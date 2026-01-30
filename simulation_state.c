@@ -201,26 +201,34 @@ void simulation_set_abundances(SimulationState *state,
 void simulation_set_stratified_abundances(SimulationState *state)
 {
     /*
-     * TASK ORDER #32: Si-TAPER for Si II Velocity Correction
+     * TASK ORDER #32 - PHASE 1: SPATIAL ABUNDANCE TAPERING
+     * =====================================================
      *
-     * BASELINE CONFIGURATION (restored):
-     *   - v < 10,500 km/s: Si = 25% (photospheric zone)
-     *   - v > 10,500 km/s: Linear taper from 25% to 2% over full velocity range
+     * Goal: Prevent Si II from forming in high-velocity outer layers while
+     *       maintaining abundance near the photosphere. This "sinks" the
+     *       Si II line formation deeper into the ejecta.
      *
-     * Combined with OPACITY_SCALE = 0.001 for extreme opacity softening.
-     * This configuration previously achieved Δv = +12 km/s from target.
+     * Physics: The saturated τ ~ 100 in outer shells (v > 11,500 km/s) creates
+     *          an unphysical "Photospheric Wall" that blue-shifts the Si II
+     *          absorption by ~2,300 km/s. Linear tapering removes this Si curtain.
+     *
+     * Configuration (per expert guidance):
+     *   - v < 11,000 km/s: X_Si = 0.35 (Si-rich photospheric zone)
+     *   - v ≥ 11,000 km/s: Linear decrease from 0.35 → 0.02 at 25,000 km/s
+     *
+     * Reference: W7 stratified composition model for Type Ia SNe
      */
 
-    /* Baseline parameters */
-    const double v_cutoff = 10500.0 * 1e5;       /* Start taper at 10,500 km/s */
-    const double v_taper_end = 25000.0 * 1e5;    /* Full taper to outer boundary */
-    const double Si_inner = 0.25;                 /* Si fraction in photosphere */
+    /* Phase 1 Si-Tapering Parameters */
+    const double v_taper_start = 11000.0 * 1e5;  /* Start taper at 11,000 km/s */
+    const double v_outer_max = 25000.0 * 1e5;    /* Outer boundary */
+    const double Si_inner = 0.35;                 /* Si fraction in photosphere */
     const double Si_outer = 0.02;                 /* Minimal outer Si */
 
-    printf("[ABUNDANCES] Task Order #32: BASELINE CONFIG\n");
-    printf("  v < 10,500 km/s: Si=25%% (photospheric zone)\n");
-    printf("  v > 10,500 km/s: Si TAPERS from 25%% → 2%%\n");
-    printf("  OPACITY_SCALE = 0.001 (extreme softening)\n\n");
+    printf("[ABUNDANCES] Task Order #32 - PHASE 1: LINEAR Si-TAPERING\n");
+    printf("  v < 11,000 km/s: X_Si = 35%% (photospheric zone)\n");
+    printf("  v ≥ 11,000 km/s: X_Si TAPERS linearly 35%% → 2%% at 25,000 km/s\n");
+    printf("  Goal: Sink Si II line formation to v ~ 10,000 km/s\n\n");
 
     for (int i = 0; i < state->n_shells; i++) {
         ShellState *shell = &state->shells[i];
@@ -231,35 +239,38 @@ void simulation_set_stratified_abundances(SimulationState *state)
 
         memset(ab, 0, sizeof(Abundances));
 
-        if (v_center < v_cutoff) {
+        if (v_center < v_taper_start) {
             /*
-             * PHOTOSPHERIC ZONE (v < 10,500 km/s):
-             * Si+Fe mixed - THIS is where Si II 6355 forms!
+             * PHOTOSPHERIC ZONE (v < 11,000 km/s):
+             * Si-rich region where Si II 6355 MUST form.
+             * High Si abundance ensures strong line formation here.
              */
-            ab->mass_fraction[14] = Si_inner;    /* Si - dominant for Si II 6355 */
+            ab->mass_fraction[14] = Si_inner;    /* Si = 35% - dominant for Si II 6355 */
             ab->mass_fraction[16] = 0.10;        /* S  - for S II */
             ab->mass_fraction[20] = 0.08;        /* Ca */
-            ab->mass_fraction[26] = 0.35;        /* Fe - for Fe II */
+            ab->mass_fraction[26] = 0.30;        /* Fe - for Fe II */
             ab->mass_fraction[27] = 0.05;        /* Co */
             ab->mass_fraction[28] = 0.07;        /* Ni */
         } else {
             /*
-             * OUTER IME LAYER (v > 10,500 km/s):
-             * LINEAR TAPER of Si abundance to reduce high-velocity opacity
+             * OUTER IME LAYER (v ≥ 11,000 km/s):
+             * LINEAR Si TAPER to prevent "photospheric wall" effect.
+             * Removing Si from high-v shells forces line to form deeper.
              */
-            double taper_frac = (v_center - v_cutoff) / (v_taper_end - v_cutoff);
+            double taper_frac = (v_center - v_taper_start) / (v_outer_max - v_taper_start);
             if (taper_frac > 1.0) taper_frac = 1.0;
             if (taper_frac < 0.0) taper_frac = 0.0;
 
+            /* Linear Si decrease: 35% → 2% */
             double X_Si_tapered = Si_inner - (Si_inner - Si_outer) * taper_frac;
 
-            ab->mass_fraction[6]  = 0.05 + 0.10 * taper_frac;  /* C increases outward */
-            ab->mass_fraction[8]  = 0.08 + 0.15 * taper_frac;  /* O increases outward */
+            ab->mass_fraction[6]  = 0.05 + 0.15 * taper_frac;  /* C increases outward */
+            ab->mass_fraction[8]  = 0.10 + 0.20 * taper_frac;  /* O increases outward */
             ab->mass_fraction[12] = 0.05;                       /* Mg */
-            ab->mass_fraction[14] = X_Si_tapered;               /* Si - TAPERED */
-            ab->mass_fraction[16] = 0.12;                       /* S */
-            ab->mass_fraction[20] = 0.10;                       /* Ca */
-            ab->mass_fraction[26] = 0.08 - 0.05 * taper_frac;  /* Fe decreases outward */
+            ab->mass_fraction[14] = X_Si_tapered;               /* Si - LINEARLY TAPERED */
+            ab->mass_fraction[16] = 0.10;                       /* S */
+            ab->mass_fraction[20] = 0.08;                       /* Ca */
+            ab->mass_fraction[26] = 0.10 - 0.06 * taper_frac;  /* Fe decreases outward */
             ab->mass_fraction[28] = 0.03;                       /* Ni */
         }
 
@@ -273,9 +284,9 @@ void simulation_set_stratified_abundances(SimulationState *state)
 
         /* Print summary for selected shells */
         double v_km = v_center / 1e5;
-        if (i == 0 || i == 3 || i == 5 || i == 10 || i == state->n_shells - 1) {
-            const char *zone = (v_center < v_cutoff) ? "PHOTO" : "TAPER";
-            printf("  Shell %2d (v=%5.0f km/s) [%s]: Si=%4.1f%%, Fe=%4.1f%%\n",
+        if (i == 0 || i == 3 || i == 5 || i == 10 || i == 15 || i == 20 || i == state->n_shells - 1) {
+            const char *zone = (v_center < v_taper_start) ? "PHOTO" : "TAPER";
+            printf("  Shell %2d (v=%5.0f km/s) [%s]: X_Si=%5.2f%%, X_Fe=%5.2f%%\n",
                    i, v_km, zone,
                    ab->mass_fraction[14] * 100,
                    ab->mass_fraction[26] * 100);

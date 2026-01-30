@@ -40,30 +40,36 @@
  * Reference: TARDIS uses similar capping for stability.
  */
 /*
- * TASK ORDER #32: Opacity Softening
+ * TASK ORDER #32 - PHASE 2: OPACITY SOFTENING & DYNAMIC RANGE
+ * ============================================================
  *
- * The hard cap at τ=100 was creating "flat-bottomed" line profiles,
- * making the Si II feature too broad and shifting the centroid blueward.
+ * Problem: "Flat-bottomed" saturated line profiles (τ >> 1) cause the
+ *          absorption minimum to form at the high-velocity edge, creating
+ *          an artificial blue-shift in the Si II feature.
  *
- * Changes:
- *   - TAU_MAX_CAP increased from 100 to 1000 for deeper line cores
- *   - OPACITY_SCALE set to 0.1 for softer opacity profile
+ * Solution:
+ *   - TAU_MAX_CAP = 1000.0: Allow deeper line cores without truncation
+ *   - OPACITY_SCALE = 0.05: Soften τ profile to reveal true Doppler centroid
  *
- * This allows a more graded transition in the line wings, improving
- * the absorption profile shape and centroid accuracy.
+ * Physics: With τ_final = min(τ_raw × OPACITY_SCALE, TAU_MAX_CAP), the line
+ *          wings are not artificially truncated, allowing the absorption
+ *          profile to reflect the true velocity distribution of absorbers.
+ *
+ * Reference: TARDIS uses similar τ capping for numerical stability while
+ *            preserving physically meaningful line profile shapes.
  */
-#define TAU_MAX_CAP 1000.0  /* Increased from 100 - allows deeper line cores */
+#define TAU_MAX_CAP 1000.0   /* Phase 2: High cap for deep line cores */
 
-/* Global opacity scaler (Task Order #32)
- * --------------------------------------
- * Scale all τ values to create softer opacity transitions.
+/* Global opacity scaler (Task Order #32 Phase 2)
+ * ----------------------------------------------
+ * τ_final = min(τ_raw × OPACITY_SCALE, TAU_MAX_CAP)
  *
- * Final formula: τ_final = min(τ_raw × OPACITY_SCALE, TAU_MAX_CAP)
- *
- * With OPACITY_SCALE = 0.1, raw τ values are reduced by 10x, creating
- * more gradual opacity gradients across the line-forming region.
+ * OPACITY_SCALE = 0.05 provides:
+ *   - Sufficient optical depth for strong absorption (τ ~ 10-100)
+ *   - Gradual wings that reveal the true velocity centroid
+ *   - Prevention of "flat-bottomed" saturated profiles
  */
-#define OPACITY_SCALE 0.001  /* Task Order #32: Extreme softening (baseline config) */
+#define OPACITY_SCALE 0.05   /* Phase 2: Moderate softening for centroid accuracy */
 
 /* ============================================================================
  * PHYSICS OVERRIDES CONFIGURATION (Task Order #30)
