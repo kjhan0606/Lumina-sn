@@ -299,12 +299,15 @@ typedef struct {
 /**
  * mc_config_default: Return default configuration
  * Thread-safe: returns value, no global state
+ *
+ * NOTE: Default changed to LINE_MACROATOM for full NLTE fluorescence treatment.
+ *       Use LUMINA_LINE_MODE=0 to revert to simple scattering.
  */
 static inline MonteCarloConfig mc_config_default(void) {
     MonteCarloConfig cfg = {
         .enable_full_relativity = 0,
         .disable_line_scattering = 0,
-        .line_interaction_type = LINE_SCATTER
+        .line_interaction_type = LINE_MACROATOM  /* Default: full macro-atom treatment */
     };
     return cfg;
 }

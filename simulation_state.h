@@ -632,4 +632,143 @@ void simulation_print_shell(const SimulationState *state, int shell_id);
  */
 int simulation_validate(const SimulationState *state);
 
+/* ============================================================================
+ * TEMPERATURE ITERATION (Radiative Equilibrium)
+ * ============================================================================
+ * TARDIS-style temperature convergence: after MC transport, use J-estimators
+ * to update shell temperatures until radiative equilibrium is achieved.
+ *
+ * Reference: Lucy 2005, A&A 429, 19; TARDIS documentation
+ *
+ * Physical basis:
+ *   In radiative equilibrium: ∫κ_ν B_ν dν = ∫κ_ν J_ν dν
+ *
+ *   For grey atmosphere: σT⁴/π = J  →  T = (πJ/σ)^{1/4}
+ *
+ *   Radiation temperature from mean intensity:
+ *     T_rad = (π J_est / σ_SB)^{1/4}
+ *
+ *   where J_est is the MC estimator for mean intensity.
+ */
+
+/* Maximum iterations for temperature convergence */
+#define TEMP_ITER_MAX 20
+
+/* Convergence threshold: relative temperature change */
+#define TEMP_CONVERGENCE_THRESHOLD 0.01  /* 1% */
+
+/* Damping factor to prevent oscillations */
+#define TEMP_DAMPING_FACTOR 0.5
+
+/**
+ * MC Estimators for temperature iteration
+ *
+ * Accumulated during MC transport, used to update shell temperatures.
+ */
+typedef struct {
+    double *j_estimator;        /* Mean intensity J per shell [erg/cm²/s/Hz/sr] */
+    double *nu_bar_estimator;   /* Frequency-weighted J (for T_rad) */
+    double *j_blue_estimator;   /* Line-specific estimators (optional) */
+    double *volume;             /* Shell volumes for normalization [cm³] */
+    int64_t n_shells;
+    int64_t n_lines;            /* For j_blue_estimator if used */
+    int64_t total_packets;      /* Total packets processed */
+    double  total_energy;       /* Total energy processed */
+} MCEstimators;
+
+/**
+ * Initialize MC estimators
+ *
+ * @param est       MCEstimators structure to initialize
+ * @param n_shells  Number of shells
+ * @param n_lines   Number of lines (0 if j_blue not needed)
+ * @return 0 on success, -1 on allocation failure
+ */
+int mc_estimators_init(MCEstimators *est, int n_shells, int64_t n_lines);
+
+/**
+ * Reset all estimators to zero (for new iteration)
+ */
+void mc_estimators_reset(MCEstimators *est);
+
+/**
+ * Free estimator memory
+ */
+void mc_estimators_free(MCEstimators *est);
+
+/**
+ * Update estimators during MC transport
+ *
+ * @param est           Estimator structure
+ * @param shell_id      Current shell
+ * @param energy_cmf    Comoving frame energy [erg]
+ * @param distance      Path length in shell [cm]
+ * @param nu_cmf        Comoving frame frequency [Hz]
+ */
+void mc_estimators_update(MCEstimators *est, int shell_id,
+                          double energy_cmf, double distance, double nu_cmf);
+
+/**
+ * Compute shell volumes for normalization
+ *
+ * @param est    Estimator structure
+ * @param state  Simulation state (for shell geometry)
+ */
+void mc_estimators_compute_volumes(MCEstimators *est, const SimulationState *state);
+
+/**
+ * Normalize estimators after MC run
+ *
+ * Divides by volume and packet count to get physical J values.
+ *
+ * @param est           Estimator structure
+ * @param total_energy  Total input energy (for luminosity normalization)
+ */
+void mc_estimators_normalize(MCEstimators *est, double total_energy);
+
+/**
+ * Update shell temperatures from J-estimators
+ *
+ * Uses T_rad = (π J / σ)^{1/4} with damping for stability.
+ *
+ * @param state       Simulation state to update
+ * @param est         Normalized MC estimators
+ * @param damping     Damping factor (0.5 recommended)
+ * @return Maximum relative temperature change (for convergence check)
+ */
+double simulation_update_temperatures(SimulationState *state,
+                                       const MCEstimators *est,
+                                       double damping);
+
+/**
+ * Check if temperature has converged
+ *
+ * @param max_delta_T  Maximum relative temperature change from last iteration
+ * @param threshold    Convergence threshold (default: 0.01 = 1%)
+ * @return true if converged, false otherwise
+ */
+static inline bool temperature_converged(double max_delta_T, double threshold) {
+    return max_delta_T < threshold;
+}
+
+/**
+ * Get radiation temperature from J-estimator
+ *
+ * T_rad = (π J / σ_SB)^{1/4}
+ *
+ * @param J_est  Mean intensity estimator [erg/cm²/s/Hz/sr]
+ * @return Radiation temperature [K]
+ */
+double J_to_T_rad(double J_est);
+
+/**
+ * Get mean intensity from temperature (inverse)
+ *
+ * J = σ_SB T⁴ / π
+ *
+ * @param T  Temperature [K]
+ * @return Mean intensity [erg/cm²/s/Hz/sr]
+ */
+double T_to_J(double T);
+
 #endif /* SIMULATION_STATE_H */
