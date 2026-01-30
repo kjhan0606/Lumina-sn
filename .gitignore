@@ -1,0 +1,36 @@
+# Compiled objects
+*.o
+*.a
+
+# Executables
+test_atomic
+test_plasma
+test_transport
+test_integrated
+test_kernels
+test_macro_atom
+diagnostic_*
+!diagnostic_*.c
+
+# Python cache
+__pycache__/
+*.pyc
+
+# Generated spectra and logs
+spectrum_*.csv
+*.log
+*.txt
+!README.txt
+
+# Generated plots (keep final results)
+*.png
+!task_order_*_final_results.png
+!*_VALIDATED.png
+
+# Optimization outputs
+optimization_*/
+test_*/
+
+# Editor files
+*~
+.*.swp
