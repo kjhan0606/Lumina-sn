@@ -1765,12 +1765,16 @@ void mc_estimators_compute_volumes(MCEstimators *est, const SimulationState *sta
  *   - Volume of each shell (spatial averaging)
  *   - Speed of light (path length to time conversion)
  *   - Solid angle (4π for full sphere)
- *   - Total input luminosity (energy normalization)
  *
  * Final formula:
- *   J = j_est × L_input / (4π × V × c)
+ *   J = j_est / (4π × V × c)
  *
- * where L_input = total_energy / Δt is the input luminosity.
+ * NOTE: When packets carry PHYSICAL energy (erg/s), we do NOT multiply
+ * by total_energy again. The total_energy parameter is stored for
+ * reference but not used in normalization.
+ *
+ * For backwards compatibility with normalized packets (sum=1), pass
+ * total_energy = L_requested to scale up to physical units.
  */
 void mc_estimators_normalize(MCEstimators *est, double total_energy)
 {
@@ -1792,16 +1796,19 @@ void mc_estimators_normalize(MCEstimators *est, double total_energy)
          * The factor of c converts path length (cm) to time (s).
          *
          * After normalization, J has units [erg/cm²/s/sr].
+         *
+         * NOTE: When packets carry physical luminosity (erg/s), the
+         * j_estimator accumulates (erg/s × cm). Dividing by (V × c)
+         * gives (erg/s / cm² / sr) = mean intensity.
+         *
+         * We do NOT multiply by total_energy since packets already
+         * carry physical energy. This is DIFFERENT from TARDIS where
+         * packets are normalized to sum=1 and then scaled.
          */
         double norm = 1.0 / (4.0 * CONST_PI * V * CONST_C);
 
-        /*
-         * Additional factor: total_energy normalizes the MC sum to
-         * the actual luminosity. Each packet carries a fraction of
-         * the total energy, so we scale accordingly.
-         */
-        est->j_estimator[i] *= norm * total_energy;
-        est->nu_bar_estimator[i] *= norm * total_energy;
+        est->j_estimator[i] *= norm;
+        est->nu_bar_estimator[i] *= norm;
     }
 }
 
@@ -1855,19 +1862,29 @@ double T_to_J(double T)
 }
 
 /**
- * Update shell temperatures from J-estimators
+ * Update shell temperatures using dilution factor approach
  *
- * Applies the radiative equilibrium condition to update temperatures,
- * with damping to prevent oscillations.
+ * TARDIS-style temperature iteration using the geometric dilution factor:
+ *   W = 0.5 × [1 - sqrt(1 - (R_in/r)²)]
  *
- * Update formula:
- *   T_new = T_old + damping × (T_rad - T_old)
+ * For a shell at radius r with inner boundary R_in:
+ *   T_rad = T_inner × W^0.25
  *
- * where T_rad = (π J / σ)^{1/4} is computed from MC estimators.
+ * This gives the expected temperature drop due to geometric dilution
+ * of radiation from the inner boundary.
+ *
+ * The MC estimator j_est is used to REFINE this estimate:
+ *   - High j_est in a shell → more absorption → increase T
+ *   - Low j_est → less absorption → decrease T
+ *
+ * Combined formula:
+ *   T_new = T_old + damping × (T_target - T_old)
+ *
+ * where T_target = T_inner × W^0.25 × correction_factor
  *
  * @param state   Simulation state to update (temperatures modified in place)
- * @param est     Normalized MC estimators
- * @param damping Damping factor (0.5 recommended for stability)
+ * @param est     Normalized MC estimators (used for correction)
+ * @param damping Damping factor (0.5-0.8 recommended)
  * @return Maximum relative temperature change (for convergence check)
  */
 double simulation_update_temperatures(SimulationState *state,
@@ -1878,24 +1895,75 @@ double simulation_update_temperatures(SimulationState *state,
 
     printf("[T-ITERATION] Updating shell temperatures (damping=%.2f):\n", damping);
 
-    for (int i = 0; i < state->n_shells && i < est->n_shells; i++) {
-        double J_est = est->j_estimator[i];
-        double T_old = state->shells[i].plasma.T;
+    /* Get inner boundary temperature */
+    double T_inner = state->shells[0].plasma.T;
+    double R_inner = state->shells[0].r_inner;
 
-        /* Skip shells with no J data */
-        if (J_est <= 0.0) {
-            continue;
+    /* Compute mean J across all shells (for relative scaling) */
+    double J_mean = 0.0;
+    int n_valid = 0;
+    for (int i = 0; i < state->n_shells && i < est->n_shells; i++) {
+        if (est->j_estimator[i] > 0.0) {
+            J_mean += est->j_estimator[i];
+            n_valid++;
+        }
+    }
+    if (n_valid > 0) J_mean /= n_valid;
+
+    for (int i = 0; i < state->n_shells && i < est->n_shells; i++) {
+        double T_old = state->shells[i].plasma.T;
+        double r_mid = 0.5 * (state->shells[i].r_inner + state->shells[i].r_outer);
+
+        /*
+         * Compute dilution factor W (TARDIS formula)
+         * W = 0.5 × [1 - sqrt(1 - (R_in/r)²)]
+         *
+         * At r = R_in: W = 0.5
+         * At r >> R_in: W → R_in²/(4r²) ≈ 0
+         */
+        double x = R_inner / r_mid;
+        double W;
+        if (x >= 1.0) {
+            W = 0.5;  /* At or inside inner boundary */
+        } else if (x < 0.01) {
+            W = x * x / 4.0;  /* Far field approximation */
+        } else {
+            W = 0.5 * (1.0 - sqrt(1.0 - x * x));
         }
 
-        /* Compute radiation temperature from J-estimator */
-        double T_rad = J_to_T_rad(J_est);
+        /*
+         * Base temperature from geometric dilution:
+         *   T_rad = T_inner × W^0.25
+         *
+         * For W = 0.5: T_rad = 0.84 × T_inner
+         * For W = 0.1: T_rad = 0.56 × T_inner
+         */
+        double T_geometric = T_inner * pow(W, 0.25);
+
+        /*
+         * MC correction: adjust based on relative J in this shell
+         * If j_est > J_mean: shell is hotter than average → increase T
+         * If j_est < J_mean: shell is cooler → decrease T
+         *
+         * Use mild correction to avoid instability
+         */
+        double correction = 1.0;
+        if (J_mean > 0.0 && est->j_estimator[i] > 0.0) {
+            double j_ratio = est->j_estimator[i] / J_mean;
+            /* Limit correction to ±20% */
+            correction = 1.0 + 0.1 * (j_ratio - 1.0);
+            if (correction < 0.8) correction = 0.8;
+            if (correction > 1.2) correction = 1.2;
+        }
+
+        double T_target = T_geometric * correction;
 
         /* Apply damping to prevent oscillations */
-        double T_new = T_old + damping * (T_rad - T_old);
+        double T_new = T_old + damping * (T_target - T_old);
 
-        /* Enforce physical bounds (minimum 1000 K, maximum 100000 K) */
-        if (T_new < 1000.0) T_new = 1000.0;
-        if (T_new > 100000.0) T_new = 100000.0;
+        /* Enforce physical bounds (minimum 3000 K, maximum T_inner) */
+        if (T_new < 3000.0) T_new = 3000.0;
+        if (T_new > T_inner * 1.1) T_new = T_inner * 1.1;
 
         /* Compute relative change */
         double delta_T = fabs(T_new - T_old) / T_old;
@@ -1909,8 +1977,8 @@ double simulation_update_temperatures(SimulationState *state,
         /* Print diagnostics for selected shells */
         if (i == 0 || i == state->n_shells / 2 || i == state->n_shells - 1) {
             double v_mid = 0.5 * (state->shells[i].v_inner + state->shells[i].v_outer) / 1e5;
-            printf("  Shell %2d (v=%5.0f km/s): T_old=%6.0fK, J=%.2e, T_rad=%6.0fK, T_new=%6.0fK (ΔT=%.1f%%)\n",
-                   i, v_mid, T_old, J_est, T_rad, T_new, delta_T * 100.0);
+            printf("  Shell %2d (v=%5.0f km/s): T_old=%6.0fK, W=%.3f, T_geo=%6.0fK, T_new=%6.0fK (ΔT=%.1f%%)\n",
+                   i, v_mid, T_old, W, T_geometric, T_new, delta_T * 100.0);
         }
     }
 

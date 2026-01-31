@@ -1320,6 +1320,30 @@ static void run_simulation(const SimConfig *cfg, const AtomicData *atomic)
     MCEstimators estimators;
     int use_estimators = cfg->enable_t_iteration;
 
+    /*
+     * LUMINOSITY TRACKING (TARDIS-style)
+     * ----------------------------------
+     * Compute the requested luminosity from T_inner using Stefan-Boltzmann:
+     *   L = 4π R² σ T⁴
+     *
+     * This is used to:
+     *   1. Normalize packet energies to physical luminosity
+     *   2. Update T_inner based on L_emitted / L_requested ratio
+     */
+    #define CONST_SIGMA_SB 5.670374419e-5  /* Stefan-Boltzmann [erg/cm²/s/K⁴] */
+
+    double L_requested = 4.0 * CONST_PI * r_inner * r_inner *
+                         CONST_SIGMA_SB * pow(cfg->T_inner, 4.0);
+
+    printf("\n[LUMINOSITY] Computing from Stefan-Boltzmann:\n");
+    printf("  R_inner = %.3e cm (v_inner × t_exp)\n", r_inner);
+    printf("  T_inner = %.0f K\n", cfg->T_inner);
+    printf("  L_requested = %.3e erg/s = %.2f log(L_sun)\n",
+           L_requested, log10(L_requested / 3.828e33));
+
+    LuminosityEstimators lum_est;
+    luminosity_estimators_init(&lum_est, L_requested, cfg->T_inner, cfg->t_fraction);
+
     if (use_estimators) {
         mc_estimators_init(&estimators, cfg->n_shells, 0);  /* No j_blue for now */
         mc_estimators_compute_volumes(&estimators, &state);
@@ -1327,6 +1351,7 @@ static void run_simulation(const SimConfig *cfg, const AtomicData *atomic)
         printf("  Max iterations: %d, Convergence: %.1f%%, Damping: %.2f\n",
                cfg->t_iter_max, cfg->t_converge * 100.0, cfg->t_damping);
         printf("  Hold iterations: %d (skip convergence check)\n", cfg->t_hold);
+        printf("  L_requested: %.3e erg/s\n", L_requested);
     }
 
     int iter_max = cfg->enable_t_iteration ? cfg->t_iter_max : 1;
@@ -1344,6 +1369,7 @@ static void run_simulation(const SimConfig *cfg, const AtomicData *atomic)
 
             /* Reset estimators for this iteration */
             mc_estimators_reset(&estimators);
+            luminosity_estimators_reset(&lum_est);
         }
 
         /* Reset spectrum for this iteration */
@@ -1371,7 +1397,15 @@ static void run_simulation(const SimConfig *cfg, const AtomicData *atomic)
         }
         planck_sum /= n_samples;  /* Average B_ν × ν over the range */
 
-        double packet_energy_base = 1.0 / cfg->n_packets;  /* Base normalization */
+        /*
+         * PHYSICAL PACKET ENERGY (TARDIS-style)
+         * ------------------------------------
+         * Each packet carries a fraction of the total luminosity:
+         *   packet_energy = L_requested / n_packets
+         *
+         * This gives proper physical units (erg/s) for the J-estimator.
+         */
+        double packet_energy_base = L_requested / cfg->n_packets;  /* Physical luminosity per packet */
         int progress_step = cfg->n_packets / 10;
         if (progress_step < 1) progress_step = 1;
 
@@ -1403,8 +1437,16 @@ static void run_simulation(const SimConfig *cfg, const AtomicData *atomic)
             /* Update statistics */
             if (pkt.status == 1) {
                 spectrum.n_escaped++;
+                /* Track escaped luminosity for T_inner update */
+                if (use_estimators) {
+                    luminosity_estimators_add_emitted(&lum_est, pkt.energy);
+                }
             } else {
                 spectrum.n_absorbed++;
+                /* Track absorbed luminosity */
+                if (use_estimators) {
+                    luminosity_estimators_add_absorbed(&lum_est, pkt.energy);
+                }
             }
             spectrum.total_energy += pkt.energy;
 
@@ -1415,26 +1457,54 @@ static void run_simulation(const SimConfig *cfg, const AtomicData *atomic)
             }
         }
 
-        printf("  Escaped: %ld, Absorbed: %ld\n",
-               (long)spectrum.n_escaped, (long)spectrum.n_absorbed);
+        printf("  Escaped: %ld (L=%.3e erg/s), Absorbed: %ld (L=%.3e erg/s)\n",
+               (long)spectrum.n_escaped, lum_est.L_emitted,
+               (long)spectrum.n_absorbed, lum_est.L_absorbed);
 
         /* Temperature update if iteration is enabled */
         if (use_estimators) {
-            /* Normalize estimators */
+            /*
+             * TARDIS-STYLE J-ESTIMATOR NORMALIZATION
+             * --------------------------------------
+             * The J-estimator needs to be normalized by the ACTUAL luminosity
+             * flowing through the simulation, not the normalized packet sum.
+             *
+             * total_energy now contains physical luminosity (erg/s) since we
+             * set packet_energy = L_requested / n_packets.
+             */
             mc_estimators_normalize(&estimators, spectrum.total_energy);
+
+            /*
+             * TARDIS-STYLE T_INNER UPDATE
+             * ---------------------------
+             * Update the inner boundary temperature based on luminosity ratio:
+             *   T_new = T_old × (L_emitted / L_requested)^0.25
+             *
+             * If L_emitted > L_requested, we're too hot → cool down
+             * If L_emitted < L_requested, we're too cold → heat up
+             */
+            double T_inner_old = state.shells[0].plasma.T;
+            double T_inner_new = luminosity_update_T_inner(&lum_est, cfg->t_damping);
+
+            /* Update inner shell temperature */
+            state.shells[0].plasma.T = T_inner_new;
 
             /* Check convergence (skip hold iterations) */
             if (iter >= cfg->t_hold) {
                 double max_delta_T = simulation_update_temperatures(&state, &estimators,
                                                                      cfg->t_damping);
 
-                if (temperature_converged(max_delta_T, cfg->t_converge)) {
-                    printf("\n[T-ITERATION] *** CONVERGED *** after %d iterations (max ΔT = %.2f%%)\n",
-                           iter + 1, max_delta_T * 100.0);
+                /* Also check luminosity convergence */
+                int lum_converged = luminosity_converged(&lum_est, cfg->t_converge);
+
+                if (temperature_converged(max_delta_T, cfg->t_converge) && lum_converged) {
+                    printf("\n[T-ITERATION] *** CONVERGED *** after %d iterations\n", iter + 1);
+                    printf("  Max ΔT = %.2f%%, L_ratio = %.3f\n",
+                           max_delta_T * 100.0, lum_est.L_emitted / lum_est.L_requested);
                     converged = 1;
                 } else {
-                    printf("[T-ITERATION] Not converged (max ΔT = %.2f%% > %.2f%%)\n",
-                           max_delta_T * 100.0, cfg->t_converge * 100.0);
+                    printf("[T-ITERATION] Not converged (max ΔT = %.2f%%, L_ratio = %.3f)\n",
+                           max_delta_T * 100.0, lum_est.L_emitted / lum_est.L_requested);
 
                     /* Recompute plasma state and opacities with new temperatures */
                     if (iter < iter_max - 1) {
@@ -1474,6 +1544,10 @@ static void run_simulation(const SimConfig *cfg, const AtomicData *atomic)
     printf("  Scattered:   %ld\n", (long)spectrum.n_scattered);
 
     if (use_estimators) {
+        printf("  T_inner:     %.0f K (final)\n", state.shells[0].plasma.T);
+        printf("  L_emitted:   %.3e erg/s\n", lum_est.L_emitted);
+        printf("  L_requested: %.3e erg/s\n", lum_est.L_requested);
+        printf("  L_ratio:     %.4f\n", lum_est.L_emitted / lum_est.L_requested);
         printf("  Iterations:  %d%s\n", converged ? iter_max : cfg->t_iter_max,
                converged ? " (converged)" : " (max reached)");
     }
