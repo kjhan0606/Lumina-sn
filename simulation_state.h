@@ -771,4 +771,127 @@ double J_to_T_rad(double J_est);
  */
 double T_to_J(double T);
 
+/* ============================================================================
+ * LUMINOSITY ESTIMATORS (TARDIS-style Convergence Strategy)
+ * ============================================================================
+ * Track luminosity at inner and outer boundaries for T_inner update.
+ *
+ * TARDIS convergence strategy uses:
+ *   - L_requested: Target luminosity from model
+ *   - L_emitted: Luminosity from escaped packets
+ *   - L_absorbed: Luminosity absorbed at inner boundary
+ *
+ * T_inner is updated using:
+ *   T_new = T_old × (L_emitted/L_requested)^0.25 with damping
+ *
+ * Reference: TARDIS documentation, Lucy 2005
+ */
+
+typedef struct {
+    double L_requested;     /* Target luminosity [erg/s] */
+    double L_emitted;       /* Emitted luminosity (from escaped packets) [erg/s] */
+    double L_absorbed;      /* Absorbed luminosity (at inner boundary) [erg/s] */
+    double L_inner;         /* Luminosity at inner boundary [erg/s] */
+    double fraction;        /* TARDIS packet generation fraction (default: 0.8) */
+    double T_inner;         /* Current inner boundary temperature [K] */
+    double T_inner_new;     /* Updated inner boundary temperature [K] */
+} LuminosityEstimators;
+
+/**
+ * Initialize luminosity estimators
+ *
+ * @param lum         LuminosityEstimators structure to initialize
+ * @param L_requested Target luminosity [erg/s]
+ * @param T_inner     Initial inner boundary temperature [K]
+ * @param fraction    Packet generation fraction (default: 0.8)
+ */
+void luminosity_estimators_init(LuminosityEstimators *lum,
+                                 double L_requested,
+                                 double T_inner,
+                                 double fraction);
+
+/**
+ * Reset luminosity estimators for new iteration
+ */
+void luminosity_estimators_reset(LuminosityEstimators *lum);
+
+/**
+ * Update luminosity estimators when packet escapes
+ *
+ * @param lum     Luminosity estimators
+ * @param energy  Packet energy [erg]
+ */
+void luminosity_estimators_add_emitted(LuminosityEstimators *lum, double energy);
+
+/**
+ * Update luminosity estimators when packet is absorbed at inner boundary
+ *
+ * @param lum     Luminosity estimators
+ * @param energy  Packet energy [erg]
+ */
+void luminosity_estimators_add_absorbed(LuminosityEstimators *lum, double energy);
+
+/**
+ * Update T_inner using TARDIS formula
+ *
+ * TARDIS formula: L ∝ T^4, so T_new = T_old × (L_emitted/L_requested)^0.25
+ * With damping: T_new = T_old + damping × (T_correction - T_old)
+ *
+ * @param lum      Luminosity estimators
+ * @param damping  Damping factor (0.5-0.9 recommended, TARDIS default: 0.7)
+ * @return Updated T_inner [K]
+ */
+double luminosity_update_T_inner(LuminosityEstimators *lum, double damping);
+
+/**
+ * Check luminosity convergence
+ *
+ * @param lum        Luminosity estimators
+ * @param threshold  Convergence threshold (fraction, e.g., 0.05 = 5%)
+ * @return true if |L_emitted - L_requested| / L_requested < threshold
+ */
+bool luminosity_converged(const LuminosityEstimators *lum, double threshold);
+
+/* ============================================================================
+ * RADIATION FIELD (for stimulated emission)
+ * ============================================================================
+ * Stores mean intensity J_ν at line frequencies for use in macro-atom
+ * stimulated emission calculations.
+ */
+
+typedef struct {
+    double *J_nu;           /* Mean intensity at line frequencies [erg/cm²/s/Hz/sr] */
+    int64_t n_lines;        /* Number of lines */
+    bool initialized;       /* Whether J_nu has been populated */
+} RadiationField;
+
+/**
+ * Initialize radiation field
+ *
+ * @param rf       RadiationField structure to initialize
+ * @param n_lines  Number of lines
+ * @return 0 on success, -1 on allocation failure
+ */
+int radiation_field_init(RadiationField *rf, int64_t n_lines);
+
+/**
+ * Free radiation field memory
+ */
+void radiation_field_free(RadiationField *rf);
+
+/**
+ * Populate J_nu from MC estimators
+ *
+ * Interpolates the shell-averaged J estimators to get J at each line frequency.
+ *
+ * @param rf        Radiation field to populate
+ * @param est       MC estimators (normalized)
+ * @param state     Simulation state
+ * @param atomic    Atomic data (for line frequencies)
+ */
+void radiation_field_from_estimators(RadiationField *rf,
+                                      const MCEstimators *est,
+                                      const SimulationState *state,
+                                      const AtomicData *atomic);
+
 #endif /* SIMULATION_STATE_H */

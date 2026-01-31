@@ -20,6 +20,7 @@
 #include <stdint.h>
 #include "physics_kernels.h"  /* Must come before rpacket.h */
 #include "rpacket.h"
+#include "atomic_data.h"      /* For LINE_DOWNBRANCH fluorescence */
 
 /* Global relativity mode flag (used by physics_kernels.h) */
 int ENABLE_FULL_RELATIVITY = 0;
@@ -241,7 +242,8 @@ void thomson_scatter(RPacket *pkt, double time_explosion) {
 
 void line_scatter(RPacket *pkt, double time_explosion,
                   LineInteractionType interaction_type,
-                  const NumbaPlasma *plasma) {
+                  const NumbaPlasma *plasma,
+                  const AtomicData *atomic) {
     /*
      * Resonant line scattering in Sobolev approximation.
      *
@@ -250,7 +252,7 @@ void line_scatter(RPacket *pkt, double time_explosion,
      *
      * Different treatments:
      * - SCATTER: Pure resonant scattering, isotropic re-emission at line freq
-     * - DOWNBRANCH: Fluorescence to lower energy line (simplified)
+     * - DOWNBRANCH: Fluorescence using pre-computed branching ratios
      * - MACROATOM: Full macro-atom NLTE treatment (handled by macro_atom.c)
      *
      * NOTE: For LINE_MACROATOM mode with full atomic data, use
@@ -273,26 +275,41 @@ void line_scatter(RPacket *pkt, double time_explosion,
 
     /* Determine emission frequency based on interaction type */
     double nu_emission = nu_line;  /* Default: coherent at line frequency */
+    int64_t emission_line_id = line_id;  /* Track output line for diagnostics */
 
     if (interaction_type == LINE_DOWNBRANCH) {
         /*
-         * DOWNBRANCH: Simplified fluorescence treatment
+         * DOWNBRANCH: Fluorescence using pre-computed branching ratios
          *
-         * With probability p_fluorescence, packet is re-emitted at a
-         * LOWER frequency (redder) line. This approximates the cascade
-         * through intermediate levels without full macro-atom treatment.
+         * When a photon is absorbed by a line, the atom can de-excite through
+         * various paths. The downbranch table contains pre-computed branching
+         * probabilities: p_k = A_ul(k) / Σ_j A_ul(j)
          *
-         * Simple model: emit at 0.8-1.0 * original line frequency
-         * This captures the net effect of fluorescence (UV -> optical)
-         * without requiring full level population data.
+         * If atomic data with downbranch table is available, sample the
+         * emission line properly. Otherwise, fall back to simplified model.
          */
-        double p_fluorescence = 0.3;  /* 30% chance of fluorescence */
         double xi = rng_uniform(&pkt->rng_state);
 
-        if (xi < p_fluorescence) {
-            /* Fluorescent re-emission at lower frequency */
-            double freq_reduction = 0.8 + 0.2 * rng_uniform(&pkt->rng_state);
-            nu_emission = nu_line * freq_reduction;
+        if (atomic != NULL && atomic->downbranch.initialized) {
+            /* Use proper branching ratios from atomic data */
+            emission_line_id = atomic_sample_downbranch(atomic, line_id, xi);
+            if (emission_line_id != line_id && emission_line_id >= 0 &&
+                emission_line_id < atomic->n_lines) {
+                /* Emission at different line frequency */
+                nu_emission = atomic->lines[emission_line_id].nu;
+            }
+        } else {
+            /*
+             * Fallback: Simplified fluorescence without atomic data
+             *
+             * With probability p_fluorescence, emit at lower frequency.
+             * This approximates UV -> optical fluorescence cascade.
+             */
+            double p_fluorescence = 0.3;
+            if (xi < p_fluorescence) {
+                double freq_reduction = 0.8 + 0.2 * rng_uniform(&pkt->rng_state);
+                nu_emission = nu_line * freq_reduction;
+            }
         }
     }
     /* LINE_SCATTER: nu_emission = nu_line (coherent) */
@@ -307,7 +324,7 @@ void line_scatter(RPacket *pkt, double time_explosion,
 
     /* Record interaction for spectrum synthesis */
     pkt->last_line_interaction_in_id = line_id;
-    pkt->last_line_interaction_out_id = line_id;
+    pkt->last_line_interaction_out_id = emission_line_id;
 }
 
 /* ============================================================================
@@ -523,7 +540,8 @@ void single_packet_loop(RPacket *pkt, const NumbaModel *model,
                 pkt->last_interaction_type = 2;
                 move_r_packet(pkt, distance, model->time_explosion, estimators);
                 line_scatter(pkt, model->time_explosion,
-                            config->line_interaction_type, plasma);
+                            config->line_interaction_type, plasma,
+                            config->atomic_data);
                 break;
 
             case INTERACTION_ESCATTERING:

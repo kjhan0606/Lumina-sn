@@ -798,6 +798,9 @@ void atomic_data_free(AtomicData *data) {
     free(data->collisions);
     free(data->zeta_data);
 
+    /* Free downbranch table */
+    atomic_free_downbranch_table(data);
+
     memset(data, 0, sizeof(AtomicData));
 }
 
@@ -981,15 +984,282 @@ int atomic_get_g(const AtomicData *data, int atomic_number,
 int64_t atomic_find_lines_in_range(const AtomicData *data,
                                     double nu_min, double nu_max,
                                     int64_t *indices, int64_t max_lines) {
-    /* Simple linear search for now - TODO: implement binary search */
-    int64_t count = 0;
+    /*
+     * Binary search implementation for finding lines in frequency range.
+     *
+     * The sorted_line_nu array contains frequencies in ascending order,
+     * and sorted_line_indices maps back to the original line indices.
+     *
+     * Algorithm:
+     * 1. Binary search for first line with nu >= nu_min
+     * 2. Binary search for first line with nu > nu_max
+     * 3. Copy indices in the range [start, end)
+     *
+     * Complexity: O(log n + k) where k is the number of lines in range
+     * vs O(n) for linear search
+     */
 
-    for (int64_t i = 0; i < data->n_lines && count < max_lines; i++) {
-        double nu = data->lines[i].nu;
-        if (nu >= nu_min && nu <= nu_max) {
-            indices[count++] = i;
+    if (!data->sorted_line_nu || !data->sorted_line_indices) {
+        /* Fall back to linear search if sorted arrays not available */
+        int64_t count = 0;
+        for (int64_t i = 0; i < data->n_lines && count < max_lines; i++) {
+            double nu = data->lines[i].nu;
+            if (nu >= nu_min && nu <= nu_max) {
+                indices[count++] = i;
+            }
         }
+        return count;
+    }
+
+    int64_t n = data->n_lines;
+
+    /* Binary search for first line with nu >= nu_min */
+    int64_t left = 0, right = n;
+    while (left < right) {
+        int64_t mid = left + (right - left) / 2;
+        if (data->sorted_line_nu[mid] < nu_min) {
+            left = mid + 1;
+        } else {
+            right = mid;
+        }
+    }
+    int64_t start = left;
+
+    /* Binary search for first line with nu > nu_max */
+    left = start;  /* Start from where we left off */
+    right = n;
+    while (left < right) {
+        int64_t mid = left + (right - left) / 2;
+        if (data->sorted_line_nu[mid] <= nu_max) {
+            left = mid + 1;
+        } else {
+            right = mid;
+        }
+    }
+    int64_t end = left;
+
+    /* Copy indices in range */
+    int64_t count = 0;
+    for (int64_t i = start; i < end && count < max_lines; i++) {
+        indices[count++] = data->sorted_line_indices[i];
     }
 
     return count;
+}
+
+/* ============================================================================
+ * DOWNBRANCH TABLE IMPLEMENTATION (Line Fluorescence)
+ * ============================================================================
+ * Pre-compute branching ratios for line fluorescence cascade.
+ *
+ * Physics:
+ * --------
+ * When a line absorbs a photon, the atom is excited to the upper level.
+ * From there, it can de-excite through any transition from that level.
+ * The branching probability to each emission channel is:
+ *
+ *   p_k = A_ul(k) / Σ_j A_ul(j)
+ *
+ * where the sum is over all lines with the same upper level.
+ *
+ * This enables UV → optical fluorescence: a UV photon absorbed by a
+ * high-excitation line can cascade down through intermediate levels,
+ * producing optical photons.
+ */
+
+int atomic_build_downbranch_table(AtomicData *data)
+{
+    printf("[ATOMIC_LOADER] Building downbranch table for %ld lines...\n",
+           (long)data->n_lines);
+
+    if (data->n_lines == 0 || data->lines == NULL) {
+        return -1;
+    }
+
+    /* Initialize downbranch structure */
+    data->downbranch.initialized = false;
+
+    /* Allocate per-line start/count arrays */
+    data->downbranch.emission_line_start = (int64_t *)calloc(data->n_lines, sizeof(int64_t));
+    data->downbranch.emission_line_count = (int64_t *)calloc(data->n_lines, sizeof(int64_t));
+
+    if (!data->downbranch.emission_line_start || !data->downbranch.emission_line_count) {
+        atomic_free_downbranch_table(data);
+        return -1;
+    }
+
+    /*
+     * First pass: For each line, count emission candidates from its upper level.
+     *
+     * An emission candidate is any line with:
+     *   - Same atomic number and ion number
+     *   - Same upper level (level_number_upper)
+     *   - Non-zero A_ul
+     */
+    int64_t total_entries = 0;
+
+    for (int64_t i = 0; i < data->n_lines; i++) {
+        const Line *absorbing = &data->lines[i];
+        int8_t Z = absorbing->atomic_number;
+        int8_t ion = absorbing->ion_number;
+        int16_t upper = absorbing->level_number_upper;
+
+        int64_t count = 0;
+
+        /* Find all emission lines from this upper level */
+        for (int64_t j = 0; j < data->n_lines; j++) {
+            const Line *emission = &data->lines[j];
+            if (emission->atomic_number == Z &&
+                emission->ion_number == ion &&
+                emission->level_number_upper == upper &&
+                emission->A_ul > 0.0) {
+                count++;
+            }
+        }
+
+        data->downbranch.emission_line_start[i] = total_entries;
+        data->downbranch.emission_line_count[i] = count;
+        total_entries += count;
+    }
+
+    data->downbranch.total_emission_entries = total_entries;
+
+    if (total_entries == 0) {
+        printf("[ATOMIC_LOADER] Warning: No downbranch entries found\n");
+        data->downbranch.initialized = true;
+        return 0;
+    }
+
+    /* Allocate emission line ID and probability arrays */
+    data->downbranch.emission_lines = (int64_t *)malloc(total_entries * sizeof(int64_t));
+    data->downbranch.branching_probs = (double *)malloc(total_entries * sizeof(double));
+
+    if (!data->downbranch.emission_lines || !data->downbranch.branching_probs) {
+        atomic_free_downbranch_table(data);
+        return -1;
+    }
+
+    /*
+     * Second pass: Populate emission line IDs and compute cumulative probabilities.
+     *
+     * For each absorbing line:
+     *   1. Find all emission candidates
+     *   2. Sum their A_ul values
+     *   3. Compute cumulative branching probabilities: p_k = Σ_{j≤k} A_ul(j) / Σ_all A_ul
+     */
+    for (int64_t i = 0; i < data->n_lines; i++) {
+        const Line *absorbing = &data->lines[i];
+        int8_t Z = absorbing->atomic_number;
+        int8_t ion = absorbing->ion_number;
+        int16_t upper = absorbing->level_number_upper;
+
+        int64_t start = data->downbranch.emission_line_start[i];
+        int64_t count = data->downbranch.emission_line_count[i];
+
+        if (count == 0) continue;
+
+        /* First: collect emission lines and sum A_ul */
+        double total_A = 0.0;
+        int64_t entry = 0;
+
+        for (int64_t j = 0; j < data->n_lines && entry < count; j++) {
+            const Line *emission = &data->lines[j];
+            if (emission->atomic_number == Z &&
+                emission->ion_number == ion &&
+                emission->level_number_upper == upper &&
+                emission->A_ul > 0.0) {
+                data->downbranch.emission_lines[start + entry] = j;
+                total_A += emission->A_ul;
+                entry++;
+            }
+        }
+
+        /* Second: compute cumulative probabilities */
+        double cumulative = 0.0;
+        for (int64_t k = 0; k < count; k++) {
+            int64_t line_idx = data->downbranch.emission_lines[start + k];
+            cumulative += data->lines[line_idx].A_ul / total_A;
+            data->downbranch.branching_probs[start + k] = cumulative;
+        }
+
+        /* Ensure last probability is exactly 1.0 */
+        if (count > 0) {
+            data->downbranch.branching_probs[start + count - 1] = 1.0;
+        }
+    }
+
+    data->downbranch.initialized = true;
+
+    /* Statistics */
+    int64_t lines_with_branches = 0;
+    for (int64_t i = 0; i < data->n_lines; i++) {
+        if (data->downbranch.emission_line_count[i] > 1) {
+            lines_with_branches++;
+        }
+    }
+
+    printf("[ATOMIC_LOADER] Downbranch table built:\n");
+    printf("  Total emission entries: %ld\n", (long)total_entries);
+    printf("  Lines with multiple branches: %ld (%.1f%%)\n",
+           (long)lines_with_branches, 100.0 * lines_with_branches / data->n_lines);
+
+    return 0;
+}
+
+void atomic_free_downbranch_table(AtomicData *data)
+{
+    free(data->downbranch.emission_line_start);
+    free(data->downbranch.emission_line_count);
+    free(data->downbranch.emission_lines);
+    free(data->downbranch.branching_probs);
+
+    data->downbranch.emission_line_start = NULL;
+    data->downbranch.emission_line_count = NULL;
+    data->downbranch.emission_lines = NULL;
+    data->downbranch.branching_probs = NULL;
+    data->downbranch.total_emission_entries = 0;
+    data->downbranch.initialized = false;
+}
+
+int64_t atomic_sample_downbranch(const AtomicData *data, int64_t line_id, double xi)
+{
+    /*
+     * Sample an emission line using pre-computed branching probabilities.
+     *
+     * @param data    AtomicData with initialized downbranch table
+     * @param line_id Index of the absorbing line
+     * @param xi      Random number in [0, 1)
+     * @return Index of emission line, or line_id if resonant scatter
+     */
+
+    if (!data->downbranch.initialized || line_id < 0 || line_id >= data->n_lines) {
+        return line_id;  /* Resonant scatter */
+    }
+
+    int64_t start = data->downbranch.emission_line_start[line_id];
+    int64_t count = data->downbranch.emission_line_count[line_id];
+
+    if (count <= 1) {
+        /* Only one emission channel - resonant scatter */
+        return line_id;
+    }
+
+    /* Binary search for the emission line */
+    int64_t left = 0, right = count;
+    while (left < right) {
+        int64_t mid = left + (right - left) / 2;
+        if (data->downbranch.branching_probs[start + mid] < xi) {
+            left = mid + 1;
+        } else {
+            right = mid;
+        }
+    }
+
+    /* Return the selected emission line */
+    if (left < count) {
+        return data->downbranch.emission_lines[start + left];
+    }
+
+    /* Fallback to last entry */
+    return data->downbranch.emission_lines[start + count - 1];
 }

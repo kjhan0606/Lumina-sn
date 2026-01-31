@@ -224,7 +224,7 @@ extern const double ZETA_TEMPERATURES[ZETA_N_TEMPERATURES];
  * Top-level container holding all atomic data with fast index lookups.
  */
 
-typedef struct {
+typedef struct AtomicData {
     /* === Metadata === */
     char    format_version[8];  /* "2.0" */
     char    source_file[256];   /* HDF5 filename */
@@ -270,6 +270,17 @@ typedef struct {
     /* === Zeta Data (optional) === */
     int32_t n_zeta;
     ZetaData *zeta_data;
+
+    /* === Downbranch Table (for line fluorescence) === */
+    /* Pre-computed branching ratios for line downbranch (fluorescence cascade) */
+    struct {
+        int64_t *emission_line_start;   /* Index into emission_lines for each absorbing line */
+        int64_t *emission_line_count;   /* Number of emission candidates for each line */
+        int64_t *emission_lines;        /* Emission line IDs (flattened array) */
+        double  *branching_probs;       /* Cumulative branching probabilities */
+        int64_t total_emission_entries; /* Total entries in emission_lines/branching_probs */
+        bool    initialized;
+    } downbranch;
 
     /* === Memory management flags === */
     bool    owns_memory;        /* True if this struct allocated the arrays */
@@ -356,6 +367,47 @@ double atomic_get_ionization_energy(const AtomicData *data,
  */
 int atomic_get_g(const AtomicData *data, int atomic_number,
                  int ion_number, int level_number);
+
+/* ============================================================================
+ * DOWNBRANCH (LINE FLUORESCENCE) FUNCTIONS
+ * ============================================================================
+ * Pre-compute and use branching ratios for line fluorescence (downbranch).
+ *
+ * When a photon is absorbed by a line transition, the atom can de-excite through
+ * various paths. The downbranch table pre-computes branching ratios:
+ *   p_k = A_ul(k) / Σ_j A_ul(j)
+ *
+ * where the sum is over all emission lines from the upper level.
+ */
+
+/**
+ * Build downbranch table for all lines
+ *
+ * For each line (absorbing transition), finds all emission candidates from
+ * the upper level and computes cumulative branching probabilities.
+ *
+ * @param data  AtomicData structure (downbranch will be populated)
+ * @return 0 on success, -1 on error
+ */
+int atomic_build_downbranch_table(AtomicData *data);
+
+/**
+ * Free downbranch table memory
+ */
+void atomic_free_downbranch_table(AtomicData *data);
+
+/**
+ * Sample emission line for downbranch (fluorescence)
+ *
+ * Given an absorbing line and a random number, selects the emission line
+ * according to pre-computed branching probabilities.
+ *
+ * @param data      AtomicData with initialized downbranch table
+ * @param line_id   Index of the absorbing line
+ * @param xi        Random number in [0, 1)
+ * @return Index of emission line, or line_id if no candidates (resonant scatter)
+ */
+int64_t atomic_sample_downbranch(const AtomicData *data, int64_t line_id, double xi);
 
 /* ============================================================================
  * UTILITY FUNCTIONS

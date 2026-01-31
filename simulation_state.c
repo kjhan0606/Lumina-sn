@@ -1575,3 +1575,536 @@ int simulation_validate(const SimulationState *state)
 
     return errors;
 }
+
+/* ============================================================================
+ * TEMPERATURE ITERATION (Radiative Equilibrium)
+ * ============================================================================
+ * TARDIS-style temperature convergence using MC J-estimators.
+ *
+ * Physical Basis:
+ * ---------------
+ * In radiative equilibrium, the radiation field J_ν and temperature T are
+ * related through the mean intensity integral:
+ *
+ *   J = ∫ J_ν dν  (frequency-integrated mean intensity)
+ *
+ * For a grey atmosphere in radiative equilibrium:
+ *   σT⁴/π = J
+ *
+ * Therefore:
+ *   T_rad = (π J / σ)^{1/4}
+ *
+ * where σ = 5.670374e-5 erg/cm²/s/K⁴ (Stefan-Boltzmann constant)
+ *
+ * MC Estimator:
+ * -------------
+ * During transport, we accumulate:
+ *   j_estimator[shell] += energy × distance
+ *
+ * After normalization by volume and total luminosity:
+ *   J_est = j_estimator / (4π × volume × c × Δt)
+ *
+ * The factor 4π accounts for solid angle integration, c converts path length
+ * to time, and Δt is the simulation time step.
+ *
+ * Reference: Lucy 2005, A&A 429, 19; TARDIS documentation
+ */
+
+/* Stefan-Boltzmann constant [erg/cm²/s/K⁴] */
+#define CONST_STEFAN_BOLTZMANN 5.670374419e-5
+
+/* Speed of light [cm/s] - ensure consistent with other modules */
+#ifndef CONST_C
+#define CONST_C 2.99792458e10
+#endif
+
+/* Pi */
+#ifndef CONST_PI
+#define CONST_PI 3.14159265358979323846
+#endif
+
+/**
+ * Initialize MC estimators
+ *
+ * Allocates arrays for j_estimator, nu_bar_estimator, and volume.
+ * Optionally allocates j_blue_estimator for line-specific tracking.
+ */
+int mc_estimators_init(MCEstimators *est, int n_shells, int64_t n_lines)
+{
+    memset(est, 0, sizeof(MCEstimators));
+
+    est->n_shells = n_shells;
+    est->n_lines = n_lines;
+    est->total_packets = 0;
+    est->total_energy = 0.0;
+
+    /* Allocate primary estimator arrays */
+    est->j_estimator = (double *)calloc(n_shells, sizeof(double));
+    est->nu_bar_estimator = (double *)calloc(n_shells, sizeof(double));
+    est->volume = (double *)calloc(n_shells, sizeof(double));
+
+    if (!est->j_estimator || !est->nu_bar_estimator || !est->volume) {
+        mc_estimators_free(est);
+        return -1;
+    }
+
+    /* Optionally allocate j_blue for line-specific estimators */
+    if (n_lines > 0) {
+        est->j_blue_estimator = (double *)calloc(n_lines * n_shells, sizeof(double));
+        if (!est->j_blue_estimator) {
+            mc_estimators_free(est);
+            return -1;
+        }
+    }
+
+    return 0;
+}
+
+/**
+ * Reset all estimators to zero
+ *
+ * Called at the start of each temperature iteration to clear
+ * accumulated values from previous MC run.
+ */
+void mc_estimators_reset(MCEstimators *est)
+{
+    if (est->j_estimator) {
+        memset(est->j_estimator, 0, est->n_shells * sizeof(double));
+    }
+    if (est->nu_bar_estimator) {
+        memset(est->nu_bar_estimator, 0, est->n_shells * sizeof(double));
+    }
+    if (est->j_blue_estimator && est->n_lines > 0) {
+        memset(est->j_blue_estimator, 0, est->n_lines * est->n_shells * sizeof(double));
+    }
+
+    est->total_packets = 0;
+    est->total_energy = 0.0;
+}
+
+/**
+ * Free estimator memory
+ */
+void mc_estimators_free(MCEstimators *est)
+{
+    free(est->j_estimator);
+    free(est->nu_bar_estimator);
+    free(est->j_blue_estimator);
+    free(est->volume);
+
+    memset(est, 0, sizeof(MCEstimators));
+}
+
+/**
+ * Update estimators during MC transport
+ *
+ * Called for each path segment during packet propagation.
+ * Accumulates energy × distance for mean intensity estimation.
+ *
+ * @param est        Estimator structure
+ * @param shell_id   Current shell index
+ * @param energy_cmf Comoving frame energy [erg]
+ * @param distance   Path length in shell [cm]
+ * @param nu_cmf     Comoving frame frequency [Hz]
+ */
+void mc_estimators_update(MCEstimators *est, int shell_id,
+                          double energy_cmf, double distance, double nu_cmf)
+{
+    if (shell_id < 0 || shell_id >= est->n_shells) {
+        return;
+    }
+
+    /*
+     * The MC estimator for mean intensity is:
+     *   j_est += ε × l
+     *
+     * where ε is the packet energy and l is the path length.
+     * This sums the energy-weighted path length through each shell.
+     *
+     * After normalization: J = j_est / (4π V c Δt)
+     */
+    est->j_estimator[shell_id] += energy_cmf * distance;
+
+    /*
+     * Frequency-weighted estimator for radiation temperature:
+     *   nu_bar_est += ε × l × ν
+     *
+     * Used to compute the mean frequency of the radiation field.
+     */
+    est->nu_bar_estimator[shell_id] += energy_cmf * distance * nu_cmf;
+}
+
+/**
+ * Compute shell volumes for normalization
+ *
+ * V = (4π/3) × (r_out³ - r_in³)
+ *
+ * These are needed to convert accumulated estimators to physical
+ * mean intensity values.
+ */
+void mc_estimators_compute_volumes(MCEstimators *est, const SimulationState *state)
+{
+    for (int i = 0; i < est->n_shells && i < state->n_shells; i++) {
+        double r_in = state->shells[i].r_inner;
+        double r_out = state->shells[i].r_outer;
+
+        /* Shell volume: V = (4π/3)(r_out³ - r_in³) */
+        double V = (4.0 / 3.0) * CONST_PI *
+                   (r_out * r_out * r_out - r_in * r_in * r_in);
+
+        est->volume[i] = V;
+    }
+}
+
+/**
+ * Normalize estimators after MC run
+ *
+ * Converts accumulated sums to physical mean intensity J [erg/cm²/s/sr].
+ *
+ * The normalization factor accounts for:
+ *   - Volume of each shell (spatial averaging)
+ *   - Speed of light (path length to time conversion)
+ *   - Solid angle (4π for full sphere)
+ *   - Total input luminosity (energy normalization)
+ *
+ * Final formula:
+ *   J = j_est × L_input / (4π × V × c)
+ *
+ * where L_input = total_energy / Δt is the input luminosity.
+ */
+void mc_estimators_normalize(MCEstimators *est, double total_energy)
+{
+    if (total_energy <= 0.0) {
+        fprintf(stderr, "[MC_ESTIMATORS] Warning: total_energy = 0, skipping normalization\n");
+        return;
+    }
+
+    est->total_energy = total_energy;
+
+    for (int64_t i = 0; i < est->n_shells; i++) {
+        double V = est->volume[i];
+        if (V <= 0.0) continue;
+
+        /*
+         * Normalization factor: 1 / (4π × V × c)
+         *
+         * The factor of 4π comes from integrating over solid angle.
+         * The factor of c converts path length (cm) to time (s).
+         *
+         * After normalization, J has units [erg/cm²/s/sr].
+         */
+        double norm = 1.0 / (4.0 * CONST_PI * V * CONST_C);
+
+        /*
+         * Additional factor: total_energy normalizes the MC sum to
+         * the actual luminosity. Each packet carries a fraction of
+         * the total energy, so we scale accordingly.
+         */
+        est->j_estimator[i] *= norm * total_energy;
+        est->nu_bar_estimator[i] *= norm * total_energy;
+    }
+}
+
+/**
+ * Get radiation temperature from J-estimator
+ *
+ * Uses Stefan-Boltzmann law inverted:
+ *   T_rad = (π J / σ)^{1/4}
+ *
+ * @param J_est  Mean intensity [erg/cm²/s/sr]
+ * @return Radiation temperature [K]
+ */
+double J_to_T_rad(double J_est)
+{
+    if (J_est <= 0.0) {
+        return 0.0;
+    }
+
+    /*
+     * From Stefan-Boltzmann:
+     *   F = σ T⁴  (flux)
+     *   J = F / π (mean intensity for isotropic radiation)
+     *
+     * Therefore:
+     *   J = σ T⁴ / π
+     *   T = (π J / σ)^{1/4}
+     */
+    double T_rad = pow(CONST_PI * J_est / CONST_STEFAN_BOLTZMANN, 0.25);
+
+    return T_rad;
+}
+
+/**
+ * Get mean intensity from temperature (inverse)
+ *
+ * J = σ T⁴ / π
+ *
+ * @param T  Temperature [K]
+ * @return Mean intensity [erg/cm²/s/sr]
+ */
+double T_to_J(double T)
+{
+    if (T <= 0.0) {
+        return 0.0;
+    }
+
+    double T4 = T * T * T * T;
+    double J = CONST_STEFAN_BOLTZMANN * T4 / CONST_PI;
+
+    return J;
+}
+
+/**
+ * Update shell temperatures from J-estimators
+ *
+ * Applies the radiative equilibrium condition to update temperatures,
+ * with damping to prevent oscillations.
+ *
+ * Update formula:
+ *   T_new = T_old + damping × (T_rad - T_old)
+ *
+ * where T_rad = (π J / σ)^{1/4} is computed from MC estimators.
+ *
+ * @param state   Simulation state to update (temperatures modified in place)
+ * @param est     Normalized MC estimators
+ * @param damping Damping factor (0.5 recommended for stability)
+ * @return Maximum relative temperature change (for convergence check)
+ */
+double simulation_update_temperatures(SimulationState *state,
+                                       const MCEstimators *est,
+                                       double damping)
+{
+    double max_delta_T = 0.0;
+
+    printf("[T-ITERATION] Updating shell temperatures (damping=%.2f):\n", damping);
+
+    for (int i = 0; i < state->n_shells && i < est->n_shells; i++) {
+        double J_est = est->j_estimator[i];
+        double T_old = state->shells[i].plasma.T;
+
+        /* Skip shells with no J data */
+        if (J_est <= 0.0) {
+            continue;
+        }
+
+        /* Compute radiation temperature from J-estimator */
+        double T_rad = J_to_T_rad(J_est);
+
+        /* Apply damping to prevent oscillations */
+        double T_new = T_old + damping * (T_rad - T_old);
+
+        /* Enforce physical bounds (minimum 1000 K, maximum 100000 K) */
+        if (T_new < 1000.0) T_new = 1000.0;
+        if (T_new > 100000.0) T_new = 100000.0;
+
+        /* Compute relative change */
+        double delta_T = fabs(T_new - T_old) / T_old;
+        if (delta_T > max_delta_T) {
+            max_delta_T = delta_T;
+        }
+
+        /* Update temperature */
+        state->shells[i].plasma.T = T_new;
+
+        /* Print diagnostics for selected shells */
+        if (i == 0 || i == state->n_shells / 2 || i == state->n_shells - 1) {
+            double v_mid = 0.5 * (state->shells[i].v_inner + state->shells[i].v_outer) / 1e5;
+            printf("  Shell %2d (v=%5.0f km/s): T_old=%6.0fK, J=%.2e, T_rad=%6.0fK, T_new=%6.0fK (ΔT=%.1f%%)\n",
+                   i, v_mid, T_old, J_est, T_rad, T_new, delta_T * 100.0);
+        }
+    }
+
+    printf("  Max relative T change: %.2f%%\n", max_delta_T * 100.0);
+
+    return max_delta_T;
+}
+
+/* ============================================================================
+ * LUMINOSITY ESTIMATORS (TARDIS-style Convergence Strategy)
+ * ============================================================================
+ * Implementation of luminosity tracking for T_inner update.
+ *
+ * TARDIS uses luminosity convergence to adjust the inner boundary temperature:
+ *   - If L_emitted > L_requested: T_inner is too high, reduce it
+ *   - If L_emitted < L_requested: T_inner is too low, increase it
+ *
+ * The update formula uses L ∝ T^4 (Stefan-Boltzmann):
+ *   T_new = T_old × (L_emitted / L_requested)^0.25
+ */
+
+void luminosity_estimators_init(LuminosityEstimators *lum,
+                                 double L_requested,
+                                 double T_inner,
+                                 double fraction)
+{
+    lum->L_requested = L_requested;
+    lum->L_emitted = 0.0;
+    lum->L_absorbed = 0.0;
+    lum->L_inner = 0.0;
+    lum->fraction = (fraction > 0.0 && fraction <= 1.0) ? fraction : 0.8;
+    lum->T_inner = T_inner;
+    lum->T_inner_new = T_inner;
+}
+
+void luminosity_estimators_reset(LuminosityEstimators *lum)
+{
+    lum->L_emitted = 0.0;
+    lum->L_absorbed = 0.0;
+    lum->L_inner = 0.0;
+    /* Keep L_requested, T_inner, and fraction */
+}
+
+void luminosity_estimators_add_emitted(LuminosityEstimators *lum, double energy)
+{
+    lum->L_emitted += energy;
+}
+
+void luminosity_estimators_add_absorbed(LuminosityEstimators *lum, double energy)
+{
+    lum->L_absorbed += energy;
+    lum->L_inner += energy;  /* Absorbed packets contribute to inner luminosity */
+}
+
+double luminosity_update_T_inner(LuminosityEstimators *lum, double damping)
+{
+    /*
+     * TARDIS T_inner update formula:
+     *
+     * From Stefan-Boltzmann: L = 4π R² σ T⁴
+     * Therefore: T ∝ L^0.25
+     *
+     * Correction factor: L_emitted / L_requested
+     *
+     * With damping to prevent oscillations:
+     *   T_new = T_old + damping × (T_correction - T_old)
+     *
+     * where T_correction = T_old × (L_emitted / L_requested)^0.25
+     */
+
+    if (lum->L_requested <= 0.0 || lum->L_emitted <= 0.0) {
+        /* Can't compute correction - keep current T_inner */
+        lum->T_inner_new = lum->T_inner;
+        return lum->T_inner;
+    }
+
+    /* Calculate correction factor */
+    double L_ratio = lum->L_emitted / lum->L_requested;
+    double correction = pow(L_ratio, 0.25);
+
+    /* Target temperature */
+    double T_target = lum->T_inner * correction;
+
+    /* Apply damping */
+    double T_new = lum->T_inner + damping * (T_target - lum->T_inner);
+
+    /* Enforce physical bounds */
+    if (T_new < 2000.0) T_new = 2000.0;
+    if (T_new > 100000.0) T_new = 100000.0;
+
+    lum->T_inner_new = T_new;
+
+    printf("[LUMINOSITY] L_emitted=%.3e, L_requested=%.3e, ratio=%.3f\n",
+           lum->L_emitted, lum->L_requested, L_ratio);
+    printf("[LUMINOSITY] T_inner: %.0fK → %.0fK (correction=%.3f, damping=%.2f)\n",
+           lum->T_inner, T_new, correction, damping);
+
+    /* Update T_inner for next iteration */
+    lum->T_inner = T_new;
+
+    return T_new;
+}
+
+bool luminosity_converged(const LuminosityEstimators *lum, double threshold)
+{
+    if (lum->L_requested <= 0.0) {
+        return false;
+    }
+
+    double relative_error = fabs(lum->L_emitted - lum->L_requested) / lum->L_requested;
+    return relative_error < threshold;
+}
+
+/* ============================================================================
+ * RADIATION FIELD (for stimulated emission)
+ * ============================================================================
+ * Implementation of mean intensity storage for macro-atom stimulated emission.
+ */
+
+int radiation_field_init(RadiationField *rf, int64_t n_lines)
+{
+    rf->n_lines = n_lines;
+    rf->initialized = false;
+
+    if (n_lines <= 0) {
+        rf->J_nu = NULL;
+        return 0;
+    }
+
+    rf->J_nu = (double *)calloc(n_lines, sizeof(double));
+    if (!rf->J_nu) {
+        return -1;
+    }
+
+    return 0;
+}
+
+void radiation_field_free(RadiationField *rf)
+{
+    free(rf->J_nu);
+    rf->J_nu = NULL;
+    rf->n_lines = 0;
+    rf->initialized = false;
+}
+
+void radiation_field_from_estimators(RadiationField *rf,
+                                      const MCEstimators *est,
+                                      const SimulationState *state,
+                                      const AtomicData *atomic)
+{
+    /*
+     * Populate J_nu at each line frequency by interpolating from shell J-estimators.
+     *
+     * For each line, we estimate J_ν at the line frequency by using the
+     * shell-averaged J estimator from the shell where the line is most active.
+     *
+     * This is a simplified approach - a full implementation would track
+     * frequency-resolved J in each shell, but that requires significant memory.
+     *
+     * Physical approximation:
+     * We use the average J across all shells as a first approximation.
+     * This is reasonable for lines that form across many shells.
+     */
+
+    if (!rf->J_nu || rf->n_lines == 0 || !est || !state || !atomic) {
+        return;
+    }
+
+    /* Compute average J across shells */
+    double J_avg = 0.0;
+    int n_valid = 0;
+
+    for (int64_t i = 0; i < est->n_shells; i++) {
+        if (est->j_estimator[i] > 0.0) {
+            J_avg += est->j_estimator[i];
+            n_valid++;
+        }
+    }
+
+    if (n_valid > 0) {
+        J_avg /= n_valid;
+    }
+
+    /* Assign average J to all line frequencies
+     * A more sophisticated approach would weight by shell temperature
+     * or interpolate based on line formation depth, but this provides
+     * a reasonable first approximation for stimulated emission.
+     */
+    for (int64_t i = 0; i < rf->n_lines && i < atomic->n_lines; i++) {
+        rf->J_nu[i] = J_avg;
+    }
+
+    rf->initialized = true;
+
+    printf("[RADIATION FIELD] Populated J_nu for %ld lines (J_avg = %.2e erg/cm²/s/Hz/sr)\n",
+           (long)rf->n_lines, J_avg);
+}

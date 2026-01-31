@@ -228,7 +228,8 @@ void single_packet_loop_traced(RPacket *pkt, const NumbaModel *model,
                 pkt->last_interaction_type = 2;
                 move_r_packet(pkt, distance, model->time_explosion, estimators);
                 line_scatter(pkt, model->time_explosion,
-                            config->line_interaction_type, plasma);
+                            config->line_interaction_type, plasma,
+                            config->atomic_data);
                 break;
 
             case INTERACTION_ESCATTERING:

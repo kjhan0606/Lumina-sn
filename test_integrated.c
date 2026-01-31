@@ -62,6 +62,14 @@ typedef struct {
     /* NLTE excitation correction */
     double t_alpha;             /* T_exc / T_eff ratio (1.0 = LTE) */
 
+    /* Temperature iteration (radiative equilibrium) */
+    int    enable_t_iteration;  /* Enable TARDIS-style T iteration */
+    int    t_iter_max;          /* Maximum iterations (default: 12) */
+    double t_converge;          /* Convergence threshold (default: 0.05 = 5%) */
+    double t_damping;           /* Damping factor (default: 0.7) */
+    int    t_hold;              /* Hold iterations: skip convergence check for first N */
+    double t_fraction;          /* Luminosity fraction for T_inner update */
+
     /* Task Order #30: Multi-Target Portability Parameters */
     double T_boundary;          /* Planck weighting temperature [K] */
     double epsilon_default;     /* Default thermalization probability */
@@ -134,6 +142,14 @@ static void config_set_defaults(SimConfig *cfg)
     /* Excitation temperature ratio (NLTE correction) */
     /* t_alpha = T_exc / T_eff, default 1.0 = LTE */
     cfg->t_alpha = 1.0;
+
+    /* Temperature iteration (radiative equilibrium) - ENABLED by default (TARDIS-style) */
+    cfg->enable_t_iteration = 1;  /* Enable by default, disable via LUMINA_T_ITERATION=0 */
+    cfg->t_iter_max = 12;         /* TARDIS default: 12 iterations */
+    cfg->t_converge = 0.05;       /* 5% convergence threshold (TARDIS default) */
+    cfg->t_damping = 0.7;         /* TARDIS damping_constant default */
+    cfg->t_hold = 3;              /* Hold iterations: skip convergence check for first N */
+    cfg->t_fraction = 0.8;        /* Luminosity fraction (TARDIS default) */
 
     /* Task Order #30 v2: Physical Engine Defaults (with continuum opacity)
      *
@@ -849,6 +865,290 @@ static void transport_single_packet(TransportPkt *pkt,
     }
 }
 
+/**
+ * Transport a single packet with MC estimator updates for temperature iteration.
+ *
+ * This version calls mc_estimators_update() for each path segment to accumulate
+ * the J-estimator needed for radiative equilibrium temperature updates.
+ *
+ * @param pkt            Packet to transport
+ * @param state          Simulation state
+ * @param spec           Spectrum accumulator
+ * @param est            MC estimators (can be NULL to skip updates)
+ * @param max_interactions Maximum interactions allowed
+ */
+static void transport_single_packet_with_estimators(TransportPkt *pkt,
+                                                      const SimulationState *state,
+                                                      SimpleSpectrum *spec,
+                                                      MCEstimators *est,
+                                                      int max_interactions)
+{
+    int step_count = 0;
+    int max_steps = 10000;  /* Prevent infinite loops */
+
+    while (pkt->status == 0 && pkt->n_interactions < max_interactions && step_count < max_steps) {
+        step_count++;
+        /* Find current shell */
+        int shell_id = find_shell_idx(state, pkt->r);
+
+        if (shell_id < 0) {
+            /* Escaped or absorbed */
+            if (pkt->r >= state->shells[state->n_shells - 1].r_outer) {
+                pkt->status = 1;  /* Escaped */
+
+                /* Standard escape: only if going outward in observer direction */
+                if (pkt->mu > 0.99) {
+                    simple_spectrum_add(spec, pkt->nu, pkt->energy, 0);
+                }
+
+                /* LUMINA rotation: all packets contribute */
+                ObserverConfig obs;
+                memset(&obs, 0, sizeof(obs));
+                obs.mu_observer = 1.0;
+                obs.time_explosion = state->t_explosion;
+
+                RotatedPacket rotated;
+                lumina_rotate_packet(pkt->r, pkt->mu, pkt->nu, pkt->energy,
+                                     &obs, &rotated);
+
+                /* Task Order #28: Track weight statistics */
+                g_weight_sum += rotated.weight;
+                g_energy_weighted_sum += pkt->energy * rotated.weight;
+                g_energy_unweighted_sum += pkt->energy;
+                g_lumina_packet_count++;
+
+                simple_spectrum_add(spec, rotated.nu_observer,
+                                    pkt->energy * rotated.weight, 1);
+            } else {
+                /* Fell inside inner boundary - absorbed */
+                pkt->status = 2;  /* Absorbed */
+            }
+            return;
+        }
+
+        const ShellState *shell = &state->shells[shell_id];
+
+        /* Calculate distances */
+        double d_boundary, d_electron, d_line, d_continuum;
+        double tau_line = 0.0;
+        int64_t line_idx = -1;
+
+        /* Distance to shell boundary */
+        int delta_shell = 0;
+        d_boundary = calculate_distance_boundary(pkt->r, pkt->mu,
+                                                  shell->r_inner, shell->r_outer,
+                                                  &delta_shell);
+
+        /* Distance to electron scattering */
+        double tau_e = -log(drand48() + 1e-30);
+        d_electron = tau_e / (shell->sigma_thomson_ne + 1e-30);
+
+        /* Distance to line interaction */
+        /* Get comoving frame frequency */
+        double beta = pkt->r / (state->t_explosion * CONST_C);
+        double doppler = 1.0 - beta * pkt->mu;
+        double nu_cmf = pkt->nu * doppler;
+
+        d_line = get_next_line_interaction(shell, nu_cmf, pkt->r, pkt->mu,
+                                           state->t_explosion, &line_idx, &tau_line);
+
+        /* Distance to continuum absorption (bf + ff) */
+        d_continuum = 1e99;  /* Default: no continuum interaction */
+        if (g_physics_overrides.enable_continuum_opacity) {
+            double kappa_cont = calculate_continuum_opacity(nu_cmf, shell);
+            if (kappa_cont > 1e-30) {
+                double tau_cont = -log(drand48() + 1e-30);
+                d_continuum = tau_cont / kappa_cont;
+            }
+        }
+
+        /* Take the minimum distance */
+        double d_min = d_boundary;
+        int interaction_type = 0;  /* 0=boundary, 1=electron, 2=line, 3=continuum */
+
+        if (d_electron < d_min) {
+            d_min = d_electron;
+            interaction_type = 1;
+        }
+
+        if (d_line < d_min && tau_line > 0.1) {
+            d_min = d_line;
+            interaction_type = 2;
+        }
+
+        /* Continuum absorption */
+        if (d_continuum < d_min) {
+            d_min = d_continuum;
+            interaction_type = 3;
+        }
+
+        /* Sanity check */
+        if (d_min <= 0.0 || d_min > 1e50 || !isfinite(d_min)) {
+            d_min = (shell->r_outer - pkt->r) * 0.1;  /* Small step */
+            if (d_min <= 0.0) d_min = shell->r_outer * 0.001;
+        }
+
+        /* ================================================================
+         * UPDATE MC ESTIMATORS (for temperature iteration)
+         * ================================================================
+         * The J-estimator accumulates energy × distance for each path segment.
+         * This gives us the mean intensity in each shell after normalization.
+         */
+        if (est != NULL) {
+            /* Compute comoving-frame energy for this path segment */
+            double energy_cmf = pkt->energy * doppler;
+
+            /* Update J-estimator and frequency-weighted estimator */
+            mc_estimators_update(est, shell_id, energy_cmf, d_min, nu_cmf);
+        }
+
+        /* Move packet */
+        double r_new = sqrt(pkt->r * pkt->r + d_min * d_min +
+                            2.0 * pkt->r * d_min * pkt->mu);
+        double mu_new = (pkt->r * pkt->mu + d_min) / r_new;
+
+        pkt->r = r_new;
+        pkt->mu = mu_new;
+
+        /* Process interaction (same as transport_single_packet) */
+        switch (interaction_type) {
+            case 0:  /* Boundary crossing */
+                /* Nothing special - will find new shell on next iteration */
+                break;
+
+            case 1:  /* Electron scattering */
+                /* Isotropic scattering in comoving frame */
+                pkt->mu = 2.0 * drand48() - 1.0;
+                spec->n_scattered++;
+                pkt->n_interactions++;
+                break;
+
+            case 2:  /* Line interaction (Sobolev approximation) */
+                if (line_idx >= 0 && tau_line > 0.1) {
+                    double p_interact = 1.0 - exp(-tau_line);
+                    double wavelength_A = CONST_C / pkt->nu * 1e8;
+                    double epsilon = (wavelength_A > g_physics_overrides.ir_wavelength_min)
+                        ? g_physics_overrides.ir_thermalization_frac
+                        : g_physics_overrides.base_thermalization_frac;
+
+                    if (drand48() < p_interact) {
+                        const Line *line = &state->atomic_data->lines[line_idx];
+
+                        if (drand48() < epsilon) {
+                            /* Thermalization - use same logic as transport_single_packet */
+                            double new_nu;
+
+                            if (g_physics_overrides.enable_wavelength_fluorescence) {
+                                if (wavelength_A < g_physics_overrides.uv_cutoff_angstrom) {
+                                    /* UV fluorescence */
+                                    if (drand48() < g_physics_overrides.uv_to_blue_probability) {
+                                        double nu_min = wavelength_angstrom_to_nu(g_physics_overrides.blue_fluor_max_angstrom);
+                                        double nu_max = wavelength_angstrom_to_nu(g_physics_overrides.blue_fluor_min_angstrom);
+                                        new_nu = nu_min + drand48() * (nu_max - nu_min);
+                                    } else {
+                                        double T_local = shell->plasma.T;
+                                        if (T_local < 5000.0) T_local = 5000.0;
+                                        new_nu = sample_planck_frequency(T_local,
+                                            wavelength_angstrom_to_nu(12000.0),
+                                            wavelength_angstrom_to_nu(3500.0));
+                                    }
+                                } else if (wavelength_A < 5000.0) {
+                                    /* Blue photon */
+                                    if (drand48() < g_physics_overrides.blue_scatter_probability) {
+                                        double beta_new = pkt->r / (state->t_explosion * CONST_C);
+                                        pkt->mu = 2.0 * drand48() - 1.0;
+                                        double doppler_new = 1.0 - beta_new * pkt->mu;
+                                        new_nu = line->nu / doppler_new;
+                                    } else {
+                                        double T_local = shell->plasma.T;
+                                        if (T_local < 5000.0) T_local = 5000.0;
+                                        new_nu = sample_planck_frequency(T_local,
+                                            wavelength_angstrom_to_nu(12000.0),
+                                            wavelength_angstrom_to_nu(3500.0));
+                                    }
+                                } else if (wavelength_A < g_physics_overrides.ir_wavelength_min) {
+                                    /* Red photon */
+                                    if (drand48() < 0.95) {
+                                        double beta_new = pkt->r / (state->t_explosion * CONST_C);
+                                        pkt->mu = 2.0 * drand48() - 1.0;
+                                        double doppler_new = 1.0 - beta_new * pkt->mu;
+                                        new_nu = line->nu / doppler_new;
+                                    } else {
+                                        double T_local = shell->plasma.T;
+                                        if (T_local < 5000.0) T_local = 5000.0;
+                                        new_nu = sample_planck_frequency(T_local,
+                                            wavelength_angstrom_to_nu(12000.0),
+                                            wavelength_angstrom_to_nu(4500.0));
+                                    }
+                                } else {
+                                    /* IR photon - high destruction probability */
+                                    if (drand48() < 0.80) {
+                                        pkt->status = 2;  /* Absorbed */
+                                        pkt->n_interactions++;
+                                        return;
+                                    } else {
+                                        double T_local = shell->plasma.T;
+                                        if (T_local < 5000.0) T_local = 5000.0;
+                                        new_nu = sample_planck_frequency(T_local,
+                                            wavelength_angstrom_to_nu(12000.0),
+                                            wavelength_angstrom_to_nu(3500.0));
+                                    }
+                                }
+                            } else {
+                                /* Legacy thermal re-emission */
+                                new_nu = sample_planck_frequency(g_physics_overrides.t_boundary,
+                                    wavelength_angstrom_to_nu(10000.0),
+                                    wavelength_angstrom_to_nu(3000.0));
+                            }
+
+                            pkt->nu = new_nu;
+                            pkt->mu = 2.0 * drand48() - 1.0;
+                            pkt->n_interactions++;
+                        } else {
+                            /* Pure resonance scattering */
+                            pkt->mu = 2.0 * drand48() - 1.0;
+                            double beta_new = pkt->r / (state->t_explosion * CONST_C);
+                            double doppler_new = 1.0 - beta_new * pkt->mu;
+                            pkt->nu = line->nu / doppler_new;
+                            pkt->n_interactions++;
+                        }
+                    }
+                }
+                break;
+
+            case 3:  /* Continuum absorption */
+                {
+                    double wavelength_A = CONST_C / pkt->nu * 1e8;
+                    double T_emit;
+
+                    if (wavelength_A < 5000.0) {
+                        T_emit = g_physics_overrides.t_boundary;
+                    } else {
+                        T_emit = shell->plasma.T;
+                        if (drand48() < 0.3) {
+                            pkt->status = 2;  /* Absorbed */
+                            pkt->n_interactions++;
+                            return;
+                        }
+                    }
+
+                    double nu_new = sample_planck_frequency(T_emit,
+                        wavelength_angstrom_to_nu(10000.0),
+                        wavelength_angstrom_to_nu(3000.0));
+                    pkt->nu = nu_new;
+                    pkt->mu = 2.0 * drand48() - 1.0;
+                    pkt->n_interactions++;
+                    spec->n_scattered++;
+                }
+                break;
+        }
+    }
+
+    if (pkt->n_interactions >= max_interactions || step_count >= max_steps) {
+        pkt->status = 2;  /* Absorbed (too many interactions or steps) */
+    }
+}
+
 /* ============================================================================
  * MAIN SIMULATION
  * ============================================================================ */
@@ -968,16 +1268,6 @@ static void run_simulation(const SimConfig *cfg, const AtomicData *atomic)
     SimpleSpectrum spectrum;
     simple_spectrum_init(&spectrum, cfg->n_bins, cfg->nu_min, cfg->nu_max);
 
-    /* Run Monte Carlo transport */
-    printf("\n[TRANSPORT] Running %d packets...\n", cfg->n_packets);
-
-    clock_t start_time = clock();
-
-    double packet_energy_base = 1.0 / cfg->n_packets;  /* Base normalization */
-
-    int progress_step = cfg->n_packets / 10;
-    if (progress_step < 1) progress_step = 1;
-
     /* Calculate inner radius from velocity */
     double r_inner = cfg->v_inner * cfg->t_exp;
 
@@ -1003,53 +1293,170 @@ static void run_simulation(const SimConfig *cfg, const AtomicData *atomic)
      * Uses g_physics_overrides.t_boundary (default 60000 K)
      */
     double T_photosphere = g_physics_overrides.t_boundary;
-    double kT = K_BOLTZ_CGS * T_photosphere;
     printf("[PLANCK] Using T_boundary = %.0f K for packet weighting\n", T_photosphere);
 
-    /* Pre-compute Planck normalization by summing over frequency grid */
-    double planck_sum = 0.0;
-    int n_samples = 1000;
-    for (int j = 0; j < n_samples; j++) {
-        double log_nu_j = log(cfg->nu_min) + (j + 0.5) / n_samples * (log(cfg->nu_max) - log(cfg->nu_min));
-        double nu_j = exp(log_nu_j);
-        double x = H_PLANCK_CGS * nu_j / kT;
-        double B_nu = (x < 100.0) ? (2.0 * H_PLANCK_CGS * nu_j * nu_j * nu_j / (C_CGS * C_CGS)) / (exp(x) - 1.0) : 0.0;
-        planck_sum += B_nu * nu_j;  /* Weight by ν for log-uniform sampling */
+    /* ========================================================================
+     * TEMPERATURE ITERATION LOOP (TARDIS-style Radiative Equilibrium)
+     * ========================================================================
+     *
+     * Reference: Lucy 2005, A&A 429, 19; TARDIS documentation
+     *
+     * Algorithm:
+     * ----------
+     * For iter = 1 to t_iter_max:
+     *   1. Reset MC estimators
+     *   2. Run MC transport, accumulating J-estimators
+     *   3. Normalize estimators
+     *   4. If iter > t_hold: check convergence
+     *   5. If not converged: update temperatures using T_rad = (π J / σ)^{1/4}
+     *   6. Recompute plasma state and opacities
+     *
+     * The iteration continues until:
+     *   - Temperature converges (max relative change < t_converge)
+     *   - Maximum iterations reached (t_iter_max)
+     */
+
+    /* Initialize MC estimators for temperature iteration */
+    MCEstimators estimators;
+    int use_estimators = cfg->enable_t_iteration;
+
+    if (use_estimators) {
+        mc_estimators_init(&estimators, cfg->n_shells, 0);  /* No j_blue for now */
+        mc_estimators_compute_volumes(&estimators, &state);
+        printf("\n[T-ITERATION] TARDIS-style temperature iteration ENABLED\n");
+        printf("  Max iterations: %d, Convergence: %.1f%%, Damping: %.2f\n",
+               cfg->t_iter_max, cfg->t_converge * 100.0, cfg->t_damping);
+        printf("  Hold iterations: %d (skip convergence check)\n", cfg->t_hold);
     }
-    planck_sum /= n_samples;  /* Average B_ν × ν over the range */
 
-    for (int i = 0; i < cfg->n_packets; i++) {
-        /* Initialize packet at inner boundary */
-        TransportPkt pkt;
+    int iter_max = cfg->enable_t_iteration ? cfg->t_iter_max : 1;
+    int converged = 0;
 
-        /* Random frequency (uniform in log space) */
-        double log_nu = log(cfg->nu_min) +
-                        drand48() * (log(cfg->nu_max) - log(cfg->nu_min));
-        double nu = exp(log_nu);
+    clock_t start_time = clock();
 
-        /* Weight packet energy by Planck function */
-        double x = H_PLANCK_CGS * nu / kT;
-        double B_nu = (x < 100.0) ? (2.0 * H_PLANCK_CGS * nu * nu * nu / (C_CGS * C_CGS)) / (exp(x) - 1.0) : 0.0;
-        double planck_weight = (planck_sum > 0.0) ? (B_nu * nu) / planck_sum : 1.0;
-        double packet_energy = packet_energy_base * planck_weight;
+    for (int iter = 0; iter < iter_max && !converged; iter++) {
 
-        init_transport_pkt(&pkt, r_inner, nu, packet_energy);
+        if (use_estimators) {
+            printf("\n╔═══════════════════════════════════════════════════════════════╗\n");
+            printf("║               TEMPERATURE ITERATION %2d / %2d                   ║\n",
+                   iter + 1, iter_max);
+            printf("╚═══════════════════════════════════════════════════════════════╝\n");
 
-        /* Transport */
-        transport_single_packet(&pkt, &state, &spectrum, 1000);
-
-        /* Update statistics */
-        if (pkt.status == 1) {
-            spectrum.n_escaped++;
-        } else {
-            spectrum.n_absorbed++;
+            /* Reset estimators for this iteration */
+            mc_estimators_reset(&estimators);
         }
-        spectrum.total_energy += pkt.energy;
 
-        /* Progress */
-        if ((i + 1) % progress_step == 0) {
-            printf("  Progress: %d/%d packets (%.1f%%)\n",
-                   i + 1, cfg->n_packets, 100.0 * (i + 1) / cfg->n_packets);
+        /* Reset spectrum for this iteration */
+        memset(spectrum.luminosity, 0, spectrum.n_bins * sizeof(double));
+        memset(spectrum.luminosity_lumina, 0, spectrum.n_bins * sizeof(double));
+        memset(spectrum.counts, 0, spectrum.n_bins * sizeof(int64_t));
+        memset(spectrum.counts_lumina, 0, spectrum.n_bins * sizeof(int64_t));
+        spectrum.n_escaped = 0;
+        spectrum.n_absorbed = 0;
+        spectrum.n_scattered = 0;
+        spectrum.total_energy = 0.0;
+
+        /* Re-compute Planck normalization with current T_inner (may have changed) */
+        double T_current = cfg->enable_t_iteration ? state.shells[0].plasma.T : T_photosphere;
+        double kT = K_BOLTZ_CGS * T_current;
+
+        double planck_sum = 0.0;
+        int n_samples = 1000;
+        for (int j = 0; j < n_samples; j++) {
+            double log_nu_j = log(cfg->nu_min) + (j + 0.5) / n_samples * (log(cfg->nu_max) - log(cfg->nu_min));
+            double nu_j = exp(log_nu_j);
+            double x = H_PLANCK_CGS * nu_j / kT;
+            double B_nu = (x < 100.0) ? (2.0 * H_PLANCK_CGS * nu_j * nu_j * nu_j / (C_CGS * C_CGS)) / (exp(x) - 1.0) : 0.0;
+            planck_sum += B_nu * nu_j;  /* Weight by ν for log-uniform sampling */
+        }
+        planck_sum /= n_samples;  /* Average B_ν × ν over the range */
+
+        double packet_energy_base = 1.0 / cfg->n_packets;  /* Base normalization */
+        int progress_step = cfg->n_packets / 10;
+        if (progress_step < 1) progress_step = 1;
+
+        /* Run Monte Carlo transport */
+        printf("\n[TRANSPORT] Running %d packets (iteration %d)...\n", cfg->n_packets, iter + 1);
+
+        for (int i = 0; i < cfg->n_packets; i++) {
+            /* Initialize packet at inner boundary */
+            TransportPkt pkt;
+
+            /* Random frequency (uniform in log space) */
+            double log_nu = log(cfg->nu_min) +
+                            drand48() * (log(cfg->nu_max) - log(cfg->nu_min));
+            double nu = exp(log_nu);
+
+            /* Weight packet energy by Planck function */
+            double x = H_PLANCK_CGS * nu / kT;
+            double B_nu = (x < 100.0) ? (2.0 * H_PLANCK_CGS * nu * nu * nu / (C_CGS * C_CGS)) / (exp(x) - 1.0) : 0.0;
+            double planck_weight = (planck_sum > 0.0) ? (B_nu * nu) / planck_sum : 1.0;
+            double packet_energy = packet_energy_base * planck_weight;
+
+            init_transport_pkt(&pkt, r_inner, nu, packet_energy);
+
+            /* Transport with estimator updates */
+            transport_single_packet_with_estimators(&pkt, &state, &spectrum,
+                                                     use_estimators ? &estimators : NULL,
+                                                     1000);
+
+            /* Update statistics */
+            if (pkt.status == 1) {
+                spectrum.n_escaped++;
+            } else {
+                spectrum.n_absorbed++;
+            }
+            spectrum.total_energy += pkt.energy;
+
+            /* Progress */
+            if ((i + 1) % progress_step == 0 && !use_estimators) {
+                printf("  Progress: %d/%d packets (%.1f%%)\n",
+                       i + 1, cfg->n_packets, 100.0 * (i + 1) / cfg->n_packets);
+            }
+        }
+
+        printf("  Escaped: %ld, Absorbed: %ld\n",
+               (long)spectrum.n_escaped, (long)spectrum.n_absorbed);
+
+        /* Temperature update if iteration is enabled */
+        if (use_estimators) {
+            /* Normalize estimators */
+            mc_estimators_normalize(&estimators, spectrum.total_energy);
+
+            /* Check convergence (skip hold iterations) */
+            if (iter >= cfg->t_hold) {
+                double max_delta_T = simulation_update_temperatures(&state, &estimators,
+                                                                     cfg->t_damping);
+
+                if (temperature_converged(max_delta_T, cfg->t_converge)) {
+                    printf("\n[T-ITERATION] *** CONVERGED *** after %d iterations (max ΔT = %.2f%%)\n",
+                           iter + 1, max_delta_T * 100.0);
+                    converged = 1;
+                } else {
+                    printf("[T-ITERATION] Not converged (max ΔT = %.2f%% > %.2f%%)\n",
+                           max_delta_T * 100.0, cfg->t_converge * 100.0);
+
+                    /* Recompute plasma state and opacities with new temperatures */
+                    if (iter < iter_max - 1) {
+                        printf("[T-ITERATION] Recomputing plasma state...\n");
+                        simulation_compute_plasma(&state);
+                        simulation_compute_opacities(&state);
+                    }
+                }
+            } else {
+                printf("[T-ITERATION] Hold iteration %d/%d (skipping convergence check)\n",
+                       iter + 1, cfg->t_hold);
+
+                /* Update temperatures without checking convergence */
+                simulation_update_temperatures(&state, &estimators, cfg->t_damping);
+
+                /* Recompute plasma state and opacities */
+                if (iter < iter_max - 1) {
+                    printf("[T-ITERATION] Recomputing plasma state...\n");
+                    simulation_compute_plasma(&state);
+                    simulation_compute_opacities(&state);
+                }
+            }
         }
     }
 
@@ -1066,10 +1473,18 @@ static void run_simulation(const SimConfig *cfg, const AtomicData *atomic)
            (long)spectrum.n_absorbed, 100.0 * spectrum.n_absorbed / cfg->n_packets);
     printf("  Scattered:   %ld\n", (long)spectrum.n_scattered);
 
+    if (use_estimators) {
+        printf("  Iterations:  %d%s\n", converged ? iter_max : cfg->t_iter_max,
+               converged ? " (converged)" : " (max reached)");
+    }
+
     /* Write spectrum */
     simple_spectrum_write_csv(&spectrum, cfg->output_file, cfg->t_exp);
 
     /* Cleanup */
+    if (use_estimators) {
+        mc_estimators_free(&estimators);
+    }
     simple_spectrum_free(&spectrum);
     simulation_state_free(&state);
 
@@ -1150,6 +1565,13 @@ int main(int argc, char *argv[])
             printf("  LUMINA_WL_FLUOR      Enable wavelength-dep fluorescence (default: 1)\n");
             printf("  LUMINA_UV_BLUE_PROB  UV→Blue fluorescence prob (default: 0.85)\n");
             printf("  LUMINA_BLUE_SCATTER  Blue photon scatter prob (default: 0.70)\n");
+            printf("\nTemperature Iteration (Radiative Equilibrium) - ENABLED BY DEFAULT:\n");
+            printf("  LUMINA_T_ITERATION   Enable T iteration (default: 1, enabled)\n");
+            printf("  LUMINA_T_ITER_MAX    Maximum iterations (default: 12)\n");
+            printf("  LUMINA_T_CONVERGE    Convergence threshold (default: 0.05 = 5%%)\n");
+            printf("  LUMINA_T_DAMPING     Damping factor (default: 0.7)\n");
+            printf("  LUMINA_T_HOLD        Hold iterations (default: 3)\n");
+            printf("  LUMINA_T_FRACTION    Luminosity fraction (default: 0.8)\n");
             return 0;
         } else if (argv[i][0] != '-') {
             /* Positional arguments: atomic_file, n_packets, output_file */
@@ -1186,6 +1608,14 @@ int main(int argc, char *argv[])
     const char *env_wl_fluor = getenv("LUMINA_WL_FLUOR");       /* Enable wavelength-dependent model */
     const char *env_uv_blue_prob = getenv("LUMINA_UV_BLUE_PROB");/* UV→blue fluorescence probability */
     const char *env_blue_scatter = getenv("LUMINA_BLUE_SCATTER");/* Blue photon scatter probability */
+
+    /* Temperature iteration controls */
+    const char *env_t_iteration = getenv("LUMINA_T_ITERATION");
+    const char *env_t_iter_max = getenv("LUMINA_T_ITER_MAX");
+    const char *env_t_converge = getenv("LUMINA_T_CONVERGE");
+    const char *env_t_damping = getenv("LUMINA_T_DAMPING");
+    const char *env_t_hold = getenv("LUMINA_T_HOLD");
+    const char *env_t_fraction = getenv("LUMINA_T_FRACTION");
 
     if (env_t_alpha) cfg.t_alpha = atof(env_t_alpha);
     if (env_si) cfg.Si_scale = atof(env_si);
@@ -1232,6 +1662,14 @@ int main(int argc, char *argv[])
     if (env_uv_blue_prob) overrides.uv_to_blue_probability = atof(env_uv_blue_prob);
     if (env_blue_scatter) overrides.blue_scatter_probability = atof(env_blue_scatter);
 
+    /* Apply temperature iteration overrides */
+    if (env_t_iteration) cfg.enable_t_iteration = atoi(env_t_iteration);
+    if (env_t_iter_max) cfg.t_iter_max = atoi(env_t_iter_max);
+    if (env_t_converge) cfg.t_converge = atof(env_t_converge);
+    if (env_t_damping) cfg.t_damping = atof(env_t_damping);
+    if (env_t_hold) cfg.t_hold = atoi(env_t_hold);
+    if (env_t_fraction) cfg.t_fraction = atof(env_t_fraction);
+
     physics_overrides_set(&overrides);
 
     printf("[PHYSICS OVERRIDES] T_boundary=%.0fK, eps=%.2f, eps_ir=%.2f, blue_scale=%.2f\n",
@@ -1248,6 +1686,11 @@ int main(int argc, char *argv[])
            g_physics_overrides.enable_wavelength_fluorescence ? "ON" : "OFF",
            g_physics_overrides.uv_to_blue_probability * 100.0,
            g_physics_overrides.blue_scatter_probability * 100.0);
+    if (cfg.enable_t_iteration) {
+        printf("[T-ITERATION] Radiative equilibrium iteration ENABLED:\n");
+        printf("  Max iterations: %d, Convergence: %.1f%%, Damping: %.2f\n",
+               cfg.t_iter_max, cfg.t_converge * 100.0, cfg.t_damping);
+    }
 
     /* Set abundances based on mode */
     if (type_ia_mode) {

@@ -290,10 +290,15 @@ typedef struct {
 /* ============================================================================
  * CONFIGURATION STRUCTURE (No longer global - passed as parameter)
  * ============================================================================ */
+
+/* Forward declaration for atomic data (optional, for downbranch) */
+struct AtomicData;
+
 typedef struct {
     int enable_full_relativity;     /* Include O(v^2/c^2) terms */
     int disable_line_scattering;    /* Turn off line interactions */
     LineInteractionType line_interaction_type;
+    const struct AtomicData *atomic_data;  /* Optional: for LINE_DOWNBRANCH fluorescence */
 } MonteCarloConfig;
 
 /**
@@ -307,7 +312,8 @@ static inline MonteCarloConfig mc_config_default(void) {
     MonteCarloConfig cfg = {
         .enable_full_relativity = 0,
         .disable_line_scattering = 0,
-        .line_interaction_type = LINE_MACROATOM  /* Default: full macro-atom treatment */
+        .line_interaction_type = LINE_MACROATOM,  /* Default: full macro-atom treatment */
+        .atomic_data = NULL  /* Set if using LINE_DOWNBRANCH with full fluorescence */
     };
     return cfg;
 }
@@ -465,10 +471,12 @@ void thomson_scatter(RPacket *pkt, double time_explosion);
  * @param time_explosion   Time since explosion [s]
  * @param interaction_type Treatment mode
  * @param plasma           Plasma data (for line frequencies)
+ * @param atomic           Optional atomic data (for DOWNBRANCH fluorescence)
  */
 void line_scatter(RPacket *pkt, double time_explosion,
                   LineInteractionType interaction_type,
-                  const NumbaPlasma *plasma);
+                  const NumbaPlasma *plasma,
+                  const struct AtomicData *atomic);
 
 /* --- Estimator Updates --- */
 void set_estimators(RPacket *pkt, double distance, Estimators *est,
