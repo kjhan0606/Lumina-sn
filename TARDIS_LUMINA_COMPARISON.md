@@ -37,7 +37,7 @@ This document validates the bottom-level physics consistency between LUMINA-SN (
 | He I | 24.587388 | 24.587388 | < 1e-10 | PASS |
 | He II | 54.417763 | 54.417765 | 3.47e-08 | PASS |
 
-### Line Data
+### Line Data Summary
 
 | Metric | Value |
 |--------|-------|
@@ -47,7 +47,122 @@ This document validates the bottom-level physics consistency between LUMINA-SN (
 | Total lines | 271,743 |
 | Hα wavelength | 6564.5960 Å (error: 2.77e-16) |
 
-**Result**: Atomic data loaded correctly with sub-ppm accuracy on ionization energies.
+### Spectral Line Validation for Type Ia Supernovae
+
+Comprehensive validation of diagnostic lines essential for Type Ia SN spectroscopy:
+
+#### Calcium (H&K and IR Triplet)
+
+| Line | λ_ref [Å] | λ_found [Å] | Δλ [Å] | f_lu | A_ul [s⁻¹] | Status |
+|------|-----------|-------------|--------|------|------------|--------|
+| Ca II K | 3934.77 | 3934.78 | +0.01 | 0.6807 | 1.47e+08 | PASS |
+| Ca II H | 3969.59 | 3969.59 | +0.00 | 0.3412 | 1.44e+08 | PASS |
+| Ca II IR 8498 | 8500.00 | 8500.36 | +0.36 | 0.0091 | 1.11e+06 | PASS |
+| Ca II IR 8542 | 8544.00 | 8544.44 | +0.44 | 0.0179 | 9.90e+05 | PASS |
+| Ca II IR 8662 | 8664.00 | 8664.52 | +0.52 | 0.0158 | 1.06e+06 | PASS |
+
+#### Silicon (Velocity Diagnostic)
+
+| Line | λ_ref [Å] | λ_found [Å] | Δλ [Å] | f_lu | A_ul [s⁻¹] | Status |
+|------|-----------|-------------|--------|------|------------|--------|
+| Si II 6347 | 6347.10 | 6347.11 | +0.01 | 0.7080 | 5.84e+07 | PASS |
+| Si II 6371 | 6371.37 | 6371.37 | +0.00 | 0.4190 | 6.90e+07 | PASS |
+| Si II 6349 | 6349.00 | 6347.11 | -1.89 | 0.7080 | 5.84e+07 | PASS |
+| Si II 6373 | 6373.00 | 6371.37 | -1.63 | 0.4190 | 6.90e+07 | PASS |
+| Si II 4128 | 4128.00 | 4128.07 | +0.07 | 0.8850 | 1.47e+08 | PASS |
+| Si II 4131 | 4131.00 | 4130.89 | -0.11 | 0.5250 | 1.73e+08 | PASS |
+| Si III 4553 | 4553.00 | 4552.62 | -0.38 | 0.2920 | 7.55e+07 | PASS |
+| Si III 4568 | 4568.00 | 4567.84 | -0.16 | 0.2170 | 5.57e+07 | PASS |
+
+#### Sulfur ("W" Feature)
+
+| Line | λ_ref [Å] | λ_found [Å] | Δλ [Å] | f_lu | A_ul [s⁻¹] | Status |
+|------|-----------|-------------|--------|------|------------|--------|
+| S II 5432 | 5432.00 | 5432.80 | +0.80 | 0.0107 | 5.60e+06 | PASS |
+| S II 5454 | 5454.00 | 5453.83 | -0.17 | 0.0171 | 9.00e+06 | PASS |
+| S II 5606 | 5606.00 | 5606.15 | +0.15 | 0.0055 | 2.80e+06 | PASS |
+| S II 5640 | 5640.00 | 5640.34 | +0.34 | 0.0068 | 3.40e+06 | PASS |
+
+#### Carbon
+
+| Line | λ_ref [Å] | λ_found [Å] | Δλ [Å] | f_lu | A_ul [s⁻¹] | Status |
+|------|-----------|-------------|--------|------|------------|--------|
+| C II 6578 | 6578.00 | 6578.05 | +0.05 | 0.2327 | 3.67e+07 | PASS |
+| C II 6583 | 6583.00 | 6582.88 | -0.12 | 0.1163 | 3.66e+07 | PASS |
+
+#### Oxygen
+
+| Line | λ_ref [Å] | λ_found [Å] | Δλ [Å] | f_lu | A_ul [s⁻¹] | Status |
+|------|-----------|-------------|--------|------|------------|--------|
+| O I 7772 | 7772.00 | 7771.94 | -0.06 | 0.3238 | 3.69e+07 | PASS |
+| O I 7774 | 7774.00 | 7774.17 | +0.17 | 0.2165 | 3.69e+07 | PASS |
+| O I 7775 | 7775.00 | 7775.39 | +0.39 | 0.1082 | 3.69e+07 | PASS |
+
+#### Magnesium
+
+| Line | λ_ref [Å] | λ_found [Å] | Δλ [Å] | f_lu | A_ul [s⁻¹] | Status |
+|------|-----------|-------------|--------|------|------------|--------|
+| Mg II 4481 | 4481.00 | 4481.13 | +0.13 | 0.8686 | 2.33e+08 | PASS |
+| Mg II 2796 | 2796.35 | 2796.35 | +0.00 | 0.6155 | 2.60e+08 | PASS |
+| Mg II 2803 | 2803.53 | 2803.53 | +0.00 | 0.3058 | 2.57e+08 | PASS |
+
+#### Iron (Fe II/III Blend)
+
+| Line | λ_ref [Å] | λ_found [Å] | Δλ [Å] | f_lu | A_ul [s⁻¹] | Status |
+|------|-----------|-------------|--------|------|------------|--------|
+| Fe II 4924 | 4924.00 | 4923.93 | -0.07 | 0.0387 | 4.22e+06 | PASS |
+| Fe II 5018 | 5018.00 | 5018.44 | +0.44 | 0.0537 | 2.00e+06 | PASS |
+| Fe II 5169 | 5169.00 | 5169.03 | +0.03 | 0.0519 | 6.28e+06 | PASS |
+| Fe II 5276 | 5276.00 | 5276.00 | +0.00 | 0.1109 | 6.00e+06 | PASS |
+| Fe II 5317 | 5317.00 | 5316.62 | -0.38 | 0.0691 | 1.56e+07 | PASS |
+| Fe III 4420 | 4420.00 | 4419.60 | -0.40 | 0.0299 | 2.53e+07 | PASS |
+| Fe III 5129 | 5129.00 | 5127.39 | -1.61 | 0.1213 | 7.40e+07 | PASS |
+| Fe III 5156 | 5156.00 | 5156.12 | +0.12 | 0.0707 | 4.30e+07 | PASS |
+
+#### Cobalt
+
+| Line | λ_ref [Å] | λ_found [Å] | Δλ [Å] | f_lu | A_ul [s⁻¹] | Status |
+|------|-----------|-------------|--------|------|------------|--------|
+| Co II 4161 | 4161.00 | 4160.66 | -0.34 | 0.0119 | 7.63e+05 | PASS |
+| Co III 5888 | 5888.00 | - | - | - | - | MISSING |
+
+#### Nickel
+
+| Line | λ_ref [Å] | λ_found [Å] | Δλ [Å] | f_lu | A_ul [s⁻¹] | Status |
+|------|-----------|-------------|--------|------|------------|--------|
+| Ni II 4067 | 4067.00 | 4067.03 | +0.03 | 0.0547 | 8.40e+06 | PASS |
+| Ni II 7378 | 7378.00 | 7377.83 | -0.17 | 0.0183 | 4.76e+07 | PASS |
+
+#### Reference Lines (H, He, Na)
+
+| Line | λ_ref [Å] | λ_found [Å] | Δλ [Å] | f_lu | A_ul [s⁻¹] | Status |
+|------|-----------|-------------|--------|------|------------|--------|
+| H α | 6564.60 | 6564.60 | +0.00 | 0.6407 | 5.39e+07 | PASS |
+| H β | 4862.70 | 4862.69 | -0.01 | 0.1193 | 1.67e+07 | PASS |
+| H γ | 4341.70 | 4341.68 | -0.02 | 0.0447 | 6.91e+06 | PASS |
+| He I 5876 | 5876.00 | 5875.62 | -0.38 | 0.7064 | 7.07e+07 | PASS |
+| He I 6678 | 6678.00 | 6678.15 | +0.15 | 0.6367 | 6.37e+07 | PASS |
+| Na I D | 5893.00 | 5889.95 | -3.05 | 0.6550 | 6.16e+07 | PASS |
+
+### Validation Summary
+
+| Category | Lines Tested | PASS | MISSING |
+|----------|--------------|------|---------|
+| Calcium | 5 | 5 | 0 |
+| Silicon | 8 | 8 | 0 |
+| Sulfur | 4 | 4 | 0 |
+| Carbon | 2 | 2 | 0 |
+| Oxygen | 3 | 3 | 0 |
+| Magnesium | 3 | 3 | 0 |
+| Iron | 8 | 8 | 0 |
+| Cobalt | 2 | 1 | 1 |
+| Nickel | 2 | 2 | 0 |
+| Reference | 6 | 6 | 0 |
+| **Total** | **43** | **42** | **1** |
+
+**Note**: Co III 5888 is not present in the Kurucz/CHIANTI atomic database. All other essential diagnostic lines for Type Ia SN spectroscopy are correctly loaded with wavelengths matching to < 5 Å and physically reasonable oscillator strengths.
+
+**Result**: Atomic data validated with 42/43 lines PASS (97.7%).
 
 ---
 
