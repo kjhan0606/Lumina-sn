@@ -146,6 +146,15 @@ typedef struct {
     double blue_fluor_max_angstrom;          /* Blue fluorescence emission range max (5500 Å) */
     double blue_scatter_probability;         /* Blue photons: scatter vs thermalize (0.7) */
 
+    /* =========== Macro-Atom Integration =========== */
+
+    /* Use macro-atom formalism for line interactions
+     * When enabled, line interactions use macro_atom_process_line_interaction()
+     * which enables multi-step cascade and proper fluorescence.
+     * Default: enabled (1), disable with LUMINA_MACRO_ATOM=0
+     */
+    int use_macro_atom;
+
 } PhysicsOverrides;
 
 /* Global physics overrides instance */

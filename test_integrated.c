@@ -29,6 +29,10 @@
 #include "physics_kernels.h"
 #include "rpacket.h"
 #include "lumina_rotation.h"
+#include "macro_atom.h"
+
+/* Required by physics_kernels.h - set to 0 for first-order Doppler */
+int ENABLE_FULL_RELATIVITY = 0;
 
 /* ============================================================================
  * DIAGNOSTIC COUNTERS (Line Interaction Statistics)
@@ -54,6 +58,11 @@ static struct {
     double sum_input_wl;      /* Sum of input wavelengths */
     double sum_output_wl;     /* Sum of output wavelengths */
     long n_freq_samples;      /* Number of frequency samples */
+
+    /* Macro-atom statistics */
+    long n_macro_atom_calls;  /* Total macro-atom process calls */
+    long n_macro_emit;        /* Radiative de-activations */
+    long n_macro_absorb;      /* Collisional de-activations (absorbed) */
 } g_line_stats = {0};
 
 static void reset_line_stats(void) {
@@ -99,6 +108,19 @@ static void print_line_stats(void) {
                avg_out > avg_in ? "RED-shift" : "BLUE-shift");
     }
     printf("  ─────────────────────────────────────────────────────────\n");
+
+    /* Macro-atom statistics (if macro-atom mode was used) */
+    if (g_line_stats.n_macro_atom_calls > 0) {
+        printf("  Macro-Atom Statistics:\n");
+        printf("    Total calls:        %8ld\n", g_line_stats.n_macro_atom_calls);
+        printf("    Radiative emit:     %8ld (%.1f%%)\n",
+               g_line_stats.n_macro_emit,
+               100.0 * g_line_stats.n_macro_emit / g_line_stats.n_macro_atom_calls);
+        printf("    Absorbed:           %8ld (%.1f%%)\n",
+               g_line_stats.n_macro_absorb,
+               100.0 * g_line_stats.n_macro_absorb / g_line_stats.n_macro_atom_calls);
+        printf("  ─────────────────────────────────────────────────────────\n");
+    }
 }
 
 /* ============================================================================
@@ -636,8 +658,6 @@ static void transport_single_packet(TransportPkt *pkt,
                         : g_physics_overrides.base_thermalization_frac;
 
                     if (drand48() < p_interact) {
-                        const Line *line = &state->atomic_data->lines[line_idx];
-
                         /* Track wavelength band statistics */
                         if (wavelength_A < 3000.0) {
                             g_line_stats.n_uv_interact++;
@@ -648,6 +668,69 @@ static void transport_single_packet(TransportPkt *pkt,
                         } else {
                             g_line_stats.n_ir_interact++;
                         }
+
+                        if (g_physics_overrides.use_macro_atom) {
+                            /* ============================================================
+                             * MACRO-ATOM MODE: Full multi-step cascade fluorescence
+                             * ============================================================
+                             * Uses macro_atom_process_line_interaction() which:
+                             *   1. Initializes macro-atom state from absorbed line
+                             *   2. Runs transition loop (up to 100 jumps)
+                             *   3. Selects emission line based on transition probabilities
+                             *   4. Returns new direction and frequency
+                             *
+                             * This properly handles UV→optical fluorescence via atomic
+                             * cascades, unlike the simplified probability-based model.
+                             */
+                            g_line_stats.n_macro_atom_calls++;
+
+                            RPacket rpkt;
+                            rpkt.r = pkt->r;
+                            rpkt.mu = pkt->mu;
+                            rpkt.nu = pkt->nu;
+                            rpkt.energy = pkt->energy;
+                            rpkt.status = PACKET_IN_PROCESS;
+                            rpkt.last_line_interaction_in_id = line_idx;
+                            rpkt.last_line_interaction_out_id = -1;
+                            rng_init(&rpkt.rng_state, (uint64_t)(time(NULL) ^ (pkt->n_interactions * 12345)));
+
+                            int survives = macro_atom_process_line_interaction(
+                                &rpkt, state->atomic_data, line_idx,
+                                shell->plasma.T, shell->plasma.n_e, state->t_explosion);
+
+                            if (survives) {
+                                g_line_stats.n_macro_emit++;
+                                pkt->mu = rpkt.mu;
+                                pkt->nu = rpkt.nu;
+                                pkt->n_interactions++;
+
+                                /* Track cascade statistics based on wavelength shift */
+                                double new_wl = CONST_C / pkt->nu * 1e8;
+                                if (new_wl > wavelength_A * 1.05) {
+                                    g_line_stats.n_thermalize++;  /* Fluorescence (red-shift) */
+                                } else {
+                                    g_line_stats.n_scatter++;     /* Near-resonant */
+                                }
+
+                                /* Debug output for macro-atom events */
+                                static int macro_debug_count = 0;
+                                if (macro_debug_count < 5 && fabs(new_wl - wavelength_A) > 100.0) {
+                                    printf("  [MACRO-ATOM] λ=%.0f → %.0f Å (cascade emission)\n",
+                                           wavelength_A, new_wl);
+                                    macro_debug_count++;
+                                }
+                            } else {
+                                g_line_stats.n_macro_absorb++;
+                                pkt->status = 2;  /* Absorbed (thermalized) */
+                                pkt->n_interactions++;
+                                g_line_stats.n_ir_absorbed++;
+                                return;
+                            }
+                        } else {
+                            /* ============================================================
+                             * LEGACY MODE: Probability-based line handling
+                             * ============================================================ */
+                            const Line *line = &state->atomic_data->lines[line_idx];
 
                         if (drand48() < epsilon) {
                             /*
@@ -917,6 +1000,7 @@ static void transport_single_packet(TransportPkt *pkt,
                                 }
                             }
                         }
+                        } /* End of legacy mode else block */
                     }
                     /* Else: packet passes through (rare for high τ) */
                 }
@@ -1166,8 +1250,6 @@ static void transport_single_packet_with_estimators(TransportPkt *pkt,
                         : g_physics_overrides.base_thermalization_frac;
 
                     if (drand48() < p_interact) {
-                        const Line *line = &state->atomic_data->lines[line_idx];
-
                         /* Track wavelength band statistics */
                         if (wavelength_A < 3000.0) {
                             g_line_stats.n_uv_interact++;
@@ -1178,6 +1260,52 @@ static void transport_single_packet_with_estimators(TransportPkt *pkt,
                         } else {
                             g_line_stats.n_ir_interact++;
                         }
+
+                        if (g_physics_overrides.use_macro_atom) {
+                            /* ============================================================
+                             * MACRO-ATOM MODE: Full multi-step cascade fluorescence
+                             * ============================================================ */
+                            g_line_stats.n_macro_atom_calls++;
+
+                            RPacket rpkt;
+                            rpkt.r = pkt->r;
+                            rpkt.mu = pkt->mu;
+                            rpkt.nu = pkt->nu;
+                            rpkt.energy = pkt->energy;
+                            rpkt.status = PACKET_IN_PROCESS;
+                            rpkt.last_line_interaction_in_id = line_idx;
+                            rpkt.last_line_interaction_out_id = -1;
+                            rng_init(&rpkt.rng_state, (uint64_t)(time(NULL) ^ (pkt->n_interactions * 12345)));
+
+                            int survives = macro_atom_process_line_interaction(
+                                &rpkt, state->atomic_data, line_idx,
+                                shell->plasma.T, shell->plasma.n_e, state->t_explosion);
+
+                            if (survives) {
+                                g_line_stats.n_macro_emit++;
+                                pkt->mu = rpkt.mu;
+                                pkt->nu = rpkt.nu;
+                                pkt->n_interactions++;
+
+                                /* Track cascade statistics based on wavelength shift */
+                                double new_wl = CONST_C / pkt->nu * 1e8;
+                                if (new_wl > wavelength_A * 1.05) {
+                                    g_line_stats.n_thermalize++;  /* Fluorescence (red-shift) */
+                                } else {
+                                    g_line_stats.n_scatter++;     /* Near-resonant */
+                                }
+                            } else {
+                                g_line_stats.n_macro_absorb++;
+                                pkt->status = 2;  /* Absorbed (thermalized) */
+                                pkt->n_interactions++;
+                                g_line_stats.n_ir_absorbed++;
+                                return;
+                            }
+                        } else {
+                            /* ============================================================
+                             * LEGACY MODE: Probability-based line handling
+                             * ============================================================ */
+                            const Line *line = &state->atomic_data->lines[line_idx];
 
                         if (drand48() < epsilon) {
                             /* Thermalization - use same logic as transport_single_packet */
@@ -1285,6 +1413,7 @@ static void transport_single_packet_with_estimators(TransportPkt *pkt,
                             pkt->n_interactions++;
                             g_line_stats.n_scatter++;
                         }
+                        } /* End of legacy mode else block */
                     }
                 }
                 break;
@@ -1823,6 +1952,13 @@ int main(int argc, char *argv[])
             printf("  LUMINA_T_DAMPING     Damping factor (default: 0.7)\n");
             printf("  LUMINA_T_HOLD        Hold iterations (default: 3)\n");
             printf("  LUMINA_T_FRACTION    Luminosity fraction (default: 0.8)\n");
+            printf("\nMacro-Atom Tuning (TARDIS-style thermalization):\n");
+            printf("  LUMINA_MACRO_ATOM    Enable macro-atom mode (default: 1)\n");
+            printf("  MACRO_EPSILON        Base thermalization probability (default: 0.35)\n");
+            printf("  MACRO_IR_THERM       IR (λ>7000Å) thermalization (default: 0.80)\n");
+            printf("  MACRO_COLLISIONAL_BOOST  Collisional rate multiplier (default: 10.0)\n");
+            printf("  MACRO_GAUNT_SCALE    Gaunt factor scale (default: 5.0)\n");
+            printf("  MACRO_UV_SCATTER     UV scatter boost (default: 0.5)\n");
             return 0;
         } else if (argv[i][0] != '-') {
             /* Positional arguments: atomic_file, n_packets, output_file */
@@ -1859,6 +1995,9 @@ int main(int argc, char *argv[])
     const char *env_wl_fluor = getenv("LUMINA_WL_FLUOR");       /* Enable wavelength-dependent model */
     const char *env_uv_blue_prob = getenv("LUMINA_UV_BLUE_PROB");/* UV→blue fluorescence probability */
     const char *env_blue_scatter = getenv("LUMINA_BLUE_SCATTER");/* Blue photon scatter probability */
+
+    /* Macro-atom integration control */
+    const char *env_macro_atom = getenv("LUMINA_MACRO_ATOM");   /* Enable/disable macro-atom mode */
 
     /* Temperature iteration controls */
     const char *env_t_iteration = getenv("LUMINA_T_ITERATION");
@@ -1913,6 +2052,9 @@ int main(int argc, char *argv[])
     if (env_uv_blue_prob) overrides.uv_to_blue_probability = atof(env_uv_blue_prob);
     if (env_blue_scatter) overrides.blue_scatter_probability = atof(env_blue_scatter);
 
+    /* Apply macro-atom override */
+    if (env_macro_atom) overrides.use_macro_atom = atoi(env_macro_atom);
+
     /* Apply temperature iteration overrides */
     if (env_t_iteration) cfg.enable_t_iteration = atoi(env_t_iteration);
     if (env_t_iter_max) cfg.t_iter_max = atoi(env_t_iter_max);
@@ -1922,6 +2064,19 @@ int main(int argc, char *argv[])
     if (env_t_fraction) cfg.t_fraction = atof(env_t_fraction);
 
     physics_overrides_set(&overrides);
+
+    /* Initialize macro-atom tuning parameters from environment */
+    macro_atom_tuning_from_env();
+    printf("[MACRO-ATOM TUNING] epsilon=%.2f, ir_therm=%.2f, collision_boost=%.1fx, gaunt=%.1fx\n",
+           g_macro_atom_tuning.thermalization_epsilon,
+           g_macro_atom_tuning.ir_thermalization_boost,
+           g_macro_atom_tuning.collisional_boost,
+           g_macro_atom_tuning.gaunt_factor_scale);
+    if (g_macro_atom_tuning.downbranch_only) {
+        printf("[MACRO-ATOM TUNING] DOWNBRANCH MODE: Only radiative de-excitation (no cascade)\n");
+    } else {
+        printf("[MACRO-ATOM TUNING] FULL MODE: Multi-step cascade with up/down transitions\n");
+    }
 
     printf("[PHYSICS OVERRIDES] T_boundary=%.0fK, eps=%.2f, eps_ir=%.2f, blue_scale=%.2f\n",
            g_physics_overrides.t_boundary,
@@ -1937,6 +2092,8 @@ int main(int argc, char *argv[])
            g_physics_overrides.enable_wavelength_fluorescence ? "ON" : "OFF",
            g_physics_overrides.uv_to_blue_probability * 100.0,
            g_physics_overrides.blue_scatter_probability * 100.0);
+    printf("[PHYSICS OVERRIDES] Macro-Atom=%s (multi-step cascade for line fluorescence)\n",
+           g_physics_overrides.use_macro_atom ? "ON" : "OFF");
     if (cfg.enable_t_iteration) {
         printf("[T-ITERATION] Radiative equilibrium iteration ENABLED:\n");
         printf("  Max iterations: %d, Convergence: %.1f%%, Damping: %.2f\n",

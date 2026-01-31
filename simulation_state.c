@@ -65,7 +65,9 @@ PhysicsOverrides physics_overrides_default(void) {
         .uv_to_blue_probability = 0.85,           /* 85% of UV → blue fluorescence */
         .blue_fluor_min_angstrom = 3500.0,        /* Fluorescence range 3500-5500 Å */
         .blue_fluor_max_angstrom = 5500.0,
-        .blue_scatter_probability = 0.70          /* 70% of blue photons scatter */
+        .blue_scatter_probability = 0.70,         /* 70% of blue photons scatter */
+        /* Macro-atom integration: enabled by default */
+        .use_macro_atom = 1
     };
     return defaults;
 }
@@ -91,7 +93,9 @@ PhysicsOverrides physics_overrides_legacy_hack(void) {
         .uv_to_blue_probability = 0.0,
         .blue_fluor_min_angstrom = 3500.0,
         .blue_fluor_max_angstrom = 5500.0,
-        .blue_scatter_probability = 0.0
+        .blue_scatter_probability = 0.0,
+        /* Legacy mode: disable macro-atom */
+        .use_macro_atom = 0
     };
     return legacy;
 }
