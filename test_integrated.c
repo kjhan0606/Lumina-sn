@@ -149,7 +149,7 @@ static void config_set_defaults(SimConfig *cfg)
     cfg->t_converge = 0.05;       /* 5% convergence threshold (TARDIS default) */
     cfg->t_damping = 0.7;         /* TARDIS damping_constant default */
     cfg->t_hold = 3;              /* Hold iterations: skip convergence check for first N */
-    cfg->t_fraction = 0.8;        /* Luminosity fraction (TARDIS default) */
+    cfg->t_fraction = 0.67;       /* Target escape fraction (~67% with current opacity) */
 
     /* Task Order #30 v2: Physical Engine Defaults (with continuum opacity)
      *
@@ -1544,10 +1544,11 @@ static void run_simulation(const SimConfig *cfg, const AtomicData *atomic)
     printf("  Scattered:   %ld\n", (long)spectrum.n_scattered);
 
     if (use_estimators) {
+        double L_target = lum_est.L_requested * lum_est.fraction;
         printf("  T_inner:     %.0f K (final)\n", state.shells[0].plasma.T);
         printf("  L_emitted:   %.3e erg/s\n", lum_est.L_emitted);
-        printf("  L_requested: %.3e erg/s\n", lum_est.L_requested);
-        printf("  L_ratio:     %.4f\n", lum_est.L_emitted / lum_est.L_requested);
+        printf("  L_target:    %.3e erg/s (frac=%.2f)\n", L_target, lum_est.fraction);
+        printf("  L_ratio:     %.4f (vs target)\n", lum_est.L_emitted / L_target);
         printf("  Iterations:  %d%s\n", converged ? iter_max : cfg->t_iter_max,
                converged ? " (converged)" : " (max reached)");
     }

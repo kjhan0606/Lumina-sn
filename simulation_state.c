@@ -2055,8 +2055,13 @@ double luminosity_update_T_inner(LuminosityEstimators *lum, double damping)
         return lum->T_inner;
     }
 
-    /* Calculate correction factor */
-    double L_ratio = lum->L_emitted / lum->L_requested;
+    /* Calculate correction factor
+     * TARDIS-style: target L_emitted = L_requested × fraction
+     * The 'fraction' accounts for packets absorbed at the inner boundary.
+     * Typical value is 0.67-0.8 depending on ejecta opacity.
+     */
+    double L_target = lum->L_requested * lum->fraction;
+    double L_ratio = lum->L_emitted / L_target;
     double correction = pow(L_ratio, 0.25);
 
     /* Target temperature */
@@ -2071,8 +2076,8 @@ double luminosity_update_T_inner(LuminosityEstimators *lum, double damping)
 
     lum->T_inner_new = T_new;
 
-    printf("[LUMINOSITY] L_emitted=%.3e, L_requested=%.3e, ratio=%.3f\n",
-           lum->L_emitted, lum->L_requested, L_ratio);
+    printf("[LUMINOSITY] L_emitted=%.3e, L_target=%.3e (frac=%.2f), ratio=%.3f\n",
+           lum->L_emitted, L_target, lum->fraction, L_ratio);
     printf("[LUMINOSITY] T_inner: %.0fK → %.0fK (correction=%.3f, damping=%.2f)\n",
            lum->T_inner, T_new, correction, damping);
 
@@ -2088,7 +2093,9 @@ bool luminosity_converged(const LuminosityEstimators *lum, double threshold)
         return false;
     }
 
-    double relative_error = fabs(lum->L_emitted - lum->L_requested) / lum->L_requested;
+    /* Target is L_emitted = L_requested × fraction */
+    double L_target = lum->L_requested * lum->fraction;
+    double relative_error = fabs(lum->L_emitted - L_target) / L_target;
     return relative_error < threshold;
 }
 

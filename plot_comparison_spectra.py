@@ -33,15 +33,25 @@ else:
     tardis_flux = None
 
 # Load LUMINA spectrum (with T-iteration)
-lumina_file = LUMINA_DIR / "lumina_comparison_spectrum.dat"
+lumina_file = LUMINA_DIR / "spectrum_sn2011fe.csv"
 if lumina_file.exists():
-    lumina_data = np.loadtxt(lumina_file)
-    lumina_wave = lumina_data[:, 0]
-    lumina_flux = lumina_data[:, 1]
-    # Normalize
-    mask = (lumina_wave > 4000) & (lumina_wave < 7000)
-    if np.any(mask) and np.max(lumina_flux[mask]) > 0:
-        lumina_flux = lumina_flux / np.max(lumina_flux[mask])
+    try:
+        # LUMINA CSV format: wavelength_A,frequency_Hz,L_nu_standard,L_nu_lumina,...
+        lumina_data = np.loadtxt(lumina_file, delimiter=',', skiprows=4)
+        lumina_wave = lumina_data[:, 0]
+        lumina_flux = lumina_data[:, 3]  # L_nu_lumina column
+        # Sort by wavelength
+        sort_idx = np.argsort(lumina_wave)
+        lumina_wave = lumina_wave[sort_idx]
+        lumina_flux = lumina_flux[sort_idx]
+        # Normalize
+        mask = (lumina_wave > 4000) & (lumina_wave < 7000)
+        if np.any(mask) and np.max(lumina_flux[mask]) > 0:
+            lumina_flux = lumina_flux / np.max(lumina_flux[mask])
+    except Exception as e:
+        print(f"Error loading LUMINA spectrum: {e}")
+        lumina_wave = None
+        lumina_flux = None
 else:
     print("LUMINA spectrum not found!")
     lumina_wave = None
