@@ -31,6 +31,77 @@
 #include "lumina_rotation.h"
 
 /* ============================================================================
+ * DIAGNOSTIC COUNTERS (Line Interaction Statistics)
+ * ============================================================================ */
+
+/* Global counters for line interaction diagnostics */
+static struct {
+    /* Interaction counts by wavelength band */
+    long n_uv_interact;       /* λ < 3000 Å */
+    long n_blue_interact;     /* 3000-5000 Å */
+    long n_red_interact;      /* 5000-7000 Å */
+    long n_ir_interact;       /* λ > 7000 Å */
+
+    /* Outcome counts */
+    long n_scatter;           /* Pure resonance scatter */
+    long n_thermalize;        /* Thermal re-emission */
+    long n_uv_to_blue;        /* UV → blue fluorescence */
+    long n_blue_scatter;      /* Blue preserved scatter */
+    long n_red_scatter;       /* Red preserved scatter */
+    long n_ir_absorbed;       /* IR true absorption */
+
+    /* Frequency redistribution */
+    double sum_input_wl;      /* Sum of input wavelengths */
+    double sum_output_wl;     /* Sum of output wavelengths */
+    long n_freq_samples;      /* Number of frequency samples */
+} g_line_stats = {0};
+
+static void reset_line_stats(void) {
+    memset(&g_line_stats, 0, sizeof(g_line_stats));
+}
+
+static void print_line_stats(void) {
+    long total = g_line_stats.n_uv_interact + g_line_stats.n_blue_interact +
+                 g_line_stats.n_red_interact + g_line_stats.n_ir_interact;
+
+    if (total == 0) return;
+
+    printf("\n[LINE INTERACTION DIAGNOSTICS]\n");
+    printf("  ─────────────────────────────────────────────────────────\n");
+    printf("  Wavelength Band Statistics:\n");
+    printf("    UV   (< 3000 Å):    %8ld (%5.1f%%)\n",
+           g_line_stats.n_uv_interact, 100.0 * g_line_stats.n_uv_interact / total);
+    printf("    Blue (3000-5000 Å): %8ld (%5.1f%%)\n",
+           g_line_stats.n_blue_interact, 100.0 * g_line_stats.n_blue_interact / total);
+    printf("    Red  (5000-7000 Å): %8ld (%5.1f%%)\n",
+           g_line_stats.n_red_interact, 100.0 * g_line_stats.n_red_interact / total);
+    printf("    IR   (> 7000 Å):    %8ld (%5.1f%%)\n",
+           g_line_stats.n_ir_interact, 100.0 * g_line_stats.n_ir_interact / total);
+    printf("  ─────────────────────────────────────────────────────────\n");
+    printf("  Interaction Outcomes:\n");
+    printf("    Pure scatter:       %8ld\n", g_line_stats.n_scatter);
+    printf("    Thermalize:         %8ld\n", g_line_stats.n_thermalize);
+    printf("    UV → Blue fluor:    %8ld\n", g_line_stats.n_uv_to_blue);
+    printf("    Blue scatter:       %8ld\n", g_line_stats.n_blue_scatter);
+    printf("    Red scatter:        %8ld\n", g_line_stats.n_red_scatter);
+    printf("    IR absorbed:        %8ld\n", g_line_stats.n_ir_absorbed);
+    printf("  ─────────────────────────────────────────────────────────\n");
+
+    if (g_line_stats.n_freq_samples > 0) {
+        double avg_in = g_line_stats.sum_input_wl / g_line_stats.n_freq_samples;
+        double avg_out = g_line_stats.sum_output_wl / g_line_stats.n_freq_samples;
+        printf("  Frequency Redistribution:\n");
+        printf("    Mean input λ:  %.1f Å\n", avg_in);
+        printf("    Mean output λ: %.1f Å\n", avg_out);
+        printf("    Shift ratio:   %.3f (%.1f%% %s)\n",
+               avg_out / avg_in,
+               fabs(avg_out / avg_in - 1.0) * 100.0,
+               avg_out > avg_in ? "RED-shift" : "BLUE-shift");
+    }
+    printf("  ─────────────────────────────────────────────────────────\n");
+}
+
+/* ============================================================================
  * SIMULATION CONFIGURATION
  * ============================================================================ */
 
@@ -567,6 +638,17 @@ static void transport_single_packet(TransportPkt *pkt,
                     if (drand48() < p_interact) {
                         const Line *line = &state->atomic_data->lines[line_idx];
 
+                        /* Track wavelength band statistics */
+                        if (wavelength_A < 3000.0) {
+                            g_line_stats.n_uv_interact++;
+                        } else if (wavelength_A < 5000.0) {
+                            g_line_stats.n_blue_interact++;
+                        } else if (wavelength_A < 7000.0) {
+                            g_line_stats.n_red_interact++;
+                        } else {
+                            g_line_stats.n_ir_interact++;
+                        }
+
                         if (drand48() < epsilon) {
                             /*
                              * Task Order #30 v2.1: Wavelength-Dependent Fluorescence
@@ -608,6 +690,7 @@ static void transport_single_packet(TransportPkt *pkt,
                                         double nu_min = wavelength_angstrom_to_nu(g_physics_overrides.blue_fluor_max_angstrom);
                                         double nu_max = wavelength_angstrom_to_nu(g_physics_overrides.blue_fluor_min_angstrom);
                                         new_nu = nu_min + drand48() * (nu_max - nu_min);
+                                        g_line_stats.n_uv_to_blue++;
 
                                         if (uv_fluor_count < 5) {
                                             double new_wl = CONST_C / new_nu * 1e8;
@@ -616,6 +699,7 @@ static void transport_single_packet(TransportPkt *pkt,
                                             uv_fluor_count++;
                                         }
                                     } else {
+                                        g_line_stats.n_thermalize++;
                                         /* Small fraction thermalizes at local temperature */
                                         double T_local = shell->plasma.T;
                                         if (T_local < 5000.0) T_local = 5000.0;
@@ -639,6 +723,7 @@ static void transport_single_packet(TransportPkt *pkt,
                                         pkt->mu = 2.0 * drand48() - 1.0;
                                         double doppler_new = 1.0 - beta_new * pkt->mu;
                                         new_nu = line->nu / doppler_new;
+                                        g_line_stats.n_blue_scatter++;
 
                                         if (blue_scatter_count < 5) {
                                             double new_wl = CONST_C / new_nu * 1e8;
@@ -647,15 +732,59 @@ static void transport_single_packet(TransportPkt *pkt,
                                             blue_scatter_count++;
                                         }
                                     } else {
-                                        /* Blue thermalization at local temperature */
-                                        double T_local = shell->plasma.T;
-                                        if (T_local < 5000.0) T_local = 5000.0;
+                                        /* Blue fluorescence via atomic downbranch cascade
+                                         *
+                                         * PHYSICS: When a blue photon is absorbed, the atom
+                                         * de-excites via one of several possible emission lines.
+                                         * The downbranch table contains pre-computed branching
+                                         * ratios: p_k = A_ul(k) / Σ_j A_ul(j)
+                                         *
+                                         * This properly redistributes blue flux to redder
+                                         * wavelengths via atomic level transitions (like TARDIS
+                                         * macro-atom mode), rather than simple Planck sampling.
+                                         */
+                                        g_line_stats.n_thermalize++;
 
-                                        new_nu = sample_planck_frequency(
-                                            T_local,
-                                            wavelength_angstrom_to_nu(12000.0),
-                                            wavelength_angstrom_to_nu(3500.0)
-                                        );
+                                        /* Try downbranch if available */
+                                        if (state->atomic_data->downbranch.initialized && line_idx >= 0) {
+                                            int64_t emit_line = atomic_sample_downbranch(
+                                                state->atomic_data, line_idx, drand48());
+
+                                            if (emit_line >= 0 && emit_line < state->atomic_data->n_lines) {
+                                                /* Use emission line frequency */
+                                                const Line *emit = &state->atomic_data->lines[emit_line];
+                                                double beta_new = pkt->r / (state->t_explosion * CONST_C);
+                                                pkt->mu = 2.0 * drand48() - 1.0;
+                                                double doppler_new = 1.0 - beta_new * pkt->mu;
+                                                new_nu = emit->nu / doppler_new;
+
+                                                static int fluor_debug = 0;
+                                                if (fluor_debug < 3) {
+                                                    double new_wl = CONST_C / new_nu * 1e8;
+                                                    printf("  [BLUE FLUOR] λ=%.0f Å → %.0f Å (downbranch)\n",
+                                                           wavelength_A, new_wl);
+                                                    fluor_debug++;
+                                                }
+                                            } else {
+                                                /* Fallback: thermal at local T */
+                                                double T_local = shell->plasma.T;
+                                                if (T_local < 5000.0) T_local = 5000.0;
+                                                new_nu = sample_planck_frequency(
+                                                    T_local,
+                                                    wavelength_angstrom_to_nu(12000.0),
+                                                    wavelength_angstrom_to_nu(4500.0)
+                                                );
+                                            }
+                                        } else {
+                                            /* No downbranch table: thermal fallback */
+                                            double T_local = shell->plasma.T;
+                                            if (T_local < 5000.0) T_local = 5000.0;
+                                            new_nu = sample_planck_frequency(
+                                                T_local,
+                                                wavelength_angstrom_to_nu(12000.0),
+                                                wavelength_angstrom_to_nu(4500.0)
+                                            );
+                                        }
                                     }
 
                                 } else if (wavelength_A < g_physics_overrides.ir_wavelength_min) {
@@ -677,8 +806,10 @@ static void transport_single_packet(TransportPkt *pkt,
                                         pkt->mu = 2.0 * drand48() - 1.0;
                                         double doppler_new = 1.0 - beta_new * pkt->mu;
                                         new_nu = line->nu / doppler_new;
+                                        g_line_stats.n_red_scatter++;
                                     } else {
                                         /* Small fraction thermalizes at local T */
+                                        g_line_stats.n_thermalize++;
                                         double T_local = shell->plasma.T;
                                         if (T_local < 5000.0) T_local = 5000.0;
 
@@ -712,6 +843,7 @@ static void transport_single_packet(TransportPkt *pkt,
                                         /* True absorption - photon energy goes to thermal bath */
                                         pkt->status = 2;  /* Absorbed */
                                         pkt->n_interactions++;
+                                        g_line_stats.n_ir_absorbed++;
                                         if (ir_therm_count < 3) {
                                             printf("  [IR ABSORBED] λ=%.0f Å (true thermalization)\n",
                                                    wavelength_A);
@@ -720,6 +852,7 @@ static void transport_single_packet(TransportPkt *pkt,
                                         return;  /* Packet destroyed */
                                     } else {
                                         /* 20% re-emit at local temperature */
+                                        g_line_stats.n_thermalize++;
                                         double T_local = shell->plasma.T;
                                         if (T_local < 5000.0) T_local = 5000.0;
 
@@ -770,6 +903,7 @@ static void transport_single_packet(TransportPkt *pkt,
                             double beta_new = pkt->r / (state->t_explosion * CONST_C);
                             double doppler_new = 1.0 - beta_new * pkt->mu;
                             pkt->nu = line->nu / doppler_new;
+                            g_line_stats.n_scatter++;
 
                             pkt->n_interactions++;
 
@@ -1034,6 +1168,17 @@ static void transport_single_packet_with_estimators(TransportPkt *pkt,
                     if (drand48() < p_interact) {
                         const Line *line = &state->atomic_data->lines[line_idx];
 
+                        /* Track wavelength band statistics */
+                        if (wavelength_A < 3000.0) {
+                            g_line_stats.n_uv_interact++;
+                        } else if (wavelength_A < 5000.0) {
+                            g_line_stats.n_blue_interact++;
+                        } else if (wavelength_A < 7000.0) {
+                            g_line_stats.n_red_interact++;
+                        } else {
+                            g_line_stats.n_ir_interact++;
+                        }
+
                         if (drand48() < epsilon) {
                             /* Thermalization - use same logic as transport_single_packet */
                             double new_nu;
@@ -1045,26 +1190,49 @@ static void transport_single_packet_with_estimators(TransportPkt *pkt,
                                         double nu_min = wavelength_angstrom_to_nu(g_physics_overrides.blue_fluor_max_angstrom);
                                         double nu_max = wavelength_angstrom_to_nu(g_physics_overrides.blue_fluor_min_angstrom);
                                         new_nu = nu_min + drand48() * (nu_max - nu_min);
+                                        g_line_stats.n_uv_to_blue++;
                                     } else {
                                         double T_local = shell->plasma.T;
                                         if (T_local < 5000.0) T_local = 5000.0;
                                         new_nu = sample_planck_frequency(T_local,
                                             wavelength_angstrom_to_nu(12000.0),
                                             wavelength_angstrom_to_nu(3500.0));
+                                        g_line_stats.n_thermalize++;
                                     }
                                 } else if (wavelength_A < 5000.0) {
-                                    /* Blue photon */
+                                    /* Blue photon: scatter or fluorescence cascade */
                                     if (drand48() < g_physics_overrides.blue_scatter_probability) {
                                         double beta_new = pkt->r / (state->t_explosion * CONST_C);
                                         pkt->mu = 2.0 * drand48() - 1.0;
                                         double doppler_new = 1.0 - beta_new * pkt->mu;
                                         new_nu = line->nu / doppler_new;
+                                        g_line_stats.n_blue_scatter++;
                                     } else {
-                                        double T_local = shell->plasma.T;
-                                        if (T_local < 5000.0) T_local = 5000.0;
-                                        new_nu = sample_planck_frequency(T_local,
-                                            wavelength_angstrom_to_nu(12000.0),
-                                            wavelength_angstrom_to_nu(3500.0));
+                                        /* Fluorescence via downbranch cascade */
+                                        g_line_stats.n_thermalize++;
+                                        if (state->atomic_data->downbranch.initialized && line_idx >= 0) {
+                                            int64_t emit_line = atomic_sample_downbranch(
+                                                state->atomic_data, line_idx, drand48());
+                                            if (emit_line >= 0 && emit_line < state->atomic_data->n_lines) {
+                                                const Line *emit = &state->atomic_data->lines[emit_line];
+                                                double beta_new = pkt->r / (state->t_explosion * CONST_C);
+                                                pkt->mu = 2.0 * drand48() - 1.0;
+                                                double doppler_new = 1.0 - beta_new * pkt->mu;
+                                                new_nu = emit->nu / doppler_new;
+                                            } else {
+                                                double T_local = shell->plasma.T;
+                                                if (T_local < 5000.0) T_local = 5000.0;
+                                                new_nu = sample_planck_frequency(T_local,
+                                                    wavelength_angstrom_to_nu(12000.0),
+                                                    wavelength_angstrom_to_nu(4500.0));
+                                            }
+                                        } else {
+                                            double T_local = shell->plasma.T;
+                                            if (T_local < 5000.0) T_local = 5000.0;
+                                            new_nu = sample_planck_frequency(T_local,
+                                                wavelength_angstrom_to_nu(12000.0),
+                                                wavelength_angstrom_to_nu(4500.0));
+                                        }
                                     }
                                 } else if (wavelength_A < g_physics_overrides.ir_wavelength_min) {
                                     /* Red photon */
@@ -1073,18 +1241,21 @@ static void transport_single_packet_with_estimators(TransportPkt *pkt,
                                         pkt->mu = 2.0 * drand48() - 1.0;
                                         double doppler_new = 1.0 - beta_new * pkt->mu;
                                         new_nu = line->nu / doppler_new;
+                                        g_line_stats.n_red_scatter++;
                                     } else {
                                         double T_local = shell->plasma.T;
                                         if (T_local < 5000.0) T_local = 5000.0;
                                         new_nu = sample_planck_frequency(T_local,
                                             wavelength_angstrom_to_nu(12000.0),
                                             wavelength_angstrom_to_nu(4500.0));
+                                        g_line_stats.n_thermalize++;
                                     }
                                 } else {
                                     /* IR photon - high destruction probability */
                                     if (drand48() < 0.80) {
                                         pkt->status = 2;  /* Absorbed */
                                         pkt->n_interactions++;
+                                        g_line_stats.n_ir_absorbed++;
                                         return;
                                     } else {
                                         double T_local = shell->plasma.T;
@@ -1092,6 +1263,7 @@ static void transport_single_packet_with_estimators(TransportPkt *pkt,
                                         new_nu = sample_planck_frequency(T_local,
                                             wavelength_angstrom_to_nu(12000.0),
                                             wavelength_angstrom_to_nu(3500.0));
+                                        g_line_stats.n_thermalize++;
                                     }
                                 }
                             } else {
@@ -1111,6 +1283,7 @@ static void transport_single_packet_with_estimators(TransportPkt *pkt,
                             double doppler_new = 1.0 - beta_new * pkt->mu;
                             pkt->nu = line->nu / doppler_new;
                             pkt->n_interactions++;
+                            g_line_stats.n_scatter++;
                         }
                     }
                 }
@@ -1543,6 +1716,9 @@ static void run_simulation(const SimConfig *cfg, const AtomicData *atomic)
            (long)spectrum.n_absorbed, 100.0 * spectrum.n_absorbed / cfg->n_packets);
     printf("  Scattered:   %ld\n", (long)spectrum.n_scattered);
 
+    /* Print line interaction diagnostics */
+    print_line_stats();
+
     if (use_estimators) {
         double L_target = lum_est.L_requested * lum_est.fraction;
         printf("  T_inner:     %.0f K (final)\n", state.shells[0].plasma.T);
@@ -1818,6 +1994,15 @@ int main(int argc, char *argv[])
 
     printf("[INIT] Loaded: %d ions, %d levels, %ld lines\n",
            atomic.n_ions, atomic.n_levels, (long)atomic.n_lines);
+
+    /* Build downbranch (fluorescence cascade) table for proper line redistribution */
+    printf("[INIT] Building downbranch table for fluorescence cascade...\n");
+    if (atomic_build_downbranch_table(&atomic) != 0) {
+        fprintf(stderr, "Warning: Failed to build downbranch table\n");
+    } else {
+        printf("[INIT] Downbranch table ready (%ld emission entries)\n",
+               atomic.downbranch.total_emission_entries);
+    }
 
     /* Run simulation */
     run_simulation(&cfg, &atomic);
