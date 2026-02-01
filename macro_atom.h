@@ -57,6 +57,10 @@ typedef struct {
     /* Temperature context (for collisional rates) */
     double  temperature;          /* Local electron temperature [K] */
     double  electron_density;     /* Local n_e [cm^-3] */
+    double  dilution_factor;      /* W: dilution factor for J_ν (0-1) */
+
+    /* Sobolev optical depth array (needed for β factor) */
+    const double *tau_sobolev;    /* Array indexed by line_id */
 
     /* RNG state (inherited from packet for thread safety) */
     RNGState *rng_state;
@@ -97,26 +101,31 @@ typedef struct {
 /**
  * Calculate transition probabilities from a given level.
  *
- * The probabilities depend on:
- *   - Einstein A coefficients (spontaneous emission rates)
- *   - Stimulated emission/absorption from radiation field
- *   - Collisional rates (temperature and n_e dependent)
+ * TARDIS-style calculation:
+ *   Radiative down (type=-1): Rate = A_ul × β + B_ul × J_ν × β
+ *   Collisional down (type=0): Rate = C_ul
+ *   Internal up (type=1): Rate = B_lu × J_ν × β × stim + C_lu
  *
- * @param atomic     Atomic data with macro-atom transitions
- * @param Z          Atomic number
- * @param ion        Ion stage (0 = neutral)
- * @param level      Level number
- * @param T          Temperature [K]
- * @param n_e        Electron density [cm^-3]
- * @param J_nu       Mean intensity at level transition frequencies [optional, can be NULL]
- * @param probs      Output: pre-allocated MacroAtomProbabilities structure
- * @return           0 on success, -1 if level has no transitions
+ * where β = (1 - exp(-τ)) / τ is the Sobolev escape probability.
+ *
+ * @param atomic      Atomic data with macro-atom transitions
+ * @param Z           Atomic number
+ * @param ion         Ion stage (0 = neutral)
+ * @param level       Level number
+ * @param T           Temperature [K]
+ * @param n_e         Electron density [cm^-3]
+ * @param W           Dilution factor (0-1)
+ * @param J_nu        Mean intensity at level transition frequencies [optional, can be NULL]
+ * @param tau_sobolev Sobolev optical depths for each line [optional, can be NULL]
+ * @param probs       Output: pre-allocated MacroAtomProbabilities structure
+ * @return            0 on success, -1 if level has no transitions
  */
 int macro_atom_calculate_probabilities(
     const AtomicData *atomic,
     int Z, int ion, int level,
-    double T, double n_e,
+    double T, double n_e, double W,
     const double *J_nu,
+    const double *tau_sobolev,
     MacroAtomProbabilities *probs
 );
 
@@ -132,12 +141,14 @@ void macro_atom_probabilities_free(MacroAtomProbabilities *probs);
 /**
  * Initialize macro-atom state from absorbed packet.
  *
- * @param state      Macro-atom state to initialize
- * @param atomic     Atomic data
- * @param line_id    Line that absorbed the packet
- * @param T          Local temperature [K]
- * @param n_e        Local electron density [cm^-3]
- * @param rng        Pointer to RNG state (from packet)
+ * @param state       Macro-atom state to initialize
+ * @param atomic      Atomic data
+ * @param line_id     Line that absorbed the packet
+ * @param T           Local temperature [K]
+ * @param n_e         Local electron density [cm^-3]
+ * @param W           Dilution factor (0-1)
+ * @param tau_sobolev Array of Sobolev optical depths (indexed by line_id)
+ * @param rng         Pointer to RNG state (from packet)
  */
 void macro_atom_init(
     MacroAtomState *state,
@@ -145,6 +156,8 @@ void macro_atom_init(
     int64_t line_id,
     double T,
     double n_e,
+    double W,
+    const double *tau_sobolev,
     RNGState *rng
 );
 
@@ -202,6 +215,8 @@ int macro_atom_simplified_transition(
  * @param line_id        Index of the interacting line
  * @param T              Local temperature [K]
  * @param n_e            Local electron density [cm^-3]
+ * @param W              Dilution factor (0-1)
+ * @param tau_sobolev    Array of Sobolev optical depths (indexed by line_id)
  * @param time_explosion Time since explosion [s]
  * @return               1 if packet survives (re-emitted), 0 if absorbed
  */
@@ -211,6 +226,8 @@ int macro_atom_process_line_interaction(
     int64_t line_id,
     double T,
     double n_e,
+    double W,
+    const double *tau_sobolev,
     double time_explosion
 );
 

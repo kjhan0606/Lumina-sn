@@ -16,6 +16,26 @@
 #include "rpacket.h"
 
 /* ============================================================================
+ * DEBUG MODE FOR TARDIS COMPARISON
+ * ============================================================================
+ * Set MACRO_ATOM_DEBUG=1 environment variable to enable detailed tracing
+ * of transition probabilities and selection for comparison with TARDIS.
+ */
+static int g_macro_atom_debug = -1;  /* -1 = not initialized */
+static long g_macro_atom_debug_count = 0;
+static long g_macro_atom_debug_max = 10;  /* Only print first N interactions */
+
+static int macro_atom_debug_enabled(void) {
+    if (g_macro_atom_debug < 0) {
+        const char *env = getenv("MACRO_ATOM_DEBUG");
+        g_macro_atom_debug = (env && atoi(env)) ? 1 : 0;
+        env = getenv("MACRO_ATOM_DEBUG_MAX");
+        if (env) g_macro_atom_debug_max = atol(env);
+    }
+    return g_macro_atom_debug && (g_macro_atom_debug_count < g_macro_atom_debug_max);
+}
+
+/* ============================================================================
  * GLOBAL TUNING PARAMETERS
  * ============================================================================ */
 
@@ -88,6 +108,9 @@ const MacroAtomReference *macro_atom_find_reference(
 {
     if (atomic->macro_atom_references == NULL ||
         atomic->n_macro_atom_references == 0) {
+        if (macro_atom_debug_enabled()) {
+            printf("[MACRO-ATOM DEBUG] find_reference: no reference table!\n");
+        }
         return NULL;
     }
 
@@ -97,7 +120,25 @@ const MacroAtomReference *macro_atom_find_reference(
         if (ref->atomic_number == Z &&
             ref->ion_number == ion &&
             ref->source_level_number == level) {
+            if (macro_atom_debug_enabled()) {
+                printf("[MACRO-ATOM DEBUG] find_reference: FOUND Z=%d ion=%d level=%d -> %d transitions\n",
+                       Z, ion, level, ref->count_total);
+            }
             return ref;
+        }
+    }
+
+    if (macro_atom_debug_enabled()) {
+        printf("[MACRO-ATOM DEBUG] find_reference: NOT FOUND Z=%d ion=%d level=%d\n", Z, ion, level);
+        /* Debug: print some references for this Z/ion */
+        int count = 0;
+        for (int32_t i = 0; i < atomic->n_macro_atom_references && count < 5; i++) {
+            const MacroAtomReference *ref = &atomic->macro_atom_references[i];
+            if (ref->atomic_number == Z && ref->ion_number == ion) {
+                printf("    Available: level=%d (%d transitions)\n",
+                       ref->source_level_number, ref->count_total);
+                count++;
+            }
         }
     }
 
@@ -198,36 +239,99 @@ double macro_atom_get_collision_rate(
 }
 
 /* ============================================================================
- * PROBABILITY CALCULATION
+ * HELPER: CALCULATE SOBOLEV ESCAPE PROBABILITY
+ * ============================================================================ */
+
+static double calculate_beta_sobolev(double tau) {
+    /*
+     * Calculate Sobolev escape probability:
+     *   β = (1 - exp(-τ)) / τ  for τ > 0
+     *   β = 1                   for τ → 0
+     *   β ≈ 1/τ                 for τ >> 1
+     */
+    if (tau < 1e-6) {
+        return 1.0;
+    } else if (tau > 500.0) {
+        return 1.0 / tau;  /* Asymptotic limit */
+    }
+    return (1.0 - exp(-tau)) / tau;
+}
+
+/* ============================================================================
+ * HELPER: CALCULATE STIMULATED EMISSION FACTOR
+ * ============================================================================ */
+
+static double calculate_stimulated_emission_factor(double nu, double T) {
+    /*
+     * Stimulated emission correction factor:
+     *   stim = 1 - exp(-hν/kT)
+     */
+    const double h = 6.62607015e-27;    /* erg·s */
+    const double k = 1.380649e-16;      /* erg/K */
+
+    double x = h * nu / (k * T);
+    if (x > 100.0) {
+        return 1.0;
+    }
+    return 1.0 - exp(-x);
+}
+
+/* ============================================================================
+ * HELPER: CALCULATE MEAN INTENSITY FROM PLANCK FUNCTION
+ * ============================================================================ */
+
+static double calculate_mean_intensity_planck(double nu, double T, double W) {
+    /*
+     * Mean intensity from diluted Planck function:
+     *   J_ν = W × B_ν(T)
+     *   B_ν = (2hν³/c²) / (exp(hν/kT) - 1)
+     */
+    const double h = 6.62607015e-27;    /* erg·s */
+    const double c = 2.99792458e10;     /* cm/s */
+    const double k = 1.380649e-16;      /* erg/K */
+
+    double x = h * nu / (k * T);
+    if (x > 100.0) {
+        return 0.0;
+    }
+
+    double B_nu = (2.0 * h * nu * nu * nu) / (c * c) / (exp(x) - 1.0);
+    return W * B_nu;
+}
+
+/* ============================================================================
+ * PROBABILITY CALCULATION - TARDIS-MATCHING IMPLEMENTATION
  * ============================================================================ */
 
 int macro_atom_calculate_probabilities(
     const AtomicData *atomic,
     int Z, int ion, int level,
-    double T, double n_e,
+    double T, double n_e, double W,
     const double *J_nu,
+    const double *tau_sobolev,
     MacroAtomProbabilities *probs)
 {
     /*
-     * Calculate transition probabilities from a given macro-atom level.
+     * TARDIS-STYLE TRANSITION PROBABILITY CALCULATION
+     * ================================================
      *
-     * For each possible transition from this level:
-     *   - Radiative (type=-1): Rate = A_ul (spontaneous) + B_ul × J_ν (stimulated)
-     *   - Internal down (type=0): Rate = C_ul × n_e
-     *   - Internal up (type=1): Rate = B_lu × J_ν (absorption) + C_lu × n_e
+     * For each transition from this level:
      *
-     * Probabilities are normalized so they sum to 1.
+     *   Radiative down (type=-1):
+     *     Rate = A_ul × β + B_ul × J_ν × β
      *
-     * Stimulated Emission/Absorption (now implemented):
-     * -------------------------------------------------
-     * The Einstein B coefficients relate to A_ul via:
-     *   B_ul = (c³ / 8π h ν³) × A_ul
-     *   B_lu = (g_u / g_l) × B_ul
+     *   Collisional down (type=0):
+     *     Rate = C_ul (van Regemorter approximation)
      *
-     * Stimulated emission rate: B_ul × J_ν
-     * Stimulated absorption rate: B_lu × J_ν
+     *   Internal up (type=1):
+     *     Rate = B_lu × J_ν × β × stim + C_lu
      *
-     * Reference: TARDIS macro_atom.py, Lucy 2002, 2003
+     * where:
+     *   β = (1 - exp(-τ)) / τ  is the Sobolev escape probability
+     *   stim = 1 - exp(-hν/kT)  is the stimulated emission factor
+     *   J_ν = W × B_ν(T)  is the mean intensity (diluted Planck)
+     *
+     * Reference: TARDIS transition_probabilities.py, macro_atom.py
      */
 
     memset(probs, 0, sizeof(MacroAtomProbabilities));
@@ -251,11 +355,11 @@ int macro_atom_calculate_probabilities(
     }
 
     /* Physical constants for B coefficient calculation */
-    const double c = 2.99792458e10;      /* Speed of light [cm/s] */
-    const double h = 6.62607015e-27;     /* Planck constant [erg·s] */
+    const double c_light = 2.99792458e10;      /* Speed of light [cm/s] */
+    const double h_planck = 6.62607015e-27;    /* Planck constant [erg·s] */
     const double pi = 3.14159265358979;
 
-    /* Calculate rates for each transition */
+    /* Calculate rates for each transition (TARDIS-matching formulas) */
     double total_rate = 0.0;
     int32_t idx = 0;
 
@@ -273,33 +377,41 @@ int macro_atom_calculate_probabilities(
         switch (trans->transition_type) {
             case -1:  /* Radiative de-excitation (emission) */
                 /*
-                 * Rate = A_ul (spontaneous) + B_ul × J_ν (stimulated emission)
+                 * TARDIS formula:
+                 *   Rate = A_ul × β + B_ul × J_ν × β
                  *
-                 * B_ul = (c³ / 8π h ν³) × A_ul
-                 *
-                 * Stimulated emission enhances the de-excitation rate when
-                 * the radiation field J_ν is significant.
+                 * where β = (1 - exp(-τ)) / τ is the Sobolev escape probability
                  */
                 if (trans->transition_line_id >= 0 &&
                     trans->transition_line_id < atomic->n_lines) {
                     const Line *line = &atomic->lines[trans->transition_line_id];
 
-                    /* Spontaneous emission rate */
-                    rate = line->A_ul;
+                    /* Get Sobolev β factor */
+                    double beta = 1.0;
+                    if (tau_sobolev != NULL && g_macro_atom_tuning.use_beta_sobolev) {
+                        double tau = tau_sobolev[trans->transition_line_id];
+                        beta = calculate_beta_sobolev(tau);
+                    }
 
-                    /* Add stimulated emission if J_nu is available */
-                    if (J_nu != NULL && trans->transition_line_id < atomic->n_lines) {
-                        double J_line = J_nu[trans->transition_line_id];
+                    /* Spontaneous emission rate (with β) */
+                    rate = line->A_ul * beta;
 
-                        if (J_line > 0.0 && line->nu > 0.0) {
-                            /* Calculate B_ul from A_ul */
-                            double nu = line->nu;
-                            double nu3 = nu * nu * nu;
-                            double B_ul = (c * c * c) / (8.0 * pi * h * nu3) * line->A_ul;
+                    /* Add stimulated emission */
+                    double J_line = 0.0;
+                    if (J_nu != NULL) {
+                        J_line = J_nu[trans->transition_line_id];
+                    } else {
+                        /* Use diluted Planck if J_nu not provided */
+                        J_line = calculate_mean_intensity_planck(line->nu, T, W);
+                    }
 
-                            /* Stimulated emission contribution */
-                            rate += B_ul * J_line;
-                        }
+                    if (J_line > 0.0 && line->nu > 0.0) {
+                        double nu = line->nu;
+                        double nu3 = nu * nu * nu;
+                        double B_ul = (c_light * c_light * c_light) / (8.0 * pi * h_planck * nu3) * line->A_ul;
+
+                        /* Stimulated emission (with β) */
+                        rate += B_ul * J_line * beta;
                     }
                 }
 
@@ -309,6 +421,9 @@ int macro_atom_calculate_probabilities(
                 break;
 
             case 0:   /* Downward internal (collisional de-excitation) */
+                /*
+                 * TARDIS: C_ul rate (no β factor for collisions)
+                 */
                 rate = macro_atom_get_collision_rate(
                     atomic, Z, ion,
                     trans->source_level_number,
@@ -319,12 +434,10 @@ int macro_atom_calculate_probabilities(
 
             case 1:   /* Upward internal (collisional excitation + radiative absorption) */
                 /*
-                 * Rate = C_lu × n_e (collisional) + B_lu × J_ν (radiative absorption)
+                 * TARDIS formula:
+                 *   Rate = B_lu × J_ν × β × stim_factor + C_lu
                  *
-                 * B_lu = (g_u / g_l) × B_ul
-                 *
-                 * Radiative absorption allows photons to pump the atom to higher
-                 * excitation states, which is important for non-LTE line formation.
+                 * where stim_factor = 1 - exp(-hν/kT)
                  */
                 {
                     /* Collisional excitation rate from detailed balance */
@@ -351,21 +464,37 @@ int macro_atom_calculate_probabilities(
                             rate = C_ul * g_ratio * exp(-delta_E / kT);
                         }
 
-                        /* Add radiative absorption if J_nu is available */
-                        if (J_nu != NULL && trans->transition_line_id >= 0 &&
+                        /* Add radiative absorption */
+                        if (trans->transition_line_id >= 0 &&
                             trans->transition_line_id < atomic->n_lines) {
                             const Line *line = &atomic->lines[trans->transition_line_id];
-                            double J_line = J_nu[trans->transition_line_id];
+
+                            /* Get Sobolev β factor */
+                            double beta = 1.0;
+                            if (tau_sobolev != NULL && g_macro_atom_tuning.use_beta_sobolev) {
+                                double tau = tau_sobolev[trans->transition_line_id];
+                                beta = calculate_beta_sobolev(tau);
+                            }
+
+                            /* Stimulated emission factor */
+                            double stim_factor = calculate_stimulated_emission_factor(line->nu, T);
+
+                            /* Mean intensity */
+                            double J_line = 0.0;
+                            if (J_nu != NULL) {
+                                J_line = J_nu[trans->transition_line_id];
+                            } else {
+                                J_line = calculate_mean_intensity_planck(line->nu, T, W);
+                            }
 
                             if (J_line > 0.0 && line->nu > 0.0 && line->A_ul > 0.0) {
-                                /* Calculate B_lu from A_ul */
                                 double nu = line->nu;
                                 double nu3 = nu * nu * nu;
-                                double B_ul = (c * c * c) / (8.0 * pi * h * nu3) * line->A_ul;
+                                double B_ul = (c_light * c_light * c_light) / (8.0 * pi * h_planck * nu3) * line->A_ul;
                                 double B_lu = g_ratio * B_ul;
 
-                                /* Radiative absorption contribution */
-                                rate += B_lu * J_line;
+                                /* Radiative absorption contribution (TARDIS: B_lu × J × β × stim) */
+                                rate += B_lu * J_line * beta * stim_factor;
                             }
                         }
                     }
@@ -400,6 +529,28 @@ int macro_atom_calculate_probabilities(
         }
     }
 
+    /* DEBUG: Print transition probabilities for TARDIS comparison */
+    if (macro_atom_debug_enabled()) {
+        printf("\n[LUMINA DEBUG] calculate_probabilities for Z=%d ion=%d level=%d\n", Z, ion, level);
+        printf("  T=%.1f K, n_e=%.3e cm^-3, W=%.4f\n", T, n_e, W);
+        printf("  total_rate=%.6e, n_transitions=%d\n", total_rate, probs->n_transitions);
+        printf("  p_emission=%.4f (%.1f%% radiative)\n", probs->p_emission, probs->p_emission * 100.0);
+        printf("  Transition probabilities:\n");
+        printf("    %-4s %-10s %-6s %-12s %-12s\n",
+               "idx", "dest_lvl", "type", "rate", "prob");
+        for (int32_t i = 0; i < probs->n_transitions && i < 10; i++) {
+            int32_t ti = probs->transition_indices[i];
+            const MacroAtomTransition *tr = &atomic->macro_atom_transitions[ti];
+            printf("    %-4d %-10d %-6d %-12.4e %-12.6f\n",
+                   i, tr->destination_level_number, tr->transition_type,
+                   probs->probabilities[i] * total_rate,  /* unnormalized rate */
+                   probs->probabilities[i]);
+        }
+        if (probs->n_transitions > 10) {
+            printf("    ... (%d more transitions)\n", probs->n_transitions - 10);
+        }
+    }
+
     return 0;
 }
 
@@ -426,6 +577,8 @@ void macro_atom_init(
     int64_t line_id,
     double T,
     double n_e,
+    double W,
+    const double *tau_sobolev,
     RNGState *rng)
 {
     memset(state, 0, sizeof(MacroAtomState));
@@ -453,6 +606,8 @@ void macro_atom_init(
 
     state->temperature = T;
     state->electron_density = n_e;
+    state->dilution_factor = W;
+    state->tau_sobolev = tau_sobolev;
     state->rng_state = rng;
 
     state->n_jumps = 0;
@@ -494,7 +649,7 @@ int macro_atom_do_transition_loop(
 
     while (state->n_jumps < state->max_jumps) {
 
-        /* Calculate probabilities from current level */
+        /* Calculate probabilities from current level (TARDIS-style) */
         MacroAtomProbabilities probs;
         int status = macro_atom_calculate_probabilities(
             atomic,
@@ -503,12 +658,18 @@ int macro_atom_do_transition_loop(
             state->level_number,
             state->temperature,
             state->electron_density,
-            NULL,  /* J_nu - not using radiation field for now */
+            state->dilution_factor,
+            NULL,  /* J_nu - use diluted Planck instead */
+            state->tau_sobolev,
             &probs
         );
 
         if (status != 0 || probs.n_transitions == 0) {
             /* No transitions available - use simplified treatment */
+            if (macro_atom_debug_enabled()) {
+                printf("[MACRO-ATOM DEBUG] No transitions from level %d, using simplified\n",
+                       state->level_number);
+            }
             macro_atom_probabilities_free(&probs);
             return macro_atom_simplified_transition(state, atomic);
         }
@@ -519,11 +680,13 @@ int macro_atom_do_transition_loop(
         /* Find selected transition by cumulative probability */
         double cumulative = 0.0;
         int32_t selected_trans = -1;
+        int32_t selected_idx = -1;
 
         for (int32_t i = 0; i < probs.n_transitions; i++) {
             cumulative += probs.probabilities[i];
             if (xi < cumulative) {
                 selected_trans = probs.transition_indices[i];
+                selected_idx = i;
                 break;
             }
         }
@@ -531,6 +694,16 @@ int macro_atom_do_transition_loop(
         /* Fallback to last transition if numerical issues */
         if (selected_trans < 0 && probs.n_transitions > 0) {
             selected_trans = probs.transition_indices[probs.n_transitions - 1];
+            selected_idx = probs.n_transitions - 1;
+        }
+
+        /* DEBUG: Print selection details */
+        if (macro_atom_debug_enabled()) {
+            const MacroAtomTransition *sel_tr = &atomic->macro_atom_transitions[selected_trans];
+            printf("[MACRO-ATOM DEBUG] Jump %d: xi=%.6f, selected_idx=%d, trans_idx=%d\n",
+                   state->n_jumps, xi, selected_idx, selected_trans);
+            printf("  cumulative_at_selection=%.6f, dest_level=%d, type=%d\n",
+                   cumulative, sel_tr->destination_level_number, sel_tr->transition_type);
         }
 
         macro_atom_probabilities_free(&probs);
@@ -680,6 +853,8 @@ int macro_atom_process_line_interaction(
     int64_t line_id,
     double T,
     double n_e,
+    double W,
+    const double *tau_sobolev,
     double time_explosion)
 {
     /*
@@ -696,13 +871,50 @@ int macro_atom_process_line_interaction(
 
     /* Initialize macro-atom state */
     MacroAtomState ma_state;
-    macro_atom_init(&ma_state, atomic, line_id, T, n_e, &pkt->rng_state);
+    macro_atom_init(&ma_state, atomic, line_id, T, n_e, W, tau_sobolev, &pkt->rng_state);
+
+    /* Get optical depth for debug output */
+    double tau_line = 0.0;
+    double beta_line = 1.0;
+    if (tau_sobolev != NULL && line_id >= 0) {
+        tau_line = tau_sobolev[line_id];
+        beta_line = (tau_line < 1e-6) ? 1.0 :
+                    (tau_line > 500.0) ? 1.0/tau_line :
+                    (1.0 - exp(-tau_line)) / tau_line;
+    }
+
+    /* DEBUG: Print activation info */
+    int debug_this = macro_atom_debug_enabled();
+    if (debug_this) {
+        g_macro_atom_debug_count++;
+        const Line *abs_line = &atomic->lines[line_id];
+        double wl_abs = (2.99792458e10 / abs_line->nu) * 1e8;
+        printf("\n");
+        printf("╔══════════════════════════════════════════════════════════════════╗\n");
+        printf("║ LUMINA MACRO-ATOM INTERACTION #%ld                                \n", g_macro_atom_debug_count);
+        printf("╠══════════════════════════════════════════════════════════════════╣\n");
+        printf("║ ACTIVATION:                                                       \n");
+        printf("║   Absorbed line_id=%ld, λ=%.1f Å, ν=%.4e Hz\n", (long)line_id, wl_abs, abs_line->nu);
+        printf("║   Line: Z=%d, ion=%d, lower=%d → upper=%d\n",
+               abs_line->atomic_number, abs_line->ion_number,
+               abs_line->level_number_lower, abs_line->level_number_upper);
+        printf("║   Activation level: Z=%d, ion=%d, level=%d\n",
+               ma_state.atomic_number, ma_state.ion_number, ma_state.level_number);
+        printf("║   T=%.1f K, n_e=%.3e cm^-3, W=%.4f\n", T, n_e, W);
+        printf("║   τ_Sobolev=%.4e, β=%.6f\n", tau_line, beta_line);
+        printf("╠══════════════════════════════════════════════════════════════════╣\n");
+        printf("║ TRANSITION LOOP:                                                  \n");
+    }
 
     /* Run transition loop */
     int survives = macro_atom_do_transition_loop(&ma_state, atomic);
 
     if (!survives) {
         /* Packet absorbed (thermalized) during cascade */
+        if (debug_this) {
+            printf("║ RESULT: ABSORBED during cascade (n_jumps=%d)\n", ma_state.n_jumps);
+            printf("╚══════════════════════════════════════════════════════════════════╝\n");
+        }
         pkt->status = PACKET_REABSORBED;
         return 0;
     }
@@ -735,6 +947,13 @@ int macro_atom_process_line_interaction(
         double xi_therm = rng_uniform(&pkt->rng_state);
         if (xi_therm < p_thermalize) {
             /* Thermalize: packet energy absorbed into thermal pool */
+            if (debug_this) {
+                printf("╠══════════════════════════════════════════════════════════════════╣\n");
+                printf("║ RESULT: THERMALIZED (epsilon check)                               \n");
+                printf("║   λ=%.1f Å, p_therm=%.3f, xi=%.6f < p_therm\n",
+                       wavelength_A, p_thermalize, xi_therm);
+                printf("╚══════════════════════════════════════════════════════════════════╝\n\n");
+            }
             pkt->status = PACKET_REABSORBED;
             return 0;
         }
@@ -764,6 +983,20 @@ int macro_atom_process_line_interaction(
     pkt->last_line_interaction_in_id = line_id;
     pkt->last_line_interaction_out_id = ma_state.emission_line_id;
     pkt->last_interaction_type = 2;  /* Line scatter */
+
+    /* DEBUG: Print emission result */
+    if (debug_this) {
+        double wl_emit = (2.99792458e10 / nu_line_emission) * 1e8;
+        printf("╠══════════════════════════════════════════════════════════════════╣\n");
+        printf("║ RESULT: EMITTED                                                   \n");
+        printf("║   Emission line_id=%ld, λ=%.1f Å, ν=%.4e Hz\n",
+               (long)ma_state.emission_line_id, wl_emit, nu_line_emission);
+        printf("║   n_jumps=%d, wavelength shift: %.1f → %.1f Å\n",
+               ma_state.n_jumps,
+               (2.99792458e10 / atomic->lines[line_id].nu) * 1e8,
+               wl_emit);
+        printf("╚══════════════════════════════════════════════════════════════════╝\n\n");
+    }
 
     return 1;  /* Packet survives */
 }

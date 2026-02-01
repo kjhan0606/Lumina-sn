@@ -124,6 +124,72 @@ static void print_line_stats(void) {
 }
 
 /* ============================================================================
+ * TAU_SOBOLEV ARRAY BUILDER FOR MACRO-ATOM
+ * ============================================================================
+ * The macro-atom code needs tau_sobolev as an array indexed by global line_id.
+ * This function builds that array from the shell's active_lines, which contains
+ * tau only for lines with significant opacity.
+ *
+ * Lines not in active_lines are set to tau=0 (optically thin, β=1).
+ */
+
+static double *g_tau_sobolev_cache = NULL;
+static int64_t g_tau_sobolev_cache_size = 0;
+static int     g_tau_sobolev_cache_shell = -1;
+
+/**
+ * Build tau_sobolev array for macro-atom from shell's active_lines.
+ *
+ * @param shell      ShellState with active_lines
+ * @param n_lines    Total number of lines in atomic data
+ * @param shell_idx  Shell index (for caching)
+ * @return           Pointer to tau array (cached, do not free)
+ */
+static double *build_tau_sobolev_array(
+    const ShellState *shell,
+    int64_t n_lines,
+    int shell_idx)
+{
+    /* Return cached array if same shell */
+    if (g_tau_sobolev_cache != NULL &&
+        g_tau_sobolev_cache_shell == shell_idx &&
+        g_tau_sobolev_cache_size == n_lines) {
+        return g_tau_sobolev_cache;
+    }
+
+    /* Allocate or reallocate if needed */
+    if (g_tau_sobolev_cache == NULL || g_tau_sobolev_cache_size < n_lines) {
+        free(g_tau_sobolev_cache);
+        g_tau_sobolev_cache = (double *)calloc(n_lines, sizeof(double));
+        g_tau_sobolev_cache_size = n_lines;
+    }
+
+    /* Clear to zero (optically thin default) */
+    memset(g_tau_sobolev_cache, 0, n_lines * sizeof(double));
+
+    /* Fill in tau values from active_lines */
+    for (int64_t i = 0; i < shell->n_active_lines; i++) {
+        int64_t line_idx = shell->active_lines[i].line_idx;
+        if (line_idx >= 0 && line_idx < n_lines) {
+            g_tau_sobolev_cache[line_idx] = shell->active_lines[i].tau_sobolev;
+        }
+    }
+
+    g_tau_sobolev_cache_shell = shell_idx;
+    return g_tau_sobolev_cache;
+}
+
+/**
+ * Free the tau_sobolev cache (call at end of simulation)
+ */
+static void free_tau_sobolev_cache(void) {
+    free(g_tau_sobolev_cache);
+    g_tau_sobolev_cache = NULL;
+    g_tau_sobolev_cache_size = 0;
+    g_tau_sobolev_cache_shell = -1;
+}
+
+/* ============================================================================
  * SIMULATION CONFIGURATION
  * ============================================================================ */
 
@@ -694,9 +760,20 @@ static void transport_single_packet(TransportPkt *pkt,
                             rpkt.last_line_interaction_out_id = -1;
                             rng_init(&rpkt.rng_state, (uint64_t)(time(NULL) ^ (pkt->n_interactions * 12345)));
 
+                            /* Calculate dilution factor for this shell */
+                            double W_shell = calculate_dilution_factor(
+                                0.5 * (shell->r_inner + shell->r_outer),
+                                g_physics_overrides.R_photosphere);
+
+                            /* Build tau_sobolev array for macro-atom β factor */
+                            double *tau_arr = build_tau_sobolev_array(
+                                shell, state->atomic_data->n_lines, shell_id);
+
                             int survives = macro_atom_process_line_interaction(
                                 &rpkt, state->atomic_data, line_idx,
-                                shell->plasma.T, shell->plasma.n_e, state->t_explosion);
+                                shell->plasma.T, shell->plasma.n_e,
+                                W_shell, tau_arr,  /* tau_sobolev for β factor */
+                                state->t_explosion);
 
                             if (survives) {
                                 g_line_stats.n_macro_emit++;
@@ -1277,9 +1354,20 @@ static void transport_single_packet_with_estimators(TransportPkt *pkt,
                             rpkt.last_line_interaction_out_id = -1;
                             rng_init(&rpkt.rng_state, (uint64_t)(time(NULL) ^ (pkt->n_interactions * 12345)));
 
+                            /* Calculate dilution factor for this shell */
+                            double W_shell = calculate_dilution_factor(
+                                0.5 * (shell->r_inner + shell->r_outer),
+                                g_physics_overrides.R_photosphere);
+
+                            /* Build tau_sobolev array for macro-atom β factor */
+                            double *tau_arr = build_tau_sobolev_array(
+                                shell, state->atomic_data->n_lines, shell_id);
+
                             int survives = macro_atom_process_line_interaction(
                                 &rpkt, state->atomic_data, line_idx,
-                                shell->plasma.T, shell->plasma.n_e, state->t_explosion);
+                                shell->plasma.T, shell->plasma.n_e,
+                                W_shell, tau_arr,  /* tau_sobolev for β factor */
+                                state->t_explosion);
 
                             if (survives) {
                                 g_line_stats.n_macro_emit++;
@@ -1867,6 +1955,7 @@ static void run_simulation(const SimConfig *cfg, const AtomicData *atomic)
     }
     simple_spectrum_free(&spectrum);
     simulation_state_free(&state);
+    free_tau_sobolev_cache();  /* Free macro-atom tau cache */
 
     /* Task Order #28: Report weight audit */
     report_weight_audit();
