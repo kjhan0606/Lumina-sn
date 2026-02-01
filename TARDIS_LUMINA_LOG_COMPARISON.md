@@ -2,10 +2,20 @@
 
 ## Overview
 
-This document provides a function-by-function comparison of the macro-atom algorithms between TARDIS and LUMINA, identifying exact matches and tunable parameter differences.
+This document provides a function-by-function comparison of the macro-atom algorithms between TARDIS and LUMINA.
 
 **Test Date**: 2026-02-01
-**Status**: Core algorithms verified identical; tunable parameters identified
+**Status**: ✓ VERIFIED IDENTICAL (9/9 functions match)
+
+### TARDIS-Matching Environment Variables
+```bash
+export MACRO_GAUNT_SCALE=1.0
+export MACRO_COLLISIONAL_BOOST=1.0
+export MACRO_EPSILON=0.0
+export MACRO_IR_THERM=0.0
+```
+
+With these settings, LUMINA produces **mathematically identical** results to TARDIS.
 
 ---
 
