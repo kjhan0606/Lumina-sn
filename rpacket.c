@@ -22,6 +22,7 @@
 #include "rpacket.h"
 #include "atomic_data.h"      /* For LINE_DOWNBRANCH fluorescence */
 #include "debug_rng.h"        /* For RNG injection diagnostics */
+#include "lumina_rotation.h"  /* For PeelingContext in peeling transport */
 
 /* Global relativity mode flag (used by physics_kernels.h) */
 int ENABLE_FULL_RELATIVITY = 0;
@@ -501,6 +502,17 @@ InteractionType trace_packet(RPacket *pkt, const NumbaModel *model,
             pkt->last_line_interaction_in_id = cur_line;
             pkt->next_line_id = cur_line;
             distance = distance_line;
+
+            /* Debug output for LINE interaction */
+            if (g_debug_transport && pkt->index == 0) {
+                fprintf(stderr, "[DEBUG] *** LINE INTERACTION ***\n");
+                fprintf(stderr, "[DEBUG]   line_id = %ld\n", (long)cur_line);
+                fprintf(stderr, "[DEBUG]   nu_line = %.16e Hz\n", nu_line);
+                fprintf(stderr, "[DEBUG]   tau_line = %.6e, tau_total = %.6e\n",
+                        tau_line, tau_total);
+                fprintf(stderr, "[DEBUG]   tau_event = %.6e (exceeded!)\n", tau_event);
+                fprintf(stderr, "[DEBUG]   d_line = %.6e cm\n", distance_line);
+            }
             break;
         }
 
@@ -600,6 +612,109 @@ void single_packet_loop(RPacket *pkt, const NumbaModel *model,
             case INTERACTION_ESCATTERING:
                 pkt->last_interaction_type = 1;
                 move_r_packet(pkt, distance, model->time_explosion, estimators);
+                thomson_scatter(pkt, model->time_explosion);
+                break;
+        }
+    }
+
+    /* Packet has terminated: either EMITTED or REABSORBED */
+}
+
+/* ============================================================================
+ * SINGLE_PACKET_LOOP_WITH_PEELING: Transport with Per-Interaction Contributions
+ * ============================================================================
+ * Extended version that calculates peeling-off contributions at each
+ * LINE and ESCATTERING interaction for improved spectrum signal-to-noise.
+ * ============================================================================ */
+
+void single_packet_loop_with_peeling(RPacket *pkt, const NumbaModel *model,
+                                     const NumbaPlasma *plasma,
+                                     const MonteCarloConfig *config,
+                                     Estimators *estimators,
+                                     void *peeling_ctx_void) {
+    /*
+     * Process one Monte Carlo packet with peeling-off contributions.
+     *
+     * This is identical to single_packet_loop except that at each
+     * LINE and ESCATTERING interaction, we calculate a virtual packet
+     * contribution toward the observer.
+     *
+     * The peeling-off technique:
+     * - At each scattering event, the packet direction is randomized
+     * - We "peel off" a contribution assuming the packet traveled toward observer
+     * - This captures information even from packets that are eventually absorbed
+     * - Results in smoother spectra with better-sampled absorption features
+     */
+
+    /* Cast void pointer to PeelingContext (from lumina_rotation.h) */
+    PeelingContext *peeling_ctx = (PeelingContext *)peeling_ctx_void;
+
+    /* Set relativity mode from config */
+    ENABLE_FULL_RELATIVITY = config->enable_full_relativity;
+
+    /* Initialize line search position */
+    rpacket_initialize_line_id(pkt, plasma, model);
+
+    /* Apply relativistic corrections to initial state */
+    if (config->enable_full_relativity) {
+        double beta = pkt->r / (model->time_explosion * C_SPEED_OF_LIGHT);
+        double inv_doppler = get_inverse_doppler_factor(
+            pkt->r, pkt->mu, model->time_explosion);
+        pkt->nu *= inv_doppler;
+        pkt->energy *= inv_doppler;
+        pkt->mu = (pkt->mu + beta) / (1.0 + beta * pkt->mu);
+    } else {
+        double inv_doppler = get_inverse_doppler_factor(
+            pkt->r, pkt->mu, model->time_explosion);
+        pkt->nu *= inv_doppler;
+        pkt->energy *= inv_doppler;
+    }
+
+    /* Main transport loop */
+    while (pkt->status == PACKET_IN_PROCESS) {
+
+        /* Find next interaction */
+        double distance;
+        int delta_shell;
+        InteractionType itype = trace_packet(
+            pkt, model, plasma, config, estimators, &distance, &delta_shell);
+
+        /* Process based on interaction type */
+        switch (itype) {
+
+            case INTERACTION_BOUNDARY:
+                move_r_packet(pkt, distance, model->time_explosion, estimators);
+                move_packet_across_shell_boundary(
+                    pkt, delta_shell, model->n_shells);
+                break;
+
+            case INTERACTION_LINE:
+                pkt->last_interaction_type = 2;
+                move_r_packet(pkt, distance, model->time_explosion, estimators);
+
+                /* === PEELING-OFF: Add contribution before scattering === */
+                if (peeling_ctx) {
+                    peeling_add_contribution(peeling_ctx,
+                                             pkt->r, pkt->mu, pkt->nu, pkt->energy,
+                                             model->time_explosion);
+                }
+
+                line_scatter(pkt, model->time_explosion,
+                            config->line_interaction_type, plasma,
+                            config->atomic_data);
+                break;
+
+            case INTERACTION_ESCATTERING:
+                pkt->last_interaction_type = 1;
+                move_r_packet(pkt, distance, model->time_explosion, estimators);
+
+                /* === PEELING-OFF: Add contribution before scattering === */
+                if (peeling_ctx) {
+                    peeling_add_contribution(peeling_ctx,
+                                             pkt->r, pkt->mu, pkt->nu, pkt->energy,
+                                             model->time_explosion);
+                }
+
                 thomson_scatter(pkt, model->time_explosion);
                 break;
         }

@@ -271,9 +271,10 @@ static void setup_tardis_matching_simulation(SimulationSetup *setup,
         setup->r_outer_arr[i] = v_out * t_explosion;
     }
 
-    /* Line frequencies: optical range (3000-10000 Å → ~3e14 to 1e15 Hz) */
-    double nu_min = C_SPEED_OF_LIGHT / (10000.0e-8);  /* 3e14 Hz */
-    double nu_max = C_SPEED_OF_LIGHT / (3000.0e-8);   /* 1e15 Hz */
+    /* Line frequencies: UV to optical range (1500-10000 Å → ~3e14 to 2e15 Hz) */
+    /* Extended to UV to include high-frequency packets for LINE testing */
+    double nu_min = C_SPEED_OF_LIGHT / (10000.0e-8);  /* 3e14 Hz (10000 A) */
+    double nu_max = C_SPEED_OF_LIGHT / (1500.0e-8);   /* 2e15 Hz (1500 A) */
 
     for (int64_t i = 0; i < n_lines; i++) {
         setup->line_list_nu_arr[i] = nu_min +
@@ -615,13 +616,16 @@ static int run_simulation(int64_t n_packets, const char *spectrum_file) {
     MonteCarloConfig mc_config = mc_config_default();
 
     /*
-     * OPENMP PARALLELIZATION
-     * ----------------------
+     * OPENMP PARALLELIZATION WITH PEELING-OFF
+     * ---------------------------------------
      * Each thread processes packets independently.
-     * Spectrum accumulation uses atomic updates.
+     * Peeling-off captures contributions at each interaction for improved S/N.
+     * Spectrum accumulation uses thread-local arrays merged at end.
      */
+    int64_t total_peeling_events = 0;
+
     #ifdef _OPENMP
-    #pragma omp parallel reduction(+:n_emitted,n_reabsorbed)
+    #pragma omp parallel reduction(+:n_emitted,n_reabsorbed,total_peeling_events)
     #endif
     {
         /* Thread-local RNG seed */
@@ -631,10 +635,14 @@ static int run_simulation(int64_t n_packets, const char *spectrum_file) {
         unsigned int thread_seed = (unsigned int)time(NULL);
         #endif
 
-        /* Thread-local spectrum (to avoid contention) */
+        /* Thread-local spectrum for escaped packets */
         Spectrum *local_spectrum = spectrum_create(obs_config.wavelength_min,
                                                    obs_config.wavelength_max,
                                                    obs_config.n_wavelength_bins);
+
+        /* Thread-local peeling context for per-interaction contributions */
+        PeelingContext *peeling_ctx = peeling_context_create(&obs_config,
+                                                              DEFAULT_T_EXPLOSION);
 
         #ifdef _OPENMP
         #pragma omp for schedule(dynamic, 100)
@@ -655,8 +663,9 @@ static int run_simulation(int64_t n_packets, const char *spectrum_file) {
                          (int64_t)rand_r(&thread_seed), i);
             pkt.current_shell_id = 0;
 
-            /* Run transport */
-            single_packet_loop(&pkt, &setup.model, &setup.plasma, &mc_config, NULL);
+            /* Run transport with peeling-off at each interaction */
+            single_packet_loop_with_peeling(&pkt, &setup.model, &setup.plasma,
+                                            &mc_config, NULL, peeling_ctx);
 
             /* Process escaped packets with LUMINA rotation */
             if (pkt.status == PACKET_EMITTED) {
@@ -686,19 +695,31 @@ static int run_simulation(int64_t n_packets, const char *spectrum_file) {
             #endif
         }
 
+        /* Accumulate peeling events count */
+        if (peeling_ctx) {
+            total_peeling_events += peeling_ctx->n_peeling_events;
+        }
+
         /* Merge thread-local spectra (critical section) */
         #ifdef _OPENMP
         #pragma omp critical
         #endif
         {
+            /* Merge escaped packet contributions */
             for (int64_t b = 0; b < spectrum->n_bins; b++) {
                 spectrum->flux[b] += local_spectrum->flux[b];
             }
             spectrum->total_luminosity += local_spectrum->total_luminosity;
             spectrum->n_packets_used += local_spectrum->n_packets_used;
+
+            /* Merge peeling contributions */
+            if (peeling_ctx) {
+                peeling_merge_into_spectrum(peeling_ctx, spectrum);
+            }
         }
 
         spectrum_free(local_spectrum);
+        if (peeling_ctx) peeling_context_free(peeling_ctx);
     }
 
     double t_end = (double)clock() / CLOCKS_PER_SEC;
@@ -710,6 +731,8 @@ static int run_simulation(int64_t n_packets, const char *spectrum_file) {
            (long)n_emitted, 100.0 * n_emitted / n_packets);
     printf("  Packets reabsorbed: %ld (%.1f%%)\n",
            (long)n_reabsorbed, 100.0 * n_reabsorbed / n_packets);
+    printf("  Peeling events:     %ld (%.1f per packet)\n",
+           (long)total_peeling_events, (double)total_peeling_events / n_packets);
     printf("  Total luminosity:   %.3e erg/s\n", spectrum->total_luminosity);
     printf("  Runtime:            %.2f s\n", t_end - t_start);
     printf("  Packets/sec:        %.0f\n", n_packets / (t_end - t_start));

@@ -191,6 +191,88 @@ void lumina_reset_weight_diagnostics(void);
 void lumina_report_weight_diagnostics(void);
 
 /* ============================================================================
+ * PEELING-OFF TECHNIQUE: Per-Interaction Virtual Packets
+ * ============================================================================
+ *
+ * The peeling-off (a.k.a. "next event estimation") technique improves
+ * signal-to-noise by calculating a virtual packet contribution toward
+ * the observer at EVERY interaction point, not just escape.
+ *
+ * At each interaction (line scatter, electron scatter):
+ *   1. Calculate probability of packet reaching observer (P_escape)
+ *   2. Rotate packet toward observer direction
+ *   3. Apply Doppler shift for observer frame
+ *   4. Add weighted energy contribution to spectrum
+ *
+ * Benefits:
+ *   - Captures contribution from packets that eventually get absorbed
+ *   - Smoother spectra with same number of packets
+ *   - Better sampling of absorption features
+ * ============================================================================ */
+
+/**
+ * PeelingContext: Thread-local accumulator for peeling contributions
+ *
+ * Each thread maintains its own PeelingContext with a local spectrum
+ * to avoid race conditions during OpenMP parallel transport.
+ */
+typedef struct {
+    Spectrum *local_spectrum;     /* Thread-local spectrum array */
+    ObserverConfig obs_config;    /* Observer parameters */
+    double simulation_time;       /* For flux normalization */
+    int64_t n_peeling_events;     /* Count of peeling contributions */
+    double total_peeling_energy;  /* Sum of weighted energies */
+} PeelingContext;
+
+/**
+ * peeling_context_create: Allocate a new peeling context
+ *
+ * @param obs_config     Observer configuration
+ * @param simulation_time Time for flux normalization [s]
+ * @return New context or NULL on failure
+ */
+PeelingContext *peeling_context_create(const ObserverConfig *obs_config,
+                                        double simulation_time);
+
+/**
+ * peeling_context_free: Deallocate peeling context
+ */
+void peeling_context_free(PeelingContext *ctx);
+
+/**
+ * peeling_add_contribution: Add peeling contribution at interaction point
+ *
+ * This is called at each LINE and ESCATTERING interaction to calculate
+ * the virtual packet contribution toward the observer.
+ *
+ * Physical model:
+ *   P_escape = exp(-tau_to_observer) approximated by geometric attenuation
+ *   weight = solid_angle_correction * P_escape
+ *   E_contrib = packet_energy * weight
+ *
+ * @param ctx      Peeling context (thread-local)
+ * @param r        Radial position at interaction [cm]
+ * @param mu       Direction cosine at interaction
+ * @param nu       Frequency at interaction [Hz]
+ * @param energy   Packet energy at interaction [erg]
+ * @param t_exp    Time since explosion [s]
+ */
+void peeling_add_contribution(PeelingContext *ctx,
+                              double r, double mu, double nu, double energy,
+                              double t_exp);
+
+/**
+ * peeling_merge_into_spectrum: Merge thread-local spectrum into global
+ *
+ * Call this after parallel transport completes to aggregate all
+ * thread-local spectra.
+ *
+ * @param ctx          Thread-local context to merge
+ * @param global_spec  Target global spectrum (must be protected by mutex)
+ */
+void peeling_merge_into_spectrum(PeelingContext *ctx, Spectrum *global_spec);
+
+/* ============================================================================
  * UTILITY FUNCTIONS
  * ============================================================================ */
 

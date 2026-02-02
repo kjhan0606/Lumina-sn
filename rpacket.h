@@ -486,6 +486,30 @@ void update_line_estimators(Estimators *est, const RPacket *pkt,
                             int64_t line_id, double distance,
                             double time_explosion);
 
+/* --- Transport with Peeling-Off --- */
+
+/**
+ * single_packet_loop_with_peeling: Process packet with per-interaction peeling
+ *
+ * Extended version of single_packet_loop that calculates a virtual packet
+ * contribution toward the observer at each interaction point (LINE, ESCATTERING).
+ *
+ * This enables the "peeling-off" technique for improved signal-to-noise in
+ * the synthetic spectrum.
+ *
+ * @param pkt          Packet to process
+ * @param model        Geometry
+ * @param plasma       Plasma conditions
+ * @param config       Monte Carlo configuration
+ * @param estimators   Radiative estimators
+ * @param peeling_ctx  Thread-local peeling context (PeelingContext*, may be NULL)
+ */
+void single_packet_loop_with_peeling(RPacket *pkt, const NumbaModel *model,
+                                     const NumbaPlasma *plasma,
+                                     const MonteCarloConfig *config,
+                                     Estimators *estimators,
+                                     void *peeling_ctx);
+
 /* --- Debug Mode (for TARDIS validation) --- */
 
 /**

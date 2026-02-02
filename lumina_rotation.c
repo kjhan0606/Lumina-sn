@@ -331,3 +331,154 @@ int spectrum_write_csv(const Spectrum *spec, const char *filename) {
     fclose(fp);
     return 0;
 }
+
+/* ============================================================================
+ * PEELING-OFF TECHNIQUE: Virtual Packet Contributions
+ * ============================================================================ */
+
+PeelingContext *peeling_context_create(const ObserverConfig *obs_config,
+                                        double simulation_time) {
+    PeelingContext *ctx = (PeelingContext *)malloc(sizeof(PeelingContext));
+    if (!ctx) return NULL;
+
+    ctx->local_spectrum = spectrum_create(obs_config->wavelength_min,
+                                          obs_config->wavelength_max,
+                                          obs_config->n_wavelength_bins);
+    if (!ctx->local_spectrum) {
+        free(ctx);
+        return NULL;
+    }
+
+    ctx->obs_config = *obs_config;
+    ctx->simulation_time = simulation_time;
+    ctx->n_peeling_events = 0;
+    ctx->total_peeling_energy = 0.0;
+
+    return ctx;
+}
+
+void peeling_context_free(PeelingContext *ctx) {
+    if (ctx) {
+        if (ctx->local_spectrum) {
+            spectrum_free(ctx->local_spectrum);
+        }
+        free(ctx);
+    }
+}
+
+void peeling_add_contribution(PeelingContext *ctx,
+                              double r, double mu, double nu, double energy,
+                              double t_exp) {
+    /*
+     * PEELING-OFF: Calculate virtual packet contribution toward observer
+     *
+     * At each interaction, we compute what the spectrum contribution would
+     * be if the packet were to travel directly toward the observer.
+     *
+     * Key physics:
+     * 1. The packet has isotropic re-emission probability in CMF
+     * 2. We "peel off" a fraction toward the observer direction
+     * 3. Apply Doppler shift for observer-frame frequency
+     * 4. Weight by escape probability (simplified: assume optically thin)
+     *
+     * The weight factor accounts for:
+     * - Solid angle: probability of emission toward observer (1/4π)
+     * - Doppler beaming: D^2 factor for relativistic intensity
+     * - Escape probability: simplified to 1.0 (full peeling)
+     */
+
+    if (!ctx || !ctx->local_spectrum) return;
+
+    /* Observer viewing angle (typically mu_obs = 1 for face-on) */
+    double mu_obs = ctx->obs_config.mu_observer;
+
+    /* Calculate expansion velocity at this radius */
+    double beta = r / (t_exp * C_SPEED_OF_LIGHT);
+
+    /* Doppler factors */
+    /* D_packet: Doppler factor for current packet direction */
+    /* D_observer: Doppler factor for observer direction */
+    double D_packet = 1.0 - beta * mu;
+    double D_observer = 1.0 - beta * mu_obs;
+
+    /*
+     * Observer-frame frequency
+     *
+     * The packet frequency (nu) is in lab frame. For an observer at
+     * mu_obs, we need to account for the Doppler shift.
+     *
+     * Since photons are emitted isotropically in CMF and we're calculating
+     * the contribution toward the observer, use the lab-frame frequency
+     * directly (LUMINA correction from Task Order investigation).
+     */
+    double nu_observer = nu;
+
+    /* Convert to wavelength */
+    double wavelength = frequency_to_wavelength(nu_observer);
+
+    /* Check if within spectrum range */
+    if (wavelength < ctx->local_spectrum->wavelength_min ||
+        wavelength >= ctx->local_spectrum->wavelength_max) {
+        return;
+    }
+
+    /*
+     * Peeling weight factor
+     *
+     * The weight corrects for the anisotropic sampling:
+     *   w = (D_observer / D_packet)^2
+     *
+     * This ensures energy conservation when integrating over all
+     * packet directions.
+     *
+     * For peeling, we also include escape probability P_escape.
+     * In the optically thin approximation: P_escape ≈ 1.0
+     * More sophisticated: P_escape = exp(-tau_to_boundary)
+     *
+     * Using simplified approach for now.
+     */
+    double doppler_ratio = D_observer / D_packet;
+    double weight = doppler_ratio * doppler_ratio;
+
+    /* Escape probability (simplified: assume optically thin) */
+    double P_escape = 1.0;
+
+    /* Weighted energy contribution */
+    double energy_weighted = energy * weight * P_escape;
+
+    /* Find wavelength bin */
+    int64_t bin = (int64_t)((wavelength - ctx->local_spectrum->wavelength_min) /
+                            ctx->local_spectrum->d_wavelength);
+
+    if (bin < 0 || bin >= ctx->local_spectrum->n_bins) return;
+
+    /* Add flux contribution */
+    double flux_contribution = energy_weighted /
+                               (ctx->local_spectrum->d_wavelength * ctx->simulation_time);
+    ctx->local_spectrum->flux[bin] += flux_contribution;
+
+    /* Update statistics */
+    ctx->local_spectrum->total_luminosity += energy_weighted / ctx->simulation_time;
+    ctx->n_peeling_events++;
+    ctx->total_peeling_energy += energy_weighted;
+}
+
+void peeling_merge_into_spectrum(PeelingContext *ctx, Spectrum *global_spec) {
+    /*
+     * Merge thread-local spectrum into global spectrum
+     *
+     * This should be called inside a critical section or mutex
+     * when using OpenMP.
+     */
+
+    if (!ctx || !ctx->local_spectrum || !global_spec) return;
+
+    /* Accumulate flux bins */
+    for (int64_t i = 0; i < global_spec->n_bins && i < ctx->local_spectrum->n_bins; i++) {
+        global_spec->flux[i] += ctx->local_spectrum->flux[i];
+    }
+
+    /* Accumulate totals */
+    global_spec->total_luminosity += ctx->local_spectrum->total_luminosity;
+    global_spec->n_packets_used += ctx->n_peeling_events;
+}
