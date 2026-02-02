@@ -9,6 +9,9 @@
  *
  * CRITICAL: These constants and formulas must match TARDIS-SN exactly
  * to achieve 10^-10 relative tolerance in validation tests.
+ *
+ * Task Order #020: Added CUDA compatibility with __host__ __device__ qualifiers.
+ * All inline functions can now run on both CPU and GPU.
  */
 
 #ifndef PHYSICS_KERNELS_H
@@ -16,6 +19,30 @@
 
 #include <math.h>
 #include <stdint.h>
+
+/* ============================================================================
+ * CUDA COMPATIBILITY NOTE (Task Order #020)
+ * ============================================================================
+ *
+ * These functions use a global variable ENABLE_FULL_RELATIVITY which cannot
+ * be accessed from GPU device code. For CUDA kernels, use the equivalent
+ * functions from cuda_shared.h which take the relativity flag as a parameter:
+ *
+ *   CPU (physics_kernels.h)          GPU (cuda_shared.h)
+ *   -------------------------        -------------------------------
+ *   get_doppler_factor()         ->  get_doppler_factor_gpu(..., full_rel)
+ *   get_inverse_doppler_factor() ->  get_inverse_doppler_factor_gpu(..., full_rel)
+ *   calculate_distance_line()    ->  calculate_distance_line_gpu(..., full_rel)
+ *   calculate_distance_boundary()->  calculate_distance_boundary_gpu()
+ *   calculate_distance_electron()->  calculate_distance_electron_gpu()
+ *   calculate_tau_electron()     ->  calculate_tau_electron_gpu()
+ *
+ * The cuda_shared.h functions are marked CUDA_CALLABLE and work on both
+ * host and device.
+ */
+
+/* PHYSICS_KERNEL_FUNC is empty - these are CPU-only due to global variable */
+#define PHYSICS_KERNEL_FUNC
 
 /* ============================================================================
  * PHYSICAL CONSTANTS - Must match TARDIS numba_config.py exactly
@@ -94,7 +121,7 @@ struct RPacket;  /* Forward declaration - full definition in rpacket.h */
  * @param time_explosion Time since explosion [s]
  * @return Doppler factor D
  */
-static inline double get_doppler_factor(double r, double mu, double time_explosion) {
+PHYSICS_KERNEL_FUNC static inline double get_doppler_factor(double r, double mu, double time_explosion) {
     double inv_c = 1.0 / C_SPEED_OF_LIGHT;
     double inv_t = 1.0 / time_explosion;
     double beta = r * inv_t * inv_c;
@@ -124,7 +151,7 @@ static inline double get_doppler_factor(double r, double mu, double time_explosi
  * @param time_explosion Time since explosion [s]
  * @return Inverse Doppler factor
  */
-static inline double get_inverse_doppler_factor(double r, double mu, double time_explosion) {
+PHYSICS_KERNEL_FUNC static inline double get_inverse_doppler_factor(double r, double mu, double time_explosion) {
     double inv_c = 1.0 / C_SPEED_OF_LIGHT;
     double inv_t = 1.0 / time_explosion;
     double beta = r * inv_t * inv_c;
@@ -145,7 +172,7 @@ static inline double get_inverse_doppler_factor(double r, double mu, double time
  *
  * This is the relativistic aberration formula.
  */
-static inline double angle_aberration_CMF_to_LF(double r, double mu_cmf, double time_explosion) {
+PHYSICS_KERNEL_FUNC static inline double angle_aberration_CMF_to_LF(double r, double mu_cmf, double time_explosion) {
     double beta = r / (C_SPEED_OF_LIGHT * time_explosion);
     return (mu_cmf + beta) / (1.0 + beta * mu_cmf);
 }
@@ -155,7 +182,7 @@ static inline double angle_aberration_CMF_to_LF(double r, double mu_cmf, double 
  *
  * μ_cmf = (μ_lab - β) / (1 - β × μ_lab)
  */
-static inline double angle_aberration_LF_to_CMF(double r, double mu_lab, double time_explosion) {
+PHYSICS_KERNEL_FUNC static inline double angle_aberration_LF_to_CMF(double r, double mu_lab, double time_explosion) {
     double beta = r / (C_SPEED_OF_LIGHT * time_explosion);
     return (mu_lab - beta) / (1.0 - beta * mu_lab);
 }
@@ -189,7 +216,7 @@ static inline double angle_aberration_LF_to_CMF(double r, double mu_lab, double 
  * @param delta_shell [out] +1 if hitting outer, -1 if hitting inner
  * @return Distance to boundary [cm]
  */
-static inline double calculate_distance_boundary(double r, double mu,
+PHYSICS_KERNEL_FUNC static inline double calculate_distance_boundary(double r, double mu,
                                                    double r_inner, double r_outer,
                                                    int *delta_shell) {
     double distance;
@@ -251,7 +278,7 @@ static inline double calculate_distance_boundary(double r, double mu,
  * @param mu          Direction cosine (for full relativity)
  * @return Distance to resonance [cm]
  */
-static inline double calculate_distance_line(double nu, double comov_nu,
+PHYSICS_KERNEL_FUNC static inline double calculate_distance_line(double nu, double comov_nu,
                                               int is_last_line, double nu_line,
                                               double time_explosion,
                                               double r, double mu) {
@@ -316,7 +343,7 @@ static inline double calculate_distance_line(double nu, double comov_nu,
  * @param tau_event         Sampled optical depth (dimensionless)
  * @return Distance [cm]
  */
-static inline double calculate_distance_electron(double electron_density, double tau_event) {
+PHYSICS_KERNEL_FUNC static inline double calculate_distance_electron(double electron_density, double tau_event) {
     return tau_event / (electron_density * SIGMA_THOMSON);
 }
 
@@ -333,7 +360,7 @@ static inline double calculate_distance_electron(double electron_density, double
  * @param distance          Path length [cm]
  * @return Optical depth (dimensionless)
  */
-static inline double calculate_tau_electron(double electron_density, double distance) {
+PHYSICS_KERNEL_FUNC static inline double calculate_tau_electron(double electron_density, double distance) {
     return electron_density * SIGMA_THOMSON * distance;
 }
 
@@ -350,7 +377,7 @@ static inline double calculate_tau_electron(double electron_density, double dist
  * @param time_explosion Time [s]
  * @return Comoving energy at (r + distance)
  */
-static inline double calc_packet_energy(double energy, double r, double mu,
+PHYSICS_KERNEL_FUNC static inline double calc_packet_energy(double energy, double r, double mu,
                                          double distance, double time_explosion) {
     /*
      * Doppler factor at position (r + d):

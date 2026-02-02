@@ -22,10 +22,13 @@ HDF5_LIB = -L$(HDF5_ROOT)/lib -Wl,-rpath,$(HDF5_ROOT)/lib -lhdf5 -lhdf5_hl
 
 # CUDA configuration
 NVCC = nvcc
-CUDA_ARCH = -arch=sm_70  # Volta (V100), adjust for your GPU
-NVCC_FLAGS = -O3 -use_fast_math $(CUDA_ARCH)
-CUDA_INCLUDE = -I$(CUDA_HOME)/include
-CUDA_LIB = -L$(CUDA_HOME)/lib64 -lcudart
+CUDA_ARCH = -arch=native  # Auto-detect GPU architecture (or set to sm_75, sm_80, etc.)
+NVCC_FLAGS = -O3 -use_fast_math $(CUDA_ARCH) -Xcompiler -fPIC
+NVCC_FLAGS_OMP = $(NVCC_FLAGS) -Xcompiler -fopenmp
+# Auto-detect CUDA path from nvcc location if CUDA_HOME not set
+CUDA_ROOT ?= $(shell dirname $$(dirname $$(which nvcc)))
+CUDA_INCLUDE = -I$(CUDA_ROOT)/include
+CUDA_LIB = -L$(CUDA_ROOT)/lib64 -Wl,-rpath,$(CUDA_ROOT)/lib64 -lcudart -lpthread -lstdc++
 
 # OpenMP support
 ifdef OPENMP
@@ -36,15 +39,15 @@ endif
 
 # Headers
 HDRS = physics_kernels.h rpacket.h validation.h lumina_rotation.h atomic_data.h plasma_physics.h simulation_state.h
-CUDA_HDRS = cuda_atomic.h
+CUDA_HDRS = cuda_atomic.h cuda_interface.h
 
 # Library sources
 LIB_SRCS = rpacket.c validation.c lumina_rotation.c atomic_loader.c plasma_physics.c simulation_state.c debug_rng.c
 LIB_OBJS = $(LIB_SRCS:.c=.o)
 
 # CUDA sources
-CUDA_SRCS = cuda_transport.cu cuda_atomic.cu
-CUDA_OBJS = cuda_transport.o cuda_atomic.o
+CUDA_SRCS = cuda_transport.cu cuda_atomic.cu gpu_transport.cu
+CUDA_OBJS = cuda_transport.o cuda_atomic.o gpu_transport.o
 
 # Main targets
 .PHONY: all clean test-kernels test-atomic test-plasma simulate simulate-integrated debug help cuda
@@ -66,6 +69,11 @@ test_kernels: test_kernels.c physics_kernels.h
 # Full transport test (needs HDF5 for liblumin.a)
 test_transport: test_transport.c liblumin.a
 	$(CC) $(CFLAGS) $(HDF5_INCLUDE) $< -L. -llumin $(LDFLAGS) $(HDF5_LIB) -o $@
+
+# Full transport test with CUDA support (Task Order #019)
+# Links C code with CUDA via cuda_interface.h
+test_transport_cuda: test_transport.c liblumin.a gpu_transport.o
+	$(CC) $(CFLAGS) -DENABLE_CUDA -fopenmp $(HDF5_INCLUDE) $< gpu_transport.o -L. -llumin $(LDFLAGS) $(HDF5_LIB) $(CUDA_LIB) -o $@
 
 # Atomic data loader test
 test_atomic: test_atomic.c atomic_loader.o atomic_data.h
@@ -114,15 +122,35 @@ cuda_transport.o: cuda_transport.cu cuda_atomic.h
 cuda_atomic.o: cuda_atomic.cu cuda_atomic.h atomic_data.h plasma_physics.h simulation_state.h
 	$(NVCC) $(NVCC_FLAGS) $(HDF5_INCLUDE) -c $< -o $@
 
+# GPU transport interface (Task Order #019/020: C-CUDA bridge + kernels)
+gpu_transport.o: gpu_transport.cu cuda_interface.h cuda_shared.h
+	$(NVCC) $(NVCC_FLAGS_OMP) -c $< -o $@
+
+# Standalone GPU transport test
+test_gpu_transport: gpu_transport.cu cuda_interface.h
+	$(NVCC) $(NVCC_FLAGS_OMP) -DGPU_TRANSPORT_STANDALONE $< -o $@
+
 # CUDA test driver
 test_cuda: test_cuda.cu $(CUDA_OBJS) simulation_state.o plasma_physics.o atomic_loader.o
 	$(NVCC) $(NVCC_FLAGS) $(HDF5_INCLUDE) $< $(CUDA_OBJS) simulation_state.o plasma_physics.o atomic_loader.o $(LDFLAGS) $(HDF5_LIB) $(CUDA_LIB) -o $@
 
 # Build all CUDA components
-cuda: test_cuda
+cuda: test_cuda test_gpu_transport
 	@echo ""
 	@echo "=== CUDA Transport Built ==="
 	@echo "Run with: ./test_cuda atomic/kurucz_cd23_chianti_H_He.h5 1000000 spectrum_cuda.csv"
+
+# Test CUDA infrastructure (Task Order #019)
+test-cuda-interface: test_gpu_transport
+	@echo ""
+	@echo "=== Testing CUDA Interface (Task Order #019) ==="
+	./test_gpu_transport
+
+# Build CUDA-enabled transport test
+cuda-transport: test_transport_cuda
+	@echo ""
+	@echo "=== CUDA-Enabled Transport Built ==="
+	@echo "Run with: ./test_transport_cuda --simulate 10000"
 
 # Run CUDA simulation
 simulate-cuda: test_cuda
@@ -192,7 +220,7 @@ debug: clean all
 
 # Clean
 clean:
-	rm -f *.o *.a test_kernels test_transport test_atomic test_plasma test_integrated test_cuda
+	rm -f *.o *.a test_kernels test_transport test_transport_cuda test_atomic test_plasma test_integrated test_cuda test_gpu_transport
 	rm -f *.bin *.csv spectrum*.csv trace*.csv
 
 # Deep clean (including backup files)

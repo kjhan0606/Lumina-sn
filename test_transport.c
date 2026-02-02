@@ -26,6 +26,10 @@
 #include <omp.h>
 #endif
 
+#ifdef ENABLE_CUDA
+#include "cuda_interface.h"
+#endif
+
 #include "physics_kernels.h"
 #include "rpacket.h"
 #include "validation.h"
@@ -582,7 +586,36 @@ static int run_simulation(int64_t n_packets, const char *spectrum_file) {
     int n_threads = omp_get_max_threads();
     printf("  OpenMP threads: %d\n", n_threads);
 #else
+    int n_threads = 1;
     printf("  OpenMP: disabled\n");
+#endif
+
+#ifdef ENABLE_CUDA
+    /* Task Order #019: Initialize CUDA and test concurrency */
+    printf("  CUDA: initializing...\n");
+    if (cuda_interface_init(0) == 0) {
+        printf("  CUDA: testing OpenMP+GPU concurrency...\n");
+
+        /* Test warmup from each OpenMP thread */
+        #pragma omp parallel num_threads(n_threads)
+        {
+            int tid = 0;
+            #ifdef _OPENMP
+            tid = omp_get_thread_num();
+            #endif
+
+            /* Each thread launches a warmup kernel on its own stream */
+            cuda_interface_launch_warmup(tid, 1024);
+        }
+
+        /* Synchronize all streams */
+        cuda_interface_sync_all_streams();
+        printf("  CUDA: concurrency test PASSED\n");
+    } else {
+        printf("  CUDA: initialization FAILED (continuing CPU-only)\n");
+    }
+#else
+    printf("  CUDA: not compiled (use make test_transport_cuda)\n");
 #endif
 
     /* Setup simulation */
@@ -748,6 +781,10 @@ static int run_simulation(int64_t n_packets, const char *spectrum_file) {
     spectrum_free(spectrum);
     free_simulation_setup(&setup);
 
+#ifdef ENABLE_CUDA
+    cuda_interface_shutdown();
+#endif
+
     return 0;
 }
 
@@ -912,6 +949,376 @@ static int run_trace_mode(uint64_t seed, int n_packets, const char *output_file)
 }
 
 /* ============================================================================
+ * GPU SIMULATION MODE (Task Order #021)
+ * ============================================================================
+ *
+ * Run full Monte Carlo transport on GPU and verify results.
+ */
+
+#ifdef ENABLE_CUDA
+
+static int run_gpu_simulation(int64_t n_packets, const char *spectrum_file) {
+    printf("\n");
+    printf("╔═══════════════════════════════════════════════════════════════╗\n");
+    printf("║         LUMINA-SN GPU Simulation Mode (Task Order #021)       ║\n");
+    printf("╚═══════════════════════════════════════════════════════════════╝\n\n");
+
+    printf("Configuration:\n");
+    printf("  N_packets:    %ld\n", (long)n_packets);
+    printf("  N_shells:     %d\n", DEFAULT_N_SHELLS);
+    printf("  N_lines:      %d\n", DEFAULT_N_LINES);
+    printf("  t_explosion:  %.2f days\n", DEFAULT_T_EXPLOSION / 86400.0);
+
+    /* Initialize CUDA */
+    printf("\n[GPU] Initializing CUDA...\n");
+    if (cuda_interface_init(0) != 0) {
+        fprintf(stderr, "[GPU] Error: CUDA initialization failed\n");
+        return 1;
+    }
+
+    /* Setup simulation on host */
+    printf("[GPU] Setting up simulation data on host...\n");
+    SimulationSetup setup;
+    setup_tardis_matching_simulation(&setup, DEFAULT_N_SHELLS, DEFAULT_N_LINES,
+                                      DEFAULT_T_EXPLOSION,
+                                      DEFAULT_V_INNER, DEFAULT_V_OUTER);
+
+    /* Prepare GPU structs */
+    Model_GPU model_gpu;
+    model_to_gpu(&model_gpu,
+                 setup.model.time_explosion,
+                 setup.model.n_shells,
+                 setup.r_inner_arr[0],
+                 setup.r_outer_arr[setup.model.n_shells - 1],
+                 0);  /* No full relativity */
+
+    Plasma_GPU plasma_gpu;
+    plasma_to_gpu(&plasma_gpu,
+                  setup.plasma.n_lines,
+                  setup.plasma.n_shells,
+                  GPU_LINE_SCATTER,  /* Simple scatter mode */
+                  0,                 /* Line scattering enabled */
+                  setup.line_list_nu_arr[0],
+                  setup.line_list_nu_arr[setup.plasma.n_lines - 1]);
+
+    printf("[GPU] Model: n_shells=%ld, t_exp=%.2e s\n",
+           (long)model_gpu.n_shells, model_gpu.time_explosion);
+    printf("[GPU] Plasma: n_lines=%ld, nu_range=[%.2e, %.2e] Hz\n",
+           (long)plasma_gpu.n_lines, plasma_gpu.nu_min, plasma_gpu.nu_max);
+
+    /* Allocate device memory for arrays */
+    printf("[GPU] Allocating device memory...\n");
+
+    void *d_r_inner = NULL, *d_r_outer = NULL;
+    void *d_line_list_nu = NULL, *d_tau_sobolev = NULL;
+    void *d_electron_density = NULL;
+    void *d_packets = NULL;
+    void *d_stats = NULL;
+
+    size_t total_gpu_mem = 0;
+
+    /* Shell radii */
+    size_t r_size = model_gpu.n_shells * sizeof(double);
+    d_r_inner = cuda_interface_malloc(r_size);
+    d_r_outer = cuda_interface_malloc(r_size);
+    if (!d_r_inner || !d_r_outer) {
+        fprintf(stderr, "[GPU] Error: Failed to allocate shell radii\n");
+        goto cleanup;
+    }
+    cuda_interface_memcpy_h2d(d_r_inner, setup.r_inner_arr, r_size);
+    cuda_interface_memcpy_h2d(d_r_outer, setup.r_outer_arr, r_size);
+    total_gpu_mem += 2 * r_size;
+
+    /* Line frequencies */
+    size_t nu_size = plasma_gpu.n_lines * sizeof(double);
+    d_line_list_nu = cuda_interface_malloc(nu_size);
+    if (!d_line_list_nu) {
+        fprintf(stderr, "[GPU] Error: Failed to allocate line frequencies\n");
+        goto cleanup;
+    }
+    cuda_interface_memcpy_h2d(d_line_list_nu, setup.line_list_nu_arr, nu_size);
+    total_gpu_mem += nu_size;
+
+    /* Sobolev optical depths [n_lines x n_shells] */
+    size_t tau_size = plasma_gpu.n_lines * plasma_gpu.n_shells * sizeof(double);
+    d_tau_sobolev = cuda_interface_malloc(tau_size);
+    if (!d_tau_sobolev) {
+        fprintf(stderr, "[GPU] Error: Failed to allocate tau_sobolev\n");
+        goto cleanup;
+    }
+    cuda_interface_memcpy_h2d(d_tau_sobolev, setup.tau_sobolev_arr, tau_size);
+    total_gpu_mem += tau_size;
+
+    /* Electron densities */
+    size_t ne_size = plasma_gpu.n_shells * sizeof(double);
+    d_electron_density = cuda_interface_malloc(ne_size);
+    if (!d_electron_density) {
+        fprintf(stderr, "[GPU] Error: Failed to allocate electron densities\n");
+        goto cleanup;
+    }
+    cuda_interface_memcpy_h2d(d_electron_density, setup.electron_density_arr, ne_size);
+    total_gpu_mem += ne_size;
+
+    /* Packets */
+    if (cuda_allocate_packets(&d_packets, n_packets) != 0) {
+        fprintf(stderr, "[GPU] Error: Failed to allocate packets\n");
+        goto cleanup;
+    }
+    total_gpu_mem += n_packets * sizeof(RPacket_GPU);
+
+    /* Statistics */
+    if (cuda_allocate_stats(&d_stats) != 0) {
+        fprintf(stderr, "[GPU] Error: Failed to allocate stats\n");
+        goto cleanup;
+    }
+    total_gpu_mem += sizeof(GPUStats);
+
+    printf("[GPU] Total device memory allocated: %.2f MB\n",
+           total_gpu_mem / (1024.0 * 1024.0));
+
+    /* Initialize packets on host */
+    printf("[GPU] Initializing %ld packets on host...\n", (long)n_packets);
+    RPacket_GPU *h_packets = (RPacket_GPU *)malloc(n_packets * sizeof(RPacket_GPU));
+    if (!h_packets) {
+        fprintf(stderr, "[GPU] Error: Failed to allocate host packets\n");
+        goto cleanup;
+    }
+
+    double r_start = setup.r_inner_arr[0] * 1.001;  /* Just above photosphere */
+    double nu_min = setup.line_list_nu_arr[0];
+    double nu_max = setup.line_list_nu_arr[setup.plasma.n_lines - 1];
+
+    for (int64_t i = 0; i < n_packets; i++) {
+        RPacket_GPU *pkt = &h_packets[i];
+
+        /* Initialize RNG */
+        gpu_rng_init(&pkt->rng_state, DEFAULT_SEED + i);
+
+        /* Position: at photosphere */
+        pkt->r = r_start;
+
+        /* Direction: outward (mu = sqrt(xi) for limb darkening) */
+        double xi = gpu_rng_uniform(&pkt->rng_state);
+        pkt->mu = sqrt(xi);
+        if (pkt->mu < 0.01) pkt->mu = 0.01;
+
+        /* Frequency: uniform in log space */
+        double xi_nu = gpu_rng_uniform(&pkt->rng_state);
+        pkt->nu = nu_min * pow(nu_max / nu_min, xi_nu);
+
+        /* Energy: normalized */
+        pkt->energy = 1.0;
+
+        /* State */
+        pkt->current_shell_id = 0;
+        pkt->next_line_id = 0;
+        pkt->status = GPU_PACKET_IN_PROCESS;
+        pkt->index = i;
+
+        /* Interaction history */
+        pkt->last_interaction_type = 0;
+        pkt->last_interaction_in_nu = 0.0;
+        pkt->last_line_interaction_in_id = -1;
+        pkt->last_line_interaction_out_id = -1;
+    }
+
+    /* Copy packets to device */
+    printf("[GPU] Copying packets to device...\n");
+    if (cuda_upload_packets(d_packets, h_packets, n_packets) != 0) {
+        fprintf(stderr, "[GPU] Error: Failed to upload packets\n");
+        free(h_packets);
+        goto cleanup;
+    }
+
+    /* Launch kernel */
+    printf("\n[GPU] Launching trace_packet_kernel...\n");
+    printf("[GPU]   Packets: %ld\n", (long)n_packets);
+    printf("[GPU]   Max iterations: 10000\n");
+
+    double t_start = (double)clock() / CLOCKS_PER_SEC;
+
+    int result = cuda_launch_trace_packet(
+        d_packets, n_packets,
+        d_r_inner, d_r_outer,
+        d_line_list_nu, d_tau_sobolev,
+        d_electron_density,
+        model_gpu, plasma_gpu,
+        d_stats,
+        0,      /* stream_id */
+        10000   /* max_iterations */
+    );
+
+    if (result != 0) {
+        fprintf(stderr, "[GPU] Error: Kernel launch failed\n");
+        free(h_packets);
+        goto cleanup;
+    }
+
+    /* Synchronize */
+    cuda_interface_stream_sync(0);
+
+    double t_end = (double)clock() / CLOCKS_PER_SEC;
+    double elapsed = t_end - t_start;
+
+    printf("[GPU] Kernel completed in %.3f seconds\n", elapsed);
+    printf("[GPU] Throughput: %.0f packets/sec\n", n_packets / elapsed);
+
+    /* Download results */
+    printf("\n[GPU] Downloading results...\n");
+
+    if (cuda_download_packets(h_packets, d_packets, n_packets) != 0) {
+        fprintf(stderr, "[GPU] Error: Failed to download packets\n");
+        free(h_packets);
+        goto cleanup;
+    }
+
+    GPUStats stats;
+    if (cuda_download_stats(&stats, d_stats) != 0) {
+        fprintf(stderr, "[GPU] Error: Failed to download stats\n");
+        free(h_packets);
+        goto cleanup;
+    }
+
+    /* Verify results */
+    printf("\n[GPU] Verifying results...\n");
+
+    int64_t n_emitted = 0, n_reabsorbed = 0, n_in_process = 0;
+    int64_t n_invalid_r = 0, n_invalid_mu = 0, n_invalid_nu = 0;
+
+    for (int64_t i = 0; i < n_packets; i++) {
+        RPacket_GPU *pkt = &h_packets[i];
+
+        /* Count by status */
+        if (pkt->status == GPU_PACKET_EMITTED) {
+            n_emitted++;
+        } else if (pkt->status == GPU_PACKET_REABSORBED) {
+            n_reabsorbed++;
+        } else {
+            n_in_process++;
+        }
+
+        /* Validate physics */
+        if (pkt->r <= 0 || pkt->r > 1e20) n_invalid_r++;
+        if (pkt->mu < -1.0 || pkt->mu > 1.0) n_invalid_mu++;
+        if (pkt->nu <= 0 || pkt->nu > 1e20) n_invalid_nu++;
+    }
+
+    printf("\n");
+    printf("╔═══════════════════════════════════════════════════════════════╗\n");
+    printf("║                   GPU SIMULATION RESULTS                      ║\n");
+    printf("╠═══════════════════════════════════════════════════════════════╣\n");
+    printf("║  Packet Statistics:                                           ║\n");
+    printf("║    Emitted (escaped):    %8ld (%5.1f%%)                    ║\n",
+           (long)n_emitted, 100.0 * n_emitted / n_packets);
+    printf("║    Reabsorbed:           %8ld (%5.1f%%)                    ║\n",
+           (long)n_reabsorbed, 100.0 * n_reabsorbed / n_packets);
+    printf("║    Still in process:     %8ld (%5.1f%%)                    ║\n",
+           (long)n_in_process, 100.0 * n_in_process / n_packets);
+    printf("╠═══════════════════════════════════════════════════════════════╣\n");
+    printf("║  Kernel Statistics (from GPU):                                ║\n");
+    printf("║    Total iterations:     %8ld                              ║\n",
+           (long)stats.n_iterations_total);
+    printf("║    Boundary crossings:   %8ld                              ║\n",
+           (long)stats.n_boundary_crossings);
+    printf("║    Electron scatters:    %8ld                              ║\n",
+           (long)stats.n_electron_scatters);
+    printf("║    Line interactions:    %8ld                              ║\n",
+           (long)stats.n_line_interactions);
+    printf("╠═══════════════════════════════════════════════════════════════╣\n");
+    printf("║  Validation:                                                  ║\n");
+    printf("║    Invalid r:            %8ld                              ║\n", (long)n_invalid_r);
+    printf("║    Invalid mu:           %8ld                              ║\n", (long)n_invalid_mu);
+    printf("║    Invalid nu:           %8ld                              ║\n", (long)n_invalid_nu);
+    printf("╚═══════════════════════════════════════════════════════════════╝\n");
+
+    /* Check for success */
+    int success = 1;
+    if (n_in_process > 0) {
+        printf("\n[GPU] WARNING: %ld packets still in process (hit iteration limit)\n",
+               (long)n_in_process);
+        success = 0;
+    }
+    if (n_invalid_r > 0 || n_invalid_mu > 0 || n_invalid_nu > 0) {
+        printf("\n[GPU] ERROR: Invalid physics values detected!\n");
+        success = 0;
+    }
+    if (n_emitted + n_reabsorbed == 0) {
+        printf("\n[GPU] ERROR: No packets completed transport!\n");
+        success = 0;
+    }
+
+    /* Compute spectrum on CPU from emitted packets */
+    if (spectrum_file && n_emitted > 0) {
+        printf("\n[GPU] Computing spectrum from %ld emitted packets...\n",
+               (long)n_emitted);
+
+        /* Simple spectrum binning */
+        int n_bins = DEFAULT_N_WAVELENGTH_BINS;
+        double wl_min = DEFAULT_WAVELENGTH_MIN;  /* Angstrom */
+        double wl_max = DEFAULT_WAVELENGTH_MAX;
+        double d_wl = (wl_max - wl_min) / n_bins;
+        double *spectrum = (double *)calloc(n_bins, sizeof(double));
+
+        for (int64_t i = 0; i < n_packets; i++) {
+            RPacket_GPU *pkt = &h_packets[i];
+            if (pkt->status != GPU_PACKET_EMITTED) continue;
+
+            /* Convert frequency to wavelength */
+            double wavelength = (GPU_C_SPEED_OF_LIGHT / pkt->nu) * 1e8;  /* cm -> Angstrom */
+
+            if (wavelength >= wl_min && wavelength < wl_max) {
+                int bin = (int)((wavelength - wl_min) / d_wl);
+                if (bin >= 0 && bin < n_bins) {
+                    spectrum[bin] += pkt->energy;
+                }
+            }
+        }
+
+        /* Write spectrum to file */
+        FILE *fp = fopen(spectrum_file, "w");
+        if (fp) {
+            fprintf(fp, "# LUMINA-SN GPU Spectrum\n");
+            fprintf(fp, "# n_packets=%ld, n_emitted=%ld\n",
+                    (long)n_packets, (long)n_emitted);
+            fprintf(fp, "wavelength_A,flux\n");
+            for (int b = 0; b < n_bins; b++) {
+                double wl = wl_min + (b + 0.5) * d_wl;
+                fprintf(fp, "%.2f,%.6e\n", wl, spectrum[b]);
+            }
+            fclose(fp);
+            printf("[GPU] Spectrum written to: %s\n", spectrum_file);
+        }
+        free(spectrum);
+    }
+
+    if (success) {
+        printf("\n[GPU] *** SIMULATION SUCCESSFUL ***\n");
+    } else {
+        printf("\n[GPU] *** SIMULATION COMPLETED WITH ISSUES ***\n");
+    }
+
+    /* Cleanup */
+    free(h_packets);
+
+cleanup:
+    printf("\n[GPU] Cleaning up device memory...\n");
+    if (d_r_inner) cuda_interface_free(d_r_inner);
+    if (d_r_outer) cuda_interface_free(d_r_outer);
+    if (d_line_list_nu) cuda_interface_free(d_line_list_nu);
+    if (d_tau_sobolev) cuda_interface_free(d_tau_sobolev);
+    if (d_electron_density) cuda_interface_free(d_electron_density);
+    if (d_packets) cuda_interface_free(d_packets);
+    if (d_stats) cuda_interface_free(d_stats);
+
+    free_simulation_setup(&setup);
+    cuda_interface_shutdown();
+
+    return success ? 0 : 1;
+}
+
+#endif /* ENABLE_CUDA */
+
+/* ============================================================================
  * MAIN: Command-line interface
  * ============================================================================ */
 
@@ -920,7 +1327,8 @@ static void print_usage(const char *prog) {
     printf("Usage: %s [OPTIONS]\n\n", prog);
     printf("Modes:\n");
     printf("  --validate <python.bin>  Validate against Python trace\n");
-    printf("  --simulate <N>           Run N packet simulation\n");
+    printf("  --simulate <N>           Run N packet simulation (CPU)\n");
+    printf("  --gpu-simulate <N>       Run N packet simulation (GPU)\n");
     printf("  --trace                  Generate TARDIS-format trace (CSV to stdout)\n");
     printf("\n");
     printf("Options:\n");
@@ -945,7 +1353,7 @@ int main(int argc, char *argv[]) {
     const char *inject_rng_file = NULL;
     int64_t n_packets = 0;
     uint64_t seed = DEFAULT_SEED;
-    int mode = 0;  /* 0=none, 1=validate, 2=simulate, 3=trace */
+    int mode = 0;  /* 0=none, 1=validate, 2=simulate, 3=trace, 4=gpu-simulate */
 
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "--validate") == 0 && i + 1 < argc) {
@@ -954,6 +1362,9 @@ int main(int argc, char *argv[]) {
         } else if (strcmp(argv[i], "--simulate") == 0 && i + 1 < argc) {
             n_packets = atol(argv[++i]);
             mode = 2;
+        } else if (strcmp(argv[i], "--gpu-simulate") == 0 && i + 1 < argc) {
+            n_packets = atol(argv[++i]);
+            mode = 4;
         } else if (strcmp(argv[i], "--trace") == 0) {
             mode = 3;
         } else if (strcmp(argv[i], "--seed") == 0 && i + 1 < argc) {
@@ -1013,6 +1424,14 @@ int main(int argc, char *argv[]) {
             /* Trace mode: default to 1 packet if not specified */
             if (n_packets <= 0) n_packets = 1;
             return run_trace_mode(seed, (int)n_packets, output_file);
+        case 4:
+            /* GPU simulation mode */
+#ifdef ENABLE_CUDA
+            return run_gpu_simulation(n_packets, spectrum_file);
+#else
+            fprintf(stderr, "Error: GPU mode requires CUDA. Rebuild with: make test_transport_cuda\n");
+            return 1;
+#endif
         default:
             print_usage(argv[0]);
             return 1;
