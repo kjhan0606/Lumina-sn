@@ -39,7 +39,7 @@ HDRS = physics_kernels.h rpacket.h validation.h lumina_rotation.h atomic_data.h 
 CUDA_HDRS = cuda_atomic.h
 
 # Library sources
-LIB_SRCS = rpacket.c validation.c lumina_rotation.c atomic_loader.c plasma_physics.c simulation_state.c
+LIB_SRCS = rpacket.c validation.c lumina_rotation.c atomic_loader.c plasma_physics.c simulation_state.c debug_rng.c
 LIB_OBJS = $(LIB_SRCS:.c=.o)
 
 # CUDA sources
@@ -63,9 +63,9 @@ liblumin.a: $(LIB_OBJS)
 test_kernels: test_kernels.c physics_kernels.h
 	$(CC) $(CFLAGS) $< $(LDFLAGS) -o $@
 
-# Full transport test
+# Full transport test (needs HDF5 for liblumin.a)
 test_transport: test_transport.c liblumin.a
-	$(CC) $(CFLAGS) $< -L. -llumin $(LDFLAGS) -o $@
+	$(CC) $(CFLAGS) $(HDF5_INCLUDE) $< -L. -llumin $(LDFLAGS) $(HDF5_LIB) -o $@
 
 # Atomic data loader test
 test_atomic: test_atomic.c atomic_loader.o atomic_data.h
@@ -98,6 +98,10 @@ virtual_packet.o: virtual_packet.c virtual_packet.h simulation_state.h physics_k
 # Integrated plasma-transport test
 test_integrated: test_integrated.c simulation_state.o plasma_physics.o atomic_loader.o lumina_rotation.o macro_atom.o virtual_packet.o
 	$(CC) $(CFLAGS) $(HDF5_INCLUDE) $< simulation_state.o plasma_physics.o atomic_loader.o lumina_rotation.o macro_atom.o virtual_packet.o $(LDFLAGS) $(HDF5_LIB) -o $@
+
+# TARDIS trace generator for validation
+test_tardis_trace: test_tardis_trace.c rpacket.o simulation_state.o plasma_physics.o atomic_loader.o
+	$(CC) $(CFLAGS) $(HDF5_INCLUDE) $< rpacket.o simulation_state.o plasma_physics.o atomic_loader.o $(LDFLAGS) $(HDF5_LIB) -o $@
 
 # ============================================================================
 # CUDA TARGETS

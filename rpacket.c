@@ -21,9 +21,36 @@
 #include "physics_kernels.h"  /* Must come before rpacket.h */
 #include "rpacket.h"
 #include "atomic_data.h"      /* For LINE_DOWNBRANCH fluorescence */
+#include "debug_rng.h"        /* For RNG injection diagnostics */
 
 /* Global relativity mode flag (used by physics_kernels.h) */
 int ENABLE_FULL_RELATIVITY = 0;
+
+/* ============================================================================
+ * DEBUG MODE: Inject RNG and print diagnostics
+ * Set via environment variable or compile flag
+ * ============================================================================ */
+static int g_debug_transport = 0;
+static int g_use_injected_rng_transport = 0;
+
+void rpacket_set_debug_mode(int enable_debug, int use_injected_rng) {
+    g_debug_transport = enable_debug;
+    g_use_injected_rng_transport = use_injected_rng;
+    if (enable_debug) {
+        fprintf(stderr, "[RPACKET] Debug mode ENABLED\n");
+        fprintf(stderr, "[RPACKET] Injected RNG for transport: %s\n",
+                use_injected_rng ? "YES" : "NO");
+    }
+}
+
+/* Get random number - uses injected RNG if enabled */
+static inline double transport_rng(RNGState *rng) {
+    if (g_use_injected_rng_transport && g_debug_rng_loaded) {
+        return debug_rng_next();
+    } else {
+        return rng_uniform(rng);
+    }
+}
 
 /* ============================================================================
  * PACKET INITIALIZATION
@@ -371,12 +398,38 @@ InteractionType trace_packet(RPacket *pkt, const NumbaModel *model,
         pkt->r, pkt->mu, r_inner, r_outer, &delta_shell);
 
     /* Sample random optical depth for next event */
-    double tau_event = -log(rng_uniform(&pkt->rng_state));
+    /* Use injected RNG if enabled for debugging */
+    double xi_tau = transport_rng(&pkt->rng_state);
+    double tau_event = -log(xi_tau);
 
     /* Initialize electron scattering */
     double electron_density = plasma->electron_density[shell_id];
     double distance_electron = calculate_distance_electron(
         electron_density, tau_event);
+
+    /* ================================================================
+     * DEBUG DIAGNOSTICS: Print physics variables for Packet #0
+     * ================================================================ */
+    if (g_debug_transport && pkt->index == 0) {
+        fprintf(stderr, "[DEBUG] ====== trace_packet START ======\n");
+        fprintf(stderr, "[DEBUG] Packet #%ld, Shell %ld\n",
+                (long)pkt->index, (long)shell_id);
+        fprintf(stderr, "[DEBUG]   r = %.16e cm\n", pkt->r);
+        fprintf(stderr, "[DEBUG]   mu = %.16e\n", pkt->mu);
+        fprintf(stderr, "[DEBUG]   r_inner = %.16e, r_outer = %.16e\n",
+                r_inner, r_outer);
+        fprintf(stderr, "[DEBUG]   xi (RNG) = %.16e\n", xi_tau);
+        fprintf(stderr, "[DEBUG]   tau_event = -ln(xi) = %.16e\n", tau_event);
+        fprintf(stderr, "[DEBUG]   n_e = %.16e cm^-3\n", electron_density);
+        fprintf(stderr, "[DEBUG]   d_boundary = %.16e cm (delta=%d)\n",
+                distance_boundary, delta_shell);
+        fprintf(stderr, "[DEBUG]   d_electron = %.16e cm\n", distance_electron);
+        if (g_use_injected_rng_transport) {
+            fprintf(stderr, "[DEBUG]   RNG index now = %d\n", debug_rng_get_index());
+        }
+        fprintf(stderr, "[DEBUG]   Winner: %s\n",
+                (distance_electron < distance_boundary) ? "ESCATTERING" : "BOUNDARY");
+    }
 
     /* Pre-compute the minimum distance for early exit optimization */
     double distance_limit = (distance_boundary < distance_electron) ?

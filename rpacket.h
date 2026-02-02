@@ -486,4 +486,18 @@ void update_line_estimators(Estimators *est, const RPacket *pkt,
                             int64_t line_id, double distance,
                             double time_explosion);
 
+/* --- Debug Mode (for TARDIS validation) --- */
+
+/**
+ * rpacket_set_debug_mode: Enable diagnostic output in trace_packet()
+ *
+ * When enabled, trace_packet() prints detailed physics variables
+ * (n_e, tau_event, distances) for Packet #0 to help diagnose
+ * divergence between LUMINA and TARDIS.
+ *
+ * @param enable_debug     1 to enable debug prints, 0 to disable
+ * @param use_injected_rng 1 to use debug_rng.h injected RNG stream
+ */
+void rpacket_set_debug_mode(int enable_debug, int use_injected_rng);
+
 #endif /* RPACKET_H */
