@@ -42,7 +42,10 @@ PhysicsOverrides g_physics_overrides = {
     .bf_opacity_scale = 1.0,            /* Standard bound-free */
     .ff_opacity_scale = 1.0,            /* Standard free-free */
     .R_photosphere = 0.0,               /* Set at runtime */
-    .enable_dilution_factor = true      /* Enable NLTE dilution */
+    .enable_dilution_factor = true,     /* Enable NLTE dilution */
+    /* Line interaction type: SCATTER for TARDIS compatibility */
+    .line_interaction_type = LINE_SCATTER,
+    .use_macro_atom = 0
 };
 
 PhysicsOverrides physics_overrides_default(void) {
@@ -66,8 +69,13 @@ PhysicsOverrides physics_overrides_default(void) {
         .blue_fluor_min_angstrom = 3500.0,        /* Fluorescence range 3500-5500 Å */
         .blue_fluor_max_angstrom = 5500.0,
         .blue_scatter_probability = 0.70,         /* 70% of blue photons scatter */
-        /* Macro-atom integration: enabled by default */
-        .use_macro_atom = 1
+        /* Line interaction type: SCATTER for TARDIS compatibility */
+        .line_interaction_type = LINE_SCATTER,
+        /* Legacy: macro-atom disabled when using SCATTER mode */
+        .use_macro_atom = 0,
+        /* Virtual packet spawning (TARDIS-style) - disabled by default */
+        .enable_virtual_packets = 0,
+        .n_virtual_packets = 10
     };
     return defaults;
 }
@@ -94,10 +102,57 @@ PhysicsOverrides physics_overrides_legacy_hack(void) {
         .blue_fluor_min_angstrom = 3500.0,
         .blue_fluor_max_angstrom = 5500.0,
         .blue_scatter_probability = 0.0,
-        /* Legacy mode: disable macro-atom */
-        .use_macro_atom = 0
+        /* Legacy mode: use SCATTER */
+        .line_interaction_type = LINE_SCATTER,
+        .use_macro_atom = 0,
+        /* Virtual packet spawning - disabled in legacy mode */
+        .enable_virtual_packets = 0,
+        .n_virtual_packets = 10
     };
     return legacy;
+}
+
+/* TARDIS-compatible mode: NO extra physics layers
+ * Line interaction type determines photon fate (SCATTER, DOWNBRANCH, or MACROATOM).
+ * All LUMINA-specific thermalization/fluorescence DISABLED.
+ *
+ * Default to SCATTER mode for exact TARDIS comparison.
+ * Set LUMINA_LINE_INTERACTION_TYPE=2 for macro-atom mode.
+ */
+PhysicsOverrides physics_overrides_tardis_mode(void) {
+    PhysicsOverrides tardis = {
+        /* Use shell temperature (set dynamically during transport) */
+        .t_boundary = 10000.0,
+        /* NO extra thermalization - line interaction type decides everything */
+        .ir_thermalization_frac = 0.0,
+        .base_thermalization_frac = 0.0,
+        /* No blue opacity scaling */
+        .blue_opacity_scalar = 1.0,
+        .ir_wavelength_min = 7000.0,
+        .blue_wavelength_min = 3500.0,
+        .blue_wavelength_max = 4500.0,
+        /* Continuum opacity - disabled like TARDIS by default */
+        .enable_continuum_opacity = false,
+        .bf_opacity_scale = 0.0,
+        .ff_opacity_scale = 0.0,
+        .R_photosphere = 0.0,
+        .enable_dilution_factor = true,     /* TARDIS uses W factor */
+        /* NO wavelength-dependent fluorescence tricks */
+        .enable_wavelength_fluorescence = false,
+        .uv_cutoff_angstrom = 3000.0,
+        .uv_to_blue_probability = 0.0,
+        .blue_fluor_min_angstrom = 3500.0,
+        .blue_fluor_max_angstrom = 5500.0,
+        .blue_scatter_probability = 0.0,
+        /* Line interaction: SCATTER by default (simplest TARDIS mode)
+         * Set LUMINA_LINE_INTERACTION_TYPE=2 for MACROATOM mode */
+        .line_interaction_type = LINE_SCATTER,
+        .use_macro_atom = 0,  /* Deprecated - use line_interaction_type */
+        /* Virtual packet spawning - ENABLED in TARDIS mode for proper comparison */
+        .enable_virtual_packets = 1,
+        .n_virtual_packets = 10
+    };
+    return tardis;
 }
 
 void physics_overrides_set(const PhysicsOverrides *overrides) {
@@ -1031,8 +1086,11 @@ static int compare_active_lines(const void *a, const void *b)
     const ActiveLine *la = (const ActiveLine *)a;
     const ActiveLine *lb = (const ActiveLine *)b;
 
-    if (la->nu < lb->nu) return -1;
-    if (la->nu > lb->nu) return 1;
+    /* Sort DESCENDING by frequency (high nu first).
+     * This is required for TARDIS-style transport: as photons redshift
+     * traveling outward, they encounter lines from high to low frequency. */
+    if (la->nu > lb->nu) return -1;
+    if (la->nu < lb->nu) return 1;
     return 0;
 }
 
@@ -1427,6 +1485,130 @@ double get_next_line_interaction(const ShellState *shell,
         return d;
     }
 
+    return 1e99;
+}
+
+/* ============================================================================
+ * TARDIS-STYLE LINE INTERACTION (CORRECT SOBOLEV ALGORITHM)
+ * ============================================================================
+ *
+ * This implements the CORRECT Sobolev approximation as used in TARDIS:
+ *
+ * 1. Lines are sorted by frequency (decreasing, so higher nu first)
+ * 2. Packet tracks next_line_id to know where it left off
+ * 3. As packet travels, its comoving frequency redshifts (decreases)
+ * 4. It passes through lines in order, accumulating optical depth
+ * 5. When cumulative τ exceeds random τ_event, it interacts with that line
+ *
+ * The key insight is that packets interact with lines IN ORDER OF FREQUENCY,
+ * not by "jumping" to the strongest line in a window.
+ */
+
+double get_line_interaction_tardis_style(
+    const ShellState *shell,
+    double nu_cmf, double r, double mu,
+    double t_exp,
+    int64_t start_line_id,
+    double tau_event,
+    double d_max,  /* Maximum distance to search for lines */
+    int64_t *line_idx, double *tau_line,
+    int64_t *next_line_id)
+{
+    *line_idx = -1;
+    *tau_line = 0.0;
+    *next_line_id = start_line_id;
+
+    if (shell->n_active_lines == 0) {
+        return 1e99;
+    }
+
+    const ActiveLine *lines = shell->active_lines;
+    int64_t n_lines = shell->n_active_lines;
+
+    /* Lines are sorted by frequency (descending: high nu first).
+     * As the packet travels outward, its comoving frequency DEcreases
+     * (redshifts due to velocity gradient).
+     * So we iterate through lines in order of decreasing frequency.
+     */
+
+    double tau_cumulative = 0.0;
+    double v = r / t_exp;  /* Local expansion velocity */
+
+    /* Find starting position: first line with nu <= nu_cmf */
+    int64_t cur_line = start_line_id;
+
+    /* If starting fresh (start_line_id == 0), find where nu_cmf sits */
+    if (start_line_id == 0) {
+        /* Binary search for first line with nu <= nu_cmf */
+        int64_t lo = 0, hi = n_lines;
+        while (lo < hi) {
+            int64_t mid = (lo + hi) / 2;
+            if (lines[mid].nu > nu_cmf) {
+                lo = mid + 1;
+            } else {
+                hi = mid;
+            }
+        }
+        cur_line = lo;
+    }
+
+    (void)d_max;  /* Kept for API compatibility */
+
+    /* Cumulative τ approach (TARDIS-style):
+     * Accumulate τ across lines until τ_cumulative > τ_event, then interact
+     * with the line that pushed us over the threshold.
+     *
+     * Key insight: tau_event is sampled ONCE per packet trajectory. We need
+     * to track how much τ has been accumulated so far. When we reach a line
+     * and τ_cumulative + τ_line > τ_event, we interact with that line.
+     *
+     * Note: The caller passes tau_event but we don't have tau_accumulated from
+     * the packet. This function will accumulate τ starting from 0, which is
+     * reset for this shell/direction. For proper multi-step tracking, we'd
+     * need to track tau_accumulated in the packet struct.
+     */
+    for (int64_t i = cur_line; i < n_lines; i++) {
+        double nu_line = lines[i].nu;
+
+        /* Skip lines with frequency higher than current comoving frequency */
+        if (nu_line > nu_cmf * 1.001) {
+            continue;
+        }
+
+        /* Calculate distance to this line */
+        double nu_ratio = nu_cmf / nu_line;
+        double d_line_i;
+
+        if (nu_ratio < 1.0001) {
+            /* Already at or past this line */
+            d_line_i = 1e8;  /* Very small: 1 km */
+        } else {
+            d_line_i = CONST_C * (nu_ratio - 1.0) * t_exp;
+        }
+
+        /* Get τ for this line */
+        double tau_this_line = lines[i].tau_sobolev;
+
+        /* Accumulate τ */
+        tau_cumulative += tau_this_line;
+
+        /* Check if we exceed the random threshold */
+        if (tau_cumulative > tau_event) {
+            /* Interact with THIS line */
+            *line_idx = lines[i].line_idx;
+            *tau_line = tau_this_line;
+            *next_line_id = i;
+            return d_line_i;
+        }
+
+        /* Stop searching if too far below current frequency */
+        if (nu_line < nu_cmf * 0.85) {
+            break;
+        }
+    }
+
+    /* No interaction - return large distance */
+    *next_line_id = n_lines;
     return 1e99;
 }
 

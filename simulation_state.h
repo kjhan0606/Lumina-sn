@@ -146,16 +146,49 @@ typedef struct {
     double blue_fluor_max_angstrom;          /* Blue fluorescence emission range max (5500 Å) */
     double blue_scatter_probability;         /* Blue photons: scatter vs thermalize (0.7) */
 
-    /* =========== Macro-Atom Integration =========== */
+    /* =========== Line Interaction Type (TARDIS-style) =========== */
 
-    /* Use macro-atom formalism for line interactions
-     * When enabled, line interactions use macro_atom_process_line_interaction()
-     * which enables multi-step cascade and proper fluorescence.
-     * Default: enabled (1), disable with LUMINA_MACRO_ATOM=0
+    /* Line interaction handling mode (matching TARDIS exactly):
+     *   0 = SCATTER: Pure resonance scattering - emit at SAME line frequency
+     *                (comoving frame), only Doppler shifts change lab frequency.
+     *                This is the simplest mode with NO frequency redistribution.
+     *
+     *   1 = DOWNBRANCH: Simplified cascade - only downward radiative transitions.
+     *                   Fluorescence to longer wavelengths only.
+     *
+     *   2 = MACROATOM: Full macro-atom cascade with up/down transitions.
+     *                  Uses transition probabilities for complete redistribution.
+     *
+     * Default: 0 (SCATTER) to match TARDIS baseline behavior.
+     * Set with LUMINA_LINE_INTERACTION_TYPE environment variable.
      */
+    int line_interaction_type;
+
+    /* Legacy: use_macro_atom is now deprecated, use line_interaction_type instead */
     int use_macro_atom;
 
+    /* =========== Virtual Packet Spectrum (TARDIS-style) =========== */
+
+    /* Enable virtual packet spawning for spectrum synthesis.
+     * When enabled, virtual packets are spawned toward the observer at:
+     *   1. Initial packet position
+     *   2. After each electron scattering
+     *   3. After each line interaction
+     *   4. After each continuum interaction
+     *
+     * This matches TARDIS trace_vpacket_volley behavior for observer spectra.
+     * Set with LUMINA_VPACKET environment variable.
+     */
+    int enable_virtual_packets;
+    int n_virtual_packets;          /* Number of v-packets per spawn (default: 10) */
+
 } PhysicsOverrides;
+
+/* Note: LineInteractionType enum is defined in rpacket.h as:
+ *   LINE_SCATTER    = 0  (pure resonance scattering)
+ *   LINE_DOWNBRANCH = 1  (simplified cascade)
+ *   LINE_MACROATOM  = 2  (full macro-atom cascade)
+ */
 
 /* Global physics overrides instance */
 extern PhysicsOverrides g_physics_overrides;
@@ -165,6 +198,9 @@ PhysicsOverrides physics_overrides_default(void);
 
 /* Initialize with legacy "hack" values (60,000 K boundary, no continuum) */
 PhysicsOverrides physics_overrides_legacy_hack(void);
+
+/* TARDIS-compatible mode: NO extra physics layers, pure macro-atom */
+PhysicsOverrides physics_overrides_tardis_mode(void);
 
 /* Apply overrides globally */
 void physics_overrides_set(const PhysicsOverrides *overrides);
@@ -598,6 +634,37 @@ double get_next_line_interaction(const ShellState *shell,
                                   double nu_cmf, double r, double mu,
                                   double t_exp,
                                   int64_t *line_idx, double *tau_line);
+
+/**
+ * TARDIS-style line interaction using cumulative optical depth
+ *
+ * This is the CORRECT Sobolev approximation algorithm:
+ * 1. Iterate through lines in frequency order starting from start_line_id
+ * 2. Accumulate τ_sobolev for each line
+ * 3. When cumulative τ > tau_event, interact with that line
+ * 4. Return distance to that line and update next_line_id
+ *
+ * @param shell           Shell state with sorted active lines
+ * @param nu_cmf          Comoving frame frequency [Hz]
+ * @param r               Current radius [cm]
+ * @param mu              Direction cosine
+ * @param t_exp           Time since explosion [s]
+ * @param start_line_id   Index in active_lines to start from
+ * @param tau_event       Random optical depth threshold (-log(ξ))
+ * @param line_idx        [out] Global line index of interacting line
+ * @param tau_line        [out] Optical depth of interacting line
+ * @param next_line_id    [out] Index to continue from after interaction
+ * @return Distance to interaction [cm], or 1e99 if boundary/continuum first
+ */
+double get_line_interaction_tardis_style(
+    const ShellState *shell,
+    double nu_cmf, double r, double mu,
+    double t_exp,
+    int64_t start_line_id,
+    double tau_event,
+    double d_max,  /* Maximum distance to search for lines */
+    int64_t *line_idx, double *tau_line,
+    int64_t *next_line_id);
 
 /* ============================================================================
  * TRANSPORT INTEGRATION

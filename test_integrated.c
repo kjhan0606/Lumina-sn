@@ -30,6 +30,7 @@
 #include "rpacket.h"
 #include "lumina_rotation.h"
 #include "macro_atom.h"
+#include "virtual_packet.h"
 
 /* Required by physics_kernels.h - set to 0 for first-order Doppler */
 int ENABLE_FULL_RELATIVITY = 0;
@@ -63,6 +64,12 @@ static struct {
     long n_macro_atom_calls;  /* Total macro-atom process calls */
     long n_macro_emit;        /* Radiative de-activations */
     long n_macro_absorb;      /* Collisional de-activations (absorbed) */
+
+    /* Debug: line selection tracking */
+    long n_line_checks;       /* Times we checked for line interaction */
+    long n_line_no_idx;       /* Times line_idx was -1 */
+    long n_line_low_tau;      /* Times tau_line <= 0.1 */
+    long n_line_selected;     /* Times line was selected as d_min */
 } g_line_stats = {0};
 
 static void reset_line_stats(void) {
@@ -72,6 +79,18 @@ static void reset_line_stats(void) {
 static void print_line_stats(void) {
     long total = g_line_stats.n_uv_interact + g_line_stats.n_blue_interact +
                  g_line_stats.n_red_interact + g_line_stats.n_ir_interact;
+
+    printf("\n[LINE INTERACTION DIAGNOSTICS]\n");
+    printf("  Line selection debug:\n");
+    printf("    Total checks:     %ld\n", g_line_stats.n_line_checks);
+    printf("    No line found:    %ld (%.1f%%)\n", g_line_stats.n_line_no_idx,
+           g_line_stats.n_line_checks > 0 ? 100.0 * g_line_stats.n_line_no_idx / g_line_stats.n_line_checks : 0.0);
+    printf("    Low tau (<0.1):   %ld (%.1f%%)\n", g_line_stats.n_line_low_tau,
+           g_line_stats.n_line_checks > 0 ? 100.0 * g_line_stats.n_line_low_tau / g_line_stats.n_line_checks : 0.0);
+    printf("    Line selected:    %ld (%.1f%%)\n", g_line_stats.n_line_selected,
+           g_line_stats.n_line_checks > 0 ? 100.0 * g_line_stats.n_line_selected / g_line_stats.n_line_checks : 0.0);
+    printf("  Total line interactions: %ld\n", total);
+    printf("  Macro-atom calls: %ld\n", g_line_stats.n_macro_atom_calls);
 
     if (total == 0) return;
 
@@ -531,6 +550,9 @@ typedef struct {
     int    shell;
     int    status;  /* 0=in_process, 1=escaped, 2=absorbed */
     int    n_interactions;
+    int64_t next_line_id;  /* TARDIS-style: track position in line list */
+    double  tau_event;     /* Random τ threshold for next interaction */
+    double  tau_accumulated; /* Cumulative τ across line searches */
 } TransportPkt;
 
 static void init_transport_pkt(TransportPkt *pkt, double r_inner, double nu, double energy)
@@ -545,6 +567,9 @@ static void init_transport_pkt(TransportPkt *pkt, double r_inner, double nu, dou
     pkt->shell = 0;
     pkt->status = 0;  /* in process */
     pkt->n_interactions = 0;
+    pkt->next_line_id = 0;  /* Start from first line */
+    pkt->tau_event = -log(drand48() + 1e-30);  /* Random τ threshold */
+    pkt->tau_accumulated = 0.0;  /* No τ accumulated yet */
 }
 
 static int find_shell_idx(const SimulationState *state, double r)
@@ -622,14 +647,28 @@ static void transport_single_packet(TransportPkt *pkt,
         double tau_e = -log(drand48() + 1e-30);
         d_electron = tau_e / (shell->sigma_thomson_ne + 1e-30);
 
-        /* Distance to line interaction */
+        /* Distance to line interaction - TARDIS-style cumulative τ */
         /* Get comoving frame frequency */
         double beta = pkt->r / (state->t_explosion * CONST_C);
         double doppler = 1.0 - beta * pkt->mu;
         double nu_cmf = pkt->nu * doppler;
 
-        d_line = get_next_line_interaction(shell, nu_cmf, pkt->r, pkt->mu,
-                                           state->t_explosion, &line_idx, &tau_line);
+        /* Maximum distance before other interactions occur */
+        double d_max_search = (d_electron < d_boundary) ? d_electron : d_boundary;
+
+        int64_t next_line_id_out;
+        d_line = get_line_interaction_tardis_style(
+            shell, nu_cmf, pkt->r, pkt->mu,
+            state->t_explosion,
+            pkt->next_line_id,   /* Start from where we left off */
+            pkt->tau_event,      /* Random τ threshold */
+            d_max_search,        /* Don't search beyond this distance */
+            &line_idx, &tau_line, &next_line_id_out);
+
+        /* Debug: track line selection statistics */
+        g_line_stats.n_line_checks++;
+        if (line_idx < 0) g_line_stats.n_line_no_idx++;
+        else if (tau_line <= 0.1) g_line_stats.n_line_low_tau++;
 
         /*
          * NEW: Distance to continuum absorption (bf + ff)
@@ -657,9 +696,11 @@ static void transport_single_packet(TransportPkt *pkt,
             interaction_type = 1;
         }
 
-        if (d_line < d_min && tau_line > 0.1) {
+        /* Line interaction: cumulative τ approach already decided. */
+        if (line_idx >= 0 && d_line < d_min && tau_line > 0.001) {
             d_min = d_line;
             interaction_type = 2;
+            g_line_stats.n_line_selected++;
         }
 
         /* Continuum absorption - KEY for removing IR hack */
@@ -685,7 +726,9 @@ static void transport_single_packet(TransportPkt *pkt,
         /* Process interaction */
         switch (interaction_type) {
             case 0:  /* Boundary crossing */
-                /* Nothing special - will find new shell on next iteration */
+                /* Reset line tracking when entering new shell */
+                pkt->next_line_id = 0;
+                pkt->tau_event = -log(drand48() + 1e-30);
                 break;
 
             case 1:  /* Electron scattering */
@@ -693,6 +736,9 @@ static void transport_single_packet(TransportPkt *pkt,
                 pkt->mu = 2.0 * drand48() - 1.0;
                 spec->n_scattered++;
                 pkt->n_interactions++;
+                /* After scattering, frequency changes - restart line search */
+                pkt->next_line_id = 0;
+                pkt->tau_event = -log(drand48() + 1e-30);
                 break;
 
             case 2:  /* Line interaction (Sobolev approximation) */
@@ -735,7 +781,64 @@ static void transport_single_packet(TransportPkt *pkt,
                             g_line_stats.n_ir_interact++;
                         }
 
-                        if (g_physics_overrides.use_macro_atom) {
+                        /* =============================================================
+                         * LINE INTERACTION HANDLING (TARDIS-style)
+                         * =============================================================
+                         * Three modes matching TARDIS exactly:
+                         *   0 = SCATTER:    Pure resonance scattering (same line freq)
+                         *   1 = DOWNBRANCH: Simplified cascade (downward only)
+                         *   2 = MACROATOM:  Full macro-atom cascade
+                         */
+                        int line_mode = g_physics_overrides.line_interaction_type;
+
+                        if (line_mode == LINE_SCATTER) {
+                            /* ============================================================
+                             * SCATTER MODE: Pure resonance scattering (TARDIS SCATTER)
+                             * ============================================================
+                             * The packet is re-emitted at the SAME LINE FREQUENCY (in CMF).
+                             * Only the Doppler shift changes due to new random direction.
+                             *
+                             * This is the simplest mode with NO frequency redistribution.
+                             * TARDIS uses this in scatter mode: line_emission(next_line_id)
+                             *
+                             * Algorithm (matching TARDIS line_scatter_event + line_emission):
+                             *   1. Get old Doppler factor (for energy conservation)
+                             *   2. Draw new random direction μ_new
+                             *   3. Get inverse Doppler factor for new direction
+                             *   4. nu_lab = nu_line * inverse_doppler_factor
+                             *   5. energy_lab = energy_cmf * inverse_doppler_factor
+                             */
+                            g_line_stats.n_scatter++;
+
+                            const Line *line = &state->atomic_data->lines[line_idx];
+                            double nu_line = line->nu;  /* Rest-frame line frequency */
+
+                            /* Old Doppler factor (before scatter) */
+                            double beta = pkt->r / (state->t_explosion * CONST_C);
+                            double old_doppler = 1.0 - beta * pkt->mu;
+
+                            /* New random direction (isotropic in CMF) */
+                            double mu_cmf_new = 2.0 * drand48() - 1.0;
+
+                            /* Transform to lab frame (angle aberration) */
+                            double mu_lab_new = (mu_cmf_new + beta) / (1.0 + beta * mu_cmf_new);
+                            pkt->mu = mu_lab_new;
+
+                            /* Inverse Doppler factor for new direction */
+                            double inv_doppler_new = 1.0 / (1.0 - beta * mu_lab_new);
+
+                            /* Energy conservation: transform energy through CMF */
+                            double energy_cmf = pkt->energy * old_doppler;
+                            pkt->energy = energy_cmf * inv_doppler_new;
+
+                            /* KEY: Emit at the SAME line frequency (in CMF), Doppler-shifted */
+                            pkt->nu = nu_line * inv_doppler_new;
+
+                            pkt->n_interactions++;
+                            pkt->next_line_id = line_idx + 1;  /* Move past this line */
+                            pkt->tau_event = -log(drand48() + 1e-30);
+
+                        } else if (line_mode == LINE_MACROATOM) {
                             /* ============================================================
                              * MACRO-ATOM MODE: Full multi-step cascade fluorescence
                              * ============================================================
@@ -744,9 +847,6 @@ static void transport_single_packet(TransportPkt *pkt,
                              *   2. Runs transition loop (up to 100 jumps)
                              *   3. Selects emission line based on transition probabilities
                              *   4. Returns new direction and frequency
-                             *
-                             * This properly handles UV→optical fluorescence via atomic
-                             * cascades, unlike the simplified probability-based model.
                              */
                             g_line_stats.n_macro_atom_calls++;
 
@@ -772,7 +872,7 @@ static void transport_single_packet(TransportPkt *pkt,
                             int survives = macro_atom_process_line_interaction(
                                 &rpkt, state->atomic_data, line_idx,
                                 shell->plasma.T, shell->plasma.n_e,
-                                W_shell, tau_arr,  /* tau_sobolev for β factor */
+                                W_shell, tau_arr,
                                 state->t_explosion);
 
                             if (survives) {
@@ -781,383 +881,66 @@ static void transport_single_packet(TransportPkt *pkt,
                                 pkt->nu = rpkt.nu;
                                 pkt->n_interactions++;
 
-                                /* Track cascade statistics based on wavelength shift */
+                                pkt->next_line_id = next_line_id_out;
+                                pkt->tau_event = -log(drand48() + 1e-30);
+
+                                /* Track cascade statistics */
                                 double new_wl = CONST_C / pkt->nu * 1e8;
                                 if (new_wl > wavelength_A * 1.05) {
-                                    g_line_stats.n_thermalize++;  /* Fluorescence (red-shift) */
-                                } else {
-                                    g_line_stats.n_scatter++;     /* Near-resonant */
+                                    g_line_stats.n_thermalize++;
                                 }
 
-                                /* Debug output for macro-atom events */
                                 static int macro_debug_count = 0;
                                 if (macro_debug_count < 5 && fabs(new_wl - wavelength_A) > 100.0) {
-                                    printf("  [MACRO-ATOM] λ=%.0f → %.0f Å (cascade emission)\n",
+                                    printf("  [MACRO-ATOM] λ=%.0f → %.0f Å (cascade)\n",
                                            wavelength_A, new_wl);
                                     macro_debug_count++;
                                 }
                             } else {
                                 g_line_stats.n_macro_absorb++;
-                                pkt->status = 2;  /* Absorbed (thermalized) */
+                                pkt->status = 2;
                                 pkt->n_interactions++;
                                 g_line_stats.n_ir_absorbed++;
                                 return;
                             }
                         } else {
-                            /* ============================================================
-                             * LEGACY MODE: Probability-based line handling
-                             * ============================================================ */
-                            const Line *line = &state->atomic_data->lines[line_idx];
-
-                        if (drand48() < epsilon) {
-                            /*
-                             * Task Order #30 v2.1: Wavelength-Dependent Fluorescence
-                             *
-                             * KEY PHYSICS INSIGHT:
-                             * UV photons absorbed by metal lines don't thermalize - they
-                             * cascade through atomic levels and preferentially emit in
-                             * the blue/optical band. This is the "macro-atom" effect.
-                             *
-                             * Implementation:
-                             * 1. UV (λ < 3000 Å) → Direct fluorescence to blue (3500-5500 Å)
-                             *    Physics: UV excites atoms to high states, cascade emits optical
-                             *
-                             * 2. Blue (3000-7000 Å) → High scatter probability, low thermalize
-                             *    Physics: Optical photons more likely to resonance scatter
-                             *
-                             * 3. IR (λ > 7000 Å) → Thermalize at T_boundary
-                             *    Physics: Low-energy photons couple to thermal bath
-                             *
-                             * This allows T_boundary ~ 13,000 K to work because:
-                             * - UV → blue fluorescence maintains blue flux directly
-                             * - Blue scattering preserves existing blue photons
-                             * - Only IR truly thermalizes
-                             */
-
-                            double new_nu;
-                            static int uv_fluor_count = 0, blue_scatter_count = 0, ir_therm_count = 0;
-
-                            if (g_physics_overrides.enable_wavelength_fluorescence) {
-                                /* Wavelength-dependent fluorescence model */
-
-                                if (wavelength_A < g_physics_overrides.uv_cutoff_angstrom) {
-                                    /* UV PHOTON: Fluorescence to blue band */
-                                    if (drand48() < g_physics_overrides.uv_to_blue_probability) {
-                                        /* Direct UV → blue fluorescence
-                                         * Emit uniformly in the blue/optical band (3500-5500 Å)
-                                         * This mimics atomic cascade emission, NOT Planck
-                                         */
-                                        double nu_min = wavelength_angstrom_to_nu(g_physics_overrides.blue_fluor_max_angstrom);
-                                        double nu_max = wavelength_angstrom_to_nu(g_physics_overrides.blue_fluor_min_angstrom);
-                                        new_nu = nu_min + drand48() * (nu_max - nu_min);
-                                        g_line_stats.n_uv_to_blue++;
-
-                                        if (uv_fluor_count < 5) {
-                                            double new_wl = CONST_C / new_nu * 1e8;
-                                            printf("  [UV→BLUE FLUOR] λ=%.0f Å → %.0f Å (direct cascade)\n",
-                                                   wavelength_A, new_wl);
-                                            uv_fluor_count++;
-                                        }
-                                    } else {
-                                        g_line_stats.n_thermalize++;
-                                        /* Small fraction thermalizes at local temperature */
-                                        double T_local = shell->plasma.T;
-                                        if (T_local < 5000.0) T_local = 5000.0;
-
-                                        new_nu = sample_planck_frequency(
-                                            T_local,
-                                            wavelength_angstrom_to_nu(12000.0),
-                                            wavelength_angstrom_to_nu(3500.0)
-                                        );
-                                    }
-
-                                } else if (wavelength_A < 5000.0) {
-                                    /* BLUE PHOTON (3000-5000Å): Moderate scatter
-                                     * Blue photons can thermalize, shifting some flux redward
-                                     */
-                                    double blue_scatter = g_physics_overrides.blue_scatter_probability;
-
-                                    if (drand48() < blue_scatter) {
-                                        /* Resonance scatter: preserve wavelength */
-                                        double beta_new = pkt->r / (state->t_explosion * CONST_C);
-                                        pkt->mu = 2.0 * drand48() - 1.0;
-                                        double doppler_new = 1.0 - beta_new * pkt->mu;
-                                        new_nu = line->nu / doppler_new;
-                                        g_line_stats.n_blue_scatter++;
-
-                                        if (blue_scatter_count < 5) {
-                                            double new_wl = CONST_C / new_nu * 1e8;
-                                            printf("  [BLUE SCATTER] λ=%.0f Å → %.0f Å (preserved)\n",
-                                                   wavelength_A, new_wl);
-                                            blue_scatter_count++;
-                                        }
-                                    } else {
-                                        /* Blue fluorescence via atomic downbranch cascade
-                                         *
-                                         * PHYSICS: When a blue photon is absorbed, the atom
-                                         * de-excites via one of several possible emission lines.
-                                         * The downbranch table contains pre-computed branching
-                                         * ratios: p_k = A_ul(k) / Σ_j A_ul(j)
-                                         *
-                                         * This properly redistributes blue flux to redder
-                                         * wavelengths via atomic level transitions (like TARDIS
-                                         * macro-atom mode), rather than simple Planck sampling.
-                                         */
-                                        g_line_stats.n_thermalize++;
-
-                                        /* Try downbranch if available */
-                                        if (state->atomic_data->downbranch.initialized && line_idx >= 0) {
-                                            int64_t emit_line = atomic_sample_downbranch(
-                                                state->atomic_data, line_idx, drand48());
-
-                                            if (emit_line >= 0 && emit_line < state->atomic_data->n_lines) {
-                                                /* Use emission line frequency */
-                                                const Line *emit = &state->atomic_data->lines[emit_line];
-                                                double beta_new = pkt->r / (state->t_explosion * CONST_C);
-                                                pkt->mu = 2.0 * drand48() - 1.0;
-                                                double doppler_new = 1.0 - beta_new * pkt->mu;
-                                                new_nu = emit->nu / doppler_new;
-
-                                                static int fluor_debug = 0;
-                                                if (fluor_debug < 3) {
-                                                    double new_wl = CONST_C / new_nu * 1e8;
-                                                    printf("  [BLUE FLUOR] λ=%.0f Å → %.0f Å (downbranch)\n",
-                                                           wavelength_A, new_wl);
-                                                    fluor_debug++;
-                                                }
-                                            } else {
-                                                /* Fallback: thermal at local T */
-                                                double T_local = shell->plasma.T;
-                                                if (T_local < 5000.0) T_local = 5000.0;
-                                                new_nu = sample_planck_frequency(
-                                                    T_local,
-                                                    wavelength_angstrom_to_nu(12000.0),
-                                                    wavelength_angstrom_to_nu(4500.0)
-                                                );
-                                            }
-                                        } else {
-                                            /* No downbranch table: thermal fallback */
-                                            double T_local = shell->plasma.T;
-                                            if (T_local < 5000.0) T_local = 5000.0;
-                                            new_nu = sample_planck_frequency(
-                                                T_local,
-                                                wavelength_angstrom_to_nu(12000.0),
-                                                wavelength_angstrom_to_nu(4500.0)
-                                            );
-                                        }
-                                    }
-
-                                } else if (wavelength_A < g_physics_overrides.ir_wavelength_min) {
-                                    /* RED PHOTON (5000-7000Å): HIGH scatter probability
-                                     *
-                                     * KEY FIX: The red continuum was being suppressed too much.
-                                     * Red photons should mostly scatter (preserve wavelength)
-                                     * to maintain the proper red/blue balance.
-                                     *
-                                     * Physics: In this wavelength range, the line opacity is
-                                     * lower and photons are more likely to resonance scatter
-                                     * than thermalize.
-                                     */
-                                    double red_scatter = 0.95;  /* Very high scatter for red */
-
-                                    if (drand48() < red_scatter) {
-                                        /* Resonance scatter: preserve red wavelength */
-                                        double beta_new = pkt->r / (state->t_explosion * CONST_C);
-                                        pkt->mu = 2.0 * drand48() - 1.0;
-                                        double doppler_new = 1.0 - beta_new * pkt->mu;
-                                        new_nu = line->nu / doppler_new;
-                                        g_line_stats.n_red_scatter++;
-                                    } else {
-                                        /* Small fraction thermalizes at local T */
-                                        g_line_stats.n_thermalize++;
-                                        double T_local = shell->plasma.T;
-                                        if (T_local < 5000.0) T_local = 5000.0;
-
-                                        new_nu = sample_planck_frequency(
-                                            T_local,
-                                            wavelength_angstrom_to_nu(12000.0),
-                                            wavelength_angstrom_to_nu(4500.0)  /* Emit in red/IR */
-                                        );
-                                    }
-
-                                } else {
-                                    /* IR PHOTON: Strong absorption (true thermalization)
-                                     *
-                                     * KEY PHYSICS: In SN ejecta, IR photons are efficiently
-                                     * coupled to the thermal bath via:
-                                     * 1. Free-free absorption by electrons
-                                     * 2. Bound-free absorption by low-ionization species
-                                     * 3. Collisional de-excitation after line absorption
-                                     *
-                                     * This creates the "IR deficit" seen in observed spectra
-                                     * where Blue/Red >> 1 and IR/Red << 1.
-                                     *
-                                     * Implementation: Most IR photons are destroyed (true
-                                     * absorption), with only a small fraction re-emitting
-                                     * at the local temperature. This is physically similar
-                                     * to the ε_ir=0.95 but with local T re-emission.
-                                     */
-                                    double ir_destruction_prob = 0.80;  /* 80% of IR truly absorbed */
-
-                                    if (drand48() < ir_destruction_prob) {
-                                        /* True absorption - photon energy goes to thermal bath */
-                                        pkt->status = 2;  /* Absorbed */
-                                        pkt->n_interactions++;
-                                        g_line_stats.n_ir_absorbed++;
-                                        if (ir_therm_count < 3) {
-                                            printf("  [IR ABSORBED] λ=%.0f Å (true thermalization)\n",
-                                                   wavelength_A);
-                                            ir_therm_count++;
-                                        }
-                                        return;  /* Packet destroyed */
-                                    } else {
-                                        /* 20% re-emit at local temperature */
-                                        g_line_stats.n_thermalize++;
-                                        double T_local = shell->plasma.T;
-                                        if (T_local < 5000.0) T_local = 5000.0;
-
-                                        new_nu = sample_planck_frequency(
-                                            T_local,
-                                            wavelength_angstrom_to_nu(12000.0),
-                                            wavelength_angstrom_to_nu(3500.0)
-                                        );
-
-                                        if (ir_therm_count < 3) {
-                                            double new_wl = CONST_C / new_nu * 1e8;
-                                            printf("  [IR RE-EMIT] λ=%.0f Å → %.0f Å (T_local=%.0f K)\n",
-                                                   wavelength_A, new_wl, T_local);
-                                            ir_therm_count++;
-                                        }
-                                    }
-                                }
-
-                            } else {
-                                /* Legacy mode: simple thermal at T_boundary for all */
-                                new_nu = sample_planck_frequency(
-                                    g_physics_overrides.t_boundary,
-                                    wavelength_angstrom_to_nu(10000.0),
-                                    wavelength_angstrom_to_nu(3000.0)
-                                );
-                            }
-
-                            pkt->nu = new_nu;
-                            pkt->mu = 2.0 * drand48() - 1.0;
-                            pkt->n_interactions++;
-
-                            /* Debug: track Si II fluorescence */
-                            if (line->atomic_number == 14 && line->ion_number == 1) {
-                                static int si_ii_fluor = 0;
-                                if (si_ii_fluor < 5) {
-                                    double new_wl = CONST_C / new_nu * 1e8;
-                                    printf("  [SI II FLUOR] λ=%.1f Å → %.0f Å\n",
-                                           line->wavelength / 1e-8, new_wl);
-                                    si_ii_fluor++;
-                                }
-                            }
-                            /* Continue propagation - don't destroy */
-                        } else {
-                            /* Pure resonance scattering - isotropic re-emission */
-                            pkt->mu = 2.0 * drand48() - 1.0;
-
-                            /* Re-emit at line frequency (rest frame) transformed to lab frame */
-                            double beta_new = pkt->r / (state->t_explosion * CONST_C);
-                            double doppler_new = 1.0 - beta_new * pkt->mu;
-                            pkt->nu = line->nu / doppler_new;
+                            /* DOWNBRANCH MODE: Simplified cascade (downward only)
+                             * For now, treat same as SCATTER - TODO: implement downbranch */
                             g_line_stats.n_scatter++;
 
+                            const Line *line = &state->atomic_data->lines[line_idx];
+                            double nu_line = line->nu;
+                            double beta = pkt->r / (state->t_explosion * CONST_C);
+                            double old_doppler = 1.0 - beta * pkt->mu;
+                            double mu_cmf_new = 2.0 * drand48() - 1.0;
+                            double mu_lab_new = (mu_cmf_new + beta) / (1.0 + beta * mu_cmf_new);
+                            pkt->mu = mu_lab_new;
+                            double inv_doppler_new = 1.0 / (1.0 - beta * mu_lab_new);
+                            double energy_cmf = pkt->energy * old_doppler;
+                            pkt->energy = energy_cmf * inv_doppler_new;
+                            pkt->nu = nu_line * inv_doppler_new;
                             pkt->n_interactions++;
-
-                            /* Debug: track Si II scattering */
-                            if (line->atomic_number == 14 && line->ion_number == 1) {
-                                static int si_ii_count = 0;
-                                if (si_ii_count < 10) {
-                                    printf("  [SI II SCATTER] λ=%.1f Å, τ=%.2e, new_nu=%.4e\n",
-                                           line->wavelength / 1e-8, tau_line, pkt->nu);
-                                    si_ii_count++;
-                                }
-                            }
+                            pkt->next_line_id = line_idx + 1;
+                            pkt->tau_event = -log(drand48() + 1e-30);
                         }
-                        } /* End of legacy mode else block */
-                    }
-                    /* Else: packet passes through (rare for high τ) */
-                }
+
+                        /* Track wavelength shift for diagnostics */
+                        double new_wl = CONST_C / pkt->nu * 1e8;
+                        g_line_stats.sum_input_wl += wavelength_A;
+                        g_line_stats.sum_output_wl += new_wl;
+                        g_line_stats.n_freq_samples++;
+
+                    } /* End of line interaction if block */
+                } /* End of tau > 0.1 if block */
+                break;  /* End of case 2 (line interaction) */
+
+            /* Placeholder for case 3 and higher - handle outside the legacy code path */
+            case 3:  /* Continuum interaction */
+            case 4:  /* Other */
+            default:
                 break;
-
-            case 3:  /* Continuum absorption (bf + ff) - NEW! */
-                /*
-                 * Task Order #30 v2: Physical Continuum Absorption with Fluorescence
-                 *
-                 * The key physics insight:
-                 * ------------------------
-                 * In real SN ejecta, absorbed UV/blue photons don't simply thermalize
-                 * at the local temperature. Instead, they excite ions to high energy
-                 * states which can radiatively de-excite through UV/blue channels.
-                 *
-                 * This "fluorescence" effect is why the 60,000K hack worked - it was
-                 * approximating this blue re-emission.
-                 *
-                 * Physical implementation:
-                 * 1. Blue photons (λ < 5000 Å) absorbed → re-emit at elevated T
-                 *    (simulates fluorescence / NLTE line cooling)
-                 * 2. IR photons absorbed → some thermalize, some scatter
-                 *    (simulates the competition between true absorption and scattering)
-                 */
-                {
-                    static int cont_absorb_count = 0;
-                    double wavelength_A = CONST_C / pkt->nu * 1e8;
-
-                    if (cont_absorb_count < 10) {
-                        printf("  [CONTINUUM] λ=%.0f Å, shell=%d, T=%.0f K\n",
-                               wavelength_A, shell_id, shell->plasma.T);
-                        cont_absorb_count++;
-                    }
-
-                    /*
-                     * Fluorescence-like re-emission:
-                     *
-                     * Blue photons (λ < 5000 Å): Re-emit at T_boundary (hot)
-                     *   - Simulates NLTE line fluorescence
-                     *   - This is the physics behind the "60,000K hack"
-                     *
-                     * Red/IR photons (λ > 5000 Å): Re-emit at local T
-                     *   - True thermal re-emission
-                     *   - But with some probability of destruction
-                     */
-                    double T_emit;
-                    if (wavelength_A < 5000.0) {
-                        /* Blue photon: fluorescence - re-emit hot */
-                        T_emit = g_physics_overrides.t_boundary;
-                    } else {
-                        /* Red/IR photon: thermal re-emission at local T */
-                        T_emit = shell->plasma.T;
-
-                        /* Some IR photons are truly absorbed (thermalized) */
-                        if (drand48() < 0.3) {
-                            pkt->status = 2;  /* Absorbed */
-                            pkt->n_interactions++;
-                            return;
-                        }
-                    }
-
-                    /* Sample new frequency from Planck distribution at T_emit */
-                    double nu_new = sample_planck_frequency(T_emit,
-                                                           wavelength_angstrom_to_nu(10000.0),
-                                                           wavelength_angstrom_to_nu(3000.0));
-                    pkt->nu = nu_new;
-
-                    /* Isotropic re-emission direction */
-                    pkt->mu = 2.0 * drand48() - 1.0;
-
-                    pkt->n_interactions++;
-                    spec->n_scattered++;
-                }
-                break;
-        }
-    }
-
-    if (pkt->n_interactions >= max_interactions || step_count >= max_steps) {
-        pkt->status = 2;  /* Absorbed (too many interactions or steps) */
-    }
+        } /* End of switch */
+    } /* End of while (step < MAX_STEPS) */
 }
 
 /**
@@ -1176,10 +959,22 @@ static void transport_single_packet_with_estimators(TransportPkt *pkt,
                                                       const SimulationState *state,
                                                       SimpleSpectrum *spec,
                                                       MCEstimators *est,
+                                                      VPacketCollection *vpacket_coll,
                                                       int max_interactions)
 {
     int step_count = 0;
     int max_steps = 10000;  /* Prevent infinite loops */
+
+    /* TARDIS-style: Spawn virtual packets at INITIAL position (before transport) */
+    if (g_physics_overrides.enable_virtual_packets && vpacket_coll) {
+        int shell_id = find_shell_idx(state, pkt->r);
+        if (shell_id >= 0) {
+            spawn_vpacket_volley(pkt->r, pkt->mu, pkt->nu, pkt->energy,
+                                  shell_id, pkt->next_line_id,
+                                  state, vpacket_coll,
+                                  g_physics_overrides.n_virtual_packets);
+        }
+    }
 
     while (pkt->status == 0 && pkt->n_interactions < max_interactions && step_count < max_steps) {
         step_count++;
@@ -1223,59 +1018,144 @@ static void transport_single_packet_with_estimators(TransportPkt *pkt,
 
         const ShellState *shell = &state->shells[shell_id];
 
-        /* Calculate distances */
-        double d_boundary, d_electron, d_line, d_continuum;
-        double tau_line = 0.0;
-        int64_t line_idx = -1;
+        /* ================================================================
+         * TARDIS-STYLE TRACE_PACKET
+         * Distance comparison happens INSIDE the line loop for efficiency.
+         * Exit immediately when boundary/continuum is closer than current line.
+         * ================================================================ */
 
-        /* Distance to shell boundary */
+        /* Calculate distance to boundary */
         int delta_shell = 0;
-        d_boundary = calculate_distance_boundary(pkt->r, pkt->mu,
-                                                  shell->r_inner, shell->r_outer,
-                                                  &delta_shell);
+        double d_boundary = calculate_distance_boundary(pkt->r, pkt->mu,
+                                                         shell->r_inner, shell->r_outer,
+                                                         &delta_shell);
 
-        /* Distance to electron scattering */
-        double tau_e = -log(drand48() + 1e-30);
-        d_electron = tau_e / (shell->sigma_thomson_ne + 1e-30);
+        /* Sample tau_event for this trace (TARDIS samples once per trace) */
+        double tau_event = -log(drand48() + 1e-30);
+        double tau_trace_combined = 0.0;
 
-        /* Distance to line interaction */
-        /* Get comoving frame frequency */
+        /* Calculate comoving frequency */
         double beta = pkt->r / (state->t_explosion * CONST_C);
         double doppler = 1.0 - beta * pkt->mu;
         double nu_cmf = pkt->nu * doppler;
 
-        d_line = get_next_line_interaction(shell, nu_cmf, pkt->r, pkt->mu,
-                                           state->t_explosion, &line_idx, &tau_line);
+        /* Distance to electron scattering (separate from continuum in TARDIS) */
+        double tau_electron = -log(drand48() + 1e-30);
+        double d_electron = tau_electron / (shell->sigma_thomson_ne + 1e-30);
 
-        /* Distance to continuum absorption (bf + ff) */
-        d_continuum = 1e99;  /* Default: no continuum interaction */
+        /* Distance to continuum (only if enabled) */
+        double chi_continuum = 0.0;
+        double d_continuum = 1e99;
         if (g_physics_overrides.enable_continuum_opacity) {
-            double kappa_cont = calculate_continuum_opacity(nu_cmf, shell);
-            if (kappa_cont > 1e-30) {
+            chi_continuum = calculate_continuum_opacity(nu_cmf, shell);
+            if (chi_continuum > 1e-30) {
                 double tau_cont = -log(drand48() + 1e-30);
-                d_continuum = tau_cont / kappa_cont;
+                d_continuum = tau_cont / chi_continuum;
             }
         }
 
-        /* Take the minimum distance */
+        /* Line loop variables */
+        const ActiveLine *lines = shell->active_lines;
+        int64_t n_lines = shell->n_active_lines;
+        int64_t start_line_id = pkt->next_line_id;
+
+        /* Result variables */
         double d_min = d_boundary;
-        int interaction_type = 0;  /* 0=boundary, 1=electron, 2=line, 3=continuum */
+        int interaction_type = 0;  /* 0=boundary, 1=electron/continuum, 2=line */
+        int64_t line_idx = -1;
+        double tau_line = 0.0;
 
-        if (d_electron < d_min) {
-            d_min = d_electron;
-            interaction_type = 1;
+        g_line_stats.n_line_checks++;
+
+        /* === TARDIS-STYLE LINE LOOP === */
+        /* Loop through lines one at a time, comparing distances each step */
+        for (int64_t cur_line = start_line_id; cur_line < n_lines; cur_line++) {
+            double nu_line = lines[cur_line].nu;
+            double tau_this_line = lines[cur_line].tau_sobolev;
+
+            /* Calculate distance to this line FIRST */
+            double nu_diff = nu_cmf - nu_line;
+            double d_line;
+
+            if (fabs(nu_diff / pkt->nu) < 1e-14) {
+                nu_diff = 0.0;  /* Numerical threshold */
+            }
+
+            if (nu_diff >= 0) {
+                d_line = (nu_diff / pkt->nu) * CONST_C * state->t_explosion;
+            } else {
+                /* Line is above current frequency - skip WITHOUT adding tau */
+                continue;
+            }
+
+            /* Accumulate tau ONLY for lines at or below current frequency
+             * This is the TARDIS algorithm: only count tau for lines the photon passes */
+            tau_trace_combined += tau_this_line;
+
+            /* In TARDIS mode: only line tau matters (no continuum in tau calc) */
+            double tau_total = tau_trace_combined;
+
+            /* CRITICAL: Check if boundary/electron is closer than THIS line
+             * Must check BEFORE testing tau for line interaction.
+             * Use direct < comparison to avoid floating point equality issues. */
+
+            /* If boundary is closer than this line, packet hits boundary first */
+            if (d_boundary < d_line) {
+                interaction_type = 0;
+                d_min = d_boundary;
+                pkt->next_line_id = cur_line;  /* Stay at this line */
+                break;
+            }
+
+            /* If electron scattering is closer than this line */
+            if (d_electron < d_line) {
+                interaction_type = 1;
+                d_min = d_electron;
+                pkt->next_line_id = cur_line;
+                break;
+            }
+
+            /* If continuum is closer than this line (only when enabled) */
+            if (d_continuum < d_line && g_physics_overrides.enable_continuum_opacity) {
+                interaction_type = 3;
+                d_min = d_continuum;
+                pkt->next_line_id = cur_line;
+                break;
+            }
+
+            /* Check for line interaction - only if we didn't exit above */
+            if (tau_total > tau_event) {
+                /* LINE INTERACTION! */
+                interaction_type = 2;
+                d_min = d_line;
+                line_idx = lines[cur_line].line_idx;
+                tau_line = tau_this_line;
+                pkt->next_line_id = cur_line;
+                g_line_stats.n_line_selected++;
+                break;
+            }
+
+            /* Stop if too far in frequency (efficiency) */
+            if (nu_line < nu_cmf * 0.5) {
+                /* No line interaction - check boundary vs electron vs continuum */
+                d_min = d_boundary;
+                interaction_type = 0;
+                if (d_electron < d_min) {
+                    d_min = d_electron;
+                    interaction_type = 1;
+                }
+                if (d_continuum < d_min && g_physics_overrides.enable_continuum_opacity) {
+                    d_min = d_continuum;
+                    interaction_type = 3;
+                }
+                pkt->next_line_id = n_lines;
+                break;
+            }
         }
 
-        if (d_line < d_min && tau_line > 0.1) {
-            d_min = d_line;
-            interaction_type = 2;
-        }
-
-        /* Continuum absorption */
-        if (d_continuum < d_min) {
-            d_min = d_continuum;
-            interaction_type = 3;
-        }
+        /* Track statistics */
+        if (line_idx < 0) g_line_stats.n_line_no_idx++;
+        else if (tau_line <= 0.1) g_line_stats.n_line_low_tau++;
 
         /* Sanity check */
         if (d_min <= 0.0 || d_min > 1e50 || !isfinite(d_min)) {
@@ -1305,218 +1185,193 @@ static void transport_single_packet_with_estimators(TransportPkt *pkt,
         pkt->r = r_new;
         pkt->mu = mu_new;
 
-        /* Process interaction (same as transport_single_packet) */
+        /* Process interaction - TARDIS style */
         switch (interaction_type) {
             case 0:  /* Boundary crossing */
-                /* Nothing special - will find new shell on next iteration */
+                /* In TARDIS, next_line_id is set inside the loop.
+                 * When entering a NEW shell, reset to 0 (different line list).
+                 * next_line_id was already set in the loop above. */
+                /* Reset only when actually changing shells */
+                if (delta_shell != 0) {
+                    pkt->next_line_id = 0;  /* New shell = new line list */
+                }
                 break;
 
-            case 1:  /* Electron scattering */
+            case 1:  /* Electron/continuum scattering */
                 /* Isotropic scattering in comoving frame */
                 pkt->mu = 2.0 * drand48() - 1.0;
                 spec->n_scattered++;
                 pkt->n_interactions++;
+                /* Reset line tracking after direction change */
+                pkt->next_line_id = 0;
+
+                /* TARDIS-style: Spawn virtual packets AFTER electron scattering */
+                if (g_physics_overrides.enable_virtual_packets && vpacket_coll) {
+                    spawn_vpacket_volley(pkt->r, pkt->mu, pkt->nu, pkt->energy,
+                                          shell_id, pkt->next_line_id,
+                                          state, vpacket_coll,
+                                          g_physics_overrides.n_virtual_packets);
+                }
                 break;
 
             case 2:  /* Line interaction (Sobolev approximation) */
-                if (line_idx >= 0 && tau_line > 0.1) {
-                    double p_interact = 1.0 - exp(-tau_line);
+                /* TARDIS: cumulative tau already decided interaction - NO extra dice roll! */
+                if (line_idx >= 0) {
                     double wavelength_A = CONST_C / pkt->nu * 1e8;
-                    double epsilon = (wavelength_A > g_physics_overrides.ir_wavelength_min)
-                        ? g_physics_overrides.ir_thermalization_frac
-                        : g_physics_overrides.base_thermalization_frac;
 
-                    if (drand48() < p_interact) {
-                        /* Track wavelength band statistics */
-                        if (wavelength_A < 3000.0) {
-                            g_line_stats.n_uv_interact++;
-                        } else if (wavelength_A < 5000.0) {
-                            g_line_stats.n_blue_interact++;
-                        } else if (wavelength_A < 7000.0) {
-                            g_line_stats.n_red_interact++;
-                        } else {
-                            g_line_stats.n_ir_interact++;
-                        }
-
-                        if (g_physics_overrides.use_macro_atom) {
-                            /* ============================================================
-                             * MACRO-ATOM MODE: Full multi-step cascade fluorescence
-                             * ============================================================ */
-                            g_line_stats.n_macro_atom_calls++;
-
-                            RPacket rpkt;
-                            rpkt.r = pkt->r;
-                            rpkt.mu = pkt->mu;
-                            rpkt.nu = pkt->nu;
-                            rpkt.energy = pkt->energy;
-                            rpkt.status = PACKET_IN_PROCESS;
-                            rpkt.last_line_interaction_in_id = line_idx;
-                            rpkt.last_line_interaction_out_id = -1;
-                            rng_init(&rpkt.rng_state, (uint64_t)(time(NULL) ^ (pkt->n_interactions * 12345)));
-
-                            /* Calculate dilution factor for this shell */
-                            double W_shell = calculate_dilution_factor(
-                                0.5 * (shell->r_inner + shell->r_outer),
-                                g_physics_overrides.R_photosphere);
-
-                            /* Build tau_sobolev array for macro-atom β factor */
-                            double *tau_arr = build_tau_sobolev_array(
-                                shell, state->atomic_data->n_lines, shell_id);
-
-                            int survives = macro_atom_process_line_interaction(
-                                &rpkt, state->atomic_data, line_idx,
-                                shell->plasma.T, shell->plasma.n_e,
-                                W_shell, tau_arr,  /* tau_sobolev for β factor */
-                                state->t_explosion);
-
-                            if (survives) {
-                                g_line_stats.n_macro_emit++;
-                                pkt->mu = rpkt.mu;
-                                pkt->nu = rpkt.nu;
-                                pkt->n_interactions++;
-
-                                /* Track cascade statistics based on wavelength shift */
-                                double new_wl = CONST_C / pkt->nu * 1e8;
-                                if (new_wl > wavelength_A * 1.05) {
-                                    g_line_stats.n_thermalize++;  /* Fluorescence (red-shift) */
-                                } else {
-                                    g_line_stats.n_scatter++;     /* Near-resonant */
-                                }
-                            } else {
-                                g_line_stats.n_macro_absorb++;
-                                pkt->status = 2;  /* Absorbed (thermalized) */
-                                pkt->n_interactions++;
-                                g_line_stats.n_ir_absorbed++;
-                                return;
-                            }
-                        } else {
-                            /* ============================================================
-                             * LEGACY MODE: Probability-based line handling
-                             * ============================================================ */
-                            const Line *line = &state->atomic_data->lines[line_idx];
-
-                        if (drand48() < epsilon) {
-                            /* Thermalization - use same logic as transport_single_packet */
-                            double new_nu;
-
-                            if (g_physics_overrides.enable_wavelength_fluorescence) {
-                                if (wavelength_A < g_physics_overrides.uv_cutoff_angstrom) {
-                                    /* UV fluorescence */
-                                    if (drand48() < g_physics_overrides.uv_to_blue_probability) {
-                                        double nu_min = wavelength_angstrom_to_nu(g_physics_overrides.blue_fluor_max_angstrom);
-                                        double nu_max = wavelength_angstrom_to_nu(g_physics_overrides.blue_fluor_min_angstrom);
-                                        new_nu = nu_min + drand48() * (nu_max - nu_min);
-                                        g_line_stats.n_uv_to_blue++;
-                                    } else {
-                                        double T_local = shell->plasma.T;
-                                        if (T_local < 5000.0) T_local = 5000.0;
-                                        new_nu = sample_planck_frequency(T_local,
-                                            wavelength_angstrom_to_nu(12000.0),
-                                            wavelength_angstrom_to_nu(3500.0));
-                                        g_line_stats.n_thermalize++;
-                                    }
-                                } else if (wavelength_A < 5000.0) {
-                                    /* Blue photon: scatter or fluorescence cascade */
-                                    if (drand48() < g_physics_overrides.blue_scatter_probability) {
-                                        double beta_new = pkt->r / (state->t_explosion * CONST_C);
-                                        pkt->mu = 2.0 * drand48() - 1.0;
-                                        double doppler_new = 1.0 - beta_new * pkt->mu;
-                                        new_nu = line->nu / doppler_new;
-                                        g_line_stats.n_blue_scatter++;
-                                    } else {
-                                        /* Fluorescence via downbranch cascade */
-                                        g_line_stats.n_thermalize++;
-                                        if (state->atomic_data->downbranch.initialized && line_idx >= 0) {
-                                            int64_t emit_line = atomic_sample_downbranch(
-                                                state->atomic_data, line_idx, drand48());
-                                            if (emit_line >= 0 && emit_line < state->atomic_data->n_lines) {
-                                                const Line *emit = &state->atomic_data->lines[emit_line];
-                                                double beta_new = pkt->r / (state->t_explosion * CONST_C);
-                                                pkt->mu = 2.0 * drand48() - 1.0;
-                                                double doppler_new = 1.0 - beta_new * pkt->mu;
-                                                new_nu = emit->nu / doppler_new;
-                                            } else {
-                                                double T_local = shell->plasma.T;
-                                                if (T_local < 5000.0) T_local = 5000.0;
-                                                new_nu = sample_planck_frequency(T_local,
-                                                    wavelength_angstrom_to_nu(12000.0),
-                                                    wavelength_angstrom_to_nu(4500.0));
-                                            }
-                                        } else {
-                                            double T_local = shell->plasma.T;
-                                            if (T_local < 5000.0) T_local = 5000.0;
-                                            new_nu = sample_planck_frequency(T_local,
-                                                wavelength_angstrom_to_nu(12000.0),
-                                                wavelength_angstrom_to_nu(4500.0));
-                                        }
-                                    }
-                                } else if (wavelength_A < g_physics_overrides.ir_wavelength_min) {
-                                    /* Red photon */
-                                    if (drand48() < 0.95) {
-                                        double beta_new = pkt->r / (state->t_explosion * CONST_C);
-                                        pkt->mu = 2.0 * drand48() - 1.0;
-                                        double doppler_new = 1.0 - beta_new * pkt->mu;
-                                        new_nu = line->nu / doppler_new;
-                                        g_line_stats.n_red_scatter++;
-                                    } else {
-                                        double T_local = shell->plasma.T;
-                                        if (T_local < 5000.0) T_local = 5000.0;
-                                        new_nu = sample_planck_frequency(T_local,
-                                            wavelength_angstrom_to_nu(12000.0),
-                                            wavelength_angstrom_to_nu(4500.0));
-                                        g_line_stats.n_thermalize++;
-                                    }
-                                } else {
-                                    /* IR photon - high destruction probability */
-                                    if (drand48() < 0.80) {
-                                        pkt->status = 2;  /* Absorbed */
-                                        pkt->n_interactions++;
-                                        g_line_stats.n_ir_absorbed++;
-                                        return;
-                                    } else {
-                                        double T_local = shell->plasma.T;
-                                        if (T_local < 5000.0) T_local = 5000.0;
-                                        new_nu = sample_planck_frequency(T_local,
-                                            wavelength_angstrom_to_nu(12000.0),
-                                            wavelength_angstrom_to_nu(3500.0));
-                                        g_line_stats.n_thermalize++;
-                                    }
-                                }
-                            } else {
-                                /* Legacy thermal re-emission */
-                                new_nu = sample_planck_frequency(g_physics_overrides.t_boundary,
-                                    wavelength_angstrom_to_nu(10000.0),
-                                    wavelength_angstrom_to_nu(3000.0));
-                            }
-
-                            pkt->nu = new_nu;
-                            pkt->mu = 2.0 * drand48() - 1.0;
-                            pkt->n_interactions++;
-                        } else {
-                            /* Pure resonance scattering */
-                            pkt->mu = 2.0 * drand48() - 1.0;
-                            double beta_new = pkt->r / (state->t_explosion * CONST_C);
-                            double doppler_new = 1.0 - beta_new * pkt->mu;
-                            pkt->nu = line->nu / doppler_new;
-                            pkt->n_interactions++;
-                            g_line_stats.n_scatter++;
-                        }
-                        } /* End of legacy mode else block */
+                    /* Track wavelength band statistics */
+                    if (wavelength_A < 3000.0) {
+                        g_line_stats.n_uv_interact++;
+                    } else if (wavelength_A < 5000.0) {
+                        g_line_stats.n_blue_interact++;
+                    } else if (wavelength_A < 7000.0) {
+                        g_line_stats.n_red_interact++;
+                    } else {
+                        g_line_stats.n_ir_interact++;
                     }
-                }
+
+                    /* =============================================================
+                     * LINE INTERACTION HANDLING (TARDIS-style)
+                     * =============================================================
+                     * Three modes matching TARDIS exactly:
+                     *   0 = SCATTER:    Pure resonance scattering (same line freq)
+                     *   1 = DOWNBRANCH: Simplified cascade (downward only)
+                     *   2 = MACROATOM:  Full macro-atom cascade
+                     */
+                    int line_mode = g_physics_overrides.line_interaction_type;
+
+                    if (line_mode == LINE_SCATTER) {
+                        /* ============================================================
+                         * SCATTER MODE: Pure resonance scattering (TARDIS SCATTER)
+                         * ============================================================
+                         * The packet is re-emitted at the SAME LINE FREQUENCY (in CMF).
+                         * Only the Doppler shift changes due to new random direction.
+                         */
+                        g_line_stats.n_scatter++;
+
+                        const Line *line = &state->atomic_data->lines[line_idx];
+                        double nu_line = line->nu;  /* Rest-frame line frequency */
+
+                        /* Old Doppler factor (before scatter) */
+                        double beta = pkt->r / (state->t_explosion * CONST_C);
+                        double old_doppler = 1.0 - beta * pkt->mu;
+
+                        /* New random direction (isotropic in CMF) */
+                        double mu_cmf_new = 2.0 * drand48() - 1.0;
+
+                        /* Transform to lab frame (angle aberration) */
+                        double mu_lab_new = (mu_cmf_new + beta) / (1.0 + beta * mu_cmf_new);
+                        pkt->mu = mu_lab_new;
+
+                        /* Inverse Doppler factor for new direction */
+                        double inv_doppler_new = 1.0 / (1.0 - beta * mu_lab_new);
+
+                        /* Energy conservation: transform energy through CMF */
+                        double energy_cmf = pkt->energy * old_doppler;
+                        pkt->energy = energy_cmf * inv_doppler_new;
+
+                        /* KEY: Emit at the SAME line frequency (in CMF), Doppler-shifted */
+                        pkt->nu = nu_line * inv_doppler_new;
+
+                        pkt->n_interactions++;
+                        pkt->next_line_id = line_idx + 1;  /* Move past this line */
+
+                    } else if (line_mode == LINE_MACROATOM) {
+                        /* ============================================================
+                         * MACRO-ATOM MODE: Full multi-step cascade fluorescence
+                         * ============================================================ */
+                        g_line_stats.n_macro_atom_calls++;
+
+                        RPacket rpkt;
+                        rpkt.r = pkt->r;
+                        rpkt.mu = pkt->mu;
+                        rpkt.nu = pkt->nu;
+                        rpkt.energy = pkt->energy;
+                        rpkt.status = PACKET_IN_PROCESS;
+                        rpkt.last_line_interaction_in_id = line_idx;
+                        rpkt.last_line_interaction_out_id = -1;
+                        rng_init(&rpkt.rng_state, (uint64_t)(time(NULL) ^ (pkt->n_interactions * 12345)));
+
+                        /* Calculate dilution factor for this shell */
+                        double W_shell = calculate_dilution_factor(
+                            0.5 * (shell->r_inner + shell->r_outer),
+                            g_physics_overrides.R_photosphere);
+
+                        /* Build tau_sobolev array for macro-atom β factor */
+                        double *tau_arr = build_tau_sobolev_array(
+                            shell, state->atomic_data->n_lines, shell_id);
+
+                        int survives = macro_atom_process_line_interaction(
+                            &rpkt, state->atomic_data, line_idx,
+                            shell->plasma.T, shell->plasma.n_e,
+                            W_shell, tau_arr,
+                            state->t_explosion);
+
+                        if (survives) {
+                            g_line_stats.n_macro_emit++;
+                            pkt->mu = rpkt.mu;
+                            pkt->nu = rpkt.nu;
+                            pkt->n_interactions++;
+
+                            /* Track cascade statistics */
+                            double new_wl = CONST_C / pkt->nu * 1e8;
+                            if (new_wl > wavelength_A * 1.05) {
+                                g_line_stats.n_thermalize++;
+                            }
+                            pkt->next_line_id = 0;
+                        } else {
+                            g_line_stats.n_macro_absorb++;
+                            pkt->status = 2;
+                            pkt->n_interactions++;
+                            g_line_stats.n_ir_absorbed++;
+                            return;
+                        }
+                    } else {
+                        /* DOWNBRANCH MODE: Treat same as SCATTER for now */
+                        g_line_stats.n_scatter++;
+
+                        const Line *line = &state->atomic_data->lines[line_idx];
+                        double nu_line = line->nu;
+                        double beta = pkt->r / (state->t_explosion * CONST_C);
+                        double old_doppler = 1.0 - beta * pkt->mu;
+                        double mu_cmf_new = 2.0 * drand48() - 1.0;
+                        double mu_lab_new = (mu_cmf_new + beta) / (1.0 + beta * mu_cmf_new);
+                        pkt->mu = mu_lab_new;
+                        double inv_doppler_new = 1.0 / (1.0 - beta * mu_lab_new);
+                        double energy_cmf = pkt->energy * old_doppler;
+                        pkt->energy = energy_cmf * inv_doppler_new;
+                        pkt->nu = nu_line * inv_doppler_new;
+                        pkt->n_interactions++;
+                        pkt->next_line_id = line_idx + 1;
+                    }
+
+                    /* Track wavelength shift for diagnostics */
+                    double new_wl = CONST_C / pkt->nu * 1e8;
+                    g_line_stats.sum_input_wl += wavelength_A;
+                    g_line_stats.sum_output_wl += new_wl;
+                    g_line_stats.n_freq_samples++;
+
+                    /* TARDIS-style: Spawn virtual packets AFTER line interaction */
+                    if (g_physics_overrides.enable_virtual_packets && vpacket_coll) {
+                        spawn_vpacket_volley(pkt->r, pkt->mu, pkt->nu, pkt->energy,
+                                              shell_id, pkt->next_line_id,
+                                              state, vpacket_coll,
+                                              g_physics_overrides.n_virtual_packets);
+                    }
+                } /* End if (line_idx >= 0) */
                 break;
 
             case 3:  /* Continuum absorption */
                 {
-                    double wavelength_A = CONST_C / pkt->nu * 1e8;
+                    double wavelength_A_cont = CONST_C / pkt->nu * 1e8;
                     double T_emit;
 
-                    if (wavelength_A < 5000.0) {
+                    if (wavelength_A_cont < 5000.0) {
                         T_emit = g_physics_overrides.t_boundary;
                     } else {
                         T_emit = shell->plasma.T;
                         if (drand48() < 0.3) {
-                            pkt->status = 2;  /* Absorbed */
+                            pkt->status = 2;
                             pkt->n_interactions++;
                             return;
                         }
@@ -1529,13 +1384,24 @@ static void transport_single_packet_with_estimators(TransportPkt *pkt,
                     pkt->mu = 2.0 * drand48() - 1.0;
                     pkt->n_interactions++;
                     spec->n_scattered++;
+
+                    /* TARDIS-style: Spawn virtual packets AFTER continuum interaction */
+                    if (g_physics_overrides.enable_virtual_packets && vpacket_coll) {
+                        spawn_vpacket_volley(pkt->r, pkt->mu, pkt->nu, pkt->energy,
+                                              shell_id, pkt->next_line_id,
+                                              state, vpacket_coll,
+                                              g_physics_overrides.n_virtual_packets);
+                    }
                 }
+                break;
+
+            default:
                 break;
         }
     }
 
     if (pkt->n_interactions >= max_interactions || step_count >= max_steps) {
-        pkt->status = 2;  /* Absorbed (too many interactions or steps) */
+        pkt->status = 2;
     }
 }
 
@@ -1657,6 +1523,15 @@ static void run_simulation(const SimConfig *cfg, const AtomicData *atomic)
     /* Initialize spectrum accumulator */
     SimpleSpectrum spectrum;
     simple_spectrum_init(&spectrum, cfg->n_bins, cfg->nu_min, cfg->nu_max);
+
+    /* Initialize virtual packet collection (TARDIS-style spectrum synthesis) */
+    VPacketCollection vpacket_coll;
+    if (g_physics_overrides.enable_virtual_packets) {
+        vpacket_collection_init(&vpacket_coll, cfg->n_packets * 10,
+                                 cfg->nu_min, cfg->nu_max, cfg->n_bins);
+        printf("[VPACKET] Initialized collection: capacity=%ld, n_bins=%d\n",
+               (long)(cfg->n_packets * 10), cfg->n_bins);
+    }
 
     /* Calculate inner radius from velocity */
     double r_inner = cfg->v_inner * cfg->t_exp;
@@ -1822,6 +1697,7 @@ static void run_simulation(const SimConfig *cfg, const AtomicData *atomic)
             /* Transport with estimator updates */
             transport_single_packet_with_estimators(&pkt, &state, &spectrum,
                                                      use_estimators ? &estimators : NULL,
+                                                     g_physics_overrides.enable_virtual_packets ? &vpacket_coll : NULL,
                                                      1000);
 
             /* Update statistics */
@@ -1949,11 +1825,23 @@ static void run_simulation(const SimConfig *cfg, const AtomicData *atomic)
     /* Write spectrum */
     simple_spectrum_write_csv(&spectrum, cfg->output_file, cfg->t_exp);
 
+    /* Write virtual packet spectrum if enabled */
+    if (g_physics_overrides.enable_virtual_packets) {
+        char vpacket_filename[256];
+        snprintf(vpacket_filename, sizeof(vpacket_filename), "lumina_vpacket_spectrum.dat");
+        vpacket_spectrum_write_csv(&vpacket_coll, vpacket_filename, cfg->t_exp);
+        printf("[VPACKET] Wrote virtual packet spectrum: %s\n", vpacket_filename);
+        printf("[VPACKET] Collected %ld virtual packets\n", (long)vpacket_coll.n_packets);
+    }
+
     /* Cleanup */
     if (use_estimators) {
         mc_estimators_free(&estimators);
     }
     simple_spectrum_free(&spectrum);
+    if (g_physics_overrides.enable_virtual_packets) {
+        vpacket_collection_free(&vpacket_coll);
+    }
     simulation_state_free(&state);
     free_tau_sobolev_cache();  /* Free macro-atom tau cache */
 
@@ -2002,6 +1890,9 @@ int main(int argc, char *argv[])
             cfg.v_outer = atof(argv[++i]) * 1e5;  /* km/s -> cm/s */
         } else if (strcmp(argv[i], "--rho-exp") == 0 && i + 1 < argc) {
             cfg.rho_profile = -atof(argv[++i]);  /* Store as negative for ρ ∝ v^-n */
+        } else if (strcmp(argv[i], "--tardis-mode") == 0) {
+            /* TARDIS-compatible mode: disable ALL extra LUMINA physics layers */
+            setenv("LUMINA_TARDIS_MODE", "1", 1);
         } else if (strcmp(argv[i], "--help") == 0 || strcmp(argv[i], "-h") == 0) {
             printf("Usage: %s [options] [atomic_file] [n_packets] [output_file]\n\n", argv[0]);
             printf("Options:\n");
@@ -2013,6 +1904,7 @@ int main(int argc, char *argv[])
             printf("  --v-inner <km/s>  Set inner velocity (default: 10000 km/s)\n");
             printf("  --v-outer <km/s>  Set outer velocity (default: 25000 km/s)\n");
             printf("  --rho-exp <n>     Set density exponent ρ ∝ v^-n (default: 7)\n");
+            printf("  --tardis-mode     TARDIS-compatible mode: disable ALL extra LUMINA layers\n");
             printf("\nEnvironment variables:\n");
             printf("  LUMINA_T_ALPHA      Excitation T ratio T_exc/T_eff (default: 1.0)\n");
             printf("  LUMINA_SI_SCALE     Silicon abundance multiplier (default: 1.0)\n");
@@ -2085,8 +1977,14 @@ int main(int argc, char *argv[])
     const char *env_uv_blue_prob = getenv("LUMINA_UV_BLUE_PROB");/* UV→blue fluorescence probability */
     const char *env_blue_scatter = getenv("LUMINA_BLUE_SCATTER");/* Blue photon scatter probability */
 
-    /* Macro-atom integration control */
+    /* Line interaction type control (TARDIS-style) */
+    const char *env_line_interaction = getenv("LUMINA_LINE_INTERACTION_TYPE");  /* 0=SCATTER, 1=DOWNBRANCH, 2=MACROATOM */
+    /* Legacy: macro-atom control (deprecated - use LINE_INTERACTION_TYPE instead) */
     const char *env_macro_atom = getenv("LUMINA_MACRO_ATOM");   /* Enable/disable macro-atom mode */
+
+    /* Virtual packet controls (TARDIS-style spectrum synthesis) */
+    const char *env_vpacket = getenv("LUMINA_VPACKET");         /* Enable virtual packet spawning */
+    const char *env_n_vpacket = getenv("LUMINA_N_VPACKET");     /* Number of v-packets per spawn */
 
     /* Temperature iteration controls */
     const char *env_t_iteration = getenv("LUMINA_T_ITERATION");
@@ -2114,10 +2012,24 @@ int main(int argc, char *argv[])
     /* Task Order #30 v2: Initialize PhysicsOverrides with new physics engine */
     PhysicsOverrides overrides;
 
+    /* Check for TARDIS mode FIRST - disables ALL extra LUMINA physics */
+    const char *env_tardis_mode = getenv("LUMINA_TARDIS_MODE");
+    int use_tardis_mode = env_tardis_mode ? atoi(env_tardis_mode) : 0;
+
     /* Check for legacy mode (backwards compatibility with 60,000K hack) */
     int use_legacy_mode = env_legacy ? atoi(env_legacy) : 0;
 
-    if (use_legacy_mode) {
+    if (use_tardis_mode) {
+        printf("[PHYSICS] TARDIS MODE: All extra LUMINA physics layers DISABLED\n");
+        printf("[PHYSICS] Only macro-atom cascade determines photon fate\n");
+        overrides = physics_overrides_tardis_mode();
+        /* Also disable macro-atom tuning extras */
+        setenv("MACRO_GAUNT_SCALE", "1.0", 1);
+        setenv("MACRO_COLLISIONAL_BOOST", "1.0", 1);
+        setenv("MACRO_EPSILON", "0.0", 1);
+        setenv("MACRO_IR_THERM", "0.0", 1);
+        setenv("MACRO_UV_SCATTER", "1.0", 1);
+    } else if (use_legacy_mode) {
         printf("[PHYSICS] LEGACY MODE: Using 60,000K hack (no continuum opacity)\n");
         overrides = physics_overrides_legacy_hack();
     } else {
@@ -2141,8 +2053,20 @@ int main(int argc, char *argv[])
     if (env_uv_blue_prob) overrides.uv_to_blue_probability = atof(env_uv_blue_prob);
     if (env_blue_scatter) overrides.blue_scatter_probability = atof(env_blue_scatter);
 
-    /* Apply macro-atom override */
-    if (env_macro_atom) overrides.use_macro_atom = atoi(env_macro_atom);
+    /* Apply line interaction type override (TARDIS-style) */
+    if (env_line_interaction) {
+        overrides.line_interaction_type = atoi(env_line_interaction);
+        /* Sync with legacy use_macro_atom for compatibility */
+        overrides.use_macro_atom = (overrides.line_interaction_type == LINE_MACROATOM) ? 1 : 0;
+    }
+    /* Legacy: macro-atom override (deprecated) */
+    if (env_macro_atom) {
+        overrides.use_macro_atom = atoi(env_macro_atom);
+        /* If legacy macro-atom is enabled, set line_interaction_type to MACROATOM */
+        if (overrides.use_macro_atom) {
+            overrides.line_interaction_type = LINE_MACROATOM;
+        }
+    }
 
     /* Apply temperature iteration overrides */
     if (env_t_iteration) cfg.enable_t_iteration = atoi(env_t_iteration);
@@ -2151,6 +2075,10 @@ int main(int argc, char *argv[])
     if (env_t_damping) cfg.t_damping = atof(env_t_damping);
     if (env_t_hold) cfg.t_hold = atoi(env_t_hold);
     if (env_t_fraction) cfg.t_fraction = atof(env_t_fraction);
+
+    /* Apply virtual packet overrides */
+    if (env_vpacket) overrides.enable_virtual_packets = atoi(env_vpacket);
+    if (env_n_vpacket) overrides.n_virtual_packets = atoi(env_n_vpacket);
 
     physics_overrides_set(&overrides);
 
@@ -2181,8 +2109,26 @@ int main(int argc, char *argv[])
            g_physics_overrides.enable_wavelength_fluorescence ? "ON" : "OFF",
            g_physics_overrides.uv_to_blue_probability * 100.0,
            g_physics_overrides.blue_scatter_probability * 100.0);
-    printf("[PHYSICS OVERRIDES] Macro-Atom=%s (multi-step cascade for line fluorescence)\n",
-           g_physics_overrides.use_macro_atom ? "ON" : "OFF");
+    /* Line interaction type (TARDIS-style) */
+    const char *line_type_names[] = {"SCATTER", "DOWNBRANCH", "MACROATOM"};
+    int line_type = g_physics_overrides.line_interaction_type;
+    if (line_type < 0 || line_type > 2) line_type = 0;
+    printf("[LINE INTERACTION] Type=%d (%s)\n", line_type, line_type_names[line_type]);
+    if (line_type == LINE_SCATTER) {
+        printf("[LINE INTERACTION]   SCATTER: Pure resonance scattering (emit at SAME line frequency)\n");
+    } else if (line_type == LINE_DOWNBRANCH) {
+        printf("[LINE INTERACTION]   DOWNBRANCH: Simplified cascade (downward radiative only)\n");
+    } else {
+        printf("[LINE INTERACTION]   MACROATOM: Full cascade with up/down transitions\n");
+    }
+    /* Virtual packet status */
+    printf("[VIRTUAL PACKETS] %s", g_physics_overrides.enable_virtual_packets ? "ENABLED" : "DISABLED");
+    if (g_physics_overrides.enable_virtual_packets) {
+        printf(" (n_vpackets=%d per spawn)\n", g_physics_overrides.n_virtual_packets);
+        printf("[VIRTUAL PACKETS]   Spawning at: initial, e-scatter, line, continuum interactions\n");
+    } else {
+        printf("\n");
+    }
     if (cfg.enable_t_iteration) {
         printf("[T-ITERATION] Radiative equilibrium iteration ENABLED:\n");
         printf("  Max iterations: %d, Convergence: %.1f%%, Damping: %.2f\n",

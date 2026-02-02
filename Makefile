@@ -91,9 +91,13 @@ simulation_state.o: simulation_state.c simulation_state.h plasma_physics.h atomi
 macro_atom.o: macro_atom.c macro_atom.h atomic_data.h rpacket.h physics_kernels.h
 	$(CC) $(CFLAGS) $(HDF5_INCLUDE) -c $< -o $@
 
+# Virtual packet object (TARDIS-style spectrum synthesis)
+virtual_packet.o: virtual_packet.c virtual_packet.h simulation_state.h physics_kernels.h
+	$(CC) $(CFLAGS) $(HDF5_INCLUDE) -c $< -o $@
+
 # Integrated plasma-transport test
-test_integrated: test_integrated.c simulation_state.o plasma_physics.o atomic_loader.o lumina_rotation.o macro_atom.o
-	$(CC) $(CFLAGS) $(HDF5_INCLUDE) $< simulation_state.o plasma_physics.o atomic_loader.o lumina_rotation.o macro_atom.o $(LDFLAGS) $(HDF5_LIB) -o $@
+test_integrated: test_integrated.c simulation_state.o plasma_physics.o atomic_loader.o lumina_rotation.o macro_atom.o virtual_packet.o
+	$(CC) $(CFLAGS) $(HDF5_INCLUDE) $< simulation_state.o plasma_physics.o atomic_loader.o lumina_rotation.o macro_atom.o virtual_packet.o $(LDFLAGS) $(HDF5_LIB) -o $@
 
 # ============================================================================
 # CUDA TARGETS
