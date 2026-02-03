@@ -156,6 +156,7 @@ typedef struct {
     /* Line interaction mode */
     int line_interaction_type;  /* GPULineInteractionType */
     int disable_line_scattering;
+    int disable_scattered_peeling;  /* Task #036 v3: Diagnostic mode */
 
     /* Precomputed values */
     double nu_min;      /* Minimum line frequency */
@@ -196,6 +197,140 @@ typedef struct {
     int64_t n_boundary_crossings;
     int64_t n_iterations_total; /* Total loop iterations */
 } GPUStats;
+
+/* ============================================================================
+ * SPECTRUM_GPU: Peeling-off (Virtual Packet) Spectrum Accumulator
+ * ============================================================================
+ *
+ * Task Order #024: GPU Peeling-off Implementation
+ *
+ * This struct accumulates flux contributions using atomicAdd.
+ * Each interaction point contributes a "virtual packet" toward the observer.
+ */
+
+/* Task Order #026: Widen spectrum range to catch all optical + edge cases */
+#define GPU_SPECTRUM_NBINS 2000     /* Number of wavelength bins (higher resolution) */
+#define GPU_SPECTRUM_WL_MIN 1000.0  /* Minimum wavelength [Angstrom] - catches UV */
+#define GPU_SPECTRUM_WL_MAX 25000.0 /* Maximum wavelength [Angstrom] - catches near-IR */
+
+typedef struct {
+    /* Flux bins (use atomicAdd in kernel) */
+    double flux[GPU_SPECTRUM_NBINS];
+
+    /* Statistics */
+    int64_t n_contributions;        /* Total peeling contributions */
+    int64_t n_line_contributions;   /* From line interactions */
+    int64_t n_escat_contributions;  /* From electron scattering */
+
+    /* Task Order #026: Debug counters for rejection analysis */
+    int64_t n_line_peeling_calls;      /* Total line peeling attempts */
+    int64_t n_line_wl_rejected;        /* Rejected: wavelength out of range */
+    int64_t n_line_escape_rejected;    /* Rejected: escape probability too low */
+    int64_t n_escat_peeling_calls;     /* Total e-scat peeling attempts */
+    int64_t n_escat_wl_rejected;       /* Rejected: wavelength out of range */
+
+    /* Task Order #038-Revised: Line opacity debug counters */
+    int64_t n_line_tau_calls;          /* Calls to calculate_line_tau_on_ray */
+    int64_t n_line_tau_found;          /* Times tau > threshold was found */
+    double sum_tau_max;                /* Sum of tau_max values */
+
+    /* Binning parameters (precomputed) */
+    double wl_min;
+    double wl_max;
+    double d_wl;                    /* Bin width in Angstrom */
+    double inv_d_wl;                /* 1/d_wl for fast binning */
+} Spectrum_GPU;
+
+/* ============================================================================
+ * MACRO-ATOM GPU DATA STRUCTURES
+ * ============================================================================
+ *
+ * Task Order #024: GPU Macro-Atom Implementation
+ *
+ * These structures enable fluorescence and thermalization physics on GPU.
+ * Ported from macro_atom.h with GPU-friendly fixed-size arrays.
+ */
+
+/* Maximum transitions from any single level (GPU constraint) */
+#define GPU_MACRO_ATOM_MAX_TRANS 128
+
+/* Maximum jumps in transition loop (safety limit) */
+#define GPU_MACRO_ATOM_MAX_JUMPS 50
+
+/**
+ * MacroAtomTransition_GPU: Single transition in macro-atom cascade
+ */
+typedef struct {
+    int16_t source_level;           /* Source level number */
+    int16_t dest_level;             /* Destination level number */
+    int8_t  transition_type;        /* -1=radiative, 0=down internal, +1=up internal */
+    int8_t  atomic_number;
+    int8_t  ion_number;
+    int8_t  _pad;
+    int64_t line_id;                /* Line index (if radiative, else -1) */
+    double  A_ul;                   /* Spontaneous emission rate [s^-1] */
+    double  nu;                     /* Transition frequency [Hz] */
+} MacroAtomTransition_GPU;
+
+/**
+ * MacroAtomReference_GPU: Index into transition array for a level
+ */
+typedef struct {
+    int8_t  atomic_number;
+    int8_t  ion_number;
+    int16_t level_number;
+    int32_t n_transitions;          /* Total transitions from this level */
+    int32_t trans_start_idx;        /* Start index in transitions array */
+} MacroAtomReference_GPU;
+
+/**
+ * MacroAtomData_GPU: All macro-atom data on device
+ */
+typedef struct {
+    int32_t n_transitions;          /* Total transition count */
+    int32_t n_references;           /* Number of level references */
+    /* Actual arrays stored separately on device */
+} MacroAtomData_GPU;
+
+/**
+ * Line_GPU: Simplified line data for macro-atom
+ */
+typedef struct {
+    double nu;                      /* Line frequency [Hz] */
+    double A_ul;                    /* Einstein A coefficient [s^-1] */
+    double f_lu;                    /* Oscillator strength */
+    int8_t atomic_number;
+    int8_t ion_number;
+    int16_t level_upper;
+    int16_t level_lower;
+    int16_t _pad;
+} Line_GPU;
+
+/**
+ * Level_GPU: Level data for macro-atom cascade
+ */
+typedef struct {
+    int8_t atomic_number;
+    int8_t ion_number;
+    int16_t level_number;
+    int16_t g;                      /* Statistical weight */
+    int16_t _pad;
+    double energy;                  /* Level energy [erg] */
+} Level_GPU;
+
+/**
+ * MacroAtomTuning_GPU: Tunable parameters for macro-atom physics
+ */
+typedef struct {
+    double thermalization_epsilon;   /* Base thermalization probability (0.35) */
+    double ir_thermalization_boost;  /* IR photons thermalization (0.80) */
+    double ir_wavelength_threshold;  /* IR threshold in Angstrom (7000) */
+    double uv_scatter_boost;         /* UV scatter multiplier (0.5) */
+    double uv_wavelength_threshold;  /* UV threshold in Angstrom (3500) */
+    double collisional_boost;        /* Collision rate boost (10.0) */
+    double gaunt_factor_scale;       /* Gaunt factor multiplier (5.0) */
+    int    downbranch_only;          /* Skip cascade, direct emission (0) */
+} MacroAtomTuning_GPU;
 
 /* ============================================================================
  * XORSHIFT64* RNG (CUDA-compatible)
@@ -448,6 +583,7 @@ static inline void plasma_to_gpu(Plasma_GPU *gpu_plasma,
     gpu_plasma->n_shells = n_shells;
     gpu_plasma->line_interaction_type = line_interaction_type;
     gpu_plasma->disable_line_scattering = disable_line_scattering;
+    gpu_plasma->disable_scattered_peeling = 0;  /* Task #036 v3: Default off */
     gpu_plasma->nu_min = nu_min;
     gpu_plasma->nu_max = nu_max;
 }

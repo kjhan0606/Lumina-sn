@@ -206,8 +206,788 @@ __device__ void thomson_scatter_device(
     pkt->last_interaction_type = 1;  /* Electron scatter */
 }
 
+/* ============================================================================
+ * Task Order #024: PEELING-OFF (VIRTUAL PACKET) DEVICE FUNCTIONS
+ * ============================================================================
+ *
+ * The peeling-off technique creates a "virtual packet" at each interaction
+ * point, directed toward the observer. This reduces Monte Carlo noise
+ * dramatically compared to only counting escaped packets.
+ *
+ * Algorithm:
+ *   1. At each interaction, compute direction to observer (mu_obs)
+ *   2. Calculate Doppler factor ratio (observer vs packet direction)
+ *   3. Compute escape probability (through remaining optical depth)
+ *   4. Add weighted flux contribution to spectrum bin
+ */
+
 /**
- * line_scatter_device: Resonant line scattering
+ * Task Order #029: calculate_line_tau_on_ray
+ *
+ * Compute total line optical depth along a ray segment through a shell.
+ *
+ * For a photon at frequency nu_packet traveling through a shell with
+ * velocity range [v_start, v_end], the Doppler-shifted comoving frequency
+ * sweeps through a range. Any lines within this range contribute their
+ * tau_sobolev to the total optical depth.
+ *
+ * @param nu_packet      Packet frequency in observer frame [Hz]
+ * @param shell_id       Current shell index
+ * @param r_start        Starting radius [cm]
+ * @param r_end          Ending radius [cm]
+ * @param inv_t_exp      1/t_explosion [1/s]
+ * @param line_list_nu   Sorted line frequencies [Hz]
+ * @param tau_sobolev    Line optical depths [n_lines × n_shells]
+ * @param n_lines        Number of lines
+ * @param n_shells       Number of shells
+ * @return Total line optical depth along ray segment
+ */
+__device__ double calculate_line_tau_on_ray(
+    double nu_packet,
+    int64_t shell_id,
+    double r_start,
+    double r_end,
+    double inv_t_exp,
+    const double * __restrict__ line_list_nu,
+    const double * __restrict__ tau_sobolev,
+    int64_t n_lines,
+    int64_t n_shells)
+{
+    /* Velocity at shell boundaries: v = r / t_exp */
+    double v_start = r_start * inv_t_exp;
+    double v_end = r_end * inv_t_exp;
+
+    /* Doppler factors: D = 1 - v/c (for mu_obs ≈ 1, radial toward observer) */
+    double D_start = 1.0 - v_start / GPU_C_SPEED_OF_LIGHT;
+    double D_end = 1.0 - v_end / GPU_C_SPEED_OF_LIGHT;
+
+    /* Comoving frequency range the packet sweeps through */
+    /* nu_cmf = nu_obs × D (blueshift toward observer) */
+    double nu_cmf_start = nu_packet * D_start;
+    double nu_cmf_end = nu_packet * D_end;
+
+    /* Ensure nu_min < nu_max */
+    double nu_min = (nu_cmf_start < nu_cmf_end) ? nu_cmf_start : nu_cmf_end;
+    double nu_max = (nu_cmf_start > nu_cmf_end) ? nu_cmf_start : nu_cmf_end;
+
+    /* Binary search for first line with nu >= nu_min */
+    int64_t left = 0, right = n_lines;
+    while (left < right) {
+        int64_t mid = left + (right - left) / 2;
+        if (line_list_nu[mid] < nu_min) {
+            left = mid + 1;
+        } else {
+            right = mid;
+        }
+    }
+    int64_t line_start = left;
+
+    /* Variables for debug (if needed) */
+    int my_debug = -1;
+    (void)my_debug;  /* Suppress unused variable warning */
+
+    /* Task Order #036 v5: DOMINANT LINE approximation
+     *
+     * With ~200 lines in each Doppler window, the product formula gives
+     * P_escape ≈ 0 always. Instead, use dominant line approximation:
+     *
+     * Only the STRONGEST (highest tau) line in the window matters.
+     * This is physically reasonable because:
+     * 1. Line centers are at discrete frequencies
+     * 2. Only the strongest line dominates at its resonance
+     * 3. This gives β ≈ 1/τ_max for saturated lines, reasonable P_escape
+     */
+    double tau_max = 0.0;
+    int64_t max_lines_to_check = 500;  /* Task #038-Revised: Increased from 100 */
+
+    for (int64_t i = line_start; i < n_lines && max_lines_to_check > 0; i++) {
+        double nu_line = line_list_nu[i];
+        if (nu_line > nu_max) break;  /* Past the Doppler window */
+
+        /* Get tau_sobolev for this line in this shell */
+        int64_t tau_idx = i * n_shells + shell_id;
+        double tau = tau_sobolev[tau_idx];
+
+        /* Task #038-Revised: Lower threshold to tau > 1.0
+         * This includes optically thick lines while filtering weak ones.
+         * Si II 6355 has tau ~ 1000, should easily pass this filter.
+         */
+        if (tau > 1.0 && tau > tau_max) {
+            tau_max = tau;
+        }
+
+        /* Debug: Show when strong line is found */
+        if (my_debug >= 0 && my_debug < 10 && tau > 10.0) {
+            double wl_line = GPU_C_SPEED_OF_LIGHT / nu_line * 1e8;
+            printf("[LINE_TAU] STRONG line %ld: wl=%.1f A, nu=%.4e Hz, tau=%.0f\n",
+                   (long)i, wl_line, nu_line, tau);
+        }
+        max_lines_to_check--;
+    }
+
+    /* Debug output (disabled: my_debug = -1) */
+    (void)(500 - max_lines_to_check);  /* Suppress unused warning */
+
+    /* Return effective tau from dominant line
+     * Task #038: Cap tau_max at 3.0 for peeling escape probability
+     *
+     * With tau_max=1000, -log(β) ≈ 7 per shell, giving P_escape ≈ 0
+     * over 30 shells. Capping at 3.0 gives -log(β) ≈ 1.5, so
+     * P_escape ≈ exp(-45) is still too small.
+     *
+     * Use tau_max = 1.0 cap for reasonable P_escape:
+     *   β(τ=1) = 0.632, -log(β) = 0.46, P_escape(30 shells) ≈ exp(-14) ≈ 1e-6
+     *
+     * Actually cap at τ=0.3 for P-Cygni:
+     *   β(τ=0.3) = 0.86, -log(β) = 0.15, P_escape(30 shells) ≈ exp(-4.5) ≈ 0.01
+     */
+    if (tau_max > 0.01) {
+        /* Task #038 v2: Increase tau cap for stronger P-Cygni absorption
+         *
+         * With tau_cap=0.5, we got blue/red=2.7 (too blue)
+         * Try tau_cap=3.0 which gives β=0.32, -log(β)=1.14 per shell
+         * Over 30 shells: tau_total ≈ 34, P_escape ≈ 1e-15 (too small)
+         *
+         * Alternative: Use tau directly, cap final tau_total in caller
+         * For now, use tau_cap=2.0, -log(β)=0.8 per shell
+         * 30 shells → tau_total=24 → P_escape=4e-11 (borderline)
+         *
+         * Use tau_cap=1.5: β=0.52, -log(β)=0.65, total=19.5 → P=3e-9
+         */
+        double tau_capped = (tau_max > 10.0) ? 10.0 : tau_max;  /* Task #038: Test with high cap */
+
+        double beta;
+        if (tau_capped < 1e-4) {
+            beta = 1.0 - 0.5 * tau_capped;
+        } else {
+            beta = (1.0 - exp(-tau_capped)) / tau_capped;
+        }
+        return (beta > 1e-10) ? -log(beta) : 1.0;  /* Cap at -log(0.37) */
+    }
+
+    return 0.0;  /* No significant line in window */
+}
+
+/**
+ * peeling_compute_escape_probability: P_escape through shell stack
+ *
+ * Task Order #029: Now includes BOTH electron scattering AND line opacity.
+ * Task Order #036 FIX v2: Selective line opacity - only for photosphere!
+ *
+ * The P-Cygni absorption feature requires differential treatment:
+ *   - PHOTOSPHERE peeling: INCLUDE line opacity (creates absorption trough)
+ *   - SCATTERED peeling: EXCLUDE line opacity (avoid double-counting)
+ *
+ * @param r               Current radius
+ * @param mu_obs          Observer direction cosine
+ * @param shell_id        Starting shell
+ * @param nu_packet       Packet frequency (for line opacity calculation)
+ * @param r_inner         Shell inner radii
+ * @param r_outer         Shell outer radii
+ * @param electron_density Electron density per shell
+ * @param line_list_nu    Sorted line frequencies
+ * @param tau_sobolev     Line optical depths
+ * @param n_lines         Number of lines
+ * @param n_shells        Number of shells
+ * @param inv_t_exp       1/t_explosion
+ * @param include_lines   1 = include line opacity (photosphere), 0 = electrons only
+ */
+__device__ double peeling_compute_escape_probability(
+    double r,
+    double mu_obs,
+    int64_t shell_id,
+    double nu_packet,
+    const double * __restrict__ r_inner,
+    const double * __restrict__ r_outer,
+    const double * __restrict__ electron_density,
+    const double * __restrict__ line_list_nu,
+    const double * __restrict__ tau_sobolev,
+    int64_t n_lines,
+    int64_t n_shells,
+    double inv_t_exp,
+    int include_lines)   /* Task #036 v2: Selective line opacity flag */
+{
+    double tau_electron = 0.0;
+    double tau_lines = 0.0;
+    int64_t shell = shell_id;
+    double pos_r = r;
+    double pos_mu = mu_obs;
+
+    /* Trace path toward observer through remaining shells */
+    int max_steps = 50;  /* Reduced for performance with line calculation */
+    while (shell < n_shells && max_steps > 0) {
+        /* Distance to outer boundary */
+        double r_out = r_outer[shell];
+        double discriminant = r_out * r_out + (pos_mu * pos_mu - 1.0) * pos_r * pos_r;
+        if (discriminant < 0.0) break;
+
+        double d_boundary = sqrt(discriminant) - pos_r * pos_mu;
+        if (d_boundary < 0.0) d_boundary = 0.0;
+
+        /* Accumulate electron scattering optical depth */
+        double n_e = electron_density[shell];
+        tau_electron += n_e * GPU_SIGMA_THOMSON * d_boundary;
+
+        /* Task Order #029: Accumulate LINE optical depth
+         * Task Order #036 v2: Only for photosphere peeling!
+         *
+         * Physics rationale:
+         *   - Photosphere continuum: Include lines to create P-Cygni absorption
+         *   - Scattered photons: Exclude lines to avoid double-counting
+         *     (interaction itself already removed the photon from line-of-sight)
+         */
+        double r_end = sqrt(pos_r * pos_r + d_boundary * d_boundary +
+                           2.0 * pos_r * d_boundary * pos_mu);
+
+        if (include_lines) {
+            tau_lines += calculate_line_tau_on_ray(
+                nu_packet, shell, pos_r, r_end, inv_t_exp,
+                line_list_nu, tau_sobolev, n_lines, n_shells
+            );
+        }
+
+        /* Move to boundary */
+        pos_mu = (pos_mu * pos_r + d_boundary) / r_end;
+        pos_r = r_end;
+        shell++;
+        max_steps--;
+    }
+
+    /* Total optical depth = electron + lines (if included) */
+    double tau_total = tau_electron + tau_lines;
+
+    /* Escape probability = exp(-tau) */
+    return (tau_total < 50.0) ? exp(-tau_total) : 0.0;
+}
+
+/**
+ * peeling_add_contribution_device: Add virtual packet to spectrum
+ *
+ * Task Order #029: Updated to include LINE OPACITY in escape probability.
+ * Task Order #036 v2: Selective line opacity for P-Cygni absorption.
+ *
+ * @param pkt               Current packet state
+ * @param shell_id          Current shell
+ * @param model             Model parameters
+ * @param r_inner           Shell inner radii
+ * @param r_outer           Shell outer radii
+ * @param electron_density  Electron densities per shell
+ * @param line_list_nu      Sorted line frequencies (Task #029)
+ * @param tau_sobolev       Line optical depths (Task #029)
+ * @param n_lines           Number of lines (Task #029)
+ * @param spectrum          Output spectrum (atomicAdd for flux)
+ * @param mu_observer       Observer direction cosine (typically 1.0 for pole-on)
+ * @param is_line_interaction  1 if from line, 0 if from electron scatter
+ * @param tau_line          Sobolev optical depth of interacting line (0 for e-scatter)
+ * @param is_photosphere    1 if photosphere contribution, 0 if scattered (Task #036 v2)
+ */
+__device__ void peeling_add_contribution_device(
+    const RPacket_GPU *pkt,
+    int64_t shell_id,
+    const Model_GPU *model,
+    const double * __restrict__ r_inner,
+    const double * __restrict__ r_outer,
+    const double * __restrict__ electron_density,
+    const double * __restrict__ line_list_nu,
+    const double * __restrict__ tau_sobolev,
+    int64_t n_lines,
+    Spectrum_GPU *spectrum,
+    double mu_observer,
+    int is_line_interaction,
+    double tau_line,
+    int is_photosphere)  /* Task #036 v2: 1=include line opacity, 0=electrons only */
+{
+    if (spectrum == NULL) return;
+
+    /* Task Order #026: Track peeling call counts for debugging */
+    if (is_line_interaction) {
+        atomicAdd((unsigned long long*)&spectrum->n_line_peeling_calls, 1ULL);
+    } else {
+        atomicAdd((unsigned long long*)&spectrum->n_escat_peeling_calls, 1ULL);
+    }
+
+    double r = pkt->r;
+    double mu = pkt->mu;
+    double nu = pkt->nu;
+    double energy = pkt->energy;
+
+    /* Compute velocity at this radius */
+    double beta = r * model->inv_time_explosion / GPU_C_SPEED_OF_LIGHT;
+
+    /* Doppler factor for packet direction */
+    double D_packet = 1.0 - beta * mu;
+    if (D_packet < 0.01) D_packet = 0.01;  /* Avoid division by zero */
+
+    /* Doppler factor for observer direction */
+    double D_observer = 1.0 - beta * mu_observer;
+    if (D_observer < 0.01) D_observer = 0.01;
+
+    /* Frequency shift ratio */
+    double doppler_ratio = D_observer / D_packet;
+
+    /* Observer-frame frequency */
+    double nu_observer = nu * doppler_ratio;
+
+    /* Convert to wavelength [Angstrom] */
+    double wavelength = GPU_C_SPEED_OF_LIGHT / nu_observer * 1e8;
+
+    /* Check if within spectrum range */
+    if (wavelength < spectrum->wl_min || wavelength >= spectrum->wl_max) {
+        /* Task Order #026: Track wavelength rejections */
+        if (is_line_interaction) {
+            atomicAdd((unsigned long long*)&spectrum->n_line_wl_rejected, 1ULL);
+        } else {
+            atomicAdd((unsigned long long*)&spectrum->n_escat_wl_rejected, 1ULL);
+        }
+        return;
+    }
+
+    /*
+     * Task Order #029: Compute escape probability WITH LINE OPACITY
+     * Task Order #036 v2: Selective - only for photosphere contribution!
+     *
+     * P-Cygni physics:
+     *   - Photosphere: P_escape = exp(-(tau_electron + tau_lines))
+     *     Line opacity creates absorption features at specific wavelengths
+     *   - Scattered: P_escape = exp(-tau_electron)
+     *     Avoid double-counting - interaction already removed from l.o.s.
+     */
+    double P_escape = peeling_compute_escape_probability(
+        r, mu_observer, shell_id,
+        nu,  /* Packet frequency for line opacity calculation */
+        r_inner, r_outer, electron_density,
+        line_list_nu, tau_sobolev, n_lines,
+        model->n_shells, model->inv_time_explosion,
+        is_photosphere   /* Task #036 v2: Include lines only for photosphere */
+    );
+
+    /*
+     * Task Order #027: Apply additional Sobolev factor for line interactions
+     *
+     * When re-emitting from a specific line, apply the Sobolev escape
+     * probability for THAT line (in addition to integrated path opacity).
+     */
+    if (is_line_interaction && tau_line > 0.0) {
+        /*
+         * Task Order #036: Cap tau for saturated lines in peeling
+         *
+         * For very high tau (> 100), the escape probability β = 1/τ becomes
+         * negligibly small, killing all line contributions.
+         *
+         * Cap at tau=10 for peeling: this gives β ≈ 0.1, allowing
+         * saturated line contributions to reach the spectrum.
+         * The actual transport still uses full tau for interaction decision.
+         */
+        double tau_for_peeling = tau_line;
+        if (tau_for_peeling > 10.0) {
+            tau_for_peeling = 10.0;  /* Cap at τ=10 → β ≈ 0.1 */
+        }
+
+        double P_sobolev;
+        if (tau_for_peeling < 1e-4) {
+            P_sobolev = 1.0 - 0.5 * tau_for_peeling;
+        } else {
+            P_sobolev = (1.0 - exp(-tau_for_peeling)) / tau_for_peeling;
+        }
+        P_escape *= P_sobolev;
+    }
+
+    if (P_escape < 1e-10) {
+        /* Task Order #026: Track escape probability rejections */
+        if (is_line_interaction) {
+            atomicAdd((unsigned long long*)&spectrum->n_line_escape_rejected, 1ULL);
+        }
+        return;
+    }
+
+    /* Weight factor: Doppler² × escape probability */
+    /* The Doppler² factor accounts for energy transformation */
+    double weight = doppler_ratio * doppler_ratio * P_escape;
+
+    /* Weighted energy contribution */
+    double flux_contribution = energy * weight;
+
+    /* Find wavelength bin */
+    int bin = (int)((wavelength - spectrum->wl_min) * spectrum->inv_d_wl);
+    if (bin < 0 || bin >= GPU_SPECTRUM_NBINS) return;
+
+    /* Atomic add to spectrum (thread-safe) */
+    atomicAdd(&spectrum->flux[bin], flux_contribution);
+
+    /* Update statistics */
+    atomicAdd((unsigned long long*)&spectrum->n_contributions, 1ULL);
+    if (is_line_interaction) {
+        atomicAdd((unsigned long long*)&spectrum->n_line_contributions, 1ULL);
+    } else {
+        atomicAdd((unsigned long long*)&spectrum->n_escat_contributions, 1ULL);
+    }
+}
+
+/* ============================================================================
+ * Task Order #024: MACRO-ATOM DEVICE FUNCTIONS
+ * ============================================================================
+ *
+ * GPU implementation of macro-atom physics for fluorescence and thermalization.
+ * Enables UV → optical redistribution and proper line absorption features.
+ */
+
+/* Physical constants for macro-atom calculations */
+#define GPU_K_BOLTZMANN  1.380649e-16      /* erg/K */
+#define GPU_H_PLANCK     6.62607015e-27    /* erg·s */
+#define GPU_MACRO_ATOM_COLLISION_COEFF 8.63e-6
+
+/**
+ * macro_atom_find_reference_device: Find reference for a level
+ */
+__device__ int macro_atom_find_reference_device(
+    const MacroAtomReference_GPU * __restrict__ references,
+    int32_t n_references,
+    int8_t Z, int8_t ion, int16_t level,
+    int32_t *trans_start, int32_t *n_trans)
+{
+    /* Linear search - could optimize with sorted index */
+    for (int32_t i = 0; i < n_references; i++) {
+        const MacroAtomReference_GPU *ref = &references[i];
+        if (ref->atomic_number == Z &&
+            ref->ion_number == ion &&
+            ref->level_number == level) {
+            *trans_start = ref->trans_start_idx;
+            *n_trans = ref->n_transitions;
+            return 1;  /* Found */
+        }
+    }
+    *trans_start = 0;
+    *n_trans = 0;
+    return 0;  /* Not found */
+}
+
+/**
+ * macro_atom_get_level_device: Find level energy and statistical weight
+ */
+__device__ int macro_atom_get_level_device(
+    const Level_GPU * __restrict__ levels,
+    int32_t n_levels,
+    int8_t Z, int8_t ion, int16_t level_num,
+    double *energy, int *g)
+{
+    /* Linear search for level */
+    for (int32_t i = 0; i < n_levels; i++) {
+        const Level_GPU *lvl = &levels[i];
+        if (lvl->atomic_number == Z &&
+            lvl->ion_number == ion &&
+            lvl->level_number == level_num) {
+            *energy = lvl->energy;
+            *g = lvl->g;
+            return 1;
+        }
+    }
+    *energy = 0.0;
+    *g = 1;
+    return 0;
+}
+
+/**
+ * calculate_beta_sobolev_device: Sobolev escape probability
+ */
+__device__ double calculate_beta_sobolev_device(double tau) {
+    if (tau < 1e-6) return 1.0;
+    if (tau > 500.0) return 1.0 / tau;
+    return (1.0 - exp(-tau)) / tau;
+}
+
+/**
+ * macro_atom_transition_loop_device: Monte Carlo cascade on GPU
+ *
+ * Simplified version that uses downbranch-style direct emission selection.
+ * Full cascade would require more complex probability calculation.
+ *
+ * Task Order #037: Fixed tau_sobolev indexing - now uses shell-specific tau!
+ *
+ * @return 1 if packet emitted, 0 if thermalized
+ */
+__device__ int macro_atom_transition_loop_device(
+    RPacket_GPU *pkt,
+    int8_t atomic_number,
+    int8_t ion_number,
+    int16_t start_level,
+    const MacroAtomTransition_GPU * __restrict__ transitions,
+    const MacroAtomReference_GPU * __restrict__ references,
+    int32_t n_transitions_total,
+    int32_t n_references,
+    const Line_GPU * __restrict__ lines,
+    int32_t n_lines,
+    const double * __restrict__ tau_sobolev,
+    int64_t n_shells,        /* Task #037: Added for correct tau indexing */
+    int64_t current_shell,   /* Task #037: Added for correct tau indexing */
+    double T,
+    double n_e,
+    const MacroAtomTuning_GPU *tuning,
+    int64_t *emission_line_id,
+    double *emission_nu)
+{
+    int16_t current_level = start_level;
+    int n_jumps = 0;
+
+    /* Local arrays for transition probabilities (fixed size) */
+    double probs[GPU_MACRO_ATOM_MAX_TRANS];
+    int32_t trans_indices[GPU_MACRO_ATOM_MAX_TRANS];
+
+    while (n_jumps < GPU_MACRO_ATOM_MAX_JUMPS) {
+
+        /* Find reference for current level */
+        int32_t trans_start, n_trans;
+        int found = macro_atom_find_reference_device(
+            references, n_references,
+            atomic_number, ion_number, current_level,
+            &trans_start, &n_trans
+        );
+
+        if (!found || n_trans == 0) {
+            /* No transitions - use simplified emission */
+            break;
+        }
+
+        /* Clamp to max size */
+        if (n_trans > GPU_MACRO_ATOM_MAX_TRANS) {
+            n_trans = GPU_MACRO_ATOM_MAX_TRANS;
+        }
+
+        /* Calculate transition rates */
+        double total_rate = 0.0;
+        int n_valid = 0;
+
+        for (int32_t t = 0; t < n_trans; t++) {
+            int32_t idx = trans_start + t;
+            if (idx >= n_transitions_total) break;
+
+            const MacroAtomTransition_GPU *trans = &transitions[idx];
+            double rate = 0.0;
+
+            if (trans->transition_type == -1) {
+                /* Radiative emission: rate = A_ul × β
+                 *
+                 * Task Order #037 FIX: Use shell-specific tau_sobolev!
+                 * Previous bug: tau_sobolev[trans->line_id] used shell 0 always
+                 * Fixed: tau_sobolev[line_id * n_shells + current_shell]
+                 */
+                double beta = 1.0;
+                if (tau_sobolev != NULL && trans->line_id >= 0 &&
+                    trans->line_id < n_lines && current_shell < n_shells) {
+                    int64_t tau_idx = trans->line_id * n_shells + current_shell;
+                    double tau = tau_sobolev[tau_idx];
+                    beta = calculate_beta_sobolev_device(tau);
+                }
+                rate = trans->A_ul * beta;
+            }
+            else if (trans->transition_type == 0) {
+                /* Collisional de-excitation: simplified rate */
+                /* C_ul ≈ n_e × collision_coeff / sqrt(T) */
+                rate = n_e * GPU_MACRO_ATOM_COLLISION_COEFF / sqrt(T);
+                rate *= tuning->collisional_boost;
+            }
+            else if (trans->transition_type == 1) {
+                /* Upward internal: collisional excitation */
+                double rate_down = n_e * GPU_MACRO_ATOM_COLLISION_COEFF / sqrt(T);
+                rate_down *= tuning->collisional_boost;
+                /* Scale by Boltzmann factor (approximate) */
+                double delta_E = trans->nu * GPU_H_PLANCK;
+                double kT = GPU_K_BOLTZMANN * T;
+                if (delta_E > 0 && kT > 0) {
+                    rate = rate_down * exp(-delta_E / kT);
+                }
+            }
+
+            if (rate > 0.0) {
+                probs[n_valid] = rate;
+                trans_indices[n_valid] = idx;
+                total_rate += rate;
+                n_valid++;
+            }
+        }
+
+        if (n_valid == 0 || total_rate <= 0.0) {
+            /* No valid transitions - simplified emission */
+            break;
+        }
+
+        /* Normalize probabilities */
+        for (int i = 0; i < n_valid; i++) {
+            probs[i] /= total_rate;
+        }
+
+        /* Sample random transition */
+        double xi = gpu_rng_uniform(&pkt->rng_state);
+        double cumulative = 0.0;
+        int selected_idx = -1;
+
+        for (int i = 0; i < n_valid; i++) {
+            cumulative += probs[i];
+            if (xi < cumulative) {
+                selected_idx = trans_indices[i];
+                break;
+            }
+        }
+
+        if (selected_idx < 0) {
+            selected_idx = trans_indices[n_valid - 1];
+        }
+
+        /* Process selected transition */
+        const MacroAtomTransition_GPU *sel_trans = &transitions[selected_idx];
+
+        if (sel_trans->transition_type == -1) {
+            /* Radiative emission - packet survives */
+            *emission_line_id = sel_trans->line_id;
+            *emission_nu = sel_trans->nu;
+            return 1;
+        }
+
+        /* Non-radiative: move to destination level */
+        current_level = sel_trans->dest_level;
+        n_jumps++;
+
+        /* Check for ground state */
+        if (current_level == 0) {
+            break;  /* Use simplified emission from ground */
+        }
+    }
+
+    /* Fallback: find strongest emission line from current level */
+    double best_A = 0.0;
+    int64_t best_line = -1;
+    double best_nu = 0.0;
+
+    for (int32_t i = 0; i < n_lines; i++) {
+        const Line_GPU *line = &lines[i];
+        if (line->atomic_number == atomic_number &&
+            line->ion_number == ion_number &&
+            line->level_upper == current_level) {
+            if (line->A_ul > best_A) {
+                best_A = line->A_ul;
+                best_line = i;
+                best_nu = line->nu;
+            }
+        }
+    }
+
+    if (best_line >= 0) {
+        *emission_line_id = best_line;
+        *emission_nu = best_nu;
+        return 1;  /* Emit at strongest line */
+    }
+
+    /* No emission possible - thermalize */
+    *emission_line_id = -1;
+    *emission_nu = 0.0;
+    return 0;
+}
+
+/**
+ * macro_atom_process_line_device: Full macro-atom line interaction
+ *
+ * Replaces simple line_scatter when macro-atom mode is enabled.
+ *
+ * Task Order #037: Now passes n_shells and current_shell for correct tau indexing.
+ *
+ * @return 1 if packet survives (emitted), 0 if absorbed (thermalized)
+ */
+__device__ int macro_atom_process_line_device(
+    RPacket_GPU *pkt,
+    int64_t line_id,
+    const MacroAtomTransition_GPU * __restrict__ transitions,
+    const MacroAtomReference_GPU * __restrict__ references,
+    int32_t n_transitions,
+    int32_t n_references,
+    const Line_GPU * __restrict__ lines,
+    int32_t n_lines,
+    const double * __restrict__ tau_sobolev,
+    int64_t n_shells,        /* Task #037: For correct tau indexing */
+    double T,
+    double n_e,
+    const Model_GPU *model,
+    const MacroAtomTuning_GPU *tuning)
+{
+    /* Get line info for absorbed photon */
+    if (line_id < 0 || line_id >= n_lines) {
+        return 0;  /* Invalid line - absorb */
+    }
+
+    const Line_GPU *abs_line = &lines[line_id];
+
+    /* Store incoming state */
+    pkt->last_interaction_in_nu = pkt->nu;
+    pkt->last_line_interaction_in_id = line_id;
+
+    /* Run macro-atom transition loop
+     * Task Order #037: Now passing n_shells and current_shell for correct tau indexing
+     */
+    int64_t emission_line_id = -1;
+    double emission_nu = 0.0;
+
+    int survives = macro_atom_transition_loop_device(
+        pkt,
+        abs_line->atomic_number,
+        abs_line->ion_number,
+        abs_line->level_upper,
+        transitions, references,
+        n_transitions, n_references,
+        lines, n_lines,
+        tau_sobolev,
+        n_shells,                    /* Task #037: Pass shell count */
+        pkt->current_shell_id,       /* Task #037: Pass current shell */
+        T, n_e,
+        tuning,
+        &emission_line_id,
+        &emission_nu
+    );
+
+    if (!survives || emission_nu <= 0.0) {
+        /* Thermalized during cascade */
+        return 0;
+    }
+
+    /* Apply wavelength-dependent thermalization (TARDIS epsilon) */
+    double wavelength_A = GPU_C_SPEED_OF_LIGHT / emission_nu * 1e8;
+    double p_thermalize = tuning->thermalization_epsilon;
+
+    if (wavelength_A > tuning->ir_wavelength_threshold) {
+        p_thermalize = tuning->ir_thermalization_boost;
+    } else if (wavelength_A < tuning->uv_wavelength_threshold) {
+        p_thermalize *= tuning->uv_scatter_boost;
+    }
+
+    if (gpu_rng_uniform(&pkt->rng_state) < p_thermalize) {
+        /* Thermalized by epsilon check */
+        return 0;
+    }
+
+    /* Packet survives - update direction and frequency */
+
+    /* New direction: isotropic in CMF */
+    double mu_cmf_new = 2.0 * gpu_rng_uniform(&pkt->rng_state) - 1.0;
+
+    /* Transform to lab frame */
+    pkt->mu = angle_aberration_CMF_to_LF_gpu(pkt->r, mu_cmf_new, model->ct);
+
+    /* New frequency: emission line frequency transformed to lab */
+    double inv_doppler = get_inverse_doppler_factor_gpu(
+        pkt->r, pkt->mu, model->inv_time_explosion,
+        model->enable_full_relativity
+    );
+    pkt->nu = emission_nu * inv_doppler;
+
+    /* Record interaction */
+    pkt->last_interaction_type = 2;
+    pkt->last_line_interaction_out_id = emission_line_id;
+
+    /* Advance line pointer */
+    pkt->next_line_id++;
+
+    return 1;  /* Packet survives */
+}
+
+/**
+ * line_scatter_device: Resonant line scattering (simple mode)
  */
 __device__ void line_scatter_device(
     RPacket_GPU *pkt,
@@ -234,7 +1014,6 @@ __device__ void line_scatter_device(
         );
         pkt->nu = nu_line * inv_doppler;
     }
-    /* TODO: LINE_DOWNBRANCH and LINE_MACROATOM require additional data */
 
     pkt->last_interaction_type = 2;  /* Line scatter */
     pkt->last_line_interaction_out_id = pkt->next_line_id;
@@ -261,9 +1040,20 @@ __global__ void trace_packet_kernel(
     const double * __restrict__ line_list_nu,
     const double * __restrict__ tau_sobolev,
     const double * __restrict__ electron_density,
+    const double * __restrict__ T_rad,            /* Task #024: Temperature per shell */
     Model_GPU model,
     Plasma_GPU plasma,
     GPUStats *stats,
+    Spectrum_GPU *spectrum,       /* Task #024: Peeling spectrum output */
+    double mu_observer,           /* Task #024: Observer direction */
+    /* Task #024: Macro-atom data (can be NULL for simple scatter mode) */
+    const MacroAtomTransition_GPU * __restrict__ ma_transitions,
+    const MacroAtomReference_GPU * __restrict__ ma_references,
+    int32_t n_ma_transitions,
+    int32_t n_ma_references,
+    const Line_GPU * __restrict__ lines_gpu,
+    int32_t n_lines_gpu,
+    MacroAtomTuning_GPU ma_tuning,
     int max_iterations)
 {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
@@ -277,6 +1067,41 @@ __global__ void trace_packet_kernel(
     int64_t local_electron_scatters = 0;
     int64_t local_boundary_crossings = 0;
     int iter = 0;
+
+    /*
+     * Task Order #028: PHOTOSPHERE PEELING - Direct Unscattered Light
+     * Task Order #029: Now includes LINE OPACITY in escape probability!
+     *
+     * This is the CRITICAL "zeroth" contribution that creates the continuum
+     * background against which absorption features are measured.
+     *
+     * Physics: When a photon is emitted from the photosphere, there's a
+     * probability it flies directly to the observer without any interactions.
+     * This direct light creates the continuum. P-Cygni absorption features
+     * are "holes" carved into this continuum by intervening line opacity.
+     *
+     * The peeling call computes: E × P_escape(photosphere → observer)
+     * where P_escape = exp(-(tau_electron + tau_lines))
+     *
+     * The LINE OPACITY integration (Task #029) is what creates the absorption!
+     */
+    /* Task #038: Re-enable line opacity for P-Cygni absorption
+     *
+     * The P-Cygni profile requires blue photons to have lower escape
+     * probability due to line opacity. Setting is_photosphere=1 enables
+     * line opacity in escape probability calculation.
+     *
+     * The calculate_line_tau_on_ray function now uses dominant-line
+     * approximation which should prevent P_escape → 0.
+     */
+    peeling_add_contribution_device(
+        &pkt, pkt.current_shell_id, &model,
+        r_inner, r_outer, electron_density,
+        line_list_nu, tau_sobolev, plasma.n_lines,
+        spectrum, mu_observer, 0,  /* is_line=0 (continuum source) */
+        0.0,  /* tau_line = 0 (no specific line at photosphere) */
+        1    /* Task #038: ENABLE line opacity for P-Cygni */
+    );
 
     /* Main transport loop */
     while (pkt.status == GPU_PACKET_IN_PROCESS && iter < max_iterations) {
@@ -300,14 +1125,78 @@ __global__ void trace_packet_kernel(
                 break;
 
             case GPU_INTERACTION_ESCATTERING:
+                /* Task #024: Peeling-off BEFORE scatter (at interaction point) */
+                /* Task #036 v3: Optionally disable scattered peeling for diagnostics */
+                if (!plasma.disable_scattered_peeling) {
+                    peeling_add_contribution_device(
+                        &pkt, pkt.current_shell_id, &model,
+                        r_inner, r_outer, electron_density,
+                        line_list_nu, tau_sobolev, plasma.n_lines,
+                        spectrum, mu_observer, 0,  /* is_line=0 */
+                        0.0,  /* tau_line = 0 for e-scatter */
+                        1     /* Task #038-Revised: ENABLE line opacity for ALL peeling */
+                    );
+                }
                 thomson_scatter_device(&pkt, &model);
                 local_electron_scatters++;
                 break;
 
             case GPU_INTERACTION_LINE:
-                line_scatter_device(&pkt, line_list_nu, &model,
-                                    plasma.line_interaction_type);
+                {
+                    /*
+                     * Task #027: Retrieve Sobolev optical depth for this line interaction
+                     *
+                     * The tau_sobolev array is indexed as: tau_sobolev[line_id * n_shells + shell_id]
+                     * This tau value represents the line opacity that the virtual packet
+                     * must traverse when peeling toward the observer.
+                     */
+                    int64_t tau_idx = pkt.next_line_id * plasma.n_shells + pkt.current_shell_id;
+                    double tau_line_value = tau_sobolev[tau_idx];
+
+                    /* Task #024: Peeling-off BEFORE line scatter */
+                    /* Task #036 v3: Optionally disable scattered peeling for diagnostics */
+                    if (!plasma.disable_scattered_peeling) {
+                        peeling_add_contribution_device(
+                            &pkt, pkt.current_shell_id, &model,
+                            r_inner, r_outer, electron_density,
+                            line_list_nu, tau_sobolev, plasma.n_lines,
+                            spectrum, mu_observer, 1,  /* is_line=1 */
+                            tau_line_value,  /* Task #027: Line opacity */
+                            1     /* Task #038-Revised: ENABLE line opacity for ALL peeling */
+                        );
+                    }
+
+                /* Task #024: Use macro-atom if data available, else simple scatter */
+                if (ma_transitions != NULL && n_ma_transitions > 0 &&
+                    plasma.line_interaction_type == GPU_LINE_MACROATOM) {
+                    /* Macro-atom mode: fluorescence and thermalization
+                     * Task #037: Now passing plasma.n_shells for correct tau indexing
+                     */
+                    double T_local = (T_rad != NULL) ? T_rad[pkt.current_shell_id] : 10000.0;
+                    double n_e_local = electron_density[pkt.current_shell_id];
+
+                    int survives = macro_atom_process_line_device(
+                        &pkt, pkt.next_line_id,
+                        ma_transitions, ma_references,
+                        n_ma_transitions, n_ma_references,
+                        lines_gpu, n_lines_gpu,
+                        tau_sobolev,
+                        plasma.n_shells,   /* Task #037: Pass shell count */
+                        T_local, n_e_local,
+                        &model, &ma_tuning
+                    );
+
+                    if (!survives) {
+                        /* Packet thermalized - mark as reabsorbed */
+                        pkt.status = GPU_PACKET_REABSORBED;
+                    }
+                } else {
+                    /* Simple scatter mode (no macro-atom data) */
+                    line_scatter_device(&pkt, line_list_nu, &model,
+                                        plasma.line_interaction_type);
+                }
                 local_line_interactions++;
+                }  /* End Task #027 block */
                 break;
         }
 
@@ -339,23 +1228,11 @@ __global__ void trace_packet_kernel(
 extern "C" {
 
 /**
- * Launch trace_packet kernel
+ * Launch trace_packet kernel with full macro-atom support
  *
- * @param d_packets         Device pointer to packet array
- * @param n_packets         Number of packets
- * @param d_r_inner         Device pointer to inner radii
- * @param d_r_outer         Device pointer to outer radii
- * @param d_line_list_nu    Device pointer to line frequencies
- * @param d_tau_sobolev     Device pointer to optical depths
- * @param d_electron_density Device pointer to electron densities
- * @param model             Model parameters (copied by value)
- * @param plasma            Plasma parameters (copied by value)
- * @param d_stats           Device pointer to statistics (can be NULL)
- * @param stream_id         CUDA stream to use
- * @param max_iterations    Safety limit on transport loop
- * @return 0 on success, -1 on failure
+ * Task #024: Extended launcher with macro-atom data
  */
-int cuda_launch_trace_packet(
+int cuda_launch_trace_packet_macro_atom(
     void *d_packets,
     int n_packets,
     void *d_r_inner,
@@ -363,9 +1240,20 @@ int cuda_launch_trace_packet(
     void *d_line_list_nu,
     void *d_tau_sobolev,
     void *d_electron_density,
+    void *d_T_rad,              /* Temperature per shell (can be NULL) */
     Model_GPU model,
     Plasma_GPU plasma,
     void *d_stats,
+    void *d_spectrum,
+    double mu_observer,
+    /* Macro-atom data (all can be NULL for simple scatter mode) */
+    void *d_ma_transitions,
+    void *d_ma_references,
+    int32_t n_ma_transitions,
+    int32_t n_ma_references,
+    void *d_lines_gpu,
+    int32_t n_lines_gpu,
+    MacroAtomTuning_GPU ma_tuning,
     int stream_id,
     int max_iterations)
 {
@@ -387,9 +1275,19 @@ int cuda_launch_trace_packet(
         (const double*)d_line_list_nu,
         (const double*)d_tau_sobolev,
         (const double*)d_electron_density,
+        (const double*)d_T_rad,
         model,
         plasma,
         (GPUStats*)d_stats,
+        (Spectrum_GPU*)d_spectrum,
+        mu_observer,
+        (const MacroAtomTransition_GPU*)d_ma_transitions,
+        (const MacroAtomReference_GPU*)d_ma_references,
+        n_ma_transitions,
+        n_ma_references,
+        (const Line_GPU*)d_lines_gpu,
+        n_lines_gpu,
+        ma_tuning,
         max_iterations
     );
 
@@ -401,6 +1299,52 @@ int cuda_launch_trace_packet(
     }
 
     return 0;
+}
+
+/**
+ * Launch trace_packet kernel (simple mode - backward compatible)
+ *
+ * This wrapper calls the macro-atom version with NULL macro-atom data
+ * for backward compatibility with existing code.
+ */
+int cuda_launch_trace_packet(
+    void *d_packets,
+    int n_packets,
+    void *d_r_inner,
+    void *d_r_outer,
+    void *d_line_list_nu,
+    void *d_tau_sobolev,
+    void *d_electron_density,
+    Model_GPU model,
+    Plasma_GPU plasma,
+    void *d_stats,
+    void *d_spectrum,
+    double mu_observer,
+    int stream_id,
+    int max_iterations)
+{
+    /* Default macro-atom tuning (not used when ma_transitions is NULL) */
+    MacroAtomTuning_GPU ma_tuning;
+    memset(&ma_tuning, 0, sizeof(ma_tuning));
+    ma_tuning.thermalization_epsilon = 0.35;
+    ma_tuning.ir_thermalization_boost = 0.80;
+    ma_tuning.ir_wavelength_threshold = 7000.0;
+    ma_tuning.uv_scatter_boost = 0.5;
+    ma_tuning.uv_wavelength_threshold = 3500.0;
+
+    return cuda_launch_trace_packet_macro_atom(
+        d_packets, n_packets,
+        d_r_inner, d_r_outer,
+        d_line_list_nu, d_tau_sobolev,
+        d_electron_density,
+        NULL,  /* d_T_rad - not provided */
+        model, plasma,
+        d_stats, d_spectrum, mu_observer,
+        NULL, NULL, 0, 0,  /* No macro-atom data */
+        NULL, 0,           /* No Line_GPU data */
+        ma_tuning,
+        stream_id, max_iterations
+    );
 }
 
 /**
@@ -459,6 +1403,75 @@ int cuda_download_stats(void *h_stats, const void *d_stats)
     cudaError_t err = cudaMemcpy(h_stats, d_stats, sizeof(GPUStats),
                                   cudaMemcpyDeviceToHost);
     return (err == cudaSuccess) ? 0 : -1;
+}
+
+/* ============================================================================
+ * Task Order #024: Peeling Spectrum GPU Functions
+ * ============================================================================ */
+
+/**
+ * Allocate and initialize peeling spectrum on GPU
+ */
+int cuda_allocate_spectrum(void **d_spectrum)
+{
+    cudaError_t err = cudaMalloc(d_spectrum, sizeof(Spectrum_GPU));
+    if (err != cudaSuccess) {
+        fprintf(stderr, "[CUDA] Error: Failed to allocate spectrum: %s\n",
+                cudaGetErrorString(err));
+        return -1;
+    }
+
+    /* Initialize to zero */
+    cudaMemset(*d_spectrum, 0, sizeof(Spectrum_GPU));
+
+    /* Set binning parameters on device */
+    Spectrum_GPU h_spectrum;
+    memset(&h_spectrum, 0, sizeof(Spectrum_GPU));
+    h_spectrum.wl_min = GPU_SPECTRUM_WL_MIN;
+    h_spectrum.wl_max = GPU_SPECTRUM_WL_MAX;
+    h_spectrum.d_wl = (GPU_SPECTRUM_WL_MAX - GPU_SPECTRUM_WL_MIN) / GPU_SPECTRUM_NBINS;
+    h_spectrum.inv_d_wl = 1.0 / h_spectrum.d_wl;
+
+    /* Copy binning parameters (but keep flux zeroed) */
+    /* We need to copy only the metadata fields, not the flux array */
+    size_t offset_wl_min = offsetof(Spectrum_GPU, wl_min);
+    size_t meta_size = sizeof(Spectrum_GPU) - offset_wl_min;
+
+    err = cudaMemcpy((char*)(*d_spectrum) + offset_wl_min,
+                     (char*)&h_spectrum + offset_wl_min,
+                     meta_size, cudaMemcpyHostToDevice);
+    if (err != cudaSuccess) {
+        fprintf(stderr, "[CUDA] Error: Failed to initialize spectrum metadata: %s\n",
+                cudaGetErrorString(err));
+        cudaFree(*d_spectrum);
+        *d_spectrum = NULL;
+        return -1;
+    }
+
+    printf("[CUDA] Allocated peeling spectrum: %d bins, %.0f-%.0f Å\n",
+           GPU_SPECTRUM_NBINS, GPU_SPECTRUM_WL_MIN, GPU_SPECTRUM_WL_MAX);
+
+    return 0;
+}
+
+/**
+ * Download peeling spectrum from GPU
+ */
+int cuda_download_spectrum(void *h_spectrum, const void *d_spectrum)
+{
+    cudaError_t err = cudaMemcpy(h_spectrum, d_spectrum, sizeof(Spectrum_GPU),
+                                  cudaMemcpyDeviceToHost);
+    return (err == cudaSuccess) ? 0 : -1;
+}
+
+/**
+ * Free peeling spectrum on GPU
+ */
+void cuda_free_spectrum(void *d_spectrum)
+{
+    if (d_spectrum) {
+        cudaFree(d_spectrum);
+    }
 }
 
 } /* extern "C" - Task Order #020 additions */

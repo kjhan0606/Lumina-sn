@@ -73,7 +73,7 @@ test_transport: test_transport.c liblumin.a
 # Full transport test with CUDA support (Task Order #019)
 # Links C code with CUDA via cuda_interface.h
 test_transport_cuda: test_transport.c liblumin.a gpu_transport.o
-	$(CC) $(CFLAGS) -DENABLE_CUDA -fopenmp $(HDF5_INCLUDE) $< gpu_transport.o -L. -llumin $(LDFLAGS) $(HDF5_LIB) $(CUDA_LIB) -o $@
+	$(CC) $(CFLAGS) -DENABLE_CUDA -DHAVE_HDF5 -fopenmp $(HDF5_INCLUDE) $< gpu_transport.o -L. -llumin $(LDFLAGS) $(HDF5_LIB) $(CUDA_LIB) -o $@
 
 # Atomic data loader test
 test_atomic: test_atomic.c atomic_loader.o atomic_data.h
@@ -91,9 +91,9 @@ plasma_physics.o: plasma_physics.c plasma_physics.h atomic_data.h
 test_plasma: test_plasma.c plasma_physics.o atomic_loader.o atomic_data.h plasma_physics.h
 	$(CC) $(CFLAGS) $(HDF5_INCLUDE) $< plasma_physics.o atomic_loader.o $(LDFLAGS) $(HDF5_LIB) -o $@
 
-# Simulation state object
+# Simulation state object (needs HAVE_HDF5 for plasma state injection)
 simulation_state.o: simulation_state.c simulation_state.h plasma_physics.h atomic_data.h rpacket.h
-	$(CC) $(CFLAGS) $(HDF5_INCLUDE) -c $< -o $@
+	$(CC) $(CFLAGS) -DHAVE_HDF5 $(HDF5_INCLUDE) -c $< -o $@
 
 # Macro-atom object
 macro_atom.o: macro_atom.c macro_atom.h atomic_data.h rpacket.h physics_kernels.h

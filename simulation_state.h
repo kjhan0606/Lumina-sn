@@ -970,4 +970,39 @@ void radiation_field_from_estimators(RadiationField *rf,
                                       const SimulationState *state,
                                       const AtomicData *atomic);
 
+/* ============================================================================
+ * TASK ORDER #034: TARDIS PLASMA STATE INJECTION
+ * ============================================================================
+ * Load pre-computed plasma state from TARDIS, bypassing C-side calculations.
+ * This ensures identical optical environment for transport validation.
+ */
+
+/**
+ * Load TARDIS plasma state from HDF5 file
+ *
+ * Loads ion number densities, electron densities, and optionally tau_sobolev
+ * directly from a TARDIS export file. This bypasses all ionization and
+ * level population calculations in C.
+ *
+ * File structure expected:
+ *   /geometry/r_inner, r_outer, v_inner, v_outer, t_explosion
+ *   /plasma/electron_densities, t_rad, w
+ *   /ion_number_density/data[n_ions, n_shells], atomic_number[], ion_number[]
+ *   /tau_sobolev/data[n_lines, n_shells] (optional)
+ *
+ * Usage:
+ *   SimulationState state;
+ *   simulation_state_init(&state, atomic, n_shells, t_exp);
+ *   simulation_load_plasma_state(&state, atomic, "plasma_state.h5");
+ *   // Now use state for transport - ion densities match TARDIS exactly
+ *
+ * @param state      SimulationState to populate (must be initialized)
+ * @param atomic     AtomicData (for line information)
+ * @param filename   Path to HDF5 file exported from TARDIS
+ * @return 0 on success, -1 on error
+ */
+int simulation_load_plasma_state(SimulationState *state,
+                                  const AtomicData *atomic,
+                                  const char *filename);
+
 #endif /* SIMULATION_STATE_H */

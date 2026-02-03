@@ -228,24 +228,13 @@ int cuda_interface_check_error(void);
 
 /* ============================================================================
  * TASK ORDER #020: TRACE PACKET KERNEL INTERFACE
+ * TASK ORDER #024: Updated with Peeling-off and Macro-Atom Support
  * ============================================================================ */
 
 /**
- * Launch trace_packet kernel on GPU
+ * Launch trace_packet kernel on GPU (simple mode - backward compatible)
  *
- * @param d_packets          Device pointer to RPacket_GPU array
- * @param n_packets          Number of packets to process
- * @param d_r_inner          Device pointer to inner radii [n_shells]
- * @param d_r_outer          Device pointer to outer radii [n_shells]
- * @param d_line_list_nu     Device pointer to line frequencies [n_lines]
- * @param d_tau_sobolev      Device pointer to optical depths [n_lines x n_shells]
- * @param d_electron_density Device pointer to electron densities [n_shells]
- * @param model              Model parameters (passed by value)
- * @param plasma             Plasma parameters (passed by value)
- * @param d_stats            Device pointer to GPUStats (can be NULL)
- * @param stream_id          CUDA stream to use
- * @param max_iterations     Safety limit on transport loop
- * @return 0 on success, -1 on failure
+ * This is the simple version without macro-atom support.
  */
 int cuda_launch_trace_packet(
     void *d_packets,
@@ -258,6 +247,61 @@ int cuda_launch_trace_packet(
     Model_GPU model,
     Plasma_GPU plasma,
     void *d_stats,
+    void *d_spectrum,
+    double mu_observer,
+    int stream_id,
+    int max_iterations);
+
+/**
+ * Launch trace_packet kernel with full macro-atom support
+ *
+ * Task #024: Extended launcher with macro-atom fluorescence/thermalization
+ *
+ * @param d_packets          Device pointer to RPacket_GPU array
+ * @param n_packets          Number of packets to process
+ * @param d_r_inner          Device pointer to inner radii [n_shells]
+ * @param d_r_outer          Device pointer to outer radii [n_shells]
+ * @param d_line_list_nu     Device pointer to line frequencies [n_lines]
+ * @param d_tau_sobolev      Device pointer to optical depths [n_lines x n_shells]
+ * @param d_electron_density Device pointer to electron densities [n_shells]
+ * @param d_T_rad            Device pointer to radiation temperature [n_shells] (can be NULL)
+ * @param model              Model parameters (passed by value)
+ * @param plasma             Plasma parameters (passed by value)
+ * @param d_stats            Device pointer to GPUStats (can be NULL)
+ * @param d_spectrum         Device pointer to Spectrum_GPU for peeling (can be NULL)
+ * @param mu_observer        Observer direction cosine (1.0 = pole-on)
+ * @param d_ma_transitions   Device pointer to MacroAtomTransition_GPU array (can be NULL)
+ * @param d_ma_references    Device pointer to MacroAtomReference_GPU array (can be NULL)
+ * @param n_ma_transitions   Number of macro-atom transitions
+ * @param n_ma_references    Number of macro-atom level references
+ * @param d_lines_gpu        Device pointer to Line_GPU array for macro-atom (can be NULL)
+ * @param n_lines_gpu        Number of lines in Line_GPU array
+ * @param ma_tuning          Macro-atom tuning parameters
+ * @param stream_id          CUDA stream to use
+ * @param max_iterations     Safety limit on transport loop
+ * @return 0 on success, -1 on failure
+ */
+int cuda_launch_trace_packet_macro_atom(
+    void *d_packets,
+    int n_packets,
+    void *d_r_inner,
+    void *d_r_outer,
+    void *d_line_list_nu,
+    void *d_tau_sobolev,
+    void *d_electron_density,
+    void *d_T_rad,
+    Model_GPU model,
+    Plasma_GPU plasma,
+    void *d_stats,
+    void *d_spectrum,
+    double mu_observer,
+    void *d_ma_transitions,
+    void *d_ma_references,
+    int32_t n_ma_transitions,
+    int32_t n_ma_references,
+    void *d_lines_gpu,
+    int32_t n_lines_gpu,
+    MacroAtomTuning_GPU ma_tuning,
     int stream_id,
     int max_iterations);
 
@@ -288,6 +332,31 @@ int cuda_allocate_stats(void **d_stats);
  * Download statistics from GPU
  */
 int cuda_download_stats(void *h_stats, const void *d_stats);
+
+/* ============================================================================
+ * TASK ORDER #024: PEELING-OFF SPECTRUM INTERFACE
+ * ============================================================================ */
+
+/**
+ * Allocate and initialize peeling spectrum on GPU
+ * @param d_spectrum  [out] Device pointer to Spectrum_GPU
+ * @return 0 on success, -1 on failure
+ */
+int cuda_allocate_spectrum(void **d_spectrum);
+
+/**
+ * Download peeling spectrum from GPU
+ * @param h_spectrum  Host pointer to Spectrum_GPU
+ * @param d_spectrum  Device pointer to Spectrum_GPU
+ * @return 0 on success, -1 on failure
+ */
+int cuda_download_spectrum(void *h_spectrum, const void *d_spectrum);
+
+/**
+ * Free peeling spectrum on GPU
+ * @param d_spectrum  Device pointer to free
+ */
+void cuda_free_spectrum(void *d_spectrum);
 
 #ifdef __cplusplus
 }

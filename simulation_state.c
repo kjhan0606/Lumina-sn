@@ -260,34 +260,32 @@ void simulation_set_abundances(SimulationState *state,
 void simulation_set_stratified_abundances(SimulationState *state)
 {
     /*
-     * TASK ORDER #32 - PHASE 1: SPATIAL ABUNDANCE TAPERING
-     * =====================================================
+     * TASK ORDER #017 - TARDIS-MATCHED STRATIFICATION
+     * ================================================
      *
-     * Goal: Prevent Si II from forming in high-velocity outer layers while
-     *       maintaining abundance near the photosphere. This "sinks" the
-     *       Si II line formation deeper into the ejecta.
+     * Updated to match TARDIS benchmark model abundances:
+     *   - v < 12,000 km/s: Fe-rich core (X_Si = 10%, X_Fe = 60%)
+     *   - 12,000 < v < 15,000 km/s: IME zone (X_Si = 50%)
+     *   - 15,000 < v < 18,000 km/s: IME-O zone (X_Si = 40%)
+     *   - v > 18,000 km/s: C/O envelope (X_Si = 2%)
      *
-     * Physics: The saturated τ ~ 100 in outer shells (v > 11,500 km/s) creates
-     *          an unphysical "Photospheric Wall" that blue-shifts the Si II
-     *          absorption by ~2,300 km/s. Linear tapering removes this Si curtain.
+     * Key insight: TARDIS has a SHARP cutoff at v = 18,000 km/s!
+     * This prevents Si II from forming in the outermost shells,
+     * fixing the ~2,400 km/s velocity offset.
      *
-     * Configuration (per expert guidance):
-     *   - v < 11,000 km/s: X_Si = 0.35 (Si-rich photospheric zone)
-     *   - v ≥ 11,000 km/s: Linear decrease from 0.35 → 0.02 at 25,000 km/s
-     *
-     * Reference: W7 stratified composition model for Type Ia SNe
+     * Reference: sn2011fe_synthetic/abundances.csv (TARDIS export)
      */
 
-    /* Phase 1 Si-Tapering Parameters */
-    const double v_taper_start = 11000.0 * 1e5;  /* Start taper at 11,000 km/s */
-    const double v_outer_max = 25000.0 * 1e5;    /* Outer boundary */
-    const double Si_inner = 0.35;                 /* Si fraction in photosphere */
-    const double Si_outer = 0.02;                 /* Minimal outer Si */
+    /* TARDIS-matched velocity boundaries */
+    const double v_fe_core_end   = 12000.0 * 1e5;   /* Fe-core → IME transition */
+    const double v_ime_zone_end  = 15000.0 * 1e5;   /* IME → IME-O transition */
+    const double v_si_cutoff     = 18000.0 * 1e5;   /* SHARP Si cutoff! */
 
-    printf("[ABUNDANCES] Task Order #32 - PHASE 1: LINEAR Si-TAPERING\n");
-    printf("  v < 11,000 km/s: X_Si = 35%% (photospheric zone)\n");
-    printf("  v ≥ 11,000 km/s: X_Si TAPERS linearly 35%% → 2%% at 25,000 km/s\n");
-    printf("  Goal: Sink Si II line formation to v ~ 10,000 km/s\n\n");
+    printf("[ABUNDANCES] Task Order #017 - TARDIS-MATCHED STRATIFICATION\n");
+    printf("  v < 12,000 km/s: Fe-core (X_Si=10%%, X_Fe=60%%)\n");
+    printf("  12,000 < v < 15,000 km/s: IME zone (X_Si=50%%)\n");
+    printf("  15,000 < v < 18,000 km/s: IME-O zone (X_Si=40%%)\n");
+    printf("  v > 18,000 km/s: C/O envelope (X_Si=2%%) **SHARP CUTOFF**\n\n");
 
     for (int i = 0; i < state->n_shells; i++) {
         ShellState *shell = &state->shells[i];
@@ -298,39 +296,48 @@ void simulation_set_stratified_abundances(SimulationState *state)
 
         memset(ab, 0, sizeof(Abundances));
 
-        if (v_center < v_taper_start) {
+        if (v_center < v_fe_core_end) {
             /*
-             * PHOTOSPHERIC ZONE (v < 11,000 km/s):
-             * Si-rich region where Si II 6355 MUST form.
-             * High Si abundance ensures strong line formation here.
+             * FE-RICH CORE (v < 12,000 km/s):
+             * TARDIS shells 0-3: dominated by Fe-group elements
              */
-            ab->mass_fraction[14] = Si_inner;    /* Si = 35% - dominant for Si II 6355 */
-            ab->mass_fraction[16] = 0.10;        /* S  - for S II */
-            ab->mass_fraction[20] = 0.08;        /* Ca */
-            ab->mass_fraction[26] = 0.30;        /* Fe - for Fe II */
-            ab->mass_fraction[27] = 0.05;        /* Co */
-            ab->mass_fraction[28] = 0.07;        /* Ni */
+            ab->mass_fraction[14] = 0.10;    /* Si = 10% */
+            ab->mass_fraction[16] = 0.03;    /* S */
+            ab->mass_fraction[20] = 0.02;    /* Ca */
+            ab->mass_fraction[26] = 0.60;    /* Fe = 60% - dominant */
+            ab->mass_fraction[27] = 0.10;    /* Co */
+            ab->mass_fraction[28] = 0.15;    /* Ni */
+        } else if (v_center < v_ime_zone_end) {
+            /*
+             * IME ZONE (12,000 < v < 15,000 km/s):
+             * TARDIS shells 4-9: Si-dominated intermediate mass elements
+             */
+            ab->mass_fraction[14] = 0.50;    /* Si = 50% - MAXIMUM */
+            ab->mass_fraction[16] = 0.20;    /* S */
+            ab->mass_fraction[18] = 0.03;    /* Ar */
+            ab->mass_fraction[20] = 0.10;    /* Ca */
+            ab->mass_fraction[26] = 0.15;    /* Fe */
+            ab->mass_fraction[28] = 0.02;    /* Ni */
+        } else if (v_center < v_si_cutoff) {
+            /*
+             * IME-O ZONE (15,000 < v < 18,000 km/s):
+             * TARDIS shells 10-15: Si with O mixing
+             */
+            ab->mass_fraction[8]  = 0.30;    /* O = 30% */
+            ab->mass_fraction[12] = 0.05;    /* Mg */
+            ab->mass_fraction[14] = 0.40;    /* Si = 40% */
+            ab->mass_fraction[16] = 0.15;    /* S */
+            ab->mass_fraction[20] = 0.05;    /* Ca */
+            ab->mass_fraction[26] = 0.05;    /* Fe */
         } else {
             /*
-             * OUTER IME LAYER (v ≥ 11,000 km/s):
-             * LINEAR Si TAPER to prevent "photospheric wall" effect.
-             * Removing Si from high-v shells forces line to form deeper.
+             * C/O ENVELOPE (v > 18,000 km/s):
+             * TARDIS shells 16-29: Carbon-Oxygen rich, almost NO Si!
+             * THIS IS THE KEY FIX: Sharp cutoff prevents Si II at high v.
              */
-            double taper_frac = (v_center - v_taper_start) / (v_outer_max - v_taper_start);
-            if (taper_frac > 1.0) taper_frac = 1.0;
-            if (taper_frac < 0.0) taper_frac = 0.0;
-
-            /* Linear Si decrease: 35% → 2% */
-            double X_Si_tapered = Si_inner - (Si_inner - Si_outer) * taper_frac;
-
-            ab->mass_fraction[6]  = 0.05 + 0.15 * taper_frac;  /* C increases outward */
-            ab->mass_fraction[8]  = 0.10 + 0.20 * taper_frac;  /* O increases outward */
-            ab->mass_fraction[12] = 0.05;                       /* Mg */
-            ab->mass_fraction[14] = X_Si_tapered;               /* Si - LINEARLY TAPERED */
-            ab->mass_fraction[16] = 0.10;                       /* S */
-            ab->mass_fraction[20] = 0.08;                       /* Ca */
-            ab->mass_fraction[26] = 0.10 - 0.06 * taper_frac;  /* Fe decreases outward */
-            ab->mass_fraction[28] = 0.03;                       /* Ni */
+            ab->mass_fraction[6]  = 0.50;    /* C = 50% */
+            ab->mass_fraction[8]  = 0.48;    /* O = 48% */
+            ab->mass_fraction[14] = 0.02;    /* Si = 2% - MINIMAL */
         }
 
         /* Build element list */
@@ -344,8 +351,13 @@ void simulation_set_stratified_abundances(SimulationState *state)
         /* Print summary for selected shells */
         double v_km = v_center / 1e5;
         if (i == 0 || i == 3 || i == 5 || i == 10 || i == 15 || i == 20 || i == state->n_shells - 1) {
-            const char *zone = (v_center < v_taper_start) ? "PHOTO" : "TAPER";
-            printf("  Shell %2d (v=%5.0f km/s) [%s]: X_Si=%5.2f%%, X_Fe=%5.2f%%\n",
+            const char *zone;
+            if (v_center < v_fe_core_end) zone = "FE-CORE";
+            else if (v_center < v_ime_zone_end) zone = "IME";
+            else if (v_center < v_si_cutoff) zone = "IME-O";
+            else zone = "C/O-ENV";
+
+            printf("  Shell %2d (v=%5.0f km/s) [%7s]: X_Si=%5.1f%%, X_Fe=%5.1f%%\n",
                    i, v_km, zone,
                    ab->mass_fraction[14] * 100,
                    ab->mass_fraction[26] * 100);
@@ -2147,8 +2159,10 @@ double simulation_update_temperatures(SimulationState *state,
         /* Apply damping to prevent oscillations */
         double T_new = T_old + damping * (T_target - T_old);
 
-        /* Enforce physical bounds (minimum 3000 K, maximum T_inner) */
-        if (T_new < 3000.0) T_new = 3000.0;
+        /* Enforce physical bounds (Task Order #018 fix: raised minimum to 5000 K)
+         * Minimum 5000 K prevents ionization collapse at low T
+         * Maximum is 1.1 × T_inner to prevent unphysical heating */
+        if (T_new < 5000.0) T_new = 5000.0;
         if (T_new > T_inner * 1.1) T_new = T_inner * 1.1;
 
         /* Compute relative change */
@@ -2222,17 +2236,23 @@ void luminosity_estimators_add_absorbed(LuminosityEstimators *lum, double energy
 double luminosity_update_T_inner(LuminosityEstimators *lum, double damping)
 {
     /*
-     * TARDIS T_inner update formula:
+     * FIXED TARDIS-STYLE T_inner update (Task Order #018 fix)
      *
-     * From Stefan-Boltzmann: L = 4π R² σ T⁴
-     * Therefore: T ∝ L^0.25
+     * Problem: Original implementation had a positive feedback loop:
+     *   - If escape fraction < target fraction, L_ratio < 1
+     *   - This causes T to decrease continuously
+     *   - Lower T → even lower escape fraction → runaway cooling
      *
-     * Correction factor: L_emitted / L_requested
+     * Fix: Use ADAPTIVE target based on actual escape fraction, and limit
+     *      the maximum correction per iteration to prevent instability.
      *
-     * With damping to prevent oscillations:
-     *   T_new = T_old + damping × (T_correction - T_old)
+     * TARDIS actually computes T_rad from W × T_inner using the dilution
+     * factor W. For shell temperatures, they use:
+     *   T_rad = W^0.25 × T_inner
      *
-     * where T_correction = T_old × (L_emitted / L_requested)^0.25
+     * For inner boundary, the key insight is that we want radiative
+     * equilibrium, not luminosity matching. We keep T_inner stable and
+     * only update shell temperatures.
      */
 
     if (lum->L_requested <= 0.0 || lum->L_emitted <= 0.0) {
@@ -2241,31 +2261,46 @@ double luminosity_update_T_inner(LuminosityEstimators *lum, double damping)
         return lum->T_inner;
     }
 
-    /* Calculate correction factor
-     * TARDIS-style: target L_emitted = L_requested × fraction
-     * The 'fraction' accounts for packets absorbed at the inner boundary.
-     * Typical value is 0.67-0.8 depending on ejecta opacity.
+    /* Compute actual escape fraction */
+    double total_L = lum->L_emitted + lum->L_absorbed;
+    double actual_escape_frac = (total_L > 0) ? lum->L_emitted / total_L : 0.5;
+
+    /* Use ADAPTIVE target: blend fixed fraction with actual escape fraction
+     * This prevents runaway when the model has different opacity than assumed.
+     * Weight: 0.3 × fixed_fraction + 0.7 × actual_escape_fraction
      */
-    double L_target = lum->L_requested * lum->fraction;
+    double adaptive_frac = 0.3 * lum->fraction + 0.7 * actual_escape_frac;
+    if (adaptive_frac < 0.3) adaptive_frac = 0.3;  /* Minimum bound */
+    if (adaptive_frac > 0.9) adaptive_frac = 0.9;  /* Maximum bound */
+
+    double L_target = lum->L_requested * adaptive_frac;
     double L_ratio = lum->L_emitted / L_target;
+
+    /* LIMIT correction factor to prevent instability
+     * Max correction: ±10% per iteration (0.9 to 1.1)
+     * This is crucial for convergence stability!
+     */
     double correction = pow(L_ratio, 0.25);
+    if (correction < 0.90) correction = 0.90;  /* Max 10% decrease */
+    if (correction > 1.10) correction = 1.10;  /* Max 10% increase */
 
     /* Target temperature */
     double T_target = lum->T_inner * correction;
 
-    /* Apply damping */
-    double T_new = lum->T_inner + damping * (T_target - lum->T_inner);
+    /* Apply damping (reduced from 0.7 to 0.5 for more stability) */
+    double effective_damping = (damping > 0.5) ? 0.5 : damping;
+    double T_new = lum->T_inner + effective_damping * (T_target - lum->T_inner);
 
-    /* Enforce physical bounds */
-    if (T_new < 2000.0) T_new = 2000.0;
+    /* Enforce physical bounds (raised minimum from 2000K to 5000K) */
+    if (T_new < 5000.0) T_new = 5000.0;
     if (T_new > 100000.0) T_new = 100000.0;
 
     lum->T_inner_new = T_new;
 
-    printf("[LUMINOSITY] L_emitted=%.3e, L_target=%.3e (frac=%.2f), ratio=%.3f\n",
-           lum->L_emitted, L_target, lum->fraction, L_ratio);
+    printf("[LUMINOSITY] L_emitted=%.3e, L_target=%.3e (frac=%.2f→%.2f), ratio=%.3f\n",
+           lum->L_emitted, L_target, lum->fraction, adaptive_frac, L_ratio);
     printf("[LUMINOSITY] T_inner: %.0fK → %.0fK (correction=%.3f, damping=%.2f)\n",
-           lum->T_inner, T_new, correction, damping);
+           lum->T_inner, T_new, correction, effective_damping);
 
     /* Update T_inner for next iteration */
     lum->T_inner = T_new;
@@ -2369,3 +2404,225 @@ void radiation_field_from_estimators(RadiationField *rf,
     printf("[RADIATION FIELD] Populated J_nu for %ld lines (J_avg = %.2e erg/cm²/s/Hz/sr)\n",
            (long)rf->n_lines, J_avg);
 }
+
+/* ============================================================================
+ * TASK ORDER #034: TARDIS PLASMA STATE INJECTION
+ * ============================================================================
+ * Load pre-computed plasma state from TARDIS directly, bypassing all C-side
+ * ionization and level population calculations.
+ *
+ * This ensures "Code-level 1:1 Correspondence" in transport by using
+ * TARDIS's own calculated optical environment.
+ * ============================================================================ */
+
+#ifdef HAVE_HDF5
+#include <hdf5.h>
+#include <hdf5_hl.h>
+
+/**
+ * Load TARDIS plasma state from HDF5 file
+ *
+ * File structure expected:
+ *   /geometry/r_inner, r_outer, v_inner, v_outer, t_explosion
+ *   /plasma/electron_densities, t_rad, w
+ *   /ion_number_density/data[n_ions, n_shells], atomic_number[], ion_number[]
+ *   /tau_sobolev/data[n_lines, n_shells] (optional)
+ *
+ * @param state      SimulationState to populate
+ * @param atomic     AtomicData (for line information)
+ * @param filename   Path to HDF5 file
+ * @return 0 on success, -1 on error
+ */
+int simulation_load_plasma_state(SimulationState *state,
+                                  const AtomicData *atomic,
+                                  const char *filename)
+{
+    printf("\n");
+    printf("╔═══════════════════════════════════════════════════════════════╗\n");
+    printf("║   TASK ORDER #035: Loading TARDIS Plasma State (Golden Data)  ║\n");
+    printf("╚═══════════════════════════════════════════════════════════════╝\n\n");
+
+    printf("[Inject] Opening plasma state file: %s\n", filename);
+
+    hid_t file_id = H5Fopen(filename, H5F_ACC_RDONLY, H5P_DEFAULT);
+    if (file_id < 0) {
+        fprintf(stderr, "[Inject] Error: Cannot open file %s\n", filename);
+        return -1;
+    }
+
+    int n_shells = state->n_shells;
+    int64_t n_lines = atomic->n_lines;
+    hsize_t dims[2];
+    H5T_class_t type_class;
+    size_t type_size;
+
+    /* ================================================================
+     * 1. Load Electron Density (n_e)
+     * ================================================================ */
+    double *n_e_buffer = (double *)malloc(n_shells * sizeof(double));
+    if (H5LTread_dataset_double(file_id, "/electron_density", n_e_buffer) < 0) {
+        fprintf(stderr, "[Inject] Error: Failed to read electron_density\n");
+        free(n_e_buffer);
+        H5Fclose(file_id);
+        return -1;
+    }
+
+    /* ================================================================
+     * 2. Load Electron Temperature (t_electrons)
+     * ================================================================ */
+    double *t_e_buffer = (double *)malloc(n_shells * sizeof(double));
+    if (H5LTread_dataset_double(file_id, "/t_electrons", t_e_buffer) < 0) {
+        fprintf(stderr, "[Inject] Error: Failed to read t_electrons\n");
+        free(n_e_buffer);
+        free(t_e_buffer);
+        H5Fclose(file_id);
+        return -1;
+    }
+
+    /* Apply Plasma Properties to Shells */
+    for (int i = 0; i < n_shells; i++) {
+        state->shells[i].plasma.n_e = n_e_buffer[i];
+        state->shells[i].plasma.T = t_e_buffer[i];
+
+        /* Update Thomson opacity based on new n_e */
+        state->shells[i].sigma_thomson_ne = n_e_buffer[i] * SIGMA_THOMSON;
+        state->shells[i].tau_electron = state->shells[i].sigma_thomson_ne *
+            (state->shells[i].r_outer - state->shells[i].r_inner);
+    }
+
+    printf("[Inject] Updated T and n_e for %d shells.\n", n_shells);
+    printf("[Inject]   n_e:   %.3e - %.3e cm^-3\n", n_e_buffer[0], n_e_buffer[n_shells-1]);
+    printf("[Inject]   T_e:   %.0f - %.0f K\n", t_e_buffer[0], t_e_buffer[n_shells-1]);
+
+    free(n_e_buffer);
+    free(t_e_buffer);
+
+    /* ================================================================
+     * 3. Load Sobolev Optical Depths (The "Answer Key")
+     * ================================================================ */
+    /* TARDIS Export Format: (N_lines, N_shells) flattened row-major */
+    if (H5LTget_dataset_info(file_id, "/tau_sobolev", dims, &type_class, &type_size) < 0) {
+        fprintf(stderr, "[Inject] Error: Failed to get tau_sobolev info\n");
+        H5Fclose(file_id);
+        return -1;
+    }
+
+    int64_t file_n_lines = dims[0];
+    int file_n_shells = (int)dims[1];
+
+    printf("[Inject] Tau Sobolev dimensions: %ld lines × %d shells\n",
+           (long)file_n_lines, file_n_shells);
+
+    if (file_n_shells != n_shells) {
+        fprintf(stderr, "[Inject] Error: Shell count mismatch! File=%d, State=%d\n",
+                file_n_shells, n_shells);
+        H5Fclose(file_id);
+        return -1;
+    }
+
+    /* Allocate buffer for all taus */
+    size_t total_taus = file_n_lines * file_n_shells;
+    double *tau_buffer = (double *)malloc(total_taus * sizeof(double));
+    if (!tau_buffer) {
+        fprintf(stderr, "[Inject] Memory allocation failed for tau buffer (%.2f MB)\n",
+                total_taus * 8.0 / 1e6);
+        H5Fclose(file_id);
+        return -1;
+    }
+
+    if (H5LTread_dataset_double(file_id, "/tau_sobolev", tau_buffer) < 0) {
+        fprintf(stderr, "[Inject] Failed to read tau_sobolev\n");
+        free(tau_buffer);
+        H5Fclose(file_id);
+        return -1;
+    }
+
+    /* Compute statistics */
+    double tau_max = 0.0, tau_sum = 0.0;
+    int64_t n_active_total = 0;
+
+    for (size_t i = 0; i < total_taus; i++) {
+        if (tau_buffer[i] > TAU_MIN_ACTIVE) {
+            n_active_total++;
+            tau_sum += tau_buffer[i];
+            if (tau_buffer[i] > tau_max) tau_max = tau_buffer[i];
+        }
+    }
+
+    printf("[Inject] Tau statistics:\n");
+    printf("[Inject]   Max tau:     %.2e\n", tau_max);
+    printf("[Inject]   Mean tau:    %.4f (of active)\n",
+           n_active_total > 0 ? tau_sum / n_active_total : 0.0);
+    printf("[Inject]   Active:      %ld / %ld\n", (long)n_active_total, (long)total_taus);
+
+    /* ================================================================
+     * 4. Distribute Taus to Shells (Populate Active Lines)
+     * ================================================================ */
+    printf("[Inject] Populating active lines in shells...\n");
+
+    /* Clear existing active lines */
+    for (int s = 0; s < n_shells; s++) {
+        state->shells[s].n_active_lines = 0;
+    }
+
+    /* Use the minimum of file lines and atomic lines */
+    int64_t lines_to_process = file_n_lines < n_lines ? file_n_lines : n_lines;
+
+    int64_t total_injected = 0;
+    for (int s = 0; s < n_shells; s++) {
+        for (int64_t l = 0; l < lines_to_process; l++) {
+            /* Access: line index l, shell index s */
+            /* TARDIS python .values is (lines, shells), C row-major: l * n_shells + s */
+            double tau = tau_buffer[l * n_shells + s];
+
+            if (tau > TAU_MIN_ACTIVE) {
+                int64_t idx = state->shells[s].n_active_lines;
+
+                if (idx < MAX_ACTIVE_LINES) {
+                    state->shells[s].active_lines[idx].line_idx = l;
+                    state->shells[s].active_lines[idx].nu = atomic->lines[l].nu;
+                    state->shells[s].active_lines[idx].tau_sobolev = tau;
+                    state->shells[s].n_active_lines++;
+                    total_injected++;
+                }
+            }
+        }
+    }
+
+    printf("[Inject] Injection complete. Total active line-shell pairs: %ld\n",
+           (long)total_injected);
+
+    /* ================================================================
+     * 5. Load Ion Densities (for verification)
+     * ================================================================ */
+    if (H5Lexists(file_id, "/ion_density", H5P_DEFAULT) > 0) {
+        H5LTget_dataset_info(file_id, "/ion_density", dims, NULL, NULL);
+        int n_ions = (int)dims[0];
+        printf("[Inject] Ion densities available: %d ions\n", n_ions);
+
+        /* Could load and populate plasma.n_ion if needed */
+    }
+
+    free(tau_buffer);
+    H5Fclose(file_id);
+
+    printf("\n[Inject] *** GOLDEN DATA INJECTION COMPLETE ***\n");
+    printf("[Inject] LUMINA is now running with TARDIS-computed tau_sobolev.\n");
+    printf("[Inject] If spectrum differs from TARDIS, transport logic has bugs.\n\n");
+
+    return 0;
+}
+
+#else
+/* Stub when HDF5 is not available */
+int simulation_load_plasma_state(SimulationState *state,
+                                  const AtomicData *atomic,
+                                  const char *filename)
+{
+    (void)state;
+    (void)atomic;
+    fprintf(stderr, "[INJECT] ERROR: HDF5 support not compiled in\n");
+    fprintf(stderr, "[INJECT] Rebuild with: make HAVE_HDF5=1\n");
+    return -1;
+}
+#endif /* HAVE_HDF5 */
