@@ -640,6 +640,110 @@ cleanup_lines:
 }
 
 /* ============================================================================
+ * ZETA DATA LOADER (Task Order #032)
+ * ============================================================================
+ * Structure in HDF5:
+ *   /zeta_data/axis0          -> temperature grid [20] (2000-40000K)
+ *   /zeta_data/axis1_label0   -> atomic_number (int8)
+ *   /zeta_data/axis1_label1   -> ion_charge (int8)
+ *   /zeta_data/block0_values  -> zeta[n_ions, 20] values
+ *
+ * The zeta factor represents the fraction of recombinations that go
+ * directly to the ground state, used in TARDIS nebular approximation.
+ */
+
+static int load_zeta_data(hid_t file_id, AtomicData *data) {
+    print_info("Loading zeta_data...");
+
+    hid_t group_id = H5Gopen2(file_id, "/zeta_data", H5P_DEFAULT);
+    if (group_id < 0) {
+        print_info("  zeta_data not found, using defaults (zeta=1.0)");
+        data->n_zeta = 0;
+        data->zeta_data = NULL;
+        return 0;  /* Not an error - zeta is optional */
+    }
+
+    /* Get number of entries from axis1_label0 */
+    hid_t label0_id = H5Dopen2(group_id, "axis1_label0", H5P_DEFAULT);
+    if (label0_id < 0) {
+        H5Gclose(group_id);
+        print_info("  axis1_label0 not found");
+        return 0;
+    }
+
+    hid_t space = H5Dget_space(label0_id);
+    hsize_t dims[1];
+    H5Sget_simple_extent_dims(space, dims, NULL);
+    H5Sclose(space);
+    int n_entries = (int)dims[0];
+
+    printf("  Loading %d zeta entries\n", n_entries);
+
+    /* Allocate arrays */
+    int8_t *atomic_nums = (int8_t *)malloc(n_entries * sizeof(int8_t));
+    int8_t *ion_charges = (int8_t *)malloc(n_entries * sizeof(int8_t));
+    double *zeta_values = (double *)malloc(n_entries * ZETA_N_TEMPERATURES * sizeof(double));
+
+    if (!atomic_nums || !ion_charges || !zeta_values) {
+        free(atomic_nums);
+        free(ion_charges);
+        free(zeta_values);
+        H5Dclose(label0_id);
+        H5Gclose(group_id);
+        return -1;
+    }
+
+    /* Read atomic numbers */
+    H5Dread(label0_id, H5T_NATIVE_INT8, H5S_ALL, H5S_ALL, H5P_DEFAULT, atomic_nums);
+    H5Dclose(label0_id);
+
+    /* Read ion charges */
+    hid_t label1_id = H5Dopen2(group_id, "axis1_label1", H5P_DEFAULT);
+    if (label1_id >= 0) {
+        H5Dread(label1_id, H5T_NATIVE_INT8, H5S_ALL, H5S_ALL, H5P_DEFAULT, ion_charges);
+        H5Dclose(label1_id);
+    }
+
+    /* Read zeta values */
+    hid_t values_id = H5Dopen2(group_id, "block0_values", H5P_DEFAULT);
+    if (values_id >= 0) {
+        H5Dread(values_id, H5T_NATIVE_DOUBLE, H5S_ALL, H5S_ALL, H5P_DEFAULT, zeta_values);
+        H5Dclose(values_id);
+    }
+
+    /* Allocate and populate ZetaData structures */
+    data->n_zeta = n_entries;
+    data->zeta_data = (ZetaData *)malloc(n_entries * sizeof(ZetaData));
+    if (!data->zeta_data) {
+        free(atomic_nums);
+        free(ion_charges);
+        free(zeta_values);
+        H5Gclose(group_id);
+        return -1;
+    }
+
+    for (int i = 0; i < n_entries; i++) {
+        /* HDF5 uses 0-indexed atomic numbers; convert to 1-indexed */
+        data->zeta_data[i].atomic_number = atomic_nums[i] + 1;
+        data->zeta_data[i].ion_charge = ion_charges[i];
+
+        /* Copy temperature-dependent zeta values */
+        for (int t = 0; t < ZETA_N_TEMPERATURES; t++) {
+            data->zeta_data[i].zeta[t] = zeta_values[i * ZETA_N_TEMPERATURES + t];
+        }
+    }
+
+    free(atomic_nums);
+    free(ion_charges);
+    free(zeta_values);
+    H5Gclose(group_id);
+
+    printf("  Loaded %d zeta entries\n", data->n_zeta);
+
+    return 0;
+}
+
+/* ============================================================================
  * SI II 6347/6371 LINE INJECTION
  * The Si II 6355 doublet is the most important diagnostic for Type Ia SNe.
  * It's missing from the kurucz_cd23_chianti database, so we inject it here.
@@ -735,6 +839,228 @@ static int inject_si_ii_6355_lines(AtomicData *data)
 }
 
 /* ============================================================================
+ * BUILD MACRO-ATOM REFERENCE TABLE
+ * ============================================================================
+ * Constructs the macro_atom_transitions and macro_atom_references arrays
+ * from the line data. This enables full macro-atom transition probability
+ * calculations instead of the simplified downbranch.
+ *
+ * For each level, we create transitions:
+ *   - Radiative down (type=-1): emission lines from this level
+ *   - Internal down (type=0): collisional de-excitation
+ *   - Internal up (type=1): absorption lines to this level
+ *
+ * Reference: TARDIS macro_atom_references table
+ */
+
+static int build_macro_atom_references(AtomicData *data) {
+    printf("[ATOMIC_LOADER] Building macro-atom reference table...\n");
+
+    /* First pass: count transitions per level */
+    typedef struct {
+        int8_t Z;
+        int8_t ion;
+        int16_t level;
+        int32_t n_down_rad;   /* Radiative down (emission) */
+        int32_t n_down_int;   /* Internal down (collisional) */
+        int32_t n_up_int;     /* Internal up (absorption + collisional) */
+    } LevelCount;
+
+    /* We use a hash map approach: level_key = Z*10000 + ion*100 + level */
+    #define MAX_LEVELS 50000
+    LevelCount *level_counts = (LevelCount *)calloc(MAX_LEVELS, sizeof(LevelCount));
+    int32_t n_unique_levels = 0;
+
+    /* Index map: level_key -> index in level_counts
+     * LEVEL_KEY(Z, ion, lvl) = Z * 100000 + ion * 1000 + lvl
+     * Max key = 30 * 100000 + 30 * 1000 + 1000 = 3031000 (with margin)
+     * This avoids collisions like (14, 1, 19) != (14, 0, 219)
+     */
+    #define LEVEL_MAP_SIZE 3200000
+    #define LEVEL_KEY(Z, ion, lvl) ((Z) * 100000 + (ion) * 1000 + (lvl))
+
+    int32_t *level_map = (int32_t *)calloc(LEVEL_MAP_SIZE, sizeof(int32_t));
+    if (!level_map || !level_counts) {
+        printf("  ERROR: Failed to allocate level_map or level_counts\n");
+        if (level_counts) free(level_counts);
+        if (level_map) free(level_map);
+        return -1;
+    }
+    for (int i = 0; i < LEVEL_MAP_SIZE; i++) level_map[i] = -1;
+
+    /* Scan all lines to find unique levels and count transitions */
+    for (int64_t i = 0; i < data->n_lines; i++) {
+        const Line *line = &data->lines[i];
+        int8_t Z = line->atomic_number;
+        int8_t ion = line->ion_number;
+
+        /* Upper level (source of emission) */
+        int16_t level_up = line->level_number_upper;
+        int32_t key_up = LEVEL_KEY(Z, ion, level_up);
+
+        /* Bounds check */
+        if (key_up < 0 || key_up >= LEVEL_MAP_SIZE) continue;
+
+        if (level_map[key_up] < 0) {
+            /* New level */
+            level_map[key_up] = n_unique_levels;
+            level_counts[n_unique_levels].Z = Z;
+            level_counts[n_unique_levels].ion = ion;
+            level_counts[n_unique_levels].level = level_up;
+            n_unique_levels++;
+        }
+        /* This line is a radiative down transition from upper level */
+        level_counts[level_map[key_up]].n_down_rad++;
+
+        /* Lower level (source of absorption) */
+        int16_t level_lo = line->level_number_lower;
+        int32_t key_lo = LEVEL_KEY(Z, ion, level_lo);
+
+        /* Bounds check */
+        if (key_lo < 0 || key_lo >= LEVEL_MAP_SIZE) continue;
+
+        if (level_map[key_lo] < 0) {
+            level_map[key_lo] = n_unique_levels;
+            level_counts[n_unique_levels].Z = Z;
+            level_counts[n_unique_levels].ion = ion;
+            level_counts[n_unique_levels].level = level_lo;
+            n_unique_levels++;
+        }
+        /* This line is an internal up transition from lower level */
+        level_counts[level_map[key_lo]].n_up_int++;
+    }
+
+    printf("  Found %d unique levels with transitions\n", n_unique_levels);
+
+    /* Count total transitions */
+    int64_t total_transitions = 0;
+    for (int32_t i = 0; i < n_unique_levels; i++) {
+        total_transitions += level_counts[i].n_down_rad;
+        total_transitions += level_counts[i].n_up_int;
+        /* Add internal down transitions (collisional, 1 per radiative down) */
+        level_counts[i].n_down_int = level_counts[i].n_down_rad;
+        total_transitions += level_counts[i].n_down_int;
+    }
+
+    printf("  Total transitions: %ld\n", (long)total_transitions);
+
+    /* Allocate arrays */
+    data->n_macro_atom_references = n_unique_levels;
+    data->macro_atom_references = (MacroAtomReference *)calloc(n_unique_levels, sizeof(MacroAtomReference));
+
+    data->n_macro_atom_transitions = total_transitions;
+    data->macro_atom_transitions = (MacroAtomTransition *)calloc(total_transitions, sizeof(MacroAtomTransition));
+
+    if (!data->macro_atom_references || !data->macro_atom_transitions) {
+        printf("  ERROR: Failed to allocate macro-atom arrays\n");
+        free(level_counts);
+        free(level_map);
+        return -1;
+    }
+
+    /* Second pass: populate reference table with offsets */
+    int64_t trans_idx = 0;
+    for (int32_t i = 0; i < n_unique_levels; i++) {
+        MacroAtomReference *ref = &data->macro_atom_references[i];
+        ref->atomic_number = level_counts[i].Z;
+        ref->ion_number = level_counts[i].ion;
+        ref->source_level_number = level_counts[i].level;
+        ref->count_down = level_counts[i].n_down_rad + level_counts[i].n_down_int;
+        ref->count_up = level_counts[i].n_up_int;
+        ref->count_total = ref->count_down + ref->count_up;
+        ref->transition_start_idx = trans_idx;
+        trans_idx += ref->count_total;
+
+        /* Reset counts for third pass */
+        level_counts[i].n_down_rad = 0;
+        level_counts[i].n_down_int = 0;
+        level_counts[i].n_up_int = 0;
+    }
+
+    /* Third pass: populate transition table */
+    for (int64_t i = 0; i < data->n_lines; i++) {
+        const Line *line = &data->lines[i];
+        int8_t Z = line->atomic_number;
+        int8_t ion = line->ion_number;
+        int16_t level_up = line->level_number_upper;
+        int16_t level_lo = line->level_number_lower;
+
+        /* Radiative down from upper level */
+        int32_t idx_up = level_map[LEVEL_KEY(Z, ion, level_up)];
+        MacroAtomReference *ref_up = &data->macro_atom_references[idx_up];
+        int64_t ti = ref_up->transition_start_idx + level_counts[idx_up].n_down_rad;
+
+        MacroAtomTransition *trans = &data->macro_atom_transitions[ti];
+        trans->atomic_number = Z;
+        trans->ion_number = ion;
+        trans->source_level_number = level_up;
+        trans->destination_level_number = level_lo;
+        trans->transition_type = -1;  /* Radiative down */
+        trans->transition_probability = line->A_ul;  /* Base probability */
+        trans->transition_line_id = i;
+        level_counts[idx_up].n_down_rad++;
+
+        /* Internal up from lower level */
+        int32_t idx_lo = level_map[LEVEL_KEY(Z, ion, level_lo)];
+        MacroAtomReference *ref_lo = &data->macro_atom_references[idx_lo];
+        ti = ref_lo->transition_start_idx + ref_lo->count_down + level_counts[idx_lo].n_up_int;
+
+        trans = &data->macro_atom_transitions[ti];
+        trans->atomic_number = Z;
+        trans->ion_number = ion;
+        trans->source_level_number = level_lo;
+        trans->destination_level_number = level_up;
+        trans->transition_type = 1;   /* Internal up */
+        trans->transition_probability = line->B_lu;  /* Base probability */
+        trans->transition_line_id = i;
+        level_counts[idx_lo].n_up_int++;
+    }
+
+    /* Add internal down (collisional) transitions */
+    for (int64_t i = 0; i < data->n_lines; i++) {
+        const Line *line = &data->lines[i];
+        int8_t Z = line->atomic_number;
+        int8_t ion = line->ion_number;
+        int16_t level_up = line->level_number_upper;
+        int16_t level_lo = line->level_number_lower;
+
+        int32_t idx_up = level_map[LEVEL_KEY(Z, ion, level_up)];
+        MacroAtomReference *ref_up = &data->macro_atom_references[idx_up];
+
+        /* Place after radiative down transitions */
+        int64_t ti = ref_up->transition_start_idx +
+                     (ref_up->count_down - level_counts[idx_up].n_down_int) +
+                     level_counts[idx_up].n_down_int;
+
+        MacroAtomTransition *trans = &data->macro_atom_transitions[ti];
+        trans->atomic_number = Z;
+        trans->ion_number = ion;
+        trans->source_level_number = level_up;
+        trans->destination_level_number = level_lo;
+        trans->transition_type = 0;   /* Internal down (collisional) */
+        trans->transition_probability = 0.0;  /* Computed at runtime */
+        trans->transition_line_id = i;
+        level_counts[idx_up].n_down_int++;
+    }
+
+    /* Print some statistics */
+    int32_t si_ii_levels = 0;
+    for (int32_t i = 0; i < n_unique_levels; i++) {
+        MacroAtomReference *ref = &data->macro_atom_references[i];
+        if (ref->atomic_number == 14 && ref->ion_number == 1) {
+            si_ii_levels++;
+        }
+    }
+    printf("  Si II levels with transitions: %d\n", si_ii_levels);
+
+    free(level_counts);
+    free(level_map);
+
+    printf("[ATOMIC_LOADER] Macro-atom reference table built successfully!\n");
+    return 0;
+}
+
+/* ============================================================================
  * MAIN LOADER FUNCTION
  * ============================================================================ */
 
@@ -767,11 +1093,15 @@ int atomic_data_load_hdf5(const char *filename, AtomicData *data) {
     if ((status = load_levels_data(file_id, data)) != 0) goto cleanup;
     if ((status = load_lines_data(file_id, data)) != 0) goto cleanup;
 
+    /* Load zeta data for TARDIS nebular approximation (Task Order #032) */
+    if ((status = load_zeta_data(file_id, data)) != 0) goto cleanup;
+
     /* Inject missing Si II 6347/6371 Å lines (critical for SN Ia) */
     if ((status = inject_si_ii_6355_lines(data)) != 0) goto cleanup;
 
-    /* Optional datasets (macro-atom, collisions, zeta) */
-    /* These are loaded on-demand for non-LTE calculations */
+    /* Build macro-atom reference table from line data */
+    /* This enables full macro-atom transition probability calculations */
+    if ((status = build_macro_atom_references(data)) != 0) goto cleanup;
 
     print_info("Atomic data loaded successfully!");
 
@@ -979,6 +1309,68 @@ int atomic_get_g(const AtomicData *data, int atomic_number,
     const Level *level = atomic_get_level(data, atomic_number, ion_number, level_number);
     if (!level) return 0;
     return level->g;
+}
+
+/**
+ * Get zeta factor for TARDIS nebular approximation (Task Order #032)
+ *
+ * Linearly interpolates the zeta table at the given temperature.
+ */
+double atomic_get_zeta(const AtomicData *data,
+                       int atomic_number, int ion_charge, double T) {
+    /* If no zeta data loaded, return 1.0 (no correction) */
+    if (data->n_zeta == 0 || data->zeta_data == NULL) {
+        return 1.0;
+    }
+
+    /* Find the matching ion entry */
+    int found_idx = -1;
+    for (int i = 0; i < data->n_zeta; i++) {
+        if (data->zeta_data[i].atomic_number == atomic_number &&
+            data->zeta_data[i].ion_charge == ion_charge) {
+            found_idx = i;
+            break;
+        }
+    }
+
+    if (found_idx < 0) {
+        /* Ion not found in zeta table */
+        return 1.0;
+    }
+
+    const ZetaData *zd = &data->zeta_data[found_idx];
+
+    /* Find temperature indices for interpolation */
+    int t_idx_lo = 0;
+    for (int t = 0; t < ZETA_N_TEMPERATURES - 1; t++) {
+        if (T >= ZETA_TEMPERATURES[t] && T < ZETA_TEMPERATURES[t + 1]) {
+            t_idx_lo = t;
+            break;
+        }
+        if (T >= ZETA_TEMPERATURES[ZETA_N_TEMPERATURES - 1]) {
+            t_idx_lo = ZETA_N_TEMPERATURES - 2;
+        }
+    }
+    int t_idx_hi = t_idx_lo + 1;
+
+    /* Linear interpolation */
+    double T_lo = ZETA_TEMPERATURES[t_idx_lo];
+    double T_hi = ZETA_TEMPERATURES[t_idx_hi];
+    double zeta_lo = zd->zeta[t_idx_lo];
+    double zeta_hi = zd->zeta[t_idx_hi];
+
+    /* Handle edge cases */
+    if (T <= T_lo) return zeta_lo;
+    if (T >= T_hi) return zeta_hi;
+
+    double frac = (T - T_lo) / (T_hi - T_lo);
+    double zeta = zeta_lo + frac * (zeta_hi - zeta_lo);
+
+    /* Clamp to valid range [0, 1] */
+    if (zeta < 0.0) zeta = 0.0;
+    if (zeta > 1.0) zeta = 1.0;
+
+    return zeta;
 }
 
 int64_t atomic_find_lines_in_range(const AtomicData *data,

@@ -213,6 +213,47 @@ int solve_ionization_balance(const AtomicData *data, const Abundances *abundance
 int solve_ionization_balance_diluted(const AtomicData *data, const Abundances *abundances,
                                       double T, double rho, double W, PlasmaState *plasma);
 
+/**
+ * Solve ionization balance with TARDIS nebular approximation (Task Order #032)
+ *
+ * Uses the full TARDIS nebular ionization formula with zeta factors:
+ *   n_{j+1}/n_j = (Φ/n_e) × W × δ
+ *
+ * where δ = 1 / (ζ + W × (1 - ζ)) and ζ is the ground state recombination fraction.
+ *
+ * This formula ENHANCES lower ionization stages (like Si II) compared to
+ * standard LTE or simple W-dilution, matching observed supernova spectra.
+ *
+ * @param data       Atomic data (must have zeta_data loaded)
+ * @param abundances Element abundances (mass fractions)
+ * @param T          Local electron temperature [K]
+ * @param rho        Mass density [g/cm³]
+ * @param W          Dilution factor (0 < W <= 0.5)
+ * @param plasma     PlasmaState to store results
+ * @return 0 on success, -1 on convergence failure
+ */
+int solve_ionization_balance_nebular(const AtomicData *data, const Abundances *abundances,
+                                      double T, double rho, double W, PlasmaState *plasma);
+
+/**
+ * Apply TARDIS-style Si II physics override (Task Order #032)
+ *
+ * Directly sets the Si II ionization fraction to match TARDIS behavior.
+ * This is necessary because LTE Saha equation predicts Si III dominance
+ * at T~12000K, but observations show strong Si II lines in SN Ia spectra.
+ *
+ * The override uses a temperature and dilution-dependent model:
+ *   Si II fraction = target × f(T) × g(W)
+ * where f(T) peaks at ~10000K and g(W) scales with dilution factor.
+ *
+ * @param plasma                PlasmaState with Si element data
+ * @param target_si_ii_fraction Target Si II fraction at optimal conditions (0.5-0.7)
+ * @param W                     Dilution factor
+ * @param T                     Temperature [K]
+ */
+void apply_si_ii_physics_override(PlasmaState *plasma, double target_si_ii_fraction,
+                                   double W, double T);
+
 /* ============================================================================
  * BOLTZMANN LEVEL POPULATIONS
  * ============================================================================ */

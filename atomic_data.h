@@ -363,6 +363,24 @@ double atomic_get_ionization_energy(const AtomicData *data,
                                      int atomic_number, int ion_number);
 
 /**
+ * Get zeta factor for TARDIS nebular approximation (Task Order #032)
+ *
+ * The zeta factor represents the fraction of recombinations that go
+ * directly to the ground state. Used to correct the Saha equation:
+ *
+ *   delta = 1 / (zeta + W * (1 - zeta))
+ *   n_j / n_{j+1} = W * delta * Saha_LTE
+ *
+ * @param data          Atomic data with loaded zeta table
+ * @param atomic_number Atomic number (1=H, 14=Si, etc.)
+ * @param ion_charge    Charge of the RECOMBINING ion (e.g., 2 for Si III → Si II)
+ * @param T             Temperature [K]
+ * @return Zeta factor (0-1), or 1.0 if not found
+ */
+double atomic_get_zeta(const AtomicData *data,
+                       int atomic_number, int ion_charge, double T);
+
+/**
  * Get statistical weight for a level
  */
 int atomic_get_g(const AtomicData *data, int atomic_number,
