@@ -43,9 +43,9 @@ PhysicsOverrides g_physics_overrides = {
     .ff_opacity_scale = 1.0,            /* Standard free-free */
     .R_photosphere = 0.0,               /* Set at runtime */
     .enable_dilution_factor = true,     /* Enable NLTE dilution */
-    /* Line interaction type: SCATTER for TARDIS compatibility */
-    .line_interaction_type = LINE_SCATTER,
-    .use_macro_atom = 0
+    /* Line interaction type: MACROATOM for proper P-Cygni profiles */
+    .line_interaction_type = LINE_MACROATOM,
+    .use_macro_atom = 1
 };
 
 PhysicsOverrides physics_overrides_default(void) {
@@ -69,10 +69,10 @@ PhysicsOverrides physics_overrides_default(void) {
         .blue_fluor_min_angstrom = 3500.0,        /* Fluorescence range 3500-5500 Å */
         .blue_fluor_max_angstrom = 5500.0,
         .blue_scatter_probability = 0.70,         /* 70% of blue photons scatter */
-        /* Line interaction type: SCATTER for TARDIS compatibility */
-        .line_interaction_type = LINE_SCATTER,
-        /* Legacy: macro-atom disabled when using SCATTER mode */
-        .use_macro_atom = 0,
+        /* Line interaction type: MACROATOM for proper P-Cygni profiles */
+        .line_interaction_type = LINE_MACROATOM,
+        /* Enable macro-atom by default for physical fluorescence */
+        .use_macro_atom = 1,
         /* Virtual packet spawning (TARDIS-style) - disabled by default */
         .enable_virtual_packets = 0,
         .n_virtual_packets = 10
@@ -116,8 +116,8 @@ PhysicsOverrides physics_overrides_legacy_hack(void) {
  * Line interaction type determines photon fate (SCATTER, DOWNBRANCH, or MACROATOM).
  * All LUMINA-specific thermalization/fluorescence DISABLED.
  *
- * Default to SCATTER mode for exact TARDIS comparison.
- * Set LUMINA_LINE_INTERACTION_TYPE=2 for macro-atom mode.
+ * Default to MACROATOM mode for proper P-Cygni profiles.
+ * Set LUMINA_LINE_INTERACTION_TYPE=0 for SCATTER mode if needed.
  */
 PhysicsOverrides physics_overrides_tardis_mode(void) {
     PhysicsOverrides tardis = {
@@ -144,10 +144,10 @@ PhysicsOverrides physics_overrides_tardis_mode(void) {
         .blue_fluor_min_angstrom = 3500.0,
         .blue_fluor_max_angstrom = 5500.0,
         .blue_scatter_probability = 0.0,
-        /* Line interaction: SCATTER by default (simplest TARDIS mode)
-         * Set LUMINA_LINE_INTERACTION_TYPE=2 for MACROATOM mode */
-        .line_interaction_type = LINE_SCATTER,
-        .use_macro_atom = 0,  /* Deprecated - use line_interaction_type */
+        /* Line interaction: MACROATOM for proper P-Cygni profiles
+         * Set LUMINA_LINE_INTERACTION_TYPE=0 for SCATTER mode if needed */
+        .line_interaction_type = LINE_MACROATOM,
+        .use_macro_atom = 1,  /* Deprecated - use line_interaction_type */
         /* Virtual packet spawning - ENABLED in TARDIS mode for proper comparison */
         .enable_virtual_packets = 1,
         .n_virtual_packets = 10
