@@ -130,9 +130,11 @@ gpu_transport.o: gpu_transport.cu cuda_interface.h cuda_shared.h
 test_gpu_transport: gpu_transport.cu cuda_interface.h
 	$(NVCC) $(NVCC_FLAGS_OMP) -DGPU_TRANSPORT_STANDALONE $< -o $@
 
-# CUDA test driver
+# CUDA test driver (uses -Xlinker for rpath since nvcc doesn't accept -Wl,)
+HDF5_LIB_NVCC = -L$(HDF5_ROOT)/lib -Xlinker -rpath -Xlinker $(HDF5_ROOT)/lib -lhdf5 -lhdf5_hl
+CUDA_LIB_NVCC = -L$(CUDA_HOME)/lib64 -Xlinker -rpath -Xlinker $(CUDA_HOME)/lib64 -lcudart
 test_cuda: test_cuda.cu $(CUDA_OBJS) simulation_state.o plasma_physics.o atomic_loader.o
-	$(NVCC) $(NVCC_FLAGS) $(HDF5_INCLUDE) $< $(CUDA_OBJS) simulation_state.o plasma_physics.o atomic_loader.o $(LDFLAGS) $(HDF5_LIB) $(CUDA_LIB) -o $@
+	$(NVCC) $(NVCC_FLAGS) $(HDF5_INCLUDE) $< $(CUDA_OBJS) simulation_state.o plasma_physics.o atomic_loader.o -lm $(HDF5_LIB_NVCC) $(CUDA_LIB_NVCC) -lpthread -lstdc++ -o $@
 
 # Build all CUDA components
 cuda: test_cuda test_gpu_transport

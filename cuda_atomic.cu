@@ -22,7 +22,7 @@
  * ============================================================================ */
 
 extern __constant__ CudaSimConfig d_config;
-extern __constant__ CudaPartitionCache d_partition;
+extern __device__ CudaPartitionCache *d_partition_ptr;  /* Global memory pointer (too large for constant) */
 
 /* ============================================================================
  * MEMORY MAPPING: CPU → GPU
@@ -441,7 +441,7 @@ int cuda_upload_downbranch_data(CudaDeviceMemory *mem, const void *cpu_atomic)
         free(h_downbranch);
         return -1;
     }
-    err = cudaMemcpy(h_downbranch->emission_start, atomic->downbranch.emission_line_start,
+    err = cudaMemcpy(h_downbranch->emission_start, (void *)atomic->downbranch.emission_line_start,
                      start_size, cudaMemcpyHostToDevice);
     if (err != cudaSuccess) {
         cudaFree(h_downbranch->emission_start);
@@ -451,14 +451,14 @@ int cuda_upload_downbranch_data(CudaDeviceMemory *mem, const void *cpu_atomic)
     mem->total_memory += start_size;
 
     /* Allocate and copy emission_count array */
-    size_t count_size = atomic->n_lines * sizeof(int32_t);
+    size_t count_size = atomic->n_lines * sizeof(int64_t);
     err = cudaMalloc(&h_downbranch->emission_count, count_size);
     if (err != cudaSuccess) {
         cudaFree(h_downbranch->emission_start);
         free(h_downbranch);
         return -1;
     }
-    err = cudaMemcpy(h_downbranch->emission_count, atomic->downbranch.emission_line_count,
+    err = cudaMemcpy(h_downbranch->emission_count, (void *)atomic->downbranch.emission_line_count,
                      count_size, cudaMemcpyHostToDevice);
     if (err != cudaSuccess) {
         cudaFree(h_downbranch->emission_start);
@@ -478,7 +478,7 @@ int cuda_upload_downbranch_data(CudaDeviceMemory *mem, const void *cpu_atomic)
         free(h_downbranch);
         return -1;
     }
-    err = cudaMemcpy(h_downbranch->emission_line_id, atomic->downbranch.emission_line_ids,
+    err = cudaMemcpy(h_downbranch->emission_line_id, (void *)atomic->downbranch.emission_lines,
                      line_id_size, cudaMemcpyHostToDevice);
     if (err != cudaSuccess) {
         cudaFree(h_downbranch->emission_start);
@@ -544,42 +544,70 @@ int cuda_upload_downbranch_data(CudaDeviceMemory *mem, const void *cpu_atomic)
 }
 
 /**
- * Upload partition function cache to constant memory
+ * Upload partition function cache to GLOBAL memory
+ * (Partition cache is ~387KB, too large for 64KB constant memory limit)
  */
 int cuda_upload_partition_cache(const void *cpu_cache)
 {
     const PartitionFunctionCache *cache = (const PartitionFunctionCache *)cpu_cache;
 
-    CudaPartitionCache h_cache;
-    memset(&h_cache, 0, sizeof(h_cache));
+    /* Allocate host buffer */
+    CudaPartitionCache *h_cache = (CudaPartitionCache *)malloc(sizeof(CudaPartitionCache));
+    if (!h_cache) {
+        fprintf(stderr, "CUDA: Failed to allocate host partition cache\n");
+        return -1;
+    }
+    memset(h_cache, 0, sizeof(CudaPartitionCache));
 
     /* Copy temperature grid */
     for (int i = 0; i < CUDA_PARTITION_N_TEMPS; i++) {
-        h_cache.T_grid[i] = cache->T_grid[i];
+        h_cache->T_grid[i] = cache->T_grid[i];
     }
 
-    h_cache.log_T_min = log(CUDA_PARTITION_T_MIN);
-    h_cache.log_T_max = log(CUDA_PARTITION_T_MAX);
-    h_cache.d_log_T = (h_cache.log_T_max - h_cache.log_T_min) /
+    h_cache->log_T_min = log(CUDA_PARTITION_T_MIN);
+    h_cache->log_T_max = log(CUDA_PARTITION_T_MAX);
+    h_cache->d_log_T = (h_cache->log_T_max - h_cache->log_T_min) /
                        (CUDA_PARTITION_N_TEMPS - 1);
 
     /* Copy partition functions */
     for (int Z = 1; Z <= CUDA_MAX_ELEMENTS; Z++) {
         for (int ion = 0; ion <= Z; ion++) {
             for (int t = 0; t < CUDA_PARTITION_N_TEMPS; t++) {
-                h_cache.U[Z][ion][t] = cache->U[Z][ion][t];
+                h_cache->U[Z][ion][t] = cache->U[Z][ion][t];
             }
         }
     }
 
-    cudaError_t err = cudaMemcpyToSymbol(d_partition, &h_cache,
-                                          sizeof(CudaPartitionCache));
+    /* Allocate device memory for partition cache */
+    CudaPartitionCache *d_cache = NULL;
+    cudaError_t err = cudaMalloc(&d_cache, sizeof(CudaPartitionCache));
     if (err != cudaSuccess) {
-        fprintf(stderr, "CUDA: Failed to upload partition cache: %s\n",
+        fprintf(stderr, "CUDA: Failed to allocate partition cache on device: %s\n",
                 cudaGetErrorString(err));
+        free(h_cache);
         return -1;
     }
 
-    printf("[CUDA] Uploaded partition function cache to constant memory\n");
+    /* Copy to device */
+    err = cudaMemcpy(d_cache, h_cache, sizeof(CudaPartitionCache), cudaMemcpyHostToDevice);
+    free(h_cache);
+    if (err != cudaSuccess) {
+        fprintf(stderr, "CUDA: Failed to copy partition cache to device: %s\n",
+                cudaGetErrorString(err));
+        cudaFree(d_cache);
+        return -1;
+    }
+
+    /* Set the device pointer using cudaMemcpyToSymbol */
+    err = cudaMemcpyToSymbol(d_partition_ptr, &d_cache, sizeof(CudaPartitionCache *));
+    if (err != cudaSuccess) {
+        fprintf(stderr, "CUDA: Failed to set partition cache pointer: %s\n",
+                cudaGetErrorString(err));
+        cudaFree(d_cache);
+        return -1;
+    }
+
+    printf("[CUDA] Uploaded partition function cache to global memory (%.2f MB)\n",
+           sizeof(CudaPartitionCache) / 1e6);
     return 0;
 }

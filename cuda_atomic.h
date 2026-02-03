@@ -252,7 +252,7 @@ typedef struct {
 
     /* Per-line offsets into emission arrays */
     int64_t  *emission_start;      /* [n_lines] Start index */
-    int32_t  *emission_count;      /* [n_lines] Number of emission options */
+    int64_t  *emission_count;      /* [n_lines] Number of emission options */
 
     /* Emission line data (flattened) */
     int64_t  *emission_line_id;    /* Target line index */

@@ -48,10 +48,10 @@ __constant__ CudaPhysicsConstants d_physics = {
 __constant__ CudaSimConfig d_config;
 
 /**
- * Partition function cache in constant memory
- * Note: May need texture memory for larger caches
+ * Partition function cache - moved to GLOBAL memory (too large for constant)
+ * Constant memory limit: 64KB, but CudaPartitionCache is ~387KB
  */
-__constant__ CudaPartitionCache d_partition;
+__device__ CudaPartitionCache *d_partition_ptr = NULL;
 
 /* ============================================================================
  * XORSHIFT64* RANDOM NUMBER GENERATOR
@@ -162,6 +162,7 @@ int find_shell_idx(const CudaShellState *shells, int n_shells, double r)
 
 /**
  * Partition function lookup with log-space interpolation
+ * Uses global memory pointer (partition cache too large for constant memory)
  */
 __device__
 double partition_function_lookup(int Z, int ion, double T)
@@ -170,25 +171,30 @@ double partition_function_lookup(int Z, int ion, double T)
         return 1.0;
     }
 
-    /* Clamp to grid bounds */
-    if (T <= d_partition.T_grid[0]) {
-        return d_partition.U[Z][ion][0];
+    /* Check if partition cache is loaded */
+    if (d_partition_ptr == NULL) {
+        return 1.0;  /* Fallback: no partition data */
     }
-    if (T >= d_partition.T_grid[CUDA_PARTITION_N_TEMPS - 1]) {
-        return d_partition.U[Z][ion][CUDA_PARTITION_N_TEMPS - 1];
+
+    /* Clamp to grid bounds */
+    if (T <= d_partition_ptr->T_grid[0]) {
+        return d_partition_ptr->U[Z][ion][0];
+    }
+    if (T >= d_partition_ptr->T_grid[CUDA_PARTITION_N_TEMPS - 1]) {
+        return d_partition_ptr->U[Z][ion][CUDA_PARTITION_N_TEMPS - 1];
     }
 
     /* Find grid indices */
     double log_T = log(T);
-    int idx = (int)((log_T - d_partition.log_T_min) / d_partition.d_log_T);
+    int idx = (int)((log_T - d_partition_ptr->log_T_min) / d_partition_ptr->d_log_T);
     if (idx < 0) idx = 0;
     if (idx >= CUDA_PARTITION_N_TEMPS - 1) idx = CUDA_PARTITION_N_TEMPS - 2;
 
     /* Linear interpolation in log-space */
-    double T_lo = d_partition.T_grid[idx];
-    double T_hi = d_partition.T_grid[idx + 1];
-    double U_lo = d_partition.U[Z][ion][idx];
-    double U_hi = d_partition.U[Z][ion][idx + 1];
+    double T_lo = d_partition_ptr->T_grid[idx];
+    double T_hi = d_partition_ptr->T_grid[idx + 1];
+    double U_lo = d_partition_ptr->U[Z][ion][idx];
+    double U_hi = d_partition_ptr->U[Z][ion][idx + 1];
 
     double w = (log_T - log(T_lo)) / (log(T_hi) - log(T_lo));
 
