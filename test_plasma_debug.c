@@ -244,6 +244,80 @@ static void compare_ionization(const AtomicData *atomic, const TardisShellData *
     /* W = W_delta × ζ / (1 - W_delta + W_delta × ζ) */
     double W_implied = W_delta * zeta / (1.0 - W_delta + W_delta * zeta);
     printf("  Implied dilution factor W = %.4f\n", W_implied);
+
+    /* ================================================================
+     * TEST NEBULAR SOLVER with geometric W
+     * ================================================================ */
+    printf("\n[LUMINA NEBULAR SOLVER] (using W from implied value)\n");
+
+    /* Use the implied W value to test the nebular formula */
+    double W_test = (W_implied > 0.0 && W_implied < 0.5) ? W_implied : 0.1;
+    printf("  Testing with W = %.4f\n", W_test);
+
+    /* Nebular formula: n_{j+1}/n_j = (Φ/n_e) × W × δ where δ = 1/(ζ + W(1-ζ)) */
+    double R_neb[MAX_ATOMIC_NUMBER + 2];
+    double sum_R_neb = 0.0;
+    R_neb[0] = 1.0;
+    sum_R_neb = 1.0;
+    double cumulative_ratio_neb = 1.0;
+
+    printf("  Nebular ionization chain:\n");
+    for (int i = 0; i < Z && i < 5; i++) {
+        double U_i = plasma.partition_function[Z][i];
+        double U_i1 = plasma.partition_function[Z][i + 1];
+        double chi = atomic_get_ionization_energy(atomic, Z, i);
+
+        double kT = 1.380649e-16 * tardis->T;
+        double T32 = tardis->T * sqrt(tardis->T);
+
+        /* Saha factor at T */
+        double ratio_U = (U_i > 0.0) ? (2.0 * U_i1 / U_i) : 2.0;
+        double phi = ratio_U * SAHA_CONST * T32 * exp(-chi / kT);
+
+        /* Get zeta for the RECOMBINING ion (i+1) */
+        double zeta_i = atomic_get_zeta(atomic, Z, i + 1, tardis->T);
+
+        /* Delta factor: δ = 1/(ζ + W(1-ζ)) */
+        double delta = 1.0 / (zeta_i + W_test * (1.0 - zeta_i));
+
+        /* Nebular ratio: (Φ/n_e) × W × δ */
+        if (tardis->n_e > 0.0 && phi > 0.0) {
+            double nebular_ratio = (phi / tardis->n_e) * W_test * delta;
+            cumulative_ratio_neb *= nebular_ratio;
+        } else {
+            cumulative_ratio_neb = 0.0;
+        }
+
+        R_neb[i + 1] = cumulative_ratio_neb;
+        sum_R_neb += cumulative_ratio_neb;
+
+        printf("    Stage %d→%d: ζ=%.4f, δ=%.4f, W×δ=%.4e, ratio=%.4e\n",
+               i, i+1, zeta_i, delta, W_test * delta, cumulative_ratio_neb);
+    }
+
+    /* Calculate nebular fractions */
+    double neb_Si_I = R_neb[0] / sum_R_neb;
+    double neb_Si_II = R_neb[1] / sum_R_neb;
+    double neb_Si_III = R_neb[2] / sum_R_neb;
+    double neb_Si_IV = (sum_R_neb > 0 && R_neb[3] > 0) ? R_neb[3] / sum_R_neb : 0;
+
+    printf("\n  LUMINA Nebular Si fractions:\n");
+    printf("  Si I:   %.4e (%.2f%%)\n", neb_Si_I * n_Si, neb_Si_I * 100);
+    printf("  Si II:  %.4e (%.2f%%)\n", neb_Si_II * n_Si, neb_Si_II * 100);
+    printf("  Si III: %.4e (%.2f%%)\n", neb_Si_III * n_Si, neb_Si_III * 100);
+    printf("  Si IV:  %.4e (%.2f%%)\n", neb_Si_IV * n_Si, neb_Si_IV * 100);
+
+    /* Compare nebular result against TARDIS */
+    double neb_discrepancy = fabs(neb_Si_II - tardis->Si_II_frac) * 100;
+    double neb_ratio = (R_neb[2] > 0 && R_neb[1] > 0) ? R_neb[2] / R_neb[1] : 0;
+
+    printf("\n[NEBULAR vs TARDIS COMPARISON]\n");
+    printf("  TARDIS Si II:  %.2f%%\n", tardis->Si_II_frac * 100);
+    printf("  NEBULAR Si II: %.2f%%\n", neb_Si_II * 100);
+    printf("  Discrepancy:   %.2f percentage points\n", neb_discrepancy);
+    printf("  TARDIS Si III/Si II:  %.4f\n", R_tardis);
+    printf("  NEBULAR Si III/Si II: %.4f\n", neb_ratio);
+    printf("  Ratio match:          %.2fx\n", neb_ratio / R_tardis);
 }
 
 int main(int argc, char *argv[])

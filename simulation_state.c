@@ -522,8 +522,8 @@ int simulation_compute_plasma(SimulationState *state)
             double r_mid = 0.5 * (shell->r_inner + shell->r_outer);
             double W = calculate_dilution_factor(r_mid, R_ph);
 
-            /* Use diluted ionization solver for NLTE correction */
-            status = solve_ionization_balance_diluted(
+            /* Use TARDIS-equivalent Nebular Solver with Zeta factors */
+            status = solve_ionization_balance_nebular(
                 state->atomic_data,
                 ab,
                 shell->plasma.T,
@@ -535,7 +535,7 @@ int simulation_compute_plasma(SimulationState *state)
             /* Diagnostic for outer shells */
             if (i >= state->n_shells - 3) {
                 double v_mid = r_mid / state->t_explosion / 1e5;
-                printf("  [NLTE] Shell %d (v=%.0f km/s): W=%.4f, n_e=%.2e\n",
+                printf("  [NEBULAR] Shell %d (v=%.0f km/s): W=%.4f, n_e=%.2e\n",
                        i, v_mid, W, shell->plasma.n_e);
             }
         } else {
