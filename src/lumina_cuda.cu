@@ -70,6 +70,7 @@ typedef struct {                           /* Phase 6 - Step 1 */
 #define VSPEC_LAMBDA_MIN  500.0
 #define VSPEC_LAMBDA_MAX  20000.0
 #define VSPEC_N_BINS      2000
+#define N_VPACKETS        10     /* virtual packets per interaction (TARDIS default) */
 
 /* ============================================================ */
 /* Phase 6 - Step 1: cuda_allocate — allocate GPU memory        */
@@ -632,7 +633,9 @@ void d_trace_virtual_packet(
     double t_exp, double L_inner,
     const double *d_r_inner, const double *d_r_outer,
     const double *d_line_list_nu, const double *d_tau_sobolev,
+    const double *d_electron_density,
     int n_lines, int n_shells,
+    int n_vpackets,
     double *d_virtual_spectrum, uint64_t *rng)
 {
     /* Draw random emission direction for v-packet */
@@ -674,6 +677,8 @@ void d_trace_virtual_packet(
                 for (int i = lo; i < n_lines && d_line_list_nu[i] >= nu_low; i++)
                     tau_total += d_tau_sobolev[(size_t)i * n_shells + s];
             }
+            /* Electron scattering tau for turning-point segment */
+            tau_total += SIGMA_THOMSON * d_electron_density[s] * fabs(0.0 - z_cur);
             z_cur = 0.0;
             break;
         } else {
@@ -691,6 +696,8 @@ void d_trace_virtual_packet(
                 for (int i = lo; i < n_lines && d_line_list_nu[i] >= nu_low; i++)
                     tau_total += d_tau_sobolev[(size_t)i * n_shells + s];
             }
+            /* Electron scattering tau for inward shell crossing */
+            tau_total += SIGMA_THOMSON * d_electron_density[s] * fabs(z_bnd - z_cur);
             z_cur = z_bnd;
             s--;
         }
@@ -713,6 +720,8 @@ void d_trace_virtual_packet(
             for (int i = lo; i < n_lines && d_line_list_nu[i] >= nu_low; i++)
                 tau_total += d_tau_sobolev[(size_t)i * n_shells + s];
         }
+        /* Electron scattering tau for outward shell crossing */
+        tau_total += SIGMA_THOMSON * d_electron_density[s] * fabs(z_bnd - z_cur);
         z_cur = z_bnd;
         s++;
     }
@@ -728,7 +737,7 @@ void d_trace_virtual_packet(
     int bin = (int)((lambda_A - VSPEC_LAMBDA_MIN) / dlambda_A);
     if (bin >= 0 && bin < VSPEC_N_BINS) {
         double dlambda_cm = dlambda_A * 1.0e-8;
-        double weight = pkt_energy * L_inner * P_escape / dlambda_cm;
+        double weight = pkt_energy * L_inner * P_escape / dlambda_cm / (double)n_vpackets;
         atomicAdd(&d_virtual_spectrum[bin], weight);
     }
 }
@@ -830,10 +839,14 @@ void transport_kernel(
     /* Virtual packet from initial photosphere emission */
     if (d_virtual_spectrum != NULL) {
         double nu_cmf_init = pkt_nu * d_get_doppler_factor(pkt_r, pkt_mu, t_exp);
-        d_trace_virtual_packet(pkt_r, pkt_shell_id, nu_cmf_init, pkt_energy,
-                                t_exp, L_inner, d_r_inner, d_r_outer,
-                                d_line_list_nu, d_tau_sobolev,
-                                n_lines, n_shells, d_virtual_spectrum, rng);
+        for (int vp = 0; vp < N_VPACKETS; vp++) {
+            d_trace_virtual_packet(pkt_r, pkt_shell_id, nu_cmf_init, pkt_energy,
+                                    t_exp, L_inner, d_r_inner, d_r_outer,
+                                    d_line_list_nu, d_tau_sobolev,
+                                    d_electron_density,
+                                    n_lines, n_shells, N_VPACKETS,
+                                    d_virtual_spectrum, rng);
+        }
     }
 
     /* Phase 6 - Step 7: Main transport loop */
@@ -907,12 +920,15 @@ void transport_kernel(
             /* Virtual packet: trace from interaction point */
             if (d_virtual_spectrum != NULL) {
                 double nu_cmf_v = pkt_nu * d_get_doppler_factor(pkt_r, pkt_mu, t_exp);
-                d_trace_virtual_packet(pkt_r, pkt_shell_id, nu_cmf_v, pkt_energy,
-                                        t_exp, L_inner,
-                                        d_r_inner, d_r_outer,
-                                        d_line_list_nu, d_tau_sobolev,
-                                        n_lines, n_shells,
-                                        d_virtual_spectrum, rng);
+                for (int vp = 0; vp < N_VPACKETS; vp++) {
+                    d_trace_virtual_packet(pkt_r, pkt_shell_id, nu_cmf_v, pkt_energy,
+                                            t_exp, L_inner,
+                                            d_r_inner, d_r_outer,
+                                            d_line_list_nu, d_tau_sobolev,
+                                            d_electron_density,
+                                            n_lines, n_shells, N_VPACKETS,
+                                            d_virtual_spectrum, rng);
+                }
             }
         } else if (interaction_type == 2) { /* Phase 6 - Step 7: ESCATTERING */
             d_thomson_scatter(&pkt_r, &pkt_mu, &pkt_nu, &pkt_energy, /* Phase 6 - Step 7 */
@@ -920,12 +936,15 @@ void transport_kernel(
             /* Virtual packet from e-scatter */
             if (d_virtual_spectrum != NULL) {
                 double nu_cmf_v = pkt_nu * d_get_doppler_factor(pkt_r, pkt_mu, t_exp);
-                d_trace_virtual_packet(pkt_r, pkt_shell_id, nu_cmf_v, pkt_energy,
-                                        t_exp, L_inner,
-                                        d_r_inner, d_r_outer,
-                                        d_line_list_nu, d_tau_sobolev,
-                                        n_lines, n_shells,
-                                        d_virtual_spectrum, rng);
+                for (int vp = 0; vp < N_VPACKETS; vp++) {
+                    d_trace_virtual_packet(pkt_r, pkt_shell_id, nu_cmf_v, pkt_energy,
+                                            t_exp, L_inner,
+                                            d_r_inner, d_r_outer,
+                                            d_line_list_nu, d_tau_sobolev,
+                                            d_electron_density,
+                                            n_lines, n_shells, N_VPACKETS,
+                                            d_virtual_spectrum, rng);
+                }
             }
         }
     }
@@ -991,7 +1010,7 @@ int main(int argc, char *argv[]) {
     config.damping_constant = 0.5;               /* Phase 6 - Step 8 */
     config.hold_iterations = 3;                  /* Phase 6 - Step 8 */
 
-    const char *ref_dir = "tardis_reference";    /* Phase 6 - Step 8 */
+    const char *ref_dir = "data/tardis_reference";    /* Phase 6 - Step 8 */
     if (argc > 1) ref_dir = argv[1];             /* Phase 6 - Step 8 */
 
     if (load_tardis_reference_data(ref_dir, &geo, &opacity, &plasma, &config) != 0) { /* Phase 6 - Step 8 */

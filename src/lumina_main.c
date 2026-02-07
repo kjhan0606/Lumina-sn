@@ -91,7 +91,7 @@ int main(int argc, char *argv[]) {
     config.damping_constant = 0.5; /* Phase 5 - Step 3 */
     config.hold_iterations = 3; /* Phase 5 - Step 3 */
 
-    const char *ref_dir = "tardis_reference"; /* Phase 5 - Step 3 */
+    const char *ref_dir = "data/tardis_reference"; /* Phase 5 - Step 3 */
     if (argc > 1) ref_dir = argv[1]; /* Phase 5 - Step 3 */
 
     if (load_tardis_reference_data(ref_dir, &geo, &opacity, &plasma, &config) != 0) { /* Phase 5 - Step 3 */

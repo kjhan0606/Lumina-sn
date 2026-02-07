@@ -324,6 +324,9 @@ int load_tardis_reference_data(const char *ref_dir, Geometry *geo,
            n - 1, opacity->line_list_nu[n - 1], /* Phase 2 - Step 10e */
            C_SPEED_OF_LIGHT / opacity->line_list_nu[n - 1] * 1e8); /* Phase 2 - Step 10e */
 
+    /* Task #072: Store line_list.csv path for later atomic data loading */
+    /* (line_atomic_number etc. loaded in load_atomic_data) */
+
     /* Phase 2 - Step 10e2: Verify descending order */
     int desc_ok = 1; /* Phase 2 - Step 10e2 */
     for (int i = 1; i < n; i++) { /* Phase 2 - Step 10e2 */
@@ -410,6 +413,7 @@ void free_plasma_state(PlasmaState *ps) { /* Phase 2 - Step 11 */
     free(ps->W); /* Phase 2 - Step 11 */
     free(ps->T_rad); /* Phase 2 - Step 11 */
     free(ps->rho); /* Phase 2 - Step 11 */
+    free(ps->n_electron); /* Task #072 */
 }
 
 Estimators *create_estimators(int n_shells, int n_lines) { /* Phase 2 - Step 11 */
@@ -460,6 +464,188 @@ void free_spectrum(Spectrum *spec) { /* Phase 2 - Step 11 */
     free(spec->flux); /* Phase 2 - Step 11 */
     free(spec->wavelength); /* Phase 2 - Step 11 */
     free(spec); /* Phase 2 - Step 11 */
+}
+
+/* ============================================================ */
+/* Task #072: Load atomic data for plasma solver                 */
+/* ============================================================ */
+
+int load_atomic_data(AtomicData *atom, const char *ref_dir, int n_shells) {
+    char path[512];
+    int n;
+
+    memset(atom, 0, sizeof(AtomicData));
+    printf("\nLoading atomic data for plasma solver...\n");
+
+    /* --- Line columns from line_list.csv --- */
+    snprintf(path, sizeof(path), "%s/line_list.csv", ref_dir);
+    atom->line_atomic_number = read_csv_column_int(path, "atomic_number", &n);
+    atom->line_ion_number    = read_csv_column_int(path, "ion_number", &n);
+    atom->line_level_lower   = read_csv_column_int(path, "level_number_lower", &n);
+    atom->line_level_upper   = read_csv_column_int(path, "level_number_upper", &n);
+    atom->line_f_lu          = read_csv_column(path, "f_lu", &n);
+    atom->line_wavelength_cm = read_csv_column(path, "wavelength_cm", &n);
+    printf("  Line columns: %d lines loaded\n", n);
+
+    /* --- Level data from levels.csv --- */
+    snprintf(path, sizeof(path), "%s/levels.csv", ref_dir);
+    atom->level_Z          = read_csv_column_int(path, "atomic_number", &n);
+    atom->level_ion        = read_csv_column_int(path, "ion_number", &n);
+    atom->level_num        = read_csv_column_int(path, "level_number", &n);
+    atom->level_energy_eV  = read_csv_column(path, "energy_eV", &n);
+    atom->level_g          = read_csv_column_int(path, "g", &n);
+    atom->level_metastable = read_csv_column_int(path, "metastable", &n);
+    atom->n_levels = n;
+    printf("  Levels: %d loaded\n", n);
+
+    /* --- Ionization energies --- */
+    snprintf(path, sizeof(path), "%s/ionization_energies.csv", ref_dir);
+    atom->ioniz_Z         = read_csv_column_int(path, "atomic_number", &n);
+    atom->ioniz_ion       = read_csv_column_int(path, "ion_number", &n);
+    atom->ioniz_energy_eV = read_csv_column(path, "ionization_energy_eV", &n);
+    atom->n_ionization = n;
+    printf("  Ionization: %d entries\n", n);
+
+    /* --- Zeta data --- */
+    snprintf(path, sizeof(path), "%s/zeta_ions.csv", ref_dir);
+    atom->zeta_Z   = read_csv_column_int(path, "atomic_number", &n);
+    atom->zeta_ion = read_csv_column_int(path, "ion_number", &n);
+    atom->n_zeta_ions = n;
+
+    snprintf(path, sizeof(path), "%s/zeta_temps.csv", ref_dir);
+    atom->zeta_temps = read_csv_column(path, "temperature", &n);
+    atom->n_zeta_temps = n;
+
+    snprintf(path, sizeof(path), "%s/zeta_data.npy", ref_dir);
+    int zr, zc;
+    atom->zeta_data = read_npy_f64(path, &zr, &zc);
+    printf("  Zeta: %d ions x %d temps, data [%d x %d]\n",
+           atom->n_zeta_ions, atom->n_zeta_temps, zr, zc);
+
+    /* --- Atom masses --- */
+    snprintf(path, sizeof(path), "%s/atom_masses.csv", ref_dir);
+    atom->element_Z        = read_csv_column_int(path, "atomic_number", &n);
+    atom->element_mass_amu = read_csv_column(path, "mass_amu", &n);
+    atom->n_elements = n;
+    printf("  Elements: %d (", n);
+    for (int i = 0; i < n; i++) printf("%s%d", i ? "," : "", atom->element_Z[i]);
+    printf(")\n");
+
+    /* --- Abundances --- */
+    snprintf(path, sizeof(path), "%s/abundances.csv", ref_dir);
+    atom->abundances = (double *)calloc((size_t)atom->n_elements * n_shells, sizeof(double));
+    FILE *fp = fopen(path, "r");
+    if (fp) {
+        char line[8192];
+        fgets(line, sizeof(line), fp); /* skip header */
+        int elem_idx = 0;
+        while (fgets(line, sizeof(line), fp) && elem_idx < atom->n_elements) {
+            /* format: atomic_number,shell0,shell1,...,shell29 */
+            char *p = line;
+            int z_csv = (int)strtol(p, &p, 10);
+            /* Find matching element index */
+            int eidx = -1;
+            for (int i = 0; i < atom->n_elements; i++) {
+                if (atom->element_Z[i] == z_csv) { eidx = i; break; }
+            }
+            if (eidx < 0) continue;
+            for (int s = 0; s < n_shells; s++) {
+                if (*p == ',') p++;
+                atom->abundances[eidx * n_shells + s] = strtod(p, &p);
+            }
+            elem_idx++;
+        }
+        fclose(fp);
+    }
+
+    /* --- Build ion population table --- */
+    /* For each element, ion stages go from 0 to n_ionization_entries_for_element */
+    /* Count total ion populations */
+    atom->elem_ion_offset = (int *)calloc(atom->n_elements + 1, sizeof(int));
+    int total_ion_pops = 0;
+    for (int e = 0; e < atom->n_elements; e++) {
+        int z = atom->element_Z[e];
+        int n_ioniz = 0;
+        for (int i = 0; i < atom->n_ionization; i++) {
+            if (atom->ioniz_Z[i] == z) n_ioniz++;
+        }
+        atom->elem_ion_offset[e] = total_ion_pops;
+        total_ion_pops += n_ioniz + 1; /* n_ioniz energies -> n_ioniz+1 populations */
+    }
+    atom->elem_ion_offset[atom->n_elements] = total_ion_pops;
+    atom->n_ion_pops = total_ion_pops;
+
+    atom->ion_pop_Z     = (int *)calloc(total_ion_pops, sizeof(int));
+    atom->ion_pop_stage = (int *)calloc(total_ion_pops, sizeof(int));
+    for (int e = 0; e < atom->n_elements; e++) {
+        int z = atom->element_Z[e];
+        int n_pops = atom->elem_ion_offset[e + 1] - atom->elem_ion_offset[e];
+        for (int k = 0; k < n_pops; k++) {
+            int idx = atom->elem_ion_offset[e] + k;
+            atom->ion_pop_Z[idx] = z;
+            atom->ion_pop_stage[idx] = k;
+        }
+    }
+    printf("  Ion populations: %d total\n", total_ion_pops);
+
+    /* --- Build level lookup: level_offset[ion_pop_idx] --- */
+    /* Levels are sorted by (Z, ion, level_num) in levels.csv */
+    atom->level_offset = (int *)calloc(total_ion_pops + 1, sizeof(int));
+    for (int ip = 0; ip < total_ion_pops; ip++) {
+        int z = atom->ion_pop_Z[ip];
+        int ion_stage = atom->ion_pop_stage[ip];
+        int count = 0;
+        for (int l = 0; l < atom->n_levels; l++) {
+            if (atom->level_Z[l] == z && atom->level_ion[l] == ion_stage) count++;
+        }
+        atom->level_offset[ip + 1] = atom->level_offset[ip] + count;
+    }
+    printf("  Level offsets built: %d total levels mapped\n",
+           atom->level_offset[total_ion_pops]);
+
+    /* Verify level_offset total matches n_levels */
+    if (atom->level_offset[total_ion_pops] != atom->n_levels) {
+        fprintf(stderr, "WARNING: level_offset total %d != n_levels %d\n",
+                atom->level_offset[total_ion_pops], atom->n_levels);
+    }
+
+    /* --- Allocate per-shell computed arrays --- */
+    atom->ion_number_density  = (double *)calloc((size_t)total_ion_pops * n_shells, sizeof(double));
+    atom->partition_functions = (double *)calloc((size_t)total_ion_pops * n_shells, sizeof(double));
+
+    printf("Atomic data loading complete.\n");
+    return 0;
+}
+
+void free_atomic_data(AtomicData *atom) {
+    free(atom->line_atomic_number);
+    free(atom->line_ion_number);
+    free(atom->line_level_lower);
+    free(atom->line_level_upper);
+    free(atom->line_f_lu);
+    free(atom->line_wavelength_cm);
+    free(atom->level_Z);
+    free(atom->level_ion);
+    free(atom->level_num);
+    free(atom->level_energy_eV);
+    free(atom->level_g);
+    free(atom->level_metastable);
+    free(atom->ioniz_Z);
+    free(atom->ioniz_ion);
+    free(atom->ioniz_energy_eV);
+    free(atom->zeta_Z);
+    free(atom->zeta_ion);
+    free(atom->zeta_data);
+    free(atom->zeta_temps);
+    free(atom->element_Z);
+    free(atom->element_mass_amu);
+    free(atom->abundances);
+    free(atom->elem_ion_offset);
+    free(atom->ion_pop_Z);
+    free(atom->ion_pop_stage);
+    free(atom->level_offset);
+    free(atom->ion_number_density);
+    free(atom->partition_functions);
 }
 
 /* ============================================================ */

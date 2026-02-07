@@ -7,7 +7,7 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 from scipy.ndimage import uniform_filter1d
 
-REF = "tardis_reference"
+REF = "data/tardis_reference"
 
 # Load TARDIS spectra
 t_real = np.genfromtxt(f"{REF}/spectrum_real.csv", delimiter=',', names=True)

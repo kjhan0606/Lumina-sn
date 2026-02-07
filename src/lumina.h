@@ -24,6 +24,12 @@
 #define MISS_DISTANCE     1.0e99           /* Phase 2 - Step 2: line past end */
 #define CLOSE_LINE_THRESHOLD 1.0e-14       /* Phase 2 - Step 2: relative freq tol (TARDIS) */
 
+/* Task #072: Constants for plasma solver */
+#define SOBOLEV_COEFF     2.6540281e-02    /* pi * e^2 / (m_e * c) in CGS */
+#define EV_TO_ERG         1.602176634e-12  /* eV to erg conversion */
+#define AMU               1.660539066e-24  /* atomic mass unit in g */
+#define M_ELECTRON        9.1093837015e-28 /* electron mass in g */
+
 /* Phase 2 - Step 2: TARDIS estimator constants (CGS) */
 /* T_RADIATIVE = (pi^4 / (15 * 24 * zeta(5))) * (h/k_B) */
 /* zeta(5) = 1.0369277551433699 */
@@ -146,7 +152,62 @@ typedef struct {
     double *W;                /* Phase 2 - Step 4: [n_shells] dilution factor */
     double *T_rad;            /* Phase 2 - Step 4: [n_shells] radiation temp [K] */
     double *rho;              /* Phase 2 - Step 4: [n_shells] density [g/cm^3] */
+    double *n_electron;       /* Task #072: [n_shells] self-consistent n_e */
 } PlasmaState;                /* Phase 2 - Step 4 */
+
+/* Task #072: Atomic data for plasma solver */
+typedef struct {
+    /* Per-line data (from line_list.csv) */
+    int    *line_atomic_number;       /* [n_lines] Z (real, e.g. 14=Si) */
+    int    *line_ion_number;          /* [n_lines] ion stage (0=neutral) */
+    int    *line_level_lower;         /* [n_lines] lower level index */
+    int    *line_level_upper;         /* [n_lines] upper level index */
+    double *line_f_lu;                /* [n_lines] oscillator strength */
+    double *line_wavelength_cm;       /* [n_lines] wavelength in cm */
+
+    /* Level data (from levels.csv) */
+    int     n_levels;
+    int    *level_Z;                  /* [n_levels] atomic number (real) */
+    int    *level_ion;                /* [n_levels] ion number */
+    int    *level_num;                /* [n_levels] level number */
+    double *level_energy_eV;          /* [n_levels] energy in eV */
+    int    *level_g;                  /* [n_levels] statistical weight */
+    int    *level_metastable;         /* [n_levels] metastable flag */
+
+    /* Ionization data (from ionization_energies.csv) */
+    int     n_ionization;             /* total ionization entries */
+    int    *ioniz_Z;                  /* [n_ionization] atomic number */
+    int    *ioniz_ion;                /* [n_ionization] ion number */
+    double *ioniz_energy_eV;          /* [n_ionization] chi in eV */
+
+    /* Zeta factors (from zeta_data.npy + zeta_ions.csv + zeta_temps.csv) */
+    int     n_zeta_ions;
+    int    *zeta_Z;                   /* [n_zeta_ions] */
+    int    *zeta_ion;                 /* [n_zeta_ions] */
+    double *zeta_data;                /* [n_zeta_ions * n_zeta_temps] */
+    double *zeta_temps;               /* [n_zeta_temps] */
+    int     n_zeta_temps;
+
+    /* Element data (from atom_masses.csv + abundances.csv) */
+    int     n_elements;               /* 8 */
+    int    *element_Z;                /* [n_elements] */
+    double *element_mass_amu;         /* [n_elements] */
+    double *abundances;               /* [n_elements * n_shells] mass fractions */
+
+    /* Lookup: ion_offset[elem_idx] = first ion index for element elem_idx */
+    /* n_ion_pops_per_elem[elem_idx] = number of ion populations */
+    int     n_ion_pops;               /* total ion populations (153) */
+    int    *ion_pop_Z;                /* [n_ion_pops] atomic number */
+    int    *ion_pop_stage;            /* [n_ion_pops] ion stage (0..Z) */
+    int    *elem_ion_offset;          /* [n_elements+1] offset into ion_pop arrays */
+
+    /* Level lookup: level_offset[ion_pop_idx] = first level index for that ion */
+    int    *level_offset;             /* [n_ion_pops+1] */
+
+    /* Per-shell computed quantities */
+    double *ion_number_density;       /* [n_ion_pops * n_shells] */
+    double *partition_functions;      /* [n_ion_pops * n_shells] */
+} AtomicData;
 
 /* Phase 2 - Step 4: Spectrum output */
 typedef struct {
@@ -292,18 +353,22 @@ void single_packet_loop(
 void solve_radiation_field(
     Estimators *est, double time_explosion,     /* Phase 4 - Step 1 */
     double time_simulation, double *volume,     /* Phase 4 - Step 1 */
-    OpacityState *opacity, PlasmaState *plasma  /* Phase 4 - Step 1 */
+    OpacityState *opacity, PlasmaState *plasma, /* Phase 4 - Step 1 */
+    double damping_constant                     /* Task #072: TARDIS W/T_rad damping */
 );
 
 void update_t_inner(
-    MCConfig *config, double escape_fraction /* Phase 4 - Step 1 */
+    MCConfig *config, double L_emitted /* Task #072: TARDIS-style L_emitted */
 );
 
-/* Phase 5 - Step 1: Spectrum building */
-void bin_escaped_packet(
-    Spectrum *spec, double nu, double energy, /* Phase 5 - Step 1 */
-    double time_explosion                     /* Phase 5 - Step 1 */
-);
+/* Spectrum building: bins escaped packet luminosity into L_lambda [erg/s/cm] */
+void bin_escaped_packet(Spectrum *spec, double nu, double energy);
+
+/* Task #072: Atomic data loading and plasma solver */
+int load_atomic_data(AtomicData *atom, const char *ref_dir, int n_shells);
+void free_atomic_data(AtomicData *atom);
+void compute_plasma_state(AtomicData *atom, PlasmaState *plasma,
+                          OpacityState *opacity, double time_explosion);
 
 #ifdef __cplusplus   /* Phase 6 - Step 9: close extern C guard */
 }                    /* Phase 6 - Step 9 */
