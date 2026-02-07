@@ -388,6 +388,123 @@ where v_rot is the rotational velocity and theta is the viewing angle.
 This avoids re-running the full MC simulation for each viewing angle.
 
 
+## 8. Parameter Fitting for SN 2011fe
+
+### Physical Model
+
+LUMINA-SN models SN Ia ejecta as a 1D spherically-symmetric power-law density
+profile in homologous expansion:
+
+    rho(v) = rho_0 * (v / v_inner)^n
+
+where n = -7 is the density exponent, v_inner is the photosphere velocity, and
+rho_0 is the reference density at v_inner. The ejecta extends from v_inner to
+v_outer = 25,000 km/s, divided into 30 radial shells. The expansion time is
+t_exp = 19 days (1,641,600 s).
+
+The composition is uniform across all shells, specified by mass fractions of
+8 elements: C (Z=6), O (Z=8), Si (Z=14), S (Z=16), Ca (Z=20), Fe (Z=26),
+Co (Z=27), and Ni (Z=28). Oxygen serves as the filler element, absorbing
+whatever mass fraction remains after the other elements are specified. This
+choice is physically motivated: oxygen has very few optical-wavelength spectral
+lines and is effectively transparent, avoiding the artificial line blanketing
+that iron-group fillers produce (see Task #063 in HISTORY.md).
+
+The inner boundary temperature T_inner is estimated from the Stefan-Boltzmann
+law for the initial iteration:
+
+    T_inner = (L / (4 * pi * sigma * R_inner^2))^(1/4)
+
+where R_inner = v_inner * t_exp and L is the bolometric luminosity. The
+simulation then self-consistently converges T_inner over 20 iterations using
+the TARDIS luminosity feedback formula.
+
+### 5-Dimensional Parameter Space
+
+The fitting procedure explores five physical parameters:
+
+1. **log_L** (log10 of luminosity in erg/s, range [42.8, 43.15]): Controls
+   the overall energy budget and ionization balance via T_inner. Higher
+   luminosity leads to higher T_inner, shifting the ionization balance toward
+   higher ionization stages and affecting the relative strength of spectral
+   features.
+
+2. **v_inner** (photosphere velocity in km/s, range [8000, 13000]): Sets the
+   location of the inner boundary. This directly controls the blueshift of
+   P-Cygni absorption minima. The observed Si II 6355 absorption minimum
+   velocity of ~11,000 km/s constrains this parameter.
+
+3. **log_rho_0** (log10 of reference density in g/cm^3, range [-13.5, -12.7]):
+   Scales the overall optical depth. Higher density increases tau_Sobolev for
+   all lines, deepening absorption features but also increasing UV line
+   blanketing that can suppress the blue continuum.
+
+4. **X_Si** (silicon mass fraction, range [0.03, 0.25]): Controls the strength
+   of Si II features, particularly the diagnostic 6355 A absorption. Silicon
+   is the primary species responsible for the defining spectral signature of
+   Type Ia supernovae.
+
+5. **X_Fe** (iron mass fraction, range [0.15, 0.75]): Controls UV line
+   blanketing. Iron-group elements have millions of spectral lines in the
+   UV/blue that redistribute photon energy to longer wavelengths, shaping the
+   pseudo-continuum.
+
+The constraint X_Si + X_Fe <= 0.72 ensures a minimum oxygen filler of X_O >= 0.03.
+
+### Coarse-to-Fine Sampling Strategy
+
+The parameter space is sampled using Latin Hypercube Sampling (LHS) for
+efficient coverage of the 5D space. LHS ensures that each parameter is
+uniformly sampled by dividing each dimension into n equal strata, then placing
+exactly one sample in each stratum with a random offset.
+
+The search proceeds in three phases of increasing fidelity:
+
+**Phase 1 (Coarse Scan)**: 100 LHS samples with 20,000 packets and 5
+iterations per model (~15s/model). The low packet count produces noisy spectra
+but is sufficient to rank-order parameter sets and identify the promising
+region of parameter space.
+
+**Phase 2 (Refinement)**: The top-20 models from Phase 1 are re-run with
+100,000 packets and 10 iterations (~25s/model). The 5x increase in packets
+reduces MC noise by sqrt(5) ~ 2.2x, providing a more reliable ranking.
+
+**Phase 3 (Production)**: The top-3 models from Phase 2 are run with 500,000
+packets and 20 iterations (~200s/model), producing publication-quality spectra
+for comparison with observations.
+
+### RMS Metric
+
+Models are ranked by the root-mean-square residual between the normalized
+model spectrum and the normalized observed SN 2011fe spectrum (Pereira+2013,
+phase -0.3 days from B-maximum):
+
+    RMS = sqrt( mean( (F_model - F_obs)^2 ) )
+
+where both spectra are interpolated onto a common wavelength grid (3500-9000 A,
+5 A step) and normalized to their peak value in 4000-7000 A. Points where the
+observed flux is below 5% of peak are excluded to avoid fitting noise.
+
+The Si II 6355 A trough depth and absorption velocity are computed as
+secondary diagnostics but are not used in the ranking.
+
+### Results
+
+The best-fit model achieves RMS = 0.089, a significant improvement over the
+default configuration (RMS ~ 0.16). The optimal parameters cluster around
+v_inner ~ 8000-9000 km/s and log rho_0 < -13.2, indicating that lower
+photosphere velocities and lower densities provide the best match to the
+observed SN 2011fe spectrum. The sensitivity analysis shows clear minima in
+v_inner and log_rho_0, while X_Si and X_Fe are less constrained due to
+degeneracy (different Si/Fe ratios can produce similar overall spectral shapes).
+
+The Si II 6355 trough depth in the best-fit models ranges from 20-49%,
+compared to 93% in TARDIS. This remaining discrepancy is attributed to the
+macro-atom source function limitation: resonant scattering dominates over
+efficient downbranching in the current implementation, preventing the full
+redistribution of photon energy away from the Si II line.
+
+
 ## References
 
 - Lucy, L.B. (2002). "Monte Carlo techniques for time-dependent radiative

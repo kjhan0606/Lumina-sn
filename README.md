@@ -22,10 +22,12 @@ lumina-sn/
 │   ├── lumina_atomic.c       ← Data loader (NPY/CSV) + memory management
 │   └── lumina_cuda.cu        ← GPU transport kernel (CUDA)
 │
-├── scripts/                  ← Python analysis/visualization scripts (14)
-│   ├── plot_spectrum_comparison.py   ← Spectrum comparison plot (primary)
+├── scripts/                  ← Python analysis/visualization scripts (15)
+│   ├── fit_parameter_search.py      ← 5D parameter fitting for SN 2011fe (primary)
+│   ├── plot_spectrum_comparison.py   ← Spectrum comparison plot
 │   ├── compare_spectra.py           ← TARDIS vs LUMINA spectrum comparison
 │   ├── compare_spectra_v2.py        ← Detailed shape comparison
+│   ├── fit_sn2011fe.py              ← SN 2011fe model vs observation comparison
 │   ├── diagnose_w.py                ← Dilution factor W diagnostics
 │   ├── validate_partition.py        ← Partition function validation
 │   ├── validate_plasma.py           ← Plasma state validation
@@ -220,6 +222,75 @@ shell,W,T_rad,n_e
 
 ---
 
+## SN 2011fe Parameter Fitting
+
+LUMINA-SN includes an automated parameter fitting pipeline that searches a 5-dimensional
+physical parameter space to find the best-fit model for the observed SN 2011fe spectrum
+(Pereira+2013, phase -0.3d from B-max).
+
+### Fitting Parameters
+
+| # | Parameter | Range | Description |
+|---|-----------|-------|-------------|
+| 1 | `log_L` (erg/s) | [42.8, 43.15] | Luminosity (controls ionization via T_inner) |
+| 2 | `v_inner` (km/s) | [8000, 13000] | Photosphere velocity |
+| 3 | `log_rho_0` (g/cm^3) | [-13.5, -12.7] | Reference density at v_inner |
+| 4 | `X_Si` | [0.03, 0.25] | Silicon mass fraction |
+| 5 | `X_Fe` | [0.15, 0.75] | Iron mass fraction |
+
+Fixed abundances: S=0.05, Ca=0.03, Co=0.05, Ni=0.10, C=0.02. Oxygen fills the remainder
+(X_O = 0.75 - X_Si - X_Fe). Density follows a power law: rho(v) = rho_0 * (v/v_inner)^(-7).
+
+### Running the Fit
+
+```bash
+# Validate pipeline (single model, ~5 seconds)
+python3 scripts/fit_parameter_search.py --test
+
+# Phase 1 only: coarse scan (100 LHS samples, 20K packets x 5 iters, ~10 min)
+python3 scripts/fit_parameter_search.py --phase1
+
+# Full 3-phase search (~30 min on CPU)
+python3 scripts/fit_parameter_search.py
+```
+
+### Coarse-to-Fine Strategy
+
+| Phase | Samples | Packets | Iters | Purpose |
+|-------|---------|---------|-------|---------|
+| 1 | 100 (Latin Hypercube) | 20K | 5 | Broad parameter scan |
+| 2 | Top-20 from Phase 1 | 100K | 10 | Refinement |
+| 3 | Top-3 from Phase 2 | 500K | 20 | Production spectra |
+
+### Results (SN 2011fe)
+
+Best-fit RMS = **0.089** (normalized spectrum vs observed Pereira+2013 data):
+
+| Rank | RMS | log L | v_inner | log rho_0 | X_Si | X_Fe | X_O |
+|------|-----|-------|---------|-----------|------|------|-----|
+| #1 | 0.0894 | 42.94 | 8,155 km/s | -13.49 | 0.078 | 0.430 | 0.243 |
+| #2 | 0.0896 | 43.05 | 8,769 km/s | -13.22 | 0.222 | 0.210 | 0.318 |
+| #3 | 0.0993 | 42.98 | 8,662 km/s | -13.46 | 0.194 | 0.335 | 0.221 |
+
+Key trends:
+- **v_inner ~ 8000-9000 km/s** is optimal (lower than default 10,000 km/s)
+- **Low density** (log rho_0 < -13.2) preferred -- reduces UV line blanketing
+- Si/Fe abundance degeneracy: two distinct compositions give similar RMS
+- Si II 6355 depth: 20-49% (known limitation vs TARDIS 93% -- macro-atom source function)
+
+### Fitting Output Files
+
+| File | Description |
+|------|-------------|
+| `fit_results_phase1.csv` | 100 coarse scan results |
+| `fit_results_phase2.csv` | 20 refined results |
+| `fit_results_final.csv` | Top-3 production results |
+| `fit_sensitivity.png` | 5-panel: RMS vs each parameter |
+| `fit_best_spectrum.png` | Best-fit vs observed + TARDIS (3-panel) |
+| `fit_best_siII.png` | Si II 6355 region detail for top-3 models |
+
+---
+
 ## Visualization
 
 All Python scripts are run from the project root.
@@ -235,6 +306,7 @@ Generates PNG files comparing the TARDIS reference spectrum with the LUMINA spec
 ### Other Analysis Scripts
 ```bash
 python3 scripts/compare_spectra.py       # Spectrum shape + Si II analysis
+python3 scripts/fit_sn2011fe.py          # SN 2011fe model vs observation
 python3 scripts/diagnose_w.py            # W discrepancy diagnostics
 python3 scripts/validate_plasma.py       # Full plasma state validation
 ```

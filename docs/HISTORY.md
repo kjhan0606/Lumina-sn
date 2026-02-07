@@ -165,3 +165,82 @@ Implemented `lumina_main.c` tying all components together. Multi-iteration conve
 
 **Phase 6: CUDA GPU Port (10x Speedup)**
 Implemented `lumina_cuda.cu` (~850 lines) containing all device functions, the transport kernel, and the host driver in a single file. Key design: xoshiro256** RNG on GPU (4 uint64 state per thread), atomicAdd for j/nu_bar estimators, j_blue/Edotlu estimators handled by CPU plasma solver. Performance: 200K packets in 728ms on GPU (3.6 us/packet) vs 7.2s on CPU (36 us/packet) -- approximately 10x speedup. Target GPU: NVIDIA RTX 5000 Ada (sm_89), CUDA 13.0. W error 1.06%, T_rad error 0.58% -- matching CPU within statistical noise. Build: `make cuda`.
+
+**Phase 6 Production Validation: 2M Packets x 20 Iterations (CUDA)**
+Full production run with 2M packets per iteration, 20 iterations, virtual packet spectrum. Results:
+- Mean |W error|: 0.44% across all 30 shells
+- Mean |T_rad error|: 0.36% across all 30 shells
+- T_inner final: 10564.38 K (TARDIS: 10521.52 K, error: 0.41%)
+- L_emitted converged to L_requested within 0.04%
+- GPU kernel: ~240s/iteration (120 us/packet for 2M packets)
+- Escape fraction: 40.76% (stable across iterations 8-20)
+
+---
+
+## 4. SN 2011fe Parameter Fitting
+
+### Date: 2026-02-08
+
+### Motivation
+
+With the LUMINA transport engine validated to sub-1% accuracy against TARDIS (W error 0.44%, T_rad error 0.36%), the next step was to demonstrate the code's utility for actual science: fitting observed supernova spectra. SN 2011fe (the best-observed Type Ia supernova) was chosen as the test case, using the Pereira+2013 spectrum at phase -0.3 days from B-maximum.
+
+### Implementation
+
+Created `scripts/fit_parameter_search.py` (~430 lines of Python) implementing a 5-dimensional coarse-to-fine parameter search:
+
+**Parameters**: log_L (luminosity), v_inner (photosphere velocity), log_rho_0 (reference density), X_Si (silicon fraction), X_Fe (iron fraction). Oxygen fills the remaining mass fraction. Fixed: S=0.05, Ca=0.03, Co=0.05, Ni=0.10, C=0.02. Density power law exponent: -7.
+
+**Method**: For each parameter set, the script:
+1. Creates a temporary reference directory with symlinks to unchanged atomic data
+2. Generates modified config.json, geometry.csv, density.csv, abundances.csv, electron_densities.csv, and plasma_state.csv
+3. Runs the LUMINA CPU binary with the "rotation" spectrum mode
+4. Computes normalized RMS vs the observed SN 2011fe spectrum (3500-9000 A, 5 A grid)
+5. Measures the Si II 6355 trough depth and absorption velocity
+
+**Sampling**: Latin Hypercube Sampling for uniform 5D coverage.
+
+### Results
+
+Total runtime: 30.2 minutes on CPU for all three phases (100 + 20 + 3 = 123 LUMINA runs).
+
+**Phase 1 (Coarse, 20K packets x 5 iters):**
+- 100 LHS samples evaluated in 9.8 minutes
+- Best coarse RMS: 0.129 (model #28)
+- Clear clustering: low v_inner (8000-9000 km/s) and low density (log_rho < -13.2) preferred
+
+**Phase 2 (Refined, 100K packets x 10 iters):**
+- Top-20 re-evaluated in 9.7 minutes
+- Best refined RMS: 0.092 (improved from 0.129 with more packets)
+- Ranking stable: top-5 from Phase 1 remained in top-7 after refinement
+
+**Phase 3 (Production, 500K packets x 20 iters):**
+- Top-3 production runs in 10.2 minutes
+- Final best RMS: 0.0894
+
+**Best-Fit Parameters:**
+
+| Rank | RMS | log L | v_inner (km/s) | log rho_0 | X_Si | X_Fe | X_O |
+|------|-----|-------|----------------|-----------|------|------|-----|
+| #1 | 0.0894 | 42.94 | 8,155 | -13.49 | 0.078 | 0.430 | 0.243 |
+| #2 | 0.0896 | 43.05 | 8,769 | -13.22 | 0.222 | 0.210 | 0.318 |
+| #3 | 0.0993 | 42.98 | 8,662 | -13.46 | 0.194 | 0.335 | 0.221 |
+
+### Physical Interpretation
+
+1. **Photosphere velocity**: The optimal v_inner ~ 8000-9000 km/s is lower than the TARDIS reference (10,000 km/s). This places the photosphere deeper in the ejecta, consistent with the epoch near B-maximum when the photosphere has receded.
+
+2. **Density**: Low log_rho_0 < -13.2 reduces line blanketing in the UV/blue, allowing more flux through the blue continuum to match the observed spectral shape. The -7 power law produces rapidly declining density with velocity.
+
+3. **Composition degeneracy**: Models #1 and #2 achieve nearly identical RMS (0.0894 vs 0.0896) with very different compositions: #1 is Fe-rich (43% Fe, 8% Si, 24% O) while #2 is Si/O-rich (21% Fe, 22% Si, 32% O). This degeneracy reflects the fact that overall opacity (not specific element ratios) dominates the normalized spectral shape at the current spectral resolution.
+
+4. **Si II depth limitation**: The best-fit Si II 6355 depth of 20-49% remains below the observed ~80% and TARDIS 93%. This is the known macro-atom source function limitation: the current implementation over-produces resonant scattering relative to downbranching, keeping too many photons near the Si II line wavelength.
+
+### Output Files
+
+- `fit_results_phase1.csv` -- 100 coarse scan results (all parameters + metrics)
+- `fit_results_phase2.csv` -- 20 refined results
+- `fit_results_final.csv` -- 3 production results
+- `fit_sensitivity.png` -- 5-panel scatter plot (RMS vs each parameter)
+- `fit_best_spectrum.png` -- Best-fit spectrum vs observed + TARDIS (3-panel comparison)
+- `fit_best_siII.png` -- Si II 6355 region detail for top-3 models

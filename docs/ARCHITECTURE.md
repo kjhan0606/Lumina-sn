@@ -108,3 +108,31 @@ make cuda       # GPU binary (lumina_cuda), requires NVCC + CUDA toolkit
 Dependencies: C99 compiler (gcc), math library (`-lm`). CUDA target additionally requires NVCC and is compiled with `-arch=sm_89 -std=c++14` (targeting NVIDIA Ada Lovelace GPUs).
 
 Input data is loaded from TARDIS reference files in NPY and CSV format (no HDF5 dependency at runtime for the main simulation). The atomic line data is read from HDF5 during a separate preprocessing step.
+
+## Parameter Fitting Pipeline
+
+The fitting pipeline (`scripts/fit_parameter_search.py`, ~430 lines of Python) automates multi-dimensional parameter searches by orchestrating many LUMINA runs:
+
+```
+Latin Hypercube Sampling (5D)
+         |
+         v
+  For each parameter set:
+    +-- Create temp reference dir (symlinks + modified CSVs)
+    +-- Generate: config.json, geometry.csv, density.csv,
+    |             abundances.csv, electron_densities.csv,
+    |             plasma_state.csv
+    +-- Run: ./lumina <temp_dir> <n_packets> <n_iters> rotation
+    +-- Read: lumina_spectrum_rotation.csv
+    +-- Compute: normalized RMS vs observed SN 2011fe
+    +-- Measure: Si II 6355 trough depth + velocity
+    +-- Cleanup temp dir
+         |
+         v
+  Rank by RMS -> select top-N -> repeat with more packets
+         |
+         v
+  Output: CSV results, sensitivity plots, spectrum comparison
+```
+
+The pipeline uses symlinks to avoid copying the large atomic data files (transition_probabilities.npy at 95MB, tau_sobolev.npy at 32MB) for each model. Only the 6 configuration files that depend on physical parameters are regenerated. Each LUMINA run operates in an isolated working directory to prevent output file conflicts.
