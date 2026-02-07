@@ -153,6 +153,7 @@ typedef struct {
     double *T_rad;            /* Phase 2 - Step 4: [n_shells] radiation temp [K] */
     double *rho;              /* Phase 2 - Step 4: [n_shells] density [g/cm^3] */
     double *n_electron;       /* Task #072: [n_shells] self-consistent n_e */
+    double  T_e_T_rad_ratio;  /* T_e/T_rad ratio for Saha equation (default 0.9) */
 } PlasmaState;                /* Phase 2 - Step 4 */
 
 /* Task #072: Atomic data for plasma solver */

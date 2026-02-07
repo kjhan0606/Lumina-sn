@@ -283,10 +283,16 @@ int load_tardis_reference_data(const char *ref_dir, Geometry *geo,
         p = strstr(buf, "\"seed\""); /* Phase 2 - Step 10b */
         if (p) { p = strchr(p, ':'); config->seed = (uint64_t)atol(p + 1); } /* Phase 2 - Step 10b */
 
+        /* Parse T_e/T_rad ratio (default 0.9 if absent) */
+        plasma->T_e_T_rad_ratio = 0.9;
+        p = strstr(buf, "\"T_e_T_rad_ratio\"");
+        if (p) { p = strchr(p, ':'); plasma->T_e_T_rad_ratio = atof(p + 1); }
+
         printf("  Config: t_exp=%.6e s, T_inner=%.2f K, L=%.3e erg/s\n", /* Phase 2 - Step 10b */
                geo->time_explosion, config->T_inner, config->luminosity_requested); /* Phase 2 - Step 10b */
-        printf("    n_packets=%d, n_iter=%d, seed=%lu\n", /* Phase 2 - Step 10b */
-               config->n_packets, config->n_iterations, config->seed); /* Phase 2 - Step 10b */
+        printf("    n_packets=%d, n_iter=%d, seed=%lu, T_e/T_rad=%.3f\n",
+               config->n_packets, config->n_iterations, config->seed,
+               plasma->T_e_T_rad_ratio);
     }
 
     /* Phase 2 - Step 10c: Load electron densities */

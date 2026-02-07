@@ -195,7 +195,7 @@ static void compute_ion_populations(AtomicData *atom, PlasmaState *plasma,
 
         for (int s = 0; s < n_shells; s++) {
             double T_rad = plasma->T_rad[s];
-            double T_e   = 0.9 * T_rad;
+            double T_e   = plasma->T_e_T_rad_ratio * T_rad;
             double W     = plasma->W[s];
             double n_e   = plasma->n_electron[s];
             double rho   = plasma->rho[s];
@@ -287,7 +287,7 @@ static void compute_electron_density(AtomicData *atom, PlasmaState *plasma,
         if (n_e <= 0.0) n_e = 1e6;
 
         double T_rad = plasma->T_rad[s];
-        double T_e   = 0.9 * T_rad;
+        double T_e   = plasma->T_e_T_rad_ratio * T_rad;
         double W     = plasma->W[s];
         double rho   = plasma->rho[s];
 

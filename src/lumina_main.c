@@ -84,6 +84,9 @@ int main(int argc, char *argv[]) {
     AtomicData atom_data; /* Task #072 */
     memset(&config, 0, sizeof(config)); /* Phase 5 - Step 3 */
 
+    /* Default T_e/T_rad ratio (will be overridden by config.json if present) */
+    plasma.T_e_T_rad_ratio = 0.9;
+
     /* Phase 5 - Step 3: Set defaults matching TARDIS sn2011fe.yml */
     config.enable_full_relativity = false; /* Phase 5 - Step 3 */
     config.disable_line_scattering = false; /* Phase 5 - Step 3 */
