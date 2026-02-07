@@ -57,7 +57,19 @@ typedef struct {                           /* Phase 6 - Step 1 */
     int    *d_escaped_flag;                /* Phase 6 - Step 1: [n_packets] */
     int64_t *d_n_escaped;                  /* Phase 6 - Step 1: scalar counter */
     int64_t *d_n_reabsorbed;               /* Phase 6 - Step 1: scalar counter */
+
+    /* Rotation packet mode: store r, mu at escape for Doppler weighting */
+    double *d_escaped_r;                   /* [n_packets] */
+    double *d_escaped_mu;                  /* [n_packets] */
+
+    /* Virtual packet spectrum (GPU-side atomicAdd target) */
+    double *d_virtual_spectrum;            /* [VSPEC_N_BINS] */
 } CudaDeviceData;                          /* Phase 6 - Step 1 */
+
+/* Virtual spectrum parameters (match real spectrum) */
+#define VSPEC_LAMBDA_MIN  500.0
+#define VSPEC_LAMBDA_MAX  20000.0
+#define VSPEC_N_BINS      2000
 
 /* ============================================================ */
 /* Phase 6 - Step 1: cuda_allocate — allocate GPU memory        */
@@ -98,6 +110,9 @@ static void cuda_allocate(CudaDeviceData *dev, Geometry *geo,
     CUDA_CHECK(cudaMalloc(&dev->d_escaped_flag, n_packets * sizeof(int)));          /* Phase 6 - Step 1 */
     CUDA_CHECK(cudaMalloc(&dev->d_n_escaped, sizeof(int64_t)));                     /* Phase 6 - Step 1 */
     CUDA_CHECK(cudaMalloc(&dev->d_n_reabsorbed, sizeof(int64_t)));                  /* Phase 6 - Step 1 */
+    CUDA_CHECK(cudaMalloc(&dev->d_escaped_r, n_packets * sizeof(double)));          /* Rotation mode */
+    CUDA_CHECK(cudaMalloc(&dev->d_escaped_mu, n_packets * sizeof(double)));         /* Rotation mode */
+    CUDA_CHECK(cudaMalloc(&dev->d_virtual_spectrum, VSPEC_N_BINS * sizeof(double)));
 }
 
 /* ============================================================ */
@@ -149,6 +164,7 @@ static void cuda_reset_estimators(CudaDeviceData *dev, int n_shells) {
     CUDA_CHECK(cudaMemset(dev->d_nu_bar_estimator, 0, n_shells * sizeof(double)));   /* Phase 6 - Step 1 */
     CUDA_CHECK(cudaMemset(dev->d_n_escaped, 0, sizeof(int64_t)));                    /* Phase 6 - Step 1 */
     CUDA_CHECK(cudaMemset(dev->d_n_reabsorbed, 0, sizeof(int64_t)));                 /* Phase 6 - Step 1 */
+    CUDA_CHECK(cudaMemset(dev->d_virtual_spectrum, 0, VSPEC_N_BINS * sizeof(double)));
 }
 
 /* ============================================================ */
@@ -185,6 +201,9 @@ static void cuda_free(CudaDeviceData *dev) {
     cudaFree(dev->d_escaped_flag);              /* Phase 6 - Step 1 */
     cudaFree(dev->d_n_escaped);                 /* Phase 6 - Step 1 */
     cudaFree(dev->d_n_reabsorbed);              /* Phase 6 - Step 1 */
+    cudaFree(dev->d_escaped_r);                 /* Rotation mode */
+    cudaFree(dev->d_escaped_mu);                /* Rotation mode */
+    cudaFree(dev->d_virtual_spectrum);
 }
 
 /* ============================================================ */
@@ -603,6 +622,118 @@ void d_line_scatter_event(double *r, double *mu, double *nu, double *energy,
 }
 
 /* ============================================================ */
+/* Virtual packet tracer: at each interaction, emit a v-packet  */
+/* in a random direction, trace it through remaining shells,    */
+/* accumulate tau, and atomicAdd to virtual spectrum.            */
+/* ============================================================ */
+__device__
+void d_trace_virtual_packet(
+    double r, int shell_id, double nu_cmf_emit, double pkt_energy,
+    double t_exp, double L_inner,
+    const double *d_r_inner, const double *d_r_outer,
+    const double *d_line_list_nu, const double *d_tau_sobolev,
+    int n_lines, int n_shells,
+    double *d_virtual_spectrum, uint64_t *rng)
+{
+    /* Draw random emission direction for v-packet */
+    double mu_v = 2.0 * d_rng_uniform(rng) - 1.0;
+
+    /* z-coordinate along ray (impact parameter stays constant) */
+    double inv_ct = 1.0 / (C_SPEED_OF_LIGHT * t_exp);
+    double z0 = r * mu_v;
+    double doppler = 1.0 - z0 * inv_ct;
+    if (doppler <= 0.0) return;
+    double nu_lab = nu_cmf_emit / doppler;
+
+    /* Impact parameter squared: p^2 = r^2 - z0^2 = r^2(1-mu^2) */
+    double p2 = r * r * (1.0 - mu_v * mu_v);
+    if (p2 < 0.0) p2 = 0.0;
+
+    /* Check if ray hits photosphere (p < r_inner[0] and going inward) */
+    if (p2 < d_r_inner[0] * d_r_inner[0] && mu_v < 0.0)
+        return;
+
+    double tau_total = 0.0;
+    double z_cur = z0;
+    int s = shell_id;
+
+    /* Phase 1: Inward propagation (mu_v < 0 → z_cur < 0, z increasing) */
+    while (mu_v < 0.0 && s >= 0) {
+        double r_inner_s = d_r_inner[s];
+        if (p2 >= r_inner_s * r_inner_s) {
+            /* Turning point in this shell: closest approach at z=0, r=sqrt(p2) */
+            double nu_high = nu_lab * (1.0 - z_cur * inv_ct);
+            double nu_low  = nu_lab;  /* at z=0: nu_cmf = nu_lab */
+            if (nu_high > nu_low) {
+                int lo = 0, hi = n_lines;
+                while (lo < hi) {
+                    int mid = (lo + hi) / 2;
+                    if (d_line_list_nu[mid] > nu_high) lo = mid + 1;
+                    else hi = mid;
+                }
+                for (int i = lo; i < n_lines && d_line_list_nu[i] >= nu_low; i++)
+                    tau_total += d_tau_sobolev[(size_t)i * n_shells + s];
+            }
+            z_cur = 0.0;
+            break;
+        } else {
+            /* Crosses inner boundary into shell s-1 */
+            double z_bnd = -sqrt(r_inner_s * r_inner_s - p2);
+            double nu_high = nu_lab * (1.0 - z_cur * inv_ct);
+            double nu_low  = nu_lab * (1.0 - z_bnd * inv_ct);
+            if (nu_high > nu_low) {
+                int lo = 0, hi = n_lines;
+                while (lo < hi) {
+                    int mid = (lo + hi) / 2;
+                    if (d_line_list_nu[mid] > nu_high) lo = mid + 1;
+                    else hi = mid;
+                }
+                for (int i = lo; i < n_lines && d_line_list_nu[i] >= nu_low; i++)
+                    tau_total += d_tau_sobolev[(size_t)i * n_shells + s];
+            }
+            z_cur = z_bnd;
+            s--;
+        }
+    }
+    if (s < 0) return;  /* reabsorbed by photosphere */
+
+    /* Phase 2: Outward propagation */
+    while (s < n_shells) {
+        double r_outer_s = d_r_outer[s];
+        double z_bnd = sqrt(r_outer_s * r_outer_s - p2);
+        double nu_high = nu_lab * (1.0 - z_cur * inv_ct);
+        double nu_low  = nu_lab * (1.0 - z_bnd * inv_ct);
+        if (nu_high > nu_low) {
+            int lo = 0, hi = n_lines;
+            while (lo < hi) {
+                int mid = (lo + hi) / 2;
+                if (d_line_list_nu[mid] > nu_high) lo = mid + 1;
+                else hi = mid;
+            }
+            for (int i = lo; i < n_lines && d_line_list_nu[i] >= nu_low; i++)
+                tau_total += d_tau_sobolev[(size_t)i * n_shells + s];
+        }
+        z_cur = z_bnd;
+        s++;
+    }
+
+    /* Escape probability */
+    if (tau_total > 50.0) return;
+    double P_escape = exp(-tau_total);
+
+    /* Bin into virtual spectrum [erg/s/cm] */
+    double lambda_A = C_SPEED_OF_LIGHT / nu_lab * 1.0e8;
+    if (lambda_A < VSPEC_LAMBDA_MIN || lambda_A >= VSPEC_LAMBDA_MAX) return;
+    double dlambda_A = (VSPEC_LAMBDA_MAX - VSPEC_LAMBDA_MIN) / (double)VSPEC_N_BINS;
+    int bin = (int)((lambda_A - VSPEC_LAMBDA_MIN) / dlambda_A);
+    if (bin >= 0 && bin < VSPEC_N_BINS) {
+        double dlambda_cm = dlambda_A * 1.0e-8;
+        double weight = pkt_energy * L_inner * P_escape / dlambda_cm;
+        atomicAdd(&d_virtual_spectrum[bin], weight);
+    }
+}
+
+/* ============================================================ */
 /* Phase 6 - Step 7: Main transport kernel                      */
 /* One thread = one packet. No grid-stride loop.                */
 /* ============================================================ */
@@ -627,7 +758,10 @@ void transport_kernel(
     /* Phase 6 - Step 7: Output */
     double *d_escaped_nu, double *d_escaped_energy,
     int *d_escaped_flag,
+    double *d_escaped_r, double *d_escaped_mu,
     int64_t *d_n_escaped, int64_t *d_n_reabsorbed,
+    /* Virtual packet spectrum */
+    double *d_virtual_spectrum, double L_inner,
     /* Phase 6 - Step 7: Scalars */
     int n_packets, int n_shells, int n_lines, int n_macro_levels,
     double t_exp, double T_inner, double packet_energy,
@@ -692,6 +826,15 @@ void transport_kernel(
     }
     if (lo == n_lines) lo = n_lines - 1; /* Phase 6 - Step 7 */
     int pkt_next_line_id = lo;            /* Phase 6 - Step 7 */
+
+    /* Virtual packet from initial photosphere emission */
+    if (d_virtual_spectrum != NULL) {
+        double nu_cmf_init = pkt_nu * d_get_doppler_factor(pkt_r, pkt_mu, t_exp);
+        d_trace_virtual_packet(pkt_r, pkt_shell_id, nu_cmf_init, pkt_energy,
+                                t_exp, L_inner, d_r_inner, d_r_outer,
+                                d_line_list_nu, d_tau_sobolev,
+                                n_lines, n_shells, d_virtual_spectrum, rng);
+    }
 
     /* Phase 6 - Step 7: Main transport loop */
     int loop_count = 0; /* Phase 6 - Step 7 */
@@ -761,9 +904,29 @@ void transport_kernel(
                                   d_transition_line_id,                   /* Phase 6 - Step 7 */
                                   d_line2macro_level_upper,               /* Phase 6 - Step 7 */
                                   rng);                                   /* Phase 6 - Step 7 */
+            /* Virtual packet: trace from interaction point */
+            if (d_virtual_spectrum != NULL) {
+                double nu_cmf_v = pkt_nu * d_get_doppler_factor(pkt_r, pkt_mu, t_exp);
+                d_trace_virtual_packet(pkt_r, pkt_shell_id, nu_cmf_v, pkt_energy,
+                                        t_exp, L_inner,
+                                        d_r_inner, d_r_outer,
+                                        d_line_list_nu, d_tau_sobolev,
+                                        n_lines, n_shells,
+                                        d_virtual_spectrum, rng);
+            }
         } else if (interaction_type == 2) { /* Phase 6 - Step 7: ESCATTERING */
             d_thomson_scatter(&pkt_r, &pkt_mu, &pkt_nu, &pkt_energy, /* Phase 6 - Step 7 */
                                t_exp, rng);                            /* Phase 6 - Step 7 */
+            /* Virtual packet from e-scatter */
+            if (d_virtual_spectrum != NULL) {
+                double nu_cmf_v = pkt_nu * d_get_doppler_factor(pkt_r, pkt_mu, t_exp);
+                d_trace_virtual_packet(pkt_r, pkt_shell_id, nu_cmf_v, pkt_energy,
+                                        t_exp, L_inner,
+                                        d_r_inner, d_r_outer,
+                                        d_line_list_nu, d_tau_sobolev,
+                                        n_lines, n_shells,
+                                        d_virtual_spectrum, rng);
+            }
         }
     }
 
@@ -772,6 +935,8 @@ void transport_kernel(
         d_escaped_flag[p] = 1;        /* Phase 6 - Step 7 */
         d_escaped_nu[p] = pkt_nu;     /* Phase 6 - Step 7 */
         d_escaped_energy[p] = pkt_energy; /* Phase 6 - Step 7 */
+        d_escaped_r[p] = pkt_r;       /* Rotation mode: store escape r */
+        d_escaped_mu[p] = pkt_mu;     /* Rotation mode: store escape mu */
         atomicAdd((unsigned long long *)d_n_escaped, 1ULL); /* Phase 6 - Step 7 */
     } else if (pkt_status == 2) { /* Phase 6 - Step 7: REABSORBED */
         d_escaped_flag[p] = 0;        /* Phase 6 - Step 7 */
@@ -817,6 +982,7 @@ int main(int argc, char *argv[]) {
     OpacityState opacity; /* Phase 6 - Step 8 */
     PlasmaState plasma;  /* Phase 6 - Step 8 */
     MCConfig config;     /* Phase 6 - Step 8 */
+    AtomicData atom_data; /* Task #072 */
     memset(&config, 0, sizeof(config)); /* Phase 6 - Step 8 */
 
     config.enable_full_relativity = false;       /* Phase 6 - Step 8 */
@@ -833,15 +999,39 @@ int main(int argc, char *argv[]) {
         return 1; /* Phase 6 - Step 8 */
     }
 
-    int n_packets = config.n_packets;            /* Phase 6 - Step 8 */
-    if (argc > 2) n_packets = atoi(argv[2]);     /* Phase 6 - Step 8 */
-    int n_iterations = config.n_iterations;      /* Phase 6 - Step 8 */
-    if (argc > 3) n_iterations = atoi(argv[3]);  /* Phase 6 - Step 8 */
+    /* Task #072: Load atomic data for plasma solver */
+    if (load_atomic_data(&atom_data, ref_dir, geo.n_shells) != 0) {
+        fprintf(stderr, "Failed to load atomic data\n");
+        return 1;
+    }
+    /* Task #072: Initialize n_electron from TARDIS reference */
+    plasma.n_electron = (double *)malloc(geo.n_shells * sizeof(double));
+    for (int i = 0; i < geo.n_shells; i++)
+        plasma.n_electron[i] = opacity.electron_density[i];
 
-    printf("\nSimulation parameters:\n");         /* Phase 6 - Step 8 */
-    printf("  Packets: %d, Iterations: %d\n", n_packets, n_iterations); /* Phase 6 - Step 8 */
-    printf("  Line interaction: MACROATOM\n");    /* Phase 6 - Step 8 */
-    printf("  T_inner: %.2f K\n", config.T_inner); /* Phase 6 - Step 8 */
+    int n_packets = config.n_packets;
+    if (argc > 2) n_packets = atoi(argv[2]);
+    int n_iterations = config.n_iterations;
+    if (argc > 3) n_iterations = atoi(argv[3]);
+
+    /* Spectrum mode: "real" (default), "virtual", "rotation", "all" */
+    int enable_virtual = 0, enable_rotation = 0;
+    if (argc > 4) {
+        if (strcmp(argv[4], "virtual") == 0) enable_virtual = 1;
+        else if (strcmp(argv[4], "rotation") == 0) enable_rotation = 1;
+        else if (strcmp(argv[4], "both") == 0) enable_virtual = 1;
+        else if (strcmp(argv[4], "all") == 0) { enable_virtual = 1; enable_rotation = 1; }
+    }
+
+    printf("\nSimulation parameters:\n");
+    printf("  Packets: %d, Iterations: %d\n", n_packets, n_iterations);
+    printf("  Line interaction: MACROATOM\n");
+    const char *mode_str = "real only";
+    if (enable_virtual && enable_rotation) mode_str = "real + virtual + rotation";
+    else if (enable_virtual) mode_str = "real + virtual";
+    else if (enable_rotation) mode_str = "real + rotation";
+    printf("  Spectrum mode: %s\n", mode_str);
+    printf("  T_inner: %.2f K\n", config.T_inner);
 
     /* Phase 6 - Step 8: Compute shell volumes */
     double *volume = (double *)malloc(geo.n_shells * sizeof(double)); /* Phase 6 - Step 8 */
@@ -866,6 +1056,8 @@ int main(int argc, char *argv[]) {
     double *h_escaped_nu = (double *)malloc(n_packets * sizeof(double));     /* Phase 6 - Step 8 */
     double *h_escaped_energy = (double *)malloc(n_packets * sizeof(double)); /* Phase 6 - Step 8 */
     int *h_escaped_flag = (int *)malloc(n_packets * sizeof(int));            /* Phase 6 - Step 8 */
+    double *h_escaped_r = (double *)malloc(n_packets * sizeof(double));      /* Rotation mode */
+    double *h_escaped_mu = (double *)malloc(n_packets * sizeof(double));     /* Rotation mode */
 
     /* Phase 6 - Step 8: Kernel launch config */
     int threads_per_block = 256; /* Phase 6 - Step 8 */
@@ -897,26 +1089,28 @@ int main(int argc, char *argv[]) {
         CUDA_CHECK(cudaEventCreate(&stop_ev));  /* Phase 6 - Step 8 */
         CUDA_CHECK(cudaEventRecord(start_ev));  /* Phase 6 - Step 8 */
 
-        transport_kernel<<<blocks, threads_per_block>>>(   /* Phase 6 - Step 8 */
-            dev.d_r_inner, dev.d_r_outer,                   /* Phase 6 - Step 8 */
-            dev.d_line_list_nu, dev.d_tau_sobolev,          /* Phase 6 - Step 8 */
-            dev.d_electron_density,                          /* Phase 6 - Step 8 */
-            dev.d_transition_probabilities,                  /* Phase 6 - Step 8 */
-            dev.d_macro_block_references,                    /* Phase 6 - Step 8 */
-            dev.d_transition_type,                           /* Phase 6 - Step 8 */
-            dev.d_destination_level_id,                      /* Phase 6 - Step 8 */
-            dev.d_transition_line_id,                        /* Phase 6 - Step 8 */
-            dev.d_line2macro_level_upper,                    /* Phase 6 - Step 8 */
-            dev.d_j_estimator, dev.d_nu_bar_estimator,      /* Phase 6 - Step 8 */
-            dev.d_rng_states,                                /* Phase 6 - Step 8 */
-            dev.d_escaped_nu, dev.d_escaped_energy,         /* Phase 6 - Step 8 */
-            dev.d_escaped_flag,                              /* Phase 6 - Step 8 */
-            dev.d_n_escaped, dev.d_n_reabsorbed,            /* Phase 6 - Step 8 */
-            n_packets, geo.n_shells, opacity.n_lines,       /* Phase 6 - Step 8 */
-            opacity.n_macro_levels,                          /* Phase 6 - Step 8 */
-            geo.time_explosion, config.T_inner,             /* Phase 6 - Step 8 */
-            packet_energy, config.line_interaction_type,    /* Phase 6 - Step 8 */
-            iter_seed);                                      /* Phase 6 - Step 8 */
+        transport_kernel<<<blocks, threads_per_block>>>(
+            dev.d_r_inner, dev.d_r_outer,
+            dev.d_line_list_nu, dev.d_tau_sobolev,
+            dev.d_electron_density,
+            dev.d_transition_probabilities,
+            dev.d_macro_block_references,
+            dev.d_transition_type,
+            dev.d_destination_level_id,
+            dev.d_transition_line_id,
+            dev.d_line2macro_level_upper,
+            dev.d_j_estimator, dev.d_nu_bar_estimator,
+            dev.d_rng_states,
+            dev.d_escaped_nu, dev.d_escaped_energy,
+            dev.d_escaped_flag,
+            dev.d_escaped_r, dev.d_escaped_mu,
+            dev.d_n_escaped, dev.d_n_reabsorbed,
+            enable_virtual ? dev.d_virtual_spectrum : (double *)NULL, L_inner,
+            n_packets, geo.n_shells, opacity.n_lines,
+            opacity.n_macro_levels,
+            geo.time_explosion, config.T_inner,
+            packet_energy, config.line_interaction_type,
+            iter_seed);
 
         CUDA_CHECK(cudaEventRecord(stop_ev));  /* Phase 6 - Step 8 */
         CUDA_CHECK(cudaEventSynchronize(stop_ev)); /* Phase 6 - Step 8 */
@@ -935,6 +1129,12 @@ int main(int argc, char *argv[]) {
                    n_packets * sizeof(double), cudaMemcpyDeviceToHost)); /* Phase 6 - Step 8 */
         CUDA_CHECK(cudaMemcpy(h_escaped_flag, dev.d_escaped_flag,    /* Phase 6 - Step 8 */
                    n_packets * sizeof(int), cudaMemcpyDeviceToHost)); /* Phase 6 - Step 8 */
+        if (enable_rotation) {
+            CUDA_CHECK(cudaMemcpy(h_escaped_r, dev.d_escaped_r,
+                       n_packets * sizeof(double), cudaMemcpyDeviceToHost));
+            CUDA_CHECK(cudaMemcpy(h_escaped_mu, dev.d_escaped_mu,
+                       n_packets * sizeof(double), cudaMemcpyDeviceToHost));
+        }
 
         int64_t n_escaped = 0, n_reabsorbed = 0; /* Phase 6 - Step 8 */
         CUDA_CHECK(cudaMemcpy(&n_escaped, dev.d_n_escaped,           /* Phase 6 - Step 8 */
@@ -949,18 +1149,30 @@ int main(int argc, char *argv[]) {
                (long)n_escaped, 100.0 * escape_fraction,         /* Phase 6 - Step 8 */
                (long)n_reabsorbed, 100.0 * n_reabsorbed / n_packets); /* Phase 6 - Step 8 */
 
-        /* Phase 6 - Step 8: Spectrum binning (CPU) */
+        /* Phase 6 - Step 8: Spectrum binning + L_emitted (CPU) */
+        double L_emitted = 0.0;
         for (int i = 0; i < n_packets; i++) { /* Phase 6 - Step 8 */
             if (h_escaped_flag[i]) { /* Phase 6 - Step 8 */
-                bin_escaped_packet(spec, h_escaped_nu[i],            /* Phase 6 - Step 8 */
-                                    h_escaped_energy[i] * L_inner,    /* Phase 6 - Step 8 */
-                                    geo.time_explosion);              /* Phase 6 - Step 8 */
+                bin_escaped_packet(spec, h_escaped_nu[i],
+                                    h_escaped_energy[i] * L_inner);
+                L_emitted += h_escaped_energy[i] * L_inner;
             }
         }
 
         /* Phase 6 - Step 8: Solve radiation field (CPU, reuse lumina_plasma.c) */
         solve_radiation_field(est, geo.time_explosion, time_simulation, /* Phase 6 - Step 8 */
-                               volume, &opacity, &plasma);              /* Phase 6 - Step 8 */
+                               volume, &opacity, &plasma,               /* Phase 6 - Step 8 */
+                               config.damping_constant);                /* Task #072: W/T_rad damping */
+
+        /* Task #072: Recompute tau_sobolev and re-upload to GPU */
+        if (iter > 0) {
+            compute_plasma_state(&atom_data, &plasma, &opacity, geo.time_explosion);
+            CUDA_CHECK(cudaMemcpy(dev.d_tau_sobolev, opacity.tau_sobolev,
+                       (size_t)opacity.n_lines * geo.n_shells * sizeof(double),
+                       cudaMemcpyHostToDevice));
+            CUDA_CHECK(cudaMemcpy(dev.d_electron_density, opacity.electron_density,
+                       geo.n_shells * sizeof(double), cudaMemcpyHostToDevice));
+        }
 
         /* Phase 6 - Step 8: Print plasma state */
         printf("  Shell  W_LUMINA   T_rad_LUM  nubar/j\n"); /* Phase 6 - Step 8 */
@@ -973,9 +1185,9 @@ int main(int argc, char *argv[]) {
         /* Phase 6 - Step 8: Update T_inner (after hold iterations) */
         if (iter >= config.hold_iterations) { /* Phase 6 - Step 8 */
             double old_T = config.T_inner; /* Phase 6 - Step 8 */
-            update_t_inner(&config, escape_fraction); /* Phase 6 - Step 8 */
-            printf("  T_inner: %.2f K -> %.2f K (escape=%.4f)\n", /* Phase 6 - Step 8 */
-                   old_T, config.T_inner, escape_fraction); /* Phase 6 - Step 8 */
+            update_t_inner(&config, L_emitted); /* Phase 6 - Step 8 */
+            printf("  T_inner: %.2f K -> %.2f K (L_em=%.3e, L_req=%.3e)\n",
+                   old_T, config.T_inner, L_emitted, config.luminosity_requested);
         } else { /* Phase 6 - Step 8 */
             printf("  T_inner: %.2f K (hold iteration %d/%d)\n", /* Phase 6 - Step 8 */
                    config.T_inner, iter + 1, config.hold_iterations); /* Phase 6 - Step 8 */
@@ -1027,17 +1239,68 @@ int main(int argc, char *argv[]) {
                (config.T_inner - 10521.52) / 10521.52 * 100.0);                      /* Phase 6 - Step 8 */
     }
 
-    /* Phase 6 - Step 8: Write spectrum to CSV */
-    const char *output_file = "lumina_spectrum.csv"; /* Phase 6 - Step 8 */
-    if (argc > 4) output_file = argv[4];             /* Phase 6 - Step 8 */
-    FILE *out = fopen(output_file, "w");             /* Phase 6 - Step 8 */
-    if (out) { /* Phase 6 - Step 8 */
-        fprintf(out, "wavelength_angstrom,flux\n");  /* Phase 6 - Step 8 */
-        for (int i = 0; i < spec->n_bins; i++) { /* Phase 6 - Step 8 */
-            fprintf(out, "%.6f,%.6e\n", spec->wavelength[i], spec->flux[i]); /* Phase 6 - Step 8 */
+    /* Write real spectrum to CSV */
+    const char *output_file = "lumina_spectrum.csv";
+    FILE *out = fopen(output_file, "w");
+    if (out) {
+        fprintf(out, "wavelength_angstrom,flux\n");
+        for (int i = 0; i < spec->n_bins; i++) {
+            fprintf(out, "%.6f,%.6e\n", spec->wavelength[i], spec->flux[i]);
         }
-        fclose(out); /* Phase 6 - Step 8 */
-        printf("\nSpectrum written to %s\n", output_file); /* Phase 6 - Step 8 */
+        fclose(out);
+        printf("\nReal spectrum written to %s\n", output_file);
+    }
+
+    /* Download and write virtual spectrum */
+    if (enable_virtual) {
+        double *h_virtual_spectrum = (double *)calloc(VSPEC_N_BINS, sizeof(double));
+        CUDA_CHECK(cudaMemcpy(h_virtual_spectrum, dev.d_virtual_spectrum,
+                   VSPEC_N_BINS * sizeof(double), cudaMemcpyDeviceToHost));
+        FILE *vf = fopen("lumina_spectrum_virtual.csv", "w");
+        if (vf) {
+            fprintf(vf, "wavelength_angstrom,flux\n");
+            double dlambda = (VSPEC_LAMBDA_MAX - VSPEC_LAMBDA_MIN) / VSPEC_N_BINS;
+            for (int i = 0; i < VSPEC_N_BINS; i++) {
+                double wl = VSPEC_LAMBDA_MIN + (i + 0.5) * dlambda;
+                fprintf(vf, "%.6f,%.6e\n", wl, h_virtual_spectrum[i]);
+            }
+            fclose(vf);
+            printf("Virtual spectrum written to lumina_spectrum_virtual.csv\n");
+        }
+        free(h_virtual_spectrum);
+    }
+
+    /* Rotation spectrum: Doppler-weight escaped packets (post-processing) */
+    if (enable_rotation) {
+        double L_inner_final = 4.0 * M_PI_VAL * geo.r_inner[0] * geo.r_inner[0] *
+                               SIGMA_SB * pow(config.T_inner, 4);
+        Spectrum *spec_rot = create_spectrum(500.0, 20000.0, 2000);
+        double weight_sum = 0.0;
+        int n_rot = 0;
+        for (int i = 0; i < n_packets; i++) {
+            if (h_escaped_flag[i]) {
+                double beta = h_escaped_r[i] / (C_SPEED_OF_LIGHT * geo.time_explosion);
+                double D_pkt = 1.0 - beta * h_escaped_mu[i];
+                double D_obs = 1.0 - beta * 1.0; /* mu_obs = 1 (face-on) */
+                double w = (D_obs / D_pkt) * (D_obs / D_pkt);
+                bin_escaped_packet(spec_rot, h_escaped_nu[i],
+                                    h_escaped_energy[i] * L_inner_final * w);
+                weight_sum += w;
+                n_rot++;
+            }
+        }
+        FILE *rf = fopen("lumina_spectrum_rotation.csv", "w");
+        if (rf) {
+            fprintf(rf, "wavelength_angstrom,flux\n");
+            for (int i = 0; i < spec_rot->n_bins; i++) {
+                fprintf(rf, "%.6f,%.6e\n", spec_rot->wavelength[i], spec_rot->flux[i]);
+            }
+            fclose(rf);
+            printf("Rotation spectrum written to lumina_spectrum_rotation.csv\n");
+            printf("  Mean rotation weight: %.6f (N=%d)\n",
+                   n_rot > 0 ? weight_sum / n_rot : 0.0, n_rot);
+        }
+        free_spectrum(spec_rot);
     }
 
     /* Phase 6 - Step 8: Write final plasma state */
@@ -1056,12 +1319,15 @@ int main(int argc, char *argv[]) {
     free(h_escaped_nu);           /* Phase 6 - Step 8 */
     free(h_escaped_energy);       /* Phase 6 - Step 8 */
     free(h_escaped_flag);         /* Phase 6 - Step 8 */
+    free(h_escaped_r);            /* Rotation mode */
+    free(h_escaped_mu);           /* Rotation mode */
     free_geometry(&geo);          /* Phase 6 - Step 8 */
     free_opacity_state(&opacity); /* Phase 6 - Step 8 */
     free_plasma_state(&plasma);   /* Phase 6 - Step 8 */
     free_estimators(est);         /* Phase 6 - Step 8 */
     free_spectrum(spec);          /* Phase 6 - Step 8 */
     free(volume);                 /* Phase 6 - Step 8 */
+    free_atomic_data(&atom_data); /* Task #072 */
 
     printf("\nDone.\n"); /* Phase 6 - Step 8 */
     return 0; /* Phase 6 - Step 8 */
