@@ -912,6 +912,10 @@ def main():
                         help='Number of LHS samples for Phase 1 (default: 200)')
     parser.add_argument('--binary', type=str, default=None,
                         help='Path to LUMINA binary (default: lumina; use lumina_cuda for GPU)')
+    parser.add_argument('--refine', type=str, default=None,
+                        help='Refine around a model from fit_results_final.csv (1-indexed row, e.g. --refine 3)')
+    parser.add_argument('--refine-samples', type=int, default=50,
+                        help='Number of LHS samples for refinement (default: 50)')
     args = parser.parse_args()
 
     # Determine binary
@@ -972,6 +976,132 @@ def main():
         else:
             print("\nTest FAILED: no spectrum produced.")
             sys.exit(1)
+        return
+
+    # ===== Refine mode =====
+    if args.refine is not None:
+        total_t0 = time.time()
+        row_idx = int(args.refine) - 1  # 1-indexed to 0-indexed
+
+        # Load center point from fit_results_final.csv
+        final_csv = PROJECT_ROOT / "fit_results_final.csv"
+        if not final_csv.exists():
+            print(f"ERROR: {final_csv} not found. Run full search first.")
+            sys.exit(1)
+        import csv
+        with open(final_csv) as f:
+            reader = csv.DictReader(f)
+            rows = list(reader)
+        if row_idx >= len(rows):
+            print(f"ERROR: Row {args.refine} not found (only {len(rows)} rows)")
+            sys.exit(1)
+        r = rows[row_idx]
+        center = ModelParams(
+            log_L=float(r['log_L']), v_inner=float(r['v_inner']),
+            log_rho_0=float(r['log_rho_0']), density_exp=float(r['density_exp']),
+            T_e_ratio=float(r['T_e_ratio']), v_core=float(r['v_core']),
+            v_wall=float(r['v_wall']), X_Fe_core=float(r['X_Fe_core']),
+            X_Si_wall=float(r['X_Si_wall']),
+        )
+
+        print("=" * 70)
+        print(f"REFINE MODE: Local search around model #{args.refine}")
+        print("=" * 70)
+        _, _, X_O_c = center.zone_abundances('core')
+        _, _, X_O_w = center.zone_abundances('wall')
+        print(f"  Center: L={center.log_L:.3f} v={center.v_inner:.0f} "
+              f"rho={center.log_rho_0:.2f} exp={center.density_exp:.1f} "
+              f"Te={center.T_e_ratio:.2f}")
+        print(f"  Zones: vc={center.v_core:.0f} vw={center.v_wall:.0f} "
+              f"Fe_c={center.X_Fe_core:.2f} Si_w={center.X_Si_wall:.2f}")
+        print(f"  Original RMS={float(r['rms']):.4f} Si_depth={float(r['si_depth']):.1%}")
+
+        # Define narrow ranges: ±15% around center (clamped to global bounds)
+        refine_ranges = []
+        for i, pname in enumerate(PARAM_NAMES):
+            val = getattr(center, pname)
+            glob_lo, glob_hi = PARAM_RANGES[i]
+            span = glob_hi - glob_lo
+            delta = span * 0.15  # ±15% of global range
+            lo = max(glob_lo, val - delta)
+            hi = min(glob_hi, val + delta)
+            refine_ranges.append((lo, hi))
+            print(f"    {pname:12s}: {val:.3f}  -> [{lo:.3f}, {hi:.3f}]")
+
+        n_ref = args.refine_samples
+        print(f"\n  Generating {n_ref} LHS samples in narrow range...")
+
+        # Phase R1: Local LHS, 100K packets x 10 iters
+        print(f"\n{'=' * 70}")
+        print(f"REFINE PHASE 1: {n_ref} local samples (100K packets x 10 iters)")
+        print(f"{'=' * 70}")
+        samples = latin_hypercube(n_ref, refine_ranges, rng=np.random.default_rng(77))
+        print(f"  Generated {len(samples)} valid samples")
+
+        ref_results = []
+        for i, params in enumerate(samples):
+            print(f"\n  [{i+1:3d}/{n_ref}] L={params.log_L:.3f} v={params.v_inner:.0f} "
+                  f"rho={params.log_rho_0:.2f} exp={params.density_exp:.1f} Te={params.T_e_ratio:.2f} "
+                  f"vc={params.v_core:.0f} vw={params.v_wall:.0f} "
+                  f"Fe_c={params.X_Fe_core:.2f} Si_w={params.X_Si_wall:.2f}",
+                  end="", flush=True)
+            result = fitter.run_model(params, n_packets=100000, n_iters=10, tag=f"ref_{i}")
+            ref_results.append(result)
+            print(f"  -> RMS={result.rms:.4f} Si_d={result.si_depth:.1%} "
+                  f"v_Si={result.si_velocity:.0f} ({result.runtime:.1f}s)")
+
+        ref_results.sort(key=lambda x: x.rms)
+        save_results_csv(ref_results, "fit_results_refine_phase1.csv")
+
+        print(f"\nRefine Phase 1 complete. Top-5:")
+        for i, result in enumerate(ref_results[:5]):
+            p = result.params
+            print(f"  #{i+1}: RMS={result.rms:.4f} Si_d={result.si_depth:.1%} "
+                  f"L={p.log_L:.3f} v={p.v_inner:.0f} vc={p.v_core:.0f} vw={p.v_wall:.0f} "
+                  f"Fe_c={p.X_Fe_core:.2f} Si_w={p.X_Si_wall:.2f}")
+
+        # Phase R2: Production for top-3
+        print(f"\n{'=' * 70}")
+        print(f"REFINE PHASE 2: Top-3 production (500K packets x 20 iters)")
+        print(f"{'=' * 70}")
+        ref_prod = []
+        for i, prev in enumerate(ref_results[:3]):
+            params = prev.params
+            print(f"\n  [{i+1}/3] (R1 RMS={prev.rms:.4f})", end="", flush=True)
+            result = fitter.run_model(params, n_packets=500000, n_iters=20, tag=f"refp_{i}")
+            ref_prod.append(result)
+            print(f"  -> RMS={result.rms:.4f} Si_d={result.si_depth:.1%} "
+                  f"v_Si={result.si_velocity:.0f} ({result.runtime:.1f}s)")
+
+        ref_prod.sort(key=lambda x: x.rms)
+        save_results_csv(ref_prod, "fit_results_refine_final.csv")
+
+        # Plots
+        best = ref_prod[0]
+        plot_best_fit(best, fitter, output="fit_refine_spectrum.png")
+        plot_si_detail(ref_prod, fitter, output="fit_refine_siII.png")
+
+        print(f"\n{'=' * 70}")
+        print("REFINEMENT COMPLETE")
+        print(f"{'=' * 70}")
+        print(f"Total time: {time.time()-total_t0:.0f}s ({(time.time()-total_t0)/60:.1f} min)")
+        p = best.params
+        _, _, X_O_c = p.zone_abundances('core')
+        _, _, X_O_w = p.zone_abundances('wall')
+        _, _, X_O_o = p.zone_abundances('outer')
+        print(f"\nBest refined parameters:")
+        print(f"  log_L       = {p.log_L:.4f}")
+        print(f"  v_inner     = {p.v_inner:.0f} km/s")
+        print(f"  log_rho_0   = {p.log_rho_0:.4f}")
+        print(f"  density_exp = {p.density_exp:.2f}")
+        print(f"  T_e/T_rad   = {p.T_e_ratio:.3f}")
+        print(f"  Core  (<{p.v_core:.0f}): Fe={p.X_Fe_core:.3f} O={X_O_c:.3f}")
+        print(f"  Wall  (<{p.v_wall:.0f}): Si={p.X_Si_wall:.3f} O={X_O_w:.3f}")
+        print(f"  Outer (>{p.v_wall:.0f}): O={X_O_o:.3f}")
+        print(f"\n  RMS: {best.rms:.4f}  Si II depth: {best.si_depth:.1%}  "
+              f"v_Si: {best.si_velocity:.0f} km/s")
+        print(f"\n  vs original #{args.refine}: RMS={float(r['rms']):.4f} "
+              f"Si_depth={float(r['si_depth']):.1%}")
         return
 
     # ===== Full 3-phase search =====
