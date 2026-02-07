@@ -14,8 +14,9 @@ virtual
 __pycache__/
 *.pyc
 
-# Data (too large for git)
-data/
+# Data (too large for git — allow sn2011fe subdirectory)
+data/*
+!data/sn2011fe/
 
 # IDE / OS
 .vscode/
