@@ -2,13 +2,18 @@
 """
 Multi-dimensional parameter fitting for SN 2011fe using LUMINA-SN.
 
-Searches an 11D physical parameter space with 3-zone stratified abundances:
+Searches an 11D physical parameter space with broken power-law density:
   (log_L, v_inner, log_rho_0, density_exp, T_e_ratio,
-   v_core, v_wall, X_Fe_core, X_Si_wall, X_S_wall, X_Ca_wall)
+   v_core, v_wall, X_Fe_core, X_Si_wall, v_break, density_exp_outer)
+
+Broken power-law density profile:
+  v < v_break:  rho = rho_0 * (v / v_inner)^density_exp
+  v >= v_break: rho = rho_break * (v / v_break)^density_exp_outer
+  (continuous at v_break)
 
 3-zone composition model:
   Core  (v_inner → v_core): Fe-rich (X_Fe_core), Si=0.05, S=0.05, Ca=0.03, O=filler
-  Wall  (v_core  → v_wall): Si-rich (X_Si_wall), S=X_S_wall, Ca=X_Ca_wall, Fe=0.05, O=filler
+  Wall  (v_core  → v_wall): Si-rich (X_Si_wall), Fe=0.05, S=0.05, Ca=0.03, O=filler
   Outer (v_wall  → v_outer): O-rich, Si=0.02, Fe=0.01, S=0.02, Ca=0.01
 
 Uses coarse-to-fine strategy:
@@ -54,9 +59,9 @@ FIXED_SPECIES = {
 }
 FIXED_SPECIES_SUM = sum(FIXED_SPECIES.values())  # 0.17
 
-# Default S and Ca (used in core and outer zones)
-DEFAULT_S = 0.05
-DEFAULT_CA = 0.03
+# Fixed S and Ca per zone (not free parameters)
+ZONE_S  = {'core': 0.05, 'wall': 0.05, 'outer': 0.02}
+ZONE_CA = {'core': 0.03, 'wall': 0.03, 'outer': 0.01}
 
 # Element ordering in abundances.csv (atomic numbers)
 ELEMENT_ORDER = [6, 8, 14, 16, 20, 26, 27, 28]
@@ -80,14 +85,14 @@ class ModelParams:
     log_L: float       # log10(luminosity in erg/s), range [42.8, 43.15]
     v_inner: float     # inner velocity (km/s), range [8000, 13000]
     log_rho_0: float   # log10(rho_0 in g/cm^3), range [-13.5, -12.7]
-    density_exp: float  # density power-law exponent, range [-10, -4]
+    density_exp: float  # density power-law exponent (inner), range [-10, -4]
     T_e_ratio: float    # T_e/T_rad ratio, range [0.7, 1.0]
     v_core: float       # core/wall boundary velocity (km/s), range [10000, 16000]
     v_wall: float       # wall/outer boundary velocity (km/s), range [14000, 22000]
     X_Fe_core: float    # Fe mass fraction in core zone, range [0.2, 0.8]
     X_Si_wall: float    # Si mass fraction in wall zone, range [0.2, 0.7]
-    X_S_wall: float     # S mass fraction in wall zone, range [0.05, 0.15]
-    X_Ca_wall: float    # Ca mass fraction in wall zone, range [0.03, 0.08]
+    v_break: float      # density slope break velocity (km/s), range [12000, 20000]
+    density_exp_outer: float  # outer density slope (v > v_break), range [-14, -6]
 
     @property
     def L_erg_s(self):
@@ -107,14 +112,27 @@ class ModelParams:
         R_inner = self.v_inner_cm_s * T_EXP
         return (self.L_erg_s / (4 * np.pi * SIGMA_SB * R_inner**2))**0.25
 
+    def density_at_v(self, v_mid):
+        """Compute broken power-law density at velocity v_mid (km/s)."""
+        rho_0 = self.rho_0
+        v_min = self.v_inner
+        if v_mid < self.v_break:
+            return rho_0 * (v_mid / v_min) ** self.density_exp
+        else:
+            # Continuity at v_break
+            rho_break = rho_0 * (self.v_break / v_min) ** self.density_exp
+            return rho_break * (v_mid / self.v_break) ** self.density_exp_outer
+
     def zone_abundances(self, zone):
         """Return (X_Si, X_Fe, X_S, X_Ca, X_O) for a given zone."""
         if zone == 'core':
-            X_Si, X_Fe, X_S, X_Ca = 0.05, self.X_Fe_core, DEFAULT_S, DEFAULT_CA
+            X_Si, X_Fe = 0.05, self.X_Fe_core
         elif zone == 'wall':
-            X_Si, X_Fe, X_S, X_Ca = self.X_Si_wall, 0.05, self.X_S_wall, self.X_Ca_wall
+            X_Si, X_Fe = self.X_Si_wall, 0.05
         else:  # outer
-            X_Si, X_Fe, X_S, X_Ca = 0.02, 0.01, 0.02, 0.01
+            X_Si, X_Fe = 0.02, 0.01
+        X_S = ZONE_S[zone]
+        X_Ca = ZONE_CA[zone]
         X_O = 1.0 - FIXED_SPECIES_SUM - X_Si - X_Fe - X_S - X_Ca
         return X_Si, X_Fe, X_S, X_Ca, X_O
 
@@ -127,6 +145,11 @@ class ModelParams:
             return False
         # Wall boundary must be below outer boundary
         if self.v_wall >= V_OUTER:
+            return False
+        # Density break must be within ejecta
+        if self.v_break <= self.v_inner + 1000:
+            return False
+        if self.v_break >= V_OUTER - 1000:
             return False
         # Oxygen filler must be positive in all zones
         for zone in ('core', 'wall', 'outer'):
@@ -163,8 +186,8 @@ class FitResult:
             'v_wall': p.v_wall,
             'X_Fe_core': p.X_Fe_core,
             'X_Si_wall': p.X_Si_wall,
-            'X_S_wall': p.X_S_wall,
-            'X_Ca_wall': p.X_Ca_wall,
+            'v_break': p.v_break,
+            'density_exp_outer': p.density_exp_outer,
             'X_O_core': X_O_core,
             'X_O_wall': X_O_wall,
             'X_O_outer': X_O_outer,
@@ -222,8 +245,8 @@ def latin_hypercube(n_samples, param_ranges, rng=None):
             v_wall=result[i, 6],
             X_Fe_core=result[i, 7],
             X_Si_wall=result[i, 8],
-            X_S_wall=result[i, 9],
-            X_Ca_wall=result[i, 10],
+            v_break=result[i, 9],
+            density_exp_outer=result[i, 10],
         )
         if p.is_valid():
             valid.append(p)
@@ -237,7 +260,7 @@ def latin_hypercube(n_samples, param_ranges, rng=None):
             density_exp=vals[3], T_e_ratio=vals[4],
             v_core=vals[5], v_wall=vals[6],
             X_Fe_core=vals[7], X_Si_wall=vals[8],
-            X_S_wall=vals[9], X_Ca_wall=vals[10],
+            v_break=vals[9], density_exp_outer=vals[10],
         )
         if p.is_valid():
             valid.append(p)
@@ -248,10 +271,11 @@ def latin_hypercube(n_samples, param_ranges, rng=None):
 
 # ===== Fitter class =====
 class LuminaFitter:
-    def __init__(self, obs_file=OBS_FILE, ref_dir=REF_DIR, binary=BINARY):
+    def __init__(self, obs_file=OBS_FILE, ref_dir=REF_DIR, binary=BINARY, feature_weight=5.0):
         self.ref_dir = Path(ref_dir)
         self.binary = Path(binary)
         self.obs_file = Path(obs_file)
+        self.feature_weight = feature_weight
 
         # Load observed spectrum
         if self.obs_file.exists():
@@ -284,11 +308,28 @@ class LuminaFitter:
         else:
             self.obs_norm = None
 
+        # Build feature weight array
+        self.weights = self._build_weight_array()
+
         # List reference files for symlinking
         self.ref_files = [f.name for f in self.ref_dir.iterdir() if f.is_file()]
 
         # Ensure tmpdir base exists
         TMPDIR_BASE.mkdir(parents=True, exist_ok=True)
+
+    def _build_weight_array(self):
+        """Build per-grid-point weight array from FEATURE_WINDOWS and feature_weight."""
+        W = self.feature_weight
+        weights = np.ones(len(self.grid))
+        for name, (lo, hi, tier) in FEATURE_WINDOWS.items():
+            mask = (self.grid >= lo) & (self.grid <= hi)
+            if tier == 1:
+                tier_weight = W
+            else:
+                tier_weight = (W + 1.0) / 2.0
+            # Use max so overlapping windows get the higher weight
+            weights[mask] = np.maximum(weights[mask], tier_weight)
+        return weights
 
     def create_model_dir(self, params, tag=""):
         """Create temporary reference directory with modified parameters."""
@@ -347,14 +388,13 @@ class LuminaFitter:
     def _write_density_csv(self, dirpath, params):
         v_min = params.v_inner  # km/s
         dv = (V_OUTER - v_min) / N_SHELLS
-        rho_0 = params.rho_0
         with open(dirpath / "density.csv", 'w') as f:
             f.write("shell_id,rho\n")
             for i in range(N_SHELLS):
                 vi = v_min + i * dv
                 vo = v_min + (i + 1) * dv
                 v_mid = (vi + vo) / 2.0
-                rho = rho_0 * (v_mid / v_min) ** params.density_exp
+                rho = params.density_at_v(v_mid)
                 f.write(f"{i},{rho}\n")
 
     def _write_abundances_csv(self, dirpath, params):
@@ -417,13 +457,8 @@ class LuminaFitter:
                                delimiter=',', names=True)
 
         # For each shell, scale n_e by (new_rho / ref_rho) at equivalent position
-        # Use simple approach: scale by overall density normalization
-        v_min_ref = 10000.0  # km/s reference
-        rho_0_ref = 8e-14    # reference rho_0 at v_min
-
         v_min_new = params.v_inner
         dv_new = (V_OUTER - v_min_new) / N_SHELLS
-        rho_0_new = params.rho_0
 
         with open(dirpath / "electron_densities.csv", 'w') as f:
             f.write("shell_id,n_e\n")
@@ -431,7 +466,7 @@ class LuminaFitter:
                 vi = v_min_new + i * dv_new
                 vo = v_min_new + (i + 1) * dv_new
                 v_mid = (vi + vo) / 2.0
-                rho_new = rho_0_new * (v_mid / v_min_new) ** params.density_exp
+                rho_new = params.density_at_v(v_mid)
                 # Scale from innermost reference shell
                 rho_ref_0 = float(ref_density['rho'][0])
                 ne_ref_0 = float(ref_ne['n_e'][0])
@@ -538,7 +573,8 @@ class LuminaFitter:
         if mask.sum() == 0:
             return 999.0
 
-        return np.sqrt(np.mean((model_n[mask] - self.obs_norm[mask])**2))
+        w = self.weights[mask]
+        return np.sqrt(np.sum(w * (model_n[mask] - self.obs_norm[mask])**2) / np.sum(w))
 
     def _measure_si_feature(self, wave, flux):
         """Measure Si II 6355 P-Cygni feature."""
@@ -604,17 +640,28 @@ PARAM_RANGES = [
     (42.80, 43.15),    # log_L
     (8000, 13000),     # v_inner (km/s)
     (-13.5, -12.7),    # log_rho_0
-    (-10, -4),         # density_exp
+    (-10, -4),         # density_exp (inner slope)
     (0.7, 1.0),        # T_e_ratio
     (10000, 16000),    # v_core (km/s)
     (14000, 22000),    # v_wall (km/s)
     (0.2, 0.8),        # X_Fe_core
     (0.2, 0.7),        # X_Si_wall
-    (0.05, 0.15),      # X_S_wall
-    (0.03, 0.08),      # X_Ca_wall
+    (12000, 20000),    # v_break (km/s)
+    (-14, -6),         # density_exp_outer
 ]
 PARAM_NAMES = ['log_L', 'v_inner', 'log_rho_0', 'density_exp', 'T_e_ratio',
-               'v_core', 'v_wall', 'X_Fe_core', 'X_Si_wall', 'X_S_wall', 'X_Ca_wall']
+               'v_core', 'v_wall', 'X_Fe_core', 'X_Si_wall', 'v_break', 'density_exp_outer']
+
+# Feature windows for weighted RMS (wavelength in Angstrom)
+# Tier 1 = THE SN Ia diagnostic, Tier 2 = major diagnostics
+# Tier weights: tier 1 = feature_weight, tier 2 = (feature_weight+1)/2, everything else = 1.0
+FEATURE_WINDOWS = {
+    'Si II 6355':  (5850, 6300, 1),   # THE SN Ia diagnostic
+    'Ca II H&K':   (3600, 3950, 2),   # Outer Ca abundance, velocity
+    'S II W':      (5150, 5550, 2),   # Temperature indicator
+    'Si II 5972':  (5550, 5850, 2),   # Temperature indicator
+    'Ca II IR':    (7800, 8600, 2),   # Outer Ca, velocity
+}
 
 
 def phase1_coarse(fitter, n=100):
@@ -632,7 +679,7 @@ def phase1_coarse(fitter, n=100):
               f"rho={params.log_rho_0:.2f} exp={params.density_exp:.1f} Te={params.T_e_ratio:.2f} "
               f"vc={params.v_core:.0f} vw={params.v_wall:.0f} "
               f"Fe_c={params.X_Fe_core:.2f} Si_w={params.X_Si_wall:.2f} "
-              f"S_w={params.X_S_wall:.2f} Ca_w={params.X_Ca_wall:.2f}",
+              f"vb={params.v_break:.0f} exp_o={params.density_exp_outer:.1f}",
               end="", flush=True)
 
         result = fitter.run_model(params, n_packets=20000, n_iters=5, tag=f"p1_{i}")
@@ -660,7 +707,7 @@ def phase2_refine(fitter, phase1_results, n_top=20):
               f"rho={params.log_rho_0:.2f} exp={params.density_exp:.1f} Te={params.T_e_ratio:.2f} "
               f"vc={params.v_core:.0f} vw={params.v_wall:.0f} "
               f"Fe_c={params.X_Fe_core:.2f} Si_w={params.X_Si_wall:.2f} "
-              f"S_w={params.X_S_wall:.2f} Ca_w={params.X_Ca_wall:.2f} "
+              f"vb={params.v_break:.0f} exp_o={params.density_exp_outer:.1f} "
               f"(P1 RMS={prev.rms:.4f})", end="", flush=True)
 
         result = fitter.run_model(params, n_packets=100000, n_iters=10, tag=f"p2_{i}")
@@ -687,7 +734,7 @@ def phase3_production(fitter, phase2_results, n_top=3):
               f"rho={params.log_rho_0:.2f} exp={params.density_exp:.1f} Te={params.T_e_ratio:.2f} "
               f"vc={params.v_core:.0f} vw={params.v_wall:.0f} "
               f"Fe_c={params.X_Fe_core:.2f} Si_w={params.X_Si_wall:.2f} "
-              f"S_w={params.X_S_wall:.2f} Ca_w={params.X_Ca_wall:.2f} "
+              f"vb={params.v_break:.0f} exp_o={params.density_exp_outer:.1f} "
               f"(P2 RMS={prev.rms:.4f})", end="", flush=True)
 
         result = fitter.run_model(params, n_packets=500000, n_iters=20, tag=f"p3_{i}")
@@ -719,7 +766,7 @@ def plot_sensitivity(results, output="fit_sensitivity.png"):
     """11-panel scatter: RMS vs each parameter."""
     filepath = PROJECT_ROOT / output
     fig, axes = plt.subplots(3, 4, figsize=(22, 12))
-    fig.suptitle('11D Stratified Parameter Sensitivity (RMS vs. each parameter)',
+    fig.suptitle('11D Broken Density Parameter Sensitivity (RMS vs. each parameter)',
                  fontsize=14, fontweight='bold')
     axes_flat = axes.flatten()
 
@@ -750,7 +797,7 @@ def plot_sensitivity(results, output="fit_sensitivity.png"):
     plt.close()
 
 
-def plot_best_fit(best_result, fitter, output="fit_best_spectrum.png"):
+def plot_best_fit(best_result, fitter, output="fit_best_spectrum.png", feature_weight=None):
     """Plot best-fit spectrum vs observed + TARDIS reference."""
     filepath = PROJECT_ROOT / output
     fig, axes = plt.subplots(3, 1, figsize=(14, 12),
@@ -799,18 +846,21 @@ def plot_best_fit(best_result, fitter, output="fit_best_spectrum.png"):
 
     # Stats box
     _, _, _, _, X_O_core = p.zone_abundances('core')
-    _, _, X_S_w, X_Ca_w, X_O_wall = p.zone_abundances('wall')
+    _, _, _, _, X_O_wall = p.zone_abundances('wall')
     _, _, _, _, X_O_outer = p.zone_abundances('outer')
+    fw_label = f" (w={feature_weight:.1f})" if feature_weight is not None and feature_weight != 1.0 else ""
     stats = (f"log L = {p.log_L:.3f}\n"
              f"v_inner = {p.v_inner:.0f} km/s\n"
              f"log rho_0 = {p.log_rho_0:.3f}\n"
              f"density_exp = {p.density_exp:.1f}\n"
+             f"v_break = {p.v_break:.0f} km/s\n"
+             f"exp_outer = {p.density_exp_outer:.1f}\n"
              f"T_e/T_rad = {p.T_e_ratio:.2f}\n"
              f"--- Zones ---\n"
              f"Core (<{p.v_core:.0f}): Fe={p.X_Fe_core:.2f} O={X_O_core:.2f}\n"
-             f"Wall (<{p.v_wall:.0f}): Si={p.X_Si_wall:.2f} S={X_S_w:.2f} Ca={X_Ca_w:.2f} O={X_O_wall:.2f}\n"
+             f"Wall (<{p.v_wall:.0f}): Si={p.X_Si_wall:.2f} O={X_O_wall:.2f}\n"
              f"Outer: Si=0.02 Fe=0.01 O={X_O_outer:.2f}\n"
-             f"RMS = {best_result.rms:.4f}\n"
+             f"RMS = {best_result.rms:.4f}{fw_label}\n"
              f"Si II depth = {best_result.si_depth:.1%}")
     ax.text(0.02, 0.97, stats, transform=ax.transAxes, fontsize=8,
             verticalalignment='top',
@@ -929,6 +979,9 @@ def main():
                         help='Refine around a model from fit_results_final.csv (1-indexed row, e.g. --refine 3)')
     parser.add_argument('--refine-samples', type=int, default=50,
                         help='Number of LHS samples for refinement (default: 50)')
+    parser.add_argument('--feature-weight', type=float, default=5.0,
+                        help='Feature weight W: Si II 6355 = W×, major features = (W+1)/2×, '
+                             'continuum = 1×. Use 1.0 for uniform RMS. (default: 5.0)')
     args = parser.parse_args()
 
     # Determine binary
@@ -943,7 +996,12 @@ def main():
         print(f"ERROR: Observed spectrum not found: {OBS_FILE}")
         sys.exit(1)
 
-    fitter = LuminaFitter(binary=binary)
+    fitter = LuminaFitter(binary=binary, feature_weight=args.feature_weight)
+
+    # Print feature weighting info
+    fw = args.feature_weight
+    tier2_w = (fw + 1.0) / 2.0
+    print(f"Feature weighting: Si II 6355 = {fw:.1f}x, major features = {tier2_w:.1f}x, continuum = 1.0x")
 
     if args.test:
         # Single validation run with default parameters
@@ -961,18 +1019,20 @@ def main():
             v_wall=18000,
             X_Fe_core=0.5,
             X_Si_wall=0.4,
-            X_S_wall=0.05,
-            X_Ca_wall=0.03,
+            v_break=15000,
+            density_exp_outer=-10.0,
         )
         print(f"\nParameters:")
         print(f"  log_L = {params.log_L} -> L = {params.L_erg_s:.4e} erg/s")
         print(f"  v_inner = {params.v_inner} km/s")
         print(f"  log_rho_0 = {params.log_rho_0} -> rho_0 = {params.rho_0:.4e} g/cm^3")
-        print(f"  density_exp = {params.density_exp}")
+        print(f"  density_exp = {params.density_exp} (inner, v < v_break)")
+        print(f"  v_break = {params.v_break} km/s")
+        print(f"  density_exp_outer = {params.density_exp_outer} (outer, v > v_break)")
         print(f"  T_e/T_rad ratio = {params.T_e_ratio}")
         print(f"  v_core = {params.v_core} km/s, v_wall = {params.v_wall} km/s")
-        print(f"  Core: Fe={params.X_Fe_core:.2f}, Si=0.05, S={DEFAULT_S:.2f}, Ca={DEFAULT_CA:.2f}, O={params.zone_abundances('core')[4]:.2f}")
-        print(f"  Wall: Si={params.X_Si_wall:.2f}, Fe=0.05, S={params.X_S_wall:.2f}, Ca={params.X_Ca_wall:.2f}, O={params.zone_abundances('wall')[4]:.2f}")
+        print(f"  Core: Fe={params.X_Fe_core:.2f}, Si=0.05, S=0.05, Ca=0.03, O={params.zone_abundances('core')[4]:.2f}")
+        print(f"  Wall: Si={params.X_Si_wall:.2f}, Fe=0.05, S=0.05, Ca=0.03, O={params.zone_abundances('wall')[4]:.2f}")
         print(f"  Outer: Si=0.02, Fe=0.01, S=0.02, Ca=0.01, O={params.zone_abundances('outer')[4]:.2f}")
         print(f"  T_inner (S-B estimate) = {params.T_inner_estimate:.1f} K")
 
@@ -986,7 +1046,8 @@ def main():
         print(f"  Runtime: {result.runtime:.1f}s")
 
         if len(result.spectrum_wave) > 0:
-            plot_best_fit(result, fitter, output="fit_test_spectrum.png")
+            plot_best_fit(result, fitter, output="fit_test_spectrum.png",
+                         feature_weight=fitter.feature_weight)
             print("\nTest passed! Pipeline is functional.")
         else:
             print("\nTest FAILED: no spectrum produced.")
@@ -1017,8 +1078,8 @@ def main():
             T_e_ratio=float(r['T_e_ratio']), v_core=float(r['v_core']),
             v_wall=float(r['v_wall']), X_Fe_core=float(r['X_Fe_core']),
             X_Si_wall=float(r['X_Si_wall']),
-            X_S_wall=float(r.get('X_S_wall', DEFAULT_S)),
-            X_Ca_wall=float(r.get('X_Ca_wall', DEFAULT_CA)),
+            v_break=float(r.get('v_break', 15000)),
+            density_exp_outer=float(r.get('density_exp_outer', -10)),
         )
 
         print("=" * 70)
@@ -1028,8 +1089,8 @@ def main():
               f"rho={center.log_rho_0:.2f} exp={center.density_exp:.1f} "
               f"Te={center.T_e_ratio:.2f}")
         print(f"  Zones: vc={center.v_core:.0f} vw={center.v_wall:.0f} "
-              f"Fe_c={center.X_Fe_core:.2f} Si_w={center.X_Si_wall:.2f} "
-              f"S_w={center.X_S_wall:.2f} Ca_w={center.X_Ca_wall:.2f}")
+              f"Fe_c={center.X_Fe_core:.2f} Si_w={center.X_Si_wall:.2f}")
+        print(f"  Density: vb={center.v_break:.0f} exp_o={center.density_exp_outer:.1f}")
         print(f"  Original RMS={float(r['rms']):.4f} Si_depth={float(r['si_depth']):.1%}")
 
         # Define narrow ranges: ±15% around center (clamped to global bounds)
@@ -1060,7 +1121,7 @@ def main():
                   f"rho={params.log_rho_0:.2f} exp={params.density_exp:.1f} Te={params.T_e_ratio:.2f} "
                   f"vc={params.v_core:.0f} vw={params.v_wall:.0f} "
                   f"Fe_c={params.X_Fe_core:.2f} Si_w={params.X_Si_wall:.2f} "
-                  f"S_w={params.X_S_wall:.2f} Ca_w={params.X_Ca_wall:.2f}",
+                  f"vb={params.v_break:.0f} exp_o={params.density_exp_outer:.1f}",
                   end="", flush=True)
             result = fitter.run_model(params, n_packets=100000, n_iters=10, tag=f"ref_{i}")
             ref_results.append(result)
@@ -1076,7 +1137,7 @@ def main():
             print(f"  #{i+1}: RMS={result.rms:.4f} Si_d={result.si_depth:.1%} "
                   f"L={p.log_L:.3f} v={p.v_inner:.0f} vc={p.v_core:.0f} vw={p.v_wall:.0f} "
                   f"Fe_c={p.X_Fe_core:.2f} Si_w={p.X_Si_wall:.2f} "
-                  f"S_w={p.X_S_wall:.2f} Ca_w={p.X_Ca_wall:.2f}")
+                  f"vb={p.v_break:.0f} exp_o={p.density_exp_outer:.1f}")
 
         # Phase R2: Production for top-3
         print(f"\n{'=' * 70}")
@@ -1096,7 +1157,8 @@ def main():
 
         # Plots
         best = ref_prod[0]
-        plot_best_fit(best, fitter, output="fit_refine_spectrum.png")
+        plot_best_fit(best, fitter, output="fit_refine_spectrum.png",
+                     feature_weight=fitter.feature_weight)
         plot_si_detail(ref_prod, fitter, output="fit_refine_siII.png")
 
         print(f"\n{'=' * 70}")
@@ -1105,16 +1167,18 @@ def main():
         print(f"Total time: {time.time()-total_t0:.0f}s ({(time.time()-total_t0)/60:.1f} min)")
         p = best.params
         _, _, _, _, X_O_c = p.zone_abundances('core')
-        _, _, X_S_w, X_Ca_w, X_O_w = p.zone_abundances('wall')
+        _, _, _, _, X_O_w = p.zone_abundances('wall')
         _, _, _, _, X_O_o = p.zone_abundances('outer')
         print(f"\nBest refined parameters:")
         print(f"  log_L       = {p.log_L:.4f}")
         print(f"  v_inner     = {p.v_inner:.0f} km/s")
         print(f"  log_rho_0   = {p.log_rho_0:.4f}")
-        print(f"  density_exp = {p.density_exp:.2f}")
+        print(f"  density_exp = {p.density_exp:.2f} (inner, v < v_break)")
+        print(f"  v_break     = {p.v_break:.0f} km/s")
+        print(f"  exp_outer   = {p.density_exp_outer:.2f} (outer, v > v_break)")
         print(f"  T_e/T_rad   = {p.T_e_ratio:.3f}")
         print(f"  Core  (<{p.v_core:.0f}): Fe={p.X_Fe_core:.3f} O={X_O_c:.3f}")
-        print(f"  Wall  (<{p.v_wall:.0f}): Si={p.X_Si_wall:.3f} S={X_S_w:.3f} Ca={X_Ca_w:.3f} O={X_O_w:.3f}")
+        print(f"  Wall  (<{p.v_wall:.0f}): Si={p.X_Si_wall:.3f} O={X_O_w:.3f}")
         print(f"  Outer (>{p.v_wall:.0f}): O={X_O_o:.3f}")
         print(f"\n  RMS: {best.rms:.4f}  Si II depth: {best.si_depth:.1%}  "
               f"v_Si: {best.si_velocity:.0f} km/s")
@@ -1137,7 +1201,7 @@ def main():
               f"rho={p.log_rho_0:.2f} exp={p.density_exp:.1f} Te={p.T_e_ratio:.2f} "
               f"vc={p.v_core:.0f} vw={p.v_wall:.0f} "
               f"Fe_c={p.X_Fe_core:.2f} Si_w={p.X_Si_wall:.2f} "
-              f"S_w={p.X_S_wall:.2f} Ca_w={p.X_Ca_wall:.2f}")
+              f"vb={p.v_break:.0f} exp_o={p.density_exp_outer:.1f}")
 
     if args.phase1:
         print(f"\nPhase 1 only. Total time: {time.time()-total_t0:.0f}s")
@@ -1154,7 +1218,7 @@ def main():
               f"rho={p.log_rho_0:.2f} exp={p.density_exp:.1f} Te={p.T_e_ratio:.2f} "
               f"vc={p.v_core:.0f} vw={p.v_wall:.0f} "
               f"Fe_c={p.X_Fe_core:.2f} Si_w={p.X_Si_wall:.2f} "
-              f"S_w={p.X_S_wall:.2f} Ca_w={p.X_Ca_wall:.2f}")
+              f"vb={p.v_break:.0f} exp_o={p.density_exp_outer:.1f}")
 
     # Phase 3
     p3_results = phase3_production(fitter, p2_results, n_top=3)
@@ -1162,7 +1226,8 @@ def main():
 
     # Final plots
     best = p3_results[0]
-    plot_best_fit(best, fitter, output="fit_best_spectrum.png")
+    plot_best_fit(best, fitter, output="fit_best_spectrum.png",
+                 feature_weight=fitter.feature_weight)
     plot_si_detail(p3_results, fitter, output="fit_best_siII.png")
 
     print(f"\n{'=' * 70}")
@@ -1174,15 +1239,17 @@ def main():
     print(f"  log_L       = {p.log_L:.4f}  (L = {p.L_erg_s:.4e} erg/s)")
     print(f"  v_inner     = {p.v_inner:.0f} km/s")
     print(f"  log_rho_0   = {p.log_rho_0:.4f}  (rho_0 = {p.rho_0:.4e} g/cm^3)")
-    print(f"  density_exp = {p.density_exp:.2f}")
+    print(f"  density_exp = {p.density_exp:.2f}  (inner, v < v_break)")
+    print(f"  v_break     = {p.v_break:.0f} km/s")
+    print(f"  exp_outer   = {p.density_exp_outer:.2f}  (outer, v > v_break)")
     print(f"  T_e/T_rad   = {p.T_e_ratio:.3f}")
     print(f"  v_core      = {p.v_core:.0f} km/s")
     print(f"  v_wall      = {p.v_wall:.0f} km/s")
     _, _, _, _, X_O_c = p.zone_abundances('core')
-    _, _, X_S_w, X_Ca_w, X_O_w = p.zone_abundances('wall')
+    _, _, _, _, X_O_w = p.zone_abundances('wall')
     _, _, _, _, X_O_o = p.zone_abundances('outer')
     print(f"  Core  (<{p.v_core:.0f} km/s): Fe={p.X_Fe_core:.3f} Si=0.050 S=0.050 Ca=0.030 O={X_O_c:.3f}")
-    print(f"  Wall  (<{p.v_wall:.0f} km/s): Si={p.X_Si_wall:.3f} Fe=0.050 S={X_S_w:.3f} Ca={X_Ca_w:.3f} O={X_O_w:.3f}")
+    print(f"  Wall  (<{p.v_wall:.0f} km/s): Si={p.X_Si_wall:.3f} Fe=0.050 S=0.050 Ca=0.030 O={X_O_w:.3f}")
     print(f"  Outer (>{p.v_wall:.0f} km/s): Si=0.020 Fe=0.010 S=0.020 Ca=0.010 O={X_O_o:.3f}")
     print(f"\nMetrics:")
     print(f"  RMS vs observed: {best.rms:.4f}")
@@ -1190,7 +1257,7 @@ def main():
     print(f"  Si II velocity: {best.si_velocity:.0f} km/s")
 
     print(f"\nOutput files:")
-    print(f"  fit_results_phase1.csv  ({args.n_samples} rows, 11D stratified)")
+    print(f"  fit_results_phase1.csv  ({args.n_samples} rows, 11D broken density)")
     print(f"  fit_results_phase2.csv  (20 rows)")
     print(f"  fit_results_final.csv   (3 rows)")
     print(f"  fit_sensitivity.png     (11 panels)")
