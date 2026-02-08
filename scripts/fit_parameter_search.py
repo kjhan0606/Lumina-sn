@@ -166,6 +166,7 @@ class FitResult:
     si_depth: float = 0.0
     si_velocity: float = 0.0
     si_wave_min: float = 0.0
+    score: float = 999.0
     runtime: float = 0.0
     converged: bool = False
     spectrum_wave: np.ndarray = field(default_factory=lambda: np.array([]))
@@ -192,6 +193,7 @@ class FitResult:
             'X_O_wall': X_O_wall,
             'X_O_outer': X_O_outer,
             'rms': self.rms,
+            'score': self.score,
             'si_depth': self.si_depth,
             'si_velocity': self.si_velocity,
             'si_wave_min': self.si_wave_min,
@@ -271,11 +273,14 @@ def latin_hypercube(n_samples, param_ranges, rng=None):
 
 # ===== Fitter class =====
 class LuminaFitter:
-    def __init__(self, obs_file=OBS_FILE, ref_dir=REF_DIR, binary=BINARY, feature_weight=5.0):
+    def __init__(self, obs_file=OBS_FILE, ref_dir=REF_DIR, binary=BINARY, feature_weight=5.0,
+                 depth_penalty=0.3, min_si_depth=0.5):
         self.ref_dir = Path(ref_dir)
         self.binary = Path(binary)
         self.obs_file = Path(obs_file)
         self.feature_weight = feature_weight
+        self.depth_penalty = depth_penalty
+        self.min_si_depth = min_si_depth
 
         # Load observed spectrum
         if self.obs_file.exists():
@@ -531,6 +536,10 @@ class LuminaFitter:
                     result.si_depth = si['depth_peak']
                     result.si_velocity = si['v_abs']
                     result.si_wave_min = si['wave_min']
+
+                # Composite score: RMS + depth penalty for shallow Si II
+                penalty = self.depth_penalty * max(0.0, self.min_si_depth - result.si_depth)
+                result.score = result.rms + penalty
             else:
                 if proc.returncode != 0:
                     # Print last few lines of stderr for debugging
@@ -685,11 +694,11 @@ def phase1_coarse(fitter, n=100):
         result = fitter.run_model(params, n_packets=20000, n_iters=5, tag=f"p1_{i}")
         results.append(result)
 
-        print(f"  -> RMS={result.rms:.4f} Si_d={result.si_depth:.1%} "
+        print(f"  -> S={result.score:.4f} RMS={result.rms:.4f} Si_d={result.si_depth:.1%} "
               f"v_Si={result.si_velocity:.0f} ({result.runtime:.1f}s)")
 
     # Sort by RMS
-    results.sort(key=lambda r: r.rms)
+    results.sort(key=lambda r: r.score)
     return results
 
 
@@ -713,10 +722,10 @@ def phase2_refine(fitter, phase1_results, n_top=20):
         result = fitter.run_model(params, n_packets=100000, n_iters=10, tag=f"p2_{i}")
         results.append(result)
 
-        print(f"  -> RMS={result.rms:.4f} Si_d={result.si_depth:.1%} "
+        print(f"  -> S={result.score:.4f} RMS={result.rms:.4f} Si_d={result.si_depth:.1%} "
               f"v_Si={result.si_velocity:.0f} ({result.runtime:.1f}s)")
 
-    results.sort(key=lambda r: r.rms)
+    results.sort(key=lambda r: r.score)
     return results
 
 
@@ -740,10 +749,10 @@ def phase3_production(fitter, phase2_results, n_top=3):
         result = fitter.run_model(params, n_packets=500000, n_iters=20, tag=f"p3_{i}")
         results.append(result)
 
-        print(f"  -> RMS={result.rms:.4f} Si_d={result.si_depth:.1%} "
+        print(f"  -> S={result.score:.4f} RMS={result.rms:.4f} Si_d={result.si_depth:.1%} "
               f"v_Si={result.si_velocity:.0f} ({result.runtime:.1f}s)")
 
-    results.sort(key=lambda r: r.rms)
+    results.sort(key=lambda r: r.score)
     return results
 
 
@@ -860,6 +869,7 @@ def plot_best_fit(best_result, fitter, output="fit_best_spectrum.png", feature_w
              f"Core (<{p.v_core:.0f}): Fe={p.X_Fe_core:.2f} O={X_O_core:.2f}\n"
              f"Wall (<{p.v_wall:.0f}): Si={p.X_Si_wall:.2f} O={X_O_wall:.2f}\n"
              f"Outer: Si=0.02 Fe=0.01 O={X_O_outer:.2f}\n"
+             f"Score = {best_result.score:.4f}\n"
              f"RMS = {best_result.rms:.4f}{fw_label}\n"
              f"Si II depth = {best_result.si_depth:.1%}")
     ax.text(0.02, 0.97, stats, transform=ax.transAxes, fontsize=8,
@@ -982,6 +992,13 @@ def main():
     parser.add_argument('--feature-weight', type=float, default=5.0,
                         help='Feature weight W: Si II 6355 = W×, major features = (W+1)/2×, '
                              'continuum = 1×. Use 1.0 for uniform RMS. (default: 5.0)')
+    parser.add_argument('--depth-penalty', type=float, default=0.3,
+                        help='Penalty coefficient for shallow Si II depth. '
+                             'score = RMS + penalty * max(0, min_depth - si_depth). '
+                             'Use 0 for pure RMS ranking. (default: 0.3)')
+    parser.add_argument('--min-si-depth', type=float, default=0.5,
+                        help='Minimum Si II depth threshold for penalty. '
+                             'Models below this depth get penalized. (default: 0.5)')
     args = parser.parse_args()
 
     # Determine binary
@@ -996,12 +1013,20 @@ def main():
         print(f"ERROR: Observed spectrum not found: {OBS_FILE}")
         sys.exit(1)
 
-    fitter = LuminaFitter(binary=binary, feature_weight=args.feature_weight)
+    fitter = LuminaFitter(binary=binary, feature_weight=args.feature_weight,
+                          depth_penalty=args.depth_penalty,
+                          min_si_depth=args.min_si_depth)
 
     # Print feature weighting info
     fw = args.feature_weight
     tier2_w = (fw + 1.0) / 2.0
     print(f"Feature weighting: Si II 6355 = {fw:.1f}x, major features = {tier2_w:.1f}x, continuum = 1.0x")
+    dp = args.depth_penalty
+    msd = args.min_si_depth
+    if dp > 0:
+        print(f"Si II depth penalty: {dp:.2f} x max(0, {msd:.2f} - depth)")
+    else:
+        print(f"Si II depth penalty: disabled (pure weighted-RMS ranking)")
 
     if args.test:
         # Single validation run with default parameters
@@ -1039,6 +1064,7 @@ def main():
         result = fitter.run_model(params, n_packets=10000, n_iters=5, tag="test")
 
         print(f"\nResult:")
+        print(f"  Score: {result.score:.4f}")
         print(f"  RMS vs observed: {result.rms:.4f}")
         print(f"  Si II depth: {result.si_depth:.1%}")
         print(f"  Si II velocity: {result.si_velocity:.0f} km/s")
@@ -1128,13 +1154,13 @@ def main():
             print(f"  -> RMS={result.rms:.4f} Si_d={result.si_depth:.1%} "
                   f"v_Si={result.si_velocity:.0f} ({result.runtime:.1f}s)")
 
-        ref_results.sort(key=lambda x: x.rms)
+        ref_results.sort(key=lambda x: x.score)
         save_results_csv(ref_results, "fit_results_refine_phase1.csv")
 
         print(f"\nRefine Phase 1 complete. Top-5:")
         for i, result in enumerate(ref_results[:5]):
             p = result.params
-            print(f"  #{i+1}: RMS={result.rms:.4f} Si_d={result.si_depth:.1%} "
+            print(f"  #{i+1}: S={result.score:.4f} RMS={result.rms:.4f} Si_d={result.si_depth:.1%} "
                   f"L={p.log_L:.3f} v={p.v_inner:.0f} vc={p.v_core:.0f} vw={p.v_wall:.0f} "
                   f"Fe_c={p.X_Fe_core:.2f} Si_w={p.X_Si_wall:.2f} "
                   f"vb={p.v_break:.0f} exp_o={p.density_exp_outer:.1f}")
@@ -1152,7 +1178,7 @@ def main():
             print(f"  -> RMS={result.rms:.4f} Si_d={result.si_depth:.1%} "
                   f"v_Si={result.si_velocity:.0f} ({result.runtime:.1f}s)")
 
-        ref_prod.sort(key=lambda x: x.rms)
+        ref_prod.sort(key=lambda x: x.score)
         save_results_csv(ref_prod, "fit_results_refine_final.csv")
 
         # Plots
@@ -1180,7 +1206,7 @@ def main():
         print(f"  Core  (<{p.v_core:.0f}): Fe={p.X_Fe_core:.3f} O={X_O_c:.3f}")
         print(f"  Wall  (<{p.v_wall:.0f}): Si={p.X_Si_wall:.3f} O={X_O_w:.3f}")
         print(f"  Outer (>{p.v_wall:.0f}): O={X_O_o:.3f}")
-        print(f"\n  RMS: {best.rms:.4f}  Si II depth: {best.si_depth:.1%}  "
+        print(f"\n  Score: {best.score:.4f}  RMS: {best.rms:.4f}  Si II depth: {best.si_depth:.1%}  "
               f"v_Si: {best.si_velocity:.0f} km/s")
         print(f"\n  vs original #{args.refine}: RMS={float(r['rms']):.4f} "
               f"Si_depth={float(r['si_depth']):.1%}")
@@ -1197,7 +1223,7 @@ def main():
     print(f"\nPhase 1 complete. Top-5:")
     for i, r in enumerate(p1_results[:5]):
         p = r.params
-        print(f"  #{i+1}: RMS={r.rms:.4f} L={p.log_L:.3f} v={p.v_inner:.0f} "
+        print(f"  #{i+1}: S={r.score:.4f} RMS={r.rms:.4f} L={p.log_L:.3f} v={p.v_inner:.0f} "
               f"rho={p.log_rho_0:.2f} exp={p.density_exp:.1f} Te={p.T_e_ratio:.2f} "
               f"vc={p.v_core:.0f} vw={p.v_wall:.0f} "
               f"Fe_c={p.X_Fe_core:.2f} Si_w={p.X_Si_wall:.2f} "
@@ -1214,7 +1240,7 @@ def main():
     print(f"\nPhase 2 complete. Top-5:")
     for i, r in enumerate(p2_results[:5]):
         p = r.params
-        print(f"  #{i+1}: RMS={r.rms:.4f} L={p.log_L:.3f} v={p.v_inner:.0f} "
+        print(f"  #{i+1}: S={r.score:.4f} RMS={r.rms:.4f} L={p.log_L:.3f} v={p.v_inner:.0f} "
               f"rho={p.log_rho_0:.2f} exp={p.density_exp:.1f} Te={p.T_e_ratio:.2f} "
               f"vc={p.v_core:.0f} vw={p.v_wall:.0f} "
               f"Fe_c={p.X_Fe_core:.2f} Si_w={p.X_Si_wall:.2f} "
@@ -1252,6 +1278,7 @@ def main():
     print(f"  Wall  (<{p.v_wall:.0f} km/s): Si={p.X_Si_wall:.3f} Fe=0.050 S=0.050 Ca=0.030 O={X_O_w:.3f}")
     print(f"  Outer (>{p.v_wall:.0f} km/s): Si=0.020 Fe=0.010 S=0.020 Ca=0.010 O={X_O_o:.3f}")
     print(f"\nMetrics:")
+    print(f"  Score: {best.score:.4f}")
     print(f"  RMS vs observed: {best.rms:.4f}")
     print(f"  Si II depth: {best.si_depth:.1%}")
     print(f"  Si II velocity: {best.si_velocity:.0f} km/s")
