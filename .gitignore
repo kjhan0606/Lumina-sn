@@ -19,6 +19,20 @@ __pycache__/
 data/*
 !data/sn2011fe/
 
+# LaTeX build artifacts
+*.aux
+*.bbl
+*.bcf
+*.blg
+*.idx
+*.ilg
+*.ind
+*.log
+*.out
+*.run.xml
+*.toc
+missfont.log
+
 # IDE / OS
 .vscode/
 *.swp
