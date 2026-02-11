@@ -18,7 +18,7 @@ TARGET = lumina
 CUDA_SRC = src/lumina_cuda.cu
 NVCC = nvcc
 NVFLAGS = -O2 -arch=sm_89 -std=c++14 -Xcompiler -fopenmp
-NVLDFLAGS = -lm -Xcompiler -fopenmp
+NVLDFLAGS = -lm -lcublas -Xcompiler -fopenmp
 
 # Default target
 all: $(TARGET)

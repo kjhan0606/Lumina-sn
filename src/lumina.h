@@ -427,6 +427,13 @@ void nlte_solve_all(NLTEConfig *nlte, AtomicData *atom, PlasmaState *plasma,
                      OpacityState *opacity, double time_explosion,
                      int n_shells);
 
+/* NLTE: Assemble rate matrix (column-major A[N*N] + RHS b[N]) for GPU/CPU solve */
+void nlte_assemble_rate_matrix(NLTEConfig *nlte, AtomicData *atom,
+                                PlasmaState *plasma, OpacityState *opacity,
+                                int ion_idx_lo, int ion_idx_hi,
+                                int shell, double time_explosion,
+                                double *A_cm, double *b, int N);
+
 #ifdef __cplusplus   /* Phase 6 - Step 9: close extern C guard */
 }                    /* Phase 6 - Step 9 */
 #endif               /* Phase 6 - Step 9 */

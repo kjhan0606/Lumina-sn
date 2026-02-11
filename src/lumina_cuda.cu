@@ -9,11 +9,33 @@
 #include <math.h>       /* Phase 6 - Step 1 */
 #include <stdint.h>     /* Phase 6 - Step 1 */
 #include <cuda_runtime.h> /* Phase 6 - Step 1 */
+#include <cublas_v2.h>    /* cuBLAS batched NLTE solver */
 
 /* Phase 6 - Step 1: Include shared header for struct definitions */
 extern "C" {             /* Phase 6 - Step 1 */
 #include "lumina.h"      /* Phase 6 - Step 1 */
 }                        /* Phase 6 - Step 1 */
+
+/* ============================================================ */
+/* cuBLAS batched NLTE solver data structure                    */
+/* ============================================================ */
+typedef struct {
+    cublasHandle_t handle;
+    double  *d_matrices;     /* [batch * max_N * max_N] device */
+    double  *d_rhs;          /* [batch * max_N] device */
+    double **d_Aarray;       /* [batch] device pointer array */
+    double **d_Barray;       /* [batch] device pointer array */
+    int     *d_pivot;        /* [batch * max_N] device */
+    int     *d_info;         /* [batch] device */
+    int      max_N;          /* largest matrix dim (Fe = 1362) */
+    int      batch_size;     /* n_shells (30) */
+    /* Host staging */
+    double  *h_matrices;
+    double  *h_rhs;
+    double **h_Aarray;       /* device pointers, assembled on host */
+    double **h_Barray;
+    int     *h_info;
+} CudaNLTESolver;
 
 /* ============================================================ */
 /* Phase 6 - Step 1: CUDA error checking macro                  */
@@ -145,6 +167,262 @@ static void cuda_download_j_nu(CudaDeviceData *dev, NLTEConfig *nlte,
     size_t size = (size_t)n_shells * NLTE_N_FREQ_BINS * sizeof(double);
     CUDA_CHECK(cudaMemcpy(nlte->j_nu_estimator, dev->d_j_nu_estimator,
                size, cudaMemcpyDeviceToHost));
+}
+
+/* ============================================================ */
+/* cuBLAS batched NLTE solver functions                         */
+/* ============================================================ */
+
+static void cuda_nlte_solver_init(CudaNLTESolver *sol, int max_N, int batch_size) {
+    memset(sol, 0, sizeof(*sol));
+    cublasCreate(&sol->handle);
+    sol->max_N = max_N;
+    sol->batch_size = batch_size;
+
+    size_t mat_bytes = (size_t)batch_size * max_N * max_N * sizeof(double);
+    size_t rhs_bytes = (size_t)batch_size * max_N * sizeof(double);
+
+    CUDA_CHECK(cudaMalloc(&sol->d_matrices, mat_bytes));
+    CUDA_CHECK(cudaMalloc(&sol->d_rhs, rhs_bytes));
+    CUDA_CHECK(cudaMalloc(&sol->d_Aarray, batch_size * sizeof(double *)));
+    CUDA_CHECK(cudaMalloc(&sol->d_Barray, batch_size * sizeof(double *)));
+    CUDA_CHECK(cudaMalloc(&sol->d_pivot, (size_t)batch_size * max_N * sizeof(int)));
+    CUDA_CHECK(cudaMalloc(&sol->d_info, batch_size * sizeof(int)));
+
+    sol->h_matrices = (double *)malloc(mat_bytes);
+    sol->h_rhs      = (double *)malloc(rhs_bytes);
+    sol->h_Aarray   = (double **)malloc(batch_size * sizeof(double *));
+    sol->h_Barray   = (double **)malloc(batch_size * sizeof(double *));
+    sol->h_info     = (int *)malloc(batch_size * sizeof(int));
+
+    printf("  [NLTE-GPU] cuBLAS solver: max_N=%d, batch=%d, GPU mem=%.1f MB\n",
+           max_N, batch_size, (mat_bytes + rhs_bytes) / (1024.0 * 1024.0));
+}
+
+static void cuda_nlte_solver_free(CudaNLTESolver *sol) {
+    if (sol->handle) cublasDestroy(sol->handle);
+    if (sol->d_matrices) cudaFree(sol->d_matrices);
+    if (sol->d_rhs)      cudaFree(sol->d_rhs);
+    if (sol->d_Aarray)   cudaFree(sol->d_Aarray);
+    if (sol->d_Barray)   cudaFree(sol->d_Barray);
+    if (sol->d_pivot)    cudaFree(sol->d_pivot);
+    if (sol->d_info)     cudaFree(sol->d_info);
+    free(sol->h_matrices);
+    free(sol->h_rhs);
+    free(sol->h_Aarray);
+    free(sol->h_Barray);
+    free(sol->h_info);
+    memset(sol, 0, sizeof(*sol));
+}
+
+/* Batched LU solve: factorize + triangular solve on GPU for all shells at once.
+ * h_matrices[batch * N * N] and h_rhs[batch * N] must be pre-filled (column-major). */
+static int cuda_nlte_batched_solve(CudaNLTESolver *sol, int N, int batch) {
+    size_t mat_bytes = (size_t)batch * N * N * sizeof(double);
+    size_t rhs_bytes = (size_t)batch * N * sizeof(double);
+
+    /* Set up device pointer arrays (each points to contiguous slice) */
+    for (int i = 0; i < batch; i++) {
+        sol->h_Aarray[i] = sol->d_matrices + (size_t)i * N * N;
+        sol->h_Barray[i] = sol->d_rhs      + (size_t)i * N;
+    }
+
+    /* Upload matrices, RHS, and pointer arrays */
+    CUDA_CHECK(cudaMemcpy(sol->d_matrices, sol->h_matrices, mat_bytes,
+               cudaMemcpyHostToDevice));
+    CUDA_CHECK(cudaMemcpy(sol->d_rhs, sol->h_rhs, rhs_bytes,
+               cudaMemcpyHostToDevice));
+    CUDA_CHECK(cudaMemcpy(sol->d_Aarray, sol->h_Aarray,
+               batch * sizeof(double *), cudaMemcpyHostToDevice));
+    CUDA_CHECK(cudaMemcpy(sol->d_Barray, sol->h_Barray,
+               batch * sizeof(double *), cudaMemcpyHostToDevice));
+
+    /* Batched LU factorization */
+    cublasStatus_t stat = cublasDgetrfBatched(sol->handle, N,
+        sol->d_Aarray, N, sol->d_pivot, sol->d_info, batch);
+    if (stat != CUBLAS_STATUS_SUCCESS) {
+        fprintf(stderr, "[NLTE-GPU] cublasDgetrfBatched failed: %d\n", stat);
+        return -1;
+    }
+
+    /* Batched triangular solve */
+    int info_host = 0;
+    stat = cublasDgetrsBatched(sol->handle, CUBLAS_OP_N, N, 1,
+        (const double **)sol->d_Aarray, N, sol->d_pivot,
+        sol->d_Barray, N, &info_host, batch);
+    if (stat != CUBLAS_STATUS_SUCCESS) {
+        fprintf(stderr, "[NLTE-GPU] cublasDgetrsBatched failed: %d\n", stat);
+        return -1;
+    }
+
+    /* Download solutions and info */
+    CUDA_CHECK(cudaMemcpy(sol->h_rhs, sol->d_rhs, rhs_bytes,
+               cudaMemcpyDeviceToHost));
+    CUDA_CHECK(cudaMemcpy(sol->h_info, sol->d_info, batch * sizeof(int),
+               cudaMemcpyDeviceToHost));
+    return 0;
+}
+
+/* GPU NLTE master solver: assemble on CPU (OpenMP), solve on GPU (cuBLAS batched) */
+static void nlte_solve_all_gpu(NLTEConfig *nlte, AtomicData *atom,
+                                PlasmaState *plasma, OpacityState *opacity,
+                                double time_explosion, int n_shells,
+                                CudaNLTESolver *sol) {
+    printf("  [NLTE-GPU] Solving rate equations (cuBLAS batched)...\n");
+
+    int pairs[][2] = { {0, 1}, {2, 3}, {4, 5}, {6, 7} };
+    const char *names[] = { "Si", "Ca", "Fe", "S" };
+
+    for (int p = 0; p < 4; p++) {
+        int lo = pairs[p][0], hi = pairs[p][1];
+        int lev_start = nlte->nlte_ion_level_offset[lo];
+        int N = nlte->nlte_ion_level_offset[hi + 1] - lev_start;
+        if (N <= 0) continue;
+
+        /* Zero staging buffers (only the portion needed for this ion pair) */
+        size_t mat_bytes = (size_t)n_shells * N * N * sizeof(double);
+        size_t rhs_bytes = (size_t)n_shells * N * sizeof(double);
+        memset(sol->h_matrices, 0, mat_bytes);
+        memset(sol->h_rhs, 0, rhs_bytes);
+
+        /* Assemble rate matrices for all shells (CPU, OpenMP parallel) */
+        #ifdef _OPENMP
+        #pragma omp parallel for schedule(dynamic, 1)
+        #endif
+        for (int s = 0; s < n_shells; s++) {
+            double *A_cm = sol->h_matrices + (size_t)s * N * N;
+            double *b    = sol->h_rhs      + (size_t)s * N;
+            nlte_assemble_rate_matrix(nlte, atom, plasma, opacity,
+                                      lo, hi, s, time_explosion,
+                                      A_cm, b, N);
+        }
+
+        /* GPU batched solve */
+        int ret = cuda_nlte_batched_solve(sol, N, n_shells);
+
+        /* Extract populations, handle singular matrices */
+        int n_singular = 0;
+        for (int s = 0; s < n_shells; s++) {
+            if (ret != 0 || sol->h_info[s] != 0) {
+                /* Singular: fall back to Boltzmann at T_rad */
+                n_singular++;
+                double T_rad = plasma->T_rad[s];
+                int Z_nl = nlte->nlte_Z[lo];
+                double n_total = 0.0;
+                for (int i = lo; i <= hi; i++) {
+                    int ip = -1;
+                    for (int j = 0; j < atom->n_ion_pops; j++) {
+                        if (atom->ion_pop_Z[j] == Z_nl &&
+                            atom->ion_pop_stage[j] == nlte->nlte_ion[i]) {
+                            ip = j; break;
+                        }
+                    }
+                    if (ip >= 0)
+                        n_total += atom->ion_number_density[ip * n_shells + s];
+                }
+                double sum = 0.0;
+                for (int i = 0; i < N; i++) {
+                    int global = nlte->nlte_to_global_level[lev_start + i];
+                    double E = atom->level_energy_eV[global] * EV_TO_ERG;
+                    int g = atom->level_g[global];
+                    double pop = (double)g * exp(-E / (K_BOLTZMANN * T_rad));
+                    nlte->nlte_level_populations[(lev_start + i) * n_shells + s] = pop;
+                    sum += pop;
+                }
+                if (sum > 0.0) {
+                    double scale = n_total / sum;
+                    for (int i = 0; i < N; i++)
+                        nlte->nlte_level_populations[(lev_start + i) * n_shells + s] *= scale;
+                }
+            } else {
+                double *x = sol->h_rhs + (size_t)s * N;
+                for (int i = 0; i < N; i++) {
+                    double pop = x[i];
+                    if (pop < 0.0) pop = 1e-30;
+                    nlte->nlte_level_populations[(lev_start + i) * n_shells + s] = pop;
+                }
+            }
+        }
+        printf("    %s (%d levels): done [GPU]%s\n", names[p], N,
+               n_singular > 0 ? " (some singular)" : "");
+    }
+
+    /* Update tau_sobolev for NLTE lines (same as CPU path) */
+    printf("  [NLTE-GPU] Updating tau_sobolev from NLTE populations...\n");
+    /* Call nlte_solve_all's tau update by calling nlte_solve_all internals;
+     * but tau update is only in the static function. Inline it here: */
+    {
+        int n_lines = opacity->n_lines;
+        for (int line = 0; line < n_lines; line++) {
+            int ion_idx = nlte->nlte_line_map[line];
+            if (ion_idx < 0) continue;
+
+            int Z     = atom->line_atomic_number[line];
+            int ion_s = atom->line_ion_number[line];
+            double f_lu   = atom->line_f_lu[line];
+            double lam_cm = atom->line_wavelength_cm[line];
+
+            int ip = -1;
+            for (int j = 0; j < atom->n_ion_pops; j++) {
+                if (atom->ion_pop_Z[j] == Z && atom->ion_pop_stage[j] == ion_s) {
+                    ip = j; break;
+                }
+            }
+            if (ip < 0) continue;
+            int lev_base = atom->level_offset[ip];
+            int lev_top  = atom->level_offset[ip + 1];
+
+            int lower_global = -1, upper_global = -1;
+            for (int l = lev_base; l < lev_top; l++) {
+                if (atom->level_num[l] == atom->line_level_lower[line]) lower_global = l;
+                if (atom->level_num[l] == atom->line_level_upper[line]) upper_global = l;
+                if (lower_global >= 0 && upper_global >= 0) break;
+            }
+            if (lower_global < 0 || upper_global < 0) continue;
+
+            int nlte_lo = nlte->global_to_nlte_level[lower_global];
+            int nlte_up = nlte->global_to_nlte_level[upper_global];
+            if (nlte_lo < 0 || nlte_up < 0) continue;
+
+            int g_lo = atom->level_g[lower_global];
+            int g_up = atom->level_g[upper_global];
+
+            for (int s = 0; s < n_shells; s++) {
+                double n_lower = nlte->nlte_level_populations[nlte_lo * n_shells + s];
+                double n_upper = nlte->nlte_level_populations[nlte_up * n_shells + s];
+                double stim_corr = 1.0;
+                if (n_lower > 0.0 && n_upper > 0.0 && g_lo > 0 && g_up > 0) {
+                    stim_corr = 1.0 - ((double)g_lo * n_upper) / ((double)g_up * n_lower);
+                    if (stim_corr < 0.0) stim_corr = 0.0;
+                }
+                double tau = SOBOLEV_COEFF * f_lu * lam_cm * time_explosion *
+                             n_lower * stim_corr;
+                if (tau < 1e-100) tau = 1e-100;
+                opacity->tau_sobolev[line * n_shells + s] = tau;
+            }
+        }
+    }
+
+    /* Print diagnostics */
+    for (int p = 0; p < 4; p++) {
+        int lo = pairs[p][0];
+        int lev_s = nlte->nlte_ion_level_offset[lo];
+        int lev_e = nlte->nlte_ion_level_offset[lo + 1];
+        double sum_nlte = 0.0;
+        for (int l = lev_s; l < lev_e; l++)
+            sum_nlte += nlte->nlte_level_populations[l * n_shells + 0];
+
+        int Z_nl = nlte->nlte_Z[lo];
+        int ip = -1;
+        for (int j = 0; j < atom->n_ion_pops; j++) {
+            if (atom->ion_pop_Z[j] == Z_nl && atom->ion_pop_stage[j] == nlte->nlte_ion[lo]) {
+                ip = j; break;
+            }
+        }
+        double n_neb = (ip >= 0) ? atom->ion_number_density[ip * n_shells + 0] : 0.0;
+        printf("    %s II shell 0: NLTE n_total=%.3e, nebular n_ion=%.3e\n",
+               names[p], sum_nlte, n_neb);
+    }
 }
 
 /* ============================================================ */
@@ -1134,10 +1412,21 @@ int main(int argc, char *argv[]) {
     /* NLTE: Initialize if enabled */
     NLTEConfig nlte;
     memset(&nlte, 0, sizeof(nlte));
+    CudaNLTESolver nlte_solver;
+    memset(&nlte_solver, 0, sizeof(nlte_solver));
     if (enable_nlte) {
         printf("\n--- NLTE Initialization ---\n");
         nlte_init(&nlte, &atom_data, &opacity, geo.n_shells);
         cuda_allocate_nlte(&dev, &nlte, geo.n_shells);
+        /* Find max level count across all ion pairs for cuBLAS allocation */
+        int max_N = 0;
+        int pairs_init[][2] = { {0,1}, {2,3}, {4,5}, {6,7} };
+        for (int p = 0; p < 4; p++) {
+            int N = nlte.nlte_ion_level_offset[pairs_init[p][1] + 1] -
+                    nlte.nlte_ion_level_offset[pairs_init[p][0]];
+            if (N > max_N) max_N = N;
+        }
+        cuda_nlte_solver_init(&nlte_solver, max_N, geo.n_shells);
     }
 
     /* Phase 6 - Step 8: Host-side escaped packet buffers */
@@ -1262,9 +1551,10 @@ int main(int argc, char *argv[]) {
             if (enable_nlte) {
                 cuda_download_j_nu(&dev, &nlte, geo.n_shells);
                 nlte_normalize_j_nu(&nlte, time_simulation, volume, geo.n_shells);
-                nlte_solve_all(&nlte, &atom_data, &plasma, &opacity,
-                               geo.time_explosion, geo.n_shells);
-                /* tau_sobolev already updated inside nlte_solve_all */
+                nlte_solve_all_gpu(&nlte, &atom_data, &plasma, &opacity,
+                                    geo.time_explosion, geo.n_shells,
+                                    &nlte_solver);
+                /* tau_sobolev already updated inside nlte_solve_all_gpu */
             }
 
             CUDA_CHECK(cudaMemcpy(dev.d_tau_sobolev, opacity.tau_sobolev,
@@ -1428,7 +1718,10 @@ int main(int argc, char *argv[]) {
     free_spectrum(spec);          /* Phase 6 - Step 8 */
     free(volume);                 /* Phase 6 - Step 8 */
     free_atomic_data(&atom_data); /* Task #072 */
-    if (enable_nlte) nlte_free(&nlte);
+    if (enable_nlte) {
+        cuda_nlte_solver_free(&nlte_solver);
+        nlte_free(&nlte);
+    }
 
     printf("\nDone.\n"); /* Phase 6 - Step 8 */
     return 0; /* Phase 6 - Step 8 */

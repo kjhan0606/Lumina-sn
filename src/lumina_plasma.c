@@ -657,73 +657,82 @@ static double nlte_get_J_at_nu(NLTEConfig *nlte, int shell, double nu) {
     return nlte->J_nu[shell * nlte->n_freq_bins + bin];
 }
 
-/* Gaussian elimination with partial pivoting for Ax=b (in-place)
- * A is N x (N+1) augmented matrix [A|b], solution returned in last column.
- * Returns 0 on success, -1 on singular matrix. */
-static int gauss_solve(double *A, int N) {
-    for (int col = 0; col < N; col++) {
-        /* Partial pivoting */
-        int max_row = col;
-        double max_val = fabs(A[col * (N + 1) + col]);
-        for (int row = col + 1; row < N; row++) {
-            double v = fabs(A[row * (N + 1) + col]);
-            if (v > max_val) { max_val = v; max_row = row; }
+/* Column-oriented Gaussian elimination with partial pivoting for Ax=b.
+ * A is N x N column-major matrix, b is N x 1 RHS vector.
+ * Inner loop iterates rows within a column = stride-1 = cache-friendly.
+ * Solution returned in b. Returns 0 on success, -1 on singular matrix. */
+static int gauss_solve(double *A, double *b, int N) {
+    /* Column-major: A(i,j) = A[j*N + i] */
+    for (int k = 0; k < N; k++) {
+        /* Partial pivoting: find max in column k, rows k..N-1 (contiguous) */
+        int max_row = k;
+        double max_val = fabs(A[k * N + k]);
+        for (int i = k + 1; i < N; i++) {
+            double v = fabs(A[k * N + i]);
+            if (v > max_val) { max_val = v; max_row = i; }
         }
-        if (max_val < 1e-300) return -1; /* singular */
+        if (max_val < 1e-300) return -1;
 
-        /* Swap rows */
-        if (max_row != col) {
-            for (int j = col; j <= N; j++) {
-                double tmp = A[col * (N + 1) + j];
-                A[col * (N + 1) + j] = A[max_row * (N + 1) + j];
-                A[max_row * (N + 1) + j] = tmp;
+        /* Swap rows k and max_row across all columns + b */
+        if (max_row != k) {
+            for (int j = 0; j < N; j++) {
+                double tmp = A[j * N + k];
+                A[j * N + k] = A[j * N + max_row];
+                A[j * N + max_row] = tmp;
             }
+            double tmp = b[k]; b[k] = b[max_row]; b[max_row] = tmp;
         }
 
-        /* Eliminate below */
-        double pivot = A[col * (N + 1) + col];
-        for (int row = col + 1; row < N; row++) {
-            double factor = A[row * (N + 1) + col] / pivot;
-            A[row * (N + 1) + col] = 0.0;
-            for (int j = col + 1; j <= N; j++)
-                A[row * (N + 1) + j] -= factor * A[col * (N + 1) + j];
+        /* Compute multipliers in column k (contiguous write) */
+        double pivot_inv = 1.0 / A[k * N + k];
+        for (int i = k + 1; i < N; i++)
+            A[k * N + i] *= pivot_inv;
+
+        /* Update trailing submatrix column-by-column (inner loop contiguous!) */
+        for (int j = k + 1; j < N; j++) {
+            double A_kj = A[j * N + k]; /* pivot row element in column j */
+            for (int i = k + 1; i < N; i++)
+                A[j * N + i] -= A[k * N + i] * A_kj;
         }
+
+        /* Update RHS using multipliers */
+        double b_k = b[k];
+        for (int i = k + 1; i < N; i++)
+            b[i] -= A[k * N + i] * b_k;
+
+        /* Zero multipliers (restore matrix for back-substitution) */
+        for (int i = k + 1; i < N; i++)
+            A[k * N + i] = 0.0;
     }
 
     /* Back substitution */
-    for (int row = N - 1; row >= 0; row--) {
-        double sum = A[row * (N + 1) + N]; /* RHS */
-        for (int j = row + 1; j < N; j++)
-            sum -= A[row * (N + 1) + j] * A[j * (N + 1) + N];
-        A[row * (N + 1) + N] = sum / A[row * (N + 1) + row];
+    for (int k = N - 1; k >= 0; k--) {
+        double sum = b[k];
+        for (int j = k + 1; j < N; j++)
+            sum -= A[j * N + k] * b[j];
+        b[k] = sum / A[k * N + k];
     }
     return 0;
 }
 
-/* Assemble and solve rate matrix for one NLTE ion pair in one shell.
- * ion_idx selects from nlte->nlte_Z/nlte_ion pairs (0..7).
- * For ion pairs (e.g. Si II + Si III), we solve the combined system
- * of both ions together since photoionization/recombination couples them. */
-static void nlte_solve_ion_shell(NLTEConfig *nlte, AtomicData *atom,
-                                  PlasmaState *plasma, OpacityState *opacity,
-                                  int ion_idx_lo, int ion_idx_hi,
-                                  int shell, double time_explosion) {
-    (void)time_explosion; /* used for future Sobolev width scaling */
+/* Assemble NLTE rate matrix for one ion pair in one shell.
+ * Outputs column-major A_cm[N*N] and RHS b[N] (both must be pre-zeroed).
+ * Called by both CPU (gauss_solve) and GPU (cuBLAS batched) paths. */
+void nlte_assemble_rate_matrix(NLTEConfig *nlte, AtomicData *atom,
+                                PlasmaState *plasma, OpacityState *opacity,
+                                int ion_idx_lo, int ion_idx_hi,
+                                int shell, double time_explosion,
+                                double *A_cm, double *b, int N) {
+    (void)time_explosion;
 
-    /* Get combined level count for this ion pair */
     int lev_start = nlte->nlte_ion_level_offset[ion_idx_lo];
-    int lev_end   = nlte->nlte_ion_level_offset[ion_idx_hi + 1];
-    int N = lev_end - lev_start;
-    if (N <= 0) return;
-
     int n_shells = plasma->n_shells;
     double T_rad = plasma->T_rad[shell];
     double T_e   = plasma->T_e_T_rad_ratio * T_rad;
     double n_e   = plasma->n_electron[shell];
 
-    /* Allocate augmented matrix [N x (N+1)] — zero-initialized */
-    double *A = (double *)calloc((size_t)N * (N + 1), sizeof(double));
-    #define AM(i,j) A[(i) * (N + 1) + (j)]
+    /* Column-major access: ACM(i,j) = A_cm[j*N + i] */
+    #define ACM(i,j) A_cm[(j) * N + (i)]
 
     /* ---- Radiative bound-bound rates from line data ---- */
     int n_lines = opacity->n_lines;
@@ -731,12 +740,7 @@ static void nlte_solve_ion_shell(NLTEConfig *nlte, AtomicData *atom,
         int map = nlte->nlte_line_map[line];
         if (map < ion_idx_lo || map > ion_idx_hi) continue;
 
-        int Z     = atom->line_atomic_number[line];
         int ion_s = atom->line_ion_number[line];
-        (void)Z;
-
-        /* Find NLTE level indices for lower and upper */
-        /* Search in the level data for this ion to find matching levels */
         int ip = find_ion_pop_idx(atom, atom->line_atomic_number[line], ion_s);
         if (ip < 0) continue;
         int lev_base = atom->level_offset[ip];
@@ -754,109 +758,84 @@ static void nlte_solve_ion_shell(NLTEConfig *nlte, AtomicData *atom,
         int i_up = nlte->global_to_nlte_level[upper_global] - lev_start;
         if (i_lo < 0 || i_lo >= N || i_up < 0 || i_up >= N) continue;
 
-        /* J_nu at line frequency */
         double nu_line = atom->line_nu[line];
         double J_line = nlte_get_J_at_nu(nlte, shell, nu_line);
 
-        /* Radiative rates */
-        double R_absorb = atom->line_B_lu[line] * J_line;        /* i_lo -> i_up */
-        double R_stim   = atom->line_B_ul[line] * J_line;        /* i_up -> i_lo */
-        double R_spont  = atom->line_A_ul[line];                  /* i_up -> i_lo */
+        double R_absorb = atom->line_B_lu[line] * J_line;
+        double R_stim   = atom->line_B_ul[line] * J_line;
+        double R_spont  = atom->line_A_ul[line];
 
-        /* Collisional rates (van Regemorter for permitted, Axelrod for forbidden) */
         double dE = fabs(atom->level_energy_eV[upper_global] -
                          atom->level_energy_eV[lower_global]) * EV_TO_ERG;
         int g_lo = atom->level_g[lower_global];
         int g_up = atom->level_g[upper_global];
         double f_lu = atom->line_f_lu[line];
 
-        double C_up = 0.0; /* upward collisional rate */
+        double C_up = 0.0;
         if (T_e > 0.0 && dE > 0.0) {
             double exp_factor = exp(-dE / (K_BOLTZMANN * T_e));
             if (f_lu > 1e-10) {
-                /* Permitted: van Regemorter */
                 C_up = VAN_REGEMORTER_COEFF * n_e * f_lu *
-                       exp_factor / (g_lo * sqrt(T_e)) * 0.2; /* g_bar ~ 0.2 */
+                       exp_factor / (g_lo * sqrt(T_e)) * 0.2;
             } else {
-                /* Forbidden: Axelrod */
                 C_up = 8.63e-6 * n_e * AXELROD_OMEGA *
                        exp_factor / (g_lo * sqrt(T_e));
             }
         }
-        /* Downward collisional: detailed balance */
         double C_down = (g_lo > 0 && g_up > 0 && T_e > 0.0) ?
             C_up * ((double)g_lo / (double)g_up) *
             exp(dE / (K_BOLTZMANN * T_e)) : 0.0;
 
-        /* Fill rate matrix:
-         * A[i][j] = rate from j -> i  (off-diagonal: positive)
-         * A[i][i] = -sum of rates from i -> j (diagonal: negative) */
-        double total_up   = R_absorb + C_up;    /* lower -> upper */
-        double total_down = R_stim + R_spont + C_down; /* upper -> lower */
+        double total_up   = R_absorb + C_up;
+        double total_down = R_stim + R_spont + C_down;
 
-        AM(i_up, i_lo) += total_up;      /* into upper from lower */
-        AM(i_lo, i_up) += total_down;    /* into lower from upper */
-        AM(i_lo, i_lo) -= total_up;      /* out of lower */
-        AM(i_up, i_up) -= total_down;    /* out of upper */
+        ACM(i_up, i_lo) += total_up;
+        ACM(i_lo, i_up) += total_down;
+        ACM(i_lo, i_lo) -= total_up;
+        ACM(i_up, i_up) -= total_down;
     }
 
-    /* ---- Photoionization / Recombination between ion pair ---- */
-    /* Couples ground state of higher ion to all levels of lower ion */
+    /* ---- Photoionization / Recombination ---- */
     int Z_elem = nlte->nlte_Z[ion_idx_lo];
     double chi_eV = find_ioniz_energy(atom, Z_elem, nlte->nlte_ion[ion_idx_lo]);
     double chi_erg = chi_eV * EV_TO_ERG;
     double nu_edge = chi_erg / H_PLANCK;
 
-    /* Find ground state of higher ion (first level of ion_idx_hi) */
     int n_lo_levels = nlte->nlte_ion_level_offset[ion_idx_lo + 1] -
                       nlte->nlte_ion_level_offset[ion_idx_lo];
-    int ground_hi = n_lo_levels; /* index relative to lev_start */
+    int ground_hi = n_lo_levels;
 
     if (ground_hi < N && nu_edge > 0.0 && nu_edge < nlte->nu_max) {
-        /* Sum photoionization rate from J_nu bins above ionization edge
-         * R_bf = integral[ 4*pi * J_nu * sigma_bf(nu) / (h*nu) dnu ]
-         * Kramers: sigma_bf(nu) = sigma_0 * (nu_edge/nu)^3
-         * sigma_0 ~ 7.91e-18 * Z_eff^(-2) * n^5 cm^2 (for hydrogen-like) */
-        double Z_eff = (double)(Z_elem - nlte->nlte_ion[ion_idx_lo]); /* effective charge */
+        double Z_eff = (double)(Z_elem - nlte->nlte_ion[ion_idx_lo]);
         if (Z_eff < 1.0) Z_eff = 1.0;
-        double sigma_0 = 7.91e-18 / (Z_eff * Z_eff); /* ground state approx */
+        double sigma_0 = 7.91e-18 / (Z_eff * Z_eff);
 
-        /* Numerical integration over J_nu bins above edge */
         for (int lev = 0; lev < n_lo_levels; lev++) {
             int global_lev = nlte->nlte_to_global_level[lev_start + lev];
             double E_lev = atom->level_energy_eV[global_lev] * EV_TO_ERG;
             double nu_thresh = (chi_erg - E_lev) / H_PLANCK;
-            if (nu_thresh <= 0.0) continue; /* above ionization limit */
-            /* Scale sigma by principal quantum number approximation */
-            double sigma_lev = sigma_0; /* simplified: all levels use same cross-section */
+            if (nu_thresh <= 0.0) continue;
+            double sigma_lev = sigma_0;
 
             double R_bf = 0.0;
-            for (int b = 0; b < nlte->n_freq_bins; b++) {
-                double log_nu_lo = log(nlte->nu_min) + b * nlte->d_log_nu;
+            for (int bb = 0; bb < nlte->n_freq_bins; bb++) {
+                double log_nu_lo = log(nlte->nu_min) + bb * nlte->d_log_nu;
                 double nu_bin = exp(log_nu_lo + 0.5 * nlte->d_log_nu);
                 if (nu_bin < nu_thresh) continue;
-
                 double delta_nu = exp(log_nu_lo + nlte->d_log_nu) - exp(log_nu_lo);
-                double J_bin = nlte->J_nu[shell * nlte->n_freq_bins + b];
+                double J_bin = nlte->J_nu[shell * nlte->n_freq_bins + bb];
                 double sigma = sigma_lev * pow(nu_thresh / nu_bin, 3.0);
-
                 R_bf += 4.0 * M_PI_VAL * J_bin * sigma / (H_PLANCK * nu_bin) * delta_nu;
             }
 
-            /* Recombination rate via Milne relation (detailed balance):
-             * R_rec = R_bf * (n_i^LTE * n_e) / (n_ion^LTE)
-             * Simplified: use Saha-Boltzmann relation */
-            double n_star_ratio = 1.0; /* LTE population ratio, simplified */
+            double n_star_ratio = 1.0;
             if (T_e > 0.0 && n_e > 0.0) {
                 int g_lev = atom->level_g[global_lev];
-                /* Saha factor for this level:
-                 * n_level / n_ion = n_e * (h^2/(2*pi*m_e*kT))^1.5 * g_lev/(2*g_ion) * exp(chi_lev/kT) */
                 double thermal_deBroglie = pow(H_PLANCK * H_PLANCK /
                     (2.0 * M_PI_VAL * M_ELECTRON * K_BOLTZMANN * T_e), 1.5);
                 double chi_lev_erg = chi_erg - E_lev;
                 if (chi_lev_erg > 0.0) {
                     double exp_factor = exp(chi_lev_erg / (K_BOLTZMANN * T_e));
-                    /* g_ion for ground state of next ion */
                     int g_ion = 1;
                     if (ground_hi < N) {
                         int global_ghi = nlte->nlte_to_global_level[lev_start + ground_hi];
@@ -870,18 +849,16 @@ static void nlte_solve_ion_shell(NLTEConfig *nlte, AtomicData *atom,
             }
             double R_rec = R_bf * n_star_ratio;
 
-            /* Add to rate matrix */
             if (R_bf > 0.0 && lev < N && ground_hi < N) {
-                AM(ground_hi, lev) += R_bf;     /* level -> ion ground (ionization) */
-                AM(lev, lev)       -= R_bf;     /* out of level */
-                AM(lev, ground_hi) += R_rec;    /* ion ground -> level (recomb) */
-                AM(ground_hi, ground_hi) -= R_rec; /* out of ion ground */
+                ACM(ground_hi, lev) += R_bf;
+                ACM(lev, lev)       -= R_bf;
+                ACM(lev, ground_hi) += R_rec;
+                ACM(ground_hi, ground_hi) -= R_rec;
             }
         }
     }
 
     /* ---- Conservation equation: replace last row ---- */
-    /* sum(n_i) = n_total (from existing nebular ionization balance) */
     int Z_nl = nlte->nlte_Z[ion_idx_lo];
     double n_total = 0.0;
     for (int i = ion_idx_lo; i <= ion_idx_hi; i++) {
@@ -889,34 +866,59 @@ static void nlte_solve_ion_shell(NLTEConfig *nlte, AtomicData *atom,
         if (ip >= 0)
             n_total += atom->ion_number_density[ip * n_shells + shell];
     }
-    for (int j = 0; j < N; j++) {
-        AM(N - 1, j) = 1.0;
-    }
-    AM(N - 1, N) = n_total; /* RHS */
+    for (int j = 0; j < N; j++)
+        ACM(N - 1, j) = 1.0;
+    b[N - 1] = n_total;
 
-    /* ---- Solve ---- */
-    int ret = gauss_solve(A, N);
+    #undef ACM
+}
 
-    /* ---- Extract populations ---- */
+/* CPU NLTE solver: assemble + Gauss elimination for one ion pair in one shell */
+static void nlte_solve_ion_shell(NLTEConfig *nlte, AtomicData *atom,
+                                  PlasmaState *plasma, OpacityState *opacity,
+                                  int ion_idx_lo, int ion_idx_hi,
+                                  int shell, double time_explosion) {
+    int lev_start = nlte->nlte_ion_level_offset[ion_idx_lo];
+    int N = nlte->nlte_ion_level_offset[ion_idx_hi + 1] - lev_start;
+    if (N <= 0) return;
+    int n_shells = plasma->n_shells;
+
+    double *A_cm = (double *)calloc((size_t)N * N, sizeof(double));
+    double *b = (double *)calloc((size_t)N, sizeof(double));
+
+    nlte_assemble_rate_matrix(nlte, atom, plasma, opacity,
+                               ion_idx_lo, ion_idx_hi, shell, time_explosion,
+                               A_cm, b, N);
+
+    int ret = gauss_solve(A_cm, b, N);
+
     if (ret == 0) {
         for (int i = 0; i < N; i++) {
-            double pop = AM(i, N);
-            if (pop < 0.0) pop = 1e-30; /* clamp negatives */
+            double pop = b[i];
+            if (pop < 0.0) pop = 1e-30;
             nlte->nlte_level_populations[(lev_start + i) * n_shells + shell] = pop;
         }
     } else {
         /* Singular matrix: fall back to Boltzmann at T_rad */
+        double T_rad = plasma->T_rad[shell];
+        double n_total = b[N - 1]; /* conservation RHS was stored here before solve failed */
+        /* Recompute n_total since b may be corrupted */
+        int Z_nl = nlte->nlte_Z[ion_idx_lo];
+        n_total = 0.0;
+        for (int i = ion_idx_lo; i <= ion_idx_hi; i++) {
+            int ip = find_ion_pop_idx(atom, Z_nl, nlte->nlte_ion[i]);
+            if (ip >= 0)
+                n_total += atom->ion_number_density[ip * n_shells + shell];
+        }
+        double sum = 0.0;
         for (int i = 0; i < N; i++) {
             int global = nlte->nlte_to_global_level[lev_start + i];
             double E = atom->level_energy_eV[global] * EV_TO_ERG;
             int g = atom->level_g[global];
             double pop = (double)g * exp(-E / (K_BOLTZMANN * T_rad));
             nlte->nlte_level_populations[(lev_start + i) * n_shells + shell] = pop;
+            sum += pop;
         }
-        /* Renormalize to n_total */
-        double sum = 0.0;
-        for (int i = 0; i < N; i++)
-            sum += nlte->nlte_level_populations[(lev_start + i) * n_shells + shell];
         if (sum > 0.0) {
             double scale = n_total / sum;
             for (int i = 0; i < N; i++)
@@ -924,8 +926,8 @@ static void nlte_solve_ion_shell(NLTEConfig *nlte, AtomicData *atom,
         }
     }
 
-    #undef AM
-    free(A);
+    free(A_cm);
+    free(b);
 }
 
 /* Update tau_sobolev for NLTE lines using NLTE level populations */
