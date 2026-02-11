@@ -491,7 +491,14 @@ int load_atomic_data(AtomicData *atom, const char *ref_dir, int n_shells) {
     atom->line_level_upper   = read_csv_column_int(path, "level_number_upper", &n);
     atom->line_f_lu          = read_csv_column(path, "f_lu", &n);
     atom->line_wavelength_cm = read_csv_column(path, "wavelength_cm", &n);
-    printf("  Line columns: %d lines loaded\n", n);
+
+    /* NLTE: Einstein coefficients and line frequencies */
+    atom->line_A_ul = read_csv_column(path, "A_ul", &n);
+    atom->line_B_lu = read_csv_column(path, "B_lu", &n);
+    atom->line_B_ul = read_csv_column(path, "B_ul", &n);
+    atom->line_nu   = read_csv_column(path, "nu", &n);
+    atom->n_lines   = n;
+    printf("  Line columns: %d lines loaded (including A_ul, B_lu, B_ul, nu)\n", n);
 
     /* --- Level data from levels.csv --- */
     snprintf(path, sizeof(path), "%s/levels.csv", ref_dir);
@@ -630,6 +637,10 @@ void free_atomic_data(AtomicData *atom) {
     free(atom->line_level_upper);
     free(atom->line_f_lu);
     free(atom->line_wavelength_cm);
+    free(atom->line_A_ul);
+    free(atom->line_B_lu);
+    free(atom->line_B_ul);
+    free(atom->line_nu);
     free(atom->level_Z);
     free(atom->level_ion);
     free(atom->level_num);

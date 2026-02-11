@@ -64,6 +64,12 @@ typedef struct {                           /* Phase 6 - Step 1 */
 
     /* Virtual packet spectrum (GPU-side atomicAdd target) */
     double *d_virtual_spectrum;            /* [VSPEC_N_BINS] */
+
+    /* NLTE: J_nu frequency histogram (atomicAdd target) */
+    double *d_j_nu_estimator;              /* [n_shells * NLTE_N_FREQ_BINS] or NULL */
+    int     nlte_n_freq_bins;              /* 0 if NLTE disabled */
+    double  nlte_nu_min;
+    double  nlte_d_log_nu;
 } CudaDeviceData;                          /* Phase 6 - Step 1 */
 
 /* Virtual spectrum parameters (match real spectrum) */
@@ -114,6 +120,31 @@ static void cuda_allocate(CudaDeviceData *dev, Geometry *geo,
     CUDA_CHECK(cudaMalloc(&dev->d_escaped_r, n_packets * sizeof(double)));          /* Rotation mode */
     CUDA_CHECK(cudaMalloc(&dev->d_escaped_mu, n_packets * sizeof(double)));         /* Rotation mode */
     CUDA_CHECK(cudaMalloc(&dev->d_virtual_spectrum, VSPEC_N_BINS * sizeof(double)));
+
+    /* NLTE: J_nu estimator (allocated but NULL-checked in kernel) */
+    dev->d_j_nu_estimator = NULL;
+    dev->nlte_n_freq_bins = 0;
+}
+
+/* NLTE: allocate J_nu estimator on GPU */
+static void cuda_allocate_nlte(CudaDeviceData *dev, NLTEConfig *nlte,
+                                int n_shells) {
+    size_t size = (size_t)n_shells * NLTE_N_FREQ_BINS * sizeof(double);
+    CUDA_CHECK(cudaMalloc(&dev->d_j_nu_estimator, size));
+    CUDA_CHECK(cudaMemset(dev->d_j_nu_estimator, 0, size));
+    dev->nlte_n_freq_bins = nlte->n_freq_bins;
+    dev->nlte_nu_min = nlte->nu_min;
+    dev->nlte_d_log_nu = nlte->d_log_nu;
+    printf("  [NLTE] GPU J_nu estimator: %.1f KB\n", size / 1024.0);
+}
+
+/* NLTE: download J_nu from GPU to CPU NLTEConfig */
+static void cuda_download_j_nu(CudaDeviceData *dev, NLTEConfig *nlte,
+                                int n_shells) {
+    if (!dev->d_j_nu_estimator) return;
+    size_t size = (size_t)n_shells * NLTE_N_FREQ_BINS * sizeof(double);
+    CUDA_CHECK(cudaMemcpy(nlte->j_nu_estimator, dev->d_j_nu_estimator,
+               size, cudaMemcpyDeviceToHost));
 }
 
 /* ============================================================ */
@@ -166,6 +197,10 @@ static void cuda_reset_estimators(CudaDeviceData *dev, int n_shells) {
     CUDA_CHECK(cudaMemset(dev->d_n_escaped, 0, sizeof(int64_t)));                    /* Phase 6 - Step 1 */
     CUDA_CHECK(cudaMemset(dev->d_n_reabsorbed, 0, sizeof(int64_t)));                 /* Phase 6 - Step 1 */
     CUDA_CHECK(cudaMemset(dev->d_virtual_spectrum, 0, VSPEC_N_BINS * sizeof(double)));
+    if (dev->d_j_nu_estimator) {
+        CUDA_CHECK(cudaMemset(dev->d_j_nu_estimator, 0,
+                   (size_t)n_shells * NLTE_N_FREQ_BINS * sizeof(double)));
+    }
 }
 
 /* ============================================================ */
@@ -205,6 +240,7 @@ static void cuda_free(CudaDeviceData *dev) {
     cudaFree(dev->d_escaped_r);                 /* Rotation mode */
     cudaFree(dev->d_escaped_mu);                /* Rotation mode */
     cudaFree(dev->d_virtual_spectrum);
+    if (dev->d_j_nu_estimator) cudaFree(dev->d_j_nu_estimator);
 }
 
 /* ============================================================ */
@@ -332,10 +368,22 @@ double d_calc_packet_energy(double pkt_energy, double pkt_r, double pkt_mu,
 /* Phase 6 - Step 4: Base J and nu_bar estimators (atomicAdd) */
 __device__ __forceinline__
 void d_update_base_estimators(double *d_j_est, double *d_nu_bar_est,
-                               int shell_id, double distance,
+                               double *d_j_nu_est, int nlte_n_freq_bins,
+                               double nlte_nu_min, double nlte_d_log_nu,
+                               int shell_id, int n_shells, double distance,
                                double comov_nu, double comov_energy) {
     atomicAdd(&d_j_est[shell_id], comov_energy * distance);             /* Phase 6 - Step 4 */
     atomicAdd(&d_nu_bar_est[shell_id], comov_energy * distance * comov_nu); /* Phase 6 - Step 4 */
+
+    /* NLTE: bin into J_nu frequency histogram */
+    if (d_j_nu_est != NULL && nlte_n_freq_bins > 0 &&
+        comov_nu > nlte_nu_min) {
+        int freq_bin = (int)(log(comov_nu / nlte_nu_min) / nlte_d_log_nu);
+        if (freq_bin >= 0 && freq_bin < nlte_n_freq_bins) {
+            atomicAdd(&d_j_nu_est[shell_id * nlte_n_freq_bins + freq_bin],
+                      comov_energy * distance);
+        }
+    }
 }
 
 /* Phase 6 - Step 4: Line estimators — skipped on GPU */
@@ -762,6 +810,9 @@ void transport_kernel(
     const int *d_line2macro_level_upper,
     /* Phase 6 - Step 7: Estimators */
     double *d_j_estimator, double *d_nu_bar_estimator,
+    /* NLTE: J_nu frequency histogram */
+    double *d_j_nu_estimator, int nlte_n_freq_bins,
+    double nlte_nu_min, double nlte_d_log_nu,
     /* Phase 6 - Step 7: RNG */
     uint64_t *d_rng_states,
     /* Phase 6 - Step 7: Output */
@@ -890,7 +941,9 @@ void transport_kernel(
 
             /* Phase 6 - Step 7: Update estimators (atomicAdd) */
             d_update_base_estimators(d_j_estimator, d_nu_bar_estimator, /* Phase 6 - Step 7 */
-                                      shell, distance, comov_nu,         /* Phase 6 - Step 7 */
+                                      d_j_nu_estimator, nlte_n_freq_bins,
+                                      nlte_nu_min, nlte_d_log_nu,
+                                      shell, n_shells, distance, comov_nu,
                                       comov_energy);                     /* Phase 6 - Step 7 */
         }
 
@@ -1042,6 +1095,12 @@ int main(int argc, char *argv[]) {
         else if (strcmp(argv[4], "all") == 0) { enable_virtual = 1; enable_rotation = 1; }
     }
 
+    /* NLTE mode: argv[5] == "nlte" or env LUMINA_NLTE=1 */
+    int enable_nlte = 0;
+    if (argc > 5 && strcmp(argv[5], "nlte") == 0) enable_nlte = 1;
+    if (getenv("LUMINA_NLTE") && atoi(getenv("LUMINA_NLTE")) > 0) enable_nlte = 1;
+    config.enable_nlte = enable_nlte;
+
     printf("\nSimulation parameters:\n");
     printf("  Packets: %d, Iterations: %d\n", n_packets, n_iterations);
     printf("  Line interaction: MACROATOM\n");
@@ -1050,6 +1109,7 @@ int main(int argc, char *argv[]) {
     else if (enable_virtual) mode_str = "real + virtual";
     else if (enable_rotation) mode_str = "real + rotation";
     printf("  Spectrum mode: %s\n", mode_str);
+    printf("  NLTE: %s\n", enable_nlte ? "ENABLED (Si/Ca/Fe/S)" : "disabled");
     printf("  T_inner: %.2f K\n", config.T_inner);
 
     /* Phase 6 - Step 8: Compute shell volumes */
@@ -1070,6 +1130,15 @@ int main(int argc, char *argv[]) {
     cuda_allocate(&dev, &geo, &opacity, n_packets); /* Phase 6 - Step 8 */
     cuda_upload(&dev, &geo, &opacity);               /* Phase 6 - Step 8 */
     printf("  GPU memory allocated and uploaded.\n"); /* Phase 6 - Step 8 */
+
+    /* NLTE: Initialize if enabled */
+    NLTEConfig nlte;
+    memset(&nlte, 0, sizeof(nlte));
+    if (enable_nlte) {
+        printf("\n--- NLTE Initialization ---\n");
+        nlte_init(&nlte, &atom_data, &opacity, geo.n_shells);
+        cuda_allocate_nlte(&dev, &nlte, geo.n_shells);
+    }
 
     /* Phase 6 - Step 8: Host-side escaped packet buffers */
     double *h_escaped_nu = (double *)malloc(n_packets * sizeof(double));     /* Phase 6 - Step 8 */
@@ -1119,6 +1188,8 @@ int main(int argc, char *argv[]) {
             dev.d_transition_line_id,
             dev.d_line2macro_level_upper,
             dev.d_j_estimator, dev.d_nu_bar_estimator,
+            dev.d_j_nu_estimator,
+            dev.nlte_n_freq_bins, dev.nlte_nu_min, dev.nlte_d_log_nu,
             dev.d_rng_states,
             dev.d_escaped_nu, dev.d_escaped_energy,
             dev.d_escaped_flag,
@@ -1186,6 +1257,16 @@ int main(int argc, char *argv[]) {
         /* Task #072: Recompute tau_sobolev and re-upload to GPU */
         if (iter > 0) {
             compute_plasma_state(&atom_data, &plasma, &opacity, geo.time_explosion);
+
+            /* NLTE: solve rate equations and update tau for NLTE lines */
+            if (enable_nlte) {
+                cuda_download_j_nu(&dev, &nlte, geo.n_shells);
+                nlte_normalize_j_nu(&nlte, time_simulation, volume, geo.n_shells);
+                nlte_solve_all(&nlte, &atom_data, &plasma, &opacity,
+                               geo.time_explosion, geo.n_shells);
+                /* tau_sobolev already updated inside nlte_solve_all */
+            }
+
             CUDA_CHECK(cudaMemcpy(dev.d_tau_sobolev, opacity.tau_sobolev,
                        (size_t)opacity.n_lines * geo.n_shells * sizeof(double),
                        cudaMemcpyHostToDevice));
@@ -1347,6 +1428,7 @@ int main(int argc, char *argv[]) {
     free_spectrum(spec);          /* Phase 6 - Step 8 */
     free(volume);                 /* Phase 6 - Step 8 */
     free_atomic_data(&atom_data); /* Task #072 */
+    if (enable_nlte) nlte_free(&nlte);
 
     printf("\nDone.\n"); /* Phase 6 - Step 8 */
     return 0; /* Phase 6 - Step 8 */

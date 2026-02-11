@@ -144,6 +144,7 @@ typedef struct {
     uint64_t seed;                      /* Phase 2 - Step 4 */
     double  T_inner;                    /* Phase 2 - Step 4: inner boundary temp [K] */
     double  luminosity_requested;       /* Phase 2 - Step 4: [erg/s] */
+    bool    enable_nlte;                /* NLTE: enable restricted NLTE solver */
 } MCConfig;                             /* Phase 2 - Step 4 */
 
 /* Phase 2 - Step 4: Plasma state for convergence */
@@ -165,6 +166,13 @@ typedef struct {
     int    *line_level_upper;         /* [n_lines] upper level index */
     double *line_f_lu;                /* [n_lines] oscillator strength */
     double *line_wavelength_cm;       /* [n_lines] wavelength in cm */
+
+    /* NLTE: Einstein coefficients and line frequencies */
+    double *line_A_ul;                /* [n_lines] spontaneous emission rate [s^-1] */
+    double *line_B_lu;                /* [n_lines] stimulated absorption [cm^2 Hz / erg] */
+    double *line_B_ul;                /* [n_lines] stimulated emission [cm^2 Hz / erg] */
+    double *line_nu;                  /* [n_lines] line frequency [Hz] */
+    int     n_lines;                  /* number of lines (from line_list.csv) */
 
     /* Level data (from levels.csv) */
     int     n_levels;
@@ -209,6 +217,38 @@ typedef struct {
     double *ion_number_density;       /* [n_ion_pops * n_shells] */
     double *partition_functions;      /* [n_ion_pops * n_shells] */
 } AtomicData;
+
+/* ============================================================ */
+/* NLTE: Configuration and data structures                      */
+/* ============================================================ */
+
+#define NLTE_N_FREQ_BINS  1000
+#define NLTE_NU_MIN       1.5e14    /* c / 20000 A */
+#define NLTE_NU_MAX       3.0e16    /* c / 100 A */
+#define NLTE_MAX_IONS     8         /* Si II/III, Ca II/III, Fe II/III, S II/III */
+
+typedef struct {
+    int    enabled;
+    int    n_freq_bins;
+    double nu_min, nu_max, d_log_nu;
+
+    /* Target ions: (Z, ion_stage) pairs */
+    int    n_nlte_ions;                        /* 8 */
+    int    nlte_Z[NLTE_MAX_IONS];              /* atomic numbers */
+    int    nlte_ion[NLTE_MAX_IONS];            /* ion stages */
+
+    /* Level index maps */
+    int    n_nlte_levels_total;                /* ~2017 */
+    int    nlte_ion_level_offset[NLTE_MAX_IONS + 1]; /* cumulative offset */
+    int   *nlte_to_global_level;               /* [n_nlte_levels_total] -> global level idx */
+    int   *global_to_nlte_level;               /* [n_levels] -> NLTE level idx or -1 */
+    int   *nlte_line_map;                      /* [n_lines] -> NLTE ion idx or -1 */
+
+    /* Results */
+    double *nlte_level_populations;            /* [n_nlte_levels_total * n_shells] */
+    double *j_nu_estimator;                    /* [n_shells * n_freq_bins] raw MC */
+    double *J_nu;                              /* [n_shells * n_freq_bins] normalized */
+} NLTEConfig;
 
 /* Phase 2 - Step 4: Spectrum output */
 typedef struct {
@@ -370,6 +410,16 @@ int load_atomic_data(AtomicData *atom, const char *ref_dir, int n_shells);
 void free_atomic_data(AtomicData *atom);
 void compute_plasma_state(AtomicData *atom, PlasmaState *plasma,
                           OpacityState *opacity, double time_explosion);
+
+/* NLTE: Restricted NLTE rate equation solver */
+int  nlte_init(NLTEConfig *nlte, AtomicData *atom, OpacityState *opacity,
+               int n_shells);
+void nlte_free(NLTEConfig *nlte);
+void nlte_normalize_j_nu(NLTEConfig *nlte, double time_simulation,
+                          double *volume, int n_shells);
+void nlte_solve_all(NLTEConfig *nlte, AtomicData *atom, PlasmaState *plasma,
+                     OpacityState *opacity, double time_explosion,
+                     int n_shells);
 
 #ifdef __cplusplus   /* Phase 6 - Step 9: close extern C guard */
 }                    /* Phase 6 - Step 9 */

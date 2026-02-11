@@ -190,6 +190,77 @@ Per MC iteration:
 taking hours per model.  With GPU batched solves, LUMINA could do restricted
 NLTE at essentially the same speed as the current nebular approximation.
 
+### Detailed NLTE cost breakdown (v1.0 implementation — CPU solver)
+
+The initial implementation uses a CPU-side Gaussian elimination solver rather
+than GPU cuSOLVER, to avoid the cuSOLVER library dependency.  Detailed cost
+analysis for both paths:
+
+**Per-element matrix sizes (confirmed from atomic data):**
+
+| Ion pair | Levels | Matrix size | FLOPs (Gauss elim) | Est. time/shell |
+|----------|--------|-------------|--------------------:|----------------:|
+| Fe II+III | 796 + 566 = 1,362 | 1362 x 1362 | 842M | ~40 ms |
+| Si II+III | 100 + 169 = 269 | 269 x 269 | 6.5M | ~0.5 ms |
+| Ca II+III | 93 + 150 = 243 | 243 x 243 | 4.8M | ~0.5 ms |
+| S II+III | 85 + 58 = 143 | 143 x 143 | 0.98M | ~0.1 ms |
+| **Total** | **2,017** | — | **854M/shell** | **~41 ms/shell** |
+
+**Full iteration cost (CPU solver, 30 shells):**
+
+| Component | Time | Memory |
+|-----------|-----:|-------:|
+| J_nu atomicAdd in transport kernel | +35--70 ms (~5--10% of 700 ms) | 240 KB GPU |
+| J_nu download + normalize | ~1 ms | 240 KB CPU |
+| Rate matrix assembly (all 4 elements, 30 shells) | ~100 ms | ~15 MB temp |
+| Gaussian elimination (Fe dominates: 40 ms x 30) | ~1.5--2.5 s | in-place |
+| tau_sobolev update from NLTE populations | ~10 ms | negligible |
+| tau_sobolev re-upload to GPU | ~1 ms | — |
+| **Total NLTE overhead per iteration** | **~2--3 s** | **~16 MB** |
+
+Current iteration without NLTE: ~750 ms (700 ms transport + 50 ms plasma).
+With NLTE: ~2.7--3.7 s per iteration (~4x slower, but adding real physics).
+
+**Future GPU solver path (cuSOLVER batched):**
+
+```
+cublasDgetrfBatched():  30 x 1362 x 1362  →  ~5-15 ms total
+cublasDgetrsBatched():  30 x 1362          →  ~1 ms total
+Total matrix solve on GPU:                     ~10-20 ms
+Full NLTE overhead with GPU solver:            ~50-100 ms (~7-14% of transport)
+```
+
+This would make NLTE essentially free compared to the 700 ms transport.
+The CPU solver is the correct first step for validation, with GPU solver
+as a straightforward future optimization.
+
+**GPU specs (NVIDIA RTX 5000 Ada, sm_89):**
+
+```
+CUDA cores:       12,800
+Tensor cores:     400 (4th gen)
+FP32 throughput:  ~50 TFLOP/s
+FP64 throughput:  ~1.6 TFLOP/s
+Memory:           32 GB GDDR6X
+Memory bandwidth: 960 GB/s
+CUDA version:     13.0
+```
+
+**J_nu frequency histogram design:**
+
+```
+Frequency range:  1.5e14 -- 3.0e16 Hz  (100 -- 20000 A)
+Binning:          1000 logarithmic bins (d_log_nu = 0.00529)
+Resolution:       ~1.2% per bin (Doppler width ~0.003% → well resolved)
+Memory per shell: 8000 bytes (1000 x double)
+Total GPU memory: 240 KB (30 shells x 8 KB)
+```
+
+Each packet step contributes one atomicAdd to the appropriate J_nu bin,
+using the comoving-frame frequency and energy already computed for the
+existing j_estimator update.  The overhead is one `log()` + one `atomicAdd`
+per step, estimated at ~5--10% transport slowdown.
+
 ### Data requirements
 
 All required atomic data is already in `kurucz_cd23_chianti_H_He.h5`:
