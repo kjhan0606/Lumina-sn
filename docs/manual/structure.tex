@@ -1,0 +1,267 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% The Legrand Orange Book (Simplified)
+% Structural Definitions File
+% Adapted for LUMINA-SN Manual
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%----------------------------------------------------------------------------------------
+%	VARIOUS REQUIRED PACKAGES AND CONFIGURATIONS
+%----------------------------------------------------------------------------------------
+
+\usepackage[top=3cm,bottom=3cm,left=3cm,right=3cm,headsep=10pt,a4paper]{geometry}
+
+\usepackage{graphicx}
+\usepackage{xcolor}
+\definecolor{ocre}{RGB}{243,102,25}
+\definecolor{lightocre}{RGB}{255,230,210}
+\definecolor{darkblue}{RGB}{0,51,102}
+\definecolor{codebg}{RGB}{245,245,245}
+\definecolor{codeframe}{RGB}{200,200,200}
+
+\usepackage{booktabs}
+\usepackage{calc}
+\usepackage{multicol}
+\usepackage{amsmath,amsfonts,amssymb,amsthm}
+\usepackage{tikz}
+\usetikzlibrary{positioning,calc}
+\usepackage{hyperref}
+\hypersetup{
+    colorlinks=true,
+    linkcolor=ocre,
+    citecolor=darkblue,
+    urlcolor=ocre,
+    hidelinks=false
+}
+
+\usepackage{listings}
+\lstset{
+    basicstyle=\ttfamily\small,
+    backgroundcolor=\color{codebg},
+    frame=single,
+    rulecolor=\color{codeframe},
+    breaklines=true,
+    numbers=left,
+    numberstyle=\tiny\color{gray},
+    keywordstyle=\color{blue}\bfseries,
+    commentstyle=\color{green!50!black},
+    stringstyle=\color{red!70!black},
+    showstringspaces=false,
+    tabsize=4,
+    xleftmargin=2em,
+    framexleftmargin=1.5em,
+    aboveskip=1em,
+    belowskip=1em
+}
+
+\lstdefinestyle{cstyle}{
+    language=C,
+    morekeywords={double,int,uint64_t,bool,int64_t,size_t,typedef,struct}
+}
+\lstdefinestyle{cudastyle}{
+    language=C,
+    morekeywords={__global__,__device__,__shared__,atomicAdd,blockIdx,threadIdx,blockDim,gridDim,__syncthreads}
+}
+\lstdefinestyle{pythonstyle}{
+    language=Python,
+    morekeywords={self,True,False,None,as,with}
+}
+\lstdefinestyle{bashstyle}{
+    language=bash,
+    morekeywords={make,nohup,export}
+}
+
+\usepackage{enumitem}
+\setlist{nolistsep}
+
+\usepackage[backend=biber,style=numeric-comp,sorting=nyt,natbib=true]{biblatex}
+\addbibresource{bibliography.bib}
+
+\usepackage{makeidx}
+\makeindex
+
+%----------------------------------------------------------------------------------------
+%	FONTS
+%----------------------------------------------------------------------------------------
+
+\usepackage{avant}
+\usepackage{mathptmx}
+\usepackage[T1]{fontenc}
+
+%----------------------------------------------------------------------------------------
+%	CHAPTER/SECTION HEADING STYLES
+%----------------------------------------------------------------------------------------
+
+\newcommand{\thechapterimage}{}
+\newcommand{\chapterimage}[1]{\renewcommand{\thechapterimage}{#1}}
+
+\newcommand{\thechapterimagetrue}{}
+
+\usepackage{fancyhdr}
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[LE,RO]{\sffamily\small\thepage}
+\fancyhead[LO]{\sffamily\small\rightmark}
+\fancyhead[RE]{\sffamily\small\leftmark}
+\renewcommand{\headrulewidth}{0.5pt}
+\renewcommand{\footrulewidth}{0pt}
+\fancypagestyle{plain}{\fancyhead{}\renewcommand{\headrulewidth}{0pt}}
+
+\usepackage[explicit]{titlesec}
+
+% Numbered chapters
+\titleformat{\chapter}[display]
+{\normalfont\huge\bfseries\sffamily\color{ocre}}
+{\flushright\fontsize{70}{80}\selectfont\color{ocre!30}\thechapter}
+{-2em}
+{\flushright #1}
+[\vspace{-1em}\rule{\textwidth}{2pt}]
+
+% Sections
+\titleformat{\section}
+{\normalfont\Large\bfseries\sffamily\color{ocre}}
+{\thesection}{0.5em}{#1}
+
+\titleformat{\subsection}
+{\normalfont\large\bfseries\sffamily}
+{\thesubsection}{0.5em}{#1}
+
+\titleformat{\subsubsection}
+{\normalfont\normalsize\bfseries\sffamily}
+{\thesubsubsection}{0.5em}{#1}
+
+%----------------------------------------------------------------------------------------
+%	PART HEADING STYLE
+%----------------------------------------------------------------------------------------
+
+\titleformat{\part}[display]
+{\centering\normalfont\huge\bfseries\sffamily\color{ocre}}
+{\fontsize{80}{90}\selectfont\color{ocre!30}\thepart}
+{1em}
+{\Huge#1}
+
+%----------------------------------------------------------------------------------------
+%	THEOREM/DEFINITION/REMARK ENVIRONMENTS
+%----------------------------------------------------------------------------------------
+
+\newtheoremstyle{ocrenum}
+{7pt}{7pt}{\normalfont}{}{}{}{0.25em}
+{\small\sffamily\bfseries\color{ocre}\thmname{#1}~\thmnumber{\@ifnotempty{#1}{}\@upn{#2}}%
+\thmnote{\ \the\thm@notefont\sffamily\bfseries\color{black}--- #3.\hspace{0.25em}}}
+
+\theoremstyle{ocrenum}
+\newtheorem{definitionT}{Definition}[chapter]
+\newtheorem{theoremT}{Theorem}[chapter]
+
+\newtheoremstyle{blacknumbox}
+{7pt}{7pt}{\normalfont}{}{}{}{0.25em}
+{\small\sffamily\bfseries\thmname{#1}~\thmnumber{\@ifnotempty{#1}{}\@upn{#2}}%
+\thmnote{\ \the\thm@notefont\sffamily\bfseries--- #3.\hspace{0.25em}}}
+
+\theoremstyle{blacknumbox}
+\newtheorem{exampleT}{Example}[chapter]
+\newtheorem{remarkT}{Remark}[chapter]
+\newtheorem{notationT}{Notation}[chapter]
+
+%----------------------------------------------------------------------------------------
+%	COLORED ENVIRONMENTS
+%----------------------------------------------------------------------------------------
+
+\usepackage[framemethod=default]{mdframed}
+
+\newmdenv[
+    skipabove=7pt,
+    skipbelow=7pt,
+    rightline=false,
+    leftline=true,
+    topline=false,
+    bottomline=false,
+    backgroundcolor=ocre!10,
+    linecolor=ocre,
+    innerleftmargin=5pt,
+    innerrightmargin=5pt,
+    innertopmargin=5pt,
+    innerbottommargin=5pt,
+    leftmargin=0cm,
+    rightmargin=0cm,
+    linewidth=4pt
+]{ocrebox}
+
+\newmdenv[
+    skipabove=7pt,
+    skipbelow=7pt,
+    rightline=false,
+    leftline=true,
+    topline=false,
+    bottomline=false,
+    backgroundcolor=darkblue!5,
+    linecolor=darkblue,
+    innerleftmargin=5pt,
+    innerrightmargin=5pt,
+    innertopmargin=5pt,
+    innerbottommargin=5pt,
+    leftmargin=0cm,
+    rightmargin=0cm,
+    linewidth=4pt
+]{bluebox}
+
+\newmdenv[
+    skipabove=7pt,
+    skipbelow=7pt,
+    rightline=false,
+    leftline=true,
+    topline=false,
+    bottomline=false,
+    backgroundcolor=green!5,
+    linecolor=green!50!black,
+    innerleftmargin=5pt,
+    innerrightmargin=5pt,
+    innertopmargin=5pt,
+    innerbottommargin=5pt,
+    leftmargin=0cm,
+    rightmargin=0cm,
+    linewidth=4pt
+]{greenbox}
+
+% User-friendly environments
+\newenvironment{definition}[1][]{\begin{ocrebox}\begin{definitionT}[#1]}{\end{definitionT}\end{ocrebox}}
+\newenvironment{theorem}[1][]{\begin{ocrebox}\begin{theoremT}[#1]}{\end{theoremT}\end{ocrebox}}
+\newenvironment{example}[1][]{\begin{greenbox}\begin{exampleT}[#1]}{\end{exampleT}\end{greenbox}}
+\newenvironment{remark}[1][]{\begin{bluebox}\begin{remarkT}[#1]}{\end{remarkT}\end{bluebox}}
+\newenvironment{notation}[1][]{\begin{bluebox}\begin{notationT}[#1]}{\end{notationT}\end{bluebox}}
+
+% Important box
+\newenvironment{important}{%
+\begin{mdframed}[
+    skipabove=7pt,skipbelow=7pt,
+    backgroundcolor=red!5,linecolor=red!70!black,
+    leftline=true,topline=false,bottomline=false,rightline=false,
+    linewidth=4pt,innerleftmargin=5pt,innerrightmargin=5pt,
+    innertopmargin=5pt,innerbottommargin=5pt
+]
+\textbf{\sffamily\color{red!70!black}Important:}\,
+}{\end{mdframed}}
+
+%----------------------------------------------------------------------------------------
+%	TABLE OF CONTENTS
+%----------------------------------------------------------------------------------------
+
+\usepackage{titletoc}
+
+\contentsmargin{0cm}
+\titlecontents{chapter}[1.25cm]
+{\addvspace{12pt}\large\sffamily\bfseries}
+{\color{ocre}\contentslabel[\Large\thecontentslabel]{1.25cm}\color{ocre}}
+{\color{ocre}}
+{\color{ocre}\normalsize\;\titlerule*[.5pc]{.}\;\thecontentspage}
+
+\titlecontents{section}[1.25cm]
+{\addvspace{3pt}\sffamily\bfseries}
+{\contentslabel[\thecontentslabel]{1.25cm}}
+{}
+{~\titlerule*[.5pc]{.}~\thecontentspage}
+
+\titlecontents{subsection}[1.25cm]
+{\addvspace{1pt}\sffamily\small}
+{\contentslabel[\thecontentslabel]{1.25cm}}
+{}
+{~\titlerule*[.5pc]{.}~\thecontentspage}

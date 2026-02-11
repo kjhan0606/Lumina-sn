@@ -1,0 +1,1236 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% LUMINA-SN Technical Manual
+% Based on The Legrand Orange Book Template
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\documentclass[11pt,fleqn]{book}
+
+\input{structure}
+
+\begin{document}
+
+%----------------------------------------------------------------------------------------
+%	TITLE PAGE
+%----------------------------------------------------------------------------------------
+
+\begingroup
+\thispagestyle{empty}
+\begin{tikzpicture}[remember picture,overlay]
+\coordinate [below=12cm] (midpoint) at (current page.north);
+\node at (current page.north west)
+{\begin{tikzpicture}[remember picture,overlay]
+\fill[ocre!20] (0,0) rectangle (\paperwidth,-\paperheight);
+\fill[ocre] (0,0) rectangle (\paperwidth,-4cm);
+\fill[darkblue] (0,-4cm) rectangle (\paperwidth,-4.3cm);
+\draw[anchor=north] (midpoint) node [fill=white,fill opacity=0.85,text opacity=1,inner sep=1.5cm,rounded corners=3pt]{
+\Huge\centering\bfseries\sffamily\parbox[c][][t]{0.85\paperwidth}{\centering
+\textcolor{darkblue}{LUMINA-SN}\\[15pt]
+{\Large\textcolor{ocre}{Monte Carlo Radiative Transfer for Type Ia Supernovae}}\\[8pt]
+{\large A Complete Technical Manual}\\[25pt]
+{\large K.~J.~Han}\\[5pt]
+{\normalsize February 2026}
+}};
+\end{tikzpicture}};
+\end{tikzpicture}
+\vfill
+\endgroup
+
+%----------------------------------------------------------------------------------------
+%	COPYRIGHT PAGE
+%----------------------------------------------------------------------------------------
+
+\newpage
+~\vfill
+\thispagestyle{empty}
+
+\noindent Copyright \copyright\ 2026 K.~J.~Han\\
+
+\noindent \textsc{LUMINA-SN: Luminosity-driven Monte Carlo Supernova Spectral Synthesizer}\\
+
+\noindent This code implements 1D Monte Carlo radiative transfer in homologously expanding supernova ejecta, following the formalism of \citet{lucy1999a,lucy2002,lucy2003} and the TARDIS code \citep{kerzendorf2014}. Written in C99 with CUDA GPU acceleration.\\
+
+\noindent \textit{Version 2.0 --- February 2026}
+
+%----------------------------------------------------------------------------------------
+%	TABLE OF CONTENTS
+%----------------------------------------------------------------------------------------
+
+\pagestyle{empty}
+\tableofcontents
+\cleardoublepage
+\pagestyle{fancy}
+
+%========================================================================================
+%	PART I: PHYSICS & THEORY
+%========================================================================================
+
+\part{Physics \& Theory}
+
+%----------------------------------------------------------------------------------------
+%	CHAPTER 1: Introduction
+%----------------------------------------------------------------------------------------
+
+\chapter{Introduction to Type Ia Supernovae}\index{Type Ia Supernovae}
+
+\section{What is a Type Ia Supernova?}
+
+A Type Ia supernova (SN~Ia) is the thermonuclear explosion of a carbon-oxygen white dwarf star that has reached a critical mass near the Chandrasekhar limit ($M_\mathrm{Ch} \approx 1.4\,M_\odot$). The explosion completely unbinds the star, leaving no compact remnant, and synthesizes approximately $0.6\,M_\odot$ of radioactive $^{56}$Ni \citep{nomoto1984}.
+
+\begin{important}
+SN~Ia are cosmological standard candles: their peak luminosity correlates with their light-curve decline rate (the Phillips relation, \citealt{phillips1993}), enabling precise distance measurements to galaxies. This led to the discovery of the accelerating expansion of the Universe.
+\end{important}
+
+\section{The Expanding Ejecta}\index{Ejecta!Homologous Expansion}
+
+After the explosion, the ejecta expand freely into a vacuum. Within hours, the expansion reaches a state of \textbf{homologous expansion}:
+\begin{equation}
+\boxed{v(r, t) = \frac{r}{t}}
+\label{eq:homologous}
+\end{equation}
+where $r$ is the radial distance from the center and $t$ is the time since explosion. This means velocity maps directly to radius: faster material is farther out.
+
+\begin{definition}[Homologous Expansion]
+In homologous expansion, each fluid element moves at constant velocity. The density at any velocity coordinate $v$ evolves as:
+\begin{equation}
+\rho(v, t) = \rho_0(v) \left(\frac{t_0}{t}\right)^3
+\end{equation}
+where $\rho_0(v)$ is the density at reference epoch $t_0$, and the $t^{-3}$ factor comes from the 3D volumetric dilution.
+\end{definition}
+
+\section{Spectral Features}\index{Spectral Features}
+
+SN~Ia spectra are dominated by \textbf{P~Cygni profiles}: blueshifted absorption troughs paired with redshifted emission peaks. These arise because:
+
+\begin{enumerate}
+\item Material approaching the observer (along the line of sight) absorbs photons at a blueshifted wavelength.
+\item The surrounding envelope re-emits photons isotropically, producing a net emission component redward of the rest wavelength.
+\end{enumerate}
+
+\begin{table}[h]
+\centering
+\caption{Key spectral features in SN~Ia near maximum light.}
+\label{tab:spectral_features}
+\begin{tabular}{llll}
+\toprule
+\textbf{Ion} & \textbf{Rest $\lambda$ (\AA)} & \textbf{Observed Range (\AA)} & \textbf{Diagnostic Value} \\
+\midrule
+Si~\textsc{ii} & 6355 & 5800--6500 & Expansion velocity, temperature \\
+Si~\textsc{ii} & 5972 & 5600--6000 & Temperature indicator \\
+S~\textsc{ii}  & 5454, 5640 & 5200--5700 & ``W'' feature, burning completeness \\
+Ca~\textsc{ii} & 3934, 3968 & 3600--4000 & H\&K lines, high-velocity features \\
+Ca~\textsc{ii} & 8498, 8542, 8662 & 8000--8800 & IR triplet \\
+Fe~\textsc{ii} & 4500--5200 & 4300--5200 & Iron-group blanketing \\
+O~\textsc{i}   & 7774 & 7400--7900 & Unburned oxygen indicator \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{The Inverse Problem}
+
+Given an observed spectrum, we want to determine the physical parameters of the explosion:
+\begin{itemize}
+\item Luminosity $L$ and photospheric temperature $T_\mathrm{inner}$
+\item Density profile $\rho(v)$ and its power-law exponents
+\item Chemical composition as a function of velocity (abundance tomography)
+\item Time since explosion $t_\mathrm{exp}$
+\end{itemize}
+
+LUMINA-SN solves the \emph{forward problem}: given these parameters, compute the emergent spectrum. Combined with Bayesian inference (Part~III), this enables solving the inverse problem.
+
+
+%----------------------------------------------------------------------------------------
+%	CHAPTER 2: Radiative Transfer Theory
+%----------------------------------------------------------------------------------------
+
+\chapter{Radiative Transfer in Expanding Atmospheres}\index{Radiative Transfer}
+
+\section{The Transfer Equation}\index{Transfer Equation}
+
+The specific intensity $I_\nu$ along a ray satisfies:
+\begin{equation}
+\frac{dI_\nu}{ds} = -\kappa_\nu \, I_\nu + j_\nu
+\label{eq:rte}
+\end{equation}
+where $s$ is the path length, $\kappa_\nu$ is the absorption coefficient (opacity), and $j_\nu$ is the emissivity.
+
+In a supernova atmosphere, three opacity sources contribute:
+\begin{enumerate}
+\item \textbf{Electron scattering} (Thomson): frequency-independent, $\sigma_T = 6.652 \times 10^{-25}$~cm$^2$
+\item \textbf{Line opacity} (Sobolev): resonant absorption in atomic transitions
+\item \textbf{Continuum opacity}: bound--free and free--free (negligible in SN~Ia, see \S\ref{sec:bfff})
+\end{enumerate}
+
+\section{The Sobolev Approximation}\index{Sobolev Approximation}
+
+In homologous expansion, the velocity gradient $dv/dr = 1/t_\mathrm{exp}$ is constant. A photon sweeps through a line's resonance frequency over a very short distance (the \emph{Sobolev length}). This means line interactions are \emph{local}: each line either absorbs the photon or lets it pass.
+
+\begin{definition}[Sobolev Optical Depth]\index{Sobolev Optical Depth}
+The optical depth of a line transition $l \to u$ in the Sobolev approximation is:
+\begin{equation}
+\boxed{\tau_\mathrm{Sob} = \frac{\pi e^2}{m_e c} \, f_{lu} \, \lambda_0 \, t_\mathrm{exp} \, n_l \left(1 - \frac{g_l \, n_u}{g_u \, n_l}\right)}
+\label{eq:tau_sobolev}
+\end{equation}
+where $f_{lu}$ is the oscillator strength, $\lambda_0$ is the rest wavelength, $n_l$ and $n_u$ are the lower and upper level populations, and $g_l$, $g_u$ are the statistical weights.
+\end{definition}
+
+The numerical coefficient is:
+\begin{equation}
+\frac{\pi e^2}{m_e c} = 0.02654 \;\text{cm}^2\,\text{s}^{-1} \quad\text{(CGS)}
+\end{equation}
+
+The \emph{escape probability} from a Sobolev line is:
+\begin{equation}
+\beta_\mathrm{Sob} = \frac{1 - e^{-\tau_\mathrm{Sob}}}{\tau_\mathrm{Sob}}
+\end{equation}
+
+\section{The Dilute Radiation Field}\index{Dilution Factor}
+
+Far from the photosphere, the radiation field is diluted. The mean intensity is:
+\begin{equation}
+J_\nu = W \, B_\nu(T_\mathrm{rad})
+\end{equation}
+where $W$ is the \textbf{dilution factor} and $T_\mathrm{rad}$ is the \textbf{radiation temperature}. For a geometrically thin photosphere at radius $R_\mathrm{phot}$:
+\begin{equation}
+W(r) = \frac{1}{2}\left(1 - \sqrt{1 - \left(\frac{R_\mathrm{phot}}{r}\right)^2}\right)
+\label{eq:W_geometric}
+\end{equation}
+
+\begin{remark}[Physical Interpretation of $W$]
+At $r = R_\mathrm{phot}$: $W = 0.5$ (hemisphere illuminated). At $r \gg R_\mathrm{phot}$: $W \approx R_\mathrm{phot}^2 / (4r^2) \to 0$ (point source). In practice, Monte Carlo estimators yield $W$ values that include the effects of line scattering and fluorescence.
+\end{remark}
+
+\section{Frame Transformations}\index{Doppler!Frame Transformations}
+
+In homologous expansion, the comoving-frame (CMF) frequency differs from the lab-frame frequency:
+\begin{equation}
+\nu_\mathrm{cmf} = \nu_\mathrm{lab} \, \left(1 - \frac{\mu \, v}{c}\right) = \nu_\mathrm{lab} \, \left(1 - \frac{\mu \, r}{c \, t_\mathrm{exp}}\right)
+\label{eq:doppler}
+\end{equation}
+where $\mu = \cos\theta$ is the direction cosine of the photon with respect to the radial direction, and $v = r/t_\mathrm{exp}$.
+
+\begin{important}
+As a photon propagates through a shell, the comoving-frame frequency changes \emph{linearly} with distance $s$ along the ray:
+\begin{equation}
+\nu_\mathrm{cmf}(s) = \nu_\mathrm{lab} \left(1 - \frac{r_0\,\mu_0 + s}{c\,t_\mathrm{exp}}\right)
+\end{equation}
+This monotonic frequency sweep is the basis of the Sobolev sweep algorithm (\S\ref{sec:sobolev_sweep}).
+\end{important}
+
+\section{Bound--Free and Free--Free Opacity}\label{sec:bfff}\index{Continuum Opacity}
+
+In SN~Ia ejecta, continuum opacities are negligible because:
+\begin{itemize}
+\item \textbf{Bound--free}: Optical photons (1.5--2.5~eV) are far below the ionization thresholds of the dominant species (Si~\textsc{ii}: 16.35~eV, Fe~\textsc{ii}: 16.19~eV, Ca~\textsc{ii}: 11.87~eV). Only far-UV photons ($< 1000$~\AA) could ionize these ions.
+\item \textbf{Free--free}: Electron densities are very low ($n_e \sim 10^9$~cm$^{-3}$ inner, $\sim 10^6$~cm$^{-3}$ outer), giving $\kappa_\mathrm{ff} \sim 10^{-20}$~cm$^{-1}$.
+\end{itemize}
+
+The combined continuum optical depth across a shell is $\tau_\mathrm{cont} \sim 10^{-6}$ to $10^{-9}$, confirming that \textbf{line opacity dominates} the spectrum formation in SN~Ia.
+
+
+%----------------------------------------------------------------------------------------
+%	CHAPTER 3: Monte Carlo Methods
+%----------------------------------------------------------------------------------------
+
+\chapter{Monte Carlo Photon Transport}\index{Monte Carlo Methods}
+
+\section{The Indivisible Energy Packet Formalism}\index{Energy Packets}
+
+LUMINA follows the \citet{lucy1999a,lucy2002} formalism, where photons are represented as discrete \textbf{energy packets} ($r$-packets) with properties:
+
+\begin{table}[h]
+\centering
+\caption{Properties of an $r$-packet in LUMINA.}
+\begin{tabular}{lll}
+\toprule
+\textbf{Symbol} & \textbf{Description} & \textbf{Unit} \\
+\midrule
+$r$ & Radial position & cm \\
+$\mu$ & Direction cosine ($\cos\theta$) & -- \\
+$\nu$ & Lab-frame frequency & Hz \\
+$\varepsilon$ & Packet energy & erg \\
+$i_\mathrm{shell}$ & Current shell index & -- \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+All packets carry the same energy:
+\begin{equation}
+\varepsilon_\mathrm{pkt} = \frac{L_\mathrm{inner} \, \Delta t}{N_\mathrm{packets}}
+\end{equation}
+where $L_\mathrm{inner}$ is the luminosity at the inner boundary and $\Delta t$ is the simulation time interval.
+
+\section{Packet Initialization}\index{Packet Initialization}
+
+Packets are emitted from the photosphere ($r = R_\mathrm{inner}$) with:
+
+\subsection{Frequency Sampling from the Planck Function}
+
+The emission frequency is sampled from a blackbody at temperature $T_\mathrm{inner}$ using the \citet{bjorkman2001} method:
+
+\begin{enumerate}
+\item Draw $\xi_0 \sim U(0,1)$
+\item Find $l_\mathrm{min}$ such that $\displaystyle\sum_{i=1}^{l_\mathrm{min}} i^{-4} \geq \frac{\pi^4}{90}\,\xi_0$
+\item Draw $\xi_1, \xi_2, \xi_3, \xi_4 \sim U(0,1)$
+\item Compute $x = -\ln(\xi_1 \xi_2 \xi_3 \xi_4) / l_\mathrm{min}$
+\item Set $\nu = x \, k_B T_\mathrm{inner} / h$
+\end{enumerate}
+
+This is exact (no rejection) and samples directly from $B_\nu(T)$.
+
+\subsection{Angular Distribution}
+
+The direction cosine is sampled from a limb-darkened distribution:
+\begin{equation}
+\mu = \sqrt{\xi}, \quad \xi \sim U(0,1)
+\end{equation}
+ensuring that more packets are emitted along the normal direction.
+
+\section{The Packet Propagation Loop}\label{sec:propagation}\index{Propagation Loop}
+
+Each packet undergoes a loop until it escapes ($r > R_\mathrm{outer}$) or is reabsorbed ($r < R_\mathrm{inner}$ moving inward):
+
+\begin{ocrebox}
+\textbf{Algorithm: Single Packet Loop}
+\begin{enumerate}
+\item \textbf{Draw random optical depth}: $\tau_\mathrm{event} = -\ln(\xi)$
+\item \textbf{Compute distances} to possible events:
+  \begin{itemize}
+  \item $d_\mathrm{boundary}$: distance to next shell wall
+  \item $d_\mathrm{line}$: distance to next Sobolev resonance
+  \item $d_\mathrm{e}$: distance to electron scattering ($\tau = n_e \sigma_T d$)
+  \end{itemize}
+\item \textbf{Select minimum}: $d_\mathrm{min} = \min(d_\mathrm{boundary}, d_\mathrm{line}, d_\mathrm{e})$
+\item \textbf{Move packet}: update $r$, $\mu$, accumulate estimators
+\item \textbf{Handle interaction}:
+  \begin{itemize}
+  \item Boundary: change shell, check escape/reabsorption
+  \item Line: scatter, downbranch, or activate macro-atom
+  \item Electron: Thomson scatter (isotropic re-emission)
+  \end{itemize}
+\item \textbf{Repeat} from step 1
+\end{enumerate}
+\end{ocrebox}
+
+\section{Distance Calculations}\index{Distance Calculations}
+
+\subsection{Distance to Shell Boundary}
+
+For a packet at $(r, \mu)$ in shell $[r_\mathrm{in}, r_\mathrm{out}]$:
+
+\textbf{Outward} ($\mu > 0$ or $r > r_\mathrm{in}/\mu$):
+\begin{equation}
+d_\mathrm{out} = \sqrt{r_\mathrm{out}^2 - r^2(1 - \mu^2)} - r\mu
+\end{equation}
+
+\textbf{Inward} ($\mu < 0$ and impact parameter $< r_\mathrm{in}$):
+\begin{equation}
+d_\mathrm{in} = -r\mu - \sqrt{r_\mathrm{in}^2 - r^2(1 - \mu^2)}
+\end{equation}
+
+\subsection{Distance to Electron Scattering}
+
+\begin{equation}
+d_e = \frac{\tau_\mathrm{event}}{n_e \, \sigma_T}
+\end{equation}
+
+\subsection{Distance to Sobolev Resonance}\label{sec:sobolev_sweep}\index{Sobolev Sweep}
+
+As the packet traverses the shell, the CMF frequency sweeps through the line list. For a line at rest frequency $\nu_\mathrm{line}$:
+
+\begin{equation}
+d_\mathrm{line} = \frac{\nu_\mathrm{cmf}(r, \mu) - \nu_\mathrm{line}}{\nu_\mathrm{lab}} \, c \, t_\mathrm{exp}
+\label{eq:d_line}
+\end{equation}
+
+\begin{important}
+The Sobolev sweep must scan from the \emph{entry} frequency to the \emph{exit} frequency of each shell. The original LUMINA code used a fixed $\pm 1\%$ window, which missed lines during thick shell crossings. The corrected algorithm (Task \#067) uses the full Doppler sweep, increasing line interactions from 0.6\% to $>50\%$ of packet steps.
+\end{important}
+
+\section{Line Interaction Types}\index{Line Interactions}
+
+When a packet encounters a line, three interaction modes are available:
+
+\subsection{Resonant Scattering (Mode 0)}\index{Line Interactions!Resonant Scattering}
+The packet is absorbed and re-emitted at the same line frequency with a new random direction:
+\begin{equation}
+\mu_\mathrm{new} \sim U(-1, +1), \quad \nu_\mathrm{new} = \nu_\mathrm{line}
+\end{equation}
+
+\subsection{Downbranching (Mode 1)}\index{Line Interactions!Downbranching}
+The packet is absorbed into the upper level and re-emitted in a \emph{different} line, selected from the downbranching probability distribution:
+\begin{equation}
+P(\text{emit in line } j) = \frac{A_{u \to l_j}}{\sum_k A_{u \to l_k}}
+\end{equation}
+This enables fluorescence: a UV photon absorbed in one line can be re-emitted in the optical.
+
+\subsection{Macro-Atom (Mode 2)}\index{Line Interactions!Macro-Atom}\index{Macro-Atom}
+
+The full macro-atom formalism \citep{lucy2002,lucy2003} activates the atom at the upper energy level and follows a Markov chain of internal transitions:
+
+\begin{ocrebox}
+\textbf{Algorithm: Macro-Atom Transition Walk}
+\begin{enumerate}
+\item Start at activation level $l$
+\item Look up transition block for level $l$ (list of possible transitions)
+\item Draw $\xi \sim U(0,1)$, select transition $k$ from cumulative probabilities
+\item If transition type $\geq 0$ (internal): move to destination level, go to step 2
+\item If transition type $< 0$ (emission): emit in the associated line, \textbf{exit}
+\end{enumerate}
+Maximum 500 iterations (safety limit).
+\end{ocrebox}
+
+Emission types include:
+\begin{itemize}
+\item $-1$: Bound--bound emission (emit photon in a specific line)
+\item $-2$: Bound--free emission (photoionization, thermalization)
+\item $-3$: Free--free emission (thermal)
+\item $-4$: Adiabatic cooling
+\end{itemize}
+
+\section{Monte Carlo Estimators}\index{Estimators}
+
+As packets propagate, they contribute to estimators that probe the radiation field.
+
+\begin{definition}[Mean Intensity Estimator]\index{Estimators!Mean Intensity}
+\begin{equation}
+\hat{J}_\nu = \frac{1}{4\pi \, V \, \Delta t} \sum_\mathrm{packets} \varepsilon_\mathrm{cmf} \, \Delta s
+\end{equation}
+In practice, two scalar estimators are accumulated per shell:
+\begin{align}
+j &= \sum_\mathrm{packets} \varepsilon_\mathrm{cmf} \, \Delta s \label{eq:j_est} \\
+\overline{\nu} &= \frac{\sum_\mathrm{packets} \varepsilon_\mathrm{cmf} \, \nu_\mathrm{cmf} \, \Delta s}{\sum_\mathrm{packets} \varepsilon_\mathrm{cmf} \, \Delta s} \label{eq:nubar_est}
+\end{align}
+\end{definition}
+
+From these, the radiation temperature and dilution factor are recovered:
+\begin{align}
+T_\mathrm{rad} &= T_\mathrm{rad,const} \times \frac{\bar{\nu}}{j} \label{eq:Trad_from_est} \\[4pt]
+W &= \frac{j}{4\,\sigma_\mathrm{SB}\,T_\mathrm{rad}^4\,\Delta t\,V} \label{eq:W_from_est}
+\end{align}
+where $T_\mathrm{rad,const} = \frac{\pi^4}{15 \cdot 24 \cdot \zeta(5)} \frac{h}{k_B} = 1.2523 \times 10^{-11}$~K$\cdot$s.
+
+\section{Convergence: The Iteration Loop}\index{Convergence}
+
+LUMINA iterates between transport and plasma calculations:
+
+\begin{enumerate}
+\item \textbf{Transport}: Run $N_\mathrm{packets}$ through the ejecta, accumulating estimators.
+\item \textbf{Radiation field update}: Compute $T_\mathrm{rad}$, $W$ from estimators, with \textbf{damping}:
+\begin{equation}
+X_\mathrm{new} = X_\mathrm{old} + d \cdot (X_\mathrm{est} - X_\mathrm{old}), \quad d = 0.5
+\end{equation}
+\item \textbf{Plasma update}: Recompute ionization, level populations, $\tau_\mathrm{Sob}$.
+\item \textbf{$T_\mathrm{inner}$ update} (after hold iterations):
+\begin{equation}
+\boxed{T_\mathrm{inner,new} = T_\mathrm{inner,old} + d \cdot \left[T_\mathrm{inner} \left(\frac{L_\mathrm{emitted}}{L_\mathrm{requested}}\right)^{-0.5} - T_\mathrm{inner,old}\right]}
+\label{eq:t_inner_update}
+\end{equation}
+\end{enumerate}
+
+\begin{remark}[Exponent $-0.5$ vs $+0.25$]
+Na\"ively, Stefan--Boltzmann gives $T \propto L^{0.25}$, suggesting the correction factor should be $(L_\mathrm{em}/L_\mathrm{req})^{0.25}$. However, TARDIS uses the exponent $-0.5$ because changing $T_\mathrm{inner}$ also changes the opacity (through ionization), leading to non-linear feedback. The empirical $-0.5$ accounts for this.
+\end{remark}
+
+
+%========================================================================================
+%	PART II: CODE ARCHITECTURE
+%========================================================================================
+
+\part{Code Architecture}
+
+%----------------------------------------------------------------------------------------
+%	CHAPTER 4: Overview & Build System
+%----------------------------------------------------------------------------------------
+
+\chapter{Overview \& Build System}\index{Build System}
+
+\section{File Structure}
+
+LUMINA-SN consists of the following source files:
+
+\begin{table}[h]
+\centering
+\caption{Source files and their roles.}
+\begin{tabular}{lrl}
+\toprule
+\textbf{File} & \textbf{Lines} & \textbf{Purpose} \\
+\midrule
+\texttt{lumina.h} & 378 & Master header: all structures, constants, prototypes \\
+\texttt{lumina\_transport.c} & 515 & CPU transport kernel \\
+\texttt{lumina\_plasma.c} & 524 & Plasma solver \& convergence \\
+\texttt{lumina\_atomic.c} & 700 & Atomic data loading (HDF5, CSV, NPY) \\
+\texttt{lumina\_main.c} & 466 & Main driver \& iteration loop \\
+\texttt{lumina\_cuda.cu} & 1353 & CUDA GPU transport kernel \\
+\midrule
+\textbf{Total} & \textbf{3936} & \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{Build System}\index{Build System!Makefile}
+
+\begin{lstlisting}[style=bashstyle,caption={Building LUMINA-SN}]
+# CPU build (serial)
+make
+
+# CPU build with OpenMP parallelism
+make OMP=1
+
+# CUDA GPU build
+make cuda
+\end{lstlisting}
+
+\begin{table}[h]
+\centering
+\caption{Compiler flags.}
+\begin{tabular}{lll}
+\toprule
+\textbf{Target} & \textbf{Compiler} & \textbf{Flags} \\
+\midrule
+CPU & \texttt{gcc} & \texttt{-O2 -Wall -Wextra -std=c11 -lm} \\
+CPU+OMP & \texttt{gcc} & adds \texttt{-fopenmp} \\
+GPU & \texttt{nvcc} & \texttt{-O2 -arch=sm\_89 -std=c++14} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{important}
+\texttt{make clean} deletes CSV output files. Always save important spectral outputs before rebuilding.
+\end{important}
+
+\section{Dependencies}
+
+\begin{itemize}
+\item \textbf{HDF5} (optional): For loading atomic data from \texttt{kurucz\_cd23\_chianti\_H\_He.h5}
+\item \textbf{CUDA Toolkit $\geq$ 12.0}: For GPU builds (tested with CUDA 13.0, sm\_89)
+\item \textbf{OpenMP}: For CPU parallelism (optional)
+\item \textbf{Standard C library}: \texttt{math.h}, \texttt{stdio.h}, \texttt{stdlib.h}, \texttt{string.h}
+\end{itemize}
+
+\section{Execution}\index{Execution}
+
+\begin{lstlisting}[style=bashstyle,caption={Running LUMINA-SN}]
+# CPU: reference model with 200K packets, 20 iterations
+./lumina tardis_reference 200000 20
+
+# CUDA: same with GPU acceleration
+./lumina_cuda atomic/kurucz_cd23_chianti_H_He.h5 200000 output.csv
+\end{lstlisting}
+
+
+%----------------------------------------------------------------------------------------
+%	CHAPTER 5: Data Structures
+%----------------------------------------------------------------------------------------
+
+\chapter{Data Structures}\index{Data Structures}
+
+\section{The \texttt{RPacket} Structure}\index{Data Structures!RPacket}
+
+The fundamental unit of the Monte Carlo simulation:
+
+\begin{lstlisting}[style=cstyle,caption={\texttt{RPacket} --- photon energy packet}]
+typedef struct {
+    double r;                // radial position [cm]
+    double mu;               // cos(theta) direction
+    double nu;               // lab-frame frequency [Hz]
+    double energy;           // packet energy [erg]
+    int    current_shell_id; // shell index [0..n_shells-1]
+    int    next_line_id;     // Sobolev sweep bookmark
+    PacketStatus status;     // IN_PROCESS / EMITTED / REABSORBED
+    int    index;            // packet ID (for RNG seeding)
+} RPacket;
+\end{lstlisting}
+
+\section{Geometry}\index{Data Structures!Geometry}
+
+The 1D spherically symmetric ejecta model:
+
+\begin{lstlisting}[style=cstyle,caption={\texttt{Geometry} --- shell structure}]
+typedef struct {
+    int    n_shells;         // number of shells (default: 30)
+    double *r_inner;         // [n_shells] inner radii [cm]
+    double *r_outer;         // [n_shells] outer radii [cm]
+    double *v_inner;         // [n_shells] inner velocities [cm/s]
+    double *v_outer;         // [n_shells] outer velocities [cm/s]
+    double time_explosion;   // t_exp [seconds]
+} Geometry;
+\end{lstlisting}
+
+The radii are derived from velocities via homologous expansion: $r = v \times t_\mathrm{exp}$.
+
+\section{Opacity State}\index{Data Structures!OpacityState}
+
+Pre-computed opacity data used during transport:
+
+\begin{lstlisting}[style=cstyle,caption={\texttt{OpacityState} --- line and continuum opacities}]
+typedef struct {
+    int n_lines, n_shells;
+    double *line_list_nu;         // [n_lines] rest frequencies, descending
+    double *tau_sobolev;          // [n_lines * n_shells]
+    double *electron_density;     // [n_shells] n_e [cm^-3]
+    double *t_electrons;          // [n_shells] T_e [K]
+
+    // Macro-atom transition data
+    int n_macro_levels, n_macro_transitions;
+    int    *macro_block_references;       // [n_levels+1]
+    int    *transition_type;              // [n_transitions]
+    int    *destination_level_id;         // [n_transitions]
+    int    *transition_line_id;           // [n_transitions]
+    double *transition_probabilities;     // [n_transitions * n_shells]
+    int    *line2macro_level_upper;       // [n_lines]
+} OpacityState;
+\end{lstlisting}
+
+\begin{remark}[Line List Ordering]
+Lines are sorted in \emph{descending} frequency order. As a packet's CMF frequency decreases while traversing a shell, it encounters lines from high to low frequency. This ordering enables efficient forward-only scanning.
+\end{remark}
+
+\section{Plasma State}\index{Data Structures!PlasmaState}
+
+Thermodynamic state updated each iteration:
+
+\begin{lstlisting}[style=cstyle,caption={\texttt{PlasmaState} --- radiation field quantities}]
+typedef struct {
+    int    n_shells;
+    double *W;               // [n_shells] dilution factor
+    double *T_rad;           // [n_shells] radiation temperature [K]
+    double *rho;             // [n_shells] mass density [g/cm^3]
+    double *n_electron;      // [n_shells] electron density [cm^-3]
+    double T_e_T_rad_ratio;  // default: 0.9
+} PlasmaState;
+\end{lstlisting}
+
+\section{Atomic Data}\index{Data Structures!AtomicData}
+
+Comprehensive atomic physics database for the plasma solver:
+
+\begin{lstlisting}[style=cstyle,caption={\texttt{AtomicData} --- atomic physics for Saha--Boltzmann}]
+typedef struct {
+    // Per-line data
+    int    *line_atomic_number;    // [n_lines] Z
+    int    *line_ion_number;       // [n_lines] ionization stage
+    double *line_f_lu;             // [n_lines] oscillator strength
+    double *line_wavelength_cm;    // [n_lines] rest wavelength
+
+    // Energy levels
+    int     n_levels;
+    double *level_energy_eV;       // [n_levels]
+    int    *level_g;               // [n_levels] statistical weight
+    int    *level_metastable;      // [n_levels] 0 or 1
+
+    // Ionization energies
+    int     n_ionization;
+    double *ioniz_energy_eV;       // [n_ionization]
+
+    // Zeta correction factors (dilute non-LTE)
+    double *zeta_data;             // [n_zeta_ions * n_zeta_temps]
+
+    // Abundances
+    double *abundances;            // [n_elements * n_shells]
+
+    // Computed quantities (updated each iteration)
+    double *ion_number_density;    // [n_ion_pops * n_shells]
+    double *partition_functions;   // [n_ion_pops * n_shells]
+} AtomicData;
+\end{lstlisting}
+
+\section{Monte Carlo Estimators}\index{Data Structures!Estimators}
+
+Accumulated during transport, used to update the radiation field:
+
+\begin{lstlisting}[style=cstyle,caption={\texttt{Estimators} --- radiation field accumulators}]
+typedef struct {
+    double *j_estimator;         // [n_shells] integral of E*ds
+    double *nu_bar_estimator;    // [n_shells] integral of E*nu*ds
+    double *j_blue_estimator;    // [n_lines * n_shells] (CPU only)
+    double *Edotlu_estimator;    // [n_lines * n_shells] (CPU only)
+} Estimators;
+\end{lstlisting}
+
+\begin{remark}[GPU Limitation]
+The \texttt{j\_blue} and \texttt{Edotlu} estimators are \emph{not computed} on the GPU because they require $n_\mathrm{lines} \times n_\mathrm{shells} \approx 4$~million atomic additions per iteration --- prohibitively expensive for \texttt{atomicAdd}.
+\end{remark}
+
+
+%----------------------------------------------------------------------------------------
+%	CHAPTER 6: Transport Engine
+%----------------------------------------------------------------------------------------
+
+\chapter{Transport Engine}\index{Transport Engine}
+
+\section{Overview}
+
+The transport engine (\texttt{lumina\_transport.c}, 515 lines) propagates $r$-packets through the ejecta. It is the most performance-critical component.
+
+\section{The \texttt{trace\_packet} Function}\index{Transport Engine!trace\_packet}
+
+This function computes the next interaction event for a packet:
+
+\begin{enumerate}
+\item Compute distance to shell boundaries ($d_\mathrm{boundary}$)
+\item Scan the Sobolev line list for resonances ($d_\mathrm{line}$, accumulated $\tau$)
+\item Compute distance to electron scattering ($d_e = \tau_\mathrm{event} / (n_e \sigma_T)$)
+\item Return the minimum distance and interaction type
+\end{enumerate}
+
+\section{Sobolev Line Sweep}\index{Transport Engine!Sobolev Sweep}
+
+The sweep algorithm processes lines in descending frequency order:
+
+\begin{lstlisting}[style=cstyle,caption={Sobolev sweep (simplified)}]
+double tau_trace_combined = 0.0;
+for (int j = pkt->next_line_id; j < n_lines; j++) {
+    double nu_line = line_list_nu[j];
+    double d_line = compute_d_line(pkt, nu_line);
+
+    if (d_line < 0 || d_line > d_boundary) break;
+
+    double tau_line = tau_sobolev[j * n_shells + shell_id];
+    tau_trace_combined += tau_line;
+
+    if (tau_trace_combined > tau_event) {
+        // Line interaction!
+        *interaction_type = INTERACTION_LINE;
+        *d_min = d_line;
+        pkt->next_line_id = j;
+        return;
+    }
+}
+\end{lstlisting}
+
+\section{Thomson Scattering}\index{Transport Engine!Thomson Scattering}
+
+Elastic scattering with free electrons:
+
+\begin{enumerate}
+\item Transform packet energy/frequency to comoving frame at current angle
+\item Sample new direction: $\mu_\mathrm{new} \sim U(-1, +1)$ (isotropic in CMF)
+\item Transform back to lab frame with new angle
+\item Energy is conserved in the comoving frame
+\end{enumerate}
+
+\begin{equation}
+\varepsilon_\mathrm{lab,new} = \varepsilon_\mathrm{cmf} \times \frac{1}{1 - \mu_\mathrm{new} \cdot v/c}
+\end{equation}
+
+\section{Boundary Crossing}\index{Transport Engine!Boundary Crossing}
+
+When a packet crosses a shell boundary:
+\begin{enumerate}
+\item Update shell index: $i_\mathrm{shell} \leftarrow i_\mathrm{shell} + \delta$ where $\delta = +1$ (outward) or $-1$ (inward)
+\item Nudge position by $\epsilon = 10^{-10} \times \Delta r_\mathrm{shell}$ into the new shell
+\item Check for escape ($i > n_\mathrm{shells} - 1$) or reabsorption ($i < 0$, inward-moving)
+\end{enumerate}
+
+\begin{important}
+The position nudge is critical. Without it, the packet lands exactly on the boundary, and the next distance calculation returns $d = 0$, causing an infinite loop (Task \#024).
+\end{important}
+
+
+%----------------------------------------------------------------------------------------
+%	CHAPTER 7: Plasma Physics Solver
+%----------------------------------------------------------------------------------------
+
+\chapter{Plasma Physics Solver}\index{Plasma Solver}
+
+\section{Overview}
+
+The plasma solver (\texttt{lumina\_plasma.c}, 524 lines) computes the thermodynamic state of the ejecta for each iteration. It implements the TARDIS-compatible nebular approximation \citep{mazzali1993}.
+
+\section{Step 1: Partition Functions}\index{Plasma Solver!Partition Functions}
+
+The partition function for ion $(Z, \text{stage})$ in shell $s$ is:
+\begin{equation}
+\mathcal{Z}(Z, \text{stage}, s) = \underbrace{\sum_{i \in \text{meta}} g_i \, e^{-E_i / k_B T_\mathrm{rad}(s)}}_{\mathcal{Z}_\mathrm{meta}} + W(s) \cdot \underbrace{\sum_{i \in \text{non-meta}} g_i \, e^{-E_i / k_B T_\mathrm{rad}(s)}}_{\mathcal{Z}_\mathrm{non}}
+\label{eq:partition}
+\end{equation}
+
+\begin{important}
+The Boltzmann factors use $T_\mathrm{rad}$ for \emph{all} levels (both metastable and non-metastable). Earlier code incorrectly used $T_e$ for metastable levels. The dilution factor $W$ suppresses the non-metastable contribution at large distances from the photosphere.
+\end{important}
+
+\section{Step 2: Electron Density}\index{Plasma Solver!Electron Density}
+
+Computed iteratively with TARDIS-style damping:
+
+\begin{ocrebox}
+\textbf{Algorithm: Electron Density Iteration}
+\begin{enumerate}
+\item Start with initial guess $n_e^{(0)}$
+\item For each element: compute ionization ratios using nebular Saha (Eq.~\ref{eq:saha_neb})
+\item Normalize ion populations to element abundance
+\item Compute $n_e^{(\text{calc})} = \sum_\text{ions} \text{stage} \times n_\text{ion}$
+\item Damped update: $n_e^{(k+1)} = 0.5 \times n_e^{(\text{calc})} + 0.5 \times n_e^{(k)}$
+\item Convergence: $|n_e^{(k+1)} - n_e^{(k)}| / n_e^{(k)} < 0.05$
+\end{enumerate}
+\end{ocrebox}
+
+\section{Step 3: Nebular Saha Ionization}\index{Plasma Solver!Saha Equation}
+
+The ionization ratio between consecutive stages is:
+\begin{equation}
+\boxed{\frac{n_{i+1}}{n_i} = \frac{\Phi_\mathrm{neb}}{n_e}}
+\label{eq:saha_neb}
+\end{equation}
+
+where the nebular ionization coefficient $\Phi_\mathrm{neb}$ is:
+\begin{equation}
+\Phi_\mathrm{neb} = \Phi_\mathrm{LTE} \times W \times \left[\zeta \cdot \delta + W \cdot (1 - \zeta)\right] \times \sqrt{\frac{T_e}{T_\mathrm{rad}}}
+\end{equation}
+
+\begin{align}
+\Phi_\mathrm{LTE} &= \frac{\mathcal{Z}_{i+1}}{\mathcal{Z}_i} \times 2 \times g_e \times e^{-\chi / k_B T_\mathrm{rad}} \\[4pt]
+g_e &= \left(\frac{2\pi m_e k_B T_\mathrm{rad}}{h^2}\right)^{3/2} \\[4pt]
+\delta &= \frac{T_e}{T_\mathrm{rad}} \exp\left[\chi \left(\frac{1}{k_B T_\mathrm{rad}} - \frac{1}{k_B T_e}\right)\right]
+\end{align}
+
+Here $\chi$ is the ionization energy, and $\zeta$ is a non-LTE correction factor interpolated from tabulated values.
+
+\section{Step 4: $\tau_\mathrm{Sobolev}$ Update}\index{Plasma Solver!Tau Sobolev}
+
+With ion populations known, $\tau_\mathrm{Sob}$ is recomputed for each line and shell using Eq.~\eqref{eq:tau_sobolev}. The level populations follow the Boltzmann distribution within each ion:
+
+\begin{equation}
+n_{l,\text{meta}} = \frac{g_l}{\mathcal{Z}} \, n_\text{ion} \, e^{-E_l / k_B T_\mathrm{rad}}, \quad
+n_{l,\text{non}} = W \times \frac{g_l}{\mathcal{Z}} \, n_\text{ion} \, e^{-E_l / k_B T_\mathrm{rad}}
+\end{equation}
+
+\section{Step 5: Radiation Field Update}\index{Plasma Solver!Radiation Field}
+
+From the MC estimators $j$ and $\overline{\nu}$ (Eqs.~\ref{eq:j_est}--\ref{eq:nubar_est}):
+\begin{align}
+T_\mathrm{rad,est}(s) &= 1.2523 \times 10^{-11} \times \frac{\overline{\nu}(s)}{j(s)} \quad \text{[K]} \\
+W_\mathrm{est}(s) &= \frac{j(s)}{4\,\sigma_\mathrm{SB}\,T_\mathrm{rad}^4(s)\,\Delta t\,V(s)}
+\end{align}
+
+All quantities are damped:
+\begin{equation}
+X_\mathrm{new} = X_\mathrm{old} + 0.5 \times (X_\mathrm{est} - X_\mathrm{old})
+\end{equation}
+
+
+%----------------------------------------------------------------------------------------
+%	CHAPTER 8: Atomic Data System
+%----------------------------------------------------------------------------------------
+
+\chapter{Atomic Data System}\index{Atomic Data}
+
+\section{Data Sources}
+
+LUMINA uses the TARDIS reference atomic dataset, originally from Kurucz CD23 and CHIANTI:
+
+\begin{table}[h]
+\centering
+\caption{Atomic data files.}
+\label{tab:atomic_files}
+\begin{tabular}{lll}
+\toprule
+\textbf{File} & \textbf{Format} & \textbf{Contents} \\
+\midrule
+\texttt{line\_list.csv} & CSV & $\nu$, $Z$, ion, $f_{lu}$, $\lambda$ per line \\
+\texttt{levels.csv} & CSV & $E$ (eV), $g$, metastable flag per level \\
+\texttt{ionization\_energies.csv} & CSV & $\chi$ per ion \\
+\texttt{tau\_sobolev.npy} & NPY & $\tau_\mathrm{Sob}$ reference values \\
+\texttt{transition\_probabilities.npy} & NPY & Macro-atom transition probs \\
+\texttt{macro\_atom\_data.csv} & CSV & Transition types, destinations \\
+\texttt{zeta\_data.npy} & NPY & Non-LTE correction factors \\
+\texttt{abundances.csv} & CSV & Mass fractions per shell \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{The NPY Format Reader}\index{Atomic Data!NPY Format}
+
+LUMINA includes a custom NPY reader (no NumPy dependency in C):
+
+\begin{enumerate}
+\item Read 6-byte magic: \texttt{\textbackslash x93NUMPY}
+\item Read version (1 or 2) and header length
+\item Parse Python dict header for \texttt{shape}, \texttt{dtype}, \texttt{fortran\_order}
+\item Read raw binary data
+\item Transpose if Fortran-ordered
+\end{enumerate}
+
+\section{The CSV Parser}\index{Atomic Data!CSV Parser}
+
+\begin{important}
+The \texttt{macro\_atom\_data.csv} header starts with an unnamed index column: ``\texttt{,atomic\_number,...}''. The standard \texttt{strtok()} function skips leading delimiters, causing a column offset of $-1$. LUMINA uses a manual field-by-field parser that handles empty fields correctly.
+\end{important}
+
+
+%----------------------------------------------------------------------------------------
+%	CHAPTER 9: CUDA GPU Implementation
+%----------------------------------------------------------------------------------------
+
+\chapter{CUDA GPU Implementation}\index{CUDA}
+
+\section{Design Philosophy}
+
+The GPU implementation maps \textbf{one CUDA thread per packet}. Each thread independently propagates its packet through the ejecta, requiring no inter-thread communication except for atomic estimator updates.
+
+\section{Memory Layout}\index{CUDA!Memory Layout}
+
+\begin{table}[h]
+\centering
+\caption{GPU memory allocation.}
+\begin{tabular}{llr}
+\toprule
+\textbf{Data} & \textbf{Access} & \textbf{Size (200K pkts)} \\
+\midrule
+Line frequencies & Read-only & $n_\mathrm{lines} \times 8$~B \\
+$\tau_\mathrm{Sob}$ & Read-only & $n_\mathrm{lines} \times n_\mathrm{shells} \times 8$~B \\
+Transition probs & Read-only & $n_\mathrm{trans} \times n_\mathrm{shells} \times 8$~B \\
+Shell geometry & Read-only & $n_\mathrm{shells} \times 4 \times 8$~B \\
+RNG states & Read/write & $N_\mathrm{pkt} \times 4 \times 8$~B \\
+$j$, $\overline{\nu}$ estimators & Atomic write & $n_\mathrm{shells} \times 2 \times 8$~B \\
+Output arrays & Write-only & $N_\mathrm{pkt} \times 3 \times 8$~B \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Total GPU memory: approximately 2~GB for a typical run.
+
+\section{Kernel Launch Configuration}\index{CUDA!Kernel Launch}
+
+\begin{lstlisting}[style=cudastyle,caption={Kernel launch}]
+int threads_per_block = 256;
+int blocks = (n_packets + threads_per_block - 1)
+             / threads_per_block;
+// Max blocks: 131072 (was 1024 -- critical bug #13)
+transport_kernel<<<blocks, threads_per_block>>>(...);
+\end{lstlisting}
+
+\begin{important}
+The original code had \texttt{CUDA\_MAX\_BLOCKS = 1024}, limiting execution to 262K packets regardless of $N_\mathrm{packets}$. For 2M packets, only 13\% executed, causing $j_\mathrm{estimator}$ to be 76$\times$ too low. This was the single largest GPU bug (Task \#13).
+\end{important}
+
+\section{Random Number Generation}\index{CUDA!RNG}
+
+Each thread uses an independent \textbf{xoshiro256**} generator with 256 bits of state (4 $\times$ \texttt{uint64}). Seeds are derived from the packet index via SplitMix64:
+
+\begin{lstlisting}[style=cudastyle,caption={Per-thread RNG initialization}]
+__device__ void init_rng(uint64_t *state, uint64_t seed) {
+    // SplitMix64 to expand seed into 4 state words
+    state[0] = splitmix64(&seed);
+    state[1] = splitmix64(&seed);
+    state[2] = splitmix64(&seed);
+    state[3] = splitmix64(&seed);
+}
+\end{lstlisting}
+
+\section{Atomic Estimator Updates}\index{CUDA!Atomic Operations}
+
+The $j$ and $\overline{\nu}$ estimators are updated using CUDA \texttt{atomicAdd}:
+
+\begin{lstlisting}[style=cudastyle,caption={Estimator accumulation on GPU}]
+__device__ void update_estimators(
+    double *d_j_est, double *d_nu_bar_est,
+    int shell_id, double comov_energy,
+    double comov_nu, double distance)
+{
+    atomicAdd(&d_j_est[shell_id],
+              comov_energy * distance);
+    atomicAdd(&d_nu_bar_est[shell_id],
+              comov_energy * distance * comov_nu);
+}
+\end{lstlisting}
+
+Since there are only $n_\mathrm{shells} = 30$ accumulation targets, contention is manageable.
+
+\section{Performance}\index{CUDA!Performance}
+
+\begin{table}[h]
+\centering
+\caption{CPU vs GPU performance (NVIDIA RTX 5000 Ada, sm\_89).}
+\begin{tabular}{lrrrr}
+\toprule
+\textbf{$N_\mathrm{packets}$} & \textbf{CPU (1 core)} & \textbf{CPU (OMP64)} & \textbf{GPU} & \textbf{Speedup} \\
+\midrule
+20,000 & 0.7\,s & 0.1\,s & 0.08\,s & $9\times$ \\
+200,000 & 7.2\,s & 1.1\,s & 0.73\,s & $10\times$ \\
+2,000,000 & 72\,s & 11\,s & 7.3\,s & $10\times$ \\
+20,000,000 & 720\,s & 110\,s & 73\,s & $10\times$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{remark}[Statistical Accuracy]
+GPU and CPU produce statistically identical results. At 200K packets: $W$ error $1.06\%$, $T_\mathrm{rad}$ error $0.58\%$ (relative to TARDIS reference). The scaling follows $\sigma \propto N^{-0.35}$ to $N^{-0.40}$, close to Poisson ($N^{-0.5}$).
+\end{remark}
+
+\section{Resolved GPU Bugs}\index{CUDA!Bug Fixes}
+
+Four critical bugs were identified and fixed during development:
+
+\begin{enumerate}
+\item \textbf{MAX\_BLOCKS = 1024}: Only 262K threads could launch. Fixed to 131072.
+\item \textbf{Shared memory race}: \texttt{\_\_shared\_\_ ShellCache} shared by all 256 threads, but only thread 0 loaded data. Fixed: use L1-cached global memory.
+\item \textbf{Counter accumulation}: Escape/reabsorb counters not reset between iterations. Fixed: explicit reset in \texttt{cuda\_reset\_estimators()}.
+\item \textbf{Boundary sticking}: Packets land exactly on shell boundaries due to floating-point precision. Fixed: explicit nudge by $10^{-10} \times \Delta r$.
+\end{enumerate}
+
+
+%========================================================================================
+%	PART III: USAGE & APPLICATIONS
+%========================================================================================
+
+\part{Usage \& Applications}
+
+%----------------------------------------------------------------------------------------
+%	CHAPTER 10: Quick Start
+%----------------------------------------------------------------------------------------
+
+\chapter{Installation \& Quick Start}\index{Installation}
+
+\section{Prerequisites}
+
+\begin{table}[h]
+\centering
+\caption{System requirements.}
+\begin{tabular}{ll}
+\toprule
+\textbf{Component} & \textbf{Requirement} \\
+\midrule
+C Compiler & GCC $\geq$ 9.0 (C11 support) \\
+CUDA (optional) & Toolkit $\geq$ 12.0, compute capability $\geq$ 7.0 \\
+HDF5 (optional) & \texttt{libhdf5-dev} for atomic data loading \\
+Memory & $\geq$ 4~GB RAM (CPU), $\geq$ 4~GB VRAM (GPU) \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{Step-by-Step Setup}
+
+\begin{lstlisting}[style=bashstyle,caption={Complete setup procedure}]
+# Clone the repository
+git clone git@github.com:kjhan0606/lumina-sn.git
+cd lumina-sn
+
+# Build CPU version
+make
+
+# (Optional) Build GPU version
+make cuda
+
+# Verify with a quick test (1000 packets, 5 iterations)
+./lumina tardis_reference 1000 5
+
+# Production run (200K packets, 20 iterations)
+./lumina tardis_reference 200000 20
+
+# Check output
+head lumina_spectrum.csv
+\end{lstlisting}
+
+\section{Input Directory Structure}\index{Input Files}
+
+LUMINA expects a reference data directory (default: \texttt{data/tardis\_reference/}) containing:
+
+\begin{lstlisting}[style=bashstyle,caption={Required input files}]
+data/tardis_reference/
+  config.json                # Simulation parameters
+  geometry.csv               # Shell radii and velocities
+  density.csv                # Mass density per shell
+  abundances.csv             # Element mass fractions
+  electron_densities.csv     # Initial electron densities
+  plasma_state.csv           # Initial W, T_rad per shell
+  line_list.csv              # Atomic line data
+  tau_sobolev.npy            # Reference optical depths
+  transition_probabilities.npy
+  macro_atom_data.csv
+  macro_atom_references.csv
+  line2macro_level_upper.npy
+  levels.csv                 # Energy levels
+  ionization_energies.csv
+  zeta_ions.csv
+  zeta_temps.csv
+  zeta_data.npy
+  atom_masses.csv
+\end{lstlisting}
+
+\section{Output Files}\index{Output Files}
+
+\begin{table}[h]
+\centering
+\caption{Output files produced by LUMINA.}
+\begin{tabular}{ll}
+\toprule
+\textbf{File} & \textbf{Contents} \\
+\midrule
+\texttt{lumina\_spectrum.csv} & $\lambda$ (\AA) vs $L_\lambda$ (erg/s/cm) \\
+\texttt{lumina\_plasma\_state.csv} & Final $W$, $T_\mathrm{rad}$ per shell \\
+\texttt{lumina\_tau\_validation.csv} & $\tau_\mathrm{Sob}$ at shell 0 (debug) \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+
+%----------------------------------------------------------------------------------------
+%	CHAPTER 11: The Ejecta Model
+%----------------------------------------------------------------------------------------
+
+\chapter{The Ejecta Model}\index{Ejecta Model}
+
+\section{Three-Zone Composition}\index{Ejecta Model!Three-Zone}
+
+LUMINA uses a three-zone abundance structure motivated by SN~Ia nucleosynthesis:
+
+\begin{table}[h]
+\centering
+\caption{Default three-zone composition model.}
+\begin{tabular}{lcccccccc}
+\toprule
+\textbf{Zone} & \textbf{Fe} & \textbf{Si} & \textbf{S} & \textbf{Ca} & \textbf{Co} & \textbf{Ni} & \textbf{C} & \textbf{O} \\
+\midrule
+Core ($v < v_\mathrm{core}$) & \textit{free} & 0.05 & 0.05 & 0.03 & 0.05 & \textit{free} & 0.02 & filler \\
+Wall ($v_\mathrm{core}$--$v_\mathrm{wall}$) & \textit{free} & \textit{free} & 0.05 & 0.03 & 0.05 & \textit{free} & 0.02 & filler \\
+Outer ($v > v_\mathrm{wall}$) & \textit{free} & 0.02 & 0.02 & 0.01 & 0.05 & \textit{free} & 0.02 & filler \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\noindent ``Filler'' means oxygen fills the remaining mass fraction to ensure $\sum X_i = 1$.
+
+\begin{important}
+Oxygen is the correct filler element for the outer zone because it has very few optical absorption lines and is essentially transparent. Using Fe/Ni/S as fillers creates massive line blanketing ($> 10^6$ active lines) that produces an artificial pseudo-photosphere (Task \#063).
+\end{important}
+
+\section{Broken Power-Law Density}\index{Ejecta Model!Density Profile}
+
+The density profile is a broken power law:
+\begin{equation}
+\rho(v) = \begin{cases}
+\rho_0 \left(\dfrac{v}{v_\mathrm{inner}}\right)^{n_\mathrm{inner}} & v < v_\mathrm{break} \\[10pt]
+\rho_\mathrm{break} \left(\dfrac{v}{v_\mathrm{break}}\right)^{n_\mathrm{outer}} & v \geq v_\mathrm{break}
+\end{cases}
+\end{equation}
+where $\rho_\mathrm{break} = \rho_0 (v_\mathrm{break}/v_\mathrm{inner})^{n_\mathrm{inner}}$ ensures continuity at $v_\mathrm{break}$.
+
+Typical values: $n_\mathrm{inner} \approx -7$, $n_\mathrm{outer} \approx -10$.
+
+\section{Physical Parameter Space}\index{Ejecta Model!Parameter Space}
+
+LUMINA-ML (the machine learning emulator companion) uses a 15-dimensional parameter space:
+
+\begin{table}[h]
+\centering
+\caption{Full 15D parameter space with ranges.}
+\label{tab:params_15d}
+\small
+\begin{tabular}{clccl}
+\toprule
+\textbf{\#} & \textbf{Parameter} & \textbf{Min} & \textbf{Max} & \textbf{Description} \\
+\midrule
+1 & $\log L$ & 42.50 & 43.50 & Luminosity [erg/s] \\
+2 & $v_\mathrm{inner}$ & 7000 & 15000 & Photosphere velocity [km/s] \\
+3 & $\log\rho_0$ & $-14.0$ & $-12.3$ & Reference density [g/cm$^3$] \\
+4 & $n_\mathrm{inner}$ & $-10$ & $-4$ & Inner density exponent \\
+5 & $T_e/T_\mathrm{rad}$ & 0.7 & 1.0 & Temperature ratio \\
+6 & $v_\mathrm{core}$ & 9000 & 17000 & Core/wall boundary [km/s] \\
+7 & $v_\mathrm{wall}$ & 12000 & 24000 & Wall/outer boundary [km/s] \\
+8 & $X_\mathrm{Fe,core}$ & 0.05 & 0.85 & Core iron abundance \\
+9 & $X_\mathrm{Si,wall}$ & 0.05 & 0.75 & Wall silicon abundance \\
+10 & $v_\mathrm{break}$ & 10000 & 22000 & Density break velocity [km/s] \\
+11 & $n_\mathrm{outer}$ & $-14$ & $-4$ & Outer density exponent \\
+12 & $t_\mathrm{exp}$ & 10 & 28 & Time since explosion [days] \\
+13 & $X_\mathrm{Fe,wall}$ & 0.001 & 0.50 & Wall iron contamination \\
+14 & $X_\mathrm{Ni}$ & 0.005 & 0.25 & Nickel abundance (all zones) \\
+15 & $X_\mathrm{Fe,outer}$ & 0.001 & 0.15 & Outer iron abundance \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+
+%----------------------------------------------------------------------------------------
+%	CHAPTER 12: Parameter Fitting
+%----------------------------------------------------------------------------------------
+
+\chapter{Parameter Fitting}\index{Parameter Fitting}
+
+\section{Fitting Strategy}
+
+LUMINA includes a multi-phase parameter search framework (\texttt{scripts/fit\_parameter\_search.py}) that combines Latin Hypercube Sampling with progressive refinement.
+
+\subsection{Phase 1: Coarse Exploration}
+\begin{itemize}
+\item 200 Latin Hypercube samples across full parameter space
+\item 20K packets $\times$ 5 iterations (fast, $\sim$5~s per model)
+\item Score by feature-weighted RMS
+\item Select top-20 candidates
+\end{itemize}
+
+\subsection{Phase 2: Refinement}
+\begin{itemize}
+\item Top-20 candidates re-simulated with 100K packets $\times$ 10 iterations
+\item Better statistics reduce Monte Carlo noise
+\item Select top-3
+\end{itemize}
+
+\subsection{Phase 3: Production}
+\begin{itemize}
+\item Top-3 candidates with 500K packets $\times$ 20 iterations
+\item Highest-fidelity spectra
+\item Final selection based on composite score
+\end{itemize}
+
+\section{Objective Function}\index{Parameter Fitting!Objective Function}
+
+The composite scoring function includes:
+\begin{equation}
+\text{Score} = \text{RMS}_\mathrm{spec} + 0.5\,|\Delta d_\mathrm{Si\,II}| + 0.2\,|\Delta \log v_\mathrm{Si\,II}| + 0.1\,|\Delta\lambda_\mathrm{min}|
+\end{equation}
+where:
+\begin{itemize}
+\item $\text{RMS}_\mathrm{spec}$: Spectral RMS over 5000--8000~\AA
+\item $\Delta d_\mathrm{Si\,II}$: Si~\textsc{ii} 6355 absorption depth error
+\item $\Delta \log v_\mathrm{Si\,II}$: Si~\textsc{ii} velocity error (log scale)
+\item $\Delta\lambda_\mathrm{min}$: Si~\textsc{ii} trough wavelength error
+\end{itemize}
+
+
+%----------------------------------------------------------------------------------------
+%	CHAPTER 13: Physical Constants
+%----------------------------------------------------------------------------------------
+
+\chapter{Physical Constants \& Reference Values}\index{Physical Constants}
+
+\begin{table}[h]
+\centering
+\caption{Physical constants used in LUMINA (CGS).}
+\begin{tabular}{llr}
+\toprule
+\textbf{Symbol} & \textbf{Description} & \textbf{Value} \\
+\midrule
+$c$ & Speed of light & $2.99792458 \times 10^{10}$~cm/s \\
+$h$ & Planck constant & $6.62607015 \times 10^{-27}$~erg$\cdot$s \\
+$k_B$ & Boltzmann constant & $1.380649 \times 10^{-16}$~erg/K \\
+$\sigma_\mathrm{SB}$ & Stefan--Boltzmann & $5.670374 \times 10^{-5}$~erg/cm$^2$/s/K$^4$ \\
+$\sigma_T$ & Thomson cross-section & $6.6525 \times 10^{-25}$~cm$^2$ \\
+$m_e$ & Electron mass & $9.10938 \times 10^{-28}$~g \\
+$e$ & Electron charge & $4.80321 \times 10^{-10}$~esu \\
+$\pi e^2/(m_e c)$ & Sobolev coefficient & $2.6540 \times 10^{-2}$~cm$^2$/s \\
+$T_\mathrm{rad,const}$ & $T_\mathrm{rad}$ estimator constant & $1.2523 \times 10^{-11}$~K$\cdot$s \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+
+%----------------------------------------------------------------------------------------
+%	BIBLIOGRAPHY
+%----------------------------------------------------------------------------------------
+
+\chapter*{Bibliography}
+\addcontentsline{toc}{chapter}{\textcolor{ocre}{Bibliography}}
+\printbibliography[heading=none]
+
+%----------------------------------------------------------------------------------------
+%	INDEX
+%----------------------------------------------------------------------------------------
+
+\cleardoublepage
+\phantomsection
+\setlength{\columnsep}{0.75cm}
+\addcontentsline{toc}{chapter}{\textcolor{ocre}{Index}}
+\printindex
+
+\end{document}
