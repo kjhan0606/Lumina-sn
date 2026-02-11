@@ -27,7 +27,7 @@
 \textcolor{darkblue}{LUMINA-SN}\\[15pt]
 {\Large\textcolor{ocre}{Monte Carlo Radiative Transfer for Type Ia Supernovae}}\\[8pt]
 {\large A Complete Technical Manual}\\[25pt]
-{\large K.~J.~Han}\\[5pt]
+{\large Professor Juhan Kim}\\[5pt]
 {\normalsize February 2026}
 }};
 \end{tikzpicture}};
@@ -43,7 +43,7 @@
 ~\vfill
 \thispagestyle{empty}
 
-\noindent Copyright \copyright\ 2026 K.~J.~Han\\
+\noindent Copyright \copyright\ 2026 Juhan Kim\\
 
 \noindent \textsc{LUMINA-SN: Luminosity-driven Monte Carlo Supernova Spectral Synthesizer}\\
 
@@ -432,6 +432,327 @@ Na\"ively, Stefan--Boltzmann gives $T \propto L^{0.25}$, suggesting the correcti
 \end{remark}
 
 
+%----------------------------------------------------------------------------------------
+%	CHAPTER 4: Spectrum Synthesis Methods
+%----------------------------------------------------------------------------------------
+
+\chapter{Spectrum Synthesis Methods}\index{Spectrum Synthesis}
+
+LUMINA implements three distinct methods for constructing the emergent spectrum from the Monte Carlo simulation. Each method makes different trade-offs between physical fidelity, noise characteristics, and computational cost.
+
+\section{Overview of the Three Methods}
+
+\begin{table}[h]
+\centering
+\caption{Comparison of the three spectrum synthesis methods.}
+\label{tab:spectrum_methods}
+\small
+\begin{tabular}{lccc}
+\toprule
+\textbf{Property} & \textbf{Real Packet} & \textbf{Virtual Packet} & \textbf{Rotation Packet} \\
+\midrule
+Transport type & Full Monte Carlo & Formal integral (ray tracing) & Post-processing \\
+Cost per real packet & 1$\times$ (baseline) & $+10\times$ (per interaction) & Negligible \\
+Noise & $\propto N^{-1/2}$ & Lower (many rays) & Same as real \\
+Observer direction & Angle-averaged & Angle-averaged & Direction-dependent \\
+Hardware & CPU + GPU & GPU only & CPU + GPU \\
+Output file & \texttt{spectrum.csv} & \texttt{spectrum\_virtual.csv} & \texttt{spectrum\_rotation.csv} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+
+\section{Real Packets}\label{sec:real_packets}\index{Spectrum Synthesis!Real Packets}
+
+The \textbf{real packet} method is the standard Monte Carlo approach. It is the simplest, most robust, and provides the estimators ($j$, $\bar\nu$) needed for convergence.
+
+\subsection{Principle}
+
+Each energy packet is launched from the photosphere, undergoes a random walk through the ejecta (line scattering, electron scattering, boundary crossings), and eventually either escapes through the outer boundary or is reabsorbed at the inner boundary. The emergent spectrum is constructed by \emph{binning} the escaped packets:
+
+\begin{equation}
+L_\lambda(\lambda_k) = \frac{1}{\Delta\lambda} \sum_{\substack{p \in \mathrm{escaped} \\ \lambda_p \in [\lambda_k, \lambda_k + \Delta\lambda)}} \varepsilon_p
+\end{equation}
+where $\varepsilon_p$ is the packet energy and $\lambda_p = c / \nu_p$ is its escape wavelength.
+
+\subsection{Algorithm}
+
+\begin{ocrebox}
+\textbf{Algorithm: Real Packet Spectrum}
+\begin{enumerate}
+\item Launch $N$ packets from $r = R_\mathrm{inner}$ with blackbody frequency, $\mu = \sqrt{\xi}$
+\item For each packet: trace through ejecta until escape or reabsorption (see \S\ref{sec:propagation})
+\item Accumulate $j$ and $\bar\nu$ estimators at each step (for convergence)
+\item For escaped packets: store $(\nu_\mathrm{lab}, \varepsilon)$ and bin into spectrum
+\item Compute $L_\mathrm{emitted} = \sum_\mathrm{escaped} \varepsilon_p$ for $T_\mathrm{inner}$ update
+\end{enumerate}
+\end{ocrebox}
+
+\subsection{Strengths and Limitations}
+
+\begin{itemize}
+\item[\textbf{+}] Self-consistent: the same packets drive both the spectrum \emph{and} the convergence loop
+\item[\textbf{+}] Captures all non-linear transport effects (multiple scatterings, fluorescence)
+\item[\textbf{+}] Available on both CPU and GPU
+\item[\textbf{--}] High Monte Carlo noise in wavelength bins with few packets (deep absorption troughs)
+\item[\textbf{--}] Angle-averaged: no directional information preserved
+\end{itemize}
+
+
+\section{Virtual Packets}\label{sec:virtual_packets}\index{Spectrum Synthesis!Virtual Packets}\index{Virtual Packets}
+
+The \textbf{virtual packet} method implements a formal-integral ray-tracing approach inspired by TARDIS \citep{kerzendorf2014}. At every interaction point of a real packet, $N_v$ virtual packets are emitted in random directions and passively traced through the remaining ejecta to compute their escape probability.
+
+\subsection{Physical Motivation}
+
+Consider a real packet that has just undergone a line scattering event at position $(r, \hat{n})$ in shell $s$, emitting a photon at comoving frequency $\nu_\mathrm{cmf}$. The question is: what fraction of this radiation escapes the ejecta along a given direction? Rather than relying on the single random walk of the real packet, virtual packets evaluate this explicitly by integrating the optical depth along rays:
+
+\begin{equation}
+\boxed{P_\mathrm{esc}(\hat{n}) = \exp\left(-\int_0^\infty \kappa(s)\,ds\right) = \exp\left(-\tau_\mathrm{total}\right)}
+\label{eq:vpacket_escape}
+\end{equation}
+
+The key insight is that this integral can be evaluated \emph{deterministically} (no random interactions), making it much cheaper per ray than full Monte Carlo transport.
+
+\subsection{The $p$-$z$ Coordinate System}\index{Virtual Packets!p-z Coordinates}
+
+Virtual packets are traced in the $(p, z)$ coordinate system, where $p$ is the \textbf{impact parameter} (perpendicular distance from the ray to the center) and $z$ is the coordinate along the ray:
+
+\begin{align}
+p &= r\,\sqrt{1 - \mu_v^2} & &\text{(constant along the ray)} \\
+z &= r\,\mu_v & &\text{(varies as the packet moves)}
+\end{align}
+
+The radius at any point along the ray is $r(z) = \sqrt{p^2 + z^2}$. The Doppler factor depends only on $z$:
+\begin{equation}
+1 - \frac{v_z}{c} = 1 - \frac{z}{c\,t_\mathrm{exp}}
+\end{equation}
+
+This means the comoving-frame frequency is:
+\begin{equation}
+\nu_\mathrm{cmf}(z) = \nu_\mathrm{lab}\left(1 - \frac{z}{c\,t_\mathrm{exp}}\right)
+\end{equation}
+which is linear in $z$ --- exactly as in the Sobolev sweep for real packets.
+
+\begin{definition}[$p$-$z$ Geometry]
+For a ray emitted at $(r, \mu_v)$:
+\begin{itemize}
+\item $p^2 = r^2(1 - \mu_v^2)$ --- the impact parameter squared
+\item Shell $s$ boundary at $z = \pm\sqrt{r_s^2 - p^2}$ (inner/outer boundaries)
+\item Turning point (closest approach): $z = 0$, $r_\mathrm{min} = p$
+\item If $p < R_\mathrm{inner}$ and $\mu_v < 0$: ray hits the photosphere (discarded)
+\end{itemize}
+\end{definition}
+
+\subsection{Algorithm}\index{Virtual Packets!Algorithm}
+
+\begin{ocrebox}
+\textbf{Algorithm: Virtual Packet Tracing}
+
+At each interaction point $(r, \text{shell\_id}, \nu_\mathrm{cmf,emit}, \varepsilon)$:
+
+\textbf{For} $i = 1$ to $N_v$ (default: $N_v = 10$):
+\begin{enumerate}
+\item \textbf{Draw direction}: $\mu_v \sim U(-1, +1)$
+\item \textbf{Compute}: $p^2 = r^2(1 - \mu_v^2)$, $z_0 = r\,\mu_v$
+\item \textbf{Lab frequency}: $\nu_\mathrm{lab} = \nu_\mathrm{cmf,emit} / (1 - z_0/(c\,t_\mathrm{exp}))$
+\item \textbf{Check}: if $p < R_\mathrm{inner}$ and $\mu_v < 0$ $\to$ skip (hits photosphere)
+\item \textbf{Phase 1} (inward, $\mu_v < 0$): trace from $z_0$ toward $z = 0$
+  \begin{itemize}
+  \item For each shell crossed: accumulate $\tau_\mathrm{line}$ (Sobolev sweep) + $\tau_e = n_e \sigma_T \Delta z$
+  \item If turning point reached ($p \geq r_\mathrm{inner,shell}$): reverse to Phase~2
+  \end{itemize}
+\item \textbf{Phase 2} (outward): trace from turning point to outer boundary
+  \begin{itemize}
+  \item For each shell crossed: accumulate $\tau_\mathrm{line}$ + $\tau_e$
+  \end{itemize}
+\item \textbf{Escape}: $P_\mathrm{esc} = e^{-\tau_\mathrm{total}}$ (if $\tau > 50$, skip)
+\item \textbf{Bin}: $L_\lambda \mathrel{+}= \varepsilon \cdot L_\mathrm{inner} \cdot P_\mathrm{esc} / (\Delta\lambda \cdot N_v)$
+\end{enumerate}
+\end{ocrebox}
+
+\subsection{Optical Depth Accumulation}\index{Virtual Packets!Optical Depth}
+
+Within each shell $s$, the virtual packet sweeps from $z_\mathrm{entry}$ to $z_\mathrm{exit}$. The corresponding CMF frequency range is:
+\begin{align}
+\nu_\mathrm{high} &= \nu_\mathrm{lab}\left(1 - \frac{z_\mathrm{entry}}{c\,t_\mathrm{exp}}\right) \\
+\nu_\mathrm{low}  &= \nu_\mathrm{lab}\left(1 - \frac{z_\mathrm{exit}}{c\,t_\mathrm{exp}}\right)
+\end{align}
+
+All lines with $\nu_\mathrm{low} \leq \nu_\mathrm{line} \leq \nu_\mathrm{high}$ contribute their Sobolev optical depth:
+\begin{equation}
+\tau_\mathrm{lines} = \sum_{\nu_\mathrm{low} \leq \nu_j \leq \nu_\mathrm{high}} \tau_{\mathrm{Sob},j}(s)
+\end{equation}
+
+The electron scattering contribution is:
+\begin{equation}
+\tau_e = n_e(s) \, \sigma_T \, |z_\mathrm{exit} - z_\mathrm{entry}|
+\end{equation}
+
+The total optical depth is the sum over all shells traversed:
+\begin{equation}
+\tau_\mathrm{total} = \sum_\mathrm{shells} \left(\tau_\mathrm{lines} + \tau_e\right)
+\end{equation}
+
+\subsection{Emission Points}
+
+Virtual packets are emitted at three types of interaction events:
+\begin{enumerate}
+\item \textbf{Photosphere}: when the real packet is first launched from $R_\mathrm{inner}$
+\item \textbf{Line scattering}: after the real packet scatters in a line (resonant, downbranch, or macro-atom)
+\item \textbf{Electron scattering}: after a Thomson scatter event
+\end{enumerate}
+
+At each event, $N_v = 10$ virtual packets are emitted, sampling $10$ random directions. This means a real packet that undergoes 50 interactions generates $\sim 500$ virtual rays.
+
+\subsection{Strengths and Limitations}
+
+\begin{itemize}
+\item[\textbf{+}] Dramatically lower noise than real packets (many more rays sample each spectral bin)
+\item[\textbf{+}] No Monte Carlo branching: deterministic ray tracing with cumulative $\tau$
+\item[\textbf{+}] Each virtual packet is independent --- ideal for GPU parallelism
+\item[\textbf{--}] Computationally expensive: $N_v = 10$ virtual rays per interaction
+\item[\textbf{--}] Assumes Sobolev approximation for the formal integral (no partial redistribution)
+\item[\textbf{--}] GPU only in LUMINA (requires \texttt{atomicAdd} for spectrum accumulation)
+\item[\textbf{--}] Does \emph{not} contribute to $j$ or $\bar\nu$ estimators (transport convergence uses real packets only)
+\end{itemize}
+
+\begin{remark}[TARDIS Virtual Packets]
+TARDIS uses $N_v \approx 10$--40 virtual packets per interaction. LUMINA defaults to $N_v = 10$, balancing noise reduction against GPU compute cost. The optimal value depends on the number of real packets: for $N_\mathrm{real} \gtrsim 10^6$, real packet noise is already low enough that $N_v = 10$ suffices.
+\end{remark}
+
+
+\section{Rotation Packets}\label{sec:rotation_packets}\index{Spectrum Synthesis!Rotation Packets}\index{Rotation Packets}
+
+The \textbf{rotation packet} method applies Doppler weighting to escaped real packets to compute the spectrum as seen by an observer at a specific viewing angle. This enables modeling of asymmetric or direction-dependent spectral features.
+
+\subsection{Physical Motivation}
+
+In the real-packet method, escaped packets leave the ejecta in random directions. The resulting spectrum is \emph{angle-averaged}: it represents the mean emission over all solid angles. A real observer, however, sees the supernova from a single direction. The Doppler effect means that material moving toward the observer is blueshifted, while receding material is redshifted, producing a direction-dependent spectrum.
+
+In spherical symmetry, the observed spectrum depends on a single parameter: the observer's direction cosine $\mu_\mathrm{obs}$ relative to each escaping packet's velocity vector. The rotation method corrects for this by weighting each escaped packet by a Doppler factor.
+
+\subsection{Doppler Weighting}\index{Rotation Packets!Doppler Weighting}
+
+For a packet escaping at radius $r$ with direction $\mu$ (relative to the radial direction), the velocity at the escape point is $v = r / t_\mathrm{exp}$ and $\beta = v/c$. Two Doppler factors are relevant:
+
+\begin{align}
+D_\mathrm{pkt} &= 1 - \beta\,\mu_\mathrm{pkt} & &\text{(packet's actual escape frame)} \label{eq:D_pkt} \\
+D_\mathrm{obs} &= 1 - \beta\,\mu_\mathrm{obs} & &\text{(observer's viewing direction)} \label{eq:D_obs}
+\end{align}
+
+The specific luminosity transforms between frames as:
+\begin{equation}
+\boxed{L_{\lambda,\mathrm{obs}} = \left(\frac{D_\mathrm{obs}}{D_\mathrm{pkt}}\right)^2 L_{\lambda,\mathrm{pkt}}}
+\label{eq:rotation_weight}
+\end{equation}
+
+The quadratic power arises because the spectral flux density transforms as $F_\nu \propto D^2$ under Lorentz boosting (one power for the frequency shift, one for the solid angle transformation).
+
+\subsection{Face-On Observer}
+
+LUMINA defaults to a \textbf{face-on observer} ($\mu_\mathrm{obs} = 1$), looking directly along the radial direction. In this case:
+\begin{equation}
+D_\mathrm{obs} = 1 - \beta, \quad w = \left(\frac{1 - \beta}{1 - \beta\,\mu_\mathrm{pkt}}\right)^2
+\end{equation}
+
+The weighting factor $w$ has the following behavior:
+\begin{itemize}
+\item $w > 1$: packets that escaped \emph{sideways} ($\mu_\mathrm{pkt} \ll 1$) are \emph{boosted} --- the face-on observer would see them more strongly
+\item $w < 1$: packets that escaped nearly radially ($\mu_\mathrm{pkt} \approx 1$) are \emph{suppressed} --- they were already heading toward the observer
+\item $w = 1$: when $\mu_\mathrm{pkt} = 1$ (escape direction equals observer direction)
+\end{itemize}
+
+In practice, the mean weight $\langle w \rangle \approx 1.0$, confirming energy conservation.
+
+\subsection{Algorithm}
+
+\begin{ocrebox}
+\textbf{Algorithm: Rotation Packet Spectrum}
+\begin{enumerate}
+\item During real-packet transport: for each escaped packet, store $(r, \mu)$ at escape
+\item After transport completes, post-process all escaped packets:
+  \begin{itemize}
+  \item Compute $\beta = r / (c \, t_\mathrm{exp})$
+  \item Compute $D_\mathrm{pkt} = 1 - \beta\,\mu_\mathrm{pkt}$ and $D_\mathrm{obs} = 1 - \beta$
+  \item Weight: $w = (D_\mathrm{obs} / D_\mathrm{pkt})^2$
+  \end{itemize}
+\item Bin into spectrum: $L_\lambda \mathrel{+}= \varepsilon \cdot L_\mathrm{inner} \cdot w / \Delta\lambda$
+\end{enumerate}
+\end{ocrebox}
+
+\subsection{Strengths and Limitations}
+
+\begin{itemize}
+\item[\textbf{+}] Essentially free: post-processing with no additional transport
+\item[\textbf{+}] Provides observer-direction-dependent spectrum from a single simulation
+\item[\textbf{+}] Available on both CPU and GPU
+\item[\textbf{+}] Can be computed for arbitrary $\mu_\mathrm{obs}$ without re-running
+\item[\textbf{--}] Same Monte Carlo noise as real packets (no extra sampling)
+\item[\textbf{--}] In 1D spherical symmetry, the spectrum is isotropic; rotation weighting primarily affects non-radial escape patterns
+\item[\textbf{--}] Does not capture true viewing-angle effects from multi-dimensional structure
+\end{itemize}
+
+
+\section{Performance Comparison}\index{Spectrum Synthesis!Performance}
+
+\begin{table}[h]
+\centering
+\caption{Runtime comparison for 200K packets, 20 iterations (NVIDIA RTX 5000 Ada).}
+\label{tab:spectrum_performance}
+\begin{tabular}{lrrr}
+\toprule
+\textbf{Mode} & \textbf{Time per iter} & \textbf{Overhead} & \textbf{Total (20 iter)} \\
+\midrule
+Real only & 0.73\,s & --- & 14.6\,s \\
+Real + Rotation & 0.73\,s & $< 0.01$\,s & 14.7\,s \\
+Real + Virtual ($N_v=10$) & 7.3\,s & $+6.6$\,s ($+900\%$) & 146\,s \\
+Real + Virtual + Rotation & 7.3\,s & $+6.6$\,s ($+900\%$) & 146\,s \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{important}
+Virtual packets are the dominant performance cost when enabled. The $\sim 10\times$ slowdown comes from tracing $N_v = 10$ virtual rays per interaction, each performing a binary search + sweep through the full line list. For production runs where spectrum quality is paramount, virtual packets are recommended. For parameter fitting where many models must be evaluated quickly, real-only or real+rotation mode is preferred.
+\end{important}
+
+\section{When to Use Each Method}\index{Spectrum Synthesis!Recommendations}
+
+\begin{table}[h]
+\centering
+\caption{Recommended spectrum modes for different use cases.}
+\begin{tabular}{lll}
+\toprule
+\textbf{Use Case} & \textbf{Mode} & \textbf{Rationale} \\
+\midrule
+Convergence diagnostics & Real only & Fastest; estimators unaffected \\
+Parameter search / SBI & Real + Rotation & Fast; observer-frame spectrum \\
+Publication spectra & Real + Virtual & Lowest noise; best features \\
+Full analysis & All three & Compare all methods \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Command-Line Usage}
+
+\begin{lstlisting}[style=bashstyle,caption={Spectrum mode selection}]
+# CPU: real only (default)
+./lumina tardis_reference 200000 20
+
+# CPU: real + rotation
+./lumina tardis_reference 200000 20 rotation
+
+# GPU: real + virtual (formal integral)
+./lumina_cuda atomic/kurucz.h5 200000 output.csv virtual
+
+# GPU: real + rotation
+./lumina_cuda atomic/kurucz.h5 200000 output.csv rotation
+
+# GPU: all three methods
+./lumina_cuda atomic/kurucz.h5 200000 output.csv all
+\end{lstlisting}
+
+
 %========================================================================================
 %	PART II: CODE ARCHITECTURE
 %========================================================================================
@@ -439,7 +760,7 @@ Na\"ively, Stefan--Boltzmann gives $T \propto L^{0.25}$, suggesting the correcti
 \part{Code Architecture}
 
 %----------------------------------------------------------------------------------------
-%	CHAPTER 4: Overview & Build System
+%	CHAPTER 5: Overview & Build System
 %----------------------------------------------------------------------------------------
 
 \chapter{Overview \& Build System}\index{Build System}
@@ -456,11 +777,11 @@ LUMINA-SN consists of the following source files:
 \textbf{File} & \textbf{Lines} & \textbf{Purpose} \\
 \midrule
 \texttt{lumina.h} & 378 & Master header: all structures, constants, prototypes \\
-\texttt{lumina\_transport.c} & 515 & CPU transport kernel \\
+\texttt{lumina\_transport.c} & 515 & CPU transport kernel (real + rotation) \\
 \texttt{lumina\_plasma.c} & 524 & Plasma solver \& convergence \\
 \texttt{lumina\_atomic.c} & 700 & Atomic data loading (HDF5, CSV, NPY) \\
 \texttt{lumina\_main.c} & 466 & Main driver \& iteration loop \\
-\texttt{lumina\_cuda.cu} & 1353 & CUDA GPU transport kernel \\
+\texttt{lumina\_cuda.cu} & 1353 & CUDA GPU kernel (real + virtual + rotation) \\
 \midrule
 \textbf{Total} & \textbf{3936} & \\
 \bottomrule
@@ -519,7 +840,7 @@ GPU & \texttt{nvcc} & \texttt{-O2 -arch=sm\_89 -std=c++14} \\
 
 
 %----------------------------------------------------------------------------------------
-%	CHAPTER 5: Data Structures
+%	CHAPTER 6: Data Structures
 %----------------------------------------------------------------------------------------
 
 \chapter{Data Structures}\index{Data Structures}
@@ -653,7 +974,7 @@ The \texttt{j\_blue} and \texttt{Edotlu} estimators are \emph{not computed} on t
 
 
 %----------------------------------------------------------------------------------------
-%	CHAPTER 6: Transport Engine
+%	CHAPTER 7: Transport Engine
 %----------------------------------------------------------------------------------------
 
 \chapter{Transport Engine}\index{Transport Engine}
@@ -728,7 +1049,7 @@ The position nudge is critical. Without it, the packet lands exactly on the boun
 
 
 %----------------------------------------------------------------------------------------
-%	CHAPTER 7: Plasma Physics Solver
+%	CHAPTER 8: Plasma Physics Solver
 %----------------------------------------------------------------------------------------
 
 \chapter{Plasma Physics Solver}\index{Plasma Solver}
@@ -810,7 +1131,7 @@ X_\mathrm{new} = X_\mathrm{old} + 0.5 \times (X_\mathrm{est} - X_\mathrm{old})
 
 
 %----------------------------------------------------------------------------------------
-%	CHAPTER 8: Atomic Data System
+%	CHAPTER 9: Atomic Data System
 %----------------------------------------------------------------------------------------
 
 \chapter{Atomic Data System}\index{Atomic Data}
@@ -859,7 +1180,7 @@ The \texttt{macro\_atom\_data.csv} header starts with an unnamed index column: `
 
 
 %----------------------------------------------------------------------------------------
-%	CHAPTER 9: CUDA GPU Implementation
+%	CHAPTER 10: CUDA GPU Implementation
 %----------------------------------------------------------------------------------------
 
 \chapter{CUDA GPU Implementation}\index{CUDA}
@@ -977,7 +1298,7 @@ Four critical bugs were identified and fixed during development:
 \part{Usage \& Applications}
 
 %----------------------------------------------------------------------------------------
-%	CHAPTER 10: Quick Start
+%	CHAPTER 11: Quick Start
 %----------------------------------------------------------------------------------------
 
 \chapter{Installation \& Quick Start}\index{Installation}
@@ -1066,7 +1387,7 @@ data/tardis_reference/
 
 
 %----------------------------------------------------------------------------------------
-%	CHAPTER 11: The Ejecta Model
+%	CHAPTER 12: The Ejecta Model
 %----------------------------------------------------------------------------------------
 
 \chapter{The Ejecta Model}\index{Ejecta Model}
@@ -1142,7 +1463,7 @@ LUMINA-ML (the machine learning emulator companion) uses a 15-dimensional parame
 
 
 %----------------------------------------------------------------------------------------
-%	CHAPTER 12: Parameter Fitting
+%	CHAPTER 13: Parameter Fitting
 %----------------------------------------------------------------------------------------
 
 \chapter{Parameter Fitting}\index{Parameter Fitting}
@@ -1189,7 +1510,7 @@ where:
 
 
 %----------------------------------------------------------------------------------------
-%	CHAPTER 13: Physical Constants
+%	CHAPTER 14: Physical Constants
 %----------------------------------------------------------------------------------------
 
 \chapter{Physical Constants \& Reference Values}\index{Physical Constants}
