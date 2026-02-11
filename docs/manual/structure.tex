@@ -83,8 +83,7 @@
 %	FONTS
 %----------------------------------------------------------------------------------------
 
-\usepackage{avant}
-\usepackage{mathptmx}
+\usepackage{lmodern}
 \usepackage[T1]{fontenc}
 
 %----------------------------------------------------------------------------------------
@@ -143,6 +142,7 @@
 %	THEOREM/DEFINITION/REMARK ENVIRONMENTS
 %----------------------------------------------------------------------------------------
 
+\makeatletter
 \newtheoremstyle{ocrenum}
 {7pt}{7pt}{\normalfont}{}{}{}{0.25em}
 {\small\sffamily\bfseries\color{ocre}\thmname{#1}~\thmnumber{\@ifnotempty{#1}{}\@upn{#2}}%
@@ -161,6 +161,7 @@
 \newtheorem{exampleT}{Example}[chapter]
 \newtheorem{remarkT}{Remark}[chapter]
 \newtheorem{notationT}{Notation}[chapter]
+\makeatother
 
 %----------------------------------------------------------------------------------------
 %	COLORED ENVIRONMENTS
