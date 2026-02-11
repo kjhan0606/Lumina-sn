@@ -101,6 +101,16 @@ void update_base_estimators(RPacket *pkt, double distance, Estimators *est,
     int shell = pkt->current_shell_id; /* Phase 3 - Step 4 */
     est->j_estimator[shell] += comov_energy * distance; /* Phase 3 - Step 4 */
     est->nu_bar_estimator[shell] += comov_energy * distance * comov_nu; /* Phase 3 - Step 4 */
+
+    /* NLTE: bin into J_nu frequency histogram */
+    if (est->j_nu_estimator != NULL && est->nlte_n_freq_bins > 0 &&
+        comov_nu > est->nlte_nu_min) {
+        int freq_bin = (int)(log(comov_nu / est->nlte_nu_min) / est->nlte_d_log_nu);
+        if (freq_bin >= 0 && freq_bin < est->nlte_n_freq_bins) {
+            est->j_nu_estimator[shell * est->nlte_n_freq_bins + freq_bin] +=
+                comov_energy * distance;
+        }
+    }
 }
 
 /* Phase 3 - Step 4: Line-specific j_blue and Edotlu */

@@ -3,6 +3,9 @@
  * Implements T_inner convergence from escape fraction. */
 
 #include "lumina.h" /* Phase 4 - Step 1 */
+#ifdef _OPENMP
+#include <omp.h>
+#endif
 
 #ifdef __cplusplus   /* Phase 6 - Step 9: extern C guard for NVCC */
 extern "C" {         /* Phase 6 - Step 9 */
@@ -995,6 +998,9 @@ void nlte_solve_all(NLTEConfig *nlte, AtomicData *atom, PlasmaState *plasma,
         int lo = pairs[p][0], hi = pairs[p][1];
         int n_levels = nlte->nlte_ion_level_offset[hi + 1] -
                        nlte->nlte_ion_level_offset[lo];
+        #ifdef _OPENMP
+        #pragma omp parallel for schedule(dynamic, 1)
+        #endif
         for (int s = 0; s < n_shells; s++) {
             nlte_solve_ion_shell(nlte, atom, plasma, opacity,
                                  lo, hi, s, time_explosion);

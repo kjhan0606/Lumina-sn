@@ -17,7 +17,8 @@ TARGET = lumina
 # CUDA source
 CUDA_SRC = src/lumina_cuda.cu
 NVCC = nvcc
-NVFLAGS = -O2 -arch=sm_89 -std=c++14
+NVFLAGS = -O2 -arch=sm_89 -std=c++14 -Xcompiler -fopenmp
+NVLDFLAGS = -lm -Xcompiler -fopenmp
 
 # Default target
 all: $(TARGET)
@@ -28,7 +29,7 @@ $(TARGET): $(SOURCES) $(HEADERS)
 # CUDA build target (compile C sources alongside .cu)
 cuda: lumina_cuda
 lumina_cuda: $(CUDA_SRC) src/lumina_atomic.c src/lumina_plasma.c $(HEADERS)
-	$(NVCC) $(NVFLAGS) -o lumina_cuda $(CUDA_SRC) src/lumina_atomic.c src/lumina_plasma.c $(LDFLAGS)
+	$(NVCC) $(NVFLAGS) -o lumina_cuda $(CUDA_SRC) src/lumina_atomic.c src/lumina_plasma.c $(NVLDFLAGS)
 
 # Clean
 clean:

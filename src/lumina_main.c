@@ -125,10 +125,17 @@ int main(int argc, char *argv[]) {
         else if (strcmp(argv[4], "all") == 0) enable_rotation = 1;
     }
 
+    /* NLTE mode: argv[5] == "nlte" or env LUMINA_NLTE=1 */
+    int enable_nlte = 0;
+    if (argc > 5 && strcmp(argv[5], "nlte") == 0) enable_nlte = 1;
+    if (getenv("LUMINA_NLTE") && atoi(getenv("LUMINA_NLTE")) > 0) enable_nlte = 1;
+    config.enable_nlte = enable_nlte;
+
     printf("\nSimulation parameters:\n"); /* Phase 5 - Step 3 */
     printf("  Packets: %d, Iterations: %d\n", n_packets, n_iterations); /* Phase 5 - Step 3 */
     printf("  Line interaction: MACROATOM\n"); /* Phase 5 - Step 3 */
     printf("  Spectrum mode: %s\n", enable_rotation ? "real + rotation" : "real only");
+    printf("  NLTE: %s\n", enable_nlte ? "ENABLED (Si/Ca/Fe/S)" : "disabled");
     printf("  T_inner: %.2f K\n", config.T_inner); /* Phase 5 - Step 3 */
 
     /* Phase 5 - Step 4: Compute shell volumes */
@@ -144,6 +151,14 @@ int main(int argc, char *argv[]) {
     Spectrum *spec = create_spectrum(500.0, 20000.0, 2000); /* Phase 5 - Step 4 */
 
     Spectrum *spec_rot = enable_rotation ? create_spectrum(500.0, 20000.0, 2000) : NULL;
+
+    /* NLTE: Initialize if enabled */
+    NLTEConfig nlte;
+    memset(&nlte, 0, sizeof(nlte));
+    if (enable_nlte) {
+        printf("\n--- NLTE Initialization ---\n");
+        nlte_init(&nlte, &atom_data, &opacity, geo.n_shells);
+    }
 
     /* Phase 5 - Step 4: Time of simulation (TARDIS: 1 / L_inner) */
     /* TARDIS: L_inner = 4 * pi * sigma_sb * r_inner^2 * T_inner^4 */
@@ -170,6 +185,9 @@ int main(int argc, char *argv[]) {
         reset_estimators(est); /* Phase 5 - Step 5 */
         reset_spectrum(spec); /* Phase 5 - Step 5 */
         if (spec_rot) reset_spectrum(spec_rot);
+        if (enable_nlte)
+            memset(nlte.j_nu_estimator, 0,
+                   (size_t)geo.n_shells * nlte.n_freq_bins * sizeof(double));
 
         /* Phase 5 - Step 5: Recompute L_inner and time_simulation */
         L_inner = 4.0 * M_PI_VAL * geo.r_inner[0] * geo.r_inner[0] * /* Phase 5 - Step 5 */
@@ -200,6 +218,14 @@ int main(int argc, char *argv[]) {
 
             /* Phase 5 - Step 5: Per-thread local estimators (lightweight: no j_blue) */
             Estimators *local_est = create_estimators(geo.n_shells, 0); /* Phase 5 - Step 5 */
+            /* NLTE: attach J_nu histogram to thread-local estimators */
+            if (enable_nlte) {
+                local_est->nlte_n_freq_bins = nlte.n_freq_bins;
+                local_est->nlte_nu_min = nlte.nu_min;
+                local_est->nlte_d_log_nu = nlte.d_log_nu;
+                local_est->j_nu_estimator = (double *)calloc(
+                    (size_t)geo.n_shells * nlte.n_freq_bins, sizeof(double));
+            }
             int local_escaped = 0, local_reabsorbed = 0; /* Phase 5 - Step 5 */
 
             #ifdef _OPENMP
@@ -242,10 +268,18 @@ int main(int argc, char *argv[]) {
                     est->j_estimator[i] += local_est->j_estimator[i]; /* Phase 5 - Step 5 */
                     est->nu_bar_estimator[i] += local_est->nu_bar_estimator[i]; /* Phase 5 - Step 5 */
                 }
+                /* NLTE: reduce J_nu histograms */
+                if (enable_nlte && local_est->j_nu_estimator) {
+                    size_t j_nu_size = (size_t)geo.n_shells * nlte.n_freq_bins;
+                    for (size_t i = 0; i < j_nu_size; i++)
+                        nlte.j_nu_estimator[i] += local_est->j_nu_estimator[i];
+                }
                 /* Phase 5 - Step 5: j_blue/Edotlu not tracked per-thread (too large) */
                 n_escaped += local_escaped; /* Phase 5 - Step 5 */
                 n_reabsorbed += local_reabsorbed; /* Phase 5 - Step 5 */
             }
+            if (local_est->j_nu_estimator) free(local_est->j_nu_estimator);
+            local_est->j_nu_estimator = NULL;
             free_estimators(local_est); /* Phase 5 - Step 5 */
         } /* Phase 5 - Step 5: end parallel block */
 
@@ -288,6 +322,13 @@ int main(int argc, char *argv[]) {
         /* Task #072: Recompute tau_sobolev from updated W, T_rad */
         if (iter > 0) {
             compute_plasma_state(&atom_data, &plasma, &opacity, geo.time_explosion);
+
+            /* NLTE: solve rate equations and update tau for NLTE lines */
+            if (enable_nlte) {
+                nlte_normalize_j_nu(&nlte, time_simulation, volume, geo.n_shells);
+                nlte_solve_all(&nlte, &atom_data, &plasma, &opacity,
+                               geo.time_explosion, geo.n_shells);
+            }
         }
 
         /* Task #072: Validation mode — compute plasma state with reference values on iter 0 */
@@ -460,6 +501,7 @@ int main(int argc, char *argv[]) {
     if (spec_rot) free_spectrum(spec_rot);
     free(volume); /* Phase 5 - Step 10 */
     free_atomic_data(&atom_data); /* Task #072 */
+    if (enable_nlte) nlte_free(&nlte);
 
     printf("\nDone.\n"); /* Phase 5 - Step 10 */
     return 0; /* Phase 5 - Step 10 */

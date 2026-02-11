@@ -130,6 +130,12 @@ typedef struct {
     double *nu_bar_estimator; /* Phase 2 - Step 4: [n_shells] freq-weighted J */
     double *j_blue_estimator; /* Phase 2 - Step 4: [n_lines * n_shells] */
     double *Edotlu_estimator; /* Phase 2 - Step 4: [n_lines * n_shells] */
+
+    /* NLTE: J_nu frequency histogram (CPU accumulation) */
+    double *j_nu_estimator;   /* [n_shells * n_freq_bins] or NULL */
+    int     nlte_n_freq_bins; /* 0 if NLTE disabled */
+    double  nlte_nu_min;
+    double  nlte_d_log_nu;
 } Estimators;                 /* Phase 2 - Step 4 */
 
 /* Phase 2 - Step 4: Monte Carlo configuration */
