@@ -753,6 +753,221 @@ Full analysis & All three & Compare all methods \\
 \end{lstlisting}
 
 
+%----------------------------------------------------------------------------------------
+%	CHAPTER 5: NLTE Rate Equation Solver
+%----------------------------------------------------------------------------------------
+
+\chapter{Non-LTE Rate Equation Solver}\index{NLTE}\label{ch:nlte}
+
+\section{Motivation: Beyond the Nebular Approximation}
+
+The nebular approximation (Chapter~8) treats ionization via a modified Saha equation with dilution factor $W$ and radiation temperature $T_\mathrm{rad}$, and level populations via Boltzmann at $T_\mathrm{rad}$.  This is adequate for most photospheric-phase diagnostics but has known limitations:
+
+\begin{itemize}
+\item \textbf{UV spectrum}: Boltzmann populations overestimate excited-level populations for Fe-group ions, producing too much UV line blanketing.
+\item \textbf{Ionization balance}: The $\zeta$-corrected Saha approximation may not capture the correct Si~II/III ratio in the silicon-burning zone, directly affecting the depth and velocity of the Si~II~6355\,\AA\ feature.
+\item \textbf{Calcium H\&K}: The emission-to-absorption ratio of Ca~II depends sensitively on the population of the $4p$ levels, which depart significantly from Boltzmann.
+\end{itemize}
+
+LUMINA implements a \textbf{restricted NLTE solver} targeting the four most important diagnostic elements: Si, Ca, Fe, and S (8 ion stages total, $\sim$2000 levels).  All other species remain on the nebular approximation.
+
+\section{Statistical Equilibrium}\index{NLTE!Statistical Equilibrium}
+
+For each NLTE ion, level populations are determined by the system of statistical equilibrium equations:
+\begin{equation}
+\boxed{\sum_{j \neq i} n_j \, R_{j \to i} = n_i \sum_{j \neq i} R_{i \to j} \quad \text{for each level } i}
+\label{eq:stat_equil}
+\end{equation}
+where $R_{i \to j}$ is the total (radiative + collisional) rate from level $i$ to level $j$.  This forms a linear system $\mathbf{A} \mathbf{n} = \mathbf{0}$, supplemented by the conservation equation:
+\begin{equation}
+\sum_i n_i = n_\mathrm{total} \quad (\text{from nebular ionization balance})
+\label{eq:nlte_conservation}
+\end{equation}
+
+\subsection{Rate Matrix Structure}
+
+The rate matrix $\mathbf{A}$ has dimensions $N \times N$ where $N$ is the combined level count for an ion pair (e.g., Si~II + Si~III).  Ion pairs are solved together because photoionization and recombination couple the two stages.
+
+\begin{table}[h]
+\centering
+\caption{NLTE ion pairs and matrix dimensions.}
+\label{tab:nlte_ions}
+\begin{tabular}{lrrr}
+\toprule
+\textbf{Ion pair} & \textbf{Levels} & \textbf{Matrix size} & \textbf{NLTE lines} \\
+\midrule
+Si~II + Si~III & $100 + 169 = 269$ & $269 \times 269$ & $\sim$2,400 \\
+Ca~II + Ca~III & $93 + 150 = 243$ & $243 \times 243$ & $\sim$1,700 \\
+Fe~II + Fe~III & $796 + 566 = 1{,}362$ & $1362 \times 1362$ & $\sim$28,000 \\
+S~II + S~III   & $85 + 58 = 143$  & $143 \times 143$  & $\sim$4,500 \\
+\midrule
+\textbf{Total} & \textbf{2,017} & --- & $\sim$36,600 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The matrix element $A_{ij}$ ($i \neq j$) represents the rate of transitions \emph{into} level $i$ from level $j$.  The diagonal $A_{ii} = -\sum_{j \neq i} R_{i \to j}$ ensures row sums are zero.
+
+\section{Transition Rates}\index{NLTE!Transition Rates}
+
+\subsection{Radiative Bound--Bound}
+
+Using Einstein coefficients loaded from the atomic database:
+\begin{align}
+R_\mathrm{abs}(l \to u) &= B_{lu} \, \bar{J}(\nu_{lu}) & \text{(absorption)} \\
+R_\mathrm{stim}(u \to l) &= B_{ul} \, \bar{J}(\nu_{lu}) & \text{(stimulated emission)} \\
+R_\mathrm{spont}(u \to l) &= A_{ul} & \text{(spontaneous emission)}
+\end{align}
+where $\bar{J}(\nu)$ is the angle-averaged mean intensity at the line frequency, obtained from the Monte Carlo frequency histogram (Section~\ref{sec:jnu_histogram}).
+
+\subsection{Collisional Bound--Bound}
+
+Since no collision data exists for Si/Ca/Fe/S in the atomic database, we use standard approximation formulas:
+
+\paragraph{Permitted transitions} (van Regemorter 1962):
+\begin{equation}
+C_{l \to u} = 2.16 \times 10^{-6} \, n_e \, f_{lu} \, \frac{\bar{g} \, e^{-\Delta E / k_B T_e}}{g_l \, \sqrt{T_e}}
+\label{eq:van_regemorter}
+\end{equation}
+with effective Gaunt factor $\bar{g} \approx 0.2$ for allowed transitions.
+
+\paragraph{Forbidden transitions} (Axelrod 1980):
+\begin{equation}
+C_{l \to u} = 8.63 \times 10^{-6} \, n_e \, \frac{\Omega}{g_l \, \sqrt{T_e}} \, e^{-\Delta E / k_B T_e}
+\label{eq:axelrod}
+\end{equation}
+with effective collision strength $\Omega \approx 1.0$.
+
+\paragraph{Downward collisional rates} follow detailed balance:
+\begin{equation}
+C_{u \to l} = C_{l \to u} \, \frac{g_l}{g_u} \, e^{\Delta E / k_B T_e}
+\end{equation}
+
+\subsection{Photoionization}\index{NLTE!Photoionization}
+
+Photoionization couples the lower ion to the ground state of the higher ion via the Kramers hydrogenic cross-section:
+\begin{equation}
+\sigma_\mathrm{bf}(\nu) = \sigma_0 \left(\frac{\nu_\mathrm{thresh}}{\nu}\right)^3 \quad \text{for } \nu \geq \nu_\mathrm{thresh}
+\label{eq:kramers}
+\end{equation}
+where $\sigma_0 = 7.91 \times 10^{-18} / Z_\mathrm{eff}^2$\,cm$^2$ and $\nu_\mathrm{thresh} = (\chi - E_l) / h$ is the level-dependent ionization threshold.  The photoionization rate is:
+\begin{equation}
+R_\mathrm{bf}(l) = \int_{\nu_\mathrm{thresh}}^{\infty} \frac{4\pi \, \bar{J}_\nu \, \sigma_\mathrm{bf}(\nu)}{h\nu} \, d\nu
+\end{equation}
+evaluated numerically over the $\bar{J}_\nu$ histogram.
+
+\subsection{Recombination}
+
+Recombination rates follow from the Milne detailed-balance relation:
+\begin{equation}
+R_\mathrm{rec}(l) = R_\mathrm{bf}(l) \times n_e \left(\frac{h^2}{2\pi m_e k_B T_e}\right)^{3/2} \frac{g_l}{2\,g_\mathrm{ion}} \, e^{(\chi - E_l) / k_B T_e}
+\end{equation}
+
+\section{The $\bar{J}_\nu$ Frequency Histogram}\label{sec:jnu_histogram}\index{NLTE!J nu Histogram}
+
+To evaluate radiative rates, the solver needs the frequency-resolved mean intensity $\bar{J}_\nu$ in each shell.  This is accumulated during Monte Carlo transport as a logarithmically-binned frequency histogram:
+
+\begin{equation}
+j_\nu^\mathrm{raw}(s, b) = \sum_\mathrm{steps} \epsilon_\mathrm{cmf} \times d_\mathrm{step} \quad \text{for } \nu_\mathrm{cmf} \in \text{bin } b
+\end{equation}
+
+normalized after each iteration to physical units:
+\begin{equation}
+\bar{J}_\nu(s, b) = \frac{j_\nu^\mathrm{raw}(s, b)}{4\pi \, V_\mathrm{shell} \, \Delta t_\mathrm{sim} \, \Delta\nu_b}
+\end{equation}
+
+\begin{definition}[Frequency Grid]
+1000 logarithmically spaced bins covering $\nu_\mathrm{min} = 1.5 \times 10^{14}$\,Hz ($\lambda = 20{,}000$\,\AA) to $\nu_\mathrm{max} = 3 \times 10^{16}$\,Hz ($\lambda = 100$\,\AA), with $\Delta\log\nu = 0.00529$ per bin ($\sim$1.2\% resolution).
+\end{definition}
+
+On the GPU, each packet step adds one \texttt{atomicAdd} to the appropriate frequency bin, using the comoving-frame frequency already computed for the standard $j$-estimator.  The memory cost is 240\,KB (30 shells $\times$ 1000 bins $\times$ 8 bytes).
+
+\section{Matrix Solve: CPU and GPU Paths}\index{NLTE!Matrix Solver}
+
+\subsection{CPU Path: Column-Oriented Gaussian Elimination}
+
+For the CPU binary (\texttt{lumina}), the rate matrix is solved via Gaussian elimination with partial pivoting.  The matrix is stored in column-major format (for compatibility with the GPU path), and the elimination uses a cache-friendly column-oriented algorithm where the inner loop iterates over rows within a column (stride-1 access):
+
+\begin{lstlisting}[language=C,caption={Cache-friendly column-oriented elimination},label=lst:gauss_cm]
+// Inner loop: column j (outer), row i (inner = contiguous)
+for (int j = k + 1; j < N; j++) {
+    double A_kj = A[j * N + k];  // pivot row element
+    for (int i = k + 1; i < N; i++)
+        A[j * N + i] -= A[k * N + i] * A_kj;
+}
+\end{lstlisting}
+
+With OpenMP parallelization across shells (\texttt{schedule(dynamic,1)}), the CPU NLTE solve takes $\sim$20\,s for all 4 ion pairs $\times$ 30 shells (dominated by Fe at $1362 \times 1362$).
+
+\subsection{GPU Path: cuBLAS Batched LU Factorization}
+
+For the GPU binary (\texttt{lumina\_cuda}), the matrix solve uses cuBLAS batched operations to solve all 30 shells simultaneously on the GPU:
+
+\begin{enumerate}
+\item \textbf{Assembly (CPU, OpenMP)}: For each ion pair, assemble $N \times N$ rate matrices for all 30 shells in parallel ($\sim$100\,ms).
+\item \textbf{Upload}: Copy matrices and RHS vectors to GPU.
+\item \textbf{LU factorization}: \texttt{cublasDgetrfBatched()} --- batched LU decomposition of 30 matrices.
+\item \textbf{Triangular solve}: \texttt{cublasDgetrsBatched()} --- batched forward/back substitution.
+\item \textbf{Download}: Copy solution vectors back to CPU.
+\end{enumerate}
+
+\begin{table}[h]
+\centering
+\caption{NLTE solver performance comparison (200K packets, 3 iterations).}
+\label{tab:nlte_performance}
+\begin{tabular}{lrrr}
+\toprule
+\textbf{Configuration} & \textbf{Total time} & \textbf{NLTE overhead} & \textbf{Speedup} \\
+\midrule
+GPU transport, no NLTE        & 6.1\,s  & ---    & --- \\
+GPU transport + cuBLAS NLTE   & 9.1\,s  & 3.0\,s & 1.0$\times$ \\
+CPU+OMP transport + Gauss NLTE & 22.8\,s & 15.4\,s & --- \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The cuBLAS batched solve reduces the NLTE matrix solve from $\sim$20\,s (CPU Gaussian elimination) to $\sim$3\,s, a \textbf{7$\times$ speedup}.  At production packet counts (2M+), the NLTE overhead becomes negligible compared to the transport kernel.
+
+\begin{important}
+GPU memory for the cuBLAS solver: the Fe $1362 \times 1362$ matrices for 30 shells require $30 \times 1362^2 \times 8 = 425$\,MB of GPU memory, pre-allocated at initialization.  This fits comfortably within the 32\,GB VRAM of the RTX~5000~Ada.
+\end{important}
+
+\section{$\tau_\mathrm{Sobolev}$ Update from NLTE Populations}\index{NLTE!Tau Sobolev Update}
+
+After solving the rate equations, the Sobolev optical depth for each NLTE line is recomputed using the NLTE level populations instead of Boltzmann:
+\begin{equation}
+\tau_\mathrm{Sob} = \frac{\pi e^2}{m_e c} \, f_{lu} \, \lambda_\mathrm{cm} \, t_\mathrm{exp} \, n_l \left(1 - \frac{g_l \, n_u}{g_u \, n_l}\right)
+\end{equation}
+where $n_l$ and $n_u$ are the NLTE lower and upper level populations respectively.  Lines not belonging to NLTE ions retain their nebular $\tau$ values.
+
+\section{Integration into the Iteration Loop}\index{NLTE!Iteration Loop}
+
+The NLTE solver is called after each Monte Carlo iteration (for iterations $> 1$), following the standard plasma state update:
+
+\begin{ocrebox}
+\textbf{Iteration workflow with NLTE enabled}
+\begin{enumerate}
+\item Monte Carlo transport kernel $\longrightarrow$ $j_\nu$ histogram + standard estimators
+\item Solve radiation field: update $W$, $T_\mathrm{rad}$, $T_\mathrm{inner}$
+\item Nebular plasma state: partition functions, $n_e$, Saha ionization, $\tau_\mathrm{Sob}$
+\item \textbf{NLTE solve}: normalize $\bar{J}_\nu$ $\to$ assemble rate matrices $\to$ solve (GPU/CPU) $\to$ update $\tau$ for NLTE lines
+\item Re-upload $\tau_\mathrm{Sob}$ to GPU for next iteration
+\end{enumerate}
+\end{ocrebox}
+
+Enable NLTE via the command line or environment variable:
+\begin{lstlisting}[language=bash]
+# GPU
+./lumina_cuda data/tardis_reference 200000 20 real nlte
+
+# CPU
+./lumina data/tardis_reference 200000 20 real nlte
+
+# Or via environment variable
+LUMINA_NLTE=1 ./lumina_cuda data/tardis_reference 200000 20
+\end{lstlisting}
+
+
 %========================================================================================
 %	PART II: CODE ARCHITECTURE
 %========================================================================================

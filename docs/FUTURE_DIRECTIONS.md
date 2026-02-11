@@ -85,238 +85,70 @@ separate long-term project.
 
 ---
 
-## 3. NLTE Rate Equations (Restricted)
+## 3. NLTE Rate Equations — IMPLEMENTED
 
-### Current approach
+### Status: Complete (February 2026)
 
-LUMINA uses the same ionization/excitation scheme as TARDIS:
+The restricted NLTE solver has been fully implemented in LUMINA, targeting
+Si II/III, Ca II/III, Fe II/III, and S II/III (2,017 levels total across
+8 ion stages, 36,616 NLTE lines).
 
-- **Ionization**: Nebular approximation (modified Saha with dilution factor W
-  and radiation temperature T_rad)
-- **Excitation**: Boltzmann distribution at T_rad for all levels
-- **Source function**: Macro-atom formalism (an implicit form of NLTE for the
-  radiation field, handling fluorescence and downbranching)
+### Implementation summary
 
-This produces W error < 1% and T_rad error < 0.3% vs TARDIS at 200K packets.
+- **Rate equations**: Statistical equilibrium with radiative BB (Einstein A/B),
+  collisional BB (van Regemorter + Axelrod), photoionization (Kramers), and
+  recombination (Milne detailed balance)
+- **J_nu histogram**: 1000 log-spaced frequency bins (1.5e14–3.0e16 Hz),
+  accumulated via atomicAdd on GPU or per-thread accumulation on CPU
+- **GPU solver**: cuBLAS batched LU factorization (`cublasDgetrfBatched` +
+  `cublasDgetrsBatched`) for all 30 shells simultaneously
+- **CPU solver**: Column-oriented Gaussian elimination with partial pivoting
+  (cache-friendly for column-major layout), OpenMP-parallel across shells
 
-### What full NLTE means
+### Matrix sizes (confirmed from atomic data)
 
-Statistical equilibrium for every level of every ion:
+| Ion pair | Levels | Matrix size |
+|----------|--------|-------------|
+| Fe II+III | 796 + 566 = 1,362 | 1362 x 1362 |
+| Si II+III | 100 + 169 = 269 | 269 x 269 |
+| Ca II+III | 93 + 150 = 243 | 243 x 243 |
+| S II+III | 85 + 58 = 143 | 143 x 143 |
 
-```
-For each level i:
+### Measured performance (200K packets, 3 iterations)
 
-    sum_j [ n_j * R(j->i) ] = n_i * sum_j [ R(i->j) ]
+| Configuration | Total time | NLTE overhead |
+|---------------|-----------|--------------|
+| GPU transport, no NLTE | 6.1 s | — |
+| GPU transport + cuBLAS NLTE | 9.1 s | +3.0 s |
+| CPU+OMP transport + Gauss NLTE | 22.8 s | +15.4 s |
 
-where R(i->j) includes:
-    - Spontaneous emission:     A_ij
-    - Stimulated emission/abs:  B_ij * J_ij
-    - Collisional transitions:  C_ij(n_e, T_e)
-    - Photoionization:          integral[ 4*pi*J_nu * sigma_bf(nu) / (h*nu) d_nu ]
-    - Recombination:            alpha_i(T_e) * n_e
-```
+GPU memory for cuBLAS: 425 MB (Fe 1362x1362 x 30 shells, pre-allocated).
+At 2M production packets, NLTE adds negligible overhead to GPU transport.
 
-This yields a linear system **A x = b** where x is the vector of level
-populations, and A is the rate matrix.
+### Usage
 
-### Restricted NLTE: target ions only
-
-Full NLTE for all 10,000+ levels is unnecessary.  A **restricted** approach
-targeting key diagnostic ions captures the dominant departures from LTE:
-
-| Ion | Levels | Why |
-|-----|--------|-----|
-| Si II / III / IV | ~80 | Classification feature; ionization balance sets 6355 A depth |
-| Ca II / III | ~60 | Strong H&K (3934, 3968 A) and IR triplet (8498, 8542, 8662 A) |
-| Fe II / III | ~300 | Dominant line blanketing; UV flux redistribution |
-| S II / III | ~50 | "W" feature diagnostic (5454, 5640 A) |
-| **Total** | **~500** | Tractable matrix size |
-
-Remaining species (C, O, Mg, Ti, Cr, Co, Ni) stay on the nebular
-approximation — their NLTE corrections are small in the photospheric phase.
-
-### Expected accuracy gains
-
-| Spectral feature | Current accuracy | With restricted NLTE |
-|-----------------|------------------|---------------------|
-| Si II 6355 A depth | Good (macro-atom helps) | Improved ionization balance |
-| Ca II H&K | Good | Better emission-to-absorption ratio |
-| UV flux (< 3500 A) | Poor | **Significantly improved** |
-| Fe-group blanketing | Good (fluorescence works) | More accurate redistribution |
-| S II "W" shape | Moderate | Improved |
-
-### GPU acceleration with Tensor Cores
-
-The rate matrix solve is a dense linear algebra problem — exactly what GPU
-Tensor Cores are designed for.
-
-**Matrix dimensions and cost:**
-
-```
-Restricted NLTE:  ~500 x 500 matrix per shell
-30 shells:        batched solve of 30 matrices simultaneously
-
-LU decomposition: O(N^3) = O(125M) FLOPs per shell
-Total:            30 x 125M = 3.75 GFLOP
-
-RTX 5000 Ada (sm_89):
-    FP32 Tensor:  ~50 TFLOP/s
-    FP64:         ~1.6 TFLOP/s  (sufficient for this problem)
-    Batched LU:   cuSOLVER cublasDgetrfBatched()
-
-Estimated time:   < 1 ms for all 30 shells (batched)
+```bash
+./lumina_cuda data/tardis_reference 200000 20 real nlte   # GPU
+./lumina data/tardis_reference 200000 20 real nlte        # CPU
+LUMINA_NLTE=1 ./lumina_cuda data/tardis_reference 200000 20  # env var
 ```
 
-For comparison, the Monte Carlo transport kernel takes ~700 ms for 200K packets.
-The NLTE matrix solve would add **< 0.2%** overhead per iteration.
+### Files
 
-**Implementation with CUDA:**
-
-```
-Per MC iteration:
-    1. Transport kernel (existing):  ~700 ms
-       -> produces J_nu estimators per shell
-    2. Rate matrix assembly:         ~1 ms
-       -> compute R(i->j) from J_nu, n_e, T_e for each shell
-    3. Batched LU solve:             < 1 ms
-       -> cuSOLVER: 30 x (500 x 500) simultaneous solves on GPU
-       -> yields new level populations n_i per shell
-    4. Update tau_sobolev:           ~1 ms
-       -> recompute line opacities from new populations
-    5. Repeat until convergence
-```
-
-**Key advantage over CPU NLTE codes**: CMFGEN and PHOENIX solve NLTE on CPU,
-taking hours per model.  With GPU batched solves, LUMINA could do restricted
-NLTE at essentially the same speed as the current nebular approximation.
-
-### Detailed NLTE cost breakdown (v1.0 implementation — CPU solver)
-
-The initial implementation uses a CPU-side Gaussian elimination solver rather
-than GPU cuSOLVER, to avoid the cuSOLVER library dependency.  Detailed cost
-analysis for both paths:
-
-**Per-element matrix sizes (confirmed from atomic data):**
-
-| Ion pair | Levels | Matrix size | FLOPs (Gauss elim) | Est. time/shell |
-|----------|--------|-------------|--------------------:|----------------:|
-| Fe II+III | 796 + 566 = 1,362 | 1362 x 1362 | 842M | ~40 ms |
-| Si II+III | 100 + 169 = 269 | 269 x 269 | 6.5M | ~0.5 ms |
-| Ca II+III | 93 + 150 = 243 | 243 x 243 | 4.8M | ~0.5 ms |
-| S II+III | 85 + 58 = 143 | 143 x 143 | 0.98M | ~0.1 ms |
-| **Total** | **2,017** | — | **854M/shell** | **~41 ms/shell** |
-
-**Full iteration cost (CPU solver, 30 shells):**
-
-| Component | Time | Memory |
-|-----------|-----:|-------:|
-| J_nu atomicAdd in transport kernel | +35--70 ms (~5--10% of 700 ms) | 240 KB GPU |
-| J_nu download + normalize | ~1 ms | 240 KB CPU |
-| Rate matrix assembly (all 4 elements, 30 shells) | ~100 ms | ~15 MB temp |
-| Gaussian elimination (Fe dominates: 40 ms x 30) | ~1.5--2.5 s | in-place |
-| tau_sobolev update from NLTE populations | ~10 ms | negligible |
-| tau_sobolev re-upload to GPU | ~1 ms | — |
-| **Total NLTE overhead per iteration** | **~2--3 s** | **~16 MB** |
-
-Current iteration without NLTE: ~750 ms (700 ms transport + 50 ms plasma).
-With NLTE: ~2.7--3.7 s per iteration (~4x slower, but adding real physics).
-
-**Future GPU solver path (cuSOLVER batched):**
-
-```
-cublasDgetrfBatched():  30 x 1362 x 1362  →  ~5-15 ms total
-cublasDgetrsBatched():  30 x 1362          →  ~1 ms total
-Total matrix solve on GPU:                     ~10-20 ms
-Full NLTE overhead with GPU solver:            ~50-100 ms (~7-14% of transport)
-```
-
-This would make NLTE essentially free compared to the 700 ms transport.
-The CPU solver is the correct first step for validation, with GPU solver
-as a straightforward future optimization.
-
-**GPU specs (NVIDIA RTX 5000 Ada, sm_89):**
-
-```
-CUDA cores:       12,800
-Tensor cores:     400 (4th gen)
-FP32 throughput:  ~50 TFLOP/s
-FP64 throughput:  ~1.6 TFLOP/s
-Memory:           32 GB GDDR6X
-Memory bandwidth: 960 GB/s
-CUDA version:     13.0
-```
-
-**J_nu frequency histogram design:**
-
-```
-Frequency range:  1.5e14 -- 3.0e16 Hz  (100 -- 20000 A)
-Binning:          1000 logarithmic bins (d_log_nu = 0.00529)
-Resolution:       ~1.2% per bin (Doppler width ~0.003% → well resolved)
-Memory per shell: 8000 bytes (1000 x double)
-Total GPU memory: 240 KB (30 shells x 8 KB)
-```
-
-Each packet step contributes one atomicAdd to the appropriate J_nu bin,
-using the comoving-frame frequency and energy already computed for the
-existing j_estimator update.  The overhead is one `log()` + one `atomicAdd`
-per step, estimated at ~5--10% transport slowdown.
-
-### Data requirements
-
-All required atomic data is already in `kurucz_cd23_chianti_H_He.h5`:
-
-| Data | Status |
-|------|--------|
-| Energy levels (E_i) | Available (10,770 levels loaded) |
-| Radiative rates (A_ij) | Available (transition_probabilities) |
-| Line wavelengths | Available (271,741 lines) |
-| Photoionization cross-sections | Available (phot_data in HDF5) |
-| Collisional rates | Need to compute: van Regemorter (permitted), Axelrod (forbidden) |
-
-Collisional rate approximations:
-
-- **Permitted transitions**: van Regemorter (1962) formula using oscillator
-  strengths (already in atomic data)
-- **Forbidden transitions**: Axelrod (1980) approximation, C_ij ~ 8.6e-6 *
-  Omega / (g_i * T_e^0.5), with effective collision strength Omega ~ 1
-- These approximations are standard in SN Ia codes and sufficient for
-  photospheric conditions
-
-### Implementation phases
-
-**Phase A**: Infrastructure (2-3 weeks)
-- Define NLTE level subset for Si, Ca, Fe, S
-- Build rate matrix assembly on GPU (using existing atomic data)
-- Implement cuSOLVER batched LU
-- Validate: reproduce nebular approximation as limiting case (W -> 0.5, T_rad -> T_bb)
-
-**Phase B**: J_nu coupling (1-2 weeks)
-- Extract frequency-binned J_nu from MC estimators (j_estimator / nu_bar)
-- Compute photoionization and stimulated emission rates from J_nu
-- Close the loop: MC transport <-> NLTE populations <-> tau_sobolev
-
-**Phase C**: Validation and tuning (2-3 weeks)
-- Compare Si II/III ionization fractions vs TARDIS (nebular approx.)
-- Compare vs published CMFGEN/PHOENIX results for SN Ia models
-- Quantify UV spectrum improvement
-- Add NLTE corrections to ML training pipeline
-
-### Priority
-
-**High scientific value, feasible with GPU.**  This is the most impactful
-physics upgrade LUMINA can make.  The GPU Tensor Core approach makes it
-uniquely fast compared to existing NLTE codes.
-
-Recommended timeline: after the ML pipeline (Stages 1-3) is validated and
-producing results.
+- `src/lumina_plasma.c`: `nlte_assemble_rate_matrix()`, `nlte_solve_all()`,
+  column-oriented `gauss_solve()`
+- `src/lumina_cuda.cu`: `CudaNLTESolver`, `cuda_nlte_batched_solve()`,
+  `nlte_solve_all_gpu()`, J_nu kernel accumulation
+- `src/lumina.h`: `NLTEConfig` struct, function declarations
+- `Makefile`: `-lcublas` for CUDA build
 
 ---
 
 ## Summary
 
-| Direction | Impact | Feasibility | Priority |
-|-----------|--------|-------------|----------|
-| Comoving-frame integration | Low (Sobolev is excellent) | Medium | Low — only for nebular phase |
-| 2D/3D geometry | High (asymmetry, polarization) | Hard (major rewrite) | Long-term |
-| Clumping factor | Medium (ionization balance) | Easy (one parameter) | Medium-term |
-| **Restricted NLTE on GPU** | **High (UV, ionization)** | **Feasible (Tensor Cores)** | **Next major upgrade** |
+| Direction | Impact | Feasibility | Status |
+|-----------|--------|-------------|--------|
+| Comoving-frame integration | Low (Sobolev is excellent) | Medium | Not needed |
+| 2D/3D geometry | High (asymmetry, polarization) | Hard (major rewrite) | Future |
+| Clumping factor | Medium (ionization balance) | Easy (one parameter) | Future |
+| **Restricted NLTE on GPU** | **High (UV, ionization)** | **Feasible (Tensor Cores)** | **DONE** |
