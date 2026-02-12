@@ -468,6 +468,97 @@ static void compute_tau_sobolev(AtomicData *atom, PlasmaState *plasma,
     }
 }
 
+/* ============================================================ */
+/* Dynamic macro-atom transition probability recomputation      */
+/* ============================================================ */
+
+static inline double beta_sobolev(double tau) {
+    if (tau < 1e-6) return 1.0 - 0.5 * tau;   /* Taylor expansion */
+    if (tau > 500.0) return 1.0 / tau;          /* asymptotic */
+    return (1.0 - exp(-tau)) / tau;
+}
+
+static inline double planck_bnu(double T, double nu) {
+    double x = H_PLANCK * nu / (K_BOLTZMANN * T);
+    if (x > 500.0) return 0.0;
+    return (2.0 * H_PLANCK * nu * nu * nu / (C_SPEED_OF_LIGHT * C_SPEED_OF_LIGHT))
+           / (exp(x) - 1.0);
+}
+
+void compute_transition_probabilities(AtomicData *atom, PlasmaState *plasma,
+                                       OpacityState *opacity,
+                                       double damping_constant, int apply_damping) {
+    int n_shells = opacity->n_shells;
+    int n_levels = opacity->n_macro_levels;
+    int n_trans  = opacity->n_macro_transitions;
+
+    /* Find max block size for temp buffer */
+    int max_block = 0;
+    for (int lev = 0; lev < n_levels; lev++) {
+        int bs = opacity->macro_block_references[lev + 1] -
+                 opacity->macro_block_references[lev];
+        if (bs > max_block) max_block = bs;
+    }
+    double *rates_buf = (double *)malloc(max_block * sizeof(double));
+
+    for (int s = 0; s < n_shells; s++) {
+        double W     = plasma->W[s];
+        double T_rad = plasma->T_rad[s];
+
+        for (int lev = 0; lev < n_levels; lev++) {
+            int block_start = opacity->macro_block_references[lev];
+            int block_end   = opacity->macro_block_references[lev + 1];
+            if (block_start >= block_end) continue;
+
+            /* Phase 1: Compute raw rates into temp buffer */
+            double sum_rates = 0.0;
+
+            for (int tid = block_start; tid < block_end; tid++) {
+                int ttype   = opacity->transition_type[tid];
+                int line_id = opacity->transition_line_id[tid];
+                double rate = 0.0;
+
+                if (line_id >= 0 && line_id < atom->n_lines) {
+                    double tau = opacity->tau_sobolev[line_id * n_shells + s];
+                    double beta = beta_sobolev(tau);
+
+                    if (ttype == -1) {
+                        /* BB emission: A_ul * beta_sobolev */
+                        rate = atom->line_A_ul[line_id] * beta;
+                    } else if (ttype == 0) {
+                        /* Internal down: A_ul * (1 - beta_sobolev) */
+                        rate = atom->line_A_ul[line_id] * (1.0 - beta);
+                    } else if (ttype == 1) {
+                        /* Internal up: B_lu * W * B_nu(T_rad, nu_line) */
+                        double nu_line = atom->line_nu[line_id];
+                        rate = atom->line_B_lu[line_id] * W * planck_bnu(T_rad, nu_line);
+                    }
+                }
+                if (rate < 0.0) rate = 0.0;
+                rates_buf[tid - block_start] = rate;
+                sum_rates += rate;
+            }
+
+            /* Phase 2: Normalize and apply (with optional damping) */
+            if (sum_rates > 0.0) {
+                for (int tid = block_start; tid < block_end; tid++) {
+                    double p_new = rates_buf[tid - block_start] / sum_rates;
+                    if (apply_damping) {
+                        double p_old = opacity->transition_probabilities[tid * n_shells + s];
+                        p_new = p_old + damping_constant * (p_new - p_old);
+                    }
+                    opacity->transition_probabilities[tid * n_shells + s] = p_new;
+                }
+            }
+            /* If sum_rates == 0: keep existing probabilities (degenerate level) */
+        }
+    }
+
+    free(rates_buf);
+    printf("  [TransProb] Recomputed %d transitions x %d shells (damping=%s)\n",
+           n_trans, n_shells, apply_damping ? "on" : "off");
+}
+
 /* Task #072 Step 4e: Master plasma state update */
 void compute_plasma_state(AtomicData *atom, PlasmaState *plasma,
                           OpacityState *opacity, double time_explosion) {

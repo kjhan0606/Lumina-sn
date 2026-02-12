@@ -136,6 +136,11 @@ int main(int argc, char *argv[]) {
     if (getenv("LUMINA_NLTE_START_ITER"))
         nlte_start_iter = atoi(getenv("LUMINA_NLTE_START_ITER"));
 
+    /* Dynamic transition probability update: default OFF, enable with LUMINA_DYNAMIC_TRANSPROB=1 */
+    int enable_transprob_update = 0;
+    if (getenv("LUMINA_DYNAMIC_TRANSPROB"))
+        enable_transprob_update = 1;
+
     printf("\nSimulation parameters:\n"); /* Phase 5 - Step 3 */
     printf("  Packets: %d, Iterations: %d\n", n_packets, n_iterations); /* Phase 5 - Step 3 */
     printf("  Line interaction: MACROATOM\n"); /* Phase 5 - Step 3 */
@@ -146,6 +151,7 @@ int main(int argc, char *argv[]) {
     else
         printf("  NLTE: %s\n", enable_nlte ? "ENABLED (all iters)" : "disabled");
     printf("  T_inner: %.2f K\n", config.T_inner); /* Phase 5 - Step 3 */
+    printf("  Transition probs: %s\n", enable_transprob_update ? "DYNAMIC" : "FROZEN");
 
     /* Phase 5 - Step 4: Compute shell volumes */
     double *volume = (double *)malloc(geo.n_shells * sizeof(double)); /* Phase 5 - Step 4 */
@@ -337,6 +343,13 @@ int main(int argc, char *argv[]) {
                 nlte_normalize_j_nu(&nlte, time_simulation, volume, geo.n_shells);
                 nlte_solve_all(&nlte, &atom_data, &plasma, &opacity,
                                geo.time_explosion, geo.n_shells);
+            }
+
+            /* Dynamic transition probability recomputation */
+            if (enable_transprob_update && iter >= config.hold_iterations) {
+                compute_transition_probabilities(&atom_data, &plasma, &opacity,
+                    config.damping_constant,
+                    (iter > config.hold_iterations) ? 1 : 0);
             }
         }
 

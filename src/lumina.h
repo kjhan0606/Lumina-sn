@@ -431,6 +431,9 @@ int load_atomic_data(AtomicData *atom, const char *ref_dir, int n_shells);
 void free_atomic_data(AtomicData *atom);
 void compute_plasma_state(AtomicData *atom, PlasmaState *plasma,
                           OpacityState *opacity, double time_explosion);
+void compute_transition_probabilities(AtomicData *atom, PlasmaState *plasma,
+                                       OpacityState *opacity,
+                                       double damping_constant, int apply_damping);
 
 /* NLTE: Restricted NLTE rate equation solver */
 int  nlte_init(NLTEConfig *nlte, AtomicData *atom, OpacityState *opacity,

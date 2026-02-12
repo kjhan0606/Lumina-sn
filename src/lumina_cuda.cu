@@ -1462,6 +1462,11 @@ int main(int argc, char *argv[]) {
     if (getenv("LUMINA_NLTE_START_ITER"))
         nlte_start_iter = atoi(getenv("LUMINA_NLTE_START_ITER"));
 
+    /* Dynamic transition probability update: default OFF, enable with LUMINA_DYNAMIC_TRANSPROB=1 */
+    int enable_transprob_update = 0;
+    if (getenv("LUMINA_DYNAMIC_TRANSPROB"))
+        enable_transprob_update = 1;
+
     printf("\nSimulation parameters:\n");
     printf("  Packets: %d, Iterations: %d\n", n_packets, n_iterations);
     printf("  Line interaction: MACROATOM\n");
@@ -1476,6 +1481,7 @@ int main(int argc, char *argv[]) {
     else
         printf("  NLTE: %s\n", enable_nlte ? "ENABLED (all iters)" : "disabled");
     printf("  T_inner: %.2f K\n", config.T_inner);
+    printf("  Transition probs: %s\n", enable_transprob_update ? "DYNAMIC" : "FROZEN");
 
     /* Phase 6 - Step 8: Compute shell volumes */
     double *volume = (double *)malloc(geo.n_shells * sizeof(double)); /* Phase 6 - Step 8 */
@@ -1645,11 +1651,25 @@ int main(int argc, char *argv[]) {
                 /* tau_sobolev already updated inside nlte_solve_all_gpu */
             }
 
+            /* Dynamic transition probability recomputation */
+            if (enable_transprob_update && iter >= config.hold_iterations) {
+                compute_transition_probabilities(&atom_data, &plasma, &opacity,
+                    config.damping_constant,
+                    (iter > config.hold_iterations) ? 1 : 0);
+            }
+
             CUDA_CHECK(cudaMemcpy(dev.d_tau_sobolev, opacity.tau_sobolev,
                        (size_t)opacity.n_lines * geo.n_shells * sizeof(double),
                        cudaMemcpyHostToDevice));
             CUDA_CHECK(cudaMemcpy(dev.d_electron_density, opacity.electron_density,
                        geo.n_shells * sizeof(double), cudaMemcpyHostToDevice));
+            /* Re-upload updated transition probabilities to GPU */
+            if (enable_transprob_update && iter >= config.hold_iterations) {
+                CUDA_CHECK(cudaMemcpy(dev.d_transition_probabilities,
+                           opacity.transition_probabilities,
+                           (size_t)opacity.n_macro_transitions * geo.n_shells * sizeof(double),
+                           cudaMemcpyHostToDevice));
+            }
         }
 
         /* Phase 6 - Step 8: Print plasma state */
