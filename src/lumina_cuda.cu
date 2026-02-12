@@ -270,10 +270,11 @@ static void nlte_solve_all_gpu(NLTEConfig *nlte, AtomicData *atom,
                                 CudaNLTESolver *sol) {
     printf("  [NLTE-GPU] Solving rate equations (cuBLAS batched)...\n");
 
-    int pairs[][2] = { {0, 1}, {2, 3}, {4, 5}, {6, 7} };
-    const char *names[] = { "Si", "Ca", "Fe", "S" };
+    int n_pairs = nlte->n_nlte_ions / 2;
+    int pairs[][2] = { {0,1}, {2,3}, {4,5}, {6,7}, {8,9}, {10,11} };
+    const char *names[] = { "Si", "Ca", "Fe", "S", "Co", "Ni" };
 
-    for (int p = 0; p < 4; p++) {
+    for (int p = 0; p < n_pairs; p++) {
         int lo = pairs[p][0], hi = pairs[p][1];
         int lev_start = nlte->nlte_ion_level_offset[lo];
         int N = nlte->nlte_ion_level_offset[hi + 1] - lev_start;
@@ -404,7 +405,7 @@ static void nlte_solve_all_gpu(NLTEConfig *nlte, AtomicData *atom,
     }
 
     /* Print diagnostics */
-    for (int p = 0; p < 4; p++) {
+    for (int p = 0; p < n_pairs; p++) {
         int lo = pairs[p][0];
         int lev_s = nlte->nlte_ion_level_offset[lo];
         int lev_e = nlte->nlte_ion_level_offset[lo + 1];
@@ -1387,7 +1388,7 @@ int main(int argc, char *argv[]) {
     else if (enable_virtual) mode_str = "real + virtual";
     else if (enable_rotation) mode_str = "real + rotation";
     printf("  Spectrum mode: %s\n", mode_str);
-    printf("  NLTE: %s\n", enable_nlte ? "ENABLED (Si/Ca/Fe/S)" : "disabled");
+    printf("  NLTE: %s\n", enable_nlte ? "ENABLED (Si/Ca/Fe/S/Co/Ni)" : "disabled");
     printf("  T_inner: %.2f K\n", config.T_inner);
 
     /* Phase 6 - Step 8: Compute shell volumes */
@@ -1420,10 +1421,11 @@ int main(int argc, char *argv[]) {
         cuda_allocate_nlte(&dev, &nlte, geo.n_shells);
         /* Find max level count across all ion pairs for cuBLAS allocation */
         int max_N = 0;
-        int pairs_init[][2] = { {0,1}, {2,3}, {4,5}, {6,7} };
-        for (int p = 0; p < 4; p++) {
-            int N = nlte.nlte_ion_level_offset[pairs_init[p][1] + 1] -
-                    nlte.nlte_ion_level_offset[pairs_init[p][0]];
+        int n_pairs_init = nlte.n_nlte_ions / 2;
+        for (int p = 0; p < n_pairs_init; p++) {
+            int lo = 2 * p, hi = 2 * p + 1;
+            int N = nlte.nlte_ion_level_offset[hi + 1] -
+                    nlte.nlte_ion_level_offset[lo];
             if (N > max_N) max_N = N;
         }
         cuda_nlte_solver_init(&nlte_solver, max_N, geo.n_shells);

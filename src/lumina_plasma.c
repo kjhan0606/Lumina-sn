@@ -506,13 +506,13 @@ void compute_plasma_state(AtomicData *atom, PlasmaState *plasma,
 }
 
 /* ============================================================ */
-/* NLTE: Restricted NLTE Rate Equation Solver                   */
-/* Targets: Si II/III, Ca II/III, Fe II/III, S II/III (2017 lvls) */
+/* NLTE: Full NLTE Rate Equation Solver                         */
+/* Targets: Si,Ca,Fe,S,Co,Ni II/III (6 pairs, ~3500 levels)    */
 /* ============================================================ */
 
-/* NLTE target ion definitions */
-static const int NLTE_TARGET_Z[]   = { 14, 14, 20, 20, 26, 26, 16, 16 };
-static const int NLTE_TARGET_ION[] = {  1,  2,  1,  2,  1,  2,  1,  2 };
+/* NLTE target ion definitions: 6 element pairs (12 ions) */
+static const int NLTE_TARGET_Z[]   = { 14, 14, 20, 20, 26, 26, 16, 16, 27, 27, 28, 28 };
+static const int NLTE_TARGET_ION[] = {  1,  2,  1,  2,  1,  2,  1,  2,  1,  2,  1,  2 };
 
 /* van Regemorter collision rate constant:
  * C_ij = 14.5 * a_0^2 * sqrt(2*pi*k_B/(m_e)) * n_e * f_ij / sqrt(T_e) * exp(-dE/kT)
@@ -991,12 +991,13 @@ void nlte_solve_all(NLTEConfig *nlte, AtomicData *atom, PlasmaState *plasma,
                      int n_shells) {
     printf("  [NLTE] Solving rate equations...\n");
 
-    /* Solve ion pairs: (Si II+III), (Ca II+III), (Fe II+III), (S II+III) */
-    /* Ion indices: 0=Si II, 1=Si III, 2=Ca II, 3=Ca III, etc. */
-    int pairs[][2] = { {0, 1}, {2, 3}, {4, 5}, {6, 7} };
-    const char *names[] = { "Si", "Ca", "Fe", "S" };
+    /* Solve ion pairs: (Si II+III), (Ca II+III), (Fe II+III), (S II+III),
+     * (Co II+III), (Ni II+III) */
+    int n_pairs = nlte->n_nlte_ions / 2;
+    int pairs[][2] = { {0,1}, {2,3}, {4,5}, {6,7}, {8,9}, {10,11} };
+    const char *names[] = { "Si", "Ca", "Fe", "S", "Co", "Ni" };
 
-    for (int p = 0; p < 4; p++) {
+    for (int p = 0; p < n_pairs; p++) {
         int lo = pairs[p][0], hi = pairs[p][1];
         int n_levels = nlte->nlte_ion_level_offset[hi + 1] -
                        nlte->nlte_ion_level_offset[lo];
@@ -1015,7 +1016,7 @@ void nlte_solve_all(NLTEConfig *nlte, AtomicData *atom, PlasmaState *plasma,
     nlte_update_tau_sobolev(nlte, atom, opacity, time_explosion, n_shells);
 
     /* Print diagnostics: compare total NLTE vs nebular ion densities */
-    for (int p = 0; p < 4; p++) {
+    for (int p = 0; p < n_pairs; p++) {
         int lo = pairs[p][0];
         int lev_s = nlte->nlte_ion_level_offset[lo];
         int lev_e = nlte->nlte_ion_level_offset[lo + 1];

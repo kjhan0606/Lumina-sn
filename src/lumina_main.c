@@ -135,7 +135,7 @@ int main(int argc, char *argv[]) {
     printf("  Packets: %d, Iterations: %d\n", n_packets, n_iterations); /* Phase 5 - Step 3 */
     printf("  Line interaction: MACROATOM\n"); /* Phase 5 - Step 3 */
     printf("  Spectrum mode: %s\n", enable_rotation ? "real + rotation" : "real only");
-    printf("  NLTE: %s\n", enable_nlte ? "ENABLED (Si/Ca/Fe/S)" : "disabled");
+    printf("  NLTE: %s\n", enable_nlte ? "ENABLED (Si/Ca/Fe/S/Co/Ni)" : "disabled");
     printf("  T_inner: %.2f K\n", config.T_inner); /* Phase 5 - Step 3 */
 
     /* Phase 5 - Step 4: Compute shell volumes */

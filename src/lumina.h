@@ -231,7 +231,7 @@ typedef struct {
 #define NLTE_N_FREQ_BINS  1000
 #define NLTE_NU_MIN       1.5e14    /* c / 20000 A */
 #define NLTE_NU_MAX       3.0e16    /* c / 100 A */
-#define NLTE_MAX_IONS     8         /* Si II/III, Ca II/III, Fe II/III, S II/III */
+#define NLTE_MAX_IONS     12        /* Si,Ca,Fe,S,Co,Ni  II/III (6 pairs) */
 
 typedef struct {
     int    enabled;

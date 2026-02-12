@@ -356,6 +356,34 @@ These are non-fatal warnings during atomic data loading. They can be safely igno
 
 ---
 
+## Comparison with Other Codes
+
+LUMINA-SN occupies a unique niche: **TARDIS physics + GPU acceleration + NLTE + ML fitting pipeline**.
+
+| Feature | **LUMINA** | **TARDIS** | **SYN++** | **SEDONA** | **ARTIS** | **CMFGEN** | **PHOENIX** |
+|---|---|---|---|---|---|---|---|
+| RT method | MC | MC | Parametric | MC | MC | CMF-ALI | ALI |
+| Geometry | 1D | 1D | 1D | 3D | 3D | 1D | 1D |
+| NLTE | Full* | Dilute-LTE | LTE | LTE/NLTE | Full | Full | Full |
+| Macro-atom | Yes | Yes | No | Partial | Yes | --- | --- |
+| GPU accel. | **CUDA** | No | No | No | No | No | No |
+| Time-dep. | No | No | No | Yes | Yes | No | No |
+| Speed (1 model) | **~14s** (GPU) | ~60-120s | ~1s | ~hours | ~hours | ~hours | ~hours |
+
+*\*Full statistical equilibrium for Si, Ca, Fe, S (2017 levels, 36K NLTE lines). Same physics as CMFGEN/PHOENIX (radiative BB, collisional BB, photoionization, recombination). Other species use nebular approximation.*
+
+**Key advantages:**
+- **vs TARDIS**: 10x faster (GPU), full NLTE for key ions, no Python runtime dependency
+- **vs SYN++**: Self-consistent radiation field, macro-atom fluorescence, quantitative abundances
+- **vs SEDONA/ARTIS**: GPU acceleration enables large parameter surveys (5000 models/day)
+- **vs CMFGEN/PHOENIX**: Monte Carlo handles line overlap naturally; 100x faster per model
+
+**Trade-offs:** 1D only, single epoch, SN Ia focused, NLTE limited to 4 elements (vs all species in CMFGEN/PHOENIX/ARTIS).
+
+For a detailed comparison, see Chapter 15 of the [Technical Manual](docs/manual/).
+
+---
+
 ## Technical Documentation
 
 For detailed technical information, see the `docs/` directory:

@@ -769,7 +769,7 @@ The nebular approximation (Chapter~8) treats ionization via a modified Saha equa
 \item \textbf{Calcium H\&K}: The emission-to-absorption ratio of Ca~II depends sensitively on the population of the $4p$ levels, which depart significantly from Boltzmann.
 \end{itemize}
 
-LUMINA implements a \textbf{restricted NLTE solver} targeting the four most important diagnostic elements: Si, Ca, Fe, and S (8 ion stages total, $\sim$2000 levels).  All other species remain on the nebular approximation.
+LUMINA implements a \textbf{full NLTE solver} for the four most spectroscopically important elements: Si, Ca, Fe, and S (8 ion stages total, $\sim$2000 levels).  For these species, the complete statistical equilibrium is solved including all radiative (bound--bound and bound--free) and collisional rates---the same physics as CMFGEN or PHOENIX.  All other species (C, O, Co, Ni) remain on the nebular approximation, as they contribute negligibly to the optical spectrum of normal SN~Ia at photospheric epochs.
 
 \section{Statistical Equilibrium}\index{NLTE!Statistical Equilibrium}
 
@@ -966,6 +966,98 @@ Enable NLTE via the command line or environment variable:
 # Or via environment variable
 LUMINA_NLTE=1 ./lumina_cuda data/tardis_reference 200000 20
 \end{lstlisting}
+
+
+\section{Roadmap: All-Species NLTE}\index{NLTE!Roadmap}
+
+While the current NLTE solver covers the four most important optical diagnostic elements, a complete treatment requires additional species and inter-species coupling.
+
+\subsection{Species Coverage}
+
+Table~\ref{tab:nlte_tiers} shows the prioritised expansion roadmap.
+
+\begin{table}[h]
+\centering
+\caption{NLTE species expansion tiers for SN~Ia.}
+\label{tab:nlte_tiers}
+\small
+\begin{tabular}{clrrp{5.5cm}}
+\toprule
+\textbf{Tier} & \textbf{Ion pair} & \textbf{Levels} & \textbf{Lines} & \textbf{Motivation} \\
+\midrule
+\multirow{4}{*}{Current}
+  & Si II/III & 269 & 1,815 & Si~II~6355\,\AA\ (primary SN~Ia diagnostic) \\
+  & Ca II/III & 243 & 2,518 & Ca~II H\&K, NIR triplet \\
+  & Fe II/III & 1,362 & 31,613 & UV/optical line blanketing (dominant) \\
+  & S  II/III & 143 & 670 & S~``W'' feature at 5640\,\AA \\
+\midrule
+\multirow{2}{*}{1}
+  & Co II/III & 469 & 5,100 & $^{56}$Ni decay product; optical blanketing \\
+  & Ni II/III & 1,061 & 22,606 & $^{56}$Ni parent; Fe-group blanketing \\
+\midrule
+\multirow{2}{*}{2}
+  & C  II    & $\sim$40 & $\sim$200 & C~II~6580\,\AA\ (unburned carbon diagnostic) \\
+  & Mg II    & $\sim$50 & $\sim$100 & Mg~II~4481\,\AA\ (high-$v$ SN~Ia) \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\noindent After Tier~1, the NLTE solver will cover $\sim$3500 levels across 6 ion pairs, accounting for $>$99\% of the optical depth in normal SN~Ia.  The runtime overhead is modest: cuBLAS batched LU scales well, and the added Ni~II/III ($1061 \times 1061$ matrix) is smaller than the existing Fe~II/III ($1362 \times 1362$).
+
+\begin{table}[h]
+\centering
+\caption{Estimated runtime impact of NLTE expansion.}
+\label{tab:nlte_runtime}
+\begin{tabular}{lrrl}
+\toprule
+\textbf{Component} & \textbf{Current (4 pairs)} & \textbf{After Tier 1 (6 pairs)} & \textbf{Change} \\
+\midrule
+Rate matrix construction & $\sim$1.5\,s & $\sim$2.7\,s & +80\% \\
+cuBLAS LU solve & $\sim$1.5\,s & $\sim$2.0\,s & +33\% \\
+\textbf{NLTE subtotal} & \textbf{$\sim$3.0\,s} & \textbf{$\sim$4.7\,s} & +57\% \\
+MC Transport & $\sim$10\,s & $\sim$10\,s & 0\% \\
+\textbf{Total per model} & \textbf{$\sim$14\,s} & \textbf{$\sim$15.7\,s} & +12\% \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Charge Exchange}\index{NLTE!Charge Exchange}
+
+A physically important process omitted from most Monte Carlo NLTE implementations is \textbf{charge exchange} (CE):
+\begin{equation}
+\mathrm{A}^{+} + \mathrm{B}^{2+} \rightleftharpoons \mathrm{A}^{2+} + \mathrm{B}^{+}
+\end{equation}
+Unlike photoionisation (which depends on $J_\nu$) or collisional ionisation (which depends on $n_e$), CE rates depend on the \emph{product of two ion densities}:
+\begin{equation}
+R_\mathrm{CE} = n(\mathrm{A}^{+}) \cdot n(\mathrm{B}^{2+}) \cdot \langle \sigma v \rangle_\mathrm{CE}
+\end{equation}
+with typical $\langle \sigma v \rangle_\mathrm{CE} \sim 10^{-9}$\,cm$^3$/s \citep{kingdon1996}.  In the dense inner shells of SN~Ia ejecta ($n_\mathrm{ion} \sim 10^{8}$--$10^{9}$\,cm$^{-3}$), CE rates can rival or exceed radiative recombination rates.
+
+\begin{important}
+The most important CE reactions for SN~Ia are:
+\begin{itemize}
+\item Fe$^+$ + Co$^{2+}$ $\rightleftharpoons$ Fe$^{2+}$ + Co$^+$ \ (Fe/Co co-located in $^{56}$Ni decay zone)
+\item Fe$^+$ + Ni$^{2+}$ $\rightleftharpoons$ Fe$^{2+}$ + Ni$^+$ \ ($^{56}$Ni parent material)
+\item Si$^+$ + Ca$^{2+}$ $\rightleftharpoons$ Si$^{2+}$ + Ca$^+$ \ (near-resonant ionisation potentials)
+\end{itemize}
+\end{important}
+
+\subsection{Implementation Strategy}
+
+LUMINA currently solves each ion pair independently.  Adding CE coupling does \emph{not} require solving all species simultaneously---even CMFGEN uses iterative convergence rather than a monolithic matrix:
+
+\begin{ocrebox}
+\textbf{Iterative CE coupling scheme}
+\begin{enumerate}
+\item Solve each ion pair's NLTE rate equations independently (current approach).
+\item After all pairs are solved, compute CE rates using the updated ionisation fractions.
+\item Add CE rates as additional source/sink terms to each ion pair's rate matrix.
+\item Re-solve all ion pairs with the updated rates.
+\item Repeat steps 2--4 until ionisation fractions converge (typically 3--5 inner iterations).
+\end{enumerate}
+\end{ocrebox}
+
+\noindent This approach couples the species through $n_e$, $T$, and the CE rates themselves, without increasing the matrix dimensions.  The additional cost is $\sim$3--5 re-solves of the existing batched LU system, adding at most $\sim$10\,s per Monte Carlo iteration.
 
 
 %========================================================================================
@@ -1749,6 +1841,172 @@ $T_\mathrm{rad,const}$ & $T_\mathrm{rad}$ estimator constant & $1.2523 \times 10
 \bottomrule
 \end{tabular}
 \end{table}
+
+
+%----------------------------------------------------------------------------------------
+%	CHAPTER 15: Comparison with Other Codes
+%----------------------------------------------------------------------------------------
+
+\chapter{Comparison with Other Radiative Transfer Codes}\index{Code Comparison}
+\label{ch:comparison}
+
+Numerous radiative transfer codes exist for modelling supernova spectra and light curves.
+This chapter places LUMINA-SN in context by comparing its design philosophy, physics scope,
+and computational performance against the most widely used alternatives.
+
+\section{Overview}
+
+Table~\ref{tab:code_comparison} summarises the key features of each code.
+
+\begin{table}[h]
+\centering
+\caption{Comparison of supernova radiative transfer codes.}
+\label{tab:code_comparison}
+\small
+\begin{tabular}{lcccccc}
+\toprule
+\textbf{Feature} & \textbf{LUMINA} & \textbf{TARDIS} & \textbf{SYN++} & \textbf{SEDONA} & \textbf{ARTIS} & \textbf{CMFGEN} \\
+\midrule
+RT method       & MC      & MC      & Param.  & MC      & MC      & CMF-ALI \\
+Geometry        & 1D      & 1D      & 1D      & 3D      & 3D      & 1D \\
+NLTE            & Full$^a$& Dilute  & LTE     & LTE/NLTE& Full    & Full \\
+Macro-atom      & Yes     & Yes     & No      & Partial & Yes     & --- \\
+GPU accel.      & CUDA    & No      & No      & No      & No      & No \\
+Time-dep.       & No      & No      & No      & Yes     & Yes     & No \\
+Language        & C/CUDA  & Py/Cy   & C++     & C++     & C++     & Fortran \\
+\bottomrule
+\end{tabular}
+
+\vspace{0.3em}
+\footnotesize{$^a$Full statistical equilibrium for Si, Ca, Fe, S (2017 levels); other species use the nebular approximation.}
+\end{table}
+
+\section{TARDIS}\index{Code Comparison!TARDIS}
+
+TARDIS \citep{kerzendorf2014} is the direct ancestor of LUMINA-SN.  Both codes implement the same Monte Carlo radiative transfer formalism in 1D homologous expansion with the macro-atom method of \citet{lucy2002,lucy2003}.
+
+\begin{ocrebox}
+\textbf{LUMINA advantages over TARDIS:}
+\begin{itemize}
+\item \textbf{GPU acceleration}: CUDA transport kernel provides $\sim$10$\times$ speedup over TARDIS's Cython implementation (200K packets: 0.7\,s vs 7.2\,s).
+\item \textbf{Full NLTE solver}: Statistical equilibrium with radiative + collisional rates for Si/Ca/Fe/S, solved via cuBLAS batched LU on GPU.  TARDIS uses the dilute-LTE (nebular) approximation for all species.
+\item \textbf{Minimal dependencies}: Pure C99/CUDA binary with no Python runtime, enabling HPC deployment without Conda environments.
+\item \textbf{Integrated ML pipeline}: Latin Hypercube sampling + neural emulator + SBI/MCMC inference chain for automated parameter fitting.
+\end{itemize}
+\end{ocrebox}
+
+\begin{bluebox}
+\textbf{TARDIS advantages over LUMINA:}
+\begin{itemize}
+\item \textbf{Broader scope}: Models CC-SNe, kilonovae (with lanthanide opacities), and other transients.
+\item \textbf{Larger community}: 40+ contributors, comprehensive documentation, active development.
+\item \textbf{Flexible plasma module}: Pluggable ionization/excitation solvers via the \texttt{plasma} framework.
+\item \textbf{Deeper Si~II trough}: TARDIS achieves 93\% absorption depth vs LUMINA's 75--83\%, likely due to subtle differences in the macro-atom source function implementation.
+\end{itemize}
+\end{bluebox}
+
+\section{SYN++}\index{Code Comparison!SYN++}
+
+SYN++ \citep{thomas2011} is a parametric spectrum synthesis tool descended from SYNOW.  It assumes a sharp photosphere emitting a blackbody, with resonance-scattering line profiles computed in the Sobolev approximation.  Each ion is characterised by a minimum velocity, optical depth, and excitation temperature.
+
+\begin{itemize}
+\item \textbf{LUMINA advantage}: Self-consistent radiation field---ionization balance, dilution factors, and level populations are computed from the Monte Carlo simulation rather than input by hand.  Fluorescence and macro-atom redistribution produce realistic P~Cygni profiles with emission components.
+\item \textbf{SYN++ advantage}: Extremely fast (seconds per model), making it ideal for rapid line identification, spectral classification, and interactive fitting.  Its simplicity is a strength for survey-scale work.
+\end{itemize}
+
+\noindent SYN++ and LUMINA serve different purposes: SYN++ is a \emph{fitting tool} for quick diagnostics, while LUMINA is a \emph{physics code} for quantitative abundance and density studies.
+
+\section{SEDONA}\index{Code Comparison!SEDONA}
+
+SEDONA \citep{kasen2006} is a multi-dimensional, time-dependent Monte Carlo code designed to compute both spectra and light curves from first principles.
+
+\begin{itemize}
+\item \textbf{LUMINA advantage}: GPU acceleration ($\sim$10$\times$) and NLTE solver for key diagnostic ions.  LUMINA's ML fitting pipeline enables automated parameter estimation, whereas SEDONA is typically run on pre-computed explosion models.
+\item \textbf{SEDONA advantage}: Full 3D geometry with time-dependent radiation transport, $\gamma$-ray deposition from $^{56}$Ni decay, and multi-epoch light curve computation.  It can model asymmetric explosions, viewing-angle effects, and nebular-phase spectra.
+\end{itemize}
+
+\noindent SEDONA is an ``explosion-to-observables'' code that starts from hydrodynamic models, while LUMINA is optimised for single-epoch spectral fitting against observations.
+
+\section{ARTIS}\index{Code Comparison!ARTIS}
+
+ARTIS \citep{sim2007,kromer2009} is a 3D time-dependent Monte Carlo code with full NLTE, developed primarily for SN~Ia.  It incorporates macro-atom physics and $\gamma$-ray transport.
+
+\begin{itemize}
+\item \textbf{LUMINA advantage}: GPU acceleration and integrated parameter search.  A single-epoch LUMINA model runs in $\sim$14\,s on GPU, enabling 5,000-model grid searches in $\sim$19\,hours.  ARTIS runs are typically CPU-only and take hours per model.
+\item \textbf{ARTIS advantage}: Full 3D geometry, time dependence, complete NLTE for all species, and $\gamma$-ray energy deposition.  ARTIS can model both photospheric and nebular phase spectra from the same explosion model.
+\end{itemize}
+
+\section{CMFGEN}\index{Code Comparison!CMFGEN}
+
+CMFGEN \citep{hillier1998} solves the radiative transfer and statistical equilibrium equations simultaneously in the comoving frame using the accelerated lambda iteration (ALI) method.  It treats millions of lines in full NLTE.
+
+\begin{itemize}
+\item \textbf{LUMINA advantage}: Monte Carlo naturally handles line overlap and fluorescence without explicit frequency-by-frequency integration.  GPU acceleration makes large parameter surveys feasible (thousands of models per day vs one CMFGEN model per several hours).
+\item \textbf{CMFGEN advantage}: Full NLTE for \emph{all} species simultaneously (not just 4 elements), self-consistent radiation--matter coupling via ALI, wind clumping, and decades of validation across diverse astrophysical objects (OB stars, WR stars, LBVs, SN~Ia, CC-SNe).  CMFGEN represents the gold standard for spectroscopic precision.
+\end{itemize}
+
+\section{PHOENIX}\index{Code Comparison!PHOENIX}
+
+PHOENIX \citep{hauschildt1997} is a general-purpose NLTE atmosphere code applicable to an extraordinarily wide range of objects: stars, brown dwarfs, exoplanet atmospheres, novae, and supernovae.
+
+\begin{itemize}
+\item \textbf{LUMINA advantage}: SN~Ia-specific optimisation, GPU acceleration, and lightweight codebase ($\sim$5K lines vs $\sim$200K).
+\item \textbf{PHOENIX advantage}: Broadest applicability of any radiative transfer code, full NLTE with the most extensive atomic database, and 30+ years of validation.
+\end{itemize}
+
+\section{Summary: LUMINA's Niche}\index{Code Comparison!Summary}
+
+LUMINA-SN occupies a unique position in the landscape of supernova radiative transfer codes:
+
+\begin{important}
+\textbf{LUMINA = TARDIS physics $+$ GPU acceleration $+$ NLTE $+$ ML fitting pipeline.}
+
+No other code combines Monte Carlo macro-atom transport with GPU acceleration and an integrated Bayesian inference framework.  This makes LUMINA the tool of choice for \textbf{large-scale, automated spectral fitting of SN~Ia} at photospheric epochs.
+\end{important}
+
+\noindent The trade-offs are clear: LUMINA sacrifices multi-dimensionality (vs SEDONA, ARTIS), time dependence (vs SEDONA, ARTIS), and universal NLTE coverage (vs CMFGEN, PHOENIX) in exchange for \textbf{speed} and \textbf{automation}.  For the specific problem of fitting observed SN~Ia spectra near maximum light, this trade-off is highly favourable.
+
+\begin{table}[h]
+\centering
+\caption{Approximate single-model execution times (200K packets, 20 iterations for MC codes).}
+\label{tab:runtime}
+\begin{tabular}{lrl}
+\toprule
+\textbf{Code} & \textbf{Time} & \textbf{Hardware} \\
+\midrule
+SYN++    & $\sim$1\,s     & 1 CPU core \\
+LUMINA   & $\sim$14\,s    & 1 GPU (RTX 5000 Ada) \\
+TARDIS   & $\sim$60--120\,s & 1 CPU core (Cython) \\
+ARTIS    & $\sim$hours    & MPI cluster \\
+SEDONA   & $\sim$hours    & MPI cluster \\
+CMFGEN   & $\sim$hours    & 1--8 CPU cores \\
+PHOENIX  & $\sim$hours    & MPI cluster \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Table~\ref{tab:nlte_scope} clarifies the distinction between ``full NLTE'' implementations.
+
+\begin{table}[h]
+\centering
+\caption{NLTE implementation scope across codes.}
+\label{tab:nlte_scope}
+\begin{tabular}{lll}
+\toprule
+\textbf{Code} & \textbf{NLTE physics} & \textbf{Species coverage} \\
+\midrule
+CMFGEN  & Full stat.\ equil.\ + ALI & All species (millions of transitions) \\
+PHOENIX & Full stat.\ equil.\ + ALI & All species \\
+ARTIS   & Full stat.\ equil.\ (MC) & All species \\
+LUMINA  & Full stat.\ equil.\ (MC + $J_\nu$) & Si, Ca, Fe, S (2017 levels) \\
+TARDIS  & Dilute-LTE (nebular approx.) & N/A (no NLTE solver) \\
+SYN++   & LTE (Boltzmann) & N/A \\
+SEDONA  & Mixed (LTE + optional NLTE) & Configuration-dependent \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+As shown in Table~\ref{tab:nlte_scope}, LUMINA's NLTE solver applies the \emph{same physics}---full statistical equilibrium with radiative and collisional bound--bound rates, photoionisation (Kramers), and recombination (Milne)---as CMFGEN and PHOENIX.  The difference is purely in \textbf{species coverage}: LUMINA solves NLTE for the four elements most critical to SN~Ia optical diagnostics, while CMFGEN and PHOENIX solve it for all species simultaneously.  For SN~Ia photospheric spectra, the optical depth is overwhelmingly dominated by Si, Ca, Fe, and S lines, so this is a well-motivated approximation.
 
 
 %----------------------------------------------------------------------------------------
