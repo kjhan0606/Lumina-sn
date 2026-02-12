@@ -1457,6 +1457,11 @@ int main(int argc, char *argv[]) {
     if (getenv("LUMINA_NLTE") && atoi(getenv("LUMINA_NLTE")) > 0) enable_nlte = 1;
     config.enable_nlte = enable_nlte;
 
+    /* NLTE start iteration: default 0 (all iters), env LUMINA_NLTE_START_ITER=N */
+    int nlte_start_iter = 0;
+    if (getenv("LUMINA_NLTE_START_ITER"))
+        nlte_start_iter = atoi(getenv("LUMINA_NLTE_START_ITER"));
+
     printf("\nSimulation parameters:\n");
     printf("  Packets: %d, Iterations: %d\n", n_packets, n_iterations);
     printf("  Line interaction: MACROATOM\n");
@@ -1465,7 +1470,11 @@ int main(int argc, char *argv[]) {
     else if (enable_virtual) mode_str = "real + virtual";
     else if (enable_rotation) mode_str = "real + rotation";
     printf("  Spectrum mode: %s\n", mode_str);
-    printf("  NLTE: %s\n", enable_nlte ? "ENABLED (Si/Ca/Fe/S/Co/Ni)" : "disabled");
+    if (enable_nlte && nlte_start_iter > 0)
+        printf("  NLTE: ENABLED from iter %d (first %d non-NLTE)\n",
+               nlte_start_iter + 1, nlte_start_iter);
+    else
+        printf("  NLTE: %s\n", enable_nlte ? "ENABLED (all iters)" : "disabled");
     printf("  T_inner: %.2f K\n", config.T_inner);
 
     /* Phase 6 - Step 8: Compute shell volumes */
@@ -1627,7 +1636,7 @@ int main(int argc, char *argv[]) {
             compute_plasma_state(&atom_data, &plasma, &opacity, geo.time_explosion);
 
             /* NLTE: solve rate equations and update tau for NLTE lines */
-            if (enable_nlte) {
+            if (enable_nlte && iter >= nlte_start_iter) {
                 cuda_download_j_nu(&dev, &nlte, geo.n_shells);
                 nlte_normalize_j_nu(&nlte, time_simulation, volume, geo.n_shells);
                 nlte_solve_all_gpu(&nlte, &atom_data, &plasma, &opacity,
