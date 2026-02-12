@@ -514,6 +514,44 @@ void compute_plasma_state(AtomicData *atom, PlasmaState *plasma,
 static const int NLTE_TARGET_Z[]   = { 14, 14, 20, 20, 26, 26, 16, 16, 27, 27, 28, 28 };
 static const int NLTE_TARGET_ION[] = {  1,  2,  1,  2,  1,  2,  1,  2,  1,  2,  1,  2 };
 
+/* Step 1.5: Charge Exchange reaction table
+ * Forward: A^(ion_A) + B^(ion_B) → A^(ion_A+1) + B^(ion_B-1)
+ * Reverse via detailed balance: k_rev = k_fwd * exp(|ΔE|/kT)
+ * Rate coefficients from Kingdon & Ferland (1996), generic 1e-9 cm³/s */
+static const ChargeExchangeReaction CE_REACTIONS[CE_N_REACTIONS] = {
+  /* Z_A ion_A  Z_B ion_B  rate       alpha  ΔE_eV  */
+  {  26,   1,    27,   2,   1.0e-9,    0.0,  -0.89 },  /* Fe+ + Co2+ → Fe2+ + Co+ */
+  {  26,   1,    28,   2,   1.0e-9,    0.0,  -1.98 },  /* Fe+ + Ni2+ → Fe2+ + Ni+ */
+  {  27,   1,    28,   2,   1.0e-9,    0.0,  -1.09 },  /* Co+ + Ni2+ → Co2+ + Ni+ */
+  {  20,   1,    14,   2,   1.0e-9,    0.0,  -4.48 },  /* Ca+ + Si2+ → Ca2+ + Si+ */
+};
+
+/* Step 1.5: Get total ion number density for (Z, ion_stage, shell).
+ * Uses NLTE level populations if available, otherwise nebular density. */
+static double nlte_get_ion_density(NLTEConfig *nlte, AtomicData *atom,
+                                    int Z, int ion_stage, int shell,
+                                    int n_shells) {
+    /* Check if this (Z, ion_stage) is an NLTE ion → sum level populations */
+    if (nlte != NULL) {
+        for (int i = 0; i < nlte->n_nlte_ions; i++) {
+            if (nlte->nlte_Z[i] == Z && nlte->nlte_ion[i] == ion_stage) {
+                int lev_s = nlte->nlte_ion_level_offset[i];
+                int lev_e = nlte->nlte_ion_level_offset[i + 1];
+                double sum = 0.0;
+                for (int l = lev_s; l < lev_e; l++)
+                    sum += nlte->nlte_level_populations[l * n_shells + shell];
+                if (sum > 0.0) return sum;
+                break;  /* found ion but no populations yet, fall through */
+            }
+        }
+    }
+    /* Fall back to nebular ion_number_density */
+    int ip = find_ion_pop_idx(atom, Z, ion_stage);
+    if (ip >= 0)
+        return atom->ion_number_density[ip * n_shells + shell];
+    return 0.0;
+}
+
 /* van Regemorter collision rate constant:
  * C_ij = 14.5 * a_0^2 * sqrt(2*pi*k_B/(m_e)) * n_e * f_ij / sqrt(T_e) * exp(-dE/kT)
  * Numerically: coeff = 14.5 * (5.29e-9)^2 * sqrt(2*pi*1.38e-16/9.11e-28)
@@ -858,6 +896,63 @@ void nlte_assemble_rate_matrix(NLTEConfig *nlte, AtomicData *atom,
         }
     }
 
+    /* ---- Step 1.5: Charge Exchange rates ---- */
+    int Z_pair = nlte->nlte_Z[ion_idx_lo]; /* element Z for this ion pair */
+    int ion_lo_stage = nlte->nlte_ion[ion_idx_lo];   /* e.g. 1 for II */
+    int ion_hi_stage = nlte->nlte_ion[ion_idx_hi];   /* e.g. 2 for III */
+
+    for (int r = 0; r < CE_N_REACTIONS; r++) {
+        const ChargeExchangeReaction *ce = &CE_REACTIONS[r];
+        double k_fwd = ce->rate_coeff * pow(T_e / 1e4, ce->alpha);
+        double k_rev = k_fwd * exp(fabs(ce->delta_E_eV) * EV_TO_ERG /
+                                    (K_BOLTZMANN * T_e));
+
+        /* Case 1: This pair is element A (forward: A^ion_A → A^(ion_A+1))
+         * Requires: Z_pair == Z_A, ion_A == lower ion, ion_A+1 == upper ion */
+        if (ce->Z_A == Z_pair && ce->ion_A == ion_lo_stage &&
+            ce->ion_A + 1 == ion_hi_stage) {
+            double n_partner = nlte_get_ion_density(nlte, atom,
+                ce->Z_B, ce->ion_B, shell, n_shells);
+            double n_partner_lower = nlte_get_ion_density(nlte, atom,
+                ce->Z_B, ce->ion_B - 1, shell, n_shells);
+
+            double R_fwd = k_fwd * n_partner;    /* [s⁻¹] per A^ion_A ion */
+            double R_rev = k_rev * n_partner_lower; /* [s⁻¹] per A^(ion_A+1) ion */
+
+            /* Forward: all A^ion_A levels → A^(ion_A+1) ground */
+            for (int lev = 0; lev < n_lo_levels; lev++) {
+                ACM(ground_hi, lev) += R_fwd;
+                ACM(lev, lev)       -= R_fwd;
+            }
+            /* Reverse: A^(ion_A+1) ground → A^ion_A ground */
+            ACM(0, ground_hi)          += R_rev;
+            ACM(ground_hi, ground_hi)  -= R_rev;
+        }
+
+        /* Case 2: This pair is element B (forward: B^ion_B → B^(ion_B-1))
+         * Requires: Z_pair == Z_B, ion_B == upper ion, ion_B-1 == lower ion */
+        if (ce->Z_B == Z_pair && ce->ion_B == ion_hi_stage &&
+            ce->ion_B - 1 == ion_lo_stage) {
+            double n_partner = nlte_get_ion_density(nlte, atom,
+                ce->Z_A, ce->ion_A, shell, n_shells);
+            double n_partner_upper = nlte_get_ion_density(nlte, atom,
+                ce->Z_A, ce->ion_A + 1, shell, n_shells);
+
+            double R_fwd = k_fwd * n_partner;        /* B^ion_B → B^(ion_B-1) */
+            double R_rev = k_rev * n_partner_upper;   /* B^(ion_B-1) → B^ion_B */
+
+            /* Forward: B^(ion_B) ground → B^(ion_B-1) ground
+             * (ion_B is the upper ion in this pair, ground_hi is its first level) */
+            ACM(0, ground_hi)          += R_fwd;
+            ACM(ground_hi, ground_hi)  -= R_fwd;
+            /* Reverse: all B^(ion_B-1) levels → B^ion_B ground */
+            for (int lev = 0; lev < n_lo_levels; lev++) {
+                ACM(ground_hi, lev) += R_rev;
+                ACM(lev, lev)       -= R_rev;
+            }
+        }
+    }
+
     /* ---- Conservation equation: replace last row ---- */
     int Z_nl = nlte->nlte_Z[ion_idx_lo];
     double n_total = 0.0;
@@ -985,29 +1080,110 @@ static void nlte_update_tau_sobolev(NLTEConfig *nlte, AtomicData *atom,
     }
 }
 
-/* Master NLTE solver: solve all ions in all shells, update tau */
+/* Master NLTE solver: solve all ions in all shells, update tau.
+ * Step 1.5: Iterative CE convergence wrapper — because CE couples
+ * different elements, we iterate until ion densities converge. */
 void nlte_solve_all(NLTEConfig *nlte, AtomicData *atom, PlasmaState *plasma,
                      OpacityState *opacity, double time_explosion,
                      int n_shells) {
-    printf("  [NLTE] Solving rate equations...\n");
+    printf("  [NLTE] Solving rate equations (with CE coupling)...\n");
 
-    /* Solve ion pairs: (Si II+III), (Ca II+III), (Fe II+III), (S II+III),
-     * (Co II+III), (Ni II+III) */
     int n_pairs = nlte->n_nlte_ions / 2;
     int pairs[][2] = { {0,1}, {2,3}, {4,5}, {6,7}, {8,9}, {10,11} };
     const char *names[] = { "Si", "Ca", "Fe", "S", "Co", "Ni" };
 
+    int ce_max_iter = 5;
+    double ce_threshold = 1e-2;  /* 1% relative convergence on ion totals */
+    double ce_damping = 0.5;     /* 50% damping */
+
+    /* Save old ion totals for convergence check (n_nlte_ions * n_shells) */
+    int n_ion_totals = nlte->n_nlte_ions * n_shells;
+    double *old_ion_totals = (double *)calloc(n_ion_totals, sizeof(double));
+    size_t pop_size = (size_t)nlte->n_nlte_levels_total * n_shells;
+    double *old_pops = (double *)malloc(pop_size * sizeof(double));
+
+    for (int ce_iter = 0; ce_iter < ce_max_iter; ce_iter++) {
+        /* Save current populations + compute old ion totals */
+        memcpy(old_pops, nlte->nlte_level_populations, pop_size * sizeof(double));
+        for (int ii = 0; ii < nlte->n_nlte_ions; ii++) {
+            int lev_s = nlte->nlte_ion_level_offset[ii];
+            int lev_e = nlte->nlte_ion_level_offset[ii + 1];
+            for (int s = 0; s < n_shells; s++) {
+                double sum = 0.0;
+                for (int l = lev_s; l < lev_e; l++)
+                    sum += nlte->nlte_level_populations[l * n_shells + s];
+                old_ion_totals[ii * n_shells + s] = sum;
+            }
+        }
+
+        /* Solve all 6 ion pairs */
+        for (int p = 0; p < n_pairs; p++) {
+            int lo = pairs[p][0], hi = pairs[p][1];
+            #ifdef _OPENMP
+            #pragma omp parallel for schedule(dynamic, 1)
+            #endif
+            for (int s = 0; s < n_shells; s++) {
+                nlte_solve_ion_shell(nlte, atom, plasma, opacity,
+                                     lo, hi, s, time_explosion);
+            }
+        }
+
+        /* Apply damping for iter >= 1 */
+        if (ce_iter > 0) {
+            for (size_t i = 0; i < pop_size; i++) {
+                double n_new = nlte->nlte_level_populations[i];
+                double n_old = old_pops[i];
+                nlte->nlte_level_populations[i] = n_old +
+                    ce_damping * (n_new - n_old);
+            }
+        }
+
+        /* Convergence: max relative change of ion totals */
+        double max_rel_change = 0.0;
+        if (ce_iter == 0) {
+            /* Check if any old ion totals were nonzero */
+            int has_prior = 0;
+            for (int k = 0; k < n_ion_totals; k++) {
+                if (old_ion_totals[k] > 1.0) { has_prior = 1; break; }
+            }
+            if (!has_prior) {
+                printf("    CE iter %d: first solve (no prior populations)\n",
+                       ce_iter + 1);
+                continue;
+            }
+        }
+
+        for (int ii = 0; ii < nlte->n_nlte_ions; ii++) {
+            int lev_s = nlte->nlte_ion_level_offset[ii];
+            int lev_e = nlte->nlte_ion_level_offset[ii + 1];
+            for (int s = 0; s < n_shells; s++) {
+                double new_total = 0.0;
+                for (int l = lev_s; l < lev_e; l++)
+                    new_total += nlte->nlte_level_populations[l * n_shells + s];
+                double old_total = old_ion_totals[ii * n_shells + s];
+                if (old_total > 1.0) {
+                    double rel = fabs(new_total - old_total) / old_total;
+                    if (rel > max_rel_change) max_rel_change = rel;
+                }
+            }
+        }
+
+        printf("    CE iter %d: max_ion_rel_change = %.2e\n",
+               ce_iter + 1, max_rel_change);
+
+        if (max_rel_change < ce_threshold) {
+            printf("    CE converged in %d iterations\n", ce_iter + 1);
+            break;
+        }
+    }
+    free(old_pops);
+    free(old_ion_totals);
+
+    /* Print ion pair level counts */
     for (int p = 0; p < n_pairs; p++) {
         int lo = pairs[p][0], hi = pairs[p][1];
         int n_levels = nlte->nlte_ion_level_offset[hi + 1] -
                        nlte->nlte_ion_level_offset[lo];
-        #ifdef _OPENMP
-        #pragma omp parallel for schedule(dynamic, 1)
-        #endif
-        for (int s = 0; s < n_shells; s++) {
-            nlte_solve_ion_shell(nlte, atom, plasma, opacity,
-                                 lo, hi, s, time_explosion);
-        }
         printf("    %s (%d levels): done\n", names[p], n_levels);
     }
 

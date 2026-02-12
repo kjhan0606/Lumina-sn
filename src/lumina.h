@@ -256,6 +256,21 @@ typedef struct {
     double *J_nu;                              /* [n_shells * n_freq_bins] normalized */
 } NLTEConfig;
 
+/* ============================================================ */
+/* Step 1.5: Charge Exchange Coupling                           */
+/* ============================================================ */
+
+#define CE_MAX_REACTIONS  4
+#define CE_N_REACTIONS    4
+
+typedef struct {
+    int    Z_A, ion_A;       /* reactant A: A^(ion_A) */
+    int    Z_B, ion_B;       /* reactant B: B^(ion_B) */
+    double rate_coeff;       /* <σv> at T=10⁴K [cm³/s] */
+    double alpha;            /* temp exponent: k(T) = rate_coeff * (T/1e4)^alpha */
+    double delta_E_eV;       /* energy defect [eV], negative = exothermic forward */
+} ChargeExchangeReaction;
+
 /* Phase 2 - Step 4: Spectrum output */
 typedef struct {
     int     n_bins;           /* Phase 2 - Step 4 */

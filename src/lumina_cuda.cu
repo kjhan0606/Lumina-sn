@@ -263,95 +263,172 @@ static int cuda_nlte_batched_solve(CudaNLTESolver *sol, int N, int batch) {
     return 0;
 }
 
-/* GPU NLTE master solver: assemble on CPU (OpenMP), solve on GPU (cuBLAS batched) */
+/* GPU NLTE master solver: assemble on CPU (OpenMP), solve on GPU (cuBLAS batched).
+ * Step 1.5: Iterative CE convergence wrapper — same logic as CPU nlte_solve_all. */
 static void nlte_solve_all_gpu(NLTEConfig *nlte, AtomicData *atom,
                                 PlasmaState *plasma, OpacityState *opacity,
                                 double time_explosion, int n_shells,
                                 CudaNLTESolver *sol) {
-    printf("  [NLTE-GPU] Solving rate equations (cuBLAS batched)...\n");
+    printf("  [NLTE-GPU] Solving rate equations (cuBLAS batched, with CE)...\n");
 
     int n_pairs = nlte->n_nlte_ions / 2;
     int pairs[][2] = { {0,1}, {2,3}, {4,5}, {6,7}, {8,9}, {10,11} };
     const char *names[] = { "Si", "Ca", "Fe", "S", "Co", "Ni" };
 
-    for (int p = 0; p < n_pairs; p++) {
-        int lo = pairs[p][0], hi = pairs[p][1];
-        int lev_start = nlte->nlte_ion_level_offset[lo];
-        int N = nlte->nlte_ion_level_offset[hi + 1] - lev_start;
-        if (N <= 0) continue;
+    int ce_max_iter = 5;
+    double ce_threshold = 1e-2;  /* 1% relative convergence on ion totals */
+    double ce_damping = 0.5;     /* 50% damping */
 
-        /* Zero staging buffers (only the portion needed for this ion pair) */
-        size_t mat_bytes = (size_t)n_shells * N * N * sizeof(double);
-        size_t rhs_bytes = (size_t)n_shells * N * sizeof(double);
-        memset(sol->h_matrices, 0, mat_bytes);
-        memset(sol->h_rhs, 0, rhs_bytes);
+    /* Save old ion totals for convergence check (n_nlte_ions * n_shells) */
+    int n_ion_totals = nlte->n_nlte_ions * n_shells;
+    double *old_ion_totals = (double *)calloc(n_ion_totals, sizeof(double));
+    size_t pop_size = (size_t)nlte->n_nlte_levels_total * n_shells;
+    double *old_pops = (double *)malloc(pop_size * sizeof(double));
 
-        /* Assemble rate matrices for all shells (CPU, OpenMP parallel) */
-        #ifdef _OPENMP
-        #pragma omp parallel for schedule(dynamic, 1)
-        #endif
-        for (int s = 0; s < n_shells; s++) {
-            double *A_cm = sol->h_matrices + (size_t)s * N * N;
-            double *b    = sol->h_rhs      + (size_t)s * N;
-            nlte_assemble_rate_matrix(nlte, atom, plasma, opacity,
-                                      lo, hi, s, time_explosion,
-                                      A_cm, b, N);
+    for (int ce_iter = 0; ce_iter < ce_max_iter; ce_iter++) {
+        /* Save current populations + compute old ion totals */
+        memcpy(old_pops, nlte->nlte_level_populations, pop_size * sizeof(double));
+        for (int ii = 0; ii < nlte->n_nlte_ions; ii++) {
+            int lev_s = nlte->nlte_ion_level_offset[ii];
+            int lev_e = nlte->nlte_ion_level_offset[ii + 1];
+            for (int s = 0; s < n_shells; s++) {
+                double sum = 0.0;
+                for (int l = lev_s; l < lev_e; l++)
+                    sum += nlte->nlte_level_populations[l * n_shells + s];
+                old_ion_totals[ii * n_shells + s] = sum;
+            }
         }
 
-        /* GPU batched solve */
-        int ret = cuda_nlte_batched_solve(sol, N, n_shells);
+        /* Solve all 6 ion pairs */
+        for (int p = 0; p < n_pairs; p++) {
+            int lo = pairs[p][0], hi = pairs[p][1];
+            int lev_start = nlte->nlte_ion_level_offset[lo];
+            int N = nlte->nlte_ion_level_offset[hi + 1] - lev_start;
+            if (N <= 0) continue;
 
-        /* Extract populations, handle singular matrices */
-        int n_singular = 0;
-        for (int s = 0; s < n_shells; s++) {
-            if (ret != 0 || sol->h_info[s] != 0) {
-                /* Singular: fall back to Boltzmann at T_rad */
-                n_singular++;
-                double T_rad = plasma->T_rad[s];
-                int Z_nl = nlte->nlte_Z[lo];
-                double n_total = 0.0;
-                for (int i = lo; i <= hi; i++) {
-                    int ip = -1;
-                    for (int j = 0; j < atom->n_ion_pops; j++) {
-                        if (atom->ion_pop_Z[j] == Z_nl &&
-                            atom->ion_pop_stage[j] == nlte->nlte_ion[i]) {
-                            ip = j; break;
+            /* Zero staging buffers */
+            size_t mat_bytes = (size_t)n_shells * N * N * sizeof(double);
+            size_t rhs_bytes = (size_t)n_shells * N * sizeof(double);
+            memset(sol->h_matrices, 0, mat_bytes);
+            memset(sol->h_rhs, 0, rhs_bytes);
+
+            /* Assemble rate matrices for all shells (CPU, OpenMP parallel) */
+            #ifdef _OPENMP
+            #pragma omp parallel for schedule(dynamic, 1)
+            #endif
+            for (int s = 0; s < n_shells; s++) {
+                double *A_cm = sol->h_matrices + (size_t)s * N * N;
+                double *b    = sol->h_rhs      + (size_t)s * N;
+                nlte_assemble_rate_matrix(nlte, atom, plasma, opacity,
+                                          lo, hi, s, time_explosion,
+                                          A_cm, b, N);
+            }
+
+            /* GPU batched solve */
+            int ret = cuda_nlte_batched_solve(sol, N, n_shells);
+
+            /* Extract populations, handle singular matrices */
+            for (int s = 0; s < n_shells; s++) {
+                if (ret != 0 || sol->h_info[s] != 0) {
+                    /* Singular: fall back to Boltzmann at T_rad */
+                    double T_rad = plasma->T_rad[s];
+                    int Z_nl = nlte->nlte_Z[lo];
+                    double n_total = 0.0;
+                    for (int i = lo; i <= hi; i++) {
+                        int ip = -1;
+                        for (int j = 0; j < atom->n_ion_pops; j++) {
+                            if (atom->ion_pop_Z[j] == Z_nl &&
+                                atom->ion_pop_stage[j] == nlte->nlte_ion[i]) {
+                                ip = j; break;
+                            }
                         }
+                        if (ip >= 0)
+                            n_total += atom->ion_number_density[ip * n_shells + s];
                     }
-                    if (ip >= 0)
-                        n_total += atom->ion_number_density[ip * n_shells + s];
-                }
-                double sum = 0.0;
-                for (int i = 0; i < N; i++) {
-                    int global = nlte->nlte_to_global_level[lev_start + i];
-                    double E = atom->level_energy_eV[global] * EV_TO_ERG;
-                    int g = atom->level_g[global];
-                    double pop = (double)g * exp(-E / (K_BOLTZMANN * T_rad));
-                    nlte->nlte_level_populations[(lev_start + i) * n_shells + s] = pop;
-                    sum += pop;
-                }
-                if (sum > 0.0) {
-                    double scale = n_total / sum;
-                    for (int i = 0; i < N; i++)
-                        nlte->nlte_level_populations[(lev_start + i) * n_shells + s] *= scale;
-                }
-            } else {
-                double *x = sol->h_rhs + (size_t)s * N;
-                for (int i = 0; i < N; i++) {
-                    double pop = x[i];
-                    if (pop < 0.0) pop = 1e-30;
-                    nlte->nlte_level_populations[(lev_start + i) * n_shells + s] = pop;
+                    double sum = 0.0;
+                    for (int i = 0; i < N; i++) {
+                        int global = nlte->nlte_to_global_level[lev_start + i];
+                        double E = atom->level_energy_eV[global] * EV_TO_ERG;
+                        int g = atom->level_g[global];
+                        double pop = (double)g * exp(-E / (K_BOLTZMANN * T_rad));
+                        nlte->nlte_level_populations[(lev_start + i) * n_shells + s] = pop;
+                        sum += pop;
+                    }
+                    if (sum > 0.0) {
+                        double scale = n_total / sum;
+                        for (int i = 0; i < N; i++)
+                            nlte->nlte_level_populations[(lev_start + i) * n_shells + s] *= scale;
+                    }
+                } else {
+                    double *x = sol->h_rhs + (size_t)s * N;
+                    for (int i = 0; i < N; i++) {
+                        double pop = x[i];
+                        if (pop < 0.0) pop = 1e-30;
+                        nlte->nlte_level_populations[(lev_start + i) * n_shells + s] = pop;
+                    }
                 }
             }
         }
-        printf("    %s (%d levels): done [GPU]%s\n", names[p], N,
-               n_singular > 0 ? " (some singular)" : "");
+
+        /* Apply damping for iter >= 1 */
+        if (ce_iter > 0) {
+            for (size_t i = 0; i < pop_size; i++) {
+                double n_new = nlte->nlte_level_populations[i];
+                double n_old = old_pops[i];
+                nlte->nlte_level_populations[i] = n_old +
+                    ce_damping * (n_new - n_old);
+            }
+        }
+
+        /* Convergence: max relative change of ion totals */
+        double max_rel_change = 0.0;
+        if (ce_iter == 0) {
+            int has_prior = 0;
+            for (int k = 0; k < n_ion_totals; k++) {
+                if (old_ion_totals[k] > 1.0) { has_prior = 1; break; }
+            }
+            if (!has_prior) {
+                printf("    CE iter %d: first solve (no prior populations)\n",
+                       ce_iter + 1);
+                continue;
+            }
+        }
+
+        for (int ii = 0; ii < nlte->n_nlte_ions; ii++) {
+            int lev_s = nlte->nlte_ion_level_offset[ii];
+            int lev_e = nlte->nlte_ion_level_offset[ii + 1];
+            for (int s = 0; s < n_shells; s++) {
+                double new_total = 0.0;
+                for (int l = lev_s; l < lev_e; l++)
+                    new_total += nlte->nlte_level_populations[l * n_shells + s];
+                double old_total = old_ion_totals[ii * n_shells + s];
+                if (old_total > 1.0) {
+                    double rel = fabs(new_total - old_total) / old_total;
+                    if (rel > max_rel_change) max_rel_change = rel;
+                }
+            }
+        }
+
+        printf("    CE iter %d: max_ion_rel_change = %.2e\n",
+               ce_iter + 1, max_rel_change);
+
+        if (max_rel_change < ce_threshold) {
+            printf("    CE converged in %d iterations\n", ce_iter + 1);
+            break;
+        }
+    }
+    free(old_pops);
+    free(old_ion_totals);
+
+    /* Print ion pair summaries */
+    for (int p = 0; p < n_pairs; p++) {
+        int lo = pairs[p][0], hi = pairs[p][1];
+        int N = nlte->nlte_ion_level_offset[hi + 1] - nlte->nlte_ion_level_offset[lo];
+        printf("    %s (%d levels): done [GPU]\n", names[p], N);
     }
 
     /* Update tau_sobolev for NLTE lines (same as CPU path) */
     printf("  [NLTE-GPU] Updating tau_sobolev from NLTE populations...\n");
-    /* Call nlte_solve_all's tau update by calling nlte_solve_all internals;
-     * but tau update is only in the static function. Inline it here: */
     {
         int n_lines = opacity->n_lines;
         for (int line = 0; line < n_lines; line++) {
