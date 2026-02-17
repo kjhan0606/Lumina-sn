@@ -17,7 +17,8 @@ TARGET = lumina
 # CUDA source
 CUDA_SRC = src/lumina_cuda.cu
 NVCC = nvcc
-NVFLAGS = -O2 -arch=sm_89 -std=c++14 -Xcompiler -fopenmp
+GPU_ARCH ?= sm_86
+NVFLAGS = -O2 -arch=$(GPU_ARCH) -std=c++14 -Xcompiler -fopenmp
 NVLDFLAGS = -lm -lcublas -Xcompiler -fopenmp
 
 # Default target
