@@ -63,6 +63,8 @@ typedef struct {                           /* Phase 6 - Step 1 */
     int    *d_destination_level_id;        /* Phase 6 - Step 1: [n_transitions] */
     int    *d_transition_line_id;          /* Phase 6 - Step 1: [n_transitions] */
     int    *d_line2macro_level_upper;      /* Phase 6 - Step 1: [n_lines] */
+    int    *d_line_atomic_number;          /* [n_lines] Z for Fe two-level scatter */
+    int    *d_line_ion_number;             /* [n_lines] ion stage for Fe II selective scatter */
 
     /* Phase 6 - Step 1: Geometry arrays */
     double *d_r_inner;                     /* Phase 6 - Step 1: [n_shells] */
@@ -92,6 +94,16 @@ typedef struct {                           /* Phase 6 - Step 1 */
     int     nlte_n_freq_bins;              /* 0 if NLTE disabled */
     double  nlte_nu_min;
     double  nlte_d_log_nu;
+
+    /* BF opacity: chi_bf grid + T_rad for BF absorption re-emission */
+    double *d_chi_bf;                      /* [n_shells * BF_N_FREQ_BINS] or NULL */
+    double *d_T_rad;                       /* [n_shells] for BF Planck re-emission */
+    int    *d_bf_activation_level;         /* [n_shells * BF_N_FREQ_BINS] macro-atom level or -1 */
+    int     bf_enabled;
+    int     bf_n_freq_bins;
+    double  bf_nu_min;
+    double  bf_nu_max;
+    double  bf_d_log_nu;
 } CudaDeviceData;                          /* Phase 6 - Step 1 */
 
 /* Virtual spectrum parameters (match real spectrum) */
@@ -121,6 +133,8 @@ static void cuda_allocate(CudaDeviceData *dev, Geometry *geo,
     CUDA_CHECK(cudaMalloc(&dev->d_destination_level_id, nt * sizeof(int)));         /* Phase 6 - Step 1 */
     CUDA_CHECK(cudaMalloc(&dev->d_transition_line_id, nt * sizeof(int)));           /* Phase 6 - Step 1 */
     CUDA_CHECK(cudaMalloc(&dev->d_line2macro_level_upper, nl * sizeof(int)));       /* Phase 6 - Step 1 */
+    CUDA_CHECK(cudaMalloc(&dev->d_line_atomic_number, nl * sizeof(int)));
+    CUDA_CHECK(cudaMalloc(&dev->d_line_ion_number, nl * sizeof(int)));
 
     /* Phase 6 - Step 1: Geometry */
     CUDA_CHECK(cudaMalloc(&dev->d_r_inner, ns * sizeof(double)));                   /* Phase 6 - Step 1 */
@@ -158,6 +172,35 @@ static void cuda_allocate_nlte(CudaDeviceData *dev, NLTEConfig *nlte,
     dev->nlte_nu_min = nlte->nu_min;
     dev->nlte_d_log_nu = nlte->d_log_nu;
     printf("  [NLTE] GPU J_nu estimator: %.1f KB\n", size / 1024.0);
+}
+
+/* BF opacity: allocate GPU arrays */
+static void cuda_allocate_bf(CudaDeviceData *dev, BFOpacity *bf, int n_shells) {
+    size_t chi_size = (size_t)n_shells * bf->n_freq_bins * sizeof(double);
+    size_t act_size = (size_t)n_shells * bf->n_freq_bins * sizeof(int);
+    CUDA_CHECK(cudaMalloc(&dev->d_chi_bf, chi_size));
+    CUDA_CHECK(cudaMalloc(&dev->d_T_rad, n_shells * sizeof(double)));
+    CUDA_CHECK(cudaMalloc(&dev->d_bf_activation_level, act_size));
+    dev->bf_enabled = 1;
+    dev->bf_n_freq_bins = bf->n_freq_bins;
+    dev->bf_nu_min = bf->nu_min;
+    dev->bf_nu_max = bf->nu_max;
+    dev->bf_d_log_nu = bf->d_log_nu;
+    printf("  [BF] GPU arrays allocated: %.1f KB\n", (chi_size + act_size) / 1024.0);
+}
+
+/* BF opacity: upload chi_bf grid + T_rad + activation_level to GPU */
+static void cuda_upload_bf(CudaDeviceData *dev, BFOpacity *bf,
+                            PlasmaState *plasma, int n_shells) {
+    if (!dev->d_chi_bf) return;
+    size_t chi_size = (size_t)n_shells * bf->n_freq_bins * sizeof(double);
+    size_t act_size = (size_t)n_shells * bf->n_freq_bins * sizeof(int);
+    CUDA_CHECK(cudaMemcpy(dev->d_chi_bf, bf->chi_bf, chi_size,
+               cudaMemcpyHostToDevice));
+    CUDA_CHECK(cudaMemcpy(dev->d_T_rad, plasma->T_rad,
+               n_shells * sizeof(double), cudaMemcpyHostToDevice));
+    CUDA_CHECK(cudaMemcpy(dev->d_bf_activation_level, bf->activation_level,
+               act_size, cudaMemcpyHostToDevice));
 }
 
 /* NLTE: download J_nu from GPU to CPU NLTEConfig */
@@ -268,12 +311,15 @@ static int cuda_nlte_batched_solve(CudaNLTESolver *sol, int N, int batch) {
 static void nlte_solve_all_gpu(NLTEConfig *nlte, AtomicData *atom,
                                 PlasmaState *plasma, OpacityState *opacity,
                                 double time_explosion, int n_shells,
-                                CudaNLTESolver *sol) {
+                                CudaNLTESolver *sol,
+                                GammaDeposition *gamma_dep) {
     printf("  [NLTE-GPU] Solving rate equations (cuBLAS batched, with CE)...\n");
 
     int n_pairs = nlte->n_nlte_ions / 2;
-    int pairs[][2] = { {0,1}, {2,3}, {4,5}, {6,7}, {8,9}, {10,11} };
-    const char *names[] = { "Si", "Ca", "Fe", "S", "Co", "Ni" };
+    int pairs[][2] = { {0,1}, {2,3}, {4,5}, {6,7}, {8,9}, {10,11},
+                       {12,13}, {14,15}, {16,17}, {18,19} };
+    const char *names[] = { "Si", "Ca", "Fe", "S", "Co", "Ni",
+                            "C", "Mg", "Ti", "Cr" };
 
     int ce_max_iter = 5;
     double ce_threshold = 1e-2;  /* 1% relative convergence on ion totals */
@@ -299,7 +345,7 @@ static void nlte_solve_all_gpu(NLTEConfig *nlte, AtomicData *atom,
             }
         }
 
-        /* Solve all 6 ion pairs */
+        /* Solve all ion pairs */
         for (int p = 0; p < n_pairs; p++) {
             int lo = pairs[p][0], hi = pairs[p][1];
             int lev_start = nlte->nlte_ion_level_offset[lo];
@@ -321,7 +367,7 @@ static void nlte_solve_all_gpu(NLTEConfig *nlte, AtomicData *atom,
                 double *b    = sol->h_rhs      + (size_t)s * N;
                 nlte_assemble_rate_matrix(nlte, atom, plasma, opacity,
                                           lo, hi, s, time_explosion,
-                                          A_cm, b, N);
+                                          A_cm, b, N, gamma_dep);
             }
 
             /* GPU batched solve */
@@ -583,6 +629,8 @@ static void cuda_free(CudaDeviceData *dev) {
     cudaFree(dev->d_destination_level_id);      /* Phase 6 - Step 1 */
     cudaFree(dev->d_transition_line_id);        /* Phase 6 - Step 1 */
     cudaFree(dev->d_line2macro_level_upper);    /* Phase 6 - Step 1 */
+    cudaFree(dev->d_line_atomic_number);
+    cudaFree(dev->d_line_ion_number);
     cudaFree(dev->d_r_inner);                   /* Phase 6 - Step 1 */
     cudaFree(dev->d_r_outer);                   /* Phase 6 - Step 1 */
     cudaFree(dev->d_j_estimator);               /* Phase 6 - Step 1 */
@@ -597,6 +645,9 @@ static void cuda_free(CudaDeviceData *dev) {
     cudaFree(dev->d_escaped_mu);                /* Rotation mode */
     cudaFree(dev->d_virtual_spectrum);
     if (dev->d_j_nu_estimator) cudaFree(dev->d_j_nu_estimator);
+    if (dev->d_chi_bf) cudaFree(dev->d_chi_bf);
+    if (dev->d_T_rad)  cudaFree(dev->d_T_rad);
+    if (dev->d_bf_activation_level) cudaFree(dev->d_bf_activation_level);
 }
 
 /* ============================================================ */
@@ -745,6 +796,92 @@ void d_update_base_estimators(double *d_j_est, double *d_nu_bar_est,
 /* Phase 6 - Step 4: Line estimators — skipped on GPU */
 /* j_blue and Edotlu are too large for atomic writes (137252 * 30 doubles) */
 /* CPU handles these in plasma solve; GPU only needs j/nu_bar for W,T_rad */
+
+/* ============================================================ */
+/* BF opacity device functions                                  */
+/* ============================================================ */
+
+/* Lookup chi_bf from precomputed grid (linear interpolation in log-nu) */
+__device__ __forceinline__
+double d_bf_get_chi(const double *d_chi_bf, int bf_n_freq_bins,
+                     double bf_nu_min, double bf_nu_max, double bf_d_log_nu,
+                     int shell, double nu) {
+    if (d_chi_bf == NULL || nu < bf_nu_min || nu >= bf_nu_max) return 0.0;
+    double log_ratio = log(nu / bf_nu_min);
+    int bin = (int)(log_ratio / bf_d_log_nu);
+    if (bin < 0) return 0.0;
+    if (bin >= bf_n_freq_bins - 1)
+        return d_chi_bf[shell * bf_n_freq_bins + bf_n_freq_bins - 1];
+    double frac = log_ratio / bf_d_log_nu - (double)bin;
+    double chi0 = d_chi_bf[shell * bf_n_freq_bins + bin];
+    double chi1 = d_chi_bf[shell * bf_n_freq_bins + bin + 1];
+    return chi0 + frac * (chi1 - chi0);
+}
+
+/* Lookup macro-atom activation level for BF absorption at given frequency */
+__device__ __forceinline__
+int d_bf_get_activation_level(const int *d_bf_act, int bf_n_freq_bins,
+                               double bf_nu_min, double bf_nu_max, double bf_d_log_nu,
+                               int shell, double nu) {
+    if (d_bf_act == NULL || nu < bf_nu_min || nu >= bf_nu_max) return -1;
+    int bin = (int)(log(nu / bf_nu_min) / bf_d_log_nu);
+    if (bin < 0 || bin >= bf_n_freq_bins) return -1;
+    return d_bf_act[shell * bf_n_freq_bins + bin];
+}
+
+/* Sample Planck frequency using Bjorkman-Wood method */
+__device__ __forceinline__
+double d_sample_planck_frequency(double T, uint64_t *rng) {
+    double kT_h = K_BOLTZMANN * T / H_PLANCK;
+    double xi0 = d_rng_uniform(rng);
+    double l_coef = M_PI_VAL * M_PI_VAL * M_PI_VAL * M_PI_VAL / 90.0;
+    double target = xi0 * l_coef;
+    double cumsum = 0.0;
+    double l_min = 1.0;
+    for (int l = 1; l <= 1000; l++) {
+        double ld = (double)l;
+        double l_inv4 = 1.0 / (ld * ld * ld * ld);
+        cumsum += l_inv4;
+        if (cumsum >= target) { l_min = ld; break; }
+    }
+    double r1 = d_rng_uniform(rng), r2 = d_rng_uniform(rng);
+    double r3 = d_rng_uniform(rng), r4 = d_rng_uniform(rng);
+    if (r1 < 1e-300) r1 = 1e-300;
+    if (r2 < 1e-300) r2 = 1e-300;
+    if (r3 < 1e-300) r3 = 1e-300;
+    if (r4 < 1e-300) r4 = 1e-300;
+    return -log(r1 * r2 * r3 * r4) / l_min * kT_h;
+}
+
+/* BF absorption: thermalize packet — re-emit as Planck(T_rad), reset line ID */
+__device__
+void d_bf_absorption_event(double *pkt_r, double *pkt_mu, double *pkt_nu,
+                            int *pkt_next_line_id, double t_exp,
+                            const double *d_T_rad, int shell_id,
+                            const double *d_line_list_nu, int n_lines,
+                            uint64_t *rng) {
+    /* 1. New isotropic direction */
+    *pkt_mu = d_rng_mu(rng);
+
+    /* 2. Sample comoving frequency from Planck(T_rad) */
+    double T_rad = d_T_rad[shell_id];
+    double comov_nu = d_sample_planck_frequency(T_rad, rng);
+
+    /* 3. Transform to lab frame */
+    double inv_doppler = d_get_inverse_doppler_factor(*pkt_r, *pkt_mu, t_exp);
+    *pkt_nu = comov_nu * inv_doppler;
+
+    /* 4. Reinitialize next_line_id (binary search in descending list) */
+    double comov_check = *pkt_nu * d_get_doppler_factor(*pkt_r, *pkt_mu, t_exp);
+    int lo = 0, hi = n_lines;
+    while (lo < hi) {
+        int mid = (lo + hi) / 2;
+        if (d_line_list_nu[mid] > comov_check) lo = mid + 1;
+        else hi = mid;
+    }
+    if (lo == n_lines) lo = n_lines - 1;
+    *pkt_next_line_id = lo;
+}
 
 /* ============================================================ */
 /* Phase 6 - Step 5: trace_packet device function               */
@@ -919,6 +1056,8 @@ void d_macro_atom_interaction(int activation_level_id, int current_shell_id,
                                int *out_transition_type) {
     int current_type = 0;  /* Phase 6 - Step 6: start as internal */
     int ma_iter = 0;       /* Phase 6 - Step 6: safety counter */
+    *out_transition_id = -1;  /* P8: safe default for orphaned levels */
+    *out_transition_type = -1; /* safe default: emission */
 
     while (current_type >= 0 && ma_iter < 500) { /* Phase 6 - Step 6 */
         ma_iter++; /* Phase 6 - Step 6 */
@@ -968,7 +1107,8 @@ void d_macro_atom_interaction(int activation_level_id, int current_shell_id,
     }
 
     /* Phase 6 - Step 6: Convert transition_id to line_id for emission */
-    *out_transition_id = d_transition_line_id[*out_transition_id]; /* Phase 6 - Step 6 */
+    if (*out_transition_id >= 0)
+        *out_transition_id = d_transition_line_id[*out_transition_id]; /* Phase 6 - Step 6 */
 }
 
 /* Phase 6 - Step 6: Line scatter event (resonant, downbranch, or macro-atom) */
@@ -985,6 +1125,9 @@ void d_line_scatter_event(double *r, double *mu, double *nu, double *energy,
                            const int *d_transition_type,
                            const int *d_transition_line_id,
                            const int *d_line2macro_level_upper,
+                           const int *d_line_atomic_number,
+                           const int *d_line_ion_number,
+                           int fe_scatter_mode,
                            uint64_t *rng) {
     /* Phase 6 - Step 6: Get comoving frame at OLD angle */
     double old_doppler = d_get_doppler_factor(*r, *mu, t_exp); /* Phase 6 - Step 6 */
@@ -1004,24 +1147,38 @@ void d_line_scatter_event(double *r, double *mu, double *nu, double *energy,
         double comov_nu = *nu * old_doppler;  /* Phase 6 - Step 6 */
         *nu = comov_nu * inv_new_doppler;     /* Phase 6 - Step 6 */
 
-        /* Phase 6 - Step 6: Activate macro-atom */
-        int activation_level = d_line2macro_level_upper[*next_line_id]; /* Phase 6 - Step 6 */
+        /* Fe two-level atom: resonance scatter instead of macro-atom cascade
+         * fe_scatter_mode: 0=off, 1=Fe II only, 2=all Fe (II+III+...) */
+        int is_fe_scatter = 0;
+        if (fe_scatter_mode && d_line_atomic_number[*next_line_id] == 26) {
+            if (fe_scatter_mode == 2) is_fe_scatter = 1;           /* all Fe */
+            else if (d_line_ion_number[*next_line_id] == 1) is_fe_scatter = 1; /* Fe II only */
+        }
+        if (is_fe_scatter) {
+            d_line_emission(nu, next_line_id, *next_line_id,
+                             *r, *mu, t_exp, d_line_list_nu);
+        } else {
+            /* Phase 6 - Step 6: Activate macro-atom */
+            int activation_level = d_line2macro_level_upper[*next_line_id]; /* Phase 6 - Step 6 */
 
-        int transition_id;   /* Phase 6 - Step 6 */
-        int transition_type; /* Phase 6 - Step 6 */
-        d_macro_atom_interaction(activation_level, shell_id,        /* Phase 6 - Step 6 */
-                                  n_shells, n_macro_levels,         /* Phase 6 - Step 6 */
-                                  d_macro_block_references,         /* Phase 6 - Step 6 */
-                                  d_transition_probabilities,       /* Phase 6 - Step 6 */
-                                  d_destination_level_id,           /* Phase 6 - Step 6 */
-                                  d_transition_type,                /* Phase 6 - Step 6 */
-                                  d_transition_line_id,             /* Phase 6 - Step 6 */
-                                  rng, &transition_id,              /* Phase 6 - Step 6 */
-                                  &transition_type);                /* Phase 6 - Step 6 */
+            int transition_id;   /* Phase 6 - Step 6 */
+            int transition_type; /* Phase 6 - Step 6 */
+            d_macro_atom_interaction(activation_level, shell_id,        /* Phase 6 - Step 6 */
+                                      n_shells, n_macro_levels,         /* Phase 6 - Step 6 */
+                                      d_macro_block_references,         /* Phase 6 - Step 6 */
+                                      d_transition_probabilities,       /* Phase 6 - Step 6 */
+                                      d_destination_level_id,           /* Phase 6 - Step 6 */
+                                      d_transition_type,                /* Phase 6 - Step 6 */
+                                      d_transition_line_id,             /* Phase 6 - Step 6 */
+                                      rng, &transition_id,              /* Phase 6 - Step 6 */
+                                      &transition_type);                /* Phase 6 - Step 6 */
 
-        if (transition_type == -1) { /* Phase 6 - Step 6: MA_BB_EMISSION */
-            d_line_emission(nu, next_line_id, transition_id, /* Phase 6 - Step 6 */
-                             *r, *mu, t_exp, d_line_list_nu); /* Phase 6 - Step 6 */
+            if (transition_type == -1) { /* Phase 6 - Step 6: MA_BB_EMISSION */
+                /* P8: Orphaned level (no transitions) → resonance scatter */
+                int emit_line = (transition_id >= 0) ? transition_id : *next_line_id;
+                d_line_emission(nu, next_line_id, emit_line, /* Phase 6 - Step 6 */
+                                 *r, *mu, t_exp, d_line_list_nu); /* Phase 6 - Step 6 */
+            }
         }
     }
 }
@@ -1038,6 +1195,8 @@ void d_trace_virtual_packet(
     const double *d_r_inner, const double *d_r_outer,
     const double *d_line_list_nu, const double *d_tau_sobolev,
     const double *d_electron_density,
+    const double *d_chi_bf, int bf_enabled, int bf_n_freq_bins,
+    double bf_nu_min, double bf_nu_max, double bf_d_log_nu,
     int n_lines, int n_shells,
     int n_vpackets,
     double *d_virtual_spectrum, uint64_t *rng)
@@ -1081,13 +1240,25 @@ void d_trace_virtual_packet(
                 for (int i = lo; i < n_lines && d_line_list_nu[i] >= nu_low; i++)
                     tau_total += d_tau_sobolev[(size_t)i * n_shells + s];
             }
-            /* Electron scattering tau for turning-point segment */
-            tau_total += SIGMA_THOMSON * d_electron_density[s] * fabs(0.0 - z_cur);
+            /* Continuum tau for turning-point segment (e-scatter + BF) */
+            {
+                double seg_len = fabs(0.0 - z_cur);
+                double chi_cont_s = SIGMA_THOMSON * d_electron_density[s];
+                if (bf_enabled && d_chi_bf != NULL) {
+                    double nu_mid = nu_lab * (1.0 - 0.5 * z_cur * inv_ct);
+                    chi_cont_s += d_bf_get_chi(d_chi_bf, bf_n_freq_bins,
+                                                bf_nu_min, bf_nu_max, bf_d_log_nu,
+                                                s, nu_mid);
+                }
+                tau_total += chi_cont_s * seg_len;
+            }
             z_cur = 0.0;
             break;
         } else {
             /* Crosses inner boundary into shell s-1 */
-            double z_bnd = -sqrt(r_inner_s * r_inner_s - p2);
+            double arg_in = r_inner_s * r_inner_s - p2;
+            if (arg_in < 0.0) arg_in = 0.0;
+            double z_bnd = -sqrt(arg_in);
             double nu_high = nu_lab * (1.0 - z_cur * inv_ct);
             double nu_low  = nu_lab * (1.0 - z_bnd * inv_ct);
             if (nu_high > nu_low) {
@@ -1100,8 +1271,18 @@ void d_trace_virtual_packet(
                 for (int i = lo; i < n_lines && d_line_list_nu[i] >= nu_low; i++)
                     tau_total += d_tau_sobolev[(size_t)i * n_shells + s];
             }
-            /* Electron scattering tau for inward shell crossing */
-            tau_total += SIGMA_THOMSON * d_electron_density[s] * fabs(z_bnd - z_cur);
+            /* Continuum tau for inward shell crossing (e-scatter + BF) */
+            {
+                double seg_len = fabs(z_bnd - z_cur);
+                double chi_cont_s = SIGMA_THOMSON * d_electron_density[s];
+                if (bf_enabled && d_chi_bf != NULL) {
+                    double nu_mid = nu_lab * (1.0 - 0.5 * (z_cur + z_bnd) * inv_ct);
+                    chi_cont_s += d_bf_get_chi(d_chi_bf, bf_n_freq_bins,
+                                                bf_nu_min, bf_nu_max, bf_d_log_nu,
+                                                s, nu_mid);
+                }
+                tau_total += chi_cont_s * seg_len;
+            }
             z_cur = z_bnd;
             s--;
         }
@@ -1111,7 +1292,9 @@ void d_trace_virtual_packet(
     /* Phase 2: Outward propagation */
     while (s < n_shells) {
         double r_outer_s = d_r_outer[s];
-        double z_bnd = sqrt(r_outer_s * r_outer_s - p2);
+        double arg = r_outer_s * r_outer_s - p2;
+        if (arg < 0.0) arg = 0.0;  /* guard against float rounding */
+        double z_bnd = sqrt(arg);
         double nu_high = nu_lab * (1.0 - z_cur * inv_ct);
         double nu_low  = nu_lab * (1.0 - z_bnd * inv_ct);
         if (nu_high > nu_low) {
@@ -1124,8 +1307,18 @@ void d_trace_virtual_packet(
             for (int i = lo; i < n_lines && d_line_list_nu[i] >= nu_low; i++)
                 tau_total += d_tau_sobolev[(size_t)i * n_shells + s];
         }
-        /* Electron scattering tau for outward shell crossing */
-        tau_total += SIGMA_THOMSON * d_electron_density[s] * fabs(z_bnd - z_cur);
+        /* Continuum tau for outward shell crossing (e-scatter + BF) */
+        {
+            double seg_len = fabs(z_bnd - z_cur);
+            double chi_cont_s = SIGMA_THOMSON * d_electron_density[s];
+            if (bf_enabled && d_chi_bf != NULL) {
+                double nu_mid = nu_lab * (1.0 - 0.5 * (z_cur + z_bnd) * inv_ct);
+                chi_cont_s += d_bf_get_chi(d_chi_bf, bf_n_freq_bins,
+                                            bf_nu_min, bf_nu_max, bf_d_log_nu,
+                                            s, nu_mid);
+            }
+            tau_total += chi_cont_s * seg_len;
+        }
         z_cur = z_bnd;
         s++;
     }
@@ -1164,6 +1357,9 @@ void transport_kernel(
     const int *d_destination_level_id,
     const int *d_transition_line_id,
     const int *d_line2macro_level_upper,
+    const int *d_line_atomic_number,
+    const int *d_line_ion_number,
+    int fe_scatter_mode,
     /* Phase 6 - Step 7: Estimators */
     double *d_j_estimator, double *d_nu_bar_estimator,
     /* NLTE: J_nu frequency histogram */
@@ -1178,6 +1374,11 @@ void transport_kernel(
     int64_t *d_n_escaped, int64_t *d_n_reabsorbed,
     /* Virtual packet spectrum */
     double *d_virtual_spectrum, double L_inner,
+    /* BF opacity arrays */
+    const double *d_chi_bf, const double *d_T_rad,
+    const int *d_bf_activation_level,
+    int bf_enabled, int bf_n_freq_bins,
+    double bf_nu_min, double bf_nu_max, double bf_d_log_nu,
     /* Phase 6 - Step 7: Scalars */
     int n_packets, int n_shells, int n_lines, int n_macro_levels,
     double t_exp, double T_inner, double packet_energy,
@@ -1251,6 +1452,8 @@ void transport_kernel(
                                     t_exp, L_inner, d_r_inner, d_r_outer,
                                     d_line_list_nu, d_tau_sobolev,
                                     d_electron_density,
+                                    d_chi_bf, bf_enabled, bf_n_freq_bins,
+                                    bf_nu_min, bf_nu_max, bf_d_log_nu,
                                     n_lines, n_shells, N_VPACKETS,
                                     d_virtual_spectrum, rng);
         }
@@ -1261,10 +1464,18 @@ void transport_kernel(
     while (pkt_status == 0 && loop_count < 100000) { /* Phase 6 - Step 7 */
         loop_count++; /* Phase 6 - Step 7 */
 
-        /* Phase 6 - Step 7: Electron scattering opacity */
+        /* Phase 6 - Step 7: Continuum opacity (e-scattering + BF) */
         int shell = pkt_shell_id;                        /* Phase 6 - Step 7 */
         double chi_e = d_electron_density[shell] * SIGMA_THOMSON; /* Phase 6 - Step 7 */
-        double chi_continuum = chi_e;                    /* Phase 6 - Step 7 */
+        double doppler_bf = d_get_doppler_factor(pkt_r, pkt_mu, t_exp);
+        double comov_nu_bf = pkt_nu * doppler_bf;
+        double chi_bf_val = 0.0;
+        if (bf_enabled && d_chi_bf != NULL) {
+            chi_bf_val = d_bf_get_chi(d_chi_bf, bf_n_freq_bins,
+                                       bf_nu_min, bf_nu_max, bf_d_log_nu,
+                                       shell, comov_nu_bf);
+        }
+        double chi_continuum = chi_e + chi_bf_val;
 
         /* Phase 6 - Step 7: Trace packet */
         double distance;      /* Phase 6 - Step 7 */
@@ -1325,6 +1536,9 @@ void transport_kernel(
                                   d_transition_type,                      /* Phase 6 - Step 7 */
                                   d_transition_line_id,                   /* Phase 6 - Step 7 */
                                   d_line2macro_level_upper,               /* Phase 6 - Step 7 */
+                                  d_line_atomic_number,
+                                  d_line_ion_number,
+                                  fe_scatter_mode,
                                   rng);                                   /* Phase 6 - Step 7 */
             /* Virtual packet: trace from interaction point */
             if (d_virtual_spectrum != NULL) {
@@ -1335,14 +1549,55 @@ void transport_kernel(
                                             d_r_inner, d_r_outer,
                                             d_line_list_nu, d_tau_sobolev,
                                             d_electron_density,
+                                            d_chi_bf, bf_enabled, bf_n_freq_bins,
+                                            bf_nu_min, bf_nu_max, bf_d_log_nu,
                                             n_lines, n_shells, N_VPACKETS,
                                             d_virtual_spectrum, rng);
                 }
             }
-        } else if (interaction_type == 2) { /* Phase 6 - Step 7: ESCATTERING */
-            d_thomson_scatter(&pkt_r, &pkt_mu, &pkt_nu, &pkt_energy, /* Phase 6 - Step 7 */
-                               t_exp, rng);                            /* Phase 6 - Step 7 */
-            /* Virtual packet from e-scatter */
+        } else if (interaction_type == 2) { /* Phase 6 - Step 7: CONTINUUM (e-scatter or BF) */
+            /* Branch: Thomson scattering vs BF absorption */
+            if (chi_bf_val > 0.0 && d_rng_uniform(rng) > chi_e / chi_continuum) {
+                /* BF macro-atom channel: route through macro-atom if activation level available */
+                double comov_nu_bf2 = pkt_nu * d_get_doppler_factor(pkt_r, pkt_mu, t_exp);
+                int act_level = d_bf_get_activation_level(d_bf_activation_level,
+                    bf_n_freq_bins, bf_nu_min, bf_nu_max, bf_d_log_nu,
+                    pkt_shell_id, comov_nu_bf2);
+                if (act_level >= 0) {
+                    /* Isotropic re-emission + macro-atom cascade */
+                    pkt_mu = d_rng_mu(rng);
+                    double inv_new_doppler = d_get_inverse_doppler_factor(pkt_r, pkt_mu, t_exp);
+                    double old_doppler = d_get_doppler_factor(pkt_r, pkt_mu, t_exp);
+                    pkt_energy *= old_doppler;  /* to comoving */
+                    pkt_energy *= inv_new_doppler;  /* back to lab */
+                    pkt_nu = comov_nu_bf2 * inv_new_doppler;
+                    /* Run macro-atom cascade */
+                    int transition_id, transition_type_ma;
+                    d_macro_atom_interaction(act_level, pkt_shell_id,
+                        n_shells, n_macro_levels,
+                        d_macro_block_references,
+                        d_transition_probabilities,
+                        d_destination_level_id,
+                        d_transition_type,
+                        d_transition_line_id,
+                        rng, &transition_id, &transition_type_ma);
+                    if (transition_type_ma == -1) { /* MA_BB_EMISSION */
+                        /* P8: Orphaned level → fall back to nearest line */
+                        int emit_line = (transition_id >= 0) ? transition_id : pkt_next_line_id;
+                        d_line_emission(&pkt_nu, &pkt_next_line_id, emit_line,
+                                         pkt_r, pkt_mu, t_exp, d_line_list_nu);
+                    }
+                } else {
+                    d_bf_absorption_event(&pkt_r, &pkt_mu, &pkt_nu,
+                                           &pkt_next_line_id, t_exp,
+                                           d_T_rad, pkt_shell_id,
+                                           d_line_list_nu, n_lines, rng);
+                }
+            } else {
+                d_thomson_scatter(&pkt_r, &pkt_mu, &pkt_nu, &pkt_energy,
+                                   t_exp, rng);
+            }
+            /* Virtual packet from continuum interaction */
             if (d_virtual_spectrum != NULL) {
                 double nu_cmf_v = pkt_nu * d_get_doppler_factor(pkt_r, pkt_mu, t_exp);
                 for (int vp = 0; vp < N_VPACKETS; vp++) {
@@ -1351,6 +1606,8 @@ void transport_kernel(
                                             d_r_inner, d_r_outer,
                                             d_line_list_nu, d_tau_sobolev,
                                             d_electron_density,
+                                            d_chi_bf, bf_enabled, bf_n_freq_bins,
+                                            bf_nu_min, bf_nu_max, bf_d_log_nu,
                                             n_lines, n_shells, N_VPACKETS,
                                             d_virtual_spectrum, rng);
                 }
@@ -1437,6 +1694,10 @@ int main(int argc, char *argv[]) {
     for (int i = 0; i < geo.n_shells; i++)
         plasma.n_electron[i] = opacity.electron_density[i];
 
+    /* P6: Initialize per-shell electron temperature */
+    plasma.T_e = (double *)malloc(geo.n_shells * sizeof(double));
+    compute_electron_temperature(&plasma, NULL, geo.time_explosion, geo.n_shells, 0);
+
     int n_packets = config.n_packets;
     if (argc > 2) n_packets = atoi(argv[2]);
     int n_iterations = config.n_iterations;
@@ -1467,6 +1728,28 @@ int main(int argc, char *argv[]) {
     if (getenv("LUMINA_DYNAMIC_TRANSPROB"))
         enable_transprob_update = 1;
 
+    /* Fe two-level atom scatter: LUMINA_FE_SCATTER=1 (Fe II only) or =2 (all Fe) */
+    int fe_scatter = 0;
+    if (getenv("LUMINA_FE_SCATTER"))
+        fe_scatter = atoi(getenv("LUMINA_FE_SCATTER"));
+
+    /* Gamma-ray deposition: LUMINA_GAMMA_DEP=1 */
+    int gamma_dep_enabled = 0;
+    if (getenv("LUMINA_GAMMA_DEP") && atoi(getenv("LUMINA_GAMMA_DEP")) > 0)
+        gamma_dep_enabled = 1;
+
+    /* Line overlap correction: LUMINA_OVERLAP_CORR=1 (handled inside compute_plasma_state) */
+    int overlap_corr_enabled = (getenv("LUMINA_OVERLAP_CORR") &&
+                                 atoi(getenv("LUMINA_OVERLAP_CORR")) > 0);
+
+    /* Bound-free opacity: LUMINA_BF_OPACITY=1 */
+    int bf_opacity_enabled = (getenv("LUMINA_BF_OPACITY") &&
+                               atoi(getenv("LUMINA_BF_OPACITY")) > 0);
+
+    /* P6: Self-consistent T_e: LUMINA_SELF_CONSISTENT_TE=1 */
+    int self_consistent_te = (getenv("LUMINA_SELF_CONSISTENT_TE") &&
+                               atoi(getenv("LUMINA_SELF_CONSISTENT_TE")) > 0);
+
     printf("\nSimulation parameters:\n");
     printf("  Packets: %d, Iterations: %d\n", n_packets, n_iterations);
     printf("  Line interaction: MACROATOM\n");
@@ -1482,6 +1765,31 @@ int main(int argc, char *argv[]) {
         printf("  NLTE: %s\n", enable_nlte ? "ENABLED (all iters)" : "disabled");
     printf("  T_inner: %.2f K\n", config.T_inner);
     printf("  Transition probs: %s\n", enable_transprob_update ? "DYNAMIC" : "FROZEN");
+    printf("  Fe scatter: %s\n", fe_scatter == 2 ? "ALL Fe TWO-LEVEL" :
+                                  fe_scatter == 1 ? "Fe II TWO-LEVEL" : "MACRO-ATOM");
+    printf("  Gamma-ray deposition: %s\n", gamma_dep_enabled ? "ENABLED" : "disabled");
+    printf("  Line overlap correction: %s\n", overlap_corr_enabled ? "ENABLED" : "disabled");
+    printf("  BF+FF opacity: %s\n", bf_opacity_enabled ? "ENABLED" : "disabled");
+    if (self_consistent_te)
+        printf("  Self-consistent T_e: ENABLED\n");
+    else
+        printf("  Self-consistent T_e: disabled (ratio=%.2f)\n", plasma.T_e_T_rad_ratio);
+    double spec_min = 500.0, spec_max = 20000.0;
+    int spec_bins = 2000;
+    if (getenv("LUMINA_SPEC_RANGE")) {
+        sscanf(getenv("LUMINA_SPEC_RANGE"), "%lf,%lf,%d", &spec_min, &spec_max, &spec_bins);
+        printf("  Spectrum range: %.0f-%.0f A, %d bins\n", spec_min, spec_max, spec_bins);
+    }
+
+    /* Multi-epoch rescaling: override t_exp via environment variable */
+    const char *time_exp_env = getenv("LUMINA_TIME_EXPLOSION");
+    if (time_exp_env) {
+        double t_new_days = atof(time_exp_env);
+        double t_new = t_new_days * 86400.0;
+        printf("  Epoch rescale: t_exp %.2f -> %.2f days (ratio %.4f)\n",
+               geo.time_explosion / 86400.0, t_new_days, t_new / geo.time_explosion);
+        rescale_epoch(&geo, &plasma, t_new);
+    }
 
     /* Phase 6 - Step 8: Compute shell volumes */
     double *volume = (double *)malloc(geo.n_shells * sizeof(double)); /* Phase 6 - Step 8 */
@@ -1493,13 +1801,17 @@ int main(int argc, char *argv[]) {
 
     /* Phase 6 - Step 8: Create CPU estimators and spectrum */
     Estimators *est = create_estimators(geo.n_shells, opacity.n_lines); /* Phase 6 - Step 8 */
-    Spectrum *spec = create_spectrum(500.0, 20000.0, 2000);            /* Phase 6 - Step 8 */
+    Spectrum *spec = create_spectrum(spec_min, spec_max, spec_bins);
 
     /* Phase 6 - Step 8: Allocate and upload GPU data */
     CudaDeviceData dev; /* Phase 6 - Step 8 */
     memset(&dev, 0, sizeof(dev)); /* Phase 6 - Step 8 */
     cuda_allocate(&dev, &geo, &opacity, n_packets); /* Phase 6 - Step 8 */
     cuda_upload(&dev, &geo, &opacity);               /* Phase 6 - Step 8 */
+    CUDA_CHECK(cudaMemcpy(dev.d_line_atomic_number, atom_data.line_atomic_number,
+               opacity.n_lines * sizeof(int), cudaMemcpyHostToDevice));
+    CUDA_CHECK(cudaMemcpy(dev.d_line_ion_number, atom_data.line_ion_number,
+               opacity.n_lines * sizeof(int), cudaMemcpyHostToDevice));
     printf("  GPU memory allocated and uploaded.\n"); /* Phase 6 - Step 8 */
 
     /* NLTE: Initialize if enabled */
@@ -1521,6 +1833,25 @@ int main(int argc, char *argv[]) {
             if (N > max_N) max_N = N;
         }
         cuda_nlte_solver_init(&nlte_solver, max_N, geo.n_shells);
+    }
+
+    /* Gamma-ray deposition: initialize if enabled */
+    GammaDeposition gamma_dep;
+    memset(&gamma_dep, 0, sizeof(gamma_dep));
+    if (gamma_dep_enabled) {
+        gamma_deposition_init(&gamma_dep, geo.n_shells);
+        printf("\n--- Gamma-ray Deposition Initialized ---\n");
+    }
+
+    /* BF opacity: initialize if enabled */
+    BFOpacity bf;
+    memset(&bf, 0, sizeof(bf));
+    if (bf_opacity_enabled) {
+        bf_opacity_init(&bf, geo.n_shells);
+        compute_bf_opacity(&bf, &atom_data, &plasma, geo.n_shells);
+        cuda_allocate_bf(&dev, &bf, geo.n_shells);
+        cuda_upload_bf(&dev, &bf, &plasma, geo.n_shells);
+        printf("--- BF+FF Opacity Initialized (%d freq bins) ---\n", bf.n_freq_bins);
     }
 
     /* Phase 6 - Step 8: Host-side escaped packet buffers */
@@ -1570,6 +1901,9 @@ int main(int argc, char *argv[]) {
             dev.d_destination_level_id,
             dev.d_transition_line_id,
             dev.d_line2macro_level_upper,
+            dev.d_line_atomic_number,
+            dev.d_line_ion_number,
+            fe_scatter,
             dev.d_j_estimator, dev.d_nu_bar_estimator,
             dev.d_j_nu_estimator,
             dev.nlte_n_freq_bins, dev.nlte_nu_min, dev.nlte_d_log_nu,
@@ -1579,6 +1913,9 @@ int main(int argc, char *argv[]) {
             dev.d_escaped_r, dev.d_escaped_mu,
             dev.d_n_escaped, dev.d_n_reabsorbed,
             enable_virtual ? dev.d_virtual_spectrum : (double *)NULL, L_inner,
+            dev.d_chi_bf, dev.d_T_rad, dev.d_bf_activation_level,
+            dev.bf_enabled, dev.bf_n_freq_bins,
+            dev.bf_nu_min, dev.bf_nu_max, dev.bf_d_log_nu,
             n_packets, geo.n_shells, opacity.n_lines,
             opacity.n_macro_levels,
             geo.time_explosion, config.T_inner,
@@ -1639,7 +1976,26 @@ int main(int argc, char *argv[]) {
 
         /* Task #072: Recompute tau_sobolev and re-upload to GPU */
         if (iter > 0) {
+            /* Gamma-ray deposition: compute heating/ionization rates */
+            if (gamma_dep_enabled) {
+                compute_gamma_deposition(&gamma_dep, &atom_data, &plasma, &geo);
+                printf("  [Gamma] heating_rate[0]=%.2e, [%d]=%.2e erg/s/cm3\n",
+                       gamma_dep.heating_rate[0], geo.n_shells - 1,
+                       gamma_dep.heating_rate[geo.n_shells - 1]);
+            }
+
+            /* P6: Update per-shell T_e before plasma state */
+            compute_electron_temperature(&plasma,
+                gamma_dep_enabled ? &gamma_dep : NULL,
+                geo.time_explosion, geo.n_shells, self_consistent_te);
+
             compute_plasma_state(&atom_data, &plasma, &opacity, geo.time_explosion);
+
+            /* Recompute BF opacity with updated plasma and re-upload to GPU */
+            if (bf_opacity_enabled) {
+                compute_bf_opacity(&bf, &atom_data, &plasma, geo.n_shells);
+                cuda_upload_bf(&dev, &bf, &plasma, geo.n_shells);
+            }
 
             /* NLTE: solve rate equations and update tau for NLTE lines */
             if (enable_nlte && iter >= nlte_start_iter) {
@@ -1647,13 +2003,19 @@ int main(int argc, char *argv[]) {
                 nlte_normalize_j_nu(&nlte, time_simulation, volume, geo.n_shells);
                 nlte_solve_all_gpu(&nlte, &atom_data, &plasma, &opacity,
                                     geo.time_explosion, geo.n_shells,
-                                    &nlte_solver);
+                                    &nlte_solver,
+                                    gamma_dep_enabled ? &gamma_dep : NULL);
                 /* tau_sobolev already updated inside nlte_solve_all_gpu */
+
+                /* Re-apply overlap corrections after NLTE tau update */
+                if (overlap_corr_enabled)
+                    apply_overlap_corrections(&atom_data, &opacity, &plasma);
             }
 
             /* Dynamic transition probability recomputation */
             if (enable_transprob_update && iter >= config.hold_iterations) {
                 compute_transition_probabilities(&atom_data, &plasma, &opacity,
+                    (enable_nlte && iter >= nlte_start_iter) ? &nlte : NULL,
                     config.damping_constant,
                     (iter > config.hold_iterations) ? 1 : 0);
             }
@@ -1768,11 +2130,29 @@ int main(int argc, char *argv[]) {
         free(h_virtual_spectrum);
     }
 
+    /* P5: Formal integral spectrum (noise-free) */
+    {
+        Spectrum *spec_fi = create_spectrum(spec_min, spec_max, spec_bins);
+        compute_formal_integral_spectrum(
+            &geo, &plasma, &opacity, &atom_data,
+            nlte.enabled ? &nlte : NULL, config.T_inner,
+            spec_fi, 100);
+        FILE *ff = fopen("lumina_spectrum_formal.csv", "w");
+        if (ff) {
+            fprintf(ff, "wavelength_angstrom,flux\n");
+            for (int i = 0; i < spec_fi->n_bins; i++)
+                fprintf(ff, "%.6f,%.6e\n", spec_fi->wavelength[i], spec_fi->flux[i]);
+            fclose(ff);
+            printf("Formal integral spectrum written to lumina_spectrum_formal.csv\n");
+        }
+        free_spectrum(spec_fi);
+    }
+
     /* Rotation spectrum: Doppler-weight escaped packets (post-processing) */
     if (enable_rotation) {
         double L_inner_final = 4.0 * M_PI_VAL * geo.r_inner[0] * geo.r_inner[0] *
                                SIGMA_SB * pow(config.T_inner, 4);
-        Spectrum *spec_rot = create_spectrum(500.0, 20000.0, 2000);
+        Spectrum *spec_rot = create_spectrum(spec_min, spec_max, spec_bins);
         double weight_sum = 0.0;
         int n_rot = 0;
         for (int i = 0; i < n_packets; i++) {
@@ -1830,6 +2210,8 @@ int main(int argc, char *argv[]) {
         cuda_nlte_solver_free(&nlte_solver);
         nlte_free(&nlte);
     }
+    if (gamma_dep_enabled) gamma_deposition_free(&gamma_dep);
+    if (bf_opacity_enabled) bf_opacity_free(&bf);
 
     printf("\nDone.\n"); /* Phase 6 - Step 8 */
     return 0; /* Phase 6 - Step 8 */

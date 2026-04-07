@@ -29,6 +29,7 @@
 #define EV_TO_ERG         1.602176634e-12  /* eV to erg conversion */
 #define AMU               1.660539066e-24  /* atomic mass unit in g */
 #define M_ELECTRON        9.1093837015e-28 /* electron mass in g */
+#define C_FF_OPACITY      3.6926e8         /* free-free opacity coefficient (CGS) */
 
 /* Phase 2 - Step 2: TARDIS estimator constants (CGS) */
 /* T_RADIATIVE = (pi^4 / (15 * 24 * zeta(5))) * (h/k_B) */
@@ -151,6 +152,9 @@ typedef struct {
     double  T_inner;                    /* Phase 2 - Step 4: inner boundary temp [K] */
     double  luminosity_requested;       /* Phase 2 - Step 4: [erg/s] */
     bool    enable_nlte;                /* NLTE: enable restricted NLTE solver */
+    int     fe_scatter_mode;            /* 0=off, 1=Fe II two-level, 2=all Fe two-level */
+    int    *line_atomic_number;         /* [n_lines] Z, borrowed pointer from AtomicData */
+    int    *line_ion_number;            /* [n_lines] ion stage, borrowed from AtomicData */
 } MCConfig;                             /* Phase 2 - Step 4 */
 
 /* Phase 2 - Step 4: Plasma state for convergence */
@@ -161,6 +165,7 @@ typedef struct {
     double *rho;              /* Phase 2 - Step 4: [n_shells] density [g/cm^3] */
     double *n_electron;       /* Task #072: [n_shells] self-consistent n_e */
     double  T_e_T_rad_ratio;  /* T_e/T_rad ratio for Saha equation (default 0.9) */
+    double *T_e;              /* P6: [n_shells] per-shell electron temperature [K] */
 } PlasmaState;                /* Phase 2 - Step 4 */
 
 /* Task #072: Atomic data for plasma solver */
@@ -231,7 +236,7 @@ typedef struct {
 #define NLTE_N_FREQ_BINS  1000
 #define NLTE_NU_MIN       1.5e14    /* c / 20000 A */
 #define NLTE_NU_MAX       3.0e16    /* c / 100 A */
-#define NLTE_MAX_IONS     12        /* Si,Ca,Fe,S,Co,Ni  II/III (6 pairs) */
+#define NLTE_MAX_IONS     20        /* Si,Ca,Fe,S,Co,Ni,C,Mg,Ti,Cr II/III (10 pairs) */
 
 typedef struct {
     int    enabled;
@@ -260,8 +265,8 @@ typedef struct {
 /* Step 1.5: Charge Exchange Coupling                           */
 /* ============================================================ */
 
-#define CE_MAX_REACTIONS  4
-#define CE_N_REACTIONS    4
+#define CE_MAX_REACTIONS  8
+#define CE_N_REACTIONS    6
 
 typedef struct {
     int    Z_A, ion_A;       /* reactant A: A^(ion_A) */
@@ -270,6 +275,31 @@ typedef struct {
     double alpha;            /* temp exponent: k(T) = rate_coeff * (T/1e4)^alpha */
     double delta_E_eV;       /* energy defect [eV], negative = exothermic forward */
 } ChargeExchangeReaction;
+
+/* ============================================================ */
+/* Gamma-ray energy deposition from 56Ni/56Co decay             */
+/* ============================================================ */
+
+typedef struct {
+    int     n_shells;
+    double *heating_rate;           /* [n_shells] erg/s/cm³ */
+    double *nonthermal_ioniz_rate;  /* [n_shells] ionizations/s/cm³ */
+} GammaDeposition;
+
+/* ============================================================ */
+/* Bound-free (photoionization) opacity                        */
+/* ============================================================ */
+
+typedef struct {
+    int     enabled;
+    int     n_freq_bins;    /* NLTE_N_FREQ_BINS (1000) */
+    int     n_shells;
+    double  nu_min;         /* NLTE_NU_MIN (1.5e14 Hz = c/20000A) */
+    double  nu_max;         /* NLTE_NU_MAX (3.0e16 Hz = c/100A) */
+    double  d_log_nu;       /* log(nu_max/nu_min) / n_freq_bins */
+    double *chi_bf;         /* [n_shells * n_freq_bins] cm^-1 */
+    int    *activation_level; /* [n_shells * n_freq_bins] macro-atom level or -1 */
+} BFOpacity;
 
 /* Phase 2 - Step 4: Spectrum output */
 typedef struct {
@@ -318,6 +348,7 @@ void free_opacity_state(OpacityState *op);  /* Phase 2 - Step 6 */
 void free_estimators(Estimators *est);      /* Phase 2 - Step 6 */
 void free_plasma_state(PlasmaState *ps);    /* Phase 2 - Step 6 */
 void free_spectrum(Spectrum *spec);         /* Phase 2 - Step 6 */
+void rescale_epoch(Geometry *geo, PlasmaState *plasma, double t_new);
 
 /* Phase 2 - Step 6: Estimator management */
 Estimators *create_estimators(int n_shells, int n_lines); /* Phase 2 - Step 6 */
@@ -374,6 +405,8 @@ void thomson_scatter(
 void line_scatter_event(
     RPacket *pkt, double time_explosion,              /* Phase 3 - Step 1 */
     int line_interaction_type, OpacityState *opacity,  /* Phase 3 - Step 1 */
+    const int *line_atomic_number, const int *line_ion_number,
+    int fe_scatter_mode,
     RNG *rng                                           /* Phase 3 - Step 1 */
 );
 
@@ -408,7 +441,8 @@ void update_line_estimators(
 
 void single_packet_loop(
     RPacket *pkt, Geometry *geo, OpacityState *opacity, /* Phase 3 - Step 1 */
-    Estimators *est, MCConfig *config, RNG *rng         /* Phase 3 - Step 1 */
+    Estimators *est, MCConfig *config,                  /* Phase 3 - Step 1 */
+    BFOpacity *bf, PlasmaState *plasma, RNG *rng        /* BF opacity support */
 );
 
 /* Phase 4 - Step 1: Plasma solver */
@@ -433,7 +467,11 @@ void compute_plasma_state(AtomicData *atom, PlasmaState *plasma,
                           OpacityState *opacity, double time_explosion);
 void compute_transition_probabilities(AtomicData *atom, PlasmaState *plasma,
                                        OpacityState *opacity,
+                                       NLTEConfig *nlte,
                                        double damping_constant, int apply_damping);
+
+/* NLTE: Interpolate J_nu at a given frequency from the histogram */
+double nlte_get_J_at_nu(NLTEConfig *nlte, int shell, double nu);
 
 /* NLTE: Restricted NLTE rate equation solver */
 int  nlte_init(NLTEConfig *nlte, AtomicData *atom, OpacityState *opacity,
@@ -443,14 +481,47 @@ void nlte_normalize_j_nu(NLTEConfig *nlte, double time_simulation,
                           double *volume, int n_shells);
 void nlte_solve_all(NLTEConfig *nlte, AtomicData *atom, PlasmaState *plasma,
                      OpacityState *opacity, double time_explosion,
-                     int n_shells);
+                     int n_shells, GammaDeposition *gamma_dep);
 
 /* NLTE: Assemble rate matrix (column-major A[N*N] + RHS b[N]) for GPU/CPU solve */
 void nlte_assemble_rate_matrix(NLTEConfig *nlte, AtomicData *atom,
                                 PlasmaState *plasma, OpacityState *opacity,
                                 int ion_idx_lo, int ion_idx_hi,
                                 int shell, double time_explosion,
-                                double *A_cm, double *b, int N);
+                                double *A_cm, double *b, int N,
+                                GammaDeposition *gamma_dep);
+
+/* Gamma-ray deposition: 56Ni/56Co decay energy deposition */
+void gamma_deposition_init(GammaDeposition *gd, int n_shells);
+void compute_gamma_deposition(GammaDeposition *gd, AtomicData *atom,
+                               PlasmaState *plasma, Geometry *geo);
+void gamma_deposition_free(GammaDeposition *gd);
+
+/* Line overlap correction: reduce tau_sobolev for overlapping UV lines */
+void apply_overlap_corrections(AtomicData *atom, OpacityState *opacity,
+                                PlasmaState *plasma);
+
+/* Bound-free opacity: Kramers photoionization cross-section grid */
+void bf_opacity_init(BFOpacity *bf, int n_shells);
+void bf_opacity_free(BFOpacity *bf);
+void compute_bf_opacity(BFOpacity *bf, AtomicData *atom, PlasmaState *plasma,
+                         int n_shells);
+double bf_get_chi(BFOpacity *bf, int shell, double nu);
+int    bf_get_activation_level(BFOpacity *bf, int shell, double nu);
+void bf_absorption_event(RPacket *pkt, double time_explosion,
+                          PlasmaState *plasma, OpacityState *opacity, RNG *rng);
+double sample_planck_frequency(double T, RNG *rng);
+
+/* P6: Self-consistent per-shell electron temperature */
+void compute_electron_temperature(PlasmaState *plasma, GammaDeposition *gamma_dep,
+                                   double time_explosion, int n_shells,
+                                   int self_consistent);
+
+/* P5: Formal integral spectrum (noise-free, p-z formalism) */
+void compute_formal_integral_spectrum(
+    Geometry *geo, PlasmaState *plasma, OpacityState *opacity,
+    AtomicData *atom, NLTEConfig *nlte, double T_inner,
+    Spectrum *spec_formal, int n_impact);
 
 #ifdef __cplusplus   /* Phase 6 - Step 9: close extern C guard */
 }                    /* Phase 6 - Step 9 */

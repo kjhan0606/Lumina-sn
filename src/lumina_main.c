@@ -112,6 +112,10 @@ int main(int argc, char *argv[]) {
     for (int i = 0; i < geo.n_shells; i++)
         plasma.n_electron[i] = opacity.electron_density[i];
 
+    /* P6: Initialize per-shell electron temperature */
+    plasma.T_e = (double *)malloc(geo.n_shells * sizeof(double));
+    compute_electron_temperature(&plasma, NULL, geo.time_explosion, geo.n_shells, 0);
+
     /* Phase 5 - Step 3: Override with command-line packets if given */
     int n_packets = config.n_packets; /* Phase 5 - Step 3 */
     if (argc > 2) n_packets = atoi(argv[2]); /* Phase 5 - Step 3 */
@@ -141,6 +145,30 @@ int main(int argc, char *argv[]) {
     if (getenv("LUMINA_DYNAMIC_TRANSPROB"))
         enable_transprob_update = 1;
 
+    /* Fe two-level atom scatter: LUMINA_FE_SCATTER=1 (Fe II only) or =2 (all Fe) */
+    config.fe_scatter_mode = 0;
+    if (getenv("LUMINA_FE_SCATTER"))
+        config.fe_scatter_mode = atoi(getenv("LUMINA_FE_SCATTER"));
+    config.line_atomic_number = atom_data.line_atomic_number;
+    config.line_ion_number = atom_data.line_ion_number;
+
+    /* Gamma-ray deposition: LUMINA_GAMMA_DEP=1 */
+    int gamma_dep_enabled = 0;
+    if (getenv("LUMINA_GAMMA_DEP") && atoi(getenv("LUMINA_GAMMA_DEP")) > 0)
+        gamma_dep_enabled = 1;
+
+    /* Line overlap correction: LUMINA_OVERLAP_CORR=1 (handled inside compute_plasma_state) */
+    int overlap_corr_enabled = (getenv("LUMINA_OVERLAP_CORR") &&
+                                 atoi(getenv("LUMINA_OVERLAP_CORR")) > 0);
+
+    /* Bound-free opacity: LUMINA_BF_OPACITY=1 */
+    int bf_opacity_enabled = (getenv("LUMINA_BF_OPACITY") &&
+                               atoi(getenv("LUMINA_BF_OPACITY")) > 0);
+
+    /* P6: Self-consistent T_e: LUMINA_SELF_CONSISTENT_TE=1 */
+    int self_consistent_te = (getenv("LUMINA_SELF_CONSISTENT_TE") &&
+                               atoi(getenv("LUMINA_SELF_CONSISTENT_TE")) > 0);
+
     printf("\nSimulation parameters:\n"); /* Phase 5 - Step 3 */
     printf("  Packets: %d, Iterations: %d\n", n_packets, n_iterations); /* Phase 5 - Step 3 */
     printf("  Line interaction: MACROATOM\n"); /* Phase 5 - Step 3 */
@@ -152,6 +180,25 @@ int main(int argc, char *argv[]) {
         printf("  NLTE: %s\n", enable_nlte ? "ENABLED (all iters)" : "disabled");
     printf("  T_inner: %.2f K\n", config.T_inner); /* Phase 5 - Step 3 */
     printf("  Transition probs: %s\n", enable_transprob_update ? "DYNAMIC" : "FROZEN");
+    printf("  Fe scatter: %s\n", config.fe_scatter_mode == 2 ? "ALL Fe TWO-LEVEL" :
+                                  config.fe_scatter_mode == 1 ? "Fe II TWO-LEVEL" : "MACRO-ATOM");
+    printf("  Gamma-ray deposition: %s\n", gamma_dep_enabled ? "ENABLED" : "disabled");
+    printf("  Line overlap correction: %s\n", overlap_corr_enabled ? "ENABLED" : "disabled");
+    printf("  BF+FF opacity: %s\n", bf_opacity_enabled ? "ENABLED" : "disabled");
+    if (self_consistent_te)
+        printf("  Self-consistent T_e: ENABLED\n");
+    else
+        printf("  Self-consistent T_e: disabled (ratio=%.2f)\n", plasma.T_e_T_rad_ratio);
+
+    /* Multi-epoch rescaling: override t_exp via environment variable */
+    const char *time_exp_env = getenv("LUMINA_TIME_EXPLOSION");
+    if (time_exp_env) {
+        double t_new_days = atof(time_exp_env);
+        double t_new = t_new_days * 86400.0;
+        printf("  Epoch rescale: t_exp %.2f -> %.2f days (ratio %.4f)\n",
+               geo.time_explosion / 86400.0, t_new_days, t_new / geo.time_explosion);
+        rescale_epoch(&geo, &plasma, t_new);
+    }
 
     /* Phase 5 - Step 4: Compute shell volumes */
     double *volume = (double *)malloc(geo.n_shells * sizeof(double)); /* Phase 5 - Step 4 */
@@ -163,9 +210,15 @@ int main(int argc, char *argv[]) {
 
     /* Phase 5 - Step 4: Create estimators and spectrum */
     Estimators *est = create_estimators(geo.n_shells, opacity.n_lines); /* Phase 5 - Step 4 */
-    Spectrum *spec = create_spectrum(500.0, 20000.0, 2000); /* Phase 5 - Step 4 */
+    double spec_min = 500.0, spec_max = 20000.0;
+    int spec_bins = 2000;
+    if (getenv("LUMINA_SPEC_RANGE")) {
+        sscanf(getenv("LUMINA_SPEC_RANGE"), "%lf,%lf,%d", &spec_min, &spec_max, &spec_bins);
+        printf("  Spectrum range: %.0f-%.0f A, %d bins\n", spec_min, spec_max, spec_bins);
+    }
+    Spectrum *spec = create_spectrum(spec_min, spec_max, spec_bins);
 
-    Spectrum *spec_rot = enable_rotation ? create_spectrum(500.0, 20000.0, 2000) : NULL;
+    Spectrum *spec_rot = enable_rotation ? create_spectrum(spec_min, spec_max, spec_bins) : NULL;
 
     /* NLTE: Initialize if enabled */
     NLTEConfig nlte;
@@ -173,6 +226,24 @@ int main(int argc, char *argv[]) {
     if (enable_nlte) {
         printf("\n--- NLTE Initialization ---\n");
         nlte_init(&nlte, &atom_data, &opacity, geo.n_shells);
+    }
+
+    /* Gamma-ray deposition: initialize if enabled */
+    GammaDeposition gamma_dep;
+    memset(&gamma_dep, 0, sizeof(gamma_dep));
+    if (gamma_dep_enabled) {
+        gamma_deposition_init(&gamma_dep, geo.n_shells);
+        printf("\n--- Gamma-ray Deposition Initialized ---\n");
+    }
+
+    /* BF opacity: initialize if enabled */
+    BFOpacity bf;
+    memset(&bf, 0, sizeof(bf));
+    if (bf_opacity_enabled) {
+        bf_opacity_init(&bf, geo.n_shells);
+        /* Initial BF computation from reference plasma state */
+        compute_bf_opacity(&bf, &atom_data, &plasma, geo.n_shells);
+        printf("\n--- BF+FF Opacity Initialized (%d freq bins) ---\n", bf.n_freq_bins);
     }
 
     /* Phase 5 - Step 4: Time of simulation (TARDIS: 1 / L_inner) */
@@ -251,7 +322,8 @@ int main(int argc, char *argv[]) {
                 pkt.index = p; /* Phase 5 - Step 5 */
                 initialize_packet(&pkt, &geo, &config, packet_energy, &rng); /* Phase 5 - Step 5 */
 
-                single_packet_loop(&pkt, &geo, &opacity, local_est, &config, &rng); /* Phase 5 - Step 5 */
+                single_packet_loop(&pkt, &geo, &opacity, local_est, &config,
+                                   bf_opacity_enabled ? &bf : NULL, &plasma, &rng);
 
                 /* Phase 5 - Step 5: Store results (per-packet, no race) */
                 if (pkt.status == PACKET_EMITTED) { /* Phase 5 - Step 5 */
@@ -336,18 +408,41 @@ int main(int argc, char *argv[]) {
 
         /* Task #072: Recompute tau_sobolev from updated W, T_rad */
         if (iter > 0) {
+            /* Gamma-ray deposition: compute heating/ionization rates */
+            if (gamma_dep_enabled) {
+                compute_gamma_deposition(&gamma_dep, &atom_data, &plasma, &geo);
+                printf("  [Gamma] heating_rate[0]=%.2e, [%d]=%.2e erg/s/cm3\n",
+                       gamma_dep.heating_rate[0], geo.n_shells - 1,
+                       gamma_dep.heating_rate[geo.n_shells - 1]);
+            }
+
+            /* P6: Update per-shell T_e before plasma state */
+            compute_electron_temperature(&plasma,
+                gamma_dep_enabled ? &gamma_dep : NULL,
+                geo.time_explosion, geo.n_shells, self_consistent_te);
+
             compute_plasma_state(&atom_data, &plasma, &opacity, geo.time_explosion);
+
+            /* Recompute BF opacity grid after plasma update */
+            if (bf_opacity_enabled)
+                compute_bf_opacity(&bf, &atom_data, &plasma, geo.n_shells);
 
             /* NLTE: solve rate equations and update tau for NLTE lines */
             if (enable_nlte && iter >= nlte_start_iter) {
                 nlte_normalize_j_nu(&nlte, time_simulation, volume, geo.n_shells);
                 nlte_solve_all(&nlte, &atom_data, &plasma, &opacity,
-                               geo.time_explosion, geo.n_shells);
+                               geo.time_explosion, geo.n_shells,
+                               gamma_dep_enabled ? &gamma_dep : NULL);
+
+                /* Re-apply overlap corrections after NLTE tau update */
+                if (overlap_corr_enabled)
+                    apply_overlap_corrections(&atom_data, &opacity, &plasma);
             }
 
             /* Dynamic transition probability recomputation */
             if (enable_transprob_update && iter >= config.hold_iterations) {
                 compute_transition_probabilities(&atom_data, &plasma, &opacity,
+                    (enable_nlte && iter >= nlte_start_iter) ? &nlte : NULL,
                     config.damping_constant,
                     (iter > config.hold_iterations) ? 1 : 0);
             }
@@ -382,6 +477,7 @@ int main(int argc, char *argv[]) {
             /* Restore reference n_e */
             for (int i = 0; i < geo.n_shells; i++)
                 plasma.n_electron[i] = opacity.electron_density[i];
+            compute_electron_temperature(&plasma, NULL, geo.time_explosion, geo.n_shells, 0);
             compute_plasma_state(&atom_data, &plasma, &opacity, geo.time_explosion);
             /* Write validation tau to file */
             FILE *vf = fopen("lumina_tau_validation.csv", "w");
@@ -503,6 +599,24 @@ int main(int argc, char *argv[]) {
         }
     }
 
+    /* P5: Formal integral spectrum (noise-free) */
+    {
+        Spectrum *spec_fi = create_spectrum(spec_min, spec_max, spec_bins);
+        compute_formal_integral_spectrum(
+            &geo, &plasma, &opacity, &atom_data,
+            nlte.enabled ? &nlte : NULL, config.T_inner,
+            spec_fi, 100);
+        FILE *ff = fopen("lumina_spectrum_formal.csv", "w");
+        if (ff) {
+            fprintf(ff, "wavelength_angstrom,flux\n");
+            for (int i = 0; i < spec_fi->n_bins; i++)
+                fprintf(ff, "%.6f,%.6e\n", spec_fi->wavelength[i], spec_fi->flux[i]);
+            fclose(ff);
+            printf("Formal integral spectrum written to lumina_spectrum_formal.csv\n");
+        }
+        free_spectrum(spec_fi);
+    }
+
     /* Phase 5 - Step 9b: Write final plasma state */
     out = fopen("lumina_plasma_state.csv", "w"); /* Phase 5 - Step 9b */
     if (out) { /* Phase 5 - Step 9b */
@@ -524,6 +638,8 @@ int main(int argc, char *argv[]) {
     free(volume); /* Phase 5 - Step 10 */
     free_atomic_data(&atom_data); /* Task #072 */
     if (enable_nlte) nlte_free(&nlte);
+    if (gamma_dep_enabled) gamma_deposition_free(&gamma_dep);
+    if (bf_opacity_enabled) bf_opacity_free(&bf);
 
     printf("\nDone.\n"); /* Phase 5 - Step 10 */
     return 0; /* Phase 5 - Step 10 */

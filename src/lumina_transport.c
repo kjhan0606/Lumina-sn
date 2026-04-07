@@ -344,6 +344,8 @@ void macro_atom_interaction(int activation_level_id, int current_shell_id,
     int current_type = 0; /* Phase 3 - Step 9: start as internal */
     int n_shells = opacity->n_shells; /* Phase 3 - Step 9 */
     int ma_iter = 0; /* Phase 3 - Step 9: safety counter */
+    *out_transition_id = -1;  /* P8: safe default for orphaned levels */
+    *out_transition_type = MA_BB_EMISSION; /* P8: safe default */
 
     /* Phase 3 - Step 9: Loop while internal transitions (type >= 0) */
     while (current_type >= 0 && ma_iter < 500) { /* Phase 3 - Step 9 */
@@ -398,7 +400,9 @@ void macro_atom_interaction(int activation_level_id, int current_shell_id,
     }
 
     /* Phase 3 - Step 9: Convert transition_id to line_id for emission */
-    *out_transition_id = opacity->transition_line_id[*out_transition_id]; /* Phase 3 - Step 9 */
+    /* P8: Guard against orphaned levels (no transitions → out_transition_id == -1) */
+    if (*out_transition_id >= 0)
+        *out_transition_id = opacity->transition_line_id[*out_transition_id];
 }
 
 /* Phase 3 - Step 9b: Macro-atom event handler */
@@ -413,7 +417,9 @@ void macro_atom_event(int dest_level_idx, RPacket *pkt,
                             opacity, rng, &transition_id, &transition_type); /* Phase 3 - Step 9b */
 
     if (transition_type == MA_BB_EMISSION) { /* Phase 3 - Step 9b */
-        line_emission(pkt, transition_id, time_explosion, opacity); /* Phase 3 - Step 9b */
+        /* P8: Orphaned level (no transitions) → resonance scatter at activation line */
+        int emit_line = (transition_id >= 0) ? transition_id : pkt->next_line_id;
+        line_emission(pkt, emit_line, time_explosion, opacity); /* Phase 3 - Step 9b */
     }
     /* Phase 3 - Step 9b: No continuum processes in this implementation */
     /* BF/FF emission would go here if enabled */
@@ -426,6 +432,8 @@ void macro_atom_event(int dest_level_idx, RPacket *pkt,
 
 void line_scatter_event(RPacket *pkt, double time_explosion,
                          int line_interaction_type, OpacityState *opacity,
+                         const int *line_atomic_number, const int *line_ion_number,
+                         int fe_scatter_mode,
                          RNG *rng) {
     /* Phase 3 - Step 10: Get comoving frame at OLD angle */
     double old_doppler = get_doppler_factor(pkt->r, pkt->mu, time_explosion); /* Phase 3 - Step 10 */
@@ -447,9 +455,20 @@ void line_scatter_event(RPacket *pkt, double time_explosion,
         double comov_nu = pkt->nu * old_doppler; /* Phase 3 - Step 10 */
         pkt->nu = comov_nu * inv_new_doppler; /* Phase 3 - Step 10 */
 
-        /* Phase 3 - Step 10: Activate macro-atom at upper level */
-        int activation_level = opacity->line2macro_level_upper[pkt->next_line_id]; /* Phase 3 - Step 10 */
-        macro_atom_event(activation_level, pkt, time_explosion, opacity, rng); /* Phase 3 - Step 10 */
+        /* Fe two-level atom: resonance scatter instead of macro-atom cascade
+         * fe_scatter_mode: 0=off, 1=Fe II only, 2=all Fe (II+III+...) */
+        int is_fe_scatter = 0;
+        if (fe_scatter_mode && line_atomic_number[pkt->next_line_id] == 26) {
+            if (fe_scatter_mode == 2) is_fe_scatter = 1;
+            else if (line_ion_number[pkt->next_line_id] == 1) is_fe_scatter = 1;
+        }
+        if (is_fe_scatter) {
+            line_emission(pkt, pkt->next_line_id, time_explosion, opacity);
+        } else {
+            /* Phase 3 - Step 10: Activate macro-atom at upper level */
+            int activation_level = opacity->line2macro_level_upper[pkt->next_line_id]; /* Phase 3 - Step 10 */
+            macro_atom_event(activation_level, pkt, time_explosion, opacity, rng); /* Phase 3 - Step 10 */
+        }
     }
 }
 
@@ -460,7 +479,8 @@ void line_scatter_event(RPacket *pkt, double time_explosion,
 /* ============================================================ */
 
 void single_packet_loop(RPacket *pkt, Geometry *geo, OpacityState *opacity,
-                          Estimators *est, MCConfig *config, RNG *rng) {
+                          Estimators *est, MCConfig *config,
+                          BFOpacity *bf, PlasmaState *plasma, RNG *rng) {
     /* Phase 3 - Step 11: Set initial packet properties (partial relativity) */
     /* TARDIS: set_packet_props_partial_relativity */
     double inv_doppler = get_inverse_doppler_factor(pkt->r, pkt->mu, /* Phase 3 - Step 11 */
@@ -494,11 +514,14 @@ void single_packet_loop(RPacket *pkt, Geometry *geo, OpacityState *opacity,
         double doppler_factor = get_doppler_factor(pkt->r, pkt->mu, /* Phase 3 - Step 11 */
                                                     geo->time_explosion); /* Phase 3 - Step 11 */
         double comov_nu = pkt->nu * doppler_factor; /* Phase 3 - Step 11 */
-        (void)comov_nu; /* Phase 3 - Step 11: used by TARDIS for BF/FF, not here */
 
         int shell = pkt->current_shell_id; /* Phase 3 - Step 11 */
         double chi_e = opacity->electron_density[shell] * SIGMA_THOMSON; /* Phase 3 - Step 11 */
-        double chi_continuum = chi_e; /* Phase 3 - Step 11: only e-scattering */
+        double chi_bf_val = 0.0;
+        if (bf && bf->enabled) {
+            chi_bf_val = bf_get_chi(bf, shell, comov_nu);
+        }
+        double chi_continuum = chi_e + chi_bf_val; /* e-scattering + bound-free */
 
         /* Phase 3 - Step 11: Trace packet to find next interaction */
         double distance; /* Phase 3 - Step 11 */
@@ -516,10 +539,33 @@ void single_packet_loop(RPacket *pkt, Geometry *geo, OpacityState *opacity,
         } else if (interaction_type == INTERACTION_LINE) { /* Phase 3 - Step 11 */
             move_r_packet(pkt, distance, geo->time_explosion, est); /* Phase 3 - Step 11 */
             line_scatter_event(pkt, geo->time_explosion, /* Phase 3 - Step 11 */
-                                config->line_interaction_type, opacity, rng); /* Phase 3 - Step 11 */
+                                config->line_interaction_type, opacity,
+                                config->line_atomic_number, config->line_ion_number,
+                                config->fe_scatter_mode,
+                                rng); /* Phase 3 - Step 11 */
         } else if (interaction_type == INTERACTION_ESCATTERING) { /* Phase 3 - Step 11 */
             move_r_packet(pkt, distance, geo->time_explosion, est); /* Phase 3 - Step 11 */
-            thomson_scatter(pkt, geo->time_explosion, rng); /* Phase 3 - Step 11 */
+            /* Branch: Thomson scattering vs BF absorption */
+            if (chi_bf_val > 0.0 && rng_uniform(rng) > chi_e / chi_continuum) {
+                /* BF macro-atom channel: route through macro-atom cascade if possible */
+                int act_level = bf_get_activation_level(bf, shell, comov_nu);
+                if (act_level >= 0) {
+                    /* Activate macro-atom at ground state of ionized species.
+                     * Transform energy/nu: old frame → comoving → new frame */
+                    double comov_energy_pkt = pkt->energy * doppler_factor;
+                    double comov_nu_pkt = pkt->nu * doppler_factor;
+                    pkt->mu = rng_mu(rng);  /* new isotropic direction */
+                    double inv_new_doppler = get_inverse_doppler_factor(
+                        pkt->r, pkt->mu, geo->time_explosion);
+                    pkt->energy = comov_energy_pkt * inv_new_doppler;
+                    pkt->nu = comov_nu_pkt * inv_new_doppler;
+                    macro_atom_event(act_level, pkt, geo->time_explosion, opacity, rng);
+                } else {
+                    bf_absorption_event(pkt, geo->time_explosion, plasma, opacity, rng);
+                }
+            } else {
+                thomson_scatter(pkt, geo->time_explosion, rng); /* Phase 3 - Step 11 */
+            }
         }
     }
 }

@@ -163,19 +163,6 @@ static void compute_partition_functions(AtomicData *atom, PlasmaState *plasma,
     }
 }
 
-/* Task #072: Helper — compute LTE partition function at given T */
-static double compute_lte_partition(AtomicData *atom, int ip, double T, int n_shells, int shell) {
-    (void)n_shells; (void)shell;
-    int lev_start = atom->level_offset[ip];
-    int lev_end   = atom->level_offset[ip + 1];
-    double Z = 0.0;
-    for (int l = lev_start; l < lev_end; l++) {
-        double boltz = (atom->level_energy_eV[l] * EV_TO_ERG) / (K_BOLTZMANN * T);
-        if (boltz < 500.0)
-            Z += atom->level_g[l] * exp(-boltz);
-    }
-    return (Z > 1e-300) ? Z : 1e-300;
-}
 
 /* Task #072 Step 4b: Compute ion number densities (Saha + nebular)
  * Uses TARDIS formula (Mazzali & Lucy 1993, eq. 14):
@@ -198,7 +185,7 @@ static void compute_ion_populations(AtomicData *atom, PlasmaState *plasma,
 
         for (int s = 0; s < n_shells; s++) {
             double T_rad = plasma->T_rad[s];
-            double T_e   = plasma->T_e_T_rad_ratio * T_rad;
+            double T_e   = plasma->T_e[s];
             double W     = plasma->W[s];
             double n_e   = plasma->n_electron[s];
             double rho   = plasma->rho[s];
@@ -219,9 +206,9 @@ static void compute_ion_populations(AtomicData *atom, PlasmaState *plasma,
                 int ip_cur  = ip_start + k;
                 int ip_next = ip_start + k + 1;
 
-                /* LTE partition functions at T_rad for Saha equation */
-                double Z_cur  = compute_lte_partition(atom, ip_cur,  T_rad, n_shells, s);
-                double Z_next = compute_lte_partition(atom, ip_next, T_rad, n_shells, s);
+                /* Dilute partition functions (W-weighted, consistent with level pops) */
+                double Z_cur  = atom->partition_functions[ip_cur  * n_shells + s];
+                double Z_next = atom->partition_functions[ip_next * n_shells + s];
 
                 double chi_eV  = find_ioniz_energy(atom, Z_elem, k);
                 double chi_erg = chi_eV * EV_TO_ERG;
@@ -290,7 +277,7 @@ static void compute_electron_density(AtomicData *atom, PlasmaState *plasma,
         if (n_e <= 0.0) n_e = 1e6;
 
         double T_rad = plasma->T_rad[s];
-        double T_e   = plasma->T_e_T_rad_ratio * T_rad;
+        double T_e   = plasma->T_e[s];
         double W     = plasma->W[s];
         double rho   = plasma->rho[s];
 
@@ -321,8 +308,9 @@ static void compute_electron_density(AtomicData *atom, PlasmaState *plasma,
                 for (int k = 0; k < max_k; k++) {
                     int ip_cur  = ip_start + k;
                     int ip_next = ip_start + k + 1;
-                    double Z_cur  = compute_lte_partition(atom, ip_cur,  T_rad, n_shells, s);
-                    double Z_next = compute_lte_partition(atom, ip_next, T_rad, n_shells, s);
+                    /* Dilute partition functions (W-weighted, consistent with level pops) */
+                    double Z_cur  = atom->partition_functions[ip_cur  * n_shells + s];
+                    double Z_next = atom->partition_functions[ip_next * n_shells + s];
                     double chi_eV = find_ioniz_energy(atom, Z_elem, k);
                     double chi_erg = chi_eV * EV_TO_ERG;
 
@@ -485,12 +473,92 @@ static inline double planck_bnu(double T, double nu) {
            / (exp(x) - 1.0);
 }
 
+/* ============================================================ */
+/* P6: Self-consistent per-shell electron temperature           */
+/*                                                              */
+/* Default mode (self_consistent=0): T_e = ratio × T_rad       */
+/* Self-consistent (self_consistent=1): Compton-adiabatic       */
+/*   balance with collisional coupling correction + gamma heat  */
+/* ============================================================ */
+void compute_electron_temperature(PlasmaState *plasma, GammaDeposition *gamma_dep,
+                                   double time_explosion, int n_shells,
+                                   int self_consistent) {
+    if (!self_consistent) {
+        /* Default: uniform ratio */
+        for (int s = 0; s < n_shells; s++)
+            plasma->T_e[s] = plasma->T_e_T_rad_ratio * plasma->T_rad[s];
+        return;
+    }
+
+    /* Self-consistent T_e from energy balance:
+     *
+     * Heating:
+     *   Compton: q_C = (T_rad - T_e) / t_Compton
+     *   Collisional (line/PI thermalization): q_coll ≈ f_coll × (T_rad - T_e) / t_coll
+     *   Gamma-ray: q_gamma = Q_gamma / (1.5 × n_e × k_B)
+     *
+     * Cooling:
+     *   Adiabatic: q_ad = 2 × T_e / t_exp  (homologous, γ=5/3)
+     *
+     * Steady state: q_C + q_coll + q_gamma = q_ad
+     *   (Γ_C + Γ_coll)(T_rad - T_e) + G = Γ_ad × T_e
+     *   T_e = (Γ_eff × T_rad + G) / (Γ_eff + Γ_ad)
+     *
+     * Γ_C = 8 σ_T u_rad / (3 m_e c)  [s⁻¹]
+     *   u_rad = 4 W σ_SB T_rad⁴ / c
+     * Γ_coll ≈ 10 × Γ_C  (collisional coupling >> Compton in photosphere)
+     * Γ_ad = 2 / t_exp  [s⁻¹]
+     * G = Q_gamma / (1.5 × n_e × k_B)  [K/s]
+     */
+    double t_exp = time_explosion;
+    double Gamma_ad = 2.0 / t_exp;
+    /* Collisional boost: line/PI interactions couple T_e to T_rad
+     * much more strongly than Compton alone. Factor ~10-20 calibrated
+     * to reproduce T_e/T_rad ≈ 0.9 for typical inner shells. */
+    double f_coll_boost = 12.0;
+
+    for (int s = 0; s < n_shells; s++) {
+        double T_rad = plasma->T_rad[s];
+        double W     = plasma->W[s];
+        double n_e   = plasma->n_electron[s];
+        if (T_rad <= 0.0 || n_e <= 0.0) {
+            plasma->T_e[s] = plasma->T_e_T_rad_ratio * T_rad;
+            continue;
+        }
+
+        /* Compton coupling rate */
+        double u_rad = 4.0 * W * SIGMA_SB * T_rad * T_rad * T_rad * T_rad / C_SPEED_OF_LIGHT;
+        double Gamma_C = 8.0 * SIGMA_THOMSON * u_rad / (3.0 * M_ELECTRON * C_SPEED_OF_LIGHT);
+
+        /* Effective coupling = Compton + collisional (boosted) */
+        double Gamma_eff = Gamma_C * (1.0 + f_coll_boost);
+
+        /* Gamma-ray heating temperature rate */
+        double G = 0.0;
+        if (gamma_dep != NULL && gamma_dep->heating_rate != NULL && gamma_dep->heating_rate[s] > 0.0)
+            G = gamma_dep->heating_rate[s] / (1.5 * n_e * K_BOLTZMANN);
+
+        /* Steady state: T_e = (Γ_eff × T_rad + G) / (Γ_eff + Γ_ad) */
+        double T_e = (Gamma_eff * T_rad + G) / (Gamma_eff + Gamma_ad);
+
+        /* Clamp to physical range */
+        if (T_e < 0.3 * T_rad) T_e = 0.3 * T_rad;
+        if (T_e > 1.5 * T_rad) T_e = 1.5 * T_rad;
+
+        plasma->T_e[s] = T_e;
+    }
+}
+
 void compute_transition_probabilities(AtomicData *atom, PlasmaState *plasma,
                                        OpacityState *opacity,
+                                       NLTEConfig *nlte,
                                        double damping_constant, int apply_damping) {
     int n_shells = opacity->n_shells;
     int n_levels = opacity->n_macro_levels;
     int n_trans  = opacity->n_macro_transitions;
+
+    /* Use J_nu histogram for internal_up if NLTE is active and J_nu populated */
+    int use_j_nu = (nlte != NULL && nlte->enabled && nlte->J_nu != NULL);
 
     /* Find max block size for temp buffer */
     int max_block = 0;
@@ -529,9 +597,14 @@ void compute_transition_probabilities(AtomicData *atom, PlasmaState *plasma,
                         /* Internal down: A_ul * (1 - beta_sobolev) */
                         rate = atom->line_A_ul[line_id] * (1.0 - beta);
                     } else if (ttype == 1) {
-                        /* Internal up: B_lu * W * B_nu(T_rad, nu_line) */
+                        /* Internal up: B_lu * J_nu (MC histogram or W*B_nu fallback) */
                         double nu_line = atom->line_nu[line_id];
-                        rate = atom->line_B_lu[line_id] * W * planck_bnu(T_rad, nu_line);
+                        if (use_j_nu) {
+                            double J_line = nlte_get_J_at_nu(nlte, s, nu_line);
+                            rate = atom->line_B_lu[line_id] * J_line;
+                        } else {
+                            rate = atom->line_B_lu[line_id] * W * planck_bnu(T_rad, nu_line);
+                        }
                     }
                 }
                 if (rate < 0.0) rate = 0.0;
@@ -555,8 +628,9 @@ void compute_transition_probabilities(AtomicData *atom, PlasmaState *plasma,
     }
 
     free(rates_buf);
-    printf("  [TransProb] Recomputed %d transitions x %d shells (damping=%s)\n",
-           n_trans, n_shells, apply_damping ? "on" : "off");
+    printf("  [TransProb] Recomputed %d transitions x %d shells (damping=%s, J_src=%s)\n",
+           n_trans, n_shells, apply_damping ? "on" : "off",
+           use_j_nu ? "MC_histogram" : "W*Bnu");
 }
 
 /* Task #072 Step 4e: Master plasma state update */
@@ -582,6 +656,12 @@ void compute_plasma_state(AtomicData *atom, PlasmaState *plasma,
     printf("  [Plasma] Computing tau_sobolev...\n");
     compute_tau_sobolev(atom, plasma, opacity, time_explosion);
 
+    /* Line overlap correction (enabled by LUMINA_OVERLAP_CORR=1) */
+    if (getenv("LUMINA_OVERLAP_CORR") && atoi(getenv("LUMINA_OVERLAP_CORR")) > 0) {
+        printf("  [Plasma] Applying line overlap corrections...\n");
+        apply_overlap_corrections(atom, opacity, plasma);
+    }
+
     /* Print tau stats for key lines */
     int n_lines = opacity->n_lines;
     double tau_min = 1e99, tau_max = 0.0;
@@ -597,13 +677,364 @@ void compute_plasma_state(AtomicData *atom, PlasmaState *plasma,
 }
 
 /* ============================================================ */
-/* NLTE: Full NLTE Rate Equation Solver                         */
-/* Targets: Si,Ca,Fe,S,Co,Ni II/III (6 pairs, ~3500 levels)    */
+/* Bound-free (photoionization) opacity                        */
+/* Kramers cross-section grid: chi_bf[shell][freq_bin]         */
 /* ============================================================ */
 
-/* NLTE target ion definitions: 6 element pairs (12 ions) */
-static const int NLTE_TARGET_Z[]   = { 14, 14, 20, 20, 26, 26, 16, 16, 27, 27, 28, 28 };
-static const int NLTE_TARGET_ION[] = {  1,  2,  1,  2,  1,  2,  1,  2,  1,  2,  1,  2 };
+void bf_opacity_init(BFOpacity *bf, int n_shells) {
+    bf->enabled = 1;
+    bf->n_freq_bins = NLTE_N_FREQ_BINS;
+    bf->n_shells = n_shells;
+    bf->nu_min = NLTE_NU_MIN;
+    bf->nu_max = NLTE_NU_MAX;
+    bf->d_log_nu = log(NLTE_NU_MAX / NLTE_NU_MIN) / (double)NLTE_N_FREQ_BINS;
+    bf->chi_bf = (double *)calloc((size_t)n_shells * NLTE_N_FREQ_BINS, sizeof(double));
+    bf->activation_level = (int *)malloc((size_t)n_shells * NLTE_N_FREQ_BINS * sizeof(int));
+    memset(bf->activation_level, -1, (size_t)n_shells * NLTE_N_FREQ_BINS * sizeof(int));
+}
+
+void bf_opacity_free(BFOpacity *bf) {
+    free(bf->chi_bf);
+    free(bf->activation_level);
+    memset(bf, 0, sizeof(*bf));
+}
+
+/* Look up macro-atom activation level for BF absorption at given frequency.
+ * Returns macro-atom level index (global level idx) or -1 for thermal fallback. */
+int bf_get_activation_level(BFOpacity *bf, int shell, double nu) {
+    if (!bf->enabled || !bf->activation_level || nu < bf->nu_min || nu >= bf->nu_max)
+        return -1;
+    int bin = (int)(log(nu / bf->nu_min) / bf->d_log_nu);
+    if (bin < 0 || bin >= bf->n_freq_bins) return -1;
+    return bf->activation_level[shell * bf->n_freq_bins + bin];
+}
+
+/* Interpolate chi_bf at arbitrary frequency (linear in log-nu grid) */
+double bf_get_chi(BFOpacity *bf, int shell, double nu) {
+    if (!bf->enabled || nu < bf->nu_min || nu >= bf->nu_max) return 0.0;
+    double log_ratio = log(nu / bf->nu_min);
+    int bin = (int)(log_ratio / bf->d_log_nu);
+    if (bin < 0) return 0.0;
+    if (bin >= bf->n_freq_bins - 1) return bf->chi_bf[shell * bf->n_freq_bins + bf->n_freq_bins - 1];
+    /* Linear interpolation between bins */
+    double frac = log_ratio / bf->d_log_nu - (double)bin;
+    double chi0 = bf->chi_bf[shell * bf->n_freq_bins + bin];
+    double chi1 = bf->chi_bf[shell * bf->n_freq_bins + bin + 1];
+    return chi0 + frac * (chi1 - chi0);
+}
+
+/* Compute chi_bf grid for all shells and frequency bins.
+ * Uses Kramers hydrogenic cross-section: sigma(nu) = sigma_0 * (nu_edge/nu)^3
+ * where sigma_0 = 7.91e-18 / Z_eff^2 cm^2.
+ * Sums over all ions and their levels weighted by level population. */
+/* P7: Tabulated ground-state photoionization cross-sections from CMFGEN data.
+ * Returns σ₀ in cm² (1 Mb = 1e-18 cm²). Ions not in table return 0 → Kramers fallback.
+ * Sources: CMFGEN phot_data files (C,Mg,Ca,Cr,Fe,Co,Ni); estimated for Si,S,Ti. */
+static double get_bf_sigma0(int Z, int stage) {
+    switch (Z) {
+    case 6:  return (stage == 1) ? 3.75e-18 : (stage == 2) ? 1.27e-18 : 0;  /* C  */
+    case 12: return (stage == 1) ? 0.23e-18 : (stage == 2) ? 5.42e-18 : 0;  /* Mg */
+    case 14: return (stage == 1) ? 1.00e-18 : (stage == 2) ? 3.00e-18 : 0;  /* Si (est) */
+    case 16: return (stage == 1) ? 2.00e-18 : (stage == 2) ? 3.00e-18 : 0;  /* S  (est) */
+    case 20: return (stage == 1) ? 0.31e-18 : (stage == 2) ? 1.92e-18 : 0;  /* Ca */
+    case 22: return (stage == 1) ? 3.00e-18 : (stage == 2) ? 2.00e-18 : 0;  /* Ti (est) */
+    case 24: return (stage == 1) ? 2.00e-18 : (stage == 2) ? 2.00e-18 : 0;  /* Cr (est) */
+    case 26: return (stage == 1) ? 5.26e-18 : (stage == 2) ? 8.82e-18 : 0;  /* Fe */
+    case 27: return (stage == 1) ?10.10e-18 : (stage == 2) ? 2.00e-18 : 0;  /* Co */
+    case 28: return (stage == 1) ? 7.27e-18 : (stage == 2) ? 3.00e-18 : 0;  /* Ni */
+    default: return 0;
+    }
+}
+
+void compute_bf_opacity(BFOpacity *bf, AtomicData *atom, PlasmaState *plasma,
+                         int n_shells) {
+    if (!bf->enabled) return;
+
+    /* Zero the grid and activation table */
+    size_t grid_size = (size_t)n_shells * bf->n_freq_bins;
+    memset(bf->chi_bf, 0, grid_size * sizeof(double));
+    memset(bf->activation_level, -1, grid_size * sizeof(int));
+
+    /* Per-bin dominant absorber tracking: chi contribution from best ion */
+    double *best_chi = (double *)calloc(grid_size, sizeof(double));
+    int    *best_ip  = (int *)malloc(grid_size * sizeof(int));
+    memset(best_ip, -1, grid_size * sizeof(int));
+
+    /* Precompute ground-state level index of the NEXT-HIGHER ion for each ion pop.
+     * When ion ip (Z, stage) absorbs BF, the atom becomes (Z, stage+1).
+     * We activate macro-atom at ground state of (Z, stage+1). */
+    int *ionized_ground = (int *)malloc(atom->n_ion_pops * sizeof(int));
+    for (int ip = 0; ip < atom->n_ion_pops; ip++) {
+        ionized_ground[ip] = -1;
+        int Z_ion = atom->ion_pop_Z[ip];
+        int next_stage = atom->ion_pop_stage[ip] + 1;
+        /* Find ion pop for (Z, next_stage) */
+        for (int jp = 0; jp < atom->n_ion_pops; jp++) {
+            if (atom->ion_pop_Z[jp] == Z_ion && atom->ion_pop_stage[jp] == next_stage) {
+                /* Find ground level (level_num=0) of that ion */
+                int ls = atom->level_offset[jp];
+                int le = atom->level_offset[jp + 1];
+                for (int l = ls; l < le; l++) {
+                    if (atom->level_num[l] == 0) {
+                        ionized_ground[ip] = l;
+                        break;
+                    }
+                }
+                break;
+            }
+        }
+    }
+
+    /* Precompute bin center frequencies */
+    double *nu_bin = (double *)malloc(bf->n_freq_bins * sizeof(double));
+    for (int b = 0; b < bf->n_freq_bins; b++) {
+        nu_bin[b] = bf->nu_min * exp((b + 0.5) * bf->d_log_nu);
+    }
+
+    for (int ip = 0; ip < atom->n_ion_pops; ip++) {
+        int Z_ion = atom->ion_pop_Z[ip];
+        int stage = atom->ion_pop_stage[ip];
+        /* Skip neutrals (no ionization from neutral ground to ion) for this simple model,
+         * and skip highest ion stages (nothing to ionize to) */
+        if (stage < 1) continue;
+
+        /* Find ionization energy for this ion */
+        double chi_eV = -1.0;
+        for (int k = 0; k < atom->n_ionization; k++) {
+            if (atom->ioniz_Z[k] == Z_ion && atom->ioniz_ion[k] == stage) {
+                chi_eV = atom->ioniz_energy_eV[k];
+                break;
+            }
+        }
+        if (chi_eV <= 0.0) continue;
+        double chi_erg = chi_eV * EV_TO_ERG;
+
+        /* P7: Tabulated cross-section (CMFGEN) or Kramers fallback */
+        double sigma_0 = get_bf_sigma0(Z_ion, stage);
+        if (sigma_0 <= 0.0) {
+            int Z_eff = Z_ion - stage;
+            if (Z_eff < 1) Z_eff = 1;
+            sigma_0 = 7.91e-18 / ((double)Z_eff * (double)Z_eff);
+        }
+
+        int lev_start = atom->level_offset[ip];
+        int lev_end   = atom->level_offset[ip + 1];
+
+        for (int s = 0; s < n_shells; s++) {
+            double T_rad = plasma->T_rad[s];
+            double W     = plasma->W[s];
+            double n_ion = atom->ion_number_density[ip * n_shells + s];
+            double Z_part = atom->partition_functions[ip * n_shells + s];
+            double beta_rad = 1.0 / (K_BOLTZMANN * T_rad);
+
+            if (n_ion < 1e-30 || Z_part < 1e-300) continue;
+
+            for (int l = lev_start; l < lev_end; l++) {
+                double E_eV = atom->level_energy_eV[l];
+                int g = atom->level_g[l];
+                int is_meta = atom->level_metastable[l];
+
+                double boltz = E_eV * EV_TO_ERG * beta_rad;
+                if (boltz > 50.0) continue;  /* negligible population */
+
+                /* Level population (dilute Boltzmann) */
+                double weight = is_meta ? 1.0 : W;
+                double n_level = n_ion * weight * g * exp(-boltz) / Z_part;
+                if (n_level < 1e-30) continue;
+
+                /* Ionization edge for this level: nu_edge = (chi_ion - E_level) / h */
+                double E_level_erg = E_eV * EV_TO_ERG;
+                double nu_edge = (chi_erg - E_level_erg) / H_PLANCK;
+                if (nu_edge <= bf->nu_min) continue;  /* edge below our grid */
+
+                /* Find starting bin for this edge */
+                int bin_start = 0;
+                if (nu_edge > bf->nu_min) {
+                    bin_start = (int)(log(nu_edge / bf->nu_min) / bf->d_log_nu);
+                    if (bin_start < 0) bin_start = 0;
+                }
+
+                /* Add contribution to all bins above the edge */
+                for (int b = bin_start; b < bf->n_freq_bins; b++) {
+                    double nu = nu_bin[b];
+                    if (nu < nu_edge) continue;
+                    double ratio = nu_edge / nu;
+                    double chi_contrib = n_level * sigma_0 * ratio * ratio * ratio;
+                    int idx = s * bf->n_freq_bins + b;
+                    bf->chi_bf[idx] += chi_contrib;
+
+                    /* Track dominant absorber for macro-atom activation */
+                    if (chi_contrib > best_chi[idx]) {
+                        best_chi[idx] = chi_contrib;
+                        best_ip[idx] = ip;
+                    }
+                }
+            }
+        }
+    }
+
+    /* Build activation level table from dominant absorber */
+    int n_activated = 0;
+    for (size_t idx = 0; idx < grid_size; idx++) {
+        if (best_ip[idx] >= 0 && ionized_ground[best_ip[idx]] >= 0) {
+            bf->activation_level[idx] = ionized_ground[best_ip[idx]];
+            n_activated++;
+        }
+    }
+
+    free(best_chi);
+    free(best_ip);
+    free(ionized_ground);
+
+    /* --- Free-free (bremsstrahlung) opacity --- */
+    for (int s = 0; s < n_shells; s++) {
+        double T_e = plasma->T_e[s];
+        double n_e = plasma->n_electron[s];
+        if (T_e <= 0.0 || n_e <= 0.0) continue;
+
+        double sqrt_Te_inv = 1.0 / sqrt(T_e);
+        double kT_e = K_BOLTZMANN * T_e;
+
+        /* Sum Z_eff^2 * n_ion over all ions */
+        double Z2_n_sum = 0.0;
+        for (int ip = 0; ip < atom->n_ion_pops; ip++) {
+            int ion_stage = atom->ion_pop_stage[ip];  /* 0=neutral, 1=II, 2=III */
+            if (ion_stage < 1) continue;              /* neutrals don't contribute */
+            double Z_eff = (double)ion_stage;
+            double n_ion = atom->ion_number_density[ip * n_shells + s];
+            Z2_n_sum += Z_eff * Z_eff * n_ion;
+        }
+
+        double coeff = C_FF_OPACITY * sqrt_Te_inv * n_e * Z2_n_sum;
+
+        for (int b = 0; b < bf->n_freq_bins; b++) {
+            double nu = nu_bin[b];
+            double nu3 = nu * nu * nu;
+            double stim = 1.0 - exp(-H_PLANCK * nu / kT_e);
+            bf->chi_bf[s * bf->n_freq_bins + b] += coeff / nu3 * stim;
+        }
+    }
+
+    free(nu_bin);
+
+    /* Print diagnostics: BF and FF contributions separately for shell 0 */
+    double chi_bf_max_opt = 0.0, chi_bf_max_uv = 0.0;
+    double chi_ff_max_opt = 0.0, chi_ff_max_uv = 0.0;
+    {
+        /* Recompute FF-only for shell 0 for diagnostics */
+        double T_e0 = plasma->T_e[0];
+        double n_e0 = plasma->n_electron[0];
+        double sqrt_Te_inv0 = (T_e0 > 0.0) ? 1.0 / sqrt(T_e0) : 0.0;
+        double kT_e0 = K_BOLTZMANN * T_e0;
+        double Z2_n_sum0 = 0.0;
+        for (int ip = 0; ip < atom->n_ion_pops; ip++) {
+            int ion_stage = atom->ion_pop_stage[ip];
+            if (ion_stage < 1) continue;
+            double Z_eff = (double)ion_stage;
+            double n_ion = atom->ion_number_density[ip * n_shells + 0];
+            Z2_n_sum0 += Z_eff * Z_eff * n_ion;
+        }
+        double coeff0 = C_FF_OPACITY * sqrt_Te_inv0 * n_e0 * Z2_n_sum0;
+
+        for (int b = 0; b < bf->n_freq_bins; b++) {
+            double nu = bf->nu_min * exp((b + 0.5) * bf->d_log_nu);
+            double lam_A = C_SPEED_OF_LIGHT / nu * 1e8;
+            double chi_total = bf->chi_bf[0 * bf->n_freq_bins + b];
+
+            /* FF contribution at this freq */
+            double nu3 = nu * nu * nu;
+            double stim = (kT_e0 > 0.0) ? 1.0 - exp(-H_PLANCK * nu / kT_e0) : 0.0;
+            double chi_ff = (coeff0 > 0.0) ? coeff0 / nu3 * stim : 0.0;
+            double chi_bf = chi_total - chi_ff;
+
+            if (lam_A >= 3500.0 && lam_A <= 9000.0) {
+                if (chi_bf > chi_bf_max_opt) chi_bf_max_opt = chi_bf;
+                if (chi_ff > chi_ff_max_opt) chi_ff_max_opt = chi_ff;
+            }
+            if (lam_A >= 1000.0 && lam_A < 3500.0) {
+                if (chi_bf > chi_bf_max_uv) chi_bf_max_uv = chi_bf;
+                if (chi_ff > chi_ff_max_uv) chi_ff_max_uv = chi_ff;
+            }
+        }
+    }
+    double chi_e0 = plasma->n_electron[0] * SIGMA_THOMSON;
+    printf("  [BF+FF] Shell 0 (optical): chi_bf=%.2e  chi_ff=%.2e  chi_e=%.2e  (bf/e=%.2e  ff/e=%.2e)\n",
+           chi_bf_max_opt, chi_ff_max_opt, chi_e0, chi_bf_max_opt/chi_e0, chi_ff_max_opt/chi_e0);
+    printf("  [BF+FF] Shell 0 (UV):      chi_bf=%.2e  chi_ff=%.2e  chi_e=%.2e  (bf/e=%.2e  ff/e=%.2e)\n",
+           chi_bf_max_uv, chi_ff_max_uv, chi_e0, chi_bf_max_uv/chi_e0, chi_ff_max_uv/chi_e0);
+    printf("  [BF] Macro-atom activation: %d/%d bins have valid levels\n",
+           n_activated, (int)grid_size);
+}
+
+/* Sample Planck frequency using Bjorkman-Wood method (4-random) */
+double sample_planck_frequency(double T, RNG *rng) {
+    double kT_h = K_BOLTZMANN * T / H_PLANCK;
+    double xi0 = rng_uniform(rng);
+    double l_coef = M_PI_VAL * M_PI_VAL * M_PI_VAL * M_PI_VAL / 90.0;
+    double target = xi0 * l_coef;
+    double cumsum = 0.0;
+    double l_min = 1.0;
+    for (int l = 1; l <= 1000; l++) {
+        double ld = (double)l;
+        double l_inv4 = 1.0 / (ld * ld * ld * ld);
+        cumsum += l_inv4;
+        if (cumsum >= target) {
+            l_min = ld;
+            break;
+        }
+    }
+    double r1 = rng_uniform(rng);
+    double r2 = rng_uniform(rng);
+    double r3 = rng_uniform(rng);
+    double r4 = rng_uniform(rng);
+    if (r1 < 1e-300) r1 = 1e-300;
+    if (r2 < 1e-300) r2 = 1e-300;
+    if (r3 < 1e-300) r3 = 1e-300;
+    if (r4 < 1e-300) r4 = 1e-300;
+    double x = -log(r1 * r2 * r3 * r4) / l_min;
+    return x * kT_h;
+}
+
+/* BF absorption event: thermalize packet — re-emit as Planck(T_rad) */
+void bf_absorption_event(RPacket *pkt, double time_explosion,
+                          PlasmaState *plasma, OpacityState *opacity,
+                          RNG *rng) {
+    /* 1. New isotropic direction */
+    pkt->mu = rng_mu(rng);
+
+    /* 2. Sample new comoving frequency from Planck(T_rad) */
+    double T_rad = plasma->T_rad[pkt->current_shell_id];
+    double comov_nu = sample_planck_frequency(T_rad, rng);
+
+    /* 3. Transform to lab frame (inline Doppler to avoid lumina_transport.c dependency) */
+    double beta = pkt->r / (C_SPEED_OF_LIGHT * time_explosion);
+    double doppler = 1.0 - beta * pkt->mu;
+    pkt->nu = comov_nu / doppler;  /* inv_doppler = 1/doppler */
+
+    /* 4. Reinitialize next_line_id for new frequency (binary search) */
+    double comov_check = pkt->nu * doppler;
+    int lo = 0, hi = opacity->n_lines;
+    while (lo < hi) {
+        int mid = (lo + hi) / 2;
+        if (opacity->line_list_nu[mid] > comov_check)
+            lo = mid + 1;
+        else
+            hi = mid;
+    }
+    if (lo == opacity->n_lines) lo = opacity->n_lines - 1;
+    pkt->next_line_id = lo;
+}
+
+/* ============================================================ */
+/* NLTE: Full NLTE Rate Equation Solver                         */
+/* Targets: Si,Ca,Fe,S,Co,Ni,C,Mg,Ti,Cr II/III (10 pairs)     */
+/* ============================================================ */
+
+/* NLTE target ion definitions: 10 element pairs (20 ions) */
+static const int NLTE_TARGET_Z[]   = { 14, 14, 20, 20, 26, 26, 16, 16, 27, 27, 28, 28,
+                                         6,  6, 12, 12, 22, 22, 24, 24 };
+static const int NLTE_TARGET_ION[] = {  1,  2,  1,  2,  1,  2,  1,  2,  1,  2,  1,  2,
+                                         1,  2,  1,  2,  1,  2,  1,  2 };
 
 /* Step 1.5: Charge Exchange reaction table
  * Forward: A^(ion_A) + B^(ion_B) → A^(ion_A+1) + B^(ion_B-1)
@@ -615,6 +1046,8 @@ static const ChargeExchangeReaction CE_REACTIONS[CE_N_REACTIONS] = {
   {  26,   1,    28,   2,   1.0e-9,    0.0,  -1.98 },  /* Fe+ + Ni2+ → Fe2+ + Ni+ */
   {  27,   1,    28,   2,   1.0e-9,    0.0,  -1.09 },  /* Co+ + Ni2+ → Co2+ + Ni+ */
   {  20,   1,    14,   2,   1.0e-9,    0.0,  -4.48 },  /* Ca+ + Si2+ → Ca2+ + Si+ */
+  {  26,   1,    24,   2,   1.0e-9,    0.0,  -1.47 },  /* Fe+ + Cr2+ → Fe2+ + Cr+ */
+  {  26,   1,    22,   2,   1.0e-9,    0.0,  -0.77 },  /* Fe+ + Ti2+ → Fe2+ + Ti+ */
 };
 
 /* Step 1.5: Get total ion number density for (Z, ion_stage, shell).
@@ -776,7 +1209,7 @@ void nlte_normalize_j_nu(NLTEConfig *nlte, double time_simulation,
 }
 
 /* Interpolate J_nu at a given frequency from the histogram */
-static double nlte_get_J_at_nu(NLTEConfig *nlte, int shell, double nu) {
+double nlte_get_J_at_nu(NLTEConfig *nlte, int shell, double nu) {
     if (nu <= nlte->nu_min || nu >= nlte->nu_max)
         return 1e-30;
     double log_ratio = log(nu / nlte->nu_min);
@@ -851,13 +1284,14 @@ void nlte_assemble_rate_matrix(NLTEConfig *nlte, AtomicData *atom,
                                 PlasmaState *plasma, OpacityState *opacity,
                                 int ion_idx_lo, int ion_idx_hi,
                                 int shell, double time_explosion,
-                                double *A_cm, double *b, int N) {
+                                double *A_cm, double *b, int N,
+                                GammaDeposition *gamma_dep) {
     (void)time_explosion;
 
     int lev_start = nlte->nlte_ion_level_offset[ion_idx_lo];
     int n_shells = plasma->n_shells;
     double T_rad = plasma->T_rad[shell];
-    double T_e   = plasma->T_e_T_rad_ratio * T_rad;
+    double T_e   = plasma->T_e[shell];
     double n_e   = plasma->n_electron[shell];
 
     /* Column-major access: ACM(i,j) = A_cm[j*N + i] */
@@ -1044,6 +1478,28 @@ void nlte_assemble_rate_matrix(NLTEConfig *nlte, AtomicData *atom,
         }
     }
 
+    /* ---- Non-thermal gamma-ray ionization ---- */
+    if (gamma_dep != NULL && gamma_dep->nonthermal_ioniz_rate[shell] > 0.0) {
+        double R_nt_total = gamma_dep->nonthermal_ioniz_rate[shell]; /* ionizations/s/cm³ */
+
+        /* Compute total atom number density in shell from all elements */
+        double n_total_atoms = 0.0;
+        for (int e = 0; e < atom->n_elements; e++) {
+            double X_e = atom->abundances[e * n_shells + shell];
+            double A_e = atom->element_mass_amu[e];
+            n_total_atoms += X_e * plasma->rho[shell] / (A_e * AMU);
+        }
+
+        /* Per-particle ionization rate (distributed equally per atom) */
+        if (n_total_atoms > 0.0 && ground_hi < N) {
+            double R_nt_per_particle = R_nt_total / n_total_atoms; /* [s⁻¹] */
+
+            /* Apply: ground state of lower ion → ground state of upper ion */
+            ACM(ground_hi, 0) += R_nt_per_particle;
+            ACM(0, 0)         -= R_nt_per_particle;
+        }
+    }
+
     /* ---- Conservation equation: replace last row ---- */
     int Z_nl = nlte->nlte_Z[ion_idx_lo];
     double n_total = 0.0;
@@ -1063,7 +1519,8 @@ void nlte_assemble_rate_matrix(NLTEConfig *nlte, AtomicData *atom,
 static void nlte_solve_ion_shell(NLTEConfig *nlte, AtomicData *atom,
                                   PlasmaState *plasma, OpacityState *opacity,
                                   int ion_idx_lo, int ion_idx_hi,
-                                  int shell, double time_explosion) {
+                                  int shell, double time_explosion,
+                                  GammaDeposition *gamma_dep) {
     int lev_start = nlte->nlte_ion_level_offset[ion_idx_lo];
     int N = nlte->nlte_ion_level_offset[ion_idx_hi + 1] - lev_start;
     if (N <= 0) return;
@@ -1074,7 +1531,7 @@ static void nlte_solve_ion_shell(NLTEConfig *nlte, AtomicData *atom,
 
     nlte_assemble_rate_matrix(nlte, atom, plasma, opacity,
                                ion_idx_lo, ion_idx_hi, shell, time_explosion,
-                               A_cm, b, N);
+                               A_cm, b, N, gamma_dep);
 
     int ret = gauss_solve(A_cm, b, N);
 
@@ -1176,12 +1633,14 @@ static void nlte_update_tau_sobolev(NLTEConfig *nlte, AtomicData *atom,
  * different elements, we iterate until ion densities converge. */
 void nlte_solve_all(NLTEConfig *nlte, AtomicData *atom, PlasmaState *plasma,
                      OpacityState *opacity, double time_explosion,
-                     int n_shells) {
+                     int n_shells, GammaDeposition *gamma_dep) {
     printf("  [NLTE] Solving rate equations (with CE coupling)...\n");
 
     int n_pairs = nlte->n_nlte_ions / 2;
-    int pairs[][2] = { {0,1}, {2,3}, {4,5}, {6,7}, {8,9}, {10,11} };
-    const char *names[] = { "Si", "Ca", "Fe", "S", "Co", "Ni" };
+    int pairs[][2] = { {0,1}, {2,3}, {4,5}, {6,7}, {8,9}, {10,11},
+                       {12,13}, {14,15}, {16,17}, {18,19} };
+    const char *names[] = { "Si", "Ca", "Fe", "S", "Co", "Ni",
+                            "C", "Mg", "Ti", "Cr" };
 
     int ce_max_iter = 5;
     double ce_threshold = 1e-2;  /* 1% relative convergence on ion totals */
@@ -1207,7 +1666,7 @@ void nlte_solve_all(NLTEConfig *nlte, AtomicData *atom, PlasmaState *plasma,
             }
         }
 
-        /* Solve all 6 ion pairs */
+        /* Solve all ion pairs */
         for (int p = 0; p < n_pairs; p++) {
             int lo = pairs[p][0], hi = pairs[p][1];
             #ifdef _OPENMP
@@ -1215,7 +1674,7 @@ void nlte_solve_all(NLTEConfig *nlte, AtomicData *atom, PlasmaState *plasma,
             #endif
             for (int s = 0; s < n_shells; s++) {
                 nlte_solve_ion_shell(nlte, atom, plasma, opacity,
-                                     lo, hi, s, time_explosion);
+                                     lo, hi, s, time_explosion, gamma_dep);
             }
         }
 
@@ -1295,6 +1754,315 @@ void nlte_solve_all(NLTEConfig *nlte, AtomicData *atom, PlasmaState *plasma,
         printf("    %s II shell 0: NLTE n_total=%.3e, nebular n_ion=%.3e\n",
                names[p], sum_nlte, n_neb);
     }
+}
+
+/* ============================================================ */
+/* Gamma-ray energy deposition from 56Ni/56Co decay             */
+/* ============================================================ */
+
+/* Physical constants for 56Ni/56Co decay */
+#define LAMBDA_NI56   1.318e-6    /* 56Ni decay constant [s⁻¹], t½=6.077d */
+#define LAMBDA_CO56   1.038e-7    /* 56Co decay constant [s⁻¹], t½=77.27d */
+#define Q_NI56        2.803e-6    /* 56Ni decay energy [erg/decay] (1.75 MeV) */
+#define Q_CO56        5.976e-6    /* 56Co decay energy [erg/decay] (3.73 MeV) */
+#define KAPPA_GAMMA   0.025       /* Gray gamma-ray opacity [cm²/g] (Swartz+ 1995) */
+#define ETA_NONTHERMAL 0.05       /* Fraction of deposition → ionization (Kozma & Fransson 1992) */
+#define W_ION_EV      35.0        /* Mean energy per ion pair [eV] */
+
+void gamma_deposition_init(GammaDeposition *gd, int n_shells) {
+    gd->n_shells = n_shells;
+    gd->heating_rate = (double *)calloc(n_shells, sizeof(double));
+    gd->nonthermal_ioniz_rate = (double *)calloc(n_shells, sizeof(double));
+}
+
+void gamma_deposition_free(GammaDeposition *gd) {
+    free(gd->heating_rate);
+    free(gd->nonthermal_ioniz_rate);
+    gd->heating_rate = NULL;
+    gd->nonthermal_ioniz_rate = NULL;
+}
+
+void compute_gamma_deposition(GammaDeposition *gd, AtomicData *atom,
+                               PlasmaState *plasma, Geometry *geo) {
+    int n_shells = gd->n_shells;
+    double t_exp = geo->time_explosion;
+
+    /* Find element indices for Ni(Z=28) and Co(Z=27) */
+    int elem_ni = -1, elem_co = -1;
+    for (int e = 0; e < atom->n_elements; e++) {
+        if (atom->element_Z[e] == 28) elem_ni = e;
+        if (atom->element_Z[e] == 27) elem_co = e;
+    }
+
+    /* Bateman equation for 56Ni → 56Co → 56Fe:
+     * N_Ni(t) = N_Ni(0) × exp(-λ_Ni × t)
+     * N_Co(t) = N_Ni(0) × [λ_Ni/(λ_Co-λ_Ni)] × [exp(-λ_Ni×t) - exp(-λ_Co×t)]
+     *           + N_Co(0) × exp(-λ_Co × t)
+     * Note: At t=0, all Ni is 56Ni; Co abundance is initial 56Co (if any). */
+    double exp_ni = exp(-LAMBDA_NI56 * t_exp);
+    double exp_co = exp(-LAMBDA_CO56 * t_exp);
+    double bateman_factor = LAMBDA_NI56 / (LAMBDA_CO56 - LAMBDA_NI56);
+
+    /* Compute per-shell energy generation and outward column density */
+    double *epsilon_gamma = (double *)calloc(n_shells, sizeof(double)); /* erg/s/cm³ */
+    double *column_density = (double *)calloc(n_shells, sizeof(double)); /* g/cm² */
+
+    for (int s = 0; s < n_shells; s++) {
+        double rho = plasma->rho[s];
+
+        /* Number density of 56Ni and 56Co from mass fractions.
+         * We use the current Ni/Co abundances as initial mass fractions,
+         * then apply time evolution. Ni mass = 56 amu. */
+        double X_ni = (elem_ni >= 0) ? atom->abundances[elem_ni * n_shells + s] : 0.0;
+        double X_co = (elem_co >= 0) ? atom->abundances[elem_co * n_shells + s] : 0.0;
+
+        /* Initial number densities at t=0 */
+        double n_ni_0 = X_ni * rho / (56.0 * AMU); /* cm⁻³ */
+        double n_co_0 = X_co * rho / (56.0 * AMU);
+
+        /* Current number densities from decay */
+        double n_ni = n_ni_0 * exp_ni;
+        double n_co = n_ni_0 * bateman_factor * (exp_ni - exp_co) + n_co_0 * exp_co;
+        if (n_co < 0.0) n_co = 0.0;
+
+        /* Local gamma-ray energy generation rate [erg/s/cm³] */
+        epsilon_gamma[s] = LAMBDA_NI56 * n_ni * Q_NI56 + LAMBDA_CO56 * n_co * Q_CO56;
+    }
+
+    /* Outward column density: Σ(s) = Σ_{s'=s}^{N-1} ρ(s') × Δr(s') */
+    column_density[n_shells - 1] = plasma->rho[n_shells - 1] *
+        (geo->r_outer[n_shells - 1] - geo->r_inner[n_shells - 1]);
+    for (int s = n_shells - 2; s >= 0; s--) {
+        double dr = geo->r_outer[s] - geo->r_inner[s];
+        column_density[s] = column_density[s + 1] + plasma->rho[s] * dr;
+    }
+
+    /* Deposition fraction and rates */
+    for (int s = 0; s < n_shells; s++) {
+        double tau_gamma = KAPPA_GAMMA * column_density[s];
+        double f_dep = 1.0 - exp(-tau_gamma);
+
+        gd->heating_rate[s] = epsilon_gamma[s] * f_dep;
+        gd->nonthermal_ioniz_rate[s] = ETA_NONTHERMAL * gd->heating_rate[s]
+                                        / (W_ION_EV * EV_TO_ERG);
+    }
+
+    free(epsilon_gamma);
+    free(column_density);
+}
+
+/* ============================================================ */
+/* Sobolev line overlap correction                               */
+/* ============================================================ */
+
+void apply_overlap_corrections(AtomicData *atom, OpacityState *opacity,
+                                PlasmaState *plasma) {
+    int n_lines = opacity->n_lines;
+    int n_shells = opacity->n_shells;
+
+    /* Work on a copy of the original tau values */
+    size_t tau_size = (size_t)n_lines * n_shells;
+    double *tau_orig = (double *)malloc(tau_size * sizeof(double));
+    memcpy(tau_orig, opacity->tau_sobolev, tau_size * sizeof(double));
+
+    for (int s = 0; s < n_shells; s++) {
+        double T_rad = plasma->T_rad[s];
+
+        for (int i = 0; i < n_lines; i++) {
+            double tau_i = tau_orig[i * n_shells + s];
+            if (tau_i < 1e-10) continue; /* skip negligible lines */
+
+            double nu_i = opacity->line_list_nu[i];
+            int Z_i = atom->line_atomic_number[i];
+            double mass_amu = 2.0 * Z_i; /* rough: A ≈ 2Z */
+            double v_th = sqrt(2.0 * K_BOLTZMANN * T_rad / (mass_amu * AMU));
+            double delta_nu_th = nu_i * v_th / C_SPEED_OF_LIGHT;
+
+            if (delta_nu_th <= 0.0) continue;
+
+            /* Scan forward neighbors (lower frequency, j > i in descending array) */
+            double tau_overlap = 0.0;
+            for (int j = i + 1; j < n_lines && j <= i + 10; j++) {
+                double dnu = nu_i - opacity->line_list_nu[j];
+                if (dnu > 3.0 * delta_nu_th) break;
+                double tau_j = tau_orig[j * n_shells + s];
+                tau_overlap += tau_j * exp(-(dnu / delta_nu_th) * (dnu / delta_nu_th));
+            }
+
+            /* Scan backward neighbors (higher frequency) */
+            for (int j = i - 1; j >= 0 && j >= i - 10; j--) {
+                double dnu = opacity->line_list_nu[j] - nu_i;
+                if (dnu > 3.0 * delta_nu_th) break;
+                double tau_j = tau_orig[j * n_shells + s];
+                tau_overlap += tau_j * exp(-(dnu / delta_nu_th) * (dnu / delta_nu_th));
+            }
+
+            /* Apply correction: tau_eff = tau_i² / (tau_i + tau_overlap) */
+            if (tau_overlap > 0.01 * tau_i) {
+                double correction = tau_i / (tau_i + tau_overlap);
+                opacity->tau_sobolev[i * n_shells + s] = tau_i * correction;
+            }
+        }
+    }
+
+    free(tau_orig);
+}
+
+/* Rescale geometry and density for a new epoch (homologous expansion).
+   v = r/t is invariant; r(t_new) = v * t_new, rho ~ t^-3. */
+void rescale_epoch(Geometry *geo, PlasmaState *plasma, double t_new) {
+    double t_ref = geo->time_explosion;
+    double ratio = t_new / t_ref;
+    double rho_scale = 1.0 / (ratio * ratio * ratio);
+    for (int i = 0; i < geo->n_shells; i++) {
+        geo->r_inner[i] = geo->v_inner[i] * t_new;
+        geo->r_outer[i] = geo->v_outer[i] * t_new;
+        plasma->rho[i] *= rho_scale;
+    }
+    geo->time_explosion = t_new;
+}
+
+/* ============================================================ */
+/* P5: Formal integral spectrum (noise-free, p-z formalism)     */
+/*                                                              */
+/* For each observed frequency nu_obs, integrate along rays     */
+/* with impact parameters p from 0 to r_outer:                 */
+/*   I_nu(p) = I_core * exp(-tau_tot) + sum_lines S_l*(1-e^-tau_l)*e^-tau_above */
+/*   L_nu = 4*pi * integral( I_nu(p) * 2*pi*p dp )            */
+/* ============================================================ */
+
+/* Binary search in descending-sorted array: find first index with val <= target */
+static int bsearch_descending_le(const double *arr, int n, double target) {
+    int lo = 0, hi = n;
+    while (lo < hi) {
+        int mid = (lo + hi) / 2;
+        if (arr[mid] > target) lo = mid + 1;
+        else hi = mid;
+    }
+    return lo; /* first index where arr[lo] <= target */
+}
+
+/* Binary search in descending-sorted array: find last index with val >= target */
+static int bsearch_descending_ge(const double *arr, int n, double target) {
+    int lo = 0, hi = n;
+    while (lo < hi) {
+        int mid = (lo + hi) / 2;
+        if (arr[mid] >= target) lo = mid + 1;
+        else hi = mid;
+    }
+    return lo - 1; /* last index where arr[lo-1] >= target */
+}
+
+void compute_formal_integral_spectrum(
+    Geometry *geo, PlasmaState *plasma, OpacityState *opacity,
+    AtomicData *atom, NLTEConfig *nlte, double T_inner,
+    Spectrum *spec_formal, int n_impact)
+{
+    int n_shells = geo->n_shells;
+    int n_lines  = opacity->n_lines;
+    double t_exp = geo->time_explosion;
+    double ct    = C_SPEED_OF_LIGHT * t_exp;
+    double r_phot  = geo->r_inner[0];
+    double r_outer = geo->r_outer[n_shells - 1];
+    double beta_max = r_outer / (C_SPEED_OF_LIGHT * t_exp); /* v_outer / c */
+    double dp = r_outer / n_impact;
+
+    printf("\n=== Formal Integral Spectrum ===\n");
+    printf("  Impact parameters: %d, beta_max=%.4f\n", n_impact, beta_max);
+
+    /* Zero output spectrum */
+    for (int b = 0; b < spec_formal->n_bins; b++)
+        spec_formal->flux[b] = 0.0;
+
+    /* For each wavelength bin (parallelized) */
+    #ifdef _OPENMP
+    #pragma omp parallel for schedule(dynamic, 10)
+    #endif
+    for (int bin = 0; bin < spec_formal->n_bins; bin++) {
+        double lambda_cm = spec_formal->wavelength[bin] * 1.0e-8;
+        double nu_obs = C_SPEED_OF_LIGHT / lambda_cm;
+
+        /* Frequency range of lines that could resonate within the ejecta */
+        double nu_line_min = nu_obs * (1.0 - beta_max);
+        double nu_line_max = nu_obs * (1.0 + beta_max);
+
+        /* Binary search in line_list_nu (sorted DESCENDING by frequency) */
+        int l_first = bsearch_descending_le(opacity->line_list_nu, n_lines, nu_line_max);
+        int l_last  = bsearch_descending_ge(opacity->line_list_nu, n_lines, nu_line_min);
+
+        double L_nu_integral = 0.0;
+
+        for (int ip = 0; ip < n_impact; ip++) {
+            double p = dp * (ip + 0.5);
+            double p2 = p * p;
+            if (p >= r_outer) continue;
+
+            double z_max_ejecta = sqrt(r_outer * r_outer - p2);
+            double z_phot = (p < r_phot) ? sqrt(r_phot * r_phot - p2) : 0.0;
+
+            double I_nu = 0.0;
+            double tau_acc = 0.0;
+
+            /* Walk from observer side inward (z decreasing).
+             * Lines sorted nu descending → as index increases, nu decreases, z increases.
+             * So iterate from l_last (lowest nu, largest z) backward to l_first. */
+            for (int l = l_last; l >= l_first; l--) {
+                double nu_l = opacity->line_list_nu[l];
+                double z = ct * (1.0 - nu_l / nu_obs);
+
+                /* Check z within valid ejecta range for this impact parameter */
+                if (z > z_max_ejecta || z < -z_max_ejecta) continue;
+                if (p < r_phot && z < z_phot) continue; /* behind photosphere */
+
+                double r = sqrt(p2 + z * z);
+                if (r < r_phot || r > r_outer) continue;
+
+                /* Find shell */
+                int shell = -1;
+                for (int s = 0; s < n_shells; s++) {
+                    if (r >= geo->r_inner[s] && r < geo->r_outer[s]) {
+                        shell = s;
+                        break;
+                    }
+                }
+                if (shell < 0) continue;
+
+                double tau_sob = opacity->tau_sobolev[l * n_shells + shell];
+                if (tau_sob < 1e-5) continue; /* skip negligible lines */
+
+                /* Source function: J_nu if NLTE available, else W * B_nu(T_rad) */
+                double S;
+                if (nlte != NULL && nlte->enabled) {
+                    S = nlte_get_J_at_nu(nlte, shell, nu_l);
+                    if (S <= 0.0)
+                        S = plasma->W[shell] * planck_bnu(plasma->T_rad[shell], nu_l);
+                } else {
+                    S = plasma->W[shell] * planck_bnu(plasma->T_rad[shell], nu_l);
+                }
+
+                /* Line contribution: S * (1 - exp(-tau)) * exp(-tau_accumulated) */
+                double one_minus_exp = (tau_sob > 500.0) ? 1.0 : (1.0 - exp(-tau_sob));
+                I_nu += S * one_minus_exp * exp(-tau_acc);
+                tau_acc += tau_sob;
+            }
+
+            /* Inner boundary: Planck at T_inner */
+            if (p < r_phot) {
+                I_nu += planck_bnu(T_inner, nu_obs) * exp(-tau_acc);
+            }
+
+            /* Integrate: L_nu += I_nu * 2*pi*p * dp */
+            L_nu_integral += I_nu * p * dp;
+        }
+
+        /* L_nu = 4*pi * integral(I_nu * 2*pi*p dp) = 8*pi^2 * sum */
+        double L_nu = 8.0 * M_PI_VAL * M_PI_VAL * L_nu_integral;
+
+        /* Convert L_nu [erg/s/Hz] to L_lambda [erg/s/cm]: L_lambda = L_nu * c / lambda^2 */
+        spec_formal->flux[bin] = L_nu * C_SPEED_OF_LIGHT / (lambda_cm * lambda_cm);
+    }
+
+    printf("  Formal integral spectrum computed.\n");
 }
 
 /* Spectrum binning: energy is luminosity in erg/s, output L_lambda in erg/s/cm */
