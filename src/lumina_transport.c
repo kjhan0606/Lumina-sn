@@ -413,6 +413,10 @@ void macro_atom_event(int dest_level_idx, RPacket *pkt,
     int transition_id; /* Phase 3 - Step 9b */
     int transition_type; /* Phase 3 - Step 9b */
 
+    /* [MA-FATE] capture entry comov nu (atomic rest-frame) */
+    double entry_doppler   = get_doppler_factor(pkt->r, pkt->mu, time_explosion);
+    double entry_comov_nu  = pkt->nu * entry_doppler;
+
     macro_atom_interaction(dest_level_idx, pkt->current_shell_id, /* Phase 3 - Step 9b */
                             opacity, rng, &transition_id, &transition_type); /* Phase 3 - Step 9b */
 
@@ -423,6 +427,11 @@ void macro_atom_event(int dest_level_idx, RPacket *pkt,
     }
     /* Phase 3 - Step 9b: No continuum processes in this implementation */
     /* BF/FF emission would go here if enabled */
+
+    /* [MA-FATE] capture exit comov nu and bin into 4x4 (entry_band, exit_band) */
+    double exit_doppler  = get_doppler_factor(pkt->r, pkt->mu, time_explosion);
+    double exit_comov_nu = pkt->nu * exit_doppler;
+    macro_atom_fate_record(entry_comov_nu, exit_comov_nu);
 }
 
 /* ============================================================ */

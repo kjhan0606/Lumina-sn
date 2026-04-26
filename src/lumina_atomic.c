@@ -640,6 +640,95 @@ int load_atomic_data(AtomicData *atom, const char *ref_dir, int n_shells) {
     return 0;
 }
 
+/* Load pre-baked CMFGEN sigma_bf grid (cmfgen_sigma_bf.bin).
+ * Binary layout (little-endian, written by scripts/expand_atomic_data_cmfgen.py):
+ *   uint32 magic   = 0x434D4644 ('CMFD')
+ *   uint32 version = 1
+ *   int32  n_levels, n_freq_bins
+ *   double nu_min_Hz, nu_max_Hz
+ *   int8   has_cmfgen[n_levels]   (padded to 8-byte alignment)
+ *   double sigma_cm2[n_levels * n_freq_bins]
+ *
+ * Returns 0 on success (grid loaded into atom->cmfgen_*), -1 on missing file
+ * or schema mismatch (atom->cmfgen_loaded stays 0 → Kramers fallback). */
+int load_cmfgen_sigma_bf(AtomicData *atom, const char *path) {
+    FILE *fp = fopen(path, "rb");
+    if (!fp) {
+        printf("  CMFGEN sigma_bf: %s not found, using Kramers fallback\n", path);
+        atom->cmfgen_loaded = 0;
+        return -1;
+    }
+    uint32_t magic = 0, version = 0;
+    int32_t n_lev = 0, n_freq = 0;
+    double nu_min = 0.0, nu_max = 0.0;
+    if (fread(&magic, 4, 1, fp) != 1 || fread(&version, 4, 1, fp) != 1 ||
+        fread(&n_lev, 4, 1, fp) != 1 || fread(&n_freq, 4, 1, fp) != 1 ||
+        fread(&nu_min, 8, 1, fp) != 1 || fread(&nu_max, 8, 1, fp) != 1) {
+        fprintf(stderr, "ERROR: %s header read failed\n", path);
+        fclose(fp);
+        return -1;
+    }
+    if (magic != 0x434D4644u || version != 1u) {
+        fprintf(stderr, "ERROR: %s bad magic/version (0x%08x v%u)\n",
+                path, magic, version);
+        fclose(fp);
+        return -1;
+    }
+    if (n_lev != atom->n_levels) {
+        fprintf(stderr, "ERROR: %s n_levels=%d != atom->n_levels=%d\n",
+                path, n_lev, atom->n_levels);
+        fclose(fp);
+        return -1;
+    }
+    if (n_freq != NLTE_N_FREQ_BINS) {
+        fprintf(stderr, "ERROR: %s n_freq_bins=%d != NLTE_N_FREQ_BINS=%d\n",
+                path, n_freq, NLTE_N_FREQ_BINS);
+        fclose(fp);
+        return -1;
+    }
+
+    /* Read has_cmfgen[n_levels] as int8 then promote to int */
+    int8_t *flag8 = (int8_t *)malloc((size_t)n_lev);
+    if (fread(flag8, 1, (size_t)n_lev, fp) != (size_t)n_lev) {
+        fprintf(stderr, "ERROR: %s has_cmfgen read failed\n", path);
+        free(flag8);
+        fclose(fp);
+        return -1;
+    }
+    /* Skip 8-byte alignment pad */
+    int pad = (8 - (n_lev % 8)) % 8;
+    if (pad > 0) fseek(fp, pad, SEEK_CUR);
+
+    atom->cmfgen_has_sigma = (int *)malloc((size_t)n_lev * sizeof(int));
+    int n_with = 0;
+    for (int i = 0; i < n_lev; i++) {
+        atom->cmfgen_has_sigma[i] = flag8[i];
+        if (flag8[i]) n_with++;
+    }
+    free(flag8);
+
+    size_t grid_n = (size_t)n_lev * (size_t)n_freq;
+    atom->cmfgen_sigma_bf = (double *)malloc(grid_n * sizeof(double));
+    if (fread(atom->cmfgen_sigma_bf, sizeof(double), grid_n, fp) != grid_n) {
+        fprintf(stderr, "ERROR: %s sigma grid read failed\n", path);
+        free(atom->cmfgen_has_sigma);
+        free(atom->cmfgen_sigma_bf);
+        atom->cmfgen_has_sigma = NULL;
+        atom->cmfgen_sigma_bf = NULL;
+        fclose(fp);
+        return -1;
+    }
+    fclose(fp);
+
+    atom->cmfgen_n_freq_bins = n_freq;
+    atom->cmfgen_nu_min = nu_min;
+    atom->cmfgen_nu_max = nu_max;
+    atom->cmfgen_loaded = 1;
+    printf("  CMFGEN sigma_bf: %d/%d levels (%.1f%%) on %d-bin grid\n",
+           n_with, n_lev, 100.0 * n_with / (double)n_lev, n_freq);
+    return 0;
+}
+
 void free_atomic_data(AtomicData *atom) {
     free(atom->line_atomic_number);
     free(atom->line_ion_number);
@@ -673,6 +762,8 @@ void free_atomic_data(AtomicData *atom) {
     free(atom->level_offset);
     free(atom->ion_number_density);
     free(atom->partition_functions);
+    free(atom->cmfgen_has_sigma);
+    free(atom->cmfgen_sigma_bf);
 }
 
 /* ============================================================ */

@@ -107,6 +107,12 @@ int main(int argc, char *argv[]) {
         fprintf(stderr, "Failed to load atomic data\n");
         return 1;
     }
+    /* Task #38: Optional pre-baked CMFGEN sigma_bf grid */
+    {
+        const char *cmf_path = getenv("LUMINA_CMFGEN_SIGMA_BF");
+        if (!cmf_path) cmf_path = "data/atomic/cmfgen_sigma_bf.bin";
+        load_cmfgen_sigma_bf(&atom_data, cmf_path);
+    }
     /* Task #072: Initialize n_electron from TARDIS reference */
     plasma.n_electron = (double *)malloc(geo.n_shells * sizeof(double));
     for (int i = 0; i < geo.n_shells; i++)
@@ -274,6 +280,8 @@ int main(int argc, char *argv[]) {
         if (enable_nlte)
             memset(nlte.j_nu_estimator, 0,
                    (size_t)geo.n_shells * nlte.n_freq_bins * sizeof(double));
+        /* [MA-FATE] reset hist; only the final iteration retains counts. */
+        if (iter == n_iterations - 1) macro_atom_fate_reset();
 
         /* Phase 5 - Step 5: Recompute L_inner and time_simulation */
         L_inner = 4.0 * M_PI_VAL * geo.r_inner[0] * geo.r_inner[0] * /* Phase 5 - Step 5 */
@@ -532,6 +540,9 @@ int main(int argc, char *argv[]) {
     printf("\n============================================================\n"); /* Phase 5 - Step 8 */
     printf("Final Results\n"); /* Phase 5 - Step 8 */
     printf("============================================================\n"); /* Phase 5 - Step 8 */
+
+    /* [MA-FATE] Macro-atom packet fate histogram (final iteration) */
+    macro_atom_fate_print("final iteration, CPU transport");
 
     /* Phase 5 - Step 8: Load TARDIS reference for comparison */
     char path[512]; /* Phase 5 - Step 8 */

@@ -1,12 +1,16 @@
 #!/usr/bin/env python3
-"""Expand atomic data from HDF5 for 11 elements (C,O,Mg,Si,S,Ca,Ti,Cr,Fe,Co,Ni).
+"""Expand atomic data from HDF5 for 15 elements (C,O,Mg,Al,Si,S,Ca,Sc,Ti,V,Cr,Mn,Fe,Co,Ni).
 
 Reads data/atomic/kurucz_cd23_chianti_H_He.h5 and regenerates ALL files in
 data/tardis_reference/ including line_list.csv, macro_atom_data.csv, and NPY files.
 
 HDF5 indexing conventions:
   - levels_data, lines_data, macro_atom_references, ionization_data, zeta_data:
-    Z is 0-indexed (Z_idx = Z_real - 1)
+    axis1_label0 is a position index into axis1_level0; axis1_level0 holds the
+    actual atomic numbers (NOT necessarily 1-indexed). For carsus 2025+ output
+    lines_data/axis1_level0 starts at Z=2 (no H lines), so the old assumption
+    `Z_real = label0 + 1` mislabels every species. Always look up via
+    `Z_real = axis1_level0[label0]`.
   - macro_atom_data block0: Z is real (1-indexed)
   - atom_data: Z is real (1-indexed)
 
@@ -18,29 +22,34 @@ import numpy as np
 import os
 import sys
 
-HDF5_PATH = "data/atomic/kurucz_cd23_chianti_H_He.h5"
+HDF5_PATH = "data/atomic/kurucz_cd23_cmfgen_lumina.h5"
 OUT_DIR = "data/tardis_reference"
 
-# 11 elements: real Z values
-ELEMENTS = [6, 8, 12, 14, 16, 20, 22, 24, 26, 27, 28]
-ELEMENT_NAMES = {6:'C',8:'O',12:'Mg',14:'Si',16:'S',20:'Ca',
-                 22:'Ti',24:'Cr',26:'Fe',27:'Co',28:'Ni'}
+# 15 elements: real Z values (added Al=13, Sc=21, V=23, Mn=25 for UV line blanketing)
+ELEMENTS = [6, 8, 12, 13, 14, 16, 20, 21, 22, 23, 24, 25, 26, 27, 28]
+ELEMENT_NAMES = {6:'C',8:'O',12:'Mg',13:'Al',14:'Si',16:'S',20:'Ca',
+                 21:'Sc',22:'Ti',23:'V',24:'Cr',25:'Mn',26:'Fe',27:'Co',28:'Ni'}
 # HDF5 0-indexed: Z_real - 1
 ELEMENTS_IDX = [z - 1 for z in ELEMENTS]
 
-# Default abundances per element (uniform across shells)
+# Default abundances per element (uniform across shells).
+# Trace UV blanketers (Al, Sc, V, Mn) take mass from O filler to keep sum = 1.
 DEFAULT_ABUNDANCES = {
-    6:  0.02,    # C
-    8:  0.0417,  # O (reduced from 0.05 by 0.0083 for Mg+Ti+Cr)
-    12: 0.005,   # Mg (NEW)
-    14: 0.1,     # Si
-    16: 0.05,    # S
-    20: 0.05,    # Ca
-    22: 0.0003,  # Ti (NEW)
-    24: 0.003,   # Cr (NEW)
-    26: 0.5,     # Fe
-    27: 0.05,    # Co
-    28: 0.13,    # Ni
+    6:  0.02,     # C
+    8:  0.0394,   # O filler (reduced for 4 new trace elements totaling 0.0023)
+    12: 0.005,    # Mg
+    13: 0.0005,   # Al
+    14: 0.1,      # Si
+    16: 0.05,     # S
+    20: 0.05,     # Ca
+    21: 0.00003,  # Sc (trace)
+    22: 0.0003,   # Ti
+    23: 0.0002,   # V
+    24: 0.003,    # Cr
+    25: 0.0015,   # Mn
+    26: 0.5,      # Fe
+    27: 0.05,     # Co
+    28: 0.13,     # Ni
 }
 
 # Number of shells (read from existing geometry)
@@ -73,61 +82,81 @@ def main():
     # 1. LEVELS DATA
     # ========================================================
     print("=== Extracting levels data ===")
-    lev_Z_idx = f["levels_data/axis1_label0"][:]
+    lev_z_table = f["levels_data/axis1_level0"][:]  # actual Z values (positional lookup)
+    lev_label0 = f["levels_data/axis1_label0"][:]   # positions into lev_z_table
+    lev_Z_real = lev_z_table[lev_label0]            # real Z per row
     lev_ion = f["levels_data/axis1_label1"][:]
     lev_num = f["levels_data/axis1_label2"][:]
     lev_energy = f["levels_data/block0_values"][:, 0]
     lev_g = f["levels_data/block1_values"][:, 0]
     lev_metastable = f["levels_data/block2_values"][:, 0]
 
-    lev_mask = np.isin(lev_Z_idx, ELEMENTS_IDX)
+    lev_mask = np.isin(lev_Z_real, ELEMENTS)
     lev_indices = np.where(lev_mask)[0]
     n_levels = len(lev_indices)
-    print(f"  Levels: {n_levels} / {len(lev_Z_idx)} selected")
+    print(f"  Levels: {n_levels} / {len(lev_Z_real)} selected")
 
-    # Build level lookup: (Z_idx, ion, level_num) -> new level index
+    # Build level lookup: (Z_real, ion, level_num) -> new level index
     level_lookup = {}
     with open(os.path.join(OUT_DIR, "levels.csv"), "w") as fp:
         fp.write("atomic_number,ion_number,level_number,energy_eV,g,metastable\n")
         for new_idx, old_idx in enumerate(lev_indices):
-            z_real = int(lev_Z_idx[old_idx]) + 1
+            z_real = int(lev_Z_real[old_idx])
             ion = int(lev_ion[old_idx])
             lvl = int(lev_num[old_idx])
             fp.write(f"{z_real},{ion},{lvl},{lev_energy[old_idx]:.10f},"
                      f"{int(lev_g[old_idx])},{int(lev_metastable[old_idx])}\n")
-            level_lookup[(int(lev_Z_idx[old_idx]), ion, lvl)] = new_idx
+            level_lookup[(z_real, ion, lvl)] = new_idx
 
     for z in ELEMENTS:
-        z_idx = z - 1
-        n = sum(1 for i in lev_indices if lev_Z_idx[i] == z_idx)
+        n = int(np.sum(lev_Z_real[lev_indices] == z))
         print(f"    Z={z:2d} ({ELEMENT_NAMES[z]:2s}): {n} levels")
 
     # ========================================================
     # 2. LINES DATA (sorted by descending nu)
     # ========================================================
     print("\n=== Extracting lines data ===")
-    line_Z_idx = f["lines_data/axis1_label0"][:]
+    line_z_table = f["lines_data/axis1_level0"][:]  # actual Z values (positional lookup)
+    line_label0 = f["lines_data/axis1_label0"][:]   # positions into line_z_table
+    line_Z_real = line_z_table[line_label0]         # real Z per row
     line_ion = f["lines_data/axis1_label1"][:]
     line_lvl_lower = f["lines_data/axis1_label2"][:]
     line_lvl_upper = f["lines_data/axis1_label3"][:]
-    line_id_all = f["lines_data/block0_values"][:, 0]  # global HDF5 line IDs
-    line_block1 = f["lines_data/block1_values"][:]
-    # block1 columns: wavelength, f_ul, f_lu, nu, B_lu, B_ul, A_ul
+    # carsus 2025+ swapped block0/block1 vs the old kurucz_cd23_chianti file:
+    # detect which block holds line_id vs the float columns by inspecting items.
+    b0_items = [b.decode() for b in f["lines_data/block0_items"][:]]
+    if "line_id" in b0_items:
+        line_id_all = f["lines_data/block0_values"][:, b0_items.index("line_id")]
+        line_block_floats = f["lines_data/block1_values"][:]
+        line_float_items = [b.decode() for b in f["lines_data/block1_items"][:]]
+    else:
+        b1_items = [b.decode() for b in f["lines_data/block1_items"][:]]
+        line_id_all = f["lines_data/block1_values"][:, b1_items.index("line_id")]
+        line_block_floats = f["lines_data/block0_values"][:]
+        line_float_items = b0_items
+    # column order in line_block_floats: wavelength, f_ul, f_lu, nu, B_lu, B_ul, A_ul
+    nu_idx = line_float_items.index("nu")
+    wl_idx = line_float_items.index("wavelength")
+    f_ul_idx = line_float_items.index("f_ul")
+    f_lu_idx = line_float_items.index("f_lu")
+    B_lu_idx = line_float_items.index("B_lu")
+    B_ul_idx = line_float_items.index("B_ul")
+    A_ul_idx = line_float_items.index("A_ul")
 
-    line_mask = np.isin(line_Z_idx, ELEMENTS_IDX)
+    line_mask = np.isin(line_Z_real, ELEMENTS)
     line_indices = np.where(line_mask)[0]
     n_lines_raw = len(line_indices)
-    print(f"  Lines: {n_lines_raw} / {len(line_Z_idx)} selected")
+    print(f"  Lines: {n_lines_raw} / {len(line_Z_real)} selected")
 
     # Extract filtered data
-    filt_Z_idx = line_Z_idx[line_indices]
+    filt_Z_real = line_Z_real[line_indices]
     filt_ion = line_ion[line_indices]
     filt_lvl_lower = line_lvl_lower[line_indices]
     filt_lvl_upper = line_lvl_upper[line_indices]
     filt_line_id = line_id_all[line_indices]
-    filt_block1 = line_block1[line_indices]
+    filt_block1 = line_block_floats[line_indices]
 
-    nu_col = filt_block1[:, 3]  # nu
+    nu_col = filt_block1[:, nu_idx]  # nu
 
     # Sort by descending nu (required for transport binary search)
     sort_order = np.argsort(-nu_col)
@@ -146,26 +175,25 @@ def main():
         fp.write("atomic_number,ion_number,level_number_lower,level_number_upper,"
                  "line_id,wavelength,f_ul,f_lu,nu,B_lu,B_ul,A_ul,wavelength_cm\n")
         for new_idx, raw_idx in enumerate(sort_order):
-            z_real = int(filt_Z_idx[raw_idx]) + 1
+            z_real = int(filt_Z_real[raw_idx])
             ion = int(filt_ion[raw_idx])
             ll = int(filt_lvl_lower[raw_idx])
             lu = int(filt_lvl_upper[raw_idx])
             lid = int(filt_line_id[raw_idx])
             b1 = filt_block1[raw_idx]
-            wl = b1[0]       # wavelength (Angstrom)
-            f_ul = b1[1]
-            f_lu = b1[2]
-            nu = b1[3]
-            B_lu = b1[4]
-            B_ul = b1[5]
-            A_ul = b1[6]
+            wl = b1[wl_idx]       # wavelength (Angstrom)
+            f_ul = b1[f_ul_idx]
+            f_lu = b1[f_lu_idx]
+            nu = b1[nu_idx]
+            B_lu = b1[B_lu_idx]
+            B_ul = b1[B_ul_idx]
+            A_ul = b1[A_ul_idx]
             wl_cm = wl * 1e-8
             fp.write(f"{z_real},{ion},{ll},{lu},{lid},{wl},"
                      f"{f_ul},{f_lu},{nu},{B_lu},{B_ul},{A_ul},{wl_cm}\n")
 
     for z in ELEMENTS:
-        z_idx = z - 1
-        n = np.sum(filt_Z_idx == z_idx)
+        n = int(np.sum(filt_Z_real == z))
         print(f"    Z={z:2d} ({ELEMENT_NAMES[z]:2s}): {n} lines")
 
     # ========================================================
@@ -197,8 +225,7 @@ def main():
         z_real = int(ma_filt[i, 0])
         ion = int(ma_filt[i, 1])
         src_lvl = int(ma_filt[i, 2])
-        z_idx = z_real - 1
-        key = (z_idx, ion, src_lvl)
+        key = (z_real, ion, src_lvl)
         if key in level_lookup:
             src_level_new_idx[i] = level_lookup[key]
         else:
@@ -240,9 +267,8 @@ def main():
             lines_idx = line_id_to_sorted_idx.get(hdf5_line_id, -1)
 
             # Remap level indices
-            z_idx = z_real - 1
-            src_key = (z_idx, ion, src_lvl)
-            dst_key = (z_idx, ion, dst_lvl)
+            src_key = (z_real, ion, src_lvl)
+            dst_key = (z_real, ion, dst_lvl)
             src_level_idx = level_lookup.get(src_key, -1)
             dst_level_idx = level_lookup.get(dst_key, -1)
 
@@ -258,7 +284,9 @@ def main():
     # 4. MACRO-ATOM REFERENCES (block offsets per level)
     # ========================================================
     print("\n=== Building macro-atom references ===")
-    ref_Z_idx = f["macro_atom_references/axis1_label0"][:]
+    ref_z_table = f["macro_atom_references/axis1_level0"][:]
+    ref_label0 = f["macro_atom_references/axis1_label0"][:]
+    ref_Z_real = ref_z_table[ref_label0]
     ref_ion = f["macro_atom_references/axis1_label1"][:]
     ref_lvl = f["macro_atom_references/axis1_label2"][:]
     ref_b0 = f["macro_atom_references/block0_values"][:]  # [count_down, count_up, count_total]
@@ -278,13 +306,12 @@ def main():
     count_total_arr = np.zeros(n_levels, dtype=np.int64)
 
     for new_idx, old_idx in enumerate(lev_indices):
-        z_idx_val = int(lev_Z_idx[old_idx])
+        z_real_val = int(lev_Z_real[old_idx])
         ion_val = int(lev_ion[old_idx])
         lvl_val = int(lev_num[old_idx])
 
         # Find this level in HDF5 macro_atom_references
-        # references have same axis labels as levels
-        ref_match = np.where((ref_Z_idx == z_idx_val) &
+        ref_match = np.where((ref_Z_real == z_real_val) &
                              (ref_ion == ion_val) &
                              (ref_lvl == lvl_val))[0]
         if len(ref_match) > 0:
@@ -304,7 +331,7 @@ def main():
                  "count_down,count_up,count_total,"
                  "block_references,references_idx\n")
         for new_idx, old_idx in enumerate(lev_indices):
-            z_real = int(lev_Z_idx[old_idx]) + 1
+            z_real = int(lev_Z_real[old_idx])
             ion_val = int(lev_ion[old_idx])
             lvl_val = int(lev_num[old_idx])
             fp.write(f"{z_real},{ion_val},{lvl_val},"
@@ -318,18 +345,20 @@ def main():
     # 5. IONIZATION ENERGIES
     # ========================================================
     print("\n=== Extracting ionization energies ===")
-    iz = f["ionization_data/index_label0"][:]  # 0-indexed Z
+    iz_table = f["ionization_data/index_level0"][:]
+    iz_label = f["ionization_data/index_label0"][:]
+    iz_real = iz_table[iz_label]
     ii = f["ionization_data/index_label1"][:]
     iv = f["ionization_data/values"][:]
 
-    mask_ion = np.isin(iz, ELEMENTS_IDX)
+    mask_ion = np.isin(iz_real, ELEMENTS)
     ion_indices = np.where(mask_ion)[0]
-    print(f"  Ionization: {len(ion_indices)} / {len(iz)} selected")
+    print(f"  Ionization: {len(ion_indices)} / {len(iz_real)} selected")
 
     with open(os.path.join(OUT_DIR, "ionization_energies.csv"), "w") as fp:
         fp.write("atomic_number,ion_number,ionization_energy_eV\n")
         for i in ion_indices:
-            z_real = int(iz[i]) + 1
+            z_real = int(iz_real[i])
             fp.write(f"{z_real},{int(ii[i])},{iv[i]:.10f}\n")
 
     # ========================================================
@@ -337,13 +366,15 @@ def main():
     # ========================================================
     print("\n=== Extracting zeta data ===")
     zeta_temps = f["zeta_data/axis0"][:]
-    zz = f["zeta_data/axis1_label0"][:]  # 0-indexed Z
+    zz_table = f["zeta_data/axis1_level0"][:]
+    zz_label = f["zeta_data/axis1_label0"][:]
+    zz_real = zz_table[zz_label]
     zi = f["zeta_data/axis1_label1"][:]
     zeta_vals = f["zeta_data/block0_values"][:]
 
-    mask_zeta = np.isin(zz, ELEMENTS_IDX)
+    mask_zeta = np.isin(zz_real, ELEMENTS)
     zeta_indices = np.where(mask_zeta)[0]
-    print(f"  Zeta: {len(zeta_indices)} / {len(zz)} selected")
+    print(f"  Zeta: {len(zeta_indices)} / {len(zz_real)} selected")
 
     zeta_selected = zeta_vals[zeta_indices]
     np.save(os.path.join(OUT_DIR, "zeta_data.npy"), zeta_selected)
@@ -351,7 +382,7 @@ def main():
     with open(os.path.join(OUT_DIR, "zeta_ions.csv"), "w") as fp:
         fp.write("atomic_number,ion_number\n")
         for i in zeta_indices:
-            z_real = int(zz[i]) + 1
+            z_real = int(zz_real[i])
             fp.write(f"{z_real},{int(zi[i])}\n")
 
     with open(os.path.join(OUT_DIR, "zeta_temps.csv"), "w") as fp:
@@ -434,10 +465,10 @@ def main():
     # line2macro_level_upper [n_lines] — maps each line to its upper level macro index
     line2macro = np.full(n_lines, -1, dtype=np.int64)
     for new_idx, raw_idx in enumerate(sort_order):
-        z_idx = int(filt_Z_idx[raw_idx])
+        z_real = int(filt_Z_real[raw_idx])
         ion = int(filt_ion[raw_idx])
         lvl_upper = int(filt_lvl_upper[raw_idx])
-        key = (z_idx, ion, lvl_upper)
+        key = (z_real, ion, lvl_upper)
         if key in level_lookup:
             line2macro[new_idx] = level_lookup[key]
     np.save(os.path.join(OUT_DIR, "line2macro_level_upper.npy"), line2macro)

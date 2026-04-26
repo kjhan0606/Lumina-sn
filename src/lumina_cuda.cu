@@ -8,6 +8,7 @@
 #include <string.h>     /* Phase 6 - Step 1 */
 #include <math.h>       /* Phase 6 - Step 1 */
 #include <stdint.h>     /* Phase 6 - Step 1 */
+#include <time.h>       /* clock_gettime for NLTE profiling */
 #include <cuda_runtime.h> /* Phase 6 - Step 1 */
 #include <cublas_v2.h>    /* cuBLAS batched NLTE solver */
 
@@ -140,6 +141,11 @@ static void cuda_allocate(CudaDeviceData *dev, Geometry *geo,
     CUDA_CHECK(cudaMalloc(&dev->d_r_inner, ns * sizeof(double)));                   /* Phase 6 - Step 1 */
     CUDA_CHECK(cudaMalloc(&dev->d_r_outer, ns * sizeof(double)));                   /* Phase 6 - Step 1 */
 
+    /* d_T_rad always-allocated: needed by EPS_UV / EPS_IR macro-atom thermalization
+     * even when BF opacity is disabled. (cuda_allocate_bf will skip its own malloc
+     * if d_T_rad is already non-NULL.) */
+    CUDA_CHECK(cudaMalloc(&dev->d_T_rad, ns * sizeof(double)));
+
     /* Phase 6 - Step 1: Estimators */
     CUDA_CHECK(cudaMalloc(&dev->d_j_estimator, ns * sizeof(double)));               /* Phase 6 - Step 1 */
     CUDA_CHECK(cudaMalloc(&dev->d_nu_bar_estimator, ns * sizeof(double)));          /* Phase 6 - Step 1 */
@@ -179,7 +185,9 @@ static void cuda_allocate_bf(CudaDeviceData *dev, BFOpacity *bf, int n_shells) {
     size_t chi_size = (size_t)n_shells * bf->n_freq_bins * sizeof(double);
     size_t act_size = (size_t)n_shells * bf->n_freq_bins * sizeof(int);
     CUDA_CHECK(cudaMalloc(&dev->d_chi_bf, chi_size));
-    CUDA_CHECK(cudaMalloc(&dev->d_T_rad, n_shells * sizeof(double)));
+    /* d_T_rad is now always-allocated in cuda_allocate(); skip if present. */
+    if (!dev->d_T_rad)
+        CUDA_CHECK(cudaMalloc(&dev->d_T_rad, n_shells * sizeof(double)));
     CUDA_CHECK(cudaMalloc(&dev->d_bf_activation_level, act_size));
     dev->bf_enabled = 1;
     dev->bf_n_freq_bins = bf->n_freq_bins;
@@ -187,6 +195,15 @@ static void cuda_allocate_bf(CudaDeviceData *dev, BFOpacity *bf, int n_shells) {
     dev->bf_nu_max = bf->nu_max;
     dev->bf_d_log_nu = bf->d_log_nu;
     printf("  [BF] GPU arrays allocated: %.1f KB\n", (chi_size + act_size) / 1024.0);
+}
+
+/* Upload T_rad to GPU. Always-callable (independent of BF status) — needed
+ * by EPS_UV / EPS_IR macro-atom thermalization paths. */
+static void cuda_upload_T_rad(CudaDeviceData *dev, PlasmaState *plasma,
+                               int n_shells) {
+    if (!dev->d_T_rad) return;
+    CUDA_CHECK(cudaMemcpy(dev->d_T_rad, plasma->T_rad,
+               n_shells * sizeof(double), cudaMemcpyHostToDevice));
 }
 
 /* BF opacity: upload chi_bf grid + T_rad + activation_level to GPU */
@@ -197,8 +214,7 @@ static void cuda_upload_bf(CudaDeviceData *dev, BFOpacity *bf,
     size_t act_size = (size_t)n_shells * bf->n_freq_bins * sizeof(int);
     CUDA_CHECK(cudaMemcpy(dev->d_chi_bf, bf->chi_bf, chi_size,
                cudaMemcpyHostToDevice));
-    CUDA_CHECK(cudaMemcpy(dev->d_T_rad, plasma->T_rad,
-               n_shells * sizeof(double), cudaMemcpyHostToDevice));
+    cuda_upload_T_rad(dev, plasma, n_shells);
     CUDA_CHECK(cudaMemcpy(dev->d_bf_activation_level, bf->activation_level,
                act_size, cudaMemcpyHostToDevice));
 }
@@ -306,6 +322,7 @@ static int cuda_nlte_batched_solve(CudaNLTESolver *sol, int N, int batch) {
     return 0;
 }
 
+
 /* GPU NLTE master solver: assemble on CPU (OpenMP), solve on GPU (cuBLAS batched).
  * Step 1.5: Iterative CE convergence wrapper — same logic as CPU nlte_solve_all. */
 static void nlte_solve_all_gpu(NLTEConfig *nlte, AtomicData *atom,
@@ -317,9 +334,11 @@ static void nlte_solve_all_gpu(NLTEConfig *nlte, AtomicData *atom,
 
     int n_pairs = nlte->n_nlte_ions / 2;
     int pairs[][2] = { {0,1}, {2,3}, {4,5}, {6,7}, {8,9}, {10,11},
-                       {12,13}, {14,15}, {16,17}, {18,19} };
+                       {12,13}, {14,15}, {16,17}, {18,19},
+                       {20,21}, {22,23}, {24,25}, {26,27} };
     const char *names[] = { "Si", "Ca", "Fe", "S", "Co", "Ni",
-                            "C", "Mg", "Ti", "Cr" };
+                            "C", "Mg", "Ti", "Cr",
+                            "Al", "Sc", "V", "Mn" };
 
     int ce_max_iter = 5;
     double ce_threshold = 1e-2;  /* 1% relative convergence on ion totals */
@@ -330,6 +349,28 @@ static void nlte_solve_all_gpu(NLTEConfig *nlte, AtomicData *atom,
     double *old_ion_totals = (double *)calloc(n_ion_totals, sizeof(double));
     size_t pop_size = (size_t)nlte->n_nlte_levels_total * n_shells;
     double *old_pops = (double *)malloc(pop_size * sizeof(double));
+
+    /* Task #40 (A)+(B): pre-bake photoionization rates on GPU.
+     * J_nu is constant across the CE iterations, so we compute R_bf once
+     * (covers all pairs × shells × levels) and pass the lookup table to the
+     * rate-matrix assembler. Falls back to per-call CPU loop if init/compute
+     * fails or env var disables it. */
+    NLTERateLookup nlte_lookup = {0};
+    NLTERateLookup *nlte_lookup_ptr = NULL;
+    int nlte_gemm_ok = 0;
+    if (getenv("LUMINA_NLTE_RATES_GEMM") == NULL || atoi(getenv("LUMINA_NLTE_RATES_GEMM")) != 0) {
+        if (nlte_rates_gpu_init(nlte, atom, n_shells) == 0 &&
+            nlte_rates_gpu_compute(nlte, &nlte_lookup) == 0) {
+            nlte_lookup_ptr = &nlte_lookup;
+            nlte_gemm_ok = 1;
+        }
+    }
+    if (nlte_gemm_ok)
+        printf("  [NLTE-GEMM] R_bf table ready (%d levels × %d shells)\n",
+               nlte_lookup.L_phot_total, n_shells);
+
+    /* Profiling: split wall-clock into assemble vs GPU solve. */
+    double t_assemble_total = 0.0, t_solve_total = 0.0;
 
     for (int ce_iter = 0; ce_iter < ce_max_iter; ce_iter++) {
         /* Save current populations + compute old ion totals */
@@ -359,6 +400,8 @@ static void nlte_solve_all_gpu(NLTEConfig *nlte, AtomicData *atom,
             memset(sol->h_rhs, 0, rhs_bytes);
 
             /* Assemble rate matrices for all shells (CPU, OpenMP parallel) */
+            struct timespec ts_a0, ts_a1, ts_s1;
+            clock_gettime(CLOCK_MONOTONIC, &ts_a0);
             #ifdef _OPENMP
             #pragma omp parallel for schedule(dynamic, 1)
             #endif
@@ -367,11 +410,18 @@ static void nlte_solve_all_gpu(NLTEConfig *nlte, AtomicData *atom,
                 double *b    = sol->h_rhs      + (size_t)s * N;
                 nlte_assemble_rate_matrix(nlte, atom, plasma, opacity,
                                           lo, hi, s, time_explosion,
-                                          A_cm, b, N, gamma_dep);
+                                          A_cm, b, N, gamma_dep,
+                                          nlte_lookup_ptr, p);
             }
+            clock_gettime(CLOCK_MONOTONIC, &ts_a1);
+            t_assemble_total += (ts_a1.tv_sec - ts_a0.tv_sec) +
+                                1e-9 * (ts_a1.tv_nsec - ts_a0.tv_nsec);
 
             /* GPU batched solve */
             int ret = cuda_nlte_batched_solve(sol, N, n_shells);
+            clock_gettime(CLOCK_MONOTONIC, &ts_s1);
+            t_solve_total += (ts_s1.tv_sec - ts_a1.tv_sec) +
+                             1e-9 * (ts_s1.tv_nsec - ts_a1.tv_nsec);
 
             /* Extract populations, handle singular matrices */
             for (int s = 0; s < n_shells; s++) {
@@ -465,6 +515,12 @@ static void nlte_solve_all_gpu(NLTEConfig *nlte, AtomicData *atom,
     }
     free(old_pops);
     free(old_ion_totals);
+
+    printf("  [NLTE-PROF] assemble: %.2f s (%.1f%%)   GPU solve: %.2f s (%.1f%%)\n",
+           t_assemble_total,
+           100.0 * t_assemble_total / (t_assemble_total + t_solve_total + 1e-9),
+           t_solve_total,
+           100.0 * t_solve_total / (t_assemble_total + t_solve_total + 1e-9));
 
     /* Print ion pair summaries */
     for (int p = 0; p < n_pairs; p++) {
@@ -603,6 +659,42 @@ static void cuda_reset_estimators(CudaDeviceData *dev, int n_shells) {
         CUDA_CHECK(cudaMemset(dev->d_j_nu_estimator, 0,
                    (size_t)n_shells * NLTE_N_FREQ_BINS * sizeof(double)));
     }
+}
+
+/* ============================================================ */
+/* [MA-FATE] Device-side fate histogram (declared here so host   */
+/* helpers can reference it; device-side helpers below).         */
+/* ============================================================ */
+__device__ unsigned long long d_ma_fate_hist[MA_FATE_NBANDS * MA_FATE_NBANDS];
+
+/* [EPS-UV] Probability that a UV-entry macro-atom call is replaced by
+ * Planck(T_rad) thermalization (BF-style). Set from LUMINA_EPS_UV. */
+__device__ double d_eps_uv = 0.0;
+
+void cuda_set_eps_uv(double v) {
+    CUDA_CHECK(cudaMemcpyToSymbol(d_eps_uv, &v, sizeof(double)));
+}
+
+/* [EPS-IR] Probability that a NIR-entry (lam > 7000 A) macro-atom call is
+ * replaced by Planck(T_rad) thermalization. Counterpart to LUMINA_EPS_UV;
+ * intended to break the IR over-thermalization loop that emerges with the
+ * 3.4M-transition carsus atomic data, where weak NIR forbidden lines vastly
+ * outnumber strong UV resonance lines and trap energy in the IR cascade. */
+__device__ double d_eps_ir = 0.0;
+
+void cuda_set_eps_ir(double v) {
+    CUDA_CHECK(cudaMemcpyToSymbol(d_eps_ir, &v, sizeof(double)));
+}
+
+void cuda_ma_fate_reset(void) {
+    unsigned long long zero[MA_FATE_NBANDS * MA_FATE_NBANDS] = {0};
+    CUDA_CHECK(cudaMemcpyToSymbol(d_ma_fate_hist, zero, sizeof(zero)));
+}
+
+void cuda_ma_fate_download_and_aggregate(void) {
+    unsigned long long host_hist[MA_FATE_NBANDS * MA_FATE_NBANDS] = {0};
+    CUDA_CHECK(cudaMemcpyFromSymbol(host_hist, d_ma_fate_hist, sizeof(host_hist)));
+    macro_atom_fate_add_counts(host_hist);
 }
 
 /* ============================================================ */
@@ -1042,6 +1134,28 @@ void d_line_emission(double *nu, int *next_line_id,
     *next_line_id = emission_line_id + 1;                            /* Phase 6 - Step 6 */
 }
 
+/* ============================================================ */
+/* [MA-FATE] Device-side helpers (storage declared earlier).     */
+/* 4×4 (entry_band, exit_band) counts; aggregated to host after  */
+/* each iteration via cuda_ma_fate_download_and_aggregate().     */
+/* ============================================================ */
+__device__ __forceinline__
+int d_ma_fate_band_from_nu(double nu_comov) {
+    if (nu_comov <= 0.0) return 3;
+    double lam_A = (C_SPEED_OF_LIGHT / nu_comov) * 1.0e8;
+    if (lam_A >= 1700.0 && lam_A < 3000.0) return 0;  /* UV */
+    if (lam_A >= 3000.0 && lam_A < 4500.0) return 1;  /* blue */
+    if (lam_A >= 4500.0 && lam_A < 7000.0) return 2;  /* opt */
+    return 3;                                          /* other */
+}
+
+__device__ __forceinline__
+void d_ma_fate_record(double entry_nu_comov, double exit_nu_comov) {
+    int eb = d_ma_fate_band_from_nu(entry_nu_comov);
+    int xb = d_ma_fate_band_from_nu(exit_nu_comov);
+    atomicAdd(&d_ma_fate_hist[eb * MA_FATE_NBANDS + xb], 1ULL);
+}
+
 /* Phase 6 - Step 6: Macro-atom interaction */
 __device__
 void d_macro_atom_interaction(int activation_level_id, int current_shell_id,
@@ -1128,6 +1242,7 @@ void d_line_scatter_event(double *r, double *mu, double *nu, double *energy,
                            const int *d_line_atomic_number,
                            const int *d_line_ion_number,
                            int fe_scatter_mode,
+                           const double *d_T_rad, int n_lines,
                            uint64_t *rng) {
     /* Phase 6 - Step 6: Get comoving frame at OLD angle */
     double old_doppler = d_get_doppler_factor(*r, *mu, t_exp); /* Phase 6 - Step 6 */
@@ -1158,6 +1273,41 @@ void d_line_scatter_event(double *r, double *mu, double *nu, double *energy,
             d_line_emission(nu, next_line_id, *next_line_id,
                              *r, *mu, t_exp, d_line_list_nu);
         } else {
+            /* [MA-FATE] entry comov nu = activation line frequency in atomic frame */
+            double ma_entry_comov_nu = *nu * d_get_doppler_factor(*r, *mu, t_exp);
+
+            /* [EPS-UV] If UV-entry, with probability d_eps_uv replace the
+             * macro-atom cascade with a Planck(T_rad) thermalization. This
+             * emulates wavelength redistribution that the atomic data is
+             * missing (no UV→optical downward radiative paths). */
+            int entry_band = d_ma_fate_band_from_nu(ma_entry_comov_nu);
+            if (entry_band == 0 && d_eps_uv > 0.0 &&
+                d_rng_uniform(rng) < d_eps_uv) {
+                d_bf_absorption_event(r, mu, nu, next_line_id, t_exp,
+                                       d_T_rad, shell_id,
+                                       d_line_list_nu, n_lines, rng);
+                double ma_exit_comov_nu_th = *nu *
+                    d_get_doppler_factor(*r, *mu, t_exp);
+                d_ma_fate_record(ma_entry_comov_nu, ma_exit_comov_nu_th);
+                return;
+            }
+
+            /* [EPS-IR] If NIR-entry (lam > 7000 A), with probability d_eps_ir
+             * thermalize back to Planck(T_rad) instead of running the cascade.
+             * Counters the IR-trapping inflation under dense atomic data. */
+            if (d_eps_ir > 0.0) {
+                double lam_A_entry = (C_SPEED_OF_LIGHT / ma_entry_comov_nu) * 1.0e8;
+                if (lam_A_entry > 7000.0 && d_rng_uniform(rng) < d_eps_ir) {
+                    d_bf_absorption_event(r, mu, nu, next_line_id, t_exp,
+                                           d_T_rad, shell_id,
+                                           d_line_list_nu, n_lines, rng);
+                    double ma_exit_comov_nu_th = *nu *
+                        d_get_doppler_factor(*r, *mu, t_exp);
+                    d_ma_fate_record(ma_entry_comov_nu, ma_exit_comov_nu_th);
+                    return;
+                }
+            }
+
             /* Phase 6 - Step 6: Activate macro-atom */
             int activation_level = d_line2macro_level_upper[*next_line_id]; /* Phase 6 - Step 6 */
 
@@ -1179,6 +1329,9 @@ void d_line_scatter_event(double *r, double *mu, double *nu, double *energy,
                 d_line_emission(nu, next_line_id, emit_line, /* Phase 6 - Step 6 */
                                  *r, *mu, t_exp, d_line_list_nu); /* Phase 6 - Step 6 */
             }
+            /* [MA-FATE] exit comov nu after cascade + line_emission */
+            double ma_exit_comov_nu = *nu * d_get_doppler_factor(*r, *mu, t_exp);
+            d_ma_fate_record(ma_entry_comov_nu, ma_exit_comov_nu);
         }
     }
 }
@@ -1539,6 +1692,7 @@ void transport_kernel(
                                   d_line_atomic_number,
                                   d_line_ion_number,
                                   fe_scatter_mode,
+                                  d_T_rad, n_lines,
                                   rng);                                   /* Phase 6 - Step 7 */
             /* Virtual packet: trace from interaction point */
             if (d_virtual_spectrum != NULL) {
@@ -1571,6 +1725,8 @@ void transport_kernel(
                     pkt_energy *= old_doppler;  /* to comoving */
                     pkt_energy *= inv_new_doppler;  /* back to lab */
                     pkt_nu = comov_nu_bf2 * inv_new_doppler;
+                    /* [MA-FATE] entry comov nu for BF activation = pre-absorption photon nu */
+                    double ma_entry_comov_nu = comov_nu_bf2;
                     /* Run macro-atom cascade */
                     int transition_id, transition_type_ma;
                     d_macro_atom_interaction(act_level, pkt_shell_id,
@@ -1587,6 +1743,9 @@ void transport_kernel(
                         d_line_emission(&pkt_nu, &pkt_next_line_id, emit_line,
                                          pkt_r, pkt_mu, t_exp, d_line_list_nu);
                     }
+                    /* [MA-FATE] exit comov nu after cascade */
+                    double ma_exit_comov_nu = pkt_nu * d_get_doppler_factor(pkt_r, pkt_mu, t_exp);
+                    d_ma_fate_record(ma_entry_comov_nu, ma_exit_comov_nu);
                 } else {
                     d_bf_absorption_event(&pkt_r, &pkt_mu, &pkt_nu,
                                            &pkt_next_line_id, t_exp,
@@ -1689,6 +1848,13 @@ int main(int argc, char *argv[]) {
         fprintf(stderr, "Failed to load atomic data\n");
         return 1;
     }
+    /* Task #38: Optional pre-baked CMFGEN sigma_bf grid (per-level ν-dependent
+     * photoionization). Override path with LUMINA_CMFGEN_SIGMA_BF env var. */
+    {
+        const char *cmf_path = getenv("LUMINA_CMFGEN_SIGMA_BF");
+        if (!cmf_path) cmf_path = "data/atomic/cmfgen_sigma_bf.bin";
+        load_cmfgen_sigma_bf(&atom_data, cmf_path);
+    }
     /* Task #072: Initialize n_electron from TARDIS reference */
     plasma.n_electron = (double *)malloc(geo.n_shells * sizeof(double));
     for (int i = 0; i < geo.n_shells; i++)
@@ -1732,6 +1898,35 @@ int main(int argc, char *argv[]) {
     int fe_scatter = 0;
     if (getenv("LUMINA_FE_SCATTER"))
         fe_scatter = atoi(getenv("LUMINA_FE_SCATTER"));
+
+    /* [EPS-UV] thermalization knob: probability that a UV-entry macro-atom
+     * call is replaced by Planck(T_rad) re-emission. Set with LUMINA_EPS_UV. */
+    {
+        double eps_uv = 0.0;
+        if (getenv("LUMINA_EPS_UV"))
+            eps_uv = atof(getenv("LUMINA_EPS_UV"));
+        if (eps_uv < 0.0) eps_uv = 0.0;
+        if (eps_uv > 1.0) eps_uv = 1.0;
+        cuda_set_eps_uv(eps_uv);
+        if (eps_uv > 0.0)
+            printf("[EPS-UV] UV-entry macro-atom thermalization probability = %.3f\n",
+                   eps_uv);
+    }
+
+    /* [EPS-IR] NIR-entry counterpart: probability of replacing a macro-atom
+     * call with Planck(T_rad) thermalization for activations at lam>7000 A.
+     * Set with LUMINA_EPS_IR. */
+    {
+        double eps_ir = 0.0;
+        if (getenv("LUMINA_EPS_IR"))
+            eps_ir = atof(getenv("LUMINA_EPS_IR"));
+        if (eps_ir < 0.0) eps_ir = 0.0;
+        if (eps_ir > 1.0) eps_ir = 1.0;
+        cuda_set_eps_ir(eps_ir);
+        if (eps_ir > 0.0)
+            printf("[EPS-IR] NIR-entry macro-atom thermalization probability = %.3f\n",
+                   eps_ir);
+    }
 
     /* Gamma-ray deposition: LUMINA_GAMMA_DEP=1 */
     int gamma_dep_enabled = 0;
@@ -1854,6 +2049,11 @@ int main(int argc, char *argv[]) {
         printf("--- BF+FF Opacity Initialized (%d freq bins) ---\n", bf.n_freq_bins);
     }
 
+    /* T_rad upload (always; needed by EPS_UV / EPS_IR macro-atom paths even
+     * when BF is disabled). cuda_upload_bf already covers BF-on case. */
+    if (!bf_opacity_enabled)
+        cuda_upload_T_rad(&dev, &plasma, geo.n_shells);
+
     /* Phase 6 - Step 8: Host-side escaped packet buffers */
     double *h_escaped_nu = (double *)malloc(n_packets * sizeof(double));     /* Phase 6 - Step 8 */
     double *h_escaped_energy = (double *)malloc(n_packets * sizeof(double)); /* Phase 6 - Step 8 */
@@ -1875,6 +2075,11 @@ int main(int argc, char *argv[]) {
         reset_spectrum(spec);    /* Phase 6 - Step 8 */
         cuda_reset_estimators(&dev, geo.n_shells); /* Phase 6 - Step 8: GPU estimators */
         CUDA_CHECK(cudaMemset(dev.d_escaped_flag, 0, n_packets * sizeof(int))); /* Phase 6 - Step 8 */
+        /* [MA-FATE] reset device-side macro-atom fate hist; aggregate
+         * only on the final iteration so the printout reflects the
+         * converged radiation field. */
+        cuda_ma_fate_reset();
+        if (iter == n_iterations - 1) macro_atom_fate_reset();
 
         /* Phase 6 - Step 8: Recompute L_inner, time_simulation, packet_energy */
         double L_inner = 4.0 * M_PI_VAL * geo.r_inner[0] * geo.r_inner[0] * /* Phase 6 - Step 8 */
@@ -1929,6 +2134,9 @@ int main(int argc, char *argv[]) {
 
         /* Phase 6 - Step 8: Check for kernel errors */
         CUDA_CHECK(cudaGetLastError()); /* Phase 6 - Step 8 */
+
+        /* [MA-FATE] aggregate device-side counts on the final iteration */
+        if (iter == n_iterations - 1) cuda_ma_fate_download_and_aggregate();
 
         /* Phase 6 - Step 8: Download results */
         cuda_download_estimators(&dev, est->j_estimator, est->nu_bar_estimator, /* Phase 6 - Step 8 */
@@ -1995,6 +2203,9 @@ int main(int argc, char *argv[]) {
             if (bf_opacity_enabled) {
                 compute_bf_opacity(&bf, &atom_data, &plasma, geo.n_shells);
                 cuda_upload_bf(&dev, &bf, &plasma, geo.n_shells);
+            } else {
+                /* EPS_UV / EPS_IR need fresh T_rad even when BF is disabled. */
+                cuda_upload_T_rad(&dev, &plasma, geo.n_shells);
             }
 
             /* NLTE: solve rate equations and update tau for NLTE lines */
@@ -2061,6 +2272,9 @@ int main(int argc, char *argv[]) {
     printf("\n============================================================\n"); /* Phase 6 - Step 8 */
     printf("Final Results (CUDA)\n");                                           /* Phase 6 - Step 8 */
     printf("============================================================\n"); /* Phase 6 - Step 8 */
+
+    /* [MA-FATE] Macro-atom packet fate histogram (final iteration) */
+    macro_atom_fate_print("final iteration, GPU transport");
 
     char path[512]; /* Phase 6 - Step 8 */
     snprintf(path, sizeof(path), "%s/plasma_state.csv", ref_dir); /* Phase 6 - Step 8 */

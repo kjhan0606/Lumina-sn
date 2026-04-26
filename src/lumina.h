@@ -227,6 +227,18 @@ typedef struct {
     /* Per-shell computed quantities */
     double *ion_number_density;       /* [n_ion_pops * n_shells] */
     double *partition_functions;      /* [n_ion_pops * n_shells] */
+
+    /* CMFGEN-baked photoionization cross-sections.
+     * Pre-baked onto LUMINA's fixed bf opacity grid (NLTE_N_FREQ_BINS bins,
+     * NLTE_NU_MIN..NLTE_NU_MAX log-spaced). Loaded from cmfgen_sigma_bf.bin.
+     * Layout: cmfgen_sigma_bf[level_idx * n_freq_bins + bin] in cm^2.
+     * cmfgen_has_sigma[level_idx]==1 → use baked curve; ==0 → Kramers fallback. */
+    int      cmfgen_loaded;           /* 1 if grid loaded; 0 → all Kramers */
+    int      cmfgen_n_freq_bins;      /* must equal NLTE_N_FREQ_BINS */
+    double   cmfgen_nu_min;
+    double   cmfgen_nu_max;
+    int     *cmfgen_has_sigma;        /* [n_levels] */
+    double  *cmfgen_sigma_bf;         /* [n_levels * n_freq_bins] */
 } AtomicData;
 
 /* ============================================================ */
@@ -236,7 +248,7 @@ typedef struct {
 #define NLTE_N_FREQ_BINS  1000
 #define NLTE_NU_MIN       1.5e14    /* c / 20000 A */
 #define NLTE_NU_MAX       3.0e16    /* c / 100 A */
-#define NLTE_MAX_IONS     20        /* Si,Ca,Fe,S,Co,Ni,C,Mg,Ti,Cr II/III (10 pairs) */
+#define NLTE_MAX_IONS     28        /* Si,Ca,Fe,S,Co,Ni,C,Mg,Ti,Cr,Al,Sc,V,Mn II/III (14 pairs) */
 
 typedef struct {
     int    enabled;
@@ -462,6 +474,7 @@ void bin_escaped_packet(Spectrum *spec, double nu, double energy);
 
 /* Task #072: Atomic data loading and plasma solver */
 int load_atomic_data(AtomicData *atom, const char *ref_dir, int n_shells);
+int load_cmfgen_sigma_bf(AtomicData *atom, const char *path);
 void free_atomic_data(AtomicData *atom);
 void compute_plasma_state(AtomicData *atom, PlasmaState *plasma,
                           OpacityState *opacity, double time_explosion);
@@ -483,13 +496,34 @@ void nlte_solve_all(NLTEConfig *nlte, AtomicData *atom, PlasmaState *plasma,
                      OpacityState *opacity, double time_explosion,
                      int n_shells, GammaDeposition *gamma_dep);
 
-/* NLTE: Assemble rate matrix (column-major A[N*N] + RHS b[N]) for GPU/CPU solve */
+/* Task #40 (A)+(B): photoionization rate lookup, populated by the GPU GEMM.
+ * R_bf_table is col-major [L_phot_total × n_shells]; for a given (pair_idx,
+ * lev_within_pair, shell):
+ *   R_bf = R_bf_table[shell * L_phot_total + (phot_offset[pair_idx] + lev)]
+ * Pass NULL to nlte_assemble_rate_matrix to use the inline CPU computation. */
+typedef struct {
+    const double *R_bf_table;
+    const int    *phot_offset;   /* [n_pairs+1] */
+    int           L_phot_total;  /* = phot_offset[n_pairs], stride of R_bf */
+} NLTERateLookup;
+
+/* NLTE: Assemble rate matrix (column-major A[N*N] + RHS b[N]) for GPU/CPU solve.
+ * pair_idx is the index in the GPU pair list (0..n_pairs-1) when lookup != NULL;
+ * ignored otherwise. */
 void nlte_assemble_rate_matrix(NLTEConfig *nlte, AtomicData *atom,
                                 PlasmaState *plasma, OpacityState *opacity,
                                 int ion_idx_lo, int ion_idx_hi,
                                 int shell, double time_explosion,
                                 double *A_cm, double *b, int N,
-                                GammaDeposition *gamma_dep);
+                                GammaDeposition *gamma_dep,
+                                const NLTERateLookup *lookup,
+                                int pair_idx);
+
+/* Task #40 (A)+(B): GPU NLTE photoionization rates via TF32 GEMM.
+ * Pre-bakes K[ν, lev] in init; per call computes R_bf = K^T · J_nu. */
+int  nlte_rates_gpu_init(NLTEConfig *nlte, AtomicData *atom, int n_shells);
+int  nlte_rates_gpu_compute(NLTEConfig *nlte, NLTERateLookup *out_lookup);
+void nlte_rates_gpu_free(void);
 
 /* Gamma-ray deposition: 56Ni/56Co decay energy deposition */
 void gamma_deposition_init(GammaDeposition *gd, int n_shells);
@@ -508,6 +542,15 @@ void compute_bf_opacity(BFOpacity *bf, AtomicData *atom, PlasmaState *plasma,
                          int n_shells);
 double bf_get_chi(BFOpacity *bf, int shell, double nu);
 int    bf_get_activation_level(BFOpacity *bf, int shell, double nu);
+
+/* Task #39: GPU bf opacity via cuBLAS GEMM (TF32 tensor cores).
+ * Reformulates per-level loop as chi_bf[s,f] = n_level[s,l] @ sigma_bf[l,f].
+ * Defined in lumina_cuda.cu; CPU build links against weak stubs.
+ * Returns 0 on success, -1 on fallback. */
+int  bf_gemm_init(AtomicData *atom, int n_shells);
+int  bf_gemm_compute(BFOpacity *bf, AtomicData *atom, PlasmaState *plasma,
+                     int n_shells);
+void bf_gemm_free(void);
 void bf_absorption_event(RPacket *pkt, double time_explosion,
                           PlasmaState *plasma, OpacityState *opacity, RNG *rng);
 double sample_planck_frequency(double T, RNG *rng);
@@ -522,6 +565,27 @@ void compute_formal_integral_spectrum(
     Geometry *geo, PlasmaState *plasma, OpacityState *opacity,
     AtomicData *atom, NLTEConfig *nlte, double T_inner,
     Spectrum *spec_formal, int n_impact);
+
+/* [MA-FATE] Macro-atom packet fate histogram (UV→? cascade diagnostic).
+ * Bands: 0=UV (1700-3000 Å), 1=blue (3000-4500 Å),
+ *        2=opt (4500-7000 Å), 3=other (NIR/far-UV).
+ * Counts (entry_band, exit_band) pairs across all macro-atom interactions
+ * (line-activated and BF-activated). Used to detect closed-loop UV trapping
+ * vs Mazzali-Lucy fluorescence redistribution.
+ *
+ * macro_atom_fate_record() is thread-safe via OpenMP atomic; called from
+ * macro_atom_event() in CPU transport. GPU transport uses a device-side
+ * histogram (cuda_ma_fate_*) and aggregates into the same counters. */
+#define MA_FATE_NBANDS 4
+int  macro_atom_fate_band_from_nu(double nu_comov);
+void macro_atom_fate_record(double entry_nu_comov, double exit_nu_comov);
+void macro_atom_fate_reset(void);
+void macro_atom_fate_print(const char *label);
+void macro_atom_fate_add_counts(const unsigned long long add[MA_FATE_NBANDS * MA_FATE_NBANDS]);
+
+/* GPU side: defined in lumina_cuda.cu, weak-stubbed in CPU build. */
+void cuda_ma_fate_reset(void);
+void cuda_ma_fate_download_and_aggregate(void);
 
 #ifdef __cplusplus   /* Phase 6 - Step 9: close extern C guard */
 }                    /* Phase 6 - Step 9 */

@@ -560,6 +560,19 @@ void compute_transition_probabilities(AtomicData *atom, PlasmaState *plasma,
     /* Use J_nu histogram for internal_up if NLTE is active and J_nu populated */
     int use_j_nu = (nlte != NULL && nlte->enabled && nlte->J_nu != NULL);
 
+    /* P5: optional cap on B_lu·J_ν internal-up rate. When the carsus 3.4M-line
+     * macro-atom is iron-forest-trapped, J_ν(UV) inflates 10-100× above LTE,
+     * driving runaway UV pumping that locks the cascade. Capping J_line at
+     * (cap_factor × W·B_ν(T_rad)) re-imposes a Mazzali-Lucy expectation
+     * without disabling NLTE entirely. Set with LUMINA_J_CAP_FACTOR (>0 to
+     * enable; typical 2-10). 0/unset = no cap. */
+    static double j_cap_factor = -1.0;
+    if (j_cap_factor < 0.0) {
+        const char *e = getenv("LUMINA_J_CAP_FACTOR");
+        j_cap_factor = (e ? atof(e) : 0.0);
+        if (j_cap_factor < 0.0) j_cap_factor = 0.0;
+    }
+
     /* Find max block size for temp buffer */
     int max_block = 0;
     for (int lev = 0; lev < n_levels; lev++) {
@@ -601,6 +614,11 @@ void compute_transition_probabilities(AtomicData *atom, PlasmaState *plasma,
                         double nu_line = atom->line_nu[line_id];
                         if (use_j_nu) {
                             double J_line = nlte_get_J_at_nu(nlte, s, nu_line);
+                            if (j_cap_factor > 0.0) {
+                                double J_lte = W * planck_bnu(T_rad, nu_line);
+                                double J_max = j_cap_factor * J_lte;
+                                if (J_line > J_max) J_line = J_max;
+                            }
                             rate = atom->line_B_lu[line_id] * J_line;
                         } else {
                             rate = atom->line_B_lu[line_id] * W * planck_bnu(T_rad, nu_line);
@@ -628,9 +646,163 @@ void compute_transition_probabilities(AtomicData *atom, PlasmaState *plasma,
     }
 
     free(rates_buf);
-    printf("  [TransProb] Recomputed %d transitions x %d shells (damping=%s, J_src=%s)\n",
+    printf("  [TransProb] Recomputed %d transitions x %d shells (damping=%s, J_src=%s, j_cap=%.2g)\n",
            n_trans, n_shells, apply_damping ? "on" : "off",
-           use_j_nu ? "MC_histogram" : "W*Bnu");
+           use_j_nu ? "MC_histogram" : "W*Bnu", j_cap_factor);
+
+    /* [MA-BRANCH] Per-band branching balance in the formation zone.
+     * For each level, find the line in its transition block with the highest
+     * Sobolev τ, and bin the level by that strong-line's band. This naturally
+     * weights toward strong-resonance levels — the ones that dominate the
+     * MA-FATE histogram entries. Then report aggregated branching mass.
+     *
+     * Within each band group we report the totals (not means), so the result
+     * is ∑_{level in band} (p_emit, p_iup, p_idn). p_iup includes ALL upward
+     * transitions; p_idn includes ALL downward transitions; p_emit is BB
+     * emission of any band. The sum-by-band of (band-resolved p_emit) gives
+     * the immediate emission redistribution; the iup/idn rows show the
+     * cascade balance into strong-band levels.
+     *
+     * We also restrict the report to levels with at least one τ > τ_strong
+     * (default 1.0) on their strongest line — so weak-line levels do not
+     * dilute the signal. */
+    {
+        int diag_shell = n_shells > 1 ? n_shells / 3 : 0;  /* formation zone */
+        const double tau_strong = 1.0;
+        int n_per_band[MA_FATE_NBANDS] = {0};
+        double sum_emit[MA_FATE_NBANDS] = {0};
+        double sum_iup [MA_FATE_NBANDS] = {0};
+        double sum_idn [MA_FATE_NBANDS] = {0};
+        /* Band-resolved BB-emission destination, per strong-line band group.
+         * sum_emit_dest[group][dest_band] = ∑ p_emit landing in dest_band */
+        double sum_emit_dest[MA_FATE_NBANDS][MA_FATE_NBANDS] = {{0}};
+        int n_idle = 0, n_weak = 0;
+        int n_dumped_fe2_uv = 0;
+        const int N_DUMP_FE2_UV = 2;
+        const double C_LIGHT_AA = 2.99792458e18;  /* Hz·Å */
+
+        for (int lev = 0; lev < n_levels; lev++) {
+            int block_start = opacity->macro_block_references[lev];
+            int block_end   = opacity->macro_block_references[lev + 1];
+            if (block_start >= block_end) { n_idle++; continue; }
+
+            /* Find the strongest line touching this level (any ttype). */
+            double tau_max  = 0.0;
+            int    max_band = -1;
+            for (int tid = block_start; tid < block_end; tid++) {
+                int line_id = opacity->transition_line_id[tid];
+                if (line_id < 0 || line_id >= atom->n_lines) continue;
+                double tau = opacity->tau_sobolev[line_id * n_shells + diag_shell];
+                if (tau > tau_max) {
+                    tau_max  = tau;
+                    max_band = macro_atom_fate_band_from_nu(atom->line_nu[line_id]);
+                }
+            }
+            if (tau_max < tau_strong || max_band < 0) { n_weak++; continue; }
+
+            double p_emit_band[MA_FATE_NBANDS] = {0};
+            double p_iup = 0.0, p_idn = 0.0;
+            /* Element of this level: take from strongest line. */
+            int strong_line_id = -1;
+            for (int tid = block_start; tid < block_end; tid++) {
+                int line_id = opacity->transition_line_id[tid];
+                if (line_id < 0 || line_id >= atom->n_lines) continue;
+                double tau = opacity->tau_sobolev[line_id * n_shells + diag_shell];
+                if (tau == tau_max) { strong_line_id = line_id; break; }
+            }
+            int level_Z   = strong_line_id >= 0 ? atom->line_atomic_number[strong_line_id] : -1;
+            int level_ion = strong_line_id >= 0 ? atom->line_ion_number[strong_line_id]    : -1;
+
+            for (int tid = block_start; tid < block_end; tid++) {
+                double p    = opacity->transition_probabilities[tid * n_shells + diag_shell];
+                int    ttype  = opacity->transition_type[tid];
+                int    line_id = opacity->transition_line_id[tid];
+                if (ttype == -1) {
+                    if (line_id >= 0 && line_id < atom->n_lines) {
+                        int b = macro_atom_fate_band_from_nu(atom->line_nu[line_id]);
+                        p_emit_band[b] += p;
+                    }
+                } else if (ttype == 0) {
+                    p_idn += p;
+                } else if (ttype == 1) {
+                    p_iup += p;
+                }
+            }
+
+            double p_emit_tot = p_emit_band[0] + p_emit_band[1] +
+                                p_emit_band[2] + p_emit_band[3];
+            n_per_band[max_band]++;
+            sum_emit[max_band] += p_emit_tot;
+            sum_iup [max_band] += p_iup;
+            sum_idn [max_band] += p_idn;
+            for (int b = 0; b < MA_FATE_NBANDS; b++)
+                sum_emit_dest[max_band][b] += p_emit_band[b];
+
+            /* Dump first N_DUMP Fe II UV-strong levels that ALSO have BB-emission
+             * exits (skip ground-multiplet members with only I-UP). These are
+             * the cascade-relevant upper levels of UV resonance lines. */
+            int has_emit = (p_emit_band[0] + p_emit_band[1] + p_emit_band[2]
+                            + p_emit_band[3]) > 0.0;
+            if (max_band == 0 && level_Z == 26 && level_ion == 1 && has_emit &&
+                n_dumped_fe2_uv < N_DUMP_FE2_UV) {
+                printf("    [MA-DUMP] Fe II UV-strong level lev=%d (Z=%d ion=%d) "
+                       "tau_max=%.2e at shell %d, block size=%d\n",
+                       lev, level_Z, level_ion, tau_max, diag_shell,
+                       block_end - block_start);
+                printf("      tid  ttype  line_id    lambda(A)     A_ul[s^-1]    "
+                       "tau_sob       p\n");
+                for (int tid = block_start; tid < block_end; tid++) {
+                    double p     = opacity->transition_probabilities[tid * n_shells + diag_shell];
+                    int    ttype = opacity->transition_type[tid];
+                    int    lid   = opacity->transition_line_id[tid];
+                    double lam = 0.0, A_ul = 0.0, tau = 0.0;
+                    if (lid >= 0 && lid < atom->n_lines) {
+                        lam   = C_LIGHT_AA / atom->line_nu[lid];
+                        A_ul  = atom->line_A_ul[lid];
+                        tau   = opacity->tau_sobolev[lid * n_shells + diag_shell];
+                    }
+                    const char *ts =
+                        ttype == -1 ? "EMIT  " :
+                        ttype ==  0 ? "I-DN  " :
+                        ttype ==  1 ? "I-UP  " : "?     ";
+                    printf("      %4d %s %7d  %10.2f   %10.3e   %10.3e  %10.3e\n",
+                           tid, ts, lid, lam, A_ul, tau, p);
+                }
+                n_dumped_fe2_uv++;
+            }
+        }
+
+        static const char *band_name[MA_FATE_NBANDS] = {"UV   ", "blue ", "opt  ", "other"};
+        printf("  [MA-BRANCH] Strong-line (tau > %.1f) branching at shell %d\n",
+               tau_strong, diag_shell);
+        printf("    bin by strongest-line band  |    n  | <p_emit> | <p_iup> | <p_idn>\n");
+        for (int b = 0; b < MA_FATE_NBANDS; b++) {
+            if (n_per_band[b] == 0) continue;
+            double inv = 1.0 / (double)n_per_band[b];
+            printf("    strong-line in %s        | %5d |  %6.4f  | %6.4f  | %6.4f\n",
+                   band_name[b], n_per_band[b],
+                   sum_emit[b] * inv, sum_iup[b] * inv, sum_idn[b] * inv);
+        }
+        printf("    weak-line (tau<=%.1f, skipped) | %5d |\n", tau_strong, n_weak);
+        if (n_idle) printf("    orphan/empty block          | %5d |\n", n_idle);
+
+        /* BB-emission destination band, normalized by row total. */
+        if (n_per_band[0] > 0) {
+            double s = sum_emit[0]; if (s <= 0) s = 1.0;
+            printf("    UV-strong levels' BB-emit destination band:"
+                   " UV=%.1f%% blue=%.1f%% opt=%.1f%% other=%.1f%%\n",
+                   100.0 * sum_emit_dest[0][0] / s,
+                   100.0 * sum_emit_dest[0][1] / s,
+                   100.0 * sum_emit_dest[0][2] / s,
+                   100.0 * sum_emit_dest[0][3] / s);
+            double up = sum_iup[0] / (double)n_per_band[0];
+            double dn = sum_idn[0] / (double)n_per_band[0];
+            printf("    UV-strong-group: <p_iup>/<p_idn>=%.2f"
+                   "  (Mazzali-Lucy expects <p_idn> >> <p_iup>;"
+                   " ratio>=1 => J_nu(UV) pumping the cascade up).\n",
+                   dn > 0 ? up / dn : -1.0);
+        }
+    }
 }
 
 /* Task #072 Step 4e: Master plasma state update */
@@ -666,14 +838,29 @@ void compute_plasma_state(AtomicData *atom, PlasmaState *plasma,
     int n_lines = opacity->n_lines;
     double tau_min = 1e99, tau_max = 0.0;
     int n_significant = 0;
+    /* [TAU-DIAG] band-resolved counts (shell 0). lambda_A = c / nu in Å. */
+    int n_uv = 0, n_uv_sig = 0;          /* 1700 - 3000 Å */
+    int n_blue = 0, n_blue_sig = 0;      /* 3000 - 4500 Å */
+    int n_opt = 0, n_opt_sig = 0;        /* 4500 - 7000 Å */
+    double tau_sum_uv = 0.0, tau_sum_blue = 0.0, tau_sum_opt = 0.0;
     for (int l = 0; l < n_lines; l++) {
         double t = opacity->tau_sobolev[l * n_shells + 0]; /* shell 0 */
         if (t > tau_max) tau_max = t;
         if (t < tau_min && t > 1e-100) tau_min = t;
         if (t > 1.0) n_significant++;
+        double nu = atom->line_nu[l];
+        double lam_A = (nu > 0.0) ? (C_SPEED_OF_LIGHT / nu * 1e8) : 0.0;
+        if (lam_A >= 1700.0 && lam_A < 3000.0)      { n_uv++;   if (t > 1.0) n_uv_sig++;   tau_sum_uv += t; }
+        else if (lam_A >= 3000.0 && lam_A < 4500.0) { n_blue++; if (t > 1.0) n_blue_sig++; tau_sum_blue += t; }
+        else if (lam_A >= 4500.0 && lam_A < 7000.0) { n_opt++;  if (t > 1.0) n_opt_sig++;  tau_sum_opt += t; }
     }
     printf("    Shell 0: tau_min=%.2e, tau_max=%.2e, lines with tau>1: %d/%d\n",
            tau_min, tau_max, n_significant, n_lines);
+    printf("    [TAU-DIAG] tau>1 by band: UV(1700-3000)=%d/%d (sum=%.1f) | "
+           "blue(3000-4500)=%d/%d (sum=%.1f) | opt(4500-7000)=%d/%d (sum=%.1f)\n",
+           n_uv_sig, n_uv, tau_sum_uv,
+           n_blue_sig, n_blue, tau_sum_blue,
+           n_opt_sig, n_opt, tau_sum_opt);
 }
 
 /* ============================================================ */
@@ -729,16 +916,20 @@ double bf_get_chi(BFOpacity *bf, int shell, double nu) {
  * Sums over all ions and their levels weighted by level population. */
 /* P7: Tabulated ground-state photoionization cross-sections from CMFGEN data.
  * Returns σ₀ in cm² (1 Mb = 1e-18 cm²). Ions not in table return 0 → Kramers fallback.
- * Sources: CMFGEN phot_data files (C,Mg,Ca,Cr,Fe,Co,Ni); estimated for Si,S,Ti. */
+ * Sources: CMFGEN phot_data files (C,Mg,Ca,Cr,Fe,Co,Ni); estimated for Si,S,Ti,Al,Sc,V,Mn. */
 static double get_bf_sigma0(int Z, int stage) {
     switch (Z) {
     case 6:  return (stage == 1) ? 3.75e-18 : (stage == 2) ? 1.27e-18 : 0;  /* C  */
     case 12: return (stage == 1) ? 0.23e-18 : (stage == 2) ? 5.42e-18 : 0;  /* Mg */
+    case 13: return (stage == 1) ? 0.30e-18 : (stage == 2) ? 1.00e-18 : (stage == 3) ? 0.80e-18 : 0;  /* Al (est, UV multiplets) */
     case 14: return (stage == 1) ? 1.00e-18 : (stage == 2) ? 3.00e-18 : 0;  /* Si (est) */
     case 16: return (stage == 1) ? 2.00e-18 : (stage == 2) ? 3.00e-18 : 0;  /* S  (est) */
     case 20: return (stage == 1) ? 0.31e-18 : (stage == 2) ? 1.92e-18 : 0;  /* Ca */
+    case 21: return (stage == 1) ? 3.00e-18 : (stage == 2) ? 2.50e-18 : (stage == 3) ? 2.00e-18 : 0;  /* Sc (est, d-shell) */
     case 22: return (stage == 1) ? 3.00e-18 : (stage == 2) ? 2.00e-18 : 0;  /* Ti (est) */
+    case 23: return (stage == 1) ? 3.50e-18 : (stage == 2) ? 3.00e-18 : (stage == 3) ? 2.50e-18 : 0;  /* V (est, d-shell) */
     case 24: return (stage == 1) ? 2.00e-18 : (stage == 2) ? 2.00e-18 : 0;  /* Cr (est) */
+    case 25: return (stage == 1) ? 2.50e-18 : (stage == 2) ? 3.00e-18 : (stage == 3) ? 2.50e-18 : 0;  /* Mn (est, d-shell) */
     case 26: return (stage == 1) ? 5.26e-18 : (stage == 2) ? 8.82e-18 : 0;  /* Fe */
     case 27: return (stage == 1) ?10.10e-18 : (stage == 2) ? 2.00e-18 : 0;  /* Co */
     case 28: return (stage == 1) ? 7.27e-18 : (stage == 2) ? 3.00e-18 : 0;  /* Ni */
@@ -755,10 +946,35 @@ void compute_bf_opacity(BFOpacity *bf, AtomicData *atom, PlasmaState *plasma,
     memset(bf->chi_bf, 0, grid_size * sizeof(double));
     memset(bf->activation_level, -1, grid_size * sizeof(int));
 
+    /* Precompute bin center frequencies (used by both CPU and free-free paths) */
+    double *nu_bin = (double *)malloc(bf->n_freq_bins * sizeof(double));
+    for (int b = 0; b < bf->n_freq_bins; b++) {
+        nu_bin[b] = bf->nu_min * exp((b + 0.5) * bf->d_log_nu);
+    }
+
+#ifdef LUMINA_HAS_CUDA_BF_GEMM
+    /* Task #39: GPU GEMM path (TF32 tensor cores) when CMFGEN sigma_bf is
+     * loaded and LUMINA_BF_GEMM=1. Fills chi_bf[s,f] = sum_l n_level[s,l] *
+     * sigma_bf[l,f] in a single batched GEMM, then jumps straight to free-free. */
+    if (atom->cmfgen_loaded && getenv("LUMINA_BF_GEMM")) {
+        if (bf_gemm_compute(bf, atom, plasma, n_shells) == 0) {
+            goto compute_ff;
+        }
+        /* GEMM failed — fall through to CPU loop */
+    }
+#endif
+
     /* Per-bin dominant absorber tracking: chi contribution from best ion */
     double *best_chi = (double *)calloc(grid_size, sizeof(double));
     int    *best_ip  = (int *)malloc(grid_size * sizeof(int));
     memset(best_ip, -1, grid_size * sizeof(int));
+
+    /* [BF-DIAG] one-shot tally of CMFGEN-vs-Kramers per-level σ_bf usage.
+     * Only the first call with non-empty active levels prints; subsequent iters
+     * reuse the same atomic data. Set LUMINA_BF_DIAG=0 to suppress. */
+    static int bf_diag_emitted = 0;
+    long bf_diag_cmfgen_levels = 0;
+    long bf_diag_kramers_levels = 0;
 
     /* Precompute ground-state level index of the NEXT-HIGHER ion for each ion pop.
      * When ion ip (Z, stage) absorbs BF, the atom becomes (Z, stage+1).
@@ -785,12 +1001,6 @@ void compute_bf_opacity(BFOpacity *bf, AtomicData *atom, PlasmaState *plasma,
         }
     }
 
-    /* Precompute bin center frequencies */
-    double *nu_bin = (double *)malloc(bf->n_freq_bins * sizeof(double));
-    for (int b = 0; b < bf->n_freq_bins; b++) {
-        nu_bin[b] = bf->nu_min * exp((b + 0.5) * bf->d_log_nu);
-    }
-
     for (int ip = 0; ip < atom->n_ion_pops; ip++) {
         int Z_ion = atom->ion_pop_Z[ip];
         int stage = atom->ion_pop_stage[ip];
@@ -810,15 +1020,23 @@ void compute_bf_opacity(BFOpacity *bf, AtomicData *atom, PlasmaState *plasma,
         double chi_erg = chi_eV * EV_TO_ERG;
 
         /* P7: Tabulated cross-section (CMFGEN) or Kramers fallback */
-        double sigma_0 = get_bf_sigma0(Z_ion, stage);
-        if (sigma_0 <= 0.0) {
+        double sigma_0_kramers = get_bf_sigma0(Z_ion, stage);
+        if (sigma_0_kramers <= 0.0) {
             int Z_eff = Z_ion - stage;
             if (Z_eff < 1) Z_eff = 1;
-            sigma_0 = 7.91e-18 / ((double)Z_eff * (double)Z_eff);
+            sigma_0_kramers = 7.91e-18 / ((double)Z_eff * (double)Z_eff);
         }
 
         int lev_start = atom->level_offset[ip];
         int lev_end   = atom->level_offset[ip + 1];
+
+        /* Task #38: Per-level CMFGEN ν-dependent σ_bf when available.
+         * Baked grid layout matches bf->n_freq_bins exactly, so we can index
+         * directly without interpolation. Falls back to Kramers per-level. */
+        const int  use_cmfgen = atom->cmfgen_loaded &&
+                                atom->cmfgen_n_freq_bins == bf->n_freq_bins;
+        const double *sigma_grid = use_cmfgen ? atom->cmfgen_sigma_bf : NULL;
+        const int    *has_sigma  = use_cmfgen ? atom->cmfgen_has_sigma : NULL;
 
         for (int s = 0; s < n_shells; s++) {
             double T_rad = plasma->T_rad[s];
@@ -854,12 +1072,28 @@ void compute_bf_opacity(BFOpacity *bf, AtomicData *atom, PlasmaState *plasma,
                     if (bin_start < 0) bin_start = 0;
                 }
 
+                int level_has_cmfgen = use_cmfgen && has_sigma[l];
+                const double *sigma_row = level_has_cmfgen
+                    ? &sigma_grid[(size_t)l * (size_t)bf->n_freq_bins]
+                    : NULL;
+                if (!bf_diag_emitted && s == 0) {
+                    if (level_has_cmfgen) bf_diag_cmfgen_levels++;
+                    else                  bf_diag_kramers_levels++;
+                }
+
                 /* Add contribution to all bins above the edge */
                 for (int b = bin_start; b < bf->n_freq_bins; b++) {
                     double nu = nu_bin[b];
                     if (nu < nu_edge) continue;
-                    double ratio = nu_edge / nu;
-                    double chi_contrib = n_level * sigma_0 * ratio * ratio * ratio;
+                    double sigma;
+                    if (sigma_row) {
+                        sigma = sigma_row[b];
+                        if (sigma <= 0.0) continue;
+                    } else {
+                        double ratio = nu_edge / nu;
+                        sigma = sigma_0_kramers * ratio * ratio * ratio;
+                    }
+                    double chi_contrib = n_level * sigma;
                     int idx = s * bf->n_freq_bins + b;
                     bf->chi_bf[idx] += chi_contrib;
 
@@ -886,6 +1120,21 @@ void compute_bf_opacity(BFOpacity *bf, AtomicData *atom, PlasmaState *plasma,
     free(best_ip);
     free(ionized_ground);
 
+    {
+        long total = bf_diag_cmfgen_levels + bf_diag_kramers_levels;
+        if (!bf_diag_emitted && total > 0) {
+            double pct = 100.0 * bf_diag_cmfgen_levels / (double)total;
+            printf("[BF-DIAG] σ_bf source over %ld active levels (shell 0): "
+                   "CMFGEN=%ld (%.1f%%), Kramers=%ld (%.1f%%)\n",
+                   total, bf_diag_cmfgen_levels, pct,
+                   bf_diag_kramers_levels, 100.0 - pct);
+            bf_diag_emitted = 1;
+        }
+    }
+
+#ifdef LUMINA_HAS_CUDA_BF_GEMM
+compute_ff:
+#endif
     /* --- Free-free (bremsstrahlung) opacity --- */
     for (int s = 0; s < n_shells; s++) {
         double T_e = plasma->T_e[s];
@@ -1030,10 +1279,14 @@ void bf_absorption_event(RPacket *pkt, double time_explosion,
 /* Targets: Si,Ca,Fe,S,Co,Ni,C,Mg,Ti,Cr II/III (10 pairs)     */
 /* ============================================================ */
 
-/* NLTE target ion definitions: 10 element pairs (20 ions) */
+/* NLTE target ion definitions: 14 element pairs (28 ions)
+ * Original 10: Si,Ca,Fe,S,Co,Ni,C,Mg,Ti,Cr II/III
+ * New 4: Al,Sc,V,Mn II/III (added for 3000-3500Å UV line blanketing) */
 static const int NLTE_TARGET_Z[]   = { 14, 14, 20, 20, 26, 26, 16, 16, 27, 27, 28, 28,
-                                         6,  6, 12, 12, 22, 22, 24, 24 };
+                                         6,  6, 12, 12, 22, 22, 24, 24,
+                                        13, 13, 21, 21, 23, 23, 25, 25 };
 static const int NLTE_TARGET_ION[] = {  1,  2,  1,  2,  1,  2,  1,  2,  1,  2,  1,  2,
+                                         1,  2,  1,  2,  1,  2,  1,  2,
                                          1,  2,  1,  2,  1,  2,  1,  2 };
 
 /* Step 1.5: Charge Exchange reaction table
@@ -1285,7 +1538,9 @@ void nlte_assemble_rate_matrix(NLTEConfig *nlte, AtomicData *atom,
                                 int ion_idx_lo, int ion_idx_hi,
                                 int shell, double time_explosion,
                                 double *A_cm, double *b, int N,
-                                GammaDeposition *gamma_dep) {
+                                GammaDeposition *gamma_dep,
+                                const NLTERateLookup *lookup,
+                                int pair_idx) {
     (void)time_explosion;
 
     int lev_start = nlte->nlte_ion_level_offset[ion_idx_lo];
@@ -1373,6 +1628,13 @@ void nlte_assemble_rate_matrix(NLTEConfig *nlte, AtomicData *atom,
         if (Z_eff < 1.0) Z_eff = 1.0;
         double sigma_0 = 7.91e-18 / (Z_eff * Z_eff);
 
+        /* Task #40 (A)+(B): GPU lookup path. R_bf_table is col-major
+         * [L_phot_total × n_shells]; pair_idx selects the row offset. */
+        int use_gpu_R_bf = (lookup != NULL && lookup->R_bf_table != NULL &&
+                            lookup->phot_offset != NULL && pair_idx >= 0);
+        int phot_base    = use_gpu_R_bf ? lookup->phot_offset[pair_idx] : 0;
+        int L_phot_total = use_gpu_R_bf ? lookup->L_phot_total : 0;
+
         for (int lev = 0; lev < n_lo_levels; lev++) {
             int global_lev = nlte->nlte_to_global_level[lev_start + lev];
             double E_lev = atom->level_energy_eV[global_lev] * EV_TO_ERG;
@@ -1381,14 +1643,19 @@ void nlte_assemble_rate_matrix(NLTEConfig *nlte, AtomicData *atom,
             double sigma_lev = sigma_0;
 
             double R_bf = 0.0;
-            for (int bb = 0; bb < nlte->n_freq_bins; bb++) {
-                double log_nu_lo = log(nlte->nu_min) + bb * nlte->d_log_nu;
-                double nu_bin = exp(log_nu_lo + 0.5 * nlte->d_log_nu);
-                if (nu_bin < nu_thresh) continue;
-                double delta_nu = exp(log_nu_lo + nlte->d_log_nu) - exp(log_nu_lo);
-                double J_bin = nlte->J_nu[shell * nlte->n_freq_bins + bb];
-                double sigma = sigma_lev * pow(nu_thresh / nu_bin, 3.0);
-                R_bf += 4.0 * M_PI_VAL * J_bin * sigma / (H_PLANCK * nu_bin) * delta_nu;
+            if (use_gpu_R_bf) {
+                int idx = phot_base + lev;
+                R_bf = lookup->R_bf_table[(size_t)shell * L_phot_total + idx];
+            } else {
+                for (int bb = 0; bb < nlte->n_freq_bins; bb++) {
+                    double log_nu_lo = log(nlte->nu_min) + bb * nlte->d_log_nu;
+                    double nu_bin = exp(log_nu_lo + 0.5 * nlte->d_log_nu);
+                    if (nu_bin < nu_thresh) continue;
+                    double delta_nu = exp(log_nu_lo + nlte->d_log_nu) - exp(log_nu_lo);
+                    double J_bin = nlte->J_nu[shell * nlte->n_freq_bins + bb];
+                    double sigma = sigma_lev * pow(nu_thresh / nu_bin, 3.0);
+                    R_bf += 4.0 * M_PI_VAL * J_bin * sigma / (H_PLANCK * nu_bin) * delta_nu;
+                }
             }
 
             double n_star_ratio = 1.0;
@@ -1531,7 +1798,8 @@ static void nlte_solve_ion_shell(NLTEConfig *nlte, AtomicData *atom,
 
     nlte_assemble_rate_matrix(nlte, atom, plasma, opacity,
                                ion_idx_lo, ion_idx_hi, shell, time_explosion,
-                               A_cm, b, N, gamma_dep);
+                               A_cm, b, N, gamma_dep,
+                               NULL, -1);
 
     int ret = gauss_solve(A_cm, b, N);
 
@@ -1638,9 +1906,11 @@ void nlte_solve_all(NLTEConfig *nlte, AtomicData *atom, PlasmaState *plasma,
 
     int n_pairs = nlte->n_nlte_ions / 2;
     int pairs[][2] = { {0,1}, {2,3}, {4,5}, {6,7}, {8,9}, {10,11},
-                       {12,13}, {14,15}, {16,17}, {18,19} };
+                       {12,13}, {14,15}, {16,17}, {18,19},
+                       {20,21}, {22,23}, {24,25}, {26,27} };
     const char *names[] = { "Si", "Ca", "Fe", "S", "Co", "Ni",
-                            "C", "Mg", "Ti", "Cr" };
+                            "C", "Mg", "Ti", "Cr",
+                            "Al", "Sc", "V", "Mn" };
 
     int ce_max_iter = 5;
     double ce_threshold = 1e-2;  /* 1% relative convergence on ion totals */
@@ -2079,6 +2349,83 @@ void bin_escaped_packet(Spectrum *spec, double nu, double energy) {
         /* L_lambda [erg/s/cm] = luminosity [erg/s] / dlambda [cm] */
         double dlambda_cm = dlambda_A * 1.0e-8;
         spec->flux[bin] += energy / dlambda_cm;
+    }
+}
+
+/* ============================================================ */
+/* [MA-FATE] Macro-atom packet fate histogram                    */
+/* Counts (entry_band, exit_band) for each macro-atom cascade.   */
+/* ============================================================ */
+static unsigned long long g_ma_fate_hist[MA_FATE_NBANDS * MA_FATE_NBANDS] = {0};
+
+int macro_atom_fate_band_from_nu(double nu_comov) {
+    if (nu_comov <= 0.0) return 3;
+    double lam_A = (C_SPEED_OF_LIGHT / nu_comov) * 1.0e8;
+    if (lam_A >= 1700.0 && lam_A < 3000.0) return 0;  /* UV */
+    if (lam_A >= 3000.0 && lam_A < 4500.0) return 1;  /* blue */
+    if (lam_A >= 4500.0 && lam_A < 7000.0) return 2;  /* optical */
+    return 3;                                          /* other (NIR/far-UV) */
+}
+
+void macro_atom_fate_record(double entry_nu_comov, double exit_nu_comov) {
+    int eb = macro_atom_fate_band_from_nu(entry_nu_comov);
+    int xb = macro_atom_fate_band_from_nu(exit_nu_comov);
+    int idx = eb * MA_FATE_NBANDS + xb;
+#pragma omp atomic
+    g_ma_fate_hist[idx]++;
+}
+
+void macro_atom_fate_reset(void) {
+    for (int i = 0; i < MA_FATE_NBANDS * MA_FATE_NBANDS; i++) g_ma_fate_hist[i] = 0;
+}
+
+void macro_atom_fate_add_counts(const unsigned long long add[MA_FATE_NBANDS * MA_FATE_NBANDS]) {
+    for (int i = 0; i < MA_FATE_NBANDS * MA_FATE_NBANDS; i++) g_ma_fate_hist[i] += add[i];
+}
+
+void macro_atom_fate_print(const char *label) {
+    static const char *band_name[MA_FATE_NBANDS] = {"UV   ", "blue ", "opt  ", "other"};
+    unsigned long long row_tot[MA_FATE_NBANDS] = {0};
+    unsigned long long col_tot[MA_FATE_NBANDS] = {0};
+    unsigned long long grand = 0;
+    for (int e = 0; e < MA_FATE_NBANDS; e++) {
+        for (int x = 0; x < MA_FATE_NBANDS; x++) {
+            unsigned long long n = g_ma_fate_hist[e * MA_FATE_NBANDS + x];
+            row_tot[e] += n;
+            col_tot[x] += n;
+            grand     += n;
+        }
+    }
+    printf("\n[MA-FATE] Macro-atom packet fate histogram (%s)\n",
+           label ? label : "");
+    printf("  Bands: UV=1700-3000 A, blue=3000-4500 A, opt=4500-7000 A, other=else\n");
+    if (grand == 0) {
+        printf("  (no macro-atom interactions recorded)\n");
+        return;
+    }
+    printf("                 |  exit-> UV          blue         opt          other        | row tot\n");
+    for (int e = 0; e < MA_FATE_NBANDS; e++) {
+        printf("  entry: %s |", band_name[e]);
+        for (int x = 0; x < MA_FATE_NBANDS; x++) {
+            unsigned long long n = g_ma_fate_hist[e * MA_FATE_NBANDS + x];
+            double pct = row_tot[e] > 0 ? 100.0 * (double)n / (double)row_tot[e] : 0.0;
+            printf(" %10llu (%4.1f%%)", n, pct);
+        }
+        printf(" | %10llu\n", row_tot[e]);
+    }
+    printf("  col tot        |");
+    for (int x = 0; x < MA_FATE_NBANDS; x++) printf(" %10llu         ", col_tot[x]);
+    printf(" | %10llu\n", grand);
+    /* Diagnostic: UV-row redistribution. Mazzali-Lucy fluorescence predicts
+     * UV-entry photons cascade out into blue+opt (small UV self-loop). */
+    if (row_tot[0] > 0) {
+        double uv_self = 100.0 * (double)g_ma_fate_hist[0 * MA_FATE_NBANDS + 0] / (double)row_tot[0];
+        double to_bluo = 100.0 * (double)(g_ma_fate_hist[0 * MA_FATE_NBANDS + 1] +
+                                          g_ma_fate_hist[0 * MA_FATE_NBANDS + 2]) / (double)row_tot[0];
+        printf("  UV-entry redistribution: UV->UV %.1f%% | UV->(blue+opt) %.1f%%\n",
+               uv_self, to_bluo);
+        printf("  (Mazzali-Lucy fluorescence: UV->(blue+opt) should dominate;\n"
+               "   UV->UV >> UV->(blue+opt) => closed-loop iron-forest trapping.)\n");
     }
 }
 
