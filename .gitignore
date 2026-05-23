@@ -41,3 +41,8 @@ sbi-logs/
 *.swp
 *~
 .DS_Store
+
+# Claude local state (keep settings.json for SessionStart hook)
+.claude/*
+!.claude/settings.json
+RESUME.md
