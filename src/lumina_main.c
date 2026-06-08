@@ -3,6 +3,7 @@
  * Compares output W, T_rad, spectrum vs TARDIS ground truth. */
 
 #include "lumina.h" /* Phase 5 - Step 1 */
+#include "lumina_cmfgen.h"  /* pure-CMFGEN parallel radiation path */
 #ifdef _OPENMP
 #include <omp.h>    /* Phase 5 - Step 1: OpenMP support */
 #endif
@@ -72,6 +73,9 @@ static void initialize_packet(RPacket *pkt, Geometry *geo, MCConfig *config,
 
 int main(int argc, char *argv[]) {
     setbuf(stdout, NULL); /* Phase 5 - Step 3: unbuffered output */
+    /* A6: enforce C locale so "." is the decimal separator in sscanf/atof
+     * regardless of LANG (ko_KR.UTF-8 etc. would parse "1.5" as 1). */
+    setlocale(LC_NUMERIC, "C");
     printf("============================================================\n"); /* Phase 5 - Step 3 */
     printf("LUMINA-SN v2.0 — TARDIS-Faithful Reimplementation\n"); /* Phase 5 - Step 3 */
     printf("============================================================\n"); /* Phase 5 - Step 3 */
@@ -91,6 +95,15 @@ int main(int argc, char *argv[]) {
     config.enable_full_relativity = false; /* Phase 5 - Step 3 */
     config.disable_line_scattering = false; /* Phase 5 - Step 3 */
     config.line_interaction_type = LINE_MACROATOM; /* Phase 5 - Step 3 */
+    {
+        const char *li_env = getenv("LUMINA_LINE_INTERACTION");
+        if (li_env) {
+            if      (strcmp(li_env, "scatter")    == 0 || strcmp(li_env, "0") == 0) config.line_interaction_type = LINE_SCATTER;
+            else if (strcmp(li_env, "downbranch") == 0 || strcmp(li_env, "1") == 0) config.line_interaction_type = LINE_DOWNBRANCH;
+            else if (strcmp(li_env, "macroatom")  == 0 || strcmp(li_env, "macro") == 0 || strcmp(li_env, "2") == 0) config.line_interaction_type = LINE_MACROATOM;
+            else fprintf(stderr, "[WARN] unknown LUMINA_LINE_INTERACTION=%s, keeping macroatom\n", li_env);
+        }
+    }
     config.damping_constant = 0.5; /* Phase 5 - Step 3 */
     config.hold_iterations = 3; /* Phase 5 - Step 3 */
 
@@ -107,11 +120,22 @@ int main(int argc, char *argv[]) {
         fprintf(stderr, "Failed to load atomic data\n");
         return 1;
     }
-    /* Task #38: Optional pre-baked CMFGEN sigma_bf grid */
+    /* Task #38: Optional pre-baked CMFGEN sigma_bf grid.
+     * LUMINA_CMFGEN_SIGMA_BF semantics:
+     *   unset / "1" / "on" / "yes" → load default path (data/atomic/cmfgen_sigma_bf.bin)
+     *   "0" / "off" / "no"          → skip load (Kramers fallback)
+     *   anything containing '/'     → explicit path override */
     {
-        const char *cmf_path = getenv("LUMINA_CMFGEN_SIGMA_BF");
-        if (!cmf_path) cmf_path = "data/atomic/cmfgen_sigma_bf.bin";
-        load_cmfgen_sigma_bf(&atom_data, cmf_path);
+        const char *cmf_env = getenv("LUMINA_CMFGEN_SIGMA_BF");
+        const char *cmf_path = "data/atomic/cmfgen_sigma_bf.bin";
+        int cmf_enable = 1;
+        if (cmf_env) {
+            if (!strcmp(cmf_env, "0") || !strcmp(cmf_env, "off") || !strcmp(cmf_env, "no"))
+                cmf_enable = 0;
+            else if (strchr(cmf_env, '/'))
+                cmf_path = cmf_env;
+        }
+        if (cmf_enable) load_cmfgen_sigma_bf(&atom_data, cmf_path);
     }
     /* Task #072: Initialize n_electron from TARDIS reference */
     plasma.n_electron = (double *)malloc(geo.n_shells * sizeof(double));
@@ -147,8 +171,10 @@ int main(int argc, char *argv[]) {
         nlte_start_iter = atoi(getenv("LUMINA_NLTE_START_ITER"));
 
     /* Dynamic transition probability update: default OFF, enable with LUMINA_DYNAMIC_TRANSPROB=1 */
+    /* A3: previously presence-only check → "=0" enabled the feature opposite of intent. */
     int enable_transprob_update = 0;
-    if (getenv("LUMINA_DYNAMIC_TRANSPROB"))
+    if (getenv("LUMINA_DYNAMIC_TRANSPROB") &&
+        atoi(getenv("LUMINA_DYNAMIC_TRANSPROB")) > 0)
         enable_transprob_update = 1;
 
     /* Fe two-level atom scatter: LUMINA_FE_SCATTER=1 (Fe II only) or =2 (all Fe) */
@@ -174,16 +200,32 @@ int main(int argc, char *argv[]) {
     /* P6: Self-consistent T_e: LUMINA_SELF_CONSISTENT_TE=1 */
     int self_consistent_te = (getenv("LUMINA_SELF_CONSISTENT_TE") &&
                                atoi(getenv("LUMINA_SELF_CONSISTENT_TE")) > 0);
+    /* Task #20: real radiative-equilibrium T_e: LUMINA_RADEQ_TE=1 */
+    int radeq_te = (getenv("LUMINA_RADEQ_TE") &&
+                     atoi(getenv("LUMINA_RADEQ_TE")) > 0);
 
     printf("\nSimulation parameters:\n"); /* Phase 5 - Step 3 */
     printf("  Packets: %d, Iterations: %d\n", n_packets, n_iterations); /* Phase 5 - Step 3 */
-    printf("  Line interaction: MACROATOM\n"); /* Phase 5 - Step 3 */
+    printf("  Line interaction: %s\n",
+        config.line_interaction_type == LINE_SCATTER    ? "SCATTER" :
+        config.line_interaction_type == LINE_DOWNBRANCH ? "DOWNBRANCH" : "MACROATOM");
     printf("  Spectrum mode: %s\n", enable_rotation ? "real + rotation" : "real only");
     if (enable_nlte && nlte_start_iter > 0)
         printf("  NLTE: ENABLED from iter %d (first %d non-NLTE)\n",
                nlte_start_iter + 1, nlte_start_iter);
     else
         printf("  NLTE: %s\n", enable_nlte ? "ENABLED (all iters)" : "disabled");
+    {
+        const char *t_pin_env = getenv("LUMINA_T_INNER_FIX");
+        if (t_pin_env) {
+            double t_pin = atof(t_pin_env);
+            if (t_pin > 0.0) {
+                printf("  T_inner: %.2f K (overridden by LUMINA_T_INNER_FIX, was %.2f)\n",
+                       t_pin, config.T_inner);
+                config.T_inner = t_pin;
+            }
+        }
+    }
     printf("  T_inner: %.2f K\n", config.T_inner); /* Phase 5 - Step 3 */
     printf("  Transition probs: %s\n", enable_transprob_update ? "DYNAMIC" : "FROZEN");
     printf("  Fe scatter: %s\n", config.fe_scatter_mode == 2 ? "ALL Fe TWO-LEVEL" :
@@ -191,8 +233,8 @@ int main(int argc, char *argv[]) {
     printf("  Gamma-ray deposition: %s\n", gamma_dep_enabled ? "ENABLED" : "disabled");
     printf("  Line overlap correction: %s\n", overlap_corr_enabled ? "ENABLED" : "disabled");
     printf("  BF+FF opacity: %s\n", bf_opacity_enabled ? "ENABLED" : "disabled");
-    if (self_consistent_te)
-        printf("  Self-consistent T_e: ENABLED\n");
+    if (self_consistent_te || radeq_te)
+        printf("  Self-consistent T_e: ENABLED (full radiative-equilibrium balance)\n");
     else
         printf("  Self-consistent T_e: disabled (ratio=%.2f)\n", plasma.T_e_T_rad_ratio);
 
@@ -219,7 +261,16 @@ int main(int argc, char *argv[]) {
     double spec_min = 500.0, spec_max = 20000.0;
     int spec_bins = 2000;
     if (getenv("LUMINA_SPEC_RANGE")) {
-        sscanf(getenv("LUMINA_SPEC_RANGE"), "%lf,%lf,%d", &spec_min, &spec_max, &spec_bins);
+        /* A4: previously unchecked sscanf — malformed string left arbitrary defaults. */
+        int nf = sscanf(getenv("LUMINA_SPEC_RANGE"), "%lf,%lf,%d",
+                        &spec_min, &spec_max, &spec_bins);
+        if (nf != 3 || spec_min <= 0.0 || spec_max <= spec_min || spec_bins <= 0) {
+            fprintf(stderr,
+                "ERROR: LUMINA_SPEC_RANGE='%s' must be 'min,max,bins' with "
+                "min>0, max>min, bins>0 (parsed %d fields → %.3f,%.3f,%d)\n",
+                getenv("LUMINA_SPEC_RANGE"), nf, spec_min, spec_max, spec_bins);
+            return 1;
+        }
         printf("  Spectrum range: %.0f-%.0f A, %d bins\n", spec_min, spec_max, spec_bins);
     }
     Spectrum *spec = create_spectrum(spec_min, spec_max, spec_bins);
@@ -252,6 +303,54 @@ int main(int argc, char *argv[]) {
         printf("\n--- BF+FF Opacity Initialized (%d freq bins) ---\n", bf.n_freq_bins);
     }
 
+    /* ============================================================ */
+    /* PURE-CMFGEN parallel path (LUMINA_PURE_CMFGEN=1): bypass the   */
+    /* Monte-Carlo loop, fill J_nu deterministically, run downstream  */
+    /* solvers, dump plasma state, and skip to cleanup.               */
+    /* ============================================================ */
+    {
+        const char *_pure = getenv("LUMINA_PURE_CMFGEN");
+        if (_pure && atoi(_pure)) {
+            const char *_ni = getenv("LUMINA_PURE_CMFGEN_ITER");
+            int pc_iter = _ni ? atoi(_ni) : n_iterations;
+            if (pc_iter < 1) pc_iter = 1;
+            printf("\n=== PURE-CMFGEN deterministic radiation path "
+                   "(MC transport bypassed) ===\n");
+            cmfgen_run(&geo, &opacity,
+                       bf_opacity_enabled ? &bf : NULL,
+                       &plasma, enable_nlte ? &nlte : NULL, &atom_data,
+                       gamma_dep_enabled ? &gamma_dep : NULL,
+                       config.T_inner, pc_iter);
+
+            FILE *pf = fopen("lumina_plasma_state.csv", "w");
+            if (pf) {
+                fprintf(pf, "shell_id,T_e,T_rad,W,n_e\n");
+                for (int i = 0; i < geo.n_shells; i++)
+                    fprintf(pf, "%d,%.6f,%.6f,%.10f,%.6e\n", i,
+                            plasma.T_e[i], plasma.T_rad[i], plasma.W[i],
+                            plasma.n_electron ? plasma.n_electron[i]
+                                              : opacity.electron_density[i]);
+                fclose(pf);
+                printf("Pure-CMFGEN plasma state written to "
+                       "lumina_plasma_state.csv\n");
+            }
+
+            free_geometry(&geo);
+            free_opacity_state(&opacity);
+            free_plasma_state(&plasma);
+            free_estimators(est);
+            free_spectrum(spec);
+            if (spec_rot) free_spectrum(spec_rot);
+            free(volume);
+            free_atomic_data(&atom_data);
+            if (enable_nlte) nlte_free(&nlte);
+            if (gamma_dep_enabled) gamma_deposition_free(&gamma_dep);
+            if (bf_opacity_enabled) bf_opacity_free(&bf);
+            printf("\nDone (pure-CMFGEN).\n");
+            return 0;
+        }
+    }
+
     /* Phase 5 - Step 4: Time of simulation (TARDIS: 1 / L_inner) */
     /* TARDIS: L_inner = 4 * pi * sigma_sb * r_inner^2 * T_inner^4 */
     double L_inner = 4.0 * M_PI_VAL * geo.r_inner[0] * geo.r_inner[0] * /* Phase 5 - Step 4 */
@@ -281,7 +380,10 @@ int main(int argc, char *argv[]) {
             memset(nlte.j_nu_estimator, 0,
                    (size_t)geo.n_shells * nlte.n_freq_bins * sizeof(double));
         /* [MA-FATE] reset hist; only the final iteration retains counts. */
-        if (iter == n_iterations - 1) macro_atom_fate_reset();
+        if (iter == n_iterations - 1) {
+            macro_atom_fate_reset();
+            macro_atom_cycle_reset();
+        }
 
         /* Phase 5 - Step 5: Recompute L_inner and time_simulation */
         L_inner = 4.0 * M_PI_VAL * geo.r_inner[0] * geo.r_inner[0] * /* Phase 5 - Step 5 */
@@ -410,12 +512,31 @@ int main(int argc, char *argv[]) {
                n_escaped, 100.0 * escape_fraction, /* Phase 5 - Step 5 */
                n_reabsorbed, 100.0 * n_reabsorbed / n_packets); /* Phase 5 - Step 5 */
 
-        /* Phase 5 - Step 6: Solve radiation field */
-        solve_radiation_field(est, geo.time_explosion, time_simulation, volume, /* Phase 5 - Step 6 */
-                               &opacity, &plasma, config.damping_constant); /* Phase 5 - Step 6 */
+        /* Binned-J estimator reads the frequency-resolved histogram, which is
+         * reduced into nlte.j_nu_estimator (not est). Expose it (raw, this
+         * iteration) on est so solve_radiation_field can fit a dilute Planck.
+         * Safe: free/reset_estimators never touch est->j_nu_estimator. */
+        if (enable_nlte) {
+            est->j_nu_estimator   = nlte.j_nu_estimator;
+            est->nlte_n_freq_bins = nlte.n_freq_bins;
+            est->nlte_nu_min      = nlte.nu_min;
+            est->nlte_d_log_nu    = nlte.d_log_nu;
+        }
 
-        /* Task #072: Recompute tau_sobolev from updated W, T_rad */
-        if (iter > 0) {
+        /* Option (8): freeze W/T_rad too once ion-lock activates — true
+         * transport-only iteration; plasma state from converged free-NLTE iter. */
+        if (!(iter > 0 && nlte_ion_lock_active(iter))) {
+            /* Phase 5 - Step 6: Solve radiation field */
+            solve_radiation_field(est, geo.time_explosion, time_simulation, volume,
+                                   &opacity, &plasma, config.damping_constant);
+        }
+
+        /* Task #072: Recompute tau_sobolev from updated W, T_rad.
+         * Option (8): skip ALL plasma updates once ion-lock activates — freeze
+         * plasma at the converged free-NLTE state, transport packets only. */
+        if (iter > 0 && nlte_ion_lock_active(iter)) {
+            printf("  [plasma frozen by ion-lock; transport-only iter %d]\n", iter);
+        } else if (iter > 0) {
             /* Gamma-ray deposition: compute heating/ionization rates */
             if (gamma_dep_enabled) {
                 compute_gamma_deposition(&gamma_dep, &atom_data, &plasma, &geo);
@@ -424,10 +545,30 @@ int main(int argc, char *argv[]) {
                        gamma_dep.heating_rate[geo.n_shells - 1]);
             }
 
-            /* P6: Update per-shell T_e before plasma state */
-            compute_electron_temperature(&plasma,
-                gamma_dep_enabled ? &gamma_dep : NULL,
-                geo.time_explosion, geo.n_shells, self_consistent_te);
+            /* P6: Update per-shell T_e before plasma state.
+             * Both LUMINA_RADEQ_TE and LUMINA_SELF_CONSISTENT_TE now route to the
+             * complete radiative-equilibrium balance (photoionization + Compton +
+             * gamma heating vs. recombination + free-free + collisional bound-bound
+             * + adiabatic cooling). The old Compton-only + f_coll_boost path
+             * (compute_electron_temperature self_consistent branch) is retired: it
+             * omitted photoionization/collisional heating and floor-saturated at
+             * early epochs. No free parameters; under-relaxed via LUMINA_RADEQ_DAMP. */
+            if (radeq_te || self_consistent_te) {
+                /* Radiative-equilibrium T_e needs the CURRENT iteration's
+                 * radiation field; normalize J_nu now (re-normalized later in
+                 * the NLTE block, harmlessly — it recomputes from the raw
+                 * estimator). */
+                if (enable_nlte && iter >= nlte_start_iter)
+                    nlte_normalize_j_nu(&nlte, time_simulation, volume, geo.n_shells);
+                compute_radiative_equilibrium_te(&plasma,
+                    gamma_dep_enabled ? &gamma_dep : NULL,
+                    &nlte, &atom_data, &opacity,
+                    geo.time_explosion, geo.n_shells);
+            } else {
+                compute_electron_temperature(&plasma,
+                    gamma_dep_enabled ? &gamma_dep : NULL,
+                    geo.time_explosion, geo.n_shells, self_consistent_te);
+            }
 
             compute_plasma_state(&atom_data, &plasma, &opacity, geo.time_explosion);
 
@@ -437,6 +578,7 @@ int main(int argc, char *argv[]) {
 
             /* NLTE: solve rate equations and update tau for NLTE lines */
             if (enable_nlte && iter >= nlte_start_iter) {
+                nlte.current_iter = iter;
                 nlte_normalize_j_nu(&nlte, time_simulation, volume, geo.n_shells);
                 nlte_solve_all(&nlte, &atom_data, &plasma, &opacity,
                                geo.time_explosion, geo.n_shells,
@@ -524,9 +666,35 @@ int main(int argc, char *argv[]) {
         /* Phase 5 - Step 7: Update T_inner (after hold iterations) */
         if (iter >= config.hold_iterations) { /* Phase 5 - Step 7 */
             double old_T = config.T_inner; /* Phase 5 - Step 7 */
-            update_t_inner(&config, L_emitted); /* Phase 5 - Step 7 */
-            printf("  T_inner: %.2f K -> %.2f K (L_em=%.3e, L_req=%.3e)\n",
-                   old_T, config.T_inner, L_emitted, config.luminosity_requested);
+            int t_inner_frozen = nlte_ion_lock_active(iter);
+            const char *t_pin_env = getenv("LUMINA_T_INNER_FIX");
+            double t_pin = t_pin_env ? atof(t_pin_env) : 0.0;
+            const char *diff_bc_env = getenv("LUMINA_DIFFUSION_INNER_BC");
+            int diff_bc = diff_bc_env ? atoi(diff_bc_env) : 0;
+            if (diff_bc) {
+                /* A1 (path-A, 2-agent verified): fixed-L diffusion inner BC.
+                 * CMFGEN fixes the base luminosity and lets T_inner follow the
+                 * diffusion relation; no feedback controller chasing emergent
+                 * L_em (which ping-pongs when ionization shifts). HD2012 3.2.2. */
+                double R_in = geo.r_inner[0];
+                config.T_inner = pow(config.luminosity_requested /
+                                     (4.0 * M_PI_VAL * R_in * R_in * SIGMA_SB),
+                                     0.25);
+                printf("  T_inner: %.2f K (fixed-L diffusion BC, L_req=%.3e, "
+                       "L_em=%.3e)\n",
+                       config.T_inner, config.luminosity_requested, L_emitted);
+            } else if (t_pin > 0.0) {
+                config.T_inner = t_pin;
+                printf("  T_inner: %.2f K (pinned LUMINA_T_INNER_FIX, L_em=%.3e, L_req=%.3e)\n",
+                       config.T_inner, L_emitted, config.luminosity_requested);
+            } else if (!t_inner_frozen) {
+                update_t_inner(&config, L_emitted);
+                printf("  T_inner: %.2f K -> %.2f K (L_em=%.3e, L_req=%.3e)\n",
+                       old_T, config.T_inner, L_emitted, config.luminosity_requested);
+            } else {
+                printf("  T_inner: %.2f K [frozen-by-lock] (L_em=%.3e, L_req=%.3e)\n",
+                       config.T_inner, L_emitted, config.luminosity_requested);
+            }
         } else { /* Phase 5 - Step 7 */
             printf("  T_inner: %.2f K (hold iteration %d/%d)\n", /* Phase 5 - Step 7 */
                    config.T_inner, iter + 1, config.hold_iterations); /* Phase 5 - Step 7 */
@@ -543,6 +711,7 @@ int main(int argc, char *argv[]) {
 
     /* [MA-FATE] Macro-atom packet fate histogram (final iteration) */
     macro_atom_fate_print("final iteration, CPU transport");
+    macro_atom_cycle_print("final iteration, CPU transport");
 
     /* Phase 5 - Step 8: Load TARDIS reference for comparison */
     char path[512]; /* Phase 5 - Step 8 */
@@ -550,12 +719,15 @@ int main(int argc, char *argv[]) {
 
     /* Phase 5 - Step 8: Read TARDIS W and T_rad */
     FILE *ref_fp = fopen(path, "r"); /* Phase 5 - Step 8 */
-    double tardis_W[30], tardis_T_rad[30]; /* Phase 5 - Step 8 */
+    /* A1: stack arrays were [30] — would corrupt for ref dirs with n_shells>30.
+     * Allocate to geo.n_shells so audit comparison works for any geometry. */
+    double *tardis_W     = (double *)calloc((size_t)geo.n_shells, sizeof(double));
+    double *tardis_T_rad = (double *)calloc((size_t)geo.n_shells, sizeof(double));
     if (ref_fp) { /* Phase 5 - Step 8 */
         char buf[1024]; /* Phase 5 - Step 8 */
         fgets(buf, sizeof(buf), ref_fp); /* Phase 5 - Step 8: skip header */
         int i = 0; /* Phase 5 - Step 8 */
-        while (fgets(buf, sizeof(buf), ref_fp) && i < 30) { /* Phase 5 - Step 8 */
+        while (fgets(buf, sizeof(buf), ref_fp) && i < geo.n_shells) {
             int sid; /* Phase 5 - Step 8 */
             sscanf(buf, "%d,%lf,%lf", &sid, &tardis_W[i], &tardis_T_rad[i]); /* Phase 5 - Step 8 */
             i++; /* Phase 5 - Step 8 */
@@ -584,6 +756,8 @@ int main(int argc, char *argv[]) {
                config.T_inner, /* Phase 5 - Step 8 */
                (config.T_inner - 10521.52) / 10521.52 * 100.0); /* Phase 5 - Step 8 */
     }
+    free(tardis_W);      /* A1 */
+    free(tardis_T_rad);  /* A1 */
 
     /* Phase 5 - Step 9: Write spectrum to CSV */
     const char *output_file = "lumina_spectrum.csv"; /* Phase 5 - Step 9 */
@@ -626,6 +800,39 @@ int main(int argc, char *argv[]) {
             printf("Formal integral spectrum written to lumina_spectrum_formal.csv\n");
         }
         free_spectrum(spec_fi);
+    }
+
+    /* CMF formal solver (paper-method line transfer), gated by LUMINA_TRANSPORT=cmf */
+    {
+        const char *_transport = getenv("LUMINA_TRANSPORT");
+        if (_transport && strcmp(_transport, "cmf") == 0) {
+            const char *_nz   = getenv("LUMINA_CMF_NZ");
+            const char *_nimp = getenv("LUMINA_CMF_NIMPACT");
+            const char *_vt   = getenv("LUMINA_CMF_VTURB_KMS");
+            int cmf_nz   = _nz   ? atoi(_nz)   : 2000;
+            int cmf_nimp = _nimp ? atoi(_nimp) : 50;
+            /* Blondin+2013 microturbulence not specified in-repo; default below
+             * is a documented placeholder — tune via LUMINA_CMF_VTURB_KMS. */
+            double v_turb_cms = (_vt ? atof(_vt) : 0.0) * 1.0e5;
+            if (cmf_nz < 1) cmf_nz = 2000;
+            if (cmf_nimp < 1) cmf_nimp = 50;
+
+            Spectrum *spec_cmf = create_spectrum(spec_min, spec_max, spec_bins);
+            compute_cmf_formal_spectrum(
+                &geo, &plasma, &opacity, &atom_data,
+                nlte.enabled ? &nlte : NULL,
+                bf_opacity_enabled ? &bf : NULL,
+                config.T_inner, spec_cmf, cmf_nimp, cmf_nz, v_turb_cms);
+            FILE *cf = fopen("lumina_spectrum_cmf.csv", "w");
+            if (cf) {
+                fprintf(cf, "wavelength_angstrom,flux\n");
+                for (int i = 0; i < spec_cmf->n_bins; i++)
+                    fprintf(cf, "%.6f,%.6e\n", spec_cmf->wavelength[i], spec_cmf->flux[i]);
+                fclose(cf);
+                printf("CMF formal spectrum written to lumina_spectrum_cmf.csv\n");
+            }
+            free_spectrum(spec_cmf);
+        }
     }
 
     /* Phase 5 - Step 9b: Write final plasma state */

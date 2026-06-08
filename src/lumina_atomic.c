@@ -20,9 +20,22 @@ static double *read_npy_f64(const char *path, int *out_rows, int *out_cols) {
         return NULL; /* Phase 2 - Step 8 */
     }
 
+    /* A7: short-read aware macro — abort cleanly instead of trusting garbage. */
+    #define NPY_FREAD(buf, elt, cnt) \
+        do { \
+            size_t _need = (size_t)(cnt); \
+            size_t _got  = fread((buf), (elt), _need, fp); \
+            if (_got != _need) { \
+                fprintf(stderr, "ERROR: %s short read (%zu/%zu) at line %d\n", \
+                        path, _got, _need, __LINE__); \
+                fclose(fp); \
+                return NULL; \
+            } \
+        } while (0)
+
     /* Phase 2 - Step 8: Read magic number */
     unsigned char magic[6]; /* Phase 2 - Step 8 */
-    fread(magic, 1, 6, fp); /* Phase 2 - Step 8 */
+    NPY_FREAD(magic, 1, 6); /* A7 */
     if (magic[0] != 0x93 || magic[1] != 'N' || magic[2] != 'U' || /* Phase 2 - Step 8 */
         magic[3] != 'M' || magic[4] != 'P' || magic[5] != 'Y') { /* Phase 2 - Step 8 */
         fprintf(stderr, "ERROR: %s is not a valid .npy file\n", path); /* Phase 2 - Step 8 */
@@ -32,21 +45,28 @@ static double *read_npy_f64(const char *path, int *out_rows, int *out_cols) {
 
     /* Phase 2 - Step 8: Read version */
     unsigned char version[2]; /* Phase 2 - Step 8 */
-    fread(version, 1, 2, fp); /* Phase 2 - Step 8 */
+    NPY_FREAD(version, 1, 2); /* A7 */
 
     /* Phase 2 - Step 8: Read header length */
     uint16_t header_len; /* Phase 2 - Step 8 */
     if (version[0] == 1) { /* Phase 2 - Step 8 */
-        fread(&header_len, 2, 1, fp); /* Phase 2 - Step 8 */
+        NPY_FREAD(&header_len, 2, 1); /* A7 */
     } else { /* Phase 2 - Step 8 */
         uint32_t hl32; /* Phase 2 - Step 8 */
-        fread(&hl32, 4, 1, fp); /* Phase 2 - Step 8 */
+        NPY_FREAD(&hl32, 4, 1); /* A7 */
         header_len = (uint16_t)hl32; /* Phase 2 - Step 8 */
     }
 
     /* Phase 2 - Step 8: Read header string */
     char *header = (char *)malloc(header_len + 1); /* Phase 2 - Step 8 */
-    fread(header, 1, header_len, fp); /* Phase 2 - Step 8 */
+    {
+        size_t _got = fread(header, 1, header_len, fp);
+        if (_got != (size_t)header_len) {
+            fprintf(stderr, "ERROR: %s short read of header (%zu/%u)\n",
+                    path, _got, (unsigned)header_len);
+            free(header); fclose(fp); return NULL;
+        }
+    }
     header[header_len] = '\0'; /* Phase 2 - Step 8 */
 
     /* Phase 2 - Step 8: Parse shape from header */
@@ -100,14 +120,27 @@ static double *read_npy_f64(const char *path, int *out_rows, int *out_cols) {
 
     if (is_int) { /* Phase 2 - Step 8: Read as int64 and convert */
         int64_t *idata = (int64_t *)malloc(total * sizeof(int64_t)); /* Phase 2 - Step 8 */
-        fread(idata, sizeof(int64_t), total, fp); /* Phase 2 - Step 8 */
+        {
+            size_t _got = fread(idata, sizeof(int64_t), (size_t)total, fp);
+            if (_got != (size_t)total) {
+                fprintf(stderr, "ERROR: %s short read of int64 body (%zu/%d)\n",
+                        path, _got, total);
+                free(idata); free(data); fclose(fp); return NULL;
+            }
+        }
         for (int i = 0; i < total; i++) { /* Phase 2 - Step 8 */
             data[i] = (double)idata[i]; /* Phase 2 - Step 8 */
         }
         free(idata); /* Phase 2 - Step 8 */
     } else { /* Phase 2 - Step 8: Read as float64 directly */
-        fread(data, sizeof(double), total, fp); /* Phase 2 - Step 8 */
+        size_t _got = fread(data, sizeof(double), (size_t)total, fp); /* A7 */
+        if (_got != (size_t)total) {
+            fprintf(stderr, "ERROR: %s short read of float64 body (%zu/%d)\n",
+                    path, _got, total);
+            free(data); fclose(fp); return NULL;
+        }
     }
+    #undef NPY_FREAD
 
     /* Phase 2 - Step 8: If Fortran order, transpose to C order */
     if (fortran_order && cols > 1) { /* Phase 2 - Step 8 */
@@ -262,28 +295,44 @@ int load_tardis_reference_data(const char *ref_dir, Geometry *geo,
     /* Phase 2 - Step 10b: Load config */
     snprintf(path, sizeof(path), "%s/config.json", ref_dir); /* Phase 2 - Step 10b */
     FILE *fp = fopen(path, "r"); /* Phase 2 - Step 10b */
-    if (fp) { /* Phase 2 - Step 10b */
+    if (!fp) {
+        fprintf(stderr, "ERROR: cannot open %s\n", path);
+        return -1;
+    }
+    {
         char buf[4096]; /* Phase 2 - Step 10b */
         size_t nr = fread(buf, 1, sizeof(buf) - 1, fp); /* Phase 2 - Step 10b */
         buf[nr] = '\0'; /* Phase 2 - Step 10b */
         fclose(fp); /* Phase 2 - Step 10b */
 
-        /* Phase 2 - Step 10b: Parse JSON manually (simple flat struct) */
+        /* A5: track which required keys are present.  Previously missing keys
+         * silently left the struct zeroed (T_inner=0, n_packets=0 etc.) and the
+         * run proceeded with nonsense — would show up as "T_inner: 0.00 K" in
+         * the banner.  Now: require all 6, abort on first missing. */
         char *p; /* Phase 2 - Step 10b */
-        p = strstr(buf, "\"time_explosion_s\""); /* Phase 2 - Step 10b */
-        if (p) { p = strchr(p, ':'); geo->time_explosion = atof(p + 1); } /* Phase 2 - Step 10b */
-        p = strstr(buf, "\"T_inner_K\""); /* Phase 2 - Step 10b */
-        if (p) { p = strchr(p, ':'); config->T_inner = atof(p + 1); } /* Phase 2 - Step 10b */
-        p = strstr(buf, "\"luminosity_inner_erg_s\""); /* Phase 2 - Step 10b */
-        if (p) { p = strchr(p, ':'); config->luminosity_requested = atof(p + 1); } /* Phase 2 - Step 10b */
-        p = strstr(buf, "\"n_packets\""); /* Phase 2 - Step 10b */
-        if (p) { p = strchr(p, ':'); config->n_packets = atoi(p + 1); } /* Phase 2 - Step 10b */
-        p = strstr(buf, "\"n_iterations\""); /* Phase 2 - Step 10b */
-        if (p) { p = strchr(p, ':'); config->n_iterations = atoi(p + 1); } /* Phase 2 - Step 10b */
-        p = strstr(buf, "\"seed\""); /* Phase 2 - Step 10b */
-        if (p) { p = strchr(p, ':'); config->seed = (uint64_t)atol(p + 1); } /* Phase 2 - Step 10b */
+        int missing = 0;
+        #define PARSE_REQ(key, sink, conv)                                  \
+            do {                                                             \
+                p = strstr(buf, "\"" key "\"");                              \
+                if (!p || !(p = strchr(p, ':'))) {                           \
+                    fprintf(stderr,                                          \
+                        "ERROR: %s missing required key \"%s\"\n",           \
+                        path, key);                                          \
+                    missing = 1;                                             \
+                } else {                                                     \
+                    sink = conv(p + 1);                                      \
+                }                                                            \
+            } while (0)
+        PARSE_REQ("time_explosion_s",       geo->time_explosion,         atof);
+        PARSE_REQ("T_inner_K",              config->T_inner,             atof);
+        PARSE_REQ("luminosity_inner_erg_s", config->luminosity_requested,atof);
+        PARSE_REQ("n_packets",              config->n_packets,           atoi);
+        PARSE_REQ("n_iterations",           config->n_iterations,        atoi);
+        PARSE_REQ("seed",                   config->seed,                (uint64_t)atol);
+        #undef PARSE_REQ
+        if (missing) return -1;
 
-        /* Parse T_e/T_rad ratio (default 0.9 if absent) */
+        /* Optional: T_e/T_rad ratio (default 0.9 if absent) */
         plasma->T_e_T_rad_ratio = 0.9;
         p = strstr(buf, "\"T_e_T_rad_ratio\"");
         if (p) { p = strchr(p, ':'); plasma->T_e_T_rad_ratio = atof(p + 1); }
@@ -333,16 +382,28 @@ int load_tardis_reference_data(const char *ref_dir, Geometry *geo,
     /* Task #072: Store line_list.csv path for later atomic data loading */
     /* (line_atomic_number etc. loaded in load_atomic_data) */
 
-    /* Phase 2 - Step 10e2: Verify descending order */
-    int desc_ok = 1; /* Phase 2 - Step 10e2 */
-    for (int i = 1; i < n; i++) { /* Phase 2 - Step 10e2 */
-        if (opacity->line_list_nu[i] > opacity->line_list_nu[i - 1]) { /* Phase 2 - Step 10e2 */
-            desc_ok = 0; /* Phase 2 - Step 10e2 */
-            fprintf(stderr, "WARNING: line_list_nu not descending at i=%d\n", i); /* Phase 2 - Step 10e2 */
-            break; /* Phase 2 - Step 10e2 */
+    /* A9: Verify strictly non-ascending order. Sobolev binary search assumes
+     * descending nu; a single out-of-order pair silently mis-routes packets
+     * onto the wrong line and warps every per-band ratio. Abort hard. */
+    int desc_violations = 0;
+    int first_bad_i = -1;
+    for (int i = 1; i < n; i++) {
+        if (opacity->line_list_nu[i] > opacity->line_list_nu[i - 1]) {
+            if (first_bad_i < 0) first_bad_i = i;
+            desc_violations++;
         }
     }
-    printf("  Line order: %s\n", desc_ok ? "DESCENDING (correct)" : "NOT DESCENDING"); /* Phase 2 - Step 10e2 */
+    if (desc_violations > 0) {
+        fprintf(stderr,
+                "FATAL: line_list_nu not descending — %d violation(s), first at i=%d "
+                "(nu[%d]=%.6e > nu[%d]=%.6e). Sobolev binary search REQUIRES descending.\n"
+                "  Regenerate reference with sort_values('nu', ascending=False, kind='stable').\n",
+                desc_violations, first_bad_i,
+                first_bad_i, opacity->line_list_nu[first_bad_i],
+                first_bad_i - 1, opacity->line_list_nu[first_bad_i - 1]);
+        return -1;
+    }
+    printf("  Line order: DESCENDING (correct, %d pairs)\n", n - 1);
 
     /* Phase 2 - Step 10f: Load tau_sobolev [n_lines, n_shells] */
     snprintf(path, sizeof(path), "%s/tau_sobolev.npy", ref_dir); /* Phase 2 - Step 10f */
@@ -356,6 +417,10 @@ int load_tardis_reference_data(const char *ref_dir, Geometry *geo,
         free(opacity->tau_sobolev);
         opacity->tau_sobolev = (double *)calloc((size_t)opacity->n_lines * opacity->n_shells, sizeof(double));
     }
+
+    /* CMF: per-line NLTE source function, populated during plasma/NLTE update.
+     * 0 (calloc default) signals "use fallback" in the CMF solver. */
+    opacity->line_source_S = (double *)calloc((size_t)opacity->n_lines * opacity->n_shells, sizeof(double));
 
     /* Phase 2 - Step 10g: Load transition probabilities [n_trans, n_shells] */
     snprintf(path, sizeof(path), "%s/transition_probabilities.npy", ref_dir); /* Phase 2 - Step 10g */
@@ -396,6 +461,11 @@ int load_tardis_reference_data(const char *ref_dir, Geometry *geo,
     opacity->line2macro_level_upper = read_npy_int(path, &n); /* Phase 2 - Step 10j */
     printf("  line2macro_level_upper: %d entries\n", n); /* Phase 2 - Step 10j */
 
+    /* k-packet tables: lazily built by compute_transition_probabilities when
+     * LUMINA_KPACKET is enabled; NULL until then. */
+    opacity->p_kpacket = NULL;
+    opacity->kpacket_cdf = NULL;
+
     printf("Data loading complete.\n"); /* Phase 2 - Step 10 */
     return 0; /* Phase 2 - Step 10 */
 }
@@ -414,6 +484,7 @@ void free_geometry(Geometry *geo) { /* Phase 2 - Step 11 */
 void free_opacity_state(OpacityState *op) { /* Phase 2 - Step 11 */
     free(op->line_list_nu); /* Phase 2 - Step 11 */
     free(op->tau_sobolev); /* Phase 2 - Step 11 */
+    free(op->line_source_S);
     free(op->electron_density); /* Phase 2 - Step 11 */
     free(op->t_electrons); /* Phase 2 - Step 11 */
     free(op->macro_block_references); /* Phase 2 - Step 11 */
@@ -510,6 +581,73 @@ int load_atomic_data(AtomicData *atom, const char *ref_dir, int n_shells) {
     atom->n_lines   = n;
     printf("  Line columns: %d lines loaded (including A_ul, B_lu, B_ul, nu)\n", n);
 
+    /* LUMINA_AUL_SCALE[N]_*: per-(Z,ion,λ-band) A_ul/f_lu/B_lu/B_ul scale.
+     * Pass N="" (primary) and N="2","3" (stacked) for independent per-species rules.
+     *   LUMINA_AUL_SCALE[N]_FACTOR    multiplier (default 1.0 = off)
+     *   LUMINA_AUL_SCALE[N]_ZMASK     comma-list of Z (default: all)
+     *   LUMINA_AUL_SCALE[N]_IONMASK   comma-list of ion stages (default: II)
+     *   LUMINA_AUL_SCALE[N]_LAMBDA_MIN  Å, scale lines with λ >= this (default: 0)
+     *   LUMINA_AUL_SCALE[N]_LAMBDA_MAX  Å, scale lines with λ < this  (default: 4000)
+     */
+    {
+        const char *suffixes[] = {"", "2", "3", "4", "5", "6", "7", "8", "9"};
+        for (int s = 0; s < 9; s++) {
+            char name[64];
+            snprintf(name, sizeof(name), "LUMINA_AUL_SCALE%s_FACTOR", suffixes[s]);
+            const char *e_fac = getenv(name);
+            if (!e_fac || !(atof(e_fac) > 0.0) || atof(e_fac) == 1.0) continue;
+            double fac = atof(e_fac);
+            unsigned int zmask = 0;
+            unsigned int imask = (1u << 1);
+            double lam_min_A = 0.0;
+            double lam_max_A = 4000.0;
+            snprintf(name, sizeof(name), "LUMINA_AUL_SCALE%s_ZMASK", suffixes[s]);
+            const char *e_z = getenv(name);
+            snprintf(name, sizeof(name), "LUMINA_AUL_SCALE%s_IONMASK", suffixes[s]);
+            const char *e_ion = getenv(name);
+            snprintf(name, sizeof(name), "LUMINA_AUL_SCALE%s_LAMBDA_MIN", suffixes[s]);
+            const char *e_lmn = getenv(name);
+            snprintf(name, sizeof(name), "LUMINA_AUL_SCALE%s_LAMBDA_MAX", suffixes[s]);
+            const char *e_lm = getenv(name);
+            if (e_z) {
+                char buf[256]; strncpy(buf, e_z, 255); buf[255]=0;
+                for (char *p = strtok(buf, ", "); p; p = strtok(NULL, ", ")) {
+                    int z = atoi(p);
+                    if (z > 0 && z < 32) zmask |= (1u << z);
+                }
+            } else {
+                for (int z = 1; z < 32; z++) zmask |= (1u << z);
+            }
+            if (e_ion) {
+                char buf[64]; strncpy(buf, e_ion, 63); buf[63]=0;
+                imask = 0;
+                for (char *p = strtok(buf, ", "); p; p = strtok(NULL, ", ")) {
+                    int ii = atoi(p);
+                    if (ii >= 0 && ii < 8) imask |= (1u << ii);
+                }
+            }
+            if (e_lmn) lam_min_A = atof(e_lmn);
+            if (e_lm) lam_max_A = atof(e_lm);
+            int nhit = 0;
+            for (int i = 0; i < atom->n_lines; i++) {
+                int Z = atom->line_atomic_number[i];
+                int ion = atom->line_ion_number[i];
+                double lam_A = atom->line_wavelength_cm[i] * 1e8;
+                if (lam_A >= lam_min_A && lam_A < lam_max_A &&
+                    Z >= 0 && Z < 32 && ion >= 0 && ion < 8 &&
+                    (zmask & (1u << Z)) && (imask & (1u << ion))) {
+                    atom->line_A_ul[i] *= fac;
+                    atom->line_B_lu[i] *= fac;
+                    atom->line_B_ul[i] *= fac;
+                    atom->line_f_lu[i] *= fac;
+                    nhit++;
+                }
+            }
+            printf("  [AUL_SCALE%s] fac=%.3f λ∈[%.0f,%.0f)Å zmask=0x%x imask=0x%x → %d lines scaled\n",
+                   suffixes[s], fac, lam_min_A, lam_max_A, zmask, imask, nhit);
+        }
+    }
+
     /* --- Level data from levels.csv --- */
     snprintf(path, sizeof(path), "%s/levels.csv", ref_dir);
     atom->level_Z          = read_csv_column_int(path, "atomic_number", &n);
@@ -519,7 +657,25 @@ int load_atomic_data(AtomicData *atom, const char *ref_dir, int n_shells) {
     atom->level_g          = read_csv_column_int(path, "g", &n);
     atom->level_metastable = read_csv_column_int(path, "metastable", &n);
     atom->n_levels = n;
-    printf("  Levels: %d loaded\n", n);
+    /* Super-level index (CMFGEN f_to_s). Optional column: older references
+     * lack it -> default to identity (each full level is its own super level)
+     * so the NLTE solve reproduces the level-truncation behaviour. */
+    atom->level_super = read_csv_column_int(path, "super_level", &n);
+    if (atom->level_super == NULL) {
+        atom->level_super = (int *)malloc((size_t)atom->n_levels * sizeof(int));
+        for (int l = 0; l < atom->n_levels; l++)
+            atom->level_super[l] = atom->level_num[l];
+        printf("  Levels: %d loaded (no super_level column -> identity)\n",
+               atom->n_levels);
+    } else {
+        int super_active = 0;
+        for (int l = 0; l < atom->n_levels; l++) {
+            if (atom->level_super[l] != atom->level_num[l]) { super_active = 1; break; }
+        }
+        printf("  Levels: %d loaded (super_level column present%s)\n",
+               atom->n_levels,
+               super_active ? ", super-levels active" : ", all identity");
+    }
 
     /* --- Ionization energies --- */
     snprintf(path, sizeof(path), "%s/ionization_energies.csv", ref_dir);
@@ -603,10 +759,25 @@ int load_atomic_data(AtomicData *atom, const char *ref_dir, int n_shells) {
     for (int e = 0; e < atom->n_elements; e++) {
         int z = atom->element_Z[e];
         int n_pops = atom->elem_ion_offset[e + 1] - atom->elem_ion_offset[e];
+        /* The ion ladder starts at the LOWEST stage that has atomic data, not
+           necessarily neutral. CMFGEN omits neutral Ti I / Mn I, so their
+           ionization-energy entries start at stage 1; labelling pops relatively
+           (k) dumped all mass into a phantom level-less neutral slot. Anchor the
+           ladder at base_stage = min ionization-energy stage for the element. */
+        int base_stage = 0;
+        int found_base = 0;
+        for (int i = 0; i < atom->n_ionization; i++) {
+            if (atom->ioniz_Z[i] == z &&
+                (!found_base || atom->ioniz_ion[i] < base_stage)) {
+                base_stage = atom->ioniz_ion[i];
+                found_base = 1;
+            }
+        }
+        /* found_base==0 (no ioniz data): leave base_stage=0 (assume neutral) */
         for (int k = 0; k < n_pops; k++) {
             int idx = atom->elem_ion_offset[e] + k;
             atom->ion_pop_Z[idx] = z;
-            atom->ion_pop_stage[idx] = k;
+            atom->ion_pop_stage[idx] = base_stage + k;
         }
     }
     printf("  Ion populations: %d total\n", total_ion_pops);
@@ -746,6 +917,7 @@ void free_atomic_data(AtomicData *atom) {
     free(atom->level_energy_eV);
     free(atom->level_g);
     free(atom->level_metastable);
+    free(atom->level_super);
     free(atom->ioniz_Z);
     free(atom->ioniz_ion);
     free(atom->ioniz_energy_eV);

@@ -348,7 +348,7 @@ void macro_atom_interaction(int activation_level_id, int current_shell_id,
     *out_transition_type = MA_BB_EMISSION; /* P8: safe default */
 
     /* Phase 3 - Step 9: Loop while internal transitions (type >= 0) */
-    while (current_type >= 0 && ma_iter < 500) { /* Phase 3 - Step 9 */
+    while (current_type >= 0 && ma_iter < 5000) { /* Phase 3 - Step 9 */
         ma_iter++; /* Phase 3 - Step 9 */
 
         /* Phase 3 - Step 9: Bounds check on activation_level_id */
@@ -398,6 +398,9 @@ void macro_atom_interaction(int activation_level_id, int current_shell_id,
             *out_transition_type = current_type; /* Phase 3 - Step 9 */
         }
     }
+
+    /* [MA-CYCLE] Record number of internal hops before emission */
+    macro_atom_cycle_record(ma_iter);
 
     /* Phase 3 - Step 9: Convert transition_id to line_id for emission */
     /* P8: Guard against orphaned levels (no transitions → out_transition_id == -1) */

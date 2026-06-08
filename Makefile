@@ -10,7 +10,7 @@ LDFLAGS += -fopenmp
 endif
 
 # Source files (in src/)
-SOURCES = src/lumina_main.c src/lumina_transport.c src/lumina_plasma.c src/lumina_atomic.c
+SOURCES = src/lumina_main.c src/lumina_transport.c src/lumina_plasma.c src/lumina_atomic.c src/lumina_cmfgen.c
 HEADERS = src/lumina.h
 TARGET = lumina
 
@@ -32,8 +32,8 @@ CUDA_BF_GEMM    = src/lumina_bf_gemm.cu
 CUDA_NLTE_GEMM  = src/lumina_nlte_gemm.cu
 
 cuda: lumina_cuda
-lumina_cuda: $(CUDA_SRC) $(CUDA_BF_GEMM) $(CUDA_NLTE_GEMM) src/lumina_atomic.c src/lumina_plasma.c $(HEADERS)
-	$(NVCC) $(NVFLAGS) -o lumina_cuda $(CUDA_SRC) $(CUDA_BF_GEMM) $(CUDA_NLTE_GEMM) src/lumina_atomic.c src/lumina_plasma.c $(NVLDFLAGS)
+lumina_cuda: $(CUDA_SRC) $(CUDA_BF_GEMM) $(CUDA_NLTE_GEMM) src/lumina_atomic.c src/lumina_plasma.c src/lumina_cmfgen.c $(HEADERS)
+	$(NVCC) $(NVFLAGS) -o lumina_cuda $(CUDA_SRC) $(CUDA_BF_GEMM) $(CUDA_NLTE_GEMM) src/lumina_atomic.c src/lumina_plasma.c src/lumina_cmfgen.c $(NVLDFLAGS)
 
 # Task #39 validation harness
 bench_bf_gemm: bench_bf_gemm.c $(CUDA_BF_GEMM) src/lumina_atomic.c src/lumina_plasma.c $(HEADERS)

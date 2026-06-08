@@ -11,6 +11,7 @@
 #include <stdbool.h>  /* Phase 2 - Step 1 */
 #include <stdint.h>   /* Phase 2 - Step 1 */
 #include <float.h>    /* Phase 2 - Step 1 */
+#include <locale.h>   /* A6: setlocale(LC_NUMERIC,"C") for ko_KR-safe sscanf */
 
 /* ============================================================ */
 /* Phase 2 - Step 2: Physical constants (CGS, matching TARDIS)  */
@@ -109,6 +110,7 @@ typedef struct {
     int     n_shells;         /* Phase 2 - Step 4: number of shells */
     double *line_list_nu;     /* Phase 2 - Step 4: [n_lines] sorted DESCENDING */
     double *tau_sobolev;      /* Phase 2 - Step 4: [n_lines * n_shells] row-major */
+    double *line_source_S;    /* CMF: NLTE two-level line source fn [n_lines*n_shells]; <=0 => use fallback */
     double *electron_density; /* Phase 2 - Step 4: [n_shells] n_e [cm^-3] */
     double *t_electrons;      /* Phase 2 - Step 4: [n_shells] T_e [K] */
 
@@ -121,6 +123,10 @@ typedef struct {
     int    *transition_line_id;          /* Phase 2 - Step 4: [n_transitions] */
     double *transition_probabilities;    /* Phase 2 - Step 4: [n_transitions * n_shells] */
     int    *line2macro_level_upper;      /* Phase 2 - Step 4: [n_lines] */
+    /* k-packet thermal pool (collisional macro-atom, LUMINA_KPACKET). Built in
+     * compute_transition_probabilities; NULL when disabled. */
+    double *p_kpacket;                   /* [n_macro_levels * n_shells] P(coll. deactivation→k-packet) */
+    double *kpacket_cdf;                 /* [n_shells * n_macro_levels] per-shell cumulative re-excitation dist */
 } OpacityState;                          /* Phase 2 - Step 4 */
 
 /* Phase 2 - Step 4: MC Estimators — TARDIS RadfieldMCEstimators */
@@ -193,6 +199,7 @@ typedef struct {
     double *level_energy_eV;          /* [n_levels] energy in eV */
     int    *level_g;                  /* [n_levels] statistical weight */
     int    *level_metastable;         /* [n_levels] metastable flag */
+    int    *level_super;              /* [n_levels] CMFGEN super-level idx (per-ion, 0-based); = level_num if no f_to_s */
 
     /* Ionization data (from ionization_energies.csv) */
     int     n_ionization;             /* total ionization entries */
@@ -248,7 +255,8 @@ typedef struct {
 #define NLTE_N_FREQ_BINS  1000
 #define NLTE_NU_MIN       1.5e14    /* c / 20000 A */
 #define NLTE_NU_MAX       3.0e16    /* c / 100 A */
-#define NLTE_MAX_IONS     28        /* Si,Ca,Fe,S,Co,Ni,C,Mg,Ti,Cr,Al,Sc,V,Mn II/III (14 pairs) */
+#define NLTE_MAX_IONS     31        /* 14 II/III pairs + O I/II/III overlap (31 slots, 16 pairs; slot 29=O II shared) */
+#define NLTE_PAIR_COUNT   16        /* #281: pair 15 = (slot 29 O II, slot 30 O III) overlaps pair 14 upper for CMFGEN triplet fidelity */
 
 typedef struct {
     int    enabled;
@@ -271,14 +279,28 @@ typedef struct {
     double *nlte_level_populations;            /* [n_nlte_levels_total * n_shells] */
     double *j_nu_estimator;                    /* [n_shells * n_freq_bins] raw MC */
     double *J_nu;                              /* [n_shells * n_freq_bins] normalized */
+
+    /* Current iteration index (set by host before each nlte_solve_all call). */
+    int    current_iter;
+
+    /* CMFGEN super-level collapse (gated by LUMINA_SUPER_LEVELS).
+     * The SE solve runs on super-levels (SL); full-level (FL) populations are
+     * redistributed within each SL by Boltzmann at local T_e. When super_mode==0
+     * every map is identity and the FL solve path is byte-identical to baseline. */
+    int    super_mode;                              /* 1 => collapse to super-levels */
+    int    n_super_total;                           /* total SL across all NLTE ions */
+    int    nlte_ion_super_offset[NLTE_MAX_IONS + 1];/* cumulative SL offset per ion */
+    int   *fl_to_super;                             /* [n_nlte_levels_total] FL nlte idx -> global SL solve idx */
+    int   *super_anchor_global;                     /* [n_super_total] lowest-E FL global idx per SL */
+    double *within_sl_frac;                         /* [n_nlte_levels_total * n_shells] Boltzmann fraction f_i of FL within its SL */
 } NLTEConfig;
 
 /* ============================================================ */
 /* Step 1.5: Charge Exchange Coupling                           */
 /* ============================================================ */
 
-#define CE_MAX_REACTIONS  8
-#define CE_N_REACTIONS    6
+#define CE_MAX_REACTIONS  20
+#define CE_N_REACTIONS    17
 
 typedef struct {
     int    Z_A, ion_A;       /* reactant A: A^(ion_A) */
@@ -287,6 +309,40 @@ typedef struct {
     double alpha;            /* temp exponent: k(T) = rate_coeff * (T/1e4)^alpha */
     double delta_E_eV;       /* energy defect [eV], negative = exothermic forward */
 } ChargeExchangeReaction;
+
+/* ============================================================ */
+/* Heavy.2 / Task #139: Dielectronic Recombination (DR)         */
+/* Burgess-form fit: α_DR(T) = T^(-3/2) * Σ c_i * exp(-E_i / T)  */
+/* T in K, c_i in cm³ s⁻¹ K^(3/2), E_i in K.                     */
+/* Convention: ion_recomb = recombining (upper) ion stage,       */
+/* i.e. for Fe III → Fe II we set Z=26, ion_recomb=2.            */
+/* DR is added as ground(upper) → ground(lower) channel in the   */
+/* NLTE rate matrix; cascades within the lower ion redistribute  */
+/* via the bound-bound and Milne network already present.        */
+/* ============================================================ */
+
+#define DR_MAX_TERMS  10
+
+typedef enum {
+    DR_SOURCE_NONE       = 0,
+    DR_SOURCE_BADNELL    = 1,   /* Strathclyde clist_K (AUTOSTRUCTURE) */
+    DR_SOURCE_NORAD      = 2,   /* Nahar OSU R-matrix unified RR+DR    */
+    DR_SOURCE_MAZZOTTA   = 3,   /* Mazzotta+1998 LS-coupling            */
+    DR_SOURCE_AUTOSTRUCT = 4,   /* our AUTOSTRUCTURE self-compute       */
+    DR_SOURCE_EST_ISOEL  = 5    /* isoelectronic interpolation estimate */
+} DRSource;
+
+typedef struct {
+    int       Z;                    /* atomic number              */
+    int       ion_recomb;           /* recombining ion stage      */
+    int       n_terms;              /* number of (c_i, E_i) pairs */
+    double    c_i[DR_MAX_TERMS];    /* cm³/s · K^(3/2)            */
+    double    E_i[DR_MAX_TERMS];    /* K                          */
+    DRSource  source;
+} DRCoefficient;
+
+double dr_alpha_eval(const DRCoefficient *coef, double T_e);
+const DRCoefficient* dr_lookup(int Z, int ion_recomb);
 
 /* ============================================================ */
 /* Gamma-ray energy deposition from 56Ni/56Co decay             */
@@ -483,15 +539,29 @@ void compute_transition_probabilities(AtomicData *atom, PlasmaState *plasma,
                                        NLTEConfig *nlte,
                                        double damping_constant, int apply_damping);
 
+void diag_macro_branch(AtomicData *atom, PlasmaState *plasma,
+                       OpacityState *opacity, int diag_shell);
+
 /* NLTE: Interpolate J_nu at a given frequency from the histogram */
 double nlte_get_J_at_nu(NLTEConfig *nlte, int shell, double nu);
 
 /* NLTE: Restricted NLTE rate equation solver */
+/* Returns 1 if Mihalas-Lucy ion-lock should be active at current_iter.
+ * Reads LUMINA_NLTE_ION_LOCK and LUMINA_NLTE_LOCK_START_ITER once.
+ * Note: ion-lock has two effects coupled — matrix-row replacement (in solver)
+ * and freeze-plasma-transport-only (in iter driver). To enable only the
+ * post-solve per-ion rescale path without either, set LUMINA_NLTE_PER_ION_RESCALE=1. */
+int  nlte_ion_lock_active(int current_iter);
+int  nlte_per_ion_rescale_active(void);
+int  nlte_skip_dead_pairs(void);
+double nlte_inv_ceiling(void);
+
 int  nlte_init(NLTEConfig *nlte, AtomicData *atom, OpacityState *opacity,
                int n_shells);
 void nlte_free(NLTEConfig *nlte);
 void nlte_normalize_j_nu(NLTEConfig *nlte, double time_simulation,
                           double *volume, int n_shells);
+void nlte_apply_uv_jnu_cap(NLTEConfig *nlte, PlasmaState *plasma, int n_shells);
 void nlte_solve_all(NLTEConfig *nlte, AtomicData *atom, PlasmaState *plasma,
                      OpacityState *opacity, double time_explosion,
                      int n_shells, GammaDeposition *gamma_dep);
@@ -518,6 +588,28 @@ void nlte_assemble_rate_matrix(NLTEConfig *nlte, AtomicData *atom,
                                 GammaDeposition *gamma_dep,
                                 const NLTERateLookup *lookup,
                                 int pair_idx);
+
+/* P7 / Task #138: tabulated ground-state photoionization σ_0 (Verner-CMFGEN).
+ * Defined in lumina_plasma.c. Returns 0 → caller falls back to Kramers 7.91e-18/Z_eff^2. */
+double get_bf_sigma0(int Z, int stage);
+
+/* (2) 2026-05-14: NLTE pair conservation total. Returns Σ_{i=lo..hi} n_ion[i],
+ * unless LUMINA_NLTE_NO_ML_LOCK=1, in which case returns element mass density
+ * (n_element = abund·rho/m_amu) — drops the Mihalas-Lucy phi_neb soft lock. */
+double nlte_pair_total_density(NLTEConfig *nlte, AtomicData *atom,
+                               PlasmaState *plasma,
+                               int Z_nl, int ion_idx_lo, int ion_idx_hi,
+                               int shell);
+
+/* Task #29 (Probe-B fix): write NLTE-solved ion split back into
+ * atom->ion_number_density (per-pair, pair-total preserved) and rebuild bulk
+ * tau_sobolev, so non-NLTE-tracked iron-peak line opacity uses the rate-solved
+ * ionization instead of nebular phi_neb. Gated by LUMINA_NLTE_OPACITY_IONSTAGE=1.
+ * Shared by CPU (lumina_plasma.c) and GPU (lumina_cuda.cu) NLTE solvers. */
+void nlte_writeback_ion_stage(NLTEConfig *nlte, AtomicData *atom,
+                              PlasmaState *plasma, OpacityState *opacity,
+                              double time_explosion, int n_shells,
+                              int pairs[][2], int n_pairs);
 
 /* Task #40 (A)+(B): GPU NLTE photoionization rates via TF32 GEMM.
  * Pre-bakes K[ν, lev] in init; per call computes R_bf = K^T · J_nu. */
@@ -560,11 +652,41 @@ void compute_electron_temperature(PlasmaState *plasma, GammaDeposition *gamma_de
                                    double time_explosion, int n_shells,
                                    int self_consistent);
 
+/* Task #20: real radiative-equilibrium T_e (heating = cooling), gated by
+ * LUMINA_RADEQ_TE=1. Uses lagged NLTE pops + J_nu (operator-split). */
+void compute_radiative_equilibrium_te(PlasmaState *plasma, GammaDeposition *gamma_dep,
+                                      NLTEConfig *nlte, AtomicData *atom,
+                                      OpacityState *opacity,
+                                      double time_explosion, int n_shells);
+
+/* PATH-A / A2: per-shell COUPLED-NEWTON solve of {n_e, T_e} (simultaneous
+ * linearization of radiative equilibrium + charge conservation), replacing the
+ * operator-split RADEQ→ionization fixed point on non-frozen inner shells.
+ * Gated by LUMINA_COUPLED_NEWTON=1; call after compute_radiative_equilibrium_te
+ * + compute_plasma_state to overwrite their (T_e, n_e) with the coupled solution. */
+void coupled_newton_solve_all(PlasmaState *plasma, GammaDeposition *gamma_dep,
+                              NLTEConfig *nlte, AtomicData *atom,
+                              OpacityState *opacity,
+                              double time_explosion, int n_shells);
+
 /* P5: Formal integral spectrum (noise-free, p-z formalism) */
 void compute_formal_integral_spectrum(
     Geometry *geo, PlasmaState *plasma, OpacityState *opacity,
     AtomicData *atom, NLTEConfig *nlte, double T_inner,
     Spectrum *spec_formal, int n_impact);
+
+/* CMF (comoving-frame) formal solver — paper-method (Blondin+2013/CMFGEN)
+ * line transfer with finite Gaussian Doppler profiles deposited on a fine
+ * z-grid, then a formal solution of the RTE along impact-parameter tangent
+ * rays using converged NLTE source functions. Single formal pass (no ALI).
+ * Reduces to the Sobolev formal integral in the thin single-line limit;
+ * the only new physics is line overlap (the suspected UV-forest divergence).
+ *   n_zstep    : z-cells per ray (env LUMINA_CMF_NZ, default 2000)
+ *   v_turb_cms : microturbulent velocity [cm/s] added to thermal width */
+void compute_cmf_formal_spectrum(
+    Geometry *geo, PlasmaState *plasma, OpacityState *opacity,
+    AtomicData *atom, NLTEConfig *nlte, BFOpacity *bf, double T_inner,
+    Spectrum *spec, int n_impact, int n_zstep, double v_turb_cms);
 
 /* [MA-FATE] Macro-atom packet fate histogram (UV→? cascade diagnostic).
  * Bands: 0=UV (1700-3000 Å), 1=blue (3000-4500 Å),
@@ -576,16 +698,45 @@ void compute_formal_integral_spectrum(
  * macro_atom_fate_record() is thread-safe via OpenMP atomic; called from
  * macro_atom_event() in CPU transport. GPU transport uses a device-side
  * histogram (cuda_ma_fate_*) and aggregates into the same counters. */
-#define MA_FATE_NBANDS 4
+#define MA_FATE_NBANDS 8
 int  macro_atom_fate_band_from_nu(double nu_comov);
 void macro_atom_fate_record(double entry_nu_comov, double exit_nu_comov);
 void macro_atom_fate_reset(void);
 void macro_atom_fate_print(const char *label);
 void macro_atom_fate_add_counts(const unsigned long long add[MA_FATE_NBANDS * MA_FATE_NBANDS]);
 
+/* [H3] Per-(Z, ion, entry_band, exit_band) attribution histogram.
+ * Z-index map: 0=C(6) 1=O(8) 2=Mg(12) 3=Al(13) 4=Si(14) 5=S(16)
+ *              6=Ca(20) 7=Sc(21) 8=Ti(22) 9=V(23) 10=Cr(24) 11=Mn(25)
+ *              12=Fe(26) 13=Co(27) 14=Ni(28)
+ * Ion: 0=I 1=II 2=III 3=IV (clamped). */
+#define MA_FATE_NZ 15
+#define MA_FATE_NION 4
+#define MA_FATE_ZI_LEN (MA_FATE_NZ * MA_FATE_NION * MA_FATE_NBANDS * MA_FATE_NBANDS)
+extern const int MA_FATE_Z_LIST[MA_FATE_NZ];
+void macro_atom_fate_zi_add_counts(const unsigned long long add[MA_FATE_ZI_LEN]);
+void macro_atom_fate_zi_reset(void);
+void macro_atom_fate_zi_dump_csv(const char *path, const char *label);
+
 /* GPU side: defined in lumina_cuda.cu, weak-stubbed in CPU build. */
 void cuda_ma_fate_reset(void);
 void cuda_ma_fate_download_and_aggregate(void);
+void cuda_set_ma_fate_zi_enabled(int v);
+void cuda_ma_fate_zi_reset(void);
+void cuda_ma_fate_zi_download_and_aggregate(void);
+
+/* [MA-CYCLE] Per-packet macro-atom internal cycle count histogram.
+ * Each macro-atom interaction loops until it picks an emission transition;
+ * ma_iter records how many hops a packet performs before emitting. Used to
+ * detect closed-loop UV trapping (high cycle counts) vs prompt emission. */
+#define MA_CYCLE_BINS 5001  /* 0..5000 inclusive (cap at 5000 in transport) */
+void macro_atom_cycle_record(int n_cycles);
+void macro_atom_cycle_reset(void);
+void macro_atom_cycle_print(const char *label);
+void macro_atom_cycle_add_counts(const unsigned long long add[MA_CYCLE_BINS]);
+
+void cuda_ma_cycle_reset(void);
+void cuda_ma_cycle_download_and_aggregate(void);
 
 #ifdef __cplusplus   /* Phase 6 - Step 9: close extern C guard */
 }                    /* Phase 6 - Step 9 */
