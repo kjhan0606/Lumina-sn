@@ -36,9 +36,14 @@ typedef struct {
     /* Per (shell,bin) opacity/source decomposition [n_shells*n_bins]. */
     double *chi_es;            /* electron scattering (coherent)   cm^-1 */
     double *chi_abs;           /* thermal true absorption bf+ff    cm^-1 */
-    double *chi_line;          /* expansion line opacity           cm^-1 */
+    double *chi_line;          /* expansion line opacity (FULL)    cm^-1 */
+    double *chi_line_th;       /* thermal (destruction) part of chi_line;
+                                  = chi_line when the eps-split is off. The
+                                  scattering remainder (chi_line-chi_line_th)
+                                  is folded into chi_es so the ALI closure
+                                  transports it (LUMINA_CMFGEN_LINE_EPS). */
     double *chi_tot;           /* chi_es + chi_abs + chi_line       cm^-1 */
-    double *S_fixed;           /* (chi_abs*B + chi_line*S_line)/chi_tot   */
+    double *S_fixed;           /* (chi_abs*B + chi_line_th*S_line)/chi_tot */
     double *J;                 /* mean intensity (output) erg/s/cm^2/Hz/sr*/
     double *lambda_star;       /* diagonal approximate Lambda operator    */
 

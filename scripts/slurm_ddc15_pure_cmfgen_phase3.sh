@@ -34,6 +34,8 @@ JNU_LSTAR=${JNU_LSTAR:-0}        # 0 = bare J_nu photoion; 1 = + diagonal-Lambda
 LSTAR=${LSTAR:-$JNU_LSTAR}       # RADEQ/Newton T_e radiation response (Phase-1 faithful Lambda*); defaults to JNU_LSTAR
 LINE_RE=${LINE_RE:-0}            # 0 = collisional bound-bound cooling; 1 = Option-2 integral-RE line term
 TE_RATIO=${TE_RATIO:-0.9}        # T_e/T_rad seed+fallback constant (perturbation test: 0.7 / 1.0)
+JNU_PHOTOION=${JNU_PHOTOION:-1}  # 0 = phi_neb closure (control arm: falsify the J->Gamma chain)
+FROZENIN=${FROZENIN:-0}          # 1 = frozen-in freeze-out owns the outer shells (+ per-ion rescale)
 
 export OMP_NUM_THREADS=${OMP_NUM_THREADS:-4}
 
@@ -41,7 +43,7 @@ ROOT=/home/kjhan/BACKUP/Eunha.A1/Claude/Lumina-sn
 REF="$ROOT/data/${DDC15_REF:-tardis_reference_ddc15_0p976d}"
 BIN="$ROOT/lumina_cuda"
 
-label="ddc15_pc_phase3_jnul${JNU_LSTAR}_radls${LSTAR}_linere${LINE_RE}_ratio${TE_RATIO}"
+label="ddc15_pc_phase3_jnul${JNU_LSTAR}_radls${LSTAR}_linere${LINE_RE}_ratio${TE_RATIO}_pi${JNU_PHOTOION}_fz${FROZENIN}"
 work_root="$ROOT/logs/${label}_${SLURM_JOB_ID}"
 mkdir -p "$work_root"; cd "$work_root"
 
@@ -72,7 +74,9 @@ env LUMINA_PURE_CMFGEN=1 \
     LUMINA_RADEQ_COOL_NONNEG=0 \
     LUMINA_RADEQ_COOL_NLTE_ONLY=1 \
     LUMINA_COUPLED_NEWTON=1 \
-    LUMINA_COUPLED_JNU_PHOTOION=1 \
+    LUMINA_COUPLED_JNU_PHOTOION=$JNU_PHOTOION \
+    LUMINA_FROZENIN=$FROZENIN \
+    LUMINA_NLTE_PER_ION_RESCALE=$FROZENIN \
     LUMINA_COUPLED_JNU_LSTAR=$JNU_LSTAR \
     LUMINA_COUPLED_LAMBDA_STAR=$LSTAR \
     LUMINA_COUPLED_TDEP=1 \

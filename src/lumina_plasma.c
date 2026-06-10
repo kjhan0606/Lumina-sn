@@ -3465,17 +3465,36 @@ static const double *g_lre_chi_line = NULL, *g_lre_chi_abs = NULL,
                     *g_lre_J = NULL, *g_lre_nu = NULL, *g_lre_dnu = NULL,
                     *g_lre_lambda_star = NULL;
 static int g_lre_nshells = 0, g_lre_nbins = 0;
+/* assemble-time T_e SNAPSHOT (copied, not aliased): the pre-Newton bisection
+ * rewrites plasma->T_e between registration and the coupled Newton, so reading
+ * plasma->T_e there yields the WRONG lag for the eta_lag subtraction in
+ * radeq_line_re wherever the bisection moved T_e. */
+static double *g_lre_te_lag = NULL;
+static int g_lre_te_lag_n = 0;
 
 void radeq_set_line_re_source(const double *chi_line, const double *chi_abs,
                               const double *chi_tot, const double *S_fixed,
                               const double *J, const double *nu,
                               const double *dnu, const double *lambda_star,
+                              const double *T_e_assemble,
                               int n_shells, int n_bins) {
     g_lre_chi_line = chi_line; g_lre_chi_abs = chi_abs;
     g_lre_chi_tot = chi_tot;   g_lre_S_fixed = S_fixed;
     g_lre_J = J; g_lre_nu = nu; g_lre_dnu = dnu;
     g_lre_lambda_star = lambda_star;
     g_lre_nshells = n_shells;  g_lre_nbins = n_bins;
+    if (T_e_assemble && n_shells > 0) {
+        if (g_lre_te_lag_n != n_shells) {
+            free(g_lre_te_lag);
+            g_lre_te_lag = (double *)malloc((size_t)n_shells * sizeof(double));
+            g_lre_te_lag_n = g_lre_te_lag ? n_shells : 0;
+        }
+        if (g_lre_te_lag)
+            memcpy(g_lre_te_lag, T_e_assemble,
+                   (size_t)n_shells * sizeof(double));
+    } else {
+        free(g_lre_te_lag); g_lre_te_lag = NULL; g_lre_te_lag_n = 0;
+    }
 }
 
 /* Option-2 radiative line term for one shell, H_line(T_e) = 4π∫χ_line(J−S_eff)dν
@@ -3723,9 +3742,12 @@ void compute_radiative_equilibrium_te(PlasmaState *plasma, GammaDeposition *gamm
             plasma->T_e[s] = plasma->T_e_T_rad_ratio * T_rad;
             continue;
         }
-        /* Te_lag = assemble-time T_e of the registered CMFGEN line opacity =
-         * plasma->T_e[s] at entry (overwritten only at the end of this shell). */
-        double Te_lag = (plasma->T_e[s] > 100.0) ? plasma->T_e[s]
+        /* Te_lag = assemble-time T_e of the registered CMFGEN line opacity:
+         * the registration SNAPSHOT when present (immune to earlier solvers
+         * rewriting plasma->T_e), else plasma->T_e[s] at entry. */
+        double Te_lag = (g_lre_te_lag && s < g_lre_te_lag_n &&
+                         g_lre_te_lag[s] > 100.0) ? g_lre_te_lag[s]
+                      : (plasma->T_e[s] > 100.0) ? plasma->T_e[s]
                         : plasma->T_e_T_rad_ratio * T_rad;
 
         /* ---- bound-free heating (n_lev·J_ν) and the matching emission-cooling
@@ -4168,7 +4190,8 @@ static double coupled_charge_density(AtomicData *atom, PlasmaState *plasma,
 static double coupled_photoion_rate_jnu(AtomicData *atom, NLTEConfig *nlte,
                                         int ip, int s, double T_e, int n_shells,
                                         const double *jblend_lstar,
-                                        const double *jblend_b, double jblend_W) {
+                                        const double *jblend_b, double jblend_W,
+                                        double wbfloor_T) {
     (void)n_shells;
     if (!atom->cmfgen_loaded || T_e <= 0.0) return -1.0;
     int Z = atom->ion_pop_Z[ip];
@@ -4210,6 +4233,16 @@ static double coupled_photoion_rate_jnu(AtomicData *atom, NLTEConfig *nlte,
             if (jblend_lstar) {
                 double L = jblend_lstar[bb];
                 J = (1.0 - L) * J + L * jblend_W * jblend_b[bb];
+            }
+            /* DIAGNOSTIC PROBE (LUMINA_COUPLED_JNU_WBFLOOR=<T_inner>): floor
+             * the integrand field at the geometrically diluted photospheric
+             * Planck W*B_nu(T_inner). Tests the "inner FUV J over-thermalized
+             * to local cold T_e -> Gamma 5-1000x low" diagnosis at the rate
+             * level. NOT a faithful fix (the faithful fix is line-forest
+             * scattering in the formal solver). */
+            if (wbfloor_T > 0.0) {
+                double Jf = jblend_W * planck_bnu(wbfloor_T, nu_c);
+                if (J < Jf) J = Jf;
             }
             if (J <= 0.0) continue;
             double dnu = exp(lo + d_log_nu) - exp(lo);
@@ -4481,6 +4514,13 @@ void coupled_newton_solve_all(PlasmaState *plasma, GammaDeposition *gamma_dep,
      * local thermalization length L=v_outer·t_exp; disabled if absent. */
     int use_lstar = 0;
     { const char *ls = getenv("LUMINA_COUPLED_LAMBDA_STAR"); if (ls) use_lstar = atoi(ls); }
+    double wbfloor_T = -1.0;
+    { const char *wf = getenv("LUMINA_COUPLED_JNU_WBFLOOR"); if (wf) wbfloor_T = atof(wf); }
+    /* line-eps split active: g_lre_chi_line holds the THERMAL line channel,
+     * which then belongs in the local-Planck response fraction eps_b. */
+    int line_eps_on = 0;
+    { const char *le = getenv("LUMINA_CMFGEN_LINE_EPS");
+      if (le && atof(le) > 0.0) line_eps_on = 1; }
     double lstar_tauscale = 1.0;
     { const char *lt = getenv("LUMINA_COUPLED_LAMBDA_TAUSCALE"); if (lt) lstar_tauscale = atof(lt); }
     if (use_lstar && (geo == NULL || geo->v_outer == NULL)) use_lstar = 0;
@@ -4704,9 +4744,12 @@ void coupled_newton_solve_all(PlasmaState *plasma, GammaDeposition *gamma_dep,
         double T_e = plasma->T_e[s];
         double n_e = plasma->n_electron[s];
         /* Te_lag = the assemble-time T_e the CMFGEN line opacity/source were
-         * built at = plasma->T_e[s] at Newton entry (the local T_e below is the
-         * trial; plasma->T_e[s] is only written at the end of this shell). */
-        double Te_lag = (plasma->T_e[s] > 100.0) ? plasma->T_e[s]
+         * built at: the registration SNAPSHOT when present. plasma->T_e[s] at
+         * Newton entry is WRONG here — the pre-Newton bisection rewrote it
+         * after cmfgen_assemble (the Te_lag-capture defect). */
+        double Te_lag = (g_lre_te_lag && s < g_lre_te_lag_n &&
+                         g_lre_te_lag[s] > 100.0) ? g_lre_te_lag[s]
+                      : (plasma->T_e[s] > 100.0) ? plasma->T_e[s]
                         : plasma->T_e_T_rad_ratio * T_rad;
         if (T_e <= 100.0) T_e = plasma->T_e_T_rad_ratio * T_rad;
 
@@ -4730,7 +4773,10 @@ void coupled_newton_solve_all(PlasmaState *plasma, GammaDeposition *gamma_dep,
                     size_t idx = (size_t)s * nfb + bb;
                     double ct = g_lre_chi_tot[idx];
                     Ld  = g_lre_lambda_star[idx];
-                    eps = (ct > 0.0) ? g_lre_chi_abs[idx] / ct : 0.0;
+                    eps = (ct > 0.0)
+                        ? (g_lre_chi_abs[idx] +
+                           (line_eps_on ? g_lre_chi_line[idx] : 0.0)) / ct
+                        : 0.0;
                     lstar[bb] = Ld * eps;
                     /* Faithful ALI: anchor the response at the FROZEN per-bin J*_b
                      * (the SAME binned mean intensity nlte->J_nu that built H_photo),
@@ -4798,7 +4844,7 @@ void coupled_newton_solve_all(PlasmaState *plasma, GammaDeposition *gamma_dep,
             for (int ip = 0; ip < n_ip; ip++)
                 gamma_jnu[ip] = coupled_photoion_rate_jnu(atom, nlte, ip, s,
                                                           T_lag, n_shells,
-                                                          jbl, jbb, W);
+                                                          jbl, jbb, W, wbfloor_T);
         }
         double T_lo = 0.03 * T_rad, T_hi = 3.0 * T_rad;
         int conv = 0;

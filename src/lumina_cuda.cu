@@ -3033,9 +3033,12 @@ int main(int argc, char *argv[]) {
                     /* Option-2 integral RE: register the CMFGEN line opacity/
                      * source so the Newton T_e solve can add the radiative line
                      * term (LUMINA_RADEQ_LINE_RE=1). */
-                    radeq_set_line_re_source(cs.chi_line, cs.chi_abs, cs.chi_tot,
+                    /* line-RE/Newton must see only the THERMAL line channel
+                     * (chi_line_th); scattering share exchanges no gas energy. */
+                    radeq_set_line_re_source(cs.chi_line_th, cs.chi_abs, cs.chi_tot,
                                              cs.S_fixed, cs.J, cs.nu, cs.dnu,
-                                             cs.lambda_star, cs.n_shells, cs.n_bins);
+                                             cs.lambda_star, plasma.T_e,
+                                             cs.n_shells, cs.n_bins);
 
                     compute_radiative_equilibrium_te(&plasma,
                         gamma_dep_enabled ? &gamma_dep : NULL,

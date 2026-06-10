@@ -680,6 +680,7 @@ void radeq_set_line_re_source(const double *chi_line, const double *chi_abs,
                               const double *chi_tot, const double *S_fixed,
                               const double *J, const double *nu,
                               const double *dnu, const double *lambda_star,
+                              const double *T_e_assemble,
                               int n_shells, int n_bins);
 
 /* P5: Formal integral spectrum (noise-free, p-z formalism) */

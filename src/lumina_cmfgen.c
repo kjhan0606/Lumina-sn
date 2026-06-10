@@ -42,11 +42,13 @@ int cmfgen_init(CMFGENState *cs, const Geometry *geo)
     cs->chi_es      = calloc((size_t)NS * NB, sizeof(double));
     cs->chi_abs     = calloc((size_t)NS * NB, sizeof(double));
     cs->chi_line    = calloc((size_t)NS * NB, sizeof(double));
+    cs->chi_line_th = calloc((size_t)NS * NB, sizeof(double));
     cs->chi_tot     = calloc((size_t)NS * NB, sizeof(double));
     cs->S_fixed     = calloc((size_t)NS * NB, sizeof(double));
     cs->J           = calloc((size_t)NS * NB, sizeof(double));
     cs->lambda_star = calloc((size_t)NS * NB, sizeof(double));
     if (!cs->nu || !cs->dnu || !cs->chi_es || !cs->chi_abs || !cs->chi_line ||
+        !cs->chi_line_th ||
         !cs->chi_tot || !cs->S_fixed || !cs->J || !cs->lambda_star) {
         fprintf(stderr, "[CMFGEN] init alloc failed\n");
         return -1;
@@ -77,7 +79,8 @@ void cmfgen_free(CMFGENState *cs)
 {
     if (!cs) return;
     free(cs->nu); free(cs->dnu); free(cs->chi_es); free(cs->chi_abs);
-    free(cs->chi_line); free(cs->chi_tot); free(cs->S_fixed); free(cs->J);
+    free(cs->chi_line); free(cs->chi_line_th);
+    free(cs->chi_tot); free(cs->S_fixed); free(cs->J);
     free(cs->lambda_star); free(cs->p_ray);
     memset(cs, 0, sizeof(*cs));
 }
@@ -121,6 +124,21 @@ void cmfgen_assemble(CMFGENState *cs, const Geometry *geo,
         }
     }
 
+    /* Line-forest scattering split (LUMINA_CMFGEN_LINE_EPS = eps in (0,1]):
+     * two-level treatment of the binned forest, S_line=(1-eps)*J+eps*B. The
+     * scattering remainder (1-eps)*chi_line joins chi_es so the ALI closure
+     * transports the photospheric FUV color outward (root of the inner
+     * Gamma(Mg I/Si I) 5-1000x deficit: J was thermalized to the LOCAL cold
+     * B within <1 shell by the pure-absorption frozen-source treatment).
+     * Applied only in bins with chi_line > GATE*chi_abs (line-dominated;
+     * default gate 1.0). eps<=0 or unset -> byte-identical legacy path. */
+    double line_eps = -1.0, line_gate = 1.0;
+    { const char *le = getenv("LUMINA_CMFGEN_LINE_EPS");
+      if (le) line_eps = atof(le);
+      const char *lg = getenv("LUMINA_CMFGEN_LINE_EPS_GATE");
+      if (lg) line_gate = atof(lg); }
+    long n_split = 0;
+
     /* electron scattering + bf/ff thermal absorption + combine. */
     for (int s = 0; s < NS; ++s) {
         double Te  = plasma->T_e[s];
@@ -148,13 +166,32 @@ void cmfgen_assemble(CMFGENState *cs, const Geometry *geo,
             double eta_ln  = eta_line[idx];          /* still in scratch */
             double chi_t   = chi_e + chi_a + chi_ln;
 
-            cs->chi_es[idx]  = chi_e;
-            cs->chi_abs[idx] = chi_a;
-            /* S_fixed = (chi_abs*B + eta_line) / chi_tot  (scatter excluded) */
+            double chi_ln_th = chi_ln;               /* legacy: all thermal */
+            if (line_eps > 0.0 && line_eps <= 1.0 &&
+                chi_ln > line_gate * chi_a) {
+                chi_ln_th = line_eps * chi_ln;
+                eta_ln   *= line_eps;   /* thermal share of the NLTE source */
+                n_split++;
+            }
+            cs->chi_es[idx]      = chi_e + (chi_ln - chi_ln_th);
+            cs->chi_abs[idx]     = chi_a;
+            cs->chi_line_th[idx] = chi_ln_th;
+            /* S_fixed = (chi_abs*B + thermal line emissivity)/chi_tot; the
+             * scattering share enters the solve as r*J, NOT here (no double
+             * count of the line source). */
             cs->S_fixed[idx] = (chi_t > 0.0)
                              ? (chi_a * B + eta_ln) / chi_t : 0.0;
             /* chi_tot scratch now overwritten with the real total */
             cs->chi_tot[idx] = chi_t;
+        }
+    }
+    if (line_eps > 0.0 && cs->diag) {
+        static int eps_diag_once = 0;
+        if (!eps_diag_once) {
+            eps_diag_once = 1;
+            printf("[CMFGEN-LINEEPS] eps=%.3f gate=%.2f split bins %ld/%ld "
+                   "(line scattering -> ALI channel)\n",
+                   line_eps, line_gate, n_split, (long)NS * NB);
         }
     }
 }
@@ -378,6 +415,30 @@ void cmfgen_validate(const CMFGENState *cs, const Geometry *geo,
         printf("[CMFGEN-LINEHEAT] s=%2d Te=%.0f  H_line_abs=%.3e  emis_line=%.3e  "
                "net=%.3e\n", s, Te, abs_r, emi_r, abs_r - emi_r);
     }
+
+    /* Full deterministic-J dump (LUMINA_CMFGEN_JDUMP=1): per shell x bin, the
+     * solved J plus the opacity split and ALI diagonal, so the thin-UV floor
+     * (Defect A) can be located offline against the sigma_bf edges. */
+    const char *jd = getenv("LUMINA_CMFGEN_JDUMP");
+    if (jd && atoi(jd)) {
+        FILE *jf = fopen("lumina_cmfgen_jnu.csv", "w");
+        if (jf) {
+            fprintf(jf, "shell,bin,nu,J,chi_es,chi_abs,chi_line,chi_tot,"
+                        "S_fixed,lambda_star\n");
+            for (int s = 0; s < NS; ++s)
+                for (int b = 0; b < NB; ++b) {
+                    size_t idx = (size_t)s * NB + b;
+                    fprintf(jf, "%d,%d,%.6e,%.6e,%.4e,%.4e,%.4e,%.4e,%.4e,%.4e\n",
+                            s, b, cs->nu[b], cs->J[idx], cs->chi_es[idx],
+                            cs->chi_abs[idx], cs->chi_line[idx],
+                            cs->chi_tot[idx], cs->S_fixed[idx],
+                            cs->lambda_star[idx]);
+                }
+            fclose(jf);
+            printf("[CMFGEN-JDUMP] wrote lumina_cmfgen_jnu.csv (%d shells x %d bins)\n",
+                   NS, NB);
+        }
+    }
     fflush(stdout);
 }
 
@@ -543,9 +604,12 @@ int cmfgen_run(Geometry *geo, OpacityState *opac, BFOpacity *bf,
         cmfgen_write_jnu(&cs, nlte);
         /* Option-2 integral RE: register the CMFGEN line opacity/source for the
          * RADEQ/Newton T_e solve (LUMINA_RADEQ_LINE_RE=1). */
-        radeq_set_line_re_source(cs.chi_line, cs.chi_abs, cs.chi_tot,
+        /* line-RE/Newton must see only the THERMAL line channel (chi_line_th):
+         * the scattering share exchanges no gas energy (codex review). */
+        radeq_set_line_re_source(cs.chi_line_th, cs.chi_abs, cs.chi_tot,
                                  cs.S_fixed, cs.J, cs.nu, cs.dnu,
-                                 cs.lambda_star, cs.n_shells, cs.n_bins);
+                                 cs.lambda_star, plasma->T_e,
+                                 cs.n_shells, cs.n_bins);
 
         /* downstream solvers reused unchanged */
         compute_radiative_equilibrium_te(plasma, gamma, nlte, atom, opac,
