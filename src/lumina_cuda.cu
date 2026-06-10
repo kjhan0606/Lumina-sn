@@ -3030,6 +3030,12 @@ int main(int argc, char *argv[]) {
                     if (cs.diag && it == pc_iter - 1)
                         cmfgen_validate(&cs, &geo, &plasma);
                     cmfgen_write_jnu(&cs, &nlte);
+                    /* Option-2 integral RE: register the CMFGEN line opacity/
+                     * source so the Newton T_e solve can add the radiative line
+                     * term (LUMINA_RADEQ_LINE_RE=1). */
+                    radeq_set_line_re_source(cs.chi_line, cs.chi_abs, cs.chi_tot,
+                                             cs.S_fixed, cs.J, cs.nu, cs.dnu,
+                                             cs.lambda_star, cs.n_shells, cs.n_bins);
 
                     compute_radiative_equilibrium_te(&plasma,
                         gamma_dep_enabled ? &gamma_dep : NULL,
@@ -3041,7 +3047,7 @@ int main(int argc, char *argv[]) {
                         atoi(getenv("LUMINA_COUPLED_NEWTON")) && enable_nlte)
                         coupled_newton_solve_all(&plasma,
                             gamma_dep_enabled ? &gamma_dep : NULL,
-                            &nlte, &atom_data, &opacity,
+                            &nlte, &atom_data, &opacity, &geo,
                             geo.time_explosion, geo.n_shells);
                     if (enable_nlte && it >= nlte_start_iter) {
                         nlte_apply_uv_jnu_cap(&nlte, &plasma, geo.n_shells);
@@ -3057,6 +3063,8 @@ int main(int argc, char *argv[]) {
                            plasma.T_e[geo.n_shells-1],
                            cs.J[(size_t)(geo.n_shells/2)*cs.n_bins + 500]);
                 }
+                cmfgen_write_spectrum(&cs, &geo, config.T_inner,
+                                      "lumina_spectrum.csv");
                 cmfgen_free(&cs);
             }
 
@@ -3318,7 +3326,7 @@ int main(int argc, char *argv[]) {
                 atoi(getenv("LUMINA_COUPLED_NEWTON")) && enable_nlte)
                 coupled_newton_solve_all(&plasma,
                     gamma_dep_enabled ? &gamma_dep : NULL,
-                    &nlte, &atom_data, &opacity,
+                    &nlte, &atom_data, &opacity, &geo,
                     geo.time_explosion, geo.n_shells);
 
             /* Recompute BF opacity with updated plasma and re-upload to GPU */
@@ -3648,6 +3656,22 @@ int main(int argc, char *argv[]) {
         }
         fclose(out); /* Phase 6 - Step 8 */
         printf("Plasma state written to lumina_plasma_state.csv\n"); /* Phase 6 - Step 8 */
+    }
+
+    /* Per-stage ion-population dump: true ionization state incl. Saha-treated
+     * neutral stages (the NLTE level dump is blind to non-NLTE ion stages). */
+    if (getenv("LUMINA_ION_POP_DUMP") && atoi(getenv("LUMINA_ION_POP_DUMP"))) {
+        FILE *ip = fopen("lumina_ion_pops.csv", "w");
+        if (ip) {
+            fprintf(ip, "shell_id,Z,stage,n_ion\n");
+            for (int s = 0; s < geo.n_shells; s++)
+                for (int j = 0; j < atom_data.n_ion_pops; j++)
+                    fprintf(ip, "%d,%d,%d,%.6e\n", s,
+                            atom_data.ion_pop_Z[j], atom_data.ion_pop_stage[j],
+                            atom_data.ion_number_density[(size_t)j * geo.n_shells + s]);
+            fclose(ip);
+            printf("Ion populations written to lumina_ion_pops.csv\n");
+        }
     }
 
     /* Phase 6 - Step 8: Cleanup */

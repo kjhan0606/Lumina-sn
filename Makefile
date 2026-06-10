@@ -17,8 +17,15 @@ TARGET = lumina
 # CUDA source
 CUDA_SRC = src/lumina_cuda.cu
 NVCC = nvcc
-GPU_ARCH ?= sm_86
-NVFLAGS = -O2 -arch=$(GPU_ARCH) -std=c++14 -Xcompiler -fopenmp -DLUMINA_HAS_CUDA_BF_GEMM
+# Multi-arch fatbin by default so one binary runs on A100(sm_80)/A40(sm_86)/H100(sm_90).
+# Override with e.g. `make GPU_ARCH=sm_86` for a single-arch build.
+GPU_ARCH ?=
+ifeq ($(strip $(GPU_ARCH)),)
+GPU_GENCODE = -gencode arch=compute_80,code=sm_80 -gencode arch=compute_86,code=sm_86 -gencode arch=compute_90,code=sm_90
+else
+GPU_GENCODE = -arch=$(GPU_ARCH)
+endif
+NVFLAGS = -O2 $(GPU_GENCODE) -std=c++14 -Xcompiler -fopenmp -DLUMINA_HAS_CUDA_BF_GEMM
 NVLDFLAGS = -lm -lcublas -Xcompiler -fopenmp
 
 # Default target

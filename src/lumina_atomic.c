@@ -336,6 +336,10 @@ int load_tardis_reference_data(const char *ref_dir, Geometry *geo,
         plasma->T_e_T_rad_ratio = 0.9;
         p = strstr(buf, "\"T_e_T_rad_ratio\"");
         if (p) { p = strchr(p, ':'); plasma->T_e_T_rad_ratio = atof(p + 1); }
+        /* Env override (perturbation test: does the 0.9 seed/fallback anchor the
+         * converged T_e?). LUMINA_TE_TRAD_RATIO=0.7 etc. overrides config. */
+        { const char *e = getenv("LUMINA_TE_TRAD_RATIO");
+          if (e && atof(e) > 0.0) plasma->T_e_T_rad_ratio = atof(e); }
 
         printf("  Config: t_exp=%.6e s, T_inner=%.2f K, L=%.3e erg/s\n", /* Phase 2 - Step 10b */
                geo->time_explosion, config->T_inner, config->luminosity_requested); /* Phase 2 - Step 10b */

@@ -479,6 +479,72 @@ def parse_col(path: Path) -> ColIon:
 
 
 # ---------------------------------------------------------------------------
+# f_to_s  (super-level assignments)
+# ---------------------------------------------------------------------------
+
+@dataclass
+class FtoS:
+    """CMFGEN full-level -> super-level map (XzV_F_TO_S files).
+
+    n_levels : number of full levels (header) -- matches osc_data ID order.
+    n_super  : number of super levels (max SL index).
+    sl_of_fl : int array length n_levels, 0-based super-level index per
+               full level, indexed by (osc cmfgen_id - 1).
+    """
+    n_levels: int = 0
+    n_super: int = 0
+    sl_of_fl: np.ndarray = field(default_factory=lambda: np.empty(0, dtype='i4'))
+
+
+def parse_f_to_s(path: Path) -> FtoS:
+    """Parse a CMFGEN f_to_s (super-level assignment) file.
+
+    Data rows: [config, g, E_cm, nu15, Lam, SL, 0, FL_id]. The header tag
+    'Entry number of link to super level' gives the 1-based token position of
+    the SL column (config counted as token 1; observed value 6). FL_id is the
+    last token and matches the osc_data level ID ordering.
+    """
+    lines = _read_text(path)
+    n_levels = 0
+    sl_token = 6  # 1-based; overridden by header if present
+    for ln in lines:
+        v, key = _parse_header_value(ln)
+        if v is None:
+            continue
+        kl = key.lower()
+        if 'number of energy levels' in kl:
+            n_levels = int(float(v))
+        elif 'link to super level' in kl:
+            sl_token = int(float(v))
+    if n_levels <= 0:
+        raise ValueError(f"f_to_s {path}: no level count in header")
+
+    sl_col = sl_token - 1  # 0-based index after split
+    sl_of_fl = np.full(n_levels, -1, dtype='i4')
+    max_sl = 0
+    for ln in lines:
+        toks = ln.split()
+        if len(toks) <= sl_col + 1:  # need SL token plus a trailing FL id
+            continue
+        try:
+            fl_id = int(toks[-1])
+            sl = int(toks[sl_col])
+        except ValueError:
+            continue
+        if fl_id < 1 or fl_id > n_levels or sl < 1:
+            continue
+        sl_of_fl[fl_id - 1] = sl - 1  # 0-based
+        if sl > max_sl:
+            max_sl = sl
+
+    missing = int((sl_of_fl < 0).sum())
+    if missing:
+        raise ValueError(f"f_to_s {path}: {missing}/{n_levels} full levels "
+                         f"unmapped to a super level")
+    return FtoS(n_levels=n_levels, n_super=max_sl, sl_of_fl=sl_of_fl)
+
+
+# ---------------------------------------------------------------------------
 # Main: smoke test on Fe II 19apr23
 # ---------------------------------------------------------------------------
 

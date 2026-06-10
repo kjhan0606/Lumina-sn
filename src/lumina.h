@@ -666,8 +666,21 @@ void compute_radiative_equilibrium_te(PlasmaState *plasma, GammaDeposition *gamm
  * + compute_plasma_state to overwrite their (T_e, n_e) with the coupled solution. */
 void coupled_newton_solve_all(PlasmaState *plasma, GammaDeposition *gamma_dep,
                               NLTEConfig *nlte, AtomicData *atom,
-                              OpacityState *opacity,
+                              OpacityState *opacity, Geometry *geo,
                               double time_explosion, int n_shells);
+
+/* Option-2 integral radiative equilibrium: register the per-(shell,bin) CMFGEN
+ * line opacity/source so the RADEQ/Newton T_e solve can add the radiative line
+ * term 4π∫χ_line(J−S_l)dν (T_e-responsive) in place of the collisional bound-
+ * bound cooling. Arrays are [n_shells*n_bins]; nu/dnu are [n_bins]. Call once
+ * per CMFGEN outer iter after cmfgen_assemble + cmfgen_solve_J, before the
+ * RADEQ/Newton solve. Pass chi_line=NULL to disable (default). Gated at use
+ * time by LUMINA_RADEQ_LINE_RE=1. */
+void radeq_set_line_re_source(const double *chi_line, const double *chi_abs,
+                              const double *chi_tot, const double *S_fixed,
+                              const double *J, const double *nu,
+                              const double *dnu, const double *lambda_star,
+                              int n_shells, int n_bins);
 
 /* P5: Formal integral spectrum (noise-free, p-z formalism) */
 void compute_formal_integral_spectrum(

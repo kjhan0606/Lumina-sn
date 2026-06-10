@@ -30,12 +30,14 @@ import numpy as np
 import h5py
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from cmfgen_parser import parse_osc, parse_phot, parse_col  # noqa: E402
+from cmfgen_parser import parse_osc, parse_phot, parse_col, parse_f_to_s  # noqa: E402
 
 ROOT        = Path('/home/kjhan/BACKUP/Eunha.A1/Claude/Lumina-sn')
 CMFGEN_ROOT = ROOT / 'data' / 'atomic' / 'cmfgen'
-OUT_DIR     = ROOT / 'data' / 'tardis_reference_cmfgen'
-OUT_H5      = ROOT / 'data' / 'atomic' / 'atomic_data_cmfgen.h5'
+import os
+_OUT_SUFFIX = os.environ.get('CMFGEN_OUT_SUFFIX', '')
+OUT_DIR     = ROOT / 'data' / f'tardis_reference_cmfgen{_OUT_SUFFIX}'
+OUT_H5      = ROOT / 'data' / 'atomic' / f'atomic_data_cmfgen{_OUT_SUFFIX}.h5'
 
 CMFGEN_DIRS = {
     1:'HYD', 2:'HE', 6:'CARB', 7:'NIT', 8:'OXY', 10:'NEON', 11:'NA',
@@ -65,19 +67,50 @@ ION_LEVEL_CAPS: dict[tuple[int,int], int | None] = {
     # all ions ~3 GB).
     (6, 1):None, (6, 2):None, (6, 3):None,
     (8, 1):None, (8, 2):None, (8, 3):None,
-    (12, 1):None, (12, 2):None,
-    (13, 1): 80, (13, 2): 80, (13, 3): 80,
+    # #24 ionfix (2026-06-01): add the missing TOP ion stage for elements whose
+    # nebular-Saha dominant stage at SN-ejecta shell conditions lies ABOVE the
+    # previous ceiling (over-populated lower ion -> spurious opacity). Sc/Mg are
+    # trapped at II across ALL shells (4700A carriers); Al/Ti/Cr trapped in outer
+    # shells only. CMFGEN tracks all these stages, so this = faithfulness.
+    (12, 1):None, (12, 2):None, (12, 3):None,      # +Mg IV(III idx) MG/III 201 lvl
+    (13, 1): 80, (13, 2): 80, (13, 3): 80, (13, 4):None,   # +Al IV AL/IV 201 lvl
     (14, 1):None, (14, 2):None, (14, 3):None, (14, 4):None,
     (16, 1):None, (16, 2):None, (16, 3):None,
     (20, 1):None, (20, 2):None, (20, 3): 200,
-    (21, 1): 60, (21, 2): 500,
-    (22, 1): 200, (22, 2): 600, (22, 3): 600,
+    (21, 1): 60, (21, 2): 500, (21, 3):None,       # +Sc III SCAN/III 87 lvl
+    (22, 1): 200, (22, 2): 600, (22, 3): 600, (22, 4):None, # +Ti IV TIT/IV 126 lvl
     (23, 1): 60, (23, 2): 200,
-    (24, 1): 200, (24, 2): 600, (24, 3): 800,
-    (25, 1): 60, (25, 2): 600, (25, 3): 800,
-    (26, 1): 300, (26, 2): 800, (26, 3): 800, (26, 4): 200, (26, 5): 200,
-    (27, 1): 200, (27, 2):1500, (27, 3):1500, (27, 4): 200,
-    (28, 1): 800, (28, 2): 800, (28, 3): 800, (28, 4): 200,
+    # #219g (2026-05-25): iron-peak III caps raised to full CMFGEN level lists
+    # (probe whether 800-cap was masking HST UV[1700,3000]=0.297 floor).
+    # Fe III 1500, Co III 3917 (None=full), Cr/Mn/Ni III 1000 (None=full).
+    (24, 1): 200, (24, 2): 600, (24, 3):None, (24, 4): 200, # +Cr IV CHRO/IV cap 200
+    (25, 1): 60, (25, 2): 600, (25, 3):None,
+    (26, 1): 300, (26, 2): 800, (26, 3):None, (26, 4): 200, (26, 5): 200,
+    (27, 1): 200, (27, 2):1500, (27, 3):None, (27, 4): 200,
+    (28, 1): 800, (28, 2): 800, (28, 3):None, (28, 4): 200,
+}
+
+# CMFGEN super-level scheme (XzV_F_TO_S): full levels (FL) carry line opacity,
+# collapsed to super-levels (SL) for the NLTE statistical-equilibrium solve;
+# FL populations are distributed within an SL by Boltzmann at the local T.
+# This is CMFGEN's *actual published method* (Hillier & Miller 1998) and is
+# Phase-1-faithful (matching the paper's map, NOT a tuning knob).  When enabled
+# (env CMFGEN_SUPER_LEVELS=1) the listed ions keep ALL full levels (no lowest-N
+# truncation) and attach the f_to_s super-level index per level.  All other
+# ions get the identity map (each FL is its own SL) so the downstream solver
+# reproduces current behaviour for them.
+# Value = f_to_s filename inside the chosen date dir.
+SUPER_LEVEL_ENABLED = os.environ.get('CMFGEN_SUPER_LEVELS', '0') not in ('0', '', 'false')
+SUPER_LEVEL_IONS: dict[tuple[int, int], str] = {
+    (26, 2): 'f_to_s_342',   # Fe II  2698 FL -> 342 SL (E%LS 1%)
+    (27, 2): 'f_to_s_252',   # Co II  2747 FL -> 252 SL (E%LS 1.5%)
+    (28, 2): 'f_to_s_88',    # Ni II  1000 FL ->  88 SL
+    # level-cap sweep (2026-06-04): lift the last capped iron-peak II ions from
+    # the 600 cap to full 1000 FL via super-levels (Fe/Co/Ni II were already
+    # full). Closes the level-cap hypothesis for the macroatom over-redshift.
+    (22, 2): 'f_to_s_92',    # Ti II  1000 FL ->  92 SL
+    (24, 2): 'f_to_s_84',    # Cr II  1000 FL ->  84 SL
+    (25, 2): 'f_to_s_92',    # Mn II  1000 FL ->  92 SL
 }
 
 N_SHELLS = 30
@@ -89,6 +122,7 @@ DEFAULT_ABUNDANCES = {
 
 C_CGS  = 2.99792458e10
 H_CGS  = 6.62607015e-27
+K_CGS  = 1.380649e-16
 EV_TO_ERG = 1.602176634e-12
 
 # Pre-bake target grid: must match NLTE_NU_{MIN,MAX} / NLTE_N_FREQ_BINS in
@@ -96,7 +130,7 @@ EV_TO_ERG = 1.602176634e-12
 BF_NU_MIN     = 1.5e14   # c / 20000 A
 BF_NU_MAX     = 3.0e16   # c / 100 A
 BF_N_FREQ_BIN = 1000
-OUT_SIGMA_BIN = ROOT / 'data' / 'atomic' / 'cmfgen_sigma_bf.bin'
+OUT_SIGMA_BIN = ROOT / 'data' / 'atomic' / f'cmfgen_sigma_bf{_OUT_SUFFIX}.bin'
 _DATE_RE = re.compile(r'^\d{1,2}[a-z]{3}\d{2}$')
 _MONTHS = {'jan':1,'feb':2,'mar':3,'apr':4,'may':5,'jun':6,
            'jul':7,'aug':8,'sep':9,'oct':10,'nov':11,'dec':12}
@@ -165,13 +199,46 @@ def parse_all_ions() -> dict:
         if osc.n_levels == 0:
             continue
 
-        n_kept = osc.n_levels if cap is None else min(osc.n_levels, cap)
+        # Super-level ions keep ALL full levels (FL carry opacity); the NLTE
+        # solve later collapses them to f_to_s super-levels.
+        ftos = None
+        use_superlev = SUPER_LEVEL_ENABLED and (Z, stage) in SUPER_LEVEL_IONS
+        if use_superlev:
+            fts_name = SUPER_LEVEL_IONS[(Z, stage)]
+            fts_p = date_dir / fts_name
+            if not fts_p.exists():
+                print(f"  WARN {SYM[Z]:2s} {ROMAN[stage]:4s}: f_to_s "
+                      f"{fts_name} absent in {date_dir.name}; using cap fallback")
+                use_superlev = False
+            else:
+                try:
+                    ftos = parse_f_to_s(fts_p)
+                except Exception as e:
+                    print(f"  WARN {SYM[Z]:2s} {ROMAN[stage]:4s} f_to_s: {e}")
+                    use_superlev = False
+                else:
+                    if ftos.n_levels != osc.n_levels:
+                        print(f"  WARN {SYM[Z]:2s} {ROMAN[stage]:4s}: f_to_s "
+                              f"n_levels {ftos.n_levels} != osc {osc.n_levels}; "
+                              f"using cap fallback")
+                        ftos = None
+                        use_superlev = False
+
+        if use_superlev:
+            n_kept = osc.n_levels   # keep everything for opacity
+        else:
+            n_kept = osc.n_levels if cap is None else min(osc.n_levels, cap)
         levels = osc.levels[:n_kept]
+        # CMFGEN encodes Kurucz-computed (theoretical, no observed lambda)
+        # transitions with negative lam_A. |lam_A| is the correct rest
+        # wavelength; the previous `> 0.0` filter dropped 86%/99% of
+        # Fe III / Co III bb network and starved the rate matrix (#266).
         tmask = (osc.transitions['i'] >= 1) & (osc.transitions['j'] >= 1) & \
                 (osc.transitions['i'] <= n_kept) & \
                 (osc.transitions['j'] <= n_kept) & \
-                (osc.transitions['lam_A'] > 0.0)
-        trans = osc.transitions[tmask]
+                (osc.transitions['lam_A'] != 0.0)
+        trans = osc.transitions[tmask].copy()
+        trans['lam_A'] = np.abs(trans['lam_A'])
 
         phot = None
         pp = _phot_path(date_dir)
@@ -189,9 +256,10 @@ def parse_all_ions() -> dict:
 
         out[(Z, stage)] = dict(osc=osc, levels=levels, trans=trans,
                                phot=phot, col=col, date=date_dir.name,
-                               n_kept=n_kept)
+                               n_kept=n_kept, ftos=ftos)
+        sl_tag = f" SL={ftos.n_super}" if ftos is not None else ""
         print(f"  {SYM[Z]:2s} {ROMAN[stage]:4s}: "
-              f"{n_kept:4d}/{osc.n_levels:5d} lev, "
+              f"{n_kept:4d}/{osc.n_levels:5d} lev{sl_tag}, "
               f"{len(trans):6d}/{osc.n_transitions:6d} trn, "
               f"phot={'Y' if phot and phot.entries else '-'} "
               f"col={'Y' if col and col.entries else '-'}  ({date_dir.name})")
@@ -203,9 +271,13 @@ def build_global_levels(ion_data: dict):
 
     Returns
     -------
-    levels_rows : list of (Z, ion_csv, lvl_csv, E_eV, g, metastable)
+    levels_rows : list of (Z, ion_csv, lvl_csv, E_eV, g, metastable, super_level)
     level_lookup_global : dict (Z, stage, cmfgen_id_1based) -> global_idx
     per_ion_g : dict (Z, stage) -> ndarray of g[lvl_csv]
+
+    super_level is a per-ion 0-based super-level index.  For CMFGEN super-level
+    ions it is the f_to_s assignment; for all other ions it equals lvl_csv
+    (identity map: each full level is its own super level).
     """
     rows = []
     lookup = {}
@@ -215,7 +287,18 @@ def build_global_levels(ion_data: dict):
         ion_csv = stage - 1
         levs = d['levels']
         n = len(levs)
+        ftos = d.get('ftos')
         gs = np.empty(n, dtype='f8')
+        # Bug #2 fix: physical metastable = no allowed downward E1 transition.
+        # CMFGEN d['trans'] lists only E1 lines; sum A_ul where this level is upper.
+        # Lucy 2002 §4 definition: A_rad_sum == 0 ⇒ metastable (n_lower=n_meta, weight=1).
+        A_rad_sum = np.zeros(n, dtype='f8')
+        for t in d['trans']:
+            i = int(t['i']); j = int(t['j'])
+            if i > j: i, j = j, i
+            upper_k = j - 1
+            if 0 <= upper_k < n:
+                A_rad_sum[upper_k] += float(t['A'])
         for k in range(n):
             cmfgen_id = int(levs['ID'][k])     # 1-based
             E_cm = float(levs['E_cm'][k])
@@ -224,10 +307,13 @@ def build_global_levels(ion_data: dict):
             E_eV = E_cm * 1.239841984e-4
             g_val = float(levs['g'][k])
             gs[k] = g_val
-            metastable = 0  # CMFGEN does not tag metastable; ground always metastable
-            if k == 0:
-                metastable = 1
-            rows.append((Z, ion_csv, k, E_eV, int(round(g_val)), metastable))
+            metastable = 1 if A_rad_sum[k] == 0.0 else 0
+            if ftos is not None:
+                super_level = int(ftos.sl_of_fl[cmfgen_id - 1])
+            else:
+                super_level = k   # identity: each full level is its own SL
+            rows.append((Z, ion_csv, k, E_eV, int(round(g_val)), metastable,
+                         super_level))
             lookup[(Z, stage, cmfgen_id)] = n_total
             n_total += 1
         per_ion_g[(Z, stage)] = gs
@@ -276,9 +362,10 @@ def build_lines(ion_data: dict, level_lookup: dict, per_ion_g: dict):
 
 def write_levels_csv(rows, path: Path) -> None:
     with open(path, 'w') as fp:
-        fp.write("atomic_number,ion_number,level_number,energy_eV,g,metastable\n")
+        fp.write("atomic_number,ion_number,level_number,energy_eV,g,metastable,"
+                 "super_level\n")
         for r in rows:
-            fp.write(f"{r[0]},{r[1]},{r[2]},{r[3]:.10f},{r[4]},{r[5]}\n")
+            fp.write(f"{r[0]},{r[1]},{r[2]},{r[3]:.10f},{r[4]},{r[5]},{r[6]}\n")
 
 
 def write_line_list_csv(L, levels_rows, path: Path) -> None:
@@ -319,9 +406,18 @@ def write_macro_atom(L, levels_rows, level_lookup_global,
       (-1) emission        : src=upper, dst=lower (line photon)
       ( 0) internal-down   : src=upper, dst=lower (no photon)
       ( 1) internal-up     : src=lower, dst=upper (excitation)
-    Initial transition_probability = 1/N within each source-level block;
-    lumina_plasma.compute_transition_probabilities() refines per iter.
+    Static transition_probability = A_ul-weighted radiative rates at reference
+    photospheric conditions (NOT flat 1/N): emit & internal-down ∝ A_ul,
+    internal-up ∝ B_lu·W·B_ν(T_rad). finalize_cmfgen_ref_npy normalizes each
+    source-level block to Σp=1. This is the static fallback used when the
+    per-shell dynamic recompute (LUMINA_DYNAMIC_TRANSPROB) is off; the old flat
+    1/N over-weighted internal transitions (red-pileup placeholder, #257).
+    Reference: T_rad_ref/W_ref are representative photospheric values; the live
+    path overrides per shell when dynamic transprob is enabled.
     """
+    T_RAD_REF = 10000.0   # K, ≈ converged DDC15 T_inner
+    W_REF     = 0.5        # dilute factor near photosphere
+
     n_levels = len(levels_rows)
     n_lines  = L['Z'].size
 
@@ -333,13 +429,30 @@ def write_macro_atom(L, levels_rows, level_lookup_global,
         glo[i] = level_lookup_global[(Z, ion_csv + 1, int(L['lo'][i]) + 1)]
         gup[i] = level_lookup_global[(Z, ion_csv + 1, int(L['up'][i]) + 1)]
 
-    # Bucket transitions by source level
-    src_buckets: list[list[tuple[int, int, int]]] = [[] for _ in range(n_levels)]
+    # Per-line radiative-rate weights (relative; finalize normalizes per block).
+    g_map = {}
+    for r in levels_rows:
+        g_map[(r[0], r[1], r[2])] = float(r[4])
+    g_lo = np.array([g_map[(int(L['Z'][i]), int(L['ion'][i]), int(L['lo'][i]))]
+                     for i in range(n_lines)], dtype='f8')
+    g_up = np.array([g_map[(int(L['Z'][i]), int(L['ion'][i]), int(L['up'][i]))]
+                     for i in range(n_lines)], dtype='f8')
+    nu_l  = L['nu'].astype('f8')
+    A_ul  = L['A_ul'].astype('f8')
+    B_lu  = A_ul * (C_CGS ** 2) / (8 * np.pi * H_CGS * (nu_l ** 3)) * (g_up / g_lo)
+    x = H_CGS * nu_l / (K_CGS * T_RAD_REF)
+    B_nu = (2 * H_CGS * nu_l ** 3 / C_CGS ** 2) / np.expm1(np.clip(x, 1e-30, 700.0))
+    w_emit = A_ul                    # ttype -1  (β folded into per-block norm)
+    w_idn  = A_ul                    # ttype  0
+    w_iup  = B_lu * W_REF * B_nu     # ttype +1
+
+    # Bucket transitions by source level: (line_id, ttype, dst_global, weight)
+    src_buckets: list[list[tuple[int, int, int, float]]] = [[] for _ in range(n_levels)]
     # tuple = (line_id, ttype, dst_global_idx)
     for i in range(n_lines):
-        src_buckets[gup[i]].append((i, -1, int(glo[i])))   # emission
-        src_buckets[gup[i]].append((i,  0, int(glo[i])))   # internal-down
-        src_buckets[glo[i]].append((i,  1, int(gup[i])))   # internal-up
+        src_buckets[gup[i]].append((i, -1, int(glo[i]), float(w_emit[i])))  # emission
+        src_buckets[gup[i]].append((i,  0, int(glo[i]), float(w_idn[i])))   # internal-down
+        src_buckets[glo[i]].append((i,  1, int(gup[i]), float(w_iup[i])))   # internal-up
 
     n_trans = sum(len(b) for b in src_buckets)
     count_down  = np.zeros(n_levels, dtype=np.int64)
@@ -349,7 +462,7 @@ def write_macro_atom(L, levels_rows, level_lookup_global,
     cum = 0
     for lvl in range(n_levels):
         b = src_buckets[lvl]
-        for (_, ttype, _) in b:
+        for (_, ttype, _, _) in b:
             if ttype == 1: count_up[lvl] += 1
             else:          count_down[lvl] += 1
         count_total[lvl] = len(b)
@@ -366,14 +479,12 @@ def write_macro_atom(L, levels_rows, level_lookup_global,
             r = levels_rows[lvl]
             Z, ion_csv, src_lvl_csv = r[0], r[1], r[2]
             b = src_buckets[lvl]
-            n = len(b)
-            prob = 1.0 / n if n > 0 else 0.0
-            for (line_id, ttype, dst_global) in b:
+            for (line_id, ttype, dst_global, weight) in b:
                 # destination level_number_csv = (Z, ion_csv) row 2 of dst
                 d_row = levels_rows[dst_global]
                 dst_lvl_csv = d_row[2]
                 fp.write(f"{idx},{Z},{ion_csv},{src_lvl_csv},{dst_lvl_csv},"
-                         f"{ttype},{prob:.10f},{line_id},{line_id},"
+                         f"{ttype},{weight:.10e},{line_id},{line_id},"
                          f"{dst_global},{lvl}\n")
                 idx += 1
 
@@ -495,7 +606,12 @@ def bake_sigma_bf_grid(ion_data: dict, ion_data_index: dict,
                 idx = np.searchsorted(nu_grid, nu_thresh)
                 if idx >= nb:
                     continue
-                gidx = level_lookup[(Z, stage, lvl_csv + 1)]
+                # When baking against a ref-merged level table, the ref may
+                # have fewer levels for this ion than CMFGEN provides; skip
+                # CMFGEN levels that don't exist in the ref.
+                gidx = level_lookup.get((Z, stage, lvl_csv + 1))
+                if gidx is None:
+                    continue
 
                 if entry.cs_type in (20, 21, 22):
                     if entry.energy.size == 0 or entry.sigma_Mb.size == 0:
