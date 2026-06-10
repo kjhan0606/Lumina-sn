@@ -98,8 +98,26 @@ void cmfgen_assemble(CMFGENState *cs, const Geometry *geo,
     double inv_ct = 1.0 / (CM_C * t_exp);   /* expansion-opacity prefactor */
 
     memset(cs->chi_line, 0, sizeof(double) * (size_t)NS * NB);
+    memset(cs->chi_line_th, 0, sizeof(double) * (size_t)NS * NB);
     /* line emissivity accumulator reuses chi_tot scratch before it is summed */
     double *eta_line = cs->chi_tot;
+
+    /* PHYSICAL per-line destruction probability (LUMINA_CMFGEN_LINE_EPS_PHYS=1):
+     * eps_l = C_ul/(C_ul + A_ul*beta_esc(tau_l)) per line — the measured FUV
+     * blockers are ground/metastable resonance lines (eps_phys~1e-3..1e-2) that
+     * the legacy path treats as FULLY thermal, pinning inner FUV J to the local
+     * cold B(T_e). The thermal channel chi_line_th and its emissivity are
+     * accumulated PER LINE (no bin-average eps mixing, codex review); the
+     * scattering remainder joins chi_es in the combine loop. Knobs:
+     * LUMINA_CMFGEN_EPS_FLOOR (1e-5), LUMINA_CMFGEN_EPS_CAP (1.0). */
+    int eps_phys = 0;
+    double eps_floor = 1e-5, eps_cap = 1.0;
+    { const char *ep = getenv("LUMINA_CMFGEN_LINE_EPS_PHYS");
+      if (ep && atoi(ep)) eps_phys = 1;
+      const char *ef = getenv("LUMINA_CMFGEN_EPS_FLOOR");
+      if (ef) eps_floor = atof(ef);
+      const char *ec = getenv("LUMINA_CMFGEN_EPS_CAP");
+      if (ec) eps_cap = atof(ec); }
     memset(eta_line, 0, sizeof(double) * (size_t)NS * NB);
 
     /* Expansion (Sobolev-binned) line opacity + emissivity.
@@ -108,6 +126,8 @@ void cmfgen_assemble(CMFGENState *cs, const Geometry *geo,
      * S_l = line_source_S if >0 else B_nu(T_e) (thermalised fallback). */
     for (int s = 0; s < NS; ++s) {
         double Te = plasma->T_e[s];
+        double ne_s = plasma->n_electron ? plasma->n_electron[s]
+                                         : opac->electron_density[s];
         for (int l = 0; l < n_lines; ++l) {
             double tau = opac->tau_sobolev[(size_t)l * NS + s];
             if (tau <= 1e-12) continue;
@@ -119,8 +139,18 @@ void cmfgen_assemble(CMFGENState *cs, const Geometry *geo,
             double w = frac * nu_l * inv_ct / cs->dnu[b];      /* cm^-1 */
             double Sl = opac->line_source_S[(size_t)l * NS + s];
             if (Sl <= 0.0) Sl = cm_planck(nu_l, Te);
-            cs->chi_line[(size_t)s * NB + b] += w;
-            eta_line[(size_t)s * NB + b]    += w * Sl;
+            size_t idx = (size_t)s * NB + b;
+            cs->chi_line[idx] += w;
+            if (eps_phys) {
+                double el = radeq_line_eps_phys(l, ne_s, Te, tau);
+                if (el < 0.0) el = 1.0;        /* table not built: thermal */
+                if (el < eps_floor) el = eps_floor;
+                if (el > eps_cap)   el = eps_cap;
+                cs->chi_line_th[idx] += w * el;
+                eta_line[idx]        += w * el * Sl;  /* thermal-channel eta */
+            } else {
+                eta_line[idx] += w * Sl;
+            }
         }
     }
 
@@ -167,8 +197,11 @@ void cmfgen_assemble(CMFGENState *cs, const Geometry *geo,
             double chi_t   = chi_e + chi_a + chi_ln;
 
             double chi_ln_th = chi_ln;               /* legacy: all thermal */
-            if (line_eps > 0.0 && line_eps <= 1.0 &&
-                chi_ln > line_gate * chi_a) {
+            if (eps_phys) {
+                chi_ln_th = cs->chi_line_th[idx];    /* per-line accumulated */
+                if (chi_ln_th > 0.0 || chi_ln > 0.0) n_split++;
+            } else if (line_eps > 0.0 && line_eps <= 1.0 &&
+                       chi_ln > line_gate * chi_a) {
                 chi_ln_th = line_eps * chi_ln;
                 eta_ln   *= line_eps;   /* thermal share of the NLTE source */
                 n_split++;
@@ -185,13 +218,18 @@ void cmfgen_assemble(CMFGENState *cs, const Geometry *geo,
             cs->chi_tot[idx] = chi_t;
         }
     }
-    if (line_eps > 0.0 && cs->diag) {
+    if ((line_eps > 0.0 || eps_phys) && cs->diag) {
         static int eps_diag_once = 0;
-        if (!eps_diag_once) {
+        if (!eps_diag_once && n_split > 0) {   /* first assemble with lines */
             eps_diag_once = 1;
-            printf("[CMFGEN-LINEEPS] eps=%.3f gate=%.2f split bins %ld/%ld "
-                   "(line scattering -> ALI channel)\n",
-                   line_eps, line_gate, n_split, (long)NS * NB);
+            double thsum = 0.0, lnsum = 0.0;
+            for (size_t i = 0; i < (size_t)NS * NB; i++) {
+                thsum += cs->chi_line_th[i]; lnsum += cs->chi_line[i];
+            }
+            printf("[CMFGEN-LINEEPS] %s eps=%.3f gate=%.2f split bins %ld/%ld "
+                   "global chi_th/chi_line=%.4f\n",
+                   eps_phys ? "PHYS" : "CONST", line_eps, line_gate,
+                   n_split, (long)NS * NB, lnsum > 0.0 ? thsum / lnsum : 1.0);
         }
     }
 }
@@ -202,13 +240,22 @@ void cmfgen_assemble(CMFGENState *cs, const Geometry *geo,
  * J[shell] (angle-averaged) and the diagonal lambda_star[shell]. */
 static void formal_solve_bin(CMFGENState *cs, const Geometry *geo,
                              int b, const double *S, double Bnu_inner,
-                             double *Jb, double *Lstar)
+                             double *Jb, double *Lstar,
+                             double *Tlo, double *Tup)
 {
+    /* Tlo/Tup (optional, NULL to skip): tridiagonal Lambda off-diagonals —
+     * Tlo[s] = nearest-INNER-neighbour coefficient L[s,s-1], Tup[s] = L[s,s+1].
+     * Accumulated like Lacc (one-segment-attenuated upstream psi), normalized
+     * by wacc. Used as the A4 ALI preconditioner (LUMINA_CMFGEN_LAMBDA_TRI). */
     int NS = cs->n_shells, NB = cs->n_bins;
     double *Jacc = calloc(NS, sizeof(double));
     double *wacc = calloc(NS, sizeof(double));
     double *Lacc = calloc(NS, sizeof(double));
-    if (!Jacc || !wacc || !Lacc) { free(Jacc); free(wacc); free(Lacc); return; }
+    double *TloA = Tlo ? calloc(NS, sizeof(double)) : NULL;
+    double *TupA = Tup ? calloc(NS, sizeof(double)) : NULL;
+    if (!Jacc || !wacc || !Lacc || (Tlo && !TloA) || (Tup && !TupA)) {
+        free(Jacc); free(wacc); free(Lacc); free(TloA); free(TupA); return;
+    }
 
     /* shell-midpoint radii for the source grid */
     /* For each ray of impact parameter p, find shells with r_outer > p and
@@ -249,6 +296,7 @@ static void formal_solve_bin(CMFGENState *cs, const Geometry *geo,
 
         /* ----- inbound leg (mu<0): from outer boundary inward ----- */
         double I = 0.0;                       /* outer BC: no incoming */
+        double psi_prev = 0.0;                /* upstream segment's psi */
         for (int i = 0; i < n; ++i) {
             int s = sh[i];
             double S_s = S[s];
@@ -265,11 +313,16 @@ static void formal_solve_bin(CMFGENState *cs, const Geometry *geo,
             Jacc[s] += ray_w * I;
             wacc[s] += ray_w;
             Lacc[s] += ray_w * psi;           /* diagonal local response */
+            /* inbound upstream neighbour is the next-OUTER shell sh[i-1]=s+1 */
+            if (TupA && i > 0) TupA[s] += ray_w * ex * psi_prev;
+            psi_prev = psi;
         }
+        double psi_turn = core ? 0.0 : psi_prev;  /* tangent carry (non-core) */
         /* ----- inner boundary ----- */
         if (core) I = Bnu_inner;              /* diffusive core emits B */
         /* (non-core grazing ray: I continues with whatever it accumulated) */
         /* ----- outbound leg (mu>0): from inner shell back out ----- */
+        psi_prev = 0.0;
         for (int i = n - 1; i >= 0; --i) {
             int s = sh[i];
             double S_s = S[s];
@@ -282,15 +335,30 @@ static void formal_solve_bin(CMFGENState *cs, const Geometry *geo,
             Jacc[s] += ray_w * I;
             wacc[s] += ray_w;
             Lacc[s] += ray_w * psi;
+            if (i == n - 1) {
+                /* first outbound visit: upstream is the SAME shell's inbound
+                 * segment (tangent turn) — a tridiag-LOCAL (diagonal) term;
+                 * core rays carry B(T_inner) instead (inhomogeneous, in J_fs).
+                 * Only counted in tridiag mode (keeps the legacy diagonal-ALI
+                 * Lambda* byte-identical when the preconditioner is off). */
+                if (TloA) Lacc[s] += ray_w * ex * psi_turn;
+            } else if (TloA) {
+                /* outbound upstream neighbour is the next-INNER shell s-1 */
+                TloA[s] += ray_w * ex * psi_prev;
+            }
+            psi_prev = psi;
         }
         free(sh); free(z);
     }
 
     for (int s = 0; s < NS; ++s) {
-        Jb[s]    = (wacc[s] > 0.0) ? Jacc[s] / wacc[s] : 0.0;
-        Lstar[s] = (wacc[s] > 0.0) ? Lacc[s] / wacc[s] : 0.0;
+        double iw = (wacc[s] > 0.0) ? 1.0 / wacc[s] : 0.0;
+        Jb[s]    = Jacc[s] * iw;
+        Lstar[s] = Lacc[s] * iw;
+        if (Tlo) Tlo[s] = TloA ? TloA[s] * iw : 0.0;
+        if (Tup) Tup[s] = TupA ? TupA[s] * iw : 0.0;
     }
-    free(Jacc); free(wacc); free(Lacc);
+    free(Jacc); free(wacc); free(Lacc); free(TloA); free(TupA);
 }
 
 /* ------------------------------------------------------------ */
@@ -303,6 +371,28 @@ void cmfgen_solve_J(CMFGENState *cs, const Geometry *geo, double T_inner,
     double *Lst  = malloc(sizeof(double) * NS);
     if (!S || !Jb || !Lst) { free(S); free(Jb); free(Lst); return; }
 
+    /* A4 tridiagonal-Lambda ALI preconditioner (LUMINA_CMFGEN_LAMBDA_TRI=1):
+     * solve (I - Lambda_tri*R) J_new = J_fs - Lambda_tri*R*J_old per ALI pass
+     * (Thomas, R=diag(r_s)). Needed once the line forest carries a near-unity
+     * scattering albedo (physical eps ~1e-3): the pure diagonal closure
+     * re-floors (the thin-UV pathology). Early-stop at max|dJ|/J < ALI_TOL. */
+    int use_tri = 0;
+    { const char *tr = getenv("LUMINA_CMFGEN_LAMBDA_TRI"); if (tr) use_tri = atoi(tr); }
+    double ali_tol = 1e-3;
+    { const char *tl = getenv("LUMINA_CMFGEN_ALI_TOL"); if (tl) ali_tol = atof(tl); }
+    double *Tlo = use_tri ? malloc(sizeof(double) * NS) : NULL;
+    double *Tup = use_tri ? malloc(sizeof(double) * NS) : NULL;
+    double *rA  = use_tri ? malloc(sizeof(double) * NS) : NULL;
+    double *aA  = use_tri ? malloc(sizeof(double) * NS) : NULL;
+    double *dA  = use_tri ? malloc(sizeof(double) * NS) : NULL;
+    double *cA  = use_tri ? malloc(sizeof(double) * NS) : NULL;
+    double *rhs = use_tri ? malloc(sizeof(double) * NS) : NULL;
+    if (use_tri && (!Tlo || !Tup || !rA || !aA || !dA || !cA || !rhs)) {
+        free(Tlo); free(Tup); free(rA); free(aA); free(dA); free(cA); free(rhs);
+        Tlo = Tup = rA = aA = dA = cA = rhs = NULL;
+        use_tri = 0;
+    }
+
     /* optional single-cell ALI trace: LUMINA_CMFGEN_CELLDIAG="s,b" */
     int cd_s = -1, cd_b = -1;
     const char *cd = getenv("LUMINA_CMFGEN_CELLDIAG");
@@ -310,42 +400,88 @@ void cmfgen_solve_J(CMFGENState *cs, const Geometry *geo, double T_inner,
 
     for (int b = 0; b < NB; ++b) {
         double Bin = cm_planck(cs->nu[b], T_inner);
-        /* diagonal-ALI Lambda iteration for coherent e-scattering */
+        /* (tridiagonal-)ALI Lambda iteration for the scattering channel */
         for (int it = 0; it < n_ali_iter; ++it) {
             for (int s = 0; s < NS; ++s) {
                 size_t idx = (size_t)s * NB + b;
                 double r = (cs->chi_tot[idx] > 0.0)
                          ? cs->chi_es[idx] / cs->chi_tot[idx] : 0.0;
+                if (rA) rA[s] = r;
                 S[s] = cs->S_fixed[idx] + r * cs->J[idx];
             }
-            formal_solve_bin(cs, geo, b, S, Bin, Jb, Lst);
-            for (int s = 0; s < NS; ++s) {
-                size_t idx = (size_t)s * NB + b;
-                double r = (cs->chi_tot[idx] > 0.0)
-                         ? cs->chi_es[idx] / cs->chi_tot[idx] : 0.0;
-                /* local ALI accel: J = (J_fs - L* r J_old)/(1 - L* r) */
-                double Ldiag = Lst[s];
-                double denom = 1.0 - Ldiag * r;
-                double Jnew = (denom > 1e-10)
-                            ? (Jb[s] - Ldiag * r * cs->J[idx]) / denom
-                            : Jb[s];
-                if (b == cd_b && s == cd_s) {
-                    size_t i2 = (size_t)cd_s * NB + cd_b;
-                    printf("[CMFGEN-CELL] s=%d b=%d ali=%d chi_es=%.3e chi_abs=%.3e "
-                           "chi_line=%.3e r=%.4f Sfix=%.3e S=%.3e Lst=%.4e Jfs=%.3e "
-                           "Jold=%.3e Jnew=%.3e\n", cd_s, cd_b, it, cs->chi_es[i2],
-                           cs->chi_abs[i2], cs->chi_line[i2], r, cs->S_fixed[i2],
-                           S[s], Ldiag, Jb[s], cs->J[idx], Jnew < 0 ? 0 : Jnew);
+            formal_solve_bin(cs, geo, b, S, Bin, Jb, Lst, Tlo, Tup);
+            double maxrel = 0.0;
+            if (use_tri) {
+                for (int s = 0; s < NS; ++s) {
+                    size_t idx = (size_t)s * NB + b;
+                    double Jo  = cs->J[idx];
+                    double Jom = (s > 0)      ? cs->J[idx - NB] : 0.0;
+                    double Jop = (s < NS - 1) ? cs->J[idx + NB] : 0.0;
+                    aA[s] = (s > 0)      ? -Tlo[s] * rA[s - 1] : 0.0;
+                    cA[s] = (s < NS - 1) ? -Tup[s] * rA[s + 1] : 0.0;
+                    dA[s] = 1.0 - Lst[s] * rA[s];
+                    if (dA[s] < 1e-10) dA[s] = 1e-10;
+                    rhs[s] = Jb[s] - Lst[s] * rA[s] * Jo
+                           - ((s > 0)      ? Tlo[s] * rA[s - 1] * Jom : 0.0)
+                           - ((s < NS - 1) ? Tup[s] * rA[s + 1] * Jop : 0.0);
                 }
-                if (Jnew < 0.0) Jnew = 0.0;
-                cs->J[idx] = Jnew;
-                /* Persist the diagonal ∂J/∂S operator for the RADEQ/Newton T_e
-                 * solve (Phase-1 faithful radiation response). Last ALI iter wins. */
-                cs->lambda_star[idx] = Lst[s];
+                /* Thomas forward sweep */
+                for (int s = 1; s < NS; ++s) {
+                    double m = aA[s] / dA[s - 1];
+                    dA[s]  -= m * cA[s - 1];
+                    if (dA[s] < 1e-10) dA[s] = 1e-10;
+                    rhs[s] -= m * rhs[s - 1];
+                }
+                double Jn = rhs[NS - 1] / dA[NS - 1];
+                for (int s = NS - 1; s >= 0; --s) {
+                    if (s < NS - 1) Jn = (rhs[s] - cA[s] * Jb[s + 1]) / dA[s];
+                    /* NOTE: back-substitution must use the NEW J of s+1; reuse
+                     * Jb[] as the solved-J scratch to avoid another array. */
+                    size_t idx = (size_t)s * NB + b;
+                    double Jold = cs->J[idx];
+                    if (Jn < 0.0) Jn = 0.0;
+                    double rel = (Jn > 1e-300) ? fabs(Jn - Jold) / Jn : 0.0;
+                    if (rel > maxrel) maxrel = rel;
+                    Jb[s] = Jn;                 /* solved J for s (scratch) */
+                }
+                for (int s = 0; s < NS; ++s) {
+                    size_t idx = (size_t)s * NB + b;
+                    cs->J[idx] = Jb[s];
+                    /* Stage-4 deferred: keep the FORMAL diagonal for the
+                     * Newton response (semantics unchanged). */
+                    cs->lambda_star[idx] = Lst[s];
+                }
+            } else {
+                for (int s = 0; s < NS; ++s) {
+                    size_t idx = (size_t)s * NB + b;
+                    double r = (cs->chi_tot[idx] > 0.0)
+                             ? cs->chi_es[idx] / cs->chi_tot[idx] : 0.0;
+                    /* local ALI accel: J = (J_fs - L* r J_old)/(1 - L* r) */
+                    double Ldiag = Lst[s];
+                    double denom = 1.0 - Ldiag * r;
+                    double Jnew = (denom > 1e-10)
+                                ? (Jb[s] - Ldiag * r * cs->J[idx]) / denom
+                                : Jb[s];
+                    if (b == cd_b && s == cd_s) {
+                        size_t i2 = (size_t)cd_s * NB + cd_b;
+                        printf("[CMFGEN-CELL] s=%d b=%d ali=%d chi_es=%.3e chi_abs=%.3e "
+                               "chi_line=%.3e r=%.4f Sfix=%.3e S=%.3e Lst=%.4e Jfs=%.3e "
+                               "Jold=%.3e Jnew=%.3e\n", cd_s, cd_b, it, cs->chi_es[i2],
+                               cs->chi_abs[i2], cs->chi_line[i2], r, cs->S_fixed[i2],
+                               S[s], Ldiag, Jb[s], cs->J[idx], Jnew < 0 ? 0 : Jnew);
+                    }
+                    if (Jnew < 0.0) Jnew = 0.0;
+                    cs->J[idx] = Jnew;
+                    /* Persist the diagonal ∂J/∂S operator for the RADEQ/Newton T_e
+                     * solve (Phase-1 faithful radiation response). Last ALI iter wins. */
+                    cs->lambda_star[idx] = Lst[s];
+                }
             }
+            if (use_tri && maxrel < ali_tol && it > 0) break;
         }
     }
     free(S); free(Jb); free(Lst);
+    free(Tlo); free(Tup); free(rA); free(aA); free(dA); free(cA); free(rhs);
     if (cd_s >= 0) fflush(stdout);
 }
 

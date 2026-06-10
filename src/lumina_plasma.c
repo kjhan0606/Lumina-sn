@@ -3252,6 +3252,40 @@ typedef struct {
 static RadEqLine *radeq_lines = NULL;
 static long radeq_n_lines = -1;
 
+/* Physical two-level destruction probability for one bb line at (n_e,T_e,tau):
+ * eps = C_ul/(C_ul + A_ul*beta_esc). Exported for cmfgen_assemble's per-line
+ * thermal-channel accumulation (LUMINA_CMFGEN_LINE_EPS_PHYS). Returns -1 when
+ * the RADEQ line table is not built yet or the line is unknown (caller falls
+ * back to the legacy fully-thermal treatment). */
+double radeq_line_eps_phys(int line, double n_e, double T_e, double tau);
+
+static double radeq_beta_esc(double tau);
+
+double radeq_line_eps_phys(int line, double n_e, double T_e, double tau) {
+    static int *line2k = NULL;
+    static int  line2k_n = 0;
+    if (!radeq_lines || radeq_n_lines <= 0 || line < 0 || T_e <= 0.0)
+        return -1.0;
+    if (!line2k) {
+        int maxline = 0;
+        for (long k = 0; k < radeq_n_lines; k++)
+            if (radeq_lines[k].line > maxline) maxline = radeq_lines[k].line;
+        int *m = (int *)malloc((size_t)(maxline + 1) * sizeof(int));
+        if (!m) return -1.0;
+        for (int i = 0; i <= maxline; i++) m[i] = -1;
+        for (long k = 0; k < radeq_n_lines; k++) m[radeq_lines[k].line] = (int)k;
+        line2k_n = maxline + 1;
+        line2k = m;
+    }
+    if (line >= line2k_n) return -1.0;
+    int k = line2k[line];
+    if (k < 0) return -1.0;
+    const RadEqLine *rl = &radeq_lines[k];
+    double C_ul = n_e * rl->coeff / ((double)rl->g_up * sqrt(T_e));
+    double denom = C_ul + rl->A_ul * radeq_beta_esc(tau);
+    return (denom > 0.0) ? C_ul / denom : 1.0;
+}
+
 static void build_radeq_line_table(NLTEConfig *nlte, AtomicData *atom,
                                    OpacityState *opacity) {
     if (radeq_n_lines >= 0) return;  /* already built */
@@ -4520,7 +4554,9 @@ void coupled_newton_solve_all(PlasmaState *plasma, GammaDeposition *gamma_dep,
      * which then belongs in the local-Planck response fraction eps_b. */
     int line_eps_on = 0;
     { const char *le = getenv("LUMINA_CMFGEN_LINE_EPS");
-      if (le && atof(le) > 0.0) line_eps_on = 1; }
+      if (le && atof(le) > 0.0) line_eps_on = 1;
+      const char *lp = getenv("LUMINA_CMFGEN_LINE_EPS_PHYS");
+      if (lp && atoi(lp)) line_eps_on = 1; }
     double lstar_tauscale = 1.0;
     { const char *lt = getenv("LUMINA_COUPLED_LAMBDA_TAUSCALE"); if (lt) lstar_tauscale = atof(lt); }
     if (use_lstar && (geo == NULL || geo->v_outer == NULL)) use_lstar = 0;

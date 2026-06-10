@@ -676,6 +676,11 @@ void coupled_newton_solve_all(PlasmaState *plasma, GammaDeposition *gamma_dep,
  * per CMFGEN outer iter after cmfgen_assemble + cmfgen_solve_J, before the
  * RADEQ/Newton solve. Pass chi_line=NULL to disable (default). Gated at use
  * time by LUMINA_RADEQ_LINE_RE=1. */
+/* Physical two-level destruction probability eps=C_ul/(C_ul+A_ul*beta_esc)
+ * for bb line `line` at (n_e,T_e,tau); -1 if the RADEQ table isn't built yet
+ * (caller treats the line as fully thermal). Used by cmfgen_assemble. */
+double radeq_line_eps_phys(int line, double n_e, double T_e, double tau);
+
 void radeq_set_line_re_source(const double *chi_line, const double *chi_abs,
                               const double *chi_tot, const double *S_fixed,
                               const double *J, const double *nu,
