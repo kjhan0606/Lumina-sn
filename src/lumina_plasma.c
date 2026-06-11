@@ -1925,11 +1925,26 @@ static double frozenin_alpha_rr(AtomicData *atom, int ip, int ip_next, double T)
     if (chi_ion_eV <= 0.0) return 0.0;
     double chi_ion_erg = chi_ion_eV * EV_TO_ERG;
 
-    int g_ion = 1;
+    /* Saha/Milne pairing needs the upper ion's PARTITION FUNCTION U_II(T),
+     * not its ground-LEVEL g: Si II/C II carry a ^2P fine-structure partner
+     * within ~0.04 eV (fully populated), so g_ground=2 vs U_II~5.7 biased
+     * their recombination x2.8 high (=> x2.8 under-ionization at the J=B
+     * fixed point; S/Mg/Al/O unaffected, U_II~g there). */
+    double U_ion = 1.0;
     if (ip_next >= 0) {
-        int gnd = atom->level_offset[ip_next];
-        g_ion = atom->level_g[gnd];
-        if (g_ion < 1) g_ion = 1;
+        int n0 = atom->level_offset[ip_next];
+        int n1 = atom->level_offset[ip_next + 1];
+        double kT = K_BOLTZMANN * T;
+        double u = 0.0;
+        for (int l = n0; l < n1; l++) {
+            double x = atom->level_energy_eV[l] * EV_TO_ERG / kT;
+            if (x < 50.0) u += (double)atom->level_g[l] * exp(-x);
+        }
+        if (u >= 1.0) U_ion = u;
+        else {
+            int gg = atom->level_g[n0];
+            U_ion = (gg >= 1) ? (double)gg : 1.0;
+        }
     }
     double lam3 = pow(H_PLANCK * H_PLANCK /
                       (2.0 * M_PI_VAL * M_ELECTRON * K_BOLTZMANN * T), 1.5);
@@ -1961,8 +1976,22 @@ static double frozenin_alpha_rr(AtomicData *atom, int ip, int ip_next, double T)
                         (C_SPEED_OF_LIGHT * C_SPEED_OF_LIGHT)) / expm1(x);
             Rbf += 4.0 * M_PI_VAL * B * sig / (H_PLANCK * nu_c) * dnu;
         }
-        a_tot += Rbf * lam3 * (double)atom->level_g[gl] / (2.0 * (double)g_ion)
+        a_tot += Rbf * lam3 * (double)atom->level_g[gl] / (2.0 * U_ion)
                  * exp(chi_l / (K_BOLTZMANN * T));
+    }
+    /* + dielectronic recombination (LUMINA_FROZENIN_DR=1): the U_II-corrected
+     * Milne RR exposed that the old x2.8-high alpha was accidentally standing
+     * in for the missing DR channel in the frozen-in/tdep cascade (outer dex
+     * 0.053->0.138 on the U_II fix alone). ADAS DR_TABLE reused from the
+     * NLTE-matrix path; recombining ion = stage+1. */
+    static int fz_dr = -1;
+    if (fz_dr < 0) {
+        const char *e = getenv("LUMINA_FROZENIN_DR");
+        fz_dr = (e && atoi(e)) ? 1 : 0;
+    }
+    if (fz_dr) {
+        const DRCoefficient *coef = dr_lookup(Z, stage + 1);
+        if (coef) a_tot += dr_alpha_eval(coef, T);
     }
     return a_tot;
 }
@@ -3551,6 +3580,27 @@ static double radeq_line_re(double T_e, double Te_lag, int s) {
     const double *sf = &g_lre_S_fixed[(size_t)s * nb];
     const double *Jb = &g_lre_J[(size_t)s * nb];
     double H = 0.0;
+    /* TRANSFER-ONLY eps_uv mode: cooling-only closure on the FULL chi_line,
+     * H = 4pi*Int chi_line*(min(J,B(T_e)) - B(T_e)) dnu. Vanishes at J=B,
+     * supplies the restoring slope when J<B (the operator-split T_e anchor),
+     * contributes ZERO when transfer-eps makes the FUV J superthermal (no
+     * spurious line heating; codex ruling 2026-06-11). No eta_lag here:
+     * S_fixed carries the transfer thermal share, the wrong owner for the
+     * full-chi closure. */
+    static int uv_mode = -1;
+    if (uv_mode < 0) {
+        const char *u = getenv("LUMINA_CMFGEN_LINE_EPS_UV");
+        uv_mode = (u && atof(u) > 0.0) ? 1 : 0;
+    }
+    if (uv_mode) {
+        for (int b = 0; b < nb; b++) {
+            if (cl[b] <= 0.0) continue;
+            double B_te = planck_bnu(T_e, g_lre_nu[b]);
+            double Jeff = (Jb[b] < B_te) ? Jb[b] : B_te;
+            H += cl[b] * (Jeff - B_te) * g_lre_dnu[b];
+        }
+        return 4.0 * M_PI_VAL * H;
+    }
     for (int b = 0; b < nb; b++) {
         if (cl[b] <= 0.0) continue;
         double nu = g_lre_nu[b];
