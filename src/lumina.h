@@ -681,11 +681,22 @@ void coupled_newton_solve_all(PlasmaState *plasma, GammaDeposition *gamma_dep,
  * (caller treats the line as fully thermal). Used by cmfgen_assemble. */
 double radeq_line_eps_phys(int line, double n_e, double T_e, double tau);
 
+/* A4 Stage-4': register the per-shell continuum-window color temperature of
+ * the deterministic J (cmfgen_window_color) — frozen-tail T_e anchor, gated
+ * by LUMINA_A4_TAIL_COLOR=1. */
+void radeq_set_tail_color(const double *t_color, int n_shells);
+
+/* A4 Stage-2.5: register the persisted tridiagonal Lambda response
+ * (cs->tri_lo/tri_up/tri_r) for the global Newton's delta-J resolvent. */
+void radeq_set_tri_response(const double *lo, const double *up,
+                            const double *r, int n_shells, int n_bins);
+
 void radeq_set_line_re_source(const double *chi_line, const double *chi_abs,
                               const double *chi_tot, const double *S_fixed,
                               const double *J, const double *nu,
                               const double *dnu, const double *lambda_star,
                               const double *T_e_assemble,
+                              const double *chi_line_full,
                               int n_shells, int n_bins);
 
 /* P5: Formal integral spectrum (noise-free, p-z formalism) */

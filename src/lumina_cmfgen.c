@@ -47,8 +47,13 @@ int cmfgen_init(CMFGENState *cs, const Geometry *geo)
     cs->S_fixed     = calloc((size_t)NS * NB, sizeof(double));
     cs->J           = calloc((size_t)NS * NB, sizeof(double));
     cs->lambda_star = calloc((size_t)NS * NB, sizeof(double));
+    cs->t_color     = calloc((size_t)NS, sizeof(double));
+    cs->tri_lo      = calloc((size_t)NS * NB, sizeof(double));
+    cs->tri_up      = calloc((size_t)NS * NB, sizeof(double));
+    cs->tri_r       = calloc((size_t)NS * NB, sizeof(double));
     if (!cs->nu || !cs->dnu || !cs->chi_es || !cs->chi_abs || !cs->chi_line ||
-        !cs->chi_line_th ||
+        !cs->chi_line_th || !cs->t_color ||
+        !cs->tri_lo || !cs->tri_up || !cs->tri_r ||
         !cs->chi_tot || !cs->S_fixed || !cs->J || !cs->lambda_star) {
         fprintf(stderr, "[CMFGEN] init alloc failed\n");
         return -1;
@@ -81,7 +86,9 @@ void cmfgen_free(CMFGENState *cs)
     free(cs->nu); free(cs->dnu); free(cs->chi_es); free(cs->chi_abs);
     free(cs->chi_line); free(cs->chi_line_th);
     free(cs->chi_tot); free(cs->S_fixed); free(cs->J);
-    free(cs->lambda_star); free(cs->p_ray);
+    free(cs->lambda_star); free(cs->t_color);
+    free(cs->tri_lo); free(cs->tri_up); free(cs->tri_r);
+    free(cs->p_ray);
     memset(cs, 0, sizeof(*cs));
 }
 
@@ -118,6 +125,17 @@ void cmfgen_assemble(CMFGENState *cs, const Geometry *geo,
       if (ef) eps_floor = atof(ef);
       const char *ec = getenv("LUMINA_CMFGEN_EPS_CAP");
       if (ec) eps_cap = atof(ec); }
+    /* TRANSFER-ONLY eps (LUMINA_CMFGEN_LINE_EPS_UV, e.g. 0.03 = branch-like
+     * interim; codex ruling 2026-06-11): the scattering share enters ONLY the
+     * formal solve (chi_es), while the RE/Newton closure keeps the FULL
+     * chi_line with the cooling-only form chi_line*(min(J,B)-B) — the
+     * operator-split T_e anchor (audited: nothing else owns the root at the
+     * first NLTE iters) without FUV line pumping heating the gas. */
+    double eps_uv = -1.0;
+    { const char *eu = getenv("LUMINA_CMFGEN_LINE_EPS_UV");
+      if (eu) eps_uv = atof(eu); }
+    if (eps_phys) eps_uv = -1.0;              /* phys mode wins (experimental) */
+    cs->chi_line_re = (eps_uv > 0.0) ? cs->chi_line : cs->chi_line_th;
     memset(eta_line, 0, sizeof(double) * (size_t)NS * NB);
 
     /* Expansion (Sobolev-binned) line opacity + emissivity.
@@ -200,6 +218,13 @@ void cmfgen_assemble(CMFGENState *cs, const Geometry *geo,
             if (eps_phys) {
                 chi_ln_th = cs->chi_line_th[idx];    /* per-line accumulated */
                 if (chi_ln_th > 0.0 || chi_ln > 0.0) n_split++;
+            } else if (eps_uv > 0.0 && eps_uv <= 1.0 &&
+                       chi_ln > line_gate * chi_a) {
+                /* transfer-only split: S_fixed/transfer see the eps_uv share,
+                 * the RE closure sees FULL chi_line via cs->chi_line_re. */
+                chi_ln_th = eps_uv * chi_ln;
+                eta_ln   *= eps_uv;
+                n_split++;
             } else if (line_eps > 0.0 && line_eps <= 1.0 &&
                        chi_ln > line_gate * chi_a) {
                 chi_ln_th = line_eps * chi_ln;
@@ -218,7 +243,7 @@ void cmfgen_assemble(CMFGENState *cs, const Geometry *geo,
             cs->chi_tot[idx] = chi_t;
         }
     }
-    if ((line_eps > 0.0 || eps_phys) && cs->diag) {
+    if ((line_eps > 0.0 || eps_phys || eps_uv > 0.0) && cs->diag) {
         static int eps_diag_once = 0;
         if (!eps_diag_once && n_split > 0) {   /* first assemble with lines */
             eps_diag_once = 1;
@@ -228,7 +253,8 @@ void cmfgen_assemble(CMFGENState *cs, const Geometry *geo,
             }
             printf("[CMFGEN-LINEEPS] %s eps=%.3f gate=%.2f split bins %ld/%ld "
                    "global chi_th/chi_line=%.4f\n",
-                   eps_phys ? "PHYS" : "CONST", line_eps, line_gate,
+                   eps_phys ? "PHYS" : (eps_uv > 0.0 ? "UV-TRANSFER" : "CONST"),
+                   eps_uv > 0.0 ? eps_uv : line_eps, line_gate,
                    n_split, (long)NS * NB, lnsum > 0.0 ? thsum / lnsum : 1.0);
         }
     }
@@ -380,6 +406,11 @@ void cmfgen_solve_J(CMFGENState *cs, const Geometry *geo, double T_inner,
     { const char *tr = getenv("LUMINA_CMFGEN_LAMBDA_TRI"); if (tr) use_tri = atoi(tr); }
     double ali_tol = 1e-3;
     { const char *tl = getenv("LUMINA_CMFGEN_ALI_TOL"); if (tl) ali_tol = atof(tl); }
+    /* near-unity albedo (line-eps runs): per-pass change underestimates the
+     * true error (spectral radius -> 1), so enforce a minimum pass count
+     * before the early-stop is trusted (A4 Stage-1 sets 16+). */
+    int ali_minit = 1;
+    { const char *mi = getenv("LUMINA_CMFGEN_ALI_MINIT"); if (mi) ali_minit = atoi(mi); }
     double *Tlo = use_tri ? malloc(sizeof(double) * NS) : NULL;
     double *Tup = use_tri ? malloc(sizeof(double) * NS) : NULL;
     double *rA  = use_tri ? malloc(sizeof(double) * NS) : NULL;
@@ -450,6 +481,13 @@ void cmfgen_solve_J(CMFGENState *cs, const Geometry *geo, double T_inner,
                     /* Stage-4 deferred: keep the FORMAL diagonal for the
                      * Newton response (semantics unchanged). */
                     cs->lambda_star[idx] = Lst[s];
+                    /* A4 Stage-2.5: persist the tridiagonal response
+                     * coefficients (last ALI pass wins) so the global Newton
+                     * can apply delta-J = (I - Lambda_tri R)^-1 Lambda_tri
+                     * delta-S without re-running the formal solve. */
+                    cs->tri_lo[idx] = Tlo[s];
+                    cs->tri_up[idx] = Tup[s];
+                    cs->tri_r[idx]  = rA[s];
                 }
             } else {
                 for (int s = 0; s < NS; ++s) {
@@ -477,12 +515,56 @@ void cmfgen_solve_J(CMFGENState *cs, const Geometry *geo, double T_inner,
                     cs->lambda_star[idx] = Lst[s];
                 }
             }
-            if (use_tri && maxrel < ali_tol && it > 0) break;
+            if (use_tri && maxrel < ali_tol && it >= ali_minit) break;
         }
     }
     free(S); free(Jb); free(Lst);
     free(Tlo); free(Tup); free(rA); free(aA); free(dA); free(cA); free(rhs);
     if (cd_s >= 0) fflush(stdout);
+}
+
+/* ------------------------------------------------------------ */
+void cmfgen_window_color(CMFGENState *cs)
+{
+    int NS = cs->n_shells, NB = cs->n_bins;
+    /* Two narrow optical bands. NO per-shell opacity filter: in the thin
+     * outer the per-shell dtau is tiny regardless of chi_line/cont, and the
+     * J SHAPE carries the photospheric color (validated offline: this 2-band
+     * ratio reproduces gold T_e 2503-2602K at sh40-48 where the trough-match
+     * thermostat extracts 2256-2324K from the SAME field). A window criterion
+     * on local chi_line finds 0 blue bins out there and never fires. */
+    const double LB1 = 4150e-8, LB2 = 4300e-8, LR1 = 6800e-8, LR2 = 7000e-8;
+    for (int s = 0; s < NS; ++s) {
+        double Jb = 0.0, wb = 0.0, Jr = 0.0, wr = 0.0;
+        int nb_ = 0, nr_ = 0;
+        for (int b = 0; b < NB; ++b) {
+            double lam = CM_C / cs->nu[b];
+            int blue = (lam >= LB1 && lam <= LB2);
+            int red  = (lam >= LR1 && lam <= LR2);
+            if (!blue && !red) continue;
+            size_t idx = (size_t)s * NB + b;
+            double J = cs->J[idx];
+            if (J <= 0.0) continue;
+            if (blue) { Jb += J * cs->dnu[b]; wb += cs->dnu[b]; nb_++; }
+            else      { Jr += J * cs->dnu[b]; wr += cs->dnu[b]; nr_++; }
+        }
+        cs->t_color[s] = -1.0;
+        if (nb_ < 2 || nr_ < 2 || Jr <= 0.0 || wb <= 0.0 || wr <= 0.0) continue;
+        double target = (Jb / wb) / (Jr / wr);
+        if (!(target > 0.0)) continue;
+        /* Planck band-ratio is monotonically increasing in T: bisect. */
+        double nub = CM_C / (0.5 * (LB1 + LB2)), nur = CM_C / (0.5 * (LR1 + LR2));
+        double Tlo = 800.0, Thi = 30000.0;
+        double rlo = cm_planck(nub, Tlo) / cm_planck(nur, Tlo);
+        double rhi = cm_planck(nub, Thi) / cm_planck(nur, Thi);
+        if (target <= rlo || target >= rhi) continue;
+        for (int it = 0; it < 60; ++it) {
+            double Tm = 0.5 * (Tlo + Thi);
+            double rm = cm_planck(nub, Tm) / cm_planck(nur, Tm);
+            if (rm < target) Tlo = Tm; else Thi = Tm;
+        }
+        cs->t_color[s] = 0.5 * (Tlo + Thi);
+    }
 }
 
 /* ------------------------------------------------------------ */
@@ -735,16 +817,22 @@ int cmfgen_run(Geometry *geo, OpacityState *opac, BFOpacity *bf,
 
         cmfgen_assemble(&cs, geo, opac, bf, plasma);
         cmfgen_solve_J(&cs, geo, T_inner, n_ali);
+        cmfgen_window_color(&cs);
+        radeq_set_tail_color(cs.t_color, cs.n_shells);
+        radeq_set_tri_response(cs.tri_lo, cs.tri_up, cs.tri_r,
+                               cs.n_shells, cs.n_bins);
         if (cs.diag && iter == n_iter - 1)
             cmfgen_validate(&cs, geo, plasma);
         cmfgen_write_jnu(&cs, nlte);
         /* Option-2 integral RE: register the CMFGEN line opacity/source for the
          * RADEQ/Newton T_e solve (LUMINA_RADEQ_LINE_RE=1). */
-        /* line-RE/Newton must see only the THERMAL line channel (chi_line_th):
-         * the scattering share exchanges no gas energy (codex review). */
-        radeq_set_line_re_source(cs.chi_line_th, cs.chi_abs, cs.chi_tot,
+        /* RE/Newton line channel: chi_line_th (physical thermal share) except
+         * in transfer-only eps_uv mode, where the closure keeps FULL chi_line
+         * (cooling-only form in radeq_line_re; codex ruling). */
+        radeq_set_line_re_source(cs.chi_line_re, cs.chi_abs, cs.chi_tot,
                                  cs.S_fixed, cs.J, cs.nu, cs.dnu,
                                  cs.lambda_star, plasma->T_e,
+                                 cs.chi_line,
                                  cs.n_shells, cs.n_bins);
 
         /* downstream solvers reused unchanged */

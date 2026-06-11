@@ -43,9 +43,18 @@ typedef struct {
                                   is folded into chi_es so the ALI closure
                                   transports it (LUMINA_CMFGEN_LINE_EPS). */
     double *chi_tot;           /* chi_es + chi_abs + chi_line       cm^-1 */
+    const double *chi_line_re; /* line opacity the RE/Newton closure sees:
+                                  = chi_line (FULL) in transfer-only eps_uv
+                                  mode (cooling-only closure), else chi_line_th */
     double *S_fixed;           /* (chi_abs*B + chi_line_th*S_line)/chi_tot */
     double *J;                 /* mean intensity (output) erg/s/cm^2/Hz/sr*/
     double *lambda_star;       /* diagonal approximate Lambda operator    */
+    double *tri_lo;            /* [ns*nb] tridiag Lambda off-diag L[s,s-1] (A4) */
+    double *tri_up;            /* [ns*nb] tridiag Lambda off-diag L[s,s+1] (A4) */
+    double *tri_r;             /* [ns*nb] scattering albedo r=chi_es/chi_tot (A4) */
+    double *t_color;           /* [n_shells] continuum-window 2-band Planck
+                                  color temperature of the solved J (A4
+                                  frozen-tail anchor); -1 where undetermined */
 
     /* Tangent-ray geometry. */
     int     n_rays;            /* core rays + one per shell radius        */
@@ -56,6 +65,14 @@ typedef struct {
 
 /* Allocate grid + tangent rays from geometry. Returns 0 on success. */
 int  cmfgen_init(CMFGENState *cs, const Geometry *geo);
+
+/* Fill cs->t_color: per-shell color temperature of the solved J from the
+ * Planck ratio of two continuum-window bands (bins with chi_line below a
+ * fraction of the continuum opacity). The faithful outer-T_e anchor: gold's
+ * thin-zone T_e is the field's optical color temperature, and the window
+ * color of OUR deterministic J carries it even where the line-trough
+ * thermostat extracts a too-cold value. */
+void cmfgen_window_color(CMFGENState *cs);
 void cmfgen_free(CMFGENState *cs);
 
 /* Build chi_es/chi_abs/chi_line/chi_tot/S_fixed for the current plasma +

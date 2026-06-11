@@ -3027,17 +3027,22 @@ int main(int argc, char *argv[]) {
                     cmfgen_assemble(&cs, &geo, &opacity,
                                     bf_opacity_enabled ? &bf : NULL, &plasma);
                     cmfgen_solve_J(&cs, &geo, config.T_inner, n_ali);
+                    cmfgen_window_color(&cs);
+                    radeq_set_tail_color(cs.t_color, cs.n_shells);
+                    radeq_set_tri_response(cs.tri_lo, cs.tri_up, cs.tri_r,
+                                           cs.n_shells, cs.n_bins);
                     if (cs.diag && it == pc_iter - 1)
                         cmfgen_validate(&cs, &geo, &plasma);
                     cmfgen_write_jnu(&cs, &nlte);
                     /* Option-2 integral RE: register the CMFGEN line opacity/
                      * source so the Newton T_e solve can add the radiative line
                      * term (LUMINA_RADEQ_LINE_RE=1). */
-                    /* line-RE/Newton must see only the THERMAL line channel
-                     * (chi_line_th); scattering share exchanges no gas energy. */
-                    radeq_set_line_re_source(cs.chi_line_th, cs.chi_abs, cs.chi_tot,
+                    /* RE/Newton line channel: chi_line_th except transfer-only
+                     * eps_uv mode (FULL chi_line, cooling-only closure). */
+                    radeq_set_line_re_source(cs.chi_line_re, cs.chi_abs, cs.chi_tot,
                                              cs.S_fixed, cs.J, cs.nu, cs.dnu,
                                              cs.lambda_star, plasma.T_e,
+                                             cs.chi_line,
                                              cs.n_shells, cs.n_bins);
 
                     compute_radiative_equilibrium_te(&plasma,

@@ -3526,13 +3526,47 @@ static double radeq_line_cool_etla(double T_e, double n_e,
 static const double *g_lre_chi_line = NULL, *g_lre_chi_abs = NULL,
                     *g_lre_chi_tot = NULL, *g_lre_S_fixed = NULL,
                     *g_lre_J = NULL, *g_lre_nu = NULL, *g_lre_dnu = NULL,
-                    *g_lre_lambda_star = NULL;
+                    *g_lre_lambda_star = NULL,
+                    *g_lre_chi_line_full = NULL;  /* unweighted chi_line (A4 boot) */
 static int g_lre_nshells = 0, g_lre_nbins = 0;
 /* assemble-time T_e SNAPSHOT (copied, not aliased): the pre-Newton bisection
  * rewrites plasma->T_e between registration and the coupled Newton, so reading
  * plasma->T_e there yields the WRONG lag for the eta_lag subtraction in
  * radeq_line_re wherever the bisection moved T_e. */
 static double *g_lre_te_lag = NULL;
+/* A4 Stage-1 bootstrap flags: per shell, 1 = the bf pair is strong enough to
+ * anchor T_e (switch to the SYMMETRIC eps-weighted line term = converged
+ * physics), 0 = bf still empty (early NLTE iters) so keep the legacy
+ * all-thermal line closure as the transient stabilizer. Measured basis:
+ * the eps-weighted line slope at s=0 is ~4e-8 erg/cm3/s/K (same order as
+ * ff) — physically too weak to anchor; the converged anchor is bf (Wien). */
+static unsigned char *g_a4_boot = NULL;
+static int g_a4_boot_n = 0;
+/* A4 Stage-4': continuum-window color temperature of the deterministic J
+ * (cmfgen_window_color). The faithful frozen-tail T_e anchor: the outer
+ * energy equation is a self-referential line-trough thermostat (treadmill,
+ * asymptote -10%), while the window color of the SAME field carries gold's
+ * outer T_e (= the field's optical color temp, measured 2505K at sh48). */
+static const double *g_tail_color = NULL;
+static int g_tail_color_n = 0;
+
+/* A4 Stage-2.5: per-(shell,bin) tridiagonal Lambda response coefficients
+ * persisted from cmfgen_solve_J (last ALI pass): off-diagonals L[s,s-1]/
+ * L[s,s+1] and the scattering albedo r. Consumed by the global Newton's
+ * delta-J resolvent (Stage 3/4). */
+static const double *g_tri_lo = NULL, *g_tri_up = NULL, *g_tri_r = NULL;
+static int g_tri_ns = 0, g_tri_nb = 0;
+
+void radeq_set_tri_response(const double *lo, const double *up,
+                            const double *r, int n_shells, int n_bins) {
+    g_tri_lo = lo; g_tri_up = up; g_tri_r = r;
+    g_tri_ns = n_shells; g_tri_nb = n_bins;
+}
+
+void radeq_set_tail_color(const double *t_color, int n_shells) {
+    g_tail_color = t_color;
+    g_tail_color_n = n_shells;
+}
 static int g_lre_te_lag_n = 0;
 
 void radeq_set_line_re_source(const double *chi_line, const double *chi_abs,
@@ -3540,7 +3574,14 @@ void radeq_set_line_re_source(const double *chi_line, const double *chi_abs,
                               const double *J, const double *nu,
                               const double *dnu, const double *lambda_star,
                               const double *T_e_assemble,
+                              const double *chi_line_full,
                               int n_shells, int n_bins) {
+    g_lre_chi_line_full = chi_line_full;
+    if (n_shells > 0 && g_a4_boot_n != n_shells) {
+        free(g_a4_boot);
+        g_a4_boot = (unsigned char *)calloc((size_t)n_shells, 1);
+        g_a4_boot_n = g_a4_boot ? n_shells : 0;
+    }
     g_lre_chi_line = chi_line; g_lre_chi_abs = chi_abs;
     g_lre_chi_tot = chi_tot;   g_lre_S_fixed = S_fixed;
     g_lre_J = J; g_lre_nu = nu; g_lre_dnu = dnu;
@@ -3587,11 +3628,38 @@ static double radeq_line_re(double T_e, double Te_lag, int s) {
      * spurious line heating; codex ruling 2026-06-11). No eta_lag here:
      * S_fixed carries the transfer thermal share, the wrong owner for the
      * full-chi closure. */
-    static int uv_mode = -1;
+    static int uv_mode = -1, a4_sym = -1;
     if (uv_mode < 0) {
         const char *u = getenv("LUMINA_CMFGEN_LINE_EPS_UV");
         uv_mode = (u && atof(u) > 0.0) ? 1 : 0;
+        const char *a4 = getenv("LUMINA_A4_STAGE1");
+        a4_sym = (a4 && atoi(a4)) ? 1 : 0;
     }
+    /* A4 Stage-1: SYMMETRIC two-level closure on the eps-weighted thermal
+     * channel, H = 4pi*Int chi_line_th*(J - B(T_e)) dnu, NO clamps. The
+     * cooling-only clamp (uv_mode below) amputated the J>B heating branch and
+     * caused the eps crashes (design review 2026-06-11): with J solved
+     * self-consistently against the same eps source, J>B(T_e_local) is
+     * physical scattered light and its eps-thermalized share is genuine line
+     * heating. cl[] must be the eps-weighted chi_line_th (registered by the
+     * LINE_EPS_PHYS assemble path); slope 4pi*Int cl*dB/dT dnu is the T_e
+     * anchor replacing the retired all-thermal thermostat. */
+    if (a4_sym && g_a4_boot && s < g_a4_boot_n && g_a4_boot[s]) {
+        for (int b = 0; b < nb; b++) {
+            if (cl[b] <= 0.0) continue;
+            double B_te = planck_bnu(T_e, g_lre_nu[b]);
+            H += cl[b] * (Jb[b] - B_te) * g_lre_dnu[b];
+        }
+        return 4.0 * M_PI_VAL * H;
+    }
+    /* (a4_sym but bf not yet booted on this shell: fall through to the legacy
+     * closure below — transient stabilizer only, retired per shell once
+     * H_photo > LUMINA_A4_BOOT_FAC * C_ff. The stabilizer needs the FULL
+     * chi_line (the eps-weighted channel is the ~4e-8-slope term that cannot
+     * anchor); swap in the full array registered alongside. */
+    const double *cl_leg = cl;
+    if (a4_sym && g_lre_chi_line_full)
+        cl_leg = &g_lre_chi_line_full[(size_t)s * nb];
     if (uv_mode) {
         for (int b = 0; b < nb; b++) {
             if (cl[b] <= 0.0) continue;
@@ -3602,16 +3670,16 @@ static double radeq_line_re(double T_e, double Te_lag, int s) {
         return 4.0 * M_PI_VAL * H;
     }
     for (int b = 0; b < nb; b++) {
-        if (cl[b] <= 0.0) continue;
+        if (cl_leg[b] <= 0.0) continue;
         double nu = g_lre_nu[b];
         double B_lag = planck_bnu(Te_lag, nu);
         double B_te  = planck_bnu(T_e,   nu);
         double eta_lag = sf[b] * ct[b] - ca[b] * B_lag;     /* = χ_line·S_line_lag */
         if (eta_lag < 0.0) eta_lag = 0.0;
-        double eta_pre = eta_lag + cl[b] * (B_te - B_lag);
-        double eta_flr = cl[b] * B_te;                       /* no-pumping floor */
+        double eta_pre = eta_lag + cl_leg[b] * (B_te - B_lag);
+        double eta_flr = cl_leg[b] * B_te;                   /* no-pumping floor */
         double eta_eff = (eta_pre > eta_flr) ? eta_pre : eta_flr;
-        H += (cl[b] * Jb[b] - eta_eff) * g_lre_dnu[b];
+        H += (cl_leg[b] * Jb[b] - eta_eff) * g_lre_dnu[b];
     }
     return 4.0 * M_PI_VAL * H;
 }
@@ -3825,6 +3893,26 @@ void compute_radiative_equilibrium_te(PlasmaState *plasma, GammaDeposition *gamm
         if (T_rad <= 0.0 || n_e <= 0.0) {
             plasma->T_e[s] = plasma->T_e_T_rad_ratio * T_rad;
             continue;
+        }
+        /* A4 Stage-4' (LUMINA_A4_TAIL_COLOR=1): frozen-in-owned shells take
+         * T_e = continuum-window color temperature of the deterministic J.
+         * The line-RE closure out here is a self-referential trough-match
+         * thermostat (S_l->B(T_e) fallback, no NLTE source): a treadmill
+         * whose asymptote is -10% cold, while the window color of the SAME
+         * field carries the physical answer (gold outer T_e = field color
+         * temp, flat in r). Also warms frozen-in alpha(T_e) -> outer n_e. */
+        {
+            static int a4_tail = -1;
+            if (a4_tail < 0) {
+                const char *t = getenv("LUMINA_A4_TAIL_COLOR");
+                a4_tail = (t && atoi(t)) ? 1 : 0;
+            }
+            if (a4_tail && frozenin_is_frozen && s < frozenin_is_frozen_n &&
+                frozenin_is_frozen[s] && g_tail_color &&
+                s < g_tail_color_n && g_tail_color[s] > 500.0) {
+                plasma->T_e[s] = g_tail_color[s];
+                continue;
+            }
         }
         /* Te_lag = assemble-time T_e of the registered CMFGEN line opacity:
          * the registration SNAPSHOT when present (immune to earlier solvers
@@ -4839,6 +4927,20 @@ void coupled_newton_solve_all(PlasmaState *plasma, GammaDeposition *gamma_dep,
                         : plasma->T_e_T_rad_ratio * T_rad;
         if (T_e <= 100.0) T_e = plasma->T_e_T_rad_ratio * T_rad;
 
+        /* A4 Stage-1 boot latch: switch this shell's line closure from the
+         * legacy all-thermal stabilizer to the symmetric eps-weighted physics
+         * once the bf pair can own the T_e root. Latched (never un-boots)
+         * to avoid closure flapping across outer iterations. */
+        if (g_a4_boot && s < g_a4_boot_n && !g_a4_boot[s]) {
+            static double a4_boot_fac = -1.0;
+            if (a4_boot_fac < 0.0) {
+                const char *bfe = getenv("LUMINA_A4_BOOT_FAC");
+                a4_boot_fac = bfe ? atof(bfe) : 10.0;
+            }
+            double cff_lag = ff0 * n_e * n_e * sqrt(Te_lag);
+            if (H_photo > a4_boot_fac * cff_lag) g_a4_boot[s] = 1;
+        }
+
         /* A3 incr-1: freeze the local thermalization fraction Λ*_bb and the lagged
          * Planck B_ν(T_e^lag) once per shell. τ_bf = χ_bf·L with L=v_outer·t_exp
          * the homologous depth scale (knob LUMINA_COUPLED_LAMBDA_TAUSCALE). Λ*→1
@@ -4881,6 +4983,33 @@ void coupled_newton_solve_all(PlasmaState *plasma, GammaDeposition *gamma_dep,
                     lstar[bb] = Ld * eps;
                     blag[bb]  = planck_bnu(Te_lag, nu_mid[bb]);
                 }
+            }
+            /* A4 Stage-1 anchor audit: the symmetric line-RE replaces the
+             * retired thermostat; its restoring slope 4pi*Sum cl*dB/dT*dnu
+             * must dominate C_ff/(2T) by orders or the eps run will floor
+             * again (the 165293 discrepancy this print settles). */
+            static int a4_anchor_once = 0;
+            if (!a4_anchor_once && (s == 0 || s == n_shells / 4) &&
+                g_lre_chi_line && s < g_lre_nshells) {
+                double slope = 0.0, hline = 0.0;
+                const double *cl4 = &g_lre_chi_line[(size_t)s * g_lre_nbins];
+                const double *Jb4 = &g_lre_J[(size_t)s * g_lre_nbins];
+                for (int bb = 0; bb < g_lre_nbins; bb++) {
+                    if (cl4[bb] <= 0.0) continue;
+                    double nu0 = g_lre_nu[bb];
+                    double dB = (planck_bnu(Te_lag + 50.0, nu0) -
+                                 planck_bnu(Te_lag - 50.0, nu0)) / 100.0;
+                    slope += cl4[bb] * dB * g_lre_dnu[bb];
+                    hline += cl4[bb] * Jb4[bb] * g_lre_dnu[bb];
+                }
+                slope *= 4.0 * M_PI_VAL; hline *= 4.0 * M_PI_VAL;
+#ifdef _OPENMP
+                #pragma omp critical
+#endif
+                fprintf(stderr, "[A4-ANCHOR] s=%d Te_lag=%.0f line-RE slope=%.3e "
+                        "erg/cm3/s/K  4pi*Int(cl*J)dnu=%.3e  (cl = registered "
+                        "line-RE channel)\n", s, Te_lag, slope, hline);
+                if (s == 0) a4_anchor_once = 1;
             }
             static int lstar_diag_once = 0;
             if (s == 0 && !lstar_diag_once) {
