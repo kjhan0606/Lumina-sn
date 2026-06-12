@@ -3715,6 +3715,112 @@ static double radeq_line_re(double T_e, double Te_lag, int s) {
     return 4.0 * M_PI_VAL * H;
 }
 
+/* ============== A4 Stage 2.5: analytic energy-row Jacobian ==============
+ * Closed-form dr1/dT_e and dr1/dln n_e for the coupled-Newton 2x2 block,
+ * mirroring each term of r1 = radeq_net + Hresp + line_re EXACTLY (same
+ * arrays, same clamp branches). Replaces the FD column (LUMINA_A4_ANALYTIC_
+ * JAC=1): exact at clamp corners where FD smears, and global-ready — these
+ * forms become the diagonal energy blocks of the Stage-4 block-tridiagonal
+ * solve (the charge row stays shell-local FD; its dalpha/dT_e is carried by
+ * the FD difference automatically). */
+
+/* dB_nu/dT = B*(x/T)/(1-e^{-x}), x=h nu/kT; overflow-safe via planck_bnu
+ * (e^{-x} underflow -> Wien dB/dT = B*x/T). */
+static double planck_bnu_dT(double T, double nu) {
+    double x = H_PLANCK * nu / (K_BOLTZMANN * T);
+    double B = planck_bnu(T, nu);
+    if (B <= 0.0 || !(x > 0.0)) return 0.0;
+    double om = -expm1(-x);
+    if (om < 1e-300) return 0.0;
+    return B * (x / T) / om;
+}
+
+/* d/dT of radeq_recomb_cool = Sum emit*e^{-x}*x/T (x=h nu/kT). */
+static double radeq_recomb_cool_dT(double T_e, const double *emit_nu,
+                                   const double *nu_mid, int nbins) {
+    double inv_kT = 1.0 / (K_BOLTZMANN * T_e);
+    double sum = 0.0;
+    for (int bb = 0; bb < nbins; bb++) {
+        if (emit_nu[bb] == 0.0) continue;
+        double x = H_PLANCK * nu_mid[bb] * inv_kT;
+        sum += emit_nu[bb] * exp(-x) * x / T_e;
+    }
+    return sum;
+}
+
+/* d/dT of radeq_line_cool: per active (nonneg-surviving) line,
+ * d[(n_e/sqrtT)(a e^{-b/T}-b)]/dT = (n_e/sqrtT)[a e^{-beta/T} beta/T^2]
+ *                                  - (1/2T)(n_e/sqrtT)(a e^{-beta/T}-b). */
+static double radeq_line_cool_dT(double T_e, double n_e,
+                                 const double *a, const double *b,
+                                 const double *beta, long n_active, int nonneg) {
+    double sqrtTe = sqrt(T_e);
+    double s_exp = 0.0, s_br = 0.0;
+    for (long m = 0; m < n_active; m++) {
+        double ae = a[m] * exp(-beta[m] / T_e);
+        double br = ae - b[m];
+        if (nonneg && br < 0.0) continue;
+        s_exp += ae * beta[m];
+        s_br  += br;
+    }
+    return n_e / sqrtTe * (s_exp / (T_e * T_e) - 0.5 * s_br / T_e);
+}
+
+/* d/dT of radeq_Hresp = Sum gbin*lstar*dB/dT (blag is the frozen J* — no
+ * T_e dependence). */
+static double radeq_Hresp_dT(double T_e, const double *gbin, const double *lstar,
+                             const double *nu_mid, int nbins) {
+    if (!gbin) return 0.0;
+    double d = 0.0;
+    for (int bb = 0; bb < nbins; bb++) {
+        if (gbin[bb] == 0.0 || lstar[bb] == 0.0) continue;
+        d += gbin[bb] * lstar[bb] * planck_bnu_dT(T_e, nu_mid[bb]);
+    }
+    return d;
+}
+
+/* d/dT of radeq_line_re, mirroring its branch ladder. Legacy + a4-booted:
+ * -4pi*Int cl*dB/dT dnu (the no-pumping max() has the SAME slope cl*dB/dT on
+ * both branches, so the derivative is smooth through the clamp). uv_mode
+ * cooling-only min(J,B)-B: slope -cl*dB/dT only where J < B(T_e). */
+static double radeq_line_re_dT(double T_e, int s) {
+    if (!g_lre_chi_line || s < 0 || s >= g_lre_nshells) return 0.0;
+    int nb = g_lre_nbins;
+    const double *cl = &g_lre_chi_line[(size_t)s * nb];
+    const double *Jb = &g_lre_J[(size_t)s * nb];
+    static int uv_mode = -1, a4_sym = -1;
+    if (uv_mode < 0) {
+        const char *u = getenv("LUMINA_CMFGEN_LINE_EPS_UV");
+        uv_mode = (u && atof(u) > 0.0) ? 1 : 0;
+        const char *a4 = getenv("LUMINA_A4_STAGE1");
+        a4_sym = (a4 && atoi(a4)) ? 1 : 0;
+    }
+    double d = 0.0;
+    if (a4_sym && g_a4_boot && s < g_a4_boot_n && g_a4_boot[s]) {
+        for (int b = 0; b < nb; b++) {
+            if (cl[b] <= 0.0) continue;
+            d += cl[b] * planck_bnu_dT(T_e, g_lre_nu[b]) * g_lre_dnu[b];
+        }
+        return -4.0 * M_PI_VAL * d;
+    }
+    const double *cl_leg = cl;
+    if (a4_sym && g_lre_chi_line_full)
+        cl_leg = &g_lre_chi_line_full[(size_t)s * nb];
+    if (uv_mode) {
+        for (int b = 0; b < nb; b++) {
+            if (cl[b] <= 0.0) continue;
+            if (Jb[b] >= planck_bnu(T_e, g_lre_nu[b])) continue;
+            d += cl[b] * planck_bnu_dT(T_e, g_lre_nu[b]) * g_lre_dnu[b];
+        }
+        return -4.0 * M_PI_VAL * d;
+    }
+    for (int b = 0; b < nb; b++) {
+        if (cl_leg[b] <= 0.0) continue;
+        d += cl_leg[b] * planck_bnu_dT(T_e, g_lre_nu[b]) * g_lre_dnu[b];
+    }
+    return -4.0 * M_PI_VAL * d;
+}
+
 static double radeq_net(double T_e, double T_rad, double n_e,
                         double H_photo, double H_gamma,
                         double compton_heat_coef, double ff_coef,
@@ -5166,6 +5272,56 @@ void coupled_newton_solve_all(PlasmaState *plasma, GammaDeposition *gamma_dep,
              * near-singular case that previously produced the runaway step. */
             double dT = 1e-4 * T_e, dx = 1e-4;
             double ne_x = n_e * exp(dx);
+            /* A4 Stage 2.5: analytic energy-row Jacobian (LUMINA_A4_ANALYTIC_
+             * JAC=1). Exact at the line-RE clamp corners where the FD column
+             * smears, and these closed forms are the Stage-4 global diagonal
+             * blocks. ETLA (line_respond) keeps FD — its SE recompute has no
+             * closed form. The charge row stays FD below (dalpha/dT_e rides
+             * the difference automatically — the classic drop->runaway term). */
+            static int ajac = -1;
+            if (ajac < 0) {
+                const char *aj = getenv("LUMINA_A4_ANALYTIC_JAC");
+                ajac = aj ? atoi(aj) : 0;   /* 2 = analytic + FD cross-check print */
+            }
+            double J11, J12;
+            if (ajac && !line_respond) {
+                double C_ff  = ff0 * n_e * n_e * sqrt(T_e);
+                double C_ad  = 1.5 * n_e * K_BOLTZMANN * T_e * Gamma_ad;
+                double C_col = radeq_line_cool(T_e, n_e, ca, cb, cbet,
+                                               n_active, cool_nonneg);
+                J11 = -compton0 * n_e
+                    - 0.5 * C_ff / T_e
+                    - C_ad / T_e
+                    - radeq_recomb_cool_dT(T_e, emit_nu, nu_mid, nfb)
+                    - radeq_line_cool_dT(T_e, n_e, ca, cb, cbet,
+                                         n_active, cool_nonneg)
+                    + radeq_Hresp_dT(T_e, gbin, lstar, nu_mid, nfb)
+                    + (line_re ? radeq_line_re_dT(T_e, s) : 0.0);
+                J12 = compton0 * n_e * (T_rad - T_e)
+                    - 2.0 * C_ff - C_ad - C_col;
+                if (ajac == 2 && it == 0 && (s % 8) == 0) {
+                    double f1T = radeq_net(T_e + dT, T_rad, n_e, H_photo, H_gamma,
+                                           compton0 * n_e, ff0 * n_e * n_e, Gamma_ad,
+                                           ca, cb, cbet, n_active, cool_nonneg, C_bb_esc,
+                                           emit_nu, nu_mid, nfb)
+                               + radeq_Hresp(T_e + dT, gbin, lstar, blag, 1.0, nu_mid, nfb)
+                               + RADEQ_LINE_RE_TERM(T_e + dT);
+                    double f1n = radeq_net(T_e, T_rad, ne_x, H_photo, H_gamma,
+                                           compton0 * ne_x, ff0 * ne_x * ne_x, Gamma_ad,
+                                           ca, cb, cbet, n_active, cool_nonneg, C_bb_esc,
+                                           emit_nu, nu_mid, nfb)
+                               + radeq_Hresp(T_e, gbin, lstar, blag, 1.0, nu_mid, nfb)
+                               + RADEQ_LINE_RE_TERM(T_e);
+                    double fd11 = (f1T - r1) / dT, fd12 = (f1n - r1) / dx;
+                    #ifdef _OPENMP
+                    #pragma omp critical
+                    #endif
+                    printf("    [AJAC-CHECK s=%d] J11 ana=%+.6e fd=%+.6e rel=%.2e | "
+                           "J12 ana=%+.6e fd=%+.6e rel=%.2e\n",
+                           s, J11, fd11, fabs(J11 - fd11) / (fabs(fd11) + 1e-300),
+                           J12, fd12, fabs(J12 - fd12) / (fabs(fd12) + 1e-300));
+                }
+            } else {
             double r1_T = radeq_net(T_e + dT, T_rad, n_e, H_photo, H_gamma,
                                     compton0 * n_e, ff0 * n_e * n_e, Gamma_ad,
                                     ca, cb, cbet, n_active, cool_nonneg, C_bb_esc,
@@ -5181,6 +5337,8 @@ void coupled_newton_solve_all(PlasmaState *plasma, GammaDeposition *gamma_dep,
                          + radeq_Hresp(T_e, gbin, lstar, blag, 1.0, nu_mid, nfb)
                          + RADEQ_LINE_DELTA(T_e, ne_x)
                          + RADEQ_LINE_RE_TERM(T_e);
+            J11 = (r1_T - r1) / dT; J12 = (r1_n - r1) / dx;
+            }
             double r2_T = n_e - (coupled_tdep
                 ? coupled_charge_density_tdep(atom, plasma, s, T_e + dT, n_e, time_explosion, n_shells, 0, gamma_jnu)
                 : coupled_charge_density(atom, plasma, s, T_e + dT, n_e, n_shells));
@@ -5188,7 +5346,6 @@ void coupled_newton_solve_all(PlasmaState *plasma, GammaDeposition *gamma_dep,
                 ? coupled_charge_density_tdep(atom, plasma, s, T_e, ne_x, time_explosion, n_shells, 0, gamma_jnu)
                 : coupled_charge_density(atom, plasma, s, T_e, ne_x, n_shells));
 
-            double J11 = (r1_T - r1) / dT, J12 = (r1_n - r1) / dx;
             double J21 = (r2_T - r2) / dT, J22 = (r2_n - r2) / dx;
             double det = J11 * J22 - J12 * J21;
             if (!isfinite(det) || fabs(det) < 1e-300) break;
