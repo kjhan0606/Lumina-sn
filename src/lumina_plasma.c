@@ -4881,61 +4881,317 @@ static double a4g_J12(const A4Shell *sh, double T, double n, double Gamma_ad) {
     return sh->compton0 * n * (sh->T_rad - T) - 2.0 * C_ff - C_ad;
 }
 
+/* ---- S4-2: energy-row off-diagonal machinery ----
+ * One-hop truncation of deltaJ = (I-Lambda_tri R)^-1 Lambda_tri (eps deltaB):
+ *   M_{s,t}[b] = D_s * Ttri_{s,t} * D_t * eps_t,  D_x = 1/max(1-Lst_x*r_x,1e-3)
+ * with eps_t = 1 - r_t: the champion S_l=B(T_e) fallback makes the LINE share
+ * of S_fixed thermal too, so the responsive source fraction is the full
+ * non-scattering share (bf-only chi_abs/chi_tot would kill the tail import
+ * ~1e-8 and silently fake the inertness kill-switch). The D_t factor closes
+ * the local scattering ladder at the SOURCE shell (same Neumann order as the
+ * hop; load-bearing in high-albedo line bins). Weights w_s = gbin_s +
+ * 4pi*cl_s*dnu are trial-independent: WM rows built once per global solve.
+ * Off-diagonal anchor = B(Te_lag,t), the neighbor source's assemble
+ * temperature — NOT J*_t (double-counts what the converged J* already
+ * transports) and NOT the Hresp blag (two anchors, two owners). At
+ * T==Te_lag everywhere the import vanishes: continuity with the
+ * operator-split state. Strictly t != s: the s-local response stays owned
+ * by Hresp(blag=J*) + radeq_line_re. */
+static void a4_offdiag_build(int n_shells, int nfb, const double *nu_mid,
+                             double *WM_lo, double *WM_up, double *Blagv,
+                             double *scale1, int *tail_ok) {
+    memset(WM_lo, 0, (size_t)n_shells * nfb * sizeof(double));
+    memset(WM_up, 0, (size_t)n_shells * nfb * sizeof(double));
+    int tri_ok = (g_tri_lo && g_tri_up && g_tri_r &&
+                  g_tri_ns == n_shells && g_tri_nb == nfb &&
+                  g_lre_lambda_star && g_lre_chi_line &&
+                  g_lre_nshells == n_shells && g_lre_nbins == nfb);
+    for (int s = 0; s < n_shells; s++) {
+        const A4Shell *sh = &g_a4sh[s];
+        tail_ok[s] = 0;
+        double sc = fabs(sh->H_photo) + fabs(sh->H_gamma);
+        for (int b = 0; b < nfb; b++)
+            Blagv[(size_t)s * nfb + b] = sh->assembled
+                ? planck_bnu(sh->Te_lag, nu_mid[b]) : 0.0;
+        if (sh->assembled && g_lre_chi_line && g_lre_nshells == n_shells) {
+            const double *cl = &g_lre_chi_line[(size_t)s * nfb];
+            for (int b = 0; b < nfb; b++)
+                if (cl[b] > 0.0)
+                    sc += 4.0 * M_PI_VAL * cl[b] *
+                          planck_bnu(sh->Te_lag, g_lre_nu[b]) * g_lre_dnu[b];
+        }
+        scale1[s] = (sc > 0.0) ? sc : 1.0;
+    }
+    if (!tri_ok) {
+        printf("  [S42-INERT] tri response not registered: off-diagonals zero "
+               "(mode degrades to block-diagonal)\n");
+        return;
+    }
+    for (int s = 0; s < n_shells; s++) {
+        if (!g_a4sh[s].assembled) continue;
+        const double *cl = &g_lre_chi_line[(size_t)s * nfb];
+        const double *gb = g_a4sh[s].gbin;
+        const double *Ls_s = &g_lre_lambda_star[(size_t)s * nfb];
+        const double *r_s  = &g_tri_r[(size_t)s * nfb];
+        for (int dir = 0; dir < 2; dir++) {
+            int t = dir ? s + 1 : s - 1;
+            if (t < 0 || t >= n_shells || !g_a4sh[t].assembled) continue;
+            const double *Ttri = dir ? &g_tri_up[(size_t)s * nfb]
+                                     : &g_tri_lo[(size_t)s * nfb];
+            double *WM = dir ? &WM_up[(size_t)s * nfb] : &WM_lo[(size_t)s * nfb];
+            const double *Ls_t = &g_lre_lambda_star[(size_t)t * nfb];
+            const double *r_t  = &g_tri_r[(size_t)t * nfb];
+            for (int b = 0; b < nfb; b++) {
+                double tt = Ttri[b];
+                if (!(tt > 0.0)) continue;       /* Tlo/Tup >= 0 by construction */
+                double Ds = 1.0 / fmax(1.0 - Ls_s[b] * r_s[b], 1e-3);
+                double Dt = 1.0 / fmax(1.0 - Ls_t[b] * r_t[b], 1e-3);
+                double ep = 1.0 - r_t[b];
+                if (ep < 0.0) ep = 0.0;
+                double M = Ds * tt * Dt * ep;
+                if (!(M > 0.0)) continue;
+                if (M > 1.0) M = 1.0;
+                double w = (gb ? gb[b] : 0.0)
+                         + ((cl[b] > 0.0)
+                            ? 4.0 * M_PI_VAL * cl[b] * g_lre_dnu[b] : 0.0);
+                WM[b] = w * M;
+            }
+        }
+        if (!g_a4sh[s].newton_own) {
+            double sum = 0.0;
+            for (int b = 0; b < nfb; b++)
+                sum += WM_lo[(size_t)s * nfb + b] + WM_up[(size_t)s * nfb + b];
+            if (sum > 0.0) tail_ok[s] = 1;
+        }
+    }
+}
+
+/* Sum_b WM*(B(T_t)-B(Te_lag,t)) — the neighbor-source import into r1(s). */
+static double a4_import(const double *WM, const double *Blag_row, double T_t,
+                        const double *nu_mid, int nfb) {
+    double a = 0.0;
+    for (int b = 0; b < nfb; b++)
+        if (WM[b] != 0.0)
+            a += WM[b] * (planck_bnu(T_t, nu_mid[b]) - Blag_row[b]);
+    return a;
+}
+
+/* d(import)/dT_t = Sum_b WM*dB/dT(T_t) >= 0 — the off-diagonal J11 column. */
+static double a4_J11_off(const double *WM, double T_t,
+                         const double *nu_mid, int nfb) {
+    double a = 0.0;
+    for (int b = 0; b < nfb; b++)
+        if (WM[b] != 0.0) a += WM[b] * planck_bnu_dT(T_t, nu_mid[b]);
+    return a;
+}
+
 static void a4_global_newton(AtomicData *atom, PlasmaState *plasma,
                              NLTEConfig *nlte, int n_shells, int nfb,
                              const double *nu_mid, double time_explosion,
                              double Gamma_ad, int cool_nonneg, int line_re,
                              int n_ip, int mode) {
-    (void)mode;
     if (!g_a4sh || g_a4sh_ns != n_shells) return;
-    int n_act = 0;
-    for (int s = 0; s < n_shells; s++)
-        if (g_a4sh[s].assembled && g_a4sh[s].newton_own) n_act++;
-    if (!n_act) return;
+    int od = (mode >= 2);
+    double *WM_lo = NULL, *WM_up = NULL, *Blagv = NULL, *scale1 = NULL;
+    int *tail_ok = NULL, *act = NULL;
+    act = (int *)calloc((size_t)n_shells, sizeof(int));
+    if (od) {
+        WM_lo  = (double *)malloc((size_t)n_shells * nfb * sizeof(double));
+        WM_up  = (double *)malloc((size_t)n_shells * nfb * sizeof(double));
+        Blagv  = (double *)malloc((size_t)n_shells * nfb * sizeof(double));
+        scale1 = (double *)malloc((size_t)n_shells * sizeof(double));
+        tail_ok = (int *)calloc((size_t)n_shells, sizeof(int));
+        a4_offdiag_build(n_shells, nfb, nu_mid, WM_lo, WM_up, Blagv,
+                         scale1, tail_ok);
+    }
+    int n_act = 0, n_tail = 0;
+    for (int s = 0; s < n_shells; s++) {
+        const A4Shell *sh = &g_a4sh[s];
+        act[s] = sh->assembled &&
+                 (sh->newton_own ||
+                  (mode >= 4 && tail_ok && tail_ok[s]));
+        if (act[s]) { n_act++; if (!sh->newton_own) n_tail++; }
+    }
+    if (!n_act) { free(act); free(WM_lo); free(WM_up); free(Blagv);
+                  free(scale1); free(tail_ok); return; }
     double *Tv  = (double *)malloc((size_t)n_shells * sizeof(double));
     double *nv  = (double *)malloc((size_t)n_shells * sizeof(double));
     double *dTe = (double *)calloc((size_t)n_shells, sizeof(double));
     double *dln = (double *)calloc((size_t)n_shells, sizeof(double));
     double *dJ  = (double *)malloc((size_t)nfb * sizeof(double));
     double *gb1 = n_ip ? (double *)malloc((size_t)n_ip * sizeof(double)) : NULL;
+    /* od row workspaces */
+    double *rJ11=NULL,*rJ12=NULL,*rJ21=NULL,*rJ22=NULL,*rElo=NULL,*rEup=NULL,
+           *rr1=NULL,*rr2=NULL,*hA11=NULL,*hA12=NULL,*hA21=NULL,*hA22=NULL,
+           *hdet=NULL,*hr1=NULL,*hr2=NULL;
+    if (od) {
+        size_t nb8 = (size_t)n_shells * sizeof(double);
+        rJ11=(double*)malloc(nb8); rJ12=(double*)malloc(nb8);
+        rJ21=(double*)malloc(nb8); rJ22=(double*)malloc(nb8);
+        rElo=(double*)malloc(nb8); rEup=(double*)malloc(nb8);
+        rr1=(double*)malloc(nb8);  rr2=(double*)malloc(nb8);
+        hA11=(double*)malloc(nb8); hA12=(double*)malloc(nb8);
+        hA21=(double*)malloc(nb8); hA22=(double*)malloc(nb8);
+        hdet=(double*)malloc(nb8); hr1=(double*)malloc(nb8);
+        hr2=(double*)malloc(nb8);
+    }
     for (int s = 0; s < n_shells; s++) {
         Tv[s] = plasma->T_e[s];
         nv[s] = plasma->n_electron[s];
     }
-    int gi, n_ls_fail = 0;
+    int gi, n_ls_fail = 0, n_pivot = 0, s42_done = 0;
     double rn_first = -1.0, rn_last = -1.0;
     for (gi = 0; gi < 15; gi++) {
         double rnorm = 0.0;
-        for (int s = 0; s < n_shells; s++) {
-            const A4Shell *sh = &g_a4sh[s];
-            dTe[s] = 0.0; dln[s] = 0.0;
-            if (!sh->assembled || !sh->newton_own) continue;
-            double T = Tv[s], n = nv[s];
-            const double *Jrow = &nlte->J_nu[(size_t)s * nfb];
-            double Tc = -1.0;
-            double r1 = a4g_r1(sh, s, T, n, nu_mid, nfb, Gamma_ad,
-                               cool_nonneg, line_re);
-            double r2 = n - coupled_charge_density_tdep(atom, plasma, s, T, n,
-                            time_explosion, n_shells, 0,
-                            a4g_gamma(sh, T, nfb, nu_mid, Jrow, n_ip, dJ, gb1, &Tc));
-            double dT = 1e-4 * T, dx = 1e-4;
-            double ne_x = n * exp(dx);
-            double J11 = a4g_J11(sh, s, T, n, nu_mid, nfb, Gamma_ad, line_re);
-            double J12 = a4g_J12(sh, T, n, Gamma_ad);
-            double r2_n = ne_x - coupled_charge_density_tdep(atom, plasma, s, T,
-                            ne_x, time_explosion, n_shells, 0,
-                            a4g_gamma(sh, T, nfb, nu_mid, Jrow, n_ip, dJ, gb1, &Tc));
-            double r2_T = n - coupled_charge_density_tdep(atom, plasma, s, T + dT,
-                            n, time_explosion, n_shells, 0,
-                            a4g_gamma(sh, T + dT, nfb, nu_mid, Jrow, n_ip, dJ, gb1, &Tc));
-            double J21 = (r2_T - r2) / dT, J22 = (r2_n - r2) / dx;
-            double det = J11 * J22 - J12 * J21;
-            if (isfinite(det) && fabs(det) > 1e-300) {
-                dTe[s] = -( J22 * r1 - J12 * r2) / det;
-                dln[s] = -(-J21 * r1 + J11 * r2) / det;
+        if (!od) {
+            /* ---- mode 1: block-diagonal (shipped S4-1 path, unchanged) ---- */
+            for (int s = 0; s < n_shells; s++) {
+                const A4Shell *sh = &g_a4sh[s];
+                dTe[s] = 0.0; dln[s] = 0.0;
+                if (!act[s]) continue;
+                double T = Tv[s], n = nv[s];
+                const double *Jrow = &nlte->J_nu[(size_t)s * nfb];
+                double Tc = -1.0;
+                double r1 = a4g_r1(sh, s, T, n, nu_mid, nfb, Gamma_ad,
+                                   cool_nonneg, line_re);
+                double r2 = n - coupled_charge_density_tdep(atom, plasma, s, T, n,
+                                time_explosion, n_shells, 0,
+                                a4g_gamma(sh, T, nfb, nu_mid, Jrow, n_ip, dJ, gb1, &Tc));
+                double dT = 1e-4 * T, dx = 1e-4;
+                double ne_x = n * exp(dx);
+                double J11 = a4g_J11(sh, s, T, n, nu_mid, nfb, Gamma_ad, line_re);
+                double J12 = a4g_J12(sh, T, n, Gamma_ad);
+                double r2_n = ne_x - coupled_charge_density_tdep(atom, plasma, s, T,
+                                ne_x, time_explosion, n_shells, 0,
+                                a4g_gamma(sh, T, nfb, nu_mid, Jrow, n_ip, dJ, gb1, &Tc));
+                double r2_T = n - coupled_charge_density_tdep(atom, plasma, s, T + dT,
+                                n, time_explosion, n_shells, 0,
+                                a4g_gamma(sh, T + dT, nfb, nu_mid, Jrow, n_ip, dJ, gb1, &Tc));
+                double J21 = (r2_T - r2) / dT, J22 = (r2_n - r2) / dx;
+                double det = J11 * J22 - J12 * J21;
+                if (isfinite(det) && fabs(det) > 1e-300) {
+                    dTe[s] = -( J22 * r1 - J12 * r2) / det;
+                    dln[s] = -(-J21 * r1 + J11 * r2) / det;
+                }
+                rnorm += fabs(r1) / (fabs(sh->H_photo) + 1e-300)
+                       + fabs(r2) / (n + 1e-300);
             }
-            rnorm += fabs(r1) / (fabs(sh->H_photo) + 1e-300)
-                   + fabs(r2) / (n + 1e-300);
+        } else {
+            /* ---- mode>=2: augmented residual + block-tridiagonal solve ----
+             * Coupling blocks are rank-1 in the (1,1) corner (energy row,
+             * T-column only), so block-Thomas reduces to corrections of the
+             * J11 entry and the r1 rhs. */
+            for (int s = 0; s < n_shells; s++) {
+                const A4Shell *sh = &g_a4sh[s];
+                rJ11[s] = 1.0; rJ12[s] = 0.0; rJ21[s] = 0.0; rJ22[s] = 1.0;
+                rElo[s] = 0.0; rEup[s] = 0.0; rr1[s] = 0.0; rr2[s] = 0.0;
+                dTe[s] = 0.0; dln[s] = 0.0;
+                if (!act[s]) continue;
+                double T = Tv[s], n = nv[s];
+                double imp_lo = 0.0, imp_up = 0.0;
+                if (s > 0 && g_a4sh[s-1].assembled) {
+                    imp_lo = a4_import(&WM_lo[(size_t)s * nfb],
+                                       &Blagv[(size_t)(s-1) * nfb],
+                                       Tv[s-1], nu_mid, nfb);
+                    if (act[s-1])
+                        rElo[s] = a4_J11_off(&WM_lo[(size_t)s * nfb],
+                                             Tv[s-1], nu_mid, nfb);
+                }
+                if (s < n_shells - 1 && g_a4sh[s+1].assembled) {
+                    imp_up = a4_import(&WM_up[(size_t)s * nfb],
+                                       &Blagv[(size_t)(s+1) * nfb],
+                                       Tv[s+1], nu_mid, nfb);
+                    if (act[s+1])
+                        rEup[s] = a4_J11_off(&WM_up[(size_t)s * nfb],
+                                             Tv[s+1], nu_mid, nfb);
+                }
+                double r1 = a4g_r1(sh, s, T, n, nu_mid, nfb, Gamma_ad,
+                                   cool_nonneg, line_re) + imp_lo + imp_up;
+                rJ11[s] = a4g_J11(sh, s, T, n, nu_mid, nfb, Gamma_ad, line_re);
+                rr1[s] = r1;
+                if (sh->newton_own) {
+                    const double *Jrow = &nlte->J_nu[(size_t)s * nfb];
+                    double Tc = -1.0;
+                    double r2 = n - coupled_charge_density_tdep(atom, plasma, s,
+                                    T, n, time_explosion, n_shells, 0,
+                                    a4g_gamma(sh, T, nfb, nu_mid, Jrow, n_ip, dJ, gb1, &Tc));
+                    double dT = 1e-4 * T, dx = 1e-4;
+                    double ne_x = n * exp(dx);
+                    rJ12[s] = a4g_J12(sh, T, n, Gamma_ad);
+                    double r2_n = ne_x - coupled_charge_density_tdep(atom, plasma,
+                                    s, T, ne_x, time_explosion, n_shells, 0,
+                                    a4g_gamma(sh, T, nfb, nu_mid, Jrow, n_ip, dJ, gb1, &Tc));
+                    double r2_T = n - coupled_charge_density_tdep(atom, plasma, s,
+                                    T + dT, n, time_explosion, n_shells, 0,
+                                    a4g_gamma(sh, T + dT, nfb, nu_mid, Jrow, n_ip, dJ, gb1, &Tc));
+                    rJ21[s] = (r2_T - r2) / dT;
+                    rJ22[s] = (r2_n - r2) / dx;
+                    rr2[s] = r2;
+                    rnorm += fabs(r2) / (n + 1e-300);
+                }
+                rnorm += fabs(r1) / scale1[s];
+                if (!s42_done && (s == 0 || s == n_shells/2 ||
+                                  (s > 0 && !sh->newton_own &&
+                                   g_a4sh[s-1].newton_own) ||
+                                  s == n_shells - 1)) {
+                    printf("    [S42 s=%d own=%d] J11=%+.3e Elo=%+.3e Eup=%+.3e "
+                           "OD/diag=%.3e imp(lo+up)=%+.3e r1=%+.3e imp/r1=%+.3e\n",
+                           s, sh->newton_own, rJ11[s], rElo[s], rEup[s],
+                           (fabs(rElo[s]) + fabs(rEup[s])) / (fabs(rJ11[s]) + 1e-300),
+                           imp_lo + imp_up, r1,
+                           (imp_lo + imp_up) / (fabs(r1) + 1e-300));
+                }
+            }
+            s42_done = 1;
+            /* block-Thomas forward elimination (corner-rank-1 coupling) */
+            for (int s = 0; s < n_shells; s++) {
+                double A11 = rJ11[s], A12 = rJ12[s], A21 = rJ21[s], A22 = rJ22[s];
+                double b1 = -rr1[s], b2 = -rr2[s];
+                if (s > 0 && rElo[s] != 0.0 && fabs(hdet[s-1]) > 1e-300) {
+                    double X11 = hA22[s-1] / hdet[s-1];
+                    A11 -= rElo[s] * X11 * rEup[s-1];
+                    double y1 = (hA22[s-1] * hr1[s-1] - hA12[s-1] * hr2[s-1])
+                              / hdet[s-1];
+                    b1 -= rElo[s] * y1;
+                }
+                double det = A11 * A22 - A12 * A21;
+                if (!isfinite(det) || fabs(det) < 1e-300) {
+                    /* pivot guard: degrade this row to its uncoupled block */
+                    A11 = rJ11[s]; b1 = -rr1[s];
+                    det = A11 * A22 - A12 * A21;
+                    rEup[s] = 0.0;
+                    n_pivot++;
+                    if (!isfinite(det) || fabs(det) < 1e-300) {
+                        A11 = 1.0; A12 = A21 = 0.0; A22 = 1.0;
+                        b1 = b2 = 0.0; det = 1.0;
+                    }
+                }
+                hA11[s] = A11; hA12[s] = A12; hA21[s] = A21; hA22[s] = A22;
+                hdet[s] = det; hr1[s] = b1; hr2[s] = b2;
+            }
+            for (int s = n_shells - 1; s >= 0; s--) {
+                double z1 = hr1[s], z2 = hr2[s];
+                if (s < n_shells - 1 && rEup[s] != 0.0)
+                    z1 -= rEup[s] * dTe[s+1];
+                dTe[s] = ( hA22[s] * z1 - hA12[s] * z2) / hdet[s];
+                dln[s] = (-hA21[s] * z1 + hA11[s] * z2) / hdet[s];
+                if (!act[s]) { dTe[s] = 0.0; dln[s] = 0.0; }
+            }
+            /* trust region: cap the max relative T step at 15%, preserve
+             * the step DIRECTION (per-shell caps would bend the coupled
+             * Newton step). */
+            double smax = 0.0;
+            for (int s = 0; s < n_shells; s++)
+                if (act[s]) {
+                    double rT = fabs(dTe[s]) / (Tv[s] + 1e-300);
+                    if (rT > smax) smax = rT;
+                }
+            if (smax > 0.15) {
+                double fac = 0.15 / smax;
+                for (int s = 0; s < n_shells; s++) {
+                    dTe[s] *= fac; dln[s] *= fac;
+                }
+            }
         }
         if (gi == 0) rn_first = rnorm;
         rn_last = rnorm;
@@ -4945,28 +5201,64 @@ static void a4_global_newton(AtomicData *atom, PlasmaState *plasma,
         for (int ls = 0; ls < 25; ls++) {
             double qnorm = 0.0;
             int bad = 0;
+            /* trial vectors first (od residuals need neighbor trials) */
             for (int s = 0; s < n_shells && !bad; s++) {
+                if (!act[s]) continue;
                 const A4Shell *sh = &g_a4sh[s];
-                if (!sh->assembled || !sh->newton_own) continue;
                 double Tt = Tv[s] + lam * dTe[s];
                 double nt = nv[s] * exp(lam * dln[s]);
                 if (Tt < sh->T_lo) Tt = sh->T_lo;
                 if (Tt > sh->T_hi) Tt = sh->T_hi;
-                if (!isfinite(Tt) || !isfinite(nt) || nt <= 0.0) { bad = 1; break; }
-                const double *Jrow = &nlte->J_nu[(size_t)s * nfb];
-                double Tc = -1.0;
-                double q1 = a4g_r1(sh, s, Tt, nt, nu_mid, nfb, Gamma_ad,
-                                   cool_nonneg, line_re);
-                double q2 = nt - coupled_charge_density_tdep(atom, plasma, s, Tt,
-                                nt, time_explosion, n_shells, 0,
-                                a4g_gamma(sh, Tt, nfb, nu_mid, Jrow, n_ip, dJ, gb1, &Tc));
-                qnorm += fabs(q1) / (fabs(sh->H_photo) + 1e-300)
-                       + fabs(q2) / (nt + 1e-300);
+                if (!isfinite(Tt) || !isfinite(nt) || nt <= 0.0) bad = 1;
+            }
+            if (!bad) {
+                for (int s = 0; s < n_shells; s++) {
+                    const A4Shell *sh = &g_a4sh[s];
+                    if (!act[s]) continue;
+                    double Tt = Tv[s] + lam * dTe[s];
+                    double nt = nv[s] * exp(lam * dln[s]);
+                    if (Tt < sh->T_lo) Tt = sh->T_lo;
+                    if (Tt > sh->T_hi) Tt = sh->T_hi;
+                    double q1;
+                    if (od) {
+                        double i_lo = 0.0, i_up = 0.0;
+                        double Tm1 = (s > 0) ? (act[s-1] ?
+                            fmin(fmax(Tv[s-1] + lam * dTe[s-1], g_a4sh[s-1].T_lo),
+                                 g_a4sh[s-1].T_hi) : Tv[s-1]) : 0.0;
+                        double Tp1 = (s < n_shells-1) ? (act[s+1] ?
+                            fmin(fmax(Tv[s+1] + lam * dTe[s+1], g_a4sh[s+1].T_lo),
+                                 g_a4sh[s+1].T_hi) : Tv[s+1]) : 0.0;
+                        if (s > 0 && g_a4sh[s-1].assembled)
+                            i_lo = a4_import(&WM_lo[(size_t)s * nfb],
+                                             &Blagv[(size_t)(s-1) * nfb],
+                                             Tm1, nu_mid, nfb);
+                        if (s < n_shells - 1 && g_a4sh[s+1].assembled)
+                            i_up = a4_import(&WM_up[(size_t)s * nfb],
+                                             &Blagv[(size_t)(s+1) * nfb],
+                                             Tp1, nu_mid, nfb);
+                        q1 = a4g_r1(sh, s, Tt, nt, nu_mid, nfb, Gamma_ad,
+                                    cool_nonneg, line_re) + i_lo + i_up;
+                        qnorm += fabs(q1) / scale1[s];
+                    } else {
+                        q1 = a4g_r1(sh, s, Tt, nt, nu_mid, nfb, Gamma_ad,
+                                    cool_nonneg, line_re);
+                        qnorm += fabs(q1) / (fabs(sh->H_photo) + 1e-300);
+                    }
+                    if (sh->newton_own) {
+                        const double *Jrow = &nlte->J_nu[(size_t)s * nfb];
+                        double Tc = -1.0;
+                        double q2 = nt - coupled_charge_density_tdep(atom, plasma,
+                                        s, Tt, nt, time_explosion, n_shells, 0,
+                                        a4g_gamma(sh, Tt, nfb, nu_mid, Jrow,
+                                                  n_ip, dJ, gb1, &Tc));
+                        qnorm += fabs(q2) / (nt + 1e-300);
+                    }
+                }
             }
             if (!bad && isfinite(qnorm) && qnorm < rnorm) {
                 for (int s = 0; s < n_shells; s++) {
                     const A4Shell *sh = &g_a4sh[s];
-                    if (!sh->assembled || !sh->newton_own) continue;
+                    if (!act[s]) continue;
                     double Tt = Tv[s] + lam * dTe[s];
                     double nt = nv[s] * exp(lam * dln[s]);
                     if (Tt < sh->T_lo) Tt = sh->T_lo;
@@ -4979,11 +5271,9 @@ static void a4_global_newton(AtomicData *atom, PlasmaState *plasma,
             lam *= 0.5;
         }
         if (!accepted) { n_ls_fail++; break; }
-        /* convergence: max relative step over owned shells */
         double relmax = 0.0;
         for (int s = 0; s < n_shells; s++) {
-            const A4Shell *sh = &g_a4sh[s];
-            if (!sh->assembled || !sh->newton_own) continue;
+            if (!act[s]) continue;
             double rT = fabs(lam * dTe[s]) / (Tv[s] + 1e-300);
             double rn = fabs(lam * dln[s]);
             if (rT > relmax) relmax = rT;
@@ -4991,13 +5281,18 @@ static void a4_global_newton(AtomicData *atom, PlasmaState *plasma,
         }
         if (relmax < 1e-5) { gi++; break; }
     }
-    /* commit + consistent ion partitions for the shells we own */
+    /* commit: owned shells get the full state + consistent ion partition;
+     * tail shells (mode>=4) commit T_e ONLY — the frozen-in partition stays
+     * authoritative and alpha(T_e) feedback is LAGGED to the next outer
+     * iteration's cascade (re-running it here would create a new split-lag
+     * loop against the rows just solved). */
     for (int s = 0; s < n_shells; s++) {
         const A4Shell *sh = &g_a4sh[s];
-        if (!sh->assembled || !sh->newton_own) continue;
+        if (!act[s]) continue;
         double T = Tv[s];
         if (T < 1000.0) T = 1000.0;
         plasma->T_e[s] = T;
+        if (!sh->newton_own) continue;
         plasma->n_electron[s] = nv[s];
         const double *Jrow = &nlte->J_nu[(size_t)s * nfb];
         double Tc = -1.0;
@@ -5005,9 +5300,18 @@ static void a4_global_newton(AtomicData *atom, PlasmaState *plasma,
                   time_explosion, n_shells, 1,
                   a4g_gamma(sh, T, nfb, nu_mid, Jrow, n_ip, dJ, gb1, &Tc));
     }
-    printf("  [A4-GLOBAL] mode=%d shells=%d iters=%d norm %.3e -> %.3e "
-           "ls_fail=%d\n", mode, n_act, gi, rn_first, rn_last, n_ls_fail);
+    printf("  [A4-GLOBAL] mode=%d shells=%d(+%d tail) iters=%d norm %.3e -> "
+           "%.3e ls_fail=%d pivots=%d T_e[%d]=%.0f\n", mode, n_act - n_tail,
+           n_tail, gi, rn_first, rn_last, n_ls_fail, n_pivot,
+           n_shells - 1, plasma->T_e[n_shells - 1]);
     free(Tv); free(nv); free(dTe); free(dln); free(dJ); free(gb1);
+    free(act); free(WM_lo); free(WM_up); free(Blagv); free(scale1);
+    free(tail_ok);
+    if (od) {
+        free(rJ11); free(rJ12); free(rJ21); free(rJ22); free(rElo);
+        free(rEup); free(rr1); free(rr2); free(hA11); free(hA12);
+        free(hA21); free(hA22); free(hdet); free(hr1); free(hr2);
+    }
 }
 
 void coupled_newton_solve_all(PlasmaState *plasma, GammaDeposition *gamma_dep,
@@ -5293,7 +5597,19 @@ void coupled_newton_solve_all(PlasmaState *plasma, GammaDeposition *gamma_dep,
         double H_gamma = (gamma_dep && gamma_dep->heating_rate &&
                           gamma_dep->heating_rate[s] > 0.0) ?
                           gamma_dep->heating_rate[s] : 0.0;
-        if (H_photo <= 0.0 && H_gamma <= 0.0) continue;  /* no anchor → leave fallback */
+        if (H_photo <= 0.0 && H_gamma <= 0.0) {
+            /* S4-4: a frozen tail shell's energy row is anchored by the line
+             * term + the off-diagonal import, not H_photo — assemble it if
+             * its registered line-RE row is non-empty. Others: fallback. */
+            int tail_line_anchor = 0;
+            if (a4_global && !newton_own && g_lre_chi_line &&
+                g_lre_nshells == n_shells && g_lre_nbins == nfb) {
+                const double *cl0 = &g_lre_chi_line[(size_t)s * nfb];
+                for (int bb = 0; bb < nfb; bb++)
+                    if (cl0[bb] > 0.0) { tail_line_anchor = 1; break; }
+            }
+            if (!tail_line_anchor) continue;     /* no anchor → leave fallback */
+        }
 
         double u_rad = 4.0 * W * SIGMA_SB * T_rad * T_rad * T_rad * T_rad /
                        C_SPEED_OF_LIGHT;
