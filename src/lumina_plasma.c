@@ -4806,6 +4806,210 @@ static double solve_ne_fixed_te(AtomicData *atom, PlasmaState *plasma, int s,
     return ne;
 }
 
+/* ================= A4 Stage 4: global block Newton ====================
+ * S4-0: the per-shell loop stores its lagged assembly (trial-independent
+ * tables) into g_a4sh[] when LUMINA_A4_GLOBAL is set — including FROZEN
+ * shells, which the per-shell Newton skips but whose energy rows the
+ * Stage-4 tail blocks will own. S4-1 (mode>=1): a global Newton over all
+ * owned shells re-solves {T_e, ln n_e} from the per-shell solution as a
+ * warm start, with the same analytic energy row + FD charge row — block-
+ * diagonal first (must reproduce the per-shell roots), block-tridiagonal
+ * off-diagonals arrive in modes 2 (energy) / 3 (charge) / 4 (frozen-tail
+ * 1x1 energy rows). Champion-path only: refuses ETLA (line_respond) and
+ * a populated collisional line table (n_active>0). */
+typedef struct {
+    int assembled, newton_own, gresp_on;
+    double T_rad, W, Te_lag, H_photo, H_gamma, compton0, ff0, C_bb_esc;
+    double T_lo, T_hi;
+    long n_active;
+    double *emit_nu;            /* [nfb] */
+    double *gbin, *lstar, *blag;/* [nfb] or NULL */
+    double *gamma_jnu;          /* [n_ip] or NULL */
+    double *Kresp;              /* [n_ip*nfb] or NULL */
+    double *gr_phi, *gr_blag;   /* [nfb] or NULL */
+} A4Shell;
+static A4Shell *g_a4sh = NULL;
+static int g_a4sh_ns = 0;
+
+static void a4sh_copy(double **dst, const double *src, size_t n) {
+    if (!src) { free(*dst); *dst = NULL; return; }
+    if (!*dst) *dst = (double *)malloc(n * sizeof(double));
+    if (*dst) memcpy(*dst, src, n * sizeof(double));
+}
+
+/* Gamma source mirroring the per-shell GAMMA_FOR semantics. */
+static const double *a4g_gamma(const A4Shell *sh, double TT, int nfb,
+                               const double *nu_mid, const double *Jrow,
+                               int n_ip, double *dJ, double *gbuf,
+                               double *Tcache) {
+    if (!sh->gresp_on || !sh->Kresp || !sh->gamma_jnu) return sh->gamma_jnu;
+    if (TT != *Tcache) {
+        a4_gamma_eval(TT, nfb, nu_mid, sh->gr_phi, sh->gr_blag, Jrow,
+                      sh->gamma_jnu, sh->Kresp, n_ip, dJ, gbuf);
+        *Tcache = TT;
+    }
+    return gbuf;
+}
+
+/* Energy residual r1(T,n) for a stored shell — term-for-term the per-shell
+ * Newton expression (champion path: empty collisional line table). */
+static double a4g_r1(const A4Shell *sh, int s, double T, double n,
+                     const double *nu_mid, int nfb, double Gamma_ad,
+                     int cool_nonneg, int line_re) {
+    return radeq_net(T, sh->T_rad, n, sh->H_photo, sh->H_gamma,
+                     sh->compton0 * n, sh->ff0 * n * n, Gamma_ad,
+                     NULL, NULL, NULL, 0, cool_nonneg, sh->C_bb_esc,
+                     sh->emit_nu, nu_mid, nfb)
+         + radeq_Hresp(T, sh->gbin, sh->lstar, sh->blag, 1.0, nu_mid, nfb)
+         + (line_re ? radeq_line_re(T, sh->Te_lag, s) : 0.0);
+}
+
+static double a4g_J11(const A4Shell *sh, int s, double T, double n,
+                      const double *nu_mid, int nfb, double Gamma_ad,
+                      int line_re) {
+    double C_ff = sh->ff0 * n * n * sqrt(T);
+    double C_ad = 1.5 * n * K_BOLTZMANN * T * Gamma_ad;
+    return -sh->compton0 * n - 0.5 * C_ff / T - C_ad / T
+         - radeq_recomb_cool_dT(T, sh->emit_nu, nu_mid, nfb)
+         + radeq_Hresp_dT(T, sh->gbin, sh->lstar, nu_mid, nfb)
+         + (line_re ? radeq_line_re_dT(T, s) : 0.0);
+}
+
+static double a4g_J12(const A4Shell *sh, double T, double n, double Gamma_ad) {
+    double C_ff = sh->ff0 * n * n * sqrt(T);
+    double C_ad = 1.5 * n * K_BOLTZMANN * T * Gamma_ad;
+    return sh->compton0 * n * (sh->T_rad - T) - 2.0 * C_ff - C_ad;
+}
+
+static void a4_global_newton(AtomicData *atom, PlasmaState *plasma,
+                             NLTEConfig *nlte, int n_shells, int nfb,
+                             const double *nu_mid, double time_explosion,
+                             double Gamma_ad, int cool_nonneg, int line_re,
+                             int n_ip, int mode) {
+    (void)mode;
+    if (!g_a4sh || g_a4sh_ns != n_shells) return;
+    int n_act = 0;
+    for (int s = 0; s < n_shells; s++)
+        if (g_a4sh[s].assembled && g_a4sh[s].newton_own) n_act++;
+    if (!n_act) return;
+    double *Tv  = (double *)malloc((size_t)n_shells * sizeof(double));
+    double *nv  = (double *)malloc((size_t)n_shells * sizeof(double));
+    double *dTe = (double *)calloc((size_t)n_shells, sizeof(double));
+    double *dln = (double *)calloc((size_t)n_shells, sizeof(double));
+    double *dJ  = (double *)malloc((size_t)nfb * sizeof(double));
+    double *gb1 = n_ip ? (double *)malloc((size_t)n_ip * sizeof(double)) : NULL;
+    for (int s = 0; s < n_shells; s++) {
+        Tv[s] = plasma->T_e[s];
+        nv[s] = plasma->n_electron[s];
+    }
+    int gi, n_ls_fail = 0;
+    double rn_first = -1.0, rn_last = -1.0;
+    for (gi = 0; gi < 15; gi++) {
+        double rnorm = 0.0;
+        for (int s = 0; s < n_shells; s++) {
+            const A4Shell *sh = &g_a4sh[s];
+            dTe[s] = 0.0; dln[s] = 0.0;
+            if (!sh->assembled || !sh->newton_own) continue;
+            double T = Tv[s], n = nv[s];
+            const double *Jrow = &nlte->J_nu[(size_t)s * nfb];
+            double Tc = -1.0;
+            double r1 = a4g_r1(sh, s, T, n, nu_mid, nfb, Gamma_ad,
+                               cool_nonneg, line_re);
+            double r2 = n - coupled_charge_density_tdep(atom, plasma, s, T, n,
+                            time_explosion, n_shells, 0,
+                            a4g_gamma(sh, T, nfb, nu_mid, Jrow, n_ip, dJ, gb1, &Tc));
+            double dT = 1e-4 * T, dx = 1e-4;
+            double ne_x = n * exp(dx);
+            double J11 = a4g_J11(sh, s, T, n, nu_mid, nfb, Gamma_ad, line_re);
+            double J12 = a4g_J12(sh, T, n, Gamma_ad);
+            double r2_n = ne_x - coupled_charge_density_tdep(atom, plasma, s, T,
+                            ne_x, time_explosion, n_shells, 0,
+                            a4g_gamma(sh, T, nfb, nu_mid, Jrow, n_ip, dJ, gb1, &Tc));
+            double r2_T = n - coupled_charge_density_tdep(atom, plasma, s, T + dT,
+                            n, time_explosion, n_shells, 0,
+                            a4g_gamma(sh, T + dT, nfb, nu_mid, Jrow, n_ip, dJ, gb1, &Tc));
+            double J21 = (r2_T - r2) / dT, J22 = (r2_n - r2) / dx;
+            double det = J11 * J22 - J12 * J21;
+            if (isfinite(det) && fabs(det) > 1e-300) {
+                dTe[s] = -( J22 * r1 - J12 * r2) / det;
+                dln[s] = -(-J21 * r1 + J11 * r2) / det;
+            }
+            rnorm += fabs(r1) / (fabs(sh->H_photo) + 1e-300)
+                   + fabs(r2) / (n + 1e-300);
+        }
+        if (gi == 0) rn_first = rnorm;
+        rn_last = rnorm;
+        /* global damped line search on the summed scaled norm */
+        double lam = 1.0;
+        int accepted = 0;
+        for (int ls = 0; ls < 25; ls++) {
+            double qnorm = 0.0;
+            int bad = 0;
+            for (int s = 0; s < n_shells && !bad; s++) {
+                const A4Shell *sh = &g_a4sh[s];
+                if (!sh->assembled || !sh->newton_own) continue;
+                double Tt = Tv[s] + lam * dTe[s];
+                double nt = nv[s] * exp(lam * dln[s]);
+                if (Tt < sh->T_lo) Tt = sh->T_lo;
+                if (Tt > sh->T_hi) Tt = sh->T_hi;
+                if (!isfinite(Tt) || !isfinite(nt) || nt <= 0.0) { bad = 1; break; }
+                const double *Jrow = &nlte->J_nu[(size_t)s * nfb];
+                double Tc = -1.0;
+                double q1 = a4g_r1(sh, s, Tt, nt, nu_mid, nfb, Gamma_ad,
+                                   cool_nonneg, line_re);
+                double q2 = nt - coupled_charge_density_tdep(atom, plasma, s, Tt,
+                                nt, time_explosion, n_shells, 0,
+                                a4g_gamma(sh, Tt, nfb, nu_mid, Jrow, n_ip, dJ, gb1, &Tc));
+                qnorm += fabs(q1) / (fabs(sh->H_photo) + 1e-300)
+                       + fabs(q2) / (nt + 1e-300);
+            }
+            if (!bad && isfinite(qnorm) && qnorm < rnorm) {
+                for (int s = 0; s < n_shells; s++) {
+                    const A4Shell *sh = &g_a4sh[s];
+                    if (!sh->assembled || !sh->newton_own) continue;
+                    double Tt = Tv[s] + lam * dTe[s];
+                    double nt = nv[s] * exp(lam * dln[s]);
+                    if (Tt < sh->T_lo) Tt = sh->T_lo;
+                    if (Tt > sh->T_hi) Tt = sh->T_hi;
+                    Tv[s] = Tt; nv[s] = nt;
+                }
+                accepted = 1;
+                break;
+            }
+            lam *= 0.5;
+        }
+        if (!accepted) { n_ls_fail++; break; }
+        /* convergence: max relative step over owned shells */
+        double relmax = 0.0;
+        for (int s = 0; s < n_shells; s++) {
+            const A4Shell *sh = &g_a4sh[s];
+            if (!sh->assembled || !sh->newton_own) continue;
+            double rT = fabs(lam * dTe[s]) / (Tv[s] + 1e-300);
+            double rn = fabs(lam * dln[s]);
+            if (rT > relmax) relmax = rT;
+            if (rn > relmax) relmax = rn;
+        }
+        if (relmax < 1e-5) { gi++; break; }
+    }
+    /* commit + consistent ion partitions for the shells we own */
+    for (int s = 0; s < n_shells; s++) {
+        const A4Shell *sh = &g_a4sh[s];
+        if (!sh->assembled || !sh->newton_own) continue;
+        double T = Tv[s];
+        if (T < 1000.0) T = 1000.0;
+        plasma->T_e[s] = T;
+        plasma->n_electron[s] = nv[s];
+        const double *Jrow = &nlte->J_nu[(size_t)s * nfb];
+        double Tc = -1.0;
+        (void)coupled_charge_density_tdep(atom, plasma, s, T, nv[s],
+                  time_explosion, n_shells, 1,
+                  a4g_gamma(sh, T, nfb, nu_mid, Jrow, n_ip, dJ, gb1, &Tc));
+    }
+    printf("  [A4-GLOBAL] mode=%d shells=%d iters=%d norm %.3e -> %.3e "
+           "ls_fail=%d\n", mode, n_act, gi, rn_first, rn_last, n_ls_fail);
+    free(Tv); free(nv); free(dTe); free(dln); free(dJ); free(gb1);
+}
+
 void coupled_newton_solve_all(PlasmaState *plasma, GammaDeposition *gamma_dep,
                               NLTEConfig *nlte, AtomicData *atom,
                               OpacityState *opacity, Geometry *geo,
@@ -4906,6 +5110,37 @@ void coupled_newton_solve_all(PlasmaState *plasma, GammaDeposition *gamma_dep,
      * matching shell count; else stays off (byte-identical collisional path). */
     int line_re = 0;
     { const char *lr = getenv("LUMINA_RADEQ_LINE_RE"); if (lr) line_re = atoi(lr); }
+    /* A4 Stage 4 (LUMINA_A4_GLOBAL): per-shell loop stores its assembly into
+     * g_a4sh[] (frozen shells included) and a GLOBAL Newton re-solves from
+     * the per-shell warm start. mode 1 = block-diagonal (root reproduction
+     * gate), 2/3/4 = +energy/charge off-diagonals/frozen-tail rows (staged).
+     * Champion-path only: tdep + no ETLA + Option-2 line-RE (empty
+     * collisional line table). */
+    int a4_global = 0;
+    { const char *ag = getenv("LUMINA_A4_GLOBAL"); if (ag) a4_global = atoi(ag); }
+    if (a4_global && (!coupled_tdep || line_respond || !line_re)) {
+        printf("  [A4-GLOBAL] disabled: requires tdep + line_re, no ETLA\n");
+        a4_global = 0;
+    }
+    if (a4_global) {
+        if (g_a4sh && g_a4sh_ns != n_shells) {
+            for (int s = 0; s < g_a4sh_ns; s++) {
+                A4Shell *sh = &g_a4sh[s];
+                free(sh->emit_nu); free(sh->gbin); free(sh->lstar);
+                free(sh->blag); free(sh->gamma_jnu); free(sh->Kresp);
+                free(sh->gr_phi); free(sh->gr_blag);
+            }
+            free(g_a4sh); g_a4sh = NULL; g_a4sh_ns = 0;
+        }
+        if (!g_a4sh) {
+            g_a4sh = (A4Shell *)calloc((size_t)n_shells, sizeof(A4Shell));
+            g_a4sh_ns = g_a4sh ? n_shells : 0;
+        }
+        if (!g_a4sh) a4_global = 0;
+        else for (int s = 0; s < n_shells; s++) {
+            g_a4sh[s].assembled = 0; g_a4sh[s].newton_own = 0;
+        }
+    }
     line_re = line_re && g_lre_chi_line && g_lre_nshells == n_shells;
     if (line_re)
         printf("  [COUPLED-NEWTON] Option-2 line-RE term ON "
@@ -4993,15 +5228,20 @@ void coupled_newton_solve_all(PlasmaState *plasma, GammaDeposition *gamma_dep,
          *    freeze (incl. the transition zone). Skip ONLY frozen-in-owned shells.
          *  - increment-1 (steady): keep the old τ_rec/t_exp gate (inner only),
          *    leaving the transition zone to steady-state Saha (A/B baseline). */
+        int newton_own = 1;
         if (coupled_tdep) {
             if (frozenin_is_frozen && s < frozenin_is_frozen_n &&
-                frozenin_is_frozen[s]) continue;
+                frozenin_is_frozen[s]) newton_own = 0;
         } else {
             double alpha_rec = 2.6e-13 * pow(T_rad / 1.0e4, -0.8);
             double n_e0 = plasma->n_electron[s];
             double tau_rec = (alpha_rec > 0.0) ? 1.0 / (n_e0 * alpha_rec) : 0.0;
-            if (tau_rec >= hybrid_taurec_thr * time_explosion) continue;
+            if (tau_rec >= hybrid_taurec_thr * time_explosion) newton_own = 0;
         }
+        /* S4-0: in global mode FROZEN shells are still assembled (their energy
+         * rows belong to the Stage-4 tail blocks); only the per-shell Newton
+         * is skipped for them. Old behavior when the gate is off. */
+        if (!newton_own && !a4_global) continue;
 
         /* ---- assemble the per-shell, n_e/T_e-independent radiative-equilibrium
          *      tables from the lagged NLTE pops + J_ν (same as the bisection path) ---- */
@@ -5345,6 +5585,25 @@ void coupled_newton_solve_all(PlasmaState *plasma, GammaDeposition *gamma_dep,
             : (const double *)gamma_cur) \
          : (const double *)gamma_jnu)
         double T_lo = 0.03 * T_rad, T_hi = 3.0 * T_rad;
+        /* S4-0: persist this shell's lagged assembly for the global Newton. */
+        if (a4_global) {
+            A4Shell *sh = &g_a4sh[s];
+            sh->assembled = 1; sh->newton_own = newton_own;
+            sh->gresp_on = gresp_on;
+            sh->T_rad = T_rad; sh->W = W; sh->Te_lag = Te_lag;
+            sh->H_photo = H_photo; sh->H_gamma = H_gamma;
+            sh->compton0 = compton0; sh->ff0 = ff0; sh->C_bb_esc = C_bb_esc;
+            sh->T_lo = T_lo; sh->T_hi = T_hi; sh->n_active = n_active;
+            a4sh_copy(&sh->emit_nu, emit_nu, (size_t)nfb);
+            a4sh_copy(&sh->gbin, gbin, (size_t)nfb);
+            a4sh_copy(&sh->lstar, lstar, (size_t)nfb);
+            a4sh_copy(&sh->blag, blag, (size_t)nfb);
+            a4sh_copy(&sh->gamma_jnu, gamma_jnu, (size_t)n_ip);
+            a4sh_copy(&sh->Kresp, gresp_on ? Kresp : NULL, (size_t)n_ip * nfb);
+            a4sh_copy(&sh->gr_phi, gresp_on ? gr_phi : NULL, (size_t)nfb);
+            a4sh_copy(&sh->gr_blag, gresp_on ? gr_blag : NULL, (size_t)nfb);
+            if (!newton_own) continue;   /* frozen: assembled only */
+        }
         int conv = 0;
         /* A3 (A): replace radeq_net's internal lagged line cooling with the
          * T_e-responsive ETLA form. radeq_net still adds radeq_line_cool(ca,cb,...);
@@ -5611,6 +5870,11 @@ void coupled_newton_solve_all(PlasmaState *plasma, GammaDeposition *gamma_dep,
                        t, cn_scnt[t], cn_tsum[t], cn_smax[t], cn_tmax[t]);
         free(cn_tsum); free(cn_tmax); free(cn_scnt); free(cn_smax);
     }
+    /* A4 Stage 4: global Newton from the per-shell warm start (S4-1+). */
+    if (a4_global)
+        a4_global_newton(atom, plasma, nlte, n_shells, nfb, nu_mid,
+                         time_explosion, Gamma_ad, cool_nonneg, line_re,
+                         n_ip, a4_global);
     free(nu_mid);
 
     /* Reconcile ONLY the shells the Newton does not own (steady-state Saha at the
