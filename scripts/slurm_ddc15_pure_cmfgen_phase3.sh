@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH --job-name=ddc15_pc_phase3
-#SBATCH --partition=a40,a100,h100,h200
+#SBATCH --partition=h100,h200,a100,a40
 #SBATCH --gres=gpu:1
 #SBATCH --cpus-per-task=4
 #SBATCH --time=UNLIMITED

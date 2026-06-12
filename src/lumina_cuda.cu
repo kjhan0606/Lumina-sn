@@ -833,6 +833,14 @@ static void nlte_solve_all_gpu(NLTEConfig *nlte, AtomicData *atom,
             int g_lo = atom->level_g[lower_global];
             int g_up = atom->level_g[upper_global];
 
+            /* CMF NLTE line source S_l = (2hv^3/c^2)/(g_u n_l/(g_l n_u) - 1):
+             * MUST be written here too — this GPU tau update was the only
+             * writer-path omission (audit 2026-06-12); line_source_S stayed
+             * empty so cmfgen_assemble's B(T_e) fallback fired for 100% of
+             * the forest in every GPU run (maximal local thermalization). */
+            double nu_l = C_SPEED_OF_LIGHT / lam_cm;
+            double src_prefac = 2.0 * H_PLANCK * nu_l * nu_l * nu_l /
+                                (C_SPEED_OF_LIGHT * C_SPEED_OF_LIGHT);
             for (int s = 0; s < n_shells; s++) {
                 double n_lower = nlte->nlte_level_populations[nlte_lo * n_shells + s];
                 double n_upper = nlte->nlte_level_populations[nlte_up * n_shells + s];
@@ -843,8 +851,18 @@ static void nlte_solve_all_gpu(NLTEConfig *nlte, AtomicData *atom,
                 }
                 double tau_nlte = SOBOLEV_COEFF * f_lu * lam_cm * time_explosion *
                                   n_lower * stim_corr;
-                if (tau_nlte < 1e-100) tau_nlte = 1e-100;
+                if (!(tau_nlte > 1e-100)) tau_nlte = 1e-100;  /* NaN-catching */
                 opacity->tau_sobolev[line * n_shells + s] = tau_nlte;
+
+                double S_l = 0.0;
+                if (n_lower > 0.0 && n_upper > 0.0 && g_lo > 0 && g_up > 0) {
+                    double ratio = ((double)g_up * n_lower) /
+                                   ((double)g_lo * n_upper);
+                    double denom = ratio - 1.0;
+                    if (denom > 1e-30) S_l = src_prefac / denom;
+                }
+                if (opacity->line_source_S)
+                    opacity->line_source_S[line * n_shells + s] = S_l;
             }
         }
     }

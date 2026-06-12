@@ -119,6 +119,17 @@ void cmfgen_assemble(CMFGENState *cs, const Geometry *geo,
      * LUMINA_CMFGEN_EPS_FLOOR (1e-5), LUMINA_CMFGEN_EPS_CAP (1.0). */
     int eps_phys = 0;
     double eps_floor = 1e-5, eps_cap = 1.0;
+    /* NLTE line-source consumption gate (LUMINA_CMFGEN_SRC_NLTE=1, default
+     * OFF). The pop-ratio S_l data is correct physics (fluorescence) but is
+     * EXPLOSIVE under the operator split: saturated FUV lines in cold gas
+     * carry S_l up to ~1e16 x the local J (run 165510: J[mid,500] 1.8e-18 ->
+     * 4.2e-2 at the first NLTE-fed iter), eta_line -> J -> T_e no-root pins
+     * at 2*T_rad. Until the eps-weighted thermal channel / A4 in-Newton
+     * source absorbs it, the B(T_e) fallback (the de-facto thermostat the
+     * champion metrics rest on) stays the default. */
+    int src_nlte = 0;
+    { const char *sn = getenv("LUMINA_CMFGEN_SRC_NLTE");
+      if (sn && atoi(sn)) src_nlte = 1; }
     { const char *ep = getenv("LUMINA_CMFGEN_LINE_EPS_PHYS");
       if (ep && atoi(ep)) eps_phys = 1;
       const char *ef = getenv("LUMINA_CMFGEN_EPS_FLOOR");
@@ -155,7 +166,8 @@ void cmfgen_assemble(CMFGENState *cs, const Geometry *geo,
             if (b < 0 || b >= NB) continue;
             double frac = (tau > 1e-6) ? -expm1(-tau) : tau;   /* 1-e^{-tau} */
             double w = frac * nu_l * inv_ct / cs->dnu[b];      /* cm^-1 */
-            double Sl = opac->line_source_S[(size_t)l * NS + s];
+            double Sl = src_nlte ? opac->line_source_S[(size_t)l * NS + s]
+                                 : 0.0;
             if (Sl <= 0.0) Sl = cm_planck(nu_l, Te);
             size_t idx = (size_t)s * NB + b;
             cs->chi_line[idx] += w;
@@ -470,7 +482,8 @@ void cmfgen_solve_J(CMFGENState *cs, const Geometry *geo, double T_inner,
                      * Jb[] as the solved-J scratch to avoid another array. */
                     size_t idx = (size_t)s * NB + b;
                     double Jold = cs->J[idx];
-                    if (Jn < 0.0) Jn = 0.0;
+                    if (!isfinite(Jn) || Jn < 0.0) Jn = 0.0;  /* finite guard:
+                        warm-started J makes any one-iter accident permanent */
                     double rel = (Jn > 1e-300) ? fabs(Jn - Jold) / Jn : 0.0;
                     if (rel > maxrel) maxrel = rel;
                     Jb[s] = Jn;                 /* solved J for s (scratch) */
@@ -508,7 +521,7 @@ void cmfgen_solve_J(CMFGENState *cs, const Geometry *geo, double T_inner,
                                cs->chi_abs[i2], cs->chi_line[i2], r, cs->S_fixed[i2],
                                S[s], Ldiag, Jb[s], cs->J[idx], Jnew < 0 ? 0 : Jnew);
                     }
-                    if (Jnew < 0.0) Jnew = 0.0;
+                    if (!isfinite(Jnew) || Jnew < 0.0) Jnew = 0.0;
                     cs->J[idx] = Jnew;
                     /* Persist the diagonal ∂J/∂S operator for the RADEQ/Newton T_e
                      * solve (Phase-1 faithful radiation response). Last ALI iter wins. */

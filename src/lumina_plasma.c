@@ -690,7 +690,7 @@ static void compute_ion_populations_shell(AtomicData *atom, PlasmaState *plasma,
             for (int k = 0; k < n_pops - 1; k++) {
                 product *= ratios[k];
                 double n_ion = n_0 * product;
-                if (n_ion < 1e-300) n_ion = 1e-300;
+                if (!(n_ion > 1e-300)) n_ion = 1e-300;  /* NaN-catching */
                 atom->ion_number_density[(ip_start + k + 1) * n_shells + s] = n_ion;
             }
 
@@ -789,7 +789,7 @@ static void compute_electron_density(AtomicData *atom, PlasmaState *plasma,
                 for (int k = 0; k < max_k; k++) {
                     product *= ratios_local[k];
                     double n_ion = n_0 * product;
-                    if (n_ion < 1e-300) n_ion = 1e-300;
+                    if (!(n_ion > 1e-300)) n_ion = 1e-300;  /* NaN-catching */
                     atom->ion_number_density[(ip_start + k + 1) * n_shells + s] = n_ion;
                 }
             }
@@ -2049,29 +2049,60 @@ static void frozenin_integrate(int nelem, const double *alpha, const double *n_e
         double amax = 0.0;
         for (int i = 0; i < n; i++) if (alpha[i] > amax) amax = alpha[i];
         double rate = amax * ne_now;
-        int nsub = (int)(rate * H / 0.05) + 1;
+        /* AUDIT FIX (2026-06-12): the old int cast (int)(rate*H/0.05)+1
+         * OVERFLOWED for deep-freeze states (rate*H ~ 1e10+ -> UB -> nsub=1
+         * -> explicit RK4 instant blow-up -> NaN through the commit floors).
+         * Stiff macro-steps now take the BACKWARD-EULER chain (the cascade is
+         * linear in y at lagged n_e and strictly lower-triangular: solve
+         * top stage down, unconditionally stable). */
+        double nsub_d = rate * H / 0.05 + 1.0;
+        int stiff = (!isfinite(nsub_d) || nsub_d > 100000.0);
+        int nsub = stiff ? 256 : (int)nsub_d;
         if (nsub < 1) nsub = 1;
-        if (nsub > 100000) nsub = 100000;
         double h = H / nsub;
         for (int sub = 0; sub < nsub; sub++) {
             double ts = t + sub * h;
-            frozenin_deriv(nelem, alpha, n_elem0, t_exp, ts, y, k1);
-            for (int i = 0; i < n; i++) ytmp[i] = y[i] + 0.5 * h * k1[i];
-            frozenin_deriv(nelem, alpha, n_elem0, t_exp, ts + 0.5 * h, ytmp, k2);
-            for (int i = 0; i < n; i++) ytmp[i] = y[i] + 0.5 * h * k2[i];
-            frozenin_deriv(nelem, alpha, n_elem0, t_exp, ts + 0.5 * h, ytmp, k3);
-            for (int i = 0; i < n; i++) ytmp[i] = y[i] + h * k3[i];
-            frozenin_deriv(nelem, alpha, n_elem0, t_exp, ts + h, ytmp, k4);
-            for (int i = 0; i < n; i++)
-                y[i] += (h / 6.0) * (k1[i] + 2.0 * k2[i] + 2.0 * k3[i] + k4[i]);
+            if (stiff) {
+                /* lagged n_e at substep start */
+                double scale = (t_exp / ts) * (t_exp / ts) * (t_exp / ts);
+                double ne_s = 0.0;
+                for (int e = 0; e < nelem; e++) {
+                    double zbar = 0.0;
+                    for (int k = 0; k < MS; k++) zbar += k * y[e * MS + k];
+                    ne_s += n_elem0[e] * zbar;
+                }
+                ne_s *= scale;
+                for (int e = 0; e < nelem; e++) {
+                    for (int k = MS - 1; k >= 0; k--) {
+                        double in_  = (k + 1 < MS)
+                                    ? alpha[e * MS + k] * ne_s * y[e * MS + k + 1]
+                                    : 0.0;   /* y[k+1] already implicit-updated */
+                        double dout = (k - 1 >= 0)
+                                    ? alpha[e * MS + k - 1] * ne_s : 0.0;
+                        y[e * MS + k] = (y[e * MS + k] + h * in_) /
+                                        (1.0 + h * dout);
+                    }
+                }
+            } else {
+                frozenin_deriv(nelem, alpha, n_elem0, t_exp, ts, y, k1);
+                for (int i = 0; i < n; i++) ytmp[i] = y[i] + 0.5 * h * k1[i];
+                frozenin_deriv(nelem, alpha, n_elem0, t_exp, ts + 0.5 * h, ytmp, k2);
+                for (int i = 0; i < n; i++) ytmp[i] = y[i] + 0.5 * h * k2[i];
+                frozenin_deriv(nelem, alpha, n_elem0, t_exp, ts + 0.5 * h, ytmp, k3);
+                for (int i = 0; i < n; i++) ytmp[i] = y[i] + h * k3[i];
+                frozenin_deriv(nelem, alpha, n_elem0, t_exp, ts + h, ytmp, k4);
+                for (int i = 0; i < n; i++)
+                    y[i] += (h / 6.0) * (k1[i] + 2.0 * k2[i] + 2.0 * k3[i] + k4[i]);
+            }
         }
         t = tn;
     }
-    /* clip + renormalize per element (number conservation) */
+    /* clip + renormalize per element (number conservation); NaN-catching
+     * (audit fix: NaN<0 is false so the old clip passed NaN through) */
     for (int e = 0; e < nelem; e++) {
         double sum = 0.0;
         for (int k = 0; k < MS; k++) {
-            if (y[e * MS + k] < 0.0) y[e * MS + k] = 0.0;
+            if (!(y[e * MS + k] > 0.0)) y[e * MS + k] = 0.0;
             sum += y[e * MS + k];
         }
         if (sum > 0.0)
@@ -2208,7 +2239,7 @@ static void apply_frozenin_freezeout(AtomicData *atom, PlasmaState *plasma,
                 int stage = atom->ion_pop_stage[ip];
                 double n_ion = (stage >= 0 && stage < MS)
                                ? y[e * MS + stage] * n_elem0[e] : 0.0;
-                if (n_ion < 1e-300) n_ion = 1e-300;
+                if (!(n_ion > 1e-300)) n_ion = 1e-300;  /* NaN-catching */
                 atom->ion_number_density[ip * n_shells + s] = n_ion;
             }
         }
@@ -4584,7 +4615,7 @@ static double coupled_charge_density_tdep(AtomicData *atom, PlasmaState *plasma,
             charge += (double)atom->ion_pop_stage[ip_start + j] * yj;
             if (write_pops) {
                 double n_ion = n_element * yj;
-                if (n_ion < 1e-300) n_ion = 1e-300;
+                if (!(n_ion > 1e-300)) n_ion = 1e-300;  /* NaN-catching */
                 atom->ion_number_density[(ip_start + j) * n_shells + s] = n_ion;
             }
         }
@@ -6436,7 +6467,7 @@ static void nlte_update_tau_sobolev(NLTEConfig *nlte, AtomicData *atom,
 
             double tau_nlte = SOBOLEV_COEFF * f_lu * lam_cm * time_explosion *
                               n_lower * stim_corr;
-            if (tau_nlte < 1e-100) tau_nlte = 1e-100;
+            if (!(tau_nlte > 1e-100)) tau_nlte = 1e-100;  /* NaN-catching */
             opacity->tau_sobolev[line * n_shells + s] = tau_nlte;
 
             /* CMF NLTE line source function (paper-method, fluorescence-bearing):
