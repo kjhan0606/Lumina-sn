@@ -540,13 +540,22 @@ void cmfgen_solve_J(CMFGENState *cs, const Geometry *geo, double T_inner,
 void cmfgen_window_color(CMFGENState *cs)
 {
     int NS = cs->n_shells, NB = cs->n_bins;
-    /* Two narrow optical bands. NO per-shell opacity filter: in the thin
-     * outer the per-shell dtau is tiny regardless of chi_line/cont, and the
-     * J SHAPE carries the photospheric color (validated offline: this 2-band
-     * ratio reproduces gold T_e 2503-2602K at sh40-48 where the trough-match
-     * thermostat extracts 2256-2324K from the SAME field). A window criterion
-     * on local chi_line finds 0 blue bins out there and never fires. */
-    const double LB1 = 4150e-8, LB2 = 4300e-8, LR1 = 6800e-8, LR2 = 7000e-8;
+    /* Two CONTINUUM windows (path-4 redo of the sealed 165485 anchor). The
+     * old 4150-4300A blue band was line-REPROCESSED in the outer shells
+     * (chi_line/chi_cont up to 8.6e6): anchoring T_e brightened the locally
+     * re-emitted trough J -> hotter color -> runaway to 24kK. These bands are
+     * chosen from the 165584 JDUMP chi map: worst chi_line/(chi_es+chi_abs)
+     * over sh40-48 is <0.10 in BOTH, so the window J is TRANSPORTED photo-
+     * spheric light, not local re-emission — the feedback loop gain is dead.
+     * Measured on the converged champion field: color = 2471.6K, FLAT across
+     * sh38-48 (gold tail T_e 2505-2560K; treadmill extracts 2254K = -10%).
+     * Override via LUMINA_CMFGEN_COLOR_BANDS="l1,l2,l3,l4" (Angstrom). */
+    double LB1 = 5619e-8, LB2 = 6083e-8, LR1 = 9000e-8, LR2 = 11000e-8;
+    { const char *cb = getenv("LUMINA_CMFGEN_COLOR_BANDS");
+      if (cb) { double a, b2, c2, e;
+                if (sscanf(cb, "%lf,%lf,%lf,%lf", &a, &b2, &c2, &e) == 4) {
+                    LB1 = a * 1e-8; LB2 = b2 * 1e-8;
+                    LR1 = c2 * 1e-8; LR2 = e * 1e-8; } } }
     for (int s = 0; s < NS; ++s) {
         double Jb = 0.0, wb = 0.0, Jr = 0.0, wr = 0.0;
         int nb_ = 0, nr_ = 0;
