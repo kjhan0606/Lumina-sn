@@ -4496,11 +4496,17 @@ static double coupled_charge_density(AtomicData *atom, PlasmaState *plasma,
  * α·φ_LTE = Saha, so inner shells are unchanged. Uses the SAME CMFGEN σ_bf levels
  * as frozenin_alpha_rr (grid bin-aligned with nlte->J_nu). Returns −1.0 if the ion
  * has no usable cmfgen σ_bf (caller then falls back to the φ_neb closure). */
+/* Krow (A4 Stage 3, optional): when non-NULL, accumulates the level-collapsed
+ * photoionization kernel K'[bb] = (1/U) Sum_l w_l * 4pi*sigma_l[bb]/(h nu_bb)
+ * * dnu_bb, so Gamma(J + dJ) = Gamma0 + Sum_bb K'[bb]*dJ[bb] without re-running
+ * the level loop. The kernel is defined on the BARE lagged-J integrand (the
+ * B3-1 blend / WBFLOOR probes are diagnostic-only paths; champion has both
+ * off). Caller must zero Krow[0..nfb-1] first. */
 static double coupled_photoion_rate_jnu(AtomicData *atom, NLTEConfig *nlte,
                                         int ip, int s, double T_e, int n_shells,
                                         const double *jblend_lstar,
                                         const double *jblend_b, double jblend_W,
-                                        double wbfloor_T) {
+                                        double wbfloor_T, double *Krow) {
     (void)n_shells;
     if (!atom->cmfgen_loaded || T_e <= 0.0) return -1.0;
     int Z = atom->ion_pop_Z[ip];
@@ -4553,17 +4559,63 @@ static double coupled_photoion_rate_jnu(AtomicData *atom, NLTEConfig *nlte,
                 double Jf = jblend_W * planck_bnu(wbfloor_T, nu_c);
                 if (J < Jf) J = Jf;
             }
-            if (J <= 0.0) continue;
             double dnu = exp(lo + d_log_nu) - exp(lo);
-            Rj += 4.0 * M_PI_VAL * J * sig / (H_PLANCK * nu_c) * dnu;
+            double kern = 4.0 * M_PI_VAL * sig / (H_PLANCK * nu_c) * dnu;
+            if (Krow) Krow[bb] += w_l * kern;
+            if (J <= 0.0) continue;
+            Rj += kern * J;
         }
         num += w_l * Rj;
         any_sigma = 1;
     }
-    if (!any_sigma || !(U > 0.0) || !isfinite(num)) return -1.0;
+    if (!any_sigma || !(U > 0.0) || !isfinite(num)) {
+        if (Krow) memset(Krow, 0, sizeof(double) * (size_t)nfb);
+        return -1.0;
+    }
+    if (Krow) {
+        double invU = 1.0 / U;
+        for (int bb = 0; bb < nfb; bb++) Krow[bb] *= invU;
+    }
     double gamma = num / U;
-    if (!isfinite(gamma) || gamma < 0.0) return -1.0;
+    if (!isfinite(gamma) || gamma < 0.0) {
+        if (Krow) memset(Krow, 0, sizeof(double) * (size_t)nfb);
+        return -1.0;
+    }
     return gamma;
+}
+
+/* A4 Stage 3: Gamma(T_trial) = Gamma0 + Sum_b K'[b]*dJ_b(T_trial), the
+ * in-residual photoionization response through the shell-local (Jacobi-
+ * diagonal) resolvent of the formal solve:
+ *   dJ_b = clamp(phi_b*(B(T)-B(Te_lag)), >= -J_b)
+ * phi is precomputed per shell (clamp01(Lstar*eps/max(1-Lstar*r,1e-3)) —
+ * bounded <= 1, so the response can never push J past full thermalization:
+ * the dB/dT Wien lever is multiplied by a <=1 factor, structurally unable
+ * to re-form the exp(-chi/kT_e) runaway). gamma0[ip] < 0 (phi_neb sentinel)
+ * passes through untouched. gout[ip] floored at 0. */
+static void a4_gamma_eval(double TT, int nfb, const double *nu_mid,
+                          const double *phi, const double *blag_resp,
+                          const double *Jrow, const double *gamma0,
+                          const double *Kresp, int n_ip,
+                          double *dJ, double *gout) {
+    for (int bb = 0; bb < nfb; bb++) {
+        double ph = phi[bb];
+        if (ph <= 0.0) { dJ[bb] = 0.0; continue; }
+        double d = ph * (planck_bnu(TT, nu_mid[bb]) - blag_resp[bb]);
+        double Jb = Jrow[bb];
+        if (d < -Jb) d = -Jb;
+        dJ[bb] = d;
+    }
+    for (int ip = 0; ip < n_ip; ip++) {
+        double g0 = gamma0[ip];
+        if (g0 < 0.0) { gout[ip] = g0; continue; }
+        const double *K = &Kresp[(size_t)ip * nfb];
+        double acc = 0.0;
+        for (int bb = 0; bb < nfb; bb++)
+            if (K[bb] != 0.0 && dJ[bb] != 0.0) acc += K[bb] * dJ[bb];
+        double g = g0 + acc;
+        gout[ip] = (g > 0.0) ? g : 0.0;
+    }
 }
 
 /* A2 increment-2: TIME-DEPENDENT charge density for one shell at trial (T_e,n_e).
@@ -4840,6 +4892,12 @@ void coupled_newton_solve_all(PlasmaState *plasma, GammaDeposition *gamma_dep,
     int use_jnu_lstar = 0;
     { const char *jl = getenv("LUMINA_COUPLED_JNU_LSTAR"); if (jl) use_jnu_lstar = atoi(jl); }
     use_jnu_lstar = use_jnu_lstar && use_jnu && use_lstar;
+    /* A4 Stage 3: photoionization rate responds to the trial T_e inside the
+     * Newton residual (LUMINA_A4_GAMMA_RESP: 0 off / 1 on / 2 on + [GRESP]
+     * one-shot print). Requires the J_nu photoion path + tdep charge eq. */
+    int a4_gresp = 0;
+    { const char *gr = getenv("LUMINA_A4_GAMMA_RESP"); if (gr) a4_gresp = atoi(gr); }
+    if (!use_jnu) a4_gresp = 0;
 
     /* Option-2 integral radiative equilibrium (LUMINA_RADEQ_LINE_RE=1): add the
      * T_e-responsive radiative line term 4π∫χ_line(J−S_l)dν to the energy
@@ -4903,6 +4961,14 @@ void coupled_newton_solve_all(PlasmaState *plasma, GammaDeposition *gamma_dep,
     double *et_Rul = line_respond ? (double *)malloc(nl_alloc * sizeof(double)) : NULL;
     double *gamma_jnu = (use_jnu && n_ip > 0)
         ? (double *)malloc((size_t)n_ip * sizeof(double)) : NULL;
+    /* A4 Stage 3 per-thread scratch: level-collapsed photoion kernel rows,
+     * trial-gamma buffer, response phi / B(Te_lag) anchor / dJ vectors. */
+    double *Kresp = (a4_gresp && gamma_jnu)
+        ? (double *)malloc((size_t)n_ip * nfb * sizeof(double)) : NULL;
+    double *gamma_cur = Kresp ? (double *)malloc((size_t)n_ip * sizeof(double)) : NULL;
+    double *gr_phi    = Kresp ? (double *)malloc((size_t)nfb * sizeof(double)) : NULL;
+    double *gr_blag   = Kresp ? (double *)malloc((size_t)nfb * sizeof(double)) : NULL;
+    double *gr_dJ     = Kresp ? (double *)malloc((size_t)nfb * sizeof(double)) : NULL;
     /* A3 incr-1 per-bin scratch: gbin=photo-weight, chi_loc=bf opacity,
      * lstar=1−e^{−τ_bf}, blag=B_ν at the lagged seed T_e. NULL when OFF. */
     double *gbin    = use_lstar ? (double *)malloc((size_t)nfb * sizeof(double)) : NULL;
@@ -5193,11 +5259,91 @@ void coupled_newton_solve_all(PlasmaState *plasma, GammaDeposition *gamma_dep,
              * (computed just above when gbin active). NULL → bare lagged J. */
             const double *jbl = use_jnu_lstar ? lstar : NULL;
             const double *jbb = use_jnu_lstar ? blag  : NULL;
+            if (Kresp) memset(Kresp, 0, (size_t)n_ip * nfb * sizeof(double));
             for (int ip = 0; ip < n_ip; ip++)
                 gamma_jnu[ip] = coupled_photoion_rate_jnu(atom, nlte, ip, s,
                                                           T_lag, n_shells,
-                                                          jbl, jbb, W, wbfloor_T);
+                                                          jbl, jbb, W, wbfloor_T,
+                                                          Kresp ? &Kresp[(size_t)ip * nfb]
+                                                                : NULL);
         }
+        /* ---- A4 Stage 3: shell-local Gamma(T_e) response setup ----
+         * phi_b = clamp01(Lstar_b*eps_b/max(1-Lstar_b*r_b, 1e-3)): the Jacobi
+         * diagonal of the resolvent (I-Lambda_tri R)^-1 Lambda_tri acting on
+         * the thermal source share eps_b (mirrors the lstar[] build above).
+         * Anchor = B(Te_lag) — the assemble snapshot S_fixed was built at —
+         * a SEPARATE array from Hresp's blag (= frozen J*): two anchors, two
+         * owners, never unify (Lambda*-anchor saga). r from the persisted
+         * tri-ALI albedo g_tri_r; fallback 1 - (chi_abs+chi_line_full)/chi_tot. */
+        int gresp_on = a4_gresp && Kresp && gamma_jnu &&
+                       g_lre_lambda_star && g_lre_nshells == n_shells &&
+                       g_lre_nbins == nfb;
+        double gr_Tcache = -1.0;
+        if (gresp_on) {
+            const double *ralb = (g_tri_r && g_tri_ns == n_shells &&
+                                  g_tri_nb == nfb)
+                               ? &g_tri_r[(size_t)s * nfb] : NULL;
+            for (int bb = 0; bb < nfb; bb++) {
+                size_t idx = (size_t)s * nfb + bb;
+                double ct  = g_lre_chi_tot[idx];
+                double eps = (ct > 0.0)
+                    ? (g_lre_chi_abs[idx] +
+                       (line_eps_on ? g_lre_chi_line[idx] : 0.0)) / ct
+                    : 0.0;
+                double rb  = ralb ? ralb[bb]
+                    : ((ct > 0.0 && g_lre_chi_line_full)
+                       ? 1.0 - (g_lre_chi_abs[idx] +
+                                g_lre_chi_line_full[idx]) / ct
+                       : 0.0);
+                if (rb < 0.0) rb = 0.0;
+                double Ld  = g_lre_lambda_star[idx];
+                double den = 1.0 - Ld * rb;
+                if (den < 1e-3) den = 1e-3;
+                double ph = Ld * eps / den;
+                if (ph < 0.0) ph = 0.0;
+                if (ph > 1.0) ph = 1.0;
+                gr_phi[bb]  = ph;
+                gr_blag[bb] = planck_bnu(Te_lag, nu_mid[bb]);
+            }
+            if (a4_gresp == 2 && (s % 8) == 0) {
+                /* [GRESP] one-shot inertness gate: Gamma(Te_lag+100K)/Gamma0. */
+                a4_gamma_eval(Te_lag + 100.0, nfb, nu_mid, gr_phi, gr_blag,
+                              &nlte->J_nu[(size_t)s * nfb], gamma_jnu, Kresp,
+                              n_ip, gr_dJ, gamma_cur);
+                double rmax = 0.0, rsum = 0.0; int ng = 0, nclamp = 0;
+                double phmax = 0.0;
+                for (int bb = 0; bb < nfb; bb++) {
+                    if (gr_phi[bb] > phmax) phmax = gr_phi[bb];
+                    if (gr_dJ[bb] != 0.0 &&
+                        gr_dJ[bb] <= -nlte->J_nu[(size_t)s * nfb + bb]) nclamp++;
+                }
+                for (int ip = 0; ip < n_ip; ip++) {
+                    if (gamma_jnu[ip] <= 0.0) continue;
+                    double rel = (gamma_cur[ip] - gamma_jnu[ip]) / gamma_jnu[ip];
+                    if (fabs(rel) > rmax) rmax = fabs(rel);
+                    rsum += fabs(rel); ng++;
+                }
+                #ifdef _OPENMP
+                #pragma omp critical
+                #endif
+                printf("    [GRESP s=%d] Te_lag=%.0f phi_max=%.3f "
+                       "relGamma(+100K) max=%.3e mean=%.3e over %d ions "
+                       "dJclamp=%d\n", s, Te_lag, phmax, rmax,
+                       ng ? rsum / ng : 0.0, ng, nclamp);
+                gr_Tcache = -1.0;   /* force fresh eval at first residual */
+            }
+        }
+        /* Single gamma source for residual, FD column, line search and
+         * write_pops alike (Jacobian-residual consistency — a responsive
+         * residual against a frozen-FD Jacobian stalls the line search). */
+#define GAMMA_FOR(TT) \
+        (gresp_on ? (((TT) != gr_Tcache) \
+            ? (a4_gamma_eval((TT), nfb, nu_mid, gr_phi, gr_blag, \
+                             &nlte->J_nu[(size_t)s * nfb], gamma_jnu, Kresp, \
+                             n_ip, gr_dJ, gamma_cur), \
+               gr_Tcache = (TT), (const double *)gamma_cur) \
+            : (const double *)gamma_cur) \
+         : (const double *)gamma_jnu)
         double T_lo = 0.03 * T_rad, T_hi = 3.0 * T_rad;
         int conv = 0;
         /* A3 (A): replace radeq_net's internal lagged line cooling with the
@@ -5261,7 +5407,7 @@ void coupled_newton_solve_all(PlasmaState *plasma, GammaDeposition *gamma_dep,
                        + RADEQ_LINE_DELTA(T_e, n_e)
                        + RADEQ_LINE_RE_TERM(T_e);
             double r2 = n_e - (coupled_tdep
-                ? coupled_charge_density_tdep(atom, plasma, s, T_e, n_e, time_explosion, n_shells, 0, gamma_jnu)
+                ? coupled_charge_density_tdep(atom, plasma, s, T_e, n_e, time_explosion, n_shells, 0, GAMMA_FOR(T_e))
                 : coupled_charge_density(atom, plasma, s, T_e, n_e, n_shells));
 
             /* (2) solve in (T_e, x=ln n_e): the n_e column is differentiated and
@@ -5339,12 +5485,12 @@ void coupled_newton_solve_all(PlasmaState *plasma, GammaDeposition *gamma_dep,
                          + RADEQ_LINE_RE_TERM(T_e);
             J11 = (r1_T - r1) / dT; J12 = (r1_n - r1) / dx;
             }
-            double r2_T = n_e - (coupled_tdep
-                ? coupled_charge_density_tdep(atom, plasma, s, T_e + dT, n_e, time_explosion, n_shells, 0, gamma_jnu)
-                : coupled_charge_density(atom, plasma, s, T_e + dT, n_e, n_shells));
             double r2_n = ne_x - (coupled_tdep
-                ? coupled_charge_density_tdep(atom, plasma, s, T_e, ne_x, time_explosion, n_shells, 0, gamma_jnu)
+                ? coupled_charge_density_tdep(atom, plasma, s, T_e, ne_x, time_explosion, n_shells, 0, GAMMA_FOR(T_e))
                 : coupled_charge_density(atom, plasma, s, T_e, ne_x, n_shells));
+            double r2_T = n_e - (coupled_tdep
+                ? coupled_charge_density_tdep(atom, plasma, s, T_e + dT, n_e, time_explosion, n_shells, 0, GAMMA_FOR(T_e + dT))
+                : coupled_charge_density(atom, plasma, s, T_e + dT, n_e, n_shells));
 
             double J21 = (r2_T - r2) / dT, J22 = (r2_n - r2) / dx;
             double det = J11 * J22 - J12 * J21;
@@ -5373,7 +5519,7 @@ void coupled_newton_solve_all(PlasmaState *plasma, GammaDeposition *gamma_dep,
                           + RADEQ_LINE_DELTA(Tt, nt)
                           + RADEQ_LINE_RE_TERM(Tt);
                 double q2 = nt - (coupled_tdep
-                    ? coupled_charge_density_tdep(atom, plasma, s, Tt, nt, time_explosion, n_shells, 0, gamma_jnu)
+                    ? coupled_charge_density_tdep(atom, plasma, s, Tt, nt, time_explosion, n_shells, 0, GAMMA_FOR(Tt))
                     : coupled_charge_density(atom, plasma, s, Tt, nt, n_shells));
                 double rn1 = fabs(q1) / (fabs(H_photo) + 1e-300) + fabs(q2) / (nt + 1e-300);
                 if (isfinite(rn1) && rn1 < rn0) { Tn = Tt; nn = nt; accepted = 1; break; }
@@ -5403,9 +5549,10 @@ void coupled_newton_solve_all(PlasmaState *plasma, GammaDeposition *gamma_dep,
          * tdep → the time-dependent tridiagonal; steady → nebular Saha. */
         if (coupled_tdep)
             (void)coupled_charge_density_tdep(atom, plasma, s, T_e, n_e,
-                                              time_explosion, n_shells, 1, gamma_jnu);
+                                              time_explosion, n_shells, 1, GAMMA_FOR(T_e));
         else
             compute_ion_populations_shell(atom, plasma, s, n_shells);
+#undef GAMMA_FOR
         if (septest_Tfix > 0.0) {
             double ne_td_fix = solve_ne_fixed_te(atom, plasma, s, septest_Tfix,
                                                  time_explosion, n_shells, 1, gamma_jnu);
@@ -5434,6 +5581,7 @@ void coupled_newton_solve_all(PlasmaState *plasma, GammaDeposition *gamma_dep,
 #endif
     }
     free(emit_nu); free(ca); free(cb); free(cbet); free(gamma_jnu);
+    free(Kresp); free(gamma_cur); free(gr_phi); free(gr_blag); free(gr_dJ);
     free(gbin); free(chi_loc); free(lstar); free(blag);
     free(et_A); free(et_B); free(et_bet); free(et_dE);
     free(et_nlo); free(et_nup); free(et_Rlu); free(et_Rul);
