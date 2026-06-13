@@ -43,6 +43,7 @@ int cmfgen_init(CMFGENState *cs, const Geometry *geo)
     cs->chi_abs     = calloc((size_t)NS * NB, sizeof(double));
     cs->chi_line    = calloc((size_t)NS * NB, sizeof(double));
     cs->chi_line_th = calloc((size_t)NS * NB, sizeof(double));
+    cs->chi_line_cls= calloc((size_t)NS * NB, sizeof(double));
     cs->chi_tot     = calloc((size_t)NS * NB, sizeof(double));
     cs->S_fixed     = calloc((size_t)NS * NB, sizeof(double));
     cs->J           = calloc((size_t)NS * NB, sizeof(double));
@@ -84,7 +85,7 @@ void cmfgen_free(CMFGENState *cs)
 {
     if (!cs) return;
     free(cs->nu); free(cs->dnu); free(cs->chi_es); free(cs->chi_abs);
-    free(cs->chi_line); free(cs->chi_line_th);
+    free(cs->chi_line); free(cs->chi_line_th); free(cs->chi_line_cls);
     free(cs->chi_tot); free(cs->S_fixed); free(cs->J);
     free(cs->lambda_star); free(cs->t_color);
     free(cs->tri_lo); free(cs->tri_up); free(cs->tri_r);
@@ -106,6 +107,7 @@ void cmfgen_assemble(CMFGENState *cs, const Geometry *geo,
 
     memset(cs->chi_line, 0, sizeof(double) * (size_t)NS * NB);
     memset(cs->chi_line_th, 0, sizeof(double) * (size_t)NS * NB);
+    memset(cs->chi_line_cls, 0, sizeof(double) * (size_t)NS * NB);
     /* line emissivity accumulator reuses chi_tot scratch before it is summed */
     double *eta_line = cs->chi_tot;
 
@@ -178,6 +180,17 @@ void cmfgen_assemble(CMFGENState *cs, const Geometry *geo,
                 if (el > eps_cap)   el = eps_cap;
                 cs->chi_line_th[idx] += w * el;
                 eta_line[idx]        += w * el * Sl;  /* thermal-channel eta */
+                /* A4 SRC_BLEND closure weight: exact two-level+Sobolev gas
+                 * coupling. Jbar_l=(1-beta)S_l+beta*J_bin with S=(1-eps)Jbar
+                 * +eps*B gives net line heating chi_l*eps*beta/(eps+beta)
+                 * *(J_bin-B): saturated lines (beta<<eps, trapped field
+                 * relaxed to local B) drop out — the 1/eps over-count AND the
+                 * hot-continuum-fed-to-trapped-lines defect both die here. */
+                {
+                    double be = (tau > 700.0) ? 1.0 / tau
+                              : (tau > 1e-6) ? (1.0 - exp(-tau)) / tau : 1.0;
+                    cs->chi_line_cls[idx] += w * (el * be) / (el + be - el * be + 1e-300);
+                }
             } else {
                 eta_line[idx] += w * Sl;
             }
@@ -854,7 +867,7 @@ int cmfgen_run(Geometry *geo, OpacityState *opac, BFOpacity *bf,
         radeq_set_line_re_source(cs.chi_line_re, cs.chi_abs, cs.chi_tot,
                                  cs.S_fixed, cs.J, cs.nu, cs.dnu,
                                  cs.lambda_star, plasma->T_e,
-                                 cs.chi_line,
+                                 cs.chi_line, cs.chi_line_cls,
                                  cs.n_shells, cs.n_bins);
 
         /* downstream solvers reused unchanged */

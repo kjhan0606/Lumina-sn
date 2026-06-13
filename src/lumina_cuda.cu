@@ -3060,7 +3060,7 @@ int main(int argc, char *argv[]) {
                     radeq_set_line_re_source(cs.chi_line_re, cs.chi_abs, cs.chi_tot,
                                              cs.S_fixed, cs.J, cs.nu, cs.dnu,
                                              cs.lambda_star, plasma.T_e,
-                                             cs.chi_line,
+                                             cs.chi_line, cs.chi_line_cls,
                                              cs.n_shells, cs.n_bins);
 
                     compute_radiative_equilibrium_te(&plasma,

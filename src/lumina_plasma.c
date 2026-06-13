@@ -3558,7 +3558,10 @@ static const double *g_lre_chi_line = NULL, *g_lre_chi_abs = NULL,
                     *g_lre_chi_tot = NULL, *g_lre_S_fixed = NULL,
                     *g_lre_J = NULL, *g_lre_nu = NULL, *g_lre_dnu = NULL,
                     *g_lre_lambda_star = NULL,
-                    *g_lre_chi_line_full = NULL;  /* unweighted chi_line (A4 boot) */
+                    *g_lre_chi_line_full = NULL,  /* unweighted chi_line (A4 boot) */
+                    *g_lre_chi_line_cls = NULL;   /* eps*beta/(eps+beta-eps*beta)
+                                                     two-level+Sobolev gas-coupling
+                                                     chi (A4 SRC_BLEND closure) */
 static int g_lre_nshells = 0, g_lre_nbins = 0;
 /* assemble-time T_e SNAPSHOT (copied, not aliased): the pre-Newton bisection
  * rewrites plasma->T_e between registration and the coupled Newton, so reading
@@ -3606,8 +3609,10 @@ void radeq_set_line_re_source(const double *chi_line, const double *chi_abs,
                               const double *dnu, const double *lambda_star,
                               const double *T_e_assemble,
                               const double *chi_line_full,
+                              const double *chi_line_cls,
                               int n_shells, int n_bins) {
     g_lre_chi_line_full = chi_line_full;
+    g_lre_chi_line_cls = chi_line_cls;
     if (n_shells > 0 && g_a4_boot_n != n_shells) {
         free(g_a4_boot);
         g_a4_boot = (unsigned char *)calloc((size_t)n_shells, 1);
@@ -3659,12 +3664,41 @@ static double radeq_line_re(double T_e, double Te_lag, int s) {
      * spurious line heating; codex ruling 2026-06-11). No eta_lag here:
      * S_fixed carries the transfer thermal share, the wrong owner for the
      * full-chi closure. */
-    static int uv_mode = -1, a4_sym = -1;
+    static int uv_mode = -1, a4_sym = -1, a4_blend = -1;
     if (uv_mode < 0) {
         const char *u = getenv("LUMINA_CMFGEN_LINE_EPS_UV");
         uv_mode = (u && atof(u) > 0.0) ? 1 : 0;
         const char *a4 = getenv("LUMINA_A4_STAGE1");
         a4_sym = (a4 && atoi(a4)) ? 1 : 0;
+        const char *ab = getenv("LUMINA_A4_SRC_BLEND");
+        a4_blend = (ab && atoi(ab)) ? 1 : 0;
+        if (a4_blend) { a4_sym = 0; uv_mode = 0; } /* blend owns the closure */
+    }
+    /* A4 SRC_BLEND closure: symmetric two-level form on the exact
+     * eps*beta/(eps+beta-eps*beta) gas-coupling chi (Newton-owned shells) —
+     * saturated lines drop out (their trapped field is in detailed balance
+     * with the gas), thin lines keep the eps-weighted transported anchor.
+     * FROZEN shells keep the FULL-chi thermostat: their gas is kinetically
+     * frozen at the radiation color temperature, and extracting that color
+     * from the transported J is exactly what full-chi does (A0b: T_e[48]
+     * +1.0%). The frozen partition is a physical boundary (the cascade's),
+     * not a latch. No clamps anywhere. */
+    if (a4_blend) {
+        const double *cl_use = NULL;
+        int frozen = (frozenin_is_frozen && s < frozenin_is_frozen_n &&
+                      frozenin_is_frozen[s]);
+        if (!frozen && g_lre_chi_line_cls)
+            cl_use = &g_lre_chi_line_cls[(size_t)s * nb];
+        else if (g_lre_chi_line_full)
+            cl_use = &g_lre_chi_line_full[(size_t)s * nb];
+        if (cl_use) {
+            for (int b = 0; b < nb; b++) {
+                if (cl_use[b] <= 0.0) continue;
+                double B_te = planck_bnu(T_e, g_lre_nu[b]);
+                H += cl_use[b] * (Jb[b] - B_te) * g_lre_dnu[b];
+            }
+            return 4.0 * M_PI_VAL * H;
+        }
     }
     /* A4 Stage-1: SYMMETRIC two-level closure on the eps-weighted thermal
      * channel, H = 4pi*Int chi_line_th*(J - B(T_e)) dnu, NO clamps. The
@@ -3788,14 +3822,33 @@ static double radeq_line_re_dT(double T_e, int s) {
     int nb = g_lre_nbins;
     const double *cl = &g_lre_chi_line[(size_t)s * nb];
     const double *Jb = &g_lre_J[(size_t)s * nb];
-    static int uv_mode = -1, a4_sym = -1;
+    static int uv_mode = -1, a4_sym = -1, a4_blend = -1;
     if (uv_mode < 0) {
         const char *u = getenv("LUMINA_CMFGEN_LINE_EPS_UV");
         uv_mode = (u && atof(u) > 0.0) ? 1 : 0;
         const char *a4 = getenv("LUMINA_A4_STAGE1");
         a4_sym = (a4 && atoi(a4)) ? 1 : 0;
+        const char *ab = getenv("LUMINA_A4_SRC_BLEND");
+        a4_blend = (ab && atoi(ab)) ? 1 : 0;
+        if (a4_blend) { a4_sym = 0; uv_mode = 0; }
     }
     double d = 0.0;
+    if (a4_blend) {
+        const double *cl_use = NULL;
+        int frozen = (frozenin_is_frozen && s < frozenin_is_frozen_n &&
+                      frozenin_is_frozen[s]);
+        if (!frozen && g_lre_chi_line_cls)
+            cl_use = &g_lre_chi_line_cls[(size_t)s * nb];
+        else if (g_lre_chi_line_full)
+            cl_use = &g_lre_chi_line_full[(size_t)s * nb];
+        if (cl_use) {
+            for (int b = 0; b < nb; b++) {
+                if (cl_use[b] <= 0.0) continue;
+                d += cl_use[b] * planck_bnu_dT(T_e, g_lre_nu[b]) * g_lre_dnu[b];
+            }
+            return -4.0 * M_PI_VAL * d;
+        }
+    }
     if (a4_sym && g_a4_boot && s < g_a4_boot_n && g_a4_boot[s]) {
         for (int b = 0; b < nb; b++) {
             if (cl[b] <= 0.0) continue;
@@ -5676,6 +5729,7 @@ void coupled_newton_solve_all(PlasmaState *plasma, GammaDeposition *gamma_dep,
         /* ---- 2×2 Newton on x=(T_e, n_e) ---- */
         double T_e = plasma->T_e[s];
         double n_e = plasma->n_electron[s];
+        double T_entry_outer = T_e;    /* previous outer-iteration value (CN_DAMP) */
         /* Te_lag = the assemble-time T_e the CMFGEN line opacity/source were
          * built at: the registration SNAPSHOT when present. plasma->T_e[s] at
          * Newton entry is WRONG here — the pre-Newton bisection rewrote it
@@ -6117,6 +6171,20 @@ void coupled_newton_solve_all(PlasmaState *plasma, GammaDeposition *gamma_dep,
 #undef RADEQ_LINE_DELTA
         if (!conv) n_stall++;          /* committed a stale (non-converged) iterate */
         if (T_e < 1000.0) { T_e = 1000.0; n_floor_cn++; }  /* under-determined: floor */
+        /* Outer-iteration under-relaxation of the committed T_e
+         * (LUMINA_CN_DAMP, default 1.0 = off): radeq_damp covers only the
+         * bisection path; the Newton path had NONE, leaving the transported-
+         * field <-> closure outer loop underdamped (T_e[24] +-150K jitter,
+         * sign-flip fraction 0.42 = unrelaxed fixed-point noise). Blends
+         * toward the shell's previous outer-iteration value. */
+        static double cn_damp = -1.0;
+        if (cn_damp < 0.0) {
+            const char *cd = getenv("LUMINA_CN_DAMP");
+            cn_damp = cd ? atof(cd) : 1.0;
+            if (cn_damp <= 0.0 || cn_damp > 1.0) cn_damp = 1.0;
+        }
+        if (cn_damp < 1.0 && T_entry_outer > 100.0)
+            T_e = cn_damp * T_e + (1.0 - cn_damp) * T_entry_outer;
         plasma->T_e[s] = T_e;
         plasma->n_electron[s] = n_e;
         newton_owned[s] = 1;

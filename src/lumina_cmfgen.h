@@ -43,6 +43,12 @@ typedef struct {
                                   is folded into chi_es so the ALI closure
                                   transports it (LUMINA_CMFGEN_LINE_EPS). */
     double *chi_tot;           /* chi_es + chi_abs + chi_line       cm^-1 */
+    double *chi_line_cls;      /* A4 SRC_BLEND closure weight: per-line
+                                  eps*beta/(eps+beta) accumulation — the exact
+                                  two-level+Sobolev gas-coupling chi (saturated
+                                  lines drop out via beta; thin lines reduce to
+                                  eps). Registered for the Newton closure of
+                                  non-frozen shells. */
     const double *chi_line_re; /* line opacity the RE/Newton closure sees:
                                   = chi_line (FULL) in transfer-only eps_uv
                                   mode (cooling-only closure), else chi_line_th */
