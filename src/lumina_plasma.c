@@ -8021,15 +8021,18 @@ void compute_formal_integral_spectrum(
                     }
                 }
 
-                /* Source function: J_nu if NLTE available, else W * B_nu(T_rad) */
-                double S;
-                if (nlte != NULL && nlte->enabled) {
-                    S = nlte_get_J_at_nu(nlte, shell, nu_l);
-                    if (S <= 0.0)
-                        S = plasma->W[shell] * planck_bnu(plasma->T_rad[shell], nu_l);
-                } else {
+                /* LINE source function: the NLTE two-level source S_l (carries
+                 * fluorescence/thermalization), NOT the binned mean intensity J.
+                 * Using S=J made the line re-emit what it absorbs at the same
+                 * observer frequency -> P-Cygni troughs refilled -> featureless
+                 * (coherent-scatter degeneracy). This is the exact fix the
+                 * sibling CMF path already carries (line_source_S, ~8252);
+                 * back-ported here per 2-reviewer verdict 2026-06-13. Fallback
+                 * dilute-LTE W*B(T_rad) for lines outside the NLTE network. */
+                double S = (opacity->line_source_S != NULL)
+                         ? opacity->line_source_S[l * n_shells + shell] : 0.0;
+                if (S <= 0.0)
                     S = plasma->W[shell] * planck_bnu(plasma->T_rad[shell], nu_l);
-                }
 
                 /* Line contribution: S * (1 - exp(-tau)) * exp(-tau_accumulated) */
                 double one_minus_exp = (tau_sob > 500.0) ? 1.0 : (1.0 - exp(-tau_sob));

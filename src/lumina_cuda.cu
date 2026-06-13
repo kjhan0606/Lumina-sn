@@ -3094,6 +3094,58 @@ int main(int argc, char *argv[]) {
                 cmfgen_free(&cs);
             }
 
+            /* Validated OBSERVER-FRAME spectra on the converged pure-CMFGEN
+             * state. The pure path used to exit with only the comoving Path-5
+             * cmfgen_write_spectrum (no inter-shell Doppler -> no P-Cygni).
+             * Path 3 (Lucy-1999 tangent-ray formal integral, per-line Sobolev
+             * Doppler) always; Path 4 (CMF finite-profile + line overlap,
+             * Blondin+2013) gated by LUMINA_TRANSPORT=cmf. Both consume
+             * plasma+opacity(tau_sobolev)+nlte, all converged here. */
+            {
+                Spectrum *spec_fi = create_spectrum(spec_min, spec_max, spec_bins);
+                compute_formal_integral_spectrum(
+                    &geo, &plasma, &opacity, &atom_data,
+                    nlte.enabled ? &nlte : NULL, config.T_inner, spec_fi, 100);
+                FILE *ff = fopen("lumina_spectrum_formal.csv", "w");
+                if (ff) {
+                    fprintf(ff, "wavelength_angstrom,flux\n");
+                    for (int i = 0; i < spec_fi->n_bins; i++)
+                        fprintf(ff, "%.6f,%.6e\n",
+                                spec_fi->wavelength[i], spec_fi->flux[i]);
+                    fclose(ff);
+                    printf("Formal integral spectrum -> lumina_spectrum_formal.csv\n");
+                }
+                free_spectrum(spec_fi);
+
+                const char *_tr = getenv("LUMINA_TRANSPORT");
+                if (_tr && strcmp(_tr, "cmf") == 0) {
+                    const char *_nz = getenv("LUMINA_CMF_NZ");
+                    const char *_ni = getenv("LUMINA_CMF_NIMPACT");
+                    const char *_vt = getenv("LUMINA_CMF_VTURB_KMS");
+                    int cmf_nz = _nz ? atoi(_nz) : 2000;
+                    int cmf_ni = _ni ? atoi(_ni) : 50;
+                    double vturb = (_vt ? atof(_vt) : 0.0) * 1.0e5;
+                    if (cmf_nz < 1) cmf_nz = 2000;
+                    if (cmf_ni < 1) cmf_ni = 50;
+                    Spectrum *spec_cmf = create_spectrum(spec_min, spec_max, spec_bins);
+                    compute_cmf_formal_spectrum(
+                        &geo, &plasma, &opacity, &atom_data,
+                        nlte.enabled ? &nlte : NULL,
+                        bf_opacity_enabled ? &bf : NULL,
+                        config.T_inner, spec_cmf, cmf_ni, cmf_nz, vturb);
+                    FILE *cf = fopen("lumina_spectrum_cmf.csv", "w");
+                    if (cf) {
+                        fprintf(cf, "wavelength_angstrom,flux\n");
+                        for (int i = 0; i < spec_cmf->n_bins; i++)
+                            fprintf(cf, "%.6f,%.6e\n",
+                                    spec_cmf->wavelength[i], spec_cmf->flux[i]);
+                        fclose(cf);
+                        printf("CMF formal spectrum -> lumina_spectrum_cmf.csv\n");
+                    }
+                    free_spectrum(spec_cmf);
+                }
+            }
+
             FILE *pf = fopen("lumina_plasma_state.csv", "w");
             if (pf) {
                 fprintf(pf, "shell_id,W,T_rad,n_e,T_e\n");
