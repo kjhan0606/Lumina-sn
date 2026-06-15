@@ -969,7 +969,15 @@ void nlte_writeback_ion_stage(NLTEConfig *nlte, AtomicData *atom,
 
     int n_writeback = 0;
     for (int p = 0; p < n_pairs; p++) {
-        if (p == 14 || p == 15) continue; /* O triplet overlap: skip */
+        /* Skip any triplet-overlap pair (shares a slot with another pair):
+         * Si II/III/IV, Fe II/III/IV, O I/II/III. Generic, not index-hardcoded. */
+        int shares = 0;
+        for (int q = 0; q < n_pairs; q++) {
+            if (q == p) continue;
+            if (pairs[q][0] == pairs[p][0] || pairs[q][1] == pairs[p][0] ||
+                pairs[q][0] == pairs[p][1] || pairs[q][1] == pairs[p][1]) { shares = 1; break; }
+        }
+        if (shares) continue;
         int lo = pairs[p][0], hi = pairs[p][1];
         int ip_lo = find_ion_pop_idx(atom, nlte->nlte_Z[lo], nlte->nlte_ion[lo]);
         int ip_hi = find_ion_pop_idx(atom, nlte->nlte_Z[hi], nlte->nlte_ion[hi]);
@@ -6642,6 +6650,33 @@ void nlte_assemble_rate_matrix(NLTEConfig *nlte, AtomicData *atom,
     }
     int *bb_connected = floor_reg_mode ? (int *)calloc(N, sizeof(int)) : NULL;
 
+    /* Rate-budget diagnostic setup (LUMINA_NLTE_BUDGET_DUMP). */
+    static int budget_init = 0, budget_on = 0, budget_Z = 8, budget_stage = 2, budget_shell = 8;
+    static int budget_lines_hdr = 0, budget_rec_hdr = 0;
+    if (!budget_init) {
+        const char *e = getenv("LUMINA_NLTE_BUDGET_DUMP");
+        budget_on = (e && atoi(e) != 0);
+        const char *z  = getenv("LUMINA_BUDGET_Z");     if (z)  budget_Z = atoi(z);
+        const char *st = getenv("LUMINA_BUDGET_STAGE"); if (st) budget_stage = atoi(st);
+        const char *sh = getenv("LUMINA_BUDGET_SHELL"); if (sh) budget_shell = atoi(sh);
+        budget_init = 1;
+    }
+    /* Fire on the PAIR that contains the target stage as EITHER ion: O III is
+     * only ever the upper ion (no O IV target), so its bb lines live in the
+     * (O II, O III) pair as ion_idx_hi. */
+    /* MALI gate (Sobolev escape on bb radiative rates). */
+    static int mali_init = 0, mali_on = 0;
+    if (!mali_init) {
+        const char *e = getenv("LUMINA_MALI");
+        mali_on = (e && atoi(e) != 0);
+        mali_init = 1;
+    }
+
+    int budget_hit = budget_on && (nlte->nlte_Z[ion_idx_lo] == budget_Z) &&
+                     (nlte->nlte_ion[ion_idx_lo] == budget_stage ||
+                      nlte->nlte_ion[ion_idx_hi] == budget_stage) &&
+                     (shell == budget_shell);
+
     /* ---- Radiative bound-bound rates from line data ---- */
     int n_lines = opacity->n_lines;
     for (int line = 0; line < n_lines; line++) {
@@ -6671,9 +6706,24 @@ void nlte_assemble_rate_matrix(NLTEConfig *nlte, AtomicData *atom,
         double nu_line = atom->line_nu[line];
         double J_line = nlte_get_J_at_nu(nlte, shell, nu_line);
 
-        double R_absorb = atom->line_B_lu[line] * J_line;
-        double R_stim   = atom->line_B_ul[line] * J_line;
-        double R_spont  = atom->line_A_ul[line];
+        /* MALI (LUMINA_MALI=1): multiply the bound-bound radiative rates by the
+         * Sobolev escape probability β_esc(τ). For a thick line (β→0) the
+         * radiative coupling vanishes and the detailed-balanced collisional pair
+         * (C_up/C_down) sets n_u/n_l → Boltzmann → S_l→B(T_e) (thermalized); thin
+         * lines (β→1) are unchanged. β cancels in the Einstein ratios so detailed
+         * balance is preserved. This is the Sobolev local-Λ; the (1−β)S_l trapped
+         * term cancels analytically, so the rate uses the ambient binned J. Fixes
+         * the super-thermal level pops at the root (the bb rate matrix), NOT the
+         * downstream S_l consumption (the 7 sealed ε-consumption strikes). */
+        double mali_beta = 1.0;
+        if (mali_on) {
+            double tau_l = opacity->tau_sobolev
+                ? opacity->tau_sobolev[(size_t)line * n_shells + shell] : 0.0;
+            mali_beta = radeq_beta_esc(tau_l);
+        }
+        double R_absorb = atom->line_B_lu[line] * J_line * mali_beta;
+        double R_stim   = atom->line_B_ul[line] * J_line * mali_beta;
+        double R_spont  = atom->line_A_ul[line] * mali_beta;
 
         double dE = fabs(atom->level_energy_eV[upper_global] -
                          atom->level_energy_eV[lower_global]) * EV_TO_ERG;
@@ -6713,6 +6763,38 @@ void nlte_assemble_rate_matrix(NLTEConfig *nlte, AtomicData *atom,
         if (bb_connected && (total_up + total_down) > 1e-30) {
             bb_connected[i_lo] = 1;
             bb_connected[i_up] = 1;
+        }
+
+        /* Rate-budget diagnostic (LUMINA_NLTE_BUDGET_DUMP): per bb-line of a
+         * target (Z,stage,shell), dump the rate coefficients + prev-iter pops so
+         * the actual feed of n_upper (recomb-cascade vs radiative pump vs coll)
+         * can be reconstructed offline — decides the O III/S III super-thermal
+         * mechanism. */
+        if (budget_hit) {
+            #ifdef _OPENMP
+            #pragma omp critical(nlte_budget_dump)
+            #endif
+            {
+                FILE *bf = fopen("nlte_budget_lines.csv", budget_lines_hdr ? "a" : "w");
+                if (bf) {
+                    if (!budget_lines_hdr) {
+                        fprintf(bf, "pairZ,pair_lo,line_Z,line_ion,shell,line,lambda_A,"
+                                    "i_lo,i_up,n_lo,n_up,R_absorb,R_stim,R_spont,"
+                                    "C_up,C_down,J_line\n");
+                        budget_lines_hdr = 1;
+                    }
+                    int nl_lo = nlte->global_to_nlte_level[lower_global];
+                    int nl_up = nlte->global_to_nlte_level[upper_global];
+                    double n_lo_p = nlte->nlte_level_populations[(size_t)nl_lo*n_shells+shell];
+                    double n_up_p = nlte->nlte_level_populations[(size_t)nl_up*n_shells+shell];
+                    fprintf(bf, "%d,%d,%d,%d,%d,%d,%.2f,%d,%d,%.4e,%.4e,%.4e,%.4e,%.4e,%.4e,%.4e,%.4e\n",
+                            nlte->nlte_Z[ion_idx_lo], nlte->nlte_ion[ion_idx_lo],
+                            atom->line_atomic_number[line], atom->line_ion_number[line],
+                            shell, line, C_SPEED_OF_LIGHT/nu_line*1e8, i_lo, i_up,
+                            n_lo_p, n_up_p, R_absorb, R_stim, R_spont, C_up, C_down, J_line);
+                    fclose(bf);
+                }
+            }
         }
     }
 
@@ -6769,10 +6851,28 @@ void nlte_assemble_rate_matrix(NLTEConfig *nlte, AtomicData *atom,
                                        (size_t)atom->cmfgen_n_freq_bins] : NULL;
 
             double R_bf = 0.0;
-            if (use_gpu_R_bf) {
-                int idx = phot_base + lev;
-                R_bf = lookup->R_bf_table[(size_t)shell * L_phot_total + idx];
-            } else {
+            /* Milne recombination integral I_rec = ∫(4πσ/hν)(2hν³/c²+J_ν)e^{-hν/kTe}dν.
+             * FAITHFUL FIX (2026-06-14, codex+agent verified): the old
+             * R_rec = R_bf*n_star_ratio tied recombination to the photoionization
+             * integral (J only), so where the ionizing J_ν collapses (cold outer
+             * shells, Wien cutoff) R_rec->0 — SPONTANEOUS radiative recombination
+             * (the 2hν³/c² term, J-independent) vanished and the lower-ion levels
+             * drained from the continuum (super-thermal S_l, optical 3260x;
+             * O+Si-pin falsifier collapsed it 2960->77). The full Milne form keeps
+             * recombination finite as J->0 and, by the Planck identity
+             * (2hν³/c²+B)e^{-x}=B, reduces to ∫4πBσ/hν dν at J=B (LTE Saha fixed
+             * point preserved => no-op in the hot inner region). The e^{-hν/kTe}
+             * weight is T_e-dependent so the static-K GPU R_bf table cannot hold
+             * it; I_rec is always integrated here, and the same loop also computes
+             * R_bf in the CPU fallback path. */
+            double I_rec = 0.0;
+            {
+                const double kTe = K_BOLTZMANN * T_e;
+                const double c2  = C_SPEED_OF_LIGHT * C_SPEED_OF_LIGHT;
+                if (use_gpu_R_bf) {
+                    int idx = phot_base + lev;
+                    R_bf = lookup->R_bf_table[(size_t)shell * L_phot_total + idx];
+                }
                 for (int bb = 0; bb < nlte->n_freq_bins; bb++) {
                     double log_nu_lo = log(nlte->nu_min) + bb * nlte->d_log_nu;
                     double nu_bin = exp(log_nu_lo + 0.5 * nlte->d_log_nu);
@@ -6786,7 +6886,15 @@ void nlte_assemble_rate_matrix(NLTEConfig *nlte, AtomicData *atom,
                     } else {
                         sigma = sigma_0 * pow(nu_thresh / nu_bin, 3.0);
                     }
-                    R_bf += 4.0 * M_PI_VAL * J_bin * sigma / (H_PLANCK * nu_bin) * delta_nu;
+                    double pref = 4.0 * M_PI_VAL * sigma / (H_PLANCK * nu_bin) * delta_nu;
+                    if (!use_gpu_R_bf) R_bf += pref * J_bin;
+                    if (kTe > 0.0) {
+                        double x = H_PLANCK * nu_bin / kTe;
+                        if (x < 700.0) {
+                            double spont = 2.0 * H_PLANCK * nu_bin * nu_bin * nu_bin / c2;
+                            I_rec += pref * (spont + J_bin) * exp(-x);
+                        }
+                    }
                 }
             }
 
@@ -6809,15 +6917,17 @@ void nlte_assemble_rate_matrix(NLTEConfig *nlte, AtomicData *atom,
                     if (n_star_ratio > 1e30) n_star_ratio = 1e30;
                 }
             }
-            double R_rec = R_bf * n_star_ratio;
+            double R_rec = n_star_ratio * I_rec;
 
             /* Collapse this FL to its SL solve index. Ionization out is weighted
              * by the FL's within-SL fraction (only that fraction of the SL pop
              * sits in this FL and ionizes); recombination in is unweighted and
-             * sums over the SL's FL (total recomb captured by the SL). */
+             * sums over the SL's FL (total recomb captured by the SL).
+             * Guard now fires on R_rec>0 too: spontaneous recombination must
+             * couple the level to the continuum even where R_bf==0 (J->0). */
             int sl = SOLVE_OF(lev_start + lev);
             double f_lev = FRAC_OF(lev_start + lev);
-            if (R_bf > 0.0 && sl >= 0 && sl < N && ground_hi < N) {
+            if ((R_bf > 0.0 || R_rec > 0.0) && sl >= 0 && sl < N && ground_hi < N) {
                 ACM(ground_hi, sl) += R_bf * f_lev;
                 ACM(sl, sl)        -= R_bf * f_lev;
                 ACM(sl, ground_hi) += R_rec;
@@ -6830,6 +6940,30 @@ void nlte_assemble_rate_matrix(NLTEConfig *nlte, AtomicData *atom,
                     sum_R_bf_ground  = R_bf;
                     sum_R_rec_ground = R_rec;
                     n_star_ground    = n_star_ratio;
+                }
+            }
+
+            if (budget_hit) {
+                double n_p = nlte->nlte_level_populations[
+                    (size_t)(lev_start + lev) * n_shells + shell];
+                double E_eV = atom->level_energy_eV[global_lev];
+                #ifdef _OPENMP
+                #pragma omp critical(nlte_budget_dump)
+                #endif
+                {
+                    FILE *rf = fopen("nlte_budget_rec.csv", budget_rec_hdr ? "a" : "w");
+                    if (rf) {
+                        if (!budget_rec_hdr) {
+                            fprintf(rf, "Z,stage,shell,lev,sl,E_eV,g,n_pop,R_bf,R_rec,"
+                                        "I_rec,n_star_ratio\n");
+                            budget_rec_hdr = 1;
+                        }
+                        fprintf(rf, "%d,%d,%d,%d,%d,%.4f,%d,%.4e,%.4e,%.4e,%.4e,%.4e\n",
+                                budget_Z, budget_stage, shell, lev, sl, E_eV,
+                                atom->level_g[global_lev], n_p, R_bf, R_rec, I_rec,
+                                n_star_ratio);
+                        fclose(rf);
+                    }
                 }
             }
         }

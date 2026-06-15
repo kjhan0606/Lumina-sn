@@ -2858,6 +2858,8 @@ int main(int argc, char *argv[]) {
     int self_consistent_te = (getenv("LUMINA_SELF_CONSISTENT_TE") &&
                                atoi(getenv("LUMINA_SELF_CONSISTENT_TE")) > 0);
     /* Task #20: real radiative-equilibrium T_e (heating=cooling): LUMINA_RADEQ_TE=1 */
+    int cmfgen_then_mc = (getenv("LUMINA_CMFGEN_THEN_MC") &&
+                          atoi(getenv("LUMINA_CMFGEN_THEN_MC")));
     int radeq_te = (getenv("LUMINA_RADEQ_TE") &&
                      atoi(getenv("LUMINA_RADEQ_TE")) > 0);
 
@@ -3094,6 +3096,46 @@ int main(int argc, char *argv[]) {
                 cmfgen_free(&cs);
             }
 
+            /* DIAGNOSTIC (LUMINA_SL_DUMP=1): per-line two-level source S_l vs
+             * the LTE thermal value B_nu(T_e) at the SAME converged T_e, for
+             * every line with tau>cutoff. Proves the spectrum defect is the
+             * line SOURCE FUNCTION (level populations), not T_e/n_e: if S_l/B
+             * >> 1 in the UV while T_e/n_e match gold, the intermediate check
+             * (T_e,n_e) under-determined the spectrum. */
+            if (getenv("LUMINA_SL_DUMP")) {
+                FILE *sf = fopen("lumina_sl_vs_B.csv", "w");
+                if (sf) {
+                    /* line_id + n_e + Jline (exact rate-matrix field) added so
+                     * the FAITHFUL in-run S_l/J_line test (codex decider) and
+                     * the two-level-with-collisions prediction (from line_list
+                     * A/B + T_e,n_e) can be reconstructed offline. */
+                    fprintf(sf, "shell,line_id,lambda_A,Te,ne,Jline,Sl,B_Te,Sl_over_B,tau\n");
+                    double hpl = 6.62607015e-27, kb = 1.380649e-16,
+                           cc = 2.99792458e10;
+                    for (int l = 0; l < opacity.n_lines; l++) {
+                        double nu_l = opacity.line_list_nu[l];
+                        double lamA = cc / nu_l * 1e8;
+                        for (int s = 0; s < geo.n_shells; s++) {
+                            double tau = opacity.tau_sobolev[(size_t)l*geo.n_shells+s];
+                            if (tau < 1e-3) continue;
+                            double Sl = opacity.line_source_S
+                                ? opacity.line_source_S[(size_t)l*geo.n_shells+s] : 0.0;
+                            if (Sl <= 0.0) continue;
+                            double Te = plasma.T_e[s];
+                            double x = hpl*nu_l/(kb*Te);
+                            double B = (x<500.0)? 2.0*hpl*nu_l*nu_l*nu_l/(cc*cc)/(exp(x)-1.0) : 0.0;
+                            if (B <= 0.0) continue;
+                            double Jline = nlte_get_J_at_nu(&nlte, s, nu_l);
+                            double ne = plasma.n_electron[s];
+                            fprintf(sf, "%d,%d,%.2f,%.1f,%.4e,%.4e,%.4e,%.4e,%.4e,%.3e\n",
+                                    s, l, lamA, Te, ne, Jline, Sl, B, Sl/B, tau);
+                        }
+                    }
+                    fclose(sf);
+                    printf("S_l vs B(T_e) dump -> lumina_sl_vs_B.csv\n");
+                }
+            }
+
             /* Validated OBSERVER-FRAME spectra on the converged pure-CMFGEN
              * state. The pure path used to exit with only the comoving Path-5
              * cmfgen_write_spectrum (no inter-shell Doppler -> no P-Cygni).
@@ -3158,7 +3200,16 @@ int main(int argc, char *argv[]) {
                        "lumina_plasma_state.csv\n");
             }
             printf("\nDone (pure-CMFGEN).\n");
-            return 0;
+            /* LUMINA_CMFGEN_THEN_MC=1: do NOT return — fall through to the MC
+             * transport loop with the plasma FROZEN at the converged
+             * pure-CMFGEN state, to synthesize a macro-atom (fluorescence)
+             * observer-frame spectrum on the GOOD plasma. The clean diagonal
+             * test: good T_e/n_e (pure-CMFGEN) + multi-level fluorescence
+             * (MC macro-atom). MC-loop count = argv N_ITER (independent of
+             * LUMINA_PURE_CMFGEN_ITER); plasma solve skipped (cmfgen_then_mc). */
+            if (!cmfgen_then_mc) return 0;
+            printf("[THEN-MC] pure-CMFGEN converged; entering FROZEN-plasma MC "
+                   "macro-atom spectrum pass (%d transport iters)\n", n_iterations);
         }
     }
 
@@ -3375,6 +3426,12 @@ int main(int argc, char *argv[]) {
              * gamma heating vs. recombination + free-free + collisional bound-bound
              * + adiabatic cooling, no free parameters). The old Compton-only +
              * f_coll_boost path is retired for the self-consistent flag. */
+            /* THEN-MC: the plasma is FROZEN at the converged pure-CMFGEN
+             * state — skip the entire T_e / ionization / coupled-Newton /
+             * NLTE re-solve. Keep BF re-upload + transition-probability build
+             * + device uploads below so the macro-atom transport sees the
+             * good frozen state. */
+            if (cmfgen_then_mc) goto frozen_skip_plasma_solve;
             if (radeq_te || self_consistent_te) {
                 /* Radiative-equilibrium T_e needs the CURRENT iteration's
                  * radiation field for photoionization heating. The MC pass
@@ -3407,6 +3464,7 @@ int main(int argc, char *argv[]) {
                     &nlte, &atom_data, &opacity, &geo,
                     geo.time_explosion, geo.n_shells);
 
+        frozen_skip_plasma_solve:
             /* Recompute BF opacity with updated plasma and re-upload to GPU */
             if (bf_opacity_enabled) {
                 compute_bf_opacity(&bf, &atom_data, &plasma, geo.n_shells);
@@ -3416,8 +3474,10 @@ int main(int argc, char *argv[]) {
                 cuda_upload_T_rad(&dev, &plasma, geo.n_shells);
             }
 
-            /* NLTE: solve rate equations and update tau for NLTE lines */
-            if (enable_nlte && iter >= nlte_start_iter) {
+            /* NLTE: solve rate equations and update tau for NLTE lines.
+             * THEN-MC freezes the converged pure-CMFGEN level populations —
+             * skip the re-solve (it would over-write the good frozen state). */
+            if (!cmfgen_then_mc && enable_nlte && iter >= nlte_start_iter) {
                 nlte.current_iter = iter;
                 cuda_download_j_nu(&dev, &nlte, geo.n_shells);
                 nlte_normalize_j_nu(&nlte, time_simulation, volume, geo.n_shells);
@@ -3458,8 +3518,13 @@ int main(int argc, char *argv[]) {
                 fflush(stdout);
             }
 
-            /* Dynamic transition probability recomputation */
-            if (enable_transprob_update && iter >= config.hold_iterations) {
+            /* Dynamic transition probability recomputation. THEN-MC: ALWAYS
+             * rebuild from the frozen converged NLTE level populations so the
+             * macro-atom fluorescence branching reflects the good plasma. */
+            if (cmfgen_then_mc) {
+                compute_transition_probabilities(&atom_data, &plasma, &opacity,
+                    enable_nlte ? &nlte : NULL, config.damping_constant, 1);
+            } else if (enable_transprob_update && iter >= config.hold_iterations) {
                 compute_transition_probabilities(&atom_data, &plasma, &opacity,
                     (enable_nlte && iter >= nlte_start_iter) ? &nlte : NULL,
                     config.damping_constant,
@@ -3484,7 +3549,8 @@ int main(int argc, char *argv[]) {
             CUDA_CHECK(cudaMemcpy(dev.d_electron_density, opacity.electron_density,
                        geo.n_shells * sizeof(double), cudaMemcpyHostToDevice));
             /* Re-upload updated transition probabilities to GPU */
-            if (enable_transprob_update && iter >= config.hold_iterations) {
+            if (cmfgen_then_mc ||
+                (enable_transprob_update && iter >= config.hold_iterations)) {
                 CUDA_CHECK(cudaMemcpy(dev.d_transition_probabilities,
                            opacity.transition_probabilities,
                            (size_t)opacity.n_macro_transitions * geo.n_shells * sizeof(double),

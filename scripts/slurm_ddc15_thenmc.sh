@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=ddc15_pc_phase3
+#SBATCH --job-name=ddc15_thenmc
 #SBATCH --partition=h100,h200,a100,a40
 #SBATCH --gres=gpu:1
 #SBATCH --cpus-per-task=4
@@ -27,8 +27,8 @@
 
 module load cuda/13.0.2 2>/dev/null || true
 
-N_PKT=${N_PKT:-1000}
-N_ITER=${N_ITER:-8}
+N_PKT=${N_PKT:-200000}
+N_ITER=${N_ITER:-3}
 SPEC_MODE=${SPEC_MODE:-spectrum}
 JNU_LSTAR=${JNU_LSTAR:-0}        # 0 = bare J_nu photoion; 1 = + diagonal-Lambda* blend
 LSTAR=${LSTAR:-$JNU_LSTAR}       # RADEQ/Newton T_e radiation response (Phase-1 faithful Lambda*); defaults to JNU_LSTAR
@@ -59,12 +59,13 @@ echo "Binary: $BIN  Ref: $REF  JNU_LSTAR=$JNU_LSTAR  LINE_RE=$LINE_RE"
 ls -l "$BIN"
 
 env LUMINA_PURE_CMFGEN=1 \
-    LUMINA_PURE_CMFGEN_ITER=$N_ITER \
+    LUMINA_PURE_CMFGEN_ITER=10 \
+    LUMINA_CMFGEN_THEN_MC=1 \
     LUMINA_CMFGEN_ALI_ITER=${LUMINA_CMFGEN_ALI_ITER:-8} \
     LUMINA_BF_OPACITY=1 \
     LUMINA_CMFGEN_SIGMA_BF=$REF/cmfgen_sigma_bf.bin \
     LUMINA_DYNAMIC_TRANSPROB=1 \
-    LUMINA_NLTE_SKIP_Z=${SKIP_Z:-14} \
+    LUMINA_NLTE_SKIP_Z=14 \
     LUMINA_NLTE_START_ITER=2 \
     LUMINA_NLTE_FLOOR_REG=1 \
     LUMINA_NLTE_INV_CEIL=1e4 \
@@ -82,17 +83,12 @@ env LUMINA_PURE_CMFGEN=1 \
     LUMINA_COUPLED_TDEP=1 \
     LUMINA_RADEQ_LINE_RE=$LINE_RE \
     LUMINA_TE_TRAD_RATIO=$TE_RATIO \
+    LUMINA_NLTE_FORCE_LTE_LEVELS=${FORCE_LTE:-0} \
     LUMINA_LINE_INTERACTION=macroatom \
     LUMINA_TAU_BY_ION=1 \
     LUMINA_DIFFUSE_INNER_BC=1 \
     LUMINA_ENERGY_BUDGET=1 \
-    LUMINA_MALI=${LUMINA_MALI:-0} \
-    LUMINA_SL_DUMP=${LUMINA_SL_DUMP:-0} \
-    LUMINA_NLTE_BUDGET_DUMP=${LUMINA_NLTE_BUDGET_DUMP:-0} \
-    LUMINA_BUDGET_Z=${LUMINA_BUDGET_Z:-8} \
-    LUMINA_BUDGET_STAGE=${LUMINA_BUDGET_STAGE:-2} \
-    LUMINA_BUDGET_SHELL=${LUMINA_BUDGET_SHELL:-8} \
-    "$BIN" "$REF_DIR" "$N_PKT" "$N_ITER" "$SPEC_MODE" nlte \
+    "$BIN" "$REF_DIR" "$N_PKT" "$N_ITER" virtual nlte \
     > stdout.log 2> stderr.log
 
 rc=$?

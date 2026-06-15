@@ -79,8 +79,8 @@ extern "C" int nlte_rates_gpu_init(NLTEConfig *nlte, AtomicData *atom, int n_she
     /* #281: pair count is now NLTE_PAIR_COUNT (16) due to O triplet overlap pair —
      * n_nlte_ions/2 would undercount (31/2=15). Use explicit constant. */
     int n_pairs = NLTE_PAIR_N;
-    if (nlte->n_nlte_ions < 31) {
-        /* Defensive: if slot count came out smaller than expected, drop pair 15 */
+    if (nlte->n_nlte_ions < NLTE_MAX_IONS) {
+        /* Defensive: if slot count came out smaller than expected, fall back */
         n_pairs = nlte->n_nlte_ions / 2;
         if (n_pairs > NLTE_PAIR_N) n_pairs = NLTE_PAIR_N;
     }
