@@ -137,6 +137,9 @@ int main(int argc, char *argv[]) {
         }
         if (cmf_enable) load_cmfgen_sigma_bf(&atom_data, cmf_path);
     }
+    /* Top-stage continuum anchor: inject synthetic IV ground levels (gated,
+     * default off). After cmfgen_sigma_bf load, before nlte_init (mirrors GPU). */
+    inject_topstage_continuum_levels(&atom_data, &opacity);
     /* Task #072: Initialize n_electron from TARDIS reference */
     plasma.n_electron = (double *)malloc(geo.n_shells * sizeof(double));
     for (int i = 0; i < geo.n_shells; i++)

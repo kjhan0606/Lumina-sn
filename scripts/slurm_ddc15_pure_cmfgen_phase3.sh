@@ -36,6 +36,8 @@ LINE_RE=${LINE_RE:-0}            # 0 = collisional bound-bound cooling; 1 = Opti
 TE_RATIO=${TE_RATIO:-0.9}        # T_e/T_rad seed+fallback constant (perturbation test: 0.7 / 1.0)
 JNU_PHOTOION=${JNU_PHOTOION:-1}  # 0 = phi_neb closure (control arm: falsify the J->Gamma chain)
 FROZENIN=${FROZENIN:-0}          # 1 = frozen-in freeze-out owns the outer shells (+ per-ion rescale)
+THEN_MC=${THEN_MC:-0}            # 1 = after pure-CMFGEN converges plasma, run MC macroatom for the emergent spectrum
+MAX_INT=${MAX_INT:-100000}       # per-packet interaction cap for the THEN_MC pass (std-MC uses 200; 100000 over-interacts -> too blue)
 
 export OMP_NUM_THREADS=${OMP_NUM_THREADS:-4}
 
@@ -86,8 +88,21 @@ env LUMINA_PURE_CMFGEN=1 \
     LUMINA_TAU_BY_ION=1 \
     LUMINA_DIFFUSE_INNER_BC=1 \
     LUMINA_ENERGY_BUDGET=1 \
+    LUMINA_TOPSTAGE_ANCHOR=${TOPSTAGE:-0} \
+    LUMINA_TOPSTAGE_IV=${TOPIV:-0} \
+    LUMINA_TOPSTAGE_IV_ZONLY=${TOPIV_Z:-0} \
+    LUMINA_TOPSTAGE_THERMALIZE=${TSTH:-0} \
+    LUMINA_TOPSTAGE_DEPARTURE=${TSTH_DEP:-0} \
+    LUMINA_CMFGEN_THEN_MC=${THEN_MC:-0} \
+    LUMINA_MAX_INTERACTIONS=$MAX_INT \
+    LUMINA_MACROATOM_EWEIGHT=${EWEIGHT:-0} \
+    LUMINA_NLTE_COLL_FLOOR=${COLL_FLOOR:-0} \
+    LUMINA_NLTE_BK_CEIL=${BK_CEIL:-0} \
+    LUMINA_TOPSTAGE_TAU=${TSTH_TAU:-10} \
     LUMINA_MALI=${LUMINA_MALI:-0} \
     LUMINA_SL_DUMP=${LUMINA_SL_DUMP:-0} \
+    LUMINA_LEVELPOP_DUMP=${LEVELPOP_DUMP:-0} \
+    LUMINA_FI_CLAMP_SL=${FI_CLAMP:-0} \
     LUMINA_NLTE_BUDGET_DUMP=${LUMINA_NLTE_BUDGET_DUMP:-0} \
     LUMINA_BUDGET_Z=${LUMINA_BUDGET_Z:-8} \
     LUMINA_BUDGET_STAGE=${LUMINA_BUDGET_STAGE:-2} \

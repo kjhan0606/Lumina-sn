@@ -1358,6 +1358,20 @@ void compute_transition_probabilities(AtomicData *atom, PlasmaState *plasma,
         if (e && atoi(e) != 0) kpacket_mode = 1;
         kpacket_init = 1;
     }
+    /* LUMINA_MACROATOM_EWEIGHT=1: weight each macro-atom transition rate by the
+     * line photon energy hν (∝ line_nu) before block normalization. The bare-rate
+     * recompute (A_ul·β / B_lu·J) is a NUMBER-flow (downbranch) weighting; the
+     * Lucy-2002 macro-atom transports an indivisible ENERGY packet, so the
+     * emission probability on line i→j must ∝ A_ij·β·hν_ij to reproduce the line
+     * emissivity η_ij ∝ n_i A_ij hν_ij. Constant h cancels in the per-block
+     * normalization, so multiplying by line_nu is sufficient. A/B falsifier vs
+     * the bare-rate (downbranch) recompute on the cmfgen_then_mc spectrum. */
+    static int eweight_init = 0, eweight_on = 0;
+    if (!eweight_init) {
+        const char *e = getenv("LUMINA_MACROATOM_EWEIGHT");
+        if (e && atoi(e) != 0) eweight_on = 1;
+        eweight_init = 1;
+    }
     /* Per-line cached lookups (static; line→global-level map is iteration- and
      * shell-invariant). glo/gup = global level idx of lower/upper; ip = ion-pop
      * slot. -1 = unresolved (skip). */
@@ -1487,6 +1501,9 @@ void compute_transition_probabilities(AtomicData *atom, PlasmaState *plasma,
                             rate = atom->line_B_lu[line_id] * W * planck_bnu(T_rad, nu_line);
                         }
                     }
+
+                    /* Macro-atom energy-flow weighting: ×hν (∝ line_nu). */
+                    if (eweight_on) rate *= atom->line_nu[line_id];
 
                     /* k-packet collisional channels (van Regemorter / Axelrod;
                      * exp(±dE/kTe) cancels in C_down so it needs only g_up). */
@@ -6649,6 +6666,35 @@ void nlte_assemble_rate_matrix(NLTEConfig *nlte, AtomicData *atom,
         floor_reg_init = 1;
     }
     int *bb_connected = floor_reg_mode ? (int *)calloc(N, sizeof(int)) : NULL;
+    /* TOPSTAGE_THERMALIZE: per-level max Sobolev tau of connecting bb lines, so the
+     * post-solve anchor forces Boltzmann@T_e on the TOP NLTE stage's bb-connected
+     * EXCITED (upper-ion) levels — the super-thermal optical carriers O/C/S/Al III.
+     * ROOT (2026-06-16, instrumented): these carriers are excited-EXCITED lines,
+     * THIN in the thermal limit (lower level Boltzmann-suppressed, tau~1e-50) —
+     * they look thick only BECAUSE they are super-thermal. So a tau-gate is the
+     * wrong criterion; the right target is the over-populated EXCITED LEVEL itself.
+     * The rate solve can't reach Boltzmann here (capped bf, sub-critical collisions,
+     * no continuum partner for the top stage) — FORCE_LTE proved Boltzmann@T_e is
+     * the correct target (-> gold-like MC features). Top-stage detected generically
+     * (no NLTE pair has ion_hi+1). Optional departure gate LUMINA_TOPSTAGE_DEPARTURE
+     * (>0: only anchor levels whose lagged pop exceeds Boltzmann by that factor;
+     * 0 default: anchor all top-stage excited levels). Gated default off. */
+    static int tsth_init = 0, tsth_mode = 0; static double tsth_dep = 0.0;
+    if (!tsth_init) {
+        const char *e = getenv("LUMINA_TOPSTAGE_THERMALIZE");
+        if (e && atoi(e) != 0) tsth_mode = 1;
+        const char *t = getenv("LUMINA_TOPSTAGE_DEPARTURE"); if (t) tsth_dep = atof(t);
+        tsth_init = 1;
+    }
+    int tsth_on = tsth_mode && floor_reg_mode;   /* needs bb_connected tracking */
+    /* hi is the TOP NLTE stage iff no NLTE ion is (same Z, ion_hi+1). */
+    int hi_is_topstage = 0;
+    if (tsth_on) {
+        hi_is_topstage = 1;
+        int Zh = nlte->nlte_Z[ion_idx_hi], ih = nlte->nlte_ion[ion_idx_hi];
+        for (int i = 0; i < nlte->n_nlte_ions; i++)
+            if (nlte->nlte_Z[i] == Zh && nlte->nlte_ion[i] == ih + 1) { hi_is_topstage = 0; break; }
+    }
 
     /* Rate-budget diagnostic setup (LUMINA_NLTE_BUDGET_DUMP). */
     static int budget_init = 0, budget_on = 0, budget_Z = 8, budget_stage = 2, budget_shell = 8;
@@ -6660,6 +6706,23 @@ void nlte_assemble_rate_matrix(NLTEConfig *nlte, AtomicData *atom,
         const char *st = getenv("LUMINA_BUDGET_STAGE"); if (st) budget_stage = atoi(st);
         const char *sh = getenv("LUMINA_BUDGET_SHELL"); if (sh) budget_shell = atoi(sh);
         budget_init = 1;
+    }
+
+    /* Collisional floor (LUMINA_NLTE_COLL_FLOOR=ε, default 0=off). At low n_e the
+     * van Regemorter/Axelrod collision rate C∝n_e→0, the bf edge sits above the
+     * (cold) radiation cutoff so R_bf=0 for low levels, and the bb radiative net
+     * is near-conservative at J≈B — the rate matrix loses rank and the LU solve
+     * returns a FLAT null-space vector (every level ≈ n_total/N). Flat pops give
+     * b_k=1e68 at the near-continuum levels → super-thermal S_l → too-blue spectrum.
+     * Floor C_up at ε·A_ul so a minimal thermalizing collision always couples the
+     * level pair; C_down is derived from C_up by the exact detailed-balance ratio
+     * below, so the floor drives n_u/n_l → Boltzmann@T_e (the correct thermalization
+     * limit), NOT the flat garbage. ε≪1 is negligible wherever real rates exist. */
+    static double coll_floor = -1.0;
+    if (coll_floor < 0.0) {
+        const char *e = getenv("LUMINA_NLTE_COLL_FLOOR");
+        coll_floor = e ? atof(e) : 0.0;
+        if (coll_floor < 0.0) coll_floor = 0.0;
     }
     /* Fire on the PAIR that contains the target stage as EITHER ion: O III is
      * only ever the upper ion (no O IV target), so its bb lines live in the
@@ -6745,6 +6808,21 @@ void nlte_assemble_rate_matrix(NLTEConfig *nlte, AtomicData *atom,
         double C_down = (g_lo > 0 && g_up > 0 && T_e > 0.0) ?
             C_up * ((double)g_lo / (double)g_up) *
             exp(dE / (K_BOLTZMANN * T_e)) : 0.0;
+        /* Collisional floor: the thermalizing rate is the de-excitation C_down;
+         * floor it at ε·A_ul (minimum thermalization parameter ε=C_down/(C_down+A))
+         * and re-derive C_up from the floored C_down by the inverse detailed-balance
+         * ratio. Keeps the matrix non-singular at low n_e and drives n_u/n_l →
+         * Boltzmann@T_e (DB-preserved; the equilibrium is independent of ε so the
+         * floor only sets the approach, not a new fixed point). Floor on C_down (not
+         * C_up) avoids the exp(+dE/kTe) blow-up for UV lines. */
+        if (coll_floor > 0.0 && T_e > 0.0 && g_lo > 0 && g_up > 0) {
+            double cd_min = coll_floor * atom->line_A_ul[line];
+            if (C_down < cd_min) {
+                C_down = cd_min;
+                C_up = cd_min * ((double)g_up / (double)g_lo) *
+                       exp(-dE / (K_BOLTZMANN * T_e));
+            }
+        }
 
         double total_up   = R_absorb + C_up;
         double total_down = R_stim + R_spont + C_down;
@@ -6964,6 +7042,146 @@ void nlte_assemble_rate_matrix(NLTEConfig *nlte, AtomicData *atom,
                                 n_star_ratio);
                         fclose(rf);
                     }
+                }
+            }
+        }
+    }
+
+    /* ---- TOP-ION CONTINUUM DRAIN (fixed Saha-IV reservoir) ----
+     * The hi ion (III) is the top NLTE stage; with no (III,IV) pair its excited
+     * levels get no photoion/recomb edge -> rank-deficient block -> the LU solve
+     * returns a UNIFORM (flat) population -> super-thermal S_l (triple-verified
+     * 2026-06-16, docs/TOPSTAGE_IV_CONTINUUM_NODE_DESIGN.md). Restore detailed
+     * balance by adding, to each hi-ion level, a photoionization sink (III->IV)
+     * and a Milne recombination SOURCE from the Saha IV reservoir (already in
+     * n_e via the upstream ionization solve; codex+phys-agent: R_rec is
+     * independent of the IV abs population, only the III SHAPE matters, conserv.
+     * sets the total). Source = n_lte_hl * I_rec_hl with n_lte_hl = n_IV *
+     * n_star_ratio computed in LOG space (no 1e30 cap; the n_IV*exp(chi/kTe)
+     * product is the level's LTE pop = well-scaled). Gauge-free: the IV ground
+     * g cancels in the within-III ratios. Env-gated; optional single-Z filter. */
+    {
+        static int tic_mode = -1, tic_zonly = 0;
+        if (tic_mode < 0) {
+            const char *e = getenv("LUMINA_TOPSTAGE_IV");
+            tic_mode = (e && atoi(e)) ? 1 : 0;
+            const char *zf = getenv("LUMINA_TOPSTAGE_IV_ZONLY");
+            tic_zonly = zf ? atoi(zf) : 0;   /* 0 = all top ions */
+        }
+        int Zh = nlte->nlte_Z[ion_idx_hi];
+        int ion_hi_stage = nlte->nlte_ion[ion_idx_hi];
+        /* Only the TOP NLTE ion needs this: if (Zh, ion_hi+1) is itself an NLTE
+         * ion, the hi ion already has a real continuum pair (e.g. O II in the
+         * (O I,O II) pair has O III above it) -> skip to avoid double-coupling. */
+        int hi_is_top = 1;
+        for (int q = 0; q < nlte->n_nlte_ions; q++)
+            if (nlte->nlte_Z[q] == Zh && nlte->nlte_ion[q] == ion_hi_stage + 1) {
+                hi_is_top = 0; break;
+            }
+        if (tic_mode && hi_is_top && (tic_zonly == 0 || tic_zonly == Zh) &&
+            T_e > 0.0 && n_e > 0.0) {
+            double chi_hi_eV = find_ioniz_energy(atom, Zh, ion_hi_stage); /* III->IV */
+            int ip_iv = find_ion_pop_idx(atom, Zh, ion_hi_stage + 1);     /* IV stage */
+            int ip_hi = find_ion_pop_idx(atom, Zh, ion_hi_stage);         /* III stage */
+            double n_iv = (ip_iv >= 0) ?
+                atom->ion_number_density[(size_t)ip_iv * n_shells + shell] : 0.0;
+            double n_hi_total = (ip_hi >= 0) ?
+                atom->ion_number_density[(size_t)ip_hi * n_shells + shell] : 0.0;
+            if (getenv("LUMINA_TOPSTAGE_IV_DIAG") && shell == 6) {
+                static int tic_diag = 0;
+                if (tic_diag < 40) {
+                    fprintf(stderr, "[TOPIV] Z=%d ion_hi=%d top=%d chi=%.2f "
+                            "n_hi=%.3e n_iv=%.3e ip_hi=%d ip_iv=%d FIRE=%d\n",
+                            Zh, ion_hi_stage, hi_is_top, chi_hi_eV, n_hi_total,
+                            n_iv, ip_hi, ip_iv,
+                            (chi_hi_eV>0.0 && chi_hi_eV<1e9 && n_hi_total>0.0));
+                    tic_diag++;
+                }
+            }
+            if (chi_hi_eV > 0.0 && chi_hi_eV < 1e9 && n_hi_total > 0.0) {
+                double chi_hi_erg = chi_hi_eV * EV_TO_ERG;
+                double nu_edge_hi  = chi_hi_erg / H_PLANCK;
+                const double kTe = K_BOLTZMANN * T_e;
+                const double c2  = C_SPEED_OF_LIGHT * C_SPEED_OF_LIGHT;
+                double deBroglie = pow(H_PLANCK * H_PLANCK /
+                    (2.0 * M_PI_VAL * M_ELECTRON * kTe), 1.5);
+                /* IV ground g (common factor -> cancels in III ratios); default 1 */
+                int g_iv = 1;
+                for (int l = 0; l < atom->n_levels; l++)
+                    if (atom->level_Z[l] == Zh &&
+                        atom->level_ion[l] == ion_hi_stage + 1 &&
+                        atom->level_num[l] == 0) { g_iv = atom->level_g[l]; break; }
+                if (g_iv < 1) g_iv = 1;
+                double sigma0_hi = get_bf_sigma0(Zh, ion_hi_stage);
+                if (sigma0_hi <= 0.0) {
+                    int Ze = Zh - ion_hi_stage; if (Ze < 1) Ze = 1;
+                    sigma0_hi = 7.91e-18 / ((double)Ze * (double)Ze);
+                }
+                const int use_cmf = atom->cmfgen_loaded &&
+                                    atom->cmfgen_n_freq_bins == nlte->n_freq_bins;
+                int h0 = nlte->nlte_ion_level_offset[ion_idx_hi];
+                int h1 = nlte->nlte_ion_level_offset[ion_idx_hi + 1];
+                /* n_IV reservoir: use the real Saha IV density where meaningful;
+                 * floor to the Saha self-consistent value n_hi_total/n_star_ground
+                 * where it underflowed to ~0 in cold outer shells (codex: never let
+                 * the continuum normalization be 0 -> III block stays rank-deficient
+                 * -> flat). n_lte is bounded by n_hi_total below for conditioning. */
+                int gl0 = nlte->nlte_to_global_level[h0];
+                int g0  = atom->level_g[gl0]; if (g0 < 1) g0 = 1;
+                double ln_nstar_g = log(n_e) + log(deBroglie)
+                                  + log((double)g0 / (2.0 * (double)g_iv))
+                                  + chi_hi_erg / kTe;
+                double n_iv_saha = exp(log(n_hi_total) - ln_nstar_g);
+                double n_iv_eff  = (n_iv > n_iv_saha) ? n_iv : n_iv_saha;
+                double ln_pref = log(n_iv_eff) + log(n_e) + log(deBroglie)
+                                 - log(2.0 * (double)g_iv);
+                for (int hl = h0; hl < h1; hl++) {
+                    int gl = nlte->nlte_to_global_level[hl];
+                    double E_hl = atom->level_energy_eV[gl] * EV_TO_ERG;
+                    double chi_lev = chi_hi_erg - E_hl;
+                    if (chi_lev <= 0.0) continue;
+                    /* Each excited level photoionizes across ITS OWN threshold
+                     * nu_edge_lev = chi_lev/h (< nu_edge_hi for E_hl>0), NOT the
+                     * ground edge. Using nu_edge_hi for all levels skipped the
+                     * [nu_edge_lev, nu_edge_hi] band where the high levels' bf
+                     * cross-section peaks -> high excited levels were never
+                     * drained -> stayed super-thermal (the FUV/UV emitters that
+                     * keep the formal spectrum too blue). */
+                    double nu_edge_lev = chi_lev / H_PLANCK;
+                    const double *srow = (use_cmf && atom->cmfgen_has_sigma[gl]) ?
+                        &atom->cmfgen_sigma_bf[(size_t)gl * atom->cmfgen_n_freq_bins]
+                        : NULL;
+                    double R_bf_hl = 0.0, I_rec_hl = 0.0;
+                    for (int bb = 0; bb < nlte->n_freq_bins; bb++) {
+                        double log_lo = log(nlte->nu_min) + bb * nlte->d_log_nu;
+                        double nu_bin = exp(log_lo + 0.5 * nlte->d_log_nu);
+                        if (nu_bin < nu_edge_lev) continue;
+                        double dnu = exp(log_lo + nlte->d_log_nu) - exp(log_lo);
+                        double sigma = srow ? srow[bb]
+                            : sigma0_hi * pow(nu_edge_lev / nu_bin, 3.0);
+                        if (sigma <= 0.0) continue;
+                        double J_bin = nlte->J_nu[(size_t)shell * nlte->n_freq_bins + bb];
+                        double pref = 4.0 * M_PI_VAL * sigma / (H_PLANCK * nu_bin) * dnu;
+                        R_bf_hl += pref * J_bin;
+                        double x = H_PLANCK * nu_bin / kTe;
+                        if (x < 700.0) {
+                            double spont = 2.0 * H_PLANCK * nu_bin * nu_bin * nu_bin / c2;
+                            I_rec_hl += pref * (spont + J_bin) * exp(-x);
+                        }
+                    }
+                    if (R_bf_hl <= 0.0 && I_rec_hl <= 0.0) continue;
+                    /* n_lte_hl = n_IV_eff * n_star_ratio (log space, no cap);
+                     * a single level cannot exceed the ion total (Saha-consistent
+                     * bound -> well-conditioned at all shells). */
+                    double ln_nlte = ln_pref + log((double)atom->level_g[gl]) +
+                                     chi_lev / kTe;
+                    double n_lte_hl = (ln_nlte < 700.0) ? exp(ln_nlte) : exp(700.0);
+                    if (n_lte_hl > n_hi_total) n_lte_hl = n_hi_total;
+                    int sl = SOLVE_OF(hl);
+                    if (sl < 0 || sl >= N) continue;
+                    double f = FRAC_OF(hl);
+                    ACM(sl, sl) -= R_bf_hl * f;   /* photoionization sink III->IV */
+                    b[sl]       -= n_lte_hl * I_rec_hl; /* Milne recomb source from IV */
                 }
             }
         }
@@ -7225,6 +7443,59 @@ void nlte_assemble_rate_matrix(NLTEConfig *nlte, AtomicData *atom,
                 ACM(k, k) = 1.0;
                 ACM(k, ground_hi) = -boltz_ratio;
                 b[k] = 0.0;
+            }
+
+            /* TOPSTAGE_THERMALIZE: force Boltzmann@T_e on the TOP NLTE stage's
+             * bb-CONNECTED EXCITED levels (the over-populated super-thermal carriers
+             * O/C/S/Al III). The carriers are excited-EXCITED lines that are THIN in
+             * the thermal limit, so a tau-gate misses them — the right target is the
+             * over-populated LEVEL. n_k/n_ground = (g_k/g_ref)exp(−ΔE/kT_e), ref =
+             * own-ion ground (ground_hi), T_e, NO dilution W. Default anchors all
+             * top-stage excited levels (FORCE_LTE for the top stage, proven gold-like);
+             * LUMINA_TOPSTAGE_DEPARTURE>0 restricts to levels whose lagged pop exceeds
+             * Boltzmann by that factor (preserves near-thermal levels). */
+            if (hi_is_topstage) {
+                static int tsth_diag = 0; int tsth_nanch = 0;
+                double n_ground = 0.0;
+                if (tsth_dep > 0.0) {
+                    int gnl = nlte->global_to_nlte_level[
+                        nlte->super_anchor_global[super_start + ground_hi]];
+                    if (gnl >= 0) n_ground =
+                        nlte->nlte_level_populations[(size_t)gnl * n_shells + shell];
+                }
+                for (int k = n_lo_super; k < N; k++) {
+                    if (!bb_connected[k]) continue;        /* isolated handled above */
+                    if (k == alt_row_hi) continue;         /* conservation row */
+                    if (k == ground_hi) continue;          /* anchor reference */
+                    int gk_global = nlte->super_anchor_global[super_start + k];
+                    double E_k = atom->level_energy_eV[gk_global] * EV_TO_ERG;
+                    int g_k = atom->level_g[gk_global];
+                    if (g_k < 1) g_k = 1;
+                    double dE = E_k - E_ref;
+                    if (dE < 0.0) dE = 0.0;
+                    double br = (double)g_k / (double)g_ref *
+                                exp(-dE / (K_BOLTZMANN * T_e));   /* T_e, no W */
+                    if (!isfinite(br)) br = 0.0;
+                    if (tsth_dep > 0.0) {   /* departure gate: skip near-thermal levels */
+                        int knl = nlte->global_to_nlte_level[gk_global];
+                        double n_k = (knl >= 0) ?
+                            nlte->nlte_level_populations[(size_t)knl * n_shells + shell] : 0.0;
+                        double n_boltz = br * n_ground;
+                        if (!(n_boltz > 0.0) || n_k <= tsth_dep * n_boltz) continue;
+                    }
+                    tsth_nanch++;
+                    for (int j = 0; j < N; j++) ACM(k, j) = 0.0;
+                    ACM(k, k) = 1.0;
+                    ACM(k, ground_hi) = -br;
+                    b[k] = 0.0;
+                }
+                if (tsth_nanch > 0 && tsth_diag < 20) {
+                    fprintf(stderr, "[TSTH] top-stage Z=%d ion=%d shell=%d: anchored "
+                            "%d/%d excited levels -> Boltzmann@T_e=%.0fK (dep=%.0f)\n",
+                            nlte->nlte_Z[ion_idx_hi], nlte->nlte_ion[ion_idx_hi], shell,
+                            tsth_nanch, N - n_lo_super, T_e, tsth_dep);
+                    tsth_diag++;
+                }
             }
         }
     }
@@ -8061,6 +8332,13 @@ void compute_formal_integral_spectrum(
     double fi_tau_cutoff = _env_cut  ? atof(_env_cut)  : 1.0e-5;
     int    fi_use_cont   = _env_cont ? atoi(_env_cont) : 0;
     double fi_W_inner    = _env_idil ? atof(_env_idil) : 1.0;
+    /* Decisive test (2026-06-17): clamp thick-line S_l -> B(T_e) for tau>thr to
+     * test whether super-thermal feature-line source functions are the
+     * formal-spectrum killer. Value = tau threshold (e.g. 1.0); 0 = off. */
+    const char *_env_clamp = getenv("LUMINA_FI_CLAMP_SL");
+    double fi_clamp_sl = _env_clamp ? atof(_env_clamp) : 0.0;
+    if (fi_clamp_sl > 0.0)
+        printf("  [FI] S_l -> B(T_e) clamp for tau>%.2f (LUMINA_FI_CLAMP_SL)\n", fi_clamp_sl);
 
     printf("\n=== Formal Integral Spectrum ===\n");
     printf("  Impact parameters: %d, beta_max=%.4f\n", n_impact, beta_max);
@@ -8167,6 +8445,9 @@ void compute_formal_integral_spectrum(
                          ? opacity->line_source_S[l * n_shells + shell] : 0.0;
                 if (S <= 0.0)
                     S = plasma->W[shell] * planck_bnu(plasma->T_rad[shell], nu_l);
+                /* Decisive clamp test: thermalize thick-line source to B(T_e). */
+                if (fi_clamp_sl > 0.0 && tau_sob > fi_clamp_sl)
+                    S = planck_bnu(plasma->T_e[shell], nu_l);
 
                 /* Line contribution: S * (1 - exp(-tau)) * exp(-tau_accumulated) */
                 double one_minus_exp = (tau_sob > 500.0) ? 1.0 : (1.0 - exp(-tau_sob));

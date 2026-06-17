@@ -531,6 +531,7 @@ void bin_escaped_packet(Spectrum *spec, double nu, double energy);
 /* Task #072: Atomic data loading and plasma solver */
 int load_atomic_data(AtomicData *atom, const char *ref_dir, int n_shells);
 int load_cmfgen_sigma_bf(AtomicData *atom, const char *path);
+void inject_topstage_continuum_levels(AtomicData *atom, OpacityState *opacity);
 void free_atomic_data(AtomicData *atom);
 void compute_plasma_state(AtomicData *atom, PlasmaState *plasma,
                           OpacityState *opacity, double time_explosion);

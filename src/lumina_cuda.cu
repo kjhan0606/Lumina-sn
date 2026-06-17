@@ -567,6 +567,20 @@ static void nlte_solve_all_gpu(NLTEConfig *nlte, AtomicData *atom,
                         }
                     }
                 }
+                /* Flat-pop diagnostic (LUMINA_POP_TRACE): dump the RAW GPU solve
+                 * output x[] for a target (Z, lo-ion, shell) to locate the source
+                 * of uniform/flat level populations. */
+                if (getenv("LUMINA_POP_TRACE") &&
+                    nlte->nlte_Z[lo] == (getenv("LUMINA_POP_Z") ? atoi(getenv("LUMINA_POP_Z")) : 8) &&
+                    nlte->nlte_ion[lo] == (getenv("LUMINA_POP_ION") ? atoi(getenv("LUMINA_POP_ION")) : 1) &&
+                    s == (getenv("LUMINA_POP_SHELL") ? atoi(getenv("LUMINA_POP_SHELL")) : 24)) {
+                    double *xr = sol->h_rhs + (size_t)s * N;
+                    fprintf(stderr, "[POPTRACE] Z=%d ion=%d s=%d N=%d info=%d fallback=%d "
+                            "x[0]=%.4e x[%d]=%.4e x[%d]=%.4e x[%d]=%.4e\n",
+                            nlte->nlte_Z[lo], nlte->nlte_ion[lo], s, N, sol->h_info[s],
+                            need_fallback, xr[0], N/4, xr[N/4], N/2, xr[N/2],
+                            (3*N)/4, xr[(3*N)/4]);
+                }
                 if (need_fallback) {
                     /* Singular or non-finite: fall back to Boltzmann at T_rad.
                      * In ion-lock mode, rescale each ion separately to its
@@ -648,9 +662,59 @@ static void nlte_solve_all_gpu(NLTEConfig *nlte, AtomicData *atom,
                     /* Clamp negatives on the SL solution, then redistribute
                      * each SL population down to its full levels by the local
                      * within-SL Boltzmann fraction. Identity mode: sl==i,
-                     * frac==1 => xfl[i]==x[i] (byte-identical to baseline). */
-                    for (int i = 0; i < N; i++) {
-                        if (x[i] < 0.0) x[i] = 1e-30;
+                     * frac==1 => xfl[i]==x[i] (byte-identical to baseline).
+                     *
+                     * b_k CEILING (LUMINA_NLTE_BK_CEIL=C, default 0=off): at low
+                     * n_e the rate matrix is ill-conditioned (bf=0 for low levels
+                     * below the cold-field cutoff, bb radiative near-cancels at
+                     * J~=B, collisions ∝ n_e -> 0), so the LU solve returns GARBAGE
+                     * excited pops (~1e-26, uniform magnitude, alternating sign).
+                     * Optical lines are excited->excited, so a uniform-garbage
+                     * excited block gives n_u/n_l ~= 1 -> S_l/B = exp(dE/kTe)
+                     * super-thermal -> deterministic spectrum too blue. The bare
+                     * clamp (x<0 -> 1e-30) leaves the POSITIVE garbage uniform and
+                     * the negatives at a uniform floor -> still super-thermal. The
+                     * inv_ceil gate only catches absolute inversion (excited>ground),
+                     * not a large DEPARTURE at tiny absolute pop. Fix: cap each
+                     * level at C * Boltzmann@T_e relative to its ion ground (b_k<=C).
+                     * Literature bounds physical SN O II/Fe II departures at b~1-50,
+                     * so C~100 removes the 1e20+ garbage while preserving real NLTE
+                     * departures; capped excited follow C*Boltzmann (declining) ->
+                     * excited->excited n_u/n_l -> Boltzmann ratio -> S_l -> B. */
+                    {
+                        static int bkc_init = 0; static double bk_ceil = 0.0;
+                        if (!bkc_init) {
+                            const char *e = getenv("LUMINA_NLTE_BK_CEIL");
+                            bk_ceil = e ? atof(e) : 0.0;
+                            if (bk_ceil < 0.0) bk_ceil = 0.0;
+                            bkc_init = 1;
+                        }
+                        for (int i = 0; i < N; i++) {
+                            if (x[i] < 0.0) x[i] = 1e-30;
+                        }
+                        if (bk_ceil > 0.0) {
+                            double T_e_s = plasma->T_e ? plasma->T_e[s] : plasma->T_rad[s];
+                            double kTe = K_BOLTZMANN * (T_e_s > 0.0 ? T_e_s : 1.0);
+                            double xg_lo = x[0];
+                            double xg_hi = (n_lo_super < N) ? x[n_lo_super] : 0.0;
+                            int gg_lo = atom->level_g[nlte->super_anchor_global[super_start]];
+                            double Eg_lo = atom->level_energy_eV[nlte->super_anchor_global[super_start]] * EV_TO_ERG;
+                            int gg_hi = (n_lo_super < N) ? atom->level_g[nlte->super_anchor_global[super_start + n_lo_super]] : 1;
+                            double Eg_hi = (n_lo_super < N) ? atom->level_energy_eV[nlte->super_anchor_global[super_start + n_lo_super]] * EV_TO_ERG : 0.0;
+                            for (int i = 0; i < N; i++) {
+                                int is_lo = (i < n_lo_super);
+                                double xg = is_lo ? xg_lo : xg_hi;
+                                if (xg <= 0.0) continue;
+                                int gi = atom->level_g[nlte->super_anchor_global[super_start + i]];
+                                double Ei = atom->level_energy_eV[nlte->super_anchor_global[super_start + i]] * EV_TO_ERG;
+                                int gg = is_lo ? gg_lo : gg_hi;
+                                double Eg = is_lo ? Eg_lo : Eg_hi;
+                                double boltz = xg * ((double)gi / (double)(gg > 0 ? gg : 1)) *
+                                               exp(-(Ei - Eg) / kTe);
+                                double cap = bk_ceil * boltz;
+                                if (cap > 0.0 && x[i] > cap) x[i] = cap;
+                            }
+                        }
                     }
                     double *xfl = (double *)malloc((size_t)N_fl * sizeof(double));
                     for (int i = 0; i < N_fl; i++) {
@@ -694,6 +758,13 @@ static void nlte_solve_all_gpu(NLTEConfig *nlte, AtomicData *atom,
                             nlte->nlte_level_populations[(lev_start + i) * n_shells + s] =
                                 xfl[i] * scale;
                         }
+                    }
+                    if (getenv("LUMINA_POP_TRACE") && nlte->nlte_Z[lo] == 8 &&
+                        nlte->nlte_ion[lo] == 1 && s == 24) {
+                        fprintf(stderr, "[POPSTORED] s=%d STORED ground=%.4e mid170=%.4e high300=%.4e\n",
+                            s, nlte->nlte_level_populations[(lev_start + 0) * n_shells + s],
+                            nlte->nlte_level_populations[(lev_start + 170) * n_shells + s],
+                            nlte->nlte_level_populations[(lev_start + 300) * n_shells + s]);
                     }
                     free(xfl);
                 }
@@ -2669,6 +2740,10 @@ int main(int argc, char *argv[]) {
         }
         if (cmf_enable) load_cmfgen_sigma_bf(&atom_data, cmf_path);
     }
+    /* Top-stage continuum anchor: inject synthetic IV ground levels (gated,
+     * default off). MUST run after cmfgen_sigma_bf load (extends it) and before
+     * nlte_init / GPU upload (they pick up the extended n_levels). */
+    inject_topstage_continuum_levels(&atom_data, &opacity);
     /* Task #072: Initialize n_electron from TARDIS reference */
     plasma.n_electron = (double *)malloc(geo.n_shells * sizeof(double));
     for (int i = 0; i < geo.n_shells; i++)
@@ -3133,6 +3208,58 @@ int main(int argc, char *argv[]) {
                     }
                     fclose(sf);
                     printf("S_l vs B(T_e) dump -> lumina_sl_vs_B.csv\n");
+                }
+            }
+
+            /* DIAGNOSTIC (LUMINA_LEVELPOP_DUMP=1): per-level departure coefficient
+             * b_k relative to its OWN-ion ground at the local T_e:
+             *   b_k = (n_k/n_ground) / ((g_k/g_ground) exp(-(E_k-E_ground)/kTe))
+             * b_k=1 -> thermal (Boltzmann); b_k>>1 -> super-thermal (the actual
+             * population overpopulation that drives S_l/B>>1). This dumps the
+             * quantity the S_l/B proxy only INFERRED: which levels, of which ion,
+             * at which shell, are over/under populated and by how much. */
+            if (getenv("LUMINA_LEVELPOP_DUMP")) {
+                FILE *lp = fopen("lumina_levelpop.csv", "w");
+                if (lp) {
+                    fprintf(lp, "shell,Z,ion,level_num,E_eV,g,n_k,n_ground,b_k,has_sigma,n_sig_pos\n");
+                    const double kB_eV = 8.617333262e-5; /* eV/K */
+                    int nfb = atom_data.cmfgen_n_freq_bins;
+                    int n_sh = geo.n_shells;
+                    for (int i = 0; i < nlte.n_nlte_ions; i++) {
+                        int Z = nlte.nlte_Z[i], ion = nlte.nlte_ion[i];
+                        int l0 = nlte.nlte_ion_level_offset[i];
+                        int l1 = nlte.nlte_ion_level_offset[i + 1];
+                        int g_glo = nlte.nlte_to_global_level[l0];
+                        double Eg = atom_data.level_energy_eV[g_glo];
+                        int gg = atom_data.level_g[g_glo]; if (gg < 1) gg = 1;
+                        for (int s = 0; s < n_sh; s++) {
+                            double Te = plasma.T_e[s];
+                            double ng = nlte.nlte_level_populations[(size_t)l0 * n_sh + s];
+                            for (int l = l0; l < l1; l++) {
+                                int gl = nlte.nlte_to_global_level[l];
+                                double Ek = atom_data.level_energy_eV[gl];
+                                int gk = atom_data.level_g[gl]; if (gk < 1) gk = 1;
+                                double nk = nlte.nlte_level_populations[(size_t)l * n_sh + s];
+                                double bk = -1.0;
+                                if (ng > 0.0 && nk > 0.0 && Te > 0.0) {
+                                    double boltz = ((double)gk / (double)gg) *
+                                        exp(-(Ek - Eg) / (kB_eV * Te));
+                                    if (boltz > 0.0) bk = (nk / ng) / boltz;
+                                }
+                                int hs = atom_data.cmfgen_has_sigma ?
+                                    atom_data.cmfgen_has_sigma[gl] : 0;
+                                int nsp = 0;
+                                if (hs && atom_data.cmfgen_sigma_bf) {
+                                    const double *sr = &atom_data.cmfgen_sigma_bf[(size_t)gl * nfb];
+                                    for (int b = 0; b < nfb; b++) if (sr[b] > 0.0) nsp++;
+                                }
+                                fprintf(lp, "%d,%d,%d,%d,%.4f,%d,%.6e,%.6e,%.4e,%d,%d\n",
+                                        s, Z, ion, atom_data.level_num[gl], Ek, gk, nk, ng, bk, hs, nsp);
+                            }
+                        }
+                    }
+                    fclose(lp);
+                    printf("Per-level departure b_k dump -> lumina_levelpop.csv\n");
                 }
             }
 

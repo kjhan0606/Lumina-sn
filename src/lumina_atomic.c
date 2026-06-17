@@ -904,6 +904,70 @@ int load_cmfgen_sigma_bf(AtomicData *atom, const char *path) {
     return 0;
 }
 
+/* TOP-STAGE CONTINUUM ANCHOR (LUMINA_TOPSTAGE_ANCHOR=1): inject synthetic
+ * ground-only IV ion stages so the top NLTE stage III gets a bound-free
+ * continuum partner. Without it, top-stage III EXCITED levels have zero
+ * continuum coupling and float super-thermal (no recombination drain) ->
+ * featureless emergent spectrum. The (III,IV) recombination is the missing
+ * thermalizing anchor (validated: thermal levels -> MC features; FORCE_LTE 166340).
+ *
+ * APPEND at the end of the level arrays: global level indices are UNCHANGED so
+ * existing line/macro-transition references stay intact (vs an insert, which
+ * would shift them). The synthetic levels are NLTE-scan orphans -- nlte_init
+ * finds them by (Z,ion) scan, independent of atom->level_offset (left stale; the
+ * bf recomb reads g_ion from level_g directly, so the unused IV partition fn is
+ * harmless). Kramers sigma_bf (cmfgen_has_sigma=0). KPACKET must be off (synthetic
+ * levels exceed n_macro_levels-sized kpacket arrays; empty macro block otherwise).
+ *
+ * Increment 1: O IV only (Z=8, ground 2s2 2p 2P, g=6). O is the last NLTE element
+ * (slots 28-30 = O I/II/III) so O IV at slot 31 is adjacent (hi=lo+1) -- no
+ * explicit-hi pair plumbing needed. S IV/C IV (mid-table III) come next with
+ * explicit pair-hi. Gated default-off. */
+void inject_topstage_continuum_levels(AtomicData *atom, OpacityState *opacity) {
+    const char *e = getenv("LUMINA_TOPSTAGE_ANCHOR");
+    if (!(e && atoi(e) != 0)) return;
+    /* {Z, ion(0-based, 3=IV), ground g} */
+    int syn_Z[]  = {8};
+    int syn_ion[]= {3};
+    int syn_g[]  = {6};       /* O IV 2s2 2p 2P deg = 6 */
+    int n_syn = (int)(sizeof(syn_Z)/sizeof(syn_Z[0]));
+    int old_n = atom->n_levels, new_n = old_n + n_syn;
+
+    atom->level_Z          = (int *)   realloc(atom->level_Z,          (size_t)new_n*sizeof(int));
+    atom->level_ion        = (int *)   realloc(atom->level_ion,        (size_t)new_n*sizeof(int));
+    atom->level_num        = (int *)   realloc(atom->level_num,        (size_t)new_n*sizeof(int));
+    atom->level_energy_eV  = (double *)realloc(atom->level_energy_eV,  (size_t)new_n*sizeof(double));
+    atom->level_g          = (int *)   realloc(atom->level_g,          (size_t)new_n*sizeof(int));
+    atom->level_metastable = (int *)   realloc(atom->level_metastable, (size_t)new_n*sizeof(int));
+    atom->level_super      = (int *)   realloc(atom->level_super,      (size_t)new_n*sizeof(int));
+    atom->cmfgen_has_sigma = (int *)   realloc(atom->cmfgen_has_sigma, (size_t)new_n*sizeof(int));
+    for (int s = 0; s < n_syn; s++) {
+        int l = old_n + s;
+        atom->level_Z[l] = syn_Z[s];   atom->level_ion[l] = syn_ion[s];
+        atom->level_num[l] = 0;        atom->level_energy_eV[l] = 0.0;
+        atom->level_g[l] = syn_g[s];   atom->level_metastable[l] = 1;
+        atom->level_super[l] = 0;      atom->cmfgen_has_sigma[l] = 0;
+    }
+    if (atom->cmfgen_sigma_bf && atom->cmfgen_n_freq_bins > 0) {
+        size_t nf = (size_t)atom->cmfgen_n_freq_bins;
+        atom->cmfgen_sigma_bf = (double *)realloc(atom->cmfgen_sigma_bf,
+                                                  (size_t)new_n*nf*sizeof(double));
+        memset(&atom->cmfgen_sigma_bf[(size_t)old_n*nf], 0, (size_t)n_syn*nf*sizeof(double));
+    }
+    atom->n_levels = new_n;
+
+    if (opacity && opacity->macro_block_references) {
+        int sentinel = opacity->macro_block_references[opacity->n_macro_levels];
+        opacity->macro_block_references = (int *)realloc(opacity->macro_block_references,
+                                                         (size_t)(new_n + 1)*sizeof(int));
+        for (int s = 0; s <= n_syn; s++)
+            opacity->macro_block_references[old_n + s] = sentinel;  /* empty blocks */
+        opacity->n_macro_levels = new_n;
+    }
+    printf("  [TOPSTAGE-ANCHOR] injected %d synthetic IV ground level(s) (O IV g=6); "
+           "n_levels %d->%d\n", n_syn, old_n, new_n);
+}
+
 void free_atomic_data(AtomicData *atom) {
     free(atom->line_atomic_number);
     free(atom->line_ion_number);
