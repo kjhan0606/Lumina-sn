@@ -335,11 +335,75 @@ static int nlte_equilibrate_enabled(void) {
     return on;
 }
 
+/* Singular-matrix Boltzmann fallback temperature (2026-06-18). The rate matrix
+ * goes singular precisely when collisions dominate (high n_e, inner shells) ->
+ * the level distribution there is the LTE limit at T_e, NOT T_rad. The legacy
+ * fallback used Boltzmann@T_rad; at inner shells T_rad is 1-4% hotter than T_e,
+ * which injects a spurious super-thermal S_l/B(T_e)>1 on every fallback line.
+ * LUMINA_NLTE_FALLBACK_TE=1 falls back to Boltzmann@T_e instead. */
+static int nlte_fallback_te_enabled(void) {
+    static int init = 0, on = 0;
+    if (!init) { const char *e = getenv("LUMINA_NLTE_FALLBACK_TE");
+                 on = (e && atoi(e) != 0) ? 1 : 0; init = 1; }
+    return on;
+}
+
+/* Residual check (2026-06-18, codex 019ed80e). cublasDgetrf reports info!=0 only
+ * for an EXACT-zero pivot; a NEAR-singular matrix factorizes with info=0 yet the
+ * triangular solve returns finite GARBAGE (the info=0 super-thermal tail, Sl/B up
+ * to 1e55). LUMINA_NLTE_RESID_CHECK=1 computes ||A x - b|| / ||b|| on the ORIGINAL
+ * (pre-equilibration) system per shell and, if it exceeds LUMINA_NLTE_RESID_TOL
+ * (default 1e-3), flags that shell singular (h_info=sentinel) so the existing
+ * caller routes it to the Boltzmann fallback. Catches what getrf info=0 misses. */
+static int nlte_resid_check_enabled(void) {
+    static int init = 0, on = 0;
+    if (!init) { const char *e = getenv("LUMINA_NLTE_RESID_CHECK");
+                 on = (e && atoi(e) != 0) ? 1 : 0; init = 1; }
+    return on;
+}
+static double nlte_resid_tol(void) {
+    static int init = 0; static double tol = 1e-3;
+    if (!init) { const char *e = getenv("LUMINA_NLTE_RESID_TOL");
+                 if (e) tol = atof(e); init = 1; }
+    return tol;
+}
+
+/* Preemptive LTE@T_e zone (2026-06-18). The rate matrix goes near-singular at
+ * inner shells BECAUSE collisions dominate (the LTE limit), and the LU then
+ * lands on a low-residual but null-space-contaminated solution (the Sl/B up to
+ * 1e55 garbage tail — provably NOT detectable from the matrix: residual ~1e-22,
+ * cond identical to good solves). The physically-correct answer at a collision-
+ * dominated shell is LTE@T_e. LUMINA_NLTE_LTE_NCRIT=<n_e threshold> forces every
+ * shell with n_e above it to the Boltzmann@T_e fallback (requires FALLBACK_TE),
+ * skipping the fragile solve. n_crit for forbidden metastables (the garbage
+ * source) ~ A_ul/q ~ 1e7-1e9; allowed UV lines have n_crit >> 1e12, so a moderate
+ * threshold leaves the emergent-UV-shaping NLTE intact (validated by A/B). 0=off. */
+static double nlte_lte_zone_ncrit(void) {
+    static int init = 0; static double ncrit = 0.0;
+    if (!init) { const char *e = getenv("LUMINA_NLTE_LTE_NCRIT");
+                 if (e) ncrit = atof(e); init = 1; }
+    return ncrit;
+}
+
 /* Batched LU solve: factorize + triangular solve on GPU for all shells at once.
  * h_matrices[batch * N * N] and h_rhs[batch * N] must be pre-filled (column-major). */
 static int cuda_nlte_batched_solve(CudaNLTESolver *sol, int N, int batch) {
     size_t mat_bytes = (size_t)batch * N * N * sizeof(double);
     size_t rhs_bytes = (size_t)batch * N * sizeof(double);
+
+    /* Residual check (LUMINA_NLTE_RESID_CHECK=1): snapshot the ORIGINAL assembled
+     * A and b BEFORE equilibration/getrf overwrite them, so ||A x - b|| can be
+     * formed after the solve to detect near-singular (info=0) garbage. */
+    int rc_on = nlte_resid_check_enabled();
+    double *rc_A = NULL, *rc_b = NULL;
+    if (rc_on) {
+        rc_A = (double *)malloc(mat_bytes);
+        rc_b = (double *)malloc(rhs_bytes);
+        if (rc_A && rc_b) {
+            memcpy(rc_A, sol->h_matrices, mat_bytes);
+            memcpy(rc_b, sol->h_rhs, rhs_bytes);
+        } else { free(rc_A); free(rc_b); rc_A = rc_b = NULL; rc_on = 0; }
+    }
 
     /* Optional pre-solve equilibration (LUMINA_NLTE_EQUILIBRATE=1). Scale each
      * matrix+RHS to O(1) and remember per-shell column scales to un-scale the
@@ -380,6 +444,7 @@ static int cuda_nlte_batched_solve(CudaNLTESolver *sol, int N, int batch) {
     if (stat != CUBLAS_STATUS_SUCCESS) {
         fprintf(stderr, "[NLTE-GPU] cublasDgetrfBatched failed: %d\n", stat);
         if (eq_cscale) free(eq_cscale);
+        free(rc_A); free(rc_b);
         return -1;
     }
 
@@ -414,6 +479,7 @@ static int cuda_nlte_batched_solve(CudaNLTESolver *sol, int N, int batch) {
     if (stat != CUBLAS_STATUS_SUCCESS) {
         fprintf(stderr, "[NLTE-GPU] cublasDgetrsBatched failed: %d\n", stat);
         if (eq_cscale) free(eq_cscale);
+        free(rc_A); free(rc_b);
         return -1;
     }
 
@@ -432,6 +498,41 @@ static int cuda_nlte_batched_solve(CudaNLTESolver *sol, int N, int batch) {
         }
     }
     if (eq_cscale) free(eq_cscale);
+
+    /* Residual check: form ||A x - b|| / ||b|| per shell on the ORIGINAL system
+     * (rc_A, rc_b snapshotted pre-equilibration; x = solved h_rhs). Flag a shell
+     * singular (h_info sentinel) when the relative residual exceeds the tolerance,
+     * so the caller routes it to the Boltzmann fallback. Catches the info=0
+     * near-singular garbage that getrf and the inv_ceil gate both miss. */
+    if (rc_on) {
+        double tol = nlte_resid_tol();
+        int n_bad = 0;
+        for (int i = 0; i < batch; i++) {
+            if (sol->h_info[i] != 0) continue;          /* already flagged */
+            const double *A = rc_A + (size_t)i * N * N;  /* column-major */
+            const double *b = rc_b + (size_t)i * N;
+            const double *x = sol->h_rhs + (size_t)i * N;
+            double rn = 0.0, bn = 0.0;
+            for (int k = 0; k < N; k++) {
+                double ax = 0.0;
+                for (int j = 0; j < N; j++) ax += A[(size_t)j * N + k] * x[j];
+                double d = ax - b[k];
+                rn += d * d; bn += b[k] * b[k];
+            }
+            double rel = (bn > 0.0) ? sqrt(rn / bn) : (rn > 0.0 ? 1e30 : 0.0);
+            if (rel > tol) { sol->h_info[i] = 88888; n_bad++; }  /* sentinel */
+        }
+        if (n_bad > 0) {
+            static int rc_warn = 0;
+            if (rc_warn < 8) {
+                fprintf(stderr, "[NLTE-RESID] %d/%d shells exceed ||Ax-b||/||b|| > "
+                        "%.1e -> routed to fallback (info=0 near-singular)\n",
+                        n_bad, batch, tol);
+                rc_warn++;
+            }
+        }
+    }
+    free(rc_A); free(rc_b);
     return 0;
 }
 
@@ -639,8 +740,16 @@ static void nlte_solve_all_gpu(NLTEConfig *nlte, AtomicData *atom,
                 if (e && atoi(e) != 0) force_lte_mode = 1;
                 force_lte_init = 1;
             }
+            double lte_ncrit = nlte_lte_zone_ncrit();
             for (int s = 0; s < n_shells; s++) {
                 int need_fallback = (ret != 0 || sol->h_info[s] != 0 || force_lte_mode);
+                /* Preemptive LTE@T_e zone: at collision-dominated shells (n_e above
+                 * the critical density) the rate solve is near-singular and the LU
+                 * lands on null-space garbage; the physical limit is LTE@T_e, so
+                 * route the whole shell to the (T_e) Boltzmann fallback. */
+                if (lte_ncrit > 0.0 && plasma->n_electron &&
+                    plasma->n_electron[s] > lte_ncrit)
+                    need_fallback = 1;
                 if (!need_fallback) {
                     /* Scan GPU solution for NaN/Inf — cuBLAS LU can succeed
                      * (info==0) but produce non-finite output when the rate
@@ -692,12 +801,17 @@ static void nlte_solve_all_gpu(NLTEConfig *nlte, AtomicData *atom,
                             (3*N)/4, xr[(3*N)/4]);
                 }
                 if (need_fallback) {
-                    /* Singular or non-finite: fall back to Boltzmann at T_rad.
-                     * In ion-lock mode, rescale each ion separately to its
-                     * nebular total — otherwise the combined rescale dumps the
-                     * upper-ion nebular into the lower-ion level range when
-                     * over-ionization is severe (Ni II/III bug). */
-                    double T_rad = plasma->T_rad[s];
+                    /* Singular or non-finite: fall back to Boltzmann.
+                     * Temperature: T_e when LUMINA_NLTE_FALLBACK_TE=1 (faithful
+                     * for the collision-dominated singular case; removes the
+                     * spurious inner super-thermal S_l the T_rad fallback injects),
+                     * else legacy T_rad. In ion-lock mode, rescale each ion
+                     * separately to its nebular total — otherwise the combined
+                     * rescale dumps the upper-ion nebular into the lower-ion level
+                     * range when over-ionization is severe (Ni II/III bug). */
+                    double T_rad = (nlte_fallback_te_enabled() && plasma->T_e &&
+                                    plasma->T_e[s] > 0.0)
+                                   ? plasma->T_e[s] : plasma->T_rad[s];
                     int Z_nl = nlte->nlte_Z[lo];
                     int gpu_fb_lock_mode = nlte_ion_lock_active(nlte->current_iter) ||
                                             nlte_per_ion_rescale_active() ||
