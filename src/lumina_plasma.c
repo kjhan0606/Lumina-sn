@@ -3284,6 +3284,25 @@ int nlte_timedep_active(void) {
     return enabled;
 }
 
+/* van Regemorter "trap" fix gate (root cause of the super-thermal S_l saga,
+ * 2026-06-18). The legacy collisional bb branch (plasma.c) dispatches by the
+ * raw radiative oscillator strength f_lu (threshold 1e-10), which mis-routes
+ * forbidden M1/E2 lines carrying a tiny nonzero f_lu (~1e-9) into the van
+ * Regemorter formula (C ∝ f_lu → ~0), starving the metastable<->ground
+ * collisional coupling and leaving an O III-metastable rate-matrix null-space.
+ * When set, dispatch by collision STRENGTH Upsilon = max(van Regemorter with the
+ * proper Bethe (Ry/dE)^2 scaling, Omega=1 forbidden floor). Parameter-free. */
+int nlte_coll_fix_enabled(void) {
+    static int init = 0;
+    static int enabled = 0;
+    if (!init) {
+        const char *e = getenv("LUMINA_NLTE_COLL_FIX");
+        if (e && atoi(e) != 0) enabled = 1;
+        init = 1;
+    }
+    return enabled;
+}
+
 /* Boltzmann-ceiling margin for the NLTE finite-garbage sanity gate.
  * A near-singular (but not exactly singular) rate matrix can yield a FINITE
  * solution whose excited-level pops sit 1e9-1e11x above the ion ground state —
@@ -6795,19 +6814,34 @@ void nlte_assemble_rate_matrix(NLTEConfig *nlte, AtomicData *atom,
         double f_lu = atom->line_f_lu[line];
 
         double C_up = 0.0;
-        if (T_e > 0.0 && dE > 0.0) {
+        double C_down = 0.0;
+        if (T_e > 0.0 && dE > 0.0 && g_lo > 0 && g_up > 0) {
             double exp_factor = exp(-dE / (K_BOLTZMANN * T_e));
-            if (f_lu > 1e-10) {
-                C_up = VAN_REGEMORTER_COEFF * n_e * f_lu *
-                       exp_factor / (g_lo * sqrt(T_e)) * 0.2;
+            if (nlte_coll_fix_enabled()) {
+                /* Dispatch by collision STRENGTH, not raw f_lu (codex 019ed80e).
+                 * Upsilon = max(van Regemorter w/ the Bethe (Ry/dE)^2 scaling the
+                 * legacy branch dropped, Omega=1 forbidden floor). Symmetric
+                 * collision-strength form keeps detailed balance exactly:
+                 *   C_up/C_down = (g_up/g_lo) * exp(-dE/kTe). */
+                double dE_eV = dE / EV_TO_ERG;
+                double ry_over_dE = 13.6057 / (dE_eV > 0.0 ? dE_eV : 1e30);
+                double gbar = 0.2;                 /* eff. Gaunt factor, ions */
+                double ups_vr = 14.5 * f_lu * ry_over_dE * ry_over_dE * gbar;
+                double ups = (ups_vr > AXELROD_OMEGA) ? ups_vr : AXELROD_OMEGA;
+                C_up   = n_e * 8.629e-6 / (g_lo * sqrt(T_e)) * ups * exp_factor;
+                C_down = n_e * 8.629e-6 / (g_up * sqrt(T_e)) * ups;
             } else {
-                C_up = 8.63e-6 * n_e * AXELROD_OMEGA *
-                       exp_factor / (g_lo * sqrt(T_e));
+                if (f_lu > 1e-10) {
+                    C_up = VAN_REGEMORTER_COEFF * n_e * f_lu *
+                           exp_factor / (g_lo * sqrt(T_e)) * 0.2;
+                } else {
+                    C_up = 8.63e-6 * n_e * AXELROD_OMEGA *
+                           exp_factor / (g_lo * sqrt(T_e));
+                }
+                C_down = C_up * ((double)g_lo / (double)g_up) *
+                         exp(dE / (K_BOLTZMANN * T_e));
             }
         }
-        double C_down = (g_lo > 0 && g_up > 0 && T_e > 0.0) ?
-            C_up * ((double)g_lo / (double)g_up) *
-            exp(dE / (K_BOLTZMANN * T_e)) : 0.0;
         /* Collisional floor: the thermalizing rate is the de-excitation C_down;
          * floor it at ε·A_ul (minimum thermalization parameter ε=C_down/(C_down+A))
          * and re-derive C_up from the floored C_down by the inverse detailed-balance

@@ -289,11 +289,74 @@ static void cuda_nlte_solver_free(CudaNLTESolver *sol) {
     memset(sol, 0, sizeof(*sol));
 }
 
+/* Two-sided inf-norm equilibration of a column-major NxN system A x = b
+ * (A_cm[j*N+i] = A(i,j)). Scales rows then columns to O(1), which is an EXACT
+ * transform (does not change the solution): A' = Dr A Dc, b' = Dr b, solve
+ * A' y = b', recover x[j] = Dc[j]*y[j]. Returns the column scales in cscale[].
+ *
+ * Rationale (2026-06-18, 3-way verified audit): the NLTE rate matrix mixes a
+ * conservation row of O(1) ones (RHS = number density ~1e8) with rate rows of
+ * O(1e6-1e8) s^-1, fed RAW to cuBLAS getrf. The huge resulting condition number
+ * makes getrf's partial pivoting unable to see the true rank at low n_e -> it
+ * returns finite GARBAGE excited pops (~1e-26, alternating sign) with info=0
+ * (not flagged singular). Equilibration collapses the condition number so the
+ * solve returns the true populations where the system is well-posed, and lets
+ * getrf honestly flag info!=0 for the genuinely-singular (missing-physics) case
+ * -> routes to the CPU Boltzmann fallback instead of silent garbage. This is a
+ * faithful numerical fix, NOT a clamp: it changes only the conditioning. */
+static void nlte_equilibrate_system(double *A_cm, double *b, int N, double *cscale) {
+    for (int i = 0; i < N; i++) {            /* row scaling: r[i] = 1/max_j|A(i,j)| */
+        double rmax = 0.0;
+        for (int j = 0; j < N; j++) {
+            double v = fabs(A_cm[(size_t)j * N + i]);
+            if (v > rmax) rmax = v;
+        }
+        double r = (rmax > 0.0) ? 1.0 / rmax : 1.0;
+        for (int j = 0; j < N; j++) A_cm[(size_t)j * N + i] *= r;
+        b[i] *= r;
+    }
+    for (int j = 0; j < N; j++) {            /* col scaling: c[j] = 1/max_i|A(i,j)| */
+        double *col = A_cm + (size_t)j * N;
+        double cmax = 0.0;
+        for (int i = 0; i < N; i++) {
+            double v = fabs(col[i]);
+            if (v > cmax) cmax = v;
+        }
+        double c = (cmax > 0.0) ? 1.0 / cmax : 1.0;
+        for (int i = 0; i < N; i++) col[i] *= c;
+        cscale[j] = c;
+    }
+}
+
+static int nlte_equilibrate_enabled(void) {
+    static int init = 0, on = 0;
+    if (!init) { const char *e = getenv("LUMINA_NLTE_EQUILIBRATE");
+                 on = (e && atoi(e) != 0) ? 1 : 0; init = 1; }
+    return on;
+}
+
 /* Batched LU solve: factorize + triangular solve on GPU for all shells at once.
  * h_matrices[batch * N * N] and h_rhs[batch * N] must be pre-filled (column-major). */
 static int cuda_nlte_batched_solve(CudaNLTESolver *sol, int N, int batch) {
     size_t mat_bytes = (size_t)batch * N * N * sizeof(double);
     size_t rhs_bytes = (size_t)batch * N * sizeof(double);
+
+    /* Optional pre-solve equilibration (LUMINA_NLTE_EQUILIBRATE=1). Scale each
+     * matrix+RHS to O(1) and remember per-shell column scales to un-scale the
+     * downloaded solution. Faithful (exact) conditioning fix; see helper above. */
+    int eq_on = nlte_equilibrate_enabled();
+    double *eq_cscale = NULL;
+    if (eq_on) {
+        eq_cscale = (double *)malloc((size_t)batch * N * sizeof(double));
+        if (eq_cscale) {
+            for (int i = 0; i < batch; i++)
+                nlte_equilibrate_system(sol->h_matrices + (size_t)i * N * N,
+                                        sol->h_rhs + (size_t)i * N, N,
+                                        eq_cscale + (size_t)i * N);
+        } else {
+            eq_on = 0;  /* OOM: skip equilibration, solve raw */
+        }
+    }
 
     /* Set up device pointer arrays (each points to contiguous slice) */
     for (int i = 0; i < batch; i++) {
@@ -316,6 +379,7 @@ static int cuda_nlte_batched_solve(CudaNLTESolver *sol, int N, int batch) {
         sol->d_Aarray, N, sol->d_pivot, sol->d_info, batch);
     if (stat != CUBLAS_STATUS_SUCCESS) {
         fprintf(stderr, "[NLTE-GPU] cublasDgetrfBatched failed: %d\n", stat);
+        if (eq_cscale) free(eq_cscale);
         return -1;
     }
 
@@ -349,12 +413,25 @@ static int cuda_nlte_batched_solve(CudaNLTESolver *sol, int N, int batch) {
         sol->d_Barray, N, &info_host, batch);
     if (stat != CUBLAS_STATUS_SUCCESS) {
         fprintf(stderr, "[NLTE-GPU] cublasDgetrsBatched failed: %d\n", stat);
+        if (eq_cscale) free(eq_cscale);
         return -1;
     }
 
     /* Download solutions */
     CUDA_CHECK(cudaMemcpy(sol->h_rhs, sol->d_rhs, rhs_bytes,
                cudaMemcpyDeviceToHost));
+
+    /* Un-scale: the GPU solved A' y = b' (column-equilibrated), so recover the
+     * true population x[j] = cscale[j] * y[j]. Output semantics identical to the
+     * un-equilibrated path -> no downstream change. */
+    if (eq_on && eq_cscale) {
+        for (int i = 0; i < batch; i++) {
+            double *y = sol->h_rhs + (size_t)i * N;
+            double *cs = eq_cscale + (size_t)i * N;
+            for (int j = 0; j < N; j++) y[j] *= cs[j];
+        }
+    }
+    if (eq_cscale) free(eq_cscale);
     return 0;
 }
 
@@ -509,6 +586,39 @@ static void nlte_solve_all_gpu(NLTEConfig *nlte, AtomicData *atom,
             clock_gettime(CLOCK_MONOTONIC, &ts_a1);
             t_assemble_total += (ts_a1.tv_sec - ts_a0.tv_sec) +
                                 1e-9 * (ts_a1.tv_nsec - ts_a0.tv_nsec);
+
+            /* FALSIFIER (LUMINA_NLTE_MATDUMP=1): dump the ORIGINAL (pre-LU,
+             * pre-equilibration) rate matrix A (col-major) + RHS b for one
+             * target pair/shell so SVD/cond/null-space can be computed offline.
+             * Confirms whether the negative-pops-with-info=0 are a structural
+             * near-singularity (smallest right-singular vector on the top-ion
+             * excited manifold) vs ill-scaling or an assembly bug. File is
+             * overwritten each iter -> holds the last (converged) iter. */
+            if (getenv("LUMINA_NLTE_MATDUMP") &&
+                nlte->nlte_Z[lo] == (getenv("LUMINA_POP_Z") ? atoi(getenv("LUMINA_POP_Z")) : 8) &&
+                nlte->nlte_ion[lo] == (getenv("LUMINA_POP_ION") ? atoi(getenv("LUMINA_POP_ION")) : 1)) {
+                int sdump = getenv("LUMINA_POP_SHELL") ? atoi(getenv("LUMINA_POP_SHELL")) : 24;
+                if (sdump >= 0 && sdump < n_shells) {
+                    const char *path = getenv("LUMINA_NLTE_MATDUMP_PATH");
+                    if (!path) path = "lumina_nlte_matrix.bin";
+                    FILE *mf = fopen(path, "wb");
+                    if (mf) {
+                        int n_lo_lev = nlte->nlte_ion_level_offset[lo + 1] -
+                                       nlte->nlte_ion_level_offset[lo];
+                        int hdr[5] = { N, n_lo_lev, nlte->nlte_Z[lo],
+                                       nlte->nlte_ion[lo], sdump };
+                        fwrite(hdr, sizeof(int), 5, mf);
+                        fwrite(sol->h_matrices + (size_t)sdump * N * N,
+                               sizeof(double), (size_t)N * N, mf);   /* col-major */
+                        fwrite(sol->h_rhs + (size_t)sdump * N,
+                               sizeof(double), (size_t)N, mf);
+                        fclose(mf);
+                        fprintf(stderr, "[MATDUMP] wrote %s N=%d n_lo=%d Z=%d ion=%d s=%d\n",
+                                path, N, n_lo_lev, nlte->nlte_Z[lo],
+                                nlte->nlte_ion[lo], sdump);
+                    }
+                }
+            }
 
             /* GPU batched solve */
             int ret = cuda_nlte_batched_solve(sol, N, n_shells);
