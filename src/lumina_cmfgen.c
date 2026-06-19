@@ -78,6 +78,8 @@ int cmfgen_init(CMFGENState *cs, const Geometry *geo)
 
     const char *d = getenv("LUMINA_RADEQ_DIAG");
     cs->diag = (d && atoi(d)) ? 1 : 0;
+    cs->frozen_morph_eps = -1.0;   /* off until the post-convergence pass sets it */
+    cs->cont_only = 0;             /* continuum-only J_inc pass off by default */
     return 0;
 }
 
@@ -235,12 +237,27 @@ void cmfgen_assemble(CMFGENState *cs, const Geometry *geo,
                 if (chi_ff < 0.0) chi_ff = 0.0;
             }
             double chi_a   = chi_bf + chi_ff;        /* thermal true abs */
-            double chi_ln  = cs->chi_line[idx];
-            double eta_ln  = eta_line[idx];          /* still in scratch */
+            /* continuum-only J_inc pass: drop ALL line opacity + emissivity so
+             * the solved field is the bare chi_es+bf/ff continuum (no forest
+             * blanketing, not self-referential with the line source). */
+            double chi_ln  = cs->cont_only ? 0.0 : cs->chi_line[idx];
+            double eta_ln  = cs->cont_only ? 0.0 : eta_line[idx];  /* in scratch */
             double chi_t   = chi_e + chi_a + chi_ln;
 
             double chi_ln_th = chi_ln;               /* legacy: all thermal */
-            if (eps_phys) {
+            if (cs->frozen_morph_eps >= 0.0 &&
+                chi_ln > line_gate * chi_a) {
+                /* frozen-plasma morphology pass: force the forest-dominated
+                 * bins to scatter with destruction prob eps (0 = pure
+                 * coherent). The scattering remainder (1-eps)*chi_line joins
+                 * chi_es so the ALI solve carries the photospheric field out;
+                 * the per-line scattering source S_l=(1-eps)*Jbar+eps*B is
+                 * written into opacity->line_source_S AFTER this solve. */
+                double fe = cs->frozen_morph_eps;
+                chi_ln_th = fe * chi_ln;
+                eta_ln   *= fe;
+                n_split++;
+            } else if (eps_phys) {
                 chi_ln_th = cs->chi_line_th[idx];    /* per-line accumulated */
                 if (chi_ln_th > 0.0 || chi_ln > 0.0) n_split++;
             } else if (eps_uv > 0.0 && eps_uv <= 1.0 &&

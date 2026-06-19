@@ -3392,6 +3392,182 @@ int main(int argc, char *argv[]) {
                 }
                 cmfgen_write_spectrum(&cs, &geo, config.T_inner,
                                       "lumina_spectrum.csv");
+
+                /* === FROZEN-PLASMA MORPHOLOGY PASS (P-Cygni gate) ===
+                 * The validated thermal plasma is now converged. To test
+                 * whether the THERMAL iron forest (S_l=B(Te), which refills its
+                 * own absorption) is what kills the P-Cygni morphology, re-solve
+                 * ONLY the radiation field with the forest set to SCATTER
+                 * (destruction prob eps; eps=0 = pure coherent), holding every
+                 * plasma quantity (T_e/n_e/pops/opacity) FIXED — env flags can't
+                 * (coupled-Newton/line-RE drive T_e), but this code path simply
+                 * never calls them. Then write the per-line scattering source
+                 * S_l=(1-eps)*Jbar+eps*B(Te) into opacity.line_source_S so the
+                 * downstream formal-integral spectrum (lumina_spectrum_formal.csv)
+                 * reflects a scattering forest. ONE-SIDED falsifier:
+                 *   eps=0 produces NO trough -> thermal forest is NOT the
+                 *     morphology blocker (root is geometry/dilution) -> abort A4;
+                 *   eps=0 produces a P-Cygni trough -> confirmed -> refine eps. */
+                {
+                    const char *_fm = getenv("LUMINA_CMFGEN_FROZEN_MORPH");
+                    if (_fm && atoi(_fm)) {
+                        double f_eps = 0.0;
+                        const char *_fe = getenv("LUMINA_CMFGEN_FROZEN_EPS");
+                        if (_fe) f_eps = atof(_fe);
+                        if (f_eps < 0.0) f_eps = 0.0;
+                        const char *_fa = getenv("LUMINA_CMFGEN_FROZEN_ALI");
+                        int f_ali = _fa ? atoi(_fa) : (n_ali > 60 ? n_ali : 60);
+                        if (f_ali < 1) f_ali = 1;
+                        /* SOURCE MODE (triple-verified 2026-06-19):
+                         *   CONT=1 (default): J_inc = continuum-only field
+                         *     (chi_line=0, chi_es+bf/ff). S_l=(1-eps)*J_inc+eps*B
+                         *     is NOT self-referential -> can fall below the
+                         *     B(T_inner)*exp(-tau_acc) backlight -> P-Cygni trough.
+                         *   CONT=0 (legacy): forest-scatter total Jbar -> S_l=Jbar
+                         *     is the coherent-scatter DEGENERACY (washes out). */
+                        const char *_fc = getenv("LUMINA_CMFGEN_FROZEN_CONT");
+                        int use_cont = _fc ? atoi(_fc) : 1;
+                        printf("\n=== FROZEN-PLASMA MORPHOLOGY PASS: %s source, "
+                               "eps=%.4g, %d ALI iters, plasma FROZEN ===\n",
+                               use_cont ? "continuum-incident J_inc" :
+                                          "forest-scatter total Jbar",
+                               f_eps, f_ali);
+
+                        if (use_cont) {
+                            cs.cont_only = 1;          /* zero chi_line -> J_inc */
+                            cs.frozen_morph_eps = -1.0;
+                        } else {
+                            cs.cont_only = 0;
+                            cs.frozen_morph_eps = f_eps;  /* forest scatters */
+                        }
+                        cmfgen_assemble(&cs, &geo, &opacity,
+                                        bf_opacity_enabled ? &bf : NULL, &plasma);
+                        cmfgen_solve_J(&cs, &geo, config.T_inner, f_ali);
+                        cs.cont_only = 0;
+                        cmfgen_write_jnu(&cs, &nlte);
+
+                        double hpl = 6.62607015e-27, kb = 1.380649e-16,
+                               cc = 2.99792458e10;
+                        int NSh = geo.n_shells, NB = cs.n_bins;
+
+                        /* FEATURE-ONLY mode (codex falsifier, 2026-06-19): the
+                         * isotropic J_inc washes out because the bright source on
+                         * the whole iron forest fills the ~85% off-limb area with
+                         * a smooth pseudo-continuum. Test: scatter (S_l=J_inc)
+                         * ONLY the strong IME feature ions (Ca/Si/S/Mg/O), keep
+                         * the iron-group forest THERMAL/dark (S_l=B(Te)). If
+                         * contrast rebounds -> forest off-limb fill confirmed ->
+                         * faithful fix = forest fluorescence/macro-atom (A4). */
+                        int feat_only = 0;
+                        { const char *fo = getenv("LUMINA_CMFGEN_FROZEN_FEATURE_ONLY");
+                          if (fo && atoi(fo)) feat_only = 1; }
+                        int feat_Z[8] = {8,12,14,16,20,0,0,0}; int n_feat = 5;
+                        { const char *fz = getenv("LUMINA_CMFGEN_FEATURE_Z");
+                          if (fz) { n_feat = 0; char buf[128]; strncpy(buf, fz, 127);
+                            buf[127]=0; char *t = strtok(buf, ",");
+                            while (t && n_feat < 8) { feat_Z[n_feat++] = atoi(t);
+                              t = strtok(NULL, ","); } } }
+                        if (feat_only) {
+                            printf("  FEATURE-ONLY: J_inc on Z={");
+                            for (int k=0;k<n_feat;k++) printf("%d%s",feat_Z[k],
+                                k<n_feat-1?",":""); printf("}, forest dark B(Te)\n");
+                        }
+
+                        /* Write per-line source from the solved field. */
+                        long n_rw = 0, n_feat_rw = 0;
+                        for (int l = 0; l < opacity.n_lines; l++) {
+                            double nu_l = opacity.line_list_nu[l];
+                            if (nu_l <= cs.nu_min || nu_l >= cs.nu_max) continue;
+                            int b = (int)floor(log(nu_l / cs.nu_min) / cs.d_log_nu);
+                            if (b < 0 || b >= NB) continue;
+                            int Zl = atom_data.line_atomic_number ?
+                                     atom_data.line_atomic_number[l] : 0;
+                            int is_feat = 0;
+                            for (int k=0;k<n_feat;k++) if (Zl==feat_Z[k]) {is_feat=1;break;}
+                            for (int s = 0; s < NSh; s++) {
+                                double tau = opacity.tau_sobolev[(size_t)l*NSh+s];
+                                if (tau < 1e-3) continue;
+                                double Jbar = cs.J[(size_t)s * NB + b];
+                                if (Jbar < 0.0) Jbar = 0.0;
+                                double Te = plasma.T_e[s];
+                                double B = 0.0;
+                                if (Te > 0.0) {
+                                    double x = hpl*nu_l/(kb*Te);
+                                    if (x < 500.0)
+                                        B = 2.0*hpl*nu_l*nu_l*nu_l/(cc*cc)/(exp(x)-1.0);
+                                }
+                                double Snew;
+                                if (feat_only && !is_feat)
+                                    Snew = B;                /* dark thermal forest */
+                                else {
+                                    Snew = (1.0 - f_eps) * Jbar + f_eps * B;
+                                    if (is_feat) n_feat_rw++;
+                                }
+                                opacity.line_source_S[(size_t)l*NSh+s] = Snew;
+                                n_rw++;
+                            }
+                        }
+                        printf("  frozen-morph line sources rewritten: %ld "
+                               "(feature-scatter rows %ld; S_l <- %s)\n", n_rw,
+                               n_feat_rw, feat_only ?
+                               "J_inc(feat)/B(Te)(forest)" :
+                               (use_cont ? "(1-eps)J_inc+eps*B" : "(1-eps)Jbar+eps*B"));
+
+                        /* FALSIFIER DUMP (codex criterion): at each (shell,bin) in
+                         * the optical-NIR, the continuum-thermalization depth
+                         * tau_eff_c = sqrt(tau_abs*(tau_abs+tau_es)) (radial, to
+                         * shell midpoint) and J_inc/B(Te), J_inc/B(Tinner). If at
+                         * the Ca II/Si II line-forming shells tau_eff_c<<1 AND
+                         * J_inc<B(Tinner) (diluted photospheric) -> trough WILL
+                         * form -> line-source fix suffices. If tau_eff_c>=1 with
+                         * J_inc~B(Te) -> field thermalized -> A4 required. */
+                        if (use_cont) {
+                            FILE *jf = fopen("lumina_frozen_jinc.csv", "w");
+                            if (jf) {
+                                fprintf(jf, "# T_inner=%.2f\n", config.T_inner);
+                                fprintf(jf, "shell,bin,lambda_A,Te,chi_es,chi_abs,"
+                                            "J_inc,B_Te,B_Tinner,Jinc_over_BTe,"
+                                            "Jinc_over_BTinner,tau_es_rad,"
+                                            "tau_abs_rad,tau_eff_c\n");
+                                for (int b = 0; b < NB; b++) {
+                                    double nu = cs.nu[b];
+                                    double lamA = cc / nu * 1e8;
+                                    if (lamA < 3000.0 || lamA > 9500.0) continue;
+                                    double xi = hpl*nu/(kb*config.T_inner);
+                                    double BTi = (xi < 500.0) ?
+                                        2.0*hpl*nu*nu*nu/(cc*cc)/(exp(xi)-1.0) : 0.0;
+                                    /* radial taus to each shell midpoint (outer->in) */
+                                    double acc_es = 0.0, acc_abs = 0.0;
+                                    for (int s = NSh-1; s >= 0; s--) {
+                                        double dr = geo.r_outer[s] - geo.r_inner[s];
+                                        double ce = cs.chi_es[(size_t)s*NB+b];
+                                        double ca = cs.chi_abs[(size_t)s*NB+b];
+                                        double tes = acc_es + 0.5*ce*dr;
+                                        double tab = acc_abs + 0.5*ca*dr;
+                                        acc_es += ce*dr; acc_abs += ca*dr;
+                                        double teff = sqrt(tab*(tab+tes));
+                                        double Te = plasma.T_e[s];
+                                        double xe = hpl*nu/(kb*Te);
+                                        double BTe = (Te>0.0 && xe<500.0) ?
+                                            2.0*hpl*nu*nu*nu/(cc*cc)/(exp(xe)-1.0):0.0;
+                                        double Ji = cs.J[(size_t)s*NB+b];
+                                        if (Ji < 0.0) Ji = 0.0;
+                                        fprintf(jf, "%d,%d,%.2f,%.1f,%.4e,%.4e,"
+                                                "%.4e,%.4e,%.4e,%.4e,%.4e,%.4e,"
+                                                "%.4e,%.4e\n",
+                                                s, b, lamA, Te, ce, ca, Ji, BTe, BTi,
+                                                BTe>0.0?Ji/BTe:-1.0,
+                                                BTi>0.0?Ji/BTi:-1.0,
+                                                tes, tab, teff);
+                                    }
+                                }
+                                fclose(jf);
+                                printf("  J_inc falsifier dump -> "
+                                       "lumina_frozen_jinc.csv\n");
+                            }
+                        }
+                    }
+                }
                 cmfgen_free(&cs);
             }
 

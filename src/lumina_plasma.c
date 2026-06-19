@@ -8373,6 +8373,28 @@ void compute_formal_integral_spectrum(
     double fi_clamp_sl = _env_clamp ? atof(_env_clamp) : 0.0;
     if (fi_clamp_sl > 0.0)
         printf("  [FI] S_l -> B(T_e) clamp for tau>%.2f (LUMINA_FI_CLAMP_SL)\n", fi_clamp_sl);
+    /* Session-closing falsifier (codex 2026-06-19): test whether the too-RED
+     * continuum is driven by blue-selective IGE forest blanketing.
+     *  FOREST_NOBLANK: IGE forest lines (Z>=21) contribute NOTHING to tau_acc
+     *    (remove their wavelength-selective blanketing) -> peak should jump
+     *    blueward 8500->~6541A (the bare B(T_inner) backlight color) if the
+     *    forest blanketing is the reddening cause.
+     *  LEDGER: per output-bin, the BACKLIGHT luminosity absorbed by IGE forest
+     *    vs other lines = B(T_inner)*exp(-tau_acc)*(1-e^-tau_l) on core rays,
+     *    split by ion group -> lumina_fi_abs_ledger.csv. Confirms blue IGE
+     *    absorption dominates the deleted-flux budget. */
+    int fi_noblank = 0, fi_ledger = 0;
+    { const char *nb = getenv("LUMINA_FI_FOREST_NOBLANK");
+      if (nb && atoi(nb)) fi_noblank = 1;
+      const char *lg = getenv("LUMINA_FI_LEDGER");
+      if (lg && atoi(lg)) fi_ledger = 1; }
+    double *absL_ige = NULL, *absL_oth = NULL;
+    if (fi_ledger) {
+        absL_ige = (double*)calloc(spec_formal->n_bins, sizeof(double));
+        absL_oth = (double*)calloc(spec_formal->n_bins, sizeof(double));
+    }
+    if (fi_noblank) printf("  [FI] IGE forest (Z>=21) blanketing REMOVED from tau_acc\n");
+    if (fi_ledger)  printf("  [FI] absorbed-energy ledger ON -> lumina_fi_abs_ledger.csv\n");
 
     printf("\n=== Formal Integral Spectrum ===\n");
     printf("  Impact parameters: %d, beta_max=%.4f\n", n_impact, beta_max);
@@ -8404,6 +8426,7 @@ void compute_formal_integral_spectrum(
         int l_last  = bsearch_descending_ge(opacity->line_list_nu, n_lines, nu_line_min);
 
         double L_nu_integral = 0.0;
+        double ledg_ige = 0.0, ledg_oth = 0.0;   /* absorbed-backlight ledger */
 
         for (int ip = 0; ip < n_impact; ip++) {
             double p = dp * (ip + 0.5);
@@ -8485,8 +8508,18 @@ void compute_formal_integral_spectrum(
 
                 /* Line contribution: S * (1 - exp(-tau)) * exp(-tau_accumulated) */
                 double one_minus_exp = (tau_sob > 500.0) ? 1.0 : (1.0 - exp(-tau_sob));
+                int is_ige = (atom && atom->line_atomic_number &&
+                              atom->line_atomic_number[l] >= 21);
+                /* ledger: backlight luminosity this line removes (core rays) */
+                if ((fi_ledger || fi_noblank) && p < r_phot) {
+                    double Babs = fi_W_inner * planck_bnu(T_inner, nu_obs)
+                                * exp(-tau_acc) * one_minus_exp;
+                    double dL = Babs * p * dp;
+                    if (is_ige) ledg_ige += dL; else ledg_oth += dL;
+                }
                 I_nu += S * one_minus_exp * exp(-tau_acc);
-                tau_acc += tau_sob;
+                /* FOREST_NOBLANK: IGE forest does not blanket (skip tau_acc add) */
+                if (!(fi_noblank && is_ige)) tau_acc += tau_sob;
                 z_prev = z;
             }
 
@@ -8529,7 +8562,25 @@ void compute_formal_integral_spectrum(
 
         /* Convert L_nu [erg/s/Hz] to L_lambda [erg/s/cm]: L_lambda = L_nu * c / lambda^2 */
         spec_formal->flux[bin] = L_nu * C_SPEED_OF_LIGHT / (lambda_cm * lambda_cm);
+        if (absL_ige) {
+            double k = 8.0 * M_PI_VAL * M_PI_VAL;
+            absL_ige[bin] = k * ledg_ige;
+            absL_oth[bin] = k * ledg_oth;
+        }
     }
+
+    if (fi_ledger && absL_ige) {
+        FILE *lf = fopen("lumina_fi_abs_ledger.csv", "w");
+        if (lf) {
+            fprintf(lf, "wavelength_angstrom,absL_IGE,absL_other\n");
+            for (int b = 0; b < spec_formal->n_bins; b++)
+                fprintf(lf, "%.4f,%.6e,%.6e\n",
+                        spec_formal->wavelength[b], absL_ige[b], absL_oth[b]);
+            fclose(lf);
+            printf("  [FI] absorbed-energy ledger -> lumina_fi_abs_ledger.csv\n");
+        }
+    }
+    free(absL_ige); free(absL_oth);
 
     printf("  Formal integral spectrum computed.\n");
 }

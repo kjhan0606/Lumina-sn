@@ -67,6 +67,20 @@ typedef struct {
     double *p_ray;             /* [n_rays] impact parameters [cm]         */
 
     int     diag;             /* LUMINA_RADEQ_DIAG echo                   */
+    double  frozen_morph_eps; /* >=0: frozen-plasma morphology pass — force
+                                 the forest line-dominated bins to scatter with
+                                 destruction probability eps (0 = pure coherent
+                                 scatter), overriding the env eps split. -1 =
+                                 off (normal assemble). Set only for the final
+                                 post-convergence J re-solve, plasma untouched. */
+    int     cont_only;        /* 1: continuum-only assemble — zero ALL line
+                                 opacity/emissivity (chi_line, eta_line) so the
+                                 solved J is the continuum-incident field J_inc
+                                 (chi_es + bf/ff only). Used by the frozen
+                                 morphology pass to set a NON-self-referential
+                                 line source S_l=(1-eps)*J_inc+eps*B(Te), which
+                                 (unlike total-Jbar) can fall below the backlight
+                                 and carve a P-Cygni trough. 0 = normal. */
 } CMFGENState;
 
 /* Allocate grid + tangent rays from geometry. Returns 0 on success. */
