@@ -6791,6 +6791,24 @@ void nlte_assemble_rate_matrix(NLTEConfig *nlte, AtomicData *atom,
         mali_on = (e && atoi(e) != 0);
         mali_init = 1;
     }
+    /* Stage A (LUMINA_NLTE_JBAR_POPS=1): drive the bb absorption rate from the
+     * per-line REALIZED MC field J_bar_l (opacity->jbar_line) instead of the
+     * frequency-averaged binned ambient J. This is the untouched lever: the
+     * binned J washes out the line-resolved UV contrast before the rate matrix
+     * sees it -> thermal populations -> no fluorescence. J_bar_l carries the
+     * non-thermal UV pump, so the POPULATIONS become fluorescent. Explosion-safe
+     * because J_bar_l is the realized EXTERNAL field held FIXED during the solve
+     * (lagged Lambda-iteration, ARTIS-style), NOT the intra-solve self-coupling
+     * that exploded in 165510. J_bar_l already includes the trapped (1-beta)S_l
+     * via the packet crossings, so the rates use NO extra beta (codex form
+     * R_lu=B_lu*Jbar, R_ul=A_ul+B_ul*Jbar). Undersampled lines fall back to the
+     * binned J. */
+    static int jbar_pops_init = 0, jbar_pops_on = 0;
+    if (!jbar_pops_init) {
+        const char *e = getenv("LUMINA_NLTE_JBAR_POPS");
+        jbar_pops_on = (e && atoi(e) != 0);
+        jbar_pops_init = 1;
+    }
 
     int budget_hit = budget_on && (nlte->nlte_Z[ion_idx_lo] == budget_Z) &&
                      (nlte->nlte_ion[ion_idx_lo] == budget_stage ||
@@ -6824,7 +6842,12 @@ void nlte_assemble_rate_matrix(NLTEConfig *nlte, AtomicData *atom,
         if (i_lo < 0 || i_lo >= N || i_up < 0 || i_up >= N) continue;
 
         double nu_line = atom->line_nu[line];
-        double J_line = nlte_get_J_at_nu(nlte, shell, nu_line);
+        double J_jbar = (jbar_pops_on && opacity->jbar_line && opacity->jbar_count &&
+                         opacity->jbar_count[(size_t)line * n_shells + shell] >= 10)
+                        ? opacity->jbar_line[(size_t)line * n_shells + shell] : -1.0;
+        int use_jbar = (J_jbar > 0.0 && isfinite(J_jbar));  /* guard MC outliers/NaN */
+        double J_line = use_jbar ? J_jbar
+                                 : nlte_get_J_at_nu(nlte, shell, nu_line);
 
         /* MALI (LUMINA_MALI=1): multiply the bound-bound radiative rates by the
          * Sobolev escape probability β_esc(τ). For a thick line (β→0) the
@@ -6841,9 +6864,14 @@ void nlte_assemble_rate_matrix(NLTEConfig *nlte, AtomicData *atom,
                 ? opacity->tau_sobolev[(size_t)line * n_shells + shell] : 0.0;
             mali_beta = radeq_beta_esc(tau_l);
         }
-        double R_absorb = atom->line_B_lu[line] * J_line * mali_beta;
-        double R_stim   = atom->line_B_ul[line] * J_line * mali_beta;
-        double R_spont  = atom->line_A_ul[line] * mali_beta;
+        /* Stage A: the realized J_bar_l already carries the trapped (1-beta)S_l
+         * via packet crossings, so its rates take NO extra beta (full codex form
+         * R_lu=B_lu*Jbar, R_ul=A_ul+B_ul*Jbar). The binned-J fallback keeps the
+         * MALI beta_esc thermalization. */
+        double beta_use = use_jbar ? 1.0 : mali_beta;
+        double R_absorb = atom->line_B_lu[line] * J_line * beta_use;
+        double R_stim   = atom->line_B_ul[line] * J_line * beta_use;
+        double R_spont  = atom->line_A_ul[line] * beta_use;
 
         double dE = fabs(atom->level_energy_eV[upper_global] -
                          atom->level_energy_eV[lower_global]) * EV_TO_ERG;
@@ -7850,6 +7878,32 @@ void nlte_update_tau_sobolev(NLTEConfig *nlte, AtomicData *atom,
     int n_lines = opacity->n_lines;
     nlte_skip_z_load();
 
+    /* F0 fluorescence falsifier (DIAGNOSTIC ONLY, never a production config):
+     * impose a controlled super-thermal departure S_l = X*B(T_e) on the Fe lines
+     * in the 4475A window, on the FROZEN plasma, to test whether a non-thermal
+     * 4475 source would actually emerge through transport. Since the converged
+     * S_l is ~B(T_e) (audit S_l/B=1.0000), multiplying S_l by X imposes X*B.
+     * PASS (modest X -> 4475 appears) => the populations are the binding layer
+     * -> build the line-specific-Jbar rate-eq fix. FAIL (even X=10 nothing) =>
+     * the blocker is upstream (super-level smearing / opacity / UV reservoir). */
+    static int    fluor_init = 0;
+    static double fluor_oracle_x = 1.0;
+    static double fluor_lam_lo_cm = 4400e-8, fluor_lam_hi_cm = 4550e-8;
+    if (!fluor_init) {
+        const char *e = getenv("LUMINA_FLUOR_ORACLE_X");
+        if (e) fluor_oracle_x = atof(e);
+        const char *lo = getenv("LUMINA_FLUOR_ORACLE_LAM_LO");
+        const char *hi = getenv("LUMINA_FLUOR_ORACLE_LAM_HI");
+        if (lo) fluor_lam_lo_cm = atof(lo) * 1e-8;
+        if (hi) fluor_lam_hi_cm = atof(hi) * 1e-8;
+        if (fluor_oracle_x > 1.0)
+            printf("  [FLUOR-ORACLE] S_l *= %.2f on Z=26 lines in [%.0f,%.0f]A "
+                   "(DIAGNOSTIC; frozen-plasma 4475 falsifier)\n",
+                   fluor_oracle_x, fluor_lam_lo_cm * 1e8, fluor_lam_hi_cm * 1e8);
+        fluor_init = 1;
+    }
+    long fluor_hits = 0;
+
     for (int line = 0; line < n_lines; line++) {
         int ion_idx = nlte->nlte_line_map[line];
         if (ion_idx < 0) continue; /* not an NLTE line */
@@ -7909,9 +7963,18 @@ void nlte_update_tau_sobolev(NLTEConfig *nlte, AtomicData *atom,
                 double denom = ratio - 1.0;
                 if (denom > 1e-30) S_l = src_prefac / denom;
             }
+            /* F0 fluorescence falsifier: impose S_l = X*B on Fe 4475-window lines */
+            if (fluor_oracle_x > 1.0 && Z == 26 &&
+                lam_cm >= fluor_lam_lo_cm && lam_cm <= fluor_lam_hi_cm) {
+                S_l *= fluor_oracle_x;
+                fluor_hits++;
+            }
             opacity->line_source_S[line * n_shells + s] = S_l;
         }
     }
+    if (fluor_oracle_x > 1.0)
+        printf("  [FLUOR-ORACLE] matched %ld (line,shell) cells (Z=26 in window)\n",
+               fluor_hits);
 }
 
 /* Master NLTE solver: solve all ions in all shells, update tau.

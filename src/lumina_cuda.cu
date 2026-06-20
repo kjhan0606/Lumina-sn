@@ -4034,6 +4034,85 @@ int main(int argc, char *argv[]) {
                    ">=100: %ld); mean J_bar=%.3e\n",
                    iter, nsamp, njb, 100.0 * (double)nsamp / (double)njb,
                    nstrong, nsamp ? jbsum / nsamp : 0.0);
+            /* Stage A (LUMINA_NLTE_JBAR_POPS=1): re-solve the NLTE populations
+             * with the realized per-line J_bar_l (consumed via the gated bb-rate
+             * edit in nlte_assemble), under-relaxed across passes, so the
+             * POPULATIONS become fluorescent. The branching rebuild below + the
+             * refreshed line_source_S then carry the fluorescence into both the
+             * macro-atom (MC) and formal spectra. J_bar_l is held fixed during the
+             * solve (lagged Lambda-iteration, ARTIS-style) => the 165510 intra-
+             * solve self-coupling explosion cannot occur; the cross-pass damping
+             * tames the slower outer loop. */
+            {
+                static int jbp_init = 0, jbp_on = 0, jbp_tripped = 0;
+                static double jbp_eta = 0.3;
+                if (!jbp_init) {
+                    const char *e = getenv("LUMINA_NLTE_JBAR_POPS");
+                    jbp_on = (e && atoi(e) != 0);
+                    const char *d = getenv("LUMINA_JBAR_POPS_DAMP");
+                    if (d) jbp_eta = atof(d);
+                    jbp_init = 1;
+                }
+                if (jbp_on && !jbp_tripped && enable_nlte && iter >= 1) {
+                    nlte.current_iter = iter;
+                    cuda_download_j_nu(&dev, &nlte, geo.n_shells);
+                    nlte_normalize_j_nu(&nlte, time_simulation, volume, geo.n_shells);
+                    size_t npop = (size_t)nlte.n_nlte_levels_total * geo.n_shells;
+                    static double *pop_old = NULL; static size_t pop_n = 0;
+                    if (pop_n != npop) { free(pop_old);
+                        pop_old = (double *)malloc(npop * sizeof(double)); pop_n = npop; }
+                    memcpy(pop_old, nlte.nlte_level_populations, npop * sizeof(double));
+                    nlte_solve_all_gpu(&nlte, &atom_data, &plasma, &opacity,
+                        geo.time_explosion, geo.n_shells, &nlte_solver,
+                        gamma_dep_enabled ? &gamma_dep : NULL);
+                    for (size_t k = 0; k < npop; k++)
+                        nlte.nlte_level_populations[k] =
+                            (1.0 - jbp_eta) * pop_old[k] +
+                            jbp_eta * nlte.nlte_level_populations[k];
+                    nlte_update_tau_sobolev(&nlte, &atom_data, &opacity,
+                                            geo.time_explosion, geo.n_shells);
+                    CUDA_CHECK(cudaMemcpy(dev.d_tau_sobolev, opacity.tau_sobolev,
+                               (size_t)opacity.n_lines * geo.n_shells * sizeof(double),
+                               cudaMemcpyHostToDevice));
+                    /* TRIPWIRE: thick-line S_l/B explosion signature (165510). */
+                    int ssh = geo.n_shells / 3;
+                    double Te = plasma.T_e[ssh], slb_max = 0.0, slb_sum = 0.0; long slb_n = 0;
+                    for (size_t l = 0; l < (size_t)opacity.n_lines; l++) {
+                        double tau = opacity.tau_sobolev[l * geo.n_shells + ssh];
+                        if (tau < 1.0) continue;
+                        double S = opacity.line_source_S[l * geo.n_shells + ssh];
+                        if (S <= 0.0) continue;
+                        double nu = opacity.line_list_nu[l];
+                        double x = H_PLANCK * nu / (K_BOLTZMANN * Te);
+                        if (x > 200.0 || x < 1e-6) continue;
+                        double B = 2.0 * H_PLANCK * nu * nu * nu /
+                                   (C_SPEED_OF_LIGHT * C_SPEED_OF_LIGHT) / (exp(x) - 1.0);
+                        if (B <= 0.0) continue;
+                        double r = S / B; slb_sum += r; slb_n++;
+                        if (r > slb_max) slb_max = r;
+                    }
+                    int tripped = (slb_max > 100.0) || !isfinite(slb_max);
+                    printf("  [JBAR-POPS iter%d eta%.2f] NLTE pops re-solved with J_bar_l; "
+                           "thick-line(s%d) S_l/B mean=%.3f max=%.2e%s\n",
+                           iter, jbp_eta, ssh, slb_n ? slb_sum / slb_n : 0.0, slb_max,
+                           tripped ? "  *** TRIPWIRE: REVERT + DISABLE jbar ***" : "");
+                    if (tripped) {
+                        /* Contain the 165510 failure mode: undo this pass's pops,
+                         * refresh tau/S_l from the last-good state, re-upload, and
+                         * stop consuming J_bar for the rest of the run (keep the
+                         * last-good fluorescent state instead of exploding). */
+                        memcpy(nlte.nlte_level_populations, pop_old, npop * sizeof(double));
+                        nlte_update_tau_sobolev(&nlte, &atom_data, &opacity,
+                                                geo.time_explosion, geo.n_shells);
+                        CUDA_CHECK(cudaMemcpy(dev.d_tau_sobolev, opacity.tau_sobolev,
+                                   (size_t)opacity.n_lines * geo.n_shells * sizeof(double),
+                                   cudaMemcpyHostToDevice));
+                        jbp_tripped = 1;
+                    }
+                    fflush(stdout);
+                }
+            }
+
             /* rebuild branching from the realized field + upload for the next pass */
             compute_transition_probabilities(&atom_data, &plasma, &opacity,
                 enable_nlte ? &nlte : NULL, config.damping_constant, 1);
