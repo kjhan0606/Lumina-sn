@@ -95,6 +95,8 @@ typedef struct {                           /* Phase 6 - Step 1 */
 
     /* NLTE: J_nu frequency histogram (atomicAdd target) */
     double *d_j_nu_estimator;              /* [n_shells * NLTE_N_FREQ_BINS] or NULL */
+    double *d_jbar_line;                    /* [n_lines*n_shells] MC-estimator J_bar (THEN_MC) or NULL */
+    int    *d_jbar_count;                   /* [n_lines*n_shells] crossing count or NULL */
     int     nlte_n_freq_bins;              /* 0 if NLTE disabled */
     double  nlte_nu_min;
     double  nlte_d_log_nu;
@@ -180,6 +182,8 @@ static void cuda_allocate(CudaDeviceData *dev, Geometry *geo,
 
     /* NLTE: J_nu estimator (allocated but NULL-checked in kernel) */
     dev->d_j_nu_estimator = NULL;
+    dev->d_jbar_line = NULL;
+    dev->d_jbar_count = NULL;
     dev->nlte_n_freq_bins = 0;
 }
 
@@ -1441,6 +1445,22 @@ __device__ double d_E_truncated_dev = 0.0;
 __device__ int d_diffuse_inner_bc = 0;
 __device__ unsigned long long d_n_returned_dev = 0;
 
+/* MC-estimator macro-atom (THEN_MC): per-line Sobolev j_blue J_bar accumulators.
+ * Device-global pointers so the hot trace kernel can atomicAdd at the line-
+ * crossing site without a signature change. g_jbar_line[line*n_shells+shell] sums
+ * comoving packet energy at every Sobolev resonance crossing; g_jbar_count is the
+ * crossing count (undersample guard). Normalized host-side to J_bar and fed to the
+ * internal-up rate B_lu*J_bar, replacing the frozen binned J. NULL/0 when off. */
+__device__ double *g_jbar_line = NULL;
+__device__ int    *g_jbar_count = NULL;
+__constant__ int   g_jbar_enabled = 0;
+
+void cuda_set_jbar_ptrs(double *line_ptr, int *count_ptr, int enabled) {
+    CUDA_CHECK(cudaMemcpyToSymbol(g_jbar_line,  &line_ptr,  sizeof(double *)));
+    CUDA_CHECK(cudaMemcpyToSymbol(g_jbar_count, &count_ptr, sizeof(int *)));
+    CUDA_CHECK(cudaMemcpyToSymbol(g_jbar_enabled, &enabled, sizeof(int)));
+}
+
 void cuda_set_diffuse_inner_bc(int v) {
     CUDA_CHECK(cudaMemcpyToSymbol(d_diffuse_inner_bc, &v, sizeof(int)));
 }
@@ -1635,6 +1655,8 @@ static void cuda_free(CudaDeviceData *dev) {
     cudaFree(dev->d_escaped_mu);                /* Rotation mode */
     cudaFree(dev->d_virtual_spectrum);
     if (dev->d_j_nu_estimator) cudaFree(dev->d_j_nu_estimator);
+    if (dev->d_jbar_line) cudaFree(dev->d_jbar_line);
+    if (dev->d_jbar_count) cudaFree(dev->d_jbar_count);
     if (dev->d_chi_bf) cudaFree(dev->d_chi_bf);
     if (dev->d_T_rad)  cudaFree(dev->d_T_rad);
     if (dev->d_bf_activation_level) cudaFree(dev->d_bf_activation_level);
@@ -2006,8 +2028,17 @@ void d_trace_packet(
             }
         }
 
-        /* Phase 6 - Step 5: Update line estimators (j_blue) - GPU skips */
-        /* Line estimators too large for atomicAdd on GPU; skip for now */
+        /* Phase 6 - Step 5: per-line Sobolev j_blue estimator (MC-estimator
+         * macro-atom). The packet has reached the resonance of cur_line_id in
+         * this shell (it did not break out to a boundary/continuum event above),
+         * i.e. it crosses the line. Deposit its comoving energy; normalized
+         * host-side to J_bar = Σε_comov·(c·t_exp)/(4π·V·t_sim·ν_line). Enabled
+         * only in the THEN_MC pass (g_jbar_enabled). */
+        if (g_jbar_enabled) {
+            double comov_energy = pkt_energy * doppler_factor;
+            atomicAdd(&g_jbar_line[cur_line_id * n_shells + shell], comov_energy);
+            atomicAdd(&g_jbar_count[cur_line_id * n_shells + shell], 1);
+        }
 
         /* Phase 6 - Step 5: Check if combined tau exceeds tau_event */
         if (tau_trace_combined > tau_event) { /* Phase 6 - Step 5 */
@@ -3777,6 +3808,22 @@ int main(int argc, char *argv[]) {
                "tau_sobolev sum=%.3e over %ld (line,shell)>1e-6 of %ld; "
                "macro-atom branching rebuilt from frozen NLTE pops\n",
                tausum, nnz, (long)opacity.n_lines * geo.n_shells);
+
+        /* MC-estimator macro-atom: allocate the per-line Sobolev J_bar
+         * accumulators (device + host) and arm the trace kernel. Iter 0 runs on
+         * the binned-J seed (use_jbar_line=0); from iter 1 the branching is
+         * rebuilt from the realized MC line field. */
+        size_t njb = (size_t)opacity.n_lines * geo.n_shells;
+        CUDA_CHECK(cudaMalloc(&dev.d_jbar_line,  njb * sizeof(double)));
+        CUDA_CHECK(cudaMalloc(&dev.d_jbar_count, njb * sizeof(int)));
+        opacity.jbar_line  = (double *)calloc(njb, sizeof(double));
+        opacity.jbar_count = (int *)calloc(njb, sizeof(int));
+        opacity.use_jbar_line = 0;
+        cuda_set_jbar_ptrs(dev.d_jbar_line, dev.d_jbar_count, 1);
+        printf("[THEN-MC] MC-estimator macro-atom armed: per-line J_bar "
+               "accumulator %.2f GB (device) over %ld (line,shell)\n",
+               (double)njb * (sizeof(double) + sizeof(int)) / 1e9,
+               (long)njb);
     }
 
     /* Phase 6 - Step 8: Iteration loop */
@@ -3788,6 +3835,11 @@ int main(int argc, char *argv[]) {
         reset_spectrum(spec);    /* Phase 6 - Step 8 */
         cuda_reset_estimators(&dev, geo.n_shells); /* Phase 6 - Step 8: GPU estimators */
         CUDA_CHECK(cudaMemset(dev.d_escaped_flag, 0, n_packets * sizeof(int))); /* Phase 6 - Step 8 */
+        if (cmfgen_then_mc && dev.d_jbar_line) {  /* MC-estimator: fresh J_bar accumulation per pass */
+            size_t njb = (size_t)opacity.n_lines * geo.n_shells;
+            CUDA_CHECK(cudaMemset(dev.d_jbar_line,  0, njb * sizeof(double)));
+            CUDA_CHECK(cudaMemset(dev.d_jbar_count, 0, njb * sizeof(int)));
+        }
         /* [MA-FATE] reset device-side macro-atom fate hist; aggregate
          * only on the final iteration so the printout reflects the
          * converged radiation field. */
@@ -3947,6 +3999,56 @@ int main(int argc, char *argv[]) {
                    100.0 * L_reabs   / L_req,
                    100.0 * L_trunc   / L_req,
                    100.0 * L_acc     / L_req);
+        }
+
+        /* MC-estimator macro-atom: rebuild the internal-up branching from the
+         * REALIZED line field of THIS transport pass, for the NEXT pass. This
+         * MUST live here (right after transport, before the frozen-plasma path):
+         * the per-iteration rebuild further below sits inside the else-if(iter>0)
+         * / ion-lock branch that THEN_MC skips, so it never runs. Here it runs
+         * every pass. iter 0 transport ran on the binned-J seed; from its field
+         * we build J_bar and from iter 1 on the branching follows the realized
+         * line radiation (with its true UV contrast) instead of the frozen
+         * thermal binned J — the downstream fix for the fluorescence-thermalizing
+         * macro-atom. */
+        if (cmfgen_then_mc && dev.d_jbar_line) {
+            size_t njb = (size_t)opacity.n_lines * geo.n_shells;
+            CUDA_CHECK(cudaMemcpy(opacity.jbar_line, dev.d_jbar_line,
+                       njb * sizeof(double), cudaMemcpyDeviceToHost));
+            CUDA_CHECK(cudaMemcpy(opacity.jbar_count, dev.d_jbar_count,
+                       njb * sizeof(int), cudaMemcpyDeviceToHost));
+            double cte = C_SPEED_OF_LIGHT * geo.time_explosion;
+            long nsamp = 0, nstrong = 0; double jbsum = 0.0;
+            for (int l = 0; l < opacity.n_lines; l++) {
+                double pref = cte / (4.0 * M_PI_VAL * time_simulation *
+                                     opacity.line_list_nu[l]);
+                for (int s = 0; s < geo.n_shells; s++) {
+                    size_t k = (size_t)l * geo.n_shells + s;
+                    opacity.jbar_line[k] *= pref / volume[s];
+                    if (opacity.jbar_count[k] >= 10)  { nsamp++; jbsum += opacity.jbar_line[k]; }
+                    if (opacity.jbar_count[k] >= 100) nstrong++;
+                }
+            }
+            opacity.use_jbar_line = 1;
+            printf("  [MC-EST iter%d] J_bar drives %ld/%zu cells (>=10 cross, %.2f%%; "
+                   ">=100: %ld); mean J_bar=%.3e\n",
+                   iter, nsamp, njb, 100.0 * (double)nsamp / (double)njb,
+                   nstrong, nsamp ? jbsum / nsamp : 0.0);
+            /* rebuild branching from the realized field + upload for the next pass */
+            compute_transition_probabilities(&atom_data, &plasma, &opacity,
+                enable_nlte ? &nlte : NULL, config.damping_constant, 1);
+            CUDA_CHECK(cudaMemcpy(dev.d_transition_probabilities,
+                       opacity.transition_probabilities,
+                       (size_t)opacity.n_macro_transitions * geo.n_shells * sizeof(double),
+                       cudaMemcpyHostToDevice));
+            if (dev.d_p_kpacket && opacity.p_kpacket)
+                CUDA_CHECK(cudaMemcpy(dev.d_p_kpacket, opacity.p_kpacket,
+                           (size_t)opacity.n_macro_levels * geo.n_shells * sizeof(double),
+                           cudaMemcpyHostToDevice));
+            if (dev.d_kpacket_cdf && opacity.kpacket_cdf)
+                CUDA_CHECK(cudaMemcpy(dev.d_kpacket_cdf, opacity.kpacket_cdf,
+                           (size_t)geo.n_shells * opacity.n_macro_levels * sizeof(double),
+                           cudaMemcpyHostToDevice));
         }
 
         /* Binned-J estimator: download the raw J_nu histogram and expose it on

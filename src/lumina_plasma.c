@@ -1485,10 +1485,23 @@ void compute_transition_probabilities(AtomicData *atom, PlasmaState *plasma,
                             }
                         }
                     } else if (ttype == 1) {
-                        /* Internal up: B_lu * J_nu (MC histogram or W*B_nu fallback) */
+                        /* Internal up: B_lu * J_nu. THEN_MC MC-estimator macro-atom:
+                         * use the per-line Sobolev j_blue J_bar accumulated from real
+                         * MC packet crossings (faithful Lucy-2002/TARDIS) when it is
+                         * enabled and the line is adequately sampled; otherwise fall
+                         * back to the coarse binned J_nu histogram. The binned field
+                         * is frequency-averaged (no line-resolved UV contrast), which
+                         * is exactly what thermalizes the fluorescence -> the MC line
+                         * estimator restores the realized UV pump at the line. */
                         double nu_line = atom->line_nu[line_id];
                         if (use_j_nu) {
-                            double J_line = nlte_get_J_at_nu(nlte, s, nu_line);
+                            double J_line;
+                            if (opacity->use_jbar_line && opacity->jbar_line &&
+                                opacity->jbar_count[line_id * n_shells + s] >= 10) {
+                                J_line = opacity->jbar_line[line_id * n_shells + s];
+                            } else {
+                                J_line = nlte_get_J_at_nu(nlte, s, nu_line);
+                            }
                             if (j_cap_factor > 0.0 || j_floor_factor > 0.0) {
                                 double J_lte = W * planck_bnu(T_rad, nu_line);
                                 if (j_cap_factor > 0.0) {

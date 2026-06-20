@@ -127,6 +127,13 @@ typedef struct {
      * compute_transition_probabilities; NULL when disabled. */
     double *p_kpacket;                   /* [n_macro_levels * n_shells] P(coll. deactivation→k-packet) */
     double *kpacket_cdf;                 /* [n_shells * n_macro_levels] per-shell cumulative re-excitation dist */
+    /* MC-estimator macro-atom (THEN_MC): per-line Sobolev j_blue estimator of
+     * J_bar at each line, accumulated from real MC packet crossings, replacing
+     * the frozen binned J in the internal-up rate B_lu*J_bar (faithful Lucy-2002
+     * /TARDIS macro-atom estimator). NULL unless cmfgen_then_mc. */
+    double *jbar_line;                   /* [n_lines * n_shells] normalized J_bar at each line */
+    int    *jbar_count;                  /* [n_lines * n_shells] resonance-crossing count (undersample guard) */
+    int     use_jbar_line;               /* 1 = use jbar_line for internal-up (iter>=1); 0 = binned-J seed */
 } OpacityState;                          /* Phase 2 - Step 4 */
 
 /* Phase 2 - Step 4: MC Estimators — TARDIS RadfieldMCEstimators */
