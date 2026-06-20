@@ -1378,7 +1378,11 @@ void compute_transition_probabilities(AtomicData *atom, PlasmaState *plasma,
     static int   kp_n_lines_cached = -1;
     static int  *kp_glo = NULL, *kp_gup = NULL, *kp_ip = NULL;
     const double VAN_REG_COEFF = 2.16e-6, AX_OMEGA = 1.0; /* match NLTE solver */
-    if (kpacket_mode) {
+    /* The lower/upper global-level map (kp_glo/kp_gup) is needed by BOTH the
+     * k-packet collisional channels AND the Lucy-2002 energy weighting (which
+     * weights internal transitions by the lower-level energy). Build it when
+     * either is active. */
+    if (kpacket_mode || eweight_on) {
         if (kp_n_lines_cached != atom->n_lines) {
             free(kp_glo); free(kp_gup); free(kp_ip);
             kp_glo = (int *)malloc(atom->n_lines * sizeof(int));
@@ -1502,8 +1506,29 @@ void compute_transition_probabilities(AtomicData *atom, PlasmaState *plasma,
                         }
                     }
 
-                    /* Macro-atom energy-flow weighting: ×hν (∝ line_nu). */
-                    if (eweight_on) rate *= atom->line_nu[line_id];
+                    /* Lucy-2002 macro-atom energy-flow weighting (the macro-atom
+                     * transports an indivisible ENERGY packet, so branching must
+                     * be energy-flow-weighted, NOT bare number-flow). The factor
+                     * is per-transition-type (Lucy 2002 eqs; TARDIS macro_atom):
+                     *   emission  i->j : x (e_i - e_j) = h*nu_ij  (PHOTON energy)
+                     *   internal  i->j : x e_lower               (lower-level energy)
+                     * Both internal jumps (down: dest=lower; up: source=lower) use
+                     * the LOWER level's energy = the line's lower level (kp_glo).
+                     * A uniform x h*nu (the earlier form) misweights internal jumps
+                     * -- large h*nu but small e_lower -- driving the cascade into
+                     * low-lying levels and re-emitting in the NIR instead of
+                     * fluorescing in the optical. e measured from the ion ground
+                     * (level_energy_eV), so internal jumps to ground vanish: a
+                     * UV-excited atom must EMIT rather than silently sink to ground. */
+                    if (eweight_on) {
+                        if (ttype == -1) {
+                            rate *= H_PLANCK * atom->line_nu[line_id];     /* h*nu_ij */
+                        } else if (kp_glo[line_id] >= 0) {
+                            rate *= atom->level_energy_eV[kp_glo[line_id]] * EV_TO_ERG;
+                        } else {
+                            rate = 0.0;  /* unresolved lower level: cannot weight */
+                        }
+                    }
 
                     /* k-packet collisional channels (van Regemorter / Axelrod;
                      * exp(±dE/kTe) cancels in C_down so it needs only g_up). */
@@ -7806,9 +7831,9 @@ static void nlte_skip_z_load(void) {
     printf("(these elements keep nebular tau)\n");
 }
 
-static void nlte_update_tau_sobolev(NLTEConfig *nlte, AtomicData *atom,
-                                     OpacityState *opacity,
-                                     double time_explosion, int n_shells) {
+void nlte_update_tau_sobolev(NLTEConfig *nlte, AtomicData *atom,
+                              OpacityState *opacity,
+                              double time_explosion, int n_shells) {
     int n_lines = opacity->n_lines;
     nlte_skip_z_load();
 

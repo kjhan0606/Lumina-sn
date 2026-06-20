@@ -3740,6 +3740,45 @@ int main(int argc, char *argv[]) {
         }
     }
 
+    /* ===== THEN-MC opacity wiring (2026-06-20, faithful refresh) =====
+     * The pure-CMFGEN loop's GPU NLTE solve does NOT call nlte_update_tau_sobolev,
+     * so the host per-line tau_sobolev + line source (and the device copies) do
+     * not reflect the CONVERGED frozen NLTE populations; the per-iter device
+     * refresh is gated to iter>0 and the THEN-MC goto skips part of it. Result:
+     * the frozen-plasma macro-atom MC read stale/LTE device opacity -> ~0 line
+     * interactions -> bare continuum. Refresh the converged per-line opacity +
+     * macro-atom branching ONCE here and push to the device before transport. */
+    if (cmfgen_then_mc) {
+        nlte_update_tau_sobolev(&nlte, &atom_data, &opacity,
+                                geo.time_explosion, geo.n_shells);
+        compute_transition_probabilities(&atom_data, &plasma, &opacity,
+            enable_nlte ? &nlte : NULL, config.damping_constant, 1);
+        CUDA_CHECK(cudaMemcpy(dev.d_tau_sobolev, opacity.tau_sobolev,
+                   (size_t)opacity.n_lines * geo.n_shells * sizeof(double),
+                   cudaMemcpyHostToDevice));
+        CUDA_CHECK(cudaMemcpy(dev.d_electron_density, opacity.electron_density,
+                   geo.n_shells * sizeof(double), cudaMemcpyHostToDevice));
+        CUDA_CHECK(cudaMemcpy(dev.d_transition_probabilities,
+                   opacity.transition_probabilities,
+                   (size_t)opacity.n_macro_transitions * geo.n_shells * sizeof(double),
+                   cudaMemcpyHostToDevice));
+        if (dev.d_p_kpacket && opacity.p_kpacket)
+            CUDA_CHECK(cudaMemcpy(dev.d_p_kpacket, opacity.p_kpacket,
+                       (size_t)opacity.n_macro_levels * geo.n_shells * sizeof(double),
+                       cudaMemcpyHostToDevice));
+        if (dev.d_kpacket_cdf && opacity.kpacket_cdf)
+            CUDA_CHECK(cudaMemcpy(dev.d_kpacket_cdf, opacity.kpacket_cdf,
+                       (size_t)geo.n_shells * opacity.n_macro_levels * sizeof(double),
+                       cudaMemcpyHostToDevice));
+        double tausum = 0.0; long nnz = 0;
+        for (size_t i = 0; i < (size_t)opacity.n_lines * geo.n_shells; i++)
+            if (opacity.tau_sobolev[i] > 1e-6) { tausum += opacity.tau_sobolev[i]; nnz++; }
+        printf("[THEN-MC] refreshed+uploaded converged line opacity: "
+               "tau_sobolev sum=%.3e over %ld (line,shell)>1e-6 of %ld; "
+               "macro-atom branching rebuilt from frozen NLTE pops\n",
+               tausum, nnz, (long)opacity.n_lines * geo.n_shells);
+    }
+
     /* Phase 6 - Step 8: Iteration loop */
     for (int iter = 0; iter < n_iterations; iter++) { /* Phase 6 - Step 8 */
         printf("\n--- Iteration %d/%d ---\n", iter + 1, n_iterations); /* Phase 6 - Step 8 */

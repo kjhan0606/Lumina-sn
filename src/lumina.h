@@ -567,6 +567,14 @@ void nlte_solve_all(NLTEConfig *nlte, AtomicData *atom, PlasmaState *plasma,
                      OpacityState *opacity, double time_explosion,
                      int n_shells, GammaDeposition *gamma_dep);
 
+/* Refresh per-line Sobolev optical depths + NLTE line source from the current
+ * NLTE level populations (writes opacity->tau_sobolev, opacity->line_source_S).
+ * Exposed so the pure-CMFGEN -> THEN_MC hand-off can push the CONVERGED line
+ * opacity to the GPU (the GPU NLTE solve does not call this internally). */
+void nlte_update_tau_sobolev(NLTEConfig *nlte, AtomicData *atom,
+                              OpacityState *opacity,
+                              double time_explosion, int n_shells);
+
 /* Task #40 (A)+(B): photoionization rate lookup, populated by the GPU GEMM.
  * R_bf_table is col-major [L_phot_total × n_shells]; for a given (pair_idx,
  * lev_within_pair, shell):
