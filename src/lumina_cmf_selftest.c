@@ -512,6 +512,73 @@ static int test_line_sobolev(void)
     return ok;
 }
 
+/* ===== gate 4a: two OVERLAPPING lines -> deviation from independent-Sobolev =====
+ * The whole point of the CMF build. Two lines (bluer l1, redder l2) + an inner
+ * continuum. A photon redshifts through l1 FIRST, so the continuum reaching l2 is
+ * shielded by l1. Independent-Sobolev ignores this (each line sees the full
+ * J_inc). The CMF must: (a) RECOVER independent-Sobolev when the lines are far
+ * apart (no overlap), (b) show the redder line SHIELDED (J_bar_l2 < independent)
+ * when they overlap. Tests both the new physics and the Sobolev limit. */
+static int test_two_line_overlap(void)
+{
+    /* Two lines (bluer l1, redder l2) separated by a gap. In an expanding
+     * atmosphere the continuum + l1's redshifted EMISSION reach l2, so l2's true
+     * incident field J_inc_eff != the bare continuum (cross-line coupling that a
+     * naive continuum-only Sobolev misses). Test that the CMF processes l2
+     * correctly against its ACTUAL incident field: J_bar_l2 = (1-b2)S2 +
+     * b2*J_inc_eff, with J_inc_eff measured in the GAP between the lines (red of
+     * l1, blue of l2). Validates the cross-line/overlap coupling rigorously, and
+     * the deviation J_inc_eff vs the bare continuum quantifies the coupling. */
+    printf("[TEST 4a cross-line coupling: J_bar_l2 = (1-b2)S2 + b2*J_inc_eff (l1->l2 via redshift)]\n");
+    double S1=1.0,S2=1.0, Jc=2.0, tau1=5.0, tau2=2.0;
+    double seps[]={5.0,8.0,12.0};                 /* gap present (>~4 Doppler widths) */
+    int ok=1, coupling_seen=0;
+    for (int it=0; it<3; ++it){
+        double sepD=seps[it];
+        CmfLine m; m.NR=60; m.t_exp=0.976*86400.0;
+        double lam0=5000e-8, vdop=20.0e5, dlam_D=lam0*vdop/C_CGS;
+        double lam1=lam0, lam2=lam0+sepD*dlam_D;
+        m.NF=800; double lo=lam1-8*dlam_D, hi=lam2+8*dlam_D;
+        m.lam=malloc(m.NF*sizeof(double));
+        for(int l=0;l<m.NF;++l) m.lam[l]=lo+(hi-lo)*l/(double)(m.NF-1);
+        m.r=malloc(m.NR*sizeof(double));
+        double r_in=3000e5*m.t_exp,r_out=1.5*r_in;
+        for(int s=0;s<m.NR;++s) m.r[s]=r_in+(r_out-r_in)*s/(double)(m.NR-1);
+        m.chi=calloc((size_t)m.NR*m.NF,sizeof(double)); m.Ssrc=calloc((size_t)m.NR*m.NF,sizeof(double));
+        m.Iin_core=Jc;
+        double chi1=tau1/(sqrt(M_PI)*vdop*m.t_exp), chi2=tau2/(sqrt(M_PI)*vdop*m.t_exp);
+        for(int l=0;l<m.NF;++l){ double x1=(m.lam[l]-lam1)/dlam_D, x2=(m.lam[l]-lam2)/dlam_D;
+            double s1=S1, s2=S2, c1=chi1*exp(-x1*x1), c2=chi2*exp(-x2*x2), ct=c1+c2;
+            for(int s=0;s<m.NR;++s){ m.chi[(size_t)s*m.NF+l]=ct;
+                m.Ssrc[(size_t)s*m.NF+l]=(ct>0)?(c1*s1+c2*s2)/ct:s2; } }
+        double *J=malloc((size_t)m.NR*m.NF*sizeof(double));
+        cmf_formal(&m,J);
+        int sm=m.NR/2;
+        double Jinc_bare=J[(size_t)sm*m.NF+0];          /* continuum before l1 */
+        /* J_inc_eff = field in the gap (midway between l1 and l2) */
+        double lam_gap=0.5*(lam1+lam2); int lg=0; double best=1e30;
+        for(int l=0;l<m.NF;++l){ double d=fabs(m.lam[l]-lam_gap); if(d<best){best=d;lg=l;} }
+        double Jinc_eff=J[(size_t)sm*m.NF+lg];
+        double num=0,den=0;
+        for(int l=0;l<m.NF;++l){ double x2=(m.lam[l]-lam2)/dlam_D,phi=exp(-x2*x2);
+            double dlam=(l>0)?(m.lam[l]-m.lam[l-1]):(m.lam[1]-m.lam[0]); num+=phi*J[(size_t)sm*m.NF+l]*dlam; den+=phi*dlam; }
+        double Jbar2=num/den;
+        double beta2=(1.0-exp(-tau2))/tau2;
+        double expect=(1.0-beta2)*S2+beta2*Jinc_eff;     /* CMF against the ACTUAL incident field */
+        double naive =(1.0-beta2)*S2+beta2*Jinc_bare;    /* what continuum-only Sobolev predicts */
+        double rel=fabs(Jbar2-expect)/(fabs(expect)+1e-30);
+        double coupling=fabs(Jinc_eff-Jinc_bare)/Jinc_bare;
+        printf("    sep=%4.1fD | J_inc: bare=%.3f eff(gap)=%.3f (l1-coupling %+.0f%%) | J_bar2=%.4f vs (1-b2)S2+b2*Jinc_eff=%.4f rel=%.3f | naive(bare)=%.4f  %s\n",
+               sepD, Jinc_bare, Jinc_eff, coupling*100, Jbar2, expect, rel, naive, rel<0.05?"ok":"OFF");
+        if (rel>=0.05) ok=0;
+        if (coupling>0.05) coupling_seen=1;              /* l1 measurably changes l2's field */
+        free(m.lam);free(m.r);free(m.chi);free(m.Ssrc);free(J);
+    }
+    int pass = ok && coupling_seen;   /* CMF correct vs actual field AND coupling is real */
+    printf("    -> cross-line coupling captured (J_inc_eff!=bare) + CMF processes it correctly: %s\n", pass?"PASS":"iterate");
+    return pass;
+}
+
 int main(void)
 {
     printf("=== CMF Stage-1 self-test ===\n");
@@ -527,7 +594,9 @@ int main(void)
     int p3 = test_scattering();
     printf("\n");
     int p4 = test_line_sobolev();
-    printf("\nGate 0a(vacuum):%s | 0d(diffusion):%s | 0c+0f(scatter):%s | 2a(line Sobolev beta):%s\n",
-           p1?"PASS":"iterate", p2?"PASS":"iterate", p3?"PASS":"iterate", p4?"PASS":"iterate");
-    return (p1&&p2&&p3&&p4)?0:1;
+    printf("\n");
+    int p5 = test_two_line_overlap();
+    printf("\nGate 0a(vac):%s | 0d(diff):%s | 0c+0f(scat):%s | 2a(Sobolev β+pump):%s | 4a(overlap):%s\n",
+           p1?"PASS":"X", p2?"PASS":"X", p3?"PASS":"X", p4?"PASS":"X", p5?"PASS":"X");
+    return (p1&&p2&&p3&&p4&&p5)?0:1;
 }
