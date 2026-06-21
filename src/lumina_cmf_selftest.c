@@ -406,6 +406,12 @@ static void cmf_formal(const CmfLine *m, double *J)
     int *cnt=malloc(NR*sizeof(int));
     for (int l=0;l<NF;++l){
         double Dlam=(l>0)?(m->lam[l]-m->lam[l-1]):0, lam_l=m->lam[l], lam_b=(l>0)?m->lam[l-1]:m->lam[l];
+        /* blue-boundary BC (codex review #6): adv=0 at l=0 = "flat continuum across
+         * the blue boundary" (the advection SINK is matched by the absent bluer
+         * SOURCE, so they cancel for a flat continuum — the standard pragmatic blue
+         * BC). Adding the sink alone (no injection) spuriously kills the continuum
+         * at the bluest guard bin. PRODUCTION NOTE: with a steeply-rising continuum
+         * at lambda_min, inject the proper blue-boundary continuum source instead. */
         double adv=(l>0)?a_lam*(lam_l/Dlam):0.0;
         memset(cnt,0,NR*sizeof(int));
         for (int k=0;k<NP;++k){
