@@ -364,6 +364,143 @@ static int test_scattering(void)
     return ok;
 }
 
+/* ===================== gate 2a: full CMF formal solve =====================
+ * Combines the frequency-coupled conservative upwind (0a) with the tangent-ray
+ * angular machinery (0d): tangent rays, each marched blue->red with the upwind
+ * frequency coupling, a single Gaussian line on a fine grid. Measures the
+ * emergent line escape vs the Sobolev beta(tau) over a tau sweep (= different
+ * level-pair strengths) — validates the per-(line-pair) escape the CMF makes
+ * emerge from profile+transfer (replacing the Sobolev beta input). */
+typedef struct {
+    int NR, NF; double t_exp;
+    double *r;        /* [NR] radii ascending */
+    double *lam;      /* [NF] wavelength ascending (resolves the line) */
+    double *chi;      /* [NR*NF] total opacity */
+    double *Ssrc;     /* [NR*NF] source S_nu */
+    double Iin_core;  /* inner-boundary incoming intensity (0 for a line-only test) */
+} CmfLine;
+
+/* tangent-ray + frequency-coupled formal solve -> J[NR*NF] */
+static void cmf_formal(const CmfLine *m, double *J)
+{
+    int NR=m->NR, NF=m->NF;
+    double a_lam=1.0/(m->t_exp*C_CGS);
+    int NCORE=16, NP=NR+NCORE;
+    double *p=malloc(NP*sizeof(double));
+    for (int k=0;k<NCORE;++k) p[k]=m->r[0]*k/(double)NCORE;
+    for (int s=0;s<NR;++s) p[NCORE+s]=m->r[s];
+    /* precompute ray node geometry */
+    int *rn=calloc(NP,sizeof(int));
+    int *rsh=malloc((size_t)NP*(NR+1)*sizeof(int));
+    double *rz=malloc((size_t)NP*(NR+1)*sizeof(double));
+    int *rcore=calloc(NP,sizeof(int)); double *rzin=calloc(NP,sizeof(double));
+    for (int k=0;k<NP;++k){ double pk=p[k]; int n=0;
+        for (int s=NR-1;s>=0;--s){ if (m->r[s]<=pk) break; rsh[(size_t)k*(NR+1)+n]=s; rz[(size_t)k*(NR+1)+n]=sqrt(m->r[s]*m->r[s]-pk*pk); ++n; }
+        rn[k]=n; rcore[k]=(pk<m->r[0]); rzin[k]=rcore[k]?sqrt(m->r[0]*m->r[0]-pk*pk):0.0; }
+    /* per-ray, per-node intensity for the bluer (prev) frequency, both legs */
+    double *Iin_p=calloc((size_t)NP*(NR+1),sizeof(double)),*Iout_p=calloc((size_t)NP*(NR+1),sizeof(double));
+    double *Iin_c=calloc((size_t)NP*(NR+1),sizeof(double)),*Iout_c=calloc((size_t)NP*(NR+1),sizeof(double));
+    /* per-shell quadrature scratch */
+    double *muL=malloc((size_t)NR*NP*sizeof(double)),*IpL=malloc((size_t)NR*NP*sizeof(double)),*ImL=malloc((size_t)NR*NP*sizeof(double));
+    int *cnt=malloc(NR*sizeof(int));
+    for (int l=0;l<NF;++l){
+        double Dlam=(l>0)?(m->lam[l]-m->lam[l-1]):0, lam_l=m->lam[l], lam_b=(l>0)?m->lam[l-1]:m->lam[l];
+        double adv=(l>0)?a_lam*(lam_l/Dlam):0.0;
+        memset(cnt,0,NR*sizeof(int));
+        for (int k=0;k<NP;++k){
+            int n=rn[k]; if(n==0)continue; size_t kb=(size_t)k*(NR+1);
+            /* inbound mu<0: outer->in, I=0 */
+            double I=0.0;
+            for (int i=0;i<n;++i){ int s=rsh[kb+i]; double ds=(i+1<n)?(rz[kb+i]-rz[kb+i+1]):(rz[kb+i]-rzin[k]);
+                double chi=m->chi[(size_t)s*NF+l], chih=chi+a_lam*4.0+adv;
+                double Su,Sd; { double eta_u=m->Ssrc[(size_t)s*NF+l]*chi, eta_d=eta_u;
+                    Su=(eta_u+((l>0)?a_lam*(lam_b/Dlam)*Iin_p[kb+i]:0.0))/(chih>0?chih:1);
+                    Sd=Su; }
+                double dtau=chih*ds, ex=exp(-dtau), e0,e1,wu,wd;
+                if(dtau>1e-4){e0=1-ex;e1=dtau-e0;wu=e0-e1/dtau;wd=e1/dtau;}else{wu=0.5*dtau;wd=0.5*dtau;}
+                I=I*ex+wu*Su+wd*Sd; Iin_c[kb+i]=I;
+                int c=cnt[s]; muL[(size_t)s*NP+c]=rz[kb+i]/m->r[s]; ImL[(size_t)s*NP+c]=I; }
+            if(rcore[k]) I=m->Iin_core; /* inner boundary incoming intensity */
+            /* outbound mu>0: in->out */
+            for (int i=n-1;i>=0;--i){ int s=rsh[kb+i]; double ds=(i+1<n)?(rz[kb+i]-rz[kb+i+1]):(rz[kb+i]-rzin[k]);
+                double chi=m->chi[(size_t)s*NF+l], chih=chi+a_lam*4.0+adv;
+                double Su=(m->Ssrc[(size_t)s*NF+l]*chi+((l>0)?a_lam*(lam_b/Dlam)*Iout_p[kb+i]:0.0))/(chih>0?chih:1), Sd=Su;
+                double dtau=chih*ds, ex=exp(-dtau), e0,e1,wu,wd;
+                if(dtau>1e-4){e0=1-ex;e1=dtau-e0;wu=e0-e1/dtau;wd=e1/dtau;}else{wu=0.5*dtau;wd=0.5*dtau;}
+                I=I*ex+wu*Su+wd*Sd; Iout_c[kb+i]=I;
+                int c=cnt[s]; IpL[(size_t)s*NP+c]=I; cnt[s]=c+1; }
+        }
+        /* mu-quadrature per shell -> J[s][l] */
+        for (int s=0;s<NR;++s){ int c=cnt[s]; if(c<1){J[(size_t)s*NF+l]=m->Ssrc[(size_t)s*NF+l];continue;}
+            for(int a=1;a<c;++a){double mk=muL[(size_t)s*NP+a],ip=IpL[(size_t)s*NP+a],im=ImL[(size_t)s*NP+a];int b=a-1;
+                while(b>=0&&muL[(size_t)s*NP+b]>mk){muL[(size_t)s*NP+b+1]=muL[(size_t)s*NP+b];IpL[(size_t)s*NP+b+1]=IpL[(size_t)s*NP+b];ImL[(size_t)s*NP+b+1]=ImL[(size_t)s*NP+b];--b;}
+                muL[(size_t)s*NP+b+1]=mk;IpL[(size_t)s*NP+b+1]=ip;ImL[(size_t)s*NP+b+1]=im;}
+            double mu[300],jv[300];int q=0; mu[q]=0;jv[q]=0.5*(IpL[(size_t)s*NP+0]+ImL[(size_t)s*NP+0]);q++;
+            for(int a=0;a<c;++a){mu[q]=muL[(size_t)s*NP+a];jv[q]=0.5*(IpL[(size_t)s*NP+a]+ImL[(size_t)s*NP+a]);q++;}
+            double Js=0; for(int a=0;a+1<q;++a)Js+=0.5*(jv[a]+jv[a+1])*(mu[a+1]-mu[a]); J[(size_t)s*NF+l]=Js; }
+        double *t1=Iin_p;Iin_p=Iin_c;Iin_c=t1; double *t2=Iout_p;Iout_p=Iout_c;Iout_c=t2;
+    }
+    free(p);free(rn);free(rsh);free(rz);free(rcore);free(rzin);
+    free(Iin_p);free(Iout_p);free(Iin_c);free(Iout_c);free(muL);free(IpL);free(ImL);free(cnt);
+}
+
+static int test_line_sobolev(void)
+{
+    /* single line, two-level pure-scatter source S_l fixed, continuum=0. Sweep
+     * tau (= level-pair strength). Measure J_bar_l = int phi J dnu at the
+     * line-forming shell; for a uniformly-expanding sphere the Sobolev relation
+     * gives J_bar_l = (1-beta) S_l (no external continuum) -> J_bar/S_l = 1-beta.
+     * Test the emergent (1-beta) vs the analytic Sobolev (1-beta(tau)). */
+    int ok=1;
+    double taus[]={0.3,1.0,3.0,10.0,30.0};
+    printf("[TEST 2a single-line Sobolev escape] J_bar_l/S_l vs (1-beta(tau)) over a tau sweep:\n");
+    int nbad=0;
+    for (int it=0; it<5; ++it){
+        double tau0=taus[it];
+        CmfLine m; m.NR=60; m.t_exp=0.976*86400.0;
+        /* fine grid resolving a single line at lam0=5000A, Doppler width b~ a few km/s */
+        double lam0=5000e-8, vdop=20.0e5; /* 20 km/s broadening (thermal+turb) */
+        double dlam_D=lam0*vdop/C_CGS;
+        m.NF=400; double half=8.0*dlam_D;   /* +-8 Doppler widths */
+        m.lam=malloc(m.NF*sizeof(double));
+        for(int l=0;l<m.NF;++l) m.lam[l]=lam0-half+2*half*l/(double)(m.NF-1);
+        m.r=malloc(m.NR*sizeof(double));
+        double r_in=3000e5*m.t_exp, r_out=1.5*r_in;    /* thick enough for the resonance zone */
+        for(int s=0;s<m.NR;++s) m.r[s]=r_in+(r_out-r_in)*s/(double)(m.NR-1);
+        m.chi=calloc((size_t)m.NR*m.NF,sizeof(double));
+        m.Ssrc=calloc((size_t)m.NR*m.NF,sizeof(double));
+        m.Iin_core=0.0;                                 /* line-only: no inner continuum */
+        double Sl=1.0;
+        /* Sobolev optical depth of the line: tau_S = chi0 * sqrt(pi) * vdop * t_exp
+         * (= freq-integrated opacity / velocity gradient). Invert for chi0 so the
+         * line-pair strength is tau_S = tau0. Source S_nu = S_l (line emissivity
+         * eta = chi(nu) S_l follows the profile). */
+        double chi0 = tau0 / (sqrt(M_PI) * vdop * m.t_exp);
+        for(int l=0;l<m.NF;++l){
+            double x=(m.lam[l]-lam0)/dlam_D, phi=exp(-x*x);
+            for(int s=0;s<m.NR;++s){ m.chi[(size_t)s*m.NF+l]=chi0*phi; m.Ssrc[(size_t)s*m.NF+l]=Sl; }
+        }
+        double *J=malloc((size_t)m.NR*m.NF*sizeof(double));
+        cmf_formal(&m,J);
+        /* J_bar_l = int phi(nu) J dnu / int phi dnu, at a mid shell */
+        int sm=m.NR/2; double num=0,den=0;
+        for(int l=0;l<m.NF;++l){ double dl=m.lam[l]-lam0,x=dl/dlam_D,phi=exp(-x*x);
+            double dlam=(l>0)?(m.lam[l]-m.lam[l-1]):(m.lam[1]-m.lam[0]);
+            num+=phi*J[(size_t)sm*m.NF+l]*dlam; den+=phi*dlam; }
+        double Jbar=num/den, emergent=Jbar/Sl;
+        double beta=(tau0>500)?1.0/tau0:(1.0-exp(-tau0))/tau0;
+        double expect=1.0-beta;
+        double rel=fabs(emergent-expect)/expect;
+        printf("    tau=%5.1f  J_bar/S_l=%.4f  (1-beta)=%.4f  rel=%.2f  %s\n",
+               tau0, emergent, expect, rel, rel<0.15?"ok":"OFF");
+        if (rel>=0.15) nbad++;
+        free(m.lam);free(m.r);free(m.chi);free(m.Ssrc);free(J);
+    }
+    if (nbad>1) ok=0;
+    printf("    -> per-(line-pair) Sobolev escape over tau sweep: %s\n", ok?"PASS":"iterate");
+    return ok;
+}
+
 int main(void)
 {
     printf("=== CMF Stage-1 self-test ===\n");
@@ -377,7 +514,9 @@ int main(void)
     int p2 = test_diffusion_static();
     printf("\n");
     int p3 = test_scattering();
-    printf("\nGate 0a(vacuum):%s | 0d(diffusion):%s | 0c(thermalization)+0f(scatter-flux):%s\n",
-           p1?"PASS":"iterate", p2?"PASS":"iterate", p3?"PASS":"iterate");
-    return (p1&&p2&&p3)?0:1;
+    printf("\n");
+    int p4 = test_line_sobolev();
+    printf("\nGate 0a(vacuum):%s | 0d(diffusion):%s | 0c+0f(scatter):%s | 2a(line Sobolev beta):%s\n",
+           p1?"PASS":"iterate", p2?"PASS":"iterate", p3?"PASS":"iterate", p4?"PASS":"iterate");
+    return (p1&&p2&&p3&&p4)?0:1;
 }
