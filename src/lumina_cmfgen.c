@@ -845,12 +845,129 @@ void cmfgen_write_jnu(const CMFGENState *cs, NLTEConfig *nlte)
 }
 
 /* ------------------------------------------------------------ */
+/* ============================================================ */
+/* P1: line-resolved comoving-frame (CMF) J solver (gate LUMINA_CMF_LINERES=1).
+ * Replaces the per-bin frequency-DECOUPLED formal_solve_bin with a single
+ * frequency-COUPLED sweep over all bins (b descending = blue->red), using the
+ * validated PHOENIX/Hauschildt-Baron conservative upwind (chih=chi+a_lam*(4+
+ * lambda/Dlam)) + Olson-Kunasz linear SC + tangent-ray mu-quadrature. Operates
+ * on the SAME 1000-bin grid as the binned solver; gate 1a (cont_only) must
+ * reproduce cmfgen_solve_J to <0.5% L2. cmfgen_solve_J is the untouched fallback.
+ *   LUMINA_CMF_ALAM=0 disables the homologous freq advection (static limit, the
+ *   transport-only sub-gate); =1 (default) the full CMF coupling.
+ * Source = S_fixed + (chi_es/chi_tot)*J (the ALI scattering source, same as the
+ * binned solver). Validated standalone in lumina_cmf_selftest.c (gates 2a/4a/2c). */
+static void cmf_solve_J(CMFGENState *cs, const Geometry *geo, double T_inner,
+                        int n_ali_iter)
+{
+    int NS = cs->n_shells, NB = cs->n_bins;
+    double t_exp = geo->time_explosion;
+    double a_lam_on = 1.0;
+    { const char *e = getenv("LUMINA_CMF_ALAM"); if (e) a_lam_on = atof(e); }
+    double a_lam = a_lam_on / (t_exp * CM_C);
+
+    double *rmid = malloc(NS * sizeof(double));
+    double *lam  = malloc(NB * sizeof(double));
+    for (int s = 0; s < NS; ++s) rmid[s] = 0.5 * (geo->r_inner[s] + geo->r_outer[s]);
+    for (int b = 0; b < NB; ++b) lam[b] = CM_C / cs->nu[b];  /* nu asc -> lam desc */
+
+    int NCORE = 16, NP = NS + NCORE;
+    double *p = malloc(NP * sizeof(double));
+    for (int k = 0; k < NCORE; ++k) p[k] = rmid[0] * k / (double)NCORE;
+    for (int s = 0; s < NS; ++s) p[NCORE + s] = rmid[s];
+    int    *rn   = calloc(NP, sizeof(int));
+    int    *rsh  = malloc((size_t)NP * (NS + 1) * sizeof(int));
+    double *rz   = malloc((size_t)NP * (NS + 1) * sizeof(double));
+    int    *rcore= calloc(NP, sizeof(int));
+    double *rzin = calloc(NP, sizeof(double));
+    for (int k = 0; k < NP; ++k) {
+        double pk = p[k]; int n = 0;
+        for (int s = NS - 1; s >= 0; --s) {
+            if (rmid[s] <= pk) break;
+            rsh[(size_t)k*(NS+1)+n] = s; rz[(size_t)k*(NS+1)+n] = sqrt(rmid[s]*rmid[s]-pk*pk); ++n;
+        }
+        rn[k] = n; rcore[k] = (pk < rmid[0]); rzin[k] = rcore[k] ? sqrt(rmid[0]*rmid[0]-pk*pk) : 0.0;
+    }
+    double *Iin_p =calloc((size_t)NP*(NS+1),sizeof(double)),*Iout_p=calloc((size_t)NP*(NS+1),sizeof(double));
+    double *Iin_c =calloc((size_t)NP*(NS+1),sizeof(double)),*Iout_c=calloc((size_t)NP*(NS+1),sizeof(double));
+    double *muL=malloc((size_t)NS*NP*sizeof(double)),*IpL=malloc((size_t)NS*NP*sizeof(double)),*ImL=malloc((size_t)NS*NP*sizeof(double));
+    int *cnt = malloc(NS * sizeof(int));
+    double *S    = malloc((size_t)NS*NB*sizeof(double));
+    double *Jnew = malloc((size_t)NS*NB*sizeof(double));
+
+    for (int it = 0; it < n_ali_iter; ++it) {
+        for (int s = 0; s < NS; ++s) for (int b = 0; b < NB; ++b) {
+            size_t idx = (size_t)s*NB+b;
+            double r = (cs->chi_tot[idx] > 0.0) ? cs->chi_es[idx]/cs->chi_tot[idx] : 0.0;
+            S[idx] = cs->S_fixed[idx] + r * cs->J[idx];
+        }
+        memset(Iin_p, 0, (size_t)NP*(NS+1)*sizeof(double));
+        memset(Iout_p,0, (size_t)NP*(NS+1)*sizeof(double));
+        for (int b = NB - 1; b >= 0; --b) {                 /* bluest (high nu) first */
+            double Dlam = (b < NB-1) ? (lam[b]-lam[b+1]) : 0.0;   /* >0 */
+            double adv  = (b < NB-1) ? a_lam*(lam[b]/Dlam) : 0.0;
+            double lam_b= (b < NB-1) ? lam[b+1] : lam[b];
+            double Bin  = cm_planck(cs->nu[b], T_inner);
+            memset(cnt, 0, NS*sizeof(int));
+            for (int k = 0; k < NP; ++k) {
+                int n = rn[k]; if (n == 0) continue; size_t kb = (size_t)k*(NS+1);
+                double I = 0.0;
+                for (int i = 0; i < n; ++i) {
+                    int s = rsh[kb+i]; double ds = (i+1<n)?(rz[kb+i]-rz[kb+i+1]):(rz[kb+i]-rzin[k]);
+                    size_t idx = (size_t)s*NB+b; double chi = cs->chi_tot[idx], chih = chi + a_lam*4.0 + adv;
+                    double Su = (S[idx]*chi + ((b<NB-1)?a_lam*(lam_b/Dlam)*Iin_p[kb+i]:0.0))/(chih>0?chih:1.0);
+                    double dtau=chih*ds, ex=exp(-dtau), e0,e1,wu,wd;
+                    if(dtau>1e-4){e0=1-ex;e1=dtau-e0;wu=e0-e1/dtau;wd=e1/dtau;}else{wu=0.5*dtau;wd=0.5*dtau;}
+                    I = I*ex + wu*Su + wd*Su; Iin_c[kb+i]=I;
+                    int c=cnt[s]; muL[(size_t)s*NP+c]=rz[kb+i]/rmid[s]; ImL[(size_t)s*NP+c]=I;
+                }
+                if (rcore[k]) I = Bin;
+                for (int i = n-1; i >= 0; --i) {
+                    int s = rsh[kb+i]; double ds = (i+1<n)?(rz[kb+i]-rz[kb+i+1]):(rz[kb+i]-rzin[k]);
+                    size_t idx = (size_t)s*NB+b; double chi = cs->chi_tot[idx], chih = chi + a_lam*4.0 + adv;
+                    double Su = (S[idx]*chi + ((b<NB-1)?a_lam*(lam_b/Dlam)*Iout_p[kb+i]:0.0))/(chih>0?chih:1.0);
+                    double dtau=chih*ds, ex=exp(-dtau), e0,e1,wu,wd;
+                    if(dtau>1e-4){e0=1-ex;e1=dtau-e0;wu=e0-e1/dtau;wd=e1/dtau;}else{wu=0.5*dtau;wd=0.5*dtau;}
+                    I = I*ex + wu*Su + wd*Su; Iout_c[kb+i]=I;
+                    int c=cnt[s]; IpL[(size_t)s*NP+c]=I; cnt[s]=c+1;
+                }
+            }
+            for (int s = 0; s < NS; ++s) {
+                int c = cnt[s]; size_t idx=(size_t)s*NB+b;
+                if (c < 1) { Jnew[idx] = S[idx]; continue; }
+                for (int a=1;a<c;++a){double mk=muL[(size_t)s*NP+a],ip=IpL[(size_t)s*NP+a],im=ImL[(size_t)s*NP+a];int q=a-1;
+                    while(q>=0&&muL[(size_t)s*NP+q]>mk){muL[(size_t)s*NP+q+1]=muL[(size_t)s*NP+q];IpL[(size_t)s*NP+q+1]=IpL[(size_t)s*NP+q];ImL[(size_t)s*NP+q+1]=ImL[(size_t)s*NP+q];--q;}
+                    muL[(size_t)s*NP+q+1]=mk;IpL[(size_t)s*NP+q+1]=ip;ImL[(size_t)s*NP+q+1]=im;}
+                double mu[300],jv[300];int q=0; mu[q]=0;jv[q]=0.5*(IpL[(size_t)s*NP+0]+ImL[(size_t)s*NP+0]);q++;
+                for(int a=0;a<c;++a){mu[q]=muL[(size_t)s*NP+a];jv[q]=0.5*(IpL[(size_t)s*NP+a]+ImL[(size_t)s*NP+a]);q++;}
+                double Js=0; for(int a=0;a+1<q;++a)Js+=0.5*(jv[a]+jv[a+1])*(mu[a+1]-mu[a]); Jnew[idx]=Js;
+            }
+            { double *t1=Iin_p;Iin_p=Iin_c;Iin_c=t1; double *t2=Iout_p;Iout_p=Iout_c;Iout_c=t2; }
+        }
+        double maxrel = 0.0;
+        for (size_t i = 0; i < (size_t)NS*NB; ++i) {
+            double d = fabs(Jnew[i]-cs->J[i])/(fabs(cs->J[i])+1e-30); if (d>maxrel) maxrel=d;
+            cs->J[i] = Jnew[i];
+        }
+        if (maxrel < 1e-4 && it > 0) break;
+    }
+    free(rmid);free(lam);free(p);free(rn);free(rsh);free(rz);free(rcore);free(rzin);
+    free(Iin_p);free(Iout_p);free(Iin_c);free(Iout_c);free(muL);free(IpL);free(ImL);free(cnt);free(S);free(Jnew);
+}
+
 int cmfgen_run(Geometry *geo, OpacityState *opac, BFOpacity *bf,
                PlasmaState *plasma, NLTEConfig *nlte, AtomicData *atom,
                GammaDeposition *gamma, double T_inner, int n_iter)
 {
     CMFGENState cs;
     if (cmfgen_init(&cs, geo) != 0) return -1;
+
+    /* P1 gate 1a: LUMINA_CMF_CONTONLY=1 forces continuum-only assemble (line
+     * opacity zeroed) so the CMF J-producer can be compared to cmfgen_solve_J
+     * on identical continuum opacity. */
+    int cmf_lineres = 0;
+    { const char *e = getenv("LUMINA_CMF_LINERES"); if (e) cmf_lineres = atoi(e); }
+    { const char *e = getenv("LUMINA_CMF_CONTONLY"); if (e && atoi(e)) cs.cont_only = 1; }
 
     const char *ali_env = getenv("LUMINA_CMFGEN_ALI_ITER");
     int n_ali = ali_env ? atoi(ali_env) : 8;
@@ -868,7 +985,8 @@ int cmfgen_run(Geometry *geo, OpacityState *opac, BFOpacity *bf,
         if (bf) compute_bf_opacity(bf, atom, plasma, cs.n_shells);
 
         cmfgen_assemble(&cs, geo, opac, bf, plasma);
-        cmfgen_solve_J(&cs, geo, T_inner, n_ali);
+        if (cmf_lineres) cmf_solve_J(&cs, geo, T_inner, n_ali);   /* P1 line-resolved CMF */
+        else             cmfgen_solve_J(&cs, geo, T_inner, n_ali);/* binned (champion) */
         cmfgen_window_color(&cs);
         radeq_set_tail_color(cs.t_color, cs.n_shells);
         radeq_set_tri_response(cs.tri_lo, cs.tri_up, cs.tri_r,
