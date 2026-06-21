@@ -452,10 +452,17 @@ static int test_line_sobolev(void)
      * gives J_bar_l = (1-beta) S_l (no external continuum) -> J_bar/S_l = 1-beta.
      * Test the emergent (1-beta) vs the analytic Sobolev (1-beta(tau)). */
     int ok=1;
-    double taus[]={0.3,1.0,3.0,10.0,30.0};
-    printf("[TEST 2a single-line Sobolev escape] J_bar_l/S_l vs (1-beta(tau)) over a tau sweep:\n");
+    double taus[]={0.01,0.1,0.3,1.0,3.0,10.0,30.0,100.0};
+    int ntau=8;
+    /* COMPLETE Sobolev source relation: J_bar_l = (1-beta) S_l + beta J_inc.
+     * Both terms tested at once with an external continuum (Iin_core=Jc) AND a
+     * line source S_l. J_inc = the incident continuum at the line shell (measured
+     * from the bluest grid point, before the line). The beta*J_inc term is the
+     * FLUORESCENCE PUMP — the load-bearing channel for the whole build. */
+    printf("[TEST 2a single-line Sobolev: J_bar_l = (1-beta)S_l + beta*J_inc (self + PUMP)]\n");
+    double Jc=2.0, Sl_=1.0;
     int nbad=0;
-    for (int it=0; it<5; ++it){
+    for (int it=0; it<ntau; ++it){
         double tau0=taus[it];
         CmfLine m; m.NR=60; m.t_exp=0.976*86400.0;
         /* fine grid resolving a single line at lam0=5000A, Doppler width b~ a few km/s */
@@ -469,8 +476,8 @@ static int test_line_sobolev(void)
         for(int s=0;s<m.NR;++s) m.r[s]=r_in+(r_out-r_in)*s/(double)(m.NR-1);
         m.chi=calloc((size_t)m.NR*m.NF,sizeof(double));
         m.Ssrc=calloc((size_t)m.NR*m.NF,sizeof(double));
-        m.Iin_core=0.0;                                 /* line-only: no inner continuum */
-        double Sl=1.0;
+        m.Iin_core=Jc;                                  /* external continuum from the core (PUMP) */
+        double Sl=Sl_;
         /* Sobolev optical depth of the line: tau_S = chi0 * sqrt(pi) * vdop * t_exp
          * (= freq-integrated opacity / velocity gradient). Invert for chi0 so the
          * line-pair strength is tau_S = tau0. Source S_nu = S_l (line emissivity
@@ -482,18 +489,22 @@ static int test_line_sobolev(void)
         }
         double *J=malloc((size_t)m.NR*m.NF*sizeof(double));
         cmf_formal(&m,J);
-        /* J_bar_l = int phi(nu) J dnu / int phi dnu, at a mid shell */
-        int sm=m.NR/2; double num=0,den=0;
-        for(int l=0;l<m.NF;++l){ double dl=m.lam[l]-lam0,x=dl/dlam_D,phi=exp(-x*x);
+        int sm=m.NR/2;
+        /* J_inc = incident continuum at this shell = J at the bluest grid point
+         * (before the photon redshifts into the line; chi~0 there). */
+        double Jinc=J[(size_t)sm*m.NF+0];
+        /* J_bar_l = profile-weighted mean intensity in the line */
+        double num=0,den=0;
+        for(int l=0;l<m.NF;++l){ double x=(m.lam[l]-lam0)/dlam_D,phi=exp(-x*x);
             double dlam=(l>0)?(m.lam[l]-m.lam[l-1]):(m.lam[1]-m.lam[0]);
             num+=phi*J[(size_t)sm*m.NF+l]*dlam; den+=phi*dlam; }
-        double Jbar=num/den, emergent=Jbar/Sl;
+        double Jbar=num/den;
         double beta=(tau0>500)?1.0/tau0:(1.0-exp(-tau0))/tau0;
-        double expect=1.0-beta;
-        double rel=fabs(emergent-expect)/expect;
-        printf("    tau=%5.1f  J_bar/S_l=%.4f  (1-beta)=%.4f  rel=%.2f  %s\n",
-               tau0, emergent, expect, rel, rel<0.15?"ok":"OFF");
-        if (rel>=0.15) nbad++;
+        double expect=(1.0-beta)*Sl + beta*Jinc;        /* full Sobolev source relation */
+        double rel=fabs(Jbar-expect)/(fabs(expect)+1e-30);
+        printf("    tau=%6.2f  beta=%.3f | J_inc=%.3f  J_bar=%.4f  (1-b)S+b*Jinc=%.4f  rel=%.3f  %s\n",
+               tau0, beta, Jinc, Jbar, expect, rel, rel<0.10?"ok":"OFF");
+        if (rel>=0.10) nbad++;
         free(m.lam);free(m.r);free(m.chi);free(m.Ssrc);free(J);
     }
     if (nbad>1) ok=0;
