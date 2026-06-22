@@ -837,6 +837,193 @@ int cmfgen_write_spectrum(const CMFGENState *cs, const Geometry *geo,
 }
 
 /* ------------------------------------------------------------ */
+/* Linear interpolation of y over the ASCENDING nu grid (cs->nu[0]=nu_min ..
+ * nu[NB-1]=nu_max, see cmfgen_create nu[b]=nu_min*exp((b+0.5)*d_log_nu)).
+ * Returns 0 (vacuum) for nu_q outside (nu[0], nu[NB-1]). */
+static double cmf_interp_nu_asc(const double *nu, const double *y, int NB,
+                                double nu_q)
+{
+    if (nu_q <= nu[0] || nu_q >= nu[NB - 1]) return 0.0;
+    int lo = 0, hi = NB - 1;                     /* nu[lo] <= nu_q < nu[hi] */
+    while (hi - lo > 1) {
+        int mid = (lo + hi) / 2;
+        if (nu[mid] <= nu_q) lo = mid; else hi = mid;
+    }
+    double t = (nu_q - nu[lo]) / (nu[lo + 1] - nu[lo]); /* nu[lo+1] > nu[lo] */
+    return y[lo] + t * (y[lo + 1] - y[lo]);
+}
+
+/* Observer-frame Doppler q = gamma(1 - mu*beta) at signed path coordinate z
+ * along a ray of impact parameter p (mu = z/r, beta = r/(c t_exp)). */
+static double cmf_q_at_z(double p, double z, double inv_ct)
+{
+    double r = sqrt(p * p + z * z);
+    double beta = r * inv_ct;
+    double mu = (r > 0.0) ? z / r : 0.0;
+    return (1.0 - mu * beta) / sqrt(1.0 - beta * beta);
+}
+
+/* March one ray segment [z0,z1] (signed z increasing toward observer) through
+ * shell s, sub-splitting so the comoving frequency q*nu_obs sweeps <=0.5 bin
+ * per sub-step (resolves line P-Cygni; continuum unaffected). Returns updated I. */
+static double cmf_obs_march(double I, double p, double z0, double z1, int s,
+                            const double *nu, const double *chi_tot,
+                            const double *Sbin, int NB, double nu_obs,
+                            double inv_ct, double d_log_nu)
+{
+    double q0 = cmf_q_at_z(p, z0, inv_ct);
+    double q1 = cmf_q_at_z(p, z1, inv_ct);
+    int nsub = (int)ceil(fabs(log(q1 / q0)) / (0.5 * d_log_nu));
+    if (nsub < 1)  nsub = 1;
+    if (nsub > 256) nsub = 256;
+    for (int m = 0; m < nsub; ++m) {
+        double za = z0 + (z1 - z0) * ((double)m / nsub);
+        double zb = z0 + (z1 - z0) * ((double)(m + 1) / nsub);
+        double zm = 0.5 * (za + zb);
+        double ds = fabs(zb - za);
+        double r  = sqrt(p * p + zm * zm);
+        double mu = (r > 0.0) ? zm / r : 0.0;
+        double beta = r * inv_ct;
+        double q = (1.0 - mu * beta) / sqrt(1.0 - beta * beta);
+        double D = 1.0 / q;
+        double nucmf = q * nu_obs;
+        double chi0 = cmf_interp_nu_asc(nu, &chi_tot[(size_t)s * NB], NB, nucmf);
+        double S0   = cmf_interp_nu_asc(nu, &Sbin[(size_t)s * NB],    NB, nucmf);
+        if (chi0 < 0.0) chi0 = 0.0;
+        double alpha = q * chi0;
+        double dtau  = alpha * ds; if (dtau < 0.0) dtau = 0.0;
+        double ex  = (dtau > 700.0) ? 0.0 : exp(-dtau);
+        double psi = (dtau > 1e-4) ? (1.0 - ex) : (dtau - 0.5 * dtau * dtau);
+        double Sobs = (alpha > 0.0) ? (D * D * D) * S0 : 0.0;
+        I = I * ex + Sobs * psi;
+    }
+    return I;
+}
+
+/* Observer-frame emergent spectrum (gate LUMINA_CMF_OBSERVER_FRAME=1).
+ *
+ * Same tangent-ray geometry as cmfgen_write_spectrum, but a SEPARATE formal
+ * solve per observer frequency nu_obs: along each ray the comoving frequency
+ * that contributes is nu_cmf(z) = q*nu_obs with q = gamma(1 - mu*beta),
+ * beta = r/(c t_exp), mu = +-z/r (signed: inbound far side mu<0, outbound near
+ * side mu>0). Material coefficients are evaluated at nu_cmf by interpolation;
+ * the moving frame enters as alpha_obs = q*chi_cmf and S_obs = D^3*S_cmf
+ * (D=1/q), and the diffusive core emits D_core^3 * B(q_core*nu_obs, T_inner).
+ * beta->0 reproduces the comoving cmfgen_write_spectrum. (codex 019eefe6) */
+int cmfgen_write_spectrum_obs(const CMFGENState *cs, const Geometry *geo,
+                              double T_inner, const char *path)
+{
+    int NS = cs->n_shells, NB = cs->n_bins, NR = cs->n_rays;
+    double t_exp  = geo->time_explosion;
+    double inv_ct = 1.0 / (CM_C * t_exp);
+
+    /* per-(shell,bin) source S = S_fixed + (chi_es/chi_tot) J for interpolation.
+     * Interpolate chi_tot and S directly (not eta=chi*S then /chi) to avoid an
+     * off-node 0/0 ratio mismatch between independent interpolations. */
+    double *Sbin = malloc(sizeof(double) * (size_t)NS * NB);
+    double *Lnu  = calloc(NB, sizeof(double));
+    if (!Sbin || !Lnu) {
+        free(Sbin); free(Lnu);
+        fprintf(stderr, "[CMFGEN] obs-spectrum alloc failed\n");
+        return -1;
+    }
+    for (int s = 0; s < NS; ++s)
+        for (int b = 0; b < NB; ++b) {
+            size_t idx = (size_t)s * NB + b;
+            double r = (cs->chi_tot[idx] > 0.0)
+                     ? cs->chi_es[idx] / cs->chi_tot[idx] : 0.0;
+            Sbin[idx] = cs->S_fixed[idx] + r * cs->J[idx];
+        }
+
+    /* per-observer-frequency formal solve */
+    for (int k = 0; k < NB; ++k) {
+        double nu_obs = cs->nu[k];
+        double integ = 0.0, p_prev = 0.0, f_prev = 0.0;
+
+        for (int ray = 0; ray < NR; ++ray) {
+            double p = cs->p_ray[ray];
+            /* intersected shells, outer -> inner (descending r) */
+            int    sh[256]; double rmid[256]; int nshell = 0;
+            for (int s = NS - 1; s >= 0 && nshell < 256; --s) {
+                double ro = geo->r_outer[s];
+                if (ro <= p) break;
+                double rm = 0.5 * (geo->r_inner[s] + geo->r_outer[s]);
+                if (rm <= p) rm = p * 1.0000001;
+                sh[nshell] = s; rmid[nshell] = rm; ++nshell;
+            }
+            if (nshell == 0) continue;
+            int core = (p < geo->r_inner[0]) ? 1 : 0;
+
+            /* segment z-extents (|z| at shell midpoints), outer->inner */
+            double zabs[256];
+            for (int i = 0; i < nshell; ++i) {
+                double a = rmid[i] * rmid[i] - p * p;
+                zabs[i] = (a > 0.0) ? sqrt(a) : 0.0;
+            }
+            double z_core = 0.0;
+            if (core) {
+                double ri0 = geo->r_inner[0];
+                z_core = sqrt(ri0 * ri0 - p * p);
+                if (nshell > 0 && z_core > zabs[nshell - 1]) z_core = zabs[nshell - 1];
+            }
+
+            double I = 0.0;   /* outer BC: no incoming radiation */
+
+            /* ---- inbound (far side, z<0): outer -> inner, z increasing ---- */
+            for (int i = 0; i < nshell; ++i) {
+                double z_hi = zabs[i];                       /* outer edge */
+                double z_lo = (i + 1 < nshell) ? zabs[i + 1]
+                            : (core ? z_core : 0.0);          /* inner edge */
+                I = cmf_obs_march(I, p, -z_hi, -z_lo, sh[i], cs->nu, cs->chi_tot,
+                                  Sbin, NB, nu_obs, inv_ct, cs->d_log_nu);
+            }
+
+            /* ---- diffusive core: D_core^3 * B(q_core*nu_obs, T_inner) ---- */
+            if (core) {
+                double ri0 = geo->r_inner[0];
+                double mu_c = z_core / ri0;
+                double beta_in = ri0 * inv_ct;
+                double gam_in = 1.0 / sqrt(1.0 - beta_in * beta_in);
+                double q_c = gam_in * (1.0 - mu_c * beta_in);
+                double D_c = 1.0 / q_c;
+                I = (D_c * D_c * D_c) * cm_planck(q_c * nu_obs, T_inner);
+            }
+
+            /* ---- outbound (near side, z>0): inner -> outer, z increasing ---- */
+            for (int i = nshell - 1; i >= 0; --i) {
+                double z_hi = zabs[i];                       /* outer edge */
+                double z_lo = (i + 1 < nshell) ? zabs[i + 1]
+                            : (core ? z_core : 0.0);          /* inner edge */
+                I = cmf_obs_march(I, p, +z_lo, +z_hi, sh[i], cs->nu, cs->chi_tot,
+                                  Sbin, NB, nu_obs, inv_ct, cs->d_log_nu);
+            }
+
+            double f = I * p;
+            integ += 0.5 * (f_prev + f) * (p - p_prev);
+            p_prev = p; f_prev = f;
+        }
+        Lnu[k] = 8.0 * M_PI * M_PI * integ;
+    }
+
+    FILE *fp = fopen(path, "w");
+    if (!fp) { free(Sbin); free(Lnu);
+        fprintf(stderr, "[CMFGEN] cannot open %s\n", path); return -1; }
+    fprintf(fp, "wavelength_angstrom,flux\n");
+    for (int b = NB - 1; b >= 0; --b) {
+        double lam_cm = CM_C / cs->nu[b];
+        double lam_A  = lam_cm * 1.0e8;
+        double L_lam  = Lnu[b] * CM_C / (lam_cm * lam_cm) * 1.0e-8;
+        fprintf(fp, "%.6f,%.6e\n", lam_A, L_lam);
+    }
+    fclose(fp);
+    printf("Pure-CMFGEN OBSERVER-frame spectrum -> %s (%d bins, beta_in=%.4f)\n",
+           path, NB, geo->r_inner[0] * inv_ct);
+
+    free(Sbin); free(Lnu);
+    return 0;
+}
+
+/* ------------------------------------------------------------ */
 void cmfgen_write_jnu(const CMFGENState *cs, NLTEConfig *nlte)
 {
     if (!nlte || !nlte->J_nu) return;
@@ -994,6 +1181,91 @@ int cmfgen_run(Geometry *geo, OpacityState *opac, BFOpacity *bf,
         if (cs.diag && iter == n_iter - 1)
             cmfgen_validate(&cs, geo, plasma);
         cmfgen_write_jnu(&cs, nlte);
+
+        /* CORRECTED FALSIFIER (LUMINA_CMF_JINC_CONT=1, codex 2026-06-22): compute the
+         * CLEAN external continuum field J_inc (cont_only solve, ALL line opacity zeroed
+         * => no line self-emission, no super-thermal contamination, bounded) and sample
+         * it per line into opac->jbar_line so the mode-3 bb-rate hook (LUMINA_NLTE_JBAR_
+         * POPS=3) pumps R_lu=B_lu*beta_l*J_inc_cont. Decisive: max(S_l/B)<=1e6 => mode-3
+         * FORM is correct (the sealed MC explosion was the contaminated input, NOT the
+         * form); max(S_l/B)>1e10 => form unstable => full MALI needed. cs.J + opacity are
+         * saved/restored so continuum rates, line-RE, and the spectrum are unaffected. */
+        {
+            static int jinc_cont = -1;
+            if (jinc_cont < 0) { const char *e = getenv("LUMINA_CMF_JINC_CONT");
+                jinc_cont = (e && atoi(e)) ? 1 : 0; }
+            if (jinc_cont && opac->tau_sobolev && opac->line_list_nu) {
+                size_t NS = cs.n_shells, NB = cs.n_bins; int NL = opac->n_lines;
+                if (!opac->jbar_line)  opac->jbar_line  = (double*)calloc((size_t)NL*NS, sizeof(double));
+                if (!opac->jbar_count) opac->jbar_count = (int*)   calloc((size_t)NL*NS, sizeof(int));
+                static double *Jsave = NULL;
+                if (!Jsave) Jsave = (double*)malloc(NS*NB*sizeof(double));
+                memcpy(Jsave, cs.J, NS*NB*sizeof(double));     /* save full J */
+                cs.cont_only = 1;
+                cmfgen_assemble(&cs, geo, opac, bf, plasma);   /* line opacity zeroed */
+                cmfgen_solve_J(&cs, geo, T_inner, n_ali);      /* cs.J = J_inc_cont (continuum) */
+                for (size_t s = 0; s < NS; ++s)
+                    for (int l = 0; l < NL; ++l) {
+                        size_t k = (size_t)l*NS + s;
+                        double tau = opac->tau_sobolev[k];
+                        double nu_l = opac->line_list_nu[l];
+                        if (tau <= 1e-12 || nu_l <= cs.nu_min || nu_l >= cs.nu_max) {
+                            opac->jbar_count[k] = 0; continue; }
+                        int b = (int)floor(log(nu_l / cs.nu_min) / cs.d_log_nu);
+                        if (b < 0 || b >= (int)NB) { opac->jbar_count[k] = 0; continue; }
+                        opac->jbar_line[k]  = cs.J[s*NB + (size_t)b]; /* clean external J_inc */
+                        opac->jbar_count[k] = 1000;                   /* pass use_jbar guard */
+                    }
+                /* CROSS-LINE OVERLAP (4a, LUMINA_CMF_OVERLAP=1, codex 2026-06-22): per shell,
+                 * blue->red sweep carrying the redshifted ESCAPING emission of bluer lines into
+                 * redder lines' incident field = the UV->optical fluorescence carrier (form
+                 * validated by self-test 4a, +175%). J_emit = f_out*beta_l*S_l_lag (escaping
+                 * part, NOT the trapped (1-beta)S_l); J_overlap attenuates by exp(-dtau_cont)
+                 * over the frequency gap (Sobolev dr_res=(dnu/nu)*c*t_exp). cs.chi_es/chi_abs
+                 * are continuum-only here (cont_only state). Lagged: S_l from previous-pass pops.
+                 * Order: use J_overlap for line l, THEN add l's emission (no self-pump). */
+                {
+                    static int ovl = -1; static double fout = 0.5;
+                    if (ovl < 0) { const char *e = getenv("LUMINA_CMF_OVERLAP"); ovl = (e&&atoi(e))?1:0;
+                        const char *fo = getenv("LUMINA_OVERLAP_FOUT"); if (fo) fout = atof(fo); }
+                    if (ovl) {
+                        double t_exp_l = geo->time_explosion;
+                        for (size_t s = 0; s < NS; ++s) {
+                            double Jov = 0.0, rmax = 1.0;
+                            for (int l = 0; l < NL; ++l) {   /* line_list_nu DESCENDING = blue->red */
+                                double nu_l = opac->line_list_nu[l];
+                                if (nu_l <= cs.nu_min || nu_l >= cs.nu_max) continue;
+                                int b = (int)floor(log(nu_l/cs.nu_min)/cs.d_log_nu);
+                                if (b < 0 || b >= (int)NB) continue;
+                                size_t k = (size_t)l*NS + s;
+                                double tau = opac->tau_sobolev[k];
+                                if (tau > 1e-12) {
+                                    double Jcont = opac->jbar_line[k];          /* continuum J_inc */
+                                    opac->jbar_line[k] = Jcont + Jov;           /* + overlap incident */
+                                    opac->jbar_count[k] = 1000;
+                                    if (Jcont > 0.0 && (Jcont+Jov)/Jcont > rmax) rmax = (Jcont+Jov)/Jcont;
+                                    double beta = (tau > 1e-6) ? -expm1(-tau)/tau : 1.0;
+                                    double S = opac->line_source_S[k];
+                                    if (S > 0.0) Jov += fout * beta * S;        /* escaping emission */
+                                }
+                                if (l < NL-1) {                                  /* attenuate over gap */
+                                    double dnu = nu_l - opac->line_list_nu[l+1];
+                                    if (dnu > 0.0) {
+                                        double chic = cs.chi_es[s*NB+(size_t)b] + cs.chi_abs[s*NB+(size_t)b];
+                                        Jov *= exp(-chic * (dnu/nu_l) * CM_C * t_exp_l);
+                                    }
+                                }
+                            }
+                            if (rmax > 1e3)
+                                printf("  [OVERLAP] shell %zu max(J_inc/J_cont)=%.1e (runaway watch)\n", s, rmax);
+                        }
+                    }
+                }
+                cs.cont_only = 0;
+                cmfgen_assemble(&cs, geo, opac, bf, plasma);   /* restore full opacity */
+                memcpy(cs.J, Jsave, NS*NB*sizeof(double));     /* restore full J */
+            }
+        }
         /* Option-2 integral RE: register the CMFGEN line opacity/source for the
          * RADEQ/Newton T_e solve (LUMINA_RADEQ_LINE_RE=1). */
         /* RE/Newton line channel: chi_line_th (physical thermal share) except
@@ -1009,8 +1281,32 @@ int cmfgen_run(Geometry *geo, OpacityState *opac, BFOpacity *bf,
         compute_radiative_equilibrium_te(plasma, gamma, nlte, atom, opac,
                                          t_exp, cs.n_shells);
         compute_plasma_state(atom, plasma, opac, t_exp);
-        if (nlte && nlte->enabled)
-            nlte_solve_all(nlte, atom, plasma, opac, t_exp, cs.n_shells, gamma);
+        if (nlte && nlte->enabled) {
+            /* UNDER-RELAXED lagged solve (codex requirement): when the cont_only-J_inc
+             * mode-3 pump is active (LUMINA_CMF_JINC_CONT), damp the population update
+             * between outer passes (pops = (1-a)*old + a*new, a=LUMINA_JBAR_POPS_DAMP,
+             * default 0.3) so the lagged jbar->bb->pop loop cannot oscillate to runaway.
+             * jbar_line is held fixed during the solve (computed above from current pops
+             * = lagged); the damping tames the outer loop. */
+            static int jdamp = -1; static double jeta = 0.3;
+            if (jdamp < 0) { const char *e = getenv("LUMINA_CMF_JINC_CONT");
+                jdamp = (e && atoi(e)) ? 1 : 0;
+                const char *d = getenv("LUMINA_JBAR_POPS_DAMP"); if (d) jeta = atof(d); }
+            if (jdamp && nlte->nlte_level_populations) {
+                size_t npop = (size_t)nlte->n_nlte_levels_total * cs.n_shells;
+                static double *pop_old = NULL; static size_t pop_n = 0;
+                if (pop_n != npop) { free(pop_old);
+                    pop_old = (double*)malloc(npop*sizeof(double)); pop_n = npop; }
+                memcpy(pop_old, nlte->nlte_level_populations, npop*sizeof(double));
+                nlte_solve_all(nlte, atom, plasma, opac, t_exp, cs.n_shells, gamma);
+                for (size_t k = 0; k < npop; ++k)
+                    nlte->nlte_level_populations[k] =
+                        (1.0 - jeta)*pop_old[k] + jeta*nlte->nlte_level_populations[k];
+                nlte_update_tau_sobolev(nlte, atom, opac, t_exp, cs.n_shells);
+            } else {
+                nlte_solve_all(nlte, atom, plasma, opac, t_exp, cs.n_shells, gamma);
+            }
+        }
 
         if (cs.diag) {
             int mid = cs.n_shells / 2;
@@ -1022,7 +1318,16 @@ int cmfgen_run(Geometry *geo, OpacityState *opac, BFOpacity *bf,
         }
     }
 
-    cmfgen_write_spectrum(&cs, geo, T_inner, "lumina_spectrum.csv");
+    /* Default frame = observer (all comparisons to gold are observer-frame);
+     * set LUMINA_CMF_OBSERVER_FRAME=0 for the legacy comoving spectrum. */
+    const char *obs_env = getenv("LUMINA_CMF_OBSERVER_FRAME");
+    int obs_frame = obs_env ? atoi(obs_env) : 1;
+    if (obs_frame) {
+        cmfgen_write_spectrum_obs(&cs, geo, T_inner, "lumina_spectrum.csv");
+        cmfgen_write_spectrum(&cs, geo, T_inner, "lumina_spectrum_comoving.csv");
+    } else {
+        cmfgen_write_spectrum(&cs, geo, T_inner, "lumina_spectrum.csv");
+    }
     cmfgen_free(&cs);
     return 0;
 }

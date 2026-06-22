@@ -122,6 +122,12 @@ void cmfgen_validate(const CMFGENState *cs, const Geometry *geo,
 int  cmfgen_write_spectrum(const CMFGENState *cs, const Geometry *geo,
                            double T_inner, const char *path);
 
+/* Observer-frame emergent spectrum (gate LUMINA_CMF_OBSERVER_FRAME=1): per-
+ * nu_obs formal solve with homologous Doppler mapping nu_cmf=gamma(1-mu*beta)*
+ * nu_obs along each ray. beta->0 reproduces cmfgen_write_spectrum. */
+int  cmfgen_write_spectrum_obs(const CMFGENState *cs, const Geometry *geo,
+                               double T_inner, const char *path);
+
 /* Top-level env-gated driver: replaces the MC iteration loop. Iterates
  * assemble -> formal-solve -> write J_nu -> RADEQ T_e -> plasma -> bf ->
  * NLTE for n_iter passes. Returns 0 on success. */

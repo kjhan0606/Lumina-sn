@@ -1445,6 +1445,21 @@ __device__ double d_E_truncated_dev = 0.0;
 __device__ int d_diffuse_inner_bc = 0;
 __device__ unsigned long long d_n_returned_dev = 0;
 
+/* f_in diagnostic (codex falsifier): of escaping packets, the energy fraction per
+ * emergent-wavelength band whose LAST frequency-set was the inner-boundary
+ * re-thermalization (vs an envelope line/bf event). f_in(optical) <= 10% falsifies
+ * the "photosphere re-emission suppresses fluorescence" hypothesis. 6 bands by
+ * emergent lambda[A]: 0:<4000 1:4000-5000 2:5000-6000 3:6000-7000 4:7000-9000 5:>9000 */
+#define FIN_NB 6
+__device__ double d_fin_tot[FIN_NB]   = {0,0,0,0,0,0};
+__device__ double d_fin_inner[FIN_NB] = {0,0,0,0,0,0};
+void cuda_fin_reset(void){ double z[FIN_NB]={0,0,0,0,0,0};
+    CUDA_CHECK(cudaMemcpyToSymbol(d_fin_tot,&z,sizeof(z)));
+    CUDA_CHECK(cudaMemcpyToSymbol(d_fin_inner,&z,sizeof(z))); }
+void cuda_fin_get(double *tot,double *inner){
+    CUDA_CHECK(cudaMemcpyFromSymbol(tot,d_fin_tot,sizeof(double)*FIN_NB));
+    CUDA_CHECK(cudaMemcpyFromSymbol(inner,d_fin_inner,sizeof(double)*FIN_NB)); }
+
 /* MC-estimator macro-atom (THEN_MC): per-line Sobolev j_blue J_bar accumulators.
  * Device-global pointers so the hot trace kernel can atomicAdd at the line-
  * crossing site without a signature change. g_jbar_line[line*n_shells+shell] sums
@@ -1500,6 +1515,7 @@ void cuda_n_capped_reset(void) {
     CUDA_CHECK(cudaMemcpyToSymbol(d_E_truncated_dev, &dzero, sizeof(double)));
     unsigned long long zhist[CAP_SHELL_MAX] = {0};
     CUDA_CHECK(cudaMemcpyToSymbol(d_capped_by_shell, zhist, sizeof(zhist)));
+    cuda_fin_reset();   /* f_in per-iter accumulators (match n_returned reset) */
 }
 
 unsigned long long cuda_n_capped_get(void) {
@@ -2673,6 +2689,7 @@ void transport_kernel(
     /* Phase 6 - Step 7: Main transport loop */
     int loop_count = 0;  /* counts interactions toward d_max_interactions */
     int total_steps = 0; /* counts ALL while-iterations (absolute safety ceiling) */
+    int last_reset_inner = 0; /* f_in: 1 if pkt_nu was last set by inner-BC re-thermalize */
     while (pkt_status == 0 && loop_count < d_max_interactions
            && total_steps < d_max_total_steps) { /* Phase 6 - Step 7 */
         total_steps++;
@@ -2752,6 +2769,7 @@ void transport_kernel(
                     double comov_nu_re = d_sample_bw_planck_nu(rng, kT_h);
                     double inv_dopp_re = d_get_inverse_doppler_factor(pkt_r, pkt_mu, t_exp);
                     pkt_nu = comov_nu_re * inv_dopp_re;
+                    last_reset_inner = 1;   /* frequency just thermalized at photosphere */
                     /* re-init next line id at the new comoving frequency */
                     double comov_nu_re2 = pkt_nu * d_get_doppler_factor(pkt_r, pkt_mu, t_exp);
                     int lo_re = 0, hi_re = n_lines;
@@ -2787,6 +2805,7 @@ void transport_kernel(
                                   fe_scatter_mode,
                                   d_T_rad, n_lines,
                                   rng);                                   /* Phase 6 - Step 7 */
+            last_reset_inner = 0;   /* f_in: line/macro-atom reset the frequency */
             /* Virtual packet: trace from interaction point */
             if (d_virtual_spectrum != NULL) {
                 double nu_cmf_v = pkt_nu * d_get_doppler_factor(pkt_r, pkt_mu, t_exp);
@@ -2843,6 +2862,7 @@ void transport_kernel(
                         d_line_emission(&pkt_nu, &pkt_next_line_id, emit_line,
                                          pkt_r, pkt_mu, t_exp, d_line_list_nu);
                     }
+                    last_reset_inner = 0;   /* f_in: macro-atom line emission reset frequency */
                     /* [MA-FATE] exit comov nu after cascade */
                     double ma_exit_comov_nu = pkt_nu * d_get_doppler_factor(pkt_r, pkt_mu, t_exp);
                     d_ma_fate_record(ma_entry_comov_nu, ma_exit_comov_nu);
@@ -2851,6 +2871,7 @@ void transport_kernel(
                                            &pkt_next_line_id, t_exp,
                                            d_T_rad, pkt_shell_id,
                                            d_line_list_nu, n_lines, rng);
+                    last_reset_inner = 0;   /* f_in: bf re-emission reset frequency */
                 }
             } else {
                 d_thomson_scatter(&pkt_r, &pkt_mu, &pkt_nu, &pkt_energy,
@@ -2882,6 +2903,10 @@ void transport_kernel(
         d_escaped_r[p] = pkt_r;       /* Rotation mode: store escape r */
         d_escaped_mu[p] = pkt_mu;     /* Rotation mode: store escape mu */
         atomicAdd((unsigned long long *)d_n_escaped, 1ULL); /* Phase 6 - Step 7 */
+        { double lamA=(C_SPEED_OF_LIGHT/pkt_nu)*1e8;    /* f_in: bin emergent energy by band */
+          int fb=(lamA<4000)?0:(lamA<5000)?1:(lamA<6000)?2:(lamA<7000)?3:(lamA<9000)?4:5;
+          atomicAdd(&d_fin_tot[fb], pkt_energy);
+          if(last_reset_inner) atomicAdd(&d_fin_inner[fb], pkt_energy); }
     } else if (pkt_status == 2) { /* Phase 6 - Step 7: REABSORBED */
         d_escaped_flag[p] = 0;        /* Phase 6 - Step 7 */
         atomicAdd((unsigned long long *)d_n_reabsorbed, 1ULL); /* Phase 6 - Step 7 */
@@ -3421,8 +3446,21 @@ int main(int argc, char *argv[]) {
                            plasma.T_e[geo.n_shells-1],
                            cs.J[(size_t)(geo.n_shells/2)*cs.n_bins + 500]);
                 }
-                cmfgen_write_spectrum(&cs, &geo, config.T_inner,
-                                      "lumina_spectrum.csv");
+                /* Default observer-frame (gold is observer-frame); set
+                 * LUMINA_CMF_OBSERVER_FRAME=0 for the legacy comoving output. */
+                {
+                    const char *obs_env = getenv("LUMINA_CMF_OBSERVER_FRAME");
+                    int obs_frame = obs_env ? atoi(obs_env) : 1;
+                    if (obs_frame) {
+                        cmfgen_write_spectrum_obs(&cs, &geo, config.T_inner,
+                                                  "lumina_spectrum.csv");
+                        cmfgen_write_spectrum(&cs, &geo, config.T_inner,
+                                              "lumina_spectrum_comoving.csv");
+                    } else {
+                        cmfgen_write_spectrum(&cs, &geo, config.T_inner,
+                                              "lumina_spectrum.csv");
+                    }
+                }
 
                 /* === FROZEN-PLASMA MORPHOLOGY PASS (P-Cygni gate) ===
                  * The validated thermal plasma is now converged. To test
@@ -3926,6 +3964,12 @@ int main(int argc, char *argv[]) {
                 unsigned long long n_returned = cuda_n_returned_get();
                 printf("  [INNER-BC] iter%d: %llu packet re-emissions at inner boundary (%.2f per packet)\n",
                        iter, n_returned, (double)n_returned / (double)n_packets);
+                double ft[FIN_NB], fi[FIN_NB]; cuda_fin_get(ft, fi);
+                const char *bl[FIN_NB]={"UV<4000","blu4-5k","grn5-6k","red6-7k","NIR7-9k","NIR>9k"};
+                printf("  [f_in] escaped-energy fraction last-set at photosphere (codex falsifier; optical<=10%%=>benign):\n");
+                for(int b=0;b<FIN_NB;++b)
+                    printf("        %s: f_in=%.3f  (E_inner=%.3e / E_tot=%.3e)\n",
+                           bl[b], ft[b]>0?fi[b]/ft[b]:0.0, fi[b], ft[b]);
             }
             fflush(stdout);
         }
@@ -4034,6 +4078,14 @@ int main(int argc, char *argv[]) {
                    ">=100: %ld); mean J_bar=%.3e\n",
                    iter, nsamp, njb, 100.0 * (double)nsamp / (double)njb,
                    nstrong, nsamp ? jbsum / nsamp : 0.0);
+            /* Gate M0: THEN_MC skips the normal nlte_normalize_j_nu (the frozen-
+             * plasma goto at ~4181), so download+normalize the MC binned J_nu here
+             * and dump it (LUMINA_MC_JDUMP, inside nlte_normalize_j_nu) for the
+             * MC-vs-pure-CMFGEN cross-check. Overwrites each iter (final=last). */
+            if (getenv("LUMINA_MC_JDUMP") && atoi(getenv("LUMINA_MC_JDUMP"))) {
+                cuda_download_j_nu(&dev, &nlte, geo.n_shells);
+                nlte_normalize_j_nu(&nlte, time_simulation, volume, geo.n_shells);
+            }
             /* Stage A (LUMINA_NLTE_JBAR_POPS=1): re-solve the NLTE populations
              * with the realized per-line J_bar_l (consumed via the gated bb-rate
              * edit in nlte_assemble), under-relaxed across passes, so the
