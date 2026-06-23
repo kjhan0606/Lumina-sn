@@ -4079,6 +4079,29 @@ int main(int argc, char *argv[]) {
                    ">=100: %ld); mean J_bar=%.3e\n",
                    iter, nsamp, njb, 100.0 * (double)nsamp / (double)njb,
                    nstrong, nsamp ? jbsum / nsamp : 0.0);
+            /* [JBAR-LINE-DUMP] per-line frequency-resolved J_bar vs the binned J
+             * (LUMINA_JBAR_LINE_DUMP=1): UV up-pump lines only (1000-4000A), so
+             * binned-J(bin) vs jbar_line(line-center) can be compared offline at
+             * the exact pumping transitions, AND jbar_count exposes whether the
+             * MC even samples the UV (low count => falls back to binned-J). */
+            if (getenv("LUMINA_JBAR_LINE_DUMP") &&
+                atoi(getenv("LUMINA_JBAR_LINE_DUMP"))) {
+                FILE *jf = fopen("lumina_jbar_line.csv", "w");
+                if (jf) {
+                    fprintf(jf, "line_id,wavelength_A,shell,jbar_line,jbar_count\n");
+                    for (int l = 0; l < opacity.n_lines; l++) {
+                        double lam = C_SPEED_OF_LIGHT / opacity.line_list_nu[l] * 1.0e8;
+                        if (lam < 1000.0 || lam > 4000.0) continue;
+                        for (int s = 0; s < geo.n_shells; s++) {
+                            size_t k = (size_t)l * geo.n_shells + s;
+                            fprintf(jf, "%d,%.3f,%d,%.6e,%d\n", l, lam, s,
+                                    opacity.jbar_line[k], opacity.jbar_count[k]);
+                        }
+                    }
+                    fclose(jf);
+                    printf("  [JBAR-LINE-DUMP] wrote lumina_jbar_line.csv (UV 1000-4000A)\n");
+                }
+            }
             /* Gate M0: THEN_MC skips the normal nlte_normalize_j_nu (the frozen-
              * plasma goto at ~4181), so download+normalize the MC binned J_nu here
              * and dump it (LUMINA_MC_JDUMP, inside nlte_normalize_j_nu) for the
