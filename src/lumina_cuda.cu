@@ -3457,6 +3457,17 @@ int main(int argc, char *argv[]) {
                                            geo.time_explosion, geo.n_shells,
                                            &nlte_solver,
                                            gamma_dep_enabled ? &gamma_dep : NULL);
+                        /* P7 (LUMINA_CMF_LINERES_JBAR=1): refresh per-line
+                         * tau_sobolev + line_source_S from the just-solved NLTE
+                         * populations so next iter's producer J_bar_l and the mode-2
+                         * consumer S_lag both see the REAL lagged NLTE line source
+                         * (the pure-CMFGEN loop otherwise leaves line_source_S=0 ->
+                         * thermal-only; this makes the lagged-J fluorescence loop
+                         * real). Both A/B run it; only the consumer differs. */
+                        if (getenv("LUMINA_CMF_LINERES_JBAR") &&
+                            atoi(getenv("LUMINA_CMF_LINERES_JBAR")))
+                            nlte_update_tau_sobolev(&nlte, &atom_data, &opacity,
+                                                    geo.time_explosion, geo.n_shells);
                     }
                     printf("[CMFGEN] iter %2d: T_e[0]=%.0fK T_e[%d]=%.0fK "
                            "T_e[%d]=%.0fK J[mid,500]=%.3e\n", it,

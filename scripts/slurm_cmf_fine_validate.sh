@@ -17,8 +17,9 @@
 module load cuda/13.0.2 2>/dev/null || true
 
 N_PKT=${N_PKT:-1000}
-N_ITER=${N_ITER:-3}
+N_ITER=${N_ITER:-5}
 SPEC_MODE=${SPEC_MODE:-spectrum}
+CONSUME=${CONSUME:-0}   # II-3 A/B knob: 0=producer-only(baseline pops), 1=deterministic consumer
 export OMP_NUM_THREADS=${OMP_NUM_THREADS:-8}
 
 ROOT=/home/kjhan/BACKUP/Eunha.A1/Claude/Lumina-sn
@@ -53,6 +54,7 @@ env LUMINA_PURE_CMFGEN=1 \
     LUMINA_DIFFUSE_INNER_BC=1 \
     LUMINA_ENERGY_BUDGET=1 \
     LUMINA_CMF_LINERES_JBAR=1 \
+    LUMINA_CMF_LINERES_CONSUME=$CONSUME \
     LUMINA_CMF_FINE_DIAG=1 \
     LUMINA_CMF_FINE_LAMLO=${LAMLO:-3000} \
     LUMINA_CMF_FINE_LAMHI=${LAMHI:-3200} \
@@ -64,8 +66,10 @@ env LUMINA_PURE_CMFGEN=1 \
 rc=$?
 echo "  exit=$rc  work_root=$work_root"
 echo ""
-echo "--- [cmf_fine] producer diagnostics ---"
+echo "--- [cmf_fine] producer diagnostics (mean Jbar/B + in-window S_l/B per iter) ---"
 grep -E "\[cmf_fine\]" stderr.log stdout.log
+echo "--- [cmf_consume] consumer activation ---"
+grep -E "\[cmf_consume\]" stderr.log stdout.log
 echo ""
 echo "--- [CMFGEN] driver lines ---"
 grep -E "\[CMFGEN\]" stdout.log | tail -8

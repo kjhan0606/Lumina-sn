@@ -1501,19 +1501,25 @@ void cmfgen_fine_jbar(CMFGENState *csb, const Geometry *geo,
         }
     }
 
-    if (diag) {   /* J_bar_l sanity vs local B(Te) at a mid shell */
+    if (diag) {   /* J_bar_l sanity + S_l/B (b_k proxy) vs local B(Te) at a mid shell */
         int st = NS/2; double Te = plasma->T_e[st];
         long nf=0; double jmin=1e300, jmax=-1e300, rsum=0.0; long rn2=0;
+        double slsum=0.0; long sln=0; double slmin=1e300, slmax=-1e300;
         for (int l = 0; l < NL; ++l) {
             double v = opac->jbar_line_det[(size_t)l*NS+st];
             if (v < 0.0) continue;
             ++nf; if (v<jmin) jmin=v; if (v>jmax) jmax=v;
             double B = cm_planck(opac->line_list_nu[l], Te);
-            if (B>0) { rsum += v/B; ++rn2; }
+            if (B>0) { rsum += v/B; ++rn2;
+                double Sl = opac->line_source_S ? opac->line_source_S[(size_t)l*NS+st] : 0.0;
+                if (Sl > 0.0) { double r=Sl/B; slsum+=r; ++sln;
+                    if (r<slmin) slmin=r; if (r>slmax) slmax=r; } }
         }
         fprintf(stderr, "[cmf_fine] shell %d Te=%.0f: filled=%ld  Jbar_l in "
-            "[%.3e,%.3e]  mean Jbar/B=%.3f\n", st, Te, nf, jmin, jmax,
-            (rn2>0)?rsum/rn2:0.0);
+            "[%.3e,%.3e]  mean Jbar/B=%.3f | in-window S_l/B: n=%ld mean=%.3f "
+            "range[%.3f,%.3f]\n", st, Te, nf, jmin, jmax,
+            (rn2>0)?rsum/rn2:0.0, sln, (sln>0)?slsum/sln:0.0,
+            (sln>0)?slmin:0.0, (sln>0)?slmax:0.0);
     }
 
     free(fs.nu);free(fs.dnu);free(fs.chi_es);free(fs.chi_abs);free(fs.chi_line);

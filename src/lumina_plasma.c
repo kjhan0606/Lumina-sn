@@ -6931,6 +6931,34 @@ void nlte_assemble_rate_matrix(NLTEConfig *nlte, AtomicData *atom,
             jbar_src_binned = (e && atoi(e)) ? 1 : 0; }
         if (jbar_src_binned && jbar_pops_mode)
             J_jbar = nlte_get_J_at_nu(nlte, shell, nu_line);   /* bounded, no MC over-count */
+
+        /* P7 CONSUMER (LUMINA_CMF_LINERES_JBAR=1, gate II-3): the fine-grid
+         * deterministic full J_bar_l (cmfgen_fine_jbar) OVERRIDES the MC estimator.
+         * It is the FULL line field (1-beta)S_l + beta*J_ext with NO MC noise, so the
+         * mode-2 differenced external pump bJext = J_bar_l - (1-beta)S_lag = beta*J_ext
+         * is exact (no crossing-count guard) and captures cross-line forest overlap
+         * that a per-line Sobolev beta*J_inc misses. In-window lines route through
+         * mode-2 (forced below). Out-of-window lines (sentinel -1) are left UNTOUCHED
+         * (original MC source + configured mode) so an A/B isolates the in-window
+         * deterministic effect. */
+        static int lineres_jbar_pops = -1;
+        if (lineres_jbar_pops < 0) { const char *e = getenv("LUMINA_CMF_LINERES_CONSUME");
+            lineres_jbar_pops = (e && atoi(e)) ? 1 : 0; }
+        int det_jbar = 0;
+        if (lineres_jbar_pops && opacity->jbar_line_det) {
+            /* self-contained: LINERES_JBAR alone activates the deterministic mode-2
+             * pump on in-window lines, independent of the (sealed) JBAR_POPS modes.
+             * Out-of-window lines keep whatever the configured path is (binned by
+             * default), so an A/B isolates the in-window deterministic effect. */
+            double vdet = opacity->jbar_line_det[(size_t)line * n_shells + shell];
+            if (vdet >= 0.0 && isfinite(vdet)) {
+                J_jbar = vdet; det_jbar = 1;
+                static int det_announced = 0;
+                if (!det_announced) { det_announced = 1; fprintf(stderr,
+                    "[cmf_consume] deterministic line-resolved J_bar mode-2 ACTIVE "
+                    "(in-window UV-pump lines)\n"); }
+            }
+        }
         int use_jbar = (J_jbar > 0.0 && isfinite(J_jbar));  /* guard MC outliers/NaN */
 
         /* MALI (LUMINA_MALI=1): multiply the bound-bound radiative rates by the
@@ -6949,7 +6977,7 @@ void nlte_assemble_rate_matrix(NLTEConfig *nlte, AtomicData *atom,
         /* effective line field (for the budget diagnostic + the mode-1/binned path) */
         double J_line = use_jbar ? J_jbar : nlte_get_J_at_nu(nlte, shell, nu_line);
         double R_absorb, R_stim, R_spont;
-        if (use_jbar && jbar_pops_mode == 3) {
+        if (use_jbar && jbar_pops_mode == 3 && !det_jbar) {
             /* Stage A v3 — faithful Sobolev/MALI with the INCIDENT field.
              * KEY (verified, 2026-06-21): the Lucy j_blue estimator jbar_line is
              * the incident mean intensity J_inc at the line frequency, NOT the
@@ -6977,7 +7005,7 @@ void nlte_assemble_rate_matrix(NLTEConfig *nlte, AtomicData *atom,
             R_absorb = atom->line_B_lu[line] * beta * J_jbar;
             R_stim   = atom->line_B_ul[line] * beta * J_jbar;
             R_spont  = atom->line_A_ul[line] * beta;
-        } else if (use_jbar && jbar_pops_mode == 2) {
+        } else if (use_jbar && (jbar_pops_mode == 2 || det_jbar)) {
             /* Stage A v2 — Λ*-preconditioned / faithful Sobolev-MALI with the
              * REALIZED external field. The MC estimator carries the FULL line
              * field J_bar = (1−β)S_l + β·J_ext. The sealed mode 1 fed it whole
@@ -6995,6 +7023,12 @@ void nlte_assemble_rate_matrix(NLTEConfig *nlte, AtomicData *atom,
             double beta = radeq_beta_esc(tau_l);
             double S_lag = opacity->line_source_S
                 ? opacity->line_source_S[(size_t)line * n_shells + shell] : 0.0;
+            /* For the deterministic producer, J_bar_l was computed with the SAME
+             * line source convention (line_source_S>0 else B(nu,Te) fallback); use
+             * the matching S_lag so bJext = J_bar_l - (1-beta)S_l = beta*J_ext is the
+             * consistent external pump (S_lag=0 would leave bJext=full J_bar = the
+             * sealed mode-1 over-pump). */
+            if (det_jbar && !(S_lag > 0.0)) S_lag = planck_bnu(T_e, nu_line);
             double bJext = J_jbar - (1.0 - beta) * S_lag;   /* = β·J_ext */
             if (!(bJext > 0.0)) bJext = 0.0;                /* clamp noise/oversub */
             R_absorb = atom->line_B_lu[line] * bJext;
