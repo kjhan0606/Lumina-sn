@@ -3410,6 +3410,24 @@ int main(int argc, char *argv[]) {
                     if (cs.diag && it == pc_iter - 1)
                         cmfgen_validate(&cs, &geo, &plasma);
                     cmfgen_write_jnu(&cs, &nlte);
+                    /* DETAILED-BALANCE FALSIFIER (LUMINA_NLTE_JEQB=1): overwrite the WHOLE
+                     * radiation field J_nu with the local Planck B(nu,Te) so bb + bf +
+                     * (Milne) recomb all see the thermal field => the entire NLTE network
+                     * MUST relax to LTE (b_k -> 1, S_l/B -> 1). This is a theorem (Einstein
+                     * + Planck), not an interpretive metric: if S_l/B stays >1, a rate
+                     * VIOLATES detailed balance = a definitive bug. */
+                    if (getenv("LUMINA_NLTE_JEQB") && atoi(getenv("LUMINA_NLTE_JEQB"))) {
+                        for (int s = 0; s < cs.n_shells; ++s) {
+                            double Te = plasma.T_e[s];
+                            for (int b = 0; b < cs.n_bins; ++b) {
+                                double nu = cs.nu[b], x = 6.62607015e-27*nu/(1.380649e-16*Te);
+                                nlte.J_nu[(size_t)s*cs.n_bins+b] =
+                                    (x < 700.0 && x > 0.0)
+                                    ? (2.0*6.62607015e-27*nu*nu*nu/(2.99792458e10*2.99792458e10))/expm1(x)
+                                    : 0.0;
+                            }
+                        }
+                    }
                     /* P7 PRODUCER (LUMINA_CMF_LINERES_JBAR=1): fine-grid line-
                      * resolved J_bar_l over the UV pump window. Fills
                      * opacity.jbar_line_det before the downstream NLTE solve so

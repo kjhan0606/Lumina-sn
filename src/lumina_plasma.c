@@ -6959,6 +6959,14 @@ void nlte_assemble_rate_matrix(NLTEConfig *nlte, AtomicData *atom,
                     "(in-window UV-pump lines)\n"); }
             }
         }
+        /* DETAILED-BALANCE FALSIFIER (LUMINA_NLTE_JEQB=1): force the bb radiation field
+         * to the LOCAL Planck B(nu,Te). By Einstein relations + Planck, J=B(Te) makes
+         * R_lu/R_ul = Boltzmann in EVERY mode/beta, so b_k MUST -> 1 (S_l/B -> 1) for a
+         * DB-respecting bb network. If S_l/B stays >1 here, a bb rate VIOLATES detailed
+         * balance = a definitive bug (this is a theorem, not an interpretive metric). */
+        static int jeqb = -1;
+        if (jeqb < 0) { const char *e = getenv("LUMINA_NLTE_JEQB"); jeqb = (e && atoi(e)) ? 1 : 0; }
+        if (jeqb) { J_jbar = planck_bnu(T_e, nu_line); det_jbar = 0; }
         int use_jbar = (J_jbar > 0.0 && isfinite(J_jbar));  /* guard MC outliers/NaN */
 
         /* MALI (LUMINA_MALI=1): multiply the bound-bound radiative rates by the
