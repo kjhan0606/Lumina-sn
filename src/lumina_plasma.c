@@ -11,6 +11,12 @@
 extern "C" {         /* Phase 6 - Step 9 */
 #endif               /* Phase 6 - Step 9 */
 
+/* ascending double comparator for qsort (b_k partial-LTE rate-pin median) */
+static int cmf_dcmp_pl(const void *a, const void *b) {
+    double d = *(const double*)a - *(const double*)b;
+    return (d > 0) - (d < 0);
+}
+
 static inline double planck_bnu(double T, double nu);
 /* Binned-J estimator: fit dilute Planck (T_rad,W) to the frequency-resolved
  * J_nu histogram instead of the nu_bar/j Wien moments. Returns 1 on success
@@ -7816,16 +7822,31 @@ void nlte_assemble_rate_matrix(NLTEConfig *nlte, AtomicData *atom,
             for (int j = 0; j < N; j++) ACM(i, j) *= bk_nstar[j] * inv_ni;
             b[i] *= inv_ni;
         }
-        /* PIN negligible levels (n_star/n_star_ground < 1e-10, E/kTe > ~23) to b_k = 1 (LTE) */
-        double ref_lo = bk_nstar[0];
-        double ref_hi = (n_lo_super < N) ? bk_nstar[n_lo_super] : bk_nstar[0];
+        /* PIN only DEAD levels (b_k-row off-diagonal rate < thr * median) to b_k=1 (LTE).
+         * NOT an LTE-population/energy criterion: that wrongly freezes radiatively-pumped
+         * UV levels (verified: 333/337 energy-pinned levels HAVE significant rates ->
+         * pinning them kills the fluorescence, making pops J-insensitive). Rate-based
+         * pinning freezes only the genuinely unconnected (singular) rows, preserving the
+         * pumped manifold. Offline: cond 9e14 -> 3.6e11 (6 pinned, 334 active). */
+        double pin_thr = 1e-4;
+        { const char *e = getenv("LUMINA_NLTE_BK_PIN_THR"); if (e) pin_thr = atof(e); }
+        double *rmax = (double*)malloc((size_t)N * sizeof(double));
+        double *rsort = (double*)malloc((size_t)N * sizeof(double));
         for (int i = 0; i < N; i++) {
-            double ref = (i < n_lo_super) ? ref_lo : ref_hi;
-            if (ref > 0.0 && bk_nstar[i] / ref < 1e-10) {
+            double mx = 0.0;
+            for (int j = 0; j < N; j++) if (j != i) { double a = fabs(ACM(i, j)); if (a > mx) mx = a; }
+            rmax[i] = mx; rsort[i] = mx;
+        }
+        qsort(rsort, N, sizeof(double), cmf_dcmp_pl);
+        double rmed = rsort[N / 2];
+        if (rmed <= 0.0) rmed = 1.0;
+        for (int i = 0; i < N; i++) {
+            if (rmax[i] < pin_thr * rmed) {
                 for (int j = 0; j < N; j++) ACM(i, j) = 0.0;
                 ACM(i, i) = 1.0; b[i] = 1.0;
             }
         }
+        free(rmax); free(rsort);
     }
     #define CONS_W(j) (bk_partial ? bk_nstar[(j)] : 1.0)
 
