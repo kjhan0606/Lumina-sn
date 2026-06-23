@@ -900,6 +900,121 @@ static double cmf_obs_march(double I, double p, double z0, double z1, int s,
     return I;
 }
 
+/* S4 line thermalisation share (LUMINA_CMF_LINE_SOB_EPS, default 0 = pure
+ * resonance scatter S_l=Jbar). Set once per spectrum in cmfgen_write_spectrum_obs. */
+static double g_sob_eps = 0.0;
+static int    g_sob_noemit = 0;
+static int    g_sob_diag = 0;
+static double g_sob_rphot  = 0.0;   /* photosphere radius (r_inner[0]) for W(r) */
+static double g_sob_Tinner = 0.0;   /* photosphere T for the diluted backlight */
+static int    g_sob_srcj   = 0;     /* 1 = legacy cs->J source (contaminated) */
+
+/* S4 — LINE-RESOLVED Sobolev observer march (gate LUMINA_CMF_OBS_SOBOLEV).
+ * The binned expansion opacity defangs tau_Sobolev (frac=1-e^{-tau}->1, /dnu_bin
+ * => integrated ray tau ~ O(1), no P-Cygni; codex 019ef207 + agent ac7845ec).
+ * Here the CONTINUUM is transported from chi_es+chi_abs (NOT the binned
+ * chi_line), and each line whose rest nu_l lies in the sub-step's swept comoving
+ * interval applies its FULL Sobolev jump  I = I*e^{-tau_S} + D^3*S_l*(1-e^{-tau_S})
+ * at the resonance — exactly the directional resonance the MC does. Requires
+ * LINE_EPS off (so chi_es is pure electron, no double-count). */
+static double cmf_obs_march_sob(double I, double p, double z0, double z1, int s,
+                                const CMFGENState *cs, const OpacityState *opac,
+                                double Te_s, double nu_obs, double inv_ct)
+{
+    int NB = cs->n_bins, NS = cs->n_shells, NL = opac->n_lines;
+    double q0 = cmf_q_at_z(p, z0, inv_ct);
+    double q1 = cmf_q_at_z(p, z1, inv_ct);
+    /* Resolve the Sobolev resonance to a FINE comoving-velocity step. The bin
+     * width 0.5*d_log_nu (~800 km/s) smears each line jump over ~800 km/s of
+     * observer wavelength -> too-shallow trough. Resolve to ~30 km/s (env
+     * LUMINA_CMF_OBS_DVRES, km/s) so the jump lands at the sharp resonance. */
+    double dlq = 30.0 / 2.99792458e5;
+    { const char *e = getenv("LUMINA_CMF_OBS_DVRES"); if (e) dlq = atof(e) / 2.99792458e5; }
+    int nsub = (int)ceil(fabs(log(q1 / q0)) / dlq);
+    if (nsub < 1)    nsub = 1;
+    if (nsub > 4096) nsub = 4096;
+    for (int m = 0; m < nsub; ++m) {
+        double za = z0 + (z1 - z0) * ((double)m / nsub);
+        double zb = z0 + (z1 - z0) * ((double)(m + 1) / nsub);
+        double zm = 0.5 * (za + zb);
+        double ds = fabs(zb - za);
+        double r  = sqrt(p * p + zm * zm);
+        double mu = (r > 0.0) ? zm / r : 0.0;
+        double beta = r * inv_ct;
+        double q = (1.0 - mu * beta) / sqrt(1.0 - beta * beta);
+        double D = 1.0 / q;
+        double nucmf = q * nu_obs;
+        /* continuum (electron scatter + thermal bf/ff), NO binned line */
+        double chi_es = cmf_interp_nu_asc(cs->nu, &cs->chi_es[(size_t)s * NB], NB, nucmf);
+        double chi_ab = cmf_interp_nu_asc(cs->nu, &cs->chi_abs[(size_t)s * NB], NB, nucmf);
+        if (chi_es < 0.0) chi_es = 0.0;
+        if (chi_ab < 0.0) chi_ab = 0.0;
+        double chi_c = chi_es + chi_ab;
+        double Jv = cmf_interp_nu_asc(cs->nu, &cs->J[(size_t)s * NB], NB, nucmf);
+        double B  = cm_planck(nucmf, Te_s);
+        double S_c = (chi_c > 0.0) ? (chi_ab * B + chi_es * Jv) / chi_c : 0.0;
+        double alpha = q * chi_c;
+        double dtau  = alpha * ds; if (dtau < 0.0) dtau = 0.0;
+        double ex  = (dtau > 700.0) ? 0.0 : exp(-dtau);
+        double psi = (dtau > 1e-4) ? (1.0 - ex) : (dtau - 0.5 * dtau * dtau);
+        I = I * ex + (D * D * D) * S_c * psi;
+        /* line resonances crossed in [nlo,nhi] of this sub-step's comoving sweep */
+        double nu_a = cmf_q_at_z(p, za, inv_ct) * nu_obs;
+        double nu_b = cmf_q_at_z(p, zb, inv_ct) * nu_obs;
+        double nlo = (nu_a < nu_b) ? nu_a : nu_b;
+        double nhi = (nu_a < nu_b) ? nu_b : nu_a;
+        /* line_list_nu DESCENDING: first index with nu_l <= nhi */
+        int lo = 0, hi = NL;
+        while (lo < hi) {
+            int mid = (lo + hi) / 2;
+            if (opac->line_list_nu[mid] > nhi) lo = mid + 1; else hi = mid;
+        }
+        /* half-open (nlo, nhi]: a line on a sub-step boundary fires once (codex #3) */
+        for (int l = lo; l < NL && opac->line_list_nu[l] > nlo; ++l) {
+            double tauS = opac->tau_sobolev[(size_t)l * NS + s];
+            if (!(tauS > 1e-6)) continue;            /* skips NaN too (codex #6) */
+            /* Resonance-line source: scattering S_l=Jbar (CLEAN continuum mean
+             * intensity = diluted backlight, NOT thermal B which refills the
+             * line, NOR cs->J which is contaminated by the binned line — codex
+             * #1). Prefer the cont_only field opac->jbar_line (LUMINA_CMF_JINC_
+             * CONT); fall back to the local binned J. eps blends a thermal B
+             * share for collision-thermalised lines (default 0 = pure scatter). */
+            /* Resonance-scatter source = J_bar = the INCIDENT continuum field,
+             * i.e. the geometrically-DILUTED photospheric backlight W(r)*B(T_phot)
+             * — NOT the local cs->J, which is contaminated by the line's own
+             * trapped radiation (binned line traps in its bin -> J/B~0.64 vs the
+             * 0.5 clean continuum, self-refilling the trough). W(r) is the point-
+             * photosphere dilution. (LUMINA_CMF_OBS_SRCJ=1 reverts to cs->J.) */
+            double Jbar;
+            if (g_sob_srcj) {
+                Jbar = Jv;
+                if (opac->jbar_line) {
+                    double jl = opac->jbar_line[(size_t)l * NS + s];
+                    if (jl > 0.0 && isfinite(jl)) Jbar = jl;
+                }
+            } else {
+                double Wd = 0.5;
+                if (g_sob_rphot > 0.0 && r > g_sob_rphot) {
+                    double a = 1.0 - (g_sob_rphot * g_sob_rphot) / (r * r);
+                    Wd = 0.5 * (1.0 - sqrt(a > 0.0 ? a : 0.0));
+                }
+                Jbar = Wd * cm_planck(nucmf, g_sob_Tinner);
+            }
+            double Sl = (1.0 - g_sob_eps) * Jbar + g_sob_eps * B;
+            if (g_sob_diag && tauS > 1e4) {
+                static int nd = 0;
+                if (nd < 8) { nd++;
+                    printf("[SOB-SRC] s=%d nu_l=%.4e tauS=%.2e Jbar=%.4e B=%.4e "
+                           "Sl/B=%.4f jbar_set=%d\n", s, opac->line_list_nu[l],
+                           tauS, Jbar, B, (B>0?Sl/B:0.0), opac->jbar_line?1:0); }
+            }
+            double exl = (tauS > 700.0) ? 0.0 : exp(-tauS);
+            I = I * exl + (g_sob_noemit ? 0.0 : (D * D * D) * Sl) * (1.0 - exl);
+        }
+    }
+    return I;
+}
+
 /* Observer-frame emergent spectrum (gate LUMINA_CMF_OBSERVER_FRAME=1).
  *
  * Same tangent-ray geometry as cmfgen_write_spectrum, but a SEPARATE formal
@@ -911,11 +1026,27 @@ static double cmf_obs_march(double I, double p, double z0, double z1, int s,
  * (D=1/q), and the diffusive core emits D_core^3 * B(q_core*nu_obs, T_inner).
  * beta->0 reproduces the comoving cmfgen_write_spectrum. (codex 019eefe6) */
 int cmfgen_write_spectrum_obs(const CMFGENState *cs, const Geometry *geo,
-                              double T_inner, const char *path)
+                              double T_inner, const OpacityState *opac,
+                              const double *Te, const char *path)
 {
     int NS = cs->n_shells, NB = cs->n_bins, NR = cs->n_rays;
     double t_exp  = geo->time_explosion;
     double inv_ct = 1.0 / (CM_C * t_exp);
+    /* S4: line-resolved Sobolev line synthesis (default ON when line data is
+     * available). Replaces the defanged binned chi_line with full-tau_S
+     * resonance jumps. Set LUMINA_CMF_OBS_SOBOLEV=0 for the legacy binned path. */
+    int sob = (opac && opac->line_list_nu && opac->tau_sobolev && Te);
+    { const char *e = getenv("LUMINA_CMF_OBS_SOBOLEV");
+      if (e) sob = sob && atoi(e); }
+    { const char *e = getenv("LUMINA_CMF_LINE_SOB_EPS");
+      g_sob_eps = e ? atof(e) : 0.0;
+      if (g_sob_eps < 0.0) g_sob_eps = 0.0;
+      if (g_sob_eps > 1.0) g_sob_eps = 1.0; }
+    { const char *e = getenv("LUMINA_CMF_OBS_NOEMIT"); g_sob_noemit = e ? atoi(e) : 0; }
+    { const char *e = getenv("LUMINA_CMF_OBS_DIAG"); g_sob_diag = e ? atoi(e) : 0; }
+    { const char *e = getenv("LUMINA_CMF_OBS_SRCJ"); g_sob_srcj = e ? atoi(e) : 0; }
+    g_sob_rphot  = geo->r_inner[0];
+    g_sob_Tinner = T_inner;
 
     /* per-(shell,bin) source S = S_fixed + (chi_es/chi_tot) J for interpolation.
      * Interpolate chi_tot and S directly (not eta=chi*S then /chi) to avoid an
@@ -935,13 +1066,22 @@ int cmfgen_write_spectrum_obs(const CMFGENState *cs, const Geometry *geo,
             Sbin[idx] = cs->S_fixed[idx] + r * cs->J[idx];
         }
 
+    /* Dense observer disk-ray grid: a sharp line P-Cygni needs the iso-velocity
+     * annuli (mu*v(r) = const) resolved across the disk; the ~9-ray plasma grid
+     * (cs->p_ray) is far too coarse and clips the trough. Uniform in p (=equal
+     * area weight p dp). Continuum is unaffected (smooth). LUMINA_CMF_OBS_NRAY. */
+    int NRO = 256; { const char *e = getenv("LUMINA_CMF_OBS_NRAY"); if (e) NRO = atoi(e); }
+    double r_max_obs = geo->r_outer[NS - 1];
+    double *p_obs = malloc(sizeof(double) * NRO);
+    for (int kk = 0; kk < NRO; ++kk) p_obs[kk] = r_max_obs * (kk + 0.5) / (double)NRO;
+
     /* per-observer-frequency formal solve */
     for (int k = 0; k < NB; ++k) {
         double nu_obs = cs->nu[k];
         double integ = 0.0, p_prev = 0.0, f_prev = 0.0;
 
-        for (int ray = 0; ray < NR; ++ray) {
-            double p = cs->p_ray[ray];
+        for (int ray = 0; ray < NRO; ++ray) {
+            double p = p_obs[ray];
             /* intersected shells, outer -> inner (descending r) */
             int    sh[256]; double rmid[256]; int nshell = 0;
             for (int s = NS - 1; s >= 0 && nshell < 256; --s) {
@@ -971,11 +1111,22 @@ int cmfgen_write_spectrum_obs(const CMFGENState *cs, const Geometry *geo,
 
             /* ---- inbound (far side, z<0): outer -> inner, z increasing ---- */
             for (int i = 0; i < nshell; ++i) {
-                double z_hi = zabs[i];                       /* outer edge */
-                double z_lo = (i + 1 < nshell) ? zabs[i + 1]
-                            : (core ? z_core : 0.0);          /* inner edge */
-                I = cmf_obs_march(I, p, -z_hi, -z_lo, sh[i], cs->nu, cs->chi_tot,
-                                  Sbin, NB, nu_obs, inv_ct, cs->d_log_nu);
+                if (sob) {
+                    /* full shell radial extent [r_inner,r_outer] (NOT the midpoint
+                     * — the midpoint collapses the shell to half-thickness and
+                     * clips the high-z/high-blueshift resonance covering). */
+                    double ro = geo->r_outer[sh[i]], ri = geo->r_inner[sh[i]];
+                    double z_hi = (ro > p) ? sqrt(ro * ro - p * p) : 0.0;
+                    double z_lo = (ri > p) ? sqrt(ri * ri - p * p) : 0.0;
+                    I = cmf_obs_march_sob(I, p, -z_hi, -z_lo, sh[i], cs, opac,
+                                          Te[sh[i]], nu_obs, inv_ct);
+                } else {
+                    double z_hi = zabs[i];                       /* outer edge */
+                    double z_lo = (i + 1 < nshell) ? zabs[i + 1]
+                                : (core ? z_core : 0.0);          /* inner edge */
+                    I = cmf_obs_march(I, p, -z_hi, -z_lo, sh[i], cs->nu, cs->chi_tot,
+                                      Sbin, NB, nu_obs, inv_ct, cs->d_log_nu);
+                }
             }
 
             /* ---- diffusive core: D_core^3 * B(q_core*nu_obs, T_inner) ---- */
@@ -991,11 +1142,19 @@ int cmfgen_write_spectrum_obs(const CMFGENState *cs, const Geometry *geo,
 
             /* ---- outbound (near side, z>0): inner -> outer, z increasing ---- */
             for (int i = nshell - 1; i >= 0; --i) {
-                double z_hi = zabs[i];                       /* outer edge */
-                double z_lo = (i + 1 < nshell) ? zabs[i + 1]
-                            : (core ? z_core : 0.0);          /* inner edge */
-                I = cmf_obs_march(I, p, +z_lo, +z_hi, sh[i], cs->nu, cs->chi_tot,
-                                  Sbin, NB, nu_obs, inv_ct, cs->d_log_nu);
+                if (sob) {
+                    double ro = geo->r_outer[sh[i]], ri = geo->r_inner[sh[i]];
+                    double z_hi = (ro > p) ? sqrt(ro * ro - p * p) : 0.0;
+                    double z_lo = (ri > p) ? sqrt(ri * ri - p * p) : 0.0;
+                    I = cmf_obs_march_sob(I, p, +z_lo, +z_hi, sh[i], cs, opac,
+                                          Te[sh[i]], nu_obs, inv_ct);
+                } else {
+                    double z_hi = zabs[i];                       /* outer edge */
+                    double z_lo = (i + 1 < nshell) ? zabs[i + 1]
+                                : (core ? z_core : 0.0);          /* inner edge */
+                    I = cmf_obs_march(I, p, +z_lo, +z_hi, sh[i], cs->nu, cs->chi_tot,
+                                      Sbin, NB, nu_obs, inv_ct, cs->d_log_nu);
+                }
             }
 
             double f = I * p;
@@ -1006,7 +1165,7 @@ int cmfgen_write_spectrum_obs(const CMFGENState *cs, const Geometry *geo,
     }
 
     FILE *fp = fopen(path, "w");
-    if (!fp) { free(Sbin); free(Lnu);
+    if (!fp) { free(Sbin); free(Lnu); free(p_obs);
         fprintf(stderr, "[CMFGEN] cannot open %s\n", path); return -1; }
     fprintf(fp, "wavelength_angstrom,flux\n");
     for (int b = NB - 1; b >= 0; --b) {
@@ -1016,10 +1175,11 @@ int cmfgen_write_spectrum_obs(const CMFGENState *cs, const Geometry *geo,
         fprintf(fp, "%.6f,%.6e\n", lam_A, L_lam);
     }
     fclose(fp);
-    printf("Pure-CMFGEN OBSERVER-frame spectrum -> %s (%d bins, beta_in=%.4f)\n",
-           path, NB, geo->r_inner[0] * inv_ct);
+    printf("Pure-CMFGEN OBSERVER-frame spectrum -> %s (%d bins, beta_in=%.4f, "
+           "lines=%s)\n", path, NB, geo->r_inner[0] * inv_ct,
+           sob ? "SOBOLEV-resolved" : "binned");
 
-    free(Sbin); free(Lnu);
+    free(Sbin); free(Lnu); free(p_obs);
     return 0;
 }
 
@@ -1323,7 +1483,8 @@ int cmfgen_run(Geometry *geo, OpacityState *opac, BFOpacity *bf,
     const char *obs_env = getenv("LUMINA_CMF_OBSERVER_FRAME");
     int obs_frame = obs_env ? atoi(obs_env) : 1;
     if (obs_frame) {
-        cmfgen_write_spectrum_obs(&cs, geo, T_inner, "lumina_spectrum.csv");
+        cmfgen_write_spectrum_obs(&cs, geo, T_inner, opac, plasma->T_e,
+                                  "lumina_spectrum.csv");
         cmfgen_write_spectrum(&cs, geo, T_inner, "lumina_spectrum_comoving.csv");
     } else {
         cmfgen_write_spectrum(&cs, geo, T_inner, "lumina_spectrum.csv");

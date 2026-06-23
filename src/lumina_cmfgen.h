@@ -126,7 +126,8 @@ int  cmfgen_write_spectrum(const CMFGENState *cs, const Geometry *geo,
  * nu_obs formal solve with homologous Doppler mapping nu_cmf=gamma(1-mu*beta)*
  * nu_obs along each ray. beta->0 reproduces cmfgen_write_spectrum. */
 int  cmfgen_write_spectrum_obs(const CMFGENState *cs, const Geometry *geo,
-                               double T_inner, const char *path);
+                               double T_inner, const OpacityState *opac,
+                               const double *Te, const char *path);
 
 /* Top-level env-gated driver: replaces the MC iteration loop. Iterates
  * assemble -> formal-solve -> write J_nu -> RADEQ T_e -> plasma -> bf ->

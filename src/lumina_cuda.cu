@@ -3453,6 +3453,7 @@ int main(int argc, char *argv[]) {
                     int obs_frame = obs_env ? atoi(obs_env) : 1;
                     if (obs_frame) {
                         cmfgen_write_spectrum_obs(&cs, &geo, config.T_inner,
+                                                  &opacity, plasma.T_e,
                                                   "lumina_spectrum.csv");
                         cmfgen_write_spectrum(&cs, &geo, config.T_inner,
                                               "lumina_spectrum_comoving.csv");
