@@ -2974,6 +2974,7 @@ int main(int argc, char *argv[]) {
     MCConfig config;     /* Phase 6 - Step 8 */
     AtomicData atom_data; /* Task #072 */
     memset(&config, 0, sizeof(config)); /* Phase 6 - Step 8 */
+    opacity.jbar_line_det = NULL;  /* P7 Stage-II: deterministic line-resolved J_bar (producer fills it) */
 
     config.enable_full_relativity = false;       /* Phase 6 - Step 8 */
     config.disable_line_scattering = false;      /* Phase 6 - Step 8 */

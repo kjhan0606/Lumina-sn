@@ -134,6 +134,11 @@ typedef struct {
     double *jbar_line;                   /* [n_lines * n_shells] normalized J_bar at each line */
     int    *jbar_count;                  /* [n_lines * n_shells] resonance-crossing count (undersample guard) */
     int     use_jbar_line;               /* 1 = use jbar_line for internal-up (iter>=1); 0 = binned-J seed */
+    /* P7 Stage-II: DETERMINISTIC line-resolved J_bar_l = Int phi_l J_nu dnu from the
+     * fine-grid CMF solve (NOT the MC estimator above; the validated cure for the
+     * binned-J contrast-collapse, ladder gates 4c/5b). NULL until the producer fills
+     * it; consumed by the bb up-rate only when LUMINA_CMF_LINERES_JBAR=1. */
+    double *jbar_line_det;               /* [n_lines * n_shells] or NULL */
 } OpacityState;                          /* Phase 2 - Step 4 */
 
 /* Phase 2 - Step 4: MC Estimators — TARDIS RadfieldMCEstimators */

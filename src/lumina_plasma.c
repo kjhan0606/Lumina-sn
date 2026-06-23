@@ -1496,7 +1496,17 @@ void compute_transition_probabilities(AtomicData *atom, PlasmaState *plasma,
                         double nu_line = atom->line_nu[line_id];
                         if (use_j_nu) {
                             double J_line;
-                            if (opacity->use_jbar_line && opacity->jbar_line &&
+                            /* P7 Stage-II (LUMINA_CMF_LINERES_JBAR=1): the DETERMINISTIC
+                             * fine-grid line-resolved J_bar_l — the validated cure for the
+                             * binned-J contrast collapse (ladder 4c/5b). Preferred over the
+                             * MC estimator (sparse in UV) and the binned read. NULL/off =>
+                             * fall through to the legacy paths (byte-identical baseline). */
+                            static int lineres_jbar = -1;
+                            if (lineres_jbar < 0) { const char *e = getenv("LUMINA_CMF_LINERES_JBAR");
+                                lineres_jbar = (e && atoi(e)) ? 1 : 0; }
+                            if (lineres_jbar && opacity->jbar_line_det) {
+                                J_line = opacity->jbar_line_det[line_id * n_shells + s];
+                            } else if (opacity->use_jbar_line && opacity->jbar_line &&
                                 opacity->jbar_count[line_id * n_shells + s] >= 10) {
                                 J_line = opacity->jbar_line[line_id * n_shells + s];
                             } else {
@@ -2326,10 +2336,29 @@ void compute_plasma_state(AtomicData *atom, PlasmaState *plasma,
     printf("  [Plasma] Computing partition functions...\n");
     compute_partition_functions(atom, plasma, n_shells);
 
-    printf("  [Plasma] Computing electron density (iterative)...\n");
-    compute_electron_density(atom, plasma, n_shells);
-    printf("    n_e[0]=%.4e, n_e[%d]=%.4e\n",
-           plasma->n_electron[0], n_shells - 1, plasma->n_electron[n_shells - 1]);
+    /* TOY DIAGNOSTIC (LUMINA_FIXED_NE_PROFILE=<file>): impose per-shell n_e and SKIP the
+     * iterative electron-density solve, so toy models fix the thermodynamic state (T_e+n_e)
+     * as INPUT and isolate the line/NLTE/fluorescence physics. File rows = "shell_id n_e". */
+    static int fne_init = 0, fne_on = 0, fne_n = 0; static double *fne = NULL;
+    if (!fne_init) { fne_init = 1;
+        const char *fp = getenv("LUMINA_FIXED_NE_PROFILE");
+        if (fp && *fp) { FILE *f = fopen(fp, "r");
+            if (f) { fne = (double*)calloc(n_shells, sizeof(double)); char ln[256];
+                while (fgets(ln, sizeof(ln), f)) { if (ln[0]=='#') continue; int s; double v;
+                    if (sscanf(ln, "%d %lf", &s, &v)==2 && s>=0 && s<n_shells) { fne[s]=v; fne_n++; } }
+                fclose(f); fne_on = (fne_n == n_shells);
+                printf("  [fixed-ne] %s: %d/%d shells -> %s\n", fp, fne_n, n_shells,
+                       fne_on ? "ACTIVE (n_e solve skipped)" : "INCOMPLETE, ignored"); }
+            else printf("  [fixed-ne] could not open %s\n", fp); } }
+    if (fne_on) {
+        for (int s = 0; s < n_shells; s++) plasma->n_electron[s] = fne[s];
+        printf("  [Plasma] electron density IMPOSED (fixed-ne): n_e[0]=%.4e\n", plasma->n_electron[0]);
+    } else {
+        printf("  [Plasma] Computing electron density (iterative)...\n");
+        compute_electron_density(atom, plasma, n_shells);
+        printf("    n_e[0]=%.4e, n_e[%d]=%.4e\n",
+               plasma->n_electron[0], n_shells - 1, plasma->n_electron[n_shells - 1]);
+    }
 
     printf("  [Plasma] Computing ion populations...\n");
     compute_ion_populations(atom, plasma, n_shells);
@@ -3985,6 +4014,21 @@ void compute_radiative_equilibrium_te(PlasmaState *plasma, GammaDeposition *gamm
                                       NLTEConfig *nlte, AtomicData *atom,
                                       OpacityState *opacity,
                                       double time_explosion, int n_shells) {
+    /* TOY DIAGNOSTIC (LUMINA_FIXED_TE_PROFILE=<file>): impose a chosen per-shell T_e and
+     * SKIP the RADEQ solve, so controlled toy models isolate the line/transport physics
+     * from the (fragile) T_e solution. File rows = "shell_id T_e". Mirrors FIXED_TRAD. */
+    static int fte_init = 0, fte_on = 0, fte_n = 0; static double *fte_T = NULL;
+    if (!fte_init) { fte_init = 1;
+        const char *fp = getenv("LUMINA_FIXED_TE_PROFILE");
+        if (fp && *fp) { FILE *f = fopen(fp, "r");
+            if (f) { fte_T = (double*)calloc(n_shells, sizeof(double)); char ln[256];
+                while (fgets(ln, sizeof(ln), f)) { if (ln[0]=='#') continue; int s; double T;
+                    if (sscanf(ln, "%d %lf", &s, &T)==2 && s>=0 && s<n_shells) { fte_T[s]=T; fte_n++; } }
+                fclose(f); fte_on = (fte_n == n_shells);
+                printf("  [fixed-Te] %s: %d/%d shells -> %s\n", fp, fte_n, n_shells,
+                       fte_on ? "ACTIVE (RADEQ skipped)" : "INCOMPLETE, ignored"); }
+            else printf("  [fixed-Te] could not open %s\n", fp); } }
+    if (fte_on) { for (int i = 0; i < n_shells; i++) plasma->T_e[i] = fte_T[i]; return; }
     if (nlte == NULL || nlte->nlte_level_populations == NULL ||
         nlte->J_nu == NULL) {
         /* No lagged NLTE state yet (pre-NLTE iters) → ratio fallback. */
@@ -6545,6 +6589,29 @@ void nlte_normalize_j_nu(NLTEConfig *nlte, double time_simulation,
             }
         }
     }
+    /* Gate M0 (LUMINA_MC_JDUMP=1): dump the MC binned J_nu per (shell,bin) so it
+     * can be cross-checked against the deterministic pure-CMFGEN J (LUMINA_CMFGEN_
+     * JDUMP -> lumina_cmfgen_jnu.csv). Same grid/units. Agreement in continuum bins
+     * validates that the MC reproduces pure-CMFGEN (the independent-method anchor);
+     * divergence in line bins measures the binned-Sobolev resolution error. */
+    {
+        const char *md = getenv("LUMINA_MC_JDUMP");
+        if (md && atoi(md)) {
+            FILE *mf = fopen("lumina_mc_jnu.csv", "w");
+            if (mf) {
+                fprintf(mf, "shell,bin,nu,J_mc\n");
+                for (int s = 0; s < n_shells; ++s)
+                    for (int b = 0; b < nlte->n_freq_bins; ++b) {
+                        double nu = exp(log(nlte->nu_min) + (b + 0.5) * nlte->d_log_nu);
+                        fprintf(mf, "%d,%d,%.6e,%.6e\n", s, b, nu,
+                                nlte->J_nu[(size_t)s * nlte->n_freq_bins + b]);
+                    }
+                fclose(mf);
+                printf("[MC-JDUMP] wrote lumina_mc_jnu.csv (%d shells x %d bins)\n",
+                       n_shells, nlte->n_freq_bins);
+            }
+        }
+    }
 }
 
 /* Cap super-Planckian J_nu in UV (λ < lambda_max) at W_cap * B_nu(T_rad).
@@ -6803,10 +6870,10 @@ void nlte_assemble_rate_matrix(NLTEConfig *nlte, AtomicData *atom,
      * via the packet crossings, so the rates use NO extra beta (codex form
      * R_lu=B_lu*Jbar, R_ul=A_ul+B_ul*Jbar). Undersampled lines fall back to the
      * binned J. */
-    static int jbar_pops_init = 0, jbar_pops_on = 0;
+    static int jbar_pops_init = 0, jbar_pops_mode = 0;
     if (!jbar_pops_init) {
         const char *e = getenv("LUMINA_NLTE_JBAR_POPS");
-        jbar_pops_on = (e && atoi(e) != 0);
+        jbar_pops_mode = e ? atoi(e) : 0;  /* 0 off; 1 naive(SEALED); 2 differenced(SEALED); 3 β·J_inc faithful Sobolev */
         jbar_pops_init = 1;
     }
 
@@ -6842,36 +6909,104 @@ void nlte_assemble_rate_matrix(NLTEConfig *nlte, AtomicData *atom,
         if (i_lo < 0 || i_lo >= N || i_up < 0 || i_up >= N) continue;
 
         double nu_line = atom->line_nu[line];
-        double J_jbar = (jbar_pops_on && opacity->jbar_line && opacity->jbar_count &&
-                         opacity->jbar_count[(size_t)line * n_shells + shell] >= 10)
+        /* Mode 2 forms a differenced estimator bJext=J_bar-(1-beta)S_l (two large
+         * near-equal numbers for thick lines), so it needs more crossings than the
+         * raw mode-1/branching consumer to keep MC noise from biasing the clamped
+         * pump positive (codex 9th-strike flag). */
+        int jbar_min = (jbar_pops_mode == 2) ? 50 : 10;
+        double J_jbar = (jbar_pops_mode && opacity->jbar_line && opacity->jbar_count &&
+                         opacity->jbar_count[(size_t)line * n_shells + shell] >= jbar_min)
                         ? opacity->jbar_line[(size_t)line * n_shells + shell] : -1.0;
+        /* FALSIFIER (LUMINA_JBAR_SRC_BINNED=1, codex 2026-06-22): the sealed mode-3
+         * explosion (S_l/B=3.34e71, 167752) is hypothesized to be the CONTAMINATED MC
+         * jbar_line (residence/trapped-packet over-count ~1e85 in thick cells), NOT the
+         * rate form. Swap the MC source for the BOUNDED binned continuum J at the line:
+         * if the explosion vanishes, the mode-3 algebra is correct and the MC input was
+         * the sole failure => gate 5 = keep mode-3, feed deterministic Sobolev J_inc. */
+        static int jbar_src_binned = -1;
+        if (jbar_src_binned < 0) { const char *e = getenv("LUMINA_JBAR_SRC_BINNED");
+            jbar_src_binned = (e && atoi(e)) ? 1 : 0; }
+        if (jbar_src_binned && jbar_pops_mode)
+            J_jbar = nlte_get_J_at_nu(nlte, shell, nu_line);   /* bounded, no MC over-count */
         int use_jbar = (J_jbar > 0.0 && isfinite(J_jbar));  /* guard MC outliers/NaN */
-        double J_line = use_jbar ? J_jbar
-                                 : nlte_get_J_at_nu(nlte, shell, nu_line);
 
         /* MALI (LUMINA_MALI=1): multiply the bound-bound radiative rates by the
          * Sobolev escape probability β_esc(τ). For a thick line (β→0) the
          * radiative coupling vanishes and the detailed-balanced collisional pair
          * (C_up/C_down) sets n_u/n_l → Boltzmann → S_l→B(T_e) (thermalized); thin
          * lines (β→1) are unchanged. β cancels in the Einstein ratios so detailed
-         * balance is preserved. This is the Sobolev local-Λ; the (1−β)S_l trapped
-         * term cancels analytically, so the rate uses the ambient binned J. Fixes
-         * the super-thermal level pops at the root (the bb rate matrix), NOT the
-         * downstream S_l consumption (the 7 sealed ε-consumption strikes). */
+         * balance is preserved. */
         double mali_beta = 1.0;
         if (mali_on) {
             double tau_l = opacity->tau_sobolev
                 ? opacity->tau_sobolev[(size_t)line * n_shells + shell] : 0.0;
             mali_beta = radeq_beta_esc(tau_l);
         }
-        /* Stage A: the realized J_bar_l already carries the trapped (1-beta)S_l
-         * via packet crossings, so its rates take NO extra beta (full codex form
-         * R_lu=B_lu*Jbar, R_ul=A_ul+B_ul*Jbar). The binned-J fallback keeps the
-         * MALI beta_esc thermalization. */
-        double beta_use = use_jbar ? 1.0 : mali_beta;
-        double R_absorb = atom->line_B_lu[line] * J_line * beta_use;
-        double R_stim   = atom->line_B_ul[line] * J_line * beta_use;
-        double R_spont  = atom->line_A_ul[line] * beta_use;
+
+        /* effective line field (for the budget diagnostic + the mode-1/binned path) */
+        double J_line = use_jbar ? J_jbar : nlte_get_J_at_nu(nlte, shell, nu_line);
+        double R_absorb, R_stim, R_spont;
+        if (use_jbar && jbar_pops_mode == 3) {
+            /* Stage A v3 — faithful Sobolev/MALI with the INCIDENT field.
+             * KEY (verified, 2026-06-21): the Lucy j_blue estimator jbar_line is
+             * the incident mean intensity J_inc at the line frequency, NOT the
+             * full trapped J_bar. Because the comoving frequency redshifts
+             * monotonically (homologous expansion), a packet crosses each line at
+             * most once and a packet emitted BY this line can never re-cross it
+             * (in any shell) — so the estimator STRUCTURALLY excludes this line's
+             * self-emission and carries only continuum + bluer-line (cross-line /
+             * forest-overlap) photons = the genuine external UV pump. The exact
+             * Sobolev two-level net rate is
+             *     net = β[n_l B_lu J_inc − n_u(A_ul + B_ul J_inc)],
+             * the trapped (1−β)S_l self-term cancelling analytically (the MALI
+             * identity). So we apply the escape factor β DIRECTLY to the
+             * incident-field pump. This self-limits at thick lines (β→0 ⇒
+             * pump→0), fixing the sealed mode-1/2 runaway — whose real bug was
+             * the MISSING β: mode 2's bJext=J_jbar−(1−β)S_lag ≈ J_jbar at thick
+             * lines (the subtraction is negligible when J_inc≫S_lag) and it was
+             * fed with NO escape factor → R_absorb=B_lu·J_inc → 167719/167720
+             * 4.5e70. Here β·J_inc keeps the UV pump at the τ~0.5−3 feature
+             * layers (β~0.6, F-ρ: 84% of 4475 Fe lines pump-survive) so the
+             * populations FLUORESCE, while thick lines thermalize (β→0). */
+            double tau_l = opacity->tau_sobolev
+                ? opacity->tau_sobolev[(size_t)line * n_shells + shell] : 0.0;
+            double beta = radeq_beta_esc(tau_l);
+            R_absorb = atom->line_B_lu[line] * beta * J_jbar;
+            R_stim   = atom->line_B_ul[line] * beta * J_jbar;
+            R_spont  = atom->line_A_ul[line] * beta;
+        } else if (use_jbar && jbar_pops_mode == 2) {
+            /* Stage A v2 — Λ*-preconditioned / faithful Sobolev-MALI with the
+             * REALIZED external field. The MC estimator carries the FULL line
+             * field J_bar = (1−β)S_l + β·J_ext. The sealed mode 1 fed it whole
+             * (no escape factor) so the trapped (1−β)S_l self-term pumped n_up
+             * with no damping → the 167719 runaway (S_l/B=4.5e70). Remove the
+             * self-trap to recover the external UV pump  β·J_ext = J_bar −
+             * (1−β)S_l_lagged, and keep the escape factor on spontaneous decay.
+             * Net rate = β[n_l B_lu J_ext − n_u(A_ul + B_ul J_ext)] = the exact
+             * Sobolev/MALI form, but J_ext is the line-resolved realized UV (not
+             * the thermal binned J), so the populations FLUORESCE. Stable because
+             * the β·A_ul down-channel self-limits the pump (F-ρ: β·A_ul>C_down at
+             * the τ~0.5−3 feature-forming layers, 84% of 4475 Fe lines). */
+            double tau_l = opacity->tau_sobolev
+                ? opacity->tau_sobolev[(size_t)line * n_shells + shell] : 0.0;
+            double beta = radeq_beta_esc(tau_l);
+            double S_lag = opacity->line_source_S
+                ? opacity->line_source_S[(size_t)line * n_shells + shell] : 0.0;
+            double bJext = J_jbar - (1.0 - beta) * S_lag;   /* = β·J_ext */
+            if (!(bJext > 0.0)) bJext = 0.0;                /* clamp noise/oversub */
+            R_absorb = atom->line_B_lu[line] * bJext;
+            R_stim   = atom->line_B_ul[line] * bJext;
+            R_spont  = atom->line_A_ul[line] * beta;
+        } else {
+            /* mode 1 (naive, SEALED → explodes; kept only for A/B) uses the full
+             * J_bar with no escape factor; the binned-J path keeps MALI β. */
+            double J_line = use_jbar ? J_jbar
+                                     : nlte_get_J_at_nu(nlte, shell, nu_line);
+            double beta_use = use_jbar ? 1.0 : mali_beta;
+            R_absorb = atom->line_B_lu[line] * J_line * beta_use;
+            R_stim   = atom->line_B_ul[line] * J_line * beta_use;
+            R_spont  = atom->line_A_ul[line] * beta_use;
+        }
 
         double dE = fabs(atom->level_energy_eV[upper_global] -
                          atom->level_energy_eV[lower_global]) * EV_TO_ERG;
