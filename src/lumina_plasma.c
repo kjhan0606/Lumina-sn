@@ -7780,6 +7780,55 @@ void nlte_assemble_rate_matrix(NLTEConfig *nlte, AtomicData *atom,
         }
     }
 
+    /* ===== b_k-SPACE PARTIAL-LTE conditioning fix (LUMINA_NLTE_BK_PARTIAL=1) =====
+     * ROOT (verified): at cold Te the raw-population rate matrix spans ~77 orders
+     * (Boltzmann e^{-E/kTe}, E to 35 eV, kTe~0.2 eV) >> double precision -> cond~1e15 ->
+     * getrf garbage -> Boltzmann@T_rad fallback -> super-thermal S_l. FIX: solve in
+     * departure-coefficient space n=n* b (n*=LTE Boltzmann). Similarity transform
+     * M_ij = A_ij n*_j/n*_i scales the Boltzmann factor OUT (rates are DB-correct so
+     * M=O(rates)); pin negligible levels (n_star/n_star_ground < thr) to b_k=1.
+     * Offline-verified on the real O II matrix: cond 1.6e15 -> 4e3, all b_k=1 at J=B.
+     * The conservation rows below are written in b_k form (sum n*_j b_j = n_total).
+     * cuda.cu back-converts n_i = b_i * n*_i after the solve. Gated/off => byte-identical. */
+    static int bk_partial = -1;
+    if (bk_partial < 0) { const char *e = getenv("LUMINA_NLTE_BK_PARTIAL");
+        bk_partial = (e && atoi(e)) ? 1 : 0; }
+    double *bk_nstar = NULL;
+    if (bk_partial && N > 0) {
+        bk_nstar = (double*)malloc((size_t)N * sizeof(double));
+        double kTe = K_BOLTZMANN * (T_e > 0.0 ? T_e : 1.0);
+        int gl = nlte->super_anchor_global[super_start];
+        double E0_lo = (gl >= 0) ? atom->level_energy_eV[gl] * EV_TO_ERG : 0.0;
+        int gh = (n_lo_super < N) ? nlte->super_anchor_global[super_start + n_lo_super] : gl;
+        double E0_hi = (gh >= 0) ? atom->level_energy_eV[gh] * EV_TO_ERG : E0_lo;
+        for (int i = 0; i < N; i++) {
+            int ga = nlte->super_anchor_global[super_start + i];
+            if (ga < 0) { bk_nstar[i] = 1.0; continue; }
+            double Ei = atom->level_energy_eV[ga] * EV_TO_ERG;
+            int gi = atom->level_g[ga];
+            double E0 = (i < n_lo_super) ? E0_lo : E0_hi;
+            double v = (double)(gi > 0 ? gi : 1) * exp(-(Ei - E0) / kTe);
+            bk_nstar[i] = (v > 1e-300) ? v : 1e-300;
+        }
+        /* similarity transform of the assembled RATE rows (conservation set fresh below) */
+        for (int i = 0; i < N; i++) {
+            double inv_ni = 1.0 / bk_nstar[i];
+            for (int j = 0; j < N; j++) ACM(i, j) *= bk_nstar[j] * inv_ni;
+            b[i] *= inv_ni;
+        }
+        /* PIN negligible levels (n_star/n_star_ground < 1e-10, E/kTe > ~23) to b_k = 1 (LTE) */
+        double ref_lo = bk_nstar[0];
+        double ref_hi = (n_lo_super < N) ? bk_nstar[n_lo_super] : bk_nstar[0];
+        for (int i = 0; i < N; i++) {
+            double ref = (i < n_lo_super) ? ref_lo : ref_hi;
+            if (ref > 0.0 && bk_nstar[i] / ref < 1e-10) {
+                for (int j = 0; j < N; j++) ACM(i, j) = 0.0;
+                ACM(i, i) = 1.0; b[i] = 1.0;
+            }
+        }
+    }
+    #define CONS_W(j) (bk_partial ? bk_nstar[(j)] : 1.0)
+
     if (ion_lock_mode && n_lo_super > 0 && n_lo_super < N) {
         double n_lo_total = 0.0;
         double n_hi_total = 0.0;
@@ -7793,8 +7842,8 @@ void nlte_assemble_rate_matrix(NLTEConfig *nlte, AtomicData *atom,
         int row_lo = alt_row_lo;
         int row_hi = alt_row_hi;
         for (int j = 0; j < N; j++) {
-            ACM(row_lo, j) = (j < n_lo_super) ? 1.0 : 0.0;
-            ACM(row_hi, j) = (j >= n_lo_super) ? 1.0 : 0.0;
+            ACM(row_lo, j) = (j < n_lo_super) ? CONS_W(j) : 0.0;
+            ACM(row_hi, j) = (j >= n_lo_super) ? CONS_W(j) : 0.0;
         }
         b[row_lo] = n_lo_total;
         b[row_hi] = n_hi_total;
@@ -7803,9 +7852,11 @@ void nlte_assemble_rate_matrix(NLTEConfig *nlte, AtomicData *atom,
                                                   ion_idx_lo, ion_idx_hi, shell);
         int row = bb_connected ? alt_row_hi : (N - 1);
         for (int j = 0; j < N; j++)
-            ACM(row, j) = 1.0;
+            ACM(row, j) = CONS_W(j);
         b[row] = n_total;
     }
+    #undef CONS_W
+    if (bk_nstar) free(bk_nstar);
 
     if (bb_connected) free(bb_connected);
 

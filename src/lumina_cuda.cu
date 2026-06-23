@@ -880,6 +880,32 @@ static void nlte_solve_all_gpu(NLTEConfig *nlte, AtomicData *atom,
                      * LUMINA_NLTE_ION_LOCK=1: per-ion rescale (Mihalas-Lucy)
                      * to break the Milne-T_e-vs-T_rad over-ionization trap. */
                     double *x = sol->h_rhs + (size_t)s * N;
+                    /* b_k-SPACE back-conversion (LUMINA_NLTE_BK_PARTIAL=1): the solve was
+                     * done in departure-coefficient space (well-conditioned), so x = b_k;
+                     * recover populations n_i = b_i * n*_i with the SAME n* the assembly
+                     * used (super-level anchor energy, per-ion ground, local Te). */
+                    {
+                        static int bk_partial = -1;
+                        if (bk_partial < 0) { const char *e = getenv("LUMINA_NLTE_BK_PARTIAL");
+                            bk_partial = (e && atoi(e)) ? 1 : 0; }
+                        if (bk_partial) {
+                            double T_e_s = plasma->T_e ? plasma->T_e[s] : plasma->T_rad[s];
+                            double kTe = K_BOLTZMANN * (T_e_s > 0.0 ? T_e_s : 1.0);
+                            int gl = nlte->super_anchor_global[super_start];
+                            double E0_lo = (gl >= 0) ? atom->level_energy_eV[gl] * EV_TO_ERG : 0.0;
+                            int gh = (n_lo_super < N) ? nlte->super_anchor_global[super_start + n_lo_super] : gl;
+                            double E0_hi = (gh >= 0) ? atom->level_energy_eV[gh] * EV_TO_ERG : E0_lo;
+                            for (int i = 0; i < N; i++) {
+                                int ga = nlte->super_anchor_global[super_start + i];
+                                if (ga < 0) continue;
+                                double Ei = atom->level_energy_eV[ga] * EV_TO_ERG;
+                                int gi = atom->level_g[ga];
+                                double E0 = (i < n_lo_super) ? E0_lo : E0_hi;
+                                double ns = (double)(gi > 0 ? gi : 1) * exp(-(Ei - E0) / kTe);
+                                if (ns > 1e-300) x[i] *= ns;
+                            }
+                        }
+                    }
                     int Z_nl = nlte->nlte_Z[lo];
                     int gpu_lock_mode = nlte_ion_lock_active(nlte->current_iter) ||
                                          nlte_per_ion_rescale_active() ||
