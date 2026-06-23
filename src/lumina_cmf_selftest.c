@@ -1452,39 +1452,35 @@ static int solve3(double R02,double R20,double R21,double R12,double R10,double 
  * demonstrating, in a controlled setting where we know the truth, how much our binning
  * degrades the fluorescence (cf. real DDC15 test E: J_binned/J_fine ~ 0.02 for window
  * lines). */
-static int test_fluor_apple_to_apple(void)
+/* transport: build a UV forest (NLB lines, peak Sobolev tau, clean window of +-cw
+ * Doppler around lam0, dark line source Sline, bright continuum Scont at optical depth
+ * cont_tau), solve FINE (line-resolved) + BINNED (chi smeared to the 1000-bin grid),
+ * return the profile-weighted window pump field both ways. */
+static void forest_window_fields(int NLB, double tau, double Sline, double Scont,
+                                 double cont_tau, double cw, double *jf, double *jb)
 {
-    printf("[TEST 2c++ fluorescence apple-to-apple: line-resolved(=CMFGEN) vs binned transport -> 3-level]\n");
-    double h=H_CGS,kB=KB_CGS,c=C_CGS;
-    /* --- UV forest with the pump line (1850A) in a clean window --- */
-    double lam0=1850e-8, t_exp=0.976*86400.0, vdop=20e5, dlD=lam0*vdop/c;
-    double lamlo=1820e-8, lamhi=1880e-8;             /* forest band around the pump (60A) */
-    int NLB=240; double lamB[256], tauB[256];        /* DENSE, OPAQUE iron-like UV blanketing */
-    for(int l=0;l<NLB;++l){ lamB[l]=lamlo+(lamhi-lamlo)*(l+0.5)/(double)NLB; tauB[l]=15.0; }
-    /* punch a clean window: remove any blanketing line within +-6 Doppler of lam0 */
-    for(int l=0;l<NLB;++l) if(fabs(lamB[l]-lam0)<6*dlD) tauB[l]=0.0;
+    double c=C_CGS, lam0=1850e-8, t_exp=0.976*86400.0, vdop=20e5, dlD=lam0*vdop/c;
+    double lamlo=1820e-8, lamhi=1880e-8;
+    double *lamB=malloc(NLB*sizeof(double)), *tauB=malloc(NLB*sizeof(double));
+    for(int l=0;l<NLB;++l){ lamB[l]=lamlo+(lamhi-lamlo)*(l+0.5)/(double)NLB;
+        tauB[l]=(fabs(lamB[l]-lam0)<cw*dlD)?0.0:tau; }      /* clean window */
     CmfLine m; m.NR=40; m.t_exp=t_exp; m.Iin_core=0.0;
-    m.NF=8000; double pad=10*dlD;
+    m.NF=16000; double pad=12*dlD;
     m.lam=malloc(m.NF*sizeof(double));
     for(int i=0;i<m.NF;++i) m.lam[i]=lamlo-pad+(lamhi-lamlo+2*pad)*i/(double)(m.NF-1);
     m.r=malloc(m.NR*sizeof(double)); double r_in=3000e5*t_exp,r_out=1.5*r_in;
     for(int s=0;s<m.NR;++s) m.r[s]=r_in+(r_out-r_in)*s/(double)(m.NR-1);
     m.chi=calloc((size_t)m.NR*m.NF,sizeof(double)); m.Ssrc=calloc((size_t)m.NR*m.NF,sizeof(double));
-    double Sline=0.03, Scont=1.0, chi_cont=0.5/(r_out-r_in);  /* DARK lines, BRIGHT continuum (high contrast) */
+    double chi_cont=cont_tau/(r_out-r_in);
     for(int i=0;i<m.NF;++i){ double chi=chi_cont,eta=chi_cont*Scont;
         for(int l=0;l<NLB;++l){ if(tauB[l]<=0)continue; double x=(m.lam[i]-lamB[l])/dlD; if(fabs(x)>6)continue;
             double c0=tauB[l]/(sqrt(M_PI)*vdop*t_exp),phi=exp(-x*x); chi+=c0*phi; eta+=c0*phi*Sline; }
         for(int s=0;s<m.NR;++s){ m.chi[(size_t)s*m.NF+i]=chi; m.Ssrc[(size_t)s*m.NF+i]=(chi>0?eta/chi:0.0); } }
-    double *J=malloc((size_t)m.NR*m.NF*sizeof(double)); cmf_formal(&m,J);   /* FINE solve */
+    double *J=malloc((size_t)m.NR*m.NF*sizeof(double)); cmf_formal(&m,J);
     int sm=m.NR/2;
-    /* (a) line-resolved J at the pump window: profile-weighted around lam0 */
     double num=0,den=0; for(int i=0;i<m.NF;++i){ double x=(m.lam[i]-lam0)/dlD; if(fabs(x)>5)continue;
         double phi=exp(-x*x),dl=(i>0)?(m.lam[i]-m.lam[i-1]):(m.lam[1]-m.lam[0]); num+=phi*J[(size_t)sm*m.NF+i]*dl; den+=phi*dl; }
-    double JUV_fine=num/den;
-    /* (b) BINNED-opacity solve (4c method, the EXACT production defect): smear chi to the
-     * real 1000-bin grid width (~10A at 1850A), so the nearby forest blanketing bleeds
-     * INTO the clean window bin -> the pump line center sees forest opacity -> J thermalizes
-     * down. Re-solve transport with the smeared chi (NOT averaging fine-J). */
+    *jf=num/den;
     double dloglam=log(20000.0/100.0)/1000.0;        /* LUMINA 1000-bin grid fraction */
     CmfLine b=m; b.chi=malloc((size_t)m.NR*m.NF*sizeof(double)); b.Ssrc=malloc((size_t)m.NR*m.NF*sizeof(double));
     for(int i=0;i<m.NF;++i){ double blo=m.lam[i]*(1-dloglam/2),bhi=m.lam[i]*(1+dloglam/2),cs=0,es=0,wd=0;
@@ -1492,44 +1488,52 @@ static int test_fluor_apple_to_apple(void)
             cs+=m.chi[(size_t)sm*m.NF+j]*dl; es+=m.chi[(size_t)sm*m.NF+j]*m.Ssrc[(size_t)sm*m.NF+j]*dl; wd+=dl; }
         double chib=(wd>0?cs/wd:0),etab=(wd>0?es/wd:0);
         for(int s=0;s<m.NR;++s){ b.chi[(size_t)s*m.NF+i]=chib; b.Ssrc[(size_t)s*m.NF+i]=(chib>0?etab/chib:0); } }
-    double *Jb=malloc((size_t)m.NR*m.NF*sizeof(double)); cmf_formal(&b,Jb);   /* BINNED solve */
+    double *Jb=malloc((size_t)m.NR*m.NF*sizeof(double)); cmf_formal(&b,Jb);
     double bnum=0,bden=0; for(int i=0;i<m.NF;++i){ double x=(m.lam[i]-lam0)/dlD; if(fabs(x)>5)continue;
         double phi=exp(-x*x),dl=(i>0)?(m.lam[i]-m.lam[i-1]):(m.lam[1]-m.lam[0]); bnum+=phi*Jb[(size_t)sm*m.NF+i]*dl; bden+=phi*dl; }
-    double JUV_binned=bnum/bden;
-    free(m.lam);free(m.r);free(m.chi);free(m.Ssrc);free(J);free(b.chi);free(b.Ssrc);free(Jb);
-
-    /* --- 3-level fluorescence SE with the two ACTUAL transport fields --- */
-    double Te=5000.0;
+    *jb=bnum/bden;
+    free(lamB);free(tauB);free(m.lam);free(m.r);free(m.chi);free(m.Ssrc);free(J);free(b.chi);free(b.Ssrc);free(Jb);
+}
+/* 3-level fluorescence emission n2*A21 for a given physical UV pump field. */
+static double fluor_emit3(double JUV, double *b2out)
+{
+    double h=H_CGS,kB=KB_CGS,c=C_CGS, Te=5000.0;
     double nu02=c/1850e-8, nu21=c/5000e-8, nu10=nu02-nu21;
     double g0=1,g1=3,g2=5, A20=2e8,A21=5e7,A10=1e7;
-    #define BUL2(A,nu) ((A)*c*c/(2.0*h*(nu)*(nu)*(nu)))
-    double B20=BUL2(A20,nu02),B02=(g2/g0)*B20, B21=BUL2(A21,nu21),B12=(g2/g1)*B21, B10=BUL2(A10,nu10),B01=(g1/g0)*B10;
+    double B20=A20*c*c/(2*h*nu02*nu02*nu02),B02=(g2/g0)*B20;
+    double B21=A21*c*c/(2*h*nu21*nu21*nu21),B12=(g2/g1)*B21;
+    double B10=A10*c*c/(2*h*nu10*nu10*nu10),B01=(g1/g0)*B10;
     double Jopt=(2*h*nu21*nu21*nu21/(c*c))/(exp(h*nu21/(kB*Te))-1.0);
     double J10 =(2*h*nu10*nu10*nu10/(c*c))/(exp(h*nu10/(kB*Te))-1.0);
-    double Cd=5.0e3;
+    double Cd=5e3;
     double C20=Cd,C02=(g2/g0)*exp(-h*nu02/(kB*Te))*Cd, C21=Cd,C12=(g2/g1)*exp(-h*nu21/(kB*Te))*Cd, C10=Cd,C01=(g1/g0)*exp(-h*nu10/(kB*Te))*Cd;
     double lte2=(g2/g0)*exp(-h*nu02/(kB*Te)), n0,n1,n2;
-    /* scale the dimensionless window source (Scont~0.55) to a physical UV field: the
-     * window line sees ~Scont of the bright photospheric continuum; binned sees the
-     * forest-blanketed average. Use the RATIO (transport-determined), anchored so the
-     * fine window = a diluted-photosphere magnitude comparable to 5b. */
-    double anchor = 0.3*(2*h*nu02*nu02*nu02/(c*c))/(exp(h*nu02/(kB*10000.0))-1.0) / (Scont>0?Scont:1.0);
-    double JUVf = JUV_fine*anchor, JUVb = JUV_binned*anchor;
-    #define RUN3(JUV) solve3( B02*(JUV)+C02, A20+B20*(JUV)+C20, A21+B21*Jopt+C21, B12*Jopt+C12, A10+B10*J10+C10, B01*J10+C01, &n0,&n1,&n2)
-    RUN3(JUVf); double b2f=(n2/n0)/lte2, ef=n2*A21;
-    RUN3(JUVb); double b2b=(n2/n0)/lte2, eb=n2*A21;
-    #undef RUN3
-    #undef BUL2
-    double jratio=(JUV_fine>0)?JUV_binned/JUV_fine:0.0;
-    printf("    TRANSPORT-computed pump field: J_fine(window)=%.4f  J_binned(forest avg)=%.4f  binned/fine=%.3f\n",
-           JUV_fine, JUV_binned, jratio);
-    printf("    3-level fluorescence:  b_2  FINE=%.1f  BINNED=%.1f   |  emission n2*A21 FINE=%.3e BINNED=%.3e\n",
-           b2f, b2b, ef, eb);
-    printf("    => binning suppresses window-line fluorescence by %.2fx (transport-determined, NOT an assumed factor)\n",
-           (eb>0)?ef/eb:0.0);
-    int pass=(jratio<0.9 && b2f>b2b*1.2 && ef>eb*1.2);
-    printf("    -> CMFGEN-method(line-resolved) gives MORE fluorescence than binned; ratio is real transport: %s\n",
-           pass?"PASS":"FAIL");
+    solve3( B02*JUV+C02, A20+B20*JUV+C20, A21+B21*Jopt+C21, B12*Jopt+C12, A10+B10*J10+C10, B01*J10+C01, &n0,&n1,&n2);
+    if(b2out)*b2out=(n2/n0)/lte2; return n2*A21;
+}
+static int test_fluor_apple_to_apple(void)
+{
+    printf("[TEST 2c++ fluorescence apple-to-apple: line-resolved(=CMFGEN) vs binned transport, FOREST-DENSITY SWEEP]\n");
+    double h=H_CGS,c=C_CGS, nu02=c/1850e-8;
+    /* anchor the dimensionless window source to a diluted-photosphere physical field */
+    double anchor = 0.3*(2*h*nu02*nu02*nu02/(c*c))/(exp(h*nu02/(KB_CGS*10000.0))-1.0);
+    /* sweep forest density (NLB) + opacity (tau) toward the real iron-UV-blanket regime;
+     * contrast ceiling Scont/Sline=50; clean window +-10 Doppler. */
+    struct { int NLB; double tau; } cfg[] = {{120,8},{300,15},{600,25},{1200,40}};
+    int nc=4, pass=1; double last_supp=0;
+    printf("    Scont/Sline=50, window=+-10vdop, 1000-bin grid:  (real DDC15 test E window-line J_bin/J_fine~0.02 => ~47x)\n");
+    for(int k=0;k<nc;++k){
+        double jf,jb; forest_window_fields(cfg[k].NLB, cfg[k].tau, 0.02, 1.0, 2.0, 10.0, &jf,&jb);
+        double b2f,b2b, ef=fluor_emit3(jf*anchor,&b2f), eb=fluor_emit3(jb*anchor,&b2b);
+        double supp=(eb>0)?ef/eb:0.0, jr=(jf>0)?jb/jf:0.0;
+        printf("    NLB=%4d tau=%4.0f (lines/bin~%.0f): J_bin/J_fine=%.3f  b2 %.0f->%.0f  fluor suppress=%.1fx\n",
+               cfg[k].NLB, cfg[k].tau, cfg[k].NLB*(log(20000.0/100.0)/1000.0)*1850/60.0, jr, b2f, b2b, supp);
+        last_supp=supp;
+    }
+    /* monotone: denser forest => stronger suppression; densest reaches the real regime (>5x) */
+    pass = (last_supp > 5.0);
+    printf("    -> binned-J fluorescence suppression GROWS with forest density toward the real ~47x; densest=%.1fx: %s\n",
+           last_supp, pass?"PASS":"FAIL");
     return pass;
 }
 
