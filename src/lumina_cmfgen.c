@@ -905,6 +905,9 @@ static double cmf_obs_march(double I, double p, double z0, double z1, int s,
 static double g_sob_eps = 0.0;
 static int    g_sob_noemit = 0;
 static int    g_sob_diag = 0;
+static int    g_sob_contonly = 0;
+static double g_sob_taumin = 1e-6;  /* min Sobolev tau for a line to fire (diag) */
+static int    g_pray_bin = -1;
 static double g_sob_rphot  = 0.0;   /* photosphere radius (r_inner[0]) for W(r) */
 static double g_sob_Tinner = 0.0;   /* photosphere T for the diluted backlight */
 static int    g_sob_srcj   = 0;     /* 1 = legacy cs->J source (contaminated) */
@@ -958,6 +961,7 @@ static double cmf_obs_march_sob(double I, double p, double z0, double z1, int s,
         double ex  = (dtau > 700.0) ? 0.0 : exp(-dtau);
         double psi = (dtau > 1e-4) ? (1.0 - ex) : (dtau - 0.5 * dtau * dtau);
         I = I * ex + (D * D * D) * S_c * psi;
+        if (g_sob_contonly) continue;   /* continuum-only diagnostic (no line jumps) */
         /* line resonances crossed in [nlo,nhi] of this sub-step's comoving sweep */
         double nu_a = cmf_q_at_z(p, za, inv_ct) * nu_obs;
         double nu_b = cmf_q_at_z(p, zb, inv_ct) * nu_obs;
@@ -972,7 +976,7 @@ static double cmf_obs_march_sob(double I, double p, double z0, double z1, int s,
         /* half-open (nlo, nhi]: a line on a sub-step boundary fires once (codex #3) */
         for (int l = lo; l < NL && opac->line_list_nu[l] > nlo; ++l) {
             double tauS = opac->tau_sobolev[(size_t)l * NS + s];
-            if (!(tauS > 1e-6)) continue;            /* skips NaN too (codex #6) */
+            if (!(tauS > g_sob_taumin)) continue;    /* skips NaN too (codex #6) */
             /* Resonance-line source: scattering S_l=Jbar (CLEAN continuum mean
              * intensity = diluted backlight, NOT thermal B which refills the
              * line, NOR cs->J which is contaminated by the binned line — codex
@@ -1045,8 +1049,24 @@ int cmfgen_write_spectrum_obs(const CMFGENState *cs, const Geometry *geo,
     { const char *e = getenv("LUMINA_CMF_OBS_NOEMIT"); g_sob_noemit = e ? atoi(e) : 0; }
     { const char *e = getenv("LUMINA_CMF_OBS_DIAG"); g_sob_diag = e ? atoi(e) : 0; }
     { const char *e = getenv("LUMINA_CMF_OBS_SRCJ"); g_sob_srcj = e ? atoi(e) : 0; }
+    { const char *e = getenv("LUMINA_CMF_OBS_CONTONLY"); g_sob_contonly = e ? atoi(e) : 0; }
+    { const char *e = getenv("LUMINA_CMF_OBS_TAUMIN"); g_sob_taumin = e ? atof(e) : 1e-6; }
+    g_pray_bin = -1;
+    { const char *e = getenv("LUMINA_CMF_OBS_PRAY_LAM");
+      if (e) { double tl = atof(e), best = 1e99;
+        for (int b = 0; b < NB; ++b) { double la = CM_C / cs->nu[b] * 1.0e8;
+          if (fabs(la - tl) < best) { best = fabs(la - tl); g_pray_bin = b; } } } }
     g_sob_rphot  = geo->r_inner[0];
     g_sob_Tinner = T_inner;
+    if (g_sob_diag && opac->tau_sobolev) {
+        for (int l = 0; l < opac->n_lines; ++l) {
+            double la = CM_C / opac->line_list_nu[l] * 1.0e8;
+            if (la > 7800.0 && la < 9300.0 &&
+                opac->tau_sobolev[(size_t)l * NS] > g_sob_taumin)
+                printf("[THICKLINE] rest=%.3fA tau=%.4e\n", la,
+                       opac->tau_sobolev[(size_t)l * NS]);
+        }
+    }
 
     /* per-(shell,bin) source S = S_fixed + (chi_es/chi_tot) J for interpolation.
      * Interpolate chi_tot and S directly (not eta=chi*S then /chi) to avoid an
@@ -1158,6 +1178,10 @@ int cmfgen_write_spectrum_obs(const CMFGENState *cs, const Geometry *geo,
             }
 
             double f = I * p;
+            if (g_pray_bin == k)
+                printf("[PRAY] lam=%.0f ray=%d p=%.4e core=%d I=%.5e\n",
+                       CM_C / cs->nu[k] * 1.0e8, ray, p,
+                       (p < geo->r_inner[0]) ? 1 : 0, I);
             integ += 0.5 * (f_prev + f) * (p - p_prev);
             p_prev = p; f_prev = f;
         }
