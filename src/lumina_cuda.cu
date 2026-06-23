@@ -3410,6 +3410,24 @@ int main(int argc, char *argv[]) {
                     if (cs.diag && it == pc_iter - 1)
                         cmfgen_validate(&cs, &geo, &plasma);
                     cmfgen_write_jnu(&cs, &nlte);
+                    /* P7 PRODUCER (LUMINA_CMF_LINERES_JBAR=1): fine-grid line-
+                     * resolved J_bar_l over the UV pump window. Fills
+                     * opacity.jbar_line_det before the downstream NLTE solve so
+                     * the bb up-rate reads it (plasma.c, sentinel -1 => fall back).
+                     * The binned cs above supplies the continuum; line_source_S
+                     * carries the lagged line source (5d lagged-J scheme). */
+                    {
+                        static int lineres_jbar = -1;
+                        if (lineres_jbar < 0) { const char *e = getenv("LUMINA_CMF_LINERES_JBAR");
+                            lineres_jbar = (e && atoi(e)) ? 1 : 0; }
+                        if (lineres_jbar && opacity.n_lines > 0 && opacity.tau_sobolev) {
+                            if (!opacity.jbar_line_det)
+                                opacity.jbar_line_det = (double*)malloc(
+                                    (size_t)opacity.n_lines * cs.n_shells * sizeof(double));
+                            if (opacity.jbar_line_det)
+                                cmfgen_fine_jbar(&cs, &geo, &opacity, config.T_inner, &plasma);
+                        }
+                    }
                     /* Option-2 integral RE: register the CMFGEN line opacity/
                      * source so the Newton T_e solve can add the radiative line
                      * term (LUMINA_RADEQ_LINE_RE=1). */

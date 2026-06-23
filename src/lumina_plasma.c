@@ -1504,7 +1504,10 @@ void compute_transition_probabilities(AtomicData *atom, PlasmaState *plasma,
                             static int lineres_jbar = -1;
                             if (lineres_jbar < 0) { const char *e = getenv("LUMINA_CMF_LINERES_JBAR");
                                 lineres_jbar = (e && atoi(e)) ? 1 : 0; }
-                            if (lineres_jbar && opacity->jbar_line_det) {
+                            if (lineres_jbar && opacity->jbar_line_det &&
+                                opacity->jbar_line_det[line_id * n_shells + s] >= 0.0) {
+                                /* fine-grid line-resolved J_bar (P7 producer); -1
+                                 * sentinel = line outside the fine window => fall back */
                                 J_line = opacity->jbar_line_det[line_id * n_shells + s];
                             } else if (opacity->use_jbar_line && opacity->jbar_line &&
                                 opacity->jbar_count[line_id * n_shells + s] >= 10) {

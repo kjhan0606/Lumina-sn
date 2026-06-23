@@ -1326,6 +1326,200 @@ static void cmf_solve_J(CMFGENState *cs, const Geometry *geo, double T_inner,
     free(Iin_p);free(Iout_p);free(Iin_c);free(Iout_c);free(muL);free(IpL);free(ImL);free(cnt);free(S);free(Jnew);
 }
 
+/* ===================================================================
+ * P7 PRODUCER: fine-grid line-resolved J_bar_l (gate II producer).
+ *
+ * Reuses the VALIDATED frequency-coupled kernel cmf_solve_J on a fine
+ * uniform-log frequency mesh spanning a wavelength window (default
+ * 1000-4000 A, the fluorescence pump region). Each line is deposited as a
+ * Gaussian profile with center opacity
+ *     chi0 = (1-e^{-tau_S}) / (sqrt(pi) * vdop * t_exp)
+ * so that  Int chi_line dnu = (1-e^{-tau_S}) * nu_l/(c t_exp), which ties
+ * back exactly to the binned expansion opacity (the I-2 deposition).
+ * Continuum (chi_es, chi_abs) is log-nu interpolated from the binned state.
+ * Lines carry their lagged source S_l (line_source_S, fallback B(nu_l,Te))
+ * in S_fixed; electron scattering is the ALI scattering channel (the outer
+ * NLTE loop re-derives S_l from the J_bar this produces -- the lagged-J
+ * scheme validated in gate 5d). After the solve, extracts per line
+ *     J_bar_l = Int phi_l J dnu / Int phi_l dnu
+ * into opac->jbar_line_det (sentinel -1 for lines outside the window, so
+ * the plasma bb-rate falls back). Standalone-validated: gates 3a/4b/4c/5*.
+ *
+ * Caller allocates opac->jbar_line_det[n_lines*n_shells]. The plasma
+ * bb-rate reads it under LUMINA_CMF_LINERES_JBAR. */
+void cmfgen_fine_jbar(CMFGENState *csb, const Geometry *geo,
+                      OpacityState *opac, double T_inner, PlasmaState *plasma)
+{
+    int NS = csb->n_shells, NL = opac->n_lines;
+    if (NL <= 0 || !opac->jbar_line_det) return;
+    double t_exp = geo->time_explosion;
+    int diag = 0; { const char *e=getenv("LUMINA_CMF_FINE_DIAG"); if(e) diag=atoi(e); }
+
+    /* --- window + resolution (env-tunable) --- */
+    double lam_lo = 1000.0, lam_hi = 4000.0;   /* Angstrom */
+    { const char *e=getenv("LUMINA_CMF_FINE_LAMLO"); if(e) lam_lo=atof(e); }
+    { const char *e=getenv("LUMINA_CMF_FINE_LAMHI"); if(e) lam_hi=atof(e); }
+    double vdop = 1.0e6;                        /* cm/s, Doppler width  */
+    { const char *e=getenv("LUMINA_CMF_FINE_VDOP"); if(e) vdop=atof(e); }
+    double ppd = 12.0;                          /* fine points / vdop   */
+    { const char *e=getenv("LUMINA_CMF_FINE_PPD"); if(e) ppd=atof(e); }
+    int n_ali = 24; { const char *e=getenv("LUMINA_CMF_FINE_ALI"); if(e) n_ali=atoi(e); }
+
+    double nu_lo = CM_C / (lam_hi * 1.0e-8);    /* red edge  = low nu   */
+    double nu_hi = CM_C / (lam_lo * 1.0e-8);    /* blue edge = high nu  */
+    double dlognu = (vdop / CM_C) / ppd;
+    int NF = (int)(log(nu_hi / nu_lo) / dlognu) + 1;
+    if (NF < 2) return;
+
+    /* default ALL lines to the sentinel (out-of-window fall back) */
+    for (size_t i = 0; i < (size_t)NL * NS; ++i) opac->jbar_line_det[i] = -1.0;
+
+    if (diag) fprintf(stderr,
+        "[cmf_fine] window %.0f-%.0f A  vdop=%.1f km/s ppd=%.0f  NF=%d (%.1fM cells)\n",
+        lam_lo, lam_hi, vdop/1e5, ppd, NF, (double)NF*NS/1e6);
+
+    /* --- fine state: only the fields cmf_solve_J reads, plus chi_line/dnu --- */
+    CMFGENState fs; memset(&fs, 0, sizeof fs);
+    fs.n_shells = NS; fs.n_bins = NF;
+    fs.nu_min = nu_lo; fs.nu_max = nu_hi; fs.d_log_nu = dlognu;
+    fs.nu       = malloc((size_t)NF * sizeof(double));
+    fs.dnu      = malloc((size_t)NF * sizeof(double));
+    fs.chi_es   = calloc((size_t)NS * NF, sizeof(double));
+    fs.chi_abs  = calloc((size_t)NS * NF, sizeof(double));
+    fs.chi_line = calloc((size_t)NS * NF, sizeof(double));
+    fs.chi_tot  = calloc((size_t)NS * NF, sizeof(double));
+    fs.S_fixed  = calloc((size_t)NS * NF, sizeof(double));
+    fs.J        = calloc((size_t)NS * NF, sizeof(double));
+    double *eta = calloc((size_t)NS * NF, sizeof(double));   /* line emissivity */
+    if (!fs.nu||!fs.dnu||!fs.chi_es||!fs.chi_abs||!fs.chi_line||!fs.chi_tot||
+        !fs.S_fixed||!fs.J||!eta) {
+        fprintf(stderr, "[cmf_fine] alloc failed (NF=%d NS=%d)\n", NF, NS);
+        free(fs.nu);free(fs.dnu);free(fs.chi_es);free(fs.chi_abs);free(fs.chi_line);
+        free(fs.chi_tot);free(fs.S_fixed);free(fs.J);free(eta); return;
+    }
+    for (int i = 0; i < NF; ++i) {
+        fs.nu[i]  = nu_lo * exp((i + 0.5) * dlognu);
+        fs.dnu[i] = fs.nu[i] * dlognu;
+    }
+
+    /* --- continuum: log-nu interpolate chi_es/chi_abs from the binned state --- */
+    for (int s = 0; s < NS; ++s) {
+        for (int i = 0; i < NF; ++i) {
+            double x = log(fs.nu[i] / csb->nu_min) / csb->d_log_nu - 0.5;
+            int b = (int)floor(x); double f = x - b;
+            if (b < 0) { b = 0; f = 0.0; }
+            if (b >= csb->n_bins - 1) { b = csb->n_bins - 2; f = 1.0; }
+            size_t ia = (size_t)s*csb->n_bins + b, ib = ia + 1;
+            fs.chi_es [(size_t)s*NF+i] = (1-f)*csb->chi_es [ia] + f*csb->chi_es [ib];
+            fs.chi_abs[(size_t)s*NF+i] = (1-f)*csb->chi_abs[ia] + f*csb->chi_abs[ib];
+        }
+    }
+
+    /* --- deposit line profiles (chi_line) + emissivity (eta) --- */
+    const double SQRTPI = 1.7724538509055160;
+    double chi0_pref = 1.0 / (SQRTPI * vdop * t_exp);   /* chi0 = (1-e^-tau)*pref */
+    int src_nlte = (opac->line_source_S != NULL);
+    long n_inwin = 0;
+    for (int l = 0; l < NL; ++l) {
+        double nu_l = opac->line_list_nu[l];
+        if (nu_l <= nu_lo || nu_l >= nu_hi) continue;
+        ++n_inwin;
+        double dnuD = nu_l * vdop / CM_C;
+        /* fine index of line center; deposit over +-4 Doppler widths */
+        double xc = log(nu_l / nu_lo) / dlognu - 0.5;
+        int half  = (int)ceil(4.0 * dnuD / (nu_l * dlognu)) + 1;
+        int ic = (int)floor(xc + 0.5);
+        int i0 = ic - half, i1 = ic + half;
+        if (i0 < 0) i0 = 0; if (i1 >= NF) i1 = NF - 1;
+        for (int s = 0; s < NS; ++s) {
+            double tau = opac->tau_sobolev[(size_t)l * NS + s];
+            if (tau <= 1e-12) continue;
+            double frac = (tau > 1e-6) ? -expm1(-tau) : tau;   /* 1-e^{-tau} */
+            double chi0 = frac * chi0_pref;
+            double Sl = src_nlte ? opac->line_source_S[(size_t)l*NS+s] : 0.0;
+            if (Sl <= 0.0) Sl = cm_planck(nu_l, plasma->T_e[s]);
+            for (int i = i0; i <= i1; ++i) {
+                double xv = (fs.nu[i] - nu_l) / dnuD;
+                double p  = exp(-xv * xv);                     /* chi0 already / (sqrt(pi) dnuD)-folded */
+                double cl = chi0 * p;
+                fs.chi_line[(size_t)s*NF+i] += cl;
+                eta        [(size_t)s*NF+i] += cl * Sl;
+            }
+        }
+    }
+
+    /* --- assemble chi_tot + S_fixed (lines emit their lagged source) --- */
+    for (int s = 0; s < NS; ++s) {
+        double Te = plasma->T_e[s];
+        for (int i = 0; i < NF; ++i) {
+            size_t idx = (size_t)s*NF+i;
+            double ct = fs.chi_es[idx] + fs.chi_abs[idx] + fs.chi_line[idx];
+            fs.chi_tot[idx] = ct;
+            double Bnu = cm_planck(fs.nu[i], Te);
+            fs.S_fixed[idx] = (ct > 0.0)
+                ? (fs.chi_abs[idx]*Bnu + eta[idx]) / ct : 0.0;
+            fs.J[idx] = Bnu;                              /* warm ALI start */
+        }
+    }
+
+    if (diag) {   /* tie-back: Int chi_line dnu vs Sobolev expectation (shell NS/2) */
+        int st = NS/2; double got=0.0, exp_=0.0;
+        for (int i = 0; i < NF; ++i) got += fs.chi_line[(size_t)st*NF+i]*fs.dnu[i];
+        for (int l = 0; l < NL; ++l) { double nu_l=opac->line_list_nu[l];
+            if (nu_l<=nu_lo||nu_l>=nu_hi) continue;
+            double tau=opac->tau_sobolev[(size_t)l*NS+st];
+            double frac=(tau>1e-6)?-expm1(-tau):(tau>0?tau:0);
+            exp_ += frac*nu_l/(CM_C*t_exp); }
+        fprintf(stderr,
+            "[cmf_fine] lines in window=%ld  tie-back shell %d: "
+            "Int chi_line dnu=%.4e  Sobolev expect=%.4e  ratio=%.4f\n",
+            n_inwin, st, got, exp_, (exp_>0)?got/exp_:0.0);
+    }
+
+    /* --- solve frequency-coupled J on the fine mesh (validated kernel) --- */
+    cmf_solve_J(&fs, geo, T_inner, n_ali);
+
+    /* --- extract J_bar_l = Int phi_l J dnu / Int phi_l dnu per line --- */
+    for (int l = 0; l < NL; ++l) {
+        double nu_l = opac->line_list_nu[l];
+        if (nu_l <= nu_lo || nu_l >= nu_hi) continue;
+        double dnuD = nu_l * vdop / CM_C;
+        double xc = log(nu_l / nu_lo) / dlognu - 0.5;
+        int half  = (int)ceil(4.0 * dnuD / (nu_l * dlognu)) + 1;
+        int ic = (int)floor(xc + 0.5);
+        int i0 = ic - half, i1 = ic + half;
+        if (i0 < 0) i0 = 0; if (i1 >= NF) i1 = NF - 1;
+        for (int s = 0; s < NS; ++s) {
+            double num = 0.0, den = 0.0;
+            for (int i = i0; i <= i1; ++i) {
+                double xv = (fs.nu[i] - nu_l) / dnuD;
+                double p  = exp(-xv * xv) * fs.dnu[i];
+                num += p * fs.J[(size_t)s*NF+i];
+                den += p;
+            }
+            opac->jbar_line_det[(size_t)l*NS+s] = (den > 0.0) ? num/den : -1.0;
+        }
+    }
+
+    if (diag) {   /* J_bar_l sanity vs local B(Te) at a mid shell */
+        int st = NS/2; double Te = plasma->T_e[st];
+        long nf=0; double jmin=1e300, jmax=-1e300, rsum=0.0; long rn2=0;
+        for (int l = 0; l < NL; ++l) {
+            double v = opac->jbar_line_det[(size_t)l*NS+st];
+            if (v < 0.0) continue;
+            ++nf; if (v<jmin) jmin=v; if (v>jmax) jmax=v;
+            double B = cm_planck(opac->line_list_nu[l], Te);
+            if (B>0) { rsum += v/B; ++rn2; }
+        }
+        fprintf(stderr, "[cmf_fine] shell %d Te=%.0f: filled=%ld  Jbar_l in "
+            "[%.3e,%.3e]  mean Jbar/B=%.3f\n", st, Te, nf, jmin, jmax,
+            (rn2>0)?rsum/rn2:0.0);
+    }
+
+    free(fs.nu);free(fs.dnu);free(fs.chi_es);free(fs.chi_abs);free(fs.chi_line);
+    free(fs.chi_tot);free(fs.S_fixed);free(fs.J);free(eta);
+}
+
 int cmfgen_run(Geometry *geo, OpacityState *opac, BFOpacity *bf,
                PlasmaState *plasma, NLTEConfig *nlte, AtomicData *atom,
                GammaDeposition *gamma, double T_inner, int n_iter)
@@ -1365,6 +1559,24 @@ int cmfgen_run(Geometry *geo, OpacityState *opac, BFOpacity *bf,
         if (cs.diag && iter == n_iter - 1)
             cmfgen_validate(&cs, geo, plasma);
         cmfgen_write_jnu(&cs, nlte);
+
+        /* P7 PRODUCER (LUMINA_CMF_LINERES_JBAR=1): fine-grid line-resolved J_bar_l
+         * over the UV pump window. Fills opac->jbar_line_det; the plasma bb-rate
+         * reads it (top priority, sentinel -1 => fall back). The binned cs above
+         * already supplied the smooth continuum that cmfgen_fine_jbar interpolates,
+         * and line_source_S carries the lagged line source (5d lagged-J scheme). */
+        {
+            static int lineres_jbar = -1;
+            if (lineres_jbar < 0) { const char *e = getenv("LUMINA_CMF_LINERES_JBAR");
+                lineres_jbar = (e && atoi(e)) ? 1 : 0; }
+            if (lineres_jbar && opac->n_lines > 0 && opac->tau_sobolev) {
+                if (!opac->jbar_line_det)
+                    opac->jbar_line_det = (double*)malloc(
+                        (size_t)opac->n_lines * cs.n_shells * sizeof(double));
+                if (opac->jbar_line_det)
+                    cmfgen_fine_jbar(&cs, geo, opac, T_inner, plasma);
+            }
+        }
 
         /* CORRECTED FALSIFIER (LUMINA_CMF_JINC_CONT=1, codex 2026-06-22): compute the
          * CLEAN external continuum field J_inc (cont_only solve, ALL line opacity zeroed

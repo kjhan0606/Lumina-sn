@@ -110,6 +110,13 @@ void cmfgen_solve_J(CMFGENState *cs, const Geometry *geo, double T_inner,
 /* Copy cs->J into nlte->J_nu (same [n_shells*n_bins] layout/grid). */
 void cmfgen_write_jnu(const CMFGENState *cs, NLTEConfig *nlte);
 
+/* P7 PRODUCER: fine-grid line-resolved J_bar_l over a wavelength window
+ * (default 1000-4000 A). Reuses cmf_solve_J on a fine Doppler-resolved mesh,
+ * fills opac->jbar_line_det[n_lines*n_shells] (sentinel -1 outside window).
+ * Env: LUMINA_CMF_FINE_{LAMLO,LAMHI,VDOP,PPD,ALI,DIAG}. */
+void cmfgen_fine_jbar(CMFGENState *csb, const Geometry *geo,
+                      OpacityState *opac, double T_inner, PlasmaState *plasma);
+
 /* Thick/thin-limit sanity print (J/B, J/S, radial tau) for chosen shells. */
 void cmfgen_validate(const CMFGENState *cs, const Geometry *geo,
                      const PlasmaState *plasma);
