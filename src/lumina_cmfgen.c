@@ -1534,6 +1534,35 @@ void cmfgen_fine_jbar(CMFGENState *csb, const Geometry *geo,
             med, p90, sl_hot, (sln>0)?100.0*sl_hot/sln:0.0);
     }
 
+    /* Codex test E (LUMINA_CMF_FINE_LINEDUMP=1): per in-window line at mid shell,
+     * dump J_fine (line-resolved jbar_line_det) vs J_binned (1000-bin csb->J at the
+     * line) vs S_l/B. If high S_l/B correlates with J_binned/J_fine >> 1, the
+     * super-thermal is a binned-J contrast-collapse ARTIFACT; if J_binned ~ J_fine,
+     * the fluorescence is robust physics independent of the binning. */
+    { const char *e = getenv("LUMINA_CMF_FINE_LINEDUMP");
+      if (e && atoi(e)) {
+        int st = NS/2; double Te = plasma->T_e[st];
+        FILE *df = fopen("cmf_fine_linedump.csv", "w");
+        if (df) {
+            fprintf(df, "lambda_A,nu,J_fine,J_binned,S_l,B,SoverB,Jbin_over_Jfine\n");
+            for (int l = 0; l < NL; ++l) {
+                double jf = opac->jbar_line_det[(size_t)l*NS+st];
+                if (jf < 0.0) continue;
+                double nu_l = opac->line_list_nu[l];
+                int b = (int)floor(log(nu_l/csb->nu_min)/csb->d_log_nu);
+                double jb = (b>=0 && b<csb->n_bins) ? csb->J[(size_t)st*csb->n_bins+b] : -1.0;
+                double B = cm_planck(nu_l, Te);
+                double Sl = opac->line_source_S ? opac->line_source_S[(size_t)l*NS+st] : 0.0;
+                fprintf(df, "%.3f,%.6e,%.6e,%.6e,%.6e,%.6e,%.4e,%.4e\n",
+                    CM_C/nu_l*1e8, nu_l, jf, jb, Sl, B,
+                    (B>0)?Sl/B:0.0, (jf>0&&jb>0)?jb/jf:0.0);
+            }
+            fclose(df);
+            fprintf(stderr, "[cmf_fine] LINEDUMP wrote cmf_fine_linedump.csv (shell %d)\n", st);
+        }
+      }
+    }
+
     free(fs.nu);free(fs.dnu);free(fs.chi_es);free(fs.chi_abs);free(fs.chi_line);
     free(fs.chi_tot);free(fs.S_fixed);free(fs.J);free(eta);
 }
