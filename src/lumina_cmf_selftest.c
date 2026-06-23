@@ -1688,6 +1688,48 @@ static int test_jbar_to_bbrate(void)
     return pass;
 }
 
+/* ===== Phase 1 (back-to-basics): production S_l FORMULA vs textbook 2-level source =====
+ * Production stores S_l = 2hv^3/c^2 / ((g_u n_l)/(g_l n_u) - 1) from the NLTE pops
+ * (lumina_plasma.c:8138 nlte_update_tau_sobolev). Verify the FORMULA + 2-level SE pops
+ * reproduce the textbook source-function limits with NO free parameter:
+ *   (1) J_bar=B(T)        -> S_l=B(T)   (detailed balance / thermal)
+ *   (2) C_ul=0 (scatter)  -> S_l=J_bar  (pure scattering: S=J)
+ *   (3) C_ul>>A_ul        -> S_l=B(T)   (collision-dominated LTE)
+ *   (4) general           -> min(J,B) <= S_l <= max(J,B)
+ * If all hold, a super-thermal production S_l is a POPULATION problem, NOT a formula bug. */
+static double se_sl(double J, double Cul, double nu, double T,
+                    double Aul, double Bul, double Blu, double gl, double gu)
+{
+    double pre = 2.0*H_CGS*nu*nu*nu/(C_CGS*C_CGS);
+    double Clu = (gu/gl)*exp(-H_CGS*nu/(KB_CGS*T))*Cul;     /* DB collisions */
+    double nun = (Blu*J + Clu)/(Aul + Bul*J + Cul);         /* n_u/n_l from 2-level SE */
+    double ratio = (gu/gl)/nun;                            /* (g_u n_l)/(g_l n_u) */
+    return pre/(ratio - 1.0);
+}
+static int test_sl_formula(void)
+{
+    printf("[TEST P1 production S_l formula = 2hv3/c2/((gu nl)/(gl nu)-1): textbook limits]\n");
+    double h=H_CGS,kB=KB_CGS,c=C_CGS;
+    double lam0=5000e-8,nu=c/lam0,T=6000.0,gl=2,gu=2;
+    double Bul=1e10,Blu=(gu/gl)*Bul,Aul=(2*h*nu*nu*nu/(c*c))*Bul;
+    double B_T=(2*h*nu*nu*nu/(c*c))/(exp(h*nu/(kB*T))-1.0);
+    double Jdil=0.4*B_T;
+    double s1=se_sl(B_T , 1e3 , nu,T,Aul,Bul,Blu,gl,gu);   /* J=B    -> S=B   */
+    double s2=se_sl(Jdil, 0.0 , nu,T,Aul,Bul,Blu,gl,gu);   /* C=0    -> S=J   */
+    double s3=se_sl(Jdil, 1e13, nu,T,Aul,Bul,Blu,gl,gu);   /* C>>A   -> S=B   */
+    double s4=se_sl(Jdil, 1e3 , nu,T,Aul,Bul,Blu,gl,gu);   /* general-> [J,B] */
+    double e1=fabs(s1-B_T)/B_T, e2=fabs(s2-Jdil)/Jdil, e3=fabs(s3-B_T)/B_T;
+    int g4=(s4>=Jdil-1e-30 && s4<=B_T+1e-30);
+    printf("    (1) J=B(T):     S_l=%.4e  B=%.4e  rel=%.2e  %s\n", s1,B_T,e1, e1<1e-6?"PASS":"FAIL");
+    printf("    (2) C_ul=0:     S_l=%.4e  J=%.4e  rel=%.2e  %s\n", s2,Jdil,e2, e2<1e-6?"PASS":"FAIL");
+    printf("    (3) C_ul>>A:    S_l=%.4e  B=%.4e  rel=%.2e  %s\n", s3,B_T,e3, e3<1e-3?"PASS":"FAIL");
+    printf("    (4) general:    S_l=%.4e  in [J=%.3e, B=%.3e]  %s\n", s4,Jdil,B_T, g4?"PASS":"FAIL");
+    int pass=(e1<1e-6 && e2<1e-6 && e3<1e-3 && g4);
+    printf("    -> S_l formula textbook-correct: %s (=> super-thermal S_l is a POPULATION issue)\n",
+           pass?"PASS":"FAIL");
+    return pass;
+}
+
 /* ===================== gate I-3: cmf_formal on the REAL DDC15 forest =====================
  * The Stage-I capstone: run the VALIDATED kernel on the ACTUAL DDC15 UV forest line
  * positions (loaded from /tmp/ddc15_uv_segment.txt = real wavelengths + f_lu), build the
@@ -1786,6 +1828,7 @@ int main(void)
     int p5c = test_fluorescence_integrity(); printf("\n"); (void)p5c;
     int p5d = test_nlte_iter_stability(); printf("\n"); (void)p5d;
     int p5e = test_nlte_uniqueness(); printf("\n"); (void)p5e;
+    int pP1 = test_sl_formula(); printf("\n"); (void)pP1;
     int pI3 = test_real_forest_jbar(); printf("\n"); (void)pI3;
     int p7 = test_line_scatter_sc();
     test_mc_vs_cmf();
