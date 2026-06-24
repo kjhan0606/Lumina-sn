@@ -1506,10 +1506,16 @@ void cmfgen_fine_jbar(CMFGENState *csb, const Geometry *geo,
         }
     }
 
-    if (diag) {   /* J_bar_l sanity + S_l/B (b_k proxy) distribution at a mid shell */
-        int st = NS/2; double Te = plasma->T_e[st];
+    if (diag) {   /* J_bar_l sanity + S_l/B (b_k proxy) per-iter at warm+cold shells.
+                   * Loop over {0(inner warm), 6, NS/2(cold)} so an A/B + iteration
+                   * trace shows whether the fluorescence converges (warm) vs the
+                   * cold near-singular tail blows up. Also report S_l/J_bar (>>1 =
+                   * multi-level fluorescence emission beyond the local field). */
+        int diag_shells[3] = { 0, 6, NS/2 };
+        for (int di = 0; di < 3; ++di) {
+        int st = diag_shells[di]; if (st >= NS) continue; double Te = plasma->T_e[st];
         long nf=0; double jmin=1e300, jmax=-1e300, rsum=0.0; long rn2=0;
-        double slsum=0.0; long sln=0, sl_hot=0;
+        double slsum=0.0; long sln=0, sl_hot=0; double sjmax=0.0; long sj_hi=0;
         double *slbuf = (double*)malloc((size_t)NL * sizeof(double));
         for (int l = 0; l < NL; ++l) {
             double v = opac->jbar_line_det[(size_t)l*NS+st];
@@ -1519,7 +1525,8 @@ void cmfgen_fine_jbar(CMFGENState *csb, const Geometry *geo,
             if (B>0) { rsum += v/B; ++rn2;
                 double Sl = opac->line_source_S ? opac->line_source_S[(size_t)l*NS+st] : 0.0;
                 if (Sl > 0.0) { double r=Sl/B; slsum+=r;
-                    if (slbuf) slbuf[sln]=r; ++sln; if (r>10.0) ++sl_hot; } }
+                    if (slbuf) slbuf[sln]=r; ++sln; if (r>10.0) ++sl_hot;
+                    double sj = Sl/v; if (sj>sjmax) sjmax=sj; if (sj>3.0) ++sj_hi; } }
         }
         double med=0.0, p90=0.0;
         if (slbuf && sln>0) {   /* sort for median / p90 */
@@ -1529,9 +1536,11 @@ void cmfgen_fine_jbar(CMFGENState *csb, const Geometry *geo,
         free(slbuf);
         fprintf(stderr, "[cmf_fine] shell %d Te=%.0f: filled=%ld  Jbar_l in "
             "[%.3e,%.3e]  mean Jbar/B=%.3f | in-window S_l/B: n=%ld mean=%.3e "
-            "MEDIAN=%.3f p90=%.3f hot(>10)=%ld(%.1f%%)\n", st, Te, nf, jmin, jmax,
+            "MEDIAN=%.3f p90=%.3f hot(>10)=%ld(%.1f%%) | S_l/Jbar max=%.2e fluor(>3)=%ld\n",
+            st, Te, nf, jmin, jmax,
             (rn2>0)?rsum/rn2:0.0, sln, (sln>0)?slsum/sln:0.0,
-            med, p90, sl_hot, (sln>0)?100.0*sl_hot/sln:0.0);
+            med, p90, sl_hot, (sln>0)?100.0*sl_hot/sln:0.0, sjmax, sj_hi);
+        }
     }
 
     /* Codex test E (LUMINA_CMF_FINE_LINEDUMP=1): per in-window line at mid shell,
