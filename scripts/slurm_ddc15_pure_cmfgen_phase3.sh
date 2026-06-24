@@ -68,8 +68,13 @@ env LUMINA_PURE_CMFGEN=1 \
     LUMINA_DYNAMIC_TRANSPROB=1 \
     LUMINA_NLTE_SKIP_Z=${SKIP_Z:-14} \
     LUMINA_NLTE_START_ITER=2 \
-    LUMINA_NLTE_FLOOR_REG=1 \
-    LUMINA_NLTE_INV_CEIL=1e4 \
+    `# ORTHODOX cold-Te NLTE closure (2026-06-24): the rate matrix is genuinely` \
+    `# rank-deficient at cold/dilute shells, so the super-thermal S_l artifact is` \
+    `# cured by FLOOR_REG=0 LTE_FLOOR=1 (replace the Boltzmann@T_RAD anchor of` \
+    `# isolated levels with a physical LTE@T_e level-zeroing floor). Validated:` \
+    `# optical 0% residual super-thermal emissivity. Legacy default keeps FLOOR_REG=1.` \
+    LUMINA_NLTE_FLOOR_REG=${FLOOR_REG:-1} \
+    LUMINA_NLTE_INV_CEIL=${INV_CEIL:-1e4} \
     LUMINA_RADEQ_TE=${RADEQ_TE:-1} \
     LUMINA_RADEQ_DIAG=1 \
     LUMINA_RADEQ_COOL_ESCAPE=0 \
@@ -98,7 +103,7 @@ env LUMINA_PURE_CMFGEN=1 \
     LUMINA_MACROATOM_EWEIGHT=${EWEIGHT:-0} \
     LUMINA_NLTE_COLL_FLOOR=${COLL_FLOOR:-0} \
     LUMINA_NLTE_BK_CEIL=${BK_CEIL:-0} \
-    LUMINA_NLTE_EQUILIBRATE=${EQUIL:-0} \
+    LUMINA_NLTE_LTE_FLOOR=${LTE_FLOOR:-0} \
     LUMINA_NLTE_COLL_FIX=${COLL_FIX:-0} \
     LUMINA_NLTE_ION_LOCK=${ION_LOCK:-0} \
     LUMINA_NLTE_LOCK_START_ITER=${LOCK_START:-0} \

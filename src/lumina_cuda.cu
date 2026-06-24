@@ -725,6 +725,16 @@ static void nlte_solve_all_gpu(NLTEConfig *nlte, AtomicData *atom,
                 }
             }
 
+            /* NOTE: two-sided (Sinkhorn) equilibration of the rate matrix before
+             * the LU solve was tried (LUMINA_NLTE_EQUILIBRATE) and proven
+             * INEFFECTIVE: the cold/dilute NLTE matrix is genuinely RANK-DEFICIENT
+             * (nulldim 1-8, the ionization-split + degenerate-multiplet modes),
+             * not merely badly scaled, so no diagonal scaling conditions it
+             * (equil-only S_l/B max stayed 6e46). The working fix is the physical
+             * LTE@T_e floor of sub-resolution levels in the read-back below
+             * (level-zeroing), which removes the super-thermal artifact where it
+             * forms the spectrum (optical 0% residual emissivity). */
+
             /* GPU batched solve */
             int ret = cuda_nlte_batched_solve(sol, N, n_shells);
             clock_gettime(CLOCK_MONOTONIC, &ts_s1);
@@ -942,8 +952,49 @@ static void nlte_solve_all_gpu(NLTEConfig *nlte, AtomicData *atom,
                             if (bk_ceil < 0.0) bk_ceil = 0.0;
                             bkc_init = 1;
                         }
-                        for (int i = 0; i < N; i++) {
-                            if (x[i] < 0.0) x[i] = 1e-30;
+                        /* PHYSICAL FLOOR (LUMINA_NLTE_LTE_FLOOR=1): replace
+                         * negative AND sub-resolution levels with their LTE@T_e
+                         * value relative to the (well-determined) ion ground,
+                         * instead of the crude 1e-30 clamp. At cold/near-singular
+                         * shells only ~3 levels (ground+metastables) are resolved;
+                         * the rest are genuinely negligible (1e-50..1e-135) and
+                         * their exact value is irrelevant to opacity/emissivity,
+                         * but flooring them to 1e-30 (>> their true ~1e-100)
+                         * spuriously fills optical upper levels -> super-thermal.
+                         * The thermal estimate keeps n_u/n_l ~ Boltzmann -> S_l~B.
+                         * Off => legacy 1e-30 clamp (byte-identical). */
+                        static int lflr_init = 0, lte_floor = 0;
+                        if (!lflr_init) { const char *e = getenv("LUMINA_NLTE_LTE_FLOOR");
+                            lte_floor = (e && atoi(e)) ? 1 : 0; lflr_init = 1; }
+                        if (lte_floor) {
+                            double T_e_s = plasma->T_e ? plasma->T_e[s] : plasma->T_rad[s];
+                            double kTe = K_BOLTZMANN * (T_e_s > 0.0 ? T_e_s : 1.0);
+                            double xmax = 0.0;
+                            for (int i = 0; i < N; i++) { double a = fabs(x[i]); if (a > xmax) xmax = a; }
+                            double subres = xmax * 1e-12;
+                            int gg_lo = atom->level_g[nlte->super_anchor_global[super_start]];
+                            double Eg_lo = atom->level_energy_eV[nlte->super_anchor_global[super_start]] * EV_TO_ERG;
+                            double xg_lo = x[0];
+                            int gg_hi = (n_lo_super < N) ? atom->level_g[nlte->super_anchor_global[super_start + n_lo_super]] : 1;
+                            double Eg_hi = (n_lo_super < N) ? atom->level_energy_eV[nlte->super_anchor_global[super_start + n_lo_super]] * EV_TO_ERG : 0.0;
+                            double xg_hi = (n_lo_super < N) ? x[n_lo_super] : 0.0;
+                            for (int i = 0; i < N; i++) {
+                                if (x[i] > subres) continue;   /* well-resolved & positive: keep */
+                                int is_lo = (i < n_lo_super);
+                                double xg = is_lo ? xg_lo : xg_hi;
+                                int gg = is_lo ? gg_lo : gg_hi;
+                                double Eg = is_lo ? Eg_lo : Eg_hi;
+                                if (xg <= 0.0) { x[i] = 1e-30; continue; }
+                                int gi = atom->level_g[nlte->super_anchor_global[super_start + i]];
+                                double Ei = atom->level_energy_eV[nlte->super_anchor_global[super_start + i]] * EV_TO_ERG;
+                                double boltz = xg * ((double)gi / (double)(gg > 0 ? gg : 1)) *
+                                               exp(-(Ei - Eg) / kTe);
+                                x[i] = (boltz > 0.0) ? boltz : 1e-30;
+                            }
+                        } else {
+                            for (int i = 0; i < N; i++) {
+                                if (x[i] < 0.0) x[i] = 1e-30;
+                            }
                         }
                         if (bk_ceil > 0.0) {
                             double T_e_s = plasma->T_e ? plasma->T_e[s] : plasma->T_rad[s];
