@@ -1285,8 +1285,21 @@ static void cmf_solve_J(CMFGENState *cs, const Geometry *geo, double T_inner,
             double lam_b= (b < NB-1) ? lam[b+1] : lam[b];
             double Bin  = cm_planck(cs->nu[b], T_inner);
             memset(cnt, 0, NS*sizeof(int));
+            /* The rays (k) are INDEPENDENT within a frequency (the blue->red
+             * advection couples only across b, which is the outer sequential
+             * loop). Parallelize over rays. The only shared write target is the
+             * per-shell accumulator cnt[s]/muL/ImL/IpL: each (ray,shell) crossing
+             * reserves a unique slot via an atomic capture on cnt[s] (in the
+             * inbound pass), stored in the per-ray local cloc[] and reused in the
+             * outbound pass. Slot order across rays becomes arbitrary, but the
+             * per-shell J integration below sorts by mu, so J is order-invariant.
+             * Iin_c/Iout_c writes are per-ray (kb range) -> no race. */
+            #ifdef _OPENMP
+            #pragma omp parallel for schedule(dynamic, 1)
+            #endif
             for (int k = 0; k < NP; ++k) {
                 int n = rn[k]; if (n == 0) continue; size_t kb = (size_t)k*(NS+1);
+                int cloc[300];   /* reserved slot per segment (NS+1 <= 300, cf. mu[300]) */
                 double I = 0.0;
                 for (int i = 0; i < n; ++i) {
                     int s = rsh[kb+i]; double ds = (i+1<n)?(rz[kb+i]-rz[kb+i+1]):(rz[kb+i]-rzin[k]);
@@ -1295,7 +1308,12 @@ static void cmf_solve_J(CMFGENState *cs, const Geometry *geo, double T_inner,
                     double dtau=chih*ds, ex=exp(-dtau), e0,e1,wu,wd;
                     if(dtau>1e-4){e0=1-ex;e1=dtau-e0;wu=e0-e1/dtau;wd=e1/dtau;}else{wu=0.5*dtau;wd=0.5*dtau;}
                     I = I*ex + wu*Su + wd*Su; Iin_c[kb+i]=I;
-                    int c=cnt[s]; muL[(size_t)s*NP+c]=rz[kb+i]/rmid[s]; ImL[(size_t)s*NP+c]=I;
+                    int c;
+                    #ifdef _OPENMP
+                    #pragma omp atomic capture
+                    #endif
+                    { c = cnt[s]; cnt[s] += 1; }
+                    cloc[i] = c; muL[(size_t)s*NP+c]=rz[kb+i]/rmid[s]; ImL[(size_t)s*NP+c]=I;
                 }
                 if (rcore[k]) I = Bin;
                 for (int i = n-1; i >= 0; --i) {
@@ -1305,7 +1323,7 @@ static void cmf_solve_J(CMFGENState *cs, const Geometry *geo, double T_inner,
                     double dtau=chih*ds, ex=exp(-dtau), e0,e1,wu,wd;
                     if(dtau>1e-4){e0=1-ex;e1=dtau-e0;wu=e0-e1/dtau;wd=e1/dtau;}else{wu=0.5*dtau;wd=0.5*dtau;}
                     I = I*ex + wu*Su + wd*Su; Iout_c[kb+i]=I;
-                    int c=cnt[s]; IpL[(size_t)s*NP+c]=I; cnt[s]=c+1;
+                    IpL[(size_t)s*NP+cloc[i]]=I;
                 }
             }
             for (int s = 0; s < NS; ++s) {
@@ -1485,6 +1503,11 @@ void cmfgen_fine_jbar(CMFGENState *csb, const Geometry *geo,
     cmf_solve_J(&fs, geo, T_inner, n_ali);
 
     /* --- extract J_bar_l = Int phi_l J dnu / Int phi_l dnu per line --- */
+    /* Per-line J_bar_l extraction: each line writes its own [l*NS .. ] slice of
+     * jbar_line_det (read-only fine field fs.J) -> embarrassingly parallel. */
+    #ifdef _OPENMP
+    #pragma omp parallel for schedule(dynamic, 64)
+    #endif
     for (int l = 0; l < NL; ++l) {
         double nu_l = opac->line_list_nu[l];
         if (nu_l <= nu_lo || nu_l >= nu_hi) continue;

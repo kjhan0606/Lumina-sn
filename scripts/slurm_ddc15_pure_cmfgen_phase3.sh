@@ -2,7 +2,7 @@
 #SBATCH --job-name=ddc15_pc_phase3
 #SBATCH --partition=h200,h100,a100,a40
 #SBATCH --gres=gpu:1
-#SBATCH --cpus-per-task=4
+#SBATCH --cpus-per-task=16
 #SBATCH --time=UNLIMITED
 #SBATCH --output=/home/kjhan/BACKUP/Eunha.A1/Claude/Lumina-sn/logs/%x_%j.out
 #SBATCH --error=/home/kjhan/BACKUP/Eunha.A1/Claude/Lumina-sn/logs/%x_%j.err
@@ -39,7 +39,7 @@ FROZENIN=${FROZENIN:-0}          # 1 = frozen-in freeze-out owns the outer shell
 THEN_MC=${THEN_MC:-0}            # 1 = after pure-CMFGEN converges plasma, run MC macroatom for the emergent spectrum
 MAX_INT=${MAX_INT:-100000}       # per-packet interaction cap for the THEN_MC pass (std-MC uses 200; 100000 over-interacts -> too blue)
 
-export OMP_NUM_THREADS=${OMP_NUM_THREADS:-4}
+export OMP_NUM_THREADS=${OMP_NUM_THREADS:-16}
 
 ROOT=/home/kjhan/BACKUP/Eunha.A1/Claude/Lumina-sn
 REF="$ROOT/data/${DDC15_REF:-tardis_reference_ddc15_0p976d}"
