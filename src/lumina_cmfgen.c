@@ -1350,6 +1350,117 @@ static void cmf_solve_J(CMFGENState *cs, const Geometry *geo, double T_inner,
 }
 
 /* ===================================================================
+ * STAGE-1 PROOF (LUMINA_CMF_FINE_EMERGENT=1): frequency-resolved emergent
+ * spectrum on the fine mesh. Clones the static (no-Doppler) per-frequency
+ * formal integral of cmfgen_write_spectrum but reads the FINE field
+ * (fs nu, chi, S_fixed, J) so line windows stay OPEN and the warm photosphere
+ * color is transported outward (binned-J collapses to grey-thermal; fine field
+ * carries J/B>1 at cold shells -- run 169643). Reuses the binned ray grid
+ * (csb->p_ray/n_rays); geometry is frequency-independent. Valid only over the
+ * producer window; writes lumina_spectrum_freqres.csv. Color (SED peak) is the
+ * gate vs gold 6630A -- the no-Doppler approximation drops P-Cygni profiles but
+ * preserves the source-function color, which is what we test. */
+static int cmfgen_fine_emergent(const CMFGENState *fs, const CMFGENState *csb,
+                                const Geometry *geo, double T_inner,
+                                const char *path)
+{
+    int NS = fs->n_shells, NF = fs->n_bins, NR = csb->n_rays;
+    if (NR <= 0 || !csb->p_ray) {
+        fprintf(stderr, "[cmf_fine] emergent: no binned ray grid\n"); return -1;
+    }
+    int    *ray_n    = malloc(sizeof(int) * NR);
+    int    *ray_core = malloc(sizeof(int) * NR);
+    int    *seg_sh   = malloc(sizeof(int) * (size_t)NR * NS);
+    double *seg_ds   = malloc(sizeof(double) * (size_t)NR * NS);
+    double *S        = malloc(sizeof(double) * NS);
+    double *Lnu      = calloc(NF, sizeof(double));
+    if (!ray_n||!ray_core||!seg_sh||!seg_ds||!S||!Lnu) {
+        free(ray_n);free(ray_core);free(seg_sh);free(seg_ds);free(S);free(Lnu);
+        fprintf(stderr,"[cmf_fine] emergent alloc failed\n"); return -1;
+    }
+    /* per-ray intersected shells + segment lengths (same as write_spectrum) */
+    for (int ray = 0; ray < NR; ++ray) {
+        double p = csb->p_ray[ray];
+        int *sh = &seg_sh[(size_t)ray * NS];
+        double *zz = malloc(sizeof(double) * (NS + 1));
+        int nshell = 0;
+        for (int s = NS - 1; s >= 0; --s) {
+            double ro = geo->r_outer[s];
+            if (ro <= p) break;
+            double rmid = 0.5 * (geo->r_inner[s] + geo->r_outer[s]);
+            if (rmid <= p) rmid = p * 1.0000001;
+            sh[nshell] = s;
+            zz[nshell] = sqrt(rmid*rmid - p*p);
+            ++nshell;
+        }
+        ray_n[ray]    = nshell;
+        ray_core[ray] = (p < geo->r_inner[0]) ? 1 : 0;
+        double z_core = 0.0;
+        if (ray_core[ray] && nshell > 0) {
+            double ri0 = geo->r_inner[0];
+            z_core = sqrt(ri0*ri0 - p*p);
+            if (z_core > zz[nshell-1]) z_core = zz[nshell-1];
+        }
+        double *ds = &seg_ds[(size_t)ray * NS];
+        for (int i = 0; i < nshell; ++i)
+            ds[i] = (i+1 < nshell) ? fabs(zz[i]-zz[i+1])
+                                   : (ray_core[ray] ? zz[i]-z_core : fabs(zz[i]));
+        free(zz);
+    }
+    /* per-fine-frequency emergent flux (static formal integral) */
+    for (int b = 0; b < NF; ++b) {
+        double Bin = cm_planck(fs->nu[b], T_inner);
+        for (int s = 0; s < NS; ++s) {
+            size_t idx = (size_t)s * NF + b;
+            double r = (fs->chi_tot[idx] > 0.0) ? fs->chi_es[idx]/fs->chi_tot[idx] : 0.0;
+            S[s] = fs->S_fixed[idx] + r * fs->J[idx];   /* converged fine source */
+        }
+        double integ = 0.0, p_prev = 0.0, f_prev = 0.0;
+        for (int ray = 0; ray < NR; ++ray) {
+            int n = ray_n[ray];
+            if (n == 0) continue;
+            const int *sh = &seg_sh[(size_t)ray * NS];
+            const double *ds = &seg_ds[(size_t)ray * NS];
+            double I = 0.0;
+            for (int i = 0; i < n; ++i) {            /* inbound */
+                double dtau = fs->chi_tot[(size_t)sh[i]*NF + b] * ds[i];
+                if (dtau < 0.0) dtau = 0.0;
+                double ex = exp(-dtau);
+                double psi = (dtau > 1e-4) ? (1.0-ex) : (dtau - 0.5*dtau*dtau);
+                I = I*ex + S[sh[i]]*psi;
+            }
+            if (ray_core[ray]) I = Bin;              /* diffusive core */
+            for (int i = n-1; i >= 0; --i) {         /* outbound */
+                double dtau = fs->chi_tot[(size_t)sh[i]*NF + b] * ds[i];
+                if (dtau < 0.0) dtau = 0.0;
+                double ex = exp(-dtau);
+                double psi = (dtau > 1e-4) ? (1.0-ex) : (dtau - 0.5*dtau*dtau);
+                I = I*ex + S[sh[i]]*psi;
+            }
+            double p = csb->p_ray[ray];
+            double f = I * p;
+            integ += 0.5 * (f_prev + f) * (p - p_prev);
+            p_prev = p; f_prev = f;
+        }
+        Lnu[b] = 8.0 * M_PI * M_PI * integ;
+    }
+    FILE *fp = fopen(path, "w");
+    if (!fp) { free(ray_n);free(ray_core);free(seg_sh);free(seg_ds);free(S);free(Lnu);
+        fprintf(stderr,"[cmf_fine] cannot open %s\n",path); return -1; }
+    fprintf(fp, "wavelength_angstrom,flux\n");
+    for (int b = NF-1; b >= 0; --b) {                /* nu desc -> lambda asc */
+        double lam_cm = CM_C / fs->nu[b];
+        double lam_A  = lam_cm * 1.0e8;
+        double L_lam  = Lnu[b] * CM_C / (lam_cm*lam_cm) * 1.0e-8;
+        fprintf(fp, "%.6f,%.6e\n", lam_A, L_lam);
+    }
+    fclose(fp);
+    fprintf(stderr, "[cmf_fine] freq-resolved emergent -> %s (%d fine freqs)\n", path, NF);
+    free(ray_n);free(ray_core);free(seg_sh);free(seg_ds);free(S);free(Lnu);
+    return 0;
+}
+
+/* ===================================================================
  * P7 PRODUCER: fine-grid line-resolved J_bar_l (gate II producer).
  *
  * Reuses the VALIDATED frequency-coupled kernel cmf_solve_J on a fine
@@ -1387,6 +1498,12 @@ void cmfgen_fine_jbar(CMFGENState *csb, const Geometry *geo,
     double ppd = 12.0;                          /* fine points / vdop   */
     { const char *e=getenv("LUMINA_CMF_FINE_PPD"); if(e) ppd=atof(e); }
     int n_ali = 24; { const char *e=getenv("LUMINA_CMF_FINE_ALI"); if(e) n_ali=atoi(e); }
+    /* Stage-2-pre stabilization: clamp lagged super-thermal S_l in the line
+     * emissivity deposit. The cold-shell NLTE matrix is ill-conditioned ->
+     * S_l/B can be huge (numerical artifact, rates are DB-correct); the closed
+     * producer<->NLTE loop amplifies it (Jbar/B 454,659 at iter5,7 in 169651).
+     * Clamp S_l <= sl_clamp*B(Te) (orthodox LTE@Te-floor analog). 0 = off. */
+    double sl_clamp = 0.0; { const char *e=getenv("LUMINA_CMF_FINE_SL_CLAMP"); if(e) sl_clamp=atof(e); }
 
     double nu_lo = CM_C / (lam_hi * 1.0e-8);    /* red edge  = low nu   */
     double nu_hi = CM_C / (lam_lo * 1.0e-8);    /* blue edge = high nu  */
@@ -1442,7 +1559,8 @@ void cmfgen_fine_jbar(CMFGENState *csb, const Geometry *geo,
     const double SQRTPI = 1.7724538509055160;
     double chi0_pref = 1.0 / (SQRTPI * vdop * t_exp);   /* chi0 = (1-e^-tau)*pref */
     int src_nlte = (opac->line_source_S != NULL);
-    long n_inwin = 0;
+    long n_inwin = 0, n_clamped = 0;
+    double max_slb = 0.0;   /* max S_l/B(Te) over deposited lines (diagnostic) */
     for (int l = 0; l < NL; ++l) {
         double nu_l = opac->line_list_nu[l];
         if (nu_l <= nu_lo || nu_l >= nu_hi) continue;
@@ -1459,8 +1577,16 @@ void cmfgen_fine_jbar(CMFGENState *csb, const Geometry *geo,
             if (tau <= 1e-12) continue;
             double frac = (tau > 1e-6) ? -expm1(-tau) : tau;   /* 1-e^{-tau} */
             double chi0 = frac * chi0_pref;
+            double Bl = cm_planck(nu_l, plasma->T_e[s]);
             double Sl = src_nlte ? opac->line_source_S[(size_t)l*NS+s] : 0.0;
-            if (Sl <= 0.0) Sl = cm_planck(nu_l, plasma->T_e[s]);
+            if (Sl <= 0.0) Sl = Bl;
+            if (Bl > 0.0) {                       /* diagnostic: track worst S_l/B */
+                double rb = Sl / Bl; if (rb > max_slb) max_slb = rb;
+            }
+            if (sl_clamp > 0.0 && Bl > 0.0 && Sl > sl_clamp * Bl) {
+                Sl = sl_clamp * Bl;               /* stabilize super-thermal artifact */
+                ++n_clamped;
+            }
             for (int i = i0; i <= i1; ++i) {
                 double xv = (fs.nu[i] - nu_l) / dnuD;
                 double p  = exp(-xv * xv);                     /* chi0 already / (sqrt(pi) dnuD)-folded */
@@ -1494,6 +1620,9 @@ void cmfgen_fine_jbar(CMFGENState *csb, const Geometry *geo,
             double frac=(tau>1e-6)?-expm1(-tau):(tau>0?tau:0);
             exp_ += frac*nu_l/(CM_C*t_exp); }
         fprintf(stderr,
+            "[cmf_fine] S_l deposit: max S_l/B=%.3e  clamped=%ld/%ld lines (sl_clamp=%.1f)\n",
+            max_slb, n_clamped, n_inwin, sl_clamp);
+        fprintf(stderr,
             "[cmf_fine] lines in window=%ld  tie-back shell %d: "
             "Int chi_line dnu=%.4e  Sobolev expect=%.4e  ratio=%.4f\n",
             n_inwin, st, got, exp_, (exp_>0)?got/exp_:0.0);
@@ -1501,6 +1630,11 @@ void cmfgen_fine_jbar(CMFGENState *csb, const Geometry *geo,
 
     /* --- solve frequency-coupled J on the fine mesh (validated kernel) --- */
     cmf_solve_J(&fs, geo, T_inner, n_ali);
+
+    /* --- Stage-1 PROOF: frequency-resolved emergent from the fine field --- */
+    { const char *e = getenv("LUMINA_CMF_FINE_EMERGENT");
+      if (e && atoi(e))
+          cmfgen_fine_emergent(&fs, csb, geo, T_inner, "lumina_spectrum_freqres.csv"); }
 
     /* --- extract J_bar_l = Int phi_l J dnu / Int phi_l dnu per line --- */
     /* Per-line J_bar_l extraction: each line writes its own [l*NS .. ] slice of
