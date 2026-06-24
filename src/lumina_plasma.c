@@ -7786,6 +7786,59 @@ void nlte_assemble_rate_matrix(NLTEConfig *nlte, AtomicData *atom,
         }
     }
 
+    /* ===== DIAGNOSTIC (LUMINA_NLTE_NSTAR_DUMP=1): write the TRUE cross-ion
+     * Saha-Boltzmann LTE reference n*_i for the target pair/shell, so the
+     * orthodox conditioning recipe (departure-coeff transform M=D^-1 A D with
+     * D=diag(n*), zero-out of decoupled levels) can be validated OFFLINE on the
+     * raw matrix (dumped by cuda.cu MATDUMP) before wiring it into the solve.
+     * n* within an ion = g_i exp(-E_i/kTe); across ions = x Saha factor
+     * S = (2/n_e) (2pi m_e k Te/h^2)^{3/2} exp(-chi_lo/kTe). Off by default. */
+    if (getenv("LUMINA_NLTE_NSTAR_DUMP") &&
+        Z_nl == (getenv("LUMINA_POP_Z") ? atoi(getenv("LUMINA_POP_Z")) : 8) &&
+        nlte->nlte_ion[ion_idx_lo] == (getenv("LUMINA_POP_ION") ? atoi(getenv("LUMINA_POP_ION")) : 1) &&
+        shell == (getenv("LUMINA_POP_SHELL") ? atoi(getenv("LUMINA_POP_SHELL")) : 24)) {
+        double kTe = K_BOLTZMANN * T_e;
+        double chi_lo_eV = find_ioniz_energy(atom, Z_nl, nlte->nlte_ion[ion_idx_lo]);
+        double lam3 = pow(H_PLANCK * H_PLANCK /
+                          (2.0 * M_PI_VAL * M_ELECTRON * K_BOLTZMANN * T_e), 1.5);
+        double Saha = (n_e > 0.0)
+            ? (2.0 / n_e) * (1.0 / lam3) * exp(-chi_lo_eV * EV_TO_ERG / kTe)
+            : 0.0;
+        int   *ionf  = (int   *)malloc((size_t)N * sizeof(int));
+        double *Ev   = (double *)malloc((size_t)N * sizeof(double));
+        double *gv   = (double *)malloc((size_t)N * sizeof(double));
+        double *nst  = (double *)malloc((size_t)N * sizeof(double));
+        for (int i = 0; i < N; i++) {
+            int gl = nlte->nlte_to_global_level[lev_start + i];
+            double E_eV = atom->level_energy_eV[gl];
+            double g    = (double)atom->level_g[gl];
+            int is_hi   = (i >= n_lo_super) ? 1 : 0;
+            double boltz = g * exp(-E_eV * EV_TO_ERG / kTe);
+            ionf[i] = is_hi;
+            Ev[i]   = E_eV;
+            gv[i]   = g;
+            nst[i]  = is_hi ? boltz * Saha : boltz;
+        }
+        const char *npath = getenv("LUMINA_NLTE_NSTAR_PATH");
+        if (!npath) npath = "bk2_nstar.bin";
+        FILE *nf = fopen(npath, "wb");
+        if (nf) {
+            int hdr[5] = { N, n_lo_super, Z_nl, nlte->nlte_ion[ion_idx_lo], shell };
+            double scal[3] = { T_e, n_e, chi_lo_eV };
+            fwrite(hdr, sizeof(int), 5, nf);
+            fwrite(scal, sizeof(double), 3, nf);
+            fwrite(ionf, sizeof(int), (size_t)N, nf);
+            fwrite(Ev,  sizeof(double), (size_t)N, nf);
+            fwrite(gv,  sizeof(double), (size_t)N, nf);
+            fwrite(nst, sizeof(double), (size_t)N, nf);
+            fclose(nf);
+            fprintf(stderr, "[NSTAR_DUMP] wrote %s N=%d n_lo=%d Z=%d ion=%d s=%d "
+                    "Te=%.0fK n_e=%.3e Saha=%.3e\n", npath, N, n_lo_super, Z_nl,
+                    nlte->nlte_ion[ion_idx_lo], shell, T_e, n_e, Saha);
+        }
+        free(ionf); free(Ev); free(gv); free(nst);
+    }
+
     /* ===== b_k-SPACE PARTIAL-LTE conditioning fix (LUMINA_NLTE_BK_PARTIAL=1) =====
      * ROOT (verified): at cold Te the raw-population rate matrix spans ~77 orders
      * (Boltzmann e^{-E/kTe}, E to 35 eV, kTe~0.2 eV) >> double precision -> cond~1e15 ->
@@ -7802,19 +7855,22 @@ void nlte_assemble_rate_matrix(NLTEConfig *nlte, AtomicData *atom,
     double *bk_nstar = NULL;
     if (bk_partial && N > 0) {
         bk_nstar = (double*)malloc((size_t)N * sizeof(double));
-        double kTe = K_BOLTZMANN * (T_e > 0.0 ? T_e : 1.0);
-        int gl = nlte->super_anchor_global[super_start];
-        double E0_lo = (gl >= 0) ? atom->level_energy_eV[gl] * EV_TO_ERG : 0.0;
-        int gh = (n_lo_super < N) ? nlte->super_anchor_global[super_start + n_lo_super] : gl;
-        double E0_hi = (gh >= 0) ? atom->level_energy_eV[gh] * EV_TO_ERG : E0_lo;
+        /* REFERENCE = PREVIOUS iterate populations (NOT per-ion LTE Boltzmann). The prior
+         * pops are Saha+Boltzmann consistent across BOTH ions, so n_old_j/n_old_i carries
+         * the correct CROSS-ION LTE ratio for free. The per-ion-ground LTE form had NO Saha
+         * factor -> cross-ion entries ~1e64 -> cond 1e81 -> garbage (verified). By detailed
+         * balance M_ij = A_ij n_old_j/n_old_i = the reverse rate = O(rates); fluorescent
+         * departures come out in the b_k solution (matrix stays conditioned). Identity-mode
+         * indexing (solve idx i <-> fine nlte level lev_start+i). */
+        double pmax = 1e-300;
         for (int i = 0; i < N; i++) {
-            int ga = nlte->super_anchor_global[super_start + i];
-            if (ga < 0) { bk_nstar[i] = 1.0; continue; }
-            double Ei = atom->level_energy_eV[ga] * EV_TO_ERG;
-            int gi = atom->level_g[ga];
-            double E0 = (i < n_lo_super) ? E0_lo : E0_hi;
-            double v = (double)(gi > 0 ? gi : 1) * exp(-(Ei - E0) / kTe);
-            bk_nstar[i] = (v > 1e-300) ? v : 1e-300;
+            double p = nlte->nlte_level_populations[(size_t)(lev_start + i) * n_shells + shell];
+            if (p > pmax) pmax = p;
+        }
+        double pfloor = pmax * 1e-30;
+        for (int i = 0; i < N; i++) {
+            double p = nlte->nlte_level_populations[(size_t)(lev_start + i) * n_shells + shell];
+            bk_nstar[i] = (p > pfloor) ? p : pfloor;
         }
         /* similarity transform of the assembled RATE rows (conservation set fresh below) */
         for (int i = 0; i < N; i++) {

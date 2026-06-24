@@ -889,20 +889,19 @@ static void nlte_solve_all_gpu(NLTEConfig *nlte, AtomicData *atom,
                         if (bk_partial < 0) { const char *e = getenv("LUMINA_NLTE_BK_PARTIAL");
                             bk_partial = (e && atoi(e)) ? 1 : 0; }
                         if (bk_partial) {
-                            double T_e_s = plasma->T_e ? plasma->T_e[s] : plasma->T_rad[s];
-                            double kTe = K_BOLTZMANN * (T_e_s > 0.0 ? T_e_s : 1.0);
-                            int gl = nlte->super_anchor_global[super_start];
-                            double E0_lo = (gl >= 0) ? atom->level_energy_eV[gl] * EV_TO_ERG : 0.0;
-                            int gh = (n_lo_super < N) ? nlte->super_anchor_global[super_start + n_lo_super] : gl;
-                            double E0_hi = (gh >= 0) ? atom->level_energy_eV[gh] * EV_TO_ERG : E0_lo;
+                            /* back-convert n_i = b_i * n*_i with the SAME reference the
+                             * assembly used = the PREVIOUS iterate populations (still in
+                             * nlte_level_populations; not yet overwritten). Saha-consistent
+                             * cross-ion ratio for free. Identity-mode index lev_start+i. */
+                            double pmax = 1e-300;
                             for (int i = 0; i < N; i++) {
-                                int ga = nlte->super_anchor_global[super_start + i];
-                                if (ga < 0) continue;
-                                double Ei = atom->level_energy_eV[ga] * EV_TO_ERG;
-                                int gi = atom->level_g[ga];
-                                double E0 = (i < n_lo_super) ? E0_lo : E0_hi;
-                                double ns = (double)(gi > 0 ? gi : 1) * exp(-(Ei - E0) / kTe);
-                                if (ns > 1e-300) x[i] *= ns;
+                                double p = nlte->nlte_level_populations[(size_t)(lev_start + i) * n_shells + s];
+                                if (p > pmax) pmax = p;
+                            }
+                            double pfloor = pmax * 1e-30;
+                            for (int i = 0; i < N; i++) {
+                                double p = nlte->nlte_level_populations[(size_t)(lev_start + i) * n_shells + s];
+                                x[i] *= (p > pfloor) ? p : pfloor;
                             }
                         }
                     }
