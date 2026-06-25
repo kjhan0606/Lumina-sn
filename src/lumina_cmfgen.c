@@ -1500,8 +1500,15 @@ static int cmfgen_fine_emergent_obs(const CMFGENState *fs, const Geometry *geo,
         fprintf(stderr, "[cmf_obs] missing line data for unified emergent\n");
         return -1;
     }
-    /* line source = NLTE line_source_S (fluorescence); thermal fallback + clamp */
-    g_sob_sl_ptr   = opac->line_source_S;   /* may be NULL -> falls back to scatter */
+    /* line source: NLTE line_source_S (fluorescence) by default; or the W*B
+     * diluted-photosphere SCATTERING source (LUMINA_CMF_FINE_OBS_SCATTER=1),
+     * which is what produces classical P-Cygni (resonance scatter of the hot
+     * backlight). Thermal NLTE S_l=B gives NO P-Cygni (absorption=emission
+     * cancel), so the scatter source is the right vehicle until fluorescence
+     * lifts S_l above Boltzmann. */
+    int obs_scatter = 0;
+    { const char *e = getenv("LUMINA_CMF_FINE_OBS_SCATTER"); if (e) obs_scatter = atoi(e); }
+    g_sob_sl_ptr   = obs_scatter ? NULL : opac->line_source_S;
     g_sob_sl_clamp = 0.0;
     { const char *e = getenv("LUMINA_CMF_FINE_SL_CLAMP"); if (e) g_sob_sl_clamp = atof(e); }
     { const char *e = getenv("LUMINA_CMF_OBS_TAUMIN");    g_sob_taumin = e ? atof(e) : 1e-6; }
