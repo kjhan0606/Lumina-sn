@@ -1692,10 +1692,26 @@ void cmfgen_fine_jbar(CMFGENState *csb, const Geometry *geo,
     int src_nlte = (opac->line_source_S != NULL);
     long n_inwin = 0, n_clamped = 0;
     double max_slb = 0.0;   /* max S_l/B(Te) over deposited lines (diagnostic) */
+    /* Strong-line threshold: skip lines whose Sobolev tau is below fine_taumin in
+     * every shell. The dense UV pump forest (1000-3000A) is otherwise intractable
+     * to deposit on the fine mesh; for the fluorescence pump only the dominant
+     * tau_S lines matter (design option-c). Default 1e-12 = deposit all (legacy).
+     * Set LUMINA_CMF_FINE_TAUMIN ~0.1-1 for a tractable UV pump producer. */
+    double fine_taumin = 1e-12;
+    { const char *e = getenv("LUMINA_CMF_FINE_TAUMIN"); if (e) fine_taumin = atof(e); }
+    long n_skip_weak = 0;
     for (int l = 0; !fine_contonly && l < NL; ++l) {
         double nu_l = opac->line_list_nu[l];
         if (nu_l <= nu_lo || nu_l >= nu_hi) continue;
         ++n_inwin;
+        if (fine_taumin > 1e-12) {            /* skip line if weak in ALL shells */
+            double tmax = 0.0;
+            for (int s = 0; s < NS; ++s) {
+                double t = opac->tau_sobolev[(size_t)l * NS + s];
+                if (t > tmax) tmax = t;
+            }
+            if (tmax < fine_taumin) { ++n_skip_weak; continue; }
+        }
         double dnuD = nu_l * vdop / CM_C;
         /* fine index of line center; deposit over +-4 Doppler widths */
         double xc = log(nu_l / nu_lo) / dlognu - 0.5;
@@ -1751,8 +1767,9 @@ void cmfgen_fine_jbar(CMFGENState *csb, const Geometry *geo,
             double frac=(tau>1e-6)?-expm1(-tau):(tau>0?tau:0);
             exp_ += frac*nu_l/(CM_C*t_exp); }
         fprintf(stderr,
-            "[cmf_fine] S_l deposit: max S_l/B=%.3e  clamped=%ld/%ld lines (sl_clamp=%.1f)\n",
-            max_slb, n_clamped, n_inwin, sl_clamp);
+            "[cmf_fine] S_l deposit: max S_l/B=%.3e  clamped=%ld/%ld lines (sl_clamp=%.1f)  "
+            "skipped weak(tau<%.2g)=%ld\n",
+            max_slb, n_clamped, n_inwin, sl_clamp, fine_taumin, n_skip_weak);
         fprintf(stderr,
             "[cmf_fine] lines in window=%ld  tie-back shell %d: "
             "Int chi_line dnu=%.4e  Sobolev expect=%.4e  ratio=%.4f\n",
