@@ -1556,12 +1556,18 @@ void cmfgen_fine_jbar(CMFGENState *csb, const Geometry *geo,
     }
 
     /* --- deposit line profiles (chi_line) + emissivity (eta) --- */
+    /* CONTONLY falsifier (2026-06-25): skip the line deposit entirely so the
+     * emergent is pure continuum (S_fixed = chi_abs*B/(chi_es+chi_abs)).
+     * A/B vs full isolates whether the grn/nir gap is continuum color
+     * (blanketing) or thermal line re-emission (-> needs fluorescence). */
+    int fine_contonly = 0;
+    { const char *e = getenv("LUMINA_CMF_FINE_CONTONLY"); if (e && atoi(e)) fine_contonly = 1; }
     const double SQRTPI = 1.7724538509055160;
     double chi0_pref = 1.0 / (SQRTPI * vdop * t_exp);   /* chi0 = (1-e^-tau)*pref */
     int src_nlte = (opac->line_source_S != NULL);
     long n_inwin = 0, n_clamped = 0;
     double max_slb = 0.0;   /* max S_l/B(Te) over deposited lines (diagnostic) */
-    for (int l = 0; l < NL; ++l) {
+    for (int l = 0; !fine_contonly && l < NL; ++l) {
         double nu_l = opac->line_list_nu[l];
         if (nu_l <= nu_lo || nu_l >= nu_hi) continue;
         ++n_inwin;
