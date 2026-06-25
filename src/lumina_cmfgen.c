@@ -916,6 +916,11 @@ static int    g_pray_bin = -1;
 static double g_sob_rphot  = 0.0;   /* photosphere radius (r_inner[0]) for W(r) */
 static double g_sob_Tinner = 0.0;   /* photosphere T for the diluted backlight */
 static int    g_sob_srcj   = 0;     /* 1 = legacy cs->J source (contaminated) */
+/* Unified-emergent: drive the resonance line source from the NLTE-solved
+ * line_source_S (fluorescence) instead of the W*B scattering backlight.
+ * g_sob_sl_ptr points at opac->line_source_S[l*NS+s]; clamp caps S_l<=clamp*B. */
+static const double *g_sob_sl_ptr = NULL;   /* NULL = scattering (default) */
+static double        g_sob_sl_clamp = 0.0;  /* 0 = off */
 
 /* S4 — LINE-RESOLVED Sobolev observer march (gate LUMINA_CMF_OBS_SOBOLEV).
  * The binned expansion opacity defangs tau_Sobolev (frac=1-e^{-tau}->1, /dnu_bin
@@ -994,28 +999,40 @@ static double cmf_obs_march_sob(double I, double p, double z0, double z1, int s,
              * trapped radiation (binned line traps in its bin -> J/B~0.64 vs the
              * 0.5 clean continuum, self-refilling the trough). W(r) is the point-
              * photosphere dilution. (LUMINA_CMF_OBS_SRCJ=1 reverts to cs->J.) */
-            double Jbar;
-            if (g_sob_srcj) {
-                Jbar = Jv;
-                if (opac->jbar_line) {
-                    double jl = opac->jbar_line[(size_t)l * NS + s];
-                    if (jl > 0.0 && isfinite(jl)) Jbar = jl;
-                }
+            double Sl;
+            if (g_sob_sl_ptr) {
+                /* UNIFIED: NLTE-solved line source (carries fluorescence once the
+                 * UV pump populates the upper level above Boltzmann). Thermal
+                 * fallback B(T_e) if unset/<=0; optional clamp vs garbage. */
+                Sl = g_sob_sl_ptr[(size_t)l * NS + s];
+                if (!(Sl > 0.0) || !isfinite(Sl)) Sl = B;
+                if (g_sob_sl_clamp > 0.0 && B > 0.0 && Sl > g_sob_sl_clamp * B)
+                    Sl = g_sob_sl_clamp * B;
             } else {
-                double Wd = 0.5;
-                if (g_sob_rphot > 0.0 && r > g_sob_rphot) {
-                    double a = 1.0 - (g_sob_rphot * g_sob_rphot) / (r * r);
-                    Wd = 0.5 * (1.0 - sqrt(a > 0.0 ? a : 0.0));
+                double Jbar;
+                if (g_sob_srcj) {
+                    Jbar = Jv;
+                    if (opac->jbar_line) {
+                        double jl = opac->jbar_line[(size_t)l * NS + s];
+                        if (jl > 0.0 && isfinite(jl)) Jbar = jl;
+                    }
+                } else {
+                    double Wd = 0.5;
+                    if (g_sob_rphot > 0.0 && r > g_sob_rphot) {
+                        double a = 1.0 - (g_sob_rphot * g_sob_rphot) / (r * r);
+                        Wd = 0.5 * (1.0 - sqrt(a > 0.0 ? a : 0.0));
+                    }
+                    Jbar = Wd * cm_planck(nucmf, g_sob_Tinner);
                 }
-                Jbar = Wd * cm_planck(nucmf, g_sob_Tinner);
+                Sl = (1.0 - g_sob_eps) * Jbar + g_sob_eps * B;
             }
-            double Sl = (1.0 - g_sob_eps) * Jbar + g_sob_eps * B;
             if (g_sob_diag && tauS > 1e4) {
                 static int nd = 0;
                 if (nd < 8) { nd++;
-                    printf("[SOB-SRC] s=%d nu_l=%.4e tauS=%.2e Jbar=%.4e B=%.4e "
-                           "Sl/B=%.4f jbar_set=%d\n", s, opac->line_list_nu[l],
-                           tauS, Jbar, B, (B>0?Sl/B:0.0), opac->jbar_line?1:0); }
+                    printf("[SOB-SRC] s=%d nu_l=%.4e tauS=%.2e Sl=%.4e B=%.4e "
+                           "Sl/B=%.4f src=%s\n", s, opac->line_list_nu[l],
+                           tauS, Sl, B, (B>0?Sl/B:0.0),
+                           g_sob_sl_ptr ? "NLTE" : "scatter"); }
             }
             double exl = (tauS > 700.0) ? 0.0 : exp(-tauS);
             I = I * exl + (g_sob_noemit ? 0.0 : (D * D * D) * Sl) * (1.0 - exl);
@@ -1461,6 +1478,114 @@ static int cmfgen_fine_emergent(const CMFGENState *fs, const CMFGENState *csb,
 }
 
 /* ===================================================================
+ * UNIFIED emergent (LUMINA_CMF_FINE_EMERGENT_OBS=1): the deterministic
+ * production spectrum that combines all three physics on one integrator:
+ *   - CONTINUUM color    : the FINE field fs (chi_es/chi_abs/J), interpolated at
+ *                          the local comoving frequency (cures binned-J grey).
+ *   - P-Cygni profiles   : observer-frame Doppler march (q = gamma(1-mu beta))
+ *                          with full-tau_Sobolev line resonances (cmf_obs_march_sob).
+ *   - FLUORESCENCE source: line resonances emit the NLTE-solved line_source_S
+ *                          (g_sob_sl_ptr), not the W*B scattering backlight.
+ * Output is a moderate observer grid (LUMINA_CMF_FINE_OBS_NOBS, default 3000)
+ * over the fine window; continuum is interpolated on the fine grid so the grid
+ * need not be fine. Reuses cmf_obs_march_sob (fs passed as the field state).
+ * beta->0 / no lines reduces to the static cmfgen_fine_emergent color. */
+static int cmfgen_fine_emergent_obs(const CMFGENState *fs, const Geometry *geo,
+                                    double T_inner, const OpacityState *opac,
+                                    const double *Te, const char *path)
+{
+    int NS = fs->n_shells, NF = fs->n_bins;
+    double inv_ct = 1.0 / (CM_C * geo->time_explosion);
+    if (!opac || !opac->line_list_nu || !opac->tau_sobolev || !Te) {
+        fprintf(stderr, "[cmf_obs] missing line data for unified emergent\n");
+        return -1;
+    }
+    /* line source = NLTE line_source_S (fluorescence); thermal fallback + clamp */
+    g_sob_sl_ptr   = opac->line_source_S;   /* may be NULL -> falls back to scatter */
+    g_sob_sl_clamp = 0.0;
+    { const char *e = getenv("LUMINA_CMF_FINE_SL_CLAMP"); if (e) g_sob_sl_clamp = atof(e); }
+    { const char *e = getenv("LUMINA_CMF_OBS_TAUMIN");    g_sob_taumin = e ? atof(e) : 1e-6; }
+    g_sob_eps = 0.0; g_sob_noemit = 0; g_sob_srcj = 0; g_sob_contonly = 0;
+    { const char *e = getenv("LUMINA_CMF_OBS_CONTONLY"); g_sob_contonly = e ? atoi(e) : 0; }
+    g_sob_rphot = geo->r_inner[0]; g_sob_Tinner = T_inner;
+
+    int NObs = 3000; { const char *e = getenv("LUMINA_CMF_FINE_OBS_NOBS"); if (e) NObs = atoi(e); }
+    if (NObs < 2) NObs = 2;
+    int NRO = 256; { const char *e = getenv("LUMINA_CMF_OBS_NRAY"); if (e) NRO = atoi(e); }
+    double r_max = geo->r_outer[NS - 1], r_in0 = geo->r_inner[0];
+    double *p_obs = malloc(sizeof(double) * NRO);
+    double *nuo   = malloc(sizeof(double) * NObs);
+    double *Lnu   = calloc(NObs, sizeof(double));
+    if (!p_obs || !nuo || !Lnu) { free(p_obs); free(nuo); free(Lnu);
+        fprintf(stderr, "[cmf_obs] alloc failed\n"); return -1; }
+    for (int kk = 0; kk < NRO; ++kk) p_obs[kk] = r_max * (kk + 0.5) / (double)NRO;
+    /* observer output grid: log-uniform over the fine window [nu_lo,nu_hi] */
+    double nu_lo = fs->nu[0], nu_hi = fs->nu[NF - 1];
+    double dln = log(nu_hi / nu_lo) / (double)(NObs - 1);
+    for (int k = 0; k < NObs; ++k) nuo[k] = nu_lo * exp(dln * k);
+
+    #pragma omp parallel for schedule(dynamic)
+    for (int k = 0; k < NObs; ++k) {
+        double nu_obs = nuo[k];
+        double integ = 0.0, p_prev = 0.0, f_prev = 0.0;
+        for (int ray = 0; ray < NRO; ++ray) {
+            double p = p_obs[ray];
+            int sh[256], nshell = 0;
+            for (int s = NS - 1; s >= 0 && nshell < 256; --s) {
+                if (geo->r_outer[s] <= p) break;
+                sh[nshell++] = s;
+            }
+            if (nshell == 0) continue;
+            int core = (p < r_in0) ? 1 : 0;
+            double I = 0.0;
+            /* inbound (far side z<0): outer -> inner */
+            for (int i = 0; i < nshell; ++i) {
+                double ro = geo->r_outer[sh[i]], ri = geo->r_inner[sh[i]];
+                double z_hi = (ro > p) ? sqrt(ro*ro - p*p) : 0.0;
+                double z_lo = (ri > p) ? sqrt(ri*ri - p*p) : 0.0;
+                I = cmf_obs_march_sob(I, p, -z_hi, -z_lo, sh[i], fs, opac,
+                                      Te[sh[i]], nu_obs, inv_ct);
+            }
+            if (core) {                          /* diffusive core */
+                double z_core = sqrt(r_in0*r_in0 - p*p);
+                double mu_c = z_core / r_in0, beta_in = r_in0 * inv_ct;
+                double gam_in = 1.0 / sqrt(1.0 - beta_in*beta_in);
+                double q_c = gam_in * (1.0 - mu_c * beta_in), D_c = 1.0 / q_c;
+                I = (D_c*D_c*D_c) * cm_planck(q_c * nu_obs, T_inner);
+            }
+            /* outbound (near side z>0): inner -> outer */
+            for (int i = nshell - 1; i >= 0; --i) {
+                double ro = geo->r_outer[sh[i]], ri = geo->r_inner[sh[i]];
+                double z_hi = (ro > p) ? sqrt(ro*ro - p*p) : 0.0;
+                double z_lo = (ri > p) ? sqrt(ri*ri - p*p) : 0.0;
+                I = cmf_obs_march_sob(I, p, +z_lo, +z_hi, sh[i], fs, opac,
+                                      Te[sh[i]], nu_obs, inv_ct);
+            }
+            double f = I * p;
+            integ += 0.5 * (f_prev + f) * (p - p_prev);
+            p_prev = p; f_prev = f;
+        }
+        Lnu[k] = 8.0 * M_PI * M_PI * integ;
+    }
+    g_sob_sl_ptr = NULL;   /* reset global */
+
+    FILE *fp = fopen(path, "w");
+    if (!fp) { free(p_obs); free(nuo); free(Lnu);
+        fprintf(stderr, "[cmf_obs] cannot open %s\n", path); return -1; }
+    fprintf(fp, "wavelength_angstrom,flux\n");
+    for (int k = NObs - 1; k >= 0; --k) {       /* nu desc -> lambda asc */
+        double lam_cm = CM_C / nuo[k];
+        double L_lam  = Lnu[k] * CM_C / (lam_cm*lam_cm) * 1.0e-8;
+        fprintf(fp, "%.6f,%.6e\n", lam_cm * 1.0e8, L_lam);
+    }
+    fclose(fp);
+    fprintf(stderr, "[cmf_obs] unified Doppler emergent -> %s (%d obs freqs, "
+            "src=%s)\n", path, NObs, opac->line_source_S ? "NLTE-Sl" : "scatter");
+    free(p_obs); free(nuo); free(Lnu);
+    return 0;
+}
+
+/* ===================================================================
  * P7 PRODUCER: fine-grid line-resolved J_bar_l (gate II producer).
  *
  * Reuses the VALIDATED frequency-coupled kernel cmf_solve_J on a fine
@@ -1641,6 +1766,12 @@ void cmfgen_fine_jbar(CMFGENState *csb, const Geometry *geo,
     { const char *e = getenv("LUMINA_CMF_FINE_EMERGENT");
       if (e && atoi(e))
           cmfgen_fine_emergent(&fs, csb, geo, T_inner, "lumina_spectrum_freqres.csv"); }
+
+    /* --- UNIFIED Doppler emergent: P-Cygni + fine color + NLTE fluorescence --- */
+    { const char *e = getenv("LUMINA_CMF_FINE_EMERGENT_OBS");
+      if (e && atoi(e))
+          cmfgen_fine_emergent_obs(&fs, geo, T_inner, opac, plasma->T_e,
+                                   "lumina_spectrum_freqres_obs.csv"); }
 
     /* --- extract J_bar_l = Int phi_l J dnu / Int phi_l dnu per line --- */
     /* Per-line J_bar_l extraction: each line writes its own [l*NS .. ] slice of
