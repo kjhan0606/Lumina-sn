@@ -72,8 +72,11 @@ env LUMINA_PURE_CMFGEN=1 \
     `# rank-deficient at cold/dilute shells, so the super-thermal S_l artifact is` \
     `# cured by FLOOR_REG=0 LTE_FLOOR=1 (replace the Boltzmann@T_RAD anchor of` \
     `# isolated levels with a physical LTE@T_e level-zeroing floor). Validated:` \
-    `# optical 0% residual super-thermal emissivity. Legacy default keeps FLOOR_REG=1.` \
-    LUMINA_NLTE_FLOOR_REG=${FLOOR_REG:-1} \
+    `# optical 0% residual super-thermal emissivity. ADOPTED AS DEFAULT 2026-06-25:` \
+    `# A/B 169732(legacy) vs 169733(orthodox) -> optical max S_l/B 8.7e6 -> 1.00,` \
+    `# 30212 super-thermal lines -> 0, freqres peak 7234 -> 6830 (gold 6790),` \
+    `# grn/nir 0.26 -> 0.38, plasma no-regress (T_e 0.98, n_e dex 0.18).` \
+    LUMINA_NLTE_FLOOR_REG=${FLOOR_REG:-0} \
     LUMINA_NLTE_INV_CEIL=${INV_CEIL:-1e4} \
     LUMINA_RADEQ_TE=${RADEQ_TE:-1} \
     LUMINA_RADEQ_DIAG=1 \
@@ -103,14 +106,14 @@ env LUMINA_PURE_CMFGEN=1 \
     LUMINA_MACROATOM_EWEIGHT=${EWEIGHT:-0} \
     LUMINA_NLTE_COLL_FLOOR=${COLL_FLOOR:-0} \
     LUMINA_NLTE_BK_CEIL=${BK_CEIL:-0} \
-    LUMINA_NLTE_LTE_FLOOR=${LTE_FLOOR:-0} \
-    LUMINA_NLTE_COLL_FIX=${COLL_FIX:-0} \
-    LUMINA_NLTE_ION_LOCK=${ION_LOCK:-0} \
+    LUMINA_NLTE_LTE_FLOOR=${LTE_FLOOR:-1} \
+    LUMINA_NLTE_COLL_FIX=${COLL_FIX:-1} \
+    LUMINA_NLTE_ION_LOCK=${ION_LOCK:-1} \
     LUMINA_NLTE_LOCK_START_ITER=${LOCK_START:-0} \
-    LUMINA_NLTE_FALLBACK_TE=${FALLBACK_TE:-0} \
+    LUMINA_NLTE_FALLBACK_TE=${FALLBACK_TE:-1} \
     LUMINA_NLTE_RESID_CHECK=${RESID_CHECK:-0} \
     LUMINA_NLTE_RESID_TOL=${RESID_TOL:-1e-3} \
-    LUMINA_NLTE_LTE_NCRIT=${LTE_NCRIT:-0} \
+    LUMINA_NLTE_LTE_NCRIT=${LTE_NCRIT:-1e8} \
     LUMINA_CMFGEN_FROZEN_MORPH=${FROZEN_MORPH:-0} \
     LUMINA_CMFGEN_FROZEN_EPS=${FROZEN_EPS:-0} \
     LUMINA_CMFGEN_FROZEN_ALI=${FROZEN_ALI:-60} \
@@ -152,6 +155,7 @@ env LUMINA_PURE_CMFGEN=1 \
     LUMINA_CMF_FINE_ALI=${FINE_ALI:-16} \
     LUMINA_CMF_FINE_EMERGENT=${FINE_EMERGENT:-0} \
     LUMINA_CMF_FINE_SL_CLAMP=${FINE_SL_CLAMP:-0} \
+    LUMINA_SUPER_LEVELS=${SUPER_LEVELS:-0} \
     "$BIN" "$REF_DIR" "$N_PKT" "$N_ITER" "$SPEC_MODE" nlte \
     > stdout.log 2> stderr.log
 
