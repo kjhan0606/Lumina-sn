@@ -470,6 +470,15 @@ int load_tardis_reference_data(const char *ref_dir, Geometry *geo,
     opacity->p_kpacket = NULL;
     opacity->kpacket_cdf = NULL;
 
+    /* bf recomb-cascade topology: lazily built by compute_transition_probabilities
+     * when LUMINA_MACROATOM_BF is enabled; NULL/0 until then. */
+    opacity->recomb_block_refs = NULL;
+    opacity->recomb_dest_level = NULL;
+    opacity->recomb_nu_edge    = NULL;
+    opacity->recomb_is_emit    = NULL;
+    opacity->recomb_prob       = NULL;
+    opacity->n_recomb          = 0;
+
     printf("Data loading complete.\n"); /* Phase 2 - Step 10 */
     return 0; /* Phase 2 - Step 10 */
 }
@@ -497,6 +506,11 @@ void free_opacity_state(OpacityState *op) { /* Phase 2 - Step 11 */
     free(op->transition_line_id); /* Phase 2 - Step 11 */
     free(op->transition_probabilities); /* Phase 2 - Step 11 */
     free(op->line2macro_level_upper); /* Phase 2 - Step 11 */
+    free(op->recomb_block_refs);      /* bf recomb cascade (NULL-safe) */
+    free(op->recomb_dest_level);
+    free(op->recomb_nu_edge);
+    free(op->recomb_is_emit);
+    free(op->recomb_prob);
 }
 
 void free_plasma_state(PlasmaState *ps) { /* Phase 2 - Step 11 */
@@ -679,6 +693,28 @@ int load_atomic_data(AtomicData *atom, const char *ref_dir, int n_shells) {
         printf("  Levels: %d loaded (super_level column present%s)\n",
                atom->n_levels,
                super_active ? ", super-levels active" : ", all identity");
+    }
+    /* ARTIS-style super-level cutoff (LUMINA_SUPER_CUTOFF=K): the CMFGEN f_to_s
+     * only collapses the iron-group ions; O II / Co III / etc. stay identity
+     * (340->340) so their 250-order Saha-Boltzmann span keeps the rate matrix
+     * ill-conditioned. Apply the ARTIS recipe ION_NLEVELS_EXCITED_NLTE=K
+     * (nltepop.cc / artisoptions): per ion, levels 0..K-1 are explicit, all
+     * higher levels lump into ONE super-level K (Boltzmann-distributed by the
+     * existing within_sl_frac). level_num is the per-ion 0-based energy rank, so
+     * super = min(level_num, K). Overrides the loaded f_to_s uniformly (A/B with
+     * K=0 = keep loaded). Activate together with LUMINA_SUPER_LEVELS=1. */
+    {
+        const char *e = getenv("LUMINA_SUPER_CUTOFF");
+        int K = e ? atoi(e) : 0;
+        if (K > 0) {
+            long ncollapsed = 0;
+            for (int l = 0; l < atom->n_levels; l++) {
+                if (atom->level_num[l] >= K) { atom->level_super[l] = K; ncollapsed++; }
+                else                          atom->level_super[l] = atom->level_num[l];
+            }
+            printf("  [ARTIS super-cutoff] K=%d: %ld levels lumped → per-ion ≤%d explicit + 1 super-level "
+                   "(set LUMINA_SUPER_LEVELS=1 to activate)\n", K, ncollapsed, K);
+        }
     }
 
     /* --- Ionization energies --- */

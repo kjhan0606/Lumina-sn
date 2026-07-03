@@ -56,10 +56,30 @@ typedef struct {
     float  *h_R_bf_f32;    /* [L_phot * n_shells] host download buffer */
     double *h_R_bf;        /* [L_phot * n_shells] FP32→FP64 promoted */
 
+    /* per-K-column metadata for the fine-ν correction (filled in init) */
+    int    *col_glev;      /* [L_phot] global level idx per K col (−1 = Kramers σ) */
+    double *col_nu_th;     /* [L_phot] photoion threshold ν per K column */
+    double *col_sig0;      /* [L_phot] Kramers σ_0 (used when col_glev<0); −1 if cmfgen */
+    double  nu_min_b, dlognu_b;  /* binned log grid (for in-window bin range) */
+
     cublasHandle_t handle;
 } NLTERatesGemmState;
 
 static NLTERatesGemmState g_nlte_gemm = {0};
+
+/* Fine-ν local field registered by the producer (cmfgen_fine_jbar) so the binned
+ * R_bf GEMM can be corrected over the fine window (LUMINA_CMF_FINE_PHOTOION).
+ * NULL → no correction (binned only). */
+static const double *g_fgemm_jnu = NULL, *g_fgemm_nu = NULL;
+static int g_fgemm_nf = 0, g_fgemm_ns = 0;
+static double g_fgemm_nulo = 0.0, g_fgemm_dlognu = 0.0;
+static AtomicData *g_fgemm_atom = NULL;
+extern "C" void nlte_rates_gpu_set_fine(const double *jnu, const double *nu,
+        int n_fine, double nu_lo, double dlognu, int n_shells, AtomicData *atom) {
+    g_fgemm_jnu = jnu; g_fgemm_nu = nu; g_fgemm_nf = n_fine;
+    g_fgemm_nulo = nu_lo; g_fgemm_dlognu = dlognu; g_fgemm_ns = n_shells;
+    g_fgemm_atom = atom;
+}
 
 /* The NLTE GPU caller currently uses fixed pair tuples (0,1),(2,3),...,
  * (28,29),(29,30) in lumina_cuda.cu. Mirror that here; if the layout changes,
@@ -106,6 +126,14 @@ extern "C" int nlte_rates_gpu_init(NLTEConfig *nlte, AtomicData *atom, int n_she
     g_nlte_gemm.n_pairs  = n_pairs;
     g_nlte_gemm.L_phot   = L_phot;
     g_nlte_gemm.phot_offset = phot_offset;
+    g_nlte_gemm.nu_min_b  = nlte->nu_min;
+    g_nlte_gemm.dlognu_b  = nlte->d_log_nu;
+    g_nlte_gemm.col_glev  = (int *)malloc((size_t)L_phot * sizeof(int));
+    g_nlte_gemm.col_nu_th = (double *)malloc((size_t)L_phot * sizeof(double));
+    g_nlte_gemm.col_sig0  = (double *)malloc((size_t)L_phot * sizeof(double));
+    for (int c = 0; c < L_phot; c++) { g_nlte_gemm.col_glev[c] = -1;
+                                       g_nlte_gemm.col_nu_th[c] = 0.0;
+                                       g_nlte_gemm.col_sig0[c] = -1.0; }
 
     /* Pass 2: build K[n_freq * L_phot] FP32 col-major.
      *
@@ -135,6 +163,21 @@ extern "C" int nlte_rates_gpu_init(NLTEConfig *nlte, AtomicData *atom, int n_she
     const int use_cmfgen = atom->cmfgen_loaded &&
                            atom->cmfgen_n_freq_bins == n_freq;
     int n_active_levels = 0, n_cmfgen_levels = 0, n_kramers_levels = 0;
+
+    /* FINE-PHOTOION reach diagnostic (LUMINA_CMF_FINE_PHOTOION_DIAG): per ion stage,
+     * what fraction of each edge's photoion kernel weight Σσ_bf·4π/(hν)·Δν lies in the
+     * fine window [LAMLO,LAMHI] Å — i.e. how much of the rate a fine-ν field would
+     * resolve. If the high-ion edges (stage≥2, which ionize the thin outer) carry
+     * negligible in-window weight, the fine-photoion approach cannot help and a full
+     * tiled-GEMM build is not worth it. Read-only; no effect on K. */
+    int fph_diag = 0;
+    { const char *e=getenv("LUMINA_CMF_FINE_PHOTOION_DIAG"); if(e) fph_diag=atoi(e); }
+    double fph_lamlo=228.0, fph_lamhi=4000.0;
+    { const char *e=getenv("LUMINA_CMF_FINE_LAMLO"); if(e) fph_lamlo=atof(e);
+      const char *h=getenv("LUMINA_CMF_FINE_LAMHI"); if(h) fph_lamhi=atof(h); }
+    double fph_nu_hi = 2.99792458e10/(fph_lamlo*1e-8);   /* blue edge of window [Hz] */
+    double fph_nu_lo = 2.99792458e10/(fph_lamhi*1e-8);   /* red edge */
+    long fph_cnt[8]={0}; double fph_fsum[8]={0}; long fph_cmf[8]={0};
     for (int p = 0; p < n_pairs; p++) {
         int ion_idx_lo = NLTE_PAIR_LO[p];
         int Z_elem = nlte->nlte_Z[ion_idx_lo];
@@ -177,6 +220,9 @@ extern "C" int nlte_rates_gpu_init(NLTEConfig *nlte, AtomicData *atom, int n_she
                 &atom->cmfgen_sigma_bf[(size_t)global_lev * (size_t)n_freq] : NULL;
 
             int idx = phot_offset[p] + lev;
+            g_nlte_gemm.col_glev[idx]  = level_has_cmfgen ? global_lev : -1;
+            g_nlte_gemm.col_nu_th[idx] = nu_thresh;
+            g_nlte_gemm.col_sig0[idx]  = level_has_cmfgen ? -1.0 : sigma_0;
             float *K_col = h_K + (size_t)idx * n_freq;
             for (int bb = 0; bb < n_freq; bb++) {
                 double sigma;
@@ -191,10 +237,33 @@ extern "C" int nlte_rates_gpu_init(NLTEConfig *nlte, AtomicData *atom, int n_she
                                (H_PLANCK * nu_bin[bb]) * dnu_bin[bb];
                 K_col[bb] = (float)k_val;
             }
+            if (fph_diag) {   /* in-window photoion-weight fraction for this edge */
+                double wtot=0.0, win=0.0;
+                for (int bb=0; bb<n_freq; bb++) {
+                    double k=K_col[bb]; if (k<=0.0) continue;
+                    wtot += k;
+                    if (nu_bin[bb] >= fph_nu_lo && nu_bin[bb] <= fph_nu_hi) win += k;
+                }
+                if (wtot > 0.0) {
+                    int st = ion_lo; if (st<0) st=0; if (st>7) st=7;
+                    fph_cnt[st]++; fph_fsum[st]+= win/wtot;
+                    if (level_has_cmfgen) fph_cmf[st]++;
+                }
+            }
             if (level_has_cmfgen) n_cmfgen_levels++;
             else                  n_kramers_levels++;
             n_active_levels++;
         }
+    }
+    if (fph_diag) {
+        fprintf(stderr, "[FINE-PHOTOION-DIAG] window %.0f-%.0f A: per-ion-stage "
+                "edges and mean in-window photoion-weight fraction\n",
+                fph_lamlo, fph_lamhi);
+        for (int st=0; st<8; st++) if (fph_cnt[st]>0)
+            fprintf(stderr, "  ion stage %d (%s): %ld edges (%ld cmfgen-sigma), "
+                    "mean in-window weight frac = %.3f\n", st,
+                    st==0?"neutral":st==1?"I+":st==2?"II+":st>=3?"III+":"",
+                    fph_cnt[st], fph_cmf[st], fph_fsum[st]/(double)fph_cnt[st]);
     }
     free(nu_bin); free(dnu_bin);
 
@@ -223,6 +292,123 @@ extern "C" int nlte_rates_gpu_init(NLTEConfig *nlte, AtomicData *atom, int n_she
            n_pairs, L_phot, n_active_levels, n_cmfgen_levels, n_kramers_levels,
            n_freq, n_shells, mb);
     return 0;
+}
+
+/* Correct d_R_bf over the fine-ν window: subtract the coarse in-window contribution
+ * (offset GEMM over the contiguous in-window binned bins) and add the fine-grid one
+ * (tiled K_fine^T·J_fine). Frequency-tiled + memory-aware; on ANY cuBLAS/CUDA/alloc
+ * failure it leaves R_bf as the binned result (graceful fallback — the fine field is
+ * an enhancement). Returns 1 if it ran, 0 if skipped (no fine field / nothing in
+ * window / fallback). This is the deterministic analog of ARTIS's exact-frequency bf
+ * estimator: the photoion rate is integrated against the frequency-RESOLVED field so
+ * the hard UV that the coarse bins average away reaches the thin outer. */
+static int fine_correct_R_bf(void)
+{
+    if (!g_fgemm_jnu || g_fgemm_nf < 2 || !g_fgemm_atom) return 0;
+    int L = g_nlte_gemm.L_phot, S = g_nlte_gemm.n_shells, NFb = g_nlte_gemm.n_freq;
+    int NF = g_fgemm_nf;
+    if (g_fgemm_ns != S || !g_nlte_gemm.col_glev) return 0;
+    const double *nuf = g_fgemm_nu, *jf = g_fgemm_jnu;
+    double nu_lo_w = nuf[0], nu_hi_w = nuf[NF - 1];
+
+    int fine_cols = 0;
+    for (int c = 0; c < L; c++)
+        if ((g_nlte_gemm.col_glev[c] >= 0 || g_nlte_gemm.col_sig0[c] > 0.0)
+            && g_nlte_gemm.col_nu_th[c] < nu_hi_w) fine_cols++;
+    fprintf(stderr, "[FINE-GEMM] fine photoion correction: %d/%d cols in window "
+            "%.0f-%.0f A (NF=%d)\n", fine_cols, L,
+            2.99792458e18/nu_hi_w, 2.99792458e18/nu_lo_w, NF);
+    if (fine_cols == 0) return 0;
+
+    /* --- A. subtract the coarse in-window contribution (contiguous bin range) --- */
+    double lnmin = log(g_nlte_gemm.nu_min_b), dln = g_nlte_gemm.dlognu_b;
+    int bb_lo = (int)ceil ((log(nu_lo_w) - lnmin) / dln - 0.5);
+    int bb_hi = (int)floor((log(nu_hi_w) - lnmin) / dln - 0.5);
+    if (bb_lo < 0) bb_lo = 0;
+    if (bb_hi > NFb - 1) bb_hi = NFb - 1;
+    if (bb_hi >= bb_lo) {
+        int kw = bb_hi - bb_lo + 1;
+        float am = -1.0f, bt = 1.0f;
+        cublasStatus_t st = cublasGemmEx(g_nlte_gemm.handle, CUBLAS_OP_T, CUBLAS_OP_N,
+            L, S, kw, &am,
+            g_nlte_gemm.d_K   + bb_lo, CUDA_R_32F, NFb,
+            g_nlte_gemm.d_J_nu+ bb_lo, CUDA_R_32F, NFb,
+            &bt, g_nlte_gemm.d_R_bf,   CUDA_R_32F, L,
+            CUBLAS_COMPUTE_32F_FAST_TF32, CUBLAS_GEMM_DEFAULT);
+        if (st != CUBLAS_STATUS_SUCCESS) {
+            fprintf(stderr, "[FINE-GEMM] subtract GEMM failed %d -> keep binned\n", st);
+            return 0;
+        }
+    }
+
+    /* --- B. add the fine in-window contribution, frequency-tiled --- */
+    size_t freeb = 0, totb = 0; cudaMemGetInfo(&freeb, &totb);
+    size_t per_col = ((size_t)L + S) * sizeof(float);
+    long tile = (per_col > 0) ? (long)((freeb / 2) / per_col) : 4096;
+    if (tile > NF) tile = NF;
+    if (tile > 65536) tile = 65536;       /* cap host K-build cost per tile */
+    if (tile < 256)  tile = 256;
+    float *h_Kt = (float *)malloc((size_t)tile * L * sizeof(float));
+    float *h_Jt = (float *)malloc((size_t)tile * S * sizeof(float));
+    float *d_Kt = NULL, *d_Jt = NULL;
+    if (!h_Kt || !h_Jt ||
+        cudaMalloc(&d_Kt, (size_t)tile * L * sizeof(float)) != cudaSuccess ||
+        cudaMalloc(&d_Jt, (size_t)tile * S * sizeof(float)) != cudaSuccess) {
+        fprintf(stderr, "[FINE-GEMM] tile alloc failed (tile=%ld) -> keep binned "
+                "(note: subtract already applied; re-add coarse)\n", tile);
+        /* re-add the coarse in-window we subtracted, to stay consistent */
+        if (bb_hi >= bb_lo) { int kw=bb_hi-bb_lo+1; float a=1.0f,b=1.0f;
+            cublasGemmEx(g_nlte_gemm.handle,CUBLAS_OP_T,CUBLAS_OP_N,L,S,kw,&a,
+                g_nlte_gemm.d_K+bb_lo,CUDA_R_32F,NFb, g_nlte_gemm.d_J_nu+bb_lo,CUDA_R_32F,NFb,
+                &b,g_nlte_gemm.d_R_bf,CUDA_R_32F,L,CUBLAS_COMPUTE_32F_FAST_TF32,CUBLAS_GEMM_DEFAULT); }
+        free(h_Kt); free(h_Jt); if (d_Kt) cudaFree(d_Kt); if (d_Jt) cudaFree(d_Jt);
+        return 0;
+    }
+    const double hpl = 6.62607015e-27;
+    AtomicData *atom = g_fgemm_atom;
+    for (long t0 = 0; t0 < NF; t0 += tile) {
+        long tn = (t0 + tile <= NF) ? tile : (NF - t0);
+        memset(h_Kt, 0, (size_t)tn * L * sizeof(float));
+        #ifdef _OPENMP
+        #pragma omp parallel for schedule(dynamic, 16)
+        #endif
+        for (int c = 0; c < L; c++) {
+            int gl = g_nlte_gemm.col_glev[c];
+            double thr = g_nlte_gemm.col_nu_th[c]; if (thr <= 0.0) continue;
+            double s0 = g_nlte_gemm.col_sig0[c];
+            if (gl < 0 && s0 <= 0.0) continue;          /* inactive column */
+            const double *srow = (gl >= 0) ?
+                &atom->cmfgen_sigma_bf[(size_t)gl * NFb] : NULL;
+            for (long it = 0; it < tn; it++) {
+                double nu = nuf[t0 + it]; if (nu < thr) continue;
+                double sig;
+                if (srow) {  /* CMFGEN tabulated σ_bf, nearest coarse bin */
+                    int bb = (int)((log(nu) - lnmin) / dln);
+                    if (bb < 0 || bb >= NFb) continue;
+                    sig = srow[bb]; if (sig <= 0.0) continue;
+                } else {     /* Kramers fallback σ_0·(ν_thr/ν)^3 — matches binned K-build */
+                    sig = s0 * (thr/nu) * (thr/nu) * (thr/nu);
+                }
+                double dnu = nu * g_fgemm_dlognu;
+                h_Kt[(size_t)c * tn + it] = (float)(sig * 4.0 * M_PI_VAL / (hpl * nu) * dnu);
+            }
+        }
+        for (long it = 0; it < tn; it++)
+            for (int s = 0; s < S; s++)
+                h_Jt[(size_t)s * tn + it] = (float)jf[(size_t)s * NF + (t0 + it)];
+        if (cudaMemcpy(d_Kt, h_Kt, (size_t)tn * L * sizeof(float), cudaMemcpyHostToDevice) != cudaSuccess ||
+            cudaMemcpy(d_Jt, h_Jt, (size_t)tn * S * sizeof(float), cudaMemcpyHostToDevice) != cudaSuccess) {
+            fprintf(stderr, "[FINE-GEMM] tile copy failed -> abort fine add\n"); break;
+        }
+        float a1 = 1.0f, b1 = 1.0f;
+        cublasGemmEx(g_nlte_gemm.handle, CUBLAS_OP_T, CUBLAS_OP_N, L, S, (int)tn, &a1,
+            d_Kt, CUDA_R_32F, (int)tn, d_Jt, CUDA_R_32F, (int)tn, &b1,
+            g_nlte_gemm.d_R_bf, CUDA_R_32F, L,
+            CUBLAS_COMPUTE_32F_FAST_TF32, CUBLAS_GEMM_DEFAULT);
+    }
+    cudaDeviceSynchronize();
+    free(h_Kt); free(h_Jt); cudaFree(d_Kt); cudaFree(d_Jt);
+    return 1;
 }
 
 /* Compute R_bf[L_phot × n_shells] = K^T · J_nu using TF32 GEMM.
@@ -270,6 +456,10 @@ extern "C" int nlte_rates_gpu_compute(NLTEConfig *nlte, NLTERateLookup *out_look
         return -1;
     }
 
+    /* Fine-ν photoion correction over the producer's window (gated by the producer
+     * having registered a fine field via nlte_rates_gpu_set_fine). No-op otherwise. */
+    fine_correct_R_bf();
+
     CUDA_CHECK(cudaMemcpy(g_nlte_gemm.h_R_bf_f32, g_nlte_gemm.d_R_bf,
                           (size_t)L_phot * n_shells * sizeof(float),
                           cudaMemcpyDeviceToHost));
@@ -298,5 +488,8 @@ extern "C" void nlte_rates_gpu_free(void)
     free(g_nlte_gemm.h_J_nu);
     free(g_nlte_gemm.h_R_bf_f32);
     free(g_nlte_gemm.h_R_bf);
+    free(g_nlte_gemm.col_glev);
+    free(g_nlte_gemm.col_nu_th);
+    free(g_nlte_gemm.col_sig0);
     memset(&g_nlte_gemm, 0, sizeof(g_nlte_gemm));
 }

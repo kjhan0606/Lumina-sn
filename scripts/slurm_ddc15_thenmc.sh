@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH --job-name=ddc15_thenmc
-#SBATCH --partition=h100,h200,a100,a40
+#SBATCH --partition=h200,h100,a100,a40
 #SBATCH --gres=gpu:1
 #SBATCH --cpus-per-task=4
 #SBATCH --time=UNLIMITED

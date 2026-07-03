@@ -265,6 +265,109 @@ extern "C" int bf_gemm_compute(BFOpacity *bf, AtomicData *atom,
     return 0;
 }
 
+/* Fine-ν bf opacity: chi_bf_fine[s,i] = Σ_l n_level[s,l]·σ_bf,l(ν_i) with the bf EDGES
+ * resolved at the exact photoion threshold on the fine grid (sharp onset at thr_l +
+ * nearest-bin σ magnitude). This is the CMFGEN-method fix: it makes the producer's fine
+ * continuum field develop the across-edge frequency structure that the binned grid (and
+ * the log-ν interpolation in cmfgen_fine_jbar) averages away. Same dilute-LTE n_level and
+ * TF32 GEMM as bf_gemm_compute, just on the fine ν grid, frequency-TILED + memory-aware.
+ * chi_bf_fine_out is [n_shells * n_fine] row-major. Returns 0 on success, -1 on failure
+ * (caller keeps the interpolated continuum). */
+extern "C" int bf_gemm_compute_fine(BFOpacity *bf, AtomicData *atom, PlasmaState *plasma,
+        int n_shells, const double *nu_fine, int n_fine,
+        double nu_min_bin, double dlognu_bin, double *chi_bf_fine_out)
+{
+    (void)bf;
+    if (!g_bf_gemm.initialized) { if (bf_gemm_init(atom, n_shells) != 0) return -1; }
+    if (n_shells != g_bf_gemm.n_shells || !atom->cmfgen_sigma_bf || n_fine < 2) return -1;
+    int n_levels = g_bf_gemm.n_levels;
+    int n_freq   = g_bf_gemm.n_freq_bins;
+    int n_ip     = g_bf_gemm.n_ion_pops;
+
+    /* recompute dilute-LTE n_level for the current plasma (== bf_gemm_compute step 1) */
+    CUDA_CHECK(cudaMemcpy(g_bf_gemm.d_T_rad, plasma->T_rad, n_shells*sizeof(double), cudaMemcpyHostToDevice));
+    CUDA_CHECK(cudaMemcpy(g_bf_gemm.d_W, plasma->W, n_shells*sizeof(double), cudaMemcpyHostToDevice));
+    CUDA_CHECK(cudaMemcpy(g_bf_gemm.d_n_ion, atom->ion_number_density, (size_t)n_ip*n_shells*sizeof(double), cudaMemcpyHostToDevice));
+    CUDA_CHECK(cudaMemcpy(g_bf_gemm.d_Z_part, atom->partition_functions, (size_t)n_ip*n_shells*sizeof(double), cudaMemcpyHostToDevice));
+    {
+        dim3 block(64,4);
+        dim3 grid((n_levels+block.x-1)/block.x, (n_shells+block.y-1)/block.y);
+        bf_compute_n_level_kernel<<<grid,block>>>(g_bf_gemm.d_n_level, g_bf_gemm.d_T_rad,
+            g_bf_gemm.d_W, g_bf_gemm.d_n_ion, g_bf_gemm.d_Z_part, g_bf_gemm.d_level_E_eV,
+            g_bf_gemm.d_level_g, g_bf_gemm.d_level_metastable, g_bf_gemm.d_level_to_ip,
+            g_bf_gemm.d_level_stage, n_shells, n_levels);
+        CUDA_CHECK(cudaGetLastError());
+    }
+
+    /* per-level photoion threshold ν = (χ_ion − E_level)/h, stage≥1 only (cached) */
+    static double *thr = NULL; static int thr_n = 0;
+    if (!thr || thr_n != n_levels) {
+        free(thr); thr = (double*)malloc((size_t)n_levels*sizeof(double)); thr_n = n_levels;
+        for (int l = 0; l < n_levels; l++) {
+            thr[l] = -1.0;
+            int ip = -1;
+            for (int p = 0; p < n_ip; p++)
+                if (l >= atom->level_offset[p] && l < atom->level_offset[p+1]) { ip = p; break; }
+            if (ip < 0 || atom->ion_pop_stage[ip] < 1) continue;
+            int Z = atom->ion_pop_Z[ip], st = atom->ion_pop_stage[ip];
+            double chi_eV = -1.0;
+            for (int k = 0; k < atom->n_ionization; k++)
+                if (atom->ioniz_Z[k]==Z && atom->ioniz_ion[k]==st) { chi_eV = atom->ioniz_energy_eV[k]; break; }
+            if (chi_eV <= 0.0) continue;
+            double e_th = (chi_eV - atom->level_energy_eV[l]) * EV_TO_ERG;
+            if (e_th > 0.0) thr[l] = e_th / H_PLANCK;
+        }
+    }
+
+    /* frequency-tiled GEMM: C[tn×n_shells] = σ_fine[tn×n_levels] · n_level[n_levels×n_shells] */
+    double lnmin = log(nu_min_bin);
+    size_t freeb=0, totb=0; cudaMemGetInfo(&freeb, &totb);
+    long tile = (long)((freeb/2) / ((size_t)(n_levels + n_shells) * sizeof(float)));
+    if (tile > n_fine) tile = n_fine;
+    if (tile > 16384) tile = 16384;
+    if (tile < 256)   tile = 256;
+    float *h_sig = (float*)malloc((size_t)tile*n_levels*sizeof(float));
+    float *h_chi = (float*)malloc((size_t)tile*n_shells*sizeof(float));
+    float *d_sig = NULL, *d_chi = NULL;
+    if (!h_sig || !h_chi ||
+        cudaMalloc(&d_sig, (size_t)tile*n_levels*sizeof(float)) != cudaSuccess ||
+        cudaMalloc(&d_chi, (size_t)tile*n_shells*sizeof(float)) != cudaSuccess) {
+        fprintf(stderr, "[BF-GEMM-FINE] alloc failed (tile=%ld) -> keep interpolated\n", tile);
+        free(h_sig); free(h_chi); if (d_sig) cudaFree(d_sig); if (d_chi) cudaFree(d_chi);
+        return -1;
+    }
+    const double *sig_tab = atom->cmfgen_sigma_bf;   /* [n_levels × n_freq] row-major */
+    for (long t0 = 0; t0 < n_fine; t0 += tile) {
+        long tn = (t0+tile <= n_fine) ? tile : (n_fine - t0);
+        memset(h_sig, 0, (size_t)tn*n_levels*sizeof(float));
+        #ifdef _OPENMP
+        #pragma omp parallel for schedule(dynamic,64)
+        #endif
+        for (int l = 0; l < n_levels; l++) {
+            double tl = thr[l]; if (tl <= 0.0) continue;
+            const double *srow = &sig_tab[(size_t)l*n_freq];
+            for (long i = 0; i < tn; i++) {
+                double nu = nu_fine[t0+i]; if (nu < tl) continue;        /* sharp edge */
+                int bb = (int)((log(nu)-lnmin)/dlognu_bin); if (bb<0||bb>=n_freq) continue;
+                double sg = srow[bb]; if (sg <= 0.0) continue;
+                h_sig[(size_t)l*tn + i] = (float)sg;     /* col-major [tn×n_levels]: (i,l)=l*tn+i */
+            }
+        }
+        if (cudaMemcpy(d_sig, h_sig, (size_t)tn*n_levels*sizeof(float), cudaMemcpyHostToDevice) != cudaSuccess) {
+            fprintf(stderr, "[BF-GEMM-FINE] tile copy failed -> abort\n"); break; }
+        float a=1.0f, b=0.0f;
+        cublasGemmEx(g_bf_gemm.cublas_handle, CUBLAS_OP_N, CUBLAS_OP_N, (int)tn, n_shells, n_levels,
+            &a, d_sig, CUDA_R_32F, (int)tn, g_bf_gemm.d_n_level, CUDA_R_32F, n_levels,
+            &b, d_chi, CUDA_R_32F, (int)tn, CUBLAS_COMPUTE_32F_FAST_TF32, CUBLAS_GEMM_DEFAULT);
+        cudaMemcpy(h_chi, d_chi, (size_t)tn*n_shells*sizeof(float), cudaMemcpyDeviceToHost);
+        for (int s = 0; s < n_shells; s++)
+            for (long i = 0; i < tn; i++)
+                chi_bf_fine_out[(size_t)s*n_fine + (t0+i)] = (double)h_chi[(size_t)s*tn + i];
+    }
+    free(h_sig); free(h_chi); cudaFree(d_sig); cudaFree(d_chi);
+    return 0;
+}
+
 extern "C" void bf_gemm_free(void)
 {
     if (!g_bf_gemm.initialized) return;

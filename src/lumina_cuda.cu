@@ -67,6 +67,18 @@ typedef struct {                           /* Phase 6 - Step 1 */
     int    *d_line2macro_level_upper;      /* Phase 6 - Step 1: [n_lines] */
     double *d_p_kpacket;                    /* [n_macro_levels * n_shells] k-packet deactivation prob (NULL if off) */
     double *d_kpacket_cdf;                  /* [n_shells * n_macro_levels] per-shell re-excitation CDF (NULL if off) */
+    double *d_kpacket_ff;                   /* [n_shells] P(free-free | k-packet) (Path A; NULL if off) */
+    double *d_kpacket_te;                   /* [n_shells] T_e per shell for ff nu sampling */
+    double *d_kpacket_fb;                   /* [n_shells] P(free-bound | k-packet) — UV recomb escape */
+    double *d_kpacket_fbnu;                 /* [n_shells] representative recomb edge freq [Hz] */
+    /* [MACROATOM_BF] bf recomb cascade (NULL if LUMINA_MACROATOM_BF off). Sized
+     * lazily from opacity->n_recomb (known only after host topology build). */
+    int    *d_recomb_block_refs;           /* [n_macro_levels+1] CSR offsets */
+    double *d_recomb_prob;                  /* [n_recomb*n_shells] CDF weights */
+    int    *d_recomb_dest_level;           /* [n_recomb] lower-ion target level */
+    int    *d_recomb_is_emit;              /* [n_recomb] (increment 2) */
+    double *d_recomb_nu_edge;              /* [n_recomb] (increment 2) */
+    int     n_recomb;                       /* mirror for upload/free */
     int    *d_line_atomic_number;          /* [n_lines] Z for Fe two-level scatter */
     int    *d_line_ion_number;             /* [n_lines] ion stage for Fe II selective scatter */
 
@@ -89,6 +101,11 @@ typedef struct {                           /* Phase 6 - Step 1 */
     /* Rotation packet mode: store r, mu at escape for Doppler weighting */
     double *d_escaped_r;                   /* [n_packets] */
     double *d_escaped_mu;                  /* [n_packets] */
+
+    /* [KROMER] per-packet last-interaction tracking (LUMINA_KROMER on; else NULL) */
+    int    *d_escaped_emit_line;          /* [n_packets] last emission line_id or -1 */
+    int    *d_escaped_in_line;            /* [n_packets] last absorption line_id or -1 */
+    double *d_escaped_in_nu;              /* [n_packets] comoving nu at last absorption */
 
     /* Virtual packet spectrum (GPU-side atomicAdd target) */
     double *d_virtual_spectrum;            /* [VSPEC_N_BINS] */
@@ -145,13 +162,32 @@ static void cuda_allocate(CudaDeviceData *dev, Geometry *geo,
      * builds them in compute_transition_probabilities). NULL → selector skips. */
     dev->d_p_kpacket  = NULL;
     dev->d_kpacket_cdf = NULL;
+    dev->d_kpacket_ff = NULL;
+    dev->d_kpacket_te = NULL;
+    dev->d_kpacket_fb = NULL;
+    dev->d_kpacket_fbnu = NULL;
+    /* [MACROATOM_BF] recomb arrays allocated lazily in cuda_upload_recomb. */
+    dev->d_recomb_block_refs = NULL;
+    dev->d_recomb_prob       = NULL;
+    dev->d_recomb_dest_level = NULL;
+    dev->d_recomb_is_emit    = NULL;
+    dev->d_recomb_nu_edge    = NULL;
+    dev->n_recomb            = 0;
     if (getenv("LUMINA_KPACKET") && atoi(getenv("LUMINA_KPACKET")) != 0) {
         CUDA_CHECK(cudaMalloc(&dev->d_p_kpacket,  (size_t)nlev * ns * sizeof(double)));
         CUDA_CHECK(cudaMalloc(&dev->d_kpacket_cdf, (size_t)ns * nlev * sizeof(double)));
+        CUDA_CHECK(cudaMalloc(&dev->d_kpacket_ff, (size_t)ns * sizeof(double)));
+        CUDA_CHECK(cudaMalloc(&dev->d_kpacket_te, (size_t)ns * sizeof(double)));
+        CUDA_CHECK(cudaMalloc(&dev->d_kpacket_fb, (size_t)ns * sizeof(double)));
+        CUDA_CHECK(cudaMalloc(&dev->d_kpacket_fbnu, (size_t)ns * sizeof(double)));
         /* zero-init so the first transport iter (before compute_transition_
          * probabilities populates the tables) makes no k-packet rolls (p=0). */
         CUDA_CHECK(cudaMemset(dev->d_p_kpacket,  0, (size_t)nlev * ns * sizeof(double)));
         CUDA_CHECK(cudaMemset(dev->d_kpacket_cdf, 0, (size_t)ns * nlev * sizeof(double)));
+        CUDA_CHECK(cudaMemset(dev->d_kpacket_ff, 0, (size_t)ns * sizeof(double)));
+        CUDA_CHECK(cudaMemset(dev->d_kpacket_te, 0, (size_t)ns * sizeof(double)));
+        CUDA_CHECK(cudaMemset(dev->d_kpacket_fb, 0, (size_t)ns * sizeof(double)));
+        CUDA_CHECK(cudaMemset(dev->d_kpacket_fbnu, 0, (size_t)ns * sizeof(double)));
     }
 
     /* Phase 6 - Step 1: Geometry */
@@ -179,6 +215,17 @@ static void cuda_allocate(CudaDeviceData *dev, Geometry *geo,
     CUDA_CHECK(cudaMalloc(&dev->d_escaped_r, n_packets * sizeof(double)));          /* Rotation mode */
     CUDA_CHECK(cudaMalloc(&dev->d_escaped_mu, n_packets * sizeof(double)));         /* Rotation mode */
     CUDA_CHECK(cudaMalloc(&dev->d_virtual_spectrum, VSPEC_N_BINS * sizeof(double)));
+
+    /* [KROMER] last-interaction arrays: allocated only when LUMINA_KROMER on
+     * (NULL otherwise → kernel writes and CSV skipped → byte-identical baseline). */
+    dev->d_escaped_emit_line = NULL;
+    dev->d_escaped_in_line   = NULL;
+    dev->d_escaped_in_nu     = NULL;
+    if (getenv("LUMINA_KROMER") && atoi(getenv("LUMINA_KROMER")) != 0) {
+        CUDA_CHECK(cudaMalloc(&dev->d_escaped_emit_line, n_packets * sizeof(int)));
+        CUDA_CHECK(cudaMalloc(&dev->d_escaped_in_line,   n_packets * sizeof(int)));
+        CUDA_CHECK(cudaMalloc(&dev->d_escaped_in_nu,     n_packets * sizeof(double)));
+    }
 
     /* NLTE: J_nu estimator (allocated but NULL-checked in kernel) */
     dev->d_j_nu_estimator = NULL;
@@ -220,6 +267,11 @@ static void cuda_allocate_bf(CudaDeviceData *dev, BFOpacity *bf, int n_shells) {
  * by EPS_UV / EPS_IR macro-atom thermalization paths. */
 static void cuda_upload_T_rad(CudaDeviceData *dev, PlasmaState *plasma,
                                int n_shells) {
+    /* Path A: per-shell T_e for k-packet free-free nu sampling (independent of T_rad). */
+    if (dev->d_kpacket_te && plasma->T_e) {
+        CUDA_CHECK(cudaMemcpy(dev->d_kpacket_te, plasma->T_e,
+                   n_shells * sizeof(double), cudaMemcpyHostToDevice));
+    }
     if (!dev->d_T_rad) return;
     CUDA_CHECK(cudaMemcpy(dev->d_T_rad, plasma->T_rad,
                n_shells * sizeof(double), cudaMemcpyHostToDevice));
@@ -309,26 +361,35 @@ static void cuda_nlte_solver_free(CudaNLTESolver *sol) {
  * -> routes to the CPU Boltzmann fallback instead of silent garbage. This is a
  * faithful numerical fix, NOT a clamp: it changes only the conditioning. */
 static void nlte_equilibrate_system(double *A_cm, double *b, int N, double *cscale) {
-    for (int i = 0; i < N; i++) {            /* row scaling: r[i] = 1/max_j|A(i,j)| */
-        double rmax = 0.0;
-        for (int j = 0; j < N; j++) {
-            double v = fabs(A_cm[(size_t)j * N + i]);
-            if (v > rmax) rmax = v;
-        }
-        double r = (rmax > 0.0) ? 1.0 / rmax : 1.0;
-        for (int j = 0; j < N; j++) A_cm[(size_t)j * N + i] *= r;
-        b[i] *= r;
-    }
-    for (int j = 0; j < N; j++) {            /* col scaling: c[j] = 1/max_i|A(i,j)| */
-        double *col = A_cm + (size_t)j * N;
-        double cmax = 0.0;
+    /* ARTIS-style ITERATIVE row-column equilibration (nltepop.cc:733
+     * nltepop_matrix_normalise). The single-pass infinity-norm version (replaced
+     * here) was shown to be insufficient / harmful at the >80-order Boltzmann
+     * spans of cold-Te iron-group matrices (N5 self-test). Faithful fix: repeatedly
+     * balance each index's row vs column 2-norm via the geometric mean
+     * f = sqrt(coln/rown); scale row i by f and column i by 1/f. This drives all
+     * row/col norms toward O(1), decoupling ill-conditioning from the LU solve.
+     * Column scaling is accumulated in cscale so the caller un-scales the solution
+     * x_true[j] = x_solved[j] * cscale[j]; b carries the row scaling.
+     * A_cm is column-major: A(i,j) = A_cm[(size_t)j*N + i]. */
+    for (int j = 0; j < N; j++) cscale[j] = 1.0;
+    const int MAXIT = 12;
+    for (int iter = 0; iter < MAXIT; iter++) {
+        double maxdev = 0.0;
         for (int i = 0; i < N; i++) {
-            double v = fabs(col[i]);
-            if (v > cmax) cmax = v;
+            double rown = 0.0, coln = 0.0;          /* row i and col i 2-norms */
+            for (int j = 0; j < N; j++) { double v = A_cm[(size_t)j * N + i]; rown += v * v; }
+            for (int k = 0; k < N; k++) { double v = A_cm[(size_t)i * N + k]; coln += v * v; }
+            rown = sqrt(rown); coln = sqrt(coln);
+            if (rown <= 0.0 || coln <= 0.0) continue;
+            double f = sqrt(coln / rown);
+            for (int j = 0; j < N; j++) A_cm[(size_t)j * N + i] *= f;   /* scale row i */
+            b[i] *= f;
+            for (int k = 0; k < N; k++) A_cm[(size_t)i * N + k] /= f;   /* scale col i */
+            cscale[i] /= f;
+            double dev = fabs(f - 1.0);
+            if (dev > maxdev) maxdev = dev;
         }
-        double c = (cmax > 0.0) ? 1.0 / cmax : 1.0;
-        for (int i = 0; i < N; i++) col[i] *= c;
-        cscale[j] = c;
+        if (maxdev < 1e-3) break;
     }
 }
 
@@ -550,6 +611,12 @@ static void nlte_solve_all_gpu(NLTEConfig *nlte, AtomicData *atom,
                                 GammaDeposition *gamma_dep) {
     printf("  [NLTE-GPU] Solving rate equations (cuBLAS batched, with CE)...\n");
 
+    /* Refresh within-super-level Boltzmann fractions at the current T_e BEFORE
+     * assembly/reconstruction. The CPU nlte_solve_all does this; the GPU path
+     * previously omitted it, leaving within_sl_frac at its init value 1.0 ->
+     * flat SL reconstruction -> super-thermal b_k ~ exp(dE/kT_e). */
+    nlte_precompute_within_sl_frac(nlte, atom, plasma, n_shells);
+
     /* #281: 16 pairs (last two overlap on slot 29 = O II) for full O triplet. */
     int n_pairs = NLTE_PAIR_COUNT;
     int pairs[][2] = { {0,1}, {2,3}, {4,5}, {6,7}, {8,9}, {10,11},
@@ -590,10 +657,35 @@ static void nlte_solve_all_gpu(NLTEConfig *nlte, AtomicData *atom,
         printf("  [NLTE-GEMM] R_bf table ready (%d levels × %d shells)\n",
                nlte_lookup.L_phot_total, n_shells);
 
+    /* GPU port of the dominant per-line bound-bound assembly loop
+     * (LUMINA_NLTE_ASSEMBLE_GPU: 0=CPU [default, byte-identical], 1=GPU bb,
+     * 2=GPU bb + per-pair max-rel-diff self-check vs full CPU assembly).
+     * The CPU still assembles everything except the bb loop. Disabled (CPU
+     * fallback) if a sealed/experimental bb mode is active. */
+    int asm_gpu_mode = 0;
+    {
+        const char *e = getenv("LUMINA_NLTE_ASSEMBLE_GPU");
+        if (e) asm_gpu_mode = atoi(e);
+    }
+    int asm_gpu_on = 0;
+    if (asm_gpu_mode > 0 && nlte_assemble_gpu_supported()) {
+        if (nlte_assemble_gpu_init(nlte, atom, opacity, n_shells) == 0)
+            asm_gpu_on = 1;
+        else
+            fprintf(stderr, "[NLTE-ASM] GPU bb-assembly init failed -> CPU path\n");
+    }
+    if (asm_gpu_on)
+        printf("  [NLTE-ASM] GPU bound-bound assembly ACTIVE (mode %d)\n", asm_gpu_mode);
+
     /* Profiling: split wall-clock into assemble vs GPU solve. */
     double t_assemble_total = 0.0, t_solve_total = 0.0;
 
     for (int ce_iter = 0; ce_iter < ce_max_iter; ce_iter++) {
+        /* GPU bb-assembly: refresh per-iter varying state (within_sl_frac,
+         * per-shell T_e/n_e/W, J_nu) before this iteration's pair loop. */
+        if (asm_gpu_on)
+            nlte_assemble_gpu_refresh(nlte, plasma);
+
         /* Save current populations + compute old ion totals */
         memcpy(old_pops, nlte->nlte_level_populations, pop_size * sizeof(double));
         for (int ii = 0; ii < nlte->n_nlte_ions; ii++) {
@@ -669,6 +761,23 @@ static void nlte_solve_all_gpu(NLTEConfig *nlte, AtomicData *atom,
             clock_gettime(CLOCK_MONOTONIC, &ts_a0);
             int skip_dead = nlte_skip_dead_pairs();
             int Z_pair = nlte->nlte_Z[lo];
+
+            /* Per-shell active mask + skip the CPU bb loop when the GPU bb
+             * kernel will add it (mirrors the dead-pair skip exactly). */
+            int *asm_active = NULL;
+            if (asm_gpu_on) {
+                asm_active = (int *)malloc((size_t)n_shells * sizeof(int));
+                for (int s = 0; s < n_shells; s++) {
+                    asm_active[s] = 1;
+                    if (skip_dead) {
+                        double n_tot = nlte_pair_total_density(nlte, atom, plasma,
+                                                               Z_pair, lo, hi, s);
+                        if (n_tot < 1e-10) asm_active[s] = 0;
+                    }
+                }
+                nlte_assemble_set_skip_bb(1);
+            }
+
             #ifdef _OPENMP
             #pragma omp parallel for schedule(dynamic, 1)
             #endif
@@ -688,6 +797,55 @@ static void nlte_solve_all_gpu(NLTEConfig *nlte, AtomicData *atom,
                                           A_cm, b, N, gamma_dep,
                                           nlte_lookup_ptr, p);
             }
+
+            /* GPU bb+collisional contributions: add on top of the CPU remainder
+             * now held in sol->h_matrices (downloaded back into it). */
+            if (asm_gpu_on) {
+                nlte_assemble_set_skip_bb(0);
+                if (asm_gpu_mode == 2 && ce_iter == 0) {
+                    /* Self-check: full CPU assembly (bb included) as reference. */
+                    double *ref_A = (double *)malloc(mat_bytes);
+                    double *ref_b = (double *)malloc(rhs_bytes);
+                    memset(ref_A, 0, mat_bytes);
+                    memset(ref_b, 0, rhs_bytes);
+                    #ifdef _OPENMP
+                    #pragma omp parallel for schedule(dynamic, 1)
+                    #endif
+                    for (int s = 0; s < n_shells; s++) {
+                        if (!asm_active[s]) continue;
+                        nlte_assemble_rate_matrix(nlte, atom, plasma, opacity,
+                                                  lo, hi, s, time_explosion,
+                                                  ref_A + (size_t)s * N * N,
+                                                  ref_b + (size_t)s * N, N,
+                                                  gamma_dep, nlte_lookup_ptr, p);
+                    }
+                    nlte_assemble_bb_gpu_pair(sol->h_matrices, N, n_shells,
+                                              lo, hi, super_start, n_lo_super,
+                                              asm_active);
+                    double max_rel = 0.0, max_abs = 0.0; size_t nz = 0;
+                    for (size_t k = 0; k < (size_t)n_shells * N * N; k++) {
+                        double r = ref_A[k], g = sol->h_matrices[k];
+                        double d = fabs(g - r);
+                        if (d > max_abs) max_abs = d;
+                        double den = fabs(r);
+                        if (den > 1e-30) {
+                            double rel = d / den;
+                            if (rel > max_rel) max_rel = rel;
+                            nz++;
+                        }
+                    }
+                    printf("  [NLTE-ASM] verify %s: max rel diff %.3e, max abs diff "
+                           "%.3e (%zu nonzero elems)\n",
+                           names[p], max_rel, max_abs, nz);
+                    free(ref_A); free(ref_b);
+                } else {
+                    nlte_assemble_bb_gpu_pair(sol->h_matrices, N, n_shells,
+                                              lo, hi, super_start, n_lo_super,
+                                              asm_active);
+                }
+                free(asm_active);
+            }
+
             clock_gettime(CLOCK_MONOTONIC, &ts_a1);
             t_assemble_total += (ts_a1.tv_sec - ts_a0.tv_sec) +
                                 1e-9 * (ts_a1.tv_nsec - ts_a0.tv_nsec);
@@ -755,12 +913,31 @@ static void nlte_solve_all_gpu(NLTEConfig *nlte, AtomicData *atom,
                 force_lte_init = 1;
             }
             double lte_ncrit = nlte_lte_zone_ncrit();
+            /* ARTIS-style grey/LTE criterion (LUMINA_NLTE_GREY_TAU>0 to enable,
+             * LUMINA_NLTE_GREY_ITERS default 2): route a shell to the LTE@T_e
+             * fallback only when it is optically thick (inward electron-scattering
+             * tau >= GREY_TAU) AND we are still in the first GREY_ITERS outer
+             * iterations. After that every cell is solved in full NLTE. This is
+             * the physical replacement for the permanent density threshold
+             * (LTE_NCRIT), which wrongly LTE-ized the optically-thin photosphere
+             * (n_e high but tau ~ 1) and masked the NLTE departures. */
+            static int grey_init = 0; static double grey_tau = 0.0; static int grey_iters = 2;
+            if (!grey_init) {
+                const char *et = getenv("LUMINA_NLTE_GREY_TAU");
+                const char *ei = getenv("LUMINA_NLTE_GREY_ITERS");
+                grey_tau = et ? atof(et) : 0.0;
+                grey_iters = ei ? atoi(ei) : 2;
+                grey_init = 1;
+            }
             for (int s = 0; s < n_shells; s++) {
                 int need_fallback = (ret != 0 || sol->h_info[s] != 0 || force_lte_mode);
-                /* Preemptive LTE@T_e zone: at collision-dominated shells (n_e above
-                 * the critical density) the rate solve is near-singular and the LU
-                 * lands on null-space garbage; the physical limit is LTE@T_e, so
-                 * route the whole shell to the (T_e) Boltzmann fallback. */
+                /* ARTIS grey/LTE: optically-thick cells, transient (first iters). */
+                if (grey_tau > 0.0 && nlte->shell_tau &&
+                    nlte->current_iter < grey_iters &&
+                    nlte->shell_tau[s] >= grey_tau)
+                    need_fallback = 1;
+                /* Legacy density LTE zone (LTE_NCRIT=0 disables). Kept for
+                 * back-compat; superseded by the tau criterion above. */
                 if (lte_ncrit > 0.0 && plasma->n_electron &&
                     plasma->n_electron[s] > lte_ncrit)
                     need_fallback = 1;
@@ -1132,6 +1309,7 @@ static void nlte_solve_all_gpu(NLTEConfig *nlte, AtomicData *atom,
             break;
         }
     }
+    if (asm_gpu_on) nlte_assemble_gpu_free();
     free(old_pops);
     free(old_ion_totals);
 
@@ -1360,6 +1538,18 @@ static void cuda_upload(CudaDeviceData *dev, Geometry *geo,
         CUDA_CHECK(cudaMemcpy(dev->d_kpacket_cdf, opacity->kpacket_cdf,
                    (size_t)ns * nlev * sizeof(double), cudaMemcpyHostToDevice));
     }
+    if (dev->d_kpacket_ff && opacity->p_kpacket_ff) {   /* Path A free-free channel prob */
+        CUDA_CHECK(cudaMemcpy(dev->d_kpacket_ff, opacity->p_kpacket_ff,
+                   (size_t)ns * sizeof(double), cudaMemcpyHostToDevice));
+    }
+    if (dev->d_kpacket_fb && opacity->p_kpacket_fb) {   /* Path A free-bound channel prob */
+        CUDA_CHECK(cudaMemcpy(dev->d_kpacket_fb, opacity->p_kpacket_fb,
+                   (size_t)ns * sizeof(double), cudaMemcpyHostToDevice));
+    }
+    if (dev->d_kpacket_fbnu && opacity->kpacket_fb_nu) { /* fb recomb edge freq */
+        CUDA_CHECK(cudaMemcpy(dev->d_kpacket_fbnu, opacity->kpacket_fb_nu,
+                   (size_t)ns * sizeof(double), cudaMemcpyHostToDevice));
+    }
 
     /* Phase 6 - Step 1: Upload geometry */
     CUDA_CHECK(cudaMemcpy(dev->d_r_inner, geo->r_inner,                              /* Phase 6 - Step 1 */
@@ -1411,15 +1601,83 @@ void cuda_set_eps_uv(double v) {
  * rates; device pointers + enable flag set via cuda_set_kpacket(). */
 __device__ const double *d_kpacket_p     = NULL;   /* [nlev*ns] P(coll. deact.) */
 __device__ const double *d_kpacket_cdf_g = NULL;   /* [ns*nlev] re-excite CDF    */
+__device__ const double *d_kpacket_ff_g  = NULL;   /* [ns] P(free-free|k-packet) (Path A) */
+__device__ const double *d_kpacket_te_g  = NULL;   /* [ns] T_e per shell for ff nu sampling */
+__device__ const double *d_kpacket_fb_g  = NULL;   /* [ns] P(free-bound|k-packet) — UV recomb edge escape */
+__device__ const double *d_kpacket_fbnu_g = NULL;  /* [ns] representative recomb edge freq [Hz] */
 __device__ int    d_kpacket_enabled = 0;
 __device__ int    d_kpacket_n_levels = 0;
 __device__ unsigned long long d_kpacket_count = 0; /* diagnostic event counter   */
 
-void cuda_set_kpacket(const double *d_p, const double *d_cdf, int n_levels, int enabled) {
+void cuda_set_kpacket(const double *d_p, const double *d_cdf, int n_levels, int enabled,
+                      const double *d_ff, const double *d_te,
+                      const double *d_fb, const double *d_fbnu) {
     CUDA_CHECK(cudaMemcpyToSymbol(d_kpacket_p,     &d_p,      sizeof(const double *)));
     CUDA_CHECK(cudaMemcpyToSymbol(d_kpacket_cdf_g, &d_cdf,    sizeof(const double *)));
+    CUDA_CHECK(cudaMemcpyToSymbol(d_kpacket_ff_g,  &d_ff,     sizeof(const double *)));
+    CUDA_CHECK(cudaMemcpyToSymbol(d_kpacket_te_g,  &d_te,     sizeof(const double *)));
+    CUDA_CHECK(cudaMemcpyToSymbol(d_kpacket_fb_g,  &d_fb,     sizeof(const double *)));
+    CUDA_CHECK(cudaMemcpyToSymbol(d_kpacket_fbnu_g,&d_fbnu,   sizeof(const double *)));
     CUDA_CHECK(cudaMemcpyToSymbol(d_kpacket_n_levels, &n_levels, sizeof(int)));
     CUDA_CHECK(cudaMemcpyToSymbol(d_kpacket_enabled,  &enabled,  sizeof(int)));
+}
+
+/* [MACROATOM_BF] bf recombination cascade. A macro-atom that bf-activated on an
+ * upper-ion ground level (a dead-end for bb-only walks) continues the SAME
+ * partial-sum into a parallel recomb block; on a hit it jumps to a lower-ion
+ * level (INTERNALDOWNLOWER, no photon) and keeps cascading. Device pointers +
+ * enable flag bound via cuda_set_recomb(); tables built host-side in
+ * compute_transition_probabilities. */
+__device__ int           d_recomb_enabled    = 0;
+__device__ const int    *d_recomb_block_refs  = NULL;  /* [nlev+1] CSR offsets   */
+__device__ const double *d_recomb_prob        = NULL;  /* [n_recomb*ns] CDF      */
+__device__ const int    *d_recomb_dest_level  = NULL;  /* [n_recomb] target j    */
+__device__ const int    *d_recomb_is_emit     = NULL;  /* [n_recomb] (increment 2)*/
+__device__ const double *d_recomb_nu_edge     = NULL;  /* [n_recomb] (increment 2)*/
+
+void cuda_set_recomb(const int *d_refs, const double *d_prob,
+                     const int *d_dest, const int *d_is_emit,
+                     const double *d_nu_edge, int enabled) {
+    CUDA_CHECK(cudaMemcpyToSymbol(d_recomb_block_refs, &d_refs,    sizeof(const int *)));
+    CUDA_CHECK(cudaMemcpyToSymbol(d_recomb_prob,       &d_prob,    sizeof(const double *)));
+    CUDA_CHECK(cudaMemcpyToSymbol(d_recomb_dest_level, &d_dest,    sizeof(const int *)));
+    CUDA_CHECK(cudaMemcpyToSymbol(d_recomb_is_emit,    &d_is_emit, sizeof(const int *)));
+    CUDA_CHECK(cudaMemcpyToSymbol(d_recomb_nu_edge,    &d_nu_edge, sizeof(const double *)));
+    CUDA_CHECK(cudaMemcpyToSymbol(d_recomb_enabled,    &enabled,   sizeof(int)));
+}
+
+/* Lazily allocate the device recomb arrays (n_recomb is only known after the
+ * host topology is built), upload the static topology once, and re-upload the
+ * per-shell recomb_prob each call. No-op when the gate is off (recomb_block_refs
+ * NULL) => byte-identical baseline. */
+static void cuda_upload_recomb(CudaDeviceData *dev, OpacityState *opacity,
+                               int n_shells) {
+    if (!opacity->recomb_block_refs || opacity->n_recomb <= 0) return;
+    int nlev = opacity->n_macro_levels;
+    size_t nr = (size_t)opacity->n_recomb;
+    if (!dev->d_recomb_prob) {
+        dev->n_recomb = opacity->n_recomb;
+        CUDA_CHECK(cudaMalloc(&dev->d_recomb_block_refs, (size_t)(nlev + 1) * sizeof(int)));
+        CUDA_CHECK(cudaMalloc(&dev->d_recomb_dest_level, nr * sizeof(int)));
+        CUDA_CHECK(cudaMalloc(&dev->d_recomb_is_emit,    nr * sizeof(int)));
+        CUDA_CHECK(cudaMalloc(&dev->d_recomb_nu_edge,    nr * sizeof(double)));
+        CUDA_CHECK(cudaMalloc(&dev->d_recomb_prob,       nr * (size_t)n_shells * sizeof(double)));
+        CUDA_CHECK(cudaMemcpy(dev->d_recomb_block_refs, opacity->recomb_block_refs,
+                   (size_t)(nlev + 1) * sizeof(int), cudaMemcpyHostToDevice));
+        CUDA_CHECK(cudaMemcpy(dev->d_recomb_dest_level, opacity->recomb_dest_level,
+                   nr * sizeof(int), cudaMemcpyHostToDevice));
+        CUDA_CHECK(cudaMemcpy(dev->d_recomb_is_emit, opacity->recomb_is_emit,
+                   nr * sizeof(int), cudaMemcpyHostToDevice));
+        CUDA_CHECK(cudaMemcpy(dev->d_recomb_nu_edge, opacity->recomb_nu_edge,
+                   nr * sizeof(double), cudaMemcpyHostToDevice));
+        cuda_set_recomb(dev->d_recomb_block_refs, dev->d_recomb_prob,
+                        dev->d_recomb_dest_level, dev->d_recomb_is_emit,
+                        dev->d_recomb_nu_edge, 1);
+        printf("  [MACROATOM_BF] recomb cascade ENABLED on device: %d entries x "
+               "%d shells\n", opacity->n_recomb, n_shells);
+    }
+    CUDA_CHECK(cudaMemcpy(dev->d_recomb_prob, opacity->recomb_prob,
+               nr * (size_t)n_shells * sizeof(double), cudaMemcpyHostToDevice));
 }
 
 /* [EPS-IR] Probability that a NIR-entry (lam > 7000 A) macro-atom call is
@@ -1733,6 +1991,15 @@ static void cuda_free(CudaDeviceData *dev) {
     cudaFree(dev->d_line_ion_number);
     cudaFree(dev->d_p_kpacket);                  /* [KPACKET] (NULL-safe)      */
     cudaFree(dev->d_kpacket_cdf);               /* [KPACKET] (NULL-safe)      */
+    cudaFree(dev->d_kpacket_ff);                /* [KPACKET ff] (NULL-safe)   */
+    cudaFree(dev->d_kpacket_te);                /* [KPACKET ff] (NULL-safe)   */
+    cudaFree(dev->d_kpacket_fb);                /* [KPACKET fb] (NULL-safe)   */
+    cudaFree(dev->d_kpacket_fbnu);              /* [KPACKET fb] (NULL-safe)   */
+    cudaFree(dev->d_recomb_block_refs);         /* [MACROATOM_BF] (NULL-safe) */
+    cudaFree(dev->d_recomb_prob);               /* [MACROATOM_BF] (NULL-safe) */
+    cudaFree(dev->d_recomb_dest_level);         /* [MACROATOM_BF] (NULL-safe) */
+    cudaFree(dev->d_recomb_is_emit);            /* [MACROATOM_BF] (NULL-safe) */
+    cudaFree(dev->d_recomb_nu_edge);            /* [MACROATOM_BF] (NULL-safe) */
     cudaFree(dev->d_r_inner);                   /* Phase 6 - Step 1 */
     cudaFree(dev->d_r_outer);                   /* Phase 6 - Step 1 */
     cudaFree(dev->d_j_estimator);               /* Phase 6 - Step 1 */
@@ -1745,6 +2012,9 @@ static void cuda_free(CudaDeviceData *dev) {
     cudaFree(dev->d_n_reabsorbed);              /* Phase 6 - Step 1 */
     cudaFree(dev->d_escaped_r);                 /* Rotation mode */
     cudaFree(dev->d_escaped_mu);                /* Rotation mode */
+    if (dev->d_escaped_emit_line) cudaFree(dev->d_escaped_emit_line); /* [KROMER] (NULL-safe) */
+    if (dev->d_escaped_in_line)   cudaFree(dev->d_escaped_in_line);   /* [KROMER] (NULL-safe) */
+    if (dev->d_escaped_in_nu)     cudaFree(dev->d_escaped_in_nu);     /* [KROMER] (NULL-safe) */
     cudaFree(dev->d_virtual_spectrum);
     if (dev->d_j_nu_estimator) cudaFree(dev->d_j_nu_estimator);
     if (dev->d_jbar_line) cudaFree(dev->d_jbar_line);
@@ -2254,6 +2524,29 @@ void d_macro_atom_interaction(int activation_level_id, int current_shell_id,
             double pk = d_kpacket_p[(size_t)activation_level_id * n_shells
                                     + current_shell_id];
             if (pk > 0.0 && d_rng_uniform(rng) < pk) {
+                atomicAdd(&d_kpacket_count, 1ULL);
+                /* Path A k-packet continuum channels (ARTIS kpkt.cc): once the
+                 * k-packet forms, it converts to a CONTINUUM r-packet and EXITS
+                 * the macro-atom (the thermalization sink that breaks the line
+                 * cascade loop / redward walk):
+                 *   prob p_ff -> free-free (cold thermal, caller type -2)
+                 *   prob p_fb -> free-bound (UV recombination edge, caller type -3)
+                 *   else      -> collisional re-excitation (continue cascade)
+                 * The fb channel (UV edge) is the one that both breaks the trap
+                 * AND re-emits blueward (toward ARTIS). */
+                double p_ff = d_kpacket_ff_g ? d_kpacket_ff_g[current_shell_id] : 0.0;
+                double p_fb = d_kpacket_fb_g ? d_kpacket_fb_g[current_shell_id] : 0.0;
+                double u_cont = d_rng_uniform(rng);
+                if (u_cont < p_ff) {
+                    *out_transition_id = -1;
+                    *out_transition_type = -2;   /* MA -> k-packet -> free-free continuum */
+                    return;
+                }
+                if (u_cont < p_ff + p_fb) {
+                    *out_transition_id = -1;
+                    *out_transition_type = -3;   /* MA -> k-packet -> free-bound (UV) continuum */
+                    return;
+                }
                 const double *cdf = d_kpacket_cdf_g
                                     + (size_t)current_shell_id * n_macro_levels;
                 double xi = d_rng_uniform(rng);
@@ -2264,7 +2557,6 @@ void d_macro_atom_interaction(int activation_level_id, int current_shell_id,
                 }
                 activation_level_id = lo;     /* thermally re-excited upper level */
                 current_type = 0;             /* stay internal; continue cascade  */
-                atomicAdd(&d_kpacket_count, 1ULL);
                 continue;
             }
         }
@@ -2288,6 +2580,27 @@ void d_macro_atom_interaction(int activation_level_id, int current_shell_id,
                 *out_transition_type = current_type;               /* Phase 6 - Step 6 */
                 found = true;                                      /* Phase 6 - Step 6 */
                 break;                                             /* Phase 6 - Step 6 */
+            }
+        }
+
+        /* [MACROATOM_BF] bf recomb cascade (increment 1): continue the SAME
+         * partial-sum into the recomb block of this (upper-ion) source level. On
+         * a hit, jump to the lower-ion target level and keep cascading internally
+         * (no photon emitted). All is_emit==0 in increment 1; increment 2 will
+         * branch on d_recomb_is_emit[k] to emit a -4 continuum photon. */
+        if (!found && d_recomb_enabled && d_recomb_block_refs) {
+            int rs = d_recomb_block_refs[activation_level_id];
+            int re = d_recomb_block_refs[activation_level_id + 1];
+            for (int k = rs; k < re; k++) {
+                probability += d_recomb_prob[(size_t)k * n_shells + current_shell_id];
+                if (probability > probability_event) {
+                    activation_level_id = d_recomb_dest_level[k]; /* lower-ion level */
+                    current_type = 0;                             /* continue cascade */
+                    *out_transition_id = -1;                      /* no line */
+                    *out_transition_type = 0;
+                    found = true;
+                    break;
+                }
             }
         }
 
@@ -2337,7 +2650,12 @@ void d_line_scatter_event(double *r, double *mu, double *nu, double *energy,
                            const int *d_line_ion_number,
                            int fe_scatter_mode,
                            const double *d_T_rad, int n_lines,
+                           /* [KROMER] emitted line_id out (-1 for continuum); NULL-safe */
+                           int *out_emit_line,
                            uint64_t *rng) {
+    /* [KROMER] default: no line emitted (continuum/thermal) */
+    if (out_emit_line) *out_emit_line = -1;
+
     /* Phase 6 - Step 6: Get comoving frame at OLD angle */
     double old_doppler = d_get_doppler_factor(*r, *mu, t_exp); /* Phase 6 - Step 6 */
 
@@ -2350,6 +2668,7 @@ void d_line_scatter_event(double *r, double *mu, double *nu, double *energy,
     *energy = comov_energy * inv_new_doppler;     /* Phase 6 - Step 6 */
 
     if (line_interaction_type == 0) { /* Phase 6 - Step 6: LINE_SCATTER */
+        if (out_emit_line) *out_emit_line = *next_line_id; /* [KROMER] resonant emit */
         d_line_emission(nu, next_line_id, *next_line_id, /* Phase 6 - Step 6 */
                          *r, *mu, t_exp, d_line_list_nu); /* Phase 6 - Step 6 */
     } else { /* Phase 6 - Step 6: macro-atom */
@@ -2364,6 +2683,7 @@ void d_line_scatter_event(double *r, double *mu, double *nu, double *energy,
             else if (d_line_ion_number[*next_line_id] == 1) is_fe_scatter = 1; /* Fe II only */
         }
         if (is_fe_scatter) {
+            if (out_emit_line) *out_emit_line = *next_line_id; /* [KROMER] Fe resonant emit */
             d_line_emission(nu, next_line_id, *next_line_id,
                              *r, *mu, t_exp, d_line_list_nu);
         } else {
@@ -2437,8 +2757,59 @@ void d_line_scatter_event(double *r, double *mu, double *nu, double *energy,
             if (transition_type == -1) { /* Phase 6 - Step 6: MA_BB_EMISSION */
                 /* P8: Orphaned level (no transitions) → resonance scatter */
                 int emit_line = (transition_id >= 0) ? transition_id : *next_line_id;
+                if (out_emit_line) *out_emit_line = emit_line; /* [KROMER] macro-atom emit */
                 d_line_emission(nu, next_line_id, emit_line, /* Phase 6 - Step 6 */
                                  *r, *mu, t_exp, d_line_list_nu); /* Phase 6 - Step 6 */
+            } else if (transition_type == -2) {
+                /* Path A: k-packet → free-free CONTINUUM emission (ARTIS kpkt.cc:441).
+                 * Comoving nu = -kB*Te/h*ln(xi); re-emit isotropically as an r-packet
+                 * (no line). This is the thermalization sink: UV energy leaves the
+                 * line cascade as a thermal continuum photon. */
+                double Te_sh = d_kpacket_te_g ? d_kpacket_te_g[shell_id] : 0.0;
+                if (Te_sh > 0.0) {
+                    double xi = d_rng_uniform(rng);
+                    if (xi < 1e-30) xi = 1e-30;            /* avoid log(0) */
+                    double nu_ff_comov = -(1.380649e-16 * Te_sh / 6.62607015e-27)
+                                         * log(xi);
+                    *mu = d_rng_mu(rng);                   /* isotropic re-emission */
+                    double inv_new_doppler = d_get_inverse_doppler_factor(*r, *mu, t_exp);
+                    *nu = nu_ff_comov * inv_new_doppler;
+                    /* next line the redshifting continuum packet reaches: first line
+                     * with rest nu < nu_ff_comov (descending list, mirrors :2036). */
+                    int lo_ff = 0, hi_ff = n_lines;
+                    while (lo_ff < hi_ff) {
+                        int mid = (lo_ff + hi_ff) / 2;
+                        if (d_line_list_nu[mid] > nu_ff_comov) lo_ff = mid + 1;
+                        else hi_ff = mid;
+                    }
+                    if (lo_ff >= n_lines) lo_ff = n_lines - 1;
+                    *next_line_id = lo_ff;
+                } else {
+                    /* no T_e: fall back to resonance scatter to conserve energy */
+                    d_line_emission(nu, next_line_id, *next_line_id,
+                                     *r, *mu, t_exp, d_line_list_nu);
+                }
+            } else if (transition_type == -3) {
+                /* Path A: k-packet -> free-bound (recombination) CONTINUUM.
+                 * Emit at the recombination edge + a thermal tail (nu >= nu_edge);
+                 * Fe-group edges are in the UV so this re-emits blueward (the
+                 * channel that breaks the line-cascade trap AND blues the SED). */
+                double Te_sh = d_kpacket_te_g ? d_kpacket_te_g[shell_id] : 0.0;
+                double nu_edge = d_kpacket_fbnu_g ? d_kpacket_fbnu_g[shell_id] : 0.0;
+                if (nu_edge > 0.0 && Te_sh > 0.0) {
+                    double xi = d_rng_uniform(rng); if (xi < 1e-30) xi = 1e-30;
+                    double nu_fb = nu_edge - (1.380649e-16 * Te_sh / 6.62607015e-27) * log(xi);
+                    *mu = d_rng_mu(rng);
+                    double ind = d_get_inverse_doppler_factor(*r, *mu, t_exp);
+                    *nu = nu_fb * ind;
+                    int lo3 = 0, hi3 = n_lines;
+                    while (lo3 < hi3) { int m=(lo3+hi3)/2; if (d_line_list_nu[m] > nu_fb) lo3=m+1; else hi3=m; }
+                    if (lo3 >= n_lines) lo3 = n_lines - 1;
+                    *next_line_id = lo3;
+                } else {
+                    d_line_emission(nu, next_line_id, *next_line_id,
+                                     *r, *mu, t_exp, d_line_list_nu);
+                }
             }
             /* [MA-FATE] exit comov nu after cascade + line_emission */
             double ma_exit_comov_nu = *nu * d_get_doppler_factor(*r, *mu, t_exp);
@@ -2691,6 +3062,8 @@ void transport_kernel(
     double *d_escaped_nu, double *d_escaped_energy,
     int *d_escaped_flag,
     double *d_escaped_r, double *d_escaped_mu,
+    /* [KROMER] last-interaction outputs (NULL when LUMINA_KROMER off) */
+    int *d_escaped_emit_line, int *d_escaped_in_line, double *d_escaped_in_nu,
     int64_t *d_n_escaped, int64_t *d_n_reabsorbed,
     /* Virtual packet spectrum */
     double *d_virtual_spectrum, double L_inner,
@@ -2766,6 +3139,9 @@ void transport_kernel(
     int loop_count = 0;  /* counts interactions toward d_max_interactions */
     int total_steps = 0; /* counts ALL while-iterations (absolute safety ceiling) */
     int last_reset_inner = 0; /* f_in: 1 if pkt_nu was last set by inner-BC re-thermalize */
+    /* [KROMER] last emission/absorption line for this packet (retained at escape) */
+    int kr_emit_line = -1, kr_in_line = -1;
+    double kr_in_nu = 0.0;
     while (pkt_status == 0 && loop_count < d_max_interactions
            && total_steps < d_max_total_steps) { /* Phase 6 - Step 7 */
         total_steps++;
@@ -2865,6 +3241,11 @@ void transport_kernel(
             }
         } else if (interaction_type == 1) { /* Phase 6 - Step 7: LINE */
             if (d_cap_real_only) loop_count++; /* #5: count real interactions only */
+            /* [KROMER] capture the absorbed line + its comoving nu (old mu, same
+             * doppler the scatter event uses) before the cascade overwrites state. */
+            int kr_out_emit = -1;
+            kr_in_line = pkt_next_line_id;
+            kr_in_nu = pkt_nu * d_get_doppler_factor(pkt_r, pkt_mu, t_exp);
             d_line_scatter_event(&pkt_r, &pkt_mu, &pkt_nu, &pkt_energy, /* Phase 6 - Step 7 */
                                   &pkt_next_line_id, pkt_shell_id,       /* Phase 6 - Step 7 */
                                   t_exp, line_interaction_type,           /* Phase 6 - Step 7 */
@@ -2880,7 +3261,10 @@ void transport_kernel(
                                   d_line_ion_number,
                                   fe_scatter_mode,
                                   d_T_rad, n_lines,
+                                  &kr_out_emit,                           /* [KROMER] */
                                   rng);                                   /* Phase 6 - Step 7 */
+            /* [KROMER] retain only real line emissions → keeps the LAST emit line */
+            if (kr_out_emit >= 0) kr_emit_line = kr_out_emit;
             last_reset_inner = 0;   /* f_in: line/macro-atom reset the frequency */
             /* Virtual packet: trace from interaction point */
             if (d_virtual_spectrum != NULL) {
@@ -2906,6 +3290,26 @@ void transport_kernel(
                 int act_level = d_bf_get_activation_level(d_bf_activation_level,
                     bf_n_freq_bins, bf_nu_min, bf_nu_max, bf_d_log_nu,
                     pkt_shell_id, comov_nu_bf2);
+                /* ARTIS-faithful bf routing: when no direct macro-atom level is
+                 * mapped for this bf bin, route the absorbed energy to the
+                 * k-packet THERMAL POOL (sample the collisional re-excitation
+                 * level → macro-atom cascade → line emission / ff), instead of
+                 * the cold-Planck(T_rad) resample which reddens the SED (the
+                 * too-red MC bug; ARTIS bf -> macro-atom/k-packet, never a cold
+                 * local-Planck continuum). Active only when the k-packet pool is
+                 * on (macroatom mode); thermal/detfluor keep the legacy path. */
+                if (act_level < 0 && d_kpacket_enabled && d_kpacket_cdf_g &&
+                    n_macro_levels > 0) {
+                    const double *cdf = d_kpacket_cdf_g +
+                        (size_t)pkt_shell_id * n_macro_levels;
+                    double xik = d_rng_uniform(rng);
+                    int lok = 0, hik = n_macro_levels - 1;
+                    while (lok < hik) {
+                        int mid = (lok + hik) >> 1;
+                        if (cdf[mid] < xik) lok = mid + 1; else hik = mid;
+                    }
+                    act_level = lok;
+                }
                 if (act_level >= 0) {
                     /* Isotropic re-emission + macro-atom cascade.
                      * Bug #7 fix: old_doppler must be evaluated with the OLD mu
@@ -2937,6 +3341,33 @@ void transport_kernel(
                         int emit_line = (transition_id >= 0) ? transition_id : pkt_next_line_id;
                         d_line_emission(&pkt_nu, &pkt_next_line_id, emit_line,
                                          pkt_r, pkt_mu, t_exp, d_line_list_nu);
+                    } else if (transition_type_ma == -2) { /* k-packet free-free continuum */
+                        double Te_sh = d_kpacket_te_g ? d_kpacket_te_g[pkt_shell_id] : 0.0;
+                        if (Te_sh > 0.0) {
+                            double xib = d_rng_uniform(rng); if (xib < 1e-30) xib = 1e-30;
+                            double nu_ff = -(1.380649e-16 * Te_sh / 6.62607015e-27) * log(xib);
+                            pkt_mu = d_rng_mu(rng);
+                            double ind = d_get_inverse_doppler_factor(pkt_r, pkt_mu, t_exp);
+                            pkt_nu = nu_ff * ind;
+                            int lo2 = 0, hi2 = n_lines;
+                            while (lo2 < hi2) { int m=(lo2+hi2)/2; if (d_line_list_nu[m] > nu_ff) lo2=m+1; else hi2=m; }
+                            if (lo2 >= n_lines) lo2 = n_lines - 1;
+                            pkt_next_line_id = lo2;
+                        }
+                    } else if (transition_type_ma == -3) { /* k-packet free-bound (UV) continuum */
+                        double Te_sh = d_kpacket_te_g ? d_kpacket_te_g[pkt_shell_id] : 0.0;
+                        double nu_edge = d_kpacket_fbnu_g ? d_kpacket_fbnu_g[pkt_shell_id] : 0.0;
+                        if (nu_edge > 0.0 && Te_sh > 0.0) {
+                            double xib = d_rng_uniform(rng); if (xib < 1e-30) xib = 1e-30;
+                            double nu_fb = nu_edge - (1.380649e-16 * Te_sh / 6.62607015e-27) * log(xib);
+                            pkt_mu = d_rng_mu(rng);
+                            double ind = d_get_inverse_doppler_factor(pkt_r, pkt_mu, t_exp);
+                            pkt_nu = nu_fb * ind;
+                            int lo3 = 0, hi3 = n_lines;
+                            while (lo3 < hi3) { int m=(lo3+hi3)/2; if (d_line_list_nu[m] > nu_fb) lo3=m+1; else hi3=m; }
+                            if (lo3 >= n_lines) lo3 = n_lines - 1;
+                            pkt_next_line_id = lo3;
+                        }
                     }
                     last_reset_inner = 0;   /* f_in: macro-atom line emission reset frequency */
                     /* [MA-FATE] exit comov nu after cascade */
@@ -2978,6 +3409,11 @@ void transport_kernel(
         d_escaped_energy[p] = pkt_energy; /* Phase 6 - Step 7 */
         d_escaped_r[p] = pkt_r;       /* Rotation mode: store escape r */
         d_escaped_mu[p] = pkt_mu;     /* Rotation mode: store escape mu */
+        if (d_escaped_emit_line) {    /* [KROMER] last-interaction decomposition */
+            d_escaped_emit_line[p] = kr_emit_line;
+            d_escaped_in_line[p]   = kr_in_line;
+            d_escaped_in_nu[p]     = kr_in_nu;
+        }
         atomicAdd((unsigned long long *)d_n_escaped, 1ULL); /* Phase 6 - Step 7 */
         { double lamA=(C_SPEED_OF_LIGHT/pkt_nu)*1e8;    /* f_in: bin emergent energy by band */
           int fb=(lamA<4000)?0:(lamA<5000)?1:(lamA<6000)?2:(lamA<7000)?3:(lamA<9000)?4:5;
@@ -3001,6 +3437,11 @@ void transport_kernel(
             d_escaped_energy[p] = pkt_energy;
             d_escaped_r[p] = pkt_r;
             d_escaped_mu[p] = pkt_mu;
+            if (d_escaped_emit_line) {    /* [KROMER] cap-force-escape packets too */
+                d_escaped_emit_line[p] = kr_emit_line;
+                d_escaped_in_line[p]   = kr_in_line;
+                d_escaped_in_nu[p]     = kr_in_nu;
+            }
             atomicAdd((unsigned long long *)d_n_escaped, 1ULL);
         } else {
             atomicAdd(&d_E_truncated_dev, pkt_energy); /* legacy: drop (energy lost) */
@@ -3028,11 +3469,109 @@ void rng_init_kernel(uint64_t *d_rng_states, int n_packets,
 /* Phase 6 - Step 8: Host driver (main function)                */
 /* ============================================================ */
 
+/* RUN-CONFIG FOOTER: re-echo the env + argv (and key resolved flags) at program
+ * EXIT, via atexit, so the END of every result log records the config that
+ * actually produced it. The start banner sits above pages of NLTE output and is
+ * easy to miss; mis-set env or a missing positional arg (e.g. the "nlte" arg that
+ * arms enable_nlte) has wasted runs. A footer makes "which keys were alive"
+ * impossible to overlook when reading a result. */
+static int    g_run_argc = 0;
+static char **g_run_argv = NULL;
+static int    g_run_enable_nlte = -1;   /* set once resolved; -1 = not yet known */
+static void run_config_footer(void) {
+    extern char **environ;
+    printf("\n=== RUN FOOTER (env/arg as actually used) ===\n");
+    int nshown = 0;
+    for (char **e = environ; *e; ++e) {
+        if (strncmp(*e, "LUMINA_", 7) == 0 || strncmp(*e, "SUPER_", 6) == 0 ||
+            strncmp(*e, "OMP_NUM", 7) == 0) { printf("  %s\n", *e); nshown++; }
+    }
+    if (nshown == 0) printf("  (no LUMINA_/SUPER_ env set)\n");
+    printf("  argv:");
+    for (int i = 0; i < g_run_argc; ++i) printf(" %s", g_run_argv[i]);
+    printf("\n");
+    if (g_run_enable_nlte >= 0)
+        printf("  resolved: enable_nlte=%d\n", g_run_enable_nlte);
+    printf("=== END RUN FOOTER (%d vars) ===\n", nshown);
+}
+
 int main(int argc, char *argv[]) {
     setbuf(stdout, NULL); /* Phase 6 - Step 8: unbuffered output */
+    if (getenv("LUMINA_CMF_NLTE_SELFTEST")) {  /* confirmation-ladder N — CPU-only, pre-model, instant */
+        cmf_nlte_selftest(getenv("LUMINA_CMF_NLTE_SELFTEST")); return 0;
+    }
+    if (getenv("LUMINA_CMF_PLASMA_SELFTEST")) {  /* confirmation-ladder P — CPU-only, pre-model */
+        cmf_plasma_selftest(getenv("LUMINA_CMF_PLASMA_SELFTEST")); return 0;
+    }
+    if (getenv("LUMINA_CMF_SOLVE_SELFTEST")) {  /* GPU cmf_solve_J A/B (set LUMINA_CMF_SOLVE_GPU=2) */
+        cmf_solve_gpu_selftest(getenv("LUMINA_CMF_SOLVE_SELFTEST")); return 0;
+    }
     printf("============================================================\n"); /* Phase 6 - Step 8 */
     printf("LUMINA-SN v2.0 CUDA — Phase 6 GPU Transport\n");                 /* Phase 6 - Step 8 */
     printf("============================================================\n"); /* Phase 6 - Step 8 */
+
+    /* ============================================================
+     * FLUORESCENCE EMERGENT MODE dispatch (docs/FLUORESCENCE_DESIGN_AB.md).
+     * LUMINA_EMERGENT_MODE = thermal | detfluor | macroatom selects the
+     * emergent-spectrum physics by deriving the sub-flags below. Set BEFORE the
+     * config dump so the log records the effective config, and before any lazy
+     * getenv() reads. setenv(...,1) overrides so the high-level switch wins. */
+    {
+        const char *emode = getenv("LUMINA_EMERGENT_MODE");
+        if (emode && strcmp(emode, "detfluor") == 0) {
+            /* Path B: deterministic fluorescence via UV-pumped populations +
+             * un-clamped NLTE line source (correct pops now that the super-level
+             * bug is fixed). Reuses the existing line-resolved J_bar machinery. */
+            setenv("LUMINA_CMF_LINERES_JBAR", "1", 1);     /* producer: fill jbar_line_det */
+            setenv("LUMINA_CMF_LINERES_CONSUME", "1", 1);  /* consumer: pops see UV-contrast field */
+            setenv("LUMINA_CMF_FINE_EMERGENT", "1", 1);    /* freq-resolved emergent */
+            /* Near-inversion guard: the two-level NLTE S_l = (2hv^3/c^2)/(g_u n_l/g_l n_u - 1)
+             * diverges as the denominator -> 0+ (near population inversion), which blue-
+             * spiked the un-clamped emergent (~5% of lines, S_l up to 1e52). Cap S_l <=
+             * CEIL*B(T_e): keeps genuine fluorescence (S_l > B for UV-pumped lines) while
+             * bounding the divergence. CEIL=1 reduces to the thermal champion; large CEIL
+             * un-clamps. LUMINA_DETFLUOR_SL_CEIL overrides (default 10). */
+            { const char *ceil = getenv("LUMINA_DETFLUOR_SL_CEIL");
+              setenv("LUMINA_CMF_FINE_SL_CLAMP", ceil ? ceil : "10", 1); }
+            setenv("LUMINA_CMFGEN_THEN_MC", "0", 1);
+            printf("[EMERGENT_MODE] detfluor (Path B): UV-pumped pops + NLTE S_l "
+                   "(near-inversion guard S_l<=%s*B)\n",
+                   getenv("LUMINA_DETFLUOR_SL_CEIL") ? getenv("LUMINA_DETFLUOR_SL_CEIL") : "10");
+        } else if (emode && strcmp(emode, "macroatom") == 0) {
+            /* Path A: MC macro-atom (ARTIS-faithful) with a real k-packet pool. */
+            setenv("LUMINA_CMFGEN_THEN_MC", "1", 1);
+            setenv("LUMINA_MACROATOM_EWEIGHT", "1", 1);
+            setenv("LUMINA_MACROATOM_NEUTRAL_E", "1", 1);
+            setenv("LUMINA_DYNAMIC_TRANSPROB", "1", 1);    /* k-packet requires dynamic transprob */
+            setenv("LUMINA_KPACKET", "1", 1);
+            setenv("LUMINA_KPACKET_FF", "1", 1);
+            setenv("LUMINA_KPACKET_FB", "1", 1);
+            setenv("LUMINA_KPACKET_COLLEXC", "1", 1);
+            printf("[EMERGENT_MODE] macroatom (Path A): MC macro-atom + k-packet thermal pool\n");
+        } else if (emode && strcmp(emode, "thermal") == 0) {
+            printf("[EMERGENT_MODE] thermal (baseline): two-level / clamped source, no fluorescence\n");
+        } else if (emode) {
+            printf("[EMERGENT_MODE] WARN: unknown '%s' (use thermal|detfluor|macroatom); using raw flags\n", emode);
+        }
+    }
+
+    /* RESOLVED CONFIG DUMP: print the env the binary ACTUALLY received + argv,
+     * so every run's log records its true config. Silent env-passing bugs
+     * (wrong harness var name, var not in slurm env list, override) have cost
+     * many wasted runs; this makes the real config impossible to misread. */
+    {
+        extern char **environ;
+        printf("=== RESOLVED CONFIG (env seen by binary) ===\n");
+        int nshown = 0;
+        for (char **e = environ; *e; ++e) {
+            if (strncmp(*e, "LUMINA_", 7) == 0 || strncmp(*e, "SUPER_", 6) == 0 ||
+                strncmp(*e, "OMP_NUM", 7) == 0) { printf("  %s\n", *e); nshown++; }
+        }
+        if (nshown == 0) printf("  (no LUMINA_/SUPER_ env set)\n");
+        printf("  argv:");
+        for (int i = 0; i < argc; ++i) printf(" %s", argv[i]);
+        printf("\n=== END CONFIG (%d vars) ===\n", nshown);
+    }
 
     /* Phase 6 - Step 8: Print GPU info */
     int device; /* Phase 6 - Step 8 */
@@ -3051,6 +3590,9 @@ int main(int argc, char *argv[]) {
     AtomicData atom_data; /* Task #072 */
     memset(&config, 0, sizeof(config)); /* Phase 6 - Step 8 */
     opacity.jbar_line_det = NULL;  /* P7 Stage-II: deterministic line-resolved J_bar (producer fills it) */
+    opacity.recomb_block_refs = NULL; opacity.recomb_dest_level = NULL;  /* [MACROATOM_BF] */
+    opacity.recomb_nu_edge = NULL; opacity.recomb_is_emit = NULL;
+    opacity.recomb_prob = NULL; opacity.n_recomb = 0;
 
     config.enable_full_relativity = false;       /* Phase 6 - Step 8 */
     config.disable_line_scattering = false;      /* Phase 6 - Step 8 */
@@ -3129,6 +3671,10 @@ int main(int argc, char *argv[]) {
     if (argc > 5 && strcmp(argv[5], "nlte") == 0) enable_nlte = 1;
     if (getenv("LUMINA_NLTE") && atoi(getenv("LUMINA_NLTE")) > 0) enable_nlte = 1;
     config.enable_nlte = enable_nlte;
+
+    /* Arm the exit footer now that argv + enable_nlte are resolved. */
+    g_run_argc = argc; g_run_argv = argv; g_run_enable_nlte = enable_nlte;
+    atexit(run_config_footer);
 
     /* NLTE start iteration: default 0 (all iters), env LUMINA_NLTE_START_ITER=N */
     int nlte_start_iter = 0;
@@ -3378,7 +3924,9 @@ int main(int argc, char *argv[]) {
     {
         int kpacket_on = (dev.d_p_kpacket != NULL) ? 1 : 0;
         cuda_set_kpacket(dev.d_p_kpacket, dev.d_kpacket_cdf,
-                         opacity.n_macro_levels, kpacket_on);
+                         opacity.n_macro_levels, kpacket_on,
+                         dev.d_kpacket_ff, dev.d_kpacket_te,
+                         dev.d_kpacket_fb, dev.d_kpacket_fbnu);
         if (kpacket_on) {
             printf("  [KPACKET] collisional/k-packet thermal pool ENABLED "
                    "(%d levels x %d shells)\n", opacity.n_macro_levels, geo.n_shells);
@@ -3422,6 +3970,34 @@ int main(int argc, char *argv[]) {
     if (gamma_dep_enabled) {
         gamma_deposition_init(&gamma_dep, geo.n_shells);
         printf("\n--- Gamma-ray Deposition Initialized ---\n");
+        /* EXTERNAL deposition injection (LUMINA_DEPOSITION_FILE=path):
+         * read per-shell heating_rate [erg/s/cm^3] from a CSV (shell_id,heating_rate)
+         * INSTEAD of compute_gamma_deposition. Used for the ARTIS comparison: our
+         * model is an already-decayed post-snapshot state, so the internal Bateman
+         * decay would double-count; injecting ARTIS's full-transport deposition
+         * gives an identical heating source to isolate the rest of the physics. */
+        const char *depf = getenv("LUMINA_DEPOSITION_FILE");
+        if (depf) {
+            FILE *df = fopen(depf, "r");
+            if (df) {
+                char line[256]; int nread = 0, sid; double hr;
+                if (fgets(line, sizeof line, df)) { /* skip header */ }
+                while (fgets(line, sizeof line, df)) {
+                    if (sscanf(line, "%d,%lf", &sid, &hr) == 2 &&
+                        sid >= 0 && sid < geo.n_shells) {
+                        gamma_dep.heating_rate[sid] = hr; nread++;
+                    }
+                }
+                fclose(df);
+                printf("  [DEPOSITION] injected %d shells from %s (external)\n", nread, depf);
+                /* the file gives only heating_rate; derive the non-thermal
+                 * ionization rate (+register it for the freeze-out guard) so the
+                 * thin outer can be kept ionized as in ARTIS. */
+                gamma_deposition_compute_nonthermal(&gamma_dep);
+            } else {
+                printf("  [DEPOSITION] WARN: cannot open %s\n", depf);
+            }
+        }
     }
 
     /* BF opacity: initialize if enabled */
@@ -3433,6 +4009,9 @@ int main(int argc, char *argv[]) {
         cuda_allocate_bf(&dev, &bf, geo.n_shells);
         cuda_upload_bf(&dev, &bf, &plasma, geo.n_shells);
         printf("--- BF+FF Opacity Initialized (%d freq bins) ---\n", bf.n_freq_bins);
+        /* Register bf+atom so the fine-ν producer can build the sharp-edge bf
+         * continuum opacity (LUMINA_CMF_FINE_BF_OPAC). */
+        cmfgen_fine_set_bf_atom(&bf, &atom_data);
     }
 
     /* T_rad upload (always; needed by EPS_UV / EPS_IR macro-atom paths even
@@ -3447,6 +4026,16 @@ int main(int argc, char *argv[]) {
     double *h_escaped_r = (double *)malloc(n_packets * sizeof(double));      /* Rotation mode */
     double *h_escaped_mu = (double *)malloc(n_packets * sizeof(double));     /* Rotation mode */
 
+    /* [KROMER] host buffers + CSV writer (LUMINA_KROMER=1; off → no alloc/CSV) */
+    int kromer_on = (getenv("LUMINA_KROMER") && atoi(getenv("LUMINA_KROMER")) != 0);
+    int *h_escaped_emit_line = NULL, *h_escaped_in_line = NULL;
+    double *h_escaped_in_nu = NULL;
+    if (kromer_on) {
+        h_escaped_emit_line = (int *)malloc(n_packets * sizeof(int));
+        h_escaped_in_line   = (int *)malloc(n_packets * sizeof(int));
+        h_escaped_in_nu     = (double *)malloc(n_packets * sizeof(double));
+    }
+
     /* Phase 6 - Step 8: Kernel launch config */
     int threads_per_block = 256; /* Phase 6 - Step 8 */
     int blocks = (n_packets + threads_per_block - 1) / threads_per_block; /* Phase 6 - Step 8 */
@@ -3459,6 +4048,13 @@ int main(int argc, char *argv[]) {
     {
         const char *_pure = getenv("LUMINA_PURE_CMFGEN");
         if (_pure && atoi(_pure)) {
+            if (getenv("LUMINA_CMF_OBS_SELFTEST")) {  /* confirmation-ladder T1 */
+                printf("=== CONFIRMATION-LADDER T1: obs single-line P-Cygni self-test ===\n");
+                cmf_obs_selftest(); exit(0);
+            }
+            if (getenv("LUMINA_CMF_FSOLVE_SELFTEST")) {  /* confirmation-ladder F */
+                cmf_fsolve_selftest(getenv("LUMINA_CMF_FSOLVE_SELFTEST")); exit(0);
+            }
             const char *_ni = getenv("LUMINA_PURE_CMFGEN_ITER");
             int pc_iter = _ni ? atoi(_ni) : n_iterations;
             if (pc_iter < 1) pc_iter = 1;
@@ -3472,10 +4068,38 @@ int main(int argc, char *argv[]) {
              * (GEMM) solver — cmfgen_run() internally uses the slow CPU NLTE. */
             CMFGENState cs;
             if (cmfgen_init(&cs, &geo) == 0) {
+                /* HOT-ROOT probe (LUMINA_OUTER_TE_SEED=<K>,<smin>): seed shells
+                 * s>=smin to a high T_e before the loop, to test whether a hot
+                 * ionised-outer root EXISTS (T_e holds) or the solve falls back to
+                 * the cool root (T_e drifts down). Diagnostic, not a fix. */
+                { const char *se = getenv("LUMINA_OUTER_TE_SEED");
+                  if (se) { double tv=0; int sm=0; sscanf(se, "%lf,%d", &tv, &sm);
+                    if (tv > 0) { for (int s=sm; s<geo.n_shells; s++) plasma.T_e[s]=tv;
+                      printf("[HOT-ROOT-SEED] T_e[%d..%d] := %.0f K\n", sm, geo.n_shells-1, tv); } } }
                 for (int it = 0; it < pc_iter; it++) {
                     nlte.current_iter = it;
+                    /* ARTIS-style grey/LTE criterion: inward electron-scattering
+                     * optical depth per shell (recomputed each iter as n_e
+                     * evolves). The solve uses it to route only optically-thick
+                     * cells to LTE during the first GREY_ITERS iterations. */
+                    if (!nlte.shell_tau)
+                        nlte.shell_tau = (double *)calloc(geo.n_shells, sizeof(double));
+                    if (nlte.shell_tau && plasma.n_electron) {
+                        const double SIGMA_T = 6.6524587e-25;
+                        double acc = 0.0;
+                        for (int s = geo.n_shells - 1; s >= 0; s--) {
+                            double dr = geo.r_outer[s] - geo.r_inner[s];
+                            acc += plasma.n_electron[s] * SIGMA_T * (dr > 0.0 ? dr : 0.0);
+                            nlte.shell_tau[s] = acc;
+                        }
+                    }
                     if (bf_opacity_enabled)
                         compute_bf_opacity(&bf, &atom_data, &plasma, geo.n_shells);
+                    /* Stage 1: register deposition so cmfgen_assemble can inject
+                     * it into S_fixed (gate LUMINA_CMF_DEP_SOURCE; NULL => off). */
+                    cmfgen_set_deposition(
+                        gamma_dep_enabled ? gamma_dep.heating_rate : NULL,
+                        geo.n_shells);
                     cmfgen_assemble(&cs, &geo, &opacity,
                                     bf_opacity_enabled ? &bf : NULL, &plasma);
                     cmfgen_solve_J(&cs, &geo, config.T_inner, n_ali);
@@ -3522,6 +4146,12 @@ int main(int argc, char *argv[]) {
                                 cmfgen_fine_jbar(&cs, &geo, &opacity, config.T_inner, &plasma);
                         }
                     }
+                    /* Register the producer's fine-ν field for the photoion GEMM
+                     * correction (nlte_rates_gpu_compute). No-op if the producer did
+                     * not retain it (gate LUMINA_CMF_FINE_PHOTOION → opacity.jnu_fine). */
+                    nlte_rates_gpu_set_fine(opacity.jnu_fine, opacity.nu_fine,
+                        opacity.n_fine, opacity.nu_lo_fine, opacity.dlognu_fine,
+                        geo.n_shells, &atom_data);
                     /* Option-2 integral RE: register the CMFGEN line opacity/
                      * source so the Newton T_e solve can add the radiative line
                      * term (LUMINA_RADEQ_LINE_RE=1). */
@@ -3569,6 +4199,31 @@ int main(int argc, char *argv[]) {
                            plasma.T_e[geo.n_shells/2], geo.n_shells-1,
                            plasma.T_e[geo.n_shells-1],
                            cs.J[(size_t)(geo.n_shells/2)*cs.n_bins + 500]);
+                    /* Dip-region per-iter T_e trace (LUMINA_DIP_TRACE=1): watch
+                     * whether sh30-35 converge or oscillate between roots. */
+                    if (getenv("LUMINA_DIP_TRACE") && atoi(getenv("LUMINA_DIP_TRACE"))) {
+                        fprintf(stderr, "[DIP-TRACE] it%2d T_e[30..35]=", it);
+                        for (int ds = 30; ds <= 35 && ds < geo.n_shells; ds++)
+                            fprintf(stderr, " %.0f", plasma.T_e[ds]);
+                        fprintf(stderr, "\n");
+                    }
+                    /* Per-iter ion-pop dump (LUMINA_ION_POP_DUMP_ITER=1): lets a
+                     * mid-run ionization mid-check without waiting for iter 8. */
+                    if (getenv("LUMINA_ION_POP_DUMP_ITER") &&
+                        atoi(getenv("LUMINA_ION_POP_DUMP_ITER"))) {
+                        char ipn[128];
+                        snprintf(ipn, sizeof(ipn), "lumina_ion_pops_iter%02d.csv", it);
+                        FILE *ipf = fopen(ipn, "w");
+                        if (ipf) {
+                            fprintf(ipf, "shell_id,Z,stage,n_ion\n");
+                            for (int i = 0; i < geo.n_shells; i++)
+                                for (int j = 0; j < atom_data.n_ion_pops; j++)
+                                    fprintf(ipf, "%d,%d,%d,%.6e\n", i,
+                                            atom_data.ion_pop_Z[j], atom_data.ion_pop_stage[j],
+                                            atom_data.ion_number_density[(size_t)j*geo.n_shells+i]);
+                            fclose(ipf);
+                        }
+                    }
                 }
                 /* Default observer-frame (gold is observer-frame); set
                  * LUMINA_CMF_OBSERVER_FRAME=0 for the legacy comoving output. */
@@ -3920,6 +4575,21 @@ int main(int argc, char *argv[]) {
                 printf("Pure-CMFGEN plasma state written to "
                        "lumina_plasma_state.csv\n");
             }
+            /* Ion populations (LUMINA_ION_POP_DUMP=1) — in the PURE-CMFGEN path so
+             * it is actually reached (the copy at ~5427 is MC-only, bypassed here). */
+            if (getenv("LUMINA_ION_POP_DUMP") && atoi(getenv("LUMINA_ION_POP_DUMP"))) {
+                FILE *ip = fopen("lumina_ion_pops.csv", "w");
+                if (ip) {
+                    fprintf(ip, "shell_id,Z,stage,n_ion\n");
+                    for (int i = 0; i < geo.n_shells; i++)
+                        for (int j = 0; j < atom_data.n_ion_pops; j++)
+                            fprintf(ip, "%d,%d,%d,%.6e\n", i,
+                                    atom_data.ion_pop_Z[j], atom_data.ion_pop_stage[j],
+                                    atom_data.ion_number_density[(size_t)j * geo.n_shells + i]);
+                    fclose(ip);
+                    printf("Pure-CMFGEN ion populations written to lumina_ion_pops.csv\n");
+                }
+            }
             printf("\nDone (pure-CMFGEN).\n");
             /* LUMINA_CMFGEN_THEN_MC=1: do NOT return — fall through to the MC
              * transport loop with the plasma FROZEN at the converged
@@ -4032,6 +4702,11 @@ int main(int argc, char *argv[]) {
         CUDA_CHECK(cudaEventCreate(&stop_ev));  /* Phase 6 - Step 8 */
         CUDA_CHECK(cudaEventRecord(start_ev));  /* Phase 6 - Step 8 */
 
+        /* [MACROATOM_BF] lazily bind + upload the recomb-cascade tables (no-op
+         * when the gate is off). recomb_prob reflects whatever the latest
+         * compute_transition_probabilities produced; re-uploaded each pass. */
+        cuda_upload_recomb(&dev, &opacity, geo.n_shells);
+
         transport_kernel<<<blocks, threads_per_block>>>(
             dev.d_r_inner, dev.d_r_outer,
             dev.d_line_list_nu, dev.d_tau_sobolev,
@@ -4052,6 +4727,7 @@ int main(int argc, char *argv[]) {
             dev.d_escaped_nu, dev.d_escaped_energy,
             dev.d_escaped_flag,
             dev.d_escaped_r, dev.d_escaped_mu,
+            dev.d_escaped_emit_line, dev.d_escaped_in_line, dev.d_escaped_in_nu, /* [KROMER] */
             dev.d_n_escaped, dev.d_n_reabsorbed,
             enable_virtual ? dev.d_virtual_spectrum : (double *)NULL, L_inner,
             dev.d_chi_bf, dev.d_T_rad, dev.d_bf_activation_level,
@@ -4121,6 +4797,14 @@ int main(int argc, char *argv[]) {
                    n_packets * sizeof(double), cudaMemcpyDeviceToHost)); /* Phase 6 - Step 8 */
         CUDA_CHECK(cudaMemcpy(h_escaped_flag, dev.d_escaped_flag,    /* Phase 6 - Step 8 */
                    n_packets * sizeof(int), cudaMemcpyDeviceToHost)); /* Phase 6 - Step 8 */
+        if (kromer_on && dev.d_escaped_emit_line) {   /* [KROMER] download last-interaction */
+            CUDA_CHECK(cudaMemcpy(h_escaped_emit_line, dev.d_escaped_emit_line,
+                       n_packets * sizeof(int), cudaMemcpyDeviceToHost));
+            CUDA_CHECK(cudaMemcpy(h_escaped_in_line, dev.d_escaped_in_line,
+                       n_packets * sizeof(int), cudaMemcpyDeviceToHost));
+            CUDA_CHECK(cudaMemcpy(h_escaped_in_nu, dev.d_escaped_in_nu,
+                       n_packets * sizeof(double), cudaMemcpyDeviceToHost));
+        }
         if (enable_rotation) {
             CUDA_CHECK(cudaMemcpy(h_escaped_r, dev.d_escaped_r,
                        n_packets * sizeof(double), cudaMemcpyDeviceToHost));
@@ -4148,6 +4832,43 @@ int main(int argc, char *argv[]) {
                 bin_escaped_packet(spec, h_escaped_nu[i],
                                     h_escaped_energy[i] * L_inner);
                 L_emitted += h_escaped_energy[i] * L_inner;
+            }
+        }
+
+        /* [KROMER] last-interaction decomposition CSV (Kromer & Sim 2009 style):
+         * one row per escaped packet with the emitting ion (who produced the
+         * flux at escape_lambda) and the last-absorbing ion + its comoving
+         * wavelength (who removed flux and where). Written on the final pass so
+         * it reflects the converged field. line_id -> (Z,ion) mapped on host. */
+        if (kromer_on && iter == n_iterations - 1) {
+            FILE *kf = fopen("lumina_kromer.csv", "w");
+            if (kf) {
+                fprintf(kf, "escape_lambda_A,emit_Z,emit_ion,in_lambda_A,in_Z,in_ion,energy\n");
+                for (int i = 0; i < n_packets; i++) {
+                    if (!h_escaped_flag[i]) continue;
+                    double esc_lam = (h_escaped_nu[i] > 0.0)
+                                   ? (C_SPEED_OF_LIGHT / h_escaped_nu[i]) * 1.0e8 : 0.0;
+                    int el = h_escaped_emit_line[i];
+                    int il = h_escaped_in_line[i];
+                    int emit_Z = -1, emit_ion = -1, in_Z = -1, in_ion = -1;
+                    double in_lam = 0.0;
+                    if (el >= 0 && atom_data.line_atomic_number) {
+                        emit_Z   = atom_data.line_atomic_number[el];
+                        emit_ion = atom_data.line_ion_number[el];
+                    }
+                    if (il >= 0 && atom_data.line_atomic_number) {
+                        in_Z   = atom_data.line_atomic_number[il];
+                        in_ion = atom_data.line_ion_number[il];
+                    }
+                    if (h_escaped_in_nu[i] > 0.0)
+                        in_lam = (C_SPEED_OF_LIGHT / h_escaped_in_nu[i]) * 1.0e8;
+                    fprintf(kf, "%.4f,%d,%d,%.4f,%d,%d,%.6e\n",
+                            esc_lam, emit_Z, emit_ion, in_lam, in_Z, in_ion,
+                            h_escaped_energy[i] * L_inner);
+                }
+                fclose(kf);
+                printf("  [KROMER] wrote lumina_kromer.csv (%ld escaped rows)\n",
+                       (long)n_escaped);
             }
         }
 
@@ -4772,6 +5493,9 @@ int main(int argc, char *argv[]) {
     free(h_escaped_flag);         /* Phase 6 - Step 8 */
     free(h_escaped_r);            /* Rotation mode */
     free(h_escaped_mu);           /* Rotation mode */
+    if (h_escaped_emit_line) free(h_escaped_emit_line); /* [KROMER] */
+    if (h_escaped_in_line)   free(h_escaped_in_line);   /* [KROMER] */
+    if (h_escaped_in_nu)     free(h_escaped_in_nu);     /* [KROMER] */
     free_geometry(&geo);          /* Phase 6 - Step 8 */
     free_opacity_state(&opacity); /* Phase 6 - Step 8 */
     free_plasma_state(&plasma);   /* Phase 6 - Step 8 */

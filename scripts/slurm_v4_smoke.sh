@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH --job-name=v4_smoke_cmfgen
-#SBATCH --partition=h100,h200
+#SBATCH --partition=h200,h100
 #SBATCH --gres=gpu:1
 #SBATCH --cpus-per-task=4
 #SBATCH --time=UNLIMITED

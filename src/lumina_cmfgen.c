@@ -17,6 +17,17 @@
 #define CM_C      2.99792458e10    /* cm/s             */
 #define CM_SIGMA_T 6.6524587e-25   /* Thomson cm^2     */
 
+/* GPU comoving-frame formal solver (lumina_cmf_solve.cu); -1 -> CPU fallback. */
+int cmf_solve_J_gpu(int NS, int NB, int NP, int adv_split, double a_lam,
+    const double *chi_tot, const double *chi_es, const double *chi_abs,
+    const double *S_fixed, double *J,
+    const double *Bin, const double *adv_b, const double *advcoef_b,
+    const int *rn, const int *rsh, const double *rz,
+    const int *rcore, const double *rzin,
+    const int *shell_off, const int *shell_k, const int *shell_seg,
+    const double *shell_mu, int nsamp,
+    int n_ali_iter, double tol, int *iters_out);
+
 static int cmf_dcmp(const void *a, const void *b) {
     double d = *(const double*)a - *(const double*)b;
     return (d > 0) - (d < 0);
@@ -29,6 +40,18 @@ static inline double cm_planck(double nu, double T) {
     double denom = expm1(x);
     if (denom <= 0.0) return 0.0;
     return (2.0 * CM_H * nu * nu * nu) / (CM_C * CM_C * denom);
+}
+
+/* Inner blackbody amplitude dilution (LUMINA_INNER_BB_SCALE, default 1.0). Read
+ * once, shared by the J solve AND the emergent spectrum writers so the inner BC
+ * is consistent. Previously only cmfgen_solve_J applied it; the emergent writers
+ * (cmfgen_write_spectrum, cmfgen_write_spectrum_obs) used the full T_inner BB, so
+ * INNER_BB_SCALE=0 diluted the solved field but NOT the emergent spectrum. */
+static double cmf_inner_bb_scale(void) {
+    static int init = 0; static double s = 1.0;
+    if (!init) { const char *e = getenv("LUMINA_INNER_BB_SCALE");
+                 if (e) s = atof(e); init = 1; }
+    return s;
 }
 
 /* ------------------------------------------------------------ */
@@ -100,6 +123,16 @@ void cmfgen_free(CMFGENState *cs)
     memset(cs, 0, sizeof(*cs));
 }
 
+/* Stage 1 (transport-coupled T_e): radioactive deposition heating per shell
+ * [erg/s/cm^3], registered before cmfgen_assemble so the formal-solve emissivity
+ * can carry it (gate LUMINA_CMF_DEP_SOURCE). Setter avoids changing the assemble
+ * signature (5 call sites). NULL => no injection (byte-identical). */
+static const double *g_dep_heating = NULL;
+static int g_dep_heating_n = 0;
+void cmfgen_set_deposition(const double *heating_rate, int n_shells) {
+    g_dep_heating = heating_rate; g_dep_heating_n = n_shells;
+}
+
 /* ------------------------------------------------------------ */
 /* Assemble per (shell,bin): electron-scatter, thermal bf/ff absorption,
  * expansion line opacity, and the scattering-independent source S_fixed. */
@@ -111,6 +144,20 @@ void cmfgen_assemble(CMFGENState *cs, const Geometry *geo,
     int n_lines = opac->n_lines;
     double t_exp = geo->time_explosion;
     double inv_ct = 1.0 / (CM_C * t_exp);   /* expansion-opacity prefactor */
+
+    /* Stage 1: thermalised radioactive deposition into the transport source.
+     * Inject eta_dep,nu = kappa*B_nu(T_e) so 4pi*Int eta_dep dnu = frac*H_gamma[s],
+     * with kappa normalised on the ACTUAL bin grid (kappa = frac*H_gamma/
+     * (4pi*Sum_b B_nu*dnu)) so the injected power equals frac*H_gamma exactly
+     * (no analytic-sigma-T^4 grid-truncation error). Added to S_fixed as
+     * eta_dep/chi_tot below. Gate LUMINA_CMF_DEP_SOURCE (default off => no-op). */
+    static int dep_src = -1; static double dep_frac = 1.0;
+    if (dep_src < 0) {
+        const char *e = getenv("LUMINA_CMF_DEP_SOURCE");
+        dep_src = (e && atoi(e)) ? 1 : 0;
+        const char *fe = getenv("LUMINA_CMF_DEP_FRAC");
+        if (fe) dep_frac = atof(fe);
+    }
 
     memset(cs->chi_line, 0, sizeof(double) * (size_t)NS * NB);
     memset(cs->chi_line_th, 0, sizeof(double) * (size_t)NS * NB);
@@ -225,6 +272,15 @@ void cmfgen_assemble(CMFGENState *cs, const Geometry *geo,
         double n_e = plasma->n_electron ? plasma->n_electron[s]
                                         : opac->electron_density[s];
         double chi_e = n_e * CM_SIGMA_T;
+        /* Stage 1 deposition: kappa_dep = frac*H_gamma / (4pi*Sum_b B_nu*dnu). */
+        double kappa_dep = 0.0;
+        if (dep_src && g_dep_heating && s < g_dep_heating_n &&
+            g_dep_heating[s] > 0.0 && Te > 0.0) {
+            double bnorm = 0.0;
+            for (int b = 0; b < NB; ++b) bnorm += cm_planck(cs->nu[b], Te) * cs->dnu[b];
+            if (bnorm > 0.0)
+                kappa_dep = dep_frac * g_dep_heating[s] / (4.0 * M_PI * bnorm);
+        }
         for (int b = 0; b < NB; ++b) {
             size_t idx = (size_t)s * NB + b;
             double nu = cs->nu[b];
@@ -286,6 +342,10 @@ void cmfgen_assemble(CMFGENState *cs, const Geometry *geo,
              * count of the line source). */
             cs->S_fixed[idx] = (chi_t > 0.0)
                              ? (chi_a * B + eta_ln) / chi_t : 0.0;
+            /* Stage 1: add the thermalised deposition emissivity eta_dep=kappa*B
+             * to the source (eta_dep/chi_tot). No-op when the gate is off. */
+            if (kappa_dep > 0.0 && chi_t > 0.0)
+                cs->S_fixed[idx] += kappa_dep * B / chi_t;
             /* chi_tot scratch now overwritten with the real total */
             cs->chi_tot[idx] = chi_t;
         }
@@ -476,8 +536,17 @@ void cmfgen_solve_J(CMFGENState *cs, const Geometry *geo, double T_inner,
     const char *cd = getenv("LUMINA_CMFGEN_CELLDIAG");
     if (cd && sscanf(cd, "%d,%d", &cd_s, &cd_b) != 2) { cd_s = cd_b = -1; }
 
+    /* Inner-BB energy-balance scale (LUMINA_INNER_BB_SCALE, default 1.0): dilute
+     * the inner blackbody source by this factor. When radioactive deposition is
+     * ON, the inner-BB (central luminosity) + distributed deposition double-count
+     * the energy and over-heat the plasma (drives T_e into the partial-ionization
+     * max-line-opacity regime → MC packet trapping). Reducing the inner-BB lets
+     * deposition supply the shell energy without the double-count (ARTIS uses
+     * distributed deposition with NO inner blackbody). Keeps T_inner's COLOR;
+     * only scales the amplitude (a dilution W_inner). */
+    double inner_bb_scale = cmf_inner_bb_scale();
     for (int b = 0; b < NB; ++b) {
-        double Bin = cm_planck(cs->nu[b], T_inner);
+        double Bin = inner_bb_scale * cm_planck(cs->nu[b], T_inner);
         /* (tridiagonal-)ALI Lambda iteration for the scattering channel */
         for (int it = 0; it < n_ali_iter; ++it) {
             for (int s = 0; s < NS; ++s) {
@@ -779,7 +848,7 @@ int cmfgen_write_spectrum(const CMFGENState *cs, const Geometry *geo,
 
     /* ---- per-bin emergent flux ---- */
     for (int b = 0; b < NB; ++b) {
-        double Bin = cm_planck(cs->nu[b], T_inner);
+        double Bin = cmf_inner_bb_scale() * cm_planck(cs->nu[b], T_inner);
         for (int s = 0; s < NS; ++s) {
             size_t idx = (size_t)s * NB + b;
             double r = (cs->chi_tot[idx] > 0.0)
@@ -916,6 +985,16 @@ static int    g_pray_bin = -1;
 static double g_sob_rphot  = 0.0;   /* photosphere radius (r_inner[0]) for W(r) */
 static double g_sob_Tinner = 0.0;   /* photosphere T for the diluted backlight */
 static int    g_sob_srcj   = 0;     /* 1 = legacy cs->J source (contaminated) */
+static int    g_sob_jbardet = 0;    /* 1 = ENERGY-CONSERVING scatter source S_l=Jbar_l
+                                     * (producer jbar_line_det). W*B backlight (below
+                                     * incident I) destroys ~47% of the flux. */
+static int    g_sob_sei_cmv = 1;    /* 1 = SEI Pass-1 accumulates COMOVING I*q^3 (correct);
+                                     * 0 = old observer-frame I (the +180% double-beam bug) */
+static int    g_sob_sei = 0;        /* 1 = 2-pass SEI: lines jump at TRUE tau_S sourced
+                                     * from the Pass-1 beamed continuum mean (jc[s]),
+                                     * conserving AND sharp P-Cygni (2026-06-26 fix). */
+static int    g_sob_faithful = 0;   /* 1 = transport static chi_tot+Sbin (conserving),
+                                     * no Sobolev jumps — the obs energy fix (2026-06-26). */
 /* Unified-emergent: drive the resonance line source from the NLTE-solved
  * line_source_S (fluorescence) instead of the W*B scattering backlight.
  * g_sob_sl_ptr points at opac->line_source_S[l*NS+s]; clamp caps S_l<=clamp*B. */
@@ -930,7 +1009,8 @@ static double        g_sob_sl_clamp = 0.0;  /* 0 = off */
  * interval applies its FULL Sobolev jump  I = I*e^{-tau_S} + D^3*S_l*(1-e^{-tau_S})
  * at the resonance — exactly the directional resonance the MC does. Requires
  * LINE_EPS off (so chi_es is pure electron, no double-count). */
-static double cmf_obs_march_sob(double I, double p, double z0, double z1, int s,
+static double cmf_obs_march_sob_jc(const double *jc,
+                                double I, double p, double z0, double z1, int s,
                                 const CMFGENState *cs, const OpacityState *opac,
                                 double Te_s, double nu_obs, double inv_ct)
 {
@@ -957,6 +1037,26 @@ static double cmf_obs_march_sob(double I, double p, double z0, double z1, int s,
         double q = (1.0 - mu * beta) / sqrt(1.0 - beta * beta);
         double D = 1.0 / q;
         double nucmf = q * nu_obs;
+        if (g_sob_faithful) {
+            /* FAITHFUL observer-frame transform of the CONSERVING static extractor
+             * (physics review 2026-06-26): transport the SAME fine-grid chi_tot +
+             * full source Sbin=S_fixed+r·J the static uses (lines RESOLVED on the
+             * fine grid -> no Sobolev-jump hack). Conserves by construction; the
+             * D⁴ beaming + P-Cygni asymmetry emerge from the line-of-sight geometry.
+             * dtau=q·chi_tot·ds, source D³·Sbin. No separate line loop. */
+            double chit = cmf_interp_nu_asc(cs->nu, &cs->chi_tot[(size_t)s*NB], NB, nucmf);
+            double ces  = cmf_interp_nu_asc(cs->nu, &cs->chi_es[(size_t)s*NB], NB, nucmf);
+            double Sfx  = cmf_interp_nu_asc(cs->nu, &cs->S_fixed[(size_t)s*NB], NB, nucmf);
+            double Jvf  = cmf_interp_nu_asc(cs->nu, &cs->J[(size_t)s*NB], NB, nucmf);
+            if (chit < 0.0) chit = 0.0; if (ces < 0.0) ces = 0.0;
+            double rf   = (chit > 0.0) ? ces/chit : 0.0;
+            double Sbin = Sfx + rf * Jvf;
+            double dt   = q * chit * ds; if (dt < 0.0) dt = 0.0;
+            double exf  = (dt > 700.0) ? 0.0 : exp(-dt);
+            double psf  = (dt > 1e-4) ? (1.0 - exf) : (dt - 0.5*dt*dt);
+            I = I*exf + (D*D*D) * Sbin * psf;
+            continue;
+        }
         /* continuum (electron scatter + thermal bf/ff), NO binned line */
         double chi_es = cmf_interp_nu_asc(cs->nu, &cs->chi_es[(size_t)s * NB], NB, nucmf);
         double chi_ab = cmf_interp_nu_asc(cs->nu, &cs->chi_abs[(size_t)s * NB], NB, nucmf);
@@ -1000,7 +1100,14 @@ static double cmf_obs_march_sob(double I, double p, double z0, double z1, int s,
              * 0.5 clean continuum, self-refilling the trough). W(r) is the point-
              * photosphere dilution. (LUMINA_CMF_OBS_SRCJ=1 reverts to cs->J.) */
             double Sl;
-            if (g_sob_sl_ptr) {
+            if (g_sob_sei && jc) {
+                /* 2-pass SEI: scatter the Pass-1 BEAMED continuum mean intensity
+                 * jc[s] (carries the D⁴ beaming that comoving J̄_l lacked). Then the
+                 * true-tau_S black line conserves: blue trough (deep absorption of
+                 * beamed I) balanced by red emission D³·jc[s]. eps blends thermal B. */
+                double jb = jc[s]; if (!(jb > 0.0) || !isfinite(jb)) jb = B;
+                Sl = (1.0 - g_sob_eps) * jb + g_sob_eps * B;
+            } else if (g_sob_sl_ptr) {
                 /* UNIFIED: NLTE-solved line source (carries fluorescence once the
                  * UV pump populates the upper level above Boltzmann). Thermal
                  * fallback B(T_e) if unset/<=0; optional clamp vs garbage. */
@@ -1010,7 +1117,17 @@ static double cmf_obs_march_sob(double I, double p, double z0, double z1, int s,
                     Sl = g_sob_sl_clamp * B;
             } else {
                 double Jbar;
-                if (g_sob_srcj) {
+                if (g_sob_jbardet) {
+                    /* ENERGY-CONSERVING: S_l = local line mean intensity. Sobolev
+                     * scatter then conserves (absorbed=re-emitted, only redistributed).
+                     * Strong lines: producer J̄_l (jbar_line_det); weak/out-of-window
+                     * lines (sentinel<0): the local fine-field J (Jv) — BOTH are local
+                     * mean intensities. (W*B external backlight was the −47% energy
+                     * leak: it sits below the incident I.) */
+                    double jl = (opac->jbar_line_det)
+                              ? opac->jbar_line_det[(size_t)l * NS + s] : -1.0;
+                    Jbar = (jl >= 0.0 && isfinite(jl)) ? jl : Jv;
+                } else if (g_sob_srcj) {
                     Jbar = Jv;
                     if (opac->jbar_line) {
                         double jl = opac->jbar_line[(size_t)l * NS + s];
@@ -1040,6 +1157,12 @@ static double cmf_obs_march_sob(double I, double p, double z0, double z1, int s,
     }
     return I;
 }
+
+/* Back-compat wrapper: no SEI beamed-continuum column (jc=NULL). */
+static inline double cmf_obs_march_sob(double I, double p, double z0, double z1, int s,
+                                const CMFGENState *cs, const OpacityState *opac,
+                                double Te_s, double nu_obs, double inv_ct)
+{ return cmf_obs_march_sob_jc(NULL, I, p, z0, z1, s, cs, opac, Te_s, nu_obs, inv_ct); }
 
 /* Observer-frame emergent spectrum (gate LUMINA_CMF_OBSERVER_FRAME=1).
  *
@@ -1179,7 +1302,8 @@ int cmfgen_write_spectrum_obs(const CMFGENState *cs, const Geometry *geo,
                 double gam_in = 1.0 / sqrt(1.0 - beta_in * beta_in);
                 double q_c = gam_in * (1.0 - mu_c * beta_in);
                 double D_c = 1.0 / q_c;
-                I = (D_c * D_c * D_c) * cm_planck(q_c * nu_obs, T_inner);
+                I = cmf_inner_bb_scale() * (D_c * D_c * D_c) *
+                    cm_planck(q_c * nu_obs, T_inner);
             }
 
             /* ---- outbound (near side, z>0): inner -> outer, z increasing ---- */
@@ -1258,6 +1382,26 @@ static void cmf_solve_J(CMFGENState *cs, const Geometry *geo, double T_inner,
     double a_lam_on = 1.0;
     { const char *e = getenv("LUMINA_CMF_ALAM"); if (e) a_lam_on = atof(e); }
     double a_lam = a_lam_on / (t_exp * CM_C);
+    /* ADV_SPLIT (LUMINA_CMF_ADV_SPLIT=1): flux-limited operator split for the
+     * comoving blue->red advection (physics review 2026-06-26). The HB upwind
+     * form lumps beta into the spatial dtau=(chi+beta)*ds; at this grid the
+     * frequency-advection Courant number beta*ds~80 (a shell spans ~80 fine
+     * bins of redshift) so e^{-80} annihilates the radially-transported
+     * upstream intensity -> the optical e-scatter continuum collapses to
+     * J/B~1e-4 at outer shells. Fix: radial short-char with the REAL opacity
+     * (dtau=chi*ds, retains radial memory) + a SEPARATE capped advection pass
+     * I += min(beta*ds,1)*(I_bluer - I). Smooth continuum (I_bluer~=I) -> ~0
+     * correction -> radial W*B restored; lines still redistribute (capped).
+     * Off (default) = legacy lumped HB form (byte-identical). */
+    int adv_split = 0;
+    { const char *e = getenv("LUMINA_CMF_ADV_SPLIT"); if (e) adv_split = atoi(e); }
+    /* GPU formal solver (lumina_cmf_solve.cu). 0=CPU/OMP (byte-identical legacy),
+     * 1=GPU (lagged-advection NB*NP kernel), 2=run BOTH and report max rel diff
+     * in the converged J (self-check). The producer's fine grid (NB~500k) is the
+     * driver of this path; the GPU lags the blue->red advection across ALI iters
+     * to expose all (bin,ray) as independent threads -- see lumina_cmf_solve.cu. */
+    int use_gpu = 0;
+    { const char *e = getenv("LUMINA_CMF_SOLVE_GPU"); if (e) use_gpu = atoi(e); }
 
     double *rmid = malloc(NS * sizeof(double));
     double *lam  = malloc(NB * sizeof(double));
@@ -1288,6 +1432,64 @@ static void cmf_solve_J(CMFGENState *cs, const Geometry *geo, double T_inner,
     double *S    = malloc((size_t)NS*NB*sizeof(double));
     double *Jnew = malloc((size_t)NS*NB*sizeof(double));
 
+    /* --- GPU aux tables (built only when LUMINA_CMF_SOLVE_GPU>=1) --------------
+     * Bin/adv/advcoef are the per-bin scalars the kernel needs; the per-shell
+     * mu-sorted sample tables let the J-integration kernel gather each shell's ray
+     * crossings without atomics (geometry fixes which rays cross a shell + their
+     * mu = rz/rmid). */
+    double *Bin_h=NULL,*adv_h=NULL,*advc_h=NULL,*Jin=NULL,*Jcpu=NULL;
+    int *shell_off=NULL,*shell_k=NULL,*shell_seg=NULL; double *shell_mu=NULL;
+    int nsamp=0, cpu_iters=n_ali_iter, gpu_iters=0;
+    if (use_gpu >= 1) {
+        Bin_h=malloc(NB*sizeof(double)); adv_h=malloc(NB*sizeof(double)); advc_h=malloc(NB*sizeof(double));
+        for (int b=0;b<NB;++b){ Bin_h[b]=cm_planck(cs->nu[b],T_inner);
+            if (b<NB-1){ double Dlam=lam[b]-lam[b+1]; adv_h[b]=a_lam*lam[b]/Dlam; advc_h[b]=a_lam*lam[b+1]/Dlam; }
+            else { adv_h[b]=0.0; advc_h[b]=0.0; } }
+        int *sc=calloc(NS,sizeof(int));
+        for (int k=0;k<NP;++k){ size_t kb=(size_t)k*(NS+1); for (int i=0;i<rn[k];++i) sc[rsh[kb+i]]++; }
+        shell_off=malloc((NS+1)*sizeof(int)); shell_off[0]=0;
+        for (int s=0;s<NS;++s) shell_off[s+1]=shell_off[s]+sc[s];
+        nsamp=shell_off[NS];
+        shell_k=malloc((size_t)nsamp*sizeof(int)); shell_seg=malloc((size_t)nsamp*sizeof(int));
+        shell_mu=malloc((size_t)nsamp*sizeof(double));
+        int *fl=calloc(NS,sizeof(int));
+        for (int k=0;k<NP;++k){ size_t kb=(size_t)k*(NS+1);
+            for (int i=0;i<rn[k];++i){ int s=rsh[kb+i]; int pos=shell_off[s]+fl[s]++;
+                shell_k[pos]=k; shell_seg[pos]=i; shell_mu[pos]=rz[kb+i]/rmid[s]; } }
+        for (int s=0;s<NS;++s){ int o0=shell_off[s],o1=shell_off[s+1];   /* sort each shell ascending mu */
+            for (int a=o0+1;a<o1;++a){ double mk=shell_mu[a]; int kk=shell_k[a],ss=shell_seg[a]; int q=a-1;
+                while(q>=o0&&shell_mu[q]>mk){ shell_mu[q+1]=shell_mu[q]; shell_k[q+1]=shell_k[q]; shell_seg[q+1]=shell_seg[q]; --q; }
+                shell_mu[q+1]=mk; shell_k[q+1]=kk; shell_seg[q+1]=ss; } }
+        free(sc); free(fl);
+        if (use_gpu==2){ Jin=malloc((size_t)NS*NB*sizeof(double)); memcpy(Jin,cs->J,(size_t)NS*NB*sizeof(double)); }
+    }
+
+    /* The lagged-advection GPU scheme is BYTE-EXACT to the CPU and converges in
+     * the SAME ALI count ONLY when the blue->red frequency coupling is off
+     * (a_lam==0, i.e. LUMINA_CMF_ALAM=0 -- the static/transport-only limit, which
+     * is also what the fine emergent step uses). With a_lam>0 the coupling is
+     * Courant-dominant (adv*ds~10^2 at the producer's fine resolution -> I_b~=I_b+1)
+     * and lagging advances the field only ~1 bin/ALI-iter, so it reaches the same
+     * fixed point but needs O(NB) iters (verified: NB=400 -> 409 iters; impractical
+     * at NB=500k vs the ~24 budget). Warn loudly so GPU=1 is not used blindly with
+     * advection on. */
+    if (use_gpu >= 1 && a_lam != 0.0)
+        fprintf(stderr, "[cmf_gpu] WARNING: LUMINA_CMF_ALAM!=0 (advection on): the lagged "
+            "GPU solver needs O(NB) ALI iters to converge -> the field at n_ali=%d is "
+            "likely NOT converged. Use LUMINA_CMF_ALAM=0 (static limit) for the GPU path.\n",
+            n_ali_iter);
+
+    /* use_gpu==1: attempt the GPU solve first; on failure fall through to CPU. */
+    int run_cpu = (use_gpu != 1);
+    if (use_gpu == 1) {
+        int rc = cmf_solve_J_gpu(NS, NB, NP, adv_split, a_lam,
+            cs->chi_tot, cs->chi_es, cs->chi_abs, cs->S_fixed, cs->J,
+            Bin_h, adv_h, advc_h, rn, rsh, rz, rcore, rzin,
+            shell_off, shell_k, shell_seg, shell_mu, nsamp, n_ali_iter, 1e-4, &gpu_iters);
+        if (rc != 0) { fprintf(stderr, "[cmf_gpu] GPU solve failed (rc=%d) -> CPU fallback\n", rc); run_cpu = 1; }
+    }
+
+    if (run_cpu)
     for (int it = 0; it < n_ali_iter; ++it) {
         for (int s = 0; s < NS; ++s) for (int b = 0; b < NB; ++b) {
             size_t idx = (size_t)s*NB+b;
@@ -1321,10 +1523,26 @@ static void cmf_solve_J(CMFGENState *cs, const Geometry *geo, double T_inner,
                 for (int i = 0; i < n; ++i) {
                     int s = rsh[kb+i]; double ds = (i+1<n)?(rz[kb+i]-rz[kb+i+1]):(rz[kb+i]-rzin[k]);
                     size_t idx = (size_t)s*NB+b; double chi = cs->chi_tot[idx], chih = chi + a_lam*4.0 + adv;
+                    if (adv_split) {
+                        /* radial transport with REAL opacity (+tiny sphericity), then
+                         * a capped frequency-advection pass (operator split). */
+                        double chi_rad = chi + a_lam*4.0;
+                        double Su = S[idx];
+                        double dtau=chi_rad*ds, ex=exp(-dtau), e0,e1,wu,wd;
+                        if(dtau>1e-4){e0=1-ex;e1=dtau-e0;wu=e0-e1/dtau;wd=e1/dtau;}else{wu=0.5*dtau;wd=0.5*dtau;}
+                        double I_rad = I*ex + (wu+wd)*Su;
+                        /* implicit upwind frequency advection (stable at any Courant
+                         * beta*ds): smooth continuum (Iblue~=I_rad) -> I_rad (W*B
+                         * retained); line (Iblue low) -> propagates absorption. */
+                        double bds = adv*ds;
+                        double Iblue = (b<NB-1)?Iin_p[kb+i]:I_rad;
+                        I = (I_rad + bds*Iblue)/(1.0 + bds); Iin_c[kb+i]=I;
+                    } else {
                     double Su = (S[idx]*chi + ((b<NB-1)?a_lam*(lam_b/Dlam)*Iin_p[kb+i]:0.0))/(chih>0?chih:1.0);
                     double dtau=chih*ds, ex=exp(-dtau), e0,e1,wu,wd;
                     if(dtau>1e-4){e0=1-ex;e1=dtau-e0;wu=e0-e1/dtau;wd=e1/dtau;}else{wu=0.5*dtau;wd=0.5*dtau;}
                     I = I*ex + wu*Su + wd*Su; Iin_c[kb+i]=I;
+                    }
                     int c;
                     #ifdef _OPENMP
                     #pragma omp atomic capture
@@ -1336,10 +1554,21 @@ static void cmf_solve_J(CMFGENState *cs, const Geometry *geo, double T_inner,
                 for (int i = n-1; i >= 0; --i) {
                     int s = rsh[kb+i]; double ds = (i+1<n)?(rz[kb+i]-rz[kb+i+1]):(rz[kb+i]-rzin[k]);
                     size_t idx = (size_t)s*NB+b; double chi = cs->chi_tot[idx], chih = chi + a_lam*4.0 + adv;
+                    if (adv_split) {
+                        double chi_rad = chi + a_lam*4.0;
+                        double Su = S[idx];
+                        double dtau=chi_rad*ds, ex=exp(-dtau), e0,e1,wu,wd;
+                        if(dtau>1e-4){e0=1-ex;e1=dtau-e0;wu=e0-e1/dtau;wd=e1/dtau;}else{wu=0.5*dtau;wd=0.5*dtau;}
+                        double I_rad = I*ex + (wu+wd)*Su;
+                        double bds = adv*ds;
+                        double Iblue = (b<NB-1)?Iout_p[kb+i]:I_rad;
+                        I = (I_rad + bds*Iblue)/(1.0 + bds); Iout_c[kb+i]=I;
+                    } else {
                     double Su = (S[idx]*chi + ((b<NB-1)?a_lam*(lam_b/Dlam)*Iout_p[kb+i]:0.0))/(chih>0?chih:1.0);
                     double dtau=chih*ds, ex=exp(-dtau), e0,e1,wu,wd;
                     if(dtau>1e-4){e0=1-ex;e1=dtau-e0;wu=e0-e1/dtau;wd=e1/dtau;}else{wu=0.5*dtau;wd=0.5*dtau;}
                     I = I*ex + wu*Su + wd*Su; Iout_c[kb+i]=I;
+                    }
                     IpL[(size_t)s*NP+cloc[i]]=I;
                 }
             }
@@ -1360,8 +1589,38 @@ static void cmf_solve_J(CMFGENState *cs, const Geometry *geo, double T_inner,
             double d = fabs(Jnew[i]-cs->J[i])/(fabs(cs->J[i])+1e-30); if (d>maxrel) maxrel=d;
             cs->J[i] = Jnew[i];
         }
-        if (maxrel < 1e-4 && it > 0) break;
+        if (maxrel < 1e-4 && it > 0) { cpu_iters = it + 1; break; }
     }
+
+    /* --- self-check (use_gpu==2): re-solve on the GPU from the SAME input and
+     * report the max relative difference in the converged J + ALI iter counts.
+     * Keeps the CPU field as authoritative so a stray =2 never perturbs a run. */
+    if (use_gpu == 2) {
+        Jcpu = malloc((size_t)NS*NB*sizeof(double));
+        memcpy(Jcpu, cs->J, (size_t)NS*NB*sizeof(double));   /* converged CPU field */
+        memcpy(cs->J, Jin,  (size_t)NS*NB*sizeof(double));   /* restore solver input */
+        int rc = cmf_solve_J_gpu(NS, NB, NP, adv_split, a_lam,
+            cs->chi_tot, cs->chi_es, cs->chi_abs, cs->S_fixed, cs->J,
+            Bin_h, adv_h, advc_h, rn, rsh, rz, rcore, rzin,
+            shell_off, shell_k, shell_seg, shell_mu, nsamp, n_ali_iter, 1e-4, &gpu_iters);
+        if (rc == 0) {
+            double maxrel=0.0, l2n=0.0, l2d=0.0; size_t worst=0;
+            for (size_t i=0;i<(size_t)NS*NB;++i){ double dn=fabs(cs->J[i]-Jcpu[i]);
+                double d=dn/(fabs(Jcpu[i])+1e-30); if(d>maxrel){maxrel=d;worst=i;}
+                l2n+=dn*dn; l2d+=Jcpu[i]*Jcpu[i]; }
+            fprintf(stderr,
+                "[cmf_gpu] SELF-CHECK NS=%d NB=%d NP=%d adv_split=%d: max rel diff(J_gpu vs J_cpu)=%.3e "
+                "L2 rel=%.3e  (worst s=%d b=%d: cpu=%.4e gpu=%.4e)  ALI iters cpu=%d gpu=%d\n",
+                NS, NB, NP, adv_split, maxrel, (l2d>0)?sqrt(l2n/l2d):0.0,
+                (int)(worst/NB),(int)(worst%NB), Jcpu[worst], cs->J[worst], cpu_iters, gpu_iters);
+        } else {
+            fprintf(stderr, "[cmf_gpu] SELF-CHECK GPU solve failed (rc=%d)\n", rc);
+        }
+        memcpy(cs->J, Jcpu, (size_t)NS*NB*sizeof(double));   /* keep CPU as authoritative */
+    }
+    (void)cpu_iters;
+    free(Bin_h);free(adv_h);free(advc_h);free(shell_off);free(shell_k);free(shell_seg);free(shell_mu);
+    free(Jin);free(Jcpu);
     free(rmid);free(lam);free(p);free(rn);free(rsh);free(rz);free(rcore);free(rzin);
     free(Iin_p);free(Iout_p);free(Iin_c);free(Iout_c);free(muL);free(IpL);free(ImL);free(cnt);free(S);free(Jnew);
 }
@@ -1513,7 +1772,19 @@ static int cmfgen_fine_emergent_obs(const CMFGENState *fs, const Geometry *geo,
     { const char *e = getenv("LUMINA_CMF_FINE_SL_CLAMP"); if (e) g_sob_sl_clamp = atof(e); }
     { const char *e = getenv("LUMINA_CMF_OBS_TAUMIN");    g_sob_taumin = e ? atof(e) : 1e-6; }
     g_sob_eps = 0.0; g_sob_noemit = 0; g_sob_srcj = 0; g_sob_contonly = 0;
+    /* F1 fine-tune: line scatter/absorption blend S_l=(1-eps)*W*B + eps*B(Te).
+     * eps=0 = pure scatter (fills troughs, right color); eps>0 adds the cold
+     * local-thermal absorbing fraction that DEEPENS the P-Cygni troughs
+     * (Ca II H&K / Fe II / O I) toward gold without the full-thermal reddening. */
+    { const char *e = getenv("LUMINA_CMF_LINE_SOB_EPS");
+      g_sob_eps = e ? atof(e) : 0.0;
+      if (g_sob_eps < 0.0) g_sob_eps = 0.0; if (g_sob_eps > 1.0) g_sob_eps = 1.0; }
     { const char *e = getenv("LUMINA_CMF_OBS_CONTONLY"); g_sob_contonly = e ? atoi(e) : 0; }
+    { const char *e = getenv("LUMINA_CMF_OBS_JBARDET"); g_sob_jbardet = e ? atoi(e) : 0; }
+    { const char *e = getenv("LUMINA_CMF_OBS_FAITHFUL"); g_sob_faithful = e ? atoi(e) : 0; }
+    { const char *e = getenv("LUMINA_CMF_OBS_SEI"); g_sob_sei = e ? atoi(e) : 0; }
+    { const char *e = getenv("LUMINA_CMF_OBS_SEI_CMV"); g_sob_sei_cmv = e ? atoi(e) : 1; }
+    { const char *e = getenv("LUMINA_CMF_OBS_SRCJ"); g_sob_srcj = e ? atoi(e) : 0; }
     g_sob_rphot = geo->r_inner[0]; g_sob_Tinner = T_inner;
 
     int NObs = 3000; { const char *e = getenv("LUMINA_CMF_FINE_OBS_NOBS"); if (e) NObs = atoi(e); }
@@ -1531,9 +1802,55 @@ static int cmfgen_fine_emergent_obs(const CMFGENState *fs, const Geometry *geo,
     double dln = log(nu_hi / nu_lo) / (double)(NObs - 1);
     for (int k = 0; k < NObs; ++k) nuo[k] = nu_lo * exp(dln * k);
 
+    /* SEI Pass 1: continuum-only march -> beamed continuum mean Jbar_C[k,s]
+     * (ray-ensemble angle average, carries the D⁴ beaming). Pass 2 (main loop)
+     * sources the true-tau_S line jumps from it -> conserving + sharp P-Cygni. */
+    double *Jbar_C = NULL;
+    if (g_sob_sei) {
+        Jbar_C = calloc((size_t)NObs * NS, sizeof(double));
+        int *cnt = calloc((size_t)NObs * NS, sizeof(int));
+        int save_co = g_sob_contonly; g_sob_contonly = 1;
+        #pragma omp parallel for schedule(dynamic)
+        for (int k = 0; k < NObs; ++k) {
+            double nu_obs = nuo[k];
+            for (int ray = 0; ray < NRO; ++ray) {
+                double p = p_obs[ray]; int sh[256], nshell = 0;
+                for (int s = NS-1; s >= 0 && nshell < 256; --s) { if (geo->r_outer[s] <= p) break; sh[nshell++] = s; }
+                if (nshell == 0) continue;
+                int core = (p < r_in0) ? 1 : 0; double I = 0.0;
+                /* CMV (default): accumulate the COMOVING intensity I_cmf = I_obs*q^3
+                 * so jc[s] is the comoving mean J_bar; Pass-2 then beams it ONCE via
+                 * D^3 (the old code stored observer-frame I -> D^3 double-beamed it,
+                 * the +180% SEI bug). LUMINA_CMF_OBS_SEI_CMV=0 reverts. */
+                for (int i = 0; i < nshell; ++i) {
+                    double ro=geo->r_outer[sh[i]],ri=geo->r_inner[sh[i]];
+                    double zh=(ro>p)?sqrt(ro*ro-p*p):0.0, zl=(ri>p)?sqrt(ri*ri-p*p):0.0;
+                    I = cmf_obs_march_sob(I,p,-zh,-zl,sh[i],fs,opac,Te[sh[i]],nu_obs,inv_ct);
+                    double w=1.0; if (g_sob_sei_cmv) { double zm=-0.5*(zh+zl),rm=sqrt(p*p+zm*zm),
+                        mu=(rm>0)?zm/rm:0.0,be=rm*inv_ct,ga=1.0/sqrt(1.0-be*be),q=ga*(1.0-mu*be); w=q*q*q; }
+                    Jbar_C[(size_t)k*NS+sh[i]] += I*w; cnt[(size_t)k*NS+sh[i]]++;
+                }
+                if (core) { double zc=sqrt(r_in0*r_in0-p*p),mc=zc/r_in0,bi=r_in0*inv_ct,gi=1.0/sqrt(1.0-bi*bi);
+                            double qc=gi*(1.0-mc*bi),Dc=1.0/qc; I=(Dc*Dc*Dc)*cm_planck(qc*nu_obs,T_inner); }
+                for (int i = nshell-1; i >= 0; --i) {
+                    double ro=geo->r_outer[sh[i]],ri=geo->r_inner[sh[i]];
+                    double zh=(ro>p)?sqrt(ro*ro-p*p):0.0, zl=(ri>p)?sqrt(ri*ri-p*p):0.0;
+                    I = cmf_obs_march_sob(I,p,+zl,+zh,sh[i],fs,opac,Te[sh[i]],nu_obs,inv_ct);
+                    double w=1.0; if (g_sob_sei_cmv) { double zm=0.5*(zh+zl),rm=sqrt(p*p+zm*zm),
+                        mu=(rm>0)?zm/rm:0.0,be=rm*inv_ct,ga=1.0/sqrt(1.0-be*be),q=ga*(1.0-mu*be); w=q*q*q; }
+                    Jbar_C[(size_t)k*NS+sh[i]] += I*w; cnt[(size_t)k*NS+sh[i]]++;
+                }
+            }
+        }
+        g_sob_contonly = save_co;
+        for (size_t i = 0; i < (size_t)NObs*NS; ++i) if (cnt[i] > 0) Jbar_C[i] /= cnt[i];
+        free(cnt);
+    }
+
     #pragma omp parallel for schedule(dynamic)
     for (int k = 0; k < NObs; ++k) {
         double nu_obs = nuo[k];
+        const double *jc = (g_sob_sei && Jbar_C) ? &Jbar_C[(size_t)k * NS] : NULL;
         double integ = 0.0, p_prev = 0.0, f_prev = 0.0;
         for (int ray = 0; ray < NRO; ++ray) {
             double p = p_obs[ray];
@@ -1550,7 +1867,7 @@ static int cmfgen_fine_emergent_obs(const CMFGENState *fs, const Geometry *geo,
                 double ro = geo->r_outer[sh[i]], ri = geo->r_inner[sh[i]];
                 double z_hi = (ro > p) ? sqrt(ro*ro - p*p) : 0.0;
                 double z_lo = (ri > p) ? sqrt(ri*ri - p*p) : 0.0;
-                I = cmf_obs_march_sob(I, p, -z_hi, -z_lo, sh[i], fs, opac,
+                I = cmf_obs_march_sob_jc(jc, I, p, -z_hi, -z_lo, sh[i], fs, opac,
                                       Te[sh[i]], nu_obs, inv_ct);
             }
             if (core) {                          /* diffusive core */
@@ -1565,7 +1882,7 @@ static int cmfgen_fine_emergent_obs(const CMFGENState *fs, const Geometry *geo,
                 double ro = geo->r_outer[sh[i]], ri = geo->r_inner[sh[i]];
                 double z_hi = (ro > p) ? sqrt(ro*ro - p*p) : 0.0;
                 double z_lo = (ri > p) ? sqrt(ri*ri - p*p) : 0.0;
-                I = cmf_obs_march_sob(I, p, +z_lo, +z_hi, sh[i], fs, opac,
+                I = cmf_obs_march_sob_jc(jc, I, p, +z_lo, +z_hi, sh[i], fs, opac,
                                       Te[sh[i]], nu_obs, inv_ct);
             }
             double f = I * p;
@@ -1575,6 +1892,7 @@ static int cmfgen_fine_emergent_obs(const CMFGENState *fs, const Geometry *geo,
         Lnu[k] = 8.0 * M_PI * M_PI * integ;
     }
     g_sob_sl_ptr = NULL;   /* reset global */
+    free(Jbar_C);
 
     FILE *fp = fopen(path, "w");
     if (!fp) { free(p_obs); free(nuo); free(Lnu);
@@ -1613,6 +1931,14 @@ static int cmfgen_fine_emergent_obs(const CMFGENState *fs, const Geometry *geo,
  *
  * Caller allocates opac->jbar_line_det[n_lines*n_shells]. The plasma
  * bb-rate reads it under LUMINA_CMF_LINERES_JBAR. */
+/* bf + atom registered by cuda.cu so the producer can build the fine bf continuum
+ * opacity (LUMINA_CMF_FINE_BF_OPAC). NULL → keep the interpolated continuum. */
+static BFOpacity   *g_fine_bf   = NULL;
+static AtomicData  *g_fine_atom = NULL;
+void cmfgen_fine_set_bf_atom(BFOpacity *bf, AtomicData *atom) {
+    g_fine_bf = bf; g_fine_atom = atom;
+}
+
 void cmfgen_fine_jbar(CMFGENState *csb, const Geometry *geo,
                       OpacityState *opac, double T_inner, PlasmaState *plasma)
 {
@@ -1636,6 +1962,19 @@ void cmfgen_fine_jbar(CMFGENState *csb, const Geometry *geo,
      * producer<->NLTE loop amplifies it (Jbar/B 454,659 at iter5,7 in 169651).
      * Clamp S_l <= sl_clamp*B(Te) (orthodox LTE@Te-floor analog). 0 = off. */
     double sl_clamp = 0.0; { const char *e=getenv("LUMINA_CMF_FINE_SL_CLAMP"); if(e) sl_clamp=atof(e); }
+    /* Line-forest SCATTERING source (LUMINA_CMF_FINE_LINE_EPS = eps in (0,1]):
+     * the ROOT CAUSE of the absent fluorescence (2026-06-26, triple-verified) is
+     * that the producer emits the in-window forest as THERMAL emitters (eta =
+     * chi_line*B(Te)), so the UV pump field thermalises to B(Te) in the green-
+     * emitting shells (measured J_bar/B = 1.001) -> no super-thermal UV to pump.
+     * With eps<1 the line source becomes S_l=(1-eps)*Jbar + eps*B: the thermal
+     * fraction eps*chi_line emits B, the scattering remainder (1-eps)*chi_line
+     * joins chi_es so the ALI carries the diluted-but-HOT photospheric UV field
+     * outward (W*B(T_phot) > cold B(T_e)) -> super-thermal pump -> fluorescence.
+     * eps=1.0 (default) = legacy pure-thermal (byte-identical). FROZEN-PLASMA
+     * staged use: converge thermal first, then enable as a perturbation. */
+    double line_eps = 1.0; { const char *e=getenv("LUMINA_CMF_FINE_LINE_EPS"); if(e) line_eps=atof(e);
+        if (line_eps < 0.0) line_eps = 0.0; if (line_eps > 1.0) line_eps = 1.0; }
 
     double nu_lo = CM_C / (lam_hi * 1.0e-8);    /* red edge  = low nu   */
     double nu_hi = CM_C / (lam_lo * 1.0e-8);    /* blue edge = high nu  */
@@ -1675,6 +2014,7 @@ void cmfgen_fine_jbar(CMFGENState *csb, const Geometry *geo,
     }
 
     /* --- continuum: log-nu interpolate chi_es/chi_abs from the binned state --- */
+    #pragma omp parallel for schedule(static)
     for (int s = 0; s < NS; ++s) {
         for (int i = 0; i < NF; ++i) {
             double x = log(fs.nu[i] / csb->nu_min) / csb->d_log_nu - 0.5;
@@ -1684,6 +2024,56 @@ void cmfgen_fine_jbar(CMFGENState *csb, const Geometry *geo,
             size_t ia = (size_t)s*csb->n_bins + b, ib = ia + 1;
             fs.chi_es [(size_t)s*NF+i] = (1-f)*csb->chi_es [ia] + f*csb->chi_es [ib];
             fs.chi_abs[(size_t)s*NF+i] = (1-f)*csb->chi_abs[ia] + f*csb->chi_abs[ib];
+        }
+    }
+
+    /* --- CMFGEN-method fix (LUMINA_CMF_FINE_BF_OPAC): replace the smeared interpolated
+     * bf part of the continuum with the fine-ν bf opacity (sharp edges at the exact
+     * thresholds), so the solved field develops the across-edge frequency structure the
+     * binned/interpolated continuum averages away. chi_abs_fine = interp_chi_abs
+     * − bf_get_chi(binned bf @ fine ν, the smeared part) + chi_bf_fine(sharp). ff kept. */
+    {
+        static int fbf = -1;
+        if (fbf < 0) { const char *e = getenv("LUMINA_CMF_FINE_BF_OPAC"); fbf = (e && atoi(e)) ? 1 : 0; }
+        if (fbf && g_fine_bf && g_fine_atom) {
+            double *chi_bf_fine = (double *)malloc((size_t)NS * NF * sizeof(double));
+            if (chi_bf_fine && bf_gemm_compute_fine(g_fine_bf, g_fine_atom, plasma, NS,
+                    fs.nu, NF, g_fine_bf->nu_min, g_fine_bf->d_log_nu, chi_bf_fine) == 0) {
+                double sum_old = 0.0, sum_new = 0.0;
+                #pragma omp parallel for schedule(static) reduction(+:sum_old,sum_new)
+                for (int s = 0; s < NS; ++s)
+                    for (int i = 0; i < NF; ++i) {
+                        size_t k = (size_t)s*NF + i;
+                        double smeared_bf = bf_get_chi(g_fine_bf, s, fs.nu[i]);
+                        double newabs = fs.chi_abs[k] - smeared_bf + chi_bf_fine[k];
+                        if (newabs < 0.0) newabs = chi_bf_fine[k];   /* ff floor guard */
+                        sum_old += fs.chi_abs[k]; sum_new += newabs;
+                        fs.chi_abs[k] = newabs;
+                    }
+                fprintf(stderr, "[FINE-BF-OPAC] sharp-edge bf continuum applied "
+                        "(NS=%d NF=%d, Σchi_abs %.3e -> %.3e)\n", NS, NF, sum_old, sum_new);
+                /* DIAG: for the outer shell, show how much the bf sharpening changed
+                 * chi_abs locally AND chi_abs vs scattering — disambiguates "swamped"
+                 * (chi_abs<<chi_es) vs "too weak" (chi_bf_fine~smeared). One-shot. */
+                static int bfdiag = -1;
+                if (bfdiag < 0) { const char *e=getenv("LUMINA_CMF_FINE_BF_DIAG"); bfdiag=(e&&atoi(e))?1:0; }
+                if (bfdiag) {
+                    int sd = NS-1;   /* outer shell */
+                    fprintf(stderr, "[FINE-BF-DIAG] shell %d (outer): lam_A  chi_es  smeared_bf  fine_bf  fine/smeared\n", sd);
+                    for (int j = 1; j <= 12; ++j) {
+                        int i = (int)((double)j/13.0 * NF);
+                        double lamA = 2.99792458e18 / fs.nu[i];
+                        double ce = fs.chi_es[(size_t)sd*NF+i];
+                        double sb = bf_get_chi(g_fine_bf, sd, fs.nu[i]);
+                        double ff = chi_bf_fine[(size_t)sd*NF+i];
+                        fprintf(stderr, "[FINE-BF-DIAG]  %.0f  %.3e  %.3e  %.3e  %.2f\n",
+                                lamA, ce, sb, ff, sb>0?ff/sb:0.0);
+                    }
+                }
+            } else {
+                fprintf(stderr, "[FINE-BF-OPAC] compute failed -> interpolated continuum\n");
+            }
+            free(chi_bf_fine);
         }
     }
 
@@ -1707,28 +2097,46 @@ void cmfgen_fine_jbar(CMFGENState *csb, const Geometry *geo,
     double fine_taumin = 1e-12;
     { const char *e = getenv("LUMINA_CMF_FINE_TAUMIN"); if (e) fine_taumin = atof(e); }
     long n_skip_weak = 0;
-    for (int l = 0; !fine_contonly && l < NL; ++l) {
-        double nu_l = opac->line_list_nu[l];
-        if (nu_l <= nu_lo || nu_l >= nu_hi) continue;
-        ++n_inwin;
-        if (fine_taumin > 1e-12) {            /* skip line if weak in ALL shells */
-            double tmax = 0.0;
-            for (int s = 0; s < NS; ++s) {
-                double t = opac->tau_sobolev[(size_t)l * NS + s];
-                if (t > tmax) tmax = t;
+    /* OMP enabler: the per-line deposit accumulates into chi_line[s,:]/eta[s,:], so
+     * parallelising over LINES would race. Instead precompute the per-line in-window
+     * + weak-skip flag SERIALLY (cheap, read-only), then parallelise the deposit over
+     * SHELLS (each thread owns one shell's chi_line/eta -> no race). Behaviour is
+     * identical to the old line-serial loop (same deposit, same diagnostics). */
+    char *line_use = NULL;
+    if (!fine_contonly) {
+        line_use = (char *)malloc((size_t)NL);
+        for (int l = 0; l < NL; ++l) {
+            double nu_l = opac->line_list_nu[l];
+            char use = (nu_l > nu_lo && nu_l < nu_hi) ? 1 : 0;
+            if (use) {
+                ++n_inwin;
+                if (fine_taumin > 1e-12) {        /* skip line if weak in ALL shells */
+                    double tmax = 0.0;
+                    for (int s = 0; s < NS; ++s) {
+                        double t = opac->tau_sobolev[(size_t)l * NS + s];
+                        if (t > tmax) tmax = t;
+                    }
+                    if (tmax < fine_taumin) { ++n_skip_weak; use = 0; }
+                }
             }
-            if (tmax < fine_taumin) { ++n_skip_weak; continue; }
+            line_use[l] = use;
         }
-        double dnuD = nu_l * vdop / CM_C;
-        /* fine index of line center; deposit over +-4 Doppler widths */
-        double xc = log(nu_l / nu_lo) / dlognu - 0.5;
-        int half  = (int)ceil(4.0 * dnuD / (nu_l * dlognu)) + 1;
-        int ic = (int)floor(xc + 0.5);
-        int i0 = ic - half, i1 = ic + half;
-        if (i0 < 0) i0 = 0; if (i1 >= NF) i1 = NF - 1;
-        for (int s = 0; s < NS; ++s) {
+    }
+    #pragma omp parallel for schedule(dynamic) reduction(max:max_slb) reduction(+:n_clamped)
+    for (int s = 0; s < NS; ++s) {
+        if (fine_contonly) continue;
+        for (int l = 0; l < NL; ++l) {
+            if (!line_use[l]) continue;
+            double nu_l = opac->line_list_nu[l];
             double tau = opac->tau_sobolev[(size_t)l * NS + s];
             if (tau <= 1e-12) continue;
+            double dnuD = nu_l * vdop / CM_C;
+            /* fine index of line center; deposit over +-4 Doppler widths */
+            double xc = log(nu_l / nu_lo) / dlognu - 0.5;
+            int half  = (int)ceil(4.0 * dnuD / (nu_l * dlognu)) + 1;
+            int ic = (int)floor(xc + 0.5);
+            int i0 = ic - half, i1 = ic + half;
+            if (i0 < 0) i0 = 0; if (i1 >= NF) i1 = NF - 1;
             double frac = (tau > 1e-6) ? -expm1(-tau) : tau;   /* 1-e^{-tau} */
             double chi0 = frac * chi0_pref;
             double Bl = cm_planck(nu_l, plasma->T_e[s]);
@@ -1741,22 +2149,32 @@ void cmfgen_fine_jbar(CMFGENState *csb, const Geometry *geo,
                 Sl = sl_clamp * Bl;               /* stabilize super-thermal artifact */
                 ++n_clamped;
             }
+            /* scattering source: thermal fraction emits eps*B; the (1-eps) share
+             * is folded into chi_es (scattering) in the combine loop below. */
+            double emit = (line_eps < 1.0) ? (line_eps * Bl) : Sl;
             for (int i = i0; i <= i1; ++i) {
                 double xv = (fs.nu[i] - nu_l) / dnuD;
                 double p  = exp(-xv * xv);                     /* chi0 already / (sqrt(pi) dnuD)-folded */
                 double cl = chi0 * p;
                 fs.chi_line[(size_t)s*NF+i] += cl;
-                eta        [(size_t)s*NF+i] += cl * Sl;
+                eta        [(size_t)s*NF+i] += cl * emit;
             }
         }
     }
+    free(line_use);
 
-    /* --- assemble chi_tot + S_fixed (lines emit their lagged source) --- */
+    /* --- assemble chi_tot + S_fixed.  eps<1: fold (1-eps)*chi_line into chi_es
+     * (ALI scattering albedo) so the line forest scatters the photospheric UV
+     * field instead of thermalising it; eta already holds only eps*chi_line*B.
+     * Total opacity is preserved: chi_es+(1-eps)cl + chi_abs + eps*cl = orig. */
+    #pragma omp parallel for schedule(static)
     for (int s = 0; s < NS; ++s) {
         double Te = plasma->T_e[s];
         for (int i = 0; i < NF; ++i) {
             size_t idx = (size_t)s*NF+i;
-            double ct = fs.chi_es[idx] + fs.chi_abs[idx] + fs.chi_line[idx];
+            if (line_eps < 1.0) fs.chi_es[idx] += (1.0 - line_eps) * fs.chi_line[idx];
+            double chi_ln_th = (line_eps < 1.0) ? (line_eps * fs.chi_line[idx]) : fs.chi_line[idx];
+            double ct = fs.chi_es[idx] + fs.chi_abs[idx] + chi_ln_th;
             fs.chi_tot[idx] = ct;
             double Bnu = cm_planck(fs.nu[i], Te);
             fs.S_fixed[idx] = (ct > 0.0)
@@ -1775,8 +2193,9 @@ void cmfgen_fine_jbar(CMFGENState *csb, const Geometry *geo,
             exp_ += frac*nu_l/(CM_C*t_exp); }
         fprintf(stderr,
             "[cmf_fine] S_l deposit: max S_l/B=%.3e  clamped=%ld/%ld lines (sl_clamp=%.1f)  "
-            "skipped weak(tau<%.2g)=%ld\n",
-            max_slb, n_clamped, n_inwin, sl_clamp, fine_taumin, n_skip_weak);
+            "skipped weak(tau<%.2g)=%ld  line_eps=%.3g%s\n",
+            max_slb, n_clamped, n_inwin, sl_clamp, fine_taumin, n_skip_weak,
+            line_eps, (line_eps < 1.0) ? " [SCATTERING pump]" : " [thermal]");
         fprintf(stderr,
             "[cmf_fine] lines in window=%ld  tie-back shell %d: "
             "Int chi_line dnu=%.4e  Sobolev expect=%.4e  ratio=%.4f\n",
@@ -1785,6 +2204,38 @@ void cmfgen_fine_jbar(CMFGENState *csb, const Geometry *geo,
 
     /* --- solve frequency-coupled J on the fine mesh (validated kernel) --- */
     cmf_solve_J(&fs, geo, T_inner, n_ali);
+
+    /* --- DIAGNOSTIC: J/B(lambda, shell) map (LUMINA_CMF_FINE_JMAP=1).
+     * Locates WHERE (wavelength, shell) the fine field is super-thermal -> the
+     * only place a fluorescence pump can come from (physics-agent 2026-06-26).
+     * read-only, no feedback. Coarse 100A bins, all shells. */
+    { const char *e = getenv("LUMINA_CMF_FINE_JMAP");
+      if (e && atoi(e)) {
+        FILE *fp = fopen("lumina_fine_jmap.csv", "w");
+        if (fp) {
+            fprintf(fp, "shell,lambda_A,Te,J_over_B\n");
+            double binA = 100.0;   /* 100 Angstrom bins */
+            for (int s = 0; s < NS; ++s) {
+                double Te = plasma->T_e[s];
+                double lam0 = lam_lo, lam;
+                for (lam = lam0; lam < lam_hi; lam += binA) {
+                    double lam_c = lam + 0.5*binA;
+                    double nu_c = CM_C / (lam_c * 1.0e-8);
+                    /* nearest fine bin */
+                    double xx = log(nu_c / nu_lo) / dlognu - 0.5;
+                    int bi = (int)floor(xx + 0.5);
+                    if (bi < 0 || bi >= NF) continue;
+                    double Jv = fs.J[(size_t)s*NF+bi];
+                    double Bv = cm_planck(fs.nu[bi], Te);
+                    fprintf(fp, "%d,%.1f,%.0f,%.4e\n", s, lam_c, Te,
+                            (Bv > 0.0) ? Jv/Bv : 0.0);
+                }
+            }
+            fclose(fp);
+            if (diag) fprintf(stderr, "[cmf_fine] wrote lumina_fine_jmap.csv (J/B vs lambda,shell)\n");
+        }
+      }
+    }
 
     /* --- Stage-1 PROOF: frequency-resolved emergent from the fine field --- */
     { const char *e = getenv("LUMINA_CMF_FINE_EMERGENT");
@@ -1890,14 +2341,519 @@ void cmfgen_fine_jbar(CMFGENState *csb, const Geometry *geo,
       }
     }
 
+    /* FINE-ν PHOTOION (LUMINA_CMF_FINE_PHOTOION): retain the local fine-ν field
+     * fs.J + fs.nu (transfer ownership to OpacityState; otherwise freed below) and
+     * register it so coupled_photoion_rate_jnu integrates bf rates on the fine grid
+     * instead of the binned J. */
+    { static int fph = -1;
+      if (fph < 0) { const char *e=getenv("LUMINA_CMF_FINE_PHOTOION"); fph=(e&&atoi(e))?1:0; }
+      if (fph) {
+          free(opac->jnu_fine); free(opac->nu_fine);
+          opac->jnu_fine = fs.J;  fs.J  = NULL;   /* transfer (skip free below) */
+          opac->nu_fine  = fs.nu; fs.nu = NULL;
+          opac->n_fine = NF; opac->nu_lo_fine = nu_lo; opac->dlognu_fine = dlognu;
+          coupled_set_fine_jnu(opac->jnu_fine, opac->nu_fine, NF,
+                               nu_lo, dlognu, NS);
+      }
+    }
+
     free(fs.nu);free(fs.dnu);free(fs.chi_es);free(fs.chi_abs);free(fs.chi_line);
     free(fs.chi_tot);free(fs.S_fixed);free(fs.J);free(eta);
+}
+
+/* ===================================================================
+ * CONFIRMATION-LADDER T1: controlled single-line P-Cygni self-test.
+ * Synthetic homologous ejecta + BB core + ONE pure-scatter resonance line.
+ * Feeds the SAME cmfgen_fine_emergent_obs (whatever obs path the env selects:
+ * scatter / SEI / faithful) and writes the profile. KNOWN ANSWER:
+ *   - pure scatter ⇒ net equivalent width = 0 (exact photon conservation)
+ *   - Castor/SEI P-Cygni shape (blue absorption, red emission)
+ *   - tau_S→∞ ⇒ blue-edge flux → 0
+ * Env: LUMINA_CMF_OBS_SELFTEST=1; LUMINA_CMF_SELFTEST_TAUS=tau_S (default 100). */
+/* ===================================================================
+ * CONFIRMATION-LADDER Stage N: NLTE level populations / line source S_l.
+ *   N1 (two-level atom): analytic S_l = (J̄ + εB)/(1+ε), ε=(C_ul/A_ul)(1−e^{−hν/kT}).
+ *       Solve the rate equation, verify num==ana AND limits (ε→0:S_l→J̄; ε→∞:S_l→B).
+ *   N4 (three-level UV pump): ground(0)/mid(1)/upper(2). UV resonance pump 0→2 (2500A),
+ *       fluorescence decay 2→1 (5000A), optical 1→0 (5000A). Feed the UV pump field
+ *       either FREQ-RESOLVED (sees hot photospheric W·B(T_rad)) or BINNED (collapses to
+ *       local-thermal B(T_e), the binned-J grey defect). KNOWN ANSWER: freq-resolved
+ *       pumps b_2>1 → elevated optical S_l(2→1) = fluorescence; binned gives b_2≈1, none.
+ *       This is the controlled capstone of the fluorescence saga. Env LUMINA_CMF_NLTE_SELFTEST=n1|n4. */
+static void cmf_nlte_solve3(const double E[3], const double g[3],
+                            const double A[3][3], const double Jbar[3][3],
+                            double qcoef, double ne, double Te, double n_out[3])
+{
+    const double H=6.62607015e-27, C=2.99792458e10, K=1.380649e-16;
+    double R[3][3]; for (int i=0;i<3;++i) for (int j=0;j<3;++j) R[i][j]=0.0;
+    for (int lo=0; lo<3; ++lo) for (int up=lo+1; up<3; ++up) {
+        if (A[up][lo]<=0.0) continue;
+        double dE=E[up]-E[lo], nu=dE/H;
+        double Bul=A[up][lo]*C*C/(2.0*H*nu*nu*nu);
+        double Blu=(g[up]/g[lo])*Bul;
+        double qul=qcoef*ne;                          /* de-excit rate s^-1 */
+        double qlu=qul*(g[up]/g[lo])*exp(-dE/(K*Te));
+        double J=Jbar[lo][up];
+        R[up][lo]=A[up][lo]+Bul*J+qul;                /* up->lo (down) */
+        R[lo][up]=Blu*J+qlu;                          /* lo->up (up)   */
+    }
+    /* statistical equilibrium M n = 0, replace row 0 with normalization */
+    double M[3][3];
+    for (int i=0;i<3;++i){ double out=0; for(int j=0;j<3;++j) if(j!=i) out+=R[i][j];
+        for(int j=0;j<3;++j) M[i][j]=(i==j)?-out:R[j][i]; }
+    for (int j=0;j<3;++j) M[0][j]=1.0; double rhs[3]={1.0,0.0,0.0};
+    /* 3x3 Gaussian elimination */
+    for (int c=0;c<3;++c){ int p=c; for(int r=c+1;r<3;++r) if(fabs(M[r][c])>fabs(M[p][c])) p=r;
+        for(int j=0;j<3;++j){double t=M[c][j];M[c][j]=M[p][j];M[p][j]=t;} double t=rhs[c];rhs[c]=rhs[p];rhs[p]=t;
+        for(int r=0;r<3;++r) if(r!=c){double f=M[r][c]/M[c][c]; for(int j=0;j<3;++j) M[r][j]-=f*M[c][j]; rhs[r]-=f*rhs[c];}}
+    for (int i=0;i<3;++i) n_out[i]=rhs[i]/M[i][i];
+}
+
+/* ===================================================================
+ * CONFIRMATION-LADDER Stage P: plasma (ionization + energy balance).
+ *   P1 (Saha LTE limit): 2-ion ground system + e-. Collisional ion/3-body recomb
+ *       (detailed-balance → Saha) + radiative recomb + photoionization (non-thermal
+ *       field). KNOWN: ne→∞ ⇒ (n_{i+1}·n_e/n_i) → S_Saha(Te) DESPITE the photoion field.
+ *   P2 (gray radiative equilibrium): J_ν = W·B_ν(T_rad). KNOWN: ∫(J−B(Te))dν=0 ⇒
+ *       Te = W^{1/4}·T_rad. Tests the energy-balance root-finder. */
+void cmf_plasma_selftest(const char *mode)
+{
+    const double H=6.62607015e-27, C=2.99792458e10, K=1.380649e-16;
+    const double ME=9.1093837e-28, EV=1.602176634e-12, PI=3.14159265358979;
+    if (!mode || strcmp(mode,"p1")==0) {
+        double chi=13.6*EV, gi=9, gip1=4, Te=8000.0, Trad=10000.0, Wd=0.5;
+        double S=2.0*(gip1/gi)*pow(2*PI*ME*K*Te/(H*H),1.5)*exp(-chi/(K*Te)); /* Saha RHS cm^-3 */
+        double Cion=1e-8*sqrt(Te)*exp(-chi/(K*Te));            /* collisional ion coeff */
+        double alpha=2e-13*pow(Te/1e4,-0.7);                   /* radiative recomb coeff */
+        double Gamma=Wd*1e-10*exp(-chi/(K*Trad));              /* photoion rate (hot field, toy) */
+        printf("=== CONFIRMATION-LADDER P1 (Saha LTE limit), Te=%.0f Trad=%.0f, photoion field ON ===\n",Te,Trad);
+        printf("  %-10s %-13s %-13s %-10s\n","ne","(n+·ne/n)","S_Saha(Te)","ratio");
+        for (double ne=1e6; ne<=1e16; ne*=100){
+            double x=(Cion*ne+Gamma)/(alpha*ne + Cion*ne*ne/S);  /* n_{i+1}/n_i */
+            printf("  %-10.0e %-13.4e %-13.4e %-10.4f\n",ne,x*ne,S,x*ne/S);
+        }
+        printf("  KNOWN: ne→∞ ⇒ (n+·ne/n)→S_Saha (ratio→1) DESPITE photoion; low ne ratio>1 (field over-ionizes, NLTE).\n");
+        printf("  ⟹ P1 PASS if ratio→1 at high ne (ionization rate network has correct Saha/LTE limit).\n");
+    }
+    if (!mode || strcmp(mode,"p2")==0) {
+        double Trad=10000.0;
+        int NF=400; double nu_lo=C/(30000e-8), nu_hi=C/(1000e-8), dln=log(nu_hi/nu_lo)/NF;
+        printf("=== CONFIRMATION-LADDER P2 (gray radiative equilibrium), Trad=%.0f ===\n",Trad);
+        printf("  %-7s %-11s %-13s %-9s\n","W","Te(solve)","Te=W^.25·Tr","ratio");
+        double Wlist[4]={1.0,0.5,0.25,0.1};
+        for (int w=0; w<4; ++w){ double W=Wlist[w];
+            double lo=1000, hi=30000;
+            for (int it=0; it<60; ++it){ double Te=0.5*(lo+hi), r=0;
+                for (int i=0;i<NF;++i){ double nu=nu_lo*exp((i+0.5)*dln), dnu=nu*dln;
+                    r += (W*cm_planck(nu,Trad)-cm_planck(nu,Te))*dnu; }
+                if (r>0) lo=Te; else hi=Te; }
+            double Te=0.5*(lo+hi), Tek=pow(W,0.25)*Trad;
+            printf("  %-7.2f %-11.1f %-13.1f %-9.4f\n",W,Te,Tek,Te/Tek);
+        }
+        printf("  KNOWN: gray radeq ∫(W·B(Trad)−B(Te))dν=0 ⇒ Te=W^{1/4}·Trad. ratio→1 ⇒ energy-balance root-finder correct.\n");
+    }
+}
+
+void cmf_nlte_selftest(const char *mode)
+{
+    const double H=6.62607015e-27, C=2.99792458e10, K=1.380649e-16;
+    double Te=8000.0, Trad=10000.0, W=0.5;
+    if (!mode || strcmp(mode,"n1")==0) {
+        double gl=2,gu=4, lam=5000e-8, nu=C/lam, dE=H*nu, Aul=1e8;
+        double twohnu3c2=2*H*nu*nu*nu/(C*C), Bnu=cm_planck(nu,Te), Jbar=W*Bnu;
+        printf("=== CONFIRMATION-LADDER N1 (two-level S_l), Te=%.0f lam=5000A, Jbar=W·B=%.2fB ===\n",Te,W);
+        printf("  %-9s %-10s %-11s %-11s %-9s\n","ne","eps","S_l/B(num)","S_l/B(ana)","match");
+        for (double ne=1e5; ne<=1e13; ne*=100){
+            double Bul=Aul*C*C/(2*H*nu*nu*nu), Blu=(gu/gl)*Bul;
+            double qul=1e-7*ne, qlu=qul*(gu/gl)*exp(-dE/(K*Te));
+            double Rlu=Blu*Jbar+qlu, Rul=Aul+Bul*Jbar+qul, ratio=Rlu/Rul; /* nu/nl */
+            double Sl=twohnu3c2/((gu/gl)/ratio-1.0);
+            double eps=(qul/Aul)*(1-exp(-dE/(K*Te))), Sl_ana=(Jbar+eps*Bnu)/(1+eps);
+            printf("  %-9.0e %-10.3e %-11.4f %-11.4f %-9s\n",ne,eps,Sl/Bnu,Sl_ana/Bnu,
+                   (fabs(Sl-Sl_ana)/Sl_ana<1e-6)?"OK":"FAIL");
+        }
+        printf("  KNOWN: ε→0 S_l→Jbar(0.50B); ε→∞ S_l→B(1.0); num==ana ⇒ 2-level machinery PASS\n");
+    }
+    if (!mode || strcmp(mode,"n4")==0) {
+        /* 3 levels: 0 ground, 1 mid(5000A from g), 2 upper(2500A from g) */
+        double lam10=5000e-8, lam02=2500e-8;
+        double E[3]={0.0, H*C/lam10, H*C/lam02}, g[3]={2,4,2};
+        double lam21=H*C/(E[2]-E[1]);  /* fluorescence line 2->1 */
+        double A[3][3]={{0}}; A[2][0]=1e8; A[2][1]=1e7; A[1][0]=1e7;  /* UV pump / fluor / optical */
+        double nu02=(E[2]-E[0])/H, nu21=(E[2]-E[1])/H, nu10=(E[1]-E[0])/H;
+        double ne=1e8, qcoef=1e-8;   /* nebular: weak collisions */
+        printf("=== CONFIRMATION-LADDER N4 (3-level UV pump→fluorescence), Te=%.0f Trad=%.0f ===\n",Te,Trad);
+        printf("  pump 0→2=%.0fA, fluor 2→1=%.0fA, optical 1→0=%.0fA; ne=%.0e\n",lam02*1e8,lam21*1e8,lam10*1e8,ne);
+        for (int cs=0; cs<2; ++cs){
+            int freq=(cs==0);
+            double Jbar[3][3]={{0}};
+            /* UV pump 0↔2: FREQ sees hot photospheric W·B(Trad); BINNED collapses to local B(Te) */
+            Jbar[0][2]=Jbar[2][0]= freq ? W*cm_planck(nu02,Trad) : cm_planck(nu02,Te);
+            Jbar[1][2]=Jbar[2][1]= W*cm_planck(nu21,Te);     /* optical: both ~W·B(Te) */
+            Jbar[0][1]=Jbar[1][0]= W*cm_planck(nu10,Te);
+            double n[3]; cmf_nlte_solve3(E,g,A,Jbar,qcoef,ne,Te,n);
+            /* LTE pops at Te for departure b_i = n_i/n_i^LTE (normalized) */
+            double zl=0; double nlte_lte[3]; for(int i=0;i<3;++i){nlte_lte[i]=g[i]*exp(-E[i]/(K*Te)); zl+=nlte_lte[i];}
+            for(int i=0;i<3;++i) nlte_lte[i]/=zl;
+            double ntot=n[0]+n[1]+n[2];
+            double b2=(n[2]/ntot)/nlte_lte[2], b1=(n[1]/ntot)/nlte_lte[1];
+            /* S_l of fluorescence line 2→1 */
+            double twohnu3c2=2*H*nu21*nu21*nu21/(C*C);
+            double Sl21=twohnu3c2/((g[2]/g[1])*(n[1]/n[2])-1.0);
+            double B21=cm_planck(nu21,Te);
+            printf("  [%s] UV J̄_02/B(Te)=%6.1f  b_2=%7.3f  b_1=%6.3f  S_l(2→1)/B(Te)=%7.3f %s\n",
+                   freq?"FREQ ":"BIN  ", Jbar[0][2]/cm_planck(nu02,Te), b2, b1, Sl21/B21,
+                   freq?"":" (binned baseline)");
+        }
+        printf("  KNOWN: FREQ pump (UV J̄≫B) → b_2>1 + S_l(2→1)>1 = FLUORESCENCE; BIN → b_2≈1, S_l≈1 (none).\n");
+        printf("  ⟹ if FREQ shows fluorescence and BIN does not, binned-J STRUCTURALLY cannot pump (saga capstone).\n");
+    }
+    if (!mode || strcmp(mode,"n2")==0) {
+        /* LTE limit: high collisions must thermalize pops → Boltzmann@Te DESPITE a
+         * non-thermal (10×B UV) field. Same 3-level atom as N4, ramp n_e. */
+        double lam10=5000e-8, lam02=2500e-8;
+        double E[3]={0.0, H*C/lam10, H*C/lam02}, g[3]={2,4,2};
+        double A[3][3]={{0}}; A[2][0]=1e8; A[2][1]=1e7; A[1][0]=1e7;
+        double nu21=(E[2]-E[1])/H;
+        double Jbar[3][3]={{0}};
+        Jbar[0][2]=Jbar[2][0]=10.0*cm_planck((E[2]-E[0])/H,Te);  /* hot UV pump (non-thermal) */
+        Jbar[1][2]=Jbar[2][1]=W*cm_planck(nu21,Te);
+        Jbar[0][1]=Jbar[1][0]=W*cm_planck((E[1]-E[0])/H,Te);
+        printf("=== CONFIRMATION-LADDER N2 (LTE limit: high collisions→Boltzmann), Te=%.0f, field NON-thermal(UV 10×B) ===\n",Te);
+        printf("  %-10s %-9s %-9s %-9s %-12s\n","ne","b_0","b_1","b_2","S_l(2→1)/B");
+        for (double ne=1e8; ne<=1e18; ne*=1000){
+            double n[3]; cmf_nlte_solve3(E,g,A,Jbar,1e-7,ne,Te,n);
+            double zl=0,nl[3]; for(int i=0;i<3;++i){nl[i]=g[i]*exp(-E[i]/(K*Te));zl+=nl[i];} for(int i=0;i<3;++i)nl[i]/=zl;
+            double ntot=n[0]+n[1]+n[2];
+            double twohnu3c2=2*H*nu21*nu21*nu21/(C*C);
+            double Sl21=twohnu3c2/((g[2]/g[1])*(n[1]/n[2])-1.0), B21=cm_planck(nu21,Te);
+            printf("  %-10.0e %-9.3f %-9.3f %-9.3f %-12.3f\n",ne,(n[0]/ntot)/nl[0],(n[1]/ntot)/nl[1],(n[2]/ntot)/nl[2],Sl21/B21);
+        }
+        printf("  KNOWN: ne→∞ (collisions dominate) ⇒ b_i→1 ALL levels (Boltzmann@Te), S_l→1, DESPITE the 10×B UV pump.\n");
+        printf("  ⟹ N2 PASS if b_i→1 at high ne (rate matrix has correct LTE limit; collisions wash out non-thermal field).\n");
+    }
+    if (!mode || strcmp(mode,"n5")==0 || strcmp(mode,"cond")==0) {
+        /* CONDITIONING (ARTIS recipe, nltepop.cc:733): an NLTE-like detailed-balance
+         * rate matrix whose equilibrium x_true spans many orders → cond≫1/eps → raw LU
+         * garbage. ARTIS fix = iterative ROW-COL equilibration (f=√(colL2/rowL2), 10×)
+         * before LU. KNOWN ANSWER = x_true (Boltzmann). Raw vs equilibrated vs x_true. */
+        enum { NN=10 };
+        printf("=== CONFIRMATION-LADDER N5 (NLTE matrix conditioning, ARTIS row-col equilibration) ===\n");
+        printf("  detailed-balance rate matrix, equilibrium x_true=Boltzmann; raw LU vs ARTIS-equilibrated LU vs x_true\n");
+        printf("  %-8s %-12s %-13s %-13s %-6s\n","decade","span","RAW err","EQ(ARTIS) err","PASS");
+        double decades[5]={28,56,84,140,200};   /* x_true span in orders of magnitude */
+        for (int sp=0; sp<5; ++sp){
+        double perlev = decades[sp]*log(10.0)/(NN-1);   /* exp(-perlev*i) gives the target span */
+        double xt[NN]; for(int i=0;i<NN;++i) xt[i]=exp(-perlev*i);
+        double M0[NN*NN]; for(int i=0;i<NN*NN;++i) M0[i]=0.0;
+        for(int i=0;i<NN;++i){ double dout=0;
+            for(int j=0;j<NN;++j) if(j!=i){
+                double Rji=(j<i)?1.0:xt[i]/xt[j];   /* rate j→i: up=1, down=xt[i]/xt[j] */
+                M0[i*NN+j]=Rji;
+                double Rik=(i<j)?1.0:xt[j]/xt[i];   /* rate i→j (for diagonal) */
+                dout+=Rik;
+            }
+            M0[i*NN+i]=-dout;
+        }
+        double sumxt=0; for(int i=0;i<NN;++i) sumxt+=xt[i];
+        for(int j=0;j<NN;++j) M0[0*NN+j]=1.0;       /* row 0 = normalization Σx=sumxt */
+        /* local LU solve (partial pivot) on row-major A[NN*NN], b[NN] -> x[NN] */
+        #define LUSOLVE(Asrc,bsrc,xout) do{ double A[NN*NN],b[NN]; \
+            for(int _i=0;_i<NN*NN;_i++)A[_i]=(Asrc)[_i]; for(int _i=0;_i<NN;_i++)b[_i]=(bsrc)[_i]; \
+            for(int c=0;c<NN;c++){ int p=c; for(int r=c+1;r<NN;r++) if(fabs(A[r*NN+c])>fabs(A[p*NN+c]))p=r; \
+              for(int k=0;k<NN;k++){double t=A[c*NN+k];A[c*NN+k]=A[p*NN+k];A[p*NN+k]=t;} double tb=b[c];b[c]=b[p];b[p]=tb; \
+              for(int r=0;r<NN;r++) if(r!=c){double f=A[r*NN+c]/A[c*NN+c]; for(int k=0;k<NN;k++)A[r*NN+k]-=f*A[c*NN+k]; b[r]-=f*b[c];}} \
+            for(int _i=0;_i<NN;_i++)(xout)[_i]=b[_i]/A[_i*NN+_i]; }while(0)
+        double bvec[NN]={0}; bvec[0]=sumxt;
+        double xraw[NN]; LUSOLVE(M0,bvec,xraw);
+        /* ARTIS iterative row-col equilibration */
+        double Meq[NN*NN],beq[NN],cscale[NN]; for(int i=0;i<NN*NN;i++)Meq[i]=M0[i];
+        for(int i=0;i<NN;i++){beq[i]=bvec[i];cscale[i]=1.0;}
+        for(int it=0;it<10;it++){ int changed=0;
+            for(int i=0;i<NN;i++){ double rn=0,cn=0;
+                for(int j=0;j<NN;j++){rn+=Meq[i*NN+j]*Meq[i*NN+j]; cn+=Meq[j*NN+i]*Meq[j*NN+i];}
+                rn=sqrt(rn);cn=sqrt(cn); if(rn==0||cn==0)continue;
+                double f=sqrt(cn/rn); if(fabs(f-1.0)<1e-3)continue; changed=1;
+                for(int j=0;j<NN;j++)Meq[i*NN+j]*=f; beq[i]*=f;          /* row i ×f */
+                for(int j=0;j<NN;j++)Meq[j*NN+i]/=f; cscale[i]/=f;       /* col i ÷f */
+            }
+            if(!changed)break;
+        }
+        double yeq[NN],xeq[NN]; LUSOLVE(Meq,beq,yeq); for(int i=0;i<NN;i++)xeq[i]=cscale[i]*yeq[i];
+        #undef LUSOLVE
+        double eraw=0,eeq=0; for(int i=0;i<NN;i++){
+            eraw=fmax(eraw,fabs(xraw[i]-xt[i])/fabs(xt[i])); eeq=fmax(eeq,fabs(xeq[i]-xt[i])/fabs(xt[i])); }
+        printf("  %-8.0f %.0e..%-6.0e %-13.3e %-13.3e %-6s\n", decades[sp], xt[0], xt[NN-1], eraw, eeq,
+               (eeq < 1e-3 && eeq < eraw*0.01) ? "EQ✓" : (eraw<1e-3?"both ok":"—"));
+        }
+        printf("  KNOWN: equilibrated recovers x_true (err≪1) even as span→200 orders; raw LU degrades.\n");
+        printf("  ⟹ N5 PASS = ARTIS row-col equilibration holds where raw LU fails (the conditioning fix).\n");
+    }
+    if (!mode || strcmp(mode,"n6")==0) {
+        /* SUPER-LEVELS (ARTIS recipe, nltepop.cc:1411 superlevel_boltzmann): solve an
+         * N-level atom (a) FULL explicit vs (b) K explicit + high levels lumped into ONE
+         * Boltzmann(T_exc) super-level (s_renorm-weighted rates). KNOWN ANSWER = full
+         * solution. Super-level should recover the low-level pops AND cut the matrix
+         * dimension N→K+1. Validates the span-reduction conditioning fix before plasma.c. */
+        enum { NL=24 };
+        const double EV=1.602176634e-12;
+        int Kx=6;  /* explicit low levels 0..Kx-1; Kx..NL-1 → super-level */
+        double Eg[NL], gg[NL];
+        for(int i=0;i<NL;++i){ Eg[i]=i*0.40*EV; gg[i]=2.0*i+1.0; }   /* ladder, g=2i+1 */
+        double ne=1e9, qc=1e-8, Te_=8000.0, Texc=8000.0;
+        /* radiative+collisional rates between all pairs (toy: A∝1/(E_u-E_l)^3-ish, here A=1e7) */
+        /* --- build full NL×NL statistical-equilibrium matrix --- */
+        double Jbar=0.5;  /* W; field = W·B(nu,Trad=10000) per pair */
+        double Tr=10000.0;
+        #define RATE_UP(lo,hi)  ( atom_blu(lo,hi)*Jbar*cm_planck((Eg[hi]-Eg[lo])/H,Tr) + qc*ne*(gg[hi]/gg[lo])*exp(-(Eg[hi]-Eg[lo])/(K*Te_)) )
+        #define RATE_DN(lo,hi)  ( atom_aul(lo,hi) + atom_blu(lo,hi)*(gg[lo]/gg[hi])*Jbar*cm_planck((Eg[hi]-Eg[lo])/H,Tr) + qc*ne )
+        /* helper lambdas via macros referencing A_ul=1e7, B_lu from A */
+        double Aul=1e7;
+        #define atom_aul(lo,hi) (Aul)
+        #define atom_blu(lo,hi) (Aul*C*C/(2*H*pow((Eg[hi]-Eg[lo])/H,3.0))*(gg[hi]/gg[lo]))
+        /* FULL solve */
+        static double Mf[NL*NL]; for(int i=0;i<NL*NL;++i)Mf[i]=0;
+        for(int lo=0;lo<NL;++lo)for(int hi=lo+1;hi<NL;++hi){
+            double ru=RATE_UP(lo,hi), rd=RATE_DN(lo,hi);
+            Mf[hi*NL+lo]+=ru; Mf[lo*NL+hi]+=rd;          /* into hi from lo; into lo from hi */
+            Mf[lo*NL+lo]-=ru; Mf[hi*NL+hi]-=rd;          /* out of lo (up), out of hi (down) */
+        }
+        for(int j=0;j<NL;++j)Mf[0*NL+j]=1.0;             /* row0 = normalization */
+        #define SOLVEGEN(N,Asrc,bsrc,xout) do{ static double A[NL*NL],b[NL]; \
+            for(int _i=0;_i<(N)*(N);_i++)A[_i]=(Asrc)[_i]; for(int _i=0;_i<(N);_i++)b[_i]=(bsrc)[_i]; \
+            for(int c=0;c<(N);c++){int p=c;for(int r=c+1;r<(N);r++)if(fabs(A[r*(N)+c])>fabs(A[p*(N)+c]))p=r; \
+              for(int k=0;k<(N);k++){double t=A[c*(N)+k];A[c*(N)+k]=A[p*(N)+k];A[p*(N)+k]=t;}double tb=b[c];b[c]=b[p];b[p]=tb; \
+              for(int r=0;r<(N);r++)if(r!=c){double f=A[r*(N)+c]/A[c*(N)+c];for(int k=0;k<(N);k++)A[r*(N)+k]-=f*A[c*(N)+k];b[r]-=f*b[c];}} \
+            for(int _i=0;_i<(N);_i++)(xout)[_i]=b[_i]/A[_i*(N)+_i]; }while(0)
+        double bf[NL]={0}; bf[0]=1.0; double nf[NL]; SOLVEGEN(NL,Mf,bf,nf);
+        /* --- SUPER-LEVEL solve: dim = Kx+1 (levels 0..Kx-1 explicit, index Kx = super) --- */
+        double zsl=0, sb[NL]; for(int i=Kx;i<NL;++i){ sb[i]=gg[i]*exp(-(Eg[i]-Eg[Kx])/(K*Texc)); zsl+=sb[i]; }
+        double sren[NL]; for(int i=Kx;i<NL;++i) sren[i]=sb[i]/zsl;     /* Boltzmann fraction within SL */
+        int DS=Kx+1; static double Ms[NL*NL]; for(int i=0;i<DS*DS;++i)Ms[i]=0;
+        #define IDX(i) ((i)<Kx?(i):Kx)                    /* map physical level → super index */
+        for(int lo=0;lo<NL;++lo)for(int hi=lo+1;hi<NL;++hi){
+            double ru=RATE_UP(lo,hi), rd=RATE_DN(lo,hi);
+            double wlo=(lo<Kx)?1.0:sren[lo], whi=(hi<Kx)?1.0:sren[hi];  /* SL members enter ×Boltzmann frac */
+            int a=IDX(lo), c=IDX(hi);
+            Ms[c*DS+a]+=ru*wlo; Ms[a*DS+c]+=rd*whi;
+            Ms[a*DS+a]-=ru*wlo; Ms[c*DS+c]-=rd*whi;
+        }
+        for(int j=0;j<DS;++j)Ms[0*DS+j]=1.0; double bs[NL]={0}; bs[0]=1.0; double ns[NL]; SOLVEGEN(DS,Ms,bs,ns);
+        #undef SOLVEGEN
+        #undef RATE_UP
+        #undef RATE_DN
+        #undef atom_aul
+        #undef atom_blu
+        #undef IDX
+        /* compare low-level pops (normalize full so Σ=1; super already Σ=1 over DS) */
+        double sumf=0; for(int i=0;i<NL;++i)sumf+=nf[i]; for(int i=0;i<NL;++i)nf[i]/=sumf;
+        double slfull=0; for(int i=Kx;i<NL;++i)slfull+=nf[i];
+        printf("=== CONFIRMATION-LADDER N6 (super-levels, ARTIS recipe), NL=%d, K_explicit=%d → dim %d→%d ===\n",NL,Kx,NL,DS);
+        printf("  %-5s %-13s %-13s %-8s\n","lev","n_full","n_super","rel.err");
+        double maxe=0; for(int i=0;i<Kx;++i){ double e=fabs(ns[i]-nf[i])/fmax(nf[i],1e-30); maxe=fmax(maxe,e);
+            printf("  %-5d %-13.4e %-13.4e %-8.1e\n",i,nf[i],ns[i],e); }
+        double esl=fabs(ns[Kx]-slfull)/fmax(slfull,1e-30);
+        printf("  SL    %-13.4e %-13.4e %-8.1e (super-level total vs Σ full high)\n",slfull,ns[Kx],esl);
+        printf("  max low-level rel.err = %.2e\n",maxe);
+        printf("  KNOWN: super-level (Boltzmann high-E lump) recovers explicit low-level pops; dim %d→%d.\n",NL,DS);
+        printf("  ⟹ N6 PASS if low-level err≪1 (super-level approx valid) → span-reduction conditioning fix works.\n");
+    }
+}
+
+/* ===================================================================
+ * CONFIRMATION-LADDER Stage F: cmf_solve_J (comoving J̄ formal solve) on
+ * known-answer cases. Env LUMINA_CMF_FSOLVE_SELFTEST = "absorb"|"dilute".
+ *   F1 absorb: isothermal, pure absorption (chi_abs only), thick, S_fixed=B(T)
+ *              → J → B(T) in the interior (thermalization). Known: J/B → 1.
+ *   F3 dilute: thin e-scatter halo (tau_es~0.3) + BB core, chi_abs=0, S_fixed=0
+ *              → J → W(r)·B(T_inner) at outer shells. Known: J/(W·B) → 1. */
+void cmf_fsolve_selftest(const char *mode)
+{
+    int NS=40, NF=200; { const char *e=getenv("LUMINA_CMF_SELFTEST_NS"); if(e) NS=atoi(e); }
+    double t_exp=86400.0, Tinner=10000.0;
+    double vph=5.0e8, vmax=2.5e9;
+    int absorb = (mode && strcmp(mode,"absorb")==0);
+    Geometry geo; memset(&geo,0,sizeof geo); geo.n_shells=NS; geo.time_explosion=t_exp;
+    geo.r_inner=malloc(NS*sizeof(double)); geo.r_outer=malloc(NS*sizeof(double));
+    geo.v_inner=malloc(NS*sizeof(double)); geo.v_outer=malloc(NS*sizeof(double));
+    for (int s=0;s<NS;++s){ double v0=vph+(vmax-vph)*s/(double)NS,v1=vph+(vmax-vph)*(s+1)/(double)NS;
+        geo.v_inner[s]=v0;geo.v_outer[s]=v1;geo.r_inner[s]=v0*t_exp;geo.r_outer[s]=v1*t_exp; }
+    double nu_min=CM_C/(6000e-8), nu_max=CM_C/(4000e-8), dlognu=log(nu_max/nu_min)/NF;
+    CMFGENState fs; memset(&fs,0,sizeof fs);
+    fs.n_shells=NS;fs.n_bins=NF;fs.nu_min=nu_min;fs.nu_max=nu_max;fs.d_log_nu=dlognu;
+    fs.nu=malloc(NF*sizeof(double));fs.dnu=malloc(NF*sizeof(double));
+    fs.chi_es=calloc((size_t)NS*NF,sizeof(double));fs.chi_abs=calloc((size_t)NS*NF,sizeof(double));
+    fs.chi_line=calloc((size_t)NS*NF,sizeof(double));fs.chi_tot=calloc((size_t)NS*NF,sizeof(double));
+    fs.S_fixed=calloc((size_t)NS*NF,sizeof(double));fs.J=calloc((size_t)NS*NF,sizeof(double));
+    for (int i=0;i<NF;++i){ fs.nu[i]=nu_min*exp((i+0.5)*dlognu); fs.dnu[i]=fs.nu[i]*dlognu; }
+    double dr=geo.r_outer[NS-1]-geo.r_inner[0];
+    for (int s=0;s<NS;++s) for (int i=0;i<NF;++i){ size_t idx=(size_t)s*NF+i;
+        double B=cm_planck(fs.nu[i],Tinner);
+        if (absorb){ double chia=100.0/dr; fs.chi_abs[idx]=chia; fs.chi_tot[idx]=chia;
+                     fs.S_fixed[idx]=B; fs.J[idx]=0.5*B; }            /* thick, S=B → J→B */
+        else { double taues=0.3; { const char *e=getenv("LUMINA_CMF_FSOLVE_TAUES"); if(e) taues=atof(e); }
+               double ces=taues/dr; fs.chi_es[idx]=ces; fs.chi_tot[idx]=ces;
+               fs.S_fixed[idx]=0.0; fs.J[idx]=0.5*B; }                /* thin scatter+core */
+    }
+    int n_ali=24; { const char *e=getenv("LUMINA_CMFGEN_ALI_ITER"); if(e) n_ali=atoi(e); }
+    cmf_solve_J(&fs,&geo,Tinner,n_ali);
+    int ic=NF/2;  /* mid frequency */
+    printf("=== CONFIRMATION-LADDER F (%s), cmf_solve_J ===\n", absorb?"F1 absorb J→B":"F3 dilute J→W·B");
+    for (int s=0;s<NS;s+=(absorb?NS/8:NS/8)){
+        double B=cm_planck(fs.nu[ic],Tinner), J=fs.J[(size_t)s*NF+ic];
+        double r=0.5*(geo.r_inner[s]+geo.r_outer[s]);
+        double a=1.0-(geo.r_inner[0]*geo.r_inner[0])/(r*r), W=0.5*(1.0-sqrt(a>0?a:0));
+        if (absorb) printf("  s=%2d  J/B=%.4f  (known: →1.0 thick interior)\n", s, J/B);
+        else        printf("  s=%2d  J/(W·B)=%.4f  W=%.4f  (known: →1.0 dilution)\n", s, (W>0)?J/(W*B):0.0, W);
+    }
+    free(geo.r_inner);free(geo.r_outer);free(geo.v_inner);free(geo.v_outer);
+    free(fs.nu);free(fs.dnu);free(fs.chi_es);free(fs.chi_abs);free(fs.chi_line);
+    free(fs.chi_tot);free(fs.S_fixed);free(fs.J);
+}
+
+/* ============================================================ */
+/* GPU cmf_solve_J self-check (model-free; dispatched pre-model from main under
+ * env LUMINA_CMF_SOLVE_SELFTEST). Builds a representative fine grid -- a thin
+ * e-scatter halo + warm BB core (continuum) plus, unless mode=="cont", a strong
+ * Gaussian SCATTERING line deposited into chi_es (the producer's UV-pump pattern,
+ * which stresses the blue->red advection across the line). Then calls cmf_solve_J,
+ * which -- with LUMINA_CMF_SOLVE_GPU=2 -- runs BOTH the CPU and GPU solvers from
+ * the same input and prints the max relative J difference + ALI iter counts.
+ *   LUMINA_CMF_SOLVE_SELFTEST_NS / _NF / _TAUS tune the grid. */
+void cmf_solve_gpu_selftest(const char *mode)
+{
+    int NS=40, NF=400;
+    { const char *e=getenv("LUMINA_CMF_SOLVE_SELFTEST_NS"); if(e) NS=atoi(e); }
+    { const char *e=getenv("LUMINA_CMF_SOLVE_SELFTEST_NF"); if(e) NF=atoi(e); }
+    int with_line = !(mode && strcmp(mode,"cont")==0);
+    double tauS=50.0; { const char *e=getenv("LUMINA_CMF_SOLVE_SELFTEST_TAUS"); if(e) tauS=atof(e); }
+    double t_exp=86400.0, Tinner=10000.0, vph=5.0e8, vmax=2.5e9;
+    Geometry geo; memset(&geo,0,sizeof geo); geo.n_shells=NS; geo.time_explosion=t_exp;
+    geo.r_inner=malloc(NS*sizeof(double)); geo.r_outer=malloc(NS*sizeof(double));
+    geo.v_inner=malloc(NS*sizeof(double)); geo.v_outer=malloc(NS*sizeof(double));
+    for (int s=0;s<NS;++s){ double v0=vph+(vmax-vph)*s/(double)NS,v1=vph+(vmax-vph)*(s+1)/(double)NS;
+        geo.v_inner[s]=v0;geo.v_outer[s]=v1;geo.r_inner[s]=v0*t_exp;geo.r_outer[s]=v1*t_exp; }
+    /* fine uniform-log mesh over 4500-5500 A (line at 5000 A) */
+    double nu_min=CM_C/(5500e-8), nu_max=CM_C/(4500e-8), dlognu=log(nu_max/nu_min)/NF;
+    double nu_l=CM_C/(5000e-8), vdop=1.0e6;
+    CMFGENState fs; memset(&fs,0,sizeof fs);
+    fs.n_shells=NS;fs.n_bins=NF;fs.nu_min=nu_min;fs.nu_max=nu_max;fs.d_log_nu=dlognu;
+    fs.nu=malloc(NF*sizeof(double));fs.dnu=malloc(NF*sizeof(double));
+    fs.chi_es=calloc((size_t)NS*NF,sizeof(double));fs.chi_abs=calloc((size_t)NS*NF,sizeof(double));
+    fs.chi_line=calloc((size_t)NS*NF,sizeof(double));fs.chi_tot=calloc((size_t)NS*NF,sizeof(double));
+    fs.S_fixed=calloc((size_t)NS*NF,sizeof(double));fs.J=calloc((size_t)NS*NF,sizeof(double));
+    for (int i=0;i<NF;++i){ fs.nu[i]=nu_min*exp((i+0.5)*dlognu); fs.dnu[i]=fs.nu[i]*dlognu; }
+    double dr=geo.r_outer[NS-1]-geo.r_inner[0];
+    double ces=0.3/dr, cab=0.05/dr;     /* tau_es~0.3 halo + weak true absorption */
+    const double SQRTPI=1.7724538509055160;
+    double dnuD=nu_l*vdop/CM_C, chi0=( (tauS>1e-6)?-expm1(-tauS):tauS )/(SQRTPI*vdop*t_exp);
+    for (int s=0;s<NS;++s) for (int i=0;i<NF;++i){ size_t idx=(size_t)s*NF+i;
+        double B=cm_planck(fs.nu[i],Tinner);
+        double cl=0.0;
+        if (with_line){ double xv=(fs.nu[i]-nu_l)/dnuD; cl=chi0*exp(-xv*xv); }
+        fs.chi_es[idx]=ces+cl;                       /* line scatters (folded into chi_es) */
+        fs.chi_abs[idx]=cab; fs.chi_line[idx]=0.0;
+        fs.chi_tot[idx]=fs.chi_es[idx]+fs.chi_abs[idx];
+        fs.S_fixed[idx]=(fs.chi_tot[idx]>0)?(cab*B)/fs.chi_tot[idx]:0.0;
+        fs.J[idx]=0.5*B; }
+    int n_ali=80; { const char *e=getenv("LUMINA_CMFGEN_ALI_ITER"); if(e) n_ali=atoi(e); }
+    fprintf(stderr,"[cmf_gpu] selftest grid: NS=%d NF=%d line=%s tauS=%.1f n_ali=%d\n",
+            NS,NF,with_line?"on":"off",tauS,n_ali);
+    cmf_solve_J(&fs,&geo,Tinner,n_ali);   /* honours LUMINA_CMF_SOLVE_GPU (set =2 for A/B) */
+    free(geo.r_inner);free(geo.r_outer);free(geo.v_inner);free(geo.v_outer);
+    free(fs.nu);free(fs.dnu);free(fs.chi_es);free(fs.chi_abs);free(fs.chi_line);
+    free(fs.chi_tot);free(fs.S_fixed);free(fs.J);
+}
+
+/* ... T1 single-line obs P-Cygni self-test ... */
+void cmf_obs_selftest(void)
+{
+    int NS = 40; { const char *e=getenv("LUMINA_CMF_SELFTEST_NS"); if(e) NS=atoi(e); }
+    double t_exp = 86400.0;                 /* 1 day */
+    double vph = 5.0e8, vmax = 2.5e9;       /* 5000, 25000 km/s [cm/s] */
+    { const char *e=getenv("LUMINA_CMF_SELFTEST_VSCALE"); if(e){ double v=atof(e); vph*=v; vmax*=v; } }
+    double Tinner = 10000.0;
+    double tauS = 100.0; { const char *e=getenv("LUMINA_CMF_SELFTEST_TAUS"); if(e) tauS=atof(e); }
+
+    Geometry geo; memset(&geo,0,sizeof geo);
+    geo.n_shells=NS; geo.time_explosion=t_exp;
+    geo.r_inner=malloc(NS*sizeof(double)); geo.r_outer=malloc(NS*sizeof(double));
+    geo.v_inner=malloc(NS*sizeof(double)); geo.v_outer=malloc(NS*sizeof(double));
+    for (int s=0;s<NS;++s){
+        double v0=vph+(vmax-vph)*s/(double)NS, v1=vph+(vmax-vph)*(s+1)/(double)NS;
+        geo.v_inner[s]=v0; geo.v_outer[s]=v1; geo.r_inner[s]=v0*t_exp; geo.r_outer[s]=v1*t_exp;
+    }
+    double lam_l=5000e-8, nu_l=CM_C/lam_l;
+    double nu_min=CM_C/(5500e-8), nu_max=CM_C/(4500e-8);
+    double vdop=1.0e6, dlognu=(vdop/CM_C)/4.0;
+    int NF=(int)(log(nu_max/nu_min)/dlognu)+1;
+    CMFGENState fs; memset(&fs,0,sizeof fs);
+    fs.n_shells=NS; fs.n_bins=NF; fs.nu_min=nu_min; fs.nu_max=nu_max; fs.d_log_nu=dlognu;
+    fs.nu=malloc(NF*sizeof(double)); fs.dnu=malloc(NF*sizeof(double));
+    fs.chi_es=calloc((size_t)NS*NF,sizeof(double)); fs.chi_abs=calloc((size_t)NS*NF,sizeof(double));
+    fs.chi_line=calloc((size_t)NS*NF,sizeof(double)); fs.chi_tot=calloc((size_t)NS*NF,sizeof(double));
+    fs.S_fixed=calloc((size_t)NS*NF,sizeof(double)); fs.J=calloc((size_t)NS*NF,sizeof(double));
+    for (int i=0;i<NF;++i){ fs.nu[i]=nu_min*exp((i+0.5)*dlognu); fs.dnu[i]=fs.nu[i]*dlognu; }
+    double dr=geo.r_outer[NS-1]-geo.r_inner[0], chi_es=0.1/dr;   /* thin halo tau_es~0.1 */
+    for (int s=0;s<NS;++s){
+        double r=0.5*(geo.r_inner[s]+geo.r_outer[s]);
+        double a=1.0-(geo.r_inner[0]*geo.r_inner[0])/(r*r); double W=0.5*(1.0-sqrt(a>0?a:0));
+        for (int i=0;i<NF;++i){ size_t idx=(size_t)s*NF+i;
+            fs.chi_es[idx]=chi_es; fs.chi_tot[idx]=chi_es;
+            fs.J[idx]=W*cm_planck(fs.nu[i],Tinner); }
+    }
+    OpacityState opac; memset(&opac,0,sizeof opac);
+    opac.n_lines=1; opac.line_list_nu=malloc(sizeof(double)); opac.line_list_nu[0]=nu_l;
+    opac.tau_sobolev=malloc((size_t)NS*sizeof(double));
+    for (int s=0;s<NS;++s) opac.tau_sobolev[s]=tauS;
+    double *Te=malloc(NS*sizeof(double)); for(int s=0;s<NS;++s) Te[s]=8000.0;
+    fprintf(stderr,"[OBS-SELFTEST] single line 5000A tauS=%.1f, NS=%d NF=%d, beta=%.3f-%.3f\n",
+            tauS,NS,NF,vph/CM_C,vmax/CM_C);
+    /* CONFIRMATION-LADDER T1b: self-consistent comoving J̄ source (physics-agent fix).
+     * Deposit the line into chi_es (pure scatter), solve cmf_solve_J for the
+     * line-coupled J̄ field (line scattering raises the halo J̄ that fixed W·B
+     * misses → the -68A static leak), extract J̄_l, feed the obs-march via
+     * jbar_line_det (g_sob_jbardet). Gate LUMINA_CMF_SELFTEST_JBAR=1. */
+    if (getenv("LUMINA_CMF_SELFTEST_JBAR") && atoi(getenv("LUMINA_CMF_SELFTEST_JBAR"))) {
+        const double SQRTPI=1.7724538509055160;
+        double dnuD=nu_l*vdop/CM_C, chi0_pref=1.0/(SQRTPI*vdop*t_exp);
+        double frac=(tauS>1e-6)?-expm1(-tauS):tauS, chi0=frac*chi0_pref;
+        double *cl_save=calloc((size_t)NS*NF,sizeof(double));
+        for (int s=0;s<NS;++s) for (int i=0;i<NF;++i){
+            double xv=(fs.nu[i]-nu_l)/dnuD, cl=chi0*exp(-xv*xv);
+            size_t idx=(size_t)s*NF+i; cl_save[idx]=cl;
+            fs.chi_es[idx]+=cl; fs.chi_tot[idx]=fs.chi_es[idx]+fs.chi_abs[idx];
+            fs.J[idx]=cm_planck(fs.nu[i],Tinner)*0.5;  /* warm start */
+        }
+        int n_ali=24; { const char *e=getenv("LUMINA_CMFGEN_ALI_ITER"); if(e) n_ali=atoi(e); }
+        cmf_solve_J(&fs,&geo,Tinner,n_ali);            /* self-consistent line-coupled J̄ */
+        opac.jbar_line_det=malloc((size_t)NS*sizeof(double));
+        for (int s=0;s<NS;++s){ double num=0,den=0;
+            for (int i=0;i<NF;++i){ double xv=(fs.nu[i]-nu_l)/dnuD, phi=exp(-xv*xv);
+                num+=phi*fs.J[(size_t)s*NF+i]; den+=phi; }
+            opac.jbar_line_det[s]=(den>0)?num/den:-1.0; }
+        for (int s=0;s<NS;++s) for (int i=0;i<NF;++i){    /* restore continuum chi_es for obs */
+            size_t idx=(size_t)s*NF+i; fs.chi_es[idx]-=cl_save[idx];
+            fs.chi_tot[idx]=fs.chi_es[idx]+fs.chi_abs[idx]; }
+        free(cl_save);
+        setenv("LUMINA_CMF_OBS_JBARDET","1",1);          /* obs uses J̄_l source */
+        fprintf(stderr,"[OBS-SELFTEST] JBAR mode: self-consistent J̄_l[sh0]=%.3e [shNS/2]=%.3e (W*B sh0~%.3e)\n",
+                opac.jbar_line_det[0],opac.jbar_line_det[NS/2],0.5*cm_planck(nu_l,Tinner));
+    }
+    cmfgen_fine_emergent_obs(&fs,&geo,Tinner,&opac,Te,"lumina_obs_selftest.csv");
+    fprintf(stderr,"[OBS-SELFTEST] wrote lumina_obs_selftest.csv (analytic: net EW=0 for pure scatter)\n");
+    free(geo.r_inner);free(geo.r_outer);free(geo.v_inner);free(geo.v_outer);
+    free(fs.nu);free(fs.dnu);free(fs.chi_es);free(fs.chi_abs);free(fs.chi_line);
+    free(fs.chi_tot);free(fs.S_fixed);free(fs.J);
+    free(opac.line_list_nu);free(opac.tau_sobolev);free(Te);
+    if (opac.jbar_line_det) free(opac.jbar_line_det);
 }
 
 int cmfgen_run(Geometry *geo, OpacityState *opac, BFOpacity *bf,
                PlasmaState *plasma, NLTEConfig *nlte, AtomicData *atom,
                GammaDeposition *gamma, double T_inner, int n_iter)
 {
+    if (getenv("LUMINA_CMF_OBS_SELFTEST")) { cmf_obs_selftest(); return 0; }
     CMFGENState cs;
     if (cmfgen_init(&cs, geo) != 0) return -1;
 

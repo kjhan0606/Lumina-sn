@@ -83,6 +83,12 @@ typedef struct {
                                  and carve a P-Cygni trough. 0 = normal. */
 } CMFGENState;
 
+void cmf_obs_selftest(void);  /* confirmation-ladder T1 single-line P-Cygni test */
+void cmf_fsolve_selftest(const char *mode);  /* confirmation-ladder F cmf_solve_J test */
+void cmf_solve_gpu_selftest(const char *mode);  /* GPU cmf_solve_J A/B vs CPU (LUMINA_CMF_SOLVE_GPU=2) */
+void cmf_nlte_selftest(const char *mode);  /* confirmation-ladder N populations/S_l test */
+void cmf_plasma_selftest(const char *mode);  /* confirmation-ladder P ionization/energy test */
+
 /* Allocate grid + tangent rays from geometry. Returns 0 on success. */
 int  cmfgen_init(CMFGENState *cs, const Geometry *geo);
 
@@ -100,6 +106,11 @@ void cmfgen_free(CMFGENState *cs);
 void cmfgen_assemble(CMFGENState *cs, const Geometry *geo,
                      const OpacityState *opac, BFOpacity *bf,
                      const PlasmaState *plasma);
+
+/* Stage 1: register radioactive deposition heating [n_shells] erg/s/cm^3 so the
+ * next cmfgen_assemble can inject it into S_fixed (gate LUMINA_CMF_DEP_SOURCE).
+ * Pass NULL to disable. */
+void cmfgen_set_deposition(const double *heating_rate, int n_shells);
 
 /* Spherical tangent-ray short-characteristics formal solve with diagonal
  * ALI scattering iteration; fills cs->J. T_inner sets the diffusive inner

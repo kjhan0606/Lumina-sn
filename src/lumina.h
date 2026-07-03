@@ -127,6 +127,9 @@ typedef struct {
      * compute_transition_probabilities; NULL when disabled. */
     double *p_kpacket;                   /* [n_macro_levels * n_shells] P(coll. deactivation→k-packet) */
     double *kpacket_cdf;                 /* [n_shells * n_macro_levels] per-shell cumulative re-excitation dist */
+    double *p_kpacket_ff;                /* [n_shells] P(free-free continuum) once a k-packet forms (Path A); else coll-exc re-excite */
+    double *p_kpacket_fb;                /* [n_shells] P(free-bound continuum | k-packet) — UV recombination-edge escape */
+    double *kpacket_fb_nu;              /* [n_shells] representative recombination edge frequency [Hz] for fb emission */
     /* MC-estimator macro-atom (THEN_MC): per-line Sobolev j_blue estimator of
      * J_bar at each line, accumulated from real MC packet crossings, replacing
      * the frozen binned J in the internal-up rate B_lu*J_bar (faithful Lucy-2002
@@ -139,6 +142,27 @@ typedef struct {
      * binned-J contrast-collapse, ladder gates 4c/5b). NULL until the producer fills
      * it; consumed by the bb up-rate only when LUMINA_CMF_LINERES_JBAR=1. */
     double *jbar_line_det;               /* [n_lines * n_shells] or NULL */
+    /* Fine-ν LOCAL continuum mean intensity from the cmfgen_fine_jbar producer,
+     * retained (instead of freed) so bound-free PHOTOIONIZATION rates can be
+     * integrated on the fine grid — the binned J collapses at the UV bf edges in
+     * the thin outer (Jth_wt→0) and under-ionizes it. NULL until the producer runs
+     * with LUMINA_CMF_FINE_PHOTOION; consumed by coupled_photoion_rate_jnu. */
+    double *jnu_fine;                    /* [n_shells * n_fine] erg/s/cm^2/Hz/sr */
+    double *nu_fine;                     /* [n_fine] Hz (log-uniform) */
+    int     n_fine;                      /* fine-grid bin count (0 = absent) */
+    double  nu_lo_fine, dlognu_fine;     /* log-grid params for σ_bf interpolation */
+    /* bf recombination-cascade channel (macro-atom, LUMINA_MACROATOM_BF).
+     * Parallel recomb topology (CSR keyed by the SOURCE upper-ion global level),
+     * built once. Increment 1 = INTERNALDOWNLOWER (cross-ion internal jump, no
+     * photon). recomb_nu_edge/recomb_is_emit reserved for increment 2 (RADRECOMB
+     * continuum emit, opcode -4). All NULL / n_recomb=0 when the gate is off =>
+     * byte-identical baseline. */
+    int    *recomb_block_refs;           /* [n_macro_levels+1] CSR offsets */
+    int    *recomb_dest_level;           /* [n_recomb] global lower-ion target level j */
+    double *recomb_nu_edge;              /* [n_recomb] (chi_ion-E_j)/h (increment 2) */
+    int    *recomb_is_emit;              /* [n_recomb] 0=INTERNALDOWNLOWER (all 0 inc1) */
+    double *recomb_prob;                 /* [n_recomb * n_shells] normalized CDF weights */
+    int     n_recomb;                    /* total recomb entries */
 } OpacityState;                          /* Phase 2 - Step 4 */
 
 /* Phase 2 - Step 4: MC Estimators — TARDIS RadfieldMCEstimators */
@@ -305,6 +329,12 @@ typedef struct {
     int   *fl_to_super;                             /* [n_nlte_levels_total] FL nlte idx -> global SL solve idx */
     int   *super_anchor_global;                     /* [n_super_total] lowest-E FL global idx per SL */
     double *within_sl_frac;                         /* [n_nlte_levels_total * n_shells] Boltzmann fraction f_i of FL within its SL */
+
+    /* ARTIS-style grey/LTE criterion: inward electron-scattering optical depth
+     * per shell, recomputed each outer iteration. Optically-thick cells are
+     * routed to LTE@T_e only during the first GREY_ITERS iterations; full NLTE
+     * everywhere afterward (replaces the permanent density LTE_NCRIT zone). */
+    double *shell_tau;                              /* [n_shells] inward tau_es */
 } NLTEConfig;
 
 /* ============================================================ */
@@ -578,6 +608,10 @@ void nlte_apply_uv_jnu_cap(NLTEConfig *nlte, PlasmaState *plasma, int n_shells);
 void nlte_solve_all(NLTEConfig *nlte, AtomicData *atom, PlasmaState *plasma,
                      OpacityState *opacity, double time_explosion,
                      int n_shells, GammaDeposition *gamma_dep);
+/* Refresh within-super-level Boltzmann fractions at current T_e (call before
+ * every solve on both CPU and GPU paths; see definition in lumina_plasma.c). */
+void nlte_precompute_within_sl_frac(NLTEConfig *nlte, AtomicData *atom,
+                                    PlasmaState *plasma, int n_shells);
 
 /* Refresh per-line Sobolev optical depths + NLTE line source from the current
  * NLTE level populations (writes opacity->tau_sobolev, opacity->line_source_S).
@@ -637,11 +671,47 @@ void nlte_writeback_ion_stage(NLTEConfig *nlte, AtomicData *atom,
 int  nlte_rates_gpu_init(NLTEConfig *nlte, AtomicData *atom, int n_shells);
 int  nlte_rates_gpu_compute(NLTEConfig *nlte, NLTERateLookup *out_lookup);
 void nlte_rates_gpu_free(void);
+/* Register the producer's fine-ν field so nlte_rates_gpu_compute corrects R_bf over
+ * the fine window (frequency-resolved photoionization). Pass jnu=NULL to disable. */
+void nlte_rates_gpu_set_fine(const double *jnu, const double *nu, int n_fine,
+                             double nu_lo, double dlognu, int n_shells, AtomicData *atom);
+
+/* GPU port of the dominant per-line bound-bound radiative + collisional
+ * assembly loop in nlte_assemble_rate_matrix (the 99.6% bottleneck). The CPU
+ * assembles everything EXCEPT the bb loop (set via nlte_assemble_set_skip_bb);
+ * the GPU kernel atomicAdds the bb+collisional contributions on top.
+ * Gated by LUMINA_NLTE_ASSEMBLE_GPU (driver-side). See lumina_nlte_assemble.cu. */
+int  nlte_assemble_gpu_init(NLTEConfig *nlte, AtomicData *atom,
+                            OpacityState *opacity, int n_shells);
+/* Returns 1 if the currently-active environment gates are within the GPU bb
+ * path's supported domain (default binned J + dilute field + van Regemorter/
+ * Axelrod collisions + coll-floor). Returns 0 if a sealed/experimental bb mode
+ * is on (JBAR_POPS, MALI, JEQB, LINERES consumer, ...) -> caller stays on CPU. */
+int  nlte_assemble_gpu_supported(void);
+/* Re-upload per-iteration varying data (within_sl_frac, per-shell T_e/n_e/
+ * T_rad/W, J_nu). Call once per CE iteration before the pair loop. */
+void nlte_assemble_gpu_refresh(NLTEConfig *nlte, PlasmaState *plasma);
+/* Add the bb+collisional contributions for one ion pair to the per-shell
+ * column-major matrices held in h_matrices[n_shells*N*N] (which already hold
+ * the CPU-assembled remainder). active[s]!=0 selects shells to fill (dead-pair
+ * skip mirror). */
+void nlte_assemble_bb_gpu_pair(double *h_matrices, int N, int n_shells,
+                               int pair_lo, int pair_hi, int super_start,
+                               int n_lo_super, const int *active);
+void nlte_assemble_set_skip_bb(int v);
+void nlte_assemble_gpu_free(void);
 
 /* Gamma-ray deposition: 56Ni/56Co decay energy deposition */
 void gamma_deposition_init(GammaDeposition *gd, int n_shells);
 void compute_gamma_deposition(GammaDeposition *gd, AtomicData *atom,
                                PlasmaState *plasma, Geometry *geo);
+/* Derive nonthermal_ioniz_rate from heating_rate + register for the freeze guard.
+ * Call after loading an external deposition file (which sets only heating_rate). */
+void gamma_deposition_compute_nonthermal(GammaDeposition *gd);
+/* Register the fine-ν local field (from cmfgen_fine_jbar) so bf photoion rates
+ * integrate on the fine grid (LUMINA_CMF_FINE_PHOTOION). */
+void coupled_set_fine_jnu(const double *jnu, const double *nu, int n_fine,
+                          double nu_lo, double dlognu, int n_shells);
 void gamma_deposition_free(GammaDeposition *gd);
 
 /* Line overlap correction: reduce tau_sobolev for overlapping UV lines */
@@ -654,6 +724,14 @@ void bf_opacity_free(BFOpacity *bf);
 void compute_bf_opacity(BFOpacity *bf, AtomicData *atom, PlasmaState *plasma,
                          int n_shells);
 double bf_get_chi(BFOpacity *bf, int shell, double nu);
+/* Fine-ν bf opacity (sharp bf edges on the fine grid) for the CMFGEN-method producer.
+ * chi_bf_fine_out is [n_shells * n_fine] row-major. Returns 0 ok / −1 fallback. */
+int bf_gemm_compute_fine(BFOpacity *bf, AtomicData *atom, PlasmaState *plasma,
+        int n_shells, const double *nu_fine, int n_fine,
+        double nu_min_bin, double dlognu_bin, double *chi_bf_fine_out);
+/* Register bf + atom so cmfgen_fine_jbar can build the fine bf continuum opacity
+ * (LUMINA_CMF_FINE_BF_OPAC). Pass NULL to disable. */
+void cmfgen_fine_set_bf_atom(BFOpacity *bf, AtomicData *atom);
 int    bf_get_activation_level(BFOpacity *bf, int shell, double nu);
 
 /* Task #39: GPU bf opacity via cuBLAS GEMM (TF32 tensor cores).

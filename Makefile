@@ -37,10 +37,12 @@ $(TARGET): $(SOURCES) $(HEADERS)
 # CUDA build target (compile C sources alongside .cu)
 CUDA_BF_GEMM    = src/lumina_bf_gemm.cu
 CUDA_NLTE_GEMM  = src/lumina_nlte_gemm.cu
+CUDA_NLTE_ASM   = src/lumina_nlte_assemble.cu
+CUDA_CMF_SOLVE  = src/lumina_cmf_solve.cu
 
 cuda: lumina_cuda
-lumina_cuda: $(CUDA_SRC) $(CUDA_BF_GEMM) $(CUDA_NLTE_GEMM) src/lumina_atomic.c src/lumina_plasma.c src/lumina_cmfgen.c $(HEADERS)
-	$(NVCC) $(NVFLAGS) -o lumina_cuda $(CUDA_SRC) $(CUDA_BF_GEMM) $(CUDA_NLTE_GEMM) src/lumina_atomic.c src/lumina_plasma.c src/lumina_cmfgen.c $(NVLDFLAGS)
+lumina_cuda: $(CUDA_SRC) $(CUDA_BF_GEMM) $(CUDA_NLTE_GEMM) $(CUDA_NLTE_ASM) $(CUDA_CMF_SOLVE) src/lumina_atomic.c src/lumina_plasma.c src/lumina_cmfgen.c $(HEADERS)
+	$(NVCC) $(NVFLAGS) -o lumina_cuda $(CUDA_SRC) $(CUDA_BF_GEMM) $(CUDA_NLTE_GEMM) $(CUDA_NLTE_ASM) $(CUDA_CMF_SOLVE) src/lumina_atomic.c src/lumina_plasma.c src/lumina_cmfgen.c $(NVLDFLAGS)
 
 # Task #39 validation harness
 bench_bf_gemm: bench_bf_gemm.c $(CUDA_BF_GEMM) src/lumina_atomic.c src/lumina_plasma.c $(HEADERS)
@@ -49,6 +51,10 @@ bench_bf_gemm: bench_bf_gemm.c $(CUDA_BF_GEMM) src/lumina_atomic.c src/lumina_pl
 # Task #40 validation harness
 bench_nlte_rates: bench_nlte_rates.c $(CUDA_BF_GEMM) $(CUDA_NLTE_GEMM) src/lumina_atomic.c src/lumina_plasma.c $(HEADERS)
 	$(NVCC) $(NVFLAGS) -o bench_nlte_rates bench_nlte_rates.c $(CUDA_BF_GEMM) $(CUDA_NLTE_GEMM) src/lumina_atomic.c src/lumina_plasma.c $(NVLDFLAGS)
+
+# GPU bound-bound assembly self-check
+selftest_nlte_assemble: selftest_nlte_assemble.c $(CUDA_NLTE_ASM) $(CUDA_NLTE_GEMM) $(CUDA_BF_GEMM) src/lumina_atomic.c src/lumina_plasma.c $(HEADERS)
+	$(NVCC) $(NVFLAGS) -o selftest_nlte_assemble selftest_nlte_assemble.c $(CUDA_NLTE_ASM) $(CUDA_NLTE_GEMM) $(CUDA_BF_GEMM) src/lumina_atomic.c src/lumina_plasma.c $(NVLDFLAGS)
 
 # Clean
 clean:
