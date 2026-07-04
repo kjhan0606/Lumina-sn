@@ -89,3 +89,16 @@ option-2 integral-RE / A4 방향과 합류. per-channel 소스함수 교체로�
 
 Arm D(1.07-1.15×CMFGEN)는 목표 상태의 존재증명으로 유지. 게이트/기계 전부 env-off 기본(레거시
 byte-identical), repro23 bit-identity 검증으로 상태 신뢰 재확립.
+
+## 7. 자율세션4 (2026-07-05): far edge 매듭 + 게이트 검증
+
+- **OTS(case-B, LUMINA_CMF_OTS) null**: ground-edge 재결합 제외해도 불변 → far edge 잔차의
+  범인 아님. hard-UV 방출 1000× 지배자는 s0-4 legacy이지만 τ_bf(35.5eV, mid)=750,000으로
+  완전 차단 — far-edge J(35eV)=3.4e-15는 국소 생성 (문턱 3e-16의 10×).
+- **far edge 1.56× 최종 해부**: CMFGEN 24.6k → 30.3k (closure gap, atomic data) →
+  38.4k (국소 미세재활용 +8k; excited-edge/교차종). 수확체감 매듭.
+- **UV 53.5% 기원**: s0-8 방출 97% + T_inner(10020K) 백라이트 피크 2892Å; s0-4 장부
+  1.06-1.14 정상 → unpaid 아님, **형광/재분배 A4-front** (전용 세션 필요).
+- **게이트**: SMIN=5 출하 유지 (s4/s5 26× τ_eff 절벽 = 확산핵 경계, 오프라인 방출-가중
+  측정으로 검증). in-code Planck-가중 τ_eff(epay9)는 핵 과소측정으로 기각, opt-in 강등.
+- **epay10 = epay7 bit-identical** — 최종 빌드 재현 검증 완료.

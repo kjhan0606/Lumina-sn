@@ -2962,8 +2962,19 @@ void compute_bf_opacity(BFOpacity *bf, AtomicData *atom, PlasmaState *plasma,
      * LTE limit: b_l -> 1 gives S_bf -> B(T_e) exactly. Gate off => eta_bf
      * stays zero and the assemble uses the legacy chi*B path (byte-identical). */
     static int bf_milne = -1;
+    static int bf_ots = 0;   /* LUMINA_CMF_OTS=1: case-B / on-the-spot —
+        * ground-edge recombination photons are locally reabsorbed (net zero),
+        * so they are EXCLUDED from the emissivity eta_bf; the EPAY budget
+        * then exits through excited edges/lines/ff. Standard nebular
+        * approximation; kills the far-edge recombination-photon recycling
+        * loop (Gph(S III)=1.9e-6 >> n_e*alpha=1.4e-7 from paid edge photons,
+        * where CMFGEN's intact S III column self-shields, tau_bf~2.6). */
     if (bf_milne < 0) { const char *e = getenv("LUMINA_CMF_BF_MILNE");
                         bf_milne = e ? atoi(e) : 0;
+                        const char *o = getenv("LUMINA_CMF_OTS");
+                        bf_ots = (o && atoi(o)) ? 1 : 0;
+                        if (bf_ots) printf("[BF-OTS] case-B: ground-edge "
+                                           "recombination emission excluded\n");
                         if (bf_milne) printf("[BF-MILNE] eta_bf source-function "
                                              "build ON (%s)\n",
                                              bf_milne >= 2 ? "ALL levels"
@@ -3157,7 +3168,8 @@ void compute_bf_opacity(BFOpacity *bf, AtomicData *atom, PlasmaState *plasma,
                     double chi_contrib = n_level * sigma;
                     int idx = s * bf->n_freq_bins + b;
                     bf->chi_bf[idx] += chi_contrib;
-                    if (bf_milne && bf->eta_bf) {
+                    if (bf_milne && bf->eta_bf &&
+                        !(bf_ots && atom->level_num[l] == 0)) {
                         double S_l;
                         if (use_milne_l) {
                             /* SPONTANEOUS Milne recombination only:

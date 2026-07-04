@@ -299,15 +299,45 @@ void cmfgen_assemble(CMFGENState *cs, const Geometry *geo,
      * there just recreates Lambda-iteration slowness (epay1: s0 stuck 0.68x). */
     double *epay_tau_arr = NULL;
     if (epay) {
+        /* LUMINA_CMF_EPAY_TAUEFF (default 1e4): Planck-weighted effective
+         * absorption depth sqrt(chi_abs*chi_tot)*dr, accumulated inward.
+         * The toy06 profile has a 26x cliff exactly at the diffusive-core
+         * boundary (s4: 2.6e4 -> s5: 1.0e3): the core keeps the legacy LTE
+         * chi*B source (books close at ~1.1 naturally; EPAY's lagged-J scale
+         * would Lambda-stall there), everything outside is EPAY-enforced.
+         * Replaces the diagnostic shell-index gate EPAY_SMIN. */
+        static double epay_taueff = 0.0;   /* 0 = disabled (gate by EPAY_SMIN;
+            * the toy06 diffusive-core boundary s4/s5 is a verified 26x cliff
+            * in offline emission-weighted tau_eff — scripts note in design
+            * doc). The in-code coarse Planck-weighted variant under-measures
+            * the core (misses the UV/line-dominated bins): epay9 regression
+            * s0-4 -40%. Opt-in via LUMINA_CMF_EPAY_TAUEFF until the measure
+            * is emission-weighted. */
+        { static int te_once = 0;
+          if (!te_once) { te_once = 1;
+              const char *tf = getenv("LUMINA_CMF_EPAY_TAUEFF");
+              if (tf) epay_taueff = atof(tf); } }
         epay_tau_arr = (double *)calloc(NS, sizeof(double));
         double acc_tau = 0.0;
+        if (epay_taueff > 0.0)
         for (int s2 = NS - 1; s2 >= 0; --s2) {
-            double ne2 = plasma->n_electron ? plasma->n_electron[s2]
-                                            : opac->electron_density[s2];
+            double Te2 = plasma->T_e[s2];
             double dr2 = geo->r_outer[s2] - geo->r_inner[s2];
-            acc_tau += ne2 * CM_SIGMA_T * (dr2 > 0.0 ? dr2 : 0.0);
+            double wsum = 0.0, ca = 0.0, ct = 0.0;
+            for (int b2 = 0; b2 < NB; b2 += 8) {   /* coarse Planck weights */
+                size_t i2 = (size_t)s2 * NB + b2;
+                double wgt = cm_planck(cs->nu[b2], Te2) * cs->dnu[b2];
+                wsum += wgt;
+                ca += wgt * cs->chi_abs[i2];
+                ct += wgt * cs->chi_tot[i2];
+            }
+            if (wsum > 0.0) { ca /= wsum; ct /= wsum; }
+            acc_tau += sqrt((ca > 0 ? ca : 0) * (ct > 0 ? ct : 0)) *
+                       (dr2 > 0.0 ? dr2 : 0.0);
             epay_tau_arr[s2] = acc_tau;
         }
+        if (epay_taueff > 0.0) epay_tau = epay_taueff;
+        /* else: arr stays 0 < epay_tau — tau gate passes, EPAY_SMIN gates */
     }
 
     /* electron scattering + bf/ff thermal absorption + combine. */
