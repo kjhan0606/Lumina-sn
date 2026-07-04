@@ -3160,14 +3160,22 @@ void compute_bf_opacity(BFOpacity *bf, AtomicData *atom, PlasmaState *plasma,
                     if (bf_milne && bf->eta_bf) {
                         double S_l;
                         if (use_milne_l) {
+                            /* SPONTANEOUS Milne recombination only:
+                             * eta = chi * (2 h nu^3/c^2) e^{-x} / Cinv
+                             *     = sigma (2 h nu^3/c^2) (n_e n_+ g_l saha /
+                             *       2U_+) e^{-h(nu-nu_edge)/kTe}
+                             * — no denominator, always bounded/positive.
+                             * (The b e^x - 1 source-function form lases when
+                             * b e^x <= 1: den-floor 1e-10 turned population-
+                             * inversion bins into 1e10x maser spikes -> the
+                             * epay4 J=1e42 runaway. Stimulated recombination
+                             * is dropped, consistent with the uncorrected
+                             * legacy chi_bf.) */
                             double x = H_PLANCK * (nu - nu_edge) / kTe_m;
-                            if (x > 600.0) S_l = 0.0;   /* deep Wien: dead */
-                            else {
-                                double den = Cinv_l * exp(x) - 1.0;
-                                if (den < 1e-10) den = 1e-10;
-                                S_l = 2.0 * H_PLANCK * nu * nu * nu /
-                                      (C_SPEED_OF_LIGHT * C_SPEED_OF_LIGHT) / den;
-                            }
+                            S_l = (x > 600.0) ? 0.0
+                                : 2.0 * H_PLANCK * nu * nu * nu /
+                                  (C_SPEED_OF_LIGHT * C_SPEED_OF_LIGHT) *
+                                  exp(-x) / Cinv_l;
                         } else {
                             S_l = planck_bnu(Te_s, nu);
                         }

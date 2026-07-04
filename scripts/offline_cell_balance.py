@@ -152,14 +152,40 @@ class Cell:
         Gamma_nt,j = gnt_atom * (chi_ref/chi_j)^p  (chi_ref = wion eV)."""
         ch=s_.chi.get((Z,j),1e9)
         return s_.gnt_atom*(s_.a.wion/ch)**s_.a.ntp
+    # ARTIS-mirror budget-shared NT (energy-conserving): the ionisation share
+    # eta*dep is split across ions ~ n_i*sigma_i (Lotz sigma ~ q/chi^2), each
+    # event costing chi_i:  Gamma_i = eta*dep*sigma_i / Sum_j n_j sigma_j chi_j
+    # => Sum_i n_i Gamma_i chi_i = eta*dep exactly (cf. ARTIS eff_ionpot =
+    # X_ion/Sum(eta_shell/pot), nonthermal.cc:1268).
+    Q_VAL={(14,0):4,(14,1):3,(14,2):2,(14,3):1,(14,4):6,
+           (16,0):6,(16,1):5,(16,2):4,(16,3):3,(16,4):2,
+           (20,0):2,(20,1):1,(20,2):8,(20,3):7,(20,4):6}
+    def gnt_budget_tbl(s_, fr):
+        """per-(Z,j) Gamma_nt from lagged fractions fr; None if disabled."""
+        denom=0.0; sig={}
+        for Z,nZ in s_.nel.items():
+            y=fr.get(Z) if fr else None
+            for j in range(0,s_.a.maxstage):
+                ch=s_.chi.get((Z,j))
+                if ch is None: continue
+                q=s_.Q_VAL.get((Z,j),2)
+                sg=q/(ch*ch)
+                sig[(Z,j)]=sg
+                nj=nZ*(y[j] if (y is not None and j<len(y)) else (1.0 if j==1 else 0.0))
+                denom+=nj*sg*ch*EV
+        if denom<=0: return {}
+        pref=s_.a.eta*s_.dep/denom
+        return {k: pref*sg for k,sg in sig.items()}
     def ionize(s_, T, n_e):
         """one pass: given n_e,T -> fractions + new n_e"""
         fr={}; ne_new=0.0
+        gnt_tbl=s_.gnt_budget_tbl(getattr(s_,'fr_last',None)) if s_.a.nt_budget else None
         for Z,nZ in s_.nel.items():
             r=[]
             for j in range(0,s_.a.maxstage):
                 if (Z,j) not in s_.chi: r.append(0.0); continue
-                G=s_.gph.get((Z,j),0.0)+s_.gnt(Z,j)
+                gn = gnt_tbl.get((Z,j),0.0) if gnt_tbl is not None else s_.gnt(Z,j)
+                G=s_.gph.get((Z,j),0.0)+gn
                 al=alpha_rec(Z,j+1,T,s_.a.alpha_scale,use_dr=not s_.a.no_dr)
                 r.append(G/(max(n_e,1.0)*al))
             y=[1.0];
@@ -167,6 +193,7 @@ class Cell:
             y=np.array(y); y/= y.sum()
             fr[Z]=y
             ne_new+=nZ*float(np.sum(np.arange(len(y))*y))
+        s_.fr_last=fr
         return fr,ne_new
     def solve_ion(s_, T):
         n_e=0.5*s_.natom
@@ -260,6 +287,7 @@ def main():
     ap.add_argument("--maxstage",type=int,default=6)
     ap.add_argument("--no-dr",action="store_true")
     ap.add_argument("--ntp",type=float,default=2.0)
+    ap.add_argument("--nt-budget",action="store_true")
     ap.add_argument("--jdump",default="logs/stage1_toy06_jdump/lumina_cmfgen_jnu.csv")
     args=ap.parse_args()
     args.Zs={14,16,20}

@@ -395,11 +395,13 @@ void cmfgen_assemble(CMFGENState *cs, const Geometry *geo,
                 if (epay >= 2) {
                     /* rate-side emission shape: Milne spontaneous recombination
                      * (bf_get_eta, LUMINA_CMF_BF_MILNE=2 builder) + collisional
-                     * line emissivity (eta_ln == chi_l*eps*B = n_l C_lu h nu by
-                     * the two-level identity). The paid power is distributed
-                     * over THIS spectrum instead of the Wien-hard chi*B(T_e). */
-                    acc_w   += ((bf ? bf_get_eta(bf, s, nu) : 0.0) + eta_ln)
-                               * cs->dnu[b];
+                     * line emissivity chi_l,th*B (= n_l C_lu h nu by the
+                     * two-level identity — NOT eta_ln, whose macroatom
+                     * line_source_S garbage bins (S_l/B~1e48 saga) concentrate
+                     * the whole paid budget into one scattering-trapped IR bin
+                     * and close a gain>1 loop: the epay6 J=1e107 runaway). */
+                    acc_w   += ((bf ? bf_get_eta(bf, s, nu) : 0.0)
+                                + chi_ln_th * B) * cs->dnu[b];
                     acc_dep += kappa_dep * B * cs->dnu[b];
                 }
             }
@@ -436,7 +438,7 @@ void cmfgen_assemble(CMFGENState *cs, const Geometry *geo,
                     size_t idx = (size_t)s * NB + b;
                     double chi_t = cs->chi_tot[idx];
                     double w = (bf ? bf_get_eta(bf, s, cs->nu[b]) : 0.0)
-                             + eta_line[idx];
+                             + cs->chi_line_th[idx] * cm_planck(cs->nu[b], Te);
                     cs->S_fixed[idx] = (chi_t > 0.0) ? wn * w / chi_t : 0.0;
                 }
                 scale = wn;   /* debug: report the shape norm instead */

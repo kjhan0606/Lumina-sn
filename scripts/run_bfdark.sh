@@ -88,6 +88,8 @@ case "${1:-all}" in
   P3)  export LUMINA_CMF_EPAY=1 LUMINA_CMF_EPAY_SMIN=5; run epay3 "" ;;
   P4)  export LUMINA_CMF_EPAY=2 LUMINA_CMF_EPAY_SMIN=5 LUMINA_CMF_BF_MILNE=2; run epay4 "" ;;
   P5)  export LUMINA_CMF_EPAY=2 LUMINA_CMF_EPAY_SMIN=5 LUMINA_CMF_BF_MILNE=2; run epay5 "" ;;
+  P6)  export LUMINA_CMF_EPAY=2 LUMINA_CMF_EPAY_SMIN=5 LUMINA_CMF_BF_MILNE=2 LUMINA_CMF_EPAY_HOTF=0; run epay6 "" ;;
+  P7)  export LUMINA_CMF_EPAY=2 LUMINA_CMF_EPAY_SMIN=5 LUMINA_CMF_BF_MILNE=2 LUMINA_CMF_EPAY_HOTF=0; run epay7 "" ;;
   all) run bfdarkA "36:40:30"; run bfdarkB "36:49:30" ;;
 esac
 echo "ALL DONE"
