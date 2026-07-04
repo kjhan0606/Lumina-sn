@@ -4103,6 +4103,30 @@ int main(int argc, char *argv[]) {
                     cmfgen_assemble(&cs, &geo, &opacity,
                                     bf_opacity_enabled ? &bf : NULL, &plasma);
                     cmfgen_solve_J(&cs, &geo, config.T_inner, n_ali);
+                    /* LUMINA_J_DAMP=<f>: radiation-field under-relaxation
+                     * J <- f*J_new + (1-f)*J_prev (TARDIS damping_constant /
+                     * ARTIS estimator-carryover mirror; fixed-point unchanged).
+                     * Breaks the transport bistability flicker: outer strip ->
+                     * blanketing loss -> hard-UV opens -> photo-strip locks in
+                     * within ONE iteration (fix13: J[mid] swings 400x, the
+                     * ~40kK root flickers with the J phase). */
+                    {
+                        static double jd = -1.0;
+                        static double *j_prev = NULL;
+                        if (jd < 0.0) { const char *e = getenv("LUMINA_J_DAMP");
+                                        jd = e ? atof(e) : 1.0; }
+                        if (jd > 0.0 && jd < 1.0) {
+                            size_t nn = (size_t)cs.n_shells * cs.n_bins;
+                            if (!j_prev) {
+                                j_prev = (double *)malloc(nn * sizeof(double));
+                                memcpy(j_prev, cs.J, nn * sizeof(double));
+                            }
+                            for (size_t q = 0; q < nn; q++) {
+                                cs.J[q] = jd * cs.J[q] + (1.0 - jd) * j_prev[q];
+                                j_prev[q] = cs.J[q];
+                            }
+                        }
+                    }
                     cmfgen_window_color(&cs);
                     radeq_set_tail_color(cs.t_color, cs.n_shells);
                     radeq_set_tri_response(cs.tri_lo, cs.tri_up, cs.tri_r,
@@ -4110,6 +4134,7 @@ int main(int argc, char *argv[]) {
                     if (cs.diag && it == pc_iter - 1)
                         cmfgen_validate(&cs, &geo, &plasma);
                     cmfgen_write_jnu(&cs, &nlte);
+                    if(getenv("LUMINA_JPROBE")) printf("  [JPROBE A-postwrite] J[49,760]=%.3e ne40=%.3e Te40=%.0f\n", nlte.J_nu[(size_t)49*cs.n_bins+760], plasma.n_electron[40], plasma.T_e[40]);
                     /* DETAILED-BALANCE FALSIFIER (LUMINA_NLTE_JEQB=1): overwrite the WHOLE
                      * radiation field J_nu with the local Planck B(nu,Te) so bb + bf +
                      * (Milne) recomb all see the thermal field => the entire NLTE network
@@ -4169,6 +4194,7 @@ int main(int argc, char *argv[]) {
                         geo.time_explosion, geo.n_shells);
                     compute_plasma_state(&atom_data, &plasma, &opacity,
                                          geo.time_explosion);
+                    if(getenv("LUMINA_JPROBE")) printf("  [JPROBE C-postplasma] J[49,760]=%.3e ne40=%.3e Te40=%.0f\n", nlte.J_nu[(size_t)49*cs.n_bins+760], plasma.n_electron[40], plasma.T_e[40]);
                     if (getenv("LUMINA_COUPLED_NEWTON") &&
                         atoi(getenv("LUMINA_COUPLED_NEWTON")) && enable_nlte)
                         coupled_newton_solve_all(&plasma,
@@ -4181,6 +4207,7 @@ int main(int argc, char *argv[]) {
                                            geo.time_explosion, geo.n_shells,
                                            &nlte_solver,
                                            gamma_dep_enabled ? &gamma_dep : NULL);
+                    if(getenv("LUMINA_JPROBE")) printf("  [JPROBE D-postnlte] J[49,760]=%.3e ne40=%.3e Te40=%.0f\n", nlte.J_nu[(size_t)49*cs.n_bins+760], plasma.n_electron[40], plasma.T_e[40]);
                         /* P7 (LUMINA_CMF_LINERES_JBAR=1): refresh per-line
                          * tau_sobolev + line_source_S from the just-solved NLTE
                          * populations so next iter's producer J_bar_l and the mode-2

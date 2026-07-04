@@ -359,6 +359,20 @@ int load_tardis_reference_data(const char *ref_dir, Geometry *geo,
     plasma->n_shells = geo->n_shells; /* Phase 2 - Step 10d */
     plasma->W = read_csv_column(path, "W", &n); /* Phase 2 - Step 10d */
     plasma->T_rad = read_csv_column(path, "T_rad", &n); /* Phase 2 - Step 10d */
+    /* AUDIT DEFECT #5 FIX (LUMINA_TRAD_COLOR_FIX=1): the toy06 builder wrote
+     * T_rad = T_inner*W^0.25 — the ENERGY-EQUIVALENT temperature, not the
+     * COLOR temperature. A dilute photospheric field keeps the photospheric
+     * COLOR (J_nu = W*B_nu(T_color~T_phot)); W alone carries the dilution.
+     * jdump falsified the seed (solved outer color 12,493K vs seed 3,134K),
+     * and the coldest-seed shell (s=40) is the one captured by the hot strip
+     * basin in the early transient. Fix at load: T_rad[s] = T_rad[0] (constant
+     * photospheric color), W untouched. Gated, default OFF. */
+    { const char *tc = getenv("LUMINA_TRAD_COLOR_FIX");
+      if (tc && atoi(tc) && n > 0) {
+          for (int i2 = 1; i2 < n; i2++) plasma->T_rad[i2] = plasma->T_rad[0];
+          printf("  [TRAD-COLOR-FIX] T_rad[s>=1] := T_rad[0]=%.0f K (W unchanged)\n",
+                 plasma->T_rad[0]);
+      } }
     printf("  Plasma: W[0]=%.6f, T_rad[0]=%.2f K\n", /* Phase 2 - Step 10d */
            plasma->W[0], plasma->T_rad[0]); /* Phase 2 - Step 10d */
 

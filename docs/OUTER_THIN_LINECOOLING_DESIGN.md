@@ -58,3 +58,32 @@ n_up = n_lo·(C_lu + R_lu)/(C_ul + R_ul),  R_lu=B_lu·J̄·β_esc, R_ul=(A_ul+B_
 - ② Γ_nt 이온 balance + tdep IC→평형 IC (감사 #4)
 - ③ cap soft화 (감사 #2/#3) — F2에서 진단용으로만 임시 해제
 - ④ T_rad 빌더 수정 (감사 #5) / 수송 S_l=B 폴백 (G1)
+
+---
+# Part 2 — 설계 (a): LUMINA_RADEQ_SIMUL (ARTIS-미러 동시화, 2026-07-04)
+
+## 근거
+fix10/12 실증: 순수-SE limit cycle(골 2445↔9195)은 감쇠·반복수로 못 닫음 —
+operator-split에서 T_e 평가가 lagged pops를 보기 때문. ARTIS는 T_e root-find의
+**매 평가마다** calculate_ion_balance_nne 재해(thermalbalance.cc:141-150), 수렴 후
+최종 T로 pops 커밋(:304). 오프라인 계산기(scripts/offline_cell_balance.py)가 같은
+구조로 U자형+CMFGEN 1.4× 착지를 재현 — 이 평가 루프를 in-code 이식한다.
+
+## 평가 함수 r1(T; s) — trial T마다
+1. 이온화 ladder: r_j=(Γ_photo,j(lagged J)+Γ_nt,j)/(n_e·α_j(T)), α=Milne RR+DR;
+   n_e fixed-point ~15회 (시작=lagged n_e). Γ_photo는 J-적분이라 T-무관 → 셸당 1회 사전계산.
+2. pops: n_ion(T)×Boltzmann(T)/U — 냉각 line n_lo, fb n_{j+1}, bf-heating n_lev 전부 이것.
+3. H(T) = H_dep + H_photo(T) (사전계산된 per-pair ∫σJ(hν−χ) 가중을 n_ion(T)로 재가중)
+4. Λ(T) = ETLA(2준위 SE, culled line table, pops from 2) + C_fb(T) + ff + ad
+5. r1 = H − Λ. 브래킷 [3500,140000] (계산기가 진짜 root 존재 입증 → cap 불필요).
+
+## 커밋 (ARTIS :304 미러)
+수렴 T*에서 ladder 1회 더 → T_e[s], n_e[s], ion_number_density[·,s] 기록.
+SIMUL 셸은 하류 compute_ion_populations/tdep/CN을 skip (이중 소유 금지).
+시간의존(EQIC tdep)은 SIMUL 위에 후속 물리 항으로 복귀 예정(명명된 gap).
+
+## Falsifier
+F-a1: 골 진동 진폭 2445↔9195 → <10% (수렴 자체가 판정)
+F-a2: 3종 대조 — 계산기 프로파일(안13066/골13328급/외곽44821 계열)과 일치해야
+      (같은 물리의 두 구현 = 강한 상호검증)
+F-a3: 안/골/밖 동시 개선, 단일 config (no-overfitting 반증 테스트)

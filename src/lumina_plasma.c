@@ -609,6 +609,7 @@ static inline double apply_ml_phi_neb_correction(double phi_neb, int Z, int k,
 static double frozenin_alpha_rr(AtomicData *atom, int ip, int ip_next, double T);
 static const double *g_nt_ioniz_rate;
 static int g_nt_ioniz_n;
+static int g_simul_on;   /* tentative; = -1 definition at the SIMUL module */
 
 /* steady-state nebular-Saha ion partition for ONE shell (all elements). Extracted
  * so the coupled Newton can reconcile only the shells it does NOT own. */
@@ -752,6 +753,8 @@ static void compute_ion_populations_shell(AtomicData *atom, PlasmaState *plasma,
 
 static void compute_ion_populations(AtomicData *atom, PlasmaState *plasma,
                                      int n_shells) {
+    /* LUMINA_RADEQ_SIMUL owns the ion partition; skip the nebular rewrite. */
+    if (g_simul_on == 1) return;
     init_ml_phi_neb_correction();
     init_zeta_override();
     init_twocomp_lock();
@@ -2698,7 +2701,14 @@ void compute_plasma_state(AtomicData *atom, PlasmaState *plasma,
         printf("  [Plasma] electron density IMPOSED (fixed-ne): n_e[0]=%.4e\n", plasma->n_electron[0]);
     } else {
         printf("  [Plasma] Computing electron density (iterative)...\n");
-        compute_electron_density(atom, plasma, n_shells);
+        /* LUMINA_RADEQ_SIMUL owns n_e AND the ion partition: this second
+         * Saha path was OVERWRITING the SIMUL commit every iteration and, at
+         * the poisoned-T_rad shell s=40, exploding n_e to 9.565e7 (48x charge
+         * conservation) via the audit-A5 defect (1e30 ladder overflow breaks
+         * sum_norm while the n_ion product keeps multiplying -> unnormalized
+         * top stage). The lamp that erased the outer root. */
+        if (g_simul_on != 1)
+            compute_electron_density(atom, plasma, n_shells);
         printf("    n_e[0]=%.4e, n_e[%d]=%.4e\n",
                plasma->n_electron[0], n_shells - 1, plasma->n_electron[n_shells - 1]);
     }
@@ -3874,6 +3884,37 @@ static void build_radeq_line_table(NLTEConfig *nlte, AtomicData *atom,
                 radeq_lines[k].line = line;
                 radeq_lines[k].dE   = dE;
                 radeq_lines[k].beta = dE / K_BOLTZMANN;
+                /* LUMINA_RADEQ_VR_STD=1: STANDARD van Regemorter normalization
+                 * Omega = 14.5*gbar*f*g_lo*(Ry/dE) (Allen/vR 1962; the physics-
+                 * agent closure Lambda(25690K)=3.1e-11=H_dep closed with THIS
+                 * form). The legacy 2.16e-6*f is 15x (UV) to 80x (optical) LOW
+                 * — the 'Bethe (Ry/dE) missing' note from the vR-trap fix was
+                 * never completed. gbar = LUMINA_RADEQ_VR_GAUNT (default 0.2). */
+                static int vr_std = -1;
+                if (vr_std < 0) { const char *vs = getenv("LUMINA_RADEQ_VR_STD");
+                                  vr_std = (vs && atoi(vs)) ? 1 : 0; }
+                if (vr_std && f_lu > 1e-10) {
+                    double gbar = (vr_gaunt != 1.0) ? vr_gaunt : 0.2;
+                    double ry_de = 13.605693 / (radeq_lines[k].dE / EV_TO_ERG);
+                    if (ry_de > 136.0) ry_de = 136.0;   /* dE>=0.1 eV validity cap */
+                    double c_vr = 8.63e-6 * 14.5 * gbar * f_lu *
+                                  (double)atom->level_g[lo_g] * ry_de;
+                    /* Upsilon = max(vR, Omega_floor): the June vR-trap design's
+                     * second half, never implemented. Semi-forbidden/forbidden
+                     * lines carry f~1e-9..1e-4 -> f-scaled vR Omega is 1e2-1e6
+                     * LOW (true Omega([S III]9069, [Ca II]7291..) ~ O(1)).
+                     * These low-dE lines are THE classic nebular valley coolants
+                     * (calculator: valley +35-40% hot without them) — and the
+                     * valley overheat opens the 35eV bf window that feeds the
+                     * regional strip attractor. Floor is harmless for permitted
+                     * lines (their Omega >> 1) and for high-dE lines (exp cut).
+                     * Gate LUMINA_RADEQ_OMEGA_FLOOR (default 1.0; 0 disables). */
+                    static double om_floor = -1.0;
+                    if (om_floor < 0.0) { const char *of = getenv("LUMINA_RADEQ_OMEGA_FLOOR");
+                                          om_floor = of ? atof(of) : 1.0; }
+                    double c_min = 8.63e-6 * om_floor;
+                    radeq_lines[k].coeff = (c_vr > c_min) ? c_vr : c_min;
+                } else
                 radeq_lines[k].coeff = (f_lu > 1e-10) ?
                     VAN_REGEMORTER_COEFF * f_lu * vr_gaunt : 8.63e-6 * AXELROD_OMEGA;
                 radeq_lines[k].A_ul = atom->line_A_ul ? atom->line_A_ul[line] : 0.0;
@@ -4021,6 +4062,439 @@ static double radeq_te_step_clamp(double T_new, double T_old) {
     if (T_new > 2.0 * T_old) return 2.0 * T_old;
     if (T_new < 0.5 * T_old) return 0.5 * T_old;
     return T_new;
+}
+
+
+/* ============================================================
+ * LUMINA_RADEQ_SIMUL=1: ARTIS-mirror SIMULTANEOUS T_e/ionization solve.
+ * Design: docs/OUTER_THIN_LINECOOLING_DESIGN.md Part 2. Validated prototype:
+ * scripts/offline_cell_balance.py (reproduces the CMFGEN outer turn-up).
+ * At EVERY trial T_e the shell's ionization ladder — lagged-J photoionization
+ * + non-thermal vs Milne RR + Badnell DR — is re-solved (ARTIS
+ * thermalbalance.cc:141-150), level populations follow Boltzmann at the trial
+ * state, and r(T) = H_dep + H_photo(T) − C_ff − C_ad − C_fb(T) − Λ_ETLA(T)
+ * is bisected on the wide physical bracket [3500,140000] K (artisoptions.h).
+ * After convergence the ladder runs once more at T* and T_e, n_e AND the ion
+ * partition are committed (thermalbalance.cc:304 mirror); the downstream
+ * nebular-Saha rewrite is skipped (single ownership; fixes the operator-split
+ * limit cycle fix10/12 measured: valley 2445<->9195 K).
+ * ============================================================ */
+static int g_simul_on = -1;
+#define SIM_MAXP 96
+#define SIM_UT 24
+static double *g_sim_ulut = NULL;   /* [n_ip][SIM_UT] partition U on log-T grid */
+static double g_sim_logT0, g_sim_dlogT;
+static void simul_build_ulut(AtomicData *atom) {
+    int n_ip = atom->n_ion_pops;
+    if (!g_sim_ulut) g_sim_ulut = (double *)malloc((size_t)n_ip * SIM_UT * sizeof(double));
+    g_sim_logT0 = log(3500.0);
+    g_sim_dlogT = (log(140000.0) - g_sim_logT0) / (SIM_UT - 1);
+    for (int ip = 0; ip < n_ip; ip++) {
+        int l0 = atom->level_offset[ip], l1 = atom->level_offset[ip + 1];
+        for (int k = 0; k < SIM_UT; k++) {
+            double T = exp(g_sim_logT0 + k * g_sim_dlogT);
+            double u = 0.0;
+            for (int l = l0; l < l1; l++) {
+                double x = atom->level_energy_eV[l] * EV_TO_ERG / (K_BOLTZMANN * T);
+                if (x < 300.0) u += (double)atom->level_g[l] * exp(-x);
+            }
+            g_sim_ulut[(size_t)ip * SIM_UT + k] = (u > 0.0) ? u : 1.0;
+        }
+    }
+}
+static double simul_U(int ip, double T) {
+    double x = (log(T) - g_sim_logT0) / g_sim_dlogT;
+    if (x < 0) x = 0; if (x > SIM_UT - 1) x = SIM_UT - 1;
+    int k = (int)x; if (k >= SIM_UT - 1) k = SIM_UT - 2;
+    double f = x - k;
+    return (1.0 - f) * g_sim_ulut[(size_t)ip * SIM_UT + k]
+         + f * g_sim_ulut[(size_t)ip * SIM_UT + k + 1];
+}
+
+/* per-shell scratch for the simultaneous evaluation */
+typedef struct {
+    /* pair (ionization) data */
+    int np; int ipa[SIM_MAXP]; double chi[SIM_MAXP], Gph[SIM_MAXP], Hex[SIM_MAXP];
+    int ne_first[SIM_MAXP];      /* 1 = first pair of its element */
+    double gnt_p[SIM_MAXP];      /* per-stage NT rate (Lotz chi-suppression) */
+    double nelem[SIM_MAXP];      /* element number density (on first pair) */
+    int npops[SIM_MAXP];         /* element ladder length (on first pair) */
+    double gnt;                  /* per-atom NT rate [s^-1] */
+    double H_dep, ff_pref, Gamma_ad, natom;
+    /* culled ETLA line table */
+    long nl;
+    int *l_ip; double *l_dE, *l_beta, *l_coeff, *l_glo, *l_gup, *l_Elo;
+    double *l_BluJ, *l_ABulJ, *l_ftau;   /* B_lu*Jb, A_ul+B_ul*Jb, Sobolev tau/n_lo */
+    double *nion;                /* [n_ip] trial ion densities */
+} SimShell;
+
+static void simul_ladder(AtomicData *atom, SimShell *sh, double T, double *n_e_io) {
+    /* equilibrium ladder with n_e fixed point (calculator solve_ion mirror) */
+    double n_e = *n_e_io;
+    if (!(n_e > 0.0)) n_e = 0.5 * sh->natom;
+    int n_ip = atom->n_ion_pops;
+    for (int it = 0; it < 20; it++) {
+        double ne_new = 0.0;
+        for (int p = 0; p < sh->np; ) {
+            int npop = sh->npops[p];
+            double nel = sh->nelem[p];
+            double y[SIM_MAXP]; y[0] = 1.0; double ysum = 1.0;
+            for (int j = 0; j < npop - 1; j++) {
+                double al = frozenin_alpha_rr(atom, sh->ipa[p + j],
+                                              sh->ipa[p + j] + 1, T);
+                double G = sh->Gph[p + j] + sh->gnt_p[p + j];
+                double r = (al > 0.0 && n_e > 0.0) ? G / (n_e * al) : 0.0;
+                if (!isfinite(r) || r < 0.0) r = 0.0;
+                if (r > 1e28) r = 1e28;
+                y[j + 1] = y[j] * r;
+                if (y[j + 1] > 1e280) { for (int q = 0; q <= j + 1; q++) y[q] /= 1e280; }
+            }
+            ysum = 0.0; for (int j = 0; j < npop; j++) ysum += y[j];
+            double zbar = 0.0;
+            for (int j = 0; j < npop; j++) {
+                double fr = (ysum > 0.0) ? y[j] / ysum : (j == 0 ? 1.0 : 0.0);
+                sh->nion[sh->ipa[p] + j] = nel * fr;
+                zbar += (double)atom->ion_pop_stage[sh->ipa[p] + j] * fr;
+            }
+            ne_new += nel * zbar;
+            p += (npop - 1);
+        }
+        double ne_next = 0.5 * (n_e + (ne_new > 1e-6 * sh->natom ? ne_new
+                                                                 : 1e-6 * sh->natom));
+        if (fabs(ne_next - n_e) < 1e-3 * n_e) { n_e = ne_next; break; }
+        n_e = ne_next;
+    }
+    *n_e_io = n_e;
+}
+
+static double simul_r1(AtomicData *atom, SimShell *sh, double T, double *n_e_out) {
+    double n_e = *n_e_out;
+    simul_ladder(atom, sh, T, &n_e);
+    *n_e_out = n_e;
+    /* heating: deposition (full) + bf excess re-weighted by trial ions */
+    double H = sh->H_dep;
+    for (int p = 0; p < sh->np; p++)
+        H += sh->nion[sh->ipa[p]] * sh->Hex[p];
+    /* continuum cooling */
+    double C = sh->ff_pref * n_e * n_e * sqrt(T);
+    C += 1.5 * n_e * K_BOLTZMANN * T * sh->Gamma_ad;
+    for (int p = 0; p < sh->np; p++) {                     /* fb: rate-based */
+        double al = frozenin_alpha_rr(atom, sh->ipa[p], sh->ipa[p] + 1, T);
+        if (al > 0.0)
+            C += n_e * sh->nion[sh->ipa[p] + 1] * al * (sh->chi[p] + K_BOLTZMANN * T);
+    }
+    /* ETLA two-level SE line exchange with trial pops (signed; heating allowed) */
+    double invsq = 1.0 / sqrt(T), lam = 0.0;
+    for (long m = 0; m < sh->nl; m++) {
+        double nion = sh->nion[sh->l_ip[m]];
+        if (nion <= 0.0) continue;
+        double x = sh->l_Elo[m] / (K_BOLTZMANN * T);
+        if (x > 300.0) continue;
+        double U = simul_U(sh->l_ip[m], T);
+        double nlo = nion * sh->l_glo[m] * exp(-x) / U;
+        if (nlo <= 0.0) continue;
+        double exb = exp(-fmin(sh->l_beta[m] / T, 300.0));
+        double qlu = sh->l_coeff[m] / sh->l_glo[m] * invsq * exb;
+        double qul = sh->l_coeff[m] / sh->l_gup[m] * invsq;
+        double Clu = n_e * qlu, Cul = n_e * qul;
+        double tau = sh->l_ftau[m] * nlo;
+        double be = radeq_beta_esc(tau);
+        double Rul = sh->l_ABulJ[m] * be, Rlu = sh->l_BluJ[m] * be;
+        double den = Cul + Rul;
+        if (den <= 0.0) continue;
+        double nup = nlo * (Clu + Rlu) / den;
+        lam += sh->l_dE[m] * (nlo * qlu * n_e - nup * qul * n_e);
+    }
+    C += lam;
+    return H - C;
+}
+
+static void radeq_simul_all(PlasmaState *plasma, GammaDeposition *gamma_dep,
+                            NLTEConfig *nlte, AtomicData *atom,
+                            OpacityState *opacity, double time_explosion,
+                            int n_shells) {
+    build_radeq_line_table(nlte, atom, opacity);
+    if (!g_sim_ulut) simul_build_ulut(atom);
+    double radeq_damp = 0.5;
+    { const char *d = getenv("LUMINA_RADEQ_DAMP"); if (d) radeq_damp = atof(d); }
+    int n_ip = atom->n_ion_pops;
+    int nfb = nlte->n_freq_bins;
+    long n_pin_hi = 0, n_pin_lo = 0;
+#ifdef _OPENMP
+    #pragma omp parallel reduction(+:n_pin_hi,n_pin_lo)
+#endif
+    {
+    SimShell sh;
+    memset(&sh, 0, sizeof(sh));
+    sh.nion   = (double *)calloc((size_t)n_ip, sizeof(double));
+    long cap  = radeq_n_lines > 0 ? radeq_n_lines : 1;
+    sh.l_ip   = (int *)malloc(cap * sizeof(int));
+    sh.l_dE   = (double *)malloc(cap * sizeof(double));
+    sh.l_beta = (double *)malloc(cap * sizeof(double));
+    sh.l_coeff= (double *)malloc(cap * sizeof(double));
+    sh.l_glo  = (double *)malloc(cap * sizeof(double));
+    sh.l_gup  = (double *)malloc(cap * sizeof(double));
+    sh.l_Elo  = (double *)malloc(cap * sizeof(double));
+    sh.l_BluJ = (double *)malloc(cap * sizeof(double));
+    sh.l_ABulJ= (double *)malloc(cap * sizeof(double));
+    sh.l_ftau = (double *)malloc(cap * sizeof(double));
+#ifdef _OPENMP
+    #pragma omp for schedule(dynamic, 1)
+#endif
+    for (int s = 0; s < n_shells; s++) {
+        /* sh is REUSED across shells within a thread: stale other-element ion
+         * densities from a previously-processed (inner, Fe-rich) shell leaked
+         * into the commit of Fe-free outer shells -> n_e 60x charge-conservation
+         * violation at s=37-42 -> the hard-UV lamp that erased the outer root. */
+        memset(sh.nion, 0, (size_t)n_ip * sizeof(double));
+        double T_rad = plasma->T_rad[s];
+        double W = plasma->W[s];
+        (void)W;
+        /* ---- shell constants ---- */
+        sh.H_dep = (gamma_dep && gamma_dep->heating_rate) ?
+                   gamma_dep->heating_rate[s] : 0.0;
+        sh.ff_pref = 1.426e-27 * 1.2;
+        sh.Gamma_ad = 3.0 / time_explosion;
+        /* ---- pairs: photoion integrals from the lagged binned J ---- */
+        sh.np = 0; sh.natom = 0.0;
+        for (int e = 0; e < atom->n_elements; e++) {
+            int ip0 = atom->elem_ion_offset[e], ip1 = atom->elem_ion_offset[e + 1];
+            int npop = ip1 - ip0;
+            double nel = atom->abundances[e * n_shells + s] * plasma->rho[s] /
+                         (atom->element_mass_amu[e] * AMU);
+            if (nel <= 0.0) continue;
+            sh.natom += nel;
+            if (npop < 2) { sh.nion[ip0] = nel; continue; }
+            if (sh.np + npop - 1 > SIM_MAXP) continue;
+            for (int j = 0; j < npop - 1; j++) {
+                int p = sh.np + j;
+                sh.ipa[p] = ip0 + j;
+                double chi_eV = find_ioniz_energy(atom, atom->ion_pop_Z[ip0 + j],
+                                                  atom->ion_pop_stage[ip0 + j]);
+                sh.chi[p] = chi_eV * EV_TO_ERG;
+                double nu0 = sh.chi[p] / H_PLANCK;
+                int zeff = atom->ion_pop_stage[ip0 + j] + 1;
+                double G = 0.0, Hx = 0.0;
+                for (int bb = 0; bb < nfb; bb++) {
+                    double lo = log(nlte->nu_min) + bb * nlte->d_log_nu;
+                    double nu = exp(lo + 0.5 * nlte->d_log_nu);
+                    if (nu < nu0) continue;
+                    double dnu = exp(lo + nlte->d_log_nu) - exp(lo);
+                    double sig = 7.91e-18 / ((double)zeff * zeff) *
+                                 (nu0 / nu) * (nu0 / nu) * (nu0 / nu);
+                    double J = nlte->J_nu[(size_t)s * nfb + bb];
+                    if (J <= 0.0) continue;
+                    double w = 4.0 * M_PI_VAL * sig * J / (H_PLANCK * nu) * dnu;
+                    G += w;
+                    Hx += w * (H_PLANCK * nu - sh.chi[p]);
+                }
+                sh.Gph[p] = G; sh.Hex[p] = Hx;
+                sh.nelem[p] = nel; sh.npops[p] = npop;
+            }
+            sh.np += npop - 1;
+        }
+        sh.gnt = 0.0;
+        if (g_nt_ioniz_rate && s < g_nt_ioniz_n && sh.natom > 0.0)
+            sh.gnt = g_nt_ioniz_rate[s] / sh.natom;
+        /* Per-stage NT suppression (Lotz sigma ~ 1/chi^2 + secondary-spectrum
+         * softening): Gamma_nt,j = gnt*(35eV/chi_j)^p, p = LUMINA_SIMUL_NTP
+         * (default 2; calculator-validated). Load-bearing for STABILITY: with
+         * the constant per-atom rate, any J-collapsed iteration strips every
+         * stage at every trial T (uniform Gamma_nt >> n_e*alpha) -> no coolant
+         * ions -> the ~40kK root vanishes -> 140kK ratchet (fix13 flight 3). */
+        { static double sim_ntp = -1.0;
+          if (sim_ntp < 0.0) { const char *e = getenv("LUMINA_SIMUL_NTP");
+                               sim_ntp = e ? atof(e) : 2.0; }
+          for (int p2 = 0; p2 < sh.np; p2++) {
+              double chi_eV = sh.chi[p2] / EV_TO_ERG;
+              double fac = pow(35.0 / (chi_eV > 1.0 ? chi_eV : 1.0), sim_ntp);
+              if (fac > 1.0) fac = 1.0;   /* suppress high-chi only */
+              sh.gnt_p[p2] = sh.gnt * fac;
+          } }
+        /* ---- culled ETLA line table (lagged tau/Jbar; T-independent parts) ---- */
+        sh.nl = 0;
+        double cull = 0.01;
+        { const char *c = getenv("LUMINA_RADEQ_LINE_CULL"); if (c) cull = atof(c); }
+        double thr = cull * (sh.H_dep > 0.0 ? sh.H_dep : 1e-30) /
+                     (double)(radeq_n_lines > 0 ? radeq_n_lines : 1);
+        for (long k = 0; k < radeq_n_lines; k++) {
+            const RadEqLine *rl = &radeq_lines[k];
+            /* cull bound must cover ALL trial ionization states (the lagged
+             * state culled away the mid-T coolant lines -> no root): use the
+             * ELEMENT density as the n_ion upper bound, n_e <= 6*natom. */
+            int Ze = atom->ion_pop_Z[rl->ip];
+            double nel_k = 0.0;
+            for (int e2 = 0; e2 < atom->n_elements; e2++)
+                if (atom->element_Z[e2] == Ze) {
+                    nel_k = atom->abundances[e2 * n_shells + s] * plasma->rho[s] /
+                            (atom->element_mass_amu[e2] * AMU);
+                    break;
+                }
+            if (nel_k <= 0.0) continue;
+            double cmax = rl->dE * rl->coeff * nel_k / rl->g_lo *
+                          (6.0 * sh.natom) / sqrt(2000.0);
+            if (cmax < thr) continue;
+            double nu_l = rl->dE / H_PLANCK;
+            double Jb = nlte_get_J_at_nu(nlte, s, nu_l);
+            double B_ul = rl->A_ul * C_SPEED_OF_LIGHT * C_SPEED_OF_LIGHT /
+                          (2.0 * H_PLANCK * nu_l * nu_l * nu_l);
+            double B_lu = B_ul * (double)rl->g_up / (double)rl->g_lo;
+            long m = sh.nl++;
+            sh.l_ip[m] = rl->ip;
+            sh.l_dE[m] = rl->dE;   sh.l_beta[m] = rl->beta;
+            sh.l_coeff[m] = rl->coeff;
+            sh.l_glo[m] = (double)rl->g_lo; sh.l_gup[m] = (double)rl->g_up;
+            sh.l_Elo[m] = atom->level_energy_eV[rl->lo_g] * EV_TO_ERG;
+            sh.l_BluJ[m]  = B_lu * Jb;
+            sh.l_ABulJ[m] = rl->A_ul + B_ul * Jb;
+            /* SELF-CONSISTENT Sobolev tau: tau(T) = ftau * n_lo(T). Using the
+             * LAGGED tau_sobolev here created hysteresis: a committed stripped
+             * state zeroed tau -> beta=1 -> cooling loss -> the ~40kK root
+             * vanished and the ladder ratcheted into the 140kK strip attractor
+             * (fix13 first flight). The offline calculator uses trial-tau and
+             * finds the root robustly.  f_lu = 1.4992e-16*A_ul*(g_up/g_lo)*lam_A^2. */
+            {
+                double lam_A = 1e8 * C_SPEED_OF_LIGHT / nu_l;
+                double f_lu = 1.4992e-16 * rl->A_ul *
+                              ((double)rl->g_up / (double)rl->g_lo) * lam_A * lam_A;
+                double lam_cm = C_SPEED_OF_LIGHT / nu_l;
+                sh.l_ftau[m] = 0.02654 * f_lu * lam_cm * time_explosion;
+            }
+        }
+        /* INPUT-DIFF dump (flip forensics): per-pair Gph + UV J bins.
+         * The T* flip 43k->140k at iter-3 survived J/T/ion damping — diff
+         * these inputs across iterations to name the switching channel. */
+        if (getenv("LUMINA_RADEQ_DIAG") && s == n_shells - 1) {
+#ifdef _OPENMP
+            #pragma omp critical
+#endif
+            {
+                printf("  [SIMUL-IN s=%d] gnt=%.3e Gph:", s, sh.gnt);
+                for (int p2 = 0; p2 < sh.np; p2++) printf(" %.2e", sh.Gph[p2]);
+                printf("\n  [SIMUL-IN s=%d] Jbin:", s);
+                for (int bb = 700; bb < 1000; bb += 60)
+                    printf(" %.2e", nlte->J_nu[(size_t)s * nfb + bb]);
+                printf("\n");
+            }
+        }
+        /* diag: r1(T) scan at the outer trace shell (calculator cross-check) */
+        if (getenv("LUMINA_RADEQ_DIAG") && (s == n_shells - 1 || s == n_shells / 2)) {
+            double Tg[8] = {5000, 9500, 16000, 25000, 40000, 60000, 95000, 140000};
+            for (int q = 0; q < 8; q++) {
+                double nq = plasma->n_electron[s];
+                double rq = simul_r1(atom, &sh, Tg[q], &nq);
+                /* recompute components for the print */
+                double Hp = 0.0;
+                for (int p2 = 0; p2 < sh.np; p2++) Hp += sh.nion[sh.ipa[p2]] * sh.Hex[p2];
+#ifdef _OPENMP
+                #pragma omp critical
+#endif
+                printf("  [SIMUL-SCAN s=%d] T=%6.0f r1=%+.3e H_photo=%.3e n_e=%.3e\n",
+                       s, Tg[q], rq, Hp, nq);
+            }
+        }
+        /* ---- bisection on the wide physical bracket ---- */
+        double Tlo = 3500.0, Thi = 140000.0;
+        double ne_l = plasma->n_electron[s], ne_h = plasma->n_electron[s];
+        double f_lo = simul_r1(atom, &sh, Tlo, &ne_l);
+        double f_hi = simul_r1(atom, &sh, Thi, &ne_h);
+        double T_e, ne_fin;
+        int held = 0;
+        /* NO-ROOT => NOT a solution: committing a bracket endpoint was audit
+         * defect B1, and inside SIMUL it FUELED the strip attractor — the
+         * pinned-hi commit ratcheted T_e[49] to 50-95kK whose OWN B(T_e)
+         * hard-UV emission (J bin +12 dex in one iter, 1e21 x dilute-
+         * photospheric = unphysical self-illumination) photo-stripped every
+         * trial state. HOLD the previous T_e instead and let the transport
+         * relax (forensics: fix14 [SIMUL-IN] iter2->3). */
+        if (f_lo <= 0.0)      { T_e = plasma->T_e[s] > 100.0 ? plasma->T_e[s] : Tlo;
+                                ne_fin = ne_l; n_pin_lo++; held = 1; }
+        else if (f_hi >= 0.0) { T_e = plasma->T_e[s] > 100.0 ? plasma->T_e[s] : Thi;
+                                ne_fin = ne_h; n_pin_hi++; held = 1; }
+        else {
+            /* LOWEST-ROOT selection (cold-branch continuation): the balance is
+             * multi-rooted in the bistable window (e.g. s=40: cold ~13kK root
+             * AND a self-illuminated strip root ~100kK). Plain bisection on
+             * [Tlo,Thi] lands on an arbitrary crossing; CMFGEN/ARTIS follow
+             * the branch continuously from the (cold) previous state. Coarse
+             * upward march to the FIRST sign change, then bisect inside it. */
+            double ne_m = plasma->n_electron[s];
+            double Ta = Tlo, fa = f_lo;
+            double fac = pow(Thi / Tlo, 1.0 / 24.0);
+            for (int q = 1; q <= 24; q++) {
+                double Tb = Tlo * pow(fac, (double)q);
+                if (q == 24) Tb = Thi;
+                double nb = plasma->n_electron[s];
+                double fb = simul_r1(atom, &sh, Tb, &nb);
+                if (fa > 0.0 && fb <= 0.0) { Tlo = Ta; Thi = Tb; break; }
+                Ta = Tb; fa = fb;
+            }
+            for (int it = 0; it < 45 && (Thi - Tlo) > 2.0; it++) {
+                double Tm = 0.5 * (Tlo + Thi);
+                double fm = simul_r1(atom, &sh, Tm, &ne_m);
+                if (fm > 0.0) Tlo = Tm; else Thi = Tm;
+            }
+            T_e = 0.5 * (Tlo + Thi); ne_fin = ne_m;
+        }
+        /* ---- commit (ARTIS thermalbalance.cc:304 mirror): final ladder at T*,
+         *      write T_e (damped+clamped), n_e and the ion partition ---- */
+        double T_old = plasma->T_e[s];
+        double T_new = T_e;
+        (void)held;
+        if (radeq_damp < 1.0 && T_old > 100.0)
+            T_new = radeq_damp * T_e + (1.0 - radeq_damp) * T_old;
+        T_new = radeq_te_step_clamp(T_new, T_old);
+        /* SELF-CONSISTENT commit: ladder at the COMMITTED temperature, not at
+         * T* — committing T*(~40k)-stripped ions with a damped T_e(12k) killed
+         * the outer blanketing ahead of the temperature, re-opening the hard-UV
+         * window and locking the strip attractor (fix14 iter2). */
+        simul_ladder(atom, &sh, T_new, &ne_fin);
+        plasma->T_e[s] = T_new;
+        /* ION-side under-relaxation (CMFGEN D/Dt population-inertia miniature,
+         * steq_co_mov_deriv RELAX mirror; fixed-point unchanged): with J damped
+         * and T_e clamped, the instantaneously-committed equilibrium ions were
+         * the last un-damped state variable — one iteration could still flip
+         * the outer blanketing/Gph channels and lock the strip attractor. */
+        static double ion_damp = -1.0;
+        if (ion_damp < 0.0) { const char *e = getenv("LUMINA_SIMUL_ION_DAMP");
+                              ion_damp = e ? atof(e) : 0.5; }
+        double ne_mix = 0.0;
+        for (int e2 = 0; e2 < atom->n_elements; e2++) {
+            int ip0 = atom->elem_ion_offset[e2], ip1 = atom->elem_ion_offset[e2 + 1];
+            double nel2 = atom->abundances[e2 * n_shells + s] * plasma->rho[s] /
+                          (atom->element_mass_amu[e2] * AMU);
+            for (int ip = ip0; ip < ip1; ip++) {
+                double prev = atom->ion_number_density[(size_t)ip * n_shells + s];
+                /* PHYSICAL BOUND on the blend memory: the ion-damp blend was
+                 * PRESERVING super-physical seed garbage (s=37-42 n_e 60x over
+                 * charge conservation, decaying only 0.5/iter) whose n_e^2 ff
+                 * emission was the hard-UV lamp that photo-stripped the outer
+                 * (fix15 forensics: corrupt shells identical with clean sh.nion
+                 * => the memory term was the carrier). n_ion <= n_element. */
+                if (prev > nel2) prev = nel2;
+                double mixed = ion_damp * sh.nion[ip] + (1.0 - ion_damp) * prev;
+                if (mixed > nel2) mixed = nel2;
+                atom->ion_number_density[(size_t)ip * n_shells + s] = mixed;
+                ne_mix += (double)atom->ion_pop_stage[ip] * mixed;
+            }
+        }
+        plasma->n_electron[s] = (ne_mix > 0.0) ? ne_mix : ne_fin;
+        if (getenv("LUMINA_RADEQ_DIAG") &&
+            (s == 0 || s == n_shells / 2 || s == n_shells - 1))
+#ifdef _OPENMP
+            #pragma omp critical
+#endif
+            printf("  [SIMUL s=%d] T*=%.0f -> committed %.0f  n_e=%.3e  "
+                   "H_dep=%.3e r1(T*)=~0  nl=%ld np=%d\n",
+                   s, T_e, T_new, ne_fin, sh.H_dep, sh.nl, sh.np);
+        (void)T_rad;
+    }
+    free(sh.nion); free(sh.l_ip); free(sh.l_dE); free(sh.l_beta);
+    free(sh.l_coeff); free(sh.l_glo); free(sh.l_gup); free(sh.l_Elo);
+    free(sh.l_BluJ); free(sh.l_ABulJ); free(sh.l_ftau);
+    }   /* omp parallel */
+    printf("  [SIMUL] done: pins hi=%ld lo=%ld of %d shells\n",
+           n_pin_hi, n_pin_lo, n_shells);
 }
 
 static double radeq_recomb_cool(double T_e, const double *emit_nu,
@@ -4527,6 +5001,15 @@ void compute_radiative_equilibrium_te(PlasmaState *plasma, GammaDeposition *gamm
                                       OpacityState *opacity,
                                       double time_explosion, int n_shells) {
     radeq_fb_rate_register(atom, plasma, n_shells);  /* LUMINA_RADEQ_FB_RATE */
+    /* LUMINA_RADEQ_SIMUL=1: ARTIS-mirror simultaneous solve replaces the
+     * whole operator-split radeq below (single ownership of T_e/n_e/ions). */
+    if (g_simul_on < 0) { const char *e = getenv("LUMINA_RADEQ_SIMUL");
+                          g_simul_on = (e && atoi(e)) ? 1 : 0; }
+    if (g_simul_on) {
+        radeq_simul_all(plasma, gamma_dep, nlte, atom, opacity,
+                        time_explosion, n_shells);
+        return;
+    }
     /* TOY DIAGNOSTIC (LUMINA_FIXED_TE_PROFILE=<file>): impose a chosen per-shell T_e and
      * SKIP the RADEQ solve, so controlled toy models isolate the line/transport physics
      * from the (fragile) T_e solution. File rows = "shell_id T_e". Mirrors FIXED_TRAD. */
