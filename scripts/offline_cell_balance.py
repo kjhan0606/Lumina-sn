@@ -84,9 +84,9 @@ def load_lines(Zs, lev):
                       dE=H*a[:,0])
     return out
 
-def load_J():
+def load_J(path="logs/stage1_toy06_jdump/lumina_cmfgen_jnu.csv"):
     Js={}
-    for r in csv.DictReader(open("logs/stage1_toy06_jdump/lumina_cmfgen_jnu.csv")):
+    for r in csv.DictReader(open(path)):
         s=int(r['shell'])
         Js.setdefault(s,[]).append((float(r['nu']),float(r['J'])))
     out={}
@@ -260,6 +260,7 @@ def main():
     ap.add_argument("--maxstage",type=int,default=6)
     ap.add_argument("--no-dr",action="store_true")
     ap.add_argument("--ntp",type=float,default=2.0)
+    ap.add_argument("--jdump",default="logs/stage1_toy06_jdump/lumina_cmfgen_jnu.csv")
     args=ap.parse_args()
     args.Zs={14,16,20}
     load_dr()
@@ -269,7 +270,7 @@ def main():
     print("loading levels/lines/J ...",flush=True)
     lev=load_levels(args.Zs)
     lines=load_lines(args.Zs,lev)
-    Js=load_J()
+    Js=load_J(args.jdump)
     truth=cmfgen_truth()
     tv=sorted(truth.keys())
     shells=[int(x) for x in args.shells.split(",")]

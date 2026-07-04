@@ -266,6 +266,50 @@ void cmfgen_assemble(CMFGENState *cs, const Geometry *geo,
       if (lg) line_gate = atof(lg); }
     long n_split = 0;
 
+    /* LUMINA_CMF_EPAY=1: energy-paid thermal emission (deterministic kpkt
+     * mirror / per-shell transport radiative equilibrium). The thermal source
+     * (chi_a*B + eta_line) is rescaled per shell so its frequency-integrated
+     * power equals what the gas actually absorbs from the (lagged) field:
+     *   scale_s = [Sum_b (chi_a+chi_line_th) J dnu] / [Sum_b (chi_a B+eta_ln) dnu]
+     * The deposition injection kappa_dep*B is already exactly H_dep and stays
+     * unscaled. Fixed point = radiative equilibrium (emit = abs + dep), the
+     * same closure CMFGEN's global linearization and ARTIS's e-packet
+     * bookkeeping enforce — a conservation constraint, not a tuning knob.
+     * iter0 (J=0) => thermal dark start (physical: the ejecta history never
+     * visits the hot state); the unpaid mutual-illumination bath (hot band
+     * s36-40, ledger 1e6-1e7x) cannot ignite because a shell can never emit
+     * more than it absorbed + deposition. */
+    static int epay = -1;
+    static int epay_smin = 0;   /* diagnostic: EPAY only for s >= smin */
+    static double epay_tau = 2.0;
+    if (epay < 0) { const char *e = getenv("LUMINA_CMF_EPAY");
+                    epay = e ? atoi(e) : 0;
+                    if (epay < 0) epay = 0;
+                    const char *et = getenv("LUMINA_CMF_EPAY_TAU");
+                    if (et) epay_tau = atof(et);
+                    const char *es = getenv("LUMINA_CMF_EPAY_SMIN");
+                    if (es) epay_smin = atoi(es);
+                    if (epay) printf("[CMF-EPAY] energy-paid thermal emission ON"
+                                     " (tau_es < %.2f only; thick=LTE legacy)\n",
+                                     epay_tau); }
+    double epay_scale_dbg[4] = {0,0,0,0};
+    /* inward electron-scattering optical depth: EPAY applies only to thin
+     * shells (tau_es < EPAY_TAU). At depth LTE holds, chi*B IS the honest
+     * emission and the books close naturally — enforcing the lagged-J scale
+     * there just recreates Lambda-iteration slowness (epay1: s0 stuck 0.68x). */
+    double *epay_tau_arr = NULL;
+    if (epay) {
+        epay_tau_arr = (double *)calloc(NS, sizeof(double));
+        double acc_tau = 0.0;
+        for (int s2 = NS - 1; s2 >= 0; --s2) {
+            double ne2 = plasma->n_electron ? plasma->n_electron[s2]
+                                            : opac->electron_density[s2];
+            double dr2 = geo->r_outer[s2] - geo->r_inner[s2];
+            acc_tau += ne2 * CM_SIGMA_T * (dr2 > 0.0 ? dr2 : 0.0);
+            epay_tau_arr[s2] = acc_tau;
+        }
+    }
+
     /* electron scattering + bf/ff thermal absorption + combine. */
     for (int s = 0; s < NS; ++s) {
         double Te  = plasma->T_e[s];
@@ -274,6 +318,8 @@ void cmfgen_assemble(CMFGENState *cs, const Geometry *geo,
         double chi_e = n_e * CM_SIGMA_T;
         /* Stage 1 deposition: kappa_dep = frac*H_gamma / (4pi*Sum_b B_nu*dnu). */
         double kappa_dep = 0.0;
+        double acc_emit = 0.0, acc_abs = 0.0;   /* EPAY per-shell books */
+        double acc_w = 0.0, acc_dep = 0.0;      /* EPAY=2 rate-shape norm */
         if (dep_src && g_dep_heating && s < g_dep_heating_n &&
             g_dep_heating[s] > 0.0 && Te > 0.0) {
             double bnorm = 0.0;
@@ -342,14 +388,78 @@ void cmfgen_assemble(CMFGENState *cs, const Geometry *geo,
              * count of the line source). */
             cs->S_fixed[idx] = (chi_t > 0.0)
                              ? (chi_a * B + eta_ln) / chi_t : 0.0;
+            /* EPAY books: thermal emitted vs absorbed (lagged J), per shell. */
+            if (epay) {
+                acc_emit += (chi_a * B + eta_ln) * cs->dnu[b];
+                acc_abs  += (chi_a + chi_ln_th) * cs->J[idx] * cs->dnu[b];
+                if (epay >= 2) {
+                    /* rate-side emission shape: Milne spontaneous recombination
+                     * (bf_get_eta, LUMINA_CMF_BF_MILNE=2 builder) + collisional
+                     * line emissivity (eta_ln == chi_l*eps*B = n_l C_lu h nu by
+                     * the two-level identity). The paid power is distributed
+                     * over THIS spectrum instead of the Wien-hard chi*B(T_e). */
+                    acc_w   += ((bf ? bf_get_eta(bf, s, nu) : 0.0) + eta_ln)
+                               * cs->dnu[b];
+                    acc_dep += kappa_dep * B * cs->dnu[b];
+                }
+            }
             /* Stage 1: add the thermalised deposition emissivity eta_dep=kappa*B
-             * to the source (eta_dep/chi_tot). No-op when the gate is off. */
-            if (kappa_dep > 0.0 && chi_t > 0.0)
+             * to the source (eta_dep/chi_tot). No-op when the gate is off.
+             * Under EPAY this is deferred to the rescale pass below. */
+            if ((!epay || s < epay_smin ||
+                 (epay_tau_arr && epay_tau_arr[s] >= epay_tau)) &&
+                kappa_dep > 0.0 && chi_t > 0.0)
                 cs->S_fixed[idx] += kappa_dep * B / chi_t;
             /* chi_tot scratch now overwritten with the real total */
             cs->chi_tot[idx] = chi_t;
         }
+        if (epay && s >= epay_smin && epay_tau_arr[s] < epay_tau) {
+            double scale = (acc_emit > 0.0) ? acc_abs / acc_emit : 0.0;
+            /* rate-shape only in the NLTE lamp regime T_e >> T_rad: there
+             * chi*B(T_e) is the proven unpaid-lamp form and Milne+lines is
+             * honest. Near LTE (T_e ~ T_rad) the two forms agree (b->1,
+             * Milne->B) BUT the Milne shape inherits the valley's corrupted
+             * n_+ (recombination edges overweighted, epay4: n_e +0.3 dex) —
+             * so keep the legacy chi*B shape there. */
+            static double epay_hotf = 1.5;
+            { static int hf_once = 0;
+              if (!hf_once) { hf_once = 1;
+                  const char *hf = getenv("LUMINA_CMF_EPAY_HOTF");
+                  if (hf) epay_hotf = atof(hf); } }
+            int hot_regime = (Te > epay_hotf * plasma->T_rad[s]);
+            if (epay >= 2 && acc_w > 0.0 && hot_regime) {
+                /* kpkt mirror proper: paid power E_pay = absorbed + deposition,
+                 * spectrum = normalized rate-side emissivity w(nu). */
+                double E_pay = acc_abs + acc_dep;
+                double wn = E_pay / acc_w;
+                for (int b = 0; b < NB; ++b) {
+                    size_t idx = (size_t)s * NB + b;
+                    double chi_t = cs->chi_tot[idx];
+                    double w = (bf ? bf_get_eta(bf, s, cs->nu[b]) : 0.0)
+                             + eta_line[idx];
+                    cs->S_fixed[idx] = (chi_t > 0.0) ? wn * w / chi_t : 0.0;
+                }
+                scale = wn;   /* debug: report the shape norm instead */
+            } else {
+            for (int b = 0; b < NB; ++b) {
+                size_t idx = (size_t)s * NB + b;
+                double chi_t = cs->chi_tot[idx];
+                cs->S_fixed[idx] *= scale;
+                if (kappa_dep > 0.0 && chi_t > 0.0)
+                    cs->S_fixed[idx] += kappa_dep * cm_planck(cs->nu[b], Te) / chi_t;
+            }
+            }
+            if (s == 0) epay_scale_dbg[0] = scale;
+            if (s == NS/2) epay_scale_dbg[1] = scale;
+            if (s == 38 && s < NS) epay_scale_dbg[2] = scale;
+            if (s == NS-1) epay_scale_dbg[3] = scale;
+        }
     }
+    if (epay)
+        printf("[CMF-EPAY] scale s0=%.3e s%d=%.3e s38=%.3e s%d=%.3e\n",
+               epay_scale_dbg[0], NS/2, epay_scale_dbg[1],
+               epay_scale_dbg[2], NS-1, epay_scale_dbg[3]);
+    free(epay_tau_arr);
     if ((line_eps > 0.0 || eps_phys || eps_uv > 0.0) && cs->diag) {
         static int eps_diag_once = 0;
         if (!eps_diag_once && n_split > 0) {   /* first assemble with lines */

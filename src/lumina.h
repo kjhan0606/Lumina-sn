@@ -408,6 +408,9 @@ typedef struct {
     double  nu_max;         /* NLTE_NU_MAX (3.0e16 Hz = c/100A) */
     double  d_log_nu;       /* log(nu_max/nu_min) / n_freq_bins */
     double *chi_bf;         /* [n_shells * n_freq_bins] cm^-1 */
+    double *eta_bf;         /* [n_shells * n_freq_bins] erg/s/cm^3/Hz/sr — bf(+ff)
+                             * emissivity; = chi*B(T_e) thermal, or NLTE Milne
+                             * source-function form under LUMINA_CMF_BF_MILNE */
     int    *activation_level; /* [n_shells * n_freq_bins] macro-atom level or -1 */
 } BFOpacity;
 
@@ -724,6 +727,7 @@ void bf_opacity_free(BFOpacity *bf);
 void compute_bf_opacity(BFOpacity *bf, AtomicData *atom, PlasmaState *plasma,
                          int n_shells);
 double bf_get_chi(BFOpacity *bf, int shell, double nu);
+double bf_get_eta(BFOpacity *bf, int shell, double nu);
 /* Fine-ν bf opacity (sharp bf edges on the fine grid) for the CMFGEN-method producer.
  * chi_bf_fine_out is [n_shells * n_fine] row-major. Returns 0 ok / −1 fallback. */
 int bf_gemm_compute_fine(BFOpacity *bf, AtomicData *atom, PlasmaState *plasma,

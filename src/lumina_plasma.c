@@ -2863,12 +2863,14 @@ void bf_opacity_init(BFOpacity *bf, int n_shells) {
     bf->nu_max = NLTE_NU_MAX;
     bf->d_log_nu = log(NLTE_NU_MAX / NLTE_NU_MIN) / (double)NLTE_N_FREQ_BINS;
     bf->chi_bf = (double *)calloc((size_t)n_shells * NLTE_N_FREQ_BINS, sizeof(double));
+    bf->eta_bf = (double *)calloc((size_t)n_shells * NLTE_N_FREQ_BINS, sizeof(double));
     bf->activation_level = (int *)malloc((size_t)n_shells * NLTE_N_FREQ_BINS * sizeof(int));
     memset(bf->activation_level, -1, (size_t)n_shells * NLTE_N_FREQ_BINS * sizeof(int));
 }
 
 void bf_opacity_free(BFOpacity *bf) {
     free(bf->chi_bf);
+    free(bf->eta_bf);
     free(bf->activation_level);
     memset(bf, 0, sizeof(*bf));
 }
@@ -2895,6 +2897,20 @@ double bf_get_chi(BFOpacity *bf, int shell, double nu) {
     double chi0 = bf->chi_bf[shell * bf->n_freq_bins + bin];
     double chi1 = bf->chi_bf[shell * bf->n_freq_bins + bin + 1];
     return chi0 + frac * (chi1 - chi0);
+}
+
+/* bf emissivity lookup (same grid/interpolation as bf_get_chi). */
+double bf_get_eta(BFOpacity *bf, int shell, double nu) {
+    if (!bf->enabled || !bf->eta_bf || nu < bf->nu_min || nu >= bf->nu_max)
+        return 0.0;
+    double log_ratio = log(nu / bf->nu_min);
+    int bin = (int)(log_ratio / bf->d_log_nu);
+    if (bin < 0) return 0.0;
+    if (bin >= bf->n_freq_bins - 1) return bf->eta_bf[shell * bf->n_freq_bins + bf->n_freq_bins - 1];
+    double frac = log_ratio / bf->d_log_nu - (double)bin;
+    double e0 = bf->eta_bf[shell * bf->n_freq_bins + bin];
+    double e1 = bf->eta_bf[shell * bf->n_freq_bins + bin + 1];
+    return e0 + frac * (e1 - e0);
 }
 
 /* Compute chi_bf grid for all shells and frequency bins.
@@ -2932,7 +2948,26 @@ void compute_bf_opacity(BFOpacity *bf, AtomicData *atom, PlasmaState *plasma,
     /* Zero the grid and activation table */
     size_t grid_size = (size_t)n_shells * bf->n_freq_bins;
     memset(bf->chi_bf, 0, grid_size * sizeof(double));
+    if (bf->eta_bf) memset(bf->eta_bf, 0, grid_size * sizeof(double));
     memset(bf->activation_level, -1, grid_size * sizeof(int));
+
+    /* LUMINA_CMF_BF_MILNE=1: build the bf EMISSIVITY eta_bf alongside chi_bf.
+     * Metastable levels (weight=1, trustworthy pops) get the NLTE bf source-
+     * function form  S_bf = (2 h nu^3/c^2) / (b_l e^{h nu/kTe} - 1)  with the
+     * Menzel departure b_l = n_l/n_l*(Saha-Boltzmann @T_e, actual n_e/n_next),
+     * rewritten overflow-safe as  b_l e^{h nu/kTe} = Cinv_l e^{h(nu-nu_edge)/kTe},
+     * Cinv_l = 2 U_next n_l / (n_next n_e g_l saha(T_e)).  Dilute (non-meta)
+     * levels stay thermal S=B(T_e) — applying the departure there injects the
+     * spurious optical super-thermal 1e5-1e7 (probe-confirmed, 2026-07-05).
+     * LTE limit: b_l -> 1 gives S_bf -> B(T_e) exactly. Gate off => eta_bf
+     * stays zero and the assemble uses the legacy chi*B path (byte-identical). */
+    static int bf_milne = -1;
+    if (bf_milne < 0) { const char *e = getenv("LUMINA_CMF_BF_MILNE");
+                        bf_milne = e ? atoi(e) : 0;
+                        if (bf_milne) printf("[BF-MILNE] eta_bf source-function "
+                                             "build ON (%s)\n",
+                                             bf_milne >= 2 ? "ALL levels"
+                                                           : "meta-only departure"); }
 
     /* Precompute bin center frequencies (used by both CPU and free-free paths) */
     double *nu_bin = (double *)malloc(bf->n_freq_bins * sizeof(double));
@@ -2944,7 +2979,7 @@ void compute_bf_opacity(BFOpacity *bf, AtomicData *atom, PlasmaState *plasma,
     /* Task #39: GPU GEMM path (TF32 tensor cores) when CMFGEN sigma_bf is
      * loaded and LUMINA_BF_GEMM=1. Fills chi_bf[s,f] = sum_l n_level[s,l] *
      * sigma_bf[l,f] in a single batched GEMM, then jumps straight to free-free. */
-    if (atom->cmfgen_loaded && getenv("LUMINA_BF_GEMM")) {
+    if (atom->cmfgen_loaded && !bf_milne && getenv("LUMINA_BF_GEMM")) {
         if (bf_gemm_compute(bf, atom, plasma, n_shells) == 0) {
             goto compute_ff;
         }
@@ -3018,6 +3053,14 @@ void compute_bf_opacity(BFOpacity *bf, AtomicData *atom, PlasmaState *plasma,
         int lev_start = atom->level_offset[ip];
         int lev_end   = atom->level_offset[ip + 1];
 
+        /* BF-MILNE: ion pop index of (Z, stage+1) for the departure Cinv. */
+        int ip_next = -1;
+        if (bf_milne) {
+            for (int jp = 0; jp < atom->n_ion_pops; jp++)
+                if (atom->ion_pop_Z[jp] == Z_ion &&
+                    atom->ion_pop_stage[jp] == stage + 1) { ip_next = jp; break; }
+        }
+
         /* Task #38: Per-level CMFGEN ν-dependent σ_bf when available.
          * Baked grid layout matches bf->n_freq_bins exactly, so we can index
          * directly without interpolation. Falls back to Kramers per-level. */
@@ -3034,6 +3077,26 @@ void compute_bf_opacity(BFOpacity *bf, AtomicData *atom, PlasmaState *plasma,
             double beta_rad = 1.0 / (K_BOLTZMANN * T_rad);
 
             if (n_ion < 1e-30 || Z_part < 1e-300) continue;
+
+            /* BF-MILNE per-shell pieces: kTe, saha(T_e), next-ion density and
+             * partition (U floor 1 — tiny-positive U exploded the v1 Milne). */
+            double kTe_m = 0.0, saha_m = 0.0, n_next_m = 0.0, U_next_m = 1.0;
+            int milne_ok = 0;
+            if (bf_milne && ip_next >= 0 && plasma->n_electron) {
+                double Te_m = plasma->T_e[s];
+                double ne_m = plasma->n_electron[s];
+                n_next_m = atom->ion_number_density[ip_next * n_shells + s];
+                U_next_m = atom->partition_functions[ip_next * n_shells + s];
+                if (U_next_m < 1.0) U_next_m = 1.0;
+                if (Te_m > 0.0 && ne_m > 0.0 && n_next_m > 1e-30) {
+                    kTe_m = K_BOLTZMANN * Te_m;
+                    saha_m = pow(H_PLANCK * H_PLANCK /
+                                 (2.0 * M_PI_VAL * M_ELECTRON * kTe_m), 1.5);
+                    /* fold the level-independent part: 2 U_next/(n_next n_e saha) */
+                    saha_m = 2.0 * U_next_m / (n_next_m * ne_m * saha_m);
+                    milne_ok = 1;
+                }
+            }
 
             for (int l = lev_start; l < lev_end; l++) {
                 double E_eV = atom->level_energy_eV[l];
@@ -3069,6 +3132,16 @@ void compute_bf_opacity(BFOpacity *bf, AtomicData *atom, PlasmaState *plasma,
                     else                  bf_diag_kramers_levels++;
                 }
 
+                /* BF-MILNE: level departure prefactor Cinv_l (see head note);
+                 * meta-only. Non-meta/unavailable -> thermal B(T_e). */
+                double Cinv_l = 0.0;
+                int use_milne_l = 0;
+                double Te_s = plasma->T_e[s];
+                if (bf_milne && milne_ok && (is_meta || bf_milne >= 2) && g > 0) {
+                    Cinv_l = saha_m * n_level / (double)g;
+                    if (Cinv_l > 0.0 && isfinite(Cinv_l)) use_milne_l = 1;
+                }
+
                 /* Add contribution to all bins above the edge */
                 for (int b = bin_start; b < bf->n_freq_bins; b++) {
                     double nu = nu_bin[b];
@@ -3084,6 +3157,22 @@ void compute_bf_opacity(BFOpacity *bf, AtomicData *atom, PlasmaState *plasma,
                     double chi_contrib = n_level * sigma;
                     int idx = s * bf->n_freq_bins + b;
                     bf->chi_bf[idx] += chi_contrib;
+                    if (bf_milne && bf->eta_bf) {
+                        double S_l;
+                        if (use_milne_l) {
+                            double x = H_PLANCK * (nu - nu_edge) / kTe_m;
+                            if (x > 600.0) S_l = 0.0;   /* deep Wien: dead */
+                            else {
+                                double den = Cinv_l * exp(x) - 1.0;
+                                if (den < 1e-10) den = 1e-10;
+                                S_l = 2.0 * H_PLANCK * nu * nu * nu /
+                                      (C_SPEED_OF_LIGHT * C_SPEED_OF_LIGHT) / den;
+                            }
+                        } else {
+                            S_l = planck_bnu(Te_s, nu);
+                        }
+                        bf->eta_bf[idx] += chi_contrib * S_l;
+                    }
 
                     /* Track dominant absorber for macro-atom activation */
                     if (chi_contrib > best_chi[idx]) {
@@ -3148,7 +3237,10 @@ compute_ff:
             double nu = nu_bin[b];
             double nu3 = nu * nu * nu;
             double stim = 1.0 - exp(-H_PLANCK * nu / kT_e);
-            bf->chi_bf[s * bf->n_freq_bins + b] += coeff / nu3 * stim;
+            double chi_ff_c = coeff / nu3 * stim;
+            bf->chi_bf[s * bf->n_freq_bins + b] += chi_ff_c;
+            if (bf->eta_bf && bf_milne)
+                bf->eta_bf[s * bf->n_freq_bins + b] += chi_ff_c * planck_bnu(T_e, nu);
         }
     }
 
