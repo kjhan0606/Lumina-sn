@@ -4378,9 +4378,14 @@ static void radeq_simul_all(PlasmaState *plasma, GammaDeposition *gamma_dep,
             }
         }
         /* diag: r1(T) scan at the outer trace shell (calculator cross-check) */
-        if (getenv("LUMINA_RADEQ_DIAG") && (s == n_shells - 1 || s == n_shells / 2)) {
-            double Tg[8] = {5000, 9500, 16000, 25000, 40000, 60000, 95000, 140000};
-            for (int q = 0; q < 8; q++) {
+        static int trace_sh = -2;
+        if (trace_sh == -2) { const char *ts = getenv("LUMINA_SIMUL_TRACE");
+                              trace_sh = ts ? atoi(ts) : -1; }
+        if (getenv("LUMINA_RADEQ_DIAG") &&
+            (s == n_shells - 1 || s == n_shells / 2 || s == trace_sh)) {
+            double Tg[12] = {5000, 8000, 11000, 14000, 18000, 24000, 32000,
+                             45000, 60000, 80000, 110000, 140000};
+            for (int q = 0; q < 12; q++) {
                 double nq = plasma->n_electron[s];
                 double rq = simul_r1(atom, &sh, Tg[q], &nq);
                 /* recompute components for the print */
