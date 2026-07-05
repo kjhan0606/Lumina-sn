@@ -3589,6 +3589,13 @@ int main(int argc, char *argv[]) {
     MCConfig config;     /* Phase 6 - Step 8 */
     AtomicData atom_data; /* Task #072 */
     memset(&config, 0, sizeof(config)); /* Phase 6 - Step 8 */
+    /* OpacityState is stack-allocated and was only field-wise initialized:
+     * jbar_line/jbar_count/use_jbar_line (and any future fields) held stack
+     * garbage. 66586d6 grew the struct, the garbage landed on use_jbar_line
+     * != 0 with a non-NULL garbage jbar_line -> compute_transition_
+     * probabilities dereferenced garbage jbar_count in the THEN_MC pass
+     * (SIGSEGV). Zero the whole struct before the loaders fill it. */
+    memset(&opacity, 0, sizeof(opacity));
     opacity.jbar_line_det = NULL;  /* P7 Stage-II: deterministic line-resolved J_bar (producer fills it) */
     opacity.recomb_block_refs = NULL; opacity.recomb_dest_level = NULL;  /* [MACROATOM_BF] */
     opacity.recomb_nu_edge = NULL; opacity.recomb_is_emit = NULL;
@@ -4162,8 +4169,14 @@ int main(int argc, char *argv[]) {
                     {
                         static int lineres_jbar = -1;
                         if (lineres_jbar < 0) { const char *e = getenv("LUMINA_CMF_LINERES_JBAR");
-                            lineres_jbar = (e && atoi(e)) ? 1 : 0; }
-                        if (lineres_jbar && opacity.n_lines > 0 && opacity.tau_sobolev) {
+                            lineres_jbar = e ? atoi(e) : 0; }
+                        /* mode 2: produce only on the FINAL pure iteration —
+                         * the THEN_MC macro-atom branching is the sole consumer
+                         * and per-iter production is the fix8-era dominant
+                         * bottleneck (~56 min/iter measured; 12x avoided). */
+                        int produce_now = (lineres_jbar == 1) ||
+                                          (lineres_jbar >= 2 && it == pc_iter - 1);
+                        if (produce_now && opacity.n_lines > 0 && opacity.tau_sobolev) {
                             if (!opacity.jbar_line_det)
                                 opacity.jbar_line_det = (double*)malloc(
                                     (size_t)opacity.n_lines * cs.n_shells * sizeof(double));

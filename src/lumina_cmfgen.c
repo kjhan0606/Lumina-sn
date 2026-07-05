@@ -2264,44 +2264,128 @@ void cmfgen_fine_jbar(CMFGENState *csb, const Geometry *geo,
             line_use[l] = use;
         }
     }
+    /* [OWNER] load-balance redesign (user #1, 2026-07-06): the legacy loop is
+     * shell-parallel (width 50, inner-shell tail-dominated -> ~18 cores).
+     * Owner-computes: fine-grid CHUNKS own their bins; each (s,chunk) task
+     * binary-searches the DESCENDING line_list_nu for lines whose +-(4 sigma
+     * + guard) deposit window reaches its bins. Every (s,i) bin is owned by
+     * exactly one task and contributing lines are processed in the same l
+     * order as the legacy loop => bit-identical accumulation.
+     * LUMINA_FINE_OWNER=0 restores the legacy loop; non-monotone line list
+     * also falls back. */
+    int fine_owner = 1;
+    { const char *e = getenv("LUMINA_FINE_OWNER"); if (e) fine_owner = atoi(e); }
+    if (fine_owner) {
+        static int nu_desc_ok = -1;
+        if (nu_desc_ok < 0) {
+            nu_desc_ok = 1;
+            for (int l = 1; l < NL; ++l)
+                if (opac->line_list_nu[l] > opac->line_list_nu[l-1]) { nu_desc_ok = 0; break; }
+            if (!nu_desc_ok)
+                printf("[FINE-OWNER] line_list_nu not descending -> legacy loop\n");
+        }
+        if (!nu_desc_ok) fine_owner = 0;
+    }
+    if (fine_owner && !fine_contonly) {
+        int nch = 512;
+        { const char *e = getenv("LUMINA_FINE_NCHUNK"); if (e) nch = atoi(e); }
+        if (nch < 1) nch = 1; if (nch > NF) nch = NF;
+        int chunk_sz = (NF + nch - 1) / nch;
+        double marg = 8.0 * vdop / CM_C + 4.0 * dlognu;   /* window guard */
+        #pragma omp parallel for schedule(dynamic) collapse(2) \
+                reduction(max:max_slb) reduction(+:n_clamped)
+        for (int s = 0; s < NS; ++s) {
+            for (int ch = 0; ch < nch; ++ch) {
+                const int ICLO = ch * chunk_sz;
+                int ichi_t = ICLO + chunk_sz - 1;
+                if (ichi_t >= NF) ichi_t = NF - 1;
+                const int ICHI = ichi_t;
+                if (ICLO > ICHI) continue;
+                double nu_min = fs.nu[ICLO] * (1.0 - marg);
+                double nu_max = fs.nu[ICHI] * (1.0 + marg);
+                /* descending list: la = first idx with nu <= nu_max,
+                 *                  lb = first idx with nu <  nu_min */
+                int la, lb;
+                { int lo = 0, hi = NL;
+                  while (lo < hi) { int mid = lo + (hi - lo) / 2;
+                      if (opac->line_list_nu[mid] > nu_max) lo = mid + 1; else hi = mid; }
+                  la = lo; lo = la; hi = NL;
+                  while (lo < hi) { int mid = lo + (hi - lo) / 2;
+                      if (opac->line_list_nu[mid] >= nu_min) lo = mid + 1; else hi = mid; }
+                  lb = lo; }
+                for (int l = la; l < lb; ++l) {
+            if (!line_use[l]) continue;
+            double nu_l = opac->line_list_nu[l];
+            double tau = opac->tau_sobolev[(size_t)l * NS + s];
+            if (tau <= 1e-12) continue;
+            double dnuD = nu_l * vdop / CM_C;
+            double xc = log(nu_l / nu_lo) / dlognu - 0.5;
+            int half  = (int)ceil(4.0 * dnuD / (nu_l * dlognu)) + 1;
+            int ic = (int)floor(xc + 0.5);
+            int i0 = ic - half, i1 = ic + half;
+            if (i0 < ICLO) i0 = ICLO; if (i1 > ICHI) i1 = ICHI;
+            if (i0 > i1) continue;
+            double frac = (tau > 1e-6) ? -expm1(-tau) : tau;   /* 1-e^{-tau} */
+            double chi0 = frac * chi0_pref;
+            double Bl = cm_planck(nu_l, plasma->T_e[s]);
+            double Sl = src_nlte ? opac->line_source_S[(size_t)l*NS+s] : 0.0;
+            if (Sl <= 0.0) Sl = Bl;
+            if (Bl > 0.0) {
+                double rb = Sl / Bl; if (rb > max_slb) max_slb = rb;
+            }
+            if (sl_clamp > 0.0 && Bl > 0.0 && Sl > sl_clamp * Bl) {
+                Sl = sl_clamp * Bl;
+                ++n_clamped;
+            }
+            double emit = (line_eps < 1.0) ? (line_eps * Bl) : Sl;
+            for (int i = i0; i <= i1; ++i) {
+                double xv = (fs.nu[i] - nu_l) / dnuD;
+                double p  = exp(-xv * xv);
+                double cl = chi0 * p;
+                fs.chi_line[(size_t)s*NF+i] += cl;
+                eta        [(size_t)s*NF+i] += cl * emit;
+            }
+                }
+            }
+        }
+    } else if (!fine_contonly) {
     #pragma omp parallel for schedule(dynamic) reduction(max:max_slb) reduction(+:n_clamped)
     for (int s = 0; s < NS; ++s) {
-        if (fine_contonly) continue;
+        const int ICLO = 0, ICHI = NF - 1;
         for (int l = 0; l < NL; ++l) {
             if (!line_use[l]) continue;
             double nu_l = opac->line_list_nu[l];
             double tau = opac->tau_sobolev[(size_t)l * NS + s];
             if (tau <= 1e-12) continue;
             double dnuD = nu_l * vdop / CM_C;
-            /* fine index of line center; deposit over +-4 Doppler widths */
             double xc = log(nu_l / nu_lo) / dlognu - 0.5;
             int half  = (int)ceil(4.0 * dnuD / (nu_l * dlognu)) + 1;
             int ic = (int)floor(xc + 0.5);
             int i0 = ic - half, i1 = ic + half;
-            if (i0 < 0) i0 = 0; if (i1 >= NF) i1 = NF - 1;
+            if (i0 < ICLO) i0 = ICLO; if (i1 > ICHI) i1 = ICHI;
+            if (i0 > i1) continue;
             double frac = (tau > 1e-6) ? -expm1(-tau) : tau;   /* 1-e^{-tau} */
             double chi0 = frac * chi0_pref;
             double Bl = cm_planck(nu_l, plasma->T_e[s]);
             double Sl = src_nlte ? opac->line_source_S[(size_t)l*NS+s] : 0.0;
             if (Sl <= 0.0) Sl = Bl;
-            if (Bl > 0.0) {                       /* diagnostic: track worst S_l/B */
+            if (Bl > 0.0) {
                 double rb = Sl / Bl; if (rb > max_slb) max_slb = rb;
             }
             if (sl_clamp > 0.0 && Bl > 0.0 && Sl > sl_clamp * Bl) {
-                Sl = sl_clamp * Bl;               /* stabilize super-thermal artifact */
+                Sl = sl_clamp * Bl;
                 ++n_clamped;
             }
-            /* scattering source: thermal fraction emits eps*B; the (1-eps) share
-             * is folded into chi_es (scattering) in the combine loop below. */
             double emit = (line_eps < 1.0) ? (line_eps * Bl) : Sl;
             for (int i = i0; i <= i1; ++i) {
                 double xv = (fs.nu[i] - nu_l) / dnuD;
-                double p  = exp(-xv * xv);                     /* chi0 already / (sqrt(pi) dnuD)-folded */
+                double p  = exp(-xv * xv);
                 double cl = chi0 * p;
                 fs.chi_line[(size_t)s*NF+i] += cl;
                 eta        [(size_t)s*NF+i] += cl * emit;
             }
         }
+    }
     }
     free(line_use);
 

@@ -1328,6 +1328,9 @@ static void build_recomb_topology(AtomicData *atom, OpacityState *opacity,
            "levels (mode=%d)\n", n_recomb, n_src, bf_mode);
 }
 
+static int g_ctp_idown_beta = -1;    /* LUMINA_MACROATOM_IDOWN_BETA (hoisted) */
+static int g_ctp_lineres_jbar = -1;  /* LUMINA_CMF_LINERES_JBAR (hoisted) */
+
 void compute_transition_probabilities(AtomicData *atom, PlasmaState *plasma,
                                        OpacityState *opacity,
                                        NLTEConfig *nlte,
@@ -1523,7 +1526,14 @@ void compute_transition_probabilities(AtomicData *atom, PlasmaState *plasma,
                  opacity->macro_block_references[lev];
         if (bs > max_block) max_block = bs;
     }
-    double *rates_buf = (double *)malloc(max_block * sizeof(double));
+    /* OMP note: rates_buf/kp_emiss are per-THREAD scratch, allocated inside
+     * the parallel region below. Loop-body lazy-init statics were hoisted
+     * here (g_ctp_*) — lazy init inside the parallel loop is a data race. */
+    if (g_ctp_idown_beta < 0) { const char *e =
+            getenv("LUMINA_MACROATOM_IDOWN_BETA");
+        g_ctp_idown_beta = (e && atoi(e)) ? 1 : 0; }
+    if (g_ctp_lineres_jbar < 0) { const char *e = getenv("LUMINA_CMF_LINERES_JBAR");
+        g_ctp_lineres_jbar = (e && atoi(e)) ? 1 : 0; }
 
     /* ---- k-packet thermal pool (collisional macro-atom) ----
      * A purely-radiative macro-atom cascade has no thermalization channel and
@@ -1622,14 +1632,21 @@ void compute_transition_probabilities(AtomicData *atom, PlasmaState *plasma,
         if (!opacity->kpacket_fb_nu)
             opacity->kpacket_fb_nu = (double *)calloc((size_t)n_shells, sizeof(double));
     }
-    /* Per-shell k-packet re-excitation weight accumulator (one level slot each). */
-    double *kp_emiss = kpacket_mode ?
-        (double *)malloc(n_levels * sizeof(double)) : NULL;
-
     /* bf recomb-cascade topology (LUMINA_MACROATOM_BF). No-op (no alloc) when the
      * gate is off => recomb_block_refs stays NULL => byte-identical baseline. */
     build_recomb_topology(atom, opacity, n_shells);
 
+    /* Shells are independent (all writes are s-indexed); per-thread scratch
+     * rates_buf (max transition block) + kp_emiss (level slots). Results are
+     * bitwise order-independent. Was the dominant serial chunk (~1.28e8
+     * (line,shell) entries) once the fluorescence pipeline made ctp hot. */
+    #pragma omp parallel
+    {
+    double *rates_buf = (double *)malloc(max_block * sizeof(double));
+    double *kp_emiss = kpacket_mode ?
+        (double *)malloc(n_levels * sizeof(double)) : NULL;
+
+    #pragma omp for schedule(dynamic)
     for (int s = 0; s < n_shells; s++) {
         double W     = plasma->W[s];
         double T_rad = plasma->T_rad[s];
@@ -1688,8 +1705,20 @@ void compute_transition_probabilities(AtomicData *atom, PlasmaState *plasma,
                             rate *= uvopt_emit_boost4;
                         }
                     } else if (ttype == 0) {
-                        /* Internal down: A_ul * (1 - beta_sobolev) */
-                        rate = atom->line_A_ul[line_id] * (1.0 - beta);
+                        /* Internal down. Lucy-2002/ARTIS (macroatom.cc:96-103):
+                         * the SAME escape-only R = A_ul*beta feeds both the
+                         * emission and internal-down channels (the epsilon
+                         * weighting alone splits them). The legacy A_ul*(1-beta)
+                         * double-counts trapping (a trapped photon re-excites
+                         * the same transition, net zero) and makes THICK
+                         * transitions descend silently, emitting only at thin
+                         * NIR lines -> the measured UV->NIR 52-72% cascade dump
+                         * + UV<->IR ping-pong (MA-FATE, epay13/17).
+                         * LUMINA_MACROATOM_IDOWN_BETA=1 selects the Lucy form;
+                         * default keeps legacy for A/B. */
+                        rate = g_ctp_idown_beta
+                             ? atom->line_A_ul[line_id] * beta
+                             : atom->line_A_ul[line_id] * (1.0 - beta);
                         /* P1: UV internal-down suppress (break UV→UV cascade) */
                         if (macro_uv_idown_factor != 1.0) {
                             int Z   = atom->line_atomic_number[line_id];
@@ -1719,10 +1748,7 @@ void compute_transition_probabilities(AtomicData *atom, PlasmaState *plasma,
                              * binned-J contrast collapse (ladder 4c/5b). Preferred over the
                              * MC estimator (sparse in UV) and the binned read. NULL/off =>
                              * fall through to the legacy paths (byte-identical baseline). */
-                            static int lineres_jbar = -1;
-                            if (lineres_jbar < 0) { const char *e = getenv("LUMINA_CMF_LINERES_JBAR");
-                                lineres_jbar = (e && atoi(e)) ? 1 : 0; }
-                            if (lineres_jbar && opacity->jbar_line_det &&
+                            if (g_ctp_lineres_jbar && opacity->jbar_line_det &&
                                 opacity->jbar_line_det[line_id * n_shells + s] >= 0.0) {
                                 /* fine-grid line-resolved J_bar (P7 producer); -1
                                  * sentinel = line outside the fine window => fall back */
@@ -1968,6 +1994,7 @@ void compute_transition_probabilities(AtomicData *atom, PlasmaState *plasma,
 
     free(rates_buf);
     free(kp_emiss);
+    }   /* end omp parallel */
 
     if (kpacket_mode) {
         /* Diagnostic: mean k-packet deactivation prob at inner/outer shell. */
