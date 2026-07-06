@@ -2203,6 +2203,24 @@ int d_bf_get_activation_level(const int *d_bf_act, int bf_n_freq_bins,
     return d_bf_act[shell * bf_n_freq_bins + bin];
 }
 
+/* [INJECT] photospheric injection at shell s_inj (LUMINA_MC_INJECT_SHELL):
+ * packets start at r_inner[s_inj] sampling the DETERMINISTIC J(nu, s_inj)
+ * spectral CDF (carries the diffusive core's blanketing), and the absorbing/
+ * re-emitting inner boundary moves to the same surface. Skips the tau_eff
+ * ~1e4-2e5 core walk that capped 50-95% of packets. Default 0 = legacy. */
+__device__ int    d_inject_shell = 0;
+__device__ int    d_inject_nb = 0;
+__device__ double d_inject_numin = 0.0, d_inject_dlognu = 0.0;
+__device__ double d_inject_cdf[1024];
+__device__ __forceinline__ double d_sample_inject_nu(uint64_t *rng) {
+    double u = d_rng_uniform(rng);
+    int lo = 0, hi = d_inject_nb - 1;
+    while (lo < hi) { int mid = (lo + hi) / 2;
+        if (d_inject_cdf[mid] < u) lo = mid + 1; else hi = mid; }
+    double u2 = d_rng_uniform(rng);
+    return d_inject_numin * exp(((double)lo + u2) * d_inject_dlognu);
+}
+
 /* Sample Planck frequency using Bjorkman-Wood method */
 __device__ __forceinline__
 double d_sample_planck_frequency(double T, uint64_t *rng) {
@@ -2875,8 +2893,8 @@ void d_trace_virtual_packet(
     double p2 = r * r * (1.0 - mu_v * mu_v);
     if (p2 < 0.0) p2 = 0.0;
 
-    /* Check if ray hits photosphere (p < r_inner[0] and going inward) */
-    if (p2 < d_r_inner[0] * d_r_inner[0] && mu_v < 0.0)
+    /* Check if ray hits photosphere (p < r_inner[inject] and going inward) */
+    if (p2 < d_r_inner[d_inject_shell] * d_r_inner[d_inject_shell] && mu_v < 0.0)
         return;
 
     double tau_total = 0.0;
@@ -3090,15 +3108,18 @@ void transport_kernel(
     uint64_t _seed_p = d_splitmix64(&_sm);
     d_rng_init(rng, _seed_p);
 
-    /* Phase 6 - Step 7: Initialize packet at inner boundary */
-    double pkt_r = d_r_inner[0];                    /* Phase 6 - Step 7 */
+    /* Phase 6 - Step 7: Initialize packet at inner boundary
+     * ([INJECT] or at r_inner[d_inject_shell] with the deterministic J CDF) */
+    double pkt_r = d_r_inner[d_inject_shell];
     double pkt_mu = sqrt(d_rng_uniform(rng));       /* Phase 6 - Step 7 */
-    int pkt_shell_id = 0;                           /* Phase 6 - Step 7 */
+    int pkt_shell_id = d_inject_shell;
     int pkt_status = 0; /* Phase 6 - Step 7: PACKET_IN_PROCESS */
 
     /* Phase 6 - Step 7: Sample frequency from Bjorkman-Wood Planck */
     double kT_h = K_BOLTZMANN * T_inner / H_PLANCK; /* Phase 6 - Step 7 */
-    double pkt_nu = d_sample_bw_planck_nu(rng, kT_h); /* Phase 6 - Step 7 */
+    double pkt_nu = (d_inject_shell > 0 && d_inject_nb > 1)
+                  ? d_sample_inject_nu(rng)
+                  : d_sample_bw_planck_nu(rng, kT_h);
     double pkt_energy = packet_energy;            /* Phase 6 - Step 7 */
 
     /* Phase 6 - Step 7: set_packet_props_partial_relativity */
@@ -3205,7 +3226,8 @@ void transport_kernel(
             int next_shell = pkt_shell_id + delta_shell; /* Phase 6 - Step 7 */
             if (next_shell >= n_shells) { /* Phase 6 - Step 7: escaped */
                 pkt_status = 1; /* Phase 6 - Step 7: PACKET_EMITTED */
-            } else if (next_shell < 0) { /* Phase 6 - Step 7: reabsorbed */
+            } else if (next_shell < d_inject_shell) { /* reabsorbed at the
+                 * (possibly moved, [INJECT]) inner boundary */
                 if (d_diffuse_inner_bc) {
                     /* Task #27 Phase 2a: luminosity-conserving diffusive lower
                      * boundary. Re-emit from the photosphere instead of killing
@@ -3215,10 +3237,12 @@ void transport_kernel(
                      * (the same Bjorkman-Wood sampler used at launch). pkt_status
                      * stays 0 so transport continues; loop_count is NOT reset, so
                      * the interaction cap still bounds total work. */
-                    pkt_r = d_r_inner[0];
-                    pkt_shell_id = 0;
+                    pkt_r = d_r_inner[d_inject_shell];
+                    pkt_shell_id = d_inject_shell;
                     pkt_mu = sqrt(d_rng_uniform(rng));
-                    double comov_nu_re = d_sample_bw_planck_nu(rng, kT_h);
+                    double comov_nu_re = (d_inject_shell > 0 && d_inject_nb > 1)
+                        ? d_sample_inject_nu(rng)
+                        : d_sample_bw_planck_nu(rng, kT_h);
                     double inv_dopp_re = d_get_inverse_doppler_factor(pkt_r, pkt_mu, t_exp);
                     pkt_nu = comov_nu_re * inv_dopp_re;
                     last_reset_inner = 1;   /* frequency just thermalized at photosphere */
@@ -4677,6 +4701,55 @@ int main(int argc, char *argv[]) {
         double tausum = 0.0; long nnz = 0;
         for (size_t i = 0; i < (size_t)opacity.n_lines * geo.n_shells; i++)
             if (opacity.tau_sobolev[i] > 1e-6) { tausum += opacity.tau_sobolev[i]; nnz++; }
+        /* [INJECT] LUMINA_MC_INJECT_SHELL=s: move the MC inner boundary to
+         * r_inner[s] and sample injection/re-emission frequencies from the
+         * converged deterministic J(nu, s) (nlte.J_nu row -> CDF). The core
+         * s<s_inj (tau_eff 1e4-2e5) is treated as an opaque photosphere —
+         * its blanketed emission is what J(nu,s) already carries. */
+        {
+            const char *ie = getenv("LUMINA_MC_INJECT_SHELL");
+            int s_inj = ie ? atoi(ie) : 0;
+            if (s_inj > 0 && s_inj < geo.n_shells && nlte.J_nu) {
+                int NB = nlte.n_freq_bins;
+                if (NB > 1024) NB = 1024;
+                static double cdf[1024];
+                double acc = 0.0;
+                double dlognu = log(nlte.nu_max / nlte.nu_min) / nlte.n_freq_bins;
+                for (int b = 0; b < NB; b++) {
+                    double nu_b = nlte.nu_min * exp((b + 0.5) * dlognu);
+                    double J = nlte.J_nu[(size_t)s_inj * nlte.n_freq_bins + b];
+                    acc += (J > 0.0 ? J : 0.0) * nu_b * dlognu;   /* J dnu */
+                    cdf[b] = acc;
+                }
+                if (acc > 0.0) {
+                    for (int b = 0; b < NB; b++) cdf[b] /= acc;
+                    CUDA_CHECK(cudaMemcpyToSymbol(d_inject_cdf, cdf,
+                               NB * sizeof(double)));
+                    CUDA_CHECK(cudaMemcpyToSymbol(d_inject_nb, &NB, sizeof(int)));
+                    CUDA_CHECK(cudaMemcpyToSymbol(d_inject_numin, &nlte.nu_min,
+                               sizeof(double)));
+                    CUDA_CHECK(cudaMemcpyToSymbol(d_inject_dlognu, &dlognu,
+                               sizeof(double)));
+                    CUDA_CHECK(cudaMemcpyToSymbol(d_inject_shell, &s_inj,
+                               sizeof(int)));
+                    /* physical luminosity through the new surface = boundary
+                     * luminosity + radioactive deposition inside it */
+                    double L_extra = 0.0;
+                    for (int s2 = 0; s2 < s_inj; s2++) {
+                        double V = 4.0 / 3.0 * M_PI_VAL *
+                            (pow(geo.r_outer[s2], 3) - pow(geo.r_inner[s2], 3));
+                        if (gamma_dep_enabled && s2 < gamma_dep.n_shells)
+                            L_extra += gamma_dep.heating_rate[s2] * V;
+                    }
+                    printf("[INJECT] MC inner boundary -> shell %d (r=%.3e), "
+                           "J-CDF %d bins, L_dep(core)=%.3e erg/s\n",
+                           s_inj, geo.r_inner[s_inj], NB, L_extra);
+                } else {
+                    printf("[INJECT] J(nu,s=%d) empty — legacy boundary kept\n",
+                           s_inj);
+                }
+            }
+        }
         printf("[THEN-MC] refreshed+uploaded converged line opacity: "
                "tau_sobolev sum=%.3e over %ld (line,shell)>1e-6 of %ld; "
                "macro-atom branching rebuilt from frozen NLTE pops\n",
