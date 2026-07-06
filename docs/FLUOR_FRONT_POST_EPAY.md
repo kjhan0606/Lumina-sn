@@ -42,3 +42,21 @@ epay11 판정: (i) UV 53.5→얼마? (ii) corr? (iii) 광학 밴드(green 7.7%�
 ## Acceptance (P-Cygni 설계기록 계승, toy06 기준으로 번역)
 
 UV≤30%, 광학 밴드 CMFGEN ±30%, corr≥0.75, plasma 무회귀(THEN_MC는 plasma 동결이라 자동).
+
+## 8. SIMUL 부하균형 설계 (SIMUL-LB, 2026-07-06 — user 승인, ML-스케일 대비)
+
+**문제**: radeq_simul_all은 셸-외곽 OMP(dynamic,1)이지만 라인 테이블이 s0=2,139,858
+vs 외곽 71,714 (30×) — wall-clock 하한 = s0의 직렬 ETLA 합 (~2.1M lines × 30-50
+T-trials). 유효 병렬 ~13-18코어의 주범.
+
+**설계**: simul_r1의 라인 합(순수 리덕션, read-only 테이블 + LUT 분배함수 = 스레드
+안전)을 무거운 셸에서만 중첩 병렬화.
+- `LUMINA_SIMUL_NESTED=<n>` (기본 0=off, opt-in): nl≥임계 셸의 합을 n-스레드 내부
+  reduction으로. `LUMINA_SIMUL_NESTED_NL` (기본 3e5).
+- 본문은 simul_line_term() inline으로 추출 (양 경로 공유).
+- 오버서브스크립션: 임계로 heavy 셸(s0-4급)만 중첩 → 과도기 한정, dynamic outer와 공존.
+
+**검증 프로토콜** (bit-동일 불가 — FP 합 순서): 같은 config에서 NESTED=0 vs 6 A/B →
+①T_e 전셸 |ratio−1| < 1e-6 ②3종 판정 동일 ③pure phase 시간. 통과 후에만 기본 채택 검토.
+
+**기대**: s0 합 ~n배 가속 → pure phase 지배항 단축. ML(SBI 그리드/다epoch) 생산에 누적 이득.

@@ -282,6 +282,7 @@ void cmfgen_assemble(CMFGENState *cs, const Geometry *geo,
     static int epay = -1;
     static int epay_smin = 0;   /* diagnostic: EPAY only for s >= smin */
     static double epay_tau = 2.0;
+    static double epay_taubin = 1.0;   /* per-bin thick exemption threshold */
     if (epay < 0) { const char *e = getenv("LUMINA_CMF_EPAY");
                     epay = e ? atoi(e) : 0;
                     if (epay < 0) epay = 0;
@@ -289,6 +290,8 @@ void cmfgen_assemble(CMFGENState *cs, const Geometry *geo,
                     if (et) epay_tau = atof(et);
                     const char *es = getenv("LUMINA_CMF_EPAY_SMIN");
                     if (es) epay_smin = atoi(es);
+                    const char *tb = getenv("LUMINA_CMF_EPAY_TAUBIN");
+                    if (tb) epay_taubin = atof(tb);   /* <=0: no exemption */
                     if (epay) printf("[CMF-EPAY] energy-paid thermal emission ON"
                                      " (tau_es < %.2f only; thick=LTE legacy)\n",
                                      epay_tau); }
@@ -418,8 +421,21 @@ void cmfgen_assemble(CMFGENState *cs, const Geometry *geo,
              * count of the line source). */
             cs->S_fixed[idx] = (chi_t > 0.0)
                              ? (chi_a * B + eta_ln) / chi_t : 0.0;
-            /* EPAY books: thermal emitted vs absorbed (lagged J), per shell. */
+            /* EPAY books: thermal emitted vs absorbed (lagged J), per shell.
+             * Per-bin THICK exemption (Kirchhoff limit): a locally thick bin
+             * (tau_bin = (chi_a+chi_l,th)*dr > EPAY_TAUBIN) reabsorbs its own
+             * emission — it cannot export unpaid energy, and its source MUST
+             * relax to B (detailed balance) or the diffusive field dies (the
+             * measured s5 J(16eV) = B/340, x3e5 below pre-EPAY: Si/S/Co stuck
+             * at stage II -> the 5700-6000A blanket). Thick bins keep the
+             * legacy chi*B source and are excluded from the books; the unpaid
+             * -lamp problem only ever lived in EXPORTING (thin) bins. */
+            int bin_thick = 0;
             if (epay) {
+                double dr_s = geo->r_outer[s] - geo->r_inner[s];
+                bin_thick = ((chi_a + chi_ln_th) * dr_s > epay_taubin);
+            }
+            if (epay && !bin_thick) {
                 acc_emit += (chi_a * B + eta_ln) * cs->dnu[b];
                 acc_abs  += (chi_a + chi_ln_th) * cs->J[idx] * cs->dnu[b];
                 if (epay >= 2) {
@@ -459,14 +475,23 @@ void cmfgen_assemble(CMFGENState *cs, const Geometry *geo,
                   const char *hf = getenv("LUMINA_CMF_EPAY_HOTF");
                   if (hf) epay_hotf = atof(hf); } }
             int hot_regime = (Te > epay_hotf * plasma->T_rad[s]);
+            double dr_s = geo->r_outer[s] - geo->r_inner[s];
             if (epay >= 2 && acc_w > 0.0 && hot_regime) {
                 /* kpkt mirror proper: paid power E_pay = absorbed + deposition,
-                 * spectrum = normalized rate-side emissivity w(nu). */
+                 * spectrum = normalized rate-side emissivity w(nu). Thick bins
+                 * (Kirchhoff) keep the pass-1 legacy chi*B source untouched. */
                 double E_pay = acc_abs + acc_dep;
                 double wn = E_pay / acc_w;
                 for (int b = 0; b < NB; ++b) {
                     size_t idx = (size_t)s * NB + b;
                     double chi_t = cs->chi_tot[idx];
+                    if ((cs->chi_abs[idx] + cs->chi_line_th[idx]) * dr_s
+                        > epay_taubin) {
+                        if (kappa_dep > 0.0 && chi_t > 0.0)
+                            cs->S_fixed[idx] += kappa_dep *
+                                cm_planck(cs->nu[b], Te) / chi_t;
+                        continue;   /* legacy Kirchhoff source */
+                    }
                     double w = (bf ? bf_get_eta(bf, s, cs->nu[b]) : 0.0)
                              + cs->chi_line_th[idx] * cm_planck(cs->nu[b], Te);
                     cs->S_fixed[idx] = (chi_t > 0.0) ? wn * w / chi_t : 0.0;
@@ -476,7 +501,9 @@ void cmfgen_assemble(CMFGENState *cs, const Geometry *geo,
             for (int b = 0; b < NB; ++b) {
                 size_t idx = (size_t)s * NB + b;
                 double chi_t = cs->chi_tot[idx];
-                cs->S_fixed[idx] *= scale;
+                if (!((cs->chi_abs[idx] + cs->chi_line_th[idx]) * dr_s
+                      > epay_taubin))
+                    cs->S_fixed[idx] *= scale;
                 if (kappa_dep > 0.0 && chi_t > 0.0)
                     cs->S_fixed[idx] += kappa_dep * cm_planck(cs->nu[b], Te) / chi_t;
             }

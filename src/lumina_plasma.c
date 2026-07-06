@@ -1329,6 +1329,7 @@ static void build_recomb_topology(AtomicData *atom, OpacityState *opacity,
 }
 
 static int g_ctp_idown_beta = -1;    /* LUMINA_MACROATOM_IDOWN_BETA (hoisted) */
+static int g_ctp_idown_coll = -1;    /* LUMINA_MACROATOM_IDOWN_COLL (hoisted) */
 static int g_ctp_lineres_jbar = -1;  /* LUMINA_CMF_LINERES_JBAR (hoisted) */
 
 void compute_transition_probabilities(AtomicData *atom, PlasmaState *plasma,
@@ -1532,6 +1533,9 @@ void compute_transition_probabilities(AtomicData *atom, PlasmaState *plasma,
     if (g_ctp_idown_beta < 0) { const char *e =
             getenv("LUMINA_MACROATOM_IDOWN_BETA");
         g_ctp_idown_beta = (e && atoi(e)) ? 1 : 0; }
+    if (g_ctp_idown_coll < 0) { const char *e =
+            getenv("LUMINA_MACROATOM_IDOWN_COLL");
+        g_ctp_idown_coll = (e && atoi(e)) ? 1 : 0; }
     if (g_ctp_lineres_jbar < 0) { const char *e = getenv("LUMINA_CMF_LINERES_JBAR");
         g_ctp_lineres_jbar = (e && atoi(e)) ? 1 : 0; }
 
@@ -1719,6 +1723,25 @@ void compute_transition_probabilities(AtomicData *atom, PlasmaState *plasma,
                         rate = g_ctp_idown_beta
                              ? atom->line_A_ul[line_id] * beta
                              : atom->line_A_ul[line_id] * (1.0 - beta);
+                        /* ARTIS macroatom.cc:103: internal-down carries the
+                         * COLLISIONAL de-excitation too, (R + C)*eps_target —
+                         * without C the cascade under-descends in dense shells
+                         * and UV fluorescence lands short of the optical.
+                         * LUMINA_MACROATOM_IDOWN_COLL=1 adds the same vR/Omega
+                         * C_down used by the kpkt deactivation channel. */
+                        if (g_ctp_idown_coll && kp_gup && kp_glo &&
+                            kp_gup[line_id] >= 0) {
+                            double g_up2 = (double)atom->level_g[kp_gup[line_id]];
+                            double f_lu2 = atom->line_f_lu[line_id];
+                            if (g_up2 > 0.0 && n_e > 0.0) {
+                                double C_down = (f_lu2 > 1e-10)
+                                    ? VAN_REG_COEFF * n_e * f_lu2 * 0.2 *
+                                      inv_sqrt_Te / g_up2
+                                    : 8.63e-6 * n_e * AX_OMEGA *
+                                      inv_sqrt_Te / g_up2;
+                                rate += C_down;
+                            }
+                        }
                         /* P1: UV internal-down suppress (break UV→UV cascade) */
                         if (macro_uv_idown_factor != 1.0) {
                             int Z   = atom->line_atomic_number[line_id];
@@ -4306,6 +4329,31 @@ static void simul_ladder(AtomicData *atom, SimShell *sh, double T, double *n_e_i
     *n_e_io = n_e;
 }
 
+static int g_simul_nested = 0;        /* LUMINA_SIMUL_NESTED inner threads */
+static long g_simul_nested_nl = 300000; /* LUMINA_SIMUL_NESTED_NL threshold */
+
+static inline double simul_line_term(const SimShell *sh, long m, double T,
+                                     double n_e, double invsq) {
+    double nion = sh->nion[sh->l_ip[m]];
+    if (nion <= 0.0) return 0.0;
+    double x = sh->l_Elo[m] / (K_BOLTZMANN * T);
+    if (x > 300.0) return 0.0;
+    double U = simul_U(sh->l_ip[m], T);
+    double nlo = nion * sh->l_glo[m] * exp(-x) / U;
+    if (nlo <= 0.0) return 0.0;
+    double exb = exp(-fmin(sh->l_beta[m] / T, 300.0));
+    double qlu = sh->l_coeff[m] / sh->l_glo[m] * invsq * exb;
+    double qul = sh->l_coeff[m] / sh->l_gup[m] * invsq;
+    double Clu = n_e * qlu, Cul = n_e * qul;
+    double tau = sh->l_ftau[m] * nlo;
+    double be = radeq_beta_esc(tau);
+    double Rul = sh->l_ABulJ[m] * be, Rlu = sh->l_BluJ[m] * be;
+    double den = Cul + Rul;
+    if (den <= 0.0) return 0.0;
+    double nup = nlo * (Clu + Rlu) / den;
+    return sh->l_dE[m] * (nlo * qlu * n_e - nup * qul * n_e);
+}
+
 static double simul_r1(AtomicData *atom, SimShell *sh, double T, double *n_e_out) {
     double n_e = *n_e_out;
     simul_ladder(atom, sh, T, &n_e);
@@ -4322,27 +4370,24 @@ static double simul_r1(AtomicData *atom, SimShell *sh, double T, double *n_e_out
         if (al > 0.0)
             C += n_e * sh->nion[sh->ipa[p] + 1] * al * (sh->chi[p] + K_BOLTZMANN * T);
     }
-    /* ETLA two-level SE line exchange with trial pops (signed; heating allowed) */
+    /* ETLA two-level SE line exchange with trial pops (signed; heating allowed).
+     * [SIMUL-LB] The line table is the SIMUL load imbalance: s0 carries 2.14M
+     * lines vs 71.7k outside (30x) — the outer shell-parallel loop's wall
+     * clock is bounded by s0's serial sum (x ~30-50 T-trials). For heavy
+     * shells (nl >= LUMINA_SIMUL_NESTED_NL, default 3e5) the sum runs as a
+     * NESTED omp reduction with LUMINA_SIMUL_NESTED threads (default 0 = off,
+     * opt-in). Pure reduction over read-only tables + LUT partition function
+     * => thread-safe; FP sum order changes => verify by physics equivalence
+     * (T_e |ratio-1| ~ 1e-12-1e-6), not bitwise. */
     double invsq = 1.0 / sqrt(T), lam = 0.0;
-    for (long m = 0; m < sh->nl; m++) {
-        double nion = sh->nion[sh->l_ip[m]];
-        if (nion <= 0.0) continue;
-        double x = sh->l_Elo[m] / (K_BOLTZMANN * T);
-        if (x > 300.0) continue;
-        double U = simul_U(sh->l_ip[m], T);
-        double nlo = nion * sh->l_glo[m] * exp(-x) / U;
-        if (nlo <= 0.0) continue;
-        double exb = exp(-fmin(sh->l_beta[m] / T, 300.0));
-        double qlu = sh->l_coeff[m] / sh->l_glo[m] * invsq * exb;
-        double qul = sh->l_coeff[m] / sh->l_gup[m] * invsq;
-        double Clu = n_e * qlu, Cul = n_e * qul;
-        double tau = sh->l_ftau[m] * nlo;
-        double be = radeq_beta_esc(tau);
-        double Rul = sh->l_ABulJ[m] * be, Rlu = sh->l_BluJ[m] * be;
-        double den = Cul + Rul;
-        if (den <= 0.0) continue;
-        double nup = nlo * (Clu + Rlu) / den;
-        lam += sh->l_dE[m] * (nlo * qlu * n_e - nup * qul * n_e);
+    if (g_simul_nested > 1 && sh->nl >= g_simul_nested_nl) {
+        #pragma omp parallel for num_threads(g_simul_nested) \
+                reduction(+:lam) schedule(static)
+        for (long m = 0; m < sh->nl; m++)
+            lam += simul_line_term(sh, m, T, n_e, invsq);
+    } else {
+        for (long m = 0; m < sh->nl; m++)
+            lam += simul_line_term(sh, m, T, n_e, invsq);
     }
     C += lam;
     return H - C;
@@ -4360,6 +4405,17 @@ static void radeq_simul_all(PlasmaState *plasma, GammaDeposition *gamma_dep,
     int nfb = nlte->n_freq_bins;
     long n_pin_hi = 0, n_pin_lo = 0;
 #ifdef _OPENMP
+    if (g_simul_nested == 0) {
+        const char *e = getenv("LUMINA_SIMUL_NESTED");
+        g_simul_nested = e ? atoi(e) : -1;          /* -1 = parsed, off */
+        const char *en = getenv("LUMINA_SIMUL_NESTED_NL");
+        if (en) g_simul_nested_nl = atol(en);
+        if (g_simul_nested > 1) {
+            omp_set_max_active_levels(2);
+            printf("[SIMUL-LB] nested line-sum: %d inner threads for shells "
+                   "with nl>=%ld\n", g_simul_nested, g_simul_nested_nl);
+        }
+    }
     #pragma omp parallel reduction(+:n_pin_hi,n_pin_lo)
 #endif
     {
