@@ -1329,6 +1329,8 @@ static void build_recomb_topology(AtomicData *atom, OpacityState *opacity,
 }
 
 static int g_ctp_idown_beta = -1;    /* LUMINA_MACROATOM_IDOWN_BETA (hoisted) */
+static double g_ma_coll_limit_ev = -1.0; /* LUMINA_MA_COLLISION_LIMIT_EV */
+static double *g_ctp_lev_gap = NULL;     /* [n_levels] chi_ion - E_lev (eV) */
 static int g_ctp_idown_coll = -1;    /* LUMINA_MACROATOM_IDOWN_COLL (hoisted) */
 static int g_ctp_lineres_jbar = -1;  /* LUMINA_CMF_LINERES_JBAR (hoisted) */
 
@@ -1536,6 +1538,24 @@ void compute_transition_probabilities(AtomicData *atom, PlasmaState *plasma,
     if (g_ctp_idown_coll < 0) { const char *e =
             getenv("LUMINA_MACROATOM_IDOWN_COLL");
         g_ctp_idown_coll = (e && atoi(e)) ? 1 : 0; }
+    if (g_ma_coll_limit_ev < 0.0) {
+        const char *e = getenv("LUMINA_MA_COLLISION_LIMIT_EV");
+        g_ma_coll_limit_ev = e ? atof(e) : 0.0;   /* 0 = off */
+        if (g_ma_coll_limit_ev > 0.0) {
+            g_ctp_lev_gap = (double *)malloc(atom->n_levels * sizeof(double));
+            long ncut = 0;
+            for (int l2 = 0; l2 < atom->n_levels; l2++) {
+                double chi = find_ioniz_energy(atom, atom->level_Z[l2],
+                                               atom->level_ion[l2]);
+                g_ctp_lev_gap[l2] = (chi < 1e9)
+                    ? chi - atom->level_energy_eV[l2] : 1e9;
+                if (g_ctp_lev_gap[l2] < g_ma_coll_limit_ev) ncut++;
+            }
+            printf("[COLL-LIMIT] p_kpkt=1 for %ld/%d levels within %.2f eV "
+                   "of their continuum\n", ncut, atom->n_levels,
+                   g_ma_coll_limit_ev);
+        }
+    }
     if (g_ctp_lineres_jbar < 0) { const char *e = getenv("LUMINA_CMF_LINERES_JBAR");
         g_ctp_lineres_jbar = (e && atoi(e)) ? 1 : 0; }
 
@@ -1941,11 +1961,22 @@ void compute_transition_probabilities(AtomicData *atom, PlasmaState *plasma,
             }
 
             /* k-packet deactivation probability for this level: collisional
-             * deactivation competes with all radiative channels (sum_rates). */
+             * deactivation competes with all radiative channels (sum_rates).
+             * [COLLISION-LIMIT] levels within LUMINA_MA_COLLISION_LIMIT_EV of
+             * their ionization continuum are collision-DOMINATED (Rydberg
+             * Delta-n collision rates scale ~n^4, far beyond van Regemorter):
+             * force p_kpkt=1 there. Kills the unphysical far-IR Rydberg
+             * radiative cycle (UV -> cascade -> ~100-300um Rydberg photon ->
+             * reabsorbed tau~1e4 -> ladder climb -> UV; the cascade-walk
+             * falsifier showed the Rydberg forest carries 99.94% of the
+             * NIR-entry flux). CMFGEN's super-levels do the same job. */
             if (kpacket_mode) {
                 double denom = sum_rates + kp_deact;
-                opacity->p_kpacket[(size_t)lev * n_shells + s] =
-                    (denom > 0.0) ? (kp_deact / denom) : 0.0;
+                double pkv = (denom > 0.0) ? (kp_deact / denom) : 0.0;
+                if (g_ma_coll_limit_ev > 0.0 && g_ctp_lev_gap &&
+                    g_ctp_lev_gap[lev] < g_ma_coll_limit_ev)
+                    pkv = 1.0;
+                opacity->p_kpacket[(size_t)lev * n_shells + s] = pkv;
             }
         }
 
