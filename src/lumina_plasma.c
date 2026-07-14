@@ -4818,6 +4818,12 @@ static int g_photoion_mc_occ = -1;
  * restoring symmetry with the Milne alpha. Parsed once in radeq_simul_all's
  * single-threaded prologue; -1 = unparsed, 0 = off (Gph loop byte-identical). */
 static int g_gph_alllevel = -1;
+/* LUMINA_GPH_ALLLEVEL_NLTE: within the all-level block above, use the ACTUAL NLTE
+ * level populations (departure b_k) as photoion weights instead of Boltzmann@T_e.
+ * Boltzmann (b_k=1) over-ionizes the IME (Si/S); the true IGE excited levels are
+ * over-populated (b_k>>1) and IME depressed (b_k<<1). Only effective when
+ * g_gph_alllevel is also on; -1 = unparsed, 0 = off (all-level loop unchanged). */
+static int g_gph_alllevel_nlte = -1;
 void plasma_set_photoion_mc_field(const double *J, double alpha, int nshells, int nfb,
                                   const int *counts) {
     g_photoion_mc_J = J; g_photoion_mc_alpha = alpha;
@@ -4942,6 +4948,24 @@ static void radeq_simul_all(PlasmaState *plasma, GammaDeposition *gamma_dep,
             fflush(stdout);
         }
     }
+    /* LUMINA_GPH_ALLLEVEL_NLTE (see file-scope decl). Parsed AFTER g_gph_alllevel
+     * so its resolved value is known: only effective when g_gph_alllevel is on;
+     * requested-but-null announced INACTIVE (env-chain verification). */
+    if (g_gph_alllevel_nlte < 0) {
+        g_gph_alllevel_nlte = 0;
+        const char *e = getenv("LUMINA_GPH_ALLLEVEL_NLTE");
+        if (e && atoi(e)) {
+            if (g_gph_alllevel) {
+                g_gph_alllevel_nlte = 1;
+                printf("[GPH-ALLLEVEL-NLTE] photoionization weights = actual NLTE "
+                       "level populations (b_k) instead of Boltzmann@T_e\n");
+            } else {
+                printf("[GPH-ALLLEVEL-NLTE] requested but INACTIVE (needs "
+                       "LUMINA_GPH_ALLLEVEL=1)\n");
+            }
+            fflush(stdout);
+        }
+    }
     fb_cool_kt_on();   /* [FB-COOL-KT] serial pre-init; simul_r1 only READS the static */
 #ifdef _OPENMP
     if (g_simul_nested == 0) {
@@ -5037,6 +5061,28 @@ static void radeq_simul_all(PlasmaState *plasma, GammaDeposition *gamma_dep,
                         if (x < 50.0) U_ion += (double)atom->level_g[l] * exp(-x);
                     }
                     if (!(U_ion >= 1.0)) U_ion = 1.0;
+                    /* LUMINA_GPH_ALLLEVEL_NLTE: resolve this lower ion's NLTE ion
+                     * index. If present with a positive summed population, weight
+                     * each level by its ACTUAL population fraction (n_level/n_ion)
+                     * over the ion's NLTE levels; else fall through to the Boltzmann
+                     * path below unchanged (non-NLTE ions stay LTE-weighted). */
+                    int use_nlte = 0, off_i = 0, off_i1 = 0;
+                    double n_ion_nlte = 0.0;
+                    if (g_gph_alllevel_nlte) {
+                        int Zc = atom->ion_pop_Z[ip0 + j];
+                        int stc = atom->ion_pop_stage[ip0 + j];
+                        for (int i = 0; i < nlte->n_nlte_ions; i++) {
+                            if (nlte->nlte_Z[i] == Zc && nlte->nlte_ion[i] == stc) {
+                                off_i  = nlte->nlte_ion_level_offset[i];
+                                off_i1 = nlte->nlte_ion_level_offset[i + 1];
+                                for (int ln = off_i; ln < off_i1; ln++)
+                                    n_ion_nlte += nlte->nlte_level_populations[
+                                                    (size_t)ln * n_shells + s];
+                                if (n_ion_nlte > 0.0) use_nlte = 1;
+                                break;
+                            }
+                        }
+                    }
                     /* one-time detailed-balance ratio for a representative IGE ion
                      * (Fe III = Z26 stage2). Only the single s==0 thread writes the
                      * flag, so the static is race-free for correctness. */
@@ -5045,6 +5091,59 @@ static void radeq_simul_all(PlasmaState *plasma, GammaDeposition *gamma_dep,
                                      atom->ion_pop_Z[ip0 + j] == 26 &&
                                      atom->ion_pop_stage[ip0 + j] == 2);
                     double G_gnd_diag = 0.0;
+                    double G_boltz_diag = 0.0;      /* NLTE diag: G w/ Boltzmann wts */
+                    if (use_nlte) {
+                        /* NLTE-weighted all-level path: iterate the ion's NLTE
+                         * levels, map to the global level index, weight by the
+                         * actual population fraction. Inner freq loop identical. */
+                        for (int ln = off_i; ln < off_i1; ln++) {
+                            int l = nlte->nlte_to_global_level[ln];
+                            if (!(atom->cmfgen_has_sigma && atom->cmfgen_has_sigma[l]))
+                                continue;
+                            double E_l = atom->level_energy_eV[l] * EV_TO_ERG;
+                            double chi_l = sh.chi[p] - E_l;   /* binding energy of l */
+                            if (chi_l <= 0.0) continue;
+                            double nu_l = chi_l / H_PLANCK;    /* level threshold */
+                            double x_l = E_l / kT;
+                            if (x_l >= 50.0) continue;
+                            double pop_l = nlte->nlte_level_populations[
+                                            (size_t)ln * n_shells + s] / n_ion_nlte;
+                            if (pop_l <= 0.0) continue;
+                            /* Boltzmann weight for the SAME level (diagnostic only) */
+                            double pop_l_boltz = (double)atom->level_g[l] *
+                                                 exp(-x_l) / U_ion;
+                            const double *sig_row_l = &atom->cmfgen_sigma_bf[
+                                            (size_t)l * (size_t)g_cmf_nfreq];
+                            for (int bb = 0; bb < nfb; bb++) {
+                                double lo = log(nlte->nu_min) + bb * nlte->d_log_nu;
+                                double nu = exp(lo + 0.5 * nlte->d_log_nu);
+                                if (nu < nu_l) continue;
+                                int bc = (int)((log(nu) - g_cmf_log_numin) *
+                                               g_cmf_inv_dlognu);
+                                if (bc < 0 || bc >= g_cmf_nfreq) continue;
+                                double sig = sig_row_l[bc];
+                                if (sig <= 0.0) continue;
+                                double dnu = exp(lo + nlte->d_log_nu) - exp(lo);
+                                double J = nlte->J_nu[(size_t)s * nfb + bb];
+                                /* same P1 MC-shadow blend as the ground path below */
+                                if (g_photoion_mc_J && s < g_photoion_mc_nshells &&
+                                    g_photoion_mc_nfb == nfb &&
+                                    !(g_photoion_mc_occ && g_photoion_mc_count &&
+                                      g_photoion_mc_count[(size_t)s * nfb + bb] == 0))
+                                    J = g_photoion_mc_alpha *
+                                            g_photoion_mc_J[(size_t)s * nfb + bb]
+                                        + (1.0 - g_photoion_mc_alpha) * J;
+                                if (J <= 0.0) continue;
+                                double w = 4.0 * M_PI_VAL * sig * J /
+                                           (H_PLANCK * nu) * dnu;
+                                G  += pop_l * w;
+                                /* excess energy above THIS level's threshold chi_l */
+                                Hx += pop_l * w * (H_PLANCK * nu - chi_l);
+                                if (want_diag && l == gl0) G_gnd_diag += w;
+                                if (want_diag) G_boltz_diag += pop_l_boltz * w;
+                            }
+                        }
+                    } else
                     for (int l = gl0; l < gl1; l++) {
                         if (!(atom->cmfgen_has_sigma && atom->cmfgen_has_sigma[l]))
                             continue;
@@ -5091,6 +5190,12 @@ static void radeq_simul_all(PlasmaState *plasma, GammaDeposition *gamma_dep,
                                "(G_all=%.3e G_gnd=%.3e U=%.2f nlev=%d)\n",
                                G_gnd_diag > 0.0 ? G / G_gnd_diag : -1.0,
                                G, G_gnd_diag, U_ion, gl1 - gl0);
+                        if (g_gph_alllevel_nlte) {
+                            printf("[GPH-ALLLEVEL-NLTE] s0 Fe III: G_nlte/G_boltz "
+                                   "= %.3g (n_ion_nlte=%.3e)\n",
+                                   G_boltz_diag > 0.0 ? G / G_boltz_diag : -1.0,
+                                   n_ion_nlte);
+                        }
                         fflush(stdout);
                         diag_done = 1;
                     }
