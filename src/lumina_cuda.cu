@@ -71,6 +71,11 @@ typedef struct {                           /* Phase 6 - Step 1 */
     double *d_kpacket_te;                   /* [n_shells] T_e per shell for ff nu sampling */
     double *d_kpacket_fb;                   /* [n_shells] P(free-bound | k-packet) — UV recomb escape */
     double *d_kpacket_fbnu;                 /* [n_shells] representative recomb edge freq [Hz] */
+    /* [FB-MULTI] per-continuum k-packet fb edge tables (NULL if LUMINA_KPKT_FB_MULTI off) */
+    double *d_kpkt_fb_edge_nu;               /* [n_shells * KPKT_FB_NEDGE] recomb edge freq [Hz] */
+    double *d_kpkt_fb_edge_cdf;              /* [n_shells * KPKT_FB_NEDGE] normalized cumulative fb weight */
+    int    *d_kpkt_fb_edge_zs;               /* [n_shells * KPKT_FB_NEDGE] Z*100+stage diagnostic code */
+    int    *d_kpkt_fb_edge_cnt;              /* [n_shells] valid edge count */
     /* [MACROATOM_BF] bf recomb cascade (NULL if LUMINA_MACROATOM_BF off). Sized
      * lazily from opacity->n_recomb (known only after host topology build). */
     int    *d_recomb_block_refs;           /* [n_macro_levels+1] CSR offsets */
@@ -112,8 +117,10 @@ typedef struct {                           /* Phase 6 - Step 1 */
 
     /* NLTE: J_nu frequency histogram (atomicAdd target) */
     double *d_j_nu_estimator;              /* [n_shells * NLTE_N_FREQ_BINS] or NULL */
+    int    *d_j_nu_count;                   /* [n_shells * NLTE_N_FREQ_BINS] per-bin packet tally or NULL */
     double *d_jbar_line;                    /* [n_lines*n_shells] MC-estimator J_bar (THEN_MC) or NULL */
     int    *d_jbar_count;                   /* [n_lines*n_shells] crossing count or NULL */
+    double *d_jblue_line;                   /* [IUP-JBLUE] [n_lines*n_shells] blue-wing J_blue or NULL */
     int     nlte_n_freq_bins;              /* 0 if NLTE disabled */
     double  nlte_nu_min;
     double  nlte_d_log_nu;
@@ -166,6 +173,10 @@ static void cuda_allocate(CudaDeviceData *dev, Geometry *geo,
     dev->d_kpacket_te = NULL;
     dev->d_kpacket_fb = NULL;
     dev->d_kpacket_fbnu = NULL;
+    dev->d_kpkt_fb_edge_nu  = NULL;   /* [FB-MULTI] */
+    dev->d_kpkt_fb_edge_cdf = NULL;
+    dev->d_kpkt_fb_edge_zs  = NULL;
+    dev->d_kpkt_fb_edge_cnt = NULL;
     /* [MACROATOM_BF] recomb arrays allocated lazily in cuda_upload_recomb. */
     dev->d_recomb_block_refs = NULL;
     dev->d_recomb_prob       = NULL;
@@ -188,6 +199,18 @@ static void cuda_allocate(CudaDeviceData *dev, Geometry *geo,
         CUDA_CHECK(cudaMemset(dev->d_kpacket_te, 0, (size_t)ns * sizeof(double)));
         CUDA_CHECK(cudaMemset(dev->d_kpacket_fb, 0, (size_t)ns * sizeof(double)));
         CUDA_CHECK(cudaMemset(dev->d_kpacket_fbnu, 0, (size_t)ns * sizeof(double)));
+        /* [FB-MULTI] per-continuum edge tables: allocated only when the gate is on. */
+        if (getenv("LUMINA_KPKT_FB_MULTI") && atoi(getenv("LUMINA_KPKT_FB_MULTI")) != 0) {
+            size_t ne = (size_t)ns * KPKT_FB_NEDGE;
+            CUDA_CHECK(cudaMalloc(&dev->d_kpkt_fb_edge_nu,  ne * sizeof(double)));
+            CUDA_CHECK(cudaMalloc(&dev->d_kpkt_fb_edge_cdf, ne * sizeof(double)));
+            CUDA_CHECK(cudaMalloc(&dev->d_kpkt_fb_edge_zs,  ne * sizeof(int)));
+            CUDA_CHECK(cudaMalloc(&dev->d_kpkt_fb_edge_cnt, (size_t)ns * sizeof(int)));
+            CUDA_CHECK(cudaMemset(dev->d_kpkt_fb_edge_nu,  0, ne * sizeof(double)));
+            CUDA_CHECK(cudaMemset(dev->d_kpkt_fb_edge_cdf, 0, ne * sizeof(double)));
+            CUDA_CHECK(cudaMemset(dev->d_kpkt_fb_edge_zs,  0, ne * sizeof(int)));
+            CUDA_CHECK(cudaMemset(dev->d_kpkt_fb_edge_cnt, 0, (size_t)ns * sizeof(int)));
+        }
     }
 
     /* Phase 6 - Step 1: Geometry */
@@ -229,8 +252,10 @@ static void cuda_allocate(CudaDeviceData *dev, Geometry *geo,
 
     /* NLTE: J_nu estimator (allocated but NULL-checked in kernel) */
     dev->d_j_nu_estimator = NULL;
+    dev->d_j_nu_count = NULL;
     dev->d_jbar_line = NULL;
     dev->d_jbar_count = NULL;
+    dev->d_jblue_line = NULL;   /* [IUP-JBLUE] */
     dev->nlte_n_freq_bins = 0;
 }
 
@@ -240,6 +265,9 @@ static void cuda_allocate_nlte(CudaDeviceData *dev, NLTEConfig *nlte,
     size_t size = (size_t)n_shells * NLTE_N_FREQ_BINS * sizeof(double);
     CUDA_CHECK(cudaMalloc(&dev->d_j_nu_estimator, size));
     CUDA_CHECK(cudaMemset(dev->d_j_nu_estimator, 0, size));
+    size_t csize = (size_t)n_shells * NLTE_N_FREQ_BINS * sizeof(int);
+    CUDA_CHECK(cudaMalloc(&dev->d_j_nu_count, csize));
+    CUDA_CHECK(cudaMemset(dev->d_j_nu_count, 0, csize));
     dev->nlte_n_freq_bins = nlte->n_freq_bins;
     dev->nlte_nu_min = nlte->nu_min;
     dev->nlte_d_log_nu = nlte->d_log_nu;
@@ -297,6 +325,11 @@ static void cuda_download_j_nu(CudaDeviceData *dev, NLTEConfig *nlte,
     size_t size = (size_t)n_shells * NLTE_N_FREQ_BINS * sizeof(double);
     CUDA_CHECK(cudaMemcpy(nlte->j_nu_estimator, dev->d_j_nu_estimator,
                size, cudaMemcpyDeviceToHost));
+    if (dev->d_j_nu_count && nlte->j_nu_count) {
+        size_t csize = (size_t)n_shells * NLTE_N_FREQ_BINS * sizeof(int);
+        CUDA_CHECK(cudaMemcpy(nlte->j_nu_count, dev->d_j_nu_count,
+                   csize, cudaMemcpyDeviceToHost));
+    }
 }
 
 /* ============================================================ */
@@ -1492,6 +1525,23 @@ static void nlte_solve_all_gpu(NLTEConfig *nlte, AtomicData *atom,
     }
 }
 
+/* [FB-MULTI] re-upload the per-shell per-continuum fb edge tables (rebuilt each
+ * iteration since populations/T_e change). NULL-safe: no-op unless both the device
+ * arrays are allocated (gate on) and the host tables are present. */
+static void cuda_reupload_kpkt_fb_edges(CudaDeviceData *dev, OpacityState *opacity,
+                                        int n_shells) {
+    if (!(dev->d_kpkt_fb_edge_nu && opacity->kpacket_fb_edge_nu)) return;
+    size_t ne = (size_t)n_shells * KPKT_FB_NEDGE;
+    CUDA_CHECK(cudaMemcpy(dev->d_kpkt_fb_edge_nu,  opacity->kpacket_fb_edge_nu,
+               ne * sizeof(double), cudaMemcpyHostToDevice));
+    CUDA_CHECK(cudaMemcpy(dev->d_kpkt_fb_edge_cdf, opacity->kpacket_fb_edge_cdf,
+               ne * sizeof(double), cudaMemcpyHostToDevice));
+    CUDA_CHECK(cudaMemcpy(dev->d_kpkt_fb_edge_zs,  opacity->kpacket_fb_edge_zstage,
+               ne * sizeof(int), cudaMemcpyHostToDevice));
+    CUDA_CHECK(cudaMemcpy(dev->d_kpkt_fb_edge_cnt, opacity->kpacket_fb_edge_count,
+               (size_t)n_shells * sizeof(int), cudaMemcpyHostToDevice));
+}
+
 /* ============================================================ */
 /* Phase 6 - Step 1: cuda_upload — copy data to GPU             */
 /* ============================================================ */
@@ -1550,6 +1600,7 @@ static void cuda_upload(CudaDeviceData *dev, Geometry *geo,
         CUDA_CHECK(cudaMemcpy(dev->d_kpacket_fbnu, opacity->kpacket_fb_nu,
                    (size_t)ns * sizeof(double), cudaMemcpyHostToDevice));
     }
+    cuda_reupload_kpkt_fb_edges(dev, opacity, ns);  /* [FB-MULTI] (NULL-safe) */
 
     /* Phase 6 - Step 1: Upload geometry */
     CUDA_CHECK(cudaMemcpy(dev->d_r_inner, geo->r_inner,                              /* Phase 6 - Step 1 */
@@ -1570,6 +1621,10 @@ static void cuda_reset_estimators(CudaDeviceData *dev, int n_shells) {
     if (dev->d_j_nu_estimator) {
         CUDA_CHECK(cudaMemset(dev->d_j_nu_estimator, 0,
                    (size_t)n_shells * NLTE_N_FREQ_BINS * sizeof(double)));
+    }
+    if (dev->d_j_nu_count) {
+        CUDA_CHECK(cudaMemset(dev->d_j_nu_count, 0,
+                   (size_t)n_shells * NLTE_N_FREQ_BINS * sizeof(int)));
     }
 }
 
@@ -1608,6 +1663,74 @@ __device__ const double *d_kpacket_fbnu_g = NULL;  /* [ns] representative recomb
 __device__ int    d_kpacket_enabled = 0;
 __device__ int    d_kpacket_n_levels = 0;
 __device__ unsigned long long d_kpacket_count = 0; /* diagnostic event counter   */
+/* [Div-2 fix] LUMINA_KPACKET_ONESHOT=1: after a k-packet collisional re-excitation, force the
+ * next macro-atom step to be RADIATIVE (skip the k-packet roll once) so the cascade cannot
+ * re-excite indefinitely -> run to the cap -> re-emit the entry UV (the coherent-scatter
+ * artifact that manufactured the 98.2% UV). Default 0 = legacy (byte-identical to champion). */
+__device__ int    d_kpacket_oneshot = 0;
+void cuda_set_kpacket_oneshot(int v) {
+    CUDA_CHECK(cudaMemcpyToSymbol(d_kpacket_oneshot, &v, sizeof(int)));
+}
+/* [KPACKET_EXIT] LUMINA_KPACKET_EXIT=1: ARTIS macroatom.cc single-exit semantics.
+ * When a k-packet's cooling channel resolves to collisional re-excitation, ARTIS
+ * activates the macro-atom ONCE and lets it cascade radiatively to emission — it
+ * never re-rolls a fresh k-packet from within the same activation. This gate makes
+ * the collisional-cooling branch re-excite exactly once, then suppress further
+ * k-packet rolls for the remainder of the activation (radiative cascade -> line
+ * emission -> exit). Default 0 = legacy (byte-identical to current re-inject). */
+__device__ int    d_kpacket_exit = 0;
+void cuda_set_kpacket_exit(int v) {
+    CUDA_CHECK(cudaMemcpyToSymbol(d_kpacket_exit, &v, sizeof(int)));
+}
+/* [MA_CAP_EMIT] LUMINA_MA_CAP_EMIT=1: when the macro-atom internal cascade hits
+ * d_ma_internal_cap unresolved (current_type still >= 0), perform a resonant
+ * deactivation in the activating line instead of the legacy coherent pass-
+ * through (silent forward continue at the absorbed frequency). Default 0 =
+ * legacy (byte-identical: the added else-if fires only where no branch fired). */
+__device__ int    d_ma_cap_emit = 0;
+void cuda_set_ma_cap_emit(int v) {
+    CUDA_CHECK(cudaMemcpyToSymbol(d_ma_cap_emit, &v, sizeof(int)));
+}
+
+/* [FB-MULTI] LUMINA_KPKT_FB_MULTI=1: sample the k-packet free-bound (type -3)
+ * emission frequency from the per-shell MULTI-continuum edge CDF (d_kpkt_fb_edge_*)
+ * instead of the single dominant Si II edge (d_kpacket_fbnu_g). Spreads fb photons
+ * over every recombining continuum weighted by fb energy emission, curing the
+ * runaway Si over-ionization where every fb photon landed on the Si II threshold.
+ * Default 0 = legacy single edge (byte-identical: the new code is wrapped in a
+ * single `if (d_kpkt_fb_multi)` branch test at each emission site). */
+__device__ int d_kpkt_fb_multi = 0;
+__device__ const double *d_kpkt_fb_edge_nu_g  = NULL; /* [ns*KPKT_FB_NEDGE] edge freq [Hz]     */
+__device__ const double *d_kpkt_fb_edge_cdf_g = NULL; /* [ns*KPKT_FB_NEDGE] cumulative weight  */
+__device__ const int    *d_kpkt_fb_edge_zs_g  = NULL; /* [ns*KPKT_FB_NEDGE] Z*100+stage code   */
+__device__ const int    *d_kpkt_fb_edge_cnt_g = NULL; /* [ns] valid edge count                 */
+__device__ unsigned long long d_n_fb_emit_total  = 0; /* fb (-3) emissions with gate on         */
+__device__ unsigned long long d_n_fb_emit_si2edge = 0;/* subset whose sampled edge zstage==1402 */
+void cuda_set_kpkt_fb_multi(int v) {
+    CUDA_CHECK(cudaMemcpyToSymbol(d_kpkt_fb_multi, &v, sizeof(int)));
+}
+void cuda_set_kpkt_fb_edges(const double *d_nu, const double *d_cdf,
+                            const int *d_zs, const int *d_cnt) {
+    CUDA_CHECK(cudaMemcpyToSymbol(d_kpkt_fb_edge_nu_g,  &d_nu,  sizeof(const double *)));
+    CUDA_CHECK(cudaMemcpyToSymbol(d_kpkt_fb_edge_cdf_g, &d_cdf, sizeof(const double *)));
+    CUDA_CHECK(cudaMemcpyToSymbol(d_kpkt_fb_edge_zs_g,  &d_zs,  sizeof(const int *)));
+    CUDA_CHECK(cudaMemcpyToSymbol(d_kpkt_fb_edge_cnt_g, &d_cnt, sizeof(const int *)));
+}
+void cuda_fb_multi_reset(void) {
+    unsigned long long z = 0;
+    CUDA_CHECK(cudaMemcpyToSymbol(d_n_fb_emit_total,   &z, sizeof(unsigned long long)));
+    CUDA_CHECK(cudaMemcpyToSymbol(d_n_fb_emit_si2edge, &z, sizeof(unsigned long long)));
+}
+unsigned long long cuda_fb_multi_total_get(void) {
+    unsigned long long v = 0;
+    CUDA_CHECK(cudaMemcpyFromSymbol(&v, d_n_fb_emit_total, sizeof(unsigned long long)));
+    return v;
+}
+unsigned long long cuda_fb_multi_si2_get(void) {
+    unsigned long long v = 0;
+    CUDA_CHECK(cudaMemcpyFromSymbol(&v, d_n_fb_emit_si2edge, sizeof(unsigned long long)));
+    return v;
+}
 
 void cuda_set_kpacket(const double *d_p, const double *d_cdf, int n_levels, int enabled,
                       const double *d_ff, const double *d_te,
@@ -1731,6 +1854,11 @@ void cuda_set_eps_uv_2step(int on, double lo_A, double hi_A) {
 __constant__ int d_max_interactions = 100000;
 __device__ unsigned long long d_n_capped_dev = 0;
 
+/* [MA_CAP_EXIT] unconditional diagnostic: packets whose macro-atom cascade
+ * exited via the internal cap (current_type >= 0, unresolved). Prime suspect for
+ * a monochromatic pile-up (coherent forward pass-through). Bookkeeping only. */
+__device__ unsigned long long d_n_ma_cap_exit = 0;
+
 /* [CAP-SHELL] diagnostic: histogram of cap-hits indexed by the packet's current
  * shell when it hit the cap. Packets are born at shell 0 (inner boundary); a
  * higher index = closer to the surface. If scissored packets pile up at low
@@ -1810,6 +1938,21 @@ void cuda_set_jbar_ptrs(double *line_ptr, int *count_ptr, int enabled) {
     CUDA_CHECK(cudaMemcpyToSymbol(g_jbar_enabled, &enabled, sizeof(int)));
 }
 
+/* [IUP-JBLUE] ARTIS blue-wing J_blue estimator. Separate accumulator so the
+ * default-OFF path leaves g_jbar_line, allocations and the RNG stream untouched.
+ * At each Sobolev resonance crossing it sums the SAME comoving packet energy as
+ * g_jbar_line (pre-interaction, both pass-through and interaction cases) — the
+ * comoving intensity the packet carries JUST BEFORE it redshifts into resonance.
+ * Normalized host-side identically to jbar_line and consumed by the CPU
+ * (B_lu - B_ul n_u/n_l)*beta*J_blue up-rate. NULL/0 when off. */
+__device__ double *g_jblue_line = NULL;
+__constant__ int   g_jblue_enabled = 0;
+
+void cuda_set_jblue_ptr(double *line_ptr, int enabled) {
+    CUDA_CHECK(cudaMemcpyToSymbol(g_jblue_line, &line_ptr, sizeof(double *)));
+    CUDA_CHECK(cudaMemcpyToSymbol(g_jblue_enabled, &enabled, sizeof(int)));
+}
+
 void cuda_set_diffuse_inner_bc(int v) {
     CUDA_CHECK(cudaMemcpyToSymbol(d_diffuse_inner_bc, &v, sizeof(int)));
 }
@@ -1855,6 +1998,17 @@ void cuda_n_capped_reset(void) {
 unsigned long long cuda_n_capped_get(void) {
     unsigned long long v = 0;
     CUDA_CHECK(cudaMemcpyFromSymbol(&v, d_n_capped_dev, sizeof(unsigned long long)));
+    return v;
+}
+
+void cuda_ma_cap_exit_reset(void) {
+    unsigned long long zero = 0;
+    CUDA_CHECK(cudaMemcpyToSymbol(d_n_ma_cap_exit, &zero, sizeof(unsigned long long)));
+}
+
+unsigned long long cuda_ma_cap_exit_get(void) {
+    unsigned long long v = 0;
+    CUDA_CHECK(cudaMemcpyFromSymbol(&v, d_n_ma_cap_exit, sizeof(unsigned long long)));
     return v;
 }
 
@@ -1995,6 +2149,10 @@ static void cuda_free(CudaDeviceData *dev) {
     cudaFree(dev->d_kpacket_te);                /* [KPACKET ff] (NULL-safe)   */
     cudaFree(dev->d_kpacket_fb);                /* [KPACKET fb] (NULL-safe)   */
     cudaFree(dev->d_kpacket_fbnu);              /* [KPACKET fb] (NULL-safe)   */
+    cudaFree(dev->d_kpkt_fb_edge_nu);           /* [FB-MULTI] (NULL-safe)     */
+    cudaFree(dev->d_kpkt_fb_edge_cdf);          /* [FB-MULTI] (NULL-safe)     */
+    cudaFree(dev->d_kpkt_fb_edge_zs);           /* [FB-MULTI] (NULL-safe)     */
+    cudaFree(dev->d_kpkt_fb_edge_cnt);          /* [FB-MULTI] (NULL-safe)     */
     cudaFree(dev->d_recomb_block_refs);         /* [MACROATOM_BF] (NULL-safe) */
     cudaFree(dev->d_recomb_prob);               /* [MACROATOM_BF] (NULL-safe) */
     cudaFree(dev->d_recomb_dest_level);         /* [MACROATOM_BF] (NULL-safe) */
@@ -2017,8 +2175,10 @@ static void cuda_free(CudaDeviceData *dev) {
     if (dev->d_escaped_in_nu)     cudaFree(dev->d_escaped_in_nu);     /* [KROMER] (NULL-safe) */
     cudaFree(dev->d_virtual_spectrum);
     if (dev->d_j_nu_estimator) cudaFree(dev->d_j_nu_estimator);
+    if (dev->d_j_nu_count) cudaFree(dev->d_j_nu_count);
     if (dev->d_jbar_line) cudaFree(dev->d_jbar_line);
     if (dev->d_jbar_count) cudaFree(dev->d_jbar_count);
+    if (dev->d_jblue_line) cudaFree(dev->d_jblue_line);   /* [IUP-JBLUE] */
     if (dev->d_chi_bf) cudaFree(dev->d_chi_bf);
     if (dev->d_T_rad)  cudaFree(dev->d_T_rad);
     if (dev->d_bf_activation_level) cudaFree(dev->d_bf_activation_level);
@@ -2149,7 +2309,8 @@ double d_calc_packet_energy(double pkt_energy, double pkt_r, double pkt_mu,
 /* Phase 6 - Step 4: Base J and nu_bar estimators (atomicAdd) */
 __device__ __forceinline__
 void d_update_base_estimators(double *d_j_est, double *d_nu_bar_est,
-                               double *d_j_nu_est, int nlte_n_freq_bins,
+                               double *d_j_nu_est, int *d_j_nu_count,
+                               int nlte_n_freq_bins,
                                double nlte_nu_min, double nlte_d_log_nu,
                                int shell_id, int n_shells, double distance,
                                double comov_nu, double comov_energy) {
@@ -2163,6 +2324,10 @@ void d_update_base_estimators(double *d_j_est, double *d_nu_bar_est,
         if (freq_bin >= 0 && freq_bin < nlte_n_freq_bins) {
             atomicAdd(&d_j_nu_est[shell_id * nlte_n_freq_bins + freq_bin],
                       comov_energy * distance);
+            /* Per-bin occupancy tally (bookkeeping only: no RNG/packet-state/
+             * estimator-value change). Zero count => bin unsampled by the MC. */
+            if (d_j_nu_count != NULL)
+                atomicAdd(&d_j_nu_count[shell_id * nlte_n_freq_bins + freq_bin], 1);
         }
     }
 }
@@ -2219,6 +2384,36 @@ __device__ __forceinline__ double d_sample_inject_nu(uint64_t *rng) {
         if (d_inject_cdf[mid] < u) lo = mid + 1; else hi = mid; }
     double u2 = d_rng_uniform(rng);
     return d_inject_numin * exp(((double)lo + u2) * d_inject_dlognu);
+}
+
+/* [COEVOLVE Stage-2] deposition-weighted volumetric birth (bottom injection).
+ * When d_birth_enabled: the packet birth SHELL is drawn from d_birth_cdf (cumulative
+ * over shells, weight ∝ heating_rate*V above the tau-floor smin; the opaque core
+ * s<smin is folded into shell smin's weight). Birth is volumetric: isotropic mu,
+ * uniform-in-volume radius, comoving SED = Planck(T_e[shell]) via d_birth_te[]. The
+ * host sets d_inject_shell=smin so the existing inner kill (3229) sits at r_inner[smin],
+ * capping the deep 56Ni-core random walk. Default off => surface J-CDF path unchanged. */
+__device__ int    d_birth_enabled = 0;
+__device__ int    d_birth_smin = 0;
+__device__ int    d_birth_nshell = 0;
+__device__ double d_birth_cdf[256];
+__device__ double d_birth_te[256];
+__device__ __forceinline__ int d_sample_birth_shell(uint64_t *rng) {
+    double u = d_rng_uniform(rng);
+    int lo = d_birth_smin, hi = d_birth_nshell - 1;
+    while (lo < hi) { int mid = (lo + hi) / 2;
+        if (d_birth_cdf[mid] < u) lo = mid + 1; else hi = mid; }
+    return lo;
+}
+/* Host: upload the deposition birth CDF + per-shell T_e and arm volumetric birth. */
+void cuda_set_birth_cdf(const double *cdf, const double *te, int nshell,
+                        int smin, int enabled) {
+    int N = nshell < 256 ? nshell : 256;
+    CUDA_CHECK(cudaMemcpyToSymbol(d_birth_cdf, cdf, N * sizeof(double)));
+    CUDA_CHECK(cudaMemcpyToSymbol(d_birth_te,  te,  N * sizeof(double)));
+    CUDA_CHECK(cudaMemcpyToSymbol(d_birth_nshell, &N, sizeof(int)));
+    CUDA_CHECK(cudaMemcpyToSymbol(d_birth_smin, &smin, sizeof(int)));
+    CUDA_CHECK(cudaMemcpyToSymbol(d_birth_enabled, &enabled, sizeof(int)));
 }
 
 /* Sample Planck frequency using Bjorkman-Wood method */
@@ -2419,6 +2614,13 @@ void d_trace_packet(
             atomicAdd(&g_jbar_line[cur_line_id * n_shells + shell], comov_energy);
             atomicAdd(&g_jbar_count[cur_line_id * n_shells + shell], 1);
         }
+        /* [IUP-JBLUE] blue-wing tally at the same crossing (pre-interaction, both
+         * pass-through and interaction). Independent single-branch test => no RNG
+         * calls, OFF path (g_jblue_enabled==0) byte-identical. */
+        if (g_jblue_enabled) {
+            atomicAdd(&g_jblue_line[cur_line_id * n_shells + shell],
+                      pkt_energy * doppler_factor);
+        }
 
         /* Phase 6 - Step 5: Check if combined tau exceeds tau_event */
         if (tau_trace_combined > tau_event) { /* Phase 6 - Step 5 */
@@ -2505,6 +2707,96 @@ void d_ma_fate_record(double entry_nu_comov, double exit_nu_comov) {
     atomicAdd(&d_ma_fate_hist[eb * MA_FATE_NBANDS + xb], 1ULL);
 }
 
+/* ============================================================ */
+/* [EVENT-LOG] gated archival packet event stream.               */
+/* Default OFF (d_event_log_on=0): the first branch test in       */
+/* d_event_record short-circuits before any atomic/allocation, so */
+/* the transport is byte-identical to the champion. When armed by */
+/* the host (LUMINA_EVENT_LOG=1) each interaction site reserves a  */
+/* slot via atomicAdd(&d_event_count) and writes one EventRec.     */
+/* ============================================================ */
+__device__ int                d_event_log_on       = 0;    /* master gate */
+__device__ int                d_event_log_escatter = 0;    /* also record etype 7 */
+__device__ int                d_event_iter_cur     = 0;    /* iter stamped on records */
+__device__ int                d_event_iter_record  = 0;    /* 1 => record this iter */
+__device__ double             d_event_nu_min       = 0.0;  /* lambda filter: keep nu>this (0=off) */
+__device__ EventRec          *d_event_buf          = NULL; /* device ring buffer */
+__device__ unsigned long long d_event_cap          = 0;    /* buffer capacity (records) */
+__device__ unsigned long long d_event_count        = 0;    /* reserved slots this iter */
+__device__ unsigned long long d_event_dropped      = 0;    /* over-capacity events */
+
+__device__ __forceinline__
+void d_event_record(unsigned char etype, unsigned int pkt_id, int line_id,
+                    double nu_comov, double energy, int shell) {
+    if (!d_event_log_on || !d_event_iter_record || d_event_buf == NULL) return;
+    if (etype == 7 && !d_event_log_escatter) return;
+    /* lambda filter: record only lambda < lambda_max  <=>  nu > c/lambda_max. */
+    if (d_event_nu_min > 0.0 && nu_comov <= d_event_nu_min) return;
+    unsigned long long idx = atomicAdd(&d_event_count, 1ULL);
+    if (idx >= d_event_cap) { atomicAdd(&d_event_dropped, 1ULL); return; }
+    EventRec *e = &d_event_buf[idx];
+    e->pkt_id   = pkt_id;
+    e->line_id  = line_id;
+    e->nu_comov = (float)nu_comov;
+    e->energy   = (float)energy;
+    e->etype    = etype;
+    e->shell    = (unsigned char)(shell & 0xFF);
+    e->iter     = (unsigned char)(d_event_iter_cur & 0xFF);
+    e->pad      = 0;
+}
+
+/* [EVENT-LOG] host-side control. Device buffer address is mirrored here so the
+ * per-iter download can cudaMemcpy the first `count` records straight out. */
+static EventRec          *g_event_dev_ptr = NULL;   /* device buffer (host copy) */
+static unsigned long long g_event_cap_h   = 0;
+
+void cuda_event_log_alloc(unsigned long long cap, double lambda_max_A,
+                          int escatter_on) {
+    g_event_cap_h = cap;
+    size_t bytes = (size_t)cap * sizeof(EventRec);
+    CUDA_CHECK(cudaMalloc(&g_event_dev_ptr, bytes));
+    CUDA_CHECK(cudaMemcpyToSymbol(d_event_buf, &g_event_dev_ptr, sizeof(EventRec *)));
+    CUDA_CHECK(cudaMemcpyToSymbol(d_event_cap, &cap, sizeof(unsigned long long)));
+    int on = 1;
+    CUDA_CHECK(cudaMemcpyToSymbol(d_event_log_on,       &on,          sizeof(int)));
+    CUDA_CHECK(cudaMemcpyToSymbol(d_event_log_escatter, &escatter_on, sizeof(int)));
+    double nu_min = (lambda_max_A > 0.0)
+                  ? (C_SPEED_OF_LIGHT / (lambda_max_A * 1.0e-8)) : 0.0;
+    CUDA_CHECK(cudaMemcpyToSymbol(d_event_nu_min, &nu_min, sizeof(double)));
+    printf("  [EVENT-LOG] device buffer allocated: %.1f MB (%llu records, %zu B each)%s%s\n",
+           bytes / (1024.0 * 1024.0), (unsigned long long)cap, sizeof(EventRec),
+           lambda_max_A > 0.0 ? ", lambda-filtered" : "",
+           escatter_on ? ", +escatter" : "");
+}
+void cuda_event_log_set_iter(int iter, int record) {
+    CUDA_CHECK(cudaMemcpyToSymbol(d_event_iter_cur,    &iter,   sizeof(int)));
+    CUDA_CHECK(cudaMemcpyToSymbol(d_event_iter_record, &record, sizeof(int)));
+}
+void cuda_event_log_reset(void) {
+    unsigned long long z = 0;
+    CUDA_CHECK(cudaMemcpyToSymbol(d_event_count,   &z, sizeof(unsigned long long)));
+    CUDA_CHECK(cudaMemcpyToSymbol(d_event_dropped, &z, sizeof(unsigned long long)));
+}
+unsigned long long cuda_event_log_count(void) {
+    unsigned long long v = 0;
+    CUDA_CHECK(cudaMemcpyFromSymbol(&v, d_event_count, sizeof(unsigned long long)));
+    return v;
+}
+unsigned long long cuda_event_log_dropped(void) {
+    unsigned long long v = 0;
+    CUDA_CHECK(cudaMemcpyFromSymbol(&v, d_event_dropped, sizeof(unsigned long long)));
+    return v;
+}
+void cuda_event_log_download(EventRec *host, unsigned long long count) {
+    if (count > g_event_cap_h) count = g_event_cap_h;
+    if (count == 0 || g_event_dev_ptr == NULL || host == NULL) return;
+    CUDA_CHECK(cudaMemcpy(host, g_event_dev_ptr,
+               (size_t)count * sizeof(EventRec), cudaMemcpyDeviceToHost));
+}
+void cuda_event_log_free(void) {
+    if (g_event_dev_ptr) { cudaFree(g_event_dev_ptr); g_event_dev_ptr = NULL; }
+}
+
 /* Phase 6 - Step 6: Macro-atom interaction */
 __device__
 void d_macro_atom_interaction(int activation_level_id, int current_shell_id,
@@ -2519,6 +2811,8 @@ void d_macro_atom_interaction(int activation_level_id, int current_shell_id,
                                int *out_transition_type) {
     int current_type = 0;  /* Phase 6 - Step 6: start as internal */
     int ma_iter = 0;       /* Phase 6 - Step 6: safety counter */
+    int just_kpacket = 0;  /* [Div-2] set after a k-packet re-excite; skips the next k-packet roll */
+    int kpkt_exit_used = 0; /* [KPACKET_EXIT] set after the single ARTIS-style collisional deactivation; disables further k-packet rolls this activation */
     *out_transition_id = -1;  /* P8: safe default for orphaned levels */
     *out_transition_type = -1; /* safe default: emission */
 
@@ -2538,7 +2832,9 @@ void d_macro_atom_interaction(int activation_level_id, int current_shell_id,
          * This breaks the deterministic redward radiative walk and re-emits near
          * the local Planck(T_e) peak. Bounded by d_ma_internal_cap (each roll is a
          * while-loop iteration). */
-        if (d_kpacket_enabled && d_kpacket_p && d_kpacket_cdf_g) {
+        if (!(d_kpacket_oneshot && just_kpacket) &&
+            !(d_kpacket_exit && kpkt_exit_used) &&
+            d_kpacket_enabled && d_kpacket_p && d_kpacket_cdf_g) {
             double pk = d_kpacket_p[(size_t)activation_level_id * n_shells
                                     + current_shell_id];
             if (pk > 0.0 && d_rng_uniform(rng) < pk) {
@@ -2575,9 +2871,16 @@ void d_macro_atom_interaction(int activation_level_id, int current_shell_id,
                 }
                 activation_level_id = lo;     /* thermally re-excited upper level */
                 current_type = 0;             /* stay internal; continue cascade  */
+                if (d_kpacket_oneshot) just_kpacket = 1; /* [Div-2] force next step radiative */
+                /* [KPACKET_EXIT] ARTIS macroatom.cc single-exit: the collisional
+                 * cooling channel activates the macro-atom exactly once; suppress
+                 * any further k-packet roll so this activation cascades radiatively
+                 * to emission and exits (no re-inject runaway). */
+                if (d_kpacket_exit) kpkt_exit_used = 1;
                 continue;
             }
         }
+        just_kpacket = 0;   /* [Div-2] clear after the (skipped-or-taken) k-packet roll */
 
         double probability = 0.0;                              /* Phase 6 - Step 6 */
         double probability_event = d_rng_uniform(rng);          /* Phase 6 - Step 6 */
@@ -2637,6 +2940,19 @@ void d_macro_atom_interaction(int activation_level_id, int current_shell_id,
         }
     }
 
+    /* [MA_CAP_EXIT] the cascade hit d_ma_internal_cap while still internal
+     * (current_type >= 0 => unresolved). The loop can exit with current_type >= 0
+     * only via the cap (both break paths force current_type = -1). Previously
+     * *out_transition_type kept a leftover internal value (0) that no caller
+     * branch consumes -> the packet silently continued as a coherent pass-through
+     * (monochromatic pile-up). Count it (bookkeeping only) and normalize outputs
+     * to a well-defined non-emission code so callers see a stable value. */
+    if (current_type >= 0) {
+        atomicAdd(&d_n_ma_cap_exit, 1ULL);
+        *out_transition_type = 0;
+        *out_transition_id   = -1;
+    }
+
     /* [MA-CYCLE] Record cycle count before line_id conversion */
     {
         int cb = ma_iter;
@@ -2670,6 +2986,7 @@ void d_line_scatter_event(double *r, double *mu, double *nu, double *energy,
                            const double *d_T_rad, int n_lines,
                            /* [KROMER] emitted line_id out (-1 for continuum); NULL-safe */
                            int *out_emit_line,
+                           unsigned int pkt_id, /* [EVENT-LOG] packet index for records */
                            uint64_t *rng) {
     /* [KROMER] default: no line emitted (continuum/thermal) */
     if (out_emit_line) *out_emit_line = -1;
@@ -2686,9 +3003,12 @@ void d_line_scatter_event(double *r, double *mu, double *nu, double *energy,
     *energy = comov_energy * inv_new_doppler;     /* Phase 6 - Step 6 */
 
     if (line_interaction_type == 0) { /* Phase 6 - Step 6: LINE_SCATTER */
+        int emit_line_ev = *next_line_id; /* [EVENT-LOG] before d_line_emission bumps it */
         if (out_emit_line) *out_emit_line = *next_line_id; /* [KROMER] resonant emit */
         d_line_emission(nu, next_line_id, *next_line_id, /* Phase 6 - Step 6 */
                          *r, *mu, t_exp, d_line_list_nu); /* Phase 6 - Step 6 */
+        if (d_event_log_on) { double _d = d_get_doppler_factor(*r, *mu, t_exp); /* [EVENT-LOG] etype 2 */
+            d_event_record(2, pkt_id, emit_line_ev, *nu * _d, *energy * _d, shell_id); }
     } else { /* Phase 6 - Step 6: macro-atom */
         double comov_nu = *nu * old_doppler;  /* Phase 6 - Step 6 */
         *nu = comov_nu * inv_new_doppler;     /* Phase 6 - Step 6 */
@@ -2701,9 +3021,12 @@ void d_line_scatter_event(double *r, double *mu, double *nu, double *energy,
             else if (d_line_ion_number[*next_line_id] == 1) is_fe_scatter = 1; /* Fe II only */
         }
         if (is_fe_scatter) {
+            int emit_line_fe = *next_line_id; /* [EVENT-LOG] before bump */
             if (out_emit_line) *out_emit_line = *next_line_id; /* [KROMER] Fe resonant emit */
             d_line_emission(nu, next_line_id, *next_line_id,
                              *r, *mu, t_exp, d_line_list_nu);
+            if (d_event_log_on) { double _d = d_get_doppler_factor(*r, *mu, t_exp); /* [EVENT-LOG] etype 2 */
+                d_event_record(2, pkt_id, emit_line_fe, *nu * _d, *energy * _d, shell_id); }
         } else {
             /* [MA-FATE] entry comov nu = activation line frequency in atomic frame */
             double ma_entry_comov_nu = *nu * d_get_doppler_factor(*r, *mu, t_exp);
@@ -2778,6 +3101,8 @@ void d_line_scatter_event(double *r, double *mu, double *nu, double *energy,
                 if (out_emit_line) *out_emit_line = emit_line; /* [KROMER] macro-atom emit */
                 d_line_emission(nu, next_line_id, emit_line, /* Phase 6 - Step 6 */
                                  *r, *mu, t_exp, d_line_list_nu); /* Phase 6 - Step 6 */
+                if (d_event_log_on) { double _d = d_get_doppler_factor(*r, *mu, t_exp); /* [EVENT-LOG] etype 2 */
+                    d_event_record(2, pkt_id, emit_line, *nu * _d, *energy * _d, shell_id); }
             } else if (transition_type == -2) {
                 /* Path A: k-packet → free-free CONTINUUM emission (ARTIS kpkt.cc:441).
                  * Comoving nu = -kB*Te/h*ln(xi); re-emit isotropically as an r-packet
@@ -2807,12 +3132,46 @@ void d_line_scatter_event(double *r, double *mu, double *nu, double *energy,
                     d_line_emission(nu, next_line_id, *next_line_id,
                                      *r, *mu, t_exp, d_line_list_nu);
                 }
+                if (d_event_log_on) { double _d = d_get_doppler_factor(*r, *mu, t_exp); /* [EVENT-LOG] etype 4 (k-packet free-free) */
+                    d_event_record(4, pkt_id, -1, *nu * _d, *energy * _d, shell_id); }
             } else if (transition_type == -3) {
                 /* Path A: k-packet -> free-bound (recombination) CONTINUUM.
                  * Emit at the recombination edge + a thermal tail (nu >= nu_edge);
                  * Fe-group edges are in the UV so this re-emits blueward (the
                  * channel that breaks the line-cascade trap AND blues the SED). */
                 double Te_sh = d_kpacket_te_g ? d_kpacket_te_g[shell_id] : 0.0;
+                if (d_kpkt_fb_multi) {
+                    /* [FB-MULTI] draw the recombination edge from this shell's
+                     * per-continuum CDF, then the identical thermal-tail form. */
+                    int base = shell_id * KPKT_FB_NEDGE;
+                    int nedge = d_kpkt_fb_edge_cnt_g ? d_kpkt_fb_edge_cnt_g[shell_id] : 0;
+                    double nu_edge; int zsel = 0;
+                    if (nedge > 0 && d_kpkt_fb_edge_cdf_g && d_kpkt_fb_edge_nu_g) {
+                        double xis = d_rng_uniform(rng);
+                        int jsel = 0;
+                        while (jsel < nedge - 1 && xis > d_kpkt_fb_edge_cdf_g[base + jsel]) jsel++;
+                        nu_edge = d_kpkt_fb_edge_nu_g[base + jsel];
+                        zsel = d_kpkt_fb_edge_zs_g ? d_kpkt_fb_edge_zs_g[base + jsel] : 0;
+                    } else {
+                        nu_edge = d_kpacket_fbnu_g ? d_kpacket_fbnu_g[shell_id] : 0.0; /* fallback single edge */
+                    }
+                    atomicAdd(&d_n_fb_emit_total, 1ULL);
+                    if (zsel == 1402) atomicAdd(&d_n_fb_emit_si2edge, 1ULL);
+                    if (nu_edge > 0.0 && Te_sh > 0.0) {
+                        double xi = d_rng_uniform(rng); if (xi < 1e-30) xi = 1e-30;
+                        double nu_fb = nu_edge - (1.380649e-16 * Te_sh / 6.62607015e-27) * log(xi);
+                        *mu = d_rng_mu(rng);
+                        double ind = d_get_inverse_doppler_factor(*r, *mu, t_exp);
+                        *nu = nu_fb * ind;
+                        int lo3 = 0, hi3 = n_lines;
+                        while (lo3 < hi3) { int m=(lo3+hi3)/2; if (d_line_list_nu[m] > nu_fb) lo3=m+1; else hi3=m; }
+                        if (lo3 >= n_lines) lo3 = n_lines - 1;
+                        *next_line_id = lo3;
+                    } else {
+                        d_line_emission(nu, next_line_id, *next_line_id,
+                                         *r, *mu, t_exp, d_line_list_nu);
+                    }
+                } else {
                 double nu_edge = d_kpacket_fbnu_g ? d_kpacket_fbnu_g[shell_id] : 0.0;
                 if (nu_edge > 0.0 && Te_sh > 0.0) {
                     double xi = d_rng_uniform(rng); if (xi < 1e-30) xi = 1e-30;
@@ -2828,6 +3187,20 @@ void d_line_scatter_event(double *r, double *mu, double *nu, double *energy,
                     d_line_emission(nu, next_line_id, *next_line_id,
                                      *r, *mu, t_exp, d_line_list_nu);
                 }
+                }
+                if (d_event_log_on) { double _d = d_get_doppler_factor(*r, *mu, t_exp); /* [EVENT-LOG] etype 5 (k-packet free-bound) */
+                    d_event_record(5, pkt_id, -1, *nu * _d, *energy * _d, shell_id); }
+            } else if (d_ma_cap_emit && transition_type >= 0) {
+                /* [MA_CAP_EMIT] cascade hit the internal cap unresolved
+                 * (transition_type >= 0): resonant deactivation in the activating
+                 * line instead of the legacy coherent pass-through. Gated OFF by
+                 * default -> this else-if fires only where no branch fired before. */
+                int emit_line_cap = *next_line_id; /* [EVENT-LOG] before bump */
+                if (out_emit_line) *out_emit_line = *next_line_id; /* [KROMER] */
+                d_line_emission(nu, next_line_id, *next_line_id,
+                                 *r, *mu, t_exp, d_line_list_nu);
+                if (d_event_log_on) { double _d = d_get_doppler_factor(*r, *mu, t_exp); /* [EVENT-LOG] etype 2 (MA-cap resonant) */
+                    d_event_record(2, pkt_id, emit_line_cap, *nu * _d, *energy * _d, shell_id); }
             }
             /* [MA-FATE] exit comov nu after cascade + line_emission */
             double ma_exit_comov_nu = *nu * d_get_doppler_factor(*r, *mu, t_exp);
@@ -3072,7 +3445,7 @@ void transport_kernel(
     /* Phase 6 - Step 7: Estimators */
     double *d_j_estimator, double *d_nu_bar_estimator,
     /* NLTE: J_nu frequency histogram */
-    double *d_j_nu_estimator, int nlte_n_freq_bins,
+    double *d_j_nu_estimator, int *d_j_nu_count, int nlte_n_freq_bins,
     double nlte_nu_min, double nlte_d_log_nu,
     /* Phase 6 - Step 7: RNG */
     uint64_t *d_rng_states,
@@ -3108,18 +3481,32 @@ void transport_kernel(
     uint64_t _seed_p = d_splitmix64(&_sm);
     d_rng_init(rng, _seed_p);
 
-    /* Phase 6 - Step 7: Initialize packet at inner boundary
-     * ([INJECT] or at r_inner[d_inject_shell] with the deterministic J CDF) */
-    double pkt_r = d_r_inner[d_inject_shell];
-    double pkt_mu = sqrt(d_rng_uniform(rng));       /* Phase 6 - Step 7 */
-    int pkt_shell_id = d_inject_shell;
-    int pkt_status = 0; /* Phase 6 - Step 7: PACKET_IN_PROCESS */
-
-    /* Phase 6 - Step 7: Sample frequency from Bjorkman-Wood Planck */
+    /* Phase 6 - Step 7: Initialize packet at inner boundary. Default = surface
+     * injection at r_inner[d_inject_shell] (deterministic J CDF or Planck(T_inner));
+     * [COEVOLVE Stage-2] = deposition-weighted volumetric birth when d_birth_enabled
+     * (birth shell ~ heating*V above tau-floor smin; isotropic mu; uniform-in-volume
+     * radius; comoving SED = Planck(T_e[shell])). The else path preserves the exact
+     * RNG draw order so d_birth_enabled=0 is byte-identical to the champion. */
     double kT_h = K_BOLTZMANN * T_inner / H_PLANCK; /* Phase 6 - Step 7 */
-    double pkt_nu = (d_inject_shell > 0 && d_inject_nb > 1)
-                  ? d_sample_inject_nu(rng)
-                  : d_sample_bw_planck_nu(rng, kT_h);
+    double pkt_r, pkt_mu, pkt_nu;
+    int pkt_shell_id;
+    if (d_birth_enabled && d_birth_nshell > 0) {
+        int sb = d_sample_birth_shell(rng);
+        pkt_shell_id = sb;
+        pkt_mu = d_rng_mu(rng);                          /* isotropic (volumetric) */
+        double ri = d_r_inner[sb], ro = d_r_outer[sb];
+        double uu = d_rng_uniform(rng);
+        pkt_r = cbrt(ri*ri*ri + uu*(ro*ro*ro - ri*ri*ri)); /* uniform in volume */
+        pkt_nu = d_sample_planck_frequency(d_birth_te[sb], rng); /* comoving Planck(T_e) */
+    } else {
+        pkt_r = d_r_inner[d_inject_shell];
+        pkt_mu = sqrt(d_rng_uniform(rng));               /* Phase 6 - Step 7 (outward) */
+        pkt_shell_id = d_inject_shell;
+        pkt_nu = (d_inject_shell > 0 && d_inject_nb > 1)
+               ? d_sample_inject_nu(rng)
+               : d_sample_bw_planck_nu(rng, kT_h);
+    }
+    int pkt_status = 0; /* Phase 6 - Step 7: PACKET_IN_PROCESS */
     double pkt_energy = packet_energy;            /* Phase 6 - Step 7 */
 
     /* Phase 6 - Step 7: set_packet_props_partial_relativity */
@@ -3215,7 +3602,7 @@ void transport_kernel(
 
             /* Phase 6 - Step 7: Update estimators (atomicAdd) */
             d_update_base_estimators(d_j_estimator, d_nu_bar_estimator, /* Phase 6 - Step 7 */
-                                      d_j_nu_estimator, nlte_n_freq_bins,
+                                      d_j_nu_estimator, d_j_nu_count, nlte_n_freq_bins,
                                       nlte_nu_min, nlte_d_log_nu,
                                       shell, n_shells, distance, comov_nu,
                                       comov_energy);                     /* Phase 6 - Step 7 */
@@ -3270,6 +3657,8 @@ void transport_kernel(
             int kr_out_emit = -1;
             kr_in_line = pkt_next_line_id;
             kr_in_nu = pkt_nu * d_get_doppler_factor(pkt_r, pkt_mu, t_exp);
+            if (d_event_log_on) { double _d = d_get_doppler_factor(pkt_r, pkt_mu, t_exp); /* [EVENT-LOG] etype 1 (line absorption / MA activation) */
+                d_event_record(1, (unsigned int)p, pkt_next_line_id, kr_in_nu, pkt_energy * _d, pkt_shell_id); }
             d_line_scatter_event(&pkt_r, &pkt_mu, &pkt_nu, &pkt_energy, /* Phase 6 - Step 7 */
                                   &pkt_next_line_id, pkt_shell_id,       /* Phase 6 - Step 7 */
                                   t_exp, line_interaction_type,           /* Phase 6 - Step 7 */
@@ -3286,6 +3675,7 @@ void transport_kernel(
                                   fe_scatter_mode,
                                   d_T_rad, n_lines,
                                   &kr_out_emit,                           /* [KROMER] */
+                                  (unsigned int)p,                        /* [EVENT-LOG] */
                                   rng);                                   /* Phase 6 - Step 7 */
             /* [KROMER] retain only real line emissions → keeps the LAST emit line */
             if (kr_out_emit >= 0) kr_emit_line = kr_out_emit;
@@ -3311,6 +3701,8 @@ void transport_kernel(
             if (chi_bf_val > 0.0 && d_rng_uniform(rng) > chi_e / chi_continuum) {
                 /* BF macro-atom channel: route through macro-atom if activation level available */
                 double comov_nu_bf2 = pkt_nu * d_get_doppler_factor(pkt_r, pkt_mu, t_exp);
+                if (d_event_log_on) { double _d = d_get_doppler_factor(pkt_r, pkt_mu, t_exp); /* [EVENT-LOG] etype 3 (bf continuum absorption) */
+                    d_event_record(3, (unsigned int)p, -1, comov_nu_bf2, pkt_energy * _d, pkt_shell_id); }
                 int act_level = d_bf_get_activation_level(d_bf_activation_level,
                     bf_n_freq_bins, bf_nu_min, bf_nu_max, bf_d_log_nu,
                     pkt_shell_id, comov_nu_bf2);
@@ -3365,6 +3757,8 @@ void transport_kernel(
                         int emit_line = (transition_id >= 0) ? transition_id : pkt_next_line_id;
                         d_line_emission(&pkt_nu, &pkt_next_line_id, emit_line,
                                          pkt_r, pkt_mu, t_exp, d_line_list_nu);
+                        if (d_event_log_on) { double _d = d_get_doppler_factor(pkt_r, pkt_mu, t_exp); /* [EVENT-LOG] etype 2 */
+                            d_event_record(2, (unsigned int)p, emit_line, pkt_nu * _d, pkt_energy * _d, pkt_shell_id); }
                     } else if (transition_type_ma == -2) { /* k-packet free-free continuum */
                         double Te_sh = d_kpacket_te_g ? d_kpacket_te_g[pkt_shell_id] : 0.0;
                         if (Te_sh > 0.0) {
@@ -3378,8 +3772,38 @@ void transport_kernel(
                             if (lo2 >= n_lines) lo2 = n_lines - 1;
                             pkt_next_line_id = lo2;
                         }
+                        if (d_event_log_on) { double _d = d_get_doppler_factor(pkt_r, pkt_mu, t_exp); /* [EVENT-LOG] etype 4 (k-packet free-free) */
+                            d_event_record(4, (unsigned int)p, -1, pkt_nu * _d, pkt_energy * _d, pkt_shell_id); }
                     } else if (transition_type_ma == -3) { /* k-packet free-bound (UV) continuum */
                         double Te_sh = d_kpacket_te_g ? d_kpacket_te_g[pkt_shell_id] : 0.0;
+                        if (d_kpkt_fb_multi) {
+                            /* [FB-MULTI] per-continuum edge draw (bf-activated k-packet). */
+                            int base = pkt_shell_id * KPKT_FB_NEDGE;
+                            int nedge = d_kpkt_fb_edge_cnt_g ? d_kpkt_fb_edge_cnt_g[pkt_shell_id] : 0;
+                            double nu_edge; int zsel = 0;
+                            if (nedge > 0 && d_kpkt_fb_edge_cdf_g && d_kpkt_fb_edge_nu_g) {
+                                double xis = d_rng_uniform(rng);
+                                int jsel = 0;
+                                while (jsel < nedge - 1 && xis > d_kpkt_fb_edge_cdf_g[base + jsel]) jsel++;
+                                nu_edge = d_kpkt_fb_edge_nu_g[base + jsel];
+                                zsel = d_kpkt_fb_edge_zs_g ? d_kpkt_fb_edge_zs_g[base + jsel] : 0;
+                            } else {
+                                nu_edge = d_kpacket_fbnu_g ? d_kpacket_fbnu_g[pkt_shell_id] : 0.0; /* fallback single edge */
+                            }
+                            atomicAdd(&d_n_fb_emit_total, 1ULL);
+                            if (zsel == 1402) atomicAdd(&d_n_fb_emit_si2edge, 1ULL);
+                            if (nu_edge > 0.0 && Te_sh > 0.0) {
+                                double xib = d_rng_uniform(rng); if (xib < 1e-30) xib = 1e-30;
+                                double nu_fb = nu_edge - (1.380649e-16 * Te_sh / 6.62607015e-27) * log(xib);
+                                pkt_mu = d_rng_mu(rng);
+                                double ind = d_get_inverse_doppler_factor(pkt_r, pkt_mu, t_exp);
+                                pkt_nu = nu_fb * ind;
+                                int lo3 = 0, hi3 = n_lines;
+                                while (lo3 < hi3) { int m=(lo3+hi3)/2; if (d_line_list_nu[m] > nu_fb) lo3=m+1; else hi3=m; }
+                                if (lo3 >= n_lines) lo3 = n_lines - 1;
+                                pkt_next_line_id = lo3;
+                            }
+                        } else {
                         double nu_edge = d_kpacket_fbnu_g ? d_kpacket_fbnu_g[pkt_shell_id] : 0.0;
                         if (nu_edge > 0.0 && Te_sh > 0.0) {
                             double xib = d_rng_uniform(rng); if (xib < 1e-30) xib = 1e-30;
@@ -3392,6 +3816,21 @@ void transport_kernel(
                             if (lo3 >= n_lines) lo3 = n_lines - 1;
                             pkt_next_line_id = lo3;
                         }
+                        }
+                        if (d_event_log_on) { double _d = d_get_doppler_factor(pkt_r, pkt_mu, t_exp); /* [EVENT-LOG] etype 5 (k-packet free-bound) */
+                            d_event_record(5, (unsigned int)p, -1, pkt_nu * _d, pkt_energy * _d, pkt_shell_id); }
+                    } else if (d_ma_cap_emit && transition_type_ma >= 0) {
+                        /* [MA_CAP_EMIT] cascade hit the internal cap unresolved
+                         * (transition_type_ma >= 0): resonant deactivation in the
+                         * activating line instead of the legacy coherent pass-
+                         * through. Gated OFF by default. (No out_emit_line in scope
+                         * here; argument pattern copied from this caller's -1
+                         * branch d_line_emission, emit line = pkt_next_line_id.) */
+                        int emit_line_bfcap = pkt_next_line_id; /* [EVENT-LOG] before bump */
+                        d_line_emission(&pkt_nu, &pkt_next_line_id, pkt_next_line_id,
+                                         pkt_r, pkt_mu, t_exp, d_line_list_nu);
+                        if (d_event_log_on) { double _d = d_get_doppler_factor(pkt_r, pkt_mu, t_exp); /* [EVENT-LOG] etype 2 (MA-cap resonant) */
+                            d_event_record(2, (unsigned int)p, emit_line_bfcap, pkt_nu * _d, pkt_energy * _d, pkt_shell_id); }
                     }
                     last_reset_inner = 0;   /* f_in: macro-atom line emission reset frequency */
                     /* [MA-FATE] exit comov nu after cascade */
@@ -3403,10 +3842,14 @@ void transport_kernel(
                                            d_T_rad, pkt_shell_id,
                                            d_line_list_nu, n_lines, rng);
                     last_reset_inner = 0;   /* f_in: bf re-emission reset frequency */
+                    if (d_event_log_on) { double _d = d_get_doppler_factor(pkt_r, pkt_mu, t_exp); /* [EVENT-LOG] etype 8 (legacy bf re-emit) */
+                        d_event_record(8, (unsigned int)p, -1, pkt_nu * _d, pkt_energy * _d, pkt_shell_id); }
                 }
             } else {
                 d_thomson_scatter(&pkt_r, &pkt_mu, &pkt_nu, &pkt_energy,
                                    t_exp, rng);
+                if (d_event_log_on) { double _d = d_get_doppler_factor(pkt_r, pkt_mu, t_exp); /* [EVENT-LOG] etype 7 (electron scatter; opt-in) */
+                    d_event_record(7, (unsigned int)p, -1, pkt_nu * _d, pkt_energy * _d, pkt_shell_id); }
             }
             /* Virtual packet from continuum interaction */
             if (d_virtual_spectrum != NULL) {
@@ -3438,6 +3881,8 @@ void transport_kernel(
             d_escaped_in_line[p]   = kr_in_line;
             d_escaped_in_nu[p]     = kr_in_nu;
         }
+        if (d_event_log_on) { double _d = d_get_doppler_factor(pkt_r, pkt_mu, t_exp); /* [EVENT-LOG] etype 6 (escape) */
+            d_event_record(6, (unsigned int)p, kr_emit_line, pkt_nu * _d, pkt_energy * _d, pkt_shell_id); }
         atomicAdd((unsigned long long *)d_n_escaped, 1ULL); /* Phase 6 - Step 7 */
         { double lamA=(C_SPEED_OF_LIGHT/pkt_nu)*1e8;    /* f_in: bin emergent energy by band */
           int fb=(lamA<4000)?0:(lamA<5000)?1:(lamA<6000)?2:(lamA<7000)?3:(lamA<9000)?4:5;
@@ -3466,6 +3911,8 @@ void transport_kernel(
                 d_escaped_in_line[p]   = kr_in_line;
                 d_escaped_in_nu[p]     = kr_in_nu;
             }
+            if (d_event_log_on) { double _d = d_get_doppler_factor(pkt_r, pkt_mu, t_exp); /* [EVENT-LOG] etype 6 (cap-force escape) */
+                d_event_record(6, (unsigned int)p, kr_emit_line, pkt_nu * _d, pkt_energy * _d, pkt_shell_id); }
             atomicAdd((unsigned long long *)d_n_escaped, 1ULL);
         } else {
             atomicAdd(&d_E_truncated_dev, pkt_energy); /* legacy: drop (energy lost) */
@@ -3775,6 +4222,27 @@ int main(int argc, char *argv[]) {
     if (getenv("LUMINA_DIFFUSE_INNER_BC"))
         diffuse_inner_bc = atoi(getenv("LUMINA_DIFFUSE_INNER_BC"));
     cuda_set_diffuse_inner_bc(diffuse_inner_bc);
+    /* [Div-2] k-packet one-shot: break the consecutive-re-excite loop that manufactures the
+     * 98.2% coherent-UV artifact. Default 0 = legacy (champion byte-identical). */
+    cuda_set_kpacket_oneshot(getenv("LUMINA_KPACKET_ONESHOT") &&
+                             atoi(getenv("LUMINA_KPACKET_ONESHOT")) ? 1 : 0);
+    /* [KPACKET_EXIT] ARTIS single-exit macro-atom: collisional deactivation resolves
+     * once then cascades radiatively to emission. Default 0 = legacy re-inject. */
+    cuda_set_kpacket_exit(getenv("LUMINA_KPACKET_EXIT") &&
+                          atoi(getenv("LUMINA_KPACKET_EXIT")) ? 1 : 0);
+    /* [MA_CAP_EMIT] resonant deactivation on macro-atom internal-cap exit.
+     * Default 0 = legacy coherent pass-through (byte-identical). */
+    cuda_set_ma_cap_emit(getenv("LUMINA_MA_CAP_EMIT") &&
+                         atoi(getenv("LUMINA_MA_CAP_EMIT")) ? 1 : 0);
+    /* [FB-MULTI] per-continuum k-packet fb edge sampling gate. Default 0 = single
+     * dominant Si II edge (byte-identical). Device edge pointers bound after the
+     * GPU tables are allocated (see the [KPACKET] bind block below). */
+    int fb_multi_on = (getenv("LUMINA_KPKT_FB_MULTI") &&
+                       atoi(getenv("LUMINA_KPKT_FB_MULTI"))) ? 1 : 0;
+    cuda_set_kpkt_fb_multi(fb_multi_on);
+    if (fb_multi_on)
+        printf("  [FB-MULTI] LUMINA_KPKT_FB_MULTI=1: per-continuum k-packet fb edge "
+               "sampling ENABLED (<=%d edges/shell)\n", KPKT_FB_NEDGE);
     printf("  [INNER-BC] LUMINA_DIFFUSE_INNER_BC=%d (%s)\n", diffuse_inner_bc,
            diffuse_inner_bc ? "diffusive: re-emit returned packets at T_inner"
                             : "absorbing hard sphere (default)");
@@ -3869,6 +4337,24 @@ int main(int argc, char *argv[]) {
     /* Task #20: real radiative-equilibrium T_e (heating=cooling): LUMINA_RADEQ_TE=1 */
     int cmfgen_then_mc = (getenv("LUMINA_CMFGEN_THEN_MC") &&
                           atoi(getenv("LUMINA_CMFGEN_THEN_MC")));
+    /* Co-evolution rewiring (docs/COEVOLVE_REWIRING_PLAN.md): LUMINA_MC_COEVOLVE=1
+     * lifts the THEN_MC transport pass INTO the pure-CMFGEN loop A so the MC field
+     * co-evolves with the deterministic state. Default OFF => byte-identical to the
+     * champion (loop A untouched). Stage 1 runs the in-loop transport to a SHADOW
+     * buffer only (no state feedback); nlte.J_nu is not modified. Mirrors the
+     * cmfgen_then_mc gate above; the two modes are mutually exclusive (co-evolve
+     * replaces the frozen THEN_MC pass). */
+    int g_coevolve = (getenv("LUMINA_MC_COEVOLVE") &&
+                      atoi(getenv("LUMINA_MC_COEVOLVE")));
+    if (g_coevolve && cmfgen_then_mc) {
+        /* Enforce the documented mutual exclusivity: co-evolve REPLACES the frozen
+         * THEN_MC pass. Forcing cmfgen_then_mc=0 makes the 'return 0' after loop A
+         * always fire, so the THEN_MC one-time setup (which would re-allocate the
+         * jbar estimators already armed by the hoisted co-evolve setup) never runs. */
+        printf("[COEVOLVE] LUMINA_CMFGEN_THEN_MC ignored — co-evolve mode replaces "
+               "the frozen THEN_MC transport pass\n");
+        cmfgen_then_mc = 0;
+    }
     int radeq_te = (getenv("LUMINA_RADEQ_TE") &&
                      atoi(getenv("LUMINA_RADEQ_TE")) > 0);
 
@@ -3958,6 +4444,9 @@ int main(int argc, char *argv[]) {
                          opacity.n_macro_levels, kpacket_on,
                          dev.d_kpacket_ff, dev.d_kpacket_te,
                          dev.d_kpacket_fb, dev.d_kpacket_fbnu);
+        /* [FB-MULTI] bind per-continuum edge tables (NULL unless the gate is on). */
+        cuda_set_kpkt_fb_edges(dev.d_kpkt_fb_edge_nu, dev.d_kpkt_fb_edge_cdf,
+                               dev.d_kpkt_fb_edge_zs, dev.d_kpkt_fb_edge_cnt);
         if (kpacket_on) {
             printf("  [KPACKET] collisional/k-packet thermal pool ENABLED "
                    "(%d levels x %d shells)\n", opacity.n_macro_levels, geo.n_shells);
@@ -3979,6 +4468,11 @@ int main(int argc, char *argv[]) {
     if (enable_nlte) {
         printf("\n--- NLTE Initialization ---\n");
         nlte_init(&nlte, &atom_data, &opacity, geo.n_shells);
+        /* [BF-NLTE-POPS] Fix A: register the live NLTE config so compute_bf_opacity
+         * can source chi_bf level pops from the NLTE solve (gate LUMINA_BF_NLTE_POPS).
+         * Struct address + population buffer are stable across outer iterations, so
+         * one registration covers all compute_bf_opacity call sites. */
+        bf_set_nlte_pops(&nlte);
         cuda_allocate_nlte(&dev, &nlte, geo.n_shells);
         /* Find max level count across all ion pairs for cuBLAS allocation.
          * #281: use explicit pair table (overlap pair 15 lo=29 not 2*15=30). */
@@ -4107,6 +4601,82 @@ int main(int argc, char *argv[]) {
                   if (se) { double tv=0; int sm=0; sscanf(se, "%lf,%d", &tv, &sm);
                     if (tv > 0) { for (int s=sm; s<geo.n_shells; s++) plasma.T_e[s]=tv;
                       printf("[HOT-ROOT-SEED] T_e[%d..%d] := %.0f K\n", sm, geo.n_shells-1, tv); } } }
+                /* ===== [COEVOLVE] Stage-0 one-time setup (before loop A) =====
+                 * Hoist the THEN_MC per-line J_bar MC-estimator allocation + arming
+                 * (mirrors the cmfgen_then_mc block at ~4695) so the in-loop transport
+                 * can run every iteration. Also allocate the Stage-1 SHADOW field
+                 * buffer nlte_Jmc (reduced MC J_nu, kept OUT of the state). GB-scale
+                 * device alloc lives across the whole loop A. */
+                double *nlte_Jmc = NULL;
+                /* P1: persistent lagged MC field for the photoion rate (gate LUMINA_COEVOLVE_PHOTOION_MC,
+                 * blend LUMINA_COEVOLVE_PHOTOION_ALPHA default 0.5). Default off => never registered. */
+                int g_photoion_mc = (getenv("LUMINA_COEVOLVE_PHOTOION_MC") &&
+                                     atoi(getenv("LUMINA_COEVOLVE_PHOTOION_MC")));
+                double photoion_mc_alpha = getenv("LUMINA_COEVOLVE_PHOTOION_ALPHA")
+                                         ? atof(getenv("LUMINA_COEVOLVE_PHOTOION_ALPHA")) : 0.5;
+                double *photoion_mc_J = (g_photoion_mc)
+                    ? (double *)calloc((size_t)geo.n_shells * nlte.n_freq_bins, sizeof(double)) : NULL;
+                /* [EVENT-LOG] archival packet event stream (gate LUMINA_EVENT_LOG).
+                 * Default OFF => no device buffer, no host buffer, transport byte-
+                 * identical. When ON, one device buffer of CAP*sizeof(EventRec) is
+                 * allocated and each selected co-evolve iteration's events are dumped
+                 * to lumina_events.bin (offline queries via scripts/read_events.py). */
+                int event_log_on = (getenv("LUMINA_EVENT_LOG") &&
+                                    atoi(getenv("LUMINA_EVENT_LOG")));
+                if (event_log_on && !g_coevolve) {
+                    printf("[EVENT-LOG] LUMINA_EVENT_LOG requires co-evolve mode "
+                           "(LUMINA_MC_COEVOLVE=1); disabled this run.\n");
+                    event_log_on = 0;
+                }
+                unsigned long long event_cap = 0;
+                int event_iters_all = 0, event_file_started = 0, event_lines_done = 0;
+                EventRec *h_event_buf = NULL;
+                if (event_log_on) {
+                    int cap_M = getenv("LUMINA_EVENT_LOG_CAP")
+                              ? atoi(getenv("LUMINA_EVENT_LOG_CAP")) : 32;
+                    if (cap_M < 1) cap_M = 1;
+                    event_cap = (unsigned long long)cap_M * 1000000ULL;
+                    double lam_max = getenv("LUMINA_EVENT_LOG_LAMBDA_MAX")
+                                   ? atof(getenv("LUMINA_EVENT_LOG_LAMBDA_MAX")) : 0.0;
+                    int escatter_on = (getenv("LUMINA_EVENT_LOG_ESCATTER") &&
+                                       atoi(getenv("LUMINA_EVENT_LOG_ESCATTER")));
+                    const char *ie = getenv("LUMINA_EVENT_LOG_ITERS");
+                    event_iters_all = (ie && strcmp(ie, "all") == 0) ? 1 : 0;
+                    cuda_event_log_alloc(event_cap, lam_max, escatter_on);
+                    h_event_buf = (EventRec *)malloc((size_t)event_cap * sizeof(EventRec));
+                    if (!h_event_buf) { fprintf(stderr, "[EVENT-LOG] host buffer malloc failed\n"); exit(1); }
+                    printf("[EVENT-LOG] LUMINA_EVENT_LOG=1: cap=%dM iters=%s escatter=%d "
+                           "lambda_max=%.1f -> lumina_events.bin\n",
+                           cap_M, event_iters_all ? "all" : "final", escatter_on, lam_max);
+                }
+                if (g_coevolve) {
+                    size_t njb = (size_t)opacity.n_lines * geo.n_shells;
+                    CUDA_CHECK(cudaMalloc(&dev.d_jbar_line,  njb * sizeof(double)));
+                    CUDA_CHECK(cudaMalloc(&dev.d_jbar_count, njb * sizeof(int)));
+                    opacity.jbar_line  = (double *)calloc(njb, sizeof(double));
+                    opacity.jbar_count = (int *)calloc(njb, sizeof(int));
+                    opacity.use_jbar_line = 0;
+                    cuda_set_jbar_ptrs(dev.d_jbar_line, dev.d_jbar_count, 1);
+                    /* [IUP-JBLUE] arm the blue-wing estimator only when the gate
+                     * is set (parallel array, same size as jbar_line). */
+                    if (getenv("LUMINA_IUP_JBLUE") && atoi(getenv("LUMINA_IUP_JBLUE"))) {
+                        CUDA_CHECK(cudaMalloc(&dev.d_jblue_line, njb * sizeof(double)));
+                        opacity.jblue_line = (double *)calloc(njb, sizeof(double));
+                        cuda_set_jblue_ptr(dev.d_jblue_line, 1);
+                        printf("[IUP-JBLUE] LUMINA_IUP_JBLUE=1: ARTIS blue-wing J_blue "
+                               "estimator armed (%.2f GB device); up-rate="
+                               "(B_lu - B_ul n_u/n_l)*beta*J_blue, fallback->J_line when "
+                               "the line is unsampled\n",
+                               (double)njb * sizeof(double) / 1e9);
+                    }
+                    nlte_Jmc = (double *)calloc(
+                        (size_t)geo.n_shells * NLTE_N_FREQ_BINS, sizeof(double));
+                    printf("[COEVOLVE] Stage-0 setup: per-line J_bar MC estimator "
+                           "armed (%.2f GB device) + shadow nlte_Jmc allocated "
+                           "(%d shells x %d bins)\n",
+                           (double)njb * (sizeof(double) + sizeof(int)) / 1e9,
+                           geo.n_shells, NLTE_N_FREQ_BINS);
+                }
                 for (int it = 0; it < pc_iter; it++) {
                     nlte.current_iter = it;
                     /* ARTIS-style grey/LTE criterion: inward electron-scattering
@@ -4288,7 +4858,592 @@ int main(int argc, char *argv[]) {
                             fclose(ipf);
                         }
                     }
+                    /* ===== [COEVOLVE] Stage-1 in-loop SHADOW transport =====
+                     * Lift the THEN_MC MC transport pass into loop A: run it on
+                     * THIS iter's just-solved pops and reduce the binned J_nu into
+                     * the SHADOW buffer nlte_Jmc. nlte.J_nu and plasma state are NOT
+                     * touched, so the deterministic champion is reproduced
+                     * bit-for-bit (OFF) and byte-identically (ON, shadow only).
+                     * This is the diagnostic that proves the ordering gotcha is
+                     * solved (MC sees live pops, not LTE) before any feedback is
+                     * risked in Stage 4. (docs/COEVOLVE_REWIRING_PLAN.md Stage 1.) */
+                    if (g_coevolve) {
+                        /* (a) Rebuild the macro-atom branching from the current NLTE
+                         *     pops so the transport uses live redistribution. This
+                         *     writes opacity.transition_probabilities / p_kpacket /
+                         *     kpacket_cdf / recomb (transport-only tables the plasma
+                         *     solve never reads) => zero state feedback. We do NOT
+                         *     call nlte_update_tau_sobolev here: compute_plasma_state
+                         *     already refreshed opacity.tau_sobolev from this iter's
+                         *     ion pops, and overwriting it would perturb the next
+                         *     iter's RE/NLTE solve (they read tau_sobolev). */
+                        compute_transition_probabilities(&atom_data, &plasma,
+                            &opacity, enable_nlte ? &nlte : NULL,
+                            config.damping_constant, 1);
+                        /* (b) Push the live opacity to the device (the 4671-4678
+                         *     ordering fix: MC must transport on updated tau/n_e/
+                         *     branching, not the stale LTE device copies). */
+                        CUDA_CHECK(cudaMemcpy(dev.d_tau_sobolev, opacity.tau_sobolev,
+                                   (size_t)opacity.n_lines * geo.n_shells * sizeof(double),
+                                   cudaMemcpyHostToDevice));
+                        CUDA_CHECK(cudaMemcpy(dev.d_electron_density,
+                                   opacity.electron_density,
+                                   geo.n_shells * sizeof(double),
+                                   cudaMemcpyHostToDevice));
+                        CUDA_CHECK(cudaMemcpy(dev.d_transition_probabilities,
+                                   opacity.transition_probabilities,
+                                   (size_t)opacity.n_macro_transitions * geo.n_shells * sizeof(double),
+                                   cudaMemcpyHostToDevice));
+                        if (dev.d_p_kpacket && opacity.p_kpacket)
+                            CUDA_CHECK(cudaMemcpy(dev.d_p_kpacket, opacity.p_kpacket,
+                                       (size_t)opacity.n_macro_levels * geo.n_shells * sizeof(double),
+                                       cudaMemcpyHostToDevice));
+                        if (dev.d_kpacket_cdf && opacity.kpacket_cdf)
+                            CUDA_CHECK(cudaMemcpy(dev.d_kpacket_cdf, opacity.kpacket_cdf,
+                                       (size_t)geo.n_shells * opacity.n_macro_levels * sizeof(double),
+                                       cudaMemcpyHostToDevice));
+                        /* [KPKT-FBUP] Path A continuum-exit channel probs were only
+                         * uploaded once at init — BEFORE the first table build, so the
+                         * device copies stayed memset-0 and the ff/fb exits never fired
+                         * (etype4=etype5=0 in every event archive). Re-upload with the
+                         * rest of the k-packet tables. */
+                        if (dev.d_kpacket_ff && opacity.p_kpacket_ff)
+                            CUDA_CHECK(cudaMemcpy(dev.d_kpacket_ff, opacity.p_kpacket_ff,
+                                       (size_t)geo.n_shells * sizeof(double),
+                                       cudaMemcpyHostToDevice));
+                        if (dev.d_kpacket_fb && opacity.p_kpacket_fb)
+                            CUDA_CHECK(cudaMemcpy(dev.d_kpacket_fb, opacity.p_kpacket_fb,
+                                       (size_t)geo.n_shells * sizeof(double),
+                                       cudaMemcpyHostToDevice));
+                        if (dev.d_kpacket_fbnu && opacity.kpacket_fb_nu)
+                            CUDA_CHECK(cudaMemcpy(dev.d_kpacket_fbnu, opacity.kpacket_fb_nu,
+                                       (size_t)geo.n_shells * sizeof(double),
+                                       cudaMemcpyHostToDevice));
+                        cuda_reupload_kpkt_fb_edges(&dev, &opacity, geo.n_shells); /* [FB-MULTI] */
+                        cuda_upload_recomb(&dev, &opacity, geo.n_shells);
+                        /* Refresh device bf continuum + T_rad + k-packet T_e from
+                         * THIS iter's plasma (mirrors the loop-B per-iter upload at
+                         * ~5446) so the transport re-emits bf/free-free photons on
+                         * the LIVE state, not the iter-0 seed. compute_bf_opacity
+                         * already refreshed host bf.chi_bf this iter (~4160).
+                         * Device-only uploads => zero state feedback. */
+                        if (bf_opacity_enabled)
+                            cuda_upload_bf(&dev, &bf, &plasma, geo.n_shells);
+                        else
+                            cuda_upload_T_rad(&dev, &plasma, geo.n_shells);
+                        /* (c) Injection source (LUMINA_MC_COEVOLVE_INJECT):
+                         *   0/1 (default) = surface J-CDF at LUMINA_MC_INJECT_SHELL
+                         *       (Stage-1; s<s_inj dark) — verbatim reuse of the ~4709 block.
+                         *   2 = deposition-weighted VOLUMETRIC birth (Stage-2): birth shell
+                         *       ~ heating_rate*V above the tau-floor smin (opaque core folded
+                         *       into smin's weight + the boundary L), Planck(T_e[s]) SED, so
+                         *       the 56Ni-core energy enters the field with the physical
+                         *       per-shell thermal spectrum and correct L normalization. */
+                        double coev_Ltot = -1.0;
+                        {
+                            static int inj_mode = -1;
+                            if (inj_mode < 0) { const char *e = getenv("LUMINA_MC_COEVOLVE_INJECT");
+                                                inj_mode = e ? atoi(e) : 0; }
+                            if (inj_mode >= 2 && gamma_dep_enabled && nlte.shell_tau) {
+                                double tau_floor = 2.0;
+                                { const char *tf = getenv("LUMINA_COEVOLVE_TAU_FLOOR");
+                                  if (tf) tau_floor = atof(tf); }
+                                int smin = 0;
+                                for (int s = 0; s < geo.n_shells; s++)
+                                    if (nlte.shell_tau[s] < tau_floor) { smin = s; break; }
+                                int NB = geo.n_shells < 256 ? geo.n_shells : 256;
+                                static double bcdf[256], bte[256];
+                                double L_core = 4.0 * M_PI_VAL * geo.r_inner[0] *
+                                    geo.r_inner[0] * SIGMA_SB * pow(config.T_inner, 4);
+                                for (int s = 0; s < smin && s < gamma_dep.n_shells; s++) {
+                                    double V = 4.0/3.0 * M_PI_VAL *
+                                        (pow(geo.r_outer[s],3) - pow(geo.r_inner[s],3));
+                                    L_core += gamma_dep.heating_rate[s] * V;
+                                }
+                                double acc = 0.0;
+                                for (int s = 0; s < NB; s++) {
+                                    double w = 0.0;
+                                    if (s >= smin) {
+                                        double V = 4.0/3.0 * M_PI_VAL *
+                                            (pow(geo.r_outer[s],3) - pow(geo.r_inner[s],3));
+                                        w = (s < gamma_dep.n_shells) ? gamma_dep.heating_rate[s] * V : 0.0;
+                                        if (s == smin) w += L_core;
+                                    }
+                                    acc += w; bcdf[s] = acc;
+                                    bte[s] = (plasma.T_e && plasma.T_e[s] > 0.0) ? plasma.T_e[s]
+                                                                                 : config.T_inner;
+                                }
+                                if (acc > 0.0) {
+                                    for (int s = 0; s < NB; s++) bcdf[s] /= acc;
+                                    cuda_set_birth_cdf(bcdf, bte, NB, smin, 1);
+                                    CUDA_CHECK(cudaMemcpyToSymbol(d_inject_shell, &smin, sizeof(int)));
+                                    /* diffuse-BC re-emit (~3243) reads d_inject_nb/cdf;
+                                     * zero it so reflected packets thermalize as
+                                     * Planck(T_inner) instead of a stale frequency CDF. */
+                                    { int z0 = 0;
+                                      CUDA_CHECK(cudaMemcpyToSymbol(d_inject_nb, &z0, sizeof(int))); }
+                                    coev_Ltot = acc;
+                                    if (it == 0)
+                                        printf("[COEVOLVE-INJECT2] volumetric deposition birth: "
+                                               "smin=%d (tau<%.2f) L_tot=%.3e erg/s\n",
+                                               smin, tau_floor, acc);
+                                }
+                            } else {
+                                const char *ie = getenv("LUMINA_MC_INJECT_SHELL");
+                                int s_inj = ie ? atoi(ie) : 0;
+                                if (s_inj > 0 && s_inj < geo.n_shells && nlte.J_nu) {
+                                    int NB = nlte.n_freq_bins;
+                                    if (NB > 1024) NB = 1024;
+                                    static double cdf_ce[1024];
+                                    double acc = 0.0;
+                                    double dlognu = log(nlte.nu_max / nlte.nu_min) / nlte.n_freq_bins;
+                                    for (int b = 0; b < NB; b++) {
+                                        double nu_b = nlte.nu_min * exp((b + 0.5) * dlognu);
+                                        double J = nlte.J_nu[(size_t)s_inj * nlte.n_freq_bins + b];
+                                        acc += (J > 0.0 ? J : 0.0) * nu_b * dlognu;
+                                        cdf_ce[b] = acc;
+                                    }
+                                    if (acc > 0.0) {
+                                        for (int b = 0; b < NB; b++) cdf_ce[b] /= acc;
+                                        CUDA_CHECK(cudaMemcpyToSymbol(d_inject_cdf, cdf_ce, NB * sizeof(double)));
+                                        CUDA_CHECK(cudaMemcpyToSymbol(d_inject_nb, &NB, sizeof(int)));
+                                        CUDA_CHECK(cudaMemcpyToSymbol(d_inject_numin, &nlte.nu_min, sizeof(double)));
+                                        CUDA_CHECK(cudaMemcpyToSymbol(d_inject_dlognu, &dlognu, sizeof(double)));
+                                        CUDA_CHECK(cudaMemcpyToSymbol(d_inject_shell, &s_inj, sizeof(int)));
+                                    }
+                                }
+                            }
+                        }
+                        /* (d) Fresh estimators + J_bar accumulators for this pass. */
+                        cuda_reset_estimators(&dev, geo.n_shells);
+                        cuda_ma_cap_exit_reset();   /* [MA_CAP_EXIT] per-iter counter */
+                        if (fb_multi_on) cuda_fb_multi_reset(); /* [FB-MULTI] per-iter counters */
+                        if (event_log_on) { /* [EVENT-LOG] arm/skip this iter + reset counters */
+                            int rec = event_iters_all || (it == pc_iter - 1);
+                            cuda_event_log_set_iter(it, rec);
+                            cuda_event_log_reset();
+                        }
+                        CUDA_CHECK(cudaMemset(dev.d_escaped_flag, 0, n_packets * sizeof(int)));
+                        if (dev.d_jbar_line) {
+                            size_t njb = (size_t)opacity.n_lines * geo.n_shells;
+                            CUDA_CHECK(cudaMemset(dev.d_jbar_line,  0, njb * sizeof(double)));
+                            CUDA_CHECK(cudaMemset(dev.d_jbar_count, 0, njb * sizeof(int)));
+                        }
+                        if (dev.d_jblue_line) {   /* [IUP-JBLUE] per-iter reset */
+                            size_t njb = (size_t)opacity.n_lines * geo.n_shells;
+                            CUDA_CHECK(cudaMemset(dev.d_jblue_line, 0, njb * sizeof(double)));
+                        }
+                        /* (e) Launch transport (verbatim from the ~4823 launch). */
+                        double L_inner_ce = 4.0 * M_PI_VAL * geo.r_inner[0] *
+                                            geo.r_inner[0] * SIGMA_SB *
+                                            pow(config.T_inner, 4);
+                        /* Stage-2 sets the physical total luminosity (boundary + all
+                         * deposition); normalize the MC field to it so nlte_Jmc lands on
+                         * the same absolute scale as cs.J (fixes the Stage-1 amp<<1). */
+                        double time_sim_ce = (coev_Ltot > 0.0) ? 1.0 / coev_Ltot
+                                                               : 1.0 / L_inner_ce;
+                        double packet_energy_ce = 1.0 / (double)n_packets;
+                        uint64_t iter_seed_ce = config.seed + (uint64_t)it * 1000000ULL;
+                        transport_kernel<<<blocks, threads_per_block>>>(
+                            dev.d_r_inner, dev.d_r_outer,
+                            dev.d_line_list_nu, dev.d_tau_sobolev,
+                            dev.d_electron_density,
+                            dev.d_transition_probabilities,
+                            dev.d_macro_block_references,
+                            dev.d_transition_type,
+                            dev.d_destination_level_id,
+                            dev.d_transition_line_id,
+                            dev.d_line2macro_level_upper,
+                            dev.d_line_atomic_number,
+                            dev.d_line_ion_number,
+                            fe_scatter,
+                            dev.d_j_estimator, dev.d_nu_bar_estimator,
+                            dev.d_j_nu_estimator, dev.d_j_nu_count,
+                            dev.nlte_n_freq_bins, dev.nlte_nu_min, dev.nlte_d_log_nu,
+                            dev.d_rng_states,
+                            dev.d_escaped_nu, dev.d_escaped_energy,
+                            dev.d_escaped_flag,
+                            dev.d_escaped_r, dev.d_escaped_mu,
+                            dev.d_escaped_emit_line, dev.d_escaped_in_line, dev.d_escaped_in_nu,
+                            dev.d_n_escaped, dev.d_n_reabsorbed,
+                            /* virtual (next-event) estimator: FINAL iter only —
+                             * 10 LOS traces per interaction are too costly for
+                             * every co-evolve pass, and only the converged-state
+                             * spectrum is the observable. */
+                            (enable_virtual && it == pc_iter - 1)
+                                ? dev.d_virtual_spectrum : (double *)NULL,
+                            L_inner_ce,
+                            dev.d_chi_bf, dev.d_T_rad, dev.d_bf_activation_level,
+                            dev.bf_enabled, dev.bf_n_freq_bins,
+                            dev.bf_nu_min, dev.bf_nu_max, dev.bf_d_log_nu,
+                            n_packets, geo.n_shells, opacity.n_lines,
+                            opacity.n_macro_levels,
+                            geo.time_explosion, config.T_inner,
+                            packet_energy_ce, config.line_interaction_type,
+                            iter_seed_ce);
+                        CUDA_CHECK(cudaDeviceSynchronize());
+                        CUDA_CHECK(cudaGetLastError());
+                        {   /* [MA_CAP_EXIT] per-iter diagnostic (env read host-side) */
+                            int d = (getenv("LUMINA_MA_CAP_EMIT") &&
+                                     atoi(getenv("LUMINA_MA_CAP_EMIT"))) ? 1 : 0;
+                            printf("[MA-CAP-EXIT] it%2d: %llu packets exited macro-atom "
+                                   "via internal cap (cap_emit=%s)\n",
+                                   it, (unsigned long long)cuda_ma_cap_exit_get(),
+                                   d ? "ON" : "off");
+                            fflush(stdout);
+                        }
+                        if (fb_multi_on) {   /* [FB-MULTI] per-iter fb-edge diagnostic */
+                            unsigned long long ft = cuda_fb_multi_total_get();
+                            unsigned long long fs = cuda_fb_multi_si2_get();
+                            printf("[FB-MULTI] it%2d: fb_emit=%llu  SiII-edge share=%.1f%%\n",
+                                   it, ft, ft ? 100.0 * (double)fs / (double)ft : 0.0);
+                            fflush(stdout);
+                        }
+                        if (dev.d_jblue_line) {   /* [IUP-JBLUE] per-iter fallback diagnostic */
+                            long ju = 0, jf = 0;
+                            plasma_get_iup_jblue_counts(&ju, &jf);
+                            printf("[IUP-JBLUE] it%2d: up-rate lines using J_blue=%ld  "
+                                   "fallback(J_line)=%ld  (%.1f%% jblue) [last CPU solve]\n",
+                                   it, ju, jf,
+                                   (ju + jf) ? 100.0 * (double)ju / (double)(ju + jf) : 0.0);
+                            /* [JBLUE-ANCHOR] thin-line log-mean ~0 dex = jblue
+                             * estimator normalization anchored; offset = bug in dex */
+                            long jba_tn = 0, jba_kn = 0, jba_tc = 0, jba_kc = 0;
+                            double jba_tlm = 0.0, jba_klm = 0.0;
+                            plasma_get_jblue_anchor(&jba_tn, &jba_tlm, &jba_kn, &jba_klm,
+                                                    &jba_tc, &jba_kc);
+                            printf("[JBLUE-ANCHOR] it%2d: thin n=%ld <log10 J_b/J_l>=%.3f "
+                                   "(clamp=%ld) | thick n=%ld <log10>=%.3f (clamp=%ld)\n",
+                                   it, jba_tn, jba_tlm, jba_tc, jba_kn, jba_klm, jba_kc);
+                            fflush(stdout);
+                        }
+                        /* [EVENT-LOG] on a selected iteration, download the reserved
+                         * records + drop count, append them to lumina_events.bin (32B
+                         * header on first write), write the line-map once, then reset
+                         * the device counter for the next iteration. */
+                        if (event_log_on && (event_iters_all || it == pc_iter - 1)) {
+                            unsigned long long ecount = cuda_event_log_count();
+                            unsigned long long edrop  = cuda_event_log_dropped();
+                            unsigned long long ndl = (ecount > event_cap) ? event_cap : ecount;
+                            cuda_event_log_download(h_event_buf, ndl);
+                            /* line-map file (once): "LUMLIN01" then per line
+                             * (float lambda_A, uint16 Z, uint16 ion). */
+                            if (!event_lines_done) {
+                                FILE *lf = fopen("lumina_events_lines.bin", "wb");
+                                if (lf) {
+                                    fwrite("LUMLIN01", 1, 8, lf);
+                                    for (int li = 0; li < opacity.n_lines; li++) {
+                                        double nu = opacity.line_list_nu[li];
+                                        float lam = (nu > 0.0) ? (float)((C_SPEED_OF_LIGHT / nu) * 1.0e8) : 0.0f;
+                                        unsigned short Zc = (unsigned short)(atom_data.line_atomic_number
+                                            ? atom_data.line_atomic_number[li] : 0);
+                                        unsigned short ic = (unsigned short)(atom_data.line_ion_number
+                                            ? atom_data.line_ion_number[li] : 0);
+                                        fwrite(&lam, sizeof(float), 1, lf);
+                                        fwrite(&Zc, sizeof(unsigned short), 1, lf);
+                                        fwrite(&ic, sizeof(unsigned short), 1, lf);
+                                    }
+                                    fclose(lf);
+                                    printf("[EVENT-LOG] wrote lumina_events_lines.bin (%d lines)\n",
+                                           opacity.n_lines);
+                                }
+                                event_lines_done = 1;
+                            }
+                            FILE *ef = fopen("lumina_events.bin",
+                                             event_file_started ? "ab" : "wb");
+                            if (ef) {
+                                if (!event_file_started) {
+                                    unsigned char hdr[32]; memset(hdr, 0, sizeof(hdr));
+                                    memcpy(hdr, "LUMEVT01", 8);
+                                    unsigned int rsz = (unsigned int)sizeof(EventRec);
+                                    memcpy(hdr + 8, &rsz, sizeof(unsigned int)); /* record_size */
+                                    /* hdr[12..31] reserved = 0 */
+                                    fwrite(hdr, 1, 32, ef);
+                                    event_file_started = 1;
+                                }
+                                if (ndl > 0)
+                                    fwrite(h_event_buf, sizeof(EventRec), (size_t)ndl, ef);
+                                fclose(ef);
+                            }
+                            printf("[EVENT-LOG] it%2d: %llu events (%llu dropped) -> lumina_events.bin\n",
+                                   it, ecount, edrop);
+                            fflush(stdout);
+                        }
+                        /* (f) Reduce the binned MC histogram into the SHADOW buffer.
+                         *     cuda_download_j_nu fills nlte.j_nu_estimator (raw);
+                         *     nlte_normalize_j_nu writes physical J_nu. Point J_nu at
+                         *     nlte_Jmc across the normalize so the deterministic
+                         *     nlte.J_nu is never overwritten (Stage-1 = shadow only). */
+                        cuda_download_j_nu(&dev, &nlte, geo.n_shells);
+                        {
+                            double *saved_Jnu = nlte.J_nu;
+                            nlte.J_nu = nlte_Jmc;
+                            nlte_normalize_j_nu(&nlte, time_sim_ce, volume, geo.n_shells);
+                            nlte.J_nu = saved_Jnu;
+                        }
+                        /* P1: publish this iter's MC field for next iter's photoion
+                         * rate (lagged, like jbar_line). */
+                        if (g_photoion_mc && photoion_mc_J && nlte_Jmc) {
+                            size_t nJ = (size_t)geo.n_shells * nlte.n_freq_bins;
+                            memcpy(photoion_mc_J, nlte_Jmc, nJ * sizeof(double));
+                            /* Pass the freshly-downloaded per-bin packet tally so the
+                             * plasma blend can keep the deterministic J in bins the MC
+                             * never sampled (LUMINA_COEVOLVE_PHOTOION_OCC). nlte.j_nu_count
+                             * is written only by cuda_download_j_nu (this iter), consumed
+                             * by next iter's solve — stays in sync with photoion_mc_J. */
+                            plasma_set_photoion_mc_field(photoion_mc_J, photoion_mc_alpha,
+                                                         geo.n_shells, nlte.n_freq_bins,
+                                                         nlte.j_nu_count);
+                            if (it == 0)
+                                printf("[COEVOLVE-PHOTOION] MC shadow field armed for the "
+                                       "photoion rate (alpha=%.2f, lagged 1 iter)\n",
+                                       photoion_mc_alpha);
+                        }
+                        /* (f2) [COEVOLVE CONSUMER] LUMINA_MC_COEVOLVE_CONSUME=1: download +
+                         * normalize the MC per-line J_bar (the transported blue-wing J_blue
+                         * measured by packet resonance crossings) into opacity.jbar_line and
+                         * arm it, so the NEXT iter's NLTE solve pumps b_k>1 via the
+                         * beta*J_blue up-rate (needs LUMINA_NLTE_JBAR_POPS=3 + CPU assembly
+                         * LUMINA_NLTE_ASSEMBLE_GPU=0). This is the lagged Lambda-iteration
+                         * that the offline calc proved lifts b_k 1.00->1.47 — the fluorescence
+                         * fix. Default 0 => Stage-1 shadow (plasma untouched). Mirrors the
+                         * THEN_MC normalize (~5364). */
+                        {
+                            static int coev_consume = -1;
+                            if (coev_consume < 0) { const char *e = getenv("LUMINA_MC_COEVOLVE_CONSUME");
+                                                    coev_consume = e ? atoi(e) : 0; }
+                            if (coev_consume && dev.d_jbar_line) {
+                                size_t njb = (size_t)opacity.n_lines * geo.n_shells;
+                                CUDA_CHECK(cudaMemcpy(opacity.jbar_line, dev.d_jbar_line,
+                                           njb * sizeof(double), cudaMemcpyDeviceToHost));
+                                CUDA_CHECK(cudaMemcpy(opacity.jbar_count, dev.d_jbar_count,
+                                           njb * sizeof(int), cudaMemcpyDeviceToHost));
+                                double cte = C_SPEED_OF_LIGHT * geo.time_explosion;
+                                for (int l = 0; l < opacity.n_lines; l++) {
+                                    double pref = cte / (4.0 * M_PI_VAL * time_sim_ce *
+                                                         opacity.line_list_nu[l]);
+                                    for (int s = 0; s < geo.n_shells; s++) {
+                                        size_t k = (size_t)l * geo.n_shells + s;
+                                        opacity.jbar_line[k] *= pref / volume[s];
+                                    }
+                                }
+                                /* [COEVOLVE damp] under-relax jbar_line across iters
+                                 * (LUMINA_COEVOLVE_JBAR_DAMP=f, default 1=off): jbar =
+                                 * f*new + (1-f)*prev. Lagged-Lambda damping that tames the
+                                 * epay25 self-reinforcing UV loop (mirror of LUMINA_J_DAMP). */
+                                {
+                                    static double jbar_damp = -1.0;
+                                    static double *jbar_prev = NULL;
+                                    if (jbar_damp < 0.0) { const char *e = getenv("LUMINA_COEVOLVE_JBAR_DAMP");
+                                                           jbar_damp = e ? atof(e) : 1.0; }
+                                    if (jbar_damp > 0.0 && jbar_damp < 1.0) {
+                                        if (!jbar_prev) {
+                                            jbar_prev = (double *)malloc(njb * sizeof(double));
+                                            memcpy(jbar_prev, opacity.jbar_line, njb * sizeof(double));
+                                        }
+                                        for (size_t k = 0; k < njb; k++) {
+                                            opacity.jbar_line[k] = jbar_damp * opacity.jbar_line[k] +
+                                                                   (1.0 - jbar_damp) * jbar_prev[k];
+                                            jbar_prev[k] = opacity.jbar_line[k];
+                                        }
+                                    }
+                                }
+                                opacity.use_jbar_line = 1;
+                                if (it == 0)
+                                    printf("[COEVOLVE-CONSUME] MC jbar_line (transported J_blue) "
+                                           "armed for the beta*J_blue up-rate; lagged into next "
+                                           "iter's NLTE solve (needs JBAR_POPS=3, ASSEMBLE_GPU=0)\n");
+                            }
+                        }
+                        /* [IUP-JBLUE] download + normalize the blue-wing J_blue estimator
+                         * (same J_bar normalization as jbar_line: comov-energy sum ->
+                         * c·t_exp/(4π·t_sim·V·ν_line)) into opacity.jblue_line, consumed by
+                         * next solve's (B_lu-B_ul n_u/n_l)*beta*J_blue up-rate. Independent
+                         * of MC_COEVOLVE_CONSUME. */
+                        if (dev.d_jblue_line && opacity.jblue_line) {
+                            size_t njb = (size_t)opacity.n_lines * geo.n_shells;
+                            CUDA_CHECK(cudaMemcpy(opacity.jblue_line, dev.d_jblue_line,
+                                       njb * sizeof(double), cudaMemcpyDeviceToHost));
+                            double cte = C_SPEED_OF_LIGHT * geo.time_explosion;
+                            for (int l = 0; l < opacity.n_lines; l++) {
+                                double pref = cte / (4.0 * M_PI_VAL * time_sim_ce *
+                                                     opacity.line_list_nu[l]);
+                                for (int s = 0; s < geo.n_shells; s++) {
+                                    size_t k = (size_t)l * geo.n_shells + s;
+                                    opacity.jblue_line[k] *= pref / volume[s];
+                                }
+                            }
+                        }
+                        /* (g) [COEVOLVE-COLOR] diagnostic at 3 line-forming shells:
+                         *   (i) COLOR — UV/optical hardness of the MC shadow field vs
+                         *       deterministic cs.J (blue-tilt: MC ratio > det ratio).
+                         *   (ii) AMPLITUDE — MC/det at the UV and optical bins. This is
+                         *       the Stage-4 discriminator: a linear blend only helps if
+                         *       the MC field carries MORE UV at the line than the
+                         *       T_e-collapsed cs.J (amp_UV > 1). Color alone (already
+                         *       blue in cs.J) does not open the optical channel.
+                         *   On the final iter, dump the full field (both fields, all
+                         *   shells x bins) for offline color+amplitude analysis. */
+                        {
+                            double dlognu = log(nlte.nu_max / nlte.nu_min) / nlte.n_freq_bins;
+                            double nu_uv  = C_SPEED_OF_LIGHT / 2500.0e-8; /* ~2500 A */
+                            double nu_opt = C_SPEED_OF_LIGHT / 6000.0e-8; /* ~6000 A */
+                            int b_uv  = (int)(log(nu_uv  / nlte.nu_min) / dlognu - 0.5);
+                            int b_opt = (int)(log(nu_opt / nlte.nu_min) / dlognu - 0.5);
+                            if (b_uv  < 0) b_uv  = 0;
+                            if (b_uv  > nlte.n_freq_bins - 1) b_uv  = nlte.n_freq_bins - 1;
+                            if (b_opt < 0) b_opt = 0;
+                            if (b_opt > nlte.n_freq_bins - 1) b_opt = nlte.n_freq_bins - 1;
+                            int probe[3];
+                            probe[0] = geo.n_shells > 10 ? 10 : geo.n_shells / 4;
+                            probe[1] = geo.n_shells / 2;
+                            probe[2] = geo.n_shells > 40 ? 40 : (3 * geo.n_shells) / 4;
+                            for (int pi = 0; pi < 3; pi++) {
+                                int sm = probe[pi];
+                                if (sm < 0 || sm >= geo.n_shells) continue;
+                                size_t iuv  = (size_t)sm * nlte.n_freq_bins + b_uv;
+                                size_t iopt = (size_t)sm * nlte.n_freq_bins + b_opt;
+                                double det_col = cs.J[iopt]     > 0.0 ? cs.J[iuv]     / cs.J[iopt]     : 0.0;
+                                double mc_col  = nlte_Jmc[iopt] > 0.0 ? nlte_Jmc[iuv] / nlte_Jmc[iopt] : 0.0;
+                                double amp_uv  = cs.J[iuv]  > 0.0 ? nlte_Jmc[iuv]  / cs.J[iuv]  : 0.0;
+                                double amp_opt = cs.J[iopt] > 0.0 ? nlte_Jmc[iopt] / cs.J[iopt] : 0.0;
+                                printf("[COEVOLVE-COLOR] it%2d s%2d: color det=%.3e MC=%.3e (MC_bluer=%s) | "
+                                       "amp MC/det UV=%.3e opt=%.3e (MC_UV_stronger=%s)\n",
+                                       it, sm, det_col, mc_col, (mc_col > det_col) ? "YES" : "no",
+                                       amp_uv, amp_opt, (amp_uv > 1.0) ? "YES" : "no");
+                            }
+                            if (it == pc_iter - 1) {
+                                FILE *cf = fopen("lumina_coevolve_field.csv", "w");
+                                if (cf) {
+                                    fprintf(cf, "shell,bin,wavelength_A,cs_J,mc_J\n");
+                                    for (int s2 = 0; s2 < geo.n_shells; s2++)
+                                        for (int b = 0; b < nlte.n_freq_bins; b++) {
+                                            double nu_b = nlte.nu_min * exp((b + 0.5) * dlognu);
+                                            double lam = C_SPEED_OF_LIGHT / nu_b * 1.0e8;
+                                            size_t q = (size_t)s2 * nlte.n_freq_bins + b;
+                                            fprintf(cf, "%d,%d,%.3f,%.6e,%.6e\n",
+                                                    s2, b, lam, cs.J[q], nlte_Jmc[q]);
+                                        }
+                                    fclose(cf);
+                                    printf("[COEVOLVE] wrote lumina_coevolve_field.csv "
+                                           "(%d shells x %d bins: cs.J vs nlte_Jmc)\n",
+                                           geo.n_shells, nlte.n_freq_bins);
+                                }
+                            }
+                            if (it == pc_iter - 1) {
+                                /* MC-emergent spectrum from the FINAL co-evolve
+                                 * transport pass (THEN_MC is bypassed in co-evolve
+                                 * mode, so this is the only MC observable — the
+                                 * fair apple-to-apple vs ARTIS's MC spectrum).
+                                 * Shape-only: flux in packet-energy units per A. */
+                                int64_t nesc = 0;
+                                CUDA_CHECK(cudaMemcpy(&nesc, dev.d_n_escaped,
+                                           sizeof(int64_t), cudaMemcpyDeviceToHost));
+                                CUDA_CHECK(cudaMemcpy(h_escaped_flag, dev.d_escaped_flag,
+                                           n_packets * sizeof(int), cudaMemcpyDeviceToHost));
+                                CUDA_CHECK(cudaMemcpy(h_escaped_nu, dev.d_escaped_nu,
+                                           n_packets * sizeof(double), cudaMemcpyDeviceToHost));
+                                CUDA_CHECK(cudaMemcpy(h_escaped_energy, dev.d_escaped_energy,
+                                           n_packets * sizeof(double), cudaMemcpyDeviceToHost));
+                                enum { CEMC_NB = 1000 };
+                                static double cemc[CEMC_NB];
+                                memset(cemc, 0, sizeof(cemc));
+                                const double cemc_lmin = 500.0, cemc_lmax = 20000.0;
+                                double cemc_dll = log(cemc_lmax / cemc_lmin) / CEMC_NB;
+                                for (int i = 0; i < n_packets; i++) {
+                                    if (!h_escaped_flag[i] || h_escaped_nu[i] <= 0.0) continue;
+                                    double lam = C_SPEED_OF_LIGHT / h_escaped_nu[i] * 1.0e8;
+                                    int b2 = (int)(log(lam / cemc_lmin) / cemc_dll);
+                                    if (b2 >= 0 && b2 < CEMC_NB) cemc[b2] += h_escaped_energy[i];
+                                }
+                                FILE *mf = fopen("lumina_spectrum_coevolve_mc.csv", "w");
+                                if (mf) {
+                                    fprintf(mf, "wavelength_angstrom,flux\n");
+                                    for (int b2 = 0; b2 < CEMC_NB; b2++) {
+                                        double lc = cemc_lmin * exp((b2 + 0.5) * cemc_dll);
+                                        double dw = cemc_lmin * (exp((b2 + 1.0) * cemc_dll)
+                                                               - exp((double)b2 * cemc_dll));
+                                        fprintf(mf, "%.3f,%.6e\n", lc, cemc[b2] / dw);
+                                    }
+                                    fclose(mf);
+                                    printf("[COEVOLVE] wrote lumina_spectrum_coevolve_mc.csv "
+                                           "(final-iter MC emergent, %ld escaped)\n", (long)nesc);
+                                }
+                                /* Kromer last-interaction decomposition for the
+                                 * co-evolve tally (the loop-B kromer CSV never runs
+                                 * in co-evolve mode). Same columns as lumina_kromer.csv
+                                 * so existing analysis tooling applies. */
+                                if (kromer_on && h_escaped_emit_line &&
+                                    dev.d_escaped_emit_line) {
+                                    CUDA_CHECK(cudaMemcpy(h_escaped_emit_line, dev.d_escaped_emit_line,
+                                               n_packets * sizeof(int), cudaMemcpyDeviceToHost));
+                                    CUDA_CHECK(cudaMemcpy(h_escaped_in_line, dev.d_escaped_in_line,
+                                               n_packets * sizeof(int), cudaMemcpyDeviceToHost));
+                                    CUDA_CHECK(cudaMemcpy(h_escaped_in_nu, dev.d_escaped_in_nu,
+                                               n_packets * sizeof(double), cudaMemcpyDeviceToHost));
+                                    FILE *kf2 = fopen("lumina_kromer_coevolve.csv", "w");
+                                    if (kf2) {
+                                        fprintf(kf2, "escape_lambda_A,emit_Z,emit_ion,in_lambda_A,in_Z,in_ion,energy\n");
+                                        for (int i = 0; i < n_packets; i++) {
+                                            if (!h_escaped_flag[i]) continue;
+                                            double esc_lam = (h_escaped_nu[i] > 0.0)
+                                                           ? (C_SPEED_OF_LIGHT / h_escaped_nu[i]) * 1.0e8 : 0.0;
+                                            int el = h_escaped_emit_line[i];
+                                            int il = h_escaped_in_line[i];
+                                            int eZ = -1, ei = -1, iZ = -1, ii = -1;
+                                            double in_lam = 0.0;
+                                            if (el >= 0 && atom_data.line_atomic_number) {
+                                                eZ = atom_data.line_atomic_number[el];
+                                                ei = atom_data.line_ion_number[el];
+                                            }
+                                            if (il >= 0 && atom_data.line_atomic_number) {
+                                                iZ = atom_data.line_atomic_number[il];
+                                                ii = atom_data.line_ion_number[il];
+                                            }
+                                            if (h_escaped_in_nu[i] > 0.0)
+                                                in_lam = (C_SPEED_OF_LIGHT / h_escaped_in_nu[i]) * 1.0e8;
+                                            fprintf(kf2, "%.2f,%d,%d,%.2f,%d,%d,%.6e\n",
+                                                    esc_lam, eZ, ei, in_lam, iZ, ii,
+                                                    h_escaped_energy[i]);
+                                        }
+                                        fclose(kf2);
+                                        printf("[COEVOLVE] wrote lumina_kromer_coevolve.csv "
+                                               "(final-iter last-interaction decomposition)\n");
+                                    }
+                                }
+                                /* Virtual (next-event) estimator spectrum of the
+                                 * final co-evolve pass. Absolute scale carries an
+                                 * L_inner_ce/coev_Ltot constant offset (kernel
+                                 * weight uses L_inner) — shape-only observable. */
+                                if (enable_virtual) {
+                                    double *hv = (double *)malloc(VSPEC_N_BINS * sizeof(double));
+                                    if (hv) {
+                                        CUDA_CHECK(cudaMemcpy(hv, dev.d_virtual_spectrum,
+                                                   VSPEC_N_BINS * sizeof(double),
+                                                   cudaMemcpyDeviceToHost));
+                                        FILE *vf2 = fopen("lumina_spectrum_virtual_coevolve.csv", "w");
+                                        if (vf2) {
+                                            fprintf(vf2, "wavelength_angstrom,flux\n");
+                                            double dlv = (VSPEC_LAMBDA_MAX - VSPEC_LAMBDA_MIN) / VSPEC_N_BINS;
+                                            for (int b2 = 0; b2 < VSPEC_N_BINS; b2++)
+                                                fprintf(vf2, "%.6f,%.6e\n",
+                                                        VSPEC_LAMBDA_MIN + (b2 + 0.5) * dlv, hv[b2]);
+                                            fclose(vf2);
+                                            printf("[COEVOLVE] wrote lumina_spectrum_virtual_coevolve.csv "
+                                                   "(final-iter VIRTUAL-PACKET estimator)\n");
+                                        }
+                                        free(hv);
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
+                if (nlte_Jmc) { free(nlte_Jmc); nlte_Jmc = NULL; }
+                if (photoion_mc_J) { plasma_set_photoion_mc_field(NULL, 0.0, 0, 0, NULL);
+                                     free(photoion_mc_J); photoion_mc_J = NULL; }
+                if (h_event_buf) { free(h_event_buf); h_event_buf = NULL; } /* [EVENT-LOG] */
+                if (event_log_on) cuda_event_log_free();                    /* [EVENT-LOG] */
                 /* Default observer-frame (gold is observer-frame); set
                  * LUMINA_CMF_OBSERVER_FRAME=0 for the legacy comoving output. */
                 {
@@ -4698,6 +5853,18 @@ int main(int argc, char *argv[]) {
             CUDA_CHECK(cudaMemcpy(dev.d_kpacket_cdf, opacity.kpacket_cdf,
                        (size_t)geo.n_shells * opacity.n_macro_levels * sizeof(double),
                        cudaMemcpyHostToDevice));
+        /* [KPKT-FBUP] mirror of the in-loop fix: ff/fb exit probs + legacy fb edge
+         * freq were init-upload-only (pre-table-build => device stayed 0). */
+        if (dev.d_kpacket_ff && opacity.p_kpacket_ff)
+            CUDA_CHECK(cudaMemcpy(dev.d_kpacket_ff, opacity.p_kpacket_ff,
+                       (size_t)geo.n_shells * sizeof(double), cudaMemcpyHostToDevice));
+        if (dev.d_kpacket_fb && opacity.p_kpacket_fb)
+            CUDA_CHECK(cudaMemcpy(dev.d_kpacket_fb, opacity.p_kpacket_fb,
+                       (size_t)geo.n_shells * sizeof(double), cudaMemcpyHostToDevice));
+        if (dev.d_kpacket_fbnu && opacity.kpacket_fb_nu)
+            CUDA_CHECK(cudaMemcpy(dev.d_kpacket_fbnu, opacity.kpacket_fb_nu,
+                       (size_t)geo.n_shells * sizeof(double), cudaMemcpyHostToDevice));
+        cuda_reupload_kpkt_fb_edges(&dev, &opacity, geo.n_shells); /* [FB-MULTI] */
         double tausum = 0.0; long nnz = 0;
         for (size_t i = 0; i < (size_t)opacity.n_lines * geo.n_shells; i++)
             if (opacity.tau_sobolev[i] > 1e-6) { tausum += opacity.tau_sobolev[i]; nnz++; }
@@ -4834,7 +6001,7 @@ int main(int argc, char *argv[]) {
             dev.d_line_ion_number,
             fe_scatter,
             dev.d_j_estimator, dev.d_nu_bar_estimator,
-            dev.d_j_nu_estimator,
+            dev.d_j_nu_estimator, dev.d_j_nu_count,
             dev.nlte_n_freq_bins, dev.nlte_nu_min, dev.nlte_d_log_nu,
             dev.d_rng_states,
             dev.d_escaped_nu, dev.d_escaped_energy,

@@ -343,7 +343,9 @@ int load_tardis_reference_data(const char *ref_dir, Geometry *geo,
 
         printf("  Config: t_exp=%.6e s, T_inner=%.2f K, L=%.3e erg/s\n", /* Phase 2 - Step 10b */
                geo->time_explosion, config->T_inner, config->luminosity_requested); /* Phase 2 - Step 10b */
-        printf("    n_packets=%d, n_iter=%d, seed=%lu, T_e/T_rad=%.3f\n",
+        printf("    n_packets=%d, n_iter=%d (config-file defaults, pre-override;"
+               " effective values in 'Simulation parameters' below), seed=%lu,"
+               " T_e/T_rad=%.3f\n",
                config->n_packets, config->n_iterations, config->seed,
                plasma->T_e_T_rad_ratio);
     }

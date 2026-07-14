@@ -31,6 +31,7 @@
 #define AMU               1.660539066e-24  /* atomic mass unit in g */
 #define M_ELECTRON        9.1093837015e-28 /* electron mass in g */
 #define C_FF_OPACITY      3.6926e8         /* free-free opacity coefficient (CGS) */
+#define KPKT_FB_NEDGE     16               /* [FB-MULTI] max recomb continua per shell for per-edge k-packet fb sampling */
 
 /* Phase 2 - Step 2: TARDIS estimator constants (CGS) */
 /* T_RADIATIVE = (pi^4 / (15 * 24 * zeta(5))) * (h/k_B) */
@@ -59,6 +60,26 @@ typedef enum {
     INTERACTION_ESCATTERING = 2, /* Phase 2 - Step 3 */
     INTERACTION_CONTINUUM   = 3  /* Phase 2 - Step 3 */
 } InteractionType;               /* Phase 2 - Step 3 */
+
+/* [EVENT-LOG] archival packet event record (little-endian). NOTE: the fields
+ * below sum to 20 bytes (4*4 scalar words + 4 uint8), not the 16 quoted in the
+ * design note — 4 four-byte members cannot coexist with 4 one-byte members in
+ * 16 bytes. record_size is therefore sizeof(EventRec)=20 and read_events.py
+ * mirrors this exact layout. etype codes:
+ *   1=line absorption (macro-atom activation)   5=k-packet free-bound  (type -3)
+ *   2=line emission (macro-atom bb exit / MA-cap)6=escape
+ *   3=bf continuum absorption                    7=electron scatter (opt-in)
+ *   4=k-packet free-free (type -2)               8=bf-absorption re-emission (legacy) */
+typedef struct {
+    unsigned int  pkt_id;    /* packet index */
+    int           line_id;   /* line index, or -1 for continuum / escape */
+    float         nu_comov;  /* comoving frequency of the event [Hz] */
+    float         energy;    /* packet comoving energy weight */
+    unsigned char etype;     /* event type code (see above) */
+    unsigned char shell;     /* current shell id (0-255) */
+    unsigned char iter;      /* co-evolve iteration */
+    unsigned char pad;       /* reserved (0) */
+} EventRec;
 
 /* Phase 2 - Step 3: Line interaction types (interaction_events.py) */
 typedef enum {
@@ -130,6 +151,15 @@ typedef struct {
     double *p_kpacket_ff;                /* [n_shells] P(free-free continuum) once a k-packet forms (Path A); else coll-exc re-excite */
     double *p_kpacket_fb;                /* [n_shells] P(free-bound continuum | k-packet) — UV recombination-edge escape */
     double *kpacket_fb_nu;              /* [n_shells] representative recombination edge frequency [Hz] for fb emission */
+    /* [FB-MULTI] per-continuum k-packet free-bound edge tables (LUMINA_KPKT_FB_MULTI).
+     * Built in compute_transition_probabilities; NULL unless the gate is on. Each
+     * shell owns a length-KPKT_FB_NEDGE slice; edge j is the recombination continuum
+     * of recombining ion (Z,stage) with edge freq kpacket_fb_edge_nu, selectable via
+     * the normalized cumulative fb-energy weight kpacket_fb_edge_cdf. */
+    double *kpacket_fb_edge_nu;         /* [n_shells * KPKT_FB_NEDGE] per-continuum recomb edge freq [Hz] */
+    double *kpacket_fb_edge_cdf;        /* [n_shells * KPKT_FB_NEDGE] normalized cumulative fb-energy weight */
+    int    *kpacket_fb_edge_zstage;     /* [n_shells * KPKT_FB_NEDGE] Z*100+stage of the recombining ion (diagnostic) */
+    int    *kpacket_fb_edge_count;      /* [n_shells] number of valid edges (<=KPKT_FB_NEDGE) */
     /* MC-estimator macro-atom (THEN_MC): per-line Sobolev j_blue estimator of
      * J_bar at each line, accumulated from real MC packet crossings, replacing
      * the frozen binned J in the internal-up rate B_lu*J_bar (faithful Lucy-2002
@@ -137,6 +167,10 @@ typedef struct {
     double *jbar_line;                   /* [n_lines * n_shells] normalized J_bar at each line */
     int    *jbar_count;                  /* [n_lines * n_shells] resonance-crossing count (undersample guard) */
     int     use_jbar_line;               /* 1 = use jbar_line for internal-up (iter>=1); 0 = binned-J seed */
+    /* [IUP-JBLUE] ARTIS blue-wing J_blue: same per-line crossing tally + normalization
+     * as jbar_line, consumed by the (B_lu - B_ul n_u/n_l)*beta*J_blue up-rate.
+     * NULL unless LUMINA_IUP_JBLUE=1 (co-evolve transport). */
+    double *jblue_line;                  /* [n_lines * n_shells] normalized blue-wing J_blue or NULL */
     /* P7 Stage-II: DETERMINISTIC line-resolved J_bar_l = Int phi_l J_nu dnu from the
      * fine-grid CMF solve (NOT the MC estimator above; the validated cure for the
      * binned-J contrast-collapse, ladder gates 4c/5b). NULL until the producer fills
@@ -314,6 +348,7 @@ typedef struct {
     /* Results */
     double *nlte_level_populations;            /* [n_nlte_levels_total * n_shells] */
     double *j_nu_estimator;                    /* [n_shells * n_freq_bins] raw MC */
+    int    *j_nu_count;                        /* [n_shells * n_freq_bins] MC per-bin packet tally */
     double *J_nu;                              /* [n_shells * n_freq_bins] normalized */
 
     /* Current iteration index (set by host before each nlte_solve_all call). */
@@ -726,6 +761,10 @@ void bf_opacity_init(BFOpacity *bf, int n_shells);
 void bf_opacity_free(BFOpacity *bf);
 void compute_bf_opacity(BFOpacity *bf, AtomicData *atom, PlasmaState *plasma,
                          int n_shells);
+/* [BF-NLTE-POPS] Fix A: register the live NLTEConfig so compute_bf_opacity can
+ * source chi_bf level populations from the NLTE solve (gate LUMINA_BF_NLTE_POPS).
+ * NULL => dilute-Boltzmann fallback everywhere. */
+void bf_set_nlte_pops(NLTEConfig *nlte);
 double bf_get_chi(BFOpacity *bf, int shell, double nu);
 double bf_get_eta(BFOpacity *bf, int shell, double nu);
 /* Fine-ν bf opacity (sharp bf edges on the fine grid) for the CMFGEN-method producer.
@@ -802,6 +841,21 @@ void radeq_set_line_re_source(const double *chi_line, const double *chi_abs,
                               const double *chi_line_full,
                               const double *chi_line_cls,
                               int n_shells, int n_bins);
+
+void plasma_set_photoion_mc_field(const double *J, double alpha, int nshells, int nfb,
+                                  const int *counts);
+
+/* [IUP-JBLUE] last-solve counters: internal-up lines that used the MC blue-wing
+ * J_blue estimator vs those that fell back to the full-line J_line. */
+void plasma_get_iup_jblue_counts(long *used, long *fallback);
+
+/* [JBLUE-ANCHOR] internal normalization anchor: per-bucket count and log-mean
+ * of log10(J_blue/J_line) for THIN (Sobolev beta>0.5) and THICK (beta<0.01)
+ * lines, plus counts of ratios clamped outside [1e-3,1e3]. Thin log-mean ~0
+ * = jblue estimator normalization anchored; systematic offset = bug in dex. */
+void plasma_get_jblue_anchor(long *thin_n, double *thin_logmean,
+                             long *thick_n, double *thick_logmean,
+                             long *thin_clamp, long *thick_clamp);
 
 /* P5: Formal integral spectrum (noise-free, p-z formalism) */
 void compute_formal_integral_spectrum(
