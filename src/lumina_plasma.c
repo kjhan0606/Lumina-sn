@@ -4094,6 +4094,44 @@ static const DRCoefficient DR_TABLE[] = {
     /* Ni III → Ni II (Z=28, stage 2) — Mazzotta1998 fallback (never matched). */
     {28, 2, 1, {9.215000e-03}, {2.604100e+05}, DR_SOURCE_MAZZOTTA},
 
+    /* --- CMFGEN LTDR (low-T dielectronic) from DIE* files ------------
+     * Co IV → Co III  (Z=27, N=24, Cr-like recomb).  Derived from CMFGEN's
+     * LTDR file  atomic/COB/III/19apr23/DIECoIII_14840  (14840 autoionizing→
+     * bound stabilizing transitions, print-cutoff ALPHA(DIE)<1e-4·1e-12).
+     * Per-transition α reconstructed with the CMFGEN reader formula
+     * (rdgendie_v4.f:209-212):
+     *   α_i(T)=2.07e-10·Gu·A/GION·exp(-HDKT·v(exc)/T4)/T4^1.5   [1e-12 cm³/s]
+     *   HDKT=4.7994145,  GION=25 (Co IV 3d⁶ ⁵D ground term; self-calibrated
+     *   from the a-columns to 25.000±5e-3 and confirmed by the phot-file
+     *   header "Statistical weight of ion=25.0"),  T4=T/1e4.
+     *   E_i[K]=47994.145·v(exc);  summed over all 14840 transitions, then
+     *   compressed to this 3-term fit.  Builder: scripts/build_dr_cob3.py.
+     * Reproduces CMFGEN's own summary total ("LTDR for all listed states"
+     *   =1.359e-11 @1e4 K) to ratio 1.0000.  α(1e4)=1.30e-11, α(2e4)=6.40e-12.
+     *   Fit max |rel err| 0.02% over 5e3-1e5 K (0.04% over 1e3-1.5e5 K).
+     *   NB: file's cutoff-converged "Total for all states"=1.512e-11 @1e4 K is
+     *   ~11% higher (below-print-cutoff tail, not reconstructable) — this entry
+     *   is faithful to the LISTED transitions only, no ad-hoc scaling.
+     * Cross file: DIECoIII_2590 (higher cutoff 1e-3) gives ~72% of 14840 at all
+     *   T (14840/2590≈1.37-1.40); 14840 preferred.
+     * VALIDATION: identical pipeline on C III (dieciii_ic.dat, GION=2 self-
+     *   calibrated) vs Lumina's Badnell C III→C II (6,2): DIE/Badnell = 5.7×
+     *   @1e4 K, 2.75× @2e4 K, 0.21× @5e4 K — LTDR-only exceeds near threshold
+     *   and undershoots the Badnell total above ~2e4 K (expected: Badnell adds
+     *   high-n/high-T DR the LTDR list omits).
+     * DOUBLE-COUNT: Co III photoionization σ (phot_nosm & phot_data_A) is 100%
+     *   smooth analytic (types 1/2/8/9: Seaton/hydrogenic/Verner-Yakovlev; ZERO
+     *   type-20/21 Opacity-Project resonances) → Milne-inversion yields radiative
+     *   recomb only, so this LTDR is fully COMPLEMENTARY (no double-count).
+     *   CMFGEN's own guard (rd_phot_die_v1.f:131-147) warns of overlap only for
+     *   OP type-20/21 σ, which Co III never uses.
+     * STATUS: consulted only when LUMINA_FROZENIN_DR=1 (default OFF) — dormant
+     *   bookkeeping/CMFGEN-comparison entry; changes no default behavior. */
+    {27, 3, 3,
+     {2.7336e-06, 9.9735e-06, 1.2109e-05},
+     {6.1307e+02, 4.3869e+03, 9.7077e+03},
+     DR_SOURCE_CMFGEN},
+
     /* --- AUTOSTRUCT self-compute: pending Task #141 ----------------- */
 };
 #define DR_N_ENTRIES ((int)(sizeof(DR_TABLE) / sizeof(DR_TABLE[0])))
@@ -4108,12 +4146,13 @@ static const DRCoefficient DR_TABLE[] = {
 static double dr_boost_factor(DRSource src) {
     static int initialized = 0;
     static double boost_all = 1.0;
-    static double boost_per_src[6] = {1.0, 1.0, 1.0, 1.0, 1.0, 1.0};
+    static double boost_per_src[7] = {1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0};
     if (!initialized) {
         const char *all = getenv("LUMINA_DR_BOOST");
         if (all) boost_all = atof(all);
-        const char *names[5] = {"NONE","BADNELL","NORAD","MAZZOTTA","AUTOSTRUCT"};
-        for (int i = 1; i <= 4; i++) {
+        const char *names[7] = {"NONE","BADNELL","NORAD","MAZZOTTA","AUTOSTRUCT",
+                                "EST_ISOEL","CMFGEN"};
+        for (int i = 1; i <= 6; i++) {
             char buf[64];
             snprintf(buf, sizeof(buf), "LUMINA_DR_BOOST_%s", names[i]);
             const char *v = getenv(buf);
@@ -4122,7 +4161,7 @@ static double dr_boost_factor(DRSource src) {
         initialized = 1;
     }
     double f = boost_all;
-    if ((int)src >= 0 && (int)src < 6) f *= boost_per_src[(int)src];
+    if ((int)src >= 0 && (int)src < 7) f *= boost_per_src[(int)src];
     return f;
 }
 

@@ -406,7 +406,8 @@ typedef enum {
     DR_SOURCE_NORAD      = 2,   /* Nahar OSU R-matrix unified RR+DR    */
     DR_SOURCE_MAZZOTTA   = 3,   /* Mazzotta+1998 LS-coupling            */
     DR_SOURCE_AUTOSTRUCT = 4,   /* our AUTOSTRUCTURE self-compute       */
-    DR_SOURCE_EST_ISOEL  = 5    /* isoelectronic interpolation estimate */
+    DR_SOURCE_EST_ISOEL  = 5,   /* isoelectronic interpolation estimate */
+    DR_SOURCE_CMFGEN     = 6    /* CMFGEN LTDR file (DIE*), summed+fit  */
 } DRSource;
 
 typedef struct {

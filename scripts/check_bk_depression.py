@@ -1,5 +1,14 @@
 #!/usr/bin/env python3
-"""Test refined diagnosis: are IME (Si II, S II) excited levels NLTE-depressed
+"""DEPRECATED (2026-07-15, Fable adversarial verify): this summarizes b_k with
+G-WEIGHTING ("use g as proxy"), which does NOT reflect which levels carry the
+photoionization RATE (that is sigma*J-weighted). The "66x" IME depression this
+tool reported is a g-weighting artifact -- the levels dominating S II/Si II
+photoion have b_k ~ 0.2-1.3, not 0.015. Use scripts/db_photoion_calc.py, which
+computes G_nlte/G_boltz with the REAL sigma_bf x J integral (the correct metric;
+IME correction is only 1.6-2.7x, insufficient to fix over-ionization).
+
+--- original (invalid) intent below ---
+Test refined diagnosis: are IME (Si II, S II) excited levels NLTE-depressed
 (b_k<<1) while IGE (Fe III, Co III) excited levels are less so?
 If yes -> Boltzmann@T_e all-level Gph over-populates IME excited levels ->
 over-ionizes IME. Correct fix = weight Gph by actual b_k.
