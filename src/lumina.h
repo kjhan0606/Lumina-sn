@@ -270,6 +270,9 @@ typedef struct {
     int    *level_g;                  /* [n_levels] statistical weight */
     int    *level_metastable;         /* [n_levels] metastable flag */
     int    *level_super;              /* [n_levels] CMFGEN super-level idx (per-ion, 0-based); = level_num if no f_to_s */
+    signed char *level_mult;          /* [n_levels] spin multiplicity 2S+1 (0=unknown). NULL unless
+                                       * LUMINA_ALPHA_SPINGATE=1 (loaded from level_multiplicity.csv);
+                                       * OFF-path stays NULL so heap layout is unchanged. */
 
     /* Ionization data (from ionization_energies.csv) */
     int     n_ionization;             /* total ionization entries */

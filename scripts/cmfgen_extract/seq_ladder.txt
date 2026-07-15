@@ -1,0 +1,41 @@
+# CMFGEN toy06 SN Ia time-sequence ladder  (StaNdaRT published TIMES grid)
+# columns:  ts_no   age_days   dirname
+# ts_no=1 is the existing steady-state model in toy06_2d (age 2.0 d); it is LIVE
+# and driver-monitored only (never relaunched).  ts_no>=2 are built + launched by
+# seq_driver.sh via mk_next_epoch.py.
+#
+# Rationale for using the full published grid:  the ratios age_{n+1}/age_n are
+#   1.010, 1.015, 1.024, 1.048, then ~1.09-1.10 from 2.2 d onward -- i.e. it is
+#   ALREADY the ~10% dt/t cadence Dessart & Hillier use for SN CMFGEN sequences,
+#   with finer early steps where the young ejecta / radiation field evolve fastest.
+#   Coarsening below 2.4 d risks a too-large first D/Dt jump; the published grid is
+#   the default.  (To coarsen later epochs, delete rows and keep <=~10% steps; the
+#   homologous rescale + D/Dt terms only require monotonically increasing ages.)
+1     2.00    toy06_2d
+2     2.02    toy06_2.02d
+3     2.05    toy06_2.05d
+4     2.10    toy06_2.1d
+5     2.20    toy06_2.2d
+6     2.40    toy06_2.4d
+7     2.64    toy06_2.64d
+8     2.90    toy06_2.9d
+9     3.19    toy06_3.19d
+10    3.51    toy06_3.51d
+11    3.86    toy06_3.86d
+12    4.25    toy06_4.25d
+13    4.67    toy06_4.67d
+14    5.14    toy06_5.14d
+15    5.65    toy06_5.65d
+16    6.21    toy06_6.21d
+17    6.83    toy06_6.83d
+18    7.51    toy06_7.51d
+19    8.26    toy06_8.26d
+20    9.09    toy06_9.09d
+21    10.00   toy06_10.0d
+22    11.00   toy06_11.0d
+23    12.10   toy06_12.1d
+24    13.31   toy06_13.31d
+25    14.64   toy06_14.64d
+26    16.10   toy06_16.1d
+27    17.71   toy06_17.71d
+28    19.48   toy06_19.48d

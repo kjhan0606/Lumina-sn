@@ -2702,6 +2702,46 @@ static int frozenin_active(void) {
     return (e && e[0] == '1');
 }
 
+/* [ALPHA-SPINGATE] Ground-term spin multiplicity (2S+1) of the RECOMBINING ion
+ * (Z, charge) from NIST ground terms. Used as the M_core fallback when the
+ * CMFGEN companion table lacks the recombining ion's ground level -- notably
+ * Fe/Co/Ni IV are NOT in cmfgen_config_lumina.yml, so their M_core (6, 5, 4)
+ * can only come from here. Returns 0 if not tabulated => that ion is not gated.
+ * The recombination X+1(ground, S_core) + e(1/2) forms daughter terms with
+ * multiplicity in {M_core-1, M_core+1}; everything else is spin-forbidden. */
+static int spingate_core_mult(int Z, int charge) {
+    switch (Z) {
+    case 14: /* Si */ switch (charge) {
+        case 0: return 3;  /* Si I   3p2 3P */   case 1: return 2;  /* Si II  3p 2P */
+        case 2: return 1;  /* Si III 3s2 1S */   case 3: return 2;  /* Si IV  3s 2S */
+        default: return 0; }
+    case 16: /* S */  switch (charge) {
+        case 0: return 3;  /* S I    3p4 3P */   case 1: return 4;  /* S II   3p3 4S */
+        case 2: return 3;  /* S III  3p2 3P */   case 3: return 2;  /* S IV   3p 2P */
+        default: return 0; }
+    case 20: /* Ca */ switch (charge) {
+        case 0: return 1;  /* Ca I   4s2 1S */   case 1: return 2;  /* Ca II  4s 2S */
+        case 2: return 1;  /* Ca III 3p6 1S */   case 3: return 2;  /* Ca IV  3p5 2P */
+        default: return 0; }
+    case 26: /* Fe */ switch (charge) {
+        case 0: return 5;  /* Fe I   3d6 4s2 5D */ case 1: return 6;  /* Fe II  3d6 4s a6D */
+        case 2: return 5;  /* Fe III 3d6 5D */     case 3: return 6;  /* Fe IV  3d5 6S */
+        case 4: return 5;  /* Fe V   3d4 5D */     case 5: return 4;  /* Fe VI  3d3 4F */
+        default: return 0; }
+    case 27: /* Co */ switch (charge) {
+        case 0: return 4;  /* Co I   3d7 4s2 a4F */ case 1: return 3;  /* Co II  3d8 a3F */
+        case 2: return 4;  /* Co III 3d7 a4F */     case 3: return 5;  /* Co IV  3d6 5D */
+        case 4: return 6;  /* Co V   3d5 6S */
+        default: return 0; }
+    case 28: /* Ni */ switch (charge) {
+        case 0: return 3;  /* Ni I   3d8 4s2 3F */ case 1: return 2;  /* Ni II  3d9 2D */
+        case 2: return 3;  /* Ni III 3d8 3F */     case 3: return 4;  /* Ni IV  3d7 4F */
+        case 4: return 5;  /* Ni V   3d6 5D */
+        default: return 0; }
+    default: return 0;
+    }
+}
+
 /* Milne radiative-recombination coefficient [cm^3/s] producing ion-pop `ip`
  * (charge stage k) by recombination from stage k+1. `ip_next` (charge k+1)
  * supplies the recombining-ion ground statistical weight. T = T_e. */
@@ -2740,11 +2780,57 @@ static double frozenin_alpha_rr(AtomicData *atom, int ip, int ip_next, double T)
     double log_numin = log(atom->cmfgen_nu_min);
     double d_log_nu = (log(atom->cmfgen_nu_max) - log_numin) / nfreq;
 
+    /* [ALPHA-SPINGATE] Restrict the Milne recombination sum to SPIN-ALLOWED
+     * daughter terms. Recombination X+1(ground core, S_core) + e(1/2) can only
+     * form daughter terms of multiplicity M in {M_core-1, M_core+1}; CMFGEN's
+     * sigma_bf carries large cross-sections for spin-forbidden terms that inflate
+     * alpha ~4.5-6.7x vs NORAD (see scripts/fe3_alpha_inflation_audit.py). When
+     * gated on, levels whose multiplicity is KNOWN and outside the allowed set
+     * are skipped. UNKNOWN multiplicity (0) is kept (conservative); an unknown
+     * M_core leaves that ion ungated. Gate off => M_core stays 0 and the loop is
+     * byte-identical to the original. */
+    static int alpha_spingate = -1;
+    if (alpha_spingate < 0) {
+        const char *e = getenv("LUMINA_ALPHA_SPINGATE");
+        alpha_spingate = (e && atoi(e)) ? 1 : 0;
+        if (alpha_spingate)
+            printf("[ALPHA-SPINGATE] Milne recombination restricted to "
+                   "spin-allowed daughter terms (M_core +/- 1)\n");
+    }
+    int M_core = 0;                     /* 0 => this ion is not gated */
+    const char *mcore_src = "none";
+    if (alpha_spingate) {
+        if (atom->level_mult && ip_next >= 0) {
+            int gnd = atom->level_offset[ip_next];   /* level_num==0 = ground */
+            if (gnd < atom->level_offset[ip_next + 1] &&
+                atom->level_mult[gnd] > 0) {
+                M_core = atom->level_mult[gnd];
+                mcore_src = "data";
+            }
+        }
+        if (M_core == 0) {
+            M_core = spingate_core_mult(Z, stage + 1);
+            if (M_core > 0) mcore_src = "table";
+        }
+    }
+    /* one-time detailed diagnostic for Fe III (Z=26 stage=2) */
+    static int spingate_diag_done = 0;
+    int want_diag = (alpha_spingate && !spingate_diag_done &&
+                     Z == 26 && stage == 2 && M_core > 0);
+    double a_full_diag = 0.0; int n_lev_diag = 0, n_skip_diag = 0;
+
     int g0 = atom->level_offset[ip];
     int g1 = atom->level_offset[ip + 1];
     double a_tot = 0.0;
     for (int gl = g0; gl < g1; gl++) {
         if (!atom->cmfgen_has_sigma[gl]) continue;
+        /* spin-selection skip: multiplicity known and not M_core +/- 1 */
+        int spin_skip = 0;
+        if (alpha_spingate && M_core > 0 && atom->level_mult) {
+            int Ml = atom->level_mult[gl];
+            if (Ml > 0 && Ml != M_core - 1 && Ml != M_core + 1) spin_skip = 1;
+        }
+        if (spin_skip && !want_diag) continue;   /* fast path: skip the integral */
         double E_l_erg = atom->level_energy_eV[gl] * EV_TO_ERG;
         double chi_l = chi_ion_erg - E_l_erg;       /* binding energy of level l */
         if (chi_l <= 0.0) continue;
@@ -2764,8 +2850,17 @@ static double frozenin_alpha_rr(AtomicData *atom, int ip, int ip_next, double T)
                         (C_SPEED_OF_LIGHT * C_SPEED_OF_LIGHT)) / expm1(x);
             Rbf += 4.0 * M_PI_VAL * B * sig / (H_PLANCK * nu_c) * dnu;
         }
-        a_tot += Rbf * lam3 * (double)atom->level_g[gl] / (2.0 * U_ion)
+        double a_l = Rbf * lam3 * (double)atom->level_g[gl] / (2.0 * U_ion)
                  * exp(chi_l / (K_BOLTZMANN * T));
+        if (want_diag) { a_full_diag += a_l; n_lev_diag++; if (spin_skip) n_skip_diag++; }
+        if (!spin_skip) a_tot += a_l;
+    }
+    if (want_diag) {
+        double ratio = (a_full_diag > 0.0) ? a_tot / a_full_diag : 0.0;
+        printf("[ALPHA-SPINGATE] Fe III: alpha_gated/alpha_full = %.2f "
+               "(skipped %d of %d levels, M_core=%d [%s])\n",
+               ratio, n_skip_diag, n_lev_diag, M_core, mcore_src);
+        spingate_diag_done = 1;
     }
     /* + dielectronic recombination (LUMINA_FROZENIN_DR=1): the U_II-corrected
      * Milne RR exposed that the old x2.8-high alpha was accidentally standing

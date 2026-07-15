@@ -859,6 +859,76 @@ int load_atomic_data(AtomicData *atom, const char *ref_dir, int n_shells) {
                 atom->level_offset[total_ion_pops], atom->n_levels);
     }
 
+    /* --- [ALPHA-SPINGATE] optional per-level spin multiplicity (2S+1) ---------
+     * Loaded ONLY when LUMINA_ALPHA_SPINGATE=1 -> when the gate is off this
+     * whole block is skipped and atom->level_mult stays NULL (memset above),
+     * so the OFF-path heap layout is byte-for-byte unchanged. The companion
+     * (level_multiplicity.csv) is produced offline from CMFGEN OSC term labels
+     * (scripts/bake_level_multiplicity.py) and keyed by (atomic_number,
+     * ion_number, level_number) so it is portable across reference dirs that
+     * share the CMFGEN level ordering. Levels absent from the companion stay 0
+     * (unknown -> never skipped downstream). */
+    atom->level_mult = NULL;
+    {
+        const char *sg = getenv("LUMINA_ALPHA_SPINGATE");
+        if (sg && atoi(sg)) {
+            char mpath[512];
+            const char *ovr = getenv("LUMINA_SPINGATE_MULT");
+            if (ovr && ovr[0])
+                snprintf(mpath, sizeof(mpath), "%s", ovr);
+            else
+                snprintf(mpath, sizeof(mpath), "%s/level_multiplicity.csv", ref_dir);
+            FILE *probe = fopen(mpath, "r");
+            if (!probe) {
+                fprintf(stderr, "  [ALPHA-SPINGATE][WARN] multiplicity table not "
+                        "found at %s -> gate will be inert (no levels skipped)\n",
+                        mpath);
+            } else {
+                fclose(probe);
+                int nz = 0, ni = 0, nl = 0, nm = 0;
+                int *m_Z    = read_csv_column_int(mpath, "atomic_number", &nz);
+                int *m_ion  = read_csv_column_int(mpath, "ion_number",    &ni);
+                int *m_lnum = read_csv_column_int(mpath, "level_number",  &nl);
+                int *m_mult = read_csv_column_int(mpath, "multiplicity",  &nm);
+                if (m_Z && m_ion && m_lnum && m_mult &&
+                    nz == ni && ni == nl && nl == nm) {
+                    atom->level_mult = (signed char *)calloc((size_t)atom->n_levels,
+                                                             sizeof(signed char));
+                    long filled = 0;
+                    for (int r = 0; r < nz; r++) {
+                        int mm = m_mult[r];
+                        if (mm < 0) mm = 0; else if (mm > 127) mm = 127;
+                        if (mm == 0) continue;
+                        /* find ion-pop for (Z, ion_charge) */
+                        int ip = -1;
+                        for (int q = 0; q < total_ion_pops; q++) {
+                            if (atom->ion_pop_Z[q] == m_Z[r] &&
+                                atom->ion_pop_stage[q] == m_ion[r]) { ip = q; break; }
+                        }
+                        if (ip < 0) continue;
+                        int gi = atom->level_offset[ip] + m_lnum[r];
+                        if (gi < atom->level_offset[ip] ||
+                            gi >= atom->level_offset[ip + 1]) continue;
+                        /* guard against ordering drift: verify identity */
+                        if (atom->level_Z[gi] != m_Z[r] ||
+                            atom->level_ion[gi] != m_ion[r] ||
+                            atom->level_num[gi] != m_lnum[r]) continue;
+                        atom->level_mult[gi] = (signed char)mm;
+                        filled++;
+                    }
+                    printf("  [ALPHA-SPINGATE] multiplicity table: %ld/%d levels "
+                           "assigned (%.1f%%) from %s\n", filled, atom->n_levels,
+                           100.0 * (double)filled / (double)atom->n_levels, mpath);
+                } else {
+                    fprintf(stderr, "  [ALPHA-SPINGATE][WARN] malformed table %s "
+                            "(cols %d/%d/%d/%d) -> gate inert\n",
+                            mpath, nz, ni, nl, nm);
+                }
+                free(m_Z); free(m_ion); free(m_lnum); free(m_mult);
+            }
+        }
+    }
+
     /* --- Allocate per-shell computed arrays --- */
     atom->ion_number_density  = (double *)calloc((size_t)total_ion_pops * n_shells, sizeof(double));
     atom->partition_functions = (double *)calloc((size_t)total_ion_pops * n_shells, sizeof(double));
@@ -1038,6 +1108,7 @@ void free_atomic_data(AtomicData *atom) {
     free(atom->level_g);
     free(atom->level_metastable);
     free(atom->level_super);
+    free(atom->level_mult);        /* NULL unless LUMINA_ALPHA_SPINGATE=1 */
     free(atom->ioniz_Z);
     free(atom->ioniz_ion);
     free(atom->ioniz_energy_eV);
