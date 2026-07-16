@@ -118,17 +118,21 @@ def analyze(d,label,Z,ion,shell,selftest=False):
     print("  top Boltz-G lv(E,b_k):",", ".join(f"{c[0]}({c[1]:.1f},{c[2]:.2g})" for c in contrib[:6]))
     print()
 
-A='logs/coevolve_consume_a10_kx_gphground'
-B='logs/coevolve_consume_a10_kx_gphall'
-analyze(A,'SELFTEST FeIII',26,2,0,selftest=True)
-analyze(A,'A FeIII',26,2,0)
-analyze(B,'B FeIII',26,2,0)
-analyze(A,'A CoIII',27,2,0)
-analyze(B,'B CoIII',27,2,0)
-analyze(A,'A SII',16,1,10)
-analyze(B,'B SII',16,1,10)
-analyze(A,'A SII',16,1,9)
-analyze(A,'A SiII',14,1,6)
-analyze(B,'B SiII',14,1,6)
-analyze(A,'A SiII s5',14,1,5)
-analyze(B,'B SiII s5',14,1,5)
+def _main():
+    A='logs/coevolve_consume_a10_kx_gphground'
+    B='logs/coevolve_consume_a10_kx_gphall'
+    analyze(A,'SELFTEST FeIII',26,2,0,selftest=True)
+    analyze(A,'A FeIII',26,2,0)
+    analyze(B,'B FeIII',26,2,0)
+    analyze(A,'A CoIII',27,2,0)
+    analyze(B,'B CoIII',27,2,0)
+    analyze(A,'A SII',16,1,10)
+    analyze(B,'B SII',16,1,10)
+    analyze(A,'A SII',16,1,9)
+    analyze(A,'A SiII',14,1,6)
+    analyze(B,'B SiII',14,1,6)
+    analyze(A,'A SiII s5',14,1,5)
+    analyze(B,'B SiII s5',14,1,5)
+
+if __name__=="__main__":
+    _main()

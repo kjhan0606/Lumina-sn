@@ -95,14 +95,34 @@ else
   log "[skip] ionfrac.csv -- needs converged model (RVTJ + POP<species> files)"
 fi
 
-# -- 5. photoionization / recombination rates (documented; converged) --------
+# -- 5. level populations -> Gamma trigger (converged) -----------------------
+# Feeds scripts/gamma_photoion_cmp.py (trigger (1) of the integrated-arm decision).
+# NB the earlier note here claimed Gamma is readable via "dispgen NETR_<ion>".
+# That was WRONG: NETR is a *line* option (maingen.f:825 groups it with
+# MOMR/SOBR/EW/LAM/CHIL/TAUL/BETA; its handler maingen.f:1618 computes
+# ZNET=1-JBAR*CHIL/ETAL, a bound-bound net rate).  dispgen exposes NO
+# photoionization-rate option -- PHOT_*/PLTPHOT_* give cross-sections only, RR_*
+# gives recombination.  And DC_*/POP_* cap at 10 levels (maingen_opt_desc.txt:213-216),
+# useless for Co III's ~3900.  So we read the POP<SPECIES> files directly and do
+# the Gamma integral offline with the same estimator LUMINA uses.
+if ls "$RUN"/POP* >/dev/null 2>&1; then
+  POPF=$(ls "$RUN"/POPCOB "$RUN"/POPIRON "$RUN"/POPNICK "$RUN"/POPSIL "$RUN"/POPSUL "$RUN"/POPCAL 2>/dev/null)
+  if [ -n "$POPF" ]; then
+    python3 "$HERE/parse_pops.py" $POPF -o "$OUT/pops.csv" && log "[ok] pops.csv (per-level n_k; feeds gamma_photoion_cmp.py)"
+  else
+    log "[warn] POP* present but no known species file (POPCOB/POPIRON/...)"
+  fi
+else
+  log "[skip] pops.csv -- POP<SPECIES> written only at LST_ITERATION (convergence)"
+fi
 log ""
-log "# Rates (Gamma/alpha) note:"
-log "#   Per-depth photoionization & recombination rates are extractable from a"
-log "#   converged model via dispgen: options RR_<ion>/NRR_<ion> (recombination"
-log "#   -> unit LU_REC), PHOT_<ion> (cross-sections), NETR_<ion> (net rates ->"
-log "#   file RATES), COL_<ion> (collision rates).  Implemented on request; the"
-log "#   IF_ ionization-fraction path above is the primary Lumina cross-check."
+log "# Gamma(Co III) trigger -- run AFTER this battery, from the repo root:"
+log "#   JNU_ALL=1 $0 $RUN $OUTBASE        # re-dump J on the FULL grid (EUV thresholds!)"
+log "#   python3 scripts/gamma_photoion_cmp.py --Z 27 --ion 2 --shell 0 \\"
+log "#       --jnu-csv $OUT/jnu.csv --pop-csv $OUT/pops.csv \\"
+log "#       --depth <d(v~4200km/s)> --r-cm <R_outer_cm> --lum-lsun <LSTAR>"
+log "#   Decision rule (pre-registered): Gamma_C/G_L >=5 -> gap is real, G-correction"
+log "#   is the arm's third component; <=2 -> the '~10x' inference is refuted, re-audit alpha."
 
 log ""
 log "# done."
