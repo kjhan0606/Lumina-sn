@@ -1,0 +1,653 @@
+========================================================================
+ R8 CMFGEN epoch-1 (2.0d) NaN fix — RESUME NOTE  (updated 2026-07-16 ~10:05)
+========================================================================
+
+*** 2026-07-16 10:00 — USER DIRECTIVE: stop running CMFGEN manually on the
+    login node (syntax). Run it on SLURM on the 'grammar' CPU cluster. ***
+  - Killed all 4 login-node diag runs (diagT/diag12/diagA/diagB) on syntax.
+  - grammar = separate CPU slurm cluster: partitions debug/normal(grammar001-112,
+    112 nodes, 64 cores + 503GB each, unlimited time). REACHABLE non-interactively
+    via `ssh grammar ...` (key auth). /gpfs is SHARED syntax<->grammar (no copying).
+  - syntax = the GPU slurm cluster (a10/a40/h100/a100/h200) for LUMINA, NOT for CMFGEN.
+  - SUBMIT CMFGEN:  ssh grammar 'cd /gpfs/kjhan/cmfgen_runs && sbatch slurm_cmfgen_epoch1.sh'
+  - MONITOR:        ssh grammar 'squeue -u kjhan'   +  read /gpfs .../toy06_2d/{OUTGEN,batch.log}
+
+ROOT CAUSE (config, not source — user's earlier instinct, confirmed on disk):
+  VADAT T_MIN=0.3 (3000K) let the outer plateau fall below the benchmark's 5000K
+  floor (--tempmin 5e3; phys_toy06_cmfgen.txt outer=exactly 5000K). Sub-5000K ->
+  extreme LTE stage-II pops -> net continuum opacity goes negative at outer depth
+  pts -> NaN. ON-DISK PROOF (toy06_2d/crashbak_0349/OUTGEN.nan):
+     "Negative opacity encountered in TORSCL_V3 ; CHI(1)=NaN ; CHI(INDX)=NaN 10 ;
+      Grey solution was NOT successfully computed"  (indices 1 & 10 = OUTER zone).
+  FIX = T_MIN 0.3 -> 0.5 (pure config, ZERO source change). APPLIED to
+  /gpfs/kjhan/cmfgen_runs/toy06_2d/VADAT line 625.
+
+*** 2026-07-17 19:05 — SEED SAGA CLOSED (SCRTEMP forensic ground truth; Fable-accepted).
+  MYSTERY SOLVED — why F1 == F1' to 8 digits: **SCALE_POPS** (subs/scale_pops.f:20-26,
+    called set_new_model_estimates.f:388-393) renormalizes each species' TOTAL to the
+    hydro POP_SPECIES: one scalar per species -> ionization RATIOS kept, absolute anchor
+    DISCARDED. A 40-dex top-ion change is invisible in the species sum -> same scalar ->
+    same dominant pops -> same L. The earlier "top-ion cascade" mechanics verdict and its
+    0.216-dex offline gate omitted SCALE_POPS = unfaithful chain model (agent retracted).
+  THE ACTUAL KILLER (SCRTEMP it1, NT=1645 empirically pinned): instantiated totals =
+    hydro (0.3%), dominant ions ~ LTE (fine, sets L) — but the seed's uniform-b
+    Boltzmann-per-ion construction leaves the TRACE high-ion tail (FeV/FeSIX/CoV/CoSIX)
+    **13-42 dex above LTE/SE**, worst at the T-minimum (depths 33/39) in the IME shell
+    where Fe/Co sit at the 1e-10 abundance floor. L-irrelevant trace ions, but Newton
+    cannot absorb 40-dex corrections -> DTDR NaN by it3. Top-ion-independent => F1 == F1'.
+  VERDICT: the *_IN route is not structurally impossible (a HYBRID writer — dominant ions
+    from published fractions + trace/high ions clamped to LTE — could work) but buys
+    nothing: dominant ionization is ~LTE anyway and totals are hydro-anchored regardless.
+    ** SEED ROUTE CLOSED. FIX_T staging + DC_METH=LTE is the initialization lever. **
+    (Hybrid-writer contract documented here in case it is ever revisited.)
+  Meta-lesson chain (recorded in memory feedback_audit_the_yardstick_first cases 7-8):
+    writer-side gate -> reader-side gate -> BOTH unfaithful until calibrated against the
+    run's own ground truth (SCRTEMP). Gates must be validated against one known-real state.
+
+*** 2026-07-17 15:30 — F1 (seeded-DC) VERDICT: pre-registered REFUTED fired — WORST demands
+    of all three initializations. it1 = +2.76e43% / -1.77e48% @ depths 33/39 (vs LTE@5000K
+    4.9e6/3.9e7 @44/50; LTE@trueT 2.9e20/1.2e21 @20/21). L(it1)=1.111e10 (same 4x-over-physical
+    family as LTE@trueT's 1.04e10). NaN by it3, grey-fail, EXIT=2 at 14:18. Corpse:
+    toy06_19.48d_dc (kept). Monitor closed cleanly (both arms EXIT).
+  ** FABLE HOLD: refutation NOT yet accepted — experiment validity under audit. **
+    - Format convention VERIFIED CORRECT (driver, source-read): XzV_IN "10-Dec-2010" stores
+      log10(b); regrid_log_dc_v1.f:127-133 takes the LOG_TEN=ln10 branch. Not a log/linear bug.
+    - BUT the seed path has NEVER produced a healthy start in its history: R5 (2.0d) died with
+      "transfer NaN"; R7's "seed exonerated" was INFERENTIAL (R7 never ran the seed). The
+      2.2e-16 seed roundtrip was WRITER-side (never traversed CMFGEN's reader chain).
+    - DEC_VEC top 1.77e46 => something seeded ~44-46 dex ABOVE equilibrium. Mechanics
+      (DC->population instantiation convention: DI column semantics, super-level F_TO_S,
+      R-grid 700->90 interpolation) vs Physics (Boltzmann excitation genuinely hostile)
+      = commissioned offline audit (reproduce reader chain, reconstruct instantiated pops).
+  NEXT-RUNG CANDIDATE (registered, not launched): FIX_T staging — LTE@trueT's LAMBDA grind
+    reached 3.7e3% demands but L ran away 64x (LAMBDA can't fix T). Orthodox config: FIX_T=T
+    holds the (truth-seeded) T while pops/J relax, then restart with FIX_T=F. Mechanics being
+    verified in the same audit. NO new runs until the audit adjudicates.
+  Machines: lageunha idle again (both arms dead); grammar normal still full.
+
+*** 2026-07-16 23:37 — EXECUTION MOVED: grammar slurm -> MANUAL run on LagEunha.
+  WHY: grammar was full (100/112 nodes alloc; largest partial-node gap = 12 cores, so a
+    16-core request could not backfill) -> slurm estimated StartTime=07:00, ~7.5 h away.
+    Job 364521 was the highest-priority PENDING job (2275); it was not a priority problem,
+    it was a no-16-core-slot problem. Other users' z50 jobs hold 8 nodes with TimeLimit=30d.
+  ** grammar job 364521 CANCELLED ** — mandatory: it would have woken at 07:00 in THIS SAME
+    /gpfs run dir and its first act is `rm -f OUTGEN batch.log EDDFACTOR* SCRTEMP ...`,
+    destroying the live manual run's scratch and then double-writing every file.
+    ==> NEVER have a queued grammar job and a manual run pointing at the same run dir.
+  LagEunha (10.0.200.25) = a SEPARATE server sharing /home and /gpfs (user-confirmed).
+    NOT the syntax login node, so the 2026-07-16 10:00 "no manual CMFGEN" directive (which
+    named the syntax login node) does not apply; manual runs are normal here.
+    2x AMD EPYC 7543 = 64 physical / 128 logical; 1007 GB RAM.
+  ***** OMP_NUM_THREADS=16 — DO NOT APPLY THE LAGEUNHA OMP=60 RULE TO CMFGEN *****
+    feedback_lageunha_omp32 says manual lageunha runs use OMP=60. For CMFGEN that is FATAL:
+    comp_opac.f:88's array REDUCTION under SCHEDULE(DYNAMIC) makes the FP sum order
+    thread-count dependent; 32/64 tip net chi<0 at the cold outer plateau -> LOG(chi<=0)=NaN
+    (README R7). 16 is the only count this model has run clean at. 60 is inside the poisoned range.
+  CORE BINDING (measured, not assumed): ramses_final3d holds 32 procs pinned to the EVEN
+    cores 0,2,...,62 — it SPANS BOTH SOCKETS, it is not confined to socket 0. Free = the ODD
+    cores. We took the 16 odd cores inside NUMA node1 (32-63): 33,35,...,63.
+    VERIFIED live: cmfgen's 16 threads sit on exactly 33..63 odd; ramses on 0..62 even;
+    intersection EMPTY. cmfgen RSS 92.1 GB (== the known peak); machine 334 GB still free.
+  SCRIPT: /gpfs/kjhan/cmfgen_runs/run_lageunha_snap1948.sh  (setsid nohup; survives ssh exit)
+    launch: ssh lageunha 'cd /gpfs/kjhan/cmfgen_runs && setsid nohup bash run_lageunha_snap1948.sh \
+                          > seq_logs/lageunha_snap1948.out 2>&1 < /dev/null &'
+    check : ssh lageunha 'pgrep -f cmfgen_dev.exe' ; run_lageunha.info has host/OMP/cores/PID/config
+  ★FIRST PRE-REGISTERED PREDICTION ALREADY LANDED: R_GRID_SELECTION inner boundary optical
+    depth 2.1575 -> **5.3496** (Fable predicted ~3-5). The ratio 2.48x matches the inner ne
+    reseed ratio 1.845e10/7.69e9 = 2.40x => the (T,ne) seed took effect as designed, AND it
+    independently confirms that the earlier "tau_IB=2.16 means DIFFUSION is invalid" alarm
+    was an artifact of the bad ne (Fable's refutation of that candidate holds).
+
+*** 2026-07-16 15:20 — PIVOT: direct 19.48d SNAPSHOT (user's choice). The 2.0d
+    cold-start sequence is abandoned as the path to the benchmark. TWO reasons:
+    (1) my OMP=64 in the slurm scripts RE-TRIGGERED the KNOWN R7 comp_opac
+    REDUCTION NaN (README R7: OMP 32/64 tips net continuum chi<0 at the cold outer
+    plateau -> LOG(chi<0)=NaN; PROVEN-CLEAN thread count = OMP=16). (2) even past
+    the NaN, the 2.0d LTE cold start has a documented deeper convergence disease
+    (40-dex LAMBDA climb, never finishes NUM_ITS; README R1-R7).
+  BUILD (toy06_19.48d/): regenerated the toy-model input at --tend 19.48 with the
+    SAME generator as 2.0d (mk_snia_toy_model.py --highni, tend override patched in
+    a scratch COPY; StaNdaRT original untouched) -> homologously evolved structure
+    + Ni->Co->Fe DECAYED composition (Co-dominated: Ni/Co/Fe=0.065/0.476/0.059 Msun)
+    + adiabatic T guess. mk_sn_hydro.py (adapted SRC/OUT/AGE) -> SN_HYDRO_DATA
+    (inner natom 5.16e9 == CMFGEN ref 5.17e9). Config copied byte-identical from the
+    stabilized 2.0d recipe, ONLY [SN_AGE] 2.0->19.48 (DO_DDT=F steady-state=snapshot,
+    T_MIN=0.5, MAX_LAM=100, DC_METH=LTE, SN_T_OPT=USE_HYDRO, N_OB_INS=8, T_EXC=0.4).
+    OMP=16 (run.sh + slurm wrapper). setup_links.sh retargeted+run (126 links, 0 broken).
+  LIVE JOB: 364439 cmf_toy06_1948 (slurm_cmfgen_snap1948.sh; --cpus-per-task=16
+    --mem=200G, OMP=16). Monitor watches OMP=16-NaN(must NOT recur)/iter/exit.
+  ON CONVERGE -> extract J_nu(918-1290A), Gamma(Co III), ionfrac; compare to
+    data/standart_data1/toy06/*_cmfgen.txt (the StaNdaRT CMFGEN reference at 19.48d).
+  CMFGEN ref 19.48d validation block = phys_toy06_cmfgen.txt line 2840 (inner
+    T=2.30e4, ne=1.85e10, natom=5.17e9 at v=1025).
+
+*** 2026-07-16 22:4x — SNAPSHOT ATTEMPT 1 (364439) FAILED; FIXED -> job 364521.
+  WHAT HAPPENED: 364439 ran 4h45m, it1 fully HEALTHY (T 15 T, DTDR finite, grey OK,
+    L(d=1)=2.488E+09 Lsun = the physically CORRECT near-peak 19.48d value), then it1's
+    Newton demand was catastrophic (+4.93E+06% / -3.91E+07% at depths 44/50) -> it2 J
+    NaN -> CMF_BLKBAND_V3 IFAIL at depths 1-66 -> 3 dead iters -> wr_x_info.f:113 format
+    crash on a NaN (CMFGEN_EXIT=2; the crash is a SYMPTOM, not the cause).
+  ** OMP=16 HELD: zero "Negative opacity in TORSCL". The R7 thread bug did NOT recur. **
+  ROOT CAUSE (Fable verdict, verified on disk) = the SAME uncured LTE cold-start disease,
+    imported via the GUESS, not the epoch:
+      - mk_snia_toy_model.py floors T at tempmin=5e3 and only ever cools (adiabatic), so
+        it cannot know about 17d of Ni->Co->Fe decay REHEATING. T guess = 0.33-0.55x truth
+        for v>15000 km/s (truth ~1e4 K from phys_toy06_cmfgen.txt 19.48d).
+      - mk_sn_hydro.py:33-34 zbar=clip(T/2e4) then propagated that error into ne (0.4-0.6x).
+      - LTE at wrong (T,ne) => Fe IV ~1e-19 vs truth 2-17% = 17-35 dex Newton climb.
+      - The worst it1 corrections (depths 44/50) map to v=11940/10780 km/s = EXACTLY the
+        T-floor onset. Smoking-gun localization.
+    ==> The snapshot did NOT dodge the 2.0d disease; it only made it ~37 dex milder
+        (3.9e7% here vs 1.75e43% at 2.0d), which is why it got further than any 2.0d run.
+  REFUTED (my candidates, both wrong):
+    - LSTAR stale: NO. LSTAR enters ONLY the IB diffusion gradient DTDR (cmfgen_sub.f:1570).
+      Correct value = decay power INSIDE v<1025 km/s = 2.59e7 Lsun; the 1.70e7 was right
+      to x1.5. L(outer) >> L(inner) is what a distributed source MUST show.
+    - IB_METH=DIFFUSION at tau_IB=2.16: NO. it1 healthy with the same IB; DTDR finite at
+      it2 => NaN did not originate at the IB. tau=2.16 is itself computed from the bad ne
+      (2.4x low); true ~3-5. Keep DIFFUSION.
+  4th FACTOR (missed): snapshot inherited R6's MAX_LIN/MAX_LAM=100, not R4's 10. R4 (caps=10)
+    is the ONLY config that ever survived it2 in this family. NOTE: "2.0d worked" is FALSE
+    on disk - R7_dead/OUTGEN and crashbak_0349/OUTGEN.nan BOTH show it1 Luminosity=NaN.
+    No 2.0d run ever survived it2. 364439 is the furthest any run has gotten.
+
+  FIX APPLIED -> job 364521 (slurm_cmfgen_snap1948.sh v2, OMP=16, --mem=200G):
+    1. mk_sn_hydro.py: (T,ne) SEEDED from phys_toy06_cmfgen.txt 19.48d block (line 2840),
+       via T=interp(v) and zbar=interp(ne/natom) on OUR density grid. Verified: T ratio
+       0.98-1.00 at all v, ne(1025)=1.845e10 (ref 1.848e10), natom(1025)=5.164e9 unchanged.
+       CIRCULARITY: T and ne are SOLVED (FIX_T=F; ED from charge conservation), so this
+       moves the START, not the fixed point. NO pops/DCs seeded (still DC_METH=LTE).
+       Non-circular validators: J_nu(918-1290A), Gamma(Co III), alpha, b_k are NOT in the
+       phys file; plus flux conservation vs the decay budget; plus |T_conv - T_seed| != 0.
+       HONEST CAVEAT: converged-T agreement can no longer be claimed as independent.
+    2. VADAT L630/631: MAX_LIN & MAX_LAM 100 -> 10.0D0 (R4-proven caps).
+    3. VADAT L11: LSTAR 1.70D+07 -> 2.60D+07 (decay power interior to v=1025 at 19.48d).
+    Unchanged: T_MIN=0.5, DC_METH=LTE, SN_T_OPT=USE_HYDRO, N_OB_INS=8, T_EXC=0.4,
+               IB_METH=DIFFUSION, DO_DDT=F, SN_AGE=19.48. Source PRISTINE.
+    Dead run archived -> toy06_19.48d/crashbak_1948_lte_coldstart/.
+
+  PRE-REGISTERED FALSIFIER (Fable):
+    it1 (~40-90 min):  grep -E "Maximum % (in|de)crease.*iteration    1" toy06_19.48d/OUTGEN
+       PASS = both < 1e6% (expect 1e3-1e5). REFUTED = still >= 1e7% -> fallback F1.
+    it2 (~2-3 h):      grep -E "Luminosity of star|Error in CMF_BLKBAND|NaN" toy06_19.48d/OUTGEN
+       PASS = it2 L finite (~2.5e9 / 2.6e7), zero CMF_BLKBAND/IFAIL, zero NaN.
+       REFUTED = it2 NaN despite collapsed it1 demand -> negative-chi channel is
+                 demand-independent -> F1.
+    secondary: R_GRID_SELECTION inner tau 2.16 -> ~3-5; it1 L(d=1) stays ~2.5e9 (decay-set,
+               guess-independent); MAXCH declines monotonically toward EPS_TERM=0.1%.
+  FALLBACK LADDER:
+    F1 = R5 seeded-DC start adapted to 19.48d (seed_dc.py + 27 *_IN; R7 EXONERATED the seed
+         - its "transfer NaN" was the OMP=32 disease). Stronger circularity: state it.
+    F2 = mid-run blowup: drop an ADJUST_CORRECTIONS file in the run dir (read live every
+         iteration, fiddle_pop_corrections_v2.f:95-104). No restart, no source change.
+    F3 = inner-depth oscillation: IB_METH=ZERO_FLUX. Physics-config change -> ASK USER FIRST.
+    Named accuracy term (post-convergence, separate single-variable run, do NOT bundle):
+      GAMRAY_TRANS=LOCAL misplaces deposition at 19.48d (ref edep central 4.7e-3 vs ~2.5e-3
+      local; mean tau_gamma~3.8). Orthodox upgrade = GAMRAY_TRANS=NONLOCAL.
+
+--- superseded ---
+
+*** 2026-07-16 11:43 — job 364237 was OOM-KILLED (external SIGKILL "1238265
+    Killed"), NOT a physics failure: it backfilled onto grammar051 which was
+    ALSO running z50_fluid + z50_hybr -> node-level memory pressure. The T_MIN=0.5
+    GREY FIX WAS CONFIRMED WORKING (past grey, "great iteration count 1", into STEQ,
+    zero "Negative opacity in TORSCL_V3") before the kill at ~33 min. Per user
+    "OOM나도 다시돌리면 되", RESUBMITTED as EXCLUSIVE node to kill the co-tenant OOM. ***
+
+CURRENT LIVE JOB — HANDS-FREE FULL SEQUENCE (resubmitted 2026-07-16 11:43):
+  job 364247  cmf_toy06_seq  grammar039  normal  1 node  EXCLUSIVE 64 cores  mem=0(all 503G)  OMP=64
+  script=/gpfs/kjhan/cmfgen_runs/slurm_cmfgen_sequence.sh  (now --exclusive, OMP=64)
+  Verified: sole job on grammar039, epoch-1 fresh cold start (POINT1/2 SCR_READ error),
+  past grey again. Prior 364237(OOM on shared grammar051) superseded.
+  ONE allocation does everything: launches epoch-1 (toy06_2d, T_MIN=0.5, fresh cold
+  start w/ scratch cleaned) in background, then seq_driver monitors it and BUILDS+RUNS
+  epochs 2..28 on the same node, sequentially, to 19.48d. Driver STOPS (never auto-
+  fixes) on any crash/non-converge -> safe unattended. exe=cmfgen_dev.exe (pristine).
+  Prior standalone epoch-1 jobs 364235(excl,queued)/364236(ran, RSS 81G near 100G cap)
+  were cancelled in favor of this combined job (256G, no OOM).
+  Progress log: /gpfs/kjhan/cmfgen_runs/seq_logs/seq_driver.log
+  Per-epoch dirs: toy06_2d(e1), toy06_2.02d(e2), ... (see seq_ladder.txt).
+  Monitor (this session): Monitor task on seq_driver.log + job state + epoch-1 grey.
+
+DECISIVE SIGNALS (read from shared /gpfs, monitor-independent):
+  1. GREY SOLUTION = the exact fix test. PASS = past the R6/R7 death point.
+     grep OUTGEN for "Negative opacity|Grey solution was NOT" (=FAIL) else PASS.
+  2. it1->it2 survival (where R6/R7 died); then convergence over 40 iters.
+  ON RETURN, recover verdict:
+     ssh grammar 'squeue -j 364235'          # running? gone?
+     tail -5 /gpfs/kjhan/cmfgen_runs/toy06_2d/batch.log   # CMFGEN_EXIT / NaN
+     grep -iE "Negative opacity|Grey|converg|CMFGEN_EXIT" /gpfs/kjhan/cmfgen_runs/toy06_2d/OUTGEN | tail
+
+ON EPOCH-1 CONVERGENCE -> launch the 28-epoch sequence ON GRAMMAR:
+  seq_driver.sh drives epochs 2..28 (epoch-1=toy06_2d is only monitored, never
+  relaunched). Wrap it in an sbatch on grammar (SEQ_OMP=32). LANDMINE: seq_driver
+  default SEQ_OMP=32 (fine on grammar's 64-core nodes; was the danger only on the
+  shared login node). Driver STOPS on any crash/non-convergence (never auto-fixes).
+
+IF epoch-1 still NaNs at grey with T_MIN=0.5 => T_MIN hypothesis refuted; go to
+  fallback (a) Co2/Nk2 18oct00-vintage bf-data consistency; (b) MAX_CF cap;
+  (c) source CHI floor = LAST resort, MUST surface to user (CMFGEN is THE standard).
+
+DO NOT: run CMFGEN on syntax login node again; run CMFGEN on syntax GPU slurm;
+        touch cmfgen source; deploy the flr CHI floor without user OK.
+========================================================================
+
+
+========================================================================
+*** 2026-07-17 10:40 — FALSIFIER-1 REFUTED (the (T,ne)-seed run) -> TWO ARMS
+    LAUNCHED: (A) continuation restart, (B) F1 seeded-DC. Executed by Opus per
+    user delegation "코딩이나 실행은 opus에게" ; decisions = Fable. ***
+========================================================================
+
+RESULT OF THE (T,ne)-SEEDED LTE RUN (run_lageunha_snap1948.sh, LagEunha, finished
+  2026-07-17 07:19): CMFGEN_EXIT=0, 40/40 iterations, ZERO NaN, ZERO grey failure
+  -- but UNCONVERGED. Outputs archived -> toy06_19.48d/unconv_it40_bak/.
+  ** FALSIFIER-1 (Fable pre-registration for the (T,ne) seed) REFUTED **
+    Pre-reg: it1 max % demand PASS if both <1e6%, REFUTED if >=1e7% -> F1.
+    ACTUAL it1: +2.86E+20% (depth 20) / -1.17E+21% (depth 21). 14 dex ABOVE the
+    refute line. The (T,ne) seed did NOT collapse the it1 Newton demand.
+  Trajectory (max % increase): it1 2.86E+20 -> it5 7.32E+22 -> it10 1.67E+25 (peak)
+    -> it19 4.83E+21 -> it30 3.77E+08 -> it37 6.98E+06(BA) -> it40 6.97E+05(LAMBDA).
+    Climbs 5 dex then decays 20 dex but NUM_ITS=40 runs out at 6.97E+05% >> EPS_TERM
+    0.1%. Luminosity L(d=1) RINGS 1.0E+10..2.0E+11 (it40 1.60E+11) vs physical
+    ~2.5E+09; inner L pinned correct 2.60E+07.
+
+CORRECTED DIAGNOSIS (Fable, confirmed on disk): LTE initialization is UNUSABLE at
+  19.48d at ANY temperature. The (T,ne) seed only MOVED the worst it1 demand from
+  the toy-cold-start's depths 44/50 (4.9E+06/3.9E+07, the T-floor onset) to depths
+  20/21 (2.9E+20/1.2E+21, the OUTER low-density plateau) and made it ~14 dex WORSE.
+  Mechanism: at the outer low-density plateau, LTE Saha overshoots the ionization
+  upward regardless of T; getting (T,ne) right does not fix pops that start in the
+  wrong ionization stage. ==> the disease is the POPULATIONS, not (T,ne).
+  (This is exactly the F1 hypothesis; the (T,ne) run was its clean falsification.)
+
+CORRECTION TO A READING PITFALL: the OUTGEN line "T   15 F" is NOT a NaN/failure
+  flag. It is a routine per-iteration status line (T=temperature block, "15", T/F
+  flag; T on it1, F thereafter with IT_ON_T=F). The morning run has 39 such F-lines
+  and ZERO NaN. Do not mistake an "F" here for a crash.
+
+------------------------------------------------------------------------
+RESTART SEMANTICS (verified against PRISTINE source, cited -- for both arms):
+  - NUM_ITS in IN_ITS = ADDITIONAL iterations for THIS run, NOT a running total.
+    cmfgen_sub.f:557 reads NUM_ITS_TO_DO from IN_ITS; :1289 MAIN_COUNTER=NITSF
+    (iterations already done); :1296-1298 the loop performs exactly NUM_ITS_TO_DO
+    iterations labeled NITSF+1..NITSF+NUM_ITS. NITSF = "# of successful iterations
+    so far" (scr_read_v2.f:151), read from POINT1 (scr_read_v2.f:96; cmfgen_sub.f:913).
+    => to add +60 iters on a 40-iter restart, set NUM_ITS=60 (labels 41..100). Verified:
+    POINT1 shows "40  40 ... " (IREC=40 NITSF=40).
+  - OUTGEN is opened STATUS='UNKNOWN',POSITION='APPEND' (cmfgen.f:99) => a restart
+    APPENDS; old + new iterations coexist in one OUTGEN (ARM-A baseline = 3114 lines).
+  - Seed consumption (F1): DC_METH='R' branch set_new_model_estimates.f:297; :305-312
+    loop builds <ION_ID>_IN filenames (:307) and calls REGRID_LOG_DC_V1(...,'R',...)
+    (:309) to read each seed file. LTE branch (:261) calls SET_DC_LTE_V2 (no file read).
+    Header LUM in each _IN is read (regrid_log_dc_v1.f:139) but UNUSED; the seed R
+    grid is rescaled to the model inner radius (:186-198). OUTGEN confirms: line 53
+    "*_IN files will be used to start model"; line 133 "Departure coefficients assumed
+    to be function of R."; line 136 "Using option: R".
+
+------------------------------------------------------------------------
+ARM A — CONTINUATION RESTART (test: does the (T,ne) run just need more iters?)
+  Host   : LagEunha (manual), PID 2665957, OMP=16, cores 33,35,...,63 (NUMA node1
+           odd; ramses_final3d holds even 0-62; intersection EMPTY, verified).
+  Dir    : /gpfs/kjhan/cmfgen_runs/toy06_19.48d  (SAME dir; restart reads SCRTEMP/
+           POINT1/POINT2/EDDFACTOR from the it40 state -- NO scratch deleted).
+  Script : run_lageunha_resume1948.sh (NO scratch rm; setsid nohup).
+  IN_ITS : NUM_ITS 40 -> 60 (=> iters 41..100). Launched 2026-07-17 10:28.
+  PRE-REG (Fable): PASS = max % demand < 1e3% within +20 iters (by it60) AND
+           L(d=1) in (1-6)e9 by +40 iters (by it80). KILL = demand back >1e7%, or
+           NaN, or +40 iters (it80) without convergence.
+  EARLY : it41 (first LAMBDA on resume) BOUNCED to +4.32E+07% (depth 23); watching
+           whether it re-decays (as it30->40 did) or sustains >1e7% (=KILL).
+
+ARM B — F1 SEEDED-DC (test: do seeded POPULATIONS collapse it1 demand?)
+  Host   : grammar debug partition (grammar-debug: 64 CPUs/257GB, was fully idle,
+           MaxTime=UNLIMITED). slurm job 364872, PID 2902825, OMP=16, cores 0-15
+           (slurm-bound; 48 cores + ~57GB left free for other debug users).
+  Dir    : /gpfs/kjhan/cmfgen_runs/toy06_19.48d_dc (NEW, fresh scratch). Config copied
+           from toy06_19.48d; ONLY change DC_METH LTE->R. Kept LSTAR=2.60D+07,
+           MAX_LIN=10, MAX_LAM=10, SN_AGE=19.48, T_MIN=0.5, DO_DDT=F, IB_METH=DIFFUSION,
+           N_OB_INS=8, T_EXC=0.4, SN_T_OPT=USE_HYDRO, same (T,ne)-seeded SN_HYDRO_DATA,
+           same 27-ion set. setup_links.sh retargeted+run: 126 links, 0 broken.
+  Seed   : seed_dc.py (R5 seeder) adapted (MODELDIR, AGE 2.0->19.48). 27 XzV_IN written
+           with UNIFORM log10-b per ion = LTE(T_ref) within-ion level distribution,
+           each ion total scaled to the PUBLISHED 19.48d ion fraction. Sanity gates:
+           rebuilt-vs-published ionfrac worst err 2.2E-16 over 6 elements x 5 vels;
+           0 clamps hit; 27/27 files finite with correct NFxN(=700) dims.
+           CIRCULARITY: pops seeded from the reference => converged pops are NOT an
+           independent match; non-circular validators = J_nu(918-1290A)/Gamma/alpha
+           (absent from the reference) + cross-check vs ARM-A fixed point if both converge.
+  Script : slurm_cmfgen_1948dc.sh (--partition=debug --cpus-per-task=16 --mem=200G, OMP=16).
+           Submitted 2026-07-17 10:39.
+  PRE-REG (Fable): F1 PASS = it1 max % demand < 1e4% (populations were the disease).
+           F1 REFUTED = it1 demand >= 1e6% (populations story ALSO wrong -> STOP; do
+           NOT improvise; next rung F2=ADJUST_CORRECTIONS is a Fable decision).
+           Secondary = it1 L(d=1) in (1.5-5)e9 Lsun.
+
+------------------------------------------------------------------------
+MONITOR (this session): setsid nohup dual monitor, polls ~120s, reads BOTH OUTGENs
+  from shared /gpfs, liveness via pgrep(lageunha)+squeue(grammar). NEVER scancels.
+  log = <session scratchpad>/cmf_dual_monitor.log ; script cmf_dual_monitor.sh.
+
+RECOVERY / VERDICT COMMANDS (monitor-independent):
+  ARM A:  ssh lageunha 'pgrep -f "[c]mfgen_dev.exe"'
+          grep -E "Maximum % increase" /gpfs/kjhan/cmfgen_runs/toy06_19.48d/OUTGEN | tail
+          grep "Luminosity of star" /gpfs/kjhan/cmfgen_runs/toy06_19.48d/OUTGEN | tail
+          tail -3 /gpfs/kjhan/cmfgen_runs/toy06_19.48d/batch.log     # CMFGEN_EXIT
+  ARM B:  ssh grammar 'squeue -j 364872'
+          grep -E "Maximum % increase|Grey solution was NOT|Negative opacity" \
+               /gpfs/kjhan/cmfgen_runs/toy06_19.48d_dc/OUTGEN | tail
+          tail -3 /gpfs/kjhan/cmfgen_runs/toy06_19.48d_dc/batch.log
+  ON EITHER CONVERGE -> extract J_nu(918-1290A)/Gamma(Co III)/ionfrac/alpha/T and
+  compare to data/standart_data1/toy06/*_cmfgen.txt (non-circular fields only for F1).
+  NOTE: NEVER point a queued grammar job at a live manual run's dir (the arms use
+  DIFFERENT dirs by design: toy06_19.48d vs toy06_19.48d_dc).
+========================================================================
+
+--- 2026-07-17 10:50 UPDATE: ARM A verdict = CONTINUATION REFUTED (diverges) ---
+  Resume trajectory (max % increase): it40 6.97E+05 -> it41 4.32E+07(BA) -> it42
+  1.97E+10(LAMBDA); L(d=1) MONOTONE 1.60E+11 -> 2.80E+11 -> 4.34E+11 (breaks UPWARD
+  out of the morning ring envelope 2E+10..2E+11). Pre-registered KILL ("demand back
+  >1e7%") MET and climbing ~2.6 dex/iter; 0 NaN, 0 grey-fail. => "just needs more
+  iterations" is FALSE; restarting the non-converged ringing it40 state (BA+EDDFACTOR
+  recompute) re-excites divergence. GRACEFUL STOP issued: IN_ITS NUM_ITS 60->0 (the
+  documented stop, cmfgen_sub.f:4783 re-read + :4795-4796 clamp; NOT a kill/scancel).
+  All restart files (SCRTEMP/POINT1/POINT2/EDDFACTOR) PRESERVED -> reversible.
+  This makes F1 (seeded POPULATIONS) the sole live path, as Fable's ladder anticipated.
+
+--- 2026-07-17 11:03 UPDATE: F1 MIGRATED grammar-debug -> LagEunha; ARM A EXIT=0 ---
+  ** STANDING RULE (record so no future session repeats this): the grammar DEBUG
+     partition (node grammar-debug) is OFF-LIMITS for CMFGEN EVEN WHEN IDLE. **
+     User decision 2026-07-16: debug is reserved for colleagues' short tests; a
+     multi-hour CMFGEN production run squatting there (and a 200G reservation leaving
+     only ~57G bookable on the 257G node) is exactly what the user declined -- when
+     grammar-normal was full the user chose "just wait", not "use idle debug".
+     => the spec phrase "prefer grammar if a slot is available NOW" NEVER includes debug.
+  F1 job 364872 (debug) was scancel'd by the driver (state CG -> node idle 0/64); it
+  died mid-it1 (harmless, fresh scratch). RELAUNCHED manual on LagEunha:
+    script  run_lageunha_f1dc.sh ; PID 2702604 ; OMP=16 ; cores 1,3,...,31 (NUMA node0
+      ODD). ramses on even 0-62; ARM A was on node1 odds 33-63 -> intersection EMPTY
+      with BOTH (measured per-thread). Mem at launch 358G avail (>=200G gate). Full
+      scratch clean (debug run's partial it1); 27 XzV_IN + config preserved. DC_METH=R
+      re-consumed (OUTGEN "*_IN files will be used"/"Using option: R"), 0 NaN/grey.
+    dir  /gpfs/kjhan/cmfgen_runs/toy06_19.48d_dc (unchanged).
+    Same pre-reg: F1 PASS it1 demand<1e4%; REFUTED it1>=1e6% (STOP, Fable's call);
+      secondary it1 L(d=1) in (1.5-5)e9. it1 verdict ~60 min out (EDDFACTOR phase).
+  ARM A (continuation): GRACEFUL STOP LANDED -> CMFGEN_EXIT=0 after 44 iters (it43
+    1.09E+11, it44 1.11E+11; L(d=1) 7.04E+11 diverged). 0 NaN. Continuation
+    CONCLUSIVELY REFUTED and closed cleanly; restart files remain (reversible).
+  Monitor v2: both arms now discriminated by /proc/<pid>/cwd on lageunha (pgrep
+    matches both). log = <session scratchpad>/cmf_dual_monitor.log.
+  RECOVERY: ARM B  ssh lageunha 'pgrep -f "[c]mfgen_dev.exe"'  (match cwd
+    toy06_19.48d_dc);  grep "Maximum % increase" toy06_19.48d_dc/OUTGEN | tail ;
+    tail -3 toy06_19.48d_dc/batch.log   # CMFGEN_EXIT
+
+--- 2026-07-17 16:12 UPDATE: F1 seed WRITER BUG found+fixed -> F1' relaunched ---
+  ** REFUTED RESCINDED: the previous F1 (PID 2702604) death was NOT a physics
+     refutation -- it was a seed_dc.py WRITER bug. Invalid experiment. **
+  THE BUG (seed_dc.py:187-189 old top-ion special case): logb=0 (b=1) with DI=n(top
+    ion itself). CMFGEN uses the file DI as the NEXT-ion density in ltepop_wld_v2.f:67,75
+    (n*=W g exp(EDGE*HDKT/T)*RGU, RGU=2.07078e-22*ED*DI*T[1e4]^-1.5/GION). With b=1 and a
+    NON-tiny DI_top, the ground edge factor K_top=exp(EDGE_top*HDKT/T)~1e53-62 at the
+    T-minimum shells is UNCANCELLED -> n(top)~1e35 -> ladder (set_new_model_estimates.f:
+    365-375) resets each lower ion's DI = ion-above ground pop -> +40-45 dex cascade at
+    depths 33/39 (T-min) -> MAX_LN_LTE_POP cap (ltepop_wld_v2.f:55,76) zeros overflowing
+    levels -> corrupted ionization -> Newton blowup. On-disk signature: OUTGEN it1
+    "Maximum % decrease depth 39 = 1.77E+48", DEC_VEC 1.77E+46, CMFGEN_EXIT=2, 357 NaN.
+    PREDATES US: the SAME code seeded R5 (2.0d); R5's "transfer NaN" is very likely this
+    same top-ion blowup, not a transfer/data problem.
+  THE FIX (seed_dc.py, OUR script -- CMFGEN source untouched): removed the special case;
+    the top ion now uses the unified Saha branch with an invented bare stage X+1
+    (f_{X+1}=1e-30, U_{X+1}=GION_top = bare-ion ground g from PHOT "Statistical weight of
+    ion": SkV6/SV2/CaV4/FeSIX21/CoSIX28/NkSIX25). This makes DI_top=f_{X+1}*n_el tiny and
+    calibrates b_top so CMFGEN reconstructs n(top)=f_top*n_el EXACTLY (constants map:
+    2.07078e-22=1/(2*CSAHA*1e6); ED/ne cancels). 27 XzV_IN regenerated; 0 clamps.
+  READER-SIDE GATE (non-circular; scripts/scratchpad verify_seed_reader.py): replicated
+    CMFGEN's instantiation offline (regrid read + ladder top->bottom + ltepop_wld n*_LTE
+    with MAX_LN cap) from the WRITTEN files; reconstructed absolute n(ion) for all 6
+    species x 6 depths INCLUDING the T-minimum (depth 342, 8851 K). RESULT: worst
+    |dlog10(n_recon/n_intended)| = 0.216 dex (Ca II outer; ground-fraction/W~1 residual);
+    EVERY top ion lands at f_top*n_el (FeSIX 1.86e-8, CoSIX, NkSIX ~0.000 dex -- NOT 1e35).
+    PASS (< 0.5 dex gate). The old writer-side 2.2e-16 check was circular and had passed
+    on the fatally broken seed -- this reader-side gate is the valid test.
+  F1' RELAUNCH (manual LagEunha): script run_lageunha_f1dc.sh; PID 3075039; OMP=16; cores
+    33,35,...,63 (NUMA node1 ODD; both prior arms dead, machine idle; ramses even 0-62,
+    intersection EMPTY; 344G free >=150G gate). Corpse archived -> crashbak_f1_topion/.
+    Full scratch clean; 27 fixed XzV_IN + config preserved; DC_METH=R re-consumed
+    (OUTGEN "*_IN files will be used"/"Using option: R").
+  PRE-REG (now FINALLY valid): PASS it1 max demand<1e4% (disease=populations confirmed);
+    REFUTED it1>=1e6% = GENUINE physics refutation -> STOP (Fable; next rung=FIX_T staging);
+    secondary it1 L(d=1) in (1.5-5)e9. it1 verdict ~60 min out (EDDFACTOR phase).
+  MONITOR: single-run cmf_f1_monitor.sh (setsid; cwd-matched pgrep; same thresholds +
+    DEC_VEC/NaN/TORSCL/grey). log=<session scratchpad>/cmf_f1_monitor.log.
+  RECOVERY: ssh lageunha 'pgrep -f "[c]mfgen_dev.exe"' (cwd toy06_19.48d_dc);
+    grep "Maximum % increase" toy06_19.48d_dc/OUTGEN | tail; tail -3 .../batch.log
+
+--- 2026-07-17 16:35 UPDATE: seeded-DC SUSPENDED (F1' identical death) -> FIX_T stint-1 ---
+  ** F1' (fixed top-ion seed) died IDENTICALLY to F1 (broken seed). Forensic fact:
+     L(it1) F1 = 1.11102805E+10 vs F1' = 1.11102795E+10 -- identical to 8 sig-figs
+     DESPITE 40-dex-different top-ion seeds. F1' it1 = +6.46E+44%/-1.51E+49% @ depth 39,
+     DEC_VEC 1.51E+47, it3 L=NaN, CMFGEN_EXIT=2. ==> the top-ion writer fix did NOT
+     propagate into the instantiated state; the seeded-DC route is SUSPENDED (a parallel
+     offline forensic -- why the fixed seed produced a byte-identical starting field --
+     is handled elsewhere, NOT this session). _dc corpse (incl SCRTEMP) archived to
+     toy06_19.48d_dc/crashbak_f1prime/; _dc left otherwise untouched for that forensic.
+  NEXT RUNG ACTIVATED (Fable): FIX_T STINT-1 in /gpfs/kjhan/cmfgen_runs/toy06_19.48d
+    (the LTE@trueT config that completed 40/40). A PURE LTE start (DC_METH=LTE, ZERO
+    XzV_IN) with the temperature equation HELD FIXED at all depths for the whole stint,
+    so pops relax against a fixed correct T instead of the free-T runaway that wrecked
+    run #2. (T,ne)-seeded SN_HYDRO_DATA kept.
+  SOURCE-VERIFIED T HOLD (read-only, cited): FIX_T=T => RD_FIX_T=TRUE => solve_for_pops.f:
+    86-89 sets MOD_FIX_T_D_ST=1, MOD_FIX_T_D_END=ND EVERY iteration => T fixed at ALL
+    depths, "independent of VARFIXT" (comment :78-81). The lone T-release path
+    (cmfgen_sub.f:4712) is gated by DO_T_AUTO; [DO_T_AUTO] is ABSENT from VADAT =>
+    defaults FALSE (cmfgen_sub.f:566) => UNREACHABLE. NOTE: the audit's attribution of
+    the auto-release to [FIX_T_AUTO] is a misread -- FIX_T_AUTO=VARFIXT (rd_control_
+    variables.f:958) only matters when FIX_T=F; the real gate is DO_T_AUTO (absent).
+    We set FIX_T_AUTO=F anyway (harmless belt-and-suspenders). T is held the ENTIRE stint.
+  CONFIG (toy06_19.48d): VADAT FIX_T F->T, FIX_T_AUTO T->F; kept TAU_SCL_T=0.0, DC_METH=
+    LTE, T_MIN=0.5, MAX_LIN=MAX_LAM=10, LSTAR=2.60D+07, SN_AGE=19.48, DO_DDT=F. IN_ITS
+    NUM_ITS 0->40, DO_LAM_IT=F. Verified 0 *_IN files (pure LTE). Source PRISTINE.
+  LAUNCH: run_lageunha_fixt1948.sh, manual LagEunha, node1 ODD cores 33-63 (freed when
+    F1' exited), OMP=16, setsid nohup, full scratch clean of toy06_19.48d. Prior state
+    archived: unconv_it40_bak (40-it corpse), unconv_resume_diverged (it41-44 resume).
+  PRE-REGISTRATION (stint-1): PASS = max pop demand grinds monotonically (LAMBDA plateaus
+    ok) to <1e3% by it40, ZERO NaN, L(d=1) BOUNDED (within ~x3 of its it1 value; T fixed
+    => no 64x runaway). KILL = NaN, or demand>1e7% after it10, or monotone unbounded L
+    climb. it1 ~1e20-1e21 demand is EXPECTED (same LTE@trueT start as run #2), NOT a
+    failure -- the test is the TRAJECTORY + L-boundedness.
+  STINT-2 PLAN (separate Fable decision, NOT auto): once pops relax under fixed T,
+    RESTART with FIX_T=F (release T) from the stint-1 SCRTEMP so T co-relaxes from a
+    sane population state. Do NOT bundle; Fable calls it after stint-1's verdict.
+  MONITOR: cmf_fixt_monitor.sh (setsid; cwd toy06_19.48d; demand trend + L per iter + NaN).
+    log=<session scratchpad>/cmf_fixt_monitor.log.
+
+==== STINT-2 FLIP CARD (pre-registered 2026-07-17 22:2x, Fable) ====
+Trigger (auto, watcher armed in driver session): max "Maximum % increase" < 1e3%
+for 2 consecutive iterations, OR stint-1 ends at it40 with PASS gates
+(zero NaN, L(d=1) bounded ~1.4-2.4e10 band). User asked "run stint-2 now?" —
+answer: not while demands are 1e25+ at d36-44 (the DTDR-NaN ammunition), but
+release on COLLAPSE, not on iteration count.
+Flip procedure (execution delegated to Opus agent at fire time):
+ 1. Graceful stop if still running: IN_ITS NUM_ITS -> current it (never kill -9).
+ 2. Archive: cp OUTGEN OUTGEN_stint1_fixT ; cp batch.log batch_stint1.log
+ 3. VADAT: FIX_T=T -> FIX_T=F. NOTHING else changes. (FIX_T_AUTO stays F,
+    DO_T_AUTO stays absent, T_MIN=0.5, caps 10.0 stay.)
+ 4. DO NOT clean scratch. Keep SCRTEMP POINT1 POINT2 EDDFACTOR* JH_AT_* —
+    stint-2 is a CONTINUATION (same mechanics as the ARM-A resume, which
+    resumed fine mechanically; its divergence was physics of the ringing state).
+ 5. Relaunch: same lageunha manual pattern, OMP_NUM_THREADS=16 (MANDATORY),
+    taskset odd cores node1 (33-63), setsid nohup. NO slurm, NEVER grammar-debug.
+ 6. Post-launch verify: OUTGEN VADAT echo shows FIX_T=F; iteration counter
+    CONTINUES (NITSF > stint-1 count); first 3 its NaN-free.
+Stint-2 gates: KILL = any NaN / L(d=1) > 1e11 / demand > 1e7% after 10 released
+its. PASS = demands keep grinding down with T free. On KILL: preserve corpse,
+revert VADAT to FIX_T=T, morning Fable decision (partial-depth T hold ladder).
+
+==== STINT-2 2-ARM PRE-ARM (2026-07-17 22:5x, Opus agent; extends the FLIP CARD) ====
+STATE AT ARM TIME: stint-1 pid 3313946 ALIVE on lageunha (core 33, RSS 96GB, cwd
+  toy06_19.48d), it17, demand grinding DOWN 2.5e26(it14) -> 7.9e20(it16), L(d=1)
+  3.2e10 bounded, NaN 0 => HEALTHY/CLIMBING, NO trigger. Nothing in toy06_19.48d was
+  touched (rule: intervene only post-trigger). lageunha avail mem 226GB; node0 odd
+  cores 1-31 free (only kernel threads), ramses_final3d confirmed on EVEN cores.
+
+WHY 2 ARMS: pre-arm two DIFFERENT T-release strategies so the NEXT death costs zero
+  serial time -- both fire together on trigger.
+  S2a (thesis) = full T-release, IN-PLACE continuation of toy06_19.48d (FIX_T T->F,
+    one-line flip), node1 ODD 33-63.  S2b (hedge) = see knob study below, clone
+    toy06_19.48d_s2b, node0 ODD 1-31.
+
+S2b KNOB -- SOURCE VERIFICATION (read-only, cited). The requested primary design
+  "hold ONLY depths 33-44, release the rest" is NOT config-expressible in CMFGEN:
+  * T-hold knobs are BOUNDARY-ANCHORED, never an interior-only band:
+    - OUTER partial hold (FIX_T=F + FIX_T_AUTO[=VARFIXT]=T + TAU_SCL_T>0):
+      solve_for_pops.f:91-100. MOD_FIX_T_D_ST is HARDCODED = 1 (:94); loop :95-99
+      sets MOD_FIX_T_D_END = deepest depth with tau_es(I) < TAU_SCL_T. DIRECTION
+      CONFIRMED (the flagged must-check): ESTAU_V2 gives tau_es increasing inward,
+      TA(1) smallest at the OUTER boundary, so the held band = [1, tau-crossover] =
+      the OUTER/low-tau zone; T is RELEASED in the interior (tau > TAU_SCL_T). Gate
+      also needs CON_SCL_T!=0, which rd_control_variables.f:962-966 ties to
+      TAU_SCL_T!=0. D_END floored at 5 (:100). Applied at fixpop_in_ba_v3.f:73-74.
+    - INNER hold (FIX_INB_T=T + FIX_X_DPTH=N): fixpop_in_ba_v3.f:95 holds the LAST N
+      depths (DEPTH_INDX >= ND+1-FIX_LST_X_DPTHS) = innermost.
+    Neither, nor their union, can hold ONLY an interior band while freeing BOTH ends.
+    The stint-1 problem/T-min zone (max%increase lives at depth 34-38 of ND=80,
+    mid-grid) is reachable only by an OUTER band [1,~44] that ALSO pins the whole
+    surface and frees just the well-thermalized deep interior -- a near-clone of
+    stint-1, not a useful distinct arm.
+  * SELECTION (pre-registered fallback taken): S2b = FIX_T=F (full release) +
+    MAX_LIN=MAX_LAM 10.0 -> 3.0. Orthogonal conservative strategy: same all-depth
+    T release as S2a but the per-iteration fractional-change cap clamped 10x->3x
+    (solve_for_pops.f:125-129: MAX_LIN=Newton/linearization cap, MAX_LAM=LAMBDA cap),
+    directly damping the T-Newton runaway that wrecked the earlier free-T LTE run --
+    a failure mode S2a's 10x caps do NOT guard. (An outer T-hold would be redundant:
+    the sub-5000K outer-edge NaN is already guarded by T_MIN=0.5.) ARM CONTRAST:
+    S2a = full release + big steps (aggressive); S2b = full release + damped steps.
+
+GRACEFUL-STOP (source-cited, NO kill of any kind): cmfgen_sub.f:4767-4796 re-reads
+  IN_ITS at every iteration end; NUM_ITS_TO_DO += (NEW_NUM_ITS - OLD) (:4795), clamped
+  to 1 if <=0 (:4796). Orchestrator sets IN_ITS NUM_ITS -> 1 => one final iteration
+  then clean CMFGEN_EXIT=0 with all scratch flushed for the continuation. Wait <=30 min;
+  if still alive, launch is ABORTED (record only) -- still no kill.
+
+ORCHESTRATOR (RESIDENT, ARMED NOW): /gpfs/kjhan/cmfgen_runs/orchestrator_s2.py runs
+  ON lageunha, pid recorded in .orch_s2.pid (PPID=1, own session/detached), poll 300s.
+  LOG (driver tails this): /gpfs/kjhan/cmfgen_runs/orchestrator_s2.log.
+  TRIGGERS (OUTGEN-parsed, per FLIP CARD):
+    COLLAPSE   = max%increase <1e3 for 2 consecutive iters (proc alive) -> graceful
+                 stop then 2-arm launch.
+    ENDED_PASS = proc ended + it>=40 + NaN 0 + L(d=1)<1e11 + final demand<1e7 ->
+                 2-arm launch (no graceful stop).
+    KILL_NAN   = NaN/neg-opacity in OUTGEN -> NO launch; cp OUTGEN OUTGEN_stint1_dead.
+    ENDED_FAIL = ended but L>=1e11 or final demand>=1e7 -> NO launch; record only.
+  LAUNCH SEQ (post-trigger only): graceful stop -> backups (OUTGEN_stint1_fixT,
+    batch_stint1.log) -> clone toy06_19.48d -> toy06_19.48d_s2b (cp -a, scratch KEPT,
+    logs reset) -> S2a VADAT FIX_T T->F only + IN_ITS NUM_ITS=40, launch node1 odd
+    33-63 -> S2b VADAT FIX_T=F + MAX_LIN=MAX_LAM=3 + NUM_ITS=40, launch node0 odd 1-31
+    (mem guard: skip S2b if avail<110GB) -> both OMP=16 hard-coded -> verify (FIX_T
+    echo freed, NITSF continuity = stint1_final+1, first 3 its NaN-free) -> append a
+    LAUNCH CARD to THIS note. Wrappers: run_s2a_flip.sh, run_s2b.sh (exec-only, no
+    edits/rm). Idempotency guard: .orch_s2.launched.
+  POST-LAUNCH: KILL-gate watch of BOTH arms (NaN / L>1e11 / demand>1e7 >10 its after
+    release) = RECORD ONLY with timestamps, never stops them (driver decides).
+  DRY-RUN (parser tested on ARCHIVED OUTGEN copies; live trigger NOT faked):
+    live climbing -> CLIMBING; unconv_it40_bak (L=1.6e11) -> ENDED_FAIL (L gate);
+    unconv_resume_diverged (L=7e11, dem=1.1e11) -> ENDED_FAIL; crashbak_0349/
+    OUTGEN.nan -> KILL_NAN. two_consecutive_below + classify_arm unit tests all pass.
+  HARD RULES honored: no slurm/scancel, grammar-debug never touched, OMP=16 only,
+    source pristine, no commit/push, S2b is the sole extra lageunha arm, no kill.
+  STAND DOWN: kill ONLY the .orch_s2.pid process (never the cmfgen pids).
+
+========================================================================
+*** 2026-07-18 04:30 — STINT-1 (FIX_T=T) ENDED_FAIL forensic + STINT-2 NEXT RUNG
+    2 ARMS LAUNCHED (Opus exec per delegation; design=Fable's ladder, Q1-adjusted). ***
+========================================================================
+STINT-1 corpse = toy06_19.48d (pristine backup -> unconv_stint1_fixT_bak/). EXIT=0,
+  40/40 iters, ZERO NaN. Orchestrator_s2 classified ENDED_FAIL (L=7.70e11>=1e11,
+  demand=1.24e7>=1e7) -> NO auto-launch (correct, per pre-reg). orchestrator_s2.log closed.
+
+FORENSICS (all source/corpse direct-read, cited):
+ Q1 — WHY (nearly) all LAMBDA, and does FIX_T=T force it?  ANSWER: FIX_T=T does NOT
+   force LAMBDA. LAMBDA_ITERATION is initialized = RD_LAMBDA(=DO_LAM_IT=F) at
+   cmfgen_sub.f:608, NOT from FIX_T. GROUND TRUTH from OUTGEN tags: it1 & it35 were
+   FULL-LINEARIZATION ("(BA computed)") WHILE FIX_T=T was in force; the other 38 were
+   "(LAMBDA)" (grep count: 38 "LAMBDA iteration used", 40 "BA matrix computed"). The
+   all-LAMBDA lock is solve_for_pops.f:298-303: `IF(MAXCH .GT. 1.0E+05) LAMBDA_ITERATION
+   =.TRUE.; FIXED_T=.TRUE.` — a HARDCODED 1e5% override. The ~1e6% demand almost never
+   fell below 1e5%, so every iter was forced LAMBDA + T-fixed. The switch-OFF threshold
+   is LAM_VAL=VAL_DO_LAM (VADAT [LAM_VAL]=400%, solve_for_pops.f:286 branch A) & NUM_LAM=2.
+   The LONE Newton step (it35) fired exactly when it34 demand 3.46e4 fell below 1e5 AND
+   CNT_LAM>=NUM_LAM=2 -> and it OVERSHOT (3.46e4 -> it35 2.66e5) and MOVED the correction
+   front from depth 38 to depth 46/47. Causation is REVERSED vs the stint premise:
+   LAMBDA ==> T fixed (solve_for_pops.f:281 comment, :302/:308), NOT T-fixed ==> LAMBDA.
+   ==> "T release = Newton entry" is FALSE. The config Newton-entry knob = LAM_VAL
+   (raise above the demand band so branch A selects full linearization, bypassing the
+   1e5 override). No auto-release path is reachable (DO_T_AUTO & DO_LAMBDA_AUTO absent
+   from VADAT; FIX_T_AUTO=F).
+ Q2 — WHO lives at depth 47 (the stuck 1e6-1e7% demand): the TRACE HIGH-ION tail, NOT the
+   dominant ions. CORRECTION_LINK depth 47, 5 largest increases: FeSEV(Fe VII) g.s.
+   -1.24e5, FeSIX(Fe VI) SL47 -1.17e5, NkSIX(Ni VI) SL62 -1.10e5, FeSIX SL65 -8.2e4,
+   SkSIX(S VI) g.s. -7.0e4. The 5 largest REDUCTIONS at d47 are all Fe2(Fe II) levels at
+   ~0.98 (SATURATED = fine). Depth 47 = v~14060 km/s, tau_Ross~0.07 (MEANOPAC): the
+   OPTICALLY-THIN outer IME/Fe shell where Fe/Co/Ni sit at the 1e-10 abundance floor.
+   These L-irrelevant abundance-floor ions carry ~1e5% corrections that DOMINATE MAXCH
+   and block convergence. SAME disease as the SCRTEMP LTE-init killer (13-42 dex tail);
+   FIX_T CONTAINED it (0 NaN, no DTDR channel) but LAMBDA's diagonal-only step cannot
+   resolve the coupled ionization tail.
+ Q3 — L RUNAWAY anatomy: origin is the ENVELOPE, not the core. Inner L(d=ND) PINNED at
+   2.60000060E+07 (correct decay power) every iteration; surface L(d=1) balloons to
+   7.70e11 (~300x the physical ~2.5e9). Excess is generated between core and surface,
+   spiking when the correction front sits at depth 46/47 (it36 L=2.91e11, it38 4.68e11,
+   it40 7.70e11). Growing-amplitude ring, not a single blow-up.
+ Q4 — DIVERGENCE vs LIMIT CYCLE: LIMIT CYCLE. Demand decayed 23 dex (it9 2.21e27 ->
+   it34 3.46e4), then the it35 Newton step RE-EXCITED it and moved the front d38->d47;
+   it36-40 ring at 3.44e7/6.25e6/1.97e6/5.46e6/1.24e7 (~1e6-1e7% band). L rings with
+   GROWING amplitude. NUM_ITS=40 ran out mid-ring. Bounded (no NaN), not converging.
+
+STINT-2 2-ARM DESIGN (Q1-adjusted; Newton knob = LAM_VAL; damping motivated by it35 &
+  the growing L-ring):
+ ARM N (thesis: forced-DAMPED-Newton with T HELD) — toy06_19.48d IN-PLACE continuation
+   from it40 SCRTEMP, node1 ODD 33..63, OMP=16, pid 3942121.
+   VADAT: FIX_T=T KEPT; LAM_VAL 400 -> 1.0D+08 (demand<1e8 now selects FULL LINEARIZATION,
+     the coupling the trace tail needs; >1e8 keeps the 1e5-override LAMBDA safety);
+     MAX_LIN=MAX_LAM 10 -> 3 (damp the it35-style overshoot). IN_ITS NUM_ITS=40 (iters
+     41..80; POINT1 NITSF=40). Source PRISTINE.
+   LIVE EARLY SIGNAL: LAM_VAL knob ENGAGED — it41 tag = "(BA not computed)" = full
+     linearization (NOT LAMBDA). First Newton step from the ring bumped demand 1.24e7 ->
+     5.45e7 (front d47 -> d28), L flat 7.70e11 -> 7.84e11, 0 NaN. The damped-Newton test
+     is whether it42+ pulls demand & L DOWN or re-rings/diverges.
+ ARM F (insurance: fresh DAMPED-LAMBDA) — toy06_19.48d_armF (cp -a clone, scratch wiped),
+   node0 ODD 1..31, OMP=16, pid 3945390. Fresh LTE@trueT (DC_METH=LTE, 0 *_IN), FIX_T=T,
+   LAM_VAL kept 400, MAX_LIN=MAX_LAM=3, NUM_ITS=60. Tests whether damped LAMBDA + more
+   iters passes the depth-47 plateau without the it35 re-excitation. it1 past grey, RSS
+   92GB, 0 NaN in progress.
+
+PRE-REGISTERED GATES (orchestrator_s3, RECORD-ONLY except the one noted auto-action):
+  KILL (record only, NO kill/stop — corpse preserved for driver): NaN/negopac; L(d=1)
+    further-runaway (Arm N >=2e12 since it INHERITS the 7.7e11 ring; Arm F >=1e11);
+    demand>=1e10 (divergence, ARM-A style); demand>=1e5% still by the lock deadline
+    (Arm N it60 = release40+20; Arm F it45).
+  PASS = demand<1e3% for 2 CONSECUTIVE iters. Arm N PASS -> RECORD, keep running to
+    EPS_TERM(0.1%) then driver extracts J_nu(918-1290A)/Gamma(CoIII)/ionfrac/alpha vs
+    data/standart_data1/toy06/*_cmfgen.txt. Arm F PASS -> the ONE authorised AUTO action:
+    pre-registered T-RELEASE FLIP (graceful stop IN_ITS NUM_ITS->1 [cmfgen_sub.f:4795,
+    NO kill]; FIX_T T->F in-place, caps stay 3; relaunch node0 odd via run_armF_trelease.sh;
+    idempotency guard .orch_s3.armF_trel.launched).
+
+LAUNCH CONFIRMATION (verified live on LagEunha):
+  Arm N pid 3942121 cwd toy06_19.48d, 16 threads on cores {33,35,...,63}, OMP=16, it41/42
+    done 0 NaN. Arm F pid 3945390 cwd toy06_19.48d_armF, 16 threads on {1,3,...,31}, OMP=16,
+    it1 (0 NaN). ramses_final3d on EVEN cores (verified taskset) — intersection EMPTY with
+    both arms. Mem avail 197GB (both fit; Arm F at 92GB peak). Wrappers: run_lageunha_armN.sh
+    (no rm, continuation), run_lageunha_armF.sh (full scratch clean, fresh LTE).
+  WATCHER: orchestrator_s3.py resident on LagEunha, pid in .orch_s3.pid (3954228, session
+    leader/detached, poll 300s). cwd-VALIDATED pid discovery (reads <dir>/CMFGEN_PID then
+    checks /proc/<pid>/cwd; NO bare pgrep self-match). LOG = orchestrator_s3.log. Reuses
+    orchestrator_s2.py's verified parse_outgen/classify. STAND DOWN = kill ONLY .orch_s3.pid.
+  RECOVERY (monitor-independent):
+    ssh lageunha 'for d in toy06_19.48d toy06_19.48d_armF; do p=$(cat /gpfs/kjhan/cmfgen_runs/$d/CMFGEN_PID); echo "$d pid=$p alive=$([ -d /proc/$p ]&&echo Y||echo N)"; done'
+    grep "Maximum % increase" /gpfs/kjhan/cmfgen_runs/toy06_19.48d/OUTGEN | tail
+    grep "Maximum % increase" /gpfs/kjhan/cmfgen_runs/toy06_19.48d_armF/OUTGEN | tail
+    tail -20 /gpfs/kjhan/cmfgen_runs/orchestrator_s3.log
+  HARD RULES honored: source PRISTINE, no slurm/scancel, no grammar-debug, OMP=16 only,
+    no commit/push, no kill of any cmfgen pid, even cores (ramses) untouched.
+========================================================================

@@ -1,0 +1,36 @@
+90          [ND]                !Number of depth points (was 70; J blowup at OB it2)
+15          [NC]                !Number of core rays
+105         [NP]                !ND + NC
+1           [NUM_BNDS]          !1 or 3
+800000      [NCF_MAX]           !Max continuum frequencies (was 4e5; R5 +Fe2/Co2 forest)
+8000        [MAX_SIM]           !Max simultaneously overlapping lines (was 4000; R5)
+8000000     [NLINE_MAX]         !Max bound-bound transitions (was 4e6; R5 +stage II)
+21          [NLF]               !CMF freqs per Doppler profile
+
+69,69,125   [Sk2_ISF]
+99,99,147   [SkIII_ISF]
+50,50,61   [SkIV_ISF]
+52,52,203   [SkV_ISF]
+55,55,322   [S2_ISF]
+79,79,256   [SIII_ISF]
+65,65,176   [SIV_ISF]
+39,39,163   [SV_ISF]
+40,40,62   [Ca2_ISF]
+44,44,232   [CaIII_ISF]
+41,41,375   [CaIV_ISF]
+70,70,528   [CaV_ISF]
+131,131,2599   [Fe2_ISF]
+105,105,1500   [FeIII_ISF]
+63,63,1000   [FeIV_ISF]
+45,45,1000   [FeV_ISF]
+67,67,2000   [FeSIX_ISF]
+55,55,1000   [Co2_ISF]
+52,52,1000   [CoIII_ISF]
+56,56,1000   [CoIV_ISF]
+43,43,1000   [CoV_ISF]
+41,41,1000   [CoSIX_ISF]
+59,59,1000   [Nk2_ISF]
+47,47,1000   [NkIII_ISF]
+54,54,1000   [NkIV_ISF]
+54,54,1000   [NkV_ISF]
+62,62,1000   [NkSIX_ISF]

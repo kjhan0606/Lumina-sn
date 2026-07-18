@@ -1,0 +1,2 @@
+40           [NUM_ITS]                  !ArmN continuation: +40 iters (41-80) from it40 SCRTEMP; FIX_T=T; LAM_VAL=1e8 forces Newton
+F            [DO_LAM_IT]                !Do lambda iterations first?
