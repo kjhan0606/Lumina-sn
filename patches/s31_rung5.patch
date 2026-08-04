@@ -1,0 +1,187 @@
+--- a/scripts/run_stage31_cmf_ka.py
++++ b/scripts/run_stage31_cmf_ka.py
+@@ -22,6 +22,12 @@
+     1.0: (1.90, 2.08),
+     100.0: (1.85, 2.15),
+ }
++KA3_PREREGISTERED_WINDOWS = {
++    "p_obs_profile_l2": (1.25, 1.45),
++    "finest_centroid_shift_error": (2.5e-5, 3.8e-5),
++    "finest_invariant_area_relative_error": (4.0e-5, 5.5e-5),
++    "finest_profile_relative_l2": (2.5e-3, 3.5e-3),
++}
+ 
+ 
+ def compile_driver(executable: pathlib.Path, sanitize: bool = False) -> None:
+@@ -103,7 +109,9 @@
+                                         max(abs(a-b) for a,b in zip(i_numeric,i_exact))),
+                 "transport_residual": metadata["residual"],
+                 "clamp_count": int(metadata["clamp"]),
+-                "negative_count": int(metadata["negative"]),
++                "bdf_eta_negative_count": int(metadata["bdf_eta_negative"]),
++                "solution_negative_excess_count": int(metadata["solution_negative_excess"]),
++                "sign_uncertain_count": int(metadata["sign_uncertain"]),
+                 "nonfinite_count": int(metadata["nonfinite"]),
+             }
+             levels.append(level)
+@@ -116,7 +124,8 @@
+         passed = (finest["I_relative_l2"] <= 1e-4 and finest["J_relative_l2"] <= 1e-4
+                   and finest["max_scaled_error"] <= 3e-4 and 1.8 <= p_obs <= 2.2
+                   and finest["transport_residual"] <= 1e-4
+-                  and finest["clamp_count"] == finest["negative_count"] == finest["nonfinite_count"] == 0
++                  and finest["clamp_count"] == finest["solution_negative_excess_count"] == 0
++                  and finest["sign_uncertain_count"] == finest["nonfinite_count"] == 0
+                   and prediction_pass)
+         overall = overall and passed
+         for level in levels:
+@@ -145,7 +154,21 @@
+     root_two_sigma = math.sqrt(2.0) * sigma
+     high = (x + 0.5 * dx - center) / root_two_sigma
+     low = (x - 0.5 * dx - center) / root_two_sigma
+-    return sigma * math.sqrt(math.pi / 2.0) * (math.erf(high) - math.erf(low)) / dx
++    if low >= 0.0:
++        difference = math.erfc(low) - math.erfc(high)
++    elif high <= 0.0:
++        difference = math.erfc(-high) - math.erfc(-low)
++    else:
++        difference = math.erf(high) - math.erf(low)
++    return sigma * math.sqrt(math.pi / 2.0) * difference / dx
++
++
++def gaussian_cell_average_oracle(x: float, dx: float, center: float) -> float:
++    sigma = mp.mpf("0.04")
++    x_mp, dx_mp, center_mp = map(lambda value: mp.mpf(str(value)), (x, dx, center))
++    high = (x_mp + dx_mp / 2 - center_mp) / (mp.sqrt(2) * sigma)
++    low = (x_mp - dx_mp / 2 - center_mp) / (mp.sqrt(2) * sigma)
++    return float(sigma * mp.sqrt(mp.pi / 2) * (mp.erf(high) - mp.erf(low)) / dx_mp)
+ 
+ 
+ def profile_metrics(rows: list[dict[str, float]], metadata: dict[str, float]) -> dict[str, float]:
+@@ -168,10 +191,12 @@
+         "invariant_area_relative_error": abs(math.exp(3.0 * shift) * output_area - input_area) / input_area,
+         "blue_boundary_fraction": max(incoming[0], output[0]),
+         "red_boundary_fraction": max(incoming[-1], output[-1]),
++        "solution_min": min(output),
+     }
+ 
+ 
+ def run_ka3(executable: pathlib.Path, work: pathlib.Path) -> dict:
++    mp.mp.dps = 80
+     levels: list[dict] = []
+     for ns, nnu in GRIDS_KA3:
+         table = work / f"ka3_{ns}_{nnu}.tsv"
+@@ -183,9 +208,7 @@
+                 "status": "FAIL",
+                 "exit_code": completed.returncode,
+                 "stderr": completed.stderr.strip(),
+-                "failure_class": "BDF2_NEGATIVE_EFFECTIVE_EMISSIVITY"
+-                    if "BDF effective emissivity failed closed" in completed.stderr
+-                    else "DRIVER_FAILURE",
++                "failure_class": "DRIVER_FAILURE",
+             })
+             return {
+                 "ka": "KA3", "grids": GRIDS_KA3, "seed": None,
+@@ -195,29 +218,93 @@
+             }
+         metadata, rows = read_table(table)
+         metrics = profile_metrics(rows, metadata)
++        oracle_values = [gaussian_cell_average_oracle(row["x"], metadata["dx"], 0.0)
++                         for row in rows]
++        stable_values = [gaussian_cell_average(row["x"], metadata["dx"], 0.0)
++                         for row in rows]
++        naive_values = []
++        for row in rows:
++            sigma = 0.04
++            root_two_sigma = math.sqrt(2.0) * sigma
++            high = (row["x"] + 0.5 * metadata["dx"]) / root_two_sigma
++            low = (row["x"] - 0.5 * metadata["dx"]) / root_two_sigma
++            naive_values.append(sigma * math.sqrt(math.pi / 2.0) *
++                                (math.erf(high) - math.erf(low)) / metadata["dx"])
++        tail_relative = [abs(value - oracle) / oracle
++                         for value, oracle in zip(stable_values, oracle_values) if oracle > 0.0]
++        first_eta = None
++        if int(metadata["bdf_eta_negative"]) > 0:
++            first_eta = {
++                "evaluation_index": int(metadata["first_eval"]),
++                "frequency_index": int(metadata["first_k"]),
++                "ray_index": int(metadata["first_ray"]),
++                "segment_index": int(metadata["first_segment"]),
++                "substep_index": int(metadata["first_substep"]),
++                "endpoint_index": int(metadata["first_endpoint"]),
++                "eta_eff": metadata["first_eta"],
++                "term_previous": metadata["first_prev"],
++                "term_previous2": metadata["first_prev2"],
++                "decay_ratio": metadata["first_decay_ratio"],
++                "theoretical_limit": metadata["first_theoretical_limit"],
++            }
+         metrics.update({
+             "grid": {"ns": ns, "nnu": nnu},
+             "transport_residual": metadata["residual"],
+             "clamp_count": int(metadata["clamp"]),
+-            "negative_count": int(metadata["negative"]),
++            "bdf_eta_negative_count": int(metadata["bdf_eta_negative"]),
++            "bdf_eta_negative_plane_count": int(metadata["bdf_eta_negative_planes"]),
++            "bdf_eta_min": metadata["bdf_eta_min"]
++                if math.isfinite(metadata["bdf_eta_min"]) else None,
++            "solution_negative_excess_count": int(metadata["solution_negative_excess"]),
++            "sign_uncertain_count": int(metadata["sign_uncertain"]),
+             "nonfinite_count": int(metadata["nonfinite"]),
++            "solver_status": int(metadata["solver_status"]),
++            "driver_stderr": completed.stderr.strip(),
++            "first_bdf_eta_negative": first_eta,
++            "stable_tail_oracle_max_relative_error": max(tail_relative),
++            "stable_tail_positive_cells": sum(value > 0.0 for value in stable_values),
++            "naive_erf_zero_cells": sum(value == 0.0 for value in naive_values),
+             "status": "PENDING_RICHARDSON",
+         })
+         levels.append(metrics)
+     p_obs = math.log2(levels[1]["profile_relative_l2"] / levels[2]["profile_relative_l2"])
+     finest = levels[-1]
+-    passed = (finest["profile_relative_l1"] <= 1.0e-4
+-              and finest["profile_relative_l2"] <= 1.0e-4
+-              and finest["centroid_shift_error"] <= 1.0e-4
+-              and finest["invariant_area_relative_error"] <= 1.0e-4
+-              and 1.8 <= p_obs <= 2.2
+-              and finest["transport_residual"] <= 1.0e-4
+-              and finest["blue_boundary_fraction"] < 1.0e-12
+-              and finest["red_boundary_fraction"] < 1.0e-12
+-              and finest["clamp_count"] == finest["negative_count"] == finest["nonfinite_count"] == 0)
++    measured_for_windows = {
++        "p_obs_profile_l2": p_obs,
++        "finest_centroid_shift_error": finest["centroid_shift_error"],
++        "finest_invariant_area_relative_error": finest["invariant_area_relative_error"],
++        "finest_profile_relative_l2": finest["profile_relative_l2"],
++    }
++    window_status = {
++        name: "PASS" if bounds[0] <= measured_for_windows[name] <= bounds[1] else "FAIL"
++        for name, bounds in KA3_PREREGISTERED_WINDOWS.items()
++    }
++    acceptance_checks = {
++        "finest_profile_relative_l1_le_1e-4": finest["profile_relative_l1"] <= 1.0e-4,
++        "finest_profile_relative_l2_le_1e-4": finest["profile_relative_l2"] <= 1.0e-4,
++        "finest_centroid_shift_error_le_1e-4": finest["centroid_shift_error"] <= 1.0e-4,
++        "finest_invariant_area_relative_error_le_1e-4":
++            finest["invariant_area_relative_error"] <= 1.0e-4,
++        "p_obs_in_1p8_2p2": 1.8 <= p_obs <= 2.2,
++        "finest_transport_residual_le_1e-4": finest["transport_residual"] <= 1.0e-4,
++        "finest_blue_boundary_fraction_lt_1e-12": finest["blue_boundary_fraction"] < 1.0e-12,
++        "finest_red_boundary_fraction_lt_1e-12": finest["red_boundary_fraction"] < 1.0e-12,
++        "all_levels_clamp_zero": all(level["clamp_count"] == 0 for level in levels),
++        "all_levels_solution_negative_excess_zero":
++            all(level["solution_negative_excess_count"] == 0 for level in levels),
++        "all_levels_sign_uncertain_zero":
++            all(level["sign_uncertain_count"] == 0 for level in levels),
++        "all_levels_nonfinite_zero": all(level["nonfinite_count"] == 0 for level in levels),
++    }
++    passed = all(acceptance_checks.values())
+     for level in levels: level["status"] = "PASS" if passed else "FAIL"
+     return {"ka": "KA3", "grids": GRIDS_KA3, "seed": None, "excluded_cells": 0,
+             "levels": levels, "p_obs_profile_l2": p_obs,
++            "mpmath_dps": mp.mp.dps,
++            "preregistered_windows": KA3_PREREGISTERED_WINDOWS,
++            "preregistered_measurements": measured_for_windows,
++            "preregistered_window_status": window_status,
++            "acceptance_checks": acceptance_checks,
+             "acceptance_unchanged": True, "status": "PASS" if passed else "FAIL"}
+ 
+ 

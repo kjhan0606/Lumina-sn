@@ -1,0 +1,233 @@
+--- /dev/null
++++ b/scripts/emiss_ab_insitu_e4.py
+@@ -0,0 +1,230 @@
++#!/usr/bin/env python3
++"""E4 offline judge: in-situ A/B payloads -> stage31 J_det, bands, and Gamma.
++
++The runtime capture is intentionally out of scope here.  This consumer accepts
++only a tagged A-production/B-Aul-nu pair with one common assembly-state digest
++and bitwise-identical geometry/grid/opacity/J coordinates.
++"""
++from __future__ import annotations
++
++import argparse
++import csv
++import json
++import math
++from pathlib import Path
++import subprocess
++import sys
++from typing import Any
++
++import numpy as np
++
++ROOT = Path(__file__).resolve().parents[1]
++sys.path.insert(0, str(ROOT / "scripts"))
++from cmf_chieta_check import check_artifact  # noqa: E402
++import stage31_cmf_field_bench as bench  # noqa: E402
++import w3_gamma_triple_compare as gamma  # noqa: E402
++
++
++class E4Error(RuntimeError):
++    pass
++
++
++def exact_array(left: tuple[float, ...], right: tuple[float, ...]) -> bool:
++    return np.asarray(left, dtype="<f8").tobytes() == np.asarray(
++        right, dtype="<f8").tobytes()
++
++
++def validate_pair(base: Path, allow_seeded: bool) -> tuple[Any, Any]:
++    a = check_artifact(Path(str(base) + ".A"))
++    b = check_artifact(Path(str(base) + ".B"))
++    ma, mb = a.manifest, b.manifest
++    if ma.get("emiss_ab_lane") != "A-production":
++        raise E4Error("A sidecar lane tag is absent or wrong")
++    if mb.get("emiss_ab_lane") != "B-Aul-nu":
++        raise E4Error("B sidecar lane tag is absent or wrong")
++    state_a = ma.get("common_assembly_state_sha256")
++    state_b = mb.get("common_assembly_state_sha256")
++    if not isinstance(state_a, str) or len(state_a) != 64 or state_a != state_b:
++        raise E4Error("common assembly-state hashes disagree")
++    # r_edge, nu, dnu, chi_total, chi_es and J_producer are invariant.  eta is
++    # the sole allowed payload delta; the runtime additionally checks all
++    # internal opacity decompositions before writing either artifact.
++    for index, label in ((0, "r_edge"), (1, "nu"), (2, "dnu"),
++                         (3, "chi_total"), (4, "chi_es"), (8, "J_producer")):
++        if not exact_array(a.arrays[index], b.arrays[index]):
++            raise E4Error(f"non-emissivity payload coordinate differs: {label}")
++    if a.header[3:8] != b.header[3:8]:
++        raise E4Error("A/B header epoch/dimension/flags mismatch")
++    if a.header[3] != 50 or a.header[4] != 1000:
++        raise E4Error(f"stage31 E4 requires 50x1000, got {a.header[3]}x{a.header[4]}")
++    seed = mb.get("seeded_defect", {})
++    if not allow_seeded and (seed.get("line_id", -1) != -1 or seed.get("hits", 0) != 0):
++        raise E4Error("seeded negative-control payload refused without --allow-seeded")
++    coverage = mb.get("coverage")
++    if not isinstance(coverage, dict):
++        raise E4Error("B coverage block is missing")
++    active = coverage.get("active_transition_count", 0)
++    defined = coverage.get("defined_transition_count", 0)
++    undefined = coverage.get("undefined_transition_count", 0)
++    if active <= 0 or defined + undefined != active:
++        raise E4Error("transition coverage census does not close")
++    active_cells = coverage.get("active_line_shell_count", 0)
++    defined_cells = coverage.get("defined_line_shell_count", 0)
++    undefined_cells = coverage.get("undefined_line_shell_count", 0)
++    fraction = coverage.get("a_reference_contribution_fraction")
++    if active_cells <= 0 or defined_cells + undefined_cells != active_cells:
++        raise E4Error("line-shell coverage census does not close")
++    if not isinstance(fraction, (int, float)) or not math.isfinite(fraction) or not 0.0 <= fraction <= 1.0:
++        raise E4Error("A-reference contribution coverage is invalid")
++    undefined_path = Path(str(base) + ".B.undefined.csv")
++    if not undefined_path.is_file():
++        raise E4Error(f"undefined-transition list missing: {undefined_path}")
++    with undefined_path.open(newline="") as f:
++        rows = list(csv.DictReader(f))
++    if len(rows) != undefined:
++        raise E4Error(f"undefined list has {len(rows)} rows, sidecar says {undefined}")
++    return a, b
++
++
++def run_stage31(executable: Path, payload: Path, output: Path,
++                shell: int, nmu: int, t_inner: float, bb_scale: float) -> dict[str, Any]:
++    command = [str(executable), str(payload), str(payload) + ".manifest.json",
++               str(shell), str(nmu), repr(t_inner), repr(bb_scale), str(output)]
++    completed = subprocess.run(command, cwd=ROOT, text=True, capture_output=True)
++    if completed.returncode:
++        raise E4Error(f"stage31 failed for {payload}: rc={completed.returncode}\n"
++                      f"stdout={completed.stdout}\nstderr={completed.stderr}")
++    meta, table = bench.parse_driver_table(output)
++    for key in ("clamp", "solution_negative_excess", "sign_uncertain", "nonfinite"):
++        if int(meta[key]) != 0:
++            raise E4Error(f"stage31 guard {key}={meta[key]} for {payload}")
++    if float(meta["transport_residual"]) > 1.0e-4:
++        raise E4Error(f"transport residual exceeds 1e-4 for {payload}")
++    return {"metadata": meta, "table": table, "stdout": completed.stdout,
++            "stderr": completed.stderr, "command": command}
++
++
++def gamma_rows(edges: np.ndarray, j_a: np.ndarray, j_b: np.ndarray,
++               capture_dir: Path, cmf_run: Path,
++               ew_dir: Path) -> tuple[dict[str, Any], list[dict[str, Any]]]:
++    gamma.CMF_RUN = cmf_run.resolve()
++    gamma.EW_DIR = ew_dir.resolve()
++    context, rates_a = bench.load_gamma_context(capture_dir, edges, j_a)
++    _, rates_b = bench.load_gamma_context(capture_dir, edges, j_b)
++    by_b = {row["matrix_index"]: row for row in rates_b}
++    rows = []
++    for ra in rates_a:
++        rb = by_b[ra["matrix_index"]]
++        ga, gb = ra["Gamma_det_D"], rb["Gamma_det_D"]
++        gc = ra["Gamma_CMFGEN_C"]
++        if not all(math.isfinite(x) and x > 0.0 for x in (ga, gb, gc)):
++            raise E4Error(f"non-positive/non-finite Gamma for {ra['target']}")
++        rows.append({
++            "target": ra["target"], "matrix_index": ra["matrix_index"],
++            "Gamma_A": ga, "Gamma_B": gb, "Gamma_CMFGEN": gc,
++            "A_over_CMFGEN": ga / gc, "B_over_CMFGEN": gb / gc,
++            "B_over_A": gb / ga,
++            "log10_B_over_A": math.log10(gb / ga),
++            "member_count": ra["member_count"],
++            "route_count": ra["route_count"],
++            "threshold_eV": ra["threshold_eV"],
++        })
++    return context, rows
++
++
++def write_csv(path: Path, rows: list[dict[str, Any]], fields: list[str]) -> None:
++    with path.open("w", newline="") as f:
++        writer = csv.DictWriter(f, fieldnames=fields, extrasaction="ignore")
++        writer.writeheader()
++        writer.writerows(rows)
++
++
++def main() -> int:
++    ap = argparse.ArgumentParser()
++    ap.add_argument("base", type=Path, help="runtime base; consumes BASE.A and BASE.B")
++    ap.add_argument("--out-dir", type=Path, default=ROOT / "validation/emiss_e4")
++    ap.add_argument("--capture-dir", type=Path, default=Path(
++        "/gpfs/kjhan/lumina_runner2/scratch/chieta_capture_parity59_188605"))
++    ap.add_argument("--cmf-run", type=Path, default=bench.DEFAULT_CMF)
++    ap.add_argument("--ew-dir", type=Path, default=gamma.EW_DIR)
++    ap.add_argument("--shell", type=int, default=8)
++    ap.add_argument("--nmu", type=int, default=16)
++    ap.add_argument("--t-inner", type=float, default=10020.0)
++    ap.add_argument("--bb-scale", type=float, default=1.0)
++    ap.add_argument("--driver", type=Path, default=Path("/tmp/stage31_cmf_field_driver_e4"))
++    ap.add_argument("--allow-seeded", action="store_true")
++    args = ap.parse_args()
++    try:
++        if args.shell != 8:
++            raise E4Error("the preregistered Fe III idx201/S II SL4 identity is shell 8")
++        a, b = validate_pair(args.base.resolve(), args.allow_seeded)
++        edges, centers, _ = bench.canonical_grid()
++        nu_descending = np.asarray(a.arrays[1])
++        grid_error = float(np.max(np.abs(nu_descending[::-1] / centers - 1.0)))
++        if grid_error > 1.0e-12:
++            raise E4Error(f"capture/canonical frequency grid mismatch {grid_error}")
++        args.out_dir.mkdir(parents=True, exist_ok=True)
++        bench.compile_driver(args.driver)
++        solve_a = run_stage31(args.driver, Path(str(args.base.resolve()) + ".A"),
++                              args.out_dir / "jdet_A.tsv", args.shell, args.nmu,
++                              args.t_inner, args.bb_scale)
++        solve_b = run_stage31(args.driver, Path(str(args.base.resolve()) + ".B"),
++                              args.out_dir / "jdet_B.tsv", args.shell, args.nmu,
++                              args.t_inner, args.bb_scale)
++        jprod = np.asarray(a.arrays[8]).reshape(a.header[3], a.header[4])[args.shell][::-1]
++        ja = solve_a["table"]["J_det"][::-1]
++        jb = solve_b["table"]["J_det"][::-1]
++        context, rates = gamma_rows(edges, ja, jb, args.capture_dir.resolve(),
++                                    args.cmf_run, args.ew_dir)
++        cmf = context["cmf"]["J"]
++        bands_a = bench.make_band_rows(edges, ja, jprod, cmf)
++        bands_b = bench.make_band_rows(edges, jb, jprod, cmf)
++        bands = []
++        for ra, rb in zip(bands_a, bands_b, strict=True):
++            if not all(math.isfinite(x) and x > 0.0 for x in
++                       (ra["J_det"], rb["J_det"], ra["J_CMFGEN"])):
++                raise E4Error(f"non-positive/non-finite band mean for {ra['band']}")
++            bands.append({
++                "band": ra["band"], "wavelength_A": ra["wavelength_A"],
++                "A_over_CMFGEN": ra["J_det_over_J_CMFGEN"],
++                "B_over_CMFGEN": rb["J_det_over_J_CMFGEN"],
++                "B_over_A": rb["J_det"] / ra["J_det"],
++                "A_J_det": ra["J_det"], "B_J_det": rb["J_det"],
++                "J_CMFGEN": ra["J_CMFGEN"],
++            })
++        result = {
++            "schema": "lumina-emiss-ab-e4-verdict-v1",
++            "base": str(args.base.resolve()),
++            "common_assembly_state_sha256": a.manifest["common_assembly_state_sha256"],
++            "coverage": b.manifest["coverage"],
++            "seeded_defect": b.manifest["seeded_defect"],
++            "nu_grid_max_relative_error": grid_error,
++            "stage31": {"A": solve_a["metadata"], "B": solve_b["metadata"]},
++            "bands": bands, "gamma": rates,
++            "no_new_clamp": True,
++        }
++        (args.out_dir / "verdict.json").write_text(
++            json.dumps(result, indent=2, allow_nan=False) + "\n")
++        write_csv(args.out_dir / "band_table.csv", bands,
++                  ["band", "wavelength_A", "A_over_CMFGEN", "B_over_CMFGEN",
++                   "B_over_A", "A_J_det", "B_J_det", "J_CMFGEN"])
++        write_csv(args.out_dir / "gamma_table.csv", rates,
++                  ["target", "matrix_index", "Gamma_A", "Gamma_B", "Gamma_CMFGEN",
++                   "A_over_CMFGEN", "B_over_CMFGEN", "B_over_A", "log10_B_over_A",
++                   "member_count", "route_count", "threshold_eV"])
++        for row in bands:
++            print(f"{row['band']:4s} A/CMFGEN={row['A_over_CMFGEN']:.8g} "
++                  f"B/CMFGEN={row['B_over_CMFGEN']:.8g} B/A={row['B_over_A']:.8g}")
++        for row in rates:
++            print(f"Gamma {row['target']}: A/CMFGEN={row['A_over_CMFGEN']:.8g} "
++                  f"B/CMFGEN={row['B_over_CMFGEN']:.8g} B/A={row['B_over_A']:.8g}")
++        print(f"PASS: {args.out_dir / 'verdict.json'}")
++        return 0
++    except (E4Error, OSError, ValueError, KeyError, subprocess.CalledProcessError,
++            gamma.Unresolved, bench.BenchError) as exc:
++        print(f"UNRESOLVED: {exc}", file=sys.stderr)
++        return 2
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())

@@ -1,0 +1,1194 @@
+--- a/src/lumina_cmfgen.c
++++ b/src/lumina_cmfgen.c
+@@ -481,6 +481,574 @@
+                                           post_damping,path,NULL);
+ }
+ 
++/* ============================================================================
++ * [CMF-LINEPOP T2] population-native line dump.
++ *
++ * WHY.  The frozen chi/eta capture (LCMFCE01) is per (shell, coarse bin): it
++ * records what the assembled line forest *summed to*, not what any individual
++ * line contributed nor which populations produced it.  T2 ("replace only the
++ * line assembly with population-native chi_l[n_l,n_u] and eta_l = A_ul n_u")
++ * therefore had no instrument: the E4 B/B2 lanes can swap the emissivity but
++ * chi stays bitwise identical, so the experiment is not a single-factor test.
++ *
++ * WHAT.  A READ-ONLY REPLAY of the assemble per-line loop, fired in the same
++ * `it == LUMINA_CMF_FROZEN_CHIETA_ITER` block that writes the chi/eta capture,
++ * i.e. the SAME GENERATION BY CONSTRUCTION.  Nothing in cmfgen_assemble_impl
++ * is touched; between assemble and this call only cmfgen_solve_J and the J
++ * damping run, and neither writes chi_line/chi_line_th/chi_abs/chi_tot.  The
++ * replay re-derives chi_line from the same inputs in the same order and the
++ * writer records whether it reproduced cs->chi_line BITWISE -- a round-trip
++ * identity that makes "same generation" checkable, not asserted.
++ *
++ * THE EPAY DISPOSITION.  Per (shell, bin) the artifact also records whether
++ * the line emissivity assembled here actually survives into S_fixed: under
++ * LUMINA_CMF_EPAY>=2 the thin-bin source is REBUILT from chi_line_th*B(T_e)
++ * plus the Milne bf shape, so eta_line is discarded there.  Without this
++ * column an offline T2 can swap eta in cells where eta is thrown away and
++ * conclude nothing.
++ *
++ * Gate LUMINA_CMF_LINEPOP_DUMP (path). Unset => not called, allocates nothing.
++ * ==========================================================================*/
++
++static void cmf_pack_u32(unsigned char *b, uint32_t x) {
++    b[0]=(unsigned char)x; b[1]=(unsigned char)(x>>8);
++    b[2]=(unsigned char)(x>>16); b[3]=(unsigned char)(x>>24);
++}
++static void cmf_pack_i32(unsigned char *b, int x) {
++    cmf_pack_u32(b,(uint32_t)x);
++}
++static void cmf_pack_f64(unsigned char *b, double x) {
++    uint64_t u; memcpy(&u,&x,sizeof(u));
++    for (int i=0;i<8;i++) b[i]=(unsigned char)(u>>(8*i));
++}
++
++#define CMF_LINEPOP_ROW_BYTES  76
++#define CMF_LINEPOP_LINE_BYTES 80
++
++enum {
++    CMF_LP_F_NLTE_ION     = 1U << 0, /* line is mapped to an NLTE ion        */
++    CMF_LP_F_POPS_DEFINED = 1U << 1, /* both n_l and n_u are NLTE-solved     */
++    CMF_LP_F_SL_POP       = 1U << 2, /* line_source_S > 0 (population-native)*/
++    CMF_LP_F_SL_FALLBACK  = 1U << 3, /* S used by assemble was B_nu(T_e)     */
++    CMF_LP_F_STIM_CLAMPED = 1U << 4, /* 1-(g_l n_u)/(g_u n_l) <= 0           */
++    CMF_LP_F_TAU_ROUNDTRIP= 1U << 5  /* tau recomputed from pops matches     */
++};
++
++typedef struct {
++    int shells[64], n_shells_sel;
++    double lam_lo, lam_hi;
++    long max_rows;
++} CMFLinePopSel;
++
++static int cmf_linepop_parse_sel(CMFLinePopSel *sel, int n_shells) {
++    memset(sel, 0, sizeof(*sel));
++    sel->lam_lo = 600.0; sel->lam_hi = 3000.0; sel->max_rows = 4000000L;
++    const char *se = getenv("LUMINA_CMF_LINEPOP_SHELLS");
++    if (!se || !*se) {
++        fprintf(stderr,"[CMF-LINEPOP][FAIL] LUMINA_CMF_LINEPOP_SHELLS is "
++                "required when the dump is armed (comma list, e.g. 8,16,45)\n");
++        return -1;
++    }
++    char buf[512];
++    if (snprintf(buf,sizeof(buf),"%s",se) >= (int)sizeof(buf)) {
++        fprintf(stderr,"[CMF-LINEPOP][FAIL] shell list too long\n");
++        return -1;
++    }
++    for (char *tok=strtok(buf,", \t"); tok; tok=strtok(NULL,", \t")) {
++        char *end=NULL; long v=strtol(tok,&end,10);
++        if (end==tok || *end || v < 0 || v >= n_shells) {
++            fprintf(stderr,"[CMF-LINEPOP][FAIL] shell '%s' out of [0,%d)\n",
++                    tok,n_shells);
++            return -1;
++        }
++        if (sel->n_shells_sel >= (int)(sizeof(sel->shells)/sizeof(sel->shells[0]))) {
++            fprintf(stderr,"[CMF-LINEPOP][FAIL] too many shells selected\n");
++            return -1;
++        }
++        for (int i=0;i<sel->n_shells_sel;i++) if (sel->shells[i]==(int)v) {
++            fprintf(stderr,"[CMF-LINEPOP][FAIL] duplicate shell %ld\n",v);
++            return -1;
++        }
++        sel->shells[sel->n_shells_sel++]=(int)v;
++    }
++    if (!sel->n_shells_sel) {
++        fprintf(stderr,"[CMF-LINEPOP][FAIL] empty shell selection\n");
++        return -1;
++    }
++    const char *le = getenv("LUMINA_CMF_LINEPOP_LAM");
++    if (le && *le) {
++        double lo=0.0, hi=0.0;
++        if (sscanf(le,"%lf,%lf",&lo,&hi)!=2 || !(lo > 0.0) || !(hi > lo)) {
++            fprintf(stderr,"[CMF-LINEPOP][FAIL] LUMINA_CMF_LINEPOP_LAM must be "
++                    "lo,hi in Angstrom with 0<lo<hi (got %s)\n",le);
++            return -1;
++        }
++        sel->lam_lo=lo; sel->lam_hi=hi;
++    }
++    const char *me = getenv("LUMINA_CMF_LINEPOP_MAXROWS");
++    if (me && *me) {
++        char *end=NULL; long v=strtol(me,&end,10);
++        if (end==me || *end || v <= 0) {
++            fprintf(stderr,"[CMF-LINEPOP][FAIL] LUMINA_CMF_LINEPOP_MAXROWS "
++                    "must be a positive integer (got %s)\n",me);
++            return -1;
++        }
++        sel->max_rows=v;
++    }
++    return 0;
++}
++
++/* level_num -> global level index, per ion population.  Same construction the
++ * E4 lane uses, extended to serve BOTH the lower and the upper level. */
++typedef struct { int **by_number; int *max_number; int n_ion_pops;
++                 int zi[100*100]; } CMFLevIdx;
++
++static void cmf_levidx_free(CMFLevIdx *ix) {
++    if (!ix->by_number) return;
++    for (int i=0;i<ix->n_ion_pops;i++) free(ix->by_number[i]);
++    free(ix->by_number); free(ix->max_number);
++    ix->by_number=NULL; ix->max_number=NULL;
++}
++
++static int cmf_levidx_build(CMFLevIdx *ix, const AtomicData *atom) {
++    memset(ix,0,sizeof(*ix));
++    int np = atom->n_ion_pops;
++    if (np <= 0 || !atom->level_offset || !atom->level_num) return -1;
++    ix->n_ion_pops=np;
++    for (int k=0;k<100*100;k++) ix->zi[k]=-1;
++    if (atom->ion_pop_Z && atom->ion_pop_stage)
++        for (int j=0;j<np;j++) {
++            int Z=atom->ion_pop_Z[j], st=atom->ion_pop_stage[j];
++            if (Z >= 0 && Z < 100 && st >= 0 && st < 100) ix->zi[Z*100+st]=j;
++        }
++    ix->by_number=(int **)calloc((size_t)np,sizeof(int *));
++    ix->max_number=(int *)malloc((size_t)np*sizeof(int));
++    if (!ix->by_number || !ix->max_number) { cmf_levidx_free(ix); return -1; }
++    for (int i=0;i<np;i++) {
++        ix->max_number[i]=-1;
++        for (int g=atom->level_offset[i]; g<atom->level_offset[i+1]; g++)
++            if (atom->level_num[g] > ix->max_number[i])
++                ix->max_number[i]=atom->level_num[g];
++        if (ix->max_number[i] < 0) continue;
++        ix->by_number[i]=(int *)malloc((size_t)(ix->max_number[i]+1)*sizeof(int));
++        if (!ix->by_number[i]) { cmf_levidx_free(ix); return -1; }
++        for (int k=0;k<=ix->max_number[i];k++) ix->by_number[i][k]=-1;
++        for (int g=atom->level_offset[i]; g<atom->level_offset[i+1]; g++) {
++            int number=atom->level_num[g];
++            if (number >= 0 && number <= ix->max_number[i])
++                ix->by_number[i][number]=g;
++        }
++    }
++    return 0;
++}
++
++static int cmf_levidx_lookup(const CMFLevIdx *ix, int ion_pop, int level_num) {
++    if (ion_pop < 0 || ion_pop >= ix->n_ion_pops || !ix->by_number[ion_pop] ||
++        level_num < 0 || level_num > ix->max_number[ion_pop]) return -1;
++    return ix->by_number[ion_pop][level_num];
++}
++
++int cmfgen_dump_line_populations(const CMFGENState *cs, const Geometry *geo,
++                                 const OpacityState *opac,
++                                 const PlasmaState *plasma,
++                                 const NLTEConfig *nlte, const AtomicData *atom,
++                                 int iter, int field_generation,
++                                 const char *path) {
++    if (!cs || !geo || !opac || !plasma || !nlte || !atom || !path || !*path ||
++        iter < 0 || field_generation < 0 || cs->n_shells <= 0 ||
++        cs->n_bins <= 0 || geo->n_shells != cs->n_shells ||
++        opac->n_shells != cs->n_shells || atom->n_lines != opac->n_lines ||
++        !opac->tau_sobolev || !opac->line_list_nu || !cs->nu || !cs->dnu ||
++        !cs->chi_line || !cs->chi_line_th || !cs->chi_abs || !cs->chi_tot ||
++        !plasma->T_e || !plasma->T_rad || !atom->line_atomic_number ||
++        !atom->line_ion_number || !atom->line_level_lower ||
++        !atom->line_level_upper || !atom->level_g || !atom->level_num ||
++        !nlte->global_to_nlte_level || !nlte->nlte_level_populations) {
++        fprintf(stderr,"[CMF-LINEPOP][FAIL] invalid state/path/iteration\n");
++        return -1;
++    }
++    /* The replay reproduces the PRODUCTION assemble only.  Refuse the two
++     * variant assemblies rather than emit a mislabeled artifact. */
++    if (cs->cont_only || cs->frozen_morph_eps >= 0.0) {
++        fprintf(stderr,"[CMF-LINEPOP][FAIL] state is a cont_only/frozen-morph "
++                "assemble; the replay would not be the production forest\n");
++        return -1;
++    }
++    { const char *tf=getenv("LUMINA_CMF_EPAY_TAUEFF");
++      if (tf && atof(tf) > 0.0) {
++        fprintf(stderr,"[CMF-LINEPOP][FAIL] LUMINA_CMF_EPAY_TAUEFF>0: the EPAY "
++                "shell gate is built from the PREVIOUS assemble's chi_abs/"
++                "chi_tot and cannot be reproduced here\n");
++        return -1;
++      } }
++
++    const int NB = cs->n_bins, NS = cs->n_shells, n_lines = opac->n_lines;
++    CMFLinePopSel sel;
++    if (cmf_linepop_parse_sel(&sel,NS) != 0) return -1;
++
++    /* Same env reads as cmfgen_assemble_impl, same defaults. */
++    int eps_phys=0, src_nlte=0;
++    double eps_floor=1e-5, eps_cap=1.0;
++    { const char *ep=getenv("LUMINA_CMFGEN_LINE_EPS_PHYS");
++      if (ep && atoi(ep)) eps_phys=1;
++      const char *ef=getenv("LUMINA_CMFGEN_EPS_FLOOR"); if (ef) eps_floor=atof(ef);
++      const char *ec=getenv("LUMINA_CMFGEN_EPS_CAP");   if (ec) eps_cap=atof(ec);
++      const char *sn=getenv("LUMINA_CMFGEN_SRC_NLTE");
++      if (sn && atoi(sn)) src_nlte=1; }
++    double line_eps=-1.0, line_gate=1.0, eps_uv=-1.0;
++    { const char *le=getenv("LUMINA_CMFGEN_LINE_EPS"); if (le) line_eps=atof(le);
++      const char *lg=getenv("LUMINA_CMFGEN_LINE_EPS_GATE"); if (lg) line_gate=atof(lg);
++      const char *eu=getenv("LUMINA_CMFGEN_LINE_EPS_UV"); if (eu) eps_uv=atof(eu); }
++    int epay=0, epay_smin=0; double epay_taubin=1.0, epay_hotf=1.5;
++    { const char *e=getenv("LUMINA_CMF_EPAY"); epay=e?atoi(e):0;
++      if (epay < 0) epay=0;
++      const char *es=getenv("LUMINA_CMF_EPAY_SMIN"); if (es) epay_smin=atoi(es);
++      const char *tb=getenv("LUMINA_CMF_EPAY_TAUBIN"); if (tb) epay_taubin=atof(tb);
++      const char *hf=getenv("LUMINA_CMF_EPAY_HOTF"); if (hf) epay_hotf=atof(hf); }
++
++    const double inv_ct = 1.0 / (CM_C * geo->time_explosion);
++    const double nu_lo = CM_C / (sel.lam_hi * 1.0e-8);
++    const double nu_hi = CM_C / (sel.lam_lo * 1.0e-8);
++
++    CMFLevIdx ix;
++    if (cmf_levidx_build(&ix,atom) != 0) {
++        fprintf(stderr,"[CMF-LINEPOP][FAIL] level index build failed\n");
++        return -1;
++    }
++
++    int    *line_slot = (int *)malloc((size_t)n_lines*sizeof(int));
++    double *chi_rep   = (double *)calloc((size_t)sel.n_shells_sel*NB,sizeof(double));
++    double *chith_rep = (double *)calloc((size_t)sel.n_shells_sel*NB,sizeof(double));
++    double *eta_rep   = (double *)calloc((size_t)sel.n_shells_sel*NB,sizeof(double));
++    unsigned char *disp = (unsigned char *)calloc((size_t)NS*NB,1);
++    if (!line_slot || !chi_rep || !chith_rep || !eta_rep || !disp) {
++        fprintf(stderr,"[CMF-LINEPOP][FAIL] host allocation failed\n");
++        free(line_slot); free(chi_rep); free(chith_rep); free(eta_rep);
++        free(disp); cmf_levidx_free(&ix); return -1;
++    }
++    for (int l=0;l<n_lines;l++) line_slot[l]=-1;
++
++    /* ---- pass 1: exact assemble predicates; count rows, mark lines -------- */
++    long n_rows=0; int n_lines_sel=0;
++    for (int si=0; si<sel.n_shells_sel; si++) {
++        int s = sel.shells[si];
++        for (int l=0;l<n_lines;l++) {
++            double tau = opac->tau_sobolev[(size_t)l*NS+s];
++            if (tau <= 1e-12) continue;
++            double nu_l = opac->line_list_nu[l];
++            if (nu_l <= cs->nu_min || nu_l >= cs->nu_max) continue;
++            int b = (int)floor(log(nu_l/cs->nu_min)/cs->d_log_nu);
++            if (b < 0 || b >= NB) continue;
++            if (nu_l < nu_lo || nu_l > nu_hi) continue;   /* selection only */
++            n_rows++;
++            if (line_slot[l] < 0) line_slot[l]=n_lines_sel++;
++        }
++    }
++    if (n_rows > sel.max_rows) {
++        fprintf(stderr,"[CMF-LINEPOP][FAIL] selection yields %ld rows "
++                "(%.1f MiB) > LUMINA_CMF_LINEPOP_MAXROWS=%ld; narrow the "
++                "shell/lambda selection instead of truncating\n",
++                n_rows,(double)n_rows*CMF_LINEPOP_ROW_BYTES/1048576.0,
++                sel.max_rows);
++        free(line_slot); free(chi_rep); free(chith_rep); free(eta_rep);
++        free(disp); cmf_levidx_free(&ix); return -1;
++    }
++
++    size_t row_bytes  = (size_t)n_rows*CMF_LINEPOP_ROW_BYTES;
++    size_t line_bytes = (size_t)n_lines_sel*CMF_LINEPOP_LINE_BYTES;
++    unsigned char *rows = (unsigned char *)malloc(row_bytes ? row_bytes : 1);
++    unsigned char *lrec = (unsigned char *)calloc(line_bytes ? line_bytes : 1,1);
++    if (!rows || !lrec) {
++        fprintf(stderr,"[CMF-LINEPOP][FAIL] payload allocation failed "
++                "(%.1f MiB)\n",(double)(row_bytes+line_bytes)/1048576.0);
++        free(rows); free(lrec); free(line_slot); free(chi_rep); free(chith_rep);
++        free(eta_rep); free(disp); cmf_levidx_free(&ix); return -1;
++    }
++
++    /* ---- pass 2: replay (accumulation order identical to assemble) -------- */
++    unsigned char *rp = rows;
++    long written=0;
++    for (int si=0; si<sel.n_shells_sel; si++) {
++        int s = sel.shells[si];
++        double Te = plasma->T_e[s];
++        double ne_s = plasma->n_electron ? plasma->n_electron[s]
++                                         : opac->electron_density[s];
++        for (int l=0;l<n_lines;l++) {
++            double tau = opac->tau_sobolev[(size_t)l*NS+s];
++            if (tau <= 1e-12) continue;
++            double nu_l = opac->line_list_nu[l];
++            if (nu_l <= cs->nu_min || nu_l >= cs->nu_max) continue;
++            int b = (int)floor(log(nu_l/cs->nu_min)/cs->d_log_nu);
++            if (b < 0 || b >= NB) continue;
++            double frac = (tau > 1e-6) ? -expm1(-tau) : tau;
++            double w = frac * nu_l * inv_ct / cs->dnu[b];
++            double Sl_pop = opac->line_source_S
++                          ? opac->line_source_S[(size_t)l*NS+s] : 0.0;
++            double Sl = src_nlte ? Sl_pop : 0.0;
++            int sl_fallback = (Sl <= 0.0);
++            if (Sl <= 0.0) Sl = cm_planck(nu_l, Te);
++            size_t ridx=(size_t)si*NB+b;
++            chi_rep[ridx] += w;
++            double el = 1.0, eta_l;
++            if (eps_phys) {
++                el = radeq_line_eps_phys(l, ne_s, Te, tau);
++                if (el < 0.0) el = 1.0;
++                if (el < eps_floor) el = eps_floor;
++                if (el > eps_cap)   el = eps_cap;
++                chith_rep[ridx] += w * el;
++                eta_l = w * el * Sl;
++            } else {
++                eta_l = w * Sl;
++            }
++            eta_rep[ridx] += eta_l;
++            if (nu_l < nu_lo || nu_l > nu_hi) continue;   /* not recorded */
++
++            int slot = line_slot[l];
++            int Z = atom->line_atomic_number[l];
++            int ion = atom->line_ion_number[l];
++            int ion_pop=(Z >= 0 && Z < 100 && ion >= 0 && ion < 100)
++                      ? ix.zi[Z*100+ion] : -1;
++            int glo = cmf_levidx_lookup(&ix,ion_pop,atom->line_level_lower[l]);
++            int gup = cmf_levidx_lookup(&ix,ion_pop,atom->line_level_upper[l]);
++            int nlo = (glo >= 0) ? nlte->global_to_nlte_level[glo] : -1;
++            int nup = (gup >= 0) ? nlte->global_to_nlte_level[gup] : -1;
++            double n_lower = (nlo >= 0)
++                ? nlte->nlte_level_populations[(size_t)nlo*NS+s] : -1.0;
++            double n_upper = (nup >= 0)
++                ? nlte->nlte_level_populations[(size_t)nup*NS+s] : -1.0;
++            int g_lo = (glo >= 0) ? atom->level_g[glo] : -1;
++            int g_up = (gup >= 0) ? atom->level_g[gup] : -1;
++
++            unsigned int flags=0;
++            if (nlte->nlte_line_map && nlte->nlte_line_map[l] >= 0)
++                flags |= CMF_LP_F_NLTE_ION;
++            if (n_lower > 0.0 && n_upper > 0.0) flags |= CMF_LP_F_POPS_DEFINED;
++            if (Sl_pop > 0.0) flags |= CMF_LP_F_SL_POP;
++            if (sl_fallback) flags |= CMF_LP_F_SL_FALLBACK;
++            /* population-native tau round trip: the SAME formula
++             * nlte_update_tau_sobolev used to write opac->tau_sobolev. */
++            double tau_pop = -1.0;
++            if ((flags & CMF_LP_F_POPS_DEFINED) && g_lo > 0 && g_up > 0 &&
++                atom->line_f_lu && atom->line_wavelength_cm) {
++                double stim = 1.0 - ((double)g_lo*n_upper)/((double)g_up*n_lower);
++                if (stim < 0.0) { stim = 0.0; flags |= CMF_LP_F_STIM_CLAMPED; }
++                tau_pop = SOBOLEV_COEFF * atom->line_f_lu[l] *
++                          atom->line_wavelength_cm[l] * geo->time_explosion *
++                          n_lower * stim;
++                if (!(tau_pop > 1e-100)) tau_pop = 1e-100;
++                if (memcmp(&tau_pop,&tau,sizeof(double))==0)
++                    flags |= CMF_LP_F_TAU_ROUNDTRIP;
++            }
++            if (slot >= 0) {
++                unsigned char *lp = lrec + (size_t)slot*CMF_LINEPOP_LINE_BYTES;
++                cmf_pack_u32(lp+0,(uint32_t)l);
++                cmf_pack_u32(lp+4,(uint32_t)b);
++                cmf_pack_i32(lp+8,Z);
++                cmf_pack_i32(lp+12,ion);
++                cmf_pack_i32(lp+16,g_lo);
++                cmf_pack_i32(lp+20,g_up);
++                cmf_pack_i32(lp+24,nlo);
++                cmf_pack_i32(lp+28,nup);
++                cmf_pack_f64(lp+32,nu_l);
++                cmf_pack_f64(lp+40,atom->line_wavelength_cm
++                                   ? atom->line_wavelength_cm[l] : -1.0);
++                cmf_pack_f64(lp+48,atom->line_A_ul ? atom->line_A_ul[l] : -1.0);
++                cmf_pack_f64(lp+56,atom->line_f_lu ? atom->line_f_lu[l] : -1.0);
++                cmf_pack_f64(lp+64,(glo>=0 && atom->level_energy_eV)
++                                   ? atom->level_energy_eV[glo] : -1.0);
++                cmf_pack_f64(lp+72,(gup>=0 && atom->level_energy_eV)
++                                   ? atom->level_energy_eV[gup] : -1.0);
++            }
++            cmf_pack_u32(rp+0,(uint32_t)(slot >= 0 ? slot : 0));
++            cmf_pack_u32(rp+4,(uint32_t)si);
++            cmf_pack_u32(rp+8,flags);
++            cmf_pack_f64(rp+12,tau);
++            cmf_pack_f64(rp+20,tau_pop);
++            cmf_pack_f64(rp+28,n_lower);
++            cmf_pack_f64(rp+36,n_upper);
++            cmf_pack_f64(rp+44,Sl_pop);
++            cmf_pack_f64(rp+52,Sl);
++            cmf_pack_f64(rp+60,el);
++            cmf_pack_f64(rp+68,w);
++            rp += CMF_LINEPOP_ROW_BYTES;
++            written++;
++        }
++    }
++    if (written != n_rows) {
++        fprintf(stderr,"[CMF-LINEPOP][FAIL] row count changed between passes "
++                "(%ld vs %ld)\n",written,n_rows);
++        free(rows); free(lrec); free(line_slot); free(chi_rep); free(chith_rep);
++        free(eta_rep); free(disp); cmf_levidx_free(&ix); return -1;
++    }
++
++    /* ---- round-trip identity against the live assembled state ------------- */
++    int chi_bitwise=1; double chi_max_abs=0.0;
++    int chith_comparable = (eps_phys && line_eps <= 0.0 && eps_uv <= 0.0);
++    int chith_bitwise=1; double chith_max_abs=0.0;
++    for (int si=0; si<sel.n_shells_sel; si++) {
++        int s=sel.shells[si];
++        for (int b=0;b<NB;b++) {
++            double a=chi_rep[(size_t)si*NB+b];
++            double c=cs->chi_line[(size_t)s*NB+b];
++            double d=fabs(a-c); if (d > chi_max_abs) chi_max_abs=d;
++            if (memcmp(&a,&c,sizeof(double))!=0) chi_bitwise=0;
++            if (chith_comparable) {
++                double at=chith_rep[(size_t)si*NB+b];
++                double ct=cs->chi_line_th[(size_t)s*NB+b];
++                double dt=fabs(at-ct); if (dt > chith_max_abs) chith_max_abs=dt;
++                if (memcmp(&at,&ct,sizeof(double))!=0) chith_bitwise=0;
++            }
++        }
++    }
++
++    /* ---- EPAY disposition: does eta_line reach S_fixed in this cell? ------ */
++    long disp_n[4]={0,0,0,0};
++    for (int s=0;s<NS;s++) {
++        double dr_s = geo->r_outer[s] - geo->r_inner[s];
++        int hot = (plasma->T_e[s] > epay_hotf * plasma->T_rad[s]);
++        for (int b=0;b<NB;b++) {
++            size_t idx=(size_t)s*NB+b;
++            unsigned char d=0;   /* pass-1 legacy source: eta_line live */
++            if (epay && s >= epay_smin) {
++                int thick=((cs->chi_abs[idx]+cs->chi_line_th[idx])*dr_s
++                           > epay_taubin);
++                d = thick ? 1 : ((epay >= 2 && hot) ? 2 : 3);
++            }
++            disp[idx]=d; disp_n[d]++;
++        }
++    }
++
++    /* ---- write LCMFLP01 --------------------------------------------------- */
++    char manifest[4096], quarantine[4096];
++    int mn=snprintf(manifest,sizeof(manifest),"%s.manifest.json",path);
++    int qn=snprintf(quarantine,sizeof(quarantine),"%s.quarantine",path);
++    if (mn < 0 || (size_t)mn >= sizeof(manifest) ||
++        qn < 0 || (size_t)qn >= sizeof(quarantine)) {
++        fprintf(stderr,"[CMF-LINEPOP][FAIL] sidecar path too long\n");
++        free(rows); free(lrec); free(line_slot); free(chi_rep); free(chith_rep);
++        free(eta_rep); free(disp); cmf_levidx_free(&ix); return -1;
++    }
++    FILE *fp=fopen(path,"wb");
++    if (!fp) {
++        fprintf(stderr,"[CMF-LINEPOP][FAIL] open %s: %s\n",path,strerror(errno));
++        free(rows); free(lrec); free(line_slot); free(chi_rep); free(chith_rep);
++        free(eta_rep); free(disp); cmf_levidx_free(&ix); return -1;
++    }
++    CMFSHA256 sha; cmf_sha256_init(&sha);
++    int fail=0;
++    const unsigned char magic[8]={'L','C','M','F','L','P','0','1'};
++#define LW(call) do { if (!fail && (call)) fail=1; } while (0)
++    LW(cmf_dump_bytes(fp,&sha,magic,sizeof(magic)));
++    LW(cmf_dump_u32(fp,&sha,UINT32_C(0x01020304)));
++    LW(cmf_dump_u32(fp,&sha,UINT32_C(1)));
++    LW(cmf_dump_u64(fp,&sha,(uint64_t)iter));
++    LW(cmf_dump_u64(fp,&sha,(uint64_t)field_generation));
++    LW(cmf_dump_u32(fp,&sha,(uint32_t)NS));
++    LW(cmf_dump_u32(fp,&sha,(uint32_t)NB));
++    LW(cmf_dump_u32(fp,&sha,(uint32_t)sel.n_shells_sel));
++    LW(cmf_dump_u32(fp,&sha,(uint32_t)n_lines_sel));
++    LW(cmf_dump_u64(fp,&sha,(uint64_t)n_rows));
++    LW(cmf_dump_f64(fp,&sha,geo->time_explosion));
++    LW(cmf_dump_f64(fp,&sha,sel.lam_lo));
++    LW(cmf_dump_f64(fp,&sha,sel.lam_hi));
++    LW(cmf_dump_u32(fp,&sha,(uint32_t)eps_phys));
++    LW(cmf_dump_u32(fp,&sha,(uint32_t)src_nlte));
++    LW(cmf_dump_u32(fp,&sha,(uint32_t)epay));
++    LW(cmf_dump_u32(fp,&sha,(uint32_t)epay_smin));
++    LW(cmf_dump_f64(fp,&sha,epay_taubin));
++    LW(cmf_dump_f64(fp,&sha,epay_hotf));
++    LW(cmf_dump_f64(fp,&sha,eps_floor));
++    LW(cmf_dump_f64(fp,&sha,eps_cap));
++    LW(cmf_dump_f64(fp,&sha,line_eps));
++    LW(cmf_dump_f64(fp,&sha,eps_uv));
++    LW(cmf_dump_f64(fp,&sha,line_gate));
++    for (int si=0;si<sel.n_shells_sel;si++)
++        LW(cmf_dump_u32(fp,&sha,(uint32_t)sel.shells[si]));
++    for (int si=0;si<sel.n_shells_sel;si++) {
++        int s=sel.shells[si];
++        LW(cmf_dump_f64(fp,&sha,plasma->T_e[s]));
++        LW(cmf_dump_f64(fp,&sha,plasma->T_rad[s]));
++        LW(cmf_dump_f64(fp,&sha,plasma->n_electron ? plasma->n_electron[s]
++                                                   : opac->electron_density[s]));
++        LW(cmf_dump_f64(fp,&sha,geo->r_outer[s]-geo->r_inner[s]));
++    }
++    for (int b=0;b<NB;b++) LW(cmf_dump_f64(fp,&sha,cs->nu[b]));
++    for (int b=0;b<NB;b++) LW(cmf_dump_f64(fp,&sha,cs->dnu[b]));
++    for (size_t q=0;q<(size_t)sel.n_shells_sel*NB;q++)
++        LW(cmf_dump_f64(fp,&sha,chi_rep[q]));
++    for (size_t q=0;q<(size_t)sel.n_shells_sel*NB;q++)
++        LW(cmf_dump_f64(fp,&sha,chith_rep[q]));
++    for (size_t q=0;q<(size_t)sel.n_shells_sel*NB;q++)
++        LW(cmf_dump_f64(fp,&sha,eta_rep[q]));
++    LW(cmf_dump_bytes(fp,&sha,disp,(size_t)NS*NB));
++    LW(cmf_dump_bytes(fp,&sha,lrec,line_bytes));
++    LW(cmf_dump_bytes(fp,&sha,rows,row_bytes));
++#undef LW
++    if (fclose(fp)) fail=1;
++    free(rows); free(lrec); free(line_slot); cmf_levidx_free(&ix);
++    if (fail) {
++        fprintf(stderr,"[CMF-LINEPOP][FAIL] write %s: %s\n",path,strerror(errno));
++        if (rename(path,quarantine)!=0)
++            fprintf(stderr,"[CMF-LINEPOP][FAIL] quarantine %s: %s\n",
++                    quarantine,strerror(errno));
++        free(chi_rep); free(chith_rep); free(eta_rep); free(disp); return -1;
++    }
++    unsigned char digest[32]; char hex[65];
++    cmf_sha256_final(&sha,digest);
++    for (int i=0;i<32;i++) snprintf(hex+2*i,3,"%02x",digest[i]);
++    hex[64]='\0';
++    FILE *mf=fopen(manifest,"w");
++    int sfail=(mf==NULL);
++    if (!sfail) {
++        sfail = fprintf(mf,"{\n  \"schema\": \"LCMFLP01-v1\",\n"
++            "  \"sha256\": \"%s\",\n"
++            "  \"iteration\": %d,\n  \"field_generation\": %d,\n"
++            "  \"n_shells\": %d,\n  \"n_bins\": %d,\n"
++            "  \"selected_shells\": %d,\n  \"selected_lines\": %d,\n"
++            "  \"rows\": %ld,\n  \"row_bytes\": %d,\n"
++            "  \"lambda_window_A\": [%.17g, %.17g],\n"
++            "  \"tau_min\": 1e-12,\n"
++            "  \"chi_line_roundtrip_bitwise\": %s,\n"
++            "  \"chi_line_roundtrip_max_abs\": %.17g,\n"
++            "  \"chi_line_th_comparable\": %s,\n"
++            "  \"chi_line_th_roundtrip_bitwise\": %s,\n"
++            "  \"chi_line_th_roundtrip_max_abs\": %.17g,\n"
++            "  \"eta_line_epoch\": \"pre-EPAY, pre-split (assemble line loop)\",\n"
++            "  \"epay_disposition_counts\": {\"legacy_source\": %ld, "
++            "\"thick_exempt\": %ld, \"rate_shape_replaced\": %ld, "
++            "\"scalar_rescaled\": %ld},\n"
++            "  \"epay_scale_not_reproducible\": true,\n"
++            "  \"gates\": {\"eps_phys\": %d, \"src_nlte\": %d, \"epay\": %d, "
++            "\"epay_smin\": %d, \"epay_taubin\": %.17g, \"epay_hotf\": %.17g, "
++            "\"line_eps\": %.17g, \"eps_uv\": %.17g},\n"
++            "  \"clamp\": 0, \"fallback\": 0\n}\n",
++            hex,iter,field_generation,NS,NB,sel.n_shells_sel,n_lines_sel,n_rows,
++            CMF_LINEPOP_ROW_BYTES,sel.lam_lo,sel.lam_hi,
++            chi_bitwise ? "true" : "false", chi_max_abs,
++            chith_comparable ? "true" : "false",
++            (chith_comparable && chith_bitwise) ? "true" : "false",
++            chith_max_abs,
++            disp_n[0],disp_n[1],disp_n[2],disp_n[3],
++            eps_phys,src_nlte,epay,epay_smin,epay_taubin,epay_hotf,
++            line_eps,eps_uv) < 0;
++        if (fclose(mf)) sfail=1;
++    }
++    free(chi_rep); free(chith_rep); free(eta_rep); free(disp);
++    if (sfail) {
++        fprintf(stderr,"[CMF-LINEPOP][FAIL] write/close %s\n",manifest);
++        if (rename(path,quarantine)!=0)
++            fprintf(stderr,"[CMF-LINEPOP][FAIL] quarantine %s: %s\n",
++                    quarantine,strerror(errno));
++        return -1;
++    }
++    fprintf(stderr,"[CMF-LINEPOP] wrote %s iter=%d generation=%d shells=%d "
++            "lines=%d rows=%ld (%.1f MiB) chi_line_bitwise=%d "
++            "epay_rate_shape_cells=%ld sha256=%s\n",
++            path,iter,field_generation,sel.n_shells_sel,n_lines_sel,n_rows,
++            (double)(row_bytes+line_bytes)/1048576.0,chi_bitwise,disp_n[2],hex);
++    return 0;
++}
++
+ /* ------------------------------------------------------------ */
+ int cmfgen_init(CMFGENState *cs, const Geometry *geo)
+ {
+--- a/src/lumina_cmfgen.h
++++ b/src/lumina_cmfgen.h
+@@ -205,6 +205,21 @@
+                                    const char *path,
+                                    const CMFGENChietaLaneMeta *meta);
+ 
++/* [CMF-LINEPOP T2] population-native per-line dump for the SAME generation as
++ * the frozen chi/eta capture.  Read-only replay of the assemble line loop: it
++ * writes nothing into cs/opac/plasma and records whether it reproduced
++ * cs->chi_line BITWISE, so "same generation" is checkable rather than assumed.
++ * Selection is mandatory (LUMINA_CMF_LINEPOP_SHELLS) and oversized selections
++ * fail closed instead of truncating.  Binary LCMFLP01 v1 little-endian;
++ * path.manifest.json carries the SHA-256, the round-trip result and the EPAY
++ * disposition census.  Returns 0 on success. */
++int cmfgen_dump_line_populations(const CMFGENState *cs, const Geometry *geo,
++                                 const OpacityState *opac,
++                                 const PlasmaState *plasma,
++                                 const NLTEConfig *nlte, const AtomicData *atom,
++                                 int iter, int field_generation,
++                                 const char *path);
++
+ /* Copy cs->J into nlte->J_nu (same [n_shells*n_bins] layout/grid). */
+ void cmfgen_write_jnu(const CMFGENState *cs, NLTEConfig *nlte);
+ 
+--- a/src/lumina_cuda.cu
++++ b/src/lumina_cuda.cu
+@@ -8028,6 +8028,22 @@
+                                 if (cmfgen_dump_frozen_chieta(
+                                         &cs,&geo,it,it,1,dump_path) != 0)
+                                     return EXIT_FAILURE;
++                                /* [CMF-LINEPOP T2] population-native per-line
++                                 * companion of the SAME generation.  Only
++                                 * cmfgen_solve_J + the J damping ran since
++                                 * cmfgen_assemble, and neither writes
++                                 * chi_line/chi_line_th/chi_abs/chi_tot, so the
++                                 * replay sees exactly the assembled forest.
++                                 * Path-valued gate: unset => strict no-op. */
++                                {
++                                    const char *lp_path =
++                                        getenv("LUMINA_CMF_LINEPOP_DUMP");
++                                    if (lp_path && *lp_path &&
++                                        cmfgen_dump_line_populations(
++                                            &cs,&geo,&opacity,&plasma,&nlte,
++                                            &atom_data,it,it,lp_path) != 0)
++                                        return EXIT_FAILURE;
++                                }
+                             }
+                         }
+                     }
+--- a/Makefile
++++ b/Makefile
+@@ -96,6 +96,12 @@
+ 		-Wl,--gc-sections -o selftest_cmf_chieta_dump \
+ 		scripts/cmf_chieta_writer_fixture.c src/lumina_cmfgen.c $(LDFLAGS)
+ 
++# [CMF-LINEPOP T2] offline population-native line-dump writer fixture.
++selftest_cmf_linepop_dump: scripts/cmf_linepop_writer_fixture.c src/lumina_cmfgen.c src/lumina_cmfgen.h $(HEADERS)
++	$(CC) -O2 -Wall -Wextra -std=c11 -D_GNU_SOURCE -ffunction-sections -fdata-sections -Isrc \
++		-Wl,--gc-sections -o selftest_cmf_linepop_dump \
++		scripts/cmf_linepop_writer_fixture.c src/lumina_cmfgen.c $(LDFLAGS)
++
+ # E5 in-situ A/B/B2 assembly fixture, including a seeded n_u corruption.
+ selftest_emiss_ab_insitu: tests/emiss_ab_insitu_fixture.c src/lumina_cmfgen.c src/lumina_cmfgen.h $(HEADERS)
+ 	$(CC) -O2 -Wall -Wextra -std=c11 -D_GNU_SOURCE -ffunction-sections -fdata-sections -Isrc \
+--- a/scripts/cmf_linepop_writer_fixture.c
++++ b/scripts/cmf_linepop_writer_fixture.c
+@@ -0,0 +1,128 @@
++/* [CMF-LINEPOP T2] offline writer fixture — no model, no GPU, no plasma solve.
++ *
++ * Builds the smallest state that exercises every branch of
++ * cmfgen_dump_line_populations: two shells, four coarse bins, three lines of
++ * which one sits OUTSIDE the selection window (so it must contribute to the
++ * chi_line round trip but must NOT produce a row), one line with fully defined
++ * NLTE populations (tau round trip live) and one without.
++ *
++ * Seeds (negative controls):
++ *   LP_SEED_CHI_DRIFT=1  perturb cs.chi_line by one ulp  -> round trip must
++ *                        report chi_line_roundtrip_bitwise=false
++ *   LP_SEED_MAXROWS=N    force the row cap  -> writer must fail closed
++ */
++#include "lumina_cmfgen.h"
++
++#include <math.h>
++#include <stdio.h>
++#include <stdlib.h>
++#include <string.h>
++
++/* This standalone fixture links only lumina_cmfgen.c (see the Makefile
++ * target); the production per-line destruction table lives in lumina_plasma.c.
++ * eps_phys is OFF in the fixture, so the value is never consumed — the stub
++ * exists to satisfy the linker and returns the same "table not built" sentinel
++ * the production routine returns before its table exists. */
++double radeq_line_eps_phys(int line, double n_e, double T_e, double tau) {
++    (void)line; (void)n_e; (void)T_e; (void)tau;
++    return -1.0;
++}
++
++#define NS 2
++#define NB 4
++#define NL 3
++
++int main(int argc, char **argv) {
++    if (argc != 2) {
++        fprintf(stderr, "usage: %s OUTPUT\n", argv[0]);
++        return 2;
++    }
++    double r_inner[NS] = {1.0e14, 2.0e14};
++    double r_outer[NS] = {2.0e14, 4.0e14};
++    double nu_min = 1.0e14, nu_max = 1.0e16;
++    double d_log_nu = log(nu_max / nu_min) / (double)NB;
++    double nu[NB], dnu[NB];
++    for (int b = 0; b < NB; b++) {
++        nu[b] = nu_min * exp(d_log_nu * ((double)b + 0.5));
++        dnu[b] = nu[b] * d_log_nu;
++    }
++    /* two lines inside 600-3000 A, one at ~5000 A outside it */
++    double line_nu[NL] = {3.0e15, 2.0e15, 6.0e14};
++    double lam_cm[NL];
++    for (int l = 0; l < NL; l++) lam_cm[l] = 2.99792458e10 / line_nu[l];
++    double tau[NL * NS] = {2.0, 0.5, 1.0e-3, 3.0, 4.0, 0.25};
++    double src_S[NL * NS] = {0.0, 0.0, 1.5e-6, 0.0, 0.0, 0.0};
++    double ne[NS] = {1.0e9, 5.0e8};
++    double Te[NS] = {12000.0, 9000.0};
++    double Tr[NS] = {10470.09324, 10470.09324};
++
++    double chi_line[NS * NB], chi_line_th[NS * NB];
++    double chi_abs[NS * NB], chi_tot[NS * NB];
++    memset(chi_line, 0, sizeof(chi_line));
++    memset(chi_line_th, 0, sizeof(chi_line_th));
++    for (int q = 0; q < NS * NB; q++) { chi_abs[q] = 1.0e-12; chi_tot[q] = 2.0e-12; }
++
++    /* Reproduce the assemble accumulation EXACTLY (same order, same
++     * expressions) so the writer's round-trip check has a true reference. */
++    double inv_ct = 1.0 / (2.99792458e10 * 1683072.0);
++    for (int s = 0; s < NS; s++)
++        for (int l = 0; l < NL; l++) {
++            double t = tau[(size_t)l * NS + s];
++            if (t <= 1e-12) continue;
++            if (line_nu[l] <= nu_min || line_nu[l] >= nu_max) continue;
++            int b = (int)floor(log(line_nu[l] / nu_min) / d_log_nu);
++            if (b < 0 || b >= NB) continue;
++            double frac = (t > 1e-6) ? -expm1(-t) : t;
++            chi_line[(size_t)s * NB + b] += frac * line_nu[l] * inv_ct / dnu[b];
++        }
++    if (getenv("LP_SEED_CHI_DRIFT"))
++        chi_line[0 * NB + 2] = nextafter(chi_line[0 * NB + 2], 1.0e300);
++
++    /* one ion population (Fe III), three levels */
++    int level_num[3] = {0, 1, 2};
++    int level_g[3] = {9, 7, 5};
++    double level_E[3] = {0.0, 3.0, 8.3};
++    int level_offset[2] = {0, 3};
++    int ion_pop_Z[1] = {26}, ion_pop_stage[1] = {2};
++    int line_lower[NL] = {0, 0, 1};
++    int line_upper[NL] = {2, 1, 2};
++    int line_Z[NL] = {26, 26, 26};
++    int line_ion[NL] = {2, 2, 2};
++    double line_f[NL] = {0.4, 0.2, 0.05};
++    double line_A[NL] = {5.0e8, 2.0e8, 1.0e7};
++    int g2n[3] = {0, 1, 2};
++    int line_map[NL] = {0, 0, -1};   /* line 2 is not NLTE-mapped */
++    double pops[3 * NS] = {1.0e6, 5.0e5, 2.0e4, 9.0e3, 3.0e2, 1.0e2};
++
++    Geometry geo; CMFGENState cs; OpacityState opac; PlasmaState plasma;
++    NLTEConfig nlte; AtomicData atom;
++    memset(&geo,0,sizeof(geo));       memset(&cs,0,sizeof(cs));
++    memset(&opac,0,sizeof(opac));     memset(&plasma,0,sizeof(plasma));
++    memset(&nlte,0,sizeof(nlte));     memset(&atom,0,sizeof(atom));
++
++    geo.n_shells=NS; geo.r_inner=r_inner; geo.r_outer=r_outer;
++    geo.time_explosion=1683072.0;
++    cs.n_shells=NS; cs.n_bins=NB; cs.nu=nu; cs.dnu=dnu;
++    cs.nu_min=nu_min; cs.nu_max=nu_max; cs.d_log_nu=d_log_nu;
++    cs.chi_line=chi_line; cs.chi_line_th=chi_line_th;
++    cs.chi_abs=chi_abs; cs.chi_tot=chi_tot;
++    cs.frozen_morph_eps=-1.0; cs.cont_only=0;
++    opac.n_lines=NL; opac.n_shells=NS; opac.line_list_nu=line_nu;
++    opac.tau_sobolev=tau; opac.line_source_S=src_S; opac.electron_density=ne;
++    plasma.T_e=Te; plasma.T_rad=Tr; plasma.n_electron=ne;
++    nlte.global_to_nlte_level=g2n; nlte.nlte_level_populations=pops;
++    nlte.nlte_line_map=line_map; nlte.n_nlte_levels_total=3;
++    atom.n_lines=NL; atom.n_levels=3; atom.n_ion_pops=1;
++    atom.line_atomic_number=line_Z; atom.line_ion_number=line_ion;
++    atom.line_level_lower=line_lower; atom.line_level_upper=line_upper;
++    atom.line_f_lu=line_f; atom.line_A_ul=line_A;
++    atom.line_wavelength_cm=lam_cm; atom.line_nu=line_nu;
++    atom.level_num=level_num; atom.level_g=level_g;
++    atom.level_energy_eV=level_E; atom.level_offset=level_offset;
++    atom.ion_pop_Z=ion_pop_Z; atom.ion_pop_stage=ion_pop_stage;
++
++    const char *it_env = getenv("LP_FIXTURE_ITER");
++    int iter = it_env ? atoi(it_env) : 10;
++    return cmfgen_dump_line_populations(&cs,&geo,&opac,&plasma,&nlte,&atom,
++                                        iter,iter,argv[1]) == 0 ? 0 : 1;
++}
+--- a/scripts/cmf_linepop_check.py
++++ b/scripts/cmf_linepop_check.py
+@@ -0,0 +1,269 @@
++#!/usr/bin/env python3
++"""Fail-closed consumer check for an LCMFLP01 population-native line dump.
++
++The artifact is the T2 companion of the LCMFCE01 chi/eta capture: the same
++generation, but resolved per (line, shell) instead of per (shell, coarse bin).
++This reader refuses anything that would let a T2 experiment be run on the wrong
++generation or on a replay that did not reproduce the assembled forest:
++
++  * the generation contract is iteration 10 (same as cmf_chieta_check); any
++    other expectation needs --non-contract-override,
++  * the manifest SHA-256 must match the payload,
++  * chi_line_roundtrip_bitwise must be true — a replay that does not reproduce
++    cs->chi_line bit for bit is not the assembled forest and must not be used
++    as a single-factor baseline,
++  * the EPAY disposition column must be present, because eta_line is DISCARDED
++    (rate-shape replaced) in a large fraction of the thin bins and swapping the
++    emissivity there measures nothing.
++
++No clamp, no fill, no fallback.
++"""
++
++from __future__ import annotations
++
++import argparse
++import hashlib
++import json
++from pathlib import Path
++import struct
++from typing import NamedTuple
++
++import numpy as np
++
++MAGIC = b"LCMFLP01"
++ENDIAN = 0x01020304
++VERSION = 1
++CONTRACT_ITERATION = 10
++NON_CONTRACT_RC = 2
++ROW_BYTES = 76
++LINE_BYTES = 80
++
++HEADER = struct.Struct("<8sIIQQIIII d d d IIII d d d d d d")
++ROW_DTYPE = np.dtype([
++    ("line_slot", "<u4"), ("shell_slot", "<u4"), ("flags", "<u4"),
++    ("tau_used", "<f8"), ("tau_from_pops", "<f8"),
++    ("n_lower", "<f8"), ("n_upper", "<f8"),
++    ("S_l_pop", "<f8"), ("S_l_used", "<f8"),
++    ("eps_l", "<f8"), ("w", "<f8"),
++], align=False)
++LINE_DTYPE = np.dtype([
++    ("line_id", "<u4"), ("bin", "<u4"), ("Z", "<i4"), ("ion", "<i4"),
++    ("g_lower", "<i4"), ("g_upper", "<i4"),
++    ("nlte_lower", "<i4"), ("nlte_upper", "<i4"),
++    ("nu_l", "<f8"), ("lambda_cm", "<f8"), ("A_ul", "<f8"), ("f_lu", "<f8"),
++    ("E_lower_eV", "<f8"), ("E_upper_eV", "<f8"),
++], align=False)
++
++F_NLTE_ION = 1 << 0
++F_POPS_DEFINED = 1 << 1
++F_SL_POP = 1 << 2
++F_SL_FALLBACK = 1 << 3
++F_STIM_CLAMPED = 1 << 4
++F_TAU_ROUNDTRIP = 1 << 5
++
++DISPOSITION = {0: "legacy_source", 1: "thick_exempt",
++               2: "rate_shape_replaced", 3: "scalar_rescaled"}
++
++
++class LinePopError(ValueError):
++    pass
++
++
++class LinePop(NamedTuple):
++    header: dict
++    shells: np.ndarray
++    shell_state: np.ndarray
++    nu: np.ndarray
++    dnu: np.ndarray
++    chi_line: np.ndarray
++    chi_line_th: np.ndarray
++    eta_line: np.ndarray
++    disposition: np.ndarray
++    lines: np.ndarray
++    rows: np.ndarray
++    manifest: dict
++    contract_status: str
++
++
++def check_artifact(path: Path, expected_iteration: int = CONTRACT_ITERATION,
++                   non_contract_override: bool = False,
++                   require_roundtrip: bool = True) -> LinePop:
++    path = Path(path)
++    deviates = expected_iteration != CONTRACT_ITERATION
++    if deviates and not non_contract_override:
++        raise LinePopError("non-contract expectation requires "
++                           "--non-contract-override")
++    raw = path.read_bytes()
++    if len(raw) < HEADER.size:
++        raise LinePopError("truncated header")
++    (magic, endian, version, iteration, generation, n_shells, n_bins,
++     n_sel, n_lines_sel, n_rows, t_exp, lam_lo, lam_hi, eps_phys, src_nlte,
++     epay, epay_smin, epay_taubin, epay_hotf, eps_floor, eps_cap,
++     line_eps, eps_uv, line_gate) = _unpack(raw)
++    if (magic, endian, version) != (MAGIC, ENDIAN, VERSION):
++        raise LinePopError("schema identity mismatch")
++    if not (n_shells > 0 and n_bins > 0 and 0 < n_sel <= n_shells and
++            lam_hi > lam_lo > 0.0 and t_exp > 0.0):
++        raise LinePopError("invalid dimensions/window")
++    if iteration != expected_iteration:
++        raise LinePopError(
++            f"generation mismatch: got iteration {iteration}, "
++            f"expected {expected_iteration}")
++    if generation != iteration:
++        raise LinePopError("field_generation disagrees with iteration")
++
++    off = _header_size()
++    shells, off = _take(raw, off, "<u4", n_sel)
++    shell_state, off = _take(raw, off, "<f8", 4 * n_sel)
++    nu, off = _take(raw, off, "<f8", n_bins)
++    dnu, off = _take(raw, off, "<f8", n_bins)
++    chi_line, off = _take(raw, off, "<f8", n_sel * n_bins)
++    chi_line_th, off = _take(raw, off, "<f8", n_sel * n_bins)
++    eta_line, off = _take(raw, off, "<f8", n_sel * n_bins)
++    disposition, off = _take(raw, off, "u1", n_shells * n_bins)
++    if off + n_lines_sel * LINE_BYTES + n_rows * ROW_BYTES != len(raw):
++        raise LinePopError("payload length disagrees with the header counts")
++    lines = np.frombuffer(raw, dtype=LINE_DTYPE, count=n_lines_sel,
++                          offset=off).copy()
++    off += n_lines_sel * LINE_BYTES
++    rows = np.frombuffer(raw, dtype=ROW_DTYPE, count=n_rows, offset=off).copy()
++
++    if np.any(shells >= n_shells) or np.unique(shells).size != n_sel:
++        raise LinePopError("invalid/duplicated shell selection")
++    if not all(nu[k] < nu[k + 1] for k in range(len(nu) - 1)):
++        raise LinePopError("frequency is not ascending")
++    if np.any(dnu <= 0.0):
++        raise LinePopError("non-positive dnu")
++    for name, values in (("chi_line", chi_line), ("chi_line_th", chi_line_th),
++                         ("eta_line", eta_line)):
++        if not np.isfinite(values).all() or np.any(values < 0.0):
++            raise LinePopError(f"invalid {name}; no clamp allowed")
++    if n_rows and (np.any(rows["shell_slot"] >= n_sel) or
++                   np.any(rows["line_slot"] >= max(n_lines_sel, 1))):
++        raise LinePopError("row references a slot outside the payload")
++    if n_rows and (not np.isfinite(rows["w"]).all() or
++                   np.any(rows["w"] < 0.0) or np.any(rows["tau_used"] <= 0.0)):
++        raise LinePopError("invalid row tau/w")
++    if np.any(disposition > 3):
++        raise LinePopError("unknown EPAY disposition code")
++
++    sidecar = Path(str(path) + ".manifest.json")
++    try:
++        manifest = json.loads(sidecar.read_text())
++    except (OSError, json.JSONDecodeError) as exc:
++        raise LinePopError(f"invalid/missing sidecar: {exc}") from exc
++    if manifest.get("schema") != "LCMFLP01-v1":
++        raise LinePopError("sidecar schema mismatch")
++    if manifest.get("sha256") != hashlib.sha256(raw).hexdigest():
++        raise LinePopError("sidecar sha256 mismatch")
++    for key, value in (("iteration", iteration), ("field_generation", generation),
++                       ("rows", int(n_rows)), ("selected_lines", int(n_lines_sel)),
++                       ("selected_shells", int(n_sel))):
++        if manifest.get(key) != value:
++            raise LinePopError(f"sidecar {key} disagrees with payload")
++    if require_roundtrip and not manifest.get("chi_line_roundtrip_bitwise"):
++        raise LinePopError(
++            "chi_line round trip is not bitwise: the replay did not reproduce "
++            "the assembled forest, so this artifact is not a valid "
++            "single-factor T2 baseline "
++            f"(max_abs={manifest.get('chi_line_roundtrip_max_abs')})")
++
++    header = {
++        "schema": "LCMFLP01-v1", "iteration": int(iteration),
++        "field_generation": int(generation), "n_shells": int(n_shells),
++        "n_bins": int(n_bins), "selected_shells": int(n_sel),
++        "selected_lines": int(n_lines_sel), "rows": int(n_rows),
++        "time_explosion": t_exp, "lambda_window_A": [lam_lo, lam_hi],
++        "eps_phys": int(eps_phys), "src_nlte": int(src_nlte),
++        "epay": int(epay), "epay_smin": int(epay_smin),
++        "epay_taubin": epay_taubin, "epay_hotf": epay_hotf,
++        "eps_floor": eps_floor, "eps_cap": eps_cap,
++        "line_eps": line_eps, "eps_uv": eps_uv, "line_gate": line_gate,
++    }
++    return LinePop(header, shells, shell_state.reshape(n_sel, 4), nu, dnu,
++                   chi_line.reshape(n_sel, n_bins),
++                   chi_line_th.reshape(n_sel, n_bins),
++                   eta_line.reshape(n_sel, n_bins),
++                   disposition.reshape(n_shells, n_bins), lines, rows,
++                   manifest, "NON-CONTRACT" if deviates else "CONTRACT")
++
++
++def _header_size() -> int:
++    # 8 magic + 2*u32 + 2*u64 + 4*u32 + 3*f64 + 4*u32 + 8*f64
++    return 8 + 8 + 16 + 16 + 24 + 16 + 64
++
++
++def _unpack(raw: bytes):
++    o = 0
++    magic = raw[0:8]; o = 8
++    endian, version = struct.unpack_from("<II", raw, o); o += 8
++    iteration, generation = struct.unpack_from("<QQ", raw, o); o += 16
++    n_shells, n_bins, n_sel, n_lines_sel = struct.unpack_from("<IIII", raw, o)
++    o += 16
++    n_rows, = struct.unpack_from("<Q", raw, o); o += 8
++    t_exp, lam_lo, lam_hi = struct.unpack_from("<ddd", raw, o); o += 24
++    eps_phys, src_nlte, epay, epay_smin = struct.unpack_from("<IIII", raw, o)
++    o += 16
++    (epay_taubin, epay_hotf, eps_floor, eps_cap, line_eps, eps_uv,
++     line_gate) = struct.unpack_from("<7d", raw, o)
++    return (magic, endian, version, iteration, generation, n_shells, n_bins,
++            n_sel, n_lines_sel, n_rows, t_exp, lam_lo, lam_hi, eps_phys,
++            src_nlte, epay, epay_smin, epay_taubin, epay_hotf, eps_floor,
++            eps_cap, line_eps, eps_uv, line_gate)
++
++
++def _take(raw: bytes, offset: int, dtype: str, count: int):
++    dt = np.dtype(dtype)
++    end = offset + count * dt.itemsize
++    if end > len(raw):
++        raise LinePopError("truncated array")
++    return np.frombuffer(raw, dtype=dt, count=count, offset=offset).copy(), end
++
++
++def main() -> int:
++    parser = argparse.ArgumentParser()
++    parser.add_argument("input", type=Path)
++    parser.add_argument("--expected-iteration", type=int,
++                        default=CONTRACT_ITERATION)
++    parser.add_argument("--non-contract-override", action="store_true")
++    parser.add_argument("--allow-roundtrip-failure", action="store_true",
++                        help="inspect a replay that did NOT reproduce "
++                             "chi_line bitwise (never valid for T2)")
++    args = parser.parse_args()
++    try:
++        lp = check_artifact(args.input, args.expected_iteration,
++                            args.non_contract_override,
++                            not args.allow_roundtrip_failure)
++    except (OSError, LinePopError) as exc:
++        print(f"FAIL: {exc}")
++        return 1
++    total = lp.disposition.size
++    disp = {name: int(np.count_nonzero(lp.disposition == code))
++            for code, name in DISPOSITION.items()}
++    live = disp["legacy_source"] + disp["thick_exempt"]
++    flags = lp.rows["flags"] if lp.rows.size else np.zeros(0, dtype=np.uint32)
++    summary = {
++        **lp.header,
++        "sha256": lp.manifest["sha256"],
++        "contract_status": lp.contract_status,
++        "chi_line_roundtrip_bitwise": lp.manifest["chi_line_roundtrip_bitwise"],
++        "chi_line_th_comparable": lp.manifest["chi_line_th_comparable"],
++        "epay_disposition_cells": disp,
++        "eta_line_reaches_S_fixed_fraction": live / total if total else 0.0,
++        "rows_with_defined_populations": int(
++            np.count_nonzero(flags & F_POPS_DEFINED)),
++        "rows_with_population_native_S": int(np.count_nonzero(flags & F_SL_POP)),
++        "rows_using_planck_fallback_S": int(
++            np.count_nonzero(flags & F_SL_FALLBACK)),
++        "rows_with_tau_population_roundtrip": int(
++            np.count_nonzero(flags & F_TAU_ROUNDTRIP)),
++        "rows_with_stimulated_clamp": int(
++            np.count_nonzero(flags & F_STIM_CLAMPED)),
++        "clamp": 0, "fallback": 0,
++    }
++    print(json.dumps(summary, indent=2, sort_keys=True, allow_nan=False))
++    return NON_CONTRACT_RC if lp.contract_status == "NON-CONTRACT" else 0
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())
+--- a/scripts/cmf_linepop_roundtrip_selftest.py
++++ b/scripts/cmf_linepop_roundtrip_selftest.py
+@@ -0,0 +1,147 @@
++#!/usr/bin/env python3
++"""Offline round-trip + negative-control battery for the LCMFLP01 line dump.
++
++Builds nothing but the fixture writer (`make selftest_cmf_linepop_dump`), runs
++it, and asserts that the fail-closed contracts actually fire.  No model, no GPU,
++no plasma solve.  Every control is seeded, i.e. the failure is injected on
++purpose and the battery FAILS if the checker does not catch it.
++"""
++from __future__ import annotations
++
++import argparse
++import json
++import os
++from pathlib import Path
++import shutil
++import subprocess
++import sys
++import tempfile
++
++ROOT = Path(__file__).resolve().parents[1]
++sys.path.insert(0, str(ROOT / "scripts"))
++from cmf_linepop_check import check_artifact, LinePopError  # noqa: E402
++
++BIN = ROOT / "selftest_cmf_linepop_dump"
++
++
++def run(env: dict, out: Path) -> subprocess.CompletedProcess:
++    e = dict(os.environ)
++    e.update(env)
++    return subprocess.run([str(BIN), str(out)], env=e, capture_output=True,
++                          text=True, check=False)
++
++
++def main() -> int:
++    parser = argparse.ArgumentParser()
++    parser.add_argument("--skip-build", action="store_true")
++    args = parser.parse_args()
++    if not args.skip_build:
++        subprocess.run(["make", "-B", "selftest_cmf_linepop_dump"],
++                       cwd=ROOT, check=True, capture_output=True, text=True)
++    work = Path(tempfile.mkdtemp(prefix="cmf_linepop_rt_", dir="/tmp"))
++    results: dict[str, object] = {}
++    try:
++        sel = {"LUMINA_CMF_LINEPOP_SHELLS": "0,1"}
++
++        # (1) positive: contract generation, bitwise round trip
++        good = work / "lp.bin"
++        proc = run(sel, good)
++        if proc.returncode != 0:
++            raise RuntimeError(f"reference write failed: {proc.stderr}")
++        lp = check_artifact(good)
++        if not lp.manifest["chi_line_roundtrip_bitwise"]:
++            raise RuntimeError("reference write is not bitwise")
++        # the line outside the lambda window must still enter chi_line
++        if lp.header["selected_lines"] != 2 or lp.header["rows"] != 4:
++            raise RuntimeError("selection did not exclude the out-of-window line")
++        if float(lp.chi_line[0].sum()) <= float(
++                sum(lp.rows["w"][lp.rows["shell_slot"] == 0])):
++            raise RuntimeError("chi_line does not exceed the recorded rows; the "
++                               "replay dropped the out-of-window contribution")
++        results["reference"] = {"sha256": lp.manifest["sha256"],
++                                "rows": lp.header["rows"],
++                                "bitwise": True}
++
++        # (2) seeded replay drift: one ulp on cs.chi_line
++        drift = work / "drift.bin"
++        run({**sel, "LP_SEED_CHI_DRIFT": "1"}, drift)
++        try:
++            check_artifact(drift)
++            raise RuntimeError("1-ulp replay drift was NOT refused")
++        except LinePopError as exc:
++            results["seeded_replay_drift_refused"] = str(exc)
++
++        # (3) row cap: fail closed, no partial artifact
++        cap = work / "cap.bin"
++        proc = run({**sel, "LUMINA_CMF_LINEPOP_MAXROWS": "3"}, cap)
++        if proc.returncode == 0 or cap.exists():
++            raise RuntimeError("row cap did not fail closed")
++        results["row_cap_refused"] = proc.stderr.strip()
++
++        # (4) generation swap
++        gen = work / "gen11.bin"
++        run({**sel, "LP_FIXTURE_ITER": "11"}, gen)
++        try:
++            check_artifact(gen)
++            raise RuntimeError("generation 11 was NOT refused by the contract")
++        except LinePopError as exc:
++            results["generation_swap_refused"] = str(exc)
++        alt = check_artifact(gen, expected_iteration=11,
++                             non_contract_override=True)
++        results["generation_swap_override_status"] = alt.contract_status
++
++        # (5) payload tamper with a stale sidecar
++        tamper = work / "tamper.bin"
++        shutil.copy(good, tamper)
++        shutil.copy(str(good) + ".manifest.json", str(tamper) + ".manifest.json")
++        blob = bytearray(tamper.read_bytes())
++        blob[-1] ^= 0x01
++        tamper.write_bytes(bytes(blob))
++        try:
++            check_artifact(tamper)
++            raise RuntimeError("payload tamper was NOT refused")
++        except LinePopError as exc:
++            results["payload_tamper_refused"] = str(exc)
++
++        # (6) missing selection / out-of-range shell
++        proc = run({}, work / "nosel.bin")
++        if proc.returncode == 0:
++            raise RuntimeError("missing shell selection was accepted")
++        results["missing_selection_refused"] = proc.stderr.strip()
++        proc = run({"LUMINA_CMF_LINEPOP_SHELLS": "0,7"}, work / "badsel.bin")
++        if proc.returncode == 0:
++            raise RuntimeError("out-of-range shell was accepted")
++        results["out_of_range_shell_refused"] = proc.stderr.strip()
++
++        # (7) EPAY disposition actually distinguishes discarded eta cells
++        epay = work / "epay.bin"
++        run({**sel, "LUMINA_CMF_EPAY": "2", "LUMINA_CMF_EPAY_SMIN": "1",
++             "LUMINA_CMF_EPAY_TAUBIN": "1e30", "LUMINA_CMF_EPAY_HOTF": "0"},
++            epay)
++        ep = check_artifact(epay)
++        replaced = int((ep.disposition == 2).sum())
++        if replaced != ep.header["n_bins"]:
++            raise RuntimeError(
++                f"EPAY rate-shape disposition not detected ({replaced} cells)")
++        results["epay_rate_shape_cells"] = replaced
++
++        # (8) TAUEFF is refused (the shell gate is not reproducible here)
++        proc = run({**sel, "LUMINA_CMF_EPAY": "2",
++                    "LUMINA_CMF_EPAY_TAUEFF": "1e4"}, work / "taueff.bin")
++        if proc.returncode == 0:
++            raise RuntimeError("EPAY_TAUEFF>0 was accepted")
++        results["epay_taueff_refused"] = proc.stderr.strip()
++
++        results["verdict"] = "PASS"
++        print(json.dumps(results, indent=2, sort_keys=True))
++        return 0
++    except Exception as exc:                       # noqa: BLE001
++        results["verdict"] = f"FAIL: {exc}"
++        print(json.dumps(results, indent=2, sort_keys=True))
++        return 1
++    finally:
++        shutil.rmtree(work, ignore_errors=True)
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())

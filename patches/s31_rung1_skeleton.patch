@@ -1,0 +1,819 @@
+--- a/src/lumina_cmf_field.h
++++ b/src/lumina_cmf_field.h
+@@ -0,0 +1,162 @@
++#ifndef LUMINA_CMF_FIELD_H
++#define LUMINA_CMF_FIELD_H
++
++#include <stddef.h>
++#include <stdint.h>
++
++#ifdef __cplusplus
++extern "C" {
++#endif
++
++typedef enum {
++    LCMF_OK = 0,
++    LCMF_EINVAL = -1,
++    LCMF_ENOMEM = -2,
++    LCMF_EGRID = -3,
++    LCMF_ENEGATIVE = -4,
++    LCMF_ENONFINITE = -5,
++    LCMF_EUNSUPPORTED = -6,
++    LCMF_ENOCONV = -7,
++    LCMF_EIO = -8,
++    LCMF_ESCHEMA = -9,
++    LCMF_ECHECKSUM = -10,
++    LCMF_EHOMOLOGY = -11
++} LCMFStatus;
++
++typedef enum {
++    LCMF_BC_DIFFUSION = 1,
++    LCMF_BC_IRRADIATION = 2
++} LCMFInnerBC;
++
++typedef enum {
++    LCMF_SCAT_NONE = 0,
++    LCMF_SCAT_COHERENT = 1,
++    LCMF_SCAT_REDISTRIBUTION = 2
++} LCMFScatterMode;
++
++typedef double (*LCMFBoundaryFn)(void *ctx, double p_cm, double mu,
++                                 double nu_hz);
++typedef int (*LCMFRedistributionFn)(void *ctx, size_t radial_index,
++                                    const double *nu_hz, size_t nnu,
++                                    const double *J_nu,
++                                    double *eta_redistributed);
++
++typedef struct {
++    int code;
++    size_t radial_index;
++    size_t frequency_index;
++    size_t ray_index;
++    size_t segment_index;
++    double value;
++    double term_previous;
++    double term_previous2;
++    char message[160];
++} LCMFError;
++
++typedef struct {
++    size_t nr;
++    size_t nnu;
++    const double *r_edge;
++    const double *nu;
++    const double *chi_total;
++    const double *eta_fixed;
++    const double *chi_coherent;
++    double t_exp_s;
++    LCMFInnerBC inner_bc;
++    LCMFScatterMode scatter_mode;
++    const double *B_inner;
++    const double *dB_dtau_inner;
++    LCMFBoundaryFn inner_irradiation;
++    LCMFBoundaryFn outer_irradiation;
++    LCMFRedistributionFn redistribution;
++    void *boundary_ctx;
++    void *redistribution_ctx;
++} LCMFInput;
++
++typedef struct {
++    size_t n_mu;
++    size_t max_source_iter;
++    double source_rtol;
++    int compute_hk;
++    int store_intensity;
++    int frequency_advection;
++} LCMFOptions;
++
++typedef struct {
++    double *J;
++    double *H;
++    double *K;
++    double *I_minus;
++    double *I_plus;
++    double transport_resid_linf;
++    double source_resid_linf;
++    uint64_t clamp_count;
++    uint64_t negative_count;
++    uint64_t nonfinite_count;
++    size_t source_iterations;
++    size_t nr;
++    size_t nnu;
++    size_t n_mu;
++    LCMFError error;
++} LCMFResult;
++
++typedef struct {
++    size_t n_mu;
++    double *mu;
++    double *weight;
++    double *p;
++} LCMFRayCache;
++
++typedef struct {
++    uint64_t nr;
++    uint64_t nnu;
++    uint64_t iteration;
++    uint64_t field_generation;
++    uint32_t flags;
++    double t_exp_s;
++    double *r_edge;
++    double *nu;
++    double *dnu;
++    double *chi_total;
++    double *chi_coherent;
++    double *eta_fixed;
++    double *eta_coherent;
++    double *eta_total;
++    double *J_producer;
++} LCMFFrozenField;
++
++enum {
++    LCMF_FROZEN_POST_DAMP = 1u << 0,
++    LCMF_FROZEN_COHERENT = 1u << 1,
++    LCMF_FROZEN_FREQUENCY_DESCENDING = 1u << 2
++};
++
++int lumina_cmf_validate_input(const LCMFInput *input,
++                              const LCMFOptions *options,
++                              LCMFError *error);
++int lumina_cmf_ray_cache_build(const double *r_edge, size_t nr,
++                               size_t radial_index, size_t n_mu,
++                               LCMFRayCache *cache, LCMFError *error);
++void lumina_cmf_ray_cache_free(LCMFRayCache *cache);
++
++int lumina_cmf_sc_linear(double intensity_upstream, double source_upstream,
++                         double source_downstream, double delta_tau,
++                         double *intensity_downstream);
++
++int lumina_cmf_field_solve(const LCMFInput *input,
++                           const LCMFOptions *options,
++                           LCMFResult *result);
++int lumina_cmf_field_residual(const LCMFInput *input,
++                              const LCMFResult *result, double *linf);
++void lumina_cmf_result_free(LCMFResult *result);
++
++int lumina_cmf_frozen_load(const char *binary_path, const char *manifest_path,
++                           LCMFFrozenField *field, LCMFError *error);
++void lumina_cmf_frozen_free(LCMFFrozenField *field);
++
++const char *lumina_cmf_status_string(int status);
++
++#ifdef __cplusplus
++}
++#endif
++#endif
+--- a/src/lumina_cmf_field.c
++++ b/src/lumina_cmf_field.c
+@@ -0,0 +1,553 @@
++#include "lumina_cmf_field.h"
++
++#include <errno.h>
++#include <float.h>
++#include <math.h>
++#include <stdio.h>
++#include <stdlib.h>
++#include <string.h>
++
++#define LCMF_PI 3.141592653589793238462643383279502884
++#define LCMF_LOG_GRID_RTOL 1.0e-12
++#define LCMF_FROZEN_VERSION 1u
++#define LCMF_FROZEN_ENDIAN 0x01020304u
++
++typedef struct {
++    uint32_t h[8];
++    uint64_t bits;
++    unsigned char block[64];
++    size_t used;
++} LCMFSha256;
++
++static void set_error(LCMFError *error, int code, const char *message,
++                      size_t ir, size_t inu, double value)
++{
++    if (error == NULL) return;
++    memset(error, 0, sizeof(*error));
++    error->code = code;
++    error->radial_index = ir;
++    error->frequency_index = inu;
++    error->ray_index = SIZE_MAX;
++    error->segment_index = SIZE_MAX;
++    error->value = value;
++    if (message != NULL) {
++        (void)snprintf(error->message, sizeof(error->message), "%s", message);
++    }
++}
++
++static int checked_product(size_t a, size_t b, size_t *out)
++{
++    if (out == NULL) return LCMF_EINVAL;
++    if (a != 0 && b > SIZE_MAX / a) return LCMF_ENOMEM;
++    *out = a * b;
++    return LCMF_OK;
++}
++
++static void *checked_calloc(size_t count, size_t width)
++{
++    size_t bytes;
++    if (checked_product(count, width, &bytes) != LCMF_OK) return NULL;
++    if (bytes == 0) return NULL;
++    return calloc(count, width);
++}
++
++static int finite_nonnegative(double value)
++{
++    return isfinite(value) && value >= 0.0;
++}
++
++static int gauss_legendre_unit(size_t n, double *nodes, double *weights)
++{
++    size_t i;
++    const size_t half = (n + 1u) / 2u;
++    if (n == 0 || nodes == NULL || weights == NULL) return LCMF_EINVAL;
++    for (i = 0; i < half; ++i) {
++        size_t iteration;
++        double z = cos(LCMF_PI * ((double)i + 0.75) / ((double)n + 0.5));
++        double derivative = 0.0;
++        for (iteration = 0; iteration < 100u; ++iteration) {
++            size_t j;
++            double p0 = 1.0;
++            double p1 = z;
++            double pn;
++            if (n == 1u) {
++                pn = z;
++                derivative = 1.0;
++            } else {
++                for (j = 2; j <= n; ++j) {
++                    const double p2 = (((2.0 * (double)j - 1.0) * z * p1)
++                                      - ((double)j - 1.0) * p0) / (double)j;
++                    p0 = p1;
++                    p1 = p2;
++                }
++                pn = p1;
++                derivative = (double)n * (z * pn - p0) / (z * z - 1.0);
++            }
++            {
++                const double next = z - pn / derivative;
++                if (fabs(next - z) <= 4.0 * DBL_EPSILON * (1.0 + fabs(next))) {
++                    z = next;
++                    break;
++                }
++                z = next;
++            }
++        }
++        if (iteration == 100u || !isfinite(z) || !isfinite(derivative)) {
++            return LCMF_EGRID;
++        }
++        {
++            const double w = 2.0 / ((1.0 - z * z) * derivative * derivative);
++            nodes[i] = 0.5 * (1.0 - z);
++            nodes[n - 1u - i] = 0.5 * (1.0 + z);
++            weights[i] = 0.5 * w;
++            weights[n - 1u - i] = 0.5 * w;
++        }
++    }
++    return LCMF_OK;
++}
++
++int lumina_cmf_validate_input(const LCMFInput *input,
++                              const LCMFOptions *options,
++                              LCMFError *error)
++{
++    size_t i, k, cells;
++    double dx = 0.0;
++    if (error != NULL) memset(error, 0, sizeof(*error));
++    if (input == NULL || options == NULL || input->r_edge == NULL ||
++        input->nu == NULL || input->chi_total == NULL ||
++        input->eta_fixed == NULL || input->nr == 0 || input->nnu == 0 ||
++        options->n_mu == 0) {
++        set_error(error, LCMF_EINVAL, "missing input array or zero dimension", 0, 0, 0.0);
++        return LCMF_EINVAL;
++    }
++    if (input->scatter_mode == LCMF_SCAT_REDISTRIBUTION) {
++        set_error(error, LCMF_EUNSUPPORTED, "redistribution is reserved for Stage 3.2", 0, 0, 0.0);
++        return LCMF_EUNSUPPORTED;
++    }
++    if (input->scatter_mode != LCMF_SCAT_NONE &&
++        input->scatter_mode != LCMF_SCAT_COHERENT) {
++        set_error(error, LCMF_EINVAL, "unknown scattering mode", 0, 0,
++                  (double)input->scatter_mode);
++        return LCMF_EINVAL;
++    }
++    if (input->inner_bc != LCMF_BC_DIFFUSION &&
++        input->inner_bc != LCMF_BC_IRRADIATION) {
++        set_error(error, LCMF_EINVAL, "unknown inner boundary mode", 0, 0,
++                  (double)input->inner_bc);
++        return LCMF_EINVAL;
++    }
++    if (input->inner_bc == LCMF_BC_DIFFUSION &&
++        (input->B_inner == NULL || input->dB_dtau_inner == NULL)) {
++        set_error(error, LCMF_EINVAL, "diffusion boundary arrays are required", 0, 0, 0.0);
++        return LCMF_EINVAL;
++    }
++    if (input->inner_bc == LCMF_BC_IRRADIATION &&
++        input->inner_irradiation == NULL && input->r_edge[0] > 0.0) {
++        set_error(error, LCMF_EINVAL, "irradiation callback is required for a core", 0, 0, 0.0);
++        return LCMF_EINVAL;
++    }
++    if (options->frequency_advection &&
++        (!isfinite(input->t_exp_s) || input->t_exp_s <= 0.0)) {
++        set_error(error, LCMF_EINVAL, "positive finite expansion time is required", 0, 0,
++                  input->t_exp_s);
++        return LCMF_EINVAL;
++    }
++    if (options->max_source_iter == 0 || !isfinite(options->source_rtol) ||
++        options->source_rtol <= 0.0) {
++        set_error(error, LCMF_EINVAL, "invalid source iteration controls", 0, 0,
++                  options->source_rtol);
++        return LCMF_EINVAL;
++    }
++    if (!isfinite(input->r_edge[0]) || input->r_edge[0] < 0.0) {
++        set_error(error, LCMF_EGRID, "invalid first radial edge", 0, 0,
++                  input->r_edge[0]);
++        return LCMF_EGRID;
++    }
++    for (i = 1; i <= input->nr; ++i) {
++        if (!isfinite(input->r_edge[i]) || input->r_edge[i] <= input->r_edge[i - 1u]) {
++            set_error(error, LCMF_EGRID, "radial edges must strictly increase", i, 0,
++                      input->r_edge[i]);
++            return LCMF_EGRID;
++        }
++    }
++    for (k = 0; k < input->nnu; ++k) {
++        if (!isfinite(input->nu[k]) || input->nu[k] <= 0.0) {
++            set_error(error, LCMF_EGRID, "frequency must be positive and finite", 0, k,
++                      input->nu[k]);
++            return LCMF_EGRID;
++        }
++        if (k > 0) {
++            const double this_dx = log(input->nu[k - 1u] / input->nu[k]);
++            if (!(this_dx > 0.0) || !isfinite(this_dx)) {
++                set_error(error, LCMF_EGRID, "frequency must strictly descend", 0, k,
++                          input->nu[k]);
++                return LCMF_EGRID;
++            }
++            if (k == 1u) dx = this_dx;
++            else if (fabs(this_dx - dx) > LCMF_LOG_GRID_RTOL * fabs(dx)) {
++                set_error(error, LCMF_EGRID, "ln-frequency spacing is not uniform", 0, k,
++                          this_dx);
++                return LCMF_EGRID;
++            }
++        }
++    }
++    if (checked_product(input->nr, input->nnu, &cells) != LCMF_OK) {
++        set_error(error, LCMF_ENOMEM, "grid size overflows size_t", 0, 0, 0.0);
++        return LCMF_ENOMEM;
++    }
++    for (i = 0; i < input->nr; ++i) {
++        for (k = 0; k < input->nnu; ++k) {
++            const size_t q = i * input->nnu + k;
++            const double chi = input->chi_total[q];
++            const double eta = input->eta_fixed[q];
++            const double coherent = input->chi_coherent == NULL ? 0.0 : input->chi_coherent[q];
++            if (!finite_nonnegative(chi)) {
++                set_error(error, isfinite(chi) ? LCMF_ENEGATIVE : LCMF_ENONFINITE,
++                          "invalid total extinction", i, k, chi);
++                return error == NULL ? LCMF_EINVAL : error->code;
++            }
++            if (!finite_nonnegative(eta)) {
++                set_error(error, isfinite(eta) ? LCMF_ENEGATIVE : LCMF_ENONFINITE,
++                          "invalid fixed emissivity", i, k, eta);
++                return error == NULL ? LCMF_EINVAL : error->code;
++            }
++            if (!finite_nonnegative(coherent) || coherent > chi) {
++                set_error(error, isfinite(coherent) ? LCMF_ENEGATIVE : LCMF_ENONFINITE,
++                          "coherent extinction is outside [0,chi_total]", i, k, coherent);
++                return error == NULL ? LCMF_EINVAL : error->code;
++            }
++        }
++    }
++    (void)cells;
++    return LCMF_OK;
++}
++
++int lumina_cmf_ray_cache_build(const double *r_edge, size_t nr,
++                               size_t radial_index, size_t n_mu,
++                               LCMFRayCache *cache, LCMFError *error)
++{
++    size_t m;
++    double r;
++    int status;
++    if (cache == NULL || r_edge == NULL || nr == 0 || radial_index >= nr || n_mu == 0) {
++        set_error(error, LCMF_EINVAL, "invalid ray-cache request", radial_index, 0, 0.0);
++        return LCMF_EINVAL;
++    }
++    memset(cache, 0, sizeof(*cache));
++    cache->mu = (double *)checked_calloc(n_mu, sizeof(double));
++    cache->weight = (double *)checked_calloc(n_mu, sizeof(double));
++    cache->p = (double *)checked_calloc(n_mu, sizeof(double));
++    if (cache->mu == NULL || cache->weight == NULL || cache->p == NULL) {
++        lumina_cmf_ray_cache_free(cache);
++        set_error(error, LCMF_ENOMEM, "ray-cache allocation failed", radial_index, 0, 0.0);
++        return LCMF_ENOMEM;
++    }
++    status = gauss_legendre_unit(n_mu, cache->mu, cache->weight);
++    if (status != LCMF_OK) {
++        lumina_cmf_ray_cache_free(cache);
++        set_error(error, status, "Gauss-Legendre construction failed", radial_index, 0, 0.0);
++        return status;
++    }
++    r = 0.5 * (r_edge[radial_index] + r_edge[radial_index + 1u]);
++    for (m = 0; m < n_mu; ++m) {
++        cache->p[m] = r * sqrt(1.0 - cache->mu[m] * cache->mu[m]);
++    }
++    cache->n_mu = n_mu;
++    return LCMF_OK;
++}
++
++void lumina_cmf_ray_cache_free(LCMFRayCache *cache)
++{
++    if (cache == NULL) return;
++    free(cache->mu);
++    free(cache->weight);
++    free(cache->p);
++    memset(cache, 0, sizeof(*cache));
++}
++
++int lumina_cmf_sc_linear(double intensity_upstream, double source_upstream,
++                         double source_downstream, double delta_tau,
++                         double *intensity_downstream)
++{
++    double one_minus_e, ratio, psi_down, psi_up;
++    if (intensity_downstream == NULL || !finite_nonnegative(intensity_upstream) ||
++        !finite_nonnegative(source_upstream) || !finite_nonnegative(source_downstream) ||
++        !isfinite(delta_tau) || delta_tau < 0.0) return LCMF_EINVAL;
++    if (delta_tau == 0.0) {
++        *intensity_downstream = intensity_upstream;
++        return LCMF_OK;
++    }
++    one_minus_e = -expm1(-delta_tau);
++    if (fabs(delta_tau) < 1.0e-4) {
++        const double t = delta_tau;
++        ratio = 1.0 - t * 0.5 + t * t / 6.0 - t * t * t / 24.0
++                + t * t * t * t / 120.0;
++    } else {
++        ratio = one_minus_e / delta_tau;
++    }
++    psi_down = 1.0 - ratio;
++    psi_up = one_minus_e - psi_down;
++    *intensity_downstream = intensity_upstream * exp(-delta_tau)
++                            + psi_up * source_upstream
++                            + psi_down * source_downstream;
++    if (!isfinite(*intensity_downstream)) return LCMF_ENONFINITE;
++    if (*intensity_downstream < 0.0) return LCMF_ENEGATIVE;
++    return LCMF_OK;
++}
++
++int lumina_cmf_field_solve(const LCMFInput *input,
++                           const LCMFOptions *options,
++                           LCMFResult *result)
++{
++    int status;
++    if (result == NULL) return LCMF_EINVAL;
++    memset(result, 0, sizeof(*result));
++    status = lumina_cmf_validate_input(input, options, &result->error);
++    if (status != LCMF_OK) return status;
++    set_error(&result->error, LCMF_EUNSUPPORTED,
++              "formal sweep is enabled by the KA1 rung", 0, 0, 0.0);
++    return LCMF_EUNSUPPORTED;
++}
++
++int lumina_cmf_field_residual(const LCMFInput *input,
++                              const LCMFResult *result, double *linf)
++{
++    if (input == NULL || result == NULL || linf == NULL) return LCMF_EINVAL;
++    if (!isfinite(result->transport_resid_linf) || result->transport_resid_linf < 0.0)
++        return LCMF_EINVAL;
++    *linf = result->transport_resid_linf;
++    return LCMF_OK;
++}
++
++void lumina_cmf_result_free(LCMFResult *result)
++{
++    if (result == NULL) return;
++    free(result->J);
++    free(result->H);
++    free(result->K);
++    free(result->I_minus);
++    free(result->I_plus);
++    memset(result, 0, sizeof(*result));
++}
++
++static uint32_t rotr32(uint32_t x, unsigned n)
++{
++    return (x >> n) | (x << (32u - n));
++}
++
++static void sha256_transform(LCMFSha256 *ctx, const unsigned char block[64])
++{
++    static const uint32_t constant[64] = {
++        0x428a2f98u,0x71374491u,0xb5c0fbcfu,0xe9b5dba5u,0x3956c25bu,0x59f111f1u,0x923f82a4u,0xab1c5ed5u,
++        0xd807aa98u,0x12835b01u,0x243185beu,0x550c7dc3u,0x72be5d74u,0x80deb1feu,0x9bdc06a7u,0xc19bf174u,
++        0xe49b69c1u,0xefbe4786u,0x0fc19dc6u,0x240ca1ccu,0x2de92c6fu,0x4a7484aau,0x5cb0a9dcu,0x76f988dau,
++        0x983e5152u,0xa831c66du,0xb00327c8u,0xbf597fc7u,0xc6e00bf3u,0xd5a79147u,0x06ca6351u,0x14292967u,
++        0x27b70a85u,0x2e1b2138u,0x4d2c6dfcu,0x53380d13u,0x650a7354u,0x766a0abbu,0x81c2c92eu,0x92722c85u,
++        0xa2bfe8a1u,0xa81a664bu,0xc24b8b70u,0xc76c51a3u,0xd192e819u,0xd6990624u,0xf40e3585u,0x106aa070u,
++        0x19a4c116u,0x1e376c08u,0x2748774cu,0x34b0bcb5u,0x391c0cb3u,0x4ed8aa4au,0x5b9cca4fu,0x682e6ff3u,
++        0x748f82eeu,0x78a5636fu,0x84c87814u,0x8cc70208u,0x90befffau,0xa4506cebu,0xbef9a3f7u,0xc67178f2u
++    };
++    uint32_t words[64], a,b,c,d,e,f,g,h;
++    size_t i;
++    for (i = 0; i < 16u; ++i) {
++        words[i] = ((uint32_t)block[4u*i] << 24) | ((uint32_t)block[4u*i+1u] << 16)
++                 | ((uint32_t)block[4u*i+2u] << 8) | (uint32_t)block[4u*i+3u];
++    }
++    for (i = 16u; i < 64u; ++i) {
++        const uint32_t s0 = rotr32(words[i-15u],7)^rotr32(words[i-15u],18)^(words[i-15u]>>3);
++        const uint32_t s1 = rotr32(words[i-2u],17)^rotr32(words[i-2u],19)^(words[i-2u]>>10);
++        words[i] = words[i-16u] + s0 + words[i-7u] + s1;
++    }
++    a=ctx->h[0]; b=ctx->h[1]; c=ctx->h[2]; d=ctx->h[3];
++    e=ctx->h[4]; f=ctx->h[5]; g=ctx->h[6]; h=ctx->h[7];
++    for (i = 0; i < 64u; ++i) {
++        const uint32_t s1=rotr32(e,6)^rotr32(e,11)^rotr32(e,25);
++        const uint32_t ch=(e&f)^((~e)&g);
++        const uint32_t t1=h+s1+ch+constant[i]+words[i];
++        const uint32_t s0=rotr32(a,2)^rotr32(a,13)^rotr32(a,22);
++        const uint32_t maj=(a&b)^(a&c)^(b&c);
++        const uint32_t t2=s0+maj;
++        h=g; g=f; f=e; e=d+t1; d=c; c=b; b=a; a=t1+t2;
++    }
++    ctx->h[0]+=a; ctx->h[1]+=b; ctx->h[2]+=c; ctx->h[3]+=d;
++    ctx->h[4]+=e; ctx->h[5]+=f; ctx->h[6]+=g; ctx->h[7]+=h;
++}
++
++static void sha256_init(LCMFSha256 *ctx)
++{
++    static const uint32_t initial[8] = {0x6a09e667u,0xbb67ae85u,0x3c6ef372u,0xa54ff53au,
++                                        0x510e527fu,0x9b05688cu,0x1f83d9abu,0x5be0cd19u};
++    memcpy(ctx->h, initial, sizeof(initial));
++    ctx->bits = 0; ctx->used = 0;
++}
++
++static void sha256_update(LCMFSha256 *ctx, const unsigned char *data, size_t length)
++{
++    while (length > 0) {
++        size_t take = 64u - ctx->used;
++        if (take > length) take = length;
++        memcpy(ctx->block + ctx->used, data, take);
++        ctx->used += take; data += take; length -= take;
++        ctx->bits += (uint64_t)take * 8u;
++        if (ctx->used == 64u) { sha256_transform(ctx, ctx->block); ctx->used = 0; }
++    }
++}
++
++static void sha256_final(LCMFSha256 *ctx, unsigned char digest[32])
++{
++    size_t i;
++    const uint64_t bits = ctx->bits;
++    ctx->block[ctx->used++] = 0x80u;
++    if (ctx->used > 56u) {
++        while (ctx->used < 64u) ctx->block[ctx->used++] = 0;
++        sha256_transform(ctx, ctx->block); ctx->used = 0;
++    }
++    while (ctx->used < 56u) ctx->block[ctx->used++] = 0;
++    for (i = 0; i < 8u; ++i) ctx->block[63u-i] = (unsigned char)(bits >> (8u*i));
++    sha256_transform(ctx, ctx->block);
++    for (i = 0; i < 8u; ++i) {
++        digest[4u*i]=(unsigned char)(ctx->h[i]>>24); digest[4u*i+1u]=(unsigned char)(ctx->h[i]>>16);
++        digest[4u*i+2u]=(unsigned char)(ctx->h[i]>>8); digest[4u*i+3u]=(unsigned char)ctx->h[i];
++    }
++}
++
++static uint32_t load_u32_le(const unsigned char *p)
++{
++    return (uint32_t)p[0] | ((uint32_t)p[1]<<8) | ((uint32_t)p[2]<<16) | ((uint32_t)p[3]<<24);
++}
++
++static uint64_t load_u64_le(const unsigned char *p)
++{
++    uint64_t value = 0; size_t i;
++    for (i = 0; i < 8u; ++i) value |= (uint64_t)p[i] << (8u*i);
++    return value;
++}
++
++static double load_f64_le(const unsigned char *p)
++{
++    const uint64_t bits = load_u64_le(p); double value;
++    memcpy(&value, &bits, sizeof(value)); return value;
++}
++
++static int read_exact(FILE *stream, unsigned char *data, size_t length, LCMFSha256 *sha)
++{
++    if (length > 0 && fread(data, 1, length, stream) != length) return LCMF_EIO;
++    if (sha != NULL) sha256_update(sha, data, length);
++    return LCMF_OK;
++}
++
++static int read_f64_array(FILE *stream, double *values, size_t count, LCMFSha256 *sha)
++{
++    unsigned char bytes[8]; size_t i;
++    for (i = 0; i < count; ++i) {
++        if (read_exact(stream, bytes, 8u, sha) != LCMF_OK) return LCMF_EIO;
++        values[i] = load_f64_le(bytes);
++    }
++    return LCMF_OK;
++}
++
++static int hex_value(int c)
++{
++    if (c >= '0' && c <= '9') return c - '0';
++    if (c >= 'a' && c <= 'f') return c - 'a' + 10;
++    if (c >= 'A' && c <= 'F') return c - 'A' + 10;
++    return -1;
++}
++
++static int read_manifest_digest(const char *path, unsigned char digest[32])
++{
++    FILE *stream; char line[256]; char *hex; size_t i;
++    stream = fopen(path, "rb"); if (stream == NULL) return LCMF_EIO;
++    if (fgets(line, sizeof(line), stream) == NULL) { fclose(stream); return LCMF_ESCHEMA; }
++    fclose(stream);
++    hex = strstr(line, "sha256=");
++    if (hex == NULL) return LCMF_ESCHEMA;
++    hex += 7;
++    for (i = 0; i < 32u; ++i) {
++        const int hi = hex_value((unsigned char)hex[2u*i]);
++        const int lo = hex_value((unsigned char)hex[2u*i+1u]);
++        if (hi < 0 || lo < 0) return LCMF_ESCHEMA;
++        digest[i] = (unsigned char)((hi << 4) | lo);
++    }
++    return LCMF_OK;
++}
++
++void lumina_cmf_frozen_free(LCMFFrozenField *field)
++{
++    if (field == NULL) return;
++    free(field->r_edge); free(field->nu); free(field->dnu);
++    free(field->chi_total); free(field->chi_coherent); free(field->eta_fixed);
++    free(field->eta_coherent); free(field->eta_total); free(field->J_producer);
++    memset(field, 0, sizeof(*field));
++}
++
++int lumina_cmf_frozen_load(const char *binary_path, const char *manifest_path,
++                           LCMFFrozenField *field, LCMFError *error)
++{
++    FILE *stream = NULL; unsigned char header[64], expected[32], actual[32], extra;
++    LCMFSha256 sha; size_t cells, nr, nnu; int status = LCMF_OK;
++    if (binary_path == NULL || manifest_path == NULL || field == NULL) return LCMF_EINVAL;
++    memset(field, 0, sizeof(*field)); sha256_init(&sha);
++    status = read_manifest_digest(manifest_path, expected);
++    if (status != LCMF_OK) { set_error(error,status,"invalid checksum manifest",0,0,0.0); return status; }
++    stream = fopen(binary_path, "rb");
++    if (stream == NULL) { set_error(error,LCMF_EIO,strerror(errno),0,0,0.0); return LCMF_EIO; }
++    status = read_exact(stream, header, sizeof(header), &sha);
++    if (status != LCMF_OK || memcmp(header,"LCMFCE01",8u)!=0 ||
++        load_u32_le(header+8)!=LCMF_FROZEN_ENDIAN || load_u32_le(header+12)!=LCMF_FROZEN_VERSION ||
++        load_u32_le(header+52)!=0u) { status=LCMF_ESCHEMA; goto fail; }
++    field->nr=load_u64_le(header+16); field->nnu=load_u64_le(header+24);
++    field->iteration=load_u64_le(header+32); field->field_generation=load_u64_le(header+40);
++    field->flags=load_u32_le(header+48); field->t_exp_s=load_f64_le(header+56);
++    if (field->nr==0 || field->nnu==0 || field->nr>SIZE_MAX || field->nnu>SIZE_MAX ||
++        !isfinite(field->t_exp_s) || field->t_exp_s<=0.0 ||
++        !(field->flags & LCMF_FROZEN_FREQUENCY_DESCENDING)) { status=LCMF_ESCHEMA; goto fail; }
++    nr=(size_t)field->nr; nnu=(size_t)field->nnu;
++    if (checked_product(nr,nnu,&cells)!=LCMF_OK) { status=LCMF_ENOMEM; goto fail; }
++#define ALLOC_FIELD(name,count) do { field->name=(double*)checked_calloc((count),sizeof(double)); if(field->name==NULL){status=LCMF_ENOMEM;goto fail;} } while(0)
++    ALLOC_FIELD(r_edge,nr+1u); ALLOC_FIELD(nu,nnu); ALLOC_FIELD(dnu,nnu);
++    ALLOC_FIELD(chi_total,cells); ALLOC_FIELD(chi_coherent,cells); ALLOC_FIELD(eta_fixed,cells);
++    ALLOC_FIELD(eta_coherent,cells); ALLOC_FIELD(eta_total,cells); ALLOC_FIELD(J_producer,cells);
++#undef ALLOC_FIELD
++#define READ_FIELD(name,count) do { if(read_f64_array(stream,field->name,(count),&sha)!=LCMF_OK){status=LCMF_EIO;goto fail;} } while(0)
++    READ_FIELD(r_edge,nr+1u); READ_FIELD(nu,nnu); READ_FIELD(dnu,nnu);
++    READ_FIELD(chi_total,cells); READ_FIELD(chi_coherent,cells); READ_FIELD(eta_fixed,cells);
++    READ_FIELD(eta_coherent,cells); READ_FIELD(eta_total,cells); READ_FIELD(J_producer,cells);
++#undef READ_FIELD
++    if (fread(&extra,1,1,stream)!=0 || ferror(stream)) { status=LCMF_ESCHEMA; goto fail; }
++    fclose(stream); stream=NULL; sha256_final(&sha,actual);
++    if (memcmp(expected,actual,32u)!=0) { status=LCMF_ECHECKSUM; goto fail; }
++    for (size_t i=0;i<nr;++i) {
++        if (!isfinite(field->r_edge[i]) || field->r_edge[i+1u]<=field->r_edge[i]) { status=LCMF_ESCHEMA; goto fail; }
++    }
++    for (size_t k=0;k<nnu;++k) {
++        if (!isfinite(field->nu[k]) || field->nu[k]<=0.0 || !isfinite(field->dnu[k]) || field->dnu[k]<=0.0 ||
++            (k>0 && field->nu[k]>=field->nu[k-1u])) { status=LCMF_ESCHEMA; goto fail; }
++    }
++    for (size_t q=0;q<cells;++q) {
++        if (!finite_nonnegative(field->chi_total[q]) || !finite_nonnegative(field->chi_coherent[q]) ||
++            field->chi_coherent[q]>field->chi_total[q] || !finite_nonnegative(field->eta_fixed[q]) ||
++            !finite_nonnegative(field->eta_coherent[q]) || !finite_nonnegative(field->eta_total[q]) ||
++            !finite_nonnegative(field->J_producer[q]) ||
++            field->eta_total[q] != field->eta_fixed[q] + field->eta_coherent[q]) { status=LCMF_ESCHEMA; goto fail; }
++    }
++    return LCMF_OK;
++fail:
++    if (stream != NULL) fclose(stream);
++    lumina_cmf_frozen_free(field);
++    set_error(error,status,"frozen field failed closed validation",0,0,0.0);
++    return status;
++}
++
++const char *lumina_cmf_status_string(int status)
++{
++    switch (status) {
++    case LCMF_OK:return "LCMF_OK"; case LCMF_EINVAL:return "LCMF_EINVAL";
++    case LCMF_ENOMEM:return "LCMF_ENOMEM"; case LCMF_EGRID:return "LCMF_EGRID";
++    case LCMF_ENEGATIVE:return "LCMF_ENEGATIVE"; case LCMF_ENONFINITE:return "LCMF_ENONFINITE";
++    case LCMF_EUNSUPPORTED:return "LCMF_EUNSUPPORTED"; case LCMF_ENOCONV:return "LCMF_ENOCONV";
++    case LCMF_EIO:return "LCMF_EIO"; case LCMF_ESCHEMA:return "LCMF_ESCHEMA";
++    case LCMF_ECHECKSUM:return "LCMF_ECHECKSUM"; case LCMF_EHOMOLOGY:return "LCMF_EHOMOLOGY";
++    default:return "LCMF_UNKNOWN";
++    }
++}
+--- a/tests/stage31_cmf_skeleton_selftest.c
++++ b/tests/stage31_cmf_skeleton_selftest.c
+@@ -0,0 +1,94 @@
++#include "lumina_cmf_field.h"
++
++#include <math.h>
++#include <stdio.h>
++#include <stdlib.h>
++#include <string.h>
++#include <unistd.h>
++
++static int expect_status(int got, int expected, const char *label)
++{
++    if (got != expected) {
++        fprintf(stderr, "%s: got %s expected %s\n", label,
++                lumina_cmf_status_string(got), lumina_cmf_status_string(expected));
++        return 1;
++    }
++    return 0;
++}
++
++int main(int argc, char **argv)
++{
++    const double edge[] = {0.0, 0.5, 1.0};
++    const double nu[] = {4.0, 2.0, 1.0};
++    const double chi[] = {1.0,1.0,1.0,1.0,1.0,1.0};
++    const double eta[] = {1.0,1.0,1.0,1.0,1.0,1.0};
++    const double zeros[] = {0.0,0.0,0.0,0.0,0.0,0.0};
++    const double boundary[] = {1.0,1.0,1.0};
++    LCMFInput input;
++    LCMFOptions options;
++    LCMFError error;
++    LCMFRayCache cache;
++    double intensity = 0.0, exact;
++    int failures = 0;
++    memset(&input,0,sizeof(input)); memset(&options,0,sizeof(options));
++    input.nr=2; input.nnu=3; input.r_edge=edge; input.nu=nu;
++    input.chi_total=chi; input.eta_fixed=eta; input.chi_coherent=zeros;
++    input.inner_bc=LCMF_BC_DIFFUSION; input.scatter_mode=LCMF_SCAT_NONE;
++    input.B_inner=boundary; input.dB_dtau_inner=zeros; input.t_exp_s=1.0;
++    options.n_mu=8; options.max_source_iter=2; options.source_rtol=1e-11;
++    failures += expect_status(lumina_cmf_validate_input(&input,&options,&error),LCMF_OK,"valid");
++    {
++        double bad_nu[] = {4.0,2.0,2.1}; input.nu=bad_nu;
++        failures += expect_status(lumina_cmf_validate_input(&input,&options,&error),LCMF_EGRID,"frequency order");
++        input.nu=nu;
++    }
++    {
++        double bad_chi[] = {1.0,1.0,-1.0,1.0,1.0,1.0}; input.chi_total=bad_chi;
++        failures += expect_status(lumina_cmf_validate_input(&input,&options,&error),LCMF_ENEGATIVE,"negative chi");
++        input.chi_total=chi;
++    }
++    input.scatter_mode=LCMF_SCAT_REDISTRIBUTION;
++    failures += expect_status(lumina_cmf_validate_input(&input,&options,&error),LCMF_EUNSUPPORTED,"redistribution");
++    input.scatter_mode=LCMF_SCAT_NONE;
++    {
++        char binary_path[96], manifest_path[96];
++        FILE *stream;
++        LCMFFrozenField frozen;
++        (void)snprintf(binary_path,sizeof(binary_path),"/tmp/stage31_bad_%ld.bin",(long)getpid());
++        (void)snprintf(manifest_path,sizeof(manifest_path),"/tmp/stage31_bad_%ld.manifest",(long)getpid());
++        stream=fopen(binary_path,"wb");
++        if (stream==NULL) return 2;
++        (void)fwrite("BADMAGIC",1,8,stream);
++        fclose(stream);
++        stream=fopen(manifest_path,"wb");
++        if (stream==NULL) return 2;
++        (void)fprintf(stream,"sha256=0000000000000000000000000000000000000000000000000000000000000000\n");
++        fclose(stream);
++        failures += expect_status(lumina_cmf_frozen_load(binary_path,manifest_path,&frozen,&error),LCMF_ESCHEMA,"malformed schema");
++        (void)remove(binary_path); (void)remove(manifest_path);
++    }
++    failures += expect_status(lumina_cmf_ray_cache_build(edge,2,1,8,&cache,&error),LCMF_OK,"ray cache");
++    if (cache.n_mu==8) {
++        double weight_sum=0.0;
++        for (size_t i=0;i<cache.n_mu;++i) {
++            weight_sum += cache.weight[i];
++            if (!(cache.mu[i]>0.0 && cache.mu[i]<1.0 && cache.p[i]>=0.0)) ++failures;
++        }
++        if (fabs(weight_sum-1.0)>1e-14) ++failures;
++    }
++    lumina_cmf_ray_cache_free(&cache);
++    failures += expect_status(lumina_cmf_sc_linear(0.3,1.2,1.2,0.7,&intensity),LCMF_OK,"SC constant source");
++    exact=0.3*exp(-0.7)+1.2*(1.0-exp(-0.7));
++    if (fabs(intensity-exact)>4.0e-15) { fprintf(stderr,"SC error %.17g\n",intensity-exact); ++failures; }
++    if (failures!=0) { fprintf(stderr,"stage31 skeleton failures=%d\n",failures); return 1; }
++    if (argc == 3) {
++        LCMFFrozenField frozen;
++        failures += expect_status(lumina_cmf_frozen_load(argv[1],argv[2],&frozen,&error),LCMF_OK,"valid frozen field");
++        if (failures==0 && (frozen.nr!=1u || frozen.nnu!=2u || frozen.iteration!=10u ||
++                            frozen.field_generation!=7u)) ++failures;
++        lumina_cmf_frozen_free(&frozen);
++    }
++    if (failures!=0) { fprintf(stderr,"stage31 loader failures=%d\n",failures); return 1; }
++    puts("stage31 skeleton PASS");
++    return 0;
++}
+

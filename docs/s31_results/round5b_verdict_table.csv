@@ -1,0 +1,27 @@
+rung,case,grid_or_setting,metric,value,threshold_or_window,status,note
+8,MPFR certificate,128x512@2048bit,certified sign-uncertain,0,0,PASS,directed RNDD/RNDU replay
+8,MPFR certificate,128x512@2048bit,certified non-finite,0,0,PASS,directed RNDD/RNDU replay
+8,MPFR certificate,256x1024@2048bit,certified sign-uncertain,0,0,PASS,directed RNDD/RNDU replay
+8,MPFR certificate,256x1024@2048bit,certified non-finite,0,0,PASS,directed RNDD/RNDU replay
+8,MPFR certificate,512x2048@2048bit,certified sign-uncertain,0,0,PASS,directed RNDD/RNDU replay
+8,MPFR certificate,512x2048@2048bit,certified non-finite,0,0,PASS,directed RNDD/RNDU replay
+8,MPFR certificate,1024x4096@4096bit,certified sign-uncertain,0,0,PASS,directed RNDD/RNDU replay
+8,MPFR certificate,1024x4096@4096bit,certified non-finite,0,0,PASS,directed RNDD/RNDU replay
+9,KA3,256x1024,profile L1,4.229785243217583e-4,diagnostic,PASS,official coarse
+9,KA3,512x2048,profile L1,1.056589331329826e-4,diagnostic,PASS,official middle
+9,KA3,1024x4096,profile L1,2.6403943800987102e-5,"[2.50e-5,2.80e-5] and <=1e-4",PASS,preregistered fine
+9,KA3,1024x4096,profile L2,2.394054891020298e-5,<=1e-4,PASS,
+9,KA3,official triple,p_obs L2,2.000591869903567,"[1.8,2.2]",PASS,
+9,KA3,1024x4096,centroid error,8.359514885869501e-10,<=1e-4,PASS,
+9,KA3,1024x4096,invariant area error,8.360132332556721e-10,<=1e-4,PASS,
+9,KA3,1024x4096,transport residual,3.5783219289889105e-11,<=1e-4,PASS,
+10,KA2 oracle,Nref 2048/4096,relative difference,3.6445269209240967e-10,<1e-9,PASS,numerical convergence
+10,KA2 oracle,Nref 2048/4096,full 80-digit arithmetic,0,required,FAIL,matrix/operator iteration stored binary64
+11,plain coherent scattering,128x32,J relative L2,1.2964054513241584e-5,diagnostic,PASS,
+11,plain coherent scattering,256x64,J relative L2,3.7746224104170392e-6,diagnostic,PASS,
+11,plain coherent scattering,512x128,J relative L2,1.0791297037518498e-6,<=1e-4,PASS,conditional on oracle qualification
+11,plain coherent scattering,official triple,p_obs J,1.769542705182469,"[1.7,2.3]",PASS,
+11,plain coherent scattering,512x128,source residual,4.09738602140625e-13,<=1e-10,PASS,32 undamped iterations
+11,plain coherent scattering,512x128,transport residual,8.127260943171817e-6,<=1e-4,PASS,
+11,plain coherent scattering,512x128,energy closure,1.2468279150592862e-6,<=1e-4,PASS,
+11,plain coherent scattering,all grids,clamp/negative/sign-uncertain/non-finite,0,0,PASS,

@@ -1,0 +1,565 @@
+--- a/src/lumina_cmfgen.h
++++ b/src/lumina_cmfgen.h
+@@ -86,6 +86,43 @@
+                                  and carve a P-Cygni trough. 0 = normal. */
+ } CMFGENState;
+ 
++/* E4 in-situ emissivity A/B audit.  The B lane keeps the production opacity,
++ * continuum, binning and EPAY machinery, replacing only the pre-EPAY line
++ * emissivity with h*nu*A_ul*n_u/(4*pi*dnu).  nlte_level_populations already
++ * contains the production full-level reconstruction (including the existing
++ * within-super-level member distribution). */
++enum {
++    CMF_EMISS_UNDEF_NO_NLTE_LINE = 1U,
++    CMF_EMISS_UNDEF_UPPER_LEVEL  = 2U,
++    CMF_EMISS_UNDEF_A_UL         = 4U,
++    CMF_EMISS_UNDEF_POPULATION   = 8U
++};
++
++typedef struct {
++    uint64_t active_transition_count;
++    uint64_t defined_transition_count;
++    uint64_t undefined_transition_count;
++    uint64_t active_line_shell_count;
++    uint64_t defined_line_shell_count;
++    uint64_t undefined_line_shell_count;
++    double   a_reference_line_power;
++    double   a_reference_covered_line_power;
++    double   a_reference_contribution_fraction;
++    int      n_lines;
++    unsigned char *undefined_reason;       /* [n_lines], CMF_EMISS_UNDEF_* mask */
++    uint32_t      *undefined_shell_count;  /* [n_lines] */
++    int      seed_line;
++    int      seed_shell;
++    double   seed_factor;
++    uint64_t seed_hits;
++} CMFGENEmissABStats;
++
++typedef struct {
++    const char *lane;                /* "A-production" or "B-Aul-nu" */
++    const char *common_state_sha256; /* exact shared assembly-input digest */
++    const CMFGENEmissABStats *coverage;
++} CMFGENChietaLaneMeta;
++
+ void cmf_obs_selftest(void);  /* confirmation-ladder T1 single-line P-Cygni test */
+ void cmf_fsolve_selftest(const char *mode);  /* confirmation-ladder F cmf_solve_J test */
+ void cmf_solve_gpu_selftest(const char *mode);  /* GPU cmf_solve_J A/B vs CPU (LUMINA_CMF_SOLVE_GPU=2) */
+@@ -110,6 +147,28 @@
+                      const OpacityState *opac, BFOpacity *bf,
+                      const PlasmaState *plasma);
+ 
++/* Assemble only the E4 B lane.  There is no fallback for an undefined A_ul or
++ * upper population: that transition contributes zero and is recorded in
++ * stats.  seed_line<0 disables the negative-control injection; otherwise the
++ * selected local n_u is multiplied by seed_factor without mutating NLTE state. */
++int cmfgen_assemble_aulnu(CMFGENState *cs, const Geometry *geo,
++                          const OpacityState *opac, BFOpacity *bf,
++                          const PlasmaState *plasma, const NLTEConfig *nlte,
++                          const AtomicData *atom, int seed_line,
++                          int seed_shell, double seed_factor,
++                          CMFGENEmissABStats *stats);
++void cmfgen_emiss_ab_stats_free(CMFGENEmissABStats *stats);
++int cmfgen_write_emiss_ab_undefined(const CMFGENEmissABStats *stats,
++                                     const AtomicData *atom,
++                                     const char *path);
++int cmfgen_emiss_ab_state_sha256(const CMFGENState *cs,
++                                 const Geometry *geo,
++                                 const OpacityState *opac,
++                                 const BFOpacity *bf,
++                                 const PlasmaState *plasma,
++                                 const NLTEConfig *nlte,
++                                 const AtomicData *atom,
++                                 char out_hex[65]);
+ 
+ /* Stage 1: register radioactive deposition heating [n_shells] erg/s/cm^3 so the
+  * next cmfgen_assemble can inject it into S_fixed (gate LUMINA_CMF_DEP_SOURCE).
+@@ -127,6 +186,11 @@
+ int cmfgen_dump_frozen_chieta(const CMFGENState *cs, const Geometry *geo,
+                               int iter, int field_generation,
+                               int post_damping, const char *path);
++int cmfgen_dump_frozen_chieta_lane(const CMFGENState *cs,
++                                   const Geometry *geo, int iter,
++                                   int field_generation, int post_damping,
++                                   const char *path,
++                                   const CMFGENChietaLaneMeta *meta);
+ 
+ /* Copy cs->J into nlte->J_nu (same [n_shells*n_bins] layout/grid). */
+ void cmfgen_write_jnu(const CMFGENState *cs, NLTEConfig *nlte);
+--- a/src/lumina_cmfgen.c
++++ b/src/lumina_cmfgen.c
+@@ -204,9 +204,10 @@
+     return cmf_dump_u64(fp, sha, u);
+ }
+ 
+-int cmfgen_dump_frozen_chieta(const CMFGENState *cs, const Geometry *geo,
+-                              int iter, int field_generation,
+-                              int post_damping, const char *path) {
++int cmfgen_dump_frozen_chieta_lane(const CMFGENState *cs, const Geometry *geo,
++                                   int iter, int field_generation,
++                                   int post_damping, const char *path,
++                                   const CMFGENChietaLaneMeta *meta) {
+     enum { FLAG_POST_DAMP=1U, FLAG_COHERENT_FROZEN=2U,
+            FLAG_FREQUENCY_DESCENDING=4U };
+     if (!cs || !geo || !path || !*path || iter < 0 || field_generation < 0 ||
+@@ -219,6 +220,13 @@
+         fprintf(stderr, "[CMF-CHIETA][FAIL] invalid state/path/iteration\n");
+         return -1;
+     }
++    if (meta && (!meta->lane || !*meta->lane ||
++                 !meta->common_state_sha256 ||
++                 strlen(meta->common_state_sha256) != 64 ||
++                 !meta->coverage)) {
++        fprintf(stderr,"[CMF-CHIETA][FAIL] invalid E4 lane metadata\n");
++        return -1;
++    }
+     for (int s=0;s<geo->n_shells;s++) {
+         if (!(geo->r_inner[s] > 0.0) ||
+             !(geo->r_outer[s] > geo->r_inner[s]) ||
+@@ -349,10 +357,49 @@
+                "  \"coherent_frozen\": true,\n"
+                "  \"frequency_descending\": true,\n"
+                "  \"eta_decomposition_bitwise\": %s,\n"
+-               "  \"eta_decomposition_max_abs\": %.17g\n}\n",
++               "  \"eta_decomposition_max_abs\": %.17g",
+                hex,iter,field_generation,post_damping ? "true" : "false",
+                eta_decomposition_bitwise ? "true" : "false",
+                eta_decomposition_max_abs) < 0;
++    if (!sidecar_fail && meta) {
++        const CMFGENEmissABStats *st = meta->coverage;
++        const char *formula = meta->lane[0] == 'A'
++                            ? "production-eps-times-source"
++                            : "hnu-over-4pi-times-Aul-times-n_upper-over-dnu";
++        sidecar_fail = fprintf(mf,
++               ",\n  \"emiss_ab_lane\": \"%s\",\n"
++               "  \"common_assembly_state_sha256\": \"%s\",\n"
++               "  \"line_emissivity_formula\": \"%s\",\n"
++               "  \"undefined_transition_list_suffix\": \".undefined.csv\",\n"
++               "  \"coverage\": {\n"
++               "    \"active_transition_count\": %llu,\n"
++               "    \"defined_transition_count\": %llu,\n"
++               "    \"undefined_transition_count\": %llu,\n"
++               "    \"active_line_shell_count\": %llu,\n"
++               "    \"defined_line_shell_count\": %llu,\n"
++               "    \"undefined_line_shell_count\": %llu,\n"
++               "    \"a_reference_line_power\": %.17g,\n"
++               "    \"a_reference_covered_line_power\": %.17g,\n"
++               "    \"a_reference_contribution_fraction\": %.17g\n"
++               "  },\n"
++               "  \"seeded_defect\": {\"line_id\": %d, \"shell\": %d, "
++               "\"population_factor\": %.17g, \"hits\": %llu}\n",
++               meta->lane,meta->common_state_sha256,formula,
++               (unsigned long long)st->active_transition_count,
++               (unsigned long long)st->defined_transition_count,
++               (unsigned long long)st->undefined_transition_count,
++               (unsigned long long)st->active_line_shell_count,
++               (unsigned long long)st->defined_line_shell_count,
++               (unsigned long long)st->undefined_line_shell_count,
++               st->a_reference_line_power,
++               st->a_reference_covered_line_power,
++               st->a_reference_contribution_fraction,
++               st->seed_line,st->seed_shell,st->seed_factor,
++               (unsigned long long)st->seed_hits) < 0;
++    } else if (!sidecar_fail) {
++        sidecar_fail = fprintf(mf,"\n") < 0;
++    }
++    if (!sidecar_fail) sidecar_fail = fprintf(mf,"}\n") < 0;
+     if(fclose(mf)) sidecar_fail = 1;
+     if(sidecar_fail) {
+         fprintf(stderr,"[CMF-CHIETA][FAIL] write/close %s\n",manifest);
+@@ -366,6 +413,13 @@
+     return 0;
+ }
+ 
++int cmfgen_dump_frozen_chieta(const CMFGENState *cs, const Geometry *geo,
++                              int iter, int field_generation,
++                              int post_damping, const char *path) {
++    return cmfgen_dump_frozen_chieta_lane(cs,geo,iter,field_generation,
++                                          post_damping,path,NULL);
++}
++
+ /* ------------------------------------------------------------ */
+ int cmfgen_init(CMFGENState *cs, const Geometry *geo)
+ {
+@@ -448,12 +502,154 @@
+     g_dep_heating = heating_rate; g_dep_heating_n = n_shells;
+ }
+ 
++static void cmf_hash_u64(CMFSHA256 *sha, uint64_t value) {
++    unsigned char b[8];
++    for (int i=0;i<8;i++) b[i]=(unsigned char)(value>>(8*i));
++    cmf_sha256_update(sha,b,sizeof(b));
++}
++
++static void cmf_hash_f64(CMFSHA256 *sha, double value) {
++    uint64_t bits;
++    memcpy(&bits,&value,sizeof(bits));
++    cmf_hash_u64(sha,bits);
++}
++
++static void cmf_hash_f64_array(CMFSHA256 *sha, const double *values,
++                               size_t count) {
++    cmf_hash_u64(sha,values ? 1U : 0U);
++    if (values) for (size_t i=0;i<count;i++) cmf_hash_f64(sha,values[i]);
++}
++
++static void cmf_hash_i32_array(CMFSHA256 *sha, const int *values,
++                               size_t count) {
++    cmf_hash_u64(sha,values ? 1U : 0U);
++    if (values) for (size_t i=0;i<count;i++)
++        cmf_hash_u64(sha,(uint64_t)(uint32_t)values[i]);
++}
++
++int cmfgen_emiss_ab_state_sha256(const CMFGENState *cs,
++                                 const Geometry *geo,
++                                 const OpacityState *opac,
++                                 const BFOpacity *bf,
++                                 const PlasmaState *plasma,
++                                 const NLTEConfig *nlte,
++                                 const AtomicData *atom,
++                                 char out_hex[65]) {
++    if (!cs || !geo || !opac || !plasma || !nlte || !atom || !out_hex ||
++        cs->n_shells <= 0 || cs->n_bins <= 0 || opac->n_lines < 0 ||
++        geo->n_shells != cs->n_shells || opac->n_shells != cs->n_shells ||
++        atom->n_lines != opac->n_lines || !cs->J || !cs->nu || !cs->dnu ||
++        !geo->r_inner || !geo->r_outer || !opac->line_list_nu ||
++        !opac->tau_sobolev || !plasma->T_e) return -1;
++    CMFSHA256 sha;
++    cmf_sha256_init(&sha);
++    static const char domain[]="LUMINA-E4-ASSEMBLY-INPUT-v1";
++    cmf_sha256_update(&sha,domain,sizeof(domain)-1);
++    size_t cells=(size_t)cs->n_shells*cs->n_bins;
++    size_t line_cells=(size_t)opac->n_lines*cs->n_shells;
++    cmf_hash_u64(&sha,(uint64_t)cs->n_shells);
++    cmf_hash_u64(&sha,(uint64_t)cs->n_bins);
++    cmf_hash_u64(&sha,(uint64_t)opac->n_lines);
++    cmf_hash_u64(&sha,(uint64_t)atom->n_levels);
++    cmf_hash_u64(&sha,(uint64_t)nlte->n_nlte_levels_total);
++    cmf_hash_u64(&sha,(uint64_t)nlte->n_nlte_ions);
++    cmf_hash_u64(&sha,(uint64_t)(cs->cont_only != 0));
++    cmf_hash_f64(&sha,cs->frozen_morph_eps);
++    cmf_hash_f64(&sha,geo->time_explosion);
++    cmf_hash_f64_array(&sha,geo->r_inner,cs->n_shells);
++    cmf_hash_f64_array(&sha,geo->r_outer,cs->n_shells);
++    cmf_hash_f64_array(&sha,cs->nu,cs->n_bins);
++    cmf_hash_f64_array(&sha,cs->dnu,cs->n_bins);
++    cmf_hash_f64_array(&sha,cs->J,cells); /* lagged field consumed by EPAY */
++    cmf_hash_f64_array(&sha,plasma->T_e,cs->n_shells);
++    cmf_hash_f64_array(&sha,plasma->T_rad,cs->n_shells);
++    cmf_hash_f64_array(&sha,plasma->n_electron,cs->n_shells);
++    cmf_hash_f64_array(&sha,opac->electron_density,cs->n_shells);
++    cmf_hash_f64_array(&sha,opac->line_list_nu,opac->n_lines);
++    cmf_hash_f64_array(&sha,opac->tau_sobolev,line_cells);
++    cmf_hash_f64_array(&sha,opac->line_source_S,line_cells);
++    cmf_hash_f64_array(&sha,bf ? bf->chi_bf : NULL,bf ? cells : 0);
++    cmf_hash_f64_array(&sha,bf ? bf->eta_bf : NULL,bf ? cells : 0);
++    cmf_hash_f64_array(&sha,nlte->nlte_level_populations,
++                       (size_t)nlte->n_nlte_levels_total*cs->n_shells);
++    cmf_hash_i32_array(&sha,nlte->nlte_ion_level_offset,
++                       (size_t)nlte->n_nlte_ions+1);
++    cmf_hash_i32_array(&sha,nlte->nlte_to_global_level,
++                       nlte->n_nlte_levels_total);
++    cmf_hash_i32_array(&sha,nlte->nlte_line_map,opac->n_lines);
++    cmf_hash_i32_array(&sha,nlte->global_to_nlte_level,atom->n_levels);
++    cmf_hash_f64_array(&sha,atom->line_A_ul,opac->n_lines);
++    cmf_hash_i32_array(&sha,atom->line_atomic_number,opac->n_lines);
++    cmf_hash_i32_array(&sha,atom->line_ion_number,opac->n_lines);
++    cmf_hash_i32_array(&sha,atom->line_level_upper,opac->n_lines);
++    cmf_hash_i32_array(&sha,atom->level_num,atom->n_levels);
++    cmf_hash_i32_array(&sha,atom->level_Z,atom->n_levels);
++    cmf_hash_i32_array(&sha,atom->level_ion,atom->n_levels);
++    cmf_hash_u64(&sha,(uint64_t)g_dep_heating_n);
++    cmf_hash_f64_array(&sha,g_dep_heating,
++                       g_dep_heating && g_dep_heating_n == cs->n_shells
++                       ? cs->n_shells : 0);
++    unsigned char digest[32];
++    cmf_sha256_final(&sha,digest);
++    for(int i=0;i<32;i++) snprintf(out_hex+2*i,3,"%02x",digest[i]);
++    out_hex[64]='\0';
++    return 0;
++}
++
++void cmfgen_emiss_ab_stats_free(CMFGENEmissABStats *stats) {
++    if (!stats) return;
++    free(stats->undefined_reason);
++    free(stats->undefined_shell_count);
++    memset(stats,0,sizeof(*stats));
++}
++
++static const char *cmf_emiss_undef_text(unsigned reason) {
++    if (reason & CMF_EMISS_UNDEF_NO_NLTE_LINE) return "population_not_tracked";
++    if (reason & CMF_EMISS_UNDEF_UPPER_LEVEL) return "upper_level_unmapped";
++    if (reason & CMF_EMISS_UNDEF_A_UL) return "A_ul_missing_or_invalid";
++    if (reason & CMF_EMISS_UNDEF_POPULATION) return "population_missing_or_invalid";
++    return "defined";
++}
++
++int cmfgen_write_emiss_ab_undefined(const CMFGENEmissABStats *stats,
++                                     const AtomicData *atom,
++                                     const char *path) {
++    if (!stats || !atom || !path || !*path || stats->n_lines != atom->n_lines ||
++        !stats->undefined_reason || !stats->undefined_shell_count) return -1;
++    FILE *fp=fopen(path,"w");
++    if (!fp) return -1;
++    int fail=fprintf(fp,"line_id,Z,ion,lower_level,upper_level,A_ul_s-1,"
++                        "undefined_shell_cells,reason_mask,reason\n") < 0;
++    for (int l=0;l<stats->n_lines && !fail;l++) {
++        unsigned reason=stats->undefined_reason[l];
++        if (!reason) continue;
++        double A=atom->line_A_ul ? atom->line_A_ul[l] : NAN;
++        fail=fprintf(fp,"%d,%d,%d,%d,%d,%.17g,%u,%u,%s\n",l,
++            atom->line_atomic_number ? atom->line_atomic_number[l] : -1,
++            atom->line_ion_number ? atom->line_ion_number[l] : -1,
++            atom->line_level_lower ? atom->line_level_lower[l] : -1,
++            atom->line_level_upper ? atom->line_level_upper[l] : -1,
++            A,stats->undefined_shell_count[l],reason,
++            cmf_emiss_undef_text(reason)) < 0;
++    }
++    if (fclose(fp)) fail=1;
++    return fail ? -1 : 0;
++}
++
++typedef struct {
++    const NLTEConfig *nlte;
++    const AtomicData *atom;
++    CMFGENEmissABStats *stats;
++    int *upper_nlte;
++    unsigned char *active_seen;
++} CMFEmissBContext;
++
+ /* ------------------------------------------------------------ */
+ /* Assemble per (shell,bin): electron-scatter, thermal bf/ff absorption,
+  * expansion line opacity, and the scattering-independent source S_fixed. */
+-void cmfgen_assemble(CMFGENState *cs, const Geometry *geo,
++static void cmfgen_assemble_impl(CMFGENState *cs, const Geometry *geo,
+                      const OpacityState *opac, BFOpacity *bf,
+-                     const PlasmaState *plasma)
++                     const PlasmaState *plasma, CMFEmissBContext *emiss_b)
+ {
+     int NB = cs->n_bins, NS = cs->n_shells;
+     int n_lines = opac->n_lines;
+@@ -542,7 +738,7 @@
+             if (Sl <= 0.0) Sl = cm_planck(nu_l, Te);
+             size_t idx = (size_t)s * NB + b;
+             cs->chi_line[idx] += w;
+-            if (eps_phys) {
++            if (!emiss_b && eps_phys) {
+                 double el = radeq_line_eps_phys(l, ne_s, Te, tau);
+                 if (el < 0.0) el = 1.0;        /* table not built: thermal */
+                 if (el < eps_floor) el = eps_floor;
+@@ -560,8 +756,62 @@
+                               : (tau > 1e-6) ? (1.0 - exp(-tau)) / tau : 1.0;
+                     cs->chi_line_cls[idx] += w * (el * be) / (el + be - el * be + 1e-300);
+                 }
+-            } else {
++            } else if (!emiss_b) {
+                 eta_line[idx] += w * Sl;
++            } else {
++                /* E4 B lane: opacity/destruction bookkeeping is byte-for-byte
++                 * the production calculation above; only the line emissivity
++                 * accumulator changes.  The direct CMFGEN-style emissivity is
++                 * projected as a delta line into the same coarse bin. */
++                double el = 1.0;
++                if (eps_phys) {
++                    el = radeq_line_eps_phys(l, ne_s, Te, tau);
++                    if (el < 0.0) el = 1.0;
++                    if (el < eps_floor) el = eps_floor;
++                    if (el > eps_cap) el = eps_cap;
++                    cs->chi_line_th[idx] += w * el;
++                    {
++                        double be = (tau > 700.0) ? 1.0 / tau
++                                  : (tau > 1e-6) ? (1.0 - exp(-tau)) / tau : 1.0;
++                        cs->chi_line_cls[idx] += w * (el * be) /
++                            (el + be - el * be + 1e-300);
++                    }
++                }
++                CMFGENEmissABStats *st=emiss_b->stats;
++                emiss_b->active_seen[l]=1;
++                st->active_line_shell_count++;
++                double eta_a = eps_phys ? w * el * Sl : w * Sl;
++                st->a_reference_line_power += eta_a * cs->dnu[b];
++                unsigned reason=st->undefined_reason[l];
++                int upper=emiss_b->upper_nlte[l];
++                if (upper < 0) {
++                    if (!reason) reason=CMF_EMISS_UNDEF_UPPER_LEVEL;
++                }
++                double A=(emiss_b->atom->line_A_ul && l < emiss_b->atom->n_lines)
++                         ? emiss_b->atom->line_A_ul[l] : NAN;
++                if (!(A > 0.0) || !isfinite(A)) reason|=CMF_EMISS_UNDEF_A_UL;
++                double n_upper=NAN;
++                if (!reason) {
++                    if (emiss_b->nlte->nlte_level_populations)
++                        n_upper=emiss_b->nlte->nlte_level_populations[
++                            (size_t)upper*NS+s];
++                    if (!isfinite(n_upper) || n_upper < 0.0)
++                        reason|=CMF_EMISS_UNDEF_POPULATION;
++                }
++                if (reason) {
++                    st->undefined_reason[l]|=(unsigned char)reason;
++                    st->undefined_shell_count[l]++;
++                    st->undefined_line_shell_count++;
++                } else {
++                    if (l == st->seed_line && s == st->seed_shell) {
++                        n_upper *= st->seed_factor;
++                        st->seed_hits++;
++                    }
++                    eta_line[idx] += (CM_H*nu_l/(4.0*M_PI_VAL))*A*n_upper /
++                                     cs->dnu[b];
++                    st->defined_line_shell_count++;
++                    st->a_reference_covered_line_power += eta_a*cs->dnu[b];
++                }
+             }
+         }
+     }
+@@ -710,7 +960,7 @@
+                  * written into opacity->line_source_S AFTER this solve. */
+                 double fe = cs->frozen_morph_eps;
+                 chi_ln_th = fe * chi_ln;
+-                eta_ln   *= fe;
++                if (!emiss_b) eta_ln *= fe;
+                 n_split++;
+             } else if (eps_phys) {
+                 chi_ln_th = cs->chi_line_th[idx];    /* per-line accumulated */
+@@ -720,12 +970,13 @@
+                 /* transfer-only split: S_fixed/transfer see the eps_uv share,
+                  * the RE closure sees FULL chi_line via cs->chi_line_re. */
+                 chi_ln_th = eps_uv * chi_ln;
+-                eta_ln   *= eps_uv;
++                if (!emiss_b) eta_ln *= eps_uv;
+                 n_split++;
+             } else if (line_eps > 0.0 && line_eps <= 1.0 &&
+                        chi_ln > line_gate * chi_a) {
+                 chi_ln_th = line_eps * chi_ln;
+-                eta_ln   *= line_eps;   /* thermal share of the NLTE source */
++                if (!emiss_b)
++                    eta_ln *= line_eps; /* A-lane thermal share only */
+                 n_split++;
+             }
+             cs->chi_es[idx]      = chi_e + (chi_ln - chi_ln_th);
+@@ -851,6 +1102,127 @@
+     }
+ }
+ 
++void cmfgen_assemble(CMFGENState *cs, const Geometry *geo,
++                     const OpacityState *opac, BFOpacity *bf,
++                     const PlasmaState *plasma) {
++    cmfgen_assemble_impl(cs,geo,opac,bf,plasma,NULL);
++}
++
++int cmfgen_assemble_aulnu(CMFGENState *cs, const Geometry *geo,
++                          const OpacityState *opac, BFOpacity *bf,
++                          const PlasmaState *plasma, const NLTEConfig *nlte,
++                          const AtomicData *atom, int seed_line,
++                          int seed_shell, double seed_factor,
++                          CMFGENEmissABStats *stats) {
++    if (!cs || !geo || !opac || !plasma || !nlte || !atom || !stats ||
++        opac->n_lines < 0 || atom->n_lines != opac->n_lines ||
++        geo->n_shells != cs->n_shells || opac->n_shells != cs->n_shells ||
++        !atom->line_level_upper || !atom->level_num ||
++        !nlte->nlte_to_global_level ||
++        (seed_line >= 0 && (seed_line >= opac->n_lines || seed_shell < 0 ||
++                            seed_shell >= cs->n_shells ||
++                            !(seed_factor > 0.0) || !isfinite(seed_factor))))
++        return -1;
++    memset(stats,0,sizeof(*stats));
++    stats->n_lines=opac->n_lines;
++    stats->seed_line=seed_line;
++    stats->seed_shell=seed_line >= 0 ? seed_shell : -1;
++    stats->seed_factor=seed_line >= 0 ? seed_factor : 1.0;
++    size_t nl=(size_t)(opac->n_lines > 0 ? opac->n_lines : 1);
++    stats->undefined_reason=(unsigned char *)calloc(nl,sizeof(unsigned char));
++    stats->undefined_shell_count=(uint32_t *)calloc(nl,sizeof(uint32_t));
++    int *upper=(int *)malloc(nl*sizeof(int));
++    unsigned char *active=(unsigned char *)calloc(nl,sizeof(unsigned char));
++    if (!stats->undefined_reason || !stats->undefined_shell_count ||
++        !upper || !active) goto fail;
++    for (int l=0;l<opac->n_lines;l++) upper[l]=-1;
++
++    int ni=nlte->n_nlte_ions;
++    int **by_number=(int **)calloc((size_t)(ni > 0 ? ni : 1),sizeof(int *));
++    int *max_number=(int *)malloc((size_t)(ni > 0 ? ni : 1)*sizeof(int));
++    if (!by_number || !max_number) {
++        free(by_number); free(max_number); goto fail;
++    }
++    for (int i=0;i<ni;i++) {
++        max_number[i]=-1;
++        for (int k=nlte->nlte_ion_level_offset[i];
++             k<nlte->nlte_ion_level_offset[i+1];k++) {
++            int gl=nlte->nlte_to_global_level[k];
++            if (gl >= 0 && gl < atom->n_levels &&
++                atom->level_num[gl] > max_number[i])
++                max_number[i]=atom->level_num[gl];
++        }
++        if (max_number[i] >= 0) {
++            by_number[i]=(int *)malloc((size_t)(max_number[i]+1)*sizeof(int));
++            if (!by_number[i]) {
++                for (int j=0;j<i;j++) free(by_number[j]);
++                free(by_number); free(max_number); goto fail;
++            }
++            for (int k=0;k<=max_number[i];k++) by_number[i][k]=-1;
++            for (int k=nlte->nlte_ion_level_offset[i];
++                 k<nlte->nlte_ion_level_offset[i+1];k++) {
++                int gl=nlte->nlte_to_global_level[k];
++                if (gl >= 0 && gl < atom->n_levels) {
++                    int number=atom->level_num[gl];
++                    if (number >= 0 && number <= max_number[i])
++                        by_number[i][number]=k;
++                }
++            }
++        }
++    }
++    for (int l=0;l<opac->n_lines;l++) {
++        if (!atom->line_A_ul || !(atom->line_A_ul[l] > 0.0) ||
++            !isfinite(atom->line_A_ul[l]))
++            stats->undefined_reason[l]|=CMF_EMISS_UNDEF_A_UL;
++        int ion=nlte->nlte_line_map ? nlte->nlte_line_map[l] : -1;
++        if (ion < 0 || ion >= ni) {
++            stats->undefined_reason[l]|=CMF_EMISS_UNDEF_NO_NLTE_LINE;
++            continue;
++        }
++        int number=atom->line_level_upper[l];
++        if (number < 0 || number > max_number[ion] || !by_number[ion] ||
++            by_number[ion][number] < 0) {
++            stats->undefined_reason[l]|=CMF_EMISS_UNDEF_UPPER_LEVEL;
++            continue;
++        }
++        upper[l]=by_number[ion][number];
++    }
++    for (int i=0;i<ni;i++) free(by_number[i]);
++    free(by_number); free(max_number);
++
++    {
++        CMFEmissBContext ctx={nlte,atom,stats,upper,active};
++        cmfgen_assemble_impl(cs,geo,opac,bf,plasma,&ctx);
++    }
++    for (int l=0;l<opac->n_lines;l++) {
++        if (!active[l]) {
++            stats->undefined_reason[l]=0;
++            stats->undefined_shell_count[l]=0;
++            continue;
++        }
++        stats->active_transition_count++;
++        if (stats->undefined_reason[l]) stats->undefined_transition_count++;
++        else stats->defined_transition_count++;
++    }
++    stats->a_reference_contribution_fraction =
++        stats->a_reference_line_power > 0.0
++        ? stats->a_reference_covered_line_power /
++          stats->a_reference_line_power : 0.0;
++    free(upper); free(active);
++    if (seed_line >= 0 && stats->seed_hits != 1) {
++        fprintf(stderr,"[EMISS-AB][FAIL] seeded transition line=%d shell=%d "
++                       "was hit %llu times (expected 1)\n",seed_line,seed_shell,
++                       (unsigned long long)stats->seed_hits);
++        return -1;
++    }
++    return 0;
++
++fail:
++    free(upper); free(active);
++    cmfgen_emiss_ab_stats_free(stats);
++    return -1;
++}
++
+ /* ------------------------------------------------------------ */
+ /* One short-characteristics formal solution along all tangent rays for a
+  * single frequency bin b, given the current total source S[shell]. Accumulates

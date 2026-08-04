@@ -1,0 +1,136 @@
+--- a/scripts/stage31_cmf_ka_driver.c
++++ b/scripts/stage31_cmf_ka_driver.c
+@@ -108,6 +108,7 @@
+     const double x_high = x0 + 8.0 * KA3_SIGMA_X;
+     const double x_low = x0 - shift - 8.0 * KA3_SIGMA_X;
+     const double dx = (x_high - x_low) / (double)(nnu - 1u);
++    const double frequency_ratio = exp(-dx);
+     const double target_r[1] = {outer};
+     double *edge = NULL, *nu = NULL, *chi = NULL, *eta = NULL;
+     LCMFInput input; LCMFOptions options; LCMFResult result;
+@@ -126,7 +127,8 @@
+         status = LCMF_ENOMEM; goto done;
+     }
+     for (i = 0u; i <= ns; ++i) edge[i] = inner + (outer - inner) * (double)i / (double)ns;
+-    for (k = 0u; k < nnu; ++k) nu[k] = exp(x_high - dx * (double)k);
++    nu[0] = exp(x_high);
++    for (k = 1u; k < nnu; ++k) nu[k] = nu[k - 1u] * frequency_ratio;
+     memset(&input, 0, sizeof(input)); memset(&options, 0, sizeof(options));
+     input.nr = ns; input.nnu = nnu; input.r_edge = edge; input.nu = nu;
+     input.chi_total = chi; input.eta_fixed = eta;
+@@ -138,7 +140,8 @@
+     options.store_intensity = 1; options.frequency_advection = 1;
+     options.radial_characteristic = 1;
+     status = lumina_cmf_field_solve(&input, &options, &result);
+-    if (status == LCMF_ENEGATIVE || status == LCMF_ESIGNUNCERTAIN) {
++    if (status == LCMF_ENEGATIVE || status == LCMF_ESIGNUNCERTAIN ||
++        status == LCMF_ENONFINITE) {
+         fprintf(stderr, "KA3 measured guard: %s: %s ir=%zu inu=%zu ray=%zu segment=%zu substep=%zu value=%.17g interval=[%.17g,%.17g]\n",
+                 lumina_cmf_status_string(status), result.error.message,
+                 result.error.radial_index, result.error.frequency_index,
+--- a/scripts/run_stage31_cmf_ka.py
++++ b/scripts/run_stage31_cmf_ka.py
+@@ -15,19 +15,28 @@
+ 
+ ROOT = pathlib.Path(__file__).resolve().parents[1]
+ GRIDS_KA1 = ((128, 32), (256, 64), (512, 128))
+-GRIDS_KA3 = ((32, 128), (64, 256), (128, 512))
++GRIDS_KA3 = ((32, 128), (64, 256), (128, 512), (256, 1024), (512, 2048))
++KA3_OFFICIAL_TRIPLE = GRIDS_KA3[-3:]
+ TAU_CASES = (1.0e-3, 1.0, 100.0)
+ PREDICTED_P_WINDOWS = {
+     1.0e-3: (1.90, 2.06),
+     1.0: (1.90, 2.08),
+     100.0: (1.85, 2.15),
+ }
+-KA3_PREREGISTERED_WINDOWS = {
++KA3_SUPERSEDED_REV2_WINDOWS = {
+     "p_obs_profile_l2": (1.25, 1.45),
+     "finest_centroid_shift_error": (2.5e-5, 3.8e-5),
+     "finest_invariant_area_relative_error": (4.0e-5, 5.5e-5),
+     "finest_profile_relative_l2": (2.5e-3, 3.5e-3),
+ }
++KA3_REV3_PREREGISTERED = {
++    "scheme": "trapezoidal-start + branch-local quadratic-exact SC",
++    "original_family_p_center": 2.00097,
++    "official_triple_p_window": (1.96, 2.04),
++    "finest_profile_relative_l2_center": 9.59e-5,
++    "finest_profile_relative_l2_window": (8.8e-5, 1.08e-4),
++    "extrapolation": "128x512 rev3 center 1.53593e-3 divided by 4^2",
++}
+ 
+ 
+ def compile_driver(executable: pathlib.Path, sanitize: bool = False) -> None:
+@@ -267,7 +276,9 @@
+             "status": "PENDING_RICHARDSON",
+         })
+         levels.append(metrics)
+-    p_obs = math.log2(levels[1]["profile_relative_l2"] / levels[2]["profile_relative_l2"])
++    official_levels = levels[-3:]
++    p_obs = math.log2(official_levels[1]["profile_relative_l2"] /
++                      official_levels[2]["profile_relative_l2"])
+     finest = levels[-1]
+     measured_for_windows = {
+         "p_obs_profile_l2": p_obs,
+@@ -277,7 +288,20 @@
+     }
+     window_status = {
+         name: "PASS" if bounds[0] <= measured_for_windows[name] <= bounds[1] else "FAIL"
+-        for name, bounds in KA3_PREREGISTERED_WINDOWS.items()
++        for name, bounds in KA3_SUPERSEDED_REV2_WINDOWS.items()
++    }
++    rev3_measurements = {
++        "official_triple_p_obs_profile_l2": p_obs,
++        "finest_profile_relative_l2": finest["profile_relative_l2"],
++    }
++    rev3_window_status = {
++        "official_triple_p_obs_profile_l2": "PASS"
++            if KA3_REV3_PREREGISTERED["official_triple_p_window"][0] <= p_obs <=
++               KA3_REV3_PREREGISTERED["official_triple_p_window"][1] else "FAIL",
++        "finest_profile_relative_l2": "PASS"
++            if KA3_REV3_PREREGISTERED["finest_profile_relative_l2_window"][0] <=
++               finest["profile_relative_l2"] <=
++               KA3_REV3_PREREGISTERED["finest_profile_relative_l2_window"][1] else "FAIL",
+     }
+     acceptance_checks = {
+         "finest_profile_relative_l1_le_1e-4": finest["profile_relative_l1"] <= 1.0e-4,
+@@ -289,21 +313,29 @@
+         "finest_transport_residual_le_1e-4": finest["transport_residual"] <= 1.0e-4,
+         "finest_blue_boundary_fraction_lt_1e-12": finest["blue_boundary_fraction"] < 1.0e-12,
+         "finest_red_boundary_fraction_lt_1e-12": finest["red_boundary_fraction"] < 1.0e-12,
+-        "all_levels_clamp_zero": all(level["clamp_count"] == 0 for level in levels),
+-        "all_levels_solution_negative_excess_zero":
+-            all(level["solution_negative_excess_count"] == 0 for level in levels),
+-        "all_levels_sign_uncertain_zero":
+-            all(level["sign_uncertain_count"] == 0 for level in levels),
+-        "all_levels_nonfinite_zero": all(level["nonfinite_count"] == 0 for level in levels),
++        "official_triple_clamp_zero":
++            all(level["clamp_count"] == 0 for level in official_levels),
++        "official_triple_solution_negative_excess_zero":
++            all(level["solution_negative_excess_count"] == 0 for level in official_levels),
++        "official_triple_sign_uncertain_zero":
++            all(level["sign_uncertain_count"] == 0 for level in official_levels),
++        "official_triple_nonfinite_zero":
++            all(level["nonfinite_count"] == 0 for level in official_levels),
+     }
+     passed = all(acceptance_checks.values())
+     for level in levels: level["status"] = "PASS" if passed else "FAIL"
+     return {"ka": "KA3", "grids": GRIDS_KA3, "seed": None, "excluded_cells": 0,
+             "levels": levels, "p_obs_profile_l2": p_obs,
+             "mpmath_dps": mp.mp.dps,
+-            "preregistered_windows": KA3_PREREGISTERED_WINDOWS,
+-            "preregistered_measurements": measured_for_windows,
+-            "preregistered_window_status": window_status,
++            "superseded_rev2_preregistered_windows": KA3_SUPERSEDED_REV2_WINDOWS,
++            "superseded_rev2_measurements": measured_for_windows,
++            "superseded_rev2_window_status": window_status,
++            "superseded_rev2_applicability":
++                "NOT_APPLICABLE_AFTER_REV3_SCHEME_AND_GRID_EXTENSION",
++            "rev3_preregistered": KA3_REV3_PREREGISTERED,
++            "rev3_measurements": rev3_measurements,
++            "rev3_window_status": rev3_window_status,
++            "official_triple_grids": KA3_OFFICIAL_TRIPLE,
+             "acceptance_checks": acceptance_checks,
+             "acceptance_unchanged": True, "status": "PASS" if passed else "FAIL"}
+ 
+

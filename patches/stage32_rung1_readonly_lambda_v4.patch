@@ -1,0 +1,1262 @@
+diff --git a/Makefile b/Makefile
+index 5fb159e..38a72ac 100644
+--- a/Makefile
++++ b/Makefile
+@@ -102,6 +102,13 @@ selftest_cmf_linepop_dump: scripts/cmf_linepop_writer_fixture.c src/lumina_cmfge
+ 		-Wl,--gc-sections -o selftest_cmf_linepop_dump \
+ 		scripts/cmf_linepop_writer_fixture.c src/lumina_cmfgen.c $(LDFLAGS)
+ 
++# Stage 3.2 Rung 1: model-free writer + KA-3.2.3 positive/negative controls.
++selftest_stage32_rung1: scripts/stage32_rung1_writer_fixture.c src/lumina_cmfgen.c src/lumina_cmfgen.h $(HEADERS)
++	$(CC) -O2 -Wall -Wextra -std=c11 -D_GNU_SOURCE -ffunction-sections -fdata-sections -Isrc \
++		-Wl,--gc-sections -o selftest_stage32_rung1_writer \
++		scripts/stage32_rung1_writer_fixture.c src/lumina_cmfgen.c $(LDFLAGS)
++	python3 scripts/stage32_rung1_selftest.py
++
+ # E5 in-situ A/B/B2 assembly fixture, including a seeded n_u corruption.
+ selftest_emiss_ab_insitu: tests/emiss_ab_insitu_fixture.c src/lumina_cmfgen.c src/lumina_cmfgen.h $(HEADERS)
+ 	$(CC) -O2 -Wall -Wextra -std=c11 -D_GNU_SOURCE -ffunction-sections -fdata-sections -Isrc \
+diff --git a/scripts/stage32_rung1_check.py b/scripts/stage32_rung1_check.py
+new file mode 100755
+index 0000000..eb1e4eb
+--- /dev/null
++++ b/scripts/stage32_rung1_check.py
+@@ -0,0 +1,191 @@
++#!/usr/bin/env python3
++"""Fail-closed reader and independent Rung-1 branch/energy judge."""
++from __future__ import annotations
++import argparse, hashlib, json, re, struct
++from pathlib import Path
++import numpy as np
++
++MAGIC=b"LCMFR101";ENDIAN=0x01020304;VERSION=3;C=2.99792458e10
++HEADER=struct.Struct("<8sIIQQQIIIIQdddII")
++ROW=np.dtype([("line","<u4"),("shell","<u4"),("bin","<u4"),("primary_status","<u4"),
++              ("lambda_A","<f8"),("tau","<f8"),("beta","<f8"),
++              ("eps0_raw","<f8"),("eps_prime","<f8"),("eps_applied","<f8"),
++              ("chi_es","<f8"),("chi_tot","<f8"),("lambda_star","<f8"),
++              ("rho_local","<f8"),
++              ("source_S","<f8"),("eta_energy","<f8"),
++              ("branch_evidence","<u4"),("disposition","<u4")])
++NAMES=("legacy_source","thick_exempt","rate_shape_replaced","scalar_rescaled")
++EV_REACHED=1;EV_ELIGIBLE=2;EV_THICK=4;EV_EPAY2=8
++EV_ACCW=16;EV_HOT=32;EV_BRANCH=64;EV_ASSEMBLED=128
++class R1Error(ValueError): pass
++
++def read_check(path: Path, *, expected_iteration: int,
++               expected_field_generation: int,
++               expect_unscaled_energy: bool=False):
++    path=Path(path);raw=path.read_bytes()
++    if len(raw)<HEADER.size: raise R1Error("truncated header")
++    vals=HEADER.unpack_from(raw)
++    (magic,endian,version,it,gen,lambda_gen,ns,nb,nl,reserved,nrows,llo,lhi,texp,
++     rowbytes,flags)=vals
++    if (magic,endian,version)!=(MAGIC,ENDIAN,VERSION): raise R1Error("schema identity mismatch")
++    if reserved or flags or rowbytes!=ROW.itemsize or len(raw)!=HEADER.size+nrows*rowbytes:
++        raise R1Error("header/length mismatch")
++    match=re.search(r"\.iter([0-9]{3,})$",path.name)
++    if not match or int(match.group(1))!=it: raise R1Error("filename/header generation mismatch")
++    if it!=expected_iteration or gen!=expected_field_generation:
++        raise R1Error("iteration/field_generation expectation mismatch")
++    if lambda_gen!=gen:
++        raise R1Error(f"chi/lambda generation mismatch: assembly={gen} lambda={lambda_gen}")
++    if not (gen>0 and ns>0 and nb>0 and nl>0 and (llo,lhi)==(600.0,3000.0)
++            and np.isfinite(texp) and texp>0):
++        raise R1Error("invalid dimensions/window/lineage")
++    rows=np.frombuffer(raw,dtype=ROW,count=nrows,offset=HEADER.size).copy()
++    finite=("lambda_A","tau","beta","eps0_raw","eps_prime","eps_applied",
++            "chi_es","chi_tot","lambda_star","source_S","eta_energy")
++    if any(not np.isfinite(rows[n]).all() for n in finite): raise R1Error("nonfinite row")
++    if (np.any(rows["tau"]<=0) or np.any(rows["beta"]<=0) or np.any(rows["beta"]>1)
++        or np.any(rows["lambda_star"]<0) or np.any(rows["lambda_star"]>=1)
++        or np.any(rows["eps0_raw"]<0) or np.any(rows["eps0_raw"]>1)
++        or np.any(rows["eps_prime"]<0) or np.any(rows["eps_prime"]>1)
++        or np.any(rows["chi_es"]<0) or np.any(rows["chi_tot"]<0)
++        or np.any(rows["source_S"]<0) or np.any(rows["eta_energy"]<0)
++        or np.any(rows["primary_status"]>1)
++        or np.any(rows["disposition"]>3) or np.any(rows["branch_evidence"]>255)):
++        raise R1Error("row outside exact mathematical domain")
++    beta_ref=-np.expm1(-rows["tau"])/rows["tau"]
++    if not np.allclose(rows["beta"],beta_ref,rtol=1e-12,atol=0):
++        raise R1Error("KA-3.2.3 FAIL: Sobolev beta differs from analytic oracle")
++    eps_prime_ref=rows["eps0_raw"]/(rows["eps0_raw"]+
++                      (1.0-rows["eps0_raw"])*rows["beta"])
++    if not np.allclose(rows["eps_prime"],eps_prime_ref,rtol=2e-14,atol=0):
++        raise R1Error("secondary eps_prime identity failure")
++    defined=rows["primary_status"]==0;undefined=~defined
++    if np.any(rows["chi_tot"][defined]==0) or np.any(~np.isfinite(rows["rho_local"][defined])):
++        raise R1Error("defined primary row has zero chi_tot or nonfinite rho")
++    if np.any(rows["chi_tot"][undefined]!=0) or np.any(~np.isnan(rows["rho_local"][undefined])):
++        raise R1Error("chi_tot==0 was not recorded as undefined")
++    rho_ref=(rows["chi_es"][defined]/rows["chi_tot"][defined])*rows["lambda_star"][defined]
++    if not np.array_equal(rows["rho_local"][defined],rho_ref):
++        raise R1Error("rho_local production-array identity failure")
++    if np.any(rows["rho_local"][defined]<0):
++        raise R1Error("negative local spectral radius")
++
++    # This independent formula is valid only for an externally asserted
++    # eps_phys=0 run.  For eps_phys=1 the checker deliberately does not copy
++    # production's epsilon branch; the authoritative cell census below judges
++    # whether both owners received the exact eta_l assembled by production.
++    if expect_unscaled_energy:
++        frac=np.where(rows["tau"]>1e-6,-np.expm1(-rows["tau"]),rows["tau"])
++        line_nu=C/(rows["lambda_A"]*1e-8)
++        assembled=(rows["branch_evidence"]&EV_ASSEMBLED)!=0
++        eta_ref=frac*line_nu/(C*texp)*rows["source_S"]
++        eta_ref=np.where(assembled,eta_ref,0.0)
++        if not np.allclose(rows["eta_energy"],eta_ref,rtol=8e-15,atol=0):
++            raise R1Error("line energy FAIL: not production w_l*S_l*dnu for eps_phys=0")
++
++    # The disposition is checked from separately recorded branch-site facts.
++    # In particular rate_shape requires acc_w>0; a reconstructed predicate
++    # that omits EV_ACCW cannot pass this oracle.
++    ev=rows["branch_evidence"].astype(np.uint32)
++    if np.any((ev&EV_REACHED)==0) or np.any((ev&EV_BRANCH)==0):
++        raise R1Error("hard gate: missing branch-site evidence")
++    expected=np.zeros(nrows,dtype=np.uint32)
++    eligible=(ev&EV_ELIGIBLE)!=0;thick=(ev&EV_THICK)!=0
++    rate=((ev&EV_EPAY2)!=0)&((ev&EV_ACCW)!=0)&((ev&EV_HOT)!=0)
++    expected[eligible&thick]=1
++    expected[eligible&~thick&rate]=2
++    expected[eligible&~thick&~rate]=3
++    if not np.array_equal(rows["disposition"],expected):
++        raise R1Error("hard gate FAIL: branch-site disposition mismatch (including acc_w)")
++
++    # KA-3.2.3 closed-form S,Jbar, independently using beta_ref.
++    jext=0.37;B=1.41;eps=rows["eps0_raw"]
++    D=eps+rows["beta"]-eps*rows["beta"];Dr=eps+beta_ref-eps*beta_ref
++    S=((1-eps)*rows["beta"]*jext+eps*B)/D
++    Sr=((1-eps)*beta_ref*jext+eps*B)/Dr
++    J=(1-rows["beta"])*S+rows["beta"]*jext
++    Jr=(1-beta_ref)*Sr+beta_ref*jext
++    scaleS=np.maximum(np.abs(Sr),np.finfo(float).tiny)
++    scaleJ=np.maximum(np.abs(Jr),np.finfo(float).tiny)
++    if np.max(np.abs(S-Sr)/scaleS)>1e-12 or np.max(np.abs(J-Jr)/scaleJ)>1e-12:
++        raise R1Error("KA-3.2.3 FAIL: analytic S/Jbar relative error > 1e-12")
++
++    mf=json.loads(Path(str(path)+".manifest.json").read_text())
++    if mf.get("schema")!="LCMFR101-v3" or mf.get("sha256")!=hashlib.sha256(raw).hexdigest():
++        raise R1Error("manifest schema/SHA mismatch")
++    if (mf.get("iteration")!=it or mf.get("field_generation")!=gen or
++        mf.get("lambda_generation")!=lambda_gen or mf.get("rows")!=nrows):
++        raise R1Error("manifest generation/count mismatch")
++    eps_floor=float(mf.get("eps_floor",np.nan));eps_cap=float(mf.get("eps_cap",np.nan))
++    if not np.isfinite(eps_floor) or not np.isfinite(eps_cap):
++        raise R1Error("secondary epsilon limits missing/nonfinite")
++    eps_applied_ref=np.where(rows["eps_prime"]<eps_floor,eps_floor,rows["eps_prime"])
++    eps_applied_ref=np.where(eps_applied_ref>eps_cap,eps_cap,eps_applied_ref)
++    if not np.array_equal(rows["eps_applied"],eps_applied_ref):
++        raise R1Error("secondary eps_applied identity failure")
++    eps_diff=int(np.count_nonzero(rows["eps_applied"]!=rows["eps_prime"]))
++    rho_undefined=int(np.count_nonzero(undefined))
++    if (mf.get("eps_applied_diff_rows")!=eps_diff or
++        mf.get("rho_undefined_chi_tot_zero_rows")!=rho_undefined):
++        raise R1Error("secondary clamp/primary undefined census mismatch")
++    counts={name:int(np.count_nonzero(rows["disposition"]==i)) for i,name in enumerate(NAMES)}
++    energies={name:float(rows["eta_energy"][rows["disposition"]==i].sum(dtype=np.longdouble))
++              for i,name in enumerate(NAMES)}
++    if mf.get("disposition_row_counts")!=counts: raise R1Error("disposition count census mismatch")
++    me=mf.get("disposition_energy",{})
++    for name in NAMES:
++        if not np.isclose(me.get(name,np.nan),energies[name],rtol=2e-15,atol=0):
++            raise R1Error(f"disposition energy census mismatch: {name}")
++    selected=float(rows["eta_energy"].sum(dtype=np.longdouble))
++    authoritative=float(mf.get("authoritative_pre_epay_window_energy",np.nan))
++    boundary=float(mf.get("boundary_nonselected_line_energy",np.nan))
++    stated_selected=float(mf.get("selected_row_energy",np.nan))
++    residual=float(mf.get("closure_residual",np.nan))
++    if not all(np.isfinite(x) and x>=0 for x in (authoritative,boundary,stated_selected)):
++        raise R1Error("independent energy census missing/nonfinite")
++    if not np.isclose(stated_selected,selected,rtol=2e-15,atol=0):
++        raise R1Error("selected-row energy census mismatch")
++    if not np.isclose(residual,authoritative-selected-boundary,rtol=0,
++                      atol=32*np.finfo(float).eps*max(authoritative,selected+boundary,np.finfo(float).tiny)):
++        raise R1Error("closure residual identity mismatch")
++    tol=64*np.finfo(float).eps*(nl+1)*max(authoritative,selected+boundary,np.finfo(float).tiny)
++    if abs(residual)>tol:
++        raise R1Error("authoritative pre-EPAY energy census does not close: "
++                      f"residual={residual:.17g} tol={tol:.17g}")
++    if counts["rate_shape_replaced"]<=0 or not (energies["rate_shape_replaced"]>0):
++        raise R1Error("hard gate: rate_shape_replaced lacks count/energy evidence")
++    target=(rows["shell"]==8)&defined
++    target_energy=float(rows["eta_energy"][target].sum(dtype=np.longdouble))
++    median=None
++    if target_energy>0:
++        order=np.argsort(rows["rho_local"][target])
++        rv=rows["rho_local"][target][order];ew=rows["eta_energy"][target][order]
++        median=float(rv[np.searchsorted(np.cumsum(ew,dtype=np.longdouble),target_energy/2)])
++    gain=None if median is None or median==1.0 else 1.0/(1.0-median)
++    pred1=median is not None and 0.90<=median<0.98
++    pred2=gain is not None and 10.0<=gain<=50.0
++    return {"rows":int(nrows),"sha256":mf["sha256"],"field_generation":int(gen),
++            "lambda_generation":int(lambda_gen),
++            "disposition_counts":counts,"disposition_energy":energies,"KA-3.2.3":"PASS",
++            "authoritative_energy":authoritative,"boundary_nonselected_energy":boundary,
++            "closure_residual":residual,"eps_applied_diff_rows":eps_diff,
++            "rho_undefined_chi_tot_zero_rows":rho_undefined,
++            "rho_target_shell":8,"rho_target_energy":target_energy,
++            "rho_energy_weighted_median":median,
++            "geometric_amplification_1_over_1_minus_rho":gain,
++            "prediction_1_status":"MATCH" if pred1 else "OUTSIDE_DISCOVERY",
++            "prediction_2_status":"MATCH" if pred2 else "OUTSIDE_DISCOVERY"}
++
++def main():
++    ap=argparse.ArgumentParser();ap.add_argument("path",type=Path)
++    ap.add_argument("--expected-iteration",type=int,required=True)
++    ap.add_argument("--expected-field-generation",type=int,required=True)
++    ap.add_argument("--expect-eps-phys-zero",action="store_true")
++    a=ap.parse_args()
++    try:
++        print(json.dumps(read_check(a.path,expected_iteration=a.expected_iteration,
++                                    expected_field_generation=a.expected_field_generation,
++                                    expect_unscaled_energy=a.expect_eps_phys_zero),
++                         indent=2,sort_keys=True));return 0
++    except Exception as e: print(f"FAIL: {e}");return 1
++if __name__=="__main__": raise SystemExit(main())
+diff --git a/scripts/stage32_rung1_selftest.py b/scripts/stage32_rung1_selftest.py
+new file mode 100755
+index 0000000..05d4da2
+--- /dev/null
++++ b/scripts/stage32_rung1_selftest.py
+@@ -0,0 +1,125 @@
++#!/usr/bin/env python3
++"""Model-free Rung-1 controls, including required injected defects."""
++from __future__ import annotations
++import hashlib,json,os,shutil,subprocess,tempfile
++from pathlib import Path
++import numpy as np
++from stage32_rung1_check import HEADER,ROW,R1Error,read_check
++
++ITER=10;FIELD_GEN=37
++def run(exe:Path,base:Path,extra=None):
++    env=os.environ.copy()
++    env.update({"LUMINA_CMFGEN_EPS_FLOOR":"0.2","LUMINA_CMFGEN_EPS_CAP":"0.7"})
++    env.update(extra or {})
++    return subprocess.run([str(exe),str(base)],env=env,text=True,capture_output=True)
++def stamped(base:Path,it:int=ITER): return Path(f"{base}.iter{it:03d}")
++def check(path:Path,*,expect_unscaled_energy=False):
++    return read_check(path,expected_iteration=ITER,expected_field_generation=FIELD_GEN,
++                      expect_unscaled_energy=expect_unscaled_energy)
++def expect_fail(path:Path,needle:str,*,expect_unscaled_energy=False):
++    try:
++        check(path,expect_unscaled_energy=expect_unscaled_energy)
++        raise RuntimeError(f"defect was accepted: {needle}")
++    except R1Error as e:
++        if needle not in str(e): raise
++        return str(e)
++
++def rehash(path:Path):
++    mfpath=Path(str(path)+".manifest.json")
++    mf=json.loads(mfpath.read_text())
++    mf["sha256"]=hashlib.sha256(path.read_bytes()).hexdigest()
++    mfpath.write_text(json.dumps(mf,indent=2,sort_keys=True)+"\n")
++
++def main():
++    root=Path(__file__).resolve().parents[1];exe=root/"selftest_stage32_rung1_writer"
++    work=Path(tempfile.mkdtemp(prefix="stage32_r1_",dir="/tmp"));result={}
++    try:
++        good_base=work/"good.bin";p=run(exe,good_base)
++        if p.returncode: raise RuntimeError(p.stderr)
++        good=stamped(good_base)
++        result["positive_eps_phys"]=check(good)
++        result["eps_fixture_coverage"]=p.stderr.splitlines()[0]
++        noeps_base=work/"noeps.bin";p=run(exe,noeps_base,{"S32_FIXTURE_EPS_PHYS":"0"})
++        if p.returncode: raise RuntimeError(p.stderr)
++        result["positive_eps_phys_zero"]=check(stamped(noeps_base),expect_unscaled_energy=True)
++        undefined_base=work/"undefined.bin"
++        p=run(exe,undefined_base,{"S32_SEED_CHI_TOT_ZERO":"1"})
++        if p.returncode: raise RuntimeError(p.stderr)
++        undefined=check(stamped(undefined_base))
++        if undefined["rho_undefined_chi_tot_zero_rows"]<=0:
++            raise RuntimeError("chi_tot==0 undefined fixture was not recorded")
++        result["chi_tot_zero_recorded_undefined"]=undefined["rho_undefined_chi_tot_zero_rows"]
++        try:
++            read_check(good) # public reader must not supply a default generation
++            raise RuntimeError("missing expected_iteration was accepted")
++        except TypeError as e: result["mandatory_keyword_only_refused"]=str(e)
++
++        cases=(("beta_defect","S32_SEED_BETA_DEFECT","KA-3.2.3 FAIL",False),
++               ("disposition_acc_w_defect","S32_SEED_DISPOSITION_DEFECT","branch-site disposition",False),
++               ("opacity_share_defect","S32_SEED_OPACITY_SHARE_DEFECT","line energy FAIL",True),
++               ("thin_numerator_defect","S32_SEED_THIN_NUMERATOR_DEFECT","line energy FAIL",True),
++               ("row_unscaled_defect","S32_SEED_ROW_UNSCALED_DEFECT","does not close",False),
++               ("authoritative_unscaled_defect","S32_SEED_AUTHORITATIVE_UNSCALED_DEFECT","does not close",False))
++        for name,envname,needle,noeps in cases:
++            env={envname:"1"}
++            if noeps: env["S32_FIXTURE_EPS_PHYS"]="0"
++            base=work/f"{name}.bin";p=run(exe,base,env)
++            if p.returncode: raise RuntimeError(f"{name} writer failed before checker: {p.stderr}")
++            result[name+"_negative_control"]=expect_fail(
++                stamped(base),needle,expect_unscaled_energy=noeps)
++
++        olddef=work/"old_definition.bin.iter010"
++        shutil.copy(good,olddef)
++        shutil.copy(Path(str(good)+".manifest.json"),Path(str(olddef)+".manifest.json"))
++        raw=bytearray(olddef.read_bytes())
++        nrows=HEADER.unpack_from(raw)[10]
++        rows=np.frombuffer(raw,dtype=ROW,count=nrows,offset=HEADER.size)
++        rows["rho_local"]=(1.0-rows["eps0_raw"])*(1.0-rows["beta"])
++        olddef.write_bytes(raw);rehash(olddef)
++        result["old_sobolev_definition_negative_control"]=expect_fail(
++            olddef,"rho_local production-array identity failure")
++
++        gen_base=work/"generation_defect.bin"
++        p=run(exe,gen_base,{"S32_SEED_LAMBDA_GENERATION_DEFECT":"1"})
++        if p.returncode==0 or "chi/lambda generation mismatch" not in p.stderr:
++            raise RuntimeError("cross-generation defect was not refused")
++        result["cross_generation_negative_control"]=p.stderr.strip()
++
++        both_base=work/"both_unscaled.bin"
++        p=run(exe,both_base,{"S32_SEED_BOTH_UNSCALED_DEFECT":"1"})
++        if p.returncode: raise RuntimeError(p.stderr)
++        both=check(stamped(both_base))
++        result["both_sides_unscaled_control"]="NOT DETECTED: closure closes when both owners omit epsilon"
++        result["fixture_preregistered_v2_readout"]={
++            "rho_energy_weighted_median":result["positive_eps_phys"]["rho_energy_weighted_median"],
++            "geometric_amplification_1_over_1_minus_rho":result["positive_eps_phys"]["geometric_amplification_1_over_1_minus_rho"],
++            "prediction_1_status":result["positive_eps_phys"]["prediction_1_status"],
++            "prediction_2_status":result["positive_eps_phys"]["prediction_2_status"]}
++
++        g11_base=work/"g11.bin";p=run(exe,g11_base,{"S32_FIXTURE_ITER":"11"})
++        if p.returncode: raise RuntimeError(p.stderr)
++        try:
++            read_check(stamped(g11_base,11),expected_iteration=ITER,
++                       expected_field_generation=FIELD_GEN)
++            raise RuntimeError("iteration mismatch accepted")
++        except R1Error as e: result["iteration_mismatch_refused"]=str(e)
++        try:
++            read_check(good,expected_iteration=ITER,expected_field_generation=FIELD_GEN+1)
++            raise RuntimeError("independent field-generation mismatch accepted")
++        except R1Error as e: result["field_generation_mismatch_refused"]=str(e)
++
++        tamper=work/"tamper.bin.iter010";shutil.copy(good,tamper)
++        shutil.copy(Path(str(good)+".manifest.json"),Path(str(tamper)+".manifest.json"))
++        raw=bytearray(tamper.read_bytes());raw[-9]^=1;tamper.write_bytes(raw)
++        try:
++            read_check(tamper,expected_iteration=ITER,expected_field_generation=FIELD_GEN)
++            raise RuntimeError("tamper accepted")
++        except R1Error as e: result["payload_tamper_refused"]=str(e)
++        p=run(exe,good_base)
++        if p.returncode==0: raise RuntimeError("generation overwrite accepted")
++        result["generation_overwrite_refused"]=p.stderr.strip()
++        result["verdict"]="PASS";print(json.dumps(result,indent=2,sort_keys=True));return 0
++    except Exception as e:
++        result["verdict"]=f"FAIL: {e}";print(json.dumps(result,indent=2,sort_keys=True));return 1
++    finally: shutil.rmtree(work,ignore_errors=True)
++if __name__=="__main__": raise SystemExit(main())
+diff --git a/scripts/stage32_rung1_writer_fixture.c b/scripts/stage32_rung1_writer_fixture.c
+new file mode 100644
+index 0000000..4075e3b
+--- /dev/null
++++ b/scripts/stage32_rung1_writer_fixture.c
+@@ -0,0 +1,143 @@
++/* Stage 3.2 Rung 1 model-free writer fixture.  No GPU/model/solver run. */
++#include "lumina_cmfgen.h"
++#include <math.h>
++#include <stdio.h>
++#include <stdlib.h>
++#include <string.h>
++
++#define NS 9
++#define NB 10
++#define NL 8
++#define EPS_FLOOR 0.2
++#define EPS_CAP 0.7
++
++static double fixture_eps0(int l,double n) {
++    static const double by_line[NL]={0.05,0.09,0.14,0.22,0.31,0.07,0.45,0.37};
++    double shell_scale=(n < 1e-6) ? 0.25 : (n < 1e-3) ? 1.0 : 2.0;
++    return by_line[l]*shell_scale;
++}
++double radeq_line_eps_phys(int l,double n,double T,double t) {
++    (void)T;
++    double eps0=fixture_eps0(l,n),beta=-expm1(-t)/t;
++    return eps0/(eps0+(1.0-eps0)*beta);
++}
++int radeq_line_local_response(int line,double ne,double Te,double tau,
++                              double *beta,double *eps0) {
++    (void)line;(void)Te;
++    if (!beta || !eps0 || !(tau > 0.0) || !(ne >= 0.0) || !(ne <= 1.0)) return -1;
++    *beta=-expm1(-tau)/tau;
++    if (getenv("S32_SEED_BETA_DEFECT")) *beta*=0.5;
++    *eps0=fixture_eps0(line,ne);
++    return (isfinite(*beta) && *beta > 0.0 && *beta <= 1.0) ? 0 : -1;
++}
++
++#define EV_REACHED 1U
++#define EV_ELIGIBLE 2U
++#define EV_THICK 4U
++#define EV_EPAY2 8U
++#define EV_ACCW 16U
++#define EV_HOT 32U
++#define EV_BRANCH 64U
++
++int main(int argc,char **argv) {
++    if (argc != 2) { fprintf(stderr,"usage: %s OUTPUT_BASE\n",argv[0]); return 2; }
++    const double C=2.99792458e10, texp=1683072.0;
++    const double wave[NL]={3050.0,3000.0,2000.0,1990.0,1500.0,1000.0,600.0,590.0};
++    const double tau_axis[NL]={1e-3,1e-16,1e-6,1e-3,1.0,1e2,2e16,1e4};
++    const double eps_axis[NS]={1e-8,3e-8,1e-6,1e-5,1e-4,1e-3,3e-3,1e-2,3e-2};
++    double nu_min=C/(3300e-8),nu_max=C/(550e-8);
++    double dl=log(nu_max/nu_min)/NB,nu[NB],dnu[NB];
++    for(int b=0;b<NB;b++){nu[b]=nu_min*exp(((double)b+0.5)*dl);dnu[b]=nu[b]*dl;}
++    double line_nu[NL],tau[NL*NS],line_source[NL*NS];
++    double chi[NS*NB],chi_es[NS*NB],chi_tot[NS*NB],lambda_star[NS*NB];
++    double eta[NS*NB],boundary[NS*NB],line_eta[NL*NS];
++    int slot[NL],nsel=0;
++    unsigned char disp[NS*NB],evidence[NS*NB];
++    memset(chi,0,sizeof chi);memset(eta,0,sizeof eta);
++    memset(boundary,0,sizeof boundary);memset(line_eta,0,sizeof line_eta);
++    double win_lo=C/(3000e-8),win_hi=C/(600e-8);
++    int blo=(int)floor(log(win_lo/nu_min)/dl),bhi=(int)floor(log(win_hi/nu_min)/dl);
++    for(int l=0;l<NL;l++){
++        line_nu[l]=C/(wave[l]*1e-8);
++        slot[l]=(line_nu[l]>=win_lo && line_nu[l]<=win_hi)?nsel++:-1;
++    }
++    int thin_defect=getenv("S32_SEED_THIN_NUMERATOR_DEFECT")!=NULL;
++    int eps_phys=!getenv("S32_FIXTURE_EPS_PHYS") ||
++                 atoi(getenv("S32_FIXTURE_EPS_PHYS"))!=0;
++    int row_unscaled=getenv("S32_SEED_ROW_UNSCALED_DEFECT")!=NULL;
++    int auth_unscaled=getenv("S32_SEED_AUTHORITATIVE_UNSCALED_DEFECT")!=NULL;
++    int both_unscaled=getenv("S32_SEED_BOTH_UNSCALED_DEFECT")!=NULL;
++    int floor_hits=0,interior_hits=0,cap_hits=0;
++    for(int s=0;s<NS;s++) for(int l=0;l<NL;l++) {
++        double t=tau_axis[l];tau[l*NS+s]=t;
++        double S=(1.0+l)*(1.0+s)*1e-7;line_source[l*NS+s]=S;
++        if (t<=1e-12) continue; /* production assembly predicate, not row predicate */
++        int b=(int)floor(log(line_nu[l]/nu_min)/dl);
++        double frac=(t>1e-6 || thin_defect)?-expm1(-t):t;
++        double w=frac*line_nu[l]/(C*texp*dnu[b]);
++        double eta_l=w*S;
++        if(eps_phys) {
++            double el=radeq_line_eps_phys(l,eps_axis[s],1e4,t);
++            if(el < EPS_FLOOR) { el=EPS_FLOOR;floor_hits++; }
++            else if(el > EPS_CAP) { el=EPS_CAP;cap_hits++; }
++            else interior_hits++;
++            eta_l=w*el*S;
++        }
++        double row_eta=(row_unscaled || both_unscaled)?w*S:eta_l;
++        double auth_eta=(auth_unscaled || both_unscaled)?w*S:eta_l;
++        chi[s*NB+b]+=w;eta[s*NB+b]+=auth_eta;
++        if(slot[l]>=0) line_eta[slot[l]*NS+s]+=row_eta;
++        else if(b==blo || b==bhi) boundary[s*NB+b]+=row_eta;
++    }
++    for(int s=0;s<NS;s++) for(int b=0;b<NB;b++) {
++        size_t q=(size_t)s*NB+b;
++        if(b==6) { disp[q]=3;evidence[q]=EV_REACHED|EV_ELIGIBLE|EV_EPAY2|
++                                      EV_HOT|EV_BRANCH; }
++        else switch(b%4) {
++        case 0: disp[q]=0;evidence[q]=EV_REACHED|EV_BRANCH;break;
++        case 1: disp[q]=1;evidence[q]=EV_REACHED|EV_ELIGIBLE|EV_THICK|
++                                    EV_EPAY2|EV_ACCW|EV_HOT|EV_BRANCH;break;
++        case 2: disp[q]=2;evidence[q]=EV_REACHED|EV_ELIGIBLE|EV_EPAY2|
++                                    EV_ACCW|EV_HOT|EV_BRANCH;break;
++        default:disp[q]=3;evidence[q]=EV_REACHED|EV_ELIGIBLE|EV_EPAY2|
++                                    EV_HOT|EV_BRANCH;break; /* acc_w==0 */
++        }
++        if(getenv("S32_SEED_DISPOSITION_DEFECT") && disp[q]==3) disp[q]=2;
++    }
++    if(getenv("S32_SEED_OPACITY_SHARE_DEFECT")) {
++        for(int s=0;s<NS;s++) for(int l=0;l<NL;l++) if(slot[l]>=0 && tau[l*NS+s]>1e-12) {
++            int b=(int)floor(log(line_nu[l]/nu_min)/dl);
++            double t=tau[l*NS+s];double frac=(t>1e-6)?-expm1(-t):t;
++            double w=frac*line_nu[l]/(C*texp*dnu[b]);
++            line_eta[slot[l]*NS+s]=eta[s*NB+b]*(w/chi[s*NB+b]);
++        }
++    }
++    for(int s=0;s<NS;s++) for(int b=0;b<NB;b++) {
++        size_t q=(size_t)s*NB+b;
++        double ratio=0.94+0.01*(double)(b%5);
++        chi_tot[q]=1.0+chi[q];
++        chi_es[q]=ratio*chi_tot[q];
++        lambda_star[q]=0.98-0.002*(double)(s%4);
++    }
++    if(getenv("S32_SEED_CHI_TOT_ZERO")) chi_tot[(size_t)8*NB+6]=0.0;
++    double rin[NS],rout[NS],Te[NS],ne[NS];
++    for(int s=0;s<NS;s++){rin[s]=1e14*(s+1);rout[s]=rin[s]+1e14;Te[s]=1e4;ne[s]=eps_axis[s];}
++    Geometry geo;CMFGENState cs;OpacityState op;PlasmaState pl;
++    memset(&geo,0,sizeof geo);memset(&cs,0,sizeof cs);memset(&op,0,sizeof op);memset(&pl,0,sizeof pl);
++    geo.n_shells=NS;geo.time_explosion=texp;geo.r_inner=rin;geo.r_outer=rout;
++    cs.n_shells=NS;cs.n_bins=NB;cs.nu_min=nu_min;cs.nu_max=nu_max;cs.d_log_nu=dl;
++    cs.nu=nu;cs.dnu=dnu;cs.chi_line=chi;cs.chi_es=chi_es;cs.chi_tot=chi_tot;
++    cs.lambda_star=lambda_star;cs.stage32_eta_pre_epay=eta;
++    cs.stage32_boundary_eta=boundary;cs.stage32_line_eta=line_eta;
++    cs.stage32_line_slot=slot;cs.stage32_line_slot_n=NL;cs.stage32_selected_lines=nsel;
++    cs.stage32_source_nlte=1;cs.stage32_field_generation=37;
++    cs.stage32_lambda_generation=getenv("S32_SEED_LAMBDA_GENERATION_DEFECT")?36:37;
++    cs.stage32_epay_disposition=disp;cs.stage32_epay_evidence=evidence;
++    op.n_shells=NS;op.n_lines=NL;op.line_list_nu=line_nu;op.tau_sobolev=tau;
++    op.electron_density=ne;op.line_source_S=line_source;
++    pl.T_e=Te;pl.n_electron=ne;
++    const char *ie=getenv("S32_FIXTURE_ITER");int it=ie?atoi(ie):10;
++    fprintf(stderr,"[fixture] eps_phys=%d floor_hits=%d interior_hits=%d cap_hits=%d\n",
++            eps_phys,floor_hits,interior_hits,cap_hits);
++    return cmfgen_dump_stage32_rung1(&cs,&geo,&op,&pl,it,argv[1])==0?0:1;
++}
+diff --git a/src/lumina.h b/src/lumina.h
+index 2e3e599..c6b9b87 100644
+--- a/src/lumina.h
++++ b/src/lumina.h
+@@ -1201,6 +1201,14 @@ void coupled_newton_solve_all(PlasmaState *plasma, GammaDeposition *gamma_dep,
+  * (caller treats the line as fully thermal). Used by cmfgen_assemble. */
+ double radeq_line_eps_phys(int line, double n_e, double T_e, double tau);
+ 
++/* Stage 3.2 Rung 1 read-only rate observer.  Returns the exact Sobolev
++ * beta=-expm1(-tau)/tau and the RAW destruction probability eps0=C/(C+A),
++ * before escape probability is folded into the existing eps_phys value.
++ * No rate/source/opacity state is changed; invalid or unavailable inputs fail
++ * closed with -1 (there is deliberately no fallback value). */
++int radeq_line_local_response(int line, double n_e, double T_e, double tau,
++                              double *beta_out, double *eps0_out);
++
+ /* A4 Stage-4': register the per-shell continuum-window color temperature of
+  * the deterministic J (cmfgen_window_color) — frozen-tail T_e anchor, gated
+  * by LUMINA_A4_TAIL_COLOR=1. */
+diff --git a/src/lumina_cmfgen.c b/src/lumina_cmfgen.c
+index 5d58843..d330067 100644
+--- a/src/lumina_cmfgen.c
++++ b/src/lumina_cmfgen.c
+@@ -1049,6 +1049,396 @@ int cmfgen_dump_line_populations(const CMFGENState *cs, const Geometry *geo,
+     return 0;
+ }
+ 
++/* Stage 3.2 Rung 1 binary schema.  The row's final field is disposition. */
++#define CMF_R1_ROW_BYTES 120U
++#define CMF_R1_PRIMARY_DEFINED 0U
++#define CMF_R1_PRIMARY_UNDEFINED_CHI_TOT_ZERO 1U
++#define CMF_R1_EV_REACHED       0x01U
++#define CMF_R1_EV_EPAY_ELIGIBLE 0x02U
++#define CMF_R1_EV_BIN_THICK     0x04U
++#define CMF_R1_EV_EPAY_GE2      0x08U
++#define CMF_R1_EV_ACC_W_POS     0x10U
++#define CMF_R1_EV_HOT           0x20U
++#define CMF_R1_EV_BRANCH        0x40U
++#define CMF_R1_EV_ASSEMBLED     0x80U
++
++static int cmf_r1_path_exists(const char *path) {
++    FILE *fp = fopen(path, "rb");
++    if (!fp) return 0;
++    fclose(fp);
++    return 1;
++}
++
++static int cmf_r1_secondary_values(int line, double ne, double Te, double tau,
++                                   double eps_floor, double eps_cap,
++                                   double *beta, double *eps0,
++                                   double *eps_prime, double *eps_applied) {
++    if (radeq_line_local_response(line,ne,Te,tau,beta,eps0) != 0)
++        return -1;
++    *eps_prime=radeq_line_eps_phys(line,ne,Te,tau);
++    if (!isfinite(*eps_prime) || !(*eps_prime >= 0.0) || !(*eps_prime <= 1.0))
++        return -1;
++    *eps_applied=*eps_prime;
++    /* Diagnostic replay of production's existing two comparisons, solely for
++     * the secondary clamp ledger.  Primary rho never consumes these values. */
++    if (*eps_applied < eps_floor) *eps_applied=eps_floor;
++    if (*eps_applied > eps_cap)   *eps_applied=eps_cap;
++    return isfinite(*eps_applied) ? 0 : -1;
++}
++
++int cmfgen_dump_stage32_rung1(const CMFGENState *cs, const Geometry *geo,
++                              const OpacityState *opac,
++                              const PlasmaState *plasma,
++                              int iteration,
++                              const char *path) {
++    static const double lam_lo = 600.0, lam_hi = 3000.0;
++    if (!cs || !geo || !opac || !plasma || !path || !*path || iteration < 0 ||
++        cs->stage32_field_generation == 0 ||
++        cs->stage32_lambda_generation != cs->stage32_field_generation ||
++        cs->stage32_diag_failed || cs->n_shells <= 0 || cs->n_bins <= 0 ||
++        geo->n_shells != cs->n_shells || opac->n_shells != cs->n_shells ||
++        opac->n_lines <= 0 || !opac->line_list_nu || !opac->tau_sobolev ||
++        (!plasma->n_electron && !opac->electron_density) ||
++        !plasma->T_e || !cs->nu || !cs->dnu ||
++        !cs->stage32_eta_pre_epay || !cs->stage32_boundary_eta ||
++        !cs->stage32_line_eta || !cs->stage32_line_slot ||
++        cs->stage32_line_slot_n != opac->n_lines ||
++        !cs->stage32_epay_disposition || !cs->stage32_epay_evidence ||
++        (cs->stage32_source_nlte && !opac->line_source_S) ||
++        !(geo->time_explosion > 0.0) ||
++        !isfinite(geo->time_explosion)) {
++        fprintf(stderr,"[STAGE32-R1][FAIL] invalid state/path or chi/lambda generation mismatch: assembly=%llu lambda=%llu\n",
++                (unsigned long long)(cs ? cs->stage32_field_generation : 0),
++                (unsigned long long)(cs ? cs->stage32_lambda_generation : 0));
++        return -1;
++    }
++    double eps_floor=1e-5, eps_cap=1.0;
++    { const char *ef=getenv("LUMINA_CMFGEN_EPS_FLOOR");
++      const char *ec=getenv("LUMINA_CMFGEN_EPS_CAP");
++      if (ef) eps_floor=atof(ef);
++      if (ec) eps_cap=atof(ec); }
++    if (!isfinite(eps_floor) || !isfinite(eps_cap)) {
++        fprintf(stderr,"[STAGE32-R1][FAIL] nonfinite production epsilon limits\n");
++        return -1;
++    }
++    char outpath[4096], manifest[4096], quarantine[4096];
++    int on=snprintf(outpath,sizeof(outpath),"%s.iter%03d",path,iteration);
++    int mn=snprintf(manifest,sizeof(manifest),"%s.manifest.json",outpath);
++    int qn=snprintf(quarantine,sizeof(quarantine),"%s.quarantine",outpath);
++    if (on < 0 || mn < 0 || qn < 0 || (size_t)on >= sizeof(outpath) ||
++        (size_t)mn >= sizeof(manifest) ||
++        (size_t)qn >= sizeof(quarantine)) {
++        fprintf(stderr,"[STAGE32-R1][FAIL] sidecar path too long\n");
++        return -1;
++    }
++    if (cmf_r1_path_exists(outpath) || cmf_r1_path_exists(manifest)) {
++        fprintf(stderr,"[STAGE32-R1][FAIL] refusing generation overwrite: %s\n",outpath);
++        return -1;
++    }
++
++    const int NS=cs->n_shells, NB=cs->n_bins, NL=opac->n_lines;
++    const double nu_lo=CM_C/(lam_hi*1.0e-8);
++    const double nu_hi=CM_C/(lam_lo*1.0e-8);
++    uint64_t n_rows=0, count[4]={0,0,0,0};
++    uint64_t eps_applied_diff_rows=0, rho_undefined_rows=0;
++    long double energy[4]={0.0L,0.0L,0.0L,0.0L};
++    long double selected_energy=0.0L;
++
++    /* Validation/count pass.  The per-line eta below is the same eta_l value
++     * added to production eta_line.  It is neither inferred from cell opacity nor
++     * apportioned from a bin total. */
++    for (int s=0;s<NS;s++) {
++        double ne=plasma->n_electron ? plasma->n_electron[s]
++                                     : opac->electron_density[s];
++        double Te=plasma->T_e[s];
++        if (!(ne >= 0.0) || !(Te > 0.0) || !isfinite(ne) || !isfinite(Te)) {
++            fprintf(stderr,"[STAGE32-R1][FAIL] invalid plasma shell=%d\n",s);
++            return -1;
++        }
++        for (int l=0;l<NL;l++) {
++            double tau=opac->tau_sobolev[(size_t)l*NS+s];
++            double nu=opac->line_list_nu[l];
++            if (!(nu >= nu_lo && nu <= nu_hi)) continue;
++            if (!(tau > 0.0) || !isfinite(tau) || !isfinite(nu)) {
++                fprintf(stderr,"[STAGE32-R1][FAIL] nonfinite line=%d shell=%d\n",l,s);
++                return -1;
++            }
++            int b=(int)(log(nu/cs->nu_min)/cs->d_log_nu);
++            if (b < 0 || b >= NB) {
++                fprintf(stderr,"[STAGE32-R1][FAIL] UV line outside grid line=%d\n",l);
++                return -1;
++            }
++            size_t q=(size_t)s*NB+b;
++            int slot=cs->stage32_line_slot[l];
++            if (slot < 0 || slot >= cs->stage32_selected_lines) {
++                fprintf(stderr,"[STAGE32-R1][FAIL] selected-line map mismatch line=%d\n",l);
++                return -1;
++            }
++            double beta=0.0, eps0=0.0, eps_prime=0.0, eps_applied=0.0;
++            if (cmf_r1_secondary_values(l,ne,Te,tau,eps_floor,eps_cap,
++                                        &beta,&eps0,&eps_prime,&eps_applied) != 0) {
++                fprintf(stderr,"[STAGE32-R1][FAIL] secondary rates unavailable line=%d shell=%d\n",l,s);
++                return -1;
++            }
++            double chi_es=cs->chi_es[q], chi_tot=cs->chi_tot[q];
++            double lambda_star=cs->lambda_star[q];
++            unsigned primary_status=(chi_tot == 0.0)
++                ? CMF_R1_PRIMARY_UNDEFINED_CHI_TOT_ZERO
++                : CMF_R1_PRIMARY_DEFINED;
++            double rho=(primary_status == CMF_R1_PRIMARY_DEFINED)
++                       ? (chi_es/chi_tot)*lambda_star : NAN;
++            double e=cs->stage32_line_eta[(size_t)slot*NS+s]*cs->dnu[b];
++            unsigned d=cs->stage32_epay_disposition[q];
++            unsigned ev=cs->stage32_epay_evidence[q];
++            if (!(lambda_star >= 0.0) || !(lambda_star < 1.0) ||
++                !(chi_es >= 0.0) || !(chi_tot >= 0.0) ||
++                (primary_status == CMF_R1_PRIMARY_DEFINED &&
++                 (!(rho >= 0.0) || !isfinite(rho))) ||
++                (primary_status == CMF_R1_PRIMARY_UNDEFINED_CHI_TOT_ZERO &&
++                 !isnan(rho)) || !(e >= 0.0) || d > 3 ||
++                !(ev & CMF_R1_EV_REACHED) || !(ev & CMF_R1_EV_BRANCH) ||
++                (ev & CMF_R1_EV_ASSEMBLED) ||
++                !isfinite(chi_es) || !isfinite(chi_tot) ||
++                !isfinite(lambda_star) || !isfinite(e) ||
++                !isfinite(cs->dnu[b]) || !(cs->dnu[b] > 0.0)) {
++                fprintf(stderr,"[STAGE32-R1][FAIL] invalid production primary value line=%d shell=%d chi_es=%.17g chi_tot=%.17g lambda_star=%.17g rho=%.17g\n",
++                        l,s,chi_es,chi_tot,lambda_star,rho);
++                return -1;
++            }
++            if (eps_applied != eps_prime) eps_applied_diff_rows++;
++            if (primary_status == CMF_R1_PRIMARY_UNDEFINED_CHI_TOT_ZERO)
++                rho_undefined_rows++;
++            n_rows++; count[d]++; energy[d]+=(long double)e;
++            selected_energy+=(long double)e;
++        }
++    }
++    if (!n_rows) {
++        fprintf(stderr,"[STAGE32-R1][FAIL] no active UV line-shell rows\n");
++        return -1;
++    }
++
++    int blo=(int)floor(log(nu_lo/cs->nu_min)/cs->d_log_nu);
++    int bhi=(int)floor(log(nu_hi/cs->nu_min)/cs->d_log_nu);
++    if (blo > bhi) { int t=blo; blo=bhi; bhi=t; }
++    if (blo < 0 || bhi >= NB) {
++        fprintf(stderr,"[STAGE32-R1][FAIL] census window outside grid\n");
++        return -1;
++    }
++    long double authoritative=0.0L, boundary=0.0L;
++    for (int s=0;s<NS;s++) for (int b=blo;b<=bhi;b++) {
++        size_t q=(size_t)s*NB+b;
++        double a=cs->stage32_eta_pre_epay[q]*cs->dnu[b];
++        double x=cs->stage32_boundary_eta[q]*cs->dnu[b];
++        if (!(a >= 0.0) || !(x >= 0.0) || !isfinite(a) || !isfinite(x)) {
++            fprintf(stderr,"[STAGE32-R1][FAIL] invalid independent census cell\n");
++            return -1;
++        }
++        authoritative+=(long double)a;
++        boundary+=(long double)x;
++    }
++    long double closure=authoritative-selected_energy-boundary;
++
++    FILE *fp=fopen(outpath,"wb");
++    if (!fp) {
++        fprintf(stderr,"[STAGE32-R1][FAIL] open %s: %s\n",outpath,strerror(errno));
++        return -1;
++    }
++    CMFSHA256 sha; cmf_sha256_init(&sha); int fail=0;
++    const unsigned char magic[8]={'L','C','M','F','R','1','0','1'};
++#define R1W(call) do { if (!fail && (call)) fail=1; } while (0)
++    R1W(cmf_dump_bytes(fp,&sha,magic,sizeof(magic)));
++    R1W(cmf_dump_u32(fp,&sha,UINT32_C(0x01020304)));
++    R1W(cmf_dump_u32(fp,&sha,UINT32_C(3)));
++    R1W(cmf_dump_u64(fp,&sha,(uint64_t)iteration));
++    R1W(cmf_dump_u64(fp,&sha,cs->stage32_field_generation));
++    R1W(cmf_dump_u64(fp,&sha,cs->stage32_lambda_generation));
++    R1W(cmf_dump_u32(fp,&sha,(uint32_t)NS));
++    R1W(cmf_dump_u32(fp,&sha,(uint32_t)NB));
++    R1W(cmf_dump_u32(fp,&sha,(uint32_t)NL));
++    R1W(cmf_dump_u32(fp,&sha,0));
++    R1W(cmf_dump_u64(fp,&sha,n_rows));
++    R1W(cmf_dump_f64(fp,&sha,lam_lo));
++    R1W(cmf_dump_f64(fp,&sha,lam_hi));
++    R1W(cmf_dump_f64(fp,&sha,geo->time_explosion));
++    R1W(cmf_dump_u32(fp,&sha,CMF_R1_ROW_BYTES));
++    R1W(cmf_dump_u32(fp,&sha,0));
++    uint64_t written=0;
++    for (int s=0;s<NS;s++) {
++        double ne=plasma->n_electron ? plasma->n_electron[s]
++                                     : opac->electron_density[s];
++        double Te=plasma->T_e[s];
++        for (int l=0;l<NL;l++) {
++            double tau=opac->tau_sobolev[(size_t)l*NS+s];
++            double nu=opac->line_list_nu[l];
++            if (!(nu >= nu_lo && nu <= nu_hi)) continue;
++            int b=(int)(log(nu/cs->nu_min)/cs->d_log_nu);
++            size_t q=(size_t)s*NB+b;
++            double beta=0.0, eps0=0.0, eps_prime=0.0, eps_applied=0.0;
++            if (cmf_r1_secondary_values(l,ne,Te,tau,eps_floor,eps_cap,
++                                        &beta,&eps0,&eps_prime,&eps_applied) != 0) {
++                fail=1; break;
++            }
++            int slot=cs->stage32_line_slot[l];
++            double e=cs->stage32_line_eta[(size_t)slot*NS+s]*cs->dnu[b];
++            double chi_es=cs->chi_es[q], chi_tot=cs->chi_tot[q];
++            double lambda_star=cs->lambda_star[q];
++            unsigned primary_status=(chi_tot == 0.0)
++                ? CMF_R1_PRIMARY_UNDEFINED_CHI_TOT_ZERO
++                : CMF_R1_PRIMARY_DEFINED;
++            double rho=(primary_status == CMF_R1_PRIMARY_DEFINED)
++                       ? (chi_es/chi_tot)*lambda_star : NAN;
++            double Sl=cs->stage32_source_nlte
++                    ? opac->line_source_S[(size_t)l*NS+s] : 0.0;
++            if (Sl <= 0.0) Sl=cm_planck(nu,Te);
++            unsigned ev=cs->stage32_epay_evidence[q];
++            if (tau > 1e-12) ev|=CMF_R1_EV_ASSEMBLED;
++            R1W(cmf_dump_u32(fp,&sha,(uint32_t)l));
++            R1W(cmf_dump_u32(fp,&sha,(uint32_t)s));
++            R1W(cmf_dump_u32(fp,&sha,(uint32_t)b));
++            R1W(cmf_dump_u32(fp,&sha,primary_status));
++            R1W(cmf_dump_f64(fp,&sha,CM_C/nu/1.0e-8));
++            R1W(cmf_dump_f64(fp,&sha,tau));
++            R1W(cmf_dump_f64(fp,&sha,beta));
++            R1W(cmf_dump_f64(fp,&sha,eps0));
++            R1W(cmf_dump_f64(fp,&sha,eps_prime));
++            R1W(cmf_dump_f64(fp,&sha,eps_applied));
++            R1W(cmf_dump_f64(fp,&sha,chi_es));
++            R1W(cmf_dump_f64(fp,&sha,chi_tot));
++            R1W(cmf_dump_f64(fp,&sha,lambda_star));
++            R1W(cmf_dump_f64(fp,&sha,rho));
++            R1W(cmf_dump_f64(fp,&sha,Sl));
++            R1W(cmf_dump_f64(fp,&sha,e));
++            R1W(cmf_dump_u32(fp,&sha,ev));
++            R1W(cmf_dump_u32(fp,&sha,(uint32_t)cs->stage32_epay_disposition[q]));
++            written++;
++        }
++        if (fail) break;
++    }
++#undef R1W
++    if (fclose(fp)) fail=1;
++    if (fail || written != n_rows) {
++        fprintf(stderr,"[STAGE32-R1][FAIL] payload write/count (%llu/%llu)\n",
++                (unsigned long long)written,(unsigned long long)n_rows);
++        if (rename(outpath,quarantine) != 0)
++            fprintf(stderr,"[STAGE32-R1][FAIL] quarantine %s: %s\n",
++                    quarantine,strerror(errno));
++        return -1;
++    }
++    unsigned char digest[32]; char hex[65]; cmf_sha256_final(&sha,digest);
++    for (int i=0;i<32;i++) snprintf(hex+2*i,3,"%02x",digest[i]);
++    hex[64]='\0';
++    FILE *mf=fopen(manifest,"w");
++    int sfail=(mf==NULL);
++    long double etot=energy[0]+energy[1]+energy[2]+energy[3];
++    if (!sfail) {
++        sfail=fprintf(mf,
++            "{\n  \"schema\": \"LCMFR101-v3\",\n  \"sha256\": \"%s\",\n"
++            "  \"iteration\": %d,\n  \"field_generation\": %llu,\n"
++            "  \"lambda_generation\": %llu,\n"
++            "  \"rows\": %llu,\n  \"row_bytes\": %u,\n"
++            "  \"lambda_window_A\": [600, 3000],\n"
++            "  \"primary_definition\": \"(chi_es/chi_tot)*lambda_star from production arrays; undefined when chi_tot==0\",\n"
++            "  \"generation_contract\": \"field_generation == lambda_generation\",\n"
++            "  \"secondary_definition\": {\"beta\": \"(1-exp(-tau))/tau\", \"eps0_raw\": \"C/(C+A)\", \"eps_prime\": \"C/(C+A*beta)\", \"eps_applied\": \"eps_prime after production eps_floor then eps_cap\"},\n"
++            "  \"eps_floor\": %.17g,\n  \"eps_cap\": %.17g,\n"
++            "  \"eps_applied_diff_rows\": %llu,\n"
++            "  \"rho_undefined_chi_tot_zero_rows\": %llu,\n"
++            "  \"energy_definition\": \"production selected-line eta_l*dnu; tau numerator for tau<=1e-6\",\n"
++            "  \"branch_evidence_definition\": \"branch-site bits: reached,eligible,thick,epay_ge2,acc_w_positive,hot,branch; row bit7=production-assembled\",\n"
++            "  \"disposition_row_counts\": {\"legacy_source\": %llu, \"thick_exempt\": %llu, \"rate_shape_replaced\": %llu, \"scalar_rescaled\": %llu},\n"
++            "  \"disposition_energy\": {\"legacy_source\": %.17Lg, \"thick_exempt\": %.17Lg, \"rate_shape_replaced\": %.17Lg, \"scalar_rescaled\": %.17Lg, \"total\": %.17Lg},\n"
++            "  \"authoritative_pre_epay_window_energy\": %.17Lg,\n"
++            "  \"boundary_nonselected_line_energy\": %.17Lg,\n"
++            "  \"selected_row_energy\": %.17Lg,\n"
++            "  \"closure_residual\": %.17Lg,\n"
++            "  \"primary_clamp\": 0, \"primary_floor\": 0, \"primary_cap\": 0, \"primary_fallback\": 0\n}\n",
++            hex,iteration,(unsigned long long)cs->stage32_field_generation,
++            (unsigned long long)cs->stage32_lambda_generation,
++            (unsigned long long)n_rows,
++            CMF_R1_ROW_BYTES,
++            eps_floor,eps_cap,
++            (unsigned long long)eps_applied_diff_rows,
++            (unsigned long long)rho_undefined_rows,
++            (unsigned long long)count[0],(unsigned long long)count[1],
++            (unsigned long long)count[2],(unsigned long long)count[3],
++            energy[0],energy[1],energy[2],energy[3],etot,
++            authoritative,boundary,selected_energy,closure) < 0;
++        if (fclose(mf)) sfail=1;
++    }
++    if (sfail) {
++        fprintf(stderr,"[STAGE32-R1][FAIL] manifest write/close\n");
++        if (rename(outpath,quarantine) != 0)
++            fprintf(stderr,"[STAGE32-R1][FAIL] quarantine %s: %s\n",
++                    quarantine,strerror(errno));
++        return -1;
++    }
++    fprintf(stderr,"[STAGE32-R1] wrote %s iter=%d generation=%llu rows=%llu "
++            "rho_undefined=%llu eps_applied_diff=%llu rate_shape=%llu E_rate_shape=%.9Lg closure=%.9Lg sha256=%s\n",outpath,iteration,
++            (unsigned long long)cs->stage32_field_generation,(unsigned long long)n_rows,
++            (unsigned long long)rho_undefined_rows,
++            (unsigned long long)eps_applied_diff_rows,
++            (unsigned long long)count[2],energy[2],closure,hex);
++    return 0;
++}
++
++int cmfgen_stage32_rung1_maybe_dump(const CMFGENState *cs,
++                                    const Geometry *geo,
++                                    const OpacityState *opac,
++                                    const PlasmaState *plasma,
++                                    int iteration,
++                                    int n_iterations) {
++    const char *path=getenv("LUMINA_STAGE32_RUNG1_DUMP");
++    if (!path || !*path) return 0;
++    const char *ie=getenv("LUMINA_STAGE32_RUNG1_ITER");
++    char *end=NULL; long wanted=ie ? strtol(ie,&end,10) : -1;
++    if (!ie || end==ie || *end || wanted < 0 || wanted >= n_iterations) {
++        fprintf(stderr,"[STAGE32-R1][FAIL] LUMINA_STAGE32_RUNG1_ITER must be in [0,%d) (got %s)\n",
++                n_iterations,ie ? ie : "<unset>");
++        return -1;
++    }
++    if (iteration != wanted) return 0;
++    return cmfgen_dump_stage32_rung1(cs,geo,opac,plasma,iteration,path);
++}
++
++static int cmf_r1_prepare_assembly(CMFGENState *cs, const OpacityState *opac) {
++    if (!cs->stage32_eta_pre_epay) return 0;
++    const int NS=cs->n_shells, NL=opac->n_lines;
++    const double nu_lo=CM_C/(3000.0e-8), nu_hi=CM_C/(600.0e-8);
++    if (!cs->stage32_line_slot) {
++        int *slot=(int *)malloc((size_t)NL*sizeof(*slot));
++        if (!slot) goto fail;
++        int nsel=0;
++        for (int l=0;l<NL;l++) {
++            double nu=opac->line_list_nu[l];
++            slot[l]=(isfinite(nu) && nu >= nu_lo && nu <= nu_hi) ? nsel++ : -1;
++        }
++        if (nsel <= 0 || (size_t)nsel > SIZE_MAX/(size_t)NS/sizeof(double)) {
++            free(slot); goto fail;
++        }
++        double *line_eta=(double *)calloc((size_t)nsel*NS,sizeof(*line_eta));
++        if (!line_eta) { free(slot); goto fail; }
++        cs->stage32_line_slot=slot;
++        cs->stage32_line_eta=line_eta;
++        cs->stage32_line_slot_n=NL;
++        cs->stage32_selected_lines=nsel;
++    } else if (cs->stage32_line_slot_n != NL) {
++        goto fail;
++    }
++    memset(cs->stage32_line_eta,0,
++           (size_t)cs->stage32_selected_lines*NS*sizeof(double));
++    memset(cs->stage32_boundary_eta,0,(size_t)NS*cs->n_bins*sizeof(double));
++    if (cs->stage32_field_generation == UINT64_MAX) goto fail;
++    cs->stage32_field_generation++;
++    /* Assembly has replaced chi_es/chi_tot, so any diagonal left by an older
++     * formal solve is deliberately invalid until cmfgen_solve_J completes. */
++    cs->stage32_lambda_generation=0;
++    return 0;
++fail:
++    cs->stage32_diag_failed=1;
++    fprintf(stderr,"[STAGE32-R1][FAIL] diagnostic line snapshot allocation/lineage\n");
++    return -1;
++}
++
+ /* ------------------------------------------------------------ */
+ int cmfgen_init(CMFGENState *cs, const Geometry *geo)
+ {
+@@ -1076,6 +1466,22 @@ int cmfgen_init(CMFGENState *cs, const Geometry *geo)
+     cs->tri_lo      = calloc((size_t)NS * NB, sizeof(double));
+     cs->tri_up      = calloc((size_t)NS * NB, sizeof(double));
+     cs->tri_r       = calloc((size_t)NS * NB, sizeof(double));
++    { const char *r1=getenv("LUMINA_STAGE32_RUNG1_DUMP");
++      if (r1 && *r1) {
++          cs->stage32_eta_pre_epay=
++              (double *)calloc((size_t)NS*NB,sizeof(double));
++          cs->stage32_boundary_eta=
++              (double *)calloc((size_t)NS*NB,sizeof(double));
++          cs->stage32_epay_disposition=
++              (unsigned char *)calloc((size_t)NS*NB,sizeof(unsigned char));
++          cs->stage32_epay_evidence=
++              (unsigned char *)calloc((size_t)NS*NB,sizeof(unsigned char));
++          if (!cs->stage32_eta_pre_epay || !cs->stage32_boundary_eta ||
++              !cs->stage32_epay_disposition || !cs->stage32_epay_evidence) {
++              fprintf(stderr,"[STAGE32-R1][FAIL] diagnostic allocation failed\n");
++              return -1;
++          }
++      } }
+     if (!cs->nu || !cs->dnu || !cs->chi_es || !cs->chi_abs || !cs->chi_line ||
+         !cs->chi_line_th || !cs->t_color ||
+         !cs->tri_lo || !cs->tri_up || !cs->tri_r ||
+@@ -1115,6 +1521,12 @@ void cmfgen_free(CMFGENState *cs)
+     free(cs->chi_line); free(cs->chi_line_th); free(cs->chi_line_cls);
+     free(cs->chi_tot); free(cs->S_fixed); free(cs->J);
+     free(cs->eta_total_audit);
++    free(cs->stage32_eta_pre_epay);
++    free(cs->stage32_boundary_eta);
++    free(cs->stage32_line_eta);
++    free(cs->stage32_line_slot);
++    free(cs->stage32_epay_disposition);
++    free(cs->stage32_epay_evidence);
+     free(cs->lambda_star); free(cs->t_color);
+     free(cs->tri_lo); free(cs->tri_up); free(cs->tri_r);
+     free(cs->p_ray);
+@@ -1308,6 +1720,10 @@ static void cmfgen_assemble_impl(CMFGENState *cs, const Geometry *geo,
+     memset(cs->chi_line, 0, sizeof(double) * (size_t)NS * NB);
+     memset(cs->chi_line_th, 0, sizeof(double) * (size_t)NS * NB);
+     memset(cs->chi_line_cls, 0, sizeof(double) * (size_t)NS * NB);
++    if (cs->stage32_epay_disposition) {
++        memset(cs->stage32_epay_disposition,0xff,(size_t)NS*NB);
++        memset(cs->stage32_epay_evidence,0,(size_t)NS*NB);
++    }
+     /* line emissivity accumulator reuses chi_tot scratch before it is summed */
+     double *eta_line = cs->chi_tot;
+ 
+@@ -1350,10 +1766,12 @@ static void cmfgen_assemble_impl(CMFGENState *cs, const Geometry *geo,
+     if (eps_phys) eps_uv = -1.0;              /* phys mode wins (experimental) */
+     cs->chi_line_re = (eps_uv > 0.0) ? cs->chi_line : cs->chi_line_th;
+     memset(eta_line, 0, sizeof(double) * (size_t)NS * NB);
++    if (cmf_r1_prepare_assembly(cs,opac) == 0 && cs->stage32_eta_pre_epay)
++        cs->stage32_source_nlte=src_nlte;
+ 
+     /* Expansion (Sobolev-binned) line opacity + emissivity.
+      *   chi_line[bin] = sum_{l in bin} (1-e^{-tau_l}) * nu_l/(c t_exp dnu_bin)
+-     *   eta_line[bin] = sum_l (1-e^{-tau_l}) * nu_l/(c t_exp dnu_bin) * S_l
++     *   eta_line[bin] = sum_l eta_l, including the production eps_phys factor
+      * S_l = line_source_S if >0 else B_nu(T_e) (thermalised fallback). */
+     for (int s = 0; s < NS; ++s) {
+         double Te = plasma->T_e[s];
+@@ -1373,13 +1791,15 @@ static void cmfgen_assemble_impl(CMFGENState *cs, const Geometry *geo,
+             if (Sl <= 0.0) Sl = cm_planck(nu_l, Te);
+             size_t idx = (size_t)s * NB + b;
+             cs->chi_line[idx] += w;
++            double eta_l = 0.0;
+             if (!emiss_b && eps_phys) {
+                 double el = radeq_line_eps_phys(l, ne_s, Te, tau);
+                 if (el < 0.0) el = 1.0;        /* table not built: thermal */
+                 if (el < eps_floor) el = eps_floor;
+                 if (el > eps_cap)   el = eps_cap;
+                 cs->chi_line_th[idx] += w * el;
+-                eta_line[idx]        += w * el * Sl;  /* thermal-channel eta */
++                eta_l = w * el * Sl;
++                eta_line[idx] += eta_l;        /* thermal-channel eta */
+                 /* A4 SRC_BLEND closure weight: exact two-level+Sobolev gas
+                  * coupling. Jbar_l=(1-beta)S_l+beta*J_bin with S=(1-eps)Jbar
+                  * +eps*B gives net line heating chi_l*eps*beta/(eps+beta)
+@@ -1392,7 +1812,8 @@ static void cmfgen_assemble_impl(CMFGENState *cs, const Geometry *geo,
+                     cs->chi_line_cls[idx] += w * (el * be) / (el + be - el * be + 1e-300);
+                 }
+             } else if (!emiss_b) {
+-                eta_line[idx] += w * Sl;
++                eta_l = w * Sl;
++                eta_line[idx] += eta_l;
+             } else {
+                 /* E4 B lane: opacity/destruction bookkeeping is byte-for-byte
+                  * the production calculation above; only the line emissivity
+@@ -1450,6 +1871,19 @@ static void cmfgen_assemble_impl(CMFGENState *cs, const Geometry *geo,
+                     emiss_b->a_covered_cell[idx] += eta_a;
+                 }
+             }
++            if (!emiss_b && cs->stage32_line_slot && !cs->stage32_diag_failed) {
++                int slot=cs->stage32_line_slot[l];
++                if (slot >= 0)
++                    cs->stage32_line_eta[(size_t)slot*NS+s] += eta_l;
++                else {
++                    const double r1_lo=CM_C/(3000.0e-8);
++                    const double r1_hi=CM_C/(600.0e-8);
++                    int blo=(int)floor(log(r1_lo/cs->nu_min)/cs->d_log_nu);
++                    int bhi=(int)floor(log(r1_hi/cs->nu_min)/cs->d_log_nu);
++                    if (b == blo || b == bhi)
++                        cs->stage32_boundary_eta[idx] += eta_l;
++                }
++            }
+         }
+     }
+ 
+@@ -1644,6 +2078,8 @@ static void cmfgen_assemble_impl(CMFGENState *cs, const Geometry *geo,
+             /* S_fixed = (chi_abs*B + thermal line emissivity)/chi_tot; the
+              * scattering share enters the solve as r*J, NOT here (no double
+              * count of the line source). */
++            if (cs->stage32_eta_pre_epay)
++                cs->stage32_eta_pre_epay[idx]=eta_ln;
+             cs->S_fixed[idx] = (chi_t > 0.0)
+                              ? (chi_a * B + eta_ln) / chi_t : 0.0;
+             /* EPAY books: thermal emitted vs absorbed (lagged J), per shell.
+@@ -1701,6 +2137,11 @@ static void cmfgen_assemble_impl(CMFGENState *cs, const Geometry *geo,
+                   if (hf) epay_hotf = atof(hf); } }
+             int hot_regime = (Te > epay_hotf * plasma->T_rad[s]);
+             double dr_s = geo->r_outer[s] - geo->r_inner[s];
++            unsigned char r1ev=CMF_R1_EV_REACHED|CMF_R1_EV_EPAY_ELIGIBLE|
++                               CMF_R1_EV_BRANCH;
++            if (epay >= 2) r1ev|=CMF_R1_EV_EPAY_GE2;
++            if (acc_w > 0.0) r1ev|=CMF_R1_EV_ACC_W_POS;
++            if (hot_regime) r1ev|=CMF_R1_EV_HOT;
+             if (epay >= 2 && acc_w > 0.0 && hot_regime) {
+                 /* kpkt mirror proper: paid power E_pay = absorbed + deposition,
+                  * spectrum = normalized rate-side emissivity w(nu). Thick bins
+@@ -1712,11 +2153,20 @@ static void cmfgen_assemble_impl(CMFGENState *cs, const Geometry *geo,
+                     double chi_t = cs->chi_tot[idx];
+                     if ((cs->chi_abs[idx] + cs->chi_line_th[idx]) * dr_s
+                         > epay_taubin) {
++                        if (cs->stage32_epay_disposition) {
++                            cs->stage32_epay_disposition[idx]=1;
++                            cs->stage32_epay_evidence[idx]=
++                                (unsigned char)(r1ev|CMF_R1_EV_BIN_THICK);
++                        }
+                         if (kappa_dep > 0.0 && chi_t > 0.0)
+                             cs->S_fixed[idx] += kappa_dep *
+                                 cm_planck(cs->nu[b], Te) / chi_t;
+                         continue;   /* legacy Kirchhoff source */
+                     }
++                    if (cs->stage32_epay_disposition) {
++                        cs->stage32_epay_disposition[idx]=2;
++                        cs->stage32_epay_evidence[idx]=r1ev;
++                    }
+                     double w = (bf ? bf_get_eta(bf, s, cs->nu[b]) : 0.0)
+                              + cs->chi_line_th[idx] * cm_planck(cs->nu[b], Te);
+                     cs->S_fixed[idx] = (chi_t > 0.0) ? wn * w / chi_t : 0.0;
+@@ -1726,9 +2176,20 @@ static void cmfgen_assemble_impl(CMFGENState *cs, const Geometry *geo,
+             for (int b = 0; b < NB; ++b) {
+                 size_t idx = (size_t)s * NB + b;
+                 double chi_t = cs->chi_tot[idx];
+-                if (!((cs->chi_abs[idx] + cs->chi_line_th[idx]) * dr_s
+-                      > epay_taubin))
++                if ((cs->chi_abs[idx] + cs->chi_line_th[idx]) * dr_s
++                    > epay_taubin) {
++                    if (cs->stage32_epay_disposition) {
++                        cs->stage32_epay_disposition[idx]=1;
++                        cs->stage32_epay_evidence[idx]=
++                            (unsigned char)(r1ev|CMF_R1_EV_BIN_THICK);
++                    }
++                } else {
++                    if (cs->stage32_epay_disposition) {
++                        cs->stage32_epay_disposition[idx]=3;
++                        cs->stage32_epay_evidence[idx]=r1ev;
++                    }
+                     cs->S_fixed[idx] *= scale;
++                }
+                 if (kappa_dep > 0.0 && chi_t > 0.0)
+                     cs->S_fixed[idx] += kappa_dep * cm_planck(cs->nu[b], Te) / chi_t;
+             }
+@@ -1737,6 +2198,13 @@ static void cmfgen_assemble_impl(CMFGENState *cs, const Geometry *geo,
+             if (s == NS/2) epay_scale_dbg[1] = scale;
+             if (s == 38 && s < NS) epay_scale_dbg[2] = scale;
+             if (s == NS-1) epay_scale_dbg[3] = scale;
++        } else if (cs->stage32_epay_disposition) {
++            for (int b=0;b<NB;b++) {
++                size_t idx=(size_t)s*NB+b;
++                cs->stage32_epay_disposition[idx]=0;
++                cs->stage32_epay_evidence[idx]=
++                    CMF_R1_EV_REACHED|CMF_R1_EV_BRANCH;
++            }
+         }
+     }
+     if (epay)
+@@ -2184,6 +2652,11 @@ void cmfgen_solve_J(CMFGENState *cs, const Geometry *geo, double T_inner,
+     }
+     free(S); free(Jb); free(Lst);
+     free(Tlo); free(Tup); free(rA); free(aA); free(dA); free(cA); free(rhs);
++    /* This is the only point that certifies lambda_star as the diagonal paired
++     * with the current assembled chi_es/chi_tot generation.  Early allocation
++     * failure and alternate solvers leave the lineage invalid and dumping fails. */
++    if (cs->stage32_eta_pre_epay && cs->stage32_field_generation > 0)
++        cs->stage32_lambda_generation=cs->stage32_field_generation;
+     if (cd_s >= 0) fflush(stdout);
+ }
+ 
+@@ -4575,6 +5048,11 @@ int cmfgen_run(Geometry *geo, OpacityState *opac, BFOpacity *bf,
+         cmfgen_assemble(&cs, geo, opac, bf, plasma);
+         if (cmf_lineres) cmf_solve_J(&cs, geo, T_inner, n_ali);   /* P1 line-resolved CMF */
+         else             cmfgen_solve_J(&cs, geo, T_inner, n_ali);/* binned (champion) */
++        if (cmfgen_stage32_rung1_maybe_dump(&cs,geo,opac,plasma,
++                                             iter,n_iter) != 0) {
++            cmfgen_free(&cs);
++            return -1;
++        }
+         cmfgen_window_color(&cs);
+         radeq_set_tail_color(cs.t_color, cs.n_shells);
+         radeq_set_tri_response(cs.tri_lo, cs.tri_up, cs.tri_r,
+diff --git a/src/lumina_cmfgen.h b/src/lumina_cmfgen.h
+index e5e8107..05c198e 100644
+--- a/src/lumina_cmfgen.h
++++ b/src/lumina_cmfgen.h
+@@ -57,6 +57,21 @@ typedef struct {
+     double *eta_total_audit;   /* authoritative total emissivity snapshot for
+                                   R7 decomposition audit; populated immediately
+                                   before an armed dump, never used by transport */
++    /* Stage 3.2 Rung 1 diagnostic-only snapshots.  Allocated only when the
++     * path-valued gate is armed.  They observe, but are never consumed by,
++     * source assembly or transport. */
++    double *stage32_eta_pre_epay;          /* [ns*nb] eta_line entering EPAY */
++    double *stage32_boundary_eta;          /* [ns*nb] non-window line eta in edge bins */
++    double *stage32_line_eta;              /* [selected_line*ns] production eta_l */
++    int *stage32_line_slot;                /* [n_lines], -1 outside 600--3000 A */
++    int stage32_line_slot_n;
++    int stage32_selected_lines;
++    int stage32_source_nlte;
++    int stage32_diag_failed;
++    uint64_t stage32_field_generation;     /* independent assembly-snapshot lineage */
++    uint64_t stage32_lambda_generation;    /* formal diagonal lineage; must equal field */
++    unsigned char *stage32_epay_disposition; /* [ns*nb], written only at branch sites */
++    unsigned char *stage32_epay_evidence;  /* [ns*nb], independent branch predicate witness */
+     double *lambda_star;       /* diagonal approximate Lambda operator    */
+     double *tri_lo;            /* [ns*nb] tridiag Lambda off-diag L[s,s-1] (A4) */
+     double *tri_up;            /* [ns*nb] tridiag Lambda off-diag L[s,s+1] (A4) */
+@@ -220,6 +235,25 @@ int cmfgen_dump_line_populations(const CMFGENState *cs, const Geometry *geo,
+                                  int iter, int field_generation,
+                                  const char *path);
+ 
++/* Stage 3.2 Rung 1: read-only formal-operator local-response artifact.  Primary
++ * rho is (chi_es/chi_tot)*lambda_star from production arrays of one verified
++ * generation.  Per-line beta/eps0/eps_prime/eps_applied are secondary only.
++ * The manifest binds SHA-256 and both generation lineages and closes count and
++ * energy censuses by disposition. */
++int cmfgen_dump_stage32_rung1(const CMFGENState *cs, const Geometry *geo,
++                              const OpacityState *opac,
++                              const PlasmaState *plasma,
++                              int iteration,
++                              const char *path);
++/* Runtime gate wrapper used by both CPU and CUDA drivers.  Unset path is a
++ * strict no-op; an armed gate requires LUMINA_STAGE32_RUNG1_ITER. */
++int cmfgen_stage32_rung1_maybe_dump(const CMFGENState *cs,
++                                    const Geometry *geo,
++                                    const OpacityState *opac,
++                                    const PlasmaState *plasma,
++                                    int iteration,
++                                    int n_iterations);
++
+ /* Copy cs->J into nlte->J_nu (same [n_shells*n_bins] layout/grid). */
+ void cmfgen_write_jnu(const CMFGENState *cs, NLTEConfig *nlte);
+ 
+diff --git a/src/lumina_cuda.cu b/src/lumina_cuda.cu
+index a9a38f8..29bc787 100644
+--- a/src/lumina_cuda.cu
++++ b/src/lumina_cuda.cu
+@@ -8150,6 +8150,9 @@ int main(int argc, char *argv[]) {
+                             }
+                         }
+                     }
++                    if (cmfgen_stage32_rung1_maybe_dump(&cs,&geo,&opacity,
++                            &plasma,it,pc_iter) != 0)
++                        return EXIT_FAILURE;
+                     if (emiss_ab_on && it == emiss_ab_iter) {
+                         size_t cells=(size_t)cs.n_shells*cs.n_bins;
+                         size_t bytes=cells*sizeof(double);
+diff --git a/src/lumina_plasma.c b/src/lumina_plasma.c
+index d9ae73b..2615cf7 100644
+--- a/src/lumina_plasma.c
++++ b/src/lumina_plasma.c
+@@ -8473,6 +8473,65 @@ double radeq_line_eps_phys(int line, double n_e, double T_e, double tau) {
+     return (denom > 0.0) ? C_ul / denom : 1.0;
+ }
+ 
++int radeq_line_local_response(int line, double n_e, double T_e, double tau,
++                              double *beta_out, double *eps0_out) {
++    static int *line2k = NULL;
++    static int line2k_n = 0;
++    if (!beta_out || !eps0_out || !radeq_lines || radeq_n_lines <= 0 ||
++        line < 0 || !(n_e >= 0.0) || !(T_e > 0.0) || !(tau > 0.0) ||
++        !isfinite(n_e) || !isfinite(T_e) || !isfinite(tau))
++        return -1;
++    if (!line2k) {
++        int maxline = -1;
++        for (long k = 0; k < radeq_n_lines; k++)
++            if (radeq_lines[k].line > maxline) maxline = radeq_lines[k].line;
++        if (maxline < 0) return -1;
++        int *m = (int *)malloc((size_t)(maxline + 1) * sizeof(int));
++        if (!m) return -1;
++        for (int i = 0; i <= maxline; i++) m[i] = -1;
++        for (long k = 0; k < radeq_n_lines; k++) {
++            int l = radeq_lines[k].line;
++            if (l < 0 || l > maxline || m[l] != -1) { free(m); return -1; }
++            m[l] = (int)k;
++        }
++        line2k = m;
++        line2k_n = maxline + 1;
++    }
++    if (line >= line2k_n || line2k[line] < 0) return -1;
++    const RadEqLine *rl = &radeq_lines[line2k[line]];
++    if (!(rl->g_up > 0) || !(rl->coeff >= 0.0) || !(rl->A_ul >= 0.0) ||
++        !isfinite(rl->coeff) || !isfinite(rl->A_ul)) return -1;
++    double beta = -expm1(-tau) / tau;
++    if (!(beta > 0.0) || !(beta <= 1.0) || !isfinite(beta)) return -1;
++
++    /* Evaluate C/(C+A) without ever forming C or C+A.  Both can overflow
++     * although the ratio is defined.  The log-domain logistic is exact at
++     * the representable endpoints and introduces no substitute value. */
++    double eps0;
++    if (n_e == 0.0 || rl->coeff == 0.0) {
++        if (rl->A_ul == 0.0) return -1;       /* 0/(0+0) is undefined */
++        eps0 = 0.0;
++    } else if (rl->A_ul == 0.0) {
++        eps0 = 1.0;
++    } else {
++        double logC = log(n_e) + log(rl->coeff) - log((double)rl->g_up)
++                    - 0.5 * log(T_e);
++        double x = log(rl->A_ul) - logC;
++        if (!isfinite(logC) || !isfinite(x)) return -1;
++        if (x >= 0.0) {
++            double r = exp(-x);
++            eps0 = r / (1.0 + r);
++        } else {
++            double r = exp(x);
++            eps0 = 1.0 / (1.0 + r);
++        }
++    }
++    if (!(eps0 >= 0.0) || !(eps0 <= 1.0) || !isfinite(eps0)) return -1;
++    *beta_out = beta;
++    *eps0_out = eps0;
++    return 0;
++}
++
+ static void build_radeq_line_table(NLTEConfig *nlte, AtomicData *atom,
+                                    OpacityState *opacity) {
+     if (radeq_n_lines >= 0) return;  /* already built */

@@ -1,0 +1,161 @@
+--- a/src/lumina_cuda.cu
++++ b/src/lumina_cuda.cu
+@@ -7408,6 +7408,49 @@
+                  * buffer nlte_Jmc (reduced MC J_nu, kept OUT of the state). GB-scale
+                  * device alloc lives across the whole loop A. */
+                 double *nlte_Jmc = NULL;
++                /* E4: same-process dual emissivity assembly.  Unset master gate
++                 * allocates nothing, prints nothing, and leaves the production
++                 * assemble/solve call sequence unchanged.  The selected epoch
++                 * deliberately reuses the R7 CHIETA iteration contract. */
++                const char *emiss_ab_base=getenv("LUMINA_EMISS_AB_DUMP");
++                int emiss_ab_on=(emiss_ab_base && *emiss_ab_base) ? 1 : 0;
++                long emiss_ab_iter=-1;
++                CMFGENState emiss_b_cs;
++                memset(&emiss_b_cs,0,sizeof(emiss_b_cs));
++                CMFGENEmissABStats emiss_ab_stats;
++                memset(&emiss_ab_stats,0,sizeof(emiss_ab_stats));
++                char emiss_ab_state_hash[65]={0};
++                int emiss_seed_line=-1, emiss_seed_shell=-1;
++                double emiss_seed_factor=1.0;
++                if (emiss_ab_on) {
++                    const char *iter_env=getenv("LUMINA_CMF_FROZEN_CHIETA_ITER");
++                    char *end=NULL;
++                    emiss_ab_iter=iter_env ? strtol(iter_env,&end,10) : -1;
++                    if (!iter_env || end==iter_env || *end || emiss_ab_iter < 0 ||
++                        emiss_ab_iter >= pc_iter) {
++                        fprintf(stderr,"[EMISS-AB][FATAL] valid "
++                            "LUMINA_CMF_FROZEN_CHIETA_ITER in [0,%d) is required "
++                            "(got %s)\n",pc_iter,iter_env ? iter_env : "<unset>");
++                        return EXIT_FAILURE;
++                    }
++                    const char *seed=getenv("LUMINA_EMISS_AB_SEED");
++                    if (seed && (sscanf(seed,"%d,%d,%lf",&emiss_seed_line,
++                                        &emiss_seed_shell,&emiss_seed_factor)!=3 ||
++                                 emiss_seed_line < 0 || emiss_seed_shell < 0 ||
++                                 !(emiss_seed_factor > 0.0) ||
++                                 !isfinite(emiss_seed_factor))) {
++                        fprintf(stderr,"[EMISS-AB][FATAL] LUMINA_EMISS_AB_SEED "
++                            "must be line_id,shell,factor (got %s)\n",seed);
++                        return EXIT_FAILURE;
++                    }
++                    if (cmfgen_init(&emiss_b_cs,&geo) != 0) {
++                        fprintf(stderr,"[EMISS-AB][FATAL] B-lane allocation failed\n");
++                        return EXIT_FAILURE;
++                    }
++                    printf("[EMISS-AB] armed base=%s iteration=%ld%s\n",
++                           emiss_ab_base,emiss_ab_iter,
++                           emiss_seed_line >= 0 ? " SEEDED-NEGATIVE-CONTROL" : "");
++                }
+                 /* P1: persistent lagged MC field for the photoion rate (gate LUMINA_COEVOLVE_PHOTOION_MC,
+                  * blend LUMINA_COEVOLVE_PHOTOION_ALPHA default 0.5). Default off => never registered. */
+                 int g_photoion_mc = (getenv("LUMINA_COEVOLVE_PHOTOION_MC") &&
+@@ -7533,8 +7576,26 @@
+                     cmfgen_set_deposition(
+                         gamma_dep_enabled ? gamma_dep.heating_rate : NULL,
+                         geo.n_shells);
++                    if (emiss_ab_on && it == emiss_ab_iter) {
++                        size_t cells=(size_t)cs.n_shells*cs.n_bins;
++                        memcpy(emiss_b_cs.J,cs.J,cells*sizeof(double));
++                        if (cmfgen_emiss_ab_state_sha256(&cs,&geo,&opacity,
++                                bf_opacity_enabled ? &bf : NULL,&plasma,&nlte,
++                                &atom_data,emiss_ab_state_hash) != 0) {
++                            fprintf(stderr,"[EMISS-AB][FATAL] common state hash failed\n");
++                            return EXIT_FAILURE;
++                        }
++                    }
+                     cmfgen_assemble(&cs, &geo, &opacity,
+                                     bf_opacity_enabled ? &bf : NULL, &plasma);
++                    if (emiss_ab_on && it == emiss_ab_iter &&
++                        cmfgen_assemble_aulnu(&emiss_b_cs,&geo,&opacity,
++                            bf_opacity_enabled ? &bf : NULL,&plasma,&nlte,
++                            &atom_data,emiss_seed_line,emiss_seed_shell,
++                            emiss_seed_factor,&emiss_ab_stats) != 0) {
++                        fprintf(stderr,"[EMISS-AB][FATAL] B-lane assembly failed\n");
++                        return EXIT_FAILURE;
++                    }
+                     cmfgen_solve_J(&cs, &geo, config.T_inner, n_ali);
+                     /* LUMINA_J_DAMP=<f>: radiation-field under-relaxation
+                      * J <- f*J_new + (1-f)*J_prev (TARDIS damping_constant /
+@@ -7594,6 +7655,70 @@
+                             }
+                         }
+                     }
++                    if (emiss_ab_on && it == emiss_ab_iter) {
++                        size_t cells=(size_t)cs.n_shells*cs.n_bins;
++                        size_t bytes=cells*sizeof(double);
++                        /* The experiment is admissible only if every opacity
++                         * coordinate is identical.  Do not turn an accidental
++                         * second-factor change into a labeled E4 artifact. */
++                        if (memcmp(cs.nu,emiss_b_cs.nu,
++                                   (size_t)cs.n_bins*sizeof(double)) ||
++                            memcmp(cs.dnu,emiss_b_cs.dnu,
++                                   (size_t)cs.n_bins*sizeof(double)) ||
++                            memcmp(cs.chi_tot,emiss_b_cs.chi_tot,bytes) ||
++                            memcmp(cs.chi_es,emiss_b_cs.chi_es,bytes) ||
++                            memcmp(cs.chi_abs,emiss_b_cs.chi_abs,bytes) ||
++                            memcmp(cs.chi_line,emiss_b_cs.chi_line,bytes) ||
++                            memcmp(cs.chi_line_th,emiss_b_cs.chi_line_th,bytes) ||
++                            memcmp(cs.chi_line_cls,emiss_b_cs.chi_line_cls,bytes)) {
++                            fprintf(stderr,"[EMISS-AB][FATAL] non-emissivity "
++                                           "coordinate changed between lanes\n");
++                            return EXIT_FAILURE;
++                        }
++                        memcpy(emiss_b_cs.J,cs.J,bytes);
++                        for (size_t q=0;q<cells;q++) {
++                            cs.eta_total_audit[q]=cs.chi_tot[q]*cs.S_fixed[q]+
++                                                  cs.chi_es[q]*cs.J[q];
++                            emiss_b_cs.eta_total_audit[q]=
++                                emiss_b_cs.chi_tot[q]*emiss_b_cs.S_fixed[q]+
++                                emiss_b_cs.chi_es[q]*emiss_b_cs.J[q];
++                        }
++                        char ap[4096],bp[4096],au[4096],bu[4096];
++                        int an=snprintf(ap,sizeof(ap),"%s.A",emiss_ab_base);
++                        int bn=snprintf(bp,sizeof(bp),"%s.B",emiss_ab_base);
++                        int aun=snprintf(au,sizeof(au),"%s.undefined.csv",ap);
++                        int bun=snprintf(bu,sizeof(bu),"%s.undefined.csv",bp);
++                        if (an < 0 || bn < 0 || aun < 0 || bun < 0 ||
++                            (size_t)an >= sizeof(ap) || (size_t)bn >= sizeof(bp) ||
++                            (size_t)aun >= sizeof(au) || (size_t)bun >= sizeof(bu)) {
++                            fprintf(stderr,"[EMISS-AB][FATAL] output path too long\n");
++                            return EXIT_FAILURE;
++                        }
++                        if (cmfgen_write_emiss_ab_undefined(&emiss_ab_stats,
++                                &atom_data,au) != 0 ||
++                            cmfgen_write_emiss_ab_undefined(&emiss_ab_stats,
++                                &atom_data,bu) != 0) {
++                            fprintf(stderr,"[EMISS-AB][FATAL] undefined-transition "
++                                           "list write failed\n");
++                            return EXIT_FAILURE;
++                        }
++                        CMFGENChietaLaneMeta am={"A-production",
++                            emiss_ab_state_hash,&emiss_ab_stats};
++                        CMFGENChietaLaneMeta bm={"B-Aul-nu",
++                            emiss_ab_state_hash,&emiss_ab_stats};
++                        if (cmfgen_dump_frozen_chieta_lane(&cs,&geo,it,it,1,ap,&am) ||
++                            cmfgen_dump_frozen_chieta_lane(&emiss_b_cs,&geo,it,it,1,bp,&bm)) {
++                            fprintf(stderr,"[EMISS-AB][FATAL] dual payload write failed\n");
++                            return EXIT_FAILURE;
++                        }
++                        printf("[EMISS-AB] wrote A=%s B=%s state=%s coverage="
++                               "%llu/%llu transitions A-power=%.6f seed_hits=%llu\n",
++                               ap,bp,emiss_ab_state_hash,
++                               (unsigned long long)emiss_ab_stats.defined_transition_count,
++                               (unsigned long long)emiss_ab_stats.active_transition_count,
++                               emiss_ab_stats.a_reference_contribution_fraction,
++                               (unsigned long long)emiss_ab_stats.seed_hits);
++                    }
+                     cmfgen_window_color(&cs);
+                     radeq_set_tail_color(cs.t_color, cs.n_shells);
+                     radeq_set_tri_response(cs.tri_lo, cs.tri_up, cs.tri_r,
+@@ -9018,6 +9143,10 @@
+                         }
+                     }
+                 }
++                if (emiss_ab_on) {
++                    cmfgen_emiss_ab_stats_free(&emiss_ab_stats);
++                    cmfgen_free(&emiss_b_cs);
++                }
+                 cmfgen_free(&cs);
+             }
+ 

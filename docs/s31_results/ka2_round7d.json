@@ -1,0 +1,130 @@
+{
+  "acceptance_checks": {
+    "all_clamp_zero": true,
+    "all_converged_within_max_iterations": true,
+    "all_nonfinite_zero": true,
+    "all_sign_uncertain_zero": true,
+    "all_solution_negative_zero": true,
+    "finest_J_relative_l2_le_1e-4": true,
+    "finest_energy_closure_le_1e-4": true,
+    "finest_max_scaled_error_le_3e-4": true,
+    "finest_source_residual_le_1e-10": true,
+    "finest_transport_residual_le_1e-4": true,
+    "oracle_full_arithmetic_is_80_digit": false,
+    "oracle_nref_relative_difference_lt_1e-9": true,
+    "p_obs_in_1p7_2p3": true
+  },
+  "acceptance_unchanged": true,
+  "cpu_threads": 32,
+  "difference_norms": [
+    1.7341225077811264e-06,
+    5.129253576860279e-07
+  ],
+  "excluded_cells": 0,
+  "grids": [
+    [
+      128,
+      32
+    ],
+    [
+      256,
+      64
+    ],
+    [
+      512,
+      128
+    ]
+  ],
+  "ka": "KA2",
+  "levels": [
+    {
+      "J_oracle_relative_l2": 1.2747371092825836e-05,
+      "L_absorbed": 1.6435363788972537,
+      "L_escape": 8.883937500227262,
+      "L_thermal": 10.527578027828648,
+      "clamp_count": 0,
+      "energy_closure": 9.892940603920293e-06,
+      "grid": {
+        "nmu": 32,
+        "nr": 128
+      },
+      "max_scaled_error": 2.82734650719485e-06,
+      "nonfinite_count": 0,
+      "sign_uncertain_count": 0,
+      "solution_negative_excess_count": 0,
+      "solution_roundoff_enclosure_restart_count": 0,
+      "solution_sign_indeterminate_subtruncation_count": 0,
+      "solution_subtruncation_count": 0,
+      "source_iterations": 32,
+      "source_residual": 4.0827565798599717e-13,
+      "status": "FAIL",
+      "transport_residual": 3.0514254298577573e-07
+    },
+    {
+      "J_oracle_relative_l2": 3.738333543844192e-06,
+      "L_absorbed": 1.6434909056858535,
+      "L_escape": 8.884048220384644,
+      "L_thermal": 10.527578027828651,
+      "clamp_count": 0,
+      "energy_closure": 3.6952239205729527e-06,
+      "grid": {
+        "nmu": 64,
+        "nr": 256
+      },
+      "max_scaled_error": 8.928692653703552e-07,
+      "nonfinite_count": 0,
+      "sign_uncertain_count": 0,
+      "solution_negative_excess_count": 0,
+      "solution_roundoff_enclosure_restart_count": 0,
+      "solution_sign_indeterminate_subtruncation_count": 0,
+      "solution_subtruncation_count": 0,
+      "source_iterations": 32,
+      "source_residual": 4.0888297460851675e-13,
+      "status": "FAIL",
+      "transport_residual": 1.2255144517901676e-06
+    },
+    {
+      "J_oracle_relative_l2": 1.073274277852105e-06,
+      "L_absorbed": 1.6434791363117036,
+      "L_escape": 8.884085919284255,
+      "L_thermal": 10.527578027828651,
+      "clamp_count": 0,
+      "energy_closure": 1.232214347768466e-06,
+      "grid": {
+        "nmu": 128,
+        "nr": 512
+      },
+      "max_scaled_error": 2.801350461045793e-07,
+      "nonfinite_count": 0,
+      "sign_uncertain_count": 0,
+      "solution_negative_excess_count": 0,
+      "solution_roundoff_enclosure_restart_count": 0,
+      "solution_sign_indeterminate_subtruncation_count": 0,
+      "solution_subtruncation_count": 0,
+      "source_iterations": 32,
+      "source_residual": 4.0888166288962173e-13,
+      "status": "FAIL",
+      "transport_residual": 8.127498024419388e-06
+    }
+  ],
+  "oracle": {
+    "Nref": [
+      2048,
+      4096
+    ],
+    "Nref_2048_iterations": 36,
+    "Nref_4096_iterations": 36,
+    "matrix_storage": "binary64 with 80-digit singular primitives",
+    "method": "Gauss-Legendre Nystrom with analytic logarithmic singularity subtraction",
+    "mpmath_dps": 80,
+    "relative_difference": 3.6445269209240967e-10
+  },
+  "p_obs_J": 1.7573850206761803,
+  "parameters": {
+    "B0": 1.0,
+    "chi0_R": 1.0,
+    "epsilon": 0.2
+  },
+  "seed": null,
+  "status": "FAIL"
+}

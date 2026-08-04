@@ -1,0 +1,592 @@
+--- a/src/lumina_cmf_field.c
++++ b/src/lumina_cmf_field.c
+@@ -1513,42 +1513,42 @@
+     free(result->I_plus); result->I_plus = NULL;
+ }
+ 
+-int lumina_cmf_field_solve(const LCMFInput *input,
+-                           const LCMFOptions *options,
+-                           LCMFResult *result)
++static void clear_result_values(LCMFResult *result, const LCMFOptions *options)
+ {
+-    int status;
+-    size_t i,m,k,n_r_eval;
+-    if (result == NULL) return LCMF_EINVAL;
+-    memset(result, 0, sizeof(*result));
+-    result->bdf_eta_min = INFINITY;
+-    result->solution_min = INFINITY;
+-    status = lumina_cmf_validate_input(input, options, &result->error);
+-    if (status != LCMF_OK) return status;
+-    if (input->scatter_mode==LCMF_SCAT_COHERENT && input->chi_coherent!=NULL) {
+-        for (i=0;i<input->nr*input->nnu;++i) {
+-            if (input->chi_coherent[i]>0.0) {
+-                set_error(&result->error,LCMF_EUNSUPPORTED,"source iteration is enabled by the scattering rung",0,0,0.0);
+-                return LCMF_EUNSUPPORTED;
+-            }
+-        }
++    size_t cells = result->nr * result->nnu;
++    memset(result->J, 0, cells * sizeof(*result->J));
++    if (result->H != NULL) memset(result->H, 0, cells * sizeof(*result->H));
++    if (result->K != NULL) memset(result->K, 0, cells * sizeof(*result->K));
++    if (result->I_minus != NULL) {
++        memset(result->I_minus, 0, cells * options->n_mu * sizeof(*result->I_minus));
+     }
+-    status=allocate_result(input,options,result);
+-    if (status!=LCMF_OK) { lumina_cmf_result_free(result); return status; }
+-    n_r_eval = result->nr;
+-    for (i=0;i<n_r_eval;++i) {
++    if (result->I_plus != NULL) {
++        memset(result->I_plus, 0, cells * options->n_mu * sizeof(*result->I_plus));
++    }
++    result->transport_resid_linf = 0.0;
++}
++
++static int transport_sweep(const LCMFInput *input, const LCMFOptions *options,
++                           const double *eta_total, LCMFResult *result)
++{
++    size_t i, m, k;
++    const size_t n_r_eval = result->nr;
++    int status = LCMF_OK;
++    clear_result_values(result, options);
++    for (i = 0u; i < n_r_eval; ++i) {
+         LCMFRayCache cache;
+         const double target_r = options->r_eval == NULL
+                               ? 0.5 * (input->r_edge[i] + input->r_edge[i + 1u])
+                               : options->r_eval[i];
+-        status=lumina_cmf_ray_cache_build_at_radius(target_r,options->n_mu,&cache,&result->error);
+-        if (status!=LCMF_OK) { release_result_arrays(result); return status; }
++        status = lumina_cmf_ray_cache_build_at_radius(target_r, options->n_mu,
++                                                       &cache, &result->error);
++        if (status != LCMF_OK) return status;
+         if (options->radial_characteristic) {
+             cache.mu[0] = 1.0;
+             cache.weight[0] = 1.0;
+             cache.p[0] = 0.0;
+         }
+-        for (m=0;m<options->n_mu;++m) {
++        for (m = 0u; m < options->n_mu; ++m) {
+             double *minus_plane = NULL;
+             double *plus_plane = NULL;
+             if (options->frequency_advection) {
+@@ -1557,51 +1557,193 @@
+                 if (minus_plane == NULL || plus_plane == NULL) {
+                     free(minus_plane); free(plus_plane);
+                     lumina_cmf_ray_cache_free(&cache);
+-                    release_result_arrays(result);
+                     return LCMF_ENOMEM;
+                 }
+-                status = solve_advection_ray(input, input->eta_fixed, i, target_r, cache.p[m],
++                status = solve_advection_ray(input, eta_total, i, target_r, cache.p[m],
+                                               minus_plane, plus_plane,
+                                               &result->transport_resid_linf, result,
+                                               i * options->n_mu + m);
+                 if (status != LCMF_OK) {
+                     free(minus_plane); free(plus_plane);
+                     lumina_cmf_ray_cache_free(&cache);
+-                    release_result_arrays(result);
+                     return status;
+                 }
+             }
+-            for (k=0;k<input->nnu;++k) {
+-                double minus,plus;
+-                const size_t q=i*input->nnu+k;
+-                const size_t iq=(i*options->n_mu+m)*input->nnu+k;
++            for (k = 0u; k < input->nnu; ++k) {
++                double minus, plus;
++                const size_t q = i * input->nnu + k;
++                const size_t iq = (i * options->n_mu + m) * input->nnu + k;
+                 if (options->frequency_advection) {
+                     minus = minus_plane[k]; plus = plus_plane[k];
+                 } else {
+-                    status=solve_static_ray(input,input->eta_fixed,i,target_r,cache.p[m],k,&minus,&plus,
+-                                            &result->transport_resid_linf,&result->error,
+-                                            i*options->n_mu+m);
+-                    if (status!=LCMF_OK) {
++                    status = solve_static_ray(input, eta_total, i, target_r, cache.p[m], k,
++                                              &minus, &plus, &result->transport_resid_linf,
++                                              &result->error, i * options->n_mu + m);
++                    if (status != LCMF_OK) {
+                         if (status == LCMF_ENONFINITE) ++result->nonfinite_count;
++                        free(minus_plane); free(plus_plane);
+                         lumina_cmf_ray_cache_free(&cache);
+-                        release_result_arrays(result);
+                         return status;
+                     }
+                 }
+-                result->J[q] += 0.5*cache.weight[m]*(plus+minus);
++                result->J[q] += 0.5 * cache.weight[m] * (plus + minus);
+                 if (options->compute_hk) {
+-                    result->H[q] += 0.5*cache.weight[m]*cache.mu[m]*(plus-minus);
+-                    result->K[q] += 0.5*cache.weight[m]*cache.mu[m]*cache.mu[m]*(plus+minus);
++                    result->H[q] += 0.5 * cache.weight[m] * cache.mu[m] * (plus - minus);
++                    result->K[q] += 0.5 * cache.weight[m] * cache.mu[m] * cache.mu[m] *
++                                    (plus + minus);
+                 }
+                 if (options->store_intensity) {
+-                    result->I_minus[iq]=minus; result->I_plus[iq]=plus;
++                    result->I_minus[iq] = minus;
++                    result->I_plus[iq] = plus;
+                 }
+             }
+             free(minus_plane); free(plus_plane);
+         }
+         lumina_cmf_ray_cache_free(&cache);
+     }
+-    result->source_iterations=1u; result->source_resid_linf=0.0;
++    return LCMF_OK;
++}
++
++static int transport_sweep_static_parallel(const LCMFInput *input,
++                                           const LCMFOptions *options,
++                                           const double *eta_total,
++                                           LCMFResult *result)
++{
++    const size_t n_r_eval = result->nr;
++    int shared_status = LCMF_OK;
++    double shared_residual = 0.0;
++    ptrdiff_t evaluation;
++    clear_result_values(result, options);
++#ifdef _OPENMP
++#pragma omp parallel for schedule(static) reduction(max:shared_residual)
++#endif
++    for (evaluation = 0; evaluation < (ptrdiff_t)n_r_eval; ++evaluation) {
++        const size_t i = (size_t)evaluation;
++        const double target_r = options->r_eval == NULL
++                              ? 0.5 * (input->r_edge[i] + input->r_edge[i + 1u])
++                              : options->r_eval[i];
++        LCMFRayCache cache;
++        LCMFError local_error;
++        double local_residual = 0.0;
++        size_t m, k;
++        int local_status;
++        memset(&cache, 0, sizeof(cache));
++        memset(&local_error, 0, sizeof(local_error));
++        local_status = lumina_cmf_ray_cache_build_at_radius(target_r, options->n_mu,
++                                                             &cache, &local_error);
++        for (m = 0u; local_status == LCMF_OK && m < options->n_mu; ++m) {
++            for (k = 0u; local_status == LCMF_OK && k < input->nnu; ++k) {
++                double minus, plus;
++                const size_t q = i * input->nnu + k;
++                const size_t iq = (i * options->n_mu + m) * input->nnu + k;
++                local_status = solve_static_ray(input, eta_total, i, target_r, cache.p[m], k,
++                                                &minus, &plus, &local_residual, &local_error,
++                                                i * options->n_mu + m);
++                if (local_status == LCMF_OK) {
++                    result->J[q] += 0.5 * cache.weight[m] * (plus + minus);
++                    if (options->compute_hk) {
++                        result->H[q] += 0.5 * cache.weight[m] * cache.mu[m] * (plus - minus);
++                        result->K[q] += 0.5 * cache.weight[m] * cache.mu[m] * cache.mu[m] *
++                                        (plus + minus);
++                    }
++                    if (options->store_intensity) {
++                        result->I_minus[iq] = minus;
++                        result->I_plus[iq] = plus;
++                    }
++                }
++            }
++        }
++        lumina_cmf_ray_cache_free(&cache);
++        if (local_residual > shared_residual) shared_residual = local_residual;
++        if (local_status != LCMF_OK) {
++#ifdef _OPENMP
++#pragma omp critical(stage31_cmf_error)
++#endif
++            {
++                if (shared_status == LCMF_OK) {
++                    shared_status = local_status;
++                    result->error = local_error;
++                }
++            }
++        }
++    }
++    result->transport_resid_linf = shared_residual;
++    if (shared_status == LCMF_ENONFINITE) ++result->nonfinite_count;
++    return shared_status;
++}
++
++int lumina_cmf_field_solve(const LCMFInput *input,
++                           const LCMFOptions *options,
++                           LCMFResult *result)
++{
++    int status;
++    size_t i, cells;
++    double *eta_total = NULL;
++    double *previous_j = NULL;
++    int coherent_active = 0;
++    if (result == NULL) return LCMF_EINVAL;
++    memset(result, 0, sizeof(*result));
++    result->bdf_eta_min = INFINITY;
++    result->solution_min = INFINITY;
++    status = lumina_cmf_validate_input(input, options, &result->error);
++    if (status != LCMF_OK) return status;
++    cells = input->nr * input->nnu;
++    if (input->scatter_mode == LCMF_SCAT_COHERENT && input->chi_coherent != NULL) {
++        for (i = 0u; i < cells; ++i) if (input->chi_coherent[i] > 0.0) coherent_active = 1;
++    }
++    if (coherent_active && (options->r_eval != NULL || options->frequency_advection)) {
++        set_error(&result->error, LCMF_EINVAL,
++                  "plain coherent iteration requires shell-center static evaluation", 0, 0, 0.0);
++        return LCMF_EINVAL;
++    }
++    status=allocate_result(input,options,result);
++    if (status!=LCMF_OK) { lumina_cmf_result_free(result); return status; }
++    if (!coherent_active) {
++        status = options->frequency_advection
++               ? transport_sweep(input, options, input->eta_fixed, result)
++               : transport_sweep_static_parallel(input, options, input->eta_fixed, result);
++        result->source_iterations = 1u;
++        result->source_resid_linf = 0.0;
++    } else {
++        size_t iteration;
++        eta_total = (double *)checked_calloc(cells, sizeof(*eta_total));
++        previous_j = (double *)checked_calloc(cells, sizeof(*previous_j));
++        if (eta_total == NULL || previous_j == NULL) {
++            free(eta_total); free(previous_j); release_result_arrays(result);
++            return LCMF_ENOMEM;
++        }
++        status = LCMF_ENOCONV;
++        for (iteration = 1u; iteration <= options->max_source_iter; ++iteration) {
++            double max_delta = 0.0;
++            double max_j = 0.0;
++            for (i = 0u; i < cells; ++i) {
++                eta_total[i] = input->eta_fixed[i] + input->chi_coherent[i] * previous_j[i];
++                if (!finite_nonnegative(eta_total[i])) { status = LCMF_ENONFINITE; break; }
++            }
++            if (status == LCMF_ENONFINITE) break;
++            status = transport_sweep_static_parallel(input, options, eta_total, result);
++            if (status != LCMF_OK) break;
++            for (i = 0u; i < cells; ++i) {
++                const double delta = fabs(result->J[i] - previous_j[i]);
++                if (delta > max_delta) max_delta = delta;
++                if (fabs(result->J[i]) > max_j) max_j = fabs(result->J[i]);
++            }
++            result->source_resid_linf = max_delta / (max_j + DBL_MIN);
++            result->source_iterations = iteration;
++            if (result->source_resid_linf <= options->source_rtol) {
++                status = LCMF_OK;
++                break;
++            }
++            memcpy(previous_j, result->J, cells * sizeof(*previous_j));
++            status = LCMF_ENOCONV;
++        }
++        free(previous_j); free(eta_total);
++        if (status == LCMF_ENOCONV) {
++            set_error(&result->error, status, "plain coherent source iteration did not converge",
++                      0, 0, result->source_resid_linf);
++        }
++    }
++    if (status != LCMF_OK) return status;
+     if (result->nonfinite_count > 0u) return LCMF_ENONFINITE;
+     if (result->solution_negative_excess_count > 0u) return LCMF_ENEGATIVE;
+     if (result->sign_uncertain_count > 0u) return LCMF_ESIGNUNCERTAIN;
+--- a/scripts/stage31_cmf_ka_driver.c
++++ b/scripts/stage31_cmf_ka_driver.c
+@@ -99,6 +99,95 @@
+     lumina_cmf_result_free(&result); free(edge); free(chi); free(eta); return status;
+ }
+ 
++static int run_ka2(size_t nr, size_t nmu, const char *path)
++{
++    const double epsilon = 0.2;
++    const double chi0 = 1.0;
++    const double b0 = 1.0;
++    const double nu[1] = {1.0};
++    double *edge = NULL, *chi = NULL, *eta_fixed = NULL, *chi_coherent = NULL;
++    double *eta_converged = NULL;
++    LCMFInput input, escape_input;
++    LCMFOptions options, escape_options;
++    LCMFResult result, escape_result;
++    FILE *stream = NULL;
++    double l_thermal = 0.0, l_absorbed = 0.0, l_escape, energy_closure;
++    size_t i;
++    int status = LCMF_OK;
++    memset(&result, 0, sizeof(result));
++    memset(&escape_result, 0, sizeof(escape_result));
++    edge = (double *)calloc(nr + 1u, sizeof(double));
++    chi = (double *)calloc(nr, sizeof(double));
++    eta_fixed = (double *)calloc(nr, sizeof(double));
++    chi_coherent = (double *)calloc(nr, sizeof(double));
++    eta_converged = (double *)calloc(nr, sizeof(double));
++    if (edge == NULL || chi == NULL || eta_fixed == NULL || chi_coherent == NULL ||
++        eta_converged == NULL) { status = LCMF_ENOMEM; goto done; }
++    for (i = 0u; i <= nr; ++i) edge[i] = (double)i / (double)nr;
++    for (i = 0u; i < nr; ++i) {
++        chi[i] = chi0;
++        eta_fixed[i] = epsilon * chi0 * b0;
++        chi_coherent[i] = (1.0 - epsilon) * chi0;
++    }
++    memset(&input, 0, sizeof(input)); memset(&options, 0, sizeof(options));
++    input.nr = nr; input.nnu = 1u; input.r_edge = edge; input.nu = nu;
++    input.chi_total = chi; input.eta_fixed = eta_fixed;
++    input.chi_coherent = chi_coherent; input.t_exp_s = 1.0;
++    input.inner_bc = LCMF_BC_IRRADIATION; input.scatter_mode = LCMF_SCAT_COHERENT;
++    options.n_mu = nmu; options.max_source_iter = 500u; options.source_rtol = 1.0e-12;
++    options.compute_hk = 1; options.store_intensity = 0; options.frequency_advection = 0;
++    status = lumina_cmf_field_solve(&input, &options, &result);
++    if (status != LCMF_OK) {
++        fprintf(stderr, "KA2 coherent solve: %s: %s\n",
++                lumina_cmf_status_string(status), result.error.message);
++        goto done;
++    }
++    for (i = 0u; i < nr; ++i) eta_converged[i] = eta_fixed[i] + chi_coherent[i] * result.J[i];
++    escape_input = input;
++    escape_input.eta_fixed = eta_converged;
++    escape_input.chi_coherent = NULL;
++    escape_input.scatter_mode = LCMF_SCAT_NONE;
++    memset(&escape_options, 0, sizeof(escape_options));
++    escape_options.n_mu = nmu; escape_options.n_r_eval = nr + 1u;
++    escape_options.r_eval = edge; escape_options.max_source_iter = 1u;
++    escape_options.source_rtol = 1.0e-12; escape_options.compute_hk = 1;
++    status = lumina_cmf_field_solve(&escape_input, &escape_options, &escape_result);
++    if (status != LCMF_OK) {
++        fprintf(stderr, "KA2 escape solve: %s: %s\n",
++                lumina_cmf_status_string(status), escape_result.error.message);
++        goto done;
++    }
++    for (i = 0u; i < nr; ++i) {
++        const double volume = (4.0 * 3.141592653589793238462643383279502884 / 3.0) *
++                              (edge[i + 1u] * edge[i + 1u] * edge[i + 1u] -
++                               edge[i] * edge[i] * edge[i]);
++        l_thermal += 4.0 * 3.141592653589793238462643383279502884 * eta_fixed[i] * volume;
++        l_absorbed += 4.0 * 3.141592653589793238462643383279502884 *
++                      epsilon * chi0 * result.J[i] * volume;
++    }
++    l_escape = 16.0 * 3.141592653589793238462643383279502884 *
++               3.141592653589793238462643383279502884 * escape_result.H[nr];
++    energy_closure = fabs(l_thermal - l_escape - l_absorbed) / l_thermal;
++    stream = fopen(path, "wb"); if (stream == NULL) { status = LCMF_EIO; goto done; }
++    (void)fprintf(stream, "# nr=%zu nmu=%zu source_iterations=%zu source_residual=%.17g transport_residual=%.17g energy_closure=%.17g Lthermal=%.17g Lescape=%.17g Labsorbed=%.17g clamp=%llu solution_negative_excess=%llu sign_uncertain=%llu nonfinite=%llu\n",
++                  nr, nmu, result.source_iterations, result.source_resid_linf,
++                  fmax(result.transport_resid_linf, escape_result.transport_resid_linf),
++                  energy_closure, l_thermal, l_escape, l_absorbed,
++                  (unsigned long long)result.clamp_count,
++                  (unsigned long long)result.solution_negative_excess_count,
++                  (unsigned long long)result.sign_uncertain_count,
++                  (unsigned long long)result.nonfinite_count);
++    (void)fprintf(stream, "i\tr\tJ\n");
++    for (i = 0u; i <= nr; ++i) {
++        (void)fprintf(stream, "%zu\t%.17g\t%.17g\n", i, edge[i], escape_result.J[i]);
++    }
++done:
++    if (stream != NULL && fclose(stream) != 0 && status == LCMF_OK) status = LCMF_EIO;
++    lumina_cmf_result_free(&escape_result); lumina_cmf_result_free(&result);
++    free(eta_converged); free(chi_coherent); free(eta_fixed); free(chi); free(edge);
++    return status;
++}
++
+ static int run_ka3(size_t ns, size_t nnu, const char *path)
+ {
+     const double inner = 1.0e10;
+@@ -197,9 +286,15 @@
+         if (status != LCMF_OK) { fprintf(stderr,"driver failed: %s\n",lumina_cmf_status_string(status)); return 1; }
+         return 0;
+     }
++    if (argc == 5 && strcmp(argv[1], "ka2") == 0 && parse_size(argv[2], &nr) &&
++        parse_size(argv[3], &nmu)) {
++        status = run_ka2(nr, nmu, argv[4]);
++        if (status != LCMF_OK) { fprintf(stderr, "driver failed: %s\n", lumina_cmf_status_string(status)); return 1; }
++        return 0;
++    }
+     if (argc!=6 || strcmp(argv[1],"ka1")!=0 || !parse_size(argv[2],&nr) ||
+         !parse_size(argv[3],&nmu) || !parse_double(argv[4],&parameter)) {
+-        fprintf(stderr,"usage: %s ka1 NR NMU TAU_RADIUS OUTPUT.tsv | ka3 NS NNU OUTPUT.tsv\n",argv[0]); return 2;
++        fprintf(stderr,"usage: %s ka1 NR NMU TAU_RADIUS OUTPUT.tsv | ka2 NR NMU OUTPUT.tsv | ka3 NS NNU OUTPUT.tsv\n",argv[0]); return 2;
+     }
+     status=run_ka1(nr,nmu,parameter,argv[5]);
+     if (status!=LCMF_OK) { fprintf(stderr,"driver failed: %s\n",lumina_cmf_status_string(status)); return 1; }
+--- a/scripts/run_stage31_cmf_ka.py
++++ b/scripts/run_stage31_cmf_ka.py
+@@ -7,14 +7,21 @@
+ import hashlib
+ import json
+ import math
++import os
+ import pathlib
+ import subprocess
+ import sys
+ 
+ import mpmath as mp
++import numpy as np
++from scipy.interpolate import CubicSpline
++
++from stage31_ka2_oracle import relative_difference as oracle_relative_difference
++from stage31_ka2_oracle import solve as solve_ka2_oracle
+ 
+ ROOT = pathlib.Path(__file__).resolve().parents[1]
+ GRIDS_KA1 = ((128, 32), (256, 64), (512, 128))
++GRIDS_KA2 = ((128, 32), (256, 64), (512, 128))
+ GRIDS_KA3 = ((32, 128), (64, 256), (128, 512), (256, 1024), (512, 2048),
+              (1024, 4096))
+ KA3_OFFICIAL_TRIPLE = GRIDS_KA3[-3:]
+@@ -49,7 +56,7 @@
+     if sanitize:
+         flags = ["-std=c11", "-O1", "-g", "-Wall", "-Wextra", "-Wpedantic", "-Werror",
+                  "-fsanitize=address,undefined", "-fno-omit-frame-pointer"]
+-    command = ["gcc", *flags, "-Isrc", "scripts/stage31_cmf_ka_driver.c",
++    command = ["gcc", *flags, "-fopenmp", "-Isrc", "scripts/stage31_cmf_ka_driver.c",
+                "src/lumina_cmf_field.c", "-lm", "-o", str(executable)]
+     subprocess.run(command, cwd=ROOT, check=True)
+ 
+@@ -163,6 +170,97 @@
+             "status": "PASS" if overall else "FAIL"}
+ 
+ 
++def run_ka2(executable: pathlib.Path, work: pathlib.Path) -> dict:
++    run_environment = {**os.environ, "OMP_NUM_THREADS": "32", "OMP_DYNAMIC": "FALSE"}
++    levels = []
++    output_targets = {i / nr for nr, _ in GRIDS_KA2 for i in range(nr + 1)}
++    convergence_targets = {(i + 0.5) / GRIDS_KA2[-1][0]
++                           for i in range(GRIDS_KA2[-1][0])}
++    target_union = sorted(output_targets | convergence_targets)
++    oracle_2048 = solve_ka2_oracle(2048, target_union)
++    oracle_4096 = solve_ka2_oracle(4096, target_union)
++    oracle_2048_map = dict(zip(target_union, oracle_2048["J"]))
++    oracle_4096_map = dict(zip(target_union, oracle_4096["J"]))
++    reference_difference = oracle_relative_difference(
++        [oracle_2048_map[target] for target in sorted(convergence_targets)],
++        [oracle_4096_map[target] for target in sorted(convergence_targets)],
++    )
++    oracle_map = oracle_4096_map
++    for nr, nmu in GRIDS_KA2:
++        table = work / f"ka2_{nr}_{nmu}.tsv"
++        subprocess.run([str(executable), "ka2", str(nr), str(nmu), str(table)],
++                       cwd=ROOT, check=True, env=run_environment)
++        metadata, rows = read_table(table)
++        radius = [row["r"] for row in rows]
++        numeric = [row["J"] for row in rows]
++        exact = [oracle_map[value] for value in radius]
++        level = {
++            "grid": {"nr": nr, "nmu": nmu},
++            "r": radius,
++            "J": numeric,
++            "J_oracle_relative_l2": relative_l2(numeric, exact),
++            "max_scaled_error": max(abs(left - right) for left, right in zip(numeric, exact)),
++            "source_iterations": int(metadata["source_iterations"]),
++            "source_residual": metadata["source_residual"],
++            "transport_residual": metadata["transport_residual"],
++            "energy_closure": metadata["energy_closure"],
++            "L_thermal": metadata["Lthermal"],
++            "L_escape": metadata["Lescape"],
++            "L_absorbed": metadata["Labsorbed"],
++            "clamp_count": int(metadata["clamp"]),
++            "solution_negative_excess_count": int(metadata["solution_negative_excess"]),
++            "sign_uncertain_count": int(metadata["sign_uncertain"]),
++            "nonfinite_count": int(metadata["nonfinite"]),
++        }
++        levels.append(level)
++    differences = []
++    for coarse, fine in zip(levels, levels[1:]):
++        restricted = np.asarray(fine["J"])[::2]
++        differences.append(float(np.sqrt(np.mean((np.asarray(coarse["J"]) - restricted) ** 2))))
++    p_obs = math.log2(differences[0] / differences[1])
++    finest = levels[-1]
++    checks = {
++        "oracle_nref_relative_difference_lt_1e-9": reference_difference < 1.0e-9,
++        "oracle_full_arithmetic_is_80_digit":
++            oracle_4096["matrix_storage"] == "80-digit",
++        "finest_J_relative_l2_le_1e-4": finest["J_oracle_relative_l2"] <= 1.0e-4,
++        "finest_max_scaled_error_le_3e-4": finest["max_scaled_error"] <= 3.0e-4,
++        "p_obs_in_1p7_2p3": 1.7 <= p_obs <= 2.3,
++        "finest_source_residual_le_1e-10": finest["source_residual"] <= 1.0e-10,
++        "finest_transport_residual_le_1e-4": finest["transport_residual"] <= 1.0e-4,
++        "finest_energy_closure_le_1e-4": finest["energy_closure"] <= 1.0e-4,
++        "all_converged_within_max_iterations":
++            all(level["source_iterations"] <= 500 for level in levels),
++        "all_clamp_zero": all(level["clamp_count"] == 0 for level in levels),
++        "all_solution_negative_zero":
++            all(level["solution_negative_excess_count"] == 0 for level in levels),
++        "all_sign_uncertain_zero": all(level["sign_uncertain_count"] == 0 for level in levels),
++        "all_nonfinite_zero": all(level["nonfinite_count"] == 0 for level in levels),
++    }
++    passed = all(checks.values())
++    for level in levels:
++        del level["r"]
++        del level["J"]
++        level["status"] = "PASS" if passed else "FAIL"
++    return {
++        "ka": "KA2", "grids": GRIDS_KA2, "seed": None, "excluded_cells": 0,
++        "parameters": {"chi0_R": 1.0, "epsilon": 0.2, "B0": 1.0},
++        "cpu_threads": 32,
++        "oracle": {
++            "method": "Gauss-Legendre Nystrom with analytic logarithmic singularity subtraction",
++            "mpmath_dps": 80,
++            "Nref": [2048, 4096],
++            "relative_difference": reference_difference,
++            "Nref_2048_iterations": oracle_2048["iterations"],
++            "Nref_4096_iterations": oracle_4096["iterations"],
++            "matrix_storage": oracle_4096["matrix_storage"],
++        },
++        "levels": levels, "p_obs_J": p_obs, "difference_norms": differences,
++        "acceptance_checks": checks, "acceptance_unchanged": True,
++        "status": "PASS" if passed else "FAIL",
++    }
++
++
+ def gaussian_cell_average(x: float, dx: float, center: float) -> float:
+     sigma = 0.04
+     root_two_sigma = math.sqrt(2.0) * sigma
+@@ -395,7 +493,7 @@
+ 
+ def main() -> int:
+     parser = argparse.ArgumentParser()
+-    parser.add_argument("--ka", choices=("ka1", "ka3"), default="ka1")
++    parser.add_argument("--ka", choices=("ka1", "ka2", "ka3"), default="ka1")
+     parser.add_argument("--work", type=pathlib.Path, default=pathlib.Path("/tmp/stage31_ka"))
+     parser.add_argument("--output", type=pathlib.Path)
+     parser.add_argument("--certificate", type=pathlib.Path,
+@@ -404,8 +502,12 @@
+     args.work.mkdir(parents=True, exist_ok=True)
+     executable = args.work / "stage31_cmf_ka_driver"
+     compile_driver(executable)
+-    report = (run_ka1(executable, args.work) if args.ka == "ka1"
+-              else run_ka3(executable, args.work, args.certificate))
++    if args.ka == "ka1":
++        report = run_ka1(executable, args.work)
++    elif args.ka == "ka2":
++        report = run_ka2(executable, args.work)
++    else:
++        report = run_ka3(executable, args.work, args.certificate)
+     rendered = json.dumps(report, indent=2, sort_keys=True)
+     if args.output:
+         args.output.parent.mkdir(parents=True, exist_ok=True)
+--- a/tests/stage31_cmf_skeleton_selftest.c
++++ b/tests/stage31_cmf_skeleton_selftest.c
+@@ -197,6 +197,38 @@
+         if (fabs(recursive-closed)>8.0e-15) { fprintf(stderr,"piecewise SC error %.17g\n",recursive-closed); ++failures; }
+     }
+     {
++        const double coherent_edge[] = {0.0,0.25,0.5,0.75,1.0};
++        const double coherent_nu[] = {1.0};
++        const double coherent_chi[] = {1.0,1.0,1.0,1.0};
++        const double coherent_eta[] = {0.2,0.2,0.2,0.2};
++        const double coherent_opacity[] = {0.8,0.8,0.8,0.8};
++        LCMFInput coherent_input;
++        LCMFOptions coherent_options;
++        LCMFResult coherent_result;
++        int coherent_status;
++        memset(&coherent_input, 0, sizeof(coherent_input));
++        memset(&coherent_options, 0, sizeof(coherent_options));
++        memset(&coherent_result, 0, sizeof(coherent_result));
++        coherent_input.nr=4u; coherent_input.nnu=1u;
++        coherent_input.r_edge=coherent_edge; coherent_input.nu=coherent_nu;
++        coherent_input.chi_total=coherent_chi; coherent_input.eta_fixed=coherent_eta;
++        coherent_input.chi_coherent=coherent_opacity; coherent_input.t_exp_s=1.0;
++        coherent_input.inner_bc=LCMF_BC_IRRADIATION;
++        coherent_input.scatter_mode=LCMF_SCAT_COHERENT;
++        coherent_options.n_mu=4u; coherent_options.max_source_iter=200u;
++        coherent_options.source_rtol=1.0e-11;
++        coherent_status=lumina_cmf_field_solve(&coherent_input,&coherent_options,
++                                               &coherent_result);
++        failures += expect_status(coherent_status,LCMF_OK,"plain coherent source iteration");
++        if (coherent_status==LCMF_OK &&
++            (coherent_result.source_iterations<=1u ||
++             coherent_result.source_resid_linf>1.0e-11 || coherent_result.J[0]<=0.0 ||
++             coherent_result.clamp_count!=0u || coherent_result.nonfinite_count!=0u)) {
++            fprintf(stderr,"plain coherent iteration contract failed\n"); ++failures;
++        }
++        lumina_cmf_result_free(&coherent_result);
++    }
++    {
+         const double core_edge[] = {1.0e10,1.25e10,1.5e10,1.75e10,2.0e10};
+         const double core_nu[] = {4.0,2.0,1.0};
+         const double core_zero[12] = {0.0};

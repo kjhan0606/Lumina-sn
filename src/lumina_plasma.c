@@ -3,6 +3,8 @@
  * Implements T_inner convergence from escape fraction. */
 
 #include "lumina.h" /* Phase 4 - Step 1 */
+#include "lumina_radeq_col_pairs.h" /* withParityO: CMFGEN-faithful all-pair COL cooling */
+#include <assert.h>
 #ifdef _OPENMP
 #include <omp.h>
 #endif
@@ -11,11 +13,348 @@
 extern "C" {         /* Phase 6 - Step 9 */
 #endif               /* Phase 6 - Step 9 */
 
+/* Wave-3.2 D7 runtime counter hooks.  Implemented by the explicitly linked EW
+ * translation unit; the hooks increment only while that lane is armed. */
+extern void nlte_ew_note_save_restore_call(void);
+extern void nlte_ew_note_per_ion_pin_call(void);
+extern void nlte_ew_note_topstage_IV_call(void);
+extern int nlte_ew_publish_runtime_counts(const NLTEConfig *nlte);
+
+/* Production counter: unlike the frozen oracle observer this survives normal
+ * runs and records every legacy GPU table rejected because the selected bf
+ * radiation field is estimator/JEQB rather than the table's J field. */
+static unsigned long g_nlte_bf_gpu_field_bypass_levels = 0;
+
+unsigned long nlte_bf_gpu_field_bypass_count(void) {
+    return g_nlte_bf_gpu_field_bypass_levels;
+}
+
 /* ascending double comparator for qsort (b_k partial-LTE rate-pin median) */
 static int cmf_dcmp_pl(const void *a, const void *b) {
     double d = *(const double*)a - *(const double*)b;
     return (d > 0) - (d < 0);
 }
+
+#ifdef LUMINA_FROZEN_ORACLE
+/* Compile-time-only Gate-B observer.  Normal production targets preprocess this
+ * entire block (and every ORACLE_* call below) away. */
+static void compute_partition_functions(AtomicData *atom, PlasmaState *plasma,
+                                        int n_shells);
+#define ORACLE_NION 8
+#define ORACLE_NWAVE 2
+typedef struct {
+    int seen;
+    int line;
+    int lo_level, up_level;
+    double lambda_A, score, j_line, jbar_raw, beta;
+    long jbar_count;
+    double r_up, r_stim, r_spont, c_lu, c_ul;
+} OracleTopLine;
+typedef struct {
+    FILE *fp;
+    int shell_label;
+    int bf_rate_seen[ORACLE_NION];
+    double gamma_num[ORACLE_NION], gamma_den[ORACLE_NION];
+    double alpha_total[ORACLE_NION], alpha_spont[ORACLE_NION],
+           alpha_stim[ORACLE_NION];
+    double chi[ORACLE_NION][ORACLE_NWAVE];
+    double eta[ORACLE_NION][ORACLE_NWAVE];
+    double ff_chi[ORACLE_NWAVE], ff_eta[ORACLE_NWAVE];
+    double ff_cooling_grid;
+    int bf_bins_loaded, bf_bins_expected;
+    long bf_estimator_consumptions, bf_fallback_consumptions;
+    long bf_gpu_lookup_level_consumptions, bf_gpu_field_bypass_levels;
+    int jbar_ion_complete[ORACLE_NION];
+    int thermal_seen;
+    double thermal_photoion, thermal_deposition, thermal_ff, thermal_bf;
+    double thermal_bb_collisional, thermal_adiabatic, thermal_net;
+    int ma_line_destruct_seen;
+    double ma_line_destruct_heating;
+    OracleTopLine top[ORACLE_NION];
+} OracleTrace;
+static OracleTrace g_oracle;
+static const int g_oracle_Z[ORACLE_NION] = {14,14,16,16,26,26,26,27};
+static const int g_oracle_stage[ORACLE_NION] = {1,2,1,2,1,2,3,2};
+static const double g_oracle_wave_A[ORACLE_NWAVE] = {1000.0, 5000.0};
+
+static int oracle_ion_slot(int Z, int stage) {
+    for (int i = 0; i < ORACLE_NION; i++)
+        if (g_oracle_Z[i] == Z && g_oracle_stage[i] == stage) return i;
+    return -1;
+}
+
+static int oracle_wave_slot(const BFOpacity *bf, int b) {
+    double nu = bf->nu_min * exp(((double)b + 0.5) * bf->d_log_nu);
+    double lam = C_SPEED_OF_LIGHT / nu * 1.0e8;
+    int best = -1;
+    double best_d = 1.0e300;
+    for (int k = 0; k < ORACLE_NWAVE; k++) {
+        double d = fabs(log(lam / g_oracle_wave_A[k]));
+        if (d < best_d) { best_d = d; best = k; }
+    }
+    /* Half a log-grid cell: exactly one production bin per requested lambda. */
+    return (best >= 0 && best_d <= 0.51 * bf->d_log_nu) ? best : -1;
+}
+
+static void oracle_csv_value(FILE *fp, int shell, const char *category,
+                             const char *quantity, int Z, int stage,
+                             const char *transition, double nu, double value,
+                             const char *unit, const char *fn) {
+    fprintf(fp, "%d,%s,%s,%d,%d,%s,%.17e,%.17e,%s,%s,available,\n",
+            shell, category, quantity, Z, stage,
+            transition ? transition : "", nu, value, unit, fn);
+}
+
+static void oracle_csv_unavailable(FILE *fp, int shell, const char *category,
+                                   const char *quantity, int Z, int stage,
+                                   const char *reason) {
+    fprintf(fp, "%d,%s,%s,%d,%d,,0,,,%s,unavailable,%s\n",
+            shell, category, quantity, Z, stage,
+            "not_computed_by_frozen_production_call", reason);
+}
+
+void lumina_oracle_trace_begin(FILE *fp, int shell_label) {
+    memset(&g_oracle, 0, sizeof(g_oracle));
+    g_oracle.fp = fp;
+    g_oracle.shell_label = shell_label;
+    for (int i = 0; i < ORACLE_NION; i++) g_oracle.top[i].score = -1.0;
+}
+
+void lumina_oracle_set_frozen_input_coverage(int bf_bins_loaded,
+                                              int bf_bins_expected,
+                                              const int *jbar_ion_complete,
+                                              int n_jbar_ions) {
+    if (!g_oracle.fp) return;
+    g_oracle.bf_bins_loaded = bf_bins_loaded;
+    g_oracle.bf_bins_expected = bf_bins_expected;
+    for (int i = 0; i < ORACLE_NION; i++)
+        g_oracle.jbar_ion_complete[i] =
+            (jbar_ion_complete && i < n_jbar_ions) ? jbar_ion_complete[i] : 0;
+}
+
+void lumina_oracle_set_transport_thermal(double ma_line_destruct_heating,
+                                         int available) {
+    if (!g_oracle.fp) return;
+    g_oracle.ma_line_destruct_seen = available ? 1 : 0;
+    g_oracle.ma_line_destruct_heating = ma_line_destruct_heating;
+}
+
+void lumina_oracle_trace_end(void) {
+    FILE *fp = g_oracle.fp;
+    if (!fp) return;
+    oracle_csv_value(fp, g_oracle.shell_label, "input",
+                     "bf_rate_estimator_bins_loaded", 0, -1, "", 0.0,
+                     (double)g_oracle.bf_bins_loaded, "count",
+                     "input:lumina_c2_bfr_dump.csv");
+    oracle_csv_value(fp, g_oracle.shell_label, "input",
+                     "bf_rate_estimator_bins_expected", 0, -1, "", 0.0,
+                     (double)g_oracle.bf_bins_expected, "count",
+                     "NLTEConfig.n_freq_bins");
+    oracle_csv_value(fp, g_oracle.shell_label, "input",
+                     "bf_rate_estimator_positive_consumptions", 0, -1, "", 0.0,
+                     (double)g_oracle.bf_estimator_consumptions, "count",
+                     "nlte_assemble_rate_matrix");
+    oracle_csv_value(fp, g_oracle.shell_label, "input",
+                     "bf_rate_estimator_fallback_consumptions", 0, -1, "", 0.0,
+                     (double)g_oracle.bf_fallback_consumptions, "count",
+                     "nlte_assemble_rate_matrix");
+    oracle_csv_value(fp, g_oracle.shell_label, "input",
+                     "bf_gpu_lookup_level_consumptions", 0, -1, "", 0.0,
+                     (double)g_oracle.bf_gpu_lookup_level_consumptions, "count",
+                     "nlte_bf_field_source");
+    oracle_csv_value(fp, g_oracle.shell_label, "input",
+                     "bf_gpu_field_bypass_levels", 0, -1, "", 0.0,
+                     (double)g_oracle.bf_gpu_field_bypass_levels, "count",
+                     "nlte_bf_field_source");
+    for (int i = 0; i < ORACLE_NION; i++)
+        oracle_csv_value(fp, g_oracle.shell_label, "input",
+                         "raw_jbar_ion_recorded", g_oracle_Z[i],
+                         g_oracle_stage[i], "", 0.0,
+                         (double)g_oracle.jbar_ion_complete[i],
+                         "dimensionless", "input:lumina_jbar_dump.csv");
+    for (int i = 0; i < ORACLE_NION; i++) {
+        int Z = g_oracle_Z[i], st = g_oracle_stage[i];
+        if (g_oracle.bf_rate_seen[i]) {
+            double gamma = g_oracle.gamma_den[i] > 0.0
+                         ? g_oracle.gamma_num[i] / g_oracle.gamma_den[i] : 0.0;
+            oracle_csv_value(fp, g_oracle.shell_label, "bf", "Gamma_photoion_total",
+                             Z, st, "", 0.0, gamma, "s^-1",
+                             "nlte_assemble_rate_matrix");
+            oracle_csv_value(fp, g_oracle.shell_label, "bf", "alpha_recomb_total",
+                             Z, st, "", 0.0, g_oracle.alpha_total[i], "cm^3_s^-1",
+                             "nlte_assemble_rate_matrix");
+            oracle_csv_value(fp, g_oracle.shell_label, "bf", "alpha_recomb_spont",
+                             Z, st, "", 0.0, g_oracle.alpha_spont[i], "cm^3_s^-1",
+                             "nlte_assemble_rate_matrix");
+            oracle_csv_value(fp, g_oracle.shell_label, "bf", "alpha_recomb_stim",
+                             Z, st, "", 0.0, g_oracle.alpha_stim[i], "cm^3_s^-1",
+                             "nlte_assemble_rate_matrix");
+        } else {
+            oracle_csv_unavailable(fp, g_oracle.shell_label, "bf",
+                                   "Gamma_photoion_total", Z, st,
+                                   "ion is not a lower member of an assembled NLTE pair");
+            oracle_csv_unavailable(fp, g_oracle.shell_label, "bf",
+                                   "alpha_recomb_total", Z, st,
+                                   "ion is not a lower member of an assembled NLTE pair");
+            oracle_csv_unavailable(fp, g_oracle.shell_label, "bf",
+                                   "alpha_recomb_spont", Z, st,
+                                   "ion is not a lower member of an assembled NLTE pair");
+            oracle_csv_unavailable(fp, g_oracle.shell_label, "bf",
+                                   "alpha_recomb_stim", Z, st,
+                                   "ion is not a lower member of an assembled NLTE pair");
+        }
+        for (int w = 0; w < ORACLE_NWAVE; w++) {
+            char q[64];
+            double nu = C_SPEED_OF_LIGHT / (g_oracle_wave_A[w] * 1.0e-8);
+            snprintf(q, sizeof(q), "chi_bf_at_%.0fA", g_oracle_wave_A[w]);
+            oracle_csv_value(fp, g_oracle.shell_label, "bf", q, Z, st, "",
+                             nu, g_oracle.chi[i][w], "cm^-1",
+                             "compute_bf_opacity");
+            snprintf(q, sizeof(q), "eta_bf_at_%.0fA", g_oracle_wave_A[w]);
+            oracle_csv_value(fp, g_oracle.shell_label, "bf", q, Z, st, "",
+                             nu, g_oracle.eta[i][w],
+                             "erg_s^-1_cm^-3_Hz^-1_sr^-1",
+                             "compute_bf_opacity");
+        }
+        OracleTopLine *t = &g_oracle.top[i];
+        if (t->seen) {
+            char tr[96];
+            double nu = C_SPEED_OF_LIGHT / (t->lambda_A * 1.0e-8);
+            snprintf(tr, sizeof(tr), "line%d_l%d_u%d_%.4fA",
+                     t->line, t->lo_level, t->up_level, t->lambda_A);
+            oracle_csv_value(fp, g_oracle.shell_label, "bb", "jbar_representative",
+                             Z, st, tr, nu, t->j_line,
+                             "erg_s^-1_cm^-2_Hz^-1_sr^-1",
+                             g_oracle.jbar_ion_complete[i]
+                                 ? "nlte_assemble_rate_matrix:frozen_raw_jbar"
+                                 : "nlte_assemble_rate_matrix:C1_fallback_replay");
+            if (g_oracle.jbar_ion_complete[i] && t->jbar_raw >= 0.0)
+                oracle_csv_value(fp, g_oracle.shell_label, "bb", "jbar_input_raw",
+                                 Z, st, tr, nu, t->jbar_raw,
+                                 "erg_s^-1_cm^-2_Hz^-1_sr^-1",
+                                 "nlte_assemble_rate_matrix");
+            else
+                oracle_csv_unavailable(fp, g_oracle.shell_label, "bb",
+                                       "jbar_input_raw", Z, st,
+                                       g_oracle.jbar_ion_complete[i]
+                                           ? "representative line absent from the selected frozen raw-Jbar block"
+                                           : "original raw-Jbar/tau was filtered before archival; representative J and rates are separately quantified by the production C1-fallback replay, but are not relabelled as the missing raw measurement");
+            oracle_csv_value(fp, g_oracle.shell_label, "bb", "sobolev_beta",
+                             Z, st, tr, nu, t->beta, "dimensionless",
+                             "nlte_assemble_rate_matrix");
+            oracle_csv_value(fp, g_oracle.shell_label, "bb", "R_lu_radiative",
+                             Z, st, tr, nu, t->r_up, "s^-1",
+                             "nlte_assemble_rate_matrix");
+            oracle_csv_value(fp, g_oracle.shell_label, "bb", "R_ul_stimulated",
+                             Z, st, tr, nu, t->r_stim, "s^-1",
+                             "nlte_assemble_rate_matrix");
+            oracle_csv_value(fp, g_oracle.shell_label, "bb", "R_ul_spontaneous",
+                             Z, st, tr, nu, t->r_spont, "s^-1",
+                             "nlte_assemble_rate_matrix");
+            oracle_csv_value(fp, g_oracle.shell_label, "collisional", "C_lu",
+                             Z, st, tr, nu, t->c_lu, "s^-1",
+                             "nlte_assemble_rate_matrix");
+            oracle_csv_value(fp, g_oracle.shell_label, "collisional", "C_ul",
+                             Z, st, tr, nu, t->c_ul, "s^-1",
+                             "nlte_assemble_rate_matrix");
+        } else {
+            oracle_csv_unavailable(fp, g_oracle.shell_label, "bb",
+                                   "jbar_representative", Z, st,
+                                   "no_positive_lower-level population flow selected");
+            oracle_csv_unavailable(fp, g_oracle.shell_label, "bb",
+                                   "jbar_input_raw", Z, st,
+                                   "no representative transition was selected");
+            oracle_csv_unavailable(fp, g_oracle.shell_label, "bb",
+                                   "sobolev_beta", Z, st,
+                                   "no representative transition was selected");
+            oracle_csv_unavailable(fp, g_oracle.shell_label, "bb",
+                                   "R_lu_radiative", Z, st,
+                                   "no_positive lower-level population flow selected");
+            oracle_csv_unavailable(fp, g_oracle.shell_label, "bb",
+                                   "R_ul_stimulated", Z, st,
+                                   "no_positive lower-level population flow selected");
+            oracle_csv_unavailable(fp, g_oracle.shell_label, "bb",
+                                   "R_ul_spontaneous", Z, st,
+                                   "no_positive lower-level population flow selected");
+            oracle_csv_unavailable(fp, g_oracle.shell_label, "collisional",
+                                   "C_lu", Z, st,
+                                   "no_positive lower-level population flow selected");
+            oracle_csv_unavailable(fp, g_oracle.shell_label, "collisional",
+                                   "C_ul", Z, st,
+                                   "no_positive lower-level population flow selected");
+        }
+    }
+    for (int w = 0; w < ORACLE_NWAVE; w++) {
+        char q[64];
+        double nu = C_SPEED_OF_LIGHT / (g_oracle_wave_A[w] * 1.0e-8);
+        snprintf(q, sizeof(q), "chi_ff_at_%.0fA", g_oracle_wave_A[w]);
+        oracle_csv_value(fp, g_oracle.shell_label, "ff", q, 0, -1, "", nu,
+                         g_oracle.ff_chi[w], "cm^-1", "compute_bf_opacity");
+        snprintf(q, sizeof(q), "eta_ff_at_%.0fA", g_oracle_wave_A[w]);
+        oracle_csv_value(fp, g_oracle.shell_label, "ff", q, 0, -1, "", nu,
+                         g_oracle.ff_eta[w], "erg_s^-1_cm^-3_Hz^-1_sr^-1",
+                         "compute_bf_opacity");
+    }
+    oracle_csv_value(fp, g_oracle.shell_label, "ff", "cooling_ff_grid",
+                     0, -1, "", 0.0, g_oracle.ff_cooling_grid,
+                     "erg_s^-1_cm^-3", "compute_bf_opacity");
+    if (g_oracle.thermal_seen) {
+        oracle_csv_value(fp, g_oracle.shell_label, "thermal", "heating_photoion",
+                         0, -1, "", 0.0, g_oracle.thermal_photoion,
+                         "erg_s^-1_cm^-3", "compute_radiative_equilibrium_te/radeq_simul_all/simul_r1");
+        oracle_csv_value(fp, g_oracle.shell_label, "thermal", "heating_deposition",
+                         0, -1, "", 0.0, g_oracle.thermal_deposition,
+                         "erg_s^-1_cm^-3", "compute_radiative_equilibrium_te/radeq_simul_all/simul_r1");
+        if (g_oracle.ma_line_destruct_seen)
+            oracle_csv_value(fp, g_oracle.shell_label, "thermal",
+                             "heating_MA_LINE_DESTRUCT", 0, -1, "", 0.0,
+                             g_oracle.ma_line_destruct_heating,
+                             "erg_s^-1_cm^-3",
+                             "input:lumina_ma_line_destruct.csv");
+        else
+            oracle_csv_unavailable(fp, g_oracle.shell_label, "thermal",
+                                   "heating_MA_LINE_DESTRUCT", 0, -1,
+                                   "selected archived run has global terminal/destroyed event counts but no lumina_ma_line_destruct.csv; shell ownership and packet-energy/volume normalization are unavailable from this archive");
+        oracle_csv_value(fp, g_oracle.shell_label, "thermal", "cooling_ff",
+                         0, -1, "", 0.0, g_oracle.thermal_ff,
+                         "erg_s^-1_cm^-3", "compute_radiative_equilibrium_te/radeq_simul_all/simul_r1");
+        oracle_csv_value(fp, g_oracle.shell_label, "thermal", "cooling_bf",
+                         0, -1, "", 0.0, g_oracle.thermal_bf,
+                         "erg_s^-1_cm^-3", "compute_radiative_equilibrium_te/radeq_simul_all/simul_r1");
+        oracle_csv_value(fp, g_oracle.shell_label, "thermal", "cooling_bf_net",
+                         0, -1, "", 0.0,
+                         g_oracle.thermal_bf - g_oracle.thermal_photoion,
+                         "erg_s^-1_cm^-3", "compute_radiative_equilibrium_te/radeq_simul_all/simul_r1");
+        oracle_csv_value(fp, g_oracle.shell_label, "thermal", "cooling_bb_collisional",
+                         0, -1, "", 0.0, g_oracle.thermal_bb_collisional,
+                         "erg_s^-1_cm^-3", "compute_radiative_equilibrium_te/radeq_simul_all/simul_r1");
+        oracle_csv_value(fp, g_oracle.shell_label, "thermal", "cooling_adiabatic",
+                         0, -1, "", 0.0, g_oracle.thermal_adiabatic,
+                         "erg_s^-1_cm^-3", "compute_radiative_equilibrium_te/radeq_simul_all/simul_r1");
+        oracle_csv_value(fp, g_oracle.shell_label, "thermal", "thermal_net",
+                         0, -1, "", 0.0, g_oracle.thermal_net,
+                         "erg_s^-1_cm^-3", "compute_radiative_equilibrium_te/radeq_simul_all/simul_r1");
+    } else {
+        static const char *tq[] = {
+            "heating_photoion", "heating_deposition", "heating_MA_LINE_DESTRUCT",
+            "cooling_ff", "cooling_bf", "cooling_bf_net",
+            "cooling_bb_collisional",
+            "cooling_adiabatic", "thermal_net"
+        };
+        for (size_t i = 0; i < sizeof(tq) / sizeof(tq[0]); i++)
+            oracle_csv_unavailable(fp, g_oracle.shell_label, "thermal", tq[i],
+                                   0, -1,
+                                   "production simultaneous thermal residual was not reached");
+    }
+    fflush(fp);
+    g_oracle.fp = NULL;
+}
+
+void lumina_oracle_prepare_partitions(AtomicData *atom, PlasmaState *plasma,
+                                      int n_shells) {
+    compute_partition_functions(atom, plasma, n_shells);
+}
+#endif
 
 static inline double planck_bnu(double T, double nu);
 /* Binned-J estimator: fit dilute Planck (T_rad,W) to the frequency-resolved
@@ -24,6 +363,481 @@ static inline double planck_bnu(double T, double nu);
 static int fit_dilute_planck_binned_j(const Estimators *est, int shell,
                                       double volume, double time_simulation,
                                       double *T_out, double *W_out);
+
+/* ============================================================ */
+/* ARTIS-PARITY collisional rate network (Group A: A1-A6).      */
+/* Master gate LUMINA_ARTIS_PARITY (default OFF => byte-identical). */
+/* Faithful port of ARTIS macroatom.cc col_excitation_ratecoeff  */
+/* / col_deexcitation_ratecoeff (constants from constants.h).    */
+/* ============================================================ */
+#define ARTIS_C_0            5.465e-11      /* constants.h C_0 */
+#define ARTIS_VR_PREF        14.51039491    /* ARTIS van-Regemorter numeric prefactor */
+#define ARTIS_H_IONPOT_ERG   (13.5979996 * EV_TO_ERG)  /* H ionization potential [erg] */
+#define ARTIS_EULERGAMMA     0.5772156649015329
+#define ARTIS_GBAR           0.2            /* effective Gaunt floor (permitted E1) */
+#define ARTIS_COL_CONST      8.629e-6       /* effective collision-strength constant */
+#define ARTIS_FORB_UPS       0.01           /* Axelrod g-scaled forbidden floor (A5) */
+#define ARTIS_GAUNT_UCROSS   0.33421        /* u where 0.276 e^u(-gamma-ln u) == g_bar */
+
+/* Master gate: LUMINA_ARTIS_PARITY=1 turns on the full ARTIS-consistent
+ * collisional network. Default OFF => every parity branch is skipped and
+ * behaviour is byte-identical to the champion. Env-cached (thread-safe: first
+ * call wins; the driver reads it once at startup before the parallel region). */
+int artis_parity_enabled(void) {
+    static int init = 0, enabled = 0;
+    if (!init) {
+        const char *e = getenv("LUMINA_ARTIS_PARITY");
+        if (e && atoi(e) != 0) enabled = 1;
+        init = 1;
+    }
+    return enabled;
+}
+
+/* Wave-3.2 R3: one source-of-truth for the bound-free radiation field AND the
+ * permission to consume a precomputed GPU lookup.  Return values are private
+ * to plasma/element_wide: 0=pref*J, 1=sigma*Gamma estimator (with per-bin
+ * pref*J fallback), 2=pref*B_nu(T_e) JEQB falsifier.  A GPU lookup represents
+ * the legacy J-field integral, so it is legal only for source 0.  When another
+ * source is selected the helper explicitly reports the field mismatch and
+ * forces the caller through the CPU integration; no caller may reconstruct
+ * C2/JEQB/parity conditions independently. */
+int nlte_bf_field_source(const NLTEConfig *nlte, double T_e, double nu,
+                         double J_default, int gpu_lookup_available,
+                         int *use_gpu_lookup, int *gpu_field_bypassed,
+                         double *J_selected) {
+    static int initialized = 0, c2_matrix_bf = 0, bf_jeqb = 0;
+    if (!initialized) {
+        const char *c2 = getenv("LUMINA_C2_MATRIX_BF");
+        const char *jq = getenv("LUMINA_NLTE_BF_JEQB");
+        c2_matrix_bf = (c2 && atoi(c2)) ? 1 : 0;
+        bf_jeqb = (jq && atoi(jq)) ? 1 : 0;
+        initialized = 1;
+    }
+    int source = bf_jeqb ? 2 :
+        (((artis_parity_enabled() || c2_matrix_bf) && nlte &&
+          nlte->bf_rate_estimator) ? 1 : 0);
+    if (use_gpu_lookup)
+        *use_gpu_lookup = gpu_lookup_available && source == 0;
+    int bypassed = gpu_lookup_available && source != 0;
+    if (gpu_field_bypassed) *gpu_field_bypassed = bypassed;
+    if (bypassed) {
+#ifdef _OPENMP
+#pragma omp atomic
+#endif
+        g_nlte_bf_gpu_field_bypass_levels++;
+    }
+    if (J_selected)
+        *J_selected = (source == 2) ? planck_bnu(T_e, nu) : J_default;
+    return source;
+}
+
+/* D3 coordinate 4: collisional bf has one policy in both owners. */
+int nlte_bf_collisional_enabled(void) {
+    return artis_parity_enabled();
+}
+
+/* Ownership status transferred from the current EW solve to the later
+ * tau/source writeback.  Process-global because the public writeback signature
+ * predates the EW lane; nlte_free releases the final retained pass. */
+static int *g_ew_tau_authority = NULL;
+static int g_ew_tau_authority_nshells = 0;
+
+/* ============================================================================
+ * [RATES-FIX] Master gate LUMINA_RATES_FIX (default OFF => every repair below
+ * falls through to the pre-existing code path => byte-identical output).
+ * Four by-construction defects of the IONIZATION rate machinery, localized by
+ * the Saha known-answer harness (scripts/run_ioniz_saha_selftest.sh):
+ *   F1  Boltzmann-cut asymmetry: the radeq Gph all-level loop dropped levels
+ *       with E_l/kT >= 50, while the Milne alpha (frozenin_alpha_rr) keeps
+ *       them. Gamma's per-level weight g e^{-E/kT} I and alpha's
+ *       g e^{(chi-E)/kT} I differ only by the (level-independent) Saha factor,
+ *       so cutting one side alone makes Gamma systematically LOW.
+ *   F2  U_ion fallback read a stray g: when the upper ion carries no levels
+ *       (n1==n0) the code read level_g[level_offset[ip_next]], which is the
+ *       NEXT element's ground level (out of bounds for the last ion pop).
+ *   F3  0 x inf -> NaN: Rbf was zeroed by the x>700 bin skip and then
+ *       multiplied by exp(chi_l/kT)=inf. Fixed by FUSING the exponent into
+ *       the integrand, exp((chi_l-h nu)/kT) <= 1 above threshold (the correct
+ *       form of the Milne integral; also restores the finite low-T alpha the
+ *       bin skip was throwing away).
+ *   F5  Kramers sigma_0 fallback used Z_eff = Z-stage (the BOUND-electron
+ *       count) instead of stage+1, the charge the ejected electron sees
+ *       (documented convention; simul_ladder already uses stage+1).
+ * F4 (missing DR autoionization partner) is deliberately NOT touched:
+ * LUMINA_FROZENIN_DR=OFF is the consistent configuration.
+ * ==========================================================================*/
+static long g_rates_fix_n_emptyU = 0;   /* F2 firings; counted gate-INDEPENDENTLY */
+static void rates_fix_report(void) {
+    printf("[RATES-FIX] F2 empty-upper-ion U_ion fallbacks: %ld\n",
+           g_rates_fix_n_emptyU);
+    fflush(stdout);
+}
+static int rates_fix_enabled(void) {
+    static int init = 0, on = 0;
+    if (!init) {
+        const char *e = getenv("LUMINA_RATES_FIX");
+        on = (e && atoi(e) != 0) ? 1 : 0;
+        init = 1;
+        if (on) {
+            printf("[RATES-FIX] F1 F2 F3 F5 active\n");
+            fflush(stdout);
+            atexit(rates_fix_report);
+        }
+    }
+    return on;
+}
+
+/* THE shared ARTIS collision-coefficient helper (A6: ONE implementation for the
+ * NLTE matrix, RADEQ cooling, and k-packet). Faithful port of ARTIS
+ * macroatom.cc col_excitation_ratecoeff / col_deexcitation_ratecoeff.
+ *   Inputs : T_e[K], n_e[cm^-3], dE=epsilon_trans[erg]>0, g_lo/g_up stat weights,
+ *            f_lu oscillator strength, coll_str (effective collision strength;
+ *            <0 => derive from f_lu/forbidden), forbidden flag (used iff coll_str<0).
+ *   Outputs: *C_up   (multiply by LOWER-level pop -> up-rate   [s^-1])
+ *            *C_down (multiply by UPPER-level pop -> down-rate  [s^-1]).
+ * Detailed balance is exact per channel: C_up/C_down = (g_up/g_lo)*exp(-dE/kTe). */
+static inline void artis_col_rates(double T_e, double n_e, double dE,
+                                   double g_lo, double g_up, double f_lu,
+                                   double coll_str, int forbidden,
+                                   double *C_up, double *C_down) {
+    *C_up = 0.0; *C_down = 0.0;
+    if (!(T_e > 0.0) || !(n_e > 0.0) || !(dE > 0.0) || g_lo <= 0.0 || g_up <= 0.0)
+        return;
+    const double sqrtTe = sqrt(T_e);
+    const double u = dE / (K_BOLTZMANN * T_e);   /* eoverkt */
+    if (coll_str < 0.0) {
+        if (!forbidden) {
+            /* permitted E1: van Regemorter + energy-dependent Gaunt + Bethe
+             * (H_ionpot/dE)^2 factor (macroatom.cc:757 / :718). gauntfac ==
+             * max(g_bar, 0.276 e^u(-gamma-ln u)); the crossover is at u=0.33421. */
+            const double gaunt = (u > ARTIS_GAUNT_UCROSS) ? ARTIS_GBAR
+                              : 0.276 * exp(u) * (-ARTIS_EULERGAMMA - log(u));
+            const double ry = ARTIS_H_IONPOT_ERG / dE;
+            const double base = ARTIS_C_0 * ARTIS_VR_PREF * n_e * sqrtTe *
+                                f_lu * ry * ry;
+            *C_up   = base * u * exp(-u) * gaunt;
+            *C_down = base * u * (g_lo / g_up) * gaunt;
+        } else {
+            /* forbidden M1/E2: Axelrod g-scaled floor, effective Upsilon =
+             * 0.01*g_lo*g_up (macroatom.cc:723,765 -> A5). */
+            *C_down = n_e * ARTIS_COL_CONST * ARTIS_FORB_UPS * g_lo / sqrtTe;
+            *C_up   = n_e * ARTIS_COL_CONST * ARTIS_FORB_UPS * g_up * exp(-u) / sqrtTe;
+        }
+    } else {
+        /* real effective collision strength (Osterbrock & Ferland p51; A3). */
+        *C_down = n_e * ARTIS_COL_CONST * coll_str / g_up / sqrtTe;
+        *C_up   = n_e * ARTIS_COL_CONST * coll_str * exp(-u) / g_lo / sqrtTe;
+    }
+}
+
+/* Does this (Z, 0-based ion stage) have a REAL collision-strength table loaded
+ * (Fe III Zhang OR a generic imported ion)? Used to suppress the per-line
+ * vR/Axelrod proxy + the metastable floor so real data is not double-counted. */
+static int ion_has_realcoldata(const AtomicData *atom, int Z, int ion0) {
+    if (atom->feiii_col_loaded && Z == atom->feiii_col_Z && ion0 == atom->feiii_col_ion)
+        return 1;
+    for (int c = 0; c < atom->ncol_ions; c++)
+        if (atom->col_ion_Z[c] == Z && atom->col_ion_stage[c] == ion0)
+            return 1;
+    return 0;
+}
+
+/* [MA-REAL-UPSILON] (Fix-P1) source registry + eval-time interpolator for wiring
+ * REAL close-coupling Upsilon into the MACRO-ATOM transport collision rates. The
+ * NLTE population matrix (plasma.c:12482/12570, nlte_assemble.cu) already consumes
+ * the real Omega tables, but the MA transport rates (eps drain / k-packet CDF /
+ * kp_deact / INTERNALUPSAME) fall back to the van-Regemorter/Axelrod proxy inside
+ * artis_col_rates -> a self-consistency gap (pops solved with real Omega,
+ * transport re-emitted with vR). ma_ru_upsilon() reproduces the NLTE-matrix lookup
+ * EXACTLY: linear-in-T interpolation of Omega over the tabulated grid, clamped to
+ * the ends. The eval-time C then equals the shared ARTIS real branch (artis_col_rates
+ * coll_str>=0): C_down = n_e*8.629e-6*Ups/(g_up*sqrt(Te)); C_up with exp(-dE/kTe)/g_lo
+ * — identical to plasma.c:12496-12497 and nlte_assemble.cu:195-196. Gated by
+ * LUMINA_MA_REAL_UPSILON (default OFF => the sites keep the vR sentinel => byte-
+ * identical). NO Omega floor is applied on the MA side (real table only). */
+typedef struct { int ntemp; const double *tgrid; const double *omega; } MaRuSrc;
+
+static inline double ma_ru_upsilon(const MaRuSrc *S, int t, double T_e) {
+    if (!S || t < 0 || S->ntemp < 2 || !S->tgrid || !S->omega || !(T_e > 0.0))
+        return -1.0;
+    int nt = S->ntemp;
+    const double *tg = S->tgrid;
+    int ti = 0;
+    while (ti < nt - 2 && T_e > tg[ti + 1]) ti++;
+    double frac = 0.0, den = tg[ti + 1] - tg[ti];
+    if (den > 0.0) frac = (T_e - tg[ti]) / den;
+    if (frac < 0.0) frac = 0.0;
+    if (frac > 1.0) frac = 1.0;
+    const double *om = &S->omega[(size_t)t * (size_t)nt];
+    double ups = om[ti] + frac * (om[ti + 1] - om[ti]);
+    return (ups > 0.0) ? ups : -1.0;
+}
+
+/* ==========================================================================
+ * [OMEGA-CMFGEN]  CMFGEN's 3-tier collision strength   (LUMINA_OMEGA_CMFGEN)
+ *
+ * WHY: LUMINA_RADEQ_OMEGA_FLOOR=1 is an invented clamp (Upsilon>=1). Measured
+ * on the parity line census it floors 88.16% of ALL bb lines (median coeff
+ * amplification 253x) and, because it is applied AFTER the real close-coupling
+ * substitution, it OVERWRITES 85.9% of the tabulated Upsilon values (those
+ * with Upsilon<1) by a median factor 18.7. This gate replaces it with the
+ * prescription CMFGEN itself uses, a faithful port of
+ *   /gpfs/kjhan/cmfgen_src/cur_cmf/newsubs/omega_gen_v3.f  L159-197
+ * (cmfgen_sub.f:224,1660,1718 call OMEGA_GEN_V3 — v3, not v2):
+ *
+ *   (i)   OMEGA(I,J) tabulated in col_data  ->  used AS IS.  NO FLOOR.
+ *   (ii)  f_lu > 1e-5   (v3 L162 "Now set Omega=0.1 when f < 1.0E-05")
+ *           OMEGA = 47.972 * OMEGA_SCALE * GBAR * f_lu * g_lo / FL
+ *         with FL = nu in 1e15 Hz, OMEGA_SCALE = 1.0 (verified: all 40 ion
+ *         col_data files declare "1.0 !Scaling factor for OMEGA"), and
+ *           ZION>=2 (ions)    : GBAR = max(0.2, 0.276 e^X E1(X))
+ *           ZION==1 (neutrals): GBAR = 0.276 e^X E1(X)      (X<=14)
+ *                               GBAR = 0.066(1+1.5/X)/sqrt(X)  (X>14)
+ *         X = h nu / k T_e; ZION = ion0 + 1 (charge seen by the outer e-).
+ *   (iii) f_lu <= 1e-5  ->  OMEGA = OMEGA_SET = 0.1.
+ *
+ * NB the CMFGEN array EIN_A(I,J) for I<J holds the OSCILLATOR STRENGTH, not
+ * the Einstein A — proved by the v3 change note ("Omega=0.1 when f < 1.0E-05"
+ * guarding EIN_A(I,J).LE.1.0E-05) and by the prefactor identity
+ *   47.972 = (8 pi / sqrt 3) * nu_Ry[1e15 Hz] = 14.5104 * 3.28984 = 47.746,
+ * i.e. tier (ii) IS standard van Regemorter Omega = 14.5 gbar g_lo f (Ry/dE).
+ *
+ * RESIDUALS (deliberate, reported):
+ *  - SAME_N GBAR=0.7 (omega_gen_v3 G1=0.7 when the two levels share the
+ *    principal quantum number) is NOT applied: Lumina's levels.csv carries no
+ *    configuration label, so SAME_N cannot be evaluated. Impact is bounded:
+ *    same-n pairs have small dE => small X => 0.276 e^X E1(X) normally already
+ *    exceeds 0.7 and the floor does not bind.
+ *  - Tier (i) interpolation is linear-in-T (ma_ru_upsilon), the convention
+ *    every other Lumina consumer of these tables uses; CMFGEN interpolates
+ *    log-log. Changing it here alone would desync this path from the dedicated
+ *    col_data NLTE pass, so it is left as a separate item.
+ *  - OMEGA_SET is taken as the 0.1 constant. 38 of the 40 imported ions declare
+ *    0.1; O II and O III declare 0.01 (per-ion OMEGA_SET is not carried by the
+ *    .bin format).  Override with LUMINA_OMEGA_CMFGEN_SET.
+ * Default OFF => omega_cmfgen_enabled()==0 => every call site falls through.
+ * ======================================================================== */
+static int find_ion_pop_idx(AtomicData *atom, int Z, int ion_stage);
+
+#define OMCM_VR_PREF    47.972      /* omega_gen_v3.f L191                    */
+#define OMCM_GBAR_ION   0.2         /* G1, ZION>=2, different-n               */
+#define OMCM_FMIN       1.0e-5      /* omega_gen_v3.f L162                    */
+#define OMCM_SET_DEF    0.1         /* OMEGA_SET (col_data header)            */
+#define OMCM_HZ15       1.0e15
+
+/* EXP(X)*E1(X), exact port of CMFGEN subs/ex_e1x_fun.f (Abramowitz & Stegun
+ * p231; |err| < 2e-7 for X<=1, < 2e-8 for X>1). */
+static double omcm_ex_e1x(double x) {
+    static const double W[6] = {-0.57721566,  0.99999193, -0.24991055,
+                                 0.05519968, -0.00976004,  0.00107857};
+    static const double A[4] = {0.2677737343, 8.6347608925,
+                                18.0590169730, 8.5733287401};
+    static const double B[4] = {3.9584969228, 21.0996530827,
+                                25.6329561486, 9.5733223454};
+    if (!(x > 0.0)) return 0.0;
+    if (x <= 1.0) {
+        double p = W[5];
+        for (int i = 4; i >= 0; i--) p = p * x + W[i];
+        return exp(x) * (p - log(x));
+    }
+    double num = 1.0, den = 1.0;
+    for (int i = 3; i >= 0; i--) { num = num * x + A[i]; den = den * x + B[i]; }
+    return num / den / x;
+}
+
+/* GBAR of omega_gen_v3.f L169-186. zion = ionic charge = ion0+1. */
+static double omcm_gbar(double x, int zion) {
+    if (zion <= 1) {                       /* Auer & Mihalas 1973 ApJ 184,151 */
+        if (x <= 14.0) return 0.276 * omcm_ex_e1x(x);
+        return 0.066 * (1.0 + 1.5 / x) / sqrt(x);
+    }
+    double g2 = 0.276 * omcm_ex_e1x(x);    /* Mihalas 2nd ed p133             */
+    return (OMCM_GBAR_ION > g2) ? OMCM_GBAR_ION : g2;
+}
+
+int omega_cmfgen_enabled(void) {
+    static int init = 0, on = 0;
+    if (!init) {
+        const char *e = getenv("LUMINA_OMEGA_CMFGEN");
+        on = (e && atoi(e) != 0) ? 1 : 0;
+        init = 1;
+    }
+    return on;
+}
+
+static double omcm_oset(void) {
+    static int init = 0; static double v = OMCM_SET_DEF;
+    if (!init) { const char *e = getenv("LUMINA_OMEGA_CMFGEN_SET");
+                 if (e) { double t = atof(e); if (t > 0.0) v = t; } init = 1; }
+    return v;
+}
+
+/* Per-line map into the loaded tables. src: -1 = feiii_col, >=0 = col_ion slot,
+ * OMCM_NOSRC = this line has no tabulated entry. Armed once, single-threaded,
+ * then read-only (safe inside the OMP assembler / radeq bake). */
+#define OMCM_NOSRC (-2)
+static int   g_omcm_armed    = 0;
+static int  *g_omcm_line_src = NULL;
+static int  *g_omcm_line_t   = NULL;
+static double *g_omcm_line_dE  = NULL;  /* [n_lines] |E_up-E_lo| erg (0 = bad) */
+static double *g_omcm_line_glo = NULL;  /* [n_lines] g of the LOWER level      */
+static int   g_omcm_nlines   = 0;
+static long  g_omcm_n_tab = 0, g_omcm_n_vr = 0, g_omcm_n_set = 0;
+static int   g_omcm_nsrc = 0;
+
+/* Tier (ii)/(iii): no tabulated entry for this pair. */
+static inline double omcm_fallback(double f_lu, double g_lo, double dE_erg,
+                                   double T_e, int ion0, int *tier) {
+    double fl = dE_erg / (H_PLANCK * OMCM_HZ15);          /* nu in 1e15 Hz */
+    if (!(f_lu > OMCM_FMIN) || !(fl > 0.0) || !(T_e > 0.0) || !(g_lo > 0.0)) {
+        if (tier) *tier = 3;
+        return omcm_oset();
+    }
+    if (tier) *tier = 2;
+    return OMCM_VR_PREF * omcm_gbar(dE_erg / (K_BOLTZMANN * T_e), ion0 + 1) *
+           f_lu * g_lo / fl;
+}
+
+double omega_cmfgen_line(const AtomicData *atom, int line, double T_e, int *tier) {
+    if (g_omcm_armed && line >= 0 && line < g_omcm_nlines) {
+        int s = g_omcm_line_src[line], t = g_omcm_line_t[line];
+        if (s != OMCM_NOSRC && t >= 0) {
+            MaRuSrc S;
+            if (s < 0) { S.ntemp = atom->feiii_col_n_temp;
+                         S.tgrid = atom->feiii_col_tgrid;
+                         S.omega = atom->feiii_col_omega; }
+            else       { S.ntemp = atom->col_ion_n_temp[s];
+                         S.tgrid = atom->col_ion_tgrid[s];
+                         S.omega = atom->col_ion_omega[s]; }
+            double ups = ma_ru_upsilon(&S, t, T_e);
+            if (ups > 0.0) { if (tier) *tier = 1; return ups; }
+        }
+    }
+    /* tier (ii)/(iii): dE and g_lo were resolved once at arm time (the level
+     * walk is O(nlev) and this is called per (line,shell) in the assembler). */
+    double dE = 0.0, g_lo = 0.0;
+    if (g_omcm_armed && line >= 0 && line < g_omcm_nlines) {
+        dE   = g_omcm_line_dE[line];
+        g_lo = g_omcm_line_glo[line];
+    }
+    return omcm_fallback(atom->line_f_lu ? atom->line_f_lu[line] : 0.0,
+                         g_lo, dE, T_e, atom->line_ion_number[line], tier);
+}
+
+/* Build the per-line map + print the 1-line census banner. Idempotent. */
+void omega_cmfgen_arm(AtomicData *atom) {
+    if (!omega_cmfgen_enabled() || g_omcm_armed || !atom || atom->n_lines <= 0)
+        return;
+    if (!artis_parity_enabled()) {
+        fprintf(stderr, "[OMEGA-CMFGEN][WARN] LUMINA_ARTIS_PARITY=0 -> no col "
+                        "tables are loaded and the parity Omega sites are not "
+                        "reached; gate has NO effect. Set LUMINA_ARTIS_PARITY=1.\n");
+        return;
+    }
+    int n = atom->n_lines;
+    g_omcm_line_src = (int *)malloc((size_t)n * sizeof(int));
+    g_omcm_line_t   = (int *)malloc((size_t)n * sizeof(int));
+    g_omcm_line_dE  = (double *)malloc((size_t)n * sizeof(double));
+    g_omcm_line_glo = (double *)malloc((size_t)n * sizeof(double));
+    if (!g_omcm_line_src || !g_omcm_line_t || !g_omcm_line_dE || !g_omcm_line_glo) {
+        free(g_omcm_line_src); free(g_omcm_line_t);
+        free(g_omcm_line_dE);  free(g_omcm_line_glo);
+        g_omcm_line_src = NULL; g_omcm_line_t = NULL;
+        g_omcm_line_dE = NULL;  g_omcm_line_glo = NULL;
+        fprintf(stderr, "[OMEGA-CMFGEN][ERROR] per-line map alloc failed\n");
+        return;
+    }
+    for (int l = 0; l < n; l++) { g_omcm_line_src[l] = OMCM_NOSRC;
+                                  g_omcm_line_t[l] = -1;
+                                  g_omcm_line_dE[l] = 0.0;
+                                  g_omcm_line_glo[l] = 0.0; }
+    /* dE + g_lo per line (level_number -> global slot within the ion block) */
+    {
+        long n_nolev = 0;
+        for (int l = 0; l < n; l++) {
+            int ip = find_ion_pop_idx(atom, atom->line_atomic_number[l],
+                                           atom->line_ion_number[l]);
+            if (ip < 0) { n_nolev++; continue; }
+            int lb = atom->level_offset[ip], lt = atom->level_offset[ip + 1];
+            int lo_g = -1, up_g = -1;
+            for (int g = lb; g < lt; g++) {
+                if (atom->level_num[g] == atom->line_level_lower[l]) lo_g = g;
+                if (atom->level_num[g] == atom->line_level_upper[l]) up_g = g;
+                if (lo_g >= 0 && up_g >= 0) break;
+            }
+            if (lo_g < 0 || up_g < 0) { n_nolev++; continue; }
+            g_omcm_line_dE[l]  = fabs(atom->level_energy_eV[up_g] -
+                                      atom->level_energy_eV[lo_g]) * EV_TO_ERG;
+            g_omcm_line_glo[l] = (double)atom->level_g[lo_g];
+        }
+        if (n_nolev)
+            fprintf(stderr, "[OMEGA-CMFGEN][WARN] %ld of %d bb lines have no "
+                            "resolvable level pair -> forced to OMEGA_SET\n",
+                            n_nolev, n);
+    }
+    g_omcm_nlines = n;
+    /* dense (a<b on level_number) -> transition index maps, one per source */
+    struct { int Z, ion0, nlev; int *dm; } bs[1 + LUMINA_MAX_COL_IONS];
+    int nb = 0;
+    for (int src = -1; src < atom->ncol_ions; src++) {
+        int Zs, ion0s, ntr;
+        const int *tlo, *thi;
+        if (src < 0) {
+            if (!atom->feiii_col_loaded) continue;
+            Zs = atom->feiii_col_Z; ion0s = atom->feiii_col_ion;
+            ntr = atom->feiii_col_n_trans;
+            tlo = atom->feiii_col_lo; thi = atom->feiii_col_hi;
+        } else {
+            Zs = atom->col_ion_Z[src]; ion0s = atom->col_ion_stage[src];
+            ntr = atom->col_ion_n_trans[src];
+            tlo = atom->col_ion_lo[src]; thi = atom->col_ion_hi[src];
+        }
+        if (ntr <= 0 || !tlo || !thi) continue;
+        int maxlev = 0;
+        for (int t = 0; t < ntr; t++) {
+            if (tlo[t] > maxlev) maxlev = tlo[t];
+            if (thi[t] > maxlev) maxlev = thi[t];
+        }
+        int nlev = maxlev + 1;
+        int *dm = (int *)malloc((size_t)nlev * (size_t)nlev * sizeof(int));
+        if (!dm) continue;
+        for (size_t i = 0; i < (size_t)nlev * (size_t)nlev; i++) dm[i] = -1;
+        for (int t = 0; t < ntr; t++) {
+            int a = tlo[t] < thi[t] ? tlo[t] : thi[t];
+            int b = tlo[t] < thi[t] ? thi[t] : tlo[t];
+            if (a < 0 || b >= nlev) continue;
+            dm[(size_t)a * (size_t)nlev + (size_t)b] = t;
+        }
+        bs[nb].Z = Zs; bs[nb].ion0 = ion0s; bs[nb].nlev = nlev; bs[nb].dm = dm;
+        for (int l = 0; l < n; l++) {
+            if (atom->line_atomic_number[l] != Zs ||
+                atom->line_ion_number[l]    != ion0s) continue;
+            int a = atom->line_level_lower[l], b = atom->line_level_upper[l];
+            if (a > b) { int tmp = a; a = b; b = tmp; }
+            if (a < 0 || b >= nlev) continue;
+            int t = dm[(size_t)a * (size_t)nlev + (size_t)b];
+            if (t >= 0) { g_omcm_line_src[l] = src; g_omcm_line_t[l] = t; }
+        }
+        nb++;
+    }
+    for (int b = 0; b < nb; b++) free(bs[b].dm);
+    g_omcm_nsrc = nb;
+    g_omcm_armed = 1;
+    /* census (tier of every bb line at the radeq bake temperature) */
+    g_omcm_n_tab = g_omcm_n_vr = g_omcm_n_set = 0;
+    for (int l = 0; l < n; l++) {
+        int tier = 3;
+        (void)omega_cmfgen_line(atom, l, 10400.0, &tier);
+        if      (tier == 1) g_omcm_n_tab++;
+        else if (tier == 2) g_omcm_n_vr++;
+        else                g_omcm_n_set++;
+    }
+    printf("  [OMEGA-CMFGEN] ON: %d Omega tables (feiii+col_ion) | of %d bb lines "
+           "%ld tabulated (no floor), %ld van-Regemorter gbar-floor, %ld OMEGA_SET=%g "
+           "(f<=%g)\n", g_omcm_nsrc, n, g_omcm_n_tab, g_omcm_n_vr, g_omcm_n_set,
+           omcm_oset(), OMCM_FMIN);
+    fflush(stdout);
+}
 
 /* ============================================================ */
 /* Phase 4 - Step 2: Radiation field solver                     */
@@ -254,6 +1068,576 @@ static int fit_dilute_planck_binned_j(const Estimators *est, int shell,
 }
 
 /* ============================================================ */
+/* [ARTIS-PARITY C1] per-bin (W,T_R) dilute-BB radiation field.  */
+/* Faithful port of ARTIS radfield.cc fit_parameters (735-804),  */
+/* find_bin_T_R (326-358), calculate_planck_integral (277-301)   */
+/* and radfield() evaluation (717-732). ARTIS fits 24 WIDE bins   */
+/* (nu_bar carries the SED slope); Lumina's 1000 narrow log bins  */
+/* are aggregated into ARTIS_RADFIELD_NC coarse bins for the fit, */
+/* then radfield(nu)=W·planck(nu,T_R) is evaluated back onto the  */
+/* fine grid so the downstream rate integrals read a smooth,      */
+/* per-bin-slope-aware field. Gated (master LUMINA_ARTIS_PARITY). */
+/* ============================================================ */
+#define ARTIS_RADFIELD_NC       24        /* radfield.cc RADFIELDBINCOUNT */
+#define ARTIS_RADFIELD_TR_MIN   500.0     /* radfield.cc bins_T_R_min */
+#define ARTIS_RADFIELD_TR_MAX   250000.0  /* radfield.cc bins_T_R_max */
+/* [withParityQ item1] ARTIS T_e-superbin edge. artisoptions.h:70
+ *   constexpr double RADFIELDBINS_NU_MAX = (CLIGHT / 1085e-8);
+ * i.e. the fitted multi-bin radiation-field model STOPS at 1085 A; everything
+ * shortward lives in ARTIS's single "superbin" whose solution is NOT fitted but
+ * pinned:  radfield.cc:766-767  `if (binindex == RADFIELDBINCOUNT-1) T_R_bin =
+ * grid::get_Te(nonemptymgi);`  followed by the ordinary
+ * `W_bin = J_bin / calculate_planck_integral(T_R_bin, nu_lower, nu_upper)`
+ * (radfield.cc:776,778).  radfield.cc:62 fixes the superbin's LOWER edge at
+ * exactly CLIGHT/1085e-8:  delta_nu = (NU_MAX-NU_MIN)/(RADFIELDBINCOUNT-1)
+ * ("- 1 for the top super bin"), so bins 0..22 tile [NU_MIN, NU_MAX] and bin 23
+ * runs [NU_MAX, RADFIELDBINS_T_E_SUPERBIN_NU_MAX=CLIGHT/10e-8] (artisoptions.h:72).
+ * ARTIS's pinned region is therefore exactly lambda in [10, 1085] A. */
+#define ARTIS_RADFIELD_SUPERBIN_LAM_A 1085.0
+
+/* radfield.cc:227 — series form of ∫_x^∞ for the Planck integral (x=hν/kT). */
+static double artis_planck_x_to_inf(double x, double epsrel) {
+    if (x > 700.0) return 0.0;
+    double sum = 0.0, x2 = x * x, x3 = x2 * x;
+    for (int n = 1; n < 1000; n++) {
+        double dn = (double)n, n2 = dn * dn, n3 = n2 * dn, n4 = n3 * dn;
+        double term = exp(-dn * x) * (x3 / dn + 3.0 * x2 / n2 + 6.0 * x / n3 + 6.0 / n4);
+        sum += term;
+        if (term < sum * epsrel) break;
+    }
+    return sum;
+}
+/* radfield.cc:250 — same, with an extra ν in the integrand. */
+static double artis_nu_planck_x_to_inf(double x, double epsrel) {
+    if (x > 700.0) return 0.0;
+    double sum = 0.0, x2 = x * x, x3 = x2 * x, x4 = x3 * x;
+    for (int n = 1; n < 1000; n++) {
+        double dn = (double)n, n2 = dn * dn, n3 = n2 * dn, n4 = n3 * dn, n5 = n4 * dn;
+        double term = exp(-dn * x) *
+            (x4 / dn + 4.0 * x3 / n2 + 12.0 * x2 / n3 + 24.0 * x / n4 + 24.0 / n5);
+        sum += term;
+        if (term < sum * epsrel) break;
+    }
+    return sum;
+}
+/* radfield.cc:277 — ∫_{nu_low}^{nu_high} B_ν dν (times_nu=1: ∫ ν B_ν dν). */
+static double artis_planck_integral(double T, double nu_low, double nu_high, int times_nu) {
+    if (T <= 0.0) return 0.0;
+    const double epsrel = 1e-15;
+    double kb = K_BOLTZMANN, h = H_PLANCK, c2 = C_SPEED_OF_LIGHT * C_SPEED_OF_LIGHT;
+    double x_low  = h * nu_low  / (kb * T);
+    double x_high = h * nu_high / (kb * T);
+    if (times_nu) {
+        double kb5 = kb * kb * kb * kb * kb, T5 = T * T * T * T * T, h4 = h * h * h * h;
+        double cf = (2.0 * kb5 * T5) / (h4 * c2);
+        return cf * (artis_nu_planck_x_to_inf(x_low, epsrel) -
+                     artis_nu_planck_x_to_inf(x_high, epsrel));
+    }
+    double kb4 = kb * kb * kb * kb, T4 = T * T * T * T, h3 = h * h * h;
+    double cf = (2.0 * kb4 * T4) / (h3 * c2);
+    return cf * (artis_planck_x_to_inf(x_low, epsrel) -
+                 artis_planck_x_to_inf(x_high, epsrel));
+}
+/* radfield.cc:305 — nu_bar_planck(T_R) - nu_bar_estimator over a bin. */
+static double artis_deltanubar(double T_R, double nu_lo, double nu_hi, double nu_bar_est) {
+    double nuP = artis_planck_integral(T_R, nu_lo, nu_hi, 1);
+    double P   = artis_planck_integral(T_R, nu_lo, nu_hi, 0);
+    if (!(P > 0.0)) return -nu_bar_est;
+    return nuP / P - nu_bar_est;
+}
+/* radfield.cc:326 — solve nu_bar_planck(T_R)=nu_bar_est in [TR_min,TR_max]
+ * (bisection in place of Boost TOMS748; ARTIS clamp semantics preserved). */
+static double artis_find_bin_T_R(double nu_bar_est, double nu_lo, double nu_hi) {
+    double f_min = artis_deltanubar(ARTIS_RADFIELD_TR_MIN, nu_lo, nu_hi, nu_bar_est);
+    double f_max = artis_deltanubar(ARTIS_RADFIELD_TR_MAX, nu_lo, nu_hi, nu_bar_est);
+    int invalid = (!isfinite(f_min) || !isfinite(f_max));
+    if (!invalid && f_min * f_max < 0.0) {
+        double a = ARTIS_RADFIELD_TR_MIN, b = ARTIS_RADFIELD_TR_MAX, fa = f_min;
+        for (int it = 0; it < 100; it++) {
+            double m = 0.5 * (a + b);
+            double fm = artis_deltanubar(m, nu_lo, nu_hi, nu_bar_est);
+            if (fm == 0.0 || (b - a) < 1e-4 * m) return m;
+            if (fa * fm < 0.0) b = m; else { a = m; fa = fm; }
+        }
+        return 0.5 * (a + b);
+    }
+    if (invalid || f_max < 0.0) return ARTIS_RADFIELD_TR_MAX;
+    return ARTIS_RADFIELD_TR_MIN;
+}
+
+void nlte_build_perbin_dilute_field(NLTEConfig *nlte, double time_simulation,
+                                    double *volume, double *T_e, int n_shells) {
+    if (!nlte || !nlte->J_nu || !nlte->j_nu_estimator ||
+        !nlte->nu_bar_nu_estimator) return;
+    const int nb = nlte->n_freq_bins;
+    if (nb <= 0) return;
+    const double nu_min = nlte->nu_min, dlog = nlte->d_log_nu;
+    const int NC = ARTIS_RADFIELD_NC;
+    double raw_J[ARTIS_RADFIELD_NC], raw_nuJ[ARTIS_RADFIELD_NC];
+    double W_c[ARTIS_RADFIELD_NC], TR_c[ARTIS_RADFIELD_NC];
+    int    f_first[ARTIS_RADFIELD_NC], f_last[ARTIS_RADFIELD_NC];
+
+    /* [C1-DEGEN-FALLBACK] opt-in field-representation fallback (default OFF ->
+     * byte-identical). In railed+starved deep-EUV coarse bins the (W,T_R) fit
+     * degenerates (T_R rails to 250 kK, W~1e-10, RJ plateau) and inflates
+     * ground-channel photoionization 9-52x; publish the honest raw per-Hz field
+     * there instead. Gate read + banner accounting only here; the actual field
+     * change is confined to the fallback_on branches below. */
+    int fallback_on = 0;
+    { const char *e = getenv("LUMINA_C1_DEGEN_FALLBACK"); fallback_on = (e && atoi(e)); }
+    static int fb_call = 0, fb_banner_done = 0;
+    int fb_M_total = 0, fb_nsh = 0;
+    char fb_shbuf[256]; fb_shbuf[0] = '\0';
+    if (fallback_on) fb_call++;
+
+    /* ------------------------------------------------------------------ */
+    /* [withParityQ item1] GATE LUMINA_C1_SUPERBIN_TEPIN (default OFF).     */
+    /* ARTIS radfield.cc:757-800 (fit_parameters) final-bin semantics:      */
+    /*                                                                     */
+    /*   if (J_bin > 0) {                                                  */
+    /*     if (binindex == RADFIELDBINCOUNT - 1)                           */
+    /*       T_R_bin = grid::get_Te(nonemptymgi);        // <-- the PIN    */
+    /*     else { T_R_bin = find_bin_T_R(...); ... }                       */
+    /*     planck_integral_result =                                        */
+    /*         calculate_planck_integral(T_R_bin, nu_lower, nu_upper, false); */
+    /*     W_bin = J_bin / planck_integral_result;                         */
+    /*     if (W_bin > 1e4 || !isfinite(W_bin)) { retry at bins_T_R_max;   */
+    /*       if still > 1e4 { T_R_bin = -99.; W_bin = 0.; } }              */
+    /*   } else { T_R_bin = 0.; W_bin = 0.; }                              */
+    /*                                                                     */
+    /* ARTIS's fitted bin ladder ENDS at RADFIELDBINS_NU_MAX = CLIGHT/1085e-8 */
+    /* (artisoptions.h:64-72); the pinned last bin is the deep-EUV superbin.  */
+    /* Lumina's 24 coarse bins span 1.5e14..3.0e16 Hz, so the region ARTIS   */
+    /* covers with ONE pinned superbin is here split over several coarse     */
+    /* bins.  Semantics ported = "shortward of 1085 A the colour temperature */
+    /* is NOT fitted, it IS T_e"; each such Lumina coarse bin is pinned      */
+    /* individually (its own W from its own Planck integral), which is the   */
+    /* faithful generalisation and strictly finer than ARTIS's single bin.   */
+    /* Boundary rule: a coarse bin that STRADDLES 1085 A keeps the ordinary  */
+    /* fit (ARTIS has no such bin — its ladder edge is exactly 1085 A — so   */
+    /* there is no ARTIS behaviour to copy; leaving the straddler fitted is  */
+    /* the conservative choice and is recorded as mode "fit" in the dump).   */
+    /* On the shipped 1.5e14..3.0e16 Hz / 24-coarse-bin grid the straddler is */
+    /* coarse bin 13 (1131.3..905.6 A); its 1085..905.6 A part belongs to     */
+    /* ARTIS's superbin but stays FITTED here. Bins 14..23 (lam_hi<=905.6 A)  */
+    /* are the pinned set. This is the one documented boundary difference.    */
+    int tepin_on = 0;
+    { const char *e = getenv("LUMINA_C1_SUPERBIN_TEPIN"); tepin_on = (e && atoi(e)); }
+    static int tp_call = 0;
+    int tp_M_total = 0, tp_nsh = 0;
+    if (tepin_on) tp_call++;
+    /* nu at 1085 A: bins with nu_lo >= this (i.e. lam_hi <= 1085 A) are pinned. */
+    const double nu_superbin =
+        C_SPEED_OF_LIGHT / (ARTIS_RADFIELD_SUPERBIN_LAM_A * 1.0e-8);
+
+    /* ------------------------------------------------------------------ */
+    /* [withParityQ item2] INSTRUMENT LUMINA_C1_BIN_DUMP (default OFF).     */
+    /* Appends the C1 per-(shell,coarse-bin) fit result once per call (=    */
+    /* once per co-evolve outer iteration; nlte_build_perbin_dilute_field   */
+    /* has exactly one call site, lumina_cuda.cu, inside the `it` loop).    */
+    /* Read-only: it prints W_c/TR_c AS BUILT, it does not recompute them.  */
+    static int   bd_on = -1;            /* -1 unparsed; 0 off; 1 on (getenv once) */
+    static FILE *bd_fp = NULL;
+    static int   bd_iter = -1;          /* invocation index == outer iteration */
+    if (bd_on < 0) {
+        const char *e = getenv("LUMINA_C1_BIN_DUMP");
+        bd_on = (e && atoi(e)) ? 1 : 0;
+        if (bd_on) {
+            bd_fp = fopen("lumina_c1_bins.csv", "w");
+            if (bd_fp) {
+                fprintf(bd_fp,
+                    "iter,shell,bin,lam_lo_A,lam_hi_A,J_bin,W,T_R,mode\n");
+                fflush(bd_fp);
+                fprintf(stderr, "[withParityQ LUMINA_C1_BIN_DUMP] ARMED -> "
+                        "lumina_c1_bins.csv (all shells x %d coarse bins, "
+                        "appended every C1 build; mode=fit|pin|degen|empty; "
+                        "lam_lo=c/nu_hi, lam_hi=c/nu_lo; J_bin=INTEGRATED "
+                        "int J_nu dnu over the bin [erg/cm2/s/sr])\n", NC);
+            } else {
+                fprintf(stderr, "[withParityQ LUMINA_C1_BIN_DUMP] *** FAILED to "
+                        "open lumina_c1_bins.csv - DUMP DISABLED ***\n");
+                bd_on = 0;              /* fail-loud, fail-closed */
+            }
+        }
+    }
+    if (bd_on == 1) bd_iter++;
+
+    /* ------------------------------------------------------------------ */
+    /* [withParityY Y2] INSTRUMENT LUMINA_C2_BFR_DUMP (default OFF).       */
+    /* Same shape as LUMINA_C1_BIN_DUMP above: one static getenv, one file, */
+    /* one invocation counter (== the co-evolve outer iteration, since this */
+    /* function has exactly one call site inside the `it` loop).            */
+    static int   c2d_on = -1;           /* -1 unparsed; 0 off; 1 on */
+    static FILE *c2d_fp = NULL;
+    static int   c2d_iter = -1;
+    if (c2d_on < 0) {
+        const char *e = getenv("LUMINA_C2_BFR_DUMP");
+        c2d_on = (e && atoi(e)) ? 1 : 0;
+        if (c2d_on) {
+            c2d_fp = fopen("lumina_c2_bfr_dump.csv", "w");
+            if (c2d_fp) {
+                fprintf(c2d_fp, "iter,shell,bin,nu_mid,J_raw,bfr,j_nu_count\n");
+                fflush(c2d_fp);
+                fprintf(stderr, "[withParityY LUMINA_C2_BFR_DUMP] ARMED -> "
+                        "lumina_c2_bfr_dump.csv (all shells x %d fine bins, "
+                        "appended every C1/C2 build; J_raw = RAW MC per-Hz field "
+                        "rebuilt from j_nu_estimator because nlte->J_nu already "
+                        "holds the C1 dilute-BB refit at the write point; "
+                        "bfr = normalized Gamma_bf density; j_nu_count = MC "
+                        "packet tally, -1 if the array is absent)\n", nb);
+            } else {
+                fprintf(stderr, "[withParityY LUMINA_C2_BFR_DUMP] *** FAILED to "
+                        "open lumina_c2_bfr_dump.csv - DUMP DISABLED ***\n");
+                c2d_on = 0;             /* fail-loud, fail-closed */
+            }
+        }
+    }
+    if (c2d_on == 1) c2d_iter++;
+
+    for (int s = 0; s < n_shells; s++) {
+        double V = volume[s];
+        if (!(V > 0.0) || !(time_simulation > 0.0)) continue;
+        double norm = 1.0 / (4.0 * M_PI_VAL * V * time_simulation); /* raw -> ∫J_ν dν */
+        for (int c = 0; c < NC; c++) {
+            raw_J[c] = 0.0; raw_nuJ[c] = 0.0; f_first[c] = -1; f_last[c] = -1;
+        }
+        const double *jr  = &nlte->j_nu_estimator[(size_t)s * nb];
+        const double *nur = &nlte->nu_bar_nu_estimator[(size_t)s * nb];
+        for (int f = 0; f < nb; f++) {
+            int c = (int)((long)f * NC / nb);
+            if (c < 0) c = 0; if (c >= NC) c = NC - 1;
+            raw_J[c]   += jr[f];
+            raw_nuJ[c] += nur[f];
+            if (f_first[c] < 0) f_first[c] = f;
+            f_last[c] = f;
+        }
+        /* [withParityQ item1] per-shell record of which coarse bins took the
+         * T_e pin.  Read below (a) to let the pin BEAT C1_DEGEN_FALLBACK and
+         * (b) by the item2 dump for the `mode` column.  Zero unless the gate
+         * is armed => OFF path never changes a decision. */
+        int pin_c[ARTIS_RADFIELD_NC];
+        for (int c = 0; c < NC; c++) pin_c[c] = 0;
+        for (int c = 0; c < NC; c++) {
+            if (f_first[c] < 0) { W_c[c] = 0.0; TR_c[c] = 0.0; continue; }
+            double J_c = raw_J[c] * norm;         /* ∫J_ν dν over the coarse bin */
+            /* ARTIS floor (fit_parameters:796): J_bin<=0 -> W=0 -> zero field. */
+            if (!(J_c > 0.0) || !(raw_J[c] > 0.0)) { W_c[c] = 0.0; TR_c[c] = 0.0; continue; }
+            double nu_lo = nu_min * exp((double)f_first[c] * dlog);
+            double nu_hi = nu_min * exp((double)(f_last[c] + 1) * dlog);
+            /* [withParityQ item1] LUMINA_C1_SUPERBIN_TEPIN: deep-EUV bins take
+             * the ARTIS superbin solution instead of a colour-temperature fit.
+             *   T_R := T_e(shell)   (radfield.cc:767 grid::get_Te)
+             *   W    := J_bin / int_bin B_nu(T_e) dnu   (radfield.cc:776,778,
+             *           the SAME calculate_planck_integral used by the fit)
+             * plus ARTIS's W>1e4 / non-finite rail retry (radfield.cc:780-795),
+             * which in ARTIS is applied to the superbin as well (it sits after
+             * the if/else that chose T_R_bin, not inside the fitted branch).
+             * Entered only for bins entirely shortward of 1085 A; the J_bin<=0
+             * exit above already ran, so the ARTIS `else {T_R=0; W=0;}` branch
+             * is the shared code path (both give a zero field, see below). */
+            if (tepin_on && nu_lo >= nu_superbin) {
+                double Te_s = T_e ? T_e[s] : 0.0;
+                if (Te_s > 0.0) {
+                    double Pp = artis_planck_integral(Te_s, nu_lo, nu_hi, 0);
+                    double Wp = (Pp > 0.0) ? J_c / Pp : 0.0;
+                    double TRp = Te_s;
+                    if (Wp > 1e4 || !isfinite(Wp)) {   /* radfield.cc:779 rail */
+                        Pp = artis_planck_integral(ARTIS_RADFIELD_TR_MAX,
+                                                   nu_lo, nu_hi, 0);
+                        Wp = (Pp > 0.0) ? J_c / Pp : 0.0;
+                        if (Wp > 1e4 || !isfinite(Wp)) { TRp = 0.0; Wp = 0.0; }
+                        else TRp = ARTIS_RADFIELD_TR_MAX;
+                    }
+                    W_c[c] = Wp; TR_c[c] = TRp;
+                    pin_c[c] = 1; tp_M_total++;
+                    continue;                      /* pin wins: skip the fit */
+                }
+                /* T_e unavailable (NULL/<=0): fall through to the ordinary fit
+                 * rather than publish a field pinned to a bogus temperature. */
+            }
+            double nu_bar = raw_nuJ[c] / raw_J[c];
+            double TR = artis_find_bin_T_R(nu_bar, nu_lo, nu_hi);
+            double P  = artis_planck_integral(TR, nu_lo, nu_hi, 0);
+            double W  = (P > 0.0) ? J_c / P : 0.0;
+            if (W > 1e4 || !isfinite(W)) {       /* fit_parameters:780 rail handling */
+                P = artis_planck_integral(ARTIS_RADFIELD_TR_MAX, nu_lo, nu_hi, 0);
+                W = (P > 0.0) ? J_c / P : 0.0;
+                if (W > 1e4 || !isfinite(W)) { TR = 0.0; W = 0.0; }
+                else TR = ARTIS_RADFIELD_TR_MAX;
+            }
+            W_c[c] = W; TR_c[c] = TR;
+        }
+        /* [withParityQ item1] shell tally for the armed-gate banner. */
+        if (tepin_on) {
+            int pin_here = 0;
+            for (int c = 0; c < NC; c++) if (pin_c[c]) pin_here = 1;
+            if (pin_here) tp_nsh++;
+        }
+        /* [C1-DEGEN-FALLBACK] criterion D(s,c) (dig_S3-validated: 0 FP / 74
+         * healthy bins): T_R >= 0.95*TR_CEILING AND raw_frac < 1e-3, where
+         * raw_frac = raw_J[c] / sum_c raw_J[c]. The per-shell norm cancels in the
+         * ratio, so the un-normalized raw_J sums reproduce dig_S3_degeneracy's
+         * raw_jint fraction exactly. degen_c is READ below only when fallback_on. */
+        int degen_c[ARTIS_RADFIELD_NC] = {0};
+        int fb_M_shell = 0;
+        if (fallback_on) {
+            double shell_total_raw = 0.0;
+            for (int c = 0; c < NC; c++) shell_total_raw += raw_J[c];
+            const double TR_rail = 0.95 * ARTIS_RADFIELD_TR_MAX;
+            for (int c = 0; c < NC; c++) {
+                if (f_first[c] < 0) continue;
+                /* [withParityQ item1] the T_e pin BEATS the degeneracy fallback:
+                 * a pinned bin is no longer a railed 250 kK fit, so the D(s,c)
+                 * criterion cannot fire on it by construction — this guard makes
+                 * that explicit and order-independent. pin_c is all-zero unless
+                 * LUMINA_C1_SUPERBIN_TEPIN is armed => OFF path unchanged. */
+                if (pin_c[c]) continue;
+                double raw_frac = (shell_total_raw > 0.0)
+                                  ? raw_J[c] / shell_total_raw : 0.0;
+                if (TR_c[c] >= TR_rail && raw_frac < 1e-3) {
+                    degen_c[c] = 1; fb_M_shell++;
+                }
+            }
+            if (fb_M_shell > 0) {
+                fb_M_total += fb_M_shell; fb_nsh++;
+                if (strlen(fb_shbuf) < sizeof(fb_shbuf) - 8) {
+                    char tmp[16];
+                    snprintf(tmp, sizeof(tmp), "%s%d", fb_shbuf[0] ? "," : "", s);
+                    strncat(fb_shbuf, tmp, sizeof(fb_shbuf) - strlen(fb_shbuf) - 1);
+                }
+            }
+        }
+        /* [withParityQ item2] LUMINA_C1_BIN_DUMP: append THIS shell's C1 result.
+         * Placed after the fit + pin + degeneracy classification and before the
+         * field is written back, so W/T_R are exactly the values the evaluation
+         * below (and therefore next iteration's rate solve) will use.  Pure
+         * observation: no array here is written. */
+        if (bd_on == 1 && bd_fp) {
+            for (int c = 0; c < NC; c++) {
+                double J_c_d  = raw_J[c] * norm;
+                double lam_lo = 0.0, lam_hi = 0.0;
+                if (f_first[c] >= 0) {
+                    double nlo = nu_min * exp((double)f_first[c] * dlog);
+                    double nhi = nu_min * exp((double)(f_last[c] + 1) * dlog);
+                    lam_lo = (C_SPEED_OF_LIGHT / nhi) * 1.0e8;   /* short edge */
+                    lam_hi = (C_SPEED_OF_LIGHT / nlo) * 1.0e8;   /* long edge  */
+                }
+                const char *mode;
+                if (f_first[c] < 0 || !(raw_J[c] > 0.0) || !(J_c_d > 0.0))
+                    mode = "empty";                 /* ARTIS J_bin<=0: W=T_R=0 */
+                else if (pin_c[c])            mode = "pin";
+                else if (fallback_on && degen_c[c]) mode = "degen";
+                else                          mode = "fit";
+                fprintf(bd_fp, "%d,%d,%d,%.2f,%.2f,%.6e,%.6e,%.2f,%s\n",
+                        bd_iter, s, c, lam_lo, lam_hi,
+                        J_c_d, W_c[c], TR_c[c], mode);
+            }
+        }
+        double *Jrow = &nlte->J_nu[(size_t)s * nb];
+        for (int f = 0; f < nb; f++) {          /* radfield.cc:717 radfield(nu) */
+            int c = (int)((long)f * NC / nb);
+            if (c < 0) c = 0; if (c >= NC) c = NC - 1;
+            if (fallback_on && degen_c[c]) {
+                /* honest raw per-Hz field: raw_jint(f)/dnu(f) = jr[f]*norm/dnu_f.
+                 * Zero raw -> zero (honest starvation), never the railed hot-fit
+                 * plateau. A fine-resolution raw estimator (jr[f], per fine bin)
+                 * exists here, so the per-fine-bin form is used (not coarse spread). */
+                double nu_lo_f = nu_min * exp((double)f * dlog);
+                double nu_hi_f = nu_min * exp((double)(f + 1) * dlog);
+                double dnu_f = nu_hi_f - nu_lo_f;
+                Jrow[f] = (dnu_f > 0.0) ? jr[f] * norm / dnu_f : 0.0;
+            } else if (W_c[c] > 0.0 && TR_c[c] > 0.0) {
+                double nu_ctr = nu_min * exp(((double)f + 0.5) * dlog);
+                Jrow[f] = W_c[c] * planck_bnu(TR_c[c], nu_ctr);
+            } else {
+                Jrow[f] = 0.0;
+            }
+        }
+        /* [ARTIS-PARITY C2] normalize the raw bf-rate estimator to the ARTIS Γ_bf
+         * density Σ(comov_e·dist/ν)/(V·t·H) (radfield.cc:850). The photoion R_bf
+         * loop then reads R_bf += Σ σ[bin]·bf_rate_estimator[bin]. */
+        if (nlte->bf_rate_estimator) {
+            double *bfr = &nlte->bf_rate_estimator[(size_t)s * nb];
+            double bnorm = 1.0 / (V * time_simulation * H_PLANCK);
+            for (int f = 0; f < nb; f++) bfr[f] *= bnorm;
+        }
+        /* [withParityY Y2] INSTRUMENT LUMINA_C2_BFR_DUMP (default OFF).
+         * The C2 Gamma_bf density is dumped NOWHERE else.  This writer sits
+         * immediately AFTER the normalization above, so `bfr` is byte-for-byte
+         * the array the consumers (MA iup_prob, parity_gamma_phot, the CPU
+         * matrix bfr branch) will read this iteration.
+         * COLUMN SEMANTICS -- read this before using the file:
+         *   J_raw  = jr[f]*norm/dnu_f  = the RAW per-Hz MC field.  nlte->J_nu was
+         *            ALREADY OVERWRITTEN three lines above by the C1 dilute-BB
+         *            refit (Jrow[f] = W_c*B_nu(TR_c)), so the pre-refit raw J is
+         *            NOT in J_nu at this point.  It is recovered here from the
+         *            untouched raw accumulator nlte->j_nu_estimator by exactly
+         *            the expression the C1-degeneracy branch uses (:1061), i.e.
+         *            this IS the raw MC estimate, not a re-fit.  The refit field
+         *            (W,T_R per coarse bin) is dumped separately by
+         *            LUMINA_C1_BIN_DUMP -> lumina_c1_bins.csv.
+         *   bfr    = normalized ARTIS Gamma_bf density, i.e. the quantity the
+         *            consumers use as R_bf += sigma[bin] * bfr[bin]
+         *   j_nu_count = MC packet tally for the bin (-1 if the array is absent)
+         * Pure observation: nothing here writes any physics array. */
+        if (c2d_on == 1 && c2d_fp) {
+            const double *bfr_r = nlte->bf_rate_estimator
+                ? &nlte->bf_rate_estimator[(size_t)s * nb] : NULL;
+            const int *cnt_r = nlte->j_nu_count
+                ? &nlte->j_nu_count[(size_t)s * nb] : NULL;
+            for (int f = 0; f < nb; f++) {
+                double nu_lo_f = nu_min * exp((double)f * dlog);
+                double nu_hi_f = nu_min * exp((double)(f + 1) * dlog);
+                double dnu_f   = nu_hi_f - nu_lo_f;
+                double nu_mid  = nu_min * exp(((double)f + 0.5) * dlog);
+                double J_raw   = (dnu_f > 0.0) ? jr[f] * norm / dnu_f : 0.0;
+                fprintf(c2d_fp, "%d,%d,%d,%.6e,%.6e,%.6e,%d\n",
+                        c2d_iter, s, f, nu_mid, J_raw,
+                        bfr_r ? bfr_r[f] : 0.0, cnt_r ? cnt_r[f] : -1);
+            }
+        }
+    }
+    if (fallback_on && fb_M_total > 0) {
+        if (!fb_banner_done) {
+            printf("[C1-DEGEN-FALLBACK] it %d: %d coarse bins railed->raw (shells %s)\n",
+                   fb_call, fb_M_total, fb_shbuf);
+            fb_banner_done = 1;
+        } else {
+            printf("[C1-DEGEN-FALLBACK] it %d: %d coarse bins -> raw (%d shells)\n",
+                   fb_call, fb_M_total, fb_nsh);
+        }
+        fflush(stdout);
+    }
+    /* [withParityQ item1] fail-loud: one banner line per build while armed, so a
+     * mis-set gate (or a bin ladder that never reaches 1085 A) is impossible to
+     * overlook.  M=0 while armed is itself the alarm. */
+    if (tepin_on) {
+        printf("[C1-SUPERBIN-TEPIN] it %d: %d coarse bins pinned to T_R=T_e "
+               "(lam_hi<=%.0fA, nu_lo>=%.4eHz) in %d shells "
+               "[ARTIS radfield.cc:760-800 + artisoptions.h:64-72]\n",
+               tp_call, tp_M_total, ARTIS_RADFIELD_SUPERBIN_LAM_A,
+               nu_superbin, tp_nsh);
+        fflush(stdout);
+    }
+    /* [withParityQ item2] flush the per-iteration block so a killed run still
+     * leaves every completed iteration on disk. */
+    if (bd_on == 1 && bd_fp) {
+        fflush(bd_fp);
+        printf("[C1-BIN-DUMP] it %d: %d shells x %d coarse bins appended -> "
+               "lumina_c1_bins.csv\n", bd_iter, n_shells, NC);
+        fflush(stdout);
+    }
+    /* [withParityY Y2] same per-iteration flush + banner for the C2 dump. */
+    if (c2d_on == 1 && c2d_fp) {
+        fflush(c2d_fp);
+        printf("[C2-BFR-DUMP] it %d: %d shells x %d fine bins appended -> "
+               "lumina_c2_bfr_dump.csv\n", c2d_iter, n_shells, nb);
+        fflush(stdout);
+    }
+    (void)T_e;   /* radfield.cc:767 sets the last (superbin) T_R=T_e; Lumina's top
+                  * log bin is not a wide T_e superbin, so all bins use the general
+                  * fit. T_e retained in the signature for a future faithful superbin. */
+    /* [withParityQ item1] SUPERSEDED WHEN ARMED: the "future faithful superbin"
+     * above is now LUMINA_C1_SUPERBIN_TEPIN, which reads T_e[s] for every coarse
+     * bin shortward of 1085 A.  The (void)T_e cast is retained (harmless) so the
+     * gate-OFF translation unit is unchanged. */
+}
+
+/* [DIAG-T2] Per-(shell,coarse-bin) dilute-BB field census. Recomputes the SAME
+ * ARTIS C1 (W_bin,T_R_bin) fit as nlte_build_perbin_dilute_field WITHOUT touching
+ * nlte->J_nu, and writes it alongside the coarse-bin-integrated MC field J_bin and
+ * the local Planck integral B_bin=∫B_ν(T_e)dν so a deviating radiation field is
+ * localizable to a (shell,bin). Read-only; no-op if the C1 estimators are absent. */
+void nlte_dump_perbin_field_csv(NLTEConfig *nlte, double time_simulation,
+                                double *volume, double *T_e, int n_shells) {
+    if (!nlte || !nlte->J_nu || !nlte->j_nu_estimator ||
+        !nlte->nu_bar_nu_estimator) return;
+    const int nb = nlte->n_freq_bins;
+    if (nb <= 0) return;
+    const double nu_min = nlte->nu_min, dlog = nlte->d_log_nu;
+    const int NC = ARTIS_RADFIELD_NC;
+    FILE *pf = fopen("lumina_census_perbin_field.csv", "w");
+    if (!pf) return;
+    fprintf(pf, "shell,coarse_bin,nu_lo_Hz,nu_hi_Hz,lam_hi_A,lam_lo_A,"
+                "W_bin,T_R_bin_K,T_e_K,J_bin,B_bin_Te,J_over_B\n");
+    double raw_J[ARTIS_RADFIELD_NC], raw_nuJ[ARTIS_RADFIELD_NC];
+    int    f_first[ARTIS_RADFIELD_NC], f_last[ARTIS_RADFIELD_NC];
+    for (int s = 0; s < n_shells; s++) {
+        double V = volume[s], Te = T_e[s];
+        if (!(V > 0.0) || !(time_simulation > 0.0)) continue;
+        double norm = 1.0 / (4.0 * M_PI_VAL * V * time_simulation);
+        for (int c = 0; c < NC; c++) {
+            raw_J[c] = 0.0; raw_nuJ[c] = 0.0; f_first[c] = -1; f_last[c] = -1;
+        }
+        const double *jr  = &nlte->j_nu_estimator[(size_t)s * nb];
+        const double *nur = &nlte->nu_bar_nu_estimator[(size_t)s * nb];
+        for (int f = 0; f < nb; f++) {
+            int c = (int)((long)f * NC / nb);
+            if (c < 0) c = 0; if (c >= NC) c = NC - 1;
+            raw_J[c]   += jr[f];
+            raw_nuJ[c] += nur[f];
+            if (f_first[c] < 0) f_first[c] = f;
+            f_last[c] = f;
+        }
+        for (int c = 0; c < NC; c++) {
+            if (f_first[c] < 0) continue;
+            double nu_lo = nu_min * exp((double)f_first[c] * dlog);
+            double nu_hi = nu_min * exp((double)(f_last[c] + 1) * dlog);
+            double J_c = raw_J[c] * norm, W = 0.0, TR = 0.0;
+            if (J_c > 0.0 && raw_J[c] > 0.0) {
+                double nu_bar = raw_nuJ[c] / raw_J[c];
+                TR = artis_find_bin_T_R(nu_bar, nu_lo, nu_hi);
+                double P = artis_planck_integral(TR, nu_lo, nu_hi, 0);
+                W = (P > 0.0) ? J_c / P : 0.0;
+                if (W > 1e4 || !isfinite(W)) {
+                    P = artis_planck_integral(ARTIS_RADFIELD_TR_MAX, nu_lo, nu_hi, 0);
+                    W = (P > 0.0) ? J_c / P : 0.0;
+                    if (W > 1e4 || !isfinite(W)) { TR = 0.0; W = 0.0; }
+                    else TR = ARTIS_RADFIELD_TR_MAX;
+                }
+            }
+            double B_c = (Te > 0.0) ? artis_planck_integral(Te, nu_lo, nu_hi, 0) : 0.0;
+            fprintf(pf, "%d,%d,%.6e,%.6e,%.2f,%.2f,%.6e,%.2f,%.2f,%.6e,%.6e,%.4e\n",
+                    s, c, nu_lo, nu_hi,
+                    (nu_lo > 0.0) ? (C_SPEED_OF_LIGHT / nu_lo) * 1e8 : 0.0,
+                    (nu_hi > 0.0) ? (C_SPEED_OF_LIGHT / nu_hi) * 1e8 : 0.0,
+                    W, TR, Te, J_c, B_c, (B_c > 0.0) ? J_c / B_c : -1.0);
+        }
+    }
+    fclose(pf);
+    printf("[DIAG-T2] per-bin (W,T_R,mc_J,B) field census -> lumina_census_perbin_field.csv\n");
+    /* [DIAG-T2 FINE] LUMINA_JNU_FINE_DUMP=1: per-FINE-bin raw MC estimator
+     * (bin-INTEGRATED, erg/cm2/s/sr) + the published nlte->J_nu (per-Hz) —
+     * provenance instrument for the spurious deep-EUV coarse-bin energy and
+     * the C1 within-bin shape. Sparse rows (both ~0) skipped. Default OFF. */
+    if (getenv("LUMINA_JNU_FINE_DUMP") && atoi(getenv("LUMINA_JNU_FINE_DUMP"))) {
+        FILE *ffp = fopen("lumina_census_jnu_fine.csv", "w");
+        if (ffp) {
+            fprintf(ffp, "shell,fine_bin,nu_lo_Hz,nu_hi_Hz,lam_mid_A,"
+                         "raw_jint,J_pub_perHz\n");
+            for (int s = 0; s < n_shells; s++) {
+                double V = volume[s];
+                if (!(V > 0.0) || !(time_simulation > 0.0)) continue;
+                double norm = 1.0 / (4.0 * M_PI_VAL * V * time_simulation);
+                const double *jr = &nlte->j_nu_estimator[(size_t)s * nb];
+                for (int f = 0; f < nb; f++) {
+                    double nlo = nu_min * exp((double)f * dlog);
+                    double nhi = nu_min * exp((double)(f + 1) * dlog);
+                    double raw = jr[f] * norm;
+                    double Jp  = nlte->J_nu ? nlte->J_nu[(size_t)s * nb + f] : 0.0;
+                    if (raw == 0.0 && Jp <= 1e-30) continue;
+                    fprintf(ffp, "%d,%d,%.6e,%.6e,%.2f,%.6e,%.6e\n", s, f, nlo, nhi,
+                            C_SPEED_OF_LIGHT / (0.5 * (nlo + nhi)) * 1e8, raw, Jp);
+                }
+            }
+            fclose(ffp);
+            printf("[DIAG-T2] fine-grid j_nu (raw_jint + J_pub) -> "
+                   "lumina_census_jnu_fine.csv\n");
+        }
+    }
+}
+
+/* ============================================================ */
 /* Phase 4 - Step 3: T_inner update from escape fraction        */
 /* ============================================================ */
 
@@ -446,6 +1830,186 @@ double nlte_pair_total_density(NLTEConfig *nlte, AtomicData *atom,
     return n_total;
 }
 
+int lumina_zinert_element_inactive(const AtomicData *atom, int element,
+                                   int n_shells) {
+    if (!atom || !atom->abundances || element < 0 ||
+        element >= atom->n_elements || n_shells <= 0)
+        return 0;
+    for (int s = 0; s < n_shells; s++)
+        if (atom->abundances[(size_t)element * n_shells + s] != 0.0)
+            return 0;
+    return 1;
+}
+
+/* L0-CLOSE-R2 section 3.7, Z-INERT.
+ *
+ * Topology is deliberately retained for zero-abundance elements.  This audit
+ * therefore distinguishes represented cells from physically live cells and
+ * checks the last element-attributable quantities before continuum/CMF/rate
+ * consumers combine them into element-agnostic totals.  A candidate count is
+ * the exact production admission predicate:
+ *   continuum        n_ion >= 1e-30 (compute_bf_opacity)
+ *   emissivity       tau > 1e-12    (cmfgen_assemble)
+ *   transport        tau > 0        (nonzero contribution to tau accumulation)
+ *   heating/cooling  any nonzero ion or NLTE level population
+ * Non-finite values are violations as well as nonzero values. */
+int lumina_zinert_validate(const AtomicData *atom, const NLTEConfig *nlte,
+                           const OpacityState *opacity, int n_shells,
+                           const char *stage) {
+    typedef struct {
+        unsigned long long zero_shells;
+        unsigned long long ion_cells, ion_nonzero;
+        unsigned long long population_cells, population_nonzero;
+        unsigned long long line_cells, line_opacity_nonzero;
+        unsigned long long line_source_nonzero;
+        unsigned long long continuum_candidates;
+        unsigned long long emissivity_candidates;
+        unsigned long long transport_candidates;
+        unsigned long long heating_cooling_candidates;
+    } ZCount;
+    ZCount count[100];
+    unsigned char *zero_shell = NULL;
+    int failed = 0;
+
+    memset(count, 0, sizeof(count));
+    if (!atom || !atom->abundances || !atom->element_Z || n_shells <= 0 ||
+        (size_t)n_shells > SIZE_MAX / 100) {
+        fprintf(stderr,
+                "[Z-INERT][FATAL] stage=%s invalid audit state n_shells=%d\n",
+                stage ? stage : "unknown", n_shells);
+        return 1;
+    }
+    zero_shell = (unsigned char *)calloc((size_t)100 * n_shells, 1);
+    if (!zero_shell) {
+        fprintf(stderr, "[Z-INERT][FATAL] stage=%s audit allocation failed\n",
+                stage ? stage : "unknown");
+        return 1;
+    }
+
+    for (int e = 0; e < atom->n_elements; e++) {
+        int Z = atom->element_Z[e];
+        if (Z <= 0 || Z >= 100) continue;
+        if (!lumina_zinert_element_inactive(atom, e, n_shells)) continue;
+        for (int s = 0; s < n_shells; s++) {
+            zero_shell[(size_t)Z * n_shells + s] = 1;
+            count[Z].zero_shells++;
+        }
+    }
+
+    if (atom->ion_number_density && atom->elem_ion_offset) {
+        for (int e = 0; e < atom->n_elements; e++) {
+            int Z = atom->element_Z[e];
+            if (Z <= 0 || Z >= 100) continue;
+            for (int ip = atom->elem_ion_offset[e];
+                 ip < atom->elem_ion_offset[e + 1]; ip++) {
+                for (int s = 0; s < n_shells; s++) {
+                    if (!zero_shell[(size_t)Z * n_shells + s]) continue;
+                    double value = atom->ion_number_density[(size_t)ip * n_shells + s];
+                    count[Z].ion_cells++;
+                    if (value != 0.0 || !isfinite(value)) {
+                        count[Z].ion_nonzero++;
+                        count[Z].heating_cooling_candidates++;
+                        failed = 1;
+                    }
+                    if (isfinite(value) && value >= 1e-30)
+                        count[Z].continuum_candidates++;
+                }
+            }
+        }
+    }
+
+    if (nlte && nlte->nlte_level_populations) {
+        for (int ii = 0; ii < nlte->n_nlte_ions; ii++) {
+            int Z = nlte->nlte_Z[ii];
+            if (Z <= 0 || Z >= 100) continue;
+            for (int level = nlte->nlte_ion_level_offset[ii];
+                 level < nlte->nlte_ion_level_offset[ii + 1]; level++) {
+                for (int s = 0; s < n_shells; s++) {
+                    if (!zero_shell[(size_t)Z * n_shells + s]) continue;
+                    double value = nlte->nlte_level_populations[
+                        (size_t)level * n_shells + s];
+                    count[Z].population_cells++;
+                    if (value != 0.0 || !isfinite(value)) {
+                        count[Z].population_nonzero++;
+                        count[Z].heating_cooling_candidates++;
+                        failed = 1;
+                    }
+                }
+            }
+        }
+    }
+
+    if (opacity && opacity->tau_sobolev && atom->line_atomic_number) {
+        int n_lines = opacity->n_lines;
+        for (int line = 0; line < n_lines; line++) {
+            int Z = atom->line_atomic_number[line];
+            if (Z <= 0 || Z >= 100) continue;
+            for (int s = 0; s < n_shells; s++) {
+                if (!zero_shell[(size_t)Z * n_shells + s]) continue;
+                size_t at = (size_t)line * n_shells + s;
+                double tau = opacity->tau_sobolev[at];
+                count[Z].line_cells++;
+                if (tau != 0.0 || !isfinite(tau)) {
+                    count[Z].line_opacity_nonzero++;
+                    failed = 1;
+                }
+                if (isfinite(tau) && tau > 0.0)
+                    count[Z].transport_candidates++;
+                if (isfinite(tau) && tau > 1e-12)
+                    count[Z].emissivity_candidates++;
+                if (opacity->line_source_S) {
+                    double source = opacity->line_source_S[at];
+                    if (source != 0.0 || !isfinite(source)) {
+                        count[Z].line_source_nonzero++;
+                        failed = 1;
+                    }
+                }
+            }
+        }
+    }
+
+    for (int Z = 1; Z < 100; Z++) {
+        ZCount *c = &count[Z];
+        if (c->zero_shells == 0) continue;
+        int z_failed = c->ion_nonzero != 0 || c->population_nonzero != 0 ||
+                       c->line_opacity_nonzero != 0 ||
+                       c->line_source_nonzero != 0 ||
+                       c->continuum_candidates != 0 ||
+                       c->emissivity_candidates != 0 ||
+                       c->heating_cooling_candidates != 0 ||
+                       c->transport_candidates != 0;
+        printf("[Z-INERT] stage=%s Z=%d zero_shells=%llu "
+               "ions=%llu ion_nonzero=%llu populations=%llu "
+               "population_nonzero=%llu lines=%llu line_opacity_nonzero=%llu "
+               "line_source_nonzero=%llu continuum_candidates=%llu "
+               "emissivity_candidates=%llu heating_cooling_candidates=%llu "
+               "transport_candidates=%llu verdict=%s\n",
+               stage ? stage : "unknown", Z, c->zero_shells,
+               c->ion_cells, c->ion_nonzero,
+               c->population_cells, c->population_nonzero,
+               c->line_cells, c->line_opacity_nonzero,
+               c->line_source_nonzero, c->continuum_candidates,
+               c->emissivity_candidates, c->heating_cooling_candidates,
+               c->transport_candidates, z_failed ? "FAIL" : "PASS");
+    }
+    fflush(stdout);
+    if (failed)
+        fprintf(stderr,
+                "[Z-INERT][FATAL] stage=%s exact-zero downstream violation\n",
+                stage ? stage : "unknown");
+    free(zero_shell);
+    return failed;
+}
+
+static int zinert_audit_enabled(void) {
+    static int enabled = -1;
+    if (enabled < 0) {
+        const char *value = getenv("LUMINA_ZINERT_AUDIT");
+        enabled = (value && atoi(value) != 0) ? 1 : 0;
+    }
+    return enabled;
+}
+
 /* Task #072: Helper — interpolate zeta factor for (Z, ion_stage) at temperature T */
 static double interpolate_zeta(AtomicData *atom, int Z, int ion_stage, double T) {
     /* P4 override: replace ζ with constant value for masked (Z, ion) pairs */
@@ -493,13 +2057,34 @@ static double interpolate_zeta(AtomicData *atom, int Z, int ion_stage, double T)
  * T_e only enters the Saha ionization equation, NOT the partition function. */
 static void compute_partition_functions(AtomicData *atom, PlasmaState *plasma,
                                          int n_shells) {
+    /* [ARTIS-PARITY B3] excitation/partition temperature. ARTIS builds LTE,
+     * super-level and non-NLTE-level populations at T_e, UNDILUTED (ltepop.cc:
+     * 361-368, USE_TJ=false), so its partition functions are Z(T_e,W=1). Lumina
+     * default uses T_rad with the dilution factor W on the non-metastable block
+     * (TARDIS nebular convention). Under LUMINA_ARTIS_PARITY, evaluate every
+     * level's Boltzmann factor at T_e and drop the W dilution (W=1) so the
+     * partition functions that feed the ionization balance match ARTIS. Gate OFF
+     * => T_rad,W path => byte-identical. */
+    int parity = artis_parity_enabled();
+    if (parity) {
+        static int b3_banner = 0;
+        if (!b3_banner) {
+            printf("  [ARTIS-PARITY B3] partition functions at T_e, undiluted (W=1)\n");
+            b3_banner = 1;
+        }
+    }
     for (int ip = 0; ip < atom->n_ion_pops; ip++) {
         int lev_start = atom->level_offset[ip];
         int lev_end   = atom->level_offset[ip + 1];
 
         for (int s = 0; s < n_shells; s++) {
-            double T_rad = plasma->T_rad[s];
-            double W     = plasma->W[s];
+            double T_part = plasma->T_rad[s];
+            double W      = plasma->W[s];
+            if (parity) {
+                double Te = plasma->T_e ? plasma->T_e[s] : 0.0;
+                if (Te > 0.0) { T_part = Te; W = 1.0; }  /* undiluted LTE@T_e */
+                /* fail-closed: if T_e not yet set, keep the T_rad,W baseline */
+            }
 
             double Z_meta = 0.0;
             double Z_non_meta = 0.0;
@@ -509,8 +2094,7 @@ static void compute_partition_functions(AtomicData *atom, PlasmaState *plasma,
                 int g = atom->level_g[l];
                 int is_meta = atom->level_metastable[l];
 
-                /* ALL levels use T_rad for Boltzmann factor (TARDIS convention) */
-                double boltz = (E_eV * EV_TO_ERG) / (K_BOLTZMANN * T_rad);
+                double boltz = (E_eV * EV_TO_ERG) / (K_BOLTZMANN * T_part);
                 if (boltz < 500.0) { /* avoid underflow */
                     double bf = g * exp(-boltz);
                     if (is_meta)
@@ -525,6 +2109,41 @@ static void compute_partition_functions(AtomicData *atom, PlasmaState *plasma,
             atom->partition_functions[ip * n_shells + s] = Z_total;
         }
     }
+}
+
+/* [FB-MILNE] Exact per-level radiative-recombination bf-cooling coefficient,
+ * mirroring ARTIS ratecoeff.cc (bfcooling_integrand :82-89, modified_sahafact
+ * :145, assembly :173-182). Milne integral of the CMFGEN per-level sigma_bf
+ * over the shared NLTE freq grid, charging the electron pool the photoelectron
+ * KINETIC energy h(nu-nu0) only (not the binding energy hnu0):
+ *   Lambda = 4pi * SAHACONST*(g_lo/g_up)*Te^-1.5
+ *            * SUM_{f: nu_f>nu0} sigma[f]*(nu-nu0)*(2h/c^2)*nu^2*exp(-h(nu-nu0)/kTe)*dnu_f
+ * so the cooling-rate density = n_e * n_upperion * Lambda [erg/s/cm^3], the same
+ * units/role as C_ff. sigma_row = atom->cmfgen_sigma_bf + (size_t)l*NLTE_N_FREQ_BINS.
+ * This is the detailed-balance partner of the transport bf opacity chi_bf (which
+ * uses the SAME sigma_bf and NLTE pops) => S_nu=j/chi satisfies Kirchhoff by
+ * construction (sub-Planckian where the recombined level is sub-thermal). */
+static double fb_milne_cooling_coeff(const double *sigma_row, double nu0,
+                                     double g_lo, double g_up, double Te) {
+    if (!(Te > 0.0) || !(nu0 > 0.0) || !(g_up > 0.0) || !(g_lo > 0.0)) return 0.0;
+    const double SAHACONST = 2.0706659e-16; /* (h^2/(2 pi m_e k_B))^1.5 in cgs */
+    const double CL = 2.99792458e10;        /* c [cm/s] */
+    double kTe = K_BOLTZMANN * Te;
+    double dln = log(NLTE_NU_MAX / NLTE_NU_MIN) / (double)NLTE_N_FREQ_BINS;
+    double acc = 0.0;
+    for (int f = 0; f < NLTE_N_FREQ_BINS; f++) {
+        double nu = NLTE_NU_MIN * exp(((double)f + 0.5) * dln);
+        if (nu <= nu0) continue;
+        double sig = sigma_row[f];
+        if (sig <= 0.0) continue;
+        double x = H_PLANCK * (nu - nu0) / kTe;
+        if (x > 500.0) break;                /* Wien tail: grid is nu-increasing */
+        double dnu = nu * dln;               /* log-grid bin width dnu = nu*dln */
+        acc += sig * (nu - nu0) * (2.0 * H_PLANCK / (CL * CL))
+               * nu * nu * exp(-x) * dnu;
+    }
+    double sahafact = SAHACONST * (g_lo / g_up) * pow(Te, -1.5);
+    return 4.0 * M_PI_VAL * sahafact * acc;
 }
 
 
@@ -611,6 +2230,170 @@ static const double *g_nt_ioniz_rate;
 static int g_nt_ioniz_n;
 static int g_simul_on;   /* tentative; = -1 definition at the SIMUL module */
 
+/* ============================================================================
+ * [ARTIS-PARITY R1] true rate-statistical-equilibrium ionization closure.
+ *
+ * Replaces the interim B2 pin (LTE Saha at T_e, W=1) with the ARTIS rate-SE
+ * adjacent-ion balance (nltepop.cc nltepop_matrix_add_ionisation:563-619):
+ *   n(X+1)*n_e / n(X) = [Gamma_phot + n_e*C_ion] / [alpha_rad + n_e*C_3body]
+ *   => r = n(X+1)/n(X) = (Gamma + n_e*C_ion) / (n_e*alpha + n_e^2*C_3body)
+ * Active only under LUMINA_ARTIS_PARITY (sub-gate LUMINA_ARTIS_PARITY_R1,
+ * default ON under parity), and only where the Group-C MC field is built.
+ * Fail-closed to the B2 LTE-Saha pin otherwise (mirrors ARTIS's LTE start).
+ *
+ * Reused machinery (NO new integrator, NO fabricated rate):
+ *   Gamma_phot : the SAME per-bin R_bf estimator as the NLTE matrix
+ *                (compute nlte pair matrix, plasma.c:11794-11820) -- prefers the
+ *                C2 transport Gamma_bf (nlte->bf_rate_estimator) per bin, falls
+ *                back to the C1 dilute-BB field integral 4pi*sigma*J/(h*nu)*dnu
+ *                over nlte->J_nu. Summed pop-weighted over the lower ion levels.
+ *   alpha_rad  : frozenin_alpha_rr (the Milne recombination coeff w/ spin-gate),
+ *                exactly the alpha the simul_ladder rate-SE closure uses (5840).
+ *   C_ion/C_3b : the A4 Seaton collisional ionization + exact-DB 3-body inverse,
+ *                verbatim from simul_ladder (plasma.c:5844-5865).
+ * ==========================================================================*/
+static NLTEConfig *g_bf_nlte_pops;   /* fwd; defined w/ bf_set_nlte_pops (~4241) */
+
+/* R1 sub-gate: default ON under parity (the ARTIS closure), settable OFF (=0)
+ * for A/B against the B2 interim pin. */
+static int r1_rate_se_enabled(void) {
+    static int on = -1;
+    if (on < 0) {
+        const char *e = getenv("LUMINA_ARTIS_PARITY_R1");
+        on = (e ? (atoi(e) != 0) : artis_parity_enabled()) ? 1 : 0;
+        if (on)
+            printf("  [ARTIS-PARITY R1] rate-SE ionization closure ARMED "
+                   "((Gamma_phot[MC field] + n_e*C_ion) / (n_e*alpha + C_3body))\n");
+    }
+    return on;
+}
+
+/* Shell has a usable transported MC field? (fail-closed gate; 1e-30 is the
+ * J_nu floor set at nlte build, so >1e-25 means an actually-sampled bin). */
+static int parity_field_built(NLTEConfig *nlte, int s) {
+    if (!nlte || !nlte->enabled || !nlte->J_nu) return 0;
+    int nfb = nlte->n_freq_bins;
+    const double *Jrow = &nlte->J_nu[(size_t)s * nfb];
+    const double *bfr  = nlte->bf_rate_estimator ?
+                         &nlte->bf_rate_estimator[(size_t)s * nfb] : NULL;
+    for (int bb = 0; bb < nfb; bb++) {
+        if (Jrow[bb] > 1e-25) return 1;
+        if (bfr && bfr[bb] > 0.0) return 1;
+    }
+    return 0;
+}
+
+/* Pop-weighted per-ion photoionization rate Gamma_phot(ip) [s^-1] from the
+ * transported field, using the SAME per-bin R_bf estimator as the NLTE matrix
+ * (prefer C2 bf_rate_estimator; else C1 dilute-BB integral over nlte->J_nu).
+ * Level population fraction = Boltzmann at T_e (the B3 partition functions are
+ * built at T_e,W=1 under parity, so this is self-consistent). Returns 0 if no
+ * ionizing field lies above the ion's edges. */
+static double parity_gamma_phot(AtomicData *atom, NLTEConfig *nlte,
+                                int s, int n_shells, int ip,
+                                double T_e, double chi_erg) {
+    if (!nlte || !nlte->J_nu || T_e <= 0.0) return 0.0;
+    int nfb = nlte->n_freq_bins;
+    const double *Jrow  = &nlte->J_nu[(size_t)s * nfb];
+    const double *bfrow = (artis_parity_enabled() && nlte->bf_rate_estimator)
+                          ? &nlte->bf_rate_estimator[(size_t)s * nfb] : NULL;
+    const int use_cmfgen = atom->cmfgen_loaded &&
+                           atom->cmfgen_n_freq_bins == nfb;
+    int Z = atom->ion_pop_Z[ip];
+    int stage = atom->ion_pop_stage[ip];
+    double sigma_0 = get_bf_sigma0(Z, stage);
+    if (sigma_0 <= 0.0) {
+        /* [RATES-FIX F5] Z-stage is the BOUND-electron count; the Kramers
+         * sigma_0 = 7.91e-18/Z_eff^2 wants the charge the ejected electron
+         * sees = stage+1 (simul_ladder's convention). */
+        int Zeff = rates_fix_enabled() ? (stage + 1) : (Z - stage);
+        if (Zeff < 1) Zeff = 1;
+        sigma_0 = 7.91e-18 / ((double)Zeff * (double)Zeff);
+    }
+    double Z_part = atom->partition_functions[(size_t)ip * n_shells + s];
+    if (!(Z_part > 0.0)) return 0.0;
+    double kTe = K_BOLTZMANN * T_e;
+    int lev_start = atom->level_offset[ip];
+    int lev_end   = atom->level_offset[ip + 1];
+    double log_numin = log(nlte->nu_min);
+    double dln = nlte->d_log_nu;
+    double Gamma = 0.0;
+    for (int l = lev_start; l < lev_end; l++) {
+        double E_lev_erg = atom->level_energy_eV[l] * EV_TO_ERG;
+        double nu_thresh = (chi_erg - E_lev_erg) / H_PLANCK;
+        if (nu_thresh <= 0.0) continue;
+        double x = E_lev_erg / kTe;
+        if (x > 500.0) continue;            /* negligible population */
+        double f_lev = (double)atom->level_g[l] * exp(-x) / Z_part;
+        if (!(f_lev > 0.0)) continue;
+        const double *sigma_row = (use_cmfgen && atom->cmfgen_has_sigma &&
+                                   atom->cmfgen_has_sigma[l])
+            ? &atom->cmfgen_sigma_bf[(size_t)l * (size_t)nfb] : NULL;
+        double R_bf = 0.0;
+        for (int bb = 0; bb < nfb; bb++) {
+            double log_nu_lo = log_numin + bb * dln;
+            double nu_bin = exp(log_nu_lo + 0.5 * dln);
+            if (nu_bin < nu_thresh) continue;
+            double delta_nu = exp(log_nu_lo + dln) - exp(log_nu_lo);
+            double sigma;
+            if (sigma_row) { sigma = sigma_row[bb]; if (sigma <= 0.0) continue; }
+            else            sigma = sigma_0 * pow(nu_thresh / nu_bin, 3.0);
+            double pref = 4.0 * M_PI_VAL * sigma / (H_PLANCK * nu_bin) * delta_nu;
+            double bfr = bfrow ? bfrow[bb] : 0.0;
+            if (bfr > 0.0) R_bf += sigma * bfr;     /* [C2] transport Gamma_bf */
+            else           R_bf += pref * Jrow[bb]; /* [C1] dilute-BB integral */
+        }
+        Gamma += f_lev * R_bf;
+    }
+    if (!isfinite(Gamma) || Gamma < 0.0) Gamma = 0.0;
+    return Gamma;
+}
+
+/* Rate-SE adjacent-ion ratio r = n(ip_next)/n(ip_cur). Reuses frozenin_alpha_rr
+ * (Milne alpha) and the A4 Seaton C_ion/3-body (verbatim from simul_ladder).
+ * Degenerate guard: Gamma=0 & recomb=0 -> keep phi_LTE_ratio (previous split);
+ * recomb=0 with Gamma>0 -> cap at the 1e30 runaway bound (as the existing pin). */
+static double parity_rate_se_ratio(AtomicData *atom, NLTEConfig *nlte,
+                                   int s, int n_shells, int ip_cur, int ip_next,
+                                   double T_e, double n_e, double chi_erg,
+                                   double gamma_nt_atom, double phi_LTE_ratio) {
+    double Gamma = parity_gamma_phot(atom, nlte, s, n_shells, ip_cur, T_e, chi_erg);
+    if (gamma_nt_atom > 0.0) Gamma += gamma_nt_atom;   /* ARTIS NT channel (additive) */
+    double alpha = frozenin_alpha_rr(atom, ip_cur, ip_next, T_e);
+    double num = Gamma;                    /* + n_e*C_ion below            */
+    double den = n_e * alpha;              /* + n_e^2*C_3body below (=R_rec)*/
+    if (T_e > 0.0 && n_e > 0.0) {
+        int has_upper = (ip_next >= 0 &&
+            atom->level_offset[ip_next + 1] > atom->level_offset[ip_next]);
+        double u = (chi_erg > 0.0) ? chi_erg / (K_BOLTZMANN * T_e) : 0.0;
+        if (u > 0.0 && u < 700.0 && has_upper) {
+            int st = atom->ion_pop_stage[ip_cur];
+            int zeff = st + 1; if (zeff < 1) zeff = 1;
+            double sig = 7.91e-18 / ((double)zeff * (double)zeff);
+            double g_col = (st <= 0) ? 0.1 : (st == 1) ? 0.2 : 0.3;
+            int glo = atom->level_g[atom->level_offset[ip_cur]];
+            int gup = atom->level_g[atom->level_offset[ip_next]];
+            if (glo > 0 && gup > 0) {
+                const double SIM_SAHACONST = 2.0706659e-16;
+                double C_ion = n_e * 1.55e13 / sqrt(T_e) * g_col * sig *
+                               exp(-u) / u;
+                double C_rec = n_e * n_e * SIM_SAHACONST *
+                               ((double)glo / (double)gup) * 1.55e13 *
+                               g_col * sig * K_BOLTZMANN / (T_e * chi_erg);
+                if (isfinite(C_ion) && C_ion > 0.0) num += C_ion;
+                if (isfinite(C_rec) && C_rec > 0.0) den += C_rec;
+            }
+        }
+    }
+    double r;
+    if (den > 0.0)      r = num / den;
+    else if (num > 0.0) r = 1e30;          /* alpha=0, Gamma>0: cap runaway ioniz */
+    else                r = phi_LTE_ratio; /* both channels zero: keep previous split */
+    if (!isfinite(r) || r < 0.0) r = 0.0;
+    if (r > 1e30) r = 1e30;
+    return r;
+}
+
 /* steady-state nebular-Saha ion partition for ONE shell (all elements). Extracted
  * so the coupled Newton can reconcile only the shells it does NOT own. */
 static void compute_ion_populations_shell(AtomicData *atom, PlasmaState *plasma,
@@ -636,6 +2419,11 @@ static void compute_ion_populations_shell(AtomicData *atom, PlasmaState *plasma,
                      (atom->element_mass_amu[e] * AMU);
         if (natom > 0.0) gamma_nt_atom = g_nt_ioniz_rate[s] / natom;
     }
+    /* [ARTIS-PARITY R1] rate-SE closure decision for this shell (once): active
+     * under parity+R1 when the transported MC field is built for this shell;
+     * else fail-closed to the B2 LTE-Saha pin below. */
+    int r1_on   = artis_parity_enabled() && r1_rate_se_enabled();
+    int r1_use  = r1_on && parity_field_built(g_bf_nlte_pops, s);
     for (int e = 0; e < atom->n_elements; e++) {
         int Z_elem = atom->element_Z[e];
         double mass_amu = atom->element_mass_amu[e];
@@ -690,13 +2478,31 @@ static void compute_ion_populations_shell(AtomicData *atom, PlasmaState *plasma,
                 double phi_LTE_at_Trad = prefactor * exp(-chi_erg * beta_rad);
                 double phi_LTE_at_Te   = prefactor * exp(-chi_erg * beta_electron);
 
-                double zeta = interpolate_zeta(atom, Z_elem, stage, T_rad);
-                double sqrt_te_tr = sqrt(T_e / T_rad);
-                double phi_neb = W * sqrt_te_tr *
-                    (zeta * (T_e / T_rad) * phi_LTE_at_Te +
-                     W * (1.0 - zeta) * phi_LTE_at_Trad);
-                phi_neb = apply_ml_phi_neb_correction(phi_neb, Z_elem, stage, T_e, T_rad);
-                phi_neb = apply_twocomp_lock(phi_neb, phi_LTE_at_Te, Z_elem, stage, W);
+                double phi_neb;
+                if (artis_parity_enabled() && T_e > 0.0) {
+                    /* [ARTIS-PARITY B2/B3] ionization closure at T_e, undiluted.
+                     * ARTIS runs FORCE_SAHA_ION_BALANCE=false (ion fractions are
+                     * the rate-SE solved output) with the LTE Saha REFERENCE at
+                     * T_e (ltepop.cc). Lumina's absolute-ionization pin (the value
+                     * the NLTE conservation row normalizes to) is the nebular
+                     * Lucy-Mazzali Saha at (T_rad, W, zeta). Under parity, evaluate
+                     * that pin as pure LTE Saha at T_e with W=1 (g_electron at T_e,
+                     * matching the T_e partition functions from B3) — the ion SPLIT
+                     * inside each NLTE pair stays the matrix solution; only the
+                     * number-conserving total is set here. */
+                    double g_e_Te = pow(2.0 * M_PI_VAL * M_ELECTRON * K_BOLTZMANN *
+                                        T_e / (H_PLANCK * H_PLANCK), 1.5);
+                    phi_neb = (Z_next / Z_cur) * 2.0 * g_e_Te *
+                              exp(-chi_erg * beta_electron);
+                } else {
+                    double zeta = interpolate_zeta(atom, Z_elem, stage, T_rad);
+                    double sqrt_te_tr = sqrt(T_e / T_rad);
+                    phi_neb = W * sqrt_te_tr *
+                        (zeta * (T_e / T_rad) * phi_LTE_at_Te +
+                         W * (1.0 - zeta) * phi_LTE_at_Trad);
+                    phi_neb = apply_ml_phi_neb_correction(phi_neb, Z_elem, stage, T_e, T_rad);
+                    phi_neb = apply_twocomp_lock(phi_neb, phi_LTE_at_Te, Z_elem, stage, W);
+                }
 
                 /* PROBE (LUMINA_OUTER_ION_BOOST=<factor>,<smin>): force the outer
                  * (s>=smin) more ionised by boosting phi_neb, to TEST whether higher
@@ -708,9 +2514,18 @@ static void compute_ion_populations_shell(AtomicData *atom, PlasmaState *plasma,
                              ib_f = (f>0)?f:1.0; ib_s = sm; } else ib_f = 1.0; }
                   if (ib_f != 1.0 && s >= ib_s) phi_neb *= ib_f; }
 
-                /* ratio n_{i+1}/n_i = phi_nebular / n_e */
+                /* ratio n_{i+1}/n_i */
                 double ratio;
-                if (n_e > 0.0) {
+                if (r1_use && n_e > 0.0 && T_e > 0.0) {
+                    /* [ARTIS-PARITY R1] rate-SE balance: (Gamma_phot + n_e C_ion)
+                     * / (n_e alpha + n_e^2 C_3body). phi_neb/n_e is the degenerate
+                     * fallback (kept only where both channels vanish). */
+                    ratio = parity_rate_se_ratio(atom, g_bf_nlte_pops, s, n_shells,
+                                                 ip_cur, ip_next, T_e, n_e, chi_erg,
+                                                 gamma_nt_atom, phi_neb / n_e);
+                } else if (n_e > 0.0) {
+                    /* B2 interim (LTE Saha@T_e under parity / nebular off) or
+                     * field-not-built fail-closed path -- byte-identical to prior. */
                     ratio = phi_neb / n_e;
                     /* + non-thermal channel (LUMINA_ION_NT): Gamma_nt/(alpha n_e) */
                     if (gamma_nt_atom > 0.0) {
@@ -742,7 +2557,8 @@ static void compute_ion_populations_shell(AtomicData *atom, PlasmaState *plasma,
             for (int k = 0; k < n_pops - 1; k++) {
                 product *= ratios[k];
                 double n_ion = n_0 * product;
-                if (!(n_ion > 1e-300)) n_ion = 1e-300;  /* NaN-catching */
+                if (lumina_zinert_element_inactive(atom, e, n_shells)) n_ion = 0.0;
+                else if (!(n_ion > 1e-300)) n_ion = 1e-300;  /* NaN-catching */
                 atom->ion_number_density[(ip_start + k + 1) * n_shells + s] = n_ion;
             }
 
@@ -755,11 +2571,30 @@ static void compute_ion_populations(AtomicData *atom, PlasmaState *plasma,
                                      int n_shells) {
     /* LUMINA_RADEQ_SIMUL owns the ion partition; skip the nebular rewrite. */
     if (g_simul_on == 1) return;
+    if (artis_parity_enabled()) {
+        static int b2_banner = 0;
+        if (!b2_banner) {
+            printf("  [ARTIS-PARITY B2] ionization closure = LTE Saha at T_e, W=1 "
+                   "(pin is number-conserving; ion split solved by NLTE matrix)\n");
+            b2_banner = 1;
+        }
+    }
     init_ml_phi_neb_correction();
     init_zeta_override();
     init_twocomp_lock();
-    for (int s = 0; s < n_shells; s++)
+    /* [ARTIS-PARITY R1] tally rate-driven vs fail-closed-LTE shells for this pass. */
+    int r1_on = artis_parity_enabled() && r1_rate_se_enabled();
+    long r1_rate_n = 0, r1_lte_n = 0;
+    for (int s = 0; s < n_shells; s++) {
+        if (r1_on) {
+            if (parity_field_built(g_bf_nlte_pops, s)) r1_rate_n++;
+            else                                       r1_lte_n++;
+        }
         compute_ion_populations_shell(atom, plasma, s, n_shells);
+    }
+    if (r1_on)
+        printf("  [ARTIS-PARITY R1] rate-SE closure: %ld shells rate-driven, "
+               "%ld fallback-LTE\n", r1_rate_n, r1_lte_n);
 }
 
 /* Task #072 Step 4c: Compute electron density (iterative)
@@ -785,6 +2620,12 @@ static void compute_electron_density(AtomicData *atom, PlasmaState *plasma,
                                  / (H_PLANCK * H_PLANCK), 1.5);
         double beta_rad = 1.0 / (K_BOLTZMANN * T_rad);
         double beta_electron = 1.0 / (K_BOLTZMANN * T_e);
+
+        /* [ARTIS-PARITY R1] same rate-SE decision as compute_ion_populations_shell,
+         * so the electron density is solved self-consistently with the ion
+         * partition it drives. Field-not-built shells fail-closed to B2. */
+        int r1_use = artis_parity_enabled() && r1_rate_se_enabled() &&
+                     parity_field_built(g_bf_nlte_pops, s);
 
         for (int iteration = 0; iteration < 100; iteration++) {
             double n_e_old = n_e;
@@ -819,15 +2660,37 @@ static void compute_electron_density(AtomicData *atom, PlasmaState *plasma,
                     double prefactor = (Z_next / Z_cur) * 2.0 * g_electron;
                     double phi_LTE_at_Trad = prefactor * exp(-chi_erg * beta_rad);
                     double phi_LTE_at_Te   = prefactor * exp(-chi_erg * beta_electron);
-                    double zeta = interpolate_zeta(atom, Z_elem, stage, T_rad);
-                    double sqrt_te_tr = sqrt(T_e / T_rad);
-                    double phi_neb = W * sqrt_te_tr *
-                        (zeta * (T_e / T_rad) * phi_LTE_at_Te +
-                         W * (1.0 - zeta) * phi_LTE_at_Trad);
-                    phi_neb = apply_ml_phi_neb_correction(phi_neb, Z_elem, stage, T_e, T_rad);
-                    phi_neb = apply_twocomp_lock(phi_neb, phi_LTE_at_Te, Z_elem, stage, W);
+                    double phi_neb;
+                    if (artis_parity_enabled() && T_e > 0.0) {
+                        /* [ARTIS-PARITY B2/B3] LTE Saha at T_e, W=1 (n_e-solve copy;
+                         * must match compute_ion_populations_shell for a consistent
+                         * electron density). */
+                        double g_e_Te = pow(2.0 * M_PI_VAL * M_ELECTRON *
+                                            K_BOLTZMANN * T_e /
+                                            (H_PLANCK * H_PLANCK), 1.5);
+                        phi_neb = (Z_next / Z_cur) * 2.0 * g_e_Te *
+                                  exp(-chi_erg * beta_electron);
+                    } else {
+                        double zeta = interpolate_zeta(atom, Z_elem, stage, T_rad);
+                        double sqrt_te_tr = sqrt(T_e / T_rad);
+                        phi_neb = W * sqrt_te_tr *
+                            (zeta * (T_e / T_rad) * phi_LTE_at_Te +
+                             W * (1.0 - zeta) * phi_LTE_at_Trad);
+                        phi_neb = apply_ml_phi_neb_correction(phi_neb, Z_elem, stage, T_e, T_rad);
+                        phi_neb = apply_twocomp_lock(phi_neb, phi_LTE_at_Te, Z_elem, stage, W);
+                    }
 
-                    double ratio = (n_e > 0.0) ? phi_neb / n_e : 1e10;
+                    double ratio;
+                    if (r1_use && n_e > 0.0 && T_e > 0.0) {
+                        /* [ARTIS-PARITY R1] rate-SE balance (n_e-solve copy;
+                         * gamma_nt omitted here as in the prior n_e solve -- the
+                         * NT channel is applied by compute_ion_populations after). */
+                        ratio = parity_rate_se_ratio(atom, g_bf_nlte_pops, s, n_shells,
+                                                     ip_cur, ip_next, T_e, n_e, chi_erg,
+                                                     0.0, phi_neb / n_e);
+                    } else {
+                        ratio = (n_e > 0.0) ? phi_neb / n_e : 1e10;
+                    }
                     if (!isfinite(ratio) || ratio < 0.0) ratio = 0.0;
                     if (ratio > 1e30) ratio = 1e30;
                     ratios_local[k] = ratio;
@@ -843,7 +2706,8 @@ static void compute_electron_density(AtomicData *atom, PlasmaState *plasma,
                 for (int k = 0; k < max_k; k++) {
                     product *= ratios_local[k];
                     double n_ion = n_0 * product;
-                    if (!(n_ion > 1e-300)) n_ion = 1e-300;  /* NaN-catching */
+                    if (lumina_zinert_element_inactive(atom, e, n_shells)) n_ion = 0.0;
+                    else if (!(n_ion > 1e-300)) n_ion = 1e-300;  /* NaN-catching */
                     atom->ion_number_density[(ip_start + k + 1) * n_shells + s] = n_ion;
                 }
             }
@@ -914,7 +2778,7 @@ static void compute_tau_sobolev(AtomicData *atom, PlasmaState *plasma,
         /* Diagnostic: zero-out lines for masked Z */
         if (Z > 0 && Z < 100 && opacity_skip_z[Z]) {
             for (int s = 0; s < n_shells; s++)
-                opacity->tau_sobolev[line * n_shells + s] = 1e-100;
+                opacity->tau_sobolev[line * n_shells + s] = 0.0;
             continue;
         }
 
@@ -922,7 +2786,7 @@ static void compute_tau_sobolev(AtomicData *atom, PlasmaState *plasma,
         int ip = find_ion_pop_idx(atom, Z, ion_stage);
         if (ip < 0) {
             for (int s = 0; s < n_shells; s++)
-                opacity->tau_sobolev[line * n_shells + s] = 1e-100;
+                opacity->tau_sobolev[line * n_shells + s] = 0.0;
             continue;
         }
 
@@ -940,7 +2804,7 @@ static void compute_tau_sobolev(AtomicData *atom, PlasmaState *plasma,
 
         if (lower_idx < 0 || upper_idx < 0) {
             for (int s = 0; s < n_shells; s++)
-                opacity->tau_sobolev[line * n_shells + s] = 1e-100;
+                opacity->tau_sobolev[line * n_shells + s] = 0.0;
             continue;
         }
 
@@ -951,10 +2815,21 @@ static void compute_tau_sobolev(AtomicData *atom, PlasmaState *plasma,
         int meta_lower = atom->level_metastable[lower_idx];
         int meta_upper = atom->level_metastable[upper_idx];
 
+        int element_inactive = 0;
+        for (int e = 0; e < atom->n_elements; e++) {
+            if (atom->element_Z[e] == Z) {
+                element_inactive = lumina_zinert_element_inactive(atom, e, n_shells);
+                break;
+            }
+        }
         for (int s = 0; s < n_shells; s++) {
             double T_rad = plasma->T_rad[s];
             double W     = plasma->W[s];
             double n_ion = atom->ion_number_density[ip * n_shells + s];
+            if (element_inactive) {
+                opacity->tau_sobolev[(size_t)line * n_shells + s] = 0.0;
+                continue;
+            }
             double Z_part = atom->partition_functions[ip * n_shells + s];
 
             /* TARDIS level population formula (nebular):
@@ -1000,6 +2875,14 @@ static void compute_tau_sobolev(AtomicData *atom, PlasmaState *plasma,
         }
     }
 }
+
+#ifdef LUMINA_FROZEN_ORACLE
+void lumina_oracle_compute_tau_sobolev(AtomicData *atom, PlasmaState *plasma,
+                                       OpacityState *opacity,
+                                       double time_explosion) {
+    compute_tau_sobolev(atom, plasma, opacity, time_explosion);
+}
+#endif
 
 /* Probe-B fix (task #29): write the NLTE-solved ion stage back into
  * atom->ion_number_density so the BULK (non-NLTE-tracked) line opacity built by
@@ -1192,6 +3075,144 @@ void compute_electron_temperature(PlasmaState *plasma, GammaDeposition *gamma_de
     }
 }
 
+/* ==========================================================================
+ * [ALPHA-SPINGATE] / [withParityY Y4]  SHARED SPIN-SELECTION HELPERS
+ * --------------------------------------------------------------------------
+ * These three helpers are the ONE definition of the spin rule that the owner
+ * path frozenin_alpha_rr already implemented inline.  They were promoted here
+ * (ahead of recomb_alpha_per_level, the first new user) so the three OTHER
+ * recombination sites can apply the IDENTICAL predicate instead of restating
+ * it.  frozenin_alpha_rr now calls them; its arithmetic is unchanged.
+ *
+ * THE RULE.  Radiative recombination X^{+1}(ground core, spin S_core) + e^-(1/2)
+ * can only form daughter terms whose multiplicity M = 2S+1 lies in
+ * {M_core - 1, M_core + 1}.  A daughter level of any other KNOWN multiplicity is
+ * spin-forbidden from the ground core.  Unknown multiplicity (level_mult == 0,
+ * or the ion has no M_core at all) is NEVER skipped -- conservative by design.
+ *
+ * DETAILED-BALANCE CAVEAT (declared, not hidden).  Gating RECOMBINATION alone
+ * breaks exact Saha recovery at J = B for precisely the skipped levels: the
+ * photoionization half of the pair is left intact (photoionization of a
+ * spin-forbidden level to an EXCITED upper-ion core is physical and does
+ * happen), so for those levels R_bf and R_rec no longer satisfy the
+ * LTE detailed-balance identity and the J=B fixed point is no longer the exact
+ * Saha population.  The true DB partner of that photoionization is recombination
+ * from the EXCITED upper-ion cores, which Lumina does not track (every ion is
+ * represented by its ground core only).  Removing the spin-forbidden
+ * recombination therefore removes a channel that the code was crediting to the
+ * GROUND core, at the cost of a known, bounded DB defect on those same levels.
+ * That is the trade this gate makes, and it is the reason it is a GATE.
+ * ========================================================================== */
+
+/* Ground-term spin multiplicity (2S+1) of the RECOMBINING ion (Z, charge) from
+ * NIST ground terms.  Used as the M_core fallback when the CMFGEN companion
+ * table lacks the recombining ion's ground level -- notably Fe/Co/Ni IV are NOT
+ * in cmfgen_config_lumina.yml, so their M_core (6, 5, 4) can only come from
+ * here.  Returns 0 if not tabulated => that ion is not gated. */
+static int spingate_core_mult(int Z, int charge) {
+    switch (Z) {
+    case 14: /* Si */ switch (charge) {
+        case 0: return 3;  /* Si I   3p2 3P */   case 1: return 2;  /* Si II  3p 2P */
+        case 2: return 1;  /* Si III 3s2 1S */   case 3: return 2;  /* Si IV  3s 2S */
+        default: return 0; }
+    case 16: /* S */  switch (charge) {
+        case 0: return 3;  /* S I    3p4 3P */   case 1: return 4;  /* S II   3p3 4S */
+        case 2: return 3;  /* S III  3p2 3P */   case 3: return 2;  /* S IV   3p 2P */
+        default: return 0; }
+    case 20: /* Ca */ switch (charge) {
+        case 0: return 1;  /* Ca I   4s2 1S */   case 1: return 2;  /* Ca II  4s 2S */
+        case 2: return 1;  /* Ca III 3p6 1S */   case 3: return 2;  /* Ca IV  3p5 2P */
+        default: return 0; }
+    case 26: /* Fe */ switch (charge) {
+        case 0: return 5;  /* Fe I   3d6 4s2 5D */ case 1: return 6;  /* Fe II  3d6 4s a6D */
+        case 2: return 5;  /* Fe III 3d6 5D */     case 3: return 6;  /* Fe IV  3d5 6S */
+        case 4: return 5;  /* Fe V   3d4 5D */     case 5: return 4;  /* Fe VI  3d3 4F */
+        default: return 0; }
+    case 27: /* Co */ switch (charge) {
+        case 0: return 4;  /* Co I   3d7 4s2 a4F */ case 1: return 3;  /* Co II  3d8 a3F */
+        case 2: return 4;  /* Co III 3d7 a4F */     case 3: return 5;  /* Co IV  3d6 5D */
+        case 4: return 6;  /* Co V   3d5 6S */
+        default: return 0; }
+    case 28: /* Ni */ switch (charge) {
+        case 0: return 3;  /* Ni I   3d8 4s2 3F */ case 1: return 2;  /* Ni II  3d9 2D */
+        case 2: return 3;  /* Ni III 3d8 3F */     case 3: return 4;  /* Ni IV  3d7 4F */
+        case 4: return 5;  /* Ni V   3d6 5D */
+        default: return 0; }
+    default: return 0;
+    }
+}
+
+/* M_core resolution, promoted VERBATIM from frozenin_alpha_rr (the owner path):
+ * prefer the CMFGEN companion table entry for the recombining ion's GROUND level
+ * (level_num == 0 => level_offset[ip_next]), fall back to the NIST table above.
+ * `ip_next` < 0 or level_mult == NULL simply falls through to the table.
+ * `src_out` (optional) receives "data"/"table"/"none" for banners. */
+static int spingate_resolve_core_mult(AtomicData *atom, int ip_next,
+                                      int Z, int core_charge,
+                                      const char **src_out) {
+    int M_core = 0;
+    const char *src = "none";
+    if (atom->level_mult && ip_next >= 0) {
+        int gnd = atom->level_offset[ip_next];      /* level_num==0 = ground */
+        if (gnd < atom->level_offset[ip_next + 1] && atom->level_mult[gnd] > 0) {
+            M_core = atom->level_mult[gnd];
+            src = "data";
+        }
+    }
+    if (M_core == 0) {
+        M_core = spingate_core_mult(Z, core_charge);
+        if (M_core > 0) src = "table";
+    }
+    if (src_out) *src_out = src;
+    return M_core;
+}
+
+/* The skip predicate, promoted VERBATIM from frozenin_alpha_rr:
+ * multiplicity KNOWN (>0) and outside {M_core-1, M_core+1} => spin-forbidden.
+ * Returns 0 whenever M_core is unknown or the companion table is absent. */
+static int spingate_level_forbidden(AtomicData *atom, int gl, int M_core) {
+    if (M_core <= 0 || !atom->level_mult) return 0;
+    int Ml = atom->level_mult[gl];
+    return (Ml > 0 && Ml != M_core - 1 && Ml != M_core + 1) ? 1 : 0;
+}
+
+/* [withParityY Y4] gate LUMINA_REC_SPINGATE (default OFF) for the three
+ * per-level Milne RECOMBINATION distribution sites (S3 recomb_alpha_per_level,
+ * S1 matrix I_rec, S2 TOPSTAGE_IV).  Independent of LUMINA_ALPHA_SPINGATE,
+ * which owns the per-ion alpha_rr total.
+ * FAIL-LOUD DEPENDENCY: atom->level_mult is loaded by lumina_atomic.c ONLY when
+ * LUMINA_ALPHA_SPINGATE=1.  With REC_SPINGATE=1 alone, level_mult is NULL, the
+ * per-level predicate can never fire and this gate is INERT -- so say so, once,
+ * instead of letting a silent no-op be read as a null result. */
+static int rec_spingate_enabled(void) {
+    static int on = -1;
+    if (on < 0) {
+        const char *e = getenv("LUMINA_REC_SPINGATE");
+        on = (e && atoi(e)) ? 1 : 0;
+        if (on)
+            printf("[REC-SPINGATE] per-level Milne RECOMBINATION restricted to "
+                   "spin-allowed daughter terms (M_core +/- 1) at S3 "
+                   "recomb_alpha_per_level / S1 matrix I_rec / S2 TOPSTAGE_IV; "
+                   "photoionization (R_bf) NOT gated -> detailed balance at J=B "
+                   "is broken for the skipped levels BY DESIGN (true DB partner "
+                   "= recombination from excited, untracked upper-ion cores)\n");
+    }
+    return on;
+}
+
+/* One-shot inertness alarm; separate from the arming banner so it can fire from
+ * whichever site first sees a live atom pointer. */
+static void rec_spingate_check_data(AtomicData *atom) {
+    static int warned = 0;
+    if (warned || !atom) return;
+    warned = 1;
+    if (!atom->level_mult)
+        fprintf(stderr, "[REC-SPINGATE][WARN] atom->level_mult is NULL "
+                "(level_multiplicity.csv is loaded only when "
+                "LUMINA_ALPHA_SPINGATE=1) -> LUMINA_REC_SPINGATE is INERT, "
+                "ZERO levels will be skipped\n");
+}
+
 /* bf recombination-cascade channel (LUMINA_MACROATOM_BF). A macro-atom that was
  * bf-activated on an upper-ion ground level (ionized_ground) recombines into a
  * lower-ion level and continues cascading down that ion's lines. */
@@ -1208,6 +3229,16 @@ static double recomb_alpha_per_level(AtomicData *atom, int ip_lower, int gl,
     if (!atom->cmfgen_has_sigma || !atom->cmfgen_has_sigma[gl]) return 0.0;
     int Z = atom->ion_pop_Z[ip_lower];
     int stage = atom->ion_pop_stage[ip_lower];
+    /* [withParityY Y4 (a) S3] spin-selection on the RECOMBINATION target level.
+     * The recombining (source) ion is stage+1, so its ground multiplicity is
+     * M_core.  Spin-forbidden target => this level receives no recombination.
+     * See the DB caveat in the shared-helper block above. */
+    if (rec_spingate_enabled()) {
+        rec_spingate_check_data(atom);
+        int ip_next = find_ion_pop_idx(atom, Z, stage + 1);
+        int M_core = spingate_resolve_core_mult(atom, ip_next, Z, stage + 1, NULL);
+        if (spingate_level_forbidden(atom, gl, M_core)) return 0.0;
+    }
     double chi_ion_eV = find_ioniz_energy(atom, Z, stage);
     if (chi_ion_eV <= 0.0 || chi_ion_eV >= 1e9) return 0.0;
     double chi_ion_erg = chi_ion_eV * EV_TO_ERG;
@@ -1220,6 +3251,7 @@ static double recomb_alpha_per_level(AtomicData *atom, int ip_lower, int gl,
     double log_numin = log(atom->cmfgen_nu_min);
     double d_log_nu = (log(atom->cmfgen_nu_max) - log_numin) / nfreq;
     const double *sigma_row = &atom->cmfgen_sigma_bf[(size_t)gl * (size_t)nfreq];
+    const int rfix_alpha = rates_fix_enabled();   /* [RATES-FIX F3] */
     double Rbf = 0.0;
     for (int bb = 0; bb < nfreq; bb++) {
         double log_nu_lo = log_numin + bb * d_log_nu;
@@ -1228,12 +3260,24 @@ static double recomb_alpha_per_level(AtomicData *atom, int ip_lower, int gl,
         double sig = sigma_row[bb];
         if (sig <= 0.0) continue;
         double x = H_PLANCK * nu_c / (K_BOLTZMANN * T);
-        if (x > 700.0) continue;
+        double B;
+        if (rfix_alpha) {
+            /* [RATES-FIX F3] same fused Milne exponent as frozenin_alpha_rr:
+             * the x>700 skip zeroed Rbf and exp(chi_l/kT) overflowed => NaN. */
+            double y = (H_PLANCK * nu_c - chi_l) / (K_BOLTZMANN * T);
+            B = (2.0 * H_PLANCK * nu_c * nu_c * nu_c /
+                 (C_SPEED_OF_LIGHT * C_SPEED_OF_LIGHT)) *
+                (exp(-y) / (-expm1(-x)));
+        } else {
+            if (x > 700.0) continue;
+            B = (2.0 * H_PLANCK * nu_c * nu_c * nu_c /
+                 (C_SPEED_OF_LIGHT * C_SPEED_OF_LIGHT)) / expm1(x);
+        }
         double dnu = exp(log_nu_lo + d_log_nu) - exp(log_nu_lo);
-        double B = (2.0 * H_PLANCK * nu_c * nu_c * nu_c /
-                    (C_SPEED_OF_LIGHT * C_SPEED_OF_LIGHT)) / expm1(x);
         Rbf += 4.0 * M_PI_VAL * B * sig / (H_PLANCK * nu_c) * dnu;
     }
+    if (rfix_alpha)
+        return Rbf * lam3 * (double)atom->level_g[gl] / (2.0 * g_i);
     return Rbf * lam3 * (double)atom->level_g[gl] / (2.0 * g_i)
            * exp(chi_l / (K_BOLTZMANN * T));
 }
@@ -1248,22 +3292,45 @@ static void build_recomb_topology(AtomicData *atom, OpacityState *opacity,
     if (bf_mode < 0) {
         const char *e = getenv("LUMINA_MACROATOM_BF");
         bf_mode = (e && atoi(e) > 0) ? atoi(e) : 0;
+        /* [ARTIS-PARITY D1/D3] promote the bf-activation macro-atom: under parity a
+         * bf absorption activates the macro-atom on the upper-ion level and cascades
+         * down the recomb topology (ion-changing INTERNALDOWNLOWER subset). Env still
+         * wins when set; radiative-recomb CONTINUUM photon emission (is_emit) is the
+         * deferred residual (see report). Gate OFF => recomb_block_refs stays NULL. */
+        if (bf_mode <= 0 && artis_parity_enabled()) bf_mode = 1;
     }
     if (bf_mode <= 0) return;                  /* gate off => baseline */
     if (opacity->recomb_block_refs) return;    /* built once */
     if (!atom->cmfgen_loaded || !atom->cmfgen_has_sigma) return;
 
+    /* [MA-RADRECOMB inc2] When LUMINA_MA_RADRECOMB=1 and the upper-ion TARGET map is
+     * loaded, flag recomb entries whose lower-ion target level j photoionizes TO the
+     * recomb source (consuming-verification: ma_rr_target[j] == source). Flagged
+     * entries emit a bf continuum photon on the device (transition_type -5) instead of
+     * INTERNALDOWNLOWER. Gate OFF or map absent => is_emit stays all 0 (byte-identical
+     * to the parity baseline). */
+    static int rr_mode = -1;
+    if (rr_mode < 0) {
+        const char *er = getenv("LUMINA_MA_RADRECOMB");
+        rr_mode = (er && atoi(er) != 0) ? 1 : 0;
+    }
+    const int *rr_tgt = (rr_mode && atom->ma_rr_loaded) ? atom->ma_rr_target : NULL;
+
     int n_levels = opacity->n_macro_levels;
 
     /* ground level of the NEXT-higher ion for each ion pop = recomb activation
-     * (source) level (same construction as compute_bf_opacity). */
+     * (source) level (same construction as compute_bf_opacity). Also record the
+     * upper ion's pop index for the stage-IV source-coverage extension below. */
     int *ionized_ground = (int *)malloc(atom->n_ion_pops * sizeof(int));
+    int *ionized_up_ip  = (int *)malloc(atom->n_ion_pops * sizeof(int));
     for (int ip = 0; ip < atom->n_ion_pops; ip++) {
         ionized_ground[ip] = -1;
+        ionized_up_ip[ip]  = -1;
         int Z = atom->ion_pop_Z[ip];
         int next = atom->ion_pop_stage[ip] + 1;
         for (int jp = 0; jp < atom->n_ion_pops; jp++) {
             if (atom->ion_pop_Z[jp] == Z && atom->ion_pop_stage[jp] == next) {
+                ionized_up_ip[ip] = jp;
                 int ls = atom->level_offset[jp], le = atom->level_offset[jp + 1];
                 for (int l = ls; l < le; l++)
                     if (atom->level_num[l] == 0) { ionized_ground[ip] = l; break; }
@@ -1272,19 +3339,45 @@ static void build_recomb_topology(AtomicData *atom, OpacityState *opacity,
         }
     }
 
-    /* count entries per source level (= upper-ion ground) */
+    /* ADDENDUM (Fork A): the recomb thermal EXIT is only reachable from a level
+     * that carries recomb entries; the baseline source set is ONLY each upper-ion
+     * GROUND (level_num==0 above). The deep Co IV funnel traps packets in EXCITED
+     * Co IV levels (e.g. lev144 / the 1490-1650A complex), which are NOT sources
+     * -> the exit door is unreachable from where packets sit. Under
+     * LUMINA_NLTE_STAGE4 (Co/Fe/Ni/... IV now SE-solved = the continuum drain),
+     * extend the source set to EVERY level of a promoted stage-IV upper ion so a
+     * packet on any IV level can recombine into the (III) manifold. Gate OFF =>
+     * ground-only sources => byte-identical baseline. `use_all_src(ip)` is the
+     * single predicate shared by the count and fill passes. */
+    int stage4_bf = nlte_stage4_enabled();
+    #define STAGE4_IS_PROMOTED_IV(Z) ((Z)==14||(Z)==26||(Z)==27||(Z)==28|| \
+                                      (Z)==22||(Z)==24||(Z)==13)
+
+    /* count entries per source level (upper-ion ground, or all IV levels) */
     int *cnt = (int *)calloc((size_t)n_levels + 1, sizeof(int));
     int n_recomb = 0;
     for (int ip = 0; ip < atom->n_ion_pops; ip++) {
-        int src = ionized_ground[ip];
-        if (src < 0 || src >= n_levels) continue;  /* no upper ion present */
+        int up_ip = ionized_up_ip[ip];
+        int use_all = stage4_bf && up_ip >= 0 &&
+                      atom->ion_pop_stage[up_ip] == 3 &&
+                      STAGE4_IS_PROMOTED_IV(atom->ion_pop_Z[up_ip]);
         int g0 = atom->level_offset[ip], g1 = atom->level_offset[ip + 1];
+        int ndest = 0;
         for (int j = g0; j < g1; j++)
-            if (atom->cmfgen_has_sigma[j]) { cnt[src]++; n_recomb++; }
+            if (atom->cmfgen_has_sigma[j]) ndest++;
+        if (ndest == 0) continue;
+        if (use_all) {
+            int sl0 = atom->level_offset[up_ip], sl1 = atom->level_offset[up_ip + 1];
+            for (int sl = sl0; sl < sl1; sl++)
+                if (sl >= 0 && sl < n_levels) { cnt[sl] += ndest; n_recomb += ndest; }
+        } else {
+            int src = ionized_ground[ip];
+            if (src >= 0 && src < n_levels) { cnt[src] += ndest; n_recomb += ndest; }
+        }
     }
 
     int *refs = (int *)malloc(((size_t)n_levels + 1) * sizeof(int));
-    int acc = 0, n_src = 0;
+    int acc = 0, n_src = 0, n_src_stage4 = 0;
     for (int l = 0; l < n_levels; l++) {
         refs[l] = acc; acc += cnt[l];
         if (cnt[l] > 0) n_src++;
@@ -1298,23 +3391,73 @@ static void build_recomb_topology(AtomicData *atom, OpacityState *opacity,
     int    *fill    = (int *)malloc((size_t)n_levels * sizeof(int));
     for (int l = 0; l < n_levels; l++) fill[l] = refs[l];
 
+    /* [MA-RADRECOMB tau-gate] per-entry edge cross-section sigma_bf(dest, nu_edge),
+     * baked once (shell-independent) on the fixed bf grid. Only the is_emit
+     * candidates matter (others never emit). Allocated only under the rr gate. */
+    double *sig_edge = rr_tgt ? (double *)calloc(na, sizeof(double)) : NULL;
+    int    rr_nfb   = atom->cmfgen_n_freq_bins;
+    double rr_numin = atom->cmfgen_nu_min;
+    double rr_dln   = (rr_numin > 0.0 && atom->cmfgen_nu_max > rr_numin && rr_nfb > 0)
+                      ? log(atom->cmfgen_nu_max / rr_numin) / rr_nfb : 0.0;
+
     for (int ip = 0; ip < atom->n_ion_pops; ip++) {
-        int src = ionized_ground[ip];
-        if (src < 0 || src >= n_levels) continue;
         int Z = atom->ion_pop_Z[ip];
         int stage = atom->ion_pop_stage[ip];
+        int up_ip = ionized_up_ip[ip];
+        int use_all = stage4_bf && up_ip >= 0 &&
+                      atom->ion_pop_stage[up_ip] == 3 &&
+                      STAGE4_IS_PROMOTED_IV(atom->ion_pop_Z[up_ip]);
         double chi_eV = find_ioniz_energy(atom, Z, stage);
         double chi_erg = (chi_eV > 0.0 && chi_eV < 1e9) ? chi_eV * EV_TO_ERG : 0.0;
         int g0 = atom->level_offset[ip], g1 = atom->level_offset[ip + 1];
-        for (int j = g0; j < g1; j++) {
-            if (!atom->cmfgen_has_sigma[j]) continue;
-            int k = fill[src]++;
-            dest[k] = j;
-            double chi_l = chi_erg - atom->level_energy_eV[j] * EV_TO_ERG;
-            nu_edge[k] = (chi_l > 0.0) ? chi_l / H_PLANCK : 0.0;  /* increment 2 */
-            is_emit[k] = 0;                                       /* INTERNALDOWNLOWER */
+        if (use_all) {
+            int sl0 = atom->level_offset[up_ip], sl1 = atom->level_offset[up_ip + 1];
+            for (int sl = sl0; sl < sl1; sl++) {
+                if (sl < 0 || sl >= n_levels) continue;
+                if (cnt[sl] > 0) n_src_stage4++;
+                for (int j = g0; j < g1; j++) {
+                    if (!atom->cmfgen_has_sigma[j]) continue;
+                    int k = fill[sl]++;
+                    dest[k] = j;
+                    double chi_l = chi_erg - atom->level_energy_eV[j] * EV_TO_ERG;
+                    nu_edge[k] = (chi_l > 0.0) ? chi_l / H_PLANCK : 0.0;
+                    /* [MA-RADRECOMB inc2] emit when j's CMFGEN photoion target == source sl. */
+                    is_emit[k] = (rr_tgt && nu_edge[k] > 0.0 && rr_tgt[j] == sl) ? 1 : 0;
+                    if (sig_edge && is_emit[k] && rr_dln > 0.0 && atom->cmfgen_sigma_bf) {
+                        int b0 = (int)floor(log(nu_edge[k] / rr_numin) / rr_dln);
+                        if (b0 < 0) b0 = 0;
+                        const double *srow = &atom->cmfgen_sigma_bf[(size_t)j * rr_nfb];
+                        double se = 0.0;
+                        for (int bb = b0; bb < rr_nfb && bb <= b0 + 5; bb++)
+                            if (srow[bb] > se) se = srow[bb];
+                        sig_edge[k] = se;   /* [MA-RADRECOMB tau-gate] edge sigma_bf */
+                    }
+                }
+            }
+        } else {
+            int src = ionized_ground[ip];
+            if (src < 0 || src >= n_levels) continue;
+            for (int j = g0; j < g1; j++) {
+                if (!atom->cmfgen_has_sigma[j]) continue;
+                int k = fill[src]++;
+                dest[k] = j;
+                double chi_l = chi_erg - atom->level_energy_eV[j] * EV_TO_ERG;
+                nu_edge[k] = (chi_l > 0.0) ? chi_l / H_PLANCK : 0.0;  /* increment 2 */
+                /* [MA-RADRECOMB inc2] emit when j's CMFGEN photoion target == source. */
+                is_emit[k] = (rr_tgt && nu_edge[k] > 0.0 && rr_tgt[j] == src) ? 1 : 0;
+                if (sig_edge && is_emit[k] && rr_dln > 0.0 && atom->cmfgen_sigma_bf) {
+                    int b0 = (int)floor(log(nu_edge[k] / rr_numin) / rr_dln);
+                    if (b0 < 0) b0 = 0;
+                    const double *srow = &atom->cmfgen_sigma_bf[(size_t)j * rr_nfb];
+                    double se = 0.0;
+                    for (int bb = b0; bb < rr_nfb && bb <= b0 + 5; bb++)
+                        if (srow[bb] > se) se = srow[bb];
+                    sig_edge[k] = se;   /* [MA-RADRECOMB tau-gate] edge sigma_bf */
+                }
+            }
         }
     }
+    #undef STAGE4_IS_PROMOTED_IV
 
     opacity->recomb_block_refs = refs;
     opacity->recomb_dest_level = dest;
@@ -1322,10 +3465,56 @@ static void build_recomb_topology(AtomicData *atom, OpacityState *opacity,
     opacity->recomb_is_emit    = is_emit;
     opacity->n_recomb          = n_recomb;
     opacity->recomb_prob = (double *)calloc(na * (size_t)n_shells, sizeof(double));
+    /* [MA-RADRECOMB tau-gate] per-shell emit decision (filled each call by the
+     * per-shell loop from live populations). Allocated only under the rr gate. */
+    opacity->recomb_sigma_edge = sig_edge;
+    opacity->recomb_emit_shell = rr_tgt
+        ? (int *)calloc(na * (size_t)n_shells, sizeof(int)) : NULL;
 
-    free(ionized_ground); free(cnt); free(fill);
+    /* [MA-RADRECOMB iup] INTERNALUPHIGHER topology (ARTIS macroatom.cc:165-185).
+     * Mirror of the recomb (DOWN) block in the UP direction: every lower-ion macro
+     * level `lev` that (a) carries a bf cross-section and (b) has a mapped photoion
+     * TARGET (ma_rr_target[lev]) which is itself a recomb SOURCE gets a single
+     * up-jump to that target. On the device a fair-draw hit on this entry activates
+     * the macro-atom on the upper-ion ground (Co IV/Fe IV/Ni IV), from which the
+     * RADRECOMB continuum valve fires — so a bb-line-activated Co III/Fe III/Ni III
+     * packet is reprocessed into recombination continuum instead of re-emitting the
+     * trapped III line (the residual deep-EUV lamp). rr_tgt NULL (gate off) => both
+     * arrays stay NULL => byte-identical. Co IV/Ni IV/S III etc. are fail-closed in
+     * the target map (upper ion absent) so they get no up-jump => no runaway. */
+    if (rr_tgt) {
+        int *idst = (int *)malloc((size_t)n_levels * sizeof(int));
+        int n_iup = 0;
+        for (int lev = 0; lev < n_levels; lev++) {
+            idst[lev] = -1;
+            if (!atom->cmfgen_has_sigma || !atom->cmfgen_has_sigma[lev]) continue;
+            int tgt = rr_tgt[lev];
+            if (tgt < 0 || tgt >= n_levels) continue;
+            /* dead-end guard: the target must carry recomb entries so the climbed
+             * packet has a radiative-recombination exit back down. */
+            if (refs[tgt + 1] > refs[tgt]) { idst[lev] = tgt; n_iup++; }
+        }
+        opacity->iup_dest_level = idst;
+        opacity->iup_prob = (double *)calloc((size_t)n_levels * (size_t)n_shells,
+                                             sizeof(double));
+        printf("  [MA-RADRECOMB] inc2 internal-up-higher: %d source levels routed to "
+               "mapped upper-ion grounds (photoionization up-jump ON)\n", n_iup);
+    }
+
+    free(ionized_ground); free(ionized_up_ip); free(cnt); free(fill);
     printf("  [MACROATOM_BF] recomb cascade topology: %d entries over %d source "
            "levels (mode=%d)\n", n_recomb, n_src, bf_mode);
+    if (rr_tgt) {
+        int n_emit = 0;
+        for (int k = 0; k < n_recomb; k++) if (is_emit[k]) n_emit++;
+        printf("  [MA-RADRECOMB] inc2 continuum emitters: %d/%d recomb entries flagged "
+               "is_emit (target-map verified) => RADRECOMB continuum ON\n",
+               n_emit, n_recomb);
+    }
+    if (stage4_bf)
+        printf("  [STAGE4-BF] recomb source-coverage extension ON: %d of the %d "
+               "sources are promoted stage-IV excited levels (Co/Fe/Ni/... IV "
+               "manifolds now reachable recomb exits)\n", n_src_stage4, n_src);
 }
 
 static int g_ctp_idown_beta = -1;    /* LUMINA_MACROATOM_IDOWN_BETA (hoisted) */
@@ -1333,6 +3522,12 @@ static double g_ma_coll_limit_ev = -1.0; /* LUMINA_MA_COLLISION_LIMIT_EV */
 static double *g_ctp_lev_gap = NULL;     /* [n_levels] chi_ion - E_lev (eV) */
 static int g_ctp_idown_coll = -1;    /* LUMINA_MACROATOM_IDOWN_COLL (hoisted) */
 static int g_ctp_lineres_jbar = -1;  /* LUMINA_CMF_LINERES_JBAR (hoisted) */
+/* [withParityY Y6] MA internal-up minimum MC crossing count.  Historically
+ * HARDCODED 10 at the internal-up J_line read while the matrix assembly reads
+ * LUMINA_JBAR_MIN (production sets 3) -- an undeclared N2 threshold SPLIT: the
+ * same line could be "well sampled" for the rate matrix and "unsampled" for the
+ * macro-atom in the same iteration.  Default stays 10 => byte-identical. */
+static int g_ctp_jbar_min_ma = 10;
 static int g_ctp_iup_trad = -1;      /* LUMINA_MACROATOM_IUP_TRAD (ARTIS/TARDIS
                                       * dilute-blackbody internal-up pump) */
 static int g_ctp_iup_beta = -1;      /* [Div-3] LUMINA_MACROATOM_IUP_BETA: apply the Sobolev
@@ -1345,6 +3540,29 @@ static int g_ctp_iup_jblue = -1;     /* [IUP-JBLUE] LUMINA_IUP_JBLUE: ARTIS-exac
                                       * precedence over LUMINA_MACROATOM_IUP_BETA. */
 static long g_iup_jblue_used = 0;    /* [IUP-JBLUE] last-solve counters */
 static long g_iup_jblue_fb   = 0;
+/* [IUP-BINFIELD] LUMINA_IUP_BINFIELD (default OFF): ARTIS-classic field source for
+ * the macro-atom INTERNAL-UP rate.  ARTIS ships
+ *     artisoptions.h:74  constexpr bool DETAILED_LINE_ESTIMATORS_ON = false;
+ * so rad_excitation_ratecoeff (macroatom.cc:571-599) never enters its per-line
+ * estimator branch
+ *     :588  if (DETAILED_LINE_ESTIMATORS_ON && !globals::lte_iteration) {
+ *     :591    return R_over_J_nu * radfield::get_Jb_lu(nonemptymgi, jblueindex);
+ * and always returns
+ *     :596  const double R = R_over_J_nu * radfield::radfield(nu_trans, nonemptymgi);
+ * i.e. the up-rate consumes the (W_bin,T_R_bin) MODEL EVALUATION of the binned
+ * radiation field at the line's CMF frequency -- not a per-line MC estimator.
+ * Armed, this gate reproduces that: the internal-up J is read straight out of
+ * nlte->J_nu's fine bin at nu_line (nlte_get_J_at_nu), the C1 per-bin dilute field
+ * already built by nlte_build_perbin_dilute_field as W_c*B_nu(TR_c,nu_ctr) -- which
+ * therefore automatically carries the LUMINA_C1_SUPERBIN_TEPIN EUV-superbin pin and
+ * the LUMINA_C1_DEGEN_FALLBACK raw publication when those are armed.  No field is
+ * recomputed here.
+ * SCOPE: the macro-atom transition-rate assembly in this function ONLY.  The NLTE
+ * rate-matrix jbar consumption (LUMINA_NLTE_JBAR_POPS mode 3) is deliberately NOT
+ * touched.  OFF => byte-identical to the per-line J_blue path. */
+static int  g_ctp_iup_binfield = -1;
+static long g_iup_binfield_used   = 0;  /* up-rate lines switched to the bin field */
+static long g_iup_binfield_bypass = 0;  /* armed, but the taken branch is uncovered */
 /* [JBLUE-ANCHOR] internal normalization self-check: per-bucket log-mean of
  * log10(J_blue/J_line) over lines where BOTH jblue>0 and J_line>0, bucketed
  * by the Sobolev escape beta. THIN (beta>0.5, tau~0) => no in-line (1-beta)S
@@ -1355,6 +3573,43 @@ static long g_iup_jblue_fb   = 0;
 static long   g_jba_thin_n = 0,     g_jba_thick_n = 0;
 static double g_jba_thin_sum = 0.0, g_jba_thick_sum = 0.0;
 static long   g_jba_thin_clamp = 0, g_jba_thick_clamp = 0;
+
+/* [JBLUE-ANCHOR2] yardstick repair (2026-07-26). The single-number log-mean
+ * above is unreadable for two reasons:
+ *  (a) the +/-3 dex clamp is counted WITHOUT SIGN, so a bucket saturated at
+ *      -3 (J_blue starved) and one saturated at +3 (J_blue blown up) report the
+ *      same "clamp=N" and the mean sits in between -- the classic average-
+ *      saturation misread. Split lo (lr<-3) / hi (lr>+3).
+ *  (b) thin/thick alone mixes lines INSIDE the deterministic CMF fine window
+ *      (where J_line can be the fine J_bar_l) with lines OUTSIDE it (where
+ *      J_line necessarily falls back to the C1 binned read). Those are two
+ *      different comparators, so their means must never be summed. Split by
+ *      window membership.
+ * Bucket index = (thick?2:0) + (out_of_window?1:0):
+ *      0 thin-in   1 thin-out   2 thick-in   3 thick-out
+ * g_jba_all_n counts EVERY (line,shell) pair that reached the check with both
+ * J>0, so the reader can see what fraction the four buckets actually cover
+ * (mid-beta lines, 0.01<=beta<=0.5, fall in NO bucket -- pre-existing, and now
+ * visible instead of silent). The legacy accumulators above are untouched so
+ * the original [JBLUE-ANCHOR] line stays byte-comparable across versions. */
+static long   g_jba4_n[4]    = {0, 0, 0, 0};
+static double g_jba4_sum[4]  = {0.0, 0.0, 0.0, 0.0};
+static long   g_jba4_clo[4]  = {0, 0, 0, 0};   /* clamped at -3 dex (J_blue starved) */
+static long   g_jba4_chi[4]  = {0, 0, 0, 0};   /* clamped at +3 dex (J_blue blown up) */
+static long   g_jba_all_n    = 0;
+/* Window bounds: the SAME env pair + defaults the deterministic CMF fine solver
+ * uses (lumina_cmfgen.c cmfgen_fine_jbar: `double lam_lo = 1000.0, lam_hi =
+ * 4000.0;` then LUMINA_CMF_FINE_LAMLO / LUMINA_CMF_FINE_LAMHI). Read here so a
+ * shifted window shifts BOTH the producer and this yardstick together. */
+static double g_jba_win_lo = -1.0, g_jba_win_hi = -1.0;
+static void jba_window_init(void) {
+    if (g_jba_win_lo > 0.0) return;
+    double lo = 1000.0, hi = 4000.0;
+    { const char *e = getenv("LUMINA_CMF_FINE_LAMLO"); if (e) lo = atof(e); }
+    { const char *e = getenv("LUMINA_CMF_FINE_LAMHI"); if (e) hi = atof(e); }
+    if (!(lo > 0.0) || !(hi > lo)) { lo = 1000.0; hi = 4000.0; }
+    g_jba_win_lo = lo; g_jba_win_hi = hi;
+}
 
 /* [FB-COOL-KT] LUMINA_FB_COOL_KT: free-bound thermal cooling energy weight.
  * ARTIS ratecoeff.cc bfcooling_integrand charges the electron heat bath only
@@ -1380,6 +3635,29 @@ void plasma_get_iup_jblue_counts(long *used, long *fallback) {
     if (fallback) *fallback = g_iup_jblue_fb;
 }
 
+/* [FB-EDGE-METER] wiring-audit N9: k-packet fb "dominant recombining edge" lookup.
+ * kpacket_fb_nu[s] is set from find_ioniz_energy(Z_dom, stage_dom-1); when that ion
+ * is absent from the ionization table the helper returns its 1e10 sentinel and the
+ * edge silently becomes 0 -> every fb exit in that shell degenerates (resonant line
+ * re-emission at the line-activated site, no-op at the bf-activated one). Run-
+ * cumulative shell-update count + the last offending (Z, recombining stage), so the
+ * failure has a number instead of being invisible. Counting only. */
+static long g_fb_dom_edge_fail = 0;   /* (shell,update) pairs with dom_n>0 but edge=0 */
+static int  g_fb_dom_edge_fail_z = 0, g_fb_dom_edge_fail_stage = 0;  /* last offender */
+void plasma_get_fb_dom_edge_fail(long *n_fail, int *last_Z, int *last_stage) {
+    if (n_fail)    *n_fail    = g_fb_dom_edge_fail;
+    if (last_Z)    *last_Z    = g_fb_dom_edge_fail_z;
+    if (last_stage) *last_stage = g_fb_dom_edge_fail_stage;
+}
+
+/* [IUP-BINFIELD] armed flag + last-solve coverage counters. `armed` stays 0 until
+ * compute_transition_probabilities has parsed the gate at least once. */
+void plasma_get_iup_binfield_counts(int *armed, long *used, long *bypass) {
+    if (armed)  *armed  = (g_ctp_iup_binfield > 0);
+    if (used)   *used   = g_iup_binfield_used;
+    if (bypass) *bypass = g_iup_binfield_bypass;
+}
+
 void plasma_get_jblue_anchor(long *thin_n, double *thin_logmean,
                              long *thick_n, double *thick_logmean,
                              long *thin_clamp, long *thick_clamp) {
@@ -1391,11 +3669,41 @@ void plasma_get_jblue_anchor(long *thin_n, double *thin_logmean,
     if (thick_clamp) *thick_clamp = g_jba_thick_clamp;
 }
 
+/* [JBLUE-ANCHOR2] 4-bucket read-out. Arrays are [4]:
+ * 0 thin-in, 1 thin-out, 2 thick-in, 3 thick-out (see the accumulator block).
+ * `logmean` is the per-bucket mean of the CLAMPED log10(J_blue/J_line); read it
+ * together with clamp_lo/clamp_hi -- a bucket whose clamp counts are a large
+ * fraction of n has a mean pinned by saturation, not by the population. */
+void plasma_get_jblue_anchor4(long n[4], double logmean[4],
+                              long clamp_lo[4], long clamp_hi[4],
+                              long *all_n, double *win_lo, double *win_hi) {
+    for (int i = 0; i < 4; i++) {
+        if (n)        n[i]        = g_jba4_n[i];
+        if (logmean)  logmean[i]  = g_jba4_n[i] ? g_jba4_sum[i] / (double)g_jba4_n[i] : 0.0;
+        if (clamp_lo) clamp_lo[i] = g_jba4_clo[i];
+        if (clamp_hi) clamp_hi[i] = g_jba4_chi[i];
+    }
+    if (all_n)  *all_n  = g_jba_all_n;
+    if (win_lo) *win_lo = g_jba_win_lo;
+    if (win_hi) *win_hi = g_jba_win_hi;
+}
+
 void compute_transition_probabilities(AtomicData *atom, PlasmaState *plasma,
                                        OpacityState *opacity,
                                        NLTEConfig *nlte,
-                                       double damping_constant, int apply_damping) {
+                                       double damping_constant, int apply_damping,
+                                       Geometry *geom) {
     int n_shells = opacity->n_shells;
+
+    /* [MA-RADRECOMB tau-gate] optically-thin threshold for the RADRECOMB continuum
+     * emit decision (dig_E2 double-count repair). Edges with tau_bf > thresh are
+     * treated on-the-spot (no continuum photon); thin edges emit. Diagnostic
+     * override via LUMINA_RR_TAU_THRESH (default 1.0). */
+    static double rr_tau_thresh = -1.0;
+    if (rr_tau_thresh < 0.0) {
+        const char *e = getenv("LUMINA_RR_TAU_THRESH");
+        rr_tau_thresh = (e && atof(e) > 0.0) ? atof(e) : 1.0;
+    }
     int n_levels = opacity->n_macro_levels;
     int n_trans  = opacity->n_macro_transitions;
 
@@ -1429,6 +3737,52 @@ void compute_transition_probabilities(AtomicData *atom, PlasmaState *plasma,
         const char *e = getenv("LUMINA_J_FLOOR_FACTOR");
         j_floor_factor = (e ? atof(e) : 0.0);
         if (j_floor_factor < 0.0) j_floor_factor = 0.0;
+    }
+    /* [Wave-2 non-bf B / C28] A macro-atom radiative internal-up rate consumes
+     * the represented radiation field. J<=factor*W*B and J>=factor*W*B are
+     * falsifier priors, not transfer identities: non-LTE fields may be either
+     * super- or sub-Planckian. The repair disables both diagnostic clamps at
+     * their MA consumption point without changing their legacy gate semantics. */
+    static int fix_ma_j_unclamp = -1;
+    if (fix_ma_j_unclamp < 0) {
+        const char *e = getenv("LUMINA_FIX_MA_J_UNCLAMP");
+        fix_ma_j_unclamp = (e && atoi(e)) ? 1 : 0;
+        if (fix_ma_j_unclamp)
+            printf("[FIX-MA-J-UNCLAMP] internal-up consumes represented J; "
+                   "LUMINA_J_CAP_FACTOR/J_FLOOR_FACTOR are ignored\n");
+    }
+    double j_cap_effective = fix_ma_j_unclamp ? 0.0 : j_cap_factor;
+    double j_floor_effective = fix_ma_j_unclamp ? 0.0 : j_floor_factor;
+
+    /* [KPR B1] LUMINA_KPEMISS_SE_POPS: build kp_emiss from the SE/NLTE lower-level
+     * populations the drain just produced (nlte_solve_all_gpu runs BEFORE this,
+     * cuda.cu:5159 -> 5226) instead of re-synthesising them as dilute-Boltzmann
+     * (the convicted step, plasma.c:2117-2126). Gated under the master repair gate
+     * LUMINA_KPEMISS_REPAIR; both unset => the dilute-Boltzmann path is unchanged
+     * (byte-identical). Applies only where the lower level's ion is NLTE-mapped
+     * (incl. promoted stage-IV under LUMINA_NLTE_STAGE4); non-SE ions fall through
+     * to the Boltzmann synthesis below. */
+    static int kpemiss_se_pops = -1;
+    if (kpemiss_se_pops < 0) {
+        const char *em = getenv("LUMINA_KPEMISS_REPAIR");
+        const char *sp = getenv("LUMINA_KPEMISS_SE_POPS");
+        kpemiss_se_pops = (em && atoi(em) && sp && atoi(sp)) ? 1 : 0;
+    }
+
+    /* [KPR TE_POP] LUMINA_KPEMISS_TE_POP: replace the k-packet fallback lower-level
+     * population (the dilute, T_rad-pinned Boltzmann below) with an UNDILUTED
+     * LTE-at-T_e population, self-consistent with the exp(-dE/kT_e) already in C_up
+     * (ARTIS calculate_levelpop_boltzmann parity, LTEPOP_EXCITATION_USE_TJ=false).
+     * Gated under the master repair gate; both unset => the dilute-Boltzmann path is
+     * byte-identical to the baseline. Only affects the non-SE fallback branch. */
+    static int kpemiss_te_pop = -1;
+    if (kpemiss_te_pop < 0) {
+        const char *em = getenv("LUMINA_KPEMISS_REPAIR");
+        const char *tp = getenv("LUMINA_KPEMISS_TE_POP");
+        kpemiss_te_pop = (em && atoi(em) && tp && atoi(tp)) ? 1 : 0;
+        if (kpemiss_te_pop)
+            fprintf(stderr, "[KPR TE_POP] k-packet fallback pop = LTE(T_e), undiluted "
+                            "(ARTIS calculate_levelpop_boltzmann parity)\n");
     }
 
     /* Emit-only boost on Fe II / Ni II UV→opt transitions, isolating the
@@ -1591,13 +3945,20 @@ void compute_transition_probabilities(AtomicData *atom, PlasmaState *plasma,
      * here (g_ctp_*) — lazy init inside the parallel loop is a data race. */
     if (g_ctp_idown_beta < 0) { const char *e =
             getenv("LUMINA_MACROATOM_IDOWN_BETA");
-        g_ctp_idown_beta = (e && atoi(e)) ? 1 : 0; }
+        /* [ARTIS-PARITY D2] internal-down = A_ul*beta (Lucy/ARTIS escape-only form,
+         * macroatom.cc:96-103) default-ON under parity; the legacy A_ul*(1-beta)
+         * trapping double-count is retained only when the gate is OFF. */
+        g_ctp_idown_beta = ((e && atoi(e)) || artis_parity_enabled()) ? 1 : 0; }
     if (g_ctp_idown_coll < 0) { const char *e =
             getenv("LUMINA_MACROATOM_IDOWN_COLL");
-        g_ctp_idown_coll = (e && atoi(e)) ? 1 : 0; }
+        /* [ARTIS-PARITY D2] internal-down carries the collisional (R+C)*eps_target
+         * (macroatom.cc:103) default-ON under parity. */
+        g_ctp_idown_coll = ((e && atoi(e)) || artis_parity_enabled()) ? 1 : 0; }
     if (g_ma_coll_limit_ev < 0.0) {
         const char *e = getenv("LUMINA_MA_COLLISION_LIMIT_EV");
-        g_ma_coll_limit_ev = e ? atof(e) : 0.0;   /* 0 = off */
+        /* [ARTIS-PARITY E3] the forced p_kpkt=1 collision-limit shortcut is a Lumina-
+         * only Rydberg-trap patch with no ARTIS analog; disable under parity. */
+        g_ma_coll_limit_ev = (e && !artis_parity_enabled()) ? atof(e) : 0.0;   /* 0 = off */
         if (g_ma_coll_limit_ev > 0.0) {
             g_ctp_lev_gap = (double *)malloc(atom->n_levels * sizeof(double));
             long ncut = 0;
@@ -1615,6 +3976,29 @@ void compute_transition_probabilities(AtomicData *atom, PlasmaState *plasma,
     }
     if (g_ctp_lineres_jbar < 0) { const char *e = getenv("LUMINA_CMF_LINERES_JBAR");
         g_ctp_lineres_jbar = (e && atoi(e)) ? 1 : 0; }
+    /* [withParityY Y6] gate LUMINA_JBAR_UNIFY (default OFF): make the MA
+     * internal-up site read the SAME env the matrix assembly reads
+     * (LUMINA_JBAR_MIN), instead of its hardcoded 10.
+     * NOTE, stated rather than hidden: when LUMINA_JBAR_MIN is UNSET the two
+     * sites still differ -- assembly falls back to 50 (jbar_pops_mode==2) or 10,
+     * this gate falls back to 3 (the production value, run_coevolve_s01.sh:127).
+     * With the env set (the production configuration) they are identical. */
+    {
+        static int jbu_init = 0;
+        if (!jbu_init) {
+            jbu_init = 1;
+            const char *g = getenv("LUMINA_JBAR_UNIFY");
+            if (g && atoi(g)) {
+                const char *e = getenv("LUMINA_JBAR_MIN");
+                int v = (e && atoi(e) > 0) ? atoi(e) : 3;
+                g_ctp_jbar_min_ma = v;
+                printf("[JBAR-UNIFY] MA internal-up min MC crossings %d -> %d "
+                       "(LUMINA_JBAR_MIN=%s; matrix assembly threshold), N2 "
+                       "threshold split closed\n",
+                       10, g_ctp_jbar_min_ma, e ? e : "(unset->3)");
+            }
+        }
+    }
     if (g_ctp_iup_trad < 0) { const char *e = getenv("LUMINA_MACROATOM_IUP_TRAD");
         g_ctp_iup_trad = (e && atoi(e)) ? 1 : 0;
         if (g_ctp_iup_trad) printf("[IUP-TRAD] macro-atom internal-up pump = "
@@ -1625,7 +4009,14 @@ void compute_transition_probabilities(AtomicData *atom, PlasmaState *plasma,
         if (g_ctp_iup_beta) printf("[IUP-BETA] macro-atom internal-up branching rate scaled by "
             "Sobolev beta (B_lu*beta*J, ARTIS-consistent; fixes p_iup/p_idn over-pump)\n"); }
     if (g_ctp_iup_jblue < 0) { const char *e = getenv("LUMINA_IUP_JBLUE");
-        g_ctp_iup_jblue = (e && atoi(e)) ? 1 : 0;
+        int env_on = (e && atoi(e));
+        /* [ARTIS-PARITY C4] enable the per-line MC J_blue up-rate by default under
+         * the master gate (ARTIS makes the detailed line estimator the up-rate
+         * driver with a low-count fallback to the dilute-BB / per-bin field). */
+        g_ctp_iup_jblue = (env_on || artis_parity_enabled()) ? 1 : 0;
+        if (!env_on && artis_parity_enabled())
+            printf("  [ARTIS-PARITY C4] per-line MC J_blue up-rate default-ON "
+                   "((B_lu-B_ul n_u/n_l)·beta·J_blue; >=10-count fallback -> C1 per-bin field)\n");
         if (g_ctp_iup_jblue) {
             printf("[IUP-JBLUE] macro-atom internal-up rate = (B_lu - B_ul*n_u/n_l)*beta"
                    "*J_blue (ARTIS rad_excitation, MC blue-wing estimator; maser clamp "
@@ -1638,7 +4029,36 @@ void compute_transition_probabilities(AtomicData *atom, PlasmaState *plasma,
         /* [JBLUE-ANCHOR] per-solve reset */
         g_jba_thin_n = g_jba_thick_n = 0;
         g_jba_thin_sum = g_jba_thick_sum = 0.0;
-        g_jba_thin_clamp = g_jba_thick_clamp = 0; } /* per-solve reset */
+        g_jba_thin_clamp = g_jba_thick_clamp = 0;
+        /* [JBLUE-ANCHOR2] per-solve reset + one-shot window parse */
+        jba_window_init();
+        for (int _b = 0; _b < 4; _b++) {
+            g_jba4_n[_b] = 0; g_jba4_sum[_b] = 0.0;
+            g_jba4_clo[_b] = 0; g_jba4_chi[_b] = 0;
+        }
+        g_jba_all_n = 0; } /* per-solve reset */
+    /* [IUP-BINFIELD] LUMINA_IUP_BINFIELD: switch the macro-atom internal-up field
+     * source from the per-line MC estimators to the C1 binned-field evaluation.
+     * Parsed AFTER g_ctp_iup_trad so the precedence warning below can be honest. */
+    if (g_ctp_iup_binfield < 0) { const char *e = getenv("LUMINA_IUP_BINFIELD");
+        g_ctp_iup_binfield = (e && atoi(e)) ? 1 : 0;
+        if (g_ctp_iup_binfield) {
+            printf("[IUP-BINFIELD] macro-atom internal-up J = C1 binned-field "
+                   "evaluation at nu_line (nlte->J_nu fine bin, W_c*B_nu(TR_c) as "
+                   "built by nlte_build_perbin_dilute_field); per-line MC J_blue, "
+                   "MC J_bar and deterministic J_bar_l are BYPASSED for the up-rate "
+                   "[ARTIS macroatom.cc:596 radfield(nu_trans) with "
+                   "artisoptions.h:74 DETAILED_LINE_ESTIMATORS_ON=false]\n");
+            if (g_ctp_iup_trad)
+                printf("[IUP-BINFIELD] *** WARNING: LUMINA_MACROATOM_IUP_TRAD is also "
+                       "armed and is evaluated FIRST -> every line takes the "
+                       "W*B(nu,T_rad) pump and the bin-field switch is INERT ***\n");
+            if (!use_j_nu)
+                printf("[IUP-BINFIELD] *** WARNING: NLTE J_nu unavailable (use_j_nu=0) "
+                       "-> there is no binned field to read; the switch is INERT ***\n");
+        } }
+    if (g_ctp_iup_binfield) { g_iup_binfield_used = 0;   /* per-solve reset */
+                              g_iup_binfield_bypass = 0; }
 
     /* ---- k-packet thermal pool (collisional macro-atom) ----
      * A purely-radiative macro-atom cascade has no thermalization channel and
@@ -1663,15 +4083,18 @@ void compute_transition_probabilities(AtomicData *atom, PlasmaState *plasma,
         if (e && atoi(e) != 0) kpacket_mode = 1;
         kpacket_init = 1;
     }
-    /* [FB-MULTI] LUMINA_KPKT_FB_MULTI=1: sample the k-packet free-bound emission
-     * frequency from a per-shell MULTI-continuum edge CDF instead of the single
-     * dominant Si II edge (default 0 = single edge, byte-identical). Only meaningful
-     * with k-packets on. */
+    opacity->kpacket_enabled = kpacket_mode;
+    /* [Wave-1 C59 / FB-MULTI] LUMINA_FIX_BF_MULTI_EDGE=1: sample the
+     * k-packet free-bound emissivity from the existing per-shell continuum CDF,
+     * rather than replacing the Milne sum by one dominant representative edge.
+     * Physical basis: j_fb is a sum over recombining continua; the weights below
+     * are the same per-ion/per-level Milne cooling weights that form C_fb.
+     * LUMINA_KPKT_FB_MULTI remains an exact legacy alias so certified launchers
+     * retain their behavior. Both unset => the old single-edge path verbatim. */
     static int fb_multi_init = 0;
     static int kpkt_fb_multi = 0;
     if (!fb_multi_init) {
-        const char *e = getenv("LUMINA_KPKT_FB_MULTI");
-        if (e && atoi(e) != 0) kpkt_fb_multi = 1;
+        kpkt_fb_multi = lumina_fix_bf_multi_edge_enabled();
         fb_multi_init = 1;
     }
     fb_cool_kt_on();   /* [FB-COOL-KT] serial pre-init before the OMP region */
@@ -1687,7 +4110,9 @@ void compute_transition_probabilities(AtomicData *atom, PlasmaState *plasma,
     static double accum_ip_eV[32 * 8];   /* [Z*8+ion] = Σ IP(Z, <ion) (neutral-ground ref) */
     if (!eweight_init) {
         const char *e = getenv("LUMINA_MACROATOM_EWEIGHT");
-        if (e && atoi(e) != 0) eweight_on = 1;
+        /* [ARTIS-PARITY D2] Lucy-2002 energy-flow weighting default-ON under parity
+         * (the macro-atom transports an indivisible ENERGY packet). */
+        if ((e && atoi(e) != 0) || artis_parity_enabled()) eweight_on = 1;
         /* Lucy/ARTIS macro-atom internal-transition weight uses the lower level's
          * energy measured from the NEUTRAL ground (excitation + accumulated
          * ionization potential), NOT each ion's own ground. The ion-ground form
@@ -1697,6 +4122,13 @@ void compute_transition_probabilities(AtomicData *atom, PlasmaState *plasma,
          * reverts to the legacy ion-ground reference for A/B falsification. */
         const char *en = getenv("LUMINA_MACROATOM_NEUTRAL_E");
         if (en) eweight_neutral = atoi(en);
+        /* [ARTIS-PARITY D2] neutral-ground energy reference (excitation + accumulated
+         * IP) is the ARTIS/Lucy internal-transition weight; force it on under parity. */
+        if (artis_parity_enabled()) eweight_neutral = 1;
+        if (artis_parity_enabled())
+            printf("  [ARTIS-PARITY D2] macro-atom emission = internal-up (B_lu-B_ul n_u/n_l)"
+                   "*beta*J_blue | internal-down (A_ul+C)*beta*eps | Lucy neutral-ground "
+                   "energy weighting (thermal line-source overrides disabled -> D4)\n");
         for (int Z = 0; Z < 32; Z++) {
             double s = 0.0;
             for (int ion = 0; ion < 8; ion++) {
@@ -1740,6 +4172,100 @@ void compute_transition_probabilities(AtomicData *atom, PlasmaState *plasma,
             kp_n_lines_cached = atom->n_lines;
         }
     }
+    /* [MA-REAL-UPSILON] (Fix-P1) gate + per-line real close-coupling Upsilon map.
+     * When LUMINA_MA_REAL_UPSILON=1, build a T-invariant per-line map (line ->
+     * source-slot + transition index) into the ALREADY-LOADED Omega tables
+     * (feiii_col_* Zhang + generic col_ion_*), so the five MA-transport collision
+     * sites below can swap the vR/Axelrod sentinel for the real Omega at eval time.
+     * Level pairing is min/max on level_number (== energy rank, matching the radeq
+     * bake plasma.c:6392 and the NLTE matrix). Default OFF => map never built, the
+     * sites keep their vR sentinel => byte-identical. */
+    static int   ma_real_ups_init = 0, ma_real_ups = 0;
+    if (!ma_real_ups_init) {
+        const char *e = getenv("LUMINA_MA_REAL_UPSILON");
+        ma_real_ups = (e && atoi(e)) ? 1 : 0;
+        ma_real_ups_init = 1;
+    }
+    static MaRuSrc ma_ru_src_reg[1 + LUMINA_MAX_COL_IONS];
+    static int     ma_ru_nsrc = 0;
+    static int    *ma_ru_line_src = NULL;   /* [n_lines] source slot, -1 = no real hit */
+    static int    *ma_ru_line_t   = NULL;   /* [n_lines] transition idx within source  */
+    static long    ma_ru_nhit = 0, ma_ru_nfall = 0;
+    static int     ma_ru_map_lines = -1;
+    if (ma_real_ups && ma_ru_map_lines != atom->n_lines) {
+        free(ma_ru_line_src); free(ma_ru_line_t);
+        ma_ru_line_src = (int *)malloc((size_t)atom->n_lines * sizeof(int));
+        ma_ru_line_t   = (int *)malloc((size_t)atom->n_lines * sizeof(int));
+        for (int l = 0; l < atom->n_lines; l++) { ma_ru_line_src[l] = -1; ma_ru_line_t[l] = -1; }
+        ma_ru_nsrc = 0; ma_ru_nhit = 0; ma_ru_nfall = 0;
+        /* temp per-source dense (a<b level_number) -> transition-index maps */
+        struct { int Z, ion0, nlev; int *dm; } bsrc[1 + LUMINA_MAX_COL_IONS];
+        int nb = 0;
+        for (int src = -1; src < atom->ncol_ions; src++) {
+            int Zs, ion0s, ntr, ntemp;
+            const double *tg, *tom; const int *tlo, *thi;
+            if (src < 0) {
+                if (!atom->feiii_col_loaded) continue;
+                Zs = atom->feiii_col_Z; ion0s = atom->feiii_col_ion;
+                ntr = atom->feiii_col_n_trans; ntemp = atom->feiii_col_n_temp;
+                tg = atom->feiii_col_tgrid; tlo = atom->feiii_col_lo;
+                thi = atom->feiii_col_hi; tom = atom->feiii_col_omega;
+            } else {
+                Zs = atom->col_ion_Z[src]; ion0s = atom->col_ion_stage[src];
+                ntr = atom->col_ion_n_trans[src]; ntemp = atom->col_ion_n_temp[src];
+                tg = atom->col_ion_tgrid[src]; tlo = atom->col_ion_lo[src];
+                thi = atom->col_ion_hi[src]; tom = atom->col_ion_omega[src];
+            }
+            if (ntr <= 0 || ntemp <= 0 || !tg || !tlo || !thi || !tom) continue;
+            int maxlev = 0;
+            for (int t = 0; t < ntr; t++) {
+                if (tlo[t] > maxlev) maxlev = tlo[t];
+                if (thi[t] > maxlev) maxlev = thi[t];
+            }
+            int nlev = maxlev + 1;
+            if (nlev <= 0) continue;
+            int *dm = (int *)malloc((size_t)nlev * (size_t)nlev * sizeof(int));
+            if (!dm) continue;
+            for (size_t i = 0; i < (size_t)nlev * (size_t)nlev; i++) dm[i] = -1;
+            for (int t = 0; t < ntr; t++) {
+                int lo = tlo[t], hi = thi[t];
+                if (lo < 0 || hi < 0 || lo >= nlev || hi >= nlev) continue;
+                int a = lo < hi ? lo : hi, b = lo < hi ? hi : lo;
+                dm[(size_t)a * (size_t)nlev + (size_t)b] = t;
+            }
+            int slot = ma_ru_nsrc;
+            ma_ru_src_reg[slot].ntemp = ntemp;
+            ma_ru_src_reg[slot].tgrid = tg;
+            ma_ru_src_reg[slot].omega = tom;
+            bsrc[nb].Z = Zs; bsrc[nb].ion0 = ion0s; bsrc[nb].nlev = nlev; bsrc[nb].dm = dm;
+            nb++; ma_ru_nsrc++;
+        }
+        for (int l = 0; l < atom->n_lines; l++) {
+            int Zl = atom->line_atomic_number[l];
+            int ionl = atom->line_ion_number[l];
+            for (int b = 0; b < nb; b++) {
+                if (bsrc[b].Z != Zl || bsrc[b].ion0 != ionl) continue;
+                int a = atom->line_level_lower[l], c = atom->line_level_upper[l];
+                if (a > c) { int tmp = a; a = c; c = tmp; }
+                if (a >= 0 && c < bsrc[b].nlev) {
+                    int t = bsrc[b].dm[(size_t)a * (size_t)bsrc[b].nlev + (size_t)c];
+                    if (t >= 0) { ma_ru_line_src[l] = b; ma_ru_line_t[l] = t; ma_ru_nhit++; }
+                    else ma_ru_nfall++;
+                } else ma_ru_nfall++;
+                break;
+            }
+        }
+        for (int b = 0; b < nb; b++) free(bsrc[b].dm);
+        ma_ru_map_lines = atom->n_lines;
+        printf("  [MA-REAL-UPSILON] armed: %d ion tables -> real close-coupling Upsilon "
+               "in MA transport collisions (eps drain / k-packet CDF / kp_deact / "
+               "INTERNALUPSAME); %ld lines hit real table, %ld covered-ion fallback (vR)\n",
+               ma_ru_nsrc, ma_ru_nhit, ma_ru_nfall);
+        if (ma_ru_nhit == 0)
+            fprintf(stderr, "  [MA-REAL-UPSILON][WARN] 0 real-table hits — real Upsilon NOT "
+                            "wired (need LUMINA_ARTIS_PARITY=1 + col tables loaded); "
+                            "MA collisions stay vR/Axelrod everywhere\n");
+    }
     if (kpacket_mode || eweight_on) {
         if (!opacity->p_kpacket)
             opacity->p_kpacket = (double *)calloc((size_t)n_levels * n_shells, sizeof(double));
@@ -1762,14 +4288,49 @@ void compute_transition_probabilities(AtomicData *atom, PlasmaState *plasma,
             if (!opacity->kpacket_fb_edge_zstage)
                 opacity->kpacket_fb_edge_zstage = (int *)calloc(
                     (size_t)n_shells * KPKT_FB_NEDGE, sizeof(int));
+            if (!opacity->kpacket_fb_edge_lev)   /* [FB-MILNE C2] recombined-level idx per edge */
+                opacity->kpacket_fb_edge_lev = (int *)calloc(
+                    (size_t)n_shells * KPKT_FB_NEDGE, sizeof(int));
             if (!opacity->kpacket_fb_edge_count)
                 opacity->kpacket_fb_edge_count = (int *)calloc(
                     (size_t)n_shells, sizeof(int));
         }
     }
+    /* [MA-LINE-DESTRUCT] LUMINA_MA_LINE_DESTRUCT=1: allocate the per-(transition,
+     * shell) two-level photon-destruction table eps=C_ul/(C_ul+A_ul*beta). Requires
+     * the k-packet thermal pool (the destroyed photon's energy sink); warn + disable
+     * otherwise. OFF (default) => ma_line_eps stays NULL => nothing written, uploaded,
+     * or consumed => byte-identical baseline. */
+    static int ma_line_destruct_gate = -1;
+    if (ma_line_destruct_gate < 0) {
+        const char *e = getenv("LUMINA_MA_LINE_DESTRUCT");
+        ma_line_destruct_gate = (e && atoi(e)) ? 1 : 0;
+        if (ma_line_destruct_gate && !kpacket_mode) {
+            fprintf(stderr, "[MA-LINE-DESTRUCT][WARN] requires LUMINA_KPACKET=1 "
+                            "(thermal sink) — DISABLED (no destruction wired)\n");
+            ma_line_destruct_gate = 0;
+        }
+    }
+    if (ma_line_destruct_gate && !opacity->ma_line_eps)
+        opacity->ma_line_eps = (double *)calloc((size_t)n_trans * n_shells,
+                                                sizeof(double));
+
     /* bf recomb-cascade topology (LUMINA_MACROATOM_BF). No-op (no alloc) when the
      * gate is off => recomb_block_refs stays NULL => byte-identical baseline. */
     build_recomb_topology(atom, opacity, n_shells);
+
+    /* [ARTIS-PARITY D5] per-shell free-free HEATING coefficient (independent of the
+     * k-packet pool; filled in the per-shell loop below). Allocated once under
+     * parity; NULL otherwise => byte-identical baseline (never uploaded/consumed). */
+    if (artis_parity_enabled() && !opacity->chi_ff_nnionpart)
+        opacity->chi_ff_nnionpart =
+            (double *)calloc((size_t)n_shells, sizeof(double));
+
+    /* [ARTIS-PARITY M1] hoist the master gate once for the per-(level,shell)
+     * fair-draw weight corrections below (COLDEEXC epsilon_trans weighting +
+     * INTERNALUPSAME collisional up-term). Read-only int => safe to share across
+     * the OMP region. OFF => every M1 branch is skipped (byte-identical). */
+    const int parity_ma = artis_parity_enabled();
 
     /* Shells are independent (all writes are s-indexed); per-thread scratch
      * rates_buf (max transition block) + kp_emiss (level slots). Results are
@@ -1780,11 +4341,20 @@ void compute_transition_probabilities(AtomicData *atom, PlasmaState *plasma,
     double *rates_buf = (double *)malloc(max_block * sizeof(double));
     double *kp_emiss = kpacket_mode ?
         (double *)malloc(n_levels * sizeof(double)) : NULL;
+    double *kpd_fe_arr = kpacket_mode ?    /* [KPD-FE2] per-level f_emit scratch */
+        (double *)malloc(n_levels * sizeof(double)) : NULL;
     long jblue_used_loc = 0, jblue_fb_loc = 0;   /* [IUP-JBLUE] thread-local */
+    long binf_used_loc = 0, binf_bypass_loc = 0; /* [IUP-BINFIELD] thread-local */
     /* [JBLUE-ANCHOR] thin/thick bucket accumulators (thread-local) */
     long   jba_thin_n_loc = 0,     jba_thick_n_loc = 0;
     double jba_thin_sum_loc = 0.0, jba_thick_sum_loc = 0.0;
     long   jba_thin_clamp_loc = 0, jba_thick_clamp_loc = 0;
+    /* [JBLUE-ANCHOR2] 4-bucket thread-locals (thin/thick x in/out-of-window) */
+    long   jba4_n_loc[4]   = {0, 0, 0, 0};
+    double jba4_sum_loc[4] = {0.0, 0.0, 0.0, 0.0};
+    long   jba4_clo_loc[4] = {0, 0, 0, 0};
+    long   jba4_chi_loc[4] = {0, 0, 0, 0};
+    long   jba_all_n_loc   = 0;
 
     #pragma omp for schedule(dynamic)
     for (int s = 0; s < n_shells; s++) {
@@ -1795,6 +4365,54 @@ void compute_transition_probabilities(AtomicData *atom, PlasmaState *plasma,
                        (opacity->electron_density ? opacity->electron_density[s] : 0.0);
         double inv_sqrt_Te = (T_e > 0.0) ? 1.0 / sqrt(T_e) : 0.0;
         if (kpacket_mode) for (int j = 0; j < n_levels; j++) kp_emiss[j] = 0.0;
+        if (kpd_fe_arr) for (int j = 0; j < n_levels; j++) kpd_fe_arr[j] = -1.0;
+        /* [KPD] collexc-collapse discriminator: was tot killed by guards (add=0)
+         * or by tiny inputs (add>0, maxw small)? Parity diagnosis only. */
+        long kpd_seen = 0, kpd_nlow0 = 0, kpd_add = 0;
+        double kpd_maxw = 0.0, kpd_maxnlow = 0.0;
+        /* [KPD-FE] confirm the f_emit collapse: per-level emission share of the
+         * normalized block + pk, bucketed per shell. */
+        long fe_b[5] = {0,0,0,0,0};   /* f_emit <1e-8,<1e-6,<1e-4,<1e-2,>= */
+        long pk_hi = 0, fe_n = 0;
+        double fe_aggE = 0.0, fe_aggR = 0.0, pk_sum = 0.0;
+
+        /* [ARTIS-PARITY D5] chi_ff_nnionpart[s] = 3.69255e8/sqrt(T_e) *
+         * Sum_ions ioncharge^2 * n_ion (ARTIS rpkt.cc:785-799, g_ff=1). ion_pop_stage
+         * is the net charge (0=neutral); neutrals do not free-free. */
+        if (opacity->chi_ff_nnionpart) {
+            double s_z2n = 0.0;
+            for (int ip = 0; ip < atom->n_ion_pops; ip++) {
+                int q = atom->ion_pop_stage[ip];
+                if (q <= 0) continue;
+                double n_ion = atom->ion_number_density[(size_t)ip * n_shells + s];
+                if (n_ion > 0.0) s_z2n += (double)q * (double)q * n_ion;
+            }
+            opacity->chi_ff_nnionpart[s] =
+                (T_e > 0.0) ? s_z2n * 3.69255e8 * inv_sqrt_Te : 0.0;
+        }
+
+        /* [KPR TE_POP] Build the undiluted LTE-at-T_e partition function Z_e(ip) for
+         * THIS shell, using the exact plasma->T_e[s] captured in T_e above (the same
+         * value the k-packet C_up weight uses at exp(-dE/kT_e) below). Placing the
+         * build here — rather than in compute_partition_functions — GUARANTEES the
+         * fallback numerator exp(-E/kT_e) and denominator Z_e share one T_e regardless
+         * of compute_partition_functions' cadence. NO W, no metastable split.
+         * Per-shell write to a distinct [ip*n_shells+s] slot => OMP-safe. Guarded so
+         * the baseline path allocates nothing extra and stays byte-identical. */
+        if (kpemiss_te_pop && T_e > 0.0) {
+            for (int ipx = 0; ipx < atom->n_ion_pops; ipx++) {
+                int l0 = atom->level_offset[ipx];
+                int l1 = atom->level_offset[ipx + 1];
+                double Ze = 0.0;
+                for (int l = l0; l < l1; l++) {
+                    double bz = atom->level_energy_eV[l] * EV_TO_ERG /
+                                (K_BOLTZMANN * T_e);
+                    if (bz < 500.0) Ze += (double)atom->level_g[l] * exp(-bz);
+                }
+                if (Ze < 1e-300) Ze = 1e-300;
+                atom->partition_functions_Te[(size_t)ipx * n_shells + s] = Ze;
+            }
+        }
 
         for (int lev = 0; lev < n_levels; lev++) {
             int block_start = opacity->macro_block_references[lev];
@@ -1804,6 +4422,7 @@ void compute_transition_probabilities(AtomicData *atom, PlasmaState *plasma,
             /* Phase 1: Compute raw rates into temp buffer */
             double sum_rates = 0.0;
             double kp_deact  = 0.0;  /* collisional deactivation rate out of lev */
+            double sum_emit  = 0.0;  /* [KPD-FE] ttype==-1 share of sum_rates */
 
             for (int tid = block_start; tid < block_end; tid++) {
                 int ttype   = opacity->transition_type[tid];
@@ -1866,15 +4485,37 @@ void compute_transition_probabilities(AtomicData *atom, PlasmaState *plasma,
                          * LUMINA_MACROATOM_IDOWN_COLL=1 adds the same vR/Omega
                          * C_down used by the kpkt deactivation channel. */
                         if (g_ctp_idown_coll && kp_gup && kp_glo &&
-                            kp_gup[line_id] >= 0) {
+                            kp_gup[line_id] >= 0 && kp_glo[line_id] >= 0) {
                             double g_up2 = (double)atom->level_g[kp_gup[line_id]];
+                            double g_lo2 = (double)atom->level_g[kp_glo[line_id]];
                             double f_lu2 = atom->line_f_lu[line_id];
                             if (g_up2 > 0.0 && n_e > 0.0) {
-                                double C_down = (f_lu2 > 1e-10)
-                                    ? VAN_REG_COEFF * n_e * f_lu2 * 0.2 *
-                                      inv_sqrt_Te / g_up2
-                                    : 8.63e-6 * n_e * AX_OMEGA *
-                                      inv_sqrt_Te / g_up2;
+                                double C_down;
+                                if (artis_parity_enabled()) {
+                                    /* [ARTIS-PARITY E2/A6] the ONE shared ARTIS helper
+                                     * (vR+Bethe+Gaunt permitted / g-scaled Axelrod
+                                     * forbidden) drives the internal-down C too. */
+                                    double cu, cd; int forb = (f_lu2 <= 1e-10);
+                                    double dE2 = H_PLANCK * atom->line_nu[line_id];
+                                    /* [MA-REAL-UPSILON] real close-coupling Omega for
+                                     * covered transitions; else vR/Axelrod sentinel. */
+                                    double cs2 = forb ? -2.0 : -1.0;
+                                    if (ma_real_ups && ma_ru_line_src[line_id] >= 0) {
+                                        double ups = ma_ru_upsilon(
+                                            &ma_ru_src_reg[ma_ru_line_src[line_id]],
+                                            ma_ru_line_t[line_id], T_e);
+                                        if (ups > 0.0) cs2 = ups;
+                                    }
+                                    artis_col_rates(T_e, n_e, dE2, g_lo2, g_up2, f_lu2,
+                                                    cs2, forb, &cu, &cd);
+                                    C_down = cd;
+                                } else {
+                                    C_down = (f_lu2 > 1e-10)
+                                        ? VAN_REG_COEFF * n_e * f_lu2 * 0.2 *
+                                          inv_sqrt_Te / g_up2
+                                        : 8.63e-6 * n_e * AX_OMEGA *
+                                          inv_sqrt_Te / g_up2;
+                                }
                                 rate += C_down;
                             }
                         }
@@ -1913,6 +4554,12 @@ void compute_transition_probabilities(AtomicData *atom, PlasmaState *plasma,
                              * ARTIS 'detailed' (the next rung). */
                             rate = atom->line_B_lu[line_id] *
                                    W * planck_bnu(T_rad, nu_line);
+                            /* [IUP-BINFIELD] NOT covered by the gate: IUP_TRAD is a
+                             * dilute-BB model pump (no per-line MC estimator is read)
+                             * and it is evaluated first, so it wins. Counted so the
+                             * banner reports the uncovered residue instead of
+                             * silently claiming a switch that never happened. */
+                            if (g_ctp_iup_binfield) binf_bypass_loc++;
                         } else if (use_j_nu) {
                             double J_line;
                             /* P7 Stage-II (LUMINA_CMF_LINERES_JBAR=1): the DETERMINISTIC
@@ -1920,25 +4567,39 @@ void compute_transition_probabilities(AtomicData *atom, PlasmaState *plasma,
                              * binned-J contrast collapse (ladder 4c/5b). Preferred over the
                              * MC estimator (sparse in UV) and the binned read. NULL/off =>
                              * fall through to the legacy paths (byte-identical baseline). */
-                            if (g_ctp_lineres_jbar && opacity->jbar_line_det &&
+                            /* [IUP-BINFIELD] armed => skip BOTH per-line estimators
+                             * (the deterministic CMF J_bar_l and the MC per-line
+                             * J_bar) so that J_line IS the C1 binned-field read in
+                             * the final else -- ARTIS radfield(nu_trans) semantics
+                             * (macroatom.cc:596). The mandate's "J_line fallback
+                             * included" clause: the fallback must not be a per-line
+                             * quantity either. OFF => the two guards are the
+                             * pre-existing conditions verbatim. */
+                            if (!g_ctp_iup_binfield &&
+                                g_ctp_lineres_jbar && opacity->jbar_line_det &&
                                 opacity->jbar_line_det[line_id * n_shells + s] >= 0.0) {
                                 /* fine-grid line-resolved J_bar (P7 producer); -1
                                  * sentinel = line outside the fine window => fall back */
                                 J_line = opacity->jbar_line_det[line_id * n_shells + s];
-                            } else if (opacity->use_jbar_line && opacity->jbar_line &&
-                                opacity->jbar_count[line_id * n_shells + s] >= 10) {
+                            } else if (!g_ctp_iup_binfield &&
+                                opacity->use_jbar_line && opacity->jbar_line &&
+                                opacity->jbar_count[line_id * n_shells + s]
+                                    >= g_ctp_jbar_min_ma) {
                                 J_line = opacity->jbar_line[line_id * n_shells + s];
                             } else {
                                 J_line = nlte_get_J_at_nu(nlte, s, nu_line);
                             }
-                            if (j_cap_factor > 0.0 || j_floor_factor > 0.0) {
+                            /* [IUP-BINFIELD] coverage tally: this (line,shell) up-rate
+                             * now takes its J from the C1 bin field. */
+                            if (g_ctp_iup_binfield) binf_used_loc++;
+                            if (j_cap_effective > 0.0 || j_floor_effective > 0.0) {
                                 double J_lte = W * planck_bnu(T_rad, nu_line);
-                                if (j_cap_factor > 0.0) {
-                                    double J_max = j_cap_factor * J_lte;
+                                if (j_cap_effective > 0.0) {
+                                    double J_max = j_cap_effective * J_lte;
                                     if (J_line > J_max) J_line = J_max;
                                 }
-                                if (j_floor_factor > 0.0) {
-                                    double J_min = j_floor_factor * J_lte;
+                                if (j_floor_effective > 0.0) {
+                                    double J_min = j_floor_effective * J_lte;
                                     if (J_line < J_min) J_line = J_min;
                                 }
                             }
@@ -1964,8 +4625,9 @@ void compute_transition_probabilities(AtomicData *atom, PlasmaState *plasma,
                                     if (J_line > 0.0) {
                                         double lr = log10(J_blue / J_line);
                                         int clamped = 0;
+                                        int clamp_hi_dir = 0;   /* [ANCHOR2] +3 vs -3 */
                                         if (lr < -3.0)     { lr = -3.0; clamped = 1; }
-                                        else if (lr > 3.0) { lr =  3.0; clamped = 1; }
+                                        else if (lr > 3.0) { lr =  3.0; clamped = 1; clamp_hi_dir = 1; }
                                         if (beta > 0.5) {
                                             jba_thin_n_loc++;  jba_thin_sum_loc  += lr;
                                             if (clamped) jba_thin_clamp_loc++;
@@ -1973,8 +4635,44 @@ void compute_transition_probabilities(AtomicData *atom, PlasmaState *plasma,
                                             jba_thick_n_loc++; jba_thick_sum_loc += lr;
                                             if (clamped) jba_thick_clamp_loc++;
                                         }
+                                        /* [JBLUE-ANCHOR2] signed clamp + 4-way bucket.
+                                         * lambda is the line's REST (comoving) wavelength
+                                         * -- the same quantity cmfgen_fine_jbar tests
+                                         * against [lam_lo, lam_hi] when it decides whether
+                                         * the line gets a deterministic fine J_bar_l or the
+                                         * -1 out-of-window sentinel. */
+                                        jba_all_n_loc++;
+                                        {
+                                            double lam_A_jba = (nu_line > 0.0)
+                                                ? (C_SPEED_OF_LIGHT / nu_line) * 1.0e8 : -1.0;
+                                            int out_w = !(lam_A_jba >= g_jba_win_lo &&
+                                                          lam_A_jba <= g_jba_win_hi);
+                                            int bidx = -1;
+                                            if (beta > 0.5)        bidx = out_w ? 1 : 0;
+                                            else if (beta < 0.01)  bidx = out_w ? 3 : 2;
+                                            if (bidx >= 0) {
+                                                jba4_n_loc[bidx]++;
+                                                jba4_sum_loc[bidx] += lr;
+                                                if (clamped) {
+                                                    if (clamp_hi_dir) jba4_chi_loc[bidx]++;
+                                                    else              jba4_clo_loc[bidx]++;
+                                                }
+                                            }
+                                        }
                                     }
                                 } else { J_blue = J_line; jblue_fb_loc++; }
+                                /* [IUP-BINFIELD] THE FIELD-SOURCE SWITCH. The rate
+                                 * form (B_lu - B_ul n_u/n_l)*beta*J is ARTIS's
+                                 * R_over_J_nu (macroatom.cc:583-585) and is kept
+                                 * exactly; only the J it multiplies changes, from the
+                                 * per-line MC blue-wing estimator (ARTIS's
+                                 * DETAILED_LINE_ESTIMATORS_ON branch, :588-593) to
+                                 * radfield(nu_trans) (:596) = our C1 bin field, which
+                                 * J_line already holds under this gate. The
+                                 * [IUP-JBLUE]/[JBLUE-ANCHOR] counters above are left
+                                 * intact on purpose: armed, they report what the OLD
+                                 * path WOULD have consumed (the A/B comparator). */
+                                if (g_ctp_iup_binfield) J_blue = J_line;
                                 double coeff = atom->line_B_lu[line_id];
                                 if (kp_glo && kp_gup && kp_glo[line_id] >= 0 &&
                                     kp_gup[line_id] >= 0 && T_rad > 0.0) {
@@ -2001,6 +4699,42 @@ void compute_transition_probabilities(AtomicData *atom, PlasmaState *plasma,
                             }
                         } else {
                             rate = atom->line_B_lu[line_id] * W * planck_bnu(T_rad, nu_line);
+                            /* [IUP-BINFIELD] NOT covered: no NLTE J_nu exists
+                             * (use_j_nu=0), so there is no binned field to read.
+                             * Counted; the arm-time banner already warned. */
+                            if (g_ctp_iup_binfield) binf_bypass_loc++;
+                        }
+                        /* [ARTIS-PARITY M1] INTERNALUPSAME collisional up-term
+                         * (macroatom.cc:128-132: sum_internal_up_same += (R + C + NT)
+                         * * epsilon_current). Fold C_up into the internal-up RATE (still
+                         * bare here; the eweight block below multiplies the whole rate by
+                         * e_low = the source/current-level neutral-ground energy =
+                         * epsilon_current, giving (B_lu*J + C_up)*epsilon_current exactly
+                         * as ARTIS). This is the MA-internal collisional up-jump -- a
+                         * distinct process from, and NOT a double-count of, the k-packet
+                         * COLLEXC re-excitation (kp_emiss CDF below), which starts from a
+                         * k-packet, not an already-activated macro-atom. OFF adds nothing
+                         * => byte-identical. */
+                        if (parity_ma && n_e > 0.0 && T_e > 0.0 &&
+                            kp_glo && kp_gup &&
+                            kp_glo[line_id] >= 0 && kp_gup[line_id] >= 0) {
+                            double g_lo_u = (double)atom->level_g[kp_glo[line_id]];
+                            double g_up_u = (double)atom->level_g[kp_gup[line_id]];
+                            double f_lu_u = atom->line_f_lu[line_id];
+                            double dE_u   = H_PLANCK * atom->line_nu[line_id];
+                            int    forb_u = (f_lu_u <= 1e-10);
+                            double cu_u, cd_u;
+                            /* [MA-REAL-UPSILON] real Omega for the internal-up C too. */
+                            double cs_u = forb_u ? -2.0 : -1.0;
+                            if (ma_real_ups && ma_ru_line_src[line_id] >= 0) {
+                                double ups = ma_ru_upsilon(
+                                    &ma_ru_src_reg[ma_ru_line_src[line_id]],
+                                    ma_ru_line_t[line_id], T_e);
+                                if (ups > 0.0) cs_u = ups;
+                            }
+                            artis_col_rates(T_e, n_e, dE_u, g_lo_u, g_up_u, f_lu_u,
+                                            cs_u, forb_u, &cu_u, &cd_u);
+                            if (cu_u > 0.0) rate += cu_u; /* eweighted below by eps_current */
                         }
                     }
 
@@ -2047,11 +4781,69 @@ void compute_transition_probabilities(AtomicData *atom, PlasmaState *plasma,
                         double f_lu = atom->line_f_lu[line_id];
                         double dE   = H_PLANCK * atom->line_nu[line_id]; /* erg */
                         if (ttype == -1 && g_up > 0.0) {
-                            /* collisional de-excitation rate (lev is upper level) */
-                            double C_down = (f_lu > 1e-10)
-                                ? VAN_REG_COEFF * n_e * f_lu * 0.2 * inv_sqrt_Te / g_up
-                                : 8.63e-6 * n_e * AX_OMEGA * inv_sqrt_Te / g_up;
-                            kp_deact += C_down;
+                            /* collisional de-excitation rate (lev is upper level).
+                             * A6: under parity, the ONE shared ARTIS helper (vR+
+                             * Bethe+Gaunt permitted / g-scaled Axelrod forbidden)
+                             * replaces the k-packet's local vR/Axelrod copy. */
+                            double C_down;
+                            if (artis_parity_enabled()) {
+                                double cu, cd; int forb = (f_lu <= 1e-10);
+                                /* [MA-REAL-UPSILON] real Omega -> the k-packet C_down
+                                 * that drives BOTH the ma_line_eps two-level drain
+                                 * eps=C/(C+A*beta) and the COLDEEXC kp_deact term. */
+                                double cs_d = forb ? -2.0 : -1.0;
+                                if (ma_real_ups && ma_ru_line_src[line_id] >= 0) {
+                                    double ups = ma_ru_upsilon(
+                                        &ma_ru_src_reg[ma_ru_line_src[line_id]],
+                                        ma_ru_line_t[line_id], T_e);
+                                    if (ups > 0.0) cs_d = ups;
+                                }
+                                artis_col_rates(T_e, n_e, dE, g_lo, g_up, f_lu,
+                                                cs_d, forb, &cu, &cd);
+                                C_down = cd;
+                            } else {
+                                C_down = (f_lu > 1e-10)
+                                    ? VAN_REG_COEFF * n_e * f_lu * 0.2 * inv_sqrt_Te / g_up
+                                    : 8.63e-6 * n_e * AX_OMEGA * inv_sqrt_Te / g_up;
+                            }
+                            /* [MA-LINE-DESTRUCT] two-level photon-destruction
+                             * probability for THIS terminal line, self-consistent with
+                             * the A_ul*beta emission rate the MA lottery uses
+                             * (plasma.c:2787): eps = C_ul/(C_ul + A_ul*beta_sobolev),
+                             * with C_ul = C_down (just computed) and A_ul*beta the BARE
+                             * emission rate (recomputed here because `rate` was already
+                             * energy-flow weighted above). Numerically identical to
+                             * radeq_line_eps_phys (same (1-e^-tau)/tau beta). Stored per
+                             * (transition,shell); consumed on-device at the terminal MA
+                             * deactivation. ma_line_eps NULL unless the gate is armed
+                             * => this store is skipped => byte-identical baseline. */
+                            if (opacity->ma_line_eps) {
+                                double rad_bare = atom->line_A_ul[line_id] * beta;
+                                double denom_e  = C_down + rad_bare;
+                                opacity->ma_line_eps[(size_t)tid * n_shells + s] =
+                                    (denom_e > 0.0) ? (C_down / denom_e) : 0.0;
+                            }
+                            /* [ARTIS-PARITY M1] COLDEEXC = Sum C_down * epsilon_trans
+                             * (macroatom.cc:102 `sum_coldeexc += C * epsilon_trans`, :109).
+                             * The k-packet pre-roll pk = kp_deact/(sum_rates + kp_deact)
+                             * IS the ARTIS single fair draw between COLDEEXC and the
+                             * same-ion radiative block (RADDEEXC + INTERNALDOWNSAME +
+                             * INTERNALUPSAME): P(k)=pk and P(rad_i)=(1-pk)*p_i =
+                             * rate_i/(kp_deact+sum_rates). But under parity the radiative
+                             * block is ENERGY-flow (Lucy-2002/D2) weighted -- emit *= h*nu,
+                             * internal *= eps_target -- so sum_rates carries erg while
+                             * kp_deact (bare s^-1) does not. That ~1e11x dimensional
+                             * mismatch forces COLDEEXC certainty (pk->1) and IS the
+                             * fluorescence funnel (parity4: inner shells line-emit=0, all
+                             * MA activations drain to k-pool ff/fb). Weighting C_down by
+                             * dE=h*nu=epsilon_trans makes COLDEEXC a dimensionally
+                             * consistent peer of RADDEEXC (=A_ul*beta*h*nu): since
+                             * epsilon_trans (photon) << eps_target (neutral-ground level
+                             * energy carried by INTERNALDOWNSAME), collisions now
+                             * predominantly drive the INTERNAL down-jump (the ladder-walk
+                             * escape valve) instead of certain thermalization -- exactly
+                             * ARTIS. OFF path keeps the bare rate => byte-identical. */
+                            kp_deact += parity_ma ? (C_down * dE) : C_down;
                         } else if (ttype == 1 && g_lo > 0.0) {
                             /* k-packet re-excitation weight n_lower·C_up·dE,
                              * deposited at the upper (destination) level. The
@@ -2060,24 +4852,69 @@ void compute_transition_probabilities(AtomicData *atom, PlasmaState *plasma,
                              * the local Planck peak. */
                             int    ip = kp_ip[line_id];
                             double n_lower = 0.0;
-                            if (ip >= 0) {
+                            /* [KPR B1] SE/NLTE lower-level population override: use the
+                             * n_k the drain produced for this level when its ion is in
+                             * the NLTE/SE set; else fall through to dilute-Boltzmann. */
+                            int gnl = (kpemiss_se_pops && nlte &&
+                                       nlte->global_to_nlte_level)
+                                    ? nlte->global_to_nlte_level[glo] : -1;
+                            if (gnl >= 0 && nlte->nlte_level_populations) {
+                                n_lower = nlte->nlte_level_populations[
+                                            (size_t)gnl * n_shells + s];
+                            } else if (ip >= 0) {
                                 double n_ion = atom->ion_number_density[(size_t)ip * n_shells + s];
-                                double Zp    = atom->partition_functions[(size_t)ip * n_shells + s];
-                                double boltz = atom->level_energy_eV[glo] * EV_TO_ERG /
-                                               (K_BOLTZMANN * T_rad);
-                                double wgt = atom->level_metastable[glo] ? 1.0 : W;
-                                if (Zp > 0.0 && boltz < 500.0)
-                                    n_lower = n_ion * wgt * g_lo * exp(-boltz) / Zp;
+                                if (kpemiss_te_pop) {
+                                    /* [KPR TE_POP] undiluted LTE-at-T_e lower-level pop
+                                     * (ARTIS calculate_levelpop_boltzmann parity): numerator
+                                     * exp(-E/kT_e) and denominator Z_e(T_e) are self-consistent,
+                                     * no W. */
+                                    double Zp_e  = atom->partition_functions_Te[(size_t)ip * n_shells + s];
+                                    double boltz_e = atom->level_energy_eV[glo] * EV_TO_ERG /
+                                                     (K_BOLTZMANN * T_e);
+                                    if (Zp_e > 0.0 && boltz_e < 500.0)
+                                        n_lower = n_ion * g_lo * exp(-boltz_e) / Zp_e;
+                                } else {
+                                    double Zp    = atom->partition_functions[(size_t)ip * n_shells + s];
+                                    double boltz = atom->level_energy_eV[glo] * EV_TO_ERG /
+                                                   (K_BOLTZMANN * T_rad);
+                                    double wgt = atom->level_metastable[glo] ? 1.0 : W;
+                                    if (Zp > 0.0 && boltz < 500.0)
+                                        n_lower = n_ion * wgt * g_lo * exp(-boltz) / Zp;
+                                }
                             }
+                            kpd_seen++;
+                            if (n_lower <= 0.0) kpd_nlow0++;
+                            else if (n_lower > kpd_maxnlow) kpd_maxnlow = n_lower;
                             if (n_lower > 0.0) {
-                                double exp_up = exp(-dE / (K_BOLTZMANN * T_e));
-                                double C_up = (f_lu > 1e-10)
-                                    ? VAN_REG_COEFF * n_e * f_lu * exp_up * 0.2 * inv_sqrt_Te / g_lo
-                                    : 8.63e-6 * n_e * AX_OMEGA * exp_up * inv_sqrt_Te / g_lo;
+                                double C_up;
+                                if (artis_parity_enabled()) {
+                                    /* A6: shared ARTIS helper (exp(-u) is internal). */
+                                    double cu, cd; int forb = (f_lu <= 1e-10);
+                                    /* [MA-REAL-UPSILON] real Omega -> k-packet re-excite
+                                     * weight n_lower*C_up*dE (kp_emiss CDF). */
+                                    double cs_e = forb ? -2.0 : -1.0;
+                                    if (ma_real_ups && ma_ru_line_src[line_id] >= 0) {
+                                        double ups = ma_ru_upsilon(
+                                            &ma_ru_src_reg[ma_ru_line_src[line_id]],
+                                            ma_ru_line_t[line_id], T_e);
+                                        if (ups > 0.0) cs_e = ups;
+                                    }
+                                    artis_col_rates(T_e, n_e, dE, g_lo, g_up, f_lu,
+                                                    cs_e, forb, &cu, &cd);
+                                    C_up = cu;
+                                } else {
+                                    double exp_up = exp(-dE / (K_BOLTZMANN * T_e));
+                                    C_up = (f_lu > 1e-10)
+                                        ? VAN_REG_COEFF * n_e * f_lu * exp_up * 0.2 * inv_sqrt_Te / g_lo
+                                        : 8.63e-6 * n_e * AX_OMEGA * exp_up * inv_sqrt_Te / g_lo;
+                                }
                                 double w = n_lower * C_up * dE;
                                 int dst = opacity->destination_level_id[tid];
-                                if (w > 0.0 && dst >= 0 && dst < n_levels)
+                                if (w > 0.0 && dst >= 0 && dst < n_levels) {
                                     kp_emiss[dst] += w;
+                                    kpd_add++;
+                                    if (w > kpd_maxw) kpd_maxw = w;
+                                }
                             }
                         }
                     }
@@ -2085,6 +4922,7 @@ void compute_transition_probabilities(AtomicData *atom, PlasmaState *plasma,
                 if (rate < 0.0) rate = 0.0;
                 rates_buf[tid - block_start] = rate;
                 sum_rates += rate;
+                if (ttype == -1) sum_emit += rate;   /* [KPD-FE] */
             }
 
             /* bf recomb cascade (LUMINA_MACROATOM_BF): for a source level (the
@@ -2115,12 +4953,139 @@ void compute_transition_probabilities(AtomicData *atom, PlasmaState *plasma,
                         if (Z_j >= 0 && Z_j < 32 && stage_j >= 0 && stage_j < 8)
                             eps_j += accum_ip_eV[Z_j * 8 + stage_j];
                         double w_down = R * eps_j * EV_TO_ERG;
-                        if (w_down < 0.0) w_down = 0.0;
+                        /* [RATES-FIX F3] a NaN from the old 0 x inf Milne form
+                         * passed this test (NaN < 0 is false) and poisoned the
+                         * cascade probability normalization. */
+                        if (rates_fix_enabled() ? (!isfinite(w_down) || w_down < 0.0)
+                                                : (w_down < 0.0)) w_down = 0.0;
                         opacity->recomb_prob[(size_t)k * n_shells + s] = w_down;
                         sum_rates += w_down;
+
+                        /* [MA-RADRECOMB tau-gate] per-shell emit decision: emit the
+                         * recombination continuum ONLY where dest level j's edge is
+                         * optically THIN (tau_bf <= thresh). tau_bf = sigma_edge(k) *
+                         * n_j(s) * dr(s). Thick edges (ground/low levels, whose
+                         * photons are reabsorbed on-the-spot => dig_E2 double count)
+                         * stay INTERNALDOWNLOWER (no photon). Writes every live (k,s)
+                         * each call (same coverage as recomb_prob). NULL array (gate
+                         * off) => untouched => byte-identical baseline. */
+                        if (opacity->recomb_emit_shell) {
+                            int emit = 0;
+                            if (opacity->recomb_is_emit && opacity->recomb_is_emit[k] &&
+                                opacity->recomb_sigma_edge && geom) {
+                                double dr = geom->r_outer[s] - geom->r_inner[s];
+                                /* n_dest = population of the recombined-onto lower-ion
+                                 * level j (the level that reabsorbs an edge photon via
+                                 * photoionization). Prefer the live NLTE SE population;
+                                 * fall back to the committed LTE-at-T_e Boltzmann pop
+                                 * (n_ion * g_j exp(-E_j/kT_e) / U) whenever j is outside
+                                 * the NLTE-solved subset (global_to_nlte_level<0, e.g.
+                                 * Fe I / S I destinations) OR its NLTE slot is not yet
+                                 * populated (first pass, calloc'd 0). Without the fallback
+                                 * n_j collapses to a spurious 0 => tau=0 => every edge
+                                 * looks thin => all EMIT (dig_E2 double-count misfire). */
+                                double n_j = 0.0;
+                                if (nlte && nlte->nlte_level_populations &&
+                                    nlte->global_to_nlte_level) {
+                                    int gnl = nlte->global_to_nlte_level[j];
+                                    if (gnl >= 0)
+                                        n_j = nlte->nlte_level_populations[
+                                                  (size_t)gnl * n_shells + s];
+                                }
+                                if (!(n_j > 0.0) && atom->ion_number_density &&
+                                    atom->partition_functions && T_e > 0.0) {
+                                    double Z_part = atom->partition_functions[
+                                                        (size_t)ip_lo * n_shells + s];
+                                    double n_ion  = atom->ion_number_density[
+                                                        (size_t)ip_lo * n_shells + s];
+                                    if (Z_part > 0.0 && n_ion > 0.0) {
+                                        double x = atom->level_energy_eV[j] * EV_TO_ERG
+                                                   / (K_BOLTZMANN * T_e);
+                                        if (x < 500.0)
+                                            n_j = n_ion * (double)atom->level_g[j]
+                                                  * exp(-x) / Z_part;
+                                    }
+                                }
+                                double tau_bf = opacity->recomb_sigma_edge[k] * n_j * dr;
+                                emit = (tau_bf <= rr_tau_thresh) ? 1 : 0;
+                            }
+                            opacity->recomb_emit_shell[(size_t)k * n_shells + s] = emit;
+                        }
                     }
                 }
             }
+
+            /* [MA-RADRECOMB iup] INTERNALUPHIGHER weight: the ion-changing
+             * photoionization + collisional-ionization up-jump out of THIS
+             * (lower-ion) source level, added to the SAME sum_rates before the
+             * block is normalized. ARTIS macroatom.cc:165-185:
+             *   sum_up_higher += (R_photoion + C_collion) * epsilon_current
+             * R_photoion is the field-weighted per-level bf rate — computed here
+             * with the SAME per-bin estimator the ion balance uses
+             * (parity_gamma_phot: C2 bf_rate_estimator under parity, else the C1
+             * dilute-BB integral over J_nu). C_collion is the Seaton edge rate
+             * (ARTIS col_ionisation_ratecoeff). epsilon_current = the source level's
+             * neutral-ground energy (Lucy weighting, matching the recomb/INTERNALUP
+             * channels). Unnormalized weight parked in iup_prob, divided by sum_rates
+             * below. iup_prob NULL (gate off) => nothing added => byte-identical. */
+            double iup_w = 0.0;
+            if (opacity->iup_prob && opacity->iup_dest_level &&
+                opacity->iup_dest_level[lev] >= 0 && n_e > 0.0 && T_e > 0.0 &&
+                use_j_nu && atom->cmfgen_has_sigma && atom->cmfgen_has_sigma[lev] &&
+                atom->cmfgen_n_freq_bins == nlte->n_freq_bins) {
+                int Zl = atom->level_Z[lev], stl = atom->level_ion[lev];
+                double chi_eV = find_ioniz_energy(atom, Zl, stl);
+                if (chi_eV > 0.0 && chi_eV < 1e9) {
+                    double chi_erg_l = chi_eV * EV_TO_ERG;
+                    double E_lev_erg = atom->level_energy_eV[lev] * EV_TO_ERG;
+                    double eps_trans = chi_erg_l - E_lev_erg;     /* threshold energy */
+                    double nu_thresh = eps_trans / H_PLANCK;
+                    if (nu_thresh > 0.0) {
+                        int nfb = nlte->n_freq_bins;
+                        const double *Jrow  = &nlte->J_nu[(size_t)s * nfb];
+                        const double *bfrow = (artis_parity_enabled() &&
+                                               nlte->bf_rate_estimator)
+                            ? &nlte->bf_rate_estimator[(size_t)s * nfb] : NULL;
+                        const double *sigma_row =
+                            &atom->cmfgen_sigma_bf[(size_t)lev * (size_t)nfb];
+                        double log_numin = log(nlte->nu_min), dln = nlte->d_log_nu;
+                        double R_ph = 0.0, sigma_edge = 0.0;
+                        for (int bb = 0; bb < nfb; bb++) {
+                            double log_nu_lo = log_numin + bb * dln;
+                            double nu_bin = exp(log_nu_lo + 0.5 * dln);
+                            if (nu_bin < nu_thresh) continue;
+                            double sigma = sigma_row[bb];
+                            if (sigma <= 0.0) continue;
+                            if (sigma_edge == 0.0) sigma_edge = sigma; /* first bin>=edge */
+                            double bfr = bfrow ? bfrow[bb] : 0.0;
+                            if (bfr > 0.0) {
+                                R_ph += sigma * bfr;                /* [C2] transport Gamma_bf */
+                            } else {
+                                double delta_nu = exp(log_nu_lo + dln) - exp(log_nu_lo);
+                                R_ph += 4.0 * M_PI_VAL * sigma /
+                                        (H_PLANCK * nu_bin) * delta_nu * Jrow[bb]; /* [C1] */
+                            }
+                        }
+                        /* Seaton collisional ionization at the edge (ARTIS
+                         * col_ionisation_ratecoeff, gaunt by ionstage). */
+                        double C_ion = 0.0;
+                        double fac1 = eps_trans / (K_BOLTZMANN * T_e);
+                        if (sigma_edge > 0.0 && fac1 > 0.0 && fac1 < 700.0) {
+                            double g_col = (stl <= 0) ? 0.1 : (stl == 1) ? 0.2 : 0.3;
+                            C_ion = n_e * 1.55e13 * inv_sqrt_Te * g_col * sigma_edge *
+                                    exp(-fac1) / fac1;
+                        }
+                        double eps_cur = atom->level_energy_eV[lev];
+                        if (Zl >= 0 && Zl < 32 && stl >= 0 && stl < 8)
+                            eps_cur += accum_ip_eV[Zl * 8 + stl];
+                        iup_w = (R_ph + C_ion) * eps_cur * EV_TO_ERG;
+                        if (!(iup_w > 0.0)) iup_w = 0.0;
+                        sum_rates += iup_w;
+                    }
+                }
+            }
+            if (opacity->iup_prob)
+                opacity->iup_prob[(size_t)lev * n_shells + s] = iup_w; /* normalized below */
 
             /* Phase 2: Normalize and apply (with optional damping) */
             if (sum_rates > 0.0) {
@@ -2145,6 +5110,15 @@ void compute_transition_probabilities(AtomicData *atom, PlasmaState *plasma,
                 }
             }
 
+            /* [MA-RADRECOMB iup] Normalize the internal-up-higher weight by the same
+             * recomb-inclusive sum_rates (no damping, mirroring the recomb channel).
+             * block_probs + recomb_probs + iup_prob now partition [0,1]. */
+            if (opacity->iup_prob) {
+                size_t idx = (size_t)lev * n_shells + s;
+                opacity->iup_prob[idx] = (sum_rates > 0.0)
+                    ? opacity->iup_prob[idx] / sum_rates : 0.0;
+            }
+
             /* k-packet deactivation probability for this level: collisional
              * deactivation competes with all radiative channels (sum_rates).
              * [COLLISION-LIMIT] levels within LUMINA_MA_COLLISION_LIMIT_EV of
@@ -2162,6 +5136,16 @@ void compute_transition_probabilities(AtomicData *atom, PlasmaState *plasma,
                     g_ctp_lev_gap[lev] < g_ma_coll_limit_ev)
                     pkv = 1.0;
                 opacity->p_kpacket[(size_t)lev * n_shells + s] = pkv;
+                /* [KPD-FE] bucket this level's emission share + pk */
+                if (sum_rates > 0.0) {
+                    double fe = sum_emit / sum_rates;
+                    fe_n++;
+                    fe_b[fe < 1e-8 ? 0 : fe < 1e-6 ? 1 : fe < 1e-4 ? 2 :
+                         fe < 1e-2 ? 3 : 4]++;
+                    fe_aggE += sum_emit; fe_aggR += sum_rates;
+                    pk_sum += pkv; if (pkv > 0.9) pk_hi++;
+                    if (kpd_fe_arr) kpd_fe_arr[lev] = fe;
+                } else if (kpd_fe_arr) kpd_fe_arr[lev] = -1.0;
             }
         }
 
@@ -2172,6 +5156,34 @@ void compute_transition_probabilities(AtomicData *atom, PlasmaState *plasma,
             double *cdf = opacity->kpacket_cdf + (size_t)s * n_levels;
             double tot = 0.0;
             for (int j = 0; j < n_levels; j++) tot += kp_emiss[j];
+            if (artis_parity_enabled()) {
+                fprintf(stderr, "[KPD] s%d tot=%.3e seen=%ld nlow0=%ld add=%ld "
+                        "maxw=%.3e maxnlow=%.3e\n",
+                        s, tot, kpd_seen, kpd_nlow0, kpd_add, kpd_maxw, kpd_maxnlow);
+                fprintf(stderr, "[KPD-FE] s%d n=%ld fe_buckets(<1e-8,<1e-6,<1e-4,"
+                        "<1e-2,>=)=%ld/%ld/%ld/%ld/%ld agg_emit_share=%.3e "
+                        "pk_mean=%.3f pk>0.9=%ld\n",
+                        s, fe_n, fe_b[0], fe_b[1], fe_b[2], fe_b[3], fe_b[4],
+                        (fe_aggR > 0.0) ? fe_aggE / fe_aggR : 0.0,
+                        (fe_n > 0) ? pk_sum / (double)fe_n : 0.0, pk_hi);
+                /* [KPD-FE2] VISITED-weighted view: the collexc CDF's top landing
+                 * levels — where re-excited MAs actually go. */
+                if (kpd_fe_arr && tot > 0.0) {
+                    for (int r = 0; r < 8; r++) {
+                        int jmax = -1; double wmax = 0.0;
+                        for (int j = 0; j < n_levels; j++)
+                            if (kp_emiss[j] > wmax) { wmax = kp_emiss[j]; jmax = j; }
+                        if (jmax < 0) break;
+                        fprintf(stderr, "[KPD-FE2] s%d lev%d share=%.3f fe=%.3e "
+                                "pk=%.4f\n", s, jmax, wmax / tot,
+                                kpd_fe_arr[jmax],
+                                opacity->p_kpacket[(size_t)jmax * n_shells + s]);
+                        kp_emiss[jmax] = -kp_emiss[jmax];  /* mark visited */
+                    }
+                    for (int j = 0; j < n_levels; j++)
+                        if (kp_emiss[j] < 0.0) kp_emiss[j] = -kp_emiss[j];
+                }
+            }
 
             /* Path A free-free channel (ARTIS kpkt.cc:65): once a k-packet forms,
              * it converts to a continuum r-packet by free-free emission with prob
@@ -2184,6 +5196,7 @@ void compute_transition_probabilities(AtomicData *atom, PlasmaState *plasma,
                 double ne_s = (plasma->n_electron ? plasma->n_electron[s]
                                                   : opacity->electron_density[s]);
                 double C_ff = 0.0, C_fb = 0.0, dom_edge_nu = 0.0, dom_n = 0.0;
+                int dom_Z = 0, dom_stage = 0;   /* [FB-EDGE-METER] N9: who the edge came from */
                 if (Te_s > 0.0 && ne_s > 0.0) {
                     double sum_z2n = 0.0;
                     double te4 = pow(Te_s / 1e4, -0.75);   /* Kramers recomb T-scaling */
@@ -2202,12 +5215,24 @@ void compute_transition_probabilities(AtomicData *atom, PlasmaState *plasma,
                          * edges are in the UV -> fb re-emits blue (toward ARTIS). */
                         if (n_ion > dom_n) {
                             dom_n = n_ion;
+                            dom_Z = atom->ion_pop_Z[ip]; dom_stage = stage;
                             double chi = find_ioniz_energy(atom, atom->ion_pop_Z[ip], stage - 1);
                             dom_edge_nu = (chi > 0.0 && chi < 1e9)
                                 ? chi * EV_TO_ERG / H_PLANCK : 0.0;
                         }
                     }
                     C_ff = 1.426e-27 * sqrt(Te_s) * ne_s * sum_z2n;
+                }
+                /* [FB-EDGE-METER] N9: a dominant recombining ion exists but its edge
+                 * lookup failed (find_ioniz_energy sentinel) -> kpacket_fb_nu[s]=0 and
+                 * every fb exit in this shell degenerates on the device. Count only. */
+                if (dom_n > 0.0 && dom_edge_nu <= 0.0) {
+                    #pragma omp critical (fb_edge_meter)
+                    {
+                        g_fb_dom_edge_fail++;
+                        g_fb_dom_edge_fail_z     = dom_Z;
+                        g_fb_dom_edge_fail_stage = dom_stage;
+                    }
                 }
                 double denom = C_ff + C_fb + tot;            /* tot = C_collexc */
                 opacity->p_kpacket_ff[s] = (denom > 0.0) ? (C_ff / denom) : 0.0;
@@ -2229,13 +5254,33 @@ void compute_transition_probabilities(AtomicData *atom, PlasmaState *plasma,
                     double kTe2 = K_BOLTZMANN * Te_s;
                     double e_nu[KPKT_FB_NEDGE], e_w[KPKT_FB_NEDGE];
                     int    e_zs[KPKT_FB_NEDGE];
+                    int    e_lev[KPKT_FB_NEDGE];      /* [FB-MILNE C2] recombined-level idx per edge (-1 = per-ion) */
+                    memset(e_lev, 0xFF, sizeof(e_lev)); /* init -1 */
                     int    nedge = 0;
                     /* [FB-MULTI] Fix C: physical free-bound sum over ALL recombining
                      * continua (not just the top-KPKT_FB_NEDGE kept for the CDF),
                      * reusing the same per-ion frozenin_alpha_rr weights. Replaces
                      * the Kramers C_fb in p_fb below. */
+                    /* [FB-MILNE] LUMINA_FB_MILNE_EXACT: replace the per-ion Kramers/
+                     * alpha_RR fb cooling (w = n_e n_ion alpha (h nu0 + kTe)) with the
+                     * EXACT per-LEVEL radiative-recombination Milne cooling integral
+                     * over the actual CMFGEN sigma_bf (ARTIS ratecoeff.cc parity), so
+                     * the fb emissivity is the detailed-balance partner of chi_bf ->
+                     * sub-Planckian EUV by construction, general (no per-case tuning).
+                     * Requires cmfgen_sigma_bf loaded; OFF => byte-identical per-ion. */
+                    static int fb_milne_exact = -1;
+                    if (fb_milne_exact < 0) {
+                        const char *e = getenv("LUMINA_FB_MILNE_EXACT");
+                        fb_milne_exact = (e && atoi(e) && atom->cmfgen_sigma_bf &&
+                                          atom->cmfgen_has_sigma) ? 1 : 0;
+                        if (fb_milne_exact)
+                            fprintf(stderr, "[FB-MILNE] exact per-level radiative-recombination "
+                                    "bf cooling ON (Milne integral over CMFGEN sigma_bf, "
+                                    "KE-charged; per-ion Kramers/alpha_RR fb path retired)\n");
+                    }
                     double C_fb_real = 0.0;
-                    for (int ip = 0; ip < atom->n_ion_pops; ip++) {
+                    if (!fb_milne_exact) {
+                      for (int ip = 0; ip < atom->n_ion_pops; ip++) {
                         int stage = atom->ion_pop_stage[ip]; /* recombining charge */
                         if (stage <= 0) continue;
                         double n_ion = atom->ion_number_density[(size_t)ip * n_shells + s];
@@ -2269,12 +5314,61 @@ void compute_transition_probabilities(AtomicData *atom, PlasmaState *plasma,
                                 if (e_w[q] < e_w[jmin]) jmin = q;
                             if (w > e_w[jmin]) { e_nu[jmin] = nu0; e_w[jmin] = w; e_zs[jmin] = zs; }
                         }
+                      }
+                    } else {
+                      /* [FB-MILNE] exact per-LEVEL recombination: for each recombining
+                       * ion (Z,stage) with pop n_upper, sum recombination TO every level
+                       * l of the product ion (Z,stage-1) that carries a CMFGEN sigma_bf.
+                       * Edge nu0_l = first non-zero sigma bin (CMFGEN threshold); weight
+                       * w_l = n_e n_upper Lambda_l (Milne KE-cooling, ground-parent Saha
+                       * g_lo/g_up). p_fb sums ALL levels; the CDF keeps top-NEDGE. */
+                      double dln = log(NLTE_NU_MAX / NLTE_NU_MIN) / (double)NLTE_N_FREQ_BINS;
+                      for (int ip = 0; ip < atom->n_ion_pops; ip++) {
+                        int stage = atom->ion_pop_stage[ip]; /* recombining charge */
+                        if (stage <= 0) continue;
+                        double n_upper = atom->ion_number_density[(size_t)ip * n_shells + s];
+                        if (n_upper <= 0.0) continue;
+                        int Z = atom->ion_pop_Z[ip];
+                        int ip_prod = find_ion_pop_idx(atom, Z, stage - 1);
+                        if (ip_prod < 0) continue;
+                        double g_up = (double)atom->level_g[atom->level_offset[ip]]; /* upper-ion ground */
+                        if (!(g_up > 0.0)) continue;
+                        int l0 = atom->level_offset[ip_prod], l1 = atom->level_offset[ip_prod + 1];
+                        for (int l = l0; l < l1; l++) {
+                            if (!atom->cmfgen_has_sigma[l]) continue;
+                            const double *sig = atom->cmfgen_sigma_bf +
+                                                (size_t)l * NLTE_N_FREQ_BINS;
+                            double nu0 = 0.0;
+                            for (int f = 0; f < NLTE_N_FREQ_BINS; f++)
+                                if (sig[f] > 0.0) { nu0 = NLTE_NU_MIN * exp(((double)f + 0.5) * dln); break; }
+                            if (!(nu0 > 0.0)) continue;
+                            double g_lo = (double)atom->level_g[l];
+                            double Lam = fb_milne_cooling_coeff(sig, nu0, g_lo, g_up, Te_s);
+                            if (!(Lam > 0.0)) continue;
+                            double w = ne_s * n_upper * Lam;  /* erg/s/cm^3 cooling density */
+                            if (!(w > 0.0)) continue;
+                            C_fb_real += w;
+                            int zs = Z * 100 + stage;
+                            if (nedge < KPKT_FB_NEDGE) {
+                                e_nu[nedge] = nu0; e_w[nedge] = w; e_zs[nedge] = zs;
+                                e_lev[nedge] = l;   /* [FB-MILNE C2] recombined level for sigma_bf draw */
+                                nedge++;
+                            } else {
+                                int jmin = 0;
+                                for (int q = 1; q < KPKT_FB_NEDGE; q++)
+                                    if (e_w[q] < e_w[jmin]) jmin = q;
+                                if (w > e_w[jmin]) { e_nu[jmin] = nu0; e_w[jmin] = w; e_zs[jmin] = zs; e_lev[jmin] = l; }
+                            }
+                        }
+                      }
                     }
                     double wtot = 0.0;
                     for (int q = 0; q < nedge; q++) wtot += e_w[q];
                     double *o_nu  = opacity->kpacket_fb_edge_nu  + (size_t)s * KPKT_FB_NEDGE;
                     double *o_cdf = opacity->kpacket_fb_edge_cdf + (size_t)s * KPKT_FB_NEDGE;
                     int    *o_zs  = opacity->kpacket_fb_edge_zstage + (size_t)s * KPKT_FB_NEDGE;
+                    int    *o_lev = opacity->kpacket_fb_edge_lev ?
+                                    opacity->kpacket_fb_edge_lev + (size_t)s * KPKT_FB_NEDGE : NULL;
                     if (wtot > 0.0) {
                         double acc = 0.0;
                         for (int q = 0; q < nedge; q++) {
@@ -2282,6 +5376,7 @@ void compute_transition_probabilities(AtomicData *atom, PlasmaState *plasma,
                             o_nu[q]  = e_nu[q];
                             o_cdf[q] = acc / wtot;
                             o_zs[q]  = e_zs[q];
+                            if (o_lev) o_lev[q] = e_lev[q];
                         }
                         o_cdf[nedge - 1] = 1.0;
                         opacity->kpacket_fb_edge_count[s] = nedge;
@@ -2325,6 +5420,13 @@ void compute_transition_probabilities(AtomicData *atom, PlasmaState *plasma,
 
     free(rates_buf);
     free(kp_emiss);
+    free(kpd_fe_arr);
+    if (g_ctp_iup_binfield) {   /* [IUP-BINFIELD] fold thread-local counters */
+        #pragma omp atomic
+        g_iup_binfield_used   += binf_used_loc;
+        #pragma omp atomic
+        g_iup_binfield_bypass += binf_bypass_loc;
+    }
     if (g_ctp_iup_jblue) {   /* [IUP-JBLUE] fold thread-local counters */
         #pragma omp atomic
         g_iup_jblue_used += jblue_used_loc;
@@ -2343,8 +5445,112 @@ void compute_transition_probabilities(AtomicData *atom, PlasmaState *plasma,
         g_jba_thin_clamp += jba_thin_clamp_loc;
         #pragma omp atomic
         g_jba_thick_clamp += jba_thick_clamp_loc;
+        /* [JBLUE-ANCHOR2] fold the 4 buckets */
+        for (int _b = 0; _b < 4; _b++) {
+            #pragma omp atomic
+            g_jba4_n[_b]   += jba4_n_loc[_b];
+            #pragma omp atomic
+            g_jba4_sum[_b] += jba4_sum_loc[_b];
+            #pragma omp atomic
+            g_jba4_clo[_b] += jba4_clo_loc[_b];
+            #pragma omp atomic
+            g_jba4_chi[_b] += jba4_chi_loc[_b];
+        }
+        #pragma omp atomic
+        g_jba_all_n += jba_all_n_loc;
     }
     }   /* end omp parallel */
+
+    /* [MA-RADRECOMB tau-gate] banner: over all (shell, is_emit-eligible entry)
+     * pairs, how many emit the MC continuum (edge optically THIN) vs stay
+     * on-the-spot (thick, INTERNALDOWNLOWER). Serial scan after the parallel
+     * region (recomb_emit_shell is s-indexed, fully written). Only under the
+     * rr gate (recomb_emit_shell != NULL). */
+    if (opacity->recomb_emit_shell && opacity->recomb_is_emit) {
+        long n_elig = 0, pairs_emit = 0, pairs_spot = 0;
+        for (int k = 0; k < opacity->n_recomb; k++) {
+            if (!opacity->recomb_is_emit[k]) continue;
+            n_elig++;
+            for (int s = 0; s < n_shells; s++) {
+                if (opacity->recomb_emit_shell[(size_t)k * n_shells + s])
+                    pairs_emit++;
+                else
+                    pairs_spot++;
+            }
+        }
+        printf("  [MA-RADRECOMB tau-gate] thresh=%.3g: %ld eligible entries x %d "
+               "shells => %ld (shell,entry) EMIT (edge thin) / %ld on-the-spot "
+               "(edge thick, INTERNALDOWNLOWER)\n",
+               rr_tau_thresh, n_elig, n_shells, pairs_emit, pairs_spot);
+    }
+
+    /* [MA-RADRECOMB tau-gate] one-time verification banner: for the ground edge of
+     * a few reference destination ions (S II, Fe III, Ni III) print the exact
+     * tau_bf ingredients (sigma_edge, n_dest, dr, tau) at shell 8, reproducing the
+     * per-shell classifier so the numbers can be checked against the CMFGEN edge
+     * opacity (S II ground ~thick). Serial, first call only. */
+    if (opacity->recomb_emit_shell && opacity->recomb_is_emit &&
+        opacity->recomb_sigma_edge) {
+        static int rr_tau_dbg_done = 0;
+        if (!rr_tau_dbg_done) {
+            rr_tau_dbg_done = 1;
+            int sdbg = (n_shells > 8) ? 8 : (n_shells - 1);
+            double dr8 = geom ? (geom->r_outer[sdbg] - geom->r_inner[sdbg]) : 0.0;
+            double Te8 = plasma ? plasma->T_e[sdbg] : 0.0;
+            struct { int Z, ion; const char *name; } tgt[3] = {
+                {16, 1, "S II  ground"}, {26, 2, "Fe III ground"},
+                {28, 2, "Ni III ground"} };
+            for (int t = 0; t < 3; t++) {
+                int kbest = -1; double ebest = 0.0;
+                for (int k = 0; k < opacity->n_recomb; k++) {
+                    if (!opacity->recomb_is_emit[k]) continue;
+                    int jj = opacity->recomb_dest_level[k];
+                    if (atom->level_Z[jj] != tgt[t].Z ||
+                        atom->level_ion[jj] != tgt[t].ion) continue;
+                    if (kbest < 0 || atom->level_energy_eV[jj] < ebest) {
+                        kbest = k; ebest = atom->level_energy_eV[jj];
+                    }
+                }
+                if (kbest < 0) {
+                    printf("  [MA-RADRECOMB tau-gate] sample s=%d %s: no is_emit "
+                           "recomb entry\n", sdbg, tgt[t].name);
+                    continue;
+                }
+                int j = opacity->recomb_dest_level[kbest];
+                int ip_lo = find_ion_pop_idx(atom, atom->level_Z[j],
+                                             atom->level_ion[j]);
+                double se = opacity->recomb_sigma_edge[kbest];
+                double n_j = 0.0; const char *nsrc = "NLTE";
+                if (nlte && nlte->nlte_level_populations &&
+                    nlte->global_to_nlte_level) {
+                    int gnl = nlte->global_to_nlte_level[j];
+                    if (gnl >= 0)
+                        n_j = nlte->nlte_level_populations[
+                                  (size_t)gnl * n_shells + sdbg];
+                }
+                if (!(n_j > 0.0) && ip_lo >= 0 && atom->ion_number_density &&
+                    atom->partition_functions && Te8 > 0.0) {
+                    double Zp = atom->partition_functions[
+                                    (size_t)ip_lo * n_shells + sdbg];
+                    double ni = atom->ion_number_density[
+                                    (size_t)ip_lo * n_shells + sdbg];
+                    if (Zp > 0.0 && ni > 0.0) {
+                        double x = atom->level_energy_eV[j] * EV_TO_ERG
+                                   / (K_BOLTZMANN * Te8);
+                        if (x < 500.0)
+                            n_j = ni * (double)atom->level_g[j] * exp(-x) / Zp;
+                    }
+                    nsrc = "Boltz";
+                }
+                double tau = se * n_j * dr8;
+                printf("  [MA-RADRECOMB tau-gate] sample s=%d %s (glev %d, E=%.3f eV): "
+                       "sigma_edge=%.3e cm2  n_dest=%.3e cm-3 (%s)  dr=%.3e cm  "
+                       "tau=%.3e -> %s\n",
+                       sdbg, tgt[t].name, j, atom->level_energy_eV[j], se, n_j, nsrc,
+                       dr8, tau, (tau <= rr_tau_thresh) ? "EMIT" : "on-the-spot");
+            }
+        }
+    }
 
     if (kpacket_mode) {
         /* Diagnostic: mean k-packet deactivation prob at inner/outer shell. */
@@ -2358,6 +5564,148 @@ void compute_transition_probabilities(AtomicData *atom, PlasmaState *plasma,
         }
         printf("  [KPACKET] mean p_kpacket: shell0=%.3e (%ld lev>0)  shell%d=%.3e (%ld lev>0)\n",
                n0 ? pk0 / n0 : 0.0, n0, sN, nN ? pkN / nN : 0.0, nN);
+    }
+
+    /* [MA-LINE-DESTRUCT] verification banner (serial, first call only): for the
+     * deepest representative Co III / Fe III / Ni III UV resonance line at shell 8,
+     * print the exact eps = C_ul/(C_ul + A_ul*beta) ingredients (tau, beta, A_ul,
+     * C_ul, eps) plus the per-ion mean eps over all that ion's UV lines at that shell
+     * (the rate-level, ion-resolved destruction fraction — DIAGNOSTIC ONLY, the
+     * shipped physics is uniform over all lines/shells/ions). Prints only when the
+     * gate is armed (ma_line_eps != NULL). Confirms deep tau>>1 lines are
+     * destruction-dominated (eps -> 1). */
+    if (opacity->ma_line_eps) {
+        static int mald_dbg_done = 0;
+        if (!mald_dbg_done) {
+            mald_dbg_done = 1;
+            int sdbg = (n_shells > 8) ? 8 : (n_shells - 1);
+            double Te8 = plasma ? plasma->T_e[sdbg] : 0.0;
+            double ne8 = (plasma && plasma->n_electron) ? plasma->n_electron[sdbg]
+                         : (opacity->electron_density ? opacity->electron_density[sdbg] : 0.0);
+            double is_te8 = (Te8 > 0.0) ? 1.0 / sqrt(Te8) : 0.0;
+            struct { int Z, ion; const char *name; } tgt[3] = {
+                {27, 2, "Co III"}, {26, 2, "Fe III"}, {28, 2, "Ni III"} };
+            printf("  [MA-LINE-DESTRUCT] ARMED eps=C_ul/(C_ul+A_ul*beta) destroyed "
+                   "photon -> k-packet thermal pool (uniform all lines/shells/ions). "
+                   "Sample s=%d T_e=%.0fK n_e=%.3e:\n", sdbg, Te8, ne8);
+            for (int t = 0; t < 3; t++) {
+                double eps_sum = 0.0, b_tau = -1.0, b_eps = 0.0, b_beta = 0.0;
+                double b_A = 0.0, b_C = 0.0, b_lam = 0.0;
+                long eps_n = 0;
+                for (int l = 0; l < atom->n_lines; l++) {
+                    if (atom->line_atomic_number[l] != tgt[t].Z ||
+                        atom->line_ion_number[l] != tgt[t].ion) continue;
+                    double lam = 2.99792458e18 / atom->line_nu[l];
+                    if (lam < 1000.0 || lam > 3200.0) continue;   /* UV window */
+                    if (kp_glo[l] < 0 || kp_gup[l] < 0) continue;
+                    double tau  = opacity->tau_sobolev[(size_t)l * n_shells + sdbg];
+                    double beta = beta_sobolev(tau);
+                    double g_up = (double)atom->level_g[kp_gup[l]];
+                    double g_lo = (double)atom->level_g[kp_glo[l]];
+                    double f_lu = atom->line_f_lu[l];
+                    double dE   = H_PLANCK * atom->line_nu[l];
+                    double C_down;
+                    if (artis_parity_enabled()) {
+                        double cu, cd; int forb = (f_lu <= 1e-10);
+                        /* [MA-REAL-UPSILON] mirror the shipped substitution so this
+                         * diagnostic eps reflects the eps the lottery actually uses. */
+                        double cs_m = forb ? -2.0 : -1.0;
+                        if (ma_real_ups && ma_ru_line_src[l] >= 0) {
+                            double ups = ma_ru_upsilon(&ma_ru_src_reg[ma_ru_line_src[l]],
+                                                       ma_ru_line_t[l], Te8);
+                            if (ups > 0.0) cs_m = ups;
+                        }
+                        artis_col_rates(Te8, ne8, dE, g_lo, g_up, f_lu,
+                                        cs_m, forb, &cu, &cd);
+                        C_down = cd;
+                    } else {
+                        C_down = (f_lu > 1e-10)
+                            ? VAN_REG_COEFF * ne8 * f_lu * 0.2 * is_te8 / g_up
+                            : 8.63e-6 * ne8 * AX_OMEGA * is_te8 / g_up;
+                    }
+                    double rad = atom->line_A_ul[l] * beta;
+                    double eps = (C_down + rad > 0.0) ? C_down / (C_down + rad) : 0.0;
+                    eps_sum += eps; eps_n++;
+                    if (tau > b_tau) {
+                        b_tau = tau; b_eps = eps; b_beta = beta;
+                        b_A = atom->line_A_ul[l]; b_C = C_down; b_lam = lam;
+                    }
+                }
+                if (eps_n == 0) {
+                    printf("    %s: no collisionally-mapped UV line at s=%d\n",
+                           tgt[t].name, sdbg);
+                    continue;
+                }
+                printf("    %s deepest-UV %.1fA: tau=%.3e beta=%.3e A_ul=%.3e "
+                       "C_ul=%.3e -> eps=%.4f | ion-mean eps(UV)=%.4f over %ld lines\n",
+                       tgt[t].name, b_lam, b_tau, b_beta, b_A, b_C, b_eps,
+                       eps_sum / eps_n, eps_n);
+            }
+        }
+    }
+    /* [MA-REAL-UPSILON] (Fix-P1) T3 verification banner (serial, first call): the
+     * global real-table hit/fallback census (fail-loud) + for three representative
+     * covered transitions (Fe III thick EUV forbidden, Co III thick, Fe III allowed)
+     * the C_ul(vR) vs C_ul(realUpsilon) and eps_before/after at a sample shell, so
+     * the drain change is directly auditable. Prints only when the gate is armed. */
+    if (ma_real_ups) {
+        static int maru_dbg_done = 0;
+        if (!maru_dbg_done) {
+            maru_dbg_done = 1;
+            int sdbg = (n_shells > 8) ? 8 : (n_shells - 1);
+            double Te = plasma ? plasma->T_e[sdbg] : 0.0;
+            double ne = (plasma && plasma->n_electron) ? plasma->n_electron[sdbg]
+                        : (opacity->electron_density ? opacity->electron_density[sdbg] : 0.0);
+            printf("  [MA-REAL-UPSILON] census: %ld lines hit real Omega, %ld covered-ion "
+                   "fallback (vR); %d ion tables. Sample s=%d T_e=%.0fK n_e=%.3e:\n",
+                   ma_ru_nhit, ma_ru_nfall, ma_ru_nsrc, sdbg, Te, ne);
+            if (ma_ru_nhit == 0)
+                fprintf(stderr, "  [MA-REAL-UPSILON][WARN] 0 real-table hits at banner — "
+                                "verify LUMINA_ARTIS_PARITY=1 and loaded col tables\n");
+            struct { int Z, ion, mode; const char *name; } cat[3] = {
+                {26, 2, 0, "Fe III forbid"},   /* mode 0: f_lu<=1e-10 (thick EUV) */
+                {27, 2, 1, "Co III thick"},    /* mode 1: any covered, deepest tau */
+                {26, 2, 2, "Fe III allowed"} };/* mode 2: f_lu>0.01 */
+            for (int c = 0; c < 3; c++) {
+                int bl = -1; double btau = -1.0;
+                for (int l = 0; l < atom->n_lines; l++) {
+                    if (atom->line_atomic_number[l] != cat[c].Z ||
+                        atom->line_ion_number[l] != cat[c].ion) continue;
+                    if (ma_ru_line_src[l] < 0) continue;   /* real-covered only */
+                    if (!kp_glo || !kp_gup || kp_glo[l] < 0 || kp_gup[l] < 0) continue;
+                    double f = atom->line_f_lu[l];
+                    if (cat[c].mode == 0 && !(f <= 1e-10)) continue;
+                    if (cat[c].mode == 2 && !(f > 0.01)) continue;
+                    double tau = opacity->tau_sobolev[(size_t)l * n_shells + sdbg];
+                    if (tau > btau) { btau = tau; bl = l; }
+                }
+                if (bl < 0) {
+                    printf("    %-14s: no real-covered line matched\n", cat[c].name);
+                    continue;
+                }
+                double f = atom->line_f_lu[bl];
+                int forb = (f <= 1e-10);
+                double g_up = (double)atom->level_g[kp_gup[bl]];
+                double g_lo = (double)atom->level_g[kp_glo[bl]];
+                double dE  = H_PLANCK * atom->line_nu[bl];
+                double lam = 2.99792458e18 / atom->line_nu[bl];
+                double beta = beta_sobolev(btau);
+                double A = atom->line_A_ul[bl];
+                double cu_v, cd_v, cu_r, cd_r;
+                artis_col_rates(Te, ne, dE, g_lo, g_up, f, forb ? -2.0 : -1.0, forb,
+                                &cu_v, &cd_v);
+                double ups = ma_ru_upsilon(&ma_ru_src_reg[ma_ru_line_src[bl]],
+                                           ma_ru_line_t[bl], Te);
+                artis_col_rates(Te, ne, dE, g_lo, g_up, f, ups, forb, &cu_r, &cd_r);
+                double rad = A * beta;
+                double eps_b = (cd_v + rad > 0.0) ? cd_v / (cd_v + rad) : 0.0;
+                double eps_a = (cd_r + rad > 0.0) ? cd_r / (cd_r + rad) : 0.0;
+                printf("    %-14s %7.1fA f=%.2e tau=%.2e beta=%.2e Ups=%.3g | "
+                       "C_ul vR=%.3e real=%.3e (x%.1f) | eps %.4f -> %.4f\n",
+                       cat[c].name, lam, f, btau, beta, ups, cd_v, cd_r,
+                       (cd_v > 0.0 ? cd_r / cd_v : 0.0), eps_b, eps_a);
+            }
+        }
     }
     /* [FB-MULTI] diagnostic record: per shell, the index j of the Si II edge
      * (Z=14, stage 2->1 => zstage code 1402) in the per-continuum table, and its
@@ -2381,7 +5729,8 @@ void compute_transition_probabilities(AtomicData *atom, PlasmaState *plasma,
     }
     printf("  [TransProb] Recomputed %d transitions x %d shells (damping=%s, J_src=%s, j_cap=%.2g, j_floor=%.2g, W1=%.2g W2=%.2g W3=%.2g W4=%.2g[%g-%g] uv_idown=%.2g[<%.0fÅ])\n",
            n_trans, n_shells, apply_damping ? "on" : "off",
-           use_j_nu ? "MC_histogram" : "W*Bnu", j_cap_factor, j_floor_factor,
+           use_j_nu ? "MC_histogram" : "W*Bnu",
+           j_cap_effective, j_floor_effective,
            uvopt_emit_boost, uvopt_emit_boost2, uvopt_emit_boost3,
            uvopt_emit_boost4, uvopt_lam_min4, uvopt_lam_max4,
            macro_uv_idown_factor, macro_uv_idown_thresh);
@@ -2702,45 +6051,9 @@ static int frozenin_active(void) {
     return (e && e[0] == '1');
 }
 
-/* [ALPHA-SPINGATE] Ground-term spin multiplicity (2S+1) of the RECOMBINING ion
- * (Z, charge) from NIST ground terms. Used as the M_core fallback when the
- * CMFGEN companion table lacks the recombining ion's ground level -- notably
- * Fe/Co/Ni IV are NOT in cmfgen_config_lumina.yml, so their M_core (6, 5, 4)
- * can only come from here. Returns 0 if not tabulated => that ion is not gated.
- * The recombination X+1(ground, S_core) + e(1/2) forms daughter terms with
- * multiplicity in {M_core-1, M_core+1}; everything else is spin-forbidden. */
-static int spingate_core_mult(int Z, int charge) {
-    switch (Z) {
-    case 14: /* Si */ switch (charge) {
-        case 0: return 3;  /* Si I   3p2 3P */   case 1: return 2;  /* Si II  3p 2P */
-        case 2: return 1;  /* Si III 3s2 1S */   case 3: return 2;  /* Si IV  3s 2S */
-        default: return 0; }
-    case 16: /* S */  switch (charge) {
-        case 0: return 3;  /* S I    3p4 3P */   case 1: return 4;  /* S II   3p3 4S */
-        case 2: return 3;  /* S III  3p2 3P */   case 3: return 2;  /* S IV   3p 2P */
-        default: return 0; }
-    case 20: /* Ca */ switch (charge) {
-        case 0: return 1;  /* Ca I   4s2 1S */   case 1: return 2;  /* Ca II  4s 2S */
-        case 2: return 1;  /* Ca III 3p6 1S */   case 3: return 2;  /* Ca IV  3p5 2P */
-        default: return 0; }
-    case 26: /* Fe */ switch (charge) {
-        case 0: return 5;  /* Fe I   3d6 4s2 5D */ case 1: return 6;  /* Fe II  3d6 4s a6D */
-        case 2: return 5;  /* Fe III 3d6 5D */     case 3: return 6;  /* Fe IV  3d5 6S */
-        case 4: return 5;  /* Fe V   3d4 5D */     case 5: return 4;  /* Fe VI  3d3 4F */
-        default: return 0; }
-    case 27: /* Co */ switch (charge) {
-        case 0: return 4;  /* Co I   3d7 4s2 a4F */ case 1: return 3;  /* Co II  3d8 a3F */
-        case 2: return 4;  /* Co III 3d7 a4F */     case 3: return 5;  /* Co IV  3d6 5D */
-        case 4: return 6;  /* Co V   3d5 6S */
-        default: return 0; }
-    case 28: /* Ni */ switch (charge) {
-        case 0: return 3;  /* Ni I   3d8 4s2 3F */ case 1: return 2;  /* Ni II  3d9 2D */
-        case 2: return 3;  /* Ni III 3d8 3F */     case 3: return 4;  /* Ni IV  3d7 4F */
-        case 4: return 5;  /* Ni V   3d6 5D */
-        default: return 0; }
-    default: return 0;
-    }
-}
+/* [ALPHA-SPINGATE] spingate_core_mult() was MOVED UP (see the shared-helper
+ * block above recomb_alpha_per_level) so the S3/S1/S2 recombination sites can
+ * reuse it; the body is unchanged.  [withParityY Y4] */
 
 /* Milne radiative-recombination coefficient [cm^3/s] producing ion-pop `ip`
  * (charge stage k) by recombination from stage k+1. `ip_next` (charge k+1)
@@ -2769,9 +6082,25 @@ static double frozenin_alpha_rr(AtomicData *atom, int ip, int ip_next, double T)
             if (x < 50.0) u += (double)atom->level_g[l] * exp(-x);
         }
         if (u >= 1.0) U_ion = u;
-        else {
+        else if (n1 > n0) {
             int gg = atom->level_g[n0];
             U_ion = (gg >= 1) ? (double)gg : 1.0;
+        } else {
+            /* [RATES-FIX F2] upper ion carries NO levels (n1==n0): the old
+             * fallback read level_g[n0], which is the ground g of the NEXT
+             * element (and is out of bounds for the last ion pop) -- a stray
+             * g that scaled alpha by 1/g. U_ion=1.0 is the recipe the
+             * reference partition function (ioniz_selftest_U) already uses.
+             * Counted unconditionally; reported at exit when the gate is on. */
+#ifdef _OPENMP
+            #pragma omp atomic
+#endif
+            g_rates_fix_n_emptyU++;
+            if (rates_fix_enabled()) U_ion = 1.0;
+            else {                      /* pre-fix path: the stray read */
+                int gg = atom->level_g[n0];
+                U_ion = (gg >= 1) ? (double)gg : 1.0;
+            }
         }
     }
     double lam3 = pow(H_PLANCK * H_PLANCK /
@@ -2799,37 +6128,30 @@ static double frozenin_alpha_rr(AtomicData *atom, int ip, int ip_next, double T)
     }
     int M_core = 0;                     /* 0 => this ion is not gated */
     const char *mcore_src = "none";
-    if (alpha_spingate) {
-        if (atom->level_mult && ip_next >= 0) {
-            int gnd = atom->level_offset[ip_next];   /* level_num==0 = ground */
-            if (gnd < atom->level_offset[ip_next + 1] &&
-                atom->level_mult[gnd] > 0) {
-                M_core = atom->level_mult[gnd];
-                mcore_src = "data";
-            }
-        }
-        if (M_core == 0) {
-            M_core = spingate_core_mult(Z, stage + 1);
-            if (M_core > 0) mcore_src = "table";
-        }
-    }
+    /* [withParityY Y4] the resolution below was PROMOTED to
+     * spingate_resolve_core_mult(); the logic is line-for-line the same
+     * (data from level_mult of the recombining ion's ground level, else the
+     * NIST table), so this call is behaviour-preserving. */
+    if (alpha_spingate)
+        M_core = spingate_resolve_core_mult(atom, ip_next, Z, stage + 1,
+                                            &mcore_src);
     /* one-time detailed diagnostic for Fe III (Z=26 stage=2) */
     static int spingate_diag_done = 0;
     int want_diag = (alpha_spingate && !spingate_diag_done &&
                      Z == 26 && stage == 2 && M_core > 0);
     double a_full_diag = 0.0; int n_lev_diag = 0, n_skip_diag = 0;
 
+    const int rfix_alpha = rates_fix_enabled();   /* [RATES-FIX F3] */
     int g0 = atom->level_offset[ip];
     int g1 = atom->level_offset[ip + 1];
     double a_tot = 0.0;
     for (int gl = g0; gl < g1; gl++) {
         if (!atom->cmfgen_has_sigma[gl]) continue;
-        /* spin-selection skip: multiplicity known and not M_core +/- 1 */
-        int spin_skip = 0;
-        if (alpha_spingate && M_core > 0 && atom->level_mult) {
-            int Ml = atom->level_mult[gl];
-            if (Ml > 0 && Ml != M_core - 1 && Ml != M_core + 1) spin_skip = 1;
-        }
+        /* spin-selection skip: multiplicity known and not M_core +/- 1
+         * [withParityY Y4] promoted to spingate_level_forbidden(); identical
+         * predicate (the M_core>0 / level_mult!=NULL guards live inside it). */
+        int spin_skip = alpha_spingate
+                        ? spingate_level_forbidden(atom, gl, M_core) : 0;
         if (spin_skip && !want_diag) continue;   /* fast path: skip the integral */
         double E_l_erg = atom->level_energy_eV[gl] * EV_TO_ERG;
         double chi_l = chi_ion_erg - E_l_erg;       /* binding energy of level l */
@@ -2844,22 +6166,48 @@ static double frozenin_alpha_rr(AtomicData *atom, int ip, int ip_next, double T)
             double sig = sigma_row[bb];
             if (sig <= 0.0) continue;
             double x = H_PLANCK * nu_c / (K_BOLTZMANN * T);
-            if (x > 700.0) continue;
+            double B;
+            if (rfix_alpha) {
+                /* [RATES-FIX F3] FUSE the exp(+chi_l/kT) Milne factor into the
+                 * integrand: exp(chi_l/kT)/expm1(x) == exp(-(h nu - chi_l)/kT) /
+                 * (-expm1(-x)), which is O(1) above threshold. The old form
+                 * skipped x>700 (=> Rbf==0) and then multiplied by
+                 * exp(chi_l/kT)==inf: 0 x inf = NaN below T ~ chi_l/(700 k),
+                 * and even where finite the skip discarded the dominant
+                 * near-threshold low-T contribution. */
+                double y = (H_PLANCK * nu_c - chi_l) / (K_BOLTZMANN * T);
+                B = (2.0 * H_PLANCK * nu_c * nu_c * nu_c /
+                     (C_SPEED_OF_LIGHT * C_SPEED_OF_LIGHT)) *
+                    (exp(-y) / (-expm1(-x)));
+            } else {
+                if (x > 700.0) continue;
+                B = (2.0 * H_PLANCK * nu_c * nu_c * nu_c /
+                     (C_SPEED_OF_LIGHT * C_SPEED_OF_LIGHT)) / expm1(x);
+            }
             double dnu = exp(log_nu_lo + d_log_nu) - exp(log_nu_lo);
-            double B = (2.0 * H_PLANCK * nu_c * nu_c * nu_c /
-                        (C_SPEED_OF_LIGHT * C_SPEED_OF_LIGHT)) / expm1(x);
             Rbf += 4.0 * M_PI_VAL * B * sig / (H_PLANCK * nu_c) * dnu;
         }
-        double a_l = Rbf * lam3 * (double)atom->level_g[gl] / (2.0 * U_ion)
-                 * exp(chi_l / (K_BOLTZMANN * T));
+        double a_l = rfix_alpha
+                 ? Rbf * lam3 * (double)atom->level_g[gl] / (2.0 * U_ion)
+                 : Rbf * lam3 * (double)atom->level_g[gl] / (2.0 * U_ion)
+                       * exp(chi_l / (K_BOLTZMANN * T));
         if (want_diag) { a_full_diag += a_l; n_lev_diag++; if (spin_skip) n_skip_diag++; }
         if (!spin_skip) a_tot += a_l;
     }
     if (want_diag) {
         double ratio = (a_full_diag > 0.0) ? a_tot / a_full_diag : 0.0;
+        /* [withParityY Y5] TRUTH FIX (unconditional, banner text only).  The
+         * ratio is a ONE-SHOT diagnostic: it is evaluated at whatever T the
+         * FIRST call into this routine happened to carry, and that caller is
+         * NOT guaranteed to be a shell.  In production the T_e bisection's cold
+         * bracket probe (Tlo = 3500 K, the simul_r1 bracket) gets here first, so
+         * the historical "= 0.09" was the 3500 K ratio and not the 0.108-0.113
+         * that real shell temperatures give.  The printed line stated no
+         * temperature at all, so the two were indistinguishable.  T is now
+         * printed and the line is self-verifying; nothing else changes. */
         printf("[ALPHA-SPINGATE] Fe III: alpha_gated/alpha_full = %.2f "
-               "(skipped %d of %d levels, M_core=%d [%s])\n",
-               ratio, n_skip_diag, n_lev_diag, M_core, mcore_src);
+               "at T=%.0fK (skipped %d of %d levels, M_core=%d [%s])\n",
+               ratio, T, n_skip_diag, n_lev_diag, M_core, mcore_src);
         spingate_diag_done = 1;
     }
     /* + dielectronic recombination (LUMINA_FROZENIN_DR=1): the U_II-corrected
@@ -2877,6 +6225,21 @@ static double frozenin_alpha_rr(AtomicData *atom, int ip, int ip_next, double T)
         if (coef) a_tot += dr_alpha_eval(coef, T);
     }
     return a_tot;
+}
+
+/* [RATES-FIX F3] direct probe of the PRODUCTION Milne integral for the
+ * ionization self-test harness (low-T NaN test). Same (ip, ip+1) pairing the
+ * simul ladder uses. Returns the raw value -- NaN/Inf are NOT sanitized, that
+ * is the point of the test. -1.0 = (Z,stage) absent from the ion-pop table. */
+double lumina_rates_alpha_probe(AtomicData *atom, int Z, int stage, double T) {
+    int ip = -1;
+    for (int i = 0; i < atom->n_ion_pops; i++)
+        if (atom->ion_pop_Z[i] == Z && atom->ion_pop_stage[i] == stage) {
+            ip = i; break;
+        }
+    if (ip < 0) return -1.0;
+    int ip_next = (ip + 1 < atom->n_ion_pops) ? ip + 1 : -1;
+    return frozenin_alpha_rr(atom, ip, ip_next, T);
 }
 
 /* dy/dt for the homologous recombination cascade (fraction space). State y is
@@ -3150,7 +6513,8 @@ static void apply_frozenin_freezeout(AtomicData *atom, PlasmaState *plasma,
                 int stage = atom->ion_pop_stage[ip];
                 double n_ion = (stage >= 0 && stage < MS)
                                ? y[e * MS + stage] * n_elem0[e] : 0.0;
-                if (!(n_ion > 1e-300)) n_ion = 1e-300;  /* NaN-catching */
+                if (lumina_zinert_element_inactive(atom, e, n_shells)) n_ion = 0.0;
+                else if (!(n_ion > 1e-300)) n_ion = 1e-300;  /* NaN-catching */
                 atom->ion_number_density[ip * n_shells + s] = n_ion;
             }
         }
@@ -3167,9 +6531,66 @@ static void apply_frozenin_freezeout(AtomicData *atom, PlasmaState *plasma,
 }
 
 /* Task #072 Step 4e: Master plasma state update */
+void tau_sobolev_require_refresh(OpacityState *opacity, const char *reason) {
+    if (!opacity) return;
+    if (opacity->tau_required_generation == UINT64_MAX) {
+        fprintf(stderr, "[K-FRESH][FATAL] tau generation overflow before %s\n",
+                reason ? reason : "refresh");
+        abort();
+    }
+    opacity->tau_required_generation++;
+}
+
+void tau_sobolev_mark_computed(OpacityState *opacity, const char *producer) {
+    if (!opacity || !opacity->tau_sobolev ||
+        opacity->tau_required_generation == 0) {
+        fprintf(stderr, "[K-FRESH][FATAL] invalid tau producer state at %s\n",
+                producer ? producer : "unknown producer");
+        abort();
+    }
+    opacity->tau_computed_generation = opacity->tau_required_generation;
+}
+
+int tau_sobolev_assert_fresh(OpacityState *opacity, const char *consumer) {
+    if (!opacity || !opacity->tau_sobolev ||
+        opacity->tau_computed_generation == 0 ||
+        opacity->tau_computed_generation < opacity->tau_required_generation) {
+        fprintf(stderr,
+                "[K-FRESH][FATAL] stale tau blocked before %s "
+                "(computed_generation=%llu required_generation=%llu)\n",
+                consumer ? consumer : "unknown consumer",
+                (unsigned long long)(opacity ? opacity->tau_computed_generation : 0),
+                (unsigned long long)(opacity ? opacity->tau_required_generation : 0));
+        return -1;
+    }
+    if (opacity->tau_first_consumer_generation == 0) {
+        opacity->tau_first_consumer_generation = opacity->tau_computed_generation;
+        printf("[K-FRESH] first consumer=%s computed_generation=%llu "
+               "required_generation=%llu owner=solver\n",
+               consumer ? consumer : "unknown",
+               (unsigned long long)opacity->tau_computed_generation,
+               (unsigned long long)opacity->tau_required_generation);
+    }
+    return 0;
+}
+
+int lumina_prepare_solver_owned_tau(AtomicData *atom, PlasmaState *plasma,
+                                    OpacityState *opacity,
+                                    double time_explosion,
+                                    const char *first_consumer) {
+    if (!atom || !plasma || !opacity || !opacity->tau_sobolev) {
+        fprintf(stderr, "[K-FRESH][FATAL] cannot prepare solver-owned tau\n");
+        return -1;
+    }
+    compute_plasma_state(atom, plasma, opacity, time_explosion);
+    return tau_sobolev_assert_fresh(opacity, first_consumer);
+}
+
 void compute_plasma_state(AtomicData *atom, PlasmaState *plasma,
                           OpacityState *opacity, double time_explosion) {
     int n_shells = plasma->n_shells;
+
+    tau_sobolev_require_refresh(opacity, "compute_plasma_state");
 
     printf("  [Plasma] Computing partition functions...\n");
     compute_partition_functions(atom, plasma, n_shells);
@@ -3225,6 +6646,12 @@ void compute_plasma_state(AtomicData *atom, PlasmaState *plasma,
         printf("  [Plasma] Applying line overlap corrections...\n");
         apply_overlap_corrections(atom, opacity, plasma);
     }
+
+    if (zinert_audit_enabled())
+        (void)lumina_zinert_validate(atom, NULL, opacity, n_shells,
+                                     "pre-transport");
+
+    tau_sobolev_mark_computed(opacity, "compute_plasma_state");
 
     /* Print tau stats for key lines */
     int n_lines = opacity->n_lines;
@@ -3347,7 +6774,62 @@ void compute_plasma_state(AtomicData *atom, PlasmaState *plasma,
 /* Kramers cross-section grid: chi_bf[shell][freq_bin]         */
 /* ============================================================ */
 
+/* Wave-1 bf repair gates. These accessors are deliberately side-effect-free:
+ * an unset/zero LUMINA_FIX_* variable leaves every legacy branch and banner
+ * untouched. CUDA bf helpers call the shared accessors so a producer cannot
+ * silently use a different neutral/multi-edge policy from the CPU path. */
+int lumina_fix_bf_stim_recomb_enabled(void) {
+    static int on = -1;
+    if (on < 0) {
+        const char *e = getenv("LUMINA_FIX_BF_STIM_RECOMB");
+        on = (e && atoi(e)) ? 1 : 0;
+    }
+    return on;
+}
+
+int lumina_fix_bf_neutral_enabled(void) {
+    static int on = -1;
+    if (on < 0) {
+        const char *e = getenv("LUMINA_FIX_BF_NEUTRAL");
+        on = (e && atoi(e)) ? 1 : 0;
+    }
+    return on;
+}
+
+int lumina_fix_bf_multi_edge_enabled(void) {
+    static int on = -1;
+    if (on < 0) {
+        const char *e_fix = getenv("LUMINA_FIX_BF_MULTI_EDGE");
+        const char *e_old = getenv("LUMINA_KPKT_FB_MULTI");
+        /* An explicit setting of the canonical gate is authoritative, including
+         * explicit OFF. The legacy spelling is consulted only when the canonical
+         * variable is absent, so an alias can never override user intent. */
+        on = e_fix ? (atoi(e_fix) != 0)
+                   : (e_old && atoi(e_old) != 0);
+    }
+    return on;
+}
+
+int lumina_fix_bf_continuum_event_enabled(void) {
+    static int on = -1;
+    if (on < 0) {
+        const char *e = getenv("LUMINA_FIX_BF_CONTINUUM_EVENT");
+        on = (e && atoi(e)) ? 1 : 0;
+    }
+    return on;
+}
+
+static int lumina_fix_bf_eta_spingate_enabled(void) {
+    static int on = -1;
+    if (on < 0) {
+        const char *e = getenv("LUMINA_FIX_BF_ETA_SPINGATE");
+        on = (e && atoi(e)) ? 1 : 0;
+    }
+    return on;
+}
+
 void bf_opacity_init(BFOpacity *bf, int n_shells) {
+    memset(bf, 0, sizeof(*bf));
     bf->enabled = 1;
     bf->n_freq_bins = NLTE_N_FREQ_BINS;
     bf->n_shells = n_shells;
@@ -3364,6 +6846,19 @@ void bf_opacity_free(BFOpacity *bf) {
     free(bf->chi_bf);
     free(bf->eta_bf);
     free(bf->activation_level);
+    free(bf->event_level_offset);
+    free(bf->event_element);
+    free(bf->event_ion);
+    free(bf->event_level);
+    free(bf->event_target);
+    free(bf->event_target_fallback);
+    free(bf->event_has_sigma);
+    free(bf->event_nu_edge);
+    free(bf->event_sigma0);
+    free(bf->event_weight);
+    free(bf->event_stim_ratio);
+    free(bf->event_chi_bf);
+    free(bf->event_Te);
     memset(bf, 0, sizeof(*bf));
 }
 
@@ -3375,6 +6870,89 @@ int bf_get_activation_level(BFOpacity *bf, int shell, double nu) {
     int bin = (int)(log(nu / bf->nu_min) / bf->d_log_nu);
     if (bin < 0 || bin >= bf->n_freq_bins) return -1;
     return bf->activation_level[shell * bf->n_freq_bins + bin];
+}
+
+/* Evaluate one continuum route at the packet's actual event frequency. CMFGEN
+ * cross sections are stored as per-bin averages represented at log-grid bin
+ * centres, so interpolate those values in log(nu); analytic Kramers routes are
+ * evaluated directly at nu. */
+static double bf_event_route_contribution(const BFOpacity *bf, int shell,
+                                          int route, double nu) {
+    double w = bf->event_weight[(size_t)shell * bf->event_n_routes + route];
+    double edge = bf->event_nu_edge[route];
+    if (!(w > 0.0) || !(edge > 0.0) || nu < edge) return 0.0;
+
+    int l = bf->event_level[route];
+    double sigma = 0.0;
+    if (bf->event_sigma_bf && bf->event_has_sigma[route] && l >= 0) {
+        const double *row =
+            bf->event_sigma_bf + (size_t)l * bf->n_freq_bins;
+        double pos = log(nu / bf->nu_min) / bf->d_log_nu - 0.5;
+        if (pos <= 0.0) {
+            sigma = row[0];
+        } else if (pos >= (double)(bf->n_freq_bins - 1)) {
+            sigma = row[bf->n_freq_bins - 1];
+        } else {
+            int lo = (int)floor(pos);
+            double frac = pos - (double)lo;
+            sigma = row[lo] + frac * (row[lo + 1] - row[lo]);
+        }
+    } else {
+        double x = edge / nu;
+        sigma = bf->event_sigma0[route] * x * x * x;
+    }
+    if (!(sigma > 0.0)) return 0.0;
+
+    double corr = 1.0;
+    double ratio = bf->event_stim_ratio
+                 ? bf->event_stim_ratio[
+                       (size_t)shell * bf->event_n_routes + route]
+                 : -1.0;
+    if (ratio >= 0.0 && bf->event_Te && bf->event_Te[shell] > 0.0) {
+        const double ARTIS_H = 6.6260755e-27;
+        const double ARTIS_KB = 1.38064852e-16;
+        double stim = ratio * exp(-(ARTIS_H / ARTIS_KB) *
+                                  (nu - edge) / bf->event_Te[shell]);
+        corr = fmax(0.0, 1.0 - stim);
+    }
+    double contrib = w * sigma * corr;
+    return (contrib > 0.0) ? contrib : 0.0;
+}
+
+/* CPU mirror of the D-1 GPU route draw. Returns the selected route index and
+ * resolves its upper target/edge. Both the endpoint and cumulative sum are
+ * constructed at the packet's actual event nu_cmf (ARTIS rpkt.cc:371). */
+int bf_sample_continuum_event(BFOpacity *bf, int shell, double nu,
+                              RNG *rng, int *target, double *nu_edge) {
+    /* Once a bf event reaches this selector ARTIS consumes the continuum-CDF
+     * draw even if inconsistent input leaves no represented route. */
+    double u_cdf = rng_uniform(rng);
+    if (!bf || !bf->event_enabled || !bf->event_chi_bf ||
+        !bf->event_weight || bf->event_n_routes <= 0 ||
+        shell < 0 || shell >= bf->n_shells ||
+        nu < bf->nu_min || nu >= bf->nu_max)
+        return -1;
+
+    double total = 0.0;
+    for (int r = 0; r < bf->event_n_routes; r++)
+        total += bf_event_route_contribution(bf, shell, r, nu);
+    if (!(total > 0.0)) return -1;
+    double threshold = u_cdf * total;
+    double cumulative = 0.0;
+    int selected = -1, last_valid = -1;
+    for (int r = 0; r < bf->event_n_routes; r++) {
+        double contrib = bf_event_route_contribution(bf, shell, r, nu);
+        if (!(contrib > 0.0)) continue;
+        cumulative += contrib;
+        last_valid = r;
+        if (cumulative > threshold) { selected = r; break; }
+    }
+    if (selected < 0) selected = last_valid;
+    if (selected >= 0) {
+        *target = bf->event_target[selected];
+        *nu_edge = bf->event_nu_edge[selected];
+    }
+    return selected;
 }
 
 /* Interpolate chi_bf at arbitrary frequency (linear in log-nu grid) */
@@ -3389,6 +6967,23 @@ double bf_get_chi(BFOpacity *bf, int shell, double nu) {
     double chi0 = bf->chi_bf[shell * bf->n_freq_bins + bin];
     double chi1 = bf->chi_bf[shell * bf->n_freq_bins + bin + 1];
     return chi0 + frac * (chi1 - chi0);
+}
+
+/* D-1's bound-free-only endpoint. Legacy chi_bf also contains free-free;
+ * selecting this grid keeps ARTIS' bf and ff absorption channels distinct. */
+double bf_get_event_chi(BFOpacity *bf, int shell, double nu) {
+    if (!bf->event_enabled || !bf->event_chi_bf ||
+        nu < bf->nu_min || nu >= bf->nu_max) return 0.0;
+    double x = log(nu / bf->nu_min) / bf->d_log_nu;
+    int bin = (int)x;
+    if (bin < 0) return 0.0;
+    if (bin >= bf->n_freq_bins - 1)
+        return bf->event_chi_bf[(size_t)shell * bf->n_freq_bins +
+                                bf->n_freq_bins - 1];
+    double frac = x - (double)bin;
+    double c0 = bf->event_chi_bf[(size_t)shell * bf->n_freq_bins + bin];
+    double c1 = bf->event_chi_bf[(size_t)shell * bf->n_freq_bins + bin + 1];
+    return c0 + frac * (c1 - c0);
 }
 
 /* bf emissivity lookup (same grid/interpolation as bf_get_chi). */
@@ -3433,6 +7028,19 @@ double get_bf_sigma0(int Z, int stage) {
     }
 }
 
+/* Wave-3.2 R5/D3: exact Kramers edge prescription used by the legacy pair
+ * assembler.  Exported locally (element_wide.c declares it extern) so the EW
+ * fallback cannot drift from the authority lane again. */
+double nlte_bf_kramers_sigma0(int Z, int stage) {
+    double sigma_0 = get_bf_sigma0(Z, stage);
+    if (sigma_0 <= 0.0) {
+        int Z_eff = rates_fix_enabled() ? (stage + 1) : (Z - stage);
+        if (Z_eff < 1) Z_eff = 1;
+        sigma_0 = 7.91e-18 / ((double)Z_eff * (double)Z_eff);
+    }
+    return sigma_0;
+}
+
 /* [BF-NLTE-POPS] Fix A: active NLTEConfig registered for chi_bf level pops.
  * compute_bf_opacity takes no nlte arg and two of its callers (lumina_main.c,
  * lumina_cmfgen.c) are outside the editable set, so the CUDA driver registers
@@ -3444,6 +7052,86 @@ double get_bf_sigma0(int Z, int stage) {
 static NLTEConfig *g_bf_nlte_pops = NULL;
 void bf_set_nlte_pops(NLTEConfig *nlte) { g_bf_nlte_pops = nlte; }
 
+/* Build the static ARTIS allcont-style route identity once. The per-shell
+ * weights and stimulated-recombination ratios are refreshed by
+ * compute_bf_opacity on every call. Unmapped levels retain a route whose target
+ * is the represented upper-ion ground; if that is also unavailable target=-1
+ * makes the event fail closed to the thermal pool rather than inventing an MA
+ * level. */
+static void bf_event_build_routes(BFOpacity *bf, AtomicData *atom,
+                                  const int *ionized_ground, int n_shells) {
+    if (!bf->event_enabled || bf->event_level_offset) return;
+
+    int nlev = atom->n_levels;
+    int nroutes = 0;
+    bf->event_level_offset = (int *)malloc((size_t)(nlev + 1) * sizeof(int));
+    for (int l = 0; l < nlev; l++) {
+        bf->event_level_offset[l] = nroutes;
+        int nr = 0;
+        if (atom->ma_rr_loaded && atom->ma_rr_target_offset)
+            nr = atom->ma_rr_target_offset[l + 1] -
+                 atom->ma_rr_target_offset[l];
+        nroutes += (nr > 0) ? nr : 1;
+    }
+    bf->event_level_offset[nlev] = nroutes;
+    bf->event_n_levels = nlev;
+    bf->event_n_routes = nroutes;
+
+    bf->event_element = (int *)malloc((size_t)nroutes * sizeof(int));
+    bf->event_ion = (int *)malloc((size_t)nroutes * sizeof(int));
+    bf->event_level = (int *)malloc((size_t)nroutes * sizeof(int));
+    bf->event_target = (int *)malloc((size_t)nroutes * sizeof(int));
+    bf->event_target_fallback =
+        (int *)calloc((size_t)nroutes, sizeof(int));
+    bf->event_has_sigma = (int *)calloc((size_t)nroutes, sizeof(int));
+    bf->event_nu_edge = (double *)malloc((size_t)nroutes * sizeof(double));
+    bf->event_sigma0 = (double *)calloc((size_t)nroutes, sizeof(double));
+    bf->event_weight = (double *)calloc((size_t)n_shells * nroutes,
+                                        sizeof(double));
+    bf->event_stim_ratio = (double *)malloc((size_t)n_shells * nroutes *
+                                             sizeof(double));
+    bf->event_chi_bf = (double *)calloc((size_t)n_shells * bf->n_freq_bins,
+                                        sizeof(double));
+    bf->event_Te = (double *)malloc((size_t)n_shells * sizeof(double));
+    bf->event_sigma_bf = (atom->cmfgen_loaded &&
+                           atom->cmfgen_n_freq_bins == bf->n_freq_bins)
+                        ? atom->cmfgen_sigma_bf : NULL;
+    for (size_t i = 0; i < (size_t)n_shells * nroutes; i++)
+        bf->event_stim_ratio[i] = -1.0;
+
+    int ip = 0;
+    int fallback_routes = 0;
+    for (int l = 0; l < nlev; l++) {
+        while (ip + 1 < atom->n_ion_pops && l >= atom->level_offset[ip + 1])
+            ip++;
+        int rb = bf->event_level_offset[l];
+        int re = bf->event_level_offset[l + 1];
+        int csr_begin = 0, csr_count = 0;
+        if (atom->ma_rr_loaded && atom->ma_rr_target_offset) {
+            csr_begin = atom->ma_rr_target_offset[l];
+            csr_count = atom->ma_rr_target_offset[l + 1] - csr_begin;
+        }
+        int has_target_map = csr_count > 0 && atom->ma_rr_targets;
+        for (int r = rb; r < re; r++) {
+            int q = r - rb;
+            bf->event_element[r] = atom->level_Z[l];
+            bf->event_ion[r] = atom->level_ion[l];
+            bf->event_level[r] = l;
+            bf->event_target[r] = has_target_map
+                ? atom->ma_rr_targets[csr_begin + q]
+                : ionized_ground[ip];
+            bf->event_target_fallback[r] = has_target_map ? 0 : 1;
+            fallback_routes += bf->event_target_fallback[r];
+            bf->event_nu_edge[r] = -1.0;
+        }
+    }
+
+    printf("[FIX-BF-CONTINUUM-EVENT] route table: %d lower levels, "
+           "%d (element,ion,level,target) continua (%d phixs-mapped, "
+           "%d upper-ground fallback); event CDF + nu_edge/nu split armed\n",
+           nlev, nroutes, nroutes - fallback_routes, fallback_routes);
+}
+
 void compute_bf_opacity(BFOpacity *bf, AtomicData *atom, PlasmaState *plasma,
                          int n_shells) {
     if (!bf->enabled) return;
@@ -3453,6 +7141,19 @@ void compute_bf_opacity(BFOpacity *bf, AtomicData *atom, PlasmaState *plasma,
     memset(bf->chi_bf, 0, grid_size * sizeof(double));
     if (bf->eta_bf) memset(bf->eta_bf, 0, grid_size * sizeof(double));
     memset(bf->activation_level, -1, grid_size * sizeof(int));
+    bf->event_enabled = lumina_fix_bf_continuum_event_enabled();
+    if (bf->event_chi_bf)
+        memset(bf->event_chi_bf, 0, grid_size * sizeof(double));
+    if (bf->event_weight)
+        memset(bf->event_weight, 0,
+               (size_t)n_shells * bf->event_n_routes * sizeof(double));
+    if (bf->event_stim_ratio)
+        for (size_t i = 0;
+             i < (size_t)n_shells * bf->event_n_routes; i++)
+            bf->event_stim_ratio[i] = -1.0;
+    if (bf->event_Te && plasma->T_e)
+        memcpy(bf->event_Te, plasma->T_e,
+               (size_t)n_shells * sizeof(double));
 
     /* LUMINA_CMF_BF_MILNE=1: build the bf EMISSIVITY eta_bf alongside chi_bf.
      * Metastable levels (weight=1, trustworthy pops) get the NLTE bf source-
@@ -3483,6 +7184,30 @@ void compute_bf_opacity(BFOpacity *bf, AtomicData *atom, PlasmaState *plasma,
                                              bf_milne >= 2 ? "ALL levels"
                                                            : "meta-only departure"); }
 
+    const int bf_stim_recomb = lumina_fix_bf_stim_recomb_enabled();
+    const int bf_neutral = lumina_fix_bf_neutral_enabled();
+    const int bf_eta_spingate_fix = lumina_fix_bf_eta_spingate_enabled();
+    const int bf_eta_spingate = bf_eta_spingate_fix && rec_spingate_enabled();
+    {
+        static int stim_banner = 0, neutral_banner = 0, eta_spin_banner = 0;
+        if (bf_stim_recomb && !stim_banner) {
+            printf("[FIX-BF-STIM-RECOMB] chi_bf uses ARTIS rpkt.cc:733-765 "
+                   "net coefficient max(0,1-r*exp[-h(nu-nu_edge)/kT_e])\n");
+            stim_banner = 1;
+        }
+        if (bf_neutral && !neutral_banner) {
+            printf("[FIX-BF-NEUTRAL] neutral photoionization continua included "
+                   "(stage=0; e.g. O I -> O II)\n");
+            neutral_banner = 1;
+        }
+        if (bf_eta_spingate_fix && !eta_spin_banner) {
+            printf("[FIX-BF-ETA-SPINGATE] eta_bf Milne level emissivity %s "
+                   "LUMINA_REC_SPINGATE spin predicate\n",
+                   bf_eta_spingate ? "uses" : "requested but INERT without");
+            eta_spin_banner = 1;
+        }
+    }
+
     /* [BF-NLTE-POPS] Fix A: use the solved NLTE level populations for the bf
      * opacity population n_level (chi_bf = n_level * sigma), instead of the
      * dilute-Boltzmann-at-T_rad expression below. Excited-state continua are
@@ -3511,8 +7236,13 @@ void compute_bf_opacity(BFOpacity *bf, AtomicData *atom, PlasmaState *plasma,
 #ifdef LUMINA_HAS_CUDA_BF_GEMM
     /* Task #39: GPU GEMM path (TF32 tensor cores) when CMFGEN sigma_bf is
      * loaded and LUMINA_BF_GEMM=1. Fills chi_bf[s,f] = sum_l n_level[s,l] *
-     * sigma_bf[l,f] in a single batched GEMM, then jumps straight to free-free. */
-    if (atom->cmfgen_loaded && !bf_milne && getenv("LUMINA_BF_GEMM")) {
+     * sigma_bf[l,f] in a single batched GEMM, then jumps straight to free-free.
+     * D-3 corrfactor is level+frequency dependent and cannot be represented by
+     * this unmodified GEMM, so its repair gate deliberately selects the exact
+     * CPU summation. Gate OFF preserves the original GEMM selection byte-for-byte. */
+    if (atom->cmfgen_loaded && !bf_milne && !bf_stim_recomb &&
+        !bf->event_enabled &&
+        getenv("LUMINA_BF_GEMM")) {
         if (bf_gemm_compute(bf, atom, plasma, n_shells) == 0) {
             goto compute_ff;
         }
@@ -3520,10 +7250,13 @@ void compute_bf_opacity(BFOpacity *bf, AtomicData *atom, PlasmaState *plasma,
     }
 #endif
 
-    /* Per-bin dominant absorber tracking: chi contribution from best ion */
-    double *best_chi = (double *)calloc(grid_size, sizeof(double));
-    int    *best_ip  = (int *)malloc(grid_size * sizeof(int));
-    memset(best_ip, -1, grid_size * sizeof(int));
+    /* Legacy per-bin dominant absorber tracking. D-1 replaces this structure
+     * rather than building an unused argmax table on its ON arm. */
+    double *best_chi = bf->event_enabled
+                     ? NULL : (double *)calloc(grid_size, sizeof(double));
+    int *best_ip = bf->event_enabled
+                 ? NULL : (int *)malloc(grid_size * sizeof(int));
+    if (best_ip) memset(best_ip, -1, grid_size * sizeof(int));
 
     /* [BF-DIAG] one-shot tally of CMFGEN-vs-Kramers per-level σ_bf usage.
      * Only the first call with non-empty active levels prints; subsequent iters
@@ -3557,12 +7290,66 @@ void compute_bf_opacity(BFOpacity *bf, AtomicData *atom, PlasmaState *plasma,
         }
     }
 
+    bf_event_build_routes(bf, atom, ionized_ground, n_shells);
+    if (bf->event_Te && plasma->T_e)
+        memcpy(bf->event_Te, plasma->T_e,
+               (size_t)n_shells * sizeof(double));
+
+    /* [MA-RADRECOMB B4] Data-driven bf-activation target: when LUMINA_MA_RADRECOMB=1
+     * and the CMFGEN photoionization TARGET map is loaded, per ion pop resolve the
+     * upper-ion level each bf absorption should activate from the map (the first level
+     * of the ion with a mapped target — all levels of a mapped ion route to the same
+     * upper-ion ground). Falls back to ionized_ground where unmapped (fail-closed). For
+     * the mapped iron-peak/S/Si/Ca ions the CMFGEN final state is the upper-ion GROUND
+     * (excitation energy 0), so rr_act == ionized_ground: the "not ground-only" routing
+     * is a validated identity here, now sourced from data. Gate OFF => rr_act NULL =>
+     * ionized_ground used verbatim (byte-identical). */
+    int *rr_act = NULL;
+    {
+        static int rr_mode_bf = -1;
+        if (rr_mode_bf < 0) {
+            const char *er = getenv("LUMINA_MA_RADRECOMB");
+            rr_mode_bf = (er && atoi(er) != 0) ? 1 : 0;
+        }
+        if (rr_mode_bf && atom->ma_rr_loaded && atom->ma_rr_target) {
+            rr_act = (int *)malloc(atom->n_ion_pops * sizeof(int));
+            for (int ip = 0; ip < atom->n_ion_pops; ip++) {
+                rr_act[ip] = ionized_ground[ip];       /* default = ground */
+                int ls = atom->level_offset[ip], le = atom->level_offset[ip + 1];
+                for (int l = ls; l < le; l++)
+                    if (atom->ma_rr_target[l] >= 0) { rr_act[ip] = atom->ma_rr_target[l]; break; }
+            }
+        }
+    }
+
+    /* Scratch for ARTIS' per-target continuum sum. A lower level may have more
+     * than one upper target; corrfactor is target-dependent through n_upper/g_upper,
+     * so probabilities cannot be collapsed before applying max(0,1-stimfactor). */
+    int stim_max_routes = 1;
+    if (bf_stim_recomb && atom->ma_rr_target_offset) {
+        for (int l = 0; l < atom->n_levels; l++) {
+            int nr = atom->ma_rr_target_offset[l + 1] -
+                     atom->ma_rr_target_offset[l];
+            if (nr > stim_max_routes) stim_max_routes = nr;
+        }
+    }
+    double *stim_route_ratio = bf_stim_recomb
+        ? (double *)calloc((size_t)stim_max_routes, sizeof(double)) : NULL;
+    double *stim_route_prob = bf_stim_recomb
+        ? (double *)calloc((size_t)stim_max_routes, sizeof(double)) : NULL;
+    unsigned char *stim_route_valid = bf_stim_recomb
+        ? (unsigned char *)calloc((size_t)stim_max_routes, 1) : NULL;
+
     for (int ip = 0; ip < atom->n_ion_pops; ip++) {
         int Z_ion = atom->ion_pop_Z[ip];
         int stage = atom->ion_pop_stage[ip];
-        /* Skip neutrals (no ionization from neutral ground to ion) for this simple model,
-         * and skip highest ion stages (nothing to ionize to) */
-        if (stage < 1) continue;
+        /* [Wave-1 neutral-bf] Neutral atoms have ordinary bound-free edges
+         * X I + hnu -> X II + e (O I is the audit witness). The historical
+         * stage<1 skip confused zero ionic charge (relevant to free-free) with
+         * absence of photoionization. Retain that exact skip unless the
+         * default-OFF repair gate is armed; missing upper stages still fail
+         * closed through the ionization-energy lookup below. */
+        if (stage < 1 && !bf_neutral) continue;
 
         /* Find ionization energy for this ion */
         double chi_eV = -1.0;
@@ -3578,7 +7365,9 @@ void compute_bf_opacity(BFOpacity *bf, AtomicData *atom, PlasmaState *plasma,
         /* P7: Tabulated cross-section (CMFGEN) or Kramers fallback */
         double sigma_0_kramers = get_bf_sigma0(Z_ion, stage);
         if (sigma_0_kramers <= 0.0) {
-            int Z_eff = Z_ion - stage;
+            /* [RATES-FIX F5] see parity_gamma_phot: Z_eff = stage+1, not Z-stage */
+            int Z_eff = (rates_fix_enabled() || (bf_neutral && stage == 0))
+                      ? (stage + 1) : (Z_ion - stage);
             if (Z_eff < 1) Z_eff = 1;
             sigma_0_kramers = 7.91e-18 / ((double)Z_eff * (double)Z_eff);
         }
@@ -3586,12 +7375,19 @@ void compute_bf_opacity(BFOpacity *bf, AtomicData *atom, PlasmaState *plasma,
         int lev_start = atom->level_offset[ip];
         int lev_end   = atom->level_offset[ip + 1];
 
-        /* BF-MILNE: ion pop index of (Z, stage+1) for the departure Cinv. */
+        /* Upper ion used by both the Milne emissivity and the ARTIS
+         * stimulated-recombination departure ratio. */
         int ip_next = -1;
-        if (bf_milne) {
+        if (bf_milne || bf_stim_recomb || bf_eta_spingate) {
             for (int jp = 0; jp < atom->n_ion_pops; jp++)
                 if (atom->ion_pop_Z[jp] == Z_ion &&
                     atom->ion_pop_stage[jp] == stage + 1) { ip_next = jp; break; }
+        }
+        int eta_M_core = 0;
+        if (bf_milne && bf_eta_spingate) {
+            rec_spingate_check_data(atom);
+            eta_M_core = spingate_resolve_core_mult(atom, ip_next, Z_ion,
+                                                     stage + 1, NULL);
         }
 
         /* Task #38: Per-level CMFGEN ν-dependent σ_bf when available.
@@ -3615,7 +7411,8 @@ void compute_bf_opacity(BFOpacity *bf, AtomicData *atom, PlasmaState *plasma,
              * partition (U floor 1 — tiny-positive U exploded the v1 Milne). */
             double kTe_m = 0.0, saha_m = 0.0, n_next_m = 0.0, U_next_m = 1.0;
             int milne_ok = 0;
-            if (bf_milne && ip_next >= 0 && plasma->n_electron) {
+            if ((bf_milne || bf_stim_recomb) && ip_next >= 0 &&
+                plasma->n_electron) {
                 double Te_m = plasma->T_e[s];
                 double ne_m = plasma->n_electron[s];
                 n_next_m = atom->ion_number_density[ip_next * n_shells + s];
@@ -3659,9 +7456,15 @@ void compute_bf_opacity(BFOpacity *bf, AtomicData *atom, PlasmaState *plasma,
                 }
                 if (n_level < 1e-30) continue;
 
-                /* Ionization edge for this level: nu_edge = (chi_ion - E_level) / h */
+                /* Ionization edge for this level: nu_edge = (chi_ion - E_level) / h.
+                 * The repair arm uses the ARTIS constants verbatim, including the
+                 * historical H/KB values in constants.h, for numeric as well as
+                 * algebraic parity. Gate OFF retains the Lumina/NIST edge exactly. */
                 double E_level_erg = E_eV * EV_TO_ERG;
-                double nu_edge = (chi_erg - E_level_erg) / H_PLANCK;
+                const double ARTIS_H = 6.6260755e-27;
+                const double ARTIS_KB = 1.38064852e-16;
+                double nu_edge = (chi_erg - E_level_erg) /
+                                 (bf_stim_recomb ? ARTIS_H : H_PLANCK);
                 if (nu_edge <= bf->nu_min) continue;  /* edge below our grid */
 
                 /* Find starting bin for this edge */
@@ -3675,6 +7478,15 @@ void compute_bf_opacity(BFOpacity *bf, AtomicData *atom, PlasmaState *plasma,
                 const double *sigma_row = level_has_cmfgen
                     ? &sigma_grid[(size_t)l * (size_t)bf->n_freq_bins]
                     : NULL;
+                if (bf->event_enabled && bf->event_level_offset) {
+                    int erb = bf->event_level_offset[l];
+                    int ere = bf->event_level_offset[l + 1];
+                    for (int er = erb; er < ere; er++) {
+                        bf->event_nu_edge[er] = nu_edge;
+                        bf->event_sigma0[er] = sigma_0_kramers;
+                        bf->event_has_sigma[er] = level_has_cmfgen;
+                    }
+                }
                 if (!bf_diag_emitted && s == 0) {
                     if (level_has_cmfgen) bf_diag_cmfgen_levels++;
                     else                  bf_diag_kramers_levels++;
@@ -3690,6 +7502,116 @@ void compute_bf_opacity(BFOpacity *bf, AtomicData *atom, PlasmaState *plasma,
                     if (Cinv_l > 0.0 && isfinite(Cinv_l)) use_milne_l = 1;
                 }
 
+                /* [Wave-1 D-3] ARTIS rpkt.cc:733-765, verbatim physics:
+                 *   r_mod = n_upper/n_l * n_e * SAHACONST
+                 *           * (g_l/g_upper) * T_e^(-3/2)
+                 *   corr = max(0, 1 - r_mod exp[-HOVERKB(nu-nu_edge)/T_e])
+                 *   chi_l = n_l sigma_bf target_probability corr.
+                 * The repair gate independently loads ma_rr_target and its
+                 * probability; established v1 CMFGEN maps are single-route p=1.
+                 * Unmapped/Kramers continua retain their represented upper-ion
+                 * ground and p=1 fallback.
+                 *
+                 * SAHACONST=2.0706659e-16 is ARTIS constants.h and equals one
+                 * half of the electron thermal de-Broglie volume coefficient.
+                 * At LTE r_mod=exp(-h nu_edge/kT), hence corr recovers the
+                 * Kirchhoff factor 1-exp(-h nu/kT). */
+                int stim_route_begin = 0;
+                int stim_route_count = 0;
+                int stim_has_csr = 0;
+                if (bf_stim_recomb && atom->ma_rr_loaded &&
+                    atom->ma_rr_target_offset && atom->ma_rr_targets &&
+                    atom->ma_rr_probability) {
+                    stim_route_begin = atom->ma_rr_target_offset[l];
+                    stim_route_count = atom->ma_rr_target_offset[l + 1] -
+                                       stim_route_begin;
+                    stim_has_csr = stim_route_count > 0;
+                }
+                if (bf_stim_recomb && !stim_has_csr) stim_route_count = 1;
+                for (int q = 0; q < stim_route_count; q++) {
+                    stim_route_ratio[q] = 0.0;
+                    stim_route_valid[q] = 0;
+                    stim_route_prob[q] = stim_has_csr
+                        ? atom->ma_rr_probability[stim_route_begin + q] : 1.0;
+                }
+                if (bf_stim_recomb && milne_ok && g > 0) {
+                  for (int q = 0; q < stim_route_count; q++) {
+                    int upper_l = stim_has_csr
+                        ? atom->ma_rr_targets[stim_route_begin + q]
+                        : ionized_ground[ip];
+                    if (stim_route_prob[q] > 0.0 &&
+                        upper_l >= 0 && upper_l < atom->n_levels) {
+                        int g_upper = atom->level_g[upper_l];
+                        double n_upper = 0.0;
+                        if (g_upper > 0) {
+                            double boltz_upper = atom->level_energy_eV[upper_l] *
+                                                 EV_TO_ERG * beta_rad;
+                            if (boltz_upper < 500.0) {
+                                double w_upper = atom->level_metastable[upper_l]
+                                               ? 1.0 : W;
+                                n_upper = n_next_m * w_upper * (double)g_upper *
+                                          exp(-boltz_upper) / U_next_m;
+                            }
+                            if (use_nlte_pops) {
+                                int ni_upper =
+                                    g_bf_nlte_pops->global_to_nlte_level[upper_l];
+                                double n_nl_upper = (ni_upper >= 0)
+                                    ? g_bf_nlte_pops->nlte_level_populations[
+                                          (size_t)ni_upper * n_shells + s]
+                                    : 0.0;
+                                if (ni_upper >= 0 && n_nl_upper > 1e-30 &&
+                                    isfinite(n_nl_upper))
+                                    n_upper = n_nl_upper;
+                            }
+                            if (n_upper >= 0.0 && isfinite(n_upper)) {
+                                const double ARTIS_SAHACONST = 2.0706659e-16;
+                                double Te_saha = plasma->T_e[s];
+                                double clump = (plasma->clump_factor &&
+                                                plasma->clump_factor[s] > 0.0)
+                                             ? plasma->clump_factor[s] : 1.0;
+                                double clumped_ne = plasma->n_electron[s] * clump;
+                                double modified_departure_ratio =
+                                    n_upper / n_level * clumped_ne *
+                                    ARTIS_SAHACONST *
+                                    ((double)g / (double)g_upper) *
+                                    pow(Te_saha, -1.5);
+                                if (modified_departure_ratio >= 0.0 &&
+                                    isfinite(modified_departure_ratio)) {
+                                    stim_route_ratio[q] = modified_departure_ratio;
+                                    stim_route_valid[q] = 1;
+                                }
+                            }
+                        }
+                    }
+                  }
+                }
+
+                /* D-1 route coefficients. Target probabilities are part of
+                 * continuum identity even when the independent D-3
+                 * stimulated-recombination gate is off. */
+                if (bf->event_enabled && bf->event_level_offset) {
+                    int erb = bf->event_level_offset[l];
+                    int ere = bf->event_level_offset[l + 1];
+                    int csr_begin = 0, csr_count = 0;
+                    if (atom->ma_rr_loaded && atom->ma_rr_target_offset) {
+                        csr_begin = atom->ma_rr_target_offset[l];
+                        csr_count = atom->ma_rr_target_offset[l + 1] -
+                                    csr_begin;
+                    }
+                    for (int er = erb; er < ere; er++) {
+                        int q = er - erb;
+                        double p_route = (csr_count > 0 &&
+                                          atom->ma_rr_probability)
+                                       ? atom->ma_rr_probability[csr_begin + q]
+                                       : 1.0;
+                        size_t ei = (size_t)s * bf->event_n_routes + er;
+                        bf->event_weight[ei] = n_level * p_route;
+                        if (bf_stim_recomb && q < stim_route_count &&
+                            stim_route_valid[q])
+                            bf->event_stim_ratio[ei] = stim_route_ratio[q];
+                    }
+                }
+
                 /* Add contribution to all bins above the edge */
                 for (int b = bin_start; b < bf->n_freq_bins; b++) {
                     double nu = nu_bin[b];
@@ -3702,37 +7624,89 @@ void compute_bf_opacity(BFOpacity *bf, AtomicData *atom, PlasmaState *plasma,
                         double ratio = nu_edge / nu;
                         sigma = sigma_0_kramers * ratio * ratio * ratio;
                     }
-                    double chi_contrib = n_level * sigma;
+                    double chi_raw = n_level * sigma;
+                    double chi_contrib = chi_raw;
+                    double chi_spont_base = chi_contrib;
+                    if (bf_stim_recomb) {
+                        double weighted_corr = 0.0;
+                        double probability_sum = 0.0;
+                        double expfactor = exp(-(ARTIS_H / ARTIS_KB) *
+                                               (nu - nu_edge) / plasma->T_e[s]);
+                        for (int q = 0; q < stim_route_count; q++) {
+                            double p = stim_route_prob[q];
+                            double corrfactor = 1.0;
+                            if (stim_route_valid[q]) {
+                                double stimfactor = stim_route_ratio[q] * expfactor;
+                                corrfactor = fmax(0.0, 1.0 - stimfactor);
+                            }
+                            probability_sum += p;
+                            weighted_corr += p * corrfactor;
+                        }
+                        chi_spont_base = chi_raw * probability_sum;
+                        chi_contrib = chi_raw * weighted_corr;
+                    }
                     int idx = s * bf->n_freq_bins + b;
                     bf->chi_bf[idx] += chi_contrib;
+                    if (bf->event_enabled && bf->event_chi_bf)
+                        bf->event_chi_bf[idx] += chi_contrib;
+#ifdef LUMINA_FROZEN_ORACLE
+                    double oracle_eta_contrib = 0.0;
+#endif
+                    /* [Wave-1 B18-a] When both gates are armed, eta_bf uses the
+                     * identical REC_SPINGATE predicate as S3/S1: radiative
+                     * capture from a core of multiplicity M_core reaches only
+                     * daughter multiplicities M_core+/-1. Unknown multiplicity
+                     * remains allowed, matching spingate_level_forbidden().
+                     * LUMINA_FIX_BF_ETA_SPINGATE=0 leaves this test unreachable. */
                     if (bf_milne && bf->eta_bf &&
-                        !(bf_ots && atom->level_num[l] == 0)) {
+                        !(bf_ots && atom->level_num[l] == 0) &&
+                        !(bf_eta_spingate &&
+                          spingate_level_forbidden(atom, l, eta_M_core))) {
                         double S_l;
+                        double eta_opacity;
                         if (use_milne_l) {
                             /* SPONTANEOUS Milne recombination only:
-                             * eta = chi * (2 h nu^3/c^2) e^{-x} / Cinv
+                             * eta = chi_raw * (2 h nu^3/c^2) e^{-x} / Cinv
                              *     = sigma (2 h nu^3/c^2) (n_e n_+ g_l saha /
                              *       2U_+) e^{-h(nu-nu_edge)/kTe}
                              * — no denominator, always bounded/positive.
                              * (The b e^x - 1 source-function form lases when
                              * b e^x <= 1: den-floor 1e-10 turned population-
                              * inversion bins into 1e10x maser spikes -> the
-                             * epay4 J=1e42 runaway. Stimulated recombination
-                             * is dropped, consistent with the uncorrected
-                             * legacy chi_bf.) */
+                             * epay4 J=1e42 runaway.) The D-3 corrfactor belongs
+                             * only to net absorption; spontaneous eta therefore
+                             * retains chi_raw here, exactly as in ARTIS. */
                             double x = H_PLANCK * (nu - nu_edge) / kTe_m;
                             S_l = (x > 600.0) ? 0.0
                                 : 2.0 * H_PLANCK * nu * nu * nu /
                                   (C_SPEED_OF_LIGHT * C_SPEED_OF_LIGHT) *
                                   exp(-x) / Cinv_l;
+                            eta_opacity = chi_spont_base;
                         } else {
+                            /* Thermal fallback is expressed as eta=chi_net*B;
+                             * this recovers Kirchhoff when D-3 is enabled. */
                             S_l = planck_bnu(Te_s, nu);
+                            eta_opacity = chi_contrib;
                         }
-                        bf->eta_bf[idx] += chi_contrib * S_l;
+                        bf->eta_bf[idx] += eta_opacity * S_l;
+#ifdef LUMINA_FROZEN_ORACLE
+                        oracle_eta_contrib = eta_opacity * S_l;
+#endif
                     }
 
+#ifdef LUMINA_FROZEN_ORACLE
+                    if (g_oracle.fp && s == 0) {
+                        int os = oracle_ion_slot(Z_ion, stage);
+                        int ow = oracle_wave_slot(bf, b);
+                        if (os >= 0 && ow >= 0) {
+                            g_oracle.chi[os][ow] += chi_contrib;
+                            g_oracle.eta[os][ow] += oracle_eta_contrib;
+                        }
+                    }
+#endif
+
                     /* Track dominant absorber for macro-atom activation */
-                    if (chi_contrib > best_chi[idx]) {
+                    if (!bf->event_enabled && chi_contrib > best_chi[idx]) {
                         best_chi[idx] = chi_contrib;
                         best_ip[idx] = ip;
                     }
@@ -3741,18 +7715,29 @@ void compute_bf_opacity(BFOpacity *bf, AtomicData *atom, PlasmaState *plasma,
         }
     }
 
-    /* Build activation level table from dominant absorber */
+    /* Build activation level table from dominant absorber. [MA-RADRECOMB B4] route
+     * through the data-driven target rr_act when loaded (== ionized_ground for the
+     * mapped ions), else ground-only. */
     int n_activated = 0;
-    for (size_t idx = 0; idx < grid_size; idx++) {
-        if (best_ip[idx] >= 0 && ionized_ground[best_ip[idx]] >= 0) {
-            bf->activation_level[idx] = ionized_ground[best_ip[idx]];
-            n_activated++;
+    if (!bf->event_enabled) {
+        for (size_t idx = 0; idx < grid_size; idx++) {
+            int ip = best_ip[idx];
+            if (ip < 0) continue;
+            int act = rr_act ? rr_act[ip] : ionized_ground[ip];
+            if (act >= 0) {
+                bf->activation_level[idx] = act;
+                n_activated++;
+            }
         }
     }
 
     free(best_chi);
     free(best_ip);
     free(ionized_ground);
+    free(rr_act);
+    free(stim_route_ratio);
+    free(stim_route_prob);
+    free(stim_route_valid);
 
     {
         long total = bf_diag_cmfgen_levels + bf_diag_kramers_levels;
@@ -3803,6 +7788,21 @@ compute_ff:
             bf->chi_bf[s * bf->n_freq_bins + b] += chi_ff_c;
             if (bf->eta_bf && bf_milne)
                 bf->eta_bf[s * bf->n_freq_bins + b] += chi_ff_c * planck_bnu(T_e, nu);
+#ifdef LUMINA_FROZEN_ORACLE
+            if (g_oracle.fp && s == 0) {
+                double nu_lo = bf->nu_min * exp((double)b * bf->d_log_nu);
+                double nu_hi = nu_lo * exp(bf->d_log_nu);
+                double eta_ff_c = (bf->eta_bf && bf_milne)
+                                ? chi_ff_c * planck_bnu(T_e, nu) : 0.0;
+                g_oracle.ff_cooling_grid +=
+                    4.0 * M_PI_VAL * eta_ff_c * (nu_hi - nu_lo);
+                int ow = oracle_wave_slot(bf, b);
+                if (ow >= 0) {
+                    g_oracle.ff_chi[ow] += chi_ff_c;
+                    g_oracle.ff_eta[ow] += eta_ff_c;
+                }
+            }
+#endif
         }
     }
 
@@ -3940,6 +7940,35 @@ static const int NLTE_TARGET_ION[] = {  1,  2,  1,  2,  1,  2,  1,  2,  1,  2,  
                                          1,  2,  1,  2,  1,  2,  1,  2,
                                          0,  1,  2 };
 
+/* Fork-A stage-IV promotion layout (LUMINA_NLTE_STAGE4=1): 38 slots. IV is
+ * inserted IMMEDIATELY after each element's III so every (III,IV) pair is
+ * contiguous (hi=lo+1) — the O I/II/III triplet's precedent — because the
+ * overlap solve computes the pair size as super_offset[hi+1]-super_offset[lo]
+ * (a contiguous span), so lo/hi MUST be adjacent slots. Only the 7 elements with
+ * stage-IV levels+lines+IP(III->IV) get a IV slot (inventory:
+ * Si,Fe,Co,Ni,Ti,Cr,Al). Gate OFF => NLTE_TARGET_Z/ION above are used verbatim. */
+static const int NLTE_TARGET_Z4[]   = { 14, 14, 14, 20, 20, 26, 26, 26, 16, 16,
+                                        27, 27, 27, 28, 28, 28,  6,  6, 12, 12,
+                                        22, 22, 22, 24, 24, 24, 13, 13, 13,
+                                        21, 21, 23, 23, 25, 25,  8,  8,  8 };
+static const int NLTE_TARGET_ION4[] = {  1,  2,  3,  1,  2,  1,  2,  3,  1,  2,
+                                         1,  2,  3,  1,  2,  3,  1,  2,  1,  2,
+                                         1,  2,  3,  1,  2,  3,  1,  2,  3,
+                                         1,  2,  1,  2,  1,  2,  0,  1,  2 };
+
+/* Wave-3 CPU Stage-2A layout.  It is selected only after the strict EW gate
+ * parser accepts an explicit Z list and shell.  Relative to the byte-stable
+ * base layout it inserts Fe IV and S IV adjacent to their III stages; no other
+ * legacy stage-IV promotion is pulled into the pilot. */
+static const int NLTE_TARGET_Z_EW[NLTE_EW_IONS] = {
+    14,14, 20,20, 26,26,26, 16,16,16, 27,27, 28,28, 6,6, 12,12,
+    22,22, 24,24, 13,13, 21,21, 23,23, 25,25, 8,8,8
+};
+static const int NLTE_TARGET_ION_EW[NLTE_EW_IONS] = {
+     1, 2,  1, 2,  1, 2, 3,  1, 2, 3,  1, 2,  1, 2, 1,2,  1, 2,
+     1, 2,  1, 2,  1, 2,  1, 2,  1, 2,  1, 2, 0,1,2
+};
+
 /* Heavy.2 / Task #139: Dielectronic recombination Burgess-form table.
  * Sources (provenance per entry):
  *   BADNELL: clist_K master fit (AUTOSTRUCTURE, Strathclyde, 2023-05-12).
@@ -4018,7 +8047,9 @@ static const DRCoefficient DR_TABLE[] = {
      DR_SOURCE_BADNELL},
 
     /* --- NORAD (Nahar OSU R-matrix unified RR+DR total) -------------
-     * Source files: data/atomic/dr_norad/{Fe1..Fe5,Ni1}.csv (81-pt grid)
+     * Source files: data/atomic/dr_norad/{Fe1..Fe5,Si1,Si2}.csv (81-pt grid);
+     * the Ni file (shipped as Ni1.csv, regenerated as Ni2.csv after the 2026-07-30
+     * label fix) feeds the shadowed {28,2} NORAD entry further below.
      * Burgess fits at data/atomic/dr_norad/burgess_fits.txt (max err <1.1%
      * over 100 ≤ T ≤ 1e5 K). NOTE: these are TOTAL recomb (RR+DR), not
      * DR-only — slight double-counting with Milne RR (~10-20% at SN T_e),
@@ -4049,11 +8080,8 @@ static const DRCoefficient DR_TABLE[] = {
      {1.054419e-06, 2.771906e-06, 7.897993e-06, 3.215862e-05, 1.542221e-03, 9.613848e-05},
      {8.824877e+01, 7.638482e+02, 3.536893e+03, 1.466235e+04, 2.688904e+05, 6.446002e+04},
      DR_SOURCE_NORAD},
-    /* Ni II → Ni I (Nahar Bautista 2001 ApJS 137 201) */
-    {28, 1, 6,
-     {1.591064e-07, 6.798302e-07, 1.811202e-06, 4.724703e-04, 7.704725e-05, 5.987436e-06},
-     {1.116045e+02, 7.047342e+02, 2.845402e+03, 1.435708e+05, 5.704062e+04, 1.181851e+04},
-     DR_SOURCE_NORAD},
+    /* (the NORAD Ni row was mislabeled "Ni II → Ni I" {28,1} here; the raw file is
+     *  Ni III → Ni II — moved to the {28,2} block below, see there.) */
     /* Si II → Si I  (Z=14, Nahar 2000 ApJS 126 537 — Si-sequence R-matrix unified RR+DR)
      * Burgess 6-term fit, max rel err 0.96%, median 0.42% over T=100..1e5 K.
      * α(8000 K) ≈ 1.65e-12 cm³/s. */
@@ -4188,6 +8216,24 @@ static const DRCoefficient DR_TABLE[] = {
      DR_SOURCE_AUTOSTRUCT},
     /* Ni III → Ni II (Z=28, stage 2) — Mazzotta1998 fallback (never matched). */
     {28, 2, 1, {9.215000e-03}, {2.604100e+05}, DR_SOURCE_MAZZOTTA},
+    /* Ni III → Ni II (Z=28, stage 2) — NORAD unified RR+DR total, Nahar & Bautista
+     * 2001 ApJS 137 201 (raw file data/atomic/dr_norad/raw_ni2.rrc.txt, header
+     * "Process: Ni III + e -> Ni II"; α(1e4 K)=4.28e-12 cm³/s).
+     * PROVENANCE / RELABEL (2026-07-30): these are the SAME six c_i/E_i that stood
+     * above in the NORAD block as {28,1} "Ni II → Ni I". That label was wrong —
+     * data/atomic/dr_norad/parse_norad.py had ion_recombining=1 for a file whose
+     * process is Ni III + e → Ni II (generator fixed in the same batch; NORAD names
+     * rrc files after the PRODUCT ion, so raw_ni2 ⇒ recombining stage 2). Only the
+     * (Z,ion) label moved; the coefficients are untouched.
+     * SHADOWED ON PURPOSE: kept BELOW the AUTOSTRUCT {28,2} entry, so dr_lookup
+     * (first match wins) still returns AUTOSTRUCT — same convention as the Sc/Ti/Co
+     * Mazzotta fallbacks above. Which of AUTOSTRUCT / NORAD / Mazzotta should own
+     * Ni III→II is an adoption question, NOT settled here; this entry exists so the
+     * NORAD datum is registered under its true label instead of a wrong one. */
+    {28, 2, 6,
+     {1.591064e-07, 6.798302e-07, 1.811202e-06, 4.724703e-04, 7.704725e-05, 5.987436e-06},
+     {1.116045e+02, 7.047342e+02, 2.845402e+03, 1.435708e+05, 5.704062e+04, 1.181851e+04},
+     DR_SOURCE_NORAD},
 
     /* --- CMFGEN LTDR (low-T dielectronic) from DIE* files ------------
      * Co IV → Co III  (Z=27, N=24, Cr-like recomb).  Derived from CMFGEN's
@@ -4400,6 +8446,78 @@ int nlte_skip_dead_pairs(void) {
     return enabled;
 }
 
+/* Fork-A stage-IV promotion gate (LUMINA_NLTE_STAGE4). Default OFF => the
+ * baseline 31-slot/16-pair NLTE set is used verbatim => byte-identical baseline.
+ * ON => append the (III,IV) pair for the 7 elements with stage-IV level+line+IP
+ * data (Si,Fe,Co,Ni,Ti,Cr,Al), each IV inserted ADJACENT to its III so every
+ * pair stays contiguous (hi=lo+1), matching the O I/II/III triplet's slot
+ * adjacency that the overlap solve machinery requires. */
+int nlte_stage4_enabled(void) {
+    static int init = 0, enabled = 0;
+    if (!init) {
+        const char *e = getenv("LUMINA_NLTE_STAGE4");
+        if (e && atoi(e) != 0) enabled = 1;
+        init = 1;
+    }
+    return enabled;
+}
+
+/* Centralized (lo,hi) + names table for the NLTE ion pairs. Single source of
+ * truth replacing the 4 hardcoded literals (GPU solve, CPU solve, max_N
+ * precompute, R_bf GEMM). Fills the caller's arrays (>= NLTE_PAIR_COUNT) and
+ * returns n_pairs. Gate OFF => the original 16-pair base layout (byte-identical);
+ * gate ON => the 23-pair stage-IV adjacent layout. Every pair has hi=lo+1. */
+int nlte_get_pairs(int pairs[][2], const char *names[]) {
+    if (nlte_element_wide_layout_enabled()) {
+        /* The two IV slots exist solely for the candidate assembler.  The
+         * authority/fallback lane remains the original 16 physical pair calls
+         * in the original order, translated through the EW slot permutation. */
+        static const int P[NLTE_BASE_PAIRS][2] = {
+            {0,1},{2,3},{4,5},{7,8},{10,11},{12,13},{14,15},{16,17},
+            {18,19},{20,21},{22,23},{24,25},{26,27},{28,29},
+            {30,31},{31,32}
+        };
+        static const char *N[NLTE_BASE_PAIRS] = {
+            "Si","Ca","Fe","S","Co","Ni","C","Mg","Ti","Cr",
+            "Al","Sc","V","Mn","O(I-II)","O(II-III)"
+        };
+        for (int p = 0; p < NLTE_BASE_PAIRS; p++) {
+            pairs[p][0]=P[p][0]; pairs[p][1]=P[p][1]; names[p]=N[p];
+        }
+        return NLTE_BASE_PAIRS;
+    } else if (nlte_stage4_enabled()) {
+        /* slots: 0SiII 1SiIII 2SiIV 3CaII 4CaIII 5FeII 6FeIII 7FeIV 8SII 9SIII
+         *   10CoII 11CoIII 12CoIV 13NiII 14NiIII 15NiIV 16CII 17CIII 18MgII
+         *   19MgIII 20TiII 21TiIII 22TiIV 23CrII 24CrIII 25CrIV 26AlII 27AlIII
+         *   28AlIV 29ScII 30ScIII 31VII 32VIII 33MnII 34MnIII 35OI 36OII 37OIII */
+        static const int P[NLTE_STAGE4_PAIRS][2] = {
+            {0,1},{1,2}, {3,4}, {5,6},{6,7}, {8,9}, {10,11},{11,12},
+            {13,14},{14,15}, {16,17}, {18,19}, {20,21},{21,22},
+            {23,24},{24,25}, {26,27},{27,28}, {29,30}, {31,32}, {33,34},
+            {35,36},{36,37} };
+        static const char *N[NLTE_STAGE4_PAIRS] = {
+            "Si(II-III)","Si(III-IV)","Ca","Fe(II-III)","Fe(III-IV)","S",
+            "Co(II-III)","Co(III-IV)","Ni(II-III)","Ni(III-IV)","C","Mg",
+            "Ti(II-III)","Ti(III-IV)","Cr(II-III)","Cr(III-IV)",
+            "Al(II-III)","Al(III-IV)","Sc","V","Mn","O(I-II)","O(II-III)" };
+        for (int p = 0; p < NLTE_STAGE4_PAIRS; p++) {
+            pairs[p][0] = P[p][0]; pairs[p][1] = P[p][1]; names[p] = N[p];
+        }
+        return NLTE_STAGE4_PAIRS;
+    } else {
+        static const int P[NLTE_BASE_PAIRS][2] = {
+            {0,1},{2,3},{4,5},{6,7},{8,9},{10,11},{12,13},{14,15},
+            {16,17},{18,19},{20,21},{22,23},{24,25},{26,27},{28,29},{29,30} };
+        static const char *N[NLTE_BASE_PAIRS] = {
+            "Si","Ca","Fe","S","Co","Ni","C","Mg","Ti","Cr","Al","Sc","V","Mn",
+            "O(I-II)","O(II-III)" };
+        for (int p = 0; p < NLTE_BASE_PAIRS; p++) {
+            pairs[p][0] = P[p][0]; pairs[p][1] = P[p][1]; names[p] = N[p];
+        }
+        return NLTE_BASE_PAIRS;
+    }
+}
+
 /* Time-dependent ionization gate (env-cached). When set, nlte_assemble_rate_matrix
  * adds a backward-Euler dn_i/dt term to the rate rows using Dt = time_explosion
  * and a fully-ionized t=0 initial condition. This is the single-epoch (option A)
@@ -4431,6 +8549,85 @@ int nlte_coll_fix_enabled(void) {
     static int enabled = 0;
     if (!init) {
         const char *e = getenv("LUMINA_NLTE_COLL_FIX");
+        if (e && atoi(e) != 0) enabled = 1;
+        init = 1;
+    }
+    return enabled;
+}
+
+/* COLD-CASE-P fix gate (LUMINA_NLTE_METASTABLE_COLL, default OFF => byte-identical).
+ * A level flagged metastable=1 in levels.csv that ALSO has zero downward radiative
+ * lines (drainless_metastable[global]==1, precomputed in nlte_init) has NO drain in
+ * the baseline network: the per-line collision assembly loops over LINES only, so a
+ * level with no line gets no collisional channel either. It fills by cascade and its
+ * b_k piles up to the g_stage4_bk_cap ceiling, driving the photospheric IGE
+ * over-ionization via its EUV photoionization. When ON, the assembler adds an
+ * Axelrod-floor (Omega=1) collisional de-excitation channel from each such level to
+ * its ion's GROUND level, restoring the missing drain (detailed balance exact). */
+int nlte_metacoll_enabled(void) {
+    static int init = 0;
+    static int enabled = 0;
+    if (!init) {
+        const char *e = getenv("LUMINA_NLTE_METASTABLE_COLL");
+        if (e && atoi(e) != 0) enabled = 1;
+        init = 1;
+    }
+    return enabled;
+}
+
+/* Metastable-collision COUPLING MODE (LUMINA_NLTE_METACOLL_MODE).
+ *   1 (default) = current behaviour: couple each drainless-metastable to its ion's
+ *                 GROUND only, with the Axelrod forbidden floor Omega=1. Byte-identical
+ *                 to kpr9 (same arithmetic, same off-diagonal placement).
+ *   2           = couple each drainless-metastable to ALL lower levels of the same ion
+ *                 (E_l < E_m), each with Omega = LUMINA_NLTE_METACOLL_OMEGA (default 0.1,
+ *                 CMFGEN's f=0 forbidden floor). This matches CMFGEN's FeIII_COL_DATA
+ *                 (Zhang 1996) topology, which drains every metastable to every lower
+ *                 level rather than to ground alone. Any value != 2 falls back to 1. */
+int nlte_metacoll_mode(void) {
+    static int init = 0;
+    static int mode = 1;
+    if (!init) {
+        const char *e = getenv("LUMINA_NLTE_METACOLL_MODE");
+        if (e && atoi(e) == 2) mode = 2;
+        init = 1;
+    }
+    return mode;
+}
+
+/* Per-channel collision strength Omega used by METACOLL_MODE=2 (LUMINA_NLTE_METACOLL_OMEGA).
+ * Default 0.1 = CMFGEN's documented forbidden-transition floor ("Value for OMEGA if f=0:
+ * 0.1", FeIII_COL_DATA header). Used per drainless-metastable -> lower-level channel as a
+ * parameter-free approximation to the true Zhang96 per-transition Omega (imported later as
+ * the fidelity endpoint). MODE=1 ignores this and uses AXELROD_OMEGA(=1) as before. */
+double nlte_metacoll_omega(void) {
+    static int init = 0;
+    static double omega = 0.1;
+    if (!init) {
+        const char *e = getenv("LUMINA_NLTE_METACOLL_OMEGA");
+        if (e) { double v = atof(e); if (v > 0.0) omega = v; }
+        init = 1;
+    }
+    return omega;
+}
+
+/* Real Fe III collisional data gate (LUMINA_FEIII_COLDATA, default OFF =>
+ * byte-identical). When ON (and atom->feiii_col_loaded), the NLTE assembler
+ * drives ALL Fe III (Z=26, ion=2) collisional bound-bound rates from the
+ * imported Zhang 1996 close-coupling Omega table (CMFGEN FeIII_COL_DATA)
+ * instead of the van-Regemorter-from-oscillator-strength proxy + Axelrod floor
+ * + METACOLL floor. This is the exact-physics fix for the over-populated Fe III
+ * levels (25, 17, 18, 28, 31, 32): their radiative down-lines are forbidden
+ * (f_lu ~ 1e-8) so van Regemorter gives ~0 collisional drain, while Zhang gives
+ * real Omega ~ 1-9 to every lower level. To avoid double counting, when this
+ * gate is on the per-line Fe III collision term is zeroed and the METACOLL
+ * pass skips Fe III — Zhang is the sole Fe III collision source (CMFGEN
+ * parity: collisions come from col_data, radiation from osc_data). */
+int nlte_feiii_coldata_enabled(void) {
+    static int init = 0;
+    static int enabled = 0;
+    if (!init) {
+        const char *e = getenv("LUMINA_FEIII_COLDATA");
         if (e && atoi(e) != 0) enabled = 1;
         init = 1;
     }
@@ -4533,6 +8730,65 @@ double radeq_line_eps_phys(int line, double n_e, double T_e, double tau) {
     return (denom > 0.0) ? C_ul / denom : 1.0;
 }
 
+int radeq_line_local_response(int line, double n_e, double T_e, double tau,
+                              double *beta_out, double *eps0_out) {
+    static int *line2k = NULL;
+    static int line2k_n = 0;
+    if (!beta_out || !eps0_out || !radeq_lines || radeq_n_lines <= 0 ||
+        line < 0 || !(n_e >= 0.0) || !(T_e > 0.0) || !(tau > 0.0) ||
+        !isfinite(n_e) || !isfinite(T_e) || !isfinite(tau))
+        return -1;
+    if (!line2k) {
+        int maxline = -1;
+        for (long k = 0; k < radeq_n_lines; k++)
+            if (radeq_lines[k].line > maxline) maxline = radeq_lines[k].line;
+        if (maxline < 0) return -1;
+        int *m = (int *)malloc((size_t)(maxline + 1) * sizeof(int));
+        if (!m) return -1;
+        for (int i = 0; i <= maxline; i++) m[i] = -1;
+        for (long k = 0; k < radeq_n_lines; k++) {
+            int l = radeq_lines[k].line;
+            if (l < 0 || l > maxline || m[l] != -1) { free(m); return -1; }
+            m[l] = (int)k;
+        }
+        line2k = m;
+        line2k_n = maxline + 1;
+    }
+    if (line >= line2k_n || line2k[line] < 0) return -1;
+    const RadEqLine *rl = &radeq_lines[line2k[line]];
+    if (!(rl->g_up > 0) || !(rl->coeff >= 0.0) || !(rl->A_ul >= 0.0) ||
+        !isfinite(rl->coeff) || !isfinite(rl->A_ul)) return -1;
+    double beta = -expm1(-tau) / tau;
+    if (!(beta > 0.0) || !(beta <= 1.0) || !isfinite(beta)) return -1;
+
+    /* Evaluate C/(C+A) without ever forming C or C+A.  Both can overflow
+     * although the ratio is defined.  The log-domain logistic is exact at
+     * the representable endpoints and introduces no substitute value. */
+    double eps0;
+    if (n_e == 0.0 || rl->coeff == 0.0) {
+        if (rl->A_ul == 0.0) return -1;       /* 0/(0+0) is undefined */
+        eps0 = 0.0;
+    } else if (rl->A_ul == 0.0) {
+        eps0 = 1.0;
+    } else {
+        double logC = log(n_e) + log(rl->coeff) - log((double)rl->g_up)
+                    - 0.5 * log(T_e);
+        double x = log(rl->A_ul) - logC;
+        if (!isfinite(logC) || !isfinite(x)) return -1;
+        if (x >= 0.0) {
+            double r = exp(-x);
+            eps0 = r / (1.0 + r);
+        } else {
+            double r = exp(x);
+            eps0 = 1.0 / (1.0 + r);
+        }
+    }
+    if (!(eps0 >= 0.0) || !(eps0 <= 1.0) || !isfinite(eps0)) return -1;
+    *beta_out = beta;
+    *eps0_out = eps0;
+    return 0;
+}
+
 static void build_radeq_line_table(NLTEConfig *nlte, AtomicData *atom,
                                    OpacityState *opacity) {
     if (radeq_n_lines >= 0) return;  /* already built */
@@ -4549,6 +8805,101 @@ static void build_radeq_line_table(NLTEConfig *nlte, AtomicData *atom,
      * coolant and is carried by the full line census, not the few NLTE levels.
      * Per-level populations are resolved at solve time: NLTE pop where the level
      * is tracked, dilute-Boltzmann (nebular) otherwise. */
+    /* ------------------------------------------------------------------ *
+     * dig_C5-A/B (ARTIS parity ONLY): real close-coupling Upsilon + Omega
+     * floor for the radeq ETLA collisional line-cooling coeff. Both are
+     * confined to the artis_parity_enabled() branch below; when the master
+     * gate is OFF none of this runs and the table is byte-identical.
+     *
+     * A (real-Upsilon, ON by default under parity — exact physics, the A6
+     * completion): for every (Z,ion,lo,hi) covered by an ALREADY-LOADED close-
+     * coupling table (feiii_col_* Zhang / col_ion_* Fe II,Co III,Ni III) bake
+     * coeff = ARTIS_COL_CONST*Upsilon(T_ref). The eval C_ul =
+     * n_e*coeff/(g_up*sqrt(Te)) then reproduces artis_col_rates' real branch
+     * C_down = n_e*ARTIS_COL_CONST*Upsilon/(g_up*sqrt(Te)) and the NLTE-matrix
+     * col_data passes EXACTLY (A6 unification). T_ref=10400K matches how the
+     * whole table is baked T-independent (consumed in the per-trial-Te root
+     * solve). Upsilon is interpolated linearly in T over the tabulated grid,
+     * clamped to the ends — identical to the NLTE-matrix passes (Fe III / col_ion).
+     *
+     * B (Omega floor, OPT-IN under parity): coeff = max(coeff,
+     * ARTIS_COL_CONST*om_floor) when LUMINA_RADEQ_OMEGA_FLOOR is explicitly
+     * set >0. Mirrors the EXACT non-parity vr_std floor semantics below (a flat
+     * coeff floor, NO degeneracy factor). Unset/0 => byte-identical parity
+     * (preserves parity10-15 rerun comparability). Matches dig_C5's reference
+     * coeff_variant() 'realfloor': A then max(., ARTIS_COL_CONST*om_floor). */
+    const double rc_Tref = 10400.0;
+    long realsub_count = 0;
+    double p_om_floor = -1.0;   /* -1 => floor disabled (byte-identical) */
+    struct { int Z, ion0, nlev; double *cf; } rcs[1 + LUMINA_MAX_COL_IONS];
+    int n_rcs = 0;
+    /* [OMEGA-CMFGEN] the orthodox replacement of dig_C5-A/B: per-transition
+     * CMFGEN 3-tier (table as-is | vR gbar-floor | OMEGA_SET) instead of
+     * "real-Upsilon then clamp everything to Upsilon>=om_floor". Mutually
+     * exclusive with the floor; the floor loses. */
+    const int omcm_on = omega_cmfgen_enabled() && artis_parity_enabled();
+    long omcm_cnt[4] = {0, 0, 0, 0};
+    if (artis_parity_enabled()) {
+        const char *of = getenv("LUMINA_RADEQ_OMEGA_FLOOR");
+        if (of) { double v = atof(of); if (v > 0.0) p_om_floor = v; }
+        if (omcm_on && p_om_floor > 0.0) {
+            fprintf(stderr, "[OMEGA-CMFGEN][WARN] LUMINA_RADEQ_OMEGA_FLOOR=%g is "
+                            "mutually exclusive with LUMINA_OMEGA_CMFGEN=1 -> the "
+                            "floor is IGNORED (3-tier wins).\n", p_om_floor);
+            p_om_floor = -1.0;
+        }
+    }
+    if (!omcm_on && artis_parity_enabled()) {
+        /* Build per-source dense coeff(=ARTIS_COL_CONST*Upsilon@Tref) maps. A
+         * source is (Fe III Zhang, src==-1) plus each generic col_ion_* ion. The
+         * dense [lo*nlev+hi] layout (lo<hi by level_number == energy rank) gives
+         * O(1) per-line lookup; -1 marks an uncovered pair. */
+        for (int src = -1; src < atom->ncol_ions; src++) {
+            int Zs, ion0s, ntr, ntemp;
+            const double *tg; const int *tlo; const int *thi; const double *tom;
+            if (src < 0) {
+                if (!atom->feiii_col_loaded) continue;
+                Zs = atom->feiii_col_Z; ion0s = atom->feiii_col_ion;
+                ntr = atom->feiii_col_n_trans; ntemp = atom->feiii_col_n_temp;
+                tg = atom->feiii_col_tgrid; tlo = atom->feiii_col_lo;
+                thi = atom->feiii_col_hi; tom = atom->feiii_col_omega;
+            } else {
+                Zs = atom->col_ion_Z[src]; ion0s = atom->col_ion_stage[src];
+                ntr = atom->col_ion_n_trans[src]; ntemp = atom->col_ion_n_temp[src];
+                tg = atom->col_ion_tgrid[src]; tlo = atom->col_ion_lo[src];
+                thi = atom->col_ion_hi[src]; tom = atom->col_ion_omega[src];
+            }
+            if (ntr <= 0 || ntemp <= 0 || !tg || !tlo || !thi || !tom) continue;
+            /* interpolation weights at T_ref (same clamp as the NLTE passes) */
+            int ti = 0; while (ti < ntemp - 2 && rc_Tref > tg[ti + 1]) ti++;
+            double frac_t = 0.0, denom = tg[ti + 1] - tg[ti];
+            if (denom > 0.0) frac_t = (rc_Tref - tg[ti]) / denom;
+            if (frac_t < 0.0) frac_t = 0.0;
+            if (frac_t > 1.0) frac_t = 1.0;
+            int maxlev = 0;
+            for (int t = 0; t < ntr; t++) {
+                if (tlo[t] > maxlev) maxlev = tlo[t];
+                if (thi[t] > maxlev) maxlev = thi[t];
+            }
+            int nlev = maxlev + 1;
+            if (nlev <= 0) continue;
+            double *cf = (double *)malloc((size_t)nlev * (size_t)nlev * sizeof(double));
+            if (!cf) continue;
+            for (size_t i = 0; i < (size_t)nlev * (size_t)nlev; i++) cf[i] = -1.0;
+            for (int t = 0; t < ntr; t++) {
+                int lo = tlo[t], hi = thi[t];
+                if (lo < 0 || hi < 0 || lo >= nlev || hi >= nlev) continue;
+                const double *om = &tom[(size_t)t * (size_t)ntemp];
+                double ups = om[ti] + frac_t * (om[ti + 1] - om[ti]);
+                if (!(ups > 0.0)) continue;
+                int a = lo < hi ? lo : hi, b = lo < hi ? hi : lo;
+                cf[(size_t)a * (size_t)nlev + (size_t)b] = ARTIS_COL_CONST * ups;
+            }
+            rcs[n_rcs].Z = Zs; rcs[n_rcs].ion0 = ion0s;
+            rcs[n_rcs].nlev = nlev; rcs[n_rcs].cf = cf;
+            n_rcs++;
+        }
+    }
     for (int pass = 0; pass < 2; pass++) {
         long k = 0;
         for (int line = 0; line < n_lines; line++) {
@@ -4586,6 +8937,67 @@ static void build_radeq_line_table(NLTEConfig *nlte, AtomicData *atom,
                 static int vr_std = -1;
                 if (vr_std < 0) { const char *vs = getenv("LUMINA_RADEQ_VR_STD");
                                   vr_std = (vs && atoi(vs)) ? 1 : 0; }
+                if (omcm_on) {
+                    /* [OMEGA-CMFGEN] one per-transition CMFGEN Omega, baked at
+                     * the same T_ref the whole table uses. coeff = 8.629e-6*Omega
+                     * keeps the eval-time C_ul = n_e*coeff/(g_up*sqrt(Te)) in the
+                     * Osterbrock convention, identical to the tier-1 (real table)
+                     * and NLTE col_data passes. NO floor is applied anywhere. */
+                    int tier = 3;
+                    double ups = omega_cmfgen_line(atom, line, rc_Tref, &tier);
+                    radeq_lines[k].coeff = ARTIS_COL_CONST * ups;
+                    omcm_cnt[tier]++;
+                    if (tier == 1) realsub_count++;
+                } else
+                if (artis_parity_enabled()) {
+                    /* A6: ONE collision form. Bake the effective coeff so the
+                     * eval-time C_ul = n_e*coeff/(g_up*sqrt(Te)) equals the shared
+                     * ARTIS C_down (deexcitation): permitted = vR + Bethe
+                     * (H_ionpot/dE)^2; forbidden = g-scaled Axelrod (0.01*g_lo*g_up).
+                     * The energy-dependent Gaunt is frozen at its g_bar=0.2 floor
+                     * because this table is T-independent (consumed in the per-trial
+                     * -Te root solve); the NLTE matrix + k-packet use the exact
+                     * eval-time Gaunt via artis_col_rates(). */
+                    int g_lo_r = atom->level_g[lo_g];
+                    int g_up_r = atom->level_g[up_g];
+                    if (f_lu > 1e-10) {
+                        double ry = ARTIS_H_IONPOT_ERG / dE;
+                        radeq_lines[k].coeff = ARTIS_C_0 * ARTIS_VR_PREF * f_lu *
+                            ry * ry * (double)g_lo_r * ARTIS_GBAR * (dE / K_BOLTZMANN);
+                    } else {
+                        radeq_lines[k].coeff = ARTIS_COL_CONST * ARTIS_FORB_UPS *
+                            (double)g_lo_r * (double)g_up_r;
+                    }
+                    /* dig_C5-A: real close-coupling Upsilon override (exact,
+                     * default ON). Covered (Z,ion,lo,hi) replace the vR/Axelrod
+                     * proxy with coeff = ARTIS_COL_CONST*Upsilon(T_ref). Level
+                     * pair normalised min/max on level_number (== energy rank),
+                     * matching dig_C5's reference lookup. */
+                    if (n_rcs > 0) {
+                        int Zl = atom->line_atomic_number[line];
+                        for (int rs = 0; rs < n_rcs; rs++) {
+                            if (rcs[rs].Z != Zl || rcs[rs].ion0 != ion_s) continue;
+                            int a = atom->level_num[lo_g];
+                            int b = atom->level_num[up_g];
+                            if (a > b) { int tmp = a; a = b; b = tmp; }
+                            if (a >= 0 && b < rcs[rs].nlev) {
+                                double cf = rcs[rs].cf[(size_t)a * (size_t)rcs[rs].nlev + (size_t)b];
+                                if (cf >= 0.0) {
+                                    radeq_lines[k].coeff = cf;
+                                    realsub_count++;
+                                }
+                            }
+                            break;
+                        }
+                    }
+                    /* dig_C5-B: Omega floor (opt-in). Flat coeff floor mirroring
+                     * the non-parity vr_std semantics (no g factor); applied AFTER
+                     * A so real Upsilon<om_floor is raised too (reference 'realfloor'). */
+                    if (p_om_floor > 0.0) {
+                        double c_min = ARTIS_COL_CONST * p_om_floor;
+                        if (radeq_lines[k].coeff < c_min) radeq_lines[k].coeff = c_min;
+                    }
+                } else
                 if (vr_std && f_lu > 1e-10) {
                     double gbar = (vr_gaunt != 1.0) ? vr_gaunt : 0.2;
                     double ry_de = 13.605693 / (radeq_lines[k].dE / EV_TO_ERG);
@@ -4625,6 +9037,21 @@ static void build_radeq_line_table(NLTEConfig *nlte, AtomicData *atom,
     radeq_n_lines = count;
     printf("  [RADEQ] collisional line-cooling table: %ld bb transitions (all ions)\n",
            radeq_n_lines);
+    if (omcm_on) {
+        printf("  [OMEGA-CMFGEN] radeq ETLA coeff = 8.629e-6*Omega_CMFGEN(T=%.0fK), "
+               "NO floor: %ld tabulated | %ld vR(gbar>=0.2) | %ld OMEGA_SET=%g  "
+               "(of %ld lines)\n", rc_Tref, omcm_cnt[1], omcm_cnt[2], omcm_cnt[3],
+               omcm_oset(), radeq_n_lines);
+    } else
+    if (artis_parity_enabled()) {
+        printf("  [ARTIS-PARITY REAL-UPSILON] radeq ETLA: real close-coupling Upsilon"
+               " baked (T=%.0fK) for %ld lines (%d ion tables)\n",
+               rc_Tref, realsub_count, n_rcs);
+        if (p_om_floor > 0.0)
+            printf("  [ARTIS-PARITY OMEGA-FLOOR] radeq ETLA coeff floored at Upsilon>=%g"
+                   " (+real-Upsilon for %ld lines)\n", p_om_floor, realsub_count);
+    }
+    for (int rs = 0; rs < n_rcs; rs++) free(rcs[rs].cf);
     {   /* DIAG: how many lines have BOTH levels NLTE-tracked (the COOL_NLTE_ONLY=1
          * cooling set). If ~0, the faithful coolant is empty because
          * global_to_nlte_level returns -1 for (super-level-folded) levels. */
@@ -4639,6 +9066,13 @@ static void build_radeq_line_table(NLTEConfig *nlte, AtomicData *atom,
                100.0 * (double)n_both / (double)(radeq_n_lines > 0 ? radeq_n_lines : 1));
     }
 }
+
+#ifdef LUMINA_FROZEN_ORACLE
+void lumina_oracle_prepare_line_eps(NLTEConfig *nlte, AtomicData *atom,
+                                    OpacityState *opacity) {
+    build_radeq_line_table(nlte, atom, opacity);
+}
+#endif
 
 /* Net energy rate H(T_e) - C(T_e) [erg/s/cm^3] for one shell. The lagged,
  * T_e-independent heating (H_photo + H_gamma) and the per-line cooling
@@ -4820,13 +9254,64 @@ typedef struct {
     int *l_ip; double *l_dE, *l_beta, *l_coeff, *l_glo, *l_gup, *l_Elo;
     double *l_BluJ, *l_ABulJ, *l_ftau;   /* B_lu*Jb, A_ul+B_ul*Jb, Sobolev tau/n_lo */
     double *nion;                /* [n_ip] trial ion densities */
+    /* [DBFB] LUMINA_RADEQ_DB_FB detailed-balance bf-emission spectrum. Built in
+     * the Gph loop on the SAME sigma_bf grid / f_above weight / lagged pops as
+     * sh.Hex, so the bf net n*(Hex - C_fb) cancels bin-by-bin when J = B_nu^Wien(T).
+     * emit_bf[p*nfb+bb] = Sum_l pop_l * 4*pi*sigma f_above dnu * (2 h nu^3/c^2)
+     * (T-independent). Cooling(T) = Sum_p nion[ipa[p]] * Sum_bb emit_bf[p][bb]
+     * * exp(-emit_bx[bb]/T).  Allocated/used only when g_radeq_db_fb==1. */
+    double *emit_bf;             /* [SIM_MAXP*nfb] per-pair per-bin emission weight */
+    double *emit_bx;             /* [nfb] h*nu_mid/k_B [K] for the Wien factor */
+    int     nfb;                 /* == nlte->n_freq_bins */
+    /* withParityO (LUMINA_RADEQ_COL_PAIRS): CMFGEN-faithful all-level-pair COL
+     * cooling prefactors for the covered col-table ions, built per shell from
+     * the LIVE NLTE populations. Replaces those ions' 2-level simul_line_term
+     * (skipped from the lam sum) -> no double count. a/b/beta consumed by
+     * radeq_line_cool at trial T (signed; the IGE super-elastic heaters keep
+     * their sign). NULL/0 when the gate is off => byte-identical. */
+    double *cp_a, *cp_b, *cp_beta;   /* [cp_cap] pair prefactors */
+    long    cp_n;                    /* active pair count this shell */
 } SimShell;
+
+/* [DBFB] LUMINA_RADEQ_DB_FB: replace simul_r1's analytic frozenin_alpha_rr C_fb
+ * with the emit_nu/Wien detailed-balance PARTNER of the photoheating integral
+ * (construction documented at the emit_nu block ~4798-4810). Parsed once in the
+ * serial prologue of radeq_simul_all (alongside fb_cool_kt_on); -1 = unparsed,
+ * 0 = off => analytic C_fb, emit_bf never allocated => byte-identical. simul_r1
+ * only READS this static (never -1 there). */
+static int g_radeq_db_fb = -1;
+
+/* withParityO forward decls (simul_r1, below, consumes both). */
+static double radeq_line_cool(double T_e, double n_e, const double *a,
+                              const double *b, const double *beta,
+                              long n_active, int nonneg);
+static int g_cp_on = -1;   /* LUMINA_RADEQ_COL_PAIRS gate; -1 unparsed, 0 off, 1 on */
 
 static void simul_ladder(AtomicData *atom, SimShell *sh, double T, double *n_e_io) {
     /* equilibrium ladder with n_e fixed point (calculator solve_ion mirror) */
     double n_e = *n_e_io;
     if (!(n_e > 0.0)) n_e = 0.5 * sh->natom;
     int n_ip = atom->n_ion_pops;
+    /* [STAGE4-R2 A2] top-ion Saha closure. A level-less destination rung
+     * (e.g. Ni V / Co V: no levels, no sigma_bf, no NLTE in this dataset) has no
+     * recombination floor, so the product-chain ladder y[j+1]=y[j]*r runs away UP
+     * into it (round-1 Ni f(V) ~ 1). Mirror the NLTE hi_is_topstage detection
+     * (plasma.c:9627-9632): when stage j+1 is a level-less rung, truncate the
+     * ladder there (r=0 => y[j+1]=0). Gated on stage4 + LUMINA_SIMUL_CAP_TOPION
+     * (default ON under stage4, OFF otherwise => byte-identical baseline). */
+    static int g_simul_cap_topion = -1;
+    if (g_simul_cap_topion < 0) {
+        const char *e = getenv("LUMINA_SIMUL_CAP_TOPION");
+        if (e) g_simul_cap_topion = atoi(e) ? 1 : 0;
+        else   g_simul_cap_topion = nlte_stage4_enabled() ? 1 : 0;
+    }
+    /* A4 (ARTIS parity): thermal collisional ionization + 3-body recombination in
+     * the ion-balance ladder. Adds C_ion to the up-rate and the EXACT detailed-
+     * balance 3-body partner C_rec to the recomb rate, so the LTE Saha fixed point
+     * is preserved (both channels vanish net at LTE). Only under the master gate
+     * => byte-identical when off. Inert unless LUMINA_RADEQ_SIMUL is also on. */
+    const int    parity_ladder = artis_parity_enabled();
+    const double SIM_SAHACONST = 2.0706659e-16;  /* (h^2/(2 pi m_e k))^1.5 [cgs] */
     for (int it = 0; it < 20; it++) {
         double ne_new = 0.0;
         for (int p = 0; p < sh->np; ) {
@@ -4837,9 +9322,41 @@ static void simul_ladder(AtomicData *atom, SimShell *sh, double T, double *n_e_i
                 double al = frozenin_alpha_rr(atom, sh->ipa[p + j],
                                               sh->ipa[p + j] + 1, T);
                 double G = sh->Gph[p + j] + sh->gnt_p[p + j];
-                double r = (al > 0.0 && n_e > 0.0) ? G / (n_e * al) : 0.0;
+                double rec_rate = n_e * al;
+                if (parity_ladder && T > 0.0 && n_e > 0.0) {
+                    int ipl = sh->ipa[p + j], ipu = ipl + 1;
+                    double chi = sh->chi[p + j];
+                    double u = (chi > 0.0) ? chi / (K_BOLTZMANN * T) : 0.0;
+                    int has_upper = (ipu < n_ip &&
+                        atom->level_offset[ipu + 1] > atom->level_offset[ipu]);
+                    if (u > 0.0 && u < 700.0 && has_upper) {
+                        int st = atom->ion_pop_stage[ipl];
+                        int zeff = st + 1; if (zeff < 1) zeff = 1;
+                        double sig = 7.91e-18 / ((double)zeff * (double)zeff);
+                        double g_col = (st <= 0) ? 0.1 : (st == 1) ? 0.2 : 0.3;
+                        int glo = atom->level_g[atom->level_offset[ipl]];
+                        int gup = atom->level_g[atom->level_offset[ipu]];
+                        if (glo > 0 && gup > 0) {
+                            double C_ion = n_e * 1.55e13 / sqrt(T) * g_col * sig *
+                                           exp(-u) / u;
+                            double C_rec = n_e * n_e * SIM_SAHACONST *
+                                           ((double)glo / (double)gup) * 1.55e13 *
+                                           g_col * sig * K_BOLTZMANN / (T * chi);
+                            if (isfinite(C_ion) && C_ion > 0.0) G += C_ion;
+                            if (isfinite(C_rec) && C_rec > 0.0) rec_rate += C_rec;
+                        }
+                    }
+                }
+                double r = (rec_rate > 0.0) ? G / rec_rate : 0.0;
                 if (!isfinite(r) || r < 0.0) r = 0.0;
                 if (r > 1e28) r = 1e28;
+                /* [STAGE4-R2 A2] clamp the step into a level-less top rung. */
+                if (g_simul_cap_topion) {
+                    int ipn = sh->ipa[p + j] + 1;
+                    if (ipn < n_ip &&
+                        atom->level_offset[ipn + 1] == atom->level_offset[ipn])
+                        r = 0.0;
+                }
                 y[j + 1] = y[j] * r;
                 if (y[j + 1] > 1e280) { for (int q = 0; q <= j + 1; q++) y[q] /= 1e280; }
             }
@@ -4886,6 +9403,11 @@ static inline double simul_line_term(const SimShell *sh, long m, double T,
     return sh->l_dE[m] * (nlo * qlu * n_e - nup * qul * n_e);
 }
 
+/* [SIMUL-CT] per-term cooling shadows of the LAST simul_r1 call on this thread
+ * (diagnostic read-out for the RADEQ_DIAG scan; the C accumulation stream is
+ * untouched — shadows are separate adds/stores, champion FP byte-identical). */
+static __thread double g_r1d_H, g_r1d_ff, g_r1d_ad, g_r1d_fb, g_r1d_lam,
+                       g_r1d_colpairs;
 static double simul_r1(AtomicData *atom, SimShell *sh, double T, double *n_e_out) {
     double n_e = *n_e_out;
     simul_ladder(atom, sh, T, &n_e);
@@ -4895,17 +9417,49 @@ static double simul_r1(AtomicData *atom, SimShell *sh, double T, double *n_e_out
     for (int p = 0; p < sh->np; p++)
         H += sh->nion[sh->ipa[p]] * sh->Hex[p];
     /* continuum cooling */
-    double C = sh->ff_pref * n_e * n_e * sqrt(T);
-    C += 1.5 * n_e * K_BOLTZMANN * T * sh->Gamma_ad;
+    double c_ff_d = sh->ff_pref * n_e * n_e * sqrt(T);
+    double C = c_ff_d;
+    double c_ad_d = 1.5 * n_e * K_BOLTZMANN * T * sh->Gamma_ad;
+    C += c_ad_d;
+    g_r1d_H = H; g_r1d_ff = c_ff_d; g_r1d_ad = c_ad_d; g_r1d_fb = 0.0;
+    if (g_radeq_db_fb == 1) {
+        /* [DBFB] detailed-balance bf cooling = the emit_nu/Wien EMISSION partner of
+         * H_photo (heating H += nion[ip]*Hex[p]).  C_fb(T) = Sum_p nion[ip] *
+         * Sum_bb emit_bf[p][bb] * exp(-h nu_bb/kT).  emit_bf was built in the Gph
+         * loop from the SAME sigma_bf, f_above weight and lagged level pops as Hex,
+         * so the bf net nion[ip]*(Hex[p] - C_fb[p](T)) cancels bin-by-bin whenever
+         * the field J_bb = B_nu^Wien(T) = (2 h nu^3/c^2) exp(-h nu/kT). Replaces the
+         * analytic frozenin_alpha_rr term below (that term was FIELD-decoupled, so a
+         * brightening ionizing field made H_photo unbounded with no cooling partner
+         * -> cold root vanished -> pin_hi ratchet; TRACE_LEDGER.txt root cause). */
+        int nfb = sh->nfb;
+        double invT = 1.0 / T;
+        double wien[NLTE_N_FREQ_BINS];
+        for (int bb = 0; bb < nfb; bb++)
+            wien[bb] = exp(-sh->emit_bx[bb] * invT);
+        for (int p = 0; p < sh->np; p++) {
+            double np_ = sh->nion[sh->ipa[p]];
+            if (np_ <= 0.0) continue;
+            const double *ep = sh->emit_bf + (size_t)p * nfb;
+            double acc = 0.0;
+            for (int bb = 0; bb < nfb; bb++) acc += ep[bb] * wien[bb];
+            double fbterm = np_ * acc;
+            C += fbterm;
+            g_r1d_fb += fbterm;
+        }
+    } else
     for (int p = 0; p < sh->np; p++) {                     /* fb: rate-based */
         double al = frozenin_alpha_rr(atom, sh->ipa[p], sh->ipa[p] + 1, T);
-        if (al > 0.0)
+        if (al > 0.0) {
             /* [FB-COOL-KT] fb thermal cooling weight: ARTIS charges only the
              * photoelectron kinetic energy (~kTe); chi is the ionization ledger.
              * OFF => legacy (chi + kTe), byte-identical (g_fb_cool_kt pre-inited
              * serially in radeq_simul_all, so it is 0/1 here, never -1). */
-            C += n_e * sh->nion[sh->ipa[p] + 1] * al *
+            double fbterm = n_e * sh->nion[sh->ipa[p] + 1] * al *
                  (g_fb_cool_kt ? (K_BOLTZMANN * T) : (sh->chi[p] + K_BOLTZMANN * T));
+            C += fbterm;
+            g_r1d_fb += fbterm;
+        }
     }
     /* ETLA two-level SE line exchange with trial pops (signed; heating allowed).
      * [SIMUL-LB] The line table is the SIMUL load imbalance: s0 carries 2.14M
@@ -4927,6 +9481,17 @@ static double simul_r1(AtomicData *atom, SimShell *sh, double T, double *n_e_out
             lam += simul_line_term(sh, m, T, n_e, invsq);
     }
     C += lam;
+    g_r1d_lam = lam;
+    /* withParityO: CMFGEN-faithful all-pair COL cooling for the covered ions
+     * (their 2-level lines were skipped from lam above => no double count).
+     * Signed (nonneg=0): the IGE super-elastic collisional HEATERS keep their
+     * sign. cp_n==0 when the gate is off => byte-identical. */
+    g_r1d_colpairs = 0.0;
+    if (g_cp_on == 1 && sh->cp_n > 0) {
+        g_r1d_colpairs = radeq_line_cool(
+            T, n_e, sh->cp_a, sh->cp_b, sh->cp_beta, sh->cp_n, 0);
+        C += g_r1d_colpairs;
+    }
     return H - C;
 }
 
@@ -4958,6 +9523,61 @@ static int g_gph_alllevel = -1;
  * over-populated (b_k>>1) and IME depressed (b_k<<1). Only effective when
  * g_gph_alllevel is also on; -1 = unparsed, 0 = off (all-level loop unchanged). */
 static int g_gph_alllevel_nlte = -1;
+/* [IONIZ-SELFTEST] known-answer (constrained) test of the IONIZATION path, the
+ * counterpart of the four transport self-tests (cmf_plasma/nlte/fsolve/obs).
+ *   Identity: with J_nu = B_nu(T_e) and detailed balance intact, the photoion /
+ *   recombination equilibrium MUST reproduce Saha exactly:
+ *       q  = Gamma_phot / alpha_rec                        [cm^-3]
+ *       q_saha = 2 (U_{i+1}/U_i) (2 pi m_e k T/h^2)^{3/2} exp(-chi/kT)
+ *   (n(i+1)/n(i) = q/n_e, so q is the n_e-free form of the r in the brief.)
+ * Modes: 1 = force every photoion field read to B_nu(T_e[s]) AND print the
+ *            per-(shell,ion) identity table  <- the known-answer test
+ *        2 = print only, leave the live field alone (audit of a real run)
+ * Default (env unset) => 0 => no site fires, no print => byte-identical. */
+static int g_ioniz_selftest = -1;
+static int ioniz_selftest_mode(void) {
+    if (g_ioniz_selftest < 0) {
+        const char *e = getenv("LUMINA_IONIZ_SELFTEST");
+        g_ioniz_selftest = (e && *e) ? atoi(e) : 0;
+    }
+    return g_ioniz_selftest;
+}
+/* forward decl: the NLTE-route photoion rate, cross-checked in the same table */
+static double coupled_photoion_rate_jnu(AtomicData *atom, NLTEConfig *nlte,
+                                        int ip, int s, double T_e, int n_shells,
+                                        const double *jblend_lstar,
+                                        const double *jblend_b, double jblend_W,
+                                        double wbfloor_T, double *Krow);
+/* Partition function on the SAME level list + x<50 cut the production integrals
+ * use (frozenin_alpha_rr's U_ion recipe), so the reference is not a second
+ * convention. floor_g: fall back to the ground g when the sum underflows. */
+static double ioniz_selftest_U(AtomicData *atom, int ip, double T, int floor_g) {
+    if (ip < 0) return 1.0;
+    int n0 = atom->level_offset[ip], n1 = atom->level_offset[ip + 1];
+    double kT = K_BOLTZMANN * T, u = 0.0;
+    for (int l = n0; l < n1; l++) {
+        double x = atom->level_energy_eV[l] * EV_TO_ERG / kT;
+        if (x < 50.0) u += (double)atom->level_g[l] * exp(-x);
+    }
+    if (u >= 1.0) return u;
+    if (floor_g && n1 > n0) { int gg = atom->level_g[n0]; return (gg >= 1) ? (double)gg : 1.0; }
+    return (u > 0.0) ? u : 1.0;
+}
+/* [TEHOLD] LINE_THERM addendum: per-shell radeq root status, captured in the
+ * radeq_simul_all shell loop and printed after the parallel region (host-side, in
+ * shell order). Distinguishes "T_e failed to climb because thermalization is
+ * innocent" from "T_e frozen because the solver HELD (pin_lo/pin_hi, no root in
+ * bracket)". Status: 0=not-solved-this-iter, 1=root-found, 2=pin_lo(HOLD prev),
+ * 3=pin_hi(HOLD prev). Written only when the LINE_THERM gate is on. */
+#define TEHOLD_MAXSH 512
+static int    g_tehold_status[TEHOLD_MAXSH];
+static double g_tehold_te[TEHOLD_MAXSH];
+static double g_tehold_told[TEHOLD_MAXSH];
+static const char *tehold_root_name(int st) {
+    return (st == 1) ? "root-found" :
+           (st == 2) ? "pin_lo(HOLD-no-root)" :
+           (st == 3) ? "pin_hi(HOLD-no-root)" : "not-solved-this-iter";
+}
 void plasma_set_photoion_mc_field(const double *J, double alpha, int nshells, int nfb,
                                   const int *counts) {
     g_photoion_mc_J = J; g_photoion_mc_alpha = alpha;
@@ -4989,17 +9609,287 @@ void plasma_set_photoion_mc_field(const double *J, double alpha, int nshells, in
     }
 }
 
+/* [PUMPF] LUMINA_RADEQ_PUMP_FIELD: unify the radeq line-pump field. The ETLA
+ * line term (simul_line_term) baked its per-line Jb from the HARD-WIRED
+ * deterministic cs_J (nlte_get_J_at_nu, plasma.c line-build), while the Gph
+ * photoion + bf-heating in the SAME balance consume the alpha-blended MC field
+ * (J = alpha*mc_J + (1-alpha)*cs_J). te_bias_budget C2: the super-thermal cs_J
+ * pump under-cools/pump-heats (bias -664/-1563/-3863 K at s0/s4/s8). When ON,
+ * the line-build Jb is read from that SAME blended field. ONLY the field SOURCE
+ * changes -- the bin mapping is byte-identical to nlte_get_J_at_nu and the
+ * cooling/stimulated structure of simul_line_term is untouched. -1 unparsed,
+ * 0 off (byte-identical), 1 on. */
+static int g_radeq_pump_field = -1;
+
+/* FIX-2 [PUMPF fallback]: LUMINA_RADEQ_PUMP_FALLBACK. When the alpha-blended line
+ * pump falls back on a ZERO-COUNT mc bin (mc field armed but this bin was never
+ * sampled), the legacy path returns the deterministic super-thermal cs_J (int
+ * J_cs ~100x mc at depth -> pump-heating, kpr4 VERDICT §b: -56..-1683 K). =1
+ * routes those zero-count bins to the local thermal B_nu(T_e) instead (consistent
+ * with the DBFB ledger), removing a warm-biased term the current field cannot
+ * self-correct. Default 0 => cs_J (byte-identical). The mc-not-armed (pre-
+ * transport) and out-of-grid guards are untouched. */
+static int g_radeq_pump_fallback = -1;
+
+/* Return the per-line pump Jb from the SAME alpha-blended field the Gph/Hex loop
+ * consumes.  The cs_J branch is byte-identical to nlte_get_J_at_nu(nlte,s,nu_l)
+ * (same log-grid bin, same out-of-range 1e-30) so ONLY the field source changes.
+ * The blend + guard MIRROR the Gph sites EXACTLY (plasma.c ground ~5873,
+ * NLTE/all-level ~5750/5806): if the MC field is NULL (pre first transport pass),
+ * shape-mismatched, or a zero-count bin, keep cs_J -- the SAME startup fallback
+ * the Gph loop uses (guard condition false => J stays cs_J).  Per-line source
+ * tallied in *n_blend / *n_cs (host-side; the reduction copies are thread-private
+ * where this is called). Reuses g_photoion_mc_* (one field, no new parameter). */
+static inline double radeq_pump_line_Jb(NLTEConfig *nlte, int s, int nfb,
+                                        double nu_l, double Te_s,
+                                        long *n_blend, long *n_cs, long *n_bnu) {
+    if (nu_l <= nlte->nu_min || nu_l >= nlte->nu_max) { (*n_cs)++; return 1e-30; }
+    int bin = (int)(log(nu_l / nlte->nu_min) / nlte->d_log_nu);
+    if (bin < 0) bin = 0;
+    if (bin >= nlte->n_freq_bins) bin = nlte->n_freq_bins - 1;
+    double cs = nlte->J_nu[(size_t)s * nlte->n_freq_bins + bin];  /* == nlte_get_J_at_nu */
+    int mc_armed = (g_photoion_mc_J && s < g_photoion_mc_nshells &&
+                    g_photoion_mc_nfb == nfb);
+    int bin_zero = (g_photoion_mc_occ && g_photoion_mc_count &&
+                    g_photoion_mc_count[(size_t)s * nfb + bin] == 0);
+    if (mc_armed && !bin_zero) {
+        (*n_blend)++;
+        return g_photoion_mc_alpha * g_photoion_mc_J[(size_t)s * nfb + bin]
+               + (1.0 - g_photoion_mc_alpha) * cs;
+    }
+    (*n_cs)++;
+    /* FIX-2: genuine zero-count mc bin (field armed) -> local thermal B_nu(Te)
+     * instead of the super-thermal cs_J. The pre-transport case (mc field NULL /
+     * shape-mismatched) keeps cs_J (the untouched startup fallback). */
+    if (g_radeq_pump_fallback == 1 && mc_armed && bin_zero && Te_s > 0.0) {
+        (*n_bnu)++;
+        return planck_bnu(Te_s, nu_l);
+    }
+    return cs;
+}
+
+/* =====================================================================
+ * withParityO — LUMINA_RADEQ_COL_PAIRS registry + per-shell build.
+ *
+ * Replaces the covered col-table ions' 2-level simul_line_term collisional
+ * cooling with the CMFGEN-faithful all-level-pair COL sum (shared core in
+ * lumina_radeq_col_pairs.h), fed the LIVE NLTE level populations and NO
+ * beta-escape. The covered ions are dropped from the lam line sum (skip flag)
+ * so there is no double count. Gate default OFF => registry never armed, skip
+ * flag all-zero, cp_n==0 => the SIMUL solve is byte-identical.
+ *
+ * Certified offline: src/lumina_radeq_col_pairs_bench.c reproduces the dig_F11
+ * numbers (Si/S/Fe/Co/Ni III) to 1.0000 through this exact core.
+ * ===================================================================== */
+typedef struct {
+    int Z, ion0, ip, src_slot;      /* src_slot: -1 = feiii_col, else col_ion slot */
+    int ntemp, n_trans;
+    const double *tgrid;            /* [ntemp] Kelvin */
+    const double *om;               /* [n_trans*ntemp] split-J Omega(T) */
+    const int    *clo, *chi;        /* [n_trans] level_number (clo = lower) */
+    int      nline;                 /* pruned line f-list (both level_num < maxlev) */
+    int     *llo, *lhi; double *lf;
+    long     nlev_max;              /* max level_number seen (for lvmap sizing) */
+} CpIon;
+static int    g_cp_maxlev = 512;        /* per-ion level cap (fail-loud on drop) */
+static CpIon  g_cp_ions[1 + LUMINA_MAX_COL_IONS];
+static int    g_cp_nions = 0;
+static char  *g_cp_line_covered = NULL; /* [radeq_n_lines] 1 = owned by pair loop */
+static const double g_cp_oset = 0.1;    /* CMFGEN forbidden Omega default */
+/* fail-loud shell-8 spot-check + one-shot census, written at s==8, host-printed
+ * after the parallel region. Indexed by a small (Z,ion0) probe map. */
+#define CP_NPROBE 5
+static const int g_cp_probe_Z[CP_NPROBE]   = {14, 16, 26, 27, 28};
+static const int g_cp_probe_ion[CP_NPROBE] = { 2,  2,  1,  2,  2};
+static const char *g_cp_probe_name[CP_NPROBE] = {"SiIII","SIII","FeIII","CoIII","NiIII"};
+static double g_cp_s8_cool[CP_NPROBE];
+static RcpCensus g_cp_s8_cen[CP_NPROBE];
+static long g_cp_s8_dropped = 0;
+static int  g_cp_census_done = 0;
+
+/* Arm the registry once per process (idempotent). Reads the gate, enumerates the
+ * covered col-table ions (feiii_col + col_ion_*), prunes their low-level line
+ * f-lists for the van-Regemorter fill, and flags the RadEqLine rows those ions
+ * own so the lam sum can skip them. */
+static void radeq_colpairs_register(AtomicData *atom, OpacityState *opacity) {
+    if (g_cp_on >= 0) return;                       /* already armed */
+    const char *e = getenv("LUMINA_RADEQ_COL_PAIRS");
+    g_cp_on = (e && atoi(e)) ? 1 : 0;
+    const char *ml = getenv("LUMINA_RADEQ_COLPAIRS_MAXLEV");
+    if (ml) { int v = atoi(ml); if (v >= 2) g_cp_maxlev = v; }
+    if (!g_cp_on) return;
+    g_cp_nions = 0;
+    for (int src = -1; src < atom->ncol_ions; src++) {
+        CpIon *c = &g_cp_ions[g_cp_nions];
+        if (src < 0) {
+            if (!atom->feiii_col_loaded) continue;
+            c->Z = atom->feiii_col_Z; c->ion0 = atom->feiii_col_ion;
+            c->ntemp = atom->feiii_col_n_temp; c->n_trans = atom->feiii_col_n_trans;
+            c->tgrid = atom->feiii_col_tgrid; c->om = atom->feiii_col_omega;
+            c->clo = atom->feiii_col_lo; c->chi = atom->feiii_col_hi; c->src_slot = -1;
+        } else {
+            c->Z = atom->col_ion_Z[src]; c->ion0 = atom->col_ion_stage[src];
+            c->ntemp = atom->col_ion_n_temp[src]; c->n_trans = atom->col_ion_n_trans[src];
+            c->tgrid = atom->col_ion_tgrid[src]; c->om = atom->col_ion_omega[src];
+            c->clo = atom->col_ion_lo[src]; c->chi = atom->col_ion_hi[src]; c->src_slot = src;
+        }
+        c->ip = find_ion_pop_idx(atom, c->Z, c->ion0);
+        if (c->ip < 0 || c->n_trans <= 0 || c->ntemp <= 0) continue;
+        c->nlev_max = 0;
+        for (int t = 0; t < c->n_trans; t++) {
+            if (c->clo[t] > c->nlev_max) c->nlev_max = c->clo[t];
+            if (c->chi[t] > c->nlev_max) c->nlev_max = c->chi[t];
+        }
+        /* pruned line f-list: only pairs both below the level cap (higher levels
+         * are dropped from the pair sum anyway) — bounds Fe III's huge line list. */
+        long cnt = 0;
+        for (int l = 0; l < atom->n_lines; l++)
+            if (atom->line_atomic_number[l] == c->Z &&
+                atom->line_ion_number[l] == c->ion0 &&
+                atom->line_level_lower[l] < g_cp_maxlev &&
+                atom->line_level_upper[l] < g_cp_maxlev) cnt++;
+        c->nline = 0;
+        c->llo = (int *)malloc((size_t)(cnt > 0 ? cnt : 1) * sizeof(int));
+        c->lhi = (int *)malloc((size_t)(cnt > 0 ? cnt : 1) * sizeof(int));
+        c->lf  = (double *)malloc((size_t)(cnt > 0 ? cnt : 1) * sizeof(double));
+        for (int l = 0; l < atom->n_lines; l++) {
+            if (atom->line_atomic_number[l] != c->Z ||
+                atom->line_ion_number[l] != c->ion0) continue;
+            int lo = atom->line_level_lower[l], hi = atom->line_level_upper[l];
+            if (lo >= g_cp_maxlev || hi >= g_cp_maxlev) continue;
+            c->llo[c->nline] = lo; c->lhi[c->nline] = hi;
+            c->lf[c->nline] = atom->line_f_lu ? atom->line_f_lu[l] : 0.0;
+            c->nline++;
+        }
+        g_cp_nions++;
+    }
+    /* flag the RadEqLine rows owned by a covered ion (skip them from lam) */
+    if (radeq_n_lines > 0) {
+        g_cp_line_covered = (char *)calloc((size_t)radeq_n_lines, 1);
+        for (long k = 0; k < radeq_n_lines; k++) {
+            int Zk = atom->ion_pop_Z[radeq_lines[k].ip];
+            int ik = atom->ion_pop_stage[radeq_lines[k].ip];
+            for (int c = 0; c < g_cp_nions; c++)
+                if (g_cp_ions[c].Z == Zk && g_cp_ions[c].ion0 == ik) {
+                    g_cp_line_covered[k] = 1; break;
+                }
+        }
+    }
+    printf("  [COL-PAIRS] LUMINA_RADEQ_COL_PAIRS=1 ARMED: %d covered ions, "
+           "maxlev=%d, no-beta CMFGEN COL sum with LIVE NLTE pops replaces their "
+           "2-level line cooling\n", g_cp_nions, g_cp_maxlev);
+    for (int c = 0; c < g_cp_nions; c++)
+        printf("    covered: Z=%d ion0=%d (%d col pairs, %d low lines, nlev_max=%ld)\n",
+               g_cp_ions[c].Z, g_cp_ions[c].ion0, g_cp_ions[c].n_trans,
+               g_cp_ions[c].nline, g_cp_ions[c].nlev_max);
+    fflush(stdout);
+}
+
+/* Build the pair prefactors (a,b,beta) for ONE covered ion at shell s from the
+ * live NLTE populations, appending to a[]/b[]/beta[] at *n. Returns the census
+ * (per-source pair counts + cooling at T_ref) and the count of levels dropped by
+ * the cap. Caller guarantees capacity >= *n + maxlev*(maxlev-1)/2. */
+static void radeq_colpairs_ion_shell(const CpIon *c, AtomicData *atom,
+        NLTEConfig *nlte, int n_shells, int s, double ne, double T_ref,
+        int maxlev, double *a, double *b, double *beta, long *n,
+        RcpCensus *cen, long *n_dropped) {
+    if (cen) { cen->n_tab = cen->n_vr = cen->n_set = 0;
+               cen->c_tab = cen->c_vr = cen->c_set = 0.0; cen->n_pairs = 0; }
+    int ip = c->ip;
+    int l0 = atom->level_offset[ip], l1 = atom->level_offset[ip + 1];
+    int cnt = l1 - l0;
+    if (cnt < 2) return;
+    /* gather + select the lowest-energy maxlev levels */
+    int    *ord = (int *)malloc((size_t)cnt * sizeof(int));
+    for (int i = 0; i < cnt; i++) ord[i] = l0 + i;
+    /* partial selection by energy (simple insertion of K smallest) */
+    int K = cnt < maxlev ? cnt : maxlev;
+    for (int i = 0; i < K; i++) {
+        int mn = i;
+        for (int j = i + 1; j < cnt; j++)
+            if (atom->level_energy_eV[ord[j]] < atom->level_energy_eV[ord[mn]]) mn = j;
+        int tmp = ord[i]; ord[i] = ord[mn]; ord[mn] = tmp;
+    }
+    if (n_dropped) *n_dropped += (cnt - K);
+    double *edge = (double *)malloc((size_t)K * sizeof(double));
+    double *npop = (double *)malloc((size_t)K * sizeof(double));
+    int    *gg   = (int *)malloc((size_t)K * sizeof(int));
+    int    *pqn  = (int *)malloc((size_t)K * sizeof(int));
+    int    *lvmap = (int *)malloc((size_t)(c->nlev_max + 1) * sizeof(int));
+    for (long i = 0; i <= c->nlev_max; i++) lvmap[i] = -1;
+    for (int k = 0; k < K; k++) {
+        int l = ord[k];
+        double E = atom->level_energy_eV[l];
+        edge[k] = (1000.0 - E) * EV_TO_ERG / RCP_HPL15;   /* higher edge = lower E */
+        gg[k]   = atom->level_g[l];
+        pqn[k]  = -1;                                      /* config-n unknown -> 0.2 */
+        int nl  = nlte->global_to_nlte_level ? nlte->global_to_nlte_level[l] : -1;
+        npop[k] = (nl >= 0 && nlte->nlte_level_populations)
+                ? nlte->nlte_level_populations[(size_t)nl * n_shells + s] : 0.0;
+        int lnum = atom->level_num[l];
+        if (lnum >= 0 && lnum <= c->nlev_max) lvmap[lnum] = k;
+    }
+    /* tabulated split-J Omega records, remapped + log-log interp at T_ref */
+    int cap_tab = c->n_trans;
+    int *tlo = (int *)malloc((size_t)(cap_tab > 0 ? cap_tab : 1) * sizeof(int));
+    int *thi = (int *)malloc((size_t)(cap_tab > 0 ? cap_tab : 1) * sizeof(int));
+    double *tom = (double *)malloc((size_t)(cap_tab > 0 ? cap_tab : 1) * sizeof(double));
+    int ntab = 0;
+    for (int t = 0; t < c->n_trans; t++) {
+        int lo = c->clo[t], hi = c->chi[t];
+        if (lo < 0 || hi < 0 || lo > c->nlev_max || hi > c->nlev_max) continue;
+        int cl = lvmap[lo], ch = lvmap[hi];
+        if (cl < 0 || ch < 0) continue;                   /* level dropped by cap */
+        tlo[ntab] = cl; thi[ntab] = ch;                   /* cl = lower level_num = lower E */
+        tom[ntab] = rcp_loglog(c->tgrid, &c->om[(size_t)t * c->ntemp], c->ntemp, T_ref);
+        ntab++;
+    }
+    /* oscillator-strength records for the van-Regemorter fill */
+    int *flo = (int *)malloc((size_t)(c->nline > 0 ? c->nline : 1) * sizeof(int));
+    int *fhi = (int *)malloc((size_t)(c->nline > 0 ? c->nline : 1) * sizeof(int));
+    double *fv = (double *)malloc((size_t)(c->nline > 0 ? c->nline : 1) * sizeof(double));
+    int nf = 0;
+    for (int t = 0; t < c->nline; t++) {
+        int lo = c->llo[t], hi = c->lhi[t];
+        if (lo > c->nlev_max || hi > c->nlev_max) continue;
+        int cl = lvmap[lo], ch = lvmap[hi];
+        if (cl < 0 || ch < 0) continue;
+        flo[nf] = cl; fhi[nf] = ch; fv[nf] = c->lf[t]; nf++;
+    }
+    radeq_col_pairs_build(K, edge, gg, npop, pqn, ne, T_ref / 1.0e4, g_cp_oset, 1.0,
+                          ntab, tlo, thi, tom, nf, flo, fhi, fv,
+                          a, b, beta, n, cen);
+    free(ord); free(edge); free(npop); free(gg); free(pqn); free(lvmap);
+    free(tlo); free(thi); free(tom); free(flo); free(fhi); free(fv);
+}
+
+static int g_simul_iter_no = 0;   /* outer-iteration tag for SIMUL diag prints */
 static void radeq_simul_all(PlasmaState *plasma, GammaDeposition *gamma_dep,
                             NLTEConfig *nlte, AtomicData *atom,
                             OpacityState *opacity, double time_explosion,
                             int n_shells) {
+    g_simul_iter_no++;            /* serial prologue; 1-based call count */
     build_radeq_line_table(nlte, atom, opacity);
     if (!g_sim_ulut) simul_build_ulut(atom);
+    radeq_colpairs_register(atom, opacity);   /* withParityO: arm once, gated */
     double radeq_damp = 0.5;
     { const char *d = getenv("LUMINA_RADEQ_DAMP"); if (d) radeq_damp = atof(d); }
+    /* [TEHOLD] LINE_THERM addendum diagnostic (default OFF => no print, no state
+     * change). When on, record each gated shell's radeq root branch + committed
+     * T_e so the probe can tell whether s0's root is actually being re-solved. */
+    int tehold_on = (getenv("LUMINA_LINE_THERM") && atoi(getenv("LUMINA_LINE_THERM"))) ? 1 : 0;
+    int tehold_smax = 2;
+    if (getenv("LUMINA_LINE_THERM_SMAX")) tehold_smax = atoi(getenv("LUMINA_LINE_THERM_SMAX"));
+    if (tehold_smax < 0) tehold_smax = 0;
+    if (tehold_on)
+        for (int s = 0; s < n_shells && s < TEHOLD_MAXSH; s++) g_tehold_status[s] = 0;
     int n_ip = atom->n_ion_pops;
     int nfb = nlte->n_freq_bins;
     long n_pin_hi = 0, n_pin_lo = 0;
+    long n_jtable_evals = 0;    /* #33: Gph field evals that used the CMFGEN J-table */
+    long n_te_table_pins = 0;   /* F3-T: shells whose T_e was pinned to the CMFGEN table */
+    long n_pumpf_bl = 0, n_pumpf_fb = 0;  /* [PUMPF] line-Jb: blended vs cs-fallback count */
+    long n_pumpf_bnu = 0;                  /* [PUMPF] FIX-2: zero-count bins routed to B_nu(Te) */
     /* ---- diagnostic / detailed-balance gates (parse once, print once) ----
      * Both default OFF: env unset => g_*<0 branch sets the gate to 0 with no
      * print, and every gated site below is skipped => byte-identical behavior.
@@ -5011,6 +9901,12 @@ static void radeq_simul_all(PlasmaState *plasma, GammaDeposition *gamma_dep,
     static int    g_gph_sigma_cmfgen = -1;          /* LUMINA_GPH_SIGMA_CMFGEN */
     static double g_cmf_log_numin = 0.0, g_cmf_inv_dlognu = 0.0;
     static int    g_cmf_nfreq = 0;
+    /* #33 GRADIENT-TRANSPLANT diagnostic (see loader block below). */
+    static int    g_gph_jtable_on = -1;             /* LUMINA_GPH_JTABLE parse latch */
+    static double *g_gph_jtable = NULL;             /* [n_shells*nfb] CMFGEN J or NULL */
+    /* F3-T TEMPERATURE-TABLE probe (see loader block below). */
+    static int    g_te_table_on = -1;               /* LUMINA_TE_TABLE parse latch */
+    static double *g_te_table = NULL;               /* [n_shells] CMFGEN T_e(v) or NULL */
     if (g_te_pin_on < 0) {
         g_te_pin_on = 0;
         const char *e = getenv("LUMINA_DIAG_TE_PIN");
@@ -5066,6 +9962,9 @@ static void radeq_simul_all(PlasmaState *plasma, GammaDeposition *gamma_dep,
      * grid statics (g_cmf_nfreq/log_numin/inv_dlognu) are available. Only effective
      * with the per-level CMFGEN sigma_bf table; otherwise announced INACTIVE so a
      * requested-but-null run is never silent (env-chain verification). */
+    /* [RATES-FIX] arm the master gate here, in the single-threaded prologue, so
+     * the env read + banner happen once before the shell-parallel region. */
+    (void)rates_fix_enabled();
     if (g_gph_alllevel < 0) {
         g_gph_alllevel = 0;
         const char *e = getenv("LUMINA_GPH_ALLLEVEL");
@@ -5100,7 +9999,228 @@ static void radeq_simul_all(PlasmaState *plasma, GammaDeposition *gamma_dep,
             fflush(stdout);
         }
     }
+    /* [IONIZ-SELFTEST] parse once in this serial prologue (default OFF). */
+    if (ioniz_selftest_mode()) {
+        printf("[IONIZ-SELFTEST] mode=%d  (%s)  route: alllevel=%d alllevel_nlte=%d "
+               "sigma_cmfgen=%d spingate=%s frozenin_dr=%s\n",
+               g_ioniz_selftest,
+               g_ioniz_selftest == 1 ? "J forced to B_nu(T_e): Gamma/alpha MUST equal Saha"
+                                     : "live field, print only",
+               g_gph_alllevel, g_gph_alllevel_nlte, g_gph_sigma_cmfgen,
+               getenv("LUMINA_ALPHA_SPINGATE") ? getenv("LUMINA_ALPHA_SPINGATE") : "0",
+               getenv("LUMINA_FROZENIN_DR") ? getenv("LUMINA_FROZENIN_DR") : "0");
+        printf("[IONIZ-SELFTEST] %-4s %-9s %-4s %-5s %-11s %-11s %-11s %-11s %-9s %-11s %-9s\n",
+               "s", "T_e", "Z", "stage", "Gamma_radeq", "alpha_Milne", "q=G/alpha",
+               "q_saha", "ratio", "Gamma_cpl", "ratio_cpl");
+        fflush(stdout);
+    }
+    /* #33 GRADIENT-TRANSPLANT loader (LUMINA_GPH_JTABLE=<path>, default OFF).
+     * Reads the offline CMFGEN J_nu(v) table (scripts/build_cmfgen_jtable.py) built
+     * onto THIS run's Gph frequency grid (n_shells x nfb; NLTE_NU_MIN..NLTE_NU_MAX,
+     * bin center exp((bb+0.5)*d_log_nu)). When present, the three Gph field sites
+     * below FULLY replace the mc-blend/nlte J with the table value for every
+     * (shell,bin) whose table entry > 0 (a value of 0 = outside CMFGEN coverage =>
+     * existing field kept). Env absent => g_gph_jtable stays NULL => every gated
+     * site is skipped => byte-identical. Parsed in this single-threaded prologue;
+     * the per-shell loop only READS the buffer (race-free). This is a surgical
+     * ionization-causality probe: it does NOT touch thermal balance, line transfer,
+     * or the MC/deterministic estimators -- ONLY the photoionization rate integral. */
+    if (g_gph_jtable_on < 0) {
+        g_gph_jtable_on = 0;
+        const char *e = getenv("LUMINA_GPH_JTABLE");
+        if (e && *e) {
+            FILE *fp = fopen(e, "rb");
+            if (!fp) {
+                printf("[JTABLE] ERROR: cannot open '%s' -- gate INACTIVE\n", e);
+            } else {
+                int hdr[4] = {0, 0, 0, 0};   /* magic, version, nshells, nfb */
+                size_t nr = fread(hdr, sizeof(int), 4, fp);
+                if (nr != 4 || hdr[0] != 0x4A544142 /* 'JTAB' */) {
+                    printf("[JTABLE] ERROR: bad header in '%s' (magic=0x%x) -- "
+                           "INACTIVE\n", e, nr == 4 ? (unsigned)hdr[0] : 0u);
+                    fclose(fp);
+                } else if (hdr[2] != n_shells || hdr[3] != nfb) {
+                    printf("[JTABLE] ERROR: grid mismatch '%s' shells=%d nfb=%d "
+                           "(run has shells=%d nfb=%d) -- INACTIVE\n",
+                           e, hdr[2], hdr[3], n_shells, nfb);
+                    fclose(fp);
+                } else {
+                    size_t nt = (size_t)n_shells * nfb;
+                    double *buf = (double *)malloc(nt * sizeof(double));
+                    size_t got = buf ? fread(buf, sizeof(double), nt, fp) : 0;
+                    fclose(fp);
+                    if (!buf || got != nt) {
+                        printf("[JTABLE] ERROR: short read '%s' (%zu/%zu) -- "
+                               "INACTIVE\n", e, got, nt);
+                        free(buf);
+                    } else {
+                        g_gph_jtable = buf;
+                        /* liveness banner: freq-bin coverage + FUV(918-1290A) band
+                         * geometric-mean at the two documented span shells s0,s8. */
+                        double dln = log(NLTE_NU_MAX / NLTE_NU_MIN) / (double)nfb;
+                        long nz_bins = 0, nz_cells = 0;
+                        double bs0 = 0.0, bs8 = 0.0; int cs0 = 0, cs8 = 0;
+                        for (int bb = 0; bb < nfb; bb++) {
+                            double nu = NLTE_NU_MIN * exp((bb + 0.5) * dln);
+                            double lamA = 2.99792458e18 / nu;
+                            int any = 0;
+                            for (int s2 = 0; s2 < n_shells; s2++)
+                                if (buf[(size_t)s2 * nfb + bb] > 0.0) { nz_cells++; any = 1; }
+                            if (any) nz_bins++;
+                            if (lamA >= 918.0 && lamA <= 1290.0) {
+                                double v0 = buf[(size_t)0 * nfb + bb];
+                                double v8 = (n_shells > 8) ? buf[(size_t)8 * nfb + bb] : 0.0;
+                                if (v0 > 0.0) { bs0 += log(v0); cs0++; }
+                                if (v8 > 0.0) { bs8 += log(v8); cs8++; }
+                            }
+                        }
+                        printf("[JTABLE] loaded %s shells=%d nfb=%d nonzero_bins=%ld "
+                               "(cells=%ld) J[s0,FUVband]=%.3e J[s8,FUVband]=%.3e\n",
+                               e, n_shells, nfb, nz_bins, nz_cells,
+                               cs0 ? exp(bs0 / cs0) : 0.0, cs8 ? exp(bs8 / cs8) : 0.0);
+                    }
+                }
+            }
+            fflush(stdout);
+        }
+    }
+    /* F3-T TEMPERATURE-TABLE loader (LUMINA_TE_TABLE=<path>, default OFF).
+     * Reads the offline CMFGEN T_e(v) CSV (scripts/build_cmfgen_te_table.py):
+     * rows "shell_id,vel_mid_kms,T_e_K". When present, the commit site below
+     * REPLACES the radeq-solved T_e with the table value for every shell whose
+     * table entry > 0 -- a WHOLE-STATE pin: the pin is applied BEFORE simul_ladder
+     * so the ion ladder + n_e solve at the table temperature, and the committed
+     * plasma->T_e[s] (uploaded to the GPU for k-packet ff/fb, the coevolve
+     * birth-Planck SED and collisional rates) carries it => every T_e consumer
+     * inherits the pin. Env absent => g_te_table stays NULL => every gated site is
+     * skipped => byte-identical. Parsed in this single-threaded prologue; the
+     * per-shell loop only READS the buffer (race-free). */
+    if (g_te_table_on < 0) {
+        g_te_table_on = 0;
+        const char *e = getenv("LUMINA_TE_TABLE");
+        if (e && *e) {
+            FILE *fp = fopen(e, "r");
+            if (!fp) {
+                printf("[TETAB] ERROR: cannot open '%s' -- gate INACTIVE\n", e);
+            } else {
+                double *buf = (double *)calloc((size_t)n_shells, sizeof(double));
+                int nfilled = 0; char ln[256];
+                while (buf && fgets(ln, sizeof(ln), fp)) {
+                    if (ln[0] == '#' || ln[0] == '\n' || ln[0] == '\0') continue;
+                    int s2; double v2, T2;
+                    if (sscanf(ln, "%d,%lf,%lf", &s2, &v2, &T2) == 3 &&
+                        s2 >= 0 && s2 < n_shells && T2 > 0.0) {
+                        if (buf[s2] <= 0.0) nfilled++;
+                        buf[s2] = T2;
+                    }
+                }
+                fclose(fp);
+                if (!buf || nfilled != n_shells) {
+                    printf("[TETAB] ERROR: '%s' filled %d/%d shells -- INACTIVE\n",
+                           e, nfilled, n_shells);
+                    free(buf);
+                } else {
+                    g_te_table = buf;
+                    printf("[TETAB] loaded %s shells=%d T[s0]=%.0f T[s8]=%.0f "
+                           "T[s%d]=%.0f (WHOLE-STATE T_e pin ACTIVE)\n",
+                           e, n_shells, buf[0], (n_shells > 8) ? buf[8] : 0.0,
+                           n_shells - 1, buf[n_shells - 1]);
+                }
+            }
+            fflush(stdout);
+        }
+    }
     fb_cool_kt_on();   /* [FB-COOL-KT] serial pre-init; simul_r1 only READS the static */
+    /* [DBFB] LUMINA_RADEQ_DB_FB serial pre-init + detailed-balance self-check.
+     * The bf net is  n*Sum_bb 4*pi*sigma f_above dnu * (J_bb - B_nu^Wien(T));  the
+     * emit_bf partner is built from the SAME geom weight as Hex, and the Wien
+     * partner B_nu^Wien(T)=(2 h nu^3/c^2) exp(-h nu/kT) is the exact Milne emission
+     * SED in the Wien limit, so at J=B the heating integrand w*(h nu-chi) and the
+     * cooling integrand emit_bf*exp(-h nu/kT) are the SAME product bin-by-bin =>
+     * net=0 by construction.  Self-check reproduces that identity on the REAL nu
+     * grid for a synthetic single-edge bf at 3 temperatures; any residual > 1e-6
+     * signals a wiring defect (mismatched geom / bnu_pref / exponent) and aborts. */
+    if (g_radeq_db_fb < 0) {
+        const char *e = getenv("LUMINA_RADEQ_DB_FB");
+        g_radeq_db_fb = (e && atoi(e)) ? 1 : 0;
+        if (g_radeq_db_fb == 1) {
+            double numin = nlte->nu_min, dln = nlte->d_log_nu;
+            double nu0t  = numin * exp(0.35 * (double)nfb * dln);  /* mid-grid edge */
+            double chit  = H_PLANCK * nu0t;
+            double Ttest[3] = { 10000.0, 18000.0, 30000.0 };
+            double worst = 0.0;
+            for (int q = 0; q < 3; q++) {
+                double T = Ttest[q], invkT = 1.0 / (K_BOLTZMANN * T);
+                double Hh = 0.0, Cc = 0.0;
+                for (int bb = 0; bb < nfb; bb++) {
+                    double lo = log(numin) + bb * dln;
+                    double nu = exp(lo + 0.5 * dln);
+                    if (nu < nu0t) continue;
+                    double dnu = exp(lo + dln) - exp(lo);
+                    double sig = 7.91e-18 * (nu0t / nu) * (nu0t / nu) * (nu0t / nu);
+                    double hnu = H_PLANCK * nu;
+                    double bnu_pref = 2.0 * H_PLANCK * nu * nu * nu /
+                                      (C_SPEED_OF_LIGHT * C_SPEED_OF_LIGHT);
+                    double geom = 4.0 * M_PI_VAL * sig * dnu / hnu * (hnu - chit);
+                    double J = bnu_pref * exp(-hnu * invkT);   /* J := B_nu^Wien(T) */
+                    double w = 4.0 * M_PI_VAL * sig * J / hnu * dnu; /* heating rate */
+                    Hh += w * (hnu - chit);                    /* heating integrand */
+                    Cc += (geom * bnu_pref) * exp(-hnu * invkT);/* emit_bf * wien   */
+                }
+                double res = (Hh > 0.0) ? fabs(Hh - Cc) / Hh : 0.0;
+                if (res > worst) worst = res;
+                printf("[DBFB] selfcheck s0: T=%.0f  net(J=B)/H = %.2e\n", T, res);
+            }
+            printf("[DBFB] selfcheck s0: net(J=B)/H = %.1e (worst over T=10/18/30kK)\n",
+                   worst);
+            if (worst > 1e-6) {
+                fprintf(stderr, "[DBFB][FATAL] detailed-balance self-check FAILED: "
+                        "worst net(J=B)/H = %.3e > 1e-6 -- bf heating and cooling "
+                        "are NOT a detailed-balance pair; aborting.\n", worst);
+                fflush(stderr);
+                exit(1);
+            }
+            printf("[DBFB] LUMINA_RADEQ_DB_FB=1: simul_r1 bf cooling = emit_nu/Wien "
+                   "detailed-balance partner of H_photo (replaces analytic C_fb)\n");
+            fflush(stdout);
+        }
+    }
+    /* [PUMPF] LUMINA_RADEQ_PUMP_FIELD serial pre-init (alongside DBFB). Default
+     * OFF => the line-build Jb stays the hard-wired cs_J => byte-identical. When
+     * ON, simul_line_term's per-line Jb reads the SAME alpha-blended field the
+     * Gph/Hex photoion loop consumes -- unifying the split-field radeq pump
+     * (te_bias_budget C2). alpha is the live g_photoion_mc_alpha (set by the
+     * co-evolve consume setter from LUMINA_COEVOLVE_PHOTOION_ALPHA); before the
+     * first transport pass the MC field is NULL and every line falls back to cs_J
+     * (the SAME startup behaviour the Gph guard has). */
+    if (g_radeq_pump_field < 0) {
+        const char *e = getenv("LUMINA_RADEQ_PUMP_FIELD");
+        g_radeq_pump_field = (e && atoi(e)) ? 1 : 0;
+        if (g_radeq_pump_field == 1) {
+            double a_disp = g_photoion_mc_alpha;   /* live blend weight if already armed */
+            if (!g_photoion_mc_J) {                /* not yet armed: show configured alpha */
+                const char *ae = getenv("LUMINA_COEVOLVE_PHOTOION_ALPHA");
+                a_disp = ae ? atof(ae) : 0.5;
+            }
+            printf("[PUMPF] LUMINA_RADEQ_PUMP_FIELD=1: simul_line_term Jb = "
+                   "alpha-blend (alpha=%.2f) -- split-field pump residue unified\n",
+                   a_disp);
+            if (!g_photoion_mc_J)
+                printf("[PUMPF] mc_J not yet armed at parse (pre-transport) -> Jb "
+                       "falls back to cs_J until first co-evolve consume pass\n");
+            fflush(stdout);
+        }
+    }
+    /* FIX-2 [PUMPF fallback] pre-init (alongside PUMP_FIELD). Only takes effect
+     * when PUMP_FIELD=1 (the sole path through radeq_pump_line_Jb). */
+    if (g_radeq_pump_fallback < 0) {
+        const char *e = getenv("LUMINA_RADEQ_PUMP_FALLBACK");
+        g_radeq_pump_fallback = (e && atoi(e)) ? 1 : 0;
+        if (g_radeq_pump_fallback == 1)
+            printf("[PUMPF] LUMINA_RADEQ_PUMP_FALLBACK=1: zero-count mc bins -> "
+                   "B_nu(T_e) (thermal) instead of super-thermal cs_J\n");
+        fflush(stdout);
+    }
 #ifdef _OPENMP
     if (g_simul_nested == 0) {
         const char *e = getenv("LUMINA_SIMUL_NESTED");
@@ -5113,7 +10233,7 @@ static void radeq_simul_all(PlasmaState *plasma, GammaDeposition *gamma_dep,
                    "with nl>=%ld\n", g_simul_nested, g_simul_nested_nl);
         }
     }
-    #pragma omp parallel reduction(+:n_pin_hi,n_pin_lo)
+    #pragma omp parallel reduction(+:n_pin_hi,n_pin_lo,n_jtable_evals,n_te_table_pins,n_pumpf_bl,n_pumpf_fb)
 #endif
     {
     SimShell sh;
@@ -5130,6 +10250,29 @@ static void radeq_simul_all(PlasmaState *plasma, GammaDeposition *gamma_dep,
     sh.l_BluJ = (double *)malloc(cap * sizeof(double));
     sh.l_ABulJ= (double *)malloc(cap * sizeof(double));
     sh.l_ftau = (double *)malloc(cap * sizeof(double));
+    /* [DBFB] per-pair per-bin bf-emission spectrum + Wien exponent grid (only when
+     * the gate is on; else NULL, never touched => byte-identical). */
+    sh.nfb = nfb;
+    /* withParityO: per-shell CMFGEN COL pair prefactors (thread-private, reused
+     * across shells). Allocated only when the gate is armed => byte-identical off. */
+    sh.cp_a = sh.cp_b = sh.cp_beta = NULL; sh.cp_n = 0;
+    if (g_cp_on == 1 && g_cp_nions > 0) {
+        long per = (long)g_cp_maxlev * (g_cp_maxlev - 1) / 2;
+        size_t cp_cap = (size_t)g_cp_nions * (size_t)(per > 0 ? per : 1);
+        sh.cp_a    = (double *)malloc(cp_cap * sizeof(double));
+        sh.cp_b    = (double *)malloc(cp_cap * sizeof(double));
+        sh.cp_beta = (double *)malloc(cp_cap * sizeof(double));
+    }
+    sh.emit_bf = NULL; sh.emit_bx = NULL;
+    if (g_radeq_db_fb == 1) {
+        sh.emit_bf = (double *)malloc((size_t)SIM_MAXP * (size_t)nfb * sizeof(double));
+        sh.emit_bx = (double *)malloc((size_t)nfb * sizeof(double));
+        for (int bb = 0; bb < nfb; bb++) {
+            double lo = log(nlte->nu_min) + bb * nlte->d_log_nu;
+            double nu_mid = exp(lo + 0.5 * nlte->d_log_nu);
+            sh.emit_bx[bb] = H_PLANCK * nu_mid / K_BOLTZMANN;   /* [K] */
+        }
+    }
 #ifdef _OPENMP
     #pragma omp for schedule(dynamic, 1)
 #endif
@@ -5139,6 +10282,8 @@ static void radeq_simul_all(PlasmaState *plasma, GammaDeposition *gamma_dep,
          * into the commit of Fe-free outer shells -> n_e 60x charge-conservation
          * violation at s=37-42 -> the hard-UV lamp that erased the outer root. */
         memset(sh.nion, 0, (size_t)n_ip * sizeof(double));
+        if (g_radeq_db_fb == 1)   /* [DBFB] clear the per-pair emission spectrum */
+            memset(sh.emit_bf, 0, (size_t)SIM_MAXP * (size_t)nfb * sizeof(double));
         double T_rad = plasma->T_rad[s];
         double W = plasma->W[s];
         (void)W;
@@ -5189,6 +10334,14 @@ static void radeq_simul_all(PlasmaState *plasma, GammaDeposition *gamma_dep,
                     int gl0 = atom->level_offset[ip0 + j];
                     int gl1 = atom->level_offset[ip0 + j + 1];
                     double kT = K_BOLTZMANN * plasma->T_e[s];
+                    /* [RATES-FIX F1] the two x_l>=50 level skips below are the
+                     * Gamma-side half of a cut that alpha (frozenin_alpha_rr)
+                     * does NOT apply: per level, Gamma weights g e^{-E/kT} I and
+                     * alpha weights g e^{(chi-E)/kT} I -- the SAME relative
+                     * share. Cutting Gamma alone makes it systematically low
+                     * (Si III @5000K: 8.3x). exp() underflows to 0 past x~745
+                     * on its own, so no cut is needed at all. */
+                    const int rfix_gph = rates_fix_enabled();
                     double U_ion = 0.0;                 /* lower-ion partition fn */
                     for (int l = gl0; l < gl1; l++) {
                         double x = atom->level_energy_eV[l] * EV_TO_ERG / kT;
@@ -5202,7 +10355,47 @@ static void radeq_simul_all(PlasmaState *plasma, GammaDeposition *gamma_dep,
                      * path below unchanged (non-NLTE ions stay LTE-weighted). */
                     int use_nlte = 0, off_i = 0, off_i1 = 0;
                     double n_ion_nlte = 0.0;
-                    if (g_gph_alllevel_nlte) {
+                    /* ADDENDUM (Fork A): the III combs of promoted pairs were
+                     * LTE-weighted (b_k=1) here, making Gph(III) ~22x low because
+                     * their real departures are b_k=800-5000. Naively NLTE-
+                     * weighting ALL top-ion combs over-corrects (super-thermal
+                     * inflation for lack of a continuum drain); but stage-IV
+                     * promotion GIVES the III comb an SE drain (IV in the NLTE
+                     * set). So under LUMINA_NLTE_STAGE4, additionally NLTE-weight
+                     * a III comb (stage==2) iff its IV (stage 3) is now an NLTE
+                     * ion = "newly drained". Scoped to exactly the promoted III
+                     * combs; non-drained top ions stay LTE-weighted. Gate OFF or
+                     * g_gph_alllevel_nlte off => byte-identical (want_nlte_w=0). */
+                    /* [STAGE4-R2 A1] depth-gate + b_k cap for the promoted III-comb
+                     * NLTE weighting. WTHR (LUMINA_STAGE4_GPH_WTHR, default 0.13):
+                     * NLTE-weight ONLY where W(s)>WTHR (deep/continuum-thick, CMFGEN
+                     * f(IV)>LTE); photospheric shells fall through to the Boltzmann
+                     * path below (already CMFGEN-correct — round-1 blew them up).
+                     * BK_CAP (LUMINA_STAGE4_BK_CAP, default 1000): per-level
+                     * departure clamp applied in the use_nlte loop below. Read once. */
+                    static double g_stage4_gph_wthr = -1.0;
+                    static double g_stage4_bk_cap   = -1.0;
+                    if (g_stage4_gph_wthr < 0.0) {
+                        const char *e = getenv("LUMINA_STAGE4_GPH_WTHR");
+                        g_stage4_gph_wthr = e ? atof(e) : 0.13;
+                        if (g_stage4_gph_wthr < 0.0) g_stage4_gph_wthr = 0.0;
+                    }
+                    if (g_stage4_bk_cap < 0.0) {
+                        const char *e = getenv("LUMINA_STAGE4_BK_CAP");
+                        g_stage4_bk_cap = e ? atof(e) : 1000.0;
+                        if (g_stage4_bk_cap < 0.0) g_stage4_bk_cap = 0.0;
+                    }
+                    int want_nlte_w = g_gph_alllevel_nlte;
+                    if (!want_nlte_w && nlte_stage4_enabled() &&
+                        atom->ion_pop_stage[ip0 + j] == 2 &&
+                        plasma->W[s] > g_stage4_gph_wthr) {   /* [A1] depth gate */
+                        int Zc = atom->ion_pop_Z[ip0 + j];
+                        for (int i = 0; i < nlte->n_nlte_ions; i++)
+                            if (nlte->nlte_Z[i] == Zc && nlte->nlte_ion[i] == 3) {
+                                want_nlte_w = 1; break;
+                            }
+                    }
+                    if (want_nlte_w) {
                         int Zc = atom->ion_pop_Z[ip0 + j];
                         int stc = atom->ion_pop_stage[ip0 + j];
                         for (int i = 0; i < nlte->n_nlte_ions; i++) {
@@ -5239,13 +10432,27 @@ static void radeq_simul_all(PlasmaState *plasma, GammaDeposition *gamma_dep,
                             if (chi_l <= 0.0) continue;
                             double nu_l = chi_l / H_PLANCK;    /* level threshold */
                             double x_l = E_l / kT;
-                            if (x_l >= 50.0) continue;
+                            /* [RATES-FIX F1] (here the weight is the ACTUAL NLTE
+                             * population, so a Boltzmann-energy cut is doubly wrong) */
+                            if (!rfix_gph && x_l >= 50.0) continue;
                             double pop_l = nlte->nlte_level_populations[
                                             (size_t)ln * n_shells + s] / n_ion_nlte;
                             if (pop_l <= 0.0) continue;
                             /* Boltzmann weight for the SAME level (diagnostic only) */
                             double pop_l_boltz = (double)atom->level_g[l] *
                                                  exp(-x_l) / U_ion;
+                            /* [STAGE4-R2 A1] cap the departure b_l = pop_l/pop_l_boltz
+                             * at BK_CAP: pop_l -> min(pop_l, BK_CAP*pop_l^LTE). Bounds
+                             * the pathological super-thermal comb (esp. Ni III, s8
+                             * b_k~2e9) without touching the deep physical drain (s0
+                             * comb << cap). stage4-only; cap<=0 => no-op. */
+                            if (g_stage4_bk_cap > 0.0 && nlte_stage4_enabled() &&
+                                !nlte_element_wide_matches(
+                                    atom->ion_pop_Z[ip0 + j], s) &&
+                                pop_l_boltz > 0.0) {
+                                double cap_pop = g_stage4_bk_cap * pop_l_boltz;
+                                if (pop_l > cap_pop) pop_l = cap_pop;
+                            }
                             const double *sig_row_l = &atom->cmfgen_sigma_bf[
                                             (size_t)l * (size_t)g_cmf_nfreq];
                             for (int bb = 0; bb < nfb; bb++) {
@@ -5258,6 +10465,15 @@ static void radeq_simul_all(PlasmaState *plasma, GammaDeposition *gamma_dep,
                                 double sig = sig_row_l[bc];
                                 if (sig <= 0.0) continue;
                                 double dnu = exp(lo + nlte->d_log_nu) - exp(lo);
+                                if (g_radeq_db_fb == 1) {   /* [DBFB] emission partner: build BEFORE
+                                     * the J<=0 skip so ALL above-threshold sig>0 bins are covered
+                                     * (exact bin-by-bin cancellation at J=B_nu^Wien(T)). */
+                                    double hnu = H_PLANCK * nu;
+                                    double bnu_pref = 2.0 * H_PLANCK * nu * nu * nu /
+                                                      (C_SPEED_OF_LIGHT * C_SPEED_OF_LIGHT);
+                                    sh.emit_bf[(size_t)p * nfb + bb] += pop_l *
+                                        (4.0 * M_PI_VAL * sig * dnu / hnu * (hnu - chi_l)) * bnu_pref;
+                                }
                                 double J = nlte->J_nu[(size_t)s * nfb + bb];
                                 /* same P1 MC-shadow blend as the ground path below */
                                 if (g_photoion_mc_J && s < g_photoion_mc_nshells &&
@@ -5267,6 +10483,14 @@ static void radeq_simul_all(PlasmaState *plasma, GammaDeposition *gamma_dep,
                                     J = g_photoion_mc_alpha *
                                             g_photoion_mc_J[(size_t)s * nfb + bb]
                                         + (1.0 - g_photoion_mc_alpha) * J;
+                                /* #33 GRADIENT-TRANSPLANT: full override with the
+                                 * external CMFGEN J-table (0 => keep field above). */
+                                if (g_gph_jtable) {
+                                    double Jtab = g_gph_jtable[(size_t)s * nfb + bb];
+                                    if (Jtab > 0.0) { J = Jtab; n_jtable_evals++; }
+                                }
+                                /* [IONIZ-SELFTEST] known-answer field: J -> B_nu(T_e). */
+                                if (g_ioniz_selftest == 1) J = planck_bnu(plasma->T_e[s], nu);
                                 if (J <= 0.0) continue;
                                 double w = 4.0 * M_PI_VAL * sig * J /
                                            (H_PLANCK * nu) * dnu;
@@ -5286,7 +10510,7 @@ static void radeq_simul_all(PlasmaState *plasma, GammaDeposition *gamma_dep,
                         if (chi_l <= 0.0) continue;
                         double nu_l = chi_l / H_PLANCK;    /* level threshold */
                         double x_l = E_l / kT;
-                        if (x_l >= 50.0) continue;
+                        if (!rfix_gph && x_l >= 50.0) continue;   /* [RATES-FIX F1] */
                         double pop_l = (double)atom->level_g[l] * exp(-x_l) / U_ion;
                         if (pop_l <= 0.0) continue;
                         const double *sig_row_l = &atom->cmfgen_sigma_bf[
@@ -5301,6 +10525,13 @@ static void radeq_simul_all(PlasmaState *plasma, GammaDeposition *gamma_dep,
                             double sig = sig_row_l[bc];
                             if (sig <= 0.0) continue;
                             double dnu = exp(lo + nlte->d_log_nu) - exp(lo);
+                            if (g_radeq_db_fb == 1) {   /* [DBFB] emission partner (see NLTE path) */
+                                double hnu = H_PLANCK * nu;
+                                double bnu_pref = 2.0 * H_PLANCK * nu * nu * nu /
+                                                  (C_SPEED_OF_LIGHT * C_SPEED_OF_LIGHT);
+                                sh.emit_bf[(size_t)p * nfb + bb] += pop_l *
+                                    (4.0 * M_PI_VAL * sig * dnu / hnu * (hnu - chi_l)) * bnu_pref;
+                            }
                             double J = nlte->J_nu[(size_t)s * nfb + bb];
                             /* same P1 MC-shadow blend as the ground path below */
                             if (g_photoion_mc_J && s < g_photoion_mc_nshells &&
@@ -5310,6 +10541,14 @@ static void radeq_simul_all(PlasmaState *plasma, GammaDeposition *gamma_dep,
                                 J = g_photoion_mc_alpha *
                                         g_photoion_mc_J[(size_t)s * nfb + bb]
                                     + (1.0 - g_photoion_mc_alpha) * J;
+                            /* #33 GRADIENT-TRANSPLANT: full override with the
+                             * external CMFGEN J-table (0 => keep field above). */
+                            if (g_gph_jtable) {
+                                double Jtab = g_gph_jtable[(size_t)s * nfb + bb];
+                                if (Jtab > 0.0) { J = Jtab; n_jtable_evals++; }
+                            }
+                            /* [IONIZ-SELFTEST] known-answer field: J -> B_nu(T_e). */
+                            if (g_ioniz_selftest == 1) J = planck_bnu(plasma->T_e[s], nu);
                             if (J <= 0.0) continue;
                             double w = 4.0 * M_PI_VAL * sig * J /
                                        (H_PLANCK * nu) * dnu;
@@ -5350,6 +10589,14 @@ static void radeq_simul_all(PlasmaState *plasma, GammaDeposition *gamma_dep,
                         if (bc >= 0 && bc < g_cmf_nfreq && gnd_sig[bc] > 0.0)
                             sig = gnd_sig[bc];
                     }
+                    if (g_radeq_db_fb == 1) {   /* [DBFB] emission partner (ground, pop=1;
+                         * chi = sh.chi[p]; built BEFORE the J<=0 skip). */
+                        double hnu = H_PLANCK * nu;
+                        double bnu_pref = 2.0 * H_PLANCK * nu * nu * nu /
+                                          (C_SPEED_OF_LIGHT * C_SPEED_OF_LIGHT);
+                        sh.emit_bf[(size_t)p * nfb + bb] +=
+                            (4.0 * M_PI_VAL * sig * dnu / hnu * (hnu - sh.chi[p])) * bnu_pref;
+                    }
                     double J = nlte->J_nu[(size_t)s * nfb + bb];
                     /* P1 (LIVE site): soften the too-blue deterministic J with the
                      * lagged, transported MC shadow continuum before it drives the
@@ -5363,12 +10610,68 @@ static void radeq_simul_all(PlasmaState *plasma, GammaDeposition *gamma_dep,
                           g_photoion_mc_count[(size_t)s * nfb + bb] == 0))
                         J = g_photoion_mc_alpha * g_photoion_mc_J[(size_t)s * nfb + bb]
                             + (1.0 - g_photoion_mc_alpha) * J;
+                    /* #33 GRADIENT-TRANSPLANT: full override with the external
+                     * CMFGEN J-table (0 => keep field above). This ground/Kramers
+                     * site is the ELSE of g_gph_alllevel; in the a10_kx (all-level)
+                     * config only the two all-level sites above fire. */
+                    if (g_gph_jtable) {
+                        double Jtab = g_gph_jtable[(size_t)s * nfb + bb];
+                        if (Jtab > 0.0) { J = Jtab; n_jtable_evals++; }
+                    }
+                    /* [IONIZ-SELFTEST] known-answer field: J -> B_nu(T_e). */
+                    if (g_ioniz_selftest == 1) J = planck_bnu(plasma->T_e[s], nu);
                     if (J <= 0.0) continue;
                     double w = 4.0 * M_PI_VAL * sig * J / (H_PLANCK * nu) * dnu;
                     G += w;
                     Hx += w * (H_PLANCK * nu - sh.chi[p]);
                 }
                 sh.Gph[p] = G; sh.Hex[p] = Hx;
+                /* [IONIZ-SELFTEST] detailed-balance identity for this pair. Both
+                 * halves are the PRODUCTION ones: G above (radeq Gph route) and
+                 * frozenin_alpha_rr (the alpha simul_ladder divides by).  Also
+                 * evaluates the NLTE-route Gamma (coupled_photoion_rate_jnu) on
+                 * the same field for a side-by-side. Gate off => never runs. */
+                if (g_ioniz_selftest) {
+                    int ipl = ip0 + j;
+                    double Ts = plasma->T_e[s];
+                    double alpha = frozenin_alpha_rr(atom, ipl, ipl + 1, Ts);
+                    double Ul = ioniz_selftest_U(atom, ipl, Ts, 0);
+                    double Uu = ioniz_selftest_U(atom, ipl + 1, Ts, 1);
+                    /* reciprocal of the EXACT lam3 expression frozenin_alpha_rr uses */
+                    double inv_lam3 = 1.0 / pow(H_PLANCK * H_PLANCK /
+                        (2.0 * M_PI_VAL * M_ELECTRON * K_BOLTZMANN * Ts), 1.5);
+                    double xchi = sh.chi[p] / (K_BOLTZMANN * Ts);
+                    double q_saha = (xchi < 700.0)
+                        ? 2.0 * (Uu / Ul) * inv_lam3 * exp(-xchi) : 0.0;
+                    double q = (alpha > 0.0) ? G / alpha : -1.0;
+                    double Gc = coupled_photoion_rate_jnu(atom, nlte, ipl, s, Ts,
+                                                          n_shells, NULL, NULL, 0.0,
+                                                          0.0, NULL);
+                    double qc = (alpha > 0.0 && Gc >= 0.0) ? Gc / alpha : -1.0;
+#ifdef _OPENMP
+                    #pragma omp critical
+#endif
+                    {
+                    printf("[IONIZ-SELFTEST] %-4d %-9.0f %-4d %-5d %-11.4e %-11.4e "
+                           "%-11.4e %-11.4e %-9.4f %-11.4e %-9.4f\n",
+                           s, Ts, atom->ion_pop_Z[ipl], atom->ion_pop_stage[ipl],
+                           G, alpha, q, q_saha,
+                           (q_saha > 0.0 && q >= 0.0) ? q / q_saha : -1.0,
+                           Gc, (q_saha > 0.0 && qc >= 0.0) ? qc / q_saha : -1.0);
+                    /* [RATES-FIX] the %.4f ratio column above only resolves
+                     * 5e-5; the acceptance criterion is 1e-6, so emit the
+                     * signed deviations at full precision. Gate off => not
+                     * printed => the pre-fix log is byte-identical. */
+                    if (rates_fix_enabled())
+                        printf("[RATES-FIX-DEV] s=%d T=%.0f Z=%d stage=%d "
+                               "dev=%.6e dev_cpl=%.6e\n",
+                               s, Ts, atom->ion_pop_Z[ipl],
+                               atom->ion_pop_stage[ipl],
+                               (q_saha > 0.0 && q >= 0.0) ? q / q_saha - 1.0 : -1.0,
+                               (q_saha > 0.0 && qc >= 0.0) ? qc / q_saha - 1.0 : -1.0);
+                    fflush(stdout);
+                    }
+                }
                 sh.nelem[p] = nel; sh.npops[p] = npop;
             }
             sh.np += npop - 1;
@@ -5391,6 +10694,57 @@ static void radeq_simul_all(PlasmaState *plasma, GammaDeposition *gamma_dep,
               if (fac > 1.0) fac = 1.0;   /* suppress high-chi only */
               sh.gnt_p[p2] = sh.gnt * fac;
           } }
+        /* [IONIZ-SELFTEST] end-to-end ladder closure: run the PRODUCTION
+         * simul_ladder on the Gph just built, at the shell's T_e, and compare the
+         * ion fractions it returns with the analytic Saha ladder at the SAME T and
+         * the SAME converged n_e. sh.nion is scratch that the real solve rewrites
+         * below, so this probe is state-free. Gate off => never runs. */
+        if (g_ioniz_selftest) {
+            double Ts = plasma->T_e[s];
+            double ne_p = (plasma->n_electron && plasma->n_electron[s] > 0.0)
+                          ? plasma->n_electron[s] : 0.5 * sh.natom;
+            simul_ladder(atom, &sh, Ts, &ne_p);
+            double worst = 0.0; int worst_ip = -1;
+            double ne_chk = 0.0;
+            for (int p2 = 0; p2 < sh.np; ) {
+                int npop2 = sh.npops[p2], ip0b = sh.ipa[p2];
+                double nel2 = sh.nelem[p2];
+                double ys[SIM_MAXP + 1]; ys[0] = 1.0; double ysum2 = 1.0;
+                for (int jj = 0; jj < npop2 - 1; jj++) {
+                    int ipl = ip0b + jj;
+                    double Ul = ioniz_selftest_U(atom, ipl, Ts, 0);
+                    double Uu = ioniz_selftest_U(atom, ipl + 1, Ts, 1);
+                    double inv_lam3 = 1.0 / pow(H_PLANCK * H_PLANCK /
+                        (2.0 * M_PI_VAL * M_ELECTRON * K_BOLTZMANN * Ts), 1.5);
+                    double xchi = sh.chi[p2 + jj] / (K_BOLTZMANN * Ts);
+                    double qs = (xchi < 700.0)
+                        ? 2.0 * (Uu / Ul) * inv_lam3 * exp(-xchi) : 0.0;
+                    ys[jj + 1] = ys[jj] * qs / ne_p;
+                    if (!isfinite(ys[jj + 1])) ys[jj + 1] = 0.0;
+                }
+                ysum2 = 0.0; for (int jj = 0; jj < npop2; jj++) ysum2 += ys[jj];
+                for (int jj = 0; jj < npop2; jj++) {
+                    double f_saha = (ysum2 > 0.0) ? ys[jj] / ysum2 : (jj == 0 ? 1.0 : 0.0);
+                    double f_code = (nel2 > 0.0) ? sh.nion[ip0b + jj] / nel2 : 0.0;
+                    ne_chk += nel2 * (double)atom->ion_pop_stage[ip0b + jj] * f_code;
+                    double d = fabs(f_code - f_saha);
+                    if (d > worst) { worst = d; worst_ip = ip0b + jj; }
+                }
+                p2 += (npop2 - 1);
+            }
+#ifdef _OPENMP
+            #pragma omp critical
+#endif
+            {
+            printf("[IONIZ-LADDER]  s=%d T=%.0f n_e=%.6e  max|f_code-f_saha|=%.3e"
+                   " (Z=%d stage=%d)  charge-conservation n_e_recomputed/n_e=%.9f\n",
+                   s, Ts, ne_p, worst,
+                   worst_ip >= 0 ? atom->ion_pop_Z[worst_ip] : -1,
+                   worst_ip >= 0 ? atom->ion_pop_stage[worst_ip] : -1,
+                   (ne_p > 0.0) ? ne_chk / ne_p : -1.0);
+            fflush(stdout);
+            }
+        }
         /* ---- culled ETLA line table (lagged tau/Jbar; T-independent parts) ---- */
         sh.nl = 0;
         double cull = 0.01;
@@ -5399,6 +10753,10 @@ static void radeq_simul_all(PlasmaState *plasma, GammaDeposition *gamma_dep,
                      (double)(radeq_n_lines > 0 ? radeq_n_lines : 1);
         for (long k = 0; k < radeq_n_lines; k++) {
             const RadEqLine *rl = &radeq_lines[k];
+            /* withParityO: covered ions' bb collisional cooling is owned by the
+             * pair loop (built below) — drop their 2-level lines from lam so the
+             * two do not double count. Gate off => g_cp_line_covered NULL => kept. */
+            if (g_cp_on == 1 && g_cp_line_covered && g_cp_line_covered[k]) continue;
             /* cull bound must cover ALL trial ionization states (the lagged
              * state culled away the mid-T coolant lines -> no root): use the
              * ELEMENT density as the n_ion upper bound, n_e <= 6*natom. */
@@ -5415,7 +10773,14 @@ static void radeq_simul_all(PlasmaState *plasma, GammaDeposition *gamma_dep,
                           (6.0 * sh.natom) / sqrt(2000.0);
             if (cmax < thr) continue;
             double nu_l = rl->dE / H_PLANCK;
-            double Jb = nlte_get_J_at_nu(nlte, s, nu_l);
+            /* [PUMPF] route the line-pump Jb through the SAME alpha-blended field
+             * the Gph loop consumes (field source only; binning + line-term
+             * structure unchanged). Gate off => byte-identical hard-wired cs_J. */
+            double Te_pump = plasma->T_e ? plasma->T_e[s] : plasma->T_rad[s];
+            double Jb = (g_radeq_pump_field == 1)
+                ? radeq_pump_line_Jb(nlte, s, nfb, nu_l, Te_pump,
+                                     &n_pumpf_bl, &n_pumpf_fb, &n_pumpf_bnu)
+                : nlte_get_J_at_nu(nlte, s, nu_l);
             double B_ul = rl->A_ul * C_SPEED_OF_LIGHT * C_SPEED_OF_LIGHT /
                           (2.0 * H_PLANCK * nu_l * nu_l * nu_l);
             double B_lu = B_ul * (double)rl->g_up / (double)rl->g_lo;
@@ -5441,6 +10806,52 @@ static void radeq_simul_all(PlasmaState *plasma, GammaDeposition *gamma_dep,
                 sh.l_ftau[m] = 0.02654 * f_lu * lam_cm * time_explosion;
             }
         }
+        /* ---- withParityO: CMFGEN all-level-pair COL cooling for the covered
+         * ions at this shell, built from the LIVE NLTE populations (replaces the
+         * covered lines skipped from lam above). Omega + vR GBAR frozen at the
+         * lagged T_e; the trial-T exp(-beta/T)/sqrt(T) is applied in simul_r1's
+         * radeq_line_cool. cp_n stays 0 when the gate is off => byte-identical. */
+        sh.cp_n = 0;
+        if (g_cp_on == 1 && g_cp_nions > 0 && sh.cp_a) {
+            double cp_ne = plasma->n_electron[s];
+            double cp_Tref = (plasma->T_e && plasma->T_e[s] > 100.0)
+                           ? plasma->T_e[s] : plasma->T_rad[s];
+            long dropped = 0;
+            for (int c = 0; c < g_cp_nions; c++) {
+                RcpCensus cen;
+                radeq_colpairs_ion_shell(&g_cp_ions[c], atom, nlte, n_shells, s,
+                                         cp_ne, cp_Tref, g_cp_maxlev,
+                                         sh.cp_a, sh.cp_b, sh.cp_beta, &sh.cp_n,
+                                         &cen, &dropped);
+                if (s == 8) {
+                    for (int pr = 0; pr < CP_NPROBE; pr++)
+                        if (g_cp_probe_Z[pr] == g_cp_ions[c].Z &&
+                            g_cp_probe_ion[pr] == g_cp_ions[c].ion0) {
+                            g_cp_s8_cen[pr] = cen;
+                            g_cp_s8_cool[pr] = cen.c_tab + cen.c_vr + cen.c_set;
+                        }
+                }
+            }
+            if (s == 8) g_cp_s8_dropped = dropped;
+        }
+#ifdef LUMINA_FROZEN_ORACLE
+        /* Dedicated observer build: evaluate the actual production residual once
+         * at the recorded cell temperature and stop before root solving/commit.
+         * simul_r1 owns the thermal arithmetic; these are read-only shadows. */
+        if (g_oracle.fp) {
+            double ne_probe = plasma->n_electron[s];
+            double net = simul_r1(atom, &sh, plasma->T_e[s], &ne_probe);
+            g_oracle.thermal_seen = 1;
+            g_oracle.thermal_deposition = sh.H_dep;
+            g_oracle.thermal_photoion = g_r1d_H - sh.H_dep;
+            g_oracle.thermal_ff = g_r1d_ff;
+            g_oracle.thermal_bf = g_r1d_fb;
+            g_oracle.thermal_bb_collisional = g_r1d_lam + g_r1d_colpairs;
+            g_oracle.thermal_adiabatic = g_r1d_ad;
+            g_oracle.thermal_net = net;
+            continue;
+        }
+#endif
         /* INPUT-DIFF dump (flip forensics): per-pair Gph + UV J bins.
          * The T* flip 43k->140k at iter-3 survived J/T/ion damping — diff
          * these inputs across iterations to name the switching channel. */
@@ -5474,8 +10885,16 @@ static void radeq_simul_all(PlasmaState *plasma, GammaDeposition *gamma_dep,
 #ifdef _OPENMP
                 #pragma omp critical
 #endif
-                printf("  [SIMUL-SCAN s=%d] T=%6.0f r1=%+.3e H_photo=%.3e n_e=%.3e\n",
-                       s, Tg[q], rq, Hp, nq);
+                {
+                printf("  [SIMUL-SCAN it=%d s=%d] T=%6.0f r1=%+.3e H_photo=%.3e n_e=%.3e\n",
+                       g_simul_iter_no, s, Tg[q], rq, Hp, nq);
+                /* [SIMUL-CT] per-term cooling of the SAME simul_r1 call (thread-local
+                 * shadows; Dig-C calibration closer: lam vs C_fb split of C_total). */
+                printf("  [SIMUL-CT   it=%d s=%d] T=%6.0f H=%.3e Cff=%.3e Cad=%.3e "
+                       "Cfb=%.3e lam=%.3e\n",
+                       g_simul_iter_no, s, Tg[q], g_r1d_H, g_r1d_ff, g_r1d_ad,
+                       g_r1d_fb, g_r1d_lam);
+                }
             }
         }
         /* ---- bisection on the wide physical bracket ---- */
@@ -5493,10 +10912,13 @@ static void radeq_simul_all(PlasmaState *plasma, GammaDeposition *gamma_dep,
          * trial state. HOLD the previous T_e instead and let the transport
          * relax (forensics: fix14 [SIMUL-IN] iter2->3). */
         if (f_lo <= 0.0)      { T_e = plasma->T_e[s] > 100.0 ? plasma->T_e[s] : Tlo;
-                                ne_fin = ne_l; n_pin_lo++; held = 1; }
+                                ne_fin = ne_l; n_pin_lo++; held = 1;
+                                if (tehold_on && s < TEHOLD_MAXSH) g_tehold_status[s] = 2; }
         else if (f_hi >= 0.0) { T_e = plasma->T_e[s] > 100.0 ? plasma->T_e[s] : Thi;
-                                ne_fin = ne_h; n_pin_hi++; held = 1; }
+                                ne_fin = ne_h; n_pin_hi++; held = 1;
+                                if (tehold_on && s < TEHOLD_MAXSH) g_tehold_status[s] = 3; }
         else {
+            if (tehold_on && s < TEHOLD_MAXSH) g_tehold_status[s] = 1; /* [TEHOLD] root-found */
             /* LOWEST-ROOT selection (cold-branch continuation): the balance is
              * multi-rooted in the bistable window (e.g. s=40: cold ~13kK root
              * AND a self-illuminated strip root ~100kK). Plain bisection on
@@ -5542,12 +10964,25 @@ static void radeq_simul_all(PlasmaState *plasma, GammaDeposition *gamma_dep,
                         : 0.0;
             T_new = g_te_pin_T0 + (g_te_pin_T1 - g_te_pin_T0) * frac;
         }
+        /* F3-T TEMPERATURE-TABLE probe: REPLACE the radeq-solved T_e with CMFGEN's
+         * published T_e(v) for this shell. Placed here -- BEFORE simul_ladder and
+         * the plasma->T_e[s] commit -- so the ion ladder / n_e / committed T_e (and
+         * therefore next iter's GPU emissivity/k-packet/collisional consumers) all
+         * inherit the table temperature = WHOLE-STATE pin (see loader block above).
+         * Gate off (g_te_table==NULL) => branch skipped => byte-identical. */
+        if (g_te_table && g_te_table[s] > 0.0) {
+            T_new = g_te_table[s];
+            n_te_table_pins++;
+        }
         /* SELF-CONSISTENT commit: ladder at the COMMITTED temperature, not at
          * T* — committing T*(~40k)-stripped ions with a damped T_e(12k) killed
          * the outer blanketing ahead of the temperature, re-opening the hard-UV
          * window and locking the strip attractor (fix14 iter2). */
         simul_ladder(atom, &sh, T_new, &ne_fin);
         plasma->T_e[s] = T_new;
+        if (tehold_on && s < TEHOLD_MAXSH) {   /* [TEHOLD] record committed T_e + prev */
+            g_tehold_te[s] = T_new; g_tehold_told[s] = T_old;
+        }
         /* ION-side under-relaxation (CMFGEN D/Dt population-inertia miniature,
          * steq_co_mov_deriv RELAX mirror; fixed-point unchanged): with J damped
          * and T_e clamped, the instantaneously-committed equilibrium ions were
@@ -5590,9 +11025,74 @@ static void radeq_simul_all(PlasmaState *plasma, GammaDeposition *gamma_dep,
     free(sh.nion); free(sh.l_ip); free(sh.l_dE); free(sh.l_beta);
     free(sh.l_coeff); free(sh.l_glo); free(sh.l_gup); free(sh.l_Elo);
     free(sh.l_BluJ); free(sh.l_ABulJ); free(sh.l_ftau);
+    free(sh.emit_bf); free(sh.emit_bx);   /* [DBFB] (NULL-safe when gate off) */
+    free(sh.cp_a); free(sh.cp_b); free(sh.cp_beta);   /* withParityO (NULL-safe) */
     }   /* omp parallel */
-    printf("  [SIMUL] done: pins hi=%ld lo=%ld of %d shells\n",
+    printf("  [SIMUL it=%d] done: pins hi=%ld lo=%ld of %d shells\n",
+           g_simul_iter_no,
            n_pin_hi, n_pin_lo, n_shells);
+    /* withParityO fail-loud: per-iter s8 census (pair-count split tab/vR/0.1) +
+     * per-ion cooling spot-check, so a masked drop / iter-0 no-pop state is never
+     * silent. Cooling >0 = cooling, <0 = super-elastic collisional HEATING. */
+    if (g_cp_on == 1 && g_cp_nions > 0) {
+        int pops_absent = (nlte == NULL || nlte->nlte_level_populations == NULL);
+        if (pops_absent)
+            printf("  [COL-PAIRS] it=%d: NLTE level populations absent this iter "
+                   "(pre-NLTE) — pair cooling forced to 0, engages once pops exist\n",
+                   g_simul_iter_no);
+        if (!g_cp_census_done && !pops_absent) {
+            printf("  [COL-PAIRS s8 census] per-ion pair split (tab/vR/0.1), "
+                   "maxlev=%d, levels_dropped=%ld:\n", g_cp_maxlev, g_cp_s8_dropped);
+            for (int pr = 0; pr < CP_NPROBE; pr++) {
+                RcpCensus *c = &g_cp_s8_cen[pr];
+                if (c->n_pairs == 0) {
+                    printf("    %-6s: NO pairs at s8 (ion not covered, or NLTE pops "
+                           "absent this iter — cooling contributes 0)\n",
+                           g_cp_probe_name[pr]);
+                    continue;
+                }
+                printf("    %-6s: pairs tab=%ld vR=%ld 0.1=%ld\n", g_cp_probe_name[pr],
+                       c->n_tab, c->n_vr, c->n_set);
+            }
+            g_cp_census_done = 1;
+        }
+        printf("  [COL-PAIRS s8 cool] it=%d (erg/cm^3/s, +=cool -=heat): "
+               "SiIII=%+.3e SIII=%+.3e FeIII=%+.3e CoIII=%+.3e NiIII=%+.3e\n",
+               g_simul_iter_no, g_cp_s8_cool[0], g_cp_s8_cool[1], g_cp_s8_cool[2],
+               g_cp_s8_cool[3], g_cp_s8_cool[4]);
+        fflush(stdout);
+    }
+    /* [TEHOLD] LINE_THERM addendum: per-iteration radeq root status for the gated
+     * shells 0..SMAX plus s8 (control). Reveals whether s0's root is actually being
+     * re-solved (root-found) or frozen (pin_lo/pin_hi HOLD) — the amended-gate(iii)
+     * discriminator. Ordered, host-side; printed only when LINE_THERM is on. */
+    if (tehold_on) {
+        for (int s = 0; s <= tehold_smax && s < n_shells && s < TEHOLD_MAXSH; s++)
+            printf("  [TEHOLD] s%d: T_e=%.0fK (prev=%.0fK) radeq_root=%s\n",
+                   s, g_tehold_te[s], g_tehold_told[s],
+                   tehold_root_name(g_tehold_status[s]));
+        if (8 > tehold_smax && 8 < n_shells && 8 < TEHOLD_MAXSH)
+            printf("  [TEHOLD] s8(ctrl): T_e=%.0fK (prev=%.0fK) radeq_root=%s\n",
+                   g_tehold_te[8], g_tehold_told[8],
+                   tehold_root_name(g_tehold_status[8]));
+        fflush(stdout);
+    }
+    /* #33: per-iteration effect counter -- zero N with the gate ON = wiring bug. */
+    if (g_gph_jtable)
+        printf("  [JTABLE] gph_evals_using_table=%ld\n", n_jtable_evals);
+    /* F3-T: per-iteration pin counter -- shells_pinned<n_shells with the gate ON
+     * = silent no-op (a pin that never fired must be loudly visible). */
+    if (g_te_table)
+        printf("  [TETAB] shells_pinned=%ld\n", n_te_table_pins);
+    /* [PUMPF] per-iteration line-Jb source counter -- zero blended with the gate
+     * ON *after* the first transport pass = wiring bug; all-fallback (blended=0)
+     * on iter 0 is the expected pre-transport (mc_J NULL) startup, mirroring the
+     * Gph guard's silent cs_J keep. */
+    if (g_radeq_pump_field == 1)
+        printf("  [PUMPF] line_Jb: blended=%ld cs_fallback=%ld fallback_mode=%d "
+               "bnu_routed=%ld\n",
+               n_pumpf_bl, n_pumpf_fb, (g_radeq_pump_fallback == 1 ? 1 : 0),
+               n_pumpf_bnu);
 }
 
 static double radeq_recomb_cool(double T_e, const double *emit_nu,
@@ -6427,7 +11927,9 @@ void compute_radiative_equilibrium_te(PlasmaState *plasma, GammaDeposition *gamm
             if (chi_erg <= 0.0) continue;
             double sigma0 = get_bf_sigma0(Z, ion_stage);
             if (sigma0 <= 0.0) {
-                int Zeff = Z - ion_stage; if (Zeff < 1) Zeff = 1;
+                /* [RATES-FIX F5] Z_eff = stage+1 (charge seen by the ejected e-) */
+                int Zeff = rates_fix_enabled() ? (ion_stage + 1) : (Z - ion_stage);
+                if (Zeff < 1) Zeff = 1;
                 sigma0 = 7.91e-18 / ((double)Zeff * (double)Zeff);
             }
             int ls = nlte->nlte_ion_level_offset[i];
@@ -7016,6 +12518,8 @@ static double coupled_photoion_rate_jnu(AtomicData *atom, NLTEConfig *nlte,
                 double sig = srow[bb];
                 if (sig <= 0.0) continue;
                 double J = g_fine_jnu[(size_t)s * g_fine_n + i];
+                /* [IONIZ-SELFTEST] known-answer field: J -> B_nu(T_e). */
+                if (g_ioniz_selftest == 1) J = planck_bnu(T_e, nu);
                 if (J <= 0.0) continue;
                 double dnu = nu * g_fine_dlognu;
                 Rj += 4.0 * M_PI_VAL * sig / (H_PLANCK * nu) * dnu * J;
@@ -7027,6 +12531,8 @@ static double coupled_photoion_rate_jnu(AtomicData *atom, NLTEConfig *nlte,
                 double sig = srow[bb];
                 if (sig <= 0.0) continue;
                 double J = nlte->J_nu[(size_t)s * nfb + bb];
+                /* [IONIZ-SELFTEST] known-answer field: J -> B_nu(T_e). */
+                if (g_ioniz_selftest == 1) J = planck_bnu(T_e, nu_c);
                 if (J <= 0.0) continue;
                 double dnu = exp(lo + d_log_nu) - exp(lo);
                 Rj += 4.0 * M_PI_VAL * sig / (H_PLANCK * nu_c) * dnu * J;
@@ -7073,6 +12579,8 @@ static double coupled_photoion_rate_jnu(AtomicData *atom, NLTEConfig *nlte,
             double dnu = exp(lo + d_log_nu) - exp(lo);
             double kern = 4.0 * M_PI_VAL * sig / (H_PLANCK * nu_c) * dnu;
             if (Krow) Krow[bb] += w_l * kern;
+            /* [IONIZ-SELFTEST] known-answer field: J -> B_nu(T_e). */
+            if (g_ioniz_selftest == 1) J = planck_bnu(T_e, nu_c);
             if (J <= 0.0) continue;
             Rj += kern * J;
         }
@@ -7194,7 +12702,8 @@ static double coupled_charge_density_tdep(AtomicData *atom, PlasmaState *plasma,
             ne_sum += n_element * (double)atom->ion_pop_stage[ip_start];
             if (write_pops)
                 atom->ion_number_density[ip_start * n_shells + s] =
-                    (n_element > 1e-300) ? n_element : 1e-300;
+                    (lumina_zinert_element_inactive(atom, e, n_shells)) ? 0.0 :
+                    ((n_element > 1e-300) ? n_element : 1e-300);
             continue;
         }
 
@@ -7350,7 +12859,8 @@ static double coupled_charge_density_tdep(AtomicData *atom, PlasmaState *plasma,
             charge += (double)atom->ion_pop_stage[ip_start + j] * yj;
             if (write_pops) {
                 double n_ion = n_element * yj;
-                if (!(n_ion > 1e-300)) n_ion = 1e-300;  /* NaN-catching */
+                if (lumina_zinert_element_inactive(atom, e, n_shells)) n_ion = 0.0;
+                else if (!(n_ion > 1e-300)) n_ion = 1e-300;  /* NaN-catching */
                 atom->ion_number_density[(ip_start + j) * n_shells + s] = n_ion;
             }
         }
@@ -8147,7 +13657,9 @@ void coupled_newton_solve_all(PlasmaState *plasma, GammaDeposition *gamma_dep,
             double chi_erg = find_ioniz_energy(atom, Z, ion_stage) * EV_TO_ERG;
             if (chi_erg <= 0.0) continue;
             double sigma0 = get_bf_sigma0(Z, ion_stage);
-            if (sigma0 <= 0.0) { int Zeff = Z - ion_stage; if (Zeff < 1) Zeff = 1;
+            if (sigma0 <= 0.0) {   /* [RATES-FIX F5] Z_eff = stage+1, not Z-stage */
+                int Zeff = rates_fix_enabled() ? (ion_stage + 1) : (Z - ion_stage);
+                if (Zeff < 1) Zeff = 1;
                 sigma0 = 7.91e-18 / ((double)Zeff * (double)Zeff); }
             int ls = nlte->nlte_ion_level_offset[i];
             int le = nlte->nlte_ion_level_offset[i + 1];
@@ -8850,6 +14362,156 @@ void coupled_newton_solve_all(PlasmaState *plasma, GammaDeposition *gamma_dep,
            n_stall, n_floor_cn, (long)n_shells);
 }
 
+/* Compact "FeIII" / "CoIII" style label for the [METACOLL] banner. ion is the
+ * 0-based stage (0=I). Falls back to "Z%d/ion%d" for elements outside the table. */
+static void metacoll_ion_label(int Z, int ion, char *buf, size_t n) {
+    static const struct { int Z; const char *sym; } S[] = {
+        {6,"C"},{8,"O"},{11,"Na"},{12,"Mg"},{13,"Al"},{14,"Si"},{16,"S"},
+        {20,"Ca"},{21,"Sc"},{22,"Ti"},{23,"V"},{24,"Cr"},{25,"Mn"},
+        {26,"Fe"},{27,"Co"},{28,"Ni"} };
+    static const char *R[] = {"I","II","III","IV","V","VI","VII","VIII"};
+    const char *sym = NULL;
+    for (size_t i = 0; i < sizeof(S)/sizeof(S[0]); i++)
+        if (S[i].Z == Z) { sym = S[i].sym; break; }
+    const char *rom = (ion >= 0 && ion < (int)(sizeof(R)/sizeof(R[0]))) ? R[ion] : NULL;
+    if (sym && rom) snprintf(buf, n, "%s%s", sym, rom);
+    else            snprintf(buf, n, "Z%d/ion%d", Z, ion);
+}
+
+/* Build every layout-derived NLTE projection in one place.  Both the normal
+ * nlte_init() lane and the Wave-3.2 private shadow lane call this routine, so
+ * offsets, bidirectional level maps, line ownership, super-level anchors, and
+ * within-SL storage cannot drift independently. */
+int nlte_build_projection(NLTEConfig *nlte, AtomicData *atom,
+                          OpacityState *opacity, int n_shells,
+                          const int *target_Z, const int *target_ion,
+                          int n_targets, int super_requested,
+                          int *n_lines_mapped) {
+    int rc = -1;
+    int *cursor = NULL;
+    if (n_lines_mapped) *n_lines_mapped = 0;
+    if (!nlte || !atom || !opacity || !target_Z || !target_ion ||
+        n_targets <= 0 || n_targets > NLTE_MAX_IONS || n_shells <= 0)
+        return -1;
+
+    /* AtomicData owns line identities while OpacityState owns line-sized
+     * arrays.  A split cardinality would make either projection out-of-bounds;
+     * never guess which side is authoritative. */
+    if (atom->n_lines != opacity->n_lines) {
+        fprintf(stderr,
+                "[NLTE][PROJECTION-FAIL] atom n_lines=%d != opacity n_lines=%d\n",
+                atom->n_lines, opacity->n_lines);
+        assert(atom->n_lines == opacity->n_lines);
+        return -1;
+    }
+
+    memset(nlte->nlte_Z, 0, sizeof(nlte->nlte_Z));
+    memset(nlte->nlte_ion, 0, sizeof(nlte->nlte_ion));
+    memset(nlte->nlte_ion_level_offset, 0,
+           sizeof(nlte->nlte_ion_level_offset));
+    memset(nlte->nlte_ion_super_offset, 0,
+           sizeof(nlte->nlte_ion_super_offset));
+    nlte->n_nlte_ions = n_targets;
+    for (int i = 0; i < n_targets; i++) {
+        nlte->nlte_Z[i] = target_Z[i];
+        nlte->nlte_ion[i] = target_ion[i];
+        int count = 0, max_super = -1;
+        for (int l = 0; l < atom->n_levels; l++) {
+            if (atom->level_Z[l] != target_Z[i] ||
+                atom->level_ion[l] != target_ion[i]) continue;
+            count++;
+            if (atom->level_super[l] > max_super)
+                max_super = atom->level_super[l];
+        }
+        nlte->nlte_ion_level_offset[i + 1] =
+            nlte->nlte_ion_level_offset[i] + count;
+        nlte->nlte_ion_super_offset[i + 1] =
+            nlte->nlte_ion_super_offset[i] +
+            (max_super >= 0 ? max_super + 1 : 0);
+    }
+    nlte->n_nlte_levels_total = nlte->nlte_ion_level_offset[n_targets];
+    nlte->n_super_total = nlte->nlte_ion_super_offset[n_targets];
+    nlte->super_mode = super_requested &&
+                       nlte->n_super_total < nlte->n_nlte_levels_total;
+
+    size_t nlevels = (size_t)(nlte->n_nlte_levels_total > 0 ?
+                              nlte->n_nlte_levels_total : 1);
+    size_t nsuper = (size_t)(nlte->n_super_total > 0 ?
+                             nlte->n_super_total : 1);
+    size_t nglobal = (size_t)(atom->n_levels > 0 ? atom->n_levels : 1);
+    size_t nlines = (size_t)(atom->n_lines > 0 ? atom->n_lines : 1);
+    nlte->nlte_to_global_level = (int *)malloc(nlevels * sizeof(int));
+    nlte->global_to_nlte_level = (int *)malloc(nglobal * sizeof(int));
+    nlte->nlte_line_map = (int *)malloc(nlines * sizeof(int));
+    nlte->fl_to_super = (int *)malloc(nlevels * sizeof(int));
+    nlte->super_anchor_global = (int *)malloc(nsuper * sizeof(int));
+    nlte->within_sl_frac = (double *)malloc(
+        nlevels * (size_t)n_shells * sizeof(double));
+    nlte->nlte_level_populations = (double *)calloc(
+        nlevels * (size_t)n_shells, sizeof(double));
+    cursor = (int *)calloc((size_t)NLTE_MAX_IONS, sizeof(int));
+    if (!nlte->nlte_to_global_level || !nlte->global_to_nlte_level ||
+        !nlte->nlte_line_map || !nlte->fl_to_super ||
+        !nlte->super_anchor_global || !nlte->within_sl_frac ||
+        !nlte->nlte_level_populations || !cursor)
+        goto cleanup;
+
+    for (int l = 0; l < atom->n_levels; l++)
+        nlte->global_to_nlte_level[l] = -1;
+    for (int s = 0; s < nlte->n_super_total; s++)
+        nlte->super_anchor_global[s] = -1;
+    for (int l = 0; l < atom->n_levels; l++) {
+        for (int i = 0; i < n_targets; i++) {
+            if (atom->level_Z[l] != target_Z[i] ||
+                atom->level_ion[l] != target_ion[i]) continue;
+            int g = nlte->nlte_ion_level_offset[i] + cursor[i]++;
+            int sl = nlte->nlte_ion_super_offset[i] + atom->level_super[l];
+            nlte->nlte_to_global_level[g] = l;
+            nlte->global_to_nlte_level[l] = g;
+            nlte->fl_to_super[g] = sl;
+            int prior = nlte->super_anchor_global[sl];
+            if (prior < 0 || atom->level_energy_eV[l] <
+                             atom->level_energy_eV[prior])
+                nlte->super_anchor_global[sl] = l;
+            break;
+        }
+    }
+    for (int line = 0; line < atom->n_lines; line++) {
+        nlte->nlte_line_map[line] = -1;
+        for (int i = 0; i < n_targets; i++) {
+            if (atom->line_atomic_number[line] != target_Z[i] ||
+                atom->line_ion_number[line] != target_ion[i]) continue;
+            nlte->nlte_line_map[line] = i;
+            if (n_lines_mapped) (*n_lines_mapped)++;
+            break;
+        }
+    }
+    for (size_t k = 0; k < nlevels * (size_t)n_shells; k++)
+        nlte->within_sl_frac[k] = 1.0;
+    rc = 0;
+
+cleanup:
+    free(cursor);
+    if (rc != 0) {
+        free(nlte->nlte_to_global_level);
+        free(nlte->global_to_nlte_level);
+        free(nlte->nlte_line_map);
+        free(nlte->fl_to_super);
+        free(nlte->super_anchor_global);
+        free(nlte->within_sl_frac);
+        free(nlte->nlte_level_populations);
+        nlte->nlte_to_global_level = NULL;
+        nlte->global_to_nlte_level = NULL;
+        nlte->nlte_line_map = NULL;
+        nlte->fl_to_super = NULL;
+        nlte->super_anchor_global = NULL;
+        nlte->within_sl_frac = NULL;
+        nlte->nlte_level_populations = NULL;
+        fprintf(stderr, "[NLTE][PROJECTION-FAIL] allocation failed\n");
+    }
+    return rc;
+}
+
 int nlte_init(NLTEConfig *nlte, AtomicData *atom, OpacityState *opacity,
               int n_shells) {
     memset(nlte, 0, sizeof(NLTEConfig));
@@ -8859,137 +14521,124 @@ int nlte_init(NLTEConfig *nlte, AtomicData *atom, OpacityState *opacity,
     nlte->nu_max = NLTE_NU_MAX;
     nlte->d_log_nu = log(NLTE_NU_MAX / NLTE_NU_MIN) / NLTE_N_FREQ_BINS;
 
-    /* Set up target ions */
-    nlte->n_nlte_ions = NLTE_MAX_IONS;
-    for (int i = 0; i < NLTE_MAX_IONS; i++) {
-        nlte->nlte_Z[i]   = NLTE_TARGET_Z[i];
-        nlte->nlte_ion[i]  = NLTE_TARGET_ION[i];
-    }
+    /* Set up target ions. LUMINA_NLTE_STAGE4 promotes stage-IV ions (adjacent
+     * layout, 38 slots); gate OFF => the original 31-slot table verbatim =>
+     * byte-identical baseline (n_nlte_ions=31, loops below bounded by it, the 7
+     * appended fixed-array slots untouched). */
+    int element_wide = nlte_element_wide_layout_enabled();
+    int stage4 = !element_wide && nlte_stage4_enabled();
+    const int *TGT_Z = element_wide ? NLTE_TARGET_Z_EW :
+                       (stage4 ? NLTE_TARGET_Z4 : NLTE_TARGET_Z);
+    const int *TGT_ION = element_wide ? NLTE_TARGET_ION_EW :
+                         (stage4 ? NLTE_TARGET_ION4 : NLTE_TARGET_ION);
+    int n_targets = element_wide ? NLTE_EW_IONS :
+                    (stage4 ? NLTE_STAGE4_IONS : NLTE_BASE_IONS);
+    const char *super_env = getenv("LUMINA_SUPER_LEVELS");
+    int super_requested = (super_env && atoi(super_env) != 0) || element_wide;
+    int n_nlte_lines = 0;
+    if (nlte_build_projection(nlte, atom, opacity, n_shells, TGT_Z, TGT_ION,
+                              n_targets, super_requested,
+                              &n_nlte_lines) != 0)
+        return -1;
 
-    /* Build level index maps */
-    /* First pass: count levels per NLTE ion */
-    nlte->nlte_ion_level_offset[0] = 0;
-    for (int i = 0; i < NLTE_MAX_IONS; i++) {
-        int Z = nlte->nlte_Z[i];
-        int ion = nlte->nlte_ion[i];
-        int count = 0;
-        for (int l = 0; l < atom->n_levels; l++) {
-            if (atom->level_Z[l] == Z && atom->level_ion[l] == ion)
-                count++;
-        }
-        nlte->nlte_ion_level_offset[i + 1] = nlte->nlte_ion_level_offset[i] + count;
-    }
-    nlte->n_nlte_levels_total = nlte->nlte_ion_level_offset[NLTE_MAX_IONS];
     printf("  [NLTE] Total NLTE levels: %d\n", nlte->n_nlte_levels_total);
-    for (int i = 0; i < NLTE_MAX_IONS; i++) {
+    for (int i = 0; i < nlte->n_nlte_ions; i++) {
         int n = nlte->nlte_ion_level_offset[i + 1] - nlte->nlte_ion_level_offset[i];
         printf("    Z=%d ion=%d: %d levels\n", nlte->nlte_Z[i], nlte->nlte_ion[i], n);
     }
-
-    /* Second pass: build bidirectional level maps */
-    nlte->nlte_to_global_level = (int *)malloc(nlte->n_nlte_levels_total * sizeof(int));
-    nlte->global_to_nlte_level = (int *)malloc(atom->n_levels * sizeof(int));
-    for (int l = 0; l < atom->n_levels; l++)
-        nlte->global_to_nlte_level[l] = -1;
-
-    int *cursor = (int *)calloc(NLTE_MAX_IONS, sizeof(int)); /* per-ion insertion cursor */
-    for (int l = 0; l < atom->n_levels; l++) {
-        for (int i = 0; i < NLTE_MAX_IONS; i++) {
-            if (atom->level_Z[l] == nlte->nlte_Z[i] &&
-                atom->level_ion[l] == nlte->nlte_ion[i]) {
-                int nlte_idx = nlte->nlte_ion_level_offset[i] + cursor[i];
-                nlte->nlte_to_global_level[nlte_idx] = l;
-                nlte->global_to_nlte_level[l] = nlte_idx;
-                cursor[i]++;
-                break;
-            }
+    if (stage4) {
+        printf("  [STAGE4] LUMINA_NLTE_STAGE4=1: %d NLTE slots (base %d + stage-IV),"
+               " promoted (III,IV) pairs:\n", nlte->n_nlte_ions, NLTE_BASE_IONS);
+        for (int i = 0; i < nlte->n_nlte_ions; i++) {
+            if (nlte->nlte_ion[i] != 3) continue;   /* ion_number 3 = spectroscopic IV */
+            int n = nlte->nlte_ion_level_offset[i + 1] - nlte->nlte_ion_level_offset[i];
+            printf("  [STAGE4]   Z=%d IV (slot %d): %d NLTE levels\n",
+                   nlte->nlte_Z[i], i, n);
         }
     }
-    free(cursor);
+    if (element_wide)
+        printf("  [EW] CPU pilot layout: %d slots; Fe/S II-IV are contiguous\n",
+               nlte->n_nlte_ions);
 
-    /* ---- CMFGEN super-level collapse maps ---- */
-    /* Pass A: count super-levels per ion (super idx is per-ion 0-based,
-     * contiguous, from the levels.csv "super_level" column; = level_num for
-     * non-collapsed ions). */
-    nlte->nlte_ion_super_offset[0] = 0;
-    for (int i = 0; i < NLTE_MAX_IONS; i++) {
-        int Z = nlte->nlte_Z[i];
-        int ion = nlte->nlte_ion[i];
-        int max_s = -1;
-        for (int l = 0; l < atom->n_levels; l++) {
-            if (atom->level_Z[l] == Z && atom->level_ion[l] == ion) {
-                int s = atom->level_super[l];
-                if (s > max_s) max_s = s;
-            }
-        }
-        int n_super_i = (max_s >= 0) ? (max_s + 1) : 0;
-        nlte->nlte_ion_super_offset[i + 1] = nlte->nlte_ion_super_offset[i] + n_super_i;
-    }
-    nlte->n_super_total = nlte->nlte_ion_super_offset[NLTE_MAX_IONS];
-
-    /* Pass B: FL nlte idx -> global SL solve idx, and lowest-E anchor per SL. */
-    nlte->fl_to_super = (int *)malloc(nlte->n_nlte_levels_total * sizeof(int));
-    for (int g = 0; g < nlte->n_nlte_levels_total; g++) nlte->fl_to_super[g] = g;
-    nlte->super_anchor_global = (int *)malloc(
-        (nlte->n_super_total > 0 ? nlte->n_super_total : 1) * sizeof(int));
-    for (int s = 0; s < nlte->n_super_total; s++) nlte->super_anchor_global[s] = -1;
-    for (int l = 0; l < atom->n_levels; l++) {
-        for (int i = 0; i < NLTE_MAX_IONS; i++) {
-            if (atom->level_Z[l] == nlte->nlte_Z[i] &&
-                atom->level_ion[l] == nlte->nlte_ion[i]) {
-                int g_nlte = nlte->global_to_nlte_level[l];
-                int sl_global = nlte->nlte_ion_super_offset[i] + atom->level_super[l];
-                nlte->fl_to_super[g_nlte] = sl_global;
-                int prev = nlte->super_anchor_global[sl_global];
-                if (prev < 0 ||
-                    atom->level_energy_eV[l] < atom->level_energy_eV[prev])
-                    nlte->super_anchor_global[sl_global] = l;
-                break;
-            }
-        }
-    }
-
-    /* Activate super mode only when the env knob is on AND the data actually
-     * collapses (otherwise stay on the byte-identical FL path). */
-    {
-        const char *e = getenv("LUMINA_SUPER_LEVELS");
-        int env_on = (e && atoi(e) != 0);
-        nlte->super_mode = (env_on && nlte->n_super_total < nlte->n_nlte_levels_total) ? 1 : 0;
-    }
-    nlte->within_sl_frac = (double *)malloc(
-        (size_t)nlte->n_nlte_levels_total * n_shells * sizeof(double));
-    for (size_t k = 0; k < (size_t)nlte->n_nlte_levels_total * n_shells; k++)
-        nlte->within_sl_frac[k] = 1.0;
     printf("  [NLTE] Super-levels: %s (%d FL -> %d SL across ions)\n",
            nlte->super_mode ? "ACTIVE" : "off (identity)",
            nlte->n_nlte_levels_total, nlte->n_super_total);
 
-    /* Build line -> NLTE ion map */
+    /* Line ownership was built by the shared projection builder above. */
     int n_lines = opacity->n_lines;
-    nlte->nlte_line_map = (int *)malloc(n_lines * sizeof(int));
-    int n_nlte_lines = 0;
-    for (int line = 0; line < n_lines; line++) {
-        nlte->nlte_line_map[line] = -1;
-        int Z   = atom->line_atomic_number[line];
-        int ion = atom->line_ion_number[line];
-        for (int i = 0; i < NLTE_MAX_IONS; i++) {
-            if (Z == nlte->nlte_Z[i] && ion == nlte->nlte_ion[i]) {
-                nlte->nlte_line_map[line] = i;
-                n_nlte_lines++;
-                break;
+    printf("  [NLTE] Lines mapped to NLTE ions: %d / %d\n",
+           n_nlte_lines, n_lines);
+
+    /* ---- COLD-CASE-P precompute: drainless-metastable flags (LUMINA_NLTE_METASTABLE_COLL).
+     * A level is "drainless-metastable" iff levels.csv flags it metastable=1 AND no line
+     * has it as its UPPER level (zero downward radiative transitions). Such levels cannot
+     * de-excite in the baseline network (the per-line collision assembly loops over LINES,
+     * so no-line => no collision channel either) -> b_k pileup. The flag is precomputed ONCE
+     * here (global-level indexed); the assembler consults it only when the gate is on. */
+    nlte->drainless_metastable = (int *)calloc(atom->n_levels, sizeof(int));
+    {
+        /* has_downward[global] = level l appears as the UPPER level of >=1 line. Mirror the
+         * assembly-loop lookup (per-ion-pop level range + level_num match). */
+        int *has_downward = (int *)calloc(atom->n_levels, sizeof(int));
+        for (int line = 0; line < n_lines; line++) {
+            int Z   = atom->line_atomic_number[line];
+            int ion = atom->line_ion_number[line];
+            int ip  = find_ion_pop_idx(atom, Z, ion);
+            if (ip < 0) continue;
+            int lb = atom->level_offset[ip], lt = atom->level_offset[ip + 1];
+            int up_num = atom->line_level_upper[line];
+            for (int l = lb; l < lt; l++)
+                if (atom->level_num[l] == up_num) { has_downward[l] = 1; break; }
+        }
+        for (int l = 0; l < atom->n_levels; l++)
+            nlte->drainless_metastable[l] =
+                (atom->level_metastable[l] == 1 && !has_downward[l]) ? 1 : 0;
+        free(has_downward);
+
+        /* Banner: per-NLTE-ion count of drainless-metastable levels that will receive a
+         * ground drain (EXCLUDING each ion's own ground level_num==0, which is the target
+         * and cannot drain to itself). Printed only when the fix is armed. */
+        if (nlte_metacoll_enabled()) {
+            int    mmode  = nlte_metacoll_mode();
+            double momega = (mmode == 2) ? nlte_metacoll_omega() : AXELROD_OMEGA;
+            const char *coupling = (mmode == 2) ? "all-lower" : "ground";
+            char line_buf[1024];
+            int off = snprintf(line_buf, sizeof(line_buf),
+                "  [METACOLL] mode=%d Omega=%.2f: drainless-metastable -> %s coupling;",
+                mmode, momega, coupling);
+            long total = 0;
+            for (int i = 0; i < nlte->n_nlte_ions; i++) {
+                int cnt = 0;
+                int l0 = nlte->nlte_ion_level_offset[i];
+                int l1 = nlte->nlte_ion_level_offset[i + 1];
+                for (int nl = l0; nl < l1; nl++) {
+                    int g = nlte->nlte_to_global_level[nl];
+                    if (nlte->drainless_metastable[g] && atom->level_num[g] != 0) cnt++;
+                }
+                if (cnt > 0 && off < (int)sizeof(line_buf) - 24) {
+                    char lab[16];
+                    metacoll_ion_label(nlte->nlte_Z[i], nlte->nlte_ion[i], lab, sizeof(lab));
+                    off += snprintf(line_buf + off, sizeof(line_buf) - off,
+                                    " %s=%d", lab, cnt);
+                    total += cnt;
+                }
             }
+            printf("%s  (total=%ld)\n", line_buf, total);
         }
     }
-    printf("  [NLTE] Lines mapped to NLTE ions: %d / %d\n", n_nlte_lines, n_lines);
 
     /* Allocate results arrays */
-    nlte->nlte_level_populations = (double *)calloc(
-        (size_t)nlte->n_nlte_levels_total * n_shells, sizeof(double));
     nlte->j_nu_estimator = (double *)calloc(
         (size_t)n_shells * NLTE_N_FREQ_BINS, sizeof(double));
     nlte->j_nu_count = (int *)calloc(
         (size_t)n_shells * NLTE_N_FREQ_BINS, sizeof(int));
     nlte->J_nu = (double *)calloc(
+        (size_t)n_shells * NLTE_N_FREQ_BINS, sizeof(double));
+    /* [ARTIS-PARITY C1/C2] per-bin MC field moment accumulators (always allocated;
+     * only accumulated/consumed under LUMINA_ARTIS_PARITY => OFF path unaffected). */
+    nlte->nu_bar_nu_estimator = (double *)calloc(
+        (size_t)n_shells * NLTE_N_FREQ_BINS, sizeof(double));
+    nlte->bf_rate_estimator = (double *)calloc(
         (size_t)n_shells * NLTE_N_FREQ_BINS, sizeof(double));
 
     printf("  [NLTE] Initialization complete. Memory: %.1f MB\n",
@@ -9002,13 +14651,19 @@ void nlte_free(NLTEConfig *nlte) {
     free(nlte->nlte_to_global_level);
     free(nlte->global_to_nlte_level);
     free(nlte->nlte_line_map);
+    free(nlte->drainless_metastable);
     free(nlte->nlte_level_populations);
     free(nlte->j_nu_estimator);
     free(nlte->j_nu_count);
     free(nlte->J_nu);
+    free(nlte->nu_bar_nu_estimator);   /* [ARTIS-PARITY C1] */
+    free(nlte->bf_rate_estimator);     /* [ARTIS-PARITY C2] */
     free(nlte->fl_to_super);
     free(nlte->super_anchor_global);
     free(nlte->within_sl_frac);
+    free(g_ew_tau_authority);
+    g_ew_tau_authority = NULL;
+    g_ew_tau_authority_nshells = 0;
 }
 
 /* Normalize raw j_nu estimator to physical J_nu [erg/s/cm^2/Hz/sr] */
@@ -9193,9 +14848,131 @@ static int gauss_solve(double *A, double *b, int N) {
     return 0;
 }
 
+/* ============================================================ */
+/* [DIAG-T3] NLTE per-level rate-channel decomposition for Fe     */
+/* II/III/IV at LUMINA_DIAG_SHELL (default 8). For lo-ion X the    */
+/* pair (X,X+1) assembly holds the COMPLETE rate picture for X:    */
+/* all its intra-X bb rates + its photoion/recomb + collion/3-body.*/
+/* We accumulate per (solve) level and, after that pair's assembly,*/
+/* rewrite the whole file so lumina_rates_decomp.csv always holds  */
+/* the latest solve sweep. A deviating b_k is then attributable to */
+/* ONE rate channel. CPU assembly only (LUMINA_NLTE_ASSEMBLE_GPU=0)*/
+/* and only under the master parity gate (=> OFF-path untouched).  */
+/* ============================================================ */
+#define DDC_NSTAGE 3    /* Fe II, III, IV */
+#define DDC_MAXLEV 64
+typedef struct {
+    int    seen [DDC_NSTAGE][DDC_MAXLEV];
+    int    levnum[DDC_NSTAGE][DDC_MAXLEV];
+    double E_eV [DDC_NSTAGE][DDC_MAXLEV];
+    int    g    [DDC_NSTAGE][DDC_MAXLEV];
+    double pop  [DDC_NSTAGE][DDC_MAXLEV];
+    double radup[DDC_NSTAGE][DDC_MAXLEV];   /* Σ R_absorb  (J-driven up)      */
+    double raddn[DDC_NSTAGE][DDC_MAXLEV];   /* Σ R_stim+R_spont (A·β down)    */
+    double colup[DDC_NSTAGE][DDC_MAXLEV];   /* Σ C_up   (coll excite up)      */
+    double coldn[DDC_NSTAGE][DDC_MAXLEV];   /* Σ C_down (coll de-excite down) */
+    double pion [DDC_NSTAGE][DDC_MAXLEV];   /* R_bf  photoionization out      */
+    double rec  [DDC_NSTAGE][DDC_MAXLEV];   /* R_rec radiative recomb in      */
+    double cion [DDC_NSTAGE][DDC_MAXLEV];   /* C_ion collisional ioniz out    */
+    double c3b  [DDC_NSTAGE][DDC_MAXLEV];   /* C_rec 3-body recomb in         */
+} DiagDecomp;
+static DiagDecomp g_ddc;
+static int g_ddc_shell = -2;   /* -2 unread, else the diag shell (-1 disables) */
+static int nlte_diag_decomp_shell(void) {
+    if (g_ddc_shell == -2) {
+        const char *e = getenv("LUMINA_DIAG_SHELL");
+        g_ddc_shell = e ? atoi(e) : 8;   /* default photosphere s8 */
+    }
+    return g_ddc_shell;
+}
+
 /* Assemble NLTE rate matrix for one ion pair in one shell.
  * Outputs column-major A_cm[N*N] and RHS b[N] (both must be pre-zeroed).
  * Called by both CPU (gauss_solve) and GPU (cuBLAS batched) paths. */
+/* ============================================================ */
+/* withParityP GATE ②: LUMINA_JBAR_DUMP — per-line consumed-jbar observer.     */
+/* Pure observation: reads opacity->jbar_line / jbar_count at the exact         */
+/* consumption point in nlte_assemble_rate_matrix (below) and appends a CSV     */
+/* row. Never feeds back to any field/population. OFF => byte-identical.        */
+/* ============================================================ */
+static int   g_jbdump_on    = -1;   /* -1 unparsed; 0 off; 1 on (getenv once) */
+static FILE *g_jbdump_fp    = NULL;
+static int   g_jbdump_nions = 0;
+static int   g_jbdump_Z[64];
+static int   g_jbdump_ion[64];
+static int   g_jbdump_arm   = 0;    /* armed by caller around the authoritative solve */
+static int   g_jbdump_iter  = -1;   /* outer iteration recorded at arm time */
+static int   g_jbdump_pass  = -1;   /* current CE inner pass (only 0 dumps) */
+
+static void nlte_jbar_dump_init(void) {
+    if (g_jbdump_on >= 0) return;                 /* env parsed exactly once */
+    const char *e = getenv("LUMINA_JBAR_DUMP");
+    g_jbdump_on = (e && atoi(e) != 0) ? 1 : 0;
+    if (!g_jbdump_on) return;
+    const char *f = getenv("LUMINA_JBAR_DUMP_IONS");
+    /* Gate-B Phase 1.6 capture preset.  This only widens the existing observer
+     * filter; it does not alter jbar, rates, populations, or transport. */
+    const char *gateb = getenv("LUMINA_GATEB_ORACLE_CAPTURE");
+    if (gateb && atoi(gateb) != 0)
+        f = "14:1,14:2,16:1,16:2,26:1,26:2,26:3,27:2";
+    if (!f || !*f) f = "14:2";                    /* default Si III (Z=14, nlte_ion=2) */
+    const char *p = f;
+    while (*p && g_jbdump_nions < 64) {
+        int Z = 0, ion = -1;
+        if (sscanf(p, "%d:%d", &Z, &ion) == 2 && Z > 0 && ion >= 0) {
+            g_jbdump_Z[g_jbdump_nions]   = Z;
+            g_jbdump_ion[g_jbdump_nions] = ion;
+            g_jbdump_nions++;
+        }
+        while (*p && *p != ',') p++;
+        if (*p == ',') p++;
+    }
+    g_jbdump_fp = fopen("lumina_jbar_dump.csv", "w");
+    if (g_jbdump_fp) {
+        fprintf(g_jbdump_fp,
+            "iter,shell,Z,ion,line_idx,lambda_A,jbar_line,jbar_count,beta,mode,B_planck_Te\n");
+        fflush(g_jbdump_fp);
+        fprintf(stderr, "[withParityP GATE2 LUMINA_JBAR_DUMP] ARMED -> "
+                        "lumina_jbar_dump.csv; ions=");
+        for (int i = 0; i < g_jbdump_nions; i++)
+            fprintf(stderr, "%s%d:%d", i ? "," : "", g_jbdump_Z[i], g_jbdump_ion[i]);
+        fprintf(stderr, "  (jbar_line=raw opacity->jbar_line array [the EMA-consumed "
+                        "field]; mode 0=binned/nlte_get_J,1=m1_jbar_beta1,2=m2_diff,"
+                        "3=m3_beta_jinc,4=dilute)\n");
+    } else {
+        fprintf(stderr, "[withParityP GATE2 LUMINA_JBAR_DUMP] *** FAILED to open "
+                        "lumina_jbar_dump.csv — DUMP DISABLED ***\n");
+        g_jbdump_on = 0;                          /* fail-loud, fail-closed */
+    }
+}
+
+void nlte_jbar_dump_arm(int outer_iter) {
+    nlte_jbar_dump_init();
+    if (g_jbdump_on != 1) return;
+    g_jbdump_arm  = 1;
+    g_jbdump_iter = outer_iter;
+    g_jbdump_pass = -1;
+}
+void nlte_jbar_dump_set_pass(int ce_pass) {
+    if (g_jbdump_on != 1) return;
+    g_jbdump_pass = ce_pass;
+}
+void nlte_jbar_dump_disarm(void) {
+    if (g_jbdump_on != 1) return;
+    g_jbdump_arm  = 0;
+    g_jbdump_pass = -1;
+    if (g_jbdump_fp) fflush(g_jbdump_fp);
+}
+/* True iff this (Z,ion) line should be dumped now: armed + CE pass 0 (one block
+ * per outer iteration, since jbar_line is held fixed across CE passes). */
+static int nlte_jbar_dump_want(int Z, int ion) {
+    if (g_jbdump_on != 1 || !g_jbdump_arm || g_jbdump_pass != 0 || !g_jbdump_fp)
+        return 0;
+    for (int i = 0; i < g_jbdump_nions; i++)
+        if (g_jbdump_Z[i] == Z && g_jbdump_ion[i] == ion) return 1;
+    return 0;
+}
+
 void nlte_assemble_rate_matrix(NLTEConfig *nlte, AtomicData *atom,
                                 PlasmaState *plasma, OpacityState *opacity,
                                 int ion_idx_lo, int ion_idx_hi,
@@ -9204,11 +14981,27 @@ void nlte_assemble_rate_matrix(NLTEConfig *nlte, AtomicData *atom,
                                 GammaDeposition *gamma_dep,
                                 const NLTERateLookup *lookup,
                                 int pair_idx) {
+    const int ew_capture = nlte_ew_capture_active();
     int lev_start = nlte->nlte_ion_level_offset[ion_idx_lo];
     int n_shells = plasma->n_shells;
     double T_rad = plasma->T_rad[shell];
     double T_e   = plasma->T_e[shell];
     double n_e   = plasma->n_electron[shell];
+#ifdef LUMINA_FROZEN_ORACLE
+    if (g_oracle.fp) {
+        int os = oracle_ion_slot(nlte->nlte_Z[ion_idx_lo],
+                                 nlte->nlte_ion[ion_idx_lo]);
+        if (os >= 0) g_oracle.bf_rate_seen[os] = 1;
+    }
+#endif
+    /* Real Fe III collisions from Zhang col_data active for this call? (gate ON
+     * AND table loaded). Used to suppress the per-line proxy + METACOLL for Fe
+     * III and to run the dedicated Zhang pass below. */
+    int feiii_coldata_on = (nlte_feiii_coldata_enabled() || artis_parity_enabled())
+                           && atom->feiii_col_loaded;
+    int parity_on = artis_parity_enabled();
+    /* [OMEGA-CMFGEN] per-transition 3-tier Omega for the bb collision block. */
+    const int omcm_on = omega_cmfgen_enabled() && parity_on;
 
     /* Column-major access: ACM(i,j) = A_cm[j*N + i] */
     #define ACM(i,j) A_cm[(j) * N + (i)]
@@ -9223,6 +15016,39 @@ void nlte_assemble_rate_matrix(NLTEConfig *nlte, AtomicData *atom,
     #define SOLVE_OF(fl_g) (nlte->fl_to_super[(fl_g)] - super_start)
     #define FRAC_OF(fl_g)  (nlte->within_sl_frac[(size_t)(fl_g) * n_shells + shell])
 
+    /* [DIAG-T3] arm the per-level rate decomposition for this pair iff it is the
+     * lo-ion of a Fe II/III/IV stage at the diag shell (=> complete picture). We
+     * key the accumulator by the LO-ion solve index (== within-ion level in
+     * identity mode). Reset this stage's slot on entry; the pair recomputes it
+     * fully. Off unless the master parity gate is on. */
+    int ddc_stage = -1;
+    if (artis_parity_enabled()) {
+        int ds = nlte_diag_decomp_shell();
+        if (ds >= 0 && shell == ds && nlte->nlte_Z[ion_idx_lo] == 26) {
+            int io = nlte->nlte_ion[ion_idx_lo];
+            /* Lumina nlte_ion is 0-based: Fe II=1, III=2, IV=3 (levelpop.csv
+             * convention) — not the ARTIS 1-based ionstage. */
+            if (io >= 1 && io <= 3) {
+                ddc_stage = io - 1;
+                for (int L = 0; L < DDC_MAXLEV; L++) {
+                    g_ddc.seen[ddc_stage][L] = 0;
+                    g_ddc.pop[ddc_stage][L]  = 0.0;
+                    g_ddc.radup[ddc_stage][L] = g_ddc.raddn[ddc_stage][L] = 0.0;
+                    g_ddc.colup[ddc_stage][L] = g_ddc.coldn[ddc_stage][L] = 0.0;
+                    g_ddc.pion[ddc_stage][L]  = g_ddc.rec[ddc_stage][L]   = 0.0;
+                    g_ddc.cion[ddc_stage][L]  = g_ddc.c3b[ddc_stage][L]   = 0.0;
+                }
+            }
+        }
+    }
+    #define DDC_CAP(i) ((i) >= 0 && (i) < n_lo_super && (i) < DDC_MAXLEV)
+    #define DDC_RAD(ilo, iup, rup, rdn) do { if (ddc_stage >= 0) { \
+        if (DDC_CAP(ilo)) g_ddc.radup[ddc_stage][ilo] += (rup); \
+        if (DDC_CAP(iup)) g_ddc.raddn[ddc_stage][iup] += (rdn); } } while (0)
+    #define DDC_COLL(ilo, iup, cu, cd) do { if (ddc_stage >= 0) { \
+        if (DDC_CAP(ilo)) g_ddc.colup[ddc_stage][ilo] += (cu); \
+        if (DDC_CAP(iup)) g_ddc.coldn[ddc_stage][iup] += (cd); } } while (0)
+
     /* α #286 floor-pop regularization: track bb-connectivity per level so we
      * can detect bb-isolated upper-ion levels (e.g. Cr/Fe/Co III top) that
      * cause conservation-row collapse (#219e). Allocated only when knob is on. */
@@ -9233,7 +15059,8 @@ void nlte_assemble_rate_matrix(NLTEConfig *nlte, AtomicData *atom,
         if (e && atoi(e) != 0) floor_reg_mode = 1;
         floor_reg_init = 1;
     }
-    int *bb_connected = floor_reg_mode ? (int *)calloc(N, sizeof(int)) : NULL;
+    int *bb_connected = (floor_reg_mode && !ew_capture) ?
+        (int *)calloc(N, sizeof(int)) : NULL;
     /* TOPSTAGE_THERMALIZE: per-level max Sobolev tau of connecting bb lines, so the
      * post-solve anchor forces Boltzmann@T_e on the TOP NLTE stage's bb-connected
      * EXCITED (upper-ion) levels — the super-thermal optical carriers O/C/S/Al III.
@@ -9467,6 +15294,9 @@ void nlte_assemble_rate_matrix(NLTEConfig *nlte, AtomicData *atom,
         /* effective line field (for the budget diagnostic + the mode-1/binned path) */
         double J_line = use_jbar ? J_jbar : nlte_get_J_at_nu(nlte, shell, nu_line);
         double R_absorb, R_stim, R_spont;
+        /* [withParityP GATE2] which assembly branch + escape factor is applied to
+         * this line (set inside each branch below; dumped after the chain). */
+        int    jd_mode = -1; double jd_beta = 1.0;
         if (dilute_on) {
             /* Dilute photospheric field (LUMINA_NLTE_DILUTE_FIELD): drive the bb
              * radiative rates with J_bar_line = W(s)*B(nu_line,T_R), T_R the hot
@@ -9480,6 +15310,7 @@ void nlte_assemble_rate_matrix(NLTEConfig *nlte, AtomicData *atom,
             R_stim   = atom->line_B_ul[line] * Jbar;
             R_spont  = atom->line_A_ul[line];
             J_line   = Jbar;   /* keep the budget diagnostic consistent */
+            jd_mode = 4; jd_beta = 1.0;   /* [withParityP GATE2] dilute W*B(T_R) */
         } else if (use_jbar && jbar_pops_mode == 3 && !det_jbar) {
             /* Stage A v3 — faithful Sobolev/MALI with the INCIDENT field.
              * KEY (verified, 2026-06-21): the Lucy j_blue estimator jbar_line is
@@ -9508,6 +15339,7 @@ void nlte_assemble_rate_matrix(NLTEConfig *nlte, AtomicData *atom,
             R_absorb = atom->line_B_lu[line] * beta * J_jbar;
             R_stim   = atom->line_B_ul[line] * beta * J_jbar;
             R_spont  = atom->line_A_ul[line] * beta;
+            jd_mode = 3; jd_beta = beta;  /* [withParityP GATE2] m3 beta*J_inc */
         } else if (use_jbar && (jbar_pops_mode == 2 || det_jbar)) {
             /* Stage A v2 — Λ*-preconditioned / faithful Sobolev-MALI with the
              * REALIZED external field. The MC estimator carries the FULL line
@@ -9537,6 +15369,7 @@ void nlte_assemble_rate_matrix(NLTEConfig *nlte, AtomicData *atom,
             R_absorb = atom->line_B_lu[line] * bJext;
             R_stim   = atom->line_B_ul[line] * bJext;
             R_spont  = atom->line_A_ul[line] * beta;
+            jd_mode = 2; jd_beta = beta;  /* [withParityP GATE2] m2 differenced */
         } else {
             /* mode 1 (naive, SEALED → explodes; kept only for A/B) uses the full
              * J_bar with no escape factor; the binned-J path keeps MALI β. */
@@ -9546,6 +15379,29 @@ void nlte_assemble_rate_matrix(NLTEConfig *nlte, AtomicData *atom,
             R_absorb = atom->line_B_lu[line] * J_line * beta_use;
             R_stim   = atom->line_B_ul[line] * J_line * beta_use;
             R_spont  = atom->line_A_ul[line] * beta_use;
+            /* [withParityP GATE2] 1=m1 jbar naive (beta=1); 0=binned nlte_get_J */
+            jd_mode = use_jbar ? 1 : 0; jd_beta = beta_use;
+        }
+
+        /* [withParityP GATE2] Observe the per-line jbar the matrix just consumed,
+         * read straight from opacity->jbar_line / jbar_count at the consumption
+         * point (no recomputation). Thread-safe append (shells run OMP-parallel). */
+        if (nlte_jbar_dump_want(nlte->nlte_Z[map], nlte->nlte_ion[map])) {
+            double jl = opacity->jbar_line
+                        ? opacity->jbar_line[(size_t)line * n_shells + shell] : -1.0;
+            long   jc = opacity->jbar_count
+                        ? (long)opacity->jbar_count[(size_t)line * n_shells + shell] : -1L;
+            double lamA = C_SPEED_OF_LIGHT / nu_line * 1.0e8;
+            double Bpl  = planck_bnu(T_e, nu_line);
+            #ifdef _OPENMP
+            #pragma omp critical (lumina_jbar_dump)
+            #endif
+            {
+                fprintf(g_jbdump_fp,
+                        "%d,%d,%d,%d,%d,%.4f,%.6e,%ld,%.6e,%d,%.6e\n",
+                        g_jbdump_iter, shell, nlte->nlte_Z[map], nlte->nlte_ion[map],
+                        line, lamA, jl, jc, jd_beta, jd_mode, Bpl);
+            }
         }
 
         double dE = fabs(atom->level_energy_eV[upper_global] -
@@ -9558,7 +15414,33 @@ void nlte_assemble_rate_matrix(NLTEConfig *nlte, AtomicData *atom,
         double C_down = 0.0;
         if (T_e > 0.0 && dE > 0.0 && g_lo > 0 && g_up > 0) {
             double exp_factor = exp(-dE / (K_BOLTZMANN * T_e));
-            if (nlte_coll_fix_enabled()) {
+            if (omcm_on) {
+                /* [OMEGA-CMFGEN] per-TRANSITION dispatch (CMFGEN's own rule),
+                 * replacing the per-ION suppression below: a covered ion's pairs
+                 * that are NOT in col_data must still get the vR / OMEGA_SET
+                 * fallback, not zero. Tabulated pairs are left to the dedicated
+                 * col_data pass (tier 1 -> C=0 here) so nothing double-counts. */
+                int tier = 3;
+                double ups = omega_cmfgen_line(atom, line, T_e, &tier);
+                if (tier != 1)
+                    artis_col_rates(T_e, n_e, dE, (double)g_lo, (double)g_up,
+                                    f_lu, ups, 0, &C_up, &C_down);
+            } else
+            if (artis_parity_enabled()) {
+                /* A2 (severe, default under master gate) + A5: ARTIS van
+                 * Regemorter with the Bethe (H_ionpot/dE)^2 factor + the
+                 * energy-dependent Gaunt Γ=max(0.2,0.276 e^u(-γ-ln u)) for
+                 * permitted E1 lines; the g-scaled Axelrod floor (eff. Upsilon
+                 * = 0.01·g_lo·g_up) for forbidden. Dispatched on the f_lu
+                 * permitted/forbidden proxy (ARTIS reads a per-transition
+                 * forbidden flag Lumina's line table does not carry; f_lu<=1e-10
+                 * is the E1-vs-M1/E2 signal). Lines of ions that have REAL
+                 * close-coupling Omega are zeroed below and driven by the
+                 * dedicated col_data pass instead (no double-count). */
+                int forb = (f_lu <= 1e-10);
+                artis_col_rates(T_e, n_e, dE, (double)g_lo, (double)g_up, f_lu,
+                                forb ? -2.0 : -1.0, forb, &C_up, &C_down);
+            } else if (nlte_coll_fix_enabled()) {
                 /* Dispatch by collision STRENGTH, not raw f_lu (codex 019ed80e).
                  * Upsilon = max(van Regemorter w/ the Bethe (Ry/dE)^2 scaling the
                  * legacy branch dropped, Omega=1 forbidden floor). Symmetric
@@ -9590,7 +15472,8 @@ void nlte_assemble_rate_matrix(NLTEConfig *nlte, AtomicData *atom,
          * Boltzmann@T_e (DB-preserved; the equilibrium is independent of ε so the
          * floor only sets the approach, not a new fixed point). Floor on C_down (not
          * C_up) avoids the exp(+dE/kTe) blow-up for UV lines. */
-        if (coll_floor > 0.0 && T_e > 0.0 && g_lo > 0 && g_up > 0) {
+        if (!ew_capture && !artis_parity_enabled() &&
+            coll_floor > 0.0 && T_e > 0.0 && g_lo > 0 && g_up > 0) {
             double cd_min = coll_floor * atom->line_A_ul[line];
             if (C_down < cd_min) {
                 C_down = cd_min;
@@ -9599,8 +15482,56 @@ void nlte_assemble_rate_matrix(NLTEConfig *nlte, AtomicData *atom,
             }
         }
 
+        /* FEIII_COLDATA: suppress the per-line (van Regemorter / Axelrod floor)
+         * collision for Fe III lines — the real Zhang col_data collisions are
+         * added in the dedicated pass below, and would double count otherwise.
+         * Radiative rates (R_absorb/R_stim/R_spont) are untouched. */
+        if (!omcm_on && feiii_coldata_on &&
+            atom->line_atomic_number[line] == 26 && atom->line_ion_number[line] == 2) {
+            C_up = 0.0; C_down = 0.0;
+        }
+        /* A3: under parity, suppress the per-line proxy for EVERY ion that has a
+         * real close-coupling Omega table (Fe II, Co III, Ni III, ...); those
+         * rates are added by the generic col_data pass below. */
+        if (!omcm_on && artis_parity_enabled() &&
+            ion_has_realcoldata(atom, atom->line_atomic_number[line],
+                                atom->line_ion_number[line])) {
+            C_up = 0.0; C_down = 0.0;
+        }
+
         double total_up   = R_absorb + C_up;
         double total_down = R_stim + R_spont + C_down;
+
+#ifdef LUMINA_FROZEN_ORACLE
+        /* Representative = largest actual upward population flow n_l R_lu for
+         * each requested ion.  Rates and J are the locals consumed below. */
+        if (g_oracle.fp) {
+            int os = oracle_ion_slot(atom->line_atomic_number[line],
+                                     atom->line_ion_number[line]);
+            if (os >= 0) {
+                int nl_lo_o = nlte->global_to_nlte_level[lower_global];
+                double np_lo = (nl_lo_o >= 0)
+                    ? nlte->nlte_level_populations[(size_t)nl_lo_o*n_shells+shell]
+                    : 0.0;
+                double score = (np_lo > 0.0) ? fabs(np_lo * R_absorb) : -1.0;
+                if (score > g_oracle.top[os].score) {
+                    OracleTopLine *ot = &g_oracle.top[os];
+                    ot->seen = 1; ot->score = score; ot->line = line;
+                    ot->lo_level = atom->level_num[lower_global];
+                    ot->up_level = atom->level_num[upper_global];
+                    ot->lambda_A = C_SPEED_OF_LIGHT / nu_line * 1.0e8;
+                    ot->j_line = J_line;
+                    ot->jbar_raw = opacity->jbar_line
+                        ? opacity->jbar_line[(size_t)line*n_shells+shell] : -1.0;
+                    ot->jbar_count = opacity->jbar_count
+                        ? opacity->jbar_count[(size_t)line*n_shells+shell] : -1;
+                    ot->beta = jd_beta;
+                    ot->r_up = R_absorb; ot->r_stim = R_stim;
+                    ot->r_spont = R_spont; ot->c_lu = C_up; ot->c_ul = C_down;
+                }
+            }
+        }
+#endif
 
         /* Within-SL Boltzmann fractions: only the fraction of the lower SL
          * residing in this FL absorbs, only the fraction of the upper SL in
@@ -9612,6 +15543,16 @@ void nlte_assemble_rate_matrix(NLTEConfig *nlte, AtomicData *atom,
         ACM(i_lo, i_up) += total_down * f_up;
         ACM(i_lo, i_lo) -= total_up   * f_lo;
         ACM(i_up, i_up) -= total_down * f_up;
+        nlte_ew_capture_transition(NLTE_EW_RAD_BB, i_up, i_lo,
+                                   R_absorb * f_lo);
+        nlte_ew_capture_transition(NLTE_EW_RAD_BB, i_lo, i_up,
+                                   (R_stim + R_spont) * f_up);
+        nlte_ew_capture_transition(NLTE_EW_COLL_BB, i_up, i_lo,
+                                   C_up * f_lo);
+        nlte_ew_capture_transition(NLTE_EW_COLL_BB, i_lo, i_up,
+                                   C_down * f_up);
+        DDC_RAD(i_lo, i_up, R_absorb, R_stim + R_spont);   /* [DIAG-T3] */
+        DDC_COLL(i_lo, i_up, C_up, C_down);                /* [DIAG-T3] */
 
         if (bb_connected && (total_up + total_down) > 1e-30) {
             bb_connected[i_lo] = 1;
@@ -9651,6 +15592,332 @@ void nlte_assemble_rate_matrix(NLTEConfig *nlte, AtomicData *atom,
         }
     }
 
+    /* ---- COLD-CASE-P fix: collisional drain for drainless-metastable levels ----
+     * (LUMINA_NLTE_METASTABLE_COLL, default OFF => this block is skipped entirely, so
+     * the assembled matrix is byte-identical to the baseline.)
+     *
+     * The per-line collision loop above only builds channels for level pairs that
+     * EXIST as a radiative line. A level flagged metastable=1 with zero downward lines
+     * (nlte->drainless_metastable[], precomputed in nlte_init) therefore gets NO
+     * de-excitation channel at all — neither radiative (no line) nor collisional (the
+     * assembly is line-driven). It fills by cascade and its b_k pins at the
+     * g_stage4_bk_cap ceiling, driving the photospheric IGE over-ionization through its
+     * EUV photoionization edge (Fe III level 17, 3.73 eV: 371 upward pumps, 0 downward
+     * lines -> holds ~51% of Fe III at s8).
+     *
+     * Restore the missing drain with a forbidden-collision floor. Two topologies,
+     * selected by LUMINA_NLTE_METACOLL_MODE (nlte_metacoll_mode()):
+     *
+     *   MODE 1 (default, byte-identical to kpr9): couple each drainless-metastable
+     *     (as "upper") to its ion's GROUND (as "lower") with the Axelrod Omega=1
+     *     floor. GROUND is the single partner; one Omega=1 channel per level.
+     *
+     *   MODE 2 (this session): couple each drainless-metastable to ALL lower levels
+     *     of the same ion (E_l < E_m), each with the CMFGEN f=0 forbidden floor
+     *     Omega = nlte_metacoll_omega() (default 0.1). This matches the topology of
+     *     CMFGEN's FeIII_COL_DATA (Zhang 1996), which drains every metastable to
+     *     every lower level, and its documented forbidden floor ("Value for OMEGA if
+     *     f=0: 0.1"). MODE 1's ground-only Omega=1 UNDER-drains (Fe III lvl 17 stays
+     *     b_k~40 at the photosphere), forcing the b_k cap; MODE 2 completes the drain
+     *     as a PARAMETER-FREE APPROXIMATION to CMFGEN's true per-transition Zhang96
+     *     Omega (imported later as the fidelity endpoint).
+     *
+     * Both modes use the exact symmetric collision-strength form, so detailed balance
+     * is exact per channel: C_up/C_down = (g_meta/g_lower) * exp(-dE/kTe). Off-diagonal
+     * placement is identical to the line-based collisions above (meta="upper",
+     * lower="lower"; total_up=C_up, total_down=C_down). */
+    if (!ew_capture && (nlte_metacoll_enabled() || parity_on) && T_e > 0.0 && n_e > 0.0) {
+      /* A1: under the master gate, the metastable full-connect (mode 2: every
+       * drainless metastable -> all lower levels) is the parity default, with
+       * the ARTIS g-scaled Axelrod forbidden floor (A5) per channel and real
+       * close-coupling Omega superseding it where loaded (skipped below). */
+      int metacoll_mode = parity_on ? 2 : nlte_metacoll_mode();
+      if (metacoll_mode == 1) {
+        /* ===== MODE 1 (default): ground-only Omega=1, byte-identical to kpr9 ===== */
+        for (int ion = ion_idx_lo; ion <= ion_idx_hi; ion++) {
+            /* Fe III drained by the real Zhang table below -> skip its floor. */
+            if (feiii_coldata_on && nlte->nlte_Z[ion] == 26 && nlte->nlte_ion[ion] == 2)
+                continue;
+            int l0 = nlte->nlte_ion_level_offset[ion];
+            int l1 = nlte->nlte_ion_level_offset[ion + 1];
+            /* locate this ion's ground level (level_num == 0) among its NLTE levels */
+            int ground_global = -1;
+            for (int nl = l0; nl < l1; nl++) {
+                int gl = nlte->nlte_to_global_level[nl];
+                if (atom->level_num[gl] == 0) { ground_global = gl; break; }
+            }
+            if (ground_global < 0) continue;
+            int fl_g = nlte->global_to_nlte_level[ground_global];
+            int i_g  = SOLVE_OF(fl_g);
+            if (i_g < 0 || i_g >= N) continue;
+            int    g_ground = atom->level_g[ground_global];
+            double E_ground = atom->level_energy_eV[ground_global];
+            double f_g      = FRAC_OF(fl_g);
+            if (g_ground <= 0) continue;
+            for (int nl = l0; nl < l1; nl++) {
+                int m = nlte->nlte_to_global_level[nl];
+                if (!nlte->drainless_metastable[m]) continue;
+                if (m == ground_global) continue;          /* ground can't drain to itself */
+                int    g_meta = atom->level_g[m];
+                double dE = (atom->level_energy_eV[m] - E_ground) * EV_TO_ERG;
+                if (g_meta <= 0 || !(dE > 0.0)) continue;   /* need a real up-transition */
+                int fl_m = nlte->global_to_nlte_level[m];
+                int i_m  = SOLVE_OF(fl_m);
+                if (i_m < 0 || i_m >= N || i_m == i_g) continue;
+                /* Axelrod Omega=1 forbidden-collision floor (numerical constant
+                 * 8.629e-6, same as the coll_fix / Axelrod branches). */
+                double C_down = n_e * 8.629e-6 / (g_meta   * sqrt(T_e)) * AXELROD_OMEGA;
+                double C_up   = n_e * 8.629e-6 / (g_ground * sqrt(T_e)) * AXELROD_OMEGA
+                                * exp(-dE / (K_BOLTZMANN * T_e));
+                double f_m = FRAC_OF(fl_m);
+                ACM(i_m, i_g) += C_up   * f_g;   /* rate into meta   from ground */
+                ACM(i_g, i_m) += C_down * f_m;   /* rate into ground from meta   */
+                ACM(i_g, i_g) -= C_up   * f_g;
+                ACM(i_m, i_m) -= C_down * f_m;
+                nlte_ew_capture_transition(NLTE_EW_COLL_BB, i_m, i_g, C_up*f_g);
+                nlte_ew_capture_transition(NLTE_EW_COLL_BB, i_g, i_m, C_down*f_m);
+                DDC_COLL(i_g, i_m, C_up, C_down);   /* [DIAG-T3] metacoll m1 */
+            }
+        }
+      } else {
+        /* ===== MODE 2: all-lower-levels, CMFGEN forbidden floor Omega (default 0.1) ==== */
+        double omega = nlte_metacoll_omega();
+        for (int ion = ion_idx_lo; ion <= ion_idx_hi; ion++) {
+            /* Fe III drained by the real Zhang table below -> skip its floor. */
+            if (feiii_coldata_on && nlte->nlte_Z[ion] == 26 && nlte->nlte_ion[ion] == 2)
+                continue;
+            /* A3: under parity, any ion with a real close-coupling Omega table is
+             * drained by the generic col_data pass below -> skip its floor too
+             * (avoid double-count; ion_has_realcoldata also covers Fe III). */
+            if (parity_on &&
+                ion_has_realcoldata(atom, nlte->nlte_Z[ion], nlte->nlte_ion[ion]))
+                continue;
+            /* Same per-ion level range the assembler uses everywhere to enumerate an
+             * ion's levels: [nlte_ion_level_offset[ion], nlte_ion_level_offset[ion+1]). */
+            int l0 = nlte->nlte_ion_level_offset[ion];
+            int l1 = nlte->nlte_ion_level_offset[ion + 1];
+            for (int nl_m = l0; nl_m < l1; nl_m++) {
+                int m = nlte->nlte_to_global_level[nl_m];
+                if (!nlte->drainless_metastable[m]) continue;
+                int    g_meta = atom->level_g[m];
+                if (g_meta <= 0) continue;
+                double E_m = atom->level_energy_eV[m];
+                int fl_m = nlte->global_to_nlte_level[m];
+                int i_m  = SOLVE_OF(fl_m);
+                if (i_m < 0 || i_m >= N) continue;
+                double f_m = FRAC_OF(fl_m);
+                /* Couple m (upper) to EVERY lower level l (E_l < E_m) of the SAME ion,
+                 * each with the CMFGEN f=0 forbidden floor Omega. APPROXIMATION: the
+                 * true per-transition value is Zhang96 (imported later); here the
+                 * topology (all-lower, not ground-only) and the 0.1 floor come straight
+                 * from FeIII_COL_DATA. Detailed balance is exact PER CHANNEL. */
+                for (int nl_l = l0; nl_l < l1; nl_l++) {
+                    if (nl_l == nl_m) continue;
+                    int l = nlte->nlte_to_global_level[nl_l];
+                    int    g_l = atom->level_g[l];
+                    if (g_l <= 0) continue;
+                    double dE = (E_m - atom->level_energy_eV[l]) * EV_TO_ERG;
+                    if (!(dE > 0.0)) continue;   /* l must be strictly lower than m */
+                    int fl_l = nlte->global_to_nlte_level[l];
+                    int i_l  = SOLVE_OF(fl_l);
+                    if (i_l < 0 || i_l >= N || i_l == i_m) continue;
+                    double f_l = FRAC_OF(fl_l);
+                    double C_down = n_e * 8.629e-6 / (g_meta * sqrt(T_e)) * omega;
+                    double C_up   = n_e * 8.629e-6 / (g_l    * sqrt(T_e)) * omega
+                                    * exp(-dE / (K_BOLTZMANN * T_e));
+                    ACM(i_m, i_l) += C_up   * f_l;   /* rate into meta  from lower */
+                    ACM(i_l, i_m) += C_down * f_m;   /* rate into lower from meta  */
+                    ACM(i_l, i_l) -= C_up   * f_l;
+                    ACM(i_m, i_m) -= C_down * f_m;
+                    nlte_ew_capture_transition(NLTE_EW_COLL_BB, i_m, i_l, C_up*f_l);
+                    nlte_ew_capture_transition(NLTE_EW_COLL_BB, i_l, i_m, C_down*f_m);
+                    DDC_COLL(i_l, i_m, C_up, C_down);   /* [DIAG-T3] metacoll m2 */
+                }
+            }
+        }
+      }
+    }
+
+    /* ---- FEIII_COLDATA: real Fe III collisional bound-bound rates (Zhang 1996) ----
+     * (LUMINA_FEIII_COLDATA, default OFF => this block is skipped, byte-identical.)
+     *
+     * Replaces Lumina's per-line collision proxy for Fe III with CMFGEN's imported
+     * FeIII_COL_DATA (Zhang H.L., A&A Sup. 119, 523). The per-line loop derived the
+     * collision strength from the radiative oscillator strength via van Regemorter
+     * (C ~ f_lu), but the over-populated Fe III levels (25, 17, 18, 28, 31, 32) drain
+     * only through FORBIDDEN lines (f_lu ~ 1e-8), so the proxy gives ~0 collisional
+     * drain and their b_k pile to 5-110. CMFGEN uses real close-coupling Omega ~ 1-9
+     * to EVERY lower level (level 25 -> level 17 Omega=8.76, -> ground 1.61; level 17
+     * -> ground 1.36). Here we add those exact rates. The per-line Fe III collision
+     * and the METACOLL Fe III floor were suppressed above, so Zhang is the sole Fe III
+     * collision source (CMFGEN parity: collisions from col_data, radiation from
+     * osc_data). Rate form is CMFGEN's exact
+     *   C(i,k) = 8.63e-8 Omega exp(-U0) / g_i / sqrt(T_4)
+     * which is algebraically identical to Lumina's 8.629e-6/sqrt(T_e) convention.
+     * Detailed balance is exact per channel: C_up/C_down = (g_hi/g_lo) exp(-dE/kTe). */
+    if (feiii_coldata_on && T_e > 0.0 && n_e > 0.0) {
+        for (int ion = ion_idx_lo; ion <= ion_idx_hi; ion++) {
+            if (nlte->nlte_Z[ion] != 26 || nlte->nlte_ion[ion] != 2) continue;
+            int l0 = nlte->nlte_ion_level_offset[ion];
+            int l1 = nlte->nlte_ion_level_offset[ion + 1];
+            int nlev_ion = l1 - l0;   /* FeIII level count; level_num is 0..nlev_ion-1 */
+            if (nlev_ion <= 0) continue;
+            /* Build level_num -> (solve idx, within-SL frac, g, E) maps for this ion.
+             * Thread-safe local heap (assembler runs under omp parallel-for/shell). */
+            int    *ln_i = (int *)   malloc((size_t)nlev_ion * sizeof(int));
+            double *ln_f = (double *)malloc((size_t)nlev_ion * sizeof(double));
+            int    *ln_g = (int *)   malloc((size_t)nlev_ion * sizeof(int));
+            double *ln_E = (double *)malloc((size_t)nlev_ion * sizeof(double));
+            if (!ln_i || !ln_f || !ln_g || !ln_E) {
+                free(ln_i); free(ln_f); free(ln_g); free(ln_E); continue;
+            }
+            for (int k = 0; k < nlev_ion; k++) ln_i[k] = -1;
+            int any = 0;
+            for (int nl = l0; nl < l1; nl++) {
+                int gl = nlte->nlte_to_global_level[nl];
+                int ln = atom->level_num[gl];
+                if (ln < 0 || ln >= nlev_ion) continue;
+                int fl = nlte->global_to_nlte_level[gl];
+                int i  = SOLVE_OF(fl);
+                if (i < 0 || i >= N) continue;   /* only when FeIII is the pair's lower ion */
+                ln_i[ln] = i;
+                ln_f[ln] = FRAC_OF(fl);
+                ln_g[ln] = atom->level_g[gl];
+                ln_E[ln] = atom->level_energy_eV[gl];
+                any = 1;
+            }
+            if (!any) { free(ln_i); free(ln_f); free(ln_g); free(ln_E); continue; }
+
+            /* Interpolate Omega(T_e) linearly in T (clamped to the tabulated ends). */
+            int nt = atom->feiii_col_n_temp;
+            const double *tg = atom->feiii_col_tgrid;
+            int ti = 0;
+            while (ti < nt - 2 && T_e > tg[ti + 1]) ti++;
+            double frac_t = 0.0, denom = tg[ti + 1] - tg[ti];
+            if (denom > 0.0) frac_t = (T_e - tg[ti]) / denom;
+            if (frac_t < 0.0) frac_t = 0.0;
+            if (frac_t > 1.0) frac_t = 1.0;
+
+            double inv_sqrtTe = 1.0 / sqrt(T_e);
+            double kTe = K_BOLTZMANN * T_e;
+            int n_trans = atom->feiii_col_n_trans;
+            for (int t = 0; t < n_trans; t++) {
+                int lo_ln = atom->feiii_col_lo[t];
+                int hi_ln = atom->feiii_col_hi[t];
+                if (lo_ln >= nlev_ion || hi_ln >= nlev_ion) continue;
+                int i_l = ln_i[lo_ln], i_h = ln_i[hi_ln];
+                if (i_l < 0 || i_h < 0 || i_l == i_h) continue;
+                const double *om = &atom->feiii_col_omega[(size_t)t * nt];
+                double omega = om[ti] + frac_t * (om[ti + 1] - om[ti]);
+                if (!(omega > 0.0)) continue;
+                int g_lo = ln_g[lo_ln], g_hi = ln_g[hi_ln];
+                if (g_lo <= 0 || g_hi <= 0) continue;
+                double dE = (ln_E[hi_ln] - ln_E[lo_ln]) * EV_TO_ERG;
+                if (!(dE > 0.0)) continue;
+                double f_l = ln_f[lo_ln], f_h = ln_f[hi_ln];
+                double C_up   = n_e * 8.629e-6 * inv_sqrtTe / g_lo * omega * exp(-dE / kTe);
+                double C_down = n_e * 8.629e-6 * inv_sqrtTe / g_hi * omega;
+                ACM(i_h, i_l) += C_up   * f_l;   /* into higher from lower */
+                ACM(i_l, i_h) += C_down * f_h;   /* into lower  from higher */
+                ACM(i_l, i_l) -= C_up   * f_l;
+                ACM(i_h, i_h) -= C_down * f_h;
+                nlte_ew_capture_transition(NLTE_EW_COLL_BB, i_h, i_l, C_up*f_l);
+                nlte_ew_capture_transition(NLTE_EW_COLL_BB, i_l, i_h, C_down*f_h);
+                DDC_COLL(i_l, i_h, C_up, C_down);   /* [DIAG-T3] Fe III Zhang */
+            }
+            free(ln_i); free(ln_f); free(ln_g); free(ln_E);
+        }
+    }
+
+    /* ---- A3 (ARTIS parity): real close-coupling Omega for the generic imported
+     * IGE coolant ions (Fe II, Co III, Ni III) beyond Fe III. Mirrors the Fe III
+     * Zhang pass above, dispatching on the loaded col_ion_* table for each (Z,ion0)
+     * present in this pair. The per-line vR/Axelrod proxy AND the metastable floor
+     * for these ions were suppressed above (ion_has_realcoldata), so this pass is
+     * their SOLE collisional source (no double-count). Table lo/hi indices are
+     * level_number == CMFGEN osc energy rank == atom->level_num (loader-verified).
+     * Rate form is CMFGEN's C(i,k)=8.63e-8*Omega*exp(-U0)/g_i/sqrt(T_4) (identical
+     * to Lumina's 8.629e-6/sqrt(T_e) convention); detailed balance exact per
+     * channel: C_up/C_down = (g_hi/g_lo)*exp(-dE/kTe). Only under the master gate. */
+    if (parity_on && atom->ncol_ions > 0 && T_e > 0.0 && n_e > 0.0) {
+        for (int ion = ion_idx_lo; ion <= ion_idx_hi; ion++) {
+            int Zi = nlte->nlte_Z[ion], ioni = nlte->nlte_ion[ion];
+            int c = -1;
+            for (int cc = 0; cc < atom->ncol_ions; cc++)
+                if (atom->col_ion_Z[cc] == Zi && atom->col_ion_stage[cc] == ioni) {
+                    c = cc; break;
+                }
+            if (c < 0) continue;
+            int l0 = nlte->nlte_ion_level_offset[ion];
+            int l1 = nlte->nlte_ion_level_offset[ion + 1];
+            int nlev_ion = l1 - l0;
+            if (nlev_ion <= 0) continue;
+            int    *ln_i = (int *)   malloc((size_t)nlev_ion * sizeof(int));
+            double *ln_f = (double *)malloc((size_t)nlev_ion * sizeof(double));
+            int    *ln_g = (int *)   malloc((size_t)nlev_ion * sizeof(int));
+            double *ln_E = (double *)malloc((size_t)nlev_ion * sizeof(double));
+            if (!ln_i || !ln_f || !ln_g || !ln_E) {
+                free(ln_i); free(ln_f); free(ln_g); free(ln_E); continue;
+            }
+            for (int k = 0; k < nlev_ion; k++) ln_i[k] = -1;
+            int any = 0;
+            for (int nl = l0; nl < l1; nl++) {
+                int gl = nlte->nlte_to_global_level[nl];
+                int ln = atom->level_num[gl];
+                if (ln < 0 || ln >= nlev_ion) continue;
+                int fl = nlte->global_to_nlte_level[gl];
+                int i  = SOLVE_OF(fl);
+                if (i < 0 || i >= N) continue;   /* only when this ion is the pair's lower ion */
+                ln_i[ln] = i;
+                ln_f[ln] = FRAC_OF(fl);
+                ln_g[ln] = atom->level_g[gl];
+                ln_E[ln] = atom->level_energy_eV[gl];
+                any = 1;
+            }
+            if (!any) { free(ln_i); free(ln_f); free(ln_g); free(ln_E); continue; }
+
+            int nt = atom->col_ion_n_temp[c];
+            const double *tg = atom->col_ion_tgrid[c];
+            int ti = 0;
+            while (ti < nt - 2 && T_e > tg[ti + 1]) ti++;
+            double frac_t = 0.0, denom = tg[ti + 1] - tg[ti];
+            if (denom > 0.0) frac_t = (T_e - tg[ti]) / denom;
+            if (frac_t < 0.0) frac_t = 0.0;
+            if (frac_t > 1.0) frac_t = 1.0;
+
+            double inv_sqrtTe = 1.0 / sqrt(T_e);
+            double kTe = K_BOLTZMANN * T_e;
+            int n_trans = atom->col_ion_n_trans[c];
+            const int    *tlo = atom->col_ion_lo[c];
+            const int    *thi = atom->col_ion_hi[c];
+            const double *tom = atom->col_ion_omega[c];
+            for (int t = 0; t < n_trans; t++) {
+                int lo_ln = tlo[t], hi_ln = thi[t];
+                if (lo_ln >= nlev_ion || hi_ln >= nlev_ion) continue;
+                int i_l = ln_i[lo_ln], i_h = ln_i[hi_ln];
+                if (i_l < 0 || i_h < 0 || i_l == i_h) continue;
+                const double *om = &tom[(size_t)t * nt];
+                double omega = om[ti] + frac_t * (om[ti + 1] - om[ti]);
+                if (!(omega > 0.0)) continue;
+                int g_lo = ln_g[lo_ln], g_hi = ln_g[hi_ln];
+                if (g_lo <= 0 || g_hi <= 0) continue;
+                double dE = (ln_E[hi_ln] - ln_E[lo_ln]) * EV_TO_ERG;
+                if (!(dE > 0.0)) continue;
+                double f_l = ln_f[lo_ln], f_h = ln_f[hi_ln];
+                double C_up   = n_e * 8.629e-6 * inv_sqrtTe / g_lo * omega * exp(-dE / kTe);
+                double C_down = n_e * 8.629e-6 * inv_sqrtTe / g_hi * omega;
+                ACM(i_h, i_l) += C_up   * f_l;   /* into higher from lower */
+                ACM(i_l, i_h) += C_down * f_h;   /* into lower  from higher */
+                ACM(i_l, i_l) -= C_up   * f_l;
+                ACM(i_h, i_h) -= C_down * f_h;
+                nlte_ew_capture_transition(NLTE_EW_COLL_BB, i_h, i_l, C_up*f_l);
+                nlte_ew_capture_transition(NLTE_EW_COLL_BB, i_l, i_h, C_down*f_h);
+                DDC_COLL(i_l, i_h, C_up, C_down);   /* [DIAG-T3] A3 col_data */
+            }
+            free(ln_i); free(ln_f); free(ln_g); free(ln_E);
+        }
+    }
+
     /* ---- Photoionization / Recombination ---- */
     int Z_elem = nlte->nlte_Z[ion_idx_lo];
     double chi_eV = find_ioniz_energy(atom, Z_elem, nlte->nlte_ion[ion_idx_lo]);
@@ -9661,7 +15928,15 @@ void nlte_assemble_rate_matrix(NLTEConfig *nlte, AtomicData *atom,
                       nlte->nlte_ion_level_offset[ion_idx_lo];
     /* ground_hi is the matrix row/col of the upper-ion ground: it is the SL
      * count of the lower ion (== n_lo_levels in identity mode). The upper ion
-     * is not collapsed here, so its FL == SL. */
+     * is not collapsed here, so its FL == SL.
+     * [ARTIS-PARITY B4 residual] ARTIS photoionises into the SPECIFIC phixs
+     * target level and recombines from it (level-resolved bf cascade). Lumina
+     * routes every level's photoion -> ground_hi and recomb <- ground_hi. The
+     * per-level phixs TARGET level is NOT stored in Lumina's atomic data
+     * (cmfgen_sigma_bf holds only per-LOWER-level sigma_bf curves, no upper
+     * target index), so under parity we keep ground routing and REPORT B4
+     * partial rather than fabricate a target. Adding a cmfgen phixs-target
+     * channel is the remaining B4 work. */
     int ground_hi = n_lo_super;
     int hi_ground_global_nlte = nlte->nlte_ion_level_offset[ion_idx_hi];
 
@@ -9676,21 +15951,29 @@ void nlte_assemble_rate_matrix(NLTEConfig *nlte, AtomicData *atom,
          * Same grid as NLTE J_ν (NLTE_N_FREQ_BINS, log-spaced) → direct index. */
         int Z_ion = nlte->nlte_Z[ion_idx_lo];
         int ion_lo_stage = nlte->nlte_ion[ion_idx_lo];
-        double sigma_0 = get_bf_sigma0(Z_ion, ion_lo_stage);
-        if (sigma_0 <= 0.0) {
-            int Z_eff = Z_ion - ion_lo_stage;
-            if (Z_eff < 1) Z_eff = 1;
-            sigma_0 = 7.91e-18 / ((double)Z_eff * (double)Z_eff);
-        }
+        double sigma_0 = nlte_bf_kramers_sigma0(Z_ion, ion_lo_stage);
         const int use_cmfgen = atom->cmfgen_loaded &&
                                atom->cmfgen_n_freq_bins == nlte->n_freq_bins;
 
         /* Task #40 (A)+(B): GPU lookup path. R_bf_table is col-major
          * [L_phot_total × n_shells]; pair_idx selects the row offset. */
-        int use_gpu_R_bf = (lookup != NULL && lookup->R_bf_table != NULL &&
-                            lookup->phot_offset != NULL && pair_idx >= 0);
-        int phot_base    = use_gpu_R_bf ? lookup->phot_offset[pair_idx] : 0;
-        int L_phot_total = use_gpu_R_bf ? lookup->L_phot_total : 0;
+        int gpu_R_bf_available =
+            (lookup != NULL && lookup->R_bf_table != NULL &&
+             lookup->phot_offset != NULL && pair_idx >= 0);
+        int phot_base = gpu_R_bf_available ? lookup->phot_offset[pair_idx] : 0;
+        int L_phot_total = gpu_R_bf_available ? lookup->L_phot_total : 0;
+
+        /* [withParityY Y4 (b) S1] spin-selection M_core for the RECOMBINING ion
+         * of this pair, hoisted out of the per-level loop (one resolution per
+         * (pair, shell) call).  Recombining core = the upper ion of the pair. */
+        int rec_sg = rec_spingate_enabled();
+        int M_core_pair = 0;
+        if (rec_sg) {
+            rec_spingate_check_data(atom);
+            int ip_next_pair = find_ion_pop_idx(atom, Z_ion, ion_lo_stage + 1);
+            M_core_pair = spingate_resolve_core_mult(atom, ip_next_pair, Z_ion,
+                                                     ion_lo_stage + 1, NULL);
+        }
 
         for (int lev = 0; lev < n_lo_levels; lev++) {
             int global_lev = nlte->nlte_to_global_level[lev_start + lev];
@@ -9698,12 +15981,26 @@ void nlte_assemble_rate_matrix(NLTEConfig *nlte, AtomicData *atom,
             double nu_thresh = (chi_erg - E_lev) / H_PLANCK;
             if (nu_thresh <= 0.0) continue;
 
+            /* The EW assembler owns its bound-free arithmetic because a route's
+             * upper identity changes epsilon_trans, the inverse statistical
+             * weight and therefore all four forward/inverse rates.  The legacy
+             * pair path below intentionally retains its historical single-ground
+             * producer and is not used as a target-independent EW shortcut. */
+            if (ew_capture) {
+                int sl_ew = SOLVE_OF(lev_start + lev);
+                double f_ew = FRAC_OF(lev_start + lev);
+                nlte_ew_capture_bf_target_rates(global_lev, sl_ew, f_ew,
+                                                 T_e, n_e);
+                continue;
+            }
+
             int level_has_cmfgen = use_cmfgen && atom->cmfgen_has_sigma[global_lev];
             const double *sigma_row = level_has_cmfgen ?
                 &atom->cmfgen_sigma_bf[(size_t)global_lev *
                                        (size_t)atom->cmfgen_n_freq_bins] : NULL;
 
             double R_bf = 0.0;
+            double sig_edge = 0.0;   /* A4: threshold sigma_bf (first non-zero bin) */
             /* Milne recombination integral I_rec = ∫(4πσ/hν)(2hν³/c²+J_ν)e^{-hν/kTe}dν.
              * FAITHFUL FIX (2026-06-14, codex+agent verified): the old
              * R_rec = R_bf*n_star_ratio tied recombination to the photoionization
@@ -9719,6 +16016,9 @@ void nlte_assemble_rate_matrix(NLTEConfig *nlte, AtomicData *atom,
              * it; I_rec is always integrated here, and the same loop also computes
              * R_bf in the CPU fallback path. */
             double I_rec = 0.0;
+#ifdef LUMINA_FROZEN_ORACLE
+            double I_rec_spont = 0.0, I_rec_stim = 0.0;
+#endif
             {
                 const double kTe = K_BOLTZMANN * T_e;
                 const double c2  = C_SPEED_OF_LIGHT * C_SPEED_OF_LIGHT;
@@ -9726,9 +16026,17 @@ void nlte_assemble_rate_matrix(NLTEConfig *nlte, AtomicData *atom,
                  * B(Te) in BOTH R_bf and I_rec → full-LTE bf. With bb-JEQB this makes
                  * the whole rate net DB-clean (Saha). If cold-shell garbage vanishes,
                  * the culprit is the binned-J continuum feeding bf (not a rate bug). */
-                static int bf_jeqb = -1;
-                if (bf_jeqb < 0) { const char *e = getenv("LUMINA_NLTE_BF_JEQB"); bf_jeqb = (e && atoi(e)) ? 1 : 0; }
-                if (use_gpu_R_bf && !bf_jeqb) {
+                int use_gpu_R_bf = 0, gpu_field_bypassed = 0;
+                int bf_field_source = nlte_bf_field_source(
+                    nlte, T_e, 0.0, 0.0, gpu_R_bf_available,
+                    &use_gpu_R_bf, &gpu_field_bypassed, NULL);
+#ifdef LUMINA_FROZEN_ORACLE
+                if (g_oracle.fp) {
+                    if (use_gpu_R_bf) g_oracle.bf_gpu_lookup_level_consumptions++;
+                    if (gpu_field_bypassed) g_oracle.bf_gpu_field_bypass_levels++;
+                }
+#endif
+                if (use_gpu_R_bf) {
                     int idx = phot_base + lev;
                     R_bf = lookup->R_bf_table[(size_t)shell * L_phot_total + idx];
                 }
@@ -9737,8 +16045,11 @@ void nlte_assemble_rate_matrix(NLTEConfig *nlte, AtomicData *atom,
                     double nu_bin = exp(log_nu_lo + 0.5 * nlte->d_log_nu);
                     if (nu_bin < nu_thresh) continue;
                     double delta_nu = exp(log_nu_lo + nlte->d_log_nu) - exp(log_nu_lo);
-                    double J_bin = bf_jeqb ? planck_bnu(T_e, nu_bin)
-                                           : nlte->J_nu[shell * nlte->n_freq_bins + bb];
+                    double J_bin = 0.0;
+                    (void)nlte_bf_field_source(
+                        nlte, T_e, nu_bin,
+                        nlte->J_nu[shell * nlte->n_freq_bins + bb],
+                        0, NULL, NULL, &J_bin);
                     double sigma;
                     if (sigma_row) {
                         sigma = sigma_row[bb];
@@ -9746,13 +16057,36 @@ void nlte_assemble_rate_matrix(NLTEConfig *nlte, AtomicData *atom,
                     } else {
                         sigma = sigma_0 * pow(nu_thresh / nu_bin, 3.0);
                     }
+                    if (sig_edge <= 0.0) sig_edge = sigma;   /* A4: sigma_bf at edge */
                     double pref = 4.0 * M_PI_VAL * sigma / (H_PLANCK * nu_bin) * delta_nu;
-                    if (!use_gpu_R_bf || bf_jeqb) R_bf += pref * J_bin;
+                    if (!use_gpu_R_bf) {
+                        /* [ARTIS-PARITY C2] detailed bf MC rate: R_bf += σ·Γ_bf density
+                         * (radfield.cc:850); falls back to the dilute-BB field integral
+                         * pref·J_bin where the bin is MC-unsampled (Γ_bf==0). */
+                        double bfr = (bf_field_source == 1)
+                            ? nlte->bf_rate_estimator[(size_t)shell * nlte->n_freq_bins + bb]
+                            : 0.0;
+                        if (bfr > 0.0) {
+                            R_bf += sigma * bfr;
+#ifdef LUMINA_FROZEN_ORACLE
+                            if (g_oracle.fp) g_oracle.bf_estimator_consumptions++;
+#endif
+                        } else {
+                            R_bf += pref * J_bin;
+#ifdef LUMINA_FROZEN_ORACLE
+                            if (g_oracle.fp) g_oracle.bf_fallback_consumptions++;
+#endif
+                        }
+                    }
                     if (kTe > 0.0) {
                         double x = H_PLANCK * nu_bin / kTe;
                         if (x < 700.0) {
                             double spont = 2.0 * H_PLANCK * nu_bin * nu_bin * nu_bin / c2;
                             I_rec += pref * (spont + J_bin) * exp(-x);
+#ifdef LUMINA_FROZEN_ORACLE
+                            I_rec_spont += pref * spont * exp(-x);
+                            I_rec_stim  += pref * J_bin * exp(-x);
+#endif
                         }
                     }
                 }
@@ -9777,7 +16111,38 @@ void nlte_assemble_rate_matrix(NLTEConfig *nlte, AtomicData *atom,
                     if (n_star_ratio > 1e30) n_star_ratio = 1e30;
                 }
             }
+            /* [withParityY Y4 (b) S1] spin-forbidden target => NO recombination
+             * into this level.  I_rec is zeroed here, BEFORE R_rec is formed, so
+             * every downstream consumer (R_rec, the DIAG-T3 ledger, sum_R_rec)
+             * sees one consistent number.  R_bf is deliberately NOT touched:
+             * photoionization of a spin-forbidden level to an EXCITED upper-ion
+             * core is physical.  That asymmetry is the declared DB caveat -- see
+             * the shared-helper block near recomb_alpha_per_level. */
+            if (rec_sg && spingate_level_forbidden(atom, global_lev, M_core_pair)) {
+                I_rec = 0.0;
+#ifdef LUMINA_FROZEN_ORACLE
+                I_rec_spont = 0.0;
+                I_rec_stim = 0.0;
+#endif
+            }
             double R_rec = n_star_ratio * I_rec;
+
+#ifdef LUMINA_FROZEN_ORACLE
+            if (g_oracle.fp) {
+                int os = oracle_ion_slot(Z_ion, ion_lo_stage);
+                if (os >= 0) {
+                    double np = nlte->nlte_level_populations[
+                        (size_t)(lev_start + lev) * n_shells + shell];
+                    g_oracle.gamma_num[os] += np * R_bf;
+                    g_oracle.gamma_den[os] += np;
+                    if (n_e > 0.0) {
+                        g_oracle.alpha_total[os] += R_rec / n_e;
+                        g_oracle.alpha_spont[os] += n_star_ratio * I_rec_spont / n_e;
+                        g_oracle.alpha_stim[os] += n_star_ratio * I_rec_stim / n_e;
+                    }
+                }
+            }
+#endif
 
             /* Collapse this FL to its SL solve index. Ionization out is weighted
              * by the FL's within-SL fraction (only that fraction of the SL pop
@@ -9792,6 +16157,16 @@ void nlte_assemble_rate_matrix(NLTEConfig *nlte, AtomicData *atom,
                 ACM(sl, sl)        -= R_bf * f_lev;
                 ACM(sl, ground_hi) += R_rec;
                 ACM(ground_hi, ground_hi) -= R_rec;
+                if (ddc_stage >= 0 && DDC_CAP(sl)) {   /* [DIAG-T3] */
+                    g_ddc.seen[ddc_stage][sl]   = 1;
+                    g_ddc.levnum[ddc_stage][sl] = atom->level_num[global_lev];
+                    g_ddc.E_eV[ddc_stage][sl]   = atom->level_energy_eV[global_lev];
+                    g_ddc.g[ddc_stage][sl]      = atom->level_g[global_lev];
+                    g_ddc.pop[ddc_stage][sl]    = nlte->nlte_level_populations[
+                                                   (size_t)(lev_start + lev) * n_shells + shell];
+                    g_ddc.pion[ddc_stage][sl]  += R_bf;
+                    g_ddc.rec[ddc_stage][sl]   += R_rec;
+                }
 
                 sum_R_bf  += R_bf;
                 sum_R_rec += R_rec;
@@ -9800,6 +16175,45 @@ void nlte_assemble_rate_matrix(NLTEConfig *nlte, AtomicData *atom,
                     sum_R_bf_ground  = R_bf;
                     sum_R_rec_ground = R_rec;
                     n_star_ground    = n_star_ratio;
+                }
+            }
+
+            /* ---- A4 (ARTIS parity): thermal collisional ionization + 3-body
+             * collisional recombination (ARTIS macroatom.cc col_ionisation_
+             * ratecoeff:662-682 / col_recombination_ratecoeff:630-658). Routed
+             * per level -> upper-ion ground, mirroring the radiative bf channel
+             * above. C_ion is FIELD-INDEPENDENT (fires even where R_bf==0, e.g.
+             * cold shells below the ionizing cutoff). C_rec is the EXACT
+             * detailed-balance inverse: C_rec = C_ion * n_star_ratio, where
+             * n_star_ratio is the SAME LTE Saha population ratio (n_lower_star
+             * over n_upper_star) the radiative Milne pair uses. Algebra:
+             * C_ion*n_lower_star == C_rec*n_upper_star at LTE by construction, and
+             * C_ion*n_star_ratio reduces exactly to ARTIS SAHACONST 3-body form
+             * n_e^2 * SAHACONST * (g_lo/g_up) * 1.55e13 * g * sigma * k_B/(T_e*chi).
+             * u = h*nu_thresh/(k*T_e) = chi_level/(k*T_e); g = ARTIS coll-ioniz
+             * Gaunt(ionstage) (0.1/0.2/0.3, macroatom.cc:309). sigma_bf(edge) = the
+             * first non-zero CMFGEN cross-section bin above threshold (== Kramers
+             * sigma_0 fallback). Only under the master gate => byte-identical off. */
+            if (nlte_bf_collisional_enabled() && T_e > 0.0 && n_e > 0.0 &&
+                sig_edge > 0.0 &&
+                sl >= 0 && sl < N && ground_hi < N) {
+                double u_ion = H_PLANCK * nu_thresh / (K_BOLTZMANN * T_e);
+                if (u_ion > 0.0 && u_ion < 700.0) {
+                    double g_col = (ion_lo_stage <= 0) ? 0.1
+                                 : (ion_lo_stage == 1) ? 0.2 : 0.3;
+                    double C_ion = n_e * 1.55e13 / sqrt(T_e) * g_col * sig_edge *
+                                   exp(-u_ion) / u_ion;
+                    double C_rec = C_ion * n_star_ratio;   /* exact DB inverse */
+                    if (C_ion > 0.0 && isfinite(C_ion) && isfinite(C_rec)) {
+                        ACM(ground_hi, sl) += C_ion * f_lev;   /* coll. ioniz out  */
+                        ACM(sl, sl)        -= C_ion * f_lev;
+                        ACM(sl, ground_hi) += C_rec;           /* 3-body recomb in */
+                        ACM(ground_hi, ground_hi) -= C_rec;
+                        if (ddc_stage >= 0 && DDC_CAP(sl)) {   /* [DIAG-T3] */
+                            g_ddc.cion[ddc_stage][sl] += C_ion;
+                            g_ddc.c3b[ddc_stage][sl]  += C_rec;
+                        }
+                    }
                 }
             }
 
@@ -9860,8 +16274,9 @@ void nlte_assemble_rate_matrix(NLTEConfig *nlte, AtomicData *atom,
             if (nlte->nlte_Z[q] == Zh && nlte->nlte_ion[q] == ion_hi_stage + 1) {
                 hi_is_top = 0; break;
             }
-        if (tic_mode && hi_is_top && (tic_zonly == 0 || tic_zonly == Zh) &&
+        if (!ew_capture && tic_mode && hi_is_top && (tic_zonly == 0 || tic_zonly == Zh) &&
             T_e > 0.0 && n_e > 0.0) {
+            nlte_ew_note_topstage_IV_call();
             double chi_hi_eV = find_ioniz_energy(atom, Zh, ion_hi_stage); /* III->IV */
             int ip_iv = find_ion_pop_idx(atom, Zh, ion_hi_stage + 1);     /* IV stage */
             int ip_hi = find_ion_pop_idx(atom, Zh, ion_hi_stage);         /* III stage */
@@ -9917,6 +16332,18 @@ void nlte_assemble_rate_matrix(NLTEConfig *nlte, AtomicData *atom,
                 double n_iv_eff  = (n_iv > n_iv_saha) ? n_iv : n_iv_saha;
                 double ln_pref = log(n_iv_eff) + log(n_e) + log(deBroglie)
                                  - log(2.0 * (double)g_iv);
+                /* [withParityY Y4 (c) S2] spin-selection M_core for the stage-IV
+                 * recombining core, hoisted out of the level loop. */
+                int rec_sg_iv = rec_spingate_enabled();
+                int M_core_iv = 0;
+                if (rec_sg_iv) {
+                    rec_spingate_check_data(atom);
+                    int ip_iv_pop = find_ion_pop_idx(atom, Zh, ion_hi_stage + 1);
+                    M_core_iv = spingate_resolve_core_mult(atom, ip_iv_pop, Zh,
+                                                           ion_hi_stage + 1, NULL);
+                }
+                int bf_field_source_iv = nlte_bf_field_source(
+                    nlte, T_e, 0.0, 0.0, 0, NULL, NULL, NULL);
                 for (int hl = h0; hl < h1; hl++) {
                     int gl = nlte->nlte_to_global_level[hl];
                     double E_hl = atom->level_energy_eV[gl] * EV_TO_ERG;
@@ -9942,9 +16369,20 @@ void nlte_assemble_rate_matrix(NLTEConfig *nlte, AtomicData *atom,
                         double sigma = srow ? srow[bb]
                             : sigma0_hi * pow(nu_edge_lev / nu_bin, 3.0);
                         if (sigma <= 0.0) continue;
-                        double J_bin = nlte->J_nu[(size_t)shell * nlte->n_freq_bins + bb];
+                        double J_bin = 0.0;
+                        (void)nlte_bf_field_source(
+                            nlte, T_e, nu_bin,
+                            nlte->J_nu[(size_t)shell * nlte->n_freq_bins + bb],
+                            0, NULL, NULL, &J_bin);
                         double pref = 4.0 * M_PI_VAL * sigma / (H_PLANCK * nu_bin) * dnu;
-                        R_bf_hl += pref * J_bin;
+                        /* Shared selection is authoritative for parity, C2,
+                         * JEQB and the stimulated Milne field here too. */
+                        double bfr_hl = (bf_field_source_iv == 1)
+                            ? nlte->bf_rate_estimator[
+                                  (size_t)shell * nlte->n_freq_bins + bb]
+                            : 0.0;
+                        if (bfr_hl > 0.0) R_bf_hl += sigma * bfr_hl;
+                        else              R_bf_hl += pref * J_bin;
                         double x = H_PLANCK * nu_bin / kTe;
                         if (x < 700.0) {
                             double spont = 2.0 * H_PLANCK * nu_bin * nu_bin * nu_bin / c2;
@@ -9963,6 +16401,14 @@ void nlte_assemble_rate_matrix(NLTEConfig *nlte, AtomicData *atom,
                     if (sl < 0 || sl >= N) continue;
                     double f = FRAC_OF(hl);
                     ACM(sl, sl) -= R_bf_hl * f;   /* photoionization sink III->IV */
+                    /* [withParityY Y4 (c) S2] same predicate as S1/S3: a
+                     * spin-forbidden level gets no Milne recombination source
+                     * from the IV ground core.  The photoionization sink on the
+                     * line above is deliberately left in place (declared DB
+                     * caveat, shared-helper block). */
+                    if (rec_sg_iv &&
+                        spingate_level_forbidden(atom, gl, M_core_iv))
+                        I_rec_hl = 0.0;
                     b[sl]       -= n_lte_hl * I_rec_hl; /* Milne recomb source from IV */
                 }
             }
@@ -10045,17 +16491,18 @@ void nlte_assemble_rate_matrix(NLTEConfig *nlte, AtomicData *atom,
             if (fenv) alpha_dr_floor = atof(fenv);
             floor_init = 1;
         }
-        if (alpha_dr_floor > 0.0 && alpha_dr < alpha_dr_floor)
+        if (!ew_capture && alpha_dr_floor > 0.0 && alpha_dr < alpha_dr_floor)
             alpha_dr = alpha_dr_floor;
 
         double R_dr = alpha_dr * n_e;   /* [s⁻¹] per upper-ion ion */
         if (R_dr > 0.0 && ground_hi < N) {
             ACM(0, ground_hi)         += R_dr;
             ACM(ground_hi, ground_hi) -= R_dr;
+            nlte_ew_capture_transition(NLTE_EW_AUTOION_DR, 0, ground_hi, R_dr);
         }
     }
 
-    for (int r = 0; r < CE_N_REACTIONS; r++) {
+    for (int r = 0; !ew_capture && r < CE_N_REACTIONS; r++) {
         const ChargeExchangeReaction *ce = &CE_REACTIONS[r];
         double k_fwd = ce->rate_coeff * pow(T_e / 1e4, ce->alpha);
         double k_rev = k_fwd * exp(ce->delta_E_eV * EV_TO_ERG /
@@ -10125,10 +16572,24 @@ void nlte_assemble_rate_matrix(NLTEConfig *nlte, AtomicData *atom,
         if (n_total_atoms > 0.0 && ground_hi < N) {
             double R_nt_per_particle = R_nt_total / n_total_atoms; /* [s⁻¹] */
 
-            /* Apply: ground state of lower ion → ground state of upper ion */
-            ACM(ground_hi, 0) += R_nt_per_particle;
-            ACM(0, 0)         -= R_nt_per_particle;
+            if (ew_capture) {
+                /* ARTIS traverses every lower level and its continuum target.
+                 * Projection fractions make the rate apply once per source SL. */
+                nlte_ew_capture_nt_routes(R_nt_per_particle);
+            } else {
+                /* Historical pair-wise baseline: ground-to-ground. */
+                ACM(ground_hi, 0) += R_nt_per_particle;
+                ACM(0, 0)         -= R_nt_per_particle;
+            }
         }
+    }
+
+    /* Element-wide Stage-2A owns closure and solve.  Return immediately after
+     * the seven physical process planes have been captured: this guarantees
+     * zero TOPSTAGE_IV, time-dependent, pin, floor, anchor and repair calls. */
+    if (ew_capture) {
+        free(bb_connected);
+        return;
     }
 
     /* ---- Time-dependent ionization: backward-Euler dn_i/dt term (option A) ----
@@ -10403,6 +16864,7 @@ void nlte_assemble_rate_matrix(NLTEConfig *nlte, AtomicData *atom,
     #define CONS_W(j) (bk_partial ? bk_nstar[(j)] : 1.0)
 
     if (ion_lock_mode && n_lo_super > 0 && n_lo_super < N) {
+        nlte_ew_note_per_ion_pin_call();
         double n_lo_total = 0.0;
         double n_hi_total = 0.0;
         int ip_lo = find_ion_pop_idx(atom, Z_nl, nlte->nlte_ion[ion_idx_lo]);
@@ -10432,6 +16894,40 @@ void nlte_assemble_rate_matrix(NLTEConfig *nlte, AtomicData *atom,
     if (bk_nstar) free(bk_nstar);
 
     if (bb_connected) free(bb_connected);
+
+    /* [DIAG-T3] this pair completed the lo-ion stage's decomposition; rewrite the
+     * whole file so it holds every Fe stage seen in the latest solve sweep. Rate
+     * coefficients are per-atom [s^-1] (photoion/recomb/collion/3-body are the
+     * per-level channel totals; multiply by n_pop for the volumetric rate). */
+    if (ddc_stage >= 0) {
+        #ifdef _OPENMP
+        #pragma omp critical(nlte_diag_decomp)
+        #endif
+        {
+            FILE *rf = fopen("lumina_rates_decomp.csv", "w");
+            if (rf) {
+                fprintf(rf, "shell,Z,ion,solve_level,level_num,E_eV,g,n_pop,"
+                            "rad_up,rad_down,coll_up,coll_down,"
+                            "photoion,recomb,collion,three_body\n");
+                for (int st = 0; st < DDC_NSTAGE; st++) {
+                    for (int L = 0; L < DDC_MAXLEV; L++) {
+                        if (!g_ddc.seen[st][L]) continue;
+                        fprintf(rf, "%d,26,%d,%d,%d,%.4f,%d,%.6e,"
+                                    "%.6e,%.6e,%.6e,%.6e,%.6e,%.6e,%.6e,%.6e\n",
+                                nlte_diag_decomp_shell(), st + 1, L,
+                                g_ddc.levnum[st][L], g_ddc.E_eV[st][L], g_ddc.g[st][L],
+                                g_ddc.pop[st][L], g_ddc.radup[st][L], g_ddc.raddn[st][L],
+                                g_ddc.colup[st][L], g_ddc.coldn[st][L], g_ddc.pion[st][L],
+                                g_ddc.rec[st][L], g_ddc.cion[st][L], g_ddc.c3b[st][L]);
+                    }
+                }
+                fclose(rf);
+            }
+        }
+    }
+    #undef DDC_CAP
+    #undef DDC_RAD
+    #undef DDC_COLL
 
     #undef ACM
     #undef SOLVE_OF
@@ -10548,7 +17044,51 @@ static void nlte_solve_ion_shell(NLTEConfig *nlte, AtomicData *atom,
         static int lte_repair = -1;
         if (lte_repair < 0) { const char *e = getenv("LUMINA_NLTE_LTE_REPAIR");
             lte_repair = (e && atoi(e)) ? 1 : 0; }
-        if (lte_repair) {
+        /* FIX-1 [FLOORM] (CPU-path mirror of the GPU writeback in lumina_cuda.cu):
+         * LUMINA_NLTE_FLOOR_MODE=1 replaces the flat 1e-30 negative-clamp (which,
+         * after the per-ion rescale below, becomes an ABSOLUTE floor identical
+         * across all collapsed excited levels -> b_k grows as exp(+dE/kTe)) with an
+         * LTE-relative floor + b_k cap: negative/sub-resolution levels floored at
+         * LTE@Te (b_k=1), every level capped at n_k<=BKMAX*Boltzmann@Te. Acts in
+         * b-space BEFORE the xfl redistribute + rescale (unchanged), so the per-ion
+         * conservation invariant is preserved. Default 0 => byte-identical. */
+        static int floorm_init = 0, floorm_mode = 0; static double floorm_bkmax = 1e3;
+        if (!floorm_init) {
+            const char *e = getenv("LUMINA_NLTE_FLOOR_MODE");
+            floorm_mode = e ? atoi(e) : 0;
+            const char *bkm = getenv("LUMINA_NLTE_FLOOR_BKMAX");
+            floorm_bkmax = bkm ? atof(bkm) : 1e3;
+            if (floorm_bkmax <= 0.0) floorm_bkmax = 1e3;
+            floorm_init = 1;
+            if (floorm_mode == 1)
+                printf("[FLOORM] mode=1 BKMAX=%g: trace-ion excited floor now LTE-relative (CPU path)\n",
+                       floorm_bkmax);
+        }
+        if (floorm_mode == 1) {
+            double Te_sh = plasma->T_e[shell];
+            double kTe = K_BOLTZMANN * (Te_sh > 0.0 ? Te_sh : 1.0);
+            double bmax = 0.0;
+            for (int i = 0; i < N; i++) { double a = fabs(b[i]); if (a > bmax) bmax = a; }
+            double subres = bmax * 1e-12;
+            for (int i = 0; i < N; i++) {
+                int is_hi = (i >= n_lo_super);
+                int ganch = is_hi ? (super_start + n_lo_super) : super_start;
+                double bg = is_hi ? ((n_lo_super < N) ? b[n_lo_super] : 0.0) : b[0];
+                int gg = atom->level_g[nlte->super_anchor_global[ganch]];
+                int gi = atom->level_g[nlte->super_anchor_global[super_start + i]];
+                double Ei = atom->level_energy_eV[nlte->super_anchor_global[super_start + i]];
+                double Eg = atom->level_energy_eV[nlte->super_anchor_global[ganch]];
+                double dE = (Ei - Eg) * EV_TO_ERG;
+                double boltz_abs = (bg > 0.0 && isfinite(bg))
+                    ? bg * ((gg > 0) ? (double)gi / gg : 1.0) * exp(-dE / kTe) : 0.0;
+                if (!(b[i] > subres) || !isfinite(b[i])) {   /* negative/sub-resolution: LTE floor */
+                    b[i] = (boltz_abs > 0.0 && isfinite(boltz_abs)) ? boltz_abs : 1e-30;
+                } else if (boltz_abs > 0.0) {                /* resolved: cap at b_k <= BKMAX */
+                    double cap = floorm_bkmax * boltz_abs;
+                    if (b[i] > cap) b[i] = cap;
+                }
+            }
+        } else if (lte_repair) {
             double Te_sh = plasma->T_e[shell];
             int nlo_sl = n_lo_super;
             for (int i = 0; i < N; i++) {
@@ -10598,8 +17138,10 @@ static void nlte_solve_ion_shell(NLTEConfig *nlte, AtomicData *atom,
             double sum_lo = 0.0, sum_hi = 0.0;
             for (int i = 0; i < n_lo_levels; i++) sum_lo += xfl[i];
             for (int i = n_lo_levels; i < N_fl; i++) sum_hi += xfl[i];
-            double scale_lo = (sum_lo > 0.0 && n_lo_total > 0.0) ? n_lo_total / sum_lo : 1.0;
-            double scale_hi = (sum_hi > 0.0 && n_hi_total > 0.0) ? n_hi_total / sum_hi : 1.0;
+            double scale_lo = (sum_lo > 0.0 && n_lo_total > 0.0)
+                            ? n_lo_total / sum_lo : (n_lo_total == 0.0 ? 0.0 : 1.0);
+            double scale_hi = (sum_hi > 0.0 && n_hi_total > 0.0)
+                            ? n_hi_total / sum_hi : (n_hi_total == 0.0 ? 0.0 : 1.0);
             for (int i = 0; i < n_lo_levels; i++) {
                 nlte->nlte_level_populations[(lev_start + i) * n_shells + shell] =
                     xfl[i] * scale_lo;
@@ -10613,7 +17155,8 @@ static void nlte_solve_ion_shell(NLTEConfig *nlte, AtomicData *atom,
                                                       ion_idx_lo, ion_idx_hi, shell);
             double sum = 0.0;
             for (int i = 0; i < N_fl; i++) sum += xfl[i];
-            double scale = (sum > 0.0 && n_total > 0.0) ? n_total / sum : 1.0;
+            double scale = (sum > 0.0 && n_total > 0.0)
+                         ? n_total / sum : (n_total == 0.0 ? 0.0 : 1.0);
             for (int i = 0; i < N_fl; i++) {
                 nlte->nlte_level_populations[(lev_start + i) * n_shells + shell] =
                     xfl[i] * scale;
@@ -10659,8 +17202,10 @@ static void nlte_solve_ion_shell(NLTEConfig *nlte, AtomicData *atom,
             int ip_hi = find_ion_pop_idx(atom, Z_nl, nlte->nlte_ion[ion_idx_hi]);
             if (ip_lo >= 0) n_lo_total = atom->ion_number_density[ip_lo * n_shells + shell];
             if (ip_hi >= 0) n_hi_total = atom->ion_number_density[ip_hi * n_shells + shell];
-            double scale_lo = (sum_lo > 0.0 && n_lo_total > 0.0) ? n_lo_total / sum_lo : 1.0;
-            double scale_hi = (sum_hi > 0.0 && n_hi_total > 0.0) ? n_hi_total / sum_hi : 1.0;
+            double scale_lo = (sum_lo > 0.0 && n_lo_total > 0.0)
+                            ? n_lo_total / sum_lo : (n_lo_total == 0.0 ? 0.0 : 1.0);
+            double scale_hi = (sum_hi > 0.0 && n_hi_total > 0.0)
+                            ? n_hi_total / sum_hi : (n_hi_total == 0.0 ? 0.0 : 1.0);
             for (int i = 0; i < n_lo_levels; i++)
                 nlte->nlte_level_populations[(lev_start + i) * n_shells + shell] *= scale_lo;
             for (int i = n_lo_levels; i < N_fl; i++)
@@ -10673,6 +17218,9 @@ static void nlte_solve_ion_shell(NLTEConfig *nlte, AtomicData *atom,
                 double scale = n_total / sum;
                 for (int i = 0; i < N_fl; i++)
                     nlte->nlte_level_populations[(lev_start + i) * n_shells + shell] *= scale;
+            } else if (n_total == 0.0) {
+                for (int i = 0; i < N_fl; i++)
+                    nlte->nlte_level_populations[(lev_start + i) * n_shells + shell] = 0.0;
             }
         }
     }
@@ -10690,6 +17238,17 @@ static void nlte_solve_ion_shell(NLTEConfig *nlte, AtomicData *atom,
  * NLTE actually increases opacity (e.g. Fe II in outer UV-forming shells)
  * while preventing pathological under-population in the inner photosphere. */
 /* Per-Z skip mask, parsed once from LUMINA_NLTE_SKIP_Z (comma list, e.g. "14,16"). */
+/* Gate: keep the SKIP_Z tau skip but still write line_source_S from the NLTE
+ * populations (see the call site for why the two were entangled). */
+int nlte_sl_write_on_skipz(void) {
+    static int v = -1;
+    if (v < 0) { const char *e = getenv("LUMINA_SL_WRITE_SKIPZ");
+                 v = (e && atoi(e)) ? 1 : 0;
+                 if (v) printf("  [SL-WRITE] LUMINA_SL_WRITE_SKIPZ=1: SKIP_Z elements keep "
+                               "nebular tau but DO get an NLTE line_source_S\n"); }
+    return v;
+}
+
 static int nlte_skip_z[100];
 static int nlte_skip_z_init = 0;
 static void nlte_skip_z_load(void) {
@@ -10712,8 +17271,19 @@ static void nlte_skip_z_load(void) {
 void nlte_update_tau_sobolev(NLTEConfig *nlte, AtomicData *atom,
                               OpacityState *opacity,
                               double time_explosion, int n_shells) {
+    tau_sobolev_require_refresh(opacity, "nlte_update_tau_sobolev");
     int n_lines = opacity->n_lines;
     nlte_skip_z_load();
+    unsigned char pair_owned[NLTE_MAX_IONS] = {0};
+    {
+        int pairs[NLTE_PAIR_COUNT][2];
+        const char *names[NLTE_PAIR_COUNT];
+        int n_pairs = nlte_get_pairs(pairs, names);
+        for (int p = 0; p < n_pairs; p++) {
+            pair_owned[pairs[p][0]] = 1;
+            pair_owned[pairs[p][1]] = 1;
+        }
+    }
 
     /* F0 fluorescence falsifier (DIAGNOSTIC ONLY, never a production config):
      * impose a controlled super-thermal departure S_l = X*B(T_e) on the Fe lines
@@ -10745,8 +17315,26 @@ void nlte_update_tau_sobolev(NLTEConfig *nlte, AtomicData *atom,
         int ion_idx = nlte->nlte_line_map[line];
         if (ion_idx < 0) continue; /* not an NLTE line */
 
+        /* Wave-3.2 R1: the 33-slot layout is an indexer, not an authority
+         * grant.  Slots absent from every pair may write tau/source only in a
+         * successfully committed EW target cell.  Shadow and off-target cells
+         * retain their pre-existing nebular values byte-for-byte. */
+        int candidate_only_slot = !pair_owned[ion_idx];
+
         int Z     = atom->line_atomic_number[line];
-        if (Z > 0 && Z < 100 && nlte_skip_z[Z]) continue; /* keep nebular tau */
+        /* SKIP_Z means "keep nebular tau" for this element. It used to `continue`
+         * here, which ALSO skipped the line_source_S write below — an unintended
+         * second effect: line_source_S then stayed 0 for the whole element and
+         * every consumer silently substituted B(T_e), i.e. treated a strongly
+         * NLTE ion's line source as LTE. Measured 2026-07-27 on parity33: Si II
+         * (790 in-window lines, 157 NLTE levels) and Si III (669 lines, 147
+         * levels, b_k up to 22.8) were the only ions with NLTE populations but a
+         * thermal source; consumers are cmfgen.c:227 (binned line emissivity),
+         * cmfgen.c:2359 (fine-grid solve) and plasma.c:13116 (mode-2 S_lag).
+         * LUMINA_SL_WRITE_SKIPZ=1 keeps the tau skip but restores the source
+         * write. Default 0 = previous behaviour, bit-identical. */
+        int skip_tau = (Z > 0 && Z < 100 && nlte_skip_z[Z]);
+        if (skip_tau && !nlte_sl_write_on_skipz()) continue;
         int ion_s = atom->line_ion_number[line];
         double f_lu   = atom->line_f_lu[line];
         double lam_cm = atom->line_wavelength_cm[line];
@@ -10771,11 +17359,31 @@ void nlte_update_tau_sobolev(NLTEConfig *nlte, AtomicData *atom,
 
         int g_lo = atom->level_g[lower_global];
         int g_up = atom->level_g[upper_global];
+        int element_index = -1;
+        for (int e = 0; e < atom->n_elements; e++) {
+            if (atom->element_Z[e] == Z) { element_index = e; break; }
+        }
+        int element_inactive = element_index >= 0 &&
+            lumina_zinert_element_inactive(atom, element_index, n_shells);
 
         double nu_l = C_SPEED_OF_LIGHT / lam_cm;
         double src_prefac = 2.0 * H_PLANCK * nu_l * nu_l * nu_l
                             / (C_SPEED_OF_LIGHT * C_SPEED_OF_LIGHT);
         for (int s = 0; s < n_shells; s++) {
+            if (element_inactive) {
+                opacity->tau_sobolev[(size_t)line * n_shells + s] = 0.0;
+                if (opacity->line_source_S)
+                    opacity->line_source_S[(size_t)line * n_shells + s] = 0.0;
+                continue;
+            }
+            if (candidate_only_slot) {
+                int zi = (Z == 16) ? 0 : (Z == 26 ? 1 : -1);
+                int committed = nlte_element_wide_commit_enabled() && zi >= 0 &&
+                    nlte_element_wide_matches(Z, s) && g_ew_tau_authority &&
+                    g_ew_tau_authority_nshells == n_shells &&
+                    g_ew_tau_authority[(size_t)zi * n_shells + s] == 1;
+                if (!committed) continue;
+            }
             double n_lower = nlte->nlte_level_populations[nlte_lo * n_shells + s];
             double n_upper = nlte->nlte_level_populations[nlte_up * n_shells + s];
 
@@ -10789,7 +17397,8 @@ void nlte_update_tau_sobolev(NLTEConfig *nlte, AtomicData *atom,
             double tau_nlte = SOBOLEV_COEFF * f_lu * lam_cm * time_explosion *
                               n_lower * stim_corr;
             if (!(tau_nlte > 1e-100)) tau_nlte = 1e-100;  /* NaN-catching */
-            opacity->tau_sobolev[line * n_shells + s] = tau_nlte;
+            if (!skip_tau)   /* SKIP_Z elements keep their nebular tau */
+                opacity->tau_sobolev[line * n_shells + s] = tau_nlte;
 
             /* CMF NLTE line source function (paper-method, fluorescence-bearing):
              * S_l = (2hv^3/c^2) / (g_u n_l / (g_l n_u) - 1), from the NLTE level
@@ -10812,6 +17421,7 @@ void nlte_update_tau_sobolev(NLTEConfig *nlte, AtomicData *atom,
     if (fluor_oracle_x > 1.0)
         printf("  [FLUOR-ORACLE] matched %ld (line,shell) cells (Z=26 in window)\n",
                fluor_hits);
+    tau_sobolev_mark_computed(opacity, "nlte_update_tau_sobolev");
 }
 
 /* Master NLTE solver: solve all ions in all shells, update tau.
@@ -10829,11 +17439,16 @@ void nlte_update_tau_sobolev(NLTEConfig *nlte, AtomicData *atom,
  * and the departure coefficients blow up as b_k ~ exp(dE/kT_e) (the GPU-path
  * super-thermal bug). The f-weighting, when current, preserves detailed balance
  * exactly for both bb and bf. */
-void nlte_precompute_within_sl_frac(NLTEConfig *nlte, AtomicData *atom,
-                                    PlasmaState *plasma, int n_shells) {
-    if (!nlte->super_mode) return;
+int nlte_precompute_within_sl_frac_checked(NLTEConfig *nlte, AtomicData *atom,
+                                           PlasmaState *plasma, int n_shells) {
+    if (!nlte->super_mode) return 0;
     double *Zsl = (double *)malloc(
         (nlte->n_super_total > 0 ? nlte->n_super_total : 1) * sizeof(double));
+    if (!Zsl) {
+        fprintf(stderr,
+                "[NLTE][OOM] within-super-level partition allocation failed\n");
+        return -1;
+    }
     for (int s = 0; s < n_shells; s++) {
         double T_e = plasma->T_e[s];
         double kT = K_BOLTZMANN * (T_e > 0.0 ? T_e : 1.0);
@@ -10859,38 +17474,114 @@ void nlte_precompute_within_sl_frac(NLTEConfig *nlte, AtomicData *atom,
         }
     }
     free(Zsl);
+    return 0;
 }
 
-void nlte_solve_all(NLTEConfig *nlte, AtomicData *atom, PlasmaState *plasma,
+/* Legacy name retained, but the error is no longer explicitly discarded. */
+int nlte_precompute_within_sl_frac(NLTEConfig *nlte, AtomicData *atom,
+                                   PlasmaState *plasma, int n_shells) {
+    return nlte_precompute_within_sl_frac_checked(
+        nlte, atom, plasma, n_shells);
+}
+
+int nlte_solve_all(NLTEConfig *nlte, AtomicData *atom, PlasmaState *plasma,
                      OpacityState *opacity, double time_explosion,
                      int n_shells, GammaDeposition *gamma_dep) {
     printf("  [NLTE] Solving rate equations (with CE coupling)...\n");
 
     /* Super-level mode: refresh the within-SL Boltzmann fractions at current T_e. */
-    nlte_precompute_within_sl_frac(nlte, atom, plasma, n_shells);
+    if (nlte_precompute_within_sl_frac_checked(
+            nlte, atom, plasma, n_shells) != 0) {
+        fprintf(stderr, "[NLTE] solve aborted: within-SL projection unavailable\n");
+        return -1;
+    }
 
-    /* #281: 16 pairs (last two overlap on slot 29 = O II) for full O triplet. */
-    int n_pairs = NLTE_PAIR_COUNT;
-    int pairs[][2] = { {0,1}, {2,3}, {4,5}, {6,7}, {8,9}, {10,11},
-                       {12,13}, {14,15}, {16,17}, {18,19},
-                       {20,21}, {22,23}, {24,25}, {26,27},
-                       {28,29}, {29,30} };
-    const char *names[] = { "Si", "Ca", "Fe", "S", "Co", "Ni",
-                            "C", "Mg", "Ti", "Cr",
-                            "Al", "Sc", "V", "Mn",
-                            "O(I-II)", "O(II-III)" };
+    /* Pair layout from the centralized builder (16 base pairs, or 23 with the O
+     * triplet + stage-IV (III,IV) pairs under LUMINA_NLTE_STAGE4). Last-overlap
+     * pairs share a prior slot; the solve below detects that generically. */
+    int pairs[NLTE_PAIR_COUNT][2];
+    const char *names[NLTE_PAIR_COUNT];
+    int n_pairs = nlte_get_pairs(pairs, names);
 
     int ce_max_iter = 5;
     double ce_threshold = 1e-2;  /* 1% relative convergence on ion totals */
     double ce_damping = 0.5;     /* 50% damping */
+    /* [ARTIS-PARITY B1 partial] tighten the outer coupling (CPU mirror of the GPU
+     * path). Drop the 50% damping and iterate to convergence; the full
+     * element-wide single SE matrix remains the residual. Gate OFF =>
+     * byte-identical (5 iters / 0.5 damping). */
+    if (artis_parity_enabled()) {
+        ce_max_iter = 20;
+        ce_damping  = 1.0;
+        printf("  [ARTIS-PARITY B1] outer CE coupling tightened: damping=1.0, "
+               "max_iter=%d (element-wide single matrix = residual)\n", ce_max_iter);
+    }
 
     /* Save old ion totals for convergence check (n_nlte_ions * n_shells) */
     int n_ion_totals = nlte->n_nlte_ions * n_shells;
     double *old_ion_totals = (double *)calloc(n_ion_totals, sizeof(double));
     size_t pop_size = (size_t)nlte->n_nlte_levels_total * n_shells;
     double *old_pops = (double *)malloc(pop_size * sizeof(double));
+    if (!old_ion_totals || !old_pops) {
+        fprintf(stderr, "[NLTE][OOM] convergence state allocation failed\n");
+        free(old_ion_totals);
+        free(old_pops);
+        return -1;
+    }
+    /* Allocated only in the explicitly armed Wave-3 lane.  status is per
+     * (S/Fe,shell): 1 means the self-tested candidate may replace legacy for
+     * this CE pass; -1 means fail-closed and legacy must run. */
+    if (nlte_element_wide_config_status() != 0) {
+        fprintf(stderr, "[EW] invalid gate configuration; solve aborted\n");
+        free(old_ion_totals);
+        free(old_pops);
+        return -1;
+    }
+    int ew_on = nlte_element_wide_enabled();
+    int *ew_status = ew_on ? (int *)calloc((size_t)2 * n_shells, sizeof(int)) : NULL;
+    if (ew_on && !ew_status) {
+        fprintf(stderr, "[EW][OOM] status allocation failed; solve aborted\n");
+        free(old_ion_totals);
+        free(old_pops);
+        return -1;
+    }
+    if (ew_on) {
+        for (int s = 0; s < n_shells; s++) {
+            if (nlte_element_wide_matches(16, s)) {
+                int verdict_pass = 0;
+                int rc = nlte_element_wide_run_status(
+                    nlte, atom, plasma, opacity, 16, s, time_explosion,
+                    gamma_dep, nlte_element_wide_commit_enabled(),
+                    &verdict_pass);
+                ew_status[s] = rc < 0 ? -1 : verdict_pass;
+                if (rc < 0) {
+                    fprintf(stderr, "[EW] operational failure Z=16 s=%d\n", s);
+                    free(ew_status);
+                    free(old_ion_totals);
+                    free(old_pops);
+                    return -1;
+                }
+            }
+            if (nlte_element_wide_matches(26, s)) {
+                int verdict_pass = 0;
+                int rc = nlte_element_wide_run_status(
+                    nlte, atom, plasma, opacity, 26, s, time_explosion,
+                    gamma_dep, nlte_element_wide_commit_enabled(),
+                    &verdict_pass);
+                ew_status[n_shells + s] = rc < 0 ? -1 : verdict_pass;
+                if (rc < 0) {
+                    fprintf(stderr, "[EW] operational failure Z=26 s=%d\n", s);
+                    free(ew_status);
+                    free(old_ion_totals);
+                    free(old_pops);
+                    return -1;
+                }
+            }
+        }
+    }
 
     for (int ce_iter = 0; ce_iter < ce_max_iter; ce_iter++) {
+        nlte_jbar_dump_set_pass(ce_iter);   /* [withParityP GATE2] CE pass marker */
         /* Save current populations + compute old ion totals */
         memcpy(old_pops, nlte->nlte_level_populations, pop_size * sizeof(double));
         for (int ii = 0; ii < nlte->n_nlte_ions; ii++) {
@@ -10934,35 +17625,86 @@ void nlte_solve_all(NLTEConfig *nlte, AtomicData *atom, PlasmaState *plasma,
                 saved_lev_e = nlte->nlte_ion_level_offset[lo + 1];
                 int n_save = (saved_lev_e - saved_lev_s) * n_shells;
                 saved_lo = (double *)malloc((size_t)n_save * sizeof(double));
-                memcpy(saved_lo,
-                       &nlte->nlte_level_populations[(size_t)saved_lev_s * n_shells],
-                       (size_t)n_save * sizeof(double));
+                if (!saved_lo) {
+                    fprintf(stderr, "[NLTE][OOM] overlap save allocation failed\n");
+                    free(ew_status);
+                    free(old_ion_totals);
+                    free(old_pops);
+                    return -1;
+                }
+                if (!ew_on) {
+                    memcpy(saved_lo,
+                           &nlte->nlte_level_populations[(size_t)saved_lev_s * n_shells],
+                           (size_t)n_save * sizeof(double));
+                } else {
+                    for (int l = saved_lev_s; l < saved_lev_e; l++)
+                        for (int s = 0; s < n_shells; s++)
+                            saved_lo[(size_t)(l-saved_lev_s)*n_shells+s] =
+                                nlte->nlte_level_populations[(size_t)l*n_shells+s];
+                }
             }
 
             #ifdef _OPENMP
             #pragma omp parallel for schedule(dynamic, 1)
             #endif
             for (int s = 0; s < n_shells; s++) {
+                int Zp = nlte->nlte_Z[lo];
+                int zi = (Zp == 16) ? 0 : (Zp == 26 ? 1 : -1);
+                if (ew_on && nlte_element_wide_commit_enabled() && zi >= 0 &&
+                    nlte_element_wide_matches(Zp, s) &&
+                    ew_status[(size_t)zi*n_shells+s] == 1)
+                    continue; /* no pair/pin/topstage call for committed (Z,s) */
                 nlte_solve_ion_shell(nlte, atom, plasma, opacity,
                                      lo, hi, s, time_explosion, gamma_dep,
                                      pair_shares_slot);
             }
 
             if (saved_lo) {
+                nlte_ew_note_save_restore_call();
                 int n_save = (saved_lev_e - saved_lev_s) * n_shells;
-                memcpy(&nlte->nlte_level_populations[(size_t)saved_lev_s * n_shells],
-                       saved_lo, (size_t)n_save * sizeof(double));
+                if (!ew_on) {
+                    memcpy(&nlte->nlte_level_populations[(size_t)saved_lev_s * n_shells],
+                           saved_lo, (size_t)n_save * sizeof(double));
+                } else {
+                    int Zp = nlte->nlte_Z[lo];
+                    int zi = (Zp == 16) ? 0 : (Zp == 26 ? 1 : -1);
+                    for (int l = saved_lev_s; l < saved_lev_e; l++)
+                        for (int s = 0; s < n_shells; s++) {
+                            int committed = nlte_element_wide_commit_enabled() &&
+                                zi >= 0 && nlte_element_wide_matches(Zp,s) &&
+                                ew_status[(size_t)zi*n_shells+s] == 1;
+                            if (!committed)
+                                nlte->nlte_level_populations[(size_t)l*n_shells+s] =
+                                  saved_lo[(size_t)(l-saved_lev_s)*n_shells+s];
+                        }
+                }
                 free(saved_lo);
             }
         }
 
         /* Apply damping for iter >= 1 */
         if (ce_iter > 0) {
-            for (size_t i = 0; i < pop_size; i++) {
-                double n_new = nlte->nlte_level_populations[i];
-                double n_old = old_pops[i];
-                nlte->nlte_level_populations[i] = n_old +
-                    ce_damping * (n_new - n_old);
+            if (!ew_on) {
+                for (size_t i = 0; i < pop_size; i++) {
+                    double n_new = nlte->nlte_level_populations[i];
+                    double n_old = old_pops[i];
+                    nlte->nlte_level_populations[i] = n_old +
+                        ce_damping * (n_new - n_old);
+                }
+            } else {
+                for (int g = 0; g < nlte->n_nlte_levels_total; g++) {
+                    int gl = nlte->nlte_to_global_level[g], Zg = atom->level_Z[gl];
+                    int zi = (Zg == 16) ? 0 : (Zg == 26 ? 1 : -1);
+                    for (int s = 0; s < n_shells; s++) {
+                        size_t i = (size_t)g*n_shells+s;
+                        int committed = nlte_element_wide_commit_enabled() && zi >= 0 &&
+                            nlte_element_wide_matches(Zg,s) &&
+                            ew_status[(size_t)zi*n_shells+s] == 1;
+                        if (!committed)
+                            nlte->nlte_level_populations[i] = old_pops[i] +
+                                ce_damping*(nlte->nlte_level_populations[i]-old_pops[i]);
+                    }
+                }
             }
         }
 
@@ -11007,6 +17749,14 @@ void nlte_solve_all(NLTEConfig *nlte, AtomicData *atom, PlasmaState *plasma,
     free(old_pops);
     free(old_ion_totals);
 
+    /* Candidate assembly has ended; these are the authoritative counts from
+     * the actual save/restore, per-ion pin and top-stage owner branches. */
+    if (nlte_ew_publish_runtime_counts(nlte) != 0) {
+        fprintf(stderr, "[EW] runtime-manifest I/O failure; solve aborted\n");
+        free(ew_status);
+        return -1;
+    }
+
     /* Print ion pair level counts */
     for (int p = 0; p < n_pairs; p++) {
         int lo = pairs[p][0], hi = pairs[p][1];
@@ -11021,7 +17771,19 @@ void nlte_solve_all(NLTEConfig *nlte, AtomicData *atom, PlasmaState *plasma,
 
     /* Update tau_sobolev for NLTE lines */
     printf("  [NLTE] Updating tau_sobolev from NLTE populations...\n");
+    free(g_ew_tau_authority);
+    g_ew_tau_authority = ew_status;
+    g_ew_tau_authority_nshells = ew_status ? n_shells : 0;
     nlte_update_tau_sobolev(nlte, atom, opacity, time_explosion, n_shells);
+
+    if (zinert_audit_enabled() &&
+        lumina_zinert_validate(atom, nlte, opacity, n_shells,
+                               "post-nlte-cpu") != 0) {
+        free(g_ew_tau_authority);
+        g_ew_tau_authority = NULL;
+        g_ew_tau_authority_nshells = 0;
+        return -1;
+    }
 
     /* Print diagnostics: compare total NLTE vs nebular ion densities */
     for (int p = 0; p < n_pairs; p++) {
@@ -11036,7 +17798,6 @@ void nlte_solve_all(NLTEConfig *nlte, AtomicData *atom, PlasmaState *plasma,
         printf("    %s II shell 0: NLTE n_total=%.3e, nebular n_ion=%.3e\n",
                names[p], sum_nlte, n_neb);
     }
-
     /* [NLTE-DUMP] Per-shell, per-level population dump for UV diagnostic.
      * Activated by env LUMINA_NLTE_LEVEL_DUMP=1. Counter increments per
      * call so successive iterations land in distinct files. */
@@ -11083,6 +17844,7 @@ void nlte_solve_all(NLTEConfig *nlte, AtomicData *atom, PlasmaState *plasma,
             }
         }
     }
+    return 0;
 }
 
 /* ============================================================ */
@@ -11213,6 +17975,7 @@ void compute_gamma_deposition(GammaDeposition *gd, AtomicData *atom,
 
 void apply_overlap_corrections(AtomicData *atom, OpacityState *opacity,
                                 PlasmaState *plasma) {
+    tau_sobolev_require_refresh(opacity, "apply_overlap_corrections");
     int n_lines = opacity->n_lines;
     int n_shells = opacity->n_shells;
 
@@ -11275,6 +18038,7 @@ void apply_overlap_corrections(AtomicData *atom, OpacityState *opacity,
     }
 
     free(tau_orig);
+    tau_sobolev_mark_computed(opacity, "apply_overlap_corrections");
 }
 
 /* Rescale geometry and density for a new epoch (homologous expansion).
@@ -11311,6 +18075,52 @@ static int bsearch_descending_le(const double *arr, int n, double target) {
     return lo; /* first index where arr[lo] <= target */
 }
 
+/* [FORMAL-CONS-WINDOW] ==================================================
+ * int_x^inf t^3/(e^t - 1) dt  in closed form (Widger & Woodall 1976):
+ *     sum_{n>=1} e^{-nx} ( x^3/n + 3x^2/n^2 + 6x/n^3 + 6/n^4 )
+ * exact (not a quadrature rule): expand 1/(e^t-1) = sum_{n>=1} e^{-nt} and
+ * integrate term by term.  At x=0 it returns sum 6/n^4 = 6*pi^4/90 = pi^4/15,
+ * the Stefan-Boltzmann normalization, so the two limits are consistent by
+ * construction.  Summed until the term is below 1e-18 of the running total
+ * (double round-off), hard cap 20000 terms; for the windows this routine uses
+ * (x >= 0.7) the cap is never approached -- the tail decays like e^{-nx}.
+ * NOT used by any physics path: read only by the FORMAL-CONS report. */
+static double planck_tail_integral(double x)
+{
+    const double pi4_15 = M_PI_VAL * M_PI_VAL * M_PI_VAL * M_PI_VAL / 15.0;
+    if (!(x > 0.0)) return pi4_15;
+    double s = 0.0;
+    for (int n = 1; n <= 20000; n++) {
+        double dn = (double)n, nx = dn * x;
+        if (nx > 700.0) break;              /* e^-700 underflows to 0 */
+        double term = exp(-nx) * (x * x * x / dn + 3.0 * x * x / (dn * dn)
+                                  + 6.0 * x / (dn * dn * dn)
+                                  + 6.0 / (dn * dn * dn * dn));
+        s += term;
+        if (term < 1.0e-18 * s) break;
+    }
+    return s;
+}
+
+/* Fraction of a Planck surface's total emergent flux that lands inside the
+ * wavelength window [lam_lo_A, lam_hi_A]:
+ *     f_win = pi * int_win B_lambda(T) dlambda / (sigma T^4)
+ * With x = h c / (lambda k T) this is
+ *     [ G(x(lam_hi)) - G(x(lam_lo)) ] / (pi^4/15),   G = planck_tail_integral,
+ * built from the SAME header constants (H_PLANCK, C_SPEED_OF_LIGHT,
+ * K_BOLTZMANN, SIGMA_SB) the rest of this file uses. */
+static double planck_band_fraction(double T, double lam_lo_A, double lam_hi_A)
+{
+    if (!(T > 0.0) || !(lam_lo_A > 0.0) || !(lam_hi_A > lam_lo_A)) return 0.0;
+    const double hck = H_PLANCK * C_SPEED_OF_LIGHT / K_BOLTZMANN; /* cm*K */
+    double x_hi = hck / (lam_lo_A * 1.0e-8 * T);  /* short lambda -> large x */
+    double x_lo = hck / (lam_hi_A * 1.0e-8 * T);
+    /* deliberately unclamped: 0 <= f <= 1 holds by construction, so a value
+     * outside it would be a defect to see, not to hide. */
+    return (planck_tail_integral(x_lo) - planck_tail_integral(x_hi))
+         / (M_PI_VAL * M_PI_VAL * M_PI_VAL * M_PI_VAL / 15.0);
+}
+
 /* Binary search in descending-sorted array: find last index with val >= target */
 static int bsearch_descending_ge(const double *arr, int n, double target) {
     int lo = 0, hi = n;
@@ -11325,7 +18135,7 @@ static int bsearch_descending_ge(const double *arr, int n, double target) {
 void compute_formal_integral_spectrum(
     Geometry *geo, PlasmaState *plasma, OpacityState *opacity,
     AtomicData *atom, NLTEConfig *nlte, double T_inner,
-    Spectrum *spec_formal, int n_impact)
+    Spectrum *spec_formal, int n_impact, double L_dep)
 {
     int n_shells = geo->n_shells;
     int n_lines  = opacity->n_lines;
@@ -11340,8 +18150,31 @@ void compute_formal_integral_spectrum(
     const char *_env_cut  = getenv("LUMINA_FI_TAU_CUTOFF");
     const char *_env_cont = getenv("LUMINA_FI_CONT_OPACITY");
     const char *_env_idil = getenv("LUMINA_FI_INNER_DILUTE");
+    /* === [FORMAL-FIX] reduced-scope repair gate (2026-07-29) ===================
+     * LUMINA_FORMAL_FIX=1 turns on the three items the adversarial re-verification
+     * of the clamp census left CONFIRMED for this routine
+     * (validation/cmfgen_toy06_19p48d/analysis/clamp_census/ADVERSARIAL.md):
+     *   R1  zero-point: the impact-parameter quadrature charges a whole annulus
+     *       to the core, so the backlight leg is +6.8% high (D-5) -> exact
+     *       two-zone ray placement (lumina_fi_impact_ray, lumina.h).
+     *   R2  no continuum sink: fi_use_cont defaulted to 0, so nothing on the ray
+     *       is attenuated by electron scattering (radial tau_es = 1.486) ->
+     *       default it ON under the gate, reusing the existing segment machinery
+     *       (attenuates the line emission AND the p<r_phot backlight alike).
+     *   R3  tau/S pair hygiene: S comes from the NLTE writer while tau may come
+     *       from the nebular writer; where the two are not the same population,
+     *       the emission is replaced by the fused closed form that is exactly
+     *       consistent with the tau actually used (see the consumption site).
+     * DEFAULT 0 => every arithmetic path below is the withParityU path, bit for
+     * bit.  THIS GATE DOES NOT CLAIM TO FIX THE 24.99x OVER-LUMINOSITY: the same
+     * audit bounded the W*B(T_rad) fallback leg at 0.07% of the 2000-4000A
+     * participating lines (D-4) and the missing continuum sink at <= e^-1.486
+     * (~4x); the residual carrier is the super-thermal S_l itself (D-7), which is
+     * out of scope here. */
+    int fi_fix = 0;
+    { const char *_e = getenv("LUMINA_FORMAL_FIX"); if (_e && atoi(_e)) fi_fix = 1; }
     double fi_tau_cutoff = _env_cut  ? atof(_env_cut)  : 1.0e-5;
-    int    fi_use_cont   = _env_cont ? atoi(_env_cont) : 0;
+    int    fi_use_cont   = _env_cont ? atoi(_env_cont) : (fi_fix ? 1 : 0);
     double fi_W_inner    = _env_idil ? atof(_env_idil) : 1.0;
     /* Decisive test (2026-06-17): clamp thick-line S_l -> B(T_e) for tau>thr to
      * test whether super-thermal feature-line source functions are the
@@ -11382,13 +18215,84 @@ void compute_formal_integral_spectrum(
     if (fi_W_inner != 1.0)
         printf("  [FI] inner Planck dilution W=%.3f (LUMINA_FI_INNER_DILUTE)\n", fi_W_inner);
 
+    /* [FORMAL-FIX R3] per-line tau/S pair provenance, built once.
+     *   FI_PAIR_UNKNOWN(0) the nebular writer could not resolve the (ion,levels)
+     *                      of this line, so it holds tau=1e-100 (compute_tau_
+     *                      sobolev) and there is no population to emit with.
+     *   1/2/3              nebular-owned: tau came from compute_tau_sobolev with
+     *                      dilute-LTE level pops n_k = w_k*(g_k/Z)*n_ion*
+     *                      exp(-E_k/kT_rad), w_k = 1 (metastable) else W. The
+     *                      code records w_upper/w_lower = 1, W, or 1/W.
+     *   FI_PAIR_NLTE(4)    nlte_update_tau_sobolev wrote BOTH tau and
+     *                      line_source_S from the same NLTE populations in the
+     *                      same loop -> the pair is sound, leave it alone.
+     * The nebular-owned branch is the one the legacy code served with
+     * W*B(T_rad), a value that belongs to no population in the run. */
+    enum { FI_PAIR_UNKNOWN = 0, FI_PAIR_NEB_SAME = 1, FI_PAIR_NEB_UDIL = 2,
+           FI_PAIR_NEB_LDIL = 3, FI_PAIR_NLTE = 4 };
+    unsigned char *fi_pair = NULL;
+    if (fi_fix && atom && atom->line_atomic_number && atom->line_ion_number) {
+        nlte_skip_z_load();
+        fi_pair = (unsigned char *)calloc((size_t)n_lines, 1);
+    }
+    if (fi_pair) {
+        #ifdef _OPENMP
+        #pragma omp parallel for schedule(static)
+        #endif
+        for (int l = 0; l < n_lines; l++) {
+            int Z = atom->line_atomic_number[l];
+            int skip_tau = (Z > 0 && Z < 100 && nlte_skip_z[Z]);
+            if (nlte && nlte->nlte_line_map && nlte->nlte_line_map[l] >= 0 &&
+                opacity->line_source_S != NULL && !skip_tau) {
+                fi_pair[l] = FI_PAIR_NLTE;
+                continue;
+            }
+            /* mirror compute_tau_sobolev's lookup exactly: same ion index, same
+             * level search, same metastable flags that set the dilution weights */
+            int ipop = find_ion_pop_idx(atom, Z, atom->line_ion_number[l]);
+            if (ipop < 0) continue;
+            int lo = atom->level_offset[ipop], hi = atom->level_offset[ipop + 1];
+            int li = -1, ui = -1;
+            for (int k = lo; k < hi; k++) {
+                if (atom->level_num[k] == atom->line_level_lower[l]) li = k;
+                if (atom->level_num[k] == atom->line_level_upper[l]) ui = k;
+                if (li >= 0 && ui >= 0) break;
+            }
+            if (li < 0 || ui < 0) continue;
+            int ml = atom->level_metastable[li] ? 1 : 0;
+            int mu = atom->level_metastable[ui] ? 1 : 0;
+            fi_pair[l] = (ml == mu) ? FI_PAIR_NEB_SAME
+                                    : (mu ? FI_PAIR_NEB_LDIL : FI_PAIR_NEB_UDIL);
+        }
+    }
+    long fi_n_fused = 0, fi_n_orphan = 0;
+
+    if (fi_fix) {
+        /* R1 zero-point, measured on this very geometry: core quadrature weight
+         * before/after, normalized by the exact core weight r_phot^2/2. */
+        double wc_old = 0.0, wc_new = 0.0, wc_exact = 0.5 * r_phot * r_phot;
+        for (int ip = 0; ip < n_impact; ip++) {
+            double p_o = dp * (ip + 0.5), p_n, d_n;
+            if (p_o < r_phot && p_o < r_outer) wc_old += p_o * dp;
+            lumina_fi_impact_ray(1, ip, n_impact, r_phot, r_outer, &p_n, &d_n);
+            if (p_n < r_phot) wc_new += p_n * d_n;
+        }
+        printf("  [FORMAL-FIX] LUMINA_FORMAL_FIX=1: R1 core-ray quadrature zero-point "
+               "%.6f -> %.6f (exact=1); R2 continuum sink %s; R3 tau/S pair hygiene ON "
+               "(nebular-owned lines -> fused n_u closed form, NOT a 25x claim)\n",
+               (wc_exact > 0.0) ? wc_old / wc_exact : 0.0,
+               (wc_exact > 0.0) ? wc_new / wc_exact : 0.0,
+               fi_use_cont ? "ON" : "OFF(env override)");
+    }
+
     /* Zero output spectrum */
     for (int b = 0; b < spec_formal->n_bins; b++)
         spec_formal->flux[b] = 0.0;
 
     /* For each wavelength bin (parallelized) */
     #ifdef _OPENMP
-    #pragma omp parallel for schedule(dynamic, 10)
+    #pragma omp parallel for schedule(dynamic, 10) \
+                             reduction(+:fi_n_fused, fi_n_orphan)
     #endif
     for (int bin = 0; bin < spec_formal->n_bins; bin++) {
         double lambda_cm = spec_formal->wavelength[bin] * 1.0e-8;
@@ -11406,7 +18310,10 @@ void compute_formal_integral_spectrum(
         double ledg_ige = 0.0, ledg_oth = 0.0;   /* absorbed-backlight ledger */
 
         for (int ip = 0; ip < n_impact; ip++) {
-            double p = dp * (ip + 0.5);
+            /* [FORMAL-FIX R1] fi_fix=0 reproduces p = dp*(ip+0.5), dp_ray = dp
+             * exactly (same values, same association) => bit-identical. */
+            double p, dp_ray;
+            lumina_fi_impact_ray(fi_fix, ip, n_impact, r_phot, r_outer, &p, &dp_ray);
             double p2 = p * p;
             if (p >= r_outer) continue;
 
@@ -11477,8 +18384,54 @@ void compute_formal_integral_spectrum(
                  * dilute-LTE W*B(T_rad) for lines outside the NLTE network. */
                 double S = (opacity->line_source_S != NULL)
                          ? opacity->line_source_S[l * n_shells + shell] : 0.0;
-                if (S <= 0.0)
-                    S = plasma->W[shell] * planck_bnu(plasma->T_rad[shell], nu_l);
+                if (!fi_fix) {
+                    if (S <= 0.0)
+                        S = plasma->W[shell] * planck_bnu(plasma->T_rad[shell], nu_l);
+                } else {
+                    /* [FORMAL-FIX R3] tau/S pair hygiene.
+                     * Sobolev identity (exact, no new physics):
+                     *   tau  = C_sob f_lu lam t n_l (1 - x),  x = g_l n_u/(g_u n_l)
+                     *   S    = (2h nu^3/c^2) x/(1-x)
+                     *   => S*tau = (2h nu^3/c^2) C_sob f_lu lam t (g_l/g_u) n_u
+                     *   => S*(1-e^-tau) = (2h nu^3/c^2) C_sob f_lu lam t (g_l/g_u)
+                     *                     * n_u * beta(tau),  beta=(1-e^-tau)/tau
+                     * i.e. the emission is FIXED by n_u and the tau actually used
+                     * for the attenuation. For a nebular-owned line, tau was built
+                     * from dilute-LTE pops, so its own x is known in closed form,
+                     * x = (w_u/w_l) exp(-h nu/k T_rad), and the emission below is
+                     * exactly that fused expression -- proportional to n_u,
+                     * bounded by it, and no invented value. The legacy
+                     * W*B(T_rad) is NOT this number (for two equally diluted
+                     * levels the pair-consistent source is B(T_rad), undiluted).
+                     * NLTE-owned lines already have a matched pair and are left
+                     * untouched; an NLTE-owned line with S<=0 has no positive
+                     * source to emit with (and, per the adversarial identity
+                     * S_l==0 <=> tau==1e-100, cannot pass fi_tau_cutoff at all) --
+                     * it is counted as unresolved and emits nothing rather than
+                     * being handed an invented one. */
+                    unsigned char pc = fi_pair ? fi_pair[l] : FI_PAIR_UNKNOWN;
+                    if (pc == FI_PAIR_NLTE) {
+                        if (!(S > 0.0)) { S = 0.0; fi_n_orphan++; }
+                    } else {
+                        double Tr = plasma->T_rad[shell], Wl = plasma->W[shell];
+                        double xr = -1.0;
+                        if (Tr > 0.0 && pc != FI_PAIR_UNKNOWN) {
+                            double hx = H_PLANCK * nu_l / (K_BOLTZMANN * Tr);
+                            double ex = (hx > 500.0) ? 0.0 : exp(-hx);
+                            if (pc == FI_PAIR_NEB_SAME)      xr = ex;
+                            else if (pc == FI_PAIR_NEB_UDIL) xr = Wl * ex;
+                            else if (Wl > 0.0)               xr = ex / Wl;
+                        }
+                        if (xr > 0.0 && xr < 1.0) {
+                            S = (2.0 * H_PLANCK * nu_l * nu_l * nu_l
+                                 / (C_SPEED_OF_LIGHT * C_SPEED_OF_LIGHT))
+                                * xr / (1.0 - xr);
+                            fi_n_fused++;
+                        } else {
+                            S = 0.0; fi_n_orphan++;
+                        }
+                    }
+                }
                 /* Decisive clamp test: thermalize thick-line source to B(T_e). */
                 if (fi_clamp_sl > 0.0 && tau_sob > fi_clamp_sl)
                     S = planck_bnu(plasma->T_e[shell], nu_l);
@@ -11491,7 +18444,7 @@ void compute_formal_integral_spectrum(
                 if ((fi_ledger || fi_noblank) && p < r_phot) {
                     double Babs = fi_W_inner * planck_bnu(T_inner, nu_obs)
                                 * exp(-tau_acc) * one_minus_exp;
-                    double dL = Babs * p * dp;
+                    double dL = Babs * p * dp_ray;
                     if (is_ige) ledg_ige += dL; else ledg_oth += dL;
                 }
                 I_nu += S * one_minus_exp * exp(-tau_acc);
@@ -11531,7 +18484,7 @@ void compute_formal_integral_spectrum(
             }
 
             /* Integrate: L_nu += I_nu * 2*pi*p * dp */
-            L_nu_integral += I_nu * p * dp;
+            L_nu_integral += I_nu * p * dp_ray;
         }
 
         /* L_nu = 4*pi * integral(I_nu * 2*pi*p dp) = 8*pi^2 * sum */
@@ -11558,6 +18511,102 @@ void compute_formal_integral_spectrum(
         }
     }
     free(absL_ige); free(absL_oth);
+
+    /* [FORMAL-CONS] SCALAR ENERGY GATE on the yardstick itself (always on, no env).
+     * The formal spectrum has never carried a conservation check, so a spectrum
+     * whose band-integrated luminosity is orders of magnitude above what the model
+     * injects has been read as physics. Emit the number every time the yardstick
+     * is produced.
+     *   integral  = trapezoid of L_lambda over the OUTPUT WAVELENGTH GRID.
+     *               spec_formal->flux[b] is L_lambda in erg/s/cm (set above:
+     *               L_nu * c / lambda_cm^2) and ->wavelength[b] is in Angstrom,
+     *               so d(lambda) must be converted A -> cm (1e-8).
+     *   L_inj     = the inner-boundary luminosity this very routine injects:
+     *               the only source term in the integral is the p<r_phot
+     *               backlight  I_nu += fi_W_inner * B_nu(T_inner) * exp(-tau),
+     *               i.e. a (dilute) Planck surface of radius geo->r_inner[0] at
+     *               T_inner, whose emergent luminosity is W * 4*pi*r^2*sigma*T^4.
+     *               Identical expression to the transport driver's L_inner
+     *               (lumina_cuda.cu "Phase 6 - Step 8" / main.c "Phase 5 - Step 4":
+     *               4*pi*r_inner[0]^2*SIGMA_SB*T_inner^4), recomputed here from the
+     *               same variables because it is not in scope at either call site.
+     * R > 1 can only come from (a) scattering/line source terms that are not
+     * energy-limited by the backlight, or (b) a normalization error; either way
+     * the yardstick is not conserving and R is the magnitude. Bins outside the
+     * output window are NOT counted -- the window is printed so the caller can
+     * tell truncation from over-emission. */
+    {
+        double Lint = 0.0;
+        for (int b = 0; b + 1 < spec_formal->n_bins; b++) {
+            double dl_cm = (spec_formal->wavelength[b + 1] -
+                            spec_formal->wavelength[b]) * 1.0e-8;
+            Lint += 0.5 * (spec_formal->flux[b] + spec_formal->flux[b + 1]) * dl_cm;
+        }
+        double L_inj = fi_W_inner * 4.0 * M_PI_VAL * r_phot * r_phot *
+                       SIGMA_SB * pow(T_inner, 4.0);
+        /* [FORMAL-FIX] R3 census rides on the existing line (empty when the gate
+         * is off => byte-identical output). */
+        char fixsfx[128]; fixsfx[0] = '\0';
+        if (fi_fix)
+            snprintf(fixsfx, sizeof(fixsfx),
+                     " [FFIX r3_fused=%ld r3_unresolved=%ld]",
+                     fi_n_fused, fi_n_orphan);
+        /* [FORMAL-CONS-WINDOW] gate LUMINA_FORMAL_CONS_WINDOW=1, default OFF.
+         * SECOND ZERO POINT of this yardstick (B-register item 3): the numerator
+         * Lint is windowed (it is the trapezoid over THIS grid only) while L_inj
+         * above is the FULL Planck sigma*T^4, so the printed ratio has always
+         * carried a fossil factor B = (in-window Planck fraction) that judgments
+         * had to divide out by hand (A*B = 1.0524 at parity42; B = 0.985622 at
+         * T_inner = 10020 K over 504.875-19995.125 A, certified in
+         * validation/cmfgen_toy06_19p48d/analysis/metering_batch1 M3).
+         * Under the gate the SAME injected luminosity is restricted to the SAME
+         * window the numerator integrates over -- the window edges are read from
+         * spec_formal->wavelength[] (the trapezoid runs from wavelength[0] to
+         * wavelength[n_bins-1]), never hardcoded -- and BOTH ratios are printed:
+         * the legacy one is untouched for continuity.
+         *   L_inj_win = W*4pi*r_in^2 * pi*int_win B_lambda(T_inner) dlambda
+         *             = L_inj * f_win,   f_win = planck_band_fraction(...)
+         * (identity pi*int_0^inf B_lambda dlambda = sigma T^4; using L_inj*f_win
+         * rather than rebuilding sigma from h,k,c keeps BOTH denominators on the
+         * one constant, so the printed ratio of the two is exactly f_win.  The
+         * two routes differ by 3.25e-11 relative -- that is SIGMA_SB vs
+         * 2 pi^5 k^4/(15 c^2 h^3) built from this header's own h,k,c, measured
+         * in impl_withParityX/selftest_fwin_precision.out.)
+         * NO PHYSICS PATH READS THIS: spec_formal->flux[] is already final and
+         * is not touched here.  Gate OFF => winsfx stays empty => byte-identical
+         * line. */
+        char winsfx[192]; winsfx[0] = '\0';
+        { const char *_ew = getenv("LUMINA_FORMAL_CONS_WINDOW");
+          if (_ew && atoi(_ew)) {
+            double lam_a = spec_formal->wavelength[0];
+            double lam_b = spec_formal->wavelength[spec_formal->n_bins - 1];
+            double lam_lo = (lam_a < lam_b) ? lam_a : lam_b;
+            double lam_hi = (lam_a < lam_b) ? lam_b : lam_a;
+            double f_win = planck_band_fraction(T_inner, lam_lo, lam_hi);
+            double L_inj_win = L_inj * f_win;
+            snprintf(winsfx, sizeof(winsfx),
+                     " [CONSWIN L/L_inj_win=%.6g L_inj_win=%.6e erg/s "
+                     "f_win=%.6f win=%.4f-%.4f A]",
+                     (L_inj_win > 0.0) ? Lint / L_inj_win : 0.0,
+                     L_inj_win, f_win, lam_lo, lam_hi);
+          } }
+        printf("[FORMAL-CONS] integral L=%.6e erg/s = %.4g x L_inj "
+               "(L_inj=%.6e erg/s = W%.3f*4pi*r_in^2*sigma*T_inner^4, "
+               "r_in=%.4e cm, T_inner=%.2f K) window=%.1f-%.1f A nbins=%d%s%s\n",
+               Lint, (L_inj > 0.0) ? Lint / L_inj : 0.0, L_inj, fi_W_inner,
+               r_phot, T_inner,
+               spec_formal->wavelength[0],
+               spec_formal->wavelength[spec_formal->n_bins - 1],
+               spec_formal->n_bins, fixsfx, winsfx);
+        double L_total_in = L_inj + L_dep;
+        printf("[FORMAL-CONS] L_total_in=%.6e erg/s ratio_total=%.6g "
+               "(L_inj=%.6e + L_dep=%.6e erg/s)\n",
+               L_total_in,
+               (L_total_in > 0.0) ? Lint / L_total_in : 0.0,
+               L_inj, L_dep);
+        fflush(stdout);
+    }
+    free(fi_pair);
 
     printf("  Formal integral spectrum computed.\n");
 }

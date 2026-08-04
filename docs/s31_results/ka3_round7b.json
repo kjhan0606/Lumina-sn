@@ -1,0 +1,354 @@
+{
+  "acceptance_checks": {
+    "finest_blue_boundary_fraction_lt_1e-12": true,
+    "finest_centroid_shift_error_le_1e-4": true,
+    "finest_invariant_area_relative_error_le_1e-4": true,
+    "finest_profile_relative_l1_le_1e-4": false,
+    "finest_profile_relative_l2_le_1e-4": false,
+    "finest_red_boundary_fraction_lt_1e-12": true,
+    "finest_transport_residual_le_1e-4": true,
+    "official_triple_certified_negative_zero": true,
+    "official_triple_certified_nonfinite_zero": true,
+    "official_triple_certified_sign_uncertain_zero": true,
+    "official_triple_clamp_zero": true,
+    "official_triple_solution_negative_excess_zero": true,
+    "p_obs_in_1p8_2p2": false,
+    "rev4_finest_l1_preregistered_window": false
+  },
+  "acceptance_unchanged": true,
+  "excluded_cells": 0,
+  "grids": [
+    [
+      32,
+      128
+    ],
+    [
+      64,
+      256
+    ],
+    [
+      128,
+      512
+    ],
+    [
+      256,
+      1024
+    ],
+    [
+      512,
+      2048
+    ],
+    [
+      1024,
+      4096
+    ]
+  ],
+  "ka": "KA3",
+  "levels": [
+    {
+      "bdf_eta_min": -6.627991103920141e-14,
+      "bdf_eta_negative_count": 1054,
+      "bdf_eta_negative_plane_count": 30,
+      "blue_boundary_fraction": 1.3380685987273148e-14,
+      "centroid_shift_error": 0.00012058675310641642,
+      "certificate_bits": null,
+      "certified_max_width": null,
+      "certified_min_lower": null,
+      "certified_negative_count": null,
+      "certified_nonfinite_count": null,
+      "certified_sign_uncertain_count": null,
+      "clamp_count": 0,
+      "driver_stderr": "KA3 measured guard: LCMF_ENEGATIVE: solution interval upper bound is negative ir=0 inu=98 ray=0 segment=48 substep=0 value=-2.2010974092395352e-08 interval=[-2.2085113253133988e-08,-2.1936834931656717e-08]",
+      "first_bdf_eta_negative": {
+        "decay_ratio": 4.492579426660045,
+        "endpoint_index": 1,
+        "eta_eff": -4.755790311120609e-17,
+        "evaluation_index": 0,
+        "frequency_index": 98,
+        "ray_index": 0,
+        "segment_index": 47,
+        "substep_index": 0,
+        "term_previous": 1.1251344524447009e-07,
+        "term_previous2": 5.054755893279478e-07,
+        "theoretical_limit": 4.0
+      },
+      "grid": {
+        "nnu": 128,
+        "ns": 32
+      },
+      "invariant_area_relative_error": 0.0001820231237213964,
+      "legacy_nonfinite_count": 0,
+      "legacy_sign_uncertain_count": 591,
+      "naive_erf_zero_cells": 15,
+      "profile_relative_l1": 0.02700665828504711,
+      "profile_relative_l2": 0.0241727337460644,
+      "red_boundary_fraction": 1.2607888723769274e-24,
+      "solution_min": -1.982237532036486e-05,
+      "solution_negative_excess_count": 193,
+      "solver_status": -4,
+      "stable_tail_oracle_max_relative_error": 1.430514354560486e-14,
+      "stable_tail_positive_cells": 128,
+      "status": "FAIL",
+      "transport_residual": 5.388384422068793e-10
+    },
+    {
+      "bdf_eta_min": null,
+      "bdf_eta_negative_count": 0,
+      "bdf_eta_negative_plane_count": 0,
+      "blue_boundary_fraction": 1.2839817716444684e-14,
+      "centroid_shift_error": 6.147121420069235e-05,
+      "certificate_bits": null,
+      "certified_max_width": null,
+      "certified_min_lower": null,
+      "certified_negative_count": null,
+      "certified_nonfinite_count": null,
+      "certified_sign_uncertain_count": null,
+      "clamp_count": 0,
+      "driver_stderr": "KA3 measured guard: LCMF_ESIGNUNCERTAIN: solution interval contains zero ir=0 inu=155 ray=0 segment=130 substep=0 value=0.56302352566437031 interval=[-0.061824655353539655,1.1878717066822804]",
+      "first_bdf_eta_negative": null,
+      "grid": {
+        "nnu": 256,
+        "ns": 64
+      },
+      "invariant_area_relative_error": 9.249658468438525e-05,
+      "legacy_nonfinite_count": 0,
+      "legacy_sign_uncertain_count": 3462,
+      "naive_erf_zero_cells": 30,
+      "profile_relative_l1": 0.008213739228927106,
+      "profile_relative_l2": 0.007540836255035396,
+      "red_boundary_fraction": 3.931987994688419e-17,
+      "solution_min": 3.931987994688419e-17,
+      "solution_negative_excess_count": 0,
+      "solver_status": -12,
+      "stable_tail_oracle_max_relative_error": 2.6054885042037386e-14,
+      "stable_tail_positive_cells": 256,
+      "status": "FAIL",
+      "transport_residual": 1.6321578997872012e-11
+    },
+    {
+      "bdf_eta_min": null,
+      "bdf_eta_negative_count": 0,
+      "bdf_eta_negative_plane_count": 0,
+      "blue_boundary_fraction": 1.270777966762779e-14,
+      "centroid_shift_error": 3.103234645841779e-05,
+      "certificate_bits": 2048,
+      "certified_max_width": "8.45355857491272719e-544",
+      "certified_min_lower": "1.26859066172249716e-24",
+      "certified_negative_count": 0,
+      "certified_nonfinite_count": 0,
+      "certified_sign_uncertain_count": 0,
+      "clamp_count": 0,
+      "driver_stderr": "KA3 measured guard: LCMF_ESIGNUNCERTAIN: solution interval contains zero ir=0 inu=67 ray=0 segment=256 substep=0 value=1.5891143037829366e-14 interval=[-1.9450776408563656e-16,3.1976793839744374e-14]",
+      "first_bdf_eta_negative": null,
+      "grid": {
+        "nnu": 512,
+        "ns": 128
+      },
+      "invariant_area_relative_error": 4.662146437316809e-05,
+      "legacy_nonfinite_count": 0,
+      "legacy_sign_uncertain_count": 32933,
+      "naive_erf_zero_cells": 62,
+      "profile_relative_l1": 0.003268704152306621,
+      "profile_relative_l2": 0.0029921707438446575,
+      "red_boundary_fraction": 5.942503689330363e-15,
+      "solution_min": 5.942503689330363e-15,
+      "solution_negative_excess_count": 0,
+      "solver_status": -12,
+      "stable_tail_oracle_max_relative_error": 6.849068004651466e-14,
+      "stable_tail_positive_cells": 512,
+      "status": "FAIL",
+      "transport_residual": 1.5429229039073763e-11
+    },
+    {
+      "bdf_eta_min": null,
+      "bdf_eta_negative_count": 0,
+      "bdf_eta_negative_plane_count": 0,
+      "blue_boundary_fraction": 1.2675039885513501e-14,
+      "centroid_shift_error": 1.5590643948196203e-05,
+      "certificate_bits": 2048,
+      "certified_max_width": "3.99376903758235988e-461",
+      "certified_min_lower": "1.20744714349472628e-24",
+      "certified_negative_count": 0,
+      "certified_nonfinite_count": 0,
+      "certified_sign_uncertain_count": 0,
+      "clamp_count": 0,
+      "driver_stderr": "KA3 measured guard: LCMF_ESIGNUNCERTAIN: solution interval contains zero ir=0 inu=65 ray=0 segment=438 substep=0 value=1.100755985382091e-14 interval=[-5.0194846775518481e-17,2.2065314554417341e-14]",
+      "first_bdf_eta_negative": null,
+      "grid": {
+        "nnu": 1024,
+        "ns": 256
+      },
+      "invariant_area_relative_error": 2.340426519013975e-05,
+      "legacy_nonfinite_count": 0,
+      "legacy_sign_uncertain_count": 197095,
+      "naive_erf_zero_cells": 129,
+      "profile_relative_l1": 0.001567062077097974,
+      "profile_relative_l2": 0.0014124443547687412,
+      "red_boundary_fraction": 9.018192921538758e-15,
+      "solution_min": 9.018192921538758e-15,
+      "solution_negative_excess_count": 0,
+      "solver_status": -12,
+      "stable_tail_oracle_max_relative_error": 6.029850223253659e-14,
+      "stable_tail_positive_cells": 1024,
+      "status": "FAIL",
+      "transport_residual": 1.957072659664354e-11
+    },
+    {
+      "bdf_eta_min": null,
+      "bdf_eta_negative_count": 0,
+      "bdf_eta_negative_plane_count": 0,
+      "blue_boundary_fraction": 1.2666880986555416e-14,
+      "centroid_shift_error": 7.813975445997157e-06,
+      "certificate_bits": 2048,
+      "certified_max_width": "4.81788188902006415e-293",
+      "certified_min_lower": "1.17665071518847714e-24",
+      "certified_negative_count": 0,
+      "certified_nonfinite_count": 0,
+      "certified_sign_uncertain_count": 0,
+      "clamp_count": 0,
+      "driver_stderr": "KA3 measured guard: LCMF_ESIGNUNCERTAIN: solution interval contains zero ir=0 inu=63 ray=0 segment=935 substep=0 value=1.1830338245089924e-14 interval=[-2.3558510799008228e-17,2.3684235000978861e-14]",
+      "first_bdf_eta_negative": null,
+      "grid": {
+        "nnu": 2048,
+        "ns": 512
+      },
+      "invariant_area_relative_error": 1.1725545856421199e-05,
+      "legacy_nonfinite_count": 0,
+      "legacy_sign_uncertain_count": 916753,
+      "naive_erf_zero_cells": 267,
+      "profile_relative_l1": 0.0007844203287494728,
+      "profile_relative_l2": 0.0007035137827431014,
+      "red_boundary_fraction": 9.545409820942286e-15,
+      "solution_min": 9.545409820942286e-15,
+      "solution_negative_excess_count": 0,
+      "solver_status": -12,
+      "stable_tail_oracle_max_relative_error": 1.401408144273151e-13,
+      "stable_tail_positive_cells": 2048,
+      "status": "FAIL",
+      "transport_residual": 1.760984166733489e-11
+    },
+    {
+      "bdf_eta_min": null,
+      "bdf_eta_negative_count": 0,
+      "bdf_eta_negative_plane_count": 0,
+      "blue_boundary_fraction": 1.2664844046302661e-14,
+      "centroid_shift_error": 3.911655570495998e-06,
+      "certificate_bits": 4096,
+      "certified_max_width": "1.73118362323440330e-572",
+      "certified_min_lower": "1.16159671501369656e-24",
+      "certified_negative_count": 0,
+      "certified_nonfinite_count": 0,
+      "certified_sign_uncertain_count": 0,
+      "clamp_count": 0,
+      "driver_stderr": "KA3 measured guard: LCMF_ESIGNUNCERTAIN: solution interval contains zero ir=0 inu=61 ray=0 segment=2030 substep=0 value=1.2252874834402983e-14 interval=[-8.7574564767920221e-18,2.4514507125282762e-14]",
+      "first_bdf_eta_negative": null,
+      "grid": {
+        "nnu": 4096,
+        "ns": 1024
+      },
+      "invariant_area_relative_error": 5.868630018444105e-06,
+      "legacy_nonfinite_count": 0,
+      "legacy_sign_uncertain_count": 3928204,
+      "naive_erf_zero_cells": 560,
+      "profile_relative_l1": 0.0003946008628874519,
+      "profile_relative_l2": 0.0003534552600116752,
+      "red_boundary_fraction": 9.54296818068775e-15,
+      "solution_min": 9.515012499194643e-15,
+      "solution_negative_excess_count": 0,
+      "solver_status": -12,
+      "stable_tail_oracle_max_relative_error": 3.2317888315687336e-13,
+      "stable_tail_positive_cells": 4096,
+      "status": "FAIL",
+      "transport_residual": 1.8222393125635944e-11
+    }
+  ],
+  "mpfr_certificate_report": "docs/s31_results/mpfr_cert_rung8_fine.json",
+  "mpmath_dps": 80,
+  "official_triple_grids": [
+    [
+      256,
+      1024
+    ],
+    [
+      512,
+      2048
+    ],
+    [
+      1024,
+      4096
+    ]
+  ],
+  "p_obs_profile_l2": 0.9930510761988792,
+  "rev3_measurements": {
+    "finest_profile_relative_l2": 0.0003534552600116752,
+    "official_triple_p_obs_profile_l2": 0.9930510761988792
+  },
+  "rev3_preregistered": {
+    "extrapolation": "128x512 rev3 center 1.53593e-3 divided by 4^2",
+    "finest_profile_relative_l2_center": 9.59e-05,
+    "finest_profile_relative_l2_window": [
+      8.8e-05,
+      0.000108
+    ],
+    "official_triple_p_window": [
+      1.96,
+      2.04
+    ],
+    "original_family_p_center": 2.00097,
+    "scheme": "trapezoidal-start + branch-local quadratic-exact SC"
+  },
+  "rev3_window_status": {
+    "finest_profile_relative_l2": "FAIL",
+    "official_triple_p_obs_profile_l2": "FAIL"
+  },
+  "rev4_measurements": {
+    "finest_centroid_shift_error": 3.911655570495998e-06,
+    "finest_invariant_area_relative_error": 5.868630018444105e-06,
+    "finest_profile_relative_l1": 0.0003946008628874519,
+    "finest_profile_relative_l2": 0.0003534552600116752,
+    "official_triple_p_obs_profile_l2": 0.9930510761988792
+  },
+  "rev4_preregistered": {
+    "finest_profile_relative_l1_center": 2.64e-05,
+    "finest_profile_relative_l1_window": [
+      2.5e-05,
+      2.8e-05
+    ]
+  },
+  "rev4_window_status": {
+    "finest_profile_relative_l1": "FAIL"
+  },
+  "seed": null,
+  "status": "FAIL",
+  "superseded_rev2_applicability": "NOT_APPLICABLE_AFTER_REV3_SCHEME_AND_GRID_EXTENSION",
+  "superseded_rev2_measurements": {
+    "finest_centroid_shift_error": 3.911655570495998e-06,
+    "finest_invariant_area_relative_error": 5.868630018444105e-06,
+    "finest_profile_relative_l2": 0.0003534552600116752,
+    "p_obs_profile_l2": 0.9930510761988792
+  },
+  "superseded_rev2_preregistered_windows": {
+    "finest_centroid_shift_error": [
+      2.5e-05,
+      3.8e-05
+    ],
+    "finest_invariant_area_relative_error": [
+      4e-05,
+      5.5e-05
+    ],
+    "finest_profile_relative_l2": [
+      0.0025,
+      0.0035
+    ],
+    "p_obs_profile_l2": [
+      1.25,
+      1.45
+    ]
+  },
+  "superseded_rev2_window_status": {
+    "finest_centroid_shift_error": "FAIL",
+    "finest_invariant_area_relative_error": "FAIL",
+    "finest_profile_relative_l2": "FAIL",
+    "p_obs_profile_l2": "FAIL"
+  }
+}

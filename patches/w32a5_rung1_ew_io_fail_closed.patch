@@ -1,0 +1,153 @@
+--- a/Makefile
++++ b/Makefile
+@@ -83,6 +83,13 @@
+ 		tests/wave32_ew_rc_wrap.c src/lumina_plasma.c \
+ 		src/lumina_element_wide.c src/lumina_atomic.c $(LDFLAGS)
+ 
++selftest_wave32_ew_io: tests/wave32_ew_io_selftest.c src/lumina_element_wide.c src/lumina_plasma.c src/lumina_atomic.c $(HEADERS)
++	$(CC) -O2 -Wall -Wextra -std=gnu11 -D_GNU_SOURCE \
++		-ffunction-sections -fdata-sections -Isrc -Wl,--gc-sections \
++		-o selftest_wave32_ew_io tests/wave32_ew_io_selftest.c \
++		src/lumina_element_wide.c src/lumina_plasma.c \
++		src/lumina_atomic.c $(LDFLAGS)
++
+ # Wave-3.2 R7 offline binary writer fixture (no model/GPU execution).
+ selftest_cmf_chieta_dump: scripts/cmf_chieta_writer_fixture.c src/lumina_cmfgen.c src/lumina_cmfgen.h $(HEADERS)
+ 	$(CC) -O2 -Wall -Wextra -std=c11 -D_GNU_SOURCE -ffunction-sections -fdata-sections -Isrc \
+@@ -117,6 +124,7 @@
+ # Clean
+ clean:
+ 	rm -f $(TARGET) lumina_cuda bench_frozen_oracle_rc selftest_wave32_ew_rc \
++		selftest_wave32_ew_io \
+ 		selftest_cmf_chieta_dump \
+ 		selftest_wave32_matrix_debit selftest_wave32_within_sl_oom \
+ 		selftest_wave32_boundary_q selftest_wave32_counter_atomic *.o
+--- a/src/lumina_element_wide.c
++++ b/src/lumina_element_wide.c
+@@ -51,6 +51,35 @@
+ static EWGate ew_gate;
+ static int ew_dump_failed;
+ 
++/* Complete a stdio artifact transaction.  A buffered fprintf() can appear to
++ * succeed and report ENOSPC only at flush/close, so every EW artifact uses this
++ * common completion check before an adoption commit is allowed. */
++static int ew_finish_file(FILE *fp, const char *path) {
++    int saved_errno = 0;
++    if (fflush(fp) != 0) saved_errno = errno ? errno : EIO;
++    if (ferror(fp) && !saved_errno) saved_errno = errno ? errno : EIO;
++    if (fclose(fp) != 0 && !saved_errno) saved_errno = errno ? errno : EIO;
++    if (saved_errno) {
++        fprintf(stderr, "[EW][DUMP-FAIL] write/close %s: %s\n",
++                path, strerror(saved_errno));
++        return -1;
++    }
++    return 0;
++}
++
++static void ew_close_dump(FILE *fp, const char *path) {
++    if (ew_finish_file(fp, path) != 0) ew_dump_failed = 1;
++}
++
++/* CPU-only fixture entry; it exercises the exact production completion check
++ * with /dev/full as the buffered-write negative control. */
++int nlte_ew_test_dump_io(const char *path) {
++    FILE *fp = fopen(path, "w");
++    if (!fp) return -1;
++    (void)fprintf(fp, "wave32-ew-artifact\n");
++    return ew_finish_file(fp, path);
++}
++
+ static int ew_env_true(const char *name) {
+     const char *v = getenv(name);
+     return v && atoi(v) != 0;
+@@ -317,11 +346,7 @@
+                 "runtime_final_per_ion_pin_calls,%lu\n"
+                 "runtime_final_topstage_IV_calls,%lu\n",
+                 counts[0], counts[1], counts[2]);
+-        if (fclose(fp) != 0) {
+-            fprintf(stderr, "[EW][DUMP-FAIL] runtime close %s: %s\n",
+-                    path, strerror(errno));
+-            failed = 1;
+-        }
++        if (ew_finish_file(fp, path) != 0) failed = 1;
+     }
+     return failed ? -1 : 0;
+ }
+@@ -1706,7 +1731,7 @@
+         }
+         base += s1-s0;
+     }
+-    (void)N; fclose(fp);
++    (void)N; ew_close_dump(fp, path);
+ }
+ 
+ static void ew_dump_sparse_matrix(const char *role, const double *A, const double *b,
+@@ -1720,7 +1745,7 @@
+             fprintf(fp, "%d,%d,%.17g,%.17g,%.17g,%.17g\n", i,j,EW(A,N,i,j),
+                     b ? b[i] : 0.0,row_scale?row_scale[i]:1.0,
+                     col_scale?col_scale[j]:1.0);
+-    fclose(fp);
++    ew_close_dump(fp, path);
+ }
+ 
+ static void ew_dump_raw(double *plane[NLTE_EW_N_CHANNELS], int N,
+@@ -1733,7 +1758,7 @@
+             if (EW(plane[c],N,i,j) != 0.0)
+                 fprintf(fp, "%s,%d,%d,%.17g,0\n", ew_channel_name[c],i,j,
+                         EW(plane[c],N,i,j));
+-    fclose(fp);
++    ew_close_dump(fp, path);
+ }
+ 
+ static double ew_scaled_residual(const double *Araw, const double *x, int N,
+@@ -2151,13 +2176,13 @@
+         ew_dump_sparse_matrix("matrix_normalized",Anorm,b,NULL,NULL,N,iter,Z,shell_label);
+         ew_dump_sparse_matrix("matrix_equilibrated",Aeq,beq,rs,cs,N,iter,Z,shell_label);
+         char path[768]; FILE *fp=ew_open_dump(path,sizeof(path),iter,Z,shell_label,"solution");
+-        if(fp){fprintf(fp,"record_type,matrix_index,internal_stage,sl_id,global_level,raw_solution,restored_population,ion_total\n");for(int q=0;q<3;q++){double tot=0;for(int i=stage_start[q];i<stage_start[q+1];i++)tot+=x[i];for(int i=stage_start[q];i<stage_start[q+1];i++)fprintf(fp,"SL,%d,%d,%d,-1,%.17g,%.17g,%.17g\n",i,q+1,i-stage_start[q],x[i]/(cs[i]!=0.0?cs[i]:1.0),x[i],tot);int slot=slots[q],ss0=nlte->nlte_ion_super_offset[slot];for(int g=nlte->nlte_ion_level_offset[slot];g<nlte->nlte_ion_level_offset[slot+1];g++){int gl=nlte->nlte_to_global_level[g],local=stage_start[q]+nlte->fl_to_super[g]-ss0;double frac=nlte->within_sl_frac[(size_t)g*plasma->n_shells+shell];fprintf(fp,"FL,%d,%d,%d,%d,%.17g,%.17g,%.17g\n",local,q+1,nlte->fl_to_super[g]-ss0,gl,x[local]/(cs[local]!=0.0?cs[local]:1.0),x[local]*frac,tot);}}if(boundary.active)fprintf(fp,"BOUNDARY_MASS,%d,4,0,-1,%.17g,%.17g,%.17g\n",boundary.m_index,x[boundary.m_index]/(cs[boundary.m_index]!=0.0?cs[boundary.m_index]:1.0),x[boundary.m_index],x[boundary.m_index]);fclose(fp);}
++        if(fp){fprintf(fp,"record_type,matrix_index,internal_stage,sl_id,global_level,raw_solution,restored_population,ion_total\n");for(int q=0;q<3;q++){double tot=0;for(int i=stage_start[q];i<stage_start[q+1];i++)tot+=x[i];for(int i=stage_start[q];i<stage_start[q+1];i++)fprintf(fp,"SL,%d,%d,%d,-1,%.17g,%.17g,%.17g\n",i,q+1,i-stage_start[q],x[i]/(cs[i]!=0.0?cs[i]:1.0),x[i],tot);int slot=slots[q],ss0=nlte->nlte_ion_super_offset[slot];for(int g=nlte->nlte_ion_level_offset[slot];g<nlte->nlte_ion_level_offset[slot+1];g++){int gl=nlte->nlte_to_global_level[g],local=stage_start[q]+nlte->fl_to_super[g]-ss0;double frac=nlte->within_sl_frac[(size_t)g*plasma->n_shells+shell];fprintf(fp,"FL,%d,%d,%d,%d,%.17g,%.17g,%.17g\n",local,q+1,nlte->fl_to_super[g]-ss0,gl,x[local]/(cs[local]!=0.0?cs[local]:1.0),x[local]*frac,tot);}}if(boundary.active)fprintf(fp,"BOUNDARY_MASS,%d,4,0,-1,%.17g,%.17g,%.17g\n",boundary.m_index,x[boundary.m_index]/(cs[boundary.m_index]!=0.0?cs[boundary.m_index]:1.0),x[boundary.m_index],x[boundary.m_index]);ew_close_dump(fp,path);}
+         fp=ew_open_dump(path,sizeof(path),iter,Z,shell_label,"diagnostics");
+-        if(fp){fprintf(fp,"key,value\nN,%d\nion_coverage,%d/%d\nsl_coverage,%d/%d\nfull_level_coverage,%d/%d\nline_coverage,%d/%d\ncontinuum_coverage,%d/%d\nkramers_continuum_count,%d\ntarget_coverage,%d/%d\nfirst_bad_lower_global,%d\nfirst_bad_target_global,%d\nchecksum_mismatch,%d\nraw_rank,%d\nsolve_attempted,%d\np_elem_valid,%d\nnormalized_rank,%d\ngraph_components,%d\nzero_rows,%d\nzero_columns,%d\nassembled_target_expected,%d\nassembled_target_mapped,%d\nassembled_target_fail,%d\nbad_rate,%d\nchannel_inventory_fail,%d\nlegacy_guard_configured_count,%d\nlegacy_guard_firing_count,%d\nC48_projected_identity_level_count,%d\nkramers_fallback_firing_count,%d\ncontinuum_deletion_firing_count,%d\ntarget_fallback_firing_count,%d\nnstar_cap_firing_count,%d\nnonfinite_guard_firing_count,%d\nbf_estimator_bin_consumptions,%d\nbf_pref_J_bin_consumptions,%d\nbf_JEQB_bin_consumptions,%d\nindependent_assembly_residual_max,%.17g\nraw_singular_value_max,%.17g\nraw_singular_value_min,%.17g\nraw_kappa_2,%.17g\nequilibrated_singular_value_max,%.17g\nequilibrated_singular_value_min,%.17g\nkappa_2,%.17g\nrcond_1_solver_estimate,%.17g\npivot_growth,%.17g\nequilibration_iterations,%d\nrefinement_iterations,%d\nscaled_se_residual,%.17g\nscaled_se_t_ref_seconds,%.17g\nconservation_residual,%.17g\nraw_solution_min,%.17g\nnegative_error_bound,%.17g\nnegative_count,%d\nnonfinite_count,%d\npermutation_ion_fraction_max_abs,%.17g\nboundary_fraction_max,%.17g\nboundary_opacity_fraction,%.17g\nboundary_process_coverage,%d\nclamp_floor_freeze_anchor_repair_fallback_count,%d\nverdict,%s\n",N,coverage.ions_mapped,coverage.ions_expected,coverage.sl_mapped,coverage.sl_expected,coverage.full_mapped,coverage.full_expected,coverage.lines_mapped,coverage.lines_expected,coverage.continua_mapped,coverage.continua_expected,coverage.continua_kramers,coverage.targets_mapped,coverage.targets_expected,coverage.first_bad_lower,coverage.first_bad_target,coverage.checksum_mismatch,raw_rank,solve_attempted,p_elem_valid,sd.rank,components,zero_rows,zero_cols,target_expected,target_mapped,target_fail,bad_rate,channel_inventory_fail,guard_config_count,guard_firing_count,c48_projected_levels,fire.kramers_fallback,fire.continuum_deleted,fire.target_fallback,fire.nstar_cap,fire.nonfinite_guard,fire.bf_estimator_bins,fire.bf_pref_j_bins,fire.bf_jeqb_bins,max_assembly_residual,raw_smax,raw_smin,raw_kappa,sd.smax,sd.smin,sd.kappa,sd.rcond,sd.pivot_growth,sd.equil_iters,sd.refinement_iters,se_res,time_explosion,conservation,raw_solution_min,negative_error_bound,negative,nonfinite,perm_frac,boundary_max,boundary_opacity,boundary_process_coverage,guard_firing_count,verdict);fprintf(fp,"candidate_assembler_calls,%d\ncandidate_pair_owner_calls,%d\nsave_restore_calls,%d\nper_ion_pin_calls,%d\ntopstage_IV_calls,%d\nhot_cold_required,%d\nhot_cold_rebuilds,%d\nhot_cold_matrix_byte_identical,%d\nhot_cold_matrix_max_abs,%.17g\ncommit_requested,%d\ncommit_performed,%d\ncommit_blocked_by,%s\n",fire.candidate_assembler_calls,fire.candidate_pair_owner_calls,fire.save_restore_calls,fire.per_ion_pin_calls,fire.topstage_IV_calls,hot_cold_required,hot_cold_rebuilds,hot_cold_identical,hot_cold_max_abs,commit_requested,commit_performed,commit_blocked_by);fprintf(fp,"topology_gate_pass,%d\nnumerical_gate_pass,%d\nboundary_gate_pass,%d\n",topology_gate_pass,numerical_gate_pass,boundary_gate_pass);for(int c=0;c<NLTE_EW_N_CHANNELS;c++){fprintf(fp,"channel_colsum_%s,%.17g\n",ew_channel_name[c],colsum[c]);fprintf(fp,"channel_independent_assembly_residual_%s,%.17g\n",ew_channel_name[c],assembly_residual[c]);fprintf(fp,"channel_event_count_%s,%d\n",ew_channel_name[c],fire.channel_events[c]);}if(!solve_attempted)fprintf(fp,"pivot_status,not_attempted\nrefinement_status,not_attempted\n");for(int i=0;solve_attempted&&i<N;i++)fprintf(fp,"pivot_%d,%d\n",i,solve_piv[i]);for(int i=0;solve_attempted&&i<=sd.refinement_iters;i++)fprintf(fp,"refinement_residual_%d,%.17g\n",i,sd.refinement[i]);fclose(fp);}
++        if(fp){fprintf(fp,"key,value\nN,%d\nion_coverage,%d/%d\nsl_coverage,%d/%d\nfull_level_coverage,%d/%d\nline_coverage,%d/%d\ncontinuum_coverage,%d/%d\nkramers_continuum_count,%d\ntarget_coverage,%d/%d\nfirst_bad_lower_global,%d\nfirst_bad_target_global,%d\nchecksum_mismatch,%d\nraw_rank,%d\nsolve_attempted,%d\np_elem_valid,%d\nnormalized_rank,%d\ngraph_components,%d\nzero_rows,%d\nzero_columns,%d\nassembled_target_expected,%d\nassembled_target_mapped,%d\nassembled_target_fail,%d\nbad_rate,%d\nchannel_inventory_fail,%d\nlegacy_guard_configured_count,%d\nlegacy_guard_firing_count,%d\nC48_projected_identity_level_count,%d\nkramers_fallback_firing_count,%d\ncontinuum_deletion_firing_count,%d\ntarget_fallback_firing_count,%d\nnstar_cap_firing_count,%d\nnonfinite_guard_firing_count,%d\nbf_estimator_bin_consumptions,%d\nbf_pref_J_bin_consumptions,%d\nbf_JEQB_bin_consumptions,%d\nindependent_assembly_residual_max,%.17g\nraw_singular_value_max,%.17g\nraw_singular_value_min,%.17g\nraw_kappa_2,%.17g\nequilibrated_singular_value_max,%.17g\nequilibrated_singular_value_min,%.17g\nkappa_2,%.17g\nrcond_1_solver_estimate,%.17g\npivot_growth,%.17g\nequilibration_iterations,%d\nrefinement_iterations,%d\nscaled_se_residual,%.17g\nscaled_se_t_ref_seconds,%.17g\nconservation_residual,%.17g\nraw_solution_min,%.17g\nnegative_error_bound,%.17g\nnegative_count,%d\nnonfinite_count,%d\npermutation_ion_fraction_max_abs,%.17g\nboundary_fraction_max,%.17g\nboundary_opacity_fraction,%.17g\nboundary_process_coverage,%d\nclamp_floor_freeze_anchor_repair_fallback_count,%d\nverdict,%s\n",N,coverage.ions_mapped,coverage.ions_expected,coverage.sl_mapped,coverage.sl_expected,coverage.full_mapped,coverage.full_expected,coverage.lines_mapped,coverage.lines_expected,coverage.continua_mapped,coverage.continua_expected,coverage.continua_kramers,coverage.targets_mapped,coverage.targets_expected,coverage.first_bad_lower,coverage.first_bad_target,coverage.checksum_mismatch,raw_rank,solve_attempted,p_elem_valid,sd.rank,components,zero_rows,zero_cols,target_expected,target_mapped,target_fail,bad_rate,channel_inventory_fail,guard_config_count,guard_firing_count,c48_projected_levels,fire.kramers_fallback,fire.continuum_deleted,fire.target_fallback,fire.nstar_cap,fire.nonfinite_guard,fire.bf_estimator_bins,fire.bf_pref_j_bins,fire.bf_jeqb_bins,max_assembly_residual,raw_smax,raw_smin,raw_kappa,sd.smax,sd.smin,sd.kappa,sd.rcond,sd.pivot_growth,sd.equil_iters,sd.refinement_iters,se_res,time_explosion,conservation,raw_solution_min,negative_error_bound,negative,nonfinite,perm_frac,boundary_max,boundary_opacity,boundary_process_coverage,guard_firing_count,verdict);fprintf(fp,"candidate_assembler_calls,%d\ncandidate_pair_owner_calls,%d\nsave_restore_calls,%d\nper_ion_pin_calls,%d\ntopstage_IV_calls,%d\nhot_cold_required,%d\nhot_cold_rebuilds,%d\nhot_cold_matrix_byte_identical,%d\nhot_cold_matrix_max_abs,%.17g\ncommit_requested,%d\ncommit_performed,%d\ncommit_blocked_by,%s\n",fire.candidate_assembler_calls,fire.candidate_pair_owner_calls,fire.save_restore_calls,fire.per_ion_pin_calls,fire.topstage_IV_calls,hot_cold_required,hot_cold_rebuilds,hot_cold_identical,hot_cold_max_abs,commit_requested,commit_performed,commit_blocked_by);fprintf(fp,"topology_gate_pass,%d\nnumerical_gate_pass,%d\nboundary_gate_pass,%d\n",topology_gate_pass,numerical_gate_pass,boundary_gate_pass);for(int c=0;c<NLTE_EW_N_CHANNELS;c++){fprintf(fp,"channel_colsum_%s,%.17g\n",ew_channel_name[c],colsum[c]);fprintf(fp,"channel_independent_assembly_residual_%s,%.17g\n",ew_channel_name[c],assembly_residual[c]);fprintf(fp,"channel_event_count_%s,%d\n",ew_channel_name[c],fire.channel_events[c]);}if(!solve_attempted)fprintf(fp,"pivot_status,not_attempted\nrefinement_status,not_attempted\n");for(int i=0;solve_attempted&&i<N;i++)fprintf(fp,"pivot_%d,%d\n",i,solve_piv[i]);for(int i=0;solve_attempted&&i<=sd.refinement_iters;i++)fprintf(fp,"refinement_residual_%d,%.17g\n",i,sd.refinement[i]);ew_close_dump(fp,path);}
+         fp=ew_open_dump(path,sizeof(path),iter,Z,shell_label,"provenance");
+-        if(fp){fprintf(fp,"channel,row,column,source_identity,target_identity,aggregated_rate,units,producer,field_generation,target_route,probability_applied,full_to_sl_weight,aggregation\n");for(int c=0;c<NLTE_EW_N_CHANNELS;c++)for(int j=0;j<N;j++)for(int i=0;i<N;i++)if(i!=j&&EW(plane[c],N,i,j)>0.0)fprintf(fp,"%s,%d,%d,SL:%d,SL:%d,%.17g,s^-1,nlte_assemble_rate_matrix,frozen_cell_field,%s,%s,applied_at_capture,sum_of_transition_routes\n",ew_channel_name[c],i,j,j,i,EW(plane[c],N,i,j),(c==NLTE_EW_RAD_BF||c==NLTE_EW_COLL_BF)?"ma_rr_CSR":"direct_level_pair",(c==NLTE_EW_RAD_BF||c==NLTE_EW_COLL_BF)?"outside_once":"not_applicable");fclose(fp);}
++        if(fp){fprintf(fp,"channel,row,column,source_identity,target_identity,aggregated_rate,units,producer,field_generation,target_route,probability_applied,full_to_sl_weight,aggregation\n");for(int c=0;c<NLTE_EW_N_CHANNELS;c++)for(int j=0;j<N;j++)for(int i=0;i<N;i++)if(i!=j&&EW(plane[c],N,i,j)>0.0)fprintf(fp,"%s,%d,%d,SL:%d,SL:%d,%.17g,s^-1,nlte_assemble_rate_matrix,frozen_cell_field,%s,%s,applied_at_capture,sum_of_transition_routes\n",ew_channel_name[c],i,j,j,i,EW(plane[c],N,i,j),(c==NLTE_EW_RAD_BF||c==NLTE_EW_COLL_BF)?"ma_rr_CSR":"direct_level_pair",(c==NLTE_EW_RAD_BF||c==NLTE_EW_COLL_BF)?"outside_once":"not_applicable");ew_close_dump(fp,path);}
+         fp=ew_open_dump(path,sizeof(path),iter,Z,shell_label,"manifest");
+-        if(fp){fprintf(fp,"key,value\nrun_id,iter%04d\nZ,%d\nshell,%d\nassembler,lumina_element_wide_cpu\nstage_window,II-IV\nN,%d\nT_e,%.17g\nn_e,%.17g\nT_rad,%.17g\nW,%.17g\nn_element,%.17g\natomic_checksum,%016llx\natomic_checksum_before,%016llx\nidentity_checksum_verified,%d\nsolve_attempted,%d\np_elem_valid,%d\nconservation_rows,%d\ncharge_rows,%d\ncandidate_assembler_calls,%d\ncandidate_pair_owner_calls,%d\nfallback_route,pair_wise_16_original_order\nsave_restore_calls,%d\nper_ion_pin_calls,%d\ntopstage_IV_calls,%d\nrad_bb,%s\ncoll_bb,%s\nnt_bb,inactive:no_bound_bound_NT_producer\nrad_bf,%s\ncoll_bf,%s\nnt_bf,%s\nautoion,inactive:no_autoion_data_producer\nDR,%s\ncharge_exchange,inactive:Stage2A_element_independent_contract\nC48_SUPER_CUTOFF,input_projection:%d_levels_hashed_identity_not_runtime_guard\nC65_STAGE4_BK_CAP,bypassed_for_element_wide_target\nhot_cold_required,%d\nhot_cold_rebuilds,%d\nhot_cold_matrix_byte_identical,%d\nhot_cold_matrix_max_abs,%.17g\nartifact_identity,identity\nartifact_matrix_raw,matrix_raw\nartifact_matrix_normalized,matrix_normalized\nartifact_matrix_equilibrated,matrix_equilibrated\nartifact_solution,solution\nartifact_diagnostics,diagnostics\nartifact_provenance,provenance\nartifact_manifest,manifest\nverdict,%s\n",iter,Z,shell_label,N,plasma->T_e[shell],plasma->n_electron[shell],plasma->T_rad[shell],plasma->W[shell],n_elem,(unsigned long long)checksum,(unsigned long long)checksum_before,!coverage.checksum_mismatch,solve_attempted,p_elem_valid,1,0,fire.candidate_assembler_calls,fire.candidate_pair_owner_calls,fire.save_restore_calls,fire.per_ion_pin_calls,fire.topstage_IV_calls,fire.channel_events[NLTE_EW_RAD_BB]?"active":"missing",fire.channel_events[NLTE_EW_COLL_BB]?"active":"missing",fire.channel_events[NLTE_EW_RAD_BF]?"active":"missing",fire.channel_events[NLTE_EW_COLL_BF]?"active":"missing",fire.channel_events[NLTE_EW_NT_BF]?"active":"inactive:no_nonthermal_deposition",ew_maxabs(plane[NLTE_EW_AUTOION_DR],N)>0.0?"active":"inactive:no_positive_DR_rate",c48_projected_levels,hot_cold_required,hot_cold_rebuilds,hot_cold_identical,hot_cold_max_abs,verdict);fprintf(fp,"kramers_fallback_firing_count,%d\ncontinuum_deletion_firing_count,%d\nbf_estimator_bin_consumptions,%d\nbf_pref_J_bin_consumptions,%d\nbf_JEQB_bin_consumptions,%d\ncommit_requested,%d\ncommit_performed,%d\ncommit_blocked_by,%s\npair_inverse_saha_cap_register,legacy_pair_1e30_cap_unchanged\nrecombination_weighting_contract,EW_within_sl_frac;pair_D5_unweighted_defect_not_replicated\ngrid_mismatch_policy,pair_policy_adopted:Kramers_fallback_counted\n",fire.kramers_fallback,fire.continuum_deleted,fire.bf_estimator_bins,fire.bf_pref_j_bins,fire.bf_jeqb_bins,commit_requested,commit_performed,commit_blocked_by);fclose(fp);}
++        if(fp){fprintf(fp,"key,value\nrun_id,iter%04d\nZ,%d\nshell,%d\nassembler,lumina_element_wide_cpu\nstage_window,II-IV\nN,%d\nT_e,%.17g\nn_e,%.17g\nT_rad,%.17g\nW,%.17g\nn_element,%.17g\natomic_checksum,%016llx\natomic_checksum_before,%016llx\nidentity_checksum_verified,%d\nsolve_attempted,%d\np_elem_valid,%d\nconservation_rows,%d\ncharge_rows,%d\ncandidate_assembler_calls,%d\ncandidate_pair_owner_calls,%d\nfallback_route,pair_wise_16_original_order\nsave_restore_calls,%d\nper_ion_pin_calls,%d\ntopstage_IV_calls,%d\nrad_bb,%s\ncoll_bb,%s\nnt_bb,inactive:no_bound_bound_NT_producer\nrad_bf,%s\ncoll_bf,%s\nnt_bf,%s\nautoion,inactive:no_autoion_data_producer\nDR,%s\ncharge_exchange,inactive:Stage2A_element_independent_contract\nC48_SUPER_CUTOFF,input_projection:%d_levels_hashed_identity_not_runtime_guard\nC65_STAGE4_BK_CAP,bypassed_for_element_wide_target\nhot_cold_required,%d\nhot_cold_rebuilds,%d\nhot_cold_matrix_byte_identical,%d\nhot_cold_matrix_max_abs,%.17g\nartifact_identity,identity\nartifact_matrix_raw,matrix_raw\nartifact_matrix_normalized,matrix_normalized\nartifact_matrix_equilibrated,matrix_equilibrated\nartifact_solution,solution\nartifact_diagnostics,diagnostics\nartifact_provenance,provenance\nartifact_manifest,manifest\nverdict,%s\n",iter,Z,shell_label,N,plasma->T_e[shell],plasma->n_electron[shell],plasma->T_rad[shell],plasma->W[shell],n_elem,(unsigned long long)checksum,(unsigned long long)checksum_before,!coverage.checksum_mismatch,solve_attempted,p_elem_valid,1,0,fire.candidate_assembler_calls,fire.candidate_pair_owner_calls,fire.save_restore_calls,fire.per_ion_pin_calls,fire.topstage_IV_calls,fire.channel_events[NLTE_EW_RAD_BB]?"active":"missing",fire.channel_events[NLTE_EW_COLL_BB]?"active":"missing",fire.channel_events[NLTE_EW_RAD_BF]?"active":"missing",fire.channel_events[NLTE_EW_COLL_BF]?"active":"missing",fire.channel_events[NLTE_EW_NT_BF]?"active":"inactive:no_nonthermal_deposition",ew_maxabs(plane[NLTE_EW_AUTOION_DR],N)>0.0?"active":"inactive:no_positive_DR_rate",c48_projected_levels,hot_cold_required,hot_cold_rebuilds,hot_cold_identical,hot_cold_max_abs,verdict);fprintf(fp,"kramers_fallback_firing_count,%d\ncontinuum_deletion_firing_count,%d\nbf_estimator_bin_consumptions,%d\nbf_pref_J_bin_consumptions,%d\nbf_JEQB_bin_consumptions,%d\ncommit_requested,%d\ncommit_performed,%d\ncommit_blocked_by,%s\npair_inverse_saha_cap_register,legacy_pair_1e30_cap_unchanged\nrecombination_weighting_contract,EW_within_sl_frac;pair_D5_unweighted_defect_not_replicated\ngrid_mismatch_policy,pair_policy_adopted:Kramers_fallback_counted\n",fire.kramers_fallback,fire.continuum_deleted,fire.bf_estimator_bins,fire.bf_pref_j_bins,fire.bf_jeqb_bins,commit_requested,commit_performed,commit_blocked_by);ew_close_dump(fp,path);}
+         /* path still names the manifest created immediately above.  Append the
+          * process-wide production meter rather than the frozen-only observer. */
+         fp = fopen(path, "a");
+@@ -2178,7 +2203,7 @@
+                         boundary.route_source_count,boundary.projection_pass,
+                         boundary.assembly_pass);
+             }
+-            fclose(fp);
++            ew_close_dump(fp, path);
+         } else {
+             fprintf(stderr, "[EW][DUMP-FAIL] append %s: %s\n",
+                     path, strerror(errno));
+@@ -2208,7 +2233,7 @@
+                     phi_forward,phi_reverse,phi_forward-phi_reverse,
+                     boundary.flux_residual,boundary.row_residual,fe1,fe6,
+                     pass?"PASS":"FAIL");
+-                fclose(fp);
++                ew_close_dump(fp, path);
+             }
+         }
+     }
+--- /dev/null
++++ b/tests/wave32_ew_io_selftest.c
+@@ -0,0 +1,12 @@
++#include <stdio.h>
++
++int nlte_ew_test_dump_io(const char *path);
++
++int main(int argc, char **argv) {
++    if (argc != 2) return 2;
++    int good_rc = nlte_ew_test_dump_io(argv[1]);
++    int full_rc = nlte_ew_test_dump_io("/dev/full");
++    printf("good_artifact_rc=%d dev_full_write_close_rc=%d\n",
++           good_rc, full_rc);
++    return good_rc == 0 && full_rc != 0 ? 0 : 1;
++}

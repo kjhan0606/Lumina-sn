@@ -1,0 +1,276 @@
+#  LUMINA-SN extended CMFGEN config
+#  Based on shipped carsus/data/cmfgen_config.yml, with iron-peak coverage
+#  for SN Ia UV blanketing: adds Cr II/III, Mn II/III, Sc II that are missing
+#  from the default config, plus 19apr23 upgrades for Co II/III where
+#  the level count has grown materially.
+#
+#  Ion-charge convention: 0 = neutral (I), 1 = singly-ionized (II), etc.
+
+version: 2024.lumina.1
+
+atom:
+  H:
+    ion_charge:
+      0:
+        date: 5dec96
+        osc: hi_osc.dat
+        hyd: hyd_l_data.dat
+        gbf: gbf_n_data.dat
+        col: hicol.dat
+        pho:
+          - hiphot.dat
+
+  He:
+    ion_charge:
+      0:
+        date: 15jul15
+        osc: hei_osc
+        col: heicol.dat
+        pho:
+          - phot_hei
+
+      1:
+        date: 5dec96
+        osc: he2_osc.dat
+        col: he2col.dat
+        pho:
+          - he2phot.dat
+
+  C:
+    ion_charge:
+      0:
+        date: 12dec04
+        osc: ci_split_osc
+        col: cicol.dat
+        pho:
+          - phot_smooth_50
+
+      1:
+        date: 30oct12
+        osc: c2osc_rev.dat
+        col: c2col.dat
+        pho:
+          - phot_sm_3000.dat
+
+      2:
+        date: 23dec04
+        osc: ciiiosc_st_split_big.dat
+        col: ciiicol.dat
+        pho:
+          - ciiiphot_sm_a_500.dat
+          - ciiiphot_sm_b_500.dat
+
+      3:
+        date: 30oct12
+        osc: civosc_a12_split.dat
+        col: civcol.dat
+        pho:
+          - civphot_a12.dat
+
+  O:
+    ion_charge:
+      0:
+        date: 20sep11
+        osc: oi_osc_mchf
+        col: oi_col
+        pho:
+          - phot_nosm_A
+          - phot_nosm_B
+      1:
+        date: 23mar05
+        osc: o2osc_fin.dat
+        col: o2col.dat
+        pho:
+          - phot_sm_3000.dat
+
+  Mg:
+    ion_charge:
+      1:
+        date: 19apr23
+        osc: osc_data
+        col: col_data
+        pho:
+          - phot_data_A
+      2:
+        date: 19apr23
+        osc: osc_data
+        col: col_data
+        pho:
+          - phot_data_A
+
+  Al:
+    ion_charge:
+      1:
+        date: 19apr23
+        osc: osc_data
+        col: col_data
+        pho:
+          - phot_data_A
+      2:
+        date: 19apr23
+        osc: osc_data
+        col: col_data
+        pho:
+          - phot_data_A
+
+  Si:
+    ion_charge:
+      0:
+        date: 23nov11
+        osc: SiI_OSC
+        col: col_data
+        pho:
+          - SiI_PHOT_DATA
+
+      1:
+        date: 19apr23
+        osc: osc_data
+        col: col_data
+        pho:
+          - phot_data_A
+
+      2:
+        date: 19apr23
+        osc: osc_data
+        col: col_data
+        pho:
+          - phot_data_A
+
+  S:
+    ion_charge:
+      0:
+        date: 24nov11
+        osc: SI_OSC
+        col: col_data
+        pho:
+          - SI_PHOT_DATA
+
+      1:
+        date: 30oct12
+        osc: s2_osc
+        col: s2_col
+        pho:
+          - phot_sm_3000
+
+      2:
+        date: 19apr23
+        osc: osc_data
+        col: col_data
+        pho:
+          - phot_data_A
+
+  Ca:
+    ion_charge:
+      1:
+        date: 30oct12
+        osc: ca2_osc_split.dat
+        col: ca2col.dat
+        pho:
+          - ca2_phot_a.dat
+      2:
+        date: 19apr23
+        osc: osc_data
+        col: col_data
+        pho:
+          - phot_data_A
+
+  Sc:
+    ion_charge:
+      1:
+        date: 19apr23
+        osc: osc_data
+        col: col_data
+        pho:
+          - phot_data_A
+
+  Ti:
+    ion_charge:
+      1:
+        date: 19apr23
+        osc: osc_data
+        col: col_data
+        pho:
+          - phot_data_A
+      2:
+        date: 19apr23
+        osc: osc_data
+        col: col_data
+        pho:
+          - phot_data_A
+
+  Cr:
+    ion_charge:
+      1:
+        date: 19apr23
+        osc: osc_data
+        col: col_data
+        pho:
+          - phot_data_A
+      2:
+        date: 19apr23
+        osc: osc_data
+        col: col_data
+        pho:
+          - phot_data_A
+
+  Mn:
+    ion_charge:
+      1:
+        date: 19apr23
+        osc: osc_data
+        col: col_data
+        pho:
+          - phot_data_A
+      2:
+        date: 19apr23
+        osc: osc_data
+        col: col_data
+        pho:
+          - phot_data_A
+
+  Fe:
+    ion_charge:
+      1:
+        date: 10sep16
+        osc: fe2_osc
+        col: fe2_col.dat
+        pho:
+          - phot_op.dat
+
+      2:
+        date: 30oct12
+        osc: FeIII_OSC
+        col: col_data.dat
+        pho:
+          - phot_sm_3000.dat
+
+  Co:
+    ion_charge:
+      1:
+        date: 19apr23
+        osc: osc_data
+        col: col_data
+        pho:
+          - phot_data_A
+
+      2:
+        date: 19apr23
+        osc: osc_data
+        col: col_data
+        pho:
+          - phot_data_A
+
+  Ni:
+    ion_charge:
+      1:
+        date: 30oct12
+        osc: nkii_osc.dat
+        col: col_data_bautista
+        pho:
+          - phot_data
+      2:
+        date: 27aug12
+        osc: nkiii_osc.dat
+        col: col_data.dat
+        pho:
+          - phot_data.dat

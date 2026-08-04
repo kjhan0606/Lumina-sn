@@ -1,0 +1,33 @@
+E11 expected change set (no commit)
+
+Rung 1 — canonical estimator and accounting
+  M src/lumina_cuda.cu
+    gated in-transport global + three representative shell-group 1000x1000
+    energy accumulators; per-input/per-shell ledgers; k-packet and unclassified
+    counters; no event cap.
+
+Rung 2 — deterministic binary contract and checksum
+  M src/lumina_cmfgen.c
+  M src/lumina_cmfgen.h
+    shared internal SHA-256 file helper.
+  M src/lumina_cuda.cu
+    LFMAT001 little-endian sparse dump and <path>.sha256 sidecar.
+
+Rung 3 — offline reader and negative controls
+  A scripts/emiss_e11_fluor_matrix.py
+  A scripts/emiss_e11_seeded_fixture.py
+  A scripts/emiss_e11_off_byte_check.py
+  M Makefile
+    offline selftest target; no model/GPU execution.
+
+Rung 4 — E10 consumer compatibility
+  M scripts/emiss_e10_apply_redistribution.py
+    auto/prefix/formal selector; old prefix CSV path retained byte-identically.
+
+Rung 5 — handoff
+  A docs/CODEX_EMISS_E11.md
+  A patches/e11_expected_changes.txt
+
+Explicit non-changes
+  no clamp/floor/normalization repair/fallback; no launcher or production model
+  deck; no captured model output; no commit.

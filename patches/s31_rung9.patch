@@ -1,0 +1,187 @@
+--- a/scripts/stage31_cmf_ka_driver.c
++++ b/scripts/stage31_cmf_ka_driver.c
+@@ -108,7 +108,7 @@
+     const double x_high = x0 + 8.0 * KA3_SIGMA_X;
+     const double x_low = x0 - shift - 8.0 * KA3_SIGMA_X;
+     const double dx = (x_high - x_low) / (double)(nnu - 1u);
+-    const double frequency_ratio = exp(-dx);
++    const double frequency_step = exp(dx);
+     const double target_r[1] = {outer};
+     double *edge = NULL, *nu = NULL, *chi = NULL, *eta = NULL;
+     LCMFInput input; LCMFOptions options; LCMFResult result;
+@@ -128,7 +128,7 @@
+     }
+     for (i = 0u; i <= ns; ++i) edge[i] = inner + (outer - inner) * (double)i / (double)ns;
+     nu[0] = exp(x_high);
+-    for (k = 1u; k < nnu; ++k) nu[k] = nu[k - 1u] * frequency_ratio;
++    for (k = 1u; k < nnu; ++k) nu[k] = nu[k - 1u] / frequency_step;
+     memset(&input, 0, sizeof(input)); memset(&options, 0, sizeof(options));
+     input.nr = ns; input.nnu = nnu; input.r_edge = edge; input.nu = nu;
+     input.chi_total = chi; input.eta_fixed = eta;
+--- a/scripts/run_stage31_cmf_ka.py
++++ b/scripts/run_stage31_cmf_ka.py
+@@ -15,7 +15,8 @@
+ 
+ ROOT = pathlib.Path(__file__).resolve().parents[1]
+ GRIDS_KA1 = ((128, 32), (256, 64), (512, 128))
+-GRIDS_KA3 = ((32, 128), (64, 256), (128, 512), (256, 1024), (512, 2048))
++GRIDS_KA3 = ((32, 128), (64, 256), (128, 512), (256, 1024), (512, 2048),
++             (1024, 4096))
+ KA3_OFFICIAL_TRIPLE = GRIDS_KA3[-3:]
+ TAU_CASES = (1.0e-3, 1.0, 100.0)
+ PREDICTED_P_WINDOWS = {
+@@ -37,6 +38,10 @@
+     "finest_profile_relative_l2_window": (8.8e-5, 1.08e-4),
+     "extrapolation": "128x512 rev3 center 1.53593e-3 divided by 4^2",
+ }
++KA3_REV4_PREREGISTERED = {
++    "finest_profile_relative_l1_center": 2.64e-5,
++    "finest_profile_relative_l1_window": (2.50e-5, 2.80e-5),
++}
+ 
+ 
+ def compile_driver(executable: pathlib.Path, sanitize: bool = False) -> None:
+@@ -204,8 +209,17 @@
+     }
+ 
+ 
+-def run_ka3(executable: pathlib.Path, work: pathlib.Path) -> dict:
++def load_certificate(path: pathlib.Path) -> dict[tuple[int, int], dict]:
++    report = json.loads(path.read_text())
++    if report.get("status") != "PASS":
++        raise ValueError(f"MPFR certificate report is not PASS: {path}")
++    return {(int(level["ns"]), int(level["nnu"])): level for level in report["levels"]}
++
++
++def run_ka3(executable: pathlib.Path, work: pathlib.Path,
++            certificate_path: pathlib.Path) -> dict:
+     mp.mp.dps = 80
++    certificates = load_certificate(certificate_path)
+     levels: list[dict] = []
+     for ns, nnu in GRIDS_KA3:
+         table = work / f"ka3_{ns}_{nnu}.tsv"
+@@ -256,6 +270,12 @@
+                 "decay_ratio": metadata["first_decay_ratio"],
+                 "theoretical_limit": metadata["first_theoretical_limit"],
+             }
++        certificate = certificates.get((ns, nnu))
++        if (ns, nnu) in KA3_OFFICIAL_TRIPLE and certificate is None:
++            raise ValueError(f"missing MPFR certificate for official grid {ns}x{nnu}")
++        expected_bits = 4096 if (ns, nnu) == (1024, 4096) else 2048
++        if certificate is not None and int(certificate["certificate_bits"]) != expected_bits:
++            raise ValueError(f"wrong certificate precision for {ns}x{nnu}")
+         metrics.update({
+             "grid": {"ns": ns, "nnu": nnu},
+             "transport_residual": metadata["residual"],
+@@ -265,8 +285,20 @@
+             "bdf_eta_min": metadata["bdf_eta_min"]
+                 if math.isfinite(metadata["bdf_eta_min"]) else None,
+             "solution_negative_excess_count": int(metadata["solution_negative_excess"]),
+-            "sign_uncertain_count": int(metadata["sign_uncertain"]),
+-            "nonfinite_count": int(metadata["nonfinite"]),
++            "legacy_sign_uncertain_count": int(metadata["sign_uncertain"]),
++            "legacy_nonfinite_count": int(metadata["nonfinite"]),
++            "certificate_bits": int(certificate["certificate_bits"])
++                if certificate is not None else None,
++            "certified_sign_uncertain_count": int(certificate["certified_sign_uncertain"])
++                if certificate is not None else None,
++            "certified_nonfinite_count": int(certificate["certified_nonfinite"])
++                if certificate is not None else None,
++            "certified_negative_count": int(certificate["certified_negative"])
++                if certificate is not None else None,
++            "certified_min_lower": certificate["certified_min_lower"]
++                if certificate is not None else None,
++            "certified_max_width": certificate["certified_max_width"]
++                if certificate is not None else None,
+             "solver_status": int(metadata["solver_status"]),
+             "driver_stderr": completed.stderr.strip(),
+             "first_bdf_eta_negative": first_eta,
+@@ -303,6 +335,19 @@
+                finest["profile_relative_l2"] <=
+                KA3_REV3_PREREGISTERED["finest_profile_relative_l2_window"][1] else "FAIL",
+     }
++    rev4_window = KA3_REV4_PREREGISTERED["finest_profile_relative_l1_window"]
++    rev4_measurements = {
++        "finest_profile_relative_l1": finest["profile_relative_l1"],
++        "official_triple_p_obs_profile_l2": p_obs,
++        "finest_profile_relative_l2": finest["profile_relative_l2"],
++        "finest_centroid_shift_error": finest["centroid_shift_error"],
++        "finest_invariant_area_relative_error": finest["invariant_area_relative_error"],
++    }
++    rev4_window_status = {
++        "finest_profile_relative_l1": "PASS"
++            if rev4_window[0] <= finest["profile_relative_l1"] <= rev4_window[1]
++            else "FAIL",
++    }
+     acceptance_checks = {
+         "finest_profile_relative_l1_le_1e-4": finest["profile_relative_l1"] <= 1.0e-4,
+         "finest_profile_relative_l2_le_1e-4": finest["profile_relative_l2"] <= 1.0e-4,
+@@ -317,10 +362,14 @@
+             all(level["clamp_count"] == 0 for level in official_levels),
+         "official_triple_solution_negative_excess_zero":
+             all(level["solution_negative_excess_count"] == 0 for level in official_levels),
+-        "official_triple_sign_uncertain_zero":
+-            all(level["sign_uncertain_count"] == 0 for level in official_levels),
+-        "official_triple_nonfinite_zero":
+-            all(level["nonfinite_count"] == 0 for level in official_levels),
++        "official_triple_certified_sign_uncertain_zero":
++            all(level["certified_sign_uncertain_count"] == 0 for level in official_levels),
++        "official_triple_certified_nonfinite_zero":
++            all(level["certified_nonfinite_count"] == 0 for level in official_levels),
++        "official_triple_certified_negative_zero":
++            all(level["certified_negative_count"] == 0 for level in official_levels),
++        "rev4_finest_l1_preregistered_window":
++            rev4_window_status["finest_profile_relative_l1"] == "PASS",
+     }
+     passed = all(acceptance_checks.values())
+     for level in levels: level["status"] = "PASS" if passed else "FAIL"
+@@ -335,6 +384,10 @@
+             "rev3_preregistered": KA3_REV3_PREREGISTERED,
+             "rev3_measurements": rev3_measurements,
+             "rev3_window_status": rev3_window_status,
++            "rev4_preregistered": KA3_REV4_PREREGISTERED,
++            "rev4_measurements": rev4_measurements,
++            "rev4_window_status": rev4_window_status,
++            "mpfr_certificate_report": str(certificate_path),
+             "official_triple_grids": KA3_OFFICIAL_TRIPLE,
+             "acceptance_checks": acceptance_checks,
+             "acceptance_unchanged": True, "status": "PASS" if passed else "FAIL"}
+@@ -345,11 +398,14 @@
+     parser.add_argument("--ka", choices=("ka1", "ka3"), default="ka1")
+     parser.add_argument("--work", type=pathlib.Path, default=pathlib.Path("/tmp/stage31_ka"))
+     parser.add_argument("--output", type=pathlib.Path)
++    parser.add_argument("--certificate", type=pathlib.Path,
++                        default=ROOT / "docs/s31_results/mpfr_cert_rung8_fine.json")
+     args = parser.parse_args()
+     args.work.mkdir(parents=True, exist_ok=True)
+     executable = args.work / "stage31_cmf_ka_driver"
+     compile_driver(executable)
+-    report = run_ka1(executable, args.work) if args.ka == "ka1" else run_ka3(executable, args.work)
++    report = (run_ka1(executable, args.work) if args.ka == "ka1"
++              else run_ka3(executable, args.work, args.certificate))
+     rendered = json.dumps(report, indent=2, sort_keys=True)
+     if args.output:
+         args.output.parent.mkdir(parents=True, exist_ok=True)
+--- a/scripts/stage31_cmf_mpfr_cert.c
++++ b/scripts/stage31_cmf_mpfr_cert.c
+@@ -454,9 +454,9 @@
+     const double x_high = 8.0 * KA3_SIGMA_X;
+     const double x_low = -shift - 8.0 * KA3_SIGMA_X;
+     const double fixture_dx = (x_high - x_low) / (double)(nnu - 1u);
+-    const double frequency_ratio = exp(-fixture_dx);
++    const double frequency_step = exp(fixture_dx);
+     const double nu0 = exp(x_high);
+-    const double nu1 = nu0 * frequency_ratio;
++    const double nu1 = nu0 / frequency_step;
+     const double dx = log(nu0 / nu1);
+     const double t_exp_s = (outer - inner) / (KA3_C_LIGHT * shift);
+     const double a = 1.0 / (KA3_C_LIGHT * t_exp_s);
+@@ -506,7 +506,7 @@
+     for (k = 0u; k < nnu; ++k) {
+         double nu = nu0;
+         size_t q;
+-        for (q = 0u; q < k; ++q) nu *= frequency_ratio;
++        for (q = 0u; q < k; ++q) nu /= frequency_step;
+         boundary[k] = gaussian_cell_average(log(nu), fixture_dx);
+     }
+     interval_set_d(&a_i, a); interval_set_d(&dx_i, dx);

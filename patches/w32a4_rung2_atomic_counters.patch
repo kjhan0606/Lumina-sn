@@ -1,0 +1,220 @@
+--- a/src/lumina_element_wide.c
++++ b/src/lumina_element_wide.c
+@@ -249,18 +249,42 @@
+ static EWRuntimeCounts ew_runtime_counts;
+ 
+ void nlte_ew_note_save_restore_call(void) {
+-    if (nlte_element_wide_enabled()) ew_runtime_counts.save_restore_calls++;
++    if (nlte_element_wide_enabled()) {
++#ifdef _OPENMP
++#pragma omp atomic update
++#endif
++        ew_runtime_counts.save_restore_calls++;
++    }
+ }
+ void nlte_ew_note_per_ion_pin_call(void) {
+-    if (nlte_element_wide_enabled()) ew_runtime_counts.per_ion_pin_calls++;
++    if (nlte_element_wide_enabled()) {
++#ifdef _OPENMP
++#pragma omp atomic update
++#endif
++        ew_runtime_counts.per_ion_pin_calls++;
++    }
+ }
+ void nlte_ew_note_topstage_IV_call(void) {
+-    if (nlte_element_wide_enabled()) ew_runtime_counts.topstage_IV_calls++;
++    if (nlte_element_wide_enabled()) {
++#ifdef _OPENMP
++#pragma omp atomic update
++#endif
++        ew_runtime_counts.topstage_IV_calls++;
++    }
+ }
+ void nlte_ew_runtime_counts_snapshot(unsigned long out[3]) {
+     if (!out) return;
++#ifdef _OPENMP
++#pragma omp atomic read
++#endif
+     out[0] = ew_runtime_counts.save_restore_calls;
++#ifdef _OPENMP
++#pragma omp atomic read
++#endif
+     out[1] = ew_runtime_counts.per_ion_pin_calls;
++#ifdef _OPENMP
++#pragma omp atomic read
++#endif
+     out[2] = ew_runtime_counts.topstage_IV_calls;
+ }
+ 
+@@ -271,6 +295,8 @@
+     ew_parse_gate();
+     if (!nlte || !ew_gate.enabled || !ew_gate.dump) return 0;
+     int failed = 0;
++    unsigned long counts[3];
++    nlte_ew_runtime_counts_snapshot(counts);
+     const int zlist[2] = {16, 26};
+     for (int zi = 0; zi < 2; zi++) {
+         int Z = zlist[zi];
+@@ -290,9 +316,7 @@
+                 "runtime_final_save_restore_calls,%lu\n"
+                 "runtime_final_per_ion_pin_calls,%lu\n"
+                 "runtime_final_topstage_IV_calls,%lu\n",
+-                ew_runtime_counts.save_restore_calls,
+-                ew_runtime_counts.per_ion_pin_calls,
+-                ew_runtime_counts.topstage_IV_calls);
++                counts[0], counts[1], counts[2]);
+         if (fclose(fp) != 0) {
+             fprintf(stderr, "[EW][DUMP-FAIL] runtime close %s: %s\n",
+                     path, strerror(errno));
+@@ -374,7 +398,12 @@
+                     a->cmfgen_sigma_bf &&
+                     a->cmfgen_has_sigma[lower_global];
+     int kramers = !has_sigma;
+-    if (kramers) ew_cap.kramers_fallback++;
++    if (kramers) {
++#ifdef _OPENMP
++#pragma omp atomic update
++#endif
++        ew_cap.kramers_fallback++;
++    }
+     if (!kramers &&
+         (!a->ma_rr_loaded || !a->ma_rr_target_offset || !a->ma_rr_targets ||
+          !a->ma_rr_probability)) {
+@@ -409,7 +438,12 @@
+             a->level_Z[upper_global] != a->level_Z[lower_global] ||
+             a->level_ion[upper_global] != a->level_ion[lower_global] + 1) {
+             ew_cap.target_fail++;
+-            if (kramers) ew_cap.continuum_deleted++;
++            if (kramers) {
++#ifdef _OPENMP
++#pragma omp atomic update
++#endif
++                ew_cap.continuum_deleted++;
++            }
+             continue;
+         }
+         int ng = n->global_to_nlte_level[upper_global];
+@@ -457,15 +491,29 @@
+                     (size_t)ew_cap.shell * n->n_freq_bins + bb];
+                 if (estimator > 0.0 && isfinite(estimator)) {
+                     rad_ion += sigma * estimator;
++                    #ifdef _OPENMP
++                    #pragma omp atomic update
++                    #endif
+                     ew_cap.bf_estimator_bins++;
+                 } else {
+                     rad_ion += pref * J;
++                    #ifdef _OPENMP
++                    #pragma omp atomic update
++                    #endif
+                     ew_cap.bf_pref_j_bins++;
+                 }
+             } else {
+                 rad_ion += pref * J;
++                #ifdef _OPENMP
++                #pragma omp atomic update
++                #endif
+                 ew_cap.bf_pref_j_bins++;
+-                if (field_source == 2) ew_cap.bf_jeqb_bins++;
++                if (field_source == 2) {
++                    #ifdef _OPENMP
++                    #pragma omp atomic update
++                    #endif
++                    ew_cap.bf_jeqb_bins++;
++                }
+             }
+             double x = H_PLANCK * nu / kTe;
+             if (x < 700.0) {
+@@ -962,11 +1010,31 @@
+                 if(field_source==1){
+                     double est=n->bf_rate_estimator[
+                         (size_t)shell*n->n_freq_bins+bb];
+-                    if(est>0.0&&isfinite(est)){rad_ion+=sigma*est;fire->bf_estimator_bins++;}
+-                    else{rad_ion+=pref*J;fire->bf_pref_j_bins++;}
++                    if(est>0.0&&isfinite(est)){
++                        rad_ion+=sigma*est;
++#ifdef _OPENMP
++#pragma omp atomic update
++#endif
++                        fire->bf_estimator_bins++;
++                    } else {
++                        rad_ion+=pref*J;
++#ifdef _OPENMP
++#pragma omp atomic update
++#endif
++                        fire->bf_pref_j_bins++;
++                    }
+                 }else{
+-                    rad_ion+=pref*J;fire->bf_pref_j_bins++;
+-                    if(field_source==2)fire->bf_jeqb_bins++;
++                    rad_ion+=pref*J;
++#ifdef _OPENMP
++#pragma omp atomic update
++#endif
++                    fire->bf_pref_j_bins++;
++                    if(field_source==2) {
++#ifdef _OPENMP
++#pragma omp atomic update
++#endif
++                        fire->bf_jeqb_bins++;
++                    }
+                 }
+                 double x=H_PLANCK*nu/kT;
+                 double spont=2.0*H_PLANCK*nu*nu*nu/
+--- a/Makefile
++++ b/Makefile
+@@ -108,12 +108,18 @@
+ 		tests/wave32_boundary_q_seed.c src/lumina_element_wide.c \
+ 		src/lumina_plasma.c src/lumina_atomic.c $(LDFLAGS)
+ 
++selftest_wave32_counter_atomic: tests/wave32_counter_atomic_selftest.c src/lumina_element_wide.c src/lumina_plasma.c src/lumina_atomic.c $(HEADERS)
++	$(CC) -O2 -std=gnu11 -D_GNU_SOURCE -fopenmp -ffunction-sections -fdata-sections -Isrc \
++		-Wl,--gc-sections -o selftest_wave32_counter_atomic \
++		tests/wave32_counter_atomic_selftest.c src/lumina_element_wide.c \
++		src/lumina_plasma.c src/lumina_atomic.c $(LDFLAGS)
++
+ # Clean
+ clean:
+ 	rm -f $(TARGET) lumina_cuda bench_frozen_oracle_rc selftest_wave32_ew_rc \
+ 		selftest_cmf_chieta_dump \
+ 		selftest_wave32_matrix_debit selftest_wave32_within_sl_oom \
+-		selftest_wave32_boundary_q *.o
++		selftest_wave32_boundary_q selftest_wave32_counter_atomic *.o
+ 
+ # Run with defaults
+ run: $(TARGET)
+--- /dev/null
++++ b/tests/wave32_counter_atomic_selftest.c
+@@ -0,0 +1,32 @@
++#include "lumina.h"
++
++#include <stdio.h>
++#include <stdlib.h>
++
++void nlte_ew_note_save_restore_call(void);
++void nlte_ew_note_per_ion_pin_call(void);
++void nlte_ew_note_topstage_IV_call(void);
++void nlte_ew_runtime_counts_snapshot(unsigned long out[3]);
++
++int main(void) {
++    enum { N = 200000 };
++    unsigned long before[3], after[3];
++    /* Production initializes the gate before entering the shell-parallel
++     * region; reproduce that ownership ordering rather than racing env parse. */
++    (void)nlte_element_wide_enabled();
++    nlte_ew_runtime_counts_snapshot(before);
++#pragma omp parallel for schedule(static)
++    for (int i = 0; i < N; i++) {
++        nlte_ew_note_save_restore_call();
++        nlte_ew_note_per_ion_pin_call();
++        nlte_ew_note_topstage_IV_call();
++    }
++    nlte_ew_runtime_counts_snapshot(after);
++    unsigned long expected = getenv("W32_EXPECT_COUNTER_DISABLED") ? 0UL : N;
++    printf("expected=%lu save_restore=%lu per_ion_pin=%lu topstage_IV=%lu\n",
++           expected, after[0] - before[0], after[1] - before[1],
++           after[2] - before[2]);
++    return after[0] - before[0] == expected &&
++           after[1] - before[1] == expected &&
++           after[2] - before[2] == expected ? 0 : 1;
++}

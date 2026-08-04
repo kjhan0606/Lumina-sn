@@ -1,0 +1,172 @@
+--- a/src/lumina_element_wide.c
++++ b/src/lumina_element_wide.c
+@@ -1569,9 +1569,17 @@
+ }
+ 
+ static double ew_channel_colsum(const double *A, int N) {
+-    double maxa = ew_maxabs(A, N), maxsum = 0.0;
++    if (!A || N <= 0) return INFINITY;
++    double maxa = 0.0, maxsum = 0.0;
+     for (int j = 0; j < N; j++) {
+-        double s = 0.0; for (int i = 0; i < N; i++) s += EW(A, N, i, j);
++        double s = 0.0;
++        for (int i = 0; i < N; i++) {
++            double value = EW(A, N, i, j);
++            if (!isfinite(value)) return INFINITY;
++            if (fabs(value) > maxa) maxa = fabs(value);
++            s += value;
++            if (!isfinite(s)) return INFINITY;
++        }
+         if (fabs(s) > maxsum) maxsum = fabs(s);
+     }
+     return maxa > 0.0 ? maxsum / maxa : 0.0;
+@@ -1580,19 +1588,29 @@
+ static double ew_channel_assembly_residual(const double *A,
+                                            const double *expected_outflow,
+                                            int N) {
++    if (!A || !expected_outflow || N <= 0) return INFINITY;
+     double scale = 0.0, worst = 0.0;
+     for (int j = 0; j < N; j++) {
+         double offdiag = 0.0;
+-        for (int i = 0; i < N; i++)
+-            if (i != j) offdiag += EW(A, N, i, j);
++        for (int i = 0; i < N; i++) {
++            double value = EW(A, N, i, j);
++            if (!isfinite(value)) return INFINITY;
++            if (i != j) {
++                offdiag += value;
++                if (!isfinite(offdiag)) return INFINITY;
++            }
++        }
+         double expected = expected_outflow[j];
++        if (!isfinite(expected)) return INFINITY;
+         double e_in = fabs(offdiag - expected);
+         double e_debit = fabs(EW(A, N, j, j) + expected);
++        if (!isfinite(e_in) || !isfinite(e_debit)) return INFINITY;
+         if (fabs(expected) > scale) scale = fabs(expected);
+         if (e_in > worst) worst = e_in;
+         if (e_debit > worst) worst = e_debit;
+     }
+-    return scale > 0.0 ? worst / scale : worst;
++    double residual = scale > 0.0 ? worst / scale : worst;
++    return isfinite(residual) ? residual : INFINITY;
+ }
+ 
+ /* Seeded-defect fixture entry: it invokes the same D6 ledger comparison used
+@@ -1637,17 +1655,20 @@
+                                     const double *x, int N,
+                                     double active_mass) {
+     if (!Anorm || !b || !x || N <= 0 || !(active_mass > 0.0) ||
+-        !isfinite(active_mass)) return INFINITY;
++        !isfinite(active_mass) || !isfinite(b[0])) return INFINITY;
+     double row_lhs = 0.0, coeff_worst = 0.0;
+     for (int j = 0; j < N; j++) {
+         double coeff = EW(Anorm, N, 0, j);
+         if (!isfinite(coeff) || !isfinite(x[j])) return INFINITY;
+         row_lhs += coeff * x[j];
++        if (!isfinite(row_lhs)) return INFINITY;
+         double delta = fabs(coeff - 1.0);
+         if (delta > coeff_worst) coeff_worst = delta;
+     }
+     double rhs_residual = fabs(b[0] - active_mass) / active_mass;
+     double equation_residual = fabs(row_lhs - b[0]) / active_mass;
++    if (!isfinite(rhs_residual) || !isfinite(equation_residual))
++        return INFINITY;
+     double worst = coeff_worst;
+     if (rhs_residual > worst) worst = rhs_residual;
+     if (equation_residual > worst) worst = equation_residual;
+@@ -1692,6 +1713,8 @@
+         double fr = fabs((matrix_reverse - expected_reverse) * x[m_index]);
+         double sf = fabs(expected_forward * x[j]);
+         double sr = fabs(expected_reverse * x[m_index]);
++        if (!isfinite(ef) || !isfinite(er) || !isfinite(ff) ||
++            !isfinite(fr) || !isfinite(sf) || !isfinite(sr)) return INFINITY;
+         if (sf > flux_scale) flux_scale = sf;
+         if (sr > flux_scale) flux_scale = sr;
+         if (ff > flux_worst) flux_worst = ff;
+@@ -1699,6 +1722,7 @@
+     }
+     double rate_residual = rate_scale > 0.0 ? rate_worst / rate_scale : rate_worst;
+     double flux_residual = flux_scale > 0.0 ? flux_worst / flux_scale : flux_worst;
++    if (!isfinite(rate_residual) || !isfinite(flux_residual)) return INFINITY;
+     return rate_residual > flux_residual ? rate_residual : flux_residual;
+ }
+ 
+@@ -2135,13 +2159,14 @@
+     for(int st_i=0;st_i<2;st_i++){
+         int st=st_i?(boundary.active?5:4):0,ip=ew_find_ip(atom,Z,st);
+         double f=(ip>=0&&n_elem>0.0)?atom->ion_number_density[(size_t)ip*plasma->n_shells+shell]/n_elem:0.0;
+-        if(f>boundary_max)boundary_max=f;
++        if(!isfinite(f))boundary_max=INFINITY;
++        else if(f>boundary_max)boundary_max=f;
+     }
+     double tau_all=0.0,tau_boundary=0.0;
+     if(opacity && opacity->tau_sobolev){
+         for(int line=0;line<atom->n_lines;line++) if(atom->line_atomic_number[line]==Z){
+             double tau=fabs(opacity->tau_sobolev[(size_t)line*plasma->n_shells+shell]);
+-            if(!isfinite(tau)) continue;
++            if(!isfinite(tau)) { tau_all=INFINITY; tau_boundary=INFINITY; break; }
+             tau_all+=tau;
+             int st=atom->line_ion_number[line];
+             if(st==0||(!boundary.active&&st==4)||(boundary.active&&st>=5))
+@@ -2149,6 +2174,7 @@
+         }
+     }
+     double boundary_opacity=(tau_all>0.0)?tau_boundary/tau_all:0.0;
++    if(!isfinite(boundary_opacity))boundary_opacity=INFINITY;
+     /* No boundary-stage rate/heating producer is present in the Stage-2A
+      * assembler.  A non-zero adjacent-stage reservoir is therefore not
+      * measurable from this lane and must fail closed rather than be inferred
+--- a/tests/wave32_boundary_q_seed.c
++++ b/tests/wave32_boundary_q_seed.c
+@@ -38,6 +38,11 @@
+     double row_good = nlte_ew_test_boundary_row_audit(Anorm,b,x,3,10.0);
+     A(Anorm,3,0,1) = 0.5;
+     double row_seeded = nlte_ew_test_boundary_row_audit(Anorm,b,x,3,10.0);
++    A(Anorm,3,0,1) = 1.0;
++    b[0] = NAN;
++    double row_b0_nan = nlte_ew_test_boundary_row_audit(Anorm,b,x,3,10.0);
++    int row_b0_nan_gate_pass = row_b0_nan <= 1e-12;
++    b[0] = 10.0;
+ 
+     double Araw[9] = {0.0};
+     double forward0[3] = {4.0,6.0,0.0}, forward1[3] = {0.0};
+@@ -53,6 +58,14 @@
+     A(Araw,3,0,2)=1.5; A(Araw,3,1,2)=3.5; /* total unchanged */
+     double q_coupling_seeded = nlte_ew_test_boundary_flux_audit(
+         Araw,x,3,2,0,2,forward0,forward1,reverse0,reverse1);
++    A(Araw,3,0,2)=2.0; A(Araw,3,1,2)=3.0;
++    forward0[0] = NAN;
++    double flux_nan = nlte_ew_test_boundary_flux_audit(
++        Araw,x,3,2,0,2,forward0,forward1,reverse0,reverse1);
++    forward0[0] = 4.0;
++
++    plane[1] = NAN;
++    double matrix_nan = nlte_ew_test_assembly_residual(plane,ledger,2);
+ 
+     double roundoff_x[3] = {1.0,-DBL_EPSILON,2.0};
+     double negative_x[3] = {1.0,-1e-12,2.0};
+@@ -67,17 +80,22 @@
+            matrix_good, bad_debit, bad_target);
+     printf("row_good=%.17g conservation_row_seeded=%.17g\n",
+            row_good,row_seeded);
++    printf("b0_nan_residual=%g b0_nan_gate_pass=%d\n",
++           row_b0_nan,row_b0_nan_gate_pass);
+     printf("flux_good=%.17g boundary_route_seeded=%.17g "
+            "q_coupling_seeded=%.17g\n",
+            flux_good,route_seeded,q_coupling_seeded);
++    printf("matrix_nan=%g flux_nan=%g\n",matrix_nan,flux_nan);
+     printf("roundoff_negative=%d raw_min=%.17g error_bound=%.17g "
+            "seeded_negative=%d\n",
+            roundoff_negative,raw_min,error_bound,seeded_negative);
+     return pass_good && fabs(sum - 1.0) <= 1e-12 && !pass_negative &&
+            !pass_nonfinite && !pass_bad_sum && matrix_good == 0.0 &&
+            bad_debit > 1e-12 && bad_target > 1e-12 && row_good == 0.0 &&
+-           row_seeded > 1e-12 && flux_good == 0.0 &&
++           row_seeded > 1e-12 && isinf(row_b0_nan) &&
++           !row_b0_nan_gate_pass && flux_good == 0.0 &&
+            route_seeded > 1e-12 && q_coupling_seeded > 1e-12 &&
++           isinf(matrix_nan) && isinf(flux_nan) &&
+            roundoff_negative == 0 && raw_min == -DBL_EPSILON &&
+            error_bound >= DBL_EPSILON && seeded_negative == 1 ? 0 : 1;
+ }

@@ -1,0 +1,23 @@
+Stage 3.2 Rung 1 preregistration -- frozen before implementation, 2026-08-02
+
+OFF:
+  Every pre-existing artifact is byte-identical.  Exceptions: 0.
+
+ON:
+  Add exactly one Stage-3.2-Rung-1 Sobolev local-response payload and its
+  SHA-256/generation manifest.  Every pre-existing artifact is byte-identical.
+
+Frozen rho_local prediction:
+  For valid 600--3000 Angstrom rows with tau_sobolev >= 100, at least 90% of
+  pre-EPAY line-emission energy has 0.99 <= rho_local < 1.0, and the
+  energy-weighted median is in [0.99, 1.0).  An observation outside this range
+  is a discovery; it must not be hidden by clamp/floor/cap/fallback.
+
+Hard-gate evidence:
+  The final row column is the actual EPAY disposition.  The manifest closes
+  both row-count and eta_pre_epay*dnu energy censuses by disposition.  The
+  Rung-1 values are written directly to a read-only side-band artifact after
+  EPAY assembly and are never routed through eta_line/S_fixed.
+
+No source function, opacity, emissivity, rate, population, or transport state
+may be mutated.  No Stage 2+ implementation is permitted.

@@ -1,0 +1,404 @@
+--- a/src/lumina_cmfgen.c
++++ b/src/lumina_cmfgen.c
+@@ -205,10 +205,12 @@
+ }
+ 
+ int cmfgen_dump_frozen_chieta(const CMFGENState *cs, const Geometry *geo,
+-                              int iter, const char *path) {
++                              int iter, int field_generation,
++                              int post_damping, const char *path) {
+     enum { FLAG_POST_DAMP=1U, FLAG_COHERENT_FROZEN=2U,
+            FLAG_FREQUENCY_DESCENDING=4U };
+-    if (!cs || !geo || !path || !*path || iter < 0 ||
++    if (!cs || !geo || !path || !*path || iter < 0 || field_generation < 0 ||
++        (post_damping != 0 && post_damping != 1) ||
+         cs->n_shells <= 0 || cs->n_bins <= 0 ||
+         geo->n_shells != cs->n_shells || !(geo->time_explosion > 0.0) ||
+         !isfinite(geo->time_explosion) || !geo->r_inner || !geo->r_outer ||
+@@ -291,9 +293,9 @@
+     DW(cmf_dump_u64(fp,&sha,(uint64_t)cs->n_shells));
+     DW(cmf_dump_u64(fp,&sha,(uint64_t)cs->n_bins));
+     DW(cmf_dump_u64(fp,&sha,(uint64_t)iter));
+-    DW(cmf_dump_u64(fp,&sha,(uint64_t)iter));
+-    DW(cmf_dump_u32(fp,&sha,FLAG_POST_DAMP|FLAG_COHERENT_FROZEN|
+-                              FLAG_FREQUENCY_DESCENDING));
++    DW(cmf_dump_u64(fp,&sha,(uint64_t)field_generation));
++    DW(cmf_dump_u32(fp,&sha,(post_damping ? FLAG_POST_DAMP : 0U)|
++                              FLAG_COHERENT_FROZEN|FLAG_FREQUENCY_DESCENDING));
+     DW(cmf_dump_u32(fp,&sha,0));
+     DW(cmf_dump_f64(fp,&sha,geo->time_explosion));
+     DW(cmf_dump_f64(fp,&sha,geo->r_inner[0]));
+@@ -343,12 +345,13 @@
+     int sidecar_fail = fprintf(mf,"{\n  \"schema\": \"LCMFCE01-v1\",\n"
+                "  \"sha256\": \"%s\",\n"
+                "  \"iteration\": %d,\n  \"field_generation\": %d,\n"
+-               "  \"post_damping\": true,\n"
++               "  \"post_damping\": %s,\n"
+                "  \"coherent_frozen\": true,\n"
+                "  \"frequency_descending\": true,\n"
+                "  \"eta_decomposition_bitwise\": %s,\n"
+                "  \"eta_decomposition_max_abs\": %.17g\n}\n",
+-               hex,iter,iter,eta_decomposition_bitwise ? "true" : "false",
++               hex,iter,field_generation,post_damping ? "true" : "false",
++               eta_decomposition_bitwise ? "true" : "false",
+                eta_decomposition_max_abs) < 0;
+     if(fclose(mf)) sidecar_fail = 1;
+     if(sidecar_fail) {
+@@ -358,8 +361,8 @@
+                     quarantine,strerror(errno));
+         return -1;
+     }
+-    fprintf(stderr,"[CMF-CHIETA] wrote %s iter=%d generation=%d sha256=%s\n",
+-            path,iter,iter,hex);
++    fprintf(stderr,"[CMF-CHIETA] wrote %s iter=%d generation=%d post_damp=%d "
++            "sha256=%s\n", path,iter,field_generation,post_damping,hex);
+     return 0;
+ }
+ 
+--- a/src/lumina_cmfgen.h
++++ b/src/lumina_cmfgen.h
+@@ -124,7 +124,8 @@
+ /* Wave-3.2 R7 frozen coarse-field capture.  Binary v1 is written field by
+  * field in little-endian order; path.manifest.json contains the SHA-256. */
+ int cmfgen_dump_frozen_chieta(const CMFGENState *cs, const Geometry *geo,
+-                              int iter, const char *path);
++                              int iter, int field_generation,
++                              int post_damping, const char *path);
+ 
+ /* Copy cs->J into nlte->J_nu (same [n_shells*n_bins] layout/grid). */
+ void cmfgen_write_jnu(const CMFGENState *cs, NLTEConfig *nlte);
+--- a/src/lumina_cuda.cu
++++ b/src/lumina_cuda.cu
+@@ -7578,20 +7578,6 @@
+                                     pc_iter, iter_env ? iter_env : "<unset>");
+                                 return EXIT_FAILURE;
+                             }
+-                            const char *expected_env = getenv(
+-                                "LUMINA_CMF_FROZEN_CHIETA_EXPECTED_ITER");
+-                            char *expected_end = NULL;
+-                            long expected = expected_env ?
+-                                strtol(expected_env,&expected_end,10) : -1;
+-                            if (!expected_env || expected_end == expected_env ||
+-                                *expected_end || expected != wanted) {
+-                                fprintf(stderr,
+-                                    "[CMF-CHIETA][FATAL] explicit expected iter "
+-                                    "must equal selected iter (selected=%ld, "
+-                                    "expected=%s)\n", wanted,
+-                                    expected_env ? expected_env : "<unset>");
+-                                return EXIT_FAILURE;
+-                            }
+                             if (it == wanted) {
+                                 size_t cells = (size_t)cs.n_shells * cs.n_bins;
+                                 for (size_t q = 0; q < cells; q++)
+@@ -7599,7 +7585,7 @@
+                                         cs.chi_tot[q] * cs.S_fixed[q] +
+                                         cs.chi_es[q] * cs.J[q];
+                                 if (cmfgen_dump_frozen_chieta(
+-                                        &cs,&geo,it,dump_path) != 0)
++                                        &cs,&geo,it,it,1,dump_path) != 0)
+                                     return EXIT_FAILURE;
+                             }
+                         }
+--- a/scripts/cmf_chieta_writer_fixture.c
++++ b/scripts/cmf_chieta_writer_fixture.c
+@@ -30,5 +30,12 @@
+     for (int q=0;q<6;q++)
+         eta_total[q]=chi_tot[q]*S_fixed[q]+chi_es[q]*J[q];
+     if (getenv("W32_SEED_BAD_ETA")) eta_total[0] += 1.0;
+-    return cmfgen_dump_frozen_chieta(&cs,&geo,10,argv[1]) == 0 ? 0 : 1;
++    const char *iter_env = getenv("W32_FIXTURE_ITER");
++    const char *generation_env = getenv("W32_FIXTURE_GENERATION");
++    const char *post_env = getenv("W32_FIXTURE_POST_DAMP");
++    int iter = iter_env ? atoi(iter_env) : 10;
++    int generation = generation_env ? atoi(generation_env) : iter;
++    int post_damp = post_env ? atoi(post_env) : 1;
++    return cmfgen_dump_frozen_chieta(
++        &cs,&geo,iter,generation,post_damp,argv[1]) == 0 ? 0 : 1;
+ }
+--- a/scripts/cmf_chieta_roundtrip_selftest.py
++++ b/scripts/cmf_chieta_roundtrip_selftest.py
+@@ -2,13 +2,13 @@
+ """Offline LCMFCE01 v1 write/read/bitwise round-trip self-test."""
+ 
+ import argparse
+-import hashlib
+-import json
+ from pathlib import Path
+ import struct
+ import subprocess
+ import tempfile
+ 
++from cmf_chieta_check import check_artifact
++
+ 
+ ROOT = Path(__file__).resolve().parents[1]
+ HEADER = struct.Struct("<8sIIQQQQIId")
+@@ -22,7 +22,7 @@
+     magic, endian, version, nr, nnu, iteration, generation, flags, reserved, texp = header
+     if (magic, endian, version, reserved) != (b"LCMFCE01", 0x01020304, 1, 0):
+         raise ValueError("schema identity mismatch")
+-    if flags != 0x7 or nr == 0 or nnu == 0 or iteration != 10 or generation != 10:
++    if flags & ~0x7 or nr == 0 or nnu == 0:
+         raise ValueError("header contract mismatch")
+     count = nr * nnu
+     lengths = [nr + 1, nnu, nnu] + [count] * 6
+@@ -75,19 +75,11 @@
+         path = out / "fixture.lcmfce"
+         subprocess.run([str(ROOT / "selftest_cmf_chieta_dump"), str(path)],
+                        cwd=ROOT, check=True)
+-    raw, header, arrays, eta_max_abs, eta_bitwise = parse(path)
++    raw, header, arrays, eta_max_abs, eta_bitwise, manifest = check_artifact(path)
+     rebuilt = serialize(header, arrays)
+     if rebuilt != raw:
+         raise ValueError("write-read-write bytes differ")
+-    sidecar = Path(str(path) + ".manifest.json")
+-    manifest = json.loads(sidecar.read_text())
+-    digest = hashlib.sha256(raw).hexdigest()
+-    if manifest.get("sha256") != digest:
+-        raise ValueError("sidecar sha256 mismatch")
+-    if manifest.get("eta_decomposition_bitwise") is not eta_bitwise:
+-        raise ValueError("sidecar eta bitwise audit disagrees with payload")
+-    if manifest.get("eta_decomposition_max_abs") != eta_max_abs:
+-        raise ValueError("sidecar eta max-abs audit disagrees with payload")
++    digest = manifest["sha256"]
+     print(f"PASS LCMFCE01 write-read-write bitwise roundtrip: {path}")
+     print(f"sha256={digest} bytes={len(raw)}")
+     return 0
+--- a/scripts/parity59_chieta.env
++++ b/scripts/parity59_chieta.env
+@@ -1,4 +1,4 @@
+ # Wave-3.2 R7 authoritative frozen-field capture contract.
+-# parity59 consumes producer iteration 10; selection and expectation must agree.
++# Producer selection only.  The consumer contract is enforced by
++# scripts/cmf_chieta_check.py (expected iteration defaults to 10).
+ export LUMINA_CMF_FROZEN_CHIETA_ITER=10
+-export LUMINA_CMF_FROZEN_CHIETA_EXPECTED_ITER=10
+--- a/tests/wave32_cmf_chieta_negative.c
++++ b/tests/wave32_cmf_chieta_negative.c
+@@ -40,26 +40,29 @@
+     Geometry geo;
+     int failures = 0;
+ 
+-#define EXPECT_REJECT(tag, mutation, iter) do {                              \
++#define EXPECT_REJECT(tag, mutation, iter, generation, post_damp) do {       \
+     init_fixture(&cs, &geo, ri, ro, nu, dnu, chi, chic, source, J,           \
+                  eta_total);                                                 \
+     mutation;                                                                 \
+     unlink(argv[1]);                                                          \
+-    int rc = cmfgen_dump_frozen_chieta(&cs, &geo, iter, argv[1]);            \
++    int rc = cmfgen_dump_frozen_chieta(                                      \
++        &cs, &geo, iter, generation, post_damp, argv[1]);                    \
+     int exists = access(argv[1], F_OK) == 0;                                 \
+     printf("%s rc=%d output_exists=%d\n", tag, rc, exists);                 \
+     if (rc == 0 || exists) failures++;                                        \
+ } while (0)
+ 
+-    EXPECT_REJECT("negative_chi", chi[2] = -1.0, 10);
++    EXPECT_REJECT("negative_chi", chi[2] = -1.0, 10, 10, 1);
+     chi[2] = 3.0;
+-    EXPECT_REJECT("noncontiguous_radius", ri[1] += 1e9, 10);
++    EXPECT_REJECT("noncontiguous_radius", ri[1] += 1e9, 10, 10, 1);
+     ri[1] = 2e14;
+-    EXPECT_REJECT("nonascending_frequency", nu[1] = nu[0], 10);
++    EXPECT_REJECT("nonascending_frequency", nu[1] = nu[0], 10, 10, 1);
+     nu[1] = 2e14;
+-    EXPECT_REJECT("nonfinite_J", J[4] = NAN, 10);
++    EXPECT_REJECT("nonfinite_J", J[4] = NAN, 10, 10, 1);
+     J[4] = 17.0;
+-    EXPECT_REJECT("negative_iteration", (void)0, -1);
++    EXPECT_REJECT("negative_iteration", (void)0, -1, 10, 1);
++    EXPECT_REJECT("negative_generation", (void)0, 10, -1, 1);
++    EXPECT_REJECT("invalid_post_damp", (void)0, 10, 10, 2);
+ #undef EXPECT_REJECT
+     return failures ? 1 : 0;
+ }
+--- a/tests/test_wave32_seeded_defects.py
++++ b/tests/test_wave32_seeded_defects.py
+@@ -1,5 +1,5 @@
+ #!/usr/bin/env python3
+-"""R7 bad-eta and D6 matrix-debit seeded negative controls."""
++"""R7 writer/consumer and D6 matrix-debit seeded negative controls."""
+ 
+ import os
+ from pathlib import Path
+@@ -21,7 +21,7 @@
+     subprocess.run([str(ROOT / "selftest_cmf_chieta_dump"), str(bad)],
+                    cwd=ROOT, env=env, check=True)
+     selected = subprocess.run(
+-        ["python3", "scripts/cmf_chieta_roundtrip_selftest.py", "--input", str(bad)],
++        ["python3", "scripts/cmf_chieta_check.py", str(bad)],
+         cwd=ROOT, text=True, capture_output=True)
+     if selected.returncode == 0:
+         raise RuntimeError("bad eta passed the R7 selector")
+@@ -35,12 +35,33 @@
+             str(quarantine_payload) + ".quarantine").is_file():
+         raise RuntimeError("sidecar failure did not quarantine payload")
+ 
++    metadata_cases = [
++        ("wrong_iter", {"W32_FIXTURE_ITER": "7"}),
++        ("wrong_generation", {"W32_FIXTURE_GENERATION": "9"}),
++        ("pre_damp", {"W32_FIXTURE_POST_DAMP": "0"}),
++    ]
++    metadata_rc = {}
++    for name, update in metadata_cases:
++        payload = tmp / f"{name}.lcmfce"
++        case_env = os.environ.copy()
++        case_env.update(update)
++        subprocess.run([str(ROOT / "selftest_cmf_chieta_dump"), str(payload)],
++                       cwd=ROOT, env=case_env, check=True)
++        checked = subprocess.run(
++            ["python3", "scripts/cmf_chieta_check.py", str(payload)],
++            cwd=ROOT, text=True, capture_output=True)
++        if checked.returncode == 0:
++            raise RuntimeError(f"{name} passed the default consumer contract")
++        metadata_rc[name] = checked.returncode
++
+     matrix = subprocess.run([str(ROOT / "selftest_wave32_matrix_debit")],
+                             cwd=ROOT, text=True, capture_output=True, check=True)
+     print("bad_eta_selector_rc=", selected.returncode, sep="")
+     print("sidecar_writer_rc=", sidecar.returncode, sep="")
++    print("metadata_consumer_rc=", metadata_rc, sep="")
+     print(matrix.stdout.strip())
+-    print("PASS seeded defects: eta selector FAIL; D6 debit ledger FAIL")
++    print("PASS seeded defects: eta/iter/generation/post-damp consumer FAIL; "
++          "D6 debit ledger FAIL")
+     return 0
+ 
+ 
+--- /dev/null
++++ b/scripts/cmf_chieta_check.py
+@@ -0,0 +1,133 @@
++#!/usr/bin/env python3
++"""Fail-closed consumer check for an LCMFCE01 frozen chi/eta sidecar.
++
++The Stage-3.1 default contract is producer iteration/field generation 10 after
++damping.  Writers record metadata; they do not decide whether a consumer's
++requested epoch is the right one.
++"""
++
++import argparse
++import hashlib
++import json
++from pathlib import Path
++import struct
++
++
++HEADER = struct.Struct("<8sIIQQQQIId")
++FLAG_POST_DAMP = 1
++FLAG_COHERENT_FROZEN = 2
++FLAG_FREQUENCY_DESCENDING = 4
++
++
++class CheckError(ValueError):
++    pass
++
++
++def check_artifact(path: Path, expected_iteration: int = 10,
++                   expected_generation: int | None = None,
++                   require_post_damp: bool = True):
++    path = Path(path)
++    expected_generation = (expected_iteration if expected_generation is None
++                           else expected_generation)
++    raw = path.read_bytes()
++    if len(raw) < HEADER.size:
++        raise CheckError("truncated header")
++    header = HEADER.unpack_from(raw)
++    magic, endian, version, nr, nnu, iteration, generation, flags, reserved, texp = header
++    if (magic, endian, version, reserved) != (
++            b"LCMFCE01", 0x01020304, 1, 0):
++        raise CheckError("schema identity mismatch")
++    if nr == 0 or nnu == 0 or not (texp > 0.0):
++        raise CheckError("invalid dimensions/time")
++    if flags & ~(FLAG_POST_DAMP | FLAG_COHERENT_FROZEN |
++                 FLAG_FREQUENCY_DESCENDING):
++        raise CheckError("unknown header flag")
++    if not flags & FLAG_COHERENT_FROZEN:
++        raise CheckError("field is not coherent-frozen")
++    if not flags & FLAG_FREQUENCY_DESCENDING:
++        raise CheckError("frequency ordering flag is absent")
++    if iteration != expected_iteration:
++        raise CheckError(
++            f"iteration mismatch: got {iteration}, expected {expected_iteration}")
++    if generation != expected_generation:
++        raise CheckError(
++            f"field_generation mismatch: got {generation}, "
++            f"expected {expected_generation}")
++    post_damp = bool(flags & FLAG_POST_DAMP)
++    if require_post_damp and not post_damp:
++        raise CheckError("post-damping field required")
++
++    count = nr * nnu
++    lengths = [nr + 1, nnu, nnu] + [count] * 6
++    arrays = []
++    off = HEADER.size
++    for length in lengths:
++        size = 8 * length
++        if off + size > len(raw):
++            raise CheckError("truncated array")
++        arrays.append(struct.unpack_from(f"<{length}d", raw, off))
++        off += size
++    if off != len(raw):
++        raise CheckError("trailing bytes")
++    _, nu, dnu, _, _, eta_fixed, eta_coherent, eta_total, _ = arrays
++    if not all(nu[k] > nu[k + 1] for k in range(len(nu) - 1)):
++        raise CheckError("frequency is not descending")
++    if not all(value > 0.0 for value in dnu):
++        raise CheckError("non-positive dnu")
++    eta_max_abs = 0.0
++    eta_bitwise = True
++    for fixed, coherent, total in zip(eta_fixed, eta_coherent, eta_total):
++        split = fixed + coherent
++        eta_max_abs = max(eta_max_abs, abs(total - split))
++        if struct.pack("<d", split) != struct.pack("<d", total):
++            eta_bitwise = False
++    if not eta_bitwise:
++        raise CheckError("eta decomposition is not bitwise exact")
++
++    sidecar_path = Path(str(path) + ".manifest.json")
++    try:
++        manifest = json.loads(sidecar_path.read_text())
++    except (OSError, json.JSONDecodeError) as exc:
++        raise CheckError(f"invalid/missing sidecar: {exc}") from exc
++    expected_sidecar = {
++        "schema": "LCMFCE01-v1",
++        "iteration": iteration,
++        "field_generation": generation,
++        "post_damping": post_damp,
++        "coherent_frozen": True,
++        "frequency_descending": True,
++        "eta_decomposition_bitwise": eta_bitwise,
++        "eta_decomposition_max_abs": eta_max_abs,
++    }
++    for key, value in expected_sidecar.items():
++        if manifest.get(key) != value:
++            raise CheckError(f"sidecar {key} disagrees with payload")
++    digest = hashlib.sha256(raw).hexdigest()
++    if manifest.get("sha256") != digest:
++        raise CheckError("sidecar sha256 mismatch")
++    return raw, header, arrays, eta_max_abs, eta_bitwise, manifest
++
++
++def main() -> int:
++    parser = argparse.ArgumentParser()
++    parser.add_argument("input", type=Path)
++    parser.add_argument("--expected-iteration", type=int, default=10,
++                        help="consumer contract (default: 10)")
++    parser.add_argument("--expected-field-generation", type=int,
++                        help="default: same as expected iteration")
++    parser.add_argument("--allow-pre-damp", action="store_true")
++    args = parser.parse_args()
++    try:
++        raw, header, _, _, _, _ = check_artifact(
++            args.input, args.expected_iteration,
++            args.expected_field_generation, not args.allow_pre_damp)
++    except (OSError, CheckError) as exc:
++        print(f"FAIL: {exc}")
++        return 1
++    print(f"PASS: iteration={header[5]} field_generation={header[6]} "
++          f"post_damp={int(bool(header[7] & FLAG_POST_DAMP))} bytes={len(raw)}")
++    return 0
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())
+

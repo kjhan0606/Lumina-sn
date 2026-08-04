@@ -5,7 +5,11 @@ Binary layout (little-endian):
   lumina_events.bin       : 32-byte header {magic "LUMEVT01"[8], u32 record_size,
                             20 reserved bytes} then N * record_size EventRec.
   EventRec (record_size=20): u32 pkt_id, i32 line_id, f32 nu_comov, f32 energy,
-                            u8 etype, u8 shell, u8 iter, u8 pad.
+                            u8 etype, u8 shell, u8 iter, u8 chan.
+  chan is the [DIAG-T1] EvChannel subsystem+channel tag (formerly the reserved
+  `pad` byte; same offset, so record_size is still 20). See lumina.h EvChannel
+  for the code values (0x10.. kpkt exits, 0x20.. heating, 0x30.. macro-atom,
+  0x40.. r-packet continuum). 0 = untagged.
   lumina_events_lines.bin : magic "LUMLIN01"[8] then per line
                             {f32 lambda_A, u16 Z, u16 ion}.
 """
@@ -17,7 +21,7 @@ EVENT_DTYPE = np.dtype([
     ("pkt_id",   "<u4"), ("line_id", "<i4"),
     ("nu_comov", "<f4"), ("energy",  "<f4"),
     ("etype",    "u1"),  ("shell",   "u1"),
-    ("iter",     "u1"),  ("pad",     "u1"),
+    ("iter",     "u1"),  ("chan",    "u1"),
 ])  # itemsize == 20
 LINE_DTYPE = np.dtype([("lam", "<f4"), ("Z", "<u2"), ("ion", "<u2")])  # 8 B
 C_CM_S = 2.99792458e10

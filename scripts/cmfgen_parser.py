@@ -494,20 +494,42 @@ class FtoS:
     n_levels: int = 0
     n_super: int = 0
     sl_of_fl: np.ndarray = field(default_factory=lambda: np.empty(0, dtype='i4'))
+    format_name: str = ''
+    format_basis: str = ''
 
 
-def parse_f_to_s(path: Path) -> FtoS:
+def parse_f_to_s(path: Path, *, _test_explicit_fl_column_offset: int = 0,
+                 _test_force_format: str | None = None) -> FtoS:
     """Parse a CMFGEN f_to_s (super-level assignment) file.
 
-    Data rows: [config, g, E_cm, nu15, Lam, SL, 0, FL_id]. The header tag
-    'Entry number of link to super level' gives the 1-based token position of
-    the SL column (config counted as token 1; observed value 6). FL_id is the
-    last token and matches the osc_data level ID ordering.
+    Supported canonical layouts are detected from the complete body, never
+    guessed a row at a time:
+
+    ``explicit_fl_id``
+        ``config g E nu Lam SL aux FL_id``.  ``FL_id`` is the final token and
+        must be an exact permutation of ``1..Number of energy levels``.
+
+    ``implicit_fl_row_order``
+        Old layout ``config g E nu Lam SL 0``.  There is no FL-ID column; the
+        full-level ID is the 1-based ordinal of the data row.  To prevent a
+        damaged explicit file silently falling back to this layout, every row
+        must have exactly one token after the declared SL column and that token
+        must be integer zero.
+
+    The header tag ``Entry number of link to super level`` gives the 1-based
+    token position of the SL column (configuration counted as token 1).  Both
+    layouts are self-validated for complete, one-to-one FL coverage and a
+    contiguous ``1..N`` set of super-level IDs.
+
+    The two ``_test_*`` arguments are intentionally private fault-injection
+    hooks used only by the R4 negative fixture.  Production callers must leave
+    them at their defaults.
     """
     lines = _read_text(path)
     n_levels = 0
     sl_token = 6  # 1-based; overridden by header if present
-    for ln in lines:
+    body_start = 0
+    for lineno, ln in enumerate(lines):
         v, key = _parse_header_value(ln)
         if v is None:
             continue
@@ -516,32 +538,117 @@ def parse_f_to_s(path: Path) -> FtoS:
             n_levels = int(float(v))
         elif 'link to super level' in kl:
             sl_token = int(float(v))
+            body_start = lineno + 1
     if n_levels <= 0:
         raise ValueError(f"f_to_s {path}: no level count in header")
+    if sl_token <= 1:
+        raise ValueError(f"f_to_s {path}: invalid SL token position {sl_token}")
 
     sl_col = sl_token - 1  # 0-based index after split
-    sl_of_fl = np.full(n_levels, -1, dtype='i4')
-    max_sl = 0
-    for ln in lines:
+    rows: list[tuple[int, list[str], int]] = []
+    for lineno, ln in enumerate(lines[body_start:], body_start + 1):
         toks = ln.split()
-        if len(toks) <= sl_col + 1:  # need SL token plus a trailing FL id
+        if len(toks) <= sl_col:
             continue
         try:
-            fl_id = int(toks[-1])
+            # Requiring the physical numeric columns rejects prose/header rows
+            # that happen to carry an integer in the declared SL position.
+            float(toks[1].replace('D', 'E').replace('d', 'e'))
+            float(toks[2].replace('D', 'E').replace('d', 'e'))
             sl = int(toks[sl_col])
-        except ValueError:
+        except (ValueError, IndexError):
             continue
-        if fl_id < 1 or fl_id > n_levels or sl < 1:
-            continue
-        sl_of_fl[fl_id - 1] = sl - 1  # 0-based
-        if sl > max_sl:
-            max_sl = sl
+        if sl < 1:
+            raise ValueError(f"f_to_s {path}:{lineno}: nonpositive SL id {sl}")
+        rows.append((lineno, toks, sl))
 
-    missing = int((sl_of_fl < 0).sum())
-    if missing:
-        raise ValueError(f"f_to_s {path}: {missing}/{n_levels} full levels "
-                         f"unmapped to a super level")
-    return FtoS(n_levels=n_levels, n_super=max_sl, sl_of_fl=sl_of_fl)
+    if len(rows) != n_levels:
+        raise ValueError(f"f_to_s {path}: mapped-row count {len(rows)} != "
+                         f"declared FL count {n_levels}")
+
+    # New layout: the selected final column must itself prove that it is an FL
+    # ID, by being a complete permutation.  Merely being integer is not enough.
+    explicit_ids: list[int] = []
+    explicit_column_present = True
+    for _lineno, toks, _sl in rows:
+        col = len(toks) - 1 + _test_explicit_fl_column_offset
+        if col <= sl_col:
+            explicit_column_present = False
+            break
+        try:
+            explicit_ids.append(int(toks[col]))
+        except (ValueError, IndexError):
+            explicit_column_present = False
+            break
+    explicit_valid = (explicit_column_present and
+                      sorted(explicit_ids) == list(range(1, n_levels + 1)))
+
+    # Old layout signature is deliberately narrow.  In particular, an
+    # 8-column explicit row whose FL column was corrupted to zero cannot be
+    # reinterpreted as row-order implicit.
+    implicit_valid = all(
+        len(toks) == sl_col + 2 and toks[sl_col + 1] == '0'
+        for _lineno, toks, _sl in rows
+    )
+    if _test_force_format is not None:
+        if _test_force_format == 'explicit_fl_id':
+            implicit_valid = False
+        elif _test_force_format == 'implicit_fl_row_order':
+            explicit_valid = False
+        else:
+            raise ValueError(f"invalid test-only forced format {_test_force_format!r}")
+
+    if explicit_valid and implicit_valid:
+        raise ValueError(f"f_to_s {path}: ambiguous explicit/implicit format")
+    if explicit_valid:
+        format_name = 'explicit_fl_id'
+        format_basis = (
+            f"header SL token={sl_token}; final token is exact FL-ID "
+            f"permutation 1..{n_levels}"
+        )
+        fl_ids = explicit_ids
+    elif implicit_valid:
+        format_name = 'implicit_fl_row_order'
+        format_basis = (
+            f"header SL token={sl_token}; every data row has exactly one "
+            "post-SL integer-zero auxiliary token and no FL-ID token; "
+            f"FL ID is data-row ordinal 1..{n_levels}"
+        )
+        fl_ids = list(range(1, n_levels + 1))
+    else:
+        reason = (
+            f"selected explicit FL column is not permutation 1..{n_levels}; "
+            f"old row-order signature (exactly {sl_col + 2} tokens with "
+            "post-SL zero) is false"
+        )
+        raise ValueError(f"f_to_s {path}: unrecognised/invalid format: {reason}")
+
+    counts = np.bincount(np.asarray(fl_ids, dtype='i4'), minlength=n_levels + 1)
+    bad_fl = np.flatnonzero(counts[1:] != 1) + 1
+    if bad_fl.size:
+        preview = ','.join(str(int(value)) for value in bad_fl[:8])
+        raise ValueError(f"f_to_s {path}: FL IDs not mapped exactly once: {preview}")
+
+    sl_of_fl = np.full(n_levels, -1, dtype='i4')
+    for fl_id, (_lineno, _toks, sl) in zip(fl_ids, rows, strict=True):
+        if sl_of_fl[fl_id - 1] != -1:
+            raise ValueError(f"f_to_s {path}: duplicate FL id {fl_id}")
+        sl_of_fl[fl_id - 1] = sl - 1
+    mapped = int(np.count_nonzero(sl_of_fl >= 0))
+    if mapped != n_levels:
+        raise ValueError(f"f_to_s {path}: mapped FL count {mapped} != "
+                         f"declared FL count {n_levels}")
+
+    observed_sl = sorted(set((sl_of_fl + 1).tolist()))
+    max_sl = observed_sl[-1] if observed_sl else 0
+    expected_sl = list(range(1, max_sl + 1))
+    if observed_sl != expected_sl:
+        missing_sl = sorted(set(expected_sl) - set(observed_sl))
+        raise ValueError(f"f_to_s {path}: non-contiguous SL ids 1..{max_sl}; "
+                         f"holes={missing_sl}")
+
+    return FtoS(n_levels=n_levels, n_super=max_sl, sl_of_fl=sl_of_fl,
+                format_name=format_name, format_basis=format_basis)
 
 
 # ---------------------------------------------------------------------------

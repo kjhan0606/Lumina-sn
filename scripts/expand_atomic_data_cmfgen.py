@@ -11,7 +11,7 @@ Outputs:
   data/tardis_reference_cmfgen/
     levels.csv, line_list.csv,
     macro_atom_data.csv, macro_atom_references.csv,
-    ionization_energies.csv, atom_masses.csv, abundances.csv
+    ionization_energies.csv, atom_masses.csv
   data/atomic/atomic_data_cmfgen.h5
     /Z{ZZ}_ion{N}/phot/L{LLLL}/{cs_type, n_points, energy?, sigma_Mb}
     /Z{ZZ}_ion{N}/col/{T_grid_kK, level_pairs, omega}
@@ -22,7 +22,9 @@ The CSV trio is fully drop-in compatible with the existing TARDIS-derived data.
 
 from __future__ import annotations
 
+import csv
 import re
+import shlex
 import sys
 from pathlib import Path
 
@@ -75,8 +77,24 @@ ION_LEVEL_CAPS: dict[tuple[int,int], int | None] = {
     (12, 1):None, (12, 2):None, (12, 3):None,      # +Mg IV(III idx) MG/III 201 lvl
     (13, 1): 80, (13, 2): 80, (13, 3): 80, (13, 4):None,   # +Al IV AL/IV 201 lvl
     (14, 1):None, (14, 2):None, (14, 3):None, (14, 4):None,
-    (16, 1):None, (16, 2):None, (16, 3):None,
-    (20, 1):None, (20, 2):None, (20, 3): 200,
+    # 2026-07-28: the four ions the campaign has been missing since 2026-07-19.
+    # Without them S IV/V and Ca IV/V are level-less destination rungs, so
+    # LUMINA_SIMUL_CAP_TOPION truncates the ladder with r:=0 and their population
+    # is identically zero. Measured consequence against the published CMFGEN
+    # toy06 @19.48d: Ca III sits at exactly 1.0000 in every shell where the truth
+    # has 2.5-16% Ca IV, and the cap breaks the energy ledger (photo-heating is
+    # counted against the element while the fb cooling term is identically zero
+    # because nion[upper] == 0). CMFGEN carries all four with osc_data +
+    # phot_data_A + col_data in 19apr23, so importing them is faithfulness, not
+    # an extension. Level counts available: S IV 194, S V 307, Ca IV 378,
+    # Ca V 613. S IV/Ca IV take the full list -- a 100-level cap was measured to
+    # drop 73% of the S IV lines. The new top rungs (S VI / Ca VI) stay absent,
+    # which is where the cap belongs: those are negligible at SN-ejecta
+    # conditions. Ladder headroom checked first: sum(npop-1) 49 -> 53, SIM_MAXP
+    # is 96, so no element gets silently dropped (plasma.c:8315 does that with no
+    # warning, and it would eat this very repair on a larger reference).
+    (16, 1):None, (16, 2):None, (16, 3):None, (16, 4):None, (16, 5): 200,
+    (20, 1):None, (20, 2):None, (20, 3): 200, (20, 4):None, (20, 5): 200,
     (21, 1): 60, (21, 2): 500, (21, 3):None,       # +Sc III SCAN/III 87 lvl
     (22, 1): 200, (22, 2): 600, (22, 3): 600, (22, 4):None, # +Ti IV TIT/IV 126 lvl
     (23, 1): 60, (23, 2): 200,
@@ -90,6 +108,54 @@ ION_LEVEL_CAPS: dict[tuple[int,int], int | None] = {
     (28, 1): 800, (28, 2): 800, (28, 3):None, (28, 4): 200,
 }
 
+# --------------------------------------------------------------------------
+# GATE: off by default.  CMFGEN_FULL_LEVELS=1 repairs the two LUMINA-atom data
+# defects the coverage-extension certification measured
+# (validation/cmfgen_toy06_19p48d/analysis/rates_certification/coverage_extension
+# /REPORT.md, item 3 "[데이터] LUMINA 원자 준위 절단" and item 7):
+#
+#  (A) LEVEL TRUNCATION.  Six ions carry a 200-level cap while the published
+#      CMFGEN toy06 @19.48d reference run models many more.  The missing levels
+#      hold ~0 population but carry 20-95 % of Gamma: measured D/C at s0 is
+#      Ni IV 0.4723, Fe IV 0.773, Fe V 0.207 -- a defect the population-share
+#      yardstick cannot see, only the rate yardstick.
+#  (B) ABSENT IONS.  Six ions the reference run carries have zero rows in
+#      levels.csv, so layer D is structurally 0 for them.
+#
+# Caps below = the reference run's own NF, read from
+# /gpfs/kjhan/cmfgen_runs/toy06_19.48d_jnu4/MODEL_SPEC (<ion>_ISF third field),
+# NOT guessed:  SkV 203, FeSIX 2000, CoV 1000, CoSIX 1000, NkV 1000, NkSIX 1000,
+# NkIV 1000, CoIV 1000, FeIV 1000, FeV 1000, CaV 528, CaIII 232.
+# min(osc.n_levels, cap) still applies, so an ion whose LUMINA-side osc file is
+# shorter than NF simply takes its full list.
+#
+# STRUCTURE-CHANGING by design: levels.csv, line_list.csv, macro_atom_*.csv and
+# the sigma bin all grow.  Gate OFF reproduces the shipped bake bit for bit
+# (the dict is not touched at all).
+FULL_LEVELS = os.environ.get('CMFGEN_FULL_LEVELS', '0') not in ('0', '', 'false')
+
+# (A) truncated ions: 200 -> reference NF
+FULL_LEVEL_CAPS_RAISE: dict[tuple[int, int], int] = {
+    (20, 3):  232,   # Ca III  CaIII_ISF   200 -> 232
+    (20, 5):  528,   # Ca V    CaV_ISF     200 -> 528
+    (26, 4): 1000,   # Fe IV   FeIV_ISF    200 -> 1000
+    (26, 5): 1000,   # Fe V    FeV_ISF     200 -> 1000
+    (27, 4): 1000,   # Co IV   CoIV_ISF    200 -> 1000
+    (28, 4): 1000,   # Ni IV   NkIV_ISF    200 -> 1000
+}
+# (B) ions with no rows at all: added at the reference NF
+FULL_LEVEL_CAPS_NEW: dict[tuple[int, int], int] = {
+    (14, 5):  203,   # Si V    SkV_ISF
+    (26, 6): 2000,   # Fe VI   FeSIX_ISF
+    (27, 5): 1000,   # Co V    CoV_ISF
+    (27, 6): 1000,   # Co VI   CoSIX_ISF
+    (28, 5): 1000,   # Ni V    NkV_ISF
+    (28, 6): 1000,   # Ni VI   NkSIX_ISF
+}
+if FULL_LEVELS:
+    ION_LEVEL_CAPS.update(FULL_LEVEL_CAPS_RAISE)
+    ION_LEVEL_CAPS.update(FULL_LEVEL_CAPS_NEW)
+
 # CMFGEN super-level scheme (XzV_F_TO_S): full levels (FL) carry line opacity,
 # collapsed to super-levels (SL) for the NLTE statistical-equilibrium solve;
 # FL populations are distributed within an SL by Boltzmann at the local T.
@@ -101,6 +167,11 @@ ION_LEVEL_CAPS: dict[tuple[int,int], int | None] = {
 # reproduces current behaviour for them.
 # Value = f_to_s filename inside the chosen date dir.
 SUPER_LEVEL_ENABLED = os.environ.get('CMFGEN_SUPER_LEVELS', '0') not in ('0', '', 'false')
+# R4 identity gate: consume every f_to_s source selected by CMFGEN_LINKS, not
+# only the three legacy iron-group-II entries below.  Default OFF is a strict
+# compatibility requirement for the existing _links deck bake.
+LINK_FTOS_ENABLED = os.environ.get('CMFGEN_LINK_FTOS', '0').strip().lower() \
+    not in ('0', '', 'false')
 SUPER_LEVEL_IONS: dict[tuple[int, int], str] = {
     (26, 2): 'f_to_s_342',   # Fe II  2698 FL -> 342 SL (E%LS 1%)
     (27, 2): 'f_to_s_252',   # Co II  2747 FL -> 252 SL (E%LS 1.5%)
@@ -108,17 +179,123 @@ SUPER_LEVEL_IONS: dict[tuple[int, int], str] = {
     # level-cap sweep (2026-06-04): lift the last capped iron-peak II ions from
     # the 600 cap to full 1000 FL via super-levels (Fe/Co/Ni II were already
     # full). Closes the level-cap hypothesis for the macroatom over-redshift.
-    (22, 2): 'f_to_s_92',    # Ti II  1000 FL ->  92 SL
-    (24, 2): 'f_to_s_84',    # Cr II  1000 FL ->  84 SL
-    (25, 2): 'f_to_s_92',    # Mn II  1000 FL ->  92 SL
+    # 2026-07-28 HELD BACK for single-variable control: these three were added to
+    # the dict on 2026-06-04 but the reference in use
+    # (tardis_reference_cmfgen_superlev_ionfix_ddc15strat) predates them, so
+    # enabling them here would ride along with the S IV/V + Ca IV/V import and
+    # make the A/B two-variable (they lift Ti/Cr/Mn II from the 600 cap to the
+    # full 1000 FL -- a separate, judgeable change). Re-enable and judge on its
+    # own once the four-ion import is settled.
+    # (22, 2): 'f_to_s_92',    # Ti II  1000 FL ->  92 SL
+    # (24, 2): 'f_to_s_84',    # Cr II  1000 FL ->  84 SL
+    # (25, 2): 'f_to_s_92',    # Mn II  1000 FL ->  92 SL
 }
 
-N_SHELLS = 30
-DEFAULT_ABUNDANCES = {
-    6:0.02, 8:0.0394, 12:0.005, 13:0.0005, 14:0.1, 16:0.05,
-    20:0.05, 21:0.00003, 22:0.0003, 23:0.0002, 24:0.003,
-    25:0.0015, 26:0.5, 27:0.05, 28:0.13,
+# --------------------------------------------------------------------------
+# GATE: off by default.  CMFGEN_VINTAGE_MATCH=1 makes the baker read, for every
+# ion the published CMFGEN toy06 @19.48d certification run carries, the SAME
+# osc/phot files that run actually used, instead of _pick_latest.  Ions that run
+# does not carry keep _pick_latest.  With the gate off this file reproduces the
+# shipped bake bit for bit.
+#
+# Provenance (2026-07-29): read off the reference run's own symlinks,
+#   /gpfs/kjhan/cmfgen_runs/toy06_19.48d_jnu4/{<Sp>_F_OSCDAT, PHOT<Sp>_A}
+#     -> /gpfs/kjhan/cmfgen_21jun23/atomic/<EL>/<ion>/<vintage>/<file>
+# and the file names are given explicitly, NOT re-derived by globbing: several
+# of these vintages carry more than one candidate (FE/IV/18oct00 alone has
+# feiv_osc{,_rev,_rev2,_rev3}.dat and phot_data_tst.dat, which is what
+# _phot_path's `phot_data*` glob would have picked).
+#
+# NOT switched by this gate:
+#   * col_data -- keeps reading from the _pick_latest dir.  The reference run's
+#     collision files are `col_guess.dat` stubs (0 parsed entries) for most of
+#     these ions, so switching them would delete collision data; the gate's
+#     variable is the photoionization data.
+#   * f_to_s for SUPER_LEVEL_IONS, except where the configured file does not
+#     exist in the matched vintage (4th tuple slot; see the two entries below).
+#
+# (Z, stage) -> (date_dir, osc file, phot file, f_to_s override or None)
+TOY06_VINTAGE: dict[tuple[int, int], tuple[str, str, str, str | None]] = {
+    (14, 2): ('19apr23', 'osc_data',         'phot_data_A',      None),
+    (14, 3): ('19apr23', 'osc_data',         'phot_data_A',      None),
+    (14, 4): ('5dec96',  'osc_op_split.dat', 'phot_op.dat',      None),
+    (16, 2): ('19apr23', 'osc_data',         'phot_data_A',      None),
+    (16, 3): ('3oct00',  'siiiosc_fin.dat',  'phot_sm_3000.dat', None),
+    (16, 4): ('3oct00',  'sivosc_fin.dat',   'phot_sm_3000.dat', None),
+    (16, 5): ('3oct00',  'svosc_fin.dat',    'phot_sm_3000.dat', None),
+    (20, 2): ('19apr23', 'osc_data',         'phot_data_A',      None),
+    (20, 3): ('10apr99', 'osc_op_sp.dat',    'phot_smooth.dat',  None),
+    (20, 4): ('10apr99', 'osc_op_sp.dat',    'phot_smooth.dat',  None),
+    (20, 5): ('10apr99', 'osc_op_sp.dat',    'phot_smooth.dat',  None),
+    (26, 2): ('19apr23', 'osc_data',         'phot_data_A',      None),
+    (26, 3): ('19apr23', 'osc_data',         'phot_data_A',      None),
+    (26, 4): ('18oct00', 'feiv_osc.dat',     'phot_sm_3000.dat', None),
+    (26, 5): ('18oct00', 'fev_osc.dat',      'phot_sm_3000.dat', None),
+    # Co II 18oct00 has no 252-super-level map (that is a 19apr23-only file);
+    # f_to_s_55.dat is the one the reference run itself used for this atom.
+    (27, 2): ('18oct00', 'coii_osc.dat',     'phot_data.dat',    'f_to_s_55.dat'),
+    (27, 3): ('18oct00', 'coiii_osc.dat',    'phot_data.dat',    None),
+    (27, 4): ('18oct00', 'coiv_osc.dat',     'phot_data.dat',    None),
+    # same 88-super-level grouping as SUPER_LEVEL_IONS, just the .dat spelling.
+    (28, 2): ('18oct00', 'nkii_osc.dat',     'phot_data.dat',    'f_to_s_88.dat'),
+    (28, 3): ('18oct00', 'nkiii_osc.dat',    'phot_data.dat',    None),
+    (28, 4): ('18oct00', 'nkiv_osc.dat',     'phot_data.dat',    None),
 }
+#
+# CMFGEN_VINTAGE_MATCH=1     -- FULL match (osc+phot) for all 21 ions above.
+#                               Changes the model atom: Co II 2747->1000 and
+#                               Co III 3917->1000 levels, -44% of the line list.
+#                               Diagnostic only (see bakefix3).
+# CMFGEN_VINTAGE_MATCH=phot  -- RESTRICTED match: swap ONLY the phot file, and
+#                               only for VINTAGE_PHOT_IONS.  levels/lines stay
+#                               on _pick_latest, so levels.csv / line_list.csv /
+#                               macro_atom_*.csv / ionization_energies.csv are
+#                               byte-identical to the gate-off bake by
+#                               construction (none of them reads phot data).
+_VM_ENV = os.environ.get('CMFGEN_VINTAGE_MATCH', '0').strip().lower()
+VINTAGE_MATCH = _VM_ENV not in ('0', '', 'false')
+VINTAGE_PHOT_ONLY = _VM_ENV == 'phot'
+
+# Ions admitted to the restricted set.  Membership is measured, not assumed:
+# an ion is in only if the reference-vintage phot file covers EVERY emitted
+# level that the current phot file covers (no level may lose sigma), where
+# "covers" applies the same config/term name match and the same
+# E_thresh > 0 / nu_thresh < BF_NU_MAX filters the baker itself uses.
+# Measured 2026-07-29 (lost -> excluded):
+#   Si IV  66/66 emitted levels lost -- 5dec96 uses a completely different
+#          config naming convention (osc_op_split vs 19apr23), 0 names match.
+#   S V    35 lost -- 3oct00 is a different atom here, not a revision
+#          (216 vs 307 levels, max|dE| 7.4e4 cm^-1, g differs on 93 levels).
+#   Co IV  1 lost -- level 36 (0-based 35) '3d6_1Se[0]' has no 18oct00 entry.
+# For every ion below the emitted-level energies are identical between the two
+# vintages (max|dE| = 0, except S IV 4.9e-7 and Fe V 0.8 cm^-1), so the
+# phot-only swap reproduces the full-vintage sigma for them.
+#
+# Measured effect of the swap, over the whole baked grid (INT sigma dnu, summed
+# over the ion's emitted levels), bakefix4 / bakefix2:
+#   S III 0.9961   S IV 1.0008   Ni II 0.00042
+#   Ca III, Ca IV, Ca V, Fe IV, Fe V, Ni III, Ni IV -- ZERO rows changed; five of
+#   those seven phot files are md5-IDENTICAL across the two vintages, the other
+#   two (Ca IV, Fe IV) differ only outside the baked grid.  For those seven the
+#   "vintage mismatch" was a directory label, not data.
+# Ni II is the one real regression: 18oct00 is an all-Seaton (type 1, 3
+# parameters, sigma_0 ~ 3.4 Mb) table, which 19apr23 replaced with a 2166-point
+# tabulated OP table (type 20).  Matching the reference run there means throwing
+# away the modern tabulation for a 1/2358 smooth fit, and NO certified ion can
+# see it (the harness carries no Ni).  Hence CMFGEN_VINTAGE_PHOT_DROP below.
+VINTAGE_PHOT_IONS: set[tuple[int, int]] = {
+    (16, 3), (16, 4),                     # S III, S IV      (3oct00)
+    (20, 3), (20, 4), (20, 5),            # Ca III, Ca IV, Ca V (10apr99)
+    (26, 4), (26, 5),                     # Fe IV, Fe V      (18oct00)
+    (28, 2), (28, 3), (28, 4),            # Ni II, Ni III, Ni IV (18oct00)
+}
+# CMFGEN_VINTAGE_PHOT_DROP='28:2,...' removes ions from the restricted set
+# without editing this file, so a per-ion adoption choice stays reproducible
+# from one code state.  Empty by default -- no effect on any existing bake.
+for _tok in os.environ.get('CMFGEN_VINTAGE_PHOT_DROP', '').replace(' ', '').split(','):
+    if _tok:
+        _z, _s = _tok.split(':')
+        VINTAGE_PHOT_IONS.discard((int(_z), int(_s)))
 
 C_CGS  = 2.99792458e10
 H_CGS  = 6.62607015e-27
@@ -134,6 +311,93 @@ OUT_SIGMA_BIN = ROOT / 'data' / 'atomic' / f'cmfgen_sigma_bf{_OUT_SUFFIX}.bin'
 _DATE_RE = re.compile(r'^\d{1,2}[a-z]{3}\d{2}$')
 _MONTHS = {'jan':1,'feb':2,'mar':3,'apr':4,'may':5,'jun':6,
            'jul':7,'aug':8,'sep':9,'oct':10,'nov':11,'dec':12}
+
+CMFGEN_LINKS_PATH = (Path(os.environ['CMFGEN_LINKS']).expanduser()
+                     if os.environ.get('CMFGEN_LINKS') else None)
+_LINK_KINDS = ('osc', 'f_to_s', 'phot', 'col')
+
+
+def _atomic_path_identity(path: Path) -> tuple[tuple[int, int], str]:
+    """Return ((Z, stage), vintage) encoded in an atomic-tree path."""
+    parts = path.parts
+    positions = [i for i, part in enumerate(parts) if part == 'atomic']
+    if not positions:
+        raise ValueError(f"atomic tree component absent from link source: {path}")
+    i = positions[-1]
+    if i + 1 < len(parts) and parts[i + 1] == 'cmfgen':
+        i += 1
+    if i + 4 >= len(parts):
+        raise ValueError(f"incomplete atomic-tree link source: {path}")
+    element, roman, vintage = parts[i + 1:i + 4]
+    z_by_dir = {name: z for z, name in CMFGEN_DIRS.items()}
+    if element not in z_by_dir or roman not in ROMAN:
+        raise ValueError(f"unknown element/ion in link source: {path}")
+    if not _DATE_RE.match(vintage):
+        raise ValueError(f"invalid vintage directory in link source: {path}")
+    return (z_by_dir[element], ROMAN.index(roman)), vintage
+
+
+def _link_kind(target: str) -> str | None:
+    if target.endswith('_F_OSCDAT'):
+        return 'osc'
+    if target.endswith('_F_TO_S'):
+        return 'f_to_s'
+    if target.startswith('PHOT') and target.endswith('_A'):
+        return 'phot'
+    if target.endswith('_COL_DATA'):
+        return 'col'
+    return None
+
+
+def load_cmfgen_links(path: Path) -> dict[tuple[int, int], dict[str, Path]]:
+    """Parse the four atomic inputs selected by a CMFGEN run.
+
+    Recognised rows are ``ln -sf SOURCE TARGET`` commands.  Every represented
+    ion must provide osc, f_to_s, phot and col; a partial or duplicate mapping
+    is an error because silently falling back would mix vintages.
+    """
+    if not path.is_file():
+        raise FileNotFoundError(f"CMFGEN_LINKS does not exist: {path}")
+    result: dict[tuple[int, int], dict[str, Path]] = {}
+    for lineno, line in enumerate(path.read_text(encoding='latin-1').splitlines(), 1):
+        stripped = line.strip()
+        if not stripped or stripped.startswith('#'):
+            continue
+        fields = shlex.split(stripped, comments=True)
+        if not fields or fields[0] != 'ln':
+            continue
+        operands = [field for field in fields[1:] if not field.startswith('-')]
+        if len(operands) != 2:
+            raise ValueError(f"{path}:{lineno}: expected ln SOURCE TARGET")
+        source, target = Path(operands[0]), operands[1]
+        kind = _link_kind(target)
+        if kind is None:
+            continue
+        key, _vintage = _atomic_path_identity(source)
+        slot = result.setdefault(key, {})
+        if kind in slot:
+            raise ValueError(f"{path}:{lineno}: duplicate {kind} link for {key}")
+        slot[kind] = source
+
+    for key, sources in sorted(result.items()):
+        missing = [kind for kind in _LINK_KINDS if kind not in sources]
+        if missing:
+            raise ValueError(f"{path}: incomplete links for {key}; missing {missing}")
+        identities = {_atomic_path_identity(source)[0] for source in sources.values()}
+        if identities != {key}:
+            raise ValueError(f"{path}: cross-ion source set for {key}: {identities}")
+        absent = [str(source) for source in sources.values() if not source.is_file()]
+        if absent:
+            raise FileNotFoundError(f"{path}: linked source files absent for {key}: {absent}")
+    return result
+
+
+if CMFGEN_LINKS_PATH is not None and VINTAGE_MATCH:
+    raise RuntimeError("CMFGEN_LINKS and CMFGEN_VINTAGE_MATCH are mutually exclusive")
+CMFGEN_LINK_MAP = (load_cmfgen_links(CMFGEN_LINKS_PATH)
+                   if CMFGEN_LINKS_PATH is not None else {})
+if LINK_FTOS_ENABLED and CMFGEN_LINKS_PATH is None:
+    raise RuntimeError("CMFGEN_LINK_FTOS=1 requires CMFGEN_LINKS")
 
 
 def _pick_latest(ion_dir: Path) -> Path | None:
@@ -181,19 +445,54 @@ def parse_all_ions() -> dict:
         if not ion_dir.is_dir():
             print(f"  miss {SYM[Z]:2s} {ROMAN[stage]:4s}: dir absent")
             continue
-        date_dir = _pick_latest(ion_dir)
-        if date_dir is None:
+        latest_dir = _pick_latest(ion_dir)
+        if latest_dir is None:
             print(f"  miss {SYM[Z]:2s} {ROMAN[stage]:4s}: no date subdir")
             continue
-        osc_p = date_dir / 'osc_data'
-        if not osc_p.exists():
-            cands = list(date_dir.glob('*osc*'))
-            if not cands: continue
-            osc_p = cands[0]
+        date_dir = latest_dir
+        col_dir = latest_dir
+        linked = CMFGEN_LINK_MAP.get((Z, stage))
+        selection_source = 'links' if linked is not None else 'auto'
+        vm = None
+        vm_osc = vm_phot = None
+        linked_ftos = None
+        if linked is not None:
+            osc_p = linked['osc']
+            linked_ftos = linked['f_to_s']
+            pp = linked['phot']
+            cp = linked['col']
+            date_dir = osc_p.parent
+        else:
+            vm = TOY06_VINTAGE.get((Z, stage)) if VINTAGE_MATCH else None
+            if vm is not None and VINTAGE_PHOT_ONLY and (Z, stage) not in VINTAGE_PHOT_IONS:
+                vm = None
+            if vm is not None:
+                vdir = ion_dir / vm[0]
+                if (vdir / vm[1]).exists() and (vdir / vm[2]).exists():
+                    vm_phot = vdir / vm[2]
+                    if not VINTAGE_PHOT_ONLY:
+                        vm_osc = vdir / vm[1]
+                        date_dir = vdir
+                    selection_source = 'vintage_match'
+                else:
+                    print(f"  WARN {SYM[Z]:2s} {ROMAN[stage]:4s}: vintage-match "
+                          f"{vm[0]} incomplete; keeping {date_dir.name}")
+                    vm = None
+            osc_p = vm_osc if vm_osc is not None else date_dir / 'osc_data'
+            if not osc_p.exists():
+                cands = list(date_dir.glob('*osc*'))
+                if not cands:
+                    continue
+                osc_p = cands[0]
+            pp = vm_phot if vm_phot is not None else _phot_path(date_dir)
+            cp = col_dir / 'col_data'
 
         try:
             osc = parse_osc(osc_p)
         except Exception as e:
+            if linked is not None:
+                raise RuntimeError(
+                    f"linked osc parse failed for {SYM[Z]} {ROMAN[stage]}: {osc_p}") from e
             print(f"  ERR {SYM[Z]:2s} {ROMAN[stage]:4s} osc: {e}")
             continue
         if osc.n_levels == 0:
@@ -202,22 +501,39 @@ def parse_all_ions() -> dict:
         # Super-level ions keep ALL full levels (FL carry opacity); the NLTE
         # solve later collapses them to f_to_s super-levels.
         ftos = None
-        use_superlev = SUPER_LEVEL_ENABLED and (Z, stage) in SUPER_LEVEL_IONS
+        use_link_ftos = LINK_FTOS_ENABLED and linked_ftos is not None
+        use_superlev = (use_link_ftos or
+                        (SUPER_LEVEL_ENABLED and (Z, stage) in SUPER_LEVEL_IONS))
         if use_superlev:
-            fts_name = SUPER_LEVEL_IONS[(Z, stage)]
-            fts_p = date_dir / fts_name
+            if linked_ftos is not None:
+                fts_p = linked_ftos
+            else:
+                fts_name = SUPER_LEVEL_IONS[(Z, stage)]
+                if vm_osc is not None and vm[3]:
+                    fts_name = vm[3]
+                fts_p = date_dir / fts_name
             if not fts_p.exists():
+                if linked is not None:
+                    raise FileNotFoundError(
+                        f"linked f_to_s absent for {SYM[Z]} {ROMAN[stage]}: {fts_p}")
                 print(f"  WARN {SYM[Z]:2s} {ROMAN[stage]:4s}: f_to_s "
-                      f"{fts_name} absent in {date_dir.name}; using cap fallback")
+                      f"{fts_p.name} absent in {date_dir.name}; using cap fallback")
                 use_superlev = False
             else:
                 try:
                     ftos = parse_f_to_s(fts_p)
                 except Exception as e:
+                    if linked is not None:
+                        raise RuntimeError(
+                            f"linked f_to_s parse failed for {SYM[Z]} {ROMAN[stage]}: {fts_p}") from e
                     print(f"  WARN {SYM[Z]:2s} {ROMAN[stage]:4s} f_to_s: {e}")
                     use_superlev = False
                 else:
                     if ftos.n_levels != osc.n_levels:
+                        if linked is not None:
+                            raise RuntimeError(
+                                f"linked f_to_s n_levels {ftos.n_levels} != osc "
+                                f"{osc.n_levels} for {SYM[Z]} {ROMAN[stage]}")
                         print(f"  WARN {SYM[Z]:2s} {ROMAN[stage]:4s}: f_to_s "
                               f"n_levels {ftos.n_levels} != osc {osc.n_levels}; "
                               f"using cap fallback")
@@ -241,28 +557,50 @@ def parse_all_ions() -> dict:
         trans['lam_A'] = np.abs(trans['lam_A'])
 
         phot = None
-        pp = _phot_path(date_dir)
         if pp is not None:
-            try: phot = parse_phot(pp)
+            try:
+                phot = parse_phot(pp)
             except Exception as e:
+                if linked is not None:
+                    raise RuntimeError(
+                        f"linked phot parse failed for {SYM[Z]} {ROMAN[stage]}: {pp}") from e
                 print(f"  WARN {SYM[Z]:2s} {ROMAN[stage]:4s} phot: {e}")
 
         col = None
-        cp = date_dir / 'col_data'
         if cp.exists():
-            try: col = parse_col(cp)
+            try:
+                col = parse_col(cp)
             except Exception as e:
+                if linked is not None:
+                    raise RuntimeError(
+                        f"linked col parse failed for {SYM[Z]} {ROMAN[stage]}: {cp}") from e
                 print(f"  WARN {SYM[Z]:2s} {ROMAN[stage]:4s} col: {e}")
 
+        fts_source = linked_ftos if linked_ftos is not None else (
+            fts_p if use_superlev else None)
+        provenance = {
+            'selection_source': selection_source,
+            'latest_vintage': latest_dir.name,
+            'osc_path': osc_p,
+            'f_to_s_path': fts_source,
+            'phot_path': pp,
+            'col_path': cp,
+        }
         out[(Z, stage)] = dict(osc=osc, levels=levels, trans=trans,
                                phot=phot, col=col, date=date_dir.name,
-                               n_kept=n_kept, ftos=ftos)
+                               n_kept=n_kept, ftos=ftos,
+                               provenance=provenance)
         sl_tag = f" SL={ftos.n_super}" if ftos is not None else ""
         print(f"  {SYM[Z]:2s} {ROMAN[stage]:4s}: "
               f"{n_kept:4d}/{osc.n_levels:5d} lev{sl_tag}, "
               f"{len(trans):6d}/{osc.n_transitions:6d} trn, "
               f"phot={'Y' if phot and phot.entries else '-'} "
-              f"col={'Y' if col and col.entries else '-'}  ({date_dir.name})")
+              f"col={'Y' if col and col.entries else '-'}  ({date_dir.name}; "
+              f"{selection_source})"
+              + (f"  VM[{'phot' if VINTAGE_PHOT_ONLY else 'full'}] "
+                 f"osc={osc_p.name}({date_dir.name}) "
+                 f"phot={pp.name if pp else '-'}({vm[0]}) "
+                 f"col<-{col_dir.name}" if vm is not None else ""))
     return out
 
 
@@ -271,7 +609,8 @@ def build_global_levels(ion_data: dict):
 
     Returns
     -------
-    levels_rows : list of (Z, ion_csv, lvl_csv, E_eV, g, metastable, super_level)
+    levels_rows : list of (Z, ion_csv, lvl_csv, E_eV, g, metastable,
+                           super_level, configuration)
     level_lookup_global : dict (Z, stage, cmfgen_id_1based) -> global_idx
     per_ion_g : dict (Z, stage) -> ndarray of g[lvl_csv]
 
@@ -313,7 +652,7 @@ def build_global_levels(ion_data: dict):
             else:
                 super_level = k   # identity: each full level is its own SL
             rows.append((Z, ion_csv, k, E_eV, int(round(g_val)), metastable,
-                         super_level))
+                         super_level, str(levs['config'][k])))
             lookup[(Z, stage, cmfgen_id)] = n_total
             n_total += 1
         per_ion_g[(Z, stage)] = gs
@@ -361,11 +700,61 @@ def build_lines(ion_data: dict, level_lookup: dict, per_ion_g: dict):
 
 
 def write_levels_csv(rows, path: Path) -> None:
-    with open(path, 'w') as fp:
-        fp.write("atomic_number,ion_number,level_number,energy_eV,g,metastable,"
-                 "super_level\n")
+    with open(path, 'w', newline='') as fp:
+        writer = csv.writer(fp, lineterminator='\n')
+        writer.writerow(("atomic_number", "ion_number", "level_number",
+                         "energy_eV", "g", "metastable", "super_level",
+                         "configuration"))
         for r in rows:
-            fp.write(f"{r[0]},{r[1]},{r[2]},{r[3]:.10f},{r[4]},{r[5]},{r[6]}\n")
+            writer.writerow((r[0], r[1], r[2], f"{r[3]:.10f}", r[4], r[5],
+                             r[6], r[7]))
+
+
+def write_atomic_vintage_manifest(ion_data: dict, path: Path) -> None:
+    """Record the exact per-ion source choice used by this deck bake."""
+    fields = [
+        'atomic_number', 'ion_stage', 'ion_number', 'ion',
+        'selection_source', 'latest_vintage',
+        'osc_vintage', 'osc_path', 'f_to_s_vintage', 'f_to_s_path',
+        'phot_vintage', 'phot_path', 'col_vintage', 'col_path',
+    ]
+    if LINK_FTOS_ENABLED:
+        fields.extend([
+            'f_to_s_format', 'f_to_s_format_basis',
+            'f_to_s_declared_full_levels', 'f_to_s_declared_super_levels',
+        ])
+    with open(path, 'w', newline='') as fp:
+        writer = csv.DictWriter(fp, fieldnames=fields, lineterminator='\n')
+        writer.writeheader()
+        for (z, stage), data in sorted(ion_data.items()):
+            provenance = data['provenance']
+            row = {
+                'atomic_number': z,
+                'ion_stage': stage,
+                'ion_number': stage - 1,
+                'ion': f"{SYM[z]} {ROMAN[stage]}",
+                'selection_source': provenance['selection_source'],
+                'latest_vintage': provenance['latest_vintage'],
+            }
+            for kind in _LINK_KINDS:
+                source = provenance[f'{kind}_path']
+                row[f'{kind}_path'] = str(source) if source is not None else ''
+                row[f'{kind}_vintage'] = (
+                    _atomic_path_identity(source)[1] if source is not None else '')
+            if LINK_FTOS_ENABLED:
+                ftos = data.get('ftos')
+                if ftos is None and provenance['selection_source'] == 'links':
+                    raise RuntimeError(
+                        f"CMFGEN_LINK_FTOS missing parsed map for {row['ion']}")
+                row.update({
+                    'f_to_s_format': ftos.format_name if ftos is not None else '',
+                    'f_to_s_format_basis': ftos.format_basis if ftos is not None else '',
+                    'f_to_s_declared_full_levels': (
+                        ftos.n_levels if ftos is not None else ''),
+                    'f_to_s_declared_super_levels': (
+                        ftos.n_super if ftos is not None else ''),
+                })
+            writer.writerow(row)
 
 
 def write_line_list_csv(L, levels_rows, path: Path) -> None:
@@ -519,14 +908,518 @@ def write_atom_masses(elements_used, path: Path) -> None:
                 fp.write(f"{Z},{ATOM_MASS_AMU[Z]:.10f}\n")
 
 
-def write_abundances(elements_used, path: Path) -> None:
-    with open(path, 'w') as fp:
-        header = "atomic_number," + ",".join(str(i) for i in range(N_SHELLS))
-        fp.write(header + "\n")
-        for Z in elements_used:
-            x = DEFAULT_ABUNDANCES.get(Z, 0.0)
-            vals = ",".join(f"{x}" for _ in range(N_SHELLS))
-            fp.write(f"{Z},{vals}\n")
+# --------------------------------------------------------------------------
+# sigma_bf(nu): faithful CMFGEN evaluators + bin-AVERAGED bake
+#
+# BAKEFIX (2026-07-29), driven by
+#   validation/cmfgen_toy06_19p48d/analysis/rates_certification/VERDICT.md
+#   sections 3.1 (fit-type stand-in) and 2.2 (point-sampling bias).
+#
+# (1) The old code lumped CMFGEN fit types 2, 3, 7, 8, 9 into a single
+#     sigma = params[0] * 1e-18 * (nu_th/nu)^3 stand-in.  That is wrong in two
+#     distinct ways, both measured against CMFGEN's own converged Gamma:
+#       * type 7 (modified Seaton, sub_phot_gen.f:505-512) is
+#             RU = (nu_th + A3)/nu ;  sigma = 0 identically unless RU <= 1
+#         i.e. the edge sits at nu_th + A3, NOT at nu_th.  For the 399 Fe III
+#         levels carrying type 7, A3 = 10.2..12.3 (CMFGEN units of 1e15 Hz) =
+#         42-50 eV above threshold, so the true edge is near 150-250 A where J
+#         is negligible.  The stand-in instead opened a ~1.2 Mb edge at
+#         1000-4000 A on every one of them: +2.0% of Gamma(Fe III).
+#         params[0] IS a cross-section in Mb for type 7, so the shape was the
+#         only defect; it is now evaluated exactly.
+#       * types 2, 3, 8 (hydrogenic, sub_phot_gen.f:267/421/308) take
+#         params[0] = principal quantum number n (types 2/8) or a scale that
+#         multiplies ALPHA_BF/NEF (type 3) -- none of them a cross-section in
+#         Mb.  Type 9 is a Verner fit.  Reading n as "sigma_0 in Mb" is a
+#         fabricated number.  It is nevertheless STILL USED here, deliberately,
+#         and the reason is measured, not assumed:
+#           - VERDICT 3.1 scoped this defect as "9 S II levels".  It is not:
+#             10876 of the 26592 baked levels take that path, concentrated in
+#             exactly the campaign's ions (Co III 3344, Co II 2700, Fe II 1973).
+#           - Removing it (has_cmfgen=0, so the C loader's per-ion Kramers
+#             fallback owns them) was built and put through the certification:
+#             Co III collapses to D/PRRR = 0.111 (gate FAIL) because 88.5 % of
+#             the Co III population at s6 then sits on a sigma==0 row.  The
+#             fallback is a single per-ION sigma_0 (lumina_plasma.c:6117-6122;
+#             2.0 Mb for Co III), not a per-level one, so it cannot stand in
+#             for 1441 hydrogenic levels.
+#           - Against CMFGEN's own type-8 value at threshold (evaluated from
+#             HYD_L_DATA) neither stand-in is right, and which one is less
+#             wrong depends on the ion: legacy/CMFGEN vs fallback/CMFGEN =
+#             0.85 vs 0.34 (Co III), 0.41 vs 0.53 (Fe II), 0.41 vs 1.03 (Co II),
+#             0.09 vs 0.12 (Sc I).  Swapping one for the other is not a repair.
+#         So the stand-in stays, LABELLED, until types 2/3/8 are evaluated
+#         exactly.  That is feasible and is the real fix: it needs CMFGEN's
+#         HYD_L_DATA / GBF_N_DATA (present at
+#         /gpfs/kjhan/cmfgen_runs/toy06_19.48d/), whose units were verified
+#         here -- 10^BF_L_CROSS(1,0,u=1) * 1e-10 = 6.3034e-18 cm^2 vs the
+#         analytic H ground-state 6.30e-18.  Type 2 additionally needs NEF and
+#         type 3 needs ALPHA_BF/GBF_N_DATA.  Deliberately NOT done in this
+#         change: the certification harness has no exact evaluator for these
+#         types either (VERDICT caveat 2), so it would ship untestable.
+#
+# (2) The old code point-sampled sigma at the geometric bin centre.  Where the
+#     CMFGEN table is finer than the 1588 km/s bin (unsmoothed OP data, e.g.
+#     S II at 2.0e-3 in dln(nu) vs the grid's 5.3e-3) that biases Gamma HIGH by
+#     +1.4%..+6.4%.  sigma is now the bin AVERAGE (1/dnu) INT_bin sigma dnu,
+#     which is the quantity the 1000-bin GEMM weight
+#     (Gamma = SUM_b sigma_b * Jbar_b * 4pi/(h nu_c,b) * dnu_b) actually wants.
+#     The quadrature matches the certification's "Bav" layer node-for-node:
+#     nodes = bin edges + the level's own structure nodes + 5 log
+#     subdivisions per bin, trapezoid, accumulated into the owning bin.
+#
+# NOT changed here (VERDICT 3.2, "latent, not live"): the tabulated
+# convention sigma=0 below the first table node and sigma=const above the last,
+# where CMFGEN uses CROSS_A[1] and CROSS_A[N]*(u_N/u)^3.  Measured effect
+# -0.24% (S II s0).  Kept so this bake is a single-variable change.
+# --------------------------------------------------------------------------
+
+# Fit types this baker can evaluate exactly (CMFGEN newsubs/sub_phot_gen.f).
+_SIGMA_TABULATED = (20, 21, 22)
+_SIGMA_EXACT_FIT = (1, 7)
+# Hydrogenic (2/3/8) and Verner (9): no exact evaluator offline.  Carried by
+# the known-wrong params[0]-as-sigma_0 Kramers stand-in -- see the head note for
+# why it is kept rather than removed, and what replacing it would take.
+_SIGMA_STANDIN_FIT = (2, 3, 8, 9)
+
+# --------------------------------------------------------------------------
+# BAKEFIX2 (2026-07-29) -- EXACT evaluators for CMFGEN fit types 2, 3, 8, 9.
+#
+# Ported statement-for-statement from newsubs/sub_phot_gen.f (the routine
+# CMFGEN itself calls; branch structure, constants and units unchanged):
+#     type 2 : lines 267-304   hydrogenic, split l
+#     type 8 : lines 308-363   hydrogenic split l, offset edge
+#     type 3 : lines 421-451   hydrogenic pure n, bf gaunt factor
+#     type 9 : lines 518-530   Verner et al. multi-shell ground-state fit
+# and cross-checked line-by-line against spec_plt/subs/raw_subphot_v2.f, which
+# carries the same four branches verbatim and ends with
+#     PHOT(1:NCF)=1.0E+08*PHOT(1:NCF)    !"Convert from CMFGEN units to MB"
+# -- that statement is what fixes the unit convention used below: SUB_PHOT_GEN
+# returns sigma in PROGRAM UNITS of 1e-10 cm^2 (= 1e8 Mb ... 1 Mb = 1e-18 cm^2),
+# consistent with CONV_FAC = 1.0E-08 (phot_data_mod.f:116) multiplying the
+# Megabarn table of types 1/4/5/7/20-22, and with the 1.0E-08 hard-wired into
+# the type-9 branch.  So sigma[cm^2] = PHOT[program units] * 1e-10.
+#
+# HYD_L_DATA / GBF_N_DATA (module HYD_BF_PHOT_DATA, read by
+# newsubs/rd_hyd_bf_data.f) are already inside the imported CMFGEN tree at
+# cmfgen/HYD/I/5dec96/{hyd_l_data,gbf_n_data}.dat -- md5-identical to
+# /gpfs/kjhan/cmfgen_21jun23/atomic/HYD/I/5dec96/ which is what the toy06
+# 19.48d run actually symlinks.  Header states "Cross-sctions are in program
+# units (i.e. cgs unit*10^10)", i.e. BF_L_CROSS = log10(sigma_cgs * 1e10),
+# which is the same 1e-10 convention.
+#
+# Two per-ion/per-level quantities the fits need, both from
+# newsubs/rdphot_gen_v2.f:
+#     ZION = ZXzV, the ion's screened nuclear charge (osc_data header;
+#            1 for neutral, 3 for Fe III, ...)                    [line 177]
+#     NEF  = ZION*SQRT(NU_INF/EDGE), NU_INF = 1e-15*109737.31*c
+#            / (1 + 5.48597e-4/(2*AT_NO))   (AT_NO=1: /(1+5.48597e-4))
+#                                                              [lines 465-478]
+#
+# GATE: off by default.  CMFGEN_EXACT_HYD=1 switches types 2/3/8/9 from the
+# legacy params[0]-as-sigma_0 stand-in to these evaluators.  With the gate off
+# this file reproduces the shipped bakefix bit for bit.
+# --------------------------------------------------------------------------
+SIGMA_EXACT_HYD = os.environ.get('CMFGEN_EXACT_HYD', '0') not in ('0', '', 'false')
+
+_HYD_BF_DIR = CMFGEN_ROOT / 'HYD' / 'I' / '5dec96'
+_HYD_BF: dict | None = None
+
+# rdphot_gen_v2.f:465 -- 1e-15 * R_inf[cm^-1] * c[cm/s], in CMFGEN's 1e15 Hz.
+_NU_INF_INF = 1.0e-15 * 109737.31 * C_CGS
+_EV_TO_HZ = 0.241798840766          # sub_phot_gen.f:129, eV -> 1e15 Hz
+
+
+def _cmfgen_nef(Z: int, zion: float, nu_th: float) -> float:
+    """NEF for one level, verbatim from rdphot_gen_v2.f:465-478.
+
+    nu_th in Hz (the level's own EDGE(I)+EXC_FREQ(K), which for phot_data_A is
+    just the threshold the baker already computes).
+    """
+    nu_inf = _NU_INF_INF / (1.0 + 5.48597e-04) if Z == 1 else \
+             _NU_INF_INF / (1.0 + 5.48597e-04 / (2 * Z))
+    t1 = nu_inf / (nu_th * 1.0e-15)
+    return zion * np.sqrt(t1) if t1 > 0.0 else 0.0
+
+
+def _read_hyd_bf_data() -> dict:
+    """Port of newsubs/rd_hyd_bf_data.f: HYD_L_DATA + GBF_N_DATA -> arrays.
+
+    Arrays are 1-BASED padded (index 0 unused) so the Fortran index arithmetic
+    (BF_L_INDX(N,L), J+1, J-1, ...) transcribes without an off-by-one rewrite.
+    """
+    def _hdr(lines, i, key):
+        while key not in lines[i]:
+            i += 1
+        return lines[i].split('!')[0].strip(), i + 1
+
+    out: dict = {}
+
+    txt = (_HYD_BF_DIR / 'hyd_l_data.dat').read_text().splitlines()
+    v, i = _hdr(txt, 0, 'Maximum principal quantum number'); max_l_pqn = int(v)
+    v, i = _hdr(txt, i, 'Number of values');                 n_per_l   = int(v)
+    v, i = _hdr(txt, i, 'L_ST_U');                           l_st_u    = _f(v)
+    v, i = _hdr(txt, i, 'L_DEL_U');                          l_del_u   = _f(v)
+    tok = ' '.join(txt[i:]).split()
+    p = 0
+    cross = np.zeros(1 + n_per_l * max_l_pqn * (max_l_pqn + 1) // 2, dtype='f8')
+    indx = np.zeros((max_l_pqn + 1, max_l_pqn), dtype='i8')
+    cnt = 0
+    for N in range(1, max_l_pqn + 1):
+        for L in range(0, N):
+            rd_n, rd_l, npts = int(tok[p]), int(tok[p + 1]), int(tok[p + 2])
+            p += 3
+            if npts != n_per_l or rd_n != N or rd_l != L:
+                raise ValueError(f'hyd_l_data.dat: bad block {rd_n},{rd_l},{npts}')
+            for k in range(1, n_per_l + 1):
+                cross[cnt + k] = _f(tok[p]); p += 1
+            indx[N, L] = cnt + 1
+            cnt += n_per_l
+    out.update(MAX_L_PQN=max_l_pqn, N_PER_L=n_per_l, L_ST_U=l_st_u,
+               L_DEL_U=l_del_u, BF_L_CROSS=cross, BF_L_INDX=indx)
+
+    txt = (_HYD_BF_DIR / 'gbf_n_data.dat').read_text().splitlines()
+    v, i = _hdr(txt, 0, 'Maximum principal quantum number'); max_n_pqn = int(v)
+    v, i = _hdr(txt, i, 'Number of values');                 n_per_n   = int(v)
+    v, i = _hdr(txt, i, 'N_ST_U');                           n_st_u    = _f(v)
+    v, i = _hdr(txt, i, 'N_DEL_U');                          n_del_u   = _f(v)
+    tok = ' '.join(txt[i:]).split()
+    p = 0
+    gaunt = np.zeros(1 + n_per_n * max_n_pqn, dtype='f8')
+    gindx = np.zeros(max_n_pqn + 1, dtype='i8')
+    cnt = 0
+    for N in range(1, max_n_pqn + 1):
+        rd_n, npts = int(tok[p]), int(tok[p + 1]); p += 2
+        if npts != n_per_n or rd_n != N:
+            raise ValueError(f'gbf_n_data.dat: bad block {rd_n},{npts}')
+        for k in range(1, n_per_n + 1):
+            gaunt[cnt + k] = _f(tok[p]); p += 1
+        gindx[N] = cnt + 1
+        cnt += n_per_n
+    out.update(MAX_N_PQN=max_n_pqn, N_PER_N=n_per_n, N_ST_U=n_st_u,
+               N_DEL_U=n_del_u, BF_N_GAUNT=gaunt, BF_N_INDX=gindx)
+    return out
+
+
+def _f(s: str) -> float:
+    return float(s.replace('D', 'E').replace('d', 'e'))
+
+
+def _hyd_bf():
+    global _HYD_BF
+    if _HYD_BF is None:
+        _HYD_BF = _read_hyd_bf_data()
+    return _HYD_BF
+
+
+def _hyd_l_block(u: np.ndarray, N: int, LST: int, LEND: int) -> np.ndarray:
+    """sub_phot_gen.f:285-304 == 343-360 (identical text in both branches).
+
+    Returns SUM/((LEND-LST+1)*(LEND+LST+1)) in CMFGEN program units, i.e.
+    everything except the (NEF/(N*ZION))**2 [type 2] / 1/ZION**2 [type 8] factor.
+    Requires u >= 1 (the caller masks on FREQ >= EDGE, as CMFGEN does).
+    """
+    D = _hyd_bf()
+    n_per_l = D['N_PER_L']; l_del_u = D['L_DEL_U']
+    XC = D['BF_L_CROSS']; IDX = D['BF_L_INDX']
+
+    X  = np.log10(u)
+    RJ = X / l_del_u
+    J  = RJ.astype('i8') + 1            # Fortran: J=RJ (truncate) ; J=J+1
+    T1 = RJ - (J - 1)
+    inside = J < n_per_l                # IF(J .LT. N_PER_L)
+    total = np.zeros_like(u)
+    for L in range(LST, LEND + 1):
+        base = int(IDX[N, L])
+        T2 = np.empty_like(u)
+        if inside.any():
+            JJ = J[inside] + base - 1
+            T2[inside] = T1[inside] * XC[JJ + 1] + (1.0 - T1[inside]) * XC[JJ]
+        if not inside.all():
+            o = ~inside
+            JJ = base + n_per_l - 1
+            T2[o] = (XC[JJ] - XC[JJ - 1]) * (RJ[o] - n_per_l) + XC[JJ]
+        total += (2 * L + 1) * 10.0 ** T2
+        # Fortran restores J=RJ+1 at the end of every l iteration, so `J`
+        # (and hence `inside`) is the same for every L -- reproduced by not
+        # mutating J here.
+    return total / ((LEND - LST + 1) * (LEND + LST + 1))
+
+
+def _gbf_n(u: np.ndarray, N: int) -> np.ndarray:
+    """Bound-free gaunt factor, sub_phot_gen.f:425-445."""
+    if N > 30:
+        return np.ones_like(u)
+    D = _hyd_bf()
+    n_per_n = D['N_PER_N']; n_del_u = D['N_DEL_U']
+    G = D['BF_N_GAUNT']; IDX = D['BF_N_INDX']
+    X  = np.log10(u)
+    RJ = X / n_del_u
+    J  = RJ.astype('i8') + 1
+    T1 = RJ - (J - 1)
+    base = int(IDX[N])
+    out = np.empty_like(u)
+    inside = J < n_per_n
+    if inside.any():
+        JJ = J[inside] + base - 1
+        out[inside] = T1[inside] * G[JJ + 1] + (1.0 - T1[inside]) * G[JJ]
+    if not inside.all():
+        o = ~inside
+        JJ = base + n_per_n - 1
+        t = np.log10(G[JJ - 1] / G[JJ])
+        out[o] = G[JJ] * 10.0 ** (t * (n_per_n - RJ[o]))
+    return out
+
+
+def _sigma_model(cs_type: int, energy: np.ndarray, params: np.ndarray,
+                 nu_th: float, zion: float | None = None,
+                 nef: float | None = None):
+    """Return (sigma_fn, nodes, nu_start, tag) for one CMFGEN phot entry, or None.
+
+    sigma_fn(nu) -> sigma in cm^2 (vectorised);  nodes = abscissae where the
+    cross-section has a kink or an edge;  nu_start = lowest frequency at which
+    sigma is nonzero (the integral starts there, so a step is never smeared
+    across a bin);  tag names the evaluation path actually taken.
+    """
+    if nu_th <= 0:
+        return None
+
+    if cs_type in _SIGMA_TABULATED:
+        if energy.size == 0 or params.size == 0:
+            return None
+        nu_pts = np.asarray(energy, dtype='f8') * nu_th
+        sig_pts = np.asarray(params, dtype='f8') * 1.0e-18
+        # np.interp needs ascending abscissae; CMFGEN tables are ascending in
+        # u (verified: 0/5437 entries non-monotonic across the whole tree).
+        if nu_pts.size >= 2 and np.any(np.diff(nu_pts) < 0):
+            return None
+        lo = max(nu_th, float(nu_pts[0]))   # left=0.0 convention -> start at node 1
+
+        def fn(nu, _p=nu_pts, _s=sig_pts):
+            return np.interp(nu, _p, _s, left=0.0, right=_s[-1])
+
+        return fn, nu_pts, lo, 'tab'
+
+    if cs_type == 1 and params.size >= 3:
+        # Seaton fit, sub_phot_gen.f:412-419.
+        s0, beta, s_exp = (float(params[0]), float(params[1]), float(params[2]))
+        if s0 == 0.0:
+            return None
+
+        def fn(nu, _s0=s0, _b=beta, _e=s_exp, _n=nu_th):
+            out = np.zeros(np.shape(nu))
+            m = nu >= _n
+            if np.any(m):
+                ru = _n / np.asarray(nu)[m]
+                out[m] = 1.0e-18 * _s0 * (_b + (1.0 - _b) * ru) * ru ** _e
+            return out
+
+        return fn, np.array([nu_th]), nu_th, 'seaton'
+
+    # ---- BAKEFIX2: exact hydrogenic / Verner, gated ----------------------
+    if SIGMA_EXACT_HYD and cs_type in _SIGMA_STANDIN_FIT and zion is not None \
+            and nef is not None and zion > 0:
+        m = _sigma_hydrogenic_exact(cs_type, params, nu_th, zion, nef)
+        if m is not None:
+            return m
+        # falls through to the legacy stand-in when the entry is malformed
+        # (n out of the HYD_L_DATA range, l > n-1, wrong parameter count, ...),
+        # which is what CMFGEN itself refuses to evaluate (it STOPs).
+
+    if cs_type in _SIGMA_STANDIN_FIT and params.size >= 1:
+        # KNOWN-WRONG STAND-IN, kept deliberately (see head note): params[0] is
+        # a principal quantum number (2/8) / an ALPHA_BF scale (3) / a Verner
+        # parameter (9), NOT a cross-section in Mb.  Kramers shape from nu_th.
+        s0 = float(params[0]) * 1.0e-18
+        if s0 <= 0.0:
+            return None
+
+        def fn(nu, _s0=s0, _n=nu_th):
+            out = np.zeros(np.shape(nu))
+            m = nu >= _n
+            if np.any(m):
+                y = np.asarray(nu)[m] / _n
+                out[m] = _s0 / (y ** 3)
+            return out
+
+        return fn, np.array([nu_th]), nu_th, 'standin'
+
+    if cs_type == 7 and params.size >= 4:
+        # Modified Seaton, sub_phot_gen.f:505-512.  A3 is in CMFGEN frequency
+        # units of 1e15 Hz and SHIFTS the edge; sigma is identically 0 below it.
+        s0, beta, s_exp = (float(params[0]), float(params[1]), float(params[2]))
+        if s0 == 0.0:
+            return None
+        edge = nu_th + float(params[3]) * 1.0e15
+
+        def fn(nu, _s0=s0, _b=beta, _e=s_exp, _E=edge):
+            out = np.zeros(np.shape(nu))
+            m = nu >= _E
+            if np.any(m):
+                ru = _E / np.asarray(nu)[m]
+                out[m] = 1.0e-18 * _s0 * (_b + (1.0 - _b) * ru) * ru ** _e
+            return out
+
+        return fn, np.array([edge]), edge, 'modseaton'
+
+    return None
+
+
+# Program units -> cm^2 (raw_subphot_v2.f: "Convert from CMFGEN units to MB",
+# PHOT*1e8 = Mb = 1e-18 cm^2, so PHOT*1e-10 = cm^2).
+_PROG_TO_CM2 = 1.0e-10
+
+
+def _sigma_hydrogenic_exact(cs_type: int, params: np.ndarray, nu_th: float,
+                            zion: float, nef: float):
+    """Exact CMFGEN types 2/3/8/9.  Returns (fn, nodes, nu_start, tag) or None."""
+    D = _hyd_bf()
+
+    if cs_type == 2 and params.size >= 3:
+        # sub_phot_gen.f:267-304.
+        N    = int(round(float(params[0])))
+        LST  = int(round(float(params[1])))
+        LEND = int(round(float(params[2])))
+        if not (1 <= N <= D['MAX_L_PQN']) or LST < 0 or LEND < LST \
+                or LEND + 1 > N:
+            return None                       # CMFGEN STOPs on these
+        scale = (nef / (N * zion)) ** 2 * _PROG_TO_CM2
+
+        def fn(nu, _N=N, _a=LST, _b=LEND, _s=scale, _e=nu_th):
+            out = np.zeros(np.shape(nu))
+            m = np.asarray(nu) >= _e
+            if np.any(m):
+                out[m] = _s * _hyd_l_block(np.asarray(nu)[m] / _e, _N, _a, _b)
+            return out
+
+        return fn, _hyd_l_nodes(nu_th, D['N_PER_L'], D['L_DEL_U']), nu_th, 'hyd2'
+
+    if cs_type == 8 and params.size >= 4:
+        # sub_phot_gen.f:308-363.  CROSS_A(LMIN+3) offsets the edge; sigma is
+        # identically zero below EDGE+offset (and below EDGE, from the enclosing
+        # IF(FREQ_VEC(I) .GE. EDGE) guard).
+        N    = int(round(float(params[0])))
+        LST  = int(round(float(params[1])))
+        LEND = int(round(float(params[2])))
+        if not (1 <= N <= D['MAX_L_PQN']) or LST < 0 or LEND < LST \
+                or LEND > D['MAX_L_PQN'] or LEND + 1 > N:
+            return None
+        edge = nu_th + float(params[3]) * 1.0e15
+        start = max(nu_th, edge)
+        if edge <= 0:
+            return None
+        scale = _PROG_TO_CM2 / (zion * zion)
+
+        def fn(nu, _N=N, _a=LST, _b=LEND, _s=scale, _E=edge, _st=start):
+            out = np.zeros(np.shape(nu))
+            m = np.asarray(nu) >= _st
+            if np.any(m):
+                out[m] = _s * _hyd_l_block(np.asarray(nu)[m] / _E, _N, _a, _b)
+            return out
+
+        return fn, _hyd_l_nodes(edge, D['N_PER_L'], D['L_DEL_U']), start, 'hyd8'
+
+    if cs_type == 3 and params.size >= 2:
+        # sub_phot_gen.f:421-451.  ALPHA_BF = 2.815e-6*ZION^4 (rdphot_gen_v2.f
+        # :503) already carries ZION; FREQ is in CMFGEN's 1e15 Hz.
+        cross = float(params[0])
+        N = int(float(params[1]))             # Fortran INTEGER <- REAL: truncate
+        if N < 1 or nef <= 0.0 or cross == 0.0:
+            return None
+        alpha_bf = 2.815e-06 * zion ** 4
+        pre = alpha_bf * cross / nef / N / (nef ** 3) * _PROG_TO_CM2
+
+        def fn(nu, _N=N, _p=pre, _e=nu_th):
+            out = np.zeros(np.shape(nu))
+            m = np.asarray(nu) >= _e
+            if np.any(m):
+                x = np.asarray(nu)[m]
+                out[m] = _p * _gbf_n(x / _e, _N) / ((x * 1.0e-15) ** 3)
+            return out
+
+        nodes = _hyd_l_nodes(nu_th, D['N_PER_N'], D['N_DEL_U']) \
+            if N <= 30 else np.array([nu_th])
+        return fn, nodes, nu_th, 'hyd3'
+
+    if cs_type == 9 and params.size >= 8 and params.size % 8 == 0:
+        # sub_phot_gen.f:518-530.  8 params per shell:
+        #   0 n, 1 l, 2 E_th[eV], 3 E_0[eV], 4 sigma_0[Mb], 5 y_a, 6 P, 7 y_w.
+        # Shell 1 uses the LEVEL's edge; shells 2.. use their own tabulated E_th.
+        nsh = params.size // 8
+        sh = []
+        for j in range(nsh):
+            p = np.asarray(params[8 * j:8 * j + 8], dtype='f8')
+            if p[3] <= 0.0 or p[5] <= 0.0:
+                return None
+            e_j = nu_th if j == 0 else _EV_TO_HZ * p[2] * 1.0e15
+            sh.append((e_j, p))
+        if not sh:
+            return None
+
+        def fn(nu, _sh=sh, _e=nu_th):
+            nu = np.asarray(nu)
+            out = np.zeros(np.shape(nu))
+            glob = nu >= _e                   # enclosing IF(FREQ .GE. EDGE)
+            for e_j, p in _sh:
+                m = glob & (nu >= e_j)
+                if not np.any(m):
+                    continue
+                U  = nu[m] * 1.0e-15 / p[3] / _EV_TO_HZ
+                T1 = (U - 1.0) ** 2 + p[7] ** 2
+                T2 = U ** (5.5 + p[1] - 0.5 * p[6])
+                T3 = (1.0 + np.sqrt(U / p[5])) ** p[6]
+                out[m] += 1.0e-08 * T1 * p[4] / T2 / T3 * _PROG_TO_CM2
+            return out
+
+        return fn, np.array([e for e, _ in sh]), nu_th, 'verner9'
+
+    return None
+
+
+def _hyd_l_nodes(edge: float, n_pts: int, del_u: float) -> np.ndarray:
+    """Interpolation knots of the HYD_L_DATA / GBF_N_DATA tables, in Hz.
+
+    The tables are linear in log10(u) with step del_u, so sigma has a kink at
+    every u = 10**(k*del_u); handing those to the bin-average quadrature keeps
+    the trapezoid exact between knots.
+    """
+    return edge * 10.0 ** (np.arange(n_pts) * del_u)
+
+
+def _bin_average_sigma(fn, nodes: np.ndarray, edges: np.ndarray,
+                       d_nu: np.ndarray, nu_start: float,
+                       n_sub: int = 6) -> np.ndarray:
+    """(1/dnu_b) INT_{bin b} sigma dnu, for a log-uniform bin grid.
+
+    Node set = {nu_start, bin edges, sigma structure nodes, n_sub-1 log
+    subdivisions per bin}, so every trapezoid segment lies inside one bin.
+    """
+    nb = edges.size - 1
+    out = np.zeros(nb)
+    lo = max(nu_start, float(edges[0]))
+    hi = float(edges[-1])
+    if lo >= hi:
+        return out
+    parts = [np.array([lo, hi]), edges[(edges > lo) & (edges < hi)]]
+    if nodes is not None and nodes.size:
+        ex = nodes[(nodes > lo) & (nodes < hi)]
+        if ex.size:
+            parts.append(ex)
+    k0 = max(int(np.searchsorted(edges, lo)) - 1, 0)
+    le = np.log(edges[k0:])
+    if le.size >= 2 and n_sub > 1:
+        frac = (np.arange(1, n_sub) / n_sub)[None, :]
+        sub = np.exp(le[:-1, None] + (le[1:, None] - le[:-1, None]) * frac).ravel()
+        sub = sub[(sub > lo) & (sub < hi)]
+        if sub.size:
+            parts.append(sub)
+    x = np.unique(np.concatenate(parts))
+    s = fn(x)
+    seg = 0.5 * (s[1:] + s[:-1]) * np.diff(x)
+    mid = 0.5 * (x[1:] + x[:-1])
+    b = np.clip(np.searchsorted(edges, mid) - 1, 0, nb - 1)
+    np.add.at(out, b, seg)
+    return out / d_nu
 
 
 def bake_sigma_bf_grid(ion_data: dict, ion_data_index: dict,
@@ -551,11 +1444,18 @@ def bake_sigma_bf_grid(ion_data: dict, ion_data_index: dict,
     log_min = np.log(BF_NU_MIN)
     log_max = np.log(BF_NU_MAX)
     d_log_nu = (log_max - log_min) / nb
-    # Bin centers (matches lumina_plasma.c: nu_bin[b] = nu_min * exp((b+0.5)*dlog))
-    nu_grid = BF_NU_MIN * np.exp((np.arange(nb) + 0.5) * d_log_nu)
+    # Bin edges + widths for the bin-AVERAGE bake (BAKEFIX 2).  The C loader's
+    # bin centres are nu_min*exp((b+0.5)*dlog) (lumina_plasma.c nu_bin[b]); the
+    # baked value is the average over [edge_b, edge_{b+1}], not a sample there.
+    nu_edges = BF_NU_MIN * np.exp(np.arange(nb + 1) * d_log_nu)
+    d_nu = np.diff(nu_edges)
 
     sigma_grid = np.zeros((n_levels, nb), dtype='f8')
     has_cmfgen = np.zeros(n_levels, dtype='i1')
+    n_skip_type: dict[int, int] = {}
+    skip_by_ion: dict[tuple[int, int], int] = {}
+    n_exact_type: dict[int, int] = {}
+    exact_by_ion: dict[tuple[int, int], int] = {}
 
     # Build (Z, ion_csv, level_num_csv) -> ionization_eV map for thresholds
     ion_E = {(Z, stage - 1): d['osc'].ionization_eV
@@ -567,6 +1467,14 @@ def bake_sigma_bf_grid(ion_data: dict, ion_data_index: dict,
         levs = d['levels']
         n_kept = d['n_kept']
         E_ion = d['osc'].ionization_eV  # eV
+        # ZXzV = "Screened nuclear charge" (osc_data header); the phot file
+        # repeats it and CMFGEN cross-checks the two, so do the same.
+        zion = float(d['osc'].z_screen)
+        if SIGMA_EXACT_HYD and d['phot'] is not None \
+                and d['phot'].z_screen > 0 \
+                and abs(d['phot'].z_screen - zion) > 1e-9:
+            print(f"  [bakefix2] WARNING Z={Z} stage={stage}: ZION mismatch "
+                  f"osc={zion} phot={d['phot'].z_screen}; using osc value")
         # Level-config -> level_num_csv map (J-resolved + term-level)
         cfg_to_lvl: dict[str, int] = {}
         term_to_lvls: dict[str, list[int]] = {}
@@ -587,24 +1495,21 @@ def bake_sigma_bf_grid(ion_data: dict, ion_data_index: dict,
             if not targets:
                 continue
 
-            # Two evaluation paths:
-            #   - Tabulated (20-22): interpolate (E_ratio, sigma_Mb) pairs.
-            #   - Modified Seaton (type 1): sigma = sigma_0 * [beta + (1-beta)/y]
-            #         * y^(-s)  where y = nu/nu_threshold and parameters are
-            #         [sigma_0_Mb, beta, s].  Hillier & Miller 1998 eq.7.
-            #   - Other fit types (2,3,7,8,9): use the first parameter as
-            #         sigma_0 and apply the Kramers form (nu_0/nu)^3.  This
-            #         is an approximation that preserves order-of-magnitude;
-            #         a fully faithful implementation requires CMFGEN's
-            #         sub_phot_gen.f for each type.
+            # Evaluation paths (see the BAKEFIX head note above):
+            #   - Tabulated (20-22)      : linear interpolation in nu.
+            #   - Seaton (1)             : sub_phot_gen.f:412, edge at nu_th.
+            #   - Modified Seaton (7)    : sub_phot_gen.f:505, edge at nu_th+A3.
+            #   - Hydrogenic/Verner (2,3,8,9): known-wrong params[0] stand-in,
+            #     kept and counted; see the head note.
+            # Every baked curve is stored as the BIN AVERAGE of sigma, not a
+            # point sample at the bin centre.
             for lvl_csv in targets:
                 E_level_eV = float(levs['E_cm'][lvl_csv]) * 1.239841984e-4
                 E_thresh   = E_ion - E_level_eV
                 if E_thresh <= 0:
                     continue
                 nu_thresh = E_thresh * EV_TO_ERG / H_CGS
-                idx = np.searchsorted(nu_grid, nu_thresh)
-                if idx >= nb:
+                if nu_thresh >= nu_edges[-1]:
                     continue
                 # When baking against a ref-merged level table, the ref may
                 # have fewer levels for this ion than CMFGEN provides; skip
@@ -613,34 +1518,47 @@ def bake_sigma_bf_grid(ion_data: dict, ion_data_index: dict,
                 if gidx is None:
                     continue
 
-                if entry.cs_type in (20, 21, 22):
-                    if entry.energy.size == 0 or entry.sigma_Mb.size == 0:
-                        continue
-                    nu_pts = entry.energy * nu_thresh
-                    sigma  = entry.sigma_Mb * 1.0e-18
-                    sigma_on_grid = np.interp(nu_grid[idx:], nu_pts, sigma,
-                                              left=0.0, right=sigma[-1])
-                    sigma_grid[gidx, idx:] = sigma_on_grid
-                    has_cmfgen[gidx] = 1
-                    n_baked += 1
-                elif entry.cs_type == 1 and entry.sigma_Mb.size >= 3:
-                    sigma_0 = float(entry.sigma_Mb[0])  # Mb
-                    beta    = float(entry.sigma_Mb[1])
-                    s_exp   = float(entry.sigma_Mb[2])
-                    y = nu_grid[idx:] / nu_thresh        # y >= 1
-                    sigma = sigma_0 * (beta + (1.0 - beta) / y) * (y ** (-s_exp))
-                    sigma_grid[gidx, idx:] = sigma * 1.0e-18
-                    has_cmfgen[gidx] = 1
-                    n_baked += 1
-                elif entry.cs_type in (2, 3, 7, 8, 9) and entry.sigma_Mb.size >= 1:
-                    # Approximate as Kramers using the first parameter.
-                    sigma_0 = float(entry.sigma_Mb[0]) * 1.0e-18
-                    if sigma_0 <= 0:
-                        continue
-                    y = nu_grid[idx:] / nu_thresh
-                    sigma_grid[gidx, idx:] = sigma_0 / (y ** 3)
-                    has_cmfgen[gidx] = 1
-                    n_baked += 1
+                nef = _cmfgen_nef(Z, zion, nu_thresh) if SIGMA_EXACT_HYD else None
+                model = _sigma_model(entry.cs_type, entry.energy,
+                                     entry.sigma_Mb, nu_thresh,
+                                     zion=zion, nef=nef)
+                if model is None:
+                    if entry.cs_type in _SIGMA_STANDIN_FIT:
+                        n_skip_type[entry.cs_type] = n_skip_type.get(entry.cs_type, 0) + 1
+                        skip_by_ion[(Z, stage)] = skip_by_ion.get((Z, stage), 0) + 1
+                    continue
+                fn, nodes, nu_start, tag = model
+                if tag == 'standin':
+                    n_skip_type[entry.cs_type] = n_skip_type.get(entry.cs_type, 0) + 1
+                    skip_by_ion[(Z, stage)] = skip_by_ion.get((Z, stage), 0) + 1
+                elif tag in ('hyd2', 'hyd3', 'hyd8', 'verner9'):
+                    n_exact_type[entry.cs_type] = n_exact_type.get(entry.cs_type, 0) + 1
+                    exact_by_ion[(Z, stage)] = exact_by_ion.get((Z, stage), 0) + 1
+                sigma_grid[gidx, :] = _bin_average_sigma(
+                    fn, nodes, nu_edges, d_nu, nu_start)
+                # has_cmfgen stays 1 even when the row is all zeros: for type 7
+                # "sigma == 0 over the whole grid" is CMFGEN's answer, and must
+                # NOT be overwritten by the C-side Kramers fallback.
+                has_cmfgen[gidx] = 1
+                n_baked += 1
+
+    if n_exact_type:
+        tot = sum(n_exact_type.values())
+        print(f"  [bakefix2] {tot} levels evaluated EXACTLY on CMFGEN fit types "
+              f"{dict(sorted(n_exact_type.items()))} (sub_phot_gen.f port; "
+              f"gate CMFGEN_EXACT_HYD=1).")
+        top = sorted(exact_by_ion.items(), key=lambda kv: -kv[1])[:8]
+        print("  [bakefix2]   top ions (Z,stage):count = "
+              + ", ".join(f"({Z},{st}):{c}" for (Z, st), c in top))
+    if n_skip_type:
+        tot = sum(n_skip_type.values())
+        print(f"  [bakefix] WARNING: {tot} levels carry the known-wrong "
+              f"params[0]-as-sigma_0 stand-in (CMFGEN fit types "
+              f"{dict(sorted(n_skip_type.items()))}); exact evaluation needs "
+              f"HYD_L_DATA/GBF_N_DATA -- see the head note in this file.")
+        top = sorted(skip_by_ion.items(), key=lambda kv: -kv[1])[:8]
+        print("  [bakefix]   most affected ions (Z,stage):count = "
+              + ", ".join(f"({Z},{st}):{c}" for (Z, st), c in top))
 
     # Write flat binary
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -763,6 +1681,9 @@ def main() -> None:
     print("\n=== Phase 3: write CSVs ===")
     write_levels_csv(levels_rows, OUT_DIR / 'levels.csv')
     print(f"  levels.csv: {len(levels_rows)} rows")
+    write_atomic_vintage_manifest(
+        ion_data, OUT_DIR / 'atomic_vintage_manifest.csv')
+    print(f"  atomic_vintage_manifest.csv: {len(ion_data)} ions")
     write_line_list_csv(L, levels_rows, OUT_DIR / 'line_list.csv')
     print(f"  line_list.csv: {L['Z'].size} rows")
     n_trans, n_lvls = write_macro_atom(
@@ -776,8 +1697,7 @@ def main() -> None:
     print(f"  ionization_energies.csv: {n_ions} rows")
     elements_used = sorted({Z for (Z, _) in ion_data.keys()})
     write_atom_masses(elements_used, OUT_DIR / 'atom_masses.csv')
-    write_abundances(elements_used, OUT_DIR / 'abundances.csv')
-    print(f"  atom_masses.csv + abundances.csv ({len(elements_used)} Z)")
+    print(f"  atom_masses.csv ({len(elements_used)} Z)")
     copy_zeta_files()
     print("  zeta_*.{csv,npy} copied from tardis_reference")
 

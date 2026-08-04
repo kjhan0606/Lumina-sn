@@ -1,0 +1,190 @@
+--- a/Makefile
++++ b/Makefile
+@@ -96,7 +96,7 @@
+ 		-Wl,--gc-sections -o selftest_cmf_chieta_dump \
+ 		scripts/cmf_chieta_writer_fixture.c src/lumina_cmfgen.c $(LDFLAGS)
+ 
+-# E4 in-situ dual-assembly fixture, including a seeded n_u corruption.
++# E5 in-situ A/B/B2 assembly fixture, including a seeded n_u corruption.
+ selftest_emiss_ab_insitu: tests/emiss_ab_insitu_fixture.c src/lumina_cmfgen.c src/lumina_cmfgen.h $(HEADERS)
+ 	$(CC) -O2 -Wall -Wextra -std=c11 -D_GNU_SOURCE -ffunction-sections -fdata-sections -Isrc \
+ 		-Wl,--gc-sections -o selftest_emiss_ab_insitu \
+--- a/tests/emiss_ab_insitu_fixture.c
++++ b/tests/emiss_ab_insitu_fixture.c
+@@ -95,21 +95,25 @@
+ 
+     PlasmaState plasma={0}; plasma.n_shells=NS; plasma.T_e=Te;
+     plasma.T_rad=Te; plasma.n_electron=ne;
+-    CMFGENState a,b,seeded;
++    CMFGENState a,b,b2,seeded;
+     if (init_state(&a,NS,NB) || init_state(&b,NS,NB) ||
++        init_state(&b2,NS,NB) ||
+         init_state(&seeded,NS,NB)) return 1;
+     memcpy(b.J,a.J,sizeof(double)*NS*NB);
++    memcpy(b2.J,a.J,sizeof(double)*NS*NB);
+     memcpy(seeded.J,a.J,sizeof(double)*NS*NB);
+     cmfgen_set_deposition(NULL,NS);
+     char state_hash[65];
+     if (cmfgen_emiss_ab_state_sha256(&a,&geo,&op,NULL,&plasma,&nlte,
+                                       &atom,state_hash)) return 1;
+     cmfgen_assemble(&a,&geo,&op,NULL,&plasma);
+-    CMFGENEmissABStats clean={0}, bad={0};
++    CMFGENEmissABStats clean={0}, controlled={0}, bad={0};
+     if (cmfgen_assemble_aulnu(&b,&geo,&op,NULL,&plasma,&nlte,&atom,
+-                              -1,-1,1.0,&clean)) return 1;
++                              -1,-1,1.0,0,&clean)) return 1;
++    if (cmfgen_assemble_aulnu(&b2,&geo,&op,NULL,&plasma,&nlte,&atom,
++                              -1,-1,1.0,1,&controlled)) return 1;
+     if (cmfgen_assemble_aulnu(&seeded,&geo,&op,NULL,&plasma,&nlte,&atom,
+-                              0,0,2.0,&bad)) return 1;
++                              0,0,2.0,0,&bad)) return 1;
+     REQUIRE(!(clean.active_transition_count != 3 ||
+         clean.defined_transition_count != 1 ||
+         clean.undefined_transition_count != 2 ||
+@@ -117,29 +121,53 @@
+         clean.defined_line_shell_count != 2 ||
+         clean.undefined_line_shell_count != 4 || bad.seed_hits != 1),
+         "coverage/seed census");
++    REQUIRE(controlled.retained_transition_count == 2 &&
++            controlled.retained_line_shell_count == 4 &&
++            controlled.a_reference_retained_contribution_fraction > 0.0,
++            "B2 controlled-retention census");
+     REQUIRE(memcmp(b.S_fixed,seeded.S_fixed,sizeof(double)*NS*NB) != 0,
+             "seeded n_u corruption was not detected");
+     for (int s=0;s<NS;s++)
+         REQUIRE(b.S_fixed[(size_t)s*NB+1] == 0.0 &&
+                 b.S_fixed[(size_t)s*NB+2] == 0.0,
+                 "undefined line acquired an emissivity fallback");
++    for (int s=0;s<NS;s++) {
++        REQUIRE(b2.S_fixed[(size_t)s*NB+1] == a.S_fixed[(size_t)s*NB+1] &&
++                b2.S_fixed[(size_t)s*NB+2] == a.S_fixed[(size_t)s*NB+2],
++                "B2 did not retain undefined A emissivity");
++        REQUIRE(b2.S_fixed[(size_t)s*NB] == b.S_fixed[(size_t)s*NB],
++                "B2 changed the covered direct-Aul contribution");
++    }
++    double diag_band=0.0, diag_shell=0.0;
++    for (int k=0;k<NB;k++) diag_band+=controlled.undefined_a_emissivity_by_band[k];
++    for (int k=0;k<NS;k++) diag_shell+=controlled.undefined_a_emissivity_by_shell[k];
++    REQUIRE(fabs(diag_band-controlled.a_reference_undefined_line_power) <=
++            1e-14*fabs(diag_band) &&
++            fabs(diag_shell-controlled.a_reference_undefined_line_power) <=
++            1e-14*fabs(diag_shell), "undefined diagnostic arrays do not close");
+     REQUIRE(!(memcmp(a.chi_tot,b.chi_tot,sizeof(double)*NS*NB) ||
+         memcmp(a.chi_es,b.chi_es,sizeof(double)*NS*NB) ||
+         memcmp(a.chi_line,b.chi_line,sizeof(double)*NS*NB)),
+         "non-emissivity coordinate changed");
+-    audit(&a); audit(&b); audit(&seeded);
++    audit(&a); audit(&b); audit(&b2); audit(&seeded);
+ 
+-    char ap[4096],bp[4096],sp[4096],up[4096];
++    char ap[4096],bp[4096],b2p[4096],sp[4096],up[4096],b2up[4096];
+     if (snprintf(ap,sizeof(ap),"%s.A",argv[1]) >= (int)sizeof(ap) ||
+         snprintf(bp,sizeof(bp),"%s.B",argv[1]) >= (int)sizeof(bp) ||
++        snprintf(b2p,sizeof(b2p),"%s.B2",argv[1]) >= (int)sizeof(b2p) ||
+         snprintf(sp,sizeof(sp),"%s.B.seeded",argv[1]) >= (int)sizeof(sp) ||
+-        snprintf(up,sizeof(up),"%s.undefined.csv",bp) >= (int)sizeof(up)) return 1;
++        snprintf(up,sizeof(up),"%s.undefined.csv",bp) >= (int)sizeof(up) ||
++        snprintf(b2up,sizeof(b2up),"%s.undefined.csv",b2p) >= (int)sizeof(b2up)) return 1;
+     CMFGENChietaLaneMeta am={"A-production",state_hash,&clean};
+     CMFGENChietaLaneMeta bm={"B-Aul-nu",state_hash,&clean};
++    CMFGENChietaLaneMeta b2m={"B2-Aul-nu-retain-A-undefined",state_hash,
++                              &controlled};
+     CMFGENChietaLaneMeta sm={"B-Aul-nu",state_hash,&bad};
+     if (cmfgen_write_emiss_ab_undefined(&clean,&atom,up) ||
++        cmfgen_write_emiss_ab_undefined(&controlled,&atom,b2up) ||
+         cmfgen_dump_frozen_chieta_lane(&a,&geo,10,10,1,ap,&am) ||
+         cmfgen_dump_frozen_chieta_lane(&b,&geo,10,10,1,bp,&bm) ||
++        cmfgen_dump_frozen_chieta_lane(&b2,&geo,10,10,1,b2p,&b2m) ||
+         cmfgen_dump_frozen_chieta_lane(&seeded,&geo,10,10,1,sp,&sm)) return 1;
+     printf("PASS state=%s clean_defined=%llu/%llu contribution=%.17g "
+            "seed_line=0 seed_shell=0 factor=2 seed_hits=%llu\n",state_hash,
+@@ -148,7 +176,8 @@
+            clean.a_reference_contribution_fraction,
+            (unsigned long long)bad.seed_hits);
+     cmfgen_emiss_ab_stats_free(&clean);
++    cmfgen_emiss_ab_stats_free(&controlled);
+     cmfgen_emiss_ab_stats_free(&bad);
+-    cmfgen_free(&a); cmfgen_free(&b); cmfgen_free(&seeded);
++    cmfgen_free(&a); cmfgen_free(&b); cmfgen_free(&b2); cmfgen_free(&seeded);
+     return 0;
+ }
+--- a/scripts/sbatch_emiss_ab_capture.sh
++++ b/scripts/sbatch_emiss_ab_capture.sh
+@@ -1,7 +1,7 @@
+ #!/usr/bin/env bash
+ # DRAFT ONLY -- DO NOT SUBMIT FROM THIS FILE WITHOUT DRIVER REVIEW.
+-# Single job-per-run parity59 chi/eta capture on an H200, falling back to an
+-# 80-GB H100. All mutable output stays in a job-private GPFS directory.
++# Single job-per-run parity59 A/B/B2 chi/eta capture on an H200, falling back
++# to an 80-GB H100. All mutable output stays in a job-private GPFS directory.
+ #SBATCH --job-name=emiss_ab_capture
+ #SBATCH --partition=h200,h100
+ #SBATCH --gres=gpu:1
+@@ -15,7 +15,7 @@
+ 
+ DEPLOY_ROOT=/gpfs/kjhan/lumina_runner2
+ CERT_ENV=/home/kjhan/BACKUP/Eunha.A1/Claude/Lumina-sn/docs/PARITY59_EMISS_AB.env
+-EXPECTED_RUN_SHA=9dedc1fa3d079121dbe9e56034f78863491673c69924fab9c67182e680f3b998
++EXPECTED_RUN_SHA=22d563955fd4c3d5446e9e76d8fb89fb988c6b3f88556ca455b7371809d7af68
+ EXPECTED_BENCH_SHA=bad088f5cb866adc94aae303a8adc5dd8c9c828dc7edf1529797b392607ae2fa
+ RUN_DIR="$DEPLOY_ROOT/scratch/emiss_ab_capture_${SLURM_JOB_ID:?}"
+ export RUN_DIR
+@@ -71,12 +71,39 @@
+ grep -q '^=== END RUN FOOTER (122 vars) ===$' stdout.log
+ grep -qxF "  LUMINA_CMF_FROZEN_CHIETA_DUMP=$LUMINA_CMF_FROZEN_CHIETA_DUMP" stdout.log
+ grep -qxF '  LUMINA_CMF_FROZEN_CHIETA_ITER=10' stdout.log
++grep -qxF "  LUMINA_EMISS_AB_DUMP=$LUMINA_EMISS_AB_DUMP" stdout.log
+ grep -qxF '  LUMINA_EVENT_LOG=1' stdout.log
+ 
+ python3 "$DEPLOY_ROOT/scripts/cmf_chieta_check.py" \
+     --expected-iteration "$CHIETA_EXPECTED_ITER" \
+     "$LUMINA_CMF_FROZEN_CHIETA_DUMP" | tee chieta_check.log
+ 
++for lane in A B B2; do
++    python3 "$DEPLOY_ROOT/scripts/cmf_chieta_check.py" \
++        --expected-iteration "$CHIETA_EXPECTED_ITER" \
++        "$LUMINA_EMISS_AB_DUMP.$lane" | tee "emiss_${lane}_check.log"
++done
++cmp -s "$LUMINA_CMF_FROZEN_CHIETA_DUMP" "$LUMINA_EMISS_AB_DUMP.A"
++cmp -s "$LUMINA_EMISS_AB_DUMP.B.undefined.csv" \
++       "$LUMINA_EMISS_AB_DUMP.B2.undefined.csv"
++python3 - "$LUMINA_EMISS_AB_DUMP.B2.manifest.json" <<'PY'
++import json
++import math
++import sys
++
++m = json.load(open(sys.argv[1]))
++c = m["coverage"]
++d = m["undefined_a_reference_diagnostic"]
++assert m["emiss_ab_lane"] == "B2-Aul-nu-retain-A-undefined"
++assert m["controlled_retention"] is True
++assert c["retained_transition_count"] == c["undefined_transition_count"]
++assert c["retained_line_shell_count"] == c["undefined_line_shell_count"]
++power = c["a_reference_undefined_line_power"]
++tol = 1e-12 * max(abs(power), 1e-300)
++assert abs(math.fsum(d["by_band"]) - power) <= tol
++assert abs(math.fsum(d["by_shell"]) - power) <= tol
++PY
++
+ # Turn the just-captured production state into the requested frozen-cell oracle
+ # CSVs. Each replay is CPU-only and fail-closed; s20 is mandatory.
+ IFS=, read -r -a oracle_cells <<< "$CHIETA_ORACLE_CELLS"
+@@ -92,6 +119,9 @@
+ 
+ sha256sum \
+     "$LUMINA_CMF_FROZEN_CHIETA_DUMP" \
++    "$LUMINA_EMISS_AB_DUMP".{A,B,B2} \
++    "$LUMINA_EMISS_AB_DUMP".{A,B,B2}.manifest.json \
++    "$LUMINA_EMISS_AB_DUMP".{A,B,B2}.undefined.csv \
+     oracle_s*/lumina_oracle_cell_s*.csv \
+     > capture_sha256.txt
+ 
+@@ -99,6 +129,7 @@
+ echo "run_rc=$run_rc"
+ echo "run_footer=present"
+ echo "chieta_contract=PASS expected_iter=$CHIETA_EXPECTED_ITER"
++echo "emiss_contract=A/B/B2_PASS"
+ echo "oracle_cells=$CHIETA_ORACLE_CELLS"
+ echo "result_dir=$RUN_DIR"
+ echo "submission=performed_by_driver_only"
+

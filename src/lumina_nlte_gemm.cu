@@ -81,35 +81,25 @@ extern "C" void nlte_rates_gpu_set_fine(const double *jnu, const double *nu,
     g_fgemm_atom = atom;
 }
 
-/* The NLTE GPU caller currently uses fixed pair tuples (0,1),(2,3),...,
- * (28,29),(29,30) in lumina_cuda.cu. Mirror that here; if the layout changes,
- * update both. #281: pair 15 starts at slot 29 (O II), giving (O II, O III)
- * overlap on top of pair 14 (O I, O II) for full CMFGEN O triplet fidelity. */
-static const int NLTE_PAIR_LO[NLTE_PAIR_COUNT] = {
-    0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 24, 26, 28, 29
-};
-static const int NLTE_PAIR_N    = NLTE_PAIR_COUNT;
-
 extern "C" int nlte_rates_gpu_init(NLTEConfig *nlte, AtomicData *atom, int n_shells)
 {
     if (g_nlte_gemm.initialized) return 0;
     if (!nlte || !nlte->enabled || n_shells <= 0) return -1;
 
     int n_freq = nlte->n_freq_bins;
-    /* #281: pair count is now NLTE_PAIR_COUNT (16) due to O triplet overlap pair —
-     * n_nlte_ions/2 would undercount (31/2=15). Use explicit constant. */
-    int n_pairs = NLTE_PAIR_N;
-    if (nlte->n_nlte_ions < NLTE_MAX_IONS) {
-        /* Defensive: if slot count came out smaller than expected, fall back */
-        n_pairs = nlte->n_nlte_ions / 2;
-        if (n_pairs > NLTE_PAIR_N) n_pairs = NLTE_PAIR_N;
-    }
+    /* Pair (lo,hi)+names from the centralized builder (single source of truth;
+     * mirrors the GPU/CPU solve exactly). 16 base pairs, or 23 with the O triplet
+     * + stage-IV (III,IV) pairs under LUMINA_NLTE_STAGE4. Only lo is needed here:
+     * the R_bf table dimensions on the lower ion's photoionizing levels. */
+    int gemm_pairs[NLTE_PAIR_COUNT][2];
+    const char *gemm_names[NLTE_PAIR_COUNT];
+    int n_pairs = nlte_get_pairs(gemm_pairs, gemm_names);
 
     /* Pass 1: count L_phot and build phot_offset[] */
     int *phot_offset = (int *)malloc((n_pairs + 1) * sizeof(int));
     phot_offset[0] = 0;
     for (int p = 0; p < n_pairs; p++) {
-        int lo = NLTE_PAIR_LO[p];
+        int lo = gemm_pairs[p][0];
         int n_lo_levels = nlte->nlte_ion_level_offset[lo + 1] -
                           nlte->nlte_ion_level_offset[lo];
         if (n_lo_levels < 0) n_lo_levels = 0;
@@ -179,7 +169,7 @@ extern "C" int nlte_rates_gpu_init(NLTEConfig *nlte, AtomicData *atom, int n_she
     double fph_nu_lo = 2.99792458e10/(fph_lamhi*1e-8);   /* red edge */
     long fph_cnt[8]={0}; double fph_fsum[8]={0}; long fph_cmf[8]={0};
     for (int p = 0; p < n_pairs; p++) {
-        int ion_idx_lo = NLTE_PAIR_LO[p];
+        int ion_idx_lo = gemm_pairs[p][0];
         int Z_elem = nlte->nlte_Z[ion_idx_lo];
         int ion_lo = nlte->nlte_ion[ion_idx_lo];
         double chi_eV = -1.0;

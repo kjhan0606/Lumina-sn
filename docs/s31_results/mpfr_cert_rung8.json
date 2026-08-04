@@ -1,0 +1,113 @@
+{
+  "acceptance_unchanged": true,
+  "checks": {
+    "all_certified_negative_zero": true,
+    "all_certified_nonfinite_zero": true,
+    "all_certified_sign_uncertain_zero": true,
+    "all_grids_completed": true,
+    "fixed_precision_exact": true
+  },
+  "environment": {
+    "compile_command": [
+      "gcc",
+      "-std=c11",
+      "-O2",
+      "-Wall",
+      "-Wextra",
+      "-Wpedantic",
+      "-Werror",
+      "-Wconversion",
+      "-Wshadow",
+      "-isystem",
+      "/home/kjhan/local/include",
+      "scripts/stage31_cmf_mpfr_cert.c",
+      "-L/home/kjhan/local/lib",
+      "-Wl,-rpath,/home/kjhan/local/lib",
+      "-lmpfr",
+      "-lgmp",
+      "-lm",
+      "-o",
+      "/tmp/s31_round5b_cert/stage31_cmf_mpfr_cert"
+    ],
+    "mpfr_header": "/home/kjhan/local/include/mpfr.h",
+    "prefix": "/home/kjhan/local",
+    "rpath": "/home/kjhan/local/lib"
+  },
+  "grids": [
+    {
+      "bits": 2048,
+      "nnu": 512,
+      "ns": 128
+    },
+    {
+      "bits": 2048,
+      "nnu": 1024,
+      "ns": 256
+    },
+    {
+      "bits": 2048,
+      "nnu": 2048,
+      "ns": 512
+    }
+  ],
+  "levels": [
+    {
+      "a": 1e-11,
+      "certificate_bits": 2048,
+      "certified_max_width": "8.45624384010089045e-544",
+      "certified_min_lower": "1.26859066171462298e-24",
+      "certified_negative": 0,
+      "certified_nonfinite": 0,
+      "certified_sign_uncertain": 0,
+      "dx": 0.0014481409001956005,
+      "exit_code": 0,
+      "first_k": 18446744073709551615,
+      "first_segment": 18446744073709551615,
+      "mpfr_version": "4.2.1",
+      "nnu": 512,
+      "ns": 128,
+      "status": "PASS",
+      "stderr": ""
+    },
+    {
+      "a": 1e-11,
+      "certificate_bits": 2048,
+      "certified_max_width": "3.99171117629116677e-461",
+      "certified_min_lower": "1.20744714346150879e-24",
+      "certified_negative": 0,
+      "certified_nonfinite": 0,
+      "certified_sign_uncertain": 0,
+      "dx": 0.0007233626588464559,
+      "exit_code": 0,
+      "first_k": 18446744073709551615,
+      "first_segment": 18446744073709551615,
+      "mpfr_version": "4.2.1",
+      "nnu": 1024,
+      "ns": 256,
+      "status": "PASS",
+      "stderr": ""
+    },
+    {
+      "a": 1e-11,
+      "certificate_bits": 2048,
+      "certified_max_width": "4.81827497220348701e-293",
+      "certified_min_lower": "1.17665071521773821e-24",
+      "certified_negative": 0,
+      "certified_nonfinite": 0,
+      "certified_sign_uncertain": 0,
+      "dx": 0.0003615046409379656,
+      "exit_code": 0,
+      "first_k": 18446744073709551615,
+      "first_segment": 18446744073709551615,
+      "mpfr_version": "4.2.1",
+      "nnu": 2048,
+      "ns": 512,
+      "status": "PASS",
+      "stderr": ""
+    }
+  ],
+  "method": "MPFR directed-rounding interval replay",
+  "production_double_touched": false,
+  "rung": 8,
+  "status": "PASS"
+}

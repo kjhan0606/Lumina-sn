@@ -1,0 +1,77 @@
+INSTRUMENT REPAIR — expected change set (pre-registered 2026-08-02, fable)
+Report: docs/FABLE_INSTRUMENT_REPAIR.md
+Patches apply in ANY order; all three revert cleanly (verified).
+
+R-N4  instr_rn4_generation_contract.patch      src +62 / scripts +177
+  producer  fluor matrix artifact path  ...fluor_matrix_iter10
+                                     ->  ...fluor_matrix_iter10.iter000 .. .iter011
+                                         (one file per generation; pre-existing
+                                          generation is FATAL, not overwritten)
+            stdout  +1 line  "[FLUOR-MATRIX] armed path=<p>.iter<NNN> ...
+                              iter_select=N overwrite=0"
+                    +1 line per skipped iteration when LUMINA_FLUOR_MATRIX_ITER set
+            transport / packets / spectra          UNCHANGED (host-side writer)
+  consumer  read_fluor_matrix() gains REQUIRED kw-only expected_iteration
+            -> any consumer that omits it raises TypeError (fail-closed by
+               construction); CONTRACT_ITERATION = 10
+            new CLI flags on e10/e11/e12x2/e13/t5:
+               --expected-matrix-iteration / --expected-matrix-sha256 /
+               --matrix-non-contract-override
+            emiss_e11_fluor_matrix.py rc: failure 2 -> 1 ; NON-CONTRACT -> 2
+               (mirrors cmf_chieta_check.py; no automated consumer of rc==2 in repo)
+  negative control (ran, PASS)
+            generation swap WITH refreshed sidecar:
+               sha256sum -c            -> OK        (defect reproduced)
+               contract read           -> refused   ("generation mismatch")
+               sha-pin read            -> refused   ("identity changed")
+               non-contract w/o flag   -> refused
+  regression guard  every other artifact byte-identical
+
+R-T2  instr_rt2_linepop_dump.patch             src +599 / scripts +544 / Makefile +6
+  NEW artifact  LCMFLP01 v1  (gate LUMINA_CMF_LINEPOP_DUMP, path-valued)
+            fired inside the EXISTING it == LUMINA_CMF_FROZEN_CHIETA_ITER block
+            => same generation by construction
+            per (line, shell): tau_used, tau_from_pops, n_lower, n_upper,
+                               S_l_pop, S_l_used, eps_l, w, flags
+            per (shell, bin) : chi_line/chi_line_th/eta_line replay
+            per (shell, bin) : EPAY disposition (0 legacy / 1 thick-exempt /
+                               2 rate-shape REPLACED / 3 scalar rescaled)
+            manifest: sha256 + chi_line_roundtrip_bitwise + gate ledger
+  required env  LUMINA_CMF_LINEPOP_SHELLS (no default; missing => FATAL)
+  optional env  LUMINA_CMF_LINEPOP_LAM (default 600,3000 A)
+                LUMINA_CMF_LINEPOP_MAXROWS (default 4000000 rows = 304 MiB)
+  size          ~0.5-0.9 M rows/shell at 600-3000 A (s8 measured 475,330 rows
+                for 1000-3000 A); 3 shells ~200-330 MB total; over-cap => FATAL
+                with the measured row count, never truncation
+  refuses       cont_only / frozen-morph assemble, LUMINA_CMF_EPAY_TAUEFF > 0
+  OFF           gate unset => function never called; cmfgen_assemble_impl,
+                cmfgen_solve_J and the transport kernel have ZERO patch hunks
+  offline battery (ran, verdict PASS): 8 seeded controls incl. 1-ulp replay
+                drift, row cap, generation swap, payload tamper, EPAY disposition
+
+R-N2  instr_rn2_activation_census.patch        src +66
+  a) ff-heat branch gains d_ma_fate_record(entry, exit)   [ONLY ungated hunk]
+        no RNG draw, no packet-state write => transport byte-identical
+        expected delta, armed iteration, uncapped: +403 counts total
+        expected delta, 41.2% event-log prefix (measured by replay): +165 counts
+          entry-band histogram [3,2,6,2,4,11,30,107]
+          exits 165/165 via EVCH_KPKT_COLLEXC
+          nonzero cells [0,7]+3 [1,7]+2 [2,0]+2 [2,7]+4 [3,7]+2 [4,6]+1 [4,7]+3
+                        [5,0]+1 [5,6]+1 [5,7]+9 [6,0]+3 [6,2]+1 [6,3]+1 [6,7]+25
+                        [7,0]+14 [7,1]+1 [7,2]+2 [7,4]+1 [7,7]+89
+        negative control: ARTIS-PARITY D5 ff-heat OFF => site unreachable => delta 0
+  b) NEW uncapped activation census -> lumina_census_ma_activation.csv
+        columns shell,act_bb,act_bf,act_ffheat,total
+        expected: act_ff == heating-census ff (403); act_bf == heating-census bf
+                  (1,291,431); act_bb is a NEW uncapped observable
+        NO existing census bucket/column touched
+  c) co-evolve lane now resets/downloads/prints d_ma_fate_hist
+        inside the existing `if (event_log_on)` blocks
+        => stdout UNCHANGED when the event log is not armed
+  regression guard  lumina_census_{kpkt_exit,heating,ma_fate,ma_fate_elem,
+                    emission}.csv must be BYTE-IDENTICAL
+
+GLOBAL
+  new clamp / floor / cap / fallback : 0  (all three patches)
+  build: full nvcc link OK (sm_90, 34.4 s); lumina_cmfgen.c warnings 25 -> 25
+  commits: 0 ; production tree modified: 0 (patches only)

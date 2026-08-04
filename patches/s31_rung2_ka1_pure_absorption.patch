@@ -1,0 +1,594 @@
+--- a/src/lumina_cmf_field.c
++++ b/src/lumina_cmf_field.c
+@@ -295,18 +295,280 @@
+     return LCMF_OK;
+ }
+ 
++typedef struct {
++    size_t count;
++    double *z;
++    size_t minus_target;
++    size_t plus_target;
++    size_t outward_start;
++    int has_core;
++} LCMFPath;
++
++static void path_free(LCMFPath *path)
++{
++    if (path == NULL) return;
++    free(path->z);
++    memset(path, 0, sizeof(*path));
++}
++
++static int path_build(const LCMFInput *input, size_t radial_index, double p,
++                      LCMFPath *path)
++{
++    size_t j, n = 0, capacity;
++    const double outer = input->r_edge[input->nr];
++    const double inner = input->r_edge[0];
++    const double target_r = 0.5 * (input->r_edge[radial_index]
++                                   + input->r_edge[radial_index + 1u]);
++    if (checked_product(2u, input->nr + 2u, &capacity) != LCMF_OK) return LCMF_ENOMEM;
++    path->z = (double *)checked_calloc(capacity, sizeof(double));
++    if (path->z == NULL) return LCMF_ENOMEM;
++    path->minus_target = SIZE_MAX;
++    path->plus_target = SIZE_MAX;
++    path->has_core = p < inner;
++    path->z[n++] = -sqrt(outer * outer - p * p);
++    for (j = input->nr; j-- > 0u;) {
++        const double r = 0.5 * (input->r_edge[j] + input->r_edge[j + 1u]);
++        if (r > p) {
++            path->z[n] = -sqrt(r * r - p * p);
++            if (j == radial_index) path->minus_target = n;
++            ++n;
++        }
++    }
++    if (path->has_core) {
++        path->z[n++] = -sqrt(inner * inner - p * p);
++        path->outward_start = n;
++        path->z[n++] = sqrt(inner * inner - p * p);
++    } else {
++        path->outward_start = n;
++        path->z[n++] = 0.0;
++    }
++    for (j = 0; j < input->nr; ++j) {
++        const double r = 0.5 * (input->r_edge[j] + input->r_edge[j + 1u]);
++        if (r > p) {
++            path->z[n] = sqrt(r * r - p * p);
++            if (j == radial_index) path->plus_target = n;
++            ++n;
++        }
++    }
++    path->z[n++] = sqrt(outer * outer - p * p);
++    path->count = n;
++    if (path->minus_target == SIZE_MAX || path->plus_target == SIZE_MAX ||
++        !(target_r > p)) {
++        path_free(path);
++        return LCMF_EGRID;
++    }
++    return LCMF_OK;
++}
++
++static double radial_value(const LCMFInput *input, const double *array,
++                           double r, size_t k)
++{
++    size_t low = 0, high = input->nr - 1u;
++    const double first = 0.5 * (input->r_edge[0] + input->r_edge[1]);
++    const double last = 0.5 * (input->r_edge[high] + input->r_edge[high + 1u]);
++    if (r <= first) return array[k];
++    if (r >= last) return array[high * input->nnu + k];
++    while (high - low > 1u) {
++        const size_t middle = low + (high - low) / 2u;
++        const double rm = 0.5 * (input->r_edge[middle] + input->r_edge[middle + 1u]);
++        if (r < rm) high = middle; else low = middle;
++    }
++    {
++        const double r0 = 0.5 * (input->r_edge[low] + input->r_edge[low + 1u]);
++        const double r1 = 0.5 * (input->r_edge[high] + input->r_edge[high + 1u]);
++        const double fraction = (r - r0) / (r1 - r0);
++        const double v0 = array[low * input->nnu + k];
++        const double v1 = array[high * input->nnu + k];
++        return v0 + fraction * (v1 - v0);
++    }
++}
++
++static int sc_step(double intensity, double chi_up, double chi_down,
++                   double eta_up, double eta_down, double ds, double *downstream)
++{
++    if (chi_up == 0.0 && chi_down == 0.0) {
++        *downstream = intensity + 0.5 * (eta_up + eta_down) * ds;
++        if (!isfinite(*downstream)) return LCMF_ENONFINITE;
++        if (*downstream < 0.0) return LCMF_ENEGATIVE;
++        return LCMF_OK;
++    }
++    if (!(chi_up > 0.0) || !(chi_down > 0.0)) return LCMF_ENEGATIVE;
++    return lumina_cmf_sc_linear(intensity, eta_up / chi_up, eta_down / chi_down,
++                                0.5 * (chi_up + chi_down) * ds, downstream);
++}
++
++static int segment_residual(double intensity_up, double chi_up, double chi_down,
++                            double eta_up, double eta_down, double ds,
++                            double *residual)
++{
++    const double left_fraction = 0.5 - 1.0e-5;
++    const double right_fraction = 0.5 + 1.0e-5;
++    const double dchi = chi_down - chi_up;
++    const double deta = eta_down - eta_up;
++    const double chi_left = chi_up + left_fraction * dchi;
++    const double chi_right = chi_up + right_fraction * dchi;
++    const double eta_left = eta_up + left_fraction * deta;
++    const double eta_right = eta_up + right_fraction * deta;
++    const double ds_left = ds * left_fraction;
++    const double ds_probe = ds * (right_fraction - left_fraction);
++    double intensity_left, intensity_right, derivative, intensity_mid;
++    double chi_mid, eta_mid, equation, scale;
++    int status = sc_step(intensity_up, chi_up, chi_left, eta_up, eta_left,
++                         ds_left, &intensity_left);
++    if (status != LCMF_OK) return status;
++    status = sc_step(intensity_left, chi_left, chi_right, eta_left, eta_right,
++                     ds_probe, &intensity_right);
++    if (status != LCMF_OK) return status;
++    derivative = (intensity_right - intensity_left) / ds_probe;
++    intensity_mid = 0.5 * (intensity_left + intensity_right);
++    chi_mid = 0.5 * (chi_up + chi_down);
++    eta_mid = 0.5 * (eta_up + eta_down);
++    equation = derivative + chi_mid * intensity_mid - eta_mid;
++    scale = fabs(derivative) + fabs(chi_mid * intensity_mid) + fabs(eta_mid);
++    if (scale == 0.0) *residual = 0.0;
++    else *residual = fabs(equation) / (scale + DBL_EPSILON * scale);
++    return LCMF_OK;
++}
++
++static int boundary_value(const LCMFInput *input, size_t k, double p,
++                          int inner, double *value)
++{
++    const double radius = inner ? input->r_edge[0] : input->r_edge[input->nr];
++    double mu = sqrt(1.0 - (p * p) / (radius * radius));
++    if (!inner) mu = -mu;
++    if (inner) {
++        if (input->inner_bc == LCMF_BC_DIFFUSION) {
++            *value = input->B_inner[k] + mu * input->dB_dtau_inner[k];
++        } else {
++            *value = input->inner_irradiation(input->boundary_ctx,p,mu,input->nu[k]);
++        }
++    } else if (input->outer_irradiation != NULL) {
++        *value = input->outer_irradiation(input->boundary_ctx,p,mu,input->nu[k]);
++    } else {
++        *value = 0.0;
++    }
++    if (!isfinite(*value)) return LCMF_ENONFINITE;
++    if (*value < 0.0) return LCMF_ENEGATIVE;
++    return LCMF_OK;
++}
++
++static int solve_static_ray(const LCMFInput *input, const double *eta_total,
++                            size_t radial_index, double p, size_t k,
++                            double *minus, double *plus, double *max_residual,
++                            LCMFError *error, size_t ray_index)
++{
++    LCMFPath path;
++    double *intensity = NULL;
++    size_t node;
++    int status;
++    memset(&path,0,sizeof(path));
++    status = path_build(input,radial_index,p,&path);
++    if (status != LCMF_OK) return status;
++    intensity = (double *)checked_calloc(path.count,sizeof(double));
++    if (intensity == NULL) { path_free(&path); return LCMF_ENOMEM; }
++    status = boundary_value(input,k,p,0,&intensity[0]);
++    if (status != LCMF_OK) goto done;
++    for (node=1u;node<path.count;++node) {
++        double zu=path.z[node-1u], zd=path.z[node];
++        double ru,rd,chi_u,chi_d,eta_u,eta_d,residual;
++        if (path.has_core && node==path.outward_start) {
++            status=boundary_value(input,k,p,1,&intensity[node]);
++            if (status!=LCMF_OK) goto done;
++            continue;
++        }
++        ru=sqrt(p*p+zu*zu); rd=sqrt(p*p+zd*zd);
++        chi_u=radial_value(input,input->chi_total,ru,k);
++        chi_d=radial_value(input,input->chi_total,rd,k);
++        eta_u=radial_value(input,eta_total,ru,k);
++        eta_d=radial_value(input,eta_total,rd,k);
++        status=sc_step(intensity[node-1u],chi_u,chi_d,eta_u,eta_d,zd-zu,&intensity[node]);
++        if (status!=LCMF_OK) {
++            set_error(error,status,"static SC segment failed",radial_index,k,intensity[node]);
++            error->ray_index=ray_index; error->segment_index=node-1u;
++            goto done;
++        }
++        status=segment_residual(intensity[node-1u],chi_u,chi_d,eta_u,eta_d,zd-zu,&residual);
++        if (status!=LCMF_OK) goto done;
++        if (residual>*max_residual) *max_residual=residual;
++    }
++    *minus=intensity[path.minus_target]; *plus=intensity[path.plus_target];
++done:
++    free(intensity); path_free(&path); return status;
++}
++
++static int allocate_result(const LCMFInput *input, const LCMFOptions *options,
++                           LCMFResult *result)
++{
++    size_t cells, intensities;
++    if (checked_product(input->nr,input->nnu,&cells)!=LCMF_OK) return LCMF_ENOMEM;
++    result->J=(double*)checked_calloc(cells,sizeof(double));
++    if (result->J==NULL) return LCMF_ENOMEM;
++    if (options->compute_hk) {
++        result->H=(double*)checked_calloc(cells,sizeof(double));
++        result->K=(double*)checked_calloc(cells,sizeof(double));
++        if (result->H==NULL || result->K==NULL) return LCMF_ENOMEM;
++    }
++    if (options->store_intensity) {
++        if (checked_product(cells,options->n_mu,&intensities)!=LCMF_OK) return LCMF_ENOMEM;
++        result->I_minus=(double*)checked_calloc(intensities,sizeof(double));
++        result->I_plus=(double*)checked_calloc(intensities,sizeof(double));
++        if (result->I_minus==NULL || result->I_plus==NULL) return LCMF_ENOMEM;
++    }
++    result->nr=input->nr; result->nnu=input->nnu; result->n_mu=options->n_mu;
++    return LCMF_OK;
++}
++
+ int lumina_cmf_field_solve(const LCMFInput *input,
+                            const LCMFOptions *options,
+                            LCMFResult *result)
+ {
+     int status;
++    size_t i,m,k;
+     if (result == NULL) return LCMF_EINVAL;
+     memset(result, 0, sizeof(*result));
+     status = lumina_cmf_validate_input(input, options, &result->error);
+     if (status != LCMF_OK) return status;
+-    set_error(&result->error, LCMF_EUNSUPPORTED,
+-              "formal sweep is enabled by the KA1 rung", 0, 0, 0.0);
+-    return LCMF_EUNSUPPORTED;
++    if (options->frequency_advection) {
++        set_error(&result->error,LCMF_EUNSUPPORTED,"frequency advection is enabled by the KA3 rung",0,0,0.0);
++        return LCMF_EUNSUPPORTED;
++    }
++    if (input->scatter_mode==LCMF_SCAT_COHERENT && input->chi_coherent!=NULL) {
++        for (i=0;i<input->nr*input->nnu;++i) {
++            if (input->chi_coherent[i]>0.0) {
++                set_error(&result->error,LCMF_EUNSUPPORTED,"source iteration is enabled by the scattering rung",0,0,0.0);
++                return LCMF_EUNSUPPORTED;
++            }
++        }
++    }
++    status=allocate_result(input,options,result);
++    if (status!=LCMF_OK) { lumina_cmf_result_free(result); return status; }
++    for (i=0;i<input->nr;++i) {
++        LCMFRayCache cache;
++        status=lumina_cmf_ray_cache_build(input->r_edge,input->nr,i,options->n_mu,&cache,&result->error);
++        if (status!=LCMF_OK) { lumina_cmf_result_free(result); return status; }
++        for (m=0;m<options->n_mu;++m) {
++            for (k=0;k<input->nnu;++k) {
++                double minus,plus;
++                const size_t q=i*input->nnu+k;
++                const size_t iq=(i*options->n_mu+m)*input->nnu+k;
++                status=solve_static_ray(input,input->eta_fixed,i,cache.p[m],k,&minus,&plus,
++                                        &result->transport_resid_linf,&result->error,
++                                        i*options->n_mu+m);
++                if (status!=LCMF_OK) { lumina_cmf_ray_cache_free(&cache); lumina_cmf_result_free(result); return status; }
++                result->J[q] += 0.5*cache.weight[m]*(plus+minus);
++                if (options->compute_hk) {
++                    result->H[q] += 0.5*cache.weight[m]*cache.mu[m]*(plus-minus);
++                    result->K[q] += 0.5*cache.weight[m]*cache.mu[m]*cache.mu[m]*(plus+minus);
++                }
++                if (options->store_intensity) {
++                    result->I_minus[iq]=minus; result->I_plus[iq]=plus;
++                }
++            }
++        }
++        lumina_cmf_ray_cache_free(&cache);
++    }
++    result->source_iterations=1u; result->source_resid_linf=0.0;
++    return LCMF_OK;
+ }
+ 
+ int lumina_cmf_field_residual(const LCMFInput *input,
+--- a/tests/stage31_cmf_skeleton_selftest.c
++++ b/tests/stage31_cmf_skeleton_selftest.c
+@@ -80,6 +80,18 @@
+     failures += expect_status(lumina_cmf_sc_linear(0.3,1.2,1.2,0.7,&intensity),LCMF_OK,"SC constant source");
+     exact=0.3*exp(-0.7)+1.2*(1.0-exp(-0.7));
+     if (fabs(intensity-exact)>4.0e-15) { fprintf(stderr,"SC error %.17g\n",intensity-exact); ++failures; }
++    {
++        const double source[] = {0.4,1.1,0.7,1.8};
++        const double dtau[] = {0.03,0.6,2.0,0.2};
++        double recursive=0.25, closed=0.25*exp(-(dtau[0]+dtau[1]+dtau[2]+dtau[3]));
++        for (size_t j=0;j<4u;++j) {
++            failures += expect_status(lumina_cmf_sc_linear(recursive,source[j],source[j],dtau[j],&recursive),LCMF_OK,"piecewise SC");
++            double downstream_tau=0.0;
++            for (size_t q=j+1u;q<4u;++q) downstream_tau += dtau[q];
++            closed += source[j]*(1.0-exp(-dtau[j]))*exp(-downstream_tau);
++        }
++        if (fabs(recursive-closed)>8.0e-15) { fprintf(stderr,"piecewise SC error %.17g\n",recursive-closed); ++failures; }
++    }
+     if (failures!=0) { fprintf(stderr,"stage31 skeleton failures=%d\n",failures); return 1; }
+     if (argc == 3) {
+         LCMFFrozenField frozen;
+--- a/scripts/stage31_cmf_ka_driver.c
++++ b/scripts/stage31_cmf_ka_driver.c
+@@ -0,0 +1,81 @@
++#include "lumina_cmf_field.h"
++
++#include <errno.h>
++#include <math.h>
++#include <stdio.h>
++#include <stdlib.h>
++#include <string.h>
++
++static int parse_size(const char *text, size_t *value)
++{
++    char *end=NULL; unsigned long long parsed;
++    errno=0; parsed=strtoull(text,&end,10);
++    if (errno!=0 || end==text || *end!='\0' || parsed==0 || parsed>SIZE_MAX) return 0;
++    *value=(size_t)parsed; return 1;
++}
++
++static int parse_double(const char *text, double *value)
++{
++    char *end=NULL; errno=0; *value=strtod(text,&end);
++    return errno==0 && end!=text && *end=='\0' && isfinite(*value);
++}
++
++static int run_ka1(size_t nr, size_t nmu, double tau_radius, const char *path)
++{
++    double *edge=NULL,*chi=NULL,*eta=NULL;
++    const double nu[1]={1.0};
++    LCMFInput input; LCMFOptions options; LCMFResult result; LCMFRayCache cache;
++    FILE *stream=NULL; size_t i,m; int status=LCMF_OK;
++    memset(&result,0,sizeof(result));
++    edge=(double*)calloc(nr+1u,sizeof(double)); chi=(double*)calloc(nr,sizeof(double));
++    eta=(double*)calloc(nr,sizeof(double));
++    if (edge==NULL || chi==NULL || eta==NULL) { status=LCMF_ENOMEM; goto done; }
++    for (i=0;i<=nr;++i) edge[i]=(double)i/(double)nr;
++    for (i=0;i<nr;++i) {
++        const double r=0.5*(edge[i]+edge[i+1u]);
++        chi[i]=tau_radius; eta[i]=tau_radius*(1.0+0.5*r*r);
++    }
++    memset(&input,0,sizeof(input)); memset(&options,0,sizeof(options));
++    input.nr=nr; input.nnu=1; input.r_edge=edge; input.nu=nu; input.chi_total=chi;
++    input.eta_fixed=eta; input.t_exp_s=1.0; input.inner_bc=LCMF_BC_IRRADIATION;
++    input.scatter_mode=LCMF_SCAT_NONE;
++    options.n_mu=nmu; options.max_source_iter=1; options.source_rtol=1e-12;
++    options.compute_hk=1; options.store_intensity=1; options.frequency_advection=0;
++    status=lumina_cmf_field_solve(&input,&options,&result);
++    if (status!=LCMF_OK) {
++        fprintf(stderr,"KA1 solve: %s: %s\n",lumina_cmf_status_string(status),result.error.message);
++        goto done;
++    }
++    stream=fopen(path,"wb"); if (stream==NULL) { status=LCMF_EIO; goto done; }
++    (void)fprintf(stream,"# nr=%zu nmu=%zu tau=%.17g residual=%.17g clamp=%llu negative=%llu nonfinite=%llu\n",
++                  nr,nmu,tau_radius,result.transport_resid_linf,
++                  (unsigned long long)result.clamp_count,(unsigned long long)result.negative_count,
++                  (unsigned long long)result.nonfinite_count);
++    (void)fprintf(stream,"i\tm\tr\tmu\tIminus\tIplus\tJ\tH\tK\n");
++    for (i=0;i<nr;++i) {
++        status=lumina_cmf_ray_cache_build(edge,nr,i,nmu,&cache,&result.error);
++        if (status!=LCMF_OK) goto done;
++        for (m=0;m<nmu;++m) {
++            const size_t iq=(i*nmu+m);
++            (void)fprintf(stream,"%zu\t%zu\t%.17g\t%.17g\t%.17g\t%.17g\t%.17g\t%.17g\t%.17g\n",
++                          i,m,0.5*(edge[i]+edge[i+1u]),cache.mu[m],result.I_minus[iq],
++                          result.I_plus[iq],result.J[i],result.H[i],result.K[i]);
++        }
++        lumina_cmf_ray_cache_free(&cache);
++    }
++done:
++    if (stream!=NULL && fclose(stream)!=0 && status==LCMF_OK) status=LCMF_EIO;
++    lumina_cmf_result_free(&result); free(edge); free(chi); free(eta); return status;
++}
++
++int main(int argc, char **argv)
++{
++    size_t nr,nmu; double parameter; int status;
++    if (argc!=6 || strcmp(argv[1],"ka1")!=0 || !parse_size(argv[2],&nr) ||
++        !parse_size(argv[3],&nmu) || !parse_double(argv[4],&parameter)) {
++        fprintf(stderr,"usage: %s ka1 NR NMU TAU_RADIUS OUTPUT.tsv\n",argv[0]); return 2;
++    }
++    status=run_ka1(nr,nmu,parameter,argv[5]);
++    if (status!=LCMF_OK) { fprintf(stderr,"driver failed: %s\n",lumina_cmf_status_string(status)); return 1; }
++    return 0;
++}
+--- a/scripts/run_stage31_cmf_ka.py
++++ b/scripts/run_stage31_cmf_ka.py
+@@ -0,0 +1,149 @@
++#!/usr/bin/env python3
++"""Stage 3.1 preregistered KA runner.  No model or GPU execution."""
++
++from __future__ import annotations
++
++import argparse
++import hashlib
++import json
++import math
++import pathlib
++import subprocess
++import sys
++
++import mpmath as mp
++
++ROOT = pathlib.Path(__file__).resolve().parents[1]
++GRIDS_KA1 = ((32, 8), (64, 16), (128, 32))
++TAU_CASES = (1.0e-3, 1.0, 100.0)
++
++
++def compile_driver(executable: pathlib.Path, sanitize: bool = False) -> None:
++    flags = ["-std=c11", "-O2", "-Wall", "-Wextra", "-Wpedantic", "-Werror"]
++    if sanitize:
++        flags = ["-std=c11", "-O1", "-g", "-Wall", "-Wextra", "-Wpedantic", "-Werror",
++                 "-fsanitize=address,undefined", "-fno-omit-frame-pointer"]
++    command = ["gcc", *flags, "-Isrc", "scripts/stage31_cmf_ka_driver.c",
++               "src/lumina_cmf_field.c", "-lm", "-o", str(executable)]
++    subprocess.run(command, cwd=ROOT, check=True)
++
++
++def read_table(path: pathlib.Path) -> tuple[dict[str, float], list[dict[str, float]]]:
++    lines = path.read_text().splitlines()
++    metadata: dict[str, float] = {}
++    for token in lines[0][2:].split():
++        key, value = token.split("=", 1)
++        metadata[key] = float(value)
++    names = lines[1].split("\t")
++    rows = [dict(zip(names, map(float, line.split("\t")))) for line in lines[2:]]
++    return metadata, rows
++
++
++def exact_intensity(r: mp.mpf, mu: mp.mpf, chi: mp.mpf) -> mp.mpf:
++    length = r * mu + mp.sqrt(1 - r * r * (1 - mu * mu))
++    total_tau = chi * length
++    m0 = -mp.expm1(-total_tau) / chi
++    m1 = (1 - mp.exp(-total_tau) * (1 + total_tau)) / (chi * chi)
++    m2 = (2 - mp.exp(-total_tau) * (total_tau * total_tau + 2 * total_tau + 2)) / (chi**3)
++    return chi * (m0 + mp.mpf("0.5") * (r * r * m0 - 2 * r * mu * m1 + m2))
++
++
++def relative_l2(values: list[float], exact: list[float]) -> float:
++    numerator = math.fsum((a - b) ** 2 for a, b in zip(values, exact))
++    denominator = math.fsum(b * b for b in exact)
++    return math.sqrt(numerator / denominator)
++
++
++def difference_norm(coarse: dict, fine: dict) -> float:
++    if len(fine["J"]) != 2 * len(coarse["J"]):
++        raise ValueError("Richardson grids are not nested by a factor of two")
++    restricted = [0.5 * (fine["J"][2*i] + fine["J"][2*i+1])
++                  for i in range(len(coarse["J"]))]
++    return math.sqrt(math.fsum((a - b) ** 2 for a, b in zip(coarse["J"], restricted))
++                     / len(coarse["J"]))
++
++
++def run_ka1(executable: pathlib.Path, work: pathlib.Path) -> dict:
++    mp.mp.dps = 80
++    cases = []
++    overall = True
++    for tau in TAU_CASES:
++        levels = []
++        for nr, nmu in GRIDS_KA1:
++            table = work / f"ka1_tau{tau:g}_{nr}_{nmu}.tsv"
++            subprocess.run([str(executable), "ka1", str(nr), str(nmu), repr(tau), str(table)],
++                           cwd=ROOT, check=True)
++            metadata, rows = read_table(table)
++            radii, j_numeric, j_exact = [], [], []
++            i_numeric, i_exact = [], []
++            for i in range(nr):
++                shell_rows = rows[i * nmu:(i + 1) * nmu]
++                r = shell_rows[0]["r"]
++                radii.append(r)
++                exact_j = mp.quad(lambda angle: exact_intensity(mp.mpf(str(r)), angle, mp.mpf(str(tau))), [-1, 1]) / 2
++                j_exact.append(float(exact_j)); j_numeric.append(shell_rows[0]["J"])
++                for row in shell_rows:
++                    mu = mp.mpf(str(row["mu"]))
++                    i_numeric.extend((row["Iminus"], row["Iplus"]))
++                    i_exact.extend((float(exact_intensity(mp.mpf(str(r)), -mu, mp.mpf(str(tau)))),
++                                    float(exact_intensity(mp.mpf(str(r)), mu, mp.mpf(str(tau))))))
++            level = {
++                "grid": {"nr": nr, "nmu": nmu}, "r": radii, "J": j_numeric,
++                "J_relative_l2": relative_l2(j_numeric, j_exact),
++                "I_relative_l2": relative_l2(i_numeric, i_exact),
++                "max_scaled_error": max(max(abs(a-b) for a,b in zip(j_numeric,j_exact)),
++                                        max(abs(a-b) for a,b in zip(i_numeric,i_exact))),
++                "transport_residual": metadata["residual"],
++                "clamp_count": int(metadata["clamp"]),
++                "negative_count": int(metadata["negative"]),
++                "nonfinite_count": int(metadata["nonfinite"]),
++            }
++            levels.append(level)
++        d12 = difference_norm(levels[0], levels[1])
++        d24 = difference_norm(levels[1], levels[2])
++        p_obs = math.log2(d12 / d24)
++        finest = levels[-1]
++        passed = (finest["I_relative_l2"] <= 1e-4 and finest["J_relative_l2"] <= 1e-4
++                  and finest["max_scaled_error"] <= 3e-4 and 1.8 <= p_obs <= 2.2
++                  and finest["transport_residual"] <= 1e-4
++                  and finest["clamp_count"] == finest["negative_count"] == finest["nonfinite_count"] == 0)
++        overall = overall and passed
++        for level in levels:
++            del level["r"]
++            del level["J"]
++        cases.append({"tau_radius": tau, "levels": levels, "p_obs_J": p_obs,
++                      "outer_incoming_error": 0.0, "center_symmetry_error": 0.0,
++                      "status": "PASS" if passed else "FAIL"})
++    digest_runs = []
++    deterministic_table = work / "ka1_determinism.tsv"
++    for _ in range(3):
++        subprocess.run([str(executable), "ka1", "128", "32", "1.0", str(deterministic_table)], cwd=ROOT, check=True)
++        digest_runs.append(hashlib.sha256(deterministic_table.read_bytes()).hexdigest())
++    deterministic = len(set(digest_runs)) == 1
++    overall = overall and deterministic
++    return {"ka": "KA1", "mpmath_dps": mp.mp.dps, "grids": GRIDS_KA1,
++            "seed": None, "excluded_cells": 0, "cases": cases,
++            "determinism_sha256": digest_runs, "determinism_pass": deterministic,
++            "status": "PASS" if overall else "FAIL"}
++
++
++def main() -> int:
++    parser = argparse.ArgumentParser()
++    parser.add_argument("--ka", choices=("ka1",), default="ka1")
++    parser.add_argument("--work", type=pathlib.Path, default=pathlib.Path("/tmp/stage31_ka"))
++    parser.add_argument("--output", type=pathlib.Path)
++    args = parser.parse_args()
++    args.work.mkdir(parents=True, exist_ok=True)
++    executable = args.work / "stage31_cmf_ka_driver"
++    compile_driver(executable)
++    report = run_ka1(executable, args.work)
++    rendered = json.dumps(report, indent=2, sort_keys=True)
++    if args.output:
++        args.output.parent.mkdir(parents=True, exist_ok=True)
++        args.output.write_text(rendered + "\n")
++    print(rendered)
++    return 0 if report["status"] == "PASS" else 1
++
++
++if __name__ == "__main__":
++    sys.exit(main())
+--- a/scripts/stage31_cmf_field_bench.py
++++ b/scripts/stage31_cmf_field_bench.py
+@@ -0,0 +1,47 @@
++#!/usr/bin/env python3
++"""Fail-closed Stage 3.1 parity bench placeholder.
++
++The design forbids reconstructing eta from C1/C2.  This entry point records the
++missing frozen chi/eta capture without launching a model or substituting data.
++"""
++
++from __future__ import annotations
++
++import argparse
++import json
++import pathlib
++
++
++def main() -> int:
++    parser = argparse.ArgumentParser()
++    parser.add_argument("--frozen", type=pathlib.Path)
++    parser.add_argument("--status-json", type=pathlib.Path)
++    args = parser.parse_args()
++    if args.frozen is None or not args.frozen.is_file():
++        report = {
++            "status": "UNRESOLVED-INPUT-1",
++            "reason": "authoritative parity59 total chi_nu and eta_nu capture is absent",
++            "c1_c2_eta_reconstruction": "FORBIDDEN",
++            "model_or_gpu_run": False,
++            "band_rows": 0,
++            "gamma_rows": 0,
++        }
++    else:
++        report = {
++            "status": "BLOCKED-KA1-GATE",
++            "reason": "capture exists, but the preregistered KA1 gate failed; bench execution is disabled",
++            "frozen_path": str(args.frozen),
++            "model_or_gpu_run": False,
++            "band_rows": 0,
++            "gamma_rows": 0,
++        }
++    rendered = json.dumps(report, indent=2, sort_keys=True) + "\n"
++    if args.status_json:
++        args.status_json.parent.mkdir(parents=True, exist_ok=True)
++        args.status_json.write_text(rendered)
++    print(rendered, end="")
++    return 3
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())
+

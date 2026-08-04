@@ -1,0 +1,31 @@
+diff --git a/bench_frozen_oracle.c b/bench_frozen_oracle.c
+index fcf6725..c2b0ff9 100644
+--- a/bench_frozen_oracle.c
++++ b/bench_frozen_oracle.c
+@@ -619,14 +619,22 @@ static int run_cell(const char *run_dir, const char *out_dir, int shell,
+      * explicitly armed; the legacy oracle rows remain authoritative. */
+     nlte->current_iter = replay.consume_iter;
+     int baseline_sigma_loaded=atom->cmfgen_loaded;
++    int ew_failed = 0;
+     if (g_ew_sigma_available) atom->cmfgen_loaded=1;
+     if (nlte_element_wide_matches(16, shell))
+-        (void)nlte_element_wide_run_labeled(nlte, atom, plasma, opacity,
+-                                             16, 0, shell, texp, gamma_dep);
++        if (nlte_element_wide_run_labeled(nlte, atom, plasma, opacity,
++                                           16, 0, shell, texp, gamma_dep) < 0)
++            ew_failed = 1;
+     if (nlte_element_wide_matches(26, shell))
+-        (void)nlte_element_wide_run_labeled(nlte, atom, plasma, opacity,
+-                                             26, 0, shell, texp, gamma_dep);
++        if (nlte_element_wide_run_labeled(nlte, atom, plasma, opacity,
++                                           26, 0, shell, texp, gamma_dep) < 0)
++            ew_failed = 1;
+     atom->cmfgen_loaded=baseline_sigma_loaded;
++    if (ew_failed) {
++        fprintf(stderr, "s%d: element-wide observer failed\n", shell);
++        free(mc_J);
++        return -1;
++    }
+ 
+     char path[4096];
+     snprintf(path, sizeof(path), "%s/lumina_oracle_cell_s%d.csv", out_dir, shell);

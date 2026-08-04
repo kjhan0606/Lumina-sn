@@ -16,9 +16,8 @@ Outputs written into REF_DIR:
                                                           iter<3 packets need
                                                           valid loaded values)
 
-Default n_shells=30 matches the production driver scripts. LUMINA's loader
-reinitializes either array to zeros if its column count != actual n_shells,
-so the value here is only a heuristic.
+The shell count is a strict runtime contract.  The generated K-SHAPE sidecar
+binds both arrays to this line-list epoch; the C loader rejects any mismatch.
 """
 
 from __future__ import annotations
@@ -26,6 +25,8 @@ import sys
 from pathlib import Path
 import numpy as np
 import pandas as pd
+
+from kshape_contract import write_contract
 
 
 def main(ref_dir: Path, n_shells: int = 30) -> None:
@@ -248,6 +249,9 @@ def main(ref_dir: Path, n_shells: int = 30) -> None:
     print(f"[finalize] wrote transition_probabilities.npy  [{ma_lines}, {n_shells}] "
           f"(nz={nz}/{ma_lines}, blocks={len(uniq)}, "
           f"mean={probs_norm.mean():.4g}, max_block_err={max_err:.2e})")
+
+    contract = write_contract(ref_dir)
+    print(f"[finalize] wrote {contract.name} (line epoch + both NPY hashes)")
 
     print("[finalize] done.")
 

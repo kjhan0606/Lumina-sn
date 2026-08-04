@@ -1,0 +1,326 @@
+{
+  "acceptance_unchanged": true,
+  "bands": [
+    {
+      "J_CMFGEN": 4.812470338650353e-08,
+      "J_MC": 1.6248838593209007e-06,
+      "J_MC_over_J_CMFGEN": 33.76402855454473,
+      "J_det": null,
+      "J_det_over_J_CMFGEN": null,
+      "J_det_over_J_MC": null,
+      "band": "B0",
+      "d_MC": 1.5284542588845764,
+      "d_det": null,
+      "log10_J_MC_over_J_CMFGEN": 1.5284542588845764,
+      "log10_J_det_over_J_CMFGEN": null,
+      "log10_J_det_over_J_MC": null,
+      "spectral_det_over_cmfgen": null,
+      "spectral_det_over_mc": null,
+      "spectral_mc_over_cmfgen": {
+        "excluded_zero_count": 0,
+        "median_dex": 1.4893927901172905,
+        "p10_dex": 1.2244992046418828,
+        "p90_dex": 1.6584536036988575,
+        "positive_pair_count": 97
+      },
+      "toward_CMFGEN": null,
+      "wavelength_A": [
+        600.0,
+        1000.0
+      ]
+    },
+    {
+      "J_CMFGEN": 3.108990404312077e-06,
+      "J_MC": 0.00010049207684877895,
+      "J_MC_over_J_CMFGEN": 32.32305789988912,
+      "J_det": null,
+      "J_det_over_J_CMFGEN": null,
+      "J_det_over_J_MC": null,
+      "band": "B1",
+      "d_MC": 1.5095124401665168,
+      "d_det": null,
+      "log10_J_MC_over_J_CMFGEN": 1.5095124401665168,
+      "log10_J_det_over_J_CMFGEN": null,
+      "log10_J_det_over_J_MC": null,
+      "spectral_det_over_cmfgen": null,
+      "spectral_det_over_mc": null,
+      "spectral_mc_over_cmfgen": {
+        "excluded_zero_count": 0,
+        "median_dex": 1.5470979740524164,
+        "p10_dex": 1.0770927438197972,
+        "p90_dex": 1.8211436180485865,
+        "positive_pair_count": 76
+      },
+      "toward_CMFGEN": null,
+      "wavelength_A": [
+        1000.0,
+        1500.0
+      ]
+    },
+    {
+      "J_CMFGEN": 2.2196211349837847e-05,
+      "J_MC": 0.00016371456191566523,
+      "J_MC_over_J_CMFGEN": 7.375788567487272,
+      "J_det": null,
+      "J_det_over_J_CMFGEN": null,
+      "J_det_over_J_MC": null,
+      "band": "B2",
+      "d_MC": 0.8678084588468661,
+      "d_det": null,
+      "log10_J_MC_over_J_CMFGEN": 0.8678084588468661,
+      "log10_J_det_over_J_CMFGEN": null,
+      "log10_J_det_over_J_MC": null,
+      "spectral_det_over_cmfgen": null,
+      "spectral_det_over_mc": null,
+      "spectral_mc_over_cmfgen": {
+        "excluded_zero_count": 0,
+        "median_dex": 0.8287367930831121,
+        "p10_dex": 0.7721250256931474,
+        "p90_dex": 1.0607269157739632,
+        "positive_pair_count": 55
+      },
+      "toward_CMFGEN": null,
+      "wavelength_A": [
+        1500.0,
+        2000.0
+      ]
+    },
+    {
+      "J_CMFGEN": 5.8890065117794586e-05,
+      "J_MC": 0.0004070615989580901,
+      "J_MC_over_J_CMFGEN": 6.912228711988465,
+      "J_det": null,
+      "J_det_over_J_CMFGEN": null,
+      "J_det_over_J_MC": null,
+      "band": "B3",
+      "d_MC": 0.839618099654753,
+      "d_det": null,
+      "log10_J_MC_over_J_CMFGEN": 0.839618099654753,
+      "log10_J_det_over_J_CMFGEN": null,
+      "log10_J_det_over_J_MC": null,
+      "spectral_det_over_cmfgen": null,
+      "spectral_det_over_mc": null,
+      "spectral_mc_over_cmfgen": {
+        "excluded_zero_count": 0,
+        "median_dex": 0.780507733144386,
+        "p10_dex": 0.7395459611319298,
+        "p90_dex": 0.8589109865318517,
+        "positive_pair_count": 42
+      },
+      "toward_CMFGEN": null,
+      "wavelength_A": [
+        2000.0,
+        2500.0
+      ]
+    },
+    {
+      "J_CMFGEN": 8.71301887921681e-05,
+      "J_MC": 0.0014195396275590052,
+      "J_MC_over_J_CMFGEN": 16.29216747073781,
+      "J_det": null,
+      "J_det_over_J_CMFGEN": null,
+      "J_det_over_J_MC": null,
+      "band": "B4",
+      "d_MC": 1.2119788656444719,
+      "d_det": null,
+      "log10_J_MC_over_J_CMFGEN": 1.2119788656444719,
+      "log10_J_det_over_J_CMFGEN": null,
+      "log10_J_det_over_J_MC": null,
+      "spectral_det_over_cmfgen": null,
+      "spectral_det_over_mc": null,
+      "spectral_mc_over_cmfgen": {
+        "excluded_zero_count": 0,
+        "median_dex": 0.9847449201252546,
+        "p10_dex": 0.7119191485452468,
+        "p90_dex": 1.5074081581254462,
+        "positive_pair_count": 34
+      },
+      "toward_CMFGEN": null,
+      "wavelength_A": [
+        2500.0,
+        3000.0
+      ]
+    },
+    {
+      "J_CMFGEN": 1.2349100694943999e-05,
+      "J_MC": 0.00014790638268112036,
+      "J_MC_over_J_CMFGEN": 11.977097469265642,
+      "J_det": null,
+      "J_det_over_J_CMFGEN": null,
+      "J_det_over_J_MC": null,
+      "band": "BALL",
+      "d_MC": 1.0783515838454114,
+      "d_det": null,
+      "log10_J_MC_over_J_CMFGEN": 1.0783515838454114,
+      "log10_J_det_over_J_CMFGEN": null,
+      "log10_J_det_over_J_MC": null,
+      "spectral_det_over_cmfgen": null,
+      "spectral_det_over_mc": null,
+      "spectral_mc_over_cmfgen": {
+        "excluded_zero_count": 0,
+        "median_dex": 1.2589533912815973,
+        "p10_dex": 0.7715840039541384,
+        "p90_dex": 1.689085437959974,
+        "positive_pair_count": 304
+      },
+      "toward_CMFGEN": null,
+      "wavelength_A": [
+        600.0,
+        3000.0
+      ]
+    }
+  ],
+  "classification": "UNRESOLVED-EXTRAP-POSITIVITY",
+  "cmfgen": {
+    "integral_ratio": 1.0,
+    "run": "/gpfs/kjhan/cmfgen_runs/toy06_19.48d_jnu4",
+    "velocity_bracket_kms": [
+      9610.0173342,
+      10163.50575
+    ],
+    "velocity_kms": 10088.0,
+    "velocity_logJ_weight": 0.8635820590917592
+  },
+  "gamma": [
+    {
+      "Gamma_CMFGEN_C": 28.071748614366502,
+      "Gamma_MC_B": 436.3858094597309,
+      "Gamma_det_D": null,
+      "Gamma_det_over_CMFGEN": null,
+      "Gamma_det_over_MC": null,
+      "log10_Gamma_MC_over_CMFGEN": 1.1916011535428055,
+      "log10_Gamma_det_over_CMFGEN": null,
+      "log10_Gamma_det_over_MC": null,
+      "matrix_index": 201,
+      "member_count": 1400,
+      "route_count": 1400,
+      "target": "Fe III C48 lump",
+      "threshold_eV": [
+        1.9673988163000011,
+        17.51782038
+      ],
+      "toward_CMFGEN": null
+    },
+    {
+      "Gamma_CMFGEN_C": 0.47480769503218123,
+      "Gamma_MC_B": 33.10150072622097,
+      "Gamma_det_D": null,
+      "Gamma_det_over_CMFGEN": null,
+      "Gamma_det_over_MC": null,
+      "log10_Gamma_MC_over_CMFGEN": 1.8433299350875318,
+      "log10_Gamma_det_over_CMFGEN": null,
+      "log10_Gamma_det_over_MC": null,
+      "matrix_index": 4,
+      "member_count": 1,
+      "route_count": 1,
+      "target": "S II SL4",
+      "threshold_eV": [
+        20.2913977318,
+        20.2913977318
+      ],
+      "toward_CMFGEN": null
+    }
+  ],
+  "input": {
+    "checker": "PASS: iteration=10 field_generation=10 post_damp=1 bytes=2416472",
+    "field_generation": 10,
+    "iteration": 10,
+    "nnu": 1000,
+    "nr": 50,
+    "nu_grid_max_relative_error": 1.2212453270876722e-15,
+    "path": "/gpfs/kjhan/lumina_runner2/scratch/chieta_capture_parity59_188605/chieta_iter10",
+    "sha256": "94d75988034454f55fb6b130f04521f01c56f875cb22ef3a711850d7382ffa2f",
+    "sidecar": "/gpfs/kjhan/lumina_runner2/scratch/chieta_capture_parity59_188605/chieta_iter10.manifest.json"
+  },
+  "model_or_gpu_run": false,
+  "radial_face_extrapolation": {
+    "chi_total": {
+      "inner": {
+        "band_600_3000_negative_count": 0,
+        "band_first_bin": null,
+        "band_last_bin": null,
+        "first_bin": null,
+        "first_wavelength_A": null,
+        "minimum": 2.826566850824629e-14,
+        "negative_count": 0
+      },
+      "outer": {
+        "band_600_3000_negative_count": 36,
+        "band_first_bin": 344,
+        "band_last_bin": 547,
+        "first_bin": 331,
+        "first_wavelength_A": 578.7498504064561,
+        "minimum": -2.6922745979256134e-16,
+        "negative_count": 40
+      }
+    },
+    "eta_total": {
+      "inner": {
+        "band_600_3000_negative_count": 0,
+        "band_first_bin": null,
+        "band_last_bin": null,
+        "first_bin": null,
+        "first_wavelength_A": null,
+        "minimum": 1.0397936760615439e-36,
+        "negative_count": 0
+      },
+      "outer": {
+        "band_600_3000_negative_count": 37,
+        "band_first_bin": 344,
+        "band_last_bin": 547,
+        "first_bin": 344,
+        "first_wavelength_A": 620.017976943264,
+        "minimum": -1.1431252487548677e-23,
+        "negative_count": 37
+      }
+    }
+  },
+  "schema": "stage31-cmf-field-bench-v1",
+  "solve": {
+    "chi_coherent_input": 0.0,
+    "command": [
+      "/tmp/stage31_cmf_field_driver",
+      "/gpfs/kjhan/lumina_runner2/scratch/chieta_capture_parity59_188605/chieta_iter10",
+      "/gpfs/kjhan/lumina_runner2/scratch/chieta_capture_parity59_188605/chieta_iter10.manifest.json",
+      "8",
+      "16",
+      "10020.0",
+      "1.0",
+      "/home/kjhan/BACKUP/Eunha.A1/Claude/Lumina-sn/docs/s31_results/stage31_jdet_s8.tsv"
+    ],
+    "compile_command": [
+      "gcc",
+      "-std=c11",
+      "-O2",
+      "-Wall",
+      "-Wextra",
+      "-Wpedantic",
+      "-Werror",
+      "-D_POSIX_C_SOURCE=200809L",
+      "-Isrc",
+      "scripts/stage31_cmf_field_driver.c",
+      "src/lumina_cmf_field.c",
+      "-lm",
+      "-o",
+      "/tmp/stage31_cmf_field_driver"
+    ],
+    "determinism_sha256": [],
+    "elapsed_seconds": 0.06177918799221516,
+    "eta_input": "captured eta_total",
+    "inner_boundary": {
+      "amplitude_scale": 1.0,
+      "mode": "LCMF_BC_IRRADIATION",
+      "provenance": "capture stdout T_inner and resolved LUMINA_INNER_BB_SCALE",
+      "spectrum": "Planck B_nu",
+      "temperature_K": 10020.0
+    },
+    "metadata": {},
+    "ok": false,
+    "returncode": 1,
+    "scattering_reconvergence": false,
+    "stderr": "deterministic solve failed: LCMF_ENEGATIVE: chi radial reconstruction failed at outer face radial=50 frequency=331 ray=0 segment=0 substep=0 value=-1.4235983099001642e-20 interval=[0,0]\n",
+    "stdout": ""
+  },
+  "src_modified": false,
+  "status": "UNRESOLVED"
+}

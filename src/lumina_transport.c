@@ -531,7 +531,9 @@ void single_packet_loop(RPacket *pkt, Geometry *geo, OpacityState *opacity,
         double chi_e = opacity->electron_density[shell] * SIGMA_THOMSON; /* Phase 3 - Step 11 */
         double chi_bf_val = 0.0;
         if (bf && bf->enabled) {
-            chi_bf_val = bf_get_chi(bf, shell, comov_nu);
+            chi_bf_val = bf->event_enabled
+                       ? bf_get_event_chi(bf, shell, comov_nu)
+                       : bf_get_chi(bf, shell, comov_nu);
         }
         double chi_continuum = chi_e + chi_bf_val; /* e-scattering + bound-free */
 
@@ -560,12 +562,61 @@ void single_packet_loop(RPacket *pkt, Geometry *geo, OpacityState *opacity,
             /* Branch: Thomson scattering vs BF absorption */
             if (chi_bf_val > 0.0 && rng_uniform(rng) > chi_e / chi_continuum) {
                 /* BF macro-atom channel: route through macro-atom cascade if possible */
-                int act_level = bf_get_activation_level(bf, shell, comov_nu);
+                double event_doppler = get_doppler_factor(
+                    pkt->r, pkt->mu, geo->time_explosion);
+                double event_comov_nu = pkt->nu * event_doppler;
+                int act_level;
+                int kinetic_to_kpacket = 0;
+                if (bf->event_enabled) {
+                    int target = -1;
+                    double nu_edge = 0.0;
+                    int route = bf_sample_continuum_event(
+                        bf, shell, event_comov_nu, rng, &target, &nu_edge);
+                    /* ARTIS always consumes the energy-split draw after the
+                     * continuum-CDF draw, including a fail-closed route. */
+                    double u_split = rng_uniform(rng);
+                    if (route >= 0 && nu_edge > 0.0) {
+                        double p_ion = nu_edge / event_comov_nu;
+                        if (u_split < p_ion && target >= 0) {
+                            act_level = target;
+                            if (bf->event_target_fallback &&
+                                bf->event_target_fallback[route]) {
+                                #ifdef _OPENMP
+                                #pragma omp atomic update
+                                #endif
+                                bf->event_target_fallback_activations++;
+                            }
+                        } else {
+                            act_level = -1;
+                            kinetic_to_kpacket = 1;
+                        }
+                    } else {
+                        act_level = -1;
+                        kinetic_to_kpacket = 1;
+                    }
+                    if (kinetic_to_kpacket && opacity->kpacket_enabled &&
+                        opacity->kpacket_cdf &&
+                        opacity->n_macro_levels > 0) {
+                        const double *cdf = opacity->kpacket_cdf +
+                            (size_t)shell * opacity->n_macro_levels;
+                        double u = rng_uniform(rng);
+                        int lo = 0, hi = opacity->n_macro_levels - 1;
+                        while (lo < hi) {
+                            int mid = (lo + hi) >> 1;
+                            if (cdf[mid] < u) lo = mid + 1;
+                            else hi = mid;
+                        }
+                        act_level = lo;
+                    }
+                } else {
+                    act_level = bf_get_activation_level(
+                        bf, shell, event_comov_nu);
+                }
                 if (act_level >= 0) {
                     /* Activate macro-atom at ground state of ionized species.
                      * Transform energy/nu: old frame → comoving → new frame */
-                    double comov_energy_pkt = pkt->energy * doppler_factor;
-                    double comov_nu_pkt = pkt->nu * doppler_factor;
+                    double comov_energy_pkt = pkt->energy * event_doppler;
+                    double comov_nu_pkt = event_comov_nu;
                     pkt->mu = rng_mu(rng);  /* new isotropic direction */
                     double inv_new_doppler = get_inverse_doppler_factor(
                         pkt->r, pkt->mu, geo->time_explosion);

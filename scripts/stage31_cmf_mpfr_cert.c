@@ -1,0 +1,620 @@
+#include <errno.h>
+#include <math.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+#define MPFR_USE_FILE 1
+#include <mpfr.h>
+
+#define KA3_C_LIGHT 2.99792458e10
+#define KA3_SIGMA_X 0.04
+
+typedef struct {
+    mpfr_t lo;
+    mpfr_t hi;
+} Interval;
+
+typedef struct {
+    mpfr_prec_t bits;
+    mpfr_t scratch[4];
+    Interval inverse;
+} Workspace;
+
+typedef struct {
+    Interval attenuation;
+    Interval weight_up;
+    Interval weight_down;
+} LinearCoefficients;
+
+typedef struct {
+    size_t index[3];
+    Interval attenuation;
+    Interval weight[3];
+} QuadraticCoefficients;
+
+typedef struct {
+    uint64_t sign_uncertain;
+    uint64_t nonfinite;
+    uint64_t negative;
+    size_t first_k;
+    size_t first_segment;
+    Interval min_lower;
+    Interval max_width;
+    int have_min_lower;
+} CertificateStats;
+
+static void interval_init(Interval *value, mpfr_prec_t bits)
+{
+    mpfr_init2(value->lo, bits);
+    mpfr_init2(value->hi, bits);
+    mpfr_set_zero(value->lo, 1);
+    mpfr_set_zero(value->hi, 1);
+}
+
+static void interval_clear(Interval *value)
+{
+    mpfr_clear(value->lo);
+    mpfr_clear(value->hi);
+}
+
+static void workspace_init(Workspace *work, mpfr_prec_t bits)
+{
+    size_t i;
+    work->bits = bits;
+    for (i = 0u; i < 4u; ++i) mpfr_init2(work->scratch[i], bits);
+    interval_init(&work->inverse, bits);
+}
+
+static void workspace_clear(Workspace *work)
+{
+    size_t i;
+    interval_clear(&work->inverse);
+    for (i = 0u; i < 4u; ++i) mpfr_clear(work->scratch[i]);
+}
+
+static void interval_set(Interval *result, const Interval *value)
+{
+    mpfr_set(result->lo, value->lo, MPFR_RNDD);
+    mpfr_set(result->hi, value->hi, MPFR_RNDU);
+}
+
+static void interval_set_d(Interval *result, double value)
+{
+    mpfr_set_d(result->lo, value, MPFR_RNDN);
+    mpfr_set_d(result->hi, value, MPFR_RNDN);
+}
+
+static void interval_set_ui(Interval *result, unsigned long value)
+{
+    mpfr_set_ui(result->lo, value, MPFR_RNDN);
+    mpfr_set_ui(result->hi, value, MPFR_RNDN);
+}
+
+static void interval_neg(Interval *result, const Interval *value)
+{
+    mpfr_neg(result->lo, value->hi, MPFR_RNDD);
+    mpfr_neg(result->hi, value->lo, MPFR_RNDU);
+}
+
+static void interval_add(Interval *result, const Interval *left,
+                         const Interval *right)
+{
+    mpfr_add(result->lo, left->lo, right->lo, MPFR_RNDD);
+    mpfr_add(result->hi, left->hi, right->hi, MPFR_RNDU);
+}
+
+static void interval_sub(Interval *result, const Interval *left,
+                         const Interval *right)
+{
+    mpfr_sub(result->lo, left->lo, right->hi, MPFR_RNDD);
+    mpfr_sub(result->hi, left->hi, right->lo, MPFR_RNDU);
+}
+
+static void interval_mul(Interval *result, const Interval *left,
+                         const Interval *right, Workspace *work)
+{
+    size_t i;
+    mpfr_mul(work->scratch[0], left->lo, right->lo, MPFR_RNDD);
+    mpfr_mul(work->scratch[1], left->lo, right->hi, MPFR_RNDD);
+    mpfr_mul(work->scratch[2], left->hi, right->lo, MPFR_RNDD);
+    mpfr_mul(work->scratch[3], left->hi, right->hi, MPFR_RNDD);
+    mpfr_set(result->lo, work->scratch[0], MPFR_RNDD);
+    for (i = 1u; i < 4u; ++i) mpfr_min(result->lo, result->lo, work->scratch[i], MPFR_RNDD);
+    mpfr_mul(work->scratch[0], left->lo, right->lo, MPFR_RNDU);
+    mpfr_mul(work->scratch[1], left->lo, right->hi, MPFR_RNDU);
+    mpfr_mul(work->scratch[2], left->hi, right->lo, MPFR_RNDU);
+    mpfr_mul(work->scratch[3], left->hi, right->hi, MPFR_RNDU);
+    mpfr_set(result->hi, work->scratch[0], MPFR_RNDU);
+    for (i = 1u; i < 4u; ++i) mpfr_max(result->hi, result->hi, work->scratch[i], MPFR_RNDU);
+}
+
+static int interval_div(Interval *result, const Interval *numerator,
+                        const Interval *denominator, Workspace *work)
+{
+    if (mpfr_sgn(denominator->lo) <= 0 && mpfr_sgn(denominator->hi) >= 0) return 0;
+    mpfr_ui_div(work->inverse.lo, 1u, denominator->hi, MPFR_RNDD);
+    mpfr_ui_div(work->inverse.hi, 1u, denominator->lo, MPFR_RNDU);
+    if (mpfr_greater_p(work->inverse.lo, work->inverse.hi)) {
+        mpfr_swap(work->inverse.lo, work->inverse.hi);
+    }
+    interval_mul(result, numerator, &work->inverse, work);
+    return 1;
+}
+
+static void interval_exp(Interval *result, const Interval *value)
+{
+    mpfr_exp(result->lo, value->lo, MPFR_RNDD);
+    mpfr_exp(result->hi, value->hi, MPFR_RNDU);
+}
+
+static void interval_expm1(Interval *result, const Interval *value)
+{
+    mpfr_expm1(result->lo, value->lo, MPFR_RNDD);
+    mpfr_expm1(result->hi, value->hi, MPFR_RNDU);
+}
+
+static int interval_is_number(const Interval *value)
+{
+    return mpfr_number_p(value->lo) && mpfr_number_p(value->hi) &&
+           mpfr_lessequal_p(value->lo, value->hi);
+}
+
+static int interval_is_exact_zero(const Interval *value)
+{
+    return mpfr_zero_p(value->lo) && mpfr_zero_p(value->hi);
+}
+
+static Interval *interval_array(size_t count, mpfr_prec_t bits)
+{
+    Interval *values;
+    size_t i;
+    if (count == 0u || count > SIZE_MAX / sizeof(*values)) return NULL;
+    values = (Interval *)calloc(count, sizeof(*values));
+    if (values == NULL) return NULL;
+    for (i = 0u; i < count; ++i) interval_init(&values[i], bits);
+    return values;
+}
+
+static void interval_array_free(Interval *values, size_t count)
+{
+    size_t i;
+    if (values == NULL) return;
+    for (i = 0u; i < count; ++i) interval_clear(&values[i]);
+    free(values);
+}
+
+static int parse_size(const char *text, size_t *value)
+{
+    char *end = NULL;
+    unsigned long long parsed;
+    errno = 0;
+    parsed = strtoull(text, &end, 10);
+    if (errno != 0 || end == text || *end != '\0' || parsed == 0u || parsed > SIZE_MAX) return 0;
+    *value = (size_t)parsed;
+    return 1;
+}
+
+static double stable_erf_difference(double high, double low)
+{
+    if (low >= 0.0) return erfc(low) - erfc(high);
+    if (high <= 0.0) return erfc(-high) - erfc(-low);
+    return erf(high) - erf(low);
+}
+
+static double gaussian_cell_average(double x, double dx)
+{
+    const double root_two_sigma = sqrt(2.0) * KA3_SIGMA_X;
+    const double high = (x + 0.5 * dx) / root_two_sigma;
+    const double low = (x - 0.5 * dx) / root_two_sigma;
+    return KA3_SIGMA_X * sqrt(0.5 * 3.141592653589793238462643383279502884) *
+           stable_erf_difference(high, low) / dx;
+}
+
+static void add_series_remainder(Interval *sum, const Interval *term,
+                                 const Interval *tau, unsigned long next_denominator,
+                                 unsigned long following_denominator, Workspace *work)
+{
+    mpfr_t magnitude;
+    mpfr_init2(magnitude, work->bits);
+    mpfr_abs(work->scratch[0], term->lo, MPFR_RNDU);
+    mpfr_abs(work->scratch[1], term->hi, MPFR_RNDU);
+    mpfr_max(magnitude, work->scratch[0], work->scratch[1], MPFR_RNDU);
+    mpfr_mul(magnitude, magnitude, tau->hi, MPFR_RNDU);
+    mpfr_div_ui(magnitude, magnitude, next_denominator, MPFR_RNDU);
+    mpfr_div_ui(work->scratch[0], tau->hi, following_denominator, MPFR_RNDU);
+    mpfr_ui_sub(work->scratch[1], 1u, work->scratch[0], MPFR_RNDD);
+    mpfr_div(magnitude, magnitude, work->scratch[1], MPFR_RNDU);
+    mpfr_sub(sum->lo, sum->lo, magnitude, MPFR_RNDD);
+    mpfr_add(sum->hi, sum->hi, magnitude, MPFR_RNDU);
+    mpfr_clear(magnitude);
+}
+
+static void quadratic_moments_series(const Interval *tau, Interval moment[3],
+                                     Workspace *work)
+{
+    Interval neg_tau;
+    Interval term[3];
+    Interval divisor;
+    Interval product;
+    size_t n;
+    unsigned long m;
+    interval_init(&neg_tau, work->bits);
+    interval_init(&divisor, work->bits);
+    interval_init(&product, work->bits);
+    for (n = 0u; n < 3u; ++n) interval_init(&term[n], work->bits);
+    interval_neg(&neg_tau, tau);
+    interval_set_ui(&term[0], 1u);
+    interval_set_ui(&divisor, 2u);
+    (void)interval_div(&term[1], &term[0], &divisor, work);
+    interval_set_ui(&divisor, 3u);
+    (void)interval_div(&term[2], &term[0], &divisor, work);
+    for (n = 0u; n < 3u; ++n) interval_set(&moment[n], &term[n]);
+    for (m = 1u; m <= 24u; ++m) {
+        for (n = 0u; n < 3u; ++n) {
+            interval_set_ui(&divisor, m + (unsigned long)n + 1u);
+            interval_mul(&product, &term[n], &neg_tau, work);
+            (void)interval_div(&term[n], &product, &divisor, work);
+            interval_add(&product, &moment[n], &term[n]);
+            interval_set(&moment[n], &product);
+        }
+    }
+    for (n = 0u; n < 3u; ++n) {
+        add_series_remainder(&moment[n], &term[n], tau,
+                             25u + (unsigned long)n + 1u,
+                             26u + (unsigned long)n + 1u, work);
+        interval_clear(&term[n]);
+    }
+    interval_clear(&product);
+    interval_clear(&divisor);
+    interval_clear(&neg_tau);
+}
+
+static int quadratic_moments(const Interval *tau, Interval moment[3], Workspace *work)
+{
+    Interval neg_tau, em1, tau2, tau3, numerator, product, two;
+    if (mpfr_cmp_d(tau->hi, 0.25) < 0) {
+        quadratic_moments_series(tau, moment, work);
+        return 1;
+    }
+    interval_init(&neg_tau, work->bits);
+    interval_init(&em1, work->bits);
+    interval_init(&tau2, work->bits);
+    interval_init(&tau3, work->bits);
+    interval_init(&numerator, work->bits);
+    interval_init(&product, work->bits);
+    interval_init(&two, work->bits);
+    interval_set_ui(&two, 2u);
+    interval_neg(&neg_tau, tau);
+    interval_expm1(&em1, &neg_tau);
+    interval_neg(&numerator, &em1);
+    if (!interval_div(&moment[0], &numerator, tau, work)) goto failure;
+    interval_mul(&tau2, tau, tau, work);
+    interval_add(&numerator, tau, &em1);
+    if (!interval_div(&moment[1], &numerator, &tau2, work)) goto failure;
+    interval_mul(&tau3, &tau2, tau, work);
+    interval_mul(&product, &two, tau, work);
+    interval_sub(&numerator, &tau2, &product);
+    interval_mul(&product, &two, &em1, work);
+    interval_sub(&neg_tau, &numerator, &product);
+    if (!interval_div(&moment[2], &neg_tau, &tau3, work)) goto failure;
+    interval_clear(&two); interval_clear(&product); interval_clear(&numerator);
+    interval_clear(&tau3); interval_clear(&tau2); interval_clear(&em1); interval_clear(&neg_tau);
+    return 1;
+failure:
+    interval_clear(&two); interval_clear(&product); interval_clear(&numerator);
+    interval_clear(&tau3); interval_clear(&tau2); interval_clear(&em1); interval_clear(&neg_tau);
+    return 0;
+}
+
+static void stencil_indices(size_t segment, size_t node_count, size_t index[3])
+{
+    const size_t downstream = segment + 1u;
+    if (downstream + 1u < node_count) {
+        index[0] = downstream - 1u;
+        index[1] = downstream;
+        index[2] = downstream + 1u;
+    } else {
+        index[0] = downstream - 2u;
+        index[1] = downstream - 1u;
+        index[2] = downstream;
+    }
+}
+
+static int build_linear_coefficients(LinearCoefficients *coefficient,
+                                     const Interval *chi, double ds,
+                                     Workspace *work)
+{
+    Interval ds_interval, tau, neg_tau, one_minus_e, ratio, one, psi_down, psi_up;
+    interval_init(&ds_interval, work->bits); interval_init(&tau, work->bits);
+    interval_init(&neg_tau, work->bits); interval_init(&one_minus_e, work->bits);
+    interval_init(&ratio, work->bits); interval_init(&one, work->bits);
+    interval_init(&psi_down, work->bits); interval_init(&psi_up, work->bits);
+    interval_set_d(&ds_interval, ds); interval_set_ui(&one, 1u);
+    interval_mul(&tau, chi, &ds_interval, work);
+    interval_neg(&neg_tau, &tau); interval_exp(&coefficient->attenuation, &neg_tau);
+    interval_expm1(&one_minus_e, &neg_tau); interval_neg(&neg_tau, &one_minus_e);
+    if (!interval_div(&ratio, &neg_tau, &tau, work)) goto failure;
+    interval_sub(&psi_down, &one, &ratio);
+    interval_sub(&psi_up, &neg_tau, &psi_down);
+    if (!interval_div(&coefficient->weight_up, &psi_up, chi, work) ||
+        !interval_div(&coefficient->weight_down, &psi_down, chi, work)) goto failure;
+    interval_clear(&psi_up); interval_clear(&psi_down); interval_clear(&one);
+    interval_clear(&ratio); interval_clear(&one_minus_e); interval_clear(&neg_tau);
+    interval_clear(&tau); interval_clear(&ds_interval);
+    return 1;
+failure:
+    interval_clear(&psi_up); interval_clear(&psi_down); interval_clear(&one);
+    interval_clear(&ratio); interval_clear(&one_minus_e); interval_clear(&neg_tau);
+    interval_clear(&tau); interval_clear(&ds_interval);
+    return 0;
+}
+
+static int build_quadratic_coefficients(QuadraticCoefficients *coefficient,
+                                        const double *z, size_t node_count,
+                                        size_t segment, const Interval *chi,
+                                        Workspace *work)
+{
+    Interval ds, tau, neg_tau, moment[3], zi, zj, zk, upstream;
+    Interval denominator, q0, q1, q2, temp0, temp1, temp2, sum;
+    size_t i;
+    stencil_indices(segment, node_count, coefficient->index);
+    interval_init(&ds, work->bits); interval_init(&tau, work->bits);
+    interval_init(&neg_tau, work->bits); interval_init(&zi, work->bits);
+    interval_init(&zj, work->bits); interval_init(&zk, work->bits);
+    interval_init(&upstream, work->bits); interval_init(&denominator, work->bits);
+    interval_init(&q0, work->bits); interval_init(&q1, work->bits);
+    interval_init(&q2, work->bits); interval_init(&temp0, work->bits);
+    interval_init(&temp1, work->bits); interval_init(&temp2, work->bits);
+    interval_init(&sum, work->bits);
+    for (i = 0u; i < 3u; ++i) interval_init(&moment[i], work->bits);
+    interval_set_d(&ds, z[segment + 1u] - z[segment]);
+    interval_mul(&tau, chi, &ds, work);
+    interval_neg(&neg_tau, &tau); interval_exp(&coefficient->attenuation, &neg_tau);
+    if (!quadratic_moments(&tau, moment, work)) goto failure;
+    interval_set_d(&upstream, z[segment]);
+    for (i = 0u; i < 3u; ++i) {
+        const size_t j = (i + 1u) % 3u;
+        const size_t k = (i + 2u) % 3u;
+        interval_set_d(&zi, z[coefficient->index[i]]);
+        interval_set_d(&zj, z[coefficient->index[j]]);
+        interval_set_d(&zk, z[coefficient->index[k]]);
+        interval_sub(&temp0, &zi, &zj); interval_sub(&temp1, &zi, &zk);
+        interval_mul(&denominator, &temp0, &temp1, work);
+        interval_sub(&temp0, &upstream, &zj); interval_sub(&temp1, &upstream, &zk);
+        interval_mul(&temp2, &temp0, &temp1, work);
+        if (!interval_div(&q0, &temp2, &denominator, work)) goto failure;
+        interval_add(&temp0, &upstream, &upstream);
+        interval_sub(&temp1, &temp0, &zj); interval_sub(&temp0, &temp1, &zk);
+        interval_mul(&temp1, &ds, &temp0, work);
+        if (!interval_div(&q1, &temp1, &denominator, work)) goto failure;
+        interval_mul(&temp0, &ds, &ds, work);
+        if (!interval_div(&q2, &temp0, &denominator, work)) goto failure;
+        interval_mul(&temp0, &q0, &moment[0], work);
+        interval_mul(&temp1, &q1, &moment[1], work);
+        interval_add(&sum, &temp0, &temp1);
+        interval_mul(&temp2, &q2, &moment[2], work);
+        interval_add(&temp0, &sum, &temp2);
+        interval_mul(&coefficient->weight[i], &ds, &temp0, work);
+    }
+    for (i = 0u; i < 3u; ++i) interval_clear(&moment[i]);
+    interval_clear(&sum); interval_clear(&temp2); interval_clear(&temp1); interval_clear(&temp0);
+    interval_clear(&q2); interval_clear(&q1); interval_clear(&q0); interval_clear(&denominator);
+    interval_clear(&upstream); interval_clear(&zk); interval_clear(&zj); interval_clear(&zi);
+    interval_clear(&neg_tau); interval_clear(&tau); interval_clear(&ds);
+    return 1;
+failure:
+    for (i = 0u; i < 3u; ++i) interval_clear(&moment[i]);
+    interval_clear(&sum); interval_clear(&temp2); interval_clear(&temp1); interval_clear(&temp0);
+    interval_clear(&q2); interval_clear(&q1); interval_clear(&q0); interval_clear(&denominator);
+    interval_clear(&upstream); interval_clear(&zk); interval_clear(&zj); interval_clear(&zi);
+    interval_clear(&neg_tau); interval_clear(&tau); interval_clear(&ds);
+    return 0;
+}
+
+static void record_interval(CertificateStats *stats, const Interval *value,
+                            size_t k, size_t segment, Workspace *work)
+{
+    Interval width;
+    interval_init(&width, work->bits);
+    if (!interval_is_number(value)) {
+        ++stats->nonfinite;
+        if (stats->first_k == SIZE_MAX) { stats->first_k = k; stats->first_segment = segment; }
+        interval_clear(&width);
+        return;
+    }
+    if (mpfr_sgn(value->hi) < 0) {
+        ++stats->negative;
+        if (stats->first_k == SIZE_MAX) { stats->first_k = k; stats->first_segment = segment; }
+    } else if (mpfr_sgn(value->lo) <= 0 && mpfr_sgn(value->hi) >= 0 &&
+               !interval_is_exact_zero(value)) {
+        ++stats->sign_uncertain;
+        if (stats->first_k == SIZE_MAX) { stats->first_k = k; stats->first_segment = segment; }
+    }
+    if (!interval_is_exact_zero(value) &&
+        (!stats->have_min_lower || mpfr_less_p(value->lo, stats->min_lower.lo))) {
+        mpfr_set(stats->min_lower.lo, value->lo, MPFR_RNDD);
+        mpfr_set(stats->min_lower.hi, value->lo, MPFR_RNDU);
+        stats->have_min_lower = 1;
+    }
+    mpfr_sub(width.hi, value->hi, value->lo, MPFR_RNDU);
+    if (mpfr_greater_p(width.hi, stats->max_width.hi)) {
+        mpfr_set(stats->max_width.lo, width.hi, MPFR_RNDD);
+        mpfr_set(stats->max_width.hi, width.hi, MPFR_RNDU);
+    }
+    interval_clear(&width);
+}
+
+static int certify(size_t ns, size_t nnu, mpfr_prec_t bits, FILE *stream)
+{
+    const double inner = 1.0e10;
+    const double outer = 2.0e10;
+    const double shift = 0.1;
+    const double x_high = 8.0 * KA3_SIGMA_X;
+    const double x_low = -shift - 8.0 * KA3_SIGMA_X;
+    const double fixture_dx = (x_high - x_low) / (double)(nnu - 1u);
+    const double frequency_step = exp(fixture_dx);
+    const double nu0 = exp(x_high);
+    const double nu1 = nu0 / frequency_step;
+    const double dx = log(nu0 / nu1);
+    const double t_exp_s = (outer - inner) / (KA3_C_LIGHT * shift);
+    const double a = 1.0 / (KA3_C_LIGHT * t_exp_s);
+    const size_t node_count = ns + 2u;
+    const size_t segment_count = node_count - 1u;
+    double *z = NULL;
+    double *boundary = NULL;
+    Interval *previous = NULL, *previous2 = NULL, *current = NULL, *effective = NULL;
+    LinearCoefficients *linear = NULL;
+    QuadraticCoefficients *quadratic = NULL;
+    Workspace work;
+    CertificateStats stats;
+    Interval a_i, dx_i, c, two, three, half, temp0, temp1, chi1, chi2, eta1_coefficient;
+    size_t i, k, segment;
+    int ok = 0;
+    memset(&stats, 0, sizeof(stats));
+    stats.first_k = SIZE_MAX; stats.first_segment = SIZE_MAX;
+    workspace_init(&work, bits);
+    interval_init(&stats.min_lower, bits); interval_init(&stats.max_width, bits);
+    interval_init(&a_i, bits); interval_init(&dx_i, bits); interval_init(&c, bits);
+    interval_init(&two, bits); interval_init(&three, bits); interval_init(&half, bits);
+    interval_init(&temp0, bits); interval_init(&temp1, bits); interval_init(&chi1, bits);
+    interval_init(&chi2, bits); interval_init(&eta1_coefficient, bits);
+    z = (double *)calloc(node_count, sizeof(*z));
+    boundary = (double *)calloc(nnu, sizeof(*boundary));
+    previous = interval_array(node_count, bits); previous2 = interval_array(node_count, bits);
+    current = interval_array(node_count, bits); effective = interval_array(node_count, bits);
+    linear = (LinearCoefficients *)calloc(segment_count, sizeof(*linear));
+    quadratic = (QuadraticCoefficients *)calloc(segment_count, sizeof(*quadratic));
+    if (z == NULL || boundary == NULL || previous == NULL || previous2 == NULL ||
+        current == NULL || effective == NULL || linear == NULL || quadratic == NULL) goto done;
+    for (segment = 0u; segment < segment_count; ++segment) {
+        interval_init(&linear[segment].attenuation, bits);
+        interval_init(&linear[segment].weight_up, bits);
+        interval_init(&linear[segment].weight_down, bits);
+        interval_init(&quadratic[segment].attenuation, bits);
+        for (i = 0u; i < 3u; ++i) interval_init(&quadratic[segment].weight[i], bits);
+    }
+    z[0] = inner;
+    for (i = 0u; i < ns; ++i) {
+        const double edge0 = inner + (outer - inner) * (double)i / (double)ns;
+        const double edge1 = inner + (outer - inner) * (double)(i + 1u) / (double)ns;
+        const double radius = 0.5 * (edge0 + edge1);
+        z[i + 1u] = sqrt(radius * radius);
+    }
+    z[node_count - 1u] = outer;
+    for (k = 0u; k < nnu; ++k) {
+        double nu = nu0;
+        size_t q;
+        for (q = 0u; q < k; ++q) nu /= frequency_step;
+        boundary[k] = gaussian_cell_average(log(nu), fixture_dx);
+    }
+    interval_set_d(&a_i, a); interval_set_d(&dx_i, dx);
+    interval_set_ui(&two, 2u); interval_set_ui(&three, 3u); interval_set_d(&half, 0.5);
+    if (!interval_div(&c, &a_i, &dx_i, &work)) goto done;
+    interval_mul(&temp0, &three, &a_i, &work); interval_mul(&temp1, &two, &c, &work);
+    interval_add(&chi1, &temp0, &temp1); interval_sub(&eta1_coefficient, &temp1, &temp0);
+    interval_mul(&temp1, &three, &half, &work); interval_mul(&chi2, &temp1, &c, &work);
+    interval_add(&temp1, &temp0, &chi2); interval_set(&chi2, &temp1);
+    for (segment = 0u; segment < segment_count; ++segment) {
+        const double ds = z[segment + 1u] - z[segment];
+        if (!build_linear_coefficients(&linear[segment], &chi1, ds, &work) ||
+            !build_quadratic_coefficients(&quadratic[segment], z, node_count,
+                                          segment, &chi2, &work)) goto done;
+    }
+    for (i = 0u; i < node_count; ++i) interval_set_d(&previous[i], boundary[0]);
+    for (k = 1u; k < nnu; ++k) {
+        interval_set_d(&current[0], boundary[k]);
+        if (k == 1u) {
+            for (i = 0u; i < node_count; ++i)
+                interval_mul(&effective[i], &eta1_coefficient, &previous[i], &work);
+            for (segment = 0u; segment < segment_count; ++segment) {
+                interval_mul(&temp0, &linear[segment].attenuation, &current[segment], &work);
+                interval_mul(&temp1, &linear[segment].weight_up, &effective[segment], &work);
+                interval_add(&current[segment + 1u], &temp0, &temp1);
+                interval_mul(&temp0, &linear[segment].weight_down, &effective[segment + 1u], &work);
+                interval_add(&temp1, &current[segment + 1u], &temp0);
+                interval_set(&current[segment + 1u], &temp1);
+                record_interval(&stats, &current[segment + 1u], k, segment, &work);
+            }
+        } else {
+            for (i = 0u; i < node_count; ++i) {
+                interval_mul(&temp0, &two, &previous[i], &work);
+                interval_mul(&temp1, &half, &previous2[i], &work);
+                interval_sub(&effective[i], &temp0, &temp1);
+                interval_mul(&temp0, &c, &effective[i], &work);
+                interval_set(&effective[i], &temp0);
+            }
+            for (segment = 0u; segment < segment_count; ++segment) {
+                interval_mul(&temp0, &quadratic[segment].attenuation, &current[segment], &work);
+                interval_set(&current[segment + 1u], &temp0);
+                for (i = 0u; i < 3u; ++i) {
+                    interval_mul(&temp0, &quadratic[segment].weight[i],
+                                 &effective[quadratic[segment].index[i]], &work);
+                    interval_add(&temp1, &current[segment + 1u], &temp0);
+                    interval_set(&current[segment + 1u], &temp1);
+                }
+                record_interval(&stats, &current[segment + 1u], k, segment, &work);
+            }
+        }
+        {
+            Interval *swap = previous2;
+            previous2 = previous;
+            previous = current;
+            current = swap;
+        }
+    }
+    (void)fprintf(stream, "# ns=%zu nnu=%zu certificate_bits=%lu certified_sign_uncertain=%llu certified_nonfinite=%llu certified_negative=%llu first_k=%zu first_segment=%zu mpfr_version=%s dx=%.17g a=%.17g certified_min_lower=",
+                  ns, nnu, (unsigned long)bits,
+                  (unsigned long long)stats.sign_uncertain,
+                  (unsigned long long)stats.nonfinite,
+                  (unsigned long long)stats.negative,
+                  stats.first_k, stats.first_segment, mpfr_get_version(), dx, a);
+    if (stats.have_min_lower) mpfr_fprintf(stream, "%.17Re", stats.min_lower.lo);
+    else (void)fprintf(stream, "nan");
+    (void)fprintf(stream, " certified_max_width=");
+    mpfr_fprintf(stream, "%.17Re\n", stats.max_width.hi);
+    ok = stats.sign_uncertain == 0u && stats.nonfinite == 0u && stats.negative == 0u;
+done:
+    if (quadratic != NULL) {
+        for (segment = 0u; segment < segment_count; ++segment) {
+            interval_clear(&quadratic[segment].attenuation);
+            for (i = 0u; i < 3u; ++i) interval_clear(&quadratic[segment].weight[i]);
+        }
+    }
+    if (linear != NULL) {
+        for (segment = 0u; segment < segment_count; ++segment) {
+            interval_clear(&linear[segment].attenuation);
+            interval_clear(&linear[segment].weight_up);
+            interval_clear(&linear[segment].weight_down);
+        }
+    }
+    free(quadratic); free(linear);
+    interval_array_free(effective, node_count); interval_array_free(current, node_count);
+    interval_array_free(previous2, node_count); interval_array_free(previous, node_count);
+    free(boundary); free(z);
+    interval_clear(&eta1_coefficient); interval_clear(&chi2); interval_clear(&chi1);
+    interval_clear(&temp1); interval_clear(&temp0); interval_clear(&half);
+    interval_clear(&three); interval_clear(&two); interval_clear(&c);
+    interval_clear(&dx_i); interval_clear(&a_i);
+    interval_clear(&stats.max_width); interval_clear(&stats.min_lower);
+    workspace_clear(&work);
+    return ok;
+}
+
+int main(int argc, char **argv)
+{
+    size_t ns, nnu, bits_size;
+    FILE *stream;
+    int passed;
+    if (argc != 5 || !parse_size(argv[1], &ns) || !parse_size(argv[2], &nnu) ||
+        !parse_size(argv[3], &bits_size) || bits_size > (size_t)MPFR_PREC_MAX) {
+        fprintf(stderr, "usage: %s NS NNU BITS OUTPUT.txt\n", argv[0]);
+        return 2;
+    }
+    stream = fopen(argv[4], "wb");
+    if (stream == NULL) { perror("fopen"); return 2; }
+    passed = certify(ns, nnu, (mpfr_prec_t)bits_size, stream);
+    if (fclose(stream) != 0) { perror("fclose"); return 2; }
+    return passed ? 0 : 1;
+}

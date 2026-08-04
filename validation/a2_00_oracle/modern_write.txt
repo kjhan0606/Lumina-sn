@@ -1,0 +1,1 @@
+FATAL CMFGEN_ORACLE_CONTRACT unclassified entries: ['BAMAT', 'INTENDED_DIFF_MANIFEST.txt', 'MODEL_SPEC.base_reference', 'PHOT_PRESCAN.txt', 'PREFLIGHT.txt', 'PROVENANCE.txt', 'RUNTIME_ESTIMATE.txt', 'SIGMA_REPAIR_CHECK.txt', '__pycache__', 'atomic_local', 'seq_logs']

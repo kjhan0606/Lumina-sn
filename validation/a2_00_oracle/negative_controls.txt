@@ -1,0 +1,9 @@
+SCRATCH_COPY_ROOT=/tmp/a2_00_oracle_controls_cs1xvq94
+CONTROL delete_one_file expected_rc=11 observed_rc=11 markers=OK PASS
+CONTROL truncate_1024_bytes expected_rc=14 observed_rc=14 markers=OK PASS
+CONTROL replace_from_other_run expected_rc=13 observed_rc=13 markers=OK PASS
+CONTROL mtime_only_must_pass expected_rc=0 observed_rc=0 markers=OK PASS
+CONTROL info_declared_nd_plus_one expected_rc=14 observed_rc=14 markers=OK PASS
+CONTROL add_unclassified_file expected_rc=15 observed_rc=15 markers=OK PASS
+POSITIVE_CONTROL current_like_snapshot_ophys_failure expected_rc=16 observed_rc=16 PASS
+SUMMARY controls_passed=7/7 failures=0

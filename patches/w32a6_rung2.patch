@@ -1,0 +1,136 @@
+diff --git a/scripts/cmf_chieta_check.py b/scripts/cmf_chieta_check.py
+index 0fc997f..972c4c1 100644
+--- a/scripts/cmf_chieta_check.py
++++ b/scripts/cmf_chieta_check.py
+@@ -11,6 +11,7 @@ import hashlib
+ import json
+ from pathlib import Path
+ import struct
++from typing import NamedTuple
+ 
+ 
+ HEADER = struct.Struct("<8sIIQQQQIId")
+@@ -19,12 +20,24 @@ FLAG_COHERENT_FROZEN = 2
+ FLAG_FREQUENCY_DESCENDING = 4
+ CONTRACT_ITERATION = 10
+ NON_CONTRACT_RC = 2
++CONTRACT_STATUS = "CONTRACT"
++NON_CONTRACT_STATUS = "NON-CONTRACT"
+ 
+ 
+ class CheckError(ValueError):
+     pass
+ 
+ 
++class CheckResult(NamedTuple):
++    raw: bytes
++    header: tuple
++    arrays: list
++    eta_max_abs: float
++    eta_bitwise: bool
++    manifest: dict
++    contract_status: str
++
++
+ def check_artifact(path: Path, expected_iteration: int = 10,
+                    expected_generation: int | None = None,
+                    require_post_damp: bool = True,
+@@ -115,7 +128,10 @@ def check_artifact(path: Path, expected_iteration: int = 10,
+     digest = hashlib.sha256(raw).hexdigest()
+     if manifest.get("sha256") != digest:
+         raise CheckError("sidecar sha256 mismatch")
+-    return raw, header, arrays, eta_max_abs, eta_bitwise, manifest
++    contract_status = (NON_CONTRACT_STATUS if deviates_from_contract
++                       else CONTRACT_STATUS)
++    return CheckResult(raw, header, arrays, eta_max_abs, eta_bitwise,
++                       manifest, contract_status)
+ 
+ 
+ def main() -> int:
+@@ -132,14 +148,15 @@ def main() -> int:
+         help="validate alternate metadata, print NON-CONTRACT, and return 2")
+     args = parser.parse_args()
+     try:
+-        raw, header, _, _, _, _ = check_artifact(
++        result = check_artifact(
+             args.input, args.expected_iteration,
+             args.expected_field_generation, not args.allow_pre_damp,
+             args.non_contract_override)
+     except (OSError, CheckError) as exc:
+         print(f"FAIL: {exc}")
+         return 1
+-    if args.non_contract_override:
++    raw, header = result.raw, result.header
++    if result.contract_status == NON_CONTRACT_STATUS:
+         print(f"NON-CONTRACT: iteration={header[5]} "
+               f"field_generation={header[6]} "
+               f"post_damp={int(bool(header[7] & FLAG_POST_DAMP))} "
+diff --git a/scripts/cmf_chieta_roundtrip_selftest.py b/scripts/cmf_chieta_roundtrip_selftest.py
+index 52a8154..4243d0a 100644
+--- a/scripts/cmf_chieta_roundtrip_selftest.py
++++ b/scripts/cmf_chieta_roundtrip_selftest.py
+@@ -75,7 +75,11 @@ def main():
+         path = out / "fixture.lcmfce"
+         subprocess.run([str(ROOT / "selftest_cmf_chieta_dump"), str(path)],
+                        cwd=ROOT, check=True)
+-    raw, header, arrays, eta_max_abs, eta_bitwise, manifest = check_artifact(path)
++    result = check_artifact(path)
++    if result.contract_status != "CONTRACT":
++        raise ValueError("round-trip fixture is outside the consumer contract")
++    raw, header, arrays, manifest = (
++        result.raw, result.header, result.arrays, result.manifest)
+     rebuilt = serialize(header, arrays)
+     if rebuilt != raw:
+         raise ValueError("write-read-write bytes differ")
+diff --git a/tests/test_wave32_seeded_defects.py b/tests/test_wave32_seeded_defects.py
+index 002e1f2..b5cf346 100644
+--- a/tests/test_wave32_seeded_defects.py
++++ b/tests/test_wave32_seeded_defects.py
+@@ -4,6 +4,7 @@
+ import os
+ from pathlib import Path
+ import subprocess
++import sys
+ import tempfile
+ 
+ 
+@@ -77,6 +78,29 @@ def main() -> int:
+             "PASS:" in overridden.stdout):
+         raise RuntimeError("explicit override was not fail-closed/labeled")
+ 
++    sys.path.insert(0, str(ROOT / "scripts"))
++    from cmf_chieta_check import (  # pylint: disable=import-outside-toplevel
++        CheckError, check_artifact)
++
++    api_contract_payload = tmp / "api_contract.lcmfce"
++    subprocess.run([str(ROOT / "selftest_cmf_chieta_dump"),
++                    str(api_contract_payload)], cwd=ROOT, check=True)
++    api_contract = check_artifact(api_contract_payload)
++    if api_contract.contract_status != "CONTRACT":
++        raise RuntimeError("Python API omitted/mislabeled contract status")
++    try:
++        check_artifact(bypass_payload, expected_iteration=7,
++                       expected_generation=7)
++    except CheckError:
++        api_unauthorized = "REJECTED"
++    else:
++        raise RuntimeError("Python API accepted an unauthorized override")
++    api_override = check_artifact(
++        bypass_payload, expected_iteration=7, expected_generation=7,
++        non_contract_override=True)
++    if api_override.contract_status != "NON-CONTRACT":
++        raise RuntimeError("Python API hid non-contract override status")
++
+     matrix = subprocess.run([str(ROOT / "selftest_wave32_matrix_debit")],
+                             cwd=ROOT, text=True, capture_output=True, check=True)
+     print("bad_eta_selector_rc=", selected.returncode, sep="")
+@@ -84,6 +108,9 @@ def main() -> int:
+     print("metadata_consumer_rc=", metadata_rc, sep="")
+     print("iter7_bypass_rc=", unauthorized.returncode,
+           " explicit_override_rc=", overridden.returncode, sep="")
++    print("api_contract_status=", api_contract.contract_status,
++          " api_unauthorized=", api_unauthorized,
++          " api_override_status=", api_override.contract_status, sep="")
+     print(matrix.stdout.strip())
+     print("PASS seeded defects: eta/iter/generation/post-damp consumer FAIL; "
+           "D6 debit ledger FAIL")

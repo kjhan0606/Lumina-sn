@@ -1,0 +1,314 @@
+--- a/Makefile
++++ b/Makefile
+@@ -116,7 +116,7 @@
+ 		src/lumina_plasma.c src/lumina_atomic.c $(LDFLAGS)
+ 
+ selftest_wave32_counter_atomic: tests/wave32_counter_atomic_selftest.c src/lumina_element_wide.c src/lumina_plasma.c src/lumina_atomic.c $(HEADERS)
+-	$(CC) -O2 -std=gnu11 -D_GNU_SOURCE -fopenmp -ffunction-sections -fdata-sections -Isrc \
++	$(CC) -O2 -std=gnu11 -D_GNU_SOURCE -DWAVE32_COUNTER_SELFTEST -fopenmp -ffunction-sections -fdata-sections -Isrc \
+ 		-Wl,--gc-sections -o selftest_wave32_counter_atomic \
+ 		tests/wave32_counter_atomic_selftest.c src/lumina_element_wide.c \
+ 		src/lumina_plasma.c src/lumina_atomic.c $(LDFLAGS)
+--- a/src/lumina_element_wide.c
++++ b/src/lumina_element_wide.c
+@@ -228,9 +228,62 @@
+ 
+ static EWCapture ew_cap;
+ 
++/* Every counter reachable from the shell-parallel assembler enters through
++ * this primitive.  Matrix/ledger arithmetic has separate ownership; this is
++ * deliberately limited to integer telemetry and topology counters. */
++static inline void ew_atomic_inc_int(int *counter) {
++#ifdef _OPENMP
++#pragma omp atomic update
++#endif
++    (*counter)++;
++}
++
+ static int ew_find_slot(const NLTEConfig *n, int Z, int stage);
+ static double ew_find_chi(const AtomicData *a, int Z, int stage);
+ 
++#ifdef WAVE32_COUNTER_SELFTEST
++enum { EW_TEST_CAPTURE_COUNTERS = 19 };
++
++void nlte_ew_test_capture_counters_reset(void) {
++    memset(&ew_cap, 0, sizeof(ew_cap));
++}
++
++void nlte_ew_test_capture_counters_bump(void) {
++    ew_atomic_inc_int(&ew_cap.target_expected);
++    ew_atomic_inc_int(&ew_cap.target_mapped);
++    ew_atomic_inc_int(&ew_cap.target_fail);
++    ew_atomic_inc_int(&ew_cap.bad_rate);
++    for (int c = 0; c < NLTE_EW_N_CHANNELS; c++)
++        ew_atomic_inc_int(&ew_cap.channel_events[c]);
++    ew_atomic_inc_int(&ew_cap.kramers_fallback);
++    ew_atomic_inc_int(&ew_cap.continuum_deleted);
++    ew_atomic_inc_int(&ew_cap.target_fallback);
++    ew_atomic_inc_int(&ew_cap.nstar_cap);
++    ew_atomic_inc_int(&ew_cap.nonfinite_guard);
++    ew_atomic_inc_int(&ew_cap.bf_estimator_bins);
++    ew_atomic_inc_int(&ew_cap.bf_pref_j_bins);
++    ew_atomic_inc_int(&ew_cap.bf_jeqb_bins);
++}
++
++void nlte_ew_test_capture_counters_snapshot(int out[EW_TEST_CAPTURE_COUNTERS]) {
++    int k = 0;
++    out[k++] = ew_cap.target_expected;
++    out[k++] = ew_cap.target_mapped;
++    out[k++] = ew_cap.target_fail;
++    out[k++] = ew_cap.bad_rate;
++    for (int c = 0; c < NLTE_EW_N_CHANNELS; c++)
++        out[k++] = ew_cap.channel_events[c];
++    out[k++] = ew_cap.kramers_fallback;
++    out[k++] = ew_cap.continuum_deleted;
++    out[k++] = ew_cap.target_fallback;
++    out[k++] = ew_cap.nstar_cap;
++    out[k++] = ew_cap.nonfinite_guard;
++    out[k++] = ew_cap.bf_estimator_bins;
++    out[k++] = ew_cap.bf_pref_j_bins;
++    out[k++] = ew_cap.bf_jeqb_bins;
++}
++#endif
++
+ int nlte_ew_capture_active(void) {
+     return ew_cap.active;
+ }
+@@ -380,7 +433,7 @@
+         target < 0 || target >= ew_cap.N_pair ||
+         source < 0 || source >= ew_cap.N_pair ||
+         !(rate >= 0.0) || !isfinite(rate)) {
+-        ew_cap.bad_rate++;
++        ew_atomic_inc_int(&ew_cap.bad_rate);
+         return;
+     }
+     if (rate == 0.0 || target == source) return;
+@@ -390,7 +443,7 @@
+     int i = ew_cap.wide_base + target;
+     int j = ew_cap.wide_base + source;
+     if (i < 0 || j < 0 || i >= ew_cap.N_wide || j >= ew_cap.N_wide) {
+-        ew_cap.bad_rate++;
++        ew_atomic_inc_int(&ew_cap.bad_rate);
+         return;
+     }
+     /* Atomic placement: every j->i rate creates inflow and source outflow here. */
+@@ -400,7 +453,7 @@
+      * this debit.  D6 later checks the assembled off-diagonal inflow and the
+      * diagonal debit separately against this value. */
+     ew_cap.expected_outflow[channel][j] += rate;
+-    ew_cap.channel_events[channel]++;
++    ew_atomic_inc_int(&ew_cap.channel_events[channel]);
+ }
+ 
+ /* ARTIS nltepop.cc:581-615 equivalent topology: rates are evaluated inside
+@@ -414,7 +467,7 @@
+     AtomicData *a = ew_cap.atom;
+     NLTEConfig *n = ew_cap.nlte;
+     if (lower_global < 0 || lower_global >= a->n_levels) {
+-        ew_cap.bad_rate++;
++        ew_atomic_inc_int(&ew_cap.bad_rate);
+         return;
+     }
+     int has_sigma = a->cmfgen_loaded &&
+@@ -424,24 +477,21 @@
+                     a->cmfgen_has_sigma[lower_global];
+     int kramers = !has_sigma;
+     if (kramers) {
+-#ifdef _OPENMP
+-#pragma omp atomic update
+-#endif
+-        ew_cap.kramers_fallback++;
++        ew_atomic_inc_int(&ew_cap.kramers_fallback);
+     }
+     if (!kramers &&
+         (!a->ma_rr_loaded || !a->ma_rr_target_offset || !a->ma_rr_targets ||
+          !a->ma_rr_probability)) {
+-        ew_cap.target_expected++;
+-        ew_cap.target_fail++;
++        ew_atomic_inc_int(&ew_cap.target_expected);
++        ew_atomic_inc_int(&ew_cap.target_fail);
+         return;
+     }
+     int begin = kramers ? 0 : a->ma_rr_target_offset[lower_global];
+     int end = kramers ? 1 : a->ma_rr_target_offset[lower_global + 1];
+     if (!kramers &&
+         (begin < 0 || end < begin || end > a->ma_rr_n_routes || begin == end)) {
+-        ew_cap.target_expected++;
+-        ew_cap.target_fail++;
++        ew_atomic_inc_int(&ew_cap.target_expected);
++        ew_atomic_inc_int(&ew_cap.target_fail);
+         return;
+     }
+     double chi_eV = ew_find_chi(a, a->level_Z[lower_global],
+@@ -454,7 +504,7 @@
+         n, T_e, 0.0, 0.0, 0, NULL, NULL, NULL);
+     double psum = 0.0;
+     for (int r = begin; r < end; r++) {
+-        ew_cap.target_expected++;
++        ew_atomic_inc_int(&ew_cap.target_expected);
+         int upper_global = kramers ? n->super_anchor_global[
+             ew_cap.pair_super_start + ew_cap.n_lo_super] : a->ma_rr_targets[r];
+         double p = kramers ? 1.0 : a->ma_rr_probability[r];
+@@ -462,35 +512,32 @@
+             !(p > 0.0) || !isfinite(p) ||
+             a->level_Z[upper_global] != a->level_Z[lower_global] ||
+             a->level_ion[upper_global] != a->level_ion[lower_global] + 1) {
+-            ew_cap.target_fail++;
++            ew_atomic_inc_int(&ew_cap.target_fail);
+             if (kramers) {
+-#ifdef _OPENMP
+-#pragma omp atomic update
+-#endif
+-                ew_cap.continuum_deleted++;
++                ew_atomic_inc_int(&ew_cap.continuum_deleted);
+             }
+             continue;
+         }
+         int ng = n->global_to_nlte_level[upper_global];
+         if (ng < 0) {
+-            ew_cap.target_fail++;
++            ew_atomic_inc_int(&ew_cap.target_fail);
+             continue;
+         }
+         int upper_sl = n->fl_to_super[ng] - ew_cap.pair_super_start;
+         if (upper_sl < 0 || upper_sl >= ew_cap.N_pair) {
+-            ew_cap.target_fail++;
++            ew_atomic_inc_int(&ew_cap.target_fail);
+             continue;
+         }
+         double f_upper = n->within_sl_frac[(size_t)ng * ew_cap.n_shells +
+                                             ew_cap.shell];
+         psum += p;
+-        ew_cap.target_mapped++;
++        ew_atomic_inc_int(&ew_cap.target_mapped);
+         double threshold_eV = chi_eV - a->level_energy_eV[lower_global] +
+                               a->level_energy_eV[upper_global];
+         double nu_threshold = threshold_eV * EV_TO_ERG / H_PLANCK;
+         if (!(threshold_eV > 0.0) || !(nu_threshold < n->nu_max) ||
+             !(T_e > 0.0) || !(n_e > 0.0)) {
+-            ew_cap.bad_rate++;
++            ew_atomic_inc_int(&ew_cap.bad_rate);
+             continue;
+         }
+         double rad_ion = 0.0, milne = 0.0, sigma_edge = 0.0;
+@@ -516,28 +563,16 @@
+                     (size_t)ew_cap.shell * n->n_freq_bins + bb];
+                 if (estimator > 0.0 && isfinite(estimator)) {
+                     rad_ion += sigma * estimator;
+-                    #ifdef _OPENMP
+-                    #pragma omp atomic update
+-                    #endif
+-                    ew_cap.bf_estimator_bins++;
++                    ew_atomic_inc_int(&ew_cap.bf_estimator_bins);
+                 } else {
+                     rad_ion += pref * J;
+-                    #ifdef _OPENMP
+-                    #pragma omp atomic update
+-                    #endif
+-                    ew_cap.bf_pref_j_bins++;
++                    ew_atomic_inc_int(&ew_cap.bf_pref_j_bins);
+                 }
+             } else {
+                 rad_ion += pref * J;
+-                #ifdef _OPENMP
+-                #pragma omp atomic update
+-                #endif
+-                ew_cap.bf_pref_j_bins++;
++                ew_atomic_inc_int(&ew_cap.bf_pref_j_bins);
+                 if (field_source == 2) {
+-                    #ifdef _OPENMP
+-                    #pragma omp atomic update
+-                    #endif
+-                    ew_cap.bf_jeqb_bins++;
++                    ew_atomic_inc_int(&ew_cap.bf_jeqb_bins);
+                 }
+             }
+             double x = H_PLANCK * nu / kTe;
+@@ -554,7 +589,7 @@
+             log((double)g_lower / (2.0 * (double)g_upper)) +
+             threshold_eV * EV_TO_ERG / kTe;
+         if (!(log_nstar < log(DBL_MAX)) || !isfinite(log_nstar)) {
+-            ew_cap.nstar_cap++; /* measured rejection; never capped */
++            ew_atomic_inc_int(&ew_cap.nstar_cap); /* measured rejection; never capped */
+             continue;
+         }
+         double nstar = exp(log_nstar);
+@@ -572,7 +607,7 @@
+         }
+         if (!isfinite(rad_ion) || !isfinite(rad_rec) ||
+             !isfinite(coll_ion) || !isfinite(coll_rec)) {
+-            ew_cap.nonfinite_guard++;
++            ew_atomic_inc_int(&ew_cap.nonfinite_guard);
+             continue;
+         }
+         nlte_ew_capture_transition(NLTE_EW_RAD_BF, upper_sl, lower_sl,
+@@ -584,7 +619,8 @@
+         nlte_ew_capture_transition(NLTE_EW_COLL_BF, lower_sl, upper_sl,
+                                    p * coll_rec * f_upper);
+     }
+-    if (fabs(psum - 1.0) > 1e-12) ew_cap.target_fail++;
++    if (fabs(psum - 1.0) > 1e-12)
++        ew_atomic_inc_int(&ew_cap.target_fail);
+ }
+ 
+ void nlte_ew_capture_nt_routes(double rate_per_particle) {
+@@ -597,7 +633,7 @@
+         if (n->nlte_ion_super_offset[i] == ew_cap.pair_super_start) {
+             lo_slot = i; break;
+         }
+-    if (lo_slot < 0) { ew_cap.bad_rate++; return; }
++    if (lo_slot < 0) { ew_atomic_inc_int(&ew_cap.bad_rate); return; }
+     int l0 = n->nlte_ion_level_offset[lo_slot];
+     int l1 = n->nlte_ion_level_offset[lo_slot + 1];
+     for (int g = l0; g < l1; g++) {
+@@ -614,7 +650,7 @@
+             int ng = (upper >= 0 && upper < a->n_levels) ?
+                      n->global_to_nlte_level[upper] : -1;
+             if (ng < 0 || !(p > 0.0) || !isfinite(p)) {
+-                ew_cap.target_fallback++;
++                ew_atomic_inc_int(&ew_cap.target_fallback);
+                 continue;
+             }
+             int target = n->fl_to_super[ng] - ew_cap.pair_super_start;
+--- a/tests/wave32_counter_atomic_selftest.c
++++ b/tests/wave32_counter_atomic_selftest.c
+@@ -7,26 +7,38 @@
+ void nlte_ew_note_per_ion_pin_call(void);
+ void nlte_ew_note_topstage_IV_call(void);
+ void nlte_ew_runtime_counts_snapshot(unsigned long out[3]);
++void nlte_ew_test_capture_counters_reset(void);
++void nlte_ew_test_capture_counters_bump(void);
++void nlte_ew_test_capture_counters_snapshot(int out[19]);
+ 
+ int main(void) {
+     enum { N = 200000 };
+     unsigned long before[3], after[3];
++    int capture[19];
+     /* Production initializes the gate before entering the shell-parallel
+      * region; reproduce that ownership ordering rather than racing env parse. */
+     (void)nlte_element_wide_enabled();
+     nlte_ew_runtime_counts_snapshot(before);
++    nlte_ew_test_capture_counters_reset();
+ #pragma omp parallel for schedule(static)
+     for (int i = 0; i < N; i++) {
+         nlte_ew_note_save_restore_call();
+         nlte_ew_note_per_ion_pin_call();
+         nlte_ew_note_topstage_IV_call();
++        nlte_ew_test_capture_counters_bump();
+     }
+     nlte_ew_runtime_counts_snapshot(after);
++    nlte_ew_test_capture_counters_snapshot(capture);
+     unsigned long expected = getenv("W32_EXPECT_COUNTER_DISABLED") ? 0UL : N;
+     printf("expected=%lu save_restore=%lu per_ion_pin=%lu topstage_IV=%lu\n",
+            expected, after[0] - before[0], after[1] - before[1],
+            after[2] - before[2]);
+-    return after[0] - before[0] == expected &&
++    int capture_ok = 1;
++    for (int k = 0; k < 19; k++)
++        if (capture[k] != N) capture_ok = 0;
++    printf("capture_counters=19 target_fail=%d all_exact=%d\n",
++           capture[2], capture_ok);
++    return capture_ok && after[0] - before[0] == expected &&
+            after[1] - before[1] == expected &&
+            after[2] - before[2] == expected ? 0 : 1;
+ }

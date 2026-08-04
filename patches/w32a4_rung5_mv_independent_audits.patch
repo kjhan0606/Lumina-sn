@@ -1,0 +1,322 @@
+--- a/src/lumina_element_wide.c
++++ b/src/lumina_element_wide.c
+@@ -809,7 +809,7 @@
+     double conservation_residual, row_residual, flux_residual;
+     double phi_forward[2], phi_reverse[2];
+     double *forward_rate[2];
+-    double reverse_rate[2];
++    double *reverse_rate[2];
+ } EWBoundaryMass;
+ 
+ static void ew_boundary_mass_free(EWBoundaryMass *bm) {
+@@ -817,6 +817,8 @@
+     free(bm->q_by_global);
+     free(bm->forward_rate[0]);
+     free(bm->forward_rate[1]);
++    free(bm->reverse_rate[0]);
++    free(bm->reverse_rate[1]);
+     memset(bm, 0, sizeof(*bm));
+ }
+ 
+@@ -859,7 +861,10 @@
+         (size_t)(a->n_levels > 0 ? a->n_levels : 1), sizeof(double));
+     bm->forward_rate[0] = (double *)calloc((size_t)N, sizeof(double));
+     bm->forward_rate[1] = (double *)calloc((size_t)N, sizeof(double));
+-    if (!bm->q_by_global || !bm->forward_rate[0] || !bm->forward_rate[1])
++    bm->reverse_rate[0] = (double *)calloc((size_t)N, sizeof(double));
++    bm->reverse_rate[1] = (double *)calloc((size_t)N, sizeof(double));
++    if (!bm->q_by_global || !bm->forward_rate[0] || !bm->forward_rate[1] ||
++        !bm->reverse_rate[0] || !bm->reverse_rate[1])
+         return -1;
+     double T_e = p->T_e[shell];
+     if (!(T_e > 0.0) || !isfinite(T_e)) return 0;
+@@ -931,7 +936,7 @@
+     EW(plane,N,source,source) -= rate;
+     ledger[source] += rate;
+     if (target == bm->m_index) bm->forward_rate[channel_slot][source] += rate;
+-    if (source == bm->m_index) bm->reverse_rate[channel_slot] += rate;
++    if (source == bm->m_index) bm->reverse_rate[channel_slot][target] += rate;
+ }
+ 
+ /* Assemble the available Fe IV 200/200 continuum routes into the scalar M_V
+@@ -1523,6 +1528,115 @@
+     return ew_channel_assembly_residual(A, expected_outflow, N);
+ }
+ 
++/* Backward-error allowance for sign classification.  This is an audit bound,
++ * not a population repair: kappa is estimated as 1/rcond and the raw solution
++ * remains untouched and separately reported. */
++static int ew_negative_audit(const double *x, int N, double rcond,
++                             double *raw_min_out, double *bound_out) {
++    double raw_min = INFINITY, xnorm = 0.0;
++    for (int i = 0; i < N; i++) {
++        if (!isfinite(x[i])) continue;
++        if (x[i] < raw_min) raw_min = x[i];
++        if (fabs(x[i]) > xnorm) xnorm = fabs(x[i]);
++    }
++    double neps = (double)N * DBL_EPSILON;
++    double bound = 0.0;
++    if (rcond > 0.0 && isfinite(rcond) && neps < 1.0 && isfinite(xnorm))
++        bound = (1.0 / rcond) * (neps / (1.0 - neps)) * xnorm;
++    if (!isfinite(bound)) bound = 0.0; /* unbounded is not permission to pass */
++    int negative = 0;
++    for (int i = 0; i < N; i++)
++        if (isfinite(x[i]) && x[i] < -bound) negative++;
++    if (raw_min_out) *raw_min_out = raw_min;
++    if (bound_out) *bound_out = bound;
++    return negative;
++}
++
++int nlte_ew_test_negative_audit(const double *x, int N, double rcond,
++                                double *raw_min_out, double *bound_out) {
++    return ew_negative_audit(x, N, rcond, raw_min_out, bound_out);
++}
++
++/* Re-read the final normalized conservation row and RHS.  Coefficient/RHS
++ * contract damage and equation residual are independent components. */
++static double ew_boundary_row_audit(const double *Anorm, const double *b,
++                                    const double *x, int N,
++                                    double active_mass) {
++    if (!Anorm || !b || !x || N <= 0 || !(active_mass > 0.0) ||
++        !isfinite(active_mass)) return INFINITY;
++    double row_lhs = 0.0, coeff_worst = 0.0;
++    for (int j = 0; j < N; j++) {
++        double coeff = EW(Anorm, N, 0, j);
++        if (!isfinite(coeff) || !isfinite(x[j])) return INFINITY;
++        row_lhs += coeff * x[j];
++        double delta = fabs(coeff - 1.0);
++        if (delta > coeff_worst) coeff_worst = delta;
++    }
++    double rhs_residual = fabs(b[0] - active_mass) / active_mass;
++    double equation_residual = fabs(row_lhs - b[0]) / active_mass;
++    double worst = coeff_worst;
++    if (rhs_residual > worst) worst = rhs_residual;
++    if (equation_residual > worst) worst = equation_residual;
++    return worst;
++}
++
++double nlte_ew_test_boundary_row_audit(const double *Anorm, const double *b,
++                                       const double *x, int N,
++                                       double active_mass) {
++    return ew_boundary_row_audit(Anorm, b, x, N, active_mass);
++}
++
++/* Compare every final Araw IV<->M coefficient with the independent route/q
++ * ledger, then compare the population-weighted flux.  Per-target reverse
++ * entries make a q redistribution detectable even when total reverse rate is
++ * accidentally preserved. */
++static double ew_boundary_flux_audit(
++        const double *Araw, const double *x, int N, int m_index,
++        int iv_begin, int iv_end, const double *forward0,
++        const double *forward1, const double *reverse0,
++        const double *reverse1) {
++    if (!Araw || !x || !forward0 || !forward1 || !reverse0 || !reverse1 ||
++        N <= 0 || m_index < 0 || m_index >= N || iv_begin < 0 ||
++        iv_end > N || iv_begin >= iv_end) return INFINITY;
++    double rate_scale = 0.0, rate_worst = 0.0;
++    double flux_scale = 0.0, flux_worst = 0.0;
++    for (int j = iv_begin; j < iv_end; j++) {
++        double expected_forward = forward0[j] + forward1[j];
++        double expected_reverse = reverse0[j] + reverse1[j];
++        double matrix_forward = EW(Araw, N, m_index, j);
++        double matrix_reverse = EW(Araw, N, j, m_index);
++        if (!isfinite(expected_forward) || !isfinite(expected_reverse) ||
++            !isfinite(matrix_forward) || !isfinite(matrix_reverse) ||
++            !isfinite(x[j]) || !isfinite(x[m_index])) return INFINITY;
++        double ef = fabs(matrix_forward - expected_forward);
++        double er = fabs(matrix_reverse - expected_reverse);
++        if (fabs(expected_forward) > rate_scale) rate_scale = fabs(expected_forward);
++        if (fabs(expected_reverse) > rate_scale) rate_scale = fabs(expected_reverse);
++        if (ef > rate_worst) rate_worst = ef;
++        if (er > rate_worst) rate_worst = er;
++        double ff = fabs((matrix_forward - expected_forward) * x[j]);
++        double fr = fabs((matrix_reverse - expected_reverse) * x[m_index]);
++        double sf = fabs(expected_forward * x[j]);
++        double sr = fabs(expected_reverse * x[m_index]);
++        if (sf > flux_scale) flux_scale = sf;
++        if (sr > flux_scale) flux_scale = sr;
++        if (ff > flux_worst) flux_worst = ff;
++        if (fr > flux_worst) flux_worst = fr;
++    }
++    double rate_residual = rate_scale > 0.0 ? rate_worst / rate_scale : rate_worst;
++    double flux_residual = flux_scale > 0.0 ? flux_worst / flux_scale : flux_worst;
++    return rate_residual > flux_residual ? rate_residual : flux_residual;
++}
++
++double nlte_ew_test_boundary_flux_audit(
++        const double *Araw, const double *x, int N, int m_index,
++        int iv_begin, int iv_end, const double *forward0,
++        const double *forward1, const double *reverse0,
++        const double *reverse1) {
++    return ew_boundary_flux_audit(Araw, x, N, m_index, iv_begin, iv_end,
++                                  forward0, forward1, reverse0, reverse1);
++}
++
+ static int ew_guard_config_count(void) {
+     static const char *const guard[] = {
+         "LUMINA_NLTE_FLOOR_REG", "LUMINA_NLTE_COLL_FLOOR",
+@@ -1898,9 +2012,15 @@
+         if(assembly_residual[c]>max_assembly_residual)
+             max_assembly_residual=assembly_residual[c];
+     }
+-    int nonfinite=0,negative=0;
++    int nonfinite=0;
+     double sumx=0.0;
+-    for(int i=0;i<N;i++){if(!isfinite(x[i]))nonfinite++;else{sumx+=x[i];if(n_elem>0.0&&x[i]/n_elem < -1e-14)negative++;}}
++    for(int i=0;i<N;i++){
++        if(!isfinite(x[i]))nonfinite++;
++        else sumx+=x[i];
++    }
++    double raw_solution_min=INFINITY,negative_error_bound=0.0;
++    int negative=ew_negative_audit(x,N,sd.rcond,&raw_solution_min,
++                                   &negative_error_bound);
+     double conservation=(n_elem>0.0)?fabs(sumx-active_mass)/n_elem:INFINITY;
+     double se_res=solve_fail?INFINITY:ew_scaled_residual(Araw,x,N,n_elem,
+                                                          time_explosion);
+@@ -1914,30 +2034,22 @@
+             for(int i=stage_start[q];i<stage_start[q+1];i++)
+                 boundary.sum_stage[q]+=x[i];
+         boundary.conservation_residual=conservation;
+-        boundary.row_residual=(n_elem>0.0)?fabs(sumx-active_mass)/n_elem:INFINITY;
+-        double flux_scale=0.0,flux_worst=0.0;
+-        const int channels[2]={NLTE_EW_RAD_BF,NLTE_EW_COLL_BF};
++        boundary.row_residual=ew_boundary_row_audit(
++            Anorm,b,x,N,active_mass);
+         for(int k=0;k<2;k++){
+-            int c=channels[k];
+             double ledger_forward=0.0;
+-            for(int j=stage_start[2];j<stage_start[3];j++)
++            double ledger_reverse=0.0;
++            for(int j=stage_start[2];j<stage_start[3];j++) {
+                 ledger_forward+=boundary.forward_rate[k][j]*x[j];
+-            double ledger_reverse=boundary.reverse_rate[k]*x[boundary.m_index];
+-            double matrix_forward=0.0,matrix_reverse=0.0;
+-            for(int j=stage_start[2];j<stage_start[3];j++){
+-                matrix_forward+=EW(plane[c],N,boundary.m_index,j)*x[j];
+-                matrix_reverse+=EW(plane[c],N,j,boundary.m_index)*x[boundary.m_index];
++                ledger_reverse+=boundary.reverse_rate[k][j]*x[boundary.m_index];
+             }
+             boundary.phi_forward[k]=ledger_forward;
+             boundary.phi_reverse[k]=ledger_reverse;
+-            double ef=fabs(matrix_forward-ledger_forward);
+-            double er=fabs(matrix_reverse-ledger_reverse);
+-            if(fabs(ledger_forward)>flux_scale)flux_scale=fabs(ledger_forward);
+-            if(fabs(ledger_reverse)>flux_scale)flux_scale=fabs(ledger_reverse);
+-            if(ef>flux_worst)flux_worst=ef;
+-            if(er>flux_worst)flux_worst=er;
+         }
+-        boundary.flux_residual=flux_scale>0.0?flux_worst/flux_scale:flux_worst;
++        boundary.flux_residual=ew_boundary_flux_audit(
++            Araw,x,N,boundary.m_index,stage_start[2],stage_start[3],
++            boundary.forward_rate[0],boundary.forward_rate[1],
++            boundary.reverse_rate[0],boundary.reverse_rate[1]);
+     }
+ 
+     double boundary_max=0.0;
+@@ -2023,7 +2135,7 @@
+         char path[768]; FILE *fp=ew_open_dump(path,sizeof(path),iter,Z,shell_label,"solution");
+         if(fp){fprintf(fp,"record_type,matrix_index,internal_stage,sl_id,global_level,raw_solution,restored_population,ion_total\n");for(int q=0;q<3;q++){double tot=0;for(int i=stage_start[q];i<stage_start[q+1];i++)tot+=x[i];for(int i=stage_start[q];i<stage_start[q+1];i++)fprintf(fp,"SL,%d,%d,%d,-1,%.17g,%.17g,%.17g\n",i,q+1,i-stage_start[q],x[i]/(cs[i]!=0.0?cs[i]:1.0),x[i],tot);int slot=slots[q],ss0=nlte->nlte_ion_super_offset[slot];for(int g=nlte->nlte_ion_level_offset[slot];g<nlte->nlte_ion_level_offset[slot+1];g++){int gl=nlte->nlte_to_global_level[g],local=stage_start[q]+nlte->fl_to_super[g]-ss0;double frac=nlte->within_sl_frac[(size_t)g*plasma->n_shells+shell];fprintf(fp,"FL,%d,%d,%d,%d,%.17g,%.17g,%.17g\n",local,q+1,nlte->fl_to_super[g]-ss0,gl,x[local]/(cs[local]!=0.0?cs[local]:1.0),x[local]*frac,tot);}}if(boundary.active)fprintf(fp,"BOUNDARY_MASS,%d,4,0,-1,%.17g,%.17g,%.17g\n",boundary.m_index,x[boundary.m_index]/(cs[boundary.m_index]!=0.0?cs[boundary.m_index]:1.0),x[boundary.m_index],x[boundary.m_index]);fclose(fp);}
+         fp=ew_open_dump(path,sizeof(path),iter,Z,shell_label,"diagnostics");
+-        if(fp){fprintf(fp,"key,value\nN,%d\nion_coverage,%d/%d\nsl_coverage,%d/%d\nfull_level_coverage,%d/%d\nline_coverage,%d/%d\ncontinuum_coverage,%d/%d\nkramers_continuum_count,%d\ntarget_coverage,%d/%d\nfirst_bad_lower_global,%d\nfirst_bad_target_global,%d\nchecksum_mismatch,%d\nraw_rank,%d\nsolve_attempted,%d\np_elem_valid,%d\nnormalized_rank,%d\ngraph_components,%d\nzero_rows,%d\nzero_columns,%d\nassembled_target_expected,%d\nassembled_target_mapped,%d\nassembled_target_fail,%d\nbad_rate,%d\nchannel_inventory_fail,%d\nlegacy_guard_configured_count,%d\nlegacy_guard_firing_count,%d\nC48_projected_identity_level_count,%d\nkramers_fallback_firing_count,%d\ncontinuum_deletion_firing_count,%d\ntarget_fallback_firing_count,%d\nnstar_cap_firing_count,%d\nnonfinite_guard_firing_count,%d\nbf_estimator_bin_consumptions,%d\nbf_pref_J_bin_consumptions,%d\nbf_JEQB_bin_consumptions,%d\nindependent_assembly_residual_max,%.17g\nraw_singular_value_max,%.17g\nraw_singular_value_min,%.17g\nraw_kappa_2,%.17g\nequilibrated_singular_value_max,%.17g\nequilibrated_singular_value_min,%.17g\nkappa_2,%.17g\nrcond_1_solver_estimate,%.17g\npivot_growth,%.17g\nequilibration_iterations,%d\nrefinement_iterations,%d\nscaled_se_residual,%.17g\nscaled_se_t_ref_seconds,%.17g\nconservation_residual,%.17g\nnegative_count,%d\nnonfinite_count,%d\npermutation_ion_fraction_max_abs,%.17g\nboundary_fraction_max,%.17g\nboundary_opacity_fraction,%.17g\nboundary_process_coverage,%d\nclamp_floor_freeze_anchor_repair_fallback_count,%d\nverdict,%s\n",N,coverage.ions_mapped,coverage.ions_expected,coverage.sl_mapped,coverage.sl_expected,coverage.full_mapped,coverage.full_expected,coverage.lines_mapped,coverage.lines_expected,coverage.continua_mapped,coverage.continua_expected,coverage.continua_kramers,coverage.targets_mapped,coverage.targets_expected,coverage.first_bad_lower,coverage.first_bad_target,coverage.checksum_mismatch,raw_rank,solve_attempted,p_elem_valid,sd.rank,components,zero_rows,zero_cols,target_expected,target_mapped,target_fail,bad_rate,channel_inventory_fail,guard_config_count,guard_firing_count,c48_projected_levels,fire.kramers_fallback,fire.continuum_deleted,fire.target_fallback,fire.nstar_cap,fire.nonfinite_guard,fire.bf_estimator_bins,fire.bf_pref_j_bins,fire.bf_jeqb_bins,max_assembly_residual,raw_smax,raw_smin,raw_kappa,sd.smax,sd.smin,sd.kappa,sd.rcond,sd.pivot_growth,sd.equil_iters,sd.refinement_iters,se_res,time_explosion,conservation,negative,nonfinite,perm_frac,boundary_max,boundary_opacity,boundary_process_coverage,guard_firing_count,verdict);fprintf(fp,"candidate_assembler_calls,%d\ncandidate_pair_owner_calls,%d\nsave_restore_calls,%d\nper_ion_pin_calls,%d\ntopstage_IV_calls,%d\nhot_cold_required,%d\nhot_cold_rebuilds,%d\nhot_cold_matrix_byte_identical,%d\nhot_cold_matrix_max_abs,%.17g\ncommit_requested,%d\ncommit_performed,%d\ncommit_blocked_by,%s\n",fire.candidate_assembler_calls,fire.candidate_pair_owner_calls,fire.save_restore_calls,fire.per_ion_pin_calls,fire.topstage_IV_calls,hot_cold_required,hot_cold_rebuilds,hot_cold_identical,hot_cold_max_abs,commit_requested,commit_performed,commit_blocked_by);fprintf(fp,"topology_gate_pass,%d\nnumerical_gate_pass,%d\nboundary_gate_pass,%d\n",topology_gate_pass,numerical_gate_pass,boundary_gate_pass);for(int c=0;c<NLTE_EW_N_CHANNELS;c++){fprintf(fp,"channel_colsum_%s,%.17g\n",ew_channel_name[c],colsum[c]);fprintf(fp,"channel_independent_assembly_residual_%s,%.17g\n",ew_channel_name[c],assembly_residual[c]);fprintf(fp,"channel_event_count_%s,%d\n",ew_channel_name[c],fire.channel_events[c]);}if(!solve_attempted)fprintf(fp,"pivot_status,not_attempted\nrefinement_status,not_attempted\n");for(int i=0;solve_attempted&&i<N;i++)fprintf(fp,"pivot_%d,%d\n",i,solve_piv[i]);for(int i=0;solve_attempted&&i<=sd.refinement_iters;i++)fprintf(fp,"refinement_residual_%d,%.17g\n",i,sd.refinement[i]);fclose(fp);}
++        if(fp){fprintf(fp,"key,value\nN,%d\nion_coverage,%d/%d\nsl_coverage,%d/%d\nfull_level_coverage,%d/%d\nline_coverage,%d/%d\ncontinuum_coverage,%d/%d\nkramers_continuum_count,%d\ntarget_coverage,%d/%d\nfirst_bad_lower_global,%d\nfirst_bad_target_global,%d\nchecksum_mismatch,%d\nraw_rank,%d\nsolve_attempted,%d\np_elem_valid,%d\nnormalized_rank,%d\ngraph_components,%d\nzero_rows,%d\nzero_columns,%d\nassembled_target_expected,%d\nassembled_target_mapped,%d\nassembled_target_fail,%d\nbad_rate,%d\nchannel_inventory_fail,%d\nlegacy_guard_configured_count,%d\nlegacy_guard_firing_count,%d\nC48_projected_identity_level_count,%d\nkramers_fallback_firing_count,%d\ncontinuum_deletion_firing_count,%d\ntarget_fallback_firing_count,%d\nnstar_cap_firing_count,%d\nnonfinite_guard_firing_count,%d\nbf_estimator_bin_consumptions,%d\nbf_pref_J_bin_consumptions,%d\nbf_JEQB_bin_consumptions,%d\nindependent_assembly_residual_max,%.17g\nraw_singular_value_max,%.17g\nraw_singular_value_min,%.17g\nraw_kappa_2,%.17g\nequilibrated_singular_value_max,%.17g\nequilibrated_singular_value_min,%.17g\nkappa_2,%.17g\nrcond_1_solver_estimate,%.17g\npivot_growth,%.17g\nequilibration_iterations,%d\nrefinement_iterations,%d\nscaled_se_residual,%.17g\nscaled_se_t_ref_seconds,%.17g\nconservation_residual,%.17g\nraw_solution_min,%.17g\nnegative_error_bound,%.17g\nnegative_count,%d\nnonfinite_count,%d\npermutation_ion_fraction_max_abs,%.17g\nboundary_fraction_max,%.17g\nboundary_opacity_fraction,%.17g\nboundary_process_coverage,%d\nclamp_floor_freeze_anchor_repair_fallback_count,%d\nverdict,%s\n",N,coverage.ions_mapped,coverage.ions_expected,coverage.sl_mapped,coverage.sl_expected,coverage.full_mapped,coverage.full_expected,coverage.lines_mapped,coverage.lines_expected,coverage.continua_mapped,coverage.continua_expected,coverage.continua_kramers,coverage.targets_mapped,coverage.targets_expected,coverage.first_bad_lower,coverage.first_bad_target,coverage.checksum_mismatch,raw_rank,solve_attempted,p_elem_valid,sd.rank,components,zero_rows,zero_cols,target_expected,target_mapped,target_fail,bad_rate,channel_inventory_fail,guard_config_count,guard_firing_count,c48_projected_levels,fire.kramers_fallback,fire.continuum_deleted,fire.target_fallback,fire.nstar_cap,fire.nonfinite_guard,fire.bf_estimator_bins,fire.bf_pref_j_bins,fire.bf_jeqb_bins,max_assembly_residual,raw_smax,raw_smin,raw_kappa,sd.smax,sd.smin,sd.kappa,sd.rcond,sd.pivot_growth,sd.equil_iters,sd.refinement_iters,se_res,time_explosion,conservation,raw_solution_min,negative_error_bound,negative,nonfinite,perm_frac,boundary_max,boundary_opacity,boundary_process_coverage,guard_firing_count,verdict);fprintf(fp,"candidate_assembler_calls,%d\ncandidate_pair_owner_calls,%d\nsave_restore_calls,%d\nper_ion_pin_calls,%d\ntopstage_IV_calls,%d\nhot_cold_required,%d\nhot_cold_rebuilds,%d\nhot_cold_matrix_byte_identical,%d\nhot_cold_matrix_max_abs,%.17g\ncommit_requested,%d\ncommit_performed,%d\ncommit_blocked_by,%s\n",fire.candidate_assembler_calls,fire.candidate_pair_owner_calls,fire.save_restore_calls,fire.per_ion_pin_calls,fire.topstage_IV_calls,hot_cold_required,hot_cold_rebuilds,hot_cold_identical,hot_cold_max_abs,commit_requested,commit_performed,commit_blocked_by);fprintf(fp,"topology_gate_pass,%d\nnumerical_gate_pass,%d\nboundary_gate_pass,%d\n",topology_gate_pass,numerical_gate_pass,boundary_gate_pass);for(int c=0;c<NLTE_EW_N_CHANNELS;c++){fprintf(fp,"channel_colsum_%s,%.17g\n",ew_channel_name[c],colsum[c]);fprintf(fp,"channel_independent_assembly_residual_%s,%.17g\n",ew_channel_name[c],assembly_residual[c]);fprintf(fp,"channel_event_count_%s,%d\n",ew_channel_name[c],fire.channel_events[c]);}if(!solve_attempted)fprintf(fp,"pivot_status,not_attempted\nrefinement_status,not_attempted\n");for(int i=0;solve_attempted&&i<N;i++)fprintf(fp,"pivot_%d,%d\n",i,solve_piv[i]);for(int i=0;solve_attempted&&i<=sd.refinement_iters;i++)fprintf(fp,"refinement_residual_%d,%.17g\n",i,sd.refinement[i]);fclose(fp);}
+         fp=ew_open_dump(path,sizeof(path),iter,Z,shell_label,"provenance");
+         if(fp){fprintf(fp,"channel,row,column,source_identity,target_identity,aggregated_rate,units,producer,field_generation,target_route,probability_applied,full_to_sl_weight,aggregation\n");for(int c=0;c<NLTE_EW_N_CHANNELS;c++)for(int j=0;j<N;j++)for(int i=0;i<N;i++)if(i!=j&&EW(plane[c],N,i,j)>0.0)fprintf(fp,"%s,%d,%d,SL:%d,SL:%d,%.17g,s^-1,nlte_assemble_rate_matrix,frozen_cell_field,%s,%s,applied_at_capture,sum_of_transition_routes\n",ew_channel_name[c],i,j,j,i,EW(plane[c],N,i,j),(c==NLTE_EW_RAD_BF||c==NLTE_EW_COLL_BF)?"ma_rr_CSR":"direct_level_pair",(c==NLTE_EW_RAD_BF||c==NLTE_EW_COLL_BF)?"outside_once":"not_applicable");fclose(fp);}
+         fp=ew_open_dump(path,sizeof(path),iter,Z,shell_label,"manifest");
+@@ -2058,17 +2170,18 @@
+             if(fp){
+                 double phi_forward=boundary.phi_forward[0]+boundary.phi_forward[1];
+                 double phi_reverse=boundary.phi_reverse[0]+boundary.phi_reverse[1];
+-                fprintf(fp,"run,iter,shell,Z,stage,atomic_checksum,route_count,valid_route_count,n_Fe_total,M_outside,M_V_before,M_V_after,sum_II,sum_III,sum_IV,conservation_residual,q_count,sum_q,q_min,q_max,q_checksum,Phi_IV_to_V_rad,Phi_V_to_IV_rad,Phi_IV_to_V_coll,Phi_V_to_IV_coll,Phi_IV_to_V_nonthermal,Phi_V_to_IV_nonthermal,Phi_DR_autoion,Phi_forward,Phi_reverse,Phi_net,matrix_event_flux_residual,boundary_row_residual,FeI_fraction,FeVIplus_fraction,right_boundary_producer_coverage,V_to_VI_contract,DR_contract,verdict\n");
++                fprintf(fp,"run,iter,shell,Z,stage,atomic_checksum,route_count,valid_route_count,n_Fe_total,M_outside,M_V_before,M_V_after,sum_II,sum_III,sum_IV,conservation_residual,raw_solution_min,negative_error_bound,q_count,sum_q,q_min,q_max,q_checksum,Phi_IV_to_V_rad,Phi_V_to_IV_rad,Phi_IV_to_V_coll,Phi_V_to_IV_coll,Phi_IV_to_V_nonthermal,Phi_V_to_IV_nonthermal,Phi_DR_autoion,Phi_forward,Phi_reverse,Phi_net,matrix_event_flux_residual,boundary_row_residual,FeI_fraction,FeVIplus_fraction,right_boundary_producer_coverage,V_to_VI_contract,DR_contract,verdict\n");
+                 double fe1=0.0,fe6=0.0;
+                 int ip1=ew_find_ip(atom,26,0);
+                 if(ip1>=0&&n_elem>0.0)fe1=atom->ion_number_density[(size_t)ip1*plasma->n_shells+shell]/n_elem;
+                 for(int ip=0;ip<atom->n_ion_pops;ip++)if(atom->ion_pop_Z[ip]==26&&atom->ion_pop_stage[ip]>=5&&n_elem>0.0)fe6+=atom->ion_number_density[(size_t)ip*plasma->n_shells+shell]/n_elem;
+-                fprintf(fp,"iter%04d,%d,%d,26,FeV_boundary_mass,%016llx,%d,%d,%.17g,%.17g,%.17g,%.17g,%.17g,%.17g,%.17g,%.17g,%d,%.17g,%.17g,%.17g,%016llx,%.17g,%.17g,%.17g,%.17g,0,0,0,%.17g,%.17g,%.17g,%.17g,%.17g,%.17g,%.17g,0,absent_declared_truncation,not_replicated_no_producer,%s\n",
++                fprintf(fp,"iter%04d,%d,%d,26,FeV_boundary_mass,%016llx,%d,%d,%.17g,%.17g,%.17g,%.17g,%.17g,%.17g,%.17g,%.17g,%.17g,%.17g,%d,%.17g,%.17g,%.17g,%016llx,%.17g,%.17g,%.17g,%.17g,0,0,0,%.17g,%.17g,%.17g,%.17g,%.17g,%.17g,%.17g,0,absent_declared_truncation,not_replicated_no_producer,%s\n",
+                     iter,iter,shell_label,(unsigned long long)checksum,
+                     boundary.route_count,boundary.valid_route_count,n_elem,
+                     boundary.m_outside,boundary.m_before,boundary.m_after,
+                     boundary.sum_stage[0],boundary.sum_stage[1],boundary.sum_stage[2],
+-                    boundary.conservation_residual,boundary.level_count,
++                    boundary.conservation_residual,raw_solution_min,
++                    negative_error_bound,boundary.level_count,
+                     boundary.q_sum,boundary.q_min,boundary.q_max,
+                     (unsigned long long)boundary.q_checksum,
+                     boundary.phi_forward[0],boundary.phi_reverse[0],
+--- a/tests/wave32_boundary_q_seed.c
++++ b/tests/wave32_boundary_q_seed.c
+@@ -1,8 +1,17 @@
+ #include <math.h>
++#include <float.h>
+ #include <stdio.h>
+ 
+ int nlte_ew_test_q_projection(const double *, int, double *);
+ double nlte_ew_test_assembly_residual(const double *, const double *, int);
++int nlte_ew_test_negative_audit(const double *, int, double, double *, double *);
++double nlte_ew_test_boundary_row_audit(
++    const double *, const double *, const double *, int, double);
++double nlte_ew_test_boundary_flux_audit(
++    const double *, const double *, int, int, int, int,
++    const double *, const double *, const double *, const double *);
++
++#define A(A_,n_,i_,j_) ((A_)[(j_)*(n_)+(i_)])
+ 
+ int main(void) {
+     double good[4] = {0.1, 0.2, 0.3, 0.4};
+@@ -22,11 +31,53 @@
+     plane[0] = -4.0;
+     plane[1] = 3.0;
+     double bad_target = nlte_ew_test_assembly_residual(plane, ledger, 2);
++
++    double x[3] = {2.0, 3.0, 5.0};
++    double Anorm[9] = {0.0}, b[3] = {10.0, 0.0, 0.0};
++    for (int j = 0; j < 3; j++) A(Anorm,3,0,j) = 1.0;
++    double row_good = nlte_ew_test_boundary_row_audit(Anorm,b,x,3,10.0);
++    A(Anorm,3,0,1) = 0.5;
++    double row_seeded = nlte_ew_test_boundary_row_audit(Anorm,b,x,3,10.0);
++
++    double Araw[9] = {0.0};
++    double forward0[3] = {4.0,6.0,0.0}, forward1[3] = {0.0};
++    double reverse0[3] = {2.0,3.0,0.0}, reverse1[3] = {0.0};
++    A(Araw,3,2,0)=4.0; A(Araw,3,2,1)=6.0;
++    A(Araw,3,0,2)=2.0; A(Araw,3,1,2)=3.0;
++    double flux_good = nlte_ew_test_boundary_flux_audit(
++        Araw,x,3,2,0,2,forward0,forward1,reverse0,reverse1);
++    A(Araw,3,2,1)=0.0;
++    double route_seeded = nlte_ew_test_boundary_flux_audit(
++        Araw,x,3,2,0,2,forward0,forward1,reverse0,reverse1);
++    A(Araw,3,2,1)=6.0;
++    A(Araw,3,0,2)=1.5; A(Araw,3,1,2)=3.5; /* total unchanged */
++    double q_coupling_seeded = nlte_ew_test_boundary_flux_audit(
++        Araw,x,3,2,0,2,forward0,forward1,reverse0,reverse1);
++
++    double roundoff_x[3] = {1.0,-DBL_EPSILON,2.0};
++    double negative_x[3] = {1.0,-1e-12,2.0};
++    double raw_min=0.0,error_bound=0.0;
++    int roundoff_negative = nlte_ew_test_negative_audit(
++        roundoff_x,3,1.0,&raw_min,&error_bound);
++    int seeded_negative = nlte_ew_test_negative_audit(
++        negative_x,3,1.0,NULL,NULL);
+     printf("good=%d sum=%.17g negative=%d nonfinite=%d bad_sum=%d\n",
+            pass_good, sum, pass_negative, pass_nonfinite, pass_bad_sum);
+     printf("matrix_good=%.17g bad_debit=%.17g bad_target=%.17g\n",
+            matrix_good, bad_debit, bad_target);
++    printf("row_good=%.17g conservation_row_seeded=%.17g\n",
++           row_good,row_seeded);
++    printf("flux_good=%.17g boundary_route_seeded=%.17g "
++           "q_coupling_seeded=%.17g\n",
++           flux_good,route_seeded,q_coupling_seeded);
++    printf("roundoff_negative=%d raw_min=%.17g error_bound=%.17g "
++           "seeded_negative=%d\n",
++           roundoff_negative,raw_min,error_bound,seeded_negative);
+     return pass_good && fabs(sum - 1.0) <= 1e-12 && !pass_negative &&
+            !pass_nonfinite && !pass_bad_sum && matrix_good == 0.0 &&
+-           bad_debit > 1e-12 && bad_target > 1e-12 ? 0 : 1;
++           bad_debit > 1e-12 && bad_target > 1e-12 && row_good == 0.0 &&
++           row_seeded > 1e-12 && flux_good == 0.0 &&
++           route_seeded > 1e-12 && q_coupling_seeded > 1e-12 &&
++           roundoff_negative == 0 && raw_min == -DBL_EPSILON &&
++           error_bound >= DBL_EPSILON && seeded_negative == 1 ? 0 : 1;
+ }
+

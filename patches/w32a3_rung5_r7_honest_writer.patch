@@ -1,0 +1,438 @@
+diff --git a/Makefile b/Makefile
+index d31e6f2..6bb1572 100644
+--- a/Makefile
++++ b/Makefile
+@@ -72,9 +72,17 @@ selftest_cmf_chieta_dump: scripts/cmf_chieta_writer_fixture.c src/lumina_cmfgen.
+ 		-Wl,--gc-sections -o selftest_cmf_chieta_dump \
+ 		scripts/cmf_chieta_writer_fixture.c src/lumina_cmfgen.c $(LDFLAGS)
+ 
++# Wave-3.2 D6 independent-ledger seeded debit corruption fixture.
++selftest_wave32_matrix_debit: tests/wave32_matrix_debit_seed.c src/lumina_element_wide.c src/lumina_plasma.c src/lumina_atomic.c $(HEADERS)
++	$(CC) -O2 -std=gnu11 -D_GNU_SOURCE -ffunction-sections -fdata-sections -Isrc \
++		-Wl,--gc-sections -o selftest_wave32_matrix_debit \
++		tests/wave32_matrix_debit_seed.c src/lumina_element_wide.c \
++		src/lumina_plasma.c src/lumina_atomic.c $(LDFLAGS)
++
+ # Clean
+ clean:
+-	rm -f $(TARGET) lumina_cuda selftest_cmf_chieta_dump *.o
++	rm -f $(TARGET) lumina_cuda selftest_cmf_chieta_dump \
++		selftest_wave32_matrix_debit *.o
+ 
+ # Run with defaults
+ run: $(TARGET)
+diff --git a/src/lumina_cmfgen.c b/src/lumina_cmfgen.c
+index 7f46fa3..88dd5ef 100644
+--- a/src/lumina_cmfgen.c
++++ b/src/lumina_cmfgen.c
+@@ -213,7 +213,7 @@ int cmfgen_dump_frozen_chieta(const CMFGENState *cs, const Geometry *geo,
+         geo->n_shells != cs->n_shells || !(geo->time_explosion > 0.0) ||
+         !isfinite(geo->time_explosion) || !geo->r_inner || !geo->r_outer ||
+         !cs->nu || !cs->dnu || !cs->chi_tot || !cs->chi_es ||
+-        !cs->S_fixed || !cs->J) {
++        !cs->S_fixed || !cs->J || !cs->eta_total_audit) {
+         fprintf(stderr, "[CMF-CHIETA][FAIL] invalid state/path/iteration\n");
+         return -1;
+     }
+@@ -243,11 +243,14 @@ int cmfgen_dump_frozen_chieta(const CMFGENState *cs, const Geometry *geo,
+         fprintf(stderr,"[CMF-CHIETA][FAIL] dimension overflow\n");
+         return -1;
+     }
+-    for (size_t q=0;q<cells;q++)
++    double eta_decomposition_max_abs = 0.0;
++    int eta_decomposition_bitwise = 1;
++    for (size_t q=0;q<cells;q++) {
+         if (!(cs->chi_tot[q] >= 0.0) || !(cs->chi_es[q] >= 0.0) ||
+-            !(cs->J[q] >= 0.0) || !isfinite(cs->chi_tot[q]) ||
++            !(cs->J[q] >= 0.0) || !(cs->eta_total_audit[q] >= 0.0) ||
++            !isfinite(cs->chi_tot[q]) ||
+             !isfinite(cs->chi_es[q]) || !isfinite(cs->S_fixed[q]) ||
+-            !isfinite(cs->J[q]) ||
++            !isfinite(cs->J[q]) || !isfinite(cs->eta_total_audit[q]) ||
+             !isfinite(cs->chi_tot[q] * cs->S_fixed[q]) ||
+             !isfinite(cs->chi_es[q] * cs->J[q]) ||
+             !isfinite(cs->chi_tot[q] * cs->S_fixed[q] +
+@@ -255,6 +258,23 @@ int cmfgen_dump_frozen_chieta(const CMFGENState *cs, const Geometry *geo,
+             fprintf(stderr,"[CMF-CHIETA][FAIL] invalid cell=%zu\n",q);
+             return -1;
+         }
++        double split = cs->chi_tot[q] * cs->S_fixed[q] +
++                       cs->chi_es[q] * cs->J[q];
++        double delta = fabs(cs->eta_total_audit[q] - split);
++        if (delta > eta_decomposition_max_abs)
++            eta_decomposition_max_abs = delta;
++        if (memcmp(&cs->eta_total_audit[q], &split, sizeof(double)) != 0)
++            eta_decomposition_bitwise = 0;
++    }
++
++    char manifest[4096], quarantine[4096];
++    int mn=snprintf(manifest,sizeof(manifest),"%s.manifest.json",path);
++    int qn=snprintf(quarantine,sizeof(quarantine),"%s.quarantine",path);
++    if (mn < 0 || (size_t)mn >= sizeof(manifest) ||
++        qn < 0 || (size_t)qn >= sizeof(quarantine)) {
++        fprintf(stderr,"[CMF-CHIETA][FAIL] sidecar/quarantine path too long\n");
++        return -1;
++    }
+ 
+     FILE *fp = fopen(path, "wb");
+     if (!fp) {
+@@ -295,9 +315,7 @@ int cmfgen_dump_frozen_chieta(const CMFGENState *cs, const Geometry *geo,
+     }
+     for (int s=0;s<cs->n_shells;s++) for (int b=cs->n_bins-1;b>=0;b--) {
+         size_t q=(size_t)s*cs->n_bins+b;
+-        double eta_fixed=cs->chi_tot[q]*cs->S_fixed[q];
+-        double eta_coherent=cs->chi_es[q]*cs->J[q];
+-        DW(cmf_dump_f64(fp,&sha,eta_fixed+eta_coherent));
++        DW(cmf_dump_f64(fp,&sha,cs->eta_total_audit[q]));
+     }
+     for (int s=0;s<cs->n_shells;s++) for (int b=cs->n_bins-1;b>=0;b--)
+         DW(cmf_dump_f64(fp,&sha,cs->J[(size_t)s*cs->n_bins+b]));
+@@ -305,33 +323,39 @@ int cmfgen_dump_frozen_chieta(const CMFGENState *cs, const Geometry *geo,
+     if (fclose(fp)) fail=1;
+     if (fail) {
+         fprintf(stderr,"[CMF-CHIETA][FAIL] write %s: %s\n",path,strerror(errno));
++        if (rename(path, quarantine) != 0)
++            fprintf(stderr,"[CMF-CHIETA][FAIL] quarantine %s: %s\n",
++                    quarantine,strerror(errno));
+         return -1;
+     }
+     unsigned char digest[32]; char hex[65];
+     cmf_sha256_final(&sha,digest);
+     for(int i=0;i<32;i++) snprintf(hex+2*i,3,"%02x",digest[i]);
+     hex[64]='\0';
+-    char manifest[4096];
+-    int mn=snprintf(manifest,sizeof(manifest),"%s.manifest.json",path);
+-    if (mn < 0 || (size_t)mn >= sizeof(manifest)) {
+-        fprintf(stderr,"[CMF-CHIETA][FAIL] sidecar path too long\n");
+-        return -1;
+-    }
+     FILE *mf=fopen(manifest,"w");
+     if(!mf) {
+         fprintf(stderr,"[CMF-CHIETA][FAIL] open %s: %s\n",manifest,strerror(errno));
++        if (rename(path, quarantine) != 0)
++            fprintf(stderr,"[CMF-CHIETA][FAIL] quarantine %s: %s\n",
++                    quarantine,strerror(errno));
+         return -1;
+     }
+-    fprintf(mf,"{\n  \"schema\": \"LCMFCE01-v1\",\n"
++    int sidecar_fail = fprintf(mf,"{\n  \"schema\": \"LCMFCE01-v1\",\n"
+                "  \"sha256\": \"%s\",\n"
+                "  \"iteration\": %d,\n  \"field_generation\": %d,\n"
+                "  \"post_damping\": true,\n"
+                "  \"coherent_frozen\": true,\n"
+                "  \"frequency_descending\": true,\n"
+-               "  \"eta_decomposition_bitwise\": true,\n"
+-               "  \"eta_decomposition_max_abs\": 0.0\n}\n",hex,iter,iter);
+-    if(fclose(mf)) {
+-        fprintf(stderr,"[CMF-CHIETA][FAIL] close %s\n",manifest);
++               "  \"eta_decomposition_bitwise\": %s,\n"
++               "  \"eta_decomposition_max_abs\": %.17g\n}\n",
++               hex,iter,iter,eta_decomposition_bitwise ? "true" : "false",
++               eta_decomposition_max_abs) < 0;
++    if(fclose(mf)) sidecar_fail = 1;
++    if(sidecar_fail) {
++        fprintf(stderr,"[CMF-CHIETA][FAIL] write/close %s\n",manifest);
++        if (rename(path, quarantine) != 0)
++            fprintf(stderr,"[CMF-CHIETA][FAIL] quarantine %s: %s\n",
++                    quarantine,strerror(errno));
+         return -1;
+     }
+     fprintf(stderr,"[CMF-CHIETA] wrote %s iter=%d generation=%d sha256=%s\n",
+@@ -360,6 +384,7 @@ int cmfgen_init(CMFGENState *cs, const Geometry *geo)
+     cs->chi_tot     = calloc((size_t)NS * NB, sizeof(double));
+     cs->S_fixed     = calloc((size_t)NS * NB, sizeof(double));
+     cs->J           = calloc((size_t)NS * NB, sizeof(double));
++    cs->eta_total_audit = calloc((size_t)NS * NB, sizeof(double));
+     cs->lambda_star = calloc((size_t)NS * NB, sizeof(double));
+     cs->t_color     = calloc((size_t)NS, sizeof(double));
+     cs->tri_lo      = calloc((size_t)NS * NB, sizeof(double));
+@@ -368,7 +393,8 @@ int cmfgen_init(CMFGENState *cs, const Geometry *geo)
+     if (!cs->nu || !cs->dnu || !cs->chi_es || !cs->chi_abs || !cs->chi_line ||
+         !cs->chi_line_th || !cs->t_color ||
+         !cs->tri_lo || !cs->tri_up || !cs->tri_r ||
+-        !cs->chi_tot || !cs->S_fixed || !cs->J || !cs->lambda_star) {
++        !cs->chi_tot || !cs->S_fixed || !cs->J || !cs->eta_total_audit ||
++        !cs->lambda_star) {
+         fprintf(stderr, "[CMFGEN] init alloc failed\n");
+         return -1;
+     }
+@@ -402,6 +428,7 @@ void cmfgen_free(CMFGENState *cs)
+     free(cs->nu); free(cs->dnu); free(cs->chi_es); free(cs->chi_abs);
+     free(cs->chi_line); free(cs->chi_line_th); free(cs->chi_line_cls);
+     free(cs->chi_tot); free(cs->S_fixed); free(cs->J);
++    free(cs->eta_total_audit);
+     free(cs->lambda_star); free(cs->t_color);
+     free(cs->tri_lo); free(cs->tri_up); free(cs->tri_r);
+     free(cs->p_ray);
+diff --git a/src/lumina_cmfgen.h b/src/lumina_cmfgen.h
+index 0eca3d2..cf89391 100644
+--- a/src/lumina_cmfgen.h
++++ b/src/lumina_cmfgen.h
+@@ -54,6 +54,9 @@ typedef struct {
+                                   mode (cooling-only closure), else chi_line_th */
+     double *S_fixed;           /* (chi_abs*B + chi_line_th*S_line)/chi_tot */
+     double *J;                 /* mean intensity (output) erg/s/cm^2/Hz/sr*/
++    double *eta_total_audit;   /* authoritative total emissivity snapshot for
++                                  R7 decomposition audit; populated immediately
++                                  before an armed dump, never used by transport */
+     double *lambda_star;       /* diagonal approximate Lambda operator    */
+     double *tri_lo;            /* [ns*nb] tridiag Lambda off-diag L[s,s-1] (A4) */
+     double *tri_up;            /* [ns*nb] tridiag Lambda off-diag L[s,s+1] (A4) */
+diff --git a/src/lumina_cuda.cu b/src/lumina_cuda.cu
+index 5904934..a04cbd7 100644
+--- a/src/lumina_cuda.cu
++++ b/src/lumina_cuda.cu
+@@ -7558,10 +7558,30 @@ int main(int argc, char *argv[]) {
+                                     pc_iter, iter_env ? iter_env : "<unset>");
+                                 return EXIT_FAILURE;
+                             }
+-                            if (it == wanted &&
+-                                cmfgen_dump_frozen_chieta(
+-                                    &cs,&geo,it,dump_path) != 0)
++                            const char *expected_env = getenv(
++                                "LUMINA_CMF_FROZEN_CHIETA_EXPECTED_ITER");
++                            char *expected_end = NULL;
++                            long expected = expected_env ?
++                                strtol(expected_env,&expected_end,10) : -1;
++                            if (!expected_env || expected_end == expected_env ||
++                                *expected_end || expected != wanted) {
++                                fprintf(stderr,
++                                    "[CMF-CHIETA][FATAL] explicit expected iter "
++                                    "must equal selected iter (selected=%ld, "
++                                    "expected=%s)\n", wanted,
++                                    expected_env ? expected_env : "<unset>");
+                                 return EXIT_FAILURE;
++                            }
++                            if (it == wanted) {
++                                size_t cells = (size_t)cs.n_shells * cs.n_bins;
++                                for (size_t q = 0; q < cells; q++)
++                                    cs.eta_total_audit[q] =
++                                        cs.chi_tot[q] * cs.S_fixed[q] +
++                                        cs.chi_es[q] * cs.J[q];
++                                if (cmfgen_dump_frozen_chieta(
++                                        &cs,&geo,it,dump_path) != 0)
++                                    return EXIT_FAILURE;
++                            }
+                         }
+                     }
+                     cmfgen_window_color(&cs);
+diff --git a/src/lumina_element_wide.c b/src/lumina_element_wide.c
+index 8194153..2dafb4f 100644
+--- a/src/lumina_element_wide.c
++++ b/src/lumina_element_wide.c
+@@ -1189,6 +1189,13 @@ static double ew_channel_assembly_residual(const double *A,
+     return scale > 0.0 ? worst / scale : worst;
+ }
+ 
++/* Seeded-defect fixture entry: it invokes the same D6 ledger comparison used
++ * by the production gate, without exposing any mutation hook in production. */
++double nlte_ew_test_assembly_residual(const double *A,
++                                      const double *expected_outflow, int N) {
++    return ew_channel_assembly_residual(A, expected_outflow, N);
++}
++
+ static int ew_guard_config_count(void) {
+     static const char *const guard[] = {
+         "LUMINA_NLTE_FLOOR_REG", "LUMINA_NLTE_COLL_FLOOR",
+diff --git a/scripts/cmf_chieta_writer_fixture.c b/scripts/cmf_chieta_writer_fixture.c
+index e539bf3..e0dc6e3 100644
+--- a/scripts/cmf_chieta_writer_fixture.c
++++ b/scripts/cmf_chieta_writer_fixture.c
+@@ -1,6 +1,7 @@
+ #include "lumina_cmfgen.h"
+ 
+ #include <stdio.h>
++#include <stdlib.h>
+ #include <string.h>
+ 
+ int main(int argc, char **argv) {
+@@ -16,6 +17,7 @@ int main(int argc, char **argv) {
+     double chi_es[6] = {0.1,0.2,0.3,0.4,0.5,0.6};
+     double S_fixed[6] = {7,8,9,10,11,12};
+     double J[6] = {13,14,15,16,17,18};
++    double eta_total[6];
+     Geometry geo;
+     CMFGENState cs;
+     memset(&geo,0,sizeof(geo));
+@@ -24,6 +26,9 @@ int main(int argc, char **argv) {
+     geo.time_explosion=1683072.0;
+     cs.n_shells=2; cs.n_bins=3; cs.nu=nu; cs.dnu=dnu;
+     cs.chi_tot=chi_tot; cs.chi_es=chi_es;
+-    cs.S_fixed=S_fixed; cs.J=J;
++    cs.S_fixed=S_fixed; cs.J=J; cs.eta_total_audit=eta_total;
++    for (int q=0;q<6;q++)
++        eta_total[q]=chi_tot[q]*S_fixed[q]+chi_es[q]*J[q];
++    if (getenv("W32_SEED_BAD_ETA")) eta_total[0] += 1.0;
+     return cmfgen_dump_frozen_chieta(&cs,&geo,10,argv[1]) == 0 ? 0 : 1;
+ }
+diff --git a/scripts/cmf_chieta_roundtrip_selftest.py b/scripts/cmf_chieta_roundtrip_selftest.py
+index cde2947..1858b62 100644
+--- a/scripts/cmf_chieta_roundtrip_selftest.py
++++ b/scripts/cmf_chieta_roundtrip_selftest.py
+@@ -41,10 +41,15 @@ def parse(path: Path):
+         raise ValueError("frequency is not descending")
+     if not all(x > 0 for x in dnu):
+         raise ValueError("non-positive dnu")
++    eta_max_abs = 0.0
++    eta_bitwise = True
+     for fixed, coherent, total in zip(etaf, etac, etat):
++        eta_max_abs = max(eta_max_abs, abs(total - (fixed + coherent)))
+         if struct.pack("<d", fixed + coherent) != struct.pack("<d", total):
+-            raise ValueError("eta decomposition is not bitwise exact")
+-    return raw, header, arrays
++            eta_bitwise = False
++    if not eta_bitwise:
++        raise ValueError("eta decomposition is not bitwise exact")
++    return raw, header, arrays, eta_max_abs, eta_bitwise
+ 
+ 
+ def serialize(header, arrays):
+@@ -70,7 +75,7 @@ def main():
+         path = out / "fixture.lcmfce"
+         subprocess.run([str(ROOT / "selftest_cmf_chieta_dump"), str(path)],
+                        cwd=ROOT, check=True)
+-    raw, header, arrays = parse(path)
++    raw, header, arrays, eta_max_abs, eta_bitwise = parse(path)
+     rebuilt = serialize(header, arrays)
+     if rebuilt != raw:
+         raise ValueError("write-read-write bytes differ")
+@@ -79,8 +84,10 @@ def main():
+     digest = hashlib.sha256(raw).hexdigest()
+     if manifest.get("sha256") != digest:
+         raise ValueError("sidecar sha256 mismatch")
+-    if not manifest.get("eta_decomposition_bitwise"):
+-        raise ValueError("sidecar eta audit flag missing")
++    if manifest.get("eta_decomposition_bitwise") is not eta_bitwise:
++        raise ValueError("sidecar eta bitwise audit disagrees with payload")
++    if manifest.get("eta_decomposition_max_abs") != eta_max_abs:
++        raise ValueError("sidecar eta max-abs audit disagrees with payload")
+     print(f"PASS LCMFCE01 write-read-write bitwise roundtrip: {path}")
+     print(f"sha256={digest} bytes={len(raw)}")
+     return 0
+diff --git a/scripts/parity59_chieta.env b/scripts/parity59_chieta.env
+new file mode 100644
+index 0000000..0dcd567
+--- /dev/null
++++ b/scripts/parity59_chieta.env
+@@ -0,0 +1,4 @@
++# Wave-3.2 R7 authoritative frozen-field capture contract.
++# parity59 consumes producer iteration 10; selection and expectation must agree.
++export LUMINA_CMF_FROZEN_CHIETA_ITER=10
++export LUMINA_CMF_FROZEN_CHIETA_EXPECTED_ITER=10
+diff --git a/tests/wave32_cmf_chieta_negative.c b/tests/wave32_cmf_chieta_negative.c
+index 75fc9d7..8d8c918 100644
+--- a/tests/wave32_cmf_chieta_negative.c
++++ b/tests/wave32_cmf_chieta_negative.c
+@@ -8,7 +8,8 @@
+ static void init_fixture(CMFGENState *cs, Geometry *geo,
+                          double r_inner[2], double r_outer[2],
+                          double nu[3], double dnu[3], double chi[6],
+-                         double chic[6], double source[6], double J[6]) {
++                         double chic[6], double source[6], double J[6],
++                         double eta_total[6]) {
+     memset(cs, 0, sizeof(*cs));
+     memset(geo, 0, sizeof(*geo));
+     geo->n_shells = 2;
+@@ -23,6 +24,9 @@ static void init_fixture(CMFGENState *cs, Geometry *geo,
+     cs->chi_es = chic;
+     cs->S_fixed = source;
+     cs->J = J;
++    cs->eta_total_audit = eta_total;
++    for (int q = 0; q < 6; q++)
++        eta_total[q] = chi[q] * source[q] + chic[q] * J[q];
+ }
+ 
+ int main(int argc, char **argv) {
+@@ -31,12 +35,14 @@ int main(int argc, char **argv) {
+     double nu[3] = {1e14, 2e14, 4e14}, dnu[3] = {5e13, 1e14, 2e14};
+     double chi[6] = {1,2,3,4,5,6}, chic[6] = {.1,.2,.3,.4,.5,.6};
+     double source[6] = {7,8,9,10,11,12}, J[6] = {13,14,15,16,17,18};
++    double eta_total[6];
+     CMFGENState cs;
+     Geometry geo;
+     int failures = 0;
+ 
+ #define EXPECT_REJECT(tag, mutation, iter) do {                              \
+-    init_fixture(&cs, &geo, ri, ro, nu, dnu, chi, chic, source, J);          \
++    init_fixture(&cs, &geo, ri, ro, nu, dnu, chi, chic, source, J,           \
++                 eta_total);                                                 \
+     mutation;                                                                 \
+     unlink(argv[1]);                                                          \
+     int rc = cmfgen_dump_frozen_chieta(&cs, &geo, iter, argv[1]);            \
+diff --git a/tests/wave32_matrix_debit_seed.c b/tests/wave32_matrix_debit_seed.c
+new file mode 100644
+index 0000000..b7be4c1
+--- /dev/null
++++ b/tests/wave32_matrix_debit_seed.c
+@@ -0,0 +1,17 @@
++#include <math.h>
++#include <stdio.h>
++
++double nlte_ew_test_assembly_residual(const double *, const double *, int);
++
++int main(void) {
++    /* Column-major two-state rate plane: 0 -> 1 at rate 4. */
++    double A[4] = {-4.0, 4.0, 0.0, 0.0};
++    double ledger[2] = {4.0, 0.0};
++    double baseline = nlte_ew_test_assembly_residual(A, ledger, 2);
++    A[0] = -3.0; /* seeded diagonal-debit corruption; ledger stays independent */
++    double seeded = nlte_ew_test_assembly_residual(A, ledger, 2);
++    int gate_pass = seeded <= 1e-12;
++    printf("baseline_residual=%.17g seeded_residual=%.17g gate_pass=%d\n",
++           baseline, seeded, gate_pass);
++    return (baseline == 0.0 && seeded > 1e-12 && !gate_pass) ? 0 : 1;
++}
+diff --git a/tests/test_wave32_seeded_defects.py b/tests/test_wave32_seeded_defects.py
+new file mode 100644
+index 0000000..97dbda6
+--- /dev/null
++++ b/tests/test_wave32_seeded_defects.py
+@@ -0,0 +1,48 @@
++#!/usr/bin/env python3
++"""R7 bad-eta and D6 matrix-debit seeded negative controls."""
++
++import os
++from pathlib import Path
++import subprocess
++import tempfile
++
++
++ROOT = Path(__file__).resolve().parents[1]
++
++
++def main() -> int:
++    subprocess.run(["make", "-B", "selftest_cmf_chieta_dump",
++                    "selftest_wave32_matrix_debit"], cwd=ROOT, check=True)
++    tmp = Path(tempfile.mkdtemp(prefix="w32_seeded_", dir="/tmp"))
++
++    bad = tmp / "bad_eta.lcmfce"
++    env = os.environ.copy()
++    env["W32_SEED_BAD_ETA"] = "1"
++    subprocess.run([str(ROOT / "selftest_cmf_chieta_dump"), str(bad)],
++                   cwd=ROOT, env=env, check=True)
++    selected = subprocess.run(
++        ["python3", "scripts/cmf_chieta_roundtrip_selftest.py", "--input", str(bad)],
++        cwd=ROOT, text=True, capture_output=True)
++    if selected.returncode == 0:
++        raise RuntimeError("bad eta passed the R7 selector")
++
++    quarantine_payload = tmp / "sidecar_fail.lcmfce"
++    Path(str(quarantine_payload) + ".manifest.json").mkdir()
++    sidecar = subprocess.run(
++        [str(ROOT / "selftest_cmf_chieta_dump"), str(quarantine_payload)],
++        cwd=ROOT)
++    if sidecar.returncode == 0 or quarantine_payload.exists() or not Path(
++            str(quarantine_payload) + ".quarantine").is_file():
++        raise RuntimeError("sidecar failure did not quarantine payload")
++
++    matrix = subprocess.run([str(ROOT / "selftest_wave32_matrix_debit")],
++                            cwd=ROOT, text=True, capture_output=True, check=True)
++    print("bad_eta_selector_rc=", selected.returncode, sep="")
++    print("sidecar_writer_rc=", sidecar.returncode, sep="")
++    print(matrix.stdout.strip())
++    print("PASS seeded defects: eta selector FAIL; D6 debit ledger FAIL")
++    return 0
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())

@@ -1,0 +1,315 @@
+--- a/src/lumina_cmfgen.h
++++ b/src/lumina_cmfgen.h
+@@ -107,7 +107,18 @@
+     uint64_t undefined_line_shell_count;
+     double   a_reference_line_power;
+     double   a_reference_covered_line_power;
++    double   a_reference_undefined_line_power;
+     double   a_reference_contribution_fraction;
++    double   a_reference_undefined_contribution_fraction;
++    uint64_t retained_transition_count;
++    uint64_t retained_line_shell_count;
++    double   a_reference_retained_line_power;
++    double   a_reference_retained_contribution_fraction;
++    int      retain_undefined_a;
++    int      n_shells;
++    int      n_bins;
++    double  *undefined_a_emissivity_by_band;  /* [n_bins], sum_s eta*dnu */
++    double  *undefined_a_emissivity_by_shell; /* [n_shells], sum_b eta*dnu */
+     int      n_lines;
+     unsigned char *undefined_reason;       /* [n_lines], CMF_EMISS_UNDEF_* mask */
+     uint32_t      *undefined_shell_count;  /* [n_lines] */
+@@ -147,15 +158,17 @@
+                      const OpacityState *opac, BFOpacity *bf,
+                      const PlasmaState *plasma);
+ 
+-/* Assemble only the E4 B lane.  There is no fallback for an undefined A_ul or
+- * upper population: that transition contributes zero and is recorded in
+- * stats.  seed_line<0 disables the negative-control injection; otherwise the
+- * selected local n_u is multiplied by seed_factor without mutating NLTE state. */
++/* Assemble an E4/E5 direct-Aul lane.  retain_undefined_a=0 is the original B
++ * lane (undefined direct emissivity is zero); retain_undefined_a=1 is B2 and
++ * preserves the exact production A-lane contribution for undefined cells.
++ * seed_line<0 disables the negative-control injection; otherwise the selected
++ * local n_u is multiplied by seed_factor without mutating NLTE state. */
+ int cmfgen_assemble_aulnu(CMFGENState *cs, const Geometry *geo,
+                           const OpacityState *opac, BFOpacity *bf,
+                           const PlasmaState *plasma, const NLTEConfig *nlte,
+                           const AtomicData *atom, int seed_line,
+                           int seed_shell, double seed_factor,
++                          int retain_undefined_a,
+                           CMFGENEmissABStats *stats);
+ void cmfgen_emiss_ab_stats_free(CMFGENEmissABStats *stats);
+ int cmfgen_write_emiss_ab_undefined(const CMFGENEmissABStats *stats,
+--- a/src/lumina_cmfgen.c
++++ b/src/lumina_cmfgen.c
+@@ -363,13 +363,22 @@
+                eta_decomposition_max_abs) < 0;
+     if (!sidecar_fail && meta) {
+         const CMFGENEmissABStats *st = meta->coverage;
+-        const char *formula = meta->lane[0] == 'A'
+-                            ? "production-eps-times-source"
+-                            : "hnu-over-4pi-times-Aul-times-n_upper-over-dnu";
++        int is_a = strcmp(meta->lane,"A-production") == 0;
++        int is_b2 = strcmp(meta->lane,"B2-Aul-nu-retain-A-undefined") == 0;
++        const char *formula = is_a
++            ? "production-eps-times-source"
++            : (is_b2
++               ? "covered:hnu-over-4pi-times-Aul-times-n_upper-over-dnu;undefined:production-A-retained"
++               : "hnu-over-4pi-times-Aul-times-n_upper-over-dnu");
++        const char *undefined_policy = is_a ? "production-not-applicable"
++            : (is_b2 ? "retain-production-A-explicit-controlled"
++                     : "zero-undefined-fail-closed");
+         sidecar_fail = fprintf(mf,
+                ",\n  \"emiss_ab_lane\": \"%s\",\n"
+                "  \"common_assembly_state_sha256\": \"%s\",\n"
+                "  \"line_emissivity_formula\": \"%s\",\n"
++               "  \"undefined_transition_policy\": \"%s\",\n"
++               "  \"controlled_retention\": %s,\n"
+                "  \"undefined_transition_list_suffix\": \".undefined.csv\",\n"
+                "  \"coverage\": {\n"
+                "    \"active_transition_count\": %llu,\n"
+@@ -378,24 +387,54 @@
+                "    \"active_line_shell_count\": %llu,\n"
+                "    \"defined_line_shell_count\": %llu,\n"
+                "    \"undefined_line_shell_count\": %llu,\n"
++               "    \"retained_transition_count\": %llu,\n"
++               "    \"retained_line_shell_count\": %llu,\n"
+                "    \"a_reference_line_power\": %.17g,\n"
+                "    \"a_reference_covered_line_power\": %.17g,\n"
+-               "    \"a_reference_contribution_fraction\": %.17g\n"
++               "    \"a_reference_undefined_line_power\": %.17g,\n"
++               "    \"a_reference_contribution_fraction\": %.17g,\n"
++               "    \"a_reference_undefined_contribution_fraction\": %.17g,\n"
++               "    \"a_reference_retained_line_power\": %.17g,\n"
++               "    \"a_reference_retained_contribution_fraction\": %.17g\n"
+                "  },\n"
+                "  \"seeded_defect\": {\"line_id\": %d, \"shell\": %d, "
+-               "\"population_factor\": %.17g, \"hits\": %llu}\n",
+-               meta->lane,meta->common_state_sha256,formula,
++               "\"population_factor\": %.17g, \"hits\": %llu},\n"
++               "  \"undefined_a_reference_diagnostic\": {\n"
++               "    \"epoch\": \"pre-EPAY\",\n"
++               "    \"quantity\": \"sum eta_A_undefined*dnu\",\n"
++               "    \"units\": \"erg s^-1 cm^-3 sr^-1\",\n"
++               "    \"n_bins\": %d,\n"
++               "    \"n_shells\": %d,\n"
++               "    \"by_band\": [",
++               meta->lane,meta->common_state_sha256,formula,undefined_policy,
++               is_b2 ? "true" : "false",
+                (unsigned long long)st->active_transition_count,
+                (unsigned long long)st->defined_transition_count,
+                (unsigned long long)st->undefined_transition_count,
+                (unsigned long long)st->active_line_shell_count,
+                (unsigned long long)st->defined_line_shell_count,
+                (unsigned long long)st->undefined_line_shell_count,
++               (unsigned long long)(is_b2 ? st->retained_transition_count : 0),
++               (unsigned long long)(is_b2 ? st->retained_line_shell_count : 0),
+                st->a_reference_line_power,
+                st->a_reference_covered_line_power,
++               st->a_reference_undefined_line_power,
+                st->a_reference_contribution_fraction,
++               st->a_reference_undefined_contribution_fraction,
++               is_b2 ? st->a_reference_retained_line_power : 0.0,
++               is_b2 ? st->a_reference_retained_contribution_fraction : 0.0,
+                st->seed_line,st->seed_shell,st->seed_factor,
+-               (unsigned long long)st->seed_hits) < 0;
++               (unsigned long long)st->seed_hits,st->n_bins,st->n_shells) < 0;
++        for (int b=0;b<st->n_bins && !sidecar_fail;b++)
++            sidecar_fail=fprintf(mf,"%s%.17g",b ? "," : "",
++                st->undefined_a_emissivity_by_band[b]) < 0;
++        if (!sidecar_fail)
++            sidecar_fail=fprintf(mf,"],\n    \"by_shell\": [") < 0;
++        for (int s=0;s<st->n_shells && !sidecar_fail;s++)
++            sidecar_fail=fprintf(mf,"%s%.17g",s ? "," : "",
++                st->undefined_a_emissivity_by_shell[s]) < 0;
++        if (!sidecar_fail)
++            sidecar_fail=fprintf(mf,"]\n  }\n") < 0;
+     } else if (!sidecar_fail) {
+         sidecar_fail = fprintf(mf,"\n") < 0;
+     }
+@@ -600,6 +639,8 @@
+     if (!stats) return;
+     free(stats->undefined_reason);
+     free(stats->undefined_shell_count);
++    free(stats->undefined_a_emissivity_by_band);
++    free(stats->undefined_a_emissivity_by_shell);
+     memset(stats,0,sizeof(*stats));
+ }
+ 
+@@ -642,6 +683,10 @@
+     CMFGENEmissABStats *stats;
+     int *upper_nlte;
+     unsigned char *active_seen;
++    int retain_undefined_a;
++    double *a_total_cell;
++    double *a_covered_cell;
++    double *a_undefined_cell;
+ } CMFEmissBContext;
+ 
+ /* ------------------------------------------------------------ */
+@@ -781,8 +826,9 @@
+                 emiss_b->active_seen[l]=1;
+                 st->active_line_shell_count++;
+                 double eta_a = eps_phys ? w * el * Sl : w * Sl;
+-                st->a_reference_line_power += eta_a * cs->dnu[b];
+-                unsigned reason=st->undefined_reason[l];
++                emiss_b->a_total_cell[idx] += eta_a;
++                unsigned reason=st->undefined_reason[l] &
++                                ~CMF_EMISS_UNDEF_POPULATION;
+                 int upper=emiss_b->upper_nlte[l];
+                 if (upper < 0) {
+                     if (!reason) reason=CMF_EMISS_UNDEF_UPPER_LEVEL;
+@@ -802,6 +848,7 @@
+                     st->undefined_reason[l]|=(unsigned char)reason;
+                     st->undefined_shell_count[l]++;
+                     st->undefined_line_shell_count++;
++                    emiss_b->a_undefined_cell[idx] += eta_a;
+                 } else {
+                     if (l == st->seed_line && s == st->seed_shell) {
+                         n_upper *= st->seed_factor;
+@@ -810,7 +857,7 @@
+                     eta_line[idx] += (CM_H*nu_l/(4.0*M_PI_VAL))*A*n_upper /
+                                      cs->dnu[b];
+                     st->defined_line_shell_count++;
+-                    st->a_reference_covered_line_power += eta_a*cs->dnu[b];
++                    emiss_b->a_covered_cell[idx] += eta_a;
+                 }
+             }
+         }
+@@ -950,6 +997,7 @@
+             double chi_t   = chi_e + chi_a + chi_ln;
+ 
+             double chi_ln_th = chi_ln;               /* legacy: all thermal */
++            double a_line_factor = cs->cont_only ? 0.0 : 1.0;
+             if (cs->frozen_morph_eps >= 0.0 &&
+                 chi_ln > line_gate * chi_a) {
+                 /* frozen-plasma morphology pass: force the forest-dominated
+@@ -961,6 +1009,7 @@
+                 double fe = cs->frozen_morph_eps;
+                 chi_ln_th = fe * chi_ln;
+                 if (!emiss_b) eta_ln *= fe;
++                a_line_factor *= fe;
+                 n_split++;
+             } else if (eps_phys) {
+                 chi_ln_th = cs->chi_line_th[idx];    /* per-line accumulated */
+@@ -971,14 +1020,34 @@
+                  * the RE closure sees FULL chi_line via cs->chi_line_re. */
+                 chi_ln_th = eps_uv * chi_ln;
+                 if (!emiss_b) eta_ln *= eps_uv;
++                a_line_factor *= eps_uv;
+                 n_split++;
+             } else if (line_eps > 0.0 && line_eps <= 1.0 &&
+                        chi_ln > line_gate * chi_a) {
+                 chi_ln_th = line_eps * chi_ln;
+                 if (!emiss_b)
+                     eta_ln *= line_eps; /* A-lane thermal share only */
++                a_line_factor *= line_eps;
+                 n_split++;
+             }
++            if (emiss_b) {
++                CMFGENEmissABStats *st=emiss_b->stats;
++                double cell_power_scale=a_line_factor*cs->dnu[b];
++                double undefined_eta=a_line_factor*
++                                     emiss_b->a_undefined_cell[idx];
++                st->a_reference_line_power +=
++                    emiss_b->a_total_cell[idx]*cell_power_scale;
++                st->a_reference_covered_line_power +=
++                    emiss_b->a_covered_cell[idx]*cell_power_scale;
++                st->a_reference_undefined_line_power +=
++                    undefined_eta*cs->dnu[b];
++                st->undefined_a_emissivity_by_band[b] +=
++                    undefined_eta*cs->dnu[b];
++                st->undefined_a_emissivity_by_shell[s] +=
++                    undefined_eta*cs->dnu[b];
++                if (emiss_b->retain_undefined_a)
++                    eta_ln += undefined_eta;
++            }
+             cs->chi_es[idx]      = chi_e + (chi_ln - chi_ln_th);
+             cs->chi_abs[idx]     = chi_a;
+             cs->chi_line_th[idx] = chi_ln_th;
+@@ -1113,12 +1182,15 @@
+                           const PlasmaState *plasma, const NLTEConfig *nlte,
+                           const AtomicData *atom, int seed_line,
+                           int seed_shell, double seed_factor,
++                          int retain_undefined_a,
+                           CMFGENEmissABStats *stats) {
++    double *a_total_cell=NULL, *a_covered_cell=NULL, *a_undefined_cell=NULL;
+     if (!cs || !geo || !opac || !plasma || !nlte || !atom || !stats ||
+         opac->n_lines < 0 || atom->n_lines != opac->n_lines ||
+         geo->n_shells != cs->n_shells || opac->n_shells != cs->n_shells ||
+         !atom->line_level_upper || !atom->level_num ||
+         !nlte->nlte_to_global_level ||
++        (retain_undefined_a != 0 && retain_undefined_a != 1) ||
+         (seed_line >= 0 && (seed_line >= opac->n_lines || seed_shell < 0 ||
+                             seed_shell >= cs->n_shells ||
+                             !(seed_factor > 0.0) || !isfinite(seed_factor))))
+@@ -1128,13 +1200,27 @@
+     stats->seed_line=seed_line;
+     stats->seed_shell=seed_line >= 0 ? seed_shell : -1;
+     stats->seed_factor=seed_line >= 0 ? seed_factor : 1.0;
++    stats->retain_undefined_a=retain_undefined_a;
++    stats->n_shells=cs->n_shells;
++    stats->n_bins=cs->n_bins;
+     size_t nl=(size_t)(opac->n_lines > 0 ? opac->n_lines : 1);
+     stats->undefined_reason=(unsigned char *)calloc(nl,sizeof(unsigned char));
+     stats->undefined_shell_count=(uint32_t *)calloc(nl,sizeof(uint32_t));
++    stats->undefined_a_emissivity_by_band=(double *)calloc(
++        (size_t)cs->n_bins,sizeof(double));
++    stats->undefined_a_emissivity_by_shell=(double *)calloc(
++        (size_t)cs->n_shells,sizeof(double));
+     int *upper=(int *)malloc(nl*sizeof(int));
+     unsigned char *active=(unsigned char *)calloc(nl,sizeof(unsigned char));
+     if (!stats->undefined_reason || !stats->undefined_shell_count ||
++        !stats->undefined_a_emissivity_by_band ||
++        !stats->undefined_a_emissivity_by_shell ||
+         !upper || !active) goto fail;
++    size_t cells=(size_t)cs->n_shells*cs->n_bins;
++    a_total_cell=(double *)calloc(cells,sizeof(double));
++    a_covered_cell=(double *)calloc(cells,sizeof(double));
++    a_undefined_cell=(double *)calloc(cells,sizeof(double));
++    if (!a_total_cell || !a_covered_cell || !a_undefined_cell) goto fail;
+     for (int l=0;l<opac->n_lines;l++) upper[l]=-1;
+ 
+     int ni=nlte->n_nlte_ions;
+@@ -1191,9 +1277,11 @@
+     free(by_number); free(max_number);
+ 
+     {
+-        CMFEmissBContext ctx={nlte,atom,stats,upper,active};
++        CMFEmissBContext ctx={nlte,atom,stats,upper,active,
++            retain_undefined_a,a_total_cell,a_covered_cell,a_undefined_cell};
+         cmfgen_assemble_impl(cs,geo,opac,bf,plasma,&ctx);
+     }
++    free(a_total_cell); free(a_covered_cell); free(a_undefined_cell);
+     for (int l=0;l<opac->n_lines;l++) {
+         if (!active[l]) {
+             stats->undefined_reason[l]=0;
+@@ -1208,6 +1296,18 @@
+         stats->a_reference_line_power > 0.0
+         ? stats->a_reference_covered_line_power /
+           stats->a_reference_line_power : 0.0;
++    stats->a_reference_undefined_contribution_fraction =
++        stats->a_reference_line_power > 0.0
++        ? stats->a_reference_undefined_line_power /
++          stats->a_reference_line_power : 0.0;
++    if (retain_undefined_a) {
++        stats->retained_transition_count=stats->undefined_transition_count;
++        stats->retained_line_shell_count=stats->undefined_line_shell_count;
++        stats->a_reference_retained_line_power=
++            stats->a_reference_undefined_line_power;
++        stats->a_reference_retained_contribution_fraction=
++            stats->a_reference_undefined_contribution_fraction;
++    }
+     free(upper); free(active);
+     if (seed_line >= 0 && stats->seed_hits != 1) {
+         fprintf(stderr,"[EMISS-AB][FAIL] seeded transition line=%d shell=%d "
+@@ -1218,6 +1318,7 @@
+     return 0;
+ 
+ fail:
++    free(a_total_cell); free(a_covered_cell); free(a_undefined_cell);
+     free(upper); free(active);
+     cmfgen_emiss_ab_stats_free(stats);
+     return -1;
+

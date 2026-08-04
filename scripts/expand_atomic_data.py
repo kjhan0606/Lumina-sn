@@ -21,6 +21,9 @@ import h5py
 import numpy as np
 import os
 import sys
+from pathlib import Path
+
+from kshape_contract import write_contract
 
 HDF5_PATH = "data/atomic/kurucz_cd23_cmfgen_lumina.h5"
 OUT_DIR = "data/tardis_reference"
@@ -435,6 +438,9 @@ def main():
             trans_prob[start:start + count, :] = 1.0 / count
     np.save(os.path.join(OUT_DIR, "transition_probabilities.npy"), trans_prob)
     print(f"  transition_probabilities: [{n_transitions} x {N_SHELLS}]")
+
+    contract = write_contract(Path(OUT_DIR))
+    print(f"  {contract.name}: line epoch + both NPY hashes")
 
     # j_blues [n_lines x n_shells] — W * B_nu(T_rad)
     try:

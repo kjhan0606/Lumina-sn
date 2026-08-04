@@ -1,0 +1,25 @@
+종합 **FAIL**입니다. 소스 정적 판정이며 빌드·테스트·git·수정은 하지 않았습니다.
+
+- **③ 실질 커버리지 — FAIL**
+  - C2는 중복을 제거해 전 주파수 bin 수가 정확히 일치해야 하므로 개선됨: [bench_frozen_oracle.c:337](/home/kjhan/BACKUP/Eunha.A1/Claude/Lumina-sn/bench_frozen_oracle.c:337), [bench_frozen_oracle.c:544](/home/kjhan/BACKUP/Eunha.A1/Claude/Lumina-sn/bench_frozen_oracle.c:544).
+  - 그러나 J-bar의 `ion_complete`는 해당 이온의 행이 **하나만 있어도** complete가 된다. 소비 대상 전체 line의 누락·중복을 대조하지 않는다: [bench_frozen_oracle.c:319](/home/kjhan/BACKUP/Eunha.A1/Claude/Lumina-sn/bench_frozen_oracle.c:319), [bench_frozen_oracle.c:553](/home/kjhan/BACKUP/Eunha.A1/Claude/Lumina-sn/bench_frozen_oracle.c:553).
+  - 마지막 iteration도 완결 블록이 아니라 “그 shell의 행 하나라도 있는 최대 iter”로 선택한다. 중단된 부분 블록이 선택될 수 있다: [bench_frozen_oracle.c:69](/home/kjhan/BACKUP/Eunha.A1/Claude/Lumina-sn/bench_frozen_oracle.c:69), [bench_frozen_oracle.c:297](/home/kjhan/BACKUP/Eunha.A1/Claude/Lumina-sn/bench_frozen_oracle.c:297).
+  - ion/level-pop도 전체 기대 레코드 수가 아니라 `>0`만 요구한다: [bench_frozen_oracle.c:536](/home/kjhan/BACKUP/Eunha.A1/Claude/Lumina-sn/bench_frozen_oracle.c:536).
+  - 캡처 preset은 8개 이온 필터를 넓힐 뿐 `LUMINA_JBAR_DUMP` 자체를 켜지 않으며, C1/C2 dump도 별도 gate다: [src/lumina_plasma.c:13897](/home/kjhan/BACKUP/Eunha.A1/Claude/Lumina-sn/src/lumina_plasma.c:13897), [src/lumina_plasma.c:13905](/home/kjhan/BACKUP/Eunha.A1/Claude/Lumina-sn/src/lumina_plasma.c:13905), [src/lumina_plasma.c:1168](/home/kjhan/BACKUP/Eunha.A1/Claude/Lumina-sn/src/lumina_plasma.c:1168), [src/lumina_plasma.c:1199](/home/kjhan/BACKUP/Eunha.A1/Claude/Lumina-sn/src/lumina_plasma.c:1199).
+
+- **④ 생산값 재현 — FAIL**
+  - MA line-destruction heating은 실제 shell별 destroyed count와 당시 packet energy·volume·simulation time으로 계산해 `%.17e`로 저장한다. 이 항목 자체는 해소됨: [src/lumina_cuda.cu:7745](/home/kjhan/BACKUP/Eunha.A1/Claude/Lumina-sn/src/lumina_cuda.cu:7745), [src/lumina_cuda.cu:7767](/home/kjhan/BACKUP/Eunha.A1/Claude/Lumina-sn/src/lumina_cuda.cu:7767).
+  - 하지만 주요 재생 입력은 생산 정밀도를 보존하지 않는다. C1은 W/J를 6자리, \(T_R\)을 소수 2자리로 기록하고 [src/lumina_plasma.c:1356](/home/kjhan/BACKUP/Eunha.A1/Claude/Lumina-sn/src/lumina_plasma.c:1356), C2와 J-bar/β도 6자리만 기록한다: [src/lumina_plasma.c:1419](/home/kjhan/BACKUP/Eunha.A1/Claude/Lumina-sn/src/lumina_plasma.c:1419), [src/lumina_plasma.c:14388](/home/kjhan/BACKUP/Eunha.A1/Claude/Lumina-sn/src/lumina_plasma.c:14388). 이후 β에서 τ를 역산하고 W·\(T_R\)에서 J를 재계산하므로 생산값의 정확 재현은 아니다: [bench_frozen_oracle.c:156](/home/kjhan/BACKUP/Eunha.A1/Claude/Lumina-sn/bench_frozen_oracle.c:156), [bench_frozen_oracle.c:287](/home/kjhan/BACKUP/Eunha.A1/Claude/Lumina-sn/bench_frozen_oracle.c:287).
+  - 생산에서는 R_bf GPU lookup이 기본 ON일 수 있지만 [src/lumina_cuda.cu:945](/home/kjhan/BACKUP/Eunha.A1/Claude/Lumina-sn/src/lumina_cuda.cu:945), oracle은 항상 `lookup=NULL`인 CPU 재계산이다: [bench_frozen_oracle.c:607](/home/kjhan/BACKUP/Eunha.A1/Claude/Lumina-sn/bench_frozen_oracle.c:607). 생산 경로 일치 여부를 강제하는 검증도 없다.
+  - 캡처한 MA heating은 별도 출력행일 뿐 생산 thermal residual의 `thermal_net`에 합산되지 않는다: [src/lumina_plasma.c:282](/home/kjhan/BACKUP/Eunha.A1/Claude/Lumina-sn/src/lumina_plasma.c:282), [src/lumina_plasma.c:9877](/home/kjhan/BACKUP/Eunha.A1/Claude/Lumina-sn/src/lumina_plasma.c:9877).
+
+- **iter 정렬 — field 경로 PASS / MA 소비 주장 FAIL**
+  - 루프에서 solve(`it`)가 먼저 실행되고 [src/lumina_cuda.cu:7253](/home/kjhan/BACKUP/Eunha.A1/Claude/Lumina-sn/src/lumina_cuda.cu:7253), 같은 iter의 transport 뒤 C1/C2와 J-bar가 게시된다: [src/lumina_cuda.cu:7977](/home/kjhan/BACKUP/Eunha.A1/Claude/Lumina-sn/src/lumina_cuda.cu:7977), [src/lumina_cuda.cu:8062](/home/kjhan/BACKUP/Eunha.A1/Claude/Lumina-sn/src/lumina_cuda.cu:8062). 따라서 field 생산 `i` → solve 소비 `i+1`, 즉 `producer=consume-1`은 정당하다: [bench_frozen_oracle.c:515](/home/kjhan/BACKUP/Eunha.A1/Claude/Lumina-sn/bench_frozen_oracle.c:515), [bench_frozen_oracle.c:556](/home/kjhan/BACKUP/Eunha.A1/Claude/Lumina-sn/bench_frozen_oracle.c:556).
+  - 반면 MA heating은 transport 관측값이며 다음 thermal solve에 등록·소비되는 소스 경로가 없다. 따라서 동일 lag로 묶는 것은 생산–소비 정렬이 아니라 사후 연관이다.
+
+- **관측 전용·OFF 불변 — PASS(소스 수준)**
+  - frozen-oracle probe는 전부 전용 compile macro 아래 있고 정상 target에는 포함되지 않는다: [src/lumina.h:922](/home/kjhan/BACKUP/Eunha.A1/Claude/Lumina-sn/src/lumina.h:922), [Makefile:64](/home/kjhan/BACKUP/Eunha.A1/Claude/Lumina-sn/Makefile:64).
+  - C1/C2/J-bar 관측부는 계산된 값을 읽어 파일에 기록할 뿐 물리 배열을 쓰지 않는다: [src/lumina_plasma.c:1335](/home/kjhan/BACKUP/Eunha.A1/Claude/Lumina-sn/src/lumina_plasma.c:1335), [src/lumina_plasma.c:1389](/home/kjhan/BACKUP/Eunha.A1/Claude/Lumina-sn/src/lumina_plasma.c:1389), [src/lumina_plasma.c:14374](/home/kjhan/BACKUP/Eunha.A1/Claude/Lumina-sn/src/lumina_plasma.c:14374).
+  - MA 캡처도 동기화된 counter readback과 파일 출력뿐이며 gate OFF에서는 실행되지 않는다: [src/lumina_cuda.cu:7720](/home/kjhan/BACKUP/Eunha.A1/Claude/Lumina-sn/src/lumina_cuda.cu:7720), [src/lumina_cuda.cu:7750](/home/kjhan/BACKUP/Eunha.A1/Claude/Lumina-sn/src/lumina_cuda.cu:7750).
+
+따라서 현재 소스는 종합 승격 조건을 충족하지 못합니다.

@@ -8,6 +8,9 @@ All saved to data/tardis_reference/ directory as CSV and HDF5.
 import os
 import numpy as np
 import pandas as pd
+from pathlib import Path
+
+from kshape_contract import write_contract
 
 # Set up TARDIS
 from tardis.io.configuration.config_reader import Configuration
@@ -324,6 +327,11 @@ try:
     escaped_df.to_csv(os.path.join(OUTPUT_DIR, "escaped_packets.csv"), index=False)
 except Exception as e:
     print(f"  Escape data: {e}")
+
+# Bind the two runtime arrays to the exact exported line-list epoch.  Missing
+# transition probabilities are a producer failure, not a usable partial deck.
+contract = write_contract(Path(OUTPUT_DIR))
+print(f"  {contract.name}: line epoch + both NPY hashes")
 
 print("\n" + "=" * 60)
 print("PHASE 1 COMPLETE. All data exported to data/tardis_reference/")

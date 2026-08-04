@@ -64,15 +64,19 @@ __global__ void bf_compute_n_level_kernel(
     const double *level_E_eV,
     const int *level_g, const int *level_metastable,
     const int *level_to_ip, const int *level_stage,
-    int n_shells, int n_levels)
+    int n_shells, int n_levels, int include_neutrals)
 {
     int l = blockIdx.x * blockDim.x + threadIdx.x;
     int s = blockIdx.y * blockDim.y + threadIdx.y;
     if (l >= n_levels || s >= n_shells) return;
 
     int stage = level_stage[l];
-    /* Match CPU compute_bf_opacity: skip neutrals (stage<1) for bf ionization. */
-    if (stage < 1) { n_level[s * n_levels + l] = 0.0f; return; }
+    /* [Wave-1 neutral-bf] Zero charge excludes free-free, not photoionization:
+     * X I + hnu -> X II + e is physical. Preserve the historical zero exactly
+     * unless LUMINA_FIX_BF_NEUTRAL is armed on the host. */
+    if (stage < 1 && !include_neutrals) {
+        n_level[s * n_levels + l] = 0.0f; return;
+    }
 
     int ip = level_to_ip[l];
     double T_rad_s = T_rad[s];
@@ -223,7 +227,7 @@ extern "C" int bf_gemm_compute(BFOpacity *bf, AtomicData *atom,
         g_bf_gemm.d_level_E_eV,
         g_bf_gemm.d_level_g, g_bf_gemm.d_level_metastable,
         g_bf_gemm.d_level_to_ip, g_bf_gemm.d_level_stage,
-        n_shells, n_levels);
+        n_shells, n_levels, lumina_fix_bf_neutral_enabled());
     CUDA_CHECK(cudaGetLastError());
 
     /* Step 2: cuBLAS GEMM (TF32 tensor cores)
@@ -278,6 +282,10 @@ extern "C" int bf_gemm_compute_fine(BFOpacity *bf, AtomicData *atom, PlasmaState
         double nu_min_bin, double dlognu_bin, double *chi_bf_fine_out)
 {
     (void)bf;
+    /* D-3's level/frequency-dependent stimulated-recombination corrfactor is
+     * not a separable GEMM. Return to the caller's corrected coarse-grid
+     * interpolation rather than silently replacing it with uncorrected fine chi. */
+    if (lumina_fix_bf_stim_recomb_enabled()) return -1;
     if (!g_bf_gemm.initialized) { if (bf_gemm_init(atom, n_shells) != 0) return -1; }
     if (n_shells != g_bf_gemm.n_shells || !atom->cmfgen_sigma_bf || n_fine < 2) return -1;
     int n_levels = g_bf_gemm.n_levels;
@@ -295,11 +303,13 @@ extern "C" int bf_gemm_compute_fine(BFOpacity *bf, AtomicData *atom, PlasmaState
         bf_compute_n_level_kernel<<<grid,block>>>(g_bf_gemm.d_n_level, g_bf_gemm.d_T_rad,
             g_bf_gemm.d_W, g_bf_gemm.d_n_ion, g_bf_gemm.d_Z_part, g_bf_gemm.d_level_E_eV,
             g_bf_gemm.d_level_g, g_bf_gemm.d_level_metastable, g_bf_gemm.d_level_to_ip,
-            g_bf_gemm.d_level_stage, n_shells, n_levels);
+            g_bf_gemm.d_level_stage, n_shells, n_levels,
+            lumina_fix_bf_neutral_enabled());
         CUDA_CHECK(cudaGetLastError());
     }
 
-    /* per-level photoion threshold ν = (χ_ion − E_level)/h, stage≥1 only (cached) */
+    /* per-level photoion threshold nu=(chi_ion-E_level)/h. Stage 0 is retained
+     * under the same neutral-bf repair gate as the population kernel. */
     static double *thr = NULL; static int thr_n = 0;
     if (!thr || thr_n != n_levels) {
         free(thr); thr = (double*)malloc((size_t)n_levels*sizeof(double)); thr_n = n_levels;
@@ -308,7 +318,9 @@ extern "C" int bf_gemm_compute_fine(BFOpacity *bf, AtomicData *atom, PlasmaState
             int ip = -1;
             for (int p = 0; p < n_ip; p++)
                 if (l >= atom->level_offset[p] && l < atom->level_offset[p+1]) { ip = p; break; }
-            if (ip < 0 || atom->ion_pop_stage[ip] < 1) continue;
+            if (ip < 0 ||
+                (atom->ion_pop_stage[ip] < 1 &&
+                 !lumina_fix_bf_neutral_enabled())) continue;
             int Z = atom->ion_pop_Z[ip], st = atom->ion_pop_stage[ip];
             double chi_eV = -1.0;
             for (int k = 0; k < atom->n_ionization; k++)
@@ -386,4 +398,10 @@ extern "C" void bf_gemm_free(void)
     cudaFree(g_bf_gemm.d_level_stage);
     free(g_bf_gemm.h_chi_bf);
     memset(&g_bf_gemm, 0, sizeof(g_bf_gemm));
+}
+
+/* [FB-MILNE C2] device sigma_bf handle for the sigma-weighted fb emission draw.
+ * col-major [n_freq x n_levels]; sigma for level l is contiguous at +l*n_freq. */
+extern "C" const float *bf_gemm_get_d_sigma_bf(void) {
+    return g_bf_gemm.d_sigma_bf;
 }

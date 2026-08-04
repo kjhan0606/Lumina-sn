@@ -1,0 +1,133 @@
+--- a/src/lumina.h
++++ b/src/lumina.h
+@@ -148,6 +148,9 @@
+ #define CENSUS_NKX  6   /* kpkt exit:  ff, fb, collexc, collion(res), bte, macap */
+ #define CENSUS_NHX  4   /* heating:    bf, ff, coll(res), dep(res)               */
+ #define CENSUS_NFATE 5  /* MA fate:    rad_deexc, col_deexc, rad_recomb, iup, idn*/
++/* [N2] macro-atom ACTIVATION classes: which channel woke the macro atom.
++ * Purely additive (new buckets + new CSV); no existing census column moves. */
++#define CENSUS_NACT 3   /* activation:  bb (line), bf, ff-heat                  */
+ #define CENSUS_NEMWL 24 /* emission wavelength coarse bins (log 900..30000 A)    */
+ #define CENSUS_NEMCH 8  /* emission channels: line, ff, fb, bte, macap, escat,   */
+                         /*                    bf_reemit, therm                   */
+--- a/src/lumina_cuda.cu
++++ b/src/lumina_cuda.cu
+@@ -4479,6 +4479,13 @@
+ __device__ unsigned long long d_census_heat[CENSUS_MAX_SHELLS * CENSUS_NHX];
+ __device__ unsigned long long d_census_fate[CENSUS_MAX_SHELLS * CENSUS_NFATE];
+ __device__ unsigned long long d_census_fate_el[3 * CENSUS_NFATE]; /* Fe,Co,Ni */
++/* [N2] macro-atom ACTIVATION-class census.  T4 could only weigh the three
++ * activation classes against each other through the CAP-truncated event log
++ * (41.2% prefix) because EVCH_MA_ACT_BB reaches NO census bucket at all and
++ * ff-heat only reaches the heating row.  These buckets are additive: no
++ * existing column changes, and every increment sits inside the same
++ * d_event_record short-circuit, so the OFF path is untouched. */
++__device__ unsigned long long d_census_act[CENSUS_MAX_SHELLS * CENSUS_NACT];
+ __device__ double             d_census_emiss[CENSUS_NEMWL * CENSUS_NEMCH];
+ __device__ const int         *d_census_line_Z = NULL; /* [n_lines] Z per line */
+ 
+@@ -4560,6 +4567,17 @@
+         default: break;
+     }
+     if (hx >= 0) atomicAdd(&d_census_heat[shell * CENSUS_NHX + hx], 1ULL);
++    /* (c2) [N2] macro-atom activation class (uncapped denominator for the
++     * activation-class shares T4 had to take from the event-log prefix). */
++    int ax = -1;
++    switch (chan) {
++        case EVCH_MA_ACT_BB:     ax = 0; break;  /* bb line absorption      */
++        case EVCH_RPKT_BF_ABS:
++        case EVCH_MA_ACT_BF:     ax = 1; break;  /* bf absorption           */
++        case EVCH_HEAT_FF:       ax = 2; break;  /* D5 ff heating -> k-pkt  */
++        default: break;
++    }
++    if (ax >= 0) atomicAdd(&d_census_act[shell * CENSUS_NACT + ax], 1ULL);
+     /* (d) macro-atom fate (+ per element Fe/Co/Ni)
+      * [ARTIS-PARITY M3] fate = the macro-atom's OWN terminal action, NOT the
+      * downstream k-packet EXIT channel. The previous mapping put KPKT_FF ->
+@@ -4690,6 +4708,8 @@
+     static unsigned long long zf[CENSUS_MAX_SHELLS * CENSUS_NFATE] = {0};
+     static unsigned long long zfe[3 * CENSUS_NFATE]               = {0};
+     static double             ze[CENSUS_NEMWL * CENSUS_NEMCH]     = {0};
++    static unsigned long long za[CENSUS_MAX_SHELLS * CENSUS_NACT]  = {0};
++    CUDA_CHECK(cudaMemcpyToSymbol(d_census_act,     za,  sizeof(za)));
+     CUDA_CHECK(cudaMemcpyToSymbol(d_census_kpkt,    zk,  sizeof(zk)));
+     CUDA_CHECK(cudaMemcpyToSymbol(d_census_heat,    zh,  sizeof(zh)));
+     CUDA_CHECK(cudaMemcpyToSymbol(d_census_fate,    zf,  sizeof(zf)));
+@@ -4704,6 +4724,8 @@
+     static unsigned long long hf[CENSUS_MAX_SHELLS * CENSUS_NFATE];
+     static unsigned long long hfe[3 * CENSUS_NFATE];
+     static double             he[CENSUS_NEMWL * CENSUS_NEMCH];
++    static unsigned long long ha[CENSUS_MAX_SHELLS * CENSUS_NACT];
++    CUDA_CHECK(cudaMemcpyFromSymbol(ha,  d_census_act,     sizeof(ha)));
+     CUDA_CHECK(cudaMemcpyFromSymbol(hk,  d_census_kpkt,    sizeof(hk)));
+     CUDA_CHECK(cudaMemcpyFromSymbol(hh,  d_census_heat,    sizeof(hh)));
+     CUDA_CHECK(cudaMemcpyFromSymbol(hf,  d_census_fate,    sizeof(hf)));
+@@ -4759,6 +4781,22 @@
+         fclose(fe);
+         printf("[DIAG-T2] macro-atom fate per-element -> lumina_census_ma_fate_elem.csv\n");
+     }
++    /* [N2] activation-class census: the uncapped denominator that lets the
++     * three macro-atom activation classes be weighed against each other
++     * without the event-log CAP prefix bias. */
++    FILE *fa = fopen("lumina_census_ma_activation.csv", "w");
++    if (fa) {
++        fprintf(fa, "shell,act_bb,act_bf,act_ffheat,total\n");
++        for (int s = 0; s < ns; s++) {
++            unsigned long long *r = &ha[s * CENSUS_NACT];
++            unsigned long long tot = 0;
++            for (int c = 0; c < CENSUS_NACT; c++) tot += r[c];
++            fprintf(fa, "%d,%llu,%llu,%llu,%llu\n", s, r[0], r[1], r[2], tot);
++        }
++        fclose(fa);
++        printf("[DIAG-T2] macro-atom activation census -> "
++               "lumina_census_ma_activation.csv\n");
++    }
+     FILE *fm = fopen("lumina_census_emission.csv", "w");
+     if (fm) {
+         fprintf(fm, "wl_bin,lam_lo_A,lam_hi_A,line,ff,fb,bte,macap,escatter,bf_reemit,linetherm\n");
+@@ -6502,6 +6540,17 @@
+                     if (d_event_log_on) { double _d = d_get_doppler_factor(pkt_r, pkt_mu, t_exp);
+                         d_event_record(4, (unsigned int)p, -1, pkt_nu * _d, pkt_energy * _d, pkt_shell_id, EVCH_KPKT_FF); }
+                 }
++                /* [MA-FATE N2] ff-heat -> k-packet -> macro-atom is the THIRD
++                 * activation class; the band ledger only carried bb (:5626)
++                 * and bf (:6417), so entry/exit for this class was invisible.
++                 * Mirrors the bf site exactly: read-only, no RNG draw, no
++                 * packet-state mutation, so the transport stream is unchanged
++                 * and only the diagnostic histogram gains counts. */
++                {
++                    double ma_exit_comov_nu_ff =
++                        pkt_nu * d_get_doppler_factor(pkt_r, pkt_mu, t_exp);
++                    d_ma_fate_record(comov_nu_ff, ma_exit_comov_nu_ff);
++                }
+                 last_reset_inner = 0;
+             } else {
+                 d_thomson_scatter(&pkt_r, &pkt_mu, &pkt_nu, &pkt_energy,
+@@ -8622,6 +8671,15 @@
+                             cuda_event_log_set_iter(it, rec);
+                             cuda_event_log_reset();
+                             cuda_census_reset();   /* [DIAG-T2] per-shell census */
++                            /* [MA-FATE N2] the (entry band, exit band) ledger is
++                             * reset/downloaded/printed ONLY by the classic MC
++                             * loop, which the pure-CMFGEN/co-evolve lane never
++                             * reaches (it returns at the end of loop A).  With
++                             * no reader the ledger was unfalsifiable here; arm
++                             * it on exactly the iterations the census is armed
++                             * on, so the OFF (no event log) path is unchanged. */
++                            cuda_ma_fate_reset();
++                            cuda_ma_fate_zi_reset();
+                         }
+                         CUDA_CHECK(cudaMemset(dev.d_escaped_flag, 0, n_packets * sizeof(int)));
+                         if (dev.d_jbar_line) {
+@@ -8961,6 +9019,11 @@
+                          * transport ran and the per-bin field was just rebuilt. */
+                         if (event_log_on && (event_iters_all || it == pc_iter - 1)) {
+                             cuda_census_dump_csv(geo.n_shells);
++                            /* [MA-FATE N2] read out the band ledger for THIS
++                             * armed iteration (host accumulator cleared first). */
++                            macro_atom_fate_reset();
++                            cuda_ma_fate_download_and_aggregate();
++                            macro_atom_fate_print("co-evolve armed iter, GPU transport");
+                             nlte_dump_perbin_field_csv(&nlte, time_sim_ce, volume,
+                                                        plasma.T_e, geo.n_shells);
+                             /* per-level departure b_k for Fe III (26/3) + Co III (27/3)

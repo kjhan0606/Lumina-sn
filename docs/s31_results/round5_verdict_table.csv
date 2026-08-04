@@ -1,0 +1,10 @@
+rung,grid,value_class,certificate_bits,certified_sign_uncertain_count,certified_nonfinite_count,profile_relative_l1,profile_relative_l2,centroid_shift_error,invariant_area_relative_error,p_obs_profile_l2,status,provenance
+8,128x512,unavailable,,,,,,,,,UNRESOLVED,"MPFR development interface unavailable; legacy round-4 values are not certificates"
+8,256x1024,unavailable,,,,,,,,,UNRESOLVED,"MPFR development interface unavailable; legacy round-4 values are not certificates"
+8,512x2048,unavailable,,,,,,,,,UNRESOLVED,"MPFR development interface unavailable; legacy round-4 values are not certificates"
+9,256x1024,measured_existing,,,,0.0004229785244928886,0.0003835010007996455,1.3306738988472233e-08,1.3314833138176783e-08,,NOT_ADJUDICATED,docs/s31_results/ka3_rev3.json
+9,512x2048,measured_existing,,,,0.00010565893300050145,9.580149026132896e-05,3.3380977843000537e-09,3.3390294475330224e-09,,NOT_ADJUDICATED,docs/s31_results/ka3_rev3.json
+9,1024x4096,preregistered_only,4096,,,"center 2.64e-5; window [2.50e-5,2.80e-5]",,,,,NOT_RUN,docs/CODEX_STAGE31_DESIGN_REV4.md
+9,"256x1024/512x2048/1024x4096",official_triple,,,,,,,,,UNRESOLVED,"1024x4096 and MPFR certificate measurements absent"
+10,32x8-128x32,not_entered,,,,,,,,,NOT_IMPLEMENTED,"KA3 all-items PASS prerequisite not established"
+11,32x8-128x32,not_entered,,,,,,,,,NOT_IMPLEMENTED,"KA3 all-items PASS prerequisite not established"

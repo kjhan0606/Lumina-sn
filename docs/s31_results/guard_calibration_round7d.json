@@ -1,0 +1,136 @@
+{
+  "attaining_sample": {
+    "coefficient": 27.80641753160013,
+    "ka": "KA3",
+    "n": 64,
+    "relative_error": 0.006788676155175813
+  },
+  "coefficient": 27.80641753160013,
+  "formula": "C=max(E_relative/h^2), h=1/n",
+  "per_ka_maximum": {
+    "KA1": 0.007085203760632297,
+    "KA2": 0.017584525768328887,
+    "KA3": 27.80641753160013
+  },
+  "safety_multiplier": 1.0,
+  "samples": [
+    {
+      "case": 0.001,
+      "coefficient": 0.005436338325682703,
+      "ka": "KA1",
+      "n": 32,
+      "relative_error": 5.3089241461745144e-06
+    },
+    {
+      "case": 0.001,
+      "coefficient": 0.0054558717678655265,
+      "ka": "KA1",
+      "n": 64,
+      "relative_error": 1.3319999433265446e-06
+    },
+    {
+      "case": 0.001,
+      "coefficient": 0.005465662308903279,
+      "ka": "KA1",
+      "n": 128,
+      "relative_error": 3.335975530336474e-07
+    },
+    {
+      "case": 1.0,
+      "coefficient": 0.005704276491876829,
+      "ka": "KA1",
+      "n": 32,
+      "relative_error": 5.5705825115984655e-06
+    },
+    {
+      "case": 1.0,
+      "coefficient": 0.005723278186693155,
+      "ka": "KA1",
+      "n": 64,
+      "relative_error": 1.3972847135481335e-06
+    },
+    {
+      "case": 1.0,
+      "coefficient": 0.005732693677450602,
+      "ka": "KA1",
+      "n": 128,
+      "relative_error": 3.498958543365846e-07
+    },
+    {
+      "case": 100.0,
+      "coefficient": 0.007085203760632297,
+      "ka": "KA1",
+      "n": 32,
+      "relative_error": 6.919144297492477e-06
+    },
+    {
+      "case": 100.0,
+      "coefficient": 0.00701050576711683,
+      "ka": "KA1",
+      "n": 64,
+      "relative_error": 1.7115492595500074e-06
+    },
+    {
+      "case": 100.0,
+      "coefficient": 0.006947759282696959,
+      "ka": "KA1",
+      "n": 128,
+      "relative_error": 4.240575734067968e-07
+    },
+    {
+      "coefficient": 0.013053307999053656,
+      "ka": "KA2",
+      "n": 32,
+      "relative_error": 1.2747371092825836e-05
+    },
+    {
+      "coefficient": 0.01531221419558581,
+      "ka": "KA2",
+      "n": 64,
+      "relative_error": 3.738333543844192e-06
+    },
+    {
+      "coefficient": 0.017584525768328887,
+      "ka": "KA2",
+      "n": 128,
+      "relative_error": 1.073274277852105e-06
+    },
+    {
+      "coefficient": 27.53135177485118,
+      "ka": "KA3",
+      "n": 32,
+      "relative_error": 0.026886085717628107
+    },
+    {
+      "coefficient": 27.80641753160013,
+      "ka": "KA3",
+      "n": 64,
+      "relative_error": 0.006788676155175813
+    },
+    {
+      "coefficient": 27.752377011274152,
+      "ka": "KA3",
+      "n": 128,
+      "relative_error": 0.001693870667192026
+    },
+    {
+      "coefficient": 27.72032056995075,
+      "ka": "KA3",
+      "n": 256,
+      "relative_error": 0.0004229785243217583
+    },
+    {
+      "coefficient": 27.69785536721259,
+      "ka": "KA3",
+      "n": 512,
+      "relative_error": 0.0001056589331329826
+    },
+    {
+      "coefficient": 27.68654177506385,
+      "ka": "KA3",
+      "n": 1024,
+      "relative_error": 2.6403943800987102e-05
+    }
+  ],
+  "schema": "stage31-sign-guard-calibration-v1"
+}

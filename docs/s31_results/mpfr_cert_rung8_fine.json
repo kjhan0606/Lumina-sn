@@ -1,0 +1,136 @@
+{
+  "acceptance_unchanged": true,
+  "checks": {
+    "all_certified_negative_zero": true,
+    "all_certified_nonfinite_zero": true,
+    "all_certified_sign_uncertain_zero": true,
+    "all_grids_completed": true,
+    "fixed_precision_exact": true
+  },
+  "environment": {
+    "compile_command": [
+      "gcc",
+      "-std=c11",
+      "-O2",
+      "-Wall",
+      "-Wextra",
+      "-Wpedantic",
+      "-Werror",
+      "-Wconversion",
+      "-Wshadow",
+      "-isystem",
+      "/home/kjhan/local/include",
+      "scripts/stage31_cmf_mpfr_cert.c",
+      "-L/home/kjhan/local/lib",
+      "-Wl,-rpath,/home/kjhan/local/lib",
+      "-lmpfr",
+      "-lgmp",
+      "-lm",
+      "-o",
+      "/tmp/s31_round5b_cert_div/stage31_cmf_mpfr_cert"
+    ],
+    "mpfr_header": "/home/kjhan/local/include/mpfr.h",
+    "prefix": "/home/kjhan/local",
+    "rpath": "/home/kjhan/local/lib"
+  },
+  "grids": [
+    {
+      "bits": 2048,
+      "nnu": 512,
+      "ns": 128
+    },
+    {
+      "bits": 2048,
+      "nnu": 1024,
+      "ns": 256
+    },
+    {
+      "bits": 2048,
+      "nnu": 2048,
+      "ns": 512
+    },
+    {
+      "bits": 4096,
+      "nnu": 4096,
+      "ns": 1024
+    }
+  ],
+  "levels": [
+    {
+      "a": 1e-11,
+      "certificate_bits": 2048,
+      "certified_max_width": "8.45355857491272719e-544",
+      "certified_min_lower": "1.26859066172249716e-24",
+      "certified_negative": 0,
+      "certified_nonfinite": 0,
+      "certified_sign_uncertain": 0,
+      "dx": 0.0014481409001956005,
+      "exit_code": 0,
+      "first_k": 18446744073709551615,
+      "first_segment": 18446744073709551615,
+      "mpfr_version": "4.2.1",
+      "nnu": 512,
+      "ns": 128,
+      "status": "PASS",
+      "stderr": ""
+    },
+    {
+      "a": 1e-11,
+      "certificate_bits": 2048,
+      "certified_max_width": "3.99376903758235988e-461",
+      "certified_min_lower": "1.20744714349472628e-24",
+      "certified_negative": 0,
+      "certified_nonfinite": 0,
+      "certified_sign_uncertain": 0,
+      "dx": 0.0007233626588464559,
+      "exit_code": 0,
+      "first_k": 18446744073709551615,
+      "first_segment": 18446744073709551615,
+      "mpfr_version": "4.2.1",
+      "nnu": 1024,
+      "ns": 256,
+      "status": "PASS",
+      "stderr": ""
+    },
+    {
+      "a": 1e-11,
+      "certificate_bits": 2048,
+      "certified_max_width": "4.81788188902006415e-293",
+      "certified_min_lower": "1.17665071518847714e-24",
+      "certified_negative": 0,
+      "certified_nonfinite": 0,
+      "certified_sign_uncertain": 0,
+      "dx": 0.0003615046409379656,
+      "exit_code": 0,
+      "first_k": 18446744073709551615,
+      "first_segment": 18446744073709551615,
+      "mpfr_version": "4.2.1",
+      "nnu": 2048,
+      "ns": 512,
+      "status": "PASS",
+      "stderr": ""
+    },
+    {
+      "a": 1e-11,
+      "certificate_bits": 4096,
+      "certified_max_width": "1.73118362323440330e-572",
+      "certified_min_lower": "1.16159671501369656e-24",
+      "certified_negative": 0,
+      "certified_nonfinite": 0,
+      "certified_sign_uncertain": 0,
+      "dx": 0.00018070818070812605,
+      "exit_code": 0,
+      "first_k": 18446744073709551615,
+      "first_segment": 18446744073709551615,
+      "mpfr_version": "4.2.1",
+      "nnu": 4096,
+      "ns": 1024,
+      "status": "PASS",
+      "stderr": ""
+    }
+  ],
+  "method": "MPFR directed-rounding interval replay",
+  "production_double_touched": false,
+  "rung": 8,
+  "status": "PASS"
+}

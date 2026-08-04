@@ -1,0 +1,112 @@
+diff --git a/src/lumina_plasma.c b/src/lumina_plasma.c
+index 608b2e9..d6e6f1d 100644
+--- a/src/lumina_plasma.c
++++ b/src/lumina_plasma.c
+@@ -18,6 +18,7 @@ extern "C" {         /* Phase 6 - Step 9 */
+ extern void nlte_ew_note_save_restore_call(void);
+ extern void nlte_ew_note_per_ion_pin_call(void);
+ extern void nlte_ew_note_topstage_IV_call(void);
++extern void nlte_ew_publish_runtime_counts(const NLTEConfig *nlte);
+ 
+ /* Production counter: unlike the frozen oracle observer this survives normal
+  * runs and records every legacy GPU table rejected because the selected bf
+@@ -17333,6 +17334,10 @@ void nlte_solve_all(NLTEConfig *nlte, AtomicData *atom, PlasmaState *plasma,
+     free(old_pops);
+     free(old_ion_totals);
+ 
++    /* Candidate assembly has ended; these are the authoritative counts from
++     * the actual save/restore, per-ion pin and top-stage owner branches. */
++    nlte_ew_publish_runtime_counts(nlte);
++
+     /* Print ion pair level counts */
+     for (int p = 0; p < n_pairs; p++) {
+         int lo = pairs[p][0], hi = pairs[p][1];
+diff --git a/src/lumina_element_wide.c b/src/lumina_element_wide.c
+index 3c2b327..8194153 100644
+--- a/src/lumina_element_wide.c
++++ b/src/lumina_element_wide.c
+@@ -256,6 +256,37 @@ void nlte_ew_runtime_counts_snapshot(unsigned long out[3]) {
+     out[2] = ew_runtime_counts.topstage_IV_calls;
+ }
+ 
++/* Publish after nlte_solve_all has traversed the real pair-owner paths.  The
++ * earlier candidate-window values are intentionally not promoted: save/restore
++ * lives outside that window and topstage is excluded while capture is active. */
++void nlte_ew_publish_runtime_counts(const NLTEConfig *nlte) {
++    ew_parse_gate();
++    if (!nlte || !ew_gate.enabled || !ew_gate.dump) return;
++    const int zlist[2] = {16, 26};
++    for (int zi = 0; zi < 2; zi++) {
++        int Z = zlist[zi];
++        if (!nlte_element_wide_matches(Z, ew_gate.shell)) continue;
++        char path[768];
++        snprintf(path, sizeof(path),
++                 "%s/lumina_ew_iter%04d_z%02d_s%03d_manifest.csv",
++                 ew_gate.dump_dir, nlte->current_iter, Z, ew_gate.shell);
++        FILE *fp = fopen(path, "a");
++        if (!fp) {
++            fprintf(stderr, "[EW][DUMP-FAIL] runtime append %s: %s\n",
++                    path, strerror(errno));
++            continue;
++        }
++        fprintf(fp,
++                "runtime_final_save_restore_calls,%lu\n"
++                "runtime_final_per_ion_pin_calls,%lu\n"
++                "runtime_final_topstage_IV_calls,%lu\n",
++                ew_runtime_counts.save_restore_calls,
++                ew_runtime_counts.per_ion_pin_calls,
++                ew_runtime_counts.topstage_IV_calls);
++        fclose(fp);
++    }
++}
++
+ static void ew_capture_end(int *expected, int *mapped, int *fail, int *bad_rate,
+                            EWFireCounts *fire) {
+     if (expected) *expected += ew_cap.target_expected;
+diff --git a/tests/wave32_runtime_counter_wrap.c b/tests/wave32_runtime_counter_wrap.c
+index d459bc8..5c3efe6 100644
+--- a/tests/wave32_runtime_counter_wrap.c
++++ b/tests/wave32_runtime_counter_wrap.c
+@@ -1,6 +1,7 @@
+ #include "lumina.h"
+ 
+ #include <stdio.h>
++#include <stdlib.h>
+ 
+ void nlte_ew_runtime_counts_snapshot(unsigned long out[3]);
+ 
+@@ -18,7 +19,21 @@ int wave32_counter_wrapped_nlte_element_wide_run_labeled(
+     static int exercised = 0;
+     if (!exercised) {
+         unsigned long before[3], after[3];
++        double *owned_line_source = NULL;
+         exercised = 1;
++        /* The frozen harness does not allocate the production line-source
++         * writeback buffer because it normally assembles matrices only.  The
++         * real nlte_solve_all owner path does, so provide that exact state. */
++        if (!opacity->line_source_S) {
++            owned_line_source = (double *)calloc(
++                (size_t)opacity->n_lines * plasma->n_shells, sizeof(double));
++            if (!owned_line_source) return -1;
++            opacity->line_source_S = owned_line_source;
++        }
++        if (getenv("W32_RUNTIME_DISABLE_PIN_TOPSTAGE")) {
++            setenv("LUMINA_NLTE_ION_LOCK", "0", 1);
++            setenv("LUMINA_TOPSTAGE_IV", "0", 1);
++        }
+         nlte_ew_runtime_counts_snapshot(before);
+         nlte_solve_all(nlte, atom, plasma, opacity, time_explosion,
+                        plasma->n_shells, gamma_dep);
+@@ -28,7 +43,12 @@ int wave32_counter_wrapped_nlte_element_wide_run_labeled(
+                 "topstage_IV=%lu\n",
+                 after[0] - before[0], after[1] - before[1],
+                 after[2] - before[2]);
++        if (owned_line_source) {
++            free(owned_line_source);
++            opacity->line_source_S = NULL;
++        }
+     }
++    if (getenv("W32_RUNTIME_COUNTER_ONLY")) return 0;
+     return nlte_element_wide_run_labeled(
+         nlte, atom, plasma, opacity, Z, shell_index, shell_label,
+         time_explosion, gamma_dep);

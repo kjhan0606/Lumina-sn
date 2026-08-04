@@ -1,0 +1,123 @@
+{
+  "version": "4.0.0",
+  "description": "L1-A-R1 method and provenance preregistration; scientific MATCH/DIFFER remains open.",
+  "thresholds": {"exact": 0, "ulp": 0, "abs": 1e-06, "rel": 1e-06},
+  "specimens": {
+    "tardis_reference_toy06_19p48d_sivcaiv": {"role": "legacy"},
+    "tardis_reference_toy06_19p48d_sivcaiv_ftos": {"role": "current"}
+  },
+  "historical": {
+    "legacy_I2_rank_join": {"denominator": 880406, "rel_1e-6_mismatch": 75075},
+    "legacy_I3_selected_vs_PHOT": {"denominator": 3953894, "rel_1e-6_mismatch": 1233529}
+  },
+  "metrics": {},
+  "registrations": {
+    "selected_vs_cmfgen|I1|selected Upsilon_eff(T) and q_ij(T) versus CMFGEN": {
+      "command": "runtime command is evidence-bound per record", "version": "4.0.0", "comparison_axis": "selected_vs_cmfgen",
+      "denominator_rule": "computed from registered semantic authority/method", "quantization_rule_version": "decimal-interval-v1",
+      "expected_result": "SCIENTIFIC_RESULT_OPEN", "checksum": "d0909f30164c370f2712b3f88aabf4894698cc2573cd030bc63fc7790eb3a2b1"
+    },
+    "selected_vs_cmfgen|I1|selected branch census versus CMFGEN": {
+      "command": "runtime command is evidence-bound per record", "version": "4.0.0", "comparison_axis": "selected_vs_cmfgen",
+      "denominator_rule": "computed from registered semantic authority/method", "quantization_rule_version": "decimal-interval-v1",
+      "expected_result": "SCIENTIFIC_RESULT_OPEN", "checksum": "d0909f30164c370f2712b3f88aabf4894698cc2573cd030bc63fc7790eb3a2b1"
+    },
+    "validator_observation|I12|level/rank identity (partial)": {
+      "command": "runtime command is evidence-bound per record", "version": "4.0.0", "comparison_axis": "validator_observation",
+      "denominator_rule": "computed from registered semantic authority/method", "quantization_rule_version": "decimal-interval-v1",
+      "expected_result": "SCIENTIFIC_RESULT_OPEN", "checksum": "f723ff3cf0af050617db47f615b4f5fc0b7c3f0ce4eab3675771b89b3603c366"
+    },
+    "validator_observation|I12|line-bit identity (partial)": {
+      "command": "runtime command is evidence-bound per record", "version": "4.0.0", "comparison_axis": "validator_observation",
+      "denominator_rule": "computed from registered semantic authority/method", "quantization_rule_version": "decimal-interval-v1",
+      "expected_result": "SCIENTIFIC_RESULT_OPEN", "checksum": "f723ff3cf0af050617db47f615b4f5fc0b7c3f0ce4eab3675771b89b3603c366"
+    },
+    "coverage_vs_cmfgen|I17|line semantic transition coverage": {
+      "command": "runtime command is evidence-bound per record", "version": "4.0.0", "comparison_axis": "coverage_vs_cmfgen",
+      "denominator_rule": "computed from registered semantic authority/method", "quantization_rule_version": "decimal-interval-v1",
+      "expected_result": "SCIENTIFIC_RESULT_OPEN", "checksum": "3c07de4c26ae3f422099f96fa7a78e225cee0327e3e9773448ed495220be720b"
+    },
+    "coverage_vs_cmfgen|I17|sigma semantic-level coverage": {
+      "command": "runtime command is evidence-bound per record", "version": "4.0.0", "comparison_axis": "coverage_vs_cmfgen",
+      "denominator_rule": "computed from registered semantic authority/method", "quantization_rule_version": "decimal-interval-v1",
+      "expected_result": "SCIENTIFIC_RESULT_OPEN", "checksum": "3c07de4c26ae3f422099f96fa7a78e225cee0327e3e9773448ed495220be720b"
+    },
+    "selected_vs_cmfgen|I19|current branch identity versus CMFGEN": {
+      "command": "runtime command is evidence-bound per record", "version": "4.0.0", "comparison_axis": "selected_vs_cmfgen",
+      "denominator_rule": "computed from registered semantic authority/method", "quantization_rule_version": "decimal-interval-v1",
+      "expected_result": "UNVERIFIABLE/PROVENANCE", "checksum": "a5b615d0fbed08a75e82b60db0820851bb6c2918279545a620f97f2b32bd90d2"
+    },
+    "selected_vs_cmfgen|I19|legacy branch identity versus CMFGEN": {
+      "command": "runtime command is evidence-bound per record", "version": "4.0.0", "comparison_axis": "selected_vs_cmfgen",
+      "denominator_rule": "computed from registered semantic authority/method", "quantization_rule_version": "decimal-interval-v1",
+      "expected_result": "UNVERIFIABLE/PROVENANCE", "checksum": "a5b615d0fbed08a75e82b60db0820851bb6c2918279545a620f97f2b32bd90d2"
+    },
+    "legacy_vs_current|I19|legacy-to-current physics change": {
+      "command": "runtime command is evidence-bound per record", "version": "4.0.0", "comparison_axis": "legacy_vs_current",
+      "denominator_rule": "computed from registered semantic authority/method", "quantization_rule_version": "decimal-interval-v1",
+      "expected_result": "SCIENTIFIC_RESULT_OPEN", "checksum": "66681fe6bbfadf184fa5a5d2c4f9a2861bd772df5f12dcd303c6a1030cae6369"
+    },
+    "selected_vs_cmfgen|I2|A_ul semantic transition identity": {
+      "command": "runtime command is evidence-bound per record", "version": "4.0.0", "comparison_axis": "selected_vs_cmfgen",
+      "denominator_rule": "computed from registered semantic authority/method", "quantization_rule_version": "decimal-interval-v1",
+      "expected_result": "SCIENTIFIC_RESULT_OPEN", "checksum": "d0909f30164c370f2712b3f88aabf4894698cc2573cd030bc63fc7790eb3a2b1"
+    },
+    "selected_vs_cmfgen|I2a|A_ul semantic transition identity Fe IV": {
+      "command": "runtime command is evidence-bound per record", "version": "4.0.0", "comparison_axis": "selected_vs_cmfgen",
+      "denominator_rule": "computed from registered semantic authority/method", "quantization_rule_version": "decimal-interval-v1",
+      "expected_result": "SCIENTIFIC_RESULT_OPEN", "checksum": "d0909f30164c370f2712b3f88aabf4894698cc2573cd030bc63fc7790eb3a2b1"
+    },
+    "selected_vs_cmfgen|I2b|A_ul semantic transition identity Ni IV": {
+      "command": "runtime command is evidence-bound per record", "version": "4.0.0", "comparison_axis": "selected_vs_cmfgen",
+      "denominator_rule": "computed from registered semantic authority/method", "quantization_rule_version": "decimal-interval-v1",
+      "expected_result": "SCIENTIFIC_RESULT_OPEN", "checksum": "d0909f30164c370f2712b3f88aabf4894698cc2573cd030bc63fc7790eb3a2b1"
+    },
+    "selected_vs_cmfgen|I2c|A_ul semantic transition identity Co IV": {
+      "command": "runtime command is evidence-bound per record", "version": "4.0.0", "comparison_axis": "selected_vs_cmfgen",
+      "denominator_rule": "computed from registered semantic authority/method", "quantization_rule_version": "decimal-interval-v1",
+      "expected_result": "SCIENTIFIC_RESULT_OPEN", "checksum": "d0909f30164c370f2712b3f88aabf4894698cc2573cd030bc63fc7790eb3a2b1"
+    },
+    "selected_vs_cmfgen|I2d|A_ul semantic transition identity Fe III": {
+      "command": "runtime command is evidence-bound per record", "version": "4.0.0", "comparison_axis": "selected_vs_cmfgen",
+      "denominator_rule": "computed from registered semantic authority/method", "quantization_rule_version": "decimal-interval-v1",
+      "expected_result": "SCIENTIFIC_RESULT_OPEN", "checksum": "d0909f30164c370f2712b3f88aabf4894698cc2573cd030bc63fc7790eb3a2b1"
+    },
+    "coverage_vs_cmfgen|I3|PHOT evaluator support census": {
+      "command": "runtime command is evidence-bound per record", "version": "4.0.0", "comparison_axis": "coverage_vs_cmfgen",
+      "denominator_rule": "computed from registered semantic authority/method", "quantization_rule_version": "decimal-interval-v1",
+      "expected_result": "SCIENTIFIC_RESULT_OPEN", "checksum": "3c07de4c26ae3f422099f96fa7a78e225cee0327e3e9773448ed495220be720b"
+    },
+    "selected_vs_cmfgen|I3|sigma(nu) selected versus CMFGEN PHOT": {
+      "command": "runtime command is evidence-bound per record", "version": "4.0.0", "comparison_axis": "selected_vs_cmfgen",
+      "denominator_rule": "computed from registered semantic authority/method", "quantization_rule_version": "decimal-interval-v1",
+      "expected_result": "UNVERIFIABLE/PROVENANCE", "checksum": "a5b615d0fbed08a75e82b60db0820851bb6c2918279545a620f97f2b32bd90d2"
+    },
+    "selected_vs_cmfgen|I3a|sigma(nu) selected versus CMFGEN PHOT Co IV": {
+      "command": "runtime command is evidence-bound per record", "version": "4.0.0", "comparison_axis": "selected_vs_cmfgen",
+      "denominator_rule": "computed from registered semantic authority/method", "quantization_rule_version": "decimal-interval-v1",
+      "expected_result": "UNVERIFIABLE/PROVENANCE", "checksum": "a5b615d0fbed08a75e82b60db0820851bb6c2918279545a620f97f2b32bd90d2"
+    },
+    "selected_vs_cmfgen|I3b|sigma(nu) selected versus CMFGEN PHOT Fe III": {
+      "command": "runtime command is evidence-bound per record", "version": "4.0.0", "comparison_axis": "selected_vs_cmfgen",
+      "denominator_rule": "computed from registered semantic authority/method", "quantization_rule_version": "decimal-interval-v1",
+      "expected_result": "UNVERIFIABLE/PROVENANCE", "checksum": "a5b615d0fbed08a75e82b60db0820851bb6c2918279545a620f97f2b32bd90d2"
+    },
+    "selected_vs_cmfgen|I3c|sigma(nu) selected versus CMFGEN PHOT Fe IV and Ni IV": {
+      "command": "runtime command is evidence-bound per record", "version": "4.0.0", "comparison_axis": "selected_vs_cmfgen",
+      "denominator_rule": "computed from registered semantic authority/method", "quantization_rule_version": "decimal-interval-v1",
+      "expected_result": "UNVERIFIABLE/PROVENANCE", "checksum": "a5b615d0fbed08a75e82b60db0820851bb6c2918279545a620f97f2b32bd90d2"
+    },
+    "selected_vs_cmfgen|I4|runtime super-level membership versus CMFGEN F_TO_S": {
+      "command": "runtime command is evidence-bound per record", "version": "4.0.0", "comparison_axis": "selected_vs_cmfgen",
+      "denominator_rule": "computed from registered semantic authority/method", "quantization_rule_version": "decimal-interval-v1",
+      "expected_result": "SCIENTIFIC_RESULT_OPEN", "checksum": "d0909f30164c370f2712b3f88aabf4894698cc2573cd030bc63fc7790eb3a2b1"
+    }
+  },
+  "contracts": {
+    "phot_type_2_3_8_expected_unsupported_levels": 2084,
+    "i19_legacy_mapped_rows_expected": 11329,
+    "i19_current_mapped_rows_expected": 0,
+    "i19_legacy_total_mapped_expected": 114952,
+    "i19_current_total_mapped_expected": 106091
+  }
+}

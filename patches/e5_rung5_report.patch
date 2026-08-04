@@ -1,0 +1,274 @@
+--- /dev/null
++++ b/docs/CODEX_EMISS_E5.md
+@@ -0,0 +1,236 @@
++# E5 — 통제된 B2 lane과 재캡처 준비
++
++작성일: 2026-08-01 (KST)  
++상태: **구현·CPU 검증·전체 빌드 완료 / 신규 모델·GPU 실행 없음 / 운전석 재캡처 대기**
++
++## 0. 결론
++
++E4의 B-lane은 정의 가능한 전이만
++
++```text
++eta_l = (h nu_l / 4 pi) A_ul n_u / Delta nu_b
++```
++
++로 교체하고 미정의 전이의 직접 방출률을 0으로 만들었다. 실제 캡처에서 이는 active
++전이의 2.421400%, pre-EPAY A-reference line power의 5.939779%였다. 따라서 E4 B-A는
++정식화 교체와 방출률 삭제가 섞인 intervention이었고, B가 1208.743248 Å에서
++certified-negative로 멈춘 결과만으로 정식화 단일 인자를 판정할 수 없었다.
++
++E5는 기존 A와 B를 보존하면서 세 번째 `B2` lane을 추가한다. B2는 B가 정의한
++line-shell cell에서만 직접 `A_ul*n_u` 식을 사용하고, 미정의 cell에서는 같은 조립 호출의
++production A 방출률을 그대로 유지한다. 이 항은 production의 per-line `eps_phys` 및
++bin-level `frozen_morph_eps`/`eps_uv`/`line_eps` 인자를 정확히 거친 뒤 더해진다. 따라서
++pre-EPAY에서 B2-A의 허용 차이는 covered 집합 위의 정식화 교체뿐이다.
++
++이 유지 정책은 무단 fallback이 아니다. B2 manifest에
++`undefined_transition_policy=retain-production-A-explicit-controlled`와
++`controlled_retention=true`를 기록하고, 유지 전이/cell 수와 방출률 분율을 함께 쓴다.
++신규 clamp/floor는 0개다.
++
++## 1. 런타임 계약과 산출물
++
++master gate와 iteration selector는 E4와 동일하다.
++
++```bash
++export LUMINA_EMISS_AB_DUMP=/absolute/output/emiss_ab_iter10
++export LUMINA_CMF_FROZEN_CHIETA_ITER=10
++```
++
++선택 iteration에서 다음 산출물이 생긴다.
++
++| 산출물 | 계약 |
++|---|---|
++| `<base>.A` | 기존 production A |
++| `<base>.B` | covered=`A_ul*n_u`, undefined=0인 E4 lane |
++| `<base>.B2` | covered=`A_ul*n_u`, undefined=production A 유지 |
++| 각 `.manifest.json` | lane/formula/state hash/coverage/통제 정책/진단 배열 |
++| 각 `.undefined.csv` | 미정의 active transition 목록 |
++
++A/B/B2는 같은 assembly-input SHA-256을 공유한다. 쓰기 직전 `nu`, `dnu`, `chi_tot`,
++`chi_es`, `chi_abs`, `chi_line`, `chi_line_th`, `chi_line_cls`가 세 lane에서 bitwise
++동일한지 검사하며 하나라도 다르면 payload를 쓰지 않고 종료한다. `J_producer`도 동일한
++production solve와 damping 후 장을 복사한다.
++
++gate가 unset 또는 빈 문자열이면 B/B2 state, 통계 배열, 출력 및 로그가 전혀 생기지
++않는다. production `cmfgen_assemble` 호출과 solve 순서는 E4 이전과 동일하다.
++
++## 2. 미정의 기여 진단
++
++직접식의 정의 여부를 line-shell cell마다 판정한다. 미정의 사유는 E4와 동일하다.
++
++- NLTE 비추적 전이;
++- upper level mapping 부재;
++- `A_ul <= 0` 또는 비유한값;
++- upper population 음수·비유한값 또는 population 배열 부재.
++
++각 미정의 cell의 production A line emissivity를 bin에 누산하고 실제 A의 line-destruction
++인자를 적용한다. EPAY가 source를 재정규화하기 전 다음 두 독립 projection을 manifest에
++기록한다.
++
++```text
++by_band[b]  = sum_s eta_A,undefined(s,b) Delta nu_b
++by_shell[s] = sum_b eta_A,undefined(s,b) Delta nu_b
++```
++
++두 배열의 합은 모두 `coverage.a_reference_undefined_line_power`와 `1e-12` 상대오차
++안에서 닫혀야 한다. 배열 단위는 `erg s^-1 cm^-3 sr^-1`이며 manifest의 epoch는
++`pre-EPAY`로 고정했다. B와 B2의 census 및 undefined CSV가 다르면 오프라인 판정기는
++fail-closed한다.
++
++## 3. B2 통제 불변식
++
++`CMFGENEmissABStats`는 다음 E5 항목을 추가로 가진다.
++
++- `retained_transition_count`, `retained_line_shell_count`;
++- A-reference undefined/retained power와 분율;
++- `undefined_a_emissivity_by_band[n_bins]`;
++- `undefined_a_emissivity_by_shell[n_shells]`.
++
++B sidecar의 retained 항은 0이다. B2에서는 retained transition/cell 수가 각각 undefined
++transition/cell 수와 같고, retained power/fraction이 undefined A-reference
++power/fraction과 같다. population-invalid가 한 shell에서 발생해도 뒤 shell을 잘못
++영구 미정의로 만드는 일이 없도록 population reason은 cell-local로 재평가한다.
++
++## 4. seeded 음성 대조와 CPU fixture
++
++`LUMINA_EMISS_AB_SEED=line_id,shell,factor`는 B와 B2의 covered local population
++복사본에만 적용된다. 정확히 한 번 hit하지 않으면 각 assembler가 실패한다. 정상 캡처에는
++설정하지 않으며 판정기는 `--allow-seeded` 없이는 seeded artifact를 거부한다.
++
++2 shell × 3 bin × 3 active line CPU fixture 결과는 다음과 같다.
++
++| 항목 | 값 |
++|---|---:|
++| defined / active transition | 1 / 3 |
++| undefined / retained transition | 2 / 2 |
++| defined / active line-shell | 2 / 6 |
++| undefined / retained line-shell | 4 / 4 |
++| covered A-reference fraction | `0.028697641017523909` |
++| retained A-reference fraction | `0.9713023589824763` |
++| undefined A-reference power | `2.8295441668996075e-6` |
++| clean B payload SHA-256 | `53e2f4620fe12847f70314db2759163a5420c5be89dad9f797d82cdf7dc25300` |
++| seeded B payload SHA-256 | `d6035a668a37db96f869e6cffe8cc4200d357e05a3662db1e9c9bbff58f78cef` |
++| B2 payload SHA-256 | `b85b5229ee507f1dbd4177e707e4fba579c4175d6cf90af29f02617a43a9d044` |
++
++기존 E4 clean/seeded B payload SHA가 그대로 유지되었다. fixture는 추가로 다음을
++assert한다.
++
++1. B의 미정의 두 bin source는 0;
++2. B2의 미정의 두 bin source는 A와 bitwise 동일;
++3. B2의 covered bin source는 B와 bitwise 동일;
++4. 세 lane opacity 좌표는 동일;
++5. by-band와 by-shell 합은 같은 undefined power에 닫힘;
++6. seeded covered population 변화는 B source를 바꿈.
++
++## 5. 오프라인 3-lane 판정기
++
++`scripts/emiss_ab_insitu_e4.py`를 E5 schema로 확장했다. 파일명은 기존 운전 deck과
++호환을 위해 유지했다. 판정기는 A/B/B2 tag, state hash, header, 불변 payload 배열,
++coverage 폐합, B2 통제 정책, 진단 배열, B/B2 undefined CSV 항등을 먼저 검사한다.
++
++그 뒤 stage31 solve를 A, B, B2 각각 독립 실행한다. E4처럼 B가 certified-negative로
++실패해도 B2 solve를 계속 시도한다. 실패 lane은 수치로 위장하지 않고 CSV/JSON에서
++`null` 또는 빈 값, console에서 `UNRESOLVED`로 남긴다. 한 lane이라도 guard 실패면
++partial 결과를 기록한 뒤 RC 2를 반환한다.
++
++정상 3-lane 결과에는 여섯 대역별 다음 열이 포함된다.
++
++```text
++A/CMFGEN, B/CMFGEN, B2/CMFGEN, B/A, B2/A
++```
++
++Fe III idx201과 S II SL4 Gamma 표도 `Gamma_A`, `Gamma_B`, `Gamma_B2`,
++`Gamma_CMFGEN` 및 같은 비율을 쓴다. 산출물은 `verdict.json`, `band_table.csv`,
++`gamma_table.csv`, `jdet_A.tsv`, `jdet_B.tsv`, `jdet_B2.tsv`다.
++
++## 6. 재캡처 deck
++
++`scripts/sbatch_emiss_ab_capture.sh`는 B2까지 계약 검사하도록 갱신했다. 운전석이 로컬
++`lumina_cuda`를 `$DEPLOY_ROOT/$LUMINA_BIN`에 배치할 때 요구되는 SHA-256은
++`22d563955fd4c3d5446e9e76d8fb89fb988c6b3f88556ca455b7371809d7af68`이다.
++스크립트는 실행 후 다음을 fail-closed로 검사한다.
++
++- production chieta와 A payload의 `cmp`;
++- A/B/B2 payload의 독립 LCMFCE01 검사;
++- B/B2 undefined CSV 항등;
++- B2 policy/count와 by-band/by-shell 장부 폐합;
++- 모든 payload/manifest/undefined CSV의 SHA-256 ledger.
++
++스크립트는 여전히 `DRAFT ONLY`이며 제출은 운전석 몫이다. 이번 작업에서 `sbatch`, 모델
++실행 또는 GPU binary 실행은 하지 않았다.
++
++## 7. 검증 결과
++
++| 검증 | 결과 |
++|---|---|
++| `make -B selftest_emiss_ab_insitu` | PASS; E5 hunk 밖 기존 warning만 존재 |
++| CPU fixture 실행 | PASS |
++| A/B/B2 `cmf_chieta_check.py` | PASS |
++| B2 manifest JSON/policy/배열 폐합 | PASS |
++| pre-E5/E5 A, B, seeded-B, undefined CSV `cmp` | 네 파일 모두 PASS |
++| `python3 -m py_compile scripts/emiss_ab_insitu_e4.py` | PASS |
++| stage31 driver strict build | PASS |
++| `bash -n scripts/sbatch_emiss_ab_capture.sh` | PASS |
++| `make -B lumina_cuda` | PASS; compile/link only |
++| 신규 clamp/floor | 0 |
++| 신규 모델/GPU run | 0 |
++| commit | 0 |
++
++OFF 중립성은 두 층으로 재확인했다. production path는 `emiss_b == NULL`에서 새 통계·유지
++분기를 전혀 소비하지 않으며 master gate unset이면 B/B2 allocation과 I/O가 없다. 또한
++pre-E5 E4 source/fixture와 E5 fixture를 각각 빌드해 A, clean B, seeded B payload 및
++undefined CSV를 `cmp`했고 네 비교가 모두 RC 0이었다. E5 fixture의 기존 B clean/seeded
++payload SHA도 E4 golden과 동일하다. A production fixture payload는
++`1a657e91402ef93b5f7e1be3e7cde8f398b7b8b845d70e1c0dd2c98ac82cf075`다.
++
++## 8. 전 수치 재현 명령
++
++repository root에서 실행한다.
++
++```bash
++make -B selftest_emiss_ab_insitu
++E5_FIXTURE_DIR=$(mktemp -d /tmp/emiss_e5_fixture.XXXXXX)
++./selftest_emiss_ab_insitu "$E5_FIXTURE_DIR/fixture"
++python3 scripts/cmf_chieta_check.py "$E5_FIXTURE_DIR/fixture.A"
++python3 scripts/cmf_chieta_check.py "$E5_FIXTURE_DIR/fixture.B"
++python3 scripts/cmf_chieta_check.py "$E5_FIXTURE_DIR/fixture.B2"
++sha256sum "$E5_FIXTURE_DIR"/* | sort -k2
++
++python3 -m py_compile scripts/emiss_ab_insitu_e4.py
++python3 - <<'PY'
++from pathlib import Path
++import sys
++sys.path.insert(0, 'scripts')
++import stage31_cmf_field_bench as bench
++bench.compile_driver(Path('/tmp/stage31_cmf_field_driver_e5'))
++PY
++bash -n scripts/sbatch_emiss_ab_capture.sh
++make -B lumina_cuda
++sha256sum lumina_cuda
++```
++
++운전석 재캡처 후 오프라인 판정:
++
++```bash
++python3 scripts/emiss_ab_insitu_e4.py \
++  /absolute/output/emiss_ab_iter10 \
++  --out-dir validation/emiss_e5
++```
++
++기존 CMFGEN/EW provenance 위치가 다르면 E4와 동일하게 `--capture-dir`, `--cmf-run`,
++`--ew-dir`을 명시한다. B guard 실패가 재현되더라도 B2까지 실행한 partial verdict를 남기고
++RC 2로 종료한다.
++
++## 9. 패치 사다리와 기대 변경집합
++
++| rung | patch | 기대 변경 |
++|---:|---|---|
++| 1 | `patches/e5_rung1_b2_assembler.patch` | `src/lumina_cmfgen.{h,c}` |
++| 2 | `patches/e5_rung2_triple_gate.patch` | `src/lumina_cuda.cu` |
++| 3 | `patches/e5_rung3_fixture_capture.patch` | `Makefile`, fixture, capture deck |
++| 4 | `patches/e5_rung4_offline_judge.patch` | E4 판정기의 3-lane 확장 |
++| 5 | `patches/e5_rung5_report.patch` | 본 보고서와 expected changeset |
++
++정확한 파일 목록과 금지 산출물은 `patches/e5_expected_changes.txt`에 기록한다. 패치들은
++E4 구현 위에 순서대로 적용하는 계약이며 모델/GPU 결과나 acceptance 변경을 포함하지
++않는다.
+--- /dev/null
++++ b/patches/e5_expected_changes.txt
+@@ -0,0 +1,31 @@
++E5 expected changeset (apply atop E4 from repository root, in order)
++
++1. e5_rung1_b2_assembler.patch
++   M src/lumina_cmfgen.h
++   M src/lumina_cmfgen.c
++   Adds the B2 controlled-retention policy, retained census, and exact
++   pre-EPAY undefined A-emissivity projections by frequency bin and shell.
++
++2. e5_rung2_triple_gate.patch
++   M src/lumina_cuda.cu
++   Extends LUMINA_EMISS_AB_DUMP from A/B to A/B/B2, with common-state and
++   bitwise non-emissivity coordinate guards.
++
++3. e5_rung3_fixture_capture.patch
++   M Makefile
++   M tests/emiss_ab_insitu_fixture.c
++   M scripts/sbatch_emiss_ab_capture.sh
++   Adds B2 identity/ledger assertions and driver-only recapture checks.
++
++4. e5_rung4_offline_judge.patch
++   M scripts/emiss_ab_insitu_e4.py
++   Adds fail-closed A/B/B2 validation, independent lane solves, partial
++   UNRESOLVED output, six-band comparisons, and three-lane Gamma replay.
++
++5. e5_rung5_report.patch
++   A docs/CODEX_EMISS_E5.md
++   A patches/e5_expected_changes.txt
++   Adds the implementation/verification report and this manifest.
++
++Explicitly absent: model products, GPU-run products, new clamps/floors,
++acceptance changes, generated E5 capture numbers, and commits.
+

@@ -1,0 +1,18 @@
+{
+  "Nref": [
+    2048,
+    4096
+  ],
+  "Nref_2048_iterations": 36,
+  "Nref_4096_iterations": 36,
+  "acceptance": {
+    "Nref_relative_difference_lt_1e-9": true,
+    "full_oracle_arithmetic_is_80_digit": false
+  },
+  "matrix_storage": "binary64 with 80-digit singular primitives",
+  "method": "Gauss-Legendre Nystrom with analytic logarithmic singularity subtraction",
+  "mpmath_dps": 80,
+  "relative_difference": 3.6445269209240967e-10,
+  "rung": 10,
+  "status": "FAIL"
+}

@@ -1,0 +1,580 @@
+diff --git a/Makefile b/Makefile
+index a920d5f..5eeb05a 100644
+--- a/Makefile
++++ b/Makefile
+@@ -85,10 +85,17 @@ selftest_wave32_within_sl_oom: tests/wave32_within_sl_oom.c src/lumina_plasma.c
+ 		tests/wave32_within_sl_oom.c src/lumina_plasma.c \
+ 		src/lumina_element_wide.c src/lumina_atomic.c $(LDFLAGS)
+ 
++selftest_wave32_boundary_q: tests/wave32_boundary_q_seed.c src/lumina_element_wide.c src/lumina_plasma.c src/lumina_atomic.c $(HEADERS)
++	$(CC) -O2 -std=gnu11 -D_GNU_SOURCE -ffunction-sections -fdata-sections -Isrc \
++		-Wl,--gc-sections -o selftest_wave32_boundary_q \
++		tests/wave32_boundary_q_seed.c src/lumina_element_wide.c \
++		src/lumina_plasma.c src/lumina_atomic.c $(LDFLAGS)
++
+ # Clean
+ clean:
+ 	rm -f $(TARGET) lumina_cuda selftest_cmf_chieta_dump \
+-		selftest_wave32_matrix_debit selftest_wave32_within_sl_oom *.o
++		selftest_wave32_matrix_debit selftest_wave32_within_sl_oom \
++		selftest_wave32_boundary_q *.o
+ 
+ # Run with defaults
+ run: $(TARGET)
+diff --git a/src/lumina_element_wide.c b/src/lumina_element_wide.c
+index d10dca4..c85583f 100644
+--- a/src/lumina_element_wide.c
++++ b/src/lumina_element_wide.c
+@@ -747,6 +747,259 @@ static uint64_t ew_fnv_bytes(uint64_t h, const void *ptr, size_t n) {
+     return h;
+ }
+ 
++typedef struct {
++    int active;
++    int level_count, sigma_count, route_source_count;
++    int route_count, valid_route_count, bad_count;
++    int data_pass, projection_pass, assembly_pass;
++    int m_index;
++    double *q_by_global;
++    double q_sum, q_min, q_max;
++    uint64_t q_checksum;
++    double n_total, m_outside, m_before, m_after;
++    double sum_stage[3];
++    double conservation_residual, row_residual, flux_residual;
++    double phi_forward[2], phi_reverse[2];
++    double *forward_rate[2];
++    double reverse_rate[2];
++} EWBoundaryMass;
++
++static void ew_boundary_mass_free(EWBoundaryMass *bm) {
++    if (!bm) return;
++    free(bm->q_by_global);
++    free(bm->forward_rate[0]);
++    free(bm->forward_rate[1]);
++    memset(bm, 0, sizeof(*bm));
++}
++
++static int ew_q_projection_valid(const double *q, int n, double *sum_out,
++                                 double *min_out, double *max_out) {
++    if (!q || n <= 0) return 0;
++    double sum = 0.0, qmin = INFINITY, qmax = 0.0;
++    for (int i = 0; i < n; i++) {
++        if (!(q[i] >= 0.0) || !isfinite(q[i])) return 0;
++        sum += q[i];
++        if (!isfinite(sum)) return 0;
++        if (q[i] < qmin) qmin = q[i];
++        if (q[i] > qmax) qmax = q[i];
++    }
++    if (sum_out) *sum_out = sum;
++    if (min_out) *min_out = qmin;
++    if (max_out) *max_out = qmax;
++    return fabs(sum - 1.0) <= 1e-12;
++}
++
++/* Seeded-defect fixture entry.  Production and the fixture deliberately use
++ * this same strict validator; it records no repaired projection. */
++int nlte_ew_test_q_projection(const double *q, int n, double *sum_out) {
++    return ew_q_projection_valid(q, n, sum_out, NULL, NULL);
++}
++
++/* Fe V is represented by one matrix unknown, but its 200 target identities
++ * remain explicit in this normalized Boltzmann projection.  No value is
++ * clipped or repaired: malformed weights close the boundary stage. */
++static int ew_boundary_mass_prepare(EWBoundaryMass *bm, const AtomicData *a,
++                                    const PlasmaState *p, int Z, int shell,
++                                    int N, double n_total) {
++    memset(bm, 0, sizeof(*bm));
++    if (Z != 26) return 0;
++    bm->active = 1;
++    bm->m_index = N - 1;
++    bm->n_total = n_total;
++    bm->q_min = INFINITY;
++    bm->q_by_global = (double *)calloc(
++        (size_t)(a->n_levels > 0 ? a->n_levels : 1), sizeof(double));
++    bm->forward_rate[0] = (double *)calloc((size_t)N, sizeof(double));
++    bm->forward_rate[1] = (double *)calloc((size_t)N, sizeof(double));
++    if (!bm->q_by_global || !bm->forward_rate[0] || !bm->forward_rate[1])
++        return -1;
++    double T_e = p->T_e[shell];
++    if (!(T_e > 0.0) || !isfinite(T_e)) return 0;
++    double E0 = INFINITY;
++    for (int gl = 0; gl < a->n_levels; gl++)
++        if (a->level_Z[gl] == 26 && a->level_ion[gl] == 4) {
++            bm->level_count++;
++            if (a->level_energy_eV[gl] < E0) E0 = a->level_energy_eV[gl];
++        }
++    if (bm->level_count != 200 || !isfinite(E0)) return 0;
++    double kT = K_BOLTZMANN * T_e;
++    double Zq = 0.0;
++    for (int gl = 0; gl < a->n_levels; gl++) {
++        if (a->level_Z[gl] != 26 || a->level_ion[gl] != 4) continue;
++        double Erel = (a->level_energy_eV[gl] - E0) * EV_TO_ERG;
++        double w = (double)a->level_g[gl] * exp(-Erel / kT);
++        if (Erel < 0.0 || !(w >= 0.0) || !isfinite(w)) {
++            bm->bad_count++;
++            continue;
++        }
++        bm->q_by_global[gl] = w;
++        Zq += w;
++    }
++    if (!(Zq > 0.0) || !isfinite(Zq) || bm->bad_count) return 0;
++    bm->q_sum = 0.0;
++    bm->q_checksum = UINT64_C(1469598103934665603);
++    double q_target[200];
++    int q_count = 0;
++    for (int gl = 0; gl < a->n_levels; gl++) {
++        if (a->level_Z[gl] != 26 || a->level_ion[gl] != 4) continue;
++        double q = bm->q_by_global[gl] / Zq;
++        if (!(q >= 0.0) || !isfinite(q)) { bm->bad_count++; continue; }
++        bm->q_by_global[gl] = q;
++        if (q_count < 200) q_target[q_count++] = q;
++        else bm->bad_count++;
++        bm->q_sum += q;
++        if (q < bm->q_min) bm->q_min = q;
++        if (q > bm->q_max) bm->q_max = q;
++        bm->q_checksum = ew_fnv_bytes(bm->q_checksum, &gl, sizeof(gl));
++        bm->q_checksum = ew_fnv_bytes(bm->q_checksum, &q, sizeof(q));
++    }
++    double recorded_sum = 0.0, recorded_min = INFINITY, recorded_max = 0.0;
++    bm->projection_pass = !bm->bad_count && q_count == 200 &&
++        ew_q_projection_valid(q_target, q_count, &recorded_sum, &recorded_min,
++        &recorded_max);
++    bm->q_sum = recorded_sum;
++    bm->q_min = recorded_min;
++    bm->q_max = recorded_max;
++    for (int ip = 0; ip < a->n_ion_pops; ip++) {
++        if (a->ion_pop_Z[ip] != 26) continue;
++        double mass = a->ion_number_density[(size_t)ip*p->n_shells + shell];
++        if (!(mass >= 0.0) || !isfinite(mass)) { bm->bad_count++; continue; }
++        if (a->ion_pop_stage[ip] == 4) bm->m_before += mass;
++        if (a->ion_pop_stage[ip] == 0 || a->ion_pop_stage[ip] >= 5)
++            bm->m_outside += mass;
++    }
++    bm->data_pass = bm->projection_pass && bm->level_count == 200 &&
++                    bm->bad_count == 0 && isfinite(ew_find_chi(a,26,4));
++    return 0;
++}
++
++static void ew_boundary_transition(EWBoundaryMass *bm, double *plane,
++                                   double *ledger, int N, int channel_slot,
++                                   int target, int source, double rate) {
++    if (!(rate >= 0.0) || !isfinite(rate) || target < 0 || source < 0 ||
++        target >= N || source >= N) { bm->bad_count++; return; }
++    if (rate == 0.0 || target == source) return;
++    EW(plane,N,target,source) += rate;
++    EW(plane,N,source,source) -= rate;
++    ledger[source] += rate;
++    if (target == bm->m_index) bm->forward_rate[channel_slot][source] += rate;
++    if (source == bm->m_index) bm->reverse_rate[channel_slot] += rate;
++}
++
++/* Assemble the available Fe IV 200/200 continuum routes into the scalar M_V
++ * row/column.  Fe V->VI, Fe V bb and DR/autoionization are deliberately absent. */
++static void ew_boundary_mass_assemble(EWBoundaryMass *bm, NLTEConfig *n,
++                                      AtomicData *a, PlasmaState *p,
++                                      int iv_slot, int iv_start, int shell,
++                                      double *plane[NLTE_EW_N_CHANNELS],
++                                      double *ledger[NLTE_EW_N_CHANNELS],
++                                      EWFireCounts *fire, int N) {
++    if (!bm->active || !bm->data_pass) return;
++    double T_e = p->T_e[shell], n_e = p->n_electron[shell];
++    if (!(n_e > 0.0) || !isfinite(n_e) || !a->cmfgen_loaded ||
++        a->cmfgen_n_freq_bins != n->n_freq_bins || !a->cmfgen_has_sigma ||
++        !a->cmfgen_sigma_bf || !a->ma_rr_loaded ||
++        !a->ma_rr_target_offset || !a->ma_rr_targets ||
++        !a->ma_rr_probability) { bm->bad_count++; return; }
++    int field_source = nlte_bf_field_source(
++        n,T_e,0.0,0.0,0,NULL,NULL,NULL);
++    int g0=n->nlte_ion_level_offset[iv_slot];
++    int g1=n->nlte_ion_level_offset[iv_slot+1];
++    int sl0=n->nlte_ion_super_offset[iv_slot];
++    double chi_eV=ew_find_chi(a,26,3);
++    for(int g=g0;g<g1;g++){
++        int lower=n->nlte_to_global_level[g];
++        if(lower<0 || !a->cmfgen_has_sigma[lower]){bm->bad_count++;continue;}
++        bm->sigma_count++;
++        int begin=a->ma_rr_target_offset[lower];
++        int end=a->ma_rr_target_offset[lower+1];
++        if(begin<0||end<=begin||end>a->ma_rr_n_routes){bm->bad_count++;continue;}
++        double psum=0.0;
++        int source=iv_start+n->fl_to_super[g]-sl0;
++        double f_lower=n->within_sl_frac[(size_t)g*p->n_shells+shell];
++        const double *sigma_row=&a->cmfgen_sigma_bf[
++            (size_t)lower*a->cmfgen_n_freq_bins];
++        for(int r=begin;r<end;r++){
++            bm->route_count++;
++            int upper=a->ma_rr_targets[r];
++            double prob=a->ma_rr_probability[r];
++            if(upper<0||upper>=a->n_levels||a->level_Z[upper]!=26||
++               a->level_ion[upper]!=4||!(prob>0.0)||!isfinite(prob)||
++               !(bm->q_by_global[upper]>=0.0)||
++               !isfinite(bm->q_by_global[upper])){bm->bad_count++;continue;}
++            psum+=prob; bm->valid_route_count++;
++            double threshold=chi_eV-a->level_energy_eV[lower]+
++                             a->level_energy_eV[upper];
++            double nu0=threshold*EV_TO_ERG/H_PLANCK;
++            if(!(threshold>0.0)||!(nu0<n->nu_max)){bm->bad_count++;continue;}
++            double rad_ion=0.0,milne=0.0,sigma_edge=0.0;
++            double kT=K_BOLTZMANN*T_e;
++            for(int bb=0;bb<n->n_freq_bins;bb++){
++                double loglo=log(n->nu_min)+bb*n->d_log_nu;
++                double nu=exp(loglo+0.5*n->d_log_nu);
++                if(nu<nu0)continue;
++                double sigma=sigma_row[bb];
++                if(!(sigma>0.0)||!isfinite(sigma))continue;
++                if(sigma_edge==0.0)sigma_edge=sigma;
++                double dnu=exp(loglo+n->d_log_nu)-exp(loglo);
++                double pref=4.0*M_PI_VAL*sigma/(H_PLANCK*nu)*dnu;
++                double J=0.0;
++                (void)nlte_bf_field_source(n,T_e,nu,
++                    n->J_nu[(size_t)shell*n->n_freq_bins+bb],0,NULL,NULL,&J);
++                if(field_source==1){
++                    double est=n->bf_rate_estimator[
++                        (size_t)shell*n->n_freq_bins+bb];
++                    if(est>0.0&&isfinite(est)){rad_ion+=sigma*est;fire->bf_estimator_bins++;}
++                    else{rad_ion+=pref*J;fire->bf_pref_j_bins++;}
++                }else{
++                    rad_ion+=pref*J;fire->bf_pref_j_bins++;
++                    if(field_source==2)fire->bf_jeqb_bins++;
++                }
++                double x=H_PLANCK*nu/kT;
++                double spont=2.0*H_PLANCK*nu*nu*nu/
++                             (C_SPEED_OF_LIGHT*C_SPEED_OF_LIGHT);
++                double term=pref*(spont+J)*exp(-x);
++                if(!isfinite(term)){bm->bad_count++;continue;}
++                milne+=term;
++            }
++            int gl=a->level_g[lower],gu=a->level_g[upper];
++            if(gl<=0||gu<=0){bm->bad_count++;continue;}
++            double log_nstar=log(n_e)+1.5*log(H_PLANCK*H_PLANCK/
++                (2.0*M_PI_VAL*M_ELECTRON*K_BOLTZMANN*T_e))+
++                log((double)gl/(2.0*(double)gu))+threshold*EV_TO_ERG/kT;
++            if(!isfinite(log_nstar)||!(log_nstar<log(DBL_MAX))){bm->bad_count++;continue;}
++            double nstar=exp(log_nstar);
++            double coll_ion=0.0,coll_rec=0.0;
++            if(nlte_bf_collisional_enabled()&&sigma_edge>0.0){
++                double u=threshold*EV_TO_ERG/kT;
++                if(u>0.0&&isfinite(u)){
++                    coll_ion=n_e*1.55e13/sqrt(T_e)*0.3*sigma_edge*exp(-u)/u;
++                    coll_rec=coll_ion*nstar;
++                }
++            }
++            double q=bm->q_by_global[upper];
++            double rates[4]={prob*rad_ion*f_lower,prob*nstar*milne*q,
++                             prob*coll_ion*f_lower,prob*coll_rec*q};
++            for(int k=0;k<4;k++)if(!isfinite(rates[k])||rates[k]<0.0)bm->bad_count++;
++            ew_boundary_transition(bm,plane[NLTE_EW_RAD_BF],ledger[NLTE_EW_RAD_BF],
++                N,0,bm->m_index,source,rates[0]);
++            ew_boundary_transition(bm,plane[NLTE_EW_RAD_BF],ledger[NLTE_EW_RAD_BF],
++                N,0,source,bm->m_index,rates[1]);
++            ew_boundary_transition(bm,plane[NLTE_EW_COLL_BF],ledger[NLTE_EW_COLL_BF],
++                N,1,bm->m_index,source,rates[2]);
++            ew_boundary_transition(bm,plane[NLTE_EW_COLL_BF],ledger[NLTE_EW_COLL_BF],
++                N,1,source,bm->m_index,rates[3]);
++            fire->channel_events[NLTE_EW_RAD_BF]+=2;
++            if(rates[2]>0.0||rates[3]>0.0)fire->channel_events[NLTE_EW_COLL_BF]+=2;
++        }
++        if(fabs(psum-1.0)<=1e-12)bm->route_source_count++;
++        else bm->bad_count++;
++    }
++    bm->assembly_pass=bm->bad_count==0&&bm->level_count==200&&
++        bm->sigma_count==200&&bm->route_source_count==200&&
++        bm->route_count==bm->valid_route_count;
++}
++
+ static uint64_t ew_atomic_checksum(const NLTEConfig *n, const AtomicData *a,
+                                    int slots[3]) {
+     uint64_t h = UINT64_C(1469598103934665603);
+@@ -1318,6 +1571,8 @@ static double ew_permutation_check(const double *A, const double *b, int N,
+             int k = 0;
+             for (int q = 2; q >= 0; q--)
+                 for (int i = stage_start[q]; i < stage_start[q+1]; i++) perm[k++] = i;
++            /* Optional scalar boundary-mass unknown follows the three stages. */
++            for (int i = stage_start[3]; i < N; i++) perm[k++] = i;
+         } else {
+             for (int i = 0; i < N; i++) perm[i] = i;
+             uint64_t x = seed ? seed : UINT64_C(0x9e3779b97f4a7c15);
+@@ -1335,6 +1590,9 @@ static double ew_permutation_check(const double *A, const double *b, int N,
+             for(int i=stage_start[q];i<stage_start[q+1];i++){a+=xref[i];c+=xu[i];}
+             double dv=fabs(a-c); if(dv>worst)worst=dv;
+         }
++        for(int i=stage_start[3];i<N;i++){
++            double dv=fabs(xref[i]-xu[i]); if(dv>worst)worst=dv;
++        }
+     }
+     free(perm);free(Ap);free(bp);free(xp);free(xu); return worst;
+ }
+@@ -1407,8 +1665,17 @@ static int ew_run_impl(NLTEConfig *nlte, AtomicData *atom,
+     int stage_start[4] = {0,0,0,0};
+     for(int q=0;q<3;q++) stage_start[q+1]=stage_start[q]+
+         nlte->nlte_ion_super_offset[slots[q]+1]-nlte->nlte_ion_super_offset[slots[q]];
+-    int N=stage_start[3];
++    int boundary_mass_active = (Z == 26);
++    int N=stage_start[3] + (boundary_mass_active ? 1 : 0);
+     if(N<=0) { ew_private_view_free(&private_view); return -1; }
++    double n_elem=ew_element_density(atom,plasma,Z,shell);
++    EWBoundaryMass boundary;
++    if(ew_boundary_mass_prepare(&boundary,atom,plasma,Z,shell,N,n_elem)!=0){
++        fprintf(stderr,"[EW][OOM] Z=%d s=%d boundary-mass projection\n",Z,shell_label);
++        ew_boundary_mass_free(&boundary);
++        ew_private_view_free(&private_view);
++        return -1;
++    }
+     int c48_projected_levels=0;
+     {
+         const char *cut=getenv("LUMINA_SUPER_CUTOFF");
+@@ -1466,10 +1733,12 @@ static int ew_run_impl(NLTEConfig *nlte, AtomicData *atom,
+         fire.topstage_IV_calls += (int)(calls_after[2] - calls_before[2]);
+         free(tmpA);free(tmpb);
+     }
++    ew_boundary_mass_assemble(&boundary,nlte,atom,plasma,slots[2],
++                              stage_start[2],shell,plane,expected_outflow,
++                              &fire,N);
+     for(int c=0;c<NLTE_EW_N_CHANNELS;c++)
+         for(size_t k=0;k<(size_t)N*N;k++) Araw[k]+=plane[c][k];
+     memcpy(Anorm,Araw,(size_t)N*N*sizeof(double));
+-    double n_elem=ew_element_density(atom,plasma,Z,shell);
+     int hot_cold_required=0,hot_cold_rebuilds=0,hot_cold_identical=0;
+     double hot_cold_max_abs=INFINITY;
+     {
+@@ -1519,8 +1788,11 @@ static int ew_run_impl(NLTEConfig *nlte, AtomicData *atom,
+         }
+         free(saved);free(cold);free(hot);
+     }
++    double active_mass=n_elem-boundary.m_outside;
++    if(!boundary.active)active_mass=n_elem;
++    if(!(active_mass>=0.0)||!isfinite(active_mass))boundary.bad_count++;
+     for(int j=0;j<N;j++) EW(Anorm,N,0,j)=1.0;
+-    b[0]=n_elem;
++    b[0]=active_mass;
+ 
+     uint64_t checksum_after=ew_atomic_checksum(nlte,atom,slots);
+     coverage.checksum_mismatch = checksum_after != checksum_before;
+@@ -1533,7 +1805,9 @@ static int ew_run_impl(NLTEConfig *nlte, AtomicData *atom,
+         coverage.continua_mapped==coverage.continua_expected &&
+         coverage.targets_expected>0 &&
+         coverage.targets_mapped==coverage.targets_expected &&
+-        coverage.checksum_mismatch==0 && target_fail==0 && bad_rate==0;
++        coverage.checksum_mismatch==0 && target_fail==0 && bad_rate==0 &&
++        (!boundary.active || (boundary.data_pass && boundary.projection_pass &&
++                              boundary.assembly_pass));
+     EWSolveDiag sd; memset(&sd,0,sizeof(sd));
+     sd.smax=INFINITY; sd.smin=0.0; sd.kappa=INFINITY;
+     sd.rcond=0.0; sd.pivot_growth=INFINITY;
+@@ -1557,16 +1831,48 @@ static int ew_run_impl(NLTEConfig *nlte, AtomicData *atom,
+     int nonfinite=0,negative=0;
+     double sumx=0.0;
+     for(int i=0;i<N;i++){if(!isfinite(x[i]))nonfinite++;else{sumx+=x[i];if(n_elem>0.0&&x[i]/n_elem < -1e-14)negative++;}}
+-    double conservation=(n_elem>0.0)?fabs(sumx-n_elem)/n_elem:INFINITY;
++    double conservation=(n_elem>0.0)?fabs(sumx-active_mass)/n_elem:INFINITY;
+     double se_res=solve_fail?INFINITY:ew_scaled_residual(Araw,x,N,n_elem,
+                                                          time_explosion);
+     uint64_t checksum=checksum_after;
+     double perm_abs=solve_fail?INFINITY:ew_permutation_check(Anorm,b,N,x,stage_start,checksum);
+     double perm_frac=(n_elem>0.0)?perm_abs/n_elem:INFINITY;
+ 
++    boundary.m_after=boundary.active&&!solve_fail?x[boundary.m_index]:0.0;
++    if(boundary.active){
++        for(int q=0;q<3;q++)
++            for(int i=stage_start[q];i<stage_start[q+1];i++)
++                boundary.sum_stage[q]+=x[i];
++        boundary.conservation_residual=conservation;
++        boundary.row_residual=(n_elem>0.0)?fabs(sumx-active_mass)/n_elem:INFINITY;
++        double flux_scale=0.0,flux_worst=0.0;
++        const int channels[2]={NLTE_EW_RAD_BF,NLTE_EW_COLL_BF};
++        for(int k=0;k<2;k++){
++            int c=channels[k];
++            double ledger_forward=0.0;
++            for(int j=stage_start[2];j<stage_start[3];j++)
++                ledger_forward+=boundary.forward_rate[k][j]*x[j];
++            double ledger_reverse=boundary.reverse_rate[k]*x[boundary.m_index];
++            double matrix_forward=0.0,matrix_reverse=0.0;
++            for(int j=stage_start[2];j<stage_start[3];j++){
++                matrix_forward+=EW(plane[c],N,boundary.m_index,j)*x[j];
++                matrix_reverse+=EW(plane[c],N,j,boundary.m_index)*x[boundary.m_index];
++            }
++            boundary.phi_forward[k]=ledger_forward;
++            boundary.phi_reverse[k]=ledger_reverse;
++            double ef=fabs(matrix_forward-ledger_forward);
++            double er=fabs(matrix_reverse-ledger_reverse);
++            if(fabs(ledger_forward)>flux_scale)flux_scale=fabs(ledger_forward);
++            if(fabs(ledger_reverse)>flux_scale)flux_scale=fabs(ledger_reverse);
++            if(ef>flux_worst)flux_worst=ef;
++            if(er>flux_worst)flux_worst=er;
++        }
++        boundary.flux_residual=flux_scale>0.0?flux_worst/flux_scale:flux_worst;
++    }
++
+     double boundary_max=0.0;
+     for(int st_i=0;st_i<2;st_i++){
+-        int st=st_i?4:0,ip=ew_find_ip(atom,Z,st);
++        int st=st_i?(boundary.active?5:4):0,ip=ew_find_ip(atom,Z,st);
+         double f=(ip>=0&&n_elem>0.0)?atom->ion_number_density[(size_t)ip*plasma->n_shells+shell]/n_elem:0.0;
+         if(f>boundary_max)boundary_max=f;
+     }
+@@ -1577,7 +1883,8 @@ static int ew_run_impl(NLTEConfig *nlte, AtomicData *atom,
+             if(!isfinite(tau)) continue;
+             tau_all+=tau;
+             int st=atom->line_ion_number[line];
+-            if(st==0||st==4) tau_boundary+=tau;
++            if(st==0||(!boundary.active&&st==4)||(boundary.active&&st>=5))
++                tau_boundary+=tau;
+         }
+     }
+     double boundary_opacity=(tau_all>0.0)?tau_boundary/tau_all:0.0;
+@@ -1585,7 +1892,10 @@ static int ew_run_impl(NLTEConfig *nlte, AtomicData *atom,
+      * assembler.  A non-zero adjacent-stage reservoir is therefore not
+      * measurable from this lane and must fail closed rather than be inferred
+      * negligible from opacity alone. */
+-    int boundary_process_coverage=(boundary_max==0.0 && tau_boundary==0.0);
++    if(boundary.active)
++        boundary_max=(n_elem>0.0)?boundary.m_outside/n_elem:INFINITY;
++    int boundary_process_coverage=boundary.active ? boundary.assembly_pass :
++        (boundary_max==0.0 && tau_boundary==0.0);
+     /* Kramers is the authority lane's declared continuum, not a clamp/repair
+      * guard firing.  A deletion remains fail-closed through target_fail. */
+     int guard_firing_count=fire.target_fallback+fire.nstar_cap+
+@@ -1612,11 +1922,15 @@ static int ew_run_impl(NLTEConfig *nlte, AtomicData *atom,
+         coverage.targets_expected>0 && coverage.targets_mapped==coverage.targets_expected &&
+         coverage.checksum_mismatch==0 && raw_rank==N-1 &&
+         components==1 && zero_rows==0 && zero_cols==0 &&
+-        max_assembly_residual<=1e-12;
++        max_assembly_residual<=1e-12 &&
++        (!boundary.active || (boundary.row_residual<=1e-12 &&
++                              boundary.flux_residual<=1e-12));
+     int numerical_gate_pass=!solve_fail && sd.rank==N &&
+         max_assembly_residual<=1e-12 && sd.kappa<=1e12 && sd.pivot_growth<=1e8 &&
+         se_res<=1e-10 && conservation<=1e-12 && nonfinite==0 && negative==0 &&
+-        perm_frac<=1e-10;
++        perm_frac<=1e-10 &&
++        (!boundary.active || (boundary.row_residual<=1e-12 &&
++                              boundary.flux_residual<=1e-12));
+     int boundary_gate_pass=boundary_max<=1e-8 && boundary_opacity<=1e-4 &&
+                            boundary_process_coverage;
+     int pass=topology_gate_pass&&numerical_gate_pass&&boundary_gate_pass;
+@@ -1636,7 +1950,7 @@ static int ew_run_impl(NLTEConfig *nlte, AtomicData *atom,
+         ew_dump_sparse_matrix("matrix_normalized",Anorm,b,NULL,NULL,N,iter,Z,shell_label);
+         ew_dump_sparse_matrix("matrix_equilibrated",Aeq,beq,rs,cs,N,iter,Z,shell_label);
+         char path[768]; FILE *fp=ew_open_dump(path,sizeof(path),iter,Z,shell_label,"solution");
+-        if(fp){fprintf(fp,"record_type,matrix_index,internal_stage,sl_id,global_level,raw_solution,restored_population,ion_total\n");for(int q=0;q<3;q++){double tot=0;for(int i=stage_start[q];i<stage_start[q+1];i++)tot+=x[i];for(int i=stage_start[q];i<stage_start[q+1];i++)fprintf(fp,"SL,%d,%d,%d,-1,%.17g,%.17g,%.17g\n",i,q+1,i-stage_start[q],x[i]/(cs[i]!=0.0?cs[i]:1.0),x[i],tot);int slot=slots[q],ss0=nlte->nlte_ion_super_offset[slot];for(int g=nlte->nlte_ion_level_offset[slot];g<nlte->nlte_ion_level_offset[slot+1];g++){int gl=nlte->nlte_to_global_level[g],local=stage_start[q]+nlte->fl_to_super[g]-ss0;double frac=nlte->within_sl_frac[(size_t)g*plasma->n_shells+shell];fprintf(fp,"FL,%d,%d,%d,%d,%.17g,%.17g,%.17g\n",local,q+1,nlte->fl_to_super[g]-ss0,gl,x[local]/(cs[local]!=0.0?cs[local]:1.0),x[local]*frac,tot);}}fclose(fp);}
++        if(fp){fprintf(fp,"record_type,matrix_index,internal_stage,sl_id,global_level,raw_solution,restored_population,ion_total\n");for(int q=0;q<3;q++){double tot=0;for(int i=stage_start[q];i<stage_start[q+1];i++)tot+=x[i];for(int i=stage_start[q];i<stage_start[q+1];i++)fprintf(fp,"SL,%d,%d,%d,-1,%.17g,%.17g,%.17g\n",i,q+1,i-stage_start[q],x[i]/(cs[i]!=0.0?cs[i]:1.0),x[i],tot);int slot=slots[q],ss0=nlte->nlte_ion_super_offset[slot];for(int g=nlte->nlte_ion_level_offset[slot];g<nlte->nlte_ion_level_offset[slot+1];g++){int gl=nlte->nlte_to_global_level[g],local=stage_start[q]+nlte->fl_to_super[g]-ss0;double frac=nlte->within_sl_frac[(size_t)g*plasma->n_shells+shell];fprintf(fp,"FL,%d,%d,%d,%d,%.17g,%.17g,%.17g\n",local,q+1,nlte->fl_to_super[g]-ss0,gl,x[local]/(cs[local]!=0.0?cs[local]:1.0),x[local]*frac,tot);}}if(boundary.active)fprintf(fp,"BOUNDARY_MASS,%d,4,0,-1,%.17g,%.17g,%.17g\n",boundary.m_index,x[boundary.m_index]/(cs[boundary.m_index]!=0.0?cs[boundary.m_index]:1.0),x[boundary.m_index],x[boundary.m_index]);fclose(fp);}
+         fp=ew_open_dump(path,sizeof(path),iter,Z,shell_label,"diagnostics");
+         if(fp){fprintf(fp,"key,value\nN,%d\nion_coverage,%d/%d\nsl_coverage,%d/%d\nfull_level_coverage,%d/%d\nline_coverage,%d/%d\ncontinuum_coverage,%d/%d\nkramers_continuum_count,%d\ntarget_coverage,%d/%d\nfirst_bad_lower_global,%d\nfirst_bad_target_global,%d\nchecksum_mismatch,%d\nraw_rank,%d\nsolve_attempted,%d\np_elem_valid,%d\nnormalized_rank,%d\ngraph_components,%d\nzero_rows,%d\nzero_columns,%d\nassembled_target_expected,%d\nassembled_target_mapped,%d\nassembled_target_fail,%d\nbad_rate,%d\nchannel_inventory_fail,%d\nlegacy_guard_configured_count,%d\nlegacy_guard_firing_count,%d\nC48_projected_identity_level_count,%d\nkramers_fallback_firing_count,%d\ncontinuum_deletion_firing_count,%d\ntarget_fallback_firing_count,%d\nnstar_cap_firing_count,%d\nnonfinite_guard_firing_count,%d\nbf_estimator_bin_consumptions,%d\nbf_pref_J_bin_consumptions,%d\nbf_JEQB_bin_consumptions,%d\nindependent_assembly_residual_max,%.17g\nraw_singular_value_max,%.17g\nraw_singular_value_min,%.17g\nraw_kappa_2,%.17g\nequilibrated_singular_value_max,%.17g\nequilibrated_singular_value_min,%.17g\nkappa_2,%.17g\nrcond_1_solver_estimate,%.17g\npivot_growth,%.17g\nequilibration_iterations,%d\nrefinement_iterations,%d\nscaled_se_residual,%.17g\nscaled_se_t_ref_seconds,%.17g\nconservation_residual,%.17g\nnegative_count,%d\nnonfinite_count,%d\npermutation_ion_fraction_max_abs,%.17g\nboundary_fraction_max,%.17g\nboundary_opacity_fraction,%.17g\nboundary_process_coverage,%d\nclamp_floor_freeze_anchor_repair_fallback_count,%d\nverdict,%s\n",N,coverage.ions_mapped,coverage.ions_expected,coverage.sl_mapped,coverage.sl_expected,coverage.full_mapped,coverage.full_expected,coverage.lines_mapped,coverage.lines_expected,coverage.continua_mapped,coverage.continua_expected,coverage.continua_kramers,coverage.targets_mapped,coverage.targets_expected,coverage.first_bad_lower,coverage.first_bad_target,coverage.checksum_mismatch,raw_rank,solve_attempted,p_elem_valid,sd.rank,components,zero_rows,zero_cols,target_expected,target_mapped,target_fail,bad_rate,channel_inventory_fail,guard_config_count,guard_firing_count,c48_projected_levels,fire.kramers_fallback,fire.continuum_deleted,fire.target_fallback,fire.nstar_cap,fire.nonfinite_guard,fire.bf_estimator_bins,fire.bf_pref_j_bins,fire.bf_jeqb_bins,max_assembly_residual,raw_smax,raw_smin,raw_kappa,sd.smax,sd.smin,sd.kappa,sd.rcond,sd.pivot_growth,sd.equil_iters,sd.refinement_iters,se_res,time_explosion,conservation,negative,nonfinite,perm_frac,boundary_max,boundary_opacity,boundary_process_coverage,guard_firing_count,verdict);fprintf(fp,"candidate_assembler_calls,%d\ncandidate_pair_owner_calls,%d\nsave_restore_calls,%d\nper_ion_pin_calls,%d\ntopstage_IV_calls,%d\nhot_cold_required,%d\nhot_cold_rebuilds,%d\nhot_cold_matrix_byte_identical,%d\nhot_cold_matrix_max_abs,%.17g\ncommit_requested,%d\ncommit_performed,%d\ncommit_blocked_by,%s\n",fire.candidate_assembler_calls,fire.candidate_pair_owner_calls,fire.save_restore_calls,fire.per_ion_pin_calls,fire.topstage_IV_calls,hot_cold_required,hot_cold_rebuilds,hot_cold_identical,hot_cold_max_abs,commit_requested,commit_performed,commit_blocked_by);fprintf(fp,"topology_gate_pass,%d\nnumerical_gate_pass,%d\nboundary_gate_pass,%d\n",topology_gate_pass,numerical_gate_pass,boundary_gate_pass);for(int c=0;c<NLTE_EW_N_CHANNELS;c++){fprintf(fp,"channel_colsum_%s,%.17g\n",ew_channel_name[c],colsum[c]);fprintf(fp,"channel_independent_assembly_residual_%s,%.17g\n",ew_channel_name[c],assembly_residual[c]);fprintf(fp,"channel_event_count_%s,%d\n",ew_channel_name[c],fire.channel_events[c]);}if(!solve_attempted)fprintf(fp,"pivot_status,not_attempted\nrefinement_status,not_attempted\n");for(int i=0;solve_attempted&&i<N;i++)fprintf(fp,"pivot_%d,%d\n",i,solve_piv[i]);for(int i=0;solve_attempted&&i<=sd.refinement_iters;i++)fprintf(fp,"refinement_residual_%d,%.17g\n",i,sd.refinement[i]);fclose(fp);}
+         fp=ew_open_dump(path,sizeof(path),iter,Z,shell_label,"provenance");
+@@ -1649,11 +1963,51 @@ static int ew_run_impl(NLTEConfig *nlte, AtomicData *atom,
+         if (fp) {
+             fprintf(fp, "production_bf_gpu_field_bypass_levels,%lu\n",
+                     nlte_bf_gpu_field_bypass_count());
++            if (boundary.active) {
++                fprintf(fp,
++                        "boundary_mass_stage,FeV_boundary_mass\n"
++                        "boundary_mass_unknown_index,%d\n"
++                        "boundary_mass_FeIV_sigma_coverage,%d/200\n"
++                        "boundary_mass_route_source_coverage,%d/200\n"
++                        "boundary_mass_FeV_to_FeVI,absent_declared_truncation\n"
++                        "boundary_mass_DR_autoion,not_replicated_no_producer\n"
++                        "boundary_mass_projection_pass,%d\n"
++                        "boundary_mass_assembly_pass,%d\n",
++                        boundary.m_index,boundary.sigma_count,
++                        boundary.route_source_count,boundary.projection_pass,
++                        boundary.assembly_pass);
++            }
+             fclose(fp);
+         } else {
+             fprintf(stderr, "[EW][DUMP-FAIL] append %s: %s\n",
+                     path, strerror(errno));
+         }
++        if(boundary.active){
++            fp=ew_open_dump(path,sizeof(path),iter,Z,shell_label,"boundary_mass");
++            if(fp){
++                double phi_forward=boundary.phi_forward[0]+boundary.phi_forward[1];
++                double phi_reverse=boundary.phi_reverse[0]+boundary.phi_reverse[1];
++                fprintf(fp,"run,iter,shell,Z,stage,atomic_checksum,route_count,valid_route_count,n_Fe_total,M_outside,M_V_before,M_V_after,sum_II,sum_III,sum_IV,conservation_residual,q_count,sum_q,q_min,q_max,q_checksum,Phi_IV_to_V_rad,Phi_V_to_IV_rad,Phi_IV_to_V_coll,Phi_V_to_IV_coll,Phi_IV_to_V_nonthermal,Phi_V_to_IV_nonthermal,Phi_DR_autoion,Phi_forward,Phi_reverse,Phi_net,matrix_event_flux_residual,boundary_row_residual,FeI_fraction,FeVIplus_fraction,right_boundary_producer_coverage,V_to_VI_contract,DR_contract,verdict\n");
++                double fe1=0.0,fe6=0.0;
++                int ip1=ew_find_ip(atom,26,0);
++                if(ip1>=0&&n_elem>0.0)fe1=atom->ion_number_density[(size_t)ip1*plasma->n_shells+shell]/n_elem;
++                for(int ip=0;ip<atom->n_ion_pops;ip++)if(atom->ion_pop_Z[ip]==26&&atom->ion_pop_stage[ip]>=5&&n_elem>0.0)fe6+=atom->ion_number_density[(size_t)ip*plasma->n_shells+shell]/n_elem;
++                fprintf(fp,"iter%04d,%d,%d,26,FeV_boundary_mass,%016llx,%d,%d,%.17g,%.17g,%.17g,%.17g,%.17g,%.17g,%.17g,%.17g,%d,%.17g,%.17g,%.17g,%016llx,%.17g,%.17g,%.17g,%.17g,0,0,0,%.17g,%.17g,%.17g,%.17g,%.17g,%.17g,%.17g,0,absent_declared_truncation,not_replicated_no_producer,%s\n",
++                    iter,iter,shell_label,(unsigned long long)checksum,
++                    boundary.route_count,boundary.valid_route_count,n_elem,
++                    boundary.m_outside,boundary.m_before,boundary.m_after,
++                    boundary.sum_stage[0],boundary.sum_stage[1],boundary.sum_stage[2],
++                    boundary.conservation_residual,boundary.level_count,
++                    boundary.q_sum,boundary.q_min,boundary.q_max,
++                    (unsigned long long)boundary.q_checksum,
++                    boundary.phi_forward[0],boundary.phi_reverse[0],
++                    boundary.phi_forward[1],boundary.phi_reverse[1],
++                    phi_forward,phi_reverse,phi_forward-phi_reverse,
++                    boundary.flux_residual,boundary.row_residual,fe1,fe6,
++                    pass?"PASS":"FAIL");
++                fclose(fp);
++            }
++        }
+     }
+ 
+     fprintf(stderr,"[EW] Z=%d s=%d N=%d verdict=%s rank=%d/%d kappa=%.3e residual=%.3e targets=%d/%d\n",Z,shell_label,N,verdict,sd.rank,N,sd.kappa,se_res,coverage.targets_mapped,coverage.targets_expected);
+@@ -1667,11 +2021,18 @@ static int ew_run_impl(NLTEConfig *nlte, AtomicData *atom,
+                 nlte->nlte_level_populations[(size_t)g*plasma->n_shells+shell]=x[local]*frac;
+             }
+         }
++        if(boundary.active){
++            int ip=ew_find_ip(atom,26,4);
++            if(ip>=0)
++                atom->ion_number_density[(size_t)ip*plasma->n_shells+shell]=
++                    x[boundary.m_index];
++        }
+     }
+     for(int c=0;c<NLTE_EW_N_CHANNELS;c++){
+         free(plane[c]); free(expected_outflow[c]);
+     }
+     free(Araw);free(Anorm);free(Aeq);free(b);free(beq);free(x);free(rs);free(cs);free(solve_piv);
++    ew_boundary_mass_free(&boundary);
+     ew_private_view_free(&private_view);
+     return pass ? 1 : -1;
+ 
+@@ -1680,6 +2041,7 @@ cleanup_fail:
+         free(plane[c]); free(expected_outflow[c]);
+     }
+     free(Araw);free(Anorm);free(Aeq);free(b);free(beq);free(x);free(rs);free(cs);free(solve_piv);
++    ew_boundary_mass_free(&boundary);
+     ew_private_view_free(&private_view);
+     return -1;
+ }
+diff --git a/tests/wave32_boundary_q_seed.c b/tests/wave32_boundary_q_seed.c
+new file mode 100644
+index 0000000..d8cc2c1
+--- /dev/null
++++ b/tests/wave32_boundary_q_seed.c
+@@ -0,0 +1,32 @@
++#include <math.h>
++#include <stdio.h>
++
++int nlte_ew_test_q_projection(const double *, int, double *);
++double nlte_ew_test_assembly_residual(const double *, const double *, int);
++
++int main(void) {
++    double good[4] = {0.1, 0.2, 0.3, 0.4};
++    double negative[4] = {0.1, -0.2, 0.3, 0.8};
++    double nonfinite[4] = {0.1, 0.2, NAN, 0.7};
++    double bad_sum[4] = {0.1, 0.2, 0.3, 0.3};
++    double sum = 0.0;
++    int pass_good = nlte_ew_test_q_projection(good, 4, &sum);
++    int pass_negative = nlte_ew_test_q_projection(negative, 4, NULL);
++    int pass_nonfinite = nlte_ew_test_q_projection(nonfinite, 4, NULL);
++    int pass_bad_sum = nlte_ew_test_q_projection(bad_sum, 4, NULL);
++    double plane[4] = {-4.0, 4.0, 0.0, 0.0};
++    double ledger[2] = {4.0, 0.0};
++    double matrix_good = nlte_ew_test_assembly_residual(plane, ledger, 2);
++    plane[0] = -3.0;
++    double bad_debit = nlte_ew_test_assembly_residual(plane, ledger, 2);
++    plane[0] = -4.0;
++    plane[1] = 3.0;
++    double bad_target = nlte_ew_test_assembly_residual(plane, ledger, 2);
++    printf("good=%d sum=%.17g negative=%d nonfinite=%d bad_sum=%d\n",
++           pass_good, sum, pass_negative, pass_nonfinite, pass_bad_sum);
++    printf("matrix_good=%.17g bad_debit=%.17g bad_target=%.17g\n",
++           matrix_good, bad_debit, bad_target);
++    return pass_good && fabs(sum - 1.0) <= 1e-12 && !pass_negative &&
++           !pass_nonfinite && !pass_bad_sum && matrix_good == 0.0 &&
++           bad_debit > 1e-12 && bad_target > 1e-12 ? 0 : 1;
++}

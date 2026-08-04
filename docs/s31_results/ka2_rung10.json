@@ -1,0 +1,121 @@
+{
+  "acceptance_checks": {
+    "all_clamp_zero": true,
+    "all_converged_within_max_iterations": true,
+    "all_nonfinite_zero": true,
+    "all_sign_uncertain_zero": true,
+    "all_solution_negative_zero": true,
+    "finest_J_relative_l2_le_1e-4": true,
+    "finest_energy_closure_le_1e-4": true,
+    "finest_max_scaled_error_le_3e-4": true,
+    "finest_source_residual_le_1e-10": true,
+    "finest_transport_residual_le_1e-4": true,
+    "oracle_full_arithmetic_is_80_digit": false,
+    "oracle_nref_relative_difference_lt_1e-9": true,
+    "p_obs_in_1p7_2p3": true
+  },
+  "acceptance_unchanged": true,
+  "cpu_threads": 32,
+  "difference_norms": [
+    1.7687189129066119e-06,
+    5.187682483755437e-07
+  ],
+  "excluded_cells": 0,
+  "grids": [
+    [
+      128,
+      32
+    ],
+    [
+      256,
+      64
+    ],
+    [
+      512,
+      128
+    ]
+  ],
+  "ka": "KA2",
+  "levels": [
+    {
+      "J_oracle_relative_l2": 1.2964054513241584e-05,
+      "L_absorbed": 1.6435358539390823,
+      "L_escape": 8.883932270760399,
+      "L_thermal": 10.527578027828648,
+      "clamp_count": 0,
+      "energy_closure": 1.0439545437364914e-05,
+      "grid": {
+        "nmu": 32,
+        "nr": 128
+      },
+      "max_scaled_error": 2.8934981368133883e-06,
+      "nonfinite_count": 0,
+      "sign_uncertain_count": 0,
+      "solution_negative_excess_count": 0,
+      "source_iterations": 32,
+      "source_residual": 4.0876540513916157e-13,
+      "status": "FAIL",
+      "transport_residual": 5.6139410443624065e-08
+    },
+    {
+      "J_oracle_relative_l2": 3.7746224104170392e-06,
+      "L_absorbed": 1.6434908187380033,
+      "L_escape": 8.884047350125094,
+      "L_thermal": 10.527578027828651,
+      "clamp_count": 0,
+      "energy_closure": 3.786147720660629e-06,
+      "grid": {
+        "nmu": 64,
+        "nr": 256
+      },
+      "max_scaled_error": 9.058122919930467e-07,
+      "nonfinite_count": 0,
+      "sign_uncertain_count": 0,
+      "solution_negative_excess_count": 0,
+      "source_iterations": 32,
+      "source_residual": 4.085157246005669e-13,
+      "status": "FAIL",
+      "transport_residual": 1.2240375716238894e-06
+    },
+    {
+      "J_oracle_relative_l2": 1.0791297037518498e-06,
+      "L_absorbed": 1.6434791223689382,
+      "L_escape": 8.88408577938155,
+      "L_thermal": 10.527578027828651,
+      "clamp_count": 0,
+      "energy_closure": 1.2468279150592862e-06,
+      "grid": {
+        "nmu": 128,
+        "nr": 512
+      },
+      "max_scaled_error": 2.8254280991235614e-07,
+      "nonfinite_count": 0,
+      "sign_uncertain_count": 0,
+      "solution_negative_excess_count": 0,
+      "source_iterations": 32,
+      "source_residual": 4.09738602140625e-13,
+      "status": "FAIL",
+      "transport_residual": 8.127260943171817e-06
+    }
+  ],
+  "oracle": {
+    "Nref": [
+      2048,
+      4096
+    ],
+    "Nref_2048_iterations": 36,
+    "Nref_4096_iterations": 36,
+    "matrix_storage": "binary64 with 80-digit singular primitives",
+    "method": "Gauss-Legendre Nystrom with analytic logarithmic singularity subtraction",
+    "mpmath_dps": 80,
+    "relative_difference": 3.6445269209240967e-10
+  },
+  "p_obs_J": 1.769542705182469,
+  "parameters": {
+    "B0": 1.0,
+    "chi0_R": 1.0,
+    "epsilon": 0.2
+  },
+  "seed": null,
+  "status": "FAIL"
+}

@@ -1,0 +1,173 @@
+diff --git a/src/lumina.h b/src/lumina.h
+--- a/src/lumina.h
++++ b/src/lumina.h
+@@ -412,5 +412,9 @@ typedef struct {
+     int    *element_Z;                /* [n_elements] */
+     double *element_mass_amu;         /* [n_elements] */
+     double *abundances;               /* [n_elements * n_shells] mass fractions */
++    double *isotope_ni56;              /* [n_shells], current-epoch subset of Ni */
++    double *isotope_co56;              /* [n_shells], current-epoch subset of Co */
++    double *isotope_fe56;              /* [n_shells], current-epoch subset of Fe */
++    int     isotopes_loaded;            /* exact Ni56/Co56/Fe56 sidecar present */
+ 
+     /* Lookup: ion_offset[elem_idx] = first ion index for element elem_idx */
+diff --git a/src/lumina_atomic.c b/src/lumina_atomic.c
+--- a/src/lumina_atomic.c
++++ b/src/lumina_atomic.c
+@@ -828,14 +828,87 @@ int load_atomic_data(AtomicData *atom, const char *ref_dir, int n_shells) {
+             for (int i = 0; i < atom->n_elements; i++) {
+                 if (atom->element_Z[i] == z_csv) { eidx = i; break; }
+             }
+             if (eidx < 0) continue;
+             for (int s = 0; s < n_shells; s++) {
+-                if (*p == ',') p++;
+-                atom->abundances[eidx * n_shells + s] = strtod(p, &p);
++                char *end = NULL;
++                if (*p != ',') {
++                    fprintf(stderr, "ERROR: %s Z=%d ends before shell %d/%d\n",
++                            path, z_csv, s, n_shells);
++                    fclose(fp);
++                    return -1;
++                }
++                p++;
++                atom->abundances[eidx * n_shells + s] = strtod(p, &end);
++                if (end == p || !isfinite(atom->abundances[eidx * n_shells + s])) {
++                    fprintf(stderr, "ERROR: %s Z=%d invalid shell %d\n", path, z_csv, s);
++                    fclose(fp);
++                    return -1;
++                }
++                p = end;
+             }
+             elem_idx++;
+         }
+         fclose(fp);
++    } else {
++        fprintf(stderr, "ERROR: Cannot open %s\n", path);
++        return -1;
++    }
++
++    /* Current-epoch radioactive subsets.  Elemental abundance remains the
++     * opacity/ionization total; these arrays are only decay-chain membership. */
++    atom->isotope_ni56 = (double *)calloc((size_t)n_shells, sizeof(double));
++    atom->isotope_co56 = (double *)calloc((size_t)n_shells, sizeof(double));
++    atom->isotope_fe56 = (double *)calloc((size_t)n_shells, sizeof(double));
++    snprintf(path, sizeof(path), "%s/isotopes.csv", ref_dir);
++    fp = fopen(path, "r");
++    if (fp) {
++        char line[8192];
++        int seen = 0;
++        if (!fgets(line, sizeof(line), fp)) {
++            fprintf(stderr, "ERROR: empty %s\n", path);
++            fclose(fp);
++            return -1;
++        }
++        while (fgets(line, sizeof(line), fp)) {
++            char name[16]; int z = 0, a = 0, used = 0;
++            if (sscanf(line, "%15[^,],%d,%d,%n", name, &z, &a, &used) < 3) {
++                fprintf(stderr, "ERROR: malformed row in %s\n", path);
++                fclose(fp);
++                return -1;
++            }
++            double *dest = NULL;
++            if (!strcmp(name, "Ni56") && z == 28 && a == 56) dest = atom->isotope_ni56;
++            if (!strcmp(name, "Co56") && z == 27 && a == 56) dest = atom->isotope_co56;
++            if (!strcmp(name, "Fe56") && z == 26 && a == 56) dest = atom->isotope_fe56;
++            if (!dest) {
++                fprintf(stderr, "ERROR: unexpected isotope identity %s,%d,%d in %s\n",
++                        name, z, a, path);
++                fclose(fp);
++                return -1;
++            }
++            char *p = line + used;
++            for (int s = 0; s < n_shells; s++) {
++                char *end = NULL;
++                dest[s] = strtod(p, &end);
++                if (end == p || !isfinite(dest[s]) || dest[s] < 0.0) {
++                    fprintf(stderr, "ERROR: %s %s invalid/missing shell %d\n", path, name, s);
++                    fclose(fp);
++                    return -1;
++                }
++                p = end;
++                if (s + 1 < n_shells) {
++                    if (*p != ',') { fclose(fp); return -1; }
++                    p++;
++                }
++            }
++            seen++;
++        }
++        fclose(fp);
++        if (seen != 3) {
++            fprintf(stderr, "ERROR: %s has %d isotope rows, expected 3\n", path, seen);
++            return -1;
++        }
++        atom->isotopes_loaded = 1;
+     }
+ 
+     /* --- Build ion population table --- */
+@@ -1611,4 +1686,7 @@ void free_atomic_data(AtomicData *atom) {
+     free(atom->element_Z);
+     free(atom->element_mass_amu);
+     free(atom->abundances);
++    free(atom->isotope_ni56);
++    free(atom->isotope_co56);
++    free(atom->isotope_fe56);
+     free(atom->elem_ion_offset);
+diff --git a/src/lumina_plasma.c b/src/lumina_plasma.c
+--- a/src/lumina_plasma.c
++++ b/src/lumina_plasma.c
+@@ -17614,44 +17614,23 @@ void compute_gamma_deposition(GammaDeposition *gd, AtomicData *atom,
+                                PlasmaState *plasma, Geometry *geo) {
+     int n_shells = gd->n_shells;
+-    double t_exp = geo->time_explosion;
+-
+-    /* Find element indices for Ni(Z=28) and Co(Z=27) */
+-    int elem_ni = -1, elem_co = -1;
+-    for (int e = 0; e < atom->n_elements; e++) {
+-        if (atom->element_Z[e] == 28) elem_ni = e;
+-        if (atom->element_Z[e] == 27) elem_co = e;
+-    }
+-
+-    /* Bateman equation for 56Ni → 56Co → 56Fe:
+-     * N_Ni(t) = N_Ni(0) × exp(-λ_Ni × t)
+-     * N_Co(t) = N_Ni(0) × [λ_Ni/(λ_Co-λ_Ni)] × [exp(-λ_Ni×t) - exp(-λ_Co×t)]
+-     *           + N_Co(0) × exp(-λ_Co × t)
+-     * Note: At t=0, all Ni is 56Ni; Co abundance is initial 56Co (if any). */
+-    double exp_ni = exp(-LAMBDA_NI56 * t_exp);
+-    double exp_co = exp(-LAMBDA_CO56 * t_exp);
+-    double bateman_factor = LAMBDA_NI56 / (LAMBDA_CO56 - LAMBDA_NI56);
++    (void)geo;
++    if (!atom->isotopes_loaded) {
++        fprintf(stderr, "FATAL: gamma deposition requires current-epoch isotopes.csv "
++                        "(Ni56,Co56,Fe56); refusing elemental fallback\n");
++        abort();
++    }
+ 
+     /* Compute per-shell energy generation and outward column density */
+     double *epsilon_gamma = (double *)calloc(n_shells, sizeof(double)); /* erg/s/cm³ */
+     double *column_density = (double *)calloc(n_shells, sizeof(double)); /* g/cm² */
+ 
+     for (int s = 0; s < n_shells; s++) {
+         double rho = plasma->rho[s];
+-
+-        /* Number density of 56Ni and 56Co from mass fractions.
+-         * We use the current Ni/Co abundances as initial mass fractions,
+-         * then apply time evolution. Ni mass = 56 amu. */
+-        double X_ni = (elem_ni >= 0) ? atom->abundances[elem_ni * n_shells + s] : 0.0;
+-        double X_co = (elem_co >= 0) ? atom->abundances[elem_co * n_shells + s] : 0.0;
+-
+-        /* Initial number densities at t=0 */
+-        double n_ni_0 = X_ni * rho / (56.0 * AMU); /* cm⁻³ */
+-        double n_co_0 = X_co * rho / (56.0 * AMU);
+-
+-        /* Current number densities from decay */
+-        double n_ni = n_ni_0 * exp_ni;
+-        double n_co = n_ni_0 * bateman_factor * (exp_ni - exp_co) + n_co_0 * exp_co;
+-        if (n_co < 0.0) n_co = 0.0;
++        /* SN_HYDRO_DATA is already at the deck epoch.  Use its current Ni56
++         * and Co56 subsets directly; applying Bateman(t_exp) again is decay
++         * double-counting.  Fe56 is loaded and validated for chain closure. */
++        double n_ni = atom->isotope_ni56[s] * rho / (56.0 * AMU);
++        double n_co = atom->isotope_co56[s] * rho / (56.0 * AMU);
+ 
+         /* Local gamma-ray energy generation rate [erg/s/cm³] */
+         epsilon_gamma[s] = LAMBDA_NI56 * n_ni * Q_NI56 + LAMBDA_CO56 * n_co * Q_CO56;

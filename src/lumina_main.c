@@ -208,7 +208,9 @@ int main(int argc, char *argv[]) {
                      atoi(getenv("LUMINA_RADEQ_TE")) > 0);
 
     printf("\nSimulation parameters:\n"); /* Phase 5 - Step 3 */
-    printf("  Packets: %d, Iterations: %d\n", n_packets, n_iterations); /* Phase 5 - Step 3 */
+    printf("  Packets: %d [source=%s], Iterations: %d [source=%s]\n",
+           n_packets, argc > 2 ? "argv[2]" : "config.json:n_packets",
+           n_iterations, argc > 3 ? "argv[3]" : "config.json:n_iterations"); /* CONFIG-PREC */
     printf("  Line interaction: %s\n",
         config.line_interaction_type == LINE_SCATTER    ? "SCATTER" :
         config.line_interaction_type == LINE_DOWNBRANCH ? "DOWNBRANCH" : "MACROATOM");
@@ -218,18 +220,8 @@ int main(int argc, char *argv[]) {
                nlte_start_iter + 1, nlte_start_iter);
     else
         printf("  NLTE: %s\n", enable_nlte ? "ENABLED (all iters)" : "disabled");
-    {
-        const char *t_pin_env = getenv("LUMINA_T_INNER_FIX");
-        if (t_pin_env) {
-            double t_pin = atof(t_pin_env);
-            if (t_pin > 0.0) {
-                printf("  T_inner: %.2f K (overridden by LUMINA_T_INNER_FIX, was %.2f)\n",
-                       t_pin, config.T_inner);
-                config.T_inner = t_pin;
-            }
-        }
-    }
-    printf("  T_inner: %.2f K\n", config.T_inner); /* Phase 5 - Step 3 */
+    printf("  T_inner: %.2f K (resolved and logged by CONFIG-PREC loader)\n",
+           config.T_inner); /* Phase 5 - Step 3 */
     printf("  Transition probs: %s\n", enable_transprob_update ? "DYNAMIC" : "FROZEN");
     printf("  Fe scatter: %s\n", config.fe_scatter_mode == 2 ? "ALL Fe TWO-LEVEL" :
                                   config.fe_scatter_mode == 1 ? "Fe II TWO-LEVEL" : "MACRO-ATOM");
@@ -250,6 +242,12 @@ int main(int argc, char *argv[]) {
                geo.time_explosion / 86400.0, t_new_days, t_new / geo.time_explosion);
         rescale_epoch(&geo, &plasma, t_new);
     }
+
+    /* K-FRESH: tau is solver-owned.  The deck NPY is only an epoch-validated
+     * seed and must be overwritten before transport or pure-CMFGEN consumes it. */
+    if (lumina_prepare_solver_owned_tau(&atom_data, &plasma, &opacity,
+            geo.time_explosion, "CPU transport/CMFGEN") != 0)
+        return EXIT_FAILURE;
 
     /* Phase 5 - Step 4: Compute shell volumes */
     double *volume = (double *)malloc(geo.n_shells * sizeof(double)); /* Phase 5 - Step 4 */
@@ -319,11 +317,14 @@ int main(int argc, char *argv[]) {
             if (pc_iter < 1) pc_iter = 1;
             printf("\n=== PURE-CMFGEN deterministic radiation path "
                    "(MC transport bypassed) ===\n");
-            cmfgen_run(&geo, &opacity,
-                       bf_opacity_enabled ? &bf : NULL,
-                       &plasma, enable_nlte ? &nlte : NULL, &atom_data,
-                       gamma_dep_enabled ? &gamma_dep : NULL,
-                       config.T_inner, pc_iter);
+            if (cmfgen_run(&geo, &opacity,
+                           bf_opacity_enabled ? &bf : NULL,
+                           &plasma, enable_nlte ? &nlte : NULL, &atom_data,
+                           gamma_dep_enabled ? &gamma_dep : NULL,
+                           config.T_inner, pc_iter) != 0) {
+                fprintf(stderr, "[CMFGEN][FATAL] deterministic path failed\n");
+                return EXIT_FAILURE;
+            }
 
             FILE *pf = fopen("lumina_plasma_state.csv", "w");
             if (pf) {
@@ -583,9 +584,12 @@ int main(int argc, char *argv[]) {
             if (enable_nlte && iter >= nlte_start_iter) {
                 nlte.current_iter = iter;
                 nlte_normalize_j_nu(&nlte, time_simulation, volume, geo.n_shells);
-                nlte_solve_all(&nlte, &atom_data, &plasma, &opacity,
-                               geo.time_explosion, geo.n_shells,
-                               gamma_dep_enabled ? &gamma_dep : NULL);
+                if (nlte_solve_all(&nlte, &atom_data, &plasma, &opacity,
+                                   geo.time_explosion, geo.n_shells,
+                                   gamma_dep_enabled ? &gamma_dep : NULL) != 0) {
+                    fprintf(stderr, "[NLTE][FATAL] solve failed at iter=%d\n", iter);
+                    return EXIT_FAILURE;
+                }
 
                 /* Re-apply overlap corrections after NLTE tau update */
                 if (overlap_corr_enabled)
@@ -597,7 +601,7 @@ int main(int argc, char *argv[]) {
                 compute_transition_probabilities(&atom_data, &plasma, &opacity,
                     (enable_nlte && iter >= nlte_start_iter) ? &nlte : NULL,
                     config.damping_constant,
-                    (iter > config.hold_iterations) ? 1 : 0);
+                    (iter > config.hold_iterations) ? 1 : 0, &geo);
             }
         }
 
@@ -793,7 +797,7 @@ int main(int argc, char *argv[]) {
         compute_formal_integral_spectrum(
             &geo, &plasma, &opacity, &atom_data,
             nlte.enabled ? &nlte : NULL, config.T_inner,
-            spec_fi, 100);
+            spec_fi, 100, 0.0);
         FILE *ff = fopen("lumina_spectrum_formal.csv", "w");
         if (ff) {
             fprintf(ff, "wavelength_angstrom,flux\n");
@@ -860,6 +864,9 @@ int main(int argc, char *argv[]) {
     free_atomic_data(&atom_data); /* Task #072 */
     if (enable_nlte) nlte_free(&nlte);
     if (gamma_dep_enabled) gamma_deposition_free(&gamma_dep);
+    if (bf_opacity_enabled && bf.event_enabled)
+        printf("[BF-PHIXS-FALLBACK] CPU upper-ground fallback activations=%llu\n",
+               bf.event_target_fallback_activations);
     if (bf_opacity_enabled) bf_opacity_free(&bf);
 
     printf("\nDone.\n"); /* Phase 5 - Step 10 */

@@ -1,0 +1,72 @@
+{
+  "acceptance_unchanged": true,
+  "binary64_oracle_comparison": {
+    "absolute_metric_difference": 8.038448192517332e-14,
+    "binary64_full_arithmetic_is_80_digit": false,
+    "binary64_matrix_storage": "binary64 with 80-digit singular primitives",
+    "binary64_relative_l2": 3.6445269209240967e-10,
+    "binary64_status": "FAIL",
+    "hp80_over_binary64_ratio": 1.0002205621845284,
+    "hp80_relative_l2": 3.6453307657433484e-10,
+    "hp80_status": "PASS",
+    "note": "This is a convergence-metric comparison, not a pointwise oracle-vector delta.",
+    "quantity": "Nref=2048/4096 self-agreement relative L2"
+  },
+  "limitations": [
+    "Archived solver JSON stores J error scalars but not raw J vectors.",
+    "Those two J-error gates retain their binary64-oracle basis; the judge does not invent a pointwise HP delta."
+  ],
+  "oracle_input": "docs/s31_results/ka2_oracle_hp.json",
+  "overall_status": "PASS",
+  "rung10_oracle": {
+    "checks": {
+      "Nref_relative_l2_lt_1e-9": true,
+      "acceptance_declared_unchanged": true,
+      "all_numerical_stages_are_mpmath_80d": true,
+      "computed_nref_contains_2048_4096": true,
+      "mpmath_dps_eq_80": true,
+      "production_run_declares_PASS": true,
+      "production_run_declares_oracle_qualified": true,
+      "reference_metadata_is_full_80digit_dense": true,
+      "requested_nref_exact_2048_4096": true,
+      "required_nref_exact_2048_4096": true,
+      "schema_version_exact": true,
+      "self_check_declares_pass": true,
+      "self_check_evaluated": true,
+      "self_check_orders_exact_2048_4096": true,
+      "self_check_threshold_exact_1e-9": true
+    },
+    "relative_l2": 3.6453307657433484e-10,
+    "status": "PASS",
+    "threshold": "< 1e-9"
+  },
+  "rung11_solver_results": [
+    {
+      "checks": {
+        "all_clamp_zero": true,
+        "all_converged_within_500_iterations": true,
+        "all_nonfinite_zero": true,
+        "all_sign_uncertain_zero": true,
+        "all_solution_negative_zero": true,
+        "finest_J_relative_l2_le_1e-4_legacy_binary64_basis": true,
+        "finest_energy_closure_le_1e-4": true,
+        "finest_max_scaled_error_le_3e-4_legacy_binary64_basis": true,
+        "finest_source_residual_le_1e-10": true,
+        "finest_transport_residual_le_1e-4": true,
+        "full_80digit_oracle_qualified": true,
+        "p_obs_in_1p7_2p3": true
+      },
+      "identity": "KA2",
+      "input": "docs/s31_results/ka2_round7c.json",
+      "metrics": {
+        "finest_J_oracle_relative_l2_legacy_binary64_basis": 1.073274277852105e-06,
+        "finest_max_scaled_error_legacy_binary64_basis": 2.801350461045793e-07,
+        "p_obs_J": 1.7573850206761803
+      },
+      "numeric_status_without_oracle_qualification": "PASS",
+      "raw_J_recomparison": "UNAVAILABLE_IN_ARCHIVED_SOLVER_JSON",
+      "status": "PASS"
+    }
+  ],
+  "schema_version": "s31-ka2-judge-v1"
+}

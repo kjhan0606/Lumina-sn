@@ -1,0 +1,95 @@
+Stage 3.2 Rung 1 preregistration v2 -- frozen before implementation, 2026-08-03
+
+SUPERSEDES patches/stage32_rung1_expected_changes.txt
+(sha256 e3c5c186a4617946b697b5368cf697d6329967d63e8c6f641a10470297515ed1),
+which is RETIRED, not amended.  Retirement rationale is recorded in
+docs/AUDIT_STAGE32_RUNG1_EPSILON_DISCREPANCY.md.  In one line: the retired
+text predicted a per-line Sobolev quantity (1-eps0)*(1-beta_Sobolev) that is
+not the spectral radius of the iteration this code performs.  The retirement
+was decided BEFORE any production measurement existed, on the ground that the
+yardstick measured the wrong operator -- not after seeing a result.
+
+OFF:
+  Every pre-existing artifact is byte-identical.  Exceptions: 0.
+
+ON:
+  Add exactly one Stage-3.2-Rung-1 local-response payload and its
+  SHA-256/generation manifest.  Every pre-existing artifact is byte-identical.
+
+THE OPERATOR BEING MEASURED
+
+  The iteration actually performed is
+
+      S = S_fixed + (chi_es/chi_tot) * Lambda_formal[S]
+
+  with chi_es assembled at src/lumina_cmfgen.c:1641 and the diagonal of
+  Lambda_formal stored by production in cs->lambda_star
+  (src/lumina_cmfgen.c:2147, :2179).  Therefore the local spectral radius is
+
+      rho_local[idx] = (chi_es[idx]/chi_tot[idx]) * lambda_star[idx]
+
+  computed from production arrays only.  No rate coefficients, no Sobolev
+  two-level reconstruction, and no choice of epsilon definition enters the
+  primary measurement.
+
+FROZEN PREDICTION 1 -- magnitude
+
+  For 600--3000 Angstrom bins at shell 8, the line-emission-energy-weighted
+  median of rho_local lies in [0.90, 0.98).
+
+  Anchor: E8 measured chi_coherent/chi_total = 0.977713 for s8 UV
+  (validation/emiss_e8/summary.json).  Since lambda_star < 1 by construction,
+  rho_local < 0.9777 strictly.  The lower bound asserts that lambda_star is
+  not small in these bins, i.e. that the UV bins are locally trapping.
+
+FROZEN PREDICTION 2 -- the discriminating test
+
+  The local geometric amplification implied by the measured operator is
+  1/(1 - rho_local).  Prediction 1 places this in [10, 50].
+
+  E8's reported recycle gain is S_total/S_fixed = 5247.49, which would require
+  rho = 0.99981.  That value is unreachable given chi_es/chi_tot = 0.9777.
+
+  This preregistration therefore predicts a CONTRADICTION of roughly two
+  orders of magnitude between the direct operator measurement and E8's source
+  decomposition.  The two quantities are computed from disjoint arrays
+  (chi_es/lambda_star versus eta_fixed/eta_coherent), so this is an
+  independent second path, not a replay.
+
+  Dispositions, fixed in advance:
+    (a) gain in [10,50] and E8 stands at 5247  ->  E8's 5247 is a source
+        composition ratio, NOT an iteration amplification.  The "recycle gain"
+        language in UV_CENSUS_CONSOLIDATION and the paper must be withdrawn.
+        This is the outcome this preregistration expects.
+    (b) gain also ~5000  ->  Prediction 1 is falsified; lambda_star or chi_es
+        is not what this preregistration assumes, and the assumption must be
+        re-derived before Stage 3.2 proceeds.
+    (c) anything else  ->  discovery; register it, do not tune toward (a).
+
+  No clamp, floor, cap, or fallback may be introduced to move an observation
+  into any of these ranges.
+
+SECONDARY ARTIFACT -- per-line view
+
+  The per-line Sobolev view is retained as a diagnostic, NOT as a prediction
+  target.  Each row carries, for the same (line, shell, bin):
+    beta            = (1-exp(-tau))/tau
+    eps0_raw        = C/(C+A)           [no escape factor]
+    eps_prime       = C/(C+A*beta)      [production's net thermalization,
+                                         src/lumina_plasma.c:8471]
+    eps_applied     = eps_prime after production's eps_floor/eps_cap
+                      (src/lumina_cmfgen.c:795-797)
+  All four are recorded so the two readings can be compared post hoc on one
+  payload, and so the number of rows pinned by eps_floor is countable.  No
+  prediction is frozen on these columns.
+
+HARD-GATE EVIDENCE
+
+  The EPAY disposition column is written at the branch site, never
+  reconstructed.  Row energy is the value production adds to eta_line, reused
+  and not recomputed.  The manifest closes both row-count and energy censuses
+  by disposition.  Rung-1 values are written to a read-only side-band artifact
+  and are never routed through eta_line/S_fixed.
+
+No source function, opacity, emissivity, rate, population, or transport state
+may be mutated.  No Stage 2+ implementation is permitted.

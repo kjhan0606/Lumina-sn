@@ -1,0 +1,442 @@
+diff --git a/src/lumina_plasma.c b/src/lumina_plasma.c
+index 4a31ba8..9beeda4 100644
+--- a/src/lumina_plasma.c
++++ b/src/lumina_plasma.c
+@@ -4,6 +4,7 @@
+ 
+ #include "lumina.h" /* Phase 4 - Step 1 */
+ #include "lumina_radeq_col_pairs.h" /* withParityO: CMFGEN-faithful all-pair COL cooling */
++#include <assert.h>
+ #ifdef _OPENMP
+ #include <omp.h>
+ #endif
+@@ -14028,6 +14029,140 @@ static void metacoll_ion_label(int Z, int ion, char *buf, size_t n) {
+     else            snprintf(buf, n, "Z%d/ion%d", Z, ion);
+ }
+ 
++/* Build every layout-derived NLTE projection in one place.  Both the normal
++ * nlte_init() lane and the Wave-3.2 private shadow lane call this routine, so
++ * offsets, bidirectional level maps, line ownership, super-level anchors, and
++ * within-SL storage cannot drift independently. */
++int nlte_build_projection(NLTEConfig *nlte, AtomicData *atom,
++                          OpacityState *opacity, int n_shells,
++                          const int *target_Z, const int *target_ion,
++                          int n_targets, int super_requested,
++                          int *n_lines_mapped) {
++    int rc = -1;
++    int *cursor = NULL;
++    if (n_lines_mapped) *n_lines_mapped = 0;
++    if (!nlte || !atom || !opacity || !target_Z || !target_ion ||
++        n_targets <= 0 || n_targets > NLTE_MAX_IONS || n_shells <= 0)
++        return -1;
++
++    /* AtomicData owns line identities while OpacityState owns line-sized
++     * arrays.  A split cardinality would make either projection out-of-bounds;
++     * never guess which side is authoritative. */
++    if (atom->n_lines != opacity->n_lines) {
++        fprintf(stderr,
++                "[NLTE][PROJECTION-FAIL] atom n_lines=%d != opacity n_lines=%d\n",
++                atom->n_lines, opacity->n_lines);
++        assert(atom->n_lines == opacity->n_lines);
++        return -1;
++    }
++
++    memset(nlte->nlte_Z, 0, sizeof(nlte->nlte_Z));
++    memset(nlte->nlte_ion, 0, sizeof(nlte->nlte_ion));
++    memset(nlte->nlte_ion_level_offset, 0,
++           sizeof(nlte->nlte_ion_level_offset));
++    memset(nlte->nlte_ion_super_offset, 0,
++           sizeof(nlte->nlte_ion_super_offset));
++    nlte->n_nlte_ions = n_targets;
++    for (int i = 0; i < n_targets; i++) {
++        nlte->nlte_Z[i] = target_Z[i];
++        nlte->nlte_ion[i] = target_ion[i];
++        int count = 0, max_super = -1;
++        for (int l = 0; l < atom->n_levels; l++) {
++            if (atom->level_Z[l] != target_Z[i] ||
++                atom->level_ion[l] != target_ion[i]) continue;
++            count++;
++            if (atom->level_super[l] > max_super)
++                max_super = atom->level_super[l];
++        }
++        nlte->nlte_ion_level_offset[i + 1] =
++            nlte->nlte_ion_level_offset[i] + count;
++        nlte->nlte_ion_super_offset[i + 1] =
++            nlte->nlte_ion_super_offset[i] +
++            (max_super >= 0 ? max_super + 1 : 0);
++    }
++    nlte->n_nlte_levels_total = nlte->nlte_ion_level_offset[n_targets];
++    nlte->n_super_total = nlte->nlte_ion_super_offset[n_targets];
++    nlte->super_mode = super_requested &&
++                       nlte->n_super_total < nlte->n_nlte_levels_total;
++
++    size_t nlevels = (size_t)(nlte->n_nlte_levels_total > 0 ?
++                              nlte->n_nlte_levels_total : 1);
++    size_t nsuper = (size_t)(nlte->n_super_total > 0 ?
++                             nlte->n_super_total : 1);
++    size_t nglobal = (size_t)(atom->n_levels > 0 ? atom->n_levels : 1);
++    size_t nlines = (size_t)(atom->n_lines > 0 ? atom->n_lines : 1);
++    nlte->nlte_to_global_level = (int *)malloc(nlevels * sizeof(int));
++    nlte->global_to_nlte_level = (int *)malloc(nglobal * sizeof(int));
++    nlte->nlte_line_map = (int *)malloc(nlines * sizeof(int));
++    nlte->fl_to_super = (int *)malloc(nlevels * sizeof(int));
++    nlte->super_anchor_global = (int *)malloc(nsuper * sizeof(int));
++    nlte->within_sl_frac = (double *)malloc(
++        nlevels * (size_t)n_shells * sizeof(double));
++    nlte->nlte_level_populations = (double *)calloc(
++        nlevels * (size_t)n_shells, sizeof(double));
++    cursor = (int *)calloc((size_t)NLTE_MAX_IONS, sizeof(int));
++    if (!nlte->nlte_to_global_level || !nlte->global_to_nlte_level ||
++        !nlte->nlte_line_map || !nlte->fl_to_super ||
++        !nlte->super_anchor_global || !nlte->within_sl_frac ||
++        !nlte->nlte_level_populations || !cursor)
++        goto cleanup;
++
++    for (int l = 0; l < atom->n_levels; l++)
++        nlte->global_to_nlte_level[l] = -1;
++    for (int s = 0; s < nlte->n_super_total; s++)
++        nlte->super_anchor_global[s] = -1;
++    for (int l = 0; l < atom->n_levels; l++) {
++        for (int i = 0; i < n_targets; i++) {
++            if (atom->level_Z[l] != target_Z[i] ||
++                atom->level_ion[l] != target_ion[i]) continue;
++            int g = nlte->nlte_ion_level_offset[i] + cursor[i]++;
++            int sl = nlte->nlte_ion_super_offset[i] + atom->level_super[l];
++            nlte->nlte_to_global_level[g] = l;
++            nlte->global_to_nlte_level[l] = g;
++            nlte->fl_to_super[g] = sl;
++            int prior = nlte->super_anchor_global[sl];
++            if (prior < 0 || atom->level_energy_eV[l] <
++                             atom->level_energy_eV[prior])
++                nlte->super_anchor_global[sl] = l;
++            break;
++        }
++    }
++    for (int line = 0; line < atom->n_lines; line++) {
++        nlte->nlte_line_map[line] = -1;
++        for (int i = 0; i < n_targets; i++) {
++            if (atom->line_atomic_number[line] != target_Z[i] ||
++                atom->line_ion_number[line] != target_ion[i]) continue;
++            nlte->nlte_line_map[line] = i;
++            if (n_lines_mapped) (*n_lines_mapped)++;
++            break;
++        }
++    }
++    for (size_t k = 0; k < nlevels * (size_t)n_shells; k++)
++        nlte->within_sl_frac[k] = 1.0;
++    rc = 0;
++
++cleanup:
++    free(cursor);
++    if (rc != 0) {
++        free(nlte->nlte_to_global_level);
++        free(nlte->global_to_nlte_level);
++        free(nlte->nlte_line_map);
++        free(nlte->fl_to_super);
++        free(nlte->super_anchor_global);
++        free(nlte->within_sl_frac);
++        free(nlte->nlte_level_populations);
++        nlte->nlte_to_global_level = NULL;
++        nlte->global_to_nlte_level = NULL;
++        nlte->nlte_line_map = NULL;
++        nlte->fl_to_super = NULL;
++        nlte->super_anchor_global = NULL;
++        nlte->within_sl_frac = NULL;
++        nlte->nlte_level_populations = NULL;
++        fprintf(stderr, "[NLTE][PROJECTION-FAIL] allocation failed\n");
++    }
++    return rc;
++}
++
+ int nlte_init(NLTEConfig *nlte, AtomicData *atom, OpacityState *opacity,
+               int n_shells) {
+     memset(nlte, 0, sizeof(NLTEConfig));
+@@ -14047,27 +14182,16 @@ int nlte_init(NLTEConfig *nlte, AtomicData *atom, OpacityState *opacity,
+                        (stage4 ? NLTE_TARGET_Z4 : NLTE_TARGET_Z);
+     const int *TGT_ION = element_wide ? NLTE_TARGET_ION_EW :
+                          (stage4 ? NLTE_TARGET_ION4 : NLTE_TARGET_ION);
+-    nlte->n_nlte_ions = element_wide ? NLTE_EW_IONS :
+-                         (stage4 ? NLTE_STAGE4_IONS : NLTE_BASE_IONS);
+-    for (int i = 0; i < nlte->n_nlte_ions; i++) {
+-        nlte->nlte_Z[i]   = TGT_Z[i];
+-        nlte->nlte_ion[i]  = TGT_ION[i];
+-    }
++    int n_targets = element_wide ? NLTE_EW_IONS :
++                    (stage4 ? NLTE_STAGE4_IONS : NLTE_BASE_IONS);
++    const char *super_env = getenv("LUMINA_SUPER_LEVELS");
++    int super_requested = (super_env && atoi(super_env) != 0) || element_wide;
++    int n_nlte_lines = 0;
++    if (nlte_build_projection(nlte, atom, opacity, n_shells, TGT_Z, TGT_ION,
++                              n_targets, super_requested,
++                              &n_nlte_lines) != 0)
++        return -1;
+ 
+-    /* Build level index maps */
+-    /* First pass: count levels per NLTE ion */
+-    nlte->nlte_ion_level_offset[0] = 0;
+-    for (int i = 0; i < nlte->n_nlte_ions; i++) {
+-        int Z = nlte->nlte_Z[i];
+-        int ion = nlte->nlte_ion[i];
+-        int count = 0;
+-        for (int l = 0; l < atom->n_levels; l++) {
+-            if (atom->level_Z[l] == Z && atom->level_ion[l] == ion)
+-                count++;
+-        }
+-        nlte->nlte_ion_level_offset[i + 1] = nlte->nlte_ion_level_offset[i] + count;
+-    }
+-    nlte->n_nlte_levels_total = nlte->nlte_ion_level_offset[nlte->n_nlte_ions];
+     printf("  [NLTE] Total NLTE levels: %d\n", nlte->n_nlte_levels_total);
+     for (int i = 0; i < nlte->n_nlte_ions; i++) {
+         int n = nlte->nlte_ion_level_offset[i + 1] - nlte->nlte_ion_level_offset[i];
+@@ -14087,102 +14211,14 @@ int nlte_init(NLTEConfig *nlte, AtomicData *atom, OpacityState *opacity,
+         printf("  [EW] CPU pilot layout: %d slots; Fe/S II-IV are contiguous\n",
+                nlte->n_nlte_ions);
+ 
+-    /* Second pass: build bidirectional level maps */
+-    nlte->nlte_to_global_level = (int *)malloc(nlte->n_nlte_levels_total * sizeof(int));
+-    nlte->global_to_nlte_level = (int *)malloc(atom->n_levels * sizeof(int));
+-    for (int l = 0; l < atom->n_levels; l++)
+-        nlte->global_to_nlte_level[l] = -1;
+-
+-    int *cursor = (int *)calloc(NLTE_MAX_IONS, sizeof(int)); /* per-ion insertion cursor */
+-    for (int l = 0; l < atom->n_levels; l++) {
+-        for (int i = 0; i < nlte->n_nlte_ions; i++) {
+-            if (atom->level_Z[l] == nlte->nlte_Z[i] &&
+-                atom->level_ion[l] == nlte->nlte_ion[i]) {
+-                int nlte_idx = nlte->nlte_ion_level_offset[i] + cursor[i];
+-                nlte->nlte_to_global_level[nlte_idx] = l;
+-                nlte->global_to_nlte_level[l] = nlte_idx;
+-                cursor[i]++;
+-                break;
+-            }
+-        }
+-    }
+-    free(cursor);
+-
+-    /* ---- CMFGEN super-level collapse maps ---- */
+-    /* Pass A: count super-levels per ion (super idx is per-ion 0-based,
+-     * contiguous, from the levels.csv "super_level" column; = level_num for
+-     * non-collapsed ions). */
+-    nlte->nlte_ion_super_offset[0] = 0;
+-    for (int i = 0; i < nlte->n_nlte_ions; i++) {
+-        int Z = nlte->nlte_Z[i];
+-        int ion = nlte->nlte_ion[i];
+-        int max_s = -1;
+-        for (int l = 0; l < atom->n_levels; l++) {
+-            if (atom->level_Z[l] == Z && atom->level_ion[l] == ion) {
+-                int s = atom->level_super[l];
+-                if (s > max_s) max_s = s;
+-            }
+-        }
+-        int n_super_i = (max_s >= 0) ? (max_s + 1) : 0;
+-        nlte->nlte_ion_super_offset[i + 1] = nlte->nlte_ion_super_offset[i] + n_super_i;
+-    }
+-    nlte->n_super_total = nlte->nlte_ion_super_offset[nlte->n_nlte_ions];
+-
+-    /* Pass B: FL nlte idx -> global SL solve idx, and lowest-E anchor per SL. */
+-    nlte->fl_to_super = (int *)malloc(nlte->n_nlte_levels_total * sizeof(int));
+-    for (int g = 0; g < nlte->n_nlte_levels_total; g++) nlte->fl_to_super[g] = g;
+-    nlte->super_anchor_global = (int *)malloc(
+-        (nlte->n_super_total > 0 ? nlte->n_super_total : 1) * sizeof(int));
+-    for (int s = 0; s < nlte->n_super_total; s++) nlte->super_anchor_global[s] = -1;
+-    for (int l = 0; l < atom->n_levels; l++) {
+-        for (int i = 0; i < nlte->n_nlte_ions; i++) {
+-            if (atom->level_Z[l] == nlte->nlte_Z[i] &&
+-                atom->level_ion[l] == nlte->nlte_ion[i]) {
+-                int g_nlte = nlte->global_to_nlte_level[l];
+-                int sl_global = nlte->nlte_ion_super_offset[i] + atom->level_super[l];
+-                nlte->fl_to_super[g_nlte] = sl_global;
+-                int prev = nlte->super_anchor_global[sl_global];
+-                if (prev < 0 ||
+-                    atom->level_energy_eV[l] < atom->level_energy_eV[prev])
+-                    nlte->super_anchor_global[sl_global] = l;
+-                break;
+-            }
+-        }
+-    }
+-
+-    /* Activate super mode only when the env knob is on AND the data actually
+-     * collapses (otherwise stay on the byte-identical FL path). */
+-    {
+-        const char *e = getenv("LUMINA_SUPER_LEVELS");
+-        int env_on = (e && atoi(e) != 0);
+-        nlte->super_mode = ((env_on || element_wide) &&
+-                            nlte->n_super_total < nlte->n_nlte_levels_total) ? 1 : 0;
+-    }
+-    nlte->within_sl_frac = (double *)malloc(
+-        (size_t)nlte->n_nlte_levels_total * n_shells * sizeof(double));
+-    for (size_t k = 0; k < (size_t)nlte->n_nlte_levels_total * n_shells; k++)
+-        nlte->within_sl_frac[k] = 1.0;
+     printf("  [NLTE] Super-levels: %s (%d FL -> %d SL across ions)\n",
+            nlte->super_mode ? "ACTIVE" : "off (identity)",
+            nlte->n_nlte_levels_total, nlte->n_super_total);
+ 
+-    /* Build line -> NLTE ion map */
++    /* Line ownership was built by the shared projection builder above. */
+     int n_lines = opacity->n_lines;
+-    nlte->nlte_line_map = (int *)malloc(n_lines * sizeof(int));
+-    int n_nlte_lines = 0;
+-    for (int line = 0; line < n_lines; line++) {
+-        nlte->nlte_line_map[line] = -1;
+-        int Z   = atom->line_atomic_number[line];
+-        int ion = atom->line_ion_number[line];
+-        for (int i = 0; i < nlte->n_nlte_ions; i++) {
+-            if (Z == nlte->nlte_Z[i] && ion == nlte->nlte_ion[i]) {
+-                nlte->nlte_line_map[line] = i;
+-                n_nlte_lines++;
+-                break;
+-            }
+-        }
+-    }
+-    printf("  [NLTE] Lines mapped to NLTE ions: %d / %d\n", n_nlte_lines, n_lines);
++    printf("  [NLTE] Lines mapped to NLTE ions: %d / %d\n",
++           n_nlte_lines, n_lines);
+ 
+     /* ---- COLD-CASE-P precompute: drainless-metastable flags (LUMINA_NLTE_METASTABLE_COLL).
+      * A level is "drainless-metastable" iff levels.csv flags it metastable=1 AND no line
+@@ -14243,8 +14279,6 @@ int nlte_init(NLTEConfig *nlte, AtomicData *atom, OpacityState *opacity,
+     }
+ 
+     /* Allocate results arrays */
+-    nlte->nlte_level_populations = (double *)calloc(
+-        (size_t)nlte->n_nlte_levels_total * n_shells, sizeof(double));
+     nlte->j_nu_estimator = (double *)calloc(
+         (size_t)n_shells * NLTE_N_FREQ_BINS, sizeof(double));
+     nlte->j_nu_count = (int *)calloc(
+diff --git a/src/lumina_element_wide.c b/src/lumina_element_wide.c
+index aaf3038..e4841f7 100644
+--- a/src/lumina_element_wide.c
++++ b/src/lumina_element_wide.c
+@@ -27,6 +27,11 @@ extern int nlte_bf_field_source(const NLTEConfig *nlte, double T_e, double nu,
+                                 double *J_selected);
+ extern int nlte_bf_collisional_enabled(void);
+ extern double nlte_bf_kramers_sigma0(int Z, int stage);
++extern int nlte_build_projection(NLTEConfig *nlte, AtomicData *atom,
++                                 OpacityState *opacity, int n_shells,
++                                 const int *target_Z, const int *target_ion,
++                                 int n_targets, int super_requested,
++                                 int *n_lines_mapped);
+ 
+ static const char *const ew_channel_name[NLTE_EW_N_CHANNELS] = {
+     "rad_bb", "coll_bb", "nt_bb", "rad_bf", "coll_bf", "nt_bf",
+@@ -559,90 +564,34 @@ static void ew_private_view_free(EWPrivateView *v) {
+ }
+ 
+ static int ew_private_view_init(EWPrivateView *v, const NLTEConfig *src,
+-                                AtomicData *a, PlasmaState *p) {
++                                AtomicData *a, PlasmaState *p,
++                                OpacityState *opacity) {
+     memset(v, 0, sizeof(*v));
+     v->cfg = *src;
+     NLTEConfig *n = &v->cfg;
+-    n->n_nlte_ions = NLTE_EW_IONS;
+-    memset(n->nlte_Z, 0, sizeof(n->nlte_Z));
+-    memset(n->nlte_ion, 0, sizeof(n->nlte_ion));
+-    memset(n->nlte_ion_level_offset, 0, sizeof(n->nlte_ion_level_offset));
+-    memset(n->nlte_ion_super_offset, 0, sizeof(n->nlte_ion_super_offset));
+-    for (int i = 0; i < NLTE_EW_IONS; i++) {
+-        n->nlte_Z[i] = ew_view_Z[i];
+-        n->nlte_ion[i] = ew_view_stage[i];
+-        int count = 0, max_sl = -1;
+-        for (int gl = 0; gl < a->n_levels; gl++)
+-            if (a->level_Z[gl] == n->nlte_Z[i] &&
+-                a->level_ion[gl] == n->nlte_ion[i]) {
+-                count++;
+-                if (a->level_super[gl] > max_sl) max_sl = a->level_super[gl];
+-            }
+-        n->nlte_ion_level_offset[i + 1] =
+-            n->nlte_ion_level_offset[i] + count;
+-        n->nlte_ion_super_offset[i + 1] =
+-            n->nlte_ion_super_offset[i] + (max_sl >= 0 ? max_sl + 1 : 0);
+-    }
+-    n->n_nlte_levels_total = n->nlte_ion_level_offset[NLTE_EW_IONS];
+-    n->n_super_total = n->nlte_ion_super_offset[NLTE_EW_IONS];
+-    n->super_mode = n->n_super_total < n->n_nlte_levels_total;
+-    n->nlte_to_global_level = (int *)malloc(
+-        (size_t)n->n_nlte_levels_total * sizeof(int));
+-    n->global_to_nlte_level = (int *)malloc((size_t)a->n_levels * sizeof(int));
+-    n->nlte_line_map = (int *)malloc((size_t)a->n_lines * sizeof(int));
+-    n->nlte_level_populations = (double *)calloc(
+-        (size_t)n->n_nlte_levels_total * p->n_shells, sizeof(double));
+-    n->fl_to_super = (int *)malloc(
+-        (size_t)n->n_nlte_levels_total * sizeof(int));
+-    n->super_anchor_global = (int *)malloc(
+-        (size_t)(n->n_super_total > 0 ? n->n_super_total : 1) * sizeof(int));
+-    n->within_sl_frac = (double *)malloc(
+-        (size_t)n->n_nlte_levels_total * p->n_shells * sizeof(double));
+-    if (!n->nlte_to_global_level || !n->global_to_nlte_level ||
+-        !n->nlte_line_map || !n->nlte_level_populations || !n->fl_to_super ||
+-        !n->super_anchor_global || !n->within_sl_frac) {
+-        v->active = 1;
+-        ew_private_view_free(v);
++    n->nlte_to_global_level = NULL;
++    n->global_to_nlte_level = NULL;
++    n->nlte_line_map = NULL;
++    n->nlte_level_populations = NULL;
++    n->fl_to_super = NULL;
++    n->super_anchor_global = NULL;
++    n->within_sl_frac = NULL;
++    if (nlte_build_projection(n, a, opacity, p->n_shells,
++                              ew_view_Z, ew_view_stage, NLTE_EW_IONS, 1,
++                              NULL) != 0)
+         return -1;
+-    }
+     v->active = 1;
+-    for (int gl = 0; gl < a->n_levels; gl++) n->global_to_nlte_level[gl] = -1;
+-    for (int sl = 0; sl < n->n_super_total; sl++)
+-        n->super_anchor_global[sl] = -1;
+-    int cursor[NLTE_MAX_IONS] = {0};
++    /* Projection topology is shared; only the shadow population seed is
++     * private-lane work. */
+     for (int gl = 0; gl < a->n_levels; gl++) {
+-        for (int i = 0; i < n->n_nlte_ions; i++) {
+-            if (a->level_Z[gl] != n->nlte_Z[i] ||
+-                a->level_ion[gl] != n->nlte_ion[i]) continue;
+-            int g = n->nlte_ion_level_offset[i] + cursor[i]++;
+-            int sl = n->nlte_ion_super_offset[i] + a->level_super[gl];
+-            n->nlte_to_global_level[g] = gl;
+-            n->global_to_nlte_level[gl] = g;
+-            n->fl_to_super[g] = sl;
+-            int old = n->super_anchor_global[sl];
+-            if (old < 0 || a->level_energy_eV[gl] < a->level_energy_eV[old])
+-                n->super_anchor_global[sl] = gl;
+-            int src_g = src->global_to_nlte_level ?
+-                        src->global_to_nlte_level[gl] : -1;
+-            if (src_g >= 0)
+-                for (int s = 0; s < p->n_shells; s++)
+-                    n->nlte_level_populations[(size_t)g * p->n_shells + s] =
+-                        src->nlte_level_populations[(size_t)src_g * p->n_shells + s];
+-            break;
+-        }
+-    }
+-    for (int line = 0; line < a->n_lines; line++) {
+-        n->nlte_line_map[line] = -1;
+-        for (int i = 0; i < n->n_nlte_ions; i++)
+-            if (a->line_atomic_number[line] == n->nlte_Z[i] &&
+-                a->line_ion_number[line] == n->nlte_ion[i]) {
+-                n->nlte_line_map[line] = i;
+-                break;
+-            }
++        int g = n->global_to_nlte_level[gl];
++        int src_g = src->global_to_nlte_level ?
++                    src->global_to_nlte_level[gl] : -1;
++        if (g >= 0 && src_g >= 0)
++            for (int s = 0; s < p->n_shells; s++)
++                n->nlte_level_populations[(size_t)g * p->n_shells + s] =
++                    src->nlte_level_populations[(size_t)src_g * p->n_shells + s];
+     }
+-    for (size_t k = 0;
+-         k < (size_t)n->n_nlte_levels_total * p->n_shells; k++)
+-        n->within_sl_frac[k] = 1.0;
+     nlte_precompute_within_sl_frac(n, a, p, p->n_shells);
+     return 0;
+ }
+@@ -1393,7 +1342,7 @@ static int ew_run_impl(NLTEConfig *nlte, AtomicData *atom,
+     EWPrivateView private_view;
+     memset(&private_view, 0, sizeof(private_view));
+     if (!commit_requested) {
+-        if (ew_private_view_init(&private_view, nlte, atom, plasma)) {
++        if (ew_private_view_init(&private_view, nlte, atom, plasma, opacity)) {
+             fprintf(stderr,
+                     "[EW][OOM] Z=%d s=%d private shadow index view failed\n",
+                     Z, shell_label);

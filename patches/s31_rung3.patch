@@ -1,0 +1,474 @@
+--- a/src/lumina_cmf_field.h
++++ b/src/lumina_cmf_field.h
+@@ -82,6 +82,7 @@
+     int compute_hk;
+     int store_intensity;
+     int frequency_advection;
++    int radial_characteristic;
+ } LCMFOptions;
+ 
+ typedef struct {
+--- a/src/lumina_cmf_field.c
++++ b/src/lumina_cmf_field.c
+@@ -11,6 +11,7 @@
+ #define LCMF_LOG_GRID_RTOL 1.0e-12
+ #define LCMF_FROZEN_VERSION 1u
+ #define LCMF_FROZEN_ENDIAN 0x01020304u
++#define LCMF_C_LIGHT 2.99792458e10
+ 
+ typedef struct {
+     uint32_t h[8];
+@@ -158,6 +159,12 @@
+                   options->source_rtol);
+         return LCMF_EINVAL;
+     }
++    if (options->radial_characteristic &&
++        (!options->frequency_advection || options->n_mu != 1u)) {
++        set_error(error, LCMF_EINVAL,
++                  "radial characteristic diagnostic requires advection and n_mu=1", 0, 0, 0.0);
++        return LCMF_EINVAL;
++    }
+     if ((options->r_eval == NULL && options->n_r_eval != 0u) ||
+         (options->r_eval != NULL && options->n_r_eval == 0u)) {
+         set_error(error, LCMF_EINVAL, "evaluation radii require both array and count", 0, 0, 0.0);
+@@ -605,6 +612,134 @@
+     free(intensity); path_free(&path); return status;
+ }
+ 
++static int solve_advection_ray(const LCMFInput *input, const double *eta_total,
++                               size_t evaluation_index, double target_r, double p,
++                               double *minus, double *plus, double *max_residual,
++                               LCMFError *error, size_t ray_index)
++{
++    LCMFPath path;
++    double *planes = NULL;
++    size_t plane_cells, k, node;
++    const double dx = log(input->nu[0] / input->nu[1]);
++    const double a = 1.0 / (LCMF_C_LIGHT * input->t_exp_s);
++    int status = LCMF_OK;
++    memset(&path, 0, sizeof(path));
++    status = path_build(input, target_r, p, &path);
++    if (status != LCMF_OK) return status;
++    if (input->nnu < 3u || checked_product(path.count, input->nnu, &plane_cells) != LCMF_OK) {
++        path_free(&path);
++        return input->nnu < 3u ? LCMF_EGRID : LCMF_ENOMEM;
++    }
++    planes = (double *)checked_calloc(plane_cells, sizeof(double));
++    if (planes == NULL) { path_free(&path); return LCMF_ENOMEM; }
++    for (k = 0u; k < input->nnu; ++k) {
++        double *current = planes + k * path.count;
++        status = boundary_value(input, k, p, 0, &current[0]);
++        if (status != LCMF_OK) goto done;
++        for (node = 1u; node < path.count; ++node) {
++            const double zu = path.z[node - 1u];
++            const double zd = path.z[node];
++            const double ds = zd - zu;
++            const double midpoint_z = 0.5 * (zu + zd);
++            const double midpoint_r = sqrt(p * p + midpoint_z * midpoint_z);
++            const double h_loc = local_radial_scale(input, midpoint_r);
++            size_t sub, n_sub;
++            if (path.has_core && node == path.outward_start) {
++                status = boundary_value(input, k, p, 1, &current[node]);
++                if (status != LCMF_OK) goto done;
++                continue;
++            }
++            if (!isfinite(ds) || !(ds > 0.0) || !isfinite(h_loc) || !(h_loc > 0.0) ||
++                ds / h_loc > (double)SIZE_MAX) {
++                set_error(error, LCMF_EGRID, "invalid advection SC subcycling scale",
++                          evaluation_index, k, ds);
++                error->ray_index = ray_index;
++                error->segment_index = node - 1u;
++                status = LCMF_EGRID;
++                goto done;
++            }
++            n_sub = (size_t)ceil(ds / h_loc);
++            if (n_sub < 1u) n_sub = 1u;
++            current[node] = current[node - 1u];
++            for (sub = 0u; sub < n_sub; ++sub) {
++                const double fu = (double)sub / (double)n_sub;
++                const double fd = (double)(sub + 1u) / (double)n_sub;
++                const double sub_zu = zu + ds * fu;
++                const double sub_zd = zu + ds * fd;
++                const double sub_ds = sub_zd - sub_zu;
++                const double ru = sqrt(p * p + sub_zu * sub_zu);
++                const double rd = sqrt(p * p + sub_zd * sub_zd);
++                double chi_u, chi_d, eta_u, eta_d, residual, next;
++                status = radial_value(input, input->chi_total, ru, k, "chi", &chi_u, error);
++                if (status == LCMF_OK) {
++                    status = radial_value(input, input->chi_total, rd, k, "chi", &chi_d, error);
++                }
++                if (status == LCMF_OK) {
++                    status = radial_value(input, eta_total, ru, k, "eta", &eta_u, error);
++                }
++                if (status == LCMF_OK) {
++                    status = radial_value(input, eta_total, rd, k, "eta", &eta_d, error);
++                }
++                if (status != LCMF_OK) {
++                    error->ray_index = ray_index;
++                    error->segment_index = node - 1u;
++                    goto done;
++                }
++                if (k == 1u) {
++                    const double *previous = planes + (k - 1u) * path.count;
++                    const double previous_u = previous[node - 1u] + fu * (previous[node] - previous[node - 1u]);
++                    const double previous_d = previous[node - 1u] + fd * (previous[node] - previous[node - 1u]);
++                    chi_u += 3.0 * a + a / dx;
++                    chi_d += 3.0 * a + a / dx;
++                    eta_u += (a / dx) * previous_u;
++                    eta_d += (a / dx) * previous_d;
++                } else if (k >= 2u) {
++                    const double *previous = planes + (k - 1u) * path.count;
++                    const double *previous2 = planes + (k - 2u) * path.count;
++                    const double previous_u = previous[node - 1u] + fu * (previous[node] - previous[node - 1u]);
++                    const double previous_d = previous[node - 1u] + fd * (previous[node] - previous[node - 1u]);
++                    const double previous2_u = previous2[node - 1u] + fu * (previous2[node] - previous2[node - 1u]);
++                    const double previous2_d = previous2[node - 1u] + fd * (previous2[node] - previous2[node - 1u]);
++                    chi_u += 3.0 * a + 1.5 * a / dx;
++                    chi_d += 3.0 * a + 1.5 * a / dx;
++                    eta_u += (2.0 * a / dx) * previous_u - (0.5 * a / dx) * previous2_u;
++                    eta_d += (2.0 * a / dx) * previous_d - (0.5 * a / dx) * previous2_d;
++                }
++                if (!isfinite(eta_u) || !isfinite(eta_d) || eta_u < 0.0 || eta_d < 0.0) {
++                    const double bad = (!isfinite(eta_u) || eta_u < 0.0) ? eta_u : eta_d;
++                    status = isfinite(bad) ? LCMF_ENEGATIVE : LCMF_ENONFINITE;
++                    set_error(error, status, "BDF effective emissivity failed closed",
++                              evaluation_index, k, bad);
++                    error->ray_index = ray_index;
++                    error->segment_index = node - 1u;
++                    if (k > 0u) error->term_previous = planes[(k - 1u) * path.count + node];
++                    if (k > 1u) error->term_previous2 = planes[(k - 2u) * path.count + node];
++                    goto done;
++                }
++                status = sc_step(current[node], chi_u, chi_d, eta_u, eta_d, sub_ds, &next);
++                if (status != LCMF_OK) {
++                    set_error(error, status, "advection SC substep failed",
++                              evaluation_index, k, current[node]);
++                    error->ray_index = ray_index;
++                    error->segment_index = node - 1u;
++                    goto done;
++                }
++                status = segment_residual(current[node], chi_u, chi_d, eta_u, eta_d,
++                                          sub_ds, &residual);
++                if (status != LCMF_OK) goto done;
++                if (residual > *max_residual) *max_residual = residual;
++                current[node] = next;
++            }
++        }
++        minus[k] = current[path.minus_target];
++        plus[k] = current[path.plus_target];
++    }
++done:
++    free(planes);
++    path_free(&path);
++    return status;
++}
++
+ static int allocate_result(const LCMFInput *input, const LCMFOptions *options,
+                            LCMFResult *result)
+ {
+@@ -647,10 +782,6 @@
+     memset(result, 0, sizeof(*result));
+     status = lumina_cmf_validate_input(input, options, &result->error);
+     if (status != LCMF_OK) return status;
+-    if (options->frequency_advection) {
+-        set_error(&result->error,LCMF_EUNSUPPORTED,"frequency advection is enabled by the KA3 rung",0,0,0.0);
+-        return LCMF_EUNSUPPORTED;
+-    }
+     if (input->scatter_mode==LCMF_SCAT_COHERENT && input->chi_coherent!=NULL) {
+         for (i=0;i<input->nr*input->nnu;++i) {
+             if (input->chi_coherent[i]>0.0) {
+@@ -669,21 +800,54 @@
+                               : options->r_eval[i];
+         status=lumina_cmf_ray_cache_build_at_radius(target_r,options->n_mu,&cache,&result->error);
+         if (status!=LCMF_OK) { release_result_arrays(result); return status; }
++        if (options->radial_characteristic) {
++            cache.mu[0] = 1.0;
++            cache.weight[0] = 1.0;
++            cache.p[0] = 0.0;
++        }
+         for (m=0;m<options->n_mu;++m) {
+-            for (k=0;k<input->nnu;++k) {
+-                double minus,plus;
+-                const size_t q=i*input->nnu+k;
+-                const size_t iq=(i*options->n_mu+m)*input->nnu+k;
+-                status=solve_static_ray(input,input->eta_fixed,i,target_r,cache.p[m],k,&minus,&plus,
+-                                        &result->transport_resid_linf,&result->error,
+-                                        i*options->n_mu+m);
+-                if (status!=LCMF_OK) {
++            double *minus_plane = NULL;
++            double *plus_plane = NULL;
++            if (options->frequency_advection) {
++                minus_plane = (double *)checked_calloc(input->nnu, sizeof(double));
++                plus_plane = (double *)checked_calloc(input->nnu, sizeof(double));
++                if (minus_plane == NULL || plus_plane == NULL) {
++                    free(minus_plane); free(plus_plane);
++                    lumina_cmf_ray_cache_free(&cache);
++                    release_result_arrays(result);
++                    return LCMF_ENOMEM;
++                }
++                status = solve_advection_ray(input, input->eta_fixed, i, target_r, cache.p[m],
++                                              minus_plane, plus_plane,
++                                              &result->transport_resid_linf, &result->error,
++                                              i * options->n_mu + m);
++                if (status != LCMF_OK) {
+                     if (status == LCMF_ENEGATIVE) ++result->negative_count;
+                     if (status == LCMF_ENONFINITE) ++result->nonfinite_count;
++                    free(minus_plane); free(plus_plane);
+                     lumina_cmf_ray_cache_free(&cache);
+                     release_result_arrays(result);
+                     return status;
+                 }
++            }
++            for (k=0;k<input->nnu;++k) {
++                double minus,plus;
++                const size_t q=i*input->nnu+k;
++                const size_t iq=(i*options->n_mu+m)*input->nnu+k;
++                if (options->frequency_advection) {
++                    minus = minus_plane[k]; plus = plus_plane[k];
++                } else {
++                    status=solve_static_ray(input,input->eta_fixed,i,target_r,cache.p[m],k,&minus,&plus,
++                                            &result->transport_resid_linf,&result->error,
++                                            i*options->n_mu+m);
++                    if (status!=LCMF_OK) {
++                        if (status == LCMF_ENEGATIVE) ++result->negative_count;
++                        if (status == LCMF_ENONFINITE) ++result->nonfinite_count;
++                        lumina_cmf_ray_cache_free(&cache);
++                        release_result_arrays(result);
++                        return status;
++                    }
++                }
+                 result->J[q] += 0.5*cache.weight[m]*(plus+minus);
+                 if (options->compute_hk) {
+                     result->H[q] += 0.5*cache.weight[m]*cache.mu[m]*(plus-minus);
+@@ -693,6 +857,7 @@
+                     result->I_minus[iq]=minus; result->I_plus[iq]=plus;
+                 }
+             }
++            free(minus_plane); free(plus_plane);
+         }
+         lumina_cmf_ray_cache_free(&cache);
+     }
+--- a/scripts/stage31_cmf_ka_driver.c
++++ b/scripts/stage31_cmf_ka_driver.c
+@@ -6,6 +6,25 @@
+ #include <stdlib.h>
+ #include <string.h>
+ 
++#define KA3_C_LIGHT 2.99792458e10
++#define KA3_SIGMA_X 0.04
++
++typedef struct {
++    double x0;
++    double dx;
++} GaussianBoundary;
++
++static double gaussian_cell_average(void *opaque, double p, double mu, double nu)
++{
++    const GaussianBoundary *context = (const GaussianBoundary *)opaque;
++    const double x = log(nu);
++    const double root_two_sigma = sqrt(2.0) * KA3_SIGMA_X;
++    const double high = (x + 0.5 * context->dx - context->x0) / root_two_sigma;
++    const double low = (x - 0.5 * context->dx - context->x0) / root_two_sigma;
++    (void)p; (void)mu;
++    return KA3_SIGMA_X * sqrt(0.5 * 3.141592653589793238462643383279502884)
++           * (erf(high) - erf(low)) / context->dx;
++}
+ 
+ static int parse_size(const char *text, size_t *value)
+ {
+@@ -70,13 +89,84 @@
+     lumina_cmf_result_free(&result); free(edge); free(chi); free(eta); return status;
+ }
+ 
++static int run_ka3(size_t ns, size_t nnu, const char *path)
++{
++    const double inner = 1.0e10;
++    const double outer = 2.0e10;
++    const double shift = 0.1;
++    const double x0 = 0.0;
++    const double x_high = x0 + 8.0 * KA3_SIGMA_X;
++    const double x_low = x0 - shift - 8.0 * KA3_SIGMA_X;
++    const double dx = (x_high - x_low) / (double)(nnu - 1u);
++    const double target_r[1] = {outer};
++    double *edge = NULL, *nu = NULL, *chi = NULL, *eta = NULL;
++    LCMFInput input; LCMFOptions options; LCMFResult result;
++    GaussianBoundary boundary = {x0, dx};
++    FILE *stream = NULL;
++    size_t cells, i, k;
++    int status = LCMF_OK;
++    if (ns < 2u || nnu < 3u || ns > SIZE_MAX / nnu) return LCMF_EINVAL;
++    cells = ns * nnu;
++    memset(&result, 0, sizeof(result));
++    edge = (double *)calloc(ns + 1u, sizeof(double));
++    nu = (double *)calloc(nnu, sizeof(double));
++    chi = (double *)calloc(cells, sizeof(double));
++    eta = (double *)calloc(cells, sizeof(double));
++    if (edge == NULL || nu == NULL || chi == NULL || eta == NULL) {
++        status = LCMF_ENOMEM; goto done;
++    }
++    for (i = 0u; i <= ns; ++i) edge[i] = inner + (outer - inner) * (double)i / (double)ns;
++    for (k = 0u; k < nnu; ++k) nu[k] = exp(x_high - dx * (double)k);
++    memset(&input, 0, sizeof(input)); memset(&options, 0, sizeof(options));
++    input.nr = ns; input.nnu = nnu; input.r_edge = edge; input.nu = nu;
++    input.chi_total = chi; input.eta_fixed = eta;
++    input.t_exp_s = (outer - inner) / (KA3_C_LIGHT * shift);
++    input.inner_bc = LCMF_BC_IRRADIATION; input.scatter_mode = LCMF_SCAT_NONE;
++    input.inner_irradiation = gaussian_cell_average; input.boundary_ctx = &boundary;
++    options.n_mu = 1u; options.n_r_eval = 1u; options.r_eval = target_r;
++    options.max_source_iter = 1u; options.source_rtol = 1.0e-12;
++    options.store_intensity = 1; options.frequency_advection = 1;
++    options.radial_characteristic = 1;
++    status = lumina_cmf_field_solve(&input, &options, &result);
++    if (status != LCMF_OK) {
++        fprintf(stderr, "KA3 solve: %s: %s ir=%zu inu=%zu ray=%zu segment=%zu value=%.17g prev=%.17g prev2=%.17g\n",
++                lumina_cmf_status_string(status), result.error.message,
++                result.error.radial_index, result.error.frequency_index,
++                result.error.ray_index, result.error.segment_index, result.error.value,
++                result.error.term_previous, result.error.term_previous2);
++        goto done;
++    }
++    stream = fopen(path, "wb"); if (stream == NULL) { status = LCMF_EIO; goto done; }
++    (void)fprintf(stream, "# ns=%zu nnu=%zu A=%.17g dx=%.17g residual=%.17g clamp=%llu negative=%llu nonfinite=%llu\n",
++                  ns, nnu, shift, dx, result.transport_resid_linf,
++                  (unsigned long long)result.clamp_count,
++                  (unsigned long long)result.negative_count,
++                  (unsigned long long)result.nonfinite_count);
++    (void)fprintf(stream, "k\tx\tnu\tIin\tIout\n");
++    for (k = 0u; k < nnu; ++k) {
++        (void)fprintf(stream, "%zu\t%.17g\t%.17g\t%.17g\t%.17g\n",
++                      k, log(nu[k]), nu[k], gaussian_cell_average(&boundary, 0.0, 1.0, nu[k]),
++                      result.I_plus[k]);
++    }
++done:
++    if (stream != NULL && fclose(stream) != 0 && status == LCMF_OK) status = LCMF_EIO;
++    lumina_cmf_result_free(&result);
++    free(edge); free(nu); free(chi); free(eta);
++    return status;
++}
+ 
+ int main(int argc, char **argv)
+ {
+     size_t nr,nmu; double parameter; int status;
++    if (argc == 5 && strcmp(argv[1], "ka3") == 0 && parse_size(argv[2], &nr) &&
++        parse_size(argv[3], &nmu)) {
++        status = run_ka3(nr, nmu, argv[4]);
++        if (status != LCMF_OK) { fprintf(stderr,"driver failed: %s\n",lumina_cmf_status_string(status)); return 1; }
++        return 0;
++    }
+     if (argc!=6 || strcmp(argv[1],"ka1")!=0 || !parse_size(argv[2],&nr) ||
+         !parse_size(argv[3],&nmu) || !parse_double(argv[4],&parameter)) {
+-        fprintf(stderr,"usage: %s ka1 NR NMU TAU_RADIUS OUTPUT.tsv\n",argv[0]); return 2;
++        fprintf(stderr,"usage: %s ka1 NR NMU TAU_RADIUS OUTPUT.tsv | ka3 NS NNU OUTPUT.tsv\n",argv[0]); return 2;
+     }
+     status=run_ka1(nr,nmu,parameter,argv[5]);
+     if (status!=LCMF_OK) { fprintf(stderr,"driver failed: %s\n",lumina_cmf_status_string(status)); return 1; }
+--- a/scripts/run_stage31_cmf_ka.py
++++ b/scripts/run_stage31_cmf_ka.py
+@@ -15,6 +15,7 @@
+ 
+ ROOT = pathlib.Path(__file__).resolve().parents[1]
+ GRIDS_KA1 = ((128, 32), (256, 64), (512, 128))
++GRIDS_KA3 = ((32, 128), (64, 256), (128, 512))
+ TAU_CASES = (1.0e-3, 1.0, 100.0)
+ PREDICTED_P_WINDOWS = {
+     1.0e-3: (1.90, 2.06),
+@@ -139,18 +140,97 @@
+             "status": "PASS" if overall else "FAIL"}
+ 
+ 
++def gaussian_cell_average(x: float, dx: float, center: float) -> float:
++    sigma = 0.04
++    root_two_sigma = math.sqrt(2.0) * sigma
++    high = (x + 0.5 * dx - center) / root_two_sigma
++    low = (x - 0.5 * dx - center) / root_two_sigma
++    return sigma * math.sqrt(math.pi / 2.0) * (math.erf(high) - math.erf(low)) / dx
++
++
++def profile_metrics(rows: list[dict[str, float]], metadata: dict[str, float]) -> dict[str, float]:
++    shift = metadata["A"]
++    dx = metadata["dx"]
++    x = [row["x"] for row in rows]
++    incoming = [row["Iin"] for row in rows]
++    output = [row["Iout"] for row in rows]
++    exact = [math.exp(-3.0 * shift) * gaussian_cell_average(value, dx, -shift) for value in x]
++    l1 = math.fsum(abs(a - b) for a, b in zip(output, exact)) / math.fsum(abs(b) for b in exact)
++    l2 = relative_l2(output, exact)
++    input_area = dx * math.fsum(incoming)
++    output_area = dx * math.fsum(output)
++    centroid_in = math.fsum(a * b for a, b in zip(x, incoming)) / math.fsum(incoming)
++    centroid_out = math.fsum(a * b for a, b in zip(x, output)) / math.fsum(output)
++    return {
++        "profile_relative_l1": l1,
++        "profile_relative_l2": l2,
++        "centroid_shift_error": abs((centroid_out - centroid_in) + shift),
++        "invariant_area_relative_error": abs(math.exp(3.0 * shift) * output_area - input_area) / input_area,
++        "blue_boundary_fraction": max(incoming[0], output[0]),
++        "red_boundary_fraction": max(incoming[-1], output[-1]),
++    }
++
++
++def run_ka3(executable: pathlib.Path, work: pathlib.Path) -> dict:
++    levels: list[dict] = []
++    for ns, nnu in GRIDS_KA3:
++        table = work / f"ka3_{ns}_{nnu}.tsv"
++        completed = subprocess.run([str(executable), "ka3", str(ns), str(nnu), str(table)],
++                                   cwd=ROOT, text=True, capture_output=True)
++        if completed.returncode != 0:
++            levels.append({
++                "grid": {"ns": ns, "nnu": nnu},
++                "status": "FAIL",
++                "exit_code": completed.returncode,
++                "stderr": completed.stderr.strip(),
++                "failure_class": "BDF2_NEGATIVE_EFFECTIVE_EMISSIVITY"
++                    if "BDF effective emissivity failed closed" in completed.stderr
++                    else "DRIVER_FAILURE",
++            })
++            return {
++                "ka": "KA3", "grids": GRIDS_KA3, "seed": None,
++                "excluded_cells": 0, "levels": levels,
++                "remaining_levels_status": "NOT RUN after first failed grid",
++                "acceptance_unchanged": True, "status": "FAIL",
++            }
++        metadata, rows = read_table(table)
++        metrics = profile_metrics(rows, metadata)
++        metrics.update({
++            "grid": {"ns": ns, "nnu": nnu},
++            "transport_residual": metadata["residual"],
++            "clamp_count": int(metadata["clamp"]),
++            "negative_count": int(metadata["negative"]),
++            "nonfinite_count": int(metadata["nonfinite"]),
++            "status": "PENDING_RICHARDSON",
++        })
++        levels.append(metrics)
++    p_obs = math.log2(levels[1]["profile_relative_l2"] / levels[2]["profile_relative_l2"])
++    finest = levels[-1]
++    passed = (finest["profile_relative_l1"] <= 1.0e-4
++              and finest["profile_relative_l2"] <= 1.0e-4
++              and finest["centroid_shift_error"] <= 1.0e-4
++              and finest["invariant_area_relative_error"] <= 1.0e-4
++              and 1.8 <= p_obs <= 2.2
++              and finest["transport_residual"] <= 1.0e-4
++              and finest["blue_boundary_fraction"] < 1.0e-12
++              and finest["red_boundary_fraction"] < 1.0e-12
++              and finest["clamp_count"] == finest["negative_count"] == finest["nonfinite_count"] == 0)
++    for level in levels: level["status"] = "PASS" if passed else "FAIL"
++    return {"ka": "KA3", "grids": GRIDS_KA3, "seed": None, "excluded_cells": 0,
++            "levels": levels, "p_obs_profile_l2": p_obs,
++            "acceptance_unchanged": True, "status": "PASS" if passed else "FAIL"}
+ 
+ 
+ def main() -> int:
+     parser = argparse.ArgumentParser()
+-    parser.add_argument("--ka", choices=("ka1",), default="ka1")
++    parser.add_argument("--ka", choices=("ka1", "ka3"), default="ka1")
+     parser.add_argument("--work", type=pathlib.Path, default=pathlib.Path("/tmp/stage31_ka"))
+     parser.add_argument("--output", type=pathlib.Path)
+     args = parser.parse_args()
+     args.work.mkdir(parents=True, exist_ok=True)
+     executable = args.work / "stage31_cmf_ka_driver"
+     compile_driver(executable)
+-    report = run_ka1(executable, args.work)
++    report = run_ka1(executable, args.work) if args.ka == "ka1" else run_ka3(executable, args.work)
+     rendered = json.dumps(report, indent=2, sort_keys=True)
+     if args.output:
+         args.output.parent.mkdir(parents=True, exist_ok=True)

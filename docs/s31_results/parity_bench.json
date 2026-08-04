@@ -1,0 +1,8 @@
+{
+  "band_rows": 0,
+  "c1_c2_eta_reconstruction": "FORBIDDEN",
+  "gamma_rows": 0,
+  "model_or_gpu_run": false,
+  "reason": "authoritative parity59 total chi_nu and eta_nu capture is absent",
+  "status": "UNRESOLVED-INPUT-1"
+}

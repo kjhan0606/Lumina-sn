@@ -1,0 +1,31 @@
+E5 expected changeset (apply atop E4 from repository root, in order)
+
+1. e5_rung1_b2_assembler.patch
+   M src/lumina_cmfgen.h
+   M src/lumina_cmfgen.c
+   Adds the B2 controlled-retention policy, retained census, and exact
+   pre-EPAY undefined A-emissivity projections by frequency bin and shell.
+
+2. e5_rung2_triple_gate.patch
+   M src/lumina_cuda.cu
+   Extends LUMINA_EMISS_AB_DUMP from A/B to A/B/B2, with common-state and
+   bitwise non-emissivity coordinate guards.
+
+3. e5_rung3_fixture_capture.patch
+   M Makefile
+   M tests/emiss_ab_insitu_fixture.c
+   M scripts/sbatch_emiss_ab_capture.sh
+   Adds B2 identity/ledger assertions and driver-only recapture checks.
+
+4. e5_rung4_offline_judge.patch
+   M scripts/emiss_ab_insitu_e4.py
+   Adds fail-closed A/B/B2 validation, independent lane solves, partial
+   UNRESOLVED output, six-band comparisons, and three-lane Gamma replay.
+
+5. e5_rung5_report.patch
+   A docs/CODEX_EMISS_E5.md
+   A patches/e5_expected_changes.txt
+   Adds the implementation/verification report and this manifest.
+
+Explicitly absent: model products, GPU-run products, new clamps/floors,
+acceptance changes, generated E5 capture numbers, and commits.

@@ -1,0 +1,567 @@
+--- a/src/lumina_cuda.cu
++++ b/src/lumina_cuda.cu
+@@ -4220,6 +4220,13 @@
+ typedef struct {
+     int on, nbins, nshells, ngroups, group_first[3], group_last[3];
+     const char *path;
++    /* [FLUOR-MATRIX N4] generation contract.  want_iter >= 0 selects the ONE
++     * iteration that may be written (mirrors LUMINA_CMF_FROZEN_CHIETA_ITER);
++     * -1 keeps the historical "every pass" behaviour but every pass now lands
++     * on its OWN generation-stamped path.  allow_overwrite must be set
++     * explicitly to re-run into a directory that already holds that
++     * generation — the default refuses instead of silently replacing it. */
++    int want_iter, allow_overwrite;
+     double numin, numax, dlognu;
+     double *matrix, *group_matrix, *input_e, *terminal_e, *outside_e;
+     unsigned long long *input_n, *shell_n, *shell_kpkt_n;
+@@ -4254,6 +4261,21 @@
+     g_fluor.on=1; g_fluor.path=path; g_fluor.nbins=nbins;
+     g_fluor.nshells=nshells; g_fluor.numin=numin;
+     g_fluor.numax=numax; g_fluor.dlognu=dlognu;
++    /* [FLUOR-MATRIX N4] iteration selection + overwrite policy. Malformed
++     * selection fails closed instead of dumping every nearby generation. */
++    g_fluor.want_iter=-1;
++    { const char *ie=getenv("LUMINA_FLUOR_MATRIX_ITER");
++      if (ie && *ie) {
++          char *end=NULL; long v=strtol(ie,&end,10);
++          if (end==ie || *end || v < 0 || v > 1000000) {
++              fprintf(stderr,"[FLUOR-MATRIX][FATAL] LUMINA_FLUOR_MATRIX_ITER "
++                      "must be a non-negative integer (got %s)\n",ie);
++              exit(EXIT_FAILURE);
++          }
++          g_fluor.want_iter=(int)v;
++      } }
++    { const char *oe=getenv("LUMINA_FLUOR_MATRIX_OVERWRITE");
++      g_fluor.allow_overwrite=(oe && atoi(oe)) ? 1 : 0; }
+     if(nshells<=5) g_fluor.ngroups=1;
+     else if(nshells<=13) g_fluor.ngroups=2;
+     else g_fluor.ngroups=3;
+@@ -4293,10 +4315,12 @@
+     CUDA_CHECK(cudaMemcpyToSymbol(d_fluor_numin,&numin,sizeof(double)));
+     CUDA_CHECK(cudaMemcpyToSymbol(d_fluor_dlognu,&dlognu,sizeof(double)));
+     int one=1; CUDA_CHECK(cudaMemcpyToSymbol(d_fluor_matrix_on,&one,sizeof(int)));
+-    printf("[FLUOR-MATRIX] armed path=%s grid=%dx%d global+%d shell-groups "
+-           "dense-device=%.2f MiB shell-ledger=%d (no event cap)\n",path,
++    printf("[FLUOR-MATRIX] armed path=%s.iter<NNN> grid=%dx%d global+%d "
++           "shell-groups dense-device=%.2f MiB shell-ledger=%d (no event cap) "
++           "iter_select=%d overwrite=%d\n",path,
+            nbins,nbins,g_fluor.ngroups,
+-           (1.0+g_fluor.ngroups)*nc*sizeof(double)/(1024.0*1024.0),nshells);
++           (1.0+g_fluor.ngroups)*nc*sizeof(double)/(1024.0*1024.0),nshells,
++           g_fluor.want_iter,g_fluor.allow_overwrite);
+ }
+ 
+ static void cuda_fluor_matrix_reset(void) {
+@@ -4329,6 +4353,36 @@
+ 
+ static int cuda_fluor_matrix_dump(int iteration) {
+     if (!g_fluor.on) return 0;
++    /* [FLUOR-MATRIX N4] one artifact per generation.  Before this guard the
++     * writer reused ONE path for every MC pass and refreshed the .sha256
++     * sidecar with it, so `sha256sum -c` stayed green while the identity of
++     * the file changed under consumers that had no iteration contract
++     * (E12/E13 read iteration 10; the file on disk ended up iteration 11).
++     * Integrity is not identity: the contract now lives in the NAME and in
++     * the header, and a pre-existing generation is never replaced silently. */
++    if (g_fluor.want_iter >= 0 && iteration != g_fluor.want_iter) {
++        printf("[FLUOR-MATRIX] iter=%d skipped (LUMINA_FLUOR_MATRIX_ITER=%d)\n",
++               iteration,g_fluor.want_iter);
++        return 0;
++    }
++    char outpath[4096];
++    int outn=snprintf(outpath,sizeof(outpath),"%s.iter%03d",g_fluor.path,
++                      iteration);
++    if (outn < 0 || (size_t)outn >= sizeof(outpath)) {
++        fprintf(stderr,"[FLUOR-MATRIX][FATAL] generation-stamped path too "
++                "long for %s\n",g_fluor.path);
++        return -1;
++    }
++    if (!g_fluor.allow_overwrite) {
++        FILE *probe=fopen(outpath,"rb");
++        if (probe) {
++            fclose(probe);
++            fprintf(stderr,"[FLUOR-MATRIX][FATAL] %s already exists; refusing "
++                    "to replace a captured generation (set "
++                    "LUMINA_FLUOR_MATRIX_OVERWRITE=1 to override)\n",outpath);
++            return -1;
++        }
++    }
+     const int nb=g_fluor.nbins, ns=g_fluor.nshells;
+     const size_t nc=(size_t)nb*nb;
+     double *matrix=(double*)malloc(nc*sizeof(double));
+@@ -4371,7 +4425,7 @@
+ #undef FGQ
+ #undef FGD
+     uint64_t nnz=0; for(size_t q=0;q<nc;q++) if(matrix[q]!=0.0) nnz++;
+-    FILE *fp=fopen(g_fluor.path,"wb"); int fail=(fp==NULL);
++    FILE *fp=fopen(outpath,"wb"); int fail=(fp==NULL);
+ #define FW(call) do { if(!fail && (call)) fail=1; } while(0)
+     const unsigned char magic[8]={'L','F','M','A','T','0','0','1'};
+     if(fp) {
+@@ -4417,13 +4471,13 @@
+     }
+ #undef FW
+     char hex[65], side[4096];
+-    int side_n=snprintf(side,sizeof(side),"%s.sha256",g_fluor.path);
+-    if(!fail && (cmfgen_sha256_file(g_fluor.path,hex)!=0 || side_n<0 ||
++    int side_n=snprintf(side,sizeof(side),"%s.sha256",outpath);
++    if(!fail && (cmfgen_sha256_file(outpath,hex)!=0 || side_n<0 ||
+                  (size_t)side_n>=sizeof(side))) fail=1;
+     if(!fail) {
+         FILE *sf=fopen(side,"w");
+         if(!sf) fail=1;
+-        else { if(fprintf(sf,"%s  %s\n",hex,g_fluor.path)<0) fail=1;
++        else { if(fprintf(sf,"%s  %s\n",hex,outpath)<0) fail=1;
+                if(fclose(sf)) fail=1; }
+     }
+     double rel=(absorbed!=0.0)?(emitted/absorbed-1.0):0.0;
+@@ -4431,7 +4485,7 @@
+            "unclassified(in=%llu,out=%llu,energy=%llu,route=%llu) kpacket=%llu "
+            "Eabs=%.17g Eemit=%.17g rel=%.17g -> %s%s\n",iteration,events,
+            classified,(unsigned long long)nnz,ui,uo,ue,ur,kpe,absorbed,emitted,rel,
+-           g_fluor.path,fail?" [WRITE-FAIL]":"");
++           outpath,fail?" [WRITE-FAIL]":"");
+     free(matrix);free(group_matrix);free(input_n);free(input_e);free(terminal_e);free(outside_e);
+     free(shell_n);free(shell_k);free(shell_abs);free(shell_emit);
+     return fail?-1:0;
+--- a/scripts/emiss_e11_fluor_matrix.py
++++ b/scripts/emiss_e11_fluor_matrix.py
+@@ -5,6 +5,16 @@
+ accumulator is dense, while this file stores only nonzero (input, output)
+ edges.  No normalization, clamp, missing-edge fill, or identity fallback is
+ performed here.
++
++GENERATION CONTRACT (N4).  A SHA-256 sidecar that is recomputed together with
++its payload proves integrity, not identity: the production writer used to
++overwrite one path every MC pass and refresh the sidecar with it, so
++`sha256sum -c` passed while E12/E13 silently consumed a different matrix
++(header iteration 11 under a file named ...iter10).  `read_fluor_matrix`
++therefore REQUIRES an explicit `expected_iteration`; the campaign contract is
++iteration 10 and any other expectation must pass `non_contract_override`,
++exactly like `cmf_chieta_check.check_artifact`.  `expected_sha256` additionally
++pins the byte identity independently of the sidecar.
+ """
+ from __future__ import annotations
+ 
+@@ -27,6 +37,10 @@
+ HEADER = struct.Struct("<8s7I3d7Q4dQ")
+ EDGE_DTYPE = np.dtype([("input_bin", "<u4"), ("output_bin", "<u4"),
+                        ("output_energy", "<f8")])
++CONTRACT_ITERATION = 10
++NON_CONTRACT_RC = 2
++CONTRACT_STATUS = "CONTRACT"
++NON_CONTRACT_STATUS = "NON-CONTRACT"
+ 
+ 
+ class FluorMatrixError(RuntimeError):
+@@ -50,6 +64,7 @@
+     group_edges: tuple[np.ndarray, ...]
+     sha256: str
+     column_closure_max_abs: float
++    contract_status: str = CONTRACT_STATUS
+ 
+ 
+ def _take(raw: bytes, offset: int, dtype: str, count: int) -> tuple[np.ndarray, int]:
+@@ -74,11 +89,30 @@
+     return measured
+ 
+ 
+-def read_fluor_matrix(path: Path, *, verify_column_closure: bool = True,
++def read_fluor_matrix(path: Path, *, expected_iteration: int,
++                       expected_sha256: str | None = None,
++                       non_contract_override: bool = False,
++                       verify_column_closure: bool = True,
+                        closure_tolerance: float = 2.0e-12) -> FluorMatrix:
++    """Read one LFMAT001 matrix under an explicit generation contract.
++
++    `expected_iteration` is keyword-only and has NO default: a consumer that
++    forgets it raises TypeError instead of silently accepting whatever
++    generation happens to be on disk.
++    """
++    deviates_from_contract = expected_iteration != CONTRACT_ITERATION
++    if deviates_from_contract and not non_contract_override:
++        raise FluorMatrixError(
++            "non-contract matrix expectation requires non_contract_override "
++            f"(expected_iteration={expected_iteration}, "
++            f"contract={CONTRACT_ITERATION})")
+     path = path.resolve()
+     raw = path.read_bytes()
+     digest = _verify_sha(path, raw)
++    if expected_sha256 is not None and digest != expected_sha256.lower():
++        raise FluorMatrixError(
++            f"matrix identity changed: expected sha256={expected_sha256}, "
++            f"measured={digest}")
+     if len(raw) < HEADER.size:
+         raise FluorMatrixError("truncated LFMAT001 header")
+     values = HEADER.unpack_from(raw)
+@@ -93,6 +127,11 @@
+             numax > numin and dlognu > 0.0 and nnz <= nb * nb and
+             0 < ngroups <= 3):
+         raise FluorMatrixError("invalid LFMAT001 dimensions/grid/nnz")
++    if int(iteration) != expected_iteration:
++        raise FluorMatrixError(
++            f"matrix generation mismatch: header iteration={int(iteration)}, "
++            f"expected {expected_iteration} (the SHA-256 sidecar is "
++            "recomputed with the payload and cannot detect this)")
+     offset = HEADER.size
+     input_count, offset = _take(raw, offset, "<u8", nb)
+     input_energy, offset = _take(raw, offset, "<f8", nb)
+@@ -197,7 +236,9 @@
+                        terminal_energy, outside_energy, shell_count,
+                        shell_kpacket_count, shell_absorbed, shell_reemitted,
+                        edges, tuple(group_ranges), tuple(group_edges), digest,
+-                       column_max)
++                       column_max,
++                       NON_CONTRACT_STATUS if deviates_from_contract
++                       else CONTRACT_STATUS)
+ 
+ 
+ def write_fixture_matrix(path: Path, *, nb: int, ns: int, iteration: int,
+@@ -249,20 +290,46 @@
+     Path(str(path) + ".sha256").write_text(f"{digest}  {path}\n")
+ 
+ 
++def add_matrix_contract_args(parser: argparse.ArgumentParser) -> None:
++    """Attach the shared LFMAT001 generation-contract flags to a consumer."""
++    parser.add_argument(
++        "--expected-matrix-iteration", type=int, default=CONTRACT_ITERATION,
++        help=f"consumer contract is {CONTRACT_ITERATION}; other values "
++             "require --matrix-non-contract-override")
++    parser.add_argument("--expected-matrix-sha256", type=str, default=None,
++                        help="pin the matrix byte identity independently of "
++                             "the co-updated .sha256 sidecar")
++    parser.add_argument("--matrix-non-contract-override", action="store_true",
++                        help="accept a non-contract matrix generation")
++
++
++def read_fluor_matrix_from_args(path: Path, args: argparse.Namespace,
++                                **kwargs) -> FluorMatrix:
++    return read_fluor_matrix(
++        path,
++        expected_iteration=args.expected_matrix_iteration,
++        expected_sha256=args.expected_matrix_sha256,
++        non_contract_override=args.matrix_non_contract_override,
++        **kwargs)
++
++
+ def main() -> int:
+     parser = argparse.ArgumentParser()
+     parser.add_argument("matrix", type=Path)
++    add_matrix_contract_args(parser)
+     args = parser.parse_args()
+     try:
+-        matrix = read_fluor_matrix(args.matrix)
++        matrix = read_fluor_matrix_from_args(args.matrix, args)
+         print(json.dumps({**matrix.header, "sha256": matrix.sha256,
+                           "column_closure_max_abs": matrix.column_closure_max_abs,
++                          "contract_status": matrix.contract_status,
+                           "clamp": 0, "fallback": 0},
+                          indent=2, sort_keys=True, allow_nan=False))
+-        return 0
++        return (NON_CONTRACT_RC
++                if matrix.contract_status == NON_CONTRACT_STATUS else 0)
+     except (OSError, ValueError, FluorMatrixError) as exc:
+         print(f"FAIL: {exc}")
+-        return 2
++        return 1
+ 
+ 
+ if __name__ == "__main__":
+--- a/scripts/emiss_e10_apply_redistribution.py
++++ b/scripts/emiss_e10_apply_redistribution.py
+@@ -25,7 +25,7 @@
+ from cmf_chieta_check import check_artifact  # noqa: E402
+ import stage31_cmf_field_bench as bench  # noqa: E402
+ from emiss_e11_fluor_matrix import (  # noqa: E402
+-    FluorMatrixError, read_fluor_matrix)
++    FluorMatrixError, add_matrix_contract_args, read_fluor_matrix_from_args)
+ 
+ 
+ HEADER = struct.Struct("<8sIIQQQQIId")
+@@ -85,6 +85,7 @@
+     parser.add_argument(
+         "--column-closure-tolerance", type=float, default=2.0e-13,
+         help="operator audit tolerance; E10 prefix default is unchanged")
++    add_matrix_contract_args(parser)   # [N4] formal-matrix generation contract
+     args = parser.parse_args()
+     try:
+         e9 = check_artifact(args.e9_payload.resolve())
+@@ -151,7 +152,7 @@
+ 
+         formal = None
+         if matrix_format == "formal":
+-            formal = read_fluor_matrix(args.matrix)
++            formal = read_fluor_matrix_from_args(args.matrix, args)
+             if (formal.header["n_bins"] != nnu or
+                     formal.header["n_shells"] != nr):
+                 raise E10ApplyError("formal matrix/payload dimensions differ")
+--- a/scripts/emiss_t5_rank1.py
++++ b/scripts/emiss_t5_rank1.py
+@@ -22,7 +22,8 @@
+ sys.path.insert(0, str(ROOT / "scripts"))
+ from cmf_chieta_check import check_artifact  # noqa: E402
+ from emiss_e11_fluor_matrix import (  # noqa: E402
+-    FluorMatrixError, read_fluor_matrix, write_fixture_matrix)
++    CONTRACT_ITERATION, FluorMatrixError, read_fluor_matrix,
++    write_fixture_matrix)
+ import stage31_cmf_field_bench as bench  # noqa: E402
+ 
+ 
+@@ -258,15 +259,14 @@
+ 
+ def build(args: argparse.Namespace) -> int:
+     matrix_path = args.matrix.resolve()
+-    matrix = read_fluor_matrix(matrix_path)
+-    if matrix.header["iteration"] != args.expected_iteration:
+-        raise T5Error(
+-            f"input generation changed: expected iteration={args.expected_iteration}, "
+-            f"measured={matrix.header['iteration']}")
+-    if args.expected_sha256 and matrix.sha256 != args.expected_sha256:
+-        raise T5Error(
+-            f"input generation changed: expected sha256={args.expected_sha256}, "
+-            f"measured={matrix.sha256}")
++    # [N4] the generation contract is enforced INSIDE the reader so no caller
++    # can read first and check later; deviating from the campaign contract
++    # iteration must be stated explicitly.
++    matrix = read_fluor_matrix(
++        matrix_path, expected_iteration=args.expected_iteration,
++        expected_sha256=args.expected_sha256,
++        non_contract_override=(args.expected_iteration != CONTRACT_ITERATION
++                               and args.matrix_non_contract_override))
+ 
+     nb = matrix.header["n_bins"]
+     active = np.flatnonzero(matrix.terminal_energy > 0.0)
+@@ -371,7 +371,9 @@
+             kpacket_absorbed=matrix.header["kpacket_absorbed_energy"],
+             kpacket_reemitted=matrix.header["kpacket_reemitted_energy"],
+         )
+-        checked_fixture = read_fluor_matrix(fixture)
++        checked_fixture = read_fluor_matrix(
++            fixture, expected_iteration=matrix.header["iteration"],
++            non_contract_override=True)
+         predictions, input_source_fraction = source_contract(
+             q, active, labels, widths, e9, source, args.shell, eps_mc)
+         q_band = {
+@@ -621,6 +623,9 @@
+     build_parser.add_argument("--matrix", type=Path, required=True)
+     build_parser.add_argument("--expected-iteration", type=int, required=True)
+     build_parser.add_argument("--expected-sha256")
++    build_parser.add_argument(
++        "--matrix-non-contract-override", action="store_true",
++        help=f"required when --expected-iteration != {CONTRACT_ITERATION}")
+     build_parser.add_argument("--e9-payload", type=Path, required=True)
+     build_parser.add_argument("--source-payload", type=Path, required=True)
+     build_parser.add_argument("--base-preregistration", type=Path, required=True)
+--- a/scripts/emiss_e12_diagnose.py
++++ b/scripts/emiss_e12_diagnose.py
+@@ -16,7 +16,8 @@
+ ROOT = Path(__file__).resolve().parents[1]
+ sys.path.insert(0, str(ROOT / "scripts"))
+ from cmf_chieta_check import check_artifact  # noqa: E402
+-from emiss_e11_fluor_matrix import read_fluor_matrix  # noqa: E402
++from emiss_e11_fluor_matrix import (  # noqa: E402
++    add_matrix_contract_args, read_fluor_matrix_from_args)
+ import stage31_cmf_field_bench as bench  # noqa: E402
+ 
+ 
+@@ -101,9 +102,10 @@
+     ap.add_argument("--out-dir", type=Path,
+                     default=ROOT / "validation/emiss_e12")
+     ap.add_argument("--shell", type=int, default=8)
++    add_matrix_contract_args(ap)   # [N4] matrix generation contract
+     args = ap.parse_args()
+     try:
+-        formal = read_fluor_matrix(args.formal)
++        formal = read_fluor_matrix_from_args(args.formal, args)
+         e9 = check_artifact(args.e9_payload.resolve())
+         source = check_artifact(args.source_payload.resolve())
+         prereg = json.loads(args.preregistration.read_text())
+--- a/scripts/emiss_e12_preregister.py
++++ b/scripts/emiss_e12_preregister.py
+@@ -20,7 +20,8 @@
+ ROOT = Path(__file__).resolve().parents[1]
+ sys.path.insert(0, str(ROOT / "scripts"))
+ from cmf_chieta_check import check_artifact  # noqa: E402
+-from emiss_e11_fluor_matrix import read_fluor_matrix  # noqa: E402
++from emiss_e11_fluor_matrix import (  # noqa: E402
++    add_matrix_contract_args, read_fluor_matrix_from_args)
+ import stage31_cmf_field_bench as bench  # noqa: E402
+ 
+ 
+@@ -57,16 +58,16 @@
+     parser.add_argument("--out-dir", type=Path,
+                         default=ROOT / "validation/emiss_e12")
+     parser.add_argument("--shell", type=int, default=8)
++    add_matrix_contract_args(parser)   # [N4] matrix generation contract
+     args = parser.parse_args()
+     try:
+-        matrix = read_fluor_matrix(args.matrix)
++        matrix = read_fluor_matrix_from_args(args.matrix, args)
+         e9 = check_artifact(args.e9_payload.resolve())
+         source = check_artifact(args.source_payload.resolve())
+         if e9.header != source.header:
+             raise E12PreregisterError("E9/source payload headers differ")
+         nr, nnu = int(e9.header[3]), int(e9.header[4])
+-        if (matrix.header["iteration"] != 10 or
+-                matrix.header["n_bins"] != nnu or
++        if (matrix.header["n_bins"] != nnu or
+                 matrix.header["n_shells"] != nr or
+                 not 0 <= args.shell < nr):
+             raise E12PreregisterError("iteration/dimension/shell mismatch")
+--- a/scripts/emiss_e13_index_audit.py
++++ b/scripts/emiss_e13_index_audit.py
+@@ -25,7 +25,8 @@
+ sys.path.insert(0, str(ROOT / "scripts"))
+ from cmf_chieta_check import check_artifact  # noqa: E402
+ from emiss_e11_fluor_matrix import (  # noqa: E402
+-    EDGE_DTYPE, HEADER as LFMAT_HEADER, FluorMatrix, read_fluor_matrix)
++    EDGE_DTYPE, HEADER as LFMAT_HEADER, FluorMatrix,
++    add_matrix_contract_args, read_fluor_matrix, read_fluor_matrix_from_args)
+ import stage31_cmf_field_bench as bench  # noqa: E402
+ 
+ H = 6.62607015e-27
+@@ -92,7 +93,9 @@
+     path.write_bytes(raw)
+     digest = hashlib.sha256(raw).hexdigest()
+     Path(str(path) + ".sha256").write_text(f"{digest}  {path}\n")
+-    checked = read_fluor_matrix(path)
++    checked = read_fluor_matrix(path, expected_iteration=int(h["iteration"]),
++                                expected_sha256=digest,
++                                non_contract_override=True)
+     if checked.sha256 != digest:
+         raise E13Error("mirrored LFMAT001 round-trip hash mismatch")
+     return digest
+@@ -335,9 +338,10 @@
+     parser.add_argument("--shell", type=int, default=8)
+     parser.add_argument("--out-dir", type=Path,
+                         default=ROOT / "validation/emiss_e13")
++    add_matrix_contract_args(parser)   # [N4] matrix generation contract
+     args = parser.parse_args()
+     try:
+-        matrix = read_fluor_matrix(args.matrix)
++        matrix = read_fluor_matrix_from_args(args.matrix, args)
+         chieta = check_artifact(args.chieta.resolve())
+         with args.preregistration.open() as stream:
+             prereg = json.load(stream)
+--- a/scripts/emiss_e11_seeded_fixture.py
++++ b/scripts/emiss_e11_seeded_fixture.py
+@@ -1,5 +1,6 @@
+ #!/usr/bin/env python3
+-"""Offline E11 negative control: seeded edge distortion and OFF byte identity."""
++"""Offline E11 negative control: seeded edge distortion, generation swap,
++and OFF byte identity."""
+ from __future__ import annotations
+ 
+ import argparse
+@@ -11,7 +12,8 @@
+ import numpy as np
+ 
+ from emiss_e11_fluor_matrix import (
+-    FluorMatrixError, read_fluor_matrix, write_fixture_matrix)
++    CONTRACT_ITERATION, FluorMatrixError, read_fluor_matrix,
++    write_fixture_matrix)
+ 
+ 
+ def synthetic_packet_output(seed: int, estimator_gate: str | None) -> bytes:
+@@ -55,7 +57,8 @@
+                   kpacket_events=2, kpacket_absorbed=8.0,
+                   kpacket_reemitted=8.0)
+     write_fixture_matrix(base, edges=edges, **common)
+-    good = read_fluor_matrix(base)
++    good = read_fluor_matrix(base, expected_iteration=11,
++                             non_contract_override=True)
+ 
+     factor = 7.0
+     bad_edges = [(ib, ob, energy * factor if (ib, ob) == (2, 0) else energy)
+@@ -63,12 +66,15 @@
+     write_fixture_matrix(distorted, edges=bad_edges, **common)
+     failure = ""
+     try:
+-        read_fluor_matrix(distorted)
++        read_fluor_matrix(distorted, expected_iteration=11,
++                          non_contract_override=True)
+     except FluorMatrixError as exc:
+         failure = str(exc)
+     if "input_bin=2" not in failure:
+         raise RuntimeError(f"seeded distortion was not localized: {failure}")
+-    bad = read_fluor_matrix(distorted, verify_column_closure=False)
++    bad = read_fluor_matrix(distorted, expected_iteration=11,
++                            non_contract_override=True,
++                            verify_column_closure=False)
+     good_edge = float(good.edges["output_energy"][(
+         (good.edges["input_bin"] == 2) & (good.edges["output_bin"] == 0))][0])
+     bad_edge = float(bad.edges["output_energy"][(
+@@ -96,7 +102,57 @@
+         shell_kpacket_count=np.zeros(sfull, dtype=np.uint64),
+         shell_absorbed=full_shell_energy, shell_reemitted=full_shell_energy,
+         edges=[(i, i, 1.0) for i in range(nfull)])
+-    identity_matrix = read_fluor_matrix(identity)
++    identity_matrix = read_fluor_matrix(identity, expected_iteration=11,
++                                        non_contract_override=True)
++
++    # [N4] GENERATION-SWAP negative control.  Reproduce the exact production
++    # accident: the payload is replaced in place by a different generation AND
++    # its SHA-256 sidecar is refreshed with it, so `sha256sum -c` still passes.
++    # A consumer holding the campaign contract (iteration 10) must refuse.
++    swap = args.out_dir / "formal_matrix_generation_swap.bin"
++    swap_common = dict(common)
++    swap_common["iteration"] = CONTRACT_ITERATION
++    write_fixture_matrix(swap, edges=edges, **swap_common)
++    contract_ok = read_fluor_matrix(swap, expected_iteration=CONTRACT_ITERATION)
++    sidecar = Path(str(swap) + ".sha256")
++    before = {"iteration": contract_ok.header["iteration"],
++              "sha256": contract_ok.sha256,
++              "sidecar": sidecar.read_text().split()[0]}
++    # the writer refreshes payload+sidecar together, exactly as production did
++    write_fixture_matrix(swap, edges=edges, **common)          # iteration 11
++    after_digest = hashlib.sha256(swap.read_bytes()).hexdigest()
++    sidecar_agrees = sidecar.read_text().split()[0] == after_digest
++    if not sidecar_agrees:
++        raise RuntimeError("generation-swap control did not reproduce a "
++                           "self-consistent sidecar")
++    if after_digest == before["sha256"]:
++        raise RuntimeError("generation swap did not change the payload")
++    swap_failure = ""
++    try:
++        read_fluor_matrix(swap, expected_iteration=CONTRACT_ITERATION)
++    except FluorMatrixError as exc:
++        swap_failure = str(exc)
++    if "generation mismatch" not in swap_failure:
++        raise RuntimeError(
++            f"generation swap was NOT refused by the consumer: {swap_failure}")
++    # the pinned-identity guard is independent of the sidecar and also fires
++    pin_failure = ""
++    try:
++        read_fluor_matrix(swap, expected_iteration=11,
++                          non_contract_override=True,
++                          expected_sha256=before["sha256"])
++    except FluorMatrixError as exc:
++        pin_failure = str(exc)
++    if "identity changed" not in pin_failure:
++        raise RuntimeError(f"sha pin did not fire: {pin_failure}")
++    # a non-contract expectation without the explicit override is refused too
++    override_failure = ""
++    try:
++        read_fluor_matrix(swap, expected_iteration=11)
++    except FluorMatrixError as exc:
++        override_failure = str(exc)
++    if "non_contract_override" not in override_failure:
++        raise RuntimeError(f"override guard did not fire: {override_failure}")
+ 
+     baseline_packets = synthetic_packet_output(0xE11, None)
+     off_packets = synthetic_packet_output(0xE11, "")
+@@ -112,6 +168,14 @@
+                         "factor_measured": measured_factor},
+         "negative_control_detected": True,
+         "negative_control_failure": failure,
++        "generation_swap_control": {
++            "before": before,
++            "after_sha256": after_digest,
++            "sidecar_recheck_still_passes": sidecar_agrees,
++            "consumer_refused": swap_failure,
++            "sha_pin_refused": pin_failure,
++            "override_guard_refused": override_failure,
++        },
+         "base_column_closure_max_abs": good.column_closure_max_abs,
+         "distorted_column_closure_max_abs": bad.column_closure_max_abs,
+         "off_byte_invariant": True,

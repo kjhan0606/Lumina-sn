@@ -1,0 +1,1 @@
+WRITE CMFGEN_ORACLE_CONTRACT path=/home/kjhan/BACKUP/Eunha.A1/Claude/Lumina-sn/validation/a2_00_oracle/toy06_19.48d_jnu4.manifest.json entries=362 unclassified=0 role_counts={"oracle-data":72,"oracle-metadata":145,"run-log":28,"scratch":117,"unclassified":0} generation=MIXED_GENERATION_PROVEN

@@ -1,0 +1,450 @@
+--- a/src/lumina_plasma.c
++++ b/src/lumina_plasma.c
+@@ -17122,15 +17122,14 @@
+     return 0;
+ }
+ 
+-/* ABI-compatible legacy entry.  New owner paths use the checked form above;
+- * retained external callers remain source/binary compatible. */
+-void nlte_precompute_within_sl_frac(NLTEConfig *nlte, AtomicData *atom,
+-                                    PlasmaState *plasma, int n_shells) {
+-    (void)nlte_precompute_within_sl_frac_checked(
++/* Legacy name retained, but the error is no longer explicitly discarded. */
++int nlte_precompute_within_sl_frac(NLTEConfig *nlte, AtomicData *atom,
++                                   PlasmaState *plasma, int n_shells) {
++    return nlte_precompute_within_sl_frac_checked(
+         nlte, atom, plasma, n_shells);
+ }
+ 
+-void nlte_solve_all(NLTEConfig *nlte, AtomicData *atom, PlasmaState *plasma,
++int nlte_solve_all(NLTEConfig *nlte, AtomicData *atom, PlasmaState *plasma,
+                      OpacityState *opacity, double time_explosion,
+                      int n_shells, GammaDeposition *gamma_dep) {
+     printf("  [NLTE] Solving rate equations (with CE coupling)...\n");
+@@ -17139,7 +17138,7 @@
+     if (nlte_precompute_within_sl_frac_checked(
+             nlte, atom, plasma, n_shells) != 0) {
+         fprintf(stderr, "[NLTE] solve aborted: within-SL projection unavailable\n");
+-        return;
++        return -1;
+     }
+ 
+     /* Pair layout from the centralized builder (16 base pairs, or 23 with the O
+@@ -17168,6 +17167,12 @@
+     double *old_ion_totals = (double *)calloc(n_ion_totals, sizeof(double));
+     size_t pop_size = (size_t)nlte->n_nlte_levels_total * n_shells;
+     double *old_pops = (double *)malloc(pop_size * sizeof(double));
++    if (!old_ion_totals || !old_pops) {
++        fprintf(stderr, "[NLTE][OOM] convergence state allocation failed\n");
++        free(old_ion_totals);
++        free(old_pops);
++        return -1;
++    }
+     /* Allocated only in the explicitly armed Wave-3 lane.  status is per
+      * (S/Fe,shell): 1 means the self-tested candidate may replace legacy for
+      * this CE pass; -1 means fail-closed and legacy must run. */
+@@ -17180,8 +17185,10 @@
+     int ew_on = nlte_element_wide_enabled();
+     int *ew_status = ew_on ? (int *)calloc((size_t)2 * n_shells, sizeof(int)) : NULL;
+     if (ew_on && !ew_status) {
+-        fprintf(stderr, "[EW][OOM] status allocation failed; using pair-wise baseline\n");
+-        ew_on = 0;
++        fprintf(stderr, "[EW][OOM] status allocation failed; solve aborted\n");
++        free(old_ion_totals);
++        free(old_pops);
++        return -1;
+     }
+     if (ew_on) {
+         for (int s = 0; s < n_shells; s++) {
+@@ -17192,6 +17199,13 @@
+                     gamma_dep, nlte_element_wide_commit_enabled(),
+                     &verdict_pass);
+                 ew_status[s] = rc < 0 ? -1 : verdict_pass;
++                if (rc < 0) {
++                    fprintf(stderr, "[EW] operational failure Z=16 s=%d\n", s);
++                    free(ew_status);
++                    free(old_ion_totals);
++                    free(old_pops);
++                    return -1;
++                }
+             }
+             if (nlte_element_wide_matches(26, s)) {
+                 int verdict_pass = 0;
+@@ -17200,6 +17214,13 @@
+                     gamma_dep, nlte_element_wide_commit_enabled(),
+                     &verdict_pass);
+                 ew_status[n_shells + s] = rc < 0 ? -1 : verdict_pass;
++                if (rc < 0) {
++                    fprintf(stderr, "[EW] operational failure Z=26 s=%d\n", s);
++                    free(ew_status);
++                    free(old_ion_totals);
++                    free(old_pops);
++                    return -1;
++                }
+             }
+         }
+     }
+@@ -17249,6 +17270,13 @@
+                 saved_lev_e = nlte->nlte_ion_level_offset[lo + 1];
+                 int n_save = (saved_lev_e - saved_lev_s) * n_shells;
+                 saved_lo = (double *)malloc((size_t)n_save * sizeof(double));
++                if (!saved_lo) {
++                    fprintf(stderr, "[NLTE][OOM] overlap save allocation failed\n");
++                    free(ew_status);
++                    free(old_ion_totals);
++                    free(old_pops);
++                    return -1;
++                }
+                 if (!ew_on) {
+                     memcpy(saved_lo,
+                            &nlte->nlte_level_populations[(size_t)saved_lev_s * n_shells],
+@@ -17406,7 +17434,6 @@
+         printf("    %s II shell 0: NLTE n_total=%.3e, nebular n_ion=%.3e\n",
+                names[p], sum_nlte, n_neb);
+     }
+-
+     /* [NLTE-DUMP] Per-shell, per-level population dump for UV diagnostic.
+      * Activated by env LUMINA_NLTE_LEVEL_DUMP=1. Counter increments per
+      * call so successive iterations land in distinct files. */
+@@ -17453,6 +17480,7 @@
+             }
+         }
+     }
++    return 0;
+ }
+ 
+ /* ============================================================ */
+--- a/src/lumina.h
++++ b/src/lumina.h
+@@ -971,12 +971,12 @@
+ void nlte_dump_perbin_field_csv(NLTEConfig *nlte, double time_simulation,
+                                 double *volume, double *T_e, int n_shells);
+ void nlte_apply_uv_jnu_cap(NLTEConfig *nlte, PlasmaState *plasma, int n_shells);
+-void nlte_solve_all(NLTEConfig *nlte, AtomicData *atom, PlasmaState *plasma,
++int  nlte_solve_all(NLTEConfig *nlte, AtomicData *atom, PlasmaState *plasma,
+                      OpacityState *opacity, double time_explosion,
+                      int n_shells, GammaDeposition *gamma_dep);
+ /* Refresh within-super-level Boltzmann fractions at current T_e (call before
+  * every solve on both CPU and GPU paths; see definition in lumina_plasma.c). */
+-void nlte_precompute_within_sl_frac(NLTEConfig *nlte, AtomicData *atom,
++int  nlte_precompute_within_sl_frac(NLTEConfig *nlte, AtomicData *atom,
+                                     PlasmaState *plasma, int n_shells);
+ 
+ /* Refresh per-line Sobolev optical depths + NLTE line source from the current
+--- a/src/lumina_main.c
++++ b/src/lumina_main.c
+@@ -319,11 +319,14 @@
+             if (pc_iter < 1) pc_iter = 1;
+             printf("\n=== PURE-CMFGEN deterministic radiation path "
+                    "(MC transport bypassed) ===\n");
+-            cmfgen_run(&geo, &opacity,
+-                       bf_opacity_enabled ? &bf : NULL,
+-                       &plasma, enable_nlte ? &nlte : NULL, &atom_data,
+-                       gamma_dep_enabled ? &gamma_dep : NULL,
+-                       config.T_inner, pc_iter);
++            if (cmfgen_run(&geo, &opacity,
++                           bf_opacity_enabled ? &bf : NULL,
++                           &plasma, enable_nlte ? &nlte : NULL, &atom_data,
++                           gamma_dep_enabled ? &gamma_dep : NULL,
++                           config.T_inner, pc_iter) != 0) {
++                fprintf(stderr, "[CMFGEN][FATAL] deterministic path failed\n");
++                return EXIT_FAILURE;
++            }
+ 
+             FILE *pf = fopen("lumina_plasma_state.csv", "w");
+             if (pf) {
+@@ -583,9 +586,12 @@
+             if (enable_nlte && iter >= nlte_start_iter) {
+                 nlte.current_iter = iter;
+                 nlte_normalize_j_nu(&nlte, time_simulation, volume, geo.n_shells);
+-                nlte_solve_all(&nlte, &atom_data, &plasma, &opacity,
+-                               geo.time_explosion, geo.n_shells,
+-                               gamma_dep_enabled ? &gamma_dep : NULL);
++                if (nlte_solve_all(&nlte, &atom_data, &plasma, &opacity,
++                                   geo.time_explosion, geo.n_shells,
++                                   gamma_dep_enabled ? &gamma_dep : NULL) != 0) {
++                    fprintf(stderr, "[NLTE][FATAL] solve failed at iter=%d\n", iter);
++                    return EXIT_FAILURE;
++                }
+ 
+                 /* Re-apply overlap corrections after NLTE tau update */
+                 if (overlap_corr_enabled)
+--- a/src/lumina_cuda.cu
++++ b/src/lumina_cuda.cu
+@@ -988,19 +988,22 @@
+ 
+ /* GPU NLTE master solver: assemble on CPU (OpenMP), solve on GPU (cuBLAS batched).
+  * Step 1.5: Iterative CE convergence wrapper — same logic as CPU nlte_solve_all. */
+-static void nlte_solve_all_gpu(NLTEConfig *nlte, AtomicData *atom,
++static int nlte_solve_all_gpu(NLTEConfig *nlte, AtomicData *atom,
+                                 PlasmaState *plasma, OpacityState *opacity,
+                                 double time_explosion, int n_shells,
+                                 CudaNLTESolver *sol,
+                                 GammaDeposition *gamma_dep) {
++    if (nlte_element_wide_config_status() != 0) {
++        fprintf(stderr, "[EW] invalid gate configuration; GPU solve aborted\n");
++        return -1;
++    }
+     /* Wave-3's authority is the CPU double-precision reference solver.  Even in
+      * the CUDA binary an explicitly armed element-wide run routes here and does
+      * not assemble or solve an overlapping GPU pair system. */
+     if (nlte_element_wide_enabled()) {
+         (void)sol;
+-        nlte_solve_all(nlte, atom, plasma, opacity, time_explosion,
+-                       n_shells, gamma_dep);
+-        return;
++        return nlte_solve_all(nlte, atom, plasma, opacity, time_explosion,
++                              n_shells, gamma_dep);
+     }
+     printf("  [NLTE-GPU] Solving rate equations (cuBLAS batched, with CE)...\n");
+ 
+@@ -1011,7 +1014,7 @@
+     if (nlte_precompute_within_sl_frac_checked(
+             nlte, atom, plasma, n_shells) != 0) {
+         fprintf(stderr, "[NLTE-GPU] abort: within-SL projection OOM\n");
+-        return;
++        return -1;
+     }
+ 
+     /* Pair layout from the centralized builder (16 base pairs, or 23 with the O
+@@ -1045,6 +1048,12 @@
+     double *old_ion_totals = (double *)calloc(n_ion_totals, sizeof(double));
+     size_t pop_size = (size_t)nlte->n_nlte_levels_total * n_shells;
+     double *old_pops = (double *)malloc(pop_size * sizeof(double));
++    if (!old_ion_totals || !old_pops) {
++        fprintf(stderr, "[NLTE-GPU][OOM] convergence state allocation failed\n");
++        free(old_ion_totals);
++        free(old_pops);
++        return -1;
++    }
+ 
+     /* Task #40 (A)+(B): pre-bake photoionization rates on GPU.
+      * J_nu is constant across the CE iterations, so we compute R_bf once
+@@ -1190,6 +1199,14 @@
+                 saved_lev_e = nlte->nlte_ion_level_offset[lo + 1];
+                 size_t n_save = (size_t)(saved_lev_e - saved_lev_s) * n_shells;
+                 saved_lo = (double *)malloc(n_save * sizeof(double));
++                if (!saved_lo) {
++                    fprintf(stderr,
++                            "[NLTE-GPU][OOM] overlap save allocation failed\n");
++                    if (asm_gpu_on) nlte_assemble_gpu_free();
++                    free(old_pops);
++                    free(old_ion_totals);
++                    return -1;
++                }
+                 memcpy(saved_lo,
+                        &nlte->nlte_level_populations[(size_t)saved_lev_s * n_shells],
+                        n_save * sizeof(double));
+@@ -2034,6 +2051,7 @@
+             }
+         }
+     }
++    return 0;
+ }
+ 
+ /* [FB-MULTI] re-upload the per-shell per-continuum fb edge tables (rebuilt each
+@@ -7679,10 +7697,14 @@
+                     if (enable_nlte && it >= nlte_start_iter) {
+                         nlte_apply_uv_jnu_cap(&nlte, &plasma, geo.n_shells);
+                         nlte_jbar_dump_arm(it);     /* [withParityP GATE2] bracket the authoritative per-iter solve */
+-                        nlte_solve_all_gpu(&nlte, &atom_data, &plasma, &opacity,
+-                                           geo.time_explosion, geo.n_shells,
+-                                           &nlte_solver,
+-                                           gamma_dep_enabled ? &gamma_dep : NULL);
++                        if (nlte_solve_all_gpu(
++                                &nlte, &atom_data, &plasma, &opacity,
++                                geo.time_explosion, geo.n_shells, &nlte_solver,
++                                gamma_dep_enabled ? &gamma_dep : NULL) != 0) {
++                            fprintf(stderr,
++                                    "[NLTE-GPU][FATAL] solve failed iter=%d\n", it);
++                            return EXIT_FAILURE;
++                        }
+                         nlte_jbar_dump_disarm();    /* [withParityP GATE2] */
+                     if(getenv("LUMINA_JPROBE")) printf("  [JPROBE D-postnlte] J[49,760]=%.3e ne40=%.3e Te40=%.0f\n", nlte.J_nu[(size_t)49*cs.n_bins+760], plasma.n_electron[40], plasma.T_e[40]);
+                         /* P7 (LUMINA_CMF_LINERES_JBAR=1): refresh per-line
+@@ -9167,9 +9189,14 @@
+ 
+                         /* --- resolve_ema: current (EMA/damped) field, pure equilibrium --- */
+                         clock_gettime(CLOCK_MONOTONIC, &_t0);
+-                        nlte_solve_all_gpu(&nlte, &atom_data, &plasma, &opacity,
+-                                           geo.time_explosion, geo.n_shells, &nlte_solver,
+-                                           gamma_dep_enabled ? &gamma_dep : NULL);
++                        if (nlte_solve_all_gpu(
++                                &nlte, &atom_data, &plasma, &opacity,
++                                geo.time_explosion, geo.n_shells, &nlte_solver,
++                                gamma_dep_enabled ? &gamma_dep : NULL) != 0) {
++                            fprintf(stderr,
++                                    "[NLTE-GPU][FATAL] EMA re-solve failed\n");
++                            return EXIT_FAILURE;
++                        }
+                         clock_gettime(CLOCK_MONOTONIC, &_t1);
+                         double dt_ema = (_t1.tv_sec - _t0.tv_sec) + (_t1.tv_nsec - _t0.tv_nsec) * 1e-9;
+                         lumina_write_levelpop_csv("lumina_levelpop_resolve_ema.csv",
+@@ -9187,9 +9214,14 @@
+                             g_jbar_raw_snap_n == nline && opacity.use_jbar_line) {
+                             memcpy(opacity.jbar_line, g_jbar_raw_snap, nline * sizeof(double));
+                             clock_gettime(CLOCK_MONOTONIC, &_t0);
+-                            nlte_solve_all_gpu(&nlte, &atom_data, &plasma, &opacity,
+-                                               geo.time_explosion, geo.n_shells, &nlte_solver,
+-                                               gamma_dep_enabled ? &gamma_dep : NULL);
++                            if (nlte_solve_all_gpu(
++                                    &nlte, &atom_data, &plasma, &opacity,
++                                    geo.time_explosion, geo.n_shells, &nlte_solver,
++                                    gamma_dep_enabled ? &gamma_dep : NULL) != 0) {
++                                fprintf(stderr,
++                                        "[NLTE-GPU][FATAL] raw re-solve failed\n");
++                                return EXIT_FAILURE;
++                            }
+                             clock_gettime(CLOCK_MONOTONIC, &_t1);
+                             double dt_raw = (_t1.tv_sec - _t0.tv_sec) + (_t1.tv_nsec - _t0.tv_nsec) * 1e-9;
+                             lumina_write_levelpop_csv("lumina_levelpop_resolve_raw.csv",
+@@ -9792,9 +9824,14 @@
+                     if (pop_n != npop) { free(pop_old);
+                         pop_old = (double *)malloc(npop * sizeof(double)); pop_n = npop; }
+                     memcpy(pop_old, nlte.nlte_level_populations, npop * sizeof(double));
+-                    nlte_solve_all_gpu(&nlte, &atom_data, &plasma, &opacity,
+-                        geo.time_explosion, geo.n_shells, &nlte_solver,
+-                        gamma_dep_enabled ? &gamma_dep : NULL);
++                    if (nlte_solve_all_gpu(
++                            &nlte, &atom_data, &plasma, &opacity,
++                            geo.time_explosion, geo.n_shells, &nlte_solver,
++                            gamma_dep_enabled ? &gamma_dep : NULL) != 0) {
++                        fprintf(stderr,
++                                "[NLTE-GPU][FATAL] damped population solve failed\n");
++                        return EXIT_FAILURE;
++                    }
+                     for (size_t k = 0; k < npop; k++)
+                         nlte.nlte_level_populations[k] =
+                             (1.0 - jbp_eta) * pop_old[k] +
+@@ -9960,10 +9997,14 @@
+                 cuda_download_j_nu(&dev, &nlte, geo.n_shells);
+                 nlte_normalize_j_nu(&nlte, time_simulation, volume, geo.n_shells);
+                 nlte_apply_uv_jnu_cap(&nlte, &plasma, geo.n_shells);
+-                nlte_solve_all_gpu(&nlte, &atom_data, &plasma, &opacity,
+-                                    geo.time_explosion, geo.n_shells,
+-                                    &nlte_solver,
+-                                    gamma_dep_enabled ? &gamma_dep : NULL);
++                if (nlte_solve_all_gpu(
++                        &nlte, &atom_data, &plasma, &opacity,
++                        geo.time_explosion, geo.n_shells, &nlte_solver,
++                        gamma_dep_enabled ? &gamma_dep : NULL) != 0) {
++                    fprintf(stderr,
++                            "[NLTE-GPU][FATAL] solve failed iter=%d\n", iter);
++                    return EXIT_FAILURE;
++                }
+                 /* tau_sobolev already updated inside nlte_solve_all_gpu */
+ 
+                 /* Re-apply overlap corrections after NLTE tau update */
+--- a/src/lumina_cmfgen.c
++++ b/src/lumina_cmfgen.c
+@@ -3651,13 +3651,25 @@
+                 if (pop_n != npop) { free(pop_old);
+                     pop_old = (double*)malloc(npop*sizeof(double)); pop_n = npop; }
+                 memcpy(pop_old, nlte->nlte_level_populations, npop*sizeof(double));
+-                nlte_solve_all(nlte, atom, plasma, opac, t_exp, cs.n_shells, gamma);
++                if (nlte_solve_all(nlte, atom, plasma, opac, t_exp,
++                                   cs.n_shells, gamma) != 0) {
++                    fprintf(stderr, "[CMFGEN][FATAL] NLTE solve failed iter=%d\n",
++                            iter);
++                    cmfgen_free(&cs);
++                    return -1;
++                }
+                 for (size_t k = 0; k < npop; ++k)
+                     nlte->nlte_level_populations[k] =
+                         (1.0 - jeta)*pop_old[k] + jeta*nlte->nlte_level_populations[k];
+                 nlte_update_tau_sobolev(nlte, atom, opac, t_exp, cs.n_shells);
+             } else {
+-                nlte_solve_all(nlte, atom, plasma, opac, t_exp, cs.n_shells, gamma);
++                if (nlte_solve_all(nlte, atom, plasma, opac, t_exp,
++                                   cs.n_shells, gamma) != 0) {
++                    fprintf(stderr, "[CMFGEN][FATAL] NLTE solve failed iter=%d\n",
++                            iter);
++                    cmfgen_free(&cs);
++                    return -1;
++                }
+             }
+         }
+ 
+--- a/tests/wave32_runtime_counter_wrap.c
++++ b/tests/wave32_runtime_counter_wrap.c
+@@ -35,8 +35,12 @@
+             setenv("LUMINA_TOPSTAGE_IV", "0", 1);
+         }
+         nlte_ew_runtime_counts_snapshot(before);
+-        nlte_solve_all(nlte, atom, plasma, opacity, time_explosion,
+-                       plasma->n_shells, gamma_dep);
++        if (nlte_solve_all(nlte, atom, plasma, opacity, time_explosion,
++                           plasma->n_shells, gamma_dep) != 0) {
++            free(owned_line_source);
++            if (owned_line_source) opacity->line_source_S = NULL;
++            return -1;
++        }
+         nlte_ew_runtime_counts_snapshot(after);
+         fprintf(stderr,
+                 "[W32-RUNTIME-COUNTERS] save_restore=%lu per_ion_pin=%lu "
+--- a/tests/wave32_within_sl_oom.c
++++ b/tests/wave32_within_sl_oom.c
+@@ -7,8 +7,9 @@
+ void *__real_malloc(size_t);
+ int nlte_precompute_within_sl_frac_checked(
+     NLTEConfig *, AtomicData *, PlasmaState *, int);
++static int force_oom;
+ void *__wrap_malloc(size_t n) {
+-    if (n == sizeof(double)) return NULL;
++    if (force_oom && n == sizeof(double)) return NULL;
+     return __real_malloc(n);
+ }
+ 
+@@ -21,8 +22,20 @@
+     memset(&plasma, 0, sizeof(plasma));
+     nlte.super_mode = 1;
+     nlte.n_super_total = 1;
+-    int rc = nlte_precompute_within_sl_frac_checked(
++    force_oom = 1;
++    int checked_rc = nlte_precompute_within_sl_frac_checked(
+         &nlte, &atom, &plasma, 1);
+-    printf("within_sl_oom_rc=%d\n", rc);
+-    return rc == -1 ? 0 : 1;
++    int legacy_rc = nlte_precompute_within_sl_frac(
++        &nlte, &atom, &plasma, 1);
++    int solve_rc = nlte_solve_all(
++        &nlte, &atom, &plasma, NULL, 1.0, 1, NULL);
++    force_oom = 0;
++    nlte.super_mode = 0;
++    int normal_rc = nlte_precompute_within_sl_frac(
++        &nlte, &atom, &plasma, 1);
++    printf("checked_oom_rc=%d legacy_oom_rc=%d solve_oom_rc=%d "
++           "normal_legacy_rc=%d\n",
++           checked_rc, legacy_rc, solve_rc, normal_rc);
++    return checked_rc == -1 && legacy_rc == -1 && solve_rc == -1 &&
++           normal_rc == 0 ? 0 : 1;
+ }
+--- a/selftest_nlte_assemble.c
++++ b/selftest_nlte_assemble.c
+@@ -79,7 +79,10 @@
+         }
+ 
+     /* Realistic within-SL Boltzmann fractions (the driver does this too). */
+-    nlte_precompute_within_sl_frac(&nlte, &atom, &plasma, n_shells);
++    if (nlte_precompute_within_sl_frac(&nlte, &atom, &plasma, n_shells) != 0) {
++        fprintf(stderr, "within-SL projection failed\n");
++        return 1;
++    }
+ 
+     if (nlte_assemble_gpu_init(&nlte, &atom, &opacity, n_shells) != 0) {
+         fprintf(stderr, "nlte_assemble_gpu_init failed\n"); return 1;
+--- a/test_nlte_te.c
++++ b/test_nlte_te.c
+@@ -59,7 +59,11 @@
+     nlte.enabled = 1;
+ 
+     /* === PRODUCTION solver in imposed TE === */
+-    nlte_solve_all(&nlte, &atom, &plasma, &opacity, t_exp, n_shells, NULL);
++    if (nlte_solve_all(&nlte, &atom, &plasma, &opacity,
++                       t_exp, n_shells, NULL) != 0) {
++        fprintf(stderr, "NLTE solve failed\n");
++        return 1;
++    }
+ 
+     const char *mali = getenv("LUMINA_MALI");
+     printf("\n=== NLTE TE TEST via PRODUCTION nlte_solve_all (J=B(%.0fK), MALI=%s, "

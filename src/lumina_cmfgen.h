@@ -54,6 +54,24 @@ typedef struct {
                                   mode (cooling-only closure), else chi_line_th */
     double *S_fixed;           /* (chi_abs*B + chi_line_th*S_line)/chi_tot */
     double *J;                 /* mean intensity (output) erg/s/cm^2/Hz/sr*/
+    double *eta_total_audit;   /* authoritative total emissivity snapshot for
+                                  R7 decomposition audit; populated immediately
+                                  before an armed dump, never used by transport */
+    /* Stage 3.2 Rung 1 diagnostic-only snapshots.  Allocated only when the
+     * path-valued gate is armed.  They observe, but are never consumed by,
+     * source assembly or transport. */
+    double *stage32_eta_pre_epay;          /* [ns*nb] eta_line entering EPAY */
+    double *stage32_boundary_eta;          /* [ns*nb] non-window line eta in edge bins */
+    double *stage32_line_eta;              /* [selected_line*ns] production eta_l */
+    int *stage32_line_slot;                /* [n_lines], -1 outside 600--3000 A */
+    int stage32_line_slot_n;
+    int stage32_selected_lines;
+    int stage32_source_nlte;
+    int stage32_diag_failed;
+    uint64_t stage32_field_generation;     /* independent assembly-snapshot lineage */
+    uint64_t stage32_lambda_generation;    /* formal diagonal lineage; must equal field */
+    unsigned char *stage32_epay_disposition; /* [ns*nb], written only at branch sites */
+    unsigned char *stage32_epay_evidence;  /* [ns*nb], independent branch predicate witness */
     double *lambda_star;       /* diagonal approximate Lambda operator    */
     double *tri_lo;            /* [ns*nb] tridiag Lambda off-diag L[s,s-1] (A4) */
     double *tri_up;            /* [ns*nb] tridiag Lambda off-diag L[s,s+1] (A4) */
@@ -83,6 +101,54 @@ typedef struct {
                                  and carve a P-Cygni trough. 0 = normal. */
 } CMFGENState;
 
+/* E4 in-situ emissivity A/B audit.  The B lane keeps the production opacity,
+ * continuum, binning and EPAY machinery, replacing only the pre-EPAY line
+ * emissivity with h*nu*A_ul*n_u/(4*pi*dnu).  nlte_level_populations already
+ * contains the production full-level reconstruction (including the existing
+ * within-super-level member distribution). */
+enum {
+    CMF_EMISS_UNDEF_NO_NLTE_LINE = 1U,
+    CMF_EMISS_UNDEF_UPPER_LEVEL  = 2U,
+    CMF_EMISS_UNDEF_A_UL         = 4U,
+    CMF_EMISS_UNDEF_POPULATION   = 8U
+};
+
+typedef struct {
+    uint64_t active_transition_count;
+    uint64_t defined_transition_count;
+    uint64_t undefined_transition_count;
+    uint64_t active_line_shell_count;
+    uint64_t defined_line_shell_count;
+    uint64_t undefined_line_shell_count;
+    double   a_reference_line_power;
+    double   a_reference_covered_line_power;
+    double   a_reference_undefined_line_power;
+    double   a_reference_contribution_fraction;
+    double   a_reference_undefined_contribution_fraction;
+    uint64_t retained_transition_count;
+    uint64_t retained_line_shell_count;
+    double   a_reference_retained_line_power;
+    double   a_reference_retained_contribution_fraction;
+    int      retain_undefined_a;
+    int      n_shells;
+    int      n_bins;
+    double  *undefined_a_emissivity_by_band;  /* [n_bins], sum_s eta*dnu */
+    double  *undefined_a_emissivity_by_shell; /* [n_shells], sum_b eta*dnu */
+    int      n_lines;
+    unsigned char *undefined_reason;       /* [n_lines], CMF_EMISS_UNDEF_* mask */
+    uint32_t      *undefined_shell_count;  /* [n_lines] */
+    int      seed_line;
+    int      seed_shell;
+    double   seed_factor;
+    uint64_t seed_hits;
+} CMFGENEmissABStats;
+
+typedef struct {
+    const char *lane;                /* "A-production" or "B-Aul-nu" */
+    const char *common_state_sha256; /* exact shared assembly-input digest */
+    const CMFGENEmissABStats *coverage;
+} CMFGENChietaLaneMeta;
+
 void cmf_obs_selftest(void);  /* confirmation-ladder T1 single-line P-Cygni test */
 void cmf_fsolve_selftest(const char *mode);  /* confirmation-ladder F cmf_solve_J test */
 void cmf_solve_gpu_selftest(const char *mode);  /* GPU cmf_solve_J A/B vs CPU (LUMINA_CMF_SOLVE_GPU=2) */
@@ -107,6 +173,31 @@ void cmfgen_assemble(CMFGENState *cs, const Geometry *geo,
                      const OpacityState *opac, BFOpacity *bf,
                      const PlasmaState *plasma);
 
+/* Assemble an E4/E5 direct-Aul lane.  retain_undefined_a=0 is the original B
+ * lane (undefined direct emissivity is zero); retain_undefined_a=1 is B2 and
+ * preserves the exact production A-lane contribution for undefined cells.
+ * seed_line<0 disables the negative-control injection; otherwise the selected
+ * local n_u is multiplied by seed_factor without mutating NLTE state. */
+int cmfgen_assemble_aulnu(CMFGENState *cs, const Geometry *geo,
+                          const OpacityState *opac, BFOpacity *bf,
+                          const PlasmaState *plasma, const NLTEConfig *nlte,
+                          const AtomicData *atom, int seed_line,
+                          int seed_shell, double seed_factor,
+                          int retain_undefined_a,
+                          CMFGENEmissABStats *stats);
+void cmfgen_emiss_ab_stats_free(CMFGENEmissABStats *stats);
+int cmfgen_write_emiss_ab_undefined(const CMFGENEmissABStats *stats,
+                                     const AtomicData *atom,
+                                     const char *path);
+int cmfgen_emiss_ab_state_sha256(const CMFGENState *cs,
+                                 const Geometry *geo,
+                                 const OpacityState *opac,
+                                 const BFOpacity *bf,
+                                 const PlasmaState *plasma,
+                                 const NLTEConfig *nlte,
+                                 const AtomicData *atom,
+                                 char out_hex[65]);
+
 /* Stage 1: register radioactive deposition heating [n_shells] erg/s/cm^3 so the
  * next cmfgen_assemble can inject it into S_fixed (gate LUMINA_CMF_DEP_SOURCE).
  * Pass NULL to disable. */
@@ -117,6 +208,51 @@ void cmfgen_set_deposition(const double *heating_rate, int n_shells);
  * boundary B_nu(T_inner) on core rays. */
 void cmfgen_solve_J(CMFGENState *cs, const Geometry *geo, double T_inner,
                     int n_ali_iter);
+
+/* Wave-3.2 R7 frozen coarse-field capture.  Binary v1 is written field by
+ * field in little-endian order; path.manifest.json contains the SHA-256. */
+int cmfgen_dump_frozen_chieta(const CMFGENState *cs, const Geometry *geo,
+                              int iter, int field_generation,
+                              int post_damping, const char *path);
+int cmfgen_dump_frozen_chieta_lane(const CMFGENState *cs,
+                                   const Geometry *geo, int iter,
+                                   int field_generation, int post_damping,
+                                   const char *path,
+                                   const CMFGENChietaLaneMeta *meta);
+
+/* [CMF-LINEPOP T2] population-native per-line dump for the SAME generation as
+ * the frozen chi/eta capture.  Read-only replay of the assemble line loop: it
+ * writes nothing into cs/opac/plasma and records whether it reproduced
+ * cs->chi_line BITWISE, so "same generation" is checkable rather than assumed.
+ * Selection is mandatory (LUMINA_CMF_LINEPOP_SHELLS) and oversized selections
+ * fail closed instead of truncating.  Binary LCMFLP01 v1 little-endian;
+ * path.manifest.json carries the SHA-256, the round-trip result and the EPAY
+ * disposition census.  Returns 0 on success. */
+int cmfgen_dump_line_populations(const CMFGENState *cs, const Geometry *geo,
+                                 const OpacityState *opac,
+                                 const PlasmaState *plasma,
+                                 const NLTEConfig *nlte, const AtomicData *atom,
+                                 int iter, int field_generation,
+                                 const char *path);
+
+/* Stage 3.2 Rung 1: read-only formal-operator local-response artifact.  Primary
+ * rho is (chi_es/chi_tot)*lambda_star from production arrays of one verified
+ * generation.  Per-line beta/eps0/eps_prime/eps_applied are secondary only.
+ * The manifest binds SHA-256 and both generation lineages and closes count and
+ * energy censuses by disposition. */
+int cmfgen_dump_stage32_rung1(const CMFGENState *cs, const Geometry *geo,
+                              const OpacityState *opac,
+                              const PlasmaState *plasma,
+                              int iteration,
+                              const char *path);
+/* Runtime gate wrapper used by both CPU and CUDA drivers.  Unset path is a
+ * strict no-op; an armed gate requires LUMINA_STAGE32_RUNG1_ITER. */
+int cmfgen_stage32_rung1_maybe_dump(const CMFGENState *cs,
+                                    const Geometry *geo,
+                                    const OpacityState *opac,
+                                    const PlasmaState *plasma,
+                                    int iteration,
+                                    int n_iterations);
 
 /* Copy cs->J into nlte->J_nu (same [n_shells*n_bins] layout/grid). */
 void cmfgen_write_jnu(const CMFGENState *cs, NLTEConfig *nlte);
@@ -146,6 +282,11 @@ int  cmfgen_write_spectrum(const CMFGENState *cs, const Geometry *geo,
 int  cmfgen_write_spectrum_obs(const CMFGENState *cs, const Geometry *geo,
                                double T_inner, const OpacityState *opac,
                                const double *Te, const char *path);
+
+/* Compute the lowercase SHA-256 of an existing file.  The frozen chi/eta and
+ * transport-estimator writers share this implementation so their sidecars do
+ * not depend on an external sha256sum executable. */
+int  cmfgen_sha256_file(const char *path, char hex[65]);
 
 /* Top-level env-gated driver: replaces the MC iteration loop. Iterates
  * assemble -> formal-solve -> write J_nu -> RADEQ T_e -> plasma -> bf ->

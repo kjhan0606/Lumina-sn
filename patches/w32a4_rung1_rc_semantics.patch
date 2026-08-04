@@ -1,0 +1,342 @@
+--- a/src/lumina_element_wide.c
++++ b/src/lumina_element_wide.c
+@@ -49,6 +49,7 @@
+ } EWGate;
+ 
+ static EWGate ew_gate;
++static int ew_dump_failed;
+ 
+ static int ew_env_true(const char *name) {
+     const char *v = getenv(name);
+@@ -148,6 +149,11 @@
+     return ew_gate.enabled;
+ }
+ 
++int nlte_element_wide_config_status(void) {
++    ew_parse_gate();
++    return ew_gate.requested && !ew_gate.enabled ? -1 : 0;
++}
++
+ int nlte_element_wide_layout_enabled(void) {
+     ew_parse_gate();
+     if (!ew_gate.enabled) return 0;
+@@ -261,9 +267,10 @@
+ /* Publish after nlte_solve_all has traversed the real pair-owner paths.  The
+  * earlier candidate-window values are intentionally not promoted: save/restore
+  * lives outside that window and topstage is excluded while capture is active. */
+-void nlte_ew_publish_runtime_counts(const NLTEConfig *nlte) {
++int nlte_ew_publish_runtime_counts(const NLTEConfig *nlte) {
+     ew_parse_gate();
+-    if (!nlte || !ew_gate.enabled || !ew_gate.dump) return;
++    if (!nlte || !ew_gate.enabled || !ew_gate.dump) return 0;
++    int failed = 0;
+     const int zlist[2] = {16, 26};
+     for (int zi = 0; zi < 2; zi++) {
+         int Z = zlist[zi];
+@@ -276,6 +283,7 @@
+         if (!fp) {
+             fprintf(stderr, "[EW][DUMP-FAIL] runtime append %s: %s\n",
+                     path, strerror(errno));
++            failed = 1;
+             continue;
+         }
+         fprintf(fp,
+@@ -285,8 +293,13 @@
+                 ew_runtime_counts.save_restore_calls,
+                 ew_runtime_counts.per_ion_pin_calls,
+                 ew_runtime_counts.topstage_IV_calls);
+-        fclose(fp);
++        if (fclose(fp) != 0) {
++            fprintf(stderr, "[EW][DUMP-FAIL] runtime close %s: %s\n",
++                    path, strerror(errno));
++            failed = 1;
++        }
+     }
++    return failed ? -1 : 0;
+ }
+ 
+ static void ew_capture_end(int *expected, int *mapped, int *fail, int *bad_rate,
+@@ -1476,7 +1489,10 @@
+     snprintf(path, n, "%s/lumina_ew_iter%04d_z%02d_s%03d_%s.csv",
+              ew_gate.dump_dir, iter, Z, shell, role);
+     FILE *fp = fopen(path, "w");
+-    if (!fp) fprintf(stderr, "[EW][DUMP-FAIL] %s: %s\n", path, strerror(errno));
++    if (!fp) {
++        fprintf(stderr, "[EW][DUMP-FAIL] %s: %s\n", path, strerror(errno));
++        ew_dump_failed = 1;
++    }
+     return fp;
+ }
+ 
+@@ -1640,8 +1656,12 @@
+ static int ew_run_impl(NLTEConfig *nlte, AtomicData *atom,
+                        PlasmaState *plasma, OpacityState *opacity,
+                        int Z, int shell, int shell_label, double time_explosion,
+-                       GammaDeposition *gamma_dep, int commit_requested) {
++                       GammaDeposition *gamma_dep, int commit_requested,
++                       int *verdict_pass_out) {
++    if (verdict_pass_out) *verdict_pass_out = 0;
++    if (nlte_element_wide_config_status() != 0) return -1;
+     if (!nlte_element_wide_matches(Z, shell_label)) return 0;
++    ew_dump_failed = 0;
+     EWPrivateView private_view;
+     memset(&private_view, 0, sizeof(private_view));
+     if (!commit_requested) {
+@@ -1934,6 +1954,7 @@
+     int boundary_gate_pass=boundary_max<=1e-8 && boundary_opacity<=1e-4 &&
+                            boundary_process_coverage;
+     int pass=topology_gate_pass&&numerical_gate_pass&&boundary_gate_pass;
++    if (verdict_pass_out) *verdict_pass_out = pass;
+     int commit_performed = pass && commit_requested;
+     const char *commit_blocked_by = !commit_requested ? "not_requested" :
+         (!topology_gate_pass ? "topology_gate" :
+@@ -1981,6 +2002,7 @@
+         } else {
+             fprintf(stderr, "[EW][DUMP-FAIL] append %s: %s\n",
+                     path, strerror(errno));
++            ew_dump_failed = 1;
+         }
+         if(boundary.active){
+             fp=ew_open_dump(path,sizeof(path),iter,Z,shell_label,"boundary_mass");
+@@ -2010,6 +2032,13 @@
+         }
+     }
+ 
++    if (ew_dump_failed) {
++        fprintf(stderr, "[EW][I/O-FAIL] Z=%d s=%d artifacts incomplete; commit blocked\n",
++                Z, shell_label);
++        if (verdict_pass_out) *verdict_pass_out = 0;
++        goto cleanup_fail;
++    }
++
+     fprintf(stderr,"[EW] Z=%d s=%d N=%d verdict=%s rank=%d/%d kappa=%.3e residual=%.3e targets=%d/%d\n",Z,shell_label,N,verdict,sd.rank,N,sd.kappa,se_res,coverage.targets_mapped,coverage.targets_expected);
+     if(commit_performed){
+         for(int q=0;q<3;q++){
+@@ -2034,7 +2063,10 @@
+     free(Araw);free(Anorm);free(Aeq);free(b);free(beq);free(x);free(rs);free(cs);free(solve_piv);
+     ew_boundary_mass_free(&boundary);
+     ew_private_view_free(&private_view);
+-    return pass ? 1 : -1;
++    /* A completed scientific judgment is not a process error.  EW_PASS,
++     * SCOPE_FAIL, and either gate FAIL are recorded above and all return zero;
++     * negative RC is reserved for configuration, allocation, and I/O errors. */
++    return 0;
+ 
+ cleanup_fail:
+     for(int c=0;c<NLTE_EW_N_CHANNELS;c++){
+@@ -2050,8 +2082,18 @@
+                            PlasmaState *plasma, OpacityState *opacity,
+                            int Z, int shell, double time_explosion,
+                            GammaDeposition *gamma_dep, int commit_requested) {
++    return nlte_element_wide_run_status(
++        nlte, atom, plasma, opacity, Z, shell, time_explosion,
++        gamma_dep, commit_requested, NULL);
++}
++
++int nlte_element_wide_run_status(NLTEConfig *nlte, AtomicData *atom,
++                           PlasmaState *plasma, OpacityState *opacity,
++                           int Z, int shell, double time_explosion,
++                           GammaDeposition *gamma_dep, int commit_requested,
++                           int *verdict_pass_out) {
+     return ew_run_impl(nlte,atom,plasma,opacity,Z,shell,shell,time_explosion,
+-                       gamma_dep,commit_requested);
++                       gamma_dep,commit_requested,verdict_pass_out);
+ }
+ 
+ #ifdef LUMINA_FROZEN_ORACLE
+@@ -2070,6 +2112,6 @@
+         frozen_commit = 1;
+     }
+     return ew_run_impl(nlte,atom,plasma,opacity,Z,shell_index,shell_label,
+-                       time_explosion,gamma_dep,frozen_commit);
++                       time_explosion,gamma_dep,frozen_commit,NULL);
+ }
+ #endif
+--- a/src/lumina_plasma.c
++++ b/src/lumina_plasma.c
+@@ -18,7 +18,7 @@
+ extern void nlte_ew_note_save_restore_call(void);
+ extern void nlte_ew_note_per_ion_pin_call(void);
+ extern void nlte_ew_note_topstage_IV_call(void);
+-extern void nlte_ew_publish_runtime_counts(const NLTEConfig *nlte);
++extern int nlte_ew_publish_runtime_counts(const NLTEConfig *nlte);
+ 
+ /* Production counter: unlike the frozen oracle observer this survives normal
+  * runs and records every legacy GPU table rejected because the selected bf
+@@ -17171,6 +17171,12 @@
+     /* Allocated only in the explicitly armed Wave-3 lane.  status is per
+      * (S/Fe,shell): 1 means the self-tested candidate may replace legacy for
+      * this CE pass; -1 means fail-closed and legacy must run. */
++    if (nlte_element_wide_config_status() != 0) {
++        fprintf(stderr, "[EW] invalid gate configuration; solve aborted\n");
++        free(old_ion_totals);
++        free(old_pops);
++        return -1;
++    }
+     int ew_on = nlte_element_wide_enabled();
+     int *ew_status = ew_on ? (int *)calloc((size_t)2 * n_shells, sizeof(int)) : NULL;
+     if (ew_on && !ew_status) {
+@@ -17179,14 +17185,22 @@
+     }
+     if (ew_on) {
+         for (int s = 0; s < n_shells; s++) {
+-            if (nlte_element_wide_matches(16, s))
+-                ew_status[s] = nlte_element_wide_run(
++            if (nlte_element_wide_matches(16, s)) {
++                int verdict_pass = 0;
++                int rc = nlte_element_wide_run_status(
+                     nlte, atom, plasma, opacity, 16, s, time_explosion,
+-                    gamma_dep, nlte_element_wide_commit_enabled());
+-            if (nlte_element_wide_matches(26, s))
+-                ew_status[n_shells + s] = nlte_element_wide_run(
++                    gamma_dep, nlte_element_wide_commit_enabled(),
++                    &verdict_pass);
++                ew_status[s] = rc < 0 ? -1 : verdict_pass;
++            }
++            if (nlte_element_wide_matches(26, s)) {
++                int verdict_pass = 0;
++                int rc = nlte_element_wide_run_status(
+                     nlte, atom, plasma, opacity, 26, s, time_explosion,
+-                    gamma_dep, nlte_element_wide_commit_enabled());
++                    gamma_dep, nlte_element_wide_commit_enabled(),
++                    &verdict_pass);
++                ew_status[n_shells + s] = rc < 0 ? -1 : verdict_pass;
++            }
+         }
+     }
+ 
+@@ -17354,7 +17368,11 @@
+ 
+     /* Candidate assembly has ended; these are the authoritative counts from
+      * the actual save/restore, per-ion pin and top-stage owner branches. */
+-    nlte_ew_publish_runtime_counts(nlte);
++    if (nlte_ew_publish_runtime_counts(nlte) != 0) {
++        fprintf(stderr, "[EW] runtime-manifest I/O failure; solve aborted\n");
++        free(ew_status);
++        return -1;
++    }
+ 
+     /* Print ion pair level counts */
+     for (int p = 0; p < n_pairs; p++) {
+--- a/src/lumina.h
++++ b/src/lumina.h
+@@ -926,6 +926,7 @@
+     NLTE_EW_N_CHANNELS
+ };
+ int  nlte_element_wide_enabled(void);
++int  nlte_element_wide_config_status(void);
+ int  nlte_element_wide_layout_enabled(void);
+ int  nlte_element_wide_matches(int Z, int shell);
+ int  nlte_element_wide_commit_enabled(void);
+@@ -940,6 +941,13 @@
+                            PlasmaState *plasma, OpacityState *opacity,
+                            int Z, int shell, double time_explosion,
+                            GammaDeposition *gamma_dep, int commit_requested);
++/* Operational RC is separate from the scientific verdict: zero means the
++ * verdict was recorded, while verdict_pass_out controls candidate adoption. */
++int  nlte_element_wide_run_status(NLTEConfig *nlte, AtomicData *atom,
++                           PlasmaState *plasma, OpacityState *opacity,
++                           int Z, int shell, double time_explosion,
++                           GammaDeposition *gamma_dep, int commit_requested,
++                           int *verdict_pass_out);
+ #ifdef LUMINA_FROZEN_ORACLE
+ int  nlte_element_wide_run_labeled(NLTEConfig *nlte, AtomicData *atom,
+                            PlasmaState *plasma, OpacityState *opacity,
+--- a/Makefile
++++ b/Makefile
+@@ -66,6 +66,23 @@
+ 		-o bench_frozen_oracle bench_frozen_oracle.c \
+ 		src/lumina_plasma.c src/lumina_element_wide.c src/lumina_atomic.c $(LDFLAGS)
+ 
++# Wave-3.2 A4 operational-RC negative control.  Only the frozen entry symbol is
++# wrapped; production allocation and judgment paths remain unchanged.
++bench_frozen_oracle_rc: bench_frozen_oracle.c tests/wave32_ew_rc_wrap.c src/lumina_plasma.c src/lumina_element_wide.c src/lumina_atomic.c $(HEADERS)
++	$(CC) -O2 -Wall -Wextra -std=gnu11 -D_GNU_SOURCE -DLUMINA_FROZEN_ORACLE \
++		-Dnlte_element_wide_run_labeled=wave32_rc_wrapped_nlte_element_wide_run_labeled \
++		-c bench_frozen_oracle.c -o /tmp/w32_rc_bench.o
++	$(CC) -O2 -Wall -Wextra -std=gnu11 -D_GNU_SOURCE -DLUMINA_FROZEN_ORACLE -Isrc \
++		-o bench_frozen_oracle_rc /tmp/w32_rc_bench.o tests/wave32_ew_rc_wrap.c \
++		src/lumina_plasma.c src/lumina_element_wide.c src/lumina_atomic.c $(LDFLAGS)
++
++selftest_wave32_ew_rc: tests/wave32_ew_rc_selftest.c tests/wave32_ew_rc_wrap.c src/lumina_plasma.c src/lumina_element_wide.c src/lumina_atomic.c $(HEADERS)
++	$(CC) -O2 -Wall -Wextra -std=gnu11 -D_GNU_SOURCE -DLUMINA_FROZEN_ORACLE \
++		-ffunction-sections -fdata-sections -Isrc -Wl,--gc-sections \
++		-o selftest_wave32_ew_rc tests/wave32_ew_rc_selftest.c \
++		tests/wave32_ew_rc_wrap.c src/lumina_plasma.c \
++		src/lumina_element_wide.c src/lumina_atomic.c $(LDFLAGS)
++
+ # Wave-3.2 R7 offline binary writer fixture (no model/GPU execution).
+ selftest_cmf_chieta_dump: scripts/cmf_chieta_writer_fixture.c src/lumina_cmfgen.c src/lumina_cmfgen.h $(HEADERS)
+ 	$(CC) -O2 -Wall -Wextra -std=c11 -D_GNU_SOURCE -ffunction-sections -fdata-sections -Isrc \
+@@ -93,7 +110,8 @@
+ 
+ # Clean
+ clean:
+-	rm -f $(TARGET) lumina_cuda selftest_cmf_chieta_dump \
++	rm -f $(TARGET) lumina_cuda bench_frozen_oracle_rc selftest_wave32_ew_rc \
++		selftest_cmf_chieta_dump \
+ 		selftest_wave32_matrix_debit selftest_wave32_within_sl_oom \
+ 		selftest_wave32_boundary_q *.o
+ 
+--- /dev/null
++++ b/tests/wave32_ew_rc_wrap.c
+@@ -0,0 +1,29 @@
++#include "lumina.h"
++
++#include <stdio.h>
++#include <stdlib.h>
++
++int nlte_element_wide_run_labeled(NLTEConfig *, AtomicData *, PlasmaState *,
++                                  OpacityState *, int, int, int, double,
++                                  GammaDeposition *);
++
++int wave32_rc_wrapped_nlte_element_wide_run_labeled(
++    NLTEConfig *nlte, AtomicData *atom, PlasmaState *plasma,
++    OpacityState *opacity, int Z, int shell_index, int shell_label,
++    double time_explosion, GammaDeposition *gamma_dep) {
++    if (getenv("W32_FORCE_EW_OOM")) {
++        fprintf(stderr,
++                "[EW][OOM] forced fixture allocation failure Z=%d s=%d\n",
++                Z, shell_label);
++        return -1;
++    }
++    if (getenv("W32_FORCE_EW_IO")) {
++        fprintf(stderr,
++                "[EW][I/O-FAIL] forced fixture artifact failure Z=%d s=%d\n",
++                Z, shell_label);
++        return -1;
++    }
++    return nlte_element_wide_run_labeled(
++        nlte, atom, plasma, opacity, Z, shell_index, shell_label,
++        time_explosion, gamma_dep);
++}
+--- /dev/null
++++ b/tests/wave32_ew_rc_selftest.c
+@@ -0,0 +1,27 @@
++#include "lumina.h"
++
++#include <stdio.h>
++#include <stdlib.h>
++
++int wave32_rc_wrapped_nlte_element_wide_run_labeled(
++    NLTEConfig *, AtomicData *, PlasmaState *, OpacityState *, int, int, int,
++    double, GammaDeposition *);
++
++int main(void) {
++    setenv("LUMINA_NLTE_ELEMENT_WIDE", "2", 1);
++    int bad_env = nlte_element_wide_run_labeled(
++        NULL, NULL, NULL, NULL, 26, 0, 0, 1.0, NULL);
++
++    setenv("W32_FORCE_EW_OOM", "1", 1);
++    int forced_oom = wave32_rc_wrapped_nlte_element_wide_run_labeled(
++        NULL, NULL, NULL, NULL, 26, 0, 0, 1.0, NULL);
++    unsetenv("W32_FORCE_EW_OOM");
++
++    setenv("W32_FORCE_EW_IO", "1", 1);
++    int forced_io = wave32_rc_wrapped_nlte_element_wide_run_labeled(
++        NULL, NULL, NULL, NULL, 26, 0, 0, 1.0, NULL);
++
++    printf("bad_env_rc=%d forced_oom_rc=%d forced_io_rc=%d\n",
++           bad_env, forced_oom, forced_io);
++    return bad_env == -1 && forced_oom == -1 && forced_io == -1 ? 0 : 1;
++}

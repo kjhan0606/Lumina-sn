@@ -3,6 +3,8 @@
  * This ensures bit-for-bit matching with TARDIS ground truth. */
 
 #include "lumina.h" /* Phase 2 - Step 7 */
+#include <errno.h>  /* composition parser: distinguish ERANGE from valid zero */
+#include <limits.h> /* composition parser: validate Z before narrowing to int */
 
 #ifdef __cplusplus   /* Phase 6 - Step 9: extern C guard for NVCC */
 extern "C" {         /* Phase 6 - Step 9 */
@@ -11,6 +13,249 @@ extern "C" {         /* Phase 6 - Step 9 */
 /* ============================================================ */
 /* Phase 2 - Step 8: NPY file reader (NumPy .npy format)       */
 /* ============================================================ */
+
+/* K-SHAPE uses SHA-256 to bind both runtime arrays to the exact line_list.csv
+ * epoch.  Keep this implementation local: several CPU fixtures link atomic.c
+ * without lumina_cmfgen.c, so depending on its hash helper would break them. */
+typedef struct {
+    uint32_t h[8];
+    uint64_t bits;
+    unsigned char block[64];
+    size_t used;
+} KShapeSHA256;
+
+static uint32_t kshape_rotr32(uint32_t x, unsigned n) {
+    return (x >> n) | (x << (32U - n));
+}
+
+static void kshape_sha256_transform(KShapeSHA256 *s,
+                                    const unsigned char block[64]) {
+    static const uint32_t k[64] = {
+        0x428a2f98U,0x71374491U,0xb5c0fbcfU,0xe9b5dba5U,
+        0x3956c25bU,0x59f111f1U,0x923f82a4U,0xab1c5ed5U,
+        0xd807aa98U,0x12835b01U,0x243185beU,0x550c7dc3U,
+        0x72be5d74U,0x80deb1feU,0x9bdc06a7U,0xc19bf174U,
+        0xe49b69c1U,0xefbe4786U,0x0fc19dc6U,0x240ca1ccU,
+        0x2de92c6fU,0x4a7484aaU,0x5cb0a9dcU,0x76f988daU,
+        0x983e5152U,0xa831c66dU,0xb00327c8U,0xbf597fc7U,
+        0xc6e00bf3U,0xd5a79147U,0x06ca6351U,0x14292967U,
+        0x27b70a85U,0x2e1b2138U,0x4d2c6dfcU,0x53380d13U,
+        0x650a7354U,0x766a0abbU,0x81c2c92eU,0x92722c85U,
+        0xa2bfe8a1U,0xa81a664bU,0xc24b8b70U,0xc76c51a3U,
+        0xd192e819U,0xd6990624U,0xf40e3585U,0x106aa070U,
+        0x19a4c116U,0x1e376c08U,0x2748774cU,0x34b0bcb5U,
+        0x391c0cb3U,0x4ed8aa4aU,0x5b9cca4fU,0x682e6ff3U,
+        0x748f82eeU,0x78a5636fU,0x84c87814U,0x8cc70208U,
+        0x90befffaU,0xa4506cebU,0xbef9a3f7U,0xc67178f2U
+    };
+    uint32_t w[64];
+    for (int i = 0; i < 16; i++)
+        w[i] = ((uint32_t)block[4*i] << 24) |
+               ((uint32_t)block[4*i+1] << 16) |
+               ((uint32_t)block[4*i+2] << 8) | block[4*i+3];
+    for (int i = 16; i < 64; i++) {
+        uint32_t a = w[i-15], b = w[i-2];
+        uint32_t s0 = kshape_rotr32(a,7) ^ kshape_rotr32(a,18) ^ (a >> 3);
+        uint32_t s1 = kshape_rotr32(b,17) ^ kshape_rotr32(b,19) ^ (b >> 10);
+        w[i] = w[i-16] + s0 + w[i-7] + s1;
+    }
+    uint32_t a=s->h[0],b=s->h[1],c=s->h[2],d=s->h[3];
+    uint32_t e=s->h[4],f=s->h[5],g=s->h[6],h=s->h[7];
+    for (int i = 0; i < 64; i++) {
+        uint32_t s1=kshape_rotr32(e,6)^kshape_rotr32(e,11)^kshape_rotr32(e,25);
+        uint32_t ch=(e&f)^((~e)&g);
+        uint32_t t1=h+s1+ch+k[i]+w[i];
+        uint32_t s0=kshape_rotr32(a,2)^kshape_rotr32(a,13)^kshape_rotr32(a,22);
+        uint32_t maj=(a&b)^(a&c)^(b&c);
+        uint32_t t2=s0+maj;
+        h=g; g=f; f=e; e=d+t1; d=c; c=b; b=a; a=t1+t2;
+    }
+    s->h[0]+=a;s->h[1]+=b;s->h[2]+=c;s->h[3]+=d;
+    s->h[4]+=e;s->h[5]+=f;s->h[6]+=g;s->h[7]+=h;
+}
+
+static void kshape_sha256_init(KShapeSHA256 *s) {
+    static const uint32_t init[8] = {
+        0x6a09e667U,0xbb67ae85U,0x3c6ef372U,0xa54ff53aU,
+        0x510e527fU,0x9b05688cU,0x1f83d9abU,0x5be0cd19U
+    };
+    memcpy(s->h, init, sizeof(init)); s->bits=0; s->used=0;
+}
+
+static void kshape_sha256_update(KShapeSHA256 *s, const void *data, size_t n) {
+    const unsigned char *p = (const unsigned char *)data;
+    s->bits += (uint64_t)n * 8U;
+    while (n) {
+        size_t take = 64U - s->used;
+        if (take > n) take = n;
+        memcpy(s->block+s->used,p,take); s->used+=take; p+=take; n-=take;
+        if (s->used == 64U) { kshape_sha256_transform(s,s->block); s->used=0; }
+    }
+}
+
+static void kshape_sha256_final(KShapeSHA256 *s, unsigned char out[32]) {
+    uint64_t bits=s->bits;
+    unsigned char one=0x80,zero=0,len[8];
+    for(int i=0;i<8;i++) len[7-i]=(unsigned char)(bits>>(8*i));
+    kshape_sha256_update(s,&one,1);
+    while(s->used!=56) kshape_sha256_update(s,&zero,1);
+    kshape_sha256_update(s,len,8);
+    for(int i=0;i<8;i++) {
+        out[4*i]=(unsigned char)(s->h[i]>>24);
+        out[4*i+1]=(unsigned char)(s->h[i]>>16);
+        out[4*i+2]=(unsigned char)(s->h[i]>>8);
+        out[4*i+3]=(unsigned char)s->h[i];
+    }
+}
+
+static int kshape_sha256_file(const char *path, char hex[65]) {
+    FILE *fp=fopen(path,"rb");
+    if(!fp) return -1;
+    KShapeSHA256 sha; unsigned char buf[65536],digest[32];
+    kshape_sha256_init(&sha);
+    for (;;) {
+        size_t n=fread(buf,1,sizeof(buf),fp);
+        if(n) kshape_sha256_update(&sha,buf,n);
+        if(n<sizeof(buf)) { if(ferror(fp)){fclose(fp);return -1;} break; }
+    }
+    if(fclose(fp)) return -1;
+    kshape_sha256_final(&sha,digest);
+    for(int i=0;i<32;i++) snprintf(hex+2*i,3,"%02x",digest[i]);
+    hex[64]='\0'; return 0;
+}
+
+/* Strict K array reader: exactly 2-D, C-order, little-endian float64, and no
+ * truncated or trailing payload.  The legacy generic reader remains for zeta
+ * and integer-conversion companions with their historical formats. */
+static double *read_npy_f64_strict_2d(const char *path,
+                                      int *out_rows, int *out_cols) {
+    FILE *fp=NULL; char *header=NULL; double *data=NULL;
+    *out_rows=0; *out_cols=0;
+    fp=fopen(path,"rb");
+    if(!fp) { fprintf(stderr,"[K-SHAPE][FATAL] cannot open %s: %s\n",path,strerror(errno)); return NULL; }
+    unsigned char preamble[12];
+    if(fread(preamble,1,8,fp)!=8 || memcmp(preamble,"\x93NUMPY",6)!=0) {
+        fprintf(stderr,"[K-SHAPE][FATAL] invalid/truncated NPY preamble: %s\n",path); goto fail;
+    }
+    uint32_t hlen=0;
+    if(preamble[6]==1) {
+        if(fread(preamble+8,1,2,fp)!=2) { fprintf(stderr,"[K-SHAPE][FATAL] truncated NPY v1 header length: %s\n",path); goto fail; }
+        hlen=(uint32_t)preamble[8]|((uint32_t)preamble[9]<<8);
+    } else if(preamble[6]==2 || preamble[6]==3) {
+        if(fread(preamble+8,1,4,fp)!=4) { fprintf(stderr,"[K-SHAPE][FATAL] truncated NPY header length: %s\n",path); goto fail; }
+        hlen=(uint32_t)preamble[8]|((uint32_t)preamble[9]<<8)|
+             ((uint32_t)preamble[10]<<16)|((uint32_t)preamble[11]<<24);
+    } else {
+        fprintf(stderr,"[K-SHAPE][FATAL] unsupported NPY version %u.%u: %s\n",
+                preamble[6],preamble[7],path); goto fail;
+    }
+    if(hlen==0 || hlen>(1U<<20)) { fprintf(stderr,"[K-SHAPE][FATAL] invalid NPY header length %u: %s\n",hlen,path); goto fail; }
+    header=(char*)malloc((size_t)hlen+1U);
+    if(!header || fread(header,1,hlen,fp)!=(size_t)hlen) {
+        fprintf(stderr,"[K-SHAPE][FATAL] truncated NPY header: %s\n",path); goto fail;
+    }
+    header[hlen]='\0';
+    if(!(strstr(header,"'descr': '<f8'") || strstr(header,"\"descr\": \"<f8\""))) {
+        fprintf(stderr,"[K-SHAPE][FATAL] %s dtype/byte-order must be little-endian float64 (<f8)\n",path); goto fail;
+    }
+    if(!(strstr(header,"'fortran_order': False") || strstr(header,"\"fortran_order\": false"))) {
+        fprintf(stderr,"[K-SHAPE][FATAL] %s must be C-order (fortran_order=False)\n",path); goto fail;
+    }
+    char *shape=strstr(header,"'shape': (");
+    if(!shape) shape=strstr(header,"\"shape\": (");
+    if(!shape || !(shape=strchr(shape,'('))) {
+        fprintf(stderr,"[K-SHAPE][FATAL] missing NPY shape: %s\n",path); goto fail;
+    }
+    char *end=NULL; errno=0;
+    unsigned long long rows=strtoull(shape+1,&end,10);
+    if(errno || end==shape+1 || !end) { fprintf(stderr,"[K-SHAPE][FATAL] invalid NPY row count: %s\n",path); goto fail; }
+    while(*end==' ') end++;
+    if(*end!=',') { fprintf(stderr,"[K-SHAPE][FATAL] %s must be exactly 2-D\n",path); goto fail; }
+    char *colstart=end+1; while(*colstart==' ') colstart++;
+    errno=0; unsigned long long cols=strtoull(colstart,&end,10);
+    if(errno || end==colstart || !end) { fprintf(stderr,"[K-SHAPE][FATAL] invalid NPY column count: %s\n",path); goto fail; }
+    while(*end==' ' || *end==',') end++;
+    if(*end!=')' || rows==0 || cols==0 || rows>INT_MAX || cols>INT_MAX ||
+       rows>SIZE_MAX/cols || rows*cols>SIZE_MAX/sizeof(double)) {
+        fprintf(stderr,"[K-SHAPE][FATAL] invalid/overflowing NPY shape (%llu,%llu): %s\n",rows,cols,path); goto fail;
+    }
+    { const uint16_t endian_probe=1;
+      if(*(const unsigned char*)&endian_probe!=1) {
+          fprintf(stderr,"[K-SHAPE][FATAL] little-endian NPY on non-little-endian host: %s\n",path); goto fail;
+      } }
+    size_t total=(size_t)rows*(size_t)cols;
+    data=(double*)malloc(total*sizeof(double));
+    if(!data || fread(data,sizeof(double),total,fp)!=total) {
+        fprintf(stderr,"[K-SHAPE][FATAL] truncated NPY payload: %s\n",path); goto fail;
+    }
+    if(fgetc(fp)!=EOF || ferror(fp)) {
+        fprintf(stderr,"[K-SHAPE][FATAL] trailing/corrupt NPY payload: %s\n",path); goto fail;
+    }
+    free(header); fclose(fp);
+    *out_rows=(int)rows; *out_cols=(int)cols; return data;
+fail:
+    free(header); free(data); fclose(fp); return NULL;
+}
+
+typedef struct {
+    char schema[32], line_hash[65], tau_hash[65], trans_hash[65];
+    int n_lines, n_trans, n_shells;
+    int seen_schema, seen_line, seen_tau, seen_trans, seen_nlines, seen_ntrans,
+        seen_nshells, seen_dtype, seen_byte_order, seen_order;
+} KShapeContract;
+
+static int validate_kshape_contract(const char *ref_dir, int n_lines,
+                                    int n_trans, int n_shells) {
+    char path[512],line_path[512],tau_path[512],trans_path[512];
+    snprintf(path,sizeof(path),"%s/kshape_contract.txt",ref_dir);
+    FILE *fp=fopen(path,"r");
+    if(!fp) { fprintf(stderr,"[K-SHAPE][FATAL] missing contract %s: %s\n",path,strerror(errno)); return -1; }
+    KShapeContract c; memset(&c,0,sizeof(c));
+    char line[256]; int lineno=0,failed=0;
+    while(fgets(line,sizeof(line),fp)) {
+        lineno++; size_t len=strlen(line);
+        if(len==0 || line[len-1]!='\n') { fprintf(stderr,"[K-SHAPE][FATAL] malformed/overlong %s:%d\n",path,lineno); failed=1; break; }
+        line[--len]='\0'; if(len && line[len-1]=='\r') line[--len]='\0';
+        char *eq=strchr(line,'='); if(!eq || eq==line || !eq[1]) { fprintf(stderr,"[K-SHAPE][FATAL] malformed %s:%d\n",path,lineno); failed=1; break; }
+        *eq='\0'; const char *key=line,*value=eq+1;
+#define KSTR(k,field,seen) if(!strcmp(key,k)){ if(c.seen){failed=1;break;} c.seen=1; snprintf(c.field,sizeof(c.field),"%s",value); }
+#define KINT(k,field,seen) if(!strcmp(key,k)){ char *e=NULL; long v=strtol(value,&e,10); if(c.seen||!e||*e||v<1||v>INT_MAX){failed=1;break;} c.seen=1;c.field=(int)v; }
+        if(!strcmp(key,"schema")){ if(c.seen_schema){failed=1;break;} c.seen_schema=1;snprintf(c.schema,sizeof(c.schema),"%s",value); }
+        else KSTR("line_list_sha256",line_hash,seen_line)
+        else KSTR("tau_sobolev_sha256",tau_hash,seen_tau)
+        else KSTR("transition_probabilities_sha256",trans_hash,seen_trans)
+        else KINT("n_lines",n_lines,seen_nlines)
+        else KINT("n_macro_transitions",n_trans,seen_ntrans)
+        else KINT("n_shells",n_shells,seen_nshells)
+        else if(!strcmp(key,"dtype")){ if(c.seen_dtype||strcmp(value,"<f8")){failed=1;break;} c.seen_dtype=1; }
+        else if(!strcmp(key,"byte_order")){ if(c.seen_byte_order||strcmp(value,"little")){failed=1;break;} c.seen_byte_order=1; }
+        else if(!strcmp(key,"array_order")){ if(c.seen_order||strcmp(value,"C")){failed=1;break;} c.seen_order=1; }
+        else { failed=1; break; }
+#undef KSTR
+#undef KINT
+    }
+    if(ferror(fp)) failed=1;
+    fclose(fp);
+    int all_seen=c.seen_schema+c.seen_line+c.seen_tau+c.seen_trans+
+        c.seen_nlines+c.seen_ntrans+c.seen_nshells+c.seen_dtype+
+        c.seen_byte_order+c.seen_order;
+    if(failed || all_seen!=10 || strcmp(c.schema,"lumina-kshape-v1") ||
+       c.n_lines!=n_lines || c.n_trans!=n_trans || c.n_shells!=n_shells) {
+        fprintf(stderr,"[K-SHAPE][FATAL] invalid contract %s (lines=%d/%d transitions=%d/%d shells=%d/%d)\n",
+                path,c.n_lines,n_lines,c.n_trans,n_trans,c.n_shells,n_shells); return -1;
+    }
+    snprintf(line_path,sizeof(line_path),"%s/line_list.csv",ref_dir);
+    snprintf(tau_path,sizeof(tau_path),"%s/tau_sobolev.npy",ref_dir);
+    snprintf(trans_path,sizeof(trans_path),"%s/transition_probabilities.npy",ref_dir);
+    char actual[65];
+#define KHASH(file,expected,label) do { if(kshape_sha256_file(file,actual)!=0 || strcmp(actual,expected)){ fprintf(stderr,"[K-SHAPE][FATAL] %s hash/line-epoch mismatch: %s\n",label,file); return -1; } } while(0)
+    KHASH(line_path,c.line_hash,"line_list");
+    KHASH(tau_path,c.tau_hash,"tau_sobolev");
+    KHASH(trans_path,c.trans_hash,"transition_probabilities");
+#undef KHASH
+    printf("  K-SHAPE contract: line epoch %.16s...; dtype=<f8 byte_order=little order=C\n",c.line_hash);
+    return 0;
+}
 
 /* Phase 2 - Step 8: Read NPY header, return data pointer */
 static double *read_npy_f64(const char *path, int *out_rows, int *out_cols) {
@@ -267,6 +512,152 @@ static int *read_csv_column_int(const char *path, const char *col_name,
     return idata; /* Phase 2 - Step 9b */
 }
 
+/* CONFIG-PREC: config.json owns the deck declaration; plasma_state.csv is a
+ * consistency witness, never an override.  Runtime overrides have to be
+ * explicit and are logged below.  Keep the tolerances here (rather than in a
+ * deck) so a stale deck cannot relax its own integrity check. */
+#define CONFIG_PREC_T_DECL_ABS_TOL_K 5.0
+#define CONFIG_PREC_T_PROFILE_ABS_TOL_K 0.01
+#define CONFIG_PREC_T_REL_TOL 1.0e-9
+
+static int config_prec_parse_switch(const char *name, int *enabled) {
+    const char *value = getenv(name);
+    if (!value) {
+        *enabled = 0;
+        return 0;
+    }
+    if (strcmp(value, "0") == 0) {
+        *enabled = 0;
+        return 0;
+    }
+    if (strcmp(value, "1") == 0) {
+        *enabled = 1;
+        return 0;
+    }
+    fprintf(stderr,
+            "[CONFIG-PREC][FATAL] %s='%s' is invalid; expected exactly 0 or 1\n",
+            name, value);
+    return -1;
+}
+
+static int config_prec_parse_positive_double(const char *name,
+                                             const char *value,
+                                             double *parsed) {
+    char *end = NULL;
+    errno = 0;
+    double result = strtod(value, &end);
+    if (errno == ERANGE || end == value || *end != '\0' ||
+        !isfinite(result) || result <= 0.0) {
+        fprintf(stderr,
+                "[CONFIG-PREC][FATAL] %s='%s' is not a finite positive number\n",
+                name, value);
+        return -1;
+    }
+    *parsed = result;
+    return 0;
+}
+
+static int config_prec_resolve_boundary_temperature(
+        const char *ref_dir, double deck_T_inner,
+        const double *W, int n_W, const double *T_rad, int n_T_rad,
+        int expected_shells,
+        double *effective_T_inner) {
+    int strict = 0;
+    if (config_prec_parse_switch("LUMINA_CONFIG_PREC", &strict) != 0)
+        return -1;
+
+    printf("  [CONFIG-PREC] priority=argv>env>config.json>compiled-default; "
+           "plasma_state.csv=consistency-witness (never override); gate=%s\n",
+           strict ? "ON" : "OFF");
+
+    if (!W || !T_rad || n_W <= 0 || n_T_rad <= 0 || n_W != n_T_rad ||
+        n_W != expected_shells) {
+        fprintf(stderr,
+                "[CONFIG-PREC][FATAL] malformed plasma_state.csv in %s: "
+                "W_rows=%d T_rad_rows=%d geometry_shells=%d\n",
+                ref_dir, n_W, n_T_rad, expected_shells);
+        return -1;
+    }
+    if (!isfinite(deck_T_inner) || deck_T_inner <= 0.0) {
+        fprintf(stderr,
+                "[CONFIG-PREC][FATAL] config.json:T_inner_K=%.17g is not "
+                "finite and positive\n", deck_T_inner);
+        return -1;
+    }
+
+    int invalid_rows = 0;
+    int color_rows = 0;
+    double color_first = 0.0;
+    double color_min = 0.0;
+    double color_max = 0.0;
+    for (int s = 0; s < n_W; s++) {
+        if (!isfinite(W[s]) || W[s] <= 0.0 || W[s] > 1.0 ||
+            !isfinite(T_rad[s]) || T_rad[s] <= 0.0) {
+            invalid_rows++;
+            continue;
+        }
+        double color = T_rad[s] / pow(W[s], 0.25);
+        if (!isfinite(color) || color <= 0.0) {
+            invalid_rows++;
+            continue;
+        }
+        if (color_rows == 0) {
+            color_first = color_min = color_max = color;
+        } else {
+            if (color < color_min) color_min = color;
+            if (color > color_max) color_max = color;
+        }
+        color_rows++;
+    }
+
+    double spread = color_rows > 0 ? color_max - color_min : INFINITY;
+    double profile_tol = color_rows > 0
+        ? CONFIG_PREC_T_PROFILE_ABS_TOL_K +
+          CONFIG_PREC_T_REL_TOL * fmax(fabs(color_min), fabs(color_max))
+        : 0.0;
+    double delta = color_rows > 0
+        ? fabs(deck_T_inner - color_first) : INFINITY;
+    double decl_tol = CONFIG_PREC_T_DECL_ABS_TOL_K +
+        CONFIG_PREC_T_REL_TOL * fmax(fabs(deck_T_inner), fabs(color_first));
+    double rel = color_rows > 0 ? delta / fabs(deck_T_inner) : INFINITY;
+    int violation = invalid_rows != 0 || color_rows != n_W ||
+                    spread > profile_tol || delta > decl_tol;
+
+    printf("  [CONFIG-PREC] deck=%s config.json:T_inner_K=%.9f K; "
+           "plasma inferred-color=%.9f K; spread=%.9g K; "
+           "delta=%.9f K (%.6f%%); limits(decl/profile)=%.6g/%.6g K\n",
+           ref_dir, deck_T_inner, color_first, spread, delta, 100.0 * rel,
+           decl_tol, profile_tol);
+
+    if (violation) {
+        FILE *stream = strict ? stderr : stdout;
+        fprintf(stream,
+                "[CONFIG-PREC][%s] boundary-temperature declarations disagree "
+                "or are not certifiable: invalid_rows=%d color_rows=%d/%d\n",
+                strict ? "FATAL" : "WARN", invalid_rows, color_rows, n_W);
+        if (strict) return -1;
+    } else {
+        printf("  [CONFIG-PREC][PASS] boundary-temperature declarations agree\n");
+    }
+
+    *effective_T_inner = deck_T_inner;
+    const char *override = getenv("LUMINA_T_INNER_FIX");
+    if (override) {
+        if (config_prec_parse_positive_double("LUMINA_T_INNER_FIX", override,
+                                              effective_T_inner) != 0)
+            return -1;
+        printf("  [CONFIG-PREC] effective T_inner=%.9f K "
+               "source=env:LUMINA_T_INNER_FIX "
+               "(does not waive deck-integrity result)\n",
+               *effective_T_inner);
+    } else {
+        printf("  [CONFIG-PREC] effective T_inner=%.9f K "
+               "source=config.json:T_inner_K (argv channel not defined)\n",
+               *effective_T_inner);
+    }
+    return 0;
+}
+
 /* ============================================================ */
 /* Phase 2 - Step 10: Main data loader                          */
 /* ============================================================ */
@@ -276,6 +667,12 @@ int load_tardis_reference_data(const char *ref_dir, Geometry *geo,
                                 MCConfig *config) {
     char path[512]; /* Phase 2 - Step 10 */
     int n; /* Phase 2 - Step 10 */
+    double config_prec_deck_T_inner = 0.0;
+
+    /* Optional Wave-1 field is NULL unless its gate explicitly requests it.
+     * The legacy loaders use a stack PlasmaState, so initialize the new member
+     * here rather than relying on caller zeroing. */
+    plasma->clump_factor = NULL;
 
     printf("Loading TARDIS reference data from %s...\n", ref_dir); /* Phase 2 - Step 10 */
 
@@ -331,6 +728,7 @@ int load_tardis_reference_data(const char *ref_dir, Geometry *geo,
         PARSE_REQ("seed",                   config->seed,                (uint64_t)atol);
         #undef PARSE_REQ
         if (missing) return -1;
+        config_prec_deck_T_inner = config->T_inner;
 
         /* Optional: T_e/T_rad ratio (default 0.9 if absent) */
         plasma->T_e_T_rad_ratio = 0.9;
@@ -359,8 +757,16 @@ int load_tardis_reference_data(const char *ref_dir, Geometry *geo,
     /* Phase 2 - Step 10d: Load plasma state (W, T_rad) */
     snprintf(path, sizeof(path), "%s/plasma_state.csv", ref_dir); /* Phase 2 - Step 10d */
     plasma->n_shells = geo->n_shells; /* Phase 2 - Step 10d */
-    plasma->W = read_csv_column(path, "W", &n); /* Phase 2 - Step 10d */
-    plasma->T_rad = read_csv_column(path, "T_rad", &n); /* Phase 2 - Step 10d */
+    int n_W = 0, n_T_rad = 0;
+    plasma->W = read_csv_column(path, "W", &n_W); /* Phase 2 - Step 10d */
+    plasma->T_rad = read_csv_column(path, "T_rad", &n_T_rad); /* Phase 2 - Step 10d */
+    if (config_prec_resolve_boundary_temperature(
+            ref_dir, config_prec_deck_T_inner,
+            plasma->W, n_W, plasma->T_rad, n_T_rad,
+            geo->n_shells,
+            &config->T_inner) != 0)
+        return -1;
+    n = n_T_rad;
     /* AUDIT DEFECT #5 FIX (LUMINA_TRAD_COLOR_FIX=1): the toy06 builder wrote
      * T_rad = T_inner*W^0.25 — the ENERGY-EQUIVALENT temperature, not the
      * COLOR temperature. A dilute photospheric field keeps the photospheric
@@ -381,6 +787,38 @@ int load_tardis_reference_data(const char *ref_dir, Geometry *geo,
     /* Phase 2 - Step 10d2: Load density */
     snprintf(path, sizeof(path), "%s/density.csv", ref_dir); /* Phase 2 - Step 10d2 */
     plasma->rho = read_csv_column(path, "rho", &n); /* Phase 2 - Step 10d2 */
+
+    /* ARTIS calculate_chi_bf_gammacontr uses clumpednne = nne*clumpfactor.
+     * Keep the field absent on the gate-OFF path. On the repair path accept a
+     * per-shell `clumping_factors.csv:clump_factor`, with an optional scalar
+     * LUMINA_BF_CLUMP_FACTOR override. Smooth models default exactly to 1. */
+    {
+        const char *stim = getenv("LUMINA_FIX_BF_STIM_RECOMB");
+        if (stim && atoi(stim) != 0) {
+            int ns = geo->n_shells;
+            plasma->clump_factor = (double *)malloc((size_t)ns * sizeof(double));
+            for (int s = 0; s < ns; s++) plasma->clump_factor[s] = 1.0;
+
+            snprintf(path, sizeof(path), "%s/clumping_factors.csv", ref_dir);
+            FILE *cf = fopen(path, "r");
+            if (cf) {
+                fclose(cf);
+                int nc = 0;
+                double *loaded = read_csv_column(path, "clump_factor", &nc);
+                if (loaded && nc == ns) {
+                    for (int s = 0; s < ns; s++)
+                        if (loaded[s] > 0.0 && isfinite(loaded[s]))
+                            plasma->clump_factor[s] = loaded[s];
+                }
+                free(loaded);
+            }
+            const char *scalar = getenv("LUMINA_BF_CLUMP_FACTOR");
+            if (scalar && atof(scalar) > 0.0 && isfinite(atof(scalar))) {
+                double f = atof(scalar);
+                for (int s = 0; s < ns; s++) plasma->clump_factor[s] = f;
+            }
+        }
+    }
 
     /* Phase 2 - Step 10d3: T_electrons = T_rad for now (TARDIS uses T_e ≈ 0.9 * T_rad) */
     opacity->t_electrons = (double *)malloc(geo->n_shells * sizeof(double)); /* Phase 2 - Step 10d3 */
@@ -425,18 +863,47 @@ int load_tardis_reference_data(const char *ref_dir, Geometry *geo,
     }
     printf("  Line order: DESCENDING (correct, %d pairs)\n", n - 1);
 
-    /* Phase 2 - Step 10f: Load tau_sobolev [n_lines, n_shells] */
+    /* K-SHAPE: establish the transition row authority from macro_atom_data.csv
+     * before either NPY can influence runtime dimensions. */
+    snprintf(path, sizeof(path), "%s/macro_atom_data.csv", ref_dir);
+    int nt=0, nd=0, nl=0;
+    opacity->transition_type = read_csv_column_int(path, "transition_type", &nt);
+    opacity->destination_level_id = read_csv_column_int(path, "destination_level_idx", &nd);
+    opacity->transition_line_id = read_csv_column_int(path, "lines_idx", &nl);
+    if (!opacity->transition_type || !opacity->destination_level_id ||
+        !opacity->transition_line_id || nt <= 0 || nt != nd || nt != nl) {
+        fprintf(stderr,
+                "[K-SHAPE][FATAL] macro_atom_data row contract failed "
+                "(transition_type=%d destination=%d lines_idx=%d)\n", nt, nd, nl);
+        return -1;
+    }
+    opacity->n_macro_transitions = nt;
+
+    if (validate_kshape_contract(ref_dir, opacity->n_lines,
+                                 opacity->n_macro_transitions,
+                                 opacity->n_shells) != 0)
+        return -1;
+
+    /* Phase 2 - Step 10f: Load tau_sobolev [n_lines, n_shells].  This disk
+     * value is a shape/epoch-checked seed only; K-FRESH marks it stale below. */
     snprintf(path, sizeof(path), "%s/tau_sobolev.npy", ref_dir); /* Phase 2 - Step 10f */
-    int tr, tc; /* Phase 2 - Step 10f */
-    opacity->tau_sobolev = read_npy_f64(path, &tr, &tc); /* Phase 2 - Step 10f */
+    int tr=0, tc=0; /* Phase 2 - Step 10f */
+    opacity->tau_sobolev = read_npy_f64_strict_2d(path, &tr, &tc);
     printf("  tau_sobolev: [%d x %d] (expect [%d x %d])\n", /* Phase 2 - Step 10f */
            tr, tc, opacity->n_lines, opacity->n_shells); /* Phase 2 - Step 10f */
-    if (tr != opacity->n_lines || tc != opacity->n_shells) {
-        fprintf(stderr, "WARNING: tau_sobolev [%d x %d] != expected [%d x %d], reinitializing\n",
+    if (!opacity->tau_sobolev || tr != opacity->n_lines || tc != opacity->n_shells) {
+        fprintf(stderr, "[K-SHAPE][FATAL] tau_sobolev [%d x %d] != expected [%d x %d]\n",
                 tr, tc, opacity->n_lines, opacity->n_shells);
         free(opacity->tau_sobolev);
-        opacity->tau_sobolev = (double *)calloc((size_t)opacity->n_lines * opacity->n_shells, sizeof(double));
+        opacity->tau_sobolev = NULL;
+        return -1;
     }
+
+    /* The solver, not the deck, owns physical tau.  Generation zero is the
+     * validated-but-stale disk seed and must never reach a physics consumer. */
+    opacity->tau_required_generation = 1;
+    opacity->tau_computed_generation = 0;
+    opacity->tau_first_consumer_generation = 0;
 
     /* CMF: per-line NLTE source function, populated during plasma/NLTE update.
      * 0 (calloc default) signals "use fallback" in the CMF solver. */
@@ -444,15 +911,16 @@ int load_tardis_reference_data(const char *ref_dir, Geometry *geo,
 
     /* Phase 2 - Step 10g: Load transition probabilities [n_trans, n_shells] */
     snprintf(path, sizeof(path), "%s/transition_probabilities.npy", ref_dir); /* Phase 2 - Step 10g */
-    opacity->transition_probabilities = read_npy_f64(path, &tr, &tc); /* Phase 2 - Step 10g */
-    opacity->n_macro_transitions = tr; /* Phase 2 - Step 10g */
+    opacity->transition_probabilities = read_npy_f64_strict_2d(path, &tr, &tc);
     printf("  transition_probabilities: [%d x %d]\n", tr, tc); /* Phase 2 - Step 10g */
-    if (tc != opacity->n_shells) {
-        fprintf(stderr, "WARNING: transition_probabilities cols %d != n_shells %d, reinitializing\n",
-                tc, opacity->n_shells);
+    if (!opacity->transition_probabilities || tr != opacity->n_macro_transitions ||
+        tc != opacity->n_shells) {
+        fprintf(stderr,
+                "[K-SHAPE][FATAL] transition_probabilities [%d x %d] != expected [%d x %d]\n",
+                tr, tc, opacity->n_macro_transitions, opacity->n_shells);
         free(opacity->transition_probabilities);
-        opacity->transition_probabilities = (double *)calloc((size_t)tr * opacity->n_shells, sizeof(double));
-        /* Initialize with equal branching per block */
+        opacity->transition_probabilities = NULL;
+        return -1;
     }
 
     /* Phase 2 - Step 10h: Load macro-atom references */
@@ -469,12 +937,9 @@ int load_tardis_reference_data(const char *ref_dir, Geometry *geo,
     printf("  Macro-atom: %d levels, %d transitions\n", /* Phase 2 - Step 10h */
            opacity->n_macro_levels, opacity->n_macro_transitions); /* Phase 2 - Step 10h */
 
-    /* Phase 2 - Step 10i: Load macro-atom transition data */
-    snprintf(path, sizeof(path), "%s/macro_atom_data.csv", ref_dir); /* Phase 2 - Step 10i */
-    opacity->transition_type = read_csv_column_int(path, "transition_type", &n); /* Phase 2 - Step 10i */
-    opacity->destination_level_id = read_csv_column_int(path, "destination_level_idx", &n); /* Phase 2 - Step 10i */
-    opacity->transition_line_id = read_csv_column_int(path, "lines_idx", &n); /* Phase 2 - Step 10i */
-    printf("  Macro transitions loaded: %d entries\n", n); /* Phase 2 - Step 10i */
+    /* Phase 2 - Step 10i: transition columns were loaded before the NPYs so
+     * their CSV row count, not an untrusted array header, is authoritative. */
+    printf("  Macro transitions loaded: %d entries\n", opacity->n_macro_transitions);
 
     /* Phase 2 - Step 10j: Load line2macro_level_upper */
     snprintf(path, sizeof(path), "%s/line2macro_level_upper.npy", ref_dir); /* Phase 2 - Step 10j */
@@ -494,6 +959,11 @@ int load_tardis_reference_data(const char *ref_dir, Geometry *geo,
     opacity->recomb_is_emit    = NULL;
     opacity->recomb_prob       = NULL;
     opacity->n_recomb          = 0;
+    opacity->recomb_sigma_edge = NULL;   /* [MA-RADRECOMB tau-gate] built under the rr gate */
+    opacity->recomb_emit_shell = NULL;   /* [MA-RADRECOMB tau-gate] per-shell emit decision */
+    opacity->iup_dest_level    = NULL;   /* [MA-RADRECOMB iup] lazily built under the gate */
+    opacity->iup_prob          = NULL;
+    opacity->chi_ff_nnionpart  = NULL;   /* [ARTIS-PARITY D5] lazily built under parity */
 
     printf("Data loading complete.\n"); /* Phase 2 - Step 10 */
     return 0; /* Phase 2 - Step 10 */
@@ -527,6 +997,11 @@ void free_opacity_state(OpacityState *op) { /* Phase 2 - Step 11 */
     free(op->recomb_nu_edge);
     free(op->recomb_is_emit);
     free(op->recomb_prob);
+    free(op->recomb_sigma_edge);      /* [MA-RADRECOMB tau-gate] (NULL-safe) */
+    free(op->recomb_emit_shell);      /* [MA-RADRECOMB tau-gate] (NULL-safe) */
+    free(op->iup_dest_level);         /* [MA-RADRECOMB iup] (NULL-safe) */
+    free(op->iup_prob);
+    free(op->chi_ff_nnionpart);       /* [ARTIS-PARITY D5] (NULL-safe) */
 }
 
 void free_plasma_state(PlasmaState *ps) { /* Phase 2 - Step 11 */
@@ -534,6 +1009,7 @@ void free_plasma_state(PlasmaState *ps) { /* Phase 2 - Step 11 */
     free(ps->T_rad); /* Phase 2 - Step 11 */
     free(ps->rho); /* Phase 2 - Step 11 */
     free(ps->n_electron); /* Task #072 */
+    free(ps->clump_factor); /* Wave-1 BF; NULL-safe and absent on gate OFF */
     free(ps->T_e); /* P6: per-shell electron temperature */
 }
 
@@ -768,29 +1244,476 @@ int load_atomic_data(AtomicData *atom, const char *ref_dir, int n_shells) {
 
     /* --- Abundances --- */
     snprintf(path, sizeof(path), "%s/abundances.csv", ref_dir);
-    atom->abundances = (double *)calloc((size_t)atom->n_elements * n_shells, sizeof(double));
-    FILE *fp = fopen(path, "r");
-    if (fp) {
+    atom->abundances = (double *)calloc((size_t)atom->n_elements * n_shells,
+                                        sizeof(double));
+    {
+        /* Composition CSV contract (ORDER_CD_COMPOSITION_IDENTITY.md, order D).
+         * Read physical lines byte-by-byte so an embedded NUL cannot masquerade
+         * as end-of-string and an overlong line cannot be accepted in chunks. */
+        FILE *mass_fp = NULL;
+        FILE *ab_fp = fopen(path, "rb");
         char line[8192];
-        fgets(line, sizeof(line), fp); /* skip header */
-        int elem_idx = 0;
-        while (fgets(line, sizeof(line), fp) && elem_idx < atom->n_elements) {
-            /* format: atomic_number,shell0,shell1,...,shell29 */
-            char *p = line;
-            int z_csv = (int)strtol(p, &p, 10);
-            /* Find matching element index */
-            int eidx = -1;
-            for (int i = 0; i < atom->n_elements; i++) {
-                if (atom->element_Z[i] == z_csv) { eidx = i; break; }
-            }
-            if (eidx < 0) continue;
-            for (int s = 0; s < n_shells; s++) {
-                if (*p == ',') p++;
-                atom->abundances[eidx * n_shells + s] = strtod(p, &p);
-            }
-            elem_idx++;
+        int *mass_seen_z = NULL;
+        unsigned char *ab_seen = NULL;
+        double *shell_sum = NULL;
+        double *row_values = NULL;
+        int fatal_seen = 0;
+
+        #define D_IS_SPACE(c) \
+            ((c) == ' ' || (c) == '\t' || (c) == '\n' || (c) == '\r' || \
+             (c) == '\v' || (c) == '\f')
+        #define D_READ_LINE(stream, buffer, length, got, nul, overlong) \
+            do { \
+                int d_ch; \
+                (length) = 0; (got) = 0; (nul) = 0; (overlong) = 0; \
+                while ((d_ch = fgetc((stream))) != EOF) { \
+                    (got) = 1; \
+                    if (d_ch == 0) (nul) = 1; \
+                    if ((length) + 1 < sizeof(buffer)) \
+                        (buffer)[(length)++] = (char)d_ch; \
+                    else \
+                        (overlong) = 1; \
+                    if (d_ch == '\n') break; \
+                } \
+                (buffer)[(length)] = '\0'; \
+            } while (0)
+        #define D_CLEANUP() \
+            do { \
+                if (mass_fp) fclose(mass_fp); \
+                if (ab_fp) fclose(ab_fp); \
+                free(mass_seen_z); free(ab_seen); free(shell_sum); \
+                free(row_values); \
+            } while (0)
+        #define D_RETURN_FATAL(...) \
+            do { \
+                fprintf(stderr, __VA_ARGS__); \
+                D_CLEANUP(); \
+                return 1; \
+            } while (0)
+
+        if (!ab_fp) {
+            D_RETURN_FATAL("[D1][FATAL] cannot open %s\n", path);
         }
-        fclose(fp);
+        if (!atom->abundances || atom->n_elements <= 0 || n_shells <= 0) {
+            D_RETURN_FATAL("[D14][FATAL] invalid atom-mass row count (%d) or "
+                           "shell count (%d)\n", atom->n_elements, n_shells);
+        }
+
+        /* Re-read atom_masses.csv strictly.  The legacy column loaders above
+         * construct the arrays; this pass validates that both columns describe
+         * the same positive, finite, unique set without changing their values. */
+        {
+            char mass_path[512];
+            size_t len;
+            int got, had_nul, overlong;
+            int mass_rows = 0, mass_valid_rows = 0;
+            int mass_non_d9_fatal = 0;
+            int mass_seen_count = 0;
+            int mass_seen_capacity = atom->n_elements > 0 ? atom->n_elements : 1;
+
+            snprintf(mass_path, sizeof(mass_path), "%s/atom_masses.csv", ref_dir);
+            mass_fp = fopen(mass_path, "rb");
+            if (!mass_fp) {
+                D_RETURN_FATAL("[D14][FATAL] cannot open %s\n", mass_path);
+            }
+            mass_seen_z = (int *)malloc((size_t)mass_seen_capacity * sizeof(int));
+            if (!mass_seen_z) {
+                D_RETURN_FATAL("[D14][FATAL] out of memory validating %s\n",
+                               mass_path);
+            }
+
+            D_READ_LINE(mass_fp, line, len, got, had_nul, overlong);
+            if (overlong) {
+                D_RETURN_FATAL("[D10][FATAL] %s header exceeds %zu-byte line "
+                               "buffer\n", mass_path, sizeof(line));
+            }
+            if (!got) {
+                D_RETURN_FATAL("[D14][FATAL] %s has no header\n", mass_path);
+            }
+            if (had_nul) {
+                D_RETURN_FATAL("[D8][FATAL] %s header contains a NUL byte\n",
+                               mass_path);
+            }
+            while (len > 0 && (line[len - 1] == '\n' || line[len - 1] == '\r'))
+                line[--len] = '\0';
+            if (strcmp(line, "atomic_number,mass_amu") != 0) {
+                D_RETURN_FATAL("[D14][FATAL] %s header must be "
+                               "atomic_number,mass_amu\n", mass_path);
+            }
+
+            for (;;) {
+                char *comma, *z_end, *mass_end;
+                char *q;
+                long z_value = 0;
+                double mass_value = 0.0;
+                int row_bad = 0;
+
+                D_READ_LINE(mass_fp, line, len, got, had_nul, overlong);
+                if (!got) break;
+                mass_rows++;
+                if (overlong) {
+                    D_RETURN_FATAL("[D10][FATAL] %s row %d exceeds %zu-byte "
+                                   "line buffer\n", mass_path, mass_rows + 1,
+                                   sizeof(line));
+                }
+                if (had_nul) {
+                    fprintf(stderr, "[D8][FATAL] %s row %d contains a NUL byte\n",
+                            mass_path, mass_rows + 1);
+                    mass_non_d9_fatal = 1;
+                    continue;
+                }
+                while (len > 0 && (line[len - 1] == '\n' || line[len - 1] == '\r'))
+                    line[--len] = '\0';
+
+                comma = strchr(line, ',');
+                if (!comma || strchr(comma + 1, ',')) {
+                    fprintf(stderr, "[D14][FATAL] %s row %d must contain "
+                            "exactly two fields\n", mass_path, mass_rows + 1);
+                    mass_non_d9_fatal = 1;
+                    continue;
+                }
+
+                errno = 0;
+                z_value = strtol(line, &z_end, 10);
+                if (errno == ERANGE) {
+                    fprintf(stderr, "[D17][FATAL] %s row %d Z is outside strtol "
+                            "range\n", mass_path, mass_rows + 1);
+                    mass_non_d9_fatal = 1;
+                    row_bad = 1;
+                }
+                q = z_end;
+                while (q < comma && D_IS_SPACE((unsigned char)*q)) q++;
+                if (z_end == line || q != comma || z_value <= 0 ||
+                    z_value > INT_MAX) {
+                    fprintf(stderr, "[D14][FATAL] %s row %d Z must be a positive "
+                            "integer representable as int\n", mass_path,
+                            mass_rows + 1);
+                    mass_non_d9_fatal = 1;
+                    row_bad = 1;
+                }
+
+                errno = 0;
+                mass_value = strtod(comma + 1, &mass_end);
+                if (errno == ERANGE) {
+                    fprintf(stderr, "[D17][FATAL] %s row %d mass is outside "
+                            "strtod range\n", mass_path, mass_rows + 1);
+                    mass_non_d9_fatal = 1;
+                    row_bad = 1;
+                }
+                q = mass_end;
+                while (*q && D_IS_SPACE((unsigned char)*q)) q++;
+                if (mass_end == comma + 1 || *q != '\0' ||
+                    !(mass_value > 0.0) || !isfinite(mass_value)) {
+                    fprintf(stderr, "[D14][FATAL] %s row %d mass must be a "
+                            "positive finite number with no trailing garbage\n",
+                            mass_path, mass_rows + 1);
+                    mass_non_d9_fatal = 1;
+                    row_bad = 1;
+                }
+                if (row_bad) continue;
+
+                for (int i = 0; i < mass_seen_count; i++) {
+                    if (mass_seen_z[i] == (int)z_value) {
+                        fprintf(stderr, "[D9][FATAL] duplicate Z=%ld in %s\n",
+                                z_value, mass_path);
+                        fatal_seen = 1;
+                        break;
+                    }
+                }
+                if (mass_seen_count == mass_seen_capacity) {
+                    int new_capacity = mass_seen_capacity * 2;
+                    int *grown = (int *)realloc(
+                        mass_seen_z, (size_t)new_capacity * sizeof(int));
+                    if (!grown) {
+                        D_RETURN_FATAL("[D14][FATAL] out of memory validating "
+                                       "%s\n", mass_path);
+                    }
+                    mass_seen_z = grown;
+                    mass_seen_capacity = new_capacity;
+                }
+                mass_seen_z[mass_seen_count++] = (int)z_value;
+                mass_valid_rows++;
+            }
+            if (ferror(mass_fp)) {
+                D_RETURN_FATAL("[D14][FATAL] read error in %s\n", mass_path);
+            }
+            fclose(mass_fp);
+            mass_fp = NULL;
+
+            if (mass_rows == 0 || mass_rows != atom->n_elements ||
+                mass_valid_rows != mass_rows) {
+                fprintf(stderr, "[D14][FATAL] %s row-count mismatch: physical=%d, "
+                        "valid=%d, loaded=%d\n", mass_path, mass_rows,
+                        mass_valid_rows, atom->n_elements);
+                mass_non_d9_fatal = 1;
+            }
+            if (mass_non_d9_fatal) {
+                D_CLEANUP();
+                return 1;
+            }
+        }
+
+        ab_seen = (unsigned char *)calloc((size_t)atom->n_elements, 1);
+        shell_sum = (double *)calloc((size_t)n_shells, sizeof(double));
+        row_values = (double *)malloc((size_t)n_shells * sizeof(double));
+        if (!ab_seen || !shell_sum || !row_values) {
+            D_RETURN_FATAL("[D14][FATAL] out of memory validating composition\n");
+        }
+
+        /* Header contract: exactly atomic_number,0,1,...,n_shells-1. */
+        {
+            size_t len;
+            int got, had_nul, overlong;
+            int total_fields = 1;
+            int schema_bad = 0;
+            char *field;
+
+            D_READ_LINE(ab_fp, line, len, got, had_nul, overlong);
+            if (overlong) {
+                D_RETURN_FATAL("[D10][FATAL] %s header exceeds %zu-byte line "
+                               "buffer\n", path, sizeof(line));
+            }
+            if (!got) {
+                D_RETURN_FATAL("[D2][FATAL] %s has no header\n", path);
+            }
+            if (had_nul) {
+                D_RETURN_FATAL("[D8][FATAL] %s header contains a NUL byte\n", path);
+            }
+            while (len > 0 && (line[len - 1] == '\n' || line[len - 1] == '\r'))
+                line[--len] = '\0';
+            for (size_t i = 0; i < len; i++)
+                if (line[i] == ',') total_fields++;
+            if (total_fields - 1 != n_shells) {
+                D_RETURN_FATAL("[D2][FATAL] %s header has %d shell columns; "
+                               "expected %d\n", path, total_fields - 1,
+                               n_shells);
+            }
+
+            field = line;
+            for (int col = 0; col < total_fields; col++) {
+                char *end = strchr(field, ',');
+                char expected[32];
+                size_t actual_len;
+                if (!end) end = field + strlen(field);
+                actual_len = (size_t)(end - field);
+                if (col == 0)
+                    snprintf(expected, sizeof(expected), "atomic_number");
+                else
+                    snprintf(expected, sizeof(expected), "%d", col - 1);
+                if (strlen(expected) != actual_len ||
+                    strncmp(field, expected, actual_len) != 0)
+                    schema_bad = 1;
+                field = *end == ',' ? end + 1 : end;
+            }
+            if (schema_bad) {
+                D_RETURN_FATAL("[D12][FATAL] %s header schema/order must be "
+                               "atomic_number,0,1,...,%d\n", path,
+                               n_shells - 1);
+            }
+        }
+
+        /* Read to EOF, including rows beyond atom->n_elements. */
+        {
+            int physical_row = 1;
+            int recognized_rows = 0;
+            for (;;) {
+                size_t len;
+                int got, had_nul, overlong;
+                int shell_fields = 0;
+                int eidx = -1;
+                int row_bad = 0;
+                char *p, *end, *q;
+                long z_value;
+
+                D_READ_LINE(ab_fp, line, len, got, had_nul, overlong);
+                if (!got) break;
+                physical_row++;
+                if (overlong) {
+                    D_RETURN_FATAL("[D10][FATAL] %s row %d exceeds %zu-byte line "
+                                   "buffer\n", path, physical_row,
+                                   sizeof(line));
+                }
+                if (had_nul) {
+                    fprintf(stderr, "[D8][FATAL] %s row %d contains a NUL byte\n",
+                            path, physical_row);
+                    fatal_seen = 1;
+                    continue;
+                }
+                while (len > 0 && (line[len - 1] == '\n' || line[len - 1] == '\r'))
+                    line[--len] = '\0';
+                for (size_t i = 0; i < len; i++)
+                    if (line[i] == ',') shell_fields++;
+                if (shell_fields != n_shells) {
+                    fprintf(stderr, "[D3][FATAL] %s row %d has %d shell fields; "
+                            "expected %d\n", path, physical_row, shell_fields,
+                            n_shells);
+                    fatal_seen = 1;
+                    continue;
+                }
+
+                p = line;
+                errno = 0;
+                z_value = strtol(p, &end, 10);
+                if (errno == ERANGE) {
+                    fprintf(stderr, "[D17][FATAL] %s row %d Z is outside strtol "
+                            "range\n", path, physical_row);
+                    fatal_seen = 1;
+                    continue;
+                }
+                q = end;
+                while (D_IS_SPACE((unsigned char)*q)) q++;
+                if (end == p || *q != ',') {
+                    fprintf(stderr, "[D8][FATAL] %s row %d has an invalid Z token "
+                            "or Z-token trailing garbage\n", path, physical_row);
+                    fatal_seen = 1;
+                    continue;
+                }
+                if (z_value <= 0 || z_value > INT_MAX) {
+                    fprintf(stderr, "[D4][FATAL] %s row %d Z=%ld is absent from "
+                            "atom_masses.csv\n", path, physical_row, z_value);
+                    fatal_seen = 1;
+                    continue;
+                }
+                for (int i = 0; i < atom->n_elements; i++) {
+                    if (atom->element_Z[i] == (int)z_value) {
+                        eidx = i;
+                        break;
+                    }
+                }
+                if (eidx < 0) {
+                    fprintf(stderr, "[D4][FATAL] %s row %d Z=%ld is absent from "
+                            "atom_masses.csv\n", path, physical_row, z_value);
+                    fatal_seen = 1;
+                    continue;
+                }
+                if (ab_seen[eidx]) {
+                    fprintf(stderr, "[D9][FATAL] duplicate Z=%ld in %s\n",
+                            z_value, path);
+                    fatal_seen = 1;
+                } else {
+                    ab_seen[eidx] = 1;
+                }
+
+                p = q + 1;
+                for (int s = 0; s < n_shells; s++) {
+                    double value;
+                    errno = 0;
+                    value = strtod(p, &end);
+                    if (errno == ERANGE) {
+                        fprintf(stderr, "[D17][FATAL] %s row %d shell %d is "
+                                "outside strtod range\n", path, physical_row, s);
+                        fatal_seen = 1;
+                        row_bad = 1;
+                    }
+                    q = end;
+                    while (D_IS_SPACE((unsigned char)*q)) q++;
+                    if (end == p || (s + 1 < n_shells ? *q != ',' : *q != '\0')) {
+                        fprintf(stderr, "[D8][FATAL] %s row %d shell %d has an "
+                                "invalid number or trailing garbage\n", path,
+                                physical_row, s);
+                        fatal_seen = 1;
+                        row_bad = 1;
+                    }
+                    if (isnan(value)) {
+                        fprintf(stderr, "[D7a][FATAL] %s row %d shell %d is NaN\n",
+                                path, physical_row, s);
+                        fatal_seen = 1;
+                        row_bad = 1;
+                    } else if (!isfinite(value)) {
+                        fprintf(stderr, "[D7b][FATAL] %s row %d shell %d is "
+                                "infinite\n", path, physical_row, s);
+                        fatal_seen = 1;
+                        row_bad = 1;
+                    } else if (value < 0.0) {
+                        fprintf(stderr, "[D7c][FATAL] %s row %d shell %d is "
+                                "negative (%.17g)\n", path, physical_row, s,
+                                value);
+                        fatal_seen = 1;
+                        row_bad = 1;
+                    } else if (value > 1.0) {
+                        fprintf(stderr, "[D16][FATAL] %s row %d shell %d exceeds "
+                                "one (%.17g)\n", path, physical_row, s, value);
+                        fatal_seen = 1;
+                        row_bad = 1;
+                    }
+                    row_values[s] = value;
+                    p = *q == ',' ? q + 1 : q;
+                }
+                if (row_bad) continue;
+
+                for (int s = 0; s < n_shells; s++) {
+                    atom->abundances[eidx * n_shells + s] = row_values[s];
+                    shell_sum[s] += row_values[s];
+                }
+                recognized_rows++;
+            }
+            if (ferror(ab_fp)) {
+                D_RETURN_FATAL("[D8][FATAL] read error in %s\n", path);
+            }
+            fclose(ab_fp);
+            ab_fp = NULL;
+
+            if (fatal_seen) {
+                D_CLEANUP();
+                return 1;
+            }
+            if (recognized_rows == 0) {
+                D_RETURN_FATAL("[D13][FATAL] %s contains zero recognized data "
+                               "rows\n", path);
+            }
+        }
+
+        for (int s = 0; s < n_shells; s++) {
+            if (!(shell_sum[s] > 0.0)) {
+                D_RETURN_FATAL("[D15][FATAL] shell %d abundance sum is not "
+                               "positive (%.17g)\n", s, shell_sum[s]);
+            }
+        }
+
+        /* Warnings are intentionally observable on stdout. */
+        {
+            int missing = 0;
+            for (int i = 0; i < atom->n_elements; i++)
+                if (!ab_seen[i]) missing++;
+            if (missing > 0) {
+                int emitted = 0;
+                printf("[D5][WARN] %d atom_masses.csv element(s) absent from "
+                       "abundances.csv\n", missing);
+                printf("  missing Z: ");
+                for (int i = 0; i < atom->n_elements; i++) {
+                    if (!ab_seen[i]) {
+                        printf("%s%d", emitted ? "," : "", atom->element_Z[i]);
+                        emitted++;
+                    }
+                }
+                printf("\n");
+            }
+        }
+        {
+            int bad_sums = 0;
+            for (int s = 0; s < n_shells; s++)
+                if (fabs(shell_sum[s] - 1.0) > 1e-6) bad_sums++;
+            if (bad_sums > 0) {
+                int emitted = 0;
+                printf("[D6][WARN] %d shell abundance sum(s) differ from one by "
+                       "more than 1e-6\n", bad_sums);
+                printf("  shell sums: ");
+                for (int s = 0; s < n_shells; s++) {
+                    if (fabs(shell_sum[s] - 1.0) > 1e-6) {
+                        printf("%s%d=%.17g", emitted ? "," : "", s,
+                               shell_sum[s]);
+                        emitted++;
+                    }
+                }
+                printf("\n");
+            }
+        }
+
+        D_CLEANUP();
+        #undef D_RETURN_FATAL
+        #undef D_CLEANUP
+        #undef D_READ_LINE
+        #undef D_IS_SPACE
     }
 
     /* --- Build ion population table --- */
@@ -932,6 +1855,25 @@ int load_atomic_data(AtomicData *atom, const char *ref_dir, int n_shells) {
     /* --- Allocate per-shell computed arrays --- */
     atom->ion_number_density  = (double *)calloc((size_t)total_ion_pops * n_shells, sizeof(double));
     atom->partition_functions = (double *)calloc((size_t)total_ion_pops * n_shells, sizeof(double));
+    atom->partition_functions_Te = (double *)calloc((size_t)total_ion_pops * n_shells, sizeof(double));
+
+    /* The bf repairs own their target-map dependency: neither stimulated
+     * recombination nor the D-1 event selector may require MA_RADRECOMB. */
+    {
+        const char *stim = getenv("LUMINA_FIX_BF_STIM_RECOMB");
+        const char *event = getenv("LUMINA_FIX_BF_CONTINUUM_EVENT");
+        if ((stim && atoi(stim) != 0) || (event && atoi(event) != 0) ||
+            nlte_element_wide_enabled()) {
+            const char *override = getenv("LUMINA_MA_RADRECOMB_TARGET");
+            char target_path[1024];
+            if (override && strchr(override, '/'))
+                snprintf(target_path, sizeof(target_path), "%s", override);
+            else
+                snprintf(target_path, sizeof(target_path),
+                         "%s/ma_radrecomb_target.bin", ref_dir);
+            load_ma_radrecomb_target(atom, target_path);
+        }
+    }
 
     printf("Atomic data loading complete.\n");
     return 0;
@@ -1024,6 +1966,431 @@ int load_cmfgen_sigma_bf(AtomicData *atom, const char *path) {
     printf("  CMFGEN sigma_bf: %d/%d levels (%.1f%%) on %d-bin grid\n",
            n_with, n_lev, 100.0 * n_with / (double)n_lev, n_freq);
     return 0;
+}
+
+/* Load the bound-free upper-ion photoionization TARGET map (B4/D1/M1 data gap).
+ * Parallel to cmfgen_sigma_bf.bin (same n_levels ordering); records per level the
+ * GLOBAL index of the upper-ion level a photoionization lands on (== the recomb
+ * source). Built by scripts/build_ma_radrecomb_target.py. Layout (little-endian):
+ *   uint32 magic   = 0x4D415254 ('MART')
+ *   uint32 version = 1 or 2
+ *   int32  n_levels                (must == atom->n_levels)
+ *   int32  n_ions_mapped
+ * v1:
+ *   int32  target_level_idx[n_levels]   (upper-ion target global level, or -1)
+ * v2:
+ *   int32  n_routes
+ *   int32  target_offset[n_levels+1]
+ *   int32  target_level_idx[n_routes]
+ *   double target_probability[n_routes]
+ * Version 1 is the established CMFGEN single-target schema and therefore has
+ * one p=1 route for every mapped level. Version 2 is a general multi-target CSR.
+ * Returns 0 on success (atom->ma_rr_loaded=1); -1 on any problem (stays 0 => the
+ * MA-RADRECOMB gate degrades to the ground-only assumption / no continuum). */
+int load_ma_radrecomb_target(AtomicData *atom, const char *path) {
+    atom->ma_rr_loaded = 0;
+    atom->ma_rr_target = NULL;
+    atom->ma_rr_n_routes = 0;
+    atom->ma_rr_target_offset = NULL;
+    atom->ma_rr_targets = NULL;
+    atom->ma_rr_probability = NULL;
+    atom->ma_rr_n_ions = 0;
+    atom->ma_rr_n_mapped = 0;
+    FILE *fp = fopen(path, "rb");
+    if (!fp) {
+        printf("  [MA-RADRECOMB] target map %s not found -> ground-only fallback\n",
+               path);
+        return -1;
+    }
+    uint32_t magic = 0, version = 0;
+    int32_t n_lev = 0, n_ions = 0;
+    if (fread(&magic, 4, 1, fp) != 1 || fread(&version, 4, 1, fp) != 1 ||
+        fread(&n_lev, 4, 1, fp) != 1 || fread(&n_ions, 4, 1, fp) != 1) {
+        fprintf(stderr, "ERROR: %s header read failed\n", path);
+        fclose(fp); return -1;
+    }
+    if (magic != 0x4D415254u || (version != 1u && version != 2u)) {
+        fprintf(stderr, "ERROR: %s bad magic/version (0x%08x v%u)\n",
+                path, magic, version);
+        fclose(fp); return -1;
+    }
+    if (n_lev != atom->n_levels) {
+        fprintf(stderr, "ERROR: %s n_levels=%d != atom->n_levels=%d\n",
+                path, n_lev, atom->n_levels);
+        fclose(fp); return -1;
+    }
+    int *primary = (int *)malloc((size_t)n_lev * sizeof(int));
+    int *offset = (int *)malloc((size_t)(n_lev + 1) * sizeof(int));
+    if (!primary || !offset) {
+        free(primary); free(offset); fclose(fp); return -1;
+    }
+    for (int i = 0; i < n_lev; i++) primary[i] = -1;
+
+    int32_t n_routes32 = 0;
+    int *targets = NULL;
+    double *prob = NULL;
+    if (version == 1u) {
+        int *legacy = (int *)malloc((size_t)n_lev * sizeof(int));
+        if (!legacy ||
+            fread(legacy, sizeof(int), (size_t)n_lev, fp) != (size_t)n_lev) {
+            fprintf(stderr, "ERROR: %s v1 target array read failed\n", path);
+            free(legacy); free(primary); free(offset); fclose(fp); return -1;
+        }
+        for (int i = 0; i < n_lev; i++)
+            if (legacy[i] >= 0 && legacy[i] < n_lev) n_routes32++;
+        size_t nr_alloc = n_routes32 > 0 ? (size_t)n_routes32 : 1u;
+        targets = (int *)malloc(nr_alloc * sizeof(int));
+        prob = (double *)malloc(nr_alloc * sizeof(double));
+        if ((n_routes32 > 0) && (!targets || !prob)) {
+            free(legacy); free(primary); free(offset);
+            free(targets); free(prob); fclose(fp); return -1;
+        }
+        int r = 0;
+        offset[0] = 0;
+        for (int i = 0; i < n_lev; i++) {
+            if (legacy[i] >= 0 && legacy[i] < n_lev) {
+                primary[i] = legacy[i];
+                targets[r] = legacy[i];
+                prob[r] = 1.0;
+                r++;
+            }
+            offset[i + 1] = r;
+        }
+        free(legacy);
+    } else {
+        if (fread(&n_routes32, sizeof(int32_t), 1, fp) != 1 ||
+            n_routes32 < 0 ||
+            fread(offset, sizeof(int), (size_t)n_lev + 1, fp) !=
+                (size_t)n_lev + 1) {
+            fprintf(stderr, "ERROR: %s v2 CSR header/offset read failed\n", path);
+            free(primary); free(offset); fclose(fp); return -1;
+        }
+        size_t nr_alloc = n_routes32 > 0 ? (size_t)n_routes32 : 1u;
+        targets = (int *)malloc(nr_alloc * sizeof(int));
+        prob = (double *)malloc(nr_alloc * sizeof(double));
+        if ((n_routes32 > 0) && (!targets || !prob)) {
+            free(primary); free(offset); free(targets); free(prob);
+            fclose(fp); return -1;
+        }
+        if (fread(targets, sizeof(int), (size_t)n_routes32, fp) !=
+                (size_t)n_routes32 ||
+            fread(prob, sizeof(double), (size_t)n_routes32, fp) !=
+                (size_t)n_routes32) {
+            fprintf(stderr, "ERROR: %s v2 route arrays read failed\n", path);
+            free(primary); free(offset); free(targets); free(prob);
+            fclose(fp); return -1;
+        }
+    }
+    fclose(fp);
+
+    /* Fail closed on malformed CSR or invalid targets/probabilities. Unlike a
+     * single primary map, route compaction preserves every valid target. */
+    int bad_csr = offset[0] != 0 || offset[n_lev] != n_routes32;
+    for (int i = 0; i < n_lev && !bad_csr; i++)
+        if (offset[i] > offset[i + 1] || offset[i] < 0 ||
+            offset[i + 1] > n_routes32) bad_csr = 1;
+    int n_mapped = 0, n_scrub = 0;
+    if (!bad_csr) {
+        for (int i = 0; i < n_lev; i++) {
+            int first_valid = -1;
+            for (int r = offset[i]; r < offset[i + 1]; r++) {
+                if (targets[r] < 0 || targets[r] >= n_lev ||
+                    !isfinite(prob[r]) || prob[r] < 0.0 || prob[r] > 1.0) {
+                    prob[r] = 0.0;
+                    n_scrub++;
+                    continue;
+                }
+                if (first_valid < 0 && prob[r] > 0.0) first_valid = targets[r];
+            }
+            primary[i] = first_valid;
+            if (first_valid >= 0) n_mapped++;
+        }
+    } else {
+        fprintf(stderr, "ERROR: %s malformed v2 target CSR\n", path);
+        free(primary); free(offset); free(targets); free(prob);
+        return -1;
+    }
+    atom->ma_rr_target = primary;
+    atom->ma_rr_n_routes = n_routes32;
+    atom->ma_rr_target_offset = offset;
+    atom->ma_rr_targets = targets;
+    atom->ma_rr_probability = prob;
+    atom->ma_rr_n_ions = n_ions;
+    atom->ma_rr_n_mapped = n_mapped;
+    atom->ma_rr_loaded = 1;
+    printf("  [MA-RADRECOMB] target data: %d ions, %d levels mapped%s\n",
+           n_ions, n_mapped,
+           n_scrub ? " (scrubbed out-of-range entries)" : "");
+    return 0;
+}
+
+/* Load the real Fe III collisional-strength table (Zhang 1996), imported from
+ * CMFGEN's FeIII_COL_DATA (19apr23) by scripts/build_feiii_coldata.py.
+ * Binary layout (little-endian):
+ *   uint32 magic   = 0x46454333 ('FEC3')
+ *   uint32 version = 1
+ *   int32  Z, ion               (26, 2)
+ *   int32  n_trans, n_temp      (n_temp==20)
+ *   int32  n_levels_ref         (osc_data level count, sanity vs atom)
+ *   double T_grid_K[n_temp]     (CMFGEN 10^4-K grid scaled to K)
+ *   record[n_trans]: { int32 i_low, int32 i_high, double omega[n_temp] }
+ *     i_low/i_high are Lumina level_number (== CMFGEN osc energy rank),
+ *     ordered so i_low is the lower-energy level.
+ * Returns 0 on success (atom->feiii_col_loaded=1), -1 on any problem
+ * (feiii_col_loaded stays 0 -> assembler falls back to van Regemorter). */
+int load_feiii_coldata(AtomicData *atom, const char *path) {
+    atom->feiii_col_loaded = 0;
+    FILE *fp = fopen(path, "rb");
+    if (!fp) {
+        printf("  FeIII col_data: %s not found -> van Regemorter fallback\n", path);
+        return -1;
+    }
+    uint32_t magic = 0, version = 0;
+    int32_t Z = 0, ion = 0, n_trans = 0, n_temp = 0, n_lev_ref = 0;
+    if (fread(&magic, 4, 1, fp) != 1 || fread(&version, 4, 1, fp) != 1 ||
+        fread(&Z, 4, 1, fp) != 1 || fread(&ion, 4, 1, fp) != 1 ||
+        fread(&n_trans, 4, 1, fp) != 1 || fread(&n_temp, 4, 1, fp) != 1 ||
+        fread(&n_lev_ref, 4, 1, fp) != 1) {
+        fprintf(stderr, "ERROR: %s header read failed\n", path);
+        fclose(fp); return -1;
+    }
+    if (magic != 0x46454333u || version != 1u) {
+        fprintf(stderr, "ERROR: %s bad magic/version (0x%08x v%u)\n", path, magic, version);
+        fclose(fp); return -1;
+    }
+    if (Z != 26 || ion != 2) {
+        fprintf(stderr, "ERROR: %s Z=%d ion=%d != (26,2)\n", path, Z, ion);
+        fclose(fp); return -1;
+    }
+    if (n_trans <= 0 || n_temp <= 0 || n_temp > 256) {
+        fprintf(stderr, "ERROR: %s bad n_trans=%d n_temp=%d\n", path, n_trans, n_temp);
+        fclose(fp); return -1;
+    }
+    /* Sanity: the reference level count must match this atom's Fe III level
+     * count, else the level_number indices don't correspond (fail-closed). */
+    int feiii_nlev = 0;
+    for (int l = 0; l < atom->n_levels; l++)
+        if (atom->level_Z[l] == 26 && atom->level_ion[l] == 2) feiii_nlev++;
+    if (n_lev_ref != feiii_nlev) {
+        fprintf(stderr, "ERROR: %s n_levels_ref=%d != atom FeIII levels=%d "
+                "(level_number map mismatch)\n", path, n_lev_ref, feiii_nlev);
+        fclose(fp); return -1;
+    }
+
+    double *tgrid = (double *)malloc((size_t)n_temp * sizeof(double));
+    int    *lo    = (int *)malloc((size_t)n_trans * sizeof(int));
+    int    *hi    = (int *)malloc((size_t)n_trans * sizeof(int));
+    double *omega = (double *)malloc((size_t)n_trans * (size_t)n_temp * sizeof(double));
+    if (!tgrid || !lo || !hi || !omega) {
+        fprintf(stderr, "ERROR: %s alloc failed\n", path);
+        free(tgrid); free(lo); free(hi); free(omega); fclose(fp); return -1;
+    }
+    if (fread(tgrid, sizeof(double), (size_t)n_temp, fp) != (size_t)n_temp) {
+        fprintf(stderr, "ERROR: %s T_grid read failed\n", path);
+        free(tgrid); free(lo); free(hi); free(omega); fclose(fp); return -1;
+    }
+    int bad = 0;
+    for (int t = 0; t < n_trans; t++) {
+        int32_t il = 0, ih = 0;
+        if (fread(&il, 4, 1, fp) != 1 || fread(&ih, 4, 1, fp) != 1 ||
+            fread(&omega[(size_t)t * n_temp], sizeof(double), (size_t)n_temp, fp)
+                != (size_t)n_temp) {
+            fprintf(stderr, "ERROR: %s record %d read failed\n", path, t);
+            bad = 1; break;
+        }
+        if (il < 0 || ih < 0 || il >= feiii_nlev || ih >= feiii_nlev) {
+            fprintf(stderr, "ERROR: %s record %d level idx out of range (%d,%d)\n",
+                    path, t, il, ih);
+            bad = 1; break;
+        }
+        lo[t] = il; hi[t] = ih;
+    }
+    fclose(fp);
+    if (bad) { free(tgrid); free(lo); free(hi); free(omega); return -1; }
+
+    atom->feiii_col_tgrid   = tgrid;
+    atom->feiii_col_lo      = lo;
+    atom->feiii_col_hi      = hi;
+    atom->feiii_col_omega   = omega;
+    atom->feiii_col_Z       = Z;
+    atom->feiii_col_ion     = ion;
+    atom->feiii_col_n_trans = n_trans;
+    atom->feiii_col_n_temp  = n_temp;
+    atom->feiii_col_loaded  = 1;
+    printf("  FeIII col_data (Zhang 1996): %d transitions x %d T [%.0f..%.0f K], "
+           "%d FeIII levels -> real close-coupling Omega ARMED\n",
+           n_trans, n_temp, tgrid[0], tgrid[n_temp - 1], feiii_nlev);
+    return 0;
+}
+
+/* ARTIS-parity (Group A / A3): generic per-ion close-coupling collision-strength
+ * loader. Reads one ion's ige_col_<Z>_<ion0>.bin (built by
+ * scripts/build_ige_coldata.py, same rate convention as the Fe III Zhang table)
+ * and APPENDS it to atom->col_ion_* (Fe II, Co III, Ni III, ...). The level
+ * indices are Lumina level_number == CMFGEN osc energy rank, verified identical
+ * by the importer's osc<->levels.csv round-trip.
+ *
+ * Binary layout (little-endian):
+ *   uint32 magic=0x49474331 ('IGC1'), uint32 version=1,
+ *   int32  Z, ion0(0-based), n_trans, n_temp, n_levels_ref,
+ *   double T_grid_K[n_temp],
+ *   record[n_trans]: { int32 i_low, int32 i_high, double omega[n_temp] }.
+ *
+ * Fail-closed: any malformed header/record, a level-count mismatch against this
+ * atom's (Z,ion0) level set, or an out-of-range index -> returns -1 and stores
+ * nothing (that ion silently falls to ARTIS's g-scaled Axelrod floor). */
+int load_ion_coldata(AtomicData *atom, const char *path) {
+    FILE *fp = fopen(path, "rb");
+    if (!fp) {
+        printf("  ion col_data: %s not found -> Axelrod floor fallback\n", path);
+        return -1;
+    }
+    uint32_t magic = 0, version = 0;
+    int32_t Z = 0, ion0 = 0, n_trans = 0, n_temp = 0, n_lev_ref = 0;
+    if (fread(&magic, 4, 1, fp) != 1 || fread(&version, 4, 1, fp) != 1 ||
+        fread(&Z, 4, 1, fp) != 1 || fread(&ion0, 4, 1, fp) != 1 ||
+        fread(&n_trans, 4, 1, fp) != 1 || fread(&n_temp, 4, 1, fp) != 1 ||
+        fread(&n_lev_ref, 4, 1, fp) != 1) {
+        fprintf(stderr, "ERROR: %s header read failed\n", path);
+        fclose(fp); return -1;
+    }
+    if (magic != 0x49474331u || version != 1u) {
+        fprintf(stderr, "ERROR: %s bad magic/version (0x%08x v%u)\n", path, magic, version);
+        fclose(fp); return -1;
+    }
+    if (n_trans <= 0 || n_temp <= 0 || n_temp > 256) {
+        fprintf(stderr, "ERROR: %s bad n_trans=%d n_temp=%d\n", path, n_trans, n_temp);
+        fclose(fp); return -1;
+    }
+    if (atom->ncol_ions >= LUMINA_MAX_COL_IONS) {
+        fprintf(stderr, "ERROR: %s exceeds LUMINA_MAX_COL_IONS=%d\n", path, LUMINA_MAX_COL_IONS);
+        fclose(fp); return -1;
+    }
+    /* Sanity: reference level count must equal this atom's (Z,ion0) level count
+     * (else the level_number == osc-rank identity does not hold). Fail-closed. */
+    int nlev_ion = 0;
+    for (int l = 0; l < atom->n_levels; l++)
+        if (atom->level_Z[l] == Z && atom->level_ion[l] == ion0) nlev_ion++;
+    if (n_lev_ref != nlev_ion) {
+        fprintf(stderr, "ERROR: %s n_levels_ref=%d != atom Z=%d ion0=%d levels=%d "
+                "(level_number map mismatch)\n", path, n_lev_ref, Z, ion0, nlev_ion);
+        fclose(fp); return -1;
+    }
+    double *tgrid = (double *)malloc((size_t)n_temp * sizeof(double));
+    int    *lo    = (int *)malloc((size_t)n_trans * sizeof(int));
+    int    *hi    = (int *)malloc((size_t)n_trans * sizeof(int));
+    double *omega = (double *)malloc((size_t)n_trans * (size_t)n_temp * sizeof(double));
+    if (!tgrid || !lo || !hi || !omega) {
+        fprintf(stderr, "ERROR: %s alloc failed\n", path);
+        free(tgrid); free(lo); free(hi); free(omega); fclose(fp); return -1;
+    }
+    if (fread(tgrid, sizeof(double), (size_t)n_temp, fp) != (size_t)n_temp) {
+        fprintf(stderr, "ERROR: %s T_grid read failed\n", path);
+        free(tgrid); free(lo); free(hi); free(omega); fclose(fp); return -1;
+    }
+    int bad = 0;
+    for (int t = 0; t < n_trans; t++) {
+        int32_t il = 0, ih = 0;
+        if (fread(&il, 4, 1, fp) != 1 || fread(&ih, 4, 1, fp) != 1 ||
+            fread(&omega[(size_t)t * n_temp], sizeof(double), (size_t)n_temp, fp)
+                != (size_t)n_temp) {
+            fprintf(stderr, "ERROR: %s record %d read failed\n", path, t);
+            bad = 1; break;
+        }
+        if (il < 0 || ih < 0 || il >= nlev_ion || ih >= nlev_ion) {
+            fprintf(stderr, "ERROR: %s record %d level idx out of range (%d,%d)\n",
+                    path, t, il, ih);
+            bad = 1; break;
+        }
+        lo[t] = il; hi[t] = ih;
+    }
+    fclose(fp);
+    if (bad) { free(tgrid); free(lo); free(hi); free(omega); return -1; }
+
+    int c = atom->ncol_ions;
+    atom->col_ion_Z[c]       = Z;
+    atom->col_ion_stage[c]   = ion0;
+    atom->col_ion_n_trans[c] = n_trans;
+    atom->col_ion_n_temp[c]  = n_temp;
+    atom->col_ion_tgrid[c]   = tgrid;
+    atom->col_ion_lo[c]      = lo;
+    atom->col_ion_hi[c]      = hi;
+    atom->col_ion_omega[c]   = omega;
+    atom->ncol_ions          = c + 1;
+    printf("  ion col_data Z=%d ion0=%d: %d transitions x %d T [%.0f..%.0f K], "
+           "%d levels -> real close-coupling Omega ARMED (slot %d)\n",
+           Z, ion0, n_trans, n_temp, tgrid[0], tgrid[n_temp - 1], nlev_ion, c);
+    return 0;
+}
+
+/* [OMEGA-CMFGEN] Manifest-driven bulk load of EVERY ion for which CMFGEN itself
+ * ships a col_data table. Reads <ref_dir>/coldata_cmfgen_manifest.csv and loads
+ * the out_bin of every row with status==OK (40 rows / 114952 transitions in
+ * data/tardis_reference_toy06_19p48d_sivcaiv). Replaces the 7 hand-listed IGE
+ * coolants of the ARTIS-parity banner.
+ *
+ * Field extraction is index-safe: Z/ion0 are columns 1/2 (before any free-text
+ * column) and out_bin/status are the LAST two, so a comma inside a middle note
+ * column cannot shift them.
+ *
+ * Fail-closed: a missing/empty manifest returns -1; any row that load_ion_coldata
+ * rejects (bad magic, level-count mismatch, out-of-range level index) makes the
+ * whole call return -1 rather than silently running on a partial table set. Rows
+ * whose (Z,ion0) is already covered by the Fe III Zhang table are skipped so one
+ * level pair never has two sources.
+ * Returns the number of ion tables loaded, or -1. */
+int load_ion_coldata_manifest(AtomicData *atom, const char *ref_dir) {
+    char mpath[1024];
+    snprintf(mpath, sizeof(mpath), "%s/coldata_cmfgen_manifest.csv", ref_dir);
+    FILE *mf = fopen(mpath, "r");
+    if (!mf) {
+        fprintf(stderr, "[OMEGA-CMFGEN][ERROR] cannot open %s\n", mpath);
+        return -1;
+    }
+    char lbuf[8192];
+    if (!fgets(lbuf, sizeof(lbuf), mf)) {          /* header */
+        fprintf(stderr, "[OMEGA-CMFGEN][ERROR] %s: empty manifest\n", mpath);
+        fclose(mf);
+        return -1;
+    }
+    int n_ok = 0, n_load = 0, n_fail = 0, n_dup = 0;
+    while (fgets(lbuf, sizeof(lbuf), mf)) {
+        char *fld[64];
+        int nf = 0;
+        for (char *p = lbuf; nf < 64; ) {
+            fld[nf++] = p;
+            char *c = strchr(p, ',');
+            if (!c) break;
+            *c = '\0';
+            p = c + 1;
+        }
+        if (nf < 4) continue;
+        for (char *q = fld[nf - 1]; *q; q++) if (*q == '\n' || *q == '\r') *q = '\0';
+        if (strcmp(fld[nf - 1], "OK") != 0) continue;
+        n_ok++;
+        int Z = atoi(fld[1]), ion0 = atoi(fld[2]);
+        const char *bin = fld[nf - 2];
+        if (atom->feiii_col_loaded && Z == atom->feiii_col_Z &&
+            ion0 == atom->feiii_col_ion) {
+            printf("  [OMEGA-CMFGEN] skip %s (Z=%d ion0=%d): already covered by "
+                   "feiii_col_zhang.bin\n", bin, Z, ion0);
+            n_dup++;
+            continue;
+        }
+        char cp[2048];
+        if (strchr(bin, '/')) snprintf(cp, sizeof(cp), "%s", bin);
+        else                  snprintf(cp, sizeof(cp), "%s/%s", ref_dir, bin);
+        if (load_ion_coldata(atom, cp) == 0) n_load++;
+        else {
+            n_fail++;
+            fprintf(stderr, "[OMEGA-CMFGEN][ERROR] load failed: %s\n", cp);
+        }
+    }
+    fclose(mf);
+    printf("  [OMEGA-CMFGEN] manifest %s: %d status==OK rows -> %d loaded, "
+           "%d skipped(dup), %d FAILED\n", mpath, n_ok, n_load, n_dup, n_fail);
+    if (n_fail > 0 || n_load == 0) return -1;
+    return n_load;
 }
 
 /* TOP-STAGE CONTINUUM ANCHOR (LUMINA_TOPSTAGE_ANCHOR=1): inject synthetic
@@ -1125,8 +2492,13 @@ void free_atomic_data(AtomicData *atom) {
     free(atom->level_offset);
     free(atom->ion_number_density);
     free(atom->partition_functions);
+    free(atom->partition_functions_Te);
     free(atom->cmfgen_has_sigma);
     free(atom->cmfgen_sigma_bf);
+    free(atom->ma_rr_target);
+    free(atom->ma_rr_target_offset);
+    free(atom->ma_rr_targets);
+    free(atom->ma_rr_probability);
 }
 
 /* ============================================================ */

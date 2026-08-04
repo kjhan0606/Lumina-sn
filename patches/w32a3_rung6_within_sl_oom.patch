@@ -1,0 +1,187 @@
+diff --git a/Makefile b/Makefile
+index 6bb1572..a920d5f 100644
+--- a/Makefile
++++ b/Makefile
+@@ -79,10 +79,16 @@ selftest_wave32_matrix_debit: tests/wave32_matrix_debit_seed.c src/lumina_elemen
+ 		tests/wave32_matrix_debit_seed.c src/lumina_element_wide.c \
+ 		src/lumina_plasma.c src/lumina_atomic.c $(LDFLAGS)
+ 
++selftest_wave32_within_sl_oom: tests/wave32_within_sl_oom.c src/lumina_plasma.c src/lumina_element_wide.c src/lumina_atomic.c $(HEADERS)
++	$(CC) -O2 -std=gnu11 -D_GNU_SOURCE -ffunction-sections -fdata-sections -Isrc \
++		-Wl,--gc-sections -Wl,--wrap=malloc -o selftest_wave32_within_sl_oom \
++		tests/wave32_within_sl_oom.c src/lumina_plasma.c \
++		src/lumina_element_wide.c src/lumina_atomic.c $(LDFLAGS)
++
+ # Clean
+ clean:
+ 	rm -f $(TARGET) lumina_cuda selftest_cmf_chieta_dump \
+-		selftest_wave32_matrix_debit *.o
++		selftest_wave32_matrix_debit selftest_wave32_within_sl_oom *.o
+ 
+ # Run with defaults
+ run: $(TARGET)
+diff --git a/bench_frozen_oracle.c b/bench_frozen_oracle.c
+index c2b0ff9..cef8798 100644
+--- a/bench_frozen_oracle.c
++++ b/bench_frozen_oracle.c
+@@ -35,6 +35,8 @@ typedef struct {
+ } FrozenReplay;
+ 
+ static int g_ew_sigma_available = 0;
++int nlte_precompute_within_sl_frac_checked(
++    NLTEConfig *, AtomicData *, PlasmaState *, int);
+ 
+ static void path_join(char *out, size_t n, const char *dir, const char *name) {
+     snprintf(out, n, "%s/%s", dir, name);
+@@ -613,7 +615,11 @@ static int run_cell(const char *run_dir, const char *out_dir, int shell,
+         plasma_set_photoion_mc_field(NULL, 0.0, 0, 0, NULL);
+ 
+     lumina_oracle_prepare_partitions(atom, plasma, 1);
+-    nlte_precompute_within_sl_frac(nlte, atom, plasma, 1);
++    if (nlte_precompute_within_sl_frac_checked(
++            nlte, atom, plasma, 1) != 0) {
++        free(mc_J);
++        return -1;
++    }
+     /* Wave-3 shadow observer: use the recorded shell label while the frozen
+      * replay stores that cell at local index zero.  No-op unless the EW gate is
+      * explicitly armed; the legacy oracle rows remain authoritative. */
+diff --git a/src/lumina_plasma.c b/src/lumina_plasma.c
+index d6e6f1d..6616173 100644
+--- a/src/lumina_plasma.c
++++ b/src/lumina_plasma.c
+@@ -17084,11 +17084,16 @@ void nlte_update_tau_sobolev(NLTEConfig *nlte, AtomicData *atom,
+  * and the departure coefficients blow up as b_k ~ exp(dE/kT_e) (the GPU-path
+  * super-thermal bug). The f-weighting, when current, preserves detailed balance
+  * exactly for both bb and bf. */
+-void nlte_precompute_within_sl_frac(NLTEConfig *nlte, AtomicData *atom,
+-                                    PlasmaState *plasma, int n_shells) {
+-    if (!nlte->super_mode) return;
++int nlte_precompute_within_sl_frac_checked(NLTEConfig *nlte, AtomicData *atom,
++                                           PlasmaState *plasma, int n_shells) {
++    if (!nlte->super_mode) return 0;
+     double *Zsl = (double *)malloc(
+         (nlte->n_super_total > 0 ? nlte->n_super_total : 1) * sizeof(double));
++    if (!Zsl) {
++        fprintf(stderr,
++                "[NLTE][OOM] within-super-level partition allocation failed\n");
++        return -1;
++    }
+     for (int s = 0; s < n_shells; s++) {
+         double T_e = plasma->T_e[s];
+         double kT = K_BOLTZMANN * (T_e > 0.0 ? T_e : 1.0);
+@@ -17114,6 +17119,15 @@ void nlte_precompute_within_sl_frac(NLTEConfig *nlte, AtomicData *atom,
+         }
+     }
+     free(Zsl);
++    return 0;
++}
++
++/* ABI-compatible legacy entry.  New owner paths use the checked form above;
++ * retained external callers remain source/binary compatible. */
++void nlte_precompute_within_sl_frac(NLTEConfig *nlte, AtomicData *atom,
++                                    PlasmaState *plasma, int n_shells) {
++    (void)nlte_precompute_within_sl_frac_checked(
++        nlte, atom, plasma, n_shells);
+ }
+ 
+ void nlte_solve_all(NLTEConfig *nlte, AtomicData *atom, PlasmaState *plasma,
+@@ -17122,7 +17136,11 @@ void nlte_solve_all(NLTEConfig *nlte, AtomicData *atom, PlasmaState *plasma,
+     printf("  [NLTE] Solving rate equations (with CE coupling)...\n");
+ 
+     /* Super-level mode: refresh the within-SL Boltzmann fractions at current T_e. */
+-    nlte_precompute_within_sl_frac(nlte, atom, plasma, n_shells);
++    if (nlte_precompute_within_sl_frac_checked(
++            nlte, atom, plasma, n_shells) != 0) {
++        fprintf(stderr, "[NLTE] solve aborted: within-SL projection unavailable\n");
++        return;
++    }
+ 
+     /* Pair layout from the centralized builder (16 base pairs, or 23 with the O
+      * triplet + stage-IV (III,IV) pairs under LUMINA_NLTE_STAGE4). Last-overlap
+diff --git a/src/lumina_element_wide.c b/src/lumina_element_wide.c
+index 2dafb4f..d10dca4 100644
+--- a/src/lumina_element_wide.c
++++ b/src/lumina_element_wide.c
+@@ -28,6 +28,8 @@ extern int nlte_bf_field_source(const NLTEConfig *nlte, double T_e, double nu,
+ extern int nlte_bf_collisional_enabled(void);
+ extern double nlte_bf_kramers_sigma0(int Z, int stage);
+ extern unsigned long nlte_bf_gpu_field_bypass_count(void);
++extern int nlte_precompute_within_sl_frac_checked(
++    NLTEConfig *, AtomicData *, PlasmaState *, int);
+ extern int nlte_build_projection(NLTEConfig *nlte, AtomicData *atom,
+                                  OpacityState *opacity, int n_shells,
+                                  const int *target_Z, const int *target_ion,
+@@ -624,7 +626,11 @@ static int ew_private_view_init(EWPrivateView *v, const NLTEConfig *src,
+                 n->nlte_level_populations[(size_t)g * p->n_shells + s] =
+                     src->nlte_level_populations[(size_t)src_g * p->n_shells + s];
+     }
+-    nlte_precompute_within_sl_frac(n, a, p, p->n_shells);
++    if (nlte_precompute_within_sl_frac_checked(
++            n, a, p, p->n_shells) != 0) {
++        ew_private_view_free(v);
++        return -1;
++    }
+     return 0;
+ }
+ 
+diff --git a/src/lumina_cuda.cu b/src/lumina_cuda.cu
+index a04cbd7..e6d4cb8 100644
+--- a/src/lumina_cuda.cu
++++ b/src/lumina_cuda.cu
+@@ -16,6 +16,8 @@
+ extern "C" {             /* Phase 6 - Step 1 */
+ #include "lumina.h"      /* Phase 6 - Step 1 */
+ #include "lumina_cmfgen.h"  /* pure-CMFGEN parallel radiation path */
++int nlte_precompute_within_sl_frac_checked(
++    NLTEConfig *, AtomicData *, PlasmaState *, int);
+ }                        /* Phase 6 - Step 1 */
+ 
+ /* ============================================================ */
+@@ -1006,7 +1008,11 @@ static void nlte_solve_all_gpu(NLTEConfig *nlte, AtomicData *atom,
+      * assembly/reconstruction. The CPU nlte_solve_all does this; the GPU path
+      * previously omitted it, leaving within_sl_frac at its init value 1.0 ->
+      * flat SL reconstruction -> super-thermal b_k ~ exp(dE/kT_e). */
+-    nlte_precompute_within_sl_frac(nlte, atom, plasma, n_shells);
++    if (nlte_precompute_within_sl_frac_checked(
++            nlte, atom, plasma, n_shells) != 0) {
++        fprintf(stderr, "[NLTE-GPU] abort: within-SL projection OOM\n");
++        return;
++    }
+ 
+     /* Pair layout from the centralized builder (16 base pairs, or 23 with the O
+      * triplet + stage-IV (III,IV) pairs under LUMINA_NLTE_STAGE4). Overlap pairs
+diff --git a/tests/wave32_within_sl_oom.c b/tests/wave32_within_sl_oom.c
+new file mode 100644
+index 0000000..be695c1
+--- /dev/null
++++ b/tests/wave32_within_sl_oom.c
+@@ -0,0 +1,28 @@
++#include "lumina.h"
++
++#include <stdio.h>
++#include <stdlib.h>
++#include <string.h>
++
++void *__real_malloc(size_t);
++int nlte_precompute_within_sl_frac_checked(
++    NLTEConfig *, AtomicData *, PlasmaState *, int);
++void *__wrap_malloc(size_t n) {
++    if (n == sizeof(double)) return NULL;
++    return __real_malloc(n);
++}
++
++int main(void) {
++    NLTEConfig nlte;
++    AtomicData atom;
++    PlasmaState plasma;
++    memset(&nlte, 0, sizeof(nlte));
++    memset(&atom, 0, sizeof(atom));
++    memset(&plasma, 0, sizeof(plasma));
++    nlte.super_mode = 1;
++    nlte.n_super_total = 1;
++    int rc = nlte_precompute_within_sl_frac_checked(
++        &nlte, &atom, &plasma, 1);
++    printf("within_sl_oom_rc=%d\n", rc);
++    return rc == -1 ? 0 : 1;
++}

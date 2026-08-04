@@ -1,0 +1,832 @@
+--- a/src/lumina_cmf_field.h
++++ b/src/lumina_cmf_field.h
+@@ -20,7 +20,8 @@
+     LCMF_EIO = -8,
+     LCMF_ESCHEMA = -9,
+     LCMF_ECHECKSUM = -10,
+-    LCMF_EHOMOLOGY = -11
++    LCMF_EHOMOLOGY = -11,
++    LCMF_ESIGNUNCERTAIN = -12
+ } LCMFStatus;
+ 
+ typedef enum {
+@@ -47,13 +48,25 @@
+     size_t frequency_index;
+     size_t ray_index;
+     size_t segment_index;
++    size_t substep_index;
++    size_t endpoint_index;
+     double value;
+     double term_previous;
+     double term_previous2;
++    double decay_ratio;
++    double theoretical_limit;
++    double interval_lower;
++    double interval_upper;
+     char message[160];
+ } LCMFError;
+ 
+ typedef struct {
++    double value;
++    double lower;
++    double upper;
++} LCMFInterval;
++
++typedef struct {
+     size_t nr;
+     size_t nnu;
+     const double *r_edge;
+@@ -94,12 +107,18 @@
+     double transport_resid_linf;
+     double source_resid_linf;
+     uint64_t clamp_count;
+-    uint64_t negative_count;
++    uint64_t bdf_eta_negative_count;
++    uint64_t bdf_eta_negative_plane_count;
++    uint64_t solution_negative_excess_count;
++    uint64_t sign_uncertain_count;
+     uint64_t nonfinite_count;
++    double bdf_eta_min;
++    double solution_min;
+     size_t source_iterations;
+     size_t nr;
+     size_t nnu;
+     size_t n_mu;
++    LCMFError bdf_eta_first;
+     LCMFError error;
+ } LCMFResult;
+ 
+@@ -148,6 +167,11 @@
+ int lumina_cmf_sc_linear(double intensity_upstream, double source_upstream,
+                          double source_downstream, double delta_tau,
+                          double *intensity_downstream);
++int lumina_cmf_sc_linear_signed(const LCMFInterval *intensity_upstream,
++                                const LCMFInterval *source_upstream,
++                                const LCMFInterval *source_downstream,
++                                double delta_tau,
++                                LCMFInterval *intensity_downstream);
+ 
+ int lumina_cmf_field_solve(const LCMFInput *input,
+                            const LCMFOptions *options,
+--- a/src/lumina_cmf_field.c
++++ b/src/lumina_cmf_field.c
+@@ -30,6 +30,8 @@
+     error->frequency_index = inu;
+     error->ray_index = SIZE_MAX;
+     error->segment_index = SIZE_MAX;
++    error->substep_index = SIZE_MAX;
++    error->endpoint_index = SIZE_MAX;
+     error->value = value;
+     if (message != NULL) {
+         (void)snprintf(error->message, sizeof(error->message), "%s", message);
+@@ -326,6 +328,77 @@
+     return LCMF_OK;
+ }
+ 
++static int valid_interval(const LCMFInterval *interval)
++{
++    return interval != NULL && isfinite(interval->value) &&
++           isfinite(interval->lower) && isfinite(interval->upper) &&
++           interval->lower <= interval->value && interval->value <= interval->upper;
++}
++
++static double interval_radius(const LCMFInterval *interval)
++{
++    return fmax(interval->value - interval->lower,
++                interval->upper - interval->value);
++}
++
++int lumina_cmf_sc_linear_signed(const LCMFInterval *intensity_upstream,
++                                const LCMFInterval *source_upstream,
++                                const LCMFInterval *source_downstream,
++                                double delta_tau,
++                                LCMFInterval *intensity_downstream)
++{
++    const double gamma_64 = (64.0 * DBL_EPSILON) /
++                            (1.0 - 64.0 * DBL_EPSILON);
++    double one_minus_e, ratio, psi_down, psi_up, attenuation;
++    double term_i, term_u, term_d, propagated, kernel, radius;
++    if (intensity_downstream == NULL || !valid_interval(intensity_upstream) ||
++        !valid_interval(source_upstream) || !valid_interval(source_downstream) ||
++        !isfinite(delta_tau) || delta_tau < 0.0) return LCMF_EINVAL;
++    if (delta_tau == 0.0) {
++        *intensity_downstream = *intensity_upstream;
++        return LCMF_OK;
++    }
++    one_minus_e = -expm1(-delta_tau);
++    if (fabs(delta_tau) < 1.0e-4) {
++        const double t = delta_tau;
++        ratio = 1.0 - t * 0.5 + t * t / 6.0 - t * t * t / 24.0
++                + t * t * t * t / 120.0;
++    } else {
++        ratio = one_minus_e / delta_tau;
++    }
++    psi_down = 1.0 - ratio;
++    psi_up = one_minus_e - psi_down;
++    attenuation = exp(-delta_tau);
++    term_i = attenuation * intensity_upstream->value;
++    term_u = psi_up * source_upstream->value;
++    term_d = psi_down * source_downstream->value;
++    intensity_downstream->value = term_i + term_u + term_d;
++    if (!isfinite(intensity_downstream->value) || !isfinite(attenuation) ||
++        !isfinite(psi_up) || !isfinite(psi_down)) return LCMF_ENONFINITE;
++
++    if (intensity_upstream->lower == 0.0 && intensity_upstream->upper == 0.0 &&
++        source_upstream->lower == 0.0 && source_upstream->upper == 0.0 &&
++        source_downstream->lower == 0.0 && source_downstream->upper == 0.0) {
++        intensity_downstream->lower = 0.0;
++        intensity_downstream->upper = 0.0;
++        return LCMF_OK;
++    }
++    propagated = fabs(attenuation) * interval_radius(intensity_upstream)
++               + fabs(psi_up) * interval_radius(source_upstream)
++               + fabs(psi_down) * interval_radius(source_downstream);
++    kernel = gamma_64 * (fabs(term_i) + fabs(term_u) + fabs(term_d) +
++                         fabs(intensity_downstream->value));
++    radius = propagated + kernel;
++    if (!isfinite(radius)) return LCMF_ENONFINITE;
++    intensity_downstream->lower = nextafter(intensity_downstream->value - radius,
++                                            -INFINITY);
++    intensity_downstream->upper = nextafter(intensity_downstream->value + radius,
++                                            INFINITY);
++    if (!isfinite(intensity_downstream->lower) ||
++        !isfinite(intensity_downstream->upper)) return LCMF_ENONFINITE;
++    return LCMF_OK;
++}
++
+ typedef struct {
+     size_t count;
+     double *z;
+@@ -462,6 +535,72 @@
+                                 0.5 * (chi_up + chi_down) * ds, downstream);
+ }
+ 
++static LCMFInterval point_interval(double value)
++{
++    LCMFInterval interval;
++    interval.value = value;
++    interval.lower = value;
++    interval.upper = value;
++    return interval;
++}
++
++static int sc_step_signed_eta(const LCMFInterval *intensity,
++                              double chi_up, double chi_down,
++                              const LCMFInterval *eta_up,
++                              const LCMFInterval *eta_down,
++                              double ds, LCMFInterval *downstream)
++{
++    const double gamma_16 = (16.0 * DBL_EPSILON) /
++                            (1.0 - 16.0 * DBL_EPSILON);
++    if (downstream == NULL || !valid_interval(intensity) ||
++        !valid_interval(eta_up) || !valid_interval(eta_down) ||
++        !isfinite(chi_up) || !isfinite(chi_down) || !isfinite(ds) || ds < 0.0)
++        return LCMF_EINVAL;
++    if (chi_up == 0.0 && chi_down == 0.0) {
++        const double emission = 0.5 * (eta_up->value + eta_down->value) * ds;
++        const double propagated = interval_radius(intensity)
++                                + 0.5 * ds * (interval_radius(eta_up) +
++                                              interval_radius(eta_down));
++        const double kernel = gamma_16 * (fabs(intensity->value) + fabs(emission));
++        const double radius = propagated + kernel;
++        downstream->value = intensity->value + emission;
++        if (!isfinite(downstream->value) || !isfinite(radius)) return LCMF_ENONFINITE;
++        if (intensity->lower == 0.0 && intensity->upper == 0.0 &&
++            eta_up->lower == 0.0 && eta_up->upper == 0.0 &&
++            eta_down->lower == 0.0 && eta_down->upper == 0.0) {
++            downstream->lower = 0.0;
++            downstream->upper = 0.0;
++        } else {
++            downstream->lower = nextafter(downstream->value - radius, -INFINITY);
++            downstream->upper = nextafter(downstream->value + radius, INFINITY);
++        }
++        return LCMF_OK;
++    }
++    if (!(chi_up > 0.0) || !(chi_down > 0.0)) return LCMF_ENEGATIVE;
++    {
++        LCMFInterval source_up, source_down;
++        source_up.value = eta_up->value / chi_up;
++        if (eta_up->lower == 0.0 && eta_up->upper == 0.0) {
++            source_up.lower = 0.0;
++            source_up.upper = 0.0;
++        } else {
++            source_up.lower = nextafter(eta_up->lower / chi_up, -INFINITY);
++            source_up.upper = nextafter(eta_up->upper / chi_up, INFINITY);
++        }
++        source_down.value = eta_down->value / chi_down;
++        if (eta_down->lower == 0.0 && eta_down->upper == 0.0) {
++            source_down.lower = 0.0;
++            source_down.upper = 0.0;
++        } else {
++            source_down.lower = nextafter(eta_down->lower / chi_down, -INFINITY);
++            source_down.upper = nextafter(eta_down->upper / chi_down, INFINITY);
++        }
++        return lumina_cmf_sc_linear_signed(intensity, &source_up, &source_down,
++                                           0.5 * (chi_up + chi_down) * ds,
++                                           downstream);
++    }
++}
++
+ static int segment_residual(double intensity_up, double chi_up, double chi_down,
+                             double eta_up, double eta_down, double ds,
+                             double *residual)
+@@ -495,6 +634,44 @@
+     return LCMF_OK;
+ }
+ 
++static int segment_residual_signed(double intensity_up,
++                                   double chi_up, double chi_down,
++                                   double eta_up, double eta_down, double ds,
++                                   double *residual)
++{
++    const double left_fraction = 0.5 - 1.0e-5;
++    const double right_fraction = 0.5 + 1.0e-5;
++    const double dchi = chi_down - chi_up;
++    const double deta = eta_down - eta_up;
++    const double chi_left = chi_up + left_fraction * dchi;
++    const double chi_right = chi_up + right_fraction * dchi;
++    const double eta_left = eta_up + left_fraction * deta;
++    const double eta_right = eta_up + right_fraction * deta;
++    const double ds_left = ds * left_fraction;
++    const double ds_probe = ds * (right_fraction - left_fraction);
++    LCMFInterval start = point_interval(intensity_up);
++    LCMFInterval eta_start = point_interval(eta_up);
++    LCMFInterval eta_l = point_interval(eta_left);
++    LCMFInterval eta_r = point_interval(eta_right);
++    LCMFInterval intensity_left, intensity_right;
++    double derivative, intensity_mid, chi_mid, eta_mid, equation, scale;
++    int status = sc_step_signed_eta(&start, chi_up, chi_left, &eta_start, &eta_l,
++                                    ds_left, &intensity_left);
++    if (status != LCMF_OK) return status;
++    status = sc_step_signed_eta(&intensity_left, chi_left, chi_right,
++                                &eta_l, &eta_r, ds_probe, &intensity_right);
++    if (status != LCMF_OK) return status;
++    derivative = (intensity_right.value - intensity_left.value) / ds_probe;
++    intensity_mid = 0.5 * (intensity_left.value + intensity_right.value);
++    chi_mid = 0.5 * (chi_up + chi_down);
++    eta_mid = 0.5 * (eta_up + eta_down);
++    equation = derivative + chi_mid * intensity_mid - eta_mid;
++    scale = fabs(derivative) + fabs(chi_mid * intensity_mid) + fabs(eta_mid);
++    *residual = scale == 0.0 ? 0.0
++                            : fabs(equation) / (scale + DBL_EPSILON * scale);
++    return isfinite(*residual) ? LCMF_OK : LCMF_ENONFINITE;
++}
++
+ static int boundary_value(const LCMFInput *input, size_t k, double p,
+                           int inner, double *value)
+ {
+@@ -612,16 +789,140 @@
+     free(intensity); path_free(&path); return status;
+ }
+ 
++static LCMFInterval interpolate_history(const double *value,
++                                        const double *lower,
++                                        const double *upper,
++                                        size_t left, size_t right,
++                                        double fraction)
++{
++    const double gamma_16 = (16.0 * DBL_EPSILON) /
++                            (1.0 - 16.0 * DBL_EPSILON);
++    const double center = value[left] + fraction * (value[right] - value[left]);
++    const double left_radius = fmax(value[left] - lower[left],
++                                    upper[left] - value[left]);
++    const double right_radius = fmax(value[right] - lower[right],
++                                     upper[right] - value[right]);
++    const double propagated = (1.0 - fraction) * left_radius +
++                              fraction * right_radius;
++    const double kernel = gamma_16 * (fabs(value[left]) + fabs(value[right]) +
++                                      fabs(center));
++    LCMFInterval result;
++    result.value = center;
++    if (value[left] == 0.0 && lower[left] == 0.0 && upper[left] == 0.0 &&
++        value[right] == 0.0 && lower[right] == 0.0 && upper[right] == 0.0) {
++        result.lower = 0.0;
++        result.upper = 0.0;
++    } else {
++        result.lower = nextafter(center - propagated - kernel, -INFINITY);
++        result.upper = nextafter(center + propagated + kernel, INFINITY);
++    }
++    return result;
++}
++
++static LCMFInterval bdf_eta_interval(double physical_eta, double coefficient,
++                                     const LCMFInterval *previous,
++                                     const LCMFInterval *previous2,
++                                     int second_order)
++{
++    const double gamma_32 = (32.0 * DBL_EPSILON) /
++                            (1.0 - 32.0 * DBL_EPSILON);
++    const double term_previous = (second_order ? 2.0 : 1.0) * coefficient *
++                                 previous->value;
++    const double term_previous2 = second_order ? 0.5 * coefficient *
++                                                 previous2->value : 0.0;
++    const double propagated = (second_order ? 2.0 : 1.0) * fabs(coefficient) *
++                              interval_radius(previous) +
++                              (second_order ? 0.5 * fabs(coefficient) *
++                                              interval_radius(previous2) : 0.0);
++    const double center = physical_eta + term_previous - term_previous2;
++    const double kernel = gamma_32 * (fabs(physical_eta) + fabs(term_previous) +
++                                      fabs(term_previous2) + fabs(center));
++    LCMFInterval result;
++    result.value = center;
++    if (physical_eta == 0.0 && previous->lower == 0.0 && previous->upper == 0.0 &&
++        (!second_order || (previous2->lower == 0.0 && previous2->upper == 0.0))) {
++        result.lower = 0.0;
++        result.upper = 0.0;
++    } else {
++        result.lower = nextafter(center - propagated - kernel, -INFINITY);
++        result.upper = nextafter(center + propagated + kernel, INFINITY);
++    }
++    return result;
++}
++
++static void record_bdf_eta_negative(LCMFResult *result, size_t evaluation_index,
++                                    size_t k, size_t ray_index, size_t segment_index,
++                                    size_t substep_index, size_t endpoint_index,
++                                    const LCMFInterval *eta,
++                                    const LCMFInterval *previous,
++                                    const LCMFInterval *previous2)
++{
++    ++result->bdf_eta_negative_count;
++    if (eta->value < result->bdf_eta_min) result->bdf_eta_min = eta->value;
++    if (result->bdf_eta_negative_count == 1u) {
++        const double ratio = previous->value == 0.0
++                           ? (previous2->value > 0.0 ? INFINITY : NAN)
++                           : previous2->value / previous->value;
++        set_error(&result->bdf_eta_first, LCMF_OK,
++                  "BDF effective emissivity negative diagnostic",
++                  evaluation_index, k, eta->value);
++        result->bdf_eta_first.ray_index = ray_index;
++        result->bdf_eta_first.segment_index = segment_index;
++        result->bdf_eta_first.substep_index = substep_index;
++        result->bdf_eta_first.endpoint_index = endpoint_index;
++        result->bdf_eta_first.term_previous = previous->value;
++        result->bdf_eta_first.term_previous2 = previous2->value;
++        result->bdf_eta_first.decay_ratio = ratio;
++        result->bdf_eta_first.theoretical_limit = 4.0;
++        result->bdf_eta_first.interval_lower = eta->lower;
++        result->bdf_eta_first.interval_upper = eta->upper;
++    }
++}
++
++static void record_solution_guard(LCMFResult *result, size_t evaluation_index,
++                                  size_t k, size_t ray_index, size_t segment_index,
++                                  size_t substep_index, const LCMFInterval *solution)
++{
++    if (solution->upper < 0.0) {
++        ++result->solution_negative_excess_count;
++        if (result->error.code != LCMF_ENEGATIVE) {
++            set_error(&result->error, LCMF_ENEGATIVE,
++                      "solution interval upper bound is negative",
++                      evaluation_index, k, solution->value);
++            result->error.ray_index = ray_index;
++            result->error.segment_index = segment_index;
++            result->error.substep_index = substep_index;
++            result->error.interval_lower = solution->lower;
++            result->error.interval_upper = solution->upper;
++        }
++    } else if (solution->lower <= 0.0 &&
++               !(solution->value == 0.0 && solution->lower == 0.0 &&
++                 solution->upper == 0.0)) {
++        ++result->sign_uncertain_count;
++        if (result->error.code == LCMF_OK) {
++            set_error(&result->error, LCMF_ESIGNUNCERTAIN,
++                      "solution interval contains zero",
++                      evaluation_index, k, solution->value);
++            result->error.ray_index = ray_index;
++            result->error.segment_index = segment_index;
++            result->error.substep_index = substep_index;
++            result->error.interval_lower = solution->lower;
++            result->error.interval_upper = solution->upper;
++        }
++    }
++}
++
+ static int solve_advection_ray(const LCMFInput *input, const double *eta_total,
+                                size_t evaluation_index, double target_r, double p,
+                                double *minus, double *plus, double *max_residual,
+-                               LCMFError *error, size_t ray_index)
++                               LCMFResult *result, size_t ray_index)
+ {
+     LCMFPath path;
+-    double *planes = NULL;
++    double *planes = NULL, *plane_lower = NULL, *plane_upper = NULL;
+     size_t plane_cells, k, node;
+     const double dx = log(input->nu[0] / input->nu[1]);
+     const double a = 1.0 / (LCMF_C_LIGHT * input->t_exp_s);
++    LCMFError *error = &result->error;
+     int status = LCMF_OK;
+     memset(&path, 0, sizeof(path));
+     status = path_build(input, target_r, p, &path);
+@@ -631,11 +932,21 @@
+         return input->nnu < 3u ? LCMF_EGRID : LCMF_ENOMEM;
+     }
+     planes = (double *)checked_calloc(plane_cells, sizeof(double));
+-    if (planes == NULL) { path_free(&path); return LCMF_ENOMEM; }
++    plane_lower = (double *)checked_calloc(plane_cells, sizeof(double));
++    plane_upper = (double *)checked_calloc(plane_cells, sizeof(double));
++    if (planes == NULL || plane_lower == NULL || plane_upper == NULL) {
++        free(planes); free(plane_lower); free(plane_upper);
++        path_free(&path); return LCMF_ENOMEM;
++    }
+     for (k = 0u; k < input->nnu; ++k) {
+         double *current = planes + k * path.count;
++        double *current_lower = plane_lower + k * path.count;
++        double *current_upper = plane_upper + k * path.count;
++        int plane_eta_negative = 0;
+         status = boundary_value(input, k, p, 0, &current[0]);
+         if (status != LCMF_OK) goto done;
++        current_lower[0] = current[0];
++        current_upper[0] = current[0];
+         for (node = 1u; node < path.count; ++node) {
+             const double zu = path.z[node - 1u];
+             const double zd = path.z[node];
+@@ -647,6 +958,8 @@
+             if (path.has_core && node == path.outward_start) {
+                 status = boundary_value(input, k, p, 1, &current[node]);
+                 if (status != LCMF_OK) goto done;
++                current_lower[node] = current[node];
++                current_upper[node] = current[node];
+                 continue;
+             }
+             if (!isfinite(ds) || !(ds > 0.0) || !isfinite(h_loc) || !(h_loc > 0.0) ||
+@@ -661,6 +974,8 @@
+             n_sub = (size_t)ceil(ds / h_loc);
+             if (n_sub < 1u) n_sub = 1u;
+             current[node] = current[node - 1u];
++            current_lower[node] = current_lower[node - 1u];
++            current_upper[node] = current_upper[node - 1u];
+             for (sub = 0u; sub < n_sub; ++sub) {
+                 const double fu = (double)sub / (double)n_sub;
+                 const double fd = (double)(sub + 1u) / (double)n_sub;
+@@ -669,73 +984,133 @@
+                 const double sub_ds = sub_zd - sub_zu;
+                 const double ru = sqrt(p * p + sub_zu * sub_zu);
+                 const double rd = sqrt(p * p + sub_zd * sub_zd);
+-                double chi_u, chi_d, eta_u, eta_d, residual, next;
++                double chi_u, chi_d, physical_eta_u, physical_eta_d, residual;
++                LCMFInterval eta_u, eta_d, previous_u, previous_d;
++                LCMFInterval previous2_u = point_interval(0.0);
++                LCMFInterval previous2_d = point_interval(0.0);
++                LCMFInterval incoming, next;
+                 status = radial_value(input, input->chi_total, ru, k, "chi", &chi_u, error);
+                 if (status == LCMF_OK) {
+                     status = radial_value(input, input->chi_total, rd, k, "chi", &chi_d, error);
+                 }
+                 if (status == LCMF_OK) {
+-                    status = radial_value(input, eta_total, ru, k, "eta", &eta_u, error);
++                    status = radial_value(input, eta_total, ru, k, "eta", &physical_eta_u, error);
+                 }
+                 if (status == LCMF_OK) {
+-                    status = radial_value(input, eta_total, rd, k, "eta", &eta_d, error);
++                    status = radial_value(input, eta_total, rd, k, "eta", &physical_eta_d, error);
+                 }
+                 if (status != LCMF_OK) {
+                     error->ray_index = ray_index;
+                     error->segment_index = node - 1u;
++                    error->substep_index = sub;
+                     goto done;
+                 }
++                eta_u = point_interval(physical_eta_u);
++                eta_d = point_interval(physical_eta_d);
++                previous_u = point_interval(0.0);
++                previous_d = point_interval(0.0);
+                 if (k == 1u) {
+                     const double *previous = planes + (k - 1u) * path.count;
+-                    const double previous_u = previous[node - 1u] + fu * (previous[node] - previous[node - 1u]);
+-                    const double previous_d = previous[node - 1u] + fd * (previous[node] - previous[node - 1u]);
++                    const double *previous_lower = plane_lower + (k - 1u) * path.count;
++                    const double *previous_upper = plane_upper + (k - 1u) * path.count;
++                    previous_u = interpolate_history(previous, previous_lower, previous_upper,
++                                                     node - 1u, node, fu);
++                    previous_d = interpolate_history(previous, previous_lower, previous_upper,
++                                                     node - 1u, node, fd);
+                     chi_u += 3.0 * a + a / dx;
+                     chi_d += 3.0 * a + a / dx;
+-                    eta_u += (a / dx) * previous_u;
+-                    eta_d += (a / dx) * previous_d;
++                    eta_u = bdf_eta_interval(physical_eta_u, a / dx,
++                                             &previous_u, &previous2_u, 0);
++                    eta_d = bdf_eta_interval(physical_eta_d, a / dx,
++                                             &previous_d, &previous2_d, 0);
+                 } else if (k >= 2u) {
+                     const double *previous = planes + (k - 1u) * path.count;
+                     const double *previous2 = planes + (k - 2u) * path.count;
+-                    const double previous_u = previous[node - 1u] + fu * (previous[node] - previous[node - 1u]);
+-                    const double previous_d = previous[node - 1u] + fd * (previous[node] - previous[node - 1u]);
+-                    const double previous2_u = previous2[node - 1u] + fu * (previous2[node] - previous2[node - 1u]);
+-                    const double previous2_d = previous2[node - 1u] + fd * (previous2[node] - previous2[node - 1u]);
++                    const double *previous_lower = plane_lower + (k - 1u) * path.count;
++                    const double *previous_upper = plane_upper + (k - 1u) * path.count;
++                    const double *previous2_lower = plane_lower + (k - 2u) * path.count;
++                    const double *previous2_upper = plane_upper + (k - 2u) * path.count;
++                    previous_u = interpolate_history(previous, previous_lower, previous_upper,
++                                                     node - 1u, node, fu);
++                    previous_d = interpolate_history(previous, previous_lower, previous_upper,
++                                                     node - 1u, node, fd);
++                    previous2_u = interpolate_history(previous2, previous2_lower, previous2_upper,
++                                                      node - 1u, node, fu);
++                    previous2_d = interpolate_history(previous2, previous2_lower, previous2_upper,
++                                                      node - 1u, node, fd);
+                     chi_u += 3.0 * a + 1.5 * a / dx;
+                     chi_d += 3.0 * a + 1.5 * a / dx;
+-                    eta_u += (2.0 * a / dx) * previous_u - (0.5 * a / dx) * previous2_u;
+-                    eta_d += (2.0 * a / dx) * previous_d - (0.5 * a / dx) * previous2_d;
++                    eta_u = bdf_eta_interval(physical_eta_u, a / dx,
++                                             &previous_u, &previous2_u, 1);
++                    eta_d = bdf_eta_interval(physical_eta_d, a / dx,
++                                             &previous_d, &previous2_d, 1);
+                 }
+-                if (!isfinite(eta_u) || !isfinite(eta_d) || eta_u < 0.0 || eta_d < 0.0) {
+-                    const double bad = (!isfinite(eta_u) || eta_u < 0.0) ? eta_u : eta_d;
+-                    status = isfinite(bad) ? LCMF_ENEGATIVE : LCMF_ENONFINITE;
+-                    set_error(error, status, "BDF effective emissivity failed closed",
+-                              evaluation_index, k, bad);
++                if (!valid_interval(&eta_u) || !valid_interval(&eta_d) ||
++                    !isfinite(chi_u) || !isfinite(chi_d)) {
++                    ++result->nonfinite_count;
++                    set_error(error, LCMF_ENONFINITE,
++                              "non-finite BDF effective coefficient",
++                              evaluation_index, k,
++                              !isfinite(eta_u.value) ? eta_u.value : eta_d.value);
+                     error->ray_index = ray_index;
+                     error->segment_index = node - 1u;
+-                    if (k > 0u) error->term_previous = planes[(k - 1u) * path.count + node];
+-                    if (k > 1u) error->term_previous2 = planes[(k - 2u) * path.count + node];
++                    error->substep_index = sub;
++                    status = LCMF_ENONFINITE;
+                     goto done;
+                 }
+-                status = sc_step(current[node], chi_u, chi_d, eta_u, eta_d, sub_ds, &next);
++                if (k >= 2u && eta_u.value < 0.0) {
++                    record_bdf_eta_negative(result, evaluation_index, k, ray_index,
++                                            node - 1u, sub, 0u, &eta_u,
++                                            &previous_u, &previous2_u);
++                    plane_eta_negative = 1;
++                }
++                if (k >= 2u && eta_d.value < 0.0) {
++                    record_bdf_eta_negative(result, evaluation_index, k, ray_index,
++                                            node - 1u, sub, 1u, &eta_d,
++                                            &previous_d, &previous2_d);
++                    plane_eta_negative = 1;
++                }
++                incoming.value = current[node];
++                incoming.lower = current_lower[node];
++                incoming.upper = current_upper[node];
++                status = sc_step_signed_eta(&incoming, chi_u, chi_d,
++                                            &eta_u, &eta_d, sub_ds, &next);
+                 if (status != LCMF_OK) {
+-                    set_error(error, status, "advection SC substep failed",
++                    if (status == LCMF_ENONFINITE) ++result->nonfinite_count;
++                    set_error(error, status, "signed advection SC substep failed",
+                               evaluation_index, k, current[node]);
+                     error->ray_index = ray_index;
+                     error->segment_index = node - 1u;
++                    error->substep_index = sub;
+                     goto done;
+                 }
+-                status = segment_residual(current[node], chi_u, chi_d, eta_u, eta_d,
+-                                          sub_ds, &residual);
++                if (k > 0u) {
++                    record_solution_guard(result, evaluation_index, k, ray_index,
++                                          node - 1u, sub, &next);
++                    status = segment_residual_signed(current[node], chi_u, chi_d,
++                                                     eta_u.value, eta_d.value,
++                                                     sub_ds, &residual);
++                } else {
++                    status = segment_residual(current[node], chi_u, chi_d,
++                                              eta_u.value, eta_d.value,
++                                              sub_ds, &residual);
++                }
+                 if (status != LCMF_OK) goto done;
+                 if (residual > *max_residual) *max_residual = residual;
+-                current[node] = next;
++                current[node] = next.value;
++                current_lower[node] = next.lower;
++                current_upper[node] = next.upper;
+             }
+         }
++        if (plane_eta_negative) ++result->bdf_eta_negative_plane_count;
+         minus[k] = current[path.minus_target];
+         plus[k] = current[path.plus_target];
++        if (plus[k] < result->solution_min) result->solution_min = plus[k];
+     }
+ done:
+     free(planes);
++    free(plane_lower);
++    free(plane_upper);
+     path_free(&path);
+     return status;
+ }
+@@ -780,6 +1155,8 @@
+     size_t i,m,k,n_r_eval;
+     if (result == NULL) return LCMF_EINVAL;
+     memset(result, 0, sizeof(*result));
++    result->bdf_eta_min = INFINITY;
++    result->solution_min = INFINITY;
+     status = lumina_cmf_validate_input(input, options, &result->error);
+     if (status != LCMF_OK) return status;
+     if (input->scatter_mode==LCMF_SCAT_COHERENT && input->chi_coherent!=NULL) {
+@@ -819,11 +1196,9 @@
+                 }
+                 status = solve_advection_ray(input, input->eta_fixed, i, target_r, cache.p[m],
+                                               minus_plane, plus_plane,
+-                                              &result->transport_resid_linf, &result->error,
++                                              &result->transport_resid_linf, result,
+                                               i * options->n_mu + m);
+                 if (status != LCMF_OK) {
+-                    if (status == LCMF_ENEGATIVE) ++result->negative_count;
+-                    if (status == LCMF_ENONFINITE) ++result->nonfinite_count;
+                     free(minus_plane); free(plus_plane);
+                     lumina_cmf_ray_cache_free(&cache);
+                     release_result_arrays(result);
+@@ -841,7 +1216,6 @@
+                                             &result->transport_resid_linf,&result->error,
+                                             i*options->n_mu+m);
+                     if (status!=LCMF_OK) {
+-                        if (status == LCMF_ENEGATIVE) ++result->negative_count;
+                         if (status == LCMF_ENONFINITE) ++result->nonfinite_count;
+                         lumina_cmf_ray_cache_free(&cache);
+                         release_result_arrays(result);
+@@ -862,6 +1236,8 @@
+         lumina_cmf_ray_cache_free(&cache);
+     }
+     result->source_iterations=1u; result->source_resid_linf=0.0;
++    if (result->solution_negative_excess_count > 0u) return LCMF_ENEGATIVE;
++    if (result->sign_uncertain_count > 0u) return LCMF_ESIGNUNCERTAIN;
+     return LCMF_OK;
+ }
+ 
+@@ -1100,6 +1476,7 @@
+     case LCMF_EUNSUPPORTED:return "LCMF_EUNSUPPORTED"; case LCMF_ENOCONV:return "LCMF_ENOCONV";
+     case LCMF_EIO:return "LCMF_EIO"; case LCMF_ESCHEMA:return "LCMF_ESCHEMA";
+     case LCMF_ECHECKSUM:return "LCMF_ECHECKSUM"; case LCMF_EHOMOLOGY:return "LCMF_EHOMOLOGY";
++    case LCMF_ESIGNUNCERTAIN:return "LCMF_ESIGNUNCERTAIN";
+     default:return "LCMF_UNKNOWN";
+     }
+ }
+--- a/scripts/stage31_cmf_ka_driver.c
++++ b/scripts/stage31_cmf_ka_driver.c
+@@ -14,6 +14,13 @@
+     double dx;
+ } GaussianBoundary;
+ 
++static double stable_erf_difference(double high, double low)
++{
++    if (low >= 0.0) return erfc(low) - erfc(high);
++    if (high <= 0.0) return erfc(-high) - erfc(-low);
++    return erf(high) - erf(low);
++}
++
+ static double gaussian_cell_average(void *opaque, double p, double mu, double nu)
+ {
+     const GaussianBoundary *context = (const GaussianBoundary *)opaque;
+@@ -23,7 +30,7 @@
+     const double low = (x - 0.5 * context->dx - context->x0) / root_two_sigma;
+     (void)p; (void)mu;
+     return KA3_SIGMA_X * sqrt(0.5 * 3.141592653589793238462643383279502884)
+-           * (erf(high) - erf(low)) / context->dx;
++           * stable_erf_difference(high, low) / context->dx;
+ }
+ 
+ static int parse_size(const char *text, size_t *value)
+@@ -68,9 +75,12 @@
+         goto done;
+     }
+     stream=fopen(path,"wb"); if (stream==NULL) { status=LCMF_EIO; goto done; }
+-    (void)fprintf(stream,"# nr=%zu nmu=%zu tau=%.17g residual=%.17g clamp=%llu negative=%llu nonfinite=%llu\n",
++    (void)fprintf(stream,"# nr=%zu nmu=%zu tau=%.17g residual=%.17g clamp=%llu bdf_eta_negative=%llu solution_negative_excess=%llu sign_uncertain=%llu nonfinite=%llu\n",
+                   nr,nmu,tau_radius,result.transport_resid_linf,
+-                  (unsigned long long)result.clamp_count,(unsigned long long)result.negative_count,
++                  (unsigned long long)result.clamp_count,
++                  (unsigned long long)result.bdf_eta_negative_count,
++                  (unsigned long long)result.solution_negative_excess_count,
++                  (unsigned long long)result.sign_uncertain_count,
+                   (unsigned long long)result.nonfinite_count);
+     (void)fprintf(stream,"i\tm\tr\tmu\tIminus\tIplus\tJ\tH\tK\n");
+     for (i=0;i<=nr;++i) {
+@@ -128,26 +138,46 @@
+     options.store_intensity = 1; options.frequency_advection = 1;
+     options.radial_characteristic = 1;
+     status = lumina_cmf_field_solve(&input, &options, &result);
+-    if (status != LCMF_OK) {
+-        fprintf(stderr, "KA3 solve: %s: %s ir=%zu inu=%zu ray=%zu segment=%zu value=%.17g prev=%.17g prev2=%.17g\n",
++    if (status == LCMF_ENEGATIVE || status == LCMF_ESIGNUNCERTAIN) {
++        fprintf(stderr, "KA3 measured guard: %s: %s ir=%zu inu=%zu ray=%zu segment=%zu substep=%zu value=%.17g interval=[%.17g,%.17g]\n",
+                 lumina_cmf_status_string(status), result.error.message,
+                 result.error.radial_index, result.error.frequency_index,
+-                result.error.ray_index, result.error.segment_index, result.error.value,
+-                result.error.term_previous, result.error.term_previous2);
++                result.error.ray_index, result.error.segment_index,
++                result.error.substep_index, result.error.value,
++                result.error.interval_lower, result.error.interval_upper);
++    } else if (status != LCMF_OK) {
++        fprintf(stderr, "KA3 solve: %s: %s\n",
++                lumina_cmf_status_string(status), result.error.message);
+         goto done;
+     }
+     stream = fopen(path, "wb"); if (stream == NULL) { status = LCMF_EIO; goto done; }
+-    (void)fprintf(stream, "# ns=%zu nnu=%zu A=%.17g dx=%.17g residual=%.17g clamp=%llu negative=%llu nonfinite=%llu\n",
++    (void)fprintf(stream, "# ns=%zu nnu=%zu A=%.17g dx=%.17g residual=%.17g clamp=%llu bdf_eta_negative=%llu bdf_eta_negative_planes=%llu solution_negative_excess=%llu sign_uncertain=%llu nonfinite=%llu bdf_eta_min=%.17g solution_min=%.17g solver_status=%d first_eval=%zu first_k=%zu first_ray=%zu first_segment=%zu first_substep=%zu first_endpoint=%zu first_eta=%.17g first_prev=%.17g first_prev2=%.17g first_decay_ratio=%.17g first_theoretical_limit=%.17g\n",
+                   ns, nnu, shift, dx, result.transport_resid_linf,
+                   (unsigned long long)result.clamp_count,
+-                  (unsigned long long)result.negative_count,
+-                  (unsigned long long)result.nonfinite_count);
++                  (unsigned long long)result.bdf_eta_negative_count,
++                  (unsigned long long)result.bdf_eta_negative_plane_count,
++                  (unsigned long long)result.solution_negative_excess_count,
++                  (unsigned long long)result.sign_uncertain_count,
++                  (unsigned long long)result.nonfinite_count,
++                  result.bdf_eta_min, result.solution_min, status,
++                  result.bdf_eta_first.radial_index,
++                  result.bdf_eta_first.frequency_index,
++                  result.bdf_eta_first.ray_index,
++                  result.bdf_eta_first.segment_index,
++                  result.bdf_eta_first.substep_index,
++                  result.bdf_eta_first.endpoint_index,
++                  result.bdf_eta_first.value,
++                  result.bdf_eta_first.term_previous,
++                  result.bdf_eta_first.term_previous2,
++                  result.bdf_eta_first.decay_ratio,
++                  result.bdf_eta_first.theoretical_limit);
+     (void)fprintf(stream, "k\tx\tnu\tIin\tIout\n");
+     for (k = 0u; k < nnu; ++k) {
+         (void)fprintf(stream, "%zu\t%.17g\t%.17g\t%.17g\t%.17g\n",
+                       k, log(nu[k]), nu[k], gaussian_cell_average(&boundary, 0.0, 1.0, nu[k]),
+                       result.I_plus[k]);
+     }
++    status = LCMF_OK;
+ done:
+     if (stream != NULL && fclose(stream) != 0 && status == LCMF_OK) status = LCMF_EIO;
+     lumina_cmf_result_free(&result);
+--- a/tests/stage31_cmf_skeleton_selftest.c
++++ b/tests/stage31_cmf_skeleton_selftest.c
+@@ -56,7 +56,10 @@
+                                   LCMF_ENEGATIVE,"negative outer extrapolation");
+         if (failed_result.error.radial_index != input.nr ||
+             failed_result.error.frequency_index != 0u ||
+-            failed_result.error.value >= 0.0 || failed_result.negative_count != 1u ||
++            failed_result.error.value >= 0.0 ||
++            failed_result.bdf_eta_negative_count != 0u ||
++            failed_result.solution_negative_excess_count != 0u ||
++            failed_result.sign_uncertain_count != 0u ||
+             strstr(failed_result.error.message,"outer face") == NULL) {
+             fprintf(stderr,"outer extrapolation failure was not recorded exactly\n");
+             ++failures;
+@@ -98,6 +101,56 @@
+     exact=0.3*exp(-0.7)+1.2*(1.0-exp(-0.7));
+     if (fabs(intensity-exact)>4.0e-15) { fprintf(stderr,"SC error %.17g\n",intensity-exact); ++failures; }
+     {
++        const LCMFInterval incoming = {0.3, 0.3, 0.3};
++        const LCMFInterval source_up = {-0.1, -0.1, -0.1};
++        const LCMFInterval source_down = {-0.2, -0.2, -0.2};
++        LCMFInterval signed_result;
++        double one_minus_e = -expm1(-0.7);
++        double ratio = one_minus_e / 0.7;
++        double psi_down = 1.0 - ratio;
++        double psi_up = one_minus_e - psi_down;
++        exact = 0.3 * exp(-0.7) - 0.1 * psi_up - 0.2 * psi_down;
++        failures += expect_status(lumina_cmf_sc_linear_signed(&incoming,&source_up,
++                                  &source_down,0.7,&signed_result),LCMF_OK,"signed SC analytic");
++        if (fabs(signed_result.value-exact)>4.0e-15 ||
++            signed_result.lower > exact || signed_result.upper < exact) {
++            fprintf(stderr,"signed SC enclosure failed\n"); ++failures;
++        }
++    }
++    {
++        const LCMFInterval zero = {0.0, 0.0, 0.0};
++        const LCMFInterval negative = {-1.0, -1.0, -1.0};
++        const LCMFInterval uncertain = {0.0, -1.0e-15, 1.0e-15};
++        LCMFInterval result_negative, result_uncertain;
++        failures += expect_status(lumina_cmf_sc_linear_signed(&zero,&negative,&negative,
++                                  0.7,&result_negative),LCMF_OK,"signed SC negative interval");
++        failures += expect_status(lumina_cmf_sc_linear_signed(&uncertain,&zero,&zero,
++                                  0.7,&result_uncertain),LCMF_OK,"signed SC straddling interval");
++        if (!(result_negative.upper < 0.0) ||
++            !(result_uncertain.lower < 0.0 && result_uncertain.upper > 0.0)) {
++            fprintf(stderr,"signed SC guard branches failed\n"); ++failures;
++        }
++    }
++    {
++        const double exact_positive_previous = 2.2972677906250876e-6;
++        const double exact_positive_previous2 = 4.7547305910730000e-6;
++        const double observed_previous = 1.1251344515546073e-7;
++        const double observed_previous2 = 5.0547558929601476e-7;
++        const double exact_tail_previous = 1.0;
++        const double exact_tail_previous2 = 4.0117088489;
++        const double exact_eta_history = 2.0 * exact_positive_previous
++                                       - 0.5 * exact_positive_previous2;
++        const double exact_tail_eta_history = 2.0 * exact_tail_previous
++                                            - 0.5 * exact_tail_previous2;
++        const double observed_eta_history = 2.0 * observed_previous
++                                          - 0.5 * observed_previous2;
++        if (!(exact_eta_history > 0.0) || !(exact_tail_eta_history < 0.0) ||
++            !(observed_eta_history < 0.0) ||
++            !(observed_previous2 / observed_previous > 4.0)) {
++            fprintf(stderr,"BDF exact/observed history regression failed\n"); ++failures;
++        }
++    }
++    {
+         const double source[] = {0.4,1.1,0.7,1.8};
+         const double dtau[] = {0.03,0.6,2.0,0.2};
+         double recursive=0.25, closed=0.25*exp(-(dtau[0]+dtau[1]+dtau[2]+dtau[3]));

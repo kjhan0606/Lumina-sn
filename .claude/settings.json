@@ -18,6 +18,15 @@
             "command": "cat RESUME.md 2>/dev/null || true"
           }
         ]
+      },
+      {
+        "matcher": "clear",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cat RESUME.md 2>/dev/null || true"
+          }
+        ]
       }
     ]
   }

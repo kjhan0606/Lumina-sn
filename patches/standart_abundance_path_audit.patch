@@ -1,0 +1,376 @@
+diff --git a/src/lumina.h b/src/lumina.h
+--- a/src/lumina.h
++++ b/src/lumina.h
+@@ -980,7 +980,11 @@ int  nlte_solve_all(NLTEConfig *nlte, AtomicData *atom, PlasmaState *plasma,
+ /* Refresh within-super-level Boltzmann fractions at current T_e (call before
+  * every solve on both CPU and GPU paths; see definition in lumina_plasma.c). */
+ int  nlte_precompute_within_sl_frac(NLTEConfig *nlte, AtomicData *atom,
+                                     PlasmaState *plasma, int n_shells);
++/* Exact negative control: abundance==0 owns no ion/level population.  Shared
++ * by CPU and GPU solve paths; prints cleared residual and excluded-slot counts. */
++void nlte_enforce_zero_abundance(NLTEConfig *nlte, AtomicData *atom,
++                                 PlasmaState *plasma, int n_shells);
+ 
+ /* Refresh per-line Sobolev optical depths + NLTE line source from the current
+  * NLTE level populations (writes opacity->tau_sobolev, opacity->line_source_S).
+diff --git a/src/lumina_atomic.c b/src/lumina_atomic.c
+--- a/src/lumina_atomic.c
++++ b/src/lumina_atomic.c
+@@ -817,28 +817,89 @@ int load_atomic_data(AtomicData *atom, const char *ref_dir, int n_shells) {
+     /* --- Abundances --- */
+     snprintf(path, sizeof(path), "%s/abundances.csv", ref_dir);
+     atom->abundances = (double *)calloc((size_t)atom->n_elements * n_shells, sizeof(double));
+     FILE *fp = fopen(path, "r");
+-    if (fp) {
+-        char line[8192];
+-        fgets(line, sizeof(line), fp); /* skip header */
+-        int elem_idx = 0;
+-        while (fgets(line, sizeof(line), fp) && elem_idx < atom->n_elements) {
+-            /* format: atomic_number,shell0,shell1,...,shell29 */
+-            char *p = line;
+-            int z_csv = (int)strtol(p, &p, 10);
+-            /* Find matching element index */
+-            int eidx = -1;
+-            for (int i = 0; i < atom->n_elements; i++) {
+-                if (atom->element_Z[i] == z_csv) { eidx = i; break; }
+-            }
+-            if (eidx < 0) continue;
+-            for (int s = 0; s < n_shells; s++) {
+-                if (*p == ',') p++;
+-                atom->abundances[eidx * n_shells + s] = strtod(p, &p);
+-            }
+-            elem_idx++;
++    if (!fp) {
++        fprintf(stderr, "[ABUNDANCE-LOAD][FAIL] cannot open %s\n", path);
++        return -1;
++    }
++    {
++        char line[8192];
++        int *seen = (int *)calloc((size_t)atom->n_elements, sizeof(int));
++        int loaded_rows = 0;
++        if (!fgets(line, sizeof(line), fp)) {
++            fprintf(stderr, "[ABUNDANCE-LOAD][FAIL] empty %s\n", path);
++            free(seen); fclose(fp); return -1;
++        }
++        while (fgets(line, sizeof(line), fp)) {
++            char *p = line, *end = NULL;
++            long z_long = strtol(p, &end, 10);
++            if (end == p) {
++                fprintf(stderr, "[ABUNDANCE-LOAD][FAIL] malformed Z row\n");
++                free(seen); fclose(fp); return -1;
++            }
++            p = end;
++            int eidx = -1;
++            for (int i = 0; i < atom->n_elements; i++)
++                if (atom->element_Z[i] == (int)z_long) { eidx = i; break; }
++            if (eidx < 0 || seen[eidx]) {
++                fprintf(stderr, "[ABUNDANCE-LOAD][FAIL] unknown/duplicate Z=%ld\n", z_long);
++                free(seen); fclose(fp); return -1;
++            }
++            for (int s = 0; s < n_shells; s++) {
++                if (*p != ',') {
++                    fprintf(stderr, "[ABUNDANCE-LOAD][FAIL] Z=%ld has fewer than %d shell values (stopped at %d)\n",
++                            z_long, n_shells, s);
++                    free(seen); fclose(fp); return -1;
++                }
++                p++;
++                double value = strtod(p, &end);
++                if (end == p || !isfinite(value) || value < 0.0) {
++                    fprintf(stderr, "[ABUNDANCE-LOAD][FAIL] Z=%ld shell=%d invalid token\n",
++                            z_long, s);
++                    free(seen); fclose(fp); return -1;
++                }
++                atom->abundances[eidx * n_shells + s] = value;
++                p = end;
++            }
++            while (*p == ' ' || *p == '\t' || *p == '\r' || *p == '\n') p++;
++            if (*p != '\0') {
++                fprintf(stderr, "[ABUNDANCE-LOAD][FAIL] Z=%ld has more than %d shell values\n",
++                        z_long, n_shells);
++                free(seen); fclose(fp); return -1;
++            }
++            seen[eidx] = 1;
++            loaded_rows++;
+         }
+         fclose(fp);
++        int excluded = 0;
++        for (int e = 0; e < atom->n_elements; e++) {
++            int active = 0;
++            double xmin = 1e300, xmax = 0.0;
++            for (int s = 0; s < n_shells; s++) {
++                double x = atom->abundances[e * n_shells + s];
++                if (x > 0.0) active++;
++                if (x < xmin) xmin = x;
++                if (x > xmax) xmax = x;
++            }
++            if (active == 0) excluded++;
++            printf("[ABUNDANCE-ELEMENT] Z=%d row=%s active_shells=%d/%d min=%.17g max=%.17g status=%s\n",
++                   atom->element_Z[e], seen[e] ? "present" : "calloc-zero", active,
++                   n_shells, xmin, xmax, active ? "ACTIVE" : "EXCLUDED_ZERO");
++        }
++        int zero_shells = 0;
++        double min_sum = 1e300, max_sum = -1e300;
++        for (int s = 0; s < n_shells; s++) {
++            double sum = 0.0;
++            for (int e = 0; e < atom->n_elements; e++)
++                sum += atom->abundances[e * n_shells + s];
++            if (sum == 0.0) zero_shells++;
++            if (sum < min_sum) min_sum = sum;
++            if (sum > max_sum) max_sum = sum;
++        }
++        printf("[ABUNDANCE-SUMMARY] file_rows=%d atomic_elements=%d excluded_zero=%d zero_shells=%d/%d shell_sum_min=%.17g shell_sum_max=%.17g runtime_renormalization=NONE\n",
++               loaded_rows, atom->n_elements, excluded, zero_shells, n_shells,
++               min_sum, max_sum);
++        free(seen);
+     }
+ 
+     /* --- Build ion population table --- */
+diff --git a/src/lumina_main.c b/src/lumina_main.c
+--- a/src/lumina_main.c
++++ b/src/lumina_main.c
+@@ -120,4 +120,9 @@ int main(int argc, char **argv) {
+         fprintf(stderr, "Failed to load atomic data\n");
+         return 1;
+     }
++    if (getenv("LUMINA_ABUNDANCE_DUMP_ONLY") &&
++        atoi(getenv("LUMINA_ABUNDANCE_DUMP_ONLY")) != 0) {
++        printf("[ABUNDANCE-DUMP-ONLY] load complete; physics and transport not entered\n");
++        return 0;
++    }
+     /* Task #38: Optional pre-baked CMFGEN sigma_bf grid.
+@@ -148,5 +153,12 @@ int main(int argc, char **argv) {
+     /* P6: Initialize per-shell electron temperature */
+     plasma.T_e = (double *)malloc(geo.n_shells * sizeof(double));
+     compute_electron_temperature(&plasma, NULL, geo.time_explosion, geo.n_shells, 0);
++    /* The copied reference tau_sobolev/electron state belongs to its old
++     * composition.  Require an explicit rebuild before iteration 0. */
++    if (getenv("LUMINA_REBUILD_INITIAL_PLASMA") &&
++        atoi(getenv("LUMINA_REBUILD_INITIAL_PLASMA")) != 0) {
++        compute_plasma_state(&atom_data, &plasma, &opacity, geo.time_explosion);
++        printf("[ABUNDANCE-INITIAL-PLASMA] rebuilt before first transport iteration\n");
++    }
+ 
+     /* Phase 5 - Step 3: Override with command-line packets if given */
+diff --git a/src/lumina_cuda.cu b/src/lumina_cuda.cu
+--- a/src/lumina_cuda.cu
++++ b/src/lumina_cuda.cu
+@@ -6889,4 +6889,9 @@ int main(int argc, char **argv) {
+         fprintf(stderr, "Failed to load atomic data\n");
+         return 1;
+     }
++    if (getenv("LUMINA_ABUNDANCE_DUMP_ONLY") &&
++        atoi(getenv("LUMINA_ABUNDANCE_DUMP_ONLY")) != 0) {
++        printf("[ABUNDANCE-DUMP-ONLY] load complete; GPU allocation, physics and transport not entered\n");
++        return 0;
++    }
+     /* Task #38: Optional pre-baked CMFGEN sigma_bf grid (per-level ν-dependent
+@@ -7061,5 +7066,11 @@ int main(int argc, char **argv) {
+     /* P6: Initialize per-shell electron temperature */
+     plasma.T_e = (double *)malloc(geo.n_shells * sizeof(double));
+     compute_electron_temperature(&plasma, NULL, geo.time_explosion, geo.n_shells, 0);
++    /* Do not carry the copied deck's old composition into iteration 0. */
++    if (getenv("LUMINA_REBUILD_INITIAL_PLASMA") &&
++        atoi(getenv("LUMINA_REBUILD_INITIAL_PLASMA")) != 0) {
++        compute_plasma_state(&atom_data, &plasma, &opacity, geo.time_explosion);
++        printf("[ABUNDANCE-INITIAL-PLASMA] rebuilt before first transport iteration\n");
++    }
+ 
+     int n_packets = config.n_packets;
+@@ -7737,6 +7748,7 @@ int main(int argc, char **argv) {
+     /* Gamma-ray deposition: initialize if enabled */
+     GammaDeposition gamma_dep;
+     memset(&gamma_dep, 0, sizeof(gamma_dep));
++    int gamma_dep_external = 0;
+     if (gamma_dep_enabled) {
+         gamma_deposition_init(&gamma_dep, geo.n_shells);
+         printf("\n--- Gamma-ray Deposition Initialized ---\n");
+@@ -7749,24 +7761,36 @@ int main(int argc, char **argv) {
+         const char *depf = getenv("LUMINA_DEPOSITION_FILE");
+         if (depf) {
+             FILE *df = fopen(depf, "r");
+-            if (df) {
+-                char line[256]; int nread = 0, sid; double hr;
+-                if (fgets(line, sizeof line, df)) { /* skip header */ }
+-                while (fgets(line, sizeof line, df)) {
+-                    if (sscanf(line, "%d,%lf", &sid, &hr) == 2 &&
+-                        sid >= 0 && sid < geo.n_shells) {
+-                        gamma_dep.heating_rate[sid] = hr; nread++;
+-                    }
+-                }
+-                fclose(df);
+-                printf("  [DEPOSITION] injected %d shells from %s (external)\n", nread, depf);
+-                /* the file gives only heating_rate; derive the non-thermal
+-                 * ionization rate (+register it for the freeze-out guard) so the
+-                 * thin outer can be kept ionized as in ARTIS. */
+-                gamma_deposition_compute_nonthermal(&gamma_dep);
+-            } else {
+-                printf("  [DEPOSITION] WARN: cannot open %s\n", depf);
++            if (!df) {
++                fprintf(stderr, "[DEPOSITION][FATAL] cannot open %s\n", depf);
++                exit(EXIT_FAILURE);
+             }
++            char line[256]; int nread = 0, sid; double hr;
++            int *seen = (int *)calloc((size_t)geo.n_shells, sizeof(int));
++            if (!fgets(line, sizeof line, df)) {
++                fprintf(stderr, "[DEPOSITION][FATAL] empty %s\n", depf);
++                exit(EXIT_FAILURE);
++            }
++            while (fgets(line, sizeof line, df)) {
++                if (sscanf(line, "%d,%lf", &sid, &hr) != 2 || sid < 0 ||
++                    sid >= geo.n_shells || !isfinite(hr) || hr < 0.0 || seen[sid]) {
++                    fprintf(stderr, "[DEPOSITION][FATAL] invalid/duplicate row in %s\n", depf);
++                    exit(EXIT_FAILURE);
++                }
++                gamma_dep.heating_rate[sid] = hr;
++                seen[sid] = 1; nread++;
++            }
++            fclose(df);
++            free(seen);
++            if (nread != geo.n_shells) {
++                fprintf(stderr, "[DEPOSITION][FATAL] %s has %d/%d shells\n",
++                        depf, nread, geo.n_shells);
++                exit(EXIT_FAILURE);
++            }
++            gamma_dep_external = 1;
++            printf("  [DEPOSITION] injected %d shells from %s (external, locked)\n", nread, depf);
++            /* The file gives only heating_rate; derive the non-thermal rate. */
++            gamma_deposition_compute_nonthermal(&gamma_dep);
+         }
+     }
+ 
+@@ -10592,8 +10616,14 @@ int main(int argc, char **argv) {
+             printf("  [plasma frozen by ion-lock; transport-only iter %d]\n", iter);
+         } else if (iter > 0) {
+             /* Gamma-ray deposition: compute heating/ionization rates */
+-            if (gamma_dep_enabled) {
++            if (gamma_dep_enabled && !gamma_dep_external) {
+                 compute_gamma_deposition(&gamma_dep, &atom_data, &plasma, &geo);
++            } else if (gamma_dep_external) {
++                /* Post-epoch composition: keep externally supplied deposition;
++                 * internal Bateman here would decay Ni/Co for a second time. */
++                gamma_deposition_compute_nonthermal(&gamma_dep);
++            }
++            if (gamma_dep_enabled) {
+                 printf("  [Gamma] heating_rate[0]=%.2e, [%d]=%.2e erg/s/cm3\n",
+                        gamma_dep.heating_rate[0], geo.n_shells - 1,
+                        gamma_dep.heating_rate[geo.n_shells - 1]);
+@@ -1817,5 +1822,7 @@ static int nlte_solve_all_gpu(NLTEConfig *nlte, AtomicData *atom,
+     if (asm_gpu_on) nlte_assemble_gpu_free();
+     free(old_pops);
+     free(old_ion_totals);
++    /* Matrix topology stays allocated, but absent species own no population. */
++    nlte_enforce_zero_abundance(nlte, atom, plasma, n_shells);
+ 
+     printf("  [NLTE-PROF] assemble: %.2f s (%.1f%%)   GPU solve: %.2f s (%.1f%%)\n",
+diff --git a/src/lumina_plasma.c b/src/lumina_plasma.c
+--- a/src/lumina_plasma.c
++++ b/src/lumina_plasma.c
+@@ -1829,5 +1829,35 @@ double nlte_pair_total_density(NLTEConfig *nlte, AtomicData *atom,
+     return n_total;
+ }
+ 
++void nlte_enforce_zero_abundance(NLTEConfig *nlte, AtomicData *atom,
++                                 PlasmaState *plasma, int n_shells) {
++    (void)plasma;
++    long excluded_ion_shells = 0, cleared_levels = 0, residual_nonzero = 0;
++    for (int e = 0; e < atom->n_elements; e++) {
++        int z = atom->element_Z[e];
++        for (int s = 0; s < n_shells; s++) {
++            if (atom->abundances[e * n_shells + s] != 0.0) continue;
++            for (int ip = atom->elem_ion_offset[e]; ip < atom->elem_ion_offset[e + 1]; ip++) {
++                size_t at = (size_t)ip * n_shells + s;
++                if (atom->ion_number_density[at] != 0.0) residual_nonzero++;
++                atom->ion_number_density[at] = 0.0;
++            }
++            for (int ii = 0; ii < nlte->n_nlte_ions; ii++) {
++                if (nlte->nlte_Z[ii] != z) continue;
++                excluded_ion_shells++;
++                for (int l = nlte->nlte_ion_level_offset[ii];
++                     l < nlte->nlte_ion_level_offset[ii + 1]; l++) {
++                    size_t at = (size_t)l * n_shells + s;
++                    if (nlte->nlte_level_populations[at] != 0.0) residual_nonzero++;
++                    nlte->nlte_level_populations[at] = 0.0;
++                    cleared_levels++;
++                }
++            }
++        }
++    }
++    printf("[ABUNDANCE-ZERO-NLTE] excluded_ion_shell_slots=%ld cleared_level_cells=%ld residual_nonzero_before_clear=%ld policy=EXACT_ZERO\n",
++           excluded_ion_shells, cleared_levels, residual_nonzero);
++}
++
+ /* Task #072: Helper — interpolate zeta factor for (Z, ion_stage) at temperature T */
+ static double interpolate_zeta(AtomicData *atom, int Z, int ion_stage, double T) {
+@@ -2377,6 +2421,7 @@ static void compute_ion_populations_shell(AtomicData *atom, PlasmaState *plasma,
+             for (int k = 0; k < n_pops - 1; k++) {
+                 product *= ratios[k];
+                 double n_ion = n_0 * product;
+-                if (!(n_ion > 1e-300)) n_ion = 1e-300;  /* NaN-catching */
++                if (n_element == 0.0) n_ion = 0.0;
++                else if (!(n_ion > 1e-300)) n_ion = 1e-300;  /* NaN-catching */
+                 atom->ion_number_density[(ip_start + k + 1) * n_shells + s] = n_ion;
+             }
+@@ -2525,6 +2570,7 @@ static void compute_electron_density(AtomicData *atom, PlasmaState *plasma,
+                 for (int k = 0; k < max_k; k++) {
+                     product *= ratios_local[k];
+                     double n_ion = n_0 * product;
+-                    if (!(n_ion > 1e-300)) n_ion = 1e-300;  /* NaN-catching */
++                    if (n_element == 0.0) n_ion = 0.0;
++                    else if (!(n_ion > 1e-300)) n_ion = 1e-300;  /* NaN-catching */
+                     atom->ion_number_density[(ip_start + k + 1) * n_shells + s] = n_ion;
+                 }
+@@ -2636,5 +2682,12 @@ static void compute_tau_sobolev(AtomicData *atom, PlasmaState *plasma,
+         for (int s = 0; s < n_shells; s++) {
+             double T_rad = plasma->T_rad[s];
+             double W     = plasma->W[s];
+             double n_ion = atom->ion_number_density[ip * n_shells + s];
++            /* A zero-abundance element has exact zero opacity, not the generic
++             * 1e-100 numerical tau floor below. */
++            int absent = 0;
++            for (int e = 0; e < atom->n_elements; e++)
++                if (atom->element_Z[e] == Z)
++                    absent = atom->abundances[e * n_shells + s] == 0.0;
++            if (absent) { opacity->tau_sobolev[line * n_shells + s] = 0.0; continue; }
+             double Z_part = atom->partition_functions[ip * n_shells + s];
+@@ -6320,6 +6366,7 @@ static void apply_frozenin_freezeout(AtomicData *atom, PlasmaState *plasma,
+                 int stage = atom->ion_pop_stage[ip];
+                 double n_ion = (stage >= 0 && stage < MS)
+                                ? y[e * MS + stage] * n_elem0[e] : 0.0;
+-                if (!(n_ion > 1e-300)) n_ion = 1e-300;  /* NaN-catching */
++                if (n_elem0[e] == 0.0) n_ion = 0.0;
++                else if (!(n_ion > 1e-300)) n_ion = 1e-300;  /* NaN-catching */
+                 atom->ion_number_density[ip * n_shells + s] = n_ion;
+             }
+@@ -12601,6 +12648,7 @@ static double coupled_charge_density(AtomicData *atom, PlasmaState *plasma,
+             charge += (double)atom->ion_pop_stage[ip_start + j] * yj;
+             if (write_pops) {
+                 double n_ion = n_element * yj;
+-                if (!(n_ion > 1e-300)) n_ion = 1e-300;  /* NaN-catching */
++                if (n_element == 0.0) n_ion = 0.0;
++                else if (!(n_ion > 1e-300)) n_ion = 1e-300;  /* NaN-catching */
+                 atom->ion_number_density[(ip_start + j) * n_shells + s] = n_ion;
+             }
+@@ -17107,6 +17155,15 @@ void nlte_update_tau_sobolev(NLTEConfig *nlte, AtomicData *atom,
+             double n_lower = nlte->nlte_level_populations[nlte_lo * n_shells + s];
+             double n_upper = nlte->nlte_level_populations[nlte_up * n_shells + s];
+ 
++            int absent = 0;
++            for (int e = 0; e < atom->n_elements; e++)
++                if (atom->element_Z[e] == Z)
++                    absent = atom->abundances[e * n_shells + s] == 0.0;
++            if (absent) {
++                opacity->tau_sobolev[line * n_shells + s] = 0.0;
++                opacity->line_source_S[line * n_shells + s] = 0.0;
++                continue;
++            }
+             /* Stimulated emission correction */
+             double stim_corr = 1.0;
+             if (n_lower > 0.0 && n_upper > 0.0 && g_lo > 0 && g_up > 0) {
+@@ -17467,5 +17515,7 @@ int nlte_solve_all(NLTEConfig *nlte, AtomicData *atom, PlasmaState *plasma,
+     }
+     free(old_pops);
+     free(old_ion_totals);
++    /* Matrix topology stays allocated, but absent species own no population. */
++    nlte_enforce_zero_abundance(nlte, atom, plasma, n_shells);
+ 
+     /* Candidate assembly has ended; these are the authoritative counts from

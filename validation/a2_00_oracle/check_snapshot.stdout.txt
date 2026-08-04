@@ -1,0 +1,1 @@
+PASS CMFGEN_ORACLE_CONTRACT entries=362 unclassified=0 role_counts={"oracle-data":72,"oracle-metadata":145,"run-log":28,"scratch":117,"unclassified":0} profile=snapshot mtime_used=false

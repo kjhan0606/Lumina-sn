@@ -1,0 +1,150 @@
+diff --git a/src/lumina_element_wide.c b/src/lumina_element_wide.c
+index d0d0cba..6593cf0 100644
+--- a/src/lumina_element_wide.c
++++ b/src/lumina_element_wide.c
+@@ -1775,6 +1775,45 @@ double nlte_ew_test_boundary_flux_audit(
+                                   forward0, forward1, reverse0, reverse1);
+ }
+ 
++static double ew_boundary_population_fraction(int has_population,
++                                              double density,
++                                              double n_elem) {
++    if (!isfinite(n_elem)) return INFINITY;
++    if (!has_population || !(n_elem > 0.0)) return 0.0;
++    double fraction = density / n_elem;
++    return isfinite(fraction) ? fraction : INFINITY;
++}
++
++static int ew_boundary_tau_add(double tau, int is_boundary,
++                               double *tau_all, double *tau_boundary) {
++    if (!tau_all || !tau_boundary || !isfinite(tau) ||
++        !isfinite(*tau_all) || !isfinite(*tau_boundary)) goto nonfinite;
++    tau = fabs(tau);
++    *tau_all += tau;
++    if (!isfinite(*tau_all)) goto nonfinite;
++    if (is_boundary) {
++        *tau_boundary += tau;
++        if (!isfinite(*tau_boundary)) goto nonfinite;
++    }
++    return 0;
++
++nonfinite:
++    if (tau_all) *tau_all = INFINITY;
++    if (tau_boundary) *tau_boundary = INFINITY;
++    return -1;
++}
++
++double nlte_ew_test_boundary_population_fraction(int has_population,
++                                                 double density,
++                                                 double n_elem) {
++    return ew_boundary_population_fraction(has_population, density, n_elem);
++}
++
++int nlte_ew_test_boundary_tau_add(double tau, int is_boundary,
++                                  double *tau_all, double *tau_boundary) {
++    return ew_boundary_tau_add(tau, is_boundary, tau_all, tau_boundary);
++}
++
+ static int ew_guard_config_count(void) {
+     static const char *const guard[] = {
+         "LUMINA_NLTE_FLOOR_REG", "LUMINA_NLTE_COLL_FLOOR",
+@@ -2198,19 +2237,22 @@ static int ew_run_impl(NLTEConfig *nlte, AtomicData *atom,
+     double boundary_max=0.0;
+     for(int st_i=0;st_i<2;st_i++){
+         int st=st_i?(boundary.active?5:4):0,ip=ew_find_ip(atom,Z,st);
+-        double f=(ip>=0&&n_elem>0.0)?atom->ion_number_density[(size_t)ip*plasma->n_shells+shell]/n_elem:0.0;
++        double density=ip>=0 ?
++            atom->ion_number_density[(size_t)ip*plasma->n_shells+shell] : 0.0;
++        double f=ew_boundary_population_fraction(ip>=0,density,n_elem);
+         if(!isfinite(f))boundary_max=INFINITY;
+         else if(f>boundary_max)boundary_max=f;
+     }
+     double tau_all=0.0,tau_boundary=0.0;
+     if(opacity && opacity->tau_sobolev){
+         for(int line=0;line<atom->n_lines;line++) if(atom->line_atomic_number[line]==Z){
+-            double tau=fabs(opacity->tau_sobolev[(size_t)line*plasma->n_shells+shell]);
+-            if(!isfinite(tau)) { tau_all=INFINITY; tau_boundary=INFINITY; break; }
+-            tau_all+=tau;
+             int st=atom->line_ion_number[line];
+-            if(st==0||(!boundary.active&&st==4)||(boundary.active&&st>=5))
+-                tau_boundary+=tau;
++            int is_boundary=st==0||(!boundary.active&&st==4)||
++                            (boundary.active&&st>=5);
++            double tau=opacity->tau_sobolev[
++                (size_t)line*plasma->n_shells+shell];
++            if(ew_boundary_tau_add(tau,is_boundary,
++                                   &tau_all,&tau_boundary)!=0) break;
+         }
+     }
+     double boundary_opacity=(tau_all>0.0)?tau_boundary/tau_all:0.0;
+diff --git a/tests/wave32_boundary_q_seed.c b/tests/wave32_boundary_q_seed.c
+index 0c1bfb4..dbda5b9 100644
+--- a/tests/wave32_boundary_q_seed.c
++++ b/tests/wave32_boundary_q_seed.c
+@@ -10,6 +10,8 @@ double nlte_ew_test_boundary_row_audit(
+ double nlte_ew_test_boundary_flux_audit(
+     const double *, const double *, int, int, int, int,
+     const double *, const double *, const double *, const double *);
++double nlte_ew_test_boundary_population_fraction(int, double, double);
++int nlte_ew_test_boundary_tau_add(double, int, double *, double *);
+ 
+ #define A(A_,n_,i_,j_) ((A_)[(j_)*(n_)+(i_)])
+ 
+@@ -67,6 +69,26 @@ int main(void) {
+     plane[1] = NAN;
+     double matrix_nan = nlte_ew_test_assembly_residual(plane,ledger,2);
+ 
++    double n_elem_finite_fraction =
++        nlte_ew_test_boundary_population_fraction(1, 4.0, 10.0);
++    double n_elem_nan_fraction =
++        nlte_ew_test_boundary_population_fraction(1, 4.0, NAN);
++    int n_elem_nan_gate_pass = n_elem_nan_fraction <= 1e-8;
++    double tau_all = 0.0, tau_boundary = 0.0;
++    int tau_first_rc = nlte_ew_test_boundary_tau_add(
++        DBL_MAX, 0, &tau_all, &tau_boundary);
++    int tau_overflow_rc = nlte_ew_test_boundary_tau_add(
++        DBL_MAX, 0, &tau_all, &tau_boundary);
++    double tau_overflow_fraction =
++        tau_all > 0.0 ? tau_boundary / tau_all : 0.0;
++    if (!isfinite(tau_overflow_fraction)) tau_overflow_fraction = INFINITY;
++    int tau_overflow_gate_pass = tau_overflow_fraction <= 1e-4;
++    double tau_normal_all = 0.0, tau_normal_boundary = 0.0;
++    int tau_normal_rc0 = nlte_ew_test_boundary_tau_add(
++        1.0, 0, &tau_normal_all, &tau_normal_boundary);
++    int tau_normal_rc1 = nlte_ew_test_boundary_tau_add(
++        2.0, 1, &tau_normal_all, &tau_normal_boundary);
++
+     double roundoff_x[3] = {1.0,-DBL_EPSILON,2.0};
+     double negative_x[3] = {1.0,-1e-12,2.0};
+     double raw_min=0.0,error_bound=0.0;
+@@ -86,6 +108,16 @@ int main(void) {
+            "q_coupling_seeded=%.17g\n",
+            flux_good,route_seeded,q_coupling_seeded);
+     printf("matrix_nan=%g flux_nan=%g\n",matrix_nan,flux_nan);
++    printf("n_elem_finite_fraction=%.17g n_elem_nan_fraction=%g "
++           "gate_pass=%d\n",n_elem_finite_fraction,
++           n_elem_nan_fraction,n_elem_nan_gate_pass);
++    printf("tau_first_rc=%d tau_overflow_rc=%d tau_all=%g "
++           "tau_boundary=%g opacity_fraction=%g gate_pass=%d\n",
++           tau_first_rc,tau_overflow_rc,tau_all,tau_boundary,
++           tau_overflow_fraction,tau_overflow_gate_pass);
++    printf("tau_normal_rc=%d/%d tau_all=%.17g tau_boundary=%.17g\n",
++           tau_normal_rc0,tau_normal_rc1,tau_normal_all,
++           tau_normal_boundary);
+     printf("roundoff_negative=%d raw_min=%.17g error_bound=%.17g "
+            "seeded_negative=%d\n",
+            roundoff_negative,raw_min,error_bound,seeded_negative);
+@@ -96,6 +128,13 @@ int main(void) {
+            !row_b0_nan_gate_pass && flux_good == 0.0 &&
+            route_seeded > 1e-12 && q_coupling_seeded > 1e-12 &&
+            isinf(matrix_nan) && isinf(flux_nan) &&
++           n_elem_finite_fraction == 0.4 &&
++           isinf(n_elem_nan_fraction) && !n_elem_nan_gate_pass &&
++           tau_first_rc == 0 && tau_overflow_rc == -1 &&
++           isinf(tau_all) && isinf(tau_boundary) &&
++           isinf(tau_overflow_fraction) && !tau_overflow_gate_pass &&
++           tau_normal_rc0 == 0 && tau_normal_rc1 == 0 &&
++           tau_normal_all == 3.0 && tau_normal_boundary == 2.0 &&
+            roundoff_negative == 0 && raw_min == -DBL_EPSILON &&
+            error_bound >= DBL_EPSILON && seeded_negative == 1 ? 0 : 1;
+ }

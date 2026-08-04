@@ -1,0 +1,29 @@
+E4 expected changeset (apply from repository root, in order)
+
+1. e4_rung1_insitu_assembler.patch
+   M src/lumina_cmfgen.h
+   M src/lumina_cmfgen.c
+   Adds the tagged R7 writer extension, common-state digest, A_ul*n_u
+   assembler, undefined-transition ledger, and coverage accounting.
+
+2. e4_rung2_runtime_gate.patch
+   M src/lumina_cuda.cu
+   Adds LUMINA_EMISS_AB_DUMP orchestration in the pure-CMFGEN loop.
+
+3. e4_rung3_seeded_fixture.patch
+   M Makefile
+   A tests/emiss_ab_insitu_fixture.c
+   Adds the CPU-only clean/seeded/no-fallback fixture.
+
+4. e4_rung4_offline_judge.patch
+   A scripts/emiss_ab_insitu_e4.py
+   Adds fail-closed A/B validation, stage31 execution, six-band comparison,
+   and Fe III idx201 / S II SL4 Gamma replay.
+
+5. e4_rung5_report.patch
+   A docs/CODEX_EMISS_E4_INSITU.md
+   A patches/e4_expected_changes.txt
+   Adds the implementation/verification report and this manifest.
+
+Explicitly absent: model products, GPU-run products, new clamps/floors,
+acceptance changes, generated E4 numerical verdicts, and commits.

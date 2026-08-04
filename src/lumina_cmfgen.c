@@ -10,6 +10,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
+#include <errno.h>
+#include <stdint.h>
 
 /* Physical constants (cgs) — local copies; planck_bnu in plasma.c is static. */
 #define CM_H      6.62607015e-27   /* erg s            */
@@ -27,6 +29,36 @@ int cmf_solve_J_gpu(int NS, int NB, int NP, int adv_split, double a_lam,
     const int *shell_off, const int *shell_k, const int *shell_seg,
     const double *shell_mu, int nsamp,
     int n_ali_iter, double tol, int *iters_out);
+
+/* The default clean CPU target does not link CUDA objects.  Keep the existing
+ * runtime fallback contract explicit so the CPU executable links portably;
+ * CUDA builds define LUMINA_HAS_CUDA_BF_GEMM and use the strong GPU symbols. */
+#ifndef LUMINA_HAS_CUDA_BF_GEMM
+int cmf_solve_J_gpu(int NS, int NB, int NP, int adv_split, double a_lam,
+    const double *chi_tot, const double *chi_es, const double *chi_abs,
+    const double *S_fixed, double *J,
+    const double *Bin, const double *adv_b, const double *advcoef_b,
+    const int *rn, const int *rsh, const double *rz,
+    const int *rcore, const double *rzin,
+    const int *shell_off, const int *shell_k, const int *shell_seg,
+    const double *shell_mu, int nsamp,
+    int n_ali_iter, double tol, int *iters_out) {
+    (void)NS;(void)NB;(void)NP;(void)adv_split;(void)a_lam;
+    (void)chi_tot;(void)chi_es;(void)chi_abs;(void)S_fixed;(void)J;
+    (void)Bin;(void)adv_b;(void)advcoef_b;(void)rn;(void)rsh;(void)rz;
+    (void)rcore;(void)rzin;(void)shell_off;(void)shell_k;(void)shell_seg;
+    (void)shell_mu;(void)nsamp;(void)n_ali_iter;(void)tol;(void)iters_out;
+    return -1;
+}
+
+int bf_gemm_compute_fine(BFOpacity *bf, AtomicData *atom, PlasmaState *plasma,
+                         int n_shells, const double *nu_fine, int n_fine,
+                         double nu_min, double d_log_nu, double *chi_out) {
+    (void)bf;(void)atom;(void)plasma;(void)n_shells;(void)nu_fine;(void)n_fine;
+    (void)nu_min;(void)d_log_nu;(void)chi_out;
+    return -1;
+}
+#endif
 
 static int cmf_dcmp(const void *a, const void *b) {
     double d = *(const double*)a - *(const double*)b;
@@ -54,6 +86,1365 @@ static double cmf_inner_bb_scale(void) {
     return s;
 }
 
+/* ---- Wave-3.2 R7: deterministic little-endian frozen chi/eta dump. ---- */
+typedef struct {
+    uint32_t h[8];
+    uint64_t bits;
+    unsigned char block[64];
+    size_t used;
+} CMFSHA256;
+
+static uint32_t cmf_rotr32(uint32_t x, unsigned n) {
+    return (x >> n) | (x << (32U - n));
+}
+
+static void cmf_sha256_transform(CMFSHA256 *s, const unsigned char block[64]) {
+    static const uint32_t K[64] = {
+        0x428a2f98U,0x71374491U,0xb5c0fbcfU,0xe9b5dba5U,
+        0x3956c25bU,0x59f111f1U,0x923f82a4U,0xab1c5ed5U,
+        0xd807aa98U,0x12835b01U,0x243185beU,0x550c7dc3U,
+        0x72be5d74U,0x80deb1feU,0x9bdc06a7U,0xc19bf174U,
+        0xe49b69c1U,0xefbe4786U,0x0fc19dc6U,0x240ca1ccU,
+        0x2de92c6fU,0x4a7484aaU,0x5cb0a9dcU,0x76f988daU,
+        0x983e5152U,0xa831c66dU,0xb00327c8U,0xbf597fc7U,
+        0xc6e00bf3U,0xd5a79147U,0x06ca6351U,0x14292967U,
+        0x27b70a85U,0x2e1b2138U,0x4d2c6dfcU,0x53380d13U,
+        0x650a7354U,0x766a0abbU,0x81c2c92eU,0x92722c85U,
+        0xa2bfe8a1U,0xa81a664bU,0xc24b8b70U,0xc76c51a3U,
+        0xd192e819U,0xd6990624U,0xf40e3585U,0x106aa070U,
+        0x19a4c116U,0x1e376c08U,0x2748774cU,0x34b0bcb5U,
+        0x391c0cb3U,0x4ed8aa4aU,0x5b9cca4fU,0x682e6ff3U,
+        0x748f82eeU,0x78a5636fU,0x84c87814U,0x8cc70208U,
+        0x90befffaU,0xa4506cebU,0xbef9a3f7U,0xc67178f2U
+    };
+    uint32_t w[64];
+    for (int i = 0; i < 16; i++)
+        w[i] = ((uint32_t)block[4*i] << 24) |
+               ((uint32_t)block[4*i+1] << 16) |
+               ((uint32_t)block[4*i+2] << 8) | block[4*i+3];
+    for (int i = 16; i < 64; i++) {
+        uint32_t a = w[i-15], b = w[i-2];
+        uint32_t s0 = cmf_rotr32(a,7) ^ cmf_rotr32(a,18) ^ (a >> 3);
+        uint32_t s1 = cmf_rotr32(b,17) ^ cmf_rotr32(b,19) ^ (b >> 10);
+        w[i] = w[i-16] + s0 + w[i-7] + s1;
+    }
+    uint32_t a=s->h[0],b=s->h[1],c=s->h[2],d=s->h[3];
+    uint32_t e=s->h[4],f=s->h[5],g=s->h[6],h=s->h[7];
+    for (int i = 0; i < 64; i++) {
+        uint32_t S1=cmf_rotr32(e,6)^cmf_rotr32(e,11)^cmf_rotr32(e,25);
+        uint32_t ch=(e&f)^((~e)&g);
+        uint32_t t1=h+S1+ch+K[i]+w[i];
+        uint32_t S0=cmf_rotr32(a,2)^cmf_rotr32(a,13)^cmf_rotr32(a,22);
+        uint32_t maj=(a&b)^(a&c)^(b&c);
+        uint32_t t2=S0+maj;
+        h=g; g=f; f=e; e=d+t1; d=c; c=b; b=a; a=t1+t2;
+    }
+    s->h[0]+=a;s->h[1]+=b;s->h[2]+=c;s->h[3]+=d;
+    s->h[4]+=e;s->h[5]+=f;s->h[6]+=g;s->h[7]+=h;
+}
+
+static void cmf_sha256_init(CMFSHA256 *s) {
+    static const uint32_t H[8] = {
+        0x6a09e667U,0xbb67ae85U,0x3c6ef372U,0xa54ff53aU,
+        0x510e527fU,0x9b05688cU,0x1f83d9abU,0x5be0cd19U
+    };
+    memcpy(s->h, H, sizeof(H)); s->bits = 0; s->used = 0;
+}
+
+static void cmf_sha256_update(CMFSHA256 *s, const void *ptr, size_t n) {
+    const unsigned char *p = (const unsigned char *)ptr;
+    s->bits += (uint64_t)n * 8U;
+    while (n) {
+        size_t take = 64 - s->used;
+        if (take > n) take = n;
+        memcpy(s->block + s->used, p, take);
+        s->used += take; p += take; n -= take;
+        if (s->used == 64) {
+            cmf_sha256_transform(s, s->block);
+            s->used = 0;
+        }
+    }
+}
+
+static void cmf_sha256_final(CMFSHA256 *s, unsigned char out[32]) {
+    uint64_t bits = s->bits;
+    unsigned char one = 0x80, zero = 0;
+    cmf_sha256_update(s, &one, 1);
+    while (s->used != 56) cmf_sha256_update(s, &zero, 1);
+    unsigned char len[8];
+    for (int i = 0; i < 8; i++) len[7-i] = (unsigned char)(bits >> (8*i));
+    cmf_sha256_update(s, len, 8);
+    for (int i = 0; i < 8; i++) {
+        out[4*i] = (unsigned char)(s->h[i] >> 24);
+        out[4*i+1] = (unsigned char)(s->h[i] >> 16);
+        out[4*i+2] = (unsigned char)(s->h[i] >> 8);
+        out[4*i+3] = (unsigned char)s->h[i];
+    }
+}
+
+int cmfgen_sha256_file(const char *path, char hex[65]) {
+    if (!path || !*path || !hex) return -1;
+    FILE *fp = fopen(path, "rb");
+    if (!fp) return -1;
+    CMFSHA256 sha;
+    unsigned char buf[65536], digest[32];
+    cmf_sha256_init(&sha);
+    for (;;) {
+        size_t n = fread(buf, 1, sizeof(buf), fp);
+        if (n) cmf_sha256_update(&sha, buf, n);
+        if (n < sizeof(buf)) {
+            if (ferror(fp)) { fclose(fp); return -1; }
+            break;
+        }
+    }
+    if (fclose(fp)) return -1;
+    cmf_sha256_final(&sha, digest);
+    for (int i=0;i<32;i++) snprintf(hex+2*i,3,"%02x",digest[i]);
+    hex[64]='\0';
+    return 0;
+}
+
+static int cmf_dump_bytes(FILE *fp, CMFSHA256 *sha,
+                          const unsigned char *p, size_t n) {
+    if (n && fwrite(p, 1, n, fp) != n) return -1;
+    cmf_sha256_update(sha, p, n);
+    return 0;
+}
+static int cmf_dump_u32(FILE *fp, CMFSHA256 *sha, uint32_t x) {
+    unsigned char b[4] = {(unsigned char)x,(unsigned char)(x>>8),
+                          (unsigned char)(x>>16),(unsigned char)(x>>24)};
+    return cmf_dump_bytes(fp, sha, b, sizeof(b));
+}
+static int cmf_dump_u64(FILE *fp, CMFSHA256 *sha, uint64_t x) {
+    unsigned char b[8];
+    for (int i=0;i<8;i++) b[i]=(unsigned char)(x>>(8*i));
+    return cmf_dump_bytes(fp, sha, b, sizeof(b));
+}
+static int cmf_dump_f64(FILE *fp, CMFSHA256 *sha, double x) {
+    uint64_t u;
+    memcpy(&u, &x, sizeof(u));
+    return cmf_dump_u64(fp, sha, u);
+}
+
+int cmfgen_dump_frozen_chieta_lane(const CMFGENState *cs, const Geometry *geo,
+                                   int iter, int field_generation,
+                                   int post_damping, const char *path,
+                                   const CMFGENChietaLaneMeta *meta) {
+    enum { FLAG_POST_DAMP=1U, FLAG_COHERENT_FROZEN=2U,
+           FLAG_FREQUENCY_DESCENDING=4U };
+    if (!cs || !geo || !path || !*path || iter < 0 || field_generation < 0 ||
+        (post_damping != 0 && post_damping != 1) ||
+        cs->n_shells <= 0 || cs->n_bins <= 0 ||
+        geo->n_shells != cs->n_shells || !(geo->time_explosion > 0.0) ||
+        !isfinite(geo->time_explosion) || !geo->r_inner || !geo->r_outer ||
+        !cs->nu || !cs->dnu || !cs->chi_tot || !cs->chi_es ||
+        !cs->S_fixed || !cs->J || !cs->eta_total_audit) {
+        fprintf(stderr, "[CMF-CHIETA][FAIL] invalid state/path/iteration\n");
+        return -1;
+    }
+    if (meta && (!meta->lane || !*meta->lane ||
+                 !meta->common_state_sha256 ||
+                 strlen(meta->common_state_sha256) != 64 ||
+                 !meta->coverage)) {
+        fprintf(stderr,"[CMF-CHIETA][FAIL] invalid E4 lane metadata\n");
+        return -1;
+    }
+    for (int s=0;s<geo->n_shells;s++) {
+        if (!(geo->r_inner[s] > 0.0) ||
+            !(geo->r_outer[s] > geo->r_inner[s]) ||
+            !isfinite(geo->r_inner[s]) || !isfinite(geo->r_outer[s])) {
+            fprintf(stderr,"[CMF-CHIETA][FAIL] invalid radius shell=%d\n",s);
+            return -1;
+        }
+        if (s && fabs(geo->r_inner[s]-geo->r_outer[s-1]) >
+                 1e-12*fmax(fabs(geo->r_inner[s]),fabs(geo->r_outer[s-1]))) {
+            fprintf(stderr,"[CMF-CHIETA][FAIL] non-contiguous radius shell=%d\n",s);
+            return -1;
+        }
+    }
+    for (int b=0;b<cs->n_bins;b++) {
+        if (!(cs->nu[b] > 0.0) || !(cs->dnu[b] > 0.0) ||
+            !isfinite(cs->nu[b]) || !isfinite(cs->dnu[b]) ||
+            (b && !(cs->nu[b] > cs->nu[b-1]))) {
+            fprintf(stderr,"[CMF-CHIETA][FAIL] source frequency grid b=%d\n",b);
+            return -1;
+        }
+    }
+    size_t cells = (size_t)cs->n_shells * (size_t)cs->n_bins;
+    if (cells / (size_t)cs->n_bins != (size_t)cs->n_shells) {
+        fprintf(stderr,"[CMF-CHIETA][FAIL] dimension overflow\n");
+        return -1;
+    }
+    double eta_decomposition_max_abs = 0.0;
+    int eta_decomposition_bitwise = 1;
+    for (size_t q=0;q<cells;q++) {
+        if (!(cs->chi_tot[q] >= 0.0) || !(cs->chi_es[q] >= 0.0) ||
+            !(cs->J[q] >= 0.0) || !(cs->eta_total_audit[q] >= 0.0) ||
+            !isfinite(cs->chi_tot[q]) ||
+            !isfinite(cs->chi_es[q]) || !isfinite(cs->S_fixed[q]) ||
+            !isfinite(cs->J[q]) || !isfinite(cs->eta_total_audit[q]) ||
+            !isfinite(cs->chi_tot[q] * cs->S_fixed[q]) ||
+            !isfinite(cs->chi_es[q] * cs->J[q]) ||
+            !isfinite(cs->chi_tot[q] * cs->S_fixed[q] +
+                      cs->chi_es[q] * cs->J[q])) {
+            fprintf(stderr,"[CMF-CHIETA][FAIL] invalid cell=%zu\n",q);
+            return -1;
+        }
+        double split = cs->chi_tot[q] * cs->S_fixed[q] +
+                       cs->chi_es[q] * cs->J[q];
+        double delta = fabs(cs->eta_total_audit[q] - split);
+        if (delta > eta_decomposition_max_abs)
+            eta_decomposition_max_abs = delta;
+        if (memcmp(&cs->eta_total_audit[q], &split, sizeof(double)) != 0)
+            eta_decomposition_bitwise = 0;
+    }
+
+    char manifest[4096], quarantine[4096];
+    int mn=snprintf(manifest,sizeof(manifest),"%s.manifest.json",path);
+    int qn=snprintf(quarantine,sizeof(quarantine),"%s.quarantine",path);
+    if (mn < 0 || (size_t)mn >= sizeof(manifest) ||
+        qn < 0 || (size_t)qn >= sizeof(quarantine)) {
+        fprintf(stderr,"[CMF-CHIETA][FAIL] sidecar/quarantine path too long\n");
+        return -1;
+    }
+
+    FILE *fp = fopen(path, "wb");
+    if (!fp) {
+        fprintf(stderr,"[CMF-CHIETA][FAIL] open %s: %s\n",path,strerror(errno));
+        return -1;
+    }
+    CMFSHA256 sha; cmf_sha256_init(&sha);
+    int fail = 0;
+    const unsigned char magic[8] = {'L','C','M','F','C','E','0','1'};
+#define DW(call) do { if (!fail && (call)) fail=1; } while (0)
+    DW(cmf_dump_bytes(fp,&sha,magic,sizeof(magic)));
+    DW(cmf_dump_u32(fp,&sha,UINT32_C(0x01020304)));
+    DW(cmf_dump_u32(fp,&sha,UINT32_C(1)));
+    DW(cmf_dump_u64(fp,&sha,(uint64_t)cs->n_shells));
+    DW(cmf_dump_u64(fp,&sha,(uint64_t)cs->n_bins));
+    DW(cmf_dump_u64(fp,&sha,(uint64_t)iter));
+    DW(cmf_dump_u64(fp,&sha,(uint64_t)field_generation));
+    DW(cmf_dump_u32(fp,&sha,(post_damping ? FLAG_POST_DAMP : 0U)|
+                              FLAG_COHERENT_FROZEN|FLAG_FREQUENCY_DESCENDING));
+    DW(cmf_dump_u32(fp,&sha,0));
+    DW(cmf_dump_f64(fp,&sha,geo->time_explosion));
+    DW(cmf_dump_f64(fp,&sha,geo->r_inner[0]));
+    for (int s=0;s<geo->n_shells;s++)
+        DW(cmf_dump_f64(fp,&sha,geo->r_outer[s]));
+    for (int b=cs->n_bins-1;b>=0;b--) DW(cmf_dump_f64(fp,&sha,cs->nu[b]));
+    for (int b=cs->n_bins-1;b>=0;b--) DW(cmf_dump_f64(fp,&sha,cs->dnu[b]));
+    for (int s=0;s<cs->n_shells;s++) for (int b=cs->n_bins-1;b>=0;b--)
+        DW(cmf_dump_f64(fp,&sha,cs->chi_tot[(size_t)s*cs->n_bins+b]));
+    for (int s=0;s<cs->n_shells;s++) for (int b=cs->n_bins-1;b>=0;b--)
+        DW(cmf_dump_f64(fp,&sha,cs->chi_es[(size_t)s*cs->n_bins+b]));
+    for (int s=0;s<cs->n_shells;s++) for (int b=cs->n_bins-1;b>=0;b--) {
+        size_t q=(size_t)s*cs->n_bins+b;
+        DW(cmf_dump_f64(fp,&sha,cs->chi_tot[q]*cs->S_fixed[q]));
+    }
+    for (int s=0;s<cs->n_shells;s++) for (int b=cs->n_bins-1;b>=0;b--) {
+        size_t q=(size_t)s*cs->n_bins+b;
+        DW(cmf_dump_f64(fp,&sha,cs->chi_es[q]*cs->J[q]));
+    }
+    for (int s=0;s<cs->n_shells;s++) for (int b=cs->n_bins-1;b>=0;b--) {
+        size_t q=(size_t)s*cs->n_bins+b;
+        DW(cmf_dump_f64(fp,&sha,cs->eta_total_audit[q]));
+    }
+    for (int s=0;s<cs->n_shells;s++) for (int b=cs->n_bins-1;b>=0;b--)
+        DW(cmf_dump_f64(fp,&sha,cs->J[(size_t)s*cs->n_bins+b]));
+#undef DW
+    if (fclose(fp)) fail=1;
+    if (fail) {
+        fprintf(stderr,"[CMF-CHIETA][FAIL] write %s: %s\n",path,strerror(errno));
+        if (rename(path, quarantine) != 0)
+            fprintf(stderr,"[CMF-CHIETA][FAIL] quarantine %s: %s\n",
+                    quarantine,strerror(errno));
+        return -1;
+    }
+    unsigned char digest[32]; char hex[65];
+    cmf_sha256_final(&sha,digest);
+    for(int i=0;i<32;i++) snprintf(hex+2*i,3,"%02x",digest[i]);
+    hex[64]='\0';
+    FILE *mf=fopen(manifest,"w");
+    if(!mf) {
+        fprintf(stderr,"[CMF-CHIETA][FAIL] open %s: %s\n",manifest,strerror(errno));
+        if (rename(path, quarantine) != 0)
+            fprintf(stderr,"[CMF-CHIETA][FAIL] quarantine %s: %s\n",
+                    quarantine,strerror(errno));
+        return -1;
+    }
+    int sidecar_fail = fprintf(mf,"{\n  \"schema\": \"LCMFCE01-v1\",\n"
+               "  \"sha256\": \"%s\",\n"
+               "  \"iteration\": %d,\n  \"field_generation\": %d,\n"
+               "  \"post_damping\": %s,\n"
+               "  \"coherent_frozen\": true,\n"
+               "  \"frequency_descending\": true,\n"
+               "  \"eta_decomposition_bitwise\": %s,\n"
+               "  \"eta_decomposition_max_abs\": %.17g",
+               hex,iter,field_generation,post_damping ? "true" : "false",
+               eta_decomposition_bitwise ? "true" : "false",
+               eta_decomposition_max_abs) < 0;
+    if (!sidecar_fail && meta) {
+        const CMFGENEmissABStats *st = meta->coverage;
+        int is_a = strcmp(meta->lane,"A-production") == 0;
+        int is_b2 = strcmp(meta->lane,"B2-Aul-nu-retain-A-undefined") == 0;
+        const char *formula = is_a
+            ? "production-eps-times-source"
+            : (is_b2
+               ? "covered:hnu-over-4pi-times-Aul-times-n_upper-over-dnu;undefined:production-A-retained"
+               : "hnu-over-4pi-times-Aul-times-n_upper-over-dnu");
+        const char *undefined_policy = is_a ? "production-not-applicable"
+            : (is_b2 ? "retain-production-A-explicit-controlled"
+                     : "zero-undefined-fail-closed");
+        sidecar_fail = fprintf(mf,
+               ",\n  \"emiss_ab_lane\": \"%s\",\n"
+               "  \"common_assembly_state_sha256\": \"%s\",\n"
+               "  \"line_emissivity_formula\": \"%s\",\n"
+               "  \"undefined_transition_policy\": \"%s\",\n"
+               "  \"controlled_retention\": %s,\n"
+               "  \"undefined_transition_list_suffix\": \".undefined.csv\",\n"
+               "  \"coverage\": {\n"
+               "    \"active_transition_count\": %llu,\n"
+               "    \"defined_transition_count\": %llu,\n"
+               "    \"undefined_transition_count\": %llu,\n"
+               "    \"active_line_shell_count\": %llu,\n"
+               "    \"defined_line_shell_count\": %llu,\n"
+               "    \"undefined_line_shell_count\": %llu,\n"
+               "    \"retained_transition_count\": %llu,\n"
+               "    \"retained_line_shell_count\": %llu,\n"
+               "    \"a_reference_line_power\": %.17g,\n"
+               "    \"a_reference_covered_line_power\": %.17g,\n"
+               "    \"a_reference_undefined_line_power\": %.17g,\n"
+               "    \"a_reference_contribution_fraction\": %.17g,\n"
+               "    \"a_reference_undefined_contribution_fraction\": %.17g,\n"
+               "    \"a_reference_retained_line_power\": %.17g,\n"
+               "    \"a_reference_retained_contribution_fraction\": %.17g\n"
+               "  },\n"
+               "  \"seeded_defect\": {\"line_id\": %d, \"shell\": %d, "
+               "\"population_factor\": %.17g, \"hits\": %llu},\n"
+               "  \"undefined_a_reference_diagnostic\": {\n"
+               "    \"epoch\": \"pre-EPAY\",\n"
+               "    \"quantity\": \"sum eta_A_undefined*dnu\",\n"
+               "    \"units\": \"erg s^-1 cm^-3 sr^-1\",\n"
+               "    \"n_bins\": %d,\n"
+               "    \"n_shells\": %d,\n"
+               "    \"by_band\": [",
+               meta->lane,meta->common_state_sha256,formula,undefined_policy,
+               is_b2 ? "true" : "false",
+               (unsigned long long)st->active_transition_count,
+               (unsigned long long)st->defined_transition_count,
+               (unsigned long long)st->undefined_transition_count,
+               (unsigned long long)st->active_line_shell_count,
+               (unsigned long long)st->defined_line_shell_count,
+               (unsigned long long)st->undefined_line_shell_count,
+               (unsigned long long)(is_b2 ? st->retained_transition_count : 0),
+               (unsigned long long)(is_b2 ? st->retained_line_shell_count : 0),
+               st->a_reference_line_power,
+               st->a_reference_covered_line_power,
+               st->a_reference_undefined_line_power,
+               st->a_reference_contribution_fraction,
+               st->a_reference_undefined_contribution_fraction,
+               is_b2 ? st->a_reference_retained_line_power : 0.0,
+               is_b2 ? st->a_reference_retained_contribution_fraction : 0.0,
+               st->seed_line,st->seed_shell,st->seed_factor,
+               (unsigned long long)st->seed_hits,st->n_bins,st->n_shells) < 0;
+        for (int b=0;b<st->n_bins && !sidecar_fail;b++)
+            sidecar_fail=fprintf(mf,"%s%.17g",b ? "," : "",
+                st->undefined_a_emissivity_by_band[b]) < 0;
+        if (!sidecar_fail)
+            sidecar_fail=fprintf(mf,"],\n    \"by_shell\": [") < 0;
+        for (int s=0;s<st->n_shells && !sidecar_fail;s++)
+            sidecar_fail=fprintf(mf,"%s%.17g",s ? "," : "",
+                st->undefined_a_emissivity_by_shell[s]) < 0;
+        if (!sidecar_fail)
+            sidecar_fail=fprintf(mf,"]\n  }\n") < 0;
+    } else if (!sidecar_fail) {
+        sidecar_fail = fprintf(mf,"\n") < 0;
+    }
+    if (!sidecar_fail) sidecar_fail = fprintf(mf,"}\n") < 0;
+    if(fclose(mf)) sidecar_fail = 1;
+    if(sidecar_fail) {
+        fprintf(stderr,"[CMF-CHIETA][FAIL] write/close %s\n",manifest);
+        if (rename(path, quarantine) != 0)
+            fprintf(stderr,"[CMF-CHIETA][FAIL] quarantine %s: %s\n",
+                    quarantine,strerror(errno));
+        return -1;
+    }
+    fprintf(stderr,"[CMF-CHIETA] wrote %s iter=%d generation=%d post_damp=%d "
+            "sha256=%s\n", path,iter,field_generation,post_damping,hex);
+    return 0;
+}
+
+int cmfgen_dump_frozen_chieta(const CMFGENState *cs, const Geometry *geo,
+                              int iter, int field_generation,
+                              int post_damping, const char *path) {
+    return cmfgen_dump_frozen_chieta_lane(cs,geo,iter,field_generation,
+                                          post_damping,path,NULL);
+}
+
+/* ============================================================================
+ * [CMF-LINEPOP T2] population-native line dump.
+ *
+ * WHY.  The frozen chi/eta capture (LCMFCE01) is per (shell, coarse bin): it
+ * records what the assembled line forest *summed to*, not what any individual
+ * line contributed nor which populations produced it.  T2 ("replace only the
+ * line assembly with population-native chi_l[n_l,n_u] and eta_l = A_ul n_u")
+ * therefore had no instrument: the E4 B/B2 lanes can swap the emissivity but
+ * chi stays bitwise identical, so the experiment is not a single-factor test.
+ *
+ * WHAT.  A READ-ONLY REPLAY of the assemble per-line loop, fired in the same
+ * `it == LUMINA_CMF_FROZEN_CHIETA_ITER` block that writes the chi/eta capture,
+ * i.e. the SAME GENERATION BY CONSTRUCTION.  Nothing in cmfgen_assemble_impl
+ * is touched; between assemble and this call only cmfgen_solve_J and the J
+ * damping run, and neither writes chi_line/chi_line_th/chi_abs/chi_tot.  The
+ * replay re-derives chi_line from the same inputs in the same order and the
+ * writer records whether it reproduced cs->chi_line BITWISE -- a round-trip
+ * identity that makes "same generation" checkable, not asserted.
+ *
+ * THE EPAY DISPOSITION.  Per (shell, bin) the artifact also records whether
+ * the line emissivity assembled here actually survives into S_fixed: under
+ * LUMINA_CMF_EPAY>=2 the thin-bin source is REBUILT from chi_line_th*B(T_e)
+ * plus the Milne bf shape, so eta_line is discarded there.  Without this
+ * column an offline T2 can swap eta in cells where eta is thrown away and
+ * conclude nothing.
+ *
+ * Gate LUMINA_CMF_LINEPOP_DUMP (path). Unset => not called, allocates nothing.
+ * ==========================================================================*/
+
+static void cmf_pack_u32(unsigned char *b, uint32_t x) {
+    b[0]=(unsigned char)x; b[1]=(unsigned char)(x>>8);
+    b[2]=(unsigned char)(x>>16); b[3]=(unsigned char)(x>>24);
+}
+static void cmf_pack_i32(unsigned char *b, int x) {
+    cmf_pack_u32(b,(uint32_t)x);
+}
+static void cmf_pack_f64(unsigned char *b, double x) {
+    uint64_t u; memcpy(&u,&x,sizeof(u));
+    for (int i=0;i<8;i++) b[i]=(unsigned char)(u>>(8*i));
+}
+
+#define CMF_LINEPOP_ROW_BYTES  76
+#define CMF_LINEPOP_LINE_BYTES 80
+
+enum {
+    CMF_LP_F_NLTE_ION     = 1U << 0, /* line is mapped to an NLTE ion        */
+    CMF_LP_F_POPS_DEFINED = 1U << 1, /* both n_l and n_u are NLTE-solved     */
+    CMF_LP_F_SL_POP       = 1U << 2, /* line_source_S > 0 (population-native)*/
+    CMF_LP_F_SL_FALLBACK  = 1U << 3, /* S used by assemble was B_nu(T_e)     */
+    CMF_LP_F_STIM_CLAMPED = 1U << 4, /* 1-(g_l n_u)/(g_u n_l) <= 0           */
+    CMF_LP_F_TAU_ROUNDTRIP= 1U << 5  /* tau recomputed from pops matches     */
+};
+
+typedef struct {
+    int shells[64], n_shells_sel;
+    double lam_lo, lam_hi;
+    long max_rows;
+} CMFLinePopSel;
+
+static int cmf_linepop_parse_sel(CMFLinePopSel *sel, int n_shells) {
+    memset(sel, 0, sizeof(*sel));
+    sel->lam_lo = 600.0; sel->lam_hi = 3000.0; sel->max_rows = 4000000L;
+    const char *se = getenv("LUMINA_CMF_LINEPOP_SHELLS");
+    if (!se || !*se) {
+        fprintf(stderr,"[CMF-LINEPOP][FAIL] LUMINA_CMF_LINEPOP_SHELLS is "
+                "required when the dump is armed (comma list, e.g. 8,16,45)\n");
+        return -1;
+    }
+    char buf[512];
+    if (snprintf(buf,sizeof(buf),"%s",se) >= (int)sizeof(buf)) {
+        fprintf(stderr,"[CMF-LINEPOP][FAIL] shell list too long\n");
+        return -1;
+    }
+    for (char *tok=strtok(buf,", \t"); tok; tok=strtok(NULL,", \t")) {
+        char *end=NULL; long v=strtol(tok,&end,10);
+        if (end==tok || *end || v < 0 || v >= n_shells) {
+            fprintf(stderr,"[CMF-LINEPOP][FAIL] shell '%s' out of [0,%d)\n",
+                    tok,n_shells);
+            return -1;
+        }
+        if (sel->n_shells_sel >= (int)(sizeof(sel->shells)/sizeof(sel->shells[0]))) {
+            fprintf(stderr,"[CMF-LINEPOP][FAIL] too many shells selected\n");
+            return -1;
+        }
+        for (int i=0;i<sel->n_shells_sel;i++) if (sel->shells[i]==(int)v) {
+            fprintf(stderr,"[CMF-LINEPOP][FAIL] duplicate shell %ld\n",v);
+            return -1;
+        }
+        sel->shells[sel->n_shells_sel++]=(int)v;
+    }
+    if (!sel->n_shells_sel) {
+        fprintf(stderr,"[CMF-LINEPOP][FAIL] empty shell selection\n");
+        return -1;
+    }
+    const char *le = getenv("LUMINA_CMF_LINEPOP_LAM");
+    if (le && *le) {
+        double lo=0.0, hi=0.0;
+        if (sscanf(le,"%lf,%lf",&lo,&hi)!=2 || !(lo > 0.0) || !(hi > lo)) {
+            fprintf(stderr,"[CMF-LINEPOP][FAIL] LUMINA_CMF_LINEPOP_LAM must be "
+                    "lo,hi in Angstrom with 0<lo<hi (got %s)\n",le);
+            return -1;
+        }
+        sel->lam_lo=lo; sel->lam_hi=hi;
+    }
+    const char *me = getenv("LUMINA_CMF_LINEPOP_MAXROWS");
+    if (me && *me) {
+        char *end=NULL; long v=strtol(me,&end,10);
+        if (end==me || *end || v <= 0) {
+            fprintf(stderr,"[CMF-LINEPOP][FAIL] LUMINA_CMF_LINEPOP_MAXROWS "
+                    "must be a positive integer (got %s)\n",me);
+            return -1;
+        }
+        sel->max_rows=v;
+    }
+    return 0;
+}
+
+/* level_num -> global level index, per ion population.  Same construction the
+ * E4 lane uses, extended to serve BOTH the lower and the upper level. */
+typedef struct { int **by_number; int *max_number; int n_ion_pops;
+                 int zi[100*100]; } CMFLevIdx;
+
+static void cmf_levidx_free(CMFLevIdx *ix) {
+    if (!ix->by_number) return;
+    for (int i=0;i<ix->n_ion_pops;i++) free(ix->by_number[i]);
+    free(ix->by_number); free(ix->max_number);
+    ix->by_number=NULL; ix->max_number=NULL;
+}
+
+static int cmf_levidx_build(CMFLevIdx *ix, const AtomicData *atom) {
+    memset(ix,0,sizeof(*ix));
+    int np = atom->n_ion_pops;
+    if (np <= 0 || !atom->level_offset || !atom->level_num) return -1;
+    ix->n_ion_pops=np;
+    for (int k=0;k<100*100;k++) ix->zi[k]=-1;
+    if (atom->ion_pop_Z && atom->ion_pop_stage)
+        for (int j=0;j<np;j++) {
+            int Z=atom->ion_pop_Z[j], st=atom->ion_pop_stage[j];
+            if (Z >= 0 && Z < 100 && st >= 0 && st < 100) ix->zi[Z*100+st]=j;
+        }
+    ix->by_number=(int **)calloc((size_t)np,sizeof(int *));
+    ix->max_number=(int *)malloc((size_t)np*sizeof(int));
+    if (!ix->by_number || !ix->max_number) { cmf_levidx_free(ix); return -1; }
+    for (int i=0;i<np;i++) {
+        ix->max_number[i]=-1;
+        for (int g=atom->level_offset[i]; g<atom->level_offset[i+1]; g++)
+            if (atom->level_num[g] > ix->max_number[i])
+                ix->max_number[i]=atom->level_num[g];
+        if (ix->max_number[i] < 0) continue;
+        ix->by_number[i]=(int *)malloc((size_t)(ix->max_number[i]+1)*sizeof(int));
+        if (!ix->by_number[i]) { cmf_levidx_free(ix); return -1; }
+        for (int k=0;k<=ix->max_number[i];k++) ix->by_number[i][k]=-1;
+        for (int g=atom->level_offset[i]; g<atom->level_offset[i+1]; g++) {
+            int number=atom->level_num[g];
+            if (number >= 0 && number <= ix->max_number[i])
+                ix->by_number[i][number]=g;
+        }
+    }
+    return 0;
+}
+
+static int cmf_levidx_lookup(const CMFLevIdx *ix, int ion_pop, int level_num) {
+    if (ion_pop < 0 || ion_pop >= ix->n_ion_pops || !ix->by_number[ion_pop] ||
+        level_num < 0 || level_num > ix->max_number[ion_pop]) return -1;
+    return ix->by_number[ion_pop][level_num];
+}
+
+int cmfgen_dump_line_populations(const CMFGENState *cs, const Geometry *geo,
+                                 const OpacityState *opac,
+                                 const PlasmaState *plasma,
+                                 const NLTEConfig *nlte, const AtomicData *atom,
+                                 int iter, int field_generation,
+                                 const char *path) {
+    if (!cs || !geo || !opac || !plasma || !nlte || !atom || !path || !*path ||
+        iter < 0 || field_generation < 0 || cs->n_shells <= 0 ||
+        cs->n_bins <= 0 || geo->n_shells != cs->n_shells ||
+        opac->n_shells != cs->n_shells || atom->n_lines != opac->n_lines ||
+        !opac->tau_sobolev || !opac->line_list_nu || !cs->nu || !cs->dnu ||
+        !cs->chi_line || !cs->chi_line_th || !cs->chi_abs || !cs->chi_tot ||
+        !plasma->T_e || !plasma->T_rad || !atom->line_atomic_number ||
+        !atom->line_ion_number || !atom->line_level_lower ||
+        !atom->line_level_upper || !atom->level_g || !atom->level_num ||
+        !nlte->global_to_nlte_level || !nlte->nlte_level_populations) {
+        fprintf(stderr,"[CMF-LINEPOP][FAIL] invalid state/path/iteration\n");
+        return -1;
+    }
+    /* The replay reproduces the PRODUCTION assemble only.  Refuse the two
+     * variant assemblies rather than emit a mislabeled artifact. */
+    if (cs->cont_only || cs->frozen_morph_eps >= 0.0) {
+        fprintf(stderr,"[CMF-LINEPOP][FAIL] state is a cont_only/frozen-morph "
+                "assemble; the replay would not be the production forest\n");
+        return -1;
+    }
+    { const char *tf=getenv("LUMINA_CMF_EPAY_TAUEFF");
+      if (tf && atof(tf) > 0.0) {
+        fprintf(stderr,"[CMF-LINEPOP][FAIL] LUMINA_CMF_EPAY_TAUEFF>0: the EPAY "
+                "shell gate is built from the PREVIOUS assemble's chi_abs/"
+                "chi_tot and cannot be reproduced here\n");
+        return -1;
+      } }
+
+    const int NB = cs->n_bins, NS = cs->n_shells, n_lines = opac->n_lines;
+    CMFLinePopSel sel;
+    if (cmf_linepop_parse_sel(&sel,NS) != 0) return -1;
+
+    /* Same env reads as cmfgen_assemble_impl, same defaults. */
+    int eps_phys=0, src_nlte=0;
+    double eps_floor=1e-5, eps_cap=1.0;
+    { const char *ep=getenv("LUMINA_CMFGEN_LINE_EPS_PHYS");
+      if (ep && atoi(ep)) eps_phys=1;
+      const char *ef=getenv("LUMINA_CMFGEN_EPS_FLOOR"); if (ef) eps_floor=atof(ef);
+      const char *ec=getenv("LUMINA_CMFGEN_EPS_CAP");   if (ec) eps_cap=atof(ec);
+      const char *sn=getenv("LUMINA_CMFGEN_SRC_NLTE");
+      if (sn && atoi(sn)) src_nlte=1; }
+    double line_eps=-1.0, line_gate=1.0, eps_uv=-1.0;
+    { const char *le=getenv("LUMINA_CMFGEN_LINE_EPS"); if (le) line_eps=atof(le);
+      const char *lg=getenv("LUMINA_CMFGEN_LINE_EPS_GATE"); if (lg) line_gate=atof(lg);
+      const char *eu=getenv("LUMINA_CMFGEN_LINE_EPS_UV"); if (eu) eps_uv=atof(eu); }
+    int epay=0, epay_smin=0; double epay_taubin=1.0, epay_hotf=1.5;
+    { const char *e=getenv("LUMINA_CMF_EPAY"); epay=e?atoi(e):0;
+      if (epay < 0) epay=0;
+      const char *es=getenv("LUMINA_CMF_EPAY_SMIN"); if (es) epay_smin=atoi(es);
+      const char *tb=getenv("LUMINA_CMF_EPAY_TAUBIN"); if (tb) epay_taubin=atof(tb);
+      const char *hf=getenv("LUMINA_CMF_EPAY_HOTF"); if (hf) epay_hotf=atof(hf); }
+
+    const double inv_ct = 1.0 / (CM_C * geo->time_explosion);
+    const double nu_lo = CM_C / (sel.lam_hi * 1.0e-8);
+    const double nu_hi = CM_C / (sel.lam_lo * 1.0e-8);
+
+    CMFLevIdx ix;
+    if (cmf_levidx_build(&ix,atom) != 0) {
+        fprintf(stderr,"[CMF-LINEPOP][FAIL] level index build failed\n");
+        return -1;
+    }
+
+    int    *line_slot = (int *)malloc((size_t)n_lines*sizeof(int));
+    double *chi_rep   = (double *)calloc((size_t)sel.n_shells_sel*NB,sizeof(double));
+    double *chith_rep = (double *)calloc((size_t)sel.n_shells_sel*NB,sizeof(double));
+    double *eta_rep   = (double *)calloc((size_t)sel.n_shells_sel*NB,sizeof(double));
+    unsigned char *disp = (unsigned char *)calloc((size_t)NS*NB,1);
+    if (!line_slot || !chi_rep || !chith_rep || !eta_rep || !disp) {
+        fprintf(stderr,"[CMF-LINEPOP][FAIL] host allocation failed\n");
+        free(line_slot); free(chi_rep); free(chith_rep); free(eta_rep);
+        free(disp); cmf_levidx_free(&ix); return -1;
+    }
+    for (int l=0;l<n_lines;l++) line_slot[l]=-1;
+
+    /* ---- pass 1: exact assemble predicates; count rows, mark lines -------- */
+    long n_rows=0; int n_lines_sel=0;
+    for (int si=0; si<sel.n_shells_sel; si++) {
+        int s = sel.shells[si];
+        for (int l=0;l<n_lines;l++) {
+            double tau = opac->tau_sobolev[(size_t)l*NS+s];
+            if (tau <= 1e-12) continue;
+            double nu_l = opac->line_list_nu[l];
+            if (nu_l <= cs->nu_min || nu_l >= cs->nu_max) continue;
+            int b = (int)floor(log(nu_l/cs->nu_min)/cs->d_log_nu);
+            if (b < 0 || b >= NB) continue;
+            if (nu_l < nu_lo || nu_l > nu_hi) continue;   /* selection only */
+            n_rows++;
+            if (line_slot[l] < 0) line_slot[l]=n_lines_sel++;
+        }
+    }
+    if (n_rows > sel.max_rows) {
+        fprintf(stderr,"[CMF-LINEPOP][FAIL] selection yields %ld rows "
+                "(%.1f MiB) > LUMINA_CMF_LINEPOP_MAXROWS=%ld; narrow the "
+                "shell/lambda selection instead of truncating\n",
+                n_rows,(double)n_rows*CMF_LINEPOP_ROW_BYTES/1048576.0,
+                sel.max_rows);
+        free(line_slot); free(chi_rep); free(chith_rep); free(eta_rep);
+        free(disp); cmf_levidx_free(&ix); return -1;
+    }
+
+    size_t row_bytes  = (size_t)n_rows*CMF_LINEPOP_ROW_BYTES;
+    size_t line_bytes = (size_t)n_lines_sel*CMF_LINEPOP_LINE_BYTES;
+    unsigned char *rows = (unsigned char *)malloc(row_bytes ? row_bytes : 1);
+    unsigned char *lrec = (unsigned char *)calloc(line_bytes ? line_bytes : 1,1);
+    if (!rows || !lrec) {
+        fprintf(stderr,"[CMF-LINEPOP][FAIL] payload allocation failed "
+                "(%.1f MiB)\n",(double)(row_bytes+line_bytes)/1048576.0);
+        free(rows); free(lrec); free(line_slot); free(chi_rep); free(chith_rep);
+        free(eta_rep); free(disp); cmf_levidx_free(&ix); return -1;
+    }
+
+    /* ---- pass 2: replay (accumulation order identical to assemble) -------- */
+    unsigned char *rp = rows;
+    long written=0;
+    for (int si=0; si<sel.n_shells_sel; si++) {
+        int s = sel.shells[si];
+        double Te = plasma->T_e[s];
+        double ne_s = plasma->n_electron ? plasma->n_electron[s]
+                                         : opac->electron_density[s];
+        for (int l=0;l<n_lines;l++) {
+            double tau = opac->tau_sobolev[(size_t)l*NS+s];
+            if (tau <= 1e-12) continue;
+            double nu_l = opac->line_list_nu[l];
+            if (nu_l <= cs->nu_min || nu_l >= cs->nu_max) continue;
+            int b = (int)floor(log(nu_l/cs->nu_min)/cs->d_log_nu);
+            if (b < 0 || b >= NB) continue;
+            double frac = (tau > 1e-6) ? -expm1(-tau) : tau;
+            double w = frac * nu_l * inv_ct / cs->dnu[b];
+            double Sl_pop = opac->line_source_S
+                          ? opac->line_source_S[(size_t)l*NS+s] : 0.0;
+            double Sl = src_nlte ? Sl_pop : 0.0;
+            int sl_fallback = (Sl <= 0.0);
+            if (Sl <= 0.0) Sl = cm_planck(nu_l, Te);
+            size_t ridx=(size_t)si*NB+b;
+            chi_rep[ridx] += w;
+            double el = 1.0, eta_l;
+            if (eps_phys) {
+                el = radeq_line_eps_phys(l, ne_s, Te, tau);
+                if (el < 0.0) el = 1.0;
+                if (el < eps_floor) el = eps_floor;
+                if (el > eps_cap)   el = eps_cap;
+                chith_rep[ridx] += w * el;
+                eta_l = w * el * Sl;
+            } else {
+                eta_l = w * Sl;
+            }
+            eta_rep[ridx] += eta_l;
+            if (nu_l < nu_lo || nu_l > nu_hi) continue;   /* not recorded */
+
+            int slot = line_slot[l];
+            int Z = atom->line_atomic_number[l];
+            int ion = atom->line_ion_number[l];
+            int ion_pop=(Z >= 0 && Z < 100 && ion >= 0 && ion < 100)
+                      ? ix.zi[Z*100+ion] : -1;
+            int glo = cmf_levidx_lookup(&ix,ion_pop,atom->line_level_lower[l]);
+            int gup = cmf_levidx_lookup(&ix,ion_pop,atom->line_level_upper[l]);
+            int nlo = (glo >= 0) ? nlte->global_to_nlte_level[glo] : -1;
+            int nup = (gup >= 0) ? nlte->global_to_nlte_level[gup] : -1;
+            double n_lower = (nlo >= 0)
+                ? nlte->nlte_level_populations[(size_t)nlo*NS+s] : -1.0;
+            double n_upper = (nup >= 0)
+                ? nlte->nlte_level_populations[(size_t)nup*NS+s] : -1.0;
+            int g_lo = (glo >= 0) ? atom->level_g[glo] : -1;
+            int g_up = (gup >= 0) ? atom->level_g[gup] : -1;
+
+            unsigned int flags=0;
+            if (nlte->nlte_line_map && nlte->nlte_line_map[l] >= 0)
+                flags |= CMF_LP_F_NLTE_ION;
+            if (n_lower > 0.0 && n_upper > 0.0) flags |= CMF_LP_F_POPS_DEFINED;
+            if (Sl_pop > 0.0) flags |= CMF_LP_F_SL_POP;
+            if (sl_fallback) flags |= CMF_LP_F_SL_FALLBACK;
+            /* population-native tau round trip: the SAME formula
+             * nlte_update_tau_sobolev used to write opac->tau_sobolev. */
+            double tau_pop = -1.0;
+            if ((flags & CMF_LP_F_POPS_DEFINED) && g_lo > 0 && g_up > 0 &&
+                atom->line_f_lu && atom->line_wavelength_cm) {
+                double stim = 1.0 - ((double)g_lo*n_upper)/((double)g_up*n_lower);
+                if (stim < 0.0) { stim = 0.0; flags |= CMF_LP_F_STIM_CLAMPED; }
+                tau_pop = SOBOLEV_COEFF * atom->line_f_lu[l] *
+                          atom->line_wavelength_cm[l] * geo->time_explosion *
+                          n_lower * stim;
+                if (!(tau_pop > 1e-100)) tau_pop = 1e-100;
+                if (memcmp(&tau_pop,&tau,sizeof(double))==0)
+                    flags |= CMF_LP_F_TAU_ROUNDTRIP;
+            }
+            if (slot >= 0) {
+                unsigned char *lp = lrec + (size_t)slot*CMF_LINEPOP_LINE_BYTES;
+                cmf_pack_u32(lp+0,(uint32_t)l);
+                cmf_pack_u32(lp+4,(uint32_t)b);
+                cmf_pack_i32(lp+8,Z);
+                cmf_pack_i32(lp+12,ion);
+                cmf_pack_i32(lp+16,g_lo);
+                cmf_pack_i32(lp+20,g_up);
+                cmf_pack_i32(lp+24,nlo);
+                cmf_pack_i32(lp+28,nup);
+                cmf_pack_f64(lp+32,nu_l);
+                cmf_pack_f64(lp+40,atom->line_wavelength_cm
+                                   ? atom->line_wavelength_cm[l] : -1.0);
+                cmf_pack_f64(lp+48,atom->line_A_ul ? atom->line_A_ul[l] : -1.0);
+                cmf_pack_f64(lp+56,atom->line_f_lu ? atom->line_f_lu[l] : -1.0);
+                cmf_pack_f64(lp+64,(glo>=0 && atom->level_energy_eV)
+                                   ? atom->level_energy_eV[glo] : -1.0);
+                cmf_pack_f64(lp+72,(gup>=0 && atom->level_energy_eV)
+                                   ? atom->level_energy_eV[gup] : -1.0);
+            }
+            cmf_pack_u32(rp+0,(uint32_t)(slot >= 0 ? slot : 0));
+            cmf_pack_u32(rp+4,(uint32_t)si);
+            cmf_pack_u32(rp+8,flags);
+            cmf_pack_f64(rp+12,tau);
+            cmf_pack_f64(rp+20,tau_pop);
+            cmf_pack_f64(rp+28,n_lower);
+            cmf_pack_f64(rp+36,n_upper);
+            cmf_pack_f64(rp+44,Sl_pop);
+            cmf_pack_f64(rp+52,Sl);
+            cmf_pack_f64(rp+60,el);
+            cmf_pack_f64(rp+68,w);
+            rp += CMF_LINEPOP_ROW_BYTES;
+            written++;
+        }
+    }
+    if (written != n_rows) {
+        fprintf(stderr,"[CMF-LINEPOP][FAIL] row count changed between passes "
+                "(%ld vs %ld)\n",written,n_rows);
+        free(rows); free(lrec); free(line_slot); free(chi_rep); free(chith_rep);
+        free(eta_rep); free(disp); cmf_levidx_free(&ix); return -1;
+    }
+
+    /* ---- round-trip identity against the live assembled state ------------- */
+    int chi_bitwise=1; double chi_max_abs=0.0;
+    int chith_comparable = (eps_phys && line_eps <= 0.0 && eps_uv <= 0.0);
+    int chith_bitwise=1; double chith_max_abs=0.0;
+    for (int si=0; si<sel.n_shells_sel; si++) {
+        int s=sel.shells[si];
+        for (int b=0;b<NB;b++) {
+            double a=chi_rep[(size_t)si*NB+b];
+            double c=cs->chi_line[(size_t)s*NB+b];
+            double d=fabs(a-c); if (d > chi_max_abs) chi_max_abs=d;
+            if (memcmp(&a,&c,sizeof(double))!=0) chi_bitwise=0;
+            if (chith_comparable) {
+                double at=chith_rep[(size_t)si*NB+b];
+                double ct=cs->chi_line_th[(size_t)s*NB+b];
+                double dt=fabs(at-ct); if (dt > chith_max_abs) chith_max_abs=dt;
+                if (memcmp(&at,&ct,sizeof(double))!=0) chith_bitwise=0;
+            }
+        }
+    }
+
+    /* ---- EPAY disposition: does eta_line reach S_fixed in this cell? ------ */
+    long disp_n[4]={0,0,0,0};
+    for (int s=0;s<NS;s++) {
+        double dr_s = geo->r_outer[s] - geo->r_inner[s];
+        int hot = (plasma->T_e[s] > epay_hotf * plasma->T_rad[s]);
+        for (int b=0;b<NB;b++) {
+            size_t idx=(size_t)s*NB+b;
+            unsigned char d=0;   /* pass-1 legacy source: eta_line live */
+            if (epay && s >= epay_smin) {
+                int thick=((cs->chi_abs[idx]+cs->chi_line_th[idx])*dr_s
+                           > epay_taubin);
+                d = thick ? 1 : ((epay >= 2 && hot) ? 2 : 3);
+            }
+            disp[idx]=d; disp_n[d]++;
+        }
+    }
+
+    /* ---- write LCMFLP01 --------------------------------------------------- */
+    char manifest[4096], quarantine[4096];
+    int mn=snprintf(manifest,sizeof(manifest),"%s.manifest.json",path);
+    int qn=snprintf(quarantine,sizeof(quarantine),"%s.quarantine",path);
+    if (mn < 0 || (size_t)mn >= sizeof(manifest) ||
+        qn < 0 || (size_t)qn >= sizeof(quarantine)) {
+        fprintf(stderr,"[CMF-LINEPOP][FAIL] sidecar path too long\n");
+        free(rows); free(lrec); free(line_slot); free(chi_rep); free(chith_rep);
+        free(eta_rep); free(disp); cmf_levidx_free(&ix); return -1;
+    }
+    FILE *fp=fopen(path,"wb");
+    if (!fp) {
+        fprintf(stderr,"[CMF-LINEPOP][FAIL] open %s: %s\n",path,strerror(errno));
+        free(rows); free(lrec); free(line_slot); free(chi_rep); free(chith_rep);
+        free(eta_rep); free(disp); cmf_levidx_free(&ix); return -1;
+    }
+    CMFSHA256 sha; cmf_sha256_init(&sha);
+    int fail=0;
+    const unsigned char magic[8]={'L','C','M','F','L','P','0','1'};
+#define LW(call) do { if (!fail && (call)) fail=1; } while (0)
+    LW(cmf_dump_bytes(fp,&sha,magic,sizeof(magic)));
+    LW(cmf_dump_u32(fp,&sha,UINT32_C(0x01020304)));
+    LW(cmf_dump_u32(fp,&sha,UINT32_C(1)));
+    LW(cmf_dump_u64(fp,&sha,(uint64_t)iter));
+    LW(cmf_dump_u64(fp,&sha,(uint64_t)field_generation));
+    LW(cmf_dump_u32(fp,&sha,(uint32_t)NS));
+    LW(cmf_dump_u32(fp,&sha,(uint32_t)NB));
+    LW(cmf_dump_u32(fp,&sha,(uint32_t)sel.n_shells_sel));
+    LW(cmf_dump_u32(fp,&sha,(uint32_t)n_lines_sel));
+    LW(cmf_dump_u64(fp,&sha,(uint64_t)n_rows));
+    LW(cmf_dump_f64(fp,&sha,geo->time_explosion));
+    LW(cmf_dump_f64(fp,&sha,sel.lam_lo));
+    LW(cmf_dump_f64(fp,&sha,sel.lam_hi));
+    LW(cmf_dump_u32(fp,&sha,(uint32_t)eps_phys));
+    LW(cmf_dump_u32(fp,&sha,(uint32_t)src_nlte));
+    LW(cmf_dump_u32(fp,&sha,(uint32_t)epay));
+    LW(cmf_dump_u32(fp,&sha,(uint32_t)epay_smin));
+    LW(cmf_dump_f64(fp,&sha,epay_taubin));
+    LW(cmf_dump_f64(fp,&sha,epay_hotf));
+    LW(cmf_dump_f64(fp,&sha,eps_floor));
+    LW(cmf_dump_f64(fp,&sha,eps_cap));
+    LW(cmf_dump_f64(fp,&sha,line_eps));
+    LW(cmf_dump_f64(fp,&sha,eps_uv));
+    LW(cmf_dump_f64(fp,&sha,line_gate));
+    for (int si=0;si<sel.n_shells_sel;si++)
+        LW(cmf_dump_u32(fp,&sha,(uint32_t)sel.shells[si]));
+    for (int si=0;si<sel.n_shells_sel;si++) {
+        int s=sel.shells[si];
+        LW(cmf_dump_f64(fp,&sha,plasma->T_e[s]));
+        LW(cmf_dump_f64(fp,&sha,plasma->T_rad[s]));
+        LW(cmf_dump_f64(fp,&sha,plasma->n_electron ? plasma->n_electron[s]
+                                                   : opac->electron_density[s]));
+        LW(cmf_dump_f64(fp,&sha,geo->r_outer[s]-geo->r_inner[s]));
+    }
+    for (int b=0;b<NB;b++) LW(cmf_dump_f64(fp,&sha,cs->nu[b]));
+    for (int b=0;b<NB;b++) LW(cmf_dump_f64(fp,&sha,cs->dnu[b]));
+    for (size_t q=0;q<(size_t)sel.n_shells_sel*NB;q++)
+        LW(cmf_dump_f64(fp,&sha,chi_rep[q]));
+    for (size_t q=0;q<(size_t)sel.n_shells_sel*NB;q++)
+        LW(cmf_dump_f64(fp,&sha,chith_rep[q]));
+    for (size_t q=0;q<(size_t)sel.n_shells_sel*NB;q++)
+        LW(cmf_dump_f64(fp,&sha,eta_rep[q]));
+    LW(cmf_dump_bytes(fp,&sha,disp,(size_t)NS*NB));
+    LW(cmf_dump_bytes(fp,&sha,lrec,line_bytes));
+    LW(cmf_dump_bytes(fp,&sha,rows,row_bytes));
+#undef LW
+    if (fclose(fp)) fail=1;
+    free(rows); free(lrec); free(line_slot); cmf_levidx_free(&ix);
+    if (fail) {
+        fprintf(stderr,"[CMF-LINEPOP][FAIL] write %s: %s\n",path,strerror(errno));
+        if (rename(path,quarantine)!=0)
+            fprintf(stderr,"[CMF-LINEPOP][FAIL] quarantine %s: %s\n",
+                    quarantine,strerror(errno));
+        free(chi_rep); free(chith_rep); free(eta_rep); free(disp); return -1;
+    }
+    unsigned char digest[32]; char hex[65];
+    cmf_sha256_final(&sha,digest);
+    for (int i=0;i<32;i++) snprintf(hex+2*i,3,"%02x",digest[i]);
+    hex[64]='\0';
+    FILE *mf=fopen(manifest,"w");
+    int sfail=(mf==NULL);
+    if (!sfail) {
+        sfail = fprintf(mf,"{\n  \"schema\": \"LCMFLP01-v1\",\n"
+            "  \"sha256\": \"%s\",\n"
+            "  \"iteration\": %d,\n  \"field_generation\": %d,\n"
+            "  \"n_shells\": %d,\n  \"n_bins\": %d,\n"
+            "  \"selected_shells\": %d,\n  \"selected_lines\": %d,\n"
+            "  \"rows\": %ld,\n  \"row_bytes\": %d,\n"
+            "  \"lambda_window_A\": [%.17g, %.17g],\n"
+            "  \"tau_min\": 1e-12,\n"
+            "  \"chi_line_roundtrip_bitwise\": %s,\n"
+            "  \"chi_line_roundtrip_max_abs\": %.17g,\n"
+            "  \"chi_line_th_comparable\": %s,\n"
+            "  \"chi_line_th_roundtrip_bitwise\": %s,\n"
+            "  \"chi_line_th_roundtrip_max_abs\": %.17g,\n"
+            "  \"eta_line_epoch\": \"pre-EPAY, pre-split (assemble line loop)\",\n"
+            "  \"epay_disposition_counts\": {\"legacy_source\": %ld, "
+            "\"thick_exempt\": %ld, \"rate_shape_replaced\": %ld, "
+            "\"scalar_rescaled\": %ld},\n"
+            "  \"epay_scale_not_reproducible\": true,\n"
+            "  \"gates\": {\"eps_phys\": %d, \"src_nlte\": %d, \"epay\": %d, "
+            "\"epay_smin\": %d, \"epay_taubin\": %.17g, \"epay_hotf\": %.17g, "
+            "\"line_eps\": %.17g, \"eps_uv\": %.17g},\n"
+            "  \"clamp\": 0, \"fallback\": 0\n}\n",
+            hex,iter,field_generation,NS,NB,sel.n_shells_sel,n_lines_sel,n_rows,
+            CMF_LINEPOP_ROW_BYTES,sel.lam_lo,sel.lam_hi,
+            chi_bitwise ? "true" : "false", chi_max_abs,
+            chith_comparable ? "true" : "false",
+            (chith_comparable && chith_bitwise) ? "true" : "false",
+            chith_max_abs,
+            disp_n[0],disp_n[1],disp_n[2],disp_n[3],
+            eps_phys,src_nlte,epay,epay_smin,epay_taubin,epay_hotf,
+            line_eps,eps_uv) < 0;
+        if (fclose(mf)) sfail=1;
+    }
+    free(chi_rep); free(chith_rep); free(eta_rep); free(disp);
+    if (sfail) {
+        fprintf(stderr,"[CMF-LINEPOP][FAIL] write/close %s\n",manifest);
+        if (rename(path,quarantine)!=0)
+            fprintf(stderr,"[CMF-LINEPOP][FAIL] quarantine %s: %s\n",
+                    quarantine,strerror(errno));
+        return -1;
+    }
+    fprintf(stderr,"[CMF-LINEPOP] wrote %s iter=%d generation=%d shells=%d "
+            "lines=%d rows=%ld (%.1f MiB) chi_line_bitwise=%d "
+            "epay_rate_shape_cells=%ld sha256=%s\n",
+            path,iter,field_generation,sel.n_shells_sel,n_lines_sel,n_rows,
+            (double)(row_bytes+line_bytes)/1048576.0,chi_bitwise,disp_n[2],hex);
+    return 0;
+}
+
+/* Stage 3.2 Rung 1 binary schema.  The row's final field is disposition. */
+#define CMF_R1_ROW_BYTES 120U
+#define CMF_R1_PRIMARY_DEFINED 0U
+#define CMF_R1_PRIMARY_UNDEFINED_CHI_TOT_ZERO 1U
+#define CMF_R1_EV_REACHED       0x01U
+#define CMF_R1_EV_EPAY_ELIGIBLE 0x02U
+#define CMF_R1_EV_BIN_THICK     0x04U
+#define CMF_R1_EV_EPAY_GE2      0x08U
+#define CMF_R1_EV_ACC_W_POS     0x10U
+#define CMF_R1_EV_HOT           0x20U
+#define CMF_R1_EV_BRANCH        0x40U
+#define CMF_R1_EV_ASSEMBLED     0x80U
+
+static int cmf_r1_path_exists(const char *path) {
+    FILE *fp = fopen(path, "rb");
+    if (!fp) return 0;
+    fclose(fp);
+    return 1;
+}
+
+static int cmf_r1_secondary_values(int line, double ne, double Te, double tau,
+                                   double eps_floor, double eps_cap,
+                                   double *beta, double *eps0,
+                                   double *eps_prime, double *eps_applied) {
+    if (radeq_line_local_response(line,ne,Te,tau,beta,eps0) != 0)
+        return -1;
+    *eps_prime=radeq_line_eps_phys(line,ne,Te,tau);
+    if (!isfinite(*eps_prime) || !(*eps_prime >= 0.0) || !(*eps_prime <= 1.0))
+        return -1;
+    *eps_applied=*eps_prime;
+    /* Diagnostic replay of production's existing two comparisons, solely for
+     * the secondary clamp ledger.  Primary rho never consumes these values. */
+    if (*eps_applied < eps_floor) *eps_applied=eps_floor;
+    if (*eps_applied > eps_cap)   *eps_applied=eps_cap;
+    return isfinite(*eps_applied) ? 0 : -1;
+}
+
+int cmfgen_dump_stage32_rung1(const CMFGENState *cs, const Geometry *geo,
+                              const OpacityState *opac,
+                              const PlasmaState *plasma,
+                              int iteration,
+                              const char *path) {
+    static const double lam_lo = 600.0, lam_hi = 3000.0;
+    if (!cs || !geo || !opac || !plasma || !path || !*path || iteration < 0 ||
+        cs->stage32_field_generation == 0 ||
+        cs->stage32_lambda_generation != cs->stage32_field_generation ||
+        cs->stage32_diag_failed || cs->n_shells <= 0 || cs->n_bins <= 0 ||
+        geo->n_shells != cs->n_shells || opac->n_shells != cs->n_shells ||
+        opac->n_lines <= 0 || !opac->line_list_nu || !opac->tau_sobolev ||
+        (!plasma->n_electron && !opac->electron_density) ||
+        !plasma->T_e || !cs->nu || !cs->dnu ||
+        !cs->stage32_eta_pre_epay || !cs->stage32_boundary_eta ||
+        !cs->stage32_line_eta || !cs->stage32_line_slot ||
+        cs->stage32_line_slot_n != opac->n_lines ||
+        !cs->stage32_epay_disposition || !cs->stage32_epay_evidence ||
+        (cs->stage32_source_nlte && !opac->line_source_S) ||
+        !(geo->time_explosion > 0.0) ||
+        !isfinite(geo->time_explosion)) {
+        fprintf(stderr,"[STAGE32-R1][FAIL] invalid state/path or chi/lambda generation mismatch: assembly=%llu lambda=%llu\n",
+                (unsigned long long)(cs ? cs->stage32_field_generation : 0),
+                (unsigned long long)(cs ? cs->stage32_lambda_generation : 0));
+        return -1;
+    }
+    double eps_floor=1e-5, eps_cap=1.0;
+    { const char *ef=getenv("LUMINA_CMFGEN_EPS_FLOOR");
+      const char *ec=getenv("LUMINA_CMFGEN_EPS_CAP");
+      if (ef) eps_floor=atof(ef);
+      if (ec) eps_cap=atof(ec); }
+    if (!isfinite(eps_floor) || !isfinite(eps_cap)) {
+        fprintf(stderr,"[STAGE32-R1][FAIL] nonfinite production epsilon limits\n");
+        return -1;
+    }
+    char outpath[4096], manifest[4096], quarantine[4096];
+    int on=snprintf(outpath,sizeof(outpath),"%s.iter%03d",path,iteration);
+    int mn=snprintf(manifest,sizeof(manifest),"%s.manifest.json",outpath);
+    int qn=snprintf(quarantine,sizeof(quarantine),"%s.quarantine",outpath);
+    if (on < 0 || mn < 0 || qn < 0 || (size_t)on >= sizeof(outpath) ||
+        (size_t)mn >= sizeof(manifest) ||
+        (size_t)qn >= sizeof(quarantine)) {
+        fprintf(stderr,"[STAGE32-R1][FAIL] sidecar path too long\n");
+        return -1;
+    }
+    if (cmf_r1_path_exists(outpath) || cmf_r1_path_exists(manifest)) {
+        fprintf(stderr,"[STAGE32-R1][FAIL] refusing generation overwrite: %s\n",outpath);
+        return -1;
+    }
+
+    const int NS=cs->n_shells, NB=cs->n_bins, NL=opac->n_lines;
+    const double nu_lo=CM_C/(lam_hi*1.0e-8);
+    const double nu_hi=CM_C/(lam_lo*1.0e-8);
+    uint64_t n_rows=0, count[4]={0,0,0,0};
+    uint64_t eps_applied_diff_rows=0, rho_undefined_rows=0;
+    long double energy[4]={0.0L,0.0L,0.0L,0.0L};
+    long double selected_energy=0.0L;
+
+    /* Validation/count pass.  The per-line eta below is the same eta_l value
+     * added to production eta_line.  It is neither inferred from cell opacity nor
+     * apportioned from a bin total. */
+    for (int s=0;s<NS;s++) {
+        double ne=plasma->n_electron ? plasma->n_electron[s]
+                                     : opac->electron_density[s];
+        double Te=plasma->T_e[s];
+        if (!(ne >= 0.0) || !(Te > 0.0) || !isfinite(ne) || !isfinite(Te)) {
+            fprintf(stderr,"[STAGE32-R1][FAIL] invalid plasma shell=%d\n",s);
+            return -1;
+        }
+        for (int l=0;l<NL;l++) {
+            double tau=opac->tau_sobolev[(size_t)l*NS+s];
+            double nu=opac->line_list_nu[l];
+            if (!(nu >= nu_lo && nu <= nu_hi)) continue;
+            if (!(tau > 0.0) || !isfinite(tau) || !isfinite(nu)) {
+                fprintf(stderr,"[STAGE32-R1][FAIL] nonfinite line=%d shell=%d\n",l,s);
+                return -1;
+            }
+            int b=(int)(log(nu/cs->nu_min)/cs->d_log_nu);
+            if (b < 0 || b >= NB) {
+                fprintf(stderr,"[STAGE32-R1][FAIL] UV line outside grid line=%d\n",l);
+                return -1;
+            }
+            size_t q=(size_t)s*NB+b;
+            int slot=cs->stage32_line_slot[l];
+            if (slot < 0 || slot >= cs->stage32_selected_lines) {
+                fprintf(stderr,"[STAGE32-R1][FAIL] selected-line map mismatch line=%d\n",l);
+                return -1;
+            }
+            double beta=0.0, eps0=0.0, eps_prime=0.0, eps_applied=0.0;
+            if (cmf_r1_secondary_values(l,ne,Te,tau,eps_floor,eps_cap,
+                                        &beta,&eps0,&eps_prime,&eps_applied) != 0) {
+                fprintf(stderr,"[STAGE32-R1][FAIL] secondary rates unavailable line=%d shell=%d\n",l,s);
+                return -1;
+            }
+            double chi_es=cs->chi_es[q], chi_tot=cs->chi_tot[q];
+            double lambda_star=cs->lambda_star[q];
+            unsigned primary_status=(chi_tot == 0.0)
+                ? CMF_R1_PRIMARY_UNDEFINED_CHI_TOT_ZERO
+                : CMF_R1_PRIMARY_DEFINED;
+            double rho=(primary_status == CMF_R1_PRIMARY_DEFINED)
+                       ? (chi_es/chi_tot)*lambda_star : NAN;
+            double e=cs->stage32_line_eta[(size_t)slot*NS+s]*cs->dnu[b];
+            unsigned d=cs->stage32_epay_disposition[q];
+            unsigned ev=cs->stage32_epay_evidence[q];
+            /* lambda_star == 1.0 is a CORRECT binary64 value, not a defect: the
+             * diagonal is 1 - escape, and in a cell thick enough that escape
+             * underflows it rounds to exactly 1.  Rejecting it fails a valid
+             * solution, which is the F3 defect class this rung already removed
+             * once (run 189065 died here at iter 10 on lambda_star=1, rho=0.9658).
+             * The closed interval is the contract; rho is bounded separately. */
+            if (!(lambda_star >= 0.0) || !(lambda_star <= 1.0) ||
+                !(chi_es >= 0.0) || !(chi_tot >= 0.0) ||
+                (primary_status == CMF_R1_PRIMARY_DEFINED &&
+                 (!(rho >= 0.0) || !isfinite(rho))) ||
+                (primary_status == CMF_R1_PRIMARY_UNDEFINED_CHI_TOT_ZERO &&
+                 !isnan(rho)) || !(e >= 0.0) || d > 3 ||
+                !(ev & CMF_R1_EV_REACHED) || !(ev & CMF_R1_EV_BRANCH) ||
+                (ev & CMF_R1_EV_ASSEMBLED) ||
+                !isfinite(chi_es) || !isfinite(chi_tot) ||
+                !isfinite(lambda_star) || !isfinite(e) ||
+                !isfinite(cs->dnu[b]) || !(cs->dnu[b] > 0.0)) {
+                fprintf(stderr,"[STAGE32-R1][FAIL] invalid production primary value line=%d shell=%d chi_es=%.17g chi_tot=%.17g lambda_star=%.17g rho=%.17g\n",
+                        l,s,chi_es,chi_tot,lambda_star,rho);
+                return -1;
+            }
+            if (eps_applied != eps_prime) eps_applied_diff_rows++;
+            if (primary_status == CMF_R1_PRIMARY_UNDEFINED_CHI_TOT_ZERO)
+                rho_undefined_rows++;
+            n_rows++; count[d]++; energy[d]+=(long double)e;
+            selected_energy+=(long double)e;
+        }
+    }
+    if (!n_rows) {
+        fprintf(stderr,"[STAGE32-R1][FAIL] no active UV line-shell rows\n");
+        return -1;
+    }
+
+    int blo=(int)floor(log(nu_lo/cs->nu_min)/cs->d_log_nu);
+    int bhi=(int)floor(log(nu_hi/cs->nu_min)/cs->d_log_nu);
+    if (blo > bhi) { int t=blo; blo=bhi; bhi=t; }
+    if (blo < 0 || bhi >= NB) {
+        fprintf(stderr,"[STAGE32-R1][FAIL] census window outside grid\n");
+        return -1;
+    }
+    long double authoritative=0.0L, boundary=0.0L;
+    for (int s=0;s<NS;s++) for (int b=blo;b<=bhi;b++) {
+        size_t q=(size_t)s*NB+b;
+        double a=cs->stage32_eta_pre_epay[q]*cs->dnu[b];
+        double x=cs->stage32_boundary_eta[q]*cs->dnu[b];
+        if (!(a >= 0.0) || !(x >= 0.0) || !isfinite(a) || !isfinite(x)) {
+            fprintf(stderr,"[STAGE32-R1][FAIL] invalid independent census cell\n");
+            return -1;
+        }
+        authoritative+=(long double)a;
+        boundary+=(long double)x;
+    }
+    long double closure=authoritative-selected_energy-boundary;
+
+    FILE *fp=fopen(outpath,"wb");
+    if (!fp) {
+        fprintf(stderr,"[STAGE32-R1][FAIL] open %s: %s\n",outpath,strerror(errno));
+        return -1;
+    }
+    CMFSHA256 sha; cmf_sha256_init(&sha); int fail=0;
+    const unsigned char magic[8]={'L','C','M','F','R','1','0','1'};
+#define R1W(call) do { if (!fail && (call)) fail=1; } while (0)
+    R1W(cmf_dump_bytes(fp,&sha,magic,sizeof(magic)));
+    R1W(cmf_dump_u32(fp,&sha,UINT32_C(0x01020304)));
+    R1W(cmf_dump_u32(fp,&sha,UINT32_C(3)));
+    R1W(cmf_dump_u64(fp,&sha,(uint64_t)iteration));
+    R1W(cmf_dump_u64(fp,&sha,cs->stage32_field_generation));
+    R1W(cmf_dump_u64(fp,&sha,cs->stage32_lambda_generation));
+    R1W(cmf_dump_u32(fp,&sha,(uint32_t)NS));
+    R1W(cmf_dump_u32(fp,&sha,(uint32_t)NB));
+    R1W(cmf_dump_u32(fp,&sha,(uint32_t)NL));
+    R1W(cmf_dump_u32(fp,&sha,0));
+    R1W(cmf_dump_u64(fp,&sha,n_rows));
+    R1W(cmf_dump_f64(fp,&sha,lam_lo));
+    R1W(cmf_dump_f64(fp,&sha,lam_hi));
+    R1W(cmf_dump_f64(fp,&sha,geo->time_explosion));
+    R1W(cmf_dump_u32(fp,&sha,CMF_R1_ROW_BYTES));
+    R1W(cmf_dump_u32(fp,&sha,0));
+    uint64_t written=0;
+    for (int s=0;s<NS;s++) {
+        double ne=plasma->n_electron ? plasma->n_electron[s]
+                                     : opac->electron_density[s];
+        double Te=plasma->T_e[s];
+        for (int l=0;l<NL;l++) {
+            double tau=opac->tau_sobolev[(size_t)l*NS+s];
+            double nu=opac->line_list_nu[l];
+            if (!(nu >= nu_lo && nu <= nu_hi)) continue;
+            int b=(int)(log(nu/cs->nu_min)/cs->d_log_nu);
+            size_t q=(size_t)s*NB+b;
+            double beta=0.0, eps0=0.0, eps_prime=0.0, eps_applied=0.0;
+            if (cmf_r1_secondary_values(l,ne,Te,tau,eps_floor,eps_cap,
+                                        &beta,&eps0,&eps_prime,&eps_applied) != 0) {
+                fail=1; break;
+            }
+            int slot=cs->stage32_line_slot[l];
+            double e=cs->stage32_line_eta[(size_t)slot*NS+s]*cs->dnu[b];
+            double chi_es=cs->chi_es[q], chi_tot=cs->chi_tot[q];
+            double lambda_star=cs->lambda_star[q];
+            unsigned primary_status=(chi_tot == 0.0)
+                ? CMF_R1_PRIMARY_UNDEFINED_CHI_TOT_ZERO
+                : CMF_R1_PRIMARY_DEFINED;
+            double rho=(primary_status == CMF_R1_PRIMARY_DEFINED)
+                       ? (chi_es/chi_tot)*lambda_star : NAN;
+            double Sl=cs->stage32_source_nlte
+                    ? opac->line_source_S[(size_t)l*NS+s] : 0.0;
+            if (Sl <= 0.0) Sl=cm_planck(nu,Te);
+            unsigned ev=cs->stage32_epay_evidence[q];
+            if (tau > 1e-12) ev|=CMF_R1_EV_ASSEMBLED;
+            R1W(cmf_dump_u32(fp,&sha,(uint32_t)l));
+            R1W(cmf_dump_u32(fp,&sha,(uint32_t)s));
+            R1W(cmf_dump_u32(fp,&sha,(uint32_t)b));
+            R1W(cmf_dump_u32(fp,&sha,primary_status));
+            R1W(cmf_dump_f64(fp,&sha,CM_C/nu/1.0e-8));
+            R1W(cmf_dump_f64(fp,&sha,tau));
+            R1W(cmf_dump_f64(fp,&sha,beta));
+            R1W(cmf_dump_f64(fp,&sha,eps0));
+            R1W(cmf_dump_f64(fp,&sha,eps_prime));
+            R1W(cmf_dump_f64(fp,&sha,eps_applied));
+            R1W(cmf_dump_f64(fp,&sha,chi_es));
+            R1W(cmf_dump_f64(fp,&sha,chi_tot));
+            R1W(cmf_dump_f64(fp,&sha,lambda_star));
+            R1W(cmf_dump_f64(fp,&sha,rho));
+            R1W(cmf_dump_f64(fp,&sha,Sl));
+            R1W(cmf_dump_f64(fp,&sha,e));
+            R1W(cmf_dump_u32(fp,&sha,ev));
+            R1W(cmf_dump_u32(fp,&sha,(uint32_t)cs->stage32_epay_disposition[q]));
+            written++;
+        }
+        if (fail) break;
+    }
+#undef R1W
+    if (fclose(fp)) fail=1;
+    if (fail || written != n_rows) {
+        fprintf(stderr,"[STAGE32-R1][FAIL] payload write/count (%llu/%llu)\n",
+                (unsigned long long)written,(unsigned long long)n_rows);
+        if (rename(outpath,quarantine) != 0)
+            fprintf(stderr,"[STAGE32-R1][FAIL] quarantine %s: %s\n",
+                    quarantine,strerror(errno));
+        return -1;
+    }
+    unsigned char digest[32]; char hex[65]; cmf_sha256_final(&sha,digest);
+    for (int i=0;i<32;i++) snprintf(hex+2*i,3,"%02x",digest[i]);
+    hex[64]='\0';
+    FILE *mf=fopen(manifest,"w");
+    int sfail=(mf==NULL);
+    long double etot=energy[0]+energy[1]+energy[2]+energy[3];
+    if (!sfail) {
+        sfail=fprintf(mf,
+            "{\n  \"schema\": \"LCMFR101-v3\",\n  \"sha256\": \"%s\",\n"
+            "  \"iteration\": %d,\n  \"field_generation\": %llu,\n"
+            "  \"lambda_generation\": %llu,\n"
+            "  \"rows\": %llu,\n  \"row_bytes\": %u,\n"
+            "  \"lambda_window_A\": [600, 3000],\n"
+            "  \"primary_definition\": \"(chi_es/chi_tot)*lambda_star from production arrays; undefined when chi_tot==0\",\n"
+            "  \"generation_contract\": \"field_generation == lambda_generation\",\n"
+            "  \"secondary_definition\": {\"beta\": \"(1-exp(-tau))/tau\", \"eps0_raw\": \"C/(C+A)\", \"eps_prime\": \"C/(C+A*beta)\", \"eps_applied\": \"eps_prime after production eps_floor then eps_cap\"},\n"
+            "  \"eps_floor\": %.17g,\n  \"eps_cap\": %.17g,\n"
+            "  \"eps_applied_diff_rows\": %llu,\n"
+            "  \"rho_undefined_chi_tot_zero_rows\": %llu,\n"
+            "  \"energy_definition\": \"production selected-line eta_l*dnu; tau numerator for tau<=1e-6\",\n"
+            "  \"branch_evidence_definition\": \"branch-site bits: reached,eligible,thick,epay_ge2,acc_w_positive,hot,branch; row bit7=production-assembled\",\n"
+            "  \"disposition_row_counts\": {\"legacy_source\": %llu, \"thick_exempt\": %llu, \"rate_shape_replaced\": %llu, \"scalar_rescaled\": %llu},\n"
+            "  \"disposition_energy\": {\"legacy_source\": %.17Lg, \"thick_exempt\": %.17Lg, \"rate_shape_replaced\": %.17Lg, \"scalar_rescaled\": %.17Lg, \"total\": %.17Lg},\n"
+            "  \"authoritative_pre_epay_window_energy\": %.17Lg,\n"
+            "  \"boundary_nonselected_line_energy\": %.17Lg,\n"
+            "  \"selected_row_energy\": %.17Lg,\n"
+            "  \"closure_residual\": %.17Lg,\n"
+            "  \"primary_clamp\": 0, \"primary_floor\": 0, \"primary_cap\": 0, \"primary_fallback\": 0\n}\n",
+            hex,iteration,(unsigned long long)cs->stage32_field_generation,
+            (unsigned long long)cs->stage32_lambda_generation,
+            (unsigned long long)n_rows,
+            CMF_R1_ROW_BYTES,
+            eps_floor,eps_cap,
+            (unsigned long long)eps_applied_diff_rows,
+            (unsigned long long)rho_undefined_rows,
+            (unsigned long long)count[0],(unsigned long long)count[1],
+            (unsigned long long)count[2],(unsigned long long)count[3],
+            energy[0],energy[1],energy[2],energy[3],etot,
+            authoritative,boundary,selected_energy,closure) < 0;
+        if (fclose(mf)) sfail=1;
+    }
+    if (sfail) {
+        fprintf(stderr,"[STAGE32-R1][FAIL] manifest write/close\n");
+        if (rename(outpath,quarantine) != 0)
+            fprintf(stderr,"[STAGE32-R1][FAIL] quarantine %s: %s\n",
+                    quarantine,strerror(errno));
+        return -1;
+    }
+    fprintf(stderr,"[STAGE32-R1] wrote %s iter=%d generation=%llu rows=%llu "
+            "rho_undefined=%llu eps_applied_diff=%llu rate_shape=%llu E_rate_shape=%.9Lg closure=%.9Lg sha256=%s\n",outpath,iteration,
+            (unsigned long long)cs->stage32_field_generation,(unsigned long long)n_rows,
+            (unsigned long long)rho_undefined_rows,
+            (unsigned long long)eps_applied_diff_rows,
+            (unsigned long long)count[2],energy[2],closure,hex);
+    return 0;
+}
+
+int cmfgen_stage32_rung1_maybe_dump(const CMFGENState *cs,
+                                    const Geometry *geo,
+                                    const OpacityState *opac,
+                                    const PlasmaState *plasma,
+                                    int iteration,
+                                    int n_iterations) {
+    const char *path=getenv("LUMINA_STAGE32_RUNG1_DUMP");
+    if (!path || !*path) return 0;
+    const char *ie=getenv("LUMINA_STAGE32_RUNG1_ITER");
+    char *end=NULL; long wanted=ie ? strtol(ie,&end,10) : -1;
+    if (!ie || end==ie || *end || wanted < 0 || wanted >= n_iterations) {
+        fprintf(stderr,"[STAGE32-R1][FAIL] LUMINA_STAGE32_RUNG1_ITER must be in [0,%d) (got %s)\n",
+                n_iterations,ie ? ie : "<unset>");
+        return -1;
+    }
+    if (iteration != wanted) return 0;
+    return cmfgen_dump_stage32_rung1(cs,geo,opac,plasma,iteration,path);
+}
+
+static int cmf_r1_prepare_assembly(CMFGENState *cs, const OpacityState *opac) {
+    if (!cs->stage32_eta_pre_epay) return 0;
+    const int NS=cs->n_shells, NL=opac->n_lines;
+    const double nu_lo=CM_C/(3000.0e-8), nu_hi=CM_C/(600.0e-8);
+    if (!cs->stage32_line_slot) {
+        int *slot=(int *)malloc((size_t)NL*sizeof(*slot));
+        if (!slot) goto fail;
+        int nsel=0;
+        for (int l=0;l<NL;l++) {
+            double nu=opac->line_list_nu[l];
+            slot[l]=(isfinite(nu) && nu >= nu_lo && nu <= nu_hi) ? nsel++ : -1;
+        }
+        if (nsel <= 0 || (size_t)nsel > SIZE_MAX/(size_t)NS/sizeof(double)) {
+            free(slot); goto fail;
+        }
+        double *line_eta=(double *)calloc((size_t)nsel*NS,sizeof(*line_eta));
+        if (!line_eta) { free(slot); goto fail; }
+        cs->stage32_line_slot=slot;
+        cs->stage32_line_eta=line_eta;
+        cs->stage32_line_slot_n=NL;
+        cs->stage32_selected_lines=nsel;
+    } else if (cs->stage32_line_slot_n != NL) {
+        goto fail;
+    }
+    memset(cs->stage32_line_eta,0,
+           (size_t)cs->stage32_selected_lines*NS*sizeof(double));
+    memset(cs->stage32_boundary_eta,0,(size_t)NS*cs->n_bins*sizeof(double));
+    if (cs->stage32_field_generation == UINT64_MAX) goto fail;
+    cs->stage32_field_generation++;
+    /* Assembly has replaced chi_es/chi_tot, so any diagonal left by an older
+     * formal solve is deliberately invalid until cmfgen_solve_J completes. */
+    cs->stage32_lambda_generation=0;
+    return 0;
+fail:
+    cs->stage32_diag_failed=1;
+    fprintf(stderr,"[STAGE32-R1][FAIL] diagnostic line snapshot allocation/lineage\n");
+    return -1;
+}
+
 /* ------------------------------------------------------------ */
 int cmfgen_init(CMFGENState *cs, const Geometry *geo)
 {
@@ -75,15 +1466,33 @@ int cmfgen_init(CMFGENState *cs, const Geometry *geo)
     cs->chi_tot     = calloc((size_t)NS * NB, sizeof(double));
     cs->S_fixed     = calloc((size_t)NS * NB, sizeof(double));
     cs->J           = calloc((size_t)NS * NB, sizeof(double));
+    cs->eta_total_audit = calloc((size_t)NS * NB, sizeof(double));
     cs->lambda_star = calloc((size_t)NS * NB, sizeof(double));
     cs->t_color     = calloc((size_t)NS, sizeof(double));
     cs->tri_lo      = calloc((size_t)NS * NB, sizeof(double));
     cs->tri_up      = calloc((size_t)NS * NB, sizeof(double));
     cs->tri_r       = calloc((size_t)NS * NB, sizeof(double));
+    { const char *r1=getenv("LUMINA_STAGE32_RUNG1_DUMP");
+      if (r1 && *r1) {
+          cs->stage32_eta_pre_epay=
+              (double *)calloc((size_t)NS*NB,sizeof(double));
+          cs->stage32_boundary_eta=
+              (double *)calloc((size_t)NS*NB,sizeof(double));
+          cs->stage32_epay_disposition=
+              (unsigned char *)calloc((size_t)NS*NB,sizeof(unsigned char));
+          cs->stage32_epay_evidence=
+              (unsigned char *)calloc((size_t)NS*NB,sizeof(unsigned char));
+          if (!cs->stage32_eta_pre_epay || !cs->stage32_boundary_eta ||
+              !cs->stage32_epay_disposition || !cs->stage32_epay_evidence) {
+              fprintf(stderr,"[STAGE32-R1][FAIL] diagnostic allocation failed\n");
+              return -1;
+          }
+      } }
     if (!cs->nu || !cs->dnu || !cs->chi_es || !cs->chi_abs || !cs->chi_line ||
         !cs->chi_line_th || !cs->t_color ||
         !cs->tri_lo || !cs->tri_up || !cs->tri_r ||
-        !cs->chi_tot || !cs->S_fixed || !cs->J || !cs->lambda_star) {
+        !cs->chi_tot || !cs->S_fixed || !cs->J || !cs->eta_total_audit ||
+        !cs->lambda_star) {
         fprintf(stderr, "[CMFGEN] init alloc failed\n");
         return -1;
     }
@@ -117,6 +1526,13 @@ void cmfgen_free(CMFGENState *cs)
     free(cs->nu); free(cs->dnu); free(cs->chi_es); free(cs->chi_abs);
     free(cs->chi_line); free(cs->chi_line_th); free(cs->chi_line_cls);
     free(cs->chi_tot); free(cs->S_fixed); free(cs->J);
+    free(cs->eta_total_audit);
+    free(cs->stage32_eta_pre_epay);
+    free(cs->stage32_boundary_eta);
+    free(cs->stage32_line_eta);
+    free(cs->stage32_line_slot);
+    free(cs->stage32_epay_disposition);
+    free(cs->stage32_epay_evidence);
     free(cs->lambda_star); free(cs->t_color);
     free(cs->tri_lo); free(cs->tri_up); free(cs->tri_r);
     free(cs->p_ray);
@@ -133,12 +1549,160 @@ void cmfgen_set_deposition(const double *heating_rate, int n_shells) {
     g_dep_heating = heating_rate; g_dep_heating_n = n_shells;
 }
 
+static void cmf_hash_u64(CMFSHA256 *sha, uint64_t value) {
+    unsigned char b[8];
+    for (int i=0;i<8;i++) b[i]=(unsigned char)(value>>(8*i));
+    cmf_sha256_update(sha,b,sizeof(b));
+}
+
+static void cmf_hash_f64(CMFSHA256 *sha, double value) {
+    uint64_t bits;
+    memcpy(&bits,&value,sizeof(bits));
+    cmf_hash_u64(sha,bits);
+}
+
+static void cmf_hash_f64_array(CMFSHA256 *sha, const double *values,
+                               size_t count) {
+    cmf_hash_u64(sha,values ? 1U : 0U);
+    if (values) for (size_t i=0;i<count;i++) cmf_hash_f64(sha,values[i]);
+}
+
+static void cmf_hash_i32_array(CMFSHA256 *sha, const int *values,
+                               size_t count) {
+    cmf_hash_u64(sha,values ? 1U : 0U);
+    if (values) for (size_t i=0;i<count;i++)
+        cmf_hash_u64(sha,(uint64_t)(uint32_t)values[i]);
+}
+
+int cmfgen_emiss_ab_state_sha256(const CMFGENState *cs,
+                                 const Geometry *geo,
+                                 const OpacityState *opac,
+                                 const BFOpacity *bf,
+                                 const PlasmaState *plasma,
+                                 const NLTEConfig *nlte,
+                                 const AtomicData *atom,
+                                 char out_hex[65]) {
+    if (!cs || !geo || !opac || !plasma || !nlte || !atom || !out_hex ||
+        cs->n_shells <= 0 || cs->n_bins <= 0 || opac->n_lines < 0 ||
+        geo->n_shells != cs->n_shells || opac->n_shells != cs->n_shells ||
+        atom->n_lines != opac->n_lines || !cs->J || !cs->nu || !cs->dnu ||
+        !geo->r_inner || !geo->r_outer || !opac->line_list_nu ||
+        !opac->tau_sobolev || !plasma->T_e) return -1;
+    CMFSHA256 sha;
+    cmf_sha256_init(&sha);
+    static const char domain[]="LUMINA-E4-ASSEMBLY-INPUT-v1";
+    cmf_sha256_update(&sha,domain,sizeof(domain)-1);
+    size_t cells=(size_t)cs->n_shells*cs->n_bins;
+    size_t line_cells=(size_t)opac->n_lines*cs->n_shells;
+    cmf_hash_u64(&sha,(uint64_t)cs->n_shells);
+    cmf_hash_u64(&sha,(uint64_t)cs->n_bins);
+    cmf_hash_u64(&sha,(uint64_t)opac->n_lines);
+    cmf_hash_u64(&sha,(uint64_t)atom->n_levels);
+    cmf_hash_u64(&sha,(uint64_t)nlte->n_nlte_levels_total);
+    cmf_hash_u64(&sha,(uint64_t)nlte->n_nlte_ions);
+    cmf_hash_u64(&sha,(uint64_t)(cs->cont_only != 0));
+    cmf_hash_f64(&sha,cs->frozen_morph_eps);
+    cmf_hash_f64(&sha,geo->time_explosion);
+    cmf_hash_f64_array(&sha,geo->r_inner,cs->n_shells);
+    cmf_hash_f64_array(&sha,geo->r_outer,cs->n_shells);
+    cmf_hash_f64_array(&sha,cs->nu,cs->n_bins);
+    cmf_hash_f64_array(&sha,cs->dnu,cs->n_bins);
+    cmf_hash_f64_array(&sha,cs->J,cells); /* lagged field consumed by EPAY */
+    cmf_hash_f64_array(&sha,plasma->T_e,cs->n_shells);
+    cmf_hash_f64_array(&sha,plasma->T_rad,cs->n_shells);
+    cmf_hash_f64_array(&sha,plasma->n_electron,cs->n_shells);
+    cmf_hash_f64_array(&sha,opac->electron_density,cs->n_shells);
+    cmf_hash_f64_array(&sha,opac->line_list_nu,opac->n_lines);
+    cmf_hash_f64_array(&sha,opac->tau_sobolev,line_cells);
+    cmf_hash_f64_array(&sha,opac->line_source_S,line_cells);
+    cmf_hash_f64_array(&sha,bf ? bf->chi_bf : NULL,bf ? cells : 0);
+    cmf_hash_f64_array(&sha,bf ? bf->eta_bf : NULL,bf ? cells : 0);
+    cmf_hash_f64_array(&sha,nlte->nlte_level_populations,
+                       (size_t)nlte->n_nlte_levels_total*cs->n_shells);
+    cmf_hash_i32_array(&sha,nlte->nlte_ion_level_offset,
+                       (size_t)nlte->n_nlte_ions+1);
+    cmf_hash_i32_array(&sha,nlte->nlte_to_global_level,
+                       nlte->n_nlte_levels_total);
+    cmf_hash_i32_array(&sha,nlte->nlte_line_map,opac->n_lines);
+    cmf_hash_i32_array(&sha,nlte->global_to_nlte_level,atom->n_levels);
+    cmf_hash_f64_array(&sha,atom->line_A_ul,opac->n_lines);
+    cmf_hash_i32_array(&sha,atom->line_atomic_number,opac->n_lines);
+    cmf_hash_i32_array(&sha,atom->line_ion_number,opac->n_lines);
+    cmf_hash_i32_array(&sha,atom->line_level_upper,opac->n_lines);
+    cmf_hash_i32_array(&sha,atom->level_num,atom->n_levels);
+    cmf_hash_i32_array(&sha,atom->level_Z,atom->n_levels);
+    cmf_hash_i32_array(&sha,atom->level_ion,atom->n_levels);
+    cmf_hash_u64(&sha,(uint64_t)g_dep_heating_n);
+    cmf_hash_f64_array(&sha,g_dep_heating,
+                       g_dep_heating && g_dep_heating_n == cs->n_shells
+                       ? cs->n_shells : 0);
+    unsigned char digest[32];
+    cmf_sha256_final(&sha,digest);
+    for(int i=0;i<32;i++) snprintf(out_hex+2*i,3,"%02x",digest[i]);
+    out_hex[64]='\0';
+    return 0;
+}
+
+void cmfgen_emiss_ab_stats_free(CMFGENEmissABStats *stats) {
+    if (!stats) return;
+    free(stats->undefined_reason);
+    free(stats->undefined_shell_count);
+    free(stats->undefined_a_emissivity_by_band);
+    free(stats->undefined_a_emissivity_by_shell);
+    memset(stats,0,sizeof(*stats));
+}
+
+static const char *cmf_emiss_undef_text(unsigned reason) {
+    if (reason & CMF_EMISS_UNDEF_NO_NLTE_LINE) return "population_not_tracked";
+    if (reason & CMF_EMISS_UNDEF_UPPER_LEVEL) return "upper_level_unmapped";
+    if (reason & CMF_EMISS_UNDEF_A_UL) return "A_ul_missing_or_invalid";
+    if (reason & CMF_EMISS_UNDEF_POPULATION) return "population_missing_or_invalid";
+    return "defined";
+}
+
+int cmfgen_write_emiss_ab_undefined(const CMFGENEmissABStats *stats,
+                                     const AtomicData *atom,
+                                     const char *path) {
+    if (!stats || !atom || !path || !*path || stats->n_lines != atom->n_lines ||
+        !stats->undefined_reason || !stats->undefined_shell_count) return -1;
+    FILE *fp=fopen(path,"w");
+    if (!fp) return -1;
+    int fail=fprintf(fp,"line_id,Z,ion,lower_level,upper_level,A_ul_s-1,"
+                        "undefined_shell_cells,reason_mask,reason\n") < 0;
+    for (int l=0;l<stats->n_lines && !fail;l++) {
+        unsigned reason=stats->undefined_reason[l];
+        if (!reason) continue;
+        double A=atom->line_A_ul ? atom->line_A_ul[l] : NAN;
+        fail=fprintf(fp,"%d,%d,%d,%d,%d,%.17g,%u,%u,%s\n",l,
+            atom->line_atomic_number ? atom->line_atomic_number[l] : -1,
+            atom->line_ion_number ? atom->line_ion_number[l] : -1,
+            atom->line_level_lower ? atom->line_level_lower[l] : -1,
+            atom->line_level_upper ? atom->line_level_upper[l] : -1,
+            A,stats->undefined_shell_count[l],reason,
+            cmf_emiss_undef_text(reason)) < 0;
+    }
+    if (fclose(fp)) fail=1;
+    return fail ? -1 : 0;
+}
+
+typedef struct {
+    const NLTEConfig *nlte;
+    const AtomicData *atom;
+    CMFGENEmissABStats *stats;
+    int *upper_nlte;
+    unsigned char *active_seen;
+    int retain_undefined_a;
+    double *a_total_cell;
+    double *a_covered_cell;
+    double *a_undefined_cell;
+} CMFEmissBContext;
+
 /* ------------------------------------------------------------ */
 /* Assemble per (shell,bin): electron-scatter, thermal bf/ff absorption,
  * expansion line opacity, and the scattering-independent source S_fixed. */
-void cmfgen_assemble(CMFGENState *cs, const Geometry *geo,
+static void cmfgen_assemble_impl(CMFGENState *cs, const Geometry *geo,
                      const OpacityState *opac, BFOpacity *bf,
-                     const PlasmaState *plasma)
+                     const PlasmaState *plasma, CMFEmissBContext *emiss_b)
 {
     int NB = cs->n_bins, NS = cs->n_shells;
     int n_lines = opac->n_lines;
@@ -162,6 +1726,10 @@ void cmfgen_assemble(CMFGENState *cs, const Geometry *geo,
     memset(cs->chi_line, 0, sizeof(double) * (size_t)NS * NB);
     memset(cs->chi_line_th, 0, sizeof(double) * (size_t)NS * NB);
     memset(cs->chi_line_cls, 0, sizeof(double) * (size_t)NS * NB);
+    if (cs->stage32_epay_disposition) {
+        memset(cs->stage32_epay_disposition,0xff,(size_t)NS*NB);
+        memset(cs->stage32_epay_evidence,0,(size_t)NS*NB);
+    }
     /* line emissivity accumulator reuses chi_tot scratch before it is summed */
     double *eta_line = cs->chi_tot;
 
@@ -204,10 +1772,12 @@ void cmfgen_assemble(CMFGENState *cs, const Geometry *geo,
     if (eps_phys) eps_uv = -1.0;              /* phys mode wins (experimental) */
     cs->chi_line_re = (eps_uv > 0.0) ? cs->chi_line : cs->chi_line_th;
     memset(eta_line, 0, sizeof(double) * (size_t)NS * NB);
+    if (cmf_r1_prepare_assembly(cs,opac) == 0 && cs->stage32_eta_pre_epay)
+        cs->stage32_source_nlte=src_nlte;
 
     /* Expansion (Sobolev-binned) line opacity + emissivity.
      *   chi_line[bin] = sum_{l in bin} (1-e^{-tau_l}) * nu_l/(c t_exp dnu_bin)
-     *   eta_line[bin] = sum_l (1-e^{-tau_l}) * nu_l/(c t_exp dnu_bin) * S_l
+     *   eta_line[bin] = sum_l eta_l, including the production eps_phys factor
      * S_l = line_source_S if >0 else B_nu(T_e) (thermalised fallback). */
     for (int s = 0; s < NS; ++s) {
         double Te = plasma->T_e[s];
@@ -227,13 +1797,15 @@ void cmfgen_assemble(CMFGENState *cs, const Geometry *geo,
             if (Sl <= 0.0) Sl = cm_planck(nu_l, Te);
             size_t idx = (size_t)s * NB + b;
             cs->chi_line[idx] += w;
-            if (eps_phys) {
+            double eta_l = 0.0;
+            if (!emiss_b && eps_phys) {
                 double el = radeq_line_eps_phys(l, ne_s, Te, tau);
                 if (el < 0.0) el = 1.0;        /* table not built: thermal */
                 if (el < eps_floor) el = eps_floor;
                 if (el > eps_cap)   el = eps_cap;
                 cs->chi_line_th[idx] += w * el;
-                eta_line[idx]        += w * el * Sl;  /* thermal-channel eta */
+                eta_l = w * el * Sl;
+                eta_line[idx] += eta_l;        /* thermal-channel eta */
                 /* A4 SRC_BLEND closure weight: exact two-level+Sobolev gas
                  * coupling. Jbar_l=(1-beta)S_l+beta*J_bin with S=(1-eps)Jbar
                  * +eps*B gives net line heating chi_l*eps*beta/(eps+beta)
@@ -245,8 +1817,78 @@ void cmfgen_assemble(CMFGENState *cs, const Geometry *geo,
                               : (tau > 1e-6) ? (1.0 - exp(-tau)) / tau : 1.0;
                     cs->chi_line_cls[idx] += w * (el * be) / (el + be - el * be + 1e-300);
                 }
+            } else if (!emiss_b) {
+                eta_l = w * Sl;
+                eta_line[idx] += eta_l;
             } else {
-                eta_line[idx] += w * Sl;
+                /* E4 B lane: opacity/destruction bookkeeping is byte-for-byte
+                 * the production calculation above; only the line emissivity
+                 * accumulator changes.  The direct CMFGEN-style emissivity is
+                 * projected as a delta line into the same coarse bin. */
+                double el = 1.0;
+                if (eps_phys) {
+                    el = radeq_line_eps_phys(l, ne_s, Te, tau);
+                    if (el < 0.0) el = 1.0;
+                    if (el < eps_floor) el = eps_floor;
+                    if (el > eps_cap) el = eps_cap;
+                    cs->chi_line_th[idx] += w * el;
+                    {
+                        double be = (tau > 700.0) ? 1.0 / tau
+                                  : (tau > 1e-6) ? (1.0 - exp(-tau)) / tau : 1.0;
+                        cs->chi_line_cls[idx] += w * (el * be) /
+                            (el + be - el * be + 1e-300);
+                    }
+                }
+                CMFGENEmissABStats *st=emiss_b->stats;
+                emiss_b->active_seen[l]=1;
+                st->active_line_shell_count++;
+                double eta_a = eps_phys ? w * el * Sl : w * Sl;
+                emiss_b->a_total_cell[idx] += eta_a;
+                unsigned reason=st->undefined_reason[l] &
+                                ~CMF_EMISS_UNDEF_POPULATION;
+                int upper=emiss_b->upper_nlte[l];
+                if (upper < 0) {
+                    if (!reason) reason=CMF_EMISS_UNDEF_UPPER_LEVEL;
+                }
+                double A=(emiss_b->atom->line_A_ul && l < emiss_b->atom->n_lines)
+                         ? emiss_b->atom->line_A_ul[l] : NAN;
+                if (!(A > 0.0) || !isfinite(A)) reason|=CMF_EMISS_UNDEF_A_UL;
+                double n_upper=NAN;
+                if (!reason) {
+                    if (emiss_b->nlte->nlte_level_populations)
+                        n_upper=emiss_b->nlte->nlte_level_populations[
+                            (size_t)upper*NS+s];
+                    if (!isfinite(n_upper) || n_upper < 0.0)
+                        reason|=CMF_EMISS_UNDEF_POPULATION;
+                }
+                if (reason) {
+                    st->undefined_reason[l]|=(unsigned char)reason;
+                    st->undefined_shell_count[l]++;
+                    st->undefined_line_shell_count++;
+                    emiss_b->a_undefined_cell[idx] += eta_a;
+                } else {
+                    if (l == st->seed_line && s == st->seed_shell) {
+                        n_upper *= st->seed_factor;
+                        st->seed_hits++;
+                    }
+                    eta_line[idx] += (CM_H*nu_l/(4.0*M_PI_VAL))*A*n_upper /
+                                     cs->dnu[b];
+                    st->defined_line_shell_count++;
+                    emiss_b->a_covered_cell[idx] += eta_a;
+                }
+            }
+            if (!emiss_b && cs->stage32_line_slot && !cs->stage32_diag_failed) {
+                int slot=cs->stage32_line_slot[l];
+                if (slot >= 0)
+                    cs->stage32_line_eta[(size_t)slot*NS+s] += eta_l;
+                else {
+                    const double r1_lo=CM_C/(3000.0e-8);
+                    const double r1_hi=CM_C/(600.0e-8);
+                    int blo=(int)floor(log(r1_lo/cs->nu_min)/cs->d_log_nu);
+                    int bhi=(int)floor(log(r1_hi/cs->nu_min)/cs->d_log_nu);
+                    if (b == blo || b == bhi)
+                        cs->stage32_boundary_eta[idx] += eta_l;
+                }
             }
         }
     }
@@ -358,7 +2000,7 @@ void cmfgen_assemble(CMFGENState *cs, const Geometry *geo,
             double bnorm = 0.0;
             for (int b = 0; b < NB; ++b) bnorm += cm_planck(cs->nu[b], Te) * cs->dnu[b];
             if (bnorm > 0.0)
-                kappa_dep = dep_frac * g_dep_heating[s] / (4.0 * M_PI * bnorm);
+                kappa_dep = dep_frac * g_dep_heating[s] / (4.0 * M_PI_VAL * bnorm);
         }
         for (int b = 0; b < NB; ++b) {
             size_t idx = (size_t)s * NB + b;
@@ -385,6 +2027,7 @@ void cmfgen_assemble(CMFGENState *cs, const Geometry *geo,
             double chi_t   = chi_e + chi_a + chi_ln;
 
             double chi_ln_th = chi_ln;               /* legacy: all thermal */
+            double a_line_factor = cs->cont_only ? 0.0 : 1.0;
             if (cs->frozen_morph_eps >= 0.0 &&
                 chi_ln > line_gate * chi_a) {
                 /* frozen-plasma morphology pass: force the forest-dominated
@@ -395,7 +2038,8 @@ void cmfgen_assemble(CMFGENState *cs, const Geometry *geo,
                  * written into opacity->line_source_S AFTER this solve. */
                 double fe = cs->frozen_morph_eps;
                 chi_ln_th = fe * chi_ln;
-                eta_ln   *= fe;
+                if (!emiss_b) eta_ln *= fe;
+                a_line_factor *= fe;
                 n_split++;
             } else if (eps_phys) {
                 chi_ln_th = cs->chi_line_th[idx];    /* per-line accumulated */
@@ -405,13 +2049,34 @@ void cmfgen_assemble(CMFGENState *cs, const Geometry *geo,
                 /* transfer-only split: S_fixed/transfer see the eps_uv share,
                  * the RE closure sees FULL chi_line via cs->chi_line_re. */
                 chi_ln_th = eps_uv * chi_ln;
-                eta_ln   *= eps_uv;
+                if (!emiss_b) eta_ln *= eps_uv;
+                a_line_factor *= eps_uv;
                 n_split++;
             } else if (line_eps > 0.0 && line_eps <= 1.0 &&
                        chi_ln > line_gate * chi_a) {
                 chi_ln_th = line_eps * chi_ln;
-                eta_ln   *= line_eps;   /* thermal share of the NLTE source */
+                if (!emiss_b)
+                    eta_ln *= line_eps; /* A-lane thermal share only */
+                a_line_factor *= line_eps;
                 n_split++;
+            }
+            if (emiss_b) {
+                CMFGENEmissABStats *st=emiss_b->stats;
+                double cell_power_scale=a_line_factor*cs->dnu[b];
+                double undefined_eta=a_line_factor*
+                                     emiss_b->a_undefined_cell[idx];
+                st->a_reference_line_power +=
+                    emiss_b->a_total_cell[idx]*cell_power_scale;
+                st->a_reference_covered_line_power +=
+                    emiss_b->a_covered_cell[idx]*cell_power_scale;
+                st->a_reference_undefined_line_power +=
+                    undefined_eta*cs->dnu[b];
+                st->undefined_a_emissivity_by_band[b] +=
+                    undefined_eta*cs->dnu[b];
+                st->undefined_a_emissivity_by_shell[s] +=
+                    undefined_eta*cs->dnu[b];
+                if (emiss_b->retain_undefined_a)
+                    eta_ln += undefined_eta;
             }
             cs->chi_es[idx]      = chi_e + (chi_ln - chi_ln_th);
             cs->chi_abs[idx]     = chi_a;
@@ -419,6 +2084,8 @@ void cmfgen_assemble(CMFGENState *cs, const Geometry *geo,
             /* S_fixed = (chi_abs*B + thermal line emissivity)/chi_tot; the
              * scattering share enters the solve as r*J, NOT here (no double
              * count of the line source). */
+            if (cs->stage32_eta_pre_epay)
+                cs->stage32_eta_pre_epay[idx]=eta_ln;
             cs->S_fixed[idx] = (chi_t > 0.0)
                              ? (chi_a * B + eta_ln) / chi_t : 0.0;
             /* EPAY books: thermal emitted vs absorbed (lagged J), per shell.
@@ -476,6 +2143,11 @@ void cmfgen_assemble(CMFGENState *cs, const Geometry *geo,
                   if (hf) epay_hotf = atof(hf); } }
             int hot_regime = (Te > epay_hotf * plasma->T_rad[s]);
             double dr_s = geo->r_outer[s] - geo->r_inner[s];
+            unsigned char r1ev=CMF_R1_EV_REACHED|CMF_R1_EV_EPAY_ELIGIBLE|
+                               CMF_R1_EV_BRANCH;
+            if (epay >= 2) r1ev|=CMF_R1_EV_EPAY_GE2;
+            if (acc_w > 0.0) r1ev|=CMF_R1_EV_ACC_W_POS;
+            if (hot_regime) r1ev|=CMF_R1_EV_HOT;
             if (epay >= 2 && acc_w > 0.0 && hot_regime) {
                 /* kpkt mirror proper: paid power E_pay = absorbed + deposition,
                  * spectrum = normalized rate-side emissivity w(nu). Thick bins
@@ -487,10 +2159,19 @@ void cmfgen_assemble(CMFGENState *cs, const Geometry *geo,
                     double chi_t = cs->chi_tot[idx];
                     if ((cs->chi_abs[idx] + cs->chi_line_th[idx]) * dr_s
                         > epay_taubin) {
+                        if (cs->stage32_epay_disposition) {
+                            cs->stage32_epay_disposition[idx]=1;
+                            cs->stage32_epay_evidence[idx]=
+                                (unsigned char)(r1ev|CMF_R1_EV_BIN_THICK);
+                        }
                         if (kappa_dep > 0.0 && chi_t > 0.0)
                             cs->S_fixed[idx] += kappa_dep *
                                 cm_planck(cs->nu[b], Te) / chi_t;
                         continue;   /* legacy Kirchhoff source */
+                    }
+                    if (cs->stage32_epay_disposition) {
+                        cs->stage32_epay_disposition[idx]=2;
+                        cs->stage32_epay_evidence[idx]=r1ev;
                     }
                     double w = (bf ? bf_get_eta(bf, s, cs->nu[b]) : 0.0)
                              + cs->chi_line_th[idx] * cm_planck(cs->nu[b], Te);
@@ -501,9 +2182,20 @@ void cmfgen_assemble(CMFGENState *cs, const Geometry *geo,
             for (int b = 0; b < NB; ++b) {
                 size_t idx = (size_t)s * NB + b;
                 double chi_t = cs->chi_tot[idx];
-                if (!((cs->chi_abs[idx] + cs->chi_line_th[idx]) * dr_s
-                      > epay_taubin))
+                if ((cs->chi_abs[idx] + cs->chi_line_th[idx]) * dr_s
+                    > epay_taubin) {
+                    if (cs->stage32_epay_disposition) {
+                        cs->stage32_epay_disposition[idx]=1;
+                        cs->stage32_epay_evidence[idx]=
+                            (unsigned char)(r1ev|CMF_R1_EV_BIN_THICK);
+                    }
+                } else {
+                    if (cs->stage32_epay_disposition) {
+                        cs->stage32_epay_disposition[idx]=3;
+                        cs->stage32_epay_evidence[idx]=r1ev;
+                    }
                     cs->S_fixed[idx] *= scale;
+                }
                 if (kappa_dep > 0.0 && chi_t > 0.0)
                     cs->S_fixed[idx] += kappa_dep * cm_planck(cs->nu[b], Te) / chi_t;
             }
@@ -512,6 +2204,13 @@ void cmfgen_assemble(CMFGENState *cs, const Geometry *geo,
             if (s == NS/2) epay_scale_dbg[1] = scale;
             if (s == 38 && s < NS) epay_scale_dbg[2] = scale;
             if (s == NS-1) epay_scale_dbg[3] = scale;
+        } else if (cs->stage32_epay_disposition) {
+            for (int b=0;b<NB;b++) {
+                size_t idx=(size_t)s*NB+b;
+                cs->stage32_epay_disposition[idx]=0;
+                cs->stage32_epay_evidence[idx]=
+                    CMF_R1_EV_REACHED|CMF_R1_EV_BRANCH;
+            }
         }
     }
     if (epay)
@@ -534,6 +2233,159 @@ void cmfgen_assemble(CMFGENState *cs, const Geometry *geo,
                    n_split, (long)NS * NB, lnsum > 0.0 ? thsum / lnsum : 1.0);
         }
     }
+}
+
+void cmfgen_assemble(CMFGENState *cs, const Geometry *geo,
+                     const OpacityState *opac, BFOpacity *bf,
+                     const PlasmaState *plasma) {
+    cmfgen_assemble_impl(cs,geo,opac,bf,plasma,NULL);
+}
+
+int cmfgen_assemble_aulnu(CMFGENState *cs, const Geometry *geo,
+                          const OpacityState *opac, BFOpacity *bf,
+                          const PlasmaState *plasma, const NLTEConfig *nlte,
+                          const AtomicData *atom, int seed_line,
+                          int seed_shell, double seed_factor,
+                          int retain_undefined_a,
+                          CMFGENEmissABStats *stats) {
+    double *a_total_cell=NULL, *a_covered_cell=NULL, *a_undefined_cell=NULL;
+    if (!cs || !geo || !opac || !plasma || !nlte || !atom || !stats ||
+        opac->n_lines < 0 || atom->n_lines != opac->n_lines ||
+        geo->n_shells != cs->n_shells || opac->n_shells != cs->n_shells ||
+        !atom->line_level_upper || !atom->level_num ||
+        !nlte->nlte_to_global_level ||
+        (retain_undefined_a != 0 && retain_undefined_a != 1) ||
+        (seed_line >= 0 && (seed_line >= opac->n_lines || seed_shell < 0 ||
+                            seed_shell >= cs->n_shells ||
+                            !(seed_factor > 0.0) || !isfinite(seed_factor))))
+        return -1;
+    memset(stats,0,sizeof(*stats));
+    stats->n_lines=opac->n_lines;
+    stats->seed_line=seed_line;
+    stats->seed_shell=seed_line >= 0 ? seed_shell : -1;
+    stats->seed_factor=seed_line >= 0 ? seed_factor : 1.0;
+    stats->retain_undefined_a=retain_undefined_a;
+    stats->n_shells=cs->n_shells;
+    stats->n_bins=cs->n_bins;
+    size_t nl=(size_t)(opac->n_lines > 0 ? opac->n_lines : 1);
+    stats->undefined_reason=(unsigned char *)calloc(nl,sizeof(unsigned char));
+    stats->undefined_shell_count=(uint32_t *)calloc(nl,sizeof(uint32_t));
+    stats->undefined_a_emissivity_by_band=(double *)calloc(
+        (size_t)cs->n_bins,sizeof(double));
+    stats->undefined_a_emissivity_by_shell=(double *)calloc(
+        (size_t)cs->n_shells,sizeof(double));
+    int *upper=(int *)malloc(nl*sizeof(int));
+    unsigned char *active=(unsigned char *)calloc(nl,sizeof(unsigned char));
+    if (!stats->undefined_reason || !stats->undefined_shell_count ||
+        !stats->undefined_a_emissivity_by_band ||
+        !stats->undefined_a_emissivity_by_shell ||
+        !upper || !active) goto fail;
+    size_t cells=(size_t)cs->n_shells*cs->n_bins;
+    a_total_cell=(double *)calloc(cells,sizeof(double));
+    a_covered_cell=(double *)calloc(cells,sizeof(double));
+    a_undefined_cell=(double *)calloc(cells,sizeof(double));
+    if (!a_total_cell || !a_covered_cell || !a_undefined_cell) goto fail;
+    for (int l=0;l<opac->n_lines;l++) upper[l]=-1;
+
+    int ni=nlte->n_nlte_ions;
+    int **by_number=(int **)calloc((size_t)(ni > 0 ? ni : 1),sizeof(int *));
+    int *max_number=(int *)malloc((size_t)(ni > 0 ? ni : 1)*sizeof(int));
+    if (!by_number || !max_number) {
+        free(by_number); free(max_number); goto fail;
+    }
+    for (int i=0;i<ni;i++) {
+        max_number[i]=-1;
+        for (int k=nlte->nlte_ion_level_offset[i];
+             k<nlte->nlte_ion_level_offset[i+1];k++) {
+            int gl=nlte->nlte_to_global_level[k];
+            if (gl >= 0 && gl < atom->n_levels &&
+                atom->level_num[gl] > max_number[i])
+                max_number[i]=atom->level_num[gl];
+        }
+        if (max_number[i] >= 0) {
+            by_number[i]=(int *)malloc((size_t)(max_number[i]+1)*sizeof(int));
+            if (!by_number[i]) {
+                for (int j=0;j<i;j++) free(by_number[j]);
+                free(by_number); free(max_number); goto fail;
+            }
+            for (int k=0;k<=max_number[i];k++) by_number[i][k]=-1;
+            for (int k=nlte->nlte_ion_level_offset[i];
+                 k<nlte->nlte_ion_level_offset[i+1];k++) {
+                int gl=nlte->nlte_to_global_level[k];
+                if (gl >= 0 && gl < atom->n_levels) {
+                    int number=atom->level_num[gl];
+                    if (number >= 0 && number <= max_number[i])
+                        by_number[i][number]=k;
+                }
+            }
+        }
+    }
+    for (int l=0;l<opac->n_lines;l++) {
+        if (!atom->line_A_ul || !(atom->line_A_ul[l] > 0.0) ||
+            !isfinite(atom->line_A_ul[l]))
+            stats->undefined_reason[l]|=CMF_EMISS_UNDEF_A_UL;
+        int ion=nlte->nlte_line_map ? nlte->nlte_line_map[l] : -1;
+        if (ion < 0 || ion >= ni) {
+            stats->undefined_reason[l]|=CMF_EMISS_UNDEF_NO_NLTE_LINE;
+            continue;
+        }
+        int number=atom->line_level_upper[l];
+        if (number < 0 || number > max_number[ion] || !by_number[ion] ||
+            by_number[ion][number] < 0) {
+            stats->undefined_reason[l]|=CMF_EMISS_UNDEF_UPPER_LEVEL;
+            continue;
+        }
+        upper[l]=by_number[ion][number];
+    }
+    for (int i=0;i<ni;i++) free(by_number[i]);
+    free(by_number); free(max_number);
+
+    {
+        CMFEmissBContext ctx={nlte,atom,stats,upper,active,
+            retain_undefined_a,a_total_cell,a_covered_cell,a_undefined_cell};
+        cmfgen_assemble_impl(cs,geo,opac,bf,plasma,&ctx);
+    }
+    free(a_total_cell); free(a_covered_cell); free(a_undefined_cell);
+    for (int l=0;l<opac->n_lines;l++) {
+        if (!active[l]) {
+            stats->undefined_reason[l]=0;
+            stats->undefined_shell_count[l]=0;
+            continue;
+        }
+        stats->active_transition_count++;
+        if (stats->undefined_reason[l]) stats->undefined_transition_count++;
+        else stats->defined_transition_count++;
+    }
+    stats->a_reference_contribution_fraction =
+        stats->a_reference_line_power > 0.0
+        ? stats->a_reference_covered_line_power /
+          stats->a_reference_line_power : 0.0;
+    stats->a_reference_undefined_contribution_fraction =
+        stats->a_reference_line_power > 0.0
+        ? stats->a_reference_undefined_line_power /
+          stats->a_reference_line_power : 0.0;
+    if (retain_undefined_a) {
+        stats->retained_transition_count=stats->undefined_transition_count;
+        stats->retained_line_shell_count=stats->undefined_line_shell_count;
+        stats->a_reference_retained_line_power=
+            stats->a_reference_undefined_line_power;
+        stats->a_reference_retained_contribution_fraction=
+            stats->a_reference_undefined_contribution_fraction;
+    }
+    free(upper); free(active);
+    if (seed_line >= 0 && stats->seed_hits != 1) {
+        fprintf(stderr,"[EMISS-AB][FAIL] seeded transition line=%d shell=%d "
+                       "was hit %llu times (expected 1)\n",seed_line,seed_shell,
+                       (unsigned long long)stats->seed_hits);
+        return -1;
+    }
+    return 0;
+
+fail:
+    free(a_total_cell); free(a_covered_cell); free(a_undefined_cell);
+    free(upper); free(active);
+    cmfgen_emiss_ab_stats_free(stats);
+    return -1;
 }
 
 /* ------------------------------------------------------------ */
@@ -806,6 +2658,11 @@ void cmfgen_solve_J(CMFGENState *cs, const Geometry *geo, double T_inner,
     }
     free(S); free(Jb); free(Lst);
     free(Tlo); free(Tup); free(rA); free(aA); free(dA); free(cA); free(rhs);
+    /* This is the only point that certifies lambda_star as the diagonal paired
+     * with the current assembled chi_es/chi_tot generation.  Early allocation
+     * failure and alternate solvers leave the lineage invalid and dumping fails. */
+    if (cs->stage32_eta_pre_epay && cs->stage32_field_generation > 0)
+        cs->stage32_lambda_generation=cs->stage32_field_generation;
     if (cd_s >= 0) fflush(stdout);
 }
 
@@ -924,7 +2781,7 @@ void cmfgen_validate(const CMFGENState *cs, const Geometry *geo,
             abs_r += cs->chi_line[idx] * cs->J[idx] * cs->dnu[b];
             emi_r += eta_ln * cs->dnu[b];
         }
-        abs_r *= 4.0 * M_PI;  emi_r *= 4.0 * M_PI;
+        abs_r *= 4.0 * M_PI_VAL;  emi_r *= 4.0 * M_PI_VAL;
         printf("[CMFGEN-LINEHEAT] s=%2d Te=%.0f  H_line_abs=%.3e  emis_line=%.3e  "
                "net=%.3e\n", s, Te, abs_r, emi_r, abs_r - emi_r);
     }
@@ -1053,7 +2910,7 @@ int cmfgen_write_spectrum(const CMFGENState *cs, const Geometry *geo,
             integ += 0.5 * (f_prev + f) * (p - p_prev);
             p_prev = p; f_prev = f;
         }
-        Lnu[b] = 8.0 * M_PI * M_PI * integ;        /* erg/s/Hz */
+        Lnu[b] = 8.0 * M_PI_VAL * M_PI_VAL * integ;        /* erg/s/Hz */
     }
 
     /* ---- write ascending-wavelength CSV: L_lambda = L_nu * c/lambda^2 ---- */
@@ -1500,7 +3357,7 @@ int cmfgen_write_spectrum_obs(const CMFGENState *cs, const Geometry *geo,
             integ += 0.5 * (f_prev + f) * (p - p_prev);
             p_prev = p; f_prev = f;
         }
-        Lnu[k] = 8.0 * M_PI * M_PI * integ;
+        Lnu[k] = 8.0 * M_PI_VAL * M_PI_VAL * integ;
     }
 
     FILE *fp = fopen(path, "w");
@@ -1887,7 +3744,7 @@ static int cmfgen_fine_emergent(const CMFGENState *fs, const CMFGENState *csb,
             integ += 0.5 * (f_prev + f) * (p - p_prev);
             p_prev = p; f_prev = f;
         }
-        Lnu[b] = 8.0 * M_PI * M_PI * integ;
+        Lnu[b] = 8.0 * M_PI_VAL * M_PI_VAL * integ;
     }
     FILE *fp = fopen(path, "w");
     if (!fp) { free(ray_n);free(ray_core);free(seg_sh);free(seg_ds);free(S);free(Lnu);
@@ -2058,7 +3915,7 @@ static int cmfgen_fine_emergent_obs(const CMFGENState *fs, const Geometry *geo,
             integ += 0.5 * (f_prev + f) * (p - p_prev);
             p_prev = p; f_prev = f;
         }
-        Lnu[k] = 8.0 * M_PI * M_PI * integ;
+        Lnu[k] = 8.0 * M_PI_VAL * M_PI_VAL * integ;
     }
     g_sob_sl_ptr = NULL;   /* reset global */
     free(Jbar_C);
@@ -2570,12 +4427,67 @@ void cmfgen_fine_jbar(CMFGENState *csb, const Geometry *geo,
      * line) vs S_l/B. If high S_l/B correlates with J_binned/J_fine >> 1, the
      * super-thermal is a binned-J contrast-collapse ARTIFACT; if J_binned ~ J_fine,
      * the fluorescence is robust physics independent of the binning. */
+    /* SHELL COVERAGE (2026-07-26): the dump used to be hard-wired to the mid
+     * shell (NS/2), so the deterministic fine J_bar_l could not be inspected
+     * anywhere else -- in particular not in the photospheric shells where the
+     * suspected ~10^3x det-jbar collapse lives. LUMINA_CMF_FINE_LINEDUMP_SHELL
+     * = <int> selects the shell; unset keeps the historical NS/2 AND the
+     * historical file name, so existing consumers are unaffected. When a shell
+     * is named explicitly the output goes to cmf_fine_linedump_s<N>.csv instead,
+     * so a targeted dump can never be mistaken for the legacy mid-shell one.
+     * line_id (the opacity line-list index -- the key that joins this dump to
+     * lumina_events_lines.bin, jbar_line[] and tau_sobolev[]) is now the first
+     * column; it was missing, which forced consumers to re-derive it from
+     * lambda. */
+    /* TAU AT THE CONSUMPTION POINT (2026-07-28). Two additions, both forced by
+     * the parity36 A/B:
+     *  (1) tau_sob column. The line source S_l only means something PAIRED with
+     *      the tau the same solver uses: the Sobolev tau carries
+     *      stim_corr = d/(1+d) while S_l = (2hv^3/c^2)/d, so S_l*tau is finite
+     *      (∝ n_upper) however small d gets. A mismatched pair manufactures
+     *      energy without bound — that is what LUMINA_SL_WRITE_SKIPZ did
+     *      (FORMAL-CONS 3.484 -> 5973). There was NO observer for tau here, and
+     *      the one instrument that looked like it could stand in — beta in
+     *      lumina_jbar_dump.csv — cannot: compute_plasma_state rewrites
+     *      tau_sobolev from the nebular ion pops at the top of every iteration
+     *      and the rate assembly (where that beta is recorded) runs BEFORE the
+     *      NLTE tau write inside nlte_solve_all_gpu, so the dumped beta is the
+     *      NEBULAR tau in every arm (measured: 89% of Si III betas byte-identical
+     *      between LUMINA_NLTE_SKIP_Z=14 and SKIP_Z-empty runs). Read here, the
+     *      tau is the one this formal solve actually consumes, with S_l beside it.
+     *  (2) shell LIST. The 1000-1300A pathology sits in s40-49, and one shell per
+     *      run cost a whole run per shell.
+     * LUMINA_CMF_FINE_LINEDUMP_SHELL now takes a comma list ("8,45,49"); each
+     * shell gets its own cmf_fine_linedump_s<N>.csv. Unset keeps NS/2 and the
+     * historical cmf_fine_linedump.csv name. */
     { const char *e = getenv("LUMINA_CMF_FINE_LINEDUMP");
       if (e && atoi(e)) {
-        int st = NS/2; double Te = plasma->T_e[st];
-        FILE *df = fopen("cmf_fine_linedump.csv", "w");
-        if (df) {
-            fprintf(df, "lambda_A,nu,J_fine,J_binned,S_l,B,SoverB,Jbin_over_Jfine\n");
+        int shells[64]; int n_sh = 0; int st_explicit = 0;
+        { const char *se = getenv("LUMINA_CMF_FINE_LINEDUMP_SHELL");
+          if (se && *se) {
+            char buf[256]; strncpy(buf, se, sizeof buf - 1); buf[sizeof buf - 1] = 0;
+            for (char *tok = strtok(buf, ", \t"); tok && n_sh < 64;
+                 tok = strtok(NULL, ", \t")) {
+                int sv = atoi(tok);
+                if (sv >= 0 && sv < NS) { shells[n_sh++] = sv; st_explicit = 1; }
+                else fprintf(stderr, "[cmf_fine] LINEDUMP: shell %s out of range "
+                             "[0,%d] — skipped\n", tok, NS-1);
+            }
+          } }
+        if (n_sh == 0) { shells[0] = NS/2; n_sh = 1; }   /* legacy default */
+        for (int is = 0; is < n_sh; ++is) {
+            int st = shells[is];
+            double Te = plasma->T_e[st];
+            char dpath[256];
+            if (st_explicit) snprintf(dpath, sizeof dpath, "cmf_fine_linedump_s%d.csv", st);
+            else             snprintf(dpath, sizeof dpath, "cmf_fine_linedump.csv");
+            FILE *df = fopen(dpath, "w");
+            if (!df) {
+                fprintf(stderr, "[cmf_fine] LINEDUMP: cannot open %s\n", dpath);
+                continue;
+            }
+            fprintf(df, "line_id,shell,lambda_A,nu,J_fine,J_binned,S_l,B,SoverB,"
+                        "Jbin_over_Jfine,tau_sob,Sl_times_esc\n");
             for (int l = 0; l < NL; ++l) {
                 double jf = opac->jbar_line_det[(size_t)l*NS+st];
                 if (jf < 0.0) continue;
@@ -2584,12 +4496,19 @@ void cmfgen_fine_jbar(CMFGENState *csb, const Geometry *geo,
                 double jb = (b>=0 && b<csb->n_bins) ? csb->J[(size_t)st*csb->n_bins+b] : -1.0;
                 double B = cm_planck(nu_l, Te);
                 double Sl = opac->line_source_S ? opac->line_source_S[(size_t)l*NS+st] : 0.0;
-                fprintf(df, "%.3f,%.6e,%.6e,%.6e,%.6e,%.6e,%.4e,%.4e\n",
-                    CM_C/nu_l*1e8, nu_l, jf, jb, Sl, B,
-                    (B>0)?Sl/B:0.0, (jf>0&&jb>0)?jb/jf:0.0);
+                double tau = opac->tau_sobolev ? opac->tau_sobolev[(size_t)l*NS+st] : -1.0;
+                /* S_l*(1-e^-tau): what this line can put into the emergent beam
+                 * from this shell. Bounded for a MATCHED pair however small d is;
+                 * unbounded when S_l and tau come from different populations. */
+                double esc = (tau > 0.0) ? -expm1(-tau) : 0.0;
+                fprintf(df, "%d,%d,%.3f,%.6e,%.6e,%.6e,%.6e,%.6e,%.4e,%.4e,%.6e,%.6e\n",
+                    l, st, CM_C/nu_l*1e8, nu_l, jf, jb, Sl, B,
+                    (B>0)?Sl/B:0.0, (jf>0&&jb>0)?jb/jf:0.0, tau, Sl*esc);
             }
             fclose(df);
-            fprintf(stderr, "[cmf_fine] LINEDUMP wrote cmf_fine_linedump.csv (shell %d)\n", st);
+            fprintf(stderr, "[cmf_fine] LINEDUMP wrote %s (shell %d, Te=%.0f K, "
+                            "in-window lines only, tau at the consumption point)\n",
+                            dpath, st, Te);
         }
       }
     }
@@ -3135,6 +5054,11 @@ int cmfgen_run(Geometry *geo, OpacityState *opac, BFOpacity *bf,
         cmfgen_assemble(&cs, geo, opac, bf, plasma);
         if (cmf_lineres) cmf_solve_J(&cs, geo, T_inner, n_ali);   /* P1 line-resolved CMF */
         else             cmfgen_solve_J(&cs, geo, T_inner, n_ali);/* binned (champion) */
+        if (cmfgen_stage32_rung1_maybe_dump(&cs,geo,opac,plasma,
+                                             iter,n_iter) != 0) {
+            cmfgen_free(&cs);
+            return -1;
+        }
         cmfgen_window_color(&cs);
         radeq_set_tail_color(cs.t_color, cs.n_shells);
         radeq_set_tri_response(cs.tri_lo, cs.tri_up, cs.tri_r,
@@ -3277,13 +5201,25 @@ int cmfgen_run(Geometry *geo, OpacityState *opac, BFOpacity *bf,
                 if (pop_n != npop) { free(pop_old);
                     pop_old = (double*)malloc(npop*sizeof(double)); pop_n = npop; }
                 memcpy(pop_old, nlte->nlte_level_populations, npop*sizeof(double));
-                nlte_solve_all(nlte, atom, plasma, opac, t_exp, cs.n_shells, gamma);
+                if (nlte_solve_all(nlte, atom, plasma, opac, t_exp,
+                                   cs.n_shells, gamma) != 0) {
+                    fprintf(stderr, "[CMFGEN][FATAL] NLTE solve failed iter=%d\n",
+                            iter);
+                    cmfgen_free(&cs);
+                    return -1;
+                }
                 for (size_t k = 0; k < npop; ++k)
                     nlte->nlte_level_populations[k] =
                         (1.0 - jeta)*pop_old[k] + jeta*nlte->nlte_level_populations[k];
                 nlte_update_tau_sobolev(nlte, atom, opac, t_exp, cs.n_shells);
             } else {
-                nlte_solve_all(nlte, atom, plasma, opac, t_exp, cs.n_shells, gamma);
+                if (nlte_solve_all(nlte, atom, plasma, opac, t_exp,
+                                   cs.n_shells, gamma) != 0) {
+                    fprintf(stderr, "[CMFGEN][FATAL] NLTE solve failed iter=%d\n",
+                            iter);
+                    cmfgen_free(&cs);
+                    return -1;
+                }
             }
         }
 

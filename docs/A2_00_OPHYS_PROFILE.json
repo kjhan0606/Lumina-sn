@@ -1,0 +1,93 @@
+{
+  "schema": "lumina-cmfgen-ophys-profile-v1",
+  "profile_id": "O-PHYS",
+  "required_exact_files": [
+    "EDDFACTOR",
+    "EDDFACTOR_INFO",
+    "RVTJ",
+    "NETRATE",
+    "TOTRATE",
+    "POPCAL",
+    "POPCOB",
+    "POPIRON",
+    "POPNICK",
+    "POPSIL",
+    "POPSUL",
+    "CHI_DATA",
+    "CHI_DATA_INFO",
+    "ETA_DATA",
+    "ETA_DATA_INFO",
+    "GENCOOL",
+    "LINEHEAT",
+    "JH_AT_CURRENT_TIME",
+    "JH_AT_CURRENT_TIME_INFO",
+    "OBSFLUX",
+    "OBS_FREQ",
+    "OUTGEN",
+    "CMFGEN_ORACLE_ATTESTATION.json"
+  ],
+  "required_patterns": [
+    {
+      "glob": "*PRRR",
+      "minimum_count": 1,
+      "meaning": "matching-ion photoionization/recombination rate exports"
+    },
+    {
+      "glob": "*OUT",
+      "minimum_count": 1,
+      "meaning": "matching level/superlevel identity exports"
+    }
+  ],
+  "attestation_required_fields": [
+    "schema",
+    "code_revision",
+    "input_files",
+    "atomic_data",
+    "run.fix_t",
+    "run.temperature_solved",
+    "freezes.undisclosed_count",
+    "freezes.components",
+    "coverage.matching_ion_stems",
+    "rate_audit.upward_downward_separated",
+    "convergence.jnu_last3_max_fraction",
+    "convergence.te_last3_max_fraction",
+    "convergence.ion_last3_max_fraction",
+    "convergence.active_population_max_correction_fraction",
+    "convergence.max_normalized_heat_residual",
+    "convergence.nan_count",
+    "convergence.inf_count",
+    "generation_proof.verdict",
+    "generation_proof.evidence_kind",
+    "generation_proof.iteration_id",
+    "generation_proof.files",
+    "generation_proof.output_after_last_iteration",
+    "record_schemas.EDDFACTOR.units",
+    "record_schemas.EDDFACTOR.frame",
+    "record_schemas.JH_AT_CURRENT_TIME.units",
+    "record_schemas.JH_AT_CURRENT_TIME.frame",
+    "record_schemas.CHI_DATA.units",
+    "record_schemas.CHI_DATA.frame",
+    "record_schemas.ETA_DATA.units",
+    "record_schemas.ETA_DATA.frame"
+  ],
+  "required_input_hashes": [
+    "IN_ITS",
+    "MODEL_SPEC",
+    "SN_HYDRO_DATA",
+    "VADAT"
+  ],
+  "thresholds": {
+    "last3_max_fraction": 0.01,
+    "population_max_fraction": 0.01,
+    "heat_residual_max": 0.001
+  },
+  "policies": {
+    "mtime_is_verdict_evidence": false,
+    "finish_rec_means": "file-complete-only-not-physical-convergence",
+    "same_generation_required": true,
+    "undisclosed_freeze_allowed": false,
+    "meanopac_substitutes_for_chi_data": false,
+    "gencool_substitutes_for_eta_data": false,
+    "neg_opac_substitutes_for_chi_data": false
+  }
+}

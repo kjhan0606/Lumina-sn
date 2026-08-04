@@ -1,0 +1,173 @@
+{
+  "cases": [
+    {
+      "center_symmetry_error": 0.0,
+      "levels": [
+        {
+          "I_relative_l2": 0.00034567847845454457,
+          "J_relative_l2": 0.00022914132495076186,
+          "clamp_count": 0,
+          "grid": {
+            "nmu": 8,
+            "nr": 32
+          },
+          "max_scaled_error": 1.7365941998941613e-06,
+          "negative_count": 0,
+          "nonfinite_count": 0,
+          "transport_residual": 3.5104893630330054e-09
+        },
+        {
+          "I_relative_l2": 0.00012872901098660654,
+          "J_relative_l2": 9.122488562431484e-05,
+          "clamp_count": 0,
+          "grid": {
+            "nmu": 16,
+            "nr": 64
+          },
+          "max_scaled_error": 7.782381384524237e-07,
+          "negative_count": 0,
+          "nonfinite_count": 0,
+          "transport_residual": 5.92648332791751e-08
+        },
+        {
+          "I_relative_l2": 4.8804293214325306e-05,
+          "J_relative_l2": 3.557317537351783e-05,
+          "clamp_count": 0,
+          "grid": {
+            "nmu": 32,
+            "nr": 128
+          },
+          "max_scaled_error": 3.0107020562632897e-07,
+          "negative_count": 0,
+          "nonfinite_count": 0,
+          "transport_residual": 1.881033868216884e-07
+        }
+      ],
+      "outer_incoming_error": 0.0,
+      "p_obs_J": 1.5031936868866314,
+      "status": "FAIL",
+      "tau_radius": 0.001
+    },
+    {
+      "center_symmetry_error": 0.0,
+      "levels": [
+        {
+          "I_relative_l2": 0.0004703582213179972,
+          "J_relative_l2": 0.00029830377380002425,
+          "clamp_count": 0,
+          "grid": {
+            "nmu": 8,
+            "nr": 32
+          },
+          "max_scaled_error": 0.0014385783217104597,
+          "negative_count": 0,
+          "nonfinite_count": 0,
+          "transport_residual": 1.3468021319357963e-09
+        },
+        {
+          "I_relative_l2": 0.00017500581562417394,
+          "J_relative_l2": 0.00011553680879494519,
+          "clamp_count": 0,
+          "grid": {
+            "nmu": 16,
+            "nr": 64
+          },
+          "max_scaled_error": 0.0005991948504366906,
+          "negative_count": 0,
+          "nonfinite_count": 0,
+          "transport_residual": 3.0877329128718516e-08
+        },
+        {
+          "I_relative_l2": 6.636459639644706e-05,
+          "J_relative_l2": 4.395868867925977e-05,
+          "clamp_count": 0,
+          "grid": {
+            "nmu": 32,
+            "nr": 128
+          },
+          "max_scaled_error": 0.00024087205731737615,
+          "negative_count": 0,
+          "nonfinite_count": 0,
+          "transport_residual": 5.486596571468252e-07
+        }
+      ],
+      "outer_incoming_error": 0.0,
+      "p_obs_J": 1.5035826885818455,
+      "status": "FAIL",
+      "tau_radius": 1.0
+    },
+    {
+      "center_symmetry_error": 0.0,
+      "levels": [
+        {
+          "I_relative_l2": 0.00046933300169113166,
+          "J_relative_l2": 0.0003097740817139413,
+          "clamp_count": 0,
+          "grid": {
+            "nmu": 8,
+            "nr": 32
+          },
+          "max_scaled_error": 0.004604832878803755,
+          "negative_count": 0,
+          "nonfinite_count": 0,
+          "transport_residual": 9.827505604029761e-11
+        },
+        {
+          "I_relative_l2": 0.0002160732513651423,
+          "J_relative_l2": 0.00013574874962436593,
+          "clamp_count": 0,
+          "grid": {
+            "nmu": 16,
+            "nr": 64
+          },
+          "max_scaled_error": 0.002300976406989008,
+          "negative_count": 0,
+          "nonfinite_count": 0,
+          "transport_residual": 5.715515969485639e-10
+        },
+        {
+          "I_relative_l2": 0.0001085828931388609,
+          "J_relative_l2": 5.233958302760708e-05,
+          "clamp_count": 0,
+          "grid": {
+            "nmu": 32,
+            "nr": 128
+          },
+          "max_scaled_error": 0.0011414637336706335,
+          "negative_count": 0,
+          "nonfinite_count": 0,
+          "transport_residual": 5.242585887606859e-09
+        }
+      ],
+      "outer_incoming_error": 0.0,
+      "p_obs_J": 0.46406141071839985,
+      "status": "FAIL",
+      "tau_radius": 100.0
+    }
+  ],
+  "determinism_pass": true,
+  "determinism_sha256": [
+    "8b0b02d4b346affe9c8d0cdf7e9b9d7b3158668194fa142241d62b164c5f866d",
+    "8b0b02d4b346affe9c8d0cdf7e9b9d7b3158668194fa142241d62b164c5f866d",
+    "8b0b02d4b346affe9c8d0cdf7e9b9d7b3158668194fa142241d62b164c5f866d"
+  ],
+  "excluded_cells": 0,
+  "grids": [
+    [
+      32,
+      8
+    ],
+    [
+      64,
+      16
+    ],
+    [
+      128,
+      32
+    ]
+  ],
+  "ka": "KA1",
+  "mpmath_dps": 80,
+  "seed": null,
+  "status": "FAIL"
+}
