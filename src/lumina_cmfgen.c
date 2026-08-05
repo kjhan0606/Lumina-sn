@@ -3387,6 +3387,60 @@ void cmfgen_write_jnu(const CMFGENState *cs, NLTEConfig *nlte)
     memcpy(nlte->J_nu, cs->J, sizeof(double) * n);
 }
 
+int cmfgen_commit_jnu(const CMFGENState *cs, NLTEConfig *nlte,
+                      const Geometry *geo, uint64_t generation)
+{
+    if (!cs || !nlte || !geo || !cs->J || cs->n_shells <= 0 ||
+        cs->n_bins <= 0 || geo->n_shells != cs->n_shells ||
+        !nlte->radiation_field.enabled)
+        return -1;
+
+    size_t bins = (size_t)cs->n_bins;
+    size_t cells = (size_t)cs->n_shells * bins;
+    double *edges = (double *)malloc((bins + 1) * sizeof(double));
+    RadiationFieldValidityState *validity =
+        (RadiationFieldValidityState *)malloc(cells * sizeof(*validity));
+    if (!edges || !validity) {
+        free(edges); free(validity);
+        return -1;
+    }
+    for (size_t b = 0; b <= bins; ++b)
+        edges[b] = cs->nu_min * exp((double)b * cs->d_log_nu);
+    edges[0] = cs->nu_min;
+    edges[bins] = cs->nu_max;
+    for (size_t i = 0; i < cells; ++i) {
+        if (!isfinite(cs->J[i]) || cs->J[i] < 0.0) {
+            free(edges); free(validity);
+            return -1;
+        }
+        validity[i] = cs->J[i] == 0.0
+            ? RADIATION_FIELD_EXACT_ZERO : RADIATION_FIELD_VALID;
+    }
+
+    RadiationFieldCommitRequest request;
+    memset(&request, 0, sizeof(request));
+    request.provenance_kind = RADIATION_FIELD_PROVENANCE_CMFGEN_REPLAY;
+    request.producer = "PURE_CMFGEN_COMOVING_CONSERVATIVE_REBIN";
+    request.generation = generation;
+    request.epoch = geo->time_explosion;
+    request.n_shells = (size_t)cs->n_shells;
+    request.v_inner = geo->v_inner;
+    request.v_outer = geo->v_outer;
+    request.source_n_bins = bins;
+    request.source_frequency_bin_edges = edges;
+    request.source_J_nu = cs->J;
+    request.source_validity = validity;
+    request.statistic_kind = RADIATION_FIELD_DETERMINISTIC;
+    int rc = radiation_field_commit(&nlte->radiation_field, &request);
+    free(edges); free(validity);
+    if (rc != 0) return -1;
+
+    /* Temporary compatibility view: A2-05+ migrates consumers to the canonical
+     * field.  This copy preserves pre-migration rate/opacity/emissivity output. */
+    cmfgen_write_jnu(cs, nlte);
+    return 0;
+}
+
 /* ------------------------------------------------------------ */
 /* ============================================================ */
 /* P1: line-resolved comoving-frame (CMF) J solver (gate LUMINA_CMF_LINERES=1).
@@ -5065,7 +5119,12 @@ int cmfgen_run(Geometry *geo, OpacityState *opac, BFOpacity *bf,
                                cs.n_shells, cs.n_bins);
         if (cs.diag && iter == n_iter - 1)
             cmfgen_validate(&cs, geo, plasma);
-        cmfgen_write_jnu(&cs, nlte);
+        if (cmfgen_commit_jnu(&cs, nlte, geo, (uint64_t)(iter + 1)) != 0) {
+            fprintf(stderr, "[RADIATION-FIELD][FATAL] pure-CMFGEN commit failed iter=%d\n",
+                    iter);
+            cmfgen_free(&cs);
+            return -1;
+        }
 
         /* P7 PRODUCER (LUMINA_CMF_LINERES_JBAR=1): fine-grid line-resolved J_bar_l
          * over the UV pump window. Fills opac->jbar_line_det; the plasma bb-rate

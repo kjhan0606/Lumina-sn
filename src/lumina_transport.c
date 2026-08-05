@@ -114,9 +114,9 @@ void update_base_estimators(RPacket *pkt, double distance, Estimators *est,
 
     /* A2-03 shadow producer: the same shell-comoving path-length measure goes
      * directly onto the amended 4000-bin edges.  No legacy state or RNG is read. */
-    if (est->radiation_field_shadow_accumulator != NULL)
+    if (est->radiation_field_accumulator != NULL)
         (void)radiation_field_accumulator_add(
-            est->radiation_field_shadow_accumulator, (size_t)shell,
+            est->radiation_field_accumulator, (size_t)shell,
             comov_nu, comov_energy * distance);
 }
 

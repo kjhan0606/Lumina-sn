@@ -2029,3 +2029,30 @@ estimator count. 생산 지점 병행 기록(shadow), 소비자 0 (호출그래�
 병렬 단독 40초 — 이후 A-2 15단계 × 최소 1회의 새 기준선.
 운전석 수리 1: CP 빌드 목록에 A2-03 신규 소스 2개 누락(같은 부류 3번째) —
 후속 등재: 빌드 목록을 mains 제외 src/*.c 파생으로.
+
+### ★★★A2-04 생산자 commit **폐합** (2026-08-06 01:19) — A-2 5/18, J_ν 정본 승격
+
+```
+commit selftest   PASS  common_callers=MC,CMFGEN · unsampled_floor=0 ·
+                        out_of_grid=EXPLICIT · generation_atomic
+실 EDDFACTOR L-0  PASS  196,185 records → 4000빈, wiring 셸 s0–s43, 2초
+                        positive PASS + 음성대조 W·B_ν(14172.549) → 5대역 전부 FAIL
+                        (guard/fallback 0/0; 합성 wiring E_1 ~1e-17 = 기계정밀도)
+배터리            PASS  36케이스 65초 (파생 목록 v2)
+```
+
+MC estimator 와 pure-CMFGEN `cs.J` 가 **같은 commit API** 로만 J_ν 를 생산.
+Planck 재구성 overwrite 차단. J_ν 1e-30 floor 는 validity 상태로 대체.
+음성대조의 주입 온도 = 층 0 quarantine 이 확정한 덱 내재 color 14172.549 K —
+층 0 폐합이 A-2 게이트의 의미를 정의한 첫 실전.
+
+#### 운전석 수리 3 (개정 8 첫 구현 사이클)
+
+1. **C commit 의 상태 붕괴**: 소스 OUT_OF_GRID 를 UNSAMPLED 로 뭉갬 (실 EDDFACTOR
+   15,268셀 실측 전이행렬로 특정). gap 분리 전파로 수리 — §9 4상태 + §13 경로 12.
+   **replay 엄격 검사가 옳았고 완화 없이 C 를 고침.**
+2. 합성 fixture 에 4상태 전부 주입 (경계-케이스 규율 3번째 실증).
+3. 배터리 빌드 목록 소스 파생화 (CP·K — 하드코딩 stale 3번째 재발의 근본 수리;
+   실링크 검증 rc=0, lumina_cuda.c = CPU 스텁 확인).
+
+부수: A2-04 Codex 세션 샌드박스 붕괴 1회(보고서만 재발주로 완성 — 구현 산출 무손실).

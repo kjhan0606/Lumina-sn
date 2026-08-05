@@ -4,9 +4,12 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import shutil
+import tempfile
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 
@@ -16,6 +19,12 @@ MASS_ONE = b"atomic_number,mass_amu\n6,12\n"
 MASS_TWO = b"atomic_number,mass_amu\n6,12\n8,16\n"
 AB_ONE = HEADER + b"6,1,1\n"
 AB_TWO = HEADER + b"6,0.5,0.5\n8,0.5,0.5\n"
+CACHE_INPUTS = (
+    "line2macro_level_upper.npy",
+    "tau_sobolev.npy",
+    "transition_probabilities.npy",
+    "zeta_data.npy",
+)
 
 
 def specs() -> dict[str, tuple[bytes, bytes | None]]:
@@ -102,7 +111,37 @@ def preflight(cases: dict[str, tuple[bytes, bytes | None]]) -> None:
     assert b"6,0.9,1" in cases["D6"][1]
 
 
-def materialize(base: Path, output: Path) -> None:
+def sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        for block in iter(lambda: stream.read(8 << 20), b""):
+            digest.update(block)
+    return digest.hexdigest()
+
+
+def cache_binding(base: Path) -> dict[str, object]:
+    inputs = [base / name for name in CACHE_INPUTS]
+    missing = [str(path) for path in inputs if not path.is_file()]
+    if missing:
+        raise FileNotFoundError(f"fixture cache inputs missing: {missing}")
+    with ThreadPoolExecutor(max_workers=len(inputs)) as pool:
+        hashes = list(pool.map(sha256, inputs))
+    generator = Path(__file__).resolve()
+    return {
+        "base": str(base.resolve()),
+        "generator_sha256": sha256(generator),
+        "deck_sha256": dict(zip(CACHE_INPUTS, hashes, strict=True)),
+    }
+
+
+def binding_key(binding: dict[str, object]) -> str:
+    encoded = json.dumps(binding, sort_keys=True, separators=(",", ":")).encode()
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def materialize(
+    base: Path, output: Path, *, cache_metadata: dict[str, object] | None = None
+) -> None:
     cases = specs()
     preflight(cases)
     if output.exists():
@@ -126,20 +165,78 @@ def materialize(base: Path, output: Path) -> None:
         "cases": list(cases),
         "base": str(base.resolve()),
     }
+    if cache_metadata is not None:
+        manifest["cache"] = cache_metadata
     (output / "manifest.json").write_text(
         json.dumps(manifest, indent=2) + "\n", encoding="utf-8"
     )
     print(f"fixture preflight PASS: {len(cases)} cases -> {output}")
 
 
+def cache_valid(path: Path, key: str) -> bool:
+    try:
+        manifest = json.loads((path / "manifest.json").read_text())
+    except (OSError, ValueError, TypeError):
+        return False
+    expected = set(specs())
+    return (
+        manifest.get("cache", {}).get("key") == key
+        and manifest.get("case_count") == len(expected)
+        and all((path / case_id).is_dir() for case_id in expected)
+    )
+
+
+def cached_materialize(base: Path, cache_root: Path) -> tuple[Path, bool, str]:
+    """Return an immutable, content-addressed node-local fixture directory."""
+    base = base.resolve()
+    binding = cache_binding(base)
+    key = binding_key(binding)
+    cache_root.mkdir(parents=True, exist_ok=True)
+    target = cache_root / key
+    if cache_valid(target, key):
+        return target, True, key
+
+    if target.exists():
+        stale = cache_root / f".{key}.stale.{os.getpid()}"
+        target.replace(stale)
+        shutil.rmtree(stale)
+
+    temporary = Path(tempfile.mkdtemp(prefix=f".{key}.", dir=cache_root))
+    try:
+        materialize(
+            base,
+            temporary,
+            cache_metadata={"key": key, "binding": binding},
+        )
+        try:
+            temporary.replace(target)
+        except OSError:
+            if not cache_valid(target, key):
+                raise
+            shutil.rmtree(temporary)
+    except BaseException:
+        if temporary.exists():
+            shutil.rmtree(temporary)
+        raise
+    return target, False, key
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--base", type=Path, required=True)
-    parser.add_argument("--output", type=Path, required=True)
+    destination = parser.add_mutually_exclusive_group(required=True)
+    destination.add_argument("--output", type=Path)
+    destination.add_argument("--cache-root", type=Path)
     args = parser.parse_args()
     if not args.base.is_dir():
         parser.error(f"base deck does not exist: {args.base}")
-    materialize(args.base, args.output)
+    if args.cache_root is not None:
+        path, hit, key = cached_materialize(args.base, args.cache_root)
+        print(
+            f"fixture cache {'HIT' if hit else 'MISS'} key={key} path={path}"
+        )
+    else:
+        materialize(args.base.resolve(), args.output)
     return 0
 
 

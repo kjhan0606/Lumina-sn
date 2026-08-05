@@ -1,0 +1,67 @@
+{
+  "census_file_modified": false,
+  "items": {
+    "H02": {
+      "disposition_proposal": "OPEN_TO_A2_18_NO_REPAIR_IN_A2_04",
+      "impact": "each armed update retains exactly 50% of the old value; transition-probability updates are held through the configured first three iterations",
+      "locations": [
+        "src/lumina_main.c:107",
+        "src/lumina_cuda.cu:6905"
+      ],
+      "measured": {
+        "archived_dynamic_transprob_damping_off_events": 1,
+        "archived_dynamic_transprob_damping_on_events": 6,
+        "default_damping": 0.5,
+        "default_hold_iterations": 3
+      },
+      "reachability": "FIRED"
+    },
+    "H13": {
+      "disposition_proposal": "DIAGNOSTIC_ONLY_CANONICAL_IMPACT_ZERO_KEEP_OPEN",
+      "impact": "the bounded fit was attempted from ten radiation-field solves in the representative run; canonical J_nu impact is now zero because the fit has no commit edge",
+      "location": "src/lumina_plasma.c:1030",
+      "measured": {
+        "archived_binned_J_arm_banners": 1,
+        "archived_outer_iterations": 10,
+        "coarse_steps": 80,
+        "refine_steps": 60,
+        "temperature_bounds_K": [
+          1500.0,
+          50000.0
+        ]
+      },
+      "reachability": "FIRED"
+    },
+    "P02": {
+      "disposition_proposal": "OPEN_TO_A2_06_NO_REPAIR_IN_A2_04",
+      "impact": "all line-resonance estimator contributions are absent from the CPU thread-local reduction; A2-06 owns the repair",
+      "locations": [
+        "src/lumina_main.c:420",
+        "src/lumina_main.c:478"
+      ],
+      "measured": {
+        "canonical_deck_line_count_excluded_per_worker": 2565342,
+        "local_estimator_n_lines": 0,
+        "local_j_blue_Edotlu_reductions": 0
+      },
+      "reachability": "FIRED_BY_CONSTRUCTION_CPU_PARALLEL_REGION"
+    },
+    "S01": {
+      "disposition_proposal": "A2_04_CANONICAL_PATH_CLOSED_LEGACY_REMAINS_A2_17",
+      "impact": "legacy W/T_rad diagnostics and pre-A2-17 consumers still change; canonical RadiationField bytes cannot be overwritten",
+      "locations": [
+        "src/lumina_plasma.c:847",
+        "src/lumina_main.c:534"
+      ],
+      "measured": {
+        "archived_radiation_field_solves": 10,
+        "canonical_planck_commit_edges": 0
+      },
+      "reachability": "FIRED_LEGACY_CANONICAL_BLOCKED"
+    }
+  },
+  "policy": "MEASURE_AND_RECORD_ONLY_NO_REPAIR",
+  "representative_archived_run": "logs/ddc15_radeqesc_163604/stdout.log",
+  "schema": "lumina-a2-04-classic-debt-sweep-v1",
+  "verdict": "PASS_MEASURED_NO_REPAIR"
+}

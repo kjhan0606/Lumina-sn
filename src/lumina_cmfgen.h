@@ -257,6 +257,12 @@ int cmfgen_stage32_rung1_maybe_dump(const CMFGENState *cs,
 /* Copy cs->J into nlte->J_nu (same [n_shells*n_bins] layout/grid). */
 void cmfgen_write_jnu(const CMFGENState *cs, NLTEConfig *nlte);
 
+/* A2-04 CPU pure-CMFGEN producer: publish cs->J through the same canonical
+ * RadiationField commit API as MC, then refresh the temporary legacy view for
+ * pre-A2-05 consumers. */
+int cmfgen_commit_jnu(const CMFGENState *cs, NLTEConfig *nlte,
+                      const Geometry *geo, uint64_t generation);
+
 /* P7 PRODUCER: fine-grid line-resolved J_bar_l over a wavelength window
  * (default 1000-4000 A). Reuses cmf_solve_J on a fine Doppler-resolved mesh,
  * fills opac->jbar_line_det[n_lines*n_shells] (sentinel -1 outside window).

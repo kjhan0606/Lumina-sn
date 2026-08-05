@@ -335,7 +335,7 @@ typedef struct {
     int     nlte_n_freq_bins; /* 0 if NLTE disabled */
     double  nlte_nu_min;
     double  nlte_d_log_nu;
-    RadiationFieldAccumulator *radiation_field_shadow_accumulator; /* A2-03 producer-only */
+    RadiationFieldAccumulator *radiation_field_accumulator; /* canonical producer work */
 } Estimators;                 /* Phase 2 - Step 4 */
 
 /* Phase 2 - Step 4: Monte Carlo configuration */
@@ -568,9 +568,9 @@ typedef struct {
     double *nu_bar_nu_estimator;               /* [n_shells * n_freq_bins] raw MC (C1) */
     double *bf_rate_estimator;                 /* [n_shells * n_freq_bins] normalized Γ_bf (C2) */
 
-    /* A2-03 CPU-only canonical shadow.  No physics-consumer API exists; the
-     * device mirror and lifecycle are explicitly deferred to A2-12. */
-    RadiationFieldShadow radiation_field_shadow;
+    /* A2-04 canonical CPU owner.  Physics consumers migrate in A2-05+, and the
+     * device mirror/lifecycle remain explicitly deferred to A2-12. */
+    RadiationFieldOwner radiation_field;
 
     /* Current iteration index (set by host before each nlte_solve_all call). */
     int    current_iter;

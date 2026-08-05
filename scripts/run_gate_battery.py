@@ -22,6 +22,21 @@ BATTERY_ORDER = ("D", "K", "Z", "CP")
 EXPECTED_ROWS = {"D": 19, "K": 7, "Z": 6, "CP": 4}
 
 
+def cpu_link_sources() -> tuple[str, ...]:
+    """All src/*.c except translation units that define their own main()."""
+    import glob as _glob
+    import re as _re
+    sources = []
+    for path in sorted(_glob.glob("src/*.c")):
+        text = open(path, encoding="utf-8", errors="replace").read()
+        if path.endswith("/lumina_main.c"):
+            continue
+        if _re.search(r"^\s*int\s+main\s*\(", text, _re.M):
+            continue
+        sources.append(path)
+    return tuple(sources)
+
+
 class Tee:
     def __init__(self, streams: tuple[TextIO, ...], lock: threading.Lock):
         self.streams = streams
@@ -82,8 +97,10 @@ def build_specs(build: Path, cc: str) -> tuple[Build, ...]:
             (
                 cc, "-O2", "-std=c11", "-Isrc", "-o",
                 str(build / "kshape_harness"), "scripts/kshape_harness.c",
-                "src/lumina_atomic.c", "src/lumina_element_wide.c",
-                "src/lumina_plasma.c", "src/lumina_cmfgen.c", "-lm",
+                # driver fix 2026-08-06: plasma/cmfgen now reference the
+                # radiation-field commit API; link the derived non-main set.
+                *cpu_link_sources(),
+                "-lm", "-fopenmp",
             ),
             build / "kshape_harness",
         ),
@@ -92,12 +109,10 @@ def build_specs(build: Path, cc: str) -> tuple[Build, ...]:
             (
                 cc, "-O2", "-Wall", "-Wextra", "-std=c11", "-o",
                 str(build / "lumina"), "src/lumina_main.c",
-                "src/lumina_transport.c", "src/lumina_plasma.c",
-                "src/lumina_element_wide.c", "src/lumina_atomic.c",
-                "src/lumina_cmfgen.c",
-                # 2026-08-06 driver fix: A2-03 landed radiation_field.c and the
-                # A2-02C capture module as link-time dependencies of main.
-                "src/radiation_field.c", "src/a2_02c_segment_capture.c",
+                # 2026-08-06 driver fix (3rd recurrence of stale hardcoded
+                # lists): link every non-main C translation unit, derived at
+                # runtime, so new A-2 stages cannot silently break this gate.
+                *cpu_link_sources(),
                 "-lm", "-fopenmp",
             ),
             build / "lumina",

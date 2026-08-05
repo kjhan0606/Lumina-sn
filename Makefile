@@ -158,6 +158,15 @@ selftest_a2_03_producer_parity_fixture: tests/a2_03_producer_parity_fixture.c sr
 		-Isrc -Wl,--gc-sections -o $@ tests/a2_03_producer_parity_fixture.c \
 		src/lumina_transport.c src/radiation_field.c $(LDFLAGS)
 
+# A2-04 single producer-commit API, atomic generation and failure injection.
+selftest_a2_04_commit: tests/a2_04_commit_selftest.c src/radiation_field.c src/radiation_field.h
+	$(CC) -O2 -Wall -Wextra -std=c11 -Isrc -o $@ \
+		tests/a2_04_commit_selftest.c src/radiation_field.c $(LDFLAGS)
+
+selftest_a2_04_replay_commit: tests/a2_04_replay_commit.c src/radiation_field.c src/radiation_field.h
+	$(CC) -O2 -Wall -Wextra -std=c11 -Isrc -o $@ \
+		tests/a2_04_replay_commit.c src/radiation_field.c $(LDFLAGS)
+
 # Clean
 clean:
 	rm -f $(TARGET) lumina_cuda bench_frozen_oracle_rc selftest_wave32_ew_rc \
@@ -167,7 +176,8 @@ clean:
 		selftest_wave32_matrix_debit selftest_wave32_within_sl_oom \
 		selftest_wave32_boundary_q selftest_wave32_counter_atomic \
 		selftest_a2_03_radiation_field \
-		selftest_a2_03_producer_parity_fixture *.o
+		selftest_a2_03_producer_parity_fixture selftest_a2_04_commit \
+		selftest_a2_04_replay_commit *.o
 
 # Run with defaults
 run: $(TARGET)
@@ -182,4 +192,5 @@ omp:
 	$(MAKE) OMP=1
 
 .PHONY: all clean run test omp cuda selftest_emiss_e11_fluor_matrix \
-	selftest_a2_03_radiation_field selftest_a2_03_producer_parity_fixture
+	selftest_a2_03_radiation_field selftest_a2_03_producer_parity_fixture \
+	selftest_a2_04_commit selftest_a2_04_replay_commit

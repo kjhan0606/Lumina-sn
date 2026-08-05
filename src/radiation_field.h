@@ -75,7 +75,8 @@ typedef struct {
 
 typedef enum {
     RADIATION_FIELD_ESTIMATOR_COUNT = 1,
-    RADIATION_FIELD_ESTIMATOR_VARIANCE = 2
+    RADIATION_FIELD_ESTIMATOR_VARIANCE = 2,
+    RADIATION_FIELD_DETERMINISTIC = 3
 } RadiationFieldEstimatorStatisticKind;
 
 typedef struct {
@@ -141,20 +142,52 @@ typedef struct {
     RadiationField field;
     LineJbarCache line_jbar_cache;
     RadiationFieldAccumulator accumulator;
-} RadiationFieldShadow;
+} RadiationFieldOwner;
+
+/* Source-compatible name for A2-03 fixtures only; production owns an
+ * always-enabled RadiationFieldOwner as of A2-04. */
+typedef RadiationFieldOwner RadiationFieldShadow;
+
+/* A2-04 producer transaction.  The public RadiationField is changed only by
+ * radiation_field_commit().  MC supplies its raw path-length work buffer and
+ * normalization factors; deterministic producers supply source-grid bin
+ * averages.  Both forms enter the same validation/rebin/publish choke point. */
+typedef struct {
+    RadiationFieldProvenanceKind provenance_kind;
+    const char *producer;
+    const char *raw_ledger_sha256;
+    uint64_t generation;
+    double epoch;
+    size_t n_shells;
+    const double *v_inner;
+    const double *v_outer;
+
+    size_t source_n_bins;
+    const double *source_frequency_bin_edges;
+    const double *source_J_nu;
+    const RadiationFieldValidityState *source_validity;
+    RadiationFieldEstimatorStatisticKind statistic_kind;
+    const uint64_t *source_count;
+    const double *source_variance;
+
+    const double *raw_path_length;
+    const double *volume;
+    double time_simulation;
+    uint64_t contribution_count;
+    uint64_t out_of_grid_contribution_count;
+} RadiationFieldCommitRequest;
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-int radiation_field_shadow_gate_enabled(void);
-int radiation_field_shadow_init(RadiationFieldShadow *shadow, size_t n_shells);
-void radiation_field_shadow_free(RadiationFieldShadow *shadow);
-int radiation_field_shadow_begin_mc(RadiationFieldShadow *shadow,
-                                    const double *v_inner,
-                                    const double *v_outer,
-                                    size_t n_shells, double epoch,
-                                    uint64_t required_generation);
+int radiation_field_owner_init(RadiationFieldOwner *owner, size_t n_shells);
+void radiation_field_owner_free(RadiationFieldOwner *owner);
+int radiation_field_begin_mc(RadiationFieldOwner *owner,
+                             const double *v_inner,
+                             const double *v_outer,
+                             size_t n_shells, double epoch,
+                             uint64_t required_generation);
 RadiationFieldAccumulator *radiation_field_accumulator_create(size_t n_shells);
 void radiation_field_accumulator_free(RadiationFieldAccumulator *accumulator);
 int radiation_field_accumulator_add(RadiationFieldAccumulator *accumulator,
@@ -162,12 +195,10 @@ int radiation_field_accumulator_add(RadiationFieldAccumulator *accumulator,
                                     double path_length_measure);
 int radiation_field_accumulator_reduce(RadiationFieldAccumulator *destination,
                                        const RadiationFieldAccumulator *source);
-int radiation_field_shadow_commit_mc(RadiationFieldShadow *shadow,
-                                     const double *volume,
-                                     size_t n_shells,
-                                     double time_simulation);
-int radiation_field_shadow_validate_owner(const RadiationFieldShadow *shadow);
-int radiation_field_shadow_dump_if_requested(const RadiationFieldShadow *shadow);
+int radiation_field_commit(RadiationFieldOwner *owner,
+                           const RadiationFieldCommitRequest *request);
+int radiation_field_validate_owner(const RadiationFieldOwner *owner);
+int radiation_field_dump_if_requested(const RadiationFieldOwner *owner);
 
 #ifdef __cplusplus
 }

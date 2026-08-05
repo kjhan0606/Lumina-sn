@@ -36,10 +36,9 @@ EXPECTED_FIELDS = [
 ]
 
 EXPECTED_EXTERNAL_CALLERS = {
-    "radiation_field_shadow_gate_enabled": {"radiation_field_shadow_init"},
-    "radiation_field_shadow_init": {"main"},
-    "radiation_field_shadow_free": {"main", "radiation_field_shadow_init"},
-    "radiation_field_shadow_begin_mc": {"main"},
+    "radiation_field_owner_init": {"main"},
+    "radiation_field_owner_free": {"main", "radiation_field_owner_init"},
+    "radiation_field_begin_mc": {"main"},
     "radiation_field_accumulator_create": {"main"},
     "radiation_field_accumulator_free": {
         "main",
@@ -47,9 +46,9 @@ EXPECTED_EXTERNAL_CALLERS = {
     },
     "radiation_field_accumulator_add": {"update_base_estimators"},
     "radiation_field_accumulator_reduce": {"main"},
-    "radiation_field_shadow_commit_mc": {"main"},
-    "radiation_field_shadow_validate_owner": {"radiation_field_shadow_commit_mc"},
-    "radiation_field_shadow_dump_if_requested": {"radiation_field_shadow_commit_mc"},
+    "radiation_field_commit": {"main", "cmfgen_commit_jnu"},
+    "radiation_field_validate_owner": {"radiation_field_commit"},
+    "radiation_field_dump_if_requested": {"radiation_field_commit"},
 }
 
 

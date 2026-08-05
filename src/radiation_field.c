@@ -15,12 +15,6 @@ static size_t radiation_field_cell_count(size_t n_shells)
     return n_shells * (size_t)LUMINA_RADFIELD_N_BINS;
 }
 
-int radiation_field_shadow_gate_enabled(void)
-{
-    const char *value = getenv("LUMINA_RADFIELD_SHADOW");
-    return value && atoi(value) != 0;
-}
-
 static void radiation_field_mark_all(RadiationField *field,
                                      RadiationFieldValidityState state)
 {
@@ -29,11 +23,10 @@ static void radiation_field_mark_all(RadiationField *field,
         field->validity.values[i] = state;
 }
 
-int radiation_field_shadow_init(RadiationFieldShadow *shadow, size_t n_shells)
+int radiation_field_owner_init(RadiationFieldOwner *shadow, size_t n_shells)
 {
     if (!shadow || n_shells == 0) return -1;
     memset(shadow, 0, sizeof(*shadow));
-    if (!radiation_field_shadow_gate_enabled()) return 0;
 
     RadiationField *field = &shadow->field;
     size_t cells = radiation_field_cell_count(n_shells);
@@ -49,7 +42,7 @@ int radiation_field_shadow_init(RadiationFieldShadow *shadow, size_t n_shells)
     field->J_nu.values = (double *)calloc(cells, sizeof(double));
     field->units = RADIATION_FIELD_UNITS_ERG_S_NEG1_CM_NEG2_HZ_NEG1_SR_NEG1;
     field->frame = RADIATION_FIELD_FRAME_SHELL_COMOVING;
-    field->generation.required_generation = 1;
+    field->generation.required_generation = 0;
     field->generation.computed_generation = 0;
     field->provenance.kind = RADIATION_FIELD_PROVENANCE_NONE;
     field->provenance.producer = "UNCOMPUTED_SHADOW";
@@ -75,7 +68,7 @@ int radiation_field_shadow_init(RadiationFieldShadow *shadow, size_t n_shells)
         !field->estimator_count_or_variance.count ||
         !shadow->accumulator.raw_path_length ||
         !shadow->accumulator.contribution_count) {
-        radiation_field_shadow_free(shadow);
+        radiation_field_owner_free(shadow);
         return -1;
     }
 
@@ -92,7 +85,7 @@ int radiation_field_shadow_init(RadiationFieldShadow *shadow, size_t n_shells)
     return 0;
 }
 
-void radiation_field_shadow_free(RadiationFieldShadow *shadow)
+void radiation_field_owner_free(RadiationFieldOwner *shadow)
 {
     if (!shadow) return;
     free(shadow->field.shell_boundaries.values);
@@ -106,53 +99,30 @@ void radiation_field_shadow_free(RadiationFieldShadow *shadow)
     memset(shadow, 0, sizeof(*shadow));
 }
 
-int radiation_field_shadow_begin_mc(RadiationFieldShadow *shadow,
+int radiation_field_begin_mc(RadiationFieldOwner *shadow,
                                     const double *v_inner,
                                     const double *v_outer,
                                     size_t n_shells, double epoch,
                                     uint64_t required_generation)
 {
-    if (!shadow || !shadow->enabled) return 0;
-    RadiationField *field = &shadow->field;
-    if (!v_inner || !v_outer || n_shells != field->J_nu.n_shells ||
+    if (!shadow || !shadow->enabled) return -1;
+    if (!v_inner || !v_outer || n_shells != shadow->field.J_nu.n_shells ||
         required_generation == 0 || !isfinite(epoch) || epoch <= 0.0)
         return -1;
-    if (field->generation.computed_generation != 0 &&
-        required_generation != field->generation.computed_generation + 1)
+    if (required_generation !=
+        shadow->field.generation.computed_generation + 1)
         return -1;
 
     for (size_t s = 0; s < n_shells; ++s) {
         if (!isfinite(v_inner[s]) || !isfinite(v_outer[s]) ||
             v_inner[s] >= v_outer[s]) return -1;
         if (s > 0 && v_inner[s] != v_outer[s - 1]) return -1;
-        field->shell_boundaries.values[s] = v_inner[s];
     }
-    field->shell_boundaries.values[n_shells] = v_outer[n_shells - 1];
-    field->epoch = epoch;
-    field->frame = RADIATION_FIELD_FRAME_SHELL_COMOVING;
-    field->generation.required_generation = required_generation;
-    field->provenance.kind = RADIATION_FIELD_PROVENANCE_MC_PATH_LENGTH;
-    field->provenance.producer = "CPU_MC_COMOVING_PATH_LENGTH_BIN_AVERAGE";
-    field->provenance.raw_ledger_sha256 = NULL;
-    field->provenance.contribution_count = 0;
-    field->provenance.out_of_grid_contribution_count = 0;
-    memset(field->J_nu.values, 0,
-           radiation_field_cell_count(n_shells) * sizeof(double));
-    memset(field->estimator_count_or_variance.count, 0,
-           radiation_field_cell_count(n_shells) * sizeof(uint64_t));
     memset(shadow->accumulator.raw_path_length, 0,
            radiation_field_cell_count(n_shells) * sizeof(double));
     memset(shadow->accumulator.contribution_count, 0,
            radiation_field_cell_count(n_shells) * sizeof(uint64_t));
     shadow->accumulator.out_of_grid_contribution_count = 0;
-    radiation_field_mark_all(field, RADIATION_FIELD_STALE);
-
-    /* The A2-06 cache cannot outlive or lead its owner generation. */
-    shadow->line_jbar_cache.generation.required_generation = required_generation;
-    shadow->line_jbar_cache.generation.computed_generation = 0;
-    shadow->line_jbar_cache.units = field->units;
-    shadow->line_jbar_cache.frame = field->frame;
-    shadow->line_jbar_cache.provenance.kind = RADIATION_FIELD_PROVENANCE_NONE;
     return 0;
 }
 
@@ -222,7 +192,7 @@ int radiation_field_accumulator_reduce(RadiationFieldAccumulator *destination,
     return 0;
 }
 
-int radiation_field_shadow_validate_owner(const RadiationFieldShadow *shadow)
+int radiation_field_validate_owner(const RadiationFieldOwner *shadow)
 {
     if (!shadow || !shadow->enabled) return 0;
     const RadiationField *field = &shadow->field;
@@ -246,82 +216,292 @@ int radiation_field_shadow_validate_owner(const RadiationFieldShadow *shadow)
         if (validity == RADIATION_FIELD_UNSAMPLED) {
             if (count != 0 || value != 0.0) return -1;
         } else if (validity == RADIATION_FIELD_EXACT_ZERO) {
-            if (count == 0 || value != 0.0) return -1;
+            if (value != 0.0 ||
+                (field->estimator_count_or_variance.kind ==
+                     RADIATION_FIELD_ESTIMATOR_COUNT && count == 0)) return -1;
         } else if (validity == RADIATION_FIELD_VALID) {
-            if (count == 0 || value <= 0.0) return -1;
+            if (value <= 0.0 ||
+                (field->estimator_count_or_variance.kind ==
+                     RADIATION_FIELD_ESTIMATOR_COUNT && count == 0)) return -1;
+        } else if (validity == RADIATION_FIELD_OUT_OF_GRID) {
+            if (count != 0 || value != 0.0) return -1;
         } else {
             return -1;
         }
+        if (field->estimator_count_or_variance.kind ==
+                RADIATION_FIELD_DETERMINISTIC && count != 0)
+            return -1;
     }
     return 0;
 }
 
-int radiation_field_shadow_commit_mc(RadiationFieldShadow *shadow,
-                                     const double *volume,
-                                     size_t n_shells,
-                                     double time_simulation)
+static int radiation_field_request_geometry_ok(
+    const RadiationFieldCommitRequest *request)
 {
-    if (!shadow || !shadow->enabled) return 0;
-    RadiationField *field = &shadow->field;
-    if (!volume || n_shells != field->J_nu.n_shells ||
-        !isfinite(time_simulation) || time_simulation <= 0.0 ||
-        field->frame != RADIATION_FIELD_FRAME_SHELL_COMOVING)
-        return -1;
+    if (!request->v_inner || !request->v_outer ||
+        !isfinite(request->epoch) || request->epoch <= 0.0)
+        return 0;
+    for (size_t s = 0; s < request->n_shells; ++s) {
+        if (!isfinite(request->v_inner[s]) ||
+            !isfinite(request->v_outer[s]) ||
+            request->v_inner[s] >= request->v_outer[s] ||
+            (s > 0 && request->v_inner[s] != request->v_outer[s - 1]))
+            return 0;
+    }
+    return 1;
+}
 
-    uint64_t total = 0;
-    for (size_t s = 0; s < n_shells; ++s) {
-        if (!isfinite(volume[s]) || volume[s] <= 0.0) return -1;
+static int radiation_field_prepare_mc(
+    const RadiationFieldCommitRequest *request,
+    const RadiationField *field, double *values,
+    RadiationFieldValidityState *validity, uint64_t *count)
+{
+    if (!request->raw_path_length || !request->source_count ||
+        !request->volume || !isfinite(request->time_simulation) ||
+        request->time_simulation <= 0.0 ||
+        request->source_frequency_bin_edges || request->source_J_nu ||
+        request->source_validity || request->source_variance ||
+        request->source_n_bins != LUMINA_RADFIELD_N_BINS ||
+        request->statistic_kind != RADIATION_FIELD_ESTIMATOR_COUNT)
+        return -1;
+    for (size_t s = 0; s < request->n_shells; ++s) {
+        if (!isfinite(request->volume[s]) || request->volume[s] <= 0.0)
+            return -1;
         for (size_t b = 0; b < LUMINA_RADFIELD_N_BINS; ++b) {
             size_t index = s * (size_t)LUMINA_RADFIELD_N_BINS + b;
-            uint64_t count = shadow->accumulator.contribution_count[index];
-            double raw = shadow->accumulator.raw_path_length[index];
+            uint64_t samples = request->source_count[index];
+            double raw = request->raw_path_length[index];
             double delta_nu = field->frequency_bin_edges.values[b + 1] -
                               field->frequency_bin_edges.values[b];
-            field->estimator_count_or_variance.count[index] = count;
-            total += count;
-            if (count == 0) {
-                field->J_nu.values[index] = 0.0;
-                field->validity.values[index] = RADIATION_FIELD_UNSAMPLED;
+            count[index] = samples;
+            if (samples == 0) {
+                values[index] = 0.0;
+                validity[index] = RADIATION_FIELD_UNSAMPLED;
             } else if (raw == 0.0) {
-                field->J_nu.values[index] = 0.0;
-                field->validity.values[index] = RADIATION_FIELD_EXACT_ZERO;
+                values[index] = 0.0;
+                validity[index] = RADIATION_FIELD_EXACT_ZERO;
             } else if (raw > 0.0 && isfinite(raw) && delta_nu > 0.0) {
-                /* A path-length integral divided by Delta-nu is the bin average;
-                 * no bin-center sample enters this expression. */
-                field->J_nu.values[index] = raw /
-                    (4.0 * M_PI * volume[s] * time_simulation * delta_nu);
-                field->validity.values[index] = RADIATION_FIELD_VALID;
+                values[index] = raw /
+                    (4.0 * M_PI * request->volume[s] *
+                     request->time_simulation * delta_nu);
+                validity[index] = RADIATION_FIELD_VALID;
             } else {
                 return -1;
             }
         }
     }
-    field->provenance.contribution_count = total;
-    field->provenance.out_of_grid_contribution_count =
-        shadow->accumulator.out_of_grid_contribution_count;
-    field->generation.computed_generation =
-        field->generation.required_generation;
-    if (radiation_field_shadow_validate_owner(shadow) != 0) {
-        field->generation.computed_generation = 0;
-        radiation_field_mark_all(field, RADIATION_FIELD_STALE);
-        return -1;
-    }
-    return radiation_field_shadow_dump_if_requested(shadow);
+    return 0;
 }
 
-int radiation_field_shadow_dump_if_requested(const RadiationFieldShadow *shadow)
+static int radiation_field_prepare_deterministic(
+    const RadiationFieldCommitRequest *request,
+    const RadiationField *field, double *values,
+    RadiationFieldValidityState *validity, uint64_t *count)
+{
+    if (!request->source_frequency_bin_edges || !request->source_J_nu ||
+        !request->source_validity || request->source_n_bins == 0 ||
+        request->raw_path_length || request->volume ||
+        request->time_simulation != 0.0 || request->source_count ||
+        request->statistic_kind != RADIATION_FIELD_DETERMINISTIC)
+        return -1;
+    const double *source_edges = request->source_frequency_bin_edges;
+    for (size_t b = 0; b <= request->source_n_bins; ++b)
+        if (!isfinite(source_edges[b]) || source_edges[b] <= 0.0 ||
+            (b > 0 && source_edges[b] <= source_edges[b - 1])) return -1;
+
+    size_t first = 0;
+    for (size_t b = 0; b < LUMINA_RADFIELD_N_BINS; ++b) {
+        double target_lo = field->frequency_bin_edges.values[b];
+        double target_hi = field->frequency_bin_edges.values[b + 1];
+        if (target_lo < source_edges[0] ||
+            target_hi > source_edges[request->source_n_bins]) {
+            for (size_t s = 0; s < request->n_shells; ++s) {
+                size_t out = s * (size_t)LUMINA_RADFIELD_N_BINS + b;
+                values[out] = 0.0;
+                validity[out] = RADIATION_FIELD_OUT_OF_GRID;
+                count[out] = 0;
+            }
+            continue;
+        }
+        while (first + 1 < request->source_n_bins &&
+               source_edges[first + 1] <= target_lo) first++;
+        for (size_t s = 0; s < request->n_shells; ++s) {
+            double integral = 0.0, covered = 0.0;
+            int has_positive = 0, gap_unsampled = 0, gap_out_of_grid = 0;
+            size_t k = first;
+            while (k < request->source_n_bins && source_edges[k] < target_hi) {
+                double lo = source_edges[k] > target_lo ? source_edges[k] : target_lo;
+                double hi = source_edges[k + 1] < target_hi
+                    ? source_edges[k + 1] : target_hi;
+                if (hi > lo) {
+                    size_t in = s * request->source_n_bins + k;
+                    double source = request->source_J_nu[in];
+                    RadiationFieldValidityState state = request->source_validity[in];
+                    if (!isfinite(source) || source < 0.0) return -1;
+                    if (state == RADIATION_FIELD_VALID && source > 0.0) {
+                        integral += source * (hi - lo);
+                        has_positive = 1;
+                    } else if (state == RADIATION_FIELD_EXACT_ZERO && source == 0.0) {
+                        /* An exact zero contributes a measured zero integral. */
+                    } else if (state == RADIATION_FIELD_OUT_OF_GRID) {
+                        /* 2026-08-06 driver fix: a producer-declared structural
+                         * absence must survive the commit as OUT_OF_GRID.  The
+                         * previous single `unavailable` flag collapsed it to
+                         * UNSAMPLED (measured on real EDDFACTOR input: 15,268
+                         * cells state 4 -> 3), erasing the section-9 four-state
+                         * distinction that section-13 path 12 depends on. */
+                        gap_out_of_grid = 1;
+                    } else {
+                        gap_unsampled = 1;
+                    }
+                    covered += hi - lo;
+                }
+                k++;
+            }
+            size_t out = s * (size_t)LUMINA_RADFIELD_N_BINS + b;
+            double width = target_hi - target_lo;
+            if (fabs(covered - width) > 32.0 *
+                    2.2204460492503131e-16 * width) {
+                /* Coverage shortfall means the target bin extends beyond the
+                 * source grid: structural, not statistical. */
+                gap_out_of_grid = 1;
+            }
+            if (gap_unsampled) {
+                values[out] = 0.0;
+                validity[out] = RADIATION_FIELD_UNSAMPLED;
+            } else if (gap_out_of_grid) {
+                values[out] = 0.0;
+                validity[out] = RADIATION_FIELD_OUT_OF_GRID;
+            } else if (has_positive) {
+                values[out] = integral / width;
+                validity[out] = RADIATION_FIELD_VALID;
+            } else {
+                values[out] = 0.0;
+                validity[out] = RADIATION_FIELD_EXACT_ZERO;
+            }
+            count[out] = 0;
+        }
+    }
+    return 0;
+}
+
+static int radiation_field_candidate_ok(
+    const double *values, const RadiationFieldValidityState *validity,
+    const uint64_t *count, size_t cells,
+    RadiationFieldEstimatorStatisticKind statistic_kind)
+{
+    if (statistic_kind != RADIATION_FIELD_ESTIMATOR_COUNT &&
+        statistic_kind != RADIATION_FIELD_DETERMINISTIC)
+        return 0;
+    for (size_t i = 0; i < cells; ++i) {
+        if (!isfinite(values[i]) || values[i] < 0.0) return 0;
+        if (validity[i] == RADIATION_FIELD_VALID) {
+            if (values[i] <= 0.0 ||
+                (statistic_kind == RADIATION_FIELD_ESTIMATOR_COUNT &&
+                 count[i] == 0)) return 0;
+        } else if (validity[i] == RADIATION_FIELD_EXACT_ZERO) {
+            if (values[i] != 0.0 ||
+                (statistic_kind == RADIATION_FIELD_ESTIMATOR_COUNT &&
+                 count[i] == 0)) return 0;
+        } else if (validity[i] == RADIATION_FIELD_UNSAMPLED ||
+                   validity[i] == RADIATION_FIELD_OUT_OF_GRID) {
+            if (values[i] != 0.0 || count[i] != 0) return 0;
+        } else {
+            return 0;
+        }
+        if (statistic_kind == RADIATION_FIELD_DETERMINISTIC && count[i] != 0)
+            return 0;
+    }
+    return 1;
+}
+
+int radiation_field_commit(RadiationFieldOwner *shadow,
+                           const RadiationFieldCommitRequest *request)
+{
+    if (!shadow || !shadow->enabled || !request) return -1;
+    RadiationField *field = &shadow->field;
+    if (request->n_shells != field->J_nu.n_shells ||
+        request->generation == 0 ||
+        request->generation != field->generation.computed_generation + 1 ||
+        !radiation_field_request_geometry_ok(request) ||
+        !request->producer ||
+        (request->provenance_kind != RADIATION_FIELD_PROVENANCE_MC_PATH_LENGTH &&
+         request->provenance_kind != RADIATION_FIELD_PROVENANCE_CMFGEN_REPLAY))
+        return -1;
+
+    size_t cells = radiation_field_cell_count(request->n_shells);
+    double *values = (double *)calloc(cells, sizeof(double));
+    RadiationFieldValidityState *validity =
+        (RadiationFieldValidityState *)malloc(cells * sizeof(*validity));
+    uint64_t *count = (uint64_t *)calloc(cells, sizeof(uint64_t));
+    if (!values || !validity || !count) {
+        free(values); free(validity); free(count);
+        return -1;
+    }
+    int rc = request->provenance_kind == RADIATION_FIELD_PROVENANCE_MC_PATH_LENGTH
+        ? radiation_field_prepare_mc(request, field, values, validity, count)
+        : radiation_field_prepare_deterministic(request, field, values, validity, count);
+    if (rc != 0) {
+        free(values); free(validity); free(count);
+        return -1;
+    }
+    if (!radiation_field_candidate_ok(values, validity, count, cells,
+                                      request->statistic_kind)) {
+        free(values); free(validity); free(count);
+        return -1;
+    }
+
+    uint64_t total = 0;
+    if (request->statistic_kind == RADIATION_FIELD_ESTIMATOR_COUNT)
+        for (size_t i = 0; i < cells; ++i) total += count[i];
+
+    /* Atomic publication: generation, validity and public statistics change in
+     * this choke point only, after the complete candidate has validated. */
+    for (size_t s = 0; s < request->n_shells; ++s)
+        field->shell_boundaries.values[s] = request->v_inner[s];
+    field->shell_boundaries.values[request->n_shells] =
+        request->v_outer[request->n_shells - 1];
+    memcpy(field->J_nu.values, values, cells * sizeof(double));
+    memcpy(field->validity.values, validity, cells * sizeof(*validity));
+    memcpy(field->estimator_count_or_variance.count, count,
+           cells * sizeof(uint64_t));
+    field->estimator_count_or_variance.kind = request->statistic_kind;
+    field->epoch = request->epoch;
+    field->frame = RADIATION_FIELD_FRAME_SHELL_COMOVING;
+    field->provenance.kind = request->provenance_kind;
+    field->provenance.producer = request->producer;
+    field->provenance.raw_ledger_sha256 = request->raw_ledger_sha256;
+    field->provenance.contribution_count = request->statistic_kind ==
+        RADIATION_FIELD_ESTIMATOR_COUNT ? total : request->contribution_count;
+    field->provenance.out_of_grid_contribution_count =
+        request->out_of_grid_contribution_count;
+    field->generation.required_generation = request->generation;
+    field->generation.computed_generation = request->generation;
+    shadow->line_jbar_cache.generation.required_generation = request->generation;
+    shadow->line_jbar_cache.generation.computed_generation = 0;
+    shadow->line_jbar_cache.units = field->units;
+    shadow->line_jbar_cache.frame = field->frame;
+    shadow->line_jbar_cache.provenance.kind = RADIATION_FIELD_PROVENANCE_NONE;
+
+    free(values); free(validity); free(count);
+    if (radiation_field_validate_owner(shadow) != 0) return -1;
+    return radiation_field_dump_if_requested(shadow);
+}
+
+int radiation_field_dump_if_requested(const RadiationFieldOwner *shadow)
 {
     if (!shadow || !shadow->enabled) return 0;
-    const char *path = getenv("LUMINA_RADFIELD_SHADOW_DUMP");
+    const char *path = getenv("LUMINA_RADFIELD_COMMIT_DUMP");
+    if (!path || !*path) path = getenv("LUMINA_RADFIELD_SHADOW_DUMP");
     if (!path || !*path) return 0;
     FILE *stream = fopen(path, "w");
     if (!stream) {
-        fprintf(stderr, "[RADFIELD-SHADOW][FATAL] cannot open %s: %s\n",
+        fprintf(stderr, "[RADIATION-FIELD][FATAL] cannot open %s: %s\n",
                 path, strerror(errno));
         return -1;
     }
     const RadiationField *field = &shadow->field;
-    fprintf(stream, "#schema=lumina-radiation-field-shadow-v1\n");
+    fprintf(stream, "#schema=lumina-radiation-field-commit-v2\n");
     fprintf(stream, "#units=erg s^-1 cm^-2 Hz^-1 sr^-1\n");
     fprintf(stream, "#frame=shell-comoving\n");
     fprintf(stream, "#epoch=%.17g\n", field->epoch);
