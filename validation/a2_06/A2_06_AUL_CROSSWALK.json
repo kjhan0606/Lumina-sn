@@ -1,0 +1,30 @@
+{
+  "schema": "lumina-a2-06-aul-crosswalk-v1",
+  "model": "/home/kjhan/BACKUP/Eunha.A1/Claude/Lumina-sn/data/tardis_reference_toy06_19p48d_sivcaiv_ftos",
+  "matching": [
+    "Z",
+    "ion",
+    "lower_label_sha256",
+    "upper_label_sha256",
+    "lower_energy_eV_tiebreak_only",
+    "upper_energy_eV_tiebreak_only",
+    "g_lower",
+    "g_upper"
+  ],
+  "lumina_lines": 2220953,
+  "matched_lines": 2220953,
+  "unmatched_lumina_lines": 0,
+  "unmatched_levels": 0,
+  "truth_transitions": 3617414,
+  "maximum_level_energy_delta_eV": 4.999378688808065e-11,
+  "maximum_A_ul_relative_error": 1.7176632725861633e-16,
+  "relative_error_limit": 1e-10,
+  "one_sided_zero_rows": 0,
+  "truth_weight": "abs(A_ul)*g_upper",
+  "active_prefix": "minimal >=99.9%; boundary ties all included",
+  "active_truth_weight_coverage_diagnostic": 0.9811252941488394,
+  "coverage_disposition": "reported, not judged: V4 section 4 replaces V3 section 3.7",
+  "unmatched_path": "/home/kjhan/BACKUP/Eunha.A1/Claude/Lumina-sn/validation/a2_06/A2_06_AUL_UNMATCHED.csv.gz",
+  "unmatched_sha256": "72b283cfc6ce4ac958d396ee3d47ac579b0584d278aa2a5830f2b11d9d3da6fe",
+  "verdict": "PASS"
+}

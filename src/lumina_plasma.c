@@ -498,6 +498,67 @@ int nlte_bf_gamma_canonical(NLTEConfig *nlte, int shell,
     return 0;
 }
 
+/* A2-06: the only production CPU bound-bound radiation-field read.  A bad
+ * checked view, cache miss, or unusable entry blocks only the radiative term;
+ * it never supplies zero as a value and never falls back to a coarse/legacy
+ * field.  Callers retain spontaneous A_ul and any separately computed
+ * collisional term. */
+static void nlte_bb_counter_inc(uint64_t *counter)
+{
+#ifdef _OPENMP
+#pragma omp atomic update
+#endif
+    (*counter)++;
+}
+
+static int nlte_bb_jbar_canonical(NLTEConfig *nlte, int shell, int line,
+                                  double *jbar)
+{
+    LineJbarValue value;
+    if (!jbar || !nlte || shell < 0 || line < 0) return 0;
+    *jbar = 0.0;
+
+    if (nlte->line_view_status != LINE_JBAR_VIEW_OK ||
+        !nlte->line_view.jbar) {
+        switch (nlte->line_view_status) {
+        case LINE_JBAR_VIEW_DISABLED:
+            nlte_bb_counter_inc(&nlte->bb_view_blocked_disabled);
+            break;
+        case LINE_JBAR_VIEW_PROFILE:
+            nlte_bb_counter_inc(&nlte->bb_view_blocked_profile);
+            break;
+        case LINE_JBAR_VIEW_QHASH:
+            nlte_bb_counter_inc(&nlte->bb_view_blocked_qhash);
+            break;
+        default:
+            nlte_bb_counter_inc(&nlte->bb_view_blocked_stale);
+            break;
+        }
+        return 0;
+    }
+
+    int rc = line_jbar_lookup(&nlte->line_view, (size_t)shell,
+                              (uint64_t)line, &value);
+    if (rc != 0) {
+        nlte_bb_counter_inc(rc == -2 ? &nlte->bb_view_blocked_miss
+                                     : &nlte->bb_view_blocked_stale);
+        return 0;
+    }
+    if (value.validity == LINE_JBAR_VALID ||
+        value.validity == LINE_JBAR_EXACT_ZERO) {
+        *jbar = value.jbar;
+        nlte_bb_counter_inc(&nlte->bb_view_rate_terms);
+        return 1;
+    }
+    if (value.validity == LINE_JBAR_UNSAMPLED)
+        nlte_bb_counter_inc(&nlte->bb_view_blocked_unsampled);
+    else if (value.validity == LINE_JBAR_OUT_OF_BB_DOMAIN)
+        nlte_bb_counter_inc(&nlte->bb_view_blocked_oog);
+    else
+        nlte_bb_counter_inc(&nlte->bb_view_blocked_stale);
+    return 0;
+}
+
 /* Ownership status transferred from the current EW solve to the later
  * tau/source writeback.  Process-global because the public writeback signature
  * predates the EW lane; nlte_free releases the final retained pass. */
@@ -4587,6 +4648,10 @@ void compute_transition_probabilities(AtomicData *atom, PlasmaState *plasma,
                             }
                         }
                     } else if (ttype == 1) {
+                        /* A2_06_DIAGNOSTIC_SHADOW_BEGIN: retain the historical
+                         * source-selection/falsifier observables, but none of
+                         * the values in this block owns the production rate. */
+                        double legacy_rate_shadow = 0.0;
                         /* Internal up: B_lu * J_nu. THEN_MC MC-estimator macro-atom:
                          * use the per-line Sobolev j_blue J_bar accumulated from real
                          * MC packet crossings (faithful Lucy-2002/TARDIS) when it is
@@ -4607,8 +4672,8 @@ void compute_transition_probabilities(AtomicData *atom, PlasmaState *plasma,
                              * B(T_e) (b_k=1). Cross-code: this is the TARDIS
                              * rate mode; the binned-MC estimator done right is
                              * ARTIS 'detailed' (the next rung). */
-                            rate = atom->line_B_lu[line_id] *
-                                   W * planck_bnu(T_rad, nu_line);
+                            legacy_rate_shadow = atom->line_B_lu[line_id] *
+                                                 W * planck_bnu(T_rad, nu_line);
                             /* [IUP-BINFIELD] NOT covered by the gate: IUP_TRAD is a
                              * dilute-BB model pump (no per-line MC estimator is read)
                              * and it is evaluated first, so it wins. Counted so the
@@ -4747,17 +4812,28 @@ void compute_transition_probabilities(AtomicData *atom, PlasmaState *plasma,
                                     }
                                 }
                                 if (coeff < 0.0) coeff = 0.0;  /* maser clamp */
-                                rate = coeff * beta * J_blue;
+                                legacy_rate_shadow = coeff * beta * J_blue;
                             } else {
-                                rate = atom->line_B_lu[line_id] * J_line;
-                                if (g_ctp_iup_beta) rate *= beta;  /* [Div-3] ARTIS Sobolev escape */
+                                legacy_rate_shadow = atom->line_B_lu[line_id] * J_line;
+                                if (g_ctp_iup_beta) legacy_rate_shadow *= beta;  /* [Div-3] ARTIS Sobolev escape */
                             }
                         } else {
-                            rate = atom->line_B_lu[line_id] * W * planck_bnu(T_rad, nu_line);
+                            legacy_rate_shadow = atom->line_B_lu[line_id] * W *
+                                                 planck_bnu(T_rad, nu_line);
                             /* [IUP-BINFIELD] NOT covered: no NLTE J_nu exists
                              * (use_j_nu=0), so there is no binned field to read.
                              * Counted; the arm-time banner already warned. */
                             if (g_ctp_iup_binfield) binf_bypass_loc++;
+                        }
+                        (void)legacy_rate_shadow;
+                        /* A2_06_DIAGNOSTIC_SHADOW_END */
+                        {
+                            double Jbar_view = 0.0;
+                            if (nlte_bb_jbar_canonical(nlte, s, line_id,
+                                                       &Jbar_view))
+                                rate = atom->line_B_lu[line_id] * Jbar_view;
+                            else
+                                rate = 0.0; /* blocked radiative contribution */
                         }
                         /* [ARTIS-PARITY M1] INTERNALUPSAME collisional up-term
                          * (macroatom.cc:128-132: sum_internal_up_same += (R + C + NT)
@@ -10829,10 +10905,13 @@ static void radeq_simul_all(PlasmaState *plasma, GammaDeposition *gamma_dep,
              * the Gph loop consumes (field source only; binning + line-term
              * structure unchanged). Gate off => byte-identical hard-wired cs_J. */
             double Te_pump = plasma->T_e ? plasma->T_e[s] : plasma->T_rad[s];
-            double Jb = (g_radeq_pump_field == 1)
+            double legacy_Jb_shadow = (g_radeq_pump_field == 1)
                 ? radeq_pump_line_Jb(nlte, s, nfb, nu_l, Te_pump,
                                      &n_pumpf_bl, &n_pumpf_fb, &n_pumpf_bnu)
                 : nlte_get_J_at_nu(nlte, s, nu_l);
+            (void)legacy_Jb_shadow; /* A2-06 diagnostic/falsifier shadow only */
+            double Jb = 0.0;
+            (void)nlte_bb_jbar_canonical(nlte, s, rl->line, &Jb);
             double B_ul = rl->A_ul * C_SPEED_OF_LIGHT * C_SPEED_OF_LIGHT /
                           (2.0 * H_PLANCK * nu_l * nu_l * nu_l);
             double B_lu = B_ul * (double)rl->g_up / (double)rl->g_lo;
@@ -12185,7 +12264,9 @@ void compute_radiative_equilibrium_te(PlasmaState *plasma, GammaDeposition *gamm
                 double beta_esc = 1.0;
                 if (opacity->tau_sobolev)
                     beta_esc = radeq_beta_esc(opacity->tau_sobolev[(size_t)rl->line * n_shells + s]);
-                double Jbar = nlte_get_J_at_nu(nlte, s, nu_l);
+                (void)beta_esc; /* diagnostic shadow; split rates are unescaped */
+                double Jbar = 0.0;
+                (void)nlte_bb_jbar_canonical(nlte, s, rl->line, &Jbar);
                 double B_ul = (nu_l > 0.0) ? rl->A_ul * C_SPEED_OF_LIGHT * C_SPEED_OF_LIGHT /
                               (2.0 * H_PLANCK * nu_l * nu_l * nu_l) : 0.0;
                 double B_lu = (rl->g_lo > 0) ? B_ul * (double)rl->g_up / (double)rl->g_lo : 0.0;
@@ -12195,8 +12276,8 @@ void compute_radiative_equilibrium_te(PlasmaState *plasma, GammaDeposition *gamm
                 et_dE[n_active]  = rl->dE;
                 et_nlo[n_active] = nlo_k;
                 et_nup[n_active] = nup_k;
-                et_Rlu[n_active] = B_lu * Jbar * beta_esc;
-                et_Rul[n_active] = (rl->A_ul + B_ul * Jbar) * beta_esc;
+                et_Rlu[n_active] = B_lu * Jbar;
+                et_Rul[n_active] = rl->A_ul + B_ul * Jbar;
             }
             n_active++;
         }
@@ -13826,7 +13907,9 @@ void coupled_newton_solve_all(PlasmaState *plasma, GammaDeposition *gamma_dep,
                 double beta_esc = 1.0;
                 if (opacity->tau_sobolev)
                     beta_esc = radeq_beta_esc(opacity->tau_sobolev[(size_t)rl->line * n_shells + s]);
-                double Jbar = nlte_get_J_at_nu(nlte, s, nu_l);
+                (void)beta_esc; /* diagnostic shadow; split rates are unescaped */
+                double Jbar = 0.0;
+                (void)nlte_bb_jbar_canonical(nlte, s, rl->line, &Jbar);
                 double B_ul = (nu_l > 0.0) ? rl->A_ul * C_SPEED_OF_LIGHT * C_SPEED_OF_LIGHT /
                               (2.0 * H_PLANCK * nu_l * nu_l * nu_l) : 0.0;
                 double B_lu = (rl->g_lo > 0) ? B_ul * (double)rl->g_up / (double)rl->g_lo : 0.0;
@@ -13836,8 +13919,8 @@ void coupled_newton_solve_all(PlasmaState *plasma, GammaDeposition *gamma_dep,
                 et_dE[n_active]  = rl->dE;
                 et_nlo[n_active] = nlo_k;
                 et_nup[n_active] = nup_k;
-                et_Rlu[n_active] = B_lu * Jbar * beta_esc;
-                et_Rul[n_active] = (rl->A_ul + B_ul * Jbar) * beta_esc;
+                et_Rlu[n_active] = B_lu * Jbar;
+                et_Rul[n_active] = rl->A_ul + B_ul * Jbar;
             }
             n_active++;
         }
@@ -14570,6 +14653,7 @@ int nlte_init(NLTEConfig *nlte, AtomicData *atom, OpacityState *opacity,
     nlte->enabled = 1;
     /* A2-05: memset zero would alias VIEW_OK; no field is published yet. */
     nlte->radfield_view_status = RADIATION_FIELD_VIEW_DISABLED;
+    nlte->line_view_status = LINE_JBAR_VIEW_DISABLED; /* A2-06 same aliasing trap */
     nlte->n_freq_bins = NLTE_N_FREQ_BINS;
     nlte->nu_min = NLTE_NU_MIN;
     nlte->nu_max = NLTE_NU_MAX;
@@ -14713,6 +14797,24 @@ void nlte_free(NLTEConfig *nlte) {
                (unsigned long long)nlte->bf_view_blocked_stale,
                (unsigned long long)nlte->bf_view_blocked_unsampled,
                (unsigned long long)nlte->bf_view_blocked_out_of_grid);
+        fflush(stdout);
+    }
+    if (nlte->bb_view_rate_terms || nlte->bb_view_blocked_stale ||
+        nlte->bb_view_blocked_unsampled || nlte->bb_view_blocked_oog ||
+        nlte->bb_view_blocked_miss || nlte->bb_view_blocked_profile ||
+        nlte->bb_view_blocked_qhash || nlte->bb_view_blocked_disabled) {
+        /* A2-06 observability */
+        printf("[A2-06][BB-VIEW] rate_terms=%llu blocked_stale=%llu "
+               "blocked_unsampled=%llu blocked_oog=%llu miss=%llu "
+               "blocked_profile=%llu blocked_qhash=%llu blocked_disabled=%llu\n",
+               (unsigned long long)nlte->bb_view_rate_terms,
+               (unsigned long long)nlte->bb_view_blocked_stale,
+               (unsigned long long)nlte->bb_view_blocked_unsampled,
+               (unsigned long long)nlte->bb_view_blocked_oog,
+               (unsigned long long)nlte->bb_view_blocked_miss,
+               (unsigned long long)nlte->bb_view_blocked_profile,
+               (unsigned long long)nlte->bb_view_blocked_qhash,
+               (unsigned long long)nlte->bb_view_blocked_disabled);
         fflush(stdout);
     }
     free(nlte->nlte_to_global_level);
@@ -15358,6 +15460,8 @@ void nlte_assemble_rate_matrix(NLTEConfig *nlte, AtomicData *atom,
             mali_beta = radeq_beta_esc(tau_l);
         }
 
+        /* A2_06_DIAGNOSTIC_SHADOW_BEGIN: legacy source/mode arithmetic remains
+         * observable, but is overwritten before matrix/rate consumers. */
         /* effective line field (for the budget diagnostic + the mode-1/binned path) */
         double J_line = use_jbar ? J_jbar : nlte_get_J_at_nu(nlte, shell, nu_line);
         double R_absorb, R_stim, R_spont;
@@ -15448,6 +15552,25 @@ void nlte_assemble_rate_matrix(NLTEConfig *nlte, AtomicData *atom,
             R_spont  = atom->line_A_ul[line] * beta_use;
             /* [withParityP GATE2] 1=m1 jbar naive (beta=1); 0=binned nlte_get_J */
             jd_mode = use_jbar ? 1 : 0; jd_beta = beta_use;
+        }
+        /* A2_06_DIAGNOSTIC_SHADOW_END */
+
+        /* Production split.  JEQB remains the registered detailed-balance
+         * falsifier; every ordinary path consumes only the checked line view. */
+        {
+            double Jbar_view = 0.0;
+            if (jeqb) {
+                Jbar_view = planck_bnu(T_e, nu_line);
+                jd_mode = 5;  /* diagnostic code: JEQB */
+            } else {
+                (void)nlte_bb_jbar_canonical(nlte, shell, line, &Jbar_view);
+                jd_mode = 6;  /* diagnostic code: A2-06 view */
+            }
+            J_line = Jbar_view;
+            jd_beta = 1.0;
+            R_absorb = atom->line_B_lu[line] * Jbar_view;
+            R_stim   = atom->line_B_ul[line] * Jbar_view;
+            R_spont  = atom->line_A_ul[line];
         }
 
         /* [withParityP GATE2] Observe the per-line jbar the matrix just consumed,

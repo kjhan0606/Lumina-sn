@@ -183,3 +183,61 @@
 잔존 bf_rate_estimator 참조(전수·허용 목록, R4): 생산자 정규화 lumina_plasma.c:1538-1542 ·
 C2 덤프(출력 전용) :1563-1564 · 오라클 계수 출력 :147-159 · field-source NULL 검사 :419 ·
 할당/해제 :14712/:14731 · GPU 경로 lumina_cuda.cu (A2-12/13). CPU 생산 물리 소비자 = 0.
+
+## ADDENDUM (A2-06 폐합, 2026-08-06) — V4 §3 census 처분 정정 및 실측 이관분
+
+행번호는 A2-06 구현 후 작업트리에서 재실측했다. `nlte_bb_jbar_canonical`은
+`line_view_status`와 `line_jbar_lookup`을 함께 검사하며, 비-OK view·MISS·UNSAMPLED는
+복사 항만 무기여로 만들고 원인별 `bb_view_*` 카운터를 증가시킨다. 정상 경로의 분리식은
+`R_lu=B_lu*Jbar`, `R_ul^stim=B_ul*Jbar`, `R_ul^sp=A_ul`이다.
+
+### A2-06 census 6행 — 이관 완료
+
+| V4 census 행(bafd2bb) | 심볼 | 구현 후 생산 소비 | 처분 |
+|---|---|---|---|
+| src/lumina_plasma.c:4556 | W | src/lumina_plasma.c:4832-4836 | `line_view` lookup의 `B_lu*Jbar`로 이관 완료 |
+| src/lumina_plasma.c:4556 | T_rad | src/lumina_plasma.c:4832-4836 | `line_view` lookup의 `B_lu*Jbar`로 이관 완료 |
+| src/lumina_plasma.c:4596 | W | src/lumina_plasma.c:4832-4836 | LTE 비교장 선택을 생산율에서 제거, 이관 완료 |
+| src/lumina_plasma.c:4596 | T_rad | src/lumina_plasma.c:4832-4836 | LTE 비교장 선택을 생산율에서 제거, 이관 완료 |
+| src/lumina_plasma.c:4701 | W | src/lumina_plasma.c:4832-4836 | 선 상향률을 `B_lu*Jbar`로 이관 완료 |
+| src/lumina_plasma.c:4701 | T_rad | src/lumina_plasma.c:4832-4836 | 선 상향률을 `B_lu*Jbar`로 이관 완료 |
+
+### census-밖 A2-06 9지점 — 신설행 및 이관 완료
+
+| V4 현행 표식 | 구현 후 위치 | 기존 의미 | 처분 |
+|---|---|---|---|
+| 4633 그룹 | src/lumina_plasma.c:4698-4710 → 4832-4836 | `jbar_line_det`/`jbar_line`/coarse 선택 사다리 | 생산 소비를 `line_view` lookup으로 이관 완료; 사다리는 진단 shadow |
+| 4661 | src/lumina_plasma.c:4726-4783 → 4832-4836 | `jblue_line` 선택·fallback | 생산 소비를 `line_view` lookup으로 이관 완료; falsifier/진단 보존 |
+| 4731 | src/lumina_plasma.c:4796-4815 → 4832-4836 | `(B_lu-B_ul*n_u/n_l)*beta*J_blue` | 생산 상향률을 `B_lu*Jbar`로 이관 완료; legacy 산식은 진단 shadow |
+| 10827 | src/lumina_plasma.c:10914-10925 | simul ETLA 선율 | `B_lu*Jbar`, `A_ul+B_ul*Jbar`로 이관 완료 |
+| 12182 | src/lumina_plasma.c:12269-12280 | RADEQ ETLA 선율 | `B_lu*Jbar`, `A_ul+B_ul*Jbar`로 이관 완료 |
+| 13823 | src/lumina_plasma.c:13912-13923 | coupled ETLA 선율 | `B_lu*Jbar`, `A_ul+B_ul*Jbar`로 이관 완료 |
+| 15238 | src/lumina_plasma.c:15348-15351 → 15566-15573 | dilute W/T source | 생산 소비를 `line_view` 분리율로 이관 완료; legacy 선택은 진단 shadow |
+| 15292 | src/lumina_plasma.c:15398-15411 → 15566-15573 | 직접 `jbar_line`/coarse 선택 | 생산 소비를 `line_view` 분리율로 이관 완료; falsifier/진단 보존 |
+| 15361 | src/lumina_plasma.c:15463-15556 → 15566-15573 | mode별 bb rate 분기 | 최종 생산 분리율을 canonical 값으로 덮어써 이관 완료 |
+
+### V4 §3 재배치 diff — A2-07 6행, A2-08 4행
+
+| V4 census 행(bafd2bb) | 심볼 | 구현 후 위치 | 정정 처분 |
+|---|---|---|---|
+| src/lumina_plasma.c:4879 | T_rad | src/lumina_plasma.c:5009-5013 | A2-07 — population fallback 지수 |
+| src/lumina_plasma.c:4880 | W | src/lumina_plasma.c:5011-5013 | A2-07 — population fallback 희석 |
+| src/lumina_plasma.c:12093 | W | src/lumina_plasma.c:12224 | A2-07 — lower-level population fallback |
+| src/lumina_plasma.c:12100 | W | src/lumina_plasma.c:12231 | A2-07 — upper-level population fallback |
+| src/lumina_plasma.c:13739 | W | src/lumina_plasma.c:13872 | A2-07 — coupled lower population fallback |
+| src/lumina_plasma.c:13743 | W | src/lumina_plasma.c:13876 | A2-07 — coupled upper population fallback |
+| src/lumina_plasma.c:11908 | W | src/lumina_plasma.c:12039 | A2-08 — line-source fallback |
+| src/lumina_plasma.c:11908 | T_rad | src/lumina_plasma.c:12039 | A2-08 — line-source fallback |
+| src/lumina_plasma.c:11915 | W | src/lumina_plasma.c:12046 | A2-08 — blanketed-heating 빈 장 |
+| src/lumina_plasma.c:11915 | T_rad | src/lumina_plasma.c:12046 | A2-08 — blanketed-heating 빈 장 |
+
+### A2-06 잔류 허용목록
+
+| 구현 후 위치 | 처분 |
+|---|---|
+| src/lumina_plasma.c:4651-4829 | 매크로 원자 source-selection/falsifier 진단 shadow 유지 |
+| src/lumina_plasma.c:15398-15556 | NLTE 행렬 falsifier와 legacy mode 진단 shadow 유지 |
+| src/lumina_plasma.c:15581, 15714-15715 | raw `jbar_line` 출력·오라클 진단 — `KEEP_DIAGNOSTIC_READ` |
+| src/lumina_plasma.c:14055, 14075, 14215 | V5 정정 진단 3행 — `KEEP_DIAGNOSTIC_READ` |
+| src/lumina_cmfgen.c:3153, 3159 | A2-08 재배치 |
+| GPU bb/rate 경로 | A2-12/A2-13 재배치 |

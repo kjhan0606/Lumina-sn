@@ -336,6 +336,12 @@ typedef struct {
     double  nlte_nu_min;
     double  nlte_d_log_nu;
     RadiationFieldAccumulator *radiation_field_accumulator; /* canonical producer work */
+    /* A2-06 selective line-Jbar estimator (SPEC_A2_06_V5).  qset/accumulator
+     * are shared (owned by the driver); partial is thread-local per packet.
+     * Opaque pointers keep this header free of line_jbar.h. */
+    void *line_jbar_qset;
+    void *line_jbar_accumulator;
+    void *line_jbar_partial;
 } Estimators;                 /* Phase 2 - Step 4 */
 
 /* Phase 2 - Step 4: Monte Carlo configuration */
@@ -396,6 +402,9 @@ typedef struct {
     int    *level_g;                  /* [n_levels] statistical weight */
     int    *level_metastable;         /* [n_levels] metastable flag */
     int    *level_super;              /* [n_levels] CMFGEN super-level idx (per-ion, 0-based); = level_num if no f_to_s */
+    char  (*level_configuration_sha256)[65]; /* [n_levels] diagnostic-only
+                                              * SHA-256 of original levels.csv
+                                              * configuration label (A2-06 A_ul crosswalk) */
     signed char *level_mult;          /* [n_levels] spin multiplicity 2S+1 (0=unknown). NULL unless
                                        * LUMINA_ALPHA_SPINGATE=1 (loaded from level_multiplicity.csv);
                                        * OFF-path stays NULL so heap layout is unchanged. */
@@ -583,6 +592,20 @@ typedef struct {
     uint64_t bf_view_blocked_unsampled;       /* BLOCKED_INSUFFICIENT_SAMPLING */
     uint64_t bf_view_blocked_out_of_grid;
     uint64_t bf_view_blocked_stale;
+
+    /* A2-06: checked line-Jbar view (refresh at commit choke points only) +
+     * R6-style counters.  line_qset is the frozen Q_g (opaque; owner=main). */
+    LineJbarView line_view;
+    int      line_view_status;                /* LineJbarViewStatus */
+    const void *line_qset;
+    uint64_t bb_view_rate_terms;
+    uint64_t bb_view_blocked_stale;
+    uint64_t bb_view_blocked_unsampled;
+    uint64_t bb_view_blocked_oog;
+    uint64_t bb_view_blocked_miss;
+    uint64_t bb_view_blocked_profile;
+    uint64_t bb_view_blocked_qhash;
+    uint64_t bb_view_blocked_disabled;
 
     /* Current iteration index (set by host before each nlte_solve_all call). */
     int    current_iter;
@@ -840,7 +863,8 @@ void macro_atom_interaction(
 
 void update_base_estimators(
     RPacket *pkt, double distance, Estimators *est, /* Phase 3 - Step 1 */
-    double comov_nu, double comov_energy            /* Phase 3 - Step 1 */
+    double comov_nu, double comov_energy,           /* Phase 3 - Step 1 */
+    double comov_nu_end, double comov_energy_end    /* A2-06: segment end */
 );
 
 void update_line_estimators(

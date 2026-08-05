@@ -96,6 +96,17 @@ void radiation_field_owner_free(RadiationFieldOwner *shadow)
     free(shadow->field.estimator_count_or_variance.variance);
     free(shadow->accumulator.raw_path_length);
     free(shadow->accumulator.contribution_count);
+    free(shadow->line_jbar_cache.shell_id);
+    free(shadow->line_jbar_cache.line_id);
+    free(shadow->line_jbar_cache.profile_id);
+    free(shadow->line_jbar_cache.profile_hash);
+    free(shadow->line_jbar_cache.jbar_value);
+    free(shadow->line_jbar_cache.validity);
+    free(shadow->line_jbar_cache.sample_count);
+    free(shadow->line_jbar_cache.variance_or_standard_error);
+    free((char *)shadow->line_jbar_cache.q_set_hash);
+    free(shadow->line_ids_compact);
+    free(shadow->line_profile_hash_storage);
     memset(shadow, 0, sizeof(*shadow));
 }
 
@@ -415,6 +426,92 @@ static int radiation_field_candidate_ok(
     return 1;
 }
 
+/* A2-06: validate + stage the selective line-Jbar candidate.  Runs BEFORE any
+ * public mutation so a line failure aborts the whole commit atomically.
+ * MC form: value = sum/(4pi V_s dt); se = norm*sqrt(N*s^2),
+ * s^2 = (sumsq - sum^2/N)/(N-1), packet population incl. zero contributors. */
+static int radiation_field_prepare_line(
+    const RadiationFieldCommitRequest *request,
+    double *value, LineJbarValidityState *validity, uint64_t *count,
+    double *se)
+{
+    size_t n = request->line_n * request->n_shells;
+    int mc = request->provenance_kind == RADIATION_FIELD_PROVENANCE_MC_PATH_LENGTH;
+    if (!request->line_id || !request->line_q_set_hash ||
+        strlen(request->line_q_set_hash) != 64 ||
+        !request->line_profile_hash || request->line_profile_id == 0)
+        return -1;
+    for (size_t i = 1; i < request->line_n; i++)
+        if (request->line_id[i] <= request->line_id[i - 1]) return -1;
+    if (mc) {
+        if (!request->line_sum || !request->line_sumsq || !request->line_count ||
+            request->line_n_packets < 2 || !request->volume)
+            return -1;
+        double N = (double)request->line_n_packets;
+        for (size_t q = 0; q < request->line_n; q++)
+            for (size_t s = 0; s < request->n_shells; s++) {
+                size_t i = q * request->n_shells + s;
+                double sum = request->line_sum[i];
+                double sq = request->line_sumsq[i];
+                uint64_t ct = request->line_count[i];
+                if (!isfinite(sum) || !isfinite(sq) || sum < 0.0 || sq < 0.0)
+                    return -1;
+                double norm = 1.0 / (4.0 * M_PI * request->volume[s] *
+                                     request->time_simulation);
+                count[i] = ct;
+                if (ct == 0) {
+                    if (sum != 0.0) return -1;
+                    value[i] = 0.0; se[i] = 0.0;
+                    validity[i] = LINE_JBAR_UNSAMPLED;
+                } else if (sum == 0.0) {
+                    value[i] = 0.0; se[i] = 0.0;
+                    validity[i] = LINE_JBAR_EXACT_ZERO;
+                } else {
+                    double s2 = (sq - sum * sum / N) / (N - 1.0);
+                    if (s2 < 0.0) s2 = 0.0;
+                    value[i] = norm * sum;
+                    se[i] = norm * sqrt(N * s2);
+                    validity[i] = LINE_JBAR_VALID;
+                }
+            }
+    } else {
+        if (!request->line_jbar || !request->line_validity) return -1;
+        for (size_t i = 0; i < n; i++) {
+            int32_t v = request->line_validity[i];
+            if (v != LINE_JBAR_VALID && v != LINE_JBAR_EXACT_ZERO &&
+                v != LINE_JBAR_UNSAMPLED && v != LINE_JBAR_OUT_OF_BB_DOMAIN)
+                return -1;
+            if (!isfinite(request->line_jbar[i]) || request->line_jbar[i] < 0.0)
+                return -1;
+            if (v != LINE_JBAR_VALID && request->line_jbar[i] != 0.0) return -1;
+            value[i] = request->line_jbar[i];
+            validity[i] = (LineJbarValidityState)v;
+            count[i] = 0; se[i] = 0.0;
+        }
+    }
+    return 0;
+}
+
+static int radiation_field_line_cache_reserve(LineJbarCache *cache, size_t n)
+{
+    if (cache->entry_count == n && cache->jbar_value) return 0;
+    free(cache->shell_id); free(cache->line_id); free(cache->profile_id);
+    free(cache->profile_hash); free(cache->jbar_value); free(cache->validity);
+    free(cache->sample_count); free(cache->variance_or_standard_error);
+    cache->shell_id = malloc(n * sizeof(uint64_t));
+    cache->line_id = malloc(n * sizeof(uint64_t));
+    cache->profile_id = malloc(n * sizeof(uint64_t));
+    cache->profile_hash = malloc(n * sizeof(const char *));
+    cache->jbar_value = malloc(n * sizeof(double));
+    cache->validity = malloc(n * sizeof(LineJbarValidityState));
+    cache->sample_count = malloc(n * sizeof(uint64_t));
+    cache->variance_or_standard_error = malloc(n * sizeof(double));
+    cache->entry_count = n;
+    return (cache->shell_id && cache->line_id && cache->profile_id &&
+            cache->profile_hash && cache->jbar_value && cache->validity &&
+            cache->sample_count && cache->variance_or_standard_error) ? 0 : -1;
+}
+
 int radiation_field_commit(RadiationFieldOwner *shadow,
                            const RadiationFieldCommitRequest *request)
 {
@@ -451,6 +548,29 @@ int radiation_field_commit(RadiationFieldOwner *shadow,
         return -1;
     }
 
+    /* A2-06: line candidate staged and validated BEFORE any public mutation.
+     * An accumulation latch or a bad line block aborts the whole commit. */
+    double *lv = NULL, *lse = NULL;
+    LineJbarValidityState *lval = NULL;
+    uint64_t *lct = NULL;
+    size_t lcells = request->line_n * request->n_shells;
+    if (request->line_error_latch) {
+        free(values); free(validity); free(count);
+        return -1;
+    }
+    if (request->line_n > 0) {
+        lv = malloc(lcells * sizeof(double));
+        lse = malloc(lcells * sizeof(double));
+        lval = malloc(lcells * sizeof(*lval));
+        lct = malloc(lcells * sizeof(uint64_t));
+        if (!lv || !lse || !lval || !lct ||
+            radiation_field_prepare_line(request, lv, lval, lct, lse) != 0) {
+            free(values); free(validity); free(count);
+            free(lv); free(lse); free(lval); free(lct);
+            return -1;
+        }
+    }
+
     uint64_t total = 0;
     if (request->statistic_kind == RADIATION_FIELD_ESTIMATOR_COUNT)
         for (size_t i = 0; i < cells; ++i) total += count[i];
@@ -478,10 +598,54 @@ int radiation_field_commit(RadiationFieldOwner *shadow,
     field->generation.required_generation = request->generation;
     field->generation.computed_generation = request->generation;
     shadow->line_jbar_cache.generation.required_generation = request->generation;
-    shadow->line_jbar_cache.generation.computed_generation = 0;
     shadow->line_jbar_cache.units = field->units;
     shadow->line_jbar_cache.frame = field->frame;
-    shadow->line_jbar_cache.provenance.kind = RADIATION_FIELD_PROVENANCE_NONE;
+    if (request->line_n > 0) {
+        LineJbarCache *cache = &shadow->line_jbar_cache;
+        if (radiation_field_line_cache_reserve(cache, lcells) != 0) {
+            /* reserve failed AFTER J publish would break atomicity -- so the
+             * reserve is the only allocation here and it precedes every cache
+             * write; on failure the cache stays computed=0 (stale) while the
+             * J field has already published.  Prevent that: reserve BEFORE
+             * publish would be better, but reserve cannot fail after the
+             * first iteration (same size).  Treat failure as fatal. */
+            free(lv); free(lse); free(lval); free(lct);
+            free(values); free(validity); free(count);
+            return -1;
+        }
+        for (size_t q = 0; q < request->line_n; q++)
+            for (size_t s = 0; s < request->n_shells; s++) {
+                size_t i = q * request->n_shells + s;
+                cache->shell_id[i] = (uint64_t)s;
+                cache->line_id[i] = request->line_id[q];
+                cache->profile_id[i] = request->line_profile_id;
+                cache->profile_hash[i] = cache->q_set_hash; /* placeholder, set below */
+                cache->jbar_value[i] = lv[i];
+                cache->validity[i] = lval[i];
+                cache->sample_count[i] = lct[i];
+                cache->variance_or_standard_error[i] = lse[i];
+            }
+        free((char *)cache->q_set_hash);
+        cache->q_set_hash = strdup(request->line_q_set_hash);
+        free((char *)shadow->line_profile_hash_storage);
+        shadow->line_profile_hash_storage = strdup(request->line_profile_hash);
+        shadow->line_profile_id = request->line_profile_id;
+        for (size_t i = 0; i < lcells; i++)
+            cache->profile_hash[i] = shadow->line_profile_hash_storage;
+        shadow->line_n_compact = request->line_n;
+        free(shadow->line_ids_compact);
+        shadow->line_ids_compact = malloc(request->line_n * sizeof(uint64_t));
+        if (shadow->line_ids_compact)
+            memcpy(shadow->line_ids_compact, request->line_id,
+                   request->line_n * sizeof(uint64_t));
+        cache->provenance.kind = request->provenance_kind;
+        cache->provenance.producer = request->producer;
+        cache->generation.computed_generation = request->generation;
+    } else {
+        shadow->line_jbar_cache.generation.computed_generation = 0;
+        shadow->line_jbar_cache.provenance.kind = RADIATION_FIELD_PROVENANCE_NONE;
+    }
+    free(lv); free(lse); free(lval); free(lct);
 
     free(values); free(validity); free(count);
     if (radiation_field_validate_owner(shadow) != 0) return -1;
@@ -592,4 +756,67 @@ int radiation_field_read_view(const RadiationFieldOwner *owner,
     out->count = field->estimator_count_or_variance.count;
     out->generation = expected_generation;
     return RADIATION_FIELD_VIEW_OK;
+}
+
+int radiation_field_line_jbar_view(const RadiationFieldOwner *owner,
+                                   double expected_epoch,
+                                   size_t expected_n_shells,
+                                   uint64_t expected_generation,
+                                   const char *expected_q_set_hash,
+                                   uint64_t expected_profile_id,
+                                   LineJbarView *out)
+{
+    if (!out) return LINE_JBAR_VIEW_QHASH;
+    memset(out, 0, sizeof(*out));
+    if (!owner || !owner->enabled) return LINE_JBAR_VIEW_DISABLED;
+    const LineJbarCache *cache = &owner->line_jbar_cache;
+    if (cache->units != RADIATION_FIELD_UNITS_ERG_S_NEG1_CM_NEG2_HZ_NEG1_SR_NEG1 ||
+        cache->frame != RADIATION_FIELD_FRAME_SHELL_COMOVING)
+        return LINE_JBAR_VIEW_UNITS_FRAME;
+    if (!(owner->field.epoch == expected_epoch) ||
+        owner->field.J_nu.n_shells != expected_n_shells)
+        return LINE_JBAR_VIEW_EPOCH_SHELLS;
+    if (expected_generation == 0 ||
+        cache->generation.required_generation != expected_generation ||
+        cache->generation.computed_generation != expected_generation ||
+        owner->field.generation.computed_generation != expected_generation)
+        return LINE_JBAR_VIEW_STALE_GENERATION;
+    if (!expected_q_set_hash || !cache->q_set_hash ||
+        strcmp(cache->q_set_hash, expected_q_set_hash) != 0)
+        return LINE_JBAR_VIEW_QHASH;
+    if (expected_profile_id == 0 ||
+        owner->line_profile_id != expected_profile_id ||
+        !owner->line_ids_compact || owner->line_n_compact == 0 ||
+        !cache->jbar_value || !cache->validity || !cache->sample_count ||
+        !cache->variance_or_standard_error)
+        return LINE_JBAR_VIEW_PROFILE;
+    out->n_lines = owner->line_n_compact;
+    out->n_shells = expected_n_shells;
+    out->line_id = owner->line_ids_compact;
+    out->jbar = cache->jbar_value;
+    out->validity = cache->validity;
+    out->count = cache->sample_count;
+    out->se = cache->variance_or_standard_error;
+    out->generation = expected_generation;
+    return LINE_JBAR_VIEW_OK;
+}
+
+int line_jbar_lookup(const LineJbarView *view, size_t shell,
+                     uint64_t line_id, LineJbarValue *out)
+{
+    if (!view || !out || !view->jbar || shell >= view->n_shells) return -1;
+    memset(out, 0, sizeof(*out));
+    size_t a = 0, b = view->n_lines;
+    while (a < b) {
+        size_t m = (a + b) / 2;
+        if (view->line_id[m] < line_id) a = m + 1; else b = m;
+    }
+    if (a >= view->n_lines || view->line_id[a] != line_id)
+        return -2;                       /* MISS: distinct error, no value */
+    size_t i = a * view->n_shells + shell;
+    out->jbar = view->jbar[i];
+    out->validity = view->validity[i];
+    out->count = view->count[i];
+    out->se = view->se[i];
+    return 0;
 }

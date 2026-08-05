@@ -1,0 +1,972 @@
+{
+  "schema": "lumina-a2-06-l1bb-gate-v1",
+  "verdict": "BLOCKED_MISSING_RATE_EXPORT",
+  "same_measure": {
+    "passed": true,
+    "raw_segment_ledger_sha256": "e4f1686e400e87c71087b9543150b687b6eb7cfe46974d73b44ac661799d1f3a",
+    "generation": 2,
+    "frame": "comoving endpoint trajectory",
+    "delta_t_s": 3.2312674748716015e-43,
+    "volume_table": {
+      "0": 7.949455638591743e+44,
+      "1": 1.0888485872215798e+45,
+      "2": 1.4289835468432385e+45,
+      "3": 1.8153504427241525e+45,
+      "4": 2.247949274864322e+45,
+      "5": 2.7267800432637458e+45,
+      "6": 3.2518427479224216e+45,
+      "7": 3.823137388840359e+45,
+      "8": 4.440663966017545e+45,
+      "9": 5.1044224794539874e+45,
+      "10": 5.814412929149681e+45,
+      "11": 6.570635315104636e+45,
+      "12": 7.373089637318844e+45,
+      "13": 8.221775895792306e+45,
+      "14": 9.116694090525022e+45,
+      "15": 1.0057844221516982e+46,
+      "16": 1.104522628876821e+46,
+      "17": 1.2078840292278697e+46,
+      "18": 1.3158686232048433e+46,
+      "19": 1.428476410807742e+46,
+      "20": 1.5457073920365652e+46,
+      "21": 1.6675615668913155e+46,
+      "22": 1.7940389353719926e+46,
+      "23": 1.9251394974785904e+46,
+      "24": 2.0608632532111195e+46,
+      "25": 2.2012102025695734e+46,
+      "26": 2.346180345553944e+46,
+      "27": 2.4957736821642514e+46,
+      "28": 2.6499902124004754e+46,
+      "29": 2.808829936262633e+46,
+      "30": 2.972292853750711e+46,
+      "31": 3.140378964864718e+46,
+      "32": 3.313088269604646e+46,
+      "33": 3.4904207679705027e+46,
+      "34": 3.672376459962276e+46,
+      "35": 3.858955345579991e+46,
+      "36": 4.0501574248236224e+46,
+      "37": 4.24598269769317e+46,
+      "38": 4.446431164188668e+46,
+      "39": 4.651502824310065e+46,
+      "40": 4.861197678057404e+46,
+      "41": 5.075515725430651e+46,
+      "42": 5.29445696642985e+46,
+      "43": 5.518021401054954e+46,
+      "44": 5.746209029306002e+46,
+      "45": 5.979019851182957e+46,
+      "46": 6.216453866685853e+46,
+      "47": 6.45851107581464e+46,
+      "48": 6.705191478569387e+46,
+      "49": 6.956495074950059e+46
+    },
+    "normalization": "4*pi*V_s*delta_t; prefix reweight N_capture/P",
+    "q_set_hash": "148fd955a0b2fa7e9ca2725f18da2da4d1e4dcc299f9a956160af94c31cc76d3",
+    "q_generation_bound_from_capture": 2,
+    "canonical_edge_hash": "ec3f94d923b42e036afd3fde71fc63a2477d4c95ca252583b40ed730a0b48f76"
+  },
+  "projection_closure_8band": {
+    "maximum_relative_change": 0.0,
+    "median_relative_change": 0.0,
+    "maximum_limit": 0.01,
+    "median_limit": 0.002,
+    "false_positive_rows": [],
+    "passed": true,
+    "band_edges_hz": [
+      1440292895009.7124,
+      5180124105196.376,
+      18630714515227.543,
+      67006796806222.78,
+      240995095199417.3,
+      866757384002910.2,
+      3117359554981452.5,
+      1.1211823255723808e+16,
+      4.032418413741097e+16
+    ],
+    "fixture": "/home/kjhan/BACKUP/Eunha.A1/Claude/Lumina-sn/tests/a2_06_l1bb_fixture.c",
+    "fixture_sha256": "e50f7f14dc91258cddd65eb066fea0204d0d874093183db67b3ca259ab9708b2"
+  },
+  "fine_closure_74": {
+    "cohort_path": "/home/kjhan/BACKUP/Eunha.A1/Claude/Lumina-sn/validation/a2_02c/A2_02C_ESTIMATOR_COHORT.json",
+    "cohort_sha256": "0c029ca15116119e2d7af4693d76988b14a452e35cae3679522629230a6c3e69",
+    "active_records": 74,
+    "result_path": "/home/kjhan/BACKUP/Eunha.A1/Claude/Lumina-sn/validation/a2_02c/a2_02c_estimator_effort_gate2_v3_result.json",
+    "result_sha256": "94ea5d61e7f6f55c456bffc11a22d5da107f808319184464eac0f2f6b9995049",
+    "closure": {
+      "maximum_relative_change": 0.0006957887371969882,
+      "median_relative_change": 2.7450390836680265e-06,
+      "maximum_limit": 0.01,
+      "median_limit": 0.002,
+      "eligible_records": 56,
+      "invalid_eligible_records": 0,
+      "passed": true,
+      "registered_records": 74,
+      "excluded_records": 18,
+      "coverage": {
+        "registered_records": 74,
+        "eligible_records": 56,
+        "excluded_records": 18,
+        "by_ion": {
+          "Z20:ion4": {
+            "registered": 2,
+            "eligible": 2,
+            "excluded": 0
+          },
+          "Z21:ion1": {
+            "registered": 2,
+            "eligible": 2,
+            "excluded": 0
+          },
+          "Z24:ion2": {
+            "registered": 2,
+            "eligible": 1,
+            "excluded": 1
+          },
+          "Z25:ion1": {
+            "registered": 2,
+            "eligible": 2,
+            "excluded": 0
+          },
+          "Z26:ion1": {
+            "registered": 14,
+            "eligible": 14,
+            "excluded": 0
+          },
+          "Z26:ion5": {
+            "registered": 8,
+            "eligible": 7,
+            "excluded": 1
+          },
+          "Z27:ion2": {
+            "registered": 4,
+            "eligible": 4,
+            "excluded": 0
+          },
+          "Z27:ion3": {
+            "registered": 2,
+            "eligible": 2,
+            "excluded": 0
+          },
+          "Z27:ion5": {
+            "registered": 2,
+            "eligible": 0,
+            "excluded": 2
+          },
+          "Z28:ion0": {
+            "registered": 6,
+            "eligible": 6,
+            "excluded": 0
+          },
+          "Z28:ion4": {
+            "registered": 2,
+            "eligible": 2,
+            "excluded": 0
+          },
+          "Z26:ion2": {
+            "registered": 6,
+            "eligible": 6,
+            "excluded": 0
+          },
+          "Z8:ion1": {
+            "registered": 2,
+            "eligible": 0,
+            "excluded": 2
+          },
+          "Z28:ion2": {
+            "registered": 2,
+            "eligible": 0,
+            "excluded": 2
+          },
+          "Z26:ion3": {
+            "registered": 4,
+            "eligible": 2,
+            "excluded": 2
+          },
+          "Z16:ion0": {
+            "registered": 2,
+            "eligible": 2,
+            "excluded": 0
+          },
+          "Z25:ion2": {
+            "registered": 2,
+            "eligible": 0,
+            "excluded": 2
+          },
+          "Z28:ion3": {
+            "registered": 2,
+            "eligible": 0,
+            "excluded": 2
+          },
+          "Z6:ion0": {
+            "registered": 2,
+            "eligible": 1,
+            "excluded": 1
+          },
+          "Z28:ion1": {
+            "registered": 2,
+            "eligible": 1,
+            "excluded": 1
+          },
+          "Z8:ion2": {
+            "registered": 2,
+            "eligible": 1,
+            "excluded": 1
+          },
+          "Z26:ion4": {
+            "registered": 2,
+            "eligible": 1,
+            "excluded": 1
+          }
+        },
+        "by_wavelength_band": {
+          "2000_10000_A": {
+            "registered": 20,
+            "eligible": 20,
+            "excluded": 0
+          },
+          "450_918_A": {
+            "registered": 10,
+            "eligible": 4,
+            "excluded": 6
+          },
+          "1290_2000_A": {
+            "registered": 14,
+            "eligible": 14,
+            "excluded": 0
+          },
+          "918_1290_A": {
+            "registered": 12,
+            "eligible": 8,
+            "excluded": 4
+          },
+          "10000_20000_A": {
+            "registered": 10,
+            "eligible": 10,
+            "excluded": 0
+          },
+          "100_450_A": {
+            "registered": 8,
+            "eligible": 0,
+            "excluded": 8
+          }
+        },
+        "excluded_detail": [
+          {
+            "record_id": "s0:line85477:f8572907be3ad2e9738a84dae1000338bb7100772cf1d3b52ec17561da409bbf",
+            "shell_id": 0,
+            "line_id": "85477",
+            "atomic_number": 27,
+            "ion": 5,
+            "lambda_lu_A": 358.823992403943,
+            "wavelength_band": "100_450_A",
+            "reasons": [
+              "2P_UNSAMPLED",
+              "2P_count_lt_10"
+            ]
+          },
+          {
+            "record_id": "s8:line296127:f8572907be3ad2e9738a84dae1000338bb7100772cf1d3b52ec17561da409bbf",
+            "shell_id": 8,
+            "line_id": "296127",
+            "atomic_number": 24,
+            "ion": 2,
+            "lambda_lu_A": 743.785053116967,
+            "wavelength_band": "450_918_A",
+            "reasons": [
+              "2P_UNSAMPLED",
+              "2P_count_lt_10"
+            ]
+          },
+          {
+            "record_id": "s8:line148063:f8572907be3ad2e9738a84dae1000338bb7100772cf1d3b52ec17561da409bbf",
+            "shell_id": 8,
+            "line_id": "148063",
+            "atomic_number": 26,
+            "ion": 5,
+            "lambda_lu_A": 481.1159764211934,
+            "wavelength_band": "450_918_A",
+            "reasons": [
+              "2P_UNSAMPLED",
+              "2P_count_lt_10"
+            ]
+          },
+          {
+            "record_id": "s8:line85477:f8572907be3ad2e9738a84dae1000338bb7100772cf1d3b52ec17561da409bbf",
+            "shell_id": 8,
+            "line_id": "85477",
+            "atomic_number": 27,
+            "ion": 5,
+            "lambda_lu_A": 358.823992403943,
+            "wavelength_band": "100_450_A",
+            "reasons": [
+              "2P_UNSAMPLED",
+              "2P_count_lt_10"
+            ]
+          },
+          {
+            "record_id": "s0:line122152:f8572907be3ad2e9738a84dae1000338bb7100772cf1d3b52ec17561da409bbf",
+            "shell_id": 0,
+            "line_id": "122152",
+            "atomic_number": 8,
+            "ion": 1,
+            "lambda_lu_A": 425.23101490076465,
+            "wavelength_band": "100_450_A",
+            "reasons": [
+              "2P_count_lt_10"
+            ]
+          },
+          {
+            "record_id": "s8:line122152:f8572907be3ad2e9738a84dae1000338bb7100772cf1d3b52ec17561da409bbf",
+            "shell_id": 8,
+            "line_id": "122152",
+            "atomic_number": 8,
+            "ion": 1,
+            "lambda_lu_A": 425.23101490076465,
+            "wavelength_band": "100_450_A",
+            "reasons": [
+              "2P_UNSAMPLED",
+              "2P_count_lt_10"
+            ]
+          },
+          {
+            "record_id": "s0:line115448:f8572907be3ad2e9738a84dae1000338bb7100772cf1d3b52ec17561da409bbf",
+            "shell_id": 0,
+            "line_id": "115448",
+            "atomic_number": 28,
+            "ion": 2,
+            "lambda_lu_A": 411.10998236625665,
+            "wavelength_band": "100_450_A",
+            "reasons": [
+              "2P_UNSAMPLED",
+              "2P_count_lt_10"
+            ]
+          },
+          {
+            "record_id": "s8:line115448:f8572907be3ad2e9738a84dae1000338bb7100772cf1d3b52ec17561da409bbf",
+            "shell_id": 8,
+            "line_id": "115448",
+            "atomic_number": 28,
+            "ion": 2,
+            "lambda_lu_A": 411.10998236625665,
+            "wavelength_band": "100_450_A",
+            "reasons": [
+              "2P_UNSAMPLED",
+              "2P_count_lt_10"
+            ]
+          },
+          {
+            "record_id": "s0:line56783:f8572907be3ad2e9738a84dae1000338bb7100772cf1d3b52ec17561da409bbf",
+            "shell_id": 0,
+            "line_id": "56783",
+            "atomic_number": 26,
+            "ion": 3,
+            "lambda_lu_A": 305.46699620163935,
+            "wavelength_band": "100_450_A",
+            "reasons": [
+              "2P_UNSAMPLED",
+              "2P_count_lt_10"
+            ]
+          },
+          {
+            "record_id": "s8:line56783:f8572907be3ad2e9738a84dae1000338bb7100772cf1d3b52ec17561da409bbf",
+            "shell_id": 8,
+            "line_id": "56783",
+            "atomic_number": 26,
+            "ion": 3,
+            "lambda_lu_A": 305.46699620163935,
+            "wavelength_band": "100_450_A",
+            "reasons": [
+              "2P_UNSAMPLED",
+              "2P_count_lt_10"
+            ]
+          },
+          {
+            "record_id": "s0:line182968:f8572907be3ad2e9738a84dae1000338bb7100772cf1d3b52ec17561da409bbf",
+            "shell_id": 0,
+            "line_id": "182968",
+            "atomic_number": 25,
+            "ion": 2,
+            "lambda_lu_A": 540.1870305002532,
+            "wavelength_band": "450_918_A",
+            "reasons": [
+              "2P_count_lt_10"
+            ]
+          },
+          {
+            "record_id": "s8:line182968:f8572907be3ad2e9738a84dae1000338bb7100772cf1d3b52ec17561da409bbf",
+            "shell_id": 8,
+            "line_id": "182968",
+            "atomic_number": 25,
+            "ion": 2,
+            "lambda_lu_A": 540.1870305002532,
+            "wavelength_band": "450_918_A",
+            "reasons": [
+              "2P_UNSAMPLED",
+              "2P_count_lt_10"
+            ]
+          },
+          {
+            "record_id": "s0:line193042:f8572907be3ad2e9738a84dae1000338bb7100772cf1d3b52ec17561da409bbf",
+            "shell_id": 0,
+            "line_id": "193042",
+            "atomic_number": 28,
+            "ion": 3,
+            "lambda_lu_A": 557.0620314768405,
+            "wavelength_band": "450_918_A",
+            "reasons": [
+              "2P_count_lt_10"
+            ]
+          },
+          {
+            "record_id": "s8:line193042:f8572907be3ad2e9738a84dae1000338bb7100772cf1d3b52ec17561da409bbf",
+            "shell_id": 8,
+            "line_id": "193042",
+            "atomic_number": 28,
+            "ion": 3,
+            "lambda_lu_A": 557.0620314768405,
+            "wavelength_band": "450_918_A",
+            "reasons": [
+              "2P_UNSAMPLED",
+              "2P_count_lt_10"
+            ]
+          },
+          {
+            "record_id": "s8:line549915:f8572907be3ad2e9738a84dae1000338bb7100772cf1d3b52ec17561da409bbf",
+            "shell_id": 8,
+            "line_id": "549915",
+            "atomic_number": 6,
+            "ion": 0,
+            "lambda_lu_A": 1159.0948239198651,
+            "wavelength_band": "918_1290_A",
+            "reasons": [
+              "2P_count_lt_10"
+            ]
+          },
+          {
+            "record_id": "s8:line473609:f8572907be3ad2e9738a84dae1000338bb7100772cf1d3b52ec17561da409bbf",
+            "shell_id": 8,
+            "line_id": "473609",
+            "atomic_number": 28,
+            "ion": 1,
+            "lambda_lu_A": 1033.8569351543651,
+            "wavelength_band": "918_1290_A",
+            "reasons": [
+              "2P_count_lt_10"
+            ]
+          },
+          {
+            "record_id": "s8:line615667:f8572907be3ad2e9738a84dae1000338bb7100772cf1d3b52ec17561da409bbf",
+            "shell_id": 8,
+            "line_id": "615667",
+            "atomic_number": 8,
+            "ion": 2,
+            "lambda_lu_A": 1282.6580440898053,
+            "wavelength_band": "918_1290_A",
+            "reasons": [
+              "2P_count_lt_10"
+            ]
+          },
+          {
+            "record_id": "s8:line412920:f8572907be3ad2e9738a84dae1000338bb7100772cf1d3b52ec17561da409bbf",
+            "shell_id": 8,
+            "line_id": "412920",
+            "atomic_number": 26,
+            "ion": 4,
+            "lambda_lu_A": 938.7809194084216,
+            "wavelength_band": "918_1290_A",
+            "reasons": [
+              "2P_UNSAMPLED",
+              "2P_count_lt_10"
+            ]
+          }
+        ]
+      }
+    },
+    "resolution_convergence": {
+      "maximum_relative_change": 0.002227923007357415,
+      "median_relative_change": 6.253731423683897e-06,
+      "maximum_limit": 0.01,
+      "median_limit": 0.002,
+      "eligible_records": 56,
+      "invalid_eligible_records": 0,
+      "passed": true,
+      "registered_records": 74,
+      "excluded_records": 18,
+      "coverage": {
+        "registered_records": 74,
+        "eligible_records": 56,
+        "excluded_records": 18,
+        "by_ion": {
+          "Z20:ion4": {
+            "registered": 2,
+            "eligible": 2,
+            "excluded": 0
+          },
+          "Z21:ion1": {
+            "registered": 2,
+            "eligible": 2,
+            "excluded": 0
+          },
+          "Z24:ion2": {
+            "registered": 2,
+            "eligible": 1,
+            "excluded": 1
+          },
+          "Z25:ion1": {
+            "registered": 2,
+            "eligible": 2,
+            "excluded": 0
+          },
+          "Z26:ion1": {
+            "registered": 14,
+            "eligible": 14,
+            "excluded": 0
+          },
+          "Z26:ion5": {
+            "registered": 8,
+            "eligible": 7,
+            "excluded": 1
+          },
+          "Z27:ion2": {
+            "registered": 4,
+            "eligible": 4,
+            "excluded": 0
+          },
+          "Z27:ion3": {
+            "registered": 2,
+            "eligible": 2,
+            "excluded": 0
+          },
+          "Z27:ion5": {
+            "registered": 2,
+            "eligible": 0,
+            "excluded": 2
+          },
+          "Z28:ion0": {
+            "registered": 6,
+            "eligible": 6,
+            "excluded": 0
+          },
+          "Z28:ion4": {
+            "registered": 2,
+            "eligible": 2,
+            "excluded": 0
+          },
+          "Z26:ion2": {
+            "registered": 6,
+            "eligible": 6,
+            "excluded": 0
+          },
+          "Z8:ion1": {
+            "registered": 2,
+            "eligible": 0,
+            "excluded": 2
+          },
+          "Z28:ion2": {
+            "registered": 2,
+            "eligible": 0,
+            "excluded": 2
+          },
+          "Z26:ion3": {
+            "registered": 4,
+            "eligible": 2,
+            "excluded": 2
+          },
+          "Z16:ion0": {
+            "registered": 2,
+            "eligible": 2,
+            "excluded": 0
+          },
+          "Z25:ion2": {
+            "registered": 2,
+            "eligible": 0,
+            "excluded": 2
+          },
+          "Z28:ion3": {
+            "registered": 2,
+            "eligible": 0,
+            "excluded": 2
+          },
+          "Z6:ion0": {
+            "registered": 2,
+            "eligible": 1,
+            "excluded": 1
+          },
+          "Z28:ion1": {
+            "registered": 2,
+            "eligible": 1,
+            "excluded": 1
+          },
+          "Z8:ion2": {
+            "registered": 2,
+            "eligible": 1,
+            "excluded": 1
+          },
+          "Z26:ion4": {
+            "registered": 2,
+            "eligible": 1,
+            "excluded": 1
+          }
+        },
+        "by_wavelength_band": {
+          "2000_10000_A": {
+            "registered": 20,
+            "eligible": 20,
+            "excluded": 0
+          },
+          "450_918_A": {
+            "registered": 10,
+            "eligible": 4,
+            "excluded": 6
+          },
+          "1290_2000_A": {
+            "registered": 14,
+            "eligible": 14,
+            "excluded": 0
+          },
+          "918_1290_A": {
+            "registered": 12,
+            "eligible": 8,
+            "excluded": 4
+          },
+          "10000_20000_A": {
+            "registered": 10,
+            "eligible": 10,
+            "excluded": 0
+          },
+          "100_450_A": {
+            "registered": 8,
+            "eligible": 0,
+            "excluded": 8
+          }
+        },
+        "excluded_detail": [
+          {
+            "record_id": "s0:line85477:f8572907be3ad2e9738a84dae1000338bb7100772cf1d3b52ec17561da409bbf",
+            "shell_id": 0,
+            "line_id": "85477",
+            "atomic_number": 27,
+            "ion": 5,
+            "lambda_lu_A": 358.823992403943,
+            "wavelength_band": "100_450_A",
+            "reasons": [
+              "2P_UNSAMPLED",
+              "2P_count_lt_10"
+            ]
+          },
+          {
+            "record_id": "s8:line296127:f8572907be3ad2e9738a84dae1000338bb7100772cf1d3b52ec17561da409bbf",
+            "shell_id": 8,
+            "line_id": "296127",
+            "atomic_number": 24,
+            "ion": 2,
+            "lambda_lu_A": 743.785053116967,
+            "wavelength_band": "450_918_A",
+            "reasons": [
+              "2P_UNSAMPLED",
+              "2P_count_lt_10"
+            ]
+          },
+          {
+            "record_id": "s8:line148063:f8572907be3ad2e9738a84dae1000338bb7100772cf1d3b52ec17561da409bbf",
+            "shell_id": 8,
+            "line_id": "148063",
+            "atomic_number": 26,
+            "ion": 5,
+            "lambda_lu_A": 481.1159764211934,
+            "wavelength_band": "450_918_A",
+            "reasons": [
+              "2P_UNSAMPLED",
+              "2P_count_lt_10"
+            ]
+          },
+          {
+            "record_id": "s8:line85477:f8572907be3ad2e9738a84dae1000338bb7100772cf1d3b52ec17561da409bbf",
+            "shell_id": 8,
+            "line_id": "85477",
+            "atomic_number": 27,
+            "ion": 5,
+            "lambda_lu_A": 358.823992403943,
+            "wavelength_band": "100_450_A",
+            "reasons": [
+              "2P_UNSAMPLED",
+              "2P_count_lt_10"
+            ]
+          },
+          {
+            "record_id": "s0:line122152:f8572907be3ad2e9738a84dae1000338bb7100772cf1d3b52ec17561da409bbf",
+            "shell_id": 0,
+            "line_id": "122152",
+            "atomic_number": 8,
+            "ion": 1,
+            "lambda_lu_A": 425.23101490076465,
+            "wavelength_band": "100_450_A",
+            "reasons": [
+              "2P_count_lt_10"
+            ]
+          },
+          {
+            "record_id": "s8:line122152:f8572907be3ad2e9738a84dae1000338bb7100772cf1d3b52ec17561da409bbf",
+            "shell_id": 8,
+            "line_id": "122152",
+            "atomic_number": 8,
+            "ion": 1,
+            "lambda_lu_A": 425.23101490076465,
+            "wavelength_band": "100_450_A",
+            "reasons": [
+              "2P_UNSAMPLED",
+              "2P_count_lt_10"
+            ]
+          },
+          {
+            "record_id": "s0:line115448:f8572907be3ad2e9738a84dae1000338bb7100772cf1d3b52ec17561da409bbf",
+            "shell_id": 0,
+            "line_id": "115448",
+            "atomic_number": 28,
+            "ion": 2,
+            "lambda_lu_A": 411.10998236625665,
+            "wavelength_band": "100_450_A",
+            "reasons": [
+              "2P_UNSAMPLED",
+              "2P_count_lt_10"
+            ]
+          },
+          {
+            "record_id": "s8:line115448:f8572907be3ad2e9738a84dae1000338bb7100772cf1d3b52ec17561da409bbf",
+            "shell_id": 8,
+            "line_id": "115448",
+            "atomic_number": 28,
+            "ion": 2,
+            "lambda_lu_A": 411.10998236625665,
+            "wavelength_band": "100_450_A",
+            "reasons": [
+              "2P_UNSAMPLED",
+              "2P_count_lt_10"
+            ]
+          },
+          {
+            "record_id": "s0:line56783:f8572907be3ad2e9738a84dae1000338bb7100772cf1d3b52ec17561da409bbf",
+            "shell_id": 0,
+            "line_id": "56783",
+            "atomic_number": 26,
+            "ion": 3,
+            "lambda_lu_A": 305.46699620163935,
+            "wavelength_band": "100_450_A",
+            "reasons": [
+              "2P_UNSAMPLED",
+              "2P_count_lt_10"
+            ]
+          },
+          {
+            "record_id": "s8:line56783:f8572907be3ad2e9738a84dae1000338bb7100772cf1d3b52ec17561da409bbf",
+            "shell_id": 8,
+            "line_id": "56783",
+            "atomic_number": 26,
+            "ion": 3,
+            "lambda_lu_A": 305.46699620163935,
+            "wavelength_band": "100_450_A",
+            "reasons": [
+              "2P_UNSAMPLED",
+              "2P_count_lt_10"
+            ]
+          },
+          {
+            "record_id": "s0:line182968:f8572907be3ad2e9738a84dae1000338bb7100772cf1d3b52ec17561da409bbf",
+            "shell_id": 0,
+            "line_id": "182968",
+            "atomic_number": 25,
+            "ion": 2,
+            "lambda_lu_A": 540.1870305002532,
+            "wavelength_band": "450_918_A",
+            "reasons": [
+              "2P_count_lt_10"
+            ]
+          },
+          {
+            "record_id": "s8:line182968:f8572907be3ad2e9738a84dae1000338bb7100772cf1d3b52ec17561da409bbf",
+            "shell_id": 8,
+            "line_id": "182968",
+            "atomic_number": 25,
+            "ion": 2,
+            "lambda_lu_A": 540.1870305002532,
+            "wavelength_band": "450_918_A",
+            "reasons": [
+              "2P_UNSAMPLED",
+              "2P_count_lt_10"
+            ]
+          },
+          {
+            "record_id": "s0:line193042:f8572907be3ad2e9738a84dae1000338bb7100772cf1d3b52ec17561da409bbf",
+            "shell_id": 0,
+            "line_id": "193042",
+            "atomic_number": 28,
+            "ion": 3,
+            "lambda_lu_A": 557.0620314768405,
+            "wavelength_band": "450_918_A",
+            "reasons": [
+              "2P_count_lt_10"
+            ]
+          },
+          {
+            "record_id": "s8:line193042:f8572907be3ad2e9738a84dae1000338bb7100772cf1d3b52ec17561da409bbf",
+            "shell_id": 8,
+            "line_id": "193042",
+            "atomic_number": 28,
+            "ion": 3,
+            "lambda_lu_A": 557.0620314768405,
+            "wavelength_band": "450_918_A",
+            "reasons": [
+              "2P_UNSAMPLED",
+              "2P_count_lt_10"
+            ]
+          },
+          {
+            "record_id": "s8:line549915:f8572907be3ad2e9738a84dae1000338bb7100772cf1d3b52ec17561da409bbf",
+            "shell_id": 8,
+            "line_id": "549915",
+            "atomic_number": 6,
+            "ion": 0,
+            "lambda_lu_A": 1159.0948239198651,
+            "wavelength_band": "918_1290_A",
+            "reasons": [
+              "2P_count_lt_10"
+            ]
+          },
+          {
+            "record_id": "s8:line473609:f8572907be3ad2e9738a84dae1000338bb7100772cf1d3b52ec17561da409bbf",
+            "shell_id": 8,
+            "line_id": "473609",
+            "atomic_number": 28,
+            "ion": 1,
+            "lambda_lu_A": 1033.8569351543651,
+            "wavelength_band": "918_1290_A",
+            "reasons": [
+              "2P_count_lt_10"
+            ]
+          },
+          {
+            "record_id": "s8:line615667:f8572907be3ad2e9738a84dae1000338bb7100772cf1d3b52ec17561da409bbf",
+            "shell_id": 8,
+            "line_id": "615667",
+            "atomic_number": 8,
+            "ion": 2,
+            "lambda_lu_A": 1282.6580440898053,
+            "wavelength_band": "918_1290_A",
+            "reasons": [
+              "2P_count_lt_10"
+            ]
+          },
+          {
+            "record_id": "s8:line412920:f8572907be3ad2e9738a84dae1000338bb7100772cf1d3b52ec17561da409bbf",
+            "shell_id": 8,
+            "line_id": "412920",
+            "atomic_number": 26,
+            "ion": 4,
+            "lambda_lu_A": 938.7809194084216,
+            "wavelength_band": "918_1290_A",
+            "reasons": [
+              "2P_UNSAMPLED",
+              "2P_count_lt_10"
+            ]
+          }
+        ]
+      }
+    },
+    "passed": true
+  },
+  "static_read_trace": {
+    "source": "src/lumina_plasma.c",
+    "source_sha256": "a102f9708dc5cb9970e118fec0661630fb71010b3fe1aed827ee80ac89f593aa",
+    "canonical_calls": 6,
+    "passed": true
+  },
+  "A_ul_crosswalk": {
+    "schema": "lumina-a2-06-aul-crosswalk-v1",
+    "model": "/home/kjhan/BACKUP/Eunha.A1/Claude/Lumina-sn/data/tardis_reference_toy06_19p48d_sivcaiv_ftos",
+    "matching": [
+      "Z",
+      "ion",
+      "lower_label_sha256",
+      "upper_label_sha256",
+      "lower_energy_eV_tiebreak_only",
+      "upper_energy_eV_tiebreak_only",
+      "g_lower",
+      "g_upper"
+    ],
+    "lumina_lines": 2220953,
+    "matched_lines": 2220953,
+    "unmatched_lumina_lines": 0,
+    "unmatched_levels": 0,
+    "truth_transitions": 3617414,
+    "maximum_level_energy_delta_eV": 4.999378688808065e-11,
+    "maximum_A_ul_relative_error": 1.7176632725861633e-16,
+    "relative_error_limit": 1e-10,
+    "one_sided_zero_rows": 0,
+    "truth_weight": "abs(A_ul)*g_upper",
+    "active_prefix": "minimal >=99.9%; boundary ties all included",
+    "active_truth_weight_coverage_diagnostic": 0.9811252941488394,
+    "coverage_disposition": "reported, not judged: V4 section 4 replaces V3 section 3.7",
+    "unmatched_path": "/home/kjhan/BACKUP/Eunha.A1/Claude/Lumina-sn/validation/a2_06/A2_06_AUL_UNMATCHED.csv.gz",
+    "unmatched_sha256": "72b283cfc6ce4ac958d396ee3d47ac579b0584d278aa2a5830f2b11d9d3da6fe",
+    "verdict": "PASS"
+  },
+  "negative_controls": {
+    "A2_06_NEG_1": {
+      "name": "stale generation",
+      "expected": "FAIL",
+      "observed_fail": true,
+      "evidence": "dual fixture rejects wrong-generation commit and stale lookup view"
+    },
+    "A2_06_NEG_2": {
+      "name": "line/profile hash exchange",
+      "expected": "FAIL",
+      "observed_fail": true,
+      "evidence": "dual fixture observes distinct QHASH and PROFILE view failures"
+    },
+    "A2_06_NEG_3": {
+      "name": "4pi/V/dt/frame omission",
+      "expected": "FAIL",
+      "observed_fail": true,
+      "evidence": "normalization poison violates projection limits"
+    },
+    "A2_06_NEG_4": {
+      "name": "UNSAMPLED zero/coarse fallback",
+      "expected": "FAIL",
+      "observed_fail": true,
+      "evidence": "dual fixture returns UNSAMPLED; consumer counter and zero-fallback trace pass"
+    },
+    "A2_06_NEG_5": {
+      "name": "A_ul/previous-estimator Q pruning",
+      "expected": "FAIL",
+      "observed_fail": true,
+      "evidence": "registered Q builder uses reachability/domain only; pruned census changes count/hash"
+    },
+    "A2_06_NEG_6": {
+      "name": "independent setter/generation/lifecycle",
+      "expected": "FAIL",
+      "observed_fail": true,
+      "evidence": "cache is nested in RadiationFieldOwner"
+    },
+    "A2_06_NEG_7": {
+      "name": "phi normalization/observer frame",
+      "expected": "FAIL",
+      "observed_fail": true,
+      "evidence": "half-normalized phi fails closure; both checked views reject observer frame"
+    },
+    "A2_06_NEG_8": {
+      "name": "legacy production read trace",
+      "expected": "FAIL",
+      "observed_fail": true,
+      "evidence": "diagnostic shadows excluded; every production BB site reaches checked view"
+    },
+    "A2_06_NEG_9": {
+      "name": "partial commit publication",
+      "expected": "FAIL",
+      "observed_fail": true,
+      "evidence": "dual-commit fixture injects both failure directions and memcmp-checks public state"
+    }
+  },
+  "L_1bb": {
+    "state": "BLOCKED_MISSING_RATE_EXPORT",
+    "assertion": "NETRATE/TOTRATE separated channels absent; PASS forbidden"
+  }
+}

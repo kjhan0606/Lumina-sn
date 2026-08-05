@@ -96,8 +96,11 @@ double calculate_distance_electron(double electron_density, double tau_event) {
 
 /* Phase 3 - Step 4: Base J and nu_bar estimators */
 /* TARDIS: update_base_estimators */
+#include "line_jbar.h"
+
 void update_base_estimators(RPacket *pkt, double distance, Estimators *est,
-                             double comov_nu, double comov_energy) {
+                             double comov_nu, double comov_energy,
+                             double comov_nu_end, double comov_energy_end) {
     int shell = pkt->current_shell_id; /* Phase 3 - Step 4 */
     est->j_estimator[shell] += comov_energy * distance; /* Phase 3 - Step 4 */
     est->nu_bar_estimator[shell] += comov_energy * distance * comov_nu; /* Phase 3 - Step 4 */
@@ -118,6 +121,22 @@ void update_base_estimators(RPacket *pkt, double distance, Estimators *est,
         (void)radiation_field_accumulator_add(
             est->radiation_field_accumulator, (size_t)shell,
             comov_nu, comov_energy * distance);
+
+    /* A2-06: same measure, phi-weighted selective line estimator.  The
+     * segment's comoving nu/energy vary linearly between the endpoints; any
+     * add failure latches the shared accumulator so the commit refuses. */
+    if (est->line_jbar_partial != NULL && est->line_jbar_qset != NULL) {
+        if (line_jbar_segment_add(
+                (const LineJbarQSet *)est->line_jbar_qset,
+                (LineJbarPacketPartial *)est->line_jbar_partial, shell,
+                comov_nu, comov_nu_end, comov_energy, comov_energy_end,
+                distance) != 0 && est->line_jbar_accumulator) {
+#ifdef _OPENMP
+#pragma omp atomic write
+#endif
+            ((LineJbarAccumulator *)est->line_jbar_accumulator)->error_latch = 1;
+        }
+    }
 }
 
 /* Phase 3 - Step 4: Line-specific j_blue and Edotlu */
@@ -284,9 +303,14 @@ void move_r_packet(RPacket *pkt, double distance, double time_explosion,
 
         double comov_nu = pkt->nu * doppler_factor; /* Phase 3 - Step 6 */
         double comov_energy = pkt->energy * doppler_factor; /* Phase 3 - Step 6 */
+        /* A2-06: end-of-segment comoving values from the moved position */
+        double doppler_end = get_doppler_factor(pkt->r, pkt->mu, time_explosion);
+        double comov_nu_end = pkt->nu * doppler_end;
+        double comov_energy_end = pkt->energy * doppler_end;
 
         /* Phase 3 - Step 6: Update base estimators */
-        update_base_estimators(pkt, distance, est, comov_nu, comov_energy); /* Phase 3 - Step 6 */
+        update_base_estimators(pkt, distance, est, comov_nu, comov_energy,
+                               comov_nu_end, comov_energy_end); /* Phase 3 - Step 6 */
     }
 }
 

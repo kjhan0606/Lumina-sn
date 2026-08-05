@@ -512,6 +512,95 @@ static int *read_csv_column_int(const char *path, const char *col_name,
     return idata; /* Phase 2 - Step 9b */
 }
 
+/* A2-06 V4 section 4: bind the original configuration label to every loaded
+ * level without retaining the label itself in the physics object.  The fixed
+ * digest table is diagnostic-only and is consumed by the A_ul crosswalk. */
+static char (*read_csv_column_sha256(const char *path, const char *col_name,
+                                     int *out_n))[65]
+{
+    FILE *fp = fopen(path, "r");
+    char line[4096];
+    int col_idx = -1, idx = 0, n = 0, cap = 1024;
+    char (*hashes)[65] = NULL;
+    if (!fp || !fgets(line, sizeof(line), fp)) {
+        if (fp) fclose(fp);
+        return NULL;
+    }
+    for (char *p = line; *p && *p != '\n' && *p != '\r'; idx++) {
+        char *start = p;
+        while (*p && *p != ',' && *p != '\n' && *p != '\r') p++;
+        char saved = *p;
+        *p = '\0';
+        while (*start == ' ') start++;
+        if (strcmp(start, col_name) == 0) col_idx = idx;
+        *p = saved;
+        if (col_idx >= 0 || *p != ',') break;
+        p++;
+    }
+    if (col_idx < 0) { fclose(fp); return NULL; }
+    hashes = (char (*)[65])malloc((size_t)cap * sizeof(*hashes));
+    if (!hashes) { fclose(fp); return NULL; }
+    while (fgets(line, sizeof(line), fp)) {
+        char *p = line, *end;
+        char decoded[4096];
+        size_t decoded_n = 0;
+        if (line[0] == '\n' || line[0] == '\r') continue;
+        for (int c = 0; c <= col_idx; c++) {
+            int quoted = (*p == '"');
+            if (quoted) p++;
+            decoded_n = 0;
+            while (*p) {
+                if (quoted && *p == '"') {
+                    if (p[1] == '"') {
+                        if (decoded_n + 1 >= sizeof(decoded)) break;
+                        decoded[decoded_n++] = '"';
+                        p += 2;
+                        continue;
+                    }
+                    p++;
+                    while (*p == ' ' || *p == '\t') p++;
+                    break;
+                }
+                if (!quoted && (*p == ',' || *p == '\n' || *p == '\r')) break;
+                if (decoded_n + 1 >= sizeof(decoded)) break;
+                decoded[decoded_n++] = *p++;
+            }
+            if (decoded_n + 1 >= sizeof(decoded)) {
+                free(hashes); fclose(fp); return NULL;
+            }
+            decoded[decoded_n] = '\0';
+            if (c == col_idx) break;
+            while (*p && *p != ',') p++;
+            if (*p != ',') { p = NULL; break; }
+            p++;
+        }
+        if (!p) { free(hashes); fclose(fp); return NULL; }
+        p = decoded;
+        end = decoded + decoded_n;
+        while (p < end && (*p == ' ' || *p == '\t')) p++;
+        while (end > p && (end[-1] == ' ' || end[-1] == '\t')) end--;
+        if (end == p) { free(hashes); fclose(fp); return NULL; }
+        if (n == cap) {
+            cap *= 2;
+            void *grown = realloc(hashes, (size_t)cap * sizeof(*hashes));
+            if (!grown) { free(hashes); fclose(fp); return NULL; }
+            hashes = (char (*)[65])grown;
+        }
+        KShapeSHA256 sha;
+        unsigned char digest[32];
+        kshape_sha256_init(&sha);
+        kshape_sha256_update(&sha, p, (size_t)(end - p));
+        kshape_sha256_final(&sha, digest);
+        for (int b = 0; b < 32; b++)
+            snprintf(hashes[n] + 2*b, 3, "%02x", digest[b]);
+        hashes[n][64] = '\0';
+        n++;
+    }
+    fclose(fp);
+    *out_n = n;
+    return hashes;
+}
+
 /* CONFIG-PREC: config.json owns the deck declaration; plasma_state.csv is a
  * consistency witness, never an override.  Runtime overrides have to be
  * explicit and are logged below.  Keep the tolerances here (rather than in a
@@ -1167,6 +1256,21 @@ int load_atomic_data(AtomicData *atom, const char *ref_dir, int n_shells) {
     atom->level_g          = read_csv_column_int(path, "g", &n);
     atom->level_metastable = read_csv_column_int(path, "metastable", &n);
     atom->n_levels = n;
+    {
+        int n_label = 0;
+        atom->level_configuration_sha256 =
+            read_csv_column_sha256(path, "configuration", &n_label);
+        if (!atom->level_configuration_sha256 || n_label != atom->n_levels) {
+            free(atom->level_configuration_sha256);
+            atom->level_configuration_sha256 = NULL;
+            fprintf(stderr, "[A2-06][WARN] configuration-label hash table "
+                    "disabled: source does not match levels.csv (%d != %d)\n",
+                    n_label, atom->n_levels);
+        } else {
+            printf("  [A2-06] configuration-label hash binding active "
+                   "(%d levels)\n", n_label);
+        }
+    }
     /* Super-level index (CMFGEN f_to_s). Optional column: older references
      * lack it -> default to identity (each full level is its own super level)
      * so the NLTE solve reproduces the level-truncation behaviour. */
@@ -2429,6 +2533,11 @@ void inject_topstage_continuum_levels(AtomicData *atom, OpacityState *opacity) {
     atom->level_g          = (int *)   realloc(atom->level_g,          (size_t)new_n*sizeof(int));
     atom->level_metastable = (int *)   realloc(atom->level_metastable, (size_t)new_n*sizeof(int));
     atom->level_super      = (int *)   realloc(atom->level_super,      (size_t)new_n*sizeof(int));
+    if (atom->level_configuration_sha256) {
+        atom->level_configuration_sha256 = (char (*)[65])realloc(
+            atom->level_configuration_sha256,
+            (size_t)new_n * sizeof(*atom->level_configuration_sha256));
+    }
     atom->cmfgen_has_sigma = (int *)   realloc(atom->cmfgen_has_sigma, (size_t)new_n*sizeof(int));
     for (int s = 0; s < n_syn; s++) {
         int l = old_n + s;
@@ -2436,6 +2545,10 @@ void inject_topstage_continuum_levels(AtomicData *atom, OpacityState *opacity) {
         atom->level_num[l] = 0;        atom->level_energy_eV[l] = 0.0;
         atom->level_g[l] = syn_g[s];   atom->level_metastable[l] = 1;
         atom->level_super[l] = 0;      atom->cmfgen_has_sigma[l] = 0;
+        if (atom->level_configuration_sha256) {
+            memset(atom->level_configuration_sha256[l], '0', 64);
+            atom->level_configuration_sha256[l][64] = '\0';
+        }
     }
     if (atom->cmfgen_sigma_bf && atom->cmfgen_n_freq_bins > 0) {
         size_t nf = (size_t)atom->cmfgen_n_freq_bins;
@@ -2475,6 +2588,7 @@ void free_atomic_data(AtomicData *atom) {
     free(atom->level_g);
     free(atom->level_metastable);
     free(atom->level_super);
+    free(atom->level_configuration_sha256);
     free(atom->level_mult);        /* NULL unless LUMINA_ALPHA_SPINGATE=1 */
     free(atom->ioniz_Z);
     free(atom->ioniz_ion);

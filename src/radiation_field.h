@@ -142,6 +142,13 @@ typedef struct {
     RadiationField field;
     LineJbarCache line_jbar_cache;
     RadiationFieldAccumulator accumulator;
+    /* A2-06 owner-internal line-cache helpers (not part of the A2-03 public
+     * schema): compact ascending line-id array for view/lookup, and owned
+     * storage backing the per-entry profile_hash pointers. */
+    uint64_t *line_ids_compact;
+    size_t    line_n_compact;
+    uint64_t  line_profile_id;
+    char     *line_profile_hash_storage;
 } RadiationFieldOwner;
 
 /* Source-compatible name for A2-03 fixtures only; production owns an
@@ -175,6 +182,25 @@ typedef struct {
     double time_simulation;
     uint64_t contribution_count;
     uint64_t out_of_grid_contribution_count;
+
+    /* A2-06 (SPEC_A2_06_V5 1.1): selective line-Jbar block.  J_nu and the
+     * line cache are two views of ONE atomic commit: both candidates validate
+     * before either publishes; any failure leaves ALL public state unchanged.
+     * MC form: sum/sumsq/count per (line,shell) from the packet-level
+     * population (zero contributors included via line_n_packets).
+     * Deterministic (replay) form: jbar/validity given directly. */
+    size_t          line_n;              /* 0 = no line block this commit */
+    const uint64_t *line_id;             /* [line_n] */
+    const char     *line_q_set_hash;     /* SHA-256 hex */
+    uint64_t        line_profile_id;
+    const char     *line_profile_hash;   /* SHA-256 hex */
+    const double   *line_sum;            /* [line_n*n_shells] MC only */
+    const double   *line_sumsq;          /* [line_n*n_shells] MC only */
+    const uint64_t *line_count;          /* [line_n*n_shells] MC only */
+    uint64_t        line_n_packets;      /* N incl. zero contributors */
+    int             line_error_latch;    /* accumulation failure => refuse */
+    const double   *line_jbar;           /* [line_n*n_shells] deterministic */
+    const int32_t  *line_validity;       /* [line_n*n_shells] deterministic */
 } RadiationFieldCommitRequest;
 
 #ifdef __cplusplus
@@ -231,6 +257,51 @@ int radiation_field_read_view(const RadiationFieldOwner *owner,
                               size_t expected_n_shells,
                               uint64_t expected_generation,
                               RadiationFieldView *out);
+
+/* A2-06 (SPEC_A2_06_V5 1.2): checked line-Jbar view.  Success requires ALL of
+ * enabled, canonical units/comoving frame, epoch/shell count, generation
+ * triple identity, q_set_hash and profile identity.  Failure fully
+ * invalidates *out and returns a distinct code; consumers never see cache
+ * arrays or any fallback (no zero, no coarse, no previous generation). */
+typedef enum {
+    LINE_JBAR_VIEW_OK = 0,
+    LINE_JBAR_VIEW_DISABLED = -1,
+    LINE_JBAR_VIEW_UNITS_FRAME = -2,
+    LINE_JBAR_VIEW_EPOCH_SHELLS = -3,
+    LINE_JBAR_VIEW_STALE_GENERATION = -4,
+    LINE_JBAR_VIEW_QHASH = -5,
+    LINE_JBAR_VIEW_PROFILE = -6
+} LineJbarViewStatus;
+
+typedef struct {
+    size_t n_lines;                  /* Q_g size */
+    size_t n_shells;
+    const uint64_t *line_id;         /* [n_lines] ascending */
+    const double   *jbar;            /* [n_lines*n_shells] */
+    const LineJbarValidityState *validity;
+    const uint64_t *count;
+    const double   *se;              /* [n_lines*n_shells] standard error */
+    uint64_t generation;
+} LineJbarView;
+
+int radiation_field_line_jbar_view(const RadiationFieldOwner *owner,
+                                   double expected_epoch,
+                                   size_t expected_n_shells,
+                                   uint64_t expected_generation,
+                                   const char *expected_q_set_hash,
+                                   uint64_t expected_profile_id,
+                                   LineJbarView *out);
+
+typedef struct {
+    double jbar;
+    LineJbarValidityState validity;
+    uint64_t count;
+    double se;
+} LineJbarValue;
+
+/* MISS (line_id not in Q_g) is a distinct error, never a value. */
+int line_jbar_lookup(const LineJbarView *view, size_t shell,
+                     uint64_t line_id, LineJbarValue *out);
 
 #ifdef __cplusplus
 }

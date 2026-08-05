@@ -10,8 +10,8 @@ LDFLAGS += -fopenmp
 endif
 
 # Source files (in src/)
-SOURCES = src/lumina_main.c src/lumina_transport.c src/a2_02c_segment_capture.c src/radiation_field.c src/bf_rate_jnu.c src/lumina_plasma.c src/lumina_element_wide.c src/lumina_atomic.c src/lumina_cmfgen.c
-HEADERS = src/lumina.h src/a2_02c_segment_capture.h src/radiation_field.h src/bf_rate_jnu.h
+SOURCES = src/lumina_main.c src/lumina_transport.c src/a2_02c_segment_capture.c src/radiation_field.c src/bf_rate_jnu.c src/line_jbar.c src/lumina_plasma.c src/lumina_element_wide.c src/lumina_atomic.c src/lumina_cmfgen.c
+HEADERS = src/lumina.h src/a2_02c_segment_capture.h src/radiation_field.h src/bf_rate_jnu.h src/line_jbar.h
 TARGET = lumina
 
 # CUDA source
@@ -204,3 +204,14 @@ selftest_a2_05_bf_rate: tests/a2_05_bf_rate_selftest.c src/bf_rate_jnu.c src/rad
 l1bf_fixture: tests/a2_05_l1bf_fixture.c src/bf_rate_jnu.c src/radiation_field.c $(HEADERS)
 	$(CC) -O2 -std=c11 -Isrc -o l1bf_fixture \
 		tests/a2_05_l1bf_fixture.c src/bf_rate_jnu.c src/radiation_field.c $(LDFLAGS)
+
+# A2-06 selective line-Jbar estimator selftest (closed-form phi integrals,
+# packet-population variance identity, Q-set hash determinism)
+selftest_a2_06_line_jbar: tests/a2_06_line_jbar_selftest.c src/line_jbar.c src/line_jbar.h
+	$(CC) -O2 -std=gnu11 -Isrc -o selftest_a2_06_line_jbar \
+		tests/a2_06_line_jbar_selftest.c src/line_jbar.c $(LDFLAGS)
+
+# A2-06 dual-view commit selftest (partial-commit invariance, view codes, SE)
+selftest_a2_06_dual_commit: tests/a2_06_dual_commit_selftest.c src/radiation_field.c $(HEADERS)
+	$(CC) -O2 -std=gnu11 -Isrc -o selftest_a2_06_dual_commit \
+		tests/a2_06_dual_commit_selftest.c src/radiation_field.c $(LDFLAGS)
