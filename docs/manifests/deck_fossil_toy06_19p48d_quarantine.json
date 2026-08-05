@@ -1,0 +1,48 @@
+{
+  "schema": "lumina.deck-fossil-quarantine/v1",
+  "state": "APPROVED_FOSSIL_QUARANTINE",
+  "deck_identity": "data/tardis_reference_toy06_19p48d",
+  "producer": "UNRESOLVED",
+  "approved_disposition": "RECOVERY_IMPOSSIBLE_FOSSIL_QUARANTINE",
+  "allowed_modes": [
+    "legacy-read-only"
+  ],
+  "canonical_production_eligible": false,
+  "exact_sha256": {
+    "config.json": "cf61ab7c880243ffa94bba95b55c3bb4c88e526bcdf1d9b76bd81f44ff81293b",
+    "geometry.csv": "21bb9349c11bceb7c815ca6fd5b21a647bddf1ba3f3da4311b97da93dc3ce3d6",
+    "electron_densities.csv": "a8288513ad7b11a0a71b897849e9e93c900f211db481a12f6f79e984e2afe457",
+    "plasma_state.csv": "45ccb86be1296e644f8491eb9b1346b2b5746f96055003d7f7009082a336a6f4"
+  },
+  "rejected_hypotheses": [
+    {
+      "id": "epoch_misselection",
+      "hypothesis": "epoch misselection",
+      "verdict": "REJECTED"
+    },
+    {
+      "id": "wavelength_truncation",
+      "hypothesis": "wavelength truncation at 3557 Angstrom",
+      "verdict": "REJECTED"
+    },
+    {
+      "id": "fitted_quarter_constant",
+      "hypothesis": "1/4 = 0.249686 fitted constant",
+      "verdict": "REJECTED_NOT_A_PHYSICAL_CONSTANT"
+    },
+    {
+      "id": "git_untracked_history",
+      "hypothesis": "git UNTRACKED history recovers the writer",
+      "verdict": "REJECTED"
+    }
+  ],
+  "metrics": {
+    "R_L": 4.005038,
+    "epsilon_L": 3.005038,
+    "Delta_SB_K": 1.65,
+    "epsilon_L_limit": 1e-06,
+    "Delta_SB_K_limit": 5.0
+  },
+  "internal_consistency_disclaimer": "내부 Delta_SB=1.65 K 정합은 generation 재현성을 대신하지 못함",
+  "operational_policy": "매 legacy read-only 소비마다 WARN을 남기며 캠페인은 계속한다. canonical production 입력으로서의 무조건 정본성은 부인한다."
+}
