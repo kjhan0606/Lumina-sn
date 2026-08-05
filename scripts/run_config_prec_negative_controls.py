@@ -17,7 +17,10 @@ import shutil
 import subprocess
 import sys
 import tempfile
+from dataclasses import dataclass
 from typing import Callable
+
+from gate_parallel import run_cases, worker_count
 
 
 REQUIRED_FILES = (
@@ -64,35 +67,54 @@ def no_mutation(_deck: Path) -> None:
     return
 
 
-def run_case(binary: Path, source_deck: Path, scratch_root: Path,
-             name: str, mutation: Callable[[Path], None],
-             env_updates: dict[str, str], marker: str) -> bool:
-    fixture = scratch_root / name
+@dataclass(frozen=True)
+class Case:
+    binary: Path
+    source_deck: Path
+    scratch: Path
+    name: str
+    mutation: Callable[[Path], None]
+    env_updates: dict[str, str]
+    marker: str
+
+
+@dataclass(frozen=True)
+class Result:
+    name: str
+    returncode: int
+    marker_found: bool
+    output: str
+    fixture: Path
+    ok: bool
+
+
+def run_case(case: Case) -> Result:
+    fixture = case.scratch / "fixture"
+    case.scratch.mkdir(parents=True, exist_ok=False)
     fixture.mkdir()
     for filename in REQUIRED_FILES:
-        shutil.copy2(source_deck / filename, fixture / filename)
-    mutation(fixture)
+        shutil.copy2(case.source_deck / filename, fixture / filename)
+    case.mutation(fixture)
 
     env = os.environ.copy()
     env.pop("LUMINA_CONFIG_PREC", None)
     env.pop("LUMINA_T_INNER_FIX", None)
-    env.update(env_updates)
+    env.update(case.env_updates)
+    env["TMPDIR"] = str(case.scratch)
     result = subprocess.run(
-        [str(binary), str(fixture)],
-        cwd=binary.parent,
+        [str(case.binary), str(fixture)],
+        cwd=case.scratch,
         env=env,
         text=True,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         check=False,
     )
-    ok = result.returncode == 1 and marker in result.stdout
-    print(f"CONFIG_PREC_NEG case={name} child_rc={result.returncode} "
-          f"marker={'yes' if marker in result.stdout else 'no'} "
-          f"verdict={'PASS' if ok else 'FAIL'} fixture={fixture}")
-    if not ok:
-        print(result.stdout)
-    return ok
+    marker_found = case.marker in result.stdout
+    ok = result.returncode == 1 and marker_found
+    return Result(
+        case.name, result.returncode, marker_found, result.stdout, fixture, ok
+    )
 
 
 def main() -> int:
@@ -101,6 +123,8 @@ def main() -> int:
     parser.add_argument(
         "--deck", default="data/tardis_reference_toy06_19p48d"
     )
+    parser.add_argument("--serial", action="store_true")
+    parser.add_argument("--scratch-root", type=Path)
     args = parser.parse_args()
 
     binary = Path(args.binary).resolve()
@@ -112,8 +136,16 @@ def main() -> int:
               file=sys.stderr)
         return 2
 
-    scratch_root = Path(tempfile.mkdtemp(prefix="lumina_config_prec_controls_"))
+    scratch_root = (
+        args.scratch_root.resolve() if args.scratch_root
+        else Path(tempfile.mkdtemp(prefix="lumina_config_prec_controls_"))
+    )
+    scratch_root.mkdir(parents=True, exist_ok=True)
     print(f"CONFIG_PREC_NEG scratch={scratch_root}")
+    print(
+        f"CONFIG_PREC_NEG mode={'serial' if args.serial else 'parallel'} "
+        f"workers={worker_count(args.serial)}"
+    )
     color = inferred_color(source_deck)
     cases = (
         (
@@ -144,9 +176,30 @@ def main() -> int:
             "[CONFIG-PREC][FATAL] LUMINA_CONFIG_PREC='true' is invalid",
         ),
     )
-    passed = sum(
-        run_case(binary, source_deck, scratch_root, *case) for case in cases
+    tasks = [
+        Case(binary, source_deck, scratch_root / case[0], *case)
+        for case in cases
+    ]
+    results = run_cases(
+        "CP", run_case, tasks, serial=args.serial,
+        case_name=lambda case: case.name,
     )
+    passed = 0
+    for result in results:
+        print(
+            f"CONFIG_PREC_NEG case={result.name} child_rc={result.returncode} "
+            f"marker={'yes' if result.marker_found else 'no'} "
+            f"verdict={'PASS' if result.ok else 'FAIL'} "
+            f"fixture={result.fixture}"
+        )
+        print(
+            f"RESULT battery=CP case={result.name} "
+            f"verdict={'PASS' if result.ok else 'FAIL'} rc={result.returncode}"
+        )
+        if result.ok:
+            passed += 1
+        else:
+            print(result.output)
     print(f"CONFIG_PREC_NEG_SUMMARY passed={passed} total={len(cases)} "
           f"scratch={scratch_root}")
     return 0 if passed == len(cases) else 1
