@@ -6,30 +6,30 @@
 
 | 파일:행 | 심볼 | 현재 공급원 | 물리 의미 | 새 공급원 | 이행 단계 | 최종 상태 |
 |---|---|---|---|---|---|---|
-| src/lumina_plasma.c:4556 | W | local alias of plasma->W[s] | [rate] bound-bound dilute Planck pump | RadiationField.J_nu | A2-05 | REPLACE_SCALAR_RATE_READ |
-| src/lumina_plasma.c:4556 | T_rad | local alias of plasma->T_rad[s] | [rate] bound-bound Planck color | RadiationField.J_nu | A2-05 | REPLACE_SCALAR_RATE_READ |
-| src/lumina_plasma.c:4596 | W | local alias of plasma->W[s] | [rate] LTE comparison field amplitude | RadiationField.J_nu | A2-05 | REPLACE_SCALAR_RATE_READ |
-| src/lumina_plasma.c:4596 | T_rad | local alias of plasma->T_rad[s] | [rate] LTE comparison field color | RadiationField.J_nu | A2-05 | REPLACE_SCALAR_RATE_READ |
-| src/lumina_plasma.c:4701 | W | local alias of plasma->W[s] | [rate] line upward radiative rate | RadiationField.J_nu | A2-05 | REPLACE_SCALAR_RATE_READ |
-| src/lumina_plasma.c:4701 | T_rad | local alias of plasma->T_rad[s] | [rate] line upward radiative rate | RadiationField.J_nu | A2-05 | REPLACE_SCALAR_RATE_READ |
-| src/lumina_plasma.c:4879 | T_rad | local alias of plasma->T_rad[s] | [rate] Boltzmann fallback exponent in line rate | RadiationField.J_nu | A2-05 | REPLACE_SCALAR_RATE_READ |
-| src/lumina_plasma.c:4880 | W | local alias of plasma->W[s] | [rate] metastable dilution in line rate | RadiationField.J_nu | A2-05 | REPLACE_SCALAR_RATE_READ |
-| src/lumina_plasma.c:9160 | T_rad | bf_rate_pop argument from plasma->T_rad | [rate] bound-free population exponent | RadiationField.J_nu | A2-05 | REPLACE_SCALAR_RATE_READ |
-| src/lumina_plasma.c:9162 | W | bf_rate_pop argument from plasma->W | [rate] bound-free population dilution | RadiationField.J_nu | A2-05 | REPLACE_SCALAR_RATE_READ |
-| src/lumina_plasma.c:11908 | W | local alias of plasma->W[s] | [rate] line source fallback | RadiationField.J_nu | A2-05 | REPLACE_SCALAR_RATE_READ |
-| src/lumina_plasma.c:11908 | T_rad | local alias of plasma->T_rad[s] | [rate] line source fallback | RadiationField.J_nu | A2-05 | REPLACE_SCALAR_RATE_READ |
-| src/lumina_plasma.c:11915 | W | local alias of plasma->W[s] | [rate] bin field construction | RadiationField.J_nu | A2-05 | REPLACE_SCALAR_RATE_READ |
-| src/lumina_plasma.c:11915 | T_rad | local alias of plasma->T_rad[s] | [rate] bin field construction | RadiationField.J_nu | A2-05 | REPLACE_SCALAR_RATE_READ |
-| src/lumina_plasma.c:11943 | W | local alias of plasma->W[s] | [rate] bound-free rate population call | RadiationField.J_nu | A2-05 | REPLACE_SCALAR_RATE_READ |
-| src/lumina_plasma.c:11943 | T_rad | local alias of plasma->T_rad[s] | [rate] bound-free rate population call | RadiationField.J_nu | A2-05 | REPLACE_SCALAR_RATE_READ |
-| src/lumina_plasma.c:11976 | W | local alias of plasma->W[s] | [rate] dilute photoheating integral | RadiationField.J_nu | A2-05 | REPLACE_SCALAR_RATE_READ |
-| src/lumina_plasma.c:12034 | T_rad | local alias of plasma->T_rad[s] | [rate] Planck comparison in rate integral | RadiationField.J_nu | A2-05 | REPLACE_SCALAR_RATE_READ |
-| src/lumina_plasma.c:12093 | W | local alias of plasma->W[s] | [rate] lower-level radiative weight | RadiationField.J_nu | A2-05 | REPLACE_SCALAR_RATE_READ |
-| src/lumina_plasma.c:12100 | W | local alias of plasma->W[s] | [rate] upper-level radiative weight | RadiationField.J_nu | A2-05 | REPLACE_SCALAR_RATE_READ |
-| src/lumina_plasma.c:13672 | W | local alias of plasma->W[s] | [rate] coupled bound-free rate call | RadiationField.J_nu | A2-05 | REPLACE_SCALAR_RATE_READ |
-| src/lumina_plasma.c:13672 | T_rad | local alias of plasma->T_rad[s] | [rate] coupled bound-free rate call | RadiationField.J_nu | A2-05 | REPLACE_SCALAR_RATE_READ |
-| src/lumina_plasma.c:13739 | W | local alias of plasma->W[s] | [rate] coupled lower-level weight | RadiationField.J_nu | A2-05 | REPLACE_SCALAR_RATE_READ |
-| src/lumina_plasma.c:13743 | W | local alias of plasma->W[s] | [rate] coupled upper-level weight | RadiationField.J_nu | A2-05 | REPLACE_SCALAR_RATE_READ |
+| src/lumina_plasma.c:4556 | W | local alias of plasma->W[s] | [rate] bound-bound dilute Planck pump | RadiationField.J_nu | A2-06 | REPLACE_SCALAR_RATE_READ |
+| src/lumina_plasma.c:4556 | T_rad | local alias of plasma->T_rad[s] | [rate] bound-bound Planck color | RadiationField.J_nu | A2-06 | REPLACE_SCALAR_RATE_READ |
+| src/lumina_plasma.c:4596 | W | local alias of plasma->W[s] | [rate] LTE comparison field amplitude | RadiationField.J_nu | A2-06 | REPLACE_SCALAR_RATE_READ |
+| src/lumina_plasma.c:4596 | T_rad | local alias of plasma->T_rad[s] | [rate] LTE comparison field color | RadiationField.J_nu | A2-06 | REPLACE_SCALAR_RATE_READ |
+| src/lumina_plasma.c:4701 | W | local alias of plasma->W[s] | [rate] line upward radiative rate | RadiationField.J_nu | A2-06 | REPLACE_SCALAR_RATE_READ |
+| src/lumina_plasma.c:4701 | T_rad | local alias of plasma->T_rad[s] | [rate] line upward radiative rate | RadiationField.J_nu | A2-06 | REPLACE_SCALAR_RATE_READ |
+| src/lumina_plasma.c:4879 | T_rad | local alias of plasma->T_rad[s] | [rate] Boltzmann fallback exponent in line rate | RadiationField.J_nu | A2-06 | REPLACE_SCALAR_RATE_READ |
+| src/lumina_plasma.c:4880 | W | local alias of plasma->W[s] | [rate] metastable dilution in line rate | RadiationField.J_nu | A2-06 | REPLACE_SCALAR_RATE_READ |
+| src/lumina_plasma.c:9160 | T_rad | bf_rate_pop argument from plasma->T_rad | [rate] bound-free population exponent | RadiationField.J_nu | A2-07 | REPLACE_SCALAR_RATE_READ |
+| src/lumina_plasma.c:9162 | W | bf_rate_pop argument from plasma->W | [rate] bound-free population dilution | RadiationField.J_nu | A2-07 | REPLACE_SCALAR_RATE_READ |
+| src/lumina_plasma.c:11908 | W | local alias of plasma->W[s] | [rate] line source fallback | RadiationField.J_nu | A2-06 | REPLACE_SCALAR_RATE_READ |
+| src/lumina_plasma.c:11908 | T_rad | local alias of plasma->T_rad[s] | [rate] line source fallback | RadiationField.J_nu | A2-06 | REPLACE_SCALAR_RATE_READ |
+| src/lumina_plasma.c:11915 | W | local alias of plasma->W[s] | [rate] bin field construction | RadiationField.J_nu | A2-06 | REPLACE_SCALAR_RATE_READ |
+| src/lumina_plasma.c:11915 | T_rad | local alias of plasma->T_rad[s] | [rate] bin field construction | RadiationField.J_nu | A2-06 | REPLACE_SCALAR_RATE_READ |
+| src/lumina_plasma.c:11943 | W | local alias of plasma->W[s] | [rate] bound-free rate population call | RadiationField.J_nu | A2-07 | REPLACE_SCALAR_RATE_READ |
+| src/lumina_plasma.c:11943 | T_rad | local alias of plasma->T_rad[s] | [rate] bound-free rate population call | RadiationField.J_nu | A2-07 | REPLACE_SCALAR_RATE_READ |
+| src/lumina_plasma.c:11976 | W | local alias of plasma->W[s] | [rate] dilute photoheating integral | (진단 유지) | 진단 | KEEP_DIAGNOSTIC_READ |
+| src/lumina_plasma.c:12034 | T_rad | local alias of plasma->T_rad[s] | [rate] Planck comparison in rate integral | (진단 유지) | 진단 | KEEP_DIAGNOSTIC_READ |
+| src/lumina_plasma.c:12093 | W | local alias of plasma->W[s] | [rate] lower-level radiative weight | RadiationField.J_nu | A2-06 | REPLACE_SCALAR_RATE_READ |
+| src/lumina_plasma.c:12100 | W | local alias of plasma->W[s] | [rate] upper-level radiative weight | RadiationField.J_nu | A2-06 | REPLACE_SCALAR_RATE_READ |
+| src/lumina_plasma.c:13672 | W | local alias of plasma->W[s] | [rate] coupled bound-free rate call | RadiationField.J_nu | A2-07 | REPLACE_SCALAR_RATE_READ |
+| src/lumina_plasma.c:13672 | T_rad | local alias of plasma->T_rad[s] | [rate] coupled bound-free rate call | RadiationField.J_nu | A2-07 | REPLACE_SCALAR_RATE_READ |
+| src/lumina_plasma.c:13739 | W | local alias of plasma->W[s] | [rate] coupled lower-level weight | RadiationField.J_nu | A2-06 | REPLACE_SCALAR_RATE_READ |
+| src/lumina_plasma.c:13743 | W | local alias of plasma->W[s] | [rate] coupled upper-level weight | RadiationField.J_nu | A2-06 | REPLACE_SCALAR_RATE_READ |
 | src/lumina_main.c:747 | plasma.W[i] | plasma.W | [comparator] CPU reference W comparator | RadiationField generation-bound diagnostic | A2-11 | KEEP_DIAGNOSTIC_ONLY |
 | src/lumina_main.c:748 | plasma.T_rad[i] | plasma.T_rad | [comparator] CPU reference T_rad comparator | RadiationField generation-bound diagnostic | A2-11 | KEEP_DIAGNOSTIC_ONLY |
 | src/lumina_main.c:750 | plasma.W[i] | plasma.W | [comparator] CPU W comparison report | RadiationField generation-bound diagnostic | A2-11 | KEEP_DIAGNOSTIC_ONLY |
@@ -163,3 +163,23 @@
 | src/lumina_plasma.c:17833 | plasma->W[s] | plasma.W | [Boltzmann_diagnostic] level-population dilution diagnostic | plasma->T_e | A2-07 | DIAGNOSE_BOLTZMANN_WITH_MATTER_TEMPERATURE |
 | src/lumina_atomic.c:826 | plasma->T_rad[i] | plasma.T_rad | [seed] initial electron-temperature seed | RadiationField.J_nu | A2-16 | LIMIT_SCALAR_SEED_TO_GENERATION_ZERO |
 | src/lumina_plasma.c:7897 | plasma->T_rad[pkt->current_shell_id] | plasma.T_rad | [emissivity] CPU BF Planck re-emission | RadiationField.J_nu | A2-09 | REPLACE_PLANCK_REEMISSION_SOURCE |
+
+## ADDENDUM (A2-05 폐합, 2026-08-06) — R3 재배치 + bf_rate_estimator 소비 실측 이관분
+
+재배치: 기존 A2-05 표기 24행 중 population 경로 6행 → A2-07, BB/line W·T_rad 16행 → A2-06,
+진단 2행 → 유지. A2-05 의 실 이관 대상은 아래 bf_rate_estimator CPU 소비 7지점(스펙 6 + 실측 발견 1)이며
+전부 canonical view 적분(`nlte_bf_gamma_canonical` → `bf_rate_gamma_legacy_grid`)으로 교체 완료.
+
+| 파일:행(이관 전 HEAD=bafd2bb 기준) | 심볼 | 물리 의미 | 처분 |
+|---|---|---|---|
+| src/lumina_plasma.c:2277-2284 | bf_rate_estimator 스캔 | parity field-built 판정 | view validity 행 스캔으로 교체 (완료) |
+| src/lumina_plasma.c:2342-2344 | σ·Γ_bf [C2]+pref·J [C1] | parity_gamma_phot 이온균형 Γ | canonical view 적분 (완료) |
+| src/lumina_plasma.c:5132-5139 | σ·Γ_bf [C2]+pref·J [C1] | MA iup INTERNALUPHIGHER R_ph | canonical view 적분 (완료; Seaton σ_edge 추출 루프만 잔존) |
+| src/lumina_plasma.c:16137-16150 | σ·Γ_bf [C2]+pref·J [C1] | NLTE 행렬 R_bf (source 0/1) | canonical view 적분 (완료; JEQB source 2 는 falsifier 장치로 유지) |
+| src/lumina_plasma.c:16451-16457 | σ·Γ_bf [C2] | 스테이지-IV 들뜬준위 R_bf_hl | **실측 발견(스펙 목록 밖)** — canonical view 적분 (완료) |
+| src/lumina_element_wide.c:601-610 | estimator+pref·J | EW capture rad_ion | canonical view 적분 (완료) |
+| src/lumina_element_wide.c:1121-1136 | estimator+pref·J | EW boundary-mix rad_ion | canonical view 적분 (완료) |
+
+잔존 bf_rate_estimator 참조(전수·허용 목록, R4): 생산자 정규화 lumina_plasma.c:1538-1542 ·
+C2 덤프(출력 전용) :1563-1564 · 오라클 계수 출력 :147-159 · field-source NULL 검사 :419 ·
+할당/해제 :14712/:14731 · GPU 경로 lumina_cuda.cu (A2-12/13). CPU 생산 물리 소비자 = 0.

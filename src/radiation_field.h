@@ -200,6 +200,38 @@ int radiation_field_commit(RadiationFieldOwner *owner,
 int radiation_field_validate_owner(const RadiationFieldOwner *owner);
 int radiation_field_dump_if_requested(const RadiationFieldOwner *owner);
 
+/* A2-05 (SPEC_A2_05_V2 R5): checked read-only view for rate consumers.
+ * Success requires ALL of: enabled owner, canonical units and comoving frame,
+ * expected epoch and shell count, generation required==computed==expected,
+ * canonical bin count and finite ascending edges.  On failure no view is
+ * produced and a distinct error code is returned; consumers must propagate
+ * rate validity instead of substituting any value (never return rate 0).
+ * The view aliases owner-internal storage and grants no write access. */
+typedef enum {
+    RADIATION_FIELD_VIEW_OK = 0,
+    RADIATION_FIELD_VIEW_DISABLED = -1,
+    RADIATION_FIELD_VIEW_UNITS_FRAME = -2,
+    RADIATION_FIELD_VIEW_EPOCH_SHELLS = -3,
+    RADIATION_FIELD_VIEW_STALE_GENERATION = -4,
+    RADIATION_FIELD_VIEW_GRID = -5
+} RadiationFieldViewStatus;
+
+typedef struct {
+    size_t n_shells;
+    size_t n_bins;
+    const double *frequency_bin_edges;   /* n_bins + 1, ascending, Hz */
+    const double *J_nu;                  /* [n_shells][n_bins] bin averages */
+    const RadiationFieldValidityState *validity;
+    const uint64_t *count;
+    uint64_t generation;
+} RadiationFieldView;
+
+int radiation_field_read_view(const RadiationFieldOwner *owner,
+                              double expected_epoch,
+                              size_t expected_n_shells,
+                              uint64_t expected_generation,
+                              RadiationFieldView *out);
+
 #ifdef __cplusplus
 }
 #endif

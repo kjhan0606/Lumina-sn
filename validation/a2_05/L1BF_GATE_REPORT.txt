@@ -1,0 +1,29 @@
+A2-05 L-1bf GATE (ORACLE_INPUT lane, deterministic)
+  run=/gpfs/kjhan/cmfgen_runs/toy06_19.48d_jnu4
+  fixture=/home/kjhan/BACKUP/Eunha.A1/Claude/Lumina-sn/l1bf_fixture
+  shells: s0:d67(v=4394) s1:d63(v=5841) s2:d60(v=7019) s3:d58(v=7983) s4:d57(v=8572) s5:d56(v=9133) s6:d54(v=10164) s7:d53(v=10706) s8:d51(v=11815)
+  canonical rebin: 4000 bins x 9 shells; validity counts VALID=28163 EXACT_ZERO=4714 OUT_OF_GRID=3123 (0.4s)
+  [Co III] NF=1000 sigma rows shipped; bandmask excluded shells: NONE
+  [Fe III] NF=1500 sigma rows shipped; bandmask excluded shells: NONE
+  [S II] NF=322 sigma rows shipped; bandmask excluded shells: ['s8']
+  [S III] NF=256 sigma rows shipped; bandmask excluded shells: NONE
+  fixture main lane done (3.8s)
+
+  --- ORACLE_INPUT verdict: Gamma_view / Gamma_PRRR (limits (0.5, 2.0) all, (0.8, 1.25) s6-s8; bandmask live) ---
+  Co III  vs PRRR : s0=1.133 s1=1.138 s2=1.142 s3=1.150 s4=1.155 s5=1.154 s6=1.138 s7=1.140 s8=1.004  | E_1=0.1335 f_cov(99.9% active,min)=1.0000
+  Co III  view/legacy1000 (migration delta): s0=0.9924 s1=0.9915 s2=0.9905 s3=0.9895 s4=0.9890 s5=0.9884 s6=0.9873 s7=0.9873 s8=0.9883
+  Fe III  vs PRRR : s0=1.005 s1=1.005 s2=1.006 s3=1.003 s4=1.000 s5=0.994 s6=0.982 s7=0.983 s8=0.911  | E_1=0.0050 f_cov(99.9% active,min)=1.0000
+  Fe III  view/legacy1000 (migration delta): s0=0.9933 s1=0.9921 s2=0.9909 s3=0.9898 s4=0.9893 s5=0.9888 s6=0.9877 s7=0.9880 s8=0.9898
+  S II    vs PRRR : s0=1.005 s1=1.010 s2=1.016 s3=1.021 s4=1.023 s5=1.023 s6=1.000 s7=0.988 s8=EXCL(0.938)  | E_1=0.0054 f_cov(99.9% active,min)=1.0000
+  S II    view/legacy1000 (migration delta): s0=0.9976 s1=0.9969 s2=0.9962 s3=0.9955 s4=0.9952 s5=0.9953 s6=0.9960 s7=0.9968 s8=0.9960
+  S II    blocked population share (R6, excluded from the numerator): s0=4.77e-06 s1=7.23e-07 s2=8.30e-08 s3=1.21e-08 s4=4.25e-09 s5=1.39e-09 s6=1.30e-10 s7=1.16e-10 s8=6.41e-10
+  S III   vs PRRR : s0=0.994 s1=0.993 s2=0.992 s3=0.990 s4=0.987 s5=0.982 s6=0.963 s7=0.954 s8=0.914  | E_1=0.0063 f_cov(99.9% active,min)=1.0000
+  S III   view/legacy1000 (migration delta): s0=0.9960 s1=0.9955 s2=0.9948 s3=0.9944 s4=0.9943 s5=0.9943 s6=0.9938 s7=0.9942 s8=0.9960
+
+  ORACLE_INPUT lane: deterministic commit => Poisson CI = 0 for every term; ORDER 6.3 CI qualification is trivially met (recorded, not waived).
+  GATE verdict: PASS
+
+  --- negative controls (each must FAIL physically; runner rc=0 iff observed) ---
+  (a) W*B_nu(14172.549) injection: E_1 = Co III:0.9 Fe III:1.0 S II:0.9 S III:1.0 (main lane E_1 <= 0.134; limit 0.5), 31 cells out of ratio limit -> FAIL observed (control PASS)
+  (b) threshold +1 legacy bin (witness ['Co III', 'Fe III']): Co III: dGamma/Gamma(s0)=0.0547 Fe III: dGamma/Gamma(s0)=0.0573 (must each exceed 0.005) -> FAIL observed (control PASS)
+  (c) alpha registration (Co III PRRR s0: alpha=5.871e-12 cm^3/s, n_e=4.848e+09, n_ion=7.828e+08): round-trip identity OK; extra density multiply detected: True -> Lumina alpha comparison BLOCKED_MISSING_RATE_EXPORT (registered)

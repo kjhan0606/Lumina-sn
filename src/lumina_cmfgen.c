@@ -3434,6 +3434,11 @@ int cmfgen_commit_jnu(const CMFGENState *cs, NLTEConfig *nlte,
     int rc = radiation_field_commit(&nlte->radiation_field, &request);
     free(edges); free(validity);
     if (rc != 0) return -1;
+    /* A2-05: the only replay-lane view refresh point. */
+    nlte->radfield_view_status = radiation_field_read_view(
+        &nlte->radiation_field, geo->time_explosion, (size_t)cs->n_shells,
+        generation, &nlte->radfield_view);
+    if (nlte->radfield_view_status != RADIATION_FIELD_VIEW_OK) return -1;
 
     /* Temporary compatibility view: A2-05+ migrates consumers to the canonical
      * field.  This copy preserves pre-migration rate/opacity/emissivity output. */

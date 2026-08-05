@@ -121,6 +121,7 @@ def build_specs(build: Path, cc: str) -> tuple[Build, ...]:
             "Z-validator",
             common_z + (
                 "tests/abundance_zero_nlte_fixture.c", "src/lumina_plasma.c",
+                "src/bf_rate_jnu.c",
                 "-lm", "-o", str(build / "zinert_validator"),
             ),
             build / "zinert_validator",
@@ -129,7 +130,7 @@ def build_specs(build: Path, cc: str) -> tuple[Build, ...]:
             "Z-tau",
             common_z + (
                 "-DLUMINA_FROZEN_ORACLE", "tests/zinert_tau_fixture.c",
-                "src/lumina_plasma.c", "-lm", "-o", str(build / "zinert_tau"),
+                "src/lumina_plasma.c", "src/bf_rate_jnu.c", "-lm", "-o", str(build / "zinert_tau"),
             ),
             build / "zinert_tau",
         ),
@@ -137,6 +138,7 @@ def build_specs(build: Path, cc: str) -> tuple[Build, ...]:
             "Z-population",
             common_z + (
                 "tests/zinert_population_fixture.c", "src/lumina_plasma.c",
+                "src/bf_rate_jnu.c",
                 "-lm", "-o", str(build / "zinert_population"),
             ),
             build / "zinert_population",
@@ -146,6 +148,7 @@ def build_specs(build: Path, cc: str) -> tuple[Build, ...]:
             common_z + (
                 "-DLUMINA_FROZEN_ORACLE", "tests/zinert_canonical_tau_fixture.c",
                 "src/lumina_plasma.c", "src/lumina_element_wide.c",
+                "src/bf_rate_jnu.c",
                 "src/lumina_atomic.c", "-lm", "-o",
                 str(build / "zinert_canonical_tau"),
             ),

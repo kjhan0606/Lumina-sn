@@ -572,6 +572,18 @@ typedef struct {
      * device mirror/lifecycle remain explicitly deferred to A2-12. */
     RadiationFieldOwner radiation_field;
 
+    /* A2-05: checked read view of the canonical field.  Refreshed ONLY at the
+     * two commit choke points (MC / CMFGEN replay); status != VIEW_OK means no
+     * published field and every view-based rate term reports STALE — consumers
+     * propagate rate validity, never substitute a value (SPEC_A2_05_V2 R5/R6).
+     * Counters are the R4 zero-consumer gate's observables. */
+    RadiationFieldView radfield_view;
+    int      radfield_view_status;            /* RadiationFieldViewStatus */
+    uint64_t bf_view_rate_terms;              /* view-integrated (level,shell) terms */
+    uint64_t bf_view_blocked_unsampled;       /* BLOCKED_INSUFFICIENT_SAMPLING */
+    uint64_t bf_view_blocked_out_of_grid;
+    uint64_t bf_view_blocked_stale;
+
     /* Current iteration index (set by host before each nlte_solve_all call). */
     int    current_iter;
 

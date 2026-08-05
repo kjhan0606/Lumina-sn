@@ -8,6 +8,7 @@
  * banner, counter, or random/permutation code.
  */
 #include "lumina.h"
+#include "bf_rate_jnu.h" /* A2-05 canonical-view bf rate result type */
 
 #include <errno.h>
 #include <float.h>
@@ -28,6 +29,10 @@ extern int nlte_bf_field_source(const NLTEConfig *nlte, double T_e, double nu,
 extern int nlte_bf_collisional_enabled(void);
 extern double nlte_bf_kramers_sigma0(int Z, int stage);
 extern unsigned long nlte_bf_gpu_field_bypass_count(void);
+/* A2-05: canonical-view bf photoionization rate (owner in lumina_plasma.c). */
+extern int nlte_bf_gamma_canonical(NLTEConfig *nlte, int shell,
+                                   const double *sigma_row, double sigma_0,
+                                   double nu_thresh, BfRateResult *out);
 extern int nlte_precompute_within_sl_frac_checked(
     NLTEConfig *, AtomicData *, PlasmaState *, int);
 extern int nlte_build_projection(NLTEConfig *nlte, AtomicData *atom,
@@ -582,6 +587,18 @@ void nlte_ew_capture_bf_target_rates(int lower_global, int lower_sl,
         }
         double rad_ion = 0.0, milne = 0.0, sigma_edge = 0.0;
         const double kTe = K_BOLTZMANN * T_e;
+        /* [A2-05] rad_ion for field sources 0/1 = canonical-view integral
+         * (blocked => no field term, counted on the NLTEConfig R6 counters).
+         * Source 2 (JEQB falsifier) keeps its per-bin B(T_e) device in the
+         * loop below, which also still owns sigma_edge and the Milne term. */
+        if (field_source != 2) {
+            BfRateResult br_ew;
+            if (nlte_bf_gamma_canonical(n, ew_cap.shell, sigma_row, sigma_0,
+                                        nu_threshold, &br_ew) == 0 &&
+                (br_ew.state == BF_RATE_VALID ||
+                 br_ew.state == BF_RATE_EXACT_ZERO))
+                rad_ion = br_ew.gamma;
+        }
         for (int bb = 0; bb < n->n_freq_bins; bb++) {
             double loglo = log(n->nu_min) + bb * n->d_log_nu;
             double nu = exp(loglo + 0.5 * n->d_log_nu);
@@ -598,22 +615,10 @@ void nlte_ew_capture_bf_target_rates(int lower_global, int lower_sl,
                 n, T_e, nu,
                 n->J_nu[(size_t)ew_cap.shell * n->n_freq_bins + bb],
                 0, NULL, NULL, &J);
-            if (field_source == 1) {
-                double estimator = n->bf_rate_estimator[
-                    (size_t)ew_cap.shell * n->n_freq_bins + bb];
-                if (estimator > 0.0 && isfinite(estimator)) {
-                    rad_ion += sigma * estimator;
-                    ew_atomic_inc_int(&ew_cap.bf_estimator_bins);
-                } else {
-                    rad_ion += pref * J;
-                    ew_atomic_inc_int(&ew_cap.bf_pref_j_bins);
-                }
-            } else {
-                rad_ion += pref * J;
+            if (field_source == 2) {
+                rad_ion += pref * J;   /* J == B_nu(T_e) under JEQB */
                 ew_atomic_inc_int(&ew_cap.bf_pref_j_bins);
-                if (field_source == 2) {
-                    ew_atomic_inc_int(&ew_cap.bf_jeqb_bins);
-                }
+                ew_atomic_inc_int(&ew_cap.bf_jeqb_bins);
             }
             double x = H_PLANCK * nu / kTe;
             if (x < 700.0) {
@@ -1101,6 +1106,15 @@ static void ew_boundary_mass_assemble(EWBoundaryMass *bm, NLTEConfig *n,
             if(!(threshold>0.0)||!(nu0<n->nu_max)){bm->bad_count++;continue;}
             double rad_ion=0.0,milne=0.0,sigma_edge=0.0;
             double kT=K_BOLTZMANN*T_e;
+            /* [A2-05] sources 0/1: canonical-view integral (blocked => no
+             * field term, counted).  Source 2 keeps its per-bin JEQB device. */
+            if(field_source!=2){
+                BfRateResult br_bm;
+                if(nlte_bf_gamma_canonical(n,shell,sigma_row,0.0,nu0,&br_bm)==0&&
+                   (br_bm.state==BF_RATE_VALID||
+                    br_bm.state==BF_RATE_EXACT_ZERO))
+                    rad_ion=br_bm.gamma;
+            }
             for(int bb=0;bb<n->n_freq_bins;bb++){
                 double loglo=log(n->nu_min)+bb*n->d_log_nu;
                 double nu=exp(loglo+0.5*n->d_log_nu);
@@ -1113,34 +1127,16 @@ static void ew_boundary_mass_assemble(EWBoundaryMass *bm, NLTEConfig *n,
                 double J=0.0;
                 (void)nlte_bf_field_source(n,T_e,nu,
                     n->J_nu[(size_t)shell*n->n_freq_bins+bb],0,NULL,NULL,&J);
-                if(field_source==1){
-                    double est=n->bf_rate_estimator[
-                        (size_t)shell*n->n_freq_bins+bb];
-                    if(est>0.0&&isfinite(est)){
-                        rad_ion+=sigma*est;
-#ifdef _OPENMP
-#pragma omp atomic update
-#endif
-                        fire->bf_estimator_bins++;
-                    } else {
-                        rad_ion+=pref*J;
-#ifdef _OPENMP
-#pragma omp atomic update
-#endif
-                        fire->bf_pref_j_bins++;
-                    }
-                }else{
-                    rad_ion+=pref*J;
+                if(field_source==2){
+                    rad_ion+=pref*J;   /* J == B_nu(T_e) under JEQB */
 #ifdef _OPENMP
 #pragma omp atomic update
 #endif
                     fire->bf_pref_j_bins++;
-                    if(field_source==2) {
 #ifdef _OPENMP
 #pragma omp atomic update
 #endif
-                        fire->bf_jeqb_bins++;
-                    }
+                    fire->bf_jeqb_bins++;
                 }
                 double x=H_PLANCK*nu/kT;
                 double spont=2.0*H_PLANCK*nu*nu*nu/

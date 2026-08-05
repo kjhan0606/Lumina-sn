@@ -3,6 +3,7 @@
  * Implements T_inner convergence from escape fraction. */
 
 #include "lumina.h" /* Phase 4 - Step 1 */
+#include "bf_rate_jnu.h" /* A2-05 canonical-view bf photoionization rate */
 #include "lumina_radeq_col_pairs.h" /* withParityO: CMFGEN-faithful all-pair COL cooling */
 #include <assert.h>
 #ifdef _OPENMP
@@ -434,6 +435,67 @@ int nlte_bf_field_source(const NLTEConfig *nlte, double T_e, double nu,
 /* D3 coordinate 4: collisional bf has one policy in both owners. */
 int nlte_bf_collisional_enabled(void) {
     return artis_parity_enabled();
+}
+
+/* A2-05 (SPEC_A2_05_V2): single choke point for the CPU bound-free
+ * photoionization rate.  Legacy field sources 0 (pref*J) and 1 (sigma*Gamma
+ * estimator) both collapse to a conservative integral of the canonical
+ * RadiationField view; source 2 (JEQB falsifier) and the GPU lookup keep
+ * their devices (R4 allowlist).  Only the J ownership moves: sigma stays the
+ * per-level legacy-grid row (or the Kramers evaluation at legacy bin centers)
+ * the site already owns, re-encoded as a bin-constant step tabulation so the
+ * integrator reproduces the current sigma reading exactly.
+ * Always fills *out; rc != 0 only on argument errors.  A non-VIEW_OK owner
+ * reports STALE — never a substituted rate. */
+int nlte_bf_gamma_canonical(NLTEConfig *nlte, int shell,
+                            const double *sigma_row, double sigma_0,
+                            double nu_thresh, BfRateResult *out)
+{
+    static __thread double node_nu[2 * NLTE_N_FREQ_BINS];
+    static __thread double node_sigma[2 * NLTE_N_FREQ_BINS];
+    if (!out) return -1;
+    out->gamma = 0.0;
+    out->state = BF_RATE_STALE;
+    out->w_miss = 0.0;
+    out->sample_count = 0;
+    if (!nlte || shell < 0 || !(nu_thresh > 0.0)) return -1;
+    /* The NULL-view test also protects zero-initialized configs, where a
+     * memset status would alias VIEW_OK (=0) without any published field. */
+    if (nlte->radfield_view_status != RADIATION_FIELD_VIEW_OK ||
+        !nlte->radfield_view.J_nu) {
+#ifdef _OPENMP
+#pragma omp atomic
+#endif
+        nlte->bf_view_blocked_stale++;
+        return 0;
+    }
+    int rc = bf_rate_gamma_legacy_grid(&nlte->radfield_view, (size_t)shell,
+                                       nlte->n_freq_bins, nlte->nu_min,
+                                       nlte->d_log_nu, sigma_row, sigma_0,
+                                       nu_thresh, node_nu, node_sigma, out);
+    if (rc != 0) return rc;
+    if (out->state == BF_RATE_VALID || out->state == BF_RATE_EXACT_ZERO) {
+#ifdef _OPENMP
+#pragma omp atomic
+#endif
+        nlte->bf_view_rate_terms++;
+    } else if (out->state == BF_RATE_STALE) {
+#ifdef _OPENMP
+#pragma omp atomic
+#endif
+        nlte->bf_view_blocked_stale++;
+    } else if (out->state == BF_RATE_UNSAMPLED) {
+#ifdef _OPENMP
+#pragma omp atomic
+#endif
+        nlte->bf_view_blocked_unsampled++;
+    } else {
+#ifdef _OPENMP
+#pragma omp atomic
+#endif
+        nlte->bf_view_blocked_out_of_grid++;
+    }
+    return 0;
 }
 
 /* Ownership status transferred from the current EW solve to the later
@@ -2269,34 +2331,38 @@ static int r1_rate_se_enabled(void) {
 }
 
 /* Shell has a usable transported MC field? (fail-closed gate; 1e-30 is the
- * J_nu floor set at nlte build, so >1e-25 means an actually-sampled bin). */
+ * J_nu floor set at nlte build, so >1e-25 means an actually-sampled bin).
+ * [A2-05] The bf_rate_estimator scan is replaced by the canonical view's
+ * validity row: a shell counts as built when any bin is VALID. */
 static int parity_field_built(NLTEConfig *nlte, int s) {
     if (!nlte || !nlte->enabled || !nlte->J_nu) return 0;
     int nfb = nlte->n_freq_bins;
     const double *Jrow = &nlte->J_nu[(size_t)s * nfb];
-    const double *bfr  = nlte->bf_rate_estimator ?
-                         &nlte->bf_rate_estimator[(size_t)s * nfb] : NULL;
-    for (int bb = 0; bb < nfb; bb++) {
+    for (int bb = 0; bb < nfb; bb++)
         if (Jrow[bb] > 1e-25) return 1;
-        if (bfr && bfr[bb] > 0.0) return 1;
+    if (nlte->radfield_view_status == RADIATION_FIELD_VIEW_OK &&
+        nlte->radfield_view.validity &&
+        (size_t)s < nlte->radfield_view.n_shells) {
+        const RadiationFieldValidityState *vrow =
+            &nlte->radfield_view.validity[(size_t)s * nlte->radfield_view.n_bins];
+        for (size_t bb = 0; bb < nlte->radfield_view.n_bins; bb++)
+            if (vrow[bb] == RADIATION_FIELD_VALID) return 1;
     }
     return 0;
 }
 
 /* Pop-weighted per-ion photoionization rate Gamma_phot(ip) [s^-1] from the
- * transported field, using the SAME per-bin R_bf estimator as the NLTE matrix
- * (prefer C2 bf_rate_estimator; else C1 dilute-BB integral over nlte->J_nu).
- * Level population fraction = Boltzmann at T_e (the B3 partition functions are
- * built at T_e,W=1 under parity, so this is self-consistent). Returns 0 if no
- * ionizing field lies above the ion's edges. */
+ * transported field.  [A2-05] The per-level rate is the canonical-view
+ * integral (nlte_bf_gamma_canonical); the old C2 bf_rate_estimator / C1
+ * dilute-BB per-bin mix is retired.  Level population fraction = Boltzmann at
+ * T_e (the B3 partition functions are built at T_e,W=1 under parity, so this
+ * is self-consistent).  Blocked (non-VALID) levels contribute nothing and are
+ * counted on the R6 counters. */
 static double parity_gamma_phot(AtomicData *atom, NLTEConfig *nlte,
                                 int s, int n_shells, int ip,
                                 double T_e, double chi_erg) {
     if (!nlte || !nlte->J_nu || T_e <= 0.0) return 0.0;
     int nfb = nlte->n_freq_bins;
-    const double *Jrow  = &nlte->J_nu[(size_t)s * nfb];
-    const double *bfrow = (artis_parity_enabled() && nlte->bf_rate_estimator)
-                          ? &nlte->bf_rate_estimator[(size_t)s * nfb] : NULL;
     const int use_cmfgen = atom->cmfgen_loaded &&
                            atom->cmfgen_n_freq_bins == nfb;
     int Z = atom->ion_pop_Z[ip];
@@ -2315,8 +2381,6 @@ static double parity_gamma_phot(AtomicData *atom, NLTEConfig *nlte,
     double kTe = K_BOLTZMANN * T_e;
     int lev_start = atom->level_offset[ip];
     int lev_end   = atom->level_offset[ip + 1];
-    double log_numin = log(nlte->nu_min);
-    double dln = nlte->d_log_nu;
     double Gamma = 0.0;
     for (int l = lev_start; l < lev_end; l++) {
         double E_lev_erg = atom->level_energy_eV[l] * EV_TO_ERG;
@@ -2329,21 +2393,12 @@ static double parity_gamma_phot(AtomicData *atom, NLTEConfig *nlte,
         const double *sigma_row = (use_cmfgen && atom->cmfgen_has_sigma &&
                                    atom->cmfgen_has_sigma[l])
             ? &atom->cmfgen_sigma_bf[(size_t)l * (size_t)nfb] : NULL;
-        double R_bf = 0.0;
-        for (int bb = 0; bb < nfb; bb++) {
-            double log_nu_lo = log_numin + bb * dln;
-            double nu_bin = exp(log_nu_lo + 0.5 * dln);
-            if (nu_bin < nu_thresh) continue;
-            double delta_nu = exp(log_nu_lo + dln) - exp(log_nu_lo);
-            double sigma;
-            if (sigma_row) { sigma = sigma_row[bb]; if (sigma <= 0.0) continue; }
-            else            sigma = sigma_0 * pow(nu_thresh / nu_bin, 3.0);
-            double pref = 4.0 * M_PI_VAL * sigma / (H_PLANCK * nu_bin) * delta_nu;
-            double bfr = bfrow ? bfrow[bb] : 0.0;
-            if (bfr > 0.0) R_bf += sigma * bfr;     /* [C2] transport Gamma_bf */
-            else           R_bf += pref * Jrow[bb]; /* [C1] dilute-BB integral */
-        }
-        Gamma += f_lev * R_bf;
+        BfRateResult br;
+        if (nlte_bf_gamma_canonical(nlte, s, sigma_row, sigma_0,
+                                    nu_thresh, &br) != 0) continue;
+        if (br.state != BF_RATE_VALID && br.state != BF_RATE_EXACT_ZERO)
+            continue;                       /* R6: blocked term, counted */
+        Gamma += f_lev * br.gamma;
     }
     if (!isfinite(Gamma) || Gamma < 0.0) Gamma = 0.0;
     return Gamma;
@@ -5042,28 +5097,25 @@ void compute_transition_probabilities(AtomicData *atom, PlasmaState *plasma,
                     double nu_thresh = eps_trans / H_PLANCK;
                     if (nu_thresh > 0.0) {
                         int nfb = nlte->n_freq_bins;
-                        const double *Jrow  = &nlte->J_nu[(size_t)s * nfb];
-                        const double *bfrow = (artis_parity_enabled() &&
-                                               nlte->bf_rate_estimator)
-                            ? &nlte->bf_rate_estimator[(size_t)s * nfb] : NULL;
                         const double *sigma_row =
                             &atom->cmfgen_sigma_bf[(size_t)lev * (size_t)nfb];
                         double log_numin = log(nlte->nu_min), dln = nlte->d_log_nu;
+                        /* [A2-05] R_ph = canonical-view integral (blocked =>
+                         * no field term, counted).  The reduced loop keeps only
+                         * the Seaton edge sigma extraction. */
                         double R_ph = 0.0, sigma_edge = 0.0;
+                        BfRateResult br_iup;
+                        if (nlte_bf_gamma_canonical(nlte, s, sigma_row, 0.0,
+                                                    nu_thresh, &br_iup) == 0 &&
+                            (br_iup.state == BF_RATE_VALID ||
+                             br_iup.state == BF_RATE_EXACT_ZERO))
+                            R_ph = br_iup.gamma;
                         for (int bb = 0; bb < nfb; bb++) {
-                            double log_nu_lo = log_numin + bb * dln;
-                            double nu_bin = exp(log_nu_lo + 0.5 * dln);
+                            double nu_bin = exp(log_numin + (bb + 0.5) * dln);
                             if (nu_bin < nu_thresh) continue;
-                            double sigma = sigma_row[bb];
-                            if (sigma <= 0.0) continue;
-                            if (sigma_edge == 0.0) sigma_edge = sigma; /* first bin>=edge */
-                            double bfr = bfrow ? bfrow[bb] : 0.0;
-                            if (bfr > 0.0) {
-                                R_ph += sigma * bfr;                /* [C2] transport Gamma_bf */
-                            } else {
-                                double delta_nu = exp(log_nu_lo + dln) - exp(log_nu_lo);
-                                R_ph += 4.0 * M_PI_VAL * sigma /
-                                        (H_PLANCK * nu_bin) * delta_nu * Jrow[bb]; /* [C1] */
+                            if (sigma_row[bb] > 0.0) {
+                                sigma_edge = sigma_row[bb]; /* first bin>=edge */
+                                break;
                             }
                         }
                         /* Seaton collisional ionization at the edge (ARTIS
@@ -14516,6 +14568,8 @@ int nlte_init(NLTEConfig *nlte, AtomicData *atom, OpacityState *opacity,
               int n_shells) {
     memset(nlte, 0, sizeof(NLTEConfig));
     nlte->enabled = 1;
+    /* A2-05: memset zero would alias VIEW_OK; no field is published yet. */
+    nlte->radfield_view_status = RADIATION_FIELD_VIEW_DISABLED;
     nlte->n_freq_bins = NLTE_N_FREQ_BINS;
     nlte->nu_min = NLTE_NU_MIN;
     nlte->nu_max = NLTE_NU_MAX;
@@ -14648,6 +14702,19 @@ int nlte_init(NLTEConfig *nlte, AtomicData *atom, OpacityState *opacity,
 }
 
 void nlte_free(NLTEConfig *nlte) {
+    /* A2-05 R4/R6 observability: the zero-consumer gate and the blocked-term
+     * audit read these totals from the run log (one line, always printed when
+     * the view path was ever exercised). */
+    if (nlte->bf_view_rate_terms || nlte->bf_view_blocked_stale ||
+        nlte->bf_view_blocked_unsampled || nlte->bf_view_blocked_out_of_grid) {
+        printf("[A2-05][BF-VIEW] rate_terms=%llu blocked_stale=%llu "
+               "blocked_unsampled=%llu blocked_out_of_grid=%llu\n",
+               (unsigned long long)nlte->bf_view_rate_terms,
+               (unsigned long long)nlte->bf_view_blocked_stale,
+               (unsigned long long)nlte->bf_view_blocked_unsampled,
+               (unsigned long long)nlte->bf_view_blocked_out_of_grid);
+        fflush(stdout);
+    }
     free(nlte->nlte_to_global_level);
     free(nlte->global_to_nlte_level);
     free(nlte->nlte_line_map);
@@ -16039,6 +16106,18 @@ void nlte_assemble_rate_matrix(NLTEConfig *nlte, AtomicData *atom,
                 if (use_gpu_R_bf) {
                     int idx = phot_base + lev;
                     R_bf = lookup->R_bf_table[(size_t)shell * L_phot_total + idx];
+                } else if (bf_field_source != 2) {
+                    /* [A2-05] CPU rate for field sources 0/1 = canonical-view
+                     * integral; the per-bin C2 estimator / C1 fallback mix is
+                     * retired.  Blocked (non-VALID) => no field term, counted
+                     * on the R6 counters.  Source 2 (JEQB falsifier) keeps its
+                     * per-bin B(T_e) device below. */
+                    BfRateResult br_bf;
+                    if (nlte_bf_gamma_canonical(nlte, shell, sigma_row, sigma_0,
+                                                nu_thresh, &br_bf) == 0 &&
+                        (br_bf.state == BF_RATE_VALID ||
+                         br_bf.state == BF_RATE_EXACT_ZERO))
+                        R_bf = br_bf.gamma;
                 }
                 for (int bb = 0; bb < nlte->n_freq_bins; bb++) {
                     double log_nu_lo = log(nlte->nu_min) + bb * nlte->d_log_nu;
@@ -16059,24 +16138,11 @@ void nlte_assemble_rate_matrix(NLTEConfig *nlte, AtomicData *atom,
                     }
                     if (sig_edge <= 0.0) sig_edge = sigma;   /* A4: sigma_bf at edge */
                     double pref = 4.0 * M_PI_VAL * sigma / (H_PLANCK * nu_bin) * delta_nu;
-                    if (!use_gpu_R_bf) {
-                        /* [ARTIS-PARITY C2] detailed bf MC rate: R_bf += σ·Γ_bf density
-                         * (radfield.cc:850); falls back to the dilute-BB field integral
-                         * pref·J_bin where the bin is MC-unsampled (Γ_bf==0). */
-                        double bfr = (bf_field_source == 1)
-                            ? nlte->bf_rate_estimator[(size_t)shell * nlte->n_freq_bins + bb]
-                            : 0.0;
-                        if (bfr > 0.0) {
-                            R_bf += sigma * bfr;
+                    if (!use_gpu_R_bf && bf_field_source == 2) {
+                        R_bf += pref * J_bin;   /* JEQB: J_bin == B_nu(T_e) */
 #ifdef LUMINA_FROZEN_ORACLE
-                            if (g_oracle.fp) g_oracle.bf_estimator_consumptions++;
+                        if (g_oracle.fp) g_oracle.bf_fallback_consumptions++;
 #endif
-                        } else {
-                            R_bf += pref * J_bin;
-#ifdef LUMINA_FROZEN_ORACLE
-                            if (g_oracle.fp) g_oracle.bf_fallback_consumptions++;
-#endif
-                        }
                     }
                     if (kTe > 0.0) {
                         double x = H_PLANCK * nu_bin / kTe;
@@ -16361,6 +16427,18 @@ void nlte_assemble_rate_matrix(NLTEConfig *nlte, AtomicData *atom,
                         &atom->cmfgen_sigma_bf[(size_t)gl * atom->cmfgen_n_freq_bins]
                         : NULL;
                     double R_bf_hl = 0.0, I_rec_hl = 0.0;
+                    /* [A2-05 ADDENDUM site 7] stage-IV excited-level rate:
+                     * sources 0/1 = canonical-view integral (blocked => no
+                     * field term, counted); source 2 keeps the per-bin JEQB
+                     * device below, which also still owns the Milne term. */
+                    if (bf_field_source_iv != 2) {
+                        BfRateResult br_hl;
+                        if (nlte_bf_gamma_canonical(nlte, shell, srow, sigma0_hi,
+                                                    nu_edge_lev, &br_hl) == 0 &&
+                            (br_hl.state == BF_RATE_VALID ||
+                             br_hl.state == BF_RATE_EXACT_ZERO))
+                            R_bf_hl = br_hl.gamma;
+                    }
                     for (int bb = 0; bb < nlte->n_freq_bins; bb++) {
                         double log_lo = log(nlte->nu_min) + bb * nlte->d_log_nu;
                         double nu_bin = exp(log_lo + 0.5 * nlte->d_log_nu);
@@ -16375,14 +16453,8 @@ void nlte_assemble_rate_matrix(NLTEConfig *nlte, AtomicData *atom,
                             nlte->J_nu[(size_t)shell * nlte->n_freq_bins + bb],
                             0, NULL, NULL, &J_bin);
                         double pref = 4.0 * M_PI_VAL * sigma / (H_PLANCK * nu_bin) * dnu;
-                        /* Shared selection is authoritative for parity, C2,
-                         * JEQB and the stimulated Milne field here too. */
-                        double bfr_hl = (bf_field_source_iv == 1)
-                            ? nlte->bf_rate_estimator[
-                                  (size_t)shell * nlte->n_freq_bins + bb]
-                            : 0.0;
-                        if (bfr_hl > 0.0) R_bf_hl += sigma * bfr_hl;
-                        else              R_bf_hl += pref * J_bin;
+                        if (bf_field_source_iv == 2)
+                            R_bf_hl += pref * J_bin;  /* J_bin == B_nu(T_e) */
                         double x = H_PLANCK * nu_bin / kTe;
                         if (x < 700.0) {
                             double spont = 2.0 * H_PLANCK * nu_bin * nu_bin * nu_bin / c2;

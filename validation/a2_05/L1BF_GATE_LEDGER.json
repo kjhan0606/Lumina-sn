@@ -1,0 +1,407 @@
+{
+  "schema": "lumina-a2-05-l1bf-gate-v2",
+  "lane": "ORACLE_INPUT",
+  "run": "/gpfs/kjhan/cmfgen_runs/toy06_19.48d_jnu4",
+  "bin": "/home/kjhan/BACKUP/Eunha.A1/Claude/Lumina-sn/data/atomic/cmfgen_sigma_bf_superlev_ionfix_ddc15strat_sivcaiv.bin",
+  "limits": {
+    "all": [
+      0.5,
+      2.0
+    ],
+    "forming": [
+      "s6",
+      "s7",
+      "s8"
+    ],
+    "forming_limit": [
+      0.8,
+      1.25
+    ]
+  },
+  "bandmask": {
+    "Co III": [],
+    "Fe III": [],
+    "S II": [
+      "s8"
+    ],
+    "S III": []
+  },
+  "E1_main": {
+    "Co III": 0.13353,
+    "Fe III": 0.005,
+    "S II": 0.00537,
+    "S III": 0.00632
+  },
+  "fcov_min": {
+    "Co III": 1.0,
+    "Fe III": 1.0,
+    "S II": 1.0,
+    "S III": 1.0
+  },
+  "verdict": "PASS",
+  "rows": [
+    {
+      "ion": "Co III",
+      "shell": "s0",
+      "ratio_prrr": 1.1333431171868555,
+      "ratio_legacy": 0.9924207667330646,
+      "ok": true,
+      "gamma_view": 17.01368520695522,
+      "gamma_truth": 15.011945587304568
+    },
+    {
+      "ion": "Co III",
+      "shell": "s1",
+      "ratio_prrr": 1.1378791652105584,
+      "ratio_legacy": 0.9915006972569852,
+      "ok": true,
+      "gamma_view": 0.6854372948473426,
+      "gamma_truth": 0.6023814441848103
+    },
+    {
+      "ion": "Co III",
+      "shell": "s2",
+      "ratio_prrr": 1.1416719182079103,
+      "ratio_legacy": 0.9904935391221474,
+      "ok": true,
+      "gamma_view": 0.017974623342153877,
+      "gamma_truth": 0.01574412320692687
+    },
+    {
+      "ion": "Co III",
+      "shell": "s3",
+      "ratio_prrr": 1.1503623301856374,
+      "ratio_legacy": 0.9895093993055083,
+      "ok": true,
+      "gamma_view": 0.0008467907595930362,
+      "gamma_truth": 0.0007361078656464585
+    },
+    {
+      "ion": "Co III",
+      "shell": "s4",
+      "ratio_prrr": 1.1553354696963503,
+      "ratio_legacy": 0.9889780530281596,
+      "ok": true,
+      "gamma_view": 0.00019593173497288053,
+      "gamma_truth": 0.00016958860877384476
+    },
+    {
+      "ion": "Co III",
+      "shell": "s5",
+      "ratio_prrr": 1.1536840639443966,
+      "ratio_legacy": 0.988395503930125,
+      "ok": true,
+      "gamma_view": 3.8131530438450824e-05,
+      "gamma_truth": 3.305196945174119e-05
+    },
+    {
+      "ion": "Co III",
+      "shell": "s6",
+      "ratio_prrr": 1.137627476162685,
+      "ratio_legacy": 0.9873019238671206,
+      "ok": true,
+      "gamma_view": 1.2857001613525905e-06,
+      "gamma_truth": 1.1301592026322775e-06
+    },
+    {
+      "ion": "Co III",
+      "shell": "s7",
+      "ratio_prrr": 1.1401819865674954,
+      "ratio_legacy": 0.9873166154818188,
+      "ok": true,
+      "gamma_view": 1.7506754391522018e-06,
+      "gamma_truth": 1.5354350970081452e-06
+    },
+    {
+      "ion": "Co III",
+      "shell": "s8",
+      "ratio_prrr": 1.0043096715239506,
+      "ratio_legacy": 0.9882628058724291,
+      "ok": true,
+      "gamma_view": 2.726685654591361e-05,
+      "gamma_truth": 2.7149849612160543e-05
+    },
+    {
+      "ion": "Fe III",
+      "shell": "s0",
+      "ratio_prrr": 1.0049776403196116,
+      "ratio_legacy": 0.9933374581237925,
+      "ok": true,
+      "gamma_view": 121.05807870474318,
+      "gamma_truth": 120.4584797192535
+    },
+    {
+      "ion": "Fe III",
+      "shell": "s1",
+      "ratio_prrr": 1.005342220009395,
+      "ratio_legacy": 0.9921162336292444,
+      "ok": true,
+      "gamma_view": 6.321590338348317,
+      "gamma_truth": 6.287998467118232
+    },
+    {
+      "ion": "Fe III",
+      "shell": "s2",
+      "ratio_prrr": 1.0058664592114805,
+      "ratio_legacy": 0.9909106881586273,
+      "ok": true,
+      "gamma_view": 0.21992278261016462,
+      "gamma_truth": 0.21864013915183794
+    },
+    {
+      "ion": "Fe III",
+      "shell": "s3",
+      "ratio_prrr": 1.0030457304360336,
+      "ratio_legacy": 0.9898403844015282,
+      "ok": true,
+      "gamma_view": 0.01340392474304652,
+      "gamma_truth": 0.013363223965092503
+    },
+    {
+      "ion": "Fe III",
+      "shell": "s4",
+      "ratio_prrr": 0.9995653803074486,
+      "ratio_legacy": 0.989337826927142,
+      "ok": true,
+      "gamma_view": 0.003545237505367235,
+      "gamma_truth": 0.003546779005368096
+    },
+    {
+      "ion": "Fe III",
+      "shell": "s5",
+      "ratio_prrr": 0.993819075344418,
+      "ratio_legacy": 0.9887827769425569,
+      "ok": true,
+      "gamma_view": 0.0008026750596113136,
+      "gamma_truth": 0.0008076671896573714
+    },
+    {
+      "ion": "Fe III",
+      "shell": "s6",
+      "ratio_prrr": 0.9820338841978015,
+      "ratio_legacy": 0.9877447380821902,
+      "ok": true,
+      "gamma_view": 3.5646729960020866e-05,
+      "gamma_truth": 3.6298879838692913e-05
+    },
+    {
+      "ion": "Fe III",
+      "shell": "s7",
+      "ratio_prrr": 0.98258659733686,
+      "ratio_legacy": 0.9880126832144431,
+      "ok": true,
+      "gamma_view": 4.661244434699721e-05,
+      "gamma_truth": 4.743851022732511e-05
+    },
+    {
+      "ion": "Fe III",
+      "shell": "s8",
+      "ratio_prrr": 0.9113639392102016,
+      "ratio_legacy": 0.989798299101354,
+      "ok": true,
+      "gamma_view": 0.0007935490552826711,
+      "gamma_truth": 0.0008707268536106111
+    },
+    {
+      "ion": "S II",
+      "shell": "s0",
+      "ratio_prrr": 1.0048251019809078,
+      "ratio_legacy": 0.9975864435127881,
+      "ok": true,
+      "gamma_view": 8746.456165442081,
+      "gamma_truth": 8704.456276220963
+    },
+    {
+      "ion": "S II",
+      "shell": "s1",
+      "ratio_prrr": 1.0100758883224412,
+      "ratio_legacy": 0.9969289219765749,
+      "ok": true,
+      "gamma_view": 843.6799953125527,
+      "gamma_truth": 835.2639688427342
+    },
+    {
+      "ion": "S II",
+      "shell": "s2",
+      "ratio_prrr": 1.015582824100176,
+      "ratio_legacy": 0.9962112463351864,
+      "ok": true,
+      "gamma_view": 61.9437618231872,
+      "gamma_truth": 60.99331374383024
+    },
+    {
+      "ion": "S II",
+      "shell": "s3",
+      "ratio_prrr": 1.020808859758905,
+      "ratio_legacy": 0.995513146378807,
+      "ok": true,
+      "gamma_view": 6.6851991638187345,
+      "gamma_truth": 6.548923532459982
+    },
+    {
+      "ion": "S II",
+      "shell": "s4",
+      "ratio_prrr": 1.023467804648198,
+      "ratio_legacy": 0.9951730371203242,
+      "ok": true,
+      "gamma_view": 2.2376902558591123,
+      "gamma_truth": 2.1863807006887583
+    },
+    {
+      "ion": "S II",
+      "shell": "s5",
+      "ratio_prrr": 1.0225536911158344,
+      "ratio_legacy": 0.9952610263668024,
+      "ok": true,
+      "gamma_view": 0.6673182049201618,
+      "gamma_truth": 0.6525996734625921
+    },
+    {
+      "ion": "S II",
+      "shell": "s6",
+      "ratio_prrr": 0.9998034467361788,
+      "ratio_legacy": 0.9959648303755269,
+      "ok": true,
+      "gamma_view": 0.05606167277888404,
+      "gamma_truth": 0.0560726940499108
+    },
+    {
+      "ion": "S II",
+      "shell": "s7",
+      "ratio_prrr": 0.987626024621827,
+      "ratio_legacy": 0.9967723407338978,
+      "ok": true,
+      "gamma_view": 0.06601240789777142,
+      "gamma_truth": 0.0668394779522424
+    },
+    {
+      "ion": "S II",
+      "shell": "s8",
+      "ratio_prrr": 0.9375596514134327,
+      "ratio_legacy": 0.9959832167556012,
+      "ok": null,
+      "excluded": true,
+      "gamma_view": 0.503001152092888,
+      "gamma_truth": 0.5365004256898009
+    },
+    {
+      "ion": "S III",
+      "shell": "s0",
+      "ratio_prrr": 0.9937078418227178,
+      "ratio_legacy": 0.9960272135466475,
+      "ok": true,
+      "gamma_view": 12.2470366741547,
+      "gamma_truth": 12.324584911889655
+    },
+    {
+      "ion": "S III",
+      "shell": "s1",
+      "ratio_prrr": 0.9929020141138316,
+      "ratio_legacy": 0.9954723622084481,
+      "ok": true,
+      "gamma_view": 0.3950714696371273,
+      "gamma_truth": 0.3978957278979134
+    },
+    {
+      "ion": "S III",
+      "shell": "s2",
+      "ratio_prrr": 0.9919186441465732,
+      "ratio_legacy": 0.9948014645114828,
+      "ok": true,
+      "gamma_view": 0.008411986087507052,
+      "gamma_truth": 0.00848052018897634
+    },
+    {
+      "ion": "S III",
+      "shell": "s3",
+      "ratio_prrr": 0.9896088590923623,
+      "ratio_legacy": 0.9943790983319266,
+      "ok": true,
+      "gamma_view": 0.0003323812400083496,
+      "gamma_truth": 0.00033587132628662913
+    },
+    {
+      "ion": "S III",
+      "shell": "s4",
+      "ratio_prrr": 0.9868978449312892,
+      "ratio_legacy": 0.9943347660788567,
+      "ok": true,
+      "gamma_view": 7.115443693431249e-05,
+      "gamma_truth": 7.209909039700707e-05
+    },
+    {
+      "ion": "S III",
+      "shell": "s5",
+      "ratio_prrr": 0.9815422595855001,
+      "ratio_legacy": 0.9942531789905831,
+      "ok": true,
+      "gamma_view": 1.2728090908266277e-05,
+      "gamma_truth": 1.2967440559962522e-05
+    },
+    {
+      "ion": "S III",
+      "shell": "s6",
+      "ratio_prrr": 0.9628170531626564,
+      "ratio_legacy": 0.9938357258470291,
+      "ok": true,
+      "gamma_view": 3.4969827277254026e-07,
+      "gamma_truth": 3.6320323951871564e-07
+    },
+    {
+      "ion": "S III",
+      "shell": "s7",
+      "ratio_prrr": 0.953678609367917,
+      "ratio_legacy": 0.9941969333647629,
+      "ok": true,
+      "gamma_view": 4.651808338088124e-07,
+      "gamma_truth": 4.877752622732378e-07
+    },
+    {
+      "ion": "S III",
+      "shell": "s8",
+      "ratio_prrr": 0.9140027247184896,
+      "ratio_legacy": 0.9960436427825394,
+      "ok": true,
+      "gamma_view": 8.90925173193136e-06,
+      "gamma_truth": 9.747511129876976e-06
+    }
+  ],
+  "controls": {
+    "planck_E1": {
+      "E1_poison": {
+        "Co III": 0.948,
+        "Fe III": 0.971,
+        "S II": 0.918,
+        "S III": 0.959
+      },
+      "E1_main": {
+        "Co III": 0.1335,
+        "Fe III": 0.005,
+        "S II": 0.0054,
+        "S III": 0.0063
+      },
+      "E1_fail_limit": 0.5,
+      "cells_out_of_limit": 31,
+      "observed_fail": true
+    },
+    "threshold_Esym": {
+      "esym": {
+        "Co III": 0.05468057428020253,
+        "Fe III": 0.05732189052123752
+      },
+      "limit": 0.005,
+      "observed_fail": true
+    },
+    "alpha_registration": {
+      "identity_ok": true,
+      "poison_detected": true,
+      "ion": "Co III",
+      "alpha_cm3_s": 5.8707e-12,
+      "n_e_cm3": 4848100000.0,
+      "n_ion_cm3": 782750000.0,
+      "depth_1based": 67,
+      "note": "Lumina-side alpha coefficient comparison BLOCKED_MISSING_RATE_EXPORT until recombination migration"
+    }
+  },
+  "elapsed_s": 7.5
+}

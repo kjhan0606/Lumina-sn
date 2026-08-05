@@ -528,3 +528,68 @@ int radiation_field_dump_if_requested(const RadiationFieldOwner *shadow)
     if (fclose(stream) != 0) return -1;
     return 0;
 }
+
+int radiation_field_read_view(const RadiationFieldOwner *owner,
+                              double expected_epoch,
+                              size_t expected_n_shells,
+                              uint64_t expected_generation,
+                              RadiationFieldView *out)
+{
+    /* A2-05 R5: every check below is a distinct falsifiable success condition;
+     * see SPEC_A2_05_V2.md.  radiation_field_validate_owner() cannot serve
+     * here because it accepts NULL/disabled owners by design. */
+    if (!out) return RADIATION_FIELD_VIEW_GRID;
+    /* Full invalidation on every failure path: no stale pointer, count or
+     * generation from a previous successful view may survive in *out. */
+    memset(out, 0, sizeof(*out));
+    if (!owner || !owner->enabled)
+        return RADIATION_FIELD_VIEW_DISABLED;
+    const RadiationField *field = &owner->field;
+    if (field->units != RADIATION_FIELD_UNITS_ERG_S_NEG1_CM_NEG2_HZ_NEG1_SR_NEG1 ||
+        field->frame != RADIATION_FIELD_FRAME_SHELL_COMOVING)
+        return RADIATION_FIELD_VIEW_UNITS_FRAME;
+    if (!(field->epoch == expected_epoch) ||
+        field->J_nu.n_shells != expected_n_shells ||
+        field->validity.n_shells != expected_n_shells)
+        return RADIATION_FIELD_VIEW_EPOCH_SHELLS;
+    if (expected_generation == 0 ||
+        field->generation.required_generation != expected_generation ||
+        field->generation.computed_generation != expected_generation)
+        return RADIATION_FIELD_VIEW_STALE_GENERATION;
+    if (field->J_nu.n_bins != LUMINA_RADFIELD_N_BINS ||
+        field->validity.n_bins != LUMINA_RADFIELD_N_BINS ||
+        field->frequency_bin_edges.count != LUMINA_RADFIELD_N_BINS + 1 ||
+        !field->frequency_bin_edges.values || !field->J_nu.values ||
+        !field->validity.values || !field->estimator_count_or_variance.count)
+        return RADIATION_FIELD_VIEW_GRID;
+    /* Canonical-grid identity (R5 edge shape): every edge is recomputed from
+     * the A2-02 authority by the SAME expression owner-init uses, so any
+     * interior tampering fails bit-exactly, not just monotonically.  One pass
+     * of 4001 exp() per view refresh (once per commit) is negligible. */
+    {
+        const double *edges = field->frequency_bin_edges.values;
+        if (edges[0] != LUMINA_RADFIELD_NU_MIN_HZ ||
+            edges[LUMINA_RADFIELD_N_BINS] != LUMINA_RADFIELD_NU_MAX_HZ)
+            return RADIATION_FIELD_VIEW_GRID;
+        double dlog = log(LUMINA_RADFIELD_NU_MAX_HZ /
+                          LUMINA_RADFIELD_NU_MIN_HZ) /
+                      (double)LUMINA_RADFIELD_N_BINS;
+        for (size_t b = 1; b < LUMINA_RADFIELD_N_BINS; ++b) {
+            if (edges[b] != LUMINA_RADFIELD_NU_MIN_HZ * exp((double)b * dlog))
+                return RADIATION_FIELD_VIEW_GRID;
+            if (!(edges[b] > edges[b - 1]))
+                return RADIATION_FIELD_VIEW_GRID;
+        }
+        if (!(edges[LUMINA_RADFIELD_N_BINS] >
+              edges[LUMINA_RADFIELD_N_BINS - 1]))
+            return RADIATION_FIELD_VIEW_GRID;
+    }
+    out->n_shells = expected_n_shells;
+    out->n_bins = LUMINA_RADFIELD_N_BINS;
+    out->frequency_bin_edges = field->frequency_bin_edges.values;
+    out->J_nu = field->J_nu.values;
+    out->validity = field->validity.values;
+    out->count = field->estimator_count_or_variance.count;
+    out->generation = expected_generation;
+    return RADIATION_FIELD_VIEW_OK;
+}
