@@ -1,0 +1,22 @@
+{
+  "stage_id": "A2-02",
+  "contract": "seven-consumer frequency union plus conservative offline 1000/2000/4000/8000/16000 resolution ladder",
+  "source_tree_hash": "git_head=cf93109044abc0ae4f212b7e2b55bc7e4843017b; src_tree_unchanged=true",
+  "input_manifest_hash": "docs/A2_02_FREQUENCY_UNION.json sha256=1ee73f51be9a510918a77bb3ad444eaeb6885d28e0f72210e7cc686b8fc24bde; production fine-dump manifest=PENDING_DRIVER_EXECUTION",
+  "oracle_id": "A2-00 O-WIRE/O-PHYS inputs; Gamma and Jbar judgments restricted to s0-s8; s9 boundary-straddling and s10+ jnu4 contamination recorded but excluded",
+  "node": "PENDING_DRIVER_EXECUTION (ladder target=lageunha; grammar/self-test target=grammar-debug)",
+  "command": "docs/CODEX_IMPL_A2_02.md sections 6.1-6.3",
+  "exit_status": "PENDING_DRIVER_EXECUTION",
+  "new_layer_status": "IMPLEMENTED_AWAITING_DRIVER_RESOLUTION_LADDER; no bin selected before execution",
+  "all_previous_layer_statuses": "A2-00=PASS; A2-01=PASS; D/K/Z-INERT/CONFIG-PREC/classifier/NE/DECK=PENDING_DRIVER_REEXECUTION",
+  "negative_control_status": "PENDING_DRIVER_EXECUTION (self-test covers UNSAMPLED rejection, conservative rebin, and contaminated-shell record-only policy)",
+  "coverage": "consumer union=7/7 with file:line and data source; ladder pairs=4/4 implemented; production fine dump and numerical ladder=PENDING_DRIVER_EXECUTION",
+  "metric_values": "thresholds preregistered: per metric maximum relative change <=0.01 and median <=0.002; J-band/Gamma/Jbar/chi+eta values=PENDING_DRIVER_EXECUTION",
+  "changed_output_allowlist": "offline only: validation/a2_02/a2_02_resolution_result.json and driver logs; no model output and no src/deck/GPFS mutation",
+  "guard_hits": "PENDING_DRIVER_EXECUTION",
+  "fallback_hits": "PENDING_DRIVER_EXECUTION; runner contains no point-sample or missing-value fallback",
+  "rng_seed": "N/A (deterministic offline conservative integration of existing dumps)",
+  "mc_confidence": "N/A for deterministic ladder; UNSAMPLED is an explicit state and invalidates eligible records",
+  "artifact_paths": "docs/A2_02_FREQUENCY_UNION.json; docs/A2_02_RESOLUTION_INPUT_TEMPLATE.json; scripts/a2_02_resolution_ladder.py; docs/CODEX_IMPL_A2_02.md; validation/a2_02/a2_02_regression_ledger.json; validation/a2_02/a2_02_resolution_result.json=PENDING_DRIVER_EXECUTION",
+  "driver_signoff": "PENDING_DRIVER_EXECUTION"
+}

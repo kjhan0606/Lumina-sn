@@ -1,0 +1,493 @@
+{
+  "schema": "lumina-a2-02-resolution-input-v1",
+  "consumer_union_ledger": {
+    "path": "docs/A2_02_FREQUENCY_UNION.json",
+    "sha256": "1ee73f51be9a510918a77bb3ad444eaeb6885d28e0f72210e7cc686b8fc24bde"
+  },
+  "fine_dump": {
+    "path": "/home/kjhan/BACKUP/Eunha.A1/Claude/Lumina-sn/validation/a2_02/a2_02_fine_bin_averages.npz",
+    "sha256": "3e2b07b4a9e027a7e269202a2716315eb3caebfbbb51db88676fef342a57ad84"
+  },
+  "provenance": {
+    "new_gpu_run": false,
+    "existing_dump_ids": [
+      "/gpfs/kjhan/cmfgen_runs/toy06_19.48d_jnu4/EDDFACTOR",
+      "/gpfs/kjhan/lumina_runner2/scratch/chieta_capture_parity59_188605/chieta_iter10"
+    ],
+    "packing_method": "offline conservative bin-average export; EDDFACTOR piecewise-linear overlap integral; CHIETA/CMFD piecewise-constant overlap integral; no point samples",
+    "notes": "Built only from the two existing dumps plus hash-bound RVTJ/INFO/deck metadata. CHIETA is zero-padded outside its captured frequency support because npz_contract has no chi/eta validity array; j_state never uses that convention.",
+    "existing_dump_sha256": {
+      "/gpfs/kjhan/cmfgen_runs/toy06_19.48d_jnu4/EDDFACTOR": "83acc14a35999aaf39cf728ce783308be31fa52676b1c5410b5e84f4cc009705",
+      "/gpfs/kjhan/lumina_runner2/scratch/chieta_capture_parity59_188605/chieta_iter10": "94d75988034454f55fb6b130f04521f01c56f875cb22ef3a711850d7382ffa2f"
+    },
+    "ancillary_inputs": [
+      {
+        "path": "/gpfs/kjhan/cmfgen_runs/toy06_19.48d_jnu4/EDDFACTOR_INFO",
+        "sha256": "2c032445a9483d5154c15cdac5c0f14dfbb3f45dbb628e2d4936c29b3efabd42"
+      },
+      {
+        "path": "/gpfs/kjhan/cmfgen_runs/toy06_19.48d_jnu4/RVTJ",
+        "sha256": "a042fd49c726dc1c2b710c997fa3d27780189e98edebc28f9d77c06ffe034f78"
+      },
+      {
+        "path": "/gpfs/kjhan/lumina_runner2/scratch/chieta_capture_parity59_188605/chieta_iter10.manifest.json",
+        "sha256": "c3b46977820ec48dae9b3172c053a19f0cc1d44a50c4e64800abd58dd3623fa3"
+      },
+      {
+        "path": "/home/kjhan/BACKUP/Eunha.A1/Claude/Lumina-sn/data/tardis_reference_toy06_19p48d_sivcaiv_ftos/geometry.csv",
+        "sha256": "21bb9349c11bceb7c815ca6fd5b21a647bddf1ba3f3da4311b97da93dc3ce3d6"
+      },
+      {
+        "path": "/home/kjhan/BACKUP/Eunha.A1/Claude/Lumina-sn/data/tardis_reference_toy06_19p48d_sivcaiv_ftos/levels.csv",
+        "sha256": "17865d5ff160ea03ce6446b67f07120128bead0a996a261ed1e29d1dc8b7a980"
+      },
+      {
+        "path": "/home/kjhan/BACKUP/Eunha.A1/Claude/Lumina-sn/data/tardis_reference_toy06_19p48d_sivcaiv_ftos/ionization_energies.csv",
+        "sha256": "c735bdb200e0f31f4a201f9ce187a2f256e2912791296d2fbb6b1ba313629482"
+      },
+      {
+        "path": "/home/kjhan/BACKUP/Eunha.A1/Claude/Lumina-sn/data/tardis_reference_toy06_19p48d_sivcaiv_ftos/line_list.csv",
+        "sha256": "b20069e557bec28df24c77885d967f7a7bea8ec473eeca2b950ae82ad96fed5e"
+      },
+      {
+        "path": "/home/kjhan/BACKUP/Eunha.A1/Claude/Lumina-sn/data/tardis_reference_toy06_19p48d_sivcaiv_ftos/cmfgen_sigma_bf.bin",
+        "sha256": "e38e80a792e01172c3bae1292667e9068dc5222cb7bc6adbcd8037ae501585aa"
+      }
+    ],
+    "builder": {
+      "path": "scripts/a2_02_prepare_fine_dump.py",
+      "sha256": "5ccd094baa42450b98b81d7d00631a047dca536e5c17be0ce38d61bd169680f4",
+      "fine_bins": 192922,
+      "shells": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+        21,
+        22,
+        23,
+        24,
+        25,
+        26,
+        27,
+        28,
+        29,
+        30,
+        31,
+        32,
+        33,
+        34,
+        35,
+        36,
+        37,
+        38,
+        39,
+        40,
+        41,
+        42,
+        43,
+        44,
+        45,
+        46,
+        47,
+        48,
+        49
+      ],
+      "bf_threshold_strata": 24,
+      "line_unique_stratified_sample": 30,
+      "profile_shells": [
+        0,
+        8,
+        9,
+        43
+      ],
+      "j_state_counts": {
+        "MEASURED": 8488436,
+        "EXACT_ZERO": 0,
+        "UNSAMPLED": 132,
+        "OUT_OF_RANGE": 1157532
+      },
+      "rvtj_shell_brackets": [
+        {
+          "shell": 0,
+          "velocity_km_s": 4264.0,
+          "v0": 4092.3914953,
+          "v1": 4394.1823505,
+          "weight": 0.5686338792017842
+        },
+        {
+          "shell": 1,
+          "velocity_km_s": 4992.0,
+          "v0": 4718.2285839,
+          "v1": 5066.1714044,
+          "weight": 0.7868287545251995
+        },
+        {
+          "shell": 2,
+          "velocity_km_s": 5720.0,
+          "v0": 5439.7730509,
+          "v1": 5840.9257175,
+          "weight": 0.6985543720177273
+        },
+        {
+          "shell": 3,
+          "velocity_km_s": 6448.0,
+          "v0": 6271.661137,
+          "v1": 6663.9769781,
+          "weight": 0.44948188302967756
+        },
+        {
+          "shell": 4,
+          "velocity_km_s": 7176.0,
+          "v0": 7018.7576274,
+          "v1": 7435.1541349,
+          "weight": 0.3776265404915767
+        },
+        {
+          "shell": 5,
+          "velocity_km_s": 7904.0,
+          "v0": 7435.1541349,
+          "v1": 7983.4549335,
+          "weight": 0.8550887875726685
+        },
+        {
+          "shell": 6,
+          "velocity_km_s": 8632.0,
+          "v0": 8572.1898321,
+          "v1": 9132.8822241,
+          "weight": 0.10667198048943621
+        },
+        {
+          "shell": 7,
+          "velocity_km_s": 9360.0,
+          "v0": 9132.8822241,
+          "v1": 9610.0173342,
+          "weight": 0.47600306724944197
+        },
+        {
+          "shell": 8,
+          "velocity_km_s": 10088.0,
+          "v0": 9610.0173342,
+          "v1": 10163.50575,
+          "weight": 0.8635820590917592
+        },
+        {
+          "shell": 9,
+          "velocity_km_s": 10816.0,
+          "v0": 10706.464425,
+          "v1": 11256.119932,
+          "weight": 0.19928041037529345
+        },
+        {
+          "shell": 10,
+          "velocity_km_s": 11544.0,
+          "v0": 11256.119932,
+          "v1": 11814.574274,
+          "weight": 0.5154943678457422
+        },
+        {
+          "shell": 11,
+          "velocity_km_s": 12272.0,
+          "v0": 11814.574274,
+          "v1": 12376.055806,
+          "weight": 0.8146763516346601
+        },
+        {
+          "shell": 12,
+          "velocity_km_s": 13000.0,
+          "v0": 12936.0982,
+          "v1": 13496.047373,
+          "weight": 0.11412071502425408
+        },
+        {
+          "shell": 13,
+          "velocity_km_s": 13728.0,
+          "v0": 13496.047373,
+          "v1": 14056.473143,
+          "weight": 0.4138864403041292
+        },
+        {
+          "shell": 14,
+          "velocity_km_s": 14456.0,
+          "v0": 14056.473143,
+          "v1": 14617.648395,
+          "weight": 0.7119466790028726
+        },
+        {
+          "shell": 15,
+          "velocity_km_s": 15184.0,
+          "v0": 15178.76148,
+          "v1": 15741.635247,
+          "weight": 0.00930674035125318
+        },
+        {
+          "shell": 16,
+          "velocity_km_s": 15912.0,
+          "v0": 15741.635247,
+          "v1": 16306.855147,
+          "weight": 0.3014132251889925
+        },
+        {
+          "shell": 17,
+          "velocity_km_s": 16640.0,
+          "v0": 16306.855147,
+          "v1": 16875.28639,
+          "weight": 0.5860776604075566
+        },
+        {
+          "shell": 18,
+          "velocity_km_s": 17368.0,
+          "v0": 16875.28639,
+          "v1": 17446.816315,
+          "weight": 0.8620959086263065
+        },
+        {
+          "shell": 19,
+          "velocity_km_s": 18096.0,
+          "v0": 18021.470042,
+          "v1": 18600.316808,
+          "weight": 0.12875593745651043
+        },
+        {
+          "shell": 20,
+          "velocity_km_s": 18824.0,
+          "v0": 18600.316808,
+          "v1": 19183.653601,
+          "weight": 0.38345462635681815
+        },
+        {
+          "shell": 21,
+          "velocity_km_s": 19552.0,
+          "v0": 19183.653601,
+          "v1": 19768.655989,
+          "weight": 0.6296493938414487
+        },
+        {
+          "shell": 22,
+          "velocity_km_s": 20280.0,
+          "v0": 19768.655989,
+          "v1": 20356.092088,
+          "weight": 0.870467463389578
+        },
+        {
+          "shell": 23,
+          "velocity_km_s": 21008.0,
+          "v0": 20943.793072,
+          "v1": 21533.881295,
+          "weight": 0.10880903142511918
+        },
+        {
+          "shell": 24,
+          "velocity_km_s": 21736.0,
+          "v0": 21533.881295,
+          "v1": 22127.251375,
+          "weight": 0.3406284068114802
+        },
+        {
+          "shell": 25,
+          "velocity_km_s": 22464.0,
+          "v0": 22127.251375,
+          "v1": 22719.845804,
+          "weight": 0.5682615436804921
+        },
+        {
+          "shell": 26,
+          "velocity_km_s": 23192.0,
+          "v0": 22719.845804,
+          "v1": 23315.177103,
+          "weight": 0.793094864646111
+        },
+        {
+          "shell": 27,
+          "velocity_km_s": 23920.0,
+          "v0": 23909.688047,
+          "v1": 24505.36785,
+          "weight": 0.01731123490853084
+        },
+        {
+          "shell": 28,
+          "velocity_km_s": 24648.0,
+          "v0": 24505.36785,
+          "v1": 25103.084363,
+          "weight": 0.2386284248432677
+        },
+        {
+          "shell": 29,
+          "velocity_km_s": 25376.0,
+          "v0": 25103.084363,
+          "v1": 25702.348976,
+          "weight": 0.4554175752740443
+        },
+        {
+          "shell": 30,
+          "velocity_km_s": 26104.0,
+          "v0": 25702.348976,
+          "v1": 26302.687806,
+          "weight": 0.6690405549812569
+        },
+        {
+          "shell": 31,
+          "velocity_km_s": 26832.0,
+          "v0": 26302.687806,
+          "v1": 26903.747431,
+          "weight": 0.8806317576230478
+        },
+        {
+          "shell": 32,
+          "velocity_km_s": 27560.0,
+          "v0": 27505.364384,
+          "v1": 28107.677855,
+          "weight": 0.09070960327234563
+        },
+        {
+          "shell": 33,
+          "velocity_km_s": 28288.0,
+          "v0": 28107.677855,
+          "v1": 28711.047603,
+          "weight": 0.2988584455845126
+        },
+        {
+          "shell": 34,
+          "velocity_km_s": 29016.0,
+          "v0": 28711.047603,
+          "v1": 29315.936463,
+          "weight": 0.504146161660179
+        },
+        {
+          "shell": 35,
+          "velocity_km_s": 29744.0,
+          "v0": 29315.936463,
+          "v1": 29922.773904,
+          "weight": 0.705400669237875
+        },
+        {
+          "shell": 36,
+          "velocity_km_s": 30472.0,
+          "v0": 29922.773904,
+          "v1": 30531.846237,
+          "weight": 0.9017419873511122
+        },
+        {
+          "shell": 37,
+          "velocity_km_s": 31200.0,
+          "v0": 31143.427304,
+          "v1": 31757.818766,
+          "weight": 0.09207923530682025
+        },
+        {
+          "shell": 38,
+          "velocity_km_s": 31928.0,
+          "v0": 31757.818766,
+          "v1": 32375.398439,
+          "weight": 0.27556158571948275
+        },
+        {
+          "shell": 39,
+          "velocity_km_s": 32656.0,
+          "v0": 32375.398439,
+          "v1": 32996.652494,
+          "weight": 0.45166958467578766
+        },
+        {
+          "shell": 40,
+          "velocity_km_s": 33384.0,
+          "v0": 32996.652494,
+          "v1": 33559.855034,
+          "weight": 0.6877588052070919
+        },
+        {
+          "shell": 41,
+          "velocity_km_s": 34112.0,
+          "v0": 34070.309267,
+          "v1": 34558.425833,
+          "weight": 0.08541142813825894
+        },
+        {
+          "shell": 42,
+          "velocity_km_s": 34840.0,
+          "v0": 34558.425833,
+          "v1": 35025.747429,
+          "weight": 0.6025276156935788
+        },
+        {
+          "shell": 43,
+          "velocity_km_s": 35568.0,
+          "v0": 35497.71049,
+          "v1": 35663.366654,
+          "weight": 0.42430965623471967
+        },
+        {
+          "shell": 44,
+          "velocity_km_s": 36296.0,
+          "status": "OUT_OF_RANGE"
+        },
+        {
+          "shell": 45,
+          "velocity_km_s": 37024.0,
+          "status": "OUT_OF_RANGE"
+        },
+        {
+          "shell": 46,
+          "velocity_km_s": 37752.0,
+          "status": "OUT_OF_RANGE"
+        },
+        {
+          "shell": 47,
+          "velocity_km_s": 38480.0,
+          "status": "OUT_OF_RANGE"
+        },
+        {
+          "shell": 48,
+          "velocity_km_s": 39208.0,
+          "status": "OUT_OF_RANGE"
+        },
+        {
+          "shell": 49,
+          "velocity_km_s": 39936.0,
+          "status": "OUT_OF_RANGE"
+        }
+      ],
+      "line_list_rows": 2220953
+    }
+  },
+  "npz_contract": {
+    "nu_edges_hz": "float64 [F+1], strictly ascending fine-bin edges",
+    "shell_id": "int64 [S]",
+    "j_nu": "float64 [S,F], bin averages",
+    "j_state": "uint8 [S,F]: 1=MEASURED, 2=EXACT_ZERO, 3=UNSAMPLED, 4=OUT_OF_RANGE",
+    "chi_nu": "float64 [S,F], bin averages",
+    "eta_nu": "float64 [S,F], bin averages",
+    "bf_kernel": "float64 [G,F], bin-average 4*pi*sigma/(h*nu), zero below threshold",
+    "bf_shell_id": "int64 [G]",
+    "bf_id": "unicode [G] stable matched identifiers",
+    "line_profile": "float64 [L,F], bin-average matched normalized profiles",
+    "line_shell_id": "int64 [L]",
+    "line_id": "unicode [L] stable element/ion/lower/upper identifiers"
+  },
+  "preregistered_expectation": {
+    "selection_rule": "smallest N whose N-to-2N pair passes all four metrics",
+    "thresholds": {
+      "maximum": 0.01,
+      "median": 0.002
+    },
+    "if_8000_to_16000_fails": "BLOCKED",
+    "pre_run_bin_choice": null
+  }
+}
