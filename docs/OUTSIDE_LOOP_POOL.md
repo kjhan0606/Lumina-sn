@@ -1254,6 +1254,30 @@ inconsistent band: NONE`**),
 사실은 그대로이므로 *placeholder 가 광구를 정한다*는 것은 확정이다. 그러나
 *얼마나 틀렸는가*는 오염되지 않은 `<Z>` 로 다시 재야 한다.
 
+#### ★★재측정 완료 (08-05 04:05) — 깨끗한 `<Z>` 로. **효과가 오염판보다 크다**
+
+`UNQUANTIFIED_PENDING_CLEAN_ZBAR` 해소. 계측기 `~/.lumina_scratch/zbar_clean.py`.
+입력 = **공개 StaNdaRT `phys_toy06_cmfgen.txt` 19.48d 블록의 `ne/natom`** (외부 심판,
+자체런 무관). 모델 202 zone 중 197 커버.
+
+```
+<Z> 진리 :  min 1.7075   median 2.1211   max 3.5809     ← 어디서도 1 미만이 아니다
+(오염판 jnu4 는 min 0.0346 — 그 값 자체가 외곽 링잉의 산물이었다)
+```
+
+| case | i_phot | v_inner [km/s] | T_inner [K] | tau_total |
+|---|---|---|---|---|
+| A 현행 `<Z>=1` | 19 | 3900.0 | 14172.5 | 2.299 |
+| B/C 공개진리 `<Z>(v)` | **33** | **6700.0** | **10812.9** | 7.27 / 5.76 |
+
+**Δi_phot +14 · Δv_inner +71.79% · ΔT_inner −23.71% · tau 3.16×.** B=C 동일
+(커버리지 밖 정책 무관 — 오염판과 같은 성질).
+
+⟹ 오염판(+56.41%/−20.04%)은 방향이 맞았고 **크기를 과소평가**하고 있었다.
+진리 `<Z>` 가 전 구간 ≥1.71 이므로 placeholder 는 **어디서나** n_e 를 낮잡고,
+광구는 확정적으로 더 바깥이다. NE-NAMING 계약의 근거 수치는 이것으로 교체한다
+(checker 의 판정 근거는 여전히 provenance 부재 — 크기가 아니다).
+
 #### ★계보축 신규 — 소거 단조성이 한 방향만 강제된다
 
 같은 균열을 이미 세 계측기가 잡았고 **전부 스스로 옳게 게이트를 걸었다**
@@ -1662,3 +1686,134 @@ scripts/kshape_contract.py            {write,check} <deck>
 - **분담 개정 4**: 발주서 저작=Codex / 검수·실행·원장=운전석 (memory 상설 기재)
 - **운전석 3규율**: 개수는 세는 명령과 함께 · 파일명은 그 턴에 확인 · **측정 전 결론 금지**
 - 검증 폐합과 생산 배포를 **두 필드로 분리 기재**(bakefix5 전례)
+
+---
+
+### ★★0-N NE-NAMING **폐합** (2026-08-05 11:38, 처분 A)
+
+계약 저작·구현 Codex(`docs/CODEX_L0_NE_DECK_CHECKERS.md` §1), 검수·실행 운전석.
+분할 실행 첫 적용: [A]=grammar-debug / [B]=lageunha (user 08-05 "2개 노드 동시 활용").
+
+```
+음성대조 5종      NE_NAMING_CONTROL_SUMMARY passed=5 total=5   rc=0
+legacy 양성       [NE-NAMING][WARN] mode=PLACEHOLDER_ZBAR_ONE claim=legacy-read-only
+                  disposition=A read_only=yes                   rc=0
+production 차단   [NE-NAMING][FATAL] unapproved placeholder     rc=1
+회귀              D 19/19 · K 7/7 · Z-INERT · CONFIG-PREC(8.4 포함) · 분류기   전부 PASS
+덱 불변           git status -- data/ 공백 · 4 companion SHA/size/mtime 동일
+```
+
+- **처분 A 이행**: `build_toy06_epoch.py` 에 `authorize_ne_boundary()`(`:251`) — `i_phot`
+  (`:260`) **직전** fail-closed. GEN-GUARD 불변식 유지(guard 가 여전히 첫 연산).
+- placeholder 는 `PLACEHOLDER_ZBAR_ONE` mode + 승인 토큰 없이는 production 경계를 만들
+  수 없다. legacy 봉인 = `docs/manifests/ne_naming_toy06_19p48d_legacy.json`.
+- 처분 B(참값 경로)는 **명세만**(`true_path_specification()`, `SPECIFICATION_ONLY`) —
+  `4.005038` 미해결 동안 계약이 이식을 금지(§3.2 금지 4).
+- 근거 수치는 오염판 +56.41% 가 아니라 **깨끗한 재측정 +71.79% / −23.71%**
+  (04:05절, 공개 StaNdaRT `<Z>` ≥1.71 전 구간). checker 판정 근거는 크기가 아니라
+  **provenance 부재**이므로 수치 교체가 판정을 바꾸지 않는다.
+
+### ★★0-F DECK-FOSSIL **폐합** (2026-08-05 11:38, fossil quarantine 경로)
+
+계약 저작·구현 Codex(같은 문서 §2), 검수·실행 운전석.
+
+```
+음성대조 5종      DECK_FOSSIL_CONTROL_SUMMARY passed=5 total=5   rc=0
+fossil 양성       [DECK-FOSSIL][WARN] producer=UNRESOLVED mode=legacy-read-only
+                  epsilon_L=3.005038 Delta_SB=1.65K canonical_production_eligible=no   rc=0
+canonical 주장    [DECK-FOSSIL][FATAL] missing manifest          rc=1
+```
+
+- **quarantine 레코드** = `docs/manifests/deck_fossil_toy06_19p48d_quarantine.json`:
+  4 companion exact SHA-256 · `producer=UNRESOLVED` · 기각 가설 4(REJECTED) ·
+  `R_L=4.005038 / epsilon_L=3.005038 / Delta_SB=1.65 K` · "내부 정합은 generation
+  재현성을 대신하지 못한다". 수치는 증거이지 writer 상수가 아니다.
+- **단계적 이행**: 현 덱은 legacy-read-only 로 계속 쓰되 매 load WARN. 무조건
+  canonical 주장은 FATAL. **현 fossil 은 영구히 canonical production seed 자격 없음.**
+- atomic writer(`scripts/deck_generation_atomic.py`) = 임시 디렉터리 → 검증 → 한
+  generation commit. 새 canonical 생성 시 별도 발주·검증 필요(미가동).
+- 합격선 사전등록: `epsilon_L ≤ 1e-6` · `Delta_SB ≤ 5 K`. 현 builder 를 producer 로
+  가정하면 `epsilon_L=3.005` ⟹ FATAL — 즉 계약이 현 상태를 정확히 거부한다.
+
+⟹ **A2-04 HARD BLOCK 3계약(NE·DECK·CONFIG) 전부 폐합.** A-2 는 A2-01 부터 자유 진행.
+
+★lageunha 정정(user): **nvcc 있음** — `module load cuda` 로 13.0.2. GPU=RTX 5000 Ada
+32GB(sm_89, sm_80/86 cubin 상위호환 실행 가능). 빌드·소형 GPU 검증 가능, full-NLTE
+생산런(80GB)은 여전히 h100/h200. 8.4 CUDA 빌드 lageunha 실측 rc=0.
+
+---
+
+## ★인수인계 (2026-08-05 03:20, user 로그아웃)
+
+### 지금 도는 것
+
+**Codex: NE-NAMING + DECK-FOSSIL checker 구현** (`pid=1658332`, 03:15 발주).
+발주 프롬프트 = `<scratch>/dispatch_ne_deck.txt`, 산출 예정 =
+`docs/CODEX_IMPL_NE_DECK_CHECKERS.md`.
+
+처분은 계약이 강제한 것이며 재논의 대상 아님:
+- **NE = 처분 A** (§3.2 금지 4 가 `4.005038` 미해결 상태에서 B 를 금지)
+- **DECK = fossil quarantine** (§4.6 이 OR; producer 미발견 ⟹ 후자.
+  단 §4.4 의 legacy read-only mode = **WARN rc=0** 이므로 덱은 계속 쓴다)
+
+★발주서에 박은 것: **`Δv_inner +56.41%` 를 근거로 인용 금지.** 그 값은 `jnu4` 단독
+`RVTJ` 산출인데 그 런 외곽이 공개 진리 대비 `v=14,000` 에서 0.048배로 파손이다.
+계약 §3.3 근거란은 `UNQUANTIFIED_PENDING_CLEAN_ZBAR` 로 둔다.
+**사슬의 존재는 확정**(case A `v_inner=3900.00` 이 덱과 정확 일치)이므로 checker 는
+크기가 아니라 **provenance 부재**로 판정한다.
+
+### 운전석 인수 절차 (Codex 복귀 시)
+
+1. 보고서 §별 검수 — 두 checker 가 **독립 실행**되는가, 음성대조 marker/rc 가 계약
+   §3.4·§4.4 표와 **정확히** 일치하는가, `+56.41%` 를 인용하지 않았는가,
+   `git status --short -- data/` 가 비었는가(덱 바이트·mtime 불변).
+2. grammar-debug 실행 — checker 2종 + 회귀 4종
+   (`run_dbuild_gates.sh` · `run_zinert_selftest.sh` · `run_config_prec.sh` ·
+   `run_cls_verify.sh`).
+3. **계약별로 따로 커밋** (user 08-05 규약 [[feedback-one-contract-one-commit]]).
+   좁게 스테이징할 것 — `git add -A <디렉터리>` 는 지난번 입도 실패의 원인이었다.
+
+### 그 다음: A-2 17단계
+
+```
+A2-01 소유권 census (157행 disposition)   ← 선행 없음. 지금 착수 가능
+A2-02 좌표·격자
+A2-03 RadiationField shadow
+──── A2-04 HARD BLOCK: NE · DECK · CONFIG 3계약 폐합 ────
+A2-04 생산자 commit → A2-05~11 CPU → A2-12~15 GPU → A2-16~18
+```
+CONFIG-PREC 은 08-05 01:02 폐합. **지금 도는 둘이 A2-04 의 마지막 자물쇠다.**
+
+★A2-01 착수 시 반영할 것: A2-00 이 남긴 `MIXED_GENERATION_PROVEN` 필드는 실체가
+**write-order 오프셋으로 본 미수렴도**임이 밝혀졌다(02:45절). 필드명을 실체에 맞추고
+이진이 아닌 **연속량**으로 기록하는 것이 A2-01 처분이다.
+
+### ⚠환경 제약 (실측)
+
+- **`nvcc` 는 grammar-debug 에 없다**(Error 127). CUDA 빌드는 **syntax(로그인 노드)**
+  또는 syn. 규약 "빌드=로그인 노드 가능" 적용.
+- `lageunha` 는 user 작업 점유 — 확인 후 사용.
+- `/usr/bin/time` 은 실행 노드에 없다.
+- fable 은 **비용 때문에 사용 중단**(user 08-05). 세대 진단류는 Codex 또는 운전석이 한다.
+
+### 계측 자산 (재사용)
+
+```
+~/.lumina_scratch/run_dbuild_gates.sh    D 19/19 + K 7/7
+~/.lumina_scratch/run_config_prec.sh     CONFIG-PREC 8.1-8.6
+~/.lumina_scratch/run_cls_verify.sh      분류기 jnu4/modern/음성
+~/.lumina_scratch/run_a2_00.sh           A2-00 원장 자격
+~/.lumina_scratch/three_runs.py          ★공개 StaNdaRT 대 자체런 3개 (안전대 잣대)
+~/.lumina_scratch/modern_ne.py           두 런 RVTJ 90 depth 전량
+~/.lumina_scratch/ne_zbar.py             <Z> 사슬 (단 jnu4 오염 — 입력 교체 필요)
+~/.lumina_scratch/deck_fossil.py         덱 대 생성기 정합
+scripts/cmfgen_oracle_contract.py        원장 manifest {write,check}
+```
+
+### git
+
+```
+fa6f283  분류기 확장 + MIXED_GENERATION 규명
+a97d0e1  층 0 계약 10건 폐합 + 안전대 확정
+브랜치 thenmc-macroatom-fluorescence · push 완료 · 미커밋 추적변경 0
+```

@@ -1,0 +1,106 @@
+{
+  "schema": "lumina.ne-naming/v1",
+  "electron_density_mode": "PLACEHOLDER_ZBAR_ONE",
+  "formula": "n_e = n_atom * 1.0",
+  "applicable_zones": {
+    "builder_native_zone_policy": "all native zones before tau_i/i_phot and all resampled output shells",
+    "legacy_deck_shells": "geometry.csv shell_id 0..49",
+    "velocity_frame": "homologous rest frame"
+  },
+  "builder": {
+    "path": "scripts/build_toy06_epoch.py",
+    "sha256": "f3b825010070af827a4bfa637bfd22450989cc7e0f039586da3352481065c336",
+    "producer_status": "CANDIDATE_NOT_PROVEN_CURRENT_FOSSIL_PRODUCER"
+  },
+  "inputs": {
+    "data/standart_data1/input_models/snia_toy06_1h_lowres.dat": {
+      "sha256": "84360654d574320f33ef469d09a0d59deb4705568eb7e3f54e0d1e87bec969c0"
+    },
+    "data/standart_data1/toy06/spectra_toy06_cmfgen.txt": {
+      "sha256": "79c6fad30bfd96f03afa5061cdbaa8a9583afc357a07defae9622a0aa1e3bc8c"
+    }
+  },
+  "source": {
+    "epoch_days": 19.48,
+    "composition": "StaNdaRT toy06 analytic decay candidate; current fossil producer remains UNRESOLVED",
+    "velocity_frame": "homologous rest frame",
+    "units": {
+      "radius": "cm",
+      "velocity": "cm/s",
+      "n_e": "cm^-3"
+    }
+  },
+  "tau_phot": 0.6666666666666666,
+  "sigma_T_cm2": 6.652458e-25,
+  "approved_disposition": "A",
+  "approval": {
+    "token": "NE-NAMING-A-LEGACY-READONLY-2026-08-05",
+    "scope": "legacy-read-only",
+    "exact_deck_sha256": {
+      "config.json": "cf61ab7c880243ffa94bba95b55c3bb4c88e526bcdf1d9b76bd81f44ff81293b",
+      "geometry.csv": "21bb9349c11bceb7c815ca6fd5b21a647bddf1ba3f3da4311b97da93dc3ce3d6",
+      "electron_densities.csv": "a8288513ad7b11a0a71b897849e9e93c900f211db481a12f6f79e984e2afe457",
+      "plasma_state.csv": "45ccb86be1296e644f8491eb9b1346b2b5746f96055003d7f7009082a336a6f4"
+    }
+  },
+  "generation_id": "TOY06-19P48D-LEGACY-FOSSIL-2026-08-05",
+  "companions": {
+    "config.json": {
+      "sha256": "cf61ab7c880243ffa94bba95b55c3bb4c88e526bcdf1d9b76bd81f44ff81293b",
+      "generation_id": "TOY06-19P48D-LEGACY-FOSSIL-2026-08-05"
+    },
+    "geometry.csv": {
+      "sha256": "21bb9349c11bceb7c815ca6fd5b21a647bddf1ba3f3da4311b97da93dc3ce3d6",
+      "generation_id": "TOY06-19P48D-LEGACY-FOSSIL-2026-08-05"
+    },
+    "electron_densities.csv": {
+      "sha256": "a8288513ad7b11a0a71b897849e9e93c900f211db481a12f6f79e984e2afe457",
+      "generation_id": "TOY06-19P48D-LEGACY-FOSSIL-2026-08-05"
+    },
+    "plasma_state.csv": {
+      "sha256": "45ccb86be1296e644f8491eb9b1346b2b5746f96055003d7f7009082a336a6f4",
+      "generation_id": "TOY06-19P48D-LEGACY-FOSSIL-2026-08-05"
+    }
+  },
+  "zbar_reproduction": {
+    "N_A_mol_inverse": 6.02214076e+23,
+    "molar_mass_g_mol": {
+      "6": 12.011,
+      "8": 15.999,
+      "14": 28.085,
+      "16": 32.06,
+      "20": 40.078,
+      "26": 55.845,
+      "27": 58.933,
+      "28": 58.693
+    },
+    "n_atom_formula": "rho * N_A * sum_Z(X_Z/A_Z)"
+  },
+  "boundary_impact_magnitude": "UNQUANTIFIED_PENDING_CLEAN_ZBAR",
+  "boundary_chain_evidence": {
+    "status": "CONFIRMED",
+    "case_A_v_inner_km_s": 3900.0,
+    "config_v_inner_min_cm_s": 390000000.0,
+    "safe_velocity_band": "v <= 10400 km/s (Lumina s0-s8; five independent observations)"
+  },
+  "true_path_specification": {
+    "status": "SPECIFICATION_ONLY_DISPOSITION_B_NOT_APPROVED",
+    "electron_density_mode": "CMFGEN_CHARGE_BALANCE",
+    "formula": "n_e(v) = sum_Z sum_q q * n_Z_q(v)",
+    "source": "original CMFGEN RVTJ",
+    "required_identity": {
+      "epoch": "same as deck target_epoch_d",
+      "composition": "same isotope/element mixture as deck",
+      "velocity_frame": "same homologous rest frame as geometry.csv"
+    },
+    "required_metadata": {
+      "units": "explicit for velocity, radius, n_Z_q, and n_e",
+      "ND": "record original depth count and ordering",
+      "interpolation": "declare coordinate and algorithm before use",
+      "duplicates": "reject or declare deterministic consolidation",
+      "non_monotonic": "reject; never silently sort physical depths",
+      "coverage": "record covered velocity interval and zone mask",
+      "outside_grid_policy": "FATAL; never substitute Zbar=1"
+    }
+  }
+}
