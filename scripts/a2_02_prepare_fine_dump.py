@@ -40,7 +40,7 @@ from validation.chain_replay_parity59.common import (  # noqa: E402
 from cmf_chieta_check import check_artifact  # noqa: E402
 
 
-SCHEMA = "lumina-a2-02-resolution-input-v1"
+SCHEMA = "lumina-a2-02c-resolution-input-v2"
 EDD_EXPECTED_ND = 90
 EDD_EXPECTED_NCF = 196_185
 EDD_HEADER_RECORDS = 14
@@ -52,6 +52,7 @@ CMFD_VERSION = 1
 H_CGS = 6.62607015e-27
 FOUR_PI = 4.0 * math.pi
 EV_TO_ERG = 1.602176634e-12
+C_SPEED_OF_LIGHT = 29_979_245_800.0
 
 MEASURED = np.uint8(1)
 EXACT_ZERO = np.uint8(2)
@@ -65,10 +66,11 @@ DEFAULT_CHIETA = Path(
     "chieta_capture_parity59_188605/chieta_iter10"
 )
 DEFAULT_DECK = ROOT / "data/tardis_reference_toy06_19p48d_sivcaiv_ftos"
-DEFAULT_LEDGER = ROOT / "docs/A2_02_FREQUENCY_UNION.json"
-DEFAULT_TEMPLATE = ROOT / "docs/A2_02_RESOLUTION_INPUT_TEMPLATE.json"
-DEFAULT_OUTPUT = ROOT / "validation/a2_02/a2_02_fine_bin_averages.npz"
-DEFAULT_MANIFEST = ROOT / "validation/a2_02/A2_02_RESOLUTION_INPUT.json"
+DEFAULT_LEDGER = ROOT / "validation/a2_02c/A2_02C_FREQUENCY_UNION.json"
+DEFAULT_COHORT = ROOT / "validation/a2_02c/A2_02C_ESTIMATOR_COHORT.json"
+DEFAULT_TEMPLATE = ROOT / "docs/A2_02C_RESOLUTION_INPUT_TEMPLATE.json"
+DEFAULT_OUTPUT = ROOT / "validation/a2_02c/a2_02c_fine_bin_averages.npz"
+DEFAULT_MANIFEST = ROOT / "validation/a2_02c/A2_02C_RESOLUTION_INPUT.json"
 
 
 class BuildError(ValueError):
@@ -506,32 +508,66 @@ def build_bf_kernel(sigma: SigmaDeck, levels: list[dict[str, str]],
     return np.asarray(rows), np.asarray(shell_ids, dtype=np.int64), np.asarray(identifiers)
 
 
+def load_active_cohort(path: Path) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    cohort = load_json(path)
+    require(cohort.get("schema") == "lumina-a2-02c-estimator-cohort-v1",
+            "estimator cohort schema mismatch")
+    require(cohort.get("membership_frozen_before_capture") is True,
+            "cohort membership is not preregistered")
+    rows = [row for row in cohort.get("records", [])
+            if str(row.get("cohort_status", "")).startswith("ACTIVE_")]
+    require(rows and len(rows) == cohort.get("counts", {}).get("active_total"),
+            "active cohort count mismatch")
+    require(any(row.get("shell_id") == 8 and row.get("atomic_number") == 26 and
+                row.get("ion") == 1 and row.get("lower") == 61 and
+                row.get("upper") == 1308 for row in rows),
+            "mandatory s8 Fe II l61->u1308 record absent")
+    return cohort, rows
+
+
+def profile_refinement(rows: list[dict[str, Any]], points_per_doppler: int = 12
+                       ) -> np.ndarray:
+    pieces: list[np.ndarray] = []
+    for row in rows:
+        center = float(row["nu_lu_hz"])
+        dnu = center * 1.0e6 / C_SPEED_OF_LIGHT
+        pieces.append(np.linspace(center - 4.0 * dnu, center + 4.0 * dnu,
+                                  8 * points_per_doppler + 1))
+    return np.unique(np.concatenate(pieces))
+
+
 def build_line_profiles(lines: list[dict[str, Any]], edges: np.ndarray
                         ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    rows = np.zeros((len(lines) * len(PROFILE_SHELLS), edges.size - 1), dtype=np.float64)
+    rows = np.zeros((len(lines), edges.size - 1), dtype=np.float64)
     shells: list[int] = []
     identifiers: list[str] = []
-    out_row = 0
-    for line in lines:
-        index = int(np.searchsorted(edges, line["nu"], side="right") - 1)
-        index = min(max(index, 0), edges.size - 2)
-        require(edges[index] <= line["nu"] <= edges[index + 1],
-                f"line {line['index']} not bracketed by fine grid")
-        for shell in PROFILE_SHELLS:
-            rows[out_row, index] = 1.0 / (edges[index + 1] - edges[index])
-            shells.append(shell)
-            identifiers.append(
-                f"line:s{shell}:Z{line['Z']}:i{line['ion']}:"
-                f"l{line['lower']}:u{line['upper']}:id{line['catalog_id']}:"
-                f"row{line['index']}"
-            )
-            out_row += 1
+    for out_row, line in enumerate(lines):
+        center = float(line["nu_lu_hz"])
+        dnu = center * 1.0e6 / C_SPEED_OF_LIGHT
+        support_lo, support_hi = center - 4.0 * dnu, center + 4.0 * dnu
+        start = max(0, int(np.searchsorted(edges, support_lo, side="right") - 1))
+        stop = min(edges.size - 1, int(np.searchsorted(edges, support_hi, side="left") + 1))
+        for index in range(start, stop):
+            lo = max(float(edges[index]), support_lo)
+            hi = min(float(edges[index + 1]), support_hi)
+            if hi <= lo:
+                continue
+            fraction = (math.erf((hi - center) / dnu) -
+                        math.erf((lo - center) / dnu)) / (math.erf(4.0) * 2.0)
+            rows[out_row, index] = fraction / (edges[index + 1] - edges[index])
+        shells.append(int(line["shell_id"]))
+        identifiers.append(
+            f"line:s{line['shell_id']}:Z{line['atomic_number']}:i{line['ion']}:"
+            f"l{line['lower']}:u{line['upper']}:id{line['line_id']}:"
+            f"row{line['source_row']}:profile={line['profile_hash']}"
+        )
     return rows, np.asarray(shells, dtype=np.int64), np.asarray(identifiers)
 
 
 def build_edges(union_lo: float, union_hi: float, edd_nu: np.ndarray,
                 chieta_edges: np.ndarray, sigma_edges: np.ndarray,
-                selected_thresholds: np.ndarray) -> np.ndarray:
+                selected_thresholds: np.ndarray,
+                profile_edges: np.ndarray) -> np.ndarray:
     pieces = [
         np.asarray([union_lo, union_hi]),
         edd_nu[(edd_nu > union_lo) & (edd_nu < union_hi)],
@@ -539,6 +575,7 @@ def build_edges(union_lo: float, union_hi: float, edd_nu: np.ndarray,
         sigma_edges[(sigma_edges > union_lo) & (sigma_edges < union_hi)],
         selected_thresholds[(selected_thresholds > union_lo) &
                             (selected_thresholds < union_hi)],
+        profile_edges[(profile_edges > union_lo) & (profile_edges < union_hi)],
     ]
     edges = np.unique(np.concatenate(pieces).astype(np.float64))
     require(edges[0] == union_lo and edges[-1] == union_hi and
@@ -547,17 +584,26 @@ def build_edges(union_lo: float, union_hi: float, edd_nu: np.ndarray,
     return edges
 
 
-def build_manifest(template_path: Path, ledger_path: Path, output: Path,
+def build_manifest(template_path: Path, ledger_path: Path, cohort_path: Path,
+                   output: Path,
                    input_hashes: dict[str, str], ancillary: list[dict[str, Any]],
                    npz_hash: str, arrays: dict[str, np.ndarray],
                    bf_selected: int, line_selected: int) -> dict[str, Any]:
     manifest = load_json(template_path)
     require(manifest.get("schema") == SCHEMA, "input template schema mismatch")
     ledger_hash = sha256_file(ledger_path)
-    require(manifest.get("consumer_union_ledger", {}).get("sha256") == ledger_hash,
+    declared_ledger_hash = manifest.get("consumer_union_ledger", {}).get("sha256")
+    require(declared_ledger_hash in ("FILL_FROM_A2_02C_CENSUS_RUN", ledger_hash),
             "template frequency-ledger hash is stale")
     manifest["consumer_union_ledger"] = {
         "path": str(ledger_path.relative_to(ROOT)), "sha256": ledger_hash,
+    }
+    cohort_hash = sha256_file(cohort_path)
+    declared_cohort_hash = manifest.get("estimator_cohort", {}).get("sha256")
+    require(declared_cohort_hash in ("FILL_FROM_A2_02C_CENSUS_RUN", cohort_hash),
+            "template cohort hash is stale")
+    manifest["estimator_cohort"] = {
+        "path": str(cohort_path.relative_to(ROOT)), "sha256": cohort_hash,
     }
     manifest["fine_dump"] = {"path": str(output), "sha256": npz_hash}
     provenance = manifest["provenance"]
@@ -580,8 +626,8 @@ def build_manifest(template_path: Path, ledger_path: Path, output: Path,
         "fine_bins": int(arrays["nu_edges_hz"].size - 1),
         "shells": list(map(int, arrays["shell_id"])),
         "bf_threshold_strata": bf_selected,
-        "line_unique_stratified_sample": line_selected,
-        "profile_shells": list(PROFILE_SHELLS),
+        "line_active_preregistered_cohort": line_selected,
+        "line_profile": "normalized Gaussian exp(-x^2), truncated at +-4 dnu_D; vdop=1e6 cm/s",
         "j_state_counts": {
             "MEASURED": int(np.count_nonzero(arrays["j_state"] == MEASURED)),
             "EXACT_ZERO": int(np.count_nonzero(arrays["j_state"] == EXACT_ZERO)),
@@ -611,7 +657,15 @@ def self_test() -> None:
                              np.asarray([0.5, 1.0, 2.0, 4.0, 8.0, 16.0]))
     require(list(state) == [UNSAMPLED, EXACT_ZERO, MEASURED, MEASURED, UNSAMPLED] and
             j[1] == 0.0, "self-test J state distinction")
-    print("A2_02_PREPARE_SELFTEST PASS conservative=1 states=4 point_sample=0")
+    fixture_lines = [{"nu_lu_hz": 5.0, "shell_id": 8, "atomic_number": 26,
+                      "ion": 1, "lower": 61, "upper": 1308, "line_id": "x",
+                      "source_row": 1, "profile_hash": "a" * 64}]
+    pedges = np.linspace(4.0, 6.0, 1001)
+    profiles, _, _ = build_line_profiles(fixture_lines, pedges)
+    require(abs(float(np.sum(profiles[0] * np.diff(pedges))) - 1.0) < 2e-15,
+            "self-test truncated Gaussian normalization")
+    print("A2_02C_PREPARE_SELFTEST PASS conservative=1 states=4 point_sample=0 "
+          "gaussian_profile=1")
 
 
 def arguments() -> argparse.Namespace:
@@ -622,12 +676,11 @@ def arguments() -> argparse.Namespace:
     parser.add_argument("--chieta", type=Path, default=DEFAULT_CHIETA)
     parser.add_argument("--deck", type=Path, default=DEFAULT_DECK)
     parser.add_argument("--ledger", type=Path, default=DEFAULT_LEDGER)
+    parser.add_argument("--cohort", type=Path, default=DEFAULT_COHORT)
     parser.add_argument("--template", type=Path, default=DEFAULT_TEMPLATE)
     parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT)
     parser.add_argument("--manifest", type=Path, default=DEFAULT_MANIFEST)
     parser.add_argument("--bf-strata", type=int, default=24)
-    parser.add_argument("--line-log-strata", type=int, default=16)
-    parser.add_argument("--line-rank-strata", type=int, default=16)
     parser.add_argument("--force", action="store_true")
     parser.add_argument("--self-test", action="store_true")
     return parser.parse_args()
@@ -639,22 +692,23 @@ def run(args: argparse.Namespace) -> None:
     chieta_path = resolve_repo(args.chieta)
     deck = resolve_repo(args.deck)
     ledger_path = resolve_repo(args.ledger)
+    cohort_path = resolve_repo(args.cohort)
     template_path = resolve_repo(args.template)
     output = resolve_repo(args.output)
     manifest_path = resolve_repo(args.manifest)
-    require(args.bf_strata > 0 and args.line_log_strata > 1 and
-            args.line_rank_strata > 1, "sample stratum counts must be positive")
+    require(args.bf_strata > 0, "BF sample stratum count must be positive")
     require(args.force or (not output.exists() and not manifest_path.exists()),
             "output or manifest already exists; use --force for an atomic replacement")
     for path in (edd_path, Path(str(edd_path) + "_INFO"), rvtj_path, chieta_path,
-                 Path(str(chieta_path) + ".manifest.json"), ledger_path,
+                 Path(str(chieta_path) + ".manifest.json"), ledger_path, cohort_path,
                  template_path, deck / "geometry.csv", deck / "levels.csv",
                  deck / "ionization_energies.csv", deck / "line_list.csv",
                  deck / "cmfgen_sigma_bf.bin"):
         require(path.is_file(), f"required input absent: {path}")
 
     ledger = load_json(ledger_path)
-    require(ledger.get("schema") == "lumina-a2-02-frequency-union-v1",
+    require(ledger.get("schema") == "lumina-a2-02c-frequency-union-v2" and
+            ledger.get("amends_after") == "43ffe31",
             "frequency ledger schema mismatch")
     union_lo = float(ledger["union"]["nu_min_hz"])
     union_hi = float(ledger["union"]["nu_max_hz"])
@@ -677,18 +731,15 @@ def run(args: argparse.Namespace) -> None:
     levels, thresholds = read_levels_and_thresholds(deck, sigma)
     selected_bf = select_bf_levels(sigma, thresholds, args.bf_strata, union_lo, union_hi)
 
-    print("[4/7] scanning line-list strata (two streaming passes)", flush=True)
-    line_path = deck / "line_list.csv"
-    line_total = scan_line_count(line_path, union_lo,
-                                 float(ledger["consumers"][1]["nu_max_hz"]))
-    selected_lines = select_lines(
-        line_path, line_total, union_lo,
-        float(ledger["consumers"][1]["nu_max_hz"]),
-        args.line_log_strata, args.line_rank_strata,
-    )
+    print("[4/7] loading frozen amended-domain estimator cohort", flush=True)
+    cohort, selected_lines = load_active_cohort(cohort_path)
+    require(cohort.get("profile_contract", {}).get("vdop_cm_s") == 1.0e6 and
+            cohort.get("profile_contract", {}).get("truncation_doppler_widths") == 4.0,
+            "cohort profile contract is not the registered runtime profile")
+    refined_profile_edges = profile_refinement(selected_lines)
 
     edges = build_edges(union_lo, union_hi, edd["nu"], chieta["edges"], sigma.edges,
-                        thresholds[selected_bf])
+                        thresholds[selected_bf], refined_profile_edges)
     print(f"[5/7] packing shell fields on {edges.size - 1} conservative bins", flush=True)
     chi = piecewise_constant_rebin(chieta["chi"], chieta["edges"], edges)
     eta = piecewise_constant_rebin(chieta["eta"], chieta["edges"], edges)
@@ -746,14 +797,14 @@ def run(args: argparse.Namespace) -> None:
     ancillary = [{"path": str(path), "sha256": sha256_file(path)}
                  for path in ancillary_paths]
     manifest = build_manifest(
-        template_path, ledger_path, output, dump_hashes, ancillary, npz_hash,
+        template_path, ledger_path, cohort_path, output, dump_hashes, ancillary, npz_hash,
         arrays, len(selected_bf), len(selected_lines),
     )
     manifest["provenance"]["builder"]["rvtj_shell_brackets"] = brackets
-    manifest["provenance"]["builder"]["line_list_rows"] = line_total
+    manifest["provenance"]["builder"]["cohort_q_set_hash"] = cohort["q_set_hash"]
     atomic_json(manifest_path, manifest)
     print(
-        f"A2_02_PREPARE PASS rc=0 bins={edges.size - 1} shells=50 "
+        f"A2_02C_PREPARE PASS rc=0 bins={edges.size - 1} shells=50 "
         f"bf_rows={bf_kernel.shape[0]} line_rows={line_profile.shape[0]} "
         f"npz={output} npz_sha256={npz_hash} manifest={manifest_path}",
         flush=True,
@@ -769,7 +820,7 @@ def main() -> int:
         run(args)
         return 0
     except (BuildError, OSError, ValueError, KeyError, struct.error) as exc:
-        print(f"A2_02_PREPARE_FAIL {exc}", file=sys.stderr)
+        print(f"A2_02C_PREPARE_FAIL {exc}", file=sys.stderr)
         return 2
 
 

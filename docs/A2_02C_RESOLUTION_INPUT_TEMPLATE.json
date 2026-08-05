@@ -1,0 +1,49 @@
+{
+  "schema": "lumina-a2-02c-resolution-input-v2",
+  "stage": "A2-02C",
+  "amends_after": "43ffe31",
+  "consumer_union_ledger": {
+    "path": "validation/a2_02c/A2_02C_FREQUENCY_UNION.json",
+    "sha256": "FILL_FROM_A2_02C_CENSUS_RUN"
+  },
+  "estimator_cohort": {
+    "path": "validation/a2_02c/A2_02C_ESTIMATOR_COHORT.json",
+    "sha256": "FILL_FROM_A2_02C_CENSUS_RUN"
+  },
+  "fine_dump": {
+    "path": "/READ_ONLY_EXISTING_DUMP/a2_02c_fine_bin_averages.npz",
+    "sha256": "FILL_FROM_A2_02C_FINE_BUILD"
+  },
+  "provenance": {
+    "new_gpu_run": false,
+    "existing_dump_ids": [
+      "/gpfs/kjhan/cmfgen_runs/toy06_19.48d_jnu4/EDDFACTOR",
+      "/gpfs/kjhan/lumina_runner2/scratch/chieta_capture_parity59_188605/chieta_iter10"
+    ],
+    "packing_method": "offline conservative bin-average export; no point samples",
+    "notes": "A2-02 v1 artifacts remain immutable; this template is filled only into new A2-02C artifact names."
+  },
+  "npz_contract": {
+    "nu_edges_hz": "float64 [F+1], strictly ascending fine-bin edges",
+    "shell_id": "int64 [S]",
+    "j_nu": "float64 [S,F], conservative bin averages",
+    "j_state": "uint8 [S,F]: 1=MEASURED, 2=EXACT_ZERO, 3=UNSAMPLED, 4=OUT_OF_RANGE",
+    "chi_nu": "float64 [S,F], conservative bin averages",
+    "eta_nu": "float64 [S,F], conservative bin averages",
+    "bf_kernel": "float64 [G,F], bin-average 4*pi*sigma/(h*nu), zero below threshold",
+    "bf_shell_id": "int64 [G]",
+    "bf_id": "unicode [G] stable matched identifiers",
+    "line_profile": "float64 [L,F], normalized registered Gaussian profiles for the frozen estimator cohort; diagnostic only",
+    "line_shell_id": "int64 [L]",
+    "line_id": "unicode [L] stable element/ion/lower/upper/profile identifiers"
+  },
+  "preregistered_expectation": {
+    "selection_rule": "smallest N whose N-to-2N pair passes band J, Gamma, chi, and eta",
+    "metrics": ["band_integral_J", "Gamma", "band_integral_chi", "band_integral_eta"],
+    "Jbar_global_metric": "REMOVED_BY_AMENDMENT",
+    "thresholds": {"maximum": 0.01, "median": 0.002},
+    "invalid_eligible_required": 0,
+    "if_8000_to_16000_fails": "BLOCKED",
+    "pre_run_bin_choice": null
+  }
+}

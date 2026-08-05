@@ -1,0 +1,61 @@
+{
+  "schema": "lumina-a2-02c-bb-census-v1",
+  "stage": "A2-02C",
+  "amends_after": "43ffe31",
+  "source": {
+    "line_list": "/home/kjhan/BACKUP/Eunha.A1/Claude/Lumina-sn/data/tardis_reference_toy06_19p48d_sivcaiv_ftos/line_list.csv",
+    "line_list_sha256": "b20069e557bec28df24c77885d967f7a7bea8ec473eeca2b950ae82ad96fed5e",
+    "levels": "/home/kjhan/BACKUP/Eunha.A1/Claude/Lumina-sn/data/tardis_reference_toy06_19p48d_sivcaiv_ftos/levels.csv",
+    "levels_sha256": "17865d5ff160ea03ce6446b67f07120128bead0a996a261ed1e29d1dc8b7a980"
+  },
+  "domain_contract": {
+    "lambda_min_A": 100.0,
+    "lambda_max_A": 20000.0,
+    "boundaries": "closed",
+    "c_cm_s": 29979245800.0,
+    "nu_min_hz": 149896229000000.0,
+    "nu_max_hz": 2.99792458e+16,
+    "selection": "finite positive line-center frequency inside the closed wavelength domain",
+    "strength_pruning": "forbidden; A_ul/gf/population are not selection inputs",
+    "profile": {
+      "profile_id": "runtime-gaussian-vdop1e6-truncated4-v1",
+      "kind": "Gaussian exp(-x^2)",
+      "normalization": "1/(sqrt(pi)*erf(4)*dnu_D) on closed truncated support",
+      "truncation_doppler_widths": 4.0,
+      "vdop_cm_s": 1000000.0,
+      "shell_dependence": "none in the registered current runtime default",
+      "support": "nu_lu*(1+-4*vdop/c)",
+      "provenance": [
+        "src/lumina_cmfgen.c:3980-3982",
+        "src/lumina_cmfgen.c:4205-4208"
+      ],
+      "profile_hash": "f8572907be3ad2e9738a84dae1000338bb7100772cf1d3b52ec17561da409bbf"
+    },
+    "authority": "docs/ORDER_A2_GRID_AMENDMENT_BY_CODEX.md sections 2.1-2.4"
+  },
+  "domain_contract_hash": "3278062cf80281ffdcc4eb74ffc37e743cbdc51a128da5a319bfba7d3a6416c4",
+  "counts": {
+    "raw_line_census": 2220953,
+    "finite_positive_input_census": 2220953,
+    "BB_IN_DOMAIN": 1891662,
+    "BB_EXCLUDED_OUTSIDE_DOMAIN": 329291,
+    "lt_1e10_hz": 382,
+    "lt_1e13_hz": 34945,
+    "lt_1e14_hz": 245123
+  },
+  "identity": {
+    "expression": "BB_IN_DOMAIN + BB_EXCLUDED_OUTSIDE_DOMAIN == finite_positive_input_census",
+    "passed": true
+  },
+  "ledgers": {
+    "BB_IN_DOMAIN": {
+      "path": "/home/kjhan/BACKUP/Eunha.A1/Claude/Lumina-sn/validation/a2_02c/A2_02C_BB_IN_DOMAIN.csv",
+      "sha256": "203da81aaff9afe810be58fc0b12290e83bac2c16298f3fca97d4fa7f35acd79"
+    },
+    "BB_EXCLUDED_OUTSIDE_DOMAIN": {
+      "path": "/home/kjhan/BACKUP/Eunha.A1/Claude/Lumina-sn/validation/a2_02c/A2_02C_BB_EXCLUDED_OUTSIDE_DOMAIN.csv",
+      "sha256": "f66e335e6307d2df029131935f72b383c669fd3bc6e0289a4fcd60888ba4200b"
+    }
+  },
+  "invalid_atomic_input_count": 0
+}

@@ -1,0 +1,342 @@
+{
+  "schema": "lumina-a2-02c-frequency-union-v2",
+  "stage": "A2-02C",
+  "amends_after": "43ffe31",
+  "preserves_blocked_artifact": {
+    "path": "/home/kjhan/BACKUP/Eunha.A1/Claude/Lumina-sn/docs/A2_02_FREQUENCY_UNION.json",
+    "sha256": "1ee73f51be9a510918a77bb3ad444eaeb6885d28e0f72210e7cc686b8fc24bde"
+  },
+  "frequency_unit": "Hz",
+  "wavelength_unit": "Angstrom",
+  "speed_of_light_cm_s": 29979245800.0,
+  "consumer_count": 7,
+  "consumers": [
+    {
+      "id": "bound_free_threshold_cross_section",
+      "contract_ordinal": 1,
+      "nu_min_hz": 1440292895009.7124,
+      "nu_max_hz": 4.032418413741097e+16,
+      "lambda_min_A": 74.34557311275296,
+      "lambda_max_A": 2081468.7001422609,
+      "evidence_file_lines": [
+        "docs/A2_01_DISPOSITION_LEDGER.md:17-18",
+        "docs/A2_01_DISPOSITION_LEDGER.md:23-26",
+        "src/lumina_plasma.c:11926-11958",
+        "data/tardis_reference_toy06_19p48d_sivcaiv_ftos/levels.csv:3444",
+        "data/tardis_reference_toy06_19p48d_sivcaiv_ftos/levels.csv:26793",
+        "data/tardis_reference_toy06_19p48d_sivcaiv_ftos/ionization_energies.csv:19",
+        "data/tardis_reference_toy06_19p48d_sivcaiv_ftos/ionization_energies.csv:55",
+        "src/lumina_atomic.c:1882-1888"
+      ],
+      "data_sources": [
+        {
+          "path": "data/tardis_reference_toy06_19p48d_sivcaiv_ftos/levels.csv",
+          "sha256": "17865d5ff160ea03ce6446b67f07120128bead0a996a261ed1e29d1dc8b7a980"
+        },
+        {
+          "path": "data/tardis_reference_toy06_19p48d_sivcaiv_ftos/ionization_energies.csv",
+          "sha256": "c735bdb200e0f31f4a201f9ce187a2f256e2912791296d2fbb6b1ba313629482"
+        },
+        {
+          "path": "data/tardis_reference_toy06_19p48d_sivcaiv_ftos/cmfgen_sigma_bf.bin",
+          "sha256": "e38e80a792e01172c3bae1292667e9068dc5222cb7bc6adbcd8037ae501585aa",
+          "tabulated_support_hz": [
+            150000000000000.0,
+            3e+16
+          ],
+          "shortfall_note": "The baked cross-section table is narrower than the threshold union at both ends. A2-03 must not interpret absent support as a small measured cross-section."
+        }
+      ],
+      "range_derivation": "For every level with positive (ionization_energy_eV-level_energy_eV), convert the minimum and maximum positive threshold energies using nu=DeltaE/h."
+    },
+    {
+      "id": "bound_bound_line_frequency_profile",
+      "contract_ordinal": 2,
+      "nu_min_hz": 149876899910471.4,
+      "nu_max_hz": 2.84871004024771e+16,
+      "lambda_min_A": 105.23796868210971,
+      "lambda_max_A": 20002.57932870778,
+      "evidence_file_lines": [
+        "docs/A2_01_DISPOSITION_LEDGER.md:9-16",
+        "src/lumina_atomic.c:829-864",
+        "src/lumina_cmfgen.c:3976-3983",
+        "src/lumina_cmfgen.c:4200-4228",
+        "data/tardis_reference_toy06_19p48d_sivcaiv_ftos/line_list.csv:2",
+        "data/tardis_reference_toy06_19p48d_sivcaiv_ftos/line_list.csv:2220954"
+      ],
+      "data_sources": [
+        {
+          "path": "/home/kjhan/BACKUP/Eunha.A1/Claude/Lumina-sn/data/tardis_reference_toy06_19p48d_sivcaiv_ftos/line_list.csv",
+          "sha256": "b20069e557bec28df24c77885d967f7a7bea8ec473eeca2b950ae82ad96fed5e"
+        }
+      ],
+      "range_derivation": "BB_IN_DOMAIN line centers plus the complete registered +-4 Doppler support",
+      "domain_contract": {
+        "lambda_min_A": 100.0,
+        "lambda_max_A": 20000.0,
+        "boundaries": "closed",
+        "c_cm_s": 29979245800.0,
+        "nu_min_hz": 149896229000000.0,
+        "nu_max_hz": 2.99792458e+16,
+        "selection": "finite positive line-center frequency inside the closed wavelength domain",
+        "strength_pruning": "forbidden; A_ul/gf/population are not selection inputs",
+        "profile": {
+          "profile_id": "runtime-gaussian-vdop1e6-truncated4-v1",
+          "kind": "Gaussian exp(-x^2)",
+          "normalization": "1/(sqrt(pi)*erf(4)*dnu_D) on closed truncated support",
+          "truncation_doppler_widths": 4.0,
+          "vdop_cm_s": 1000000.0,
+          "shell_dependence": "none in the registered current runtime default",
+          "support": "nu_lu*(1+-4*vdop/c)",
+          "provenance": [
+            "src/lumina_cmfgen.c:3980-3982",
+            "src/lumina_cmfgen.c:4205-4208"
+          ],
+          "profile_hash": "f8572907be3ad2e9738a84dae1000338bb7100772cf1d3b52ec17561da409bbf"
+        },
+        "authority": "docs/ORDER_A2_GRID_AMENDMENT_BY_CODEX.md sections 2.1-2.4"
+      },
+      "domain_contract_hash": "3278062cf80281ffdcc4eb74ffc37e743cbdc51a128da5a319bfba7d3a6416c4",
+      "census_manifest": {
+        "path": "/home/kjhan/BACKUP/Eunha.A1/Claude/Lumina-sn/validation/a2_02c/A2_02C_LINE_CENSUS.json",
+        "sha256": "fa567c276b1e4d41497f10f83dbde34b2bc49bcd4a1ddde13728b22353cacbac"
+      }
+    },
+    {
+      "id": "opacity_emissivity_grid",
+      "contract_ordinal": 3,
+      "nu_min_hz": 150000000000000.0,
+      "nu_max_hz": 3e+16,
+      "lambda_min_A": 99.93081933333333,
+      "lambda_max_A": 19986.163866666666,
+      "evidence_file_lines": [
+        "docs/A2_01_DISPOSITION_LEDGER.md:71-79",
+        "docs/A2_01_DISPOSITION_LEDGER.md:144-146",
+        "docs/A2_01_DISPOSITION_LEDGER.md:157",
+        "src/lumina.h:656-665",
+        "src/lumina_plasma.c:6834-6837",
+        "src/lumina_cmfgen.c:1453-1469"
+      ],
+      "data_sources": [
+        {
+          "path": "validation/emiss_e1/chieta_A_replay",
+          "schema": "LCMFCE01-v1",
+          "note": "Existing deterministic chi/eta/J dump; 1000-bin evidence only, not by itself sufficient to certify the 16000-bin ladder."
+        }
+      ],
+      "range_derivation": "The current BF and deterministic CMF chi/eta arrays share NLTE_NU_MIN..NLTE_NU_MAX."
+    },
+    {
+      "id": "packet_emission_absorption",
+      "contract_ordinal": 4,
+      "nu_min_hz": 99930819333333.33,
+      "nu_max_hz": 3e+16,
+      "lambda_min_A": 99.93081933333333,
+      "lambda_max_A": 30000.0,
+      "evidence_file_lines": [
+        "docs/A2_01_DISPOSITION_LEDGER.md:60-70",
+        "docs/A2_01_DISPOSITION_LEDGER.md:134-137",
+        "src/lumina.h:154-158",
+        "src/lumina_cuda.cu:4591-4620",
+        "src/lumina_plasma.c:6865-6999",
+        "src/lumina_plasma.c:7860-7906"
+      ],
+      "data_sources": [
+        {
+          "path": "lumina_census_emission.csv",
+          "status": "EXISTING_DUMP_REQUIRED_AT_DRIVER_EXECUTION",
+          "registered_wavelength_support_A": [
+            900.0,
+            30000.0
+          ]
+        }
+      ],
+      "range_derivation": "Union of registered packet emission census support (900..30000 A) and the current BF absorption/emissivity lookup grid. Planck sampling has mathematical tails, but it does not authorize an implicit J lookup outside this registered interval; A2-03 must represent and reject OUT_OF_RANGE explicitly."
+    },
+    {
+      "id": "formal_transfer",
+      "contract_ordinal": 5,
+      "nu_min_hz": 119916983200000.0,
+      "nu_max_hz": 5995849160000000.0,
+      "lambda_min_A": 500.0,
+      "lambda_max_A": 25000.0,
+      "evidence_file_lines": [
+        "docs/A2_01_DISPOSITION_LEDGER.md:80-88",
+        "src/lumina_cuda.cu:7457-7461",
+        "src/lumina_cuda.cu:9955-9989",
+        "src/lumina_plasma.c:18354-18483"
+      ],
+      "data_sources": [
+        {
+          "path": "LUMINA_SPEC_RANGE",
+          "default_wavelength_A": [
+            500.0,
+            20000.0
+          ],
+          "a2_registered_extension_A": 25000.0
+        }
+      ],
+      "range_derivation": "The current formal spectrum consumes the configured spectrum grid. A2 registers the red edge at 25000 A; future wider overrides must fail canonical-range validation until separately registered."
+    },
+    {
+      "id": "observer_spectrum",
+      "contract_ordinal": 6,
+      "nu_min_hz": 119916983200000.0,
+      "nu_max_hz": 5995849160000000.0,
+      "lambda_min_A": 500.0,
+      "lambda_max_A": 25000.0,
+      "evidence_file_lines": [
+        "docs/A2_01_DISPOSITION_LEDGER.md:80-88",
+        "src/lumina_cuda.cu:7457-7461",
+        "src/lumina_cmfgen.c:3193-3205",
+        "src/lumina_cmfgen.c:3269-3272"
+      ],
+      "data_sources": [
+        {
+          "path": "lumina_spectrum_formal.csv",
+          "status": "EXISTING_DUMP_REQUIRED_AT_DRIVER_EXECUTION",
+          "common_wavelength_edges_required": true
+        }
+      ],
+      "range_derivation": "Observer and formal outputs share the registered 500..25000 A comparison interval; comparison must conservatively rebin to common wavelength edges."
+    },
+    {
+      "id": "registered_validation_bands",
+      "contract_ordinal": 7,
+      "nu_min_hz": 119916983200000.0,
+      "nu_max_hz": 6662054622222222.0,
+      "lambda_min_A": 450.0,
+      "lambda_max_A": 25000.0,
+      "evidence_file_lines": [
+        "docs/ORDER_L0_JNU_OWNER_BY_CODEX.md:17",
+        "scripts/verify_trad_fix.py:76-81"
+      ],
+      "data_sources": [
+        {
+          "path": "scripts/verify_trad_fix.py",
+          "symbol": "BANDS_A"
+        }
+      ],
+      "registered_bands": [
+        {
+          "id": "450_918_A",
+          "lambda_lo_A": 450.0,
+          "lambda_hi_A": 918.0,
+          "nu_min_hz": 3265713040000000.0,
+          "nu_max_hz": 6662054622222222.0
+        },
+        {
+          "id": "918_1290_A",
+          "lambda_lo_A": 918.0,
+          "lambda_hi_A": 1290.0,
+          "nu_min_hz": 2323972542635659.0,
+          "nu_max_hz": 3265713040000000.0
+        },
+        {
+          "id": "1290_2000_A",
+          "lambda_lo_A": 1290.0,
+          "lambda_hi_A": 2000.0,
+          "nu_min_hz": 1498962290000000.0,
+          "nu_max_hz": 2323972542635659.0
+        },
+        {
+          "id": "2000_10000_A",
+          "lambda_lo_A": 2000.0,
+          "lambda_hi_A": 10000.0,
+          "nu_min_hz": 299792458000000.0,
+          "nu_max_hz": 1498962290000000.0
+        },
+        {
+          "id": "10000_25000_A",
+          "lambda_lo_A": 10000.0,
+          "lambda_hi_A": 25000.0,
+          "nu_min_hz": 119916983200000.0,
+          "nu_max_hz": 299792458000000.0
+        }
+      ],
+      "range_derivation": "Exact five-band registry from the canonical order and the existing TRAD-FIX verifier."
+    }
+  ],
+  "union": {
+    "nu_min_hz": 1440292895009.7124,
+    "nu_max_hz": 4.032418413741097e+16,
+    "lambda_min_A": 74.34557311275294,
+    "lambda_max_A": 2081468.700142261,
+    "derivation": "closed interval union of exactly seven amended consumers"
+  },
+  "validity_contract": {
+    "states": [
+      "MEASURED",
+      "EXACT_ZERO",
+      "UNSAMPLED",
+      "OUT_OF_RANGE"
+    ],
+    "ambiguous_floor_forbidden": true,
+    "evidence_file_lines": [
+      "docs/ORDER_L0_JNU_OWNER_BY_CODEX.md:636",
+      "docs/ORDER_L0_JNU_OWNER_BY_CODEX.md:756-758",
+      "src/lumina_plasma.c:14683-14688"
+    ]
+  },
+  "resolution_ladder": {
+    "candidate_bins": [
+      1000,
+      2000,
+      4000,
+      8000,
+      16000
+    ],
+    "comparison_pairs": [
+      [
+        1000,
+        2000
+      ],
+      [
+        2000,
+        4000
+      ],
+      [
+        4000,
+        8000
+      ],
+      [
+        8000,
+        16000
+      ]
+    ],
+    "maximum_relative_change_limit": 0.01,
+    "median_relative_change_limit": 0.002,
+    "last_pair_failure_disposition": "BLOCKED",
+    "metrics": [
+      "band_integral_J",
+      "Gamma",
+      "band_integral_chi",
+      "band_integral_eta"
+    ],
+    "Jbar_removed_from_global_ladder": true
+  },
+  "oracle_shell_policy": {
+    "cmfgen_judgment_shells": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8
+    ],
+    "straddling_shells_record_only": [
+      9
+    ],
+    "contaminated_shells_record_only": "s10+",
+    "applies_to_metrics": [
+      "Gamma"
+    ],
+    "evidence_file_lines": [
+      "docs/OUTSIDE_LOOP_POOL.md:1212-1227"
+    ]
+  },
+  "line_census_manifest_sha256": "fa567c276b1e4d41497f10f83dbde34b2bc49bcd4a1ddde13728b22353cacbac"
+}

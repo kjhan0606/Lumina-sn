@@ -25,9 +25,9 @@ from typing import Any
 import numpy as np
 
 
-SCHEMA_LEDGER = "lumina-a2-02-frequency-union-v1"
-SCHEMA_INPUT = "lumina-a2-02-resolution-input-v1"
-SCHEMA_OUTPUT = "lumina-a2-02-resolution-result-v1"
+SCHEMA_LEDGER = "lumina-a2-02c-frequency-union-v2"
+SCHEMA_INPUT = "lumina-a2-02c-resolution-input-v2"
+SCHEMA_OUTPUT = "lumina-a2-02c-global-resolution-result-v2"
 CANDIDATES = (1000, 2000, 4000, 8000, 16000)
 MAX_LIMIT = 0.01
 MEDIAN_LIMIT = 0.002
@@ -72,6 +72,7 @@ def require(condition: bool, message: str) -> None:
 
 def check_ledger(ledger: dict[str, Any]) -> None:
     require(ledger.get("schema") == SCHEMA_LEDGER, "frequency ledger schema mismatch")
+    require(ledger.get("amends_after") == "43ffe31", "amends_after must be 43ffe31")
     consumers = ledger.get("consumers")
     require(isinstance(consumers, list) and len(consumers) == 7,
             "frequency ledger must contain exactly seven consumers")
@@ -101,8 +102,12 @@ def check_ledger(ledger: dict[str, Any]) -> None:
     policy = ledger.get("oracle_shell_policy", {})
     require(policy.get("cmfgen_judgment_shells") == list(range(9)),
             "CMFGEN judgment shells must be exactly s0..s8")
-    require(set(policy.get("applies_to_metrics", [])) == {"Gamma", "Jbar"},
-            "safe-shell restriction must apply to Gamma and Jbar")
+    require(set(policy.get("applies_to_metrics", [])) == {"Gamma"},
+            "safe-shell restriction must apply to Gamma only")
+    require(ladder.get("metrics") == ["band_integral_J", "Gamma",
+                                      "band_integral_chi", "band_integral_eta"] and
+            ladder.get("Jbar_removed_from_global_ladder") is True,
+            "amended global ladder must contain exactly four metrics and no Jbar")
     states = ledger.get("validity_contract", {}).get("states")
     require(states == ["MEASURED", "EXACT_ZERO", "UNSAMPLED", "OUT_OF_RANGE"],
             "validity states must preserve exact-zero/unsampled/out-of-range")
@@ -121,6 +126,7 @@ def check_ledger(ledger: dict[str, Any]) -> None:
 def validate_manifest(manifest_path: Path) -> tuple[dict[str, Any], dict[str, Any], Path]:
     manifest = load_json(manifest_path)
     require(manifest.get("schema") == SCHEMA_INPUT, "input manifest schema mismatch")
+    require(manifest.get("amends_after") == "43ffe31", "input amends_after mismatch")
     provenance = manifest.get("provenance", {})
     require(provenance.get("new_gpu_run") is False,
             "new_gpu_run must be explicitly false; A2-02 accepts existing dumps only")
@@ -292,7 +298,7 @@ def compute_candidate(arr: dict[str, np.ndarray], ledger: dict[str, Any],
     bad_band = band_integrals((invalid_width > 0.0).astype(np.float64), edges, bands) > 0.0
     chi_band = band_integrals(chi, edges, bands)
     eta_band = band_integrals(eta, edges, bands)
-    rows: dict[str, list[dict[str, Any]]] = {"J_band": [], "Gamma": [], "Jbar": [], "chi": [], "eta": []}
+    rows: dict[str, list[dict[str, Any]]] = {"J_band": [], "Gamma": [], "chi": [], "eta": []}
     # 2026-08-05 driver fix: a shell whose J is state-4 across the whole grid
     # (s44+ outside EDDFACTOR coverage, valid=false BY CONSTRUCTION in the npz)
     # can never yield a convergence verdict; counting it as invalid-eligible
@@ -348,27 +354,6 @@ def compute_candidate(arr: dict[str, np.ndarray], ledger: dict[str, Any],
                      "s10+ jnu4 outer oracle contaminated"),
             })
 
-    for start in range(0, arr["line_profile"].shape[0], 64):
-        stop = min(start + 64, arr["line_profile"].shape[0])
-        profile = conservative_rebin(arr["line_profile"][start:stop], old_edges, edges)
-        denom = np.sum(profile * widths, axis=1)
-        for local, row_index in enumerate(range(start, stop)):
-            shell = int(arr["line_shell"][row_index])
-            si = shell_index[shell]
-            value = float(np.sum(j[si] * profile[local] * widths) / denom[local])
-            support = arr["line_profile"][row_index] > 0.0
-            support_bad = bool(np.any(invalid_source[si] & support))
-            support_oor = bool(np.any((arr["state"][si] == 4) & support))
-            support_mc_gap = bool(np.any((arr["state"][si] == 3) & support))
-            eligible = (shell in SAFE_SHELLS) and not (support_oor and not support_mc_gap)
-            rows["Jbar"].append({
-                "record_id": str(arr["line_id"][row_index]), "shell": shell,
-                "value": value, "valid": not support_bad,
-                "judgment_eligible": eligible,
-                "exclusion_reason": None if eligible else
-                    ("s9 straddles the jnu4/modern boundary" if shell == 9 else
-                     "s10+ jnu4 outer oracle contaminated"),
-            })
     return rows
 
 
@@ -432,14 +417,13 @@ def compare_pair(coarse_n: int, fine_n: int,
                  fine: dict[str, list[dict[str, Any]]]) -> dict[str, Any]:
     j = compare_rows(coarse["J_band"], fine["J_band"], "band_integral_J")
     gamma = compare_rows(coarse["Gamma"], fine["Gamma"], "Gamma")
-    jbar = compare_rows(coarse["Jbar"], fine["Jbar"], "Jbar")
     chi = compare_rows(coarse["chi"], fine["chi"], "band_integral_chi")
     eta = compare_rows(coarse["eta"], fine["eta"], "band_integral_eta")
     chieta_pass = bool(chi["passed"] and eta["passed"])
     return {
         "coarse_bins": coarse_n, "fine_bins": fine_n,
         "metrics": {
-            "band_integral_J": j, "Gamma": gamma, "Jbar": jbar,
+            "band_integral_J": j, "Gamma": gamma,
             "band_integral_chi": chi, "band_integral_eta": eta,
             "chi_eta_combined_gate": {
                 "passed": chieta_pass,
@@ -447,7 +431,7 @@ def compare_pair(coarse_n: int, fine_n: int,
             },
         },
         "all_four_contract_metrics_passed": bool(
-            j["passed"] and gamma["passed"] and jbar["passed"] and chieta_pass),
+            j["passed"] and gamma["passed"] and chieta_pass),
     }
 
 
@@ -469,10 +453,13 @@ def run_ladder(arr: dict[str, np.ndarray], ledger: dict[str, Any]) -> dict[str, 
         "thresholds": {"maximum": MAX_LIMIT, "median": MEDIAN_LIMIT},
         "candidate_bins": list(CANDIDATES),
         "coordinate_method": "conservative overlap integration of bin averages",
+        "global_metrics": ["band_integral_J", "Gamma", "band_integral_chi",
+                           "band_integral_eta"],
+        "Jbar_global_metric": "REMOVED_BY_AMENDMENT",
         "point_sampling_used": False,
         "validity_states": STATE_NAMES,
         "cmfgen_judgment_shells": list(range(9)),
-        "cmfgen_record_only_shells": "s9+ (s9 boundary-straddling; s10+ contaminated)",
+        "cmfgen_record_only_shells": "Gamma: s9+ (s9 boundary-straddling; s10+ contaminated)",
         "pairs": pairs,
     }
 
@@ -510,6 +497,7 @@ def self_test() -> None:
         for center in (8.0e14, 2.0e15, 4.0e15)])
     ledger = {
         "schema": SCHEMA_LEDGER,
+        "amends_after": "43ffe31",
         "consumers": [
             {"id": f"c{i}", "contract_ordinal": i, "nu_min_hz": lo,
              "nu_max_hz": hi, "evidence_file_lines": ["fixture:1"],
@@ -532,10 +520,13 @@ def self_test() -> None:
             "candidate_bins": list(CANDIDATES),
             "maximum_relative_change_limit": MAX_LIMIT,
             "median_relative_change_limit": MEDIAN_LIMIT,
+            "metrics": ["band_integral_J", "Gamma", "band_integral_chi",
+                        "band_integral_eta"],
+            "Jbar_removed_from_global_ladder": True,
         },
         "oracle_shell_policy": {
             "cmfgen_judgment_shells": list(range(9)),
-            "applies_to_metrics": ["Gamma", "Jbar"],
+            "applies_to_metrics": ["Gamma"],
         },
         "validity_contract": {
             "states": ["MEASURED", "EXACT_ZERO", "UNSAMPLED", "OUT_OF_RANGE"]
@@ -556,8 +547,7 @@ def self_test() -> None:
     for pair in result["pairs"]:
         require(pair["metrics"]["Gamma"]["excluded_record_only"] == 1,
                 "contaminated Gamma shell was not recorded/excluded")
-        require(pair["metrics"]["Jbar"]["excluded_record_only"] == 1,
-                "contaminated Jbar shell was not recorded/excluded")
+        require("Jbar" not in pair["metrics"], "Jbar leaked into global ladder")
     broken = dict(data)
     broken["j_state"] = state.copy()
     broken["j_state"][0, 1000] = 3
@@ -566,8 +556,8 @@ def self_test() -> None:
     require(any(pair["metrics"]["band_integral_J"]["invalid_eligible_records"] > 0
                 for pair in broken_result["pairs"]),
             "UNSAMPLED state must invalidate a judgment record")
-    print("A2_02_SELFTEST PASS conservative_rebin=1 point_sample=0 "
-          "validity_states=4 safe_shells=s0-s8 contaminated_recorded=1")
+    print("A2_02C_LADDER_SELFTEST PASS conservative_rebin=1 point_sample=0 "
+          "global_metrics=4 Jbar_removed=1 invalid_eligible_gate=0")
 
 
 def main() -> int:
@@ -584,8 +574,8 @@ def main() -> int:
         if args.command == "check-ledger":
             ledger = load_json(args.ledger.resolve())
             check_ledger(ledger)
-            print("A2_02_LEDGER PASS consumers=7 ladder=1000/2000/4000/8000/16000 "
-                  "max=0.01 median=0.002 safe_shells=s0-s8")
+            print("A2_02C_LEDGER PASS consumers=7 ladder=1000/2000/4000/8000/16000 "
+                  "metrics=4 Jbar_removed=1 max=0.01 median=0.002 safe_shells=s0-s8")
             return 0
         if args.command == "self-test":
             self_test()
@@ -601,11 +591,11 @@ def main() -> int:
         result["fine_dump_sha256"] = sha256_file(fine_path)
         result["provenance"] = manifest["provenance"]
         write_json_atomic(args.output.resolve(), result)
-        print(f"A2_02_LADDER {result['decision']} selected_bins={result['selected_bins']} "
+        print(f"A2_02C_LADDER {result['decision']} selected_bins={result['selected_bins']} "
               f"output={args.output.resolve()}")
         return 0 if result["decision"] == "SELECTED" else 3
     except (ContractError, OSError, ValueError, KeyError) as exc:
-        print(f"A2_02_INPUT_FAIL {exc}")
+        print(f"A2_02C_INPUT_FAIL {exc}")
         return 2
 
 
