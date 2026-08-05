@@ -393,7 +393,7 @@ int main(int argc, char *argv[]) {
         L_inner = 4.0 * M_PI_VAL * geo.r_inner[0] * geo.r_inner[0] * /* Phase 5 - Step 5 */
                   SIGMA_SB * pow(config.T_inner, 4); /* Phase 5 - Step 5 */
         time_simulation = 1.0 / L_inner; /* Phase 5 - Step 5 */
-        packet_energy = 1.0 / (double)n_packets; /* Phase 5 - Step 5 */
+        packet_energy = 1.0 / (double)n_packets; a2_02c_capture_begin((unsigned long long)(iter + 1), (unsigned long long)n_packets, &geo, volume, time_simulation); /* A2-02C gated read-only capture */
 
         /* Phase 5 - Step 5: Transport all packets (OpenMP-ready) */
         /* Store escaped packet data for spectrum binning after parallel section */
@@ -482,7 +482,7 @@ int main(int argc, char *argv[]) {
             if (local_est->j_nu_estimator) free(local_est->j_nu_estimator);
             local_est->j_nu_estimator = NULL;
             free_estimators(local_est); /* Phase 5 - Step 5 */
-        } /* Phase 5 - Step 5: end parallel block */
+        } a2_02c_capture_end(); /* Phase 5 - Step 5: end parallel block; A2-02C */
 
         /* Phase 5 - Step 5b: Spectrum binning + L_emitted from actual packets */
         double L_emitted = 0.0;

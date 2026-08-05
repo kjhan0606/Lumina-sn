@@ -1,0 +1,28 @@
+{
+ "schema": "a2-02c-effort-manifest-v2",
+ "amends_after": "(200000,400000) BLOCKED ladder",
+ "P": 1200000,
+ "two_P": 2400000,
+ "iterations": 2,
+ "capture_generation": 2,
+ "sizing_basis": "deterministic from measured prefix noise: 0.805% aggregate delta at (200k,400k) -> factor (0.8/0.333)^2=5.76 for section-6.3 CI eligibility of the 1% total gate",
+ "expected": {
+  "capture_s_per_lane": 3400,
+  "bytes_per_lane": 55400000000,
+  "underpowered_gates": [
+   "aggregate median 0.2% (requires ~35x more effort)"
+  ]
+ },
+ "ceiling": {
+  "elapsed_s_max": 14400,
+  "bytes_max": 140000000000
+ },
+ "independent_stream": {
+  "seed": 62519117,
+  "method": "scratch deck"
+ },
+ "last_pair": [
+  1200000,
+  2400000
+ ]
+}

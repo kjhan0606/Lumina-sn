@@ -1,0 +1,28 @@
+{
+ "schema": "a2-02c-effort-manifest-v1",
+ "P": 200000,
+ "two_P": 400000,
+ "iterations": 2,
+ "capture_generation": 2,
+ "definition": "converged-field single-iteration replay (user decision 2026-08-05)",
+ "prefix_rule": "single 2P capture, packet-ID prefix replay for P",
+ "pilot": {
+  "two_p": 4000,
+  "iters": 2,
+  "elapsed_s": 163,
+  "bytes": 94027608,
+  "segments": 1068485
+ },
+ "ceiling": {
+  "elapsed_s_max": 28800,
+  "bytes_max": 12884901888,
+  "basis": "pilot x100 linear + 75% margin"
+ },
+ "independent_stream": {
+  "method": "scratch deck copy, config seed 23111963->62519117"
+ },
+ "last_pair": [
+  200000,
+  400000
+ ]
+}

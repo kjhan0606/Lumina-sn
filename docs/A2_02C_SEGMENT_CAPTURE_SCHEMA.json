@@ -1,0 +1,32 @@
+{
+  "schema": "lumina-a2-02c-raw-segment-capture-v1",
+  "stage": "A2-02C",
+  "amends_after": "43ffe31",
+  "gate": {
+    "enable": "LUMINA_A2_02C_SEGMENT_CAPTURE=1",
+    "required_generation": "LUMINA_A2_02C_CAPTURE_GENERATION=<positive iteration/generation>",
+    "required_new_path": "LUMINA_A2_02C_CAPTURE_PATH=<nonexistent output file>",
+    "default": "OFF",
+    "off_contract": "no capture file, no stdout/stderr, no packet/estimator/RNG/plasma mutation",
+    "on_contract": "only the named capture file is added; transport state and RNG are read-only"
+  },
+  "binary_layout": {
+    "byte_order": "little-endian",
+    "header": {
+      "bytes": 128,
+      "fields": "magic[8], endian:u32, version:u32, header_bytes:u32, record_bytes:u32, n_shells:u32, complete:u32, production_packet_count:u64, generation:u64, time_explosion:f64, delta_t:f64, segment_count:u64, shell_table_bytes:u64, reserved[48]"
+    },
+    "shell_entry": {
+      "bytes": 16,
+      "fields": "shell_id:i32, reserved:u32, V_s_cm3:f64"
+    },
+    "segment_record": {
+      "bytes": 88,
+      "fields": "packet_id:u64, segment_id:u64, generation:u64, shell_id:i32, flags:u32, comoving_nu_start_hz:f64, comoving_nu_end_hz:f64, comoving_energy_start:f64, comoving_energy_end:f64, path_length_cm:f64, V_s_cm3:f64, delta_t_s:f64",
+      "flags": {"1": "comoving endpoints with linear homologous trajectory"}
+    }
+  },
+  "measure_contract": "Both offline global J_nu and selective line Jbar consume these exact records with normalization 1/(4*pi*V_s*delta_t).",
+  "generation_contract": "Every record generation equals the complete header generation; partial files are invalid.",
+  "prefix_contract": "For a 2P capture, P is packet_id<P and 2P is packet_id<2P; the replay reweights stored packet energy by N_capture/effort."
+}

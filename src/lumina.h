@@ -782,7 +782,7 @@ void trace_packet(
 
 void move_r_packet(
     RPacket *pkt, double distance, double time_explosion, /* Phase 3 - Step 1 */
-    Estimators *est                                       /* Phase 3 - Step 1 */
+    Estimators *est, unsigned long long segment_id        /* A2-02C diagnostic */
 );
 
 void move_packet_across_shell_boundary(
@@ -835,6 +835,15 @@ void single_packet_loop(
     Estimators *est, MCConfig *config,                  /* Phase 3 - Step 1 */
     BFOpacity *bf, PlasmaState *plasma, RNG *rng        /* BF opacity support */
 );
+
+/* A2-02C read-only raw-segment capture; implementations are default-OFF. */
+void a2_02c_capture_begin(unsigned long long generation,
+                          unsigned long long production_packet_count,
+                          const Geometry *geo, const double *shell_volume,
+                          double delta_t);
+void a2_02c_capture_segment(const RPacket *pkt, unsigned long long segment_id,
+                            double path_length, double time_explosion);
+void a2_02c_capture_end(void);
 
 /* Phase 4 - Step 1: Plasma solver */
 void solve_radiation_field(

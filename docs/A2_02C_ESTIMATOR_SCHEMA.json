@@ -1,0 +1,37 @@
+{
+  "schema": "lumina-a2-02c-line-derived-view-v1",
+  "stage": "A2-02C",
+  "owner": "RadiationField generation-checked derived view; no independent setter, commit, generation, or lifecycle",
+  "provenance": "MC_SEGMENT_REPLAY",
+  "atomic_commit_contract": "global J_nu and line-derived view expose one generation only after all three section 3.3 gates pass",
+  "q_set": {
+    "required_fields": ["generation", "q_set_hash", "selection_census", "selection_basis"],
+    "selection_basis": "semantic reachability in enabled BB_IN_DOMAIN rate graph only",
+    "strength_pruning": "forbidden"
+  },
+  "record": {
+    "required_fields": [
+      "generation", "shell_id", "line_id", "profile_id", "profile_hash",
+      "jbar_value", "units", "frame", "validity", "sample_count",
+      "variance", "standard_error", "q_set_hash", "raw_segment_ledger_sha256",
+      "provenance"
+    ],
+    "validity": ["MEASURED", "EXACT_ZERO", "UNSAMPLED", "OUT_OF_BB_DOMAIN"],
+    "units": "erg s^-1 cm^-2 Hz^-1 sr^-1",
+    "frame": "comoving"
+  },
+  "lookup_failures": {
+    "generation_mismatch": "FAIL",
+    "profile_mismatch": "FAIL",
+    "active_q_cache_miss": "FAIL",
+    "UNSAMPLED": "FAIL",
+    "OUT_OF_BB_DOMAIN": "FAIL",
+    "coarse_J_nu_fallback": "FORBIDDEN",
+    "zero_or_floor_fallback": "FORBIDDEN"
+  },
+  "commit_gates": {
+    "same_measure_same_commit": "raw ledger/frame/V_s/delta_t/packet normalization/generation hashes equal",
+    "canonical_projection_closure": {"maximum": 0.01, "median": 0.002, "invalid_eligible": 0},
+    "fine_diagnostic_closure": {"maximum": 0.01, "median": 0.002, "invalid_eligible": 0}
+  }
+}

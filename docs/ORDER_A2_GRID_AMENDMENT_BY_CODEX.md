@@ -286,6 +286,8 @@ buffer·validity·variance·GPU 업로드 bytes와 rate kernel bandwidth까지 �
 
 ### 4.4 `Jbar` 대체 지표: estimator effort 사다리
 
+> **대체 표기:** 이 절의 판정 규칙은 문서 말미의 「부록 A — estimator 게이트 개정 2호」가 대체한다. 아래 종전 본문은 `BLOCKED` 근거 보존을 위해 수정하지 않는다.
+
 종전 전역 재빈 `Jbar(N_grid)→Jbar(2N_grid)` 대신
 `\widehat{\bar J}(P)→\widehat{\bar J}(2P)`를 잰다. `P`는 임의 상수가 아니라 실행 전
 manifest에 기록된 현재 production packet-effort이며, 고정 RNG prefix를 사용해
@@ -499,3 +501,139 @@ raw segment-ledger hash, 정본 generation을 해당되는 범위에서 결박�
 24. GPU memory·upload bytes·bandwidth 보고가 실제 혼합안 배열을 대상으로 하는가.
 25. 개정 1∼4의 모든 음성대조가 독립 marker와 기대 비0 종료를 남겼는가.
 26. 종전 `BLOCKED` 결과는 보존되고 amended 회귀 대장에 새 행과 운전석 서명이 있는가.
+
+---
+
+## 부록 A — estimator 게이트 개정 2호
+
+### A.1 효력, 근거와 변경 경계
+
+이 부록은 §4.4의 estimator effort 및 독립 재현 판정만 대체하는 개정 2호다. §3.1의
+적분식, segment trajectory 적분, packet normalization, variance estimator, raw capture
+판독, canonical projection 및 fine histogram 작성법은 바꾸지 않는다. §4.3 전역 격자
+사다리와 그 최대 1%·중앙값 0.2% 합격선도 바꾸지 않는다.
+이 개정 2호에 한해 문서 머리말의 구현 제외 범위를 대체하고, 같은 승인 계약 안에서
+`scripts/a2_02c_segment_replay.py`의 판정부와 self-test 구현을 허가한다. `src`, 덱,
+`/gpfs` 및 estimator/capture 생산 경로는 여전히 변경 대상이 아니다.
+
+production replay `P=200,000`, `2P=400,000`, 사전등록 cohort 74선의 `rc=3`을 다음 네
+독립 판별로 재분해했다.
+
+1. same-measure는 PASS했고 canonical projection closure `δ`는 정확히 `0.0`이었다.
+2. 두 fine 게이트의 유효 수치는 최대 `0.0074`, `0.0048`로 통과 범위였고, 종전
+   `invalid-eligible=17 (UNSAMPLED)` 처분만 FAIL을 만들었다.
+3. prefix
+   `z=(Jhat_P-Jhat_2P)/(sigma_P/sqrt(2))`는 50개 유효선에서 평균 `-0.21`, 표준편차
+   `0.89`, `|z|>3` 0건이었고, 부호는 `+21/-29 (p=0.32)`였다.
+4. 관측 `δ/[1/sqrt(2 count)]` 중앙값은 `1.00`이며, 독립 분산 예측 중앙값 `10.2%`와
+   독립 replay 실측 중앙값 `9.9%`가 일치했다.
+
+line별 표본수는 중앙값 66, 최솟값 0, 최댓값 5,048이었다. 고표본 13선에서 계통 성분
+검출 한계는 약 2% 이하였다. 따라서 종전의 line별 `δ<=1%`, 중앙값 `<=0.2%`는
+estimator 편향보다 포아송 표본 잡음의 크기를 판정한 잘못된 검정이다. 이 수치는 이후
+진단 열에는 보존하지만 PASS/BLOCKED 판정에서는 제외한다.
+
+### A.2 line별 z 게이트
+
+고정 RNG prefix 쌍은 모든 유효선에 대해 다음을 계산한다.
+
+\[
+ z_i={\widehat{\bar J}_{i,P}-\widehat{\bar J}_{i,2P}
+       \over \sigma_{i,P}/\sqrt{2}},\qquad |z_i|\le 3.
+\]
+
+여기서 `sigma_P`는 replay가 이미 기록하는 `standard_error`이며 새 분산 추정이나 재조정은
+금지한다. 분모와 차이가 모두 0이면 `z=0`; 분모만 0이고 차이가 비0이면 무한 outlier로
+처분한다. 모든 유효선을 분류하고 `|z|>3`이 없어야 하며, 동시에 outlier 수가 양측 정규
+꼬리확률 `p=erfc(3/sqrt(2))=0.002699796...`인 이항 기대와 양립해야 한다. 양립 검사는
+사전등록된 단측 exact upper-tail `P[X>=k]>=0.05`로 한다.
+
+동일 effort의 독립 레인 `a,b`에는 다음 동형 게이트를 적용한다.
+
+\[
+ z_i={\widehat{\bar J}_{i,a}-\widehat{\bar J}_{i,b}
+       \over\sqrt{\sigma_{i,a}^2+\sigma_{i,b}^2}},\qquad |z_i|\le3.
+\]
+
+z의 부호·평균·표준편차, 유효선 수, outlier 수·비율 및 exact-binomial p-value를 모두
+기록한다. line별 종전 `δ`도 `legacy_per_line_delta_diagnostic`으로 계속 기록하되
+`judgment=false`로 명시한다.
+
+### A.3 flow-가중 집계 게이트
+
+값을 보기 전에 cohort에 등록된 비음수 유한 가중 `w_i`로 다음 전체-cohort 집계를 만든다.
+
+\[
+ J_{agg}={\sum_i w_i\widehat{\bar J}_i\over\sum_{i\in cohort}w_i},\qquad
+ \delta_{agg}={|J_{agg,a}-J_{agg,b}|\over|J_{agg,b}|}.
+\]
+
+등록 aggregate의 최대 `delta<=1%`, 중앙값 `<=0.2%`를 모두 요구하며 수치를 바꾸지
+않는다. 현재 등록은 전체 cohort aggregate 하나이므로 그 한 값이 최대와 중앙값 양쪽에
+기록된다. prefix `P/2P`와 독립 `a/b`가 각각 이 게이트를 통과해야 한다.
+
+명시 가중 필드가 있는 cohort는 모든 active 행에 `flow_weight` 또는 `cohort_weight`가
+있어야 하고 cohort-level `flow_weights_frozen_before_values=true` 또는 동형 contract가
+있어야 한다. 일부 행에만 가중이 있거나 freeze 선언이 없는 입력은 schema FAIL이다. 명시 필드가 생기기 전
+작성된 frozen cohort v1은 각 등록 행 자체를 단위가중 `1.0`의 사전등록으로 해석한다.
+replay 값, count, validity로 가중을 만들거나 바꾸는 것은 금지하며, 결과에는 가중 출처,
+등록 행 수와 전체 가중합을 기록한다.
+
+### A.4 `UNSAMPLED` 및 저표본 처분
+
+어느 비교 레인에서든 `sample_count<10`이거나 `validity=UNSAMPLED`인 line은 line별 z와
+fine 수치 게이트에서 사유를 붙여 제외한다. 이를 `EXACT_ZERO`로 승격하지 않으며
+`invalid-eligible`로 PASS를 죽이지 않는다. 결과에는 74개 등록선 중 유효·제외 선 수,
+제외 record 전량, 원소/이온 및 다음 파장대별 coverage를 의무 기록한다.
+
+```text
+100–450, 450–918, 918–1290, 1290–2000,
+2000–10000, 10000–20000 Angstrom
+```
+
+flow 집계에서는 제외선의 numerator 기여를 넣지 않되 `sum(all registered w_i)` 분모를
+줄이지 않는다. 각 레인의 included weight·record·sample count와 전체 등록 가중 대비
+coverage를 기록하여 coverage 손실이 두 레인 집계 차이에 그대로 나타나게 한다.
+
+### A.5 production 잡음 자산과 하류 입력
+
+이번 production 관측 `sample_count=66` 부근의 line별 `δ` 중앙값 약 12%는 실패 수치가
+아니라 검증된 MC 잡음 자산으로 등재한다. A2-06은 이를 damping, iteration averaging,
+수렴 감시 및 필요한 packet effort를 설계하는 정량 입력으로 사용해야 한다. 표본수를
+무시한 1% line별 정지조건, variance inflation 또는 결과 후 cohort/가중 변경으로 이
+잡음을 숨기면 FAIL이다.
+
+### A.6 음성대조
+
+종전 §4.6의 7종은 삭제 없이 유지한다. 다음 2종을 추가하여 총 9종을 요구한다.
+
+8. 한 독립 레인 전체에 상수 편향 3%를 주입한다. line별 z 및 이항 게이트가 FAIL해야 한다.
+9. 기록 `sigma`만 10배 부풀린 fixture를 주입한다. z가 통과하더라도 변경되지 않은
+   flow 집계 `1%/0.2%` 게이트가 FAIL해야 한다.
+
+각 주입은 비0 종료와 `A2_02C_REPLAY_NEGATIVE_FAIL` marker를 내야 한다. production
+estimator, 적분 또는 capture를 고쳐 음성대조를 맞추는 것은 금지한다.
+
+### A.7 artifact, schema와 최종 판정식
+
+종전 `validation/a2_02c/a2_02c_estimator_effort_result.json`과 schema
+`lumina-a2-02c-segment-replay-v1`의 `BLOCKED` artifact는 보존하고 덮어쓰지 않는다.
+개정 2호 재판정은 새 이름 `a2_02c_estimator_effort_gate2_result.json`, 새 schema
+`lumina-a2-02c-segment-replay-gate2-v2`를 사용하며 `amends_after`로 종전 artifact/schema를
+참조한다. 원 `43ffe31` 참조도 `historical_amends_after`에 유지한다.
+
+```text
+selective_jbar_effort_ladder_PASS =
+  prefix_z_gate_PASS
+  AND prefix_flow_weighted_aggregate_gate_PASS
+  AND independent_z_gate_PASS
+  AND independent_flow_weighted_aggregate_gate_PASS
+  AND same_measure_commit_gate_PASS
+  AND canonical_projection_closure_PASS
+  AND fine_histogram_resolution_convergence_PASS
+  AND fine_diagnostic_closure_PASS
+  AND estimator_negative_controls_9_of_9_PASS
+```
+
+이 부록이 정한 사유 제외 및 coverage 보고는 `invalid-eligible=0`의 종전 문구를 대체한다.
+그 밖의 A2-02 최종 판정항과 하류 보류 조건은 그대로다.

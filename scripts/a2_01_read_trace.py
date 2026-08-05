@@ -27,6 +27,7 @@ from a2_01_census_contract import SITES, token_matches, validate
 CPU_SOURCES = [
     "lumina_main.c",
     "lumina_transport.c",
+    "a2_02c_segment_capture.c",
     "lumina_plasma.c",
     "lumina_element_wide.c",
     "lumina_atomic.c",

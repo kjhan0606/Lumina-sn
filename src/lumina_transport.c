@@ -261,7 +261,7 @@ void trace_packet(RPacket *pkt, Geometry *geo, OpacityState *opacity,
 /* ============================================================ */
 
 void move_r_packet(RPacket *pkt, double distance, double time_explosion,
-                    Estimators *est) {
+                    Estimators *est, unsigned long long segment_id) {
     /* Phase 3 - Step 6: Doppler factor at OLD position */
     double doppler_factor = get_doppler_factor(pkt->r, pkt->mu, /* Phase 3 - Step 6 */
                                                 time_explosion); /* Phase 3 - Step 6 */
@@ -269,7 +269,7 @@ void move_r_packet(RPacket *pkt, double distance, double time_explosion,
     /* Phase 3 - Step 6: Move packet to new position */
     /* TARDIS: estimator update only happens when distance > 0 */
     if (distance > 0.0) { /* Phase 3 - Step 6 */
-        double r = pkt->r; /* Phase 3 - Step 6 */
+        a2_02c_capture_segment(pkt, segment_id, distance, time_explosion); double r = pkt->r; /* Phase 3 - Step 6 */
         double new_r = sqrt(r * r + distance * distance + /* Phase 3 - Step 6 */
                             2.0 * r * distance * pkt->mu); /* Phase 3 - Step 6 */
         pkt->mu = (pkt->mu * r + distance) / new_r; /* Phase 3 - Step 6 */
@@ -547,18 +547,18 @@ void single_packet_loop(RPacket *pkt, Geometry *geo, OpacityState *opacity,
 
         /* Phase 3 - Step 11: Handle interaction */
         if (interaction_type == INTERACTION_BOUNDARY) { /* Phase 3 - Step 11 */
-            move_r_packet(pkt, distance, geo->time_explosion, est); /* Phase 3 - Step 11 */
+            move_r_packet(pkt, distance, geo->time_explosion, est, (unsigned long long)loop_count); /* Phase 3 - Step 11 */
             move_packet_across_shell_boundary(pkt, delta_shell, /* Phase 3 - Step 11 */
                                                geo->n_shells); /* Phase 3 - Step 11 */
         } else if (interaction_type == INTERACTION_LINE) { /* Phase 3 - Step 11 */
-            move_r_packet(pkt, distance, geo->time_explosion, est); /* Phase 3 - Step 11 */
+            move_r_packet(pkt, distance, geo->time_explosion, est, (unsigned long long)loop_count); /* Phase 3 - Step 11 */
             line_scatter_event(pkt, geo->time_explosion, /* Phase 3 - Step 11 */
                                 config->line_interaction_type, opacity,
                                 config->line_atomic_number, config->line_ion_number,
                                 config->fe_scatter_mode,
                                 rng); /* Phase 3 - Step 11 */
         } else if (interaction_type == INTERACTION_ESCATTERING) { /* Phase 3 - Step 11 */
-            move_r_packet(pkt, distance, geo->time_explosion, est); /* Phase 3 - Step 11 */
+            move_r_packet(pkt, distance, geo->time_explosion, est, (unsigned long long)loop_count); /* Phase 3 - Step 11 */
             /* Branch: Thomson scattering vs BF absorption */
             if (chi_bf_val > 0.0 && rng_uniform(rng) > chi_e / chi_continuum) {
                 /* BF macro-atom channel: route through macro-atom cascade if possible */

@@ -53,8 +53,11 @@ ORACLE_DATA_EXACT = {
     "CONT_FREQ",
     "EDDFACTOR",
     "ETA_DATA",
+    "EWDATA",
+    "FLUX_FILE",
     "GAMMAS",
     "GENCOOL",
+    "HYDRO",
     "JH_AT_CURRENT_TIME",
     "LINEHEAT",
     "MEANOPAC",
@@ -69,6 +72,8 @@ ORACLE_DATA_EXACT = {
 
 ORACLE_METADATA_EXACT = {
     ATTESTATION,
+    "CMF_FLUX_PARAM",
+    "CMF_FLUX_STDIN",
     "IN_ITS",
     "LEVEL_SL_STEQ_LINKS",
     "MODEL",
@@ -94,6 +99,9 @@ RUN_LOG_EXACT = {
     "NEW_SN_R_GRID",
     "NUM_DECAYS_INFO",
     "OLD_SN_R_GRID",
+    "OBSFRAME",
+    "OUT_FLUX",
+    "OUT_PARAMS",
     "PHOT_SUMMARY_FILE",
     "R_GRID_SELECTION",
     "SN_DATA_INPUT_CHK",
@@ -106,6 +114,7 @@ RUN_LOG_EXACT = {
 
 SCRATCH_EXACT = {
     "CFDAT_OUT",
+    "CMFFLUX_PID",
     "CMFGEN_PID",
     "CUR_MODEL_DATA",
     "JEW",
@@ -1225,7 +1234,11 @@ def ophys_gaps(
 
 
 def write_manifest(
-    root: Path, target: Path, profile_name: str, scan_generation: bool
+    root: Path,
+    target: Path,
+    profile_name: str,
+    scan_generation: bool,
+    profile_file: Path | None = None,
 ) -> dict[str, Any]:
     root = root.resolve()
     target = target.resolve()
@@ -1279,7 +1292,23 @@ def write_manifest(
         "eligibility": qualification(root, generation),
     }
     if profile_name == "ophys":
-        manifest["ophys_gaps_at_write"] = ophys_gaps(root, manifest, load_profile(None))
+        gaps = ophys_gaps(root, manifest, load_profile(profile_file))
+        manifest["ophys_gaps_at_write"] = gaps
+        if not gaps:
+            manifest["eligibility"]["CMFGEN_NONLINEAR_CONVERGENCE"] = {
+                "value": "PASS",
+                "reason": (
+                    "O-PHYS attestation passes the last-three Jnu/Te/ion, active-"
+                    "population, heat-residual, and nonfinite thresholds"
+                ),
+            }
+            manifest["eligibility"]["CMFGEN_PHYSICAL_ORACLE"] = {
+                "value": "ELIGIBLE",
+                "reason": (
+                    "O-PHYS profile has zero gaps: free-T, freeze-zero, converged, "
+                    "diagnostic-complete, and same-generation content-attested"
+                ),
+            }
     target.parent.mkdir(parents=True, exist_ok=True)
     fd, temporary_name = tempfile.mkstemp(prefix=f".{target.name}.", dir=target.parent)
     try:
@@ -1409,6 +1438,7 @@ def main(argv: list[str] | None = None) -> int:
                 args.manifest,
                 args.profile,
                 scan_generation=not args.no_generation_scan,
+                profile_file=args.profile_file,
             )
             print(
                 f"WRITE CMFGEN_ORACLE_CONTRACT path={args.manifest} "
