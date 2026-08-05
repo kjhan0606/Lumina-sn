@@ -1,0 +1,50 @@
+{
+  "stage_id": "A2-03",
+  "contract": "Introduce the canonical RadiationField data type as a default-OFF CPU MC shadow; no physics consumer reads it and legacy outputs remain byte-identical.",
+  "source_tree_hash": "5a2d4922afec65c64e4caf839db03b268151ab620d0877e6e0c4ec7cff67fa7f",
+  "input_manifest_hash": "a4c6f2618f2e6ee5be3b58042a64df07632c22e64c1ea26c07e13429f26cced7",
+  "oracle_id": "A2-02C amended union sha256=1443c069eb710acb31c6470442637e43ad11eb57191fbc3a265363cd4d61321c; selected_bins=4000; edge sha256=ec3f94d923b42e036afd3fde71fc63a2477d4c95ca252583b40ed730a0b48f76",
+  "node": "local build/synthetic fixture; grammar-debug and lageunha production commands registered in docs/CODEX_IMPL_A2_03.md",
+  "command": "make selftest_a2_03_radiation_field selftest_a2_03_producer_parity_fixture && ./selftest_a2_03_radiation_field && python3 scripts/a2_03_callgraph_audit.py && python3 scripts/a2_03_byte_parity.py --binary ./selftest_a2_03_producer_parity_fixture --fixture --parallel --progress-seconds 1",
+  "exit_status": 0,
+  "new_layer_status": "PASS_LOCAL_FIXTURE; PENDING_DRIVER_PRODUCTION_PARITY",
+  "all_previous_layer_statuses": {
+    "A2-00": "7/7 negative-control recheck PASS",
+    "A2-01": "157/157 census and trace self-test PASS",
+    "A2-02": "union/capture/prepare/ladder/replay self-tests PASS; closed production artifacts retained"
+  },
+  "negative_control_status": {
+    "path_9_observer_frame_injection": "PASS_REJECTED",
+    "path_10_zero_missing_swap": "PASS_REJECTED",
+    "path_11_unsampled_floor_fill": "PASS_REJECTED"
+  },
+  "coverage": {
+    "canonical_fields": "10/10",
+    "global_bins": 4000,
+    "compiler_callgraph_translation_units": "8/8",
+    "physics_consumer_callers": 0,
+    "parity_compared_files": 3
+  },
+  "metric_values": {
+    "parity_differing_files": 0,
+    "unsampled_bins": 3998,
+    "unsampled_nonzero_bins": 0,
+    "historical_1e_30_floor_values": 0,
+    "out_of_grid_contributions": 0,
+    "production_selected_jbar_noise_median_at_66_samples": 0.12
+  },
+  "changed_output_allowlist": [
+    "radiation_field_shadow.csv"
+  ],
+  "guard_hits": 0,
+  "fallback_hits": 0,
+  "rng_seed": "fixture has no RNG; production command uses deck fixed seed with OMP_NUM_THREADS=1",
+  "mc_confidence": "NOT_APPLICABLE_TO_SCHEMA_SHADOW; A2-02C production selective-Jbar asset is median 12% at 66 samples and is handed to A2-06",
+  "artifact_paths": [
+    "validation/a2_03/a2_03_callgraph_audit.json",
+    "validation/a2_03/a2_03_byte_parity.json",
+    "tests/a2_03_radiation_field_selftest.c",
+    "tests/a2_03_producer_parity_fixture.c"
+  ],
+  "driver_signoff": "PENDING_DRIVER_EXECUTION"
+}

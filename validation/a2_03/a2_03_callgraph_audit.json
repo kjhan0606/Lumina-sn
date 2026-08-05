@@ -1,0 +1,43 @@
+{
+  "schema": "lumina-a2-03-callgraph-audit-v1",
+  "canonical_field_count": 10,
+  "canonical_fields": [
+    "shell_boundaries",
+    "frequency_bin_edges",
+    "J_nu",
+    "units",
+    "frame",
+    "epoch",
+    "generation",
+    "provenance",
+    "validity",
+    "estimator_count_or_variance"
+  ],
+  "compiler": "gcc -fdump-ipa-cgraph",
+  "compiled_translation_units": [
+    "src/lumina_main.c",
+    "src/lumina_transport.c",
+    "src/a2_02c_segment_capture.c",
+    "src/radiation_field.c",
+    "src/lumina_plasma.c",
+    "src/lumina_element_wide.c",
+    "src/lumina_atomic.c",
+    "src/lumina_cmfgen.c"
+  ],
+  "radiation_field_callers": {
+    "radiation_field_shadow_gate_enabled": ["radiation_field_shadow_init"],
+    "radiation_field_shadow_init": ["main"],
+    "radiation_field_shadow_free": ["main", "radiation_field_shadow_init"],
+    "radiation_field_shadow_begin_mc": ["main"],
+    "radiation_field_accumulator_create": ["main"],
+    "radiation_field_accumulator_free": ["main", "radiation_field_accumulator_create"],
+    "radiation_field_accumulator_add": ["update_base_estimators"],
+    "radiation_field_accumulator_reduce": ["main"],
+    "radiation_field_shadow_commit_mc": ["main"],
+    "radiation_field_shadow_validate_owner": ["radiation_field_shadow_commit_mc"],
+    "radiation_field_shadow_dump_if_requested": ["radiation_field_shadow_commit_mc"]
+  },
+  "physics_consumer_callers": [],
+  "public_consumer_api": [],
+  "verdict": "PASS"
+}

@@ -2003,3 +2003,20 @@ gate_off_compare 공허 PASS 차단 · replay ID 계약 캘리브레이션 · �
 
 - replay 국면 A(전역 히스토그램) 청크-Pool 병렬화 — 현 벡터-순차 ~3분/쌍은 수용치
 - 러너 tail 파이프가 진행률 로그를 삼키는 문제 → tee 표준화
+
+### ★★A2-03 RadiationField shadow **폐합** (2026-08-06 00:09) — A-2 4/18
+
+`src/radiation_field.{h,c}` 신설 — §2.1 정본 자료형 10필드, 4000빈, validity 4상태,
+estimator count. 생산 지점 병행 기록(shadow), 소비자 0 (호출그래프 증명).
+게이트 `LUMINA_RADFIELD_SHADOW` 기본 OFF.
+
+```
+[A] grammar-debug  자료형 selftest(fields=10 bins=4000 음성 9/10/11) · callgraph 소비자 0
+                   · producer 픽스처 byte parity · 앞 단계 게이트 8/8        전부 PASS
+[B'] lageunha      D 19/19 · K 7/7 · Z-INERT · CONFIG-PREC                  전부 PASS
+```
+
+★인수 크기 판단: 실바이너리 OMP=1 parity 는 **생략** — 반복당 NLTE 솔브 비용이
+패킷 수와 무관해(실측 35분+) 마이크로 픽스처 가정이 성립하지 않고, [A] 의 producer
+픽스처 parity 가 같은 배선 코드를 이미 byte 수준 증명함. 판정력 무증가·비용 1h+ ⟹
+크기 정당화 규율로 배제. (병렬화 스킬 메모의 "솔브비용 패킷무관" 함정 사례)

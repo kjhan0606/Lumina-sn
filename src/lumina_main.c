@@ -283,7 +283,7 @@ int main(int argc, char *argv[]) {
     memset(&nlte, 0, sizeof(nlte));
     if (enable_nlte) {
         printf("\n--- NLTE Initialization ---\n");
-        nlte_init(&nlte, &atom_data, &opacity, geo.n_shells);
+        if (nlte_init(&nlte, &atom_data, &opacity, geo.n_shells) != 0 || radiation_field_shadow_init(&nlte.radiation_field_shadow, (size_t)geo.n_shells) != 0) { fprintf(stderr, "[RADFIELD-SHADOW][FATAL] initialization failed\n"); return EXIT_FAILURE; }
     }
 
     /* Gamma-ray deposition: initialize if enabled */
@@ -347,7 +347,7 @@ int main(int argc, char *argv[]) {
             if (spec_rot) free_spectrum(spec_rot);
             free(volume);
             free_atomic_data(&atom_data);
-            if (enable_nlte) nlte_free(&nlte);
+            if (enable_nlte) { radiation_field_shadow_free(&nlte.radiation_field_shadow); nlte_free(&nlte); }
             if (gamma_dep_enabled) gamma_deposition_free(&gamma_dep);
             if (bf_opacity_enabled) bf_opacity_free(&bf);
             printf("\nDone (pure-CMFGEN).\n");
@@ -393,7 +393,7 @@ int main(int argc, char *argv[]) {
         L_inner = 4.0 * M_PI_VAL * geo.r_inner[0] * geo.r_inner[0] * /* Phase 5 - Step 5 */
                   SIGMA_SB * pow(config.T_inner, 4); /* Phase 5 - Step 5 */
         time_simulation = 1.0 / L_inner; /* Phase 5 - Step 5 */
-        packet_energy = 1.0 / (double)n_packets; a2_02c_capture_begin((unsigned long long)(iter + 1), (unsigned long long)n_packets, &geo, volume, time_simulation); /* A2-02C gated read-only capture */
+        packet_energy = 1.0 / (double)n_packets; if (enable_nlte && radiation_field_shadow_begin_mc(&nlte.radiation_field_shadow, geo.v_inner, geo.v_outer, (size_t)geo.n_shells, geo.time_explosion, (uint64_t)(iter + 1)) != 0) { fprintf(stderr, "[RADFIELD-SHADOW][FATAL] generation begin failed\n"); return EXIT_FAILURE; } a2_02c_capture_begin((unsigned long long)(iter + 1), (unsigned long long)n_packets, &geo, volume, time_simulation); /* A2-02C + A2-03 gated producers */
 
         /* Phase 5 - Step 5: Transport all packets (OpenMP-ready) */
         /* Store escaped packet data for spectrum binning after parallel section */
@@ -403,10 +403,10 @@ int main(int argc, char *argv[]) {
         double *escaped_r = enable_rotation ? (double *)malloc(n_packets * sizeof(double)) : NULL;
         double *escaped_mu = enable_rotation ? (double *)malloc(n_packets * sizeof(double)) : NULL;
         int n_escaped = 0; /* Phase 5 - Step 5 */
-        int n_reabsorbed = 0; /* Phase 5 - Step 5 */
+        int n_reabsorbed = 0; int radiation_field_shadow_error = 0; /* Phase 5 - Step 5; A2-03 */
 
         #ifdef _OPENMP
-        #pragma omp parallel
+        #pragma omp parallel reduction(|:radiation_field_shadow_error)
         #endif
         { /* Phase 5 - Step 5: thread-parallel block */
             int tid = 0; /* Phase 5 - Step 5 */
@@ -424,7 +424,7 @@ int main(int argc, char *argv[]) {
                 local_est->nlte_nu_min = nlte.nu_min;
                 local_est->nlte_d_log_nu = nlte.d_log_nu;
                 local_est->j_nu_estimator = (double *)calloc(
-                    (size_t)geo.n_shells * nlte.n_freq_bins, sizeof(double));
+                    (size_t)geo.n_shells * nlte.n_freq_bins, sizeof(double)); local_est->radiation_field_shadow_accumulator = nlte.radiation_field_shadow.enabled ? radiation_field_accumulator_create((size_t)geo.n_shells) : NULL; if (nlte.radiation_field_shadow.enabled && !local_est->radiation_field_shadow_accumulator) radiation_field_shadow_error = 1;
             }
             int local_escaped = 0, local_reabsorbed = 0; /* Phase 5 - Step 5 */
 
@@ -474,15 +474,15 @@ int main(int argc, char *argv[]) {
                     size_t j_nu_size = (size_t)geo.n_shells * nlte.n_freq_bins;
                     for (size_t i = 0; i < j_nu_size; i++)
                         nlte.j_nu_estimator[i] += local_est->j_nu_estimator[i];
-                }
+                } if (local_est->radiation_field_shadow_accumulator && radiation_field_accumulator_reduce(&nlte.radiation_field_shadow.accumulator, local_est->radiation_field_shadow_accumulator) != 0) radiation_field_shadow_error = 1;
                 /* Phase 5 - Step 5: j_blue/Edotlu not tracked per-thread (too large) */
                 n_escaped += local_escaped; /* Phase 5 - Step 5 */
                 n_reabsorbed += local_reabsorbed; /* Phase 5 - Step 5 */
             }
             if (local_est->j_nu_estimator) free(local_est->j_nu_estimator);
-            local_est->j_nu_estimator = NULL;
+            local_est->j_nu_estimator = NULL; radiation_field_accumulator_free(local_est->radiation_field_shadow_accumulator); local_est->radiation_field_shadow_accumulator = NULL;
             free_estimators(local_est); /* Phase 5 - Step 5 */
-        } a2_02c_capture_end(); /* Phase 5 - Step 5: end parallel block; A2-02C */
+        } a2_02c_capture_end(); if (radiation_field_shadow_error || (enable_nlte && radiation_field_shadow_commit_mc(&nlte.radiation_field_shadow, volume, (size_t)geo.n_shells, time_simulation) != 0)) { fprintf(stderr, "[RADFIELD-SHADOW][FATAL] producer commit failed\n"); return EXIT_FAILURE; } /* A2-02C/A2-03 producer commits */
 
         /* Phase 5 - Step 5b: Spectrum binning + L_emitted from actual packets */
         double L_emitted = 0.0;
@@ -862,7 +862,7 @@ int main(int argc, char *argv[]) {
     if (spec_rot) free_spectrum(spec_rot);
     free(volume); /* Phase 5 - Step 10 */
     free_atomic_data(&atom_data); /* Task #072 */
-    if (enable_nlte) nlte_free(&nlte);
+    if (enable_nlte) { radiation_field_shadow_free(&nlte.radiation_field_shadow); nlte_free(&nlte); }
     if (gamma_dep_enabled) gamma_deposition_free(&gamma_dep);
     if (bf_opacity_enabled && bf.event_enabled)
         printf("[BF-PHIXS-FALLBACK] CPU upper-ground fallback activations=%llu\n",

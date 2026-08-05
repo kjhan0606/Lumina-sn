@@ -10,8 +10,8 @@ LDFLAGS += -fopenmp
 endif
 
 # Source files (in src/)
-SOURCES = src/lumina_main.c src/lumina_transport.c src/a2_02c_segment_capture.c src/lumina_plasma.c src/lumina_element_wide.c src/lumina_atomic.c src/lumina_cmfgen.c
-HEADERS = src/lumina.h src/a2_02c_segment_capture.h
+SOURCES = src/lumina_main.c src/lumina_transport.c src/a2_02c_segment_capture.c src/radiation_field.c src/lumina_plasma.c src/lumina_element_wide.c src/lumina_atomic.c src/lumina_cmfgen.c
+HEADERS = src/lumina.h src/a2_02c_segment_capture.h src/radiation_field.h
 TARGET = lumina
 
 # CUDA source
@@ -148,6 +148,16 @@ selftest_wave32_counter_atomic: tests/wave32_counter_atomic_selftest.c src/lumin
 		tests/wave32_counter_atomic_selftest.c src/lumina_element_wide.c \
 		src/lumina_plasma.c src/lumina_atomic.c $(LDFLAGS)
 
+# A2-03 canonical RadiationField schema/lifecycle and failure-injection fixture.
+selftest_a2_03_radiation_field: tests/a2_03_radiation_field_selftest.c src/radiation_field.c src/radiation_field.h
+	$(CC) -O2 -Wall -Wextra -std=c11 -Isrc -o $@ \
+		tests/a2_03_radiation_field_selftest.c src/radiation_field.c $(LDFLAGS)
+
+selftest_a2_03_producer_parity_fixture: tests/a2_03_producer_parity_fixture.c src/lumina_transport.c src/radiation_field.c $(HEADERS)
+	$(CC) -O2 -Wall -Wextra -std=c11 -ffunction-sections -fdata-sections \
+		-Isrc -Wl,--gc-sections -o $@ tests/a2_03_producer_parity_fixture.c \
+		src/lumina_transport.c src/radiation_field.c $(LDFLAGS)
+
 # Clean
 clean:
 	rm -f $(TARGET) lumina_cuda bench_frozen_oracle_rc selftest_wave32_ew_rc \
@@ -155,7 +165,9 @@ clean:
 		selftest_cmf_chieta_dump \
 		selftest_emiss_ab_insitu \
 		selftest_wave32_matrix_debit selftest_wave32_within_sl_oom \
-		selftest_wave32_boundary_q selftest_wave32_counter_atomic *.o
+		selftest_wave32_boundary_q selftest_wave32_counter_atomic \
+		selftest_a2_03_radiation_field \
+		selftest_a2_03_producer_parity_fixture *.o
 
 # Run with defaults
 run: $(TARGET)
@@ -169,4 +181,5 @@ test: $(TARGET)
 omp:
 	$(MAKE) OMP=1
 
-.PHONY: all clean run test omp cuda selftest_emiss_e11_fluor_matrix
+.PHONY: all clean run test omp cuda selftest_emiss_e11_fluor_matrix \
+	selftest_a2_03_radiation_field selftest_a2_03_producer_parity_fixture

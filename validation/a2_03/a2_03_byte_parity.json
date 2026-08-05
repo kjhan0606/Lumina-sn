@@ -1,0 +1,27 @@
+{
+  "schema": "lumina-a2-03-byte-parity-v1",
+  "fixture": true,
+  "fixed_rng": true,
+  "omp_num_threads": 1,
+  "chunk_pool_workers": 2,
+  "gate": "LUMINA_RADFIELD_SHADOW",
+  "gate_default": "OFF",
+  "off_exit_status": 0,
+  "on_exit_status": 0,
+  "compared_file_count": 3,
+  "same_file_set": true,
+  "differing_files": [],
+  "changed_output_allowlist": [
+    "radiation_field_shadow.csv"
+  ],
+  "shadow_diagnostic_sha256": "e14dc8555601a8ceee7ec907fe9cc8cd226eaf6e5765648fdbccc6743ae1d12a",
+  "shadow_diagnostic_metrics": {
+    "historical_1e_30_floor_values": 0,
+    "out_of_grid_contributions": 0,
+    "unsampled_bins": 3998,
+    "unsampled_nonzero_bins": 0
+  },
+  "guard_hits": 0,
+  "fallback_hits": 0,
+  "verdict": "PASS"
+}
