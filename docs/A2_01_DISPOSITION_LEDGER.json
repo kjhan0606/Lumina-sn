@@ -1,0 +1,1459 @@
+{
+  "schema": "lumina-a2-01-disposition-ledger-v1",
+  "stage": "A2-01",
+  "row_count": 157,
+  "unclassified": 0,
+  "role_counts": {
+    "rate": 24,
+    "comparator": 14,
+    "GPU_opacity_rate": 13,
+    "GPU_transport": 11,
+    "opacity_rate": 9,
+    "formal_transfer": 9,
+    "GPU_lifecycle": 8,
+    "GPU_rate": 8,
+    "owner_validation": 7,
+    "owner_update": 7,
+    "seed_radeq": 6,
+    "input_owner": 5,
+    "diagnostic": 4,
+    "GPU_emissivity": 4,
+    "rate_diagnostic": 3,
+    "GPU_transfer": 3,
+    "opacity": 3,
+    "seed_rate": 3,
+    "lifecycle": 2,
+    "output": 2,
+    "Boltzmann_partition": 2,
+    "transition_probability": 2,
+    "rate_Boltzmann": 2,
+    "rate_radeq": 2,
+    "Boltzmann_diagnostic": 2,
+    "seed": 1,
+    "emissivity": 1
+  },
+  "field_order": [
+    "file_line",
+    "symbol",
+    "current_source",
+    "physical_meaning",
+    "new_source",
+    "migration_stage",
+    "final_status"
+  ],
+  "rows": [
+    {
+      "file_line": "src/lumina_plasma.c:4556",
+      "symbol": "W",
+      "current_source": "local alias of plasma->W[s]",
+      "physical_meaning": "[rate] bound-bound dilute Planck pump",
+      "new_source": "RadiationField.J_nu",
+      "migration_stage": "A2-05",
+      "final_status": "REPLACE_SCALAR_RATE_READ"
+    },
+    {
+      "file_line": "src/lumina_plasma.c:4556",
+      "symbol": "T_rad",
+      "current_source": "local alias of plasma->T_rad[s]",
+      "physical_meaning": "[rate] bound-bound Planck color",
+      "new_source": "RadiationField.J_nu",
+      "migration_stage": "A2-05",
+      "final_status": "REPLACE_SCALAR_RATE_READ"
+    },
+    {
+      "file_line": "src/lumina_plasma.c:4596",
+      "symbol": "W",
+      "current_source": "local alias of plasma->W[s]",
+      "physical_meaning": "[rate] LTE comparison field amplitude",
+      "new_source": "RadiationField.J_nu",
+      "migration_stage": "A2-05",
+      "final_status": "REPLACE_SCALAR_RATE_READ"
+    },
+    {
+      "file_line": "src/lumina_plasma.c:4596",
+      "symbol": "T_rad",
+      "current_source": "local alias of plasma->T_rad[s]",
+      "physical_meaning": "[rate] LTE comparison field color",
+      "new_source": "RadiationField.J_nu",
+      "migration_stage": "A2-05",
+      "final_status": "REPLACE_SCALAR_RATE_READ"
+    },
+    {
+      "file_line": "src/lumina_plasma.c:4701",
+      "symbol": "W",
+      "current_source": "local alias of plasma->W[s]",
+      "physical_meaning": "[rate] line upward radiative rate",
+      "new_source": "RadiationField.J_nu",
+      "migration_stage": "A2-05",
+      "final_status": "REPLACE_SCALAR_RATE_READ"
+    },
+    {
+      "file_line": "src/lumina_plasma.c:4701",
+      "symbol": "T_rad",
+      "current_source": "local alias of plasma->T_rad[s]",
+      "physical_meaning": "[rate] line upward radiative rate",
+      "new_source": "RadiationField.J_nu",
+      "migration_stage": "A2-05",
+      "final_status": "REPLACE_SCALAR_RATE_READ"
+    },
+    {
+      "file_line": "src/lumina_plasma.c:4879",
+      "symbol": "T_rad",
+      "current_source": "local alias of plasma->T_rad[s]",
+      "physical_meaning": "[rate] Boltzmann fallback exponent in line rate",
+      "new_source": "RadiationField.J_nu",
+      "migration_stage": "A2-05",
+      "final_status": "REPLACE_SCALAR_RATE_READ"
+    },
+    {
+      "file_line": "src/lumina_plasma.c:4880",
+      "symbol": "W",
+      "current_source": "local alias of plasma->W[s]",
+      "physical_meaning": "[rate] metastable dilution in line rate",
+      "new_source": "RadiationField.J_nu",
+      "migration_stage": "A2-05",
+      "final_status": "REPLACE_SCALAR_RATE_READ"
+    },
+    {
+      "file_line": "src/lumina_plasma.c:9160",
+      "symbol": "T_rad",
+      "current_source": "bf_rate_pop argument from plasma->T_rad",
+      "physical_meaning": "[rate] bound-free population exponent",
+      "new_source": "RadiationField.J_nu",
+      "migration_stage": "A2-05",
+      "final_status": "REPLACE_SCALAR_RATE_READ"
+    },
+    {
+      "file_line": "src/lumina_plasma.c:9162",
+      "symbol": "W",
+      "current_source": "bf_rate_pop argument from plasma->W",
+      "physical_meaning": "[rate] bound-free population dilution",
+      "new_source": "RadiationField.J_nu",
+      "migration_stage": "A2-05",
+      "final_status": "REPLACE_SCALAR_RATE_READ"
+    },
+    {
+      "file_line": "src/lumina_plasma.c:11908",
+      "symbol": "W",
+      "current_source": "local alias of plasma->W[s]",
+      "physical_meaning": "[rate] line source fallback",
+      "new_source": "RadiationField.J_nu",
+      "migration_stage": "A2-05",
+      "final_status": "REPLACE_SCALAR_RATE_READ"
+    },
+    {
+      "file_line": "src/lumina_plasma.c:11908",
+      "symbol": "T_rad",
+      "current_source": "local alias of plasma->T_rad[s]",
+      "physical_meaning": "[rate] line source fallback",
+      "new_source": "RadiationField.J_nu",
+      "migration_stage": "A2-05",
+      "final_status": "REPLACE_SCALAR_RATE_READ"
+    },
+    {
+      "file_line": "src/lumina_plasma.c:11915",
+      "symbol": "W",
+      "current_source": "local alias of plasma->W[s]",
+      "physical_meaning": "[rate] bin field construction",
+      "new_source": "RadiationField.J_nu",
+      "migration_stage": "A2-05",
+      "final_status": "REPLACE_SCALAR_RATE_READ"
+    },
+    {
+      "file_line": "src/lumina_plasma.c:11915",
+      "symbol": "T_rad",
+      "current_source": "local alias of plasma->T_rad[s]",
+      "physical_meaning": "[rate] bin field construction",
+      "new_source": "RadiationField.J_nu",
+      "migration_stage": "A2-05",
+      "final_status": "REPLACE_SCALAR_RATE_READ"
+    },
+    {
+      "file_line": "src/lumina_plasma.c:11943",
+      "symbol": "W",
+      "current_source": "local alias of plasma->W[s]",
+      "physical_meaning": "[rate] bound-free rate population call",
+      "new_source": "RadiationField.J_nu",
+      "migration_stage": "A2-05",
+      "final_status": "REPLACE_SCALAR_RATE_READ"
+    },
+    {
+      "file_line": "src/lumina_plasma.c:11943",
+      "symbol": "T_rad",
+      "current_source": "local alias of plasma->T_rad[s]",
+      "physical_meaning": "[rate] bound-free rate population call",
+      "new_source": "RadiationField.J_nu",
+      "migration_stage": "A2-05",
+      "final_status": "REPLACE_SCALAR_RATE_READ"
+    },
+    {
+      "file_line": "src/lumina_plasma.c:11976",
+      "symbol": "W",
+      "current_source": "local alias of plasma->W[s]",
+      "physical_meaning": "[rate] dilute photoheating integral",
+      "new_source": "RadiationField.J_nu",
+      "migration_stage": "A2-05",
+      "final_status": "REPLACE_SCALAR_RATE_READ"
+    },
+    {
+      "file_line": "src/lumina_plasma.c:12034",
+      "symbol": "T_rad",
+      "current_source": "local alias of plasma->T_rad[s]",
+      "physical_meaning": "[rate] Planck comparison in rate integral",
+      "new_source": "RadiationField.J_nu",
+      "migration_stage": "A2-05",
+      "final_status": "REPLACE_SCALAR_RATE_READ"
+    },
+    {
+      "file_line": "src/lumina_plasma.c:12093",
+      "symbol": "W",
+      "current_source": "local alias of plasma->W[s]",
+      "physical_meaning": "[rate] lower-level radiative weight",
+      "new_source": "RadiationField.J_nu",
+      "migration_stage": "A2-05",
+      "final_status": "REPLACE_SCALAR_RATE_READ"
+    },
+    {
+      "file_line": "src/lumina_plasma.c:12100",
+      "symbol": "W",
+      "current_source": "local alias of plasma->W[s]",
+      "physical_meaning": "[rate] upper-level radiative weight",
+      "new_source": "RadiationField.J_nu",
+      "migration_stage": "A2-05",
+      "final_status": "REPLACE_SCALAR_RATE_READ"
+    },
+    {
+      "file_line": "src/lumina_plasma.c:13672",
+      "symbol": "W",
+      "current_source": "local alias of plasma->W[s]",
+      "physical_meaning": "[rate] coupled bound-free rate call",
+      "new_source": "RadiationField.J_nu",
+      "migration_stage": "A2-05",
+      "final_status": "REPLACE_SCALAR_RATE_READ"
+    },
+    {
+      "file_line": "src/lumina_plasma.c:13672",
+      "symbol": "T_rad",
+      "current_source": "local alias of plasma->T_rad[s]",
+      "physical_meaning": "[rate] coupled bound-free rate call",
+      "new_source": "RadiationField.J_nu",
+      "migration_stage": "A2-05",
+      "final_status": "REPLACE_SCALAR_RATE_READ"
+    },
+    {
+      "file_line": "src/lumina_plasma.c:13739",
+      "symbol": "W",
+      "current_source": "local alias of plasma->W[s]",
+      "physical_meaning": "[rate] coupled lower-level weight",
+      "new_source": "RadiationField.J_nu",
+      "migration_stage": "A2-05",
+      "final_status": "REPLACE_SCALAR_RATE_READ"
+    },
+    {
+      "file_line": "src/lumina_plasma.c:13743",
+      "symbol": "W",
+      "current_source": "local alias of plasma->W[s]",
+      "physical_meaning": "[rate] coupled upper-level weight",
+      "new_source": "RadiationField.J_nu",
+      "migration_stage": "A2-05",
+      "final_status": "REPLACE_SCALAR_RATE_READ"
+    },
+    {
+      "file_line": "src/lumina_main.c:747",
+      "symbol": "plasma.W[i]",
+      "current_source": "plasma.W",
+      "physical_meaning": "[comparator] CPU reference W comparator",
+      "new_source": "RadiationField generation-bound diagnostic",
+      "migration_stage": "A2-11",
+      "final_status": "KEEP_DIAGNOSTIC_ONLY"
+    },
+    {
+      "file_line": "src/lumina_main.c:748",
+      "symbol": "plasma.T_rad[i]",
+      "current_source": "plasma.T_rad",
+      "physical_meaning": "[comparator] CPU reference T_rad comparator",
+      "new_source": "RadiationField generation-bound diagnostic",
+      "migration_stage": "A2-11",
+      "final_status": "KEEP_DIAGNOSTIC_ONLY"
+    },
+    {
+      "file_line": "src/lumina_main.c:750",
+      "symbol": "plasma.W[i]",
+      "current_source": "plasma.W",
+      "physical_meaning": "[comparator] CPU W comparison report",
+      "new_source": "RadiationField generation-bound diagnostic",
+      "migration_stage": "A2-11",
+      "final_status": "KEEP_DIAGNOSTIC_ONLY"
+    },
+    {
+      "file_line": "src/lumina_main.c:751",
+      "symbol": "plasma.T_rad[i]",
+      "current_source": "plasma.T_rad",
+      "physical_meaning": "[comparator] CPU T_rad comparison report",
+      "new_source": "RadiationField generation-bound diagnostic",
+      "migration_stage": "A2-11",
+      "final_status": "KEEP_DIAGNOSTIC_ONLY"
+    },
+    {
+      "file_line": "src/lumina_main.c:757",
+      "symbol": "plasma.W[i]",
+      "current_source": "plasma.W",
+      "physical_meaning": "[comparator] CPU W mean error",
+      "new_source": "RadiationField generation-bound diagnostic",
+      "migration_stage": "A2-11",
+      "final_status": "KEEP_DIAGNOSTIC_ONLY"
+    },
+    {
+      "file_line": "src/lumina_main.c:758",
+      "symbol": "plasma.T_rad[i]",
+      "current_source": "plasma.T_rad",
+      "physical_meaning": "[comparator] CPU T_rad mean error",
+      "new_source": "RadiationField generation-bound diagnostic",
+      "migration_stage": "A2-11",
+      "final_status": "KEEP_DIAGNOSTIC_ONLY"
+    },
+    {
+      "file_line": "src/lumina_main.c:850",
+      "symbol": "plasma.W[i]",
+      "current_source": "plasma.W",
+      "physical_meaning": "[comparator] CPU scalar comparison CSV",
+      "new_source": "RadiationField generation-bound diagnostic",
+      "migration_stage": "A2-11",
+      "final_status": "KEEP_DIAGNOSTIC_ONLY"
+    },
+    {
+      "file_line": "src/lumina_main.c:850",
+      "symbol": "plasma.T_rad[i]",
+      "current_source": "plasma.T_rad",
+      "physical_meaning": "[comparator] CPU scalar comparison CSV",
+      "new_source": "RadiationField generation-bound diagnostic",
+      "migration_stage": "A2-11",
+      "final_status": "KEEP_DIAGNOSTIC_ONLY"
+    },
+    {
+      "file_line": "src/lumina_cuda.cu:10879",
+      "symbol": "plasma.W[i]",
+      "current_source": "plasma.W",
+      "physical_meaning": "[comparator] CUDA-host reference W comparator",
+      "new_source": "RadiationField generation-bound diagnostic",
+      "migration_stage": "A2-11",
+      "final_status": "KEEP_DIAGNOSTIC_ONLY"
+    },
+    {
+      "file_line": "src/lumina_cuda.cu:10880",
+      "symbol": "plasma.T_rad[i]",
+      "current_source": "plasma.T_rad",
+      "physical_meaning": "[comparator] CUDA-host reference T_rad comparator",
+      "new_source": "RadiationField generation-bound diagnostic",
+      "migration_stage": "A2-11",
+      "final_status": "KEEP_DIAGNOSTIC_ONLY"
+    },
+    {
+      "file_line": "src/lumina_cuda.cu:10882",
+      "symbol": "plasma.W[i]",
+      "current_source": "plasma.W",
+      "physical_meaning": "[comparator] CUDA-host W comparison report",
+      "new_source": "RadiationField generation-bound diagnostic",
+      "migration_stage": "A2-11",
+      "final_status": "KEEP_DIAGNOSTIC_ONLY"
+    },
+    {
+      "file_line": "src/lumina_cuda.cu:10883",
+      "symbol": "plasma.T_rad[i]",
+      "current_source": "plasma.T_rad",
+      "physical_meaning": "[comparator] CUDA-host T_rad comparison report",
+      "new_source": "RadiationField generation-bound diagnostic",
+      "migration_stage": "A2-11",
+      "final_status": "KEEP_DIAGNOSTIC_ONLY"
+    },
+    {
+      "file_line": "src/lumina_cuda.cu:10888",
+      "symbol": "plasma.W[i]",
+      "current_source": "plasma.W",
+      "physical_meaning": "[comparator] CUDA-host W mean error",
+      "new_source": "RadiationField generation-bound diagnostic",
+      "migration_stage": "A2-11",
+      "final_status": "KEEP_DIAGNOSTIC_ONLY"
+    },
+    {
+      "file_line": "src/lumina_cuda.cu:10889",
+      "symbol": "plasma.T_rad[i]",
+      "current_source": "plasma.T_rad",
+      "physical_meaning": "[comparator] CUDA-host T_rad mean error",
+      "new_source": "RadiationField generation-bound diagnostic",
+      "migration_stage": "A2-11",
+      "final_status": "KEEP_DIAGNOSTIC_ONLY"
+    },
+    {
+      "file_line": "src/lumina_bf_gemm.cu:82",
+      "symbol": "T_rad[s]",
+      "current_source": "GPU BF-kernel T_rad parameter",
+      "physical_meaning": "[GPU_opacity_rate] GPU bound-free Boltzmann factor",
+      "new_source": "RadiationField.J_nu",
+      "migration_stage": "A2-14",
+      "final_status": "REPLACE_GPU_SCALAR_OPACITY_RATE_READ"
+    },
+    {
+      "file_line": "src/lumina_bf_gemm.cu:83",
+      "symbol": "W[s]",
+      "current_source": "GPU BF-kernel W parameter",
+      "physical_meaning": "[GPU_opacity_rate] GPU bound-free dilution factor",
+      "new_source": "RadiationField.J_nu",
+      "migration_stage": "A2-14",
+      "final_status": "REPLACE_GPU_SCALAR_OPACITY_RATE_READ"
+    },
+    {
+      "file_line": "src/lumina_bf_gemm.cu:208",
+      "symbol": "plasma->T_rad",
+      "current_source": "plasma.T_rad upload source",
+      "physical_meaning": "[GPU_opacity_rate] GPU BF rate state upload",
+      "new_source": "RadiationField.J_nu",
+      "migration_stage": "A2-14",
+      "final_status": "REPLACE_GPU_SCALAR_OPACITY_RATE_READ"
+    },
+    {
+      "file_line": "src/lumina_bf_gemm.cu:210",
+      "symbol": "plasma->W",
+      "current_source": "plasma.W upload source",
+      "physical_meaning": "[GPU_opacity_rate] GPU BF rate state upload",
+      "new_source": "RadiationField.J_nu",
+      "migration_stage": "A2-14",
+      "final_status": "REPLACE_GPU_SCALAR_OPACITY_RATE_READ"
+    },
+    {
+      "file_line": "src/lumina_bf_gemm.cu:225",
+      "symbol": "g_bf_gemm.d_T_rad",
+      "current_source": "GPU BF T_rad buffer",
+      "physical_meaning": "[GPU_opacity_rate] GPU BF kernel argument",
+      "new_source": "RadiationField.J_nu",
+      "migration_stage": "A2-14",
+      "final_status": "REPLACE_GPU_SCALAR_OPACITY_RATE_READ"
+    },
+    {
+      "file_line": "src/lumina_bf_gemm.cu:225",
+      "symbol": "g_bf_gemm.d_W",
+      "current_source": "GPU BF W buffer",
+      "physical_meaning": "[GPU_opacity_rate] GPU BF kernel argument",
+      "new_source": "RadiationField.J_nu",
+      "migration_stage": "A2-14",
+      "final_status": "REPLACE_GPU_SCALAR_OPACITY_RATE_READ"
+    },
+    {
+      "file_line": "src/lumina_bf_gemm.cu:296",
+      "symbol": "plasma->T_rad",
+      "current_source": "plasma.T_rad refresh source",
+      "physical_meaning": "[GPU_opacity_rate] GPU BF iteration refresh",
+      "new_source": "RadiationField.J_nu",
+      "migration_stage": "A2-14",
+      "final_status": "REPLACE_GPU_SCALAR_OPACITY_RATE_READ"
+    },
+    {
+      "file_line": "src/lumina_bf_gemm.cu:297",
+      "symbol": "plasma->W",
+      "current_source": "plasma.W refresh source",
+      "physical_meaning": "[GPU_opacity_rate] GPU BF iteration refresh",
+      "new_source": "RadiationField.J_nu",
+      "migration_stage": "A2-14",
+      "final_status": "REPLACE_GPU_SCALAR_OPACITY_RATE_READ"
+    },
+    {
+      "file_line": "src/lumina_bf_gemm.cu:303",
+      "symbol": "g_bf_gemm.d_T_rad",
+      "current_source": "GPU BF T_rad buffer",
+      "physical_meaning": "[GPU_opacity_rate] GPU BF refreshed kernel argument",
+      "new_source": "RadiationField.J_nu",
+      "migration_stage": "A2-14",
+      "final_status": "REPLACE_GPU_SCALAR_OPACITY_RATE_READ"
+    },
+    {
+      "file_line": "src/lumina_bf_gemm.cu:304",
+      "symbol": "g_bf_gemm.d_W",
+      "current_source": "GPU BF W buffer",
+      "physical_meaning": "[GPU_opacity_rate] GPU BF refreshed kernel argument",
+      "new_source": "RadiationField.J_nu",
+      "migration_stage": "A2-14",
+      "final_status": "REPLACE_GPU_SCALAR_OPACITY_RATE_READ"
+    },
+    {
+      "file_line": "src/lumina_nlte_assemble.cu:169",
+      "symbol": "d_W[s]",
+      "current_source": "GPU NLTE assembly W parameter",
+      "physical_meaning": "[GPU_opacity_rate] GPU bound-bound Planck fallback",
+      "new_source": "RadiationField.J_nu",
+      "migration_stage": "A2-14",
+      "final_status": "REPLACE_GPU_SCALAR_OPACITY_RATE_READ"
+    },
+    {
+      "file_line": "src/lumina_nlte_assemble.cu:413",
+      "symbol": "plasma->W",
+      "current_source": "plasma.W upload source",
+      "physical_meaning": "[GPU_opacity_rate] GPU NLTE assembly upload",
+      "new_source": "RadiationField.J_nu",
+      "migration_stage": "A2-14",
+      "final_status": "REPLACE_GPU_SCALAR_OPACITY_RATE_READ"
+    },
+    {
+      "file_line": "src/lumina_nlte_assemble.cu:428",
+      "symbol": "plasma->T_rad[0]",
+      "current_source": "plasma.T_rad",
+      "physical_meaning": "[GPU_opacity_rate] GPU NLTE dilute temperature fallback",
+      "new_source": "RadiationField.J_nu",
+      "migration_stage": "A2-14",
+      "final_status": "REPLACE_GPU_SCALAR_OPACITY_RATE_READ"
+    },
+    {
+      "file_line": "src/lumina_cuda.cu:3760",
+      "symbol": "d_T_rad[shell_id]",
+      "current_source": "GPU transport T_rad array",
+      "physical_meaning": "[GPU_transport] GPU BF re-emission temperature read",
+      "new_source": "RadiationField generation lifecycle",
+      "migration_stage": "A2-12",
+      "final_status": "REPLACE_GPU_SCALAR_TRANSPORT_STATE"
+    },
+    {
+      "file_line": "src/lumina_cuda.cu:3793",
+      "symbol": "d_T_rad[shell_id]",
+      "current_source": "GPU transport T_rad array",
+      "physical_meaning": "[GPU_transport] GPU band re-emission temperature read",
+      "new_source": "RadiationField generation lifecycle",
+      "migration_stage": "A2-12",
+      "final_status": "REPLACE_GPU_SCALAR_TRANSPORT_STATE"
+    },
+    {
+      "file_line": "src/lumina_cuda.cu:5978",
+      "symbol": "d_T_rad",
+      "current_source": "GPU transport T_rad pointer",
+      "physical_meaning": "[GPU_transport] transport kernel scalar-field argument",
+      "new_source": "RadiationField generation lifecycle",
+      "migration_stage": "A2-12",
+      "final_status": "REPLACE_GPU_SCALAR_TRANSPORT_STATE"
+    },
+    {
+      "file_line": "src/lumina_cuda.cu:6242",
+      "symbol": "d_T_rad",
+      "current_source": "GPU transport T_rad pointer",
+      "physical_meaning": "[GPU_transport] transport interaction call",
+      "new_source": "RadiationField generation lifecycle",
+      "migration_stage": "A2-12",
+      "final_status": "REPLACE_GPU_SCALAR_TRANSPORT_STATE"
+    },
+    {
+      "file_line": "src/lumina_cuda.cu:6552",
+      "symbol": "d_T_rad",
+      "current_source": "GPU transport T_rad pointer",
+      "physical_meaning": "[GPU_transport] legacy BF re-emission call",
+      "new_source": "RadiationField generation lifecycle",
+      "migration_stage": "A2-12",
+      "final_status": "REPLACE_GPU_SCALAR_TRANSPORT_STATE"
+    },
+    {
+      "file_line": "src/lumina_cuda.cu:8834",
+      "symbol": "dev.d_T_rad",
+      "current_source": "GPU device T_rad owner",
+      "physical_meaning": "[GPU_transport] main transport launch argument",
+      "new_source": "RadiationField generation lifecycle",
+      "migration_stage": "A2-12",
+      "final_status": "REPLACE_GPU_SCALAR_TRANSPORT_STATE"
+    },
+    {
+      "file_line": "src/lumina_cuda.cu:10248",
+      "symbol": "dev.d_T_rad",
+      "current_source": "GPU device T_rad owner",
+      "physical_meaning": "[GPU_transport] final transport launch argument",
+      "new_source": "RadiationField generation lifecycle",
+      "migration_stage": "A2-12",
+      "final_status": "REPLACE_GPU_SCALAR_TRANSPORT_STATE"
+    },
+    {
+      "file_line": "src/lumina_cuda.cu:8549",
+      "symbol": "plasma.W[s]",
+      "current_source": "plasma.W",
+      "physical_meaning": "[GPU_transport] GPU-host packet source tier",
+      "new_source": "RadiationField generation lifecycle",
+      "migration_stage": "A2-12",
+      "final_status": "REPLACE_GPU_SCALAR_TRANSPORT_STATE"
+    },
+    {
+      "file_line": "src/lumina_cuda.cu:8550",
+      "symbol": "plasma.W",
+      "current_source": "plasma.W owner pointer",
+      "physical_meaning": "[GPU_transport] GPU-host packet source validity gate",
+      "new_source": "RadiationField generation lifecycle",
+      "migration_stage": "A2-12",
+      "final_status": "REPLACE_GPU_SCALAR_TRANSPORT_STATE"
+    },
+    {
+      "file_line": "src/lumina_cuda.cu:10794",
+      "symbol": "plasma.T_rad[i]",
+      "current_source": "plasma.T_rad",
+      "physical_meaning": "[GPU_transport] GPU-host transport temperature ratio",
+      "new_source": "RadiationField generation lifecycle",
+      "migration_stage": "A2-12",
+      "final_status": "REPLACE_GPU_SCALAR_TRANSPORT_STATE"
+    },
+    {
+      "file_line": "src/lumina_cuda.cu:10794",
+      "symbol": "plasma.T_rad[i]",
+      "current_source": "plasma.T_rad",
+      "physical_meaning": "[GPU_transport] GPU-host transport temperature ratio denominator",
+      "new_source": "RadiationField generation lifecycle",
+      "migration_stage": "A2-12",
+      "final_status": "REPLACE_GPU_SCALAR_TRANSPORT_STATE"
+    },
+    {
+      "file_line": "src/lumina_plasma.c:2435",
+      "symbol": "plasma->T_rad[s]",
+      "current_source": "plasma.T_rad",
+      "physical_meaning": "[opacity_rate] nebular ionization opacity/rate temperature",
+      "new_source": "RadiationField.J_nu",
+      "migration_stage": "A2-08",
+      "final_status": "REPLACE_SCALAR_OPACITY_RATE_READ"
+    },
+    {
+      "file_line": "src/lumina_plasma.c:2437",
+      "symbol": "plasma->W[s]",
+      "current_source": "plasma.W",
+      "physical_meaning": "[opacity_rate] nebular ionization opacity/rate dilution",
+      "new_source": "RadiationField.J_nu",
+      "migration_stage": "A2-08",
+      "final_status": "REPLACE_SCALAR_OPACITY_RATE_READ"
+    },
+    {
+      "file_line": "src/lumina_plasma.c:2498",
+      "symbol": "T_rad",
+      "current_source": "local alias of plasma->T_rad[s]",
+      "physical_meaning": "[opacity_rate] zeta interpolation temperature",
+      "new_source": "RadiationField.J_nu",
+      "migration_stage": "A2-08",
+      "final_status": "REPLACE_SCALAR_OPACITY_RATE_READ"
+    },
+    {
+      "file_line": "src/lumina_plasma.c:2499",
+      "symbol": "T_rad",
+      "current_source": "local alias of plasma->T_rad[s]",
+      "physical_meaning": "[opacity_rate] electron-to-radiation temperature ratio",
+      "new_source": "RadiationField.J_nu",
+      "migration_stage": "A2-08",
+      "final_status": "REPLACE_SCALAR_OPACITY_RATE_READ"
+    },
+    {
+      "file_line": "src/lumina_plasma.c:2500",
+      "symbol": "W",
+      "current_source": "local alias of plasma->W[s]",
+      "physical_meaning": "[opacity_rate] nebular rate dilution",
+      "new_source": "RadiationField.J_nu",
+      "migration_stage": "A2-08",
+      "final_status": "REPLACE_SCALAR_OPACITY_RATE_READ"
+    },
+    {
+      "file_line": "src/lumina_plasma.c:2501",
+      "symbol": "T_rad",
+      "current_source": "local alias of plasma->T_rad[s]",
+      "physical_meaning": "[opacity_rate] nebular rate temperature ratio",
+      "new_source": "RadiationField.J_nu",
+      "migration_stage": "A2-08",
+      "final_status": "REPLACE_SCALAR_OPACITY_RATE_READ"
+    },
+    {
+      "file_line": "src/lumina_plasma.c:2502",
+      "symbol": "W",
+      "current_source": "local alias of plasma->W[s]",
+      "physical_meaning": "[opacity_rate] non-metastable dilution term",
+      "new_source": "RadiationField.J_nu",
+      "migration_stage": "A2-08",
+      "final_status": "REPLACE_SCALAR_OPACITY_RATE_READ"
+    },
+    {
+      "file_line": "src/lumina_plasma.c:2503",
+      "symbol": "T_rad",
+      "current_source": "local alias of plasma->T_rad[s]",
+      "physical_meaning": "[opacity_rate] ML correction temperature",
+      "new_source": "RadiationField.J_nu",
+      "migration_stage": "A2-08",
+      "final_status": "REPLACE_SCALAR_OPACITY_RATE_READ"
+    },
+    {
+      "file_line": "src/lumina_plasma.c:2504",
+      "symbol": "W",
+      "current_source": "local alias of plasma->W[s]",
+      "physical_meaning": "[opacity_rate] two-component rate lock threshold",
+      "new_source": "RadiationField.J_nu",
+      "migration_stage": "A2-08",
+      "final_status": "REPLACE_SCALAR_OPACITY_RATE_READ"
+    },
+    {
+      "file_line": "src/lumina_plasma.c:18369",
+      "symbol": "plasma->W[shell_mid]",
+      "current_source": "plasma.W",
+      "physical_meaning": "[formal_transfer] observer continuum source",
+      "new_source": "RadiationField.J_nu",
+      "migration_stage": "A2-11",
+      "final_status": "REPLACE_FORMAL_TRANSFER_SCALAR_READ"
+    },
+    {
+      "file_line": "src/lumina_plasma.c:18370",
+      "symbol": "plasma->T_rad[shell_mid]",
+      "current_source": "plasma.T_rad",
+      "physical_meaning": "[formal_transfer] observer continuum source",
+      "new_source": "RadiationField.J_nu",
+      "migration_stage": "A2-11",
+      "final_status": "REPLACE_FORMAL_TRANSFER_SCALAR_READ"
+    },
+    {
+      "file_line": "src/lumina_plasma.c:18389",
+      "symbol": "plasma->W[shell]",
+      "current_source": "plasma.W",
+      "physical_meaning": "[formal_transfer] observer line fallback source",
+      "new_source": "RadiationField.J_nu",
+      "migration_stage": "A2-11",
+      "final_status": "REPLACE_FORMAL_TRANSFER_SCALAR_READ"
+    },
+    {
+      "file_line": "src/lumina_plasma.c:18389",
+      "symbol": "plasma->T_rad[shell]",
+      "current_source": "plasma.T_rad",
+      "physical_meaning": "[formal_transfer] observer line fallback source",
+      "new_source": "RadiationField.J_nu",
+      "migration_stage": "A2-11",
+      "final_status": "REPLACE_FORMAL_TRANSFER_SCALAR_READ"
+    },
+    {
+      "file_line": "src/lumina_plasma.c:18416",
+      "symbol": "plasma->T_rad[shell]",
+      "current_source": "plasma.T_rad",
+      "physical_meaning": "[formal_transfer] formal-transfer thermal width",
+      "new_source": "RadiationField.J_nu",
+      "migration_stage": "A2-11",
+      "final_status": "REPLACE_FORMAL_TRANSFER_SCALAR_READ"
+    },
+    {
+      "file_line": "src/lumina_plasma.c:18416",
+      "symbol": "plasma->W[shell]",
+      "current_source": "plasma.W",
+      "physical_meaning": "[formal_transfer] formal-transfer dilution",
+      "new_source": "RadiationField.J_nu",
+      "migration_stage": "A2-11",
+      "final_status": "REPLACE_FORMAL_TRANSFER_SCALAR_READ"
+    },
+    {
+      "file_line": "src/lumina_plasma.c:18472",
+      "symbol": "plasma->W[shell_mid]",
+      "current_source": "plasma.W",
+      "physical_meaning": "[formal_transfer] red-side continuum source",
+      "new_source": "RadiationField.J_nu",
+      "migration_stage": "A2-11",
+      "final_status": "REPLACE_FORMAL_TRANSFER_SCALAR_READ"
+    },
+    {
+      "file_line": "src/lumina_plasma.c:18473",
+      "symbol": "plasma->T_rad[shell_mid]",
+      "current_source": "plasma.T_rad",
+      "physical_meaning": "[formal_transfer] red-side continuum source",
+      "new_source": "RadiationField.J_nu",
+      "migration_stage": "A2-11",
+      "final_status": "REPLACE_FORMAL_TRANSFER_SCALAR_READ"
+    },
+    {
+      "file_line": "src/lumina_plasma.c:18722",
+      "symbol": "plasma->W[shell]",
+      "current_source": "plasma.W",
+      "physical_meaning": "[formal_transfer] electron-scattering source fallback",
+      "new_source": "RadiationField.J_nu",
+      "migration_stage": "A2-11",
+      "final_status": "REPLACE_FORMAL_TRANSFER_SCALAR_READ"
+    },
+    {
+      "file_line": "src/lumina_bf_gemm.cu:140",
+      "symbol": "g_bf_gemm.d_T_rad",
+      "current_source": "GPU BF T_rad allocation",
+      "physical_meaning": "[GPU_lifecycle] allocate GPU scalar owner",
+      "new_source": "RadiationField generation lifecycle",
+      "migration_stage": "A2-12",
+      "final_status": "REMOVE_GPU_SCALAR_LIFECYCLE"
+    },
+    {
+      "file_line": "src/lumina_bf_gemm.cu:141",
+      "symbol": "g_bf_gemm.d_W",
+      "current_source": "GPU BF W allocation",
+      "physical_meaning": "[GPU_lifecycle] allocate GPU scalar owner",
+      "new_source": "RadiationField generation lifecycle",
+      "migration_stage": "A2-12",
+      "final_status": "REMOVE_GPU_SCALAR_LIFECYCLE"
+    },
+    {
+      "file_line": "src/lumina_bf_gemm.cu:390",
+      "symbol": "g_bf_gemm.d_T_rad",
+      "current_source": "GPU BF T_rad allocation",
+      "physical_meaning": "[GPU_lifecycle] free GPU scalar owner",
+      "new_source": "RadiationField generation lifecycle",
+      "migration_stage": "A2-12",
+      "final_status": "REMOVE_GPU_SCALAR_LIFECYCLE"
+    },
+    {
+      "file_line": "src/lumina_bf_gemm.cu:391",
+      "symbol": "g_bf_gemm.d_W",
+      "current_source": "GPU BF W allocation",
+      "physical_meaning": "[GPU_lifecycle] free GPU scalar owner",
+      "new_source": "RadiationField generation lifecycle",
+      "migration_stage": "A2-12",
+      "final_status": "REMOVE_GPU_SCALAR_LIFECYCLE"
+    },
+    {
+      "file_line": "src/lumina_cuda.cu:273",
+      "symbol": "dev->d_T_rad",
+      "current_source": "GPU transport T_rad allocation",
+      "physical_meaning": "[GPU_lifecycle] allocate GPU scalar owner",
+      "new_source": "RadiationField generation lifecycle",
+      "migration_stage": "A2-12",
+      "final_status": "REMOVE_GPU_SCALAR_LIFECYCLE"
+    },
+    {
+      "file_line": "src/lumina_cuda.cu:341",
+      "symbol": "dev->d_T_rad",
+      "current_source": "GPU transport T_rad allocation",
+      "physical_meaning": "[GPU_lifecycle] test GPU scalar allocation",
+      "new_source": "RadiationField generation lifecycle",
+      "migration_stage": "A2-12",
+      "final_status": "REMOVE_GPU_SCALAR_LIFECYCLE"
+    },
+    {
+      "file_line": "src/lumina_cuda.cu:342",
+      "symbol": "dev->d_T_rad",
+      "current_source": "GPU transport T_rad allocation",
+      "physical_meaning": "[GPU_lifecycle] lazy allocate GPU scalar owner",
+      "new_source": "RadiationField generation lifecycle",
+      "migration_stage": "A2-12",
+      "final_status": "REMOVE_GPU_SCALAR_LIFECYCLE"
+    },
+    {
+      "file_line": "src/lumina_cuda.cu:3286",
+      "symbol": "dev->d_T_rad",
+      "current_source": "GPU transport T_rad allocation",
+      "physical_meaning": "[GPU_lifecycle] free GPU scalar owner",
+      "new_source": "RadiationField generation lifecycle",
+      "migration_stage": "A2-12",
+      "final_status": "REMOVE_GPU_SCALAR_LIFECYCLE"
+    },
+    {
+      "file_line": "src/lumina_cuda.cu:1467",
+      "symbol": "plasma->T_rad[s]",
+      "current_source": "plasma.T_rad",
+      "physical_meaning": "[GPU_rate] GPU-host NLTE Boltzmann fallback",
+      "new_source": "RadiationField.J_nu",
+      "migration_stage": "A2-13",
+      "final_status": "REPLACE_GPU_SCALAR_RATE_READ"
+    },
+    {
+      "file_line": "src/lumina_cuda.cu:1621",
+      "symbol": "plasma->T_rad[s]",
+      "current_source": "plasma.T_rad",
+      "physical_meaning": "[GPU_rate] GPU-host lower-ion fallback",
+      "new_source": "RadiationField.J_nu",
+      "migration_stage": "A2-13",
+      "final_status": "REPLACE_GPU_SCALAR_RATE_READ"
+    },
+    {
+      "file_line": "src/lumina_cuda.cu:1652",
+      "symbol": "plasma->T_rad[s]",
+      "current_source": "plasma.T_rad",
+      "physical_meaning": "[GPU_rate] GPU-host upper-ion fallback",
+      "new_source": "RadiationField.J_nu",
+      "migration_stage": "A2-13",
+      "final_status": "REPLACE_GPU_SCALAR_RATE_READ"
+    },
+    {
+      "file_line": "src/lumina_cuda.cu:1682",
+      "symbol": "plasma->T_rad[s]",
+      "current_source": "plasma.T_rad",
+      "physical_meaning": "[GPU_rate] GPU-host top-stage fallback",
+      "new_source": "RadiationField.J_nu",
+      "migration_stage": "A2-13",
+      "final_status": "REPLACE_GPU_SCALAR_RATE_READ"
+    },
+    {
+      "file_line": "src/lumina_cuda.cu:2019",
+      "symbol": "plasma->T_rad[s]",
+      "current_source": "plasma.T_rad",
+      "physical_meaning": "[GPU_rate] GPU-host rate dump electron seed",
+      "new_source": "RadiationField.J_nu",
+      "migration_stage": "A2-13",
+      "final_status": "REPLACE_GPU_SCALAR_RATE_READ"
+    },
+    {
+      "file_line": "src/lumina_cuda.cu:2020",
+      "symbol": "plasma->T_rad[s]",
+      "current_source": "plasma.T_rad",
+      "physical_meaning": "[GPU_rate] GPU-host rate dump radiation temperature",
+      "new_source": "RadiationField.J_nu",
+      "migration_stage": "A2-13",
+      "final_status": "REPLACE_GPU_SCALAR_RATE_READ"
+    },
+    {
+      "file_line": "src/lumina_cuda.cu:2021",
+      "symbol": "plasma->W[s]",
+      "current_source": "plasma.W",
+      "physical_meaning": "[GPU_rate] GPU-host rate dump dilution",
+      "new_source": "RadiationField.J_nu",
+      "migration_stage": "A2-13",
+      "final_status": "REPLACE_GPU_SCALAR_RATE_READ"
+    },
+    {
+      "file_line": "src/lumina_cuda.cu:2068",
+      "symbol": "plasma->T_rad[s]",
+      "current_source": "plasma.T_rad",
+      "physical_meaning": "[GPU_rate] GPU-host rate fallback seed",
+      "new_source": "RadiationField.J_nu",
+      "migration_stage": "A2-13",
+      "final_status": "REPLACE_GPU_SCALAR_RATE_READ"
+    },
+    {
+      "file_line": "src/lumina_atomic.c:573",
+      "symbol": "W",
+      "current_source": "plasma-state W input array",
+      "physical_meaning": "[owner_validation] validate owner presence",
+      "new_source": "RadiationField commit API",
+      "migration_stage": "A2-04",
+      "final_status": "VALIDATE_CANONICAL_FIELD_INSTEAD"
+    },
+    {
+      "file_line": "src/lumina_atomic.c:573",
+      "symbol": "T_rad",
+      "current_source": "plasma-state T_rad input array",
+      "physical_meaning": "[owner_validation] validate owner presence",
+      "new_source": "RadiationField commit API",
+      "migration_stage": "A2-04",
+      "final_status": "VALIDATE_CANONICAL_FIELD_INSTEAD"
+    },
+    {
+      "file_line": "src/lumina_atomic.c:594",
+      "symbol": "W[s]",
+      "current_source": "plasma-state W input array",
+      "physical_meaning": "[owner_validation] validate finite physical dilution",
+      "new_source": "RadiationField commit API",
+      "migration_stage": "A2-04",
+      "final_status": "VALIDATE_CANONICAL_FIELD_INSTEAD"
+    },
+    {
+      "file_line": "src/lumina_atomic.c:595",
+      "symbol": "T_rad[s]",
+      "current_source": "plasma-state T_rad input array",
+      "physical_meaning": "[owner_validation] validate finite positive color temperature",
+      "new_source": "RadiationField commit API",
+      "migration_stage": "A2-04",
+      "final_status": "VALIDATE_CANONICAL_FIELD_INSTEAD"
+    },
+    {
+      "file_line": "src/lumina_atomic.c:599",
+      "symbol": "T_rad[s]",
+      "current_source": "plasma-state T_rad input array",
+      "physical_meaning": "[owner_validation] validate color invariant",
+      "new_source": "RadiationField commit API",
+      "migration_stage": "A2-04",
+      "final_status": "VALIDATE_CANONICAL_FIELD_INSTEAD"
+    },
+    {
+      "file_line": "src/lumina_atomic.c:599",
+      "symbol": "W[s]",
+      "current_source": "plasma-state W input array",
+      "physical_meaning": "[owner_validation] validate color invariant",
+      "new_source": "RadiationField commit API",
+      "migration_stage": "A2-04",
+      "final_status": "VALIDATE_CANONICAL_FIELD_INSTEAD"
+    },
+    {
+      "file_line": "src/lumina_cmfgen.c:663",
+      "symbol": "plasma->T_rad",
+      "current_source": "plasma.T_rad owner pointer",
+      "physical_meaning": "[owner_validation] CMF solver owner-presence validation",
+      "new_source": "RadiationField commit API",
+      "migration_stage": "A2-04",
+      "final_status": "VALIDATE_CANONICAL_FIELD_INSTEAD"
+    },
+    {
+      "file_line": "src/lumina_atomic.c:780",
+      "symbol": "plasma->T_rad[i2]",
+      "current_source": "plasma.T_rad",
+      "physical_meaning": "[owner_update] fixed-color profile overwrite",
+      "new_source": "RadiationField commit API",
+      "migration_stage": "A2-04",
+      "final_status": "REMOVE_SCALAR_OWNER_UPDATE"
+    },
+    {
+      "file_line": "src/lumina_plasma.c:917",
+      "symbol": "plasma->T_rad[i]",
+      "current_source": "plasma.T_rad",
+      "physical_meaning": "[owner_update] fixed radiation profile update",
+      "new_source": "RadiationField commit API",
+      "migration_stage": "A2-04",
+      "final_status": "REMOVE_SCALAR_OWNER_UPDATE"
+    },
+    {
+      "file_line": "src/lumina_plasma.c:918",
+      "symbol": "plasma->W[i]",
+      "current_source": "plasma.W",
+      "physical_meaning": "[owner_update] fixed radiation profile update",
+      "new_source": "RadiationField commit API",
+      "migration_stage": "A2-04",
+      "final_status": "REMOVE_SCALAR_OWNER_UPDATE"
+    },
+    {
+      "file_line": "src/lumina_plasma.c:949",
+      "symbol": "plasma->T_rad[i]",
+      "current_source": "plasma.T_rad",
+      "physical_meaning": "[owner_update] damped T_rad owner update",
+      "new_source": "RadiationField commit API",
+      "migration_stage": "A2-04",
+      "final_status": "REMOVE_SCALAR_OWNER_UPDATE"
+    },
+    {
+      "file_line": "src/lumina_plasma.c:950",
+      "symbol": "plasma->T_rad[i]",
+      "current_source": "plasma.T_rad",
+      "physical_meaning": "[owner_update] damped T_rad prior generation read",
+      "new_source": "RadiationField commit API",
+      "migration_stage": "A2-04",
+      "final_status": "REMOVE_SCALAR_OWNER_UPDATE"
+    },
+    {
+      "file_line": "src/lumina_plasma.c:951",
+      "symbol": "plasma->W[i]",
+      "current_source": "plasma.W",
+      "physical_meaning": "[owner_update] damped W owner update",
+      "new_source": "RadiationField commit API",
+      "migration_stage": "A2-04",
+      "final_status": "REMOVE_SCALAR_OWNER_UPDATE"
+    },
+    {
+      "file_line": "src/lumina_plasma.c:952",
+      "symbol": "plasma->W[i]",
+      "current_source": "plasma.W",
+      "physical_meaning": "[owner_update] damped W prior generation read",
+      "new_source": "RadiationField commit API",
+      "migration_stage": "A2-04",
+      "final_status": "REMOVE_SCALAR_OWNER_UPDATE"
+    },
+    {
+      "file_line": "src/lumina_plasma.c:2999",
+      "symbol": "plasma->T_rad[s]",
+      "current_source": "plasma.T_rad",
+      "physical_meaning": "[seed_radeq] electron-temperature seed",
+      "new_source": "RadiationField.J_nu",
+      "migration_stage": "A2-16",
+      "final_status": "LIMIT_TO_GENERATION_ZERO_SEED"
+    },
+    {
+      "file_line": "src/lumina_plasma.c:3038",
+      "symbol": "plasma->T_rad[s]",
+      "current_source": "plasma.T_rad",
+      "physical_meaning": "[seed_radeq] analytic RADEQ radiation seed",
+      "new_source": "RadiationField.J_nu",
+      "migration_stage": "A2-16",
+      "final_status": "LIMIT_TO_GENERATION_ZERO_SEED"
+    },
+    {
+      "file_line": "src/lumina_plasma.c:3039",
+      "symbol": "plasma->W[s]",
+      "current_source": "plasma.W",
+      "physical_meaning": "[seed_radeq] analytic RADEQ energy-density seed",
+      "new_source": "RadiationField.J_nu",
+      "migration_stage": "A2-16",
+      "final_status": "LIMIT_TO_GENERATION_ZERO_SEED"
+    },
+    {
+      "file_line": "src/lumina_plasma.c:3042",
+      "symbol": "T_rad",
+      "current_source": "local alias of plasma->T_rad[s]",
+      "physical_meaning": "[seed_radeq] invalid-cell electron-temperature seed",
+      "new_source": "RadiationField.J_nu",
+      "migration_stage": "A2-16",
+      "final_status": "LIMIT_TO_GENERATION_ZERO_SEED"
+    },
+    {
+      "file_line": "src/lumina_plasma.c:11631",
+      "symbol": "plasma->T_rad[s]",
+      "current_source": "plasma.T_rad",
+      "physical_meaning": "[seed_radeq] RADEQ disabled-path seed",
+      "new_source": "RadiationField.J_nu",
+      "migration_stage": "A2-16",
+      "final_status": "LIMIT_TO_GENERATION_ZERO_SEED"
+    },
+    {
+      "file_line": "src/lumina_plasma.c:11845",
+      "symbol": "T_rad",
+      "current_source": "local alias of plasma->T_rad[s]",
+      "physical_meaning": "[seed_radeq] RADEQ invalid-cell seed",
+      "new_source": "RadiationField.J_nu",
+      "migration_stage": "A2-16",
+      "final_status": "LIMIT_TO_GENERATION_ZERO_SEED"
+    },
+    {
+      "file_line": "src/lumina_atomic.c:761",
+      "symbol": "plasma->W",
+      "current_source": "plasma.W owner pointer",
+      "physical_meaning": "[input_owner] load W column as runtime owner",
+      "new_source": "RadiationField.J_nu",
+      "migration_stage": "A2-16",
+      "final_status": "MOVE_TO_OFFLINE_LEGACY_CONVERTER"
+    },
+    {
+      "file_line": "src/lumina_atomic.c:762",
+      "symbol": "plasma->T_rad",
+      "current_source": "plasma.T_rad owner pointer",
+      "physical_meaning": "[input_owner] load T_rad column as runtime owner",
+      "new_source": "RadiationField.J_nu",
+      "migration_stage": "A2-16",
+      "final_status": "MOVE_TO_OFFLINE_LEGACY_CONVERTER"
+    },
+    {
+      "file_line": "src/lumina_atomic.c:765",
+      "symbol": "plasma->W",
+      "current_source": "plasma.W owner pointer",
+      "physical_meaning": "[input_owner] pass W owner into cross-field validation",
+      "new_source": "RadiationField.J_nu",
+      "migration_stage": "A2-16",
+      "final_status": "MOVE_TO_OFFLINE_LEGACY_CONVERTER"
+    },
+    {
+      "file_line": "src/lumina_atomic.c:765",
+      "symbol": "plasma->T_rad",
+      "current_source": "plasma.T_rad owner pointer",
+      "physical_meaning": "[input_owner] pass T_rad owner into cross-field validation",
+      "new_source": "RadiationField.J_nu",
+      "migration_stage": "A2-16",
+      "final_status": "MOVE_TO_OFFLINE_LEGACY_CONVERTER"
+    },
+    {
+      "file_line": "src/lumina_atomic.c:785",
+      "symbol": "plasma->W[0]",
+      "current_source": "plasma.W",
+      "physical_meaning": "[input_owner] loaded owner summary",
+      "new_source": "RadiationField.J_nu",
+      "migration_stage": "A2-16",
+      "final_status": "MOVE_TO_OFFLINE_LEGACY_CONVERTER"
+    },
+    {
+      "file_line": "src/lumina_plasma.c:976",
+      "symbol": "plasma->T_rad[i]",
+      "current_source": "plasma.T_rad",
+      "physical_meaning": "[diagnostic] binned-field fit diagnostic",
+      "new_source": "RadiationField generation-bound diagnostic",
+      "migration_stage": "A2-11",
+      "final_status": "KEEP_OUTPUT_ONLY_DIAGNOSTIC"
+    },
+    {
+      "file_line": "src/lumina_cmfgen.c:970",
+      "symbol": "plasma->T_rad[s]",
+      "current_source": "plasma.T_rad",
+      "physical_meaning": "[diagnostic] CMF frozen-state diagnostic",
+      "new_source": "RadiationField generation-bound diagnostic",
+      "migration_stage": "A2-11",
+      "final_status": "KEEP_OUTPUT_ONLY_DIAGNOSTIC"
+    },
+    {
+      "file_line": "src/lumina_cmfgen.c:1612",
+      "symbol": "plasma->T_rad",
+      "current_source": "plasma.T_rad owner array",
+      "physical_meaning": "[diagnostic] CMF state checksum diagnostic",
+      "new_source": "RadiationField generation-bound diagnostic",
+      "migration_stage": "A2-11",
+      "final_status": "KEEP_OUTPUT_ONLY_DIAGNOSTIC"
+    },
+    {
+      "file_line": "src/lumina_element_wide.c:2329",
+      "symbol": "plasma->W[shell]",
+      "current_source": "plasma.W",
+      "physical_meaning": "[diagnostic] element-wide provenance diagnostic",
+      "new_source": "RadiationField generation-bound diagnostic",
+      "migration_stage": "A2-11",
+      "final_status": "KEEP_OUTPUT_ONLY_DIAGNOSTIC"
+    },
+    {
+      "file_line": "src/lumina_cuda.cu:5446",
+      "symbol": "d_T_rad",
+      "current_source": "GPU transport T_rad pointer",
+      "physical_meaning": "[GPU_emissivity] GPU macro-atom Planck re-emission",
+      "new_source": "RadiationField.J_nu",
+      "migration_stage": "A2-15",
+      "final_status": "REPLACE_GPU_PLANCK_EMISSIVITY_READ"
+    },
+    {
+      "file_line": "src/lumina_cuda.cu:5453",
+      "symbol": "d_T_rad",
+      "current_source": "GPU transport T_rad pointer",
+      "physical_meaning": "[GPU_emissivity] GPU UV thermalization",
+      "new_source": "RadiationField.J_nu",
+      "migration_stage": "A2-15",
+      "final_status": "REPLACE_GPU_PLANCK_EMISSIVITY_READ"
+    },
+    {
+      "file_line": "src/lumina_cuda.cu:5471",
+      "symbol": "d_T_rad",
+      "current_source": "GPU transport T_rad pointer",
+      "physical_meaning": "[GPU_emissivity] GPU IR thermalization",
+      "new_source": "RadiationField.J_nu",
+      "migration_stage": "A2-15",
+      "final_status": "REPLACE_GPU_PLANCK_EMISSIVITY_READ"
+    },
+    {
+      "file_line": "src/lumina_cuda.cu:5733",
+      "symbol": "d_T_rad",
+      "current_source": "GPU transport T_rad pointer",
+      "physical_meaning": "[GPU_emissivity] GPU packet source re-emission",
+      "new_source": "RadiationField.J_nu",
+      "migration_stage": "A2-15",
+      "final_status": "REPLACE_GPU_PLANCK_EMISSIVITY_READ"
+    },
+    {
+      "file_line": "src/lumina_plasma.c:13920",
+      "symbol": "W",
+      "current_source": "local alias of plasma->W[s]",
+      "physical_meaning": "[rate_diagnostic] coupled-rate luminosity diagnostic",
+      "new_source": "RadiationField generation-bound diagnostic",
+      "migration_stage": "A2-06",
+      "final_status": "DERIVE_RATE_DIAGNOSTIC_FROM_CANONICAL_FIELD"
+    },
+    {
+      "file_line": "src/lumina_plasma.c:13940",
+      "symbol": "W",
+      "current_source": "local alias of plasma->W[s]",
+      "physical_meaning": "[rate_diagnostic] coupled-rate floor diagnostic",
+      "new_source": "RadiationField generation-bound diagnostic",
+      "migration_stage": "A2-06",
+      "final_status": "DERIVE_RATE_DIAGNOSTIC_FROM_CANONICAL_FIELD"
+    },
+    {
+      "file_line": "src/lumina_plasma.c:14080",
+      "symbol": "T_rad",
+      "current_source": "local alias of plasma->T_rad[s]",
+      "physical_meaning": "[rate_diagnostic] coupled-rate residual diagnostic",
+      "new_source": "RadiationField generation-bound diagnostic",
+      "migration_stage": "A2-06",
+      "final_status": "DERIVE_RATE_DIAGNOSTIC_FROM_CANONICAL_FIELD"
+    },
+    {
+      "file_line": "src/lumina_cuda.cu:530",
+      "symbol": "plasma->T_rad",
+      "current_source": "plasma.T_rad upload source",
+      "physical_meaning": "[GPU_transfer] transport scalar upload",
+      "new_source": "RadiationField generation lifecycle",
+      "migration_stage": "A2-12",
+      "final_status": "REPLACE_GPU_TRANSFER_SCALAR_READ"
+    },
+    {
+      "file_line": "src/lumina_cuda.cu:10008",
+      "symbol": "plasma.W[i]",
+      "current_source": "plasma.W",
+      "physical_meaning": "[GPU_transfer] GPU transfer-state CSV",
+      "new_source": "RadiationField generation lifecycle",
+      "migration_stage": "A2-12",
+      "final_status": "REPLACE_GPU_TRANSFER_SCALAR_READ"
+    },
+    {
+      "file_line": "src/lumina_cuda.cu:10008",
+      "symbol": "plasma.T_rad[i]",
+      "current_source": "plasma.T_rad",
+      "physical_meaning": "[GPU_transfer] GPU transfer-state CSV",
+      "new_source": "RadiationField generation lifecycle",
+      "migration_stage": "A2-12",
+      "final_status": "REPLACE_GPU_TRANSFER_SCALAR_READ"
+    },
+    {
+      "file_line": "src/lumina_cmfgen.c:908",
+      "symbol": "plasma->T_rad[s]",
+      "current_source": "plasma.T_rad",
+      "physical_meaning": "[opacity] CMF emissivity/opacity regime split",
+      "new_source": "RadiationField.J_nu",
+      "migration_stage": "A2-08",
+      "final_status": "REPLACE_OPACITY_SCALAR_READ"
+    },
+    {
+      "file_line": "src/lumina_cmfgen.c:2144",
+      "symbol": "plasma->T_rad[s]",
+      "current_source": "plasma.T_rad",
+      "physical_meaning": "[opacity] CMF hot-regime opacity split",
+      "new_source": "RadiationField.J_nu",
+      "migration_stage": "A2-08",
+      "final_status": "REPLACE_OPACITY_SCALAR_READ"
+    },
+    {
+      "file_line": "src/lumina_plasma.c:18010",
+      "symbol": "T_rad",
+      "current_source": "local alias of plasma->T_rad[s]",
+      "physical_meaning": "[opacity] formal opacity thermal width",
+      "new_source": "RadiationField.J_nu",
+      "migration_stage": "A2-08",
+      "final_status": "REPLACE_OPACITY_SCALAR_READ"
+    },
+    {
+      "file_line": "src/lumina_plasma.c:14987",
+      "symbol": "plasma->T_rad[shell]",
+      "current_source": "plasma.T_rad",
+      "physical_meaning": "[seed_rate] NLTE rate seed temperature",
+      "new_source": "RadiationField.J_nu",
+      "migration_stage": "A2-16",
+      "final_status": "LIMIT_RATE_SEED_TO_GENERATION_ZERO"
+    },
+    {
+      "file_line": "src/lumina_plasma.c:15179",
+      "symbol": "plasma->W[shell]",
+      "current_source": "plasma.W",
+      "physical_meaning": "[seed_rate] dilute GPU-assembly seed field",
+      "new_source": "RadiationField.J_nu",
+      "migration_stage": "A2-16",
+      "final_status": "LIMIT_RATE_SEED_TO_GENERATION_ZERO"
+    },
+    {
+      "file_line": "src/lumina_plasma.c:15181",
+      "symbol": "plasma->T_rad[0]",
+      "current_source": "plasma.T_rad",
+      "physical_meaning": "[seed_rate] dilute GPU-assembly seed color",
+      "new_source": "RadiationField.J_nu",
+      "migration_stage": "A2-16",
+      "final_status": "LIMIT_RATE_SEED_TO_GENERATION_ZERO"
+    },
+    {
+      "file_line": "src/lumina_atomic.c:1008",
+      "symbol": "ps->W",
+      "current_source": "plasma.W allocation",
+      "physical_meaning": "[lifecycle] free scalar owner",
+      "new_source": "RadiationField generation lifecycle",
+      "migration_stage": "A2-17",
+      "final_status": "REMOVE_SCALAR_LIFECYCLE"
+    },
+    {
+      "file_line": "src/lumina_atomic.c:1009",
+      "symbol": "ps->T_rad",
+      "current_source": "plasma.T_rad allocation",
+      "physical_meaning": "[lifecycle] free scalar owner",
+      "new_source": "RadiationField generation lifecycle",
+      "migration_stage": "A2-17",
+      "final_status": "REMOVE_SCALAR_LIFECYCLE"
+    },
+    {
+      "file_line": "src/lumina_main.c:334",
+      "symbol": "plasma.T_rad[i]",
+      "current_source": "plasma.T_rad",
+      "physical_meaning": "[output] CPU plasma-state owner output",
+      "new_source": "RadiationField generation-bound diagnostic",
+      "migration_stage": "A2-17",
+      "final_status": "REMOVE_SCALAR_OWNER_OUTPUT"
+    },
+    {
+      "file_line": "src/lumina_cuda.cu:11020",
+      "symbol": "plasma.W[i]",
+      "current_source": "plasma.W",
+      "physical_meaning": "[output] CUDA plasma-state owner output",
+      "new_source": "RadiationField generation-bound diagnostic",
+      "migration_stage": "A2-17",
+      "final_status": "REMOVE_SCALAR_OWNER_OUTPUT"
+    },
+    {
+      "file_line": "src/lumina_plasma.c:2081",
+      "symbol": "plasma->T_rad[s]",
+      "current_source": "plasma.T_rad",
+      "physical_meaning": "[Boltzmann_partition] partition-function temperature",
+      "new_source": "plasma->T_e",
+      "migration_stage": "A2-07",
+      "final_status": "USE_MATTER_TEMPERATURE"
+    },
+    {
+      "file_line": "src/lumina_plasma.c:2082",
+      "symbol": "plasma->W[s]",
+      "current_source": "plasma.W",
+      "physical_meaning": "[Boltzmann_partition] non-metastable partition dilution",
+      "new_source": "plasma->T_e",
+      "migration_stage": "A2-07",
+      "final_status": "USE_MATTER_TEMPERATURE"
+    },
+    {
+      "file_line": "src/lumina_plasma.c:2826",
+      "symbol": "plasma->T_rad[s]",
+      "current_source": "plasma.T_rad",
+      "physical_meaning": "[transition_probability] macro-atom transition population temperature",
+      "new_source": "Jbar[RadiationField.J_nu]",
+      "migration_stage": "A2-09",
+      "final_status": "DERIVE_TRANSITION_PROBABILITY_FROM_JBAR"
+    },
+    {
+      "file_line": "src/lumina_plasma.c:2827",
+      "symbol": "plasma->W[s]",
+      "current_source": "plasma.W",
+      "physical_meaning": "[transition_probability] macro-atom transition population dilution",
+      "new_source": "Jbar[RadiationField.J_nu]",
+      "migration_stage": "A2-09",
+      "final_status": "DERIVE_TRANSITION_PROBABILITY_FROM_JBAR"
+    },
+    {
+      "file_line": "src/lumina_plasma.c:7402",
+      "symbol": "plasma->T_rad[s]",
+      "current_source": "plasma.T_rad",
+      "physical_meaning": "[rate_Boltzmann] Boltzmann rate temperature",
+      "new_source": "plasma->T_e",
+      "migration_stage": "A2-07",
+      "final_status": "USE_MATTER_TEMPERATURE_FOR_BOLTZMANN_RATE"
+    },
+    {
+      "file_line": "src/lumina_plasma.c:7403",
+      "symbol": "plasma->W[s]",
+      "current_source": "plasma.W",
+      "physical_meaning": "[rate_Boltzmann] Boltzmann rate dilution",
+      "new_source": "plasma->T_e",
+      "migration_stage": "A2-07",
+      "final_status": "USE_MATTER_TEMPERATURE_FOR_BOLTZMANN_RATE"
+    },
+    {
+      "file_line": "src/lumina_plasma.c:12379",
+      "symbol": "plasma->T_rad[s]",
+      "current_source": "plasma.T_rad",
+      "physical_meaning": "[rate_radeq] RADEQ rate temperature",
+      "new_source": "RadiationField.J_nu",
+      "migration_stage": "A2-10",
+      "final_status": "USE_CANONICAL_FIELD_IN_RADEQ"
+    },
+    {
+      "file_line": "src/lumina_plasma.c:12380",
+      "symbol": "plasma->W[s]",
+      "current_source": "plasma.W",
+      "physical_meaning": "[rate_radeq] RADEQ rate dilution",
+      "new_source": "RadiationField.J_nu",
+      "migration_stage": "A2-10",
+      "final_status": "USE_CANONICAL_FIELD_IN_RADEQ"
+    },
+    {
+      "file_line": "src/lumina_plasma.c:17832",
+      "symbol": "plasma->T_rad[s]",
+      "current_source": "plasma.T_rad",
+      "physical_meaning": "[Boltzmann_diagnostic] level-population Boltzmann diagnostic",
+      "new_source": "plasma->T_e",
+      "migration_stage": "A2-07",
+      "final_status": "DIAGNOSE_BOLTZMANN_WITH_MATTER_TEMPERATURE"
+    },
+    {
+      "file_line": "src/lumina_plasma.c:17833",
+      "symbol": "plasma->W[s]",
+      "current_source": "plasma.W",
+      "physical_meaning": "[Boltzmann_diagnostic] level-population dilution diagnostic",
+      "new_source": "plasma->T_e",
+      "migration_stage": "A2-07",
+      "final_status": "DIAGNOSE_BOLTZMANN_WITH_MATTER_TEMPERATURE"
+    },
+    {
+      "file_line": "src/lumina_atomic.c:826",
+      "symbol": "plasma->T_rad[i]",
+      "current_source": "plasma.T_rad",
+      "physical_meaning": "[seed] initial electron-temperature seed",
+      "new_source": "RadiationField.J_nu",
+      "migration_stage": "A2-16",
+      "final_status": "LIMIT_SCALAR_SEED_TO_GENERATION_ZERO"
+    },
+    {
+      "file_line": "src/lumina_plasma.c:7897",
+      "symbol": "plasma->T_rad[pkt->current_shell_id]",
+      "current_source": "plasma.T_rad",
+      "physical_meaning": "[emissivity] CPU BF Planck re-emission",
+      "new_source": "RadiationField.J_nu",
+      "migration_stage": "A2-09",
+      "final_status": "REPLACE_PLANCK_REEMISSION_SOURCE"
+    }
+  ]
+}

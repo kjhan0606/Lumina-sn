@@ -1,5 +1,5 @@
 {
-  "created_utc": "2026-08-04T17:33:45.760344+00:00",
+  "created_utc": "2026-08-05T04:36:36.130392+00:00",
   "eligibility": {
     "CMFGEN_FILE_INTEGRITY": {
       "reason": "all classified hashed entries and both direct-access size/schema checks completed",
@@ -10,7 +10,7 @@
       "value": "FAIL"
     },
     "CMFGEN_PHYSICAL_ORACLE": {
-      "reason": "nonlinear=FAIL; generation=MIXED_GENERATION_PROVEN; FIX_T evidence=run_jnu4.info:7 T            [FIX_T]            !FIX_T STINT-1: hold T at ALL depths (solve_for_",
+      "reason": "nonlinear=FAIL; write_order_assessment=CROSS_FILE_CONTENT_OFFSET_MEASURED; FIX_T evidence=run_jnu4.info:7 T            [FIX_T]            !FIX_T STINT-1: hold T at ALL depths (solve_for_",
       "value": "INELIGIBLE"
     },
     "CMFGEN_SNAPSHOT_REPLAY": {
@@ -5158,6 +5158,9 @@
     "value": 1.0
   },
   "generation_consistency": {
+    "assessment": "CROSS_FILE_CONTENT_OFFSET_MEASURED",
+    "assessment_basis": "Ca2PRRR/RVTJ shared state differs; CaIIIPRRR/RVTJ shared state differs; CaIVPRRR/RVTJ shared state differs; CaVPRRR/RVTJ shared state differs; Co2PRRR/RVTJ shared state differs; CoIIIPRRR/RVTJ shared state differs; CoIVPRRR/RVTJ shared state differs; CoSIXPRRR/RVTJ shared state differs; CoVPRRR/RVTJ shared state differs; Fe2PRRR/RVTJ shared state differs; FeIIIPRRR/RVTJ shared state differs; FeIVPRRR/RVTJ shared state differs; FeSIXPRRR/RVTJ shared state differs; FeVPRRR/RVTJ shared state differs; GENCOOL/RVTJ shared state differs; Nk2PRRR/RVTJ shared state differs; NkIIIPRRR/RVTJ shared state differs; NkIVPRRR/RVTJ shared state differs; NkSIXPRRR/RVTJ shared state differs; NkVPRRR/RVTJ shared state differs; S2PRRR/RVTJ shared state differs; SIIIPRRR/RVTJ shared state differs; SIVPRRR/RVTJ shared state differs; SVPRRR/RVTJ shared state differs; Sk2PRRR/RVTJ shared state differs; SkIIIPRRR/RVTJ shared state differs; SkIVPRRR/RVTJ shared state differs; SkVPRRR/RVTJ shared state differs",
+    "canonical_field": "write_order_offset_convergence",
     "completion_tokens_from_file_content": {
       "POPCAL": "18-Jul-2026 21:38:00",
       "POPCOB": "18-Jul-2026 21:38:00",
@@ -5881,6 +5884,8 @@
         }
       }
     },
+    "deprecated_alias": true,
+    "legacy_semantics_warning": "MIXED_GENERATION_PROVEN is retained only for v1 consumers; RVTJ/PRRR n_e disagreement is measured canonically as a continuous write-order offset and is not proof of different great iterations",
     "mtime_used_for_verdict": false,
     "target_files": [
       "Ca2PRRR",
@@ -5925,7 +5930,51 @@
     ],
     "unresolved_links": [],
     "verdict": "MIXED_GENERATION_PROVEN",
-    "verdict_basis": "Ca2PRRR/RVTJ shared state differs; CaIIIPRRR/RVTJ shared state differs; CaIVPRRR/RVTJ shared state differs; CaVPRRR/RVTJ shared state differs; Co2PRRR/RVTJ shared state differs; CoIIIPRRR/RVTJ shared state differs; CoIVPRRR/RVTJ shared state differs; CoSIXPRRR/RVTJ shared state differs; CoVPRRR/RVTJ shared state differs; Fe2PRRR/RVTJ shared state differs; FeIIIPRRR/RVTJ shared state differs; FeIVPRRR/RVTJ shared state differs; FeSIXPRRR/RVTJ shared state differs; FeVPRRR/RVTJ shared state differs; GENCOOL/RVTJ shared state differs; Nk2PRRR/RVTJ shared state differs; NkIIIPRRR/RVTJ shared state differs; NkIVPRRR/RVTJ shared state differs; NkSIXPRRR/RVTJ shared state differs; NkVPRRR/RVTJ shared state differs; S2PRRR/RVTJ shared state differs; SIIIPRRR/RVTJ shared state differs; SIVPRRR/RVTJ shared state differs; SVPRRR/RVTJ shared state differs; Sk2PRRR/RVTJ shared state differs; SkIIIPRRR/RVTJ shared state differs; SkIVPRRR/RVTJ shared state differs; SkVPRRR/RVTJ shared state differs"
+    "verdict_basis": "Ca2PRRR/RVTJ shared state differs; CaIIIPRRR/RVTJ shared state differs; CaIVPRRR/RVTJ shared state differs; CaVPRRR/RVTJ shared state differs; Co2PRRR/RVTJ shared state differs; CoIIIPRRR/RVTJ shared state differs; CoIVPRRR/RVTJ shared state differs; CoSIXPRRR/RVTJ shared state differs; CoVPRRR/RVTJ shared state differs; Fe2PRRR/RVTJ shared state differs; FeIIIPRRR/RVTJ shared state differs; FeIVPRRR/RVTJ shared state differs; FeSIXPRRR/RVTJ shared state differs; FeVPRRR/RVTJ shared state differs; GENCOOL/RVTJ shared state differs; Nk2PRRR/RVTJ shared state differs; NkIIIPRRR/RVTJ shared state differs; NkIVPRRR/RVTJ shared state differs; NkSIXPRRR/RVTJ shared state differs; NkVPRRR/RVTJ shared state differs; S2PRRR/RVTJ shared state differs; SIIIPRRR/RVTJ shared state differs; SIVPRRR/RVTJ shared state differs; SVPRRR/RVTJ shared state differs; Sk2PRRR/RVTJ shared state differs; SkIIIPRRR/RVTJ shared state differs; SkIVPRRR/RVTJ shared state differs; SkVPRRR/RVTJ shared state differs",
+    "write_order_offset": {
+      "definition": "symmetric relative offset |RVTJ-PRRR|/max(|RVTJ|,|PRRR|); this is a pre-rate-write versus post-update n_e convergence proxy, not proof of mixed great iterations",
+      "files_compared": 27,
+      "max_relative_offset": 0.6665761958086706,
+      "mean_relative_offset": 0.16816303927897136,
+      "median_relative_offset": 0.0036451177686618865,
+      "mismatched_files": 27,
+      "normalization": "max(abs(RVTJ_n_e),abs(PRRR_n_e),DBL_MIN)",
+      "p95_relative_offset": 0.6325041350792557,
+      "relative_tolerance_from_declared_print_precision": 6e-05,
+      "rms_relative_offset": 0.2893643323170292,
+      "status": "MEASURED",
+      "values_above_tolerance": 1836,
+      "values_compared": 2430
+    },
+    "write_order_signature_files": [
+      "Ca2PRRR",
+      "CaIIIPRRR",
+      "CaIVPRRR",
+      "CaVPRRR",
+      "Co2PRRR",
+      "CoIIIPRRR",
+      "CoIVPRRR",
+      "CoSIXPRRR",
+      "CoVPRRR",
+      "Fe2PRRR",
+      "FeIIIPRRR",
+      "FeIVPRRR",
+      "FeSIXPRRR",
+      "FeVPRRR",
+      "Nk2PRRR",
+      "NkIIIPRRR",
+      "NkIVPRRR",
+      "NkSIXPRRR",
+      "NkVPRRR",
+      "S2PRRR",
+      "SIIIPRRR",
+      "SIVPRRR",
+      "SVPRRR",
+      "Sk2PRRR",
+      "SkIIIPRRR",
+      "SkIVPRRR",
+      "SkVPRRR"
+    ]
   },
   "hash_exclusions": [
     {
@@ -6788,5 +6837,819 @@
     "entry_count": 362,
     "kind": "immediate-children-only"
   },
-  "symlink_policy": "hash-link-text-never-follow-target"
+  "symlink_policy": "hash-link-text-never-follow-target",
+  "write_order_offset_convergence": {
+    "assessment": "CROSS_FILE_CONTENT_OFFSET_MEASURED",
+    "assessment_basis": "Ca2PRRR/RVTJ shared state differs; CaIIIPRRR/RVTJ shared state differs; CaIVPRRR/RVTJ shared state differs; CaVPRRR/RVTJ shared state differs; Co2PRRR/RVTJ shared state differs; CoIIIPRRR/RVTJ shared state differs; CoIVPRRR/RVTJ shared state differs; CoSIXPRRR/RVTJ shared state differs; CoVPRRR/RVTJ shared state differs; Fe2PRRR/RVTJ shared state differs; FeIIIPRRR/RVTJ shared state differs; FeIVPRRR/RVTJ shared state differs; FeSIXPRRR/RVTJ shared state differs; FeVPRRR/RVTJ shared state differs; GENCOOL/RVTJ shared state differs; Nk2PRRR/RVTJ shared state differs; NkIIIPRRR/RVTJ shared state differs; NkIVPRRR/RVTJ shared state differs; NkSIXPRRR/RVTJ shared state differs; NkVPRRR/RVTJ shared state differs; S2PRRR/RVTJ shared state differs; SIIIPRRR/RVTJ shared state differs; SIVPRRR/RVTJ shared state differs; SVPRRR/RVTJ shared state differs; Sk2PRRR/RVTJ shared state differs; SkIIIPRRR/RVTJ shared state differs; SkIVPRRR/RVTJ shared state differs; SkVPRRR/RVTJ shared state differs",
+    "completion_tokens_from_file_content": {
+      "POPCAL": "18-Jul-2026 21:38:00",
+      "POPCOB": "18-Jul-2026 21:38:00",
+      "POPIRON": "18-Jul-2026 21:38:00",
+      "POPNICK": "18-Jul-2026 21:38:00",
+      "POPSIL": "18-Jul-2026 21:38:00",
+      "POPSUL": "18-Jul-2026 21:38:00",
+      "RVTJ": "18-Jul-2026 21:38:00"
+    },
+    "content_links": {
+      "EDDFACTOR<->JH_AT_CURRENT_TIME": {
+        "comparison_basis": "full content: R/V bytes, every frequency byte, and every JH.RSQ_J versus EDD.J*R^2 value",
+        "frequency_bit_mismatches": 0,
+        "frequency_records_compared": 196185,
+        "max_rsqj_relative_error": 0.0,
+        "r_grid_bitwise_equal": true,
+        "rsqj_mismatches_over_8e-15": 0,
+        "rsqj_values_compared": 17656650,
+        "status": "MATCH",
+        "v_grid_bitwise_equal": true
+      },
+      "OBSFLUX<->OBS_FREQ": {
+        "expected_obsfreq_rows": 166151,
+        "max_relative_error": 4.99958253333691e-07,
+        "mismatches": 0,
+        "obsflux_declared_frequency_count": 166152,
+        "obsfreq_rows": 166151,
+        "relative_tolerance_from_declared_print_precision": 1.1e-06,
+        "status": "MATCH",
+        "values_compared": 166151
+      },
+      "RVTJ<->*PRRR": {
+        "Ca2PRRR": {
+          "electron_density": {
+            "max_relative_error": 0.6665761958086706,
+            "mismatches": 68,
+            "relative_tolerance_from_declared_print_precision": 6e-05,
+            "status": "MISMATCH",
+            "values_compared": 90
+          },
+          "radius": {
+            "max_relative_error": 3.2469401288320224e-05,
+            "mismatches": 0,
+            "relative_tolerance_from_declared_print_precision": 6e-05,
+            "status": "MATCH",
+            "values_compared": 90
+          },
+          "temperature": {
+            "max_relative_error": 4.7970116976379636e-05,
+            "mismatches": 0,
+            "relative_tolerance_from_declared_print_precision": 6e-05,
+            "status": "MATCH",
+            "values_compared": 90
+          }
+        },
+        "CaIIIPRRR": {
+          "electron_density": {
+            "max_relative_error": 0.6665761958086706,
+            "mismatches": 68,
+            "relative_tolerance_from_declared_print_precision": 6e-05,
+            "status": "MISMATCH",
+            "values_compared": 90
+          },
+          "radius": {
+            "max_relative_error": 3.2469401288320224e-05,
+            "mismatches": 0,
+            "relative_tolerance_from_declared_print_precision": 6e-05,
+            "status": "MATCH",
+            "values_compared": 90
+          },
+          "temperature": {
+            "max_relative_error": 4.7970116976379636e-05,
+            "mismatches": 0,
+            "relative_tolerance_from_declared_print_precision": 6e-05,
+            "status": "MATCH",
+            "values_compared": 90
+          }
+        },
+        "CaIVPRRR": {
+          "electron_density": {
+            "max_relative_error": 0.6665761958086706,
+            "mismatches": 68,
+            "relative_tolerance_from_declared_print_precision": 6e-05,
+            "status": "MISMATCH",
+            "values_compared": 90
+          },
+          "radius": {
+            "max_relative_error": 3.2469401288320224e-05,
+            "mismatches": 0,
+            "relative_tolerance_from_declared_print_precision": 6e-05,
+            "status": "MATCH",
+            "values_compared": 90
+          },
+          "temperature": {
+            "max_relative_error": 4.7970116976379636e-05,
+            "mismatches": 0,
+            "relative_tolerance_from_declared_print_precision": 6e-05,
+            "status": "MATCH",
+            "values_compared": 90
+          }
+        },
+        "CaVPRRR": {
+          "electron_density": {
+            "max_relative_error": 0.6665761958086706,
+            "mismatches": 68,
+            "relative_tolerance_from_declared_print_precision": 6e-05,
+            "status": "MISMATCH",
+            "values_compared": 90
+          },
+          "radius": {
+            "max_relative_error": 3.2469401288320224e-05,
+            "mismatches": 0,
+            "relative_tolerance_from_declared_print_precision": 6e-05,
+            "status": "MATCH",
+            "values_compared": 90
+          },
+          "temperature": {
+            "max_relative_error": 4.7970116976379636e-05,
+            "mismatches": 0,
+            "relative_tolerance_from_declared_print_precision": 6e-05,
+            "status": "MATCH",
+            "values_compared": 90
+          }
+        },
+        "Co2PRRR": {
+          "electron_density": {
+            "max_relative_error": 0.6665761958086706,
+            "mismatches": 68,
+            "relative_tolerance_from_declared_print_precision": 6e-05,
+            "status": "MISMATCH",
+            "values_compared": 90
+          },
+          "radius": {
+            "max_relative_error": 3.2469401288320224e-05,
+            "mismatches": 0,
+            "relative_tolerance_from_declared_print_precision": 6e-05,
+            "status": "MATCH",
+            "values_compared": 90
+          },
+          "temperature": {
+            "max_relative_error": 4.7970116976379636e-05,
+            "mismatches": 0,
+            "relative_tolerance_from_declared_print_precision": 6e-05,
+            "status": "MATCH",
+            "values_compared": 90
+          }
+        },
+        "CoIIIPRRR": {
+          "electron_density": {
+            "max_relative_error": 0.6665761958086706,
+            "mismatches": 68,
+            "relative_tolerance_from_declared_print_precision": 6e-05,
+            "status": "MISMATCH",
+            "values_compared": 90
+          },
+          "radius": {
+            "max_relative_error": 3.2469401288320224e-05,
+            "mismatches": 0,
+            "relative_tolerance_from_declared_print_precision": 6e-05,
+            "status": "MATCH",
+            "values_compared": 90
+          },
+          "temperature": {
+            "max_relative_error": 4.7970116976379636e-05,
+            "mismatches": 0,
+            "relative_tolerance_from_declared_print_precision": 6e-05,
+            "status": "MATCH",
+            "values_compared": 90
+          }
+        },
+        "CoIVPRRR": {
+          "electron_density": {
+            "max_relative_error": 0.6665761958086706,
+            "mismatches": 68,
+            "relative_tolerance_from_declared_print_precision": 6e-05,
+            "status": "MISMATCH",
+            "values_compared": 90
+          },
+          "radius": {
+            "max_relative_error": 3.2469401288320224e-05,
+            "mismatches": 0,
+            "relative_tolerance_from_declared_print_precision": 6e-05,
+            "status": "MATCH",
+            "values_compared": 90
+          },
+          "temperature": {
+            "max_relative_error": 4.7970116976379636e-05,
+            "mismatches": 0,
+            "relative_tolerance_from_declared_print_precision": 6e-05,
+            "status": "MATCH",
+            "values_compared": 90
+          }
+        },
+        "CoSIXPRRR": {
+          "electron_density": {
+            "max_relative_error": 0.6665761958086706,
+            "mismatches": 68,
+            "relative_tolerance_from_declared_print_precision": 6e-05,
+            "status": "MISMATCH",
+            "values_compared": 90
+          },
+          "radius": {
+            "max_relative_error": 3.2469401288320224e-05,
+            "mismatches": 0,
+            "relative_tolerance_from_declared_print_precision": 6e-05,
+            "status": "MATCH",
+            "values_compared": 90
+          },
+          "temperature": {
+            "max_relative_error": 4.7970116976379636e-05,
+            "mismatches": 0,
+            "relative_tolerance_from_declared_print_precision": 6e-05,
+            "status": "MATCH",
+            "values_compared": 90
+          }
+        },
+        "CoVPRRR": {
+          "electron_density": {
+            "max_relative_error": 0.6665761958086706,
+            "mismatches": 68,
+            "relative_tolerance_from_declared_print_precision": 6e-05,
+            "status": "MISMATCH",
+            "values_compared": 90
+          },
+          "radius": {
+            "max_relative_error": 3.2469401288320224e-05,
+            "mismatches": 0,
+            "relative_tolerance_from_declared_print_precision": 6e-05,
+            "status": "MATCH",
+            "values_compared": 90
+          },
+          "temperature": {
+            "max_relative_error": 4.7970116976379636e-05,
+            "mismatches": 0,
+            "relative_tolerance_from_declared_print_precision": 6e-05,
+            "status": "MATCH",
+            "values_compared": 90
+          }
+        },
+        "Fe2PRRR": {
+          "electron_density": {
+            "max_relative_error": 0.6665761958086706,
+            "mismatches": 68,
+            "relative_tolerance_from_declared_print_precision": 6e-05,
+            "status": "MISMATCH",
+            "values_compared": 90
+          },
+          "radius": {
+            "max_relative_error": 3.2469401288320224e-05,
+            "mismatches": 0,
+            "relative_tolerance_from_declared_print_precision": 6e-05,
+            "status": "MATCH",
+            "values_compared": 90
+          },
+          "temperature": {
+            "max_relative_error": 4.7970116976379636e-05,
+            "mismatches": 0,
+            "relative_tolerance_from_declared_print_precision": 6e-05,
+            "status": "MATCH",
+            "values_compared": 90
+          }
+        },
+        "FeIIIPRRR": {
+          "electron_density": {
+            "max_relative_error": 0.6665761958086706,
+            "mismatches": 68,
+            "relative_tolerance_from_declared_print_precision": 6e-05,
+            "status": "MISMATCH",
+            "values_compared": 90
+          },
+          "radius": {
+            "max_relative_error": 3.2469401288320224e-05,
+            "mismatches": 0,
+            "relative_tolerance_from_declared_print_precision": 6e-05,
+            "status": "MATCH",
+            "values_compared": 90
+          },
+          "temperature": {
+            "max_relative_error": 4.7970116976379636e-05,
+            "mismatches": 0,
+            "relative_tolerance_from_declared_print_precision": 6e-05,
+            "status": "MATCH",
+            "values_compared": 90
+          }
+        },
+        "FeIVPRRR": {
+          "electron_density": {
+            "max_relative_error": 0.6665761958086706,
+            "mismatches": 68,
+            "relative_tolerance_from_declared_print_precision": 6e-05,
+            "status": "MISMATCH",
+            "values_compared": 90
+          },
+          "radius": {
+            "max_relative_error": 3.2469401288320224e-05,
+            "mismatches": 0,
+            "relative_tolerance_from_declared_print_precision": 6e-05,
+            "status": "MATCH",
+            "values_compared": 90
+          },
+          "temperature": {
+            "max_relative_error": 4.7970116976379636e-05,
+            "mismatches": 0,
+            "relative_tolerance_from_declared_print_precision": 6e-05,
+            "status": "MATCH",
+            "values_compared": 90
+          }
+        },
+        "FeSIXPRRR": {
+          "electron_density": {
+            "max_relative_error": 0.6665761958086706,
+            "mismatches": 68,
+            "relative_tolerance_from_declared_print_precision": 6e-05,
+            "status": "MISMATCH",
+            "values_compared": 90
+          },
+          "radius": {
+            "max_relative_error": 3.2469401288320224e-05,
+            "mismatches": 0,
+            "relative_tolerance_from_declared_print_precision": 6e-05,
+            "status": "MATCH",
+            "values_compared": 90
+          },
+          "temperature": {
+            "max_relative_error": 4.7970116976379636e-05,
+            "mismatches": 0,
+            "relative_tolerance_from_declared_print_precision": 6e-05,
+            "status": "MATCH",
+            "values_compared": 90
+          }
+        },
+        "FeVPRRR": {
+          "electron_density": {
+            "max_relative_error": 0.6665761958086706,
+            "mismatches": 68,
+            "relative_tolerance_from_declared_print_precision": 6e-05,
+            "status": "MISMATCH",
+            "values_compared": 90
+          },
+          "radius": {
+            "max_relative_error": 3.2469401288320224e-05,
+            "mismatches": 0,
+            "relative_tolerance_from_declared_print_precision": 6e-05,
+            "status": "MATCH",
+            "values_compared": 90
+          },
+          "temperature": {
+            "max_relative_error": 4.7970116976379636e-05,
+            "mismatches": 0,
+            "relative_tolerance_from_declared_print_precision": 6e-05,
+            "status": "MATCH",
+            "values_compared": 90
+          }
+        },
+        "Nk2PRRR": {
+          "electron_density": {
+            "max_relative_error": 0.6665761958086706,
+            "mismatches": 68,
+            "relative_tolerance_from_declared_print_precision": 6e-05,
+            "status": "MISMATCH",
+            "values_compared": 90
+          },
+          "radius": {
+            "max_relative_error": 3.2469401288320224e-05,
+            "mismatches": 0,
+            "relative_tolerance_from_declared_print_precision": 6e-05,
+            "status": "MATCH",
+            "values_compared": 90
+          },
+          "temperature": {
+            "max_relative_error": 4.7970116976379636e-05,
+            "mismatches": 0,
+            "relative_tolerance_from_declared_print_precision": 6e-05,
+            "status": "MATCH",
+            "values_compared": 90
+          }
+        },
+        "NkIIIPRRR": {
+          "electron_density": {
+            "max_relative_error": 0.6665761958086706,
+            "mismatches": 68,
+            "relative_tolerance_from_declared_print_precision": 6e-05,
+            "status": "MISMATCH",
+            "values_compared": 90
+          },
+          "radius": {
+            "max_relative_error": 3.2469401288320224e-05,
+            "mismatches": 0,
+            "relative_tolerance_from_declared_print_precision": 6e-05,
+            "status": "MATCH",
+            "values_compared": 90
+          },
+          "temperature": {
+            "max_relative_error": 4.7970116976379636e-05,
+            "mismatches": 0,
+            "relative_tolerance_from_declared_print_precision": 6e-05,
+            "status": "MATCH",
+            "values_compared": 90
+          }
+        },
+        "NkIVPRRR": {
+          "electron_density": {
+            "max_relative_error": 0.6665761958086706,
+            "mismatches": 68,
+            "relative_tolerance_from_declared_print_precision": 6e-05,
+            "status": "MISMATCH",
+            "values_compared": 90
+          },
+          "radius": {
+            "max_relative_error": 3.2469401288320224e-05,
+            "mismatches": 0,
+            "relative_tolerance_from_declared_print_precision": 6e-05,
+            "status": "MATCH",
+            "values_compared": 90
+          },
+          "temperature": {
+            "max_relative_error": 4.7970116976379636e-05,
+            "mismatches": 0,
+            "relative_tolerance_from_declared_print_precision": 6e-05,
+            "status": "MATCH",
+            "values_compared": 90
+          }
+        },
+        "NkSIXPRRR": {
+          "electron_density": {
+            "max_relative_error": 0.6665761958086706,
+            "mismatches": 68,
+            "relative_tolerance_from_declared_print_precision": 6e-05,
+            "status": "MISMATCH",
+            "values_compared": 90
+          },
+          "radius": {
+            "max_relative_error": 3.2469401288320224e-05,
+            "mismatches": 0,
+            "relative_tolerance_from_declared_print_precision": 6e-05,
+            "status": "MATCH",
+            "values_compared": 90
+          },
+          "temperature": {
+            "max_relative_error": 4.7970116976379636e-05,
+            "mismatches": 0,
+            "relative_tolerance_from_declared_print_precision": 6e-05,
+            "status": "MATCH",
+            "values_compared": 90
+          }
+        },
+        "NkVPRRR": {
+          "electron_density": {
+            "max_relative_error": 0.6665761958086706,
+            "mismatches": 68,
+            "relative_tolerance_from_declared_print_precision": 6e-05,
+            "status": "MISMATCH",
+            "values_compared": 90
+          },
+          "radius": {
+            "max_relative_error": 3.2469401288320224e-05,
+            "mismatches": 0,
+            "relative_tolerance_from_declared_print_precision": 6e-05,
+            "status": "MATCH",
+            "values_compared": 90
+          },
+          "temperature": {
+            "max_relative_error": 4.7970116976379636e-05,
+            "mismatches": 0,
+            "relative_tolerance_from_declared_print_precision": 6e-05,
+            "status": "MATCH",
+            "values_compared": 90
+          }
+        },
+        "S2PRRR": {
+          "electron_density": {
+            "max_relative_error": 0.6665761958086706,
+            "mismatches": 68,
+            "relative_tolerance_from_declared_print_precision": 6e-05,
+            "status": "MISMATCH",
+            "values_compared": 90
+          },
+          "radius": {
+            "max_relative_error": 3.2469401288320224e-05,
+            "mismatches": 0,
+            "relative_tolerance_from_declared_print_precision": 6e-05,
+            "status": "MATCH",
+            "values_compared": 90
+          },
+          "temperature": {
+            "max_relative_error": 4.7970116976379636e-05,
+            "mismatches": 0,
+            "relative_tolerance_from_declared_print_precision": 6e-05,
+            "status": "MATCH",
+            "values_compared": 90
+          }
+        },
+        "SIIIPRRR": {
+          "electron_density": {
+            "max_relative_error": 0.6665761958086706,
+            "mismatches": 68,
+            "relative_tolerance_from_declared_print_precision": 6e-05,
+            "status": "MISMATCH",
+            "values_compared": 90
+          },
+          "radius": {
+            "max_relative_error": 3.2469401288320224e-05,
+            "mismatches": 0,
+            "relative_tolerance_from_declared_print_precision": 6e-05,
+            "status": "MATCH",
+            "values_compared": 90
+          },
+          "temperature": {
+            "max_relative_error": 4.7970116976379636e-05,
+            "mismatches": 0,
+            "relative_tolerance_from_declared_print_precision": 6e-05,
+            "status": "MATCH",
+            "values_compared": 90
+          }
+        },
+        "SIVPRRR": {
+          "electron_density": {
+            "max_relative_error": 0.6665761958086706,
+            "mismatches": 68,
+            "relative_tolerance_from_declared_print_precision": 6e-05,
+            "status": "MISMATCH",
+            "values_compared": 90
+          },
+          "radius": {
+            "max_relative_error": 3.2469401288320224e-05,
+            "mismatches": 0,
+            "relative_tolerance_from_declared_print_precision": 6e-05,
+            "status": "MATCH",
+            "values_compared": 90
+          },
+          "temperature": {
+            "max_relative_error": 4.7970116976379636e-05,
+            "mismatches": 0,
+            "relative_tolerance_from_declared_print_precision": 6e-05,
+            "status": "MATCH",
+            "values_compared": 90
+          }
+        },
+        "SVPRRR": {
+          "electron_density": {
+            "max_relative_error": 0.6665761958086706,
+            "mismatches": 68,
+            "relative_tolerance_from_declared_print_precision": 6e-05,
+            "status": "MISMATCH",
+            "values_compared": 90
+          },
+          "radius": {
+            "max_relative_error": 3.2469401288320224e-05,
+            "mismatches": 0,
+            "relative_tolerance_from_declared_print_precision": 6e-05,
+            "status": "MATCH",
+            "values_compared": 90
+          },
+          "temperature": {
+            "max_relative_error": 4.7970116976379636e-05,
+            "mismatches": 0,
+            "relative_tolerance_from_declared_print_precision": 6e-05,
+            "status": "MATCH",
+            "values_compared": 90
+          }
+        },
+        "Sk2PRRR": {
+          "electron_density": {
+            "max_relative_error": 0.6665761958086706,
+            "mismatches": 68,
+            "relative_tolerance_from_declared_print_precision": 6e-05,
+            "status": "MISMATCH",
+            "values_compared": 90
+          },
+          "radius": {
+            "max_relative_error": 3.2469401288320224e-05,
+            "mismatches": 0,
+            "relative_tolerance_from_declared_print_precision": 6e-05,
+            "status": "MATCH",
+            "values_compared": 90
+          },
+          "temperature": {
+            "max_relative_error": 4.7970116976379636e-05,
+            "mismatches": 0,
+            "relative_tolerance_from_declared_print_precision": 6e-05,
+            "status": "MATCH",
+            "values_compared": 90
+          }
+        },
+        "SkIIIPRRR": {
+          "electron_density": {
+            "max_relative_error": 0.6665761958086706,
+            "mismatches": 68,
+            "relative_tolerance_from_declared_print_precision": 6e-05,
+            "status": "MISMATCH",
+            "values_compared": 90
+          },
+          "radius": {
+            "max_relative_error": 3.2469401288320224e-05,
+            "mismatches": 0,
+            "relative_tolerance_from_declared_print_precision": 6e-05,
+            "status": "MATCH",
+            "values_compared": 90
+          },
+          "temperature": {
+            "max_relative_error": 4.7970116976379636e-05,
+            "mismatches": 0,
+            "relative_tolerance_from_declared_print_precision": 6e-05,
+            "status": "MATCH",
+            "values_compared": 90
+          }
+        },
+        "SkIVPRRR": {
+          "electron_density": {
+            "max_relative_error": 0.6665761958086706,
+            "mismatches": 68,
+            "relative_tolerance_from_declared_print_precision": 6e-05,
+            "status": "MISMATCH",
+            "values_compared": 90
+          },
+          "radius": {
+            "max_relative_error": 3.2469401288320224e-05,
+            "mismatches": 0,
+            "relative_tolerance_from_declared_print_precision": 6e-05,
+            "status": "MATCH",
+            "values_compared": 90
+          },
+          "temperature": {
+            "max_relative_error": 4.7970116976379636e-05,
+            "mismatches": 0,
+            "relative_tolerance_from_declared_print_precision": 6e-05,
+            "status": "MATCH",
+            "values_compared": 90
+          }
+        },
+        "SkVPRRR": {
+          "electron_density": {
+            "max_relative_error": 0.6665761958086706,
+            "mismatches": 68,
+            "relative_tolerance_from_declared_print_precision": 6e-05,
+            "status": "MISMATCH",
+            "values_compared": 90
+          },
+          "radius": {
+            "max_relative_error": 3.2469401288320224e-05,
+            "mismatches": 0,
+            "relative_tolerance_from_declared_print_precision": 6e-05,
+            "status": "MATCH",
+            "values_compared": 90
+          },
+          "temperature": {
+            "max_relative_error": 4.7970116976379636e-05,
+            "mismatches": 0,
+            "relative_tolerance_from_declared_print_precision": 6e-05,
+            "status": "MATCH",
+            "values_compared": 90
+          }
+        }
+      },
+      "RVTJ<->GENCOOL": {
+        "electron_density": {
+          "max_relative_error": 0.6665761958086706,
+          "mismatches": 68,
+          "relative_tolerance_from_declared_print_precision": 6e-05,
+          "status": "MISMATCH",
+          "values_compared": 90
+        },
+        "radius": {
+          "max_relative_error": 3.2469401288320224e-05,
+          "mismatches": 0,
+          "relative_tolerance_from_declared_print_precision": 6e-05,
+          "status": "MATCH",
+          "values_compared": 90
+        },
+        "temperature": {
+          "max_relative_error": 4.7970116976379636e-05,
+          "mismatches": 0,
+          "relative_tolerance_from_declared_print_precision": 6e-05,
+          "status": "MATCH",
+          "values_compared": 90
+        },
+        "velocity": {
+          "max_relative_error": 4.862750885475581e-05,
+          "mismatches": 0,
+          "relative_tolerance_from_declared_print_precision": 6e-05,
+          "status": "MATCH",
+          "values_compared": 90
+        }
+      },
+      "RVTJ<->POP*": {
+        "POPCAL": {
+          "completion_matches_rvtj": true,
+          "completion_token": "18-Jul-2026 21:38:00",
+          "nd": 90,
+          "nd_matches_rvtj": true
+        },
+        "POPCOB": {
+          "completion_matches_rvtj": true,
+          "completion_token": "18-Jul-2026 21:38:00",
+          "nd": 90,
+          "nd_matches_rvtj": true
+        },
+        "POPIRON": {
+          "completion_matches_rvtj": true,
+          "completion_token": "18-Jul-2026 21:38:00",
+          "nd": 90,
+          "nd_matches_rvtj": true
+        },
+        "POPNICK": {
+          "completion_matches_rvtj": true,
+          "completion_token": "18-Jul-2026 21:38:00",
+          "nd": 90,
+          "nd_matches_rvtj": true
+        },
+        "POPSIL": {
+          "completion_matches_rvtj": true,
+          "completion_token": "18-Jul-2026 21:38:00",
+          "nd": 90,
+          "nd_matches_rvtj": true
+        },
+        "POPSUL": {
+          "completion_matches_rvtj": true,
+          "completion_token": "18-Jul-2026 21:38:00",
+          "nd": 90,
+          "nd_matches_rvtj": true
+        }
+      }
+    },
+    "mtime_used_for_verdict": false,
+    "target_files": [
+      "Ca2PRRR",
+      "CaIIIPRRR",
+      "CaIVPRRR",
+      "CaVPRRR",
+      "Co2PRRR",
+      "CoIIIPRRR",
+      "CoIVPRRR",
+      "CoSIXPRRR",
+      "CoVPRRR",
+      "EDDFACTOR",
+      "Fe2PRRR",
+      "FeIIIPRRR",
+      "FeIVPRRR",
+      "FeSIXPRRR",
+      "FeVPRRR",
+      "GENCOOL",
+      "JH_AT_CURRENT_TIME",
+      "Nk2PRRR",
+      "NkIIIPRRR",
+      "NkIVPRRR",
+      "NkSIXPRRR",
+      "NkVPRRR",
+      "OBSFLUX",
+      "OBS_FREQ",
+      "POPCAL",
+      "POPCOB",
+      "POPIRON",
+      "POPNICK",
+      "POPSIL",
+      "POPSUL",
+      "RVTJ",
+      "S2PRRR",
+      "SIIIPRRR",
+      "SIVPRRR",
+      "SVPRRR",
+      "Sk2PRRR",
+      "SkIIIPRRR",
+      "SkIVPRRR",
+      "SkVPRRR"
+    ],
+    "unresolved_links": [],
+    "write_order_offset": {
+      "definition": "symmetric relative offset |RVTJ-PRRR|/max(|RVTJ|,|PRRR|); this is a pre-rate-write versus post-update n_e convergence proxy, not proof of mixed great iterations",
+      "files_compared": 27,
+      "max_relative_offset": 0.6665761958086706,
+      "mean_relative_offset": 0.16816303927897136,
+      "median_relative_offset": 0.0036451177686618865,
+      "mismatched_files": 27,
+      "normalization": "max(abs(RVTJ_n_e),abs(PRRR_n_e),DBL_MIN)",
+      "p95_relative_offset": 0.6325041350792557,
+      "relative_tolerance_from_declared_print_precision": 6e-05,
+      "rms_relative_offset": 0.2893643323170292,
+      "status": "MEASURED",
+      "values_above_tolerance": 1836,
+      "values_compared": 2430
+    },
+    "write_order_signature_files": [
+      "Ca2PRRR",
+      "CaIIIPRRR",
+      "CaIVPRRR",
+      "CaVPRRR",
+      "Co2PRRR",
+      "CoIIIPRRR",
+      "CoIVPRRR",
+      "CoSIXPRRR",
+      "CoVPRRR",
+      "Fe2PRRR",
+      "FeIIIPRRR",
+      "FeIVPRRR",
+      "FeSIXPRRR",
+      "FeVPRRR",
+      "Nk2PRRR",
+      "NkIIIPRRR",
+      "NkIVPRRR",
+      "NkSIXPRRR",
+      "NkVPRRR",
+      "S2PRRR",
+      "SIIIPRRR",
+      "SIVPRRR",
+      "SVPRRR",
+      "Sk2PRRR",
+      "SkIIIPRRR",
+      "SkIVPRRR",
+      "SkVPRRR"
+    ]
+  }
 }

@@ -1,0 +1,1955 @@
+{
+  "schema": "lumina-a2-01-runtime-read-summary-v1",
+  "lanes": [
+    "cpu"
+  ],
+  "row_count": 157,
+  "read_observed": 34,
+  "static_read_not_observed": 56,
+  "pending_lane_execution": 26,
+  "not_a_scalar_read": 41,
+  "trace_census_mismatches": [
+    "A2R001 src/lumina_plasma.c:4556 W",
+    "A2R002 src/lumina_plasma.c:4556 T_rad",
+    "A2R003 src/lumina_plasma.c:4596 W",
+    "A2R004 src/lumina_plasma.c:4596 T_rad",
+    "A2R005 src/lumina_plasma.c:4701 W",
+    "A2R006 src/lumina_plasma.c:4701 T_rad",
+    "A2R007 src/lumina_plasma.c:4879 T_rad",
+    "A2R008 src/lumina_plasma.c:4880 W",
+    "A2R009 src/lumina_plasma.c:9160 T_rad",
+    "A2R010 src/lumina_plasma.c:9162 W",
+    "A2R011 src/lumina_plasma.c:11908 W",
+    "A2R012 src/lumina_plasma.c:11908 T_rad",
+    "A2R013 src/lumina_plasma.c:11915 W",
+    "A2R014 src/lumina_plasma.c:11915 T_rad",
+    "A2R015 src/lumina_plasma.c:11943 W",
+    "A2R016 src/lumina_plasma.c:11943 T_rad",
+    "A2R017 src/lumina_plasma.c:11976 W",
+    "A2R018 src/lumina_plasma.c:12034 T_rad",
+    "A2R019 src/lumina_plasma.c:12093 W",
+    "A2R020 src/lumina_plasma.c:12100 W",
+    "A2R021 src/lumina_plasma.c:13672 W",
+    "A2R022 src/lumina_plasma.c:13672 T_rad",
+    "A2R023 src/lumina_plasma.c:13739 W",
+    "A2R024 src/lumina_plasma.c:13743 W",
+    "A2R072 src/lumina_plasma.c:18369 plasma->W[shell_mid]",
+    "A2R073 src/lumina_plasma.c:18370 plasma->T_rad[shell_mid]",
+    "A2R076 src/lumina_plasma.c:18416 plasma->T_rad[shell]",
+    "A2R077 src/lumina_plasma.c:18416 plasma->W[shell]",
+    "A2R078 src/lumina_plasma.c:18472 plasma->W[shell_mid]",
+    "A2R079 src/lumina_plasma.c:18473 plasma->T_rad[shell_mid]",
+    "A2R080 src/lumina_plasma.c:18722 plasma->W[shell]",
+    "A2R112 src/lumina_plasma.c:3038 plasma->T_rad[s]",
+    "A2R113 src/lumina_plasma.c:3039 plasma->W[s]",
+    "A2R114 src/lumina_plasma.c:3042 T_rad",
+    "A2R115 src/lumina_plasma.c:11631 plasma->T_rad[s]",
+    "A2R116 src/lumina_plasma.c:11845 T_rad",
+    "A2R122 src/lumina_plasma.c:976 plasma->T_rad[i]",
+    "A2R123 src/lumina_cmfgen.c:970 plasma->T_rad[s]",
+    "A2R125 src/lumina_element_wide.c:2329 plasma->W[shell]",
+    "A2R130 src/lumina_plasma.c:13920 W",
+    "A2R131 src/lumina_plasma.c:13940 W",
+    "A2R132 src/lumina_plasma.c:14080 T_rad",
+    "A2R136 src/lumina_cmfgen.c:908 plasma->T_rad[s]",
+    "A2R137 src/lumina_cmfgen.c:2144 plasma->T_rad[s]",
+    "A2R138 src/lumina_plasma.c:18010 T_rad",
+    "A2R139 src/lumina_plasma.c:14987 plasma->T_rad[shell]",
+    "A2R140 src/lumina_plasma.c:15179 plasma->W[shell]",
+    "A2R141 src/lumina_plasma.c:15181 plasma->T_rad[0]",
+    "A2R144 src/lumina_main.c:334 plasma.T_rad[i]",
+    "A2R150 src/lumina_plasma.c:7402 plasma->T_rad[s]",
+    "A2R151 src/lumina_plasma.c:7403 plasma->W[s]",
+    "A2R152 src/lumina_plasma.c:12379 plasma->T_rad[s]",
+    "A2R153 src/lumina_plasma.c:12380 plasma->W[s]",
+    "A2R154 src/lumina_plasma.c:17832 plasma->T_rad[s]",
+    "A2R155 src/lumina_plasma.c:17833 plasma->W[s]",
+    "A2R157 src/lumina_plasma.c:7897 plasma->T_rad[pkt->current_shell_id]"
+  ],
+  "rows": [
+    {
+      "site_id": "A2R001",
+      "file_line": "src/lumina_plasma.c:4556",
+      "symbol": "W",
+      "role": "rate",
+      "static_access": "read",
+      "read_count": 0,
+      "status": "STATIC_READ_NOT_OBSERVED",
+      "lane_counts": {
+        "cpu": 0
+      }
+    },
+    {
+      "site_id": "A2R002",
+      "file_line": "src/lumina_plasma.c:4556",
+      "symbol": "T_rad",
+      "role": "rate",
+      "static_access": "read",
+      "read_count": 0,
+      "status": "STATIC_READ_NOT_OBSERVED",
+      "lane_counts": {
+        "cpu": 0
+      }
+    },
+    {
+      "site_id": "A2R003",
+      "file_line": "src/lumina_plasma.c:4596",
+      "symbol": "W",
+      "role": "rate",
+      "static_access": "read",
+      "read_count": 0,
+      "status": "STATIC_READ_NOT_OBSERVED",
+      "lane_counts": {
+        "cpu": 0
+      }
+    },
+    {
+      "site_id": "A2R004",
+      "file_line": "src/lumina_plasma.c:4596",
+      "symbol": "T_rad",
+      "role": "rate",
+      "static_access": "read",
+      "read_count": 0,
+      "status": "STATIC_READ_NOT_OBSERVED",
+      "lane_counts": {
+        "cpu": 0
+      }
+    },
+    {
+      "site_id": "A2R005",
+      "file_line": "src/lumina_plasma.c:4701",
+      "symbol": "W",
+      "role": "rate",
+      "static_access": "read",
+      "read_count": 0,
+      "status": "STATIC_READ_NOT_OBSERVED",
+      "lane_counts": {
+        "cpu": 0
+      }
+    },
+    {
+      "site_id": "A2R006",
+      "file_line": "src/lumina_plasma.c:4701",
+      "symbol": "T_rad",
+      "role": "rate",
+      "static_access": "read",
+      "read_count": 0,
+      "status": "STATIC_READ_NOT_OBSERVED",
+      "lane_counts": {
+        "cpu": 0
+      }
+    },
+    {
+      "site_id": "A2R007",
+      "file_line": "src/lumina_plasma.c:4879",
+      "symbol": "T_rad",
+      "role": "rate",
+      "static_access": "read",
+      "read_count": 0,
+      "status": "STATIC_READ_NOT_OBSERVED",
+      "lane_counts": {
+        "cpu": 0
+      }
+    },
+    {
+      "site_id": "A2R008",
+      "file_line": "src/lumina_plasma.c:4880",
+      "symbol": "W",
+      "role": "rate",
+      "static_access": "read",
+      "read_count": 0,
+      "status": "STATIC_READ_NOT_OBSERVED",
+      "lane_counts": {
+        "cpu": 0
+      }
+    },
+    {
+      "site_id": "A2R009",
+      "file_line": "src/lumina_plasma.c:9160",
+      "symbol": "T_rad",
+      "role": "rate",
+      "static_access": "read",
+      "read_count": 0,
+      "status": "STATIC_READ_NOT_OBSERVED",
+      "lane_counts": {
+        "cpu": 0
+      }
+    },
+    {
+      "site_id": "A2R010",
+      "file_line": "src/lumina_plasma.c:9162",
+      "symbol": "W",
+      "role": "rate",
+      "static_access": "read",
+      "read_count": 0,
+      "status": "STATIC_READ_NOT_OBSERVED",
+      "lane_counts": {
+        "cpu": 0
+      }
+    },
+    {
+      "site_id": "A2R011",
+      "file_line": "src/lumina_plasma.c:11908",
+      "symbol": "W",
+      "role": "rate",
+      "static_access": "read",
+      "read_count": 0,
+      "status": "STATIC_READ_NOT_OBSERVED",
+      "lane_counts": {
+        "cpu": 0
+      }
+    },
+    {
+      "site_id": "A2R012",
+      "file_line": "src/lumina_plasma.c:11908",
+      "symbol": "T_rad",
+      "role": "rate",
+      "static_access": "read",
+      "read_count": 0,
+      "status": "STATIC_READ_NOT_OBSERVED",
+      "lane_counts": {
+        "cpu": 0
+      }
+    },
+    {
+      "site_id": "A2R013",
+      "file_line": "src/lumina_plasma.c:11915",
+      "symbol": "W",
+      "role": "rate",
+      "static_access": "read",
+      "read_count": 0,
+      "status": "STATIC_READ_NOT_OBSERVED",
+      "lane_counts": {
+        "cpu": 0
+      }
+    },
+    {
+      "site_id": "A2R014",
+      "file_line": "src/lumina_plasma.c:11915",
+      "symbol": "T_rad",
+      "role": "rate",
+      "static_access": "read",
+      "read_count": 0,
+      "status": "STATIC_READ_NOT_OBSERVED",
+      "lane_counts": {
+        "cpu": 0
+      }
+    },
+    {
+      "site_id": "A2R015",
+      "file_line": "src/lumina_plasma.c:11943",
+      "symbol": "W",
+      "role": "rate",
+      "static_access": "read",
+      "read_count": 0,
+      "status": "STATIC_READ_NOT_OBSERVED",
+      "lane_counts": {
+        "cpu": 0
+      }
+    },
+    {
+      "site_id": "A2R016",
+      "file_line": "src/lumina_plasma.c:11943",
+      "symbol": "T_rad",
+      "role": "rate",
+      "static_access": "read",
+      "read_count": 0,
+      "status": "STATIC_READ_NOT_OBSERVED",
+      "lane_counts": {
+        "cpu": 0
+      }
+    },
+    {
+      "site_id": "A2R017",
+      "file_line": "src/lumina_plasma.c:11976",
+      "symbol": "W",
+      "role": "rate",
+      "static_access": "read",
+      "read_count": 0,
+      "status": "STATIC_READ_NOT_OBSERVED",
+      "lane_counts": {
+        "cpu": 0
+      }
+    },
+    {
+      "site_id": "A2R018",
+      "file_line": "src/lumina_plasma.c:12034",
+      "symbol": "T_rad",
+      "role": "rate",
+      "static_access": "read",
+      "read_count": 0,
+      "status": "STATIC_READ_NOT_OBSERVED",
+      "lane_counts": {
+        "cpu": 0
+      }
+    },
+    {
+      "site_id": "A2R019",
+      "file_line": "src/lumina_plasma.c:12093",
+      "symbol": "W",
+      "role": "rate",
+      "static_access": "read",
+      "read_count": 0,
+      "status": "STATIC_READ_NOT_OBSERVED",
+      "lane_counts": {
+        "cpu": 0
+      }
+    },
+    {
+      "site_id": "A2R020",
+      "file_line": "src/lumina_plasma.c:12100",
+      "symbol": "W",
+      "role": "rate",
+      "static_access": "read",
+      "read_count": 0,
+      "status": "STATIC_READ_NOT_OBSERVED",
+      "lane_counts": {
+        "cpu": 0
+      }
+    },
+    {
+      "site_id": "A2R021",
+      "file_line": "src/lumina_plasma.c:13672",
+      "symbol": "W",
+      "role": "rate",
+      "static_access": "read",
+      "read_count": 0,
+      "status": "STATIC_READ_NOT_OBSERVED",
+      "lane_counts": {
+        "cpu": 0
+      }
+    },
+    {
+      "site_id": "A2R022",
+      "file_line": "src/lumina_plasma.c:13672",
+      "symbol": "T_rad",
+      "role": "rate",
+      "static_access": "read",
+      "read_count": 0,
+      "status": "STATIC_READ_NOT_OBSERVED",
+      "lane_counts": {
+        "cpu": 0
+      }
+    },
+    {
+      "site_id": "A2R023",
+      "file_line": "src/lumina_plasma.c:13739",
+      "symbol": "W",
+      "role": "rate",
+      "static_access": "read",
+      "read_count": 0,
+      "status": "STATIC_READ_NOT_OBSERVED",
+      "lane_counts": {
+        "cpu": 0
+      }
+    },
+    {
+      "site_id": "A2R024",
+      "file_line": "src/lumina_plasma.c:13743",
+      "symbol": "W",
+      "role": "rate",
+      "static_access": "read",
+      "read_count": 0,
+      "status": "STATIC_READ_NOT_OBSERVED",
+      "lane_counts": {
+        "cpu": 0
+      }
+    },
+    {
+      "site_id": "A2R025",
+      "file_line": "src/lumina_main.c:747",
+      "symbol": "plasma.W[i]",
+      "role": "comparator",
+      "static_access": "read",
+      "read_count": 50,
+      "status": "READ_OBSERVED",
+      "lane_counts": {
+        "cpu": 50
+      }
+    },
+    {
+      "site_id": "A2R026",
+      "file_line": "src/lumina_main.c:748",
+      "symbol": "plasma.T_rad[i]",
+      "role": "comparator",
+      "static_access": "read",
+      "read_count": 50,
+      "status": "READ_OBSERVED",
+      "lane_counts": {
+        "cpu": 50
+      }
+    },
+    {
+      "site_id": "A2R027",
+      "file_line": "src/lumina_main.c:750",
+      "symbol": "plasma.W[i]",
+      "role": "comparator",
+      "static_access": "read",
+      "read_count": 50,
+      "status": "READ_OBSERVED",
+      "lane_counts": {
+        "cpu": 50
+      }
+    },
+    {
+      "site_id": "A2R028",
+      "file_line": "src/lumina_main.c:751",
+      "symbol": "plasma.T_rad[i]",
+      "role": "comparator",
+      "static_access": "read",
+      "read_count": 50,
+      "status": "READ_OBSERVED",
+      "lane_counts": {
+        "cpu": 50
+      }
+    },
+    {
+      "site_id": "A2R029",
+      "file_line": "src/lumina_main.c:757",
+      "symbol": "plasma.W[i]",
+      "role": "comparator",
+      "static_access": "read",
+      "read_count": 50,
+      "status": "READ_OBSERVED",
+      "lane_counts": {
+        "cpu": 50
+      }
+    },
+    {
+      "site_id": "A2R030",
+      "file_line": "src/lumina_main.c:758",
+      "symbol": "plasma.T_rad[i]",
+      "role": "comparator",
+      "static_access": "read",
+      "read_count": 50,
+      "status": "READ_OBSERVED",
+      "lane_counts": {
+        "cpu": 50
+      }
+    },
+    {
+      "site_id": "A2R031",
+      "file_line": "src/lumina_main.c:850",
+      "symbol": "plasma.W[i]",
+      "role": "comparator",
+      "static_access": "read",
+      "read_count": 50,
+      "status": "READ_OBSERVED",
+      "lane_counts": {
+        "cpu": 50
+      }
+    },
+    {
+      "site_id": "A2R032",
+      "file_line": "src/lumina_main.c:850",
+      "symbol": "plasma.T_rad[i]",
+      "role": "comparator",
+      "static_access": "read",
+      "read_count": 50,
+      "status": "READ_OBSERVED",
+      "lane_counts": {
+        "cpu": 50
+      }
+    },
+    {
+      "site_id": "A2R033",
+      "file_line": "src/lumina_cuda.cu:10879",
+      "symbol": "plasma.W[i]",
+      "role": "comparator",
+      "static_access": "read",
+      "read_count": 0,
+      "status": "PENDING_LANE_EXECUTION",
+      "lane_counts": {
+        "cpu": 0
+      }
+    },
+    {
+      "site_id": "A2R034",
+      "file_line": "src/lumina_cuda.cu:10880",
+      "symbol": "plasma.T_rad[i]",
+      "role": "comparator",
+      "static_access": "read",
+      "read_count": 0,
+      "status": "PENDING_LANE_EXECUTION",
+      "lane_counts": {
+        "cpu": 0
+      }
+    },
+    {
+      "site_id": "A2R035",
+      "file_line": "src/lumina_cuda.cu:10882",
+      "symbol": "plasma.W[i]",
+      "role": "comparator",
+      "static_access": "read",
+      "read_count": 0,
+      "status": "PENDING_LANE_EXECUTION",
+      "lane_counts": {
+        "cpu": 0
+      }
+    },
+    {
+      "site_id": "A2R036",
+      "file_line": "src/lumina_cuda.cu:10883",
+      "symbol": "plasma.T_rad[i]",
+      "role": "comparator",
+      "static_access": "read",
+      "read_count": 0,
+      "status": "PENDING_LANE_EXECUTION",
+      "lane_counts": {
+        "cpu": 0
+      }
+    },
+    {
+      "site_id": "A2R037",
+      "file_line": "src/lumina_cuda.cu:10888",
+      "symbol": "plasma.W[i]",
+      "role": "comparator",
+      "static_access": "read",
+      "read_count": 0,
+      "status": "PENDING_LANE_EXECUTION",
+      "lane_counts": {
+        "cpu": 0
+      }
+    },
+    {
+      "site_id": "A2R038",
+      "file_line": "src/lumina_cuda.cu:10889",
+      "symbol": "plasma.T_rad[i]",
+      "role": "comparator",
+      "static_access": "read",
+      "read_count": 0,
+      "status": "PENDING_LANE_EXECUTION",
+      "lane_counts": {
+        "cpu": 0
+      }
+    },
+    {
+      "site_id": "A2R039",
+      "file_line": "src/lumina_bf_gemm.cu:82",
+      "symbol": "T_rad[s]",
+      "role": "GPU_opacity_rate",
+      "static_access": "device_read",
+      "read_count": 0,
+      "status": "PENDING_LANE_EXECUTION",
+      "lane_counts": {
+        "cpu": 0
+      }
+    },
+    {
+      "site_id": "A2R040",
+      "file_line": "src/lumina_bf_gemm.cu:83",
+      "symbol": "W[s]",
+      "role": "GPU_opacity_rate",
+      "static_access": "device_read",
+      "read_count": 0,
+      "status": "PENDING_LANE_EXECUTION",
+      "lane_counts": {
+        "cpu": 0
+      }
+    },
+    {
+      "site_id": "A2R041",
+      "file_line": "src/lumina_bf_gemm.cu:208",
+      "symbol": "plasma->T_rad",
+      "role": "GPU_opacity_rate",
+      "static_access": "buffer",
+      "read_count": 0,
+      "status": "NOT_A_SCALAR_READ",
+      "lane_counts": {
+        "cpu": 0
+      }
+    },
+    {
+      "site_id": "A2R042",
+      "file_line": "src/lumina_bf_gemm.cu:210",
+      "symbol": "plasma->W",
+      "role": "GPU_opacity_rate",
+      "static_access": "buffer",
+      "read_count": 0,
+      "status": "NOT_A_SCALAR_READ",
+      "lane_counts": {
+        "cpu": 0
+      }
+    },
+    {
+      "site_id": "A2R043",
+      "file_line": "src/lumina_bf_gemm.cu:225",
+      "symbol": "g_bf_gemm.d_T_rad",
+      "role": "GPU_opacity_rate",
+      "static_access": "buffer",
+      "read_count": 0,
+      "status": "NOT_A_SCALAR_READ",
+      "lane_counts": {
+        "cpu": 0
+      }
+    },
+    {
+      "site_id": "A2R044",
+      "file_line": "src/lumina_bf_gemm.cu:225",
+      "symbol": "g_bf_gemm.d_W",
+      "role": "GPU_opacity_rate",
+      "static_access": "buffer",
+      "read_count": 0,
+      "status": "NOT_A_SCALAR_READ",
+      "lane_counts": {
+        "cpu": 0
+      }
+    },
+    {
+      "site_id": "A2R045",
+      "file_line": "src/lumina_bf_gemm.cu:296",
+      "symbol": "plasma->T_rad",
+      "role": "GPU_opacity_rate",
+      "static_access": "buffer",
+      "read_count": 0,
+      "status": "NOT_A_SCALAR_READ",
+      "lane_counts": {
+        "cpu": 0
+      }
+    },
+    {
+      "site_id": "A2R046",
+      "file_line": "src/lumina_bf_gemm.cu:297",
+      "symbol": "plasma->W",
+      "role": "GPU_opacity_rate",
+      "static_access": "buffer",
+      "read_count": 0,
+      "status": "NOT_A_SCALAR_READ",
+      "lane_counts": {
+        "cpu": 0
+      }
+    },
+    {
+      "site_id": "A2R047",
+      "file_line": "src/lumina_bf_gemm.cu:303",
+      "symbol": "g_bf_gemm.d_T_rad",
+      "role": "GPU_opacity_rate",
+      "static_access": "buffer",
+      "read_count": 0,
+      "status": "NOT_A_SCALAR_READ",
+      "lane_counts": {
+        "cpu": 0
+      }
+    },
+    {
+      "site_id": "A2R048",
+      "file_line": "src/lumina_bf_gemm.cu:304",
+      "symbol": "g_bf_gemm.d_W",
+      "role": "GPU_opacity_rate",
+      "static_access": "buffer",
+      "read_count": 0,
+      "status": "NOT_A_SCALAR_READ",
+      "lane_counts": {
+        "cpu": 0
+      }
+    },
+    {
+      "site_id": "A2R049",
+      "file_line": "src/lumina_nlte_assemble.cu:169",
+      "symbol": "d_W[s]",
+      "role": "GPU_opacity_rate",
+      "static_access": "device_read",
+      "read_count": 0,
+      "status": "PENDING_LANE_EXECUTION",
+      "lane_counts": {
+        "cpu": 0
+      }
+    },
+    {
+      "site_id": "A2R050",
+      "file_line": "src/lumina_nlte_assemble.cu:413",
+      "symbol": "plasma->W",
+      "role": "GPU_opacity_rate",
+      "static_access": "buffer",
+      "read_count": 0,
+      "status": "NOT_A_SCALAR_READ",
+      "lane_counts": {
+        "cpu": 0
+      }
+    },
+    {
+      "site_id": "A2R051",
+      "file_line": "src/lumina_nlte_assemble.cu:428",
+      "symbol": "plasma->T_rad[0]",
+      "role": "GPU_opacity_rate",
+      "static_access": "read",
+      "read_count": 0,
+      "status": "PENDING_LANE_EXECUTION",
+      "lane_counts": {
+        "cpu": 0
+      }
+    },
+    {
+      "site_id": "A2R052",
+      "file_line": "src/lumina_cuda.cu:3760",
+      "symbol": "d_T_rad[shell_id]",
+      "role": "GPU_transport",
+      "static_access": "device_read",
+      "read_count": 0,
+      "status": "PENDING_LANE_EXECUTION",
+      "lane_counts": {
+        "cpu": 0
+      }
+    },
+    {
+      "site_id": "A2R053",
+      "file_line": "src/lumina_cuda.cu:3793",
+      "symbol": "d_T_rad[shell_id]",
+      "role": "GPU_transport",
+      "static_access": "device_read",
+      "read_count": 0,
+      "status": "PENDING_LANE_EXECUTION",
+      "lane_counts": {
+        "cpu": 0
+      }
+    },
+    {
+      "site_id": "A2R054",
+      "file_line": "src/lumina_cuda.cu:5978",
+      "symbol": "d_T_rad",
+      "role": "GPU_transport",
+      "static_access": "buffer",
+      "read_count": 0,
+      "status": "NOT_A_SCALAR_READ",
+      "lane_counts": {
+        "cpu": 0
+      }
+    },
+    {
+      "site_id": "A2R055",
+      "file_line": "src/lumina_cuda.cu:6242",
+      "symbol": "d_T_rad",
+      "role": "GPU_transport",
+      "static_access": "buffer",
+      "read_count": 0,
+      "status": "NOT_A_SCALAR_READ",
+      "lane_counts": {
+        "cpu": 0
+      }
+    },
+    {
+      "site_id": "A2R056",
+      "file_line": "src/lumina_cuda.cu:6552",
+      "symbol": "d_T_rad",
+      "role": "GPU_transport",
+      "static_access": "buffer",
+      "read_count": 0,
+      "status": "NOT_A_SCALAR_READ",
+      "lane_counts": {
+        "cpu": 0
+      }
+    },
+    {
+      "site_id": "A2R057",
+      "file_line": "src/lumina_cuda.cu:8834",
+      "symbol": "dev.d_T_rad",
+      "role": "GPU_transport",
+      "static_access": "buffer",
+      "read_count": 0,
+      "status": "NOT_A_SCALAR_READ",
+      "lane_counts": {
+        "cpu": 0
+      }
+    },
+    {
+      "site_id": "A2R058",
+      "file_line": "src/lumina_cuda.cu:10248",
+      "symbol": "dev.d_T_rad",
+      "role": "GPU_transport",
+      "static_access": "buffer",
+      "read_count": 0,
+      "status": "NOT_A_SCALAR_READ",
+      "lane_counts": {
+        "cpu": 0
+      }
+    },
+    {
+      "site_id": "A2R059",
+      "file_line": "src/lumina_cuda.cu:8549",
+      "symbol": "plasma.W[s]",
+      "role": "GPU_transport",
+      "static_access": "read",
+      "read_count": 0,
+      "status": "PENDING_LANE_EXECUTION",
+      "lane_counts": {
+        "cpu": 0
+      }
+    },
+    {
+      "site_id": "A2R060",
+      "file_line": "src/lumina_cuda.cu:8550",
+      "symbol": "plasma.W",
+      "role": "GPU_transport",
+      "static_access": "buffer",
+      "read_count": 0,
+      "status": "NOT_A_SCALAR_READ",
+      "lane_counts": {
+        "cpu": 0
+      }
+    },
+    {
+      "site_id": "A2R061",
+      "file_line": "src/lumina_cuda.cu:10794",
+      "symbol": "plasma.T_rad[i]",
+      "role": "GPU_transport",
+      "static_access": "read",
+      "read_count": 0,
+      "status": "PENDING_LANE_EXECUTION",
+      "lane_counts": {
+        "cpu": 0
+      }
+    },
+    {
+      "site_id": "A2R062",
+      "file_line": "src/lumina_cuda.cu:10794",
+      "symbol": "plasma.T_rad[i]",
+      "role": "GPU_transport",
+      "static_access": "read",
+      "read_count": 0,
+      "status": "PENDING_LANE_EXECUTION",
+      "lane_counts": {
+        "cpu": 0
+      }
+    },
+    {
+      "site_id": "A2R063",
+      "file_line": "src/lumina_plasma.c:2435",
+      "symbol": "plasma->T_rad[s]",
+      "role": "opacity_rate",
+      "static_access": "read",
+      "read_count": 1500,
+      "status": "READ_OBSERVED",
+      "lane_counts": {
+        "cpu": 1500
+      }
+    },
+    {
+      "site_id": "A2R064",
+      "file_line": "src/lumina_plasma.c:2437",
+      "symbol": "plasma->W[s]",
+      "role": "opacity_rate",
+      "static_access": "read",
+      "read_count": 1500,
+      "status": "READ_OBSERVED",
+      "lane_counts": {
+        "cpu": 1500
+      }
+    },
+    {
+      "site_id": "A2R065",
+      "file_line": "src/lumina_plasma.c:2498",
+      "symbol": "T_rad",
+      "role": "opacity_rate",
+      "static_access": "read",
+      "read_count": 5300,
+      "status": "READ_OBSERVED",
+      "lane_counts": {
+        "cpu": 5300
+      }
+    },
+    {
+      "site_id": "A2R066",
+      "file_line": "src/lumina_plasma.c:2499",
+      "symbol": "T_rad",
+      "role": "opacity_rate",
+      "static_access": "read",
+      "read_count": 5300,
+      "status": "READ_OBSERVED",
+      "lane_counts": {
+        "cpu": 5300
+      }
+    },
+    {
+      "site_id": "A2R067",
+      "file_line": "src/lumina_plasma.c:2500",
+      "symbol": "W",
+      "role": "opacity_rate",
+      "static_access": "read",
+      "read_count": 5300,
+      "status": "READ_OBSERVED",
+      "lane_counts": {
+        "cpu": 5300
+      }
+    },
+    {
+      "site_id": "A2R068",
+      "file_line": "src/lumina_plasma.c:2501",
+      "symbol": "T_rad",
+      "role": "opacity_rate",
+      "static_access": "read",
+      "read_count": 5300,
+      "status": "READ_OBSERVED",
+      "lane_counts": {
+        "cpu": 5300
+      }
+    },
+    {
+      "site_id": "A2R069",
+      "file_line": "src/lumina_plasma.c:2502",
+      "symbol": "W",
+      "role": "opacity_rate",
+      "static_access": "read",
+      "read_count": 5300,
+      "status": "READ_OBSERVED",
+      "lane_counts": {
+        "cpu": 5300
+      }
+    },
+    {
+      "site_id": "A2R070",
+      "file_line": "src/lumina_plasma.c:2503",
+      "symbol": "T_rad",
+      "role": "opacity_rate",
+      "static_access": "read",
+      "read_count": 5300,
+      "status": "READ_OBSERVED",
+      "lane_counts": {
+        "cpu": 5300
+      }
+    },
+    {
+      "site_id": "A2R071",
+      "file_line": "src/lumina_plasma.c:2504",
+      "symbol": "W",
+      "role": "opacity_rate",
+      "static_access": "read",
+      "read_count": 5300,
+      "status": "READ_OBSERVED",
+      "lane_counts": {
+        "cpu": 5300
+      }
+    },
+    {
+      "site_id": "A2R072",
+      "file_line": "src/lumina_plasma.c:18369",
+      "symbol": "plasma->W[shell_mid]",
+      "role": "formal_transfer",
+      "static_access": "read",
+      "read_count": 0,
+      "status": "STATIC_READ_NOT_OBSERVED",
+      "lane_counts": {
+        "cpu": 0
+      }
+    },
+    {
+      "site_id": "A2R073",
+      "file_line": "src/lumina_plasma.c:18370",
+      "symbol": "plasma->T_rad[shell_mid]",
+      "role": "formal_transfer",
+      "static_access": "read",
+      "read_count": 0,
+      "status": "STATIC_READ_NOT_OBSERVED",
+      "lane_counts": {
+        "cpu": 0
+      }
+    },
+    {
+      "site_id": "A2R074",
+      "file_line": "src/lumina_plasma.c:18389",
+      "symbol": "plasma->W[shell]",
+      "role": "formal_transfer",
+      "static_access": "read",
+      "read_count": 109483297,
+      "status": "READ_OBSERVED",
+      "lane_counts": {
+        "cpu": 109483297
+      }
+    },
+    {
+      "site_id": "A2R075",
+      "file_line": "src/lumina_plasma.c:18389",
+      "symbol": "plasma->T_rad[shell]",
+      "role": "formal_transfer",
+      "static_access": "read",
+      "read_count": 109483297,
+      "status": "READ_OBSERVED",
+      "lane_counts": {
+        "cpu": 109483297
+      }
+    },
+    {
+      "site_id": "A2R076",
+      "file_line": "src/lumina_plasma.c:18416",
+      "symbol": "plasma->T_rad[shell]",
+      "role": "formal_transfer",
+      "static_access": "read",
+      "read_count": 0,
+      "status": "STATIC_READ_NOT_OBSERVED",
+      "lane_counts": {
+        "cpu": 0
+      }
+    },
+    {
+      "site_id": "A2R077",
+      "file_line": "src/lumina_plasma.c:18416",
+      "symbol": "plasma->W[shell]",
+      "role": "formal_transfer",
+      "static_access": "read",
+      "read_count": 0,
+      "status": "STATIC_READ_NOT_OBSERVED",
+      "lane_counts": {
+        "cpu": 0
+      }
+    },
+    {
+      "site_id": "A2R078",
+      "file_line": "src/lumina_plasma.c:18472",
+      "symbol": "plasma->W[shell_mid]",
+      "role": "formal_transfer",
+      "static_access": "read",
+      "read_count": 0,
+      "status": "STATIC_READ_NOT_OBSERVED",
+      "lane_counts": {
+        "cpu": 0
+      }
+    },
+    {
+      "site_id": "A2R079",
+      "file_line": "src/lumina_plasma.c:18473",
+      "symbol": "plasma->T_rad[shell_mid]",
+      "role": "formal_transfer",
+      "static_access": "read",
+      "read_count": 0,
+      "status": "STATIC_READ_NOT_OBSERVED",
+      "lane_counts": {
+        "cpu": 0
+      }
+    },
+    {
+      "site_id": "A2R080",
+      "file_line": "src/lumina_plasma.c:18722",
+      "symbol": "plasma->W[shell]",
+      "role": "formal_transfer",
+      "static_access": "read",
+      "read_count": 0,
+      "status": "STATIC_READ_NOT_OBSERVED",
+      "lane_counts": {
+        "cpu": 0
+      }
+    },
+    {
+      "site_id": "A2R081",
+      "file_line": "src/lumina_bf_gemm.cu:140",
+      "symbol": "g_bf_gemm.d_T_rad",
+      "role": "GPU_lifecycle",
+      "static_access": "lifecycle",
+      "read_count": 0,
+      "status": "NOT_A_SCALAR_READ",
+      "lane_counts": {
+        "cpu": 0
+      }
+    },
+    {
+      "site_id": "A2R082",
+      "file_line": "src/lumina_bf_gemm.cu:141",
+      "symbol": "g_bf_gemm.d_W",
+      "role": "GPU_lifecycle",
+      "static_access": "lifecycle",
+      "read_count": 0,
+      "status": "NOT_A_SCALAR_READ",
+      "lane_counts": {
+        "cpu": 0
+      }
+    },
+    {
+      "site_id": "A2R083",
+      "file_line": "src/lumina_bf_gemm.cu:390",
+      "symbol": "g_bf_gemm.d_T_rad",
+      "role": "GPU_lifecycle",
+      "static_access": "lifecycle",
+      "read_count": 0,
+      "status": "NOT_A_SCALAR_READ",
+      "lane_counts": {
+        "cpu": 0
+      }
+    },
+    {
+      "site_id": "A2R084",
+      "file_line": "src/lumina_bf_gemm.cu:391",
+      "symbol": "g_bf_gemm.d_W",
+      "role": "GPU_lifecycle",
+      "static_access": "lifecycle",
+      "read_count": 0,
+      "status": "NOT_A_SCALAR_READ",
+      "lane_counts": {
+        "cpu": 0
+      }
+    },
+    {
+      "site_id": "A2R085",
+      "file_line": "src/lumina_cuda.cu:273",
+      "symbol": "dev->d_T_rad",
+      "role": "GPU_lifecycle",
+      "static_access": "lifecycle",
+      "read_count": 0,
+      "status": "NOT_A_SCALAR_READ",
+      "lane_counts": {
+        "cpu": 0
+      }
+    },
+    {
+      "site_id": "A2R086",
+      "file_line": "src/lumina_cuda.cu:341",
+      "symbol": "dev->d_T_rad",
+      "role": "GPU_lifecycle",
+      "static_access": "lifecycle",
+      "read_count": 0,
+      "status": "NOT_A_SCALAR_READ",
+      "lane_counts": {
+        "cpu": 0
+      }
+    },
+    {
+      "site_id": "A2R087",
+      "file_line": "src/lumina_cuda.cu:342",
+      "symbol": "dev->d_T_rad",
+      "role": "GPU_lifecycle",
+      "static_access": "lifecycle",
+      "read_count": 0,
+      "status": "NOT_A_SCALAR_READ",
+      "lane_counts": {
+        "cpu": 0
+      }
+    },
+    {
+      "site_id": "A2R088",
+      "file_line": "src/lumina_cuda.cu:3286",
+      "symbol": "dev->d_T_rad",
+      "role": "GPU_lifecycle",
+      "static_access": "lifecycle",
+      "read_count": 0,
+      "status": "NOT_A_SCALAR_READ",
+      "lane_counts": {
+        "cpu": 0
+      }
+    },
+    {
+      "site_id": "A2R089",
+      "file_line": "src/lumina_cuda.cu:1467",
+      "symbol": "plasma->T_rad[s]",
+      "role": "GPU_rate",
+      "static_access": "read",
+      "read_count": 0,
+      "status": "PENDING_LANE_EXECUTION",
+      "lane_counts": {
+        "cpu": 0
+      }
+    },
+    {
+      "site_id": "A2R090",
+      "file_line": "src/lumina_cuda.cu:1621",
+      "symbol": "plasma->T_rad[s]",
+      "role": "GPU_rate",
+      "static_access": "read",
+      "read_count": 0,
+      "status": "PENDING_LANE_EXECUTION",
+      "lane_counts": {
+        "cpu": 0
+      }
+    },
+    {
+      "site_id": "A2R091",
+      "file_line": "src/lumina_cuda.cu:1652",
+      "symbol": "plasma->T_rad[s]",
+      "role": "GPU_rate",
+      "static_access": "read",
+      "read_count": 0,
+      "status": "PENDING_LANE_EXECUTION",
+      "lane_counts": {
+        "cpu": 0
+      }
+    },
+    {
+      "site_id": "A2R092",
+      "file_line": "src/lumina_cuda.cu:1682",
+      "symbol": "plasma->T_rad[s]",
+      "role": "GPU_rate",
+      "static_access": "read",
+      "read_count": 0,
+      "status": "PENDING_LANE_EXECUTION",
+      "lane_counts": {
+        "cpu": 0
+      }
+    },
+    {
+      "site_id": "A2R093",
+      "file_line": "src/lumina_cuda.cu:2019",
+      "symbol": "plasma->T_rad[s]",
+      "role": "GPU_rate",
+      "static_access": "read",
+      "read_count": 0,
+      "status": "PENDING_LANE_EXECUTION",
+      "lane_counts": {
+        "cpu": 0
+      }
+    },
+    {
+      "site_id": "A2R094",
+      "file_line": "src/lumina_cuda.cu:2020",
+      "symbol": "plasma->T_rad[s]",
+      "role": "GPU_rate",
+      "static_access": "read",
+      "read_count": 0,
+      "status": "PENDING_LANE_EXECUTION",
+      "lane_counts": {
+        "cpu": 0
+      }
+    },
+    {
+      "site_id": "A2R095",
+      "file_line": "src/lumina_cuda.cu:2021",
+      "symbol": "plasma->W[s]",
+      "role": "GPU_rate",
+      "static_access": "read",
+      "read_count": 0,
+      "status": "PENDING_LANE_EXECUTION",
+      "lane_counts": {
+        "cpu": 0
+      }
+    },
+    {
+      "site_id": "A2R096",
+      "file_line": "src/lumina_cuda.cu:2068",
+      "symbol": "plasma->T_rad[s]",
+      "role": "GPU_rate",
+      "static_access": "read",
+      "read_count": 0,
+      "status": "PENDING_LANE_EXECUTION",
+      "lane_counts": {
+        "cpu": 0
+      }
+    },
+    {
+      "site_id": "A2R097",
+      "file_line": "src/lumina_atomic.c:573",
+      "symbol": "W",
+      "role": "owner_validation",
+      "static_access": "buffer",
+      "read_count": 0,
+      "status": "NOT_A_SCALAR_READ",
+      "lane_counts": {
+        "cpu": 0
+      }
+    },
+    {
+      "site_id": "A2R098",
+      "file_line": "src/lumina_atomic.c:573",
+      "symbol": "T_rad",
+      "role": "owner_validation",
+      "static_access": "buffer",
+      "read_count": 0,
+      "status": "NOT_A_SCALAR_READ",
+      "lane_counts": {
+        "cpu": 0
+      }
+    },
+    {
+      "site_id": "A2R099",
+      "file_line": "src/lumina_atomic.c:594",
+      "symbol": "W[s]",
+      "role": "owner_validation",
+      "static_access": "read",
+      "read_count": 50,
+      "status": "READ_OBSERVED",
+      "lane_counts": {
+        "cpu": 50
+      }
+    },
+    {
+      "site_id": "A2R100",
+      "file_line": "src/lumina_atomic.c:595",
+      "symbol": "T_rad[s]",
+      "role": "owner_validation",
+      "static_access": "read",
+      "read_count": 50,
+      "status": "READ_OBSERVED",
+      "lane_counts": {
+        "cpu": 50
+      }
+    },
+    {
+      "site_id": "A2R101",
+      "file_line": "src/lumina_atomic.c:599",
+      "symbol": "T_rad[s]",
+      "role": "owner_validation",
+      "static_access": "read",
+      "read_count": 50,
+      "status": "READ_OBSERVED",
+      "lane_counts": {
+        "cpu": 50
+      }
+    },
+    {
+      "site_id": "A2R102",
+      "file_line": "src/lumina_atomic.c:599",
+      "symbol": "W[s]",
+      "role": "owner_validation",
+      "static_access": "read",
+      "read_count": 50,
+      "status": "READ_OBSERVED",
+      "lane_counts": {
+        "cpu": 50
+      }
+    },
+    {
+      "site_id": "A2R103",
+      "file_line": "src/lumina_cmfgen.c:663",
+      "symbol": "plasma->T_rad",
+      "role": "owner_validation",
+      "static_access": "buffer",
+      "read_count": 0,
+      "status": "NOT_A_SCALAR_READ",
+      "lane_counts": {
+        "cpu": 0
+      }
+    },
+    {
+      "site_id": "A2R104",
+      "file_line": "src/lumina_atomic.c:780",
+      "symbol": "plasma->T_rad[i2]",
+      "role": "owner_update",
+      "static_access": "write",
+      "read_count": 0,
+      "status": "NOT_A_SCALAR_READ",
+      "lane_counts": {
+        "cpu": 0
+      }
+    },
+    {
+      "site_id": "A2R105",
+      "file_line": "src/lumina_plasma.c:917",
+      "symbol": "plasma->T_rad[i]",
+      "role": "owner_update",
+      "static_access": "write",
+      "read_count": 0,
+      "status": "NOT_A_SCALAR_READ",
+      "lane_counts": {
+        "cpu": 0
+      }
+    },
+    {
+      "site_id": "A2R106",
+      "file_line": "src/lumina_plasma.c:918",
+      "symbol": "plasma->W[i]",
+      "role": "owner_update",
+      "static_access": "write",
+      "read_count": 0,
+      "status": "NOT_A_SCALAR_READ",
+      "lane_counts": {
+        "cpu": 0
+      }
+    },
+    {
+      "site_id": "A2R107",
+      "file_line": "src/lumina_plasma.c:949",
+      "symbol": "plasma->T_rad[i]",
+      "role": "owner_update",
+      "static_access": "readwrite",
+      "read_count": 100,
+      "status": "READ_OBSERVED",
+      "lane_counts": {
+        "cpu": 100
+      }
+    },
+    {
+      "site_id": "A2R108",
+      "file_line": "src/lumina_plasma.c:950",
+      "symbol": "plasma->T_rad[i]",
+      "role": "owner_update",
+      "static_access": "read",
+      "read_count": 100,
+      "status": "READ_OBSERVED",
+      "lane_counts": {
+        "cpu": 100
+      }
+    },
+    {
+      "site_id": "A2R109",
+      "file_line": "src/lumina_plasma.c:951",
+      "symbol": "plasma->W[i]",
+      "role": "owner_update",
+      "static_access": "readwrite",
+      "read_count": 100,
+      "status": "READ_OBSERVED",
+      "lane_counts": {
+        "cpu": 100
+      }
+    },
+    {
+      "site_id": "A2R110",
+      "file_line": "src/lumina_plasma.c:952",
+      "symbol": "plasma->W[i]",
+      "role": "owner_update",
+      "static_access": "read",
+      "read_count": 100,
+      "status": "READ_OBSERVED",
+      "lane_counts": {
+        "cpu": 100
+      }
+    },
+    {
+      "site_id": "A2R111",
+      "file_line": "src/lumina_plasma.c:2999",
+      "symbol": "plasma->T_rad[s]",
+      "role": "seed_radeq",
+      "static_access": "read",
+      "read_count": 100,
+      "status": "READ_OBSERVED",
+      "lane_counts": {
+        "cpu": 100
+      }
+    },
+    {
+      "site_id": "A2R112",
+      "file_line": "src/lumina_plasma.c:3038",
+      "symbol": "plasma->T_rad[s]",
+      "role": "seed_radeq",
+      "static_access": "read",
+      "read_count": 0,
+      "status": "STATIC_READ_NOT_OBSERVED",
+      "lane_counts": {
+        "cpu": 0
+      }
+    },
+    {
+      "site_id": "A2R113",
+      "file_line": "src/lumina_plasma.c:3039",
+      "symbol": "plasma->W[s]",
+      "role": "seed_radeq",
+      "static_access": "read",
+      "read_count": 0,
+      "status": "STATIC_READ_NOT_OBSERVED",
+      "lane_counts": {
+        "cpu": 0
+      }
+    },
+    {
+      "site_id": "A2R114",
+      "file_line": "src/lumina_plasma.c:3042",
+      "symbol": "T_rad",
+      "role": "seed_radeq",
+      "static_access": "read",
+      "read_count": 0,
+      "status": "STATIC_READ_NOT_OBSERVED",
+      "lane_counts": {
+        "cpu": 0
+      }
+    },
+    {
+      "site_id": "A2R115",
+      "file_line": "src/lumina_plasma.c:11631",
+      "symbol": "plasma->T_rad[s]",
+      "role": "seed_radeq",
+      "static_access": "read",
+      "read_count": 0,
+      "status": "STATIC_READ_NOT_OBSERVED",
+      "lane_counts": {
+        "cpu": 0
+      }
+    },
+    {
+      "site_id": "A2R116",
+      "file_line": "src/lumina_plasma.c:11845",
+      "symbol": "T_rad",
+      "role": "seed_radeq",
+      "static_access": "read",
+      "read_count": 0,
+      "status": "STATIC_READ_NOT_OBSERVED",
+      "lane_counts": {
+        "cpu": 0
+      }
+    },
+    {
+      "site_id": "A2R117",
+      "file_line": "src/lumina_atomic.c:761",
+      "symbol": "plasma->W",
+      "role": "input_owner",
+      "static_access": "input",
+      "read_count": 0,
+      "status": "NOT_A_SCALAR_READ",
+      "lane_counts": {
+        "cpu": 0
+      }
+    },
+    {
+      "site_id": "A2R118",
+      "file_line": "src/lumina_atomic.c:762",
+      "symbol": "plasma->T_rad",
+      "role": "input_owner",
+      "static_access": "input",
+      "read_count": 0,
+      "status": "NOT_A_SCALAR_READ",
+      "lane_counts": {
+        "cpu": 0
+      }
+    },
+    {
+      "site_id": "A2R119",
+      "file_line": "src/lumina_atomic.c:765",
+      "symbol": "plasma->W",
+      "role": "input_owner",
+      "static_access": "buffer",
+      "read_count": 0,
+      "status": "NOT_A_SCALAR_READ",
+      "lane_counts": {
+        "cpu": 0
+      }
+    },
+    {
+      "site_id": "A2R120",
+      "file_line": "src/lumina_atomic.c:765",
+      "symbol": "plasma->T_rad",
+      "role": "input_owner",
+      "static_access": "buffer",
+      "read_count": 0,
+      "status": "NOT_A_SCALAR_READ",
+      "lane_counts": {
+        "cpu": 0
+      }
+    },
+    {
+      "site_id": "A2R121",
+      "file_line": "src/lumina_atomic.c:785",
+      "symbol": "plasma->W[0]",
+      "role": "input_owner",
+      "static_access": "read",
+      "read_count": 1,
+      "status": "READ_OBSERVED",
+      "lane_counts": {
+        "cpu": 1
+      }
+    },
+    {
+      "site_id": "A2R122",
+      "file_line": "src/lumina_plasma.c:976",
+      "symbol": "plasma->T_rad[i]",
+      "role": "diagnostic",
+      "static_access": "read",
+      "read_count": 0,
+      "status": "STATIC_READ_NOT_OBSERVED",
+      "lane_counts": {
+        "cpu": 0
+      }
+    },
+    {
+      "site_id": "A2R123",
+      "file_line": "src/lumina_cmfgen.c:970",
+      "symbol": "plasma->T_rad[s]",
+      "role": "diagnostic",
+      "static_access": "read",
+      "read_count": 0,
+      "status": "STATIC_READ_NOT_OBSERVED",
+      "lane_counts": {
+        "cpu": 0
+      }
+    },
+    {
+      "site_id": "A2R124",
+      "file_line": "src/lumina_cmfgen.c:1612",
+      "symbol": "plasma->T_rad",
+      "role": "diagnostic",
+      "static_access": "buffer",
+      "read_count": 0,
+      "status": "NOT_A_SCALAR_READ",
+      "lane_counts": {
+        "cpu": 0
+      }
+    },
+    {
+      "site_id": "A2R125",
+      "file_line": "src/lumina_element_wide.c:2329",
+      "symbol": "plasma->W[shell]",
+      "role": "diagnostic",
+      "static_access": "read",
+      "read_count": 0,
+      "status": "STATIC_READ_NOT_OBSERVED",
+      "lane_counts": {
+        "cpu": 0
+      }
+    },
+    {
+      "site_id": "A2R126",
+      "file_line": "src/lumina_cuda.cu:5446",
+      "symbol": "d_T_rad",
+      "role": "GPU_emissivity",
+      "static_access": "buffer",
+      "read_count": 0,
+      "status": "NOT_A_SCALAR_READ",
+      "lane_counts": {
+        "cpu": 0
+      }
+    },
+    {
+      "site_id": "A2R127",
+      "file_line": "src/lumina_cuda.cu:5453",
+      "symbol": "d_T_rad",
+      "role": "GPU_emissivity",
+      "static_access": "buffer",
+      "read_count": 0,
+      "status": "NOT_A_SCALAR_READ",
+      "lane_counts": {
+        "cpu": 0
+      }
+    },
+    {
+      "site_id": "A2R128",
+      "file_line": "src/lumina_cuda.cu:5471",
+      "symbol": "d_T_rad",
+      "role": "GPU_emissivity",
+      "static_access": "buffer",
+      "read_count": 0,
+      "status": "NOT_A_SCALAR_READ",
+      "lane_counts": {
+        "cpu": 0
+      }
+    },
+    {
+      "site_id": "A2R129",
+      "file_line": "src/lumina_cuda.cu:5733",
+      "symbol": "d_T_rad",
+      "role": "GPU_emissivity",
+      "static_access": "buffer",
+      "read_count": 0,
+      "status": "NOT_A_SCALAR_READ",
+      "lane_counts": {
+        "cpu": 0
+      }
+    },
+    {
+      "site_id": "A2R130",
+      "file_line": "src/lumina_plasma.c:13920",
+      "symbol": "W",
+      "role": "rate_diagnostic",
+      "static_access": "read",
+      "read_count": 0,
+      "status": "STATIC_READ_NOT_OBSERVED",
+      "lane_counts": {
+        "cpu": 0
+      }
+    },
+    {
+      "site_id": "A2R131",
+      "file_line": "src/lumina_plasma.c:13940",
+      "symbol": "W",
+      "role": "rate_diagnostic",
+      "static_access": "read",
+      "read_count": 0,
+      "status": "STATIC_READ_NOT_OBSERVED",
+      "lane_counts": {
+        "cpu": 0
+      }
+    },
+    {
+      "site_id": "A2R132",
+      "file_line": "src/lumina_plasma.c:14080",
+      "symbol": "T_rad",
+      "role": "rate_diagnostic",
+      "static_access": "read",
+      "read_count": 0,
+      "status": "STATIC_READ_NOT_OBSERVED",
+      "lane_counts": {
+        "cpu": 0
+      }
+    },
+    {
+      "site_id": "A2R133",
+      "file_line": "src/lumina_cuda.cu:530",
+      "symbol": "plasma->T_rad",
+      "role": "GPU_transfer",
+      "static_access": "buffer",
+      "read_count": 0,
+      "status": "NOT_A_SCALAR_READ",
+      "lane_counts": {
+        "cpu": 0
+      }
+    },
+    {
+      "site_id": "A2R134",
+      "file_line": "src/lumina_cuda.cu:10008",
+      "symbol": "plasma.W[i]",
+      "role": "GPU_transfer",
+      "static_access": "read",
+      "read_count": 0,
+      "status": "PENDING_LANE_EXECUTION",
+      "lane_counts": {
+        "cpu": 0
+      }
+    },
+    {
+      "site_id": "A2R135",
+      "file_line": "src/lumina_cuda.cu:10008",
+      "symbol": "plasma.T_rad[i]",
+      "role": "GPU_transfer",
+      "static_access": "read",
+      "read_count": 0,
+      "status": "PENDING_LANE_EXECUTION",
+      "lane_counts": {
+        "cpu": 0
+      }
+    },
+    {
+      "site_id": "A2R136",
+      "file_line": "src/lumina_cmfgen.c:908",
+      "symbol": "plasma->T_rad[s]",
+      "role": "opacity",
+      "static_access": "read",
+      "read_count": 0,
+      "status": "STATIC_READ_NOT_OBSERVED",
+      "lane_counts": {
+        "cpu": 0
+      }
+    },
+    {
+      "site_id": "A2R137",
+      "file_line": "src/lumina_cmfgen.c:2144",
+      "symbol": "plasma->T_rad[s]",
+      "role": "opacity",
+      "static_access": "read",
+      "read_count": 0,
+      "status": "STATIC_READ_NOT_OBSERVED",
+      "lane_counts": {
+        "cpu": 0
+      }
+    },
+    {
+      "site_id": "A2R138",
+      "file_line": "src/lumina_plasma.c:18010",
+      "symbol": "T_rad",
+      "role": "opacity",
+      "static_access": "read",
+      "read_count": 0,
+      "status": "STATIC_READ_NOT_OBSERVED",
+      "lane_counts": {
+        "cpu": 0
+      }
+    },
+    {
+      "site_id": "A2R139",
+      "file_line": "src/lumina_plasma.c:14987",
+      "symbol": "plasma->T_rad[shell]",
+      "role": "seed_rate",
+      "static_access": "read",
+      "read_count": 0,
+      "status": "STATIC_READ_NOT_OBSERVED",
+      "lane_counts": {
+        "cpu": 0
+      }
+    },
+    {
+      "site_id": "A2R140",
+      "file_line": "src/lumina_plasma.c:15179",
+      "symbol": "plasma->W[shell]",
+      "role": "seed_rate",
+      "static_access": "read",
+      "read_count": 0,
+      "status": "STATIC_READ_NOT_OBSERVED",
+      "lane_counts": {
+        "cpu": 0
+      }
+    },
+    {
+      "site_id": "A2R141",
+      "file_line": "src/lumina_plasma.c:15181",
+      "symbol": "plasma->T_rad[0]",
+      "role": "seed_rate",
+      "static_access": "read",
+      "read_count": 0,
+      "status": "STATIC_READ_NOT_OBSERVED",
+      "lane_counts": {
+        "cpu": 0
+      }
+    },
+    {
+      "site_id": "A2R142",
+      "file_line": "src/lumina_atomic.c:1008",
+      "symbol": "ps->W",
+      "role": "lifecycle",
+      "static_access": "lifecycle",
+      "read_count": 0,
+      "status": "NOT_A_SCALAR_READ",
+      "lane_counts": {
+        "cpu": 0
+      }
+    },
+    {
+      "site_id": "A2R143",
+      "file_line": "src/lumina_atomic.c:1009",
+      "symbol": "ps->T_rad",
+      "role": "lifecycle",
+      "static_access": "lifecycle",
+      "read_count": 0,
+      "status": "NOT_A_SCALAR_READ",
+      "lane_counts": {
+        "cpu": 0
+      }
+    },
+    {
+      "site_id": "A2R144",
+      "file_line": "src/lumina_main.c:334",
+      "symbol": "plasma.T_rad[i]",
+      "role": "output",
+      "static_access": "read",
+      "read_count": 0,
+      "status": "STATIC_READ_NOT_OBSERVED",
+      "lane_counts": {
+        "cpu": 0
+      }
+    },
+    {
+      "site_id": "A2R145",
+      "file_line": "src/lumina_cuda.cu:11020",
+      "symbol": "plasma.W[i]",
+      "role": "output",
+      "static_access": "read",
+      "read_count": 0,
+      "status": "PENDING_LANE_EXECUTION",
+      "lane_counts": {
+        "cpu": 0
+      }
+    },
+    {
+      "site_id": "A2R146",
+      "file_line": "src/lumina_plasma.c:2081",
+      "symbol": "plasma->T_rad[s]",
+      "role": "Boltzmann_partition",
+      "static_access": "read",
+      "read_count": 6800,
+      "status": "READ_OBSERVED",
+      "lane_counts": {
+        "cpu": 6800
+      }
+    },
+    {
+      "site_id": "A2R147",
+      "file_line": "src/lumina_plasma.c:2082",
+      "symbol": "plasma->W[s]",
+      "role": "Boltzmann_partition",
+      "static_access": "read",
+      "read_count": 6800,
+      "status": "READ_OBSERVED",
+      "lane_counts": {
+        "cpu": 6800
+      }
+    },
+    {
+      "site_id": "A2R148",
+      "file_line": "src/lumina_plasma.c:2826",
+      "symbol": "plasma->T_rad[s]",
+      "role": "transition_probability",
+      "static_access": "read",
+      "read_count": 258413200,
+      "status": "READ_OBSERVED",
+      "lane_counts": {
+        "cpu": 258413200
+      }
+    },
+    {
+      "site_id": "A2R149",
+      "file_line": "src/lumina_plasma.c:2827",
+      "symbol": "plasma->W[s]",
+      "role": "transition_probability",
+      "static_access": "read",
+      "read_count": 258413200,
+      "status": "READ_OBSERVED",
+      "lane_counts": {
+        "cpu": 258413200
+      }
+    },
+    {
+      "site_id": "A2R150",
+      "file_line": "src/lumina_plasma.c:7402",
+      "symbol": "plasma->T_rad[s]",
+      "role": "rate_Boltzmann",
+      "static_access": "read",
+      "read_count": 0,
+      "status": "STATIC_READ_NOT_OBSERVED",
+      "lane_counts": {
+        "cpu": 0
+      }
+    },
+    {
+      "site_id": "A2R151",
+      "file_line": "src/lumina_plasma.c:7403",
+      "symbol": "plasma->W[s]",
+      "role": "rate_Boltzmann",
+      "static_access": "read",
+      "read_count": 0,
+      "status": "STATIC_READ_NOT_OBSERVED",
+      "lane_counts": {
+        "cpu": 0
+      }
+    },
+    {
+      "site_id": "A2R152",
+      "file_line": "src/lumina_plasma.c:12379",
+      "symbol": "plasma->T_rad[s]",
+      "role": "rate_radeq",
+      "static_access": "read",
+      "read_count": 0,
+      "status": "STATIC_READ_NOT_OBSERVED",
+      "lane_counts": {
+        "cpu": 0
+      }
+    },
+    {
+      "site_id": "A2R153",
+      "file_line": "src/lumina_plasma.c:12380",
+      "symbol": "plasma->W[s]",
+      "role": "rate_radeq",
+      "static_access": "read",
+      "read_count": 0,
+      "status": "STATIC_READ_NOT_OBSERVED",
+      "lane_counts": {
+        "cpu": 0
+      }
+    },
+    {
+      "site_id": "A2R154",
+      "file_line": "src/lumina_plasma.c:17832",
+      "symbol": "plasma->T_rad[s]",
+      "role": "Boltzmann_diagnostic",
+      "static_access": "read",
+      "read_count": 0,
+      "status": "STATIC_READ_NOT_OBSERVED",
+      "lane_counts": {
+        "cpu": 0
+      }
+    },
+    {
+      "site_id": "A2R155",
+      "file_line": "src/lumina_plasma.c:17833",
+      "symbol": "plasma->W[s]",
+      "role": "Boltzmann_diagnostic",
+      "static_access": "read",
+      "read_count": 0,
+      "status": "STATIC_READ_NOT_OBSERVED",
+      "lane_counts": {
+        "cpu": 0
+      }
+    },
+    {
+      "site_id": "A2R156",
+      "file_line": "src/lumina_atomic.c:826",
+      "symbol": "plasma->T_rad[i]",
+      "role": "seed",
+      "static_access": "read",
+      "read_count": 50,
+      "status": "READ_OBSERVED",
+      "lane_counts": {
+        "cpu": 50
+      }
+    },
+    {
+      "site_id": "A2R157",
+      "file_line": "src/lumina_plasma.c:7897",
+      "symbol": "plasma->T_rad[pkt->current_shell_id]",
+      "role": "emissivity",
+      "static_access": "read",
+      "read_count": 0,
+      "status": "STATIC_READ_NOT_OBSERVED",
+      "lane_counts": {
+        "cpu": 0
+      }
+    }
+  ]
+}

@@ -631,6 +631,61 @@ def close_vectors(left: list[float], right: list[float], relative: float) -> dic
     }
 
 
+def vector_relative_offsets(left: list[float], right: list[float]) -> list[float]:
+    """Return the same symmetric relative offset used by ``close_vectors``."""
+
+    if not left or len(left) != len(right):
+        return []
+    return [
+        abs(a - b) / max(abs(a), abs(b), sys.float_info.min)
+        for a, b in zip(left, right)
+    ]
+
+
+def continuous_offset_summary(
+    values: list[float], files_compared: int, mismatched_files: int, tolerance: float
+) -> dict[str, Any]:
+    """Summarize the RVTJ/PRRR write-order offset as a continuous quantity."""
+
+    if not values:
+        return {
+            "status": "NOT_MEASURED",
+            "definition": (
+                "symmetric relative offset |RVTJ-PRRR|/max(|RVTJ|,|PRRR|); "
+                "interpreted as a convergence proxy only when R and T agree"
+            ),
+            "files_compared": files_compared,
+            "values_compared": 0,
+        }
+    ordered = sorted(values)
+    size = len(ordered)
+    percentile_95 = ordered[max(0, math.ceil(0.95 * size) - 1)]
+    median = (
+        ordered[size // 2]
+        if size % 2
+        else 0.5 * (ordered[size // 2 - 1] + ordered[size // 2])
+    )
+    return {
+        "status": "MEASURED",
+        "definition": (
+            "symmetric relative offset |RVTJ-PRRR|/max(|RVTJ|,|PRRR|); "
+            "this is a pre-rate-write versus post-update n_e convergence proxy, "
+            "not proof of mixed great iterations"
+        ),
+        "normalization": "max(abs(RVTJ_n_e),abs(PRRR_n_e),DBL_MIN)",
+        "relative_tolerance_from_declared_print_precision": tolerance,
+        "files_compared": files_compared,
+        "mismatched_files": mismatched_files,
+        "values_compared": size,
+        "values_above_tolerance": sum(value > tolerance for value in values),
+        "max_relative_offset": max(values),
+        "median_relative_offset": median,
+        "p95_relative_offset": percentile_95,
+        "mean_relative_offset": sum(values) / size,
+        "rms_relative_offset": math.sqrt(sum(value * value for value in values) / size),
+    }
+
+
 def parse_rvtj(path: Path) -> dict[str, Any]:
     lines = read_lines(path)
     nd_raw, nd_line = header_value(lines, "ND:")
@@ -758,6 +813,10 @@ def generation_evidence(root: Path, schemas: dict[str, Any]) -> dict[str, Any]:
     if core.get("status") == "MISMATCH":
         mixed_reasons.append("EDDFACTOR/JH shared content differs")
     completion_tokens: dict[str, Any] = {}
+    prrr_offsets: list[float] = []
+    prrr_files_compared = 0
+    prrr_mismatched_files = 0
+    write_order_signature_files: list[str] = []
     if rv:
         completion_tokens["RVTJ"] = rv.get("completion_token")
         pop_checks: dict[str, Any] = {}
@@ -779,22 +838,38 @@ def generation_evidence(root: Path, schemas: dict[str, Any]) -> dict[str, Any]:
         prrr_checks: dict[str, Any] = {}
         for path in sorted(root.glob("*PRRR")):
             lines = read_lines(path)
+            prrr_radius = repeated_block_vector(lines, "Radius [")
+            prrr_temperature = repeated_block_vector(lines, "Temperature [")
+            prrr_electron_density = repeated_block_vector(lines, "Electron Density")
             checks = {
                 "radius": close_vectors(
-                    rv["radius"], repeated_block_vector(lines, "Radius ["), 6.0e-5
+                    rv["radius"], prrr_radius, 6.0e-5
                 ),
                 "temperature": close_vectors(
                     rv["temperature"],
-                    repeated_block_vector(lines, "Temperature ["),
+                    prrr_temperature,
                     6.0e-5,
                 ),
                 "electron_density": close_vectors(
                     rv["electron_density"],
-                    repeated_block_vector(lines, "Electron Density"),
+                    prrr_electron_density,
                     6.0e-5,
                 ),
             }
             prrr_checks[path.name] = checks
+            offsets = vector_relative_offsets(
+                rv["electron_density"], prrr_electron_density
+            )
+            if offsets:
+                prrr_files_compared += 1
+                prrr_offsets.extend(offsets)
+                if checks["electron_density"]["status"] == "MISMATCH":
+                    prrr_mismatched_files += 1
+                if (
+                    checks["radius"]["status"] == "MATCH"
+                    and checks["temperature"]["status"] == "MATCH"
+                ):
+                    write_order_signature_files.append(path.name)
             if any(item["status"] == "MISMATCH" for item in checks.values()):
                 mixed_reasons.append(f"{path.name}/RVTJ shared state differs")
         evidence["content_links"]["RVTJ<->*PRRR"] = prrr_checks
@@ -827,6 +902,10 @@ def generation_evidence(root: Path, schemas: dict[str, Any]) -> dict[str, Any]:
         if obs_check.get("status") == "MISMATCH":
             mixed_reasons.append("OBSFLUX/OBS_FREQ grids differ")
     evidence["completion_tokens_from_file_content"] = completion_tokens
+    evidence["write_order_offset"] = continuous_offset_summary(
+        prrr_offsets, prrr_files_compared, prrr_mismatched_files, 6.0e-5
+    )
+    evidence["write_order_signature_files"] = write_order_signature_files
     attestation = load_attestation(root)
     if attestation:
         proof = attestation.get("generation_proof", {})
@@ -840,15 +919,24 @@ def generation_evidence(root: Path, schemas: dict[str, Any]) -> dict[str, Any]:
             and set(targets).issubset(declared_files)
             and proof.get("iteration_id") not in {None, ""}
         ):
-            evidence["verdict"] = "SAME_GENERATION_PROVEN"
-            evidence["verdict_basis"] = (
+            evidence["assessment"] = "ATTESTED_SAME_GENERATION"
+            evidence["assessment_basis"] = (
                 "machine attestation supplies one content-derived iteration ID for every "
                 "target, and all independently checkable shared content agrees"
             )
             return evidence
     if mixed_reasons:
-        evidence["verdict"] = "MIXED_GENERATION_PROVEN"
-        evidence["verdict_basis"] = "; ".join(sorted(set(mixed_reasons)))
+        prrr_only_write_order = all(
+            reason.endswith("/RVTJ shared state differs")
+            and reason.split("/RVTJ", 1)[0].endswith("PRRR")
+            for reason in mixed_reasons
+        )
+        evidence["assessment"] = (
+            "WRITE_ORDER_OFFSET_MEASURED"
+            if prrr_only_write_order and prrr_offsets
+            else "CROSS_FILE_CONTENT_OFFSET_MEASURED"
+        )
+        evidence["assessment_basis"] = "; ".join(sorted(set(mixed_reasons)))
         return evidence
     evidence["unresolved_links"].append(
         "OBSFLUX/OBS_FREQ expose a shared observer grid but no iteration ID or "
@@ -857,12 +945,42 @@ def generation_evidence(root: Path, schemas: dict[str, Any]) -> dict[str, Any]:
     evidence["unresolved_links"].append(
         "the two *_INFO formats do not declare iteration ID, units, frame, or NCF"
     )
-    evidence["verdict"] = "UNDECIDABLE_WITH_CURRENT_EVIDENCE"
-    evidence["verdict_basis"] = (
+    evidence["assessment"] = "UNDECIDABLE_WITH_CURRENT_EVIDENCE"
+    evidence["assessment_basis"] = (
         "available content establishes several internally consistent groups but does not "
         "bind every requested file to one CMFGEN great iteration"
     )
     return evidence
+
+
+def legacy_generation_alias(evidence: dict[str, Any]) -> dict[str, Any]:
+    """Keep v1 manifest consumers working while making the renamed field canonical."""
+
+    assessment = evidence.get("assessment")
+    if assessment == "ATTESTED_SAME_GENERATION":
+        verdict = "SAME_GENERATION_PROVEN"
+    elif assessment in {
+        "WRITE_ORDER_OFFSET_MEASURED",
+        "CROSS_FILE_CONTENT_OFFSET_MEASURED",
+    }:
+        verdict = "MIXED_GENERATION_PROVEN"
+    else:
+        verdict = "UNDECIDABLE_WITH_CURRENT_EVIDENCE"
+    alias = dict(evidence)
+    alias.update(
+        {
+            "verdict": verdict,
+            "verdict_basis": evidence.get("assessment_basis"),
+            "deprecated_alias": True,
+            "canonical_field": "write_order_offset_convergence",
+            "legacy_semantics_warning": (
+                "MIXED_GENERATION_PROVEN is retained only for v1 consumers; RVTJ/PRRR "
+                "n_e disagreement is measured canonically as a continuous write-order "
+                "offset and is not proof of different great iterations"
+            ),
+        }
+    )
+    return alias
 
 
 def find_line(lines: list[str], pattern: str) -> tuple[int | None, str | None]:
@@ -925,7 +1043,8 @@ def qualification(root: Path, generation: dict[str, Any]) -> dict[str, Any]:
         "CMFGEN_PHYSICAL_ORACLE": {
             "value": physical,
             "reason": (
-                f"nonlinear={nonlinear}; generation={generation['verdict']}; "
+                f"nonlinear={nonlinear}; "
+                f"write_order_assessment={generation['assessment']}; "
                 f"FIX_T evidence={run_path.name if run_path else 'missing'}:{fix_line} {fix_text}"
             ),
         },
@@ -1090,8 +1209,12 @@ def ophys_gaps(
         or proof.get("output_after_last_iteration") is not True
         or proof.get("iteration_id") in {None, ""}
         or not generation_targets.issubset(proof_files)
-        or manifest.get("generation_consistency", {}).get("verdict")
-        != "SAME_GENERATION_PROVEN"
+        or (
+            manifest.get("write_order_offset_convergence", {}).get("assessment")
+            != "ATTESTED_SAME_GENERATION"
+            and manifest.get("generation_consistency", {}).get("verdict")
+            != "SAME_GENERATION_PROVEN"
+        )
     ):
         gaps.append("GENERATION_NOT_PROVEN")
     for data_name in ["EDDFACTOR", "JH_AT_CURRENT_TIME", "CHI_DATA", "ETA_DATA"]:
@@ -1120,6 +1243,7 @@ def write_manifest(
         raise ContractError(RC_UNCLASSIFIED, f"unclassified entries: {unknown}")
     schemas = record_schemas(root, scan_generation=scan_generation)
     generation = generation_evidence(root, schemas)
+    generation_legacy = legacy_generation_alias(generation)
     role_counts = {role: 0 for role in sorted(ROLES)}
     for entry in entries:
         role_counts[entry["role"]] += 1
@@ -1150,7 +1274,8 @@ def write_manifest(
             "is_physical_convergence": False,
             "statement": "FINISH_REC proves completed EDDFACTOR writes, not nonlinear convergence",
         },
-        "generation_consistency": generation,
+        "write_order_offset_convergence": generation,
+        "generation_consistency": generation_legacy,
         "eligibility": qualification(root, generation),
     }
     if profile_name == "ophys":
@@ -1290,6 +1415,10 @@ def main(argv: list[str] | None = None) -> int:
                 f"entries={manifest['scope']['entry_count']} "
                 f"unclassified={manifest['role_counts']['unclassified']} "
                 f"role_counts={json.dumps(manifest['role_counts'], sort_keys=True, separators=(',', ':'))} "
+                f"write_order_assessment="
+                f"{manifest['write_order_offset_convergence']['assessment']} "
+                f"write_order_max="
+                f"{manifest['write_order_offset_convergence']['write_order_offset'].get('max_relative_offset')} "
                 f"generation={manifest['generation_consistency']['verdict']}"
             )
             if args.profile == "ophys" and manifest.get("ophys_gaps_at_write"):

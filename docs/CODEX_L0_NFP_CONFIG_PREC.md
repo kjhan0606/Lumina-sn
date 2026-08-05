@@ -4,8 +4,8 @@
 - 기준 실측: `docs/OUTSIDE_LOOP_POOL.md`의
   `★★★0-N/0-F/0-P 실측 (2026-08-04 23:30, 운전석)`
 - 상태:
-  - **NE-NAMING — 계약 저작 완료, 처분 승인/이행/음성 대조 대기**
-  - **DECK-FOSSIL — 계약 저작 완료, 원인 `UNRESOLVED`, 처분/이행/음성 대조 대기**
+  - **NE-NAMING — 처분 A checker/builder guard 구현 완료, grammar-debug 음성 대조 대기**
+  - **DECK-FOSSIL — fossil quarantine checker/atomic writer 구현 완료, grammar-debug 음성 대조 대기**
   - **CONFIG-PREC — 계약 저작 및 구현 완료, grammar-debug 운전석 검증 대기**
 - 실행 상태 표기: 이 문서를 쓰는 세션에서는 로그인 노드 연산 금지를 지켰다. 파일 조회,
   `rg`, `stat`, `sha256sum`, diff 판독만 수행했다. 아래 빌드·Python·음성 대조·회귀 값은
@@ -14,9 +14,9 @@
 
 ---
 
-## 1. 변경집합
+## 1. 선행 CONFIG-PREC 변경집합
 
-이번 작업이 더한/고친 파일은 다음 다섯 개뿐이다. 작업 시작 전부터 이 중 세 `src` 파일을
+CONFIG-PREC 구현 세션이 더한/고친 파일은 다음 다섯 개다. 그 세션 시작 전부터 이 중 세 `src` 파일을
 포함한 worktree가 크게 dirty였으므로 기존 변경은 되돌리거나 재정렬하지 않고 국소 hunk만
 삽입했다.
 
@@ -28,9 +28,10 @@
 | `scripts/run_config_prec_negative_controls.py` | 신규 | `/tmp` 사본만 쓰는 실제 바이너리 음성 대조 4건 |
 | `docs/CODEX_L0_NFP_CONFIG_PREC.md` | 신규 | 본 계약·조사·구현·운전석 인수 문서 |
 
-변경 금지 대상인 `scripts/build_toy06_epoch.py`, 모든
-`data/tardis_reference_*`, `/gpfs/kjhan/cmfgen_runs/**`,
-`LUMINA_TRAD_COLOR_FIX` 블록은 수정하지 않았다. commit/push도 하지 않았다.
+후속 NE-NAMING/DECK-FOSSIL checker 구현 변경집합은
+`docs/CODEX_L0_NE_DECK_CHECKERS.md`에 별도로 기록한다. 모든
+`data/tardis_reference_*`, `/gpfs/kjhan/cmfgen_runs/**`, `src/`,
+`LUMINA_TRAD_COLOR_FIX` 블록은 그 후속 작업에서 수정하지 않았다. commit/push도 하지 않았다.
 
 ---
 
@@ -119,15 +120,15 @@ i_{\rm phot}=\max\{i:\tau_i\ge\tau_{\rm phot}\}
 | 조건 | 등급 | 근거 |
 |---|---|---|
 | `n_e` provenance/mode/승인 중 하나라도 없는데 production boundary를 생성 | FATAL | placeholder가 경계조건을 결정하지만 소비자가 이를 식별할 수 없음 |
-| mode가 placeholder인데 승인 없이 canonical/production 출력 요청 | FATAL | 현재 실측에서 `Delta i_phot=+11`, `Delta v_inner=+56.41%` |
+| mode가 placeholder인데 승인 없이 canonical/production 출력 요청 | FATAL | provenance 없이 placeholder가 경계 사슬을 결정함; 영향 크기는 `UNQUANTIFIED_PENDING_CLEAN_ZBAR` |
 | 참값 경로에서 epoch/frame/unit/coverage/격자 밖 정책 불명 | FATAL | 같은 배열처럼 보여도 다른 물리 좌표를 섞을 수 있음 |
 | geometry/config/plasma 중 일부만 새 `n_e`와 결합 | FATAL | `r_inner`와 Stefan–Boltzmann 경계가 서로 다른 generation이 됨 |
 | 정확한 기존 덱 hash에 묶인 승인된 legacy 진단 실행 | WARN | 재현 보존은 가능하나 물리 정본 주장은 불가 |
 
-현재 `build_toy06_epoch.py:162`는 이 계약의 production 판정에서 FATAL 대상이다. 다만
-현 덱을 즉시 교체하는 처분을 뜻하지 않는다. case A의 3900 km/s가 실제 config와 정확히
-일치한다는 양성 대조는 placeholder가 단순 이름 문제가 아니라 현재 덱 경계의 생산자였음을
-보인다.
+현재 `build_toy06_epoch.py`는 처분 A gate를 `tau_i/i_phot` 계산 앞에 두어 기본 production
+호출을 차단한다. 현 덱을 즉시 교체하는 처분은 아니다. case A의 3900 km/s가 실제 config와
+정확히 일치한다는 양성 대조는 placeholder가 단순 이름 문제가 아니라 현재 덱 경계의
+생산자였음을 보인다. 오염되지 않은 `<Z>`가 없으므로 그 영향의 크기는 정량화하지 않는다.
 
 ### 3.4 사전등록 음성 대조
 
@@ -141,9 +142,9 @@ NE 구현 단계에서 만들 checker의 종료코드는 PASS/WARN=0, FATAL=1로
 | 새 `electron_densities.csv`와 구 geometry/config/plasma를 혼합 | `NE-NAMING][FATAL] generation mismatch` | 1 |
 | 승인된 legacy hash와 placeholder mode를 함께 명시 | `NE-NAMING][WARN]` | 0 |
 
-이 표는 계약 사전등록이며 checker/src를 이번 발주에서 구현하지 않았다. 따라서 실제 FAIL
-시연 상태는 **PENDING_NE_DISPOSITION**, PASS로 주장하지 않는다. 모든 fixture는 향후
-`/tmp/lumina_ne_naming_controls_*` 사본에서 만들어야 한다.
+이 표대로 `scripts/check_ne_naming.py`와 `scripts/run_ne_naming_controls.py`를 구현했다.
+실행 전 상태는 **PENDING_DRIVER_EXECUTION**이며 모든 fixture는
+`/tmp/lumina_ne_naming_controls_*` 사본에서만 만들어진다.
 
 ### 3.5 기대 변경집합
 
@@ -242,9 +243,9 @@ DECK 구현 단계 checker의 종료코드는 PASS/WARN=0, FATAL=1로 고정한�
 | manifest writer hash 또는 argv 하나 변경 | `DECK-FOSSIL][FATAL] writer replay mismatch` | 1 |
 | 승인된 fossil hash와 read-only legacy mode | `DECK-FOSSIL][WARN]` | 0 |
 
-이 역시 문안 사전등록이며 이번 발주에서 checker나 deck writer를 구현하지 않았다. 실제
-시연은 **PENDING_DECK_PROVENANCE**이고 fixture는 향후
-`/tmp/lumina_deck_fossil_controls_*`만 사용한다.
+이 표대로 `scripts/check_deck_fossil.py`, `scripts/deck_generation_atomic.py`,
+`scripts/run_deck_fossil_controls.py`를 구현했다. 실제 시연은
+**PENDING_DRIVER_EXECUTION**이고 fixture는 `/tmp/lumina_deck_fossil_controls_*`만 사용한다.
 
 ### 4.5 기대 변경집합
 
@@ -264,11 +265,12 @@ DECK 구현 단계 checker의 종료코드는 PASS/WARN=0, FATAL=1로 고정한�
 ### 4.6 폐합 조건
 
 1. 실제 producer가 발견되어 등록 명령으로 전 companion을 재현하거나, producer가
-   회복 불가능하다는 처분과 새 canonical generation이 함께 승인된다.
+   회복 불가능하다는 처분과 exact-hash fossil quarantine가 승인된다.
 2. `4.005038`이 재현 가능한 계산으로 설명되거나, 설명 불능 상태가 fossil quarantine에
    명시되어 더 이상 canonical production 입력으로 쓰이지 않는다.
 3. 양성/음성 대조와 hash manifest가 모두 통과한다.
-4. NE가 선택한 `r_inner` 및 CONFIG가 선택한 경계온도와 같은 generation임을 증명한다.
+4. 새 generation이면 NE의 `r_inner`와 CONFIG 경계온도가 같은 generation임을 증명하고,
+   fossil legacy면 NE/CONFIG가 같은 exact companion hash seal을 가리킨다.
 5. A2-04 전에 닫는다.
 
 ---
@@ -584,12 +586,12 @@ ssh grammar "ssh grammar-debug 'set -e; cd /home/kjhan/BACKUP/Eunha.A1/Claude/Lu
 
 | 계약 | 등록 수 | 실제 구현 | 기대 종료코드 | 현재 상태 |
 |---|---:|---|---|---|
-| NE-NAMING | FATAL 4 + WARN 1 | 이번 범위 아님 | FATAL 1, WARN 0 | `PENDING_NE_DISPOSITION` |
-| DECK-FOSSIL | FATAL 4 + WARN 1 | 이번 범위 아님 | FATAL 1, WARN 0 | `PENDING_DECK_PROVENANCE` |
+| NE-NAMING | FATAL 4 + WARN 1 | 독립 checker/runner 구현 | FATAL 1, WARN 0 | `PENDING_DRIVER_EXECUTION` |
+| DECK-FOSSIL | FATAL 4 + WARN 1 | 독립 checker/runner + atomic writer 구현 | FATAL 1, WARN 0 | `PENDING_DRIVER_EXECUTION` |
 | CONFIG-PREC | FATAL 4 | 구현됨, CPU/CUDA가 공유하는 loader | child 1, runner 0 | `PENDING_DRIVER_EXECUTION` |
 
-계약 문안만 저작하도록 제한된 NE/DECK의 대조를 실행 PASS로 꾸미지 않았다. 두 checker의
-구현과 실제 injection rejection이 각 계약 폐합의 필수 조건이다.
+로그인 노드에서는 두 checker를 실행하지 않았으므로 실제 injection 결과를 PASS로 꾸미지
+않는다. grammar-debug 운전석 시연 결과가 각 계약의 실행 폐합 조건이다.
 
 ---
 
@@ -600,8 +602,8 @@ ssh grammar "ssh grammar-debug 'set -e; cd /home/kjhan/BACKUP/Eunha.A1/Claude/Lu
 2. NE 처분을 개명으로 쓰지 않았고 즉시 CMFGEN `<Z>` 덱 재생성도 요구하지 않았다.
 3. `4.005038`은 재현 producer가 없으므로 `UNRESOLVED`로 남겼다.
 4. CONFIG 판정은 현재 덱의 4152.549 K 차이를 약 5 K 한계와 비교하므로 실제로 걸린다.
-5. 세 계약 모두 주입 결함, marker, 기대 rc를 등록했다. CONFIG만 이번 범위에서 runner를
-   구현했고 운전석 실행 전 상태를 명시했다.
+5. 세 계약 모두 주입 결함, marker, 기대 rc를 등록했다. NE/DECK도 독립 runner를 구현했고
+   운전석 실행 전 상태를 명시했다.
 6. 본문에 쓴 파일명과 줄번호는 이 세션에서 `nl -ba`/`rg`로 확인했다.
 7. 실행 명령은 nested ssh이며 `/usr/bin/time`, lageunha, GPFS/deck write가 없다.
 

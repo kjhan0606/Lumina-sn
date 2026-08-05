@@ -1743,6 +1743,43 @@ canonical 주장    [DECK-FOSSIL][FATAL] missing manifest          rc=1
 
 ---
 
+### ★★A2-01 소유권 census **폐합** (2026-08-05 14:30) — A-2 2/18
+
+구현 Codex, 검수·실행 운전석(2노드 분할 + 수리 1회).
+
+```
+[A] grammar-debug   census check rows=157 unclassified=0 (§2.4 role 카운트 정확 일치)
+                    trace selftest · oracle compat · A2-00 음성대조 7/7      4/4 PASS
+[B] lageunha        회귀 5종 (CLS·D/K·Z-INERT·NE·DECK)                        5/5 PASS
+    게이트 ON trace 2000×2 실런 rc=0 → 157사이트 카운트 tsv 확보
+    summarize: observed=34 / not_observed=56 / pending=26
+    게이트 OFF parity (수리 후): files=4 bytes_identical=true                 PASS
+```
+
+산출: `docs/A2_01_DISPOSITION_LEDGER.{md,json}`(157행×7필드) ·
+`validation/a2_01/`(회귀대장·runtime trace·summary) ·
+`scripts/a2_01_{census_contract,read_trace,gate_off_compare,oracle_compat_selftest}.py`.
+계측 설계 = **소스를 scratch 에 복사해 wrap** — 정본 트리 무변경으로 90 CPU 사이트 계측.
+`MIXED_GENERATION_PROVEN` → `write_order_offset_convergence` 개명 + 연속량
+(max/median/p95/RMS) + deprecated alias (02:45절 처분 이행).
+
+#### 검수 발견 3건 (전부 원장 기재·처분 완료)
+
+1. **보고서 §6 부재** — 요약이 "운전석 명령은 §6" 을 가리키나 §6 이 없음(Codex 전형
+   범위밖 인지). 운전석이 `--help`·소스에서 인수 절차 재구성.
+2. **`gate_off_compare` 공허 PASS** — 파일 0개 비교로 `files=0 bytes_identical=true`
+   (tree_sha256 = 빈 문자열 해시). 운전석 사용 오류(파일 대 디렉터리) + 도구가
+   files=0 에서 fail-closed 안 함. **도구는 경량 예외로 즉시 수리**(empty→FAIL rc=2),
+   parity 는 격리 디렉터리 500×1 로 재실행해 실물 PASS.
+3. **운전석 인수 크기 과대** — parity 2000×2·OMP=1 (편도 35분×2) 은 판정력 무증가.
+   ⟹ user 지적으로 **3층 인수 프로토콜** 상설 채택(memory 기재): 마이크로 픽스처
+   100pkt×1iter · 회귀=변경파일 선별 · 전량=마디(A2-04·11·18)만.
+
+부수: 인수 런이 repo 루트를 cwd 로 써서 산출 CSV 오염 → 정리, trace tsv 는
+`validation/a2_01/` 회수. 이후 인수 스크립트는 격리 디렉터리 강제.
+
+---
+
 ## ★인수인계 (2026-08-05 03:20, user 로그아웃)
 
 ### 지금 도는 것

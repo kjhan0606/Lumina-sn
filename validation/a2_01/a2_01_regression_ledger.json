@@ -1,0 +1,22 @@
+{
+  "stage_id": "A2-01",
+  "contract": "ownership census closure and gated runtime W/T_rad read trace",
+  "source_tree_hash": "git_head=26e2555bd71674d7a52dd9cd538ccba44a1bf6dc; implementation_bundle_sha256=8f5c683cf26302d95b0cb7cb01a1228ddc5810f3b0fd7e9da16d836ab6fc7cc9",
+  "input_manifest_hash": "docs/A2_01_DISPOSITION_LEDGER.json sha256=acb225f63d6dc0b32ed7905c4011ad33eea0303402b755158c85796c515a05b1",
+  "oracle_id": "A2-00 O-WIRE snapshot manifests; physical use restricted to s0-s8 (v<=10400 km/s); jnu4 outer region excluded",
+  "node": "PENDING_DRIVER_EXECUTION",
+  "command": "docs/CODEX_IMPL_A2_01.md driver commands",
+  "exit_status": "PENDING_DRIVER_EXECUTION",
+  "new_layer_status": "IMPLEMENTED_AWAITING_DRIVER_RUNTIME_TRACE",
+  "all_previous_layer_statuses": "A2-00=PASS; D/K/Z-INERT/CONFIG-PREC/classifiers=PENDING_DRIVER_REEXECUTION",
+  "negative_control_status": "PENDING_DRIVER_EXECUTION",
+  "coverage": "static disposition=157/157; unclassified=0; CPU trace sites=90; CUDA trace sites=107; production runtime counts=PENDING_DRIVER_EXECUTION",
+  "metric_values": "role counts exactly match ORDER section 2.4; trace-census mismatch list=PENDING_DRIVER_EXECUTION; write-order offset continuous fields implemented",
+  "changed_output_allowlist": "none for model outputs; trace-on adds only the explicitly named read-trace artifact",
+  "guard_hits": "PENDING_DRIVER_EXECUTION",
+  "fallback_hits": "PENDING_DRIVER_EXECUTION",
+  "rng_seed": "23111963 from data/tardis_reference_toy06_19p48d/config.json:9",
+  "mc_confidence": "PENDING_DRIVER_EXECUTION",
+  "artifact_paths": "docs/A2_01_DISPOSITION_LEDGER.json; docs/A2_01_DISPOSITION_LEDGER.md; scripts/a2_01_census_contract.py; scripts/a2_01_read_trace.py; scripts/a2_01_gate_off_compare.py; scripts/a2_01_oracle_compat_selftest.py; scripts/cmfgen_oracle_contract.py; docs/CODEX_IMPL_A2_01.md; validation/a2_01/*",
+  "driver_signoff": "PENDING_DRIVER_EXECUTION"
+}
