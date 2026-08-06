@@ -1,16 +1,74 @@
 {
-  "schema": "A2_12_NEGATIVE_CONTROLS_V1",
-  "execution": "UNVERIFIED_GPU_NODE",
-  "physical_launches": 0,
-  "expected": {
-    "N1": [41, "A2_12_NEG_CPU_STALE_FAIL"],
-    "N2": [42, "A2_12_NEG_CACHE_GENERATION_FAIL"],
-    "N3": [43, "A2_12_NEG_LINE_ID_MAPPING_FAIL"],
-    "N4": [44, "A2_12_NEG_CPU_GPU_GENERATION_FAIL"],
-    "N5": [45, "A2_12_NEG_PARTIAL_UPLOAD_FAIL"],
-    "N6": [46, "A2_12_NEG_INVALID_VALIDITY_FAIL"],
-    "N7": [47, "A2_12_NEG_FALLBACK_FAIL"],
-    "N8": [48, "A2_12_NEG_UPLOAD_BYTES_FAIL"],
-    "N9": [49, "A2_12_NEG_RESET_GENERATION_FAIL"]
+  "N1": {
+    "rc": 41,
+    "expected_rc": 41,
+    "marker": "A2_12_NEG_CPU_STALE_FAIL",
+    "physical_launches": 0,
+    "pass": true,
+    "stdout_sha256": "164db961828b90a7303abb9fb06f04897c75e85c64b36fa0110ea939a4eee91b"
+  },
+  "N2": {
+    "rc": 42,
+    "expected_rc": 42,
+    "marker": "A2_12_NEG_CACHE_GENERATION_FAIL",
+    "physical_launches": 0,
+    "pass": true,
+    "stdout_sha256": "bd091d12266ad0ef3de95e2251dc3f3441f36001bcab03fa8f35e093640d36da"
+  },
+  "N3": {
+    "rc": 43,
+    "expected_rc": 43,
+    "marker": "A2_12_NEG_LINE_ID_MAPPING_FAIL",
+    "physical_launches": 0,
+    "pass": true,
+    "stdout_sha256": "b80584ffa334657fe6cbc9527cf7bec66ec4b638568ca44cacb1275c5ff2c364"
+  },
+  "N4": {
+    "rc": 44,
+    "expected_rc": 44,
+    "marker": "A2_12_NEG_CPU_GPU_GENERATION_FAIL",
+    "physical_launches": 0,
+    "pass": true,
+    "stdout_sha256": "e2cc6f334158e841c19e829f59bb651038d51e893720d9204524f459782ce6f0"
+  },
+  "N5": {
+    "rc": 45,
+    "expected_rc": 45,
+    "marker": "A2_12_NEG_PARTIAL_UPLOAD_FAIL",
+    "physical_launches": 0,
+    "pass": true,
+    "stdout_sha256": "b4e3faee953a19e55726d5c7ea1b9940dd4e4f7f9c60c6327fa78f0d9d8ee4f8"
+  },
+  "N6": {
+    "rc": 46,
+    "expected_rc": 46,
+    "marker": "A2_12_NEG_INVALID_VALIDITY_FAIL",
+    "physical_launches": 0,
+    "pass": true,
+    "stdout_sha256": "9ce565a7ca58db9c3625d786e13233f26019192e34c9d494ec78d51d6d04d0a5"
+  },
+  "N7": {
+    "rc": 47,
+    "expected_rc": 47,
+    "marker": "A2_12_NEG_FALLBACK_FAIL",
+    "physical_launches": 0,
+    "pass": true,
+    "stdout_sha256": "46ee5545ecf3fd84435591702cf7237f8d2759b3b6ea96f21e790957286c8557"
+  },
+  "N8": {
+    "rc": 48,
+    "expected_rc": 48,
+    "marker": "A2_12_NEG_UPLOAD_BYTES_FAIL",
+    "physical_launches": 0,
+    "pass": true,
+    "stdout_sha256": "af93afd6fb48cbe96ed30159d819f62333a3d92764cd1d4b01292b582b5d7cd2"
+  },
+  "N9": {
+    "rc": 49,
+    "expected_rc": 49,
+    "marker": "A2_12_NEG_RESET_GENERATION_FAIL",
+    "physical_launches": 0,
+    "pass": true,
+    "stdout_sha256": "9a5ef8cd615255c69850e2efffd6ae118e35ce2d6e402eb6c4e46e1843687d93"
   }
 }
