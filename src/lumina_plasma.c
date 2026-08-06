@@ -39,8 +39,9 @@ static int cmf_dcmp_pl(const void *a, const void *b) {
 #ifdef LUMINA_FROZEN_ORACLE
 /* Compile-time-only Gate-B observer.  Normal production targets preprocess this
  * entire block (and every ORACLE_* call below) away. */
-static void compute_partition_functions(AtomicData *atom, PlasmaState *plasma,
-                                        int n_shells);
+static PopulationStatus compute_partition_functions(AtomicData *atom,
+                                                     PlasmaState *plasma,
+                                                     int n_shells);
 #define ORACLE_NION 8
 #define ORACLE_NWAVE 2
 typedef struct {
@@ -353,7 +354,7 @@ void lumina_oracle_trace_end(void) {
 
 void lumina_oracle_prepare_partitions(AtomicData *atom, PlasmaState *plasma,
                                       int n_shells) {
-    compute_partition_functions(atom, plasma, n_shells);
+    (void)compute_partition_functions(atom, plasma, n_shells);
 }
 #endif
 
@@ -447,6 +448,7 @@ int nlte_bf_collisional_enabled(void) {
  * integrator reproduces the current sigma reading exactly.
  * Always fills *out; rc != 0 only on argument errors.  A non-VIEW_OK owner
  * reports STALE — never a substituted rate. */
+static void nlte_bb_counter_inc(uint64_t *counter);
 int nlte_bf_gamma_canonical(NLTEConfig *nlte, int shell,
                             const double *sigma_row, double sigma_0,
                             double nu_thresh, BfRateResult *out)
@@ -467,6 +469,19 @@ int nlte_bf_gamma_canonical(NLTEConfig *nlte, int shell,
 #pragma omp atomic
 #endif
         nlte->bf_view_blocked_stale++;
+        if (nlte->population_required_generation >
+            nlte->population_committed_generation) {
+#ifdef _OPENMP
+#pragma omp critical(a2_07_population_error)
+#endif
+            {
+                if (nlte->population_error_count == 0)
+                    nlte->population_first_error = POP_BF_STALE;
+                nlte->population_error_count++;
+                population_counter_note(&nlte->population_counters,
+                                        POP_BF_STALE);
+            }
+        }
         return 0;
     }
     int rc = bf_rate_gamma_legacy_grid(&nlte->radfield_view, (size_t)shell,
@@ -479,6 +494,10 @@ int nlte_bf_gamma_canonical(NLTEConfig *nlte, int shell,
 #pragma omp atomic
 #endif
         nlte->bf_view_rate_terms++;
+        nlte_bb_counter_inc(&nlte->population_counters.pop_bf_terms);
+        if (out->state == BF_RATE_EXACT_ZERO)
+            nlte_bb_counter_inc(
+                &nlte->population_counters.pop_exact_zero_terms);
     } else if (out->state == BF_RATE_STALE) {
 #ifdef _OPENMP
 #pragma omp atomic
@@ -494,6 +513,23 @@ int nlte_bf_gamma_canonical(NLTEConfig *nlte, int shell,
 #pragma omp atomic
 #endif
         nlte->bf_view_blocked_out_of_grid++;
+    }
+    if (out->state != BF_RATE_VALID && out->state != BF_RATE_EXACT_ZERO &&
+        nlte->population_required_generation >
+        nlte->population_committed_generation) {
+        PopulationStatus ps = out->state == BF_RATE_UNSAMPLED
+                            ? POP_BF_UNSAMPLED
+                            : out->state == BF_RATE_OUT_OF_GRID
+                            ? POP_BF_OOG : POP_BF_STALE;
+#ifdef _OPENMP
+#pragma omp critical(a2_07_population_error)
+#endif
+        {
+            if (nlte->population_error_count == 0)
+                nlte->population_first_error = ps;
+            nlte->population_error_count++;
+            population_counter_note(&nlte->population_counters, ps);
+        }
     }
     return 0;
 }
@@ -520,19 +556,34 @@ static int nlte_bb_jbar_canonical(NLTEConfig *nlte, int shell, int line,
 
     if (nlte->line_view_status != LINE_JBAR_VIEW_OK ||
         !nlte->line_view.jbar) {
+        PopulationStatus ps = POP_BB_STALE;
         switch (nlte->line_view_status) {
         case LINE_JBAR_VIEW_DISABLED:
             nlte_bb_counter_inc(&nlte->bb_view_blocked_disabled);
             break;
         case LINE_JBAR_VIEW_PROFILE:
             nlte_bb_counter_inc(&nlte->bb_view_blocked_profile);
+            ps = POP_PROFILE_MISMATCH;
             break;
         case LINE_JBAR_VIEW_QHASH:
             nlte_bb_counter_inc(&nlte->bb_view_blocked_qhash);
+            ps = POP_QUERY_HASH_MISMATCH;
             break;
         default:
             nlte_bb_counter_inc(&nlte->bb_view_blocked_stale);
             break;
+        }
+        if (nlte->population_required_generation >
+            nlte->population_committed_generation) {
+#ifdef _OPENMP
+#pragma omp critical(a2_07_population_error)
+#endif
+            {
+                if (nlte->population_error_count == 0)
+                    nlte->population_first_error = ps;
+                nlte->population_error_count++;
+                population_counter_note(&nlte->population_counters, ps);
+            }
         }
         return 0;
     }
@@ -542,12 +593,28 @@ static int nlte_bb_jbar_canonical(NLTEConfig *nlte, int shell, int line,
     if (rc != 0) {
         nlte_bb_counter_inc(rc == -2 ? &nlte->bb_view_blocked_miss
                                      : &nlte->bb_view_blocked_stale);
+        if (nlte->population_required_generation >
+            nlte->population_committed_generation) {
+            PopulationStatus ps = rc == -2 ? POP_BB_MISS : POP_BB_STALE;
+#ifdef _OPENMP
+#pragma omp critical(a2_07_population_error)
+#endif
+            {
+                if (nlte->population_error_count == 0)
+                    nlte->population_first_error = ps;
+                nlte->population_error_count++;
+                population_counter_note(&nlte->population_counters, ps);
+            }
+        }
         return 0;
     }
     if (value.validity == LINE_JBAR_VALID ||
         value.validity == LINE_JBAR_EXACT_ZERO) {
         *jbar = value.jbar;
         nlte_bb_counter_inc(&nlte->bb_view_rate_terms);
+        nlte_bb_counter_inc(&nlte->population_counters.pop_bb_terms);
+        if (value.validity == LINE_JBAR_EXACT_ZERO)
+            nlte_bb_counter_inc(&nlte->population_counters.pop_exact_zero_terms);
         return 1;
     }
     if (value.validity == LINE_JBAR_UNSAMPLED)
@@ -556,6 +623,22 @@ static int nlte_bb_jbar_canonical(NLTEConfig *nlte, int shell, int line,
         nlte_bb_counter_inc(&nlte->bb_view_blocked_oog);
     else
         nlte_bb_counter_inc(&nlte->bb_view_blocked_stale);
+    if (nlte->population_required_generation >
+        nlte->population_committed_generation) {
+        PopulationStatus ps = value.validity == LINE_JBAR_UNSAMPLED
+                            ? POP_BB_UNSAMPLED
+                            : value.validity == LINE_JBAR_OUT_OF_BB_DOMAIN
+                            ? POP_BB_OOG : POP_BB_STALE;
+#ifdef _OPENMP
+#pragma omp critical(a2_07_population_error)
+#endif
+        {
+            if (nlte->population_error_count == 0)
+                nlte->population_first_error = ps;
+            nlte->population_error_count++;
+            population_counter_note(&nlte->population_counters, ps);
+        }
+    }
     return 0;
 }
 
@@ -2171,67 +2254,39 @@ static double interpolate_zeta(AtomicData *atom, int Z, int ion_stage, double T)
     return vals[nt - 1];
 }
 
-/* Task #072 Step 4a: Compute partition functions
- * TARDIS formula (LevelBoltzmannFactorDiluteLTE):
- *   bf = g * exp(-E / kT_rad)  for ALL levels (both metastable & non-metastable)
- *   bf[non-metastable] *= W
- *   Z = sum(bf) = Z_meta(T_rad) + W * Z_non(T_rad)
- * Note: T_rad is used for BOTH metastable and non-metastable levels.
- * T_e only enters the Saha ionization equation, NOT the partition function. */
-static void compute_partition_functions(AtomicData *atom, PlasmaState *plasma,
-                                         int n_shells) {
-    /* [ARTIS-PARITY B3] excitation/partition temperature. ARTIS builds LTE,
-     * super-level and non-NLTE-level populations at T_e, UNDILUTED (ltepop.cc:
-     * 361-368, USE_TJ=false), so its partition functions are Z(T_e,W=1). Lumina
-     * default uses T_rad with the dilution factor W on the non-metastable block
-     * (TARDIS nebular convention). Under LUMINA_ARTIS_PARITY, evaluate every
-     * level's Boltzmann factor at T_e and drop the W dilution (W=1) so the
-     * partition functions that feed the ionization balance match ARTIS. Gate OFF
-     * => T_rad,W path => byte-identical. */
-    int parity = artis_parity_enabled();
-    if (parity) {
-        static int b3_banner = 0;
-        if (!b3_banner) {
-            printf("  [ARTIS-PARITY B3] partition functions at T_e, undiluted (W=1)\n");
-            b3_banner = 1;
-        }
-    }
-    for (int ip = 0; ip < atom->n_ion_pops; ip++) {
-        int lev_start = atom->level_offset[ip];
-        int lev_end   = atom->level_offset[ip + 1];
+/* A2-07: the sole production partition owner.  The helper accepts only the
+ * atomic membership and T_e; no PlasmaState radiation quantities can enter. */
+static PopulationAtomicView population_atomic_view(const AtomicData *atom) {
+    PopulationAtomicView view;
+    memset(&view, 0, sizeof(view));
+    view.n_ions = atom ? (size_t)atom->n_ion_pops : 0;
+    view.n_levels = atom ? (size_t)atom->n_levels : 0;
+    view.level_offset = atom ? atom->level_offset : NULL;
+    view.energy_eV = atom ? atom->level_energy_eV : NULL;
+    view.g = atom ? atom->level_g : NULL;
+    view.level_Z = atom ? atom->level_Z : NULL;
+    view.level_ion = atom ? atom->level_ion : NULL;
+    return view;
+}
 
-        for (int s = 0; s < n_shells; s++) {
-            double T_part = plasma->T_rad[s];
-            double W      = plasma->W[s];
-            if (parity) {
-                double Te = plasma->T_e ? plasma->T_e[s] : 0.0;
-                if (Te > 0.0) { T_part = Te; W = 1.0; }  /* undiluted LTE@T_e */
-                /* fail-closed: if T_e not yet set, keep the T_rad,W baseline */
-            }
-
-            double Z_meta = 0.0;
-            double Z_non_meta = 0.0;
-
-            for (int l = lev_start; l < lev_end; l++) {
-                double E_eV = atom->level_energy_eV[l];
-                int g = atom->level_g[l];
-                int is_meta = atom->level_metastable[l];
-
-                double boltz = (E_eV * EV_TO_ERG) / (K_BOLTZMANN * T_part);
-                if (boltz < 500.0) { /* avoid underflow */
-                    double bf = g * exp(-boltz);
-                    if (is_meta)
-                        Z_meta += bf;
-                    else
-                        Z_non_meta += bf;
-                }
-            }
-
-            double Z_total = Z_meta + W * Z_non_meta;
-            if (Z_total < 1e-300) Z_total = 1e-300; /* prevent division by zero */
-            atom->partition_functions[ip * n_shells + s] = Z_total;
-        }
-    }
+static PopulationStatus compute_partition_functions(AtomicData *atom,
+                                                     PlasmaState *plasma,
+                                                     int n_shells) {
+    if (!atom || !plasma || !plasma->T_e || n_shells <= 0 ||
+        plasma->n_shells != n_shells || plasma->T_e_generation == 0)
+        return POP_INVALID_TE;
+    PopulationAtomicView view = population_atomic_view(atom);
+    uint64_t generation = atom->population_committed_generation + 1;
+    if (generation == 0) return POP_STALE_DERIVED_TEMPERATURE;
+    PopulationStatus status = population_partition_build(
+        &view, plasma->T_e, (size_t)n_shells, generation,
+        plasma->T_e_generation, atom->partition_functions,
+        &atom->partition_stamp);
+    if (status == POP_OK)
+        printf("  [A2-07] partition Z(T_e) committed generation=%llu te_generation=%llu\n",
+               (unsigned long long)generation,
+               (unsigned long long)plasma->T_e_generation);
+    return status;
 }
 
 /* [FB-MILNE] Exact per-level radiative-recombination bf-cooling coefficient,
@@ -2380,15 +2435,7 @@ static NLTEConfig *g_bf_nlte_pops;   /* fwd; defined w/ bf_set_nlte_pops (~4241)
 /* R1 sub-gate: default ON under parity (the ARTIS closure), settable OFF (=0)
  * for A/B against the B2 interim pin. */
 static int r1_rate_se_enabled(void) {
-    static int on = -1;
-    if (on < 0) {
-        const char *e = getenv("LUMINA_ARTIS_PARITY_R1");
-        on = (e ? (atoi(e) != 0) : artis_parity_enabled()) ? 1 : 0;
-        if (on)
-            printf("  [ARTIS-PARITY R1] rate-SE ionization closure ARMED "
-                   "((Gamma_phot[MC field] + n_e*C_ion) / (n_e*alpha + C_3body))\n");
-    }
-    return on;
+    return 1; /* A2-07 production owner; legacy selector is shadow-only. */
 }
 
 /* Shell has a usable transported MC field? (fail-closed gate; 1e-30 is the
@@ -2396,20 +2443,10 @@ static int r1_rate_se_enabled(void) {
  * [A2-05] The bf_rate_estimator scan is replaced by the canonical view's
  * validity row: a shell counts as built when any bin is VALID. */
 static int parity_field_built(NLTEConfig *nlte, int s) {
-    if (!nlte || !nlte->enabled || !nlte->J_nu) return 0;
-    int nfb = nlte->n_freq_bins;
-    const double *Jrow = &nlte->J_nu[(size_t)s * nfb];
-    for (int bb = 0; bb < nfb; bb++)
-        if (Jrow[bb] > 1e-25) return 1;
-    if (nlte->radfield_view_status == RADIATION_FIELD_VIEW_OK &&
-        nlte->radfield_view.validity &&
-        (size_t)s < nlte->radfield_view.n_shells) {
-        const RadiationFieldValidityState *vrow =
-            &nlte->radfield_view.validity[(size_t)s * nlte->radfield_view.n_bins];
-        for (size_t bb = 0; bb < nlte->radfield_view.n_bins; bb++)
-            if (vrow[bb] == RADIATION_FIELD_VALID) return 1;
-    }
-    return 0;
+    return nlte && nlte->enabled && s >= 0 &&
+           nlte->radfield_view_status == RADIATION_FIELD_VIEW_OK &&
+           nlte->radfield_view.J_nu && nlte->radfield_view.validity &&
+           (size_t)s < nlte->radfield_view.n_shells;
 }
 
 /* Pop-weighted per-ion photoionization rate Gamma_phot(ip) [s^-1] from the
@@ -2419,10 +2456,13 @@ static int parity_field_built(NLTEConfig *nlte, int s) {
  * T_e (the B3 partition functions are built at T_e,W=1 under parity, so this
  * is self-consistent).  Blocked (non-VALID) levels contribute nothing and are
  * counted on the R6 counters. */
-static double parity_gamma_phot(AtomicData *atom, NLTEConfig *nlte,
-                                int s, int n_shells, int ip,
-                                double T_e, double chi_erg) {
-    if (!nlte || !nlte->J_nu || T_e <= 0.0) return 0.0;
+static PopulationStatus parity_gamma_phot_checked(
+        AtomicData *atom, NLTEConfig *nlte, int s, int n_shells, int ip,
+        double T_e, double chi_erg, double *gamma_out) {
+    if (!gamma_out || !nlte) return POP_ATOMIC_MISSING;
+    *gamma_out = 0.0;
+    if (T_e <= 0.0 || !isfinite(T_e)) return POP_INVALID_TE;
+    if (!parity_field_built(nlte, s)) return POP_BF_STALE;
     int nfb = nlte->n_freq_bins;
     const int use_cmfgen = atom->cmfgen_loaded &&
                            atom->cmfgen_n_freq_bins == nfb;
@@ -2438,8 +2478,8 @@ static double parity_gamma_phot(AtomicData *atom, NLTEConfig *nlte,
         sigma_0 = 7.91e-18 / ((double)Zeff * (double)Zeff);
     }
     double Z_part = atom->partition_functions[(size_t)ip * n_shells + s];
-    if (!(Z_part > 0.0)) return 0.0;
-    double kTe = K_BOLTZMANN * T_e;
+    if (!(Z_part > 0.0) || !isfinite(Z_part)) return POP_INVALID_PARTITION;
+    PopulationAtomicView av = population_atomic_view(atom);
     int lev_start = atom->level_offset[ip];
     int lev_end   = atom->level_offset[ip + 1];
     double Gamma = 0.0;
@@ -2447,33 +2487,46 @@ static double parity_gamma_phot(AtomicData *atom, NLTEConfig *nlte,
         double E_lev_erg = atom->level_energy_eV[l] * EV_TO_ERG;
         double nu_thresh = (chi_erg - E_lev_erg) / H_PLANCK;
         if (nu_thresh <= 0.0) continue;
-        double x = E_lev_erg / kTe;
-        if (x > 500.0) continue;            /* negligible population */
-        double f_lev = (double)atom->level_g[l] * exp(-x) / Z_part;
-        if (!(f_lev > 0.0)) continue;
+        double f_lev = 0.0;
+        PopulationStatus pop_status = population_lte_level_fraction(
+            &av, (size_t)ip, (size_t)l, T_e, Z_part, &f_lev);
+        if (pop_status == POP_EXACT_ZERO) continue;
+        if (pop_status != POP_OK) return pop_status;
         const double *sigma_row = (use_cmfgen && atom->cmfgen_has_sigma &&
                                    atom->cmfgen_has_sigma[l])
             ? &atom->cmfgen_sigma_bf[(size_t)l * (size_t)nfb] : NULL;
         BfRateResult br;
         if (nlte_bf_gamma_canonical(nlte, s, sigma_row, sigma_0,
-                                    nu_thresh, &br) != 0) continue;
+                                    nu_thresh, &br) != 0)
+            return POP_BF_MISS;
+        if (br.state == BF_RATE_UNSAMPLED) return POP_BF_UNSAMPLED;
+        if (br.state == BF_RATE_OUT_OF_GRID) return POP_BF_OOG;
+        if (br.state == BF_RATE_STALE) return POP_BF_STALE;
         if (br.state != BF_RATE_VALID && br.state != BF_RATE_EXACT_ZERO)
-            continue;                       /* R6: blocked term, counted */
+            return POP_BF_MISS;
+        /* nlte_bf_gamma_canonical owns the one-and-only term accounting. */
         Gamma += f_lev * br.gamma;
     }
-    if (!isfinite(Gamma) || Gamma < 0.0) Gamma = 0.0;
-    return Gamma;
+    if (!isfinite(Gamma) || Gamma < 0.0) return POP_NONFINITE;
+    *gamma_out = Gamma;
+    return Gamma == 0.0 ? POP_EXACT_ZERO : POP_OK;
 }
 
 /* Rate-SE adjacent-ion ratio r = n(ip_next)/n(ip_cur). Reuses frozenin_alpha_rr
  * (Milne alpha) and the A4 Seaton C_ion/3-body (verbatim from simul_ladder).
  * Degenerate guard: Gamma=0 & recomb=0 -> keep phi_LTE_ratio (previous split);
  * recomb=0 with Gamma>0 -> cap at the 1e30 runaway bound (as the existing pin). */
-static double parity_rate_se_ratio(AtomicData *atom, NLTEConfig *nlte,
-                                   int s, int n_shells, int ip_cur, int ip_next,
-                                   double T_e, double n_e, double chi_erg,
-                                   double gamma_nt_atom, double phi_LTE_ratio) {
-    double Gamma = parity_gamma_phot(atom, nlte, s, n_shells, ip_cur, T_e, chi_erg);
+static PopulationStatus parity_rate_se_ratio_checked(
+        AtomicData *atom, NLTEConfig *nlte, int s, int n_shells,
+        int ip_cur, int ip_next, double T_e, double n_e, double chi_erg,
+        double gamma_nt_atom, double *ratio_out) {
+    if (!ratio_out) return POP_ATOMIC_MISSING;
+    if (!isfinite(n_e) || n_e <= 0.0) return POP_NE_NOT_CONVERGED;
+    double Gamma = 0.0;
+    PopulationStatus gamma_status = parity_gamma_phot_checked(
+        atom, nlte, s, n_shells, ip_cur, T_e, chi_erg, &Gamma);
+    if (gamma_status != POP_OK && gamma_status != POP_EXACT_ZERO)
+        return gamma_status;
     if (gamma_nt_atom > 0.0) Gamma += gamma_nt_atom;   /* ARTIS NT channel (additive) */
     double alpha = frozenin_alpha_rr(atom, ip_cur, ip_next, T_e);
     double num = Gamma;                    /* + n_e*C_ion below            */
@@ -2501,19 +2554,27 @@ static double parity_rate_se_ratio(AtomicData *atom, NLTEConfig *nlte,
             }
         }
     }
-    double r;
-    if (den > 0.0)      r = num / den;
-    else if (num > 0.0) r = 1e30;          /* alpha=0, Gamma>0: cap runaway ioniz */
-    else                r = phi_LTE_ratio; /* both channels zero: keep previous split */
-    if (!isfinite(r) || r < 0.0) r = 0.0;
-    if (r > 1e30) r = 1e30;
-    return r;
+    if (!isfinite(num) || !isfinite(den) || num < 0.0 || den < 0.0)
+        return POP_NONFINITE;
+    if (num == 0.0 && den == 0.0) return POP_RANK_INCOMPLETE;
+    if (den == 0.0) return POP_RANK_INCOMPLETE;
+    double r = num / den;
+    if (!isfinite(r) || r < 0.0) return POP_NONFINITE;
+    *ratio_out = r;
+    return r == 0.0 ? POP_EXACT_ZERO : POP_OK;
 }
 
 /* steady-state nebular-Saha ion partition for ONE shell (all elements). Extracted
  * so the coupled Newton can reconcile only the shells it does NOT own. */
-static void compute_ion_populations_shell(AtomicData *atom, PlasmaState *plasma,
-                                          int s, int n_shells) {
+static PopulationStatus compute_ion_populations_shell(
+        AtomicData *atom, PlasmaState *plasma, int s, int n_shells) {
+    if (!atom || !plasma || !plasma->T_e || !plasma->n_electron ||
+        s < 0 || s >= n_shells)
+        return POP_ATOMIC_MISSING;
+    if (!isfinite(plasma->T_e[s]) || plasma->T_e[s] <= 0.0)
+        return POP_INVALID_TE;
+    if (!isfinite(plasma->n_electron[s]) || plasma->n_electron[s] <= 0.0)
+        return POP_NE_NOT_CONVERGED;
     /* LUMINA_ION_NT=1: ARTIS non-thermal ionization channel in the ION-STAGE
      * balance (this function OWNS the stages; the NLTE matrix at 8245 only
      * moves levels). Lucy-Mazzali nebular Saha is the photo/recomb equilibrium
@@ -2538,7 +2599,7 @@ static void compute_ion_populations_shell(AtomicData *atom, PlasmaState *plasma,
     /* [ARTIS-PARITY R1] rate-SE closure decision for this shell (once): active
      * under parity+R1 when the transported MC field is built for this shell;
      * else fail-closed to the B2 LTE-Saha pin below. */
-    int r1_on   = artis_parity_enabled() && r1_rate_se_enabled();
+    int r1_on   = g_bf_nlte_pops && r1_rate_se_enabled();
     int r1_use  = r1_on && parity_field_built(g_bf_nlte_pops, s);
     for (int e = 0; e < atom->n_elements; e++) {
         int Z_elem = atom->element_Z[e];
@@ -2546,6 +2607,18 @@ static void compute_ion_populations_shell(AtomicData *atom, PlasmaState *plasma,
         int ip_start = atom->elem_ion_offset[e];
         int ip_end   = atom->elem_ion_offset[e + 1];
         int n_pops   = ip_end - ip_start;
+        if (n_pops <= 0) continue;
+
+        /* Z-INERT owns this decision before any partition/rate lookup.  A
+         * topology-only element has no physical rate equation to solve, and
+         * must not be rejected merely because its ghost ladder has no BF
+         * field or ionization data. */
+        int inactive = lumina_zinert_element_inactive(atom, e, n_shells);
+        if (inactive) {
+            for (int ip = ip_start; ip < ip_end; ip++)
+                atom->ion_number_density[(size_t)ip * n_shells + s] = 0.0;
+            continue;
+        }
 
         {
             double T_rad = plasma->T_rad[s];
@@ -2564,7 +2637,10 @@ static void compute_ion_populations_shell(AtomicData *atom, PlasmaState *plasma,
             double beta_rad = 1.0 / (K_BOLTZMANN * T_rad);
             double beta_electron = 1.0 / (K_BOLTZMANN * T_e);
 
-            double *ratios = (double *)calloc(n_pops, sizeof(double));
+            if (!isfinite(n_element) || n_element < 0.0)
+                return POP_NONFINITE;
+            double *ratios = (double *)calloc((size_t)n_pops, sizeof(double));
+            if (!ratios) return POP_SOLVE_FAILED;
 
             for (int k = 0; k < n_pops - 1; k++) {
                 int ip_cur  = ip_start + k;
@@ -2579,6 +2655,11 @@ static void compute_ion_populations_shell(AtomicData *atom, PlasmaState *plasma,
                 /* Dilute partition functions (W-weighted, consistent with level pops) */
                 double Z_cur  = atom->partition_functions[ip_cur  * n_shells + s];
                 double Z_next = atom->partition_functions[ip_next * n_shells + s];
+                if (!isfinite(Z_cur) || Z_cur <= 0.0 ||
+                    !isfinite(Z_next) || Z_next <= 0.0) {
+                    free(ratios);
+                    return POP_INVALID_PARTITION;
+                }
 
                 double chi_eV  = find_ioniz_energy(atom, Z_elem, stage);
                 double chi_erg = chi_eV * EV_TO_ERG;
@@ -2631,67 +2712,85 @@ static void compute_ion_populations_shell(AtomicData *atom, PlasmaState *plasma,
                   if (ib_f != 1.0 && s >= ib_s) phi_neb *= ib_f; }
 
                 /* ratio n_{i+1}/n_i */
-                double ratio;
-                if (r1_use && n_e > 0.0 && T_e > 0.0) {
-                    /* [ARTIS-PARITY R1] rate-SE balance: (Gamma_phot + n_e C_ion)
-                     * / (n_e alpha + n_e^2 C_3body). phi_neb/n_e is the degenerate
-                     * fallback (kept only where both channels vanish). */
-                    ratio = parity_rate_se_ratio(atom, g_bf_nlte_pops, s, n_shells,
-                                                 ip_cur, ip_next, T_e, n_e, chi_erg,
-                                                 gamma_nt_atom, phi_neb / n_e);
-                } else if (n_e > 0.0) {
-                    /* B2 interim (LTE Saha@T_e under parity / nebular off) or
-                     * field-not-built fail-closed path -- byte-identical to prior. */
-                    ratio = phi_neb / n_e;
-                    /* + non-thermal channel (LUMINA_ION_NT): Gamma_nt/(alpha n_e) */
-                    if (gamma_nt_atom > 0.0) {
-                        double alpha_nt = frozenin_alpha_rr(atom, ip_cur, ip_next,
-                                                            plasma->T_e[s]);
-                        if (alpha_nt > 0.0)
-                            ratio += gamma_nt_atom / (alpha_nt * n_e);
-                    }
-                } else {
-                    ratio = 1e10;
+                /* The legacy nebular/Saha value above is a shadow diagnostic.
+                 * The only physical supplier is the checked canonical BF view. */
+                (void)phi_neb;
+                if (!r1_use) {
+                    free(ratios);
+                    return POP_BF_STALE;
                 }
-                if (!isfinite(ratio) || ratio < 0.0) ratio = 0.0;
-                if (ratio > 1e30) ratio = 1e30;
+                double ratio = 0.0;
+                PopulationStatus ratio_status = parity_rate_se_ratio_checked(
+                    atom, g_bf_nlte_pops, s, n_shells, ip_cur, ip_next,
+                    T_e, n_e, chi_erg, gamma_nt_atom, &ratio);
+                if (ratio_status != POP_OK && ratio_status != POP_EXACT_ZERO) {
+                    if (g_bf_nlte_pops->population_error_count == 0)
+                        g_bf_nlte_pops->population_first_error = ratio_status;
+                    g_bf_nlte_pops->population_error_count++;
+                    population_counter_note(
+                        &g_bf_nlte_pops->population_counters, ratio_status);
+                    free(ratios);
+                    return ratio_status;
+                }
                 ratios[k] = ratio;
             }
 
-            /* Normalize: n_0 * (1 + r_0 + r_0*r_1 + ...) = n_element */
-            double sum = 1.0;
-            double product = 1.0;
+            /* Same adjacent-stage conservation equation, evaluated as a
+             * log-sum-exp ladder so overflow is not repaired by a 1e30 cap. */
+            double log_product = 0.0;
+            double max_log_weight = 0.0;
             for (int k = 0; k < n_pops - 1; k++) {
-                product *= ratios[k];
-                if (product > 1e30) { product = 1e30; break; }
-                sum += product;
+                if (ratios[k] == 0.0 || !isfinite(log_product))
+                    log_product = -INFINITY;
+                else
+                    log_product += log(ratios[k]);
+                ratios[k] = log_product;
+                if (log_product > max_log_weight)
+                    max_log_weight = log_product;
             }
-
-            double n_0 = n_element / sum;
-            atom->ion_number_density[ip_start * n_shells + s] = n_0;
-            product = 1.0;
+            long double sum_scaled = expl(-max_log_weight);
             for (int k = 0; k < n_pops - 1; k++) {
-                product *= ratios[k];
-                double n_ion = n_0 * product;
-                if (lumina_zinert_element_inactive(atom, e, n_shells)) n_ion = 0.0;
-                else if (!(n_ion > 1e-300)) n_ion = 1e-300;  /* NaN-catching */
-                atom->ion_number_density[(ip_start + k + 1) * n_shells + s] = n_ion;
+                if (isfinite(ratios[k]))
+                    sum_scaled += expl(ratios[k] - max_log_weight);
+            }
+            if (!isfinite((double)sum_scaled) || sum_scaled <= 0.0L) {
+                free(ratios);
+                return POP_NONFINITE;
+            }
+            double n_0 = n_element *
+                exp(-max_log_weight) / (double)sum_scaled;
+            if (!isfinite(n_0) || n_0 < 0.0) {
+                free(ratios);
+                return POP_NONFINITE;
+            }
+            atom->ion_number_density[ip_start * n_shells + s] = n_0;
+            for (int k = 0; k < n_pops - 1; k++) {
+                double n_ion = !isfinite(ratios[k]) ? 0.0 :
+                    n_element * exp(ratios[k] - max_log_weight) /
+                    (double)sum_scaled;
+                if (!isfinite(n_ion) || n_ion < 0.0) {
+                    free(ratios);
+                    return POP_NONFINITE;
+                }
+                atom->ion_number_density[(ip_start + k + 1) * n_shells + s] =
+                    n_ion;
             }
 
             free(ratios);
         }
     }
+    return POP_OK;
 }
 
-static void compute_ion_populations(AtomicData *atom, PlasmaState *plasma,
-                                     int n_shells) {
+static PopulationStatus compute_ion_populations(
+        AtomicData *atom, PlasmaState *plasma, int n_shells) {
     /* LUMINA_RADEQ_SIMUL owns the ion partition; skip the nebular rewrite. */
-    if (g_simul_on == 1) return;
+    if (g_simul_on == 1) return POP_OK;
     if (artis_parity_enabled()) {
         static int b2_banner = 0;
         if (!b2_banner) {
-            printf("  [ARTIS-PARITY B2] ionization closure = LTE Saha at T_e, W=1 "
-                   "(pin is number-conserving; ion split solved by NLTE matrix)\n");
+            printf("  [A2-07] ionization closure = canonical BF rates at T_e "
+                   "(number-conserving adjacent-stage solve)\n");
             b2_banner = 1;
         }
     }
@@ -2699,18 +2798,21 @@ static void compute_ion_populations(AtomicData *atom, PlasmaState *plasma,
     init_zeta_override();
     init_twocomp_lock();
     /* [ARTIS-PARITY R1] tally rate-driven vs fail-closed-LTE shells for this pass. */
-    int r1_on = artis_parity_enabled() && r1_rate_se_enabled();
+    int r1_on = g_bf_nlte_pops && r1_rate_se_enabled();
     long r1_rate_n = 0, r1_lte_n = 0;
     for (int s = 0; s < n_shells; s++) {
         if (r1_on) {
             if (parity_field_built(g_bf_nlte_pops, s)) r1_rate_n++;
             else                                       r1_lte_n++;
         }
-        compute_ion_populations_shell(atom, plasma, s, n_shells);
+        PopulationStatus status =
+            compute_ion_populations_shell(atom, plasma, s, n_shells);
+        if (status != POP_OK) return status;
     }
     if (r1_on)
         printf("  [ARTIS-PARITY R1] rate-SE closure: %ld shells rate-driven, "
-               "%ld fallback-LTE\n", r1_rate_n, r1_lte_n);
+               "%ld blocked-no-view\n", r1_rate_n, r1_lte_n);
+    return POP_OK;
 }
 
 /* Task #072 Step 4c: Compute electron density (iterative)
@@ -2718,115 +2820,24 @@ static void compute_ion_populations(AtomicData *atom, PlasmaState *plasma,
  *   n_e_new_damped = 0.5 * (n_e_computed + n_e_old)
  *   convergence threshold: 5% (TARDIS default)
  *   max iterations: 100 (TARDIS default) */
-static void compute_electron_density(AtomicData *atom, PlasmaState *plasma,
-                                      int n_shells) {
+static int compute_electron_density(AtomicData *atom, PlasmaState *plasma,
+                                    int n_shells) {
     init_ml_phi_neb_correction();
     init_zeta_override();
     init_twocomp_lock();
     for (int s = 0; s < n_shells; s++) {
         double n_e = plasma->n_electron[s];
-        if (!isfinite(n_e) || n_e <= 0.0) n_e = 1e6;
+        if (!isfinite(n_e) || n_e <= 0.0) return -1;
 
-        double T_rad = plasma->T_rad[s];
-        double T_e   = plasma->T_e[s];
-        double W     = plasma->W[s];
-        double rho   = plasma->rho[s];
-
-        double g_electron = pow(2.0 * M_PI_VAL * M_ELECTRON * K_BOLTZMANN * T_rad
-                                 / (H_PLANCK * H_PLANCK), 1.5);
-        double beta_rad = 1.0 / (K_BOLTZMANN * T_rad);
-        double beta_electron = 1.0 / (K_BOLTZMANN * T_e);
-
-        /* [ARTIS-PARITY R1] same rate-SE decision as compute_ion_populations_shell,
-         * so the electron density is solved self-consistently with the ion
-         * partition it drives. Field-not-built shells fail-closed to B2. */
-        int r1_use = artis_parity_enabled() && r1_rate_se_enabled() &&
-                     parity_field_built(g_bf_nlte_pops, s);
-
+        int shell_converged = 0;
         for (int iteration = 0; iteration < 100; iteration++) {
             double n_e_old = n_e;
 
-            /* Recompute ion populations for all elements in this shell */
-            for (int e = 0; e < atom->n_elements; e++) {
-                int Z_elem = atom->element_Z[e];
-                double mass_amu = atom->element_mass_amu[e];
-                int ip_start = atom->elem_ion_offset[e];
-                int ip_end   = atom->elem_ion_offset[e + 1];
-                int n_pops   = ip_end - ip_start;
-                double abund = atom->abundances[e * n_shells + s];
-                double n_element = (abund * rho) / (mass_amu * AMU);
-
-                /* Compute ionization ratios using TARDIS nebular formula */
-                double product = 1.0;
-                double sum_norm = 1.0;
-                double ratios_local[64]; /* max ion stages per element */
-                int max_k = (n_pops - 1 < 63) ? n_pops - 1 : 63;
-
-                for (int k = 0; k < max_k; k++) {
-                    int ip_cur  = ip_start + k;
-                    int ip_next = ip_start + k + 1;
-                    int stage = atom->ion_pop_stage[ip_cur];  /* absolute stage; != k for Ti/Mn (no neutral) */
-                    /* Dilute partition functions (W-weighted, consistent with level pops) */
-                    double Z_cur  = atom->partition_functions[ip_cur  * n_shells + s];
-                    double Z_next = atom->partition_functions[ip_next * n_shells + s];
-                    double chi_eV = find_ioniz_energy(atom, Z_elem, stage);
-                    double chi_erg = chi_eV * EV_TO_ERG;
-
-                    /* Decomposed phi_neb (see compute_ion_populations for full comment) */
-                    double prefactor = (Z_next / Z_cur) * 2.0 * g_electron;
-                    double phi_LTE_at_Trad = prefactor * exp(-chi_erg * beta_rad);
-                    double phi_LTE_at_Te   = prefactor * exp(-chi_erg * beta_electron);
-                    double phi_neb;
-                    if (artis_parity_enabled() && T_e > 0.0) {
-                        /* [ARTIS-PARITY B2/B3] LTE Saha at T_e, W=1 (n_e-solve copy;
-                         * must match compute_ion_populations_shell for a consistent
-                         * electron density). */
-                        double g_e_Te = pow(2.0 * M_PI_VAL * M_ELECTRON *
-                                            K_BOLTZMANN * T_e /
-                                            (H_PLANCK * H_PLANCK), 1.5);
-                        phi_neb = (Z_next / Z_cur) * 2.0 * g_e_Te *
-                                  exp(-chi_erg * beta_electron);
-                    } else {
-                        double zeta = interpolate_zeta(atom, Z_elem, stage, T_rad);
-                        double sqrt_te_tr = sqrt(T_e / T_rad);
-                        phi_neb = W * sqrt_te_tr *
-                            (zeta * (T_e / T_rad) * phi_LTE_at_Te +
-                             W * (1.0 - zeta) * phi_LTE_at_Trad);
-                        phi_neb = apply_ml_phi_neb_correction(phi_neb, Z_elem, stage, T_e, T_rad);
-                        phi_neb = apply_twocomp_lock(phi_neb, phi_LTE_at_Te, Z_elem, stage, W);
-                    }
-
-                    double ratio;
-                    if (r1_use && n_e > 0.0 && T_e > 0.0) {
-                        /* [ARTIS-PARITY R1] rate-SE balance (n_e-solve copy;
-                         * gamma_nt omitted here as in the prior n_e solve -- the
-                         * NT channel is applied by compute_ion_populations after). */
-                        ratio = parity_rate_se_ratio(atom, g_bf_nlte_pops, s, n_shells,
-                                                     ip_cur, ip_next, T_e, n_e, chi_erg,
-                                                     0.0, phi_neb / n_e);
-                    } else {
-                        ratio = (n_e > 0.0) ? phi_neb / n_e : 1e10;
-                    }
-                    if (!isfinite(ratio) || ratio < 0.0) ratio = 0.0;
-                    if (ratio > 1e30) ratio = 1e30;
-                    ratios_local[k] = ratio;
-
-                    product *= ratio;
-                    if (product > 1e30) { product = 1e30; sum_norm += product; break; }
-                    sum_norm += product;
-                }
-
-                double n_0 = n_element / sum_norm;
-                atom->ion_number_density[ip_start * n_shells + s] = n_0;
-                product = 1.0;
-                for (int k = 0; k < max_k; k++) {
-                    product *= ratios_local[k];
-                    double n_ion = n_0 * product;
-                    if (lumina_zinert_element_inactive(atom, e, n_shells)) n_ion = 0.0;
-                    else if (!(n_ion > 1e-300)) n_ion = 1e-300;  /* NaN-catching */
-                    atom->ion_number_density[(ip_start + k + 1) * n_shells + s] = n_ion;
-                }
-            }
+            /* The same checked ion-rate helper owns both the n_e iteration and
+             * the final ion population solve; no independent selector/fallback. */
+            PopulationStatus ion_status =
+                compute_ion_populations_shell(atom, plasma, s, n_shells);
+            if (ion_status != POP_OK) return -1;
 
             /* Sum electron density: n_e_new = sum(ion_stage * n_ion) */
             double n_e_new = 0.0;
@@ -2836,16 +2847,21 @@ static void compute_electron_density(AtomicData *atom, PlasmaState *plasma,
                 if (isfinite(n_ion_contrib) && n_ion_contrib > 0.0)
                     n_e_new += charge * n_ion_contrib;
             }
-            if (!isfinite(n_e_new) || n_e_new < 1.0) n_e_new = 1.0;
+            if (!isfinite(n_e_new) || n_e_new <= 0.0) return -1;
 
             /* TARDIS-style damped update: n_e = 0.5 * (n_e_new + n_e_old) */
             n_e = 0.5 * (n_e_new + n_e_old);
             plasma->n_electron[s] = n_e;
 
             /* TARDIS convergence: 5% relative threshold */
-            if (n_e_old > 0.0 && fabs(n_e_new - n_e_old) / n_e_old < 0.05) break;
+            if (n_e_old > 0.0 && fabs(n_e_new - n_e_old) / n_e_old < 0.05) {
+                shell_converged = 1;
+                break;
+            }
         }
+        if (!shell_converged) return -1;
     }
+    return 0;
 }
 
 /* Task #072 Step 4d: Compute tau_sobolev from ion populations */
@@ -2924,12 +2940,8 @@ static void compute_tau_sobolev(AtomicData *atom, PlasmaState *plasma,
             continue;
         }
 
-        double E_lower = atom->level_energy_eV[lower_idx];
-        double E_upper = atom->level_energy_eV[upper_idx];
         int g_lower    = atom->level_g[lower_idx];
         int g_upper    = atom->level_g[upper_idx];
-        int meta_lower = atom->level_metastable[lower_idx];
-        int meta_upper = atom->level_metastable[upper_idx];
 
         int element_inactive = 0;
         for (int e = 0; e < atom->n_elements; e++) {
@@ -2939,43 +2951,36 @@ static void compute_tau_sobolev(AtomicData *atom, PlasmaState *plasma,
             }
         }
         for (int s = 0; s < n_shells; s++) {
-            double T_rad = plasma->T_rad[s];
-            double W     = plasma->W[s];
             double n_ion = atom->ion_number_density[ip * n_shells + s];
             if (element_inactive) {
                 opacity->tau_sobolev[(size_t)line * n_shells + s] = 0.0;
                 continue;
             }
+            if (!plasma || !plasma->T_e || s >= plasma->n_shells ||
+                !isfinite(plasma->T_e[s]) || plasma->T_e[s] <= 0.0) {
+                /* A2-07 section 3.1: an active LTE population has no
+                 * radiation-temperature fallback.  Preserve the exact-zero
+                 * Z-inert short circuit above, but fail closed for active
+                 * lines instead of dereferencing a missing T_e view. */
+                opacity->tau_sobolev[(size_t)line * n_shells + s] = NAN;
+                continue;
+            }
+            double T_e = plasma->T_e[s];
             double Z_part = atom->partition_functions[ip * n_shells + s];
 
-            /* TARDIS level population formula (nebular):
-             * Non-metastable: n_k = W * (g_k / Z) * n_ion * exp(-E_k / kT_rad)
-             * Metastable:     n_k =     (g_k / Z) * n_ion * exp(-E_k / kT_rad)
-             * Note: BOTH use T_rad for Boltzmann factor (not T_e for metastable)
-             * T_e only enters the partition function for metastable levels */
-            double beta_rad = 1.0 / (K_BOLTZMANN * T_rad);
-
-            /* Lower level population */
-            double n_lower;
-            {
-                double boltz = E_lower * EV_TO_ERG * beta_rad;
-                double weight = meta_lower ? 1.0 : W;
-                if (boltz < 500.0)
-                    n_lower = n_ion * weight * g_lower * exp(-boltz) / Z_part;
-                else
-                    n_lower = 0.0;
+            PopulationAtomicView av = population_atomic_view(atom);
+            double f_lower = 0.0, f_upper = 0.0;
+            PopulationStatus ps_lo = population_lte_level_fraction(
+                &av, (size_t)ip, (size_t)lower_idx, T_e, Z_part, &f_lower);
+            PopulationStatus ps_up = population_lte_level_fraction(
+                &av, (size_t)ip, (size_t)upper_idx, T_e, Z_part, &f_upper);
+            if ((ps_lo != POP_OK && ps_lo != POP_EXACT_ZERO) ||
+                (ps_up != POP_OK && ps_up != POP_EXACT_ZERO)) {
+                opacity->tau_sobolev[(size_t)line * n_shells + s] = NAN;
+                continue;
             }
-
-            /* Upper level population */
-            double n_upper;
-            {
-                double boltz = E_upper * EV_TO_ERG * beta_rad;
-                double weight = meta_upper ? 1.0 : W;
-                if (boltz < 500.0)
-                    n_upper = n_ion * weight * g_upper * exp(-boltz) / Z_part;
-                else
-                    n_upper = 0.0;
-            }
+            double n_lower = n_ion * f_lower;
+            double n_upper = n_ion * f_upper;
 
             /* Stimulated emission correction */
             double stim_corr = 1.0;
@@ -3870,36 +3875,10 @@ void compute_transition_probabilities(AtomicData *atom, PlasmaState *plasma,
     double j_cap_effective = fix_ma_j_unclamp ? 0.0 : j_cap_factor;
     double j_floor_effective = fix_ma_j_unclamp ? 0.0 : j_floor_factor;
 
-    /* [KPR B1] LUMINA_KPEMISS_SE_POPS: build kp_emiss from the SE/NLTE lower-level
-     * populations the drain just produced (nlte_solve_all_gpu runs BEFORE this,
-     * cuda.cu:5159 -> 5226) instead of re-synthesising them as dilute-Boltzmann
-     * (the convicted step, plasma.c:2117-2126). Gated under the master repair gate
-     * LUMINA_KPEMISS_REPAIR; both unset => the dilute-Boltzmann path is unchanged
-     * (byte-identical). Applies only where the lower level's ion is NLTE-mapped
-     * (incl. promoted stage-IV under LUMINA_NLTE_STAGE4); non-SE ions fall through
-     * to the Boltzmann synthesis below. */
-    static int kpemiss_se_pops = -1;
-    if (kpemiss_se_pops < 0) {
-        const char *em = getenv("LUMINA_KPEMISS_REPAIR");
-        const char *sp = getenv("LUMINA_KPEMISS_SE_POPS");
-        kpemiss_se_pops = (em && atoi(em) && sp && atoi(sp)) ? 1 : 0;
-    }
-
-    /* [KPR TE_POP] LUMINA_KPEMISS_TE_POP: replace the k-packet fallback lower-level
-     * population (the dilute, T_rad-pinned Boltzmann below) with an UNDILUTED
-     * LTE-at-T_e population, self-consistent with the exp(-dE/kT_e) already in C_up
-     * (ARTIS calculate_levelpop_boltzmann parity, LTEPOP_EXCITATION_USE_TJ=false).
-     * Gated under the master repair gate; both unset => the dilute-Boltzmann path is
-     * byte-identical to the baseline. Only affects the non-SE fallback branch. */
-    static int kpemiss_te_pop = -1;
-    if (kpemiss_te_pop < 0) {
-        const char *em = getenv("LUMINA_KPEMISS_REPAIR");
-        const char *tp = getenv("LUMINA_KPEMISS_TE_POP");
-        kpemiss_te_pop = (em && atoi(em) && tp && atoi(tp)) ? 1 : 0;
-        if (kpemiss_te_pop)
-            fprintf(stderr, "[KPR TE_POP] k-packet fallback pop = LTE(T_e), undiluted "
-                            "(ARTIS calculate_levelpop_boltzmann parity)\n");
-    }
+    /* A2-07: k-packet population selection is no longer environment-gated.
+     * A committed solved level wins; an untracked level uses LTE@T_e. */
+    int kpemiss_se_pops = nlte &&
+        nlte->population_committed_generation > 0;
 
     /* Emit-only boost on Fe II / Ni II UV→opt transitions, isolating the
      * spontaneous-emission lever from the radiative-pumping lever. Only
@@ -4476,7 +4455,7 @@ void compute_transition_probabilities(AtomicData *atom, PlasmaState *plasma,
     for (int s = 0; s < n_shells; s++) {
         double W     = plasma->W[s];
         double T_rad = plasma->T_rad[s];
-        double T_e   = plasma->T_e ? plasma->T_e[s] : T_rad;
+        double T_e   = plasma->T_e[s];
         double n_e   = plasma->n_electron ? plasma->n_electron[s] :
                        (opacity->electron_density ? opacity->electron_density[s] : 0.0);
         double inv_sqrt_Te = (T_e > 0.0) ? 1.0 / sqrt(T_e) : 0.0;
@@ -4505,29 +4484,6 @@ void compute_transition_probabilities(AtomicData *atom, PlasmaState *plasma,
             }
             opacity->chi_ff_nnionpart[s] =
                 (T_e > 0.0) ? s_z2n * 3.69255e8 * inv_sqrt_Te : 0.0;
-        }
-
-        /* [KPR TE_POP] Build the undiluted LTE-at-T_e partition function Z_e(ip) for
-         * THIS shell, using the exact plasma->T_e[s] captured in T_e above (the same
-         * value the k-packet C_up weight uses at exp(-dE/kT_e) below). Placing the
-         * build here — rather than in compute_partition_functions — GUARANTEES the
-         * fallback numerator exp(-E/kT_e) and denominator Z_e share one T_e regardless
-         * of compute_partition_functions' cadence. NO W, no metastable split.
-         * Per-shell write to a distinct [ip*n_shells+s] slot => OMP-safe. Guarded so
-         * the baseline path allocates nothing extra and stays byte-identical. */
-        if (kpemiss_te_pop && T_e > 0.0) {
-            for (int ipx = 0; ipx < atom->n_ion_pops; ipx++) {
-                int l0 = atom->level_offset[ipx];
-                int l1 = atom->level_offset[ipx + 1];
-                double Ze = 0.0;
-                for (int l = l0; l < l1; l++) {
-                    double bz = atom->level_energy_eV[l] * EV_TO_ERG /
-                                (K_BOLTZMANN * T_e);
-                    if (bz < 500.0) Ze += (double)atom->level_g[l] * exp(-bz);
-                }
-                if (Ze < 1e-300) Ze = 1e-300;
-                atom->partition_functions_Te[(size_t)ipx * n_shells + s] = Ze;
-            }
         }
 
         for (int lev = 0; lev < n_levels; lev++) {
@@ -4983,9 +4939,8 @@ void compute_transition_probabilities(AtomicData *atom, PlasmaState *plasma,
                              * the local Planck peak. */
                             int    ip = kp_ip[line_id];
                             double n_lower = 0.0;
-                            /* [KPR B1] SE/NLTE lower-level population override: use the
-                             * n_k the drain produced for this level when its ion is in
-                             * the NLTE/SE set; else fall through to dilute-Boltzmann. */
+                            /* Committed solved population for tracked levels;
+                             * otherwise the sole LTE@T_e reference below. */
                             int gnl = (kpemiss_se_pops && nlte &&
                                        nlte->global_to_nlte_level)
                                     ? nlte->global_to_nlte_level[glo] : -1;
@@ -4994,24 +4949,15 @@ void compute_transition_probabilities(AtomicData *atom, PlasmaState *plasma,
                                             (size_t)gnl * n_shells + s];
                             } else if (ip >= 0) {
                                 double n_ion = atom->ion_number_density[(size_t)ip * n_shells + s];
-                                if (kpemiss_te_pop) {
-                                    /* [KPR TE_POP] undiluted LTE-at-T_e lower-level pop
-                                     * (ARTIS calculate_levelpop_boltzmann parity): numerator
-                                     * exp(-E/kT_e) and denominator Z_e(T_e) are self-consistent,
-                                     * no W. */
-                                    double Zp_e  = atom->partition_functions_Te[(size_t)ip * n_shells + s];
-                                    double boltz_e = atom->level_energy_eV[glo] * EV_TO_ERG /
-                                                     (K_BOLTZMANN * T_e);
-                                    if (Zp_e > 0.0 && boltz_e < 500.0)
-                                        n_lower = n_ion * g_lo * exp(-boltz_e) / Zp_e;
-                                } else {
-                                    double Zp    = atom->partition_functions[(size_t)ip * n_shells + s];
-                                    double boltz = atom->level_energy_eV[glo] * EV_TO_ERG /
-                                                   (K_BOLTZMANN * T_rad);
-                                    double wgt = atom->level_metastable[glo] ? 1.0 : W;
-                                    if (Zp > 0.0 && boltz < 500.0)
-                                        n_lower = n_ion * wgt * g_lo * exp(-boltz) / Zp;
-                                }
+                                /* A2-07: one LTE@T_e reference, irrespective of
+                                 * the legacy kpemiss selector (now shadow-only). */
+                                double Zp = atom->partition_functions[(size_t)ip * n_shells + s];
+                                PopulationAtomicView av = population_atomic_view(atom);
+                                double frac = 0.0;
+                                PopulationStatus ps = population_lte_level_fraction(
+                                    &av, (size_t)ip, (size_t)glo, T_e, Zp, &frac);
+                                if (ps == POP_OK || ps == POP_EXACT_ZERO)
+                                    n_lower = n_ion * frac;
                             }
                             kpd_seen++;
                             if (n_lower <= 0.0) kpd_nlow0++;
@@ -5109,32 +5055,34 @@ void compute_transition_probabilities(AtomicData *atom, PlasmaState *plasma,
                                  * level j (the level that reabsorbs an edge photon via
                                  * photoionization). Prefer the live NLTE SE population;
                                  * fall back to the committed LTE-at-T_e Boltzmann pop
-                                 * (n_ion * g_j exp(-E_j/kT_e) / U) whenever j is outside
-                                 * the NLTE-solved subset (global_to_nlte_level<0, e.g.
-                                 * Fe I / S I destinations) OR its NLTE slot is not yet
-                                 * populated (first pass, calloc'd 0). Without the fallback
-                                 * n_j collapses to a spurious 0 => tau=0 => every edge
-                                 * looks thin => all EMIT (dig_E2 double-count misfire). */
+                                 * LTE@T_e whenever j is outside the committed solved
+                                 * subset. A committed exact zero remains zero. */
                                 double n_j = 0.0;
+                                int n_j_from_solve = 0;
                                 if (nlte && nlte->nlte_level_populations &&
-                                    nlte->global_to_nlte_level) {
+                                    nlte->global_to_nlte_level &&
+                                    nlte->population_committed_generation > 0) {
                                     int gnl = nlte->global_to_nlte_level[j];
-                                    if (gnl >= 0)
+                                    if (gnl >= 0) {
                                         n_j = nlte->nlte_level_populations[
                                                   (size_t)gnl * n_shells + s];
+                                        n_j_from_solve = 1;
+                                    }
                                 }
-                                if (!(n_j > 0.0) && atom->ion_number_density &&
+                                if (!n_j_from_solve && atom->ion_number_density &&
                                     atom->partition_functions && T_e > 0.0) {
                                     double Z_part = atom->partition_functions[
                                                         (size_t)ip_lo * n_shells + s];
                                     double n_ion  = atom->ion_number_density[
                                                         (size_t)ip_lo * n_shells + s];
                                     if (Z_part > 0.0 && n_ion > 0.0) {
-                                        double x = atom->level_energy_eV[j] * EV_TO_ERG
-                                                   / (K_BOLTZMANN * T_e);
-                                        if (x < 500.0)
-                                            n_j = n_ion * (double)atom->level_g[j]
-                                                  * exp(-x) / Z_part;
+                                        PopulationAtomicView av = population_atomic_view(atom);
+                                        double frac = 0.0;
+                                        PopulationStatus ps = population_lte_level_fraction(
+                                            &av, (size_t)ip_lo, (size_t)j,
+                                            T_e, Z_part, &frac);
+                                        if (ps == POP_OK || ps == POP_EXACT_ZERO)
+                                            n_j = n_ion * frac;
                                     }
                                 }
                                 double tau_bf = opacity->recomb_sigma_edge[k] * n_j * dr;
@@ -5649,26 +5597,32 @@ void compute_transition_probabilities(AtomicData *atom, PlasmaState *plasma,
                                              atom->level_ion[j]);
                 double se = opacity->recomb_sigma_edge[kbest];
                 double n_j = 0.0; const char *nsrc = "NLTE";
+                int n_j_from_solve = 0;
                 if (nlte && nlte->nlte_level_populations &&
-                    nlte->global_to_nlte_level) {
+                    nlte->global_to_nlte_level &&
+                    nlte->population_committed_generation > 0) {
                     int gnl = nlte->global_to_nlte_level[j];
-                    if (gnl >= 0)
+                    if (gnl >= 0) {
                         n_j = nlte->nlte_level_populations[
                                   (size_t)gnl * n_shells + sdbg];
+                        n_j_from_solve = 1;
+                    }
                 }
-                if (!(n_j > 0.0) && ip_lo >= 0 && atom->ion_number_density &&
+                if (!n_j_from_solve && ip_lo >= 0 && atom->ion_number_density &&
                     atom->partition_functions && Te8 > 0.0) {
                     double Zp = atom->partition_functions[
                                     (size_t)ip_lo * n_shells + sdbg];
                     double ni = atom->ion_number_density[
                                     (size_t)ip_lo * n_shells + sdbg];
                     if (Zp > 0.0 && ni > 0.0) {
-                        double x = atom->level_energy_eV[j] * EV_TO_ERG
-                                   / (K_BOLTZMANN * Te8);
-                        if (x < 500.0)
-                            n_j = ni * (double)atom->level_g[j] * exp(-x) / Zp;
+                        PopulationAtomicView av = population_atomic_view(atom);
+                        double frac = 0.0;
+                        PopulationStatus ps = population_lte_level_fraction(
+                            &av, (size_t)ip_lo, (size_t)j, Te8, Zp, &frac);
+                        if (ps == POP_OK || ps == POP_EXACT_ZERO)
+                            n_j = ni * frac;
                     }
-                    nsrc = "Boltz";
+                    nsrc = "LTE@Te";
                 }
                 double tau = se * n_j * dr8;
                 printf("  [MA-RADRECOMB tau-gate] sample s=%d %s (glev %d, E=%.3f eV): "
@@ -6710,18 +6664,75 @@ int lumina_prepare_solver_owned_tau(AtomicData *atom, PlasmaState *plasma,
         fprintf(stderr, "[K-FRESH][FATAL] cannot prepare solver-owned tau\n");
         return -1;
     }
-    compute_plasma_state(atom, plasma, opacity, time_explosion);
+    if (compute_plasma_state(atom, plasma, opacity, time_explosion) != 0)
+        return -1;
     return tau_sobolev_assert_fresh(opacity, first_consumer);
 }
 
-void compute_plasma_state(AtomicData *atom, PlasmaState *plasma,
-                          OpacityState *opacity, double time_explosion) {
+int compute_plasma_state(AtomicData *atom, PlasmaState *plasma,
+                         OpacityState *opacity, double time_explosion) {
+    if (!atom || !plasma || !opacity || !plasma->T_e ||
+        !plasma->n_electron || plasma->n_shells <= 0) {
+        if (plasma) {
+            plasma->population_last_error = POP_INVALID_TE;
+            plasma->population_error_count++;
+        }
+        return -1;
+    }
+    plasma->population_last_error = POP_OK;
+    const char *frozenin = getenv("LUMINA_FROZENIN");
+    if (frozenin && atoi(frozenin) != 0) {
+        plasma->population_last_error = POP_FORBIDDEN_FALLBACK;
+        plasma->population_error_count++;
+        fprintf(stderr, "[A2-07] forbidden population fallback configuration: LUMINA_FROZENIN\n");
+        return -1;
+    }
     int n_shells = plasma->n_shells;
+    char te_hash[65];
+    if (population_te_manifest_sha256(plasma->T_e, (size_t)n_shells,
+                                      te_hash) != POP_OK ||
+        plasma->T_e_generation == 0) {
+        plasma->population_last_error = POP_INVALID_TE;
+        plasma->population_error_count++;
+        return -1;
+    }
+
+    uint64_t required_generation = atom->population_committed_generation + 1;
+    PopulationTransaction pop_tx;
+    double *published_ion = atom->ion_number_density;
+    double *published_ne = plasma->n_electron;
+    double *published_partition = atom->partition_functions;
+    PopulationDerivedStamp prior_stamp = atom->partition_stamp;
+    if (population_transaction_begin(
+            &pop_tx, published_ion, (size_t)atom->n_ion_pops * n_shells,
+            NULL, 0, published_ne, (size_t)n_shells,
+            published_partition, (size_t)atom->n_ion_pops * n_shells,
+            required_generation, &atom->population_committed_generation) != 0) {
+        plasma->population_last_error = POP_SOLVE_FAILED;
+        plasma->population_error_count++;
+        return -1;
+    }
+    atom->ion_number_density = pop_tx.work_ion;
+    plasma->n_electron = pop_tx.work_ne;
+    atom->partition_functions = pop_tx.work_partition;
+#define A2_07_PLASMA_ABORT(status_) do {                                  \
+        atom->ion_number_density = published_ion;                          \
+        plasma->n_electron = published_ne;                                 \
+        atom->partition_functions = published_partition;                   \
+        atom->partition_stamp = prior_stamp;                               \
+        population_transaction_abort(&pop_tx, (status_));                  \
+        plasma->population_last_error = (status_);                         \
+        plasma->population_error_count++;                                  \
+        return -1;                                                         \
+    } while (0)
 
     tau_sobolev_require_refresh(opacity, "compute_plasma_state");
 
     printf("  [Plasma] Computing partition functions...\n");
-    compute_partition_functions(atom, plasma, n_shells);
+    PopulationStatus partition_status =
+        compute_partition_functions(atom, plasma, n_shells);
+    if (partition_status != POP_OK)
+        A2_07_PLASMA_ABORT(partition_status);
 
     /* TOY DIAGNOSTIC (LUMINA_FIXED_NE_PROFILE=<file>): impose per-shell n_e and SKIP the
      * iterative electron-density solve, so toy models fix the thermodynamic state (T_e+n_e)
@@ -6748,19 +6759,34 @@ void compute_plasma_state(AtomicData *atom, PlasmaState *plasma,
          * conservation) via the audit-A5 defect (1e30 ladder overflow breaks
          * sum_norm while the n_ion product keeps multiplying -> unnormalized
          * top stage). The lamp that erased the outer root. */
-        if (g_simul_on != 1)
-            compute_electron_density(atom, plasma, n_shells);
+        if (g_simul_on != 1 &&
+            compute_electron_density(atom, plasma, n_shells) != 0)
+            A2_07_PLASMA_ABORT(POP_NE_NOT_CONVERGED);
         printf("    n_e[0]=%.4e, n_e[%d]=%.4e\n",
                plasma->n_electron[0], n_shells - 1, plasma->n_electron[n_shells - 1]);
     }
 
     printf("  [Plasma] Computing ion populations...\n");
-    compute_ion_populations(atom, plasma, n_shells);
+    PopulationStatus ion_status =
+        compute_ion_populations(atom, plasma, n_shells);
+    if (ion_status != POP_OK)
+        A2_07_PLASMA_ABORT(ion_status);
 
     /* Task #7: frozen-in recombination freeze-out (gated LUMINA_FROZENIN).
      * Overrides outer-shell ion populations + n_e with the time-dependent
      * cascade; no-op (byte-identical) when off. */
     apply_frozenin_freezeout(atom, plasma, n_shells, time_explosion);
+
+    atom->ion_number_density = published_ion;
+    plasma->n_electron = published_ne;
+    atom->partition_functions = published_partition;
+    PopulationStatus publish_status = population_transaction_commit(&pop_tx);
+    if (publish_status != POP_OK) {
+        atom->partition_stamp = prior_stamp;
+        plasma->population_last_error = publish_status;
+        plasma->population_error_count++;
+        return -1;
+    }
 
     /* Copy self-consistent n_e back to opacity for transport */
     for (int s = 0; s < n_shells; s++)
@@ -6780,6 +6806,7 @@ void compute_plasma_state(AtomicData *atom, PlasmaState *plasma,
                                      "pre-transport");
 
     tau_sobolev_mark_computed(opacity, "compute_plasma_state");
+    plasma->population_last_error = POP_OK;
 
     /* Print tau stats for key lines */
     int n_lines = opacity->n_lines;
@@ -6895,6 +6922,8 @@ void compute_plasma_state(AtomicData *atom, PlasmaState *plasma,
             }
         }
     }
+#undef A2_07_PLASMA_ABORT
+    return 0;
 }
 
 /* ============================================================ */
@@ -7336,21 +7365,11 @@ void compute_bf_opacity(BFOpacity *bf, AtomicData *atom, PlasmaState *plasma,
         }
     }
 
-    /* [BF-NLTE-POPS] Fix A: use the solved NLTE level populations for the bf
-     * opacity population n_level (chi_bf = n_level * sigma), instead of the
-     * dilute-Boltzmann-at-T_rad expression below. Excited-state continua are
-     * W-diluted 60-300x by the legacy form; the NLTE pops restore them. Only the
-     * population changes — sigma source is untouched. Levels outside the NLTE set
-     * (or before the first solve, pops == 0) fall back to dilute-Boltzmann. */
-    static int bf_nlte_pops = -1;
-    if (bf_nlte_pops < 0) {
-        const char *e = getenv("LUMINA_BF_NLTE_POPS");
-        bf_nlte_pops = (e && atoi(e)) ? 1 : 0;
-        if (bf_nlte_pops)
-            printf("[BF-NLTE-POPS] chi_bf level populations = NLTE "
-                   "(fallback: dilute-Boltzmann for non-NLTE levels)\n");
-    }
-    const int use_nlte_pops = bf_nlte_pops && g_bf_nlte_pops &&
+    /* A2-07: a committed solved population is always preferred. Untracked
+     * levels (and the pre-solve generation) use the one LTE@T_e reference;
+     * the legacy selector is diagnostic shadow and cannot change physics. */
+    const int use_nlte_pops = g_bf_nlte_pops &&
+                              g_bf_nlte_pops->population_committed_generation > 0 &&
                               g_bf_nlte_pops->nlte_level_populations &&
                               g_bf_nlte_pops->global_to_nlte_level;
     long bf_nlte_used = 0, bf_nlte_fb = 0;   /* [BF-NLTE-POPS] per-call tally */
@@ -7527,17 +7546,13 @@ void compute_bf_opacity(BFOpacity *bf, AtomicData *atom, PlasmaState *plasma,
         const int    *has_sigma  = use_cmfgen ? atom->cmfgen_has_sigma : NULL;
 
         for (int s = 0; s < n_shells; s++) {
-            double T_rad = plasma->T_rad[s];
-            double W     = plasma->W[s];
             double n_ion = atom->ion_number_density[ip * n_shells + s];
             double Z_part = atom->partition_functions[ip * n_shells + s];
-            double beta_rad = 1.0 / (K_BOLTZMANN * T_rad);
-
             if (n_ion < 1e-30 || Z_part < 1e-300) continue;
 
             /* BF-MILNE per-shell pieces: kTe, saha(T_e), next-ion density and
              * partition (U floor 1 — tiny-positive U exploded the v1 Milne). */
-            double kTe_m = 0.0, saha_m = 0.0, n_next_m = 0.0, U_next_m = 1.0;
+            double kTe_m = 0.0, saha_m = 0.0, n_next_m = 0.0, U_next_m = 0.0;
             int milne_ok = 0;
             if ((bf_milne || bf_stim_recomb) && ip_next >= 0 &&
                 plasma->n_electron) {
@@ -7545,8 +7560,8 @@ void compute_bf_opacity(BFOpacity *bf, AtomicData *atom, PlasmaState *plasma,
                 double ne_m = plasma->n_electron[s];
                 n_next_m = atom->ion_number_density[ip_next * n_shells + s];
                 U_next_m = atom->partition_functions[ip_next * n_shells + s];
-                if (U_next_m < 1.0) U_next_m = 1.0;
-                if (Te_m > 0.0 && ne_m > 0.0 && n_next_m > 1e-30) {
+                if (Te_m > 0.0 && ne_m > 0.0 && n_next_m > 1e-30 &&
+                    U_next_m > 0.0 && isfinite(U_next_m)) {
                     kTe_m = K_BOLTZMANN * Te_m;
                     saha_m = pow(H_PLANCK * H_PLANCK /
                                  (2.0 * M_PI_VAL * M_ELECTRON * kTe_m), 1.5);
@@ -7561,26 +7576,28 @@ void compute_bf_opacity(BFOpacity *bf, AtomicData *atom, PlasmaState *plasma,
                 int g = atom->level_g[l];
                 int is_meta = atom->level_metastable[l];
 
-                double boltz = E_eV * EV_TO_ERG * beta_rad;
-                if (boltz > 50.0) continue;  /* negligible population */
-
-                /* Level population (dilute Boltzmann), or the solved NLTE
-                 * population when LUMINA_BF_NLTE_POPS is armed and this level is
-                 * in the NLTE set with a positive solved pop. */
-                double weight = is_meta ? 1.0 : W;
-                double n_level = n_ion * weight * g * exp(-boltz) / Z_part;
-                if (use_nlte_pops) {
-                    int nlte_idx = g_bf_nlte_pops->global_to_nlte_level[l];
-                    double n_nl = (nlte_idx >= 0)
-                        ? g_bf_nlte_pops->nlte_level_populations[
-                              (size_t)nlte_idx * n_shells + s]
-                        : 0.0;
-                    if (nlte_idx >= 0 && n_nl > 1e-30 && isfinite(n_nl)) {
-                        n_level = n_nl;
-                        bf_nlte_used++;
-                    } else {
-                        bf_nlte_fb++;   /* keep dilute-Boltzmann n_level */
-                    }
+                /* Population consumption is exact: a tracked level consumes its
+                 * committed NLTE value, including an exact physical zero; only an
+                 * untracked level uses the sole LTE@T_e reference. */
+                PopulationAtomicView av = population_atomic_view(atom);
+                double level_fraction = 0.0;
+                double n_level = 0.0;
+                int nlte_idx = (use_nlte_pops &&
+                                g_bf_nlte_pops->global_to_nlte_level)
+                             ? g_bf_nlte_pops->global_to_nlte_level[l] : -1;
+                if (nlte_idx >= 0) {
+                    n_level = g_bf_nlte_pops->nlte_level_populations[
+                        (size_t)nlte_idx * n_shells + s];
+                    if (!isfinite(n_level) || n_level < 0.0) continue;
+                    bf_nlte_used++;
+                } else {
+                    PopulationStatus level_status = population_lte_level_fraction(
+                        &av, (size_t)ip, (size_t)l, plasma->T_e[s], Z_part,
+                        &level_fraction);
+                    if (level_status != POP_OK && level_status != POP_EXACT_ZERO)
+                        continue;
+                    n_level = n_ion * level_fraction;
+                    if (use_nlte_pops) bf_nlte_fb++; /* untracked LTE@T_e */
                 }
                 if (n_level < 1e-30) continue;
 
@@ -7672,24 +7689,25 @@ void compute_bf_opacity(BFOpacity *bf, AtomicData *atom, PlasmaState *plasma,
                         int g_upper = atom->level_g[upper_l];
                         double n_upper = 0.0;
                         if (g_upper > 0) {
-                            double boltz_upper = atom->level_energy_eV[upper_l] *
-                                                 EV_TO_ERG * beta_rad;
-                            if (boltz_upper < 500.0) {
-                                double w_upper = atom->level_metastable[upper_l]
-                                               ? 1.0 : W;
-                                n_upper = n_next_m * w_upper * (double)g_upper *
-                                          exp(-boltz_upper) / U_next_m;
-                            }
-                            if (use_nlte_pops) {
-                                int ni_upper =
-                                    g_bf_nlte_pops->global_to_nlte_level[upper_l];
-                                double n_nl_upper = (ni_upper >= 0)
-                                    ? g_bf_nlte_pops->nlte_level_populations[
-                                          (size_t)ni_upper * n_shells + s]
-                                    : 0.0;
-                                if (ni_upper >= 0 && n_nl_upper > 1e-30 &&
-                                    isfinite(n_nl_upper))
-                                    n_upper = n_nl_upper;
+                            int ni_upper = (use_nlte_pops &&
+                                            g_bf_nlte_pops->global_to_nlte_level)
+                                         ? g_bf_nlte_pops->global_to_nlte_level[upper_l]
+                                         : -1;
+                            if (ni_upper >= 0) {
+                                n_upper = g_bf_nlte_pops->nlte_level_populations[
+                                    (size_t)ni_upper * n_shells + s];
+                            } else {
+                                double upper_fraction = 0.0;
+                                PopulationStatus upper_status =
+                                    population_lte_level_fraction(
+                                        &av, (size_t)ip_next, (size_t)upper_l,
+                                        plasma->T_e[s], U_next_m,
+                                        &upper_fraction);
+                                if (upper_status == POP_OK ||
+                                    upper_status == POP_EXACT_ZERO)
+                                    n_upper = n_next_m * upper_fraction;
+                                else
+                                    n_upper = NAN;
                             }
                             if (n_upper >= 0.0 && isfinite(n_upper)) {
                                 const double ARTIS_SAHACONST = 2.0706659e-16;
@@ -7879,8 +7897,8 @@ void compute_bf_opacity(BFOpacity *bf, AtomicData *atom, PlasmaState *plasma,
         }
     }
 
-    if (bf_nlte_pops) {
-        printf("  [BF-NLTE-POPS] chi_bf level pops: nlte-used=%ld  fallback=%ld\n",
+    if (use_nlte_pops) {
+        printf("  [A2-07][BF-POPS] chi_bf: solved=%ld  LTE@T_e-reference=%ld\n",
                bf_nlte_used, bf_nlte_fb);
     }
 
@@ -9278,17 +9296,18 @@ static void radeq_fb_rate_register(AtomicData *atom, PlasmaState *plasma, int n_
  * see-saw. Recipe mirrors the cooling-table untracked-level branch. */
 static int g_bfrp = -1;
 static double bf_rate_pop(AtomicData *atom, int Z, int ion_stage, int gidx,
-                          int s, int n_shells, double W, double T_rad) {
+                          int s, int n_shells, double T_e) {
     int ip = find_ion_pop_idx(atom, Z, ion_stage);
     if (ip < 0) return 0.0;
     double n_ion = atom->ion_number_density[(size_t)ip * n_shells + s];
     if (n_ion <= 0.0) return 0.0;
     double U = atom->partition_functions[(size_t)ip * n_shells + s];
-    if (U <= 0.0) U = 1.0;
-    double bz = atom->level_energy_eV[gidx] * EV_TO_ERG / (K_BOLTZMANN * T_rad);
-    if (bz >= 500.0) return 0.0;
-    double wt = atom->level_metastable[gidx] ? 1.0 : W;
-    return n_ion * wt * (double)atom->level_g[gidx] * exp(-bz) / U;
+    PopulationAtomicView av = population_atomic_view(atom);
+    double fraction = 0.0;
+    PopulationStatus status = population_lte_level_fraction(
+        &av, (size_t)ip, (size_t)gidx, T_e, U, &fraction);
+    return (status == POP_OK || status == POP_EXACT_ZERO)
+         ? n_ion * fraction : NAN;
 }
 
 static double radeq_fb_rate_eval(double T_e) {
@@ -11726,10 +11745,10 @@ static double radeq_net(double T_e, double T_rad, double n_e,
     return H - C;
 }
 
-void compute_radiative_equilibrium_te(PlasmaState *plasma, GammaDeposition *gamma_dep,
-                                      NLTEConfig *nlte, AtomicData *atom,
-                                      OpacityState *opacity,
-                                      double time_explosion, int n_shells) {
+int compute_radiative_equilibrium_te(PlasmaState *plasma, GammaDeposition *gamma_dep,
+                                     NLTEConfig *nlte, AtomicData *atom,
+                                     OpacityState *opacity,
+                                     double time_explosion, int n_shells) {
     radeq_fb_rate_register(atom, plasma, n_shells);  /* LUMINA_RADEQ_FB_RATE */
     /* LUMINA_RADEQ_SIMUL=1: ARTIS-mirror simultaneous solve replaces the
      * whole operator-split radeq below (single ownership of T_e/n_e/ions). */
@@ -11738,7 +11757,9 @@ void compute_radiative_equilibrium_te(PlasmaState *plasma, GammaDeposition *gamm
     if (g_simul_on) {
         radeq_simul_all(plasma, gamma_dep, nlte, atom, opacity,
                         time_explosion, n_shells);
-        return;
+        for (int s = 0; s < n_shells; s++)
+            if (!isfinite(plasma->T_e[s]) || plasma->T_e[s] <= 0.0) return 0;
+        return 1;
     }
     /* TOY DIAGNOSTIC (LUMINA_FIXED_TE_PROFILE=<file>): impose a chosen per-shell T_e and
      * SKIP the RADEQ solve, so controlled toy models isolate the line/transport physics
@@ -11749,18 +11770,24 @@ void compute_radiative_equilibrium_te(PlasmaState *plasma, GammaDeposition *gamm
         if (fp && *fp) { FILE *f = fopen(fp, "r");
             if (f) { fte_T = (double*)calloc(n_shells, sizeof(double)); char ln[256];
                 while (fgets(ln, sizeof(ln), f)) { if (ln[0]=='#') continue; int s; double T;
-                    if (sscanf(ln, "%d %lf", &s, &T)==2 && s>=0 && s<n_shells) { fte_T[s]=T; fte_n++; } }
+                    if (sscanf(ln, "%d %lf", &s, &T)==2 && s>=0 && s<n_shells &&
+                        isfinite(T) && T > 0.0 && fte_T[s] == 0.0) {
+                        fte_T[s]=T; fte_n++;
+                    } }
                 fclose(f); fte_on = (fte_n == n_shells);
                 printf("  [fixed-Te] %s: %d/%d shells -> %s\n", fp, fte_n, n_shells,
                        fte_on ? "ACTIVE (RADEQ skipped)" : "INCOMPLETE, ignored"); }
             else printf("  [fixed-Te] could not open %s\n", fp); } }
-    if (fte_on) { for (int i = 0; i < n_shells; i++) plasma->T_e[i] = fte_T[i]; return; }
+    if (fte_on) {
+        for (int i = 0; i < n_shells; i++) plasma->T_e[i] = fte_T[i];
+        return 1;
+    }
     if (nlte == NULL || nlte->nlte_level_populations == NULL ||
         nlte->J_nu == NULL) {
         /* No lagged NLTE state yet (pre-NLTE iters) → ratio fallback. */
         for (int s = 0; s < n_shells; s++)
             plasma->T_e[s] = plasma->T_e_T_rad_ratio * plasma->T_rad[s];
-        return;
+        return 0;
     }
     build_radeq_line_table(nlte, atom, opacity);
 
@@ -12071,7 +12098,7 @@ void compute_radiative_equilibrium_te(PlasmaState *plasma, GammaDeposition *gamm
                 double nu_th = (chi_erg - E_lev) / H_PLANCK;
                 if (nu_th <= 0.0) continue;
                 double n_lev = (g_bfrp == 1)
-                    ? bf_rate_pop(atom, Z, ion_stage, g, s, n_shells, W, T_rad)
+                    ? bf_rate_pop(atom, Z, ion_stage, g, s, n_shells, Te_lag)
                     : nlte->nlte_level_populations[(size_t)l * n_shells + s];
                 if (n_lev <= 0.0) continue;
                 int has = use_cmfgen && atom->cmfgen_has_sigma[g];
@@ -12200,11 +12227,9 @@ void compute_radiative_equilibrium_te(PlasmaState *plasma, GammaDeposition *gamm
         double compton_heat_coef = 1.5 * n_e * K_BOLTZMANN * Gamma_C; /* ×(T_rad-T_e) */
         double ff_coef = FF_COEF * GFF * n_e * n_e;                   /* ×sqrt(T_e) */
 
-        /* Build the active collisional-cooling coefficient arrays for this shell.
-         * Per-level pop = NLTE pop where the level is tracked, else dilute-Boltzmann
-         * (nebular), identical to the Sobolev opacity formula:
-         *   n_k = (meta?1:W) * (g_k/U) * n_ion * exp(-E_k/kT_rad). */
-        double beta_rad = 1.0 / (K_BOLTZMANN * T_rad);
+        /* Build the active collisional-cooling coefficient arrays. Tracked
+         * levels consume committed NLTE populations; untracked levels consume
+         * the sole LTE@T_e reference and never reconstruct a T_rad/W population. */
         double C_bb_esc = 0.0;   /* radiative-escape bound-bound cooling (T_e-indep) */
         long n_active = 0;
         /* Option-2: the radiative line term owns bb; skip the collisional/escape
@@ -12212,24 +12237,43 @@ void compute_radiative_equilibrium_te(PlasmaState *plasma, GammaDeposition *gamm
         for (long k = 0; !line_re && k < radeq_n_lines; k++) {
             const RadEqLine *rl = &radeq_lines[k];
             if (cool_nlte_only && (rl->nlte_lo < 0 || rl->nlte_up < 0))
-                continue;   /* SE-only: skip untracked lagged-Boltzmann lines */
+                continue;   /* SE-only: skip untracked levels */
             double n_ion = atom->ion_number_density[(size_t)rl->ip * n_shells + s];
             double U     = atom->partition_functions[(size_t)rl->ip * n_shells + s];
-            if (U <= 0.0) U = 1.0;
             double nlo_k, nup_k;
             if (rl->nlte_lo >= 0) {
                 nlo_k = nlte->nlte_level_populations[(size_t)rl->nlte_lo * n_shells + s];
             } else {
-                double bz = atom->level_energy_eV[rl->lo_g] * EV_TO_ERG * beta_rad;
-                double wt = atom->level_metastable[rl->lo_g] ? 1.0 : W;
-                nlo_k = (bz < 500.0) ? n_ion * wt * rl->g_lo * exp(-bz) / U : 0.0;
+                PopulationAtomicView av = population_atomic_view(atom);
+                double fraction = 0.0;
+                PopulationStatus ps = population_lte_level_fraction(
+                    &av, (size_t)rl->ip, (size_t)rl->lo_g,
+                    plasma->T_e[s], U, &fraction);
+                if (ps != POP_OK && ps != POP_EXACT_ZERO) {
+                    if (nlte->population_error_count == 0)
+                        nlte->population_first_error = ps;
+                    nlte->population_error_count++;
+                    population_counter_note(&nlte->population_counters, ps);
+                    continue;
+                }
+                nlo_k = n_ion * fraction;
             }
             if (rl->nlte_up >= 0) {
                 nup_k = nlte->nlte_level_populations[(size_t)rl->nlte_up * n_shells + s];
             } else {
-                double bz = atom->level_energy_eV[rl->up_g] * EV_TO_ERG * beta_rad;
-                double wt = atom->level_metastable[rl->up_g] ? 1.0 : W;
-                nup_k = (bz < 500.0) ? n_ion * wt * rl->g_up * exp(-bz) / U : 0.0;
+                PopulationAtomicView av = population_atomic_view(atom);
+                double fraction = 0.0;
+                PopulationStatus ps = population_lte_level_fraction(
+                    &av, (size_t)rl->ip, (size_t)rl->up_g,
+                    plasma->T_e[s], U, &fraction);
+                if (ps != POP_OK && ps != POP_EXACT_ZERO) {
+                    if (nlte->population_error_count == 0)
+                        nlte->population_first_error = ps;
+                    nlte->population_error_count++;
+                    population_counter_note(&nlte->population_counters, ps);
+                    continue;
+                }
+                nup_k = n_ion * fraction;
             }
             if (nlo_k <= 0.0 && nup_k <= 0.0) continue;   /* inactive: no population */
             if (cool_escape) {
@@ -12473,6 +12517,11 @@ void compute_radiative_equilibrium_te(PlasmaState *plasma, GammaDeposition *gamm
                mname, n_frozen, n_shells, hybrid_taurec_thr,
                plasma->T_e[n_shells - 1]);
     }
+    if (n_pin_hi != 0 || n_pin_lo != 0 || n_floor_bis != 0 || n_frozen != 0)
+        return 0;
+    for (int s = 0; s < n_shells; s++)
+        if (!isfinite(plasma->T_e[s]) || plasma->T_e[s] <= 0.0) return 0;
+    return 1;
 }
 
 /* ============================================================
@@ -13802,7 +13851,8 @@ void coupled_newton_solve_all(PlasmaState *plasma, GammaDeposition *gamma_dep,
                 double nu_th = (chi_erg - E_lev) / H_PLANCK;
                 if (nu_th <= 0.0) continue;
                 double n_lev = (g_bfrp == 1)
-                    ? bf_rate_pop(atom, Z, ion_stage, g, s, n_shells, W, T_rad)
+                    ? bf_rate_pop(atom, Z, ion_stage, g, s, n_shells,
+                                  plasma->T_e[s])
                     : nlte->nlte_level_populations[(size_t)l * n_shells + s];
                 if (n_lev <= 0.0) continue;
                 int has = use_cmfgen && atom->cmfgen_has_sigma[g];
@@ -13853,7 +13903,6 @@ void coupled_newton_solve_all(PlasmaState *plasma, GammaDeposition *gamma_dep,
         double compton0 = 1.5 * K_BOLTZMANN * Gamma_C;   /* ×n_e ×(T_rad−T_e) */
         double ff0 = FF_COEF * GFF;                      /* ×n_e^2 ×sqrt(T_e) */
 
-        double beta_rad = 1.0 / (K_BOLTZMANN * T_rad);
         double C_bb_esc = 0.0;
         long n_active = 0;
         /* Option-2: skip the collisional bound-bound assembly entirely — the
@@ -13865,16 +13914,39 @@ void coupled_newton_solve_all(PlasmaState *plasma, GammaDeposition *gamma_dep,
             if (cool_nlte_only && (rl->nlte_lo < 0 || rl->nlte_up < 0)) continue;
             double n_ion = atom->ion_number_density[(size_t)rl->ip * n_shells + s];
             double U     = atom->partition_functions[(size_t)rl->ip * n_shells + s];
-            if (U <= 0.0) U = 1.0;
             double nlo_k, nup_k;
             if (rl->nlte_lo >= 0) nlo_k = nlte->nlte_level_populations[(size_t)rl->nlte_lo * n_shells + s];
-            else { double bz = atom->level_energy_eV[rl->lo_g] * EV_TO_ERG * beta_rad;
-                   double wt = atom->level_metastable[rl->lo_g] ? 1.0 : W;
-                   nlo_k = (bz < 500.0) ? n_ion * wt * rl->g_lo * exp(-bz) / U : 0.0; }
+            else {
+                PopulationAtomicView av = population_atomic_view(atom);
+                double fraction = 0.0;
+                PopulationStatus ps = population_lte_level_fraction(
+                    &av, (size_t)rl->ip, (size_t)rl->lo_g,
+                    plasma->T_e[s], U, &fraction);
+                if (ps != POP_OK && ps != POP_EXACT_ZERO) {
+                    if (nlte->population_error_count == 0)
+                        nlte->population_first_error = ps;
+                    nlte->population_error_count++;
+                    population_counter_note(&nlte->population_counters, ps);
+                    continue;
+                }
+                nlo_k = n_ion * fraction;
+            }
             if (rl->nlte_up >= 0) nup_k = nlte->nlte_level_populations[(size_t)rl->nlte_up * n_shells + s];
-            else { double bz = atom->level_energy_eV[rl->up_g] * EV_TO_ERG * beta_rad;
-                   double wt = atom->level_metastable[rl->up_g] ? 1.0 : W;
-                   nup_k = (bz < 500.0) ? n_ion * wt * rl->g_up * exp(-bz) / U : 0.0; }
+            else {
+                PopulationAtomicView av = population_atomic_view(atom);
+                double fraction = 0.0;
+                PopulationStatus ps = population_lte_level_fraction(
+                    &av, (size_t)rl->ip, (size_t)rl->up_g,
+                    plasma->T_e[s], U, &fraction);
+                if (ps != POP_OK && ps != POP_EXACT_ZERO) {
+                    if (nlte->population_error_count == 0)
+                        nlte->population_first_error = ps;
+                    nlte->population_error_count++;
+                    population_counter_note(&nlte->population_counters, ps);
+                    continue;
+                }
+                nup_k = n_ion * fraction;
+            }
             if (nlo_k <= 0.0 && nup_k <= 0.0) continue;
             if (use_escape) {
                 if (nup_k > 0.0 && rl->A_ul > 0.0 && opacity->tau_sobolev) {
@@ -14408,7 +14480,7 @@ void coupled_newton_solve_all(PlasmaState *plasma, GammaDeposition *gamma_dep,
             (void)coupled_charge_density_tdep(atom, plasma, s, T_e, n_e,
                                               time_explosion, n_shells, 1, GAMMA_FOR(T_e));
         else
-            compute_ion_populations_shell(atom, plasma, s, n_shells);
+            (void)compute_ion_populations_shell(atom, plasma, s, n_shells);
 #undef GAMMA_FOR
         if (septest_Tfix > 0.0) {
             double ne_td_fix = solve_ne_fixed_te(atom, plasma, s, septest_Tfix,
@@ -14485,7 +14557,7 @@ void coupled_newton_solve_all(PlasmaState *plasma, GammaDeposition *gamma_dep,
         if (newton_owned[s]) continue;
         if (frozenin_is_frozen && s < frozenin_is_frozen_n && frozenin_is_frozen[s])
             continue;
-        compute_ion_populations_shell(atom, plasma, s, n_shells);
+        (void)compute_ion_populations_shell(atom, plasma, s, n_shells);
     }
     free(newton_owned);
 
@@ -14786,6 +14858,8 @@ int nlte_init(NLTEConfig *nlte, AtomicData *atom, OpacityState *opacity,
 }
 
 void nlte_free(NLTEConfig *nlte) {
+    population_counters_print(stdout, &nlte->population_counters);
+    fflush(stdout);
     /* A2-05 R4/R6 observability: the zero-consumer gate and the blocked-term
      * audit read these totals from the run log (one line, always printed when
      * the view path was ever exercised). */
@@ -16832,10 +16906,9 @@ void nlte_assemble_rate_matrix(NLTEConfig *nlte, AtomicData *atom,
     int Z_nl = nlte->nlte_Z[ion_idx_lo];
     int ion_lock_mode = nlte_ion_lock_active(nlte->current_iter);
 
-    /* α #286 floor-pop regularization: choose alternate conservation rows for
-     * upper- and lower-ion blocks when the default top row is bb-isolated, and
-     * write Boltzmann@T_rad anchors on every remaining bb-isolated row in the
-     * upper-ion block. Resolves #219e (Cr/Fe/Co III top-level pop collapse). */
+    /* A2-07: a conservation row may move to a connected row, but an isolated
+     * physical row is never replaced by a Boltzmann population anchor.  A truly
+     * deficient matrix therefore fails in the checked solve below. */
     int alt_row_hi = N - 1;
     int alt_row_lo = n_lo_super - 1;
     if (bb_connected) {
@@ -16849,40 +16922,11 @@ void nlte_assemble_rate_matrix(NLTEConfig *nlte, AtomicData *atom,
             if (bb_connected[k]) { alt_row_lo = k; break; }
         }
 
-        /* For each remaining bb-isolated upper-ion level (excluding the
-         * conservation row), overwrite the row with a dilute (nebular)
-         * Boltzmann anchor:
-         *   x[k] - W * (g_k/g_ref) * exp(-(E_k-E_ref)/kT_rad) * x[ref] = 0
-         * where ref = upper-ion ground (n_lo_levels) and W = plasma dilution
-         * factor for this shell. The W factor depletes high-E anchor pops
-         * in outer (dilute) shells per the standard nebular approximation,
-         * fixing the NIR over-emission from W=1 LTE-at-T_rad. */
         if (ground_hi < N) {
-            double W_shell = plasma->W[shell];
-            if (!isfinite(W_shell) || W_shell <= 0.0) W_shell = 1.0;
             int ref_global = nlte->super_anchor_global[super_start + ground_hi];
             double E_ref = atom->level_energy_eV[ref_global] * EV_TO_ERG;
             int g_ref = atom->level_g[ref_global];
             if (g_ref < 1) g_ref = 1;
-            for (int k = n_lo_super; k < N; k++) {
-                if (bb_connected[k]) continue;
-                if (k == alt_row_hi) continue; /* reserved for conservation */
-                if (k == ground_hi) continue;  /* anchor reference itself */
-                int gk_global = nlte->super_anchor_global[super_start + k];
-                double E_k = atom->level_energy_eV[gk_global] * EV_TO_ERG;
-                int g_k = atom->level_g[gk_global];
-                if (g_k < 1) g_k = 1;
-                double dE = E_k - E_ref;
-                if (dE < 0.0) dE = 0.0;
-                double boltz_ratio = W_shell * (double)g_k / (double)g_ref *
-                                     exp(-dE / (K_BOLTZMANN * T_rad));
-                if (!isfinite(boltz_ratio)) boltz_ratio = 0.0;
-                for (int j = 0; j < N; j++) ACM(k, j) = 0.0;
-                ACM(k, k) = 1.0;
-                ACM(k, ground_hi) = -boltz_ratio;
-                b[k] = 0.0;
-            }
-
             /* TOPSTAGE_THERMALIZE: force Boltzmann@T_e on the TOP NLTE stage's
              * bb-CONNECTED EXCITED levels (the over-populated super-thermal carriers
              * O/C/S/Al III). The carriers are excited-EXCITED lines that are THIN in
@@ -17130,12 +17174,12 @@ void nlte_assemble_rate_matrix(NLTEConfig *nlte, AtomicData *atom,
 }
 
 /* CPU NLTE solver: assemble + Gauss elimination for one ion pair in one shell */
-static void nlte_solve_ion_shell(NLTEConfig *nlte, AtomicData *atom,
-                                  PlasmaState *plasma, OpacityState *opacity,
-                                  int ion_idx_lo, int ion_idx_hi,
-                                  int shell, double time_explosion,
-                                  GammaDeposition *gamma_dep,
-                                  int pair_shares_slot) {
+static int nlte_solve_ion_shell(NLTEConfig *nlte, AtomicData *atom,
+                                PlasmaState *plasma, OpacityState *opacity,
+                                int ion_idx_lo, int ion_idx_hi,
+                                int shell, double time_explosion,
+                                GammaDeposition *gamma_dep,
+                                int pair_shares_slot) {
     int lev_start = nlte->nlte_ion_level_offset[ion_idx_lo];
     int super_start = nlte->nlte_ion_super_offset[ion_idx_lo];
     /* Matrix is assembled and solved on super-levels (N); full-level pops are
@@ -17143,12 +17187,13 @@ static void nlte_solve_ion_shell(NLTEConfig *nlte, AtomicData *atom,
      * In identity mode N == N_fl and the SL->FL expansion is a no-op. */
     int N    = nlte->nlte_ion_super_offset[ion_idx_hi + 1] - super_start;
     int N_fl = nlte->nlte_ion_level_offset[ion_idx_hi + 1] - lev_start;
-    if (N <= 0 || N_fl <= 0) return;
+    if (N <= 0 || N_fl <= 0) return -1;
     int n_shells = plasma->n_shells;
     int n_lo_super = nlte->nlte_ion_super_offset[ion_idx_lo + 1] - super_start;
 
     double *A_cm = (double *)calloc((size_t)N * N, sizeof(double));
     double *b = (double *)calloc((size_t)N, sizeof(double));
+    if (!A_cm || !b) { free(A_cm); free(b); return -1; }
 
     /* Dead-pair skip (mirror of the CUDA assembly skip): no atoms of this
      * element here -> ~0 pops either way; route straight to the Boltzmann
@@ -17163,12 +17208,31 @@ static void nlte_solve_ion_shell(NLTEConfig *nlte, AtomicData *atom,
     }
 
     if (!has_nonfinite) {
+        uint64_t population_errors_before = nlte->population_error_count;
         nlte_assemble_rate_matrix(nlte, atom, plasma, opacity,
                                    ion_idx_lo, ion_idx_hi, shell, time_explosion,
                                    A_cm, b, N, gamma_dep,
                                    NULL, -1);
-
-        ret = gauss_solve(A_cm, b, N);
+        if (nlte->population_error_count != population_errors_before)
+            ret = -1;
+        else {
+            PopulationStatus rank_status = population_dense_rank_check(
+                A_cm, (size_t)N, 1.0e-14);
+            if (rank_status != POP_OK) {
+#ifdef _OPENMP
+#pragma omp critical(a2_07_population_error)
+#endif
+                {
+                    if (nlte->population_error_count == 0)
+                        nlte->population_first_error = rank_status;
+                    nlte->population_error_count++;
+                    population_counter_note(&nlte->population_counters,
+                                            rank_status);
+                }
+                ret = -1;
+            } else
+            ret = gauss_solve(A_cm, b, N);
+        }
     }
 
     /* Detect non-finite output: gauss_solve may succeed but produce NaN/Inf
@@ -17205,17 +17269,11 @@ static void nlte_solve_ion_shell(NLTEConfig *nlte, AtomicData *atom,
         }
     }
 
-    /* LUMINA_NLTE_FORCE_LTE_LEVELS=1: bypass rate-solve result, use Boltzmann@T_rad. */
-    static int cpu_force_lte_init = 0;
-    static int cpu_force_lte_mode = 0;
-    if (!cpu_force_lte_init) {
-        const char *e = getenv("LUMINA_NLTE_FORCE_LTE_LEVELS");
-        if (e && atoi(e) != 0) cpu_force_lte_mode = 1;
-        cpu_force_lte_init = 1;
+    if (ret != 0 || has_nonfinite) {
+        free(A_cm); free(b);
+        return -1;
     }
-    if (cpu_force_lte_mode) has_nonfinite = 1;
-
-    if (ret == 0 && !has_nonfinite) {
+    {
         /* Clamp negatives + rescale to enforce conservation.
          * Default: combined Σ x_i = n_pair_total.
          * LUMINA_NLTE_ION_LOCK=1: per-ion rescale to (n_lo_total, n_hi_total)
@@ -17230,84 +17288,13 @@ static void nlte_solve_ion_shell(NLTEConfig *nlte, AtomicData *atom,
         int n_lo_levels = nlte->nlte_ion_level_offset[ion_idx_lo + 1] -
                           nlte->nlte_ion_level_offset[ion_idx_lo];
 
-        /* ARTIS-style negative repair (nltepop.cc:796 solution_pops_are_valid):
-         * replace a negative/non-finite super-level pop with its LTE Boltzmann
-         * value relative to the ion ground, NOT a flat 1e-30 floor. The flat
-         * floor sits ABOVE the (exp(-E/kTe)-tiny) true LTE pop of high-E levels,
-         * which manufactured artificial super-thermal b_k. Gated for A/B
-         * (LUMINA_NLTE_LTE_REPAIR=1); default keeps the legacy 1e-30 clamp. */
-        static int lte_repair = -1;
-        if (lte_repair < 0) { const char *e = getenv("LUMINA_NLTE_LTE_REPAIR");
-            lte_repair = (e && atoi(e)) ? 1 : 0; }
-        /* FIX-1 [FLOORM] (CPU-path mirror of the GPU writeback in lumina_cuda.cu):
-         * LUMINA_NLTE_FLOOR_MODE=1 replaces the flat 1e-30 negative-clamp (which,
-         * after the per-ion rescale below, becomes an ABSOLUTE floor identical
-         * across all collapsed excited levels -> b_k grows as exp(+dE/kTe)) with an
-         * LTE-relative floor + b_k cap: negative/sub-resolution levels floored at
-         * LTE@Te (b_k=1), every level capped at n_k<=BKMAX*Boltzmann@Te. Acts in
-         * b-space BEFORE the xfl redistribute + rescale (unchanged), so the per-ion
-         * conservation invariant is preserved. Default 0 => byte-identical. */
-        static int floorm_init = 0, floorm_mode = 0; static double floorm_bkmax = 1e3;
-        if (!floorm_init) {
-            const char *e = getenv("LUMINA_NLTE_FLOOR_MODE");
-            floorm_mode = e ? atoi(e) : 0;
-            const char *bkm = getenv("LUMINA_NLTE_FLOOR_BKMAX");
-            floorm_bkmax = bkm ? atof(bkm) : 1e3;
-            if (floorm_bkmax <= 0.0) floorm_bkmax = 1e3;
-            floorm_init = 1;
-            if (floorm_mode == 1)
-                printf("[FLOORM] mode=1 BKMAX=%g: trace-ion excited floor now LTE-relative (CPU path)\n",
-                       floorm_bkmax);
-        }
-        if (floorm_mode == 1) {
-            double Te_sh = plasma->T_e[shell];
-            double kTe = K_BOLTZMANN * (Te_sh > 0.0 ? Te_sh : 1.0);
-            double bmax = 0.0;
-            for (int i = 0; i < N; i++) { double a = fabs(b[i]); if (a > bmax) bmax = a; }
-            double subres = bmax * 1e-12;
-            for (int i = 0; i < N; i++) {
-                int is_hi = (i >= n_lo_super);
-                int ganch = is_hi ? (super_start + n_lo_super) : super_start;
-                double bg = is_hi ? ((n_lo_super < N) ? b[n_lo_super] : 0.0) : b[0];
-                int gg = atom->level_g[nlte->super_anchor_global[ganch]];
-                int gi = atom->level_g[nlte->super_anchor_global[super_start + i]];
-                double Ei = atom->level_energy_eV[nlte->super_anchor_global[super_start + i]];
-                double Eg = atom->level_energy_eV[nlte->super_anchor_global[ganch]];
-                double dE = (Ei - Eg) * EV_TO_ERG;
-                double boltz_abs = (bg > 0.0 && isfinite(bg))
-                    ? bg * ((gg > 0) ? (double)gi / gg : 1.0) * exp(-dE / kTe) : 0.0;
-                if (!(b[i] > subres) || !isfinite(b[i])) {   /* negative/sub-resolution: LTE floor */
-                    b[i] = (boltz_abs > 0.0 && isfinite(boltz_abs)) ? boltz_abs : 1e-30;
-                } else if (boltz_abs > 0.0) {                /* resolved: cap at b_k <= BKMAX */
-                    double cap = floorm_bkmax * boltz_abs;
-                    if (b[i] > cap) b[i] = cap;
-                }
-            }
-        } else if (lte_repair) {
-            double Te_sh = plasma->T_e[shell];
-            int nlo_sl = n_lo_super;
-            for (int i = 0; i < N; i++) {
-                if (b[i] >= 0.0 && isfinite(b[i])) continue;
-                int is_hi = (i >= nlo_sl);
-                double bg = is_hi ? ((nlo_sl < N) ? b[nlo_sl] : 0.0) : b[0];
-                int ganch = is_hi ? (super_start + nlo_sl) : super_start;
-                double repl = 1e-30;
-                if (bg > 0.0 && isfinite(bg) && Te_sh > 0.0) {
-                    int gi = atom->level_g[nlte->super_anchor_global[super_start + i]];
-                    int gg = atom->level_g[nlte->super_anchor_global[ganch]];
-                    double Ei = atom->level_energy_eV[nlte->super_anchor_global[super_start + i]];
-                    double Eg = atom->level_energy_eV[nlte->super_anchor_global[ganch]];
-                    double dE = (Ei - Eg) * EV_TO_ERG;
-                    double boltz = ((gg > 0) ? (double)gi / gg : 1.0) *
-                                   exp(-dE / (K_BOLTZMANN * Te_sh));
-                    double cand = bg * boltz;
-                    if (isfinite(cand) && cand > 0.0) repl = cand;
-                }
-                b[i] = repl;
-            }
-        } else {
-            for (int i = 0; i < N; i++) {
-                if (b[i] < 0.0) b[i] = 1e-30;
+        /* A2-07: negative/non-finite solutions are terminal. Legacy LTE repair,
+         * flat floors and b-space caps are diagnostic shadow only and cannot
+         * alter a production population candidate. */
+        for (int i = 0; i < N; i++) {
+            if (!isfinite(b[i]) || b[i] < 0.0) {
+                free(A_cm); free(b);
+                return -1;
             }
         }
 
@@ -17315,6 +17302,7 @@ static void nlte_solve_ion_shell(NLTEConfig *nlte, AtomicData *atom,
          *   n_FL = x_SL[SL(FL)] * f_FL,   f_FL = within-SL Boltzmann fraction.
          * Identity mode: SL(FL)==FL nlte idx and f_FL==1, so xfl == b. */
         double *xfl = (double *)malloc((size_t)N_fl * sizeof(double));
+        if (!xfl) { free(A_cm); free(b); return -1; }
         for (int i = 0; i < N_fl; i++) {
             int sl = nlte->fl_to_super[lev_start + i] - super_start;
             double f = nlte->within_sl_frac[(size_t)(lev_start + i) * n_shells + shell];
@@ -17358,70 +17346,11 @@ static void nlte_solve_ion_shell(NLTEConfig *nlte, AtomicData *atom,
             }
         }
         free(xfl);
-    } else {
-        /* Singular or non-finite: fall back to Boltzmann at T_rad.
-         * In ion-lock mode, rescale per-ion (Boltzmann shape, ion totals
-         * pinned to nebular) so the lock invariant survives a failed solve. */
-        double T_rad = plasma->T_rad[shell];
-        int Z_nl = nlte->nlte_Z[ion_idx_lo];
-        int lock = nlte_ion_lock_active(nlte->current_iter) ||
-                   nlte_per_ion_rescale_active() || pair_shares_slot;
-        int n_lo_levels = nlte->nlte_ion_level_offset[ion_idx_lo + 1] -
-                          nlte->nlte_ion_level_offset[ion_idx_lo];
-
-        static int fallback_warn = 0;
-        if (fallback_warn < 16) {
-            fprintf(stderr,
-                "[NLTE-FALLBACK] CPU pair (Z=%d, ions %d/%d, N=%d) shell=%d "
-                "ret=%d has_nonfinite=%d -> Boltzmann@T_rad\n",
-                Z_nl, nlte->nlte_ion[ion_idx_lo], nlte->nlte_ion[ion_idx_hi],
-                N, shell, ret, has_nonfinite);
-            fallback_warn++;
-        }
-
-        double pop_buf_unused; (void)pop_buf_unused;
-        double sum_lo = 0.0, sum_hi = 0.0;
-        for (int i = 0; i < N_fl; i++) {
-            int global = nlte->nlte_to_global_level[lev_start + i];
-            double E = atom->level_energy_eV[global] * EV_TO_ERG;
-            int g = atom->level_g[global];
-            double pop = (double)g * exp(-E / (K_BOLTZMANN * T_rad));
-            nlte->nlte_level_populations[(lev_start + i) * n_shells + shell] = pop;
-            if (i < n_lo_levels) sum_lo += pop;
-            else sum_hi += pop;
-        }
-
-        if (lock && n_lo_levels > 0 && n_lo_levels < N_fl) {
-            double n_lo_total = 0.0, n_hi_total = 0.0;
-            int ip_lo = find_ion_pop_idx(atom, Z_nl, nlte->nlte_ion[ion_idx_lo]);
-            int ip_hi = find_ion_pop_idx(atom, Z_nl, nlte->nlte_ion[ion_idx_hi]);
-            if (ip_lo >= 0) n_lo_total = atom->ion_number_density[ip_lo * n_shells + shell];
-            if (ip_hi >= 0) n_hi_total = atom->ion_number_density[ip_hi * n_shells + shell];
-            double scale_lo = (sum_lo > 0.0 && n_lo_total > 0.0)
-                            ? n_lo_total / sum_lo : (n_lo_total == 0.0 ? 0.0 : 1.0);
-            double scale_hi = (sum_hi > 0.0 && n_hi_total > 0.0)
-                            ? n_hi_total / sum_hi : (n_hi_total == 0.0 ? 0.0 : 1.0);
-            for (int i = 0; i < n_lo_levels; i++)
-                nlte->nlte_level_populations[(lev_start + i) * n_shells + shell] *= scale_lo;
-            for (int i = n_lo_levels; i < N_fl; i++)
-                nlte->nlte_level_populations[(lev_start + i) * n_shells + shell] *= scale_hi;
-        } else {
-            double n_total = nlte_pair_total_density(nlte, atom, plasma, Z_nl,
-                                                      ion_idx_lo, ion_idx_hi, shell);
-            double sum = sum_lo + sum_hi;
-            if (sum > 0.0 && n_total > 0.0) {
-                double scale = n_total / sum;
-                for (int i = 0; i < N_fl; i++)
-                    nlte->nlte_level_populations[(lev_start + i) * n_shells + shell] *= scale;
-            } else if (n_total == 0.0) {
-                for (int i = 0; i < N_fl; i++)
-                    nlte->nlte_level_populations[(lev_start + i) * n_shells + shell] = 0.0;
-            }
-        }
     }
 
     free(A_cm);
     free(b);
+    return 0;
 }
 
 /* Update tau_sobolev for NLTE lines using NLTE level populations.
@@ -17636,17 +17565,40 @@ void nlte_update_tau_sobolev(NLTEConfig *nlte, AtomicData *atom,
  * exactly for both bb and bf. */
 int nlte_precompute_within_sl_frac_checked(NLTEConfig *nlte, AtomicData *atom,
                                            PlasmaState *plasma, int n_shells) {
-    if (!nlte->super_mode) return 0;
+    PopulationAtomicView av = population_atomic_view(atom);
+    PopulationStatus stamp_status = population_partition_view_check(
+        &atom->partition_stamp, &av, plasma ? plasma->T_e : NULL,
+        (size_t)n_shells, atom->partition_stamp.required_population_generation,
+        plasma ? plasma->T_e_generation : 0);
+    if (stamp_status != POP_OK) {
+        fprintf(stderr, "[A2-07] within-super-level blocked: %s\n",
+                population_status_name(stamp_status));
+        return -1;
+    }
+    if (!nlte->super_mode) {
+        nlte->within_sl_stamp = atom->partition_stamp;
+        nlte->within_sl_stamp.n_items =
+            (size_t)nlte->n_nlte_levels_total;
+        return 0;
+    }
     double *Zsl = (double *)malloc(
         (nlte->n_super_total > 0 ? nlte->n_super_total : 1) * sizeof(double));
-    if (!Zsl) {
+    size_t frac_count = (size_t)nlte->n_nlte_levels_total * n_shells;
+    double *work = (double *)malloc((frac_count ? frac_count : 1) * sizeof(double));
+    if (!Zsl || !work) {
         fprintf(stderr,
                 "[NLTE][OOM] within-super-level partition allocation failed\n");
+        free(Zsl);
+        free(work);
         return -1;
     }
     for (int s = 0; s < n_shells; s++) {
         double T_e = plasma->T_e[s];
-        double kT = K_BOLTZMANN * (T_e > 0.0 ? T_e : 1.0);
+        if (!isfinite(T_e) || T_e <= 0.0) {
+            free(Zsl); free(work);
+            return -1;
+        }
+        double kT = K_BOLTZMANN * T_e;
         for (int sl = 0; sl < nlte->n_super_total; sl++) Zsl[sl] = 0.0;
         for (int g = 0; g < nlte->n_nlte_levels_total; g++) {
             int gl = nlte->nlte_to_global_level[g];
@@ -17654,21 +17606,35 @@ int nlte_precompute_within_sl_frac_checked(NLTEConfig *nlte, AtomicData *atom,
             int anchor = nlte->super_anchor_global[sl];
             double E_rel = (atom->level_energy_eV[gl] -
                             atom->level_energy_eV[anchor]) * EV_TO_ERG;
-            if (E_rel < 0.0) E_rel = 0.0;
+            if (!isfinite(E_rel) || E_rel < 0.0 || atom->level_g[gl] <= 0) {
+                free(Zsl); free(work);
+                return -1;
+            }
             double w = (double)atom->level_g[gl] * exp(-E_rel / kT);
-            if (!isfinite(w) || w < 0.0) w = 0.0;
-            nlte->within_sl_frac[(size_t)g * n_shells + s] = w;
+            if (!isfinite(w) || w < 0.0) {
+                free(Zsl); free(work);
+                return -1;
+            }
+            work[(size_t)g * n_shells + s] = w;
             Zsl[sl] += w;
         }
         for (int g = 0; g < nlte->n_nlte_levels_total; g++) {
             int sl = nlte->fl_to_super[g];
             double Z = Zsl[sl];
             size_t idx = (size_t)g * n_shells + s;
-            nlte->within_sl_frac[idx] = (Z > 0.0) ?
-                nlte->within_sl_frac[idx] / Z : 1.0;
+            if (!isfinite(Z) || Z <= 0.0) {
+                free(Zsl); free(work);
+                return -1;
+            }
+            work[idx] /= Z;
         }
     }
+    memcpy(nlte->within_sl_frac, work, frac_count * sizeof(double));
+    nlte->within_sl_stamp = atom->partition_stamp;
+    nlte->within_sl_stamp.n_items =
+        (size_t)nlte->n_nlte_levels_total;
     free(Zsl);
+    free(work);
     return 0;
 }
 
@@ -17684,11 +17650,119 @@ int nlte_solve_all(NLTEConfig *nlte, AtomicData *atom, PlasmaState *plasma,
                      int n_shells, GammaDeposition *gamma_dep) {
     printf("  [NLTE] Solving rate equations (with CE coupling)...\n");
 
-    /* Super-level mode: refresh the within-SL Boltzmann fractions at current T_e. */
+    const char *forbidden_population_knobs[] = {
+        "LUMINA_NLTE_FORCE_LTE_LEVELS",
+        "LUMINA_NLTE_LTE_REPAIR",
+        "LUMINA_NLTE_FLOOR_MODE",
+        "LUMINA_NLTE_FLOOR_REG",
+        "LUMINA_TOPSTAGE_THERMALIZE",
+        "LUMINA_NLTE_BK_PARTIAL",
+        "LUMINA_NLTE_BF_JEQB",
+        "LUMINA_C2_MATRIX_BF",
+        "LUMINA_NLTE_JEQB",
+        "LUMINA_FROZENIN"
+    };
+    int forbidden_population_config = 0;
+    for (size_t i = 0;
+         i < sizeof(forbidden_population_knobs) /
+             sizeof(forbidden_population_knobs[0]); i++) {
+        const char *value = getenv(forbidden_population_knobs[i]);
+        if (value && atoi(value) != 0) {
+            forbidden_population_config = 1;
+            break;
+        }
+    }
+    if (forbidden_population_config) {
+        nlte->population_first_error = POP_FORBIDDEN_FALLBACK;
+        nlte->population_error_count++;
+        population_counter_note(&nlte->population_counters,
+                                POP_FORBIDDEN_FALLBACK);
+        fprintf(stderr, "[A2-07] forbidden population fallback configuration\n");
+        return -1;
+    }
+    if (nlte->radfield_view_status != RADIATION_FIELD_VIEW_OK ||
+        !nlte->radfield_view.J_nu) {
+        nlte->population_first_error = POP_BF_STALE;
+        nlte->population_error_count++;
+        population_counter_note(&nlte->population_counters, POP_BF_STALE);
+        return -1;
+    }
+    if (nlte->line_view_status != LINE_JBAR_VIEW_OK ||
+        !nlte->line_view.jbar) {
+        PopulationStatus ps = nlte->line_view_status == LINE_JBAR_VIEW_PROFILE
+                            ? POP_PROFILE_MISMATCH
+                            : nlte->line_view_status == LINE_JBAR_VIEW_QHASH
+                            ? POP_QUERY_HASH_MISMATCH : POP_BB_STALE;
+        nlte->population_first_error = ps;
+        nlte->population_error_count++;
+        population_counter_note(&nlte->population_counters, ps);
+        return -1;
+    }
+    PopulationStatus rate_pair_status = population_rate_views_check(
+        POP_OK, nlte->radfield_view.generation,
+        POP_OK, nlte->line_view.generation,
+        nlte->radfield_view.generation);
+    if (rate_pair_status != POP_OK) {
+        nlte->population_first_error = rate_pair_status;
+        nlte->population_error_count++;
+        nlte->population_counters.pop_generation_mismatch++;
+        return -1;
+    }
+
+    uint64_t next_generation = atom->population_committed_generation + 1;
+    if (next_generation == 0) return -1;
+    nlte->population_required_generation = next_generation;
+    nlte->population_counters.pop_generation_required = next_generation;
+    nlte->population_counters.pop_shells_attempted += (uint64_t)n_shells;
+    PopulationTransaction pop_tx;
+    double *published_level_populations = nlte->nlte_level_populations;
+    double *published_ion_populations = atom->ion_number_density;
+    double *published_ne = plasma->n_electron;
+    double *published_partition = atom->partition_functions;
+    PopulationDerivedStamp published_partition_stamp = atom->partition_stamp;
+    PopulationDerivedStamp published_within_sl_stamp = nlte->within_sl_stamp;
+    if (population_transaction_begin(
+            &pop_tx, atom->ion_number_density,
+            (size_t)atom->n_ion_pops * n_shells,
+            nlte->nlte_level_populations,
+            (size_t)nlte->n_nlte_levels_total * n_shells,
+            plasma->n_electron, (size_t)n_shells,
+            atom->partition_functions,
+            (size_t)atom->n_ion_pops * n_shells, next_generation,
+            &atom->population_committed_generation) != 0) {
+        population_counter_note(&nlte->population_counters, POP_SOLVE_FAILED);
+        return -1;
+    }
+    atom->ion_number_density = pop_tx.work_ion;
+    nlte->nlte_level_populations = pop_tx.work_level;
+    plasma->n_electron = pop_tx.work_ne;
+    atom->partition_functions = pop_tx.work_partition;
+#define A2_07_POP_ABORT(status_) do {                                      \
+        atom->ion_number_density = published_ion_populations;              \
+        nlte->nlte_level_populations = published_level_populations;        \
+        plasma->n_electron = published_ne;                                 \
+        atom->partition_functions = published_partition;                   \
+        atom->partition_stamp = published_partition_stamp;                 \
+        nlte->within_sl_stamp = published_within_sl_stamp;                 \
+        population_transaction_abort(&pop_tx, (status_));                  \
+        if (nlte->population_error_count == 0)                             \
+            nlte->population_first_error = (status_);                      \
+        nlte->population_error_count++;                                    \
+        population_counter_note(&nlte->population_counters, (status_));    \
+        return -1;                                                         \
+    } while (0)
+
+    PopulationAtomicView population_view = population_atomic_view(atom);
+    PopulationStatus partition_status = population_partition_build(
+        &population_view, plasma->T_e, (size_t)n_shells, next_generation,
+        plasma->T_e_generation, atom->partition_functions,
+        &atom->partition_stamp);
+    if (partition_status != POP_OK)
+        A2_07_POP_ABORT(partition_status);
     if (nlte_precompute_within_sl_frac_checked(
             nlte, atom, plasma, n_shells) != 0) {
         fprintf(stderr, "[NLTE] solve aborted: within-SL projection unavailable\n");
-        return -1;
+        A2_07_POP_ABORT(POP_STALE_DERIVED_TEMPERATURE);
     }
 
     /* Pair layout from the centralized builder (16 base pairs, or 23 with the O
@@ -17721,7 +17795,7 @@ int nlte_solve_all(NLTEConfig *nlte, AtomicData *atom, PlasmaState *plasma,
         fprintf(stderr, "[NLTE][OOM] convergence state allocation failed\n");
         free(old_ion_totals);
         free(old_pops);
-        return -1;
+        A2_07_POP_ABORT(POP_SOLVE_FAILED);
     }
     /* Allocated only in the explicitly armed Wave-3 lane.  status is per
      * (S/Fe,shell): 1 means the self-tested candidate may replace legacy for
@@ -17730,7 +17804,7 @@ int nlte_solve_all(NLTEConfig *nlte, AtomicData *atom, PlasmaState *plasma,
         fprintf(stderr, "[EW] invalid gate configuration; solve aborted\n");
         free(old_ion_totals);
         free(old_pops);
-        return -1;
+        A2_07_POP_ABORT(POP_FORBIDDEN_FALLBACK);
     }
     int ew_on = nlte_element_wide_enabled();
     int *ew_status = ew_on ? (int *)calloc((size_t)2 * n_shells, sizeof(int)) : NULL;
@@ -17738,7 +17812,7 @@ int nlte_solve_all(NLTEConfig *nlte, AtomicData *atom, PlasmaState *plasma,
         fprintf(stderr, "[EW][OOM] status allocation failed; solve aborted\n");
         free(old_ion_totals);
         free(old_pops);
-        return -1;
+        A2_07_POP_ABORT(POP_SOLVE_FAILED);
     }
     if (ew_on) {
         for (int s = 0; s < n_shells; s++) {
@@ -17754,7 +17828,7 @@ int nlte_solve_all(NLTEConfig *nlte, AtomicData *atom, PlasmaState *plasma,
                     free(ew_status);
                     free(old_ion_totals);
                     free(old_pops);
-                    return -1;
+                    A2_07_POP_ABORT(POP_SOLVE_FAILED);
                 }
             }
             if (nlte_element_wide_matches(26, s)) {
@@ -17769,12 +17843,13 @@ int nlte_solve_all(NLTEConfig *nlte, AtomicData *atom, PlasmaState *plasma,
                     free(ew_status);
                     free(old_ion_totals);
                     free(old_pops);
-                    return -1;
+                    A2_07_POP_ABORT(POP_SOLVE_FAILED);
                 }
             }
         }
     }
 
+    int ce_converged = 0;
     for (int ce_iter = 0; ce_iter < ce_max_iter; ce_iter++) {
         nlte_jbar_dump_set_pass(ce_iter);   /* [withParityP GATE2] CE pass marker */
         /* Save current populations + compute old ion totals */
@@ -17825,7 +17900,7 @@ int nlte_solve_all(NLTEConfig *nlte, AtomicData *atom, PlasmaState *plasma,
                     free(ew_status);
                     free(old_ion_totals);
                     free(old_pops);
-                    return -1;
+                    A2_07_POP_ABORT(POP_SOLVE_FAILED);
                 }
                 if (!ew_on) {
                     memcpy(saved_lo,
@@ -17839,6 +17914,7 @@ int nlte_solve_all(NLTEConfig *nlte, AtomicData *atom, PlasmaState *plasma,
                 }
             }
 
+            int pair_solve_failed = 0;
             #ifdef _OPENMP
             #pragma omp parallel for schedule(dynamic, 1)
             #endif
@@ -17849,9 +17925,22 @@ int nlte_solve_all(NLTEConfig *nlte, AtomicData *atom, PlasmaState *plasma,
                     nlte_element_wide_matches(Zp, s) &&
                     ew_status[(size_t)zi*n_shells+s] == 1)
                     continue; /* no pair/pin/topstage call for committed (Z,s) */
-                nlte_solve_ion_shell(nlte, atom, plasma, opacity,
-                                     lo, hi, s, time_explosion, gamma_dep,
-                                     pair_shares_slot);
+                if (nlte_solve_ion_shell(nlte, atom, plasma, opacity,
+                                         lo, hi, s, time_explosion, gamma_dep,
+                                         pair_shares_slot) != 0) {
+#ifdef _OPENMP
+#pragma omp atomic write
+#endif
+                    pair_solve_failed = 1;
+                }
+            }
+
+            if (pair_solve_failed) {
+                free(saved_lo);
+                free(ew_status);
+                free(old_ion_totals);
+                free(old_pops);
+                A2_07_POP_ABORT(POP_SOLVE_FAILED);
             }
 
             if (saved_lo) {
@@ -17938,18 +18027,23 @@ int nlte_solve_all(NLTEConfig *nlte, AtomicData *atom, PlasmaState *plasma,
 
         if (max_rel_change < ce_threshold) {
             printf("    CE converged in %d iterations\n", ce_iter + 1);
+            ce_converged = 1;
             break;
         }
     }
     free(old_pops);
     free(old_ion_totals);
+    if (!ce_converged) {
+        free(ew_status);
+        A2_07_POP_ABORT(POP_SOLVE_FAILED);
+    }
 
     /* Candidate assembly has ended; these are the authoritative counts from
      * the actual save/restore, per-ion pin and top-stage owner branches. */
     if (nlte_ew_publish_runtime_counts(nlte) != 0) {
         fprintf(stderr, "[EW] runtime-manifest I/O failure; solve aborted\n");
         free(ew_status);
-        return -1;
+        A2_07_POP_ABORT(POP_SOLVE_FAILED);
     }
 
     /* Print ion pair level counts */
@@ -17977,7 +18071,7 @@ int nlte_solve_all(NLTEConfig *nlte, AtomicData *atom, PlasmaState *plasma,
         free(g_ew_tau_authority);
         g_ew_tau_authority = NULL;
         g_ew_tau_authority_nshells = 0;
-        return -1;
+        A2_07_POP_ABORT(POP_NONFINITE);
     }
 
     /* Print diagnostics: compare total NLTE vs nebular ion densities */
@@ -18007,7 +18101,7 @@ int nlte_solve_all(NLTEConfig *nlte, AtomicData *atom, PlasmaState *plasma,
             if (!fp) {
                 fprintf(stderr, "[NLTE-DUMP] failed to open %s\n", path);
             } else {
-                fprintf(fp, "Z,ion,shell,level_idx,global_idx,E_eV,g,n_pop,T_e,T_rad,W,n_ion_total\n");
+                fprintf(fp, "Z,ion,shell,level_idx,global_idx,E_eV,g,n_pop,T_e,n_ion_total,population_generation\n");
                 for (int ii = 0; ii < nlte->n_nlte_ions; ii++) {
                     int Zv  = nlte->nlte_Z[ii];
                     int ion = nlte->nlte_ion[ii];
@@ -18022,15 +18116,13 @@ int nlte_solve_all(NLTEConfig *nlte, AtomicData *atom, PlasmaState *plasma,
                         for (int s = 0; s < n_shells; s++) {
                             double n_pop = nlte->nlte_level_populations[
                                 (size_t)l * n_shells + s];
-                            double T_e   = plasma->T_e ? plasma->T_e[s] :
-                                           plasma->T_e_T_rad_ratio * plasma->T_rad[s];
-                            double T_rad = plasma->T_rad[s];
-                            double W     = plasma->W[s];
+                            double T_e   = plasma->T_e[s];
                             double n_ion = (ip >= 0) ?
                                 atom->ion_number_density[ip * n_shells + s] : 0.0;
-                            fprintf(fp, "%d,%d,%d,%d,%d,%.6f,%d,%.6e,%.2f,%.2f,%.6e,%.6e\n",
+                            fprintf(fp, "%d,%d,%d,%d,%d,%.6f,%d,%.6e,%.2f,%.6e,%llu\n",
                                     Zv, ion, s, local_l, gi, E_eV, gw, n_pop,
-                                    T_e, T_rad, W, n_ion);
+                                    T_e, n_ion,
+                                    (unsigned long long)nlte->population_required_generation);
                         }
                     }
                 }
@@ -18039,6 +18131,23 @@ int nlte_solve_all(NLTEConfig *nlte, AtomicData *atom, PlasmaState *plasma,
             }
         }
     }
+    atom->ion_number_density = published_ion_populations;
+    nlte->nlte_level_populations = published_level_populations;
+    plasma->n_electron = published_ne;
+    atom->partition_functions = published_partition;
+    PopulationStatus publish_status = population_transaction_commit(&pop_tx);
+    if (publish_status != POP_OK) {
+        atom->partition_stamp = published_partition_stamp;
+        nlte->within_sl_stamp = published_within_sl_stamp;
+        nlte->population_first_error = publish_status;
+        nlte->population_error_count++;
+        population_counter_note(&nlte->population_counters, publish_status);
+        return -1;
+    }
+    nlte->population_committed_generation = next_generation;
+    nlte->population_counters.pop_generation_committed = next_generation;
+    nlte->population_counters.pop_shells_published += (uint64_t)n_shells;
+#undef A2_07_POP_ABORT
     return 0;
 }
 

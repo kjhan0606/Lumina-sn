@@ -1,0 +1,149 @@
+{
+  "schema": "A2_07_STATIC_CENSUS_V1",
+  "status": "PASS",
+  "reason_code": "OK",
+  "child_rc": 0,
+  "wrapper_rc": 0,
+  "ledger_ids": [
+    "A2-05:old9160:T_rad",
+    "A2-05:old9162:W",
+    "A2-05:old11943:W",
+    "A2-05:old11943:T_rad",
+    "A2-05:old13672:W",
+    "A2-05:old13672:T_rad",
+    "A2-06:old4879:T_rad",
+    "A2-06:old4880:W",
+    "A2-06:old12093:W",
+    "A2-06:old12100:W",
+    "A2-06:old13739:W",
+    "A2-06:old13743:W",
+    "BASE:old2081:T_rad",
+    "BASE:old2082:W",
+    "BASE:old7402:T_rad",
+    "BASE:old7403:W",
+    "BASE:old17832:T_rad",
+    "BASE:old17833:W"
+  ],
+  "outside_groups": [
+    "partition canonical/fallback",
+    "duplicate partition_functions_Te",
+    "Sobolev LTE synthesis",
+    "macro/k-packet fallback",
+    "recombination destination",
+    "BF opacity/rate population",
+    "bf_rate_pop",
+    "all-level Gamma weight",
+    "RADEQ untracked population",
+    "coupled untracked population",
+    "isolated-row anchor",
+    "force/singular fallback",
+    "within-superlevel distribution",
+    "Boltzmann dump",
+    "ion rate selection duplication",
+    "level matrix BF/BB assembly",
+    "transactional publish/counters"
+  ],
+  "function_spans": {
+    "compute_partition_functions": {
+      "line": 2272,
+      "lines": 19
+    },
+    "bf_rate_pop": {
+      "line": 9279,
+      "lines": 14
+    },
+    "compute_tau_sobolev": {
+      "line": 2886,
+      "lines": 94
+    },
+    "compute_bf_opacity": {
+      "line": 7273,
+      "lines": 713
+    },
+    "parity_gamma_phot_checked": {
+      "line": 2459,
+      "lines": 55
+    },
+    "compute_ion_populations_shell": {
+      "line": 2569,
+      "lines": 205
+    },
+    "compute_electron_density": {
+      "line": 2813,
+      "lines": 43
+    },
+    "nlte_precompute_within_sl_frac_checked": {
+      "line": 17547,
+      "lines": 74
+    },
+    "nlte_solve_ion_shell": {
+      "line": 17158,
+      "lines": 178
+    },
+    "nlte_solve_all": {
+      "line": 17629,
+      "lines": 505
+    },
+    "compute_transition_probabilities": {
+      "line": 3793,
+      "lines": 2013
+    },
+    "nlte_assemble_rate_matrix": {
+      "line": 15200,
+      "lines": 1956
+    }
+  },
+  "violations": [],
+  "missing_required_tokens": [],
+  "missing_function_tokens": [],
+  "duplicate_partition_store": false,
+  "bf_rate_pop_te_only_signature": true,
+  "allowlist": [
+    {
+      "file": "src/lumina_plasma.c",
+      "function": "compute_radiative_equilibrium_te",
+      "root": "A2-10 temperature solve",
+      "symbols": [
+        "plasma->T_rad",
+        "plasma->W"
+      ],
+      "reason": "temperature/energy equation, not a population fallback",
+      "followup": "A2-10"
+    },
+    {
+      "file": "src/lumina_cuda.cu",
+      "function": "nlte_solve_all_gpu",
+      "root": "nlte_solve_all_gpu",
+      "symbols": [
+        "plasma->T_rad",
+        "plasma->W",
+        "T_e_T_rad_ratio"
+      ],
+      "reason": "GPU ownership is outside A2-07",
+      "followup": "A2-13"
+    },
+    {
+      "file": "src/lumina_plasma.c",
+      "function": "nlte_assemble_rate_matrix:A2_06_DIAGNOSTIC_SHADOW",
+      "root": "nlte_solve_all -> nlte_assemble_rate_matrix",
+      "symbols": [
+        "opacity->jbar_line",
+        "plasma->T_rad",
+        "plasma->W"
+      ],
+      "reason": "observer-only shadow overwritten by checked line view before ACM",
+      "followup": "none"
+    },
+    {
+      "file": "src/lumina_plasma.c",
+      "function": "compute_ion_populations_shell:legacy_phi_shadow",
+      "root": "compute_plasma_state -> compute_ion_populations_shell",
+      "symbols": [
+        "plasma->T_rad",
+        "plasma->W"
+      ],
+      "reason": "legacy Saha diagnostic shadow; ratio supplier is checked helper",
+      "followup": "none"
+    }
+  ]
+}

@@ -14,22 +14,18 @@ int main(void) {
     int element_Z[2] = {6, 14};
     double element_mass[2] = {12.0, 28.0};
     double abundance[2] = {0.0, 1.0};
-    int elem_ion_offset[3] = {0, 2, 4};
-    int ion_Z[4] = {6, 6, 14, 14};
-    int ion_stage[4] = {0, 1, 0, 1};
-    double ion_density[4] = {-1.0, -1.0, -1.0, -1.0};
-    double partition[4] = {0.0, 0.0, 0.0, 0.0};
-    double partition_Te[4] = {0.0, 0.0, 0.0, 0.0};
-    int level_offset[5] = {0, 1, 2, 3, 4};
-    int level_Z[4] = {6, 6, 14, 14};
-    int level_ion[4] = {0, 1, 0, 1};
-    int level_num[4] = {0, 0, 0, 0};
-    double level_energy[4] = {0.0, 0.0, 0.0, 0.0};
-    int level_g[4] = {1, 1, 1, 1};
-    int level_meta[4] = {1, 1, 1, 1};
-    int ioniz_Z[2] = {6, 14};
-    int ioniz_stage[2] = {0, 0};
-    double ioniz_energy[2] = {1e10, 1e10};
+    int elem_ion_offset[3] = {0, 2, 3};
+    int ion_Z[3] = {6, 6, 14};
+    int ion_stage[3] = {0, 1, 1};
+    double ion_density[3] = {-1.0, -1.0, -1.0};
+    double partition[3] = {0.0, 0.0, 0.0};
+    int level_offset[4] = {0, 1, 2, 3};
+    int level_Z[3] = {6, 6, 14};
+    int level_ion[3] = {0, 1, 1};
+    int level_num[3] = {0, 0, 0};
+    double level_energy[3] = {0.0, 0.0, 0.0};
+    int level_g[3] = {1, 1, 1};
+    int level_meta[3] = {1, 1, 1};
 
     double W[1] = {0.5};
     double T_rad[1] = {10000.0};
@@ -44,13 +40,12 @@ int main(void) {
     atom.element_mass_amu = element_mass;
     atom.abundances = abundance;
     atom.elem_ion_offset = elem_ion_offset;
-    atom.n_ion_pops = 4;
+    atom.n_ion_pops = 3;
     atom.ion_pop_Z = ion_Z;
     atom.ion_pop_stage = ion_stage;
     atom.ion_number_density = ion_density;
     atom.partition_functions = partition;
-    atom.partition_functions_Te = partition_Te;
-    atom.n_levels = 4;
+    atom.n_levels = 3;
     atom.level_offset = level_offset;
     atom.level_Z = level_Z;
     atom.level_ion = level_ion;
@@ -58,17 +53,13 @@ int main(void) {
     atom.level_energy_eV = level_energy;
     atom.level_g = level_g;
     atom.level_metastable = level_meta;
-    atom.n_ionization = 2;
-    atom.ioniz_Z = ioniz_Z;
-    atom.ioniz_ion = ioniz_stage;
-    atom.ioniz_energy_eV = ioniz_energy;
-
     plasma.n_shells = 1;
     plasma.W = W;
     plasma.T_rad = T_rad;
     plasma.rho = rho;
     plasma.n_electron = n_e;
     plasma.T_e = T_e;
+    plasma.T_e_generation = 1;
     opacity.n_lines = 0;
     opacity.n_shells = 1;
     opacity.tau_sobolev = tau_dummy;
@@ -81,21 +72,19 @@ int main(void) {
 
     double active_ground_legacy = (abundance[1] * rho[0]) /
                                   (element_mass[1] * AMU);
-    double active_upper_legacy = 1e-300;
     int active_identical =
-        memcmp(&ion_density[2], &active_ground_legacy, sizeof(double)) == 0 &&
-        memcmp(&ion_density[3], &active_upper_legacy, sizeof(double)) == 0;
+        memcmp(&ion_density[2], &active_ground_legacy, sizeof(double)) == 0;
     int inactive_zero = ion_density[0] == 0.0 && ion_density[1] == 0.0;
+    int audit_rc = lumina_zinert_validate(&atom, NULL, &opacity, 1,
+                                          "population-fixture");
 
     printf("[Z-INERT-POP] inactive_ground=%.17g inactive_upper=%.17g "
-           "active_ground_bits=%s active_upper_floor_bits=%s "
-           "active_ground=%.17g active_upper=%.17g verdict=%s\n",
+           "active_ground_bits=%s active_ground=%.17g audit_rc=%d verdict=%s\n",
            ion_density[0], ion_density[1],
            memcmp(&ion_density[2], &active_ground_legacy,
                   sizeof(double)) == 0 ? "IDENTICAL" : "DIFFERENT",
-           memcmp(&ion_density[3], &active_upper_legacy,
-                  sizeof(double)) == 0 ? "IDENTICAL" : "DIFFERENT",
-           ion_density[2], ion_density[3],
-           (inactive_zero && active_identical) ? "PASS" : "FAIL");
-    return (inactive_zero && active_identical) ? 0 : 1;
+           ion_density[2], audit_rc,
+           (inactive_zero && active_identical && audit_rc == 0) ?
+               "PASS" : "FAIL");
+    return (inactive_zero && active_identical && audit_rc == 0) ? 0 : 1;
 }

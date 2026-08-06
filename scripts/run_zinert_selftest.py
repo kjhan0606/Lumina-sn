@@ -13,6 +13,11 @@ from pathlib import Path
 
 from gate_parallel import run_cases, worker_count
 
+CANONICAL_TAU_EXPECTATION = (
+    "active_lines=2211572 active_tau_bit_differences=0 "
+    "active_tau_fnv64=1cfbc8dba0b0f23f"
+)
+
 
 @dataclass(frozen=True)
 class Case:
@@ -44,6 +49,8 @@ def run_case(case: Case) -> Result:
         check=False,
     )
     ok = proc.returncode != 0 if case.expect_nonzero else proc.returncode == 0
+    if case.case_id == "canonical-tau":
+        ok = ok and CANONICAL_TAU_EXPECTATION in proc.stdout
     return Result(case.case_id, proc.returncode, proc.stdout, ok)
 
 

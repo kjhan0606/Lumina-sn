@@ -1,0 +1,40 @@
+{
+  "schema": "A2_07_ORACLE_CONTRACT_V1",
+  "status": "CONTRACT_ONLY_DRIVER_NOT_RUN",
+  "reason_code": "BLOCKED_DRIVER_NOT_RUN",
+  "child_rc": 3,
+  "wrapper_rc": 3,
+  "shell_domain": [0, 1, 2, 3, 4, 5, 6, 7, 8],
+  "lanes": {
+    "CHAIN": "committed A2-05 BF view plus committed A2-06 LineJbarCache",
+    "ORACLE_INPUT": "deterministic truth-side rates committed through the same checked views; no truth population injection"
+  },
+  "required_cmfgen_files": [
+    "POPCAL", "POPCOB", "POPIRON", "POPNICK", "POPSIL", "POPSUL",
+    "RVTJ", "SUPERLEVEL_MEMBERSHIP"
+  ],
+  "frozen_ions": {
+    "SiVI": 5, "SVI": 5, "CaVI": 5, "FeVI": 5, "FeVII": 6,
+    "NiVI": 5, "NiVII": 6, "CoVI": 5, "CoVII": 6
+  },
+  "thresholds": {
+    "ion_tv_max": 0.10,
+    "dominant_stage_all": true,
+    "ne_esym_median_max": 0.10,
+    "ne_esym_p95_max": 0.20,
+    "ion_closure_max": 1e-10,
+    "truth_f_cov_min": 0.95,
+    "truth_f_cov_lcl_min": 0.95,
+    "level_coverage_min": 0.95,
+    "level_sum_max": 0.10,
+    "level_log_p95_dex_max": 0.30,
+    "partition_relative_error_max": 1e-10
+  },
+  "negative_controls": {
+    "N1": {"marker": "A2_07_NEG_STAGE_SWAP", "child_rc": 4, "wrapper_rc": 0},
+    "N2": {"marker": "A2_07_NEG_NEIGHBOR_NE", "child_rc": 4, "wrapper_rc": 0},
+    "N3": {"marker": "A2_07_NEG_TRAD_FOR_TE", "child_rc": 4, "wrapper_rc": 0},
+    "N4": {"marker": "A2_07_NEG_LEVEL_SHUFFLE", "child_rc": 4, "wrapper_rc": 0}
+  },
+  "implementation": "scripts/a2_07_population_gate.py"
+}

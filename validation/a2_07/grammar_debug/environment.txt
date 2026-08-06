@@ -1,0 +1,151 @@
+ *v*)
+ *v*x*)
+ *x*)
+ /usr/bin/scl "$@";
+ ;;
+ ;;
+ ;;
+ __lmod_my_status=$?;
+ __lmod_sh_dbg='v'
+ __lmod_sh_dbg='vx'
+ __lmod_sh_dbg='x'
+ case "$-" in 
+ echo "Shell debugging restarted" 1>&2;
+ echo "Shell debugging temporarily silenced: export LMOD_SH_DBG_ON=1 for Lmod's output" 1>&2;
+ else
+ esac;
+ eval "$($LMOD_CMD shell "$@")" && eval "$(${LMOD_SETTARG_CMD:-:} -s sh)";
+ eval "module $@";
+ eval ${which_declare} ) | /usr/bin/which --tty-only --read-alias --read-functions --show-tilde --show-dot $@
+ fi
+ fi;
+ fi;
+ fi;
+ if [ -n "${__lmod_sh_dbg:-}" ]; then
+ if [ -n "${__lmod_sh_dbg:-}" ]; then
+ return $__lmod_my_status
+ set +$__lmod_sh_dbg;
+ set -$__lmod_sh_dbg;
+ unset __lmod_sh_dbg;
+BASH_ENV=/opt/ohpc/admin/lmod/lmod/init/bash
+BASH_FUNC_ml%%=() {  eval "$($LMOD_DIR/ml_cmd "$@")"
+BASH_FUNC_module%%=() {  if [ -z "${LMOD_SH_DBG_ON+x}" ]; then
+BASH_FUNC_scl%%=() {  if [ "$1" = "load" -o "$1" = "unload" ]; then
+BASH_FUNC_which%%=() {  ( alias;
+CLASSPATH=/opt/ohpc/pub/intel/oneapi/mpi/2021.17/share/java/mpi.jar
+CLAUDE_CODE_MAX_OUTPUT_TOKENS=128000
+CLAUDE_OPTS=--prompt 'You have access to a tool called python ask_gemini.py. Whenever you are unsure about astrophysics physics or spectral fitting, run this script to get a second opinion from Gemini 1.5 Pro before making changes.'
+CMAKE_PREFIX_PATH=/opt/ohpc/pub/intel/oneapi/compiler/2025.3:/opt/ohpc/pub/intel/oneapi/umf/1.0:/opt/ohpc/pub/intel/oneapi/tbb/2022.3
+CMPLR_ROOT=/opt/ohpc/pub/intel/oneapi/compiler/2025.3
+CONDA_DEFAULT_ENV=base
+CONDA_EXE=/home/kjhan/miniconda3/bin/conda
+CONDA_PREFIX=/home/kjhan/miniconda3
+CONDA_PROMPT_MODIFIER=(base) 
+CONDA_PYTHON_EXE=/home/kjhan/miniconda3/bin/python
+CONDA_SHLVL=1
+CPATH=/opt/ohpc/pub/intel/oneapi/mpi/2021.17/include:/opt/ohpc/pub/intel/oneapi/dev-utilities/2025.3/include:/opt/ohpc/pub/intel/oneapi/umf/1.0/include
+CPLUS_INCLUDE_PATH=/opt/ohpc/pub/intel/oneapi/umf/1.0/include:/opt/ohpc/pub/intel/oneapi/tbb/2022.3/include
+C_INCLUDE_PATH=/opt/ohpc/pub/intel/oneapi/umf/1.0/include:/opt/ohpc/pub/intel/oneapi/tbb/2022.3/include
+DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/10396/bus
+DEBUGINFOD_IMA_CERT_PATH=/etc/keys/ima:
+DEBUGINFOD_URLS=https://debuginfod.rockylinux.org/ 
+DIAGUTIL_PATH=/opt/ohpc/pub/intel/oneapi/compiler/2025.3/etc/compiler/sys_check/sys_check.sh
+FI_PROVIDER_PATH=/opt/ohpc/pub/intel/oneapi/mpi/2021.17/opt/mpi/libfabric/lib/prov:/usr/lib64/libfabric
+FPATH=/opt/ohpc/admin/lmod/lmod/init/ksh_funcs
+GDB_INFO=/opt/ohpc/pub/intel/oneapi/debugger/2025.3/share/info
+HOME=/home/kjhan
+INCLUDE=/opt/ohpc/pub/apps/nodejs/include:/opt/ohpc/pub/compiler/gcc/13.2.0/include
+INFOPATH=/opt/ohpc/pub/intel/oneapi/debugger/2025.3/share/info
+INTEL_PYTHONHOME=/opt/ohpc/pub/intel/oneapi/debugger/2025.3/opt/debugger
+I_MPI_FABRICS=shm:ofi
+I_MPI_ROOT=/opt/ohpc/pub/intel/oneapi/mpi/2021.17
+LANG=C
+LC_ALL=C
+LD_LIBRARY_PATH=/opt/ohpc/pub/intel/oneapi/debugger/2025.3/opt/debugger/lib:/opt/ohpc/pub/apps/nodejs/lib:/opt/ohpc/pub/utils/valgrind/3.24.0/lib:/opt/ohpc/pub/compiler/gcc/13.2.0/lib64:/opt/ohpc/pub/intel/oneapi/mpi/2021.17/opt/mpi/libfabric/lib:/opt/ohpc/pub/intel/oneapi/mpi/2021.17/lib:/opt/ohpc/pub/intel/oneapi/compiler/2025.3/opt/compiler/lib:/opt/ohpc/pub/intel/oneapi/compiler/2025.3/lib:/opt/ohpc/pub/intel/oneapi/umf/1.0/lib:/opt/ohpc/pub/intel/oneapi/tbb/2022.3/lib:./:/home/kjhan/local/lib:/home/kjhan/local/lib64
+LESSOPEN=||/usr/bin/lesspipe.sh %s
+LIBRARY_PATH=/opt/ohpc/pub/intel/oneapi/mpi/2021.17/opt/mpi/libfabric/lib:/opt/ohpc/pub/intel/oneapi/mpi/2021.17/lib:/opt/ohpc/pub/intel/oneapi/compiler/2025.3/lib:/opt/ohpc/pub/intel/oneapi/umf/1.0/lib:/opt/ohpc/pub/intel/oneapi/tbb/2022.3/lib
+LMOD_CMD=/opt/ohpc/admin/lmod/lmod/libexec/lmod
+LMOD_COLORIZE=no
+LMOD_DIR=/opt/ohpc/admin/lmod/lmod/libexec
+LMOD_FAMILY_COMPILER=gnu13
+LMOD_FAMILY_COMPILER_VERSION=13.2.0
+LMOD_FAMILY_NODEJS=nodejs
+LMOD_FAMILY_NODEJS_VERSION=false
+LMOD_FULL_SETTARG_SUPPORT=no
+LMOD_PKG=/opt/ohpc/admin/lmod/lmod
+LMOD_PREPEND_BLOCK=normal
+LMOD_ROOT=/opt/ohpc/admin/lmod
+LMOD_SETTARG_CMD=:
+LMOD_SETTARG_FULL_SUPPORT=no
+LMOD_VERSION=8.7.59
+LOADEDMODULES=intel/tbb/2022.3:intel/umf/1.0.2:intel/compiler-rt/2025.3.0:intel/compiler/2025.3.0:intel/dev-utilities/2025.3.0:intel/mpi/2021.17:gnu13/13.2.0:valgrind/3.24.0:nodejs:intel/debugger/2025.3.0
+LOGNAME=kjhan
+MANPATH=/opt/ohpc/pub/intel/oneapi/debugger/2025.3/share/man:/opt/ohpc/pub/apps/nodejs/share/man:/opt/ohpc/pub/utils/valgrind/3.24.0/share/man:/opt/ohpc/pub/compiler/gcc/13.2.0/share/man:/opt/ohpc/pub/intel/oneapi/mpi/2021.17/share/man:/opt/ohpc/pub/intel/oneapi/compiler/2025.3/share/man:/opt/ohpc/admin/lmod/lmod/share/man::
+MODULEPATH=/opt/ohpc/pub/moduledeps/gnu13:/etc/scl/modulefiles:/opt/ohpc/pub/modulefiles
+MODULESHOME=/opt/ohpc/admin/lmod/lmod
+MOTD_SHOWN=pam
+NLSPATH=/opt/ohpc/pub/intel/oneapi/compiler/2025.3/lib/compiler/locale/%l_%t/%N
+OCL_ICD_FILENAMES=/opt/ohpc/pub/intel/oneapi/compiler/2025.3/lib/libintelocl.so
+OLDPWD=/home/kjhan
+OMP_NUM_THREADS=32
+OMP_PLACES=threads
+OMP_STACKSIZE=128M
+OMP_WAIT_POLICY=passive
+PATH=/home/kjhan/ollama/bin:/home/kjhan/.npm-global/bin:/home/kjhan/.cargo/bin:/home/kjhan/texlive/2026/bin/x86_64-linux:/home/kjhan/miniconda3/bin:/home/kjhan/miniconda3/condabin:/opt/ohpc/pub/intel/oneapi/debugger/2025.3/bin:/opt/ohpc/pub/apps/nodejs/bin:/opt/ohpc/pub/utils/valgrind/3.24.0/bin:/opt/ohpc/pub/compiler/gcc/13.2.0/bin:/opt/ohpc/pub/intel/oneapi/mpi/2021.17/opt/mpi/libfabric/bin:/opt/ohpc/pub/intel/oneapi/mpi/2021.17/bin:/opt/ohpc/pub/intel/oneapi/dev-utilities/2025.3/bin:/opt/ohpc/pub/intel/oneapi/compiler/2025.3/bin:/home/kjhan/local/bin:/home/kjhan/.local/bin:/usr/lib64/ccache:/usr/local/bin:/usr/bin:/usr/local/sbin:/usr/sbin
+PKG_CONFIG_PATH=/opt/ohpc/pub/utils/valgrind/3.24.0/lib/pkgconfig:/opt/ohpc/pub/intel/oneapi/compiler/2025.3/lib/pkgconfig:/opt/ohpc/pub/intel/oneapi/tbb/2022.3/lib/pkgconfig
+PWD=/home/kjhan/BACKUP/Eunha.A1/Claude/Lumina-sn
+SHELL=/bin/bash
+SHLVL=2
+SSH_CLIENT=10.0.200.100 48190 22
+SSH_CONNECTION=10.0.200.100 48190 10.0.200.25 22
+S_COLORS=auto
+TBBROOT=/opt/ohpc/pub/intel/oneapi/tbb/2022.3
+TERM=xterm-256color
+TSOUT=0
+UMF_ROOT=/opt/ohpc/pub/intel/oneapi/umf/1.0
+USER=kjhan
+VALGRIND_DIR=/opt/ohpc/pub/utils/valgrind/3.24.0
+VALGRIND_INC=/opt/ohpc/pub/utils/valgrind/3.24.0/include
+VALGRIND_LIB=/opt/ohpc/pub/utils/valgrind/3.24.0/lib/valgrind
+XDG_DATA_DIRS=/home/kjhan/.local/share/flatpak/exports/share:/var/lib/flatpak/exports/share:/usr/local/share:/usr/share
+XDG_RUNTIME_DIR=/run/user/10396
+XDG_SESSION_CLASS=user
+XDG_SESSION_ID=39393
+XDG_SESSION_TYPE=tty
+_=/usr/bin/env
+_CE_CONDA=
+_CE_M=
+_CONDA_EXE=/home/kjhan/miniconda3/bin/conda
+_CONDA_ROOT=/home/kjhan/miniconda3
+_LMFILES_=/opt/ohpc/pub/modulefiles/intel/tbb/2022.3:/opt/ohpc/pub/modulefiles/intel/umf/1.0.2:/opt/ohpc/pub/modulefiles/intel/compiler-rt/2025.3.0:/opt/ohpc/pub/modulefiles/intel/compiler/2025.3.0:/opt/ohpc/pub/modulefiles/intel/dev-utilities/2025.3.0:/opt/ohpc/pub/modulefiles/intel/mpi/2021.17:/opt/ohpc/pub/modulefiles/gnu13/13.2.0.lua:/opt/ohpc/pub/modulefiles/valgrind/3.24.0:/opt/ohpc/pub/modulefiles/nodejs:/opt/ohpc/pub/modulefiles/intel/debugger/2025.3.0
+_ModuleTable001_=X01vZHVsZVRhYmxlXyA9IHsKTVR2ZXJzaW9uID0gMywKY19yZWJ1aWxkVGltZSA9IGZhbHNlLApjX3Nob3J0VGltZSA9IGZhbHNlLApkZXB0aFQgPSB7fSwKZmFtaWx5ID0gewpjb21waWxlciA9ICJnbnUxMyIsCm5vZGVqcyA9ICJub2RlanMiLAp9LAptVCA9IHsKZ251MTMgPSB7CmFjdGlvbkEgPSB7CiJwcmVwZW5kX3BhdGgoXCJNT0RVTEVQQVRIXCIsXCIvb3B0L29ocGMvcHViL21vZHVsZWRlcHMvZ251MTNcIikiLAp9LApmbiA9ICIvb3B0L29ocGMvcHViL21vZHVsZWZpbGVzL2dudTEzLzEzLjIuMC5sdWEiLApmdWxsTmFtZSA9ICJnbnUxMy8xMy4yLjAiLApsb2FkT3JkZXIgPSA3LApwcm9wVCA9IHt9LApzdGFja0RlcHRoID0gMCwKc3RhdHVzID0gImFjdGl2ZSIsCnVz
+_ModuleTable002_=ZXJOYW1lID0gImdudTEzLzEzLjIuMCIsCndWID0gIjAwMDAwMDAxMy4wMDAwMDAwMDIuKnpmaW5hbCIsCn0sClsiaW50ZWwvY29tcGlsZXIiXSA9IHsKZm4gPSAiL29wdC9vaHBjL3B1Yi9tb2R1bGVmaWxlcy9pbnRlbC9jb21waWxlci8yMDI1LjMuMCIsCmZ1bGxOYW1lID0gImludGVsL2NvbXBpbGVyLzIwMjUuMy4wIiwKbG9hZE9yZGVyID0gNCwKcHJvcFQgPSB7fSwKc3RhY2tEZXB0aCA9IDAsCnN0YXR1cyA9ICJhY3RpdmUiLAp1c2VyTmFtZSA9ICJpbnRlbC9jb21waWxlci8yMDI1LjMuMCIsCndWID0gIjAwMDAwMjAyNS4wMDAwMDAwMDMuKnpmaW5hbCIsCn0sClsiaW50ZWwvY29tcGlsZXItcnQiXSA9IHsKZm4gPSAiL29wdC9vaHBjL3B1Yi9tb2R1bGVmaWxlcy9pbnRl
+_ModuleTable003_=bC9jb21waWxlci1ydC8yMDI1LjMuMCIsCmZ1bGxOYW1lID0gImludGVsL2NvbXBpbGVyLXJ0LzIwMjUuMy4wIiwKbG9hZE9yZGVyID0gMywKcHJvcFQgPSB7fSwKc3RhY2tEZXB0aCA9IDAsCnN0YXR1cyA9ICJhY3RpdmUiLAp1c2VyTmFtZSA9ICJpbnRlbC9jb21waWxlci1ydC8yMDI1LjMuMCIsCndWID0gIjAwMDAwMjAyNS4wMDAwMDAwMDMuKnpmaW5hbCIsCn0sClsiaW50ZWwvZGVidWdnZXIiXSA9IHsKZm4gPSAiL29wdC9vaHBjL3B1Yi9tb2R1bGVmaWxlcy9pbnRlbC9kZWJ1Z2dlci8yMDI1LjMuMCIsCmZ1bGxOYW1lID0gImludGVsL2RlYnVnZ2VyLzIwMjUuMy4wIiwKbG9hZE9yZGVyID0gMTAsCnByb3BUID0ge30sCnN0YWNrRGVwdGggPSAwLApzdGF0dXMgPSAiYWN0
+_ModuleTable004_=aXZlIiwKdXNlck5hbWUgPSAiaW50ZWwvZGVidWdnZXIvMjAyNS4zLjAiLAp3ViA9ICIwMDAwMDIwMjUuMDAwMDAwMDAzLip6ZmluYWwiLAp9LApbImludGVsL2Rldi11dGlsaXRpZXMiXSA9IHsKZm4gPSAiL29wdC9vaHBjL3B1Yi9tb2R1bGVmaWxlcy9pbnRlbC9kZXYtdXRpbGl0aWVzLzIwMjUuMy4wIiwKZnVsbE5hbWUgPSAiaW50ZWwvZGV2LXV0aWxpdGllcy8yMDI1LjMuMCIsCmxvYWRPcmRlciA9IDUsCnByb3BUID0ge30sCnN0YWNrRGVwdGggPSAwLApzdGF0dXMgPSAiYWN0aXZlIiwKdXNlck5hbWUgPSAiaW50ZWwvZGV2LXV0aWxpdGllcy8yMDI1LjMuMCIsCndWID0gIjAwMDAwMjAyNS4wMDAwMDAwMDMuKnpmaW5hbCIsCn0sClsiaW50ZWwvbXBpIl0gPSB7CmZuID0g
+_ModuleTable005_=Ii9vcHQvb2hwYy9wdWIvbW9kdWxlZmlsZXMvaW50ZWwvbXBpLzIwMjEuMTciLApmdWxsTmFtZSA9ICJpbnRlbC9tcGkvMjAyMS4xNyIsCmxvYWRPcmRlciA9IDYsCnByb3BUID0ge30sCnN0YWNrRGVwdGggPSAwLApzdGF0dXMgPSAiYWN0aXZlIiwKdXNlck5hbWUgPSAiaW50ZWwvbXBpLzIwMjEuMTciLAp3ViA9ICIwMDAwMDIwMjEuMDAwMDAwMDE3Lip6ZmluYWwiLAp9LApbImludGVsL3RiYiJdID0gewpmbiA9ICIvb3B0L29ocGMvcHViL21vZHVsZWZpbGVzL2ludGVsL3RiYi8yMDIyLjMiLApmdWxsTmFtZSA9ICJpbnRlbC90YmIvMjAyMi4zIiwKbG9hZE9yZGVyID0gMSwKcHJvcFQgPSB7fSwKc3RhY2tEZXB0aCA9IDAsCnN0YXR1cyA9ICJhY3RpdmUiLAp1c2VyTmFtZSA9
+_ModuleTable006_=ICJpbnRlbC90YmIvMjAyMi4zIiwKd1YgPSAiMDAwMDAyMDIyLjAwMDAwMDAwMy4qemZpbmFsIiwKfSwKWyJpbnRlbC91bWYiXSA9IHsKZm4gPSAiL29wdC9vaHBjL3B1Yi9tb2R1bGVmaWxlcy9pbnRlbC91bWYvMS4wLjIiLApmdWxsTmFtZSA9ICJpbnRlbC91bWYvMS4wLjIiLApsb2FkT3JkZXIgPSAyLApwcm9wVCA9IHt9LApzdGFja0RlcHRoID0gMCwKc3RhdHVzID0gImFjdGl2ZSIsCnVzZXJOYW1lID0gImludGVsL3VtZi8xLjAuMiIsCndWID0gIjAwMDAwMDAwMS4wMDAwMDAwMDAuMDAwMDAwMDAyLip6ZmluYWwiLAp9LApub2RlanMgPSB7CmZuID0gIi9vcHQvb2hwYy9wdWIvbW9kdWxlZmlsZXMvbm9kZWpzIiwKZnVsbE5hbWUgPSAibm9kZWpzIiwKbG9hZE9yZGVyID0g
+_ModuleTable007_=OSwKcHJvcFQgPSB7fSwKc3RhY2tEZXB0aCA9IDAsCnN0YXR1cyA9ICJhY3RpdmUiLAp1c2VyTmFtZSA9ICJub2RlanMiLAp3ViA9ICJNLip6ZmluYWwiLAp9LAp2YWxncmluZCA9IHsKZm4gPSAiL29wdC9vaHBjL3B1Yi9tb2R1bGVmaWxlcy92YWxncmluZC8zLjI0LjAiLApmdWxsTmFtZSA9ICJ2YWxncmluZC8zLjI0LjAiLApsb2FkT3JkZXIgPSA4LApwcm9wVCA9IHt9LApzdGFja0RlcHRoID0gMCwKc3RhdHVzID0gImFjdGl2ZSIsCnVzZXJOYW1lID0gInZhbGdyaW5kLzMuMjQuMCIsCndWID0gIjAwMDAwMDAwMy4wMDAwMDAwMjQuKnpmaW5hbCIsCn0sCn0sCm1wYXRoQSA9IHsKIi9vcHQvb2hwYy9wdWIvbW9kdWxlZGVwcy9nbnUxMyIsICIvZXRjL3NjbC9tb2R1bGVmaWxl
+_ModuleTable008_=cyIsICIvb3B0L29ocGMvcHViL21vZHVsZWZpbGVzIiwKfSwKc3lzdGVtQmFzZU1QQVRIID0gIi9vcHQvb2hwYy9wdWIvbW9kdWxlZmlsZXMiLAp9Cg==
+_ModuleTable_Sz_=8
+__LMOD_REF_COUNT_CLASSPATH=/opt/ohpc/pub/intel/oneapi/mpi/2021.17/share/java/mpi.jar:1
+__LMOD_REF_COUNT_CMAKE_PREFIX_PATH=/opt/ohpc/pub/intel/oneapi/compiler/2025.3:1;/opt/ohpc/pub/intel/oneapi/umf/1.0:1;/opt/ohpc/pub/intel/oneapi/tbb/2022.3:1
+__LMOD_REF_COUNT_CPATH=/opt/ohpc/pub/intel/oneapi/mpi/2021.17/include:1;/opt/ohpc/pub/intel/oneapi/dev-utilities/2025.3/include:1;/opt/ohpc/pub/intel/oneapi/umf/1.0/include:1
+__LMOD_REF_COUNT_CPLUS_INCLUDE_PATH=/opt/ohpc/pub/intel/oneapi/umf/1.0/include:1;/opt/ohpc/pub/intel/oneapi/tbb/2022.3/include:1
+__LMOD_REF_COUNT_C_INCLUDE_PATH=/opt/ohpc/pub/intel/oneapi/umf/1.0/include:1;/opt/ohpc/pub/intel/oneapi/tbb/2022.3/include:1
+__LMOD_REF_COUNT_DIAGUTIL_PATH=/opt/ohpc/pub/intel/oneapi/compiler/2025.3/etc/compiler/sys_check/sys_check.sh:2
+__LMOD_REF_COUNT_GDB_INFO=/opt/ohpc/pub/intel/oneapi/debugger/2025.3/share/info:1
+__LMOD_REF_COUNT_INCLUDE=/opt/ohpc/pub/apps/nodejs/include:1;/opt/ohpc/pub/compiler/gcc/13.2.0/include:1
+__LMOD_REF_COUNT_INFOPATH=/opt/ohpc/pub/intel/oneapi/debugger/2025.3/share/info:1
+__LMOD_REF_COUNT_LD_LIBRARY_PATH=/opt/ohpc/pub/intel/oneapi/debugger/2025.3/opt/debugger/lib:1;/opt/ohpc/pub/apps/nodejs/lib:1;/opt/ohpc/pub/utils/valgrind/3.24.0/lib:1;/opt/ohpc/pub/compiler/gcc/13.2.0/lib64:1;/opt/ohpc/pub/intel/oneapi/mpi/2021.17/opt/mpi/libfabric/lib:1;/opt/ohpc/pub/intel/oneapi/mpi/2021.17/lib:1;/opt/ohpc/pub/intel/oneapi/compiler/2025.3/opt/compiler/lib:1;/opt/ohpc/pub/intel/oneapi/compiler/2025.3/lib:1;/opt/ohpc/pub/intel/oneapi/umf/1.0/lib:1;/opt/ohpc/pub/intel/oneapi/tbb/2022.3/lib:1
+__LMOD_REF_COUNT_LIBRARY_PATH=/opt/ohpc/pub/intel/oneapi/mpi/2021.17/opt/mpi/libfabric/lib:1;/opt/ohpc/pub/intel/oneapi/mpi/2021.17/lib:1;/opt/ohpc/pub/intel/oneapi/compiler/2025.3/lib:1;/opt/ohpc/pub/intel/oneapi/umf/1.0/lib:1;/opt/ohpc/pub/intel/oneapi/tbb/2022.3/lib:1
+__LMOD_REF_COUNT_MANPATH=/opt/ohpc/pub/intel/oneapi/debugger/2025.3/share/man:1;/opt/ohpc/pub/apps/nodejs/share/man:1;/opt/ohpc/pub/utils/valgrind/3.24.0/share/man:1;/opt/ohpc/pub/compiler/gcc/13.2.0/share/man:1;/opt/ohpc/pub/intel/oneapi/mpi/2021.17/share/man:1;/opt/ohpc/pub/intel/oneapi/compiler/2025.3/share/man:1;/opt/ohpc/admin/lmod/lmod/share/man:1;:1
+__LMOD_REF_COUNT_MODULEPATH=/opt/ohpc/pub/moduledeps/gnu13:1;/etc/scl/modulefiles:1;/opt/ohpc/pub/modulefiles:1
+__LMOD_REF_COUNT_NLSPATH=/opt/ohpc/pub/intel/oneapi/compiler/2025.3/lib/compiler/locale/%l_%t/%N:1
+__LMOD_REF_COUNT_OCL_ICD_FILENAMES=/opt/ohpc/pub/intel/oneapi/compiler/2025.3/lib/libintelocl.so:1
+__LMOD_REF_COUNT_PATH=/opt/ohpc/pub/intel/oneapi/debugger/2025.3/bin:1;/opt/ohpc/pub/apps/nodejs/bin:1;/opt/ohpc/pub/utils/valgrind/3.24.0/bin:1;/opt/ohpc/pub/compiler/gcc/13.2.0/bin:1;/opt/ohpc/pub/intel/oneapi/mpi/2021.17/opt/mpi/libfabric/bin:1;/opt/ohpc/pub/intel/oneapi/mpi/2021.17/bin:1;/opt/ohpc/pub/intel/oneapi/dev-utilities/2025.3/bin:1;/opt/ohpc/pub/intel/oneapi/compiler/2025.3/bin:1;/home/kjhan/local/bin:1;/home/kjhan/.local/bin:1;/usr/lib64/ccache:1;/usr/local/bin:1;/usr/bin:1;/usr/local/sbin:1;/usr/sbin:1
+__LMOD_REF_COUNT_PKG_CONFIG_PATH=/opt/ohpc/pub/utils/valgrind/3.24.0/lib/pkgconfig:1;/opt/ohpc/pub/intel/oneapi/compiler/2025.3/lib/pkgconfig:1;/opt/ohpc/pub/intel/oneapi/tbb/2022.3/lib/pkgconfig:1
+which_declare=declare -f
+}
+}
+}
+}

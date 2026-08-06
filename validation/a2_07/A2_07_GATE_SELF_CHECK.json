@@ -1,0 +1,113 @@
+{
+  "schema": "A2_07_GATE_SELF_CHECK_V1",
+  "status": "PASS",
+  "reason_code": "OK",
+  "baseline": {
+    "schema": "A2_07_GATE_RESULT_V1",
+    "lane": "ORACLE_INPUT",
+    "status": "PASS",
+    "reason_code": "OK",
+    "metrics": {
+      "ion_tv_max": 0.020000000000000004,
+      "dominant_stage_all": true,
+      "ne_esym_median": 0.009950248756218904,
+      "ne_esym_p95": 0.009950248756218931,
+      "closure_max": 0.0,
+      "level_coverage_min": 1.0,
+      "level_sum_max": 0.025,
+      "level_log_p95": 0.0,
+      "level_hard_zero": 0,
+      "Z_relerr_max": 0.0,
+      "truth_f_cov": 0.99,
+      "frozen_9x9_complete": true,
+      "excluded_frozen_dominant_elements": [],
+      "excluded_frozen_level_coverage": null
+    },
+    "checks": {
+      "ion_tv": true,
+      "dominant": true,
+      "ne": true,
+      "closure": true,
+      "level_coverage": true,
+      "level_sum": true,
+      "level_log": true,
+      "partition": true,
+      "truth_coverage": true,
+      "frozen_disclosure": true,
+      "mc_uncertainty": true
+    },
+    "population_counters": {
+      "pop_generation_required": 7,
+      "pop_generation_committed": 7,
+      "pop_shells_attempted": 9,
+      "pop_shells_published": 9,
+      "pop_bf_terms": 81,
+      "pop_bb_terms": 81,
+      "pop_exact_zero_terms": 0,
+      "pop_blocked_stale": 0,
+      "pop_blocked_unsampled": 0,
+      "pop_blocked_oog": 0,
+      "pop_blocked_miss": 0,
+      "pop_blocked_profile": 0,
+      "pop_blocked_qhash": 0,
+      "pop_blocked_te": 0,
+      "pop_blocked_partition": 0,
+      "pop_rank_incomplete": 0,
+      "pop_ne_not_converged": 0,
+      "pop_solve_failed": 0,
+      "pop_nonfinite": 0,
+      "pop_generation_mismatch": 0,
+      "pop_fallback_attempts": 0,
+      "pop_partial_publish_attempts": 0
+    },
+    "new_layer_status": {
+      "L2ION": "PASS",
+      "L2LEVEL": "PASS",
+      "PARTITION_CPU": "PASS"
+    },
+    "mc_confidence": {
+      "ion_tv_halfwidth": 0.0,
+      "ne_median_halfwidth": 0.0,
+      "ne_p95_halfwidth": 0.0,
+      "level_sum_halfwidth": 0.0,
+      "level_log_p95_halfwidth": 0.0,
+      "dominant_stable": true
+    }
+  },
+  "artifact_writer_status": {
+    "status": "PASS",
+    "expected_outputs": 5
+  },
+  "negative_control_status": {
+    "N1": {
+      "marker": "A2_07_NEG_STAGE_SWAP",
+      "marker_seen": true,
+      "metric_witness_seen": true,
+      "child_rc": 4,
+      "wrapper_rc": 0
+    },
+    "N2": {
+      "marker": "A2_07_NEG_NEIGHBOR_NE",
+      "marker_seen": true,
+      "metric_witness_seen": true,
+      "child_rc": 4,
+      "wrapper_rc": 0
+    },
+    "N3": {
+      "marker": "A2_07_NEG_TRAD_FOR_TE",
+      "marker_seen": true,
+      "metric_witness_seen": true,
+      "child_rc": 4,
+      "wrapper_rc": 0
+    },
+    "N4": {
+      "marker": "A2_07_NEG_LEVEL_SHUFFLE",
+      "marker_seen": true,
+      "metric_witness_seen": true,
+      "child_rc": 4,
+      "wrapper_rc": 0
+    }
+  },
+  "child_rc": 0,
+  "wrapper_rc": 0
+}

@@ -10,9 +10,10 @@ LDFLAGS += -fopenmp
 endif
 
 # Source files (in src/)
-SOURCES = src/lumina_main.c src/lumina_transport.c src/a2_02c_segment_capture.c src/radiation_field.c src/bf_rate_jnu.c src/line_jbar.c src/lumina_plasma.c src/lumina_element_wide.c src/lumina_atomic.c src/lumina_cmfgen.c
-HEADERS = src/lumina.h src/a2_02c_segment_capture.h src/radiation_field.h src/bf_rate_jnu.h src/line_jbar.h
+SOURCES = src/lumina_main.c src/lumina_transport.c src/a2_02c_segment_capture.c src/radiation_field.c src/bf_rate_jnu.c src/line_jbar.c src/population_contract.c src/lumina_plasma.c src/lumina_element_wide.c src/lumina_atomic.c src/lumina_cmfgen.c
+HEADERS = src/lumina.h src/a2_02c_segment_capture.h src/radiation_field.h src/bf_rate_jnu.h src/line_jbar.h src/population_contract.h
 TARGET = lumina
+POPULATION_SRC = src/population_contract.c
 
 # CUDA source
 CUDA_SRC = src/lumina_cuda.cu
@@ -41,53 +42,53 @@ CUDA_NLTE_ASM   = src/lumina_nlte_assemble.cu
 CUDA_CMF_SOLVE  = src/lumina_cmf_solve.cu
 
 cuda: lumina_cuda
-lumina_cuda: $(CUDA_SRC) $(CUDA_BF_GEMM) $(CUDA_NLTE_GEMM) $(CUDA_NLTE_ASM) $(CUDA_CMF_SOLVE) src/lumina_atomic.c src/lumina_plasma.c src/bf_rate_jnu.c src/radiation_field.c src/lumina_element_wide.c src/lumina_cmfgen.c $(HEADERS)
-	$(NVCC) $(NVFLAGS) -o lumina_cuda $(CUDA_SRC) $(CUDA_BF_GEMM) $(CUDA_NLTE_GEMM) $(CUDA_NLTE_ASM) $(CUDA_CMF_SOLVE) src/lumina_atomic.c src/lumina_plasma.c src/bf_rate_jnu.c src/radiation_field.c src/lumina_element_wide.c src/lumina_cmfgen.c $(NVLDFLAGS)
+lumina_cuda: $(CUDA_SRC) $(CUDA_BF_GEMM) $(CUDA_NLTE_GEMM) $(CUDA_NLTE_ASM) $(CUDA_CMF_SOLVE) src/lumina_atomic.c src/lumina_plasma.c $(POPULATION_SRC) src/bf_rate_jnu.c src/radiation_field.c src/lumina_element_wide.c src/lumina_cmfgen.c $(HEADERS)
+	$(NVCC) $(NVFLAGS) -o lumina_cuda $(CUDA_SRC) $(CUDA_BF_GEMM) $(CUDA_NLTE_GEMM) $(CUDA_NLTE_ASM) $(CUDA_CMF_SOLVE) src/lumina_atomic.c src/lumina_plasma.c $(POPULATION_SRC) src/bf_rate_jnu.c src/radiation_field.c src/lumina_element_wide.c src/lumina_cmfgen.c $(NVLDFLAGS)
 
 # Task #39 validation harness
-bench_bf_gemm: bench_bf_gemm.c $(CUDA_BF_GEMM) src/lumina_atomic.c src/lumina_plasma.c src/bf_rate_jnu.c src/radiation_field.c src/lumina_element_wide.c $(HEADERS)
-	$(NVCC) $(NVFLAGS) -o bench_bf_gemm bench_bf_gemm.c $(CUDA_BF_GEMM) src/lumina_atomic.c src/lumina_plasma.c src/bf_rate_jnu.c src/radiation_field.c src/lumina_element_wide.c $(NVLDFLAGS)
+bench_bf_gemm: bench_bf_gemm.c $(CUDA_BF_GEMM) src/lumina_atomic.c src/lumina_plasma.c $(POPULATION_SRC) src/bf_rate_jnu.c src/radiation_field.c src/lumina_element_wide.c $(HEADERS)
+	$(NVCC) $(NVFLAGS) -o bench_bf_gemm bench_bf_gemm.c $(CUDA_BF_GEMM) src/lumina_atomic.c src/lumina_plasma.c $(POPULATION_SRC) src/bf_rate_jnu.c src/radiation_field.c src/lumina_element_wide.c $(NVLDFLAGS)
 
 # Task #40 validation harness
-bench_nlte_rates: bench_nlte_rates.c $(CUDA_BF_GEMM) $(CUDA_NLTE_GEMM) src/lumina_atomic.c src/lumina_plasma.c src/bf_rate_jnu.c src/radiation_field.c src/lumina_element_wide.c $(HEADERS)
-	$(NVCC) $(NVFLAGS) -o bench_nlte_rates bench_nlte_rates.c $(CUDA_BF_GEMM) $(CUDA_NLTE_GEMM) src/lumina_atomic.c src/lumina_plasma.c src/bf_rate_jnu.c src/radiation_field.c src/lumina_element_wide.c $(NVLDFLAGS)
+bench_nlte_rates: bench_nlte_rates.c $(CUDA_BF_GEMM) $(CUDA_NLTE_GEMM) src/lumina_atomic.c src/lumina_plasma.c $(POPULATION_SRC) src/bf_rate_jnu.c src/radiation_field.c src/lumina_element_wide.c $(HEADERS)
+	$(NVCC) $(NVFLAGS) -o bench_nlte_rates bench_nlte_rates.c $(CUDA_BF_GEMM) $(CUDA_NLTE_GEMM) src/lumina_atomic.c src/lumina_plasma.c $(POPULATION_SRC) src/bf_rate_jnu.c src/radiation_field.c src/lumina_element_wide.c $(NVLDFLAGS)
 
 # GPU bound-bound assembly self-check
-selftest_nlte_assemble: selftest_nlte_assemble.c $(CUDA_NLTE_ASM) $(CUDA_NLTE_GEMM) $(CUDA_BF_GEMM) src/lumina_atomic.c src/lumina_plasma.c src/bf_rate_jnu.c src/radiation_field.c src/lumina_element_wide.c $(HEADERS)
-	$(NVCC) $(NVFLAGS) -o selftest_nlte_assemble selftest_nlte_assemble.c $(CUDA_NLTE_ASM) $(CUDA_NLTE_GEMM) $(CUDA_BF_GEMM) src/lumina_atomic.c src/lumina_plasma.c src/bf_rate_jnu.c src/radiation_field.c src/lumina_element_wide.c $(NVLDFLAGS)
+selftest_nlte_assemble: selftest_nlte_assemble.c $(CUDA_NLTE_ASM) $(CUDA_NLTE_GEMM) $(CUDA_BF_GEMM) src/lumina_atomic.c src/lumina_plasma.c $(POPULATION_SRC) src/bf_rate_jnu.c src/radiation_field.c src/lumina_element_wide.c $(HEADERS)
+	$(NVCC) $(NVFLAGS) -o selftest_nlte_assemble selftest_nlte_assemble.c $(CUDA_NLTE_ASM) $(CUDA_NLTE_GEMM) $(CUDA_BF_GEMM) src/lumina_atomic.c src/lumina_plasma.c $(POPULATION_SRC) src/bf_rate_jnu.c src/radiation_field.c src/lumina_element_wide.c $(NVLDFLAGS)
 
 # Known-answer (Saha) self-test of the ionization/photoionization path — CPU only
-selftest_ioniz_saha: selftest_ioniz_saha.c src/lumina_plasma.c src/bf_rate_jnu.c src/radiation_field.c src/lumina_element_wide.c src/lumina_atomic.c $(HEADERS)
-	$(CC) -O2 -std=gnu11 -D_GNU_SOURCE -o selftest_ioniz_saha selftest_ioniz_saha.c src/lumina_plasma.c src/bf_rate_jnu.c src/radiation_field.c src/lumina_element_wide.c src/lumina_atomic.c $(LDFLAGS)
+selftest_ioniz_saha: selftest_ioniz_saha.c src/lumina_plasma.c $(POPULATION_SRC) src/bf_rate_jnu.c src/radiation_field.c src/lumina_element_wide.c src/lumina_atomic.c $(HEADERS)
+	$(CC) -O2 -std=gnu11 -D_GNU_SOURCE -o selftest_ioniz_saha selftest_ioniz_saha.c src/lumina_plasma.c $(POPULATION_SRC) src/bf_rate_jnu.c src/radiation_field.c src/lumina_element_wide.c src/lumina_atomic.c $(LDFLAGS)
 
 # Gate-B Phase-1.6 deterministic frozen-cell oracle (CPU single-thread observer)
-bench_frozen_oracle: bench_frozen_oracle.c src/lumina_plasma.c src/bf_rate_jnu.c src/radiation_field.c src/lumina_element_wide.c src/lumina_atomic.c $(HEADERS)
+bench_frozen_oracle: bench_frozen_oracle.c src/lumina_plasma.c $(POPULATION_SRC) src/bf_rate_jnu.c src/radiation_field.c src/lumina_element_wide.c src/lumina_atomic.c $(HEADERS)
 	$(CC) -O2 -Wall -Wextra -std=gnu11 -D_GNU_SOURCE -DLUMINA_FROZEN_ORACLE \
 		-o bench_frozen_oracle bench_frozen_oracle.c \
-		src/lumina_plasma.c src/bf_rate_jnu.c src/radiation_field.c src/lumina_element_wide.c src/lumina_atomic.c $(LDFLAGS)
+		src/lumina_plasma.c $(POPULATION_SRC) src/bf_rate_jnu.c src/radiation_field.c src/lumina_element_wide.c src/lumina_atomic.c $(LDFLAGS)
 
 # Wave-3.2 A4 operational-RC negative control.  Only the frozen entry symbol is
 # wrapped; production allocation and judgment paths remain unchanged.
-bench_frozen_oracle_rc: bench_frozen_oracle.c tests/wave32_ew_rc_wrap.c src/lumina_plasma.c src/bf_rate_jnu.c src/radiation_field.c src/lumina_element_wide.c src/lumina_atomic.c $(HEADERS)
+bench_frozen_oracle_rc: bench_frozen_oracle.c tests/wave32_ew_rc_wrap.c src/lumina_plasma.c $(POPULATION_SRC) src/bf_rate_jnu.c src/radiation_field.c src/lumina_element_wide.c src/lumina_atomic.c $(HEADERS)
 	$(CC) -O2 -Wall -Wextra -std=gnu11 -D_GNU_SOURCE -DLUMINA_FROZEN_ORACLE \
 		-Dnlte_element_wide_run_labeled=wave32_rc_wrapped_nlte_element_wide_run_labeled \
 		-c bench_frozen_oracle.c -o /tmp/w32_rc_bench.o
 	$(CC) -O2 -Wall -Wextra -std=gnu11 -D_GNU_SOURCE -DLUMINA_FROZEN_ORACLE -Isrc \
 		-o bench_frozen_oracle_rc /tmp/w32_rc_bench.o tests/wave32_ew_rc_wrap.c \
-		src/lumina_plasma.c src/bf_rate_jnu.c src/radiation_field.c src/lumina_element_wide.c src/lumina_atomic.c $(LDFLAGS)
+		src/lumina_plasma.c $(POPULATION_SRC) src/bf_rate_jnu.c src/radiation_field.c src/lumina_element_wide.c src/lumina_atomic.c $(LDFLAGS)
 
-selftest_wave32_ew_rc: tests/wave32_ew_rc_selftest.c tests/wave32_ew_rc_wrap.c src/lumina_plasma.c src/bf_rate_jnu.c src/radiation_field.c src/lumina_element_wide.c src/lumina_atomic.c $(HEADERS)
+selftest_wave32_ew_rc: tests/wave32_ew_rc_selftest.c tests/wave32_ew_rc_wrap.c src/lumina_plasma.c $(POPULATION_SRC) src/bf_rate_jnu.c src/radiation_field.c src/lumina_element_wide.c src/lumina_atomic.c $(HEADERS)
 	$(CC) -O2 -Wall -Wextra -std=gnu11 -D_GNU_SOURCE -DLUMINA_FROZEN_ORACLE \
 		-ffunction-sections -fdata-sections -Isrc -Wl,--gc-sections \
 		-o selftest_wave32_ew_rc tests/wave32_ew_rc_selftest.c \
-		tests/wave32_ew_rc_wrap.c src/lumina_plasma.c src/bf_rate_jnu.c src/radiation_field.c \
+		tests/wave32_ew_rc_wrap.c src/lumina_plasma.c $(POPULATION_SRC) src/bf_rate_jnu.c src/radiation_field.c \
 		src/lumina_element_wide.c src/lumina_atomic.c $(LDFLAGS)
 
-selftest_wave32_ew_io: tests/wave32_ew_io_selftest.c src/lumina_element_wide.c src/lumina_plasma.c src/bf_rate_jnu.c src/radiation_field.c src/lumina_atomic.c $(HEADERS)
+selftest_wave32_ew_io: tests/wave32_ew_io_selftest.c src/lumina_element_wide.c src/lumina_plasma.c $(POPULATION_SRC) src/bf_rate_jnu.c src/radiation_field.c src/lumina_atomic.c $(HEADERS)
 	$(CC) -O2 -Wall -Wextra -std=gnu11 -D_GNU_SOURCE \
 		-ffunction-sections -fdata-sections -Isrc -Wl,--gc-sections \
 		-o selftest_wave32_ew_io tests/wave32_ew_io_selftest.c \
-		src/lumina_element_wide.c src/lumina_plasma.c src/bf_rate_jnu.c src/radiation_field.c \
+		src/lumina_element_wide.c src/lumina_plasma.c $(POPULATION_SRC) src/bf_rate_jnu.c src/radiation_field.c \
 		src/lumina_atomic.c $(LDFLAGS)
 
 # Wave-3.2 R7 offline binary writer fixture (no model/GPU execution).
@@ -124,29 +125,29 @@ selftest_emiss_e11_fluor_matrix:
 	python3 scripts/emiss_e11_seeded_fixture.py --out-dir /tmp/emiss_e11_fixture
 
 # Wave-3.2 D6 independent-ledger seeded debit corruption fixture.
-selftest_wave32_matrix_debit: tests/wave32_matrix_debit_seed.c src/lumina_element_wide.c src/lumina_plasma.c src/bf_rate_jnu.c src/radiation_field.c src/lumina_atomic.c $(HEADERS)
+selftest_wave32_matrix_debit: tests/wave32_matrix_debit_seed.c src/lumina_element_wide.c src/lumina_plasma.c $(POPULATION_SRC) src/bf_rate_jnu.c src/radiation_field.c src/lumina_atomic.c $(HEADERS)
 	$(CC) -O2 -std=gnu11 -D_GNU_SOURCE -ffunction-sections -fdata-sections -Isrc \
 		-Wl,--gc-sections -o selftest_wave32_matrix_debit \
 		tests/wave32_matrix_debit_seed.c src/lumina_element_wide.c \
-		src/lumina_plasma.c src/bf_rate_jnu.c src/radiation_field.c src/lumina_atomic.c $(LDFLAGS)
+		src/lumina_plasma.c $(POPULATION_SRC) src/bf_rate_jnu.c src/radiation_field.c src/lumina_atomic.c $(LDFLAGS)
 
-selftest_wave32_within_sl_oom: tests/wave32_within_sl_oom.c src/lumina_plasma.c src/bf_rate_jnu.c src/radiation_field.c src/lumina_element_wide.c src/lumina_atomic.c $(HEADERS)
+selftest_wave32_within_sl_oom: tests/wave32_within_sl_oom.c src/lumina_plasma.c $(POPULATION_SRC) src/bf_rate_jnu.c src/radiation_field.c src/lumina_element_wide.c src/lumina_atomic.c $(HEADERS)
 	$(CC) -O2 -std=gnu11 -D_GNU_SOURCE -ffunction-sections -fdata-sections -Isrc \
 		-Wl,--gc-sections -Wl,--wrap=malloc -o selftest_wave32_within_sl_oom \
-		tests/wave32_within_sl_oom.c src/lumina_plasma.c src/bf_rate_jnu.c src/radiation_field.c \
+		tests/wave32_within_sl_oom.c src/lumina_plasma.c $(POPULATION_SRC) src/bf_rate_jnu.c src/radiation_field.c \
 		src/lumina_element_wide.c src/lumina_atomic.c $(LDFLAGS)
 
-selftest_wave32_boundary_q: tests/wave32_boundary_q_seed.c src/lumina_element_wide.c src/lumina_plasma.c src/bf_rate_jnu.c src/radiation_field.c src/lumina_atomic.c $(HEADERS)
+selftest_wave32_boundary_q: tests/wave32_boundary_q_seed.c src/lumina_element_wide.c src/lumina_plasma.c $(POPULATION_SRC) src/bf_rate_jnu.c src/radiation_field.c src/lumina_atomic.c $(HEADERS)
 	$(CC) -O2 -std=gnu11 -D_GNU_SOURCE -ffunction-sections -fdata-sections -Isrc \
 		-Wl,--gc-sections -o selftest_wave32_boundary_q \
 		tests/wave32_boundary_q_seed.c src/lumina_element_wide.c \
-		src/lumina_plasma.c src/bf_rate_jnu.c src/radiation_field.c src/lumina_atomic.c $(LDFLAGS)
+		src/lumina_plasma.c $(POPULATION_SRC) src/bf_rate_jnu.c src/radiation_field.c src/lumina_atomic.c $(LDFLAGS)
 
-selftest_wave32_counter_atomic: tests/wave32_counter_atomic_selftest.c src/lumina_element_wide.c src/lumina_plasma.c src/bf_rate_jnu.c src/radiation_field.c src/lumina_atomic.c $(HEADERS)
+selftest_wave32_counter_atomic: tests/wave32_counter_atomic_selftest.c src/lumina_element_wide.c src/lumina_plasma.c $(POPULATION_SRC) src/bf_rate_jnu.c src/radiation_field.c src/lumina_atomic.c $(HEADERS)
 	$(CC) -O2 -std=gnu11 -D_GNU_SOURCE -DWAVE32_COUNTER_SELFTEST -fopenmp -ffunction-sections -fdata-sections -Isrc \
 		-Wl,--gc-sections -o selftest_wave32_counter_atomic \
 		tests/wave32_counter_atomic_selftest.c src/lumina_element_wide.c \
-		src/lumina_plasma.c src/bf_rate_jnu.c src/radiation_field.c src/lumina_atomic.c $(LDFLAGS)
+		src/lumina_plasma.c $(POPULATION_SRC) src/bf_rate_jnu.c src/radiation_field.c src/lumina_atomic.c $(LDFLAGS)
 
 # A2-03 canonical RadiationField schema/lifecycle and failure-injection fixture.
 selftest_a2_03_radiation_field: tests/a2_03_radiation_field_selftest.c src/radiation_field.c src/radiation_field.h
@@ -215,3 +216,8 @@ selftest_a2_06_line_jbar: tests/a2_06_line_jbar_selftest.c src/line_jbar.c src/l
 selftest_a2_06_dual_commit: tests/a2_06_dual_commit_selftest.c src/radiation_field.c $(HEADERS)
 	$(CC) -O2 -std=gnu11 -Isrc -o selftest_a2_06_dual_commit \
 		tests/a2_06_dual_commit_selftest.c src/radiation_field.c $(LDFLAGS)
+
+# A2-07 generation-bound Z(T_e), validity and transactional-publish contract.
+selftest_a2_07_population: tests/a2_07_population_selftest.c src/population_contract.c src/population_contract.h
+	$(CC) -O2 -Wall -Wextra -std=c11 -Isrc -o selftest_a2_07_population \
+		tests/a2_07_population_selftest.c src/population_contract.c $(LDFLAGS)

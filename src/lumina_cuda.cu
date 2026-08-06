@@ -7090,6 +7090,7 @@ int main(int argc, char *argv[]) {
     /* P6: Initialize per-shell electron temperature */
     plasma.T_e = (double *)malloc(geo.n_shells * sizeof(double));
     compute_electron_temperature(&plasma, NULL, geo.time_explosion, geo.n_shells, 0);
+    plasma.T_e_generation = 0;  /* ratio-derived seed is not A2-07 qualified */
 
     int n_packets = config.n_packets;
     if (argc > 2) n_packets = atoi(argv[2]);
@@ -8345,12 +8346,19 @@ int main(int argc, char *argv[]) {
                                              cs.chi_line, cs.chi_line_cls,
                                              cs.n_shells, cs.n_bins);
 
-                    compute_radiative_equilibrium_te(&plasma,
+                    int te_qualified = compute_radiative_equilibrium_te(&plasma,
                         gamma_dep_enabled ? &gamma_dep : NULL,
                         enable_nlte ? &nlte : NULL, &atom_data, &opacity,
                         geo.time_explosion, geo.n_shells);
-                    compute_plasma_state(&atom_data, &plasma, &opacity,
-                                         geo.time_explosion);
+                    if (!te_qualified) plasma.T_e_generation = 0;
+                    if (!te_qualified || plasma.T_e_generation == UINT64_MAX)
+                        return EXIT_FAILURE;
+                    plasma.T_e_generation++;
+                    if (compute_plasma_state(&atom_data, &plasma, &opacity,
+                                             geo.time_explosion) != 0) {
+                        fprintf(stderr, "[A2-07][FATAL] CUDA-host population transaction failed\n");
+                        return EXIT_FAILURE;
+                    }
                     if(getenv("LUMINA_JPROBE")) printf("  [JPROBE C-postplasma] J[49,760]=%.3e ne40=%.3e Te40=%.0f\n", nlte.J_nu[(size_t)49*cs.n_bins+760], plasma.n_electron[40], plasma.T_e[40]);
                     if (getenv("LUMINA_COUPLED_NEWTON") &&
                         atoi(getenv("LUMINA_COUPLED_NEWTON")) && enable_nlte)
@@ -10638,6 +10646,7 @@ int main(int argc, char *argv[]) {
              * + device uploads below so the macro-atom transport sees the
              * good frozen state. */
             if (cmfgen_then_mc) goto frozen_skip_plasma_solve;
+            int te_qualified = 0;
             if (radeq_te || self_consistent_te) {
                 /* Radiative-equilibrium T_e needs the CURRENT iteration's
                  * radiation field for photoionization heating. The MC pass
@@ -10648,7 +10657,7 @@ int main(int argc, char *argv[]) {
                     cuda_download_j_nu(&dev, &nlte, geo.n_shells);
                     nlte_normalize_j_nu(&nlte, time_simulation, volume, geo.n_shells);
                 }
-                compute_radiative_equilibrium_te(&plasma,
+                te_qualified = compute_radiative_equilibrium_te(&plasma,
                     gamma_dep_enabled ? &gamma_dep : NULL,
                     &nlte, &atom_data, &opacity,
                     geo.time_explosion, geo.n_shells);
@@ -10656,9 +10665,20 @@ int main(int argc, char *argv[]) {
                 compute_electron_temperature(&plasma,
                     gamma_dep_enabled ? &gamma_dep : NULL,
                     geo.time_explosion, geo.n_shells, self_consistent_te);
+                plasma.T_e_generation = 0;
             }
 
-            compute_plasma_state(&atom_data, &plasma, &opacity, geo.time_explosion);
+            if (te_qualified) {
+                if (plasma.T_e_generation == UINT64_MAX) return EXIT_FAILURE;
+                plasma.T_e_generation++;
+            } else {
+                plasma.T_e_generation = 0;
+            }
+            if (compute_plasma_state(&atom_data, &plasma, &opacity,
+                                     geo.time_explosion) != 0) {
+                fprintf(stderr, "[A2-07][FATAL] CUDA validation population transaction failed\n");
+                return EXIT_FAILURE;
+            }
 
             /* PATH-A / A2: replace the operator-split RADEQ→ionization fixed point
              * on non-frozen inner shells with the simultaneous coupled-Newton

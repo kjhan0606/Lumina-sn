@@ -241,3 +241,37 @@ C2 덤프(출력 전용) :1563-1564 · 오라클 계수 출력 :147-159 · field
 | src/lumina_plasma.c:14055, 14075, 14215 | V5 정정 진단 3행 — `KEEP_DIAGNOSTIC_READ` |
 | src/lumina_cmfgen.c:3153, 3159 | A2-08 재배치 |
 | GPU bb/rate 경로 | A2-12/A2-13 재배치 |
+
+## ADDENDUM (A2-07 구현, 2026-08-06) — population 온도·rate 소유권 18행 종결
+
+기준 HEAD는 `ece5aef8e192e2166b647ee00aae5fdd1f935a1c`이며, 아래 줄번호는
+A2-07 구현 작업트리에서 재측정했다. 18개 이관 ID는
+`scripts/a2_07_population_census.py`가 누락·중복 없이 고정한다. 생산 population의
+partition/LTE reference는 단일 `population_lte_level_fraction`/`population_partition_build`
+경로를 쓰며 legacy 식은 진단 shadow로만 남는다.
+
+| # | 고정 이관 ID | 구현 후 위치 | 1:1 처분 |
+|---:|---|---|---|
+| 1 | `A2-05:old9160:T_rad` | `src/lumina_plasma.c:9279-9292` | `bf_rate_pop`을 shell `T_e`와 단일 partition accessor로 이관 완료 |
+| 2 | `A2-05:old9162:W` | `src/lumina_plasma.c:9279-9292` | 함수 인자와 식에서 dilution 제거 완료 |
+| 3 | `A2-05:old11943:W` | `src/lumina_plasma.c:12082` | RADEQ 호출은 `Te_lag`만 전달; `W` 전달 제거 완료 |
+| 4 | `A2-05:old11943:T_rad` | `src/lumina_plasma.c:12082` | RADEQ population 공급을 `LTE@T_e` accessor로 이관 완료 |
+| 5 | `A2-05:old13672:W` | `src/lumina_plasma.c:13835-13836` | coupled 호출의 dilution 전달 제거 완료 |
+| 6 | `A2-05:old13672:T_rad` | `src/lumina_plasma.c:13835-13836` | coupled population 공급을 `LTE@T_e` accessor로 이관 완료 |
+| 7 | `A2-06:old4879:T_rad` | `src/lumina_plasma.c:4938-4949` | macro/k-packet reference를 단일 `LTE@T_e` accessor로 이관 완료 |
+| 8 | `A2-06:old4880:W` | `src/lumina_plasma.c:4938-4949` | metastable/dilution 분기 제거 완료 |
+| 9 | `A2-06:old12093:W` | `src/lumina_plasma.c:12230-12240` | RADEQ lower population의 dilution 제거 완료 |
+| 10 | `A2-06:old12100:W` | `src/lumina_plasma.c:12247-12257` | RADEQ upper population의 dilution 제거 완료 |
+| 11 | `A2-06:old13739:W` | `src/lumina_plasma.c:13903-13913` | coupled lower population의 dilution 제거 완료 |
+| 12 | `A2-06:old13743:W` | `src/lumina_plasma.c:13919-13929` | coupled upper population의 dilution 제거 완료 |
+| 13 | `BASE:old2081:T_rad` | `src/lumina_plasma.c:2272-2284` | 단일 `population_partition_build(atomic,T_e)` 정본으로 이관 완료 |
+| 14 | `BASE:old2082:W` | `src/lumina_plasma.c:2272-2284` | partition `W` 항과 병렬 partition 저장소 제거 완료 |
+| 15 | `BASE:old7402:T_rad` | `src/lumina_plasma.c:7575-7585,7683-7693` | BF 부수 population을 solved 또는 `LTE@T_e`로만 공급 |
+| 16 | `BASE:old7403:W` | `src/lumina_plasma.c:7575-7585,7683-7693` | lower/upper dilution 제거 완료 |
+| 17 | `BASE:old17832:T_rad` | `src/lumina_plasma.c:18100-18108` | dump 온도를 유효한 `T_e` 하나와 population generation으로 기록 |
+| 18 | `BASE:old17833:W` | `src/lumina_plasma.c:18085,18100-18108` | dump의 `W/T_rad` 열·읽기 제거 완료 |
+
+원장 밖 소비자는 17군으로 별도 census하였다. 결과와 개별 처분은
+`validation/a2_07/A2_07_STATIC_CENSUS.json` 및 `docs/CODEX_IMPL_A2_07.md`에 있으며,
+생산 CPU population call graph의 금지 읽기 0, 별도 `partition_functions_Te` 저장소 0을
+검사한다. A2-10 온도 해법, A2-13 GPU, 명시적 A2-06 진단 shadow만 좁은 allowlist다.

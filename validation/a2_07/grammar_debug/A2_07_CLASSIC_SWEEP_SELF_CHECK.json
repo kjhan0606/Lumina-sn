@@ -1,0 +1,245 @@
+{
+  "schema": "A2_07_CLASSIC_SWEEP_V1",
+  "status": "PASS_SELF_CHECK",
+  "reason_code": "OK",
+  "items": [
+    {
+      "id": "H01",
+      "fired": true,
+      "hit_count": 2,
+      "affected_shells/species": [],
+      "impact_metric": "BLOCKED_DRIVER_METRIC_NOT_PROVIDED",
+      "impact_value": null,
+      "population_path_live": true,
+      "disposition": "BLOCKED_DRIVER_METRIC_NOT_PROVIDED",
+      "evidence": [
+        "synthetic-self-check"
+      ],
+      "followup": "A2-10/A2-17"
+    },
+    {
+      "id": "H04",
+      "fired": true,
+      "hit_count": 2,
+      "affected_shells/species": [],
+      "impact_metric": "BLOCKED_DRIVER_METRIC_NOT_PROVIDED",
+      "impact_value": null,
+      "population_path_live": true,
+      "disposition": "BLOCKED_DRIVER_METRIC_NOT_PROVIDED",
+      "evidence": [
+        "synthetic-self-check"
+      ],
+      "followup": "A2-18"
+    },
+    {
+      "id": "H05",
+      "fired": true,
+      "hit_count": 2,
+      "affected_shells/species": [],
+      "impact_metric": "BLOCKED_DRIVER_METRIC_NOT_PROVIDED",
+      "impact_value": null,
+      "population_path_live": true,
+      "disposition": "BLOCKED_DRIVER_METRIC_NOT_PROVIDED",
+      "evidence": [
+        "synthetic-self-check"
+      ],
+      "followup": "A2-13"
+    },
+    {
+      "id": "H11",
+      "fired": true,
+      "hit_count": 3,
+      "affected_shells/species": [],
+      "impact_metric": "BLOCKED_DRIVER_METRIC_NOT_PROVIDED",
+      "impact_value": null,
+      "population_path_live": true,
+      "disposition": "BLOCKED_DRIVER_METRIC_NOT_PROVIDED",
+      "evidence": [
+        "synthetic-self-check"
+      ],
+      "followup": "A2-13"
+    },
+    {
+      "id": "H15",
+      "fired": true,
+      "hit_count": 2,
+      "affected_shells/species": [],
+      "impact_metric": "BLOCKED_DRIVER_METRIC_NOT_PROVIDED",
+      "impact_value": null,
+      "population_path_live": true,
+      "disposition": "BLOCKED_DRIVER_METRIC_NOT_PROVIDED",
+      "evidence": [
+        "synthetic-self-check"
+      ],
+      "followup": "A2-10"
+    },
+    {
+      "id": "S03",
+      "fired": true,
+      "hit_count": 2,
+      "affected_shells/species": [],
+      "impact_metric": "BLOCKED_DRIVER_METRIC_NOT_PROVIDED",
+      "impact_value": null,
+      "population_path_live": true,
+      "disposition": "BLOCKED_DRIVER_METRIC_NOT_PROVIDED",
+      "evidence": [
+        "synthetic-self-check"
+      ],
+      "followup": "A2-08"
+    },
+    {
+      "id": "S04",
+      "fired": true,
+      "hit_count": 2,
+      "affected_shells/species": [],
+      "impact_metric": "BLOCKED_DRIVER_METRIC_NOT_PROVIDED",
+      "impact_value": null,
+      "population_path_live": true,
+      "disposition": "BLOCKED_DRIVER_METRIC_NOT_PROVIDED",
+      "evidence": [
+        "synthetic-self-check"
+      ],
+      "followup": "A2-13"
+    },
+    {
+      "id": "S09",
+      "fired": true,
+      "hit_count": 2,
+      "affected_shells/species": [],
+      "impact_metric": "BLOCKED_DRIVER_METRIC_NOT_PROVIDED",
+      "impact_value": null,
+      "population_path_live": true,
+      "disposition": "BLOCKED_DRIVER_METRIC_NOT_PROVIDED",
+      "evidence": [
+        "synthetic-self-check"
+      ],
+      "followup": "A2-09/A2-13"
+    },
+    {
+      "id": "S14",
+      "fired": true,
+      "hit_count": 2,
+      "affected_shells/species": [],
+      "impact_metric": "BLOCKED_DRIVER_METRIC_NOT_PROVIDED",
+      "impact_value": null,
+      "population_path_live": true,
+      "disposition": "BLOCKED_DRIVER_METRIC_NOT_PROVIDED",
+      "evidence": [
+        "synthetic-self-check"
+      ],
+      "followup": "A2-13"
+    },
+    {
+      "id": "S15",
+      "fired": true,
+      "hit_count": 2,
+      "affected_shells/species": [],
+      "impact_metric": "BLOCKED_DRIVER_METRIC_NOT_PROVIDED",
+      "impact_value": null,
+      "population_path_live": true,
+      "disposition": "BLOCKED_DRIVER_METRIC_NOT_PROVIDED",
+      "evidence": [
+        "synthetic-self-check"
+      ],
+      "followup": "A2-13"
+    },
+    {
+      "id": "S16",
+      "fired": true,
+      "hit_count": 2,
+      "affected_shells/species": [],
+      "impact_metric": "BLOCKED_DRIVER_METRIC_NOT_PROVIDED",
+      "impact_value": null,
+      "population_path_live": true,
+      "disposition": "BLOCKED_DRIVER_METRIC_NOT_PROVIDED",
+      "evidence": [
+        "synthetic-self-check"
+      ],
+      "followup": "A2-18"
+    },
+    {
+      "id": "G01",
+      "fired": true,
+      "hit_count": 2,
+      "affected_shells/species": [],
+      "impact_metric": "BLOCKED_DRIVER_METRIC_NOT_PROVIDED",
+      "impact_value": null,
+      "population_path_live": true,
+      "disposition": "BLOCKED_DRIVER_METRIC_NOT_PROVIDED",
+      "evidence": [
+        "synthetic-self-check"
+      ],
+      "followup": "A2-13"
+    },
+    {
+      "id": "G02",
+      "fired": true,
+      "hit_count": 1,
+      "affected_shells/species": [],
+      "impact_metric": "BLOCKED_DRIVER_METRIC_NOT_PROVIDED",
+      "impact_value": null,
+      "population_path_live": true,
+      "disposition": "BLOCKED_DRIVER_METRIC_NOT_PROVIDED",
+      "evidence": [
+        "synthetic-self-check"
+      ],
+      "followup": "A2-13"
+    },
+    {
+      "id": "G03",
+      "fired": true,
+      "hit_count": 3,
+      "affected_shells/species": [],
+      "impact_metric": "BLOCKED_DRIVER_METRIC_NOT_PROVIDED",
+      "impact_value": null,
+      "population_path_live": true,
+      "disposition": "BLOCKED_DRIVER_METRIC_NOT_PROVIDED",
+      "evidence": [
+        "synthetic-self-check"
+      ],
+      "followup": "A2-13"
+    },
+    {
+      "id": "G05",
+      "fired": true,
+      "hit_count": 1,
+      "affected_shells/species": [],
+      "impact_metric": "BLOCKED_DRIVER_METRIC_NOT_PROVIDED",
+      "impact_value": null,
+      "population_path_live": true,
+      "disposition": "BLOCKED_DRIVER_METRIC_NOT_PROVIDED",
+      "evidence": [
+        "synthetic-self-check"
+      ],
+      "followup": "A2-13"
+    },
+    {
+      "id": "G06",
+      "fired": true,
+      "hit_count": 2,
+      "affected_shells/species": [],
+      "impact_metric": "BLOCKED_DRIVER_METRIC_NOT_PROVIDED",
+      "impact_value": null,
+      "population_path_live": true,
+      "disposition": "BLOCKED_DRIVER_METRIC_NOT_PROVIDED",
+      "evidence": [
+        "synthetic-self-check"
+      ],
+      "followup": "A2-08/A2-13"
+    },
+    {
+      "id": "G10",
+      "fired": true,
+      "hit_count": 2,
+      "affected_shells/species": [],
+      "impact_metric": "BLOCKED_DRIVER_METRIC_NOT_PROVIDED",
+      "impact_value": null,
+      "population_path_live": true,
+      "disposition": "BLOCKED_DRIVER_METRIC_NOT_PROVIDED",
+      "evidence": [
+        "synthetic-self-check"
+      ],
+      "followup": "A2-18"
+    }
+  ]
+}

@@ -149,6 +149,9 @@ int main(int argc, char *argv[]) {
     /* P6: Initialize per-shell electron temperature */
     plasma.T_e = (double *)malloc(geo.n_shells * sizeof(double));
     compute_electron_temperature(&plasma, NULL, geo.time_explosion, geo.n_shells, 0);
+    /* Ratio-derived T_e is an unqualified diagnostic seed. Only the A2-10
+     * radiative-equilibrium supplier below may mint a production generation. */
+    plasma.T_e_generation = 0;
 
     /* Phase 5 - Step 3: Override with command-line packets if given */
     int n_packets = config.n_packets; /* Phase 5 - Step 3 */
@@ -288,6 +291,7 @@ int main(int argc, char *argv[]) {
     if (enable_nlte) {
         printf("\n--- NLTE Initialization ---\n");
         if (nlte_init(&nlte, &atom_data, &opacity, geo.n_shells) != 0 || radiation_field_owner_init(&nlte.radiation_field, (size_t)geo.n_shells) != 0) { fprintf(stderr, "[RADIATION-FIELD][FATAL] initialization failed\n"); return EXIT_FAILURE; }
+        bf_set_nlte_pops(&nlte);
         /* A2-06: Q_g = enabled bound-bound rate-graph lines (nlte_line_map>=0),
          * frozen + hashed before any accumulation (SPEC_A2_06_V5). */
         if (line_jbar_qset_build(&line_qset, opacity.n_lines,
@@ -616,6 +620,7 @@ int main(int argc, char *argv[]) {
              * (compute_electron_temperature self_consistent branch) is retired: it
              * omitted photoionization/collisional heating and floor-saturated at
              * early epochs. No free parameters; under-relaxed via LUMINA_RADEQ_DAMP. */
+            int te_qualified = 0;
             if (radeq_te || self_consistent_te) {
                 /* Radiative-equilibrium T_e needs the CURRENT iteration's
                  * radiation field; normalize J_nu now (re-normalized later in
@@ -623,7 +628,7 @@ int main(int argc, char *argv[]) {
                  * estimator). */
                 if (enable_nlte && iter >= nlte_start_iter)
                     nlte_normalize_j_nu(&nlte, time_simulation, volume, geo.n_shells);
-                compute_radiative_equilibrium_te(&plasma,
+                te_qualified = compute_radiative_equilibrium_te(&plasma,
                     gamma_dep_enabled ? &gamma_dep : NULL,
                     &nlte, &atom_data, &opacity,
                     geo.time_explosion, geo.n_shells);
@@ -631,9 +636,21 @@ int main(int argc, char *argv[]) {
                 compute_electron_temperature(&plasma,
                     gamma_dep_enabled ? &gamma_dep : NULL,
                     geo.time_explosion, geo.n_shells, self_consistent_te);
+                plasma.T_e_generation = 0;
             }
 
-            compute_plasma_state(&atom_data, &plasma, &opacity, geo.time_explosion);
+            if (te_qualified) {
+                if (plasma.T_e_generation == UINT64_MAX) return EXIT_FAILURE;
+                plasma.T_e_generation++;
+            } else {
+                plasma.T_e_generation = 0;
+            }
+            if (compute_plasma_state(&atom_data, &plasma, &opacity,
+                                     geo.time_explosion) != 0) {
+                fprintf(stderr, "[A2-07][FATAL] population transaction failed at iter=%d\n",
+                        iter);
+                return EXIT_FAILURE;
+            }
 
             /* Recompute BF opacity grid after plasma update */
             if (bf_opacity_enabled)
@@ -694,7 +711,12 @@ int main(int argc, char *argv[]) {
             for (int i = 0; i < geo.n_shells; i++)
                 plasma.n_electron[i] = opacity.electron_density[i];
             compute_electron_temperature(&plasma, NULL, geo.time_explosion, geo.n_shells, 0);
-            compute_plasma_state(&atom_data, &plasma, &opacity, geo.time_explosion);
+            plasma.T_e_generation = 0;
+            if (compute_plasma_state(&atom_data, &plasma, &opacity,
+                                     geo.time_explosion) != 0) {
+                fprintf(stderr, "[A2-07][FATAL] validation population transaction failed\n");
+                return EXIT_FAILURE;
+            }
             /* Write validation tau to file */
             FILE *vf = fopen("lumina_tau_validation.csv", "w");
             if (vf) {

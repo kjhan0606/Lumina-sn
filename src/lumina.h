@@ -13,6 +13,7 @@
 #include <float.h>    /* Phase 2 - Step 1 */
 #include <locale.h>   /* A6: setlocale(LC_NUMERIC,"C") for ko_KR-safe sscanf */
 #include "radiation_field.h" /* A2-03 canonical shadow schema (CPU only) */
+#include "population_contract.h" /* A2-07 CPU population owner contract */
 
 /* ============================================================ */
 /* Phase 2 - Step 2: Physical constants (CGS, matching TARDIS)  */
@@ -374,6 +375,9 @@ typedef struct {
                                * for FIX_BF_STIM_RECOMB so its OFF heap is unchanged. */
     double  T_e_T_rad_ratio;  /* T_e/T_rad ratio for Saha equation (default 0.9) */
     double *T_e;              /* P6: [n_shells] per-shell electron temperature [K] */
+    uint64_t T_e_generation;  /* A2-07: supplied T_e input generation */
+    PopulationStatus population_last_error;
+    uint64_t population_error_count;
 } PlasmaState;                /* Phase 2 - Step 4 */
 
 /* Task #072: Atomic data for plasma solver */
@@ -441,8 +445,9 @@ typedef struct {
 
     /* Per-shell computed quantities */
     double *ion_number_density;       /* [n_ion_pops * n_shells] */
-    double *partition_functions;      /* [n_ion_pops * n_shells] */
-    double *partition_functions_Te;   /* [n_ion_pops * n_shells] undiluted LTE-at-T_e (no W); ARTIS parity, k-packet fallback */
+    double *partition_functions;      /* [n_ion_pops * n_shells], sole Z(T_e) owner */
+    PopulationDerivedStamp partition_stamp;
+    uint64_t population_committed_generation;
 
     /* CMFGEN-baked photoionization cross-sections.
      * Pre-baked onto LUMINA's fixed bf opacity grid (NLTE_N_FREQ_BINS bins,
@@ -607,6 +612,13 @@ typedef struct {
     uint64_t bb_view_blocked_qhash;
     uint64_t bb_view_blocked_disabled;
 
+    /* A2-07 generation-bound CPU population transaction and observability. */
+    uint64_t population_required_generation;
+    uint64_t population_committed_generation;
+    PopulationStatus population_first_error;
+    uint64_t population_error_count;
+    PopulationCounters population_counters;
+
     /* Current iteration index (set by host before each nlte_solve_all call). */
     int    current_iter;
 
@@ -620,6 +632,7 @@ typedef struct {
     int   *fl_to_super;                             /* [n_nlte_levels_total] FL nlte idx -> global SL solve idx */
     int   *super_anchor_global;                     /* [n_super_total] lowest-E FL global idx per SL */
     double *within_sl_frac;                         /* [n_nlte_levels_total * n_shells] Boltzmann fraction f_i of FL within its SL */
+    PopulationDerivedStamp within_sl_stamp;         /* A2-07: immutable LTE@T_e projection stamp */
 
     /* ARTIS-style grey/LTE criterion: inward electron-scattering optical depth
      * per shell, recomputed each outer iteration. Optically-thick cells are
@@ -935,8 +948,8 @@ void   omega_cmfgen_arm(AtomicData *atom);
 double omega_cmfgen_line(const AtomicData *atom, int line, double T_e, int *tier);
 void inject_topstage_continuum_levels(AtomicData *atom, OpacityState *opacity);
 void free_atomic_data(AtomicData *atom);
-void compute_plasma_state(AtomicData *atom, PlasmaState *plasma,
-                          OpacityState *opacity, double time_explosion);
+int compute_plasma_state(AtomicData *atom, PlasmaState *plasma,
+                         OpacityState *opacity, double time_explosion);
 void tau_sobolev_require_refresh(OpacityState *opacity, const char *reason);
 void tau_sobolev_mark_computed(OpacityState *opacity, const char *producer);
 int  tau_sobolev_assert_fresh(OpacityState *opacity, const char *consumer);
@@ -1246,10 +1259,10 @@ void compute_electron_temperature(PlasmaState *plasma, GammaDeposition *gamma_de
 
 /* Task #20: real radiative-equilibrium T_e (heating = cooling), gated by
  * LUMINA_RADEQ_TE=1. Uses lagged NLTE pops + J_nu (operator-split). */
-void compute_radiative_equilibrium_te(PlasmaState *plasma, GammaDeposition *gamma_dep,
-                                      NLTEConfig *nlte, AtomicData *atom,
-                                      OpacityState *opacity,
-                                      double time_explosion, int n_shells);
+int compute_radiative_equilibrium_te(PlasmaState *plasma, GammaDeposition *gamma_dep,
+                                     NLTEConfig *nlte, AtomicData *atom,
+                                     OpacityState *opacity,
+                                     double time_explosion, int n_shells);
 
 /* PATH-A / A2: per-shell COUPLED-NEWTON solve of {n_e, T_e} (simultaneous
  * linearization of radiative equilibrium + charge conservation), replacing the

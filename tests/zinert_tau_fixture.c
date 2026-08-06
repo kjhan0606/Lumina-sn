@@ -26,6 +26,7 @@ int main(void) {
     double line_f[4] = {0.25, 0.25, 0.25, 0.25};
     double line_lam[4] = {5e-5, 5e-5, 5e-5, 5e-5};
     double T_rad[1] = {10000.0};
+    double T_e[1] = {9000.0};
     double W[1] = {0.5};
     double tau[4] = {-1.0, -1.0, -1.0, -1.0};
 
@@ -41,6 +42,7 @@ int main(void) {
     atom.ion_pop_stage = ion_stage;
     atom.ion_number_density = ion_density;
     atom.partition_functions = partition;
+    atom.n_levels = 4;
     atom.level_offset = level_offset;
     atom.level_num = level_num;
     atom.level_energy_eV = level_energy;
@@ -54,16 +56,32 @@ int main(void) {
     atom.line_wavelength_cm = line_lam;
     plasma.n_shells = 1;
     plasma.T_rad = T_rad;
+    plasma.T_e = T_e;
+    plasma.T_e_generation = 1;
     plasma.W = W;
     opacity.n_lines = 4;
     opacity.n_shells = 1;
     opacity.tau_sobolev = tau;
 
+    /* Missing T_e must fail closed for the active line without touching the
+     * exact-zero inert/missing-map outputs or crashing. */
+    plasma.T_e = NULL;
+    lumina_oracle_compute_tau_sobolev(&atom, &plasma, &opacity, 86400.0);
+    if (tau[0] != 0.0 || !isnan(tau[1]) || tau[2] != 0.0 || tau[3] != 0.0) {
+        fprintf(stderr,
+                "[Z-INERT-TAU][FATAL] missing-T_e fail-closed outputs "
+                "%.17g %.17g %.17g %.17g\n",
+                tau[0], tau[1], tau[2], tau[3]);
+        return 3;
+    }
+
+    plasma.T_e = T_e;
+    for (int line = 0; line < 4; line++) tau[line] = -1.0;
     lumina_oracle_compute_tau_sobolev(&atom, &plasma, &opacity, 86400.0);
 
-    double beta = 1.0 / (K_BOLTZMANN * T_rad[0]);
-    double n_lower = ion_density[1] * W[0] * level_g[2];
-    double n_upper = ion_density[1] * W[0] * level_g[3] *
+    double beta = 1.0 / (K_BOLTZMANN * T_e[0]);
+    double n_lower = ion_density[1] * level_g[2];
+    double n_upper = ion_density[1] * level_g[3] *
                      exp(-level_energy[3] * EV_TO_ERG * beta);
     double stim = 1.0 - (level_g[2] * n_upper) / (level_g[3] * n_lower);
     if (stim < 0.0) stim = 0.0;
@@ -83,7 +101,8 @@ int main(void) {
                 tau[1], active_expected);
         return 2;
     }
-    printf("[Z-INERT-TAU] inactive_valid=0 missing_ion=0 missing_level=0 "
+    printf("[Z-INERT-TAU] missing_te=FAIL_CLOSED inactive_valid=0 "
+           "missing_ion=0 missing_level=0 "
            "active_tau_bits=IDENTICAL value=%.17g PASS\n", tau[1]);
     return 0;
 }

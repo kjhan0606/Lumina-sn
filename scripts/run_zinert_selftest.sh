@@ -18,23 +18,23 @@ fi
 cd "$REPO_ROOT"
 "${CC:-gcc}" -O2 -w -std=gnu11 -D_GNU_SOURCE \
     -ffunction-sections -fdata-sections -Isrc -Wl,--gc-sections \
-    tests/abundance_zero_nlte_fixture.c src/lumina_plasma.c src/bf_rate_jnu.c \
+    tests/abundance_zero_nlte_fixture.c src/lumina_plasma.c src/bf_rate_jnu.c src/population_contract.c \
     -lm -o "$BUILD_DIR/zinert_validator" >"$BUILD_DIR/validator.build.log" 2>&1 &
 P1=$!
 "${CC:-gcc}" -O2 -w -std=gnu11 -D_GNU_SOURCE \
     -DLUMINA_FROZEN_ORACLE -ffunction-sections -fdata-sections \
     -Isrc -Wl,--gc-sections tests/zinert_tau_fixture.c \
-    src/lumina_plasma.c src/bf_rate_jnu.c -lm -o "$BUILD_DIR/zinert_tau" >"$BUILD_DIR/tau.build.log" 2>&1 &
+    src/lumina_plasma.c src/bf_rate_jnu.c src/population_contract.c -lm -o "$BUILD_DIR/zinert_tau" >"$BUILD_DIR/tau.build.log" 2>&1 &
 P2=$!
 "${CC:-gcc}" -O2 -w -std=gnu11 -D_GNU_SOURCE \
     -ffunction-sections -fdata-sections -Isrc -Wl,--gc-sections \
-    tests/zinert_population_fixture.c src/lumina_plasma.c src/bf_rate_jnu.c \
+    tests/zinert_population_fixture.c src/lumina_plasma.c src/bf_rate_jnu.c src/population_contract.c \
     -lm -o "$BUILD_DIR/zinert_population" >"$BUILD_DIR/population.build.log" 2>&1 &
 P3=$!
 "${CC:-gcc}" -O2 -w -std=gnu11 -D_GNU_SOURCE \
     -DLUMINA_FROZEN_ORACLE -ffunction-sections -fdata-sections \
     -Isrc -Wl,--gc-sections tests/zinert_canonical_tau_fixture.c \
-    src/lumina_plasma.c src/lumina_element_wide.c src/lumina_atomic.c src/bf_rate_jnu.c \
+    src/lumina_plasma.c src/lumina_element_wide.c src/lumina_atomic.c src/bf_rate_jnu.c src/population_contract.c \
     -lm -o "$BUILD_DIR/zinert_canonical_tau" >"$BUILD_DIR/canonical.build.log" 2>&1 &
 P4=$!
 

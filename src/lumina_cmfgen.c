@@ -5245,9 +5245,17 @@ int cmfgen_run(Geometry *geo, OpacityState *opac, BFOpacity *bf,
                                  cs.n_shells, cs.n_bins);
 
         /* downstream solvers reused unchanged */
-        compute_radiative_equilibrium_te(plasma, gamma, nlte, atom, opac,
-                                         t_exp, cs.n_shells);
-        compute_plasma_state(atom, plasma, opac, t_exp);
+        int te_qualified = compute_radiative_equilibrium_te(
+            plasma, gamma, nlte, atom, opac, t_exp, cs.n_shells);
+        if (!te_qualified) plasma->T_e_generation = 0;
+        if (!te_qualified) return -1;
+        if (plasma->T_e_generation == UINT64_MAX) return -1;
+        plasma->T_e_generation++;
+        if (compute_plasma_state(atom, plasma, opac, t_exp) != 0) {
+            fprintf(stderr, "[A2-07][FATAL] CMF population transaction failed iter=%d\n",
+                    iter);
+            return -1;
+        }
         if (nlte && nlte->enabled) {
             /* UNDER-RELAXED lagged solve (codex requirement): when the cont_only-J_inc
              * mode-3 pump is active (LUMINA_CMF_JINC_CONT), damp the population update

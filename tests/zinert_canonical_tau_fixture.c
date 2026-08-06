@@ -12,9 +12,8 @@ static int find_ion(const AtomicData *atom, int Z, int stage) {
     return -1;
 }
 
-static double legacy_active_tau(const AtomicData *atom, int line,
-                                double T_rad, double W,
-                                double time_explosion) {
+static double canonical_active_tau(const AtomicData *atom, int line,
+                                   double T_e, double time_explosion) {
     int ip = find_ion(atom, atom->line_atomic_number[line],
                       atom->line_ion_number[line]);
     if (ip < 0) return 0.0;
@@ -27,21 +26,28 @@ static double legacy_active_tau(const AtomicData *atom, int line,
     }
     if (lower < 0 || upper < 0) return 0.0;
 
-    double beta = 1.0 / (K_BOLTZMANN * T_rad);
     double n_ion = atom->ion_number_density[ip];
     double Z_part = atom->partition_functions[ip];
-    double lower_boltz = atom->level_energy_eV[lower] * EV_TO_ERG * beta;
-    double upper_boltz = atom->level_energy_eV[upper] * EV_TO_ERG * beta;
-    double n_lower = 0.0, n_upper = 0.0;
-    if (lower_boltz < 500.0) {
-        double weight = atom->level_metastable[lower] ? 1.0 : W;
-        n_lower = n_ion * weight * atom->level_g[lower] *
-                  exp(-lower_boltz) / Z_part;
+    double ground_energy_eV = atom->level_energy_eV[atom->level_offset[ip]];
+    for (int l = atom->level_offset[ip] + 1;
+         l < atom->level_offset[ip + 1]; l++) {
+        if (atom->level_energy_eV[l] < ground_energy_eV)
+            ground_energy_eV = atom->level_energy_eV[l];
     }
-    if (upper_boltz < 500.0) {
-        double weight = atom->level_metastable[upper] ? 1.0 : W;
-        n_upper = n_ion * weight * atom->level_g[upper] *
-                  exp(-upper_boltz) / Z_part;
+    double lower_boltz = (atom->level_energy_eV[lower] - ground_energy_eV) *
+                         EV_TO_ERG / (K_BOLTZMANN * T_e);
+    double upper_boltz = (atom->level_energy_eV[upper] - ground_energy_eV) *
+                         EV_TO_ERG / (K_BOLTZMANN * T_e);
+    double n_lower = 0.0, n_upper = 0.0;
+    if (lower_boltz < 745.0) {
+        double f_lower = (double)atom->level_g[lower] *
+                         exp(-lower_boltz) / Z_part;
+        n_lower = n_ion * f_lower;
+    }
+    if (upper_boltz < 745.0) {
+        double f_upper = (double)atom->level_g[upper] *
+                         exp(-upper_boltz) / Z_part;
+        n_upper = n_ion * f_upper;
     }
     double stim = 1.0;
     if (n_lower > 0.0 && n_upper > 0.0) {
@@ -57,6 +63,9 @@ static double legacy_active_tau(const AtomicData *atom, int line,
 }
 
 int main(int argc, char **argv) {
+    static const long expected_active_lines = 2211572;
+    static const uint64_t expected_active_tau_fnv64 =
+        UINT64_C(0x1cfbc8dba0b0f23f);
     if (argc != 2) {
         fprintf(stderr, "usage: %s REFERENCE_DECK\n", argv[0]);
         return 64;
@@ -77,15 +86,13 @@ int main(int argc, char **argv) {
     double *original_abundances = atom.abundances;
     double *original_ions = atom.ion_number_density;
     double *original_partition = atom.partition_functions;
-    double *original_partition_Te = atom.partition_functions_Te;
     atom.abundances = calloc((size_t)atom.n_elements, sizeof(double));
     atom.ion_number_density = calloc((size_t)atom.n_ion_pops, sizeof(double));
     atom.partition_functions = calloc((size_t)atom.n_ion_pops, sizeof(double));
-    atom.partition_functions_Te = calloc((size_t)atom.n_ion_pops, sizeof(double));
     double *tau = calloc((size_t)atom.n_lines, sizeof(double));
     double *source = calloc((size_t)atom.n_lines, sizeof(double));
     if (!atom.abundances || !atom.ion_number_density ||
-        !atom.partition_functions || !atom.partition_functions_Te ||
+        !atom.partition_functions ||
         !tau || !source) {
         fprintf(stderr, "[Z-INERT-CANONICAL-TAU][FATAL] allocation failed\n");
         return 3;
@@ -104,10 +111,10 @@ int main(int argc, char **argv) {
         atom.ion_number_density[ip] =
             (Z > 0 && Z < 100 && inactive_Z[Z]) ? 0.0 : (double)(17 * (ip + 1));
         atom.partition_functions[ip] = 1.0 + 0.125 * (double)(ip % 7);
-        atom.partition_functions_Te[ip] = atom.partition_functions[ip];
     }
 
     double T_rad[1] = {10000.0};
+    double T_e[1] = {10000.0};
     double W[1] = {0.5};
     PlasmaState plasma;
     OpacityState opacity;
@@ -115,6 +122,8 @@ int main(int argc, char **argv) {
     memset(&opacity, 0, sizeof opacity);
     plasma.n_shells = 1;
     plasma.T_rad = T_rad;
+    plasma.T_e = T_e;
+    plasma.T_e_generation = 1;
     plasma.W = W;
     opacity.n_lines = atom.n_lines;
     opacity.n_shells = 1;
@@ -135,8 +144,8 @@ int main(int argc, char **argv) {
             if (tau[line] != 0.0) inactive_nonzero++;
             continue;
         }
-        double expected = legacy_active_tau(&atom, line, T_rad[0], W[0],
-                                            time_explosion);
+        double expected = canonical_active_tau(&atom, line, T_e[0],
+                                               time_explosion);
         active_lines++;
         if (memcmp(&tau[line], &expected, sizeof expected) != 0)
             active_bit_differences++;
@@ -155,20 +164,22 @@ int main(int argc, char **argv) {
            inactive_lines, inactive_nonzero, active_lines,
            active_bit_differences, (unsigned long long)active_hash, audit_rc,
            (!audit_rc && inactive_nonzero == 0 &&
-            active_bit_differences == 0) ? "PASS" : "FAIL");
+            active_lines == expected_active_lines &&
+            active_bit_differences == 0 &&
+            active_hash == expected_active_tau_fnv64) ? "PASS" : "FAIL");
 
     free(atom.abundances);
     free(atom.ion_number_density);
     free(atom.partition_functions);
-    free(atom.partition_functions_Te);
     free(tau);
     free(source);
     atom.abundances = original_abundances;
     atom.ion_number_density = original_ions;
     atom.partition_functions = original_partition;
-    atom.partition_functions_Te = original_partition_Te;
     free_atomic_data(&atom);
 
     return (audit_rc || inactive_nonzero != 0 ||
-            active_bit_differences != 0) ? 1 : 0;
+            active_lines != expected_active_lines ||
+            active_bit_differences != 0 ||
+            active_hash != expected_active_tau_fnv64) ? 1 : 0;
 }

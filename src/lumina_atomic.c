@@ -1959,7 +1959,6 @@ int load_atomic_data(AtomicData *atom, const char *ref_dir, int n_shells) {
     /* --- Allocate per-shell computed arrays --- */
     atom->ion_number_density  = (double *)calloc((size_t)total_ion_pops * n_shells, sizeof(double));
     atom->partition_functions = (double *)calloc((size_t)total_ion_pops * n_shells, sizeof(double));
-    atom->partition_functions_Te = (double *)calloc((size_t)total_ion_pops * n_shells, sizeof(double));
 
     /* The bf repairs own their target-map dependency: neither stimulated
      * recombination nor the D-1 event selector may require MA_RADRECOMB. */
@@ -2606,7 +2605,6 @@ void free_atomic_data(AtomicData *atom) {
     free(atom->level_offset);
     free(atom->ion_number_density);
     free(atom->partition_functions);
-    free(atom->partition_functions_Te);
     free(atom->cmfgen_has_sigma);
     free(atom->cmfgen_sigma_bf);
     free(atom->ma_rr_target);
