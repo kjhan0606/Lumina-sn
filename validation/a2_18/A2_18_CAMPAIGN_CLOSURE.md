@@ -22,7 +22,27 @@
 | A2-10 | 복사평형 → 항별 J_ν heating/cooling | `540ebbd`+`068fb36` | 폐합 |
 | A2-11 | 중간 마디 (전량 회귀 + 계보 감사) | `9b73c04` | 폐합 |
 | A2-12 | GPU lifecycle (세대 결박·업로드) | `4077537`+`3e9e317`+`7f72c0d` | 폐합 · GPU 검증 완료 |
-| A2-13 | production CUDA 가 canonical view 소비 | `d47a596` | 폐합 |
+| A2-13 | production CUDA 가 canonical view 소비 | `d47a596` | 폐합 ⚠**단서 있음** |
+
+> ### ⚠ A2-13 단서 — 봉인 없이 구현됐다 (2026-08-07 적발)
+>
+> `scripts/verify_seals.py`(C7 수리로 신설한 봉인 검증기)가 첫 실행에서 잡았다.
+> `validation/a2_13_15/implementation_start_manifest.json` 의 **V1**(커밋 `50e21b6`)이
+> 기록한 것:
+> ```
+> scope = A2-13 · source_edit_started = true
+> seal_status = "BLOCKED_GIT_READ_ONLY"
+> allowlist_blob_ids = 전부 UNAVAILABLE
+> ```
+> 캠페인 규율은 **첫 src 편집 전에 changed-output allowlist 를 봉인**하는 것이다.
+> A2-13 은 그 봉인 없이 편집에 들어갔고, 그 기록마저 A2-14/15 의 V2 로 교체되며
+> 현 트리에서 사라졌다(V2 는 A2-14/15 만 덮는다). 변조가 아니라 교체지만
+> **실패 기록의 소실**이므로 append-only 규율 위반에 준한다.
+>
+> ⟹ **이 표의 A2-13 "폐합"은 봉인 근거가 없는 폐합이다.**
+> 처분 미결 — 사후 검증 / 재봉인 / 단서 기재 유지 중 판정 필요.
+> 증거 `validation/a2_13_15/A2_13_UNSEALED_IMPLEMENTATION.json`.
+
 | **A2-14** | GPU signed opacity production 배선 | `19c8ab0`+`65498e1`+`c65800e` | **폐합** |
 | **A2-15** | GPU emissivity CDF production 배선 | `1178878`+`84a1481`+`ae72804`+`841e88f` | **폐합** |
 | **A2-16** | 스칼라 seed generation-0 격리 | `686a4a1` | **폐합** |
