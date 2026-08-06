@@ -1,0 +1,500 @@
+{
+ "schema": "lumina-layer1-r5-deckwide-air-census-v1",
+ "criterion": "이온의 lambda>2000A 대역에서 deck_nu/levelenergy_nu-1 이 1e-05 를 넘으면 공기 규약 파일에서 온 것",
+ "lines_joined": 2565342,
+ "lines_dropped_no_level": 0,
+ "air_band_lines": 2010490,
+ "vac_band_lines": 554852,
+ "ions_total": 48,
+ "ions_contaminated": 32,
+ "contaminated_air_band_lines": 1325865,
+ "contaminated_ion_all_lines": 1692000,
+ "contaminated_air_fraction_of_deck": 0.5168375210790608,
+ "per_ion": {
+  "27_1": {
+   "Z": 27,
+   "ion_number": 1,
+   "air_lines": 524120,
+   "vac_lines": 69439,
+   "air_band_median_r": 0.0002745066972924537,
+   "vac_band_median_r": 8.188846489787238e-09,
+   "contaminated": true,
+   "implied_shift_km_s": 82.29503751876663
+  },
+  "27_2": {
+   "Z": 27,
+   "ion_number": 2,
+   "air_lines": 493419,
+   "vac_lines": 185993,
+   "air_band_median_r": 0.0002755487044470706,
+   "vac_band_median_r": 5.99404992307484e-09,
+   "contaminated": true,
+   "implied_shift_km_s": 82.60742340490282
+  },
+  "26_1": {
+   "Z": 26,
+   "ion_number": 1,
+   "air_lines": 455463,
+   "vac_lines": 76199,
+   "air_band_median_r": -1.1203399319370533e-10,
+   "vac_band_median_r": -1.9121556560364183e-09,
+   "contaminated": false,
+   "implied_shift_km_s": 3.358694619909619e-05
+  },
+  "26_2": {
+   "Z": 26,
+   "ion_number": 2,
+   "air_lines": 76218,
+   "vac_lines": 60045,
+   "air_band_median_r": -2.4656392483279888e-09,
+   "vac_band_median_r": -8.655453020978143e-10,
+   "contaminated": false,
+   "implied_shift_km_s": 0.0007391800507975203
+  },
+  "28_0": {
+   "Z": 28,
+   "ion_number": 0,
+   "air_lines": 51500,
+   "vac_lines": 1078,
+   "air_band_median_r": 0.000274145284581917,
+   "vac_band_median_r": 1.3156560063620759e-08,
+   "contaminated": true,
+   "implied_shift_km_s": 82.1866887139224
+  },
+  "24_2": {
+   "Z": 24,
+   "ion_number": 2,
+   "air_lines": 46189,
+   "vac_lines": 27943,
+   "air_band_median_r": -1.1663106869175266e-09,
+   "vac_band_median_r": -2.2324596615774794e-09,
+   "contaminated": false,
+   "implied_shift_km_s": 0.0003496511476226738
+  },
+  "28_2": {
+   "Z": 28,
+   "ion_number": 2,
+   "air_lines": 42470,
+   "vac_lines": 24041,
+   "air_band_median_r": 0.00027676466155523993,
+   "vac_band_median_r": 3.747681942556369e-09,
+   "contaminated": true,
+   "implied_shift_km_s": 82.97195817518347
+  },
+  "28_1": {
+   "Z": 28,
+   "ion_number": 1,
+   "air_lines": 41340,
+   "vac_lines": 10472,
+   "air_band_median_r": 0.00027474957375261955,
+   "vac_band_median_r": 7.3585330051528786e-09,
+   "contaminated": true,
+   "implied_shift_km_s": 82.3678500497501
+  },
+  "22_1": {
+   "Z": 22,
+   "ion_number": 1,
+   "air_lines": 36799,
+   "vac_lines": 7979,
+   "air_band_median_r": -1.7965295917576896e-11,
+   "vac_band_median_r": -1.114096925824981e-09,
+   "contaminated": false,
+   "implied_shift_km_s": 5.385860221827743e-06
+  },
+  "25_2": {
+   "Z": 25,
+   "ion_number": 2,
+   "air_lines": 34808,
+   "vac_lines": 35410,
+   "air_band_median_r": 0.00027620285595253424,
+   "vac_band_median_r": 8.63410021256783e-09,
+   "contaminated": true,
+   "implied_shift_km_s": 82.80353309263018
+  },
+  "21_1": {
+   "Z": 21,
+   "ion_number": 1,
+   "air_lines": 21765,
+   "vac_lines": 2401,
+   "air_band_median_r": 0.00027382469176862045,
+   "vac_band_median_r": -4.152445387539672e-09,
+   "contaminated": true,
+   "implied_shift_km_s": 82.09057740640709
+  },
+  "14_0": {
+   "Z": 14,
+   "ion_number": 0,
+   "air_lines": 21430,
+   "vac_lines": 361,
+   "air_band_median_r": 0.00027338613558336444,
+   "vac_band_median_r": 1.800147941821706e-08,
+   "contaminated": true,
+   "implied_shift_km_s": 81.95910156965809
+  },
+  "16_0": {
+   "Z": 16,
+   "ion_number": 0,
+   "air_lines": 19363,
+   "vac_lines": 450,
+   "air_band_median_r": 3.1255012467035215e-09,
+   "vac_band_median_r": -1.3490329464627138e-08,
+   "contaminated": false,
+   "implied_shift_km_s": 0.0009370017012313132
+  },
+  "24_1": {
+   "Z": 24,
+   "ion_number": 1,
+   "air_lines": 18018,
+   "vac_lines": 8568,
+   "air_band_median_r": 0.00027968537792877335,
+   "vac_band_median_r": 5.343438358451635e-09,
+   "contaminated": true,
+   "implied_shift_km_s": 83.84756691592591
+  },
+  "22_2": {
+   "Z": 22,
+   "ion_number": 2,
+   "air_lines": 16429,
+   "vac_lines": 4237,
+   "air_band_median_r": -1.1621874296263712e-09,
+   "vac_band_median_r": 6.0613030150591385e-09,
+   "contaminated": false,
+   "implied_shift_km_s": 0.00034841502618439187
+  },
+  "25_1": {
+   "Z": 25,
+   "ion_number": 1,
+   "air_lines": 16298,
+   "vac_lines": 7514,
+   "air_band_median_r": 0.0002803294826345115,
+   "vac_band_median_r": 4.3024329654528515e-09,
+   "contaminated": true,
+   "implied_shift_km_s": 84.04066464886851
+  },
+  "6_0": {
+   "Z": 6,
+   "ion_number": 0,
+   "air_lines": 9749,
+   "vac_lines": 455,
+   "air_band_median_r": 0.00027334566750508715,
+   "vac_band_median_r": 6.721478040816464e-09,
+   "contaminated": true,
+   "implied_shift_km_s": 81.9469695450008
+  },
+  "8_1": {
+   "Z": 8,
+   "ion_number": 1,
+   "air_lines": 7552,
+   "vac_lines": 1385,
+   "air_band_median_r": 0.0002752349883583527,
+   "vac_band_median_r": -3.545422733175485e-09,
+   "contaminated": true,
+   "implied_shift_km_s": 82.51337368755195
+  },
+  "16_1": {
+   "Z": 16,
+   "ion_number": 1,
+   "air_lines": 7039,
+   "vac_lines": 1488,
+   "air_band_median_r": -2.4179270530222396e-09,
+   "vac_band_median_r": 7.3197748973186094e-09,
+   "contaminated": false,
+   "implied_shift_km_s": 0.0007248762944902336
+  },
+  "26_0": {
+   "Z": 26,
+   "ion_number": 0,
+   "air_lines": 6979,
+   "vac_lines": 5,
+   "air_band_median_r": 7.206921170954672e-11,
+   "vac_band_median_r": 1.8200677587287828e-07,
+   "contaminated": false,
+   "implied_shift_km_s": 2.1605806124527395e-05
+  },
+  "6_1": {
+   "Z": 6,
+   "ion_number": 1,
+   "air_lines": 6622,
+   "vac_lines": 1395,
+   "air_band_median_r": 0.0002744343238587077,
+   "vac_band_median_r": 3.635096668119786e-10,
+   "contaminated": true,
+   "implied_shift_km_s": 82.27334050917003
+  },
+  "24_0": {
+   "Z": 24,
+   "ion_number": 0,
+   "air_lines": 4372,
+   "vac_lines": 0,
+   "_vac_r": [],
+   "air_band_median_r": 0.0002737531560332851,
+   "vac_band_median_r": null,
+   "contaminated": true,
+   "implied_shift_km_s": 82.06913153247606
+  },
+  "6_2": {
+   "Z": 6,
+   "ion_number": 2,
+   "air_lines": 4360,
+   "vac_lines": 1168,
+   "air_band_median_r": 0.0002741003936180819,
+   "vac_band_median_r": 1.8951097247033033e-08,
+   "contaminated": true,
+   "implied_shift_km_s": 82.1732307415323
+  },
+  "8_2": {
+   "Z": 8,
+   "ion_number": 2,
+   "air_lines": 4265,
+   "vac_lines": 2254,
+   "air_band_median_r": 0.00027676358977118953,
+   "vac_band_median_r": -2.3325897324788514e-09,
+   "contaminated": true,
+   "implied_shift_km_s": 82.97163686240856
+  },
+  "8_0": {
+   "Z": 8,
+   "ion_number": 0,
+   "air_lines": 4088,
+   "vac_lines": 105,
+   "air_band_median_r": 0.00027325965177560363,
+   "vac_band_median_r": -8.573936460809506e-08,
+   "contaminated": true,
+   "implied_shift_km_s": 81.92118267803228
+  },
+  "20_0": {
+   "Z": 20,
+   "ion_number": 0,
+   "air_lines": 3976,
+   "vac_lines": 0,
+   "_vac_r": [],
+   "air_band_median_r": 5.962482452215312e-10,
+   "vac_band_median_r": null,
+   "contaminated": false,
+   "implied_shift_km_s": 0.0001787507270131496
+  },
+  "27_0": {
+   "Z": 27,
+   "ion_number": 0,
+   "air_lines": 3943,
+   "vac_lines": 0,
+   "_vac_r": [],
+   "air_band_median_r": 5.412858661291153e-09,
+   "vac_band_median_r": null,
+   "contaminated": false,
+   "implied_shift_km_s": 0.0016227342028750644
+  },
+  "16_2": {
+   "Z": 16,
+   "ion_number": 2,
+   "air_lines": 3889,
+   "vac_lines": 2345,
+   "air_band_median_r": -4.187981073044966e-09,
+   "vac_band_median_r": 9.065979300615368e-09,
+   "contaminated": false,
+   "implied_shift_km_s": 0.001255525139945628
+  },
+  "14_1": {
+   "Z": 14,
+   "ion_number": 1,
+   "air_lines": 3820,
+   "vac_lines": 412,
+   "air_band_median_r": 1.4083120780661318e-09,
+   "vac_band_median_r": -2.2436950075643836e-08,
+   "contaminated": false,
+   "implied_shift_km_s": 0.00042220133951453354
+  },
+  "12_0": {
+   "Z": 12,
+   "ion_number": 0,
+   "air_lines": 3484,
+   "vac_lines": 27,
+   "air_band_median_r": 0.00027336137367062197,
+   "vac_band_median_r": -2.0733283645490985e-08,
+   "contaminated": true,
+   "implied_shift_km_s": 81.95167813497224
+  },
+  "12_2": {
+   "Z": 12,
+   "ion_number": 2,
+   "air_lines": 2105,
+   "vac_lines": 947,
+   "air_band_median_r": 0.00027506485670636405,
+   "vac_band_median_r": 1.68533940136939e-08,
+   "contaminated": true,
+   "implied_shift_km_s": 82.46236950141866
+  },
+  "12_1": {
+   "Z": 12,
+   "ion_number": 1,
+   "air_lines": 1864,
+   "vac_lines": 129,
+   "air_band_median_r": 0.00027383353014642786,
+   "vac_band_median_r": 1.0171483877385867e-08,
+   "contaminated": true,
+   "implied_shift_km_s": 82.09322708541471
+  },
+  "20_2": {
+   "Z": 20,
+   "ion_number": 2,
+   "air_lines": 1718,
+   "vac_lines": 936,
+   "air_band_median_r": 0.0002755614488386682,
+   "vac_band_median_r": -2.059847908908452e-08,
+   "contaminated": true,
+   "implied_shift_km_s": 82.61124407738558
+  },
+  "13_3": {
+   "Z": 13,
+   "ion_number": 3,
+   "air_lines": 1678,
+   "vac_lines": 1374,
+   "air_band_median_r": 0.0002761684859742264,
+   "vac_band_median_r": -4.4514383124028e-08,
+   "contaminated": true,
+   "implied_shift_km_s": 82.79322923235185
+  },
+  "20_1": {
+   "Z": 20,
+   "ion_number": 1,
+   "air_lines": 1580,
+   "vac_lines": 156,
+   "air_band_median_r": -3.7255030727045835e-09,
+   "vac_band_median_r": 2.448109925889952e-08,
+   "contaminated": false,
+   "implied_shift_km_s": 0.0011168777234526598
+  },
+  "13_2": {
+   "Z": 13,
+   "ion_number": 2,
+   "air_lines": 1575,
+   "vac_lines": 436,
+   "air_band_median_r": 0.0002748512212281673,
+   "vac_band_median_r": 4.015873300566852e-09,
+   "contaminated": true,
+   "implied_shift_km_s": 82.39832319629406
+  },
+  "24_3": {
+   "Z": 24,
+   "ion_number": 3,
+   "air_lines": 1383,
+   "vac_lines": 3226,
+   "air_band_median_r": 0.0002815554922887542,
+   "vac_band_median_r": 2.620102246275735e-09,
+   "contaminated": true,
+   "implied_shift_km_s": 84.40821309664567
+  },
+  "27_3": {
+   "Z": 27,
+   "ion_number": 3,
+   "air_lines": 1220,
+   "vac_lines": 2821,
+   "air_band_median_r": 0.0002841586384892958,
+   "vac_band_median_r": -4.4723635905796755e-09,
+   "contaminated": true,
+   "implied_shift_km_s": 85.18861669463939
+  },
+  "14_2": {
+   "Z": 14,
+   "ion_number": 2,
+   "air_lines": 1199,
+   "vac_lines": 440,
+   "air_band_median_r": 9.383687216146797e-09,
+   "vac_band_median_r": -2.7711262562402084e-08,
+   "contaminated": false,
+   "implied_shift_km_s": 0.002813158655631826
+  },
+  "28_3": {
+   "Z": 28,
+   "ion_number": 3,
+   "air_lines": 1162,
+   "vac_lines": 3037,
+   "air_band_median_r": 1.5090337313061752e-08,
+   "vac_band_median_r": -1.6899041832552086e-08,
+   "contaminated": false,
+   "implied_shift_km_s": 0.004523969315131898
+  },
+  "26_3": {
+   "Z": 26,
+   "ion_number": 3,
+   "air_lines": 1128,
+   "vac_lines": 3208,
+   "air_band_median_r": 0.0002811790494031685,
+   "vac_band_median_r": -2.4884616589559982e-09,
+   "contaminated": true,
+   "implied_shift_km_s": 84.29535835867932
+  },
+  "13_0": {
+   "Z": 13,
+   "ion_number": 0,
+   "air_lines": 772,
+   "vac_lines": 0,
+   "_vac_r": [],
+   "air_band_median_r": 0.0002738045822940349,
+   "vac_band_median_r": null,
+   "contaminated": true,
+   "implied_shift_km_s": 82.084548737592
+  },
+  "22_3": {
+   "Z": 22,
+   "ion_number": 3,
+   "air_lines": 685,
+   "vac_lines": 315,
+   "air_band_median_r": 0.0002754094122427442,
+   "vac_band_median_r": 6.248434902822453e-08,
+   "contaminated": true,
+   "implied_shift_km_s": 82.56566465258757
+  },
+  "14_3": {
+   "Z": 14,
+   "ion_number": 3,
+   "air_lines": 652,
+   "vac_lines": 460,
+   "air_band_median_r": 0.00027611313518333125,
+   "vac_band_median_r": -6.326889945285075e-08,
+   "contaminated": true,
+   "implied_shift_km_s": 82.77663548269715
+  },
+  "26_4": {
+   "Z": 26,
+   "ion_number": 4,
+   "air_lines": 577,
+   "vac_lines": 3981,
+   "air_band_median_r": 1.2112605574099433e-07,
+   "vac_band_median_r": 2.410566191102248e-09,
+   "contaminated": false,
+   "implied_shift_km_s": 0.0363126779784377
+  },
+  "21_2": {
+   "Z": 21,
+   "ion_number": 2,
+   "air_lines": 548,
+   "vac_lines": 139,
+   "air_band_median_r": 0.000274483804653447,
+   "vac_band_median_r": 2.238291019196481e-08,
+   "contaminated": true,
+   "implied_shift_km_s": 82.28817447824872
+  },
+  "21_0": {
+   "Z": 21,
+   "ion_number": 0,
+   "air_lines": 445,
+   "vac_lines": 0,
+   "_vac_r": [],
+   "air_band_median_r": 0.00027449570622400943,
+   "vac_band_median_r": null,
+   "contaminated": true,
+   "implied_shift_km_s": 82.29174247934168
+  },
+  "13_1": {
+   "Z": 13,
+   "ion_number": 1,
+   "air_lines": 432,
+   "vac_lines": 78,
+   "air_band_median_r": 0.00027488988596641173,
+   "vac_band_median_r": -3.476198051632906e-09,
+   "contaminated": true,
+   "implied_shift_km_s": 82.40991459321027
+  }
+ }
+}
