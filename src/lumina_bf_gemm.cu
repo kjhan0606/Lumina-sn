@@ -12,10 +12,7 @@
 
 extern "C" {
 #include "lumina.h"
-#include "gpu_radiation_field_contract.h"
 }
-
-static GpuRadiationFieldCounters g_a2_12_bf_counters;
 
 #define CUDA_CHECK(call) do {                                    \
     cudaError_t err = (call);                                    \
@@ -44,67 +41,13 @@ typedef struct {
     float  *d_sigma_bf;       /* [n_freq_bins x n_levels] col-major (= [l x nf] row-major) */
     float  *d_n_level;        /* [n_levels x n_shells]   col-major (= [s x nl] row-major) */
     float  *d_chi_bf;         /* [n_freq_bins x n_shells] col-major (= [s x nf] row-major) */
-    double *d_T_rad;          /* [n_shells] */
-    double *d_W;              /* [n_shells] */
-    double *d_n_ion;          /* [n_ion_pops x n_shells] row-major */
-    double *d_Z_part;         /* [n_ion_pops x n_shells] row-major */
-    double *d_level_E_eV;     /* [n_levels] */
-    int    *d_level_g;        /* [n_levels] */
-    int    *d_level_metastable;/* [n_levels] */
-    int    *d_level_to_ip;    /* [n_levels] -> ion_pop index */
-    int    *d_level_stage;    /* [n_levels] */
     /* Host staging */
+    float  *h_n_level;        /* A2-07 committed material populations */
     float  *h_chi_bf;         /* pinned/pageable [n_freq_bins x n_shells] */
     cublasHandle_t cublas_handle;
 } BFGemmState;
 
 static BFGemmState g_bf_gemm = {0};
-
-__global__ void bf_compute_n_level_kernel(
-    float *n_level,                                /* col-major [n_levels x n_shells] */
-    const double *T_rad, const double *W,
-    const double *n_ion, const double *Z_part,     /* row-major [n_ion_pops x n_shells] */
-    const double *level_E_eV,
-    const int *level_g, const int *level_metastable,
-    const int *level_to_ip, const int *level_stage,
-    int n_shells, int n_levels, int include_neutrals)
-{
-    int l = blockIdx.x * blockDim.x + threadIdx.x;
-    int s = blockIdx.y * blockDim.y + threadIdx.y;
-    if (l >= n_levels || s >= n_shells) return;
-
-    int stage = level_stage[l];
-    /* [Wave-1 neutral-bf] Zero charge excludes free-free, not photoionization:
-     * X I + hnu -> X II + e is physical. Preserve the historical zero exactly
-     * unless LUMINA_FIX_BF_NEUTRAL is armed on the host. */
-    if (stage < 1 && !include_neutrals) {
-        n_level[s * n_levels + l] = 0.0f; return;
-    }
-
-    int ip = level_to_ip[l];
-    double T_rad_s = T_rad[s];
-    double W_s     = W[s];
-    double n_ion_s = n_ion[ip * n_shells + s];
-    double Z_part_s= Z_part[ip * n_shells + s];
-
-    if (n_ion_s < 1e-30 || Z_part_s < 1e-300 || T_rad_s <= 0.0) {
-        n_level[s * n_levels + l] = 0.0f; return;
-    }
-
-    double E_eV = level_E_eV[l];
-    int g = level_g[l];
-    int is_meta = level_metastable[l];
-
-    double beta_rad = 1.0 / (K_BOLTZMANN * T_rad_s);
-    double boltz = E_eV * EV_TO_ERG * beta_rad;
-    if (boltz > 50.0) { n_level[s * n_levels + l] = 0.0f; return; }
-
-    double weight = is_meta ? 1.0 : W_s;
-    double n_lvl = n_ion_s * weight * (double)g * exp(-boltz) / Z_part_s;
-
-    /* col-major store: n_level[l + s*n_levels] */
-    n_level[s * n_levels + l] = (float)n_lvl;
-}
 
 extern "C" int bf_gemm_init(AtomicData *atom, int n_shells)
 {
@@ -113,12 +56,11 @@ extern "C" int bf_gemm_init(AtomicData *atom, int n_shells)
 
     int n_levels = atom->n_levels;
     int n_freq   = atom->cmfgen_n_freq_bins;
-    int n_ip     = atom->n_ion_pops;
 
     g_bf_gemm.n_levels    = n_levels;
     g_bf_gemm.n_freq_bins = n_freq;
     g_bf_gemm.n_shells    = n_shells;
-    g_bf_gemm.n_ion_pops  = n_ip;
+    g_bf_gemm.n_ion_pops  = atom->n_ion_pops;
 
     /* Pack sigma_bf as col-major [n_freq x n_levels] (transpose of row-major
      * [n_levels x n_freq]). Same byte order, different stride convention. */
@@ -140,43 +82,8 @@ extern "C" int bf_gemm_init(AtomicData *atom, int n_shells)
                           (size_t)n_levels * n_shells * sizeof(float)));
     CUDA_CHECK(cudaMalloc(&g_bf_gemm.d_chi_bf,
                           (size_t)n_freq * n_shells * sizeof(float)));
-    /* A2-12 GL01/GL02: no independent scalar owners survive. */
-    g_bf_gemm.d_T_rad = NULL;
-    g_bf_gemm.d_W = NULL;
-    CUDA_CHECK(cudaMalloc(&g_bf_gemm.d_n_ion,
-                          (size_t)n_ip * n_shells * sizeof(double)));
-    CUDA_CHECK(cudaMalloc(&g_bf_gemm.d_Z_part,
-                          (size_t)n_ip * n_shells * sizeof(double)));
-    CUDA_CHECK(cudaMalloc(&g_bf_gemm.d_level_E_eV, n_levels * sizeof(double)));
-    CUDA_CHECK(cudaMalloc(&g_bf_gemm.d_level_g, n_levels * sizeof(int)));
-    CUDA_CHECK(cudaMalloc(&g_bf_gemm.d_level_metastable, n_levels * sizeof(int)));
-    CUDA_CHECK(cudaMalloc(&g_bf_gemm.d_level_to_ip, n_levels * sizeof(int)));
-    CUDA_CHECK(cudaMalloc(&g_bf_gemm.d_level_stage, n_levels * sizeof(int)));
-
-    /* Build level_to_ip and level_stage on host, upload */
-    int *h_level_to_ip = (int *)malloc(n_levels * sizeof(int));
-    int *h_level_stage = (int *)malloc(n_levels * sizeof(int));
-    for (int ip = 0; ip < n_ip; ip++) {
-        int s = atom->level_offset[ip];
-        int e = atom->level_offset[ip + 1];
-        for (int l = s; l < e; l++) {
-            h_level_to_ip[l] = ip;
-            h_level_stage[l] = atom->ion_pop_stage[ip];
-        }
-    }
-    CUDA_CHECK(cudaMemcpy(g_bf_gemm.d_level_to_ip, h_level_to_ip,
-                          n_levels * sizeof(int), cudaMemcpyHostToDevice));
-    CUDA_CHECK(cudaMemcpy(g_bf_gemm.d_level_stage, h_level_stage,
-                          n_levels * sizeof(int), cudaMemcpyHostToDevice));
-    free(h_level_to_ip); free(h_level_stage);
-
-    CUDA_CHECK(cudaMemcpy(g_bf_gemm.d_level_E_eV, atom->level_energy_eV,
-                          n_levels * sizeof(double), cudaMemcpyHostToDevice));
-    CUDA_CHECK(cudaMemcpy(g_bf_gemm.d_level_g, atom->level_g,
-                          n_levels * sizeof(int), cudaMemcpyHostToDevice));
-    CUDA_CHECK(cudaMemcpy(g_bf_gemm.d_level_metastable, atom->level_metastable,
-                          n_levels * sizeof(int), cudaMemcpyHostToDevice));
-
+    g_bf_gemm.h_n_level = (float *)malloc(
+        (size_t)n_levels * n_shells * sizeof(float));
     g_bf_gemm.h_chi_bf = (float *)malloc((size_t)n_freq * n_shells * sizeof(float));
 
     cublasCreate(&g_bf_gemm.cublas_handle);
@@ -195,9 +102,6 @@ extern "C" int bf_gemm_init(AtomicData *atom, int n_shells)
 extern "C" int bf_gemm_compute(BFOpacity *bf, AtomicData *atom,
                                PlasmaState *plasma, int n_shells)
 {
-    if (gpu_rf_block_unmigrated(&g_a2_12_bf_counters,
-            GPU_OPACITY_NOT_MIGRATED, "lumina_bf_gemm.compute") != 0)
-        return -(int)GPU_OPACITY_NOT_MIGRATED;
     if (!g_bf_gemm.initialized) {
         if (bf_gemm_init(atom, n_shells) != 0) return -1;
     }
@@ -209,33 +113,14 @@ extern "C" int bf_gemm_compute(BFOpacity *bf, AtomicData *atom,
 
     int n_levels = g_bf_gemm.n_levels;
     int n_freq   = g_bf_gemm.n_freq_bins;
-    int n_ip     = g_bf_gemm.n_ion_pops;
-
-    /* Upload current plasma state */
-    CUDA_CHECK(cudaMemcpy(g_bf_gemm.d_T_rad, plasma->T_rad,
-                          n_shells * sizeof(double), cudaMemcpyHostToDevice));
-    CUDA_CHECK(cudaMemcpy(g_bf_gemm.d_W, plasma->W,
-                          n_shells * sizeof(double), cudaMemcpyHostToDevice));
-    CUDA_CHECK(cudaMemcpy(g_bf_gemm.d_n_ion, atom->ion_number_density,
-                          (size_t)n_ip * n_shells * sizeof(double),
+    /* A2-14: consume the A2-07 committed level-population contract exactly;
+     * CUDA computes opacity only and never reconstructs a scalar radiation fit. */
+    if (bf_fill_committed_level_populations(atom, plasma, n_shells,
+                                             g_bf_gemm.h_n_level) != 0)
+        return -1;
+    CUDA_CHECK(cudaMemcpy(g_bf_gemm.d_n_level, g_bf_gemm.h_n_level,
+                          (size_t)n_levels*n_shells*sizeof(float),
                           cudaMemcpyHostToDevice));
-    CUDA_CHECK(cudaMemcpy(g_bf_gemm.d_Z_part, atom->partition_functions,
-                          (size_t)n_ip * n_shells * sizeof(double),
-                          cudaMemcpyHostToDevice));
-
-    /* Step 1: launch n_level kernel */
-    dim3 block(64, 4);
-    dim3 grid((n_levels + block.x - 1) / block.x,
-              (n_shells + block.y - 1) / block.y);
-    bf_compute_n_level_kernel<<<grid, block>>>(
-        g_bf_gemm.d_n_level,
-        g_bf_gemm.d_T_rad, g_bf_gemm.d_W,
-        g_bf_gemm.d_n_ion, g_bf_gemm.d_Z_part,
-        g_bf_gemm.d_level_E_eV,
-        g_bf_gemm.d_level_g, g_bf_gemm.d_level_metastable,
-        g_bf_gemm.d_level_to_ip, g_bf_gemm.d_level_stage,
-        n_shells, n_levels, lumina_fix_bf_neutral_enabled());
-    CUDA_CHECK(cudaGetLastError());
 
     /* Step 2: cuBLAS GEMM (TF32 tensor cores)
      *   col-major view: A=sigma_bf [n_freq x n_levels], B=n_level [n_levels x n_shells]
@@ -267,9 +152,8 @@ extern "C" int bf_gemm_compute(BFOpacity *bf, AtomicData *atom,
         for (int f = 0; f < n_freq; f++)
             bf->chi_bf[s * n_freq + f] = (double)g_bf_gemm.h_chi_bf[s * n_freq + f];
 
-    /* Activation level: GEMM mode loses per-level dominance info. Set all to
-     * -1 (thermal fallback for macro-atom on bf events). A future kernel can
-     * argmax over levels to recover dominant absorber identity. */
+    /* Activation identity is unavailable in the separable GEMM.  A2-15 handles
+     * this explicit -1 route with its checked emissivity CDF, never Planck. */
     memset(bf->activation_level, -1,
            (size_t)n_shells * n_freq * sizeof(int));
 
@@ -288,9 +172,6 @@ extern "C" int bf_gemm_compute_fine(BFOpacity *bf, AtomicData *atom, PlasmaState
         int n_shells, const double *nu_fine, int n_fine,
         double nu_min_bin, double dlognu_bin, double *chi_bf_fine_out)
 {
-    if (gpu_rf_block_unmigrated(&g_a2_12_bf_counters,
-            GPU_OPACITY_NOT_MIGRATED, "lumina_bf_gemm.compute_fine") != 0)
-        return -(int)GPU_OPACITY_NOT_MIGRATED;
     (void)bf;
     /* D-3's level/frequency-dependent stimulated-recombination corrfactor is
      * not a separable GEMM. Return to the caller's corrected coarse-grid
@@ -302,21 +183,12 @@ extern "C" int bf_gemm_compute_fine(BFOpacity *bf, AtomicData *atom, PlasmaState
     int n_freq   = g_bf_gemm.n_freq_bins;
     int n_ip     = g_bf_gemm.n_ion_pops;
 
-    /* recompute dilute-LTE n_level for the current plasma (== bf_gemm_compute step 1) */
-    CUDA_CHECK(cudaMemcpy(g_bf_gemm.d_T_rad, plasma->T_rad, n_shells*sizeof(double), cudaMemcpyHostToDevice));
-    CUDA_CHECK(cudaMemcpy(g_bf_gemm.d_W, plasma->W, n_shells*sizeof(double), cudaMemcpyHostToDevice));
-    CUDA_CHECK(cudaMemcpy(g_bf_gemm.d_n_ion, atom->ion_number_density, (size_t)n_ip*n_shells*sizeof(double), cudaMemcpyHostToDevice));
-    CUDA_CHECK(cudaMemcpy(g_bf_gemm.d_Z_part, atom->partition_functions, (size_t)n_ip*n_shells*sizeof(double), cudaMemcpyHostToDevice));
-    {
-        dim3 block(64,4);
-        dim3 grid((n_levels+block.x-1)/block.x, (n_shells+block.y-1)/block.y);
-        bf_compute_n_level_kernel<<<grid,block>>>(g_bf_gemm.d_n_level, g_bf_gemm.d_T_rad,
-            g_bf_gemm.d_W, g_bf_gemm.d_n_ion, g_bf_gemm.d_Z_part, g_bf_gemm.d_level_E_eV,
-            g_bf_gemm.d_level_g, g_bf_gemm.d_level_metastable, g_bf_gemm.d_level_to_ip,
-            g_bf_gemm.d_level_stage, n_shells, n_levels,
-            lumina_fix_bf_neutral_enabled());
-        CUDA_CHECK(cudaGetLastError());
-    }
+    if (bf_fill_committed_level_populations(atom, plasma, n_shells,
+                                             g_bf_gemm.h_n_level) != 0)
+        return -1;
+    CUDA_CHECK(cudaMemcpy(g_bf_gemm.d_n_level, g_bf_gemm.h_n_level,
+                          (size_t)n_levels*n_shells*sizeof(float),
+                          cudaMemcpyHostToDevice));
 
     /* per-level photoion threshold nu=(chi_ion-E_level)/h. Stage 0 is retained
      * under the same neutral-bf repair gate as the population kernel. */
@@ -397,14 +269,7 @@ extern "C" void bf_gemm_free(void)
     cudaFree(g_bf_gemm.d_sigma_bf);
     cudaFree(g_bf_gemm.d_n_level);
     cudaFree(g_bf_gemm.d_chi_bf);
-    /* A2-12 GL03/GL04: no scalar allocation remains to free. */
-    cudaFree(g_bf_gemm.d_n_ion);
-    cudaFree(g_bf_gemm.d_Z_part);
-    cudaFree(g_bf_gemm.d_level_E_eV);
-    cudaFree(g_bf_gemm.d_level_g);
-    cudaFree(g_bf_gemm.d_level_metastable);
-    cudaFree(g_bf_gemm.d_level_to_ip);
-    cudaFree(g_bf_gemm.d_level_stage);
+    free(g_bf_gemm.h_n_level);
     free(g_bf_gemm.h_chi_bf);
     memset(&g_bf_gemm, 0, sizeof(g_bf_gemm));
 }

@@ -1240,6 +1240,9 @@ int lumina_fix_bf_continuum_event_enabled(void);
  * source chi_bf level populations from the NLTE solve (gate LUMINA_BF_NLTE_POPS).
  * NULL => dilute-Boltzmann fallback everywhere. */
 void bf_set_nlte_pops(NLTEConfig *nlte);
+int bf_fill_committed_level_populations(const AtomicData *atom,
+                                        const PlasmaState *plasma,
+                                        int n_shells, float *out);
 double bf_get_chi(BFOpacity *bf, int shell, double nu);
 double bf_get_event_measure(BFOpacity *bf, int shell, double nu);
 double bf_get_eta(BFOpacity *bf, int shell, double nu);

@@ -6,6 +6,7 @@
 #include "bf_rate_jnu.h" /* A2-05 canonical-view bf photoionization rate */
 #include "lumina_radeq_col_pairs.h" /* withParityO: CMFGEN-faithful all-pair COL cooling */
 #include <assert.h>
+#include <float.h>
 #ifdef _OPENMP
 #include <omp.h>
 #endif
@@ -7221,6 +7222,46 @@ double nlte_bf_kramers_sigma0(int Z, int stage) {
 static NLTEConfig *g_bf_nlte_pops = NULL;
 void bf_set_nlte_pops(NLTEConfig *nlte) { g_bf_nlte_pops = nlte; }
 
+int bf_fill_committed_level_populations(const AtomicData *atom,
+                                        const PlasmaState *plasma,
+                                        int n_shells, float *out) {
+    if (!atom || !plasma || !out || n_shells <= 0 ||
+        atom->population_committed_generation == 0 ||
+        !atom->ion_number_density || !atom->partition_functions ||
+        !plasma->T_e) return -1;
+    PopulationAtomicView av = population_atomic_view(atom);
+    int use_nlte = g_bf_nlte_pops &&
+        g_bf_nlte_pops->population_committed_generation ==
+            atom->population_committed_generation &&
+        g_bf_nlte_pops->nlte_level_populations &&
+        g_bf_nlte_pops->global_to_nlte_level;
+    for (int s = 0; s < n_shells; ++s) {
+        for (int ip = 0; ip < atom->n_ion_pops; ++ip) {
+            double nion = atom->ion_number_density[(size_t)ip*n_shells+s];
+            double z = atom->partition_functions[(size_t)ip*n_shells+s];
+            for (int l = atom->level_offset[ip]; l < atom->level_offset[ip+1]; ++l) {
+                double value = 0.0;
+                int ni = use_nlte ? g_bf_nlte_pops->global_to_nlte_level[l] : -1;
+                if (ni >= 0) {
+                    value = g_bf_nlte_pops->nlte_level_populations[
+                        (size_t)ni*n_shells+s];
+                } else {
+                    double fraction = 0.0;
+                    PopulationStatus st = population_lte_level_fraction(
+                        &av, (size_t)ip, (size_t)l, plasma->T_e[s], z,
+                        &fraction);
+                    if (st != POP_OK && st != POP_EXACT_ZERO) return -1;
+                    value = nion * fraction;
+                }
+                if (!isfinite(value) || value < 0.0 || value > FLT_MAX)
+                    return -1;
+                out[(size_t)s*atom->n_levels+l] = (float)value;
+            }
+        }
+    }
+    return 0;
+}
+
 /* Build the static ARTIS allcont-style route identity once. The per-shell
  * weights and stimulated-recombination ratios are refreshed by
  * compute_bf_opacity on every call. Unmapped levels retain a route whose target
@@ -7401,11 +7442,14 @@ void compute_bf_opacity(BFOpacity *bf, AtomicData *atom, PlasmaState *plasma,
      * CPU summation. Gate OFF preserves the original GEMM selection byte-for-byte. */
     if (atom->cmfgen_loaded && !bf_milne && !bf_stim_recomb &&
         !bf->event_enabled &&
-        getenv("LUMINA_BF_GEMM")) {
+        getenv("LUMINA_BF_GEMM") &&
+        atom->population_committed_generation > 0) {
         if (bf_gemm_compute(bf, atom, plasma, n_shells) == 0) {
             goto compute_ff;
         }
-        /* GEMM failed — fall through to CPU loop */
+        fprintf(stderr, "[A2-14][FATAL] committed GPU opacity publication failed; "
+                        "CPU fallback forbidden\n");
+        exit(EXIT_FAILURE);
     }
 #endif
 
@@ -8026,7 +8070,10 @@ int a208_publish_cpu_opacity(OpacityState *opacity, const BFOpacity *bf,
     CpuOpacityPublication candidate={0};
     /* The line publication is the generation-bound OpacityState value/status
      * pair; avoid a second multi-gigabyte copy of the 125M-cell line slab. */
-    if(a208_publication_init(&candidate,ns,nb,0,0)) return 2;
+    /* A2-14 extends the A2-08 publication to CUDA without changing the CPU
+     * arithmetic: one aggregate BF route carries the nonnegative packet-event
+     * measure independently of the signed BF coefficient. */
+    if(a208_publication_init(&candidate,ns,nb,0,1)) return 2;
     candidate.generation_required=opacity->cpu_opacity.generation_required+1;
     candidate.epoch=epoch;
     candidate.population_generation=atom->population_committed_generation;
@@ -8057,7 +8104,16 @@ int a208_publish_cpu_opacity(OpacityState *opacity, const BFOpacity *bf,
             double ff=C_FF_OPACITY/sqrt(Te)*ne*z2ni/(nu*nu*nu)*(-expm1(-x));
             double legacy=bf?bf->chi_bf[k]:ff;
             double bfnet=legacy-ff;
+            double event_bf = (bf && bf->event_enabled && bf->event_chi_bf)
+                            ? bf->event_chi_bf[k] : bfnet;
+            if (!isfinite(event_bf) || event_bf < 0.0) {
+                ctr->event_measure_unavailable++;
+                a208_publication_free(&candidate); return 5;
+            }
             candidate.chi_es[k]=es;candidate.chi_bf[k]=bfnet;candidate.chi_ff[k]=ff;
+            candidate.bf_net_route[k]=bfnet;
+            candidate.bf_event_measure[k]=event_bf;
+            candidate.bf_route_validity[k]=event_bf==0.0?A208_EXACT_ZERO:A208_VALID;
             candidate.chi_validity[k]=(es==0.0)?A208_EXACT_ZERO:A208_VALID;
             candidate.chi_validity[2*ns*nb+k]=(bfnet==0.0)?A208_EXACT_ZERO:A208_VALID;
             candidate.chi_validity[3*ns*nb+k]=(ff==0.0)?A208_EXACT_ZERO:A208_VALID;
