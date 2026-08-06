@@ -1,9 +1,9 @@
 {
   "category_counts": {
-    "COMMENT_STRING_TEST": 233,
-    "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING": 248,
+    "COMMENT_STRING_TEST": 231,
+    "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING": 220,
     "DIAGNOSTIC_SHADOW_CANDIDATE": 2,
-    "PRODUCTION_READ": 120,
+    "PRODUCTION_READ": 109,
     "UNISOLATED_G0_TE_SEED_TARGET": 1
   },
   "hits": [
@@ -60,12 +60,6 @@
       "line": 1051,
       "path": "src/lumina.h",
       "text": "* per-bin dilute-BB fit (coarse-bin W,T_R; radfield.cc:735-804) and normalize the"
-    },
-    {
-      "category": "COMMENT_STRING_TEST",
-      "line": 1189,
-      "path": "src/lumina.h",
-      "text": "* T_rad/W, J_nu). Call once per CE iteration before the pair loop. */"
     },
     {
       "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
@@ -264,90 +258,6 @@
       "line": 1106,
       "path": "src/lumina_atomic.c",
       "text": "free(ps->T_rad); /* Phase 2 - Step 11 */"
-    },
-    {
-      "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
-      "line": 47,
-      "path": "src/lumina_bf_gemm.cu",
-      "text": "double *d_T_rad;          /* [n_shells] */"
-    },
-    {
-      "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
-      "line": 48,
-      "path": "src/lumina_bf_gemm.cu",
-      "text": "double *d_W;              /* [n_shells] */"
-    },
-    {
-      "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
-      "line": 65,
-      "path": "src/lumina_bf_gemm.cu",
-      "text": "const double *T_rad, const double *W,"
-    },
-    {
-      "category": "PRODUCTION_READ",
-      "line": 85,
-      "path": "src/lumina_bf_gemm.cu",
-      "text": "double T_rad_s = T_rad[s];"
-    },
-    {
-      "category": "PRODUCTION_READ",
-      "line": 86,
-      "path": "src/lumina_bf_gemm.cu",
-      "text": "double W_s     = W[s];"
-    },
-    {
-      "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
-      "line": 144,
-      "path": "src/lumina_bf_gemm.cu",
-      "text": "g_bf_gemm.d_T_rad = NULL;"
-    },
-    {
-      "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
-      "line": 145,
-      "path": "src/lumina_bf_gemm.cu",
-      "text": "g_bf_gemm.d_W = NULL;"
-    },
-    {
-      "category": "PRODUCTION_READ",
-      "line": 215,
-      "path": "src/lumina_bf_gemm.cu",
-      "text": "CUDA_CHECK(cudaMemcpy(g_bf_gemm.d_T_rad, plasma->T_rad,"
-    },
-    {
-      "category": "PRODUCTION_READ",
-      "line": 217,
-      "path": "src/lumina_bf_gemm.cu",
-      "text": "CUDA_CHECK(cudaMemcpy(g_bf_gemm.d_W, plasma->W,"
-    },
-    {
-      "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
-      "line": 232,
-      "path": "src/lumina_bf_gemm.cu",
-      "text": "g_bf_gemm.d_T_rad, g_bf_gemm.d_W,"
-    },
-    {
-      "category": "PRODUCTION_READ",
-      "line": 306,
-      "path": "src/lumina_bf_gemm.cu",
-      "text": "CUDA_CHECK(cudaMemcpy(g_bf_gemm.d_T_rad, plasma->T_rad, n_shells*sizeof(double), cudaMemcpyHostToDevice));"
-    },
-    {
-      "category": "PRODUCTION_READ",
-      "line": 307,
-      "path": "src/lumina_bf_gemm.cu",
-      "text": "CUDA_CHECK(cudaMemcpy(g_bf_gemm.d_W, plasma->W, n_shells*sizeof(double), cudaMemcpyHostToDevice));"
-    },
-    {
-      "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
-      "line": 313,
-      "path": "src/lumina_bf_gemm.cu",
-      "text": "bf_compute_n_level_kernel<<<grid,block>>>(g_bf_gemm.d_n_level, g_bf_gemm.d_T_rad,"
-    },
-    {
-      "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
-      "line": 314,
-      "path": "src/lumina_bf_gemm.cu",
-      "text": "g_bf_gemm.d_W, g_bf_gemm.d_n_ion, g_bf_gemm.d_Z_part, g_bf_gemm.d_level_E_eV,"
     },
     {
       "category": "COMMENT_STRING_TEST",
@@ -783,667 +693,541 @@
     },
     {
       "category": "COMMENT_STRING_TEST",
-      "line": 141,
+      "line": 145,
       "path": "src/lumina_cuda.cu",
       "text": "/* BF opacity: chi_bf grid + T_rad for BF absorption re-emission */"
     },
     {
       "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
-      "line": 143,
+      "line": 147,
       "path": "src/lumina_cuda.cu",
       "text": "double *d_T_rad;                       /* [n_shells] for BF Planck re-emission */"
     },
     {
       "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
-      "line": 275,
+      "line": 279,
       "path": "src/lumina_cuda.cu",
       "text": "dev->d_T_rad = NULL;"
     },
     {
       "category": "COMMENT_STRING_TEST",
-      "line": 511,
+      "line": 515,
       "path": "src/lumina_cuda.cu",
       "text": "/* Upload T_rad to GPU. Always-callable (independent of BF status) \u2014 needed"
     },
     {
       "category": "COMMENT_STRING_TEST",
-      "line": 515,
+      "line": 519,
       "path": "src/lumina_cuda.cu",
       "text": "/* Path A: per-shell T_e for k-packet free-free nu sampling (independent of T_rad). */"
     },
     {
       "category": "COMMENT_STRING_TEST",
-      "line": 529,
+      "line": 533,
       "path": "src/lumina_cuda.cu",
       "text": "/* Tombstone for A2-01 witness: plasma->T_rad is no longer an upload source. */"
     },
     {
       "category": "COMMENT_STRING_TEST",
-      "line": 533,
+      "line": 537,
       "path": "src/lumina_cuda.cu",
       "text": "/* BF opacity: upload chi_bf grid + T_rad + activation_level to GPU */"
     },
     {
       "category": "COMMENT_STRING_TEST",
-      "line": 583,
+      "line": 614,
       "path": "src/lumina_cuda.cu",
       "text": "* host can build the per-bin (W,T_R) field + normalize \u0393_bf. */"
     },
     {
       "category": "COMMENT_STRING_TEST",
-      "line": 697,
+      "line": 728,
       "path": "src/lumina_cuda.cu",
       "text": "* the level distribution there is the LTE limit at T_e, NOT T_rad. The legacy"
     },
     {
       "category": "COMMENT_STRING_TEST",
-      "line": 698,
+      "line": 729,
       "path": "src/lumina_cuda.cu",
       "text": "* fallback used Boltzmann@T_rad; at inner shells T_rad is 1-4% hotter than T_e,"
     },
     {
       "category": "COMMENT_STRING_TEST",
-      "line": 1125,
+      "line": 1168,
       "path": "src/lumina_cuda.cu",
       "text": "* per-shell T_e/n_e/W, J_nu) before this iteration's pair loop. */"
     },
     {
       "category": "COMMENT_STRING_TEST",
-      "line": 1365,
+      "line": 1408,
       "path": "src/lumina_cuda.cu",
       "text": "* every shell and use Boltzmann@T_rad (i.e. only the ion-lock"
     },
     {
       "category": "COMMENT_STRING_TEST",
-      "line": 1459,
+      "line": 1502,
       "path": "src/lumina_cuda.cu",
       "text": "* spurious inner super-thermal S_l the T_rad fallback injects),"
     },
     {
       "category": "COMMENT_STRING_TEST",
-      "line": 1460,
+      "line": 1503,
       "path": "src/lumina_cuda.cu",
       "text": "* else legacy T_rad. In ion-lock mode, rescale each ion"
     },
     {
       "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
-      "line": 1464,
+      "line": 1507,
       "path": "src/lumina_cuda.cu",
       "text": "double T_rad = (nlte_fallback_te_enabled() && plasma->T_e &&"
     },
     {
       "category": "PRODUCTION_READ",
-      "line": 1466,
+      "line": 1509,
       "path": "src/lumina_cuda.cu",
       "text": "? plasma->T_e[s] : plasma->T_rad[s];"
     },
     {
       "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
-      "line": 1478,
+      "line": 1521,
       "path": "src/lumina_cuda.cu",
       "text": "\"ret=%d info=%d -> Boltzmann@T_rad lock=%d\\n\","
     },
     {
       "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
-      "line": 1497,
+      "line": 1540,
       "path": "src/lumina_cuda.cu",
       "text": "double pop = (double)g * exp(-E / (K_BOLTZMANN * T_rad));"
     },
     {
       "category": "COMMENT_STRING_TEST",
-      "line": 1534,
+      "line": 1577,
       "path": "src/lumina_cuda.cu",
       "text": "* to break the Milne-T_e-vs-T_rad over-ionization trap. */"
     },
     {
       "category": "PRODUCTION_READ",
-      "line": 1620,
+      "line": 1663,
       "path": "src/lumina_cuda.cu",
       "text": "double T_e_s = plasma->T_e ? plasma->T_e[s] : plasma->T_rad[s];"
     },
     {
       "category": "PRODUCTION_READ",
-      "line": 1651,
+      "line": 1694,
       "path": "src/lumina_cuda.cu",
       "text": "double T_e_s = plasma->T_e ? plasma->T_e[s] : plasma->T_rad[s];"
     },
     {
       "category": "PRODUCTION_READ",
-      "line": 1681,
+      "line": 1724,
       "path": "src/lumina_cuda.cu",
       "text": "double T_e_s = plasma->T_e ? plasma->T_e[s] : plasma->T_rad[s];"
     },
     {
       "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
-      "line": 1997,
+      "line": 2040,
       "path": "src/lumina_cuda.cu",
       "text": "fprintf(fp, \"Z,ion,shell,level_idx,global_idx,E_eV,g,n_pop,T_e,T_rad,W,n_ion_total\\n\");"
     },
     {
       "category": "PRODUCTION_READ",
-      "line": 2018,
+      "line": 2061,
       "path": "src/lumina_cuda.cu",
       "text": "plasma->T_e_T_rad_ratio * plasma->T_rad[s];"
     },
     {
       "category": "PRODUCTION_READ",
-      "line": 2019,
+      "line": 2062,
       "path": "src/lumina_cuda.cu",
       "text": "double T_rad = plasma->T_rad[s];"
     },
     {
       "category": "PRODUCTION_READ",
-      "line": 2020,
+      "line": 2063,
       "path": "src/lumina_cuda.cu",
       "text": "double W     = plasma->W[s];"
     },
     {
       "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
-      "line": 2025,
+      "line": 2068,
       "path": "src/lumina_cuda.cu",
       "text": "T_e, T_rad, W, n_ion);"
     },
     {
       "category": "PRODUCTION_READ",
-      "line": 2067,
+      "line": 2110,
       "path": "src/lumina_cuda.cu",
       "text": "plasma->T_e_T_rad_ratio * plasma->T_rad[s];"
     },
     {
       "category": "COMMENT_STRING_TEST",
-      "line": 2214,
+      "line": 2257,
       "path": "src/lumina_cuda.cu",
       "text": "* Planck(T_rad) thermalization (BF-style). Set from LUMINA_EPS_UV. */"
     },
     {
       "category": "COMMENT_STRING_TEST",
-      "line": 2461,
+      "line": 2504,
       "path": "src/lumina_cuda.cu",
       "text": "* continuum-thick shells (host flags W(s)>tau into d_kpr_qualify, the SAME depth"
     },
     {
       "category": "COMMENT_STRING_TEST",
-      "line": 2471,
+      "line": 2514,
       "path": "src/lumina_cuda.cu",
       "text": "* array (n_shells=50 << 256), uploaded per iteration from plasma.W. */"
     },
     {
       "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
-      "line": 2509,
+      "line": 2552,
       "path": "src/lumina_cuda.cu",
       "text": "__device__ int d_kpr_is_phot[256];         /* 1 => phot tier (WFLOOR<W<=TAU)     */"
     },
     {
       "category": "COMMENT_STRING_TEST",
-      "line": 2533,
+      "line": 2576,
       "path": "src/lumina_cuda.cu",
       "text": "/* ---- [OTS-TAUBF] PHYSICAL case-A/B criterion (replaces the W>WFLOOR constant) --"
     },
     {
       "category": "COMMENT_STRING_TEST",
-      "line": 2612,
+      "line": 2655,
       "path": "src/lumina_cuda.cu",
       "text": "* and the phot-tier flag (WFLOOR<W<=TAU), and arm the per-shell src selection."
     },
     {
       "category": "COMMENT_STRING_TEST",
-      "line": 2858,
+      "line": 2901,
       "path": "src/lumina_cuda.cu",
       "text": "* replaced by Planck(T_rad) thermalization. Counterpart to LUMINA_EPS_UV;"
     },
     {
       "category": "COMMENT_STRING_TEST",
-      "line": 2879,
+      "line": 2922,
       "path": "src/lumina_cuda.cu",
       "text": "* instead of full Planck(T_rad) thermalization the packet is re-emitted into"
     },
     {
       "category": "COMMENT_STRING_TEST",
-      "line": 2880,
+      "line": 2923,
       "path": "src/lumina_cuda.cu",
       "text": "* an *optical band* [LO,HI]\u00c5 (rejection-sampled Planck(T_rad)). Normal"
     },
     {
       "category": "COMMENT_STRING_TEST",
-      "line": 3285,
+      "line": 3328,
       "path": "src/lumina_cuda.cu",
       "text": "/* A2-12 GL08 tombstone: dev->d_T_rad has no allocation left to free. */"
     },
     {
       "category": "COMMENT_STRING_TEST",
-      "line": 3537,
+      "line": 3580,
       "path": "src/lumina_cuda.cu",
       "text": "/* CPU handles these in plasma solve; GPU only needs j/nu_bar for W,T_rad */"
     },
     {
       "category": "COMMENT_STRING_TEST",
-      "line": 3748,
-      "path": "src/lumina_cuda.cu",
-      "text": "/* BF absorption: thermalize packet \u2014 re-emit as Planck(T_rad), reset line ID */"
-    },
-    {
-      "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
-      "line": 3752,
-      "path": "src/lumina_cuda.cu",
-      "text": "const double *d_T_rad, int shell_id,"
-    },
-    {
-      "category": "COMMENT_STRING_TEST",
-      "line": 3758,
-      "path": "src/lumina_cuda.cu",
-      "text": "/* 2. Sample comoving frequency from Planck(T_rad) */"
-    },
-    {
-      "category": "PRODUCTION_READ",
-      "line": 3759,
-      "path": "src/lumina_cuda.cu",
-      "text": "double T_rad = d_T_rad[shell_id];"
-    },
-    {
-      "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
-      "line": 3760,
-      "path": "src/lumina_cuda.cu",
-      "text": "double comov_nu = d_sample_planck_frequency(T_rad, rng);"
-    },
-    {
-      "category": "COMMENT_STRING_TEST",
-      "line": 3778,
-      "path": "src/lumina_cuda.cu",
-      "text": "/* [EPS-UV 2STEP] Band-constrained variant: Planck(T_rad) re-emission rejection-"
-    },
-    {
-      "category": "COMMENT_STRING_TEST",
-      "line": 3783,
-      "path": "src/lumina_cuda.cu",
-      "text": "* SN T_rad ~ 8000 K when band straddles the Wien peak). */"
-    },
-    {
-      "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
-      "line": 3787,
-      "path": "src/lumina_cuda.cu",
-      "text": "const double *d_T_rad, int shell_id,"
-    },
-    {
-      "category": "PRODUCTION_READ",
-      "line": 3792,
-      "path": "src/lumina_cuda.cu",
-      "text": "double T_rad = d_T_rad[shell_id];"
-    },
-    {
-      "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
-      "line": 3795,
-      "path": "src/lumina_cuda.cu",
-      "text": "double cand = d_sample_planck_frequency(T_rad, rng);"
-    },
-    {
-      "category": "COMMENT_STRING_TEST",
-      "line": 4992,
+      "line": 5027,
       "path": "src/lumina_cuda.cu",
       "text": "* (W>tau, host-flagged) re-emit the k-packet from Planck(T_e)"
     },
     {
-      "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
-      "line": 5346,
-      "path": "src/lumina_cuda.cu",
-      "text": "const double *d_T_rad, int n_lines,"
-    },
-    {
       "category": "COMMENT_STRING_TEST",
-      "line": 5435,
+      "line": 5470,
       "path": "src/lumina_cuda.cu",
       "text": "* macro-atom cascade with a Planck(T_rad) thermalization. This"
     },
     {
-      "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
-      "line": 5445,
-      "path": "src/lumina_cuda.cu",
-      "text": "d_T_rad, shell_id,"
-    },
-    {
-      "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
-      "line": 5452,
-      "path": "src/lumina_cuda.cu",
-      "text": "d_T_rad, shell_id,"
-    },
-    {
       "category": "COMMENT_STRING_TEST",
-      "line": 5464,
+      "line": 5499,
       "path": "src/lumina_cuda.cu",
       "text": "* thermalize back to Planck(T_rad) instead of running the cascade."
     },
     {
-      "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
-      "line": 5470,
-      "path": "src/lumina_cuda.cu",
-      "text": "d_T_rad, shell_id,"
-    },
-    {
       "category": "COMMENT_STRING_TEST",
-      "line": 5724,
+      "line": 5759,
       "path": "src/lumina_cuda.cu",
       "text": "* as Planck(T_rad). Kills UV\u2192red conversion only; keeps"
     },
     {
-      "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
-      "line": 5732,
-      "path": "src/lumina_cuda.cu",
-      "text": "d_T_rad, shell_id,"
-    },
-    {
-      "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
-      "line": 5738,
-      "path": "src/lumina_cuda.cu",
-      "text": "d_T_rad, shell_id,"
-    },
-    {
-      "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
-      "line": 5977,
-      "path": "src/lumina_cuda.cu",
-      "text": "const double *d_chi_bf, const double *d_T_rad,"
-    },
-    {
-      "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
-      "line": 6241,
-      "path": "src/lumina_cuda.cu",
-      "text": "d_T_rad, n_lines,"
-    },
-    {
       "category": "COMMENT_STRING_TEST",
-      "line": 6345,
+      "line": 6380,
       "path": "src/lumina_cuda.cu",
       "text": "* the cold-Planck(T_rad) resample which reddens the SED (the"
     },
     {
       "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
-      "line": 6551,
-      "path": "src/lumina_cuda.cu",
-      "text": "d_T_rad, pkt_shell_id,"
-    },
-    {
-      "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
-      "line": 6997,
+      "line": 7032,
       "path": "src/lumina_cuda.cu",
       "text": "printf(\"  B2 ionization closure = LTE Saha @T_e,W=1; ion split rate-SE\\n\");"
     },
     {
       "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
-      "line": 6999,
+      "line": 7034,
       "path": "src/lumina_cuda.cu",
       "text": "printf(\"  B3 partition functions @T_e, undiluted (W=1)\\n\");"
     },
     {
       "category": "COMMENT_STRING_TEST",
-      "line": 7226,
+      "line": 7261,
       "path": "src/lumina_cuda.cu",
       "text": "* call is replaced by Planck(T_rad) re-emission. Set with LUMINA_EPS_UV. */"
     },
     {
       "category": "COMMENT_STRING_TEST",
-      "line": 7233,
+      "line": 7268,
       "path": "src/lumina_cuda.cu",
       "text": "/* [ARTIS-PARITY D4] EPS_UV Planck(T_rad) UV-entry thermalization is a Lumina-"
     },
     {
       "category": "COMMENT_STRING_TEST",
-      "line": 7244,
+      "line": 7279,
       "path": "src/lumina_cuda.cu",
       "text": "* call with Planck(T_rad) thermalization for activations at lam>7000 A."
     },
     {
       "category": "COMMENT_STRING_TEST",
-      "line": 7252,
+      "line": 7287,
       "path": "src/lumina_cuda.cu",
       "text": "/* [ARTIS-PARITY D4] EPS_IR Planck(T_rad) NIR-entry thermalization: no ARTIS"
     },
     {
       "category": "COMMENT_STRING_TEST",
-      "line": 7274,
+      "line": 7309,
       "path": "src/lumina_cuda.cu",
       "text": "* optical band [LO,HI]\u00c5 (Planck(T_rad) rejection sample) instead of full"
     },
     {
       "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
-      "line": 7289,
+      "line": 7324,
       "path": "src/lumina_cuda.cu",
       "text": "printf(\"[EPS-UV-2STEP] band-constrained re-emit: \u03bb\u2208[%.0f,%.0f]\u00c5 (Planck(T_rad) rejection)\\n\","
     },
     {
       "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
-      "line": 7456,
+      "line": 7491,
       "path": "src/lumina_cuda.cu",
       "text": "printf(\"  Self-consistent T_e: disabled (ratio=%.2f)\\n\", plasma.T_e_T_rad_ratio);"
     },
     {
       "category": "COMMENT_STRING_TEST",
-      "line": 7564,
+      "line": 7599,
       "path": "src/lumina_cuda.cu",
       "text": "* B(T_e) exit to the photosphere (thick tier W>WFLOOR) with a per-shell src"
     },
     {
       "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
-      "line": 7572,
+      "line": 7607,
       "path": "src/lumina_cuda.cu",
       "text": "double bsrc_wfloor   = 0.0;    /* optional extra W floor guard (0 = off) */"
     },
     {
       "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
-      "line": 7636,
+      "line": 7671,
       "path": "src/lumina_cuda.cu",
       "text": "\"KPKT_FB_MULTI=%d (B2) BSRC_TAU=%.3f (B3, W>thr) -> B(T_e) exit %s \""
     },
     {
       "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
-      "line": 7651,
+      "line": 7686,
       "path": "src/lumina_cuda.cu",
       "text": "\"WFLOOR-guard=%.3f (0=off) -- W>WFLOOR CONSTANT RETIRED\\n\","
     },
     {
       "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
-      "line": 7657,
+      "line": 7692,
       "path": "src/lumina_cuda.cu",
       "text": "\"(phot tier: W<=TAU=%.3f AND tau_bf-qualified -> -4 B(T_e) exit; \""
     },
     {
       "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
-      "line": 7658,
+      "line": 7693,
       "path": "src/lumina_cuda.cu",
       "text": "\"deep W>TAU keeps SRC=%d)\\n\","
     },
     {
       "category": "COMMENT_STRING_TEST",
-      "line": 7836,
+      "line": 7871,
       "path": "src/lumina_cuda.cu",
       "text": "/* T_rad upload (always; needed by EPS_UV / EPS_IR macro-atom paths even"
     },
     {
       "category": "COMMENT_STRING_TEST",
-      "line": 8016,
+      "line": 8051,
       "path": "src/lumina_cuda.cu",
       "text": "* (per-bin nu_bar for the (W,T_R) fit + the bf-rate \u0393_bf estimator)."
     },
     {
       "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
-      "line": 8022,
+      "line": 8057,
       "path": "src/lumina_cuda.cu",
       "text": "printf(\"[ARTIS-PARITY C1] per-bin (W,T_R) dilute-BB field: %d coarse \""
     },
     {
       "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
-      "line": 8023,
+      "line": 8058,
       "path": "src/lumina_cuda.cu",
       "text": "\"bins fit (radfield.cc find_bin_T_R/W=J/planckint), evaluated \""
     },
     {
       "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
-      "line": 8024,
+      "line": 8059,
       "path": "src/lumina_cuda.cu",
       "text": "\"radfield(nu)=W*planck onto the %d-bin grid; empty bin -> 0\\n\","
     },
     {
       "category": "COMMENT_STRING_TEST",
-      "line": 8282,
+      "line": 8317,
       "path": "src/lumina_cuda.cu",
       "text": "* it>0: keep the MC-sampled per-bin (W,T_R) field that the previous"
     },
     {
       "category": "PRODUCTION_READ",
-      "line": 8556,
+      "line": 8587,
       "path": "src/lumina_cuda.cu",
       "text": "double Wsh = (plasma.W ? plasma.W[s] : 0.0);"
     },
     {
       "category": "PRODUCTION_READ",
-      "line": 8557,
+      "line": 8588,
       "path": "src/lumina_cuda.cu",
       "text": "int q = (plasma.W && Wsh > kpr_bsrc_tau) ? 1 : 0; /* deep tier UNCHANGED */"
     },
     {
       "category": "COMMENT_STRING_TEST",
-      "line": 8561,
+      "line": 8592,
       "path": "src/lumina_cuda.cu",
       "text": "* the W>WFLOOR constant). tau_bf = chi_bf(404A)*L_shell:"
     },
     {
       "category": "COMMENT_STRING_TEST",
-      "line": 8579,
+      "line": 8610,
       "path": "src/lumina_cuda.cu",
       "text": "/* optional extra W floor guard (default off => bsrc_wfloor=0). */"
     },
     {
       "category": "COMMENT_STRING_TEST",
-      "line": 8584,
+      "line": 8615,
       "path": "src/lumina_cuda.cu",
       "text": "* boundary to any tau_bf-qualified phot shell (was: W>WFLOOR)."
     },
     {
       "category": "COMMENT_STRING_TEST",
-      "line": 8672,
+      "line": 8703,
       "path": "src/lumina_cuda.cu",
       "text": "/* Refresh device bf continuum + T_rad + k-packet T_e from"
     },
     {
       "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
-      "line": 8846,
-      "path": "src/lumina_cuda.cu",
-      "text": "dev.d_chi_bf, dev.d_T_rad, dev.d_bf_activation_level,"
-    },
-    {
-      "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
-      "line": 8992,
+      "line": 9030,
       "path": "src/lumina_cuda.cu",
       "text": "\"check qualify mask (W>tau) ***\" : \"\","
     },
     {
       "category": "COMMENT_STRING_TEST",
-      "line": 9121,
+      "line": 9159,
       "path": "src/lumina_cuda.cu",
       "text": "* estimators via the ARTIS per-bin (W,T_R) dilute-BB fit, and"
     },
     {
       "category": "COMMENT_STRING_TEST",
-      "line": 9130,
+      "line": 9168,
       "path": "src/lumina_cuda.cu",
       "text": "* (mc_J, B_nu(T_e), C1 W/T_R) \u2014 all reflect THIS iter now that"
     },
     {
       "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
-      "line": 10017,
+      "line": 10055,
       "path": "src/lumina_cuda.cu",
       "text": "fprintf(pf, \"shell_id,W,T_rad,n_e,T_e\\n\");"
     },
     {
       "category": "PRODUCTION_READ",
-      "line": 10020,
+      "line": 10058,
       "path": "src/lumina_cuda.cu",
       "text": "plasma.W[i], plasma.T_rad[i],"
     },
     {
-      "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
-      "line": 10265,
-      "path": "src/lumina_cuda.cu",
-      "text": "dev.d_chi_bf, dev.d_T_rad, dev.d_bf_activation_level,"
-    },
-    {
       "category": "COMMENT_STRING_TEST",
-      "line": 10623,
+      "line": 10667,
       "path": "src/lumina_cuda.cu",
       "text": "/* Option (8): freeze W/T_rad too once ion-lock activates \u2014 true"
     },
     {
       "category": "COMMENT_STRING_TEST",
-      "line": 10708,
+      "line": 10752,
       "path": "src/lumina_cuda.cu",
       "text": "/* EPS_UV / EPS_IR need fresh T_rad even when BF is disabled. */"
     },
     {
       "category": "PRODUCTION_READ",
-      "line": 10823,
+      "line": 10867,
       "path": "src/lumina_cuda.cu",
       "text": "double te_ratio = plasma.T_rad[i] > 0 ? plasma.T_e[i] / plasma.T_rad[i] : 0.0;"
     },
     {
       "category": "PRODUCTION_READ",
-      "line": 10825,
+      "line": 10869,
       "path": "src/lumina_cuda.cu",
       "text": "i, plasma.W[i], plasma.T_rad[i], plasma.T_e[i], te_ratio, ratio);"
     },
     {
       "category": "PRODUCTION_READ",
-      "line": 10908,
+      "line": 10952,
       "path": "src/lumina_cuda.cu",
       "text": "double w_err = (plasma.W[i] - tardis_W[i]) / tardis_W[i] * 100.0;    /* Phase 6 - Step 8 */"
     },
     {
       "category": "PRODUCTION_READ",
-      "line": 10909,
+      "line": 10953,
       "path": "src/lumina_cuda.cu",
       "text": "double t_err = (plasma.T_rad[i] - tardis_T_rad[i]) / tardis_T_rad[i] * 100.0; /* Phase 6 - Step 8 */"
     },
     {
       "category": "PRODUCTION_READ",
-      "line": 10911,
+      "line": 10955,
       "path": "src/lumina_cuda.cu",
       "text": "i, plasma.W[i], tardis_W[i], w_err,                            /* Phase 6 - Step 8 */"
     },
     {
       "category": "PRODUCTION_READ",
-      "line": 10912,
+      "line": 10956,
       "path": "src/lumina_cuda.cu",
       "text": "plasma.T_rad[i], tardis_T_rad[i], t_err);                      /* Phase 6 - Step 8 */"
     },
     {
       "category": "PRODUCTION_READ",
-      "line": 10917,
+      "line": 10961,
       "path": "src/lumina_cuda.cu",
       "text": "sum_w_err += fabs((plasma.W[i] - tardis_W[i]) / tardis_W[i]); /* Phase 6 - Step 8 */"
     },
     {
       "category": "PRODUCTION_READ",
-      "line": 10918,
+      "line": 10962,
       "path": "src/lumina_cuda.cu",
       "text": "sum_t_err += fabs((plasma.T_rad[i] - tardis_T_rad[i]) / tardis_T_rad[i]); /* Phase 6 - Step 8 */"
     },
     {
       "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
-      "line": 10920,
+      "line": 10964,
       "path": "src/lumina_cuda.cu",
       "text": "printf(\"\\nMean |W error|: %.2f%%\\n\", sum_w_err / geo.n_shells * 100.0);     /* Phase 6 - Step 8 */"
     },
     {
       "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
-      "line": 10921,
+      "line": 10965,
       "path": "src/lumina_cuda.cu",
       "text": "printf(\"Mean |T_rad error|: %.2f%%\\n\", sum_t_err / geo.n_shells * 100.0);   /* Phase 6 - Step 8 */"
     },
     {
       "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
-      "line": 11047,
+      "line": 11091,
       "path": "src/lumina_cuda.cu",
       "text": "fprintf(out, \"shell_id,W,T_rad,n_e,T_e\\n\"); /* +T_e: RADEQ solver target, vs CMFGEN gas temperature */"
     },
     {
       "category": "PRODUCTION_READ",
-      "line": 11049,
+      "line": 11093,
       "path": "src/lumina_cuda.cu",
       "text": "fprintf(out, \"%d,%.10f,%.6f,%.6e,%.6f\\n\", i, plasma.W[i], plasma.T_rad[i], plasma.n_electron[i], plasma.T_e[i]); /* Phase 6 - Step 8 */"
     },
@@ -1634,52 +1418,22 @@
       "text": "*   - LUMINA_NLTE_DILUTE_FIELD       J = W(s) * B(nu_line, T_R)"
     },
     {
-      "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
-      "line": 94,
+      "category": "COMMENT_STRING_TEST",
+      "line": 110,
       "path": "src/lumina_nlte_assemble.cu",
-      "text": "double *d_W;                      /* [n_shells]                              */"
+      "text": "* d_W[s]"
     },
     {
-      "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
-      "line": 144,
+      "category": "COMMENT_STRING_TEST",
+      "line": 111,
       "path": "src/lumina_nlte_assemble.cu",
-      "text": "const double *d_T_e, const double *d_n_e, const double *d_W,"
+      "text": "* plasma->W"
     },
     {
-      "category": "PRODUCTION_READ",
-      "line": 172,
+      "category": "COMMENT_STRING_TEST",
+      "line": 112,
       "path": "src/lumina_nlte_assemble.cu",
-      "text": "J_line = d_W[s] * a_planck_bnu(dilute_TR, nu);"
-    },
-    {
-      "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
-      "line": 360,
-      "path": "src/lumina_nlte_assemble.cu",
-      "text": "ACUDA_CHECK(cudaMalloc(&g_asm.d_W,   (size_t)n_shells * sizeof(double)));"
-    },
-    {
-      "category": "PRODUCTION_READ",
-      "line": 419,
-      "path": "src/lumina_nlte_assemble.cu",
-      "text": "ACUDA_CHECK(cudaMemcpy(g_asm.d_W, plasma->W,"
-    },
-    {
-      "category": "PRODUCTION_READ",
-      "line": 434,
-      "path": "src/lumina_nlte_assemble.cu",
-      "text": "g_asm.dilute_TR = (over > 0.0) ? over : plasma->T_rad[0];"
-    },
-    {
-      "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
-      "line": 473,
-      "path": "src/lumina_nlte_assemble.cu",
-      "text": "g_asm.d_T_e, g_asm.d_n_e, g_asm.d_W,"
-    },
-    {
-      "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
-      "line": 493,
-      "path": "src/lumina_nlte_assemble.cu",
-      "text": "cudaFree(g_asm.d_W); cudaFree(g_asm.d_active);"
+      "text": "* plasma->T_rad[0]"
     },
     {
       "category": "COMMENT_STRING_TEST",
@@ -1689,1945 +1443,1945 @@
     },
     {
       "category": "COMMENT_STRING_TEST",
-      "line": 362,
+      "line": 363,
       "path": "src/lumina_plasma.c",
       "text": "/* Binned-J estimator: fit dilute Planck (T_rad,W) to the frequency-resolved"
     },
     {
       "category": "PRODUCTION_READ",
-      "line": 837,
+      "line": 838,
       "path": "src/lumina_plasma.c",
       "text": "static const double W[6] = {-0.57721566,  0.99999193, -0.24991055,"
     },
     {
       "category": "PRODUCTION_READ",
-      "line": 845,
+      "line": 846,
       "path": "src/lumina_plasma.c",
       "text": "double p = W[5];"
     },
     {
       "category": "PRODUCTION_READ",
-      "line": 846,
+      "line": 847,
       "path": "src/lumina_plasma.c",
       "text": "for (int i = 4; i >= 0; i--) p = p * x + W[i];"
     },
     {
       "category": "COMMENT_STRING_TEST",
-      "line": 1059,
+      "line": 1060,
       "path": "src/lumina_plasma.c",
       "text": "/* Physical dilution-factor ceiling. The Lucy (W,T_rad) estimator can rail to"
     },
     {
       "category": "COMMENT_STRING_TEST",
-      "line": 1060,
+      "line": 1061,
       "path": "src/lumina_plasma.c",
       "text": "* unphysical W>1 when the field is strongly line-blanketed (mean-nu redshift"
     },
     {
       "category": "COMMENT_STRING_TEST",
-      "line": 1061,
+      "line": 1062,
       "path": "src/lumina_plasma.c",
       "text": "* pins T_rad low, so W = piJ/(sigma T_rad^4) inflates). W is a dilution"
     },
     {
       "category": "COMMENT_STRING_TEST",
-      "line": 1068,
+      "line": 1069,
       "path": "src/lumina_plasma.c",
       "text": "/* Binned-J estimator: derive (T_rad,W) from a dilute-Planck FIT to the"
     },
     {
       "category": "COMMENT_STRING_TEST",
-      "line": 1071,
+      "line": 1072,
       "path": "src/lumina_plasma.c",
       "text": "* (mean-nu pulled to the red tail -> T_rad rails to ~2000-3000K, W explodes);"
     },
     {
       "category": "COMMENT_STRING_TEST",
-      "line": 1072,
+      "line": 1073,
       "path": "src/lumina_plasma.c",
       "text": "* a shape fit is robust because W absorbs amplitude while T is set by the"
     },
     {
       "category": "COMMENT_STRING_TEST",
-      "line": 1084,
+      "line": 1085,
       "path": "src/lumina_plasma.c",
       "text": "* \"shell T_rad W\" file, OVERRIDE plasma T_rad/W with that profile and skip the"
     },
     {
       "category": "COMMENT_STRING_TEST",
-      "line": 1087,
+      "line": 1088,
       "path": "src/lumina_plasma.c",
       "text": "* positive-feedback loop (T_rad collapse -> Boltzmann/Saha over-populate low"
     },
     {
       "category": "COMMENT_STRING_TEST",
-      "line": 1088,
+      "line": 1089,
       "path": "src/lumina_plasma.c",
       "text": "* levels -> red lines thicken -> field reddens -> T_rad collapses further)."
     },
     {
       "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
-      "line": 1105,
+      "line": 1106,
       "path": "src/lumina_plasma.c",
       "text": "int s; double T, W;"
     },
     {
       "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
-      "line": 1106,
+      "line": 1107,
       "path": "src/lumina_plasma.c",
       "text": "if (sscanf(ln, \"%d %lf %lf\", &s, &T, &W) == 3 &&"
     },
     {
       "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
-      "line": 1108,
+      "line": 1109,
       "path": "src/lumina_plasma.c",
       "text": "fixed_T[s] = T; fixed_W[s] = W; fixed_n++;"
     },
     {
       "category": "PRODUCTION_READ",
-      "line": 1123,
+      "line": 1124,
       "path": "src/lumina_plasma.c",
       "text": "plasma->T_rad[i] = fixed_T[i];"
     },
     {
       "category": "PRODUCTION_READ",
-      "line": 1124,
+      "line": 1125,
       "path": "src/lumina_plasma.c",
       "text": "plasma->W[i]     = fixed_W[i];"
     },
     {
       "category": "COMMENT_STRING_TEST",
-      "line": 1130,
+      "line": 1131,
       "path": "src/lumina_plasma.c",
       "text": "/* Phase 4 - Step 2: T_rad from nubar/j ratio */"
     },
     {
       "category": "COMMENT_STRING_TEST",
-      "line": 1143,
+      "line": 1144,
       "path": "src/lumina_plasma.c",
       "text": "/* Phase 4 - Step 2: W from j vs Planck(T_rad) */"
     },
     {
       "category": "COMMENT_STRING_TEST",
-      "line": 1144,
+      "line": 1145,
       "path": "src/lumina_plasma.c",
       "text": "/* TARDIS: W = j / (4 * sigma_sb * T^4 * t_sim * V) */"
     },
     {
       "category": "COMMENT_STRING_TEST",
-      "line": 1152,
+      "line": 1153,
       "path": "src/lumina_plasma.c",
       "text": "/* Task #072: TARDIS damping (base.py: converge() for W and T_rad)"
     },
     {
       "category": "PRODUCTION_READ",
-      "line": 1155,
+      "line": 1156,
       "path": "src/lumina_plasma.c",
       "text": "plasma->T_rad[i] = plasma->T_rad[i] +"
     },
     {
       "category": "PRODUCTION_READ",
-      "line": 1156,
+      "line": 1157,
       "path": "src/lumina_plasma.c",
       "text": "damping_constant * (T_rad_est - plasma->T_rad[i]);"
     },
     {
       "category": "PRODUCTION_READ",
-      "line": 1157,
+      "line": 1158,
       "path": "src/lumina_plasma.c",
       "text": "plasma->W[i] = plasma->W[i] +"
     },
     {
       "category": "PRODUCTION_READ",
-      "line": 1158,
+      "line": 1159,
       "path": "src/lumina_plasma.c",
       "text": "damping_constant * (W_est - plasma->W[i]);"
     },
     {
       "category": "COMMENT_STRING_TEST",
-      "line": 1162,
+      "line": 1163,
       "path": "src/lumina_plasma.c",
       "text": "/* Diagnostic: dump the per-shell binned J_nu SED + fitted (T_rad,W) so the"
     },
     {
       "category": "COMMENT_STRING_TEST",
-      "line": 1163,
+      "line": 1164,
       "path": "src/lumina_plasma.c",
       "text": "* dilute-Planck fit can be inspected offline (is a hot T_rad a real blue"
     },
     {
       "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
-      "line": 1171,
+      "line": 1172,
       "path": "src/lumina_plasma.c",
       "text": "fprintf(sf, \"shell,T_rad,W,bin,nu_lo,nu_hi,J_nu\\n\");"
     },
     {
       "category": "PRODUCTION_READ",
-      "line": 1182,
+      "line": 1183,
       "path": "src/lumina_plasma.c",
       "text": "i, plasma->T_rad[i], plasma->W[i], b, nu_a, nu_b, j);"
     },
     {
       "category": "COMMENT_STRING_TEST",
-      "line": 1191,
+      "line": 1192,
       "path": "src/lumina_plasma.c",
       "text": "/* Fit a dilute Planck W*B_nu(T) to the per-shell J_nu histogram."
     },
     {
       "category": "COMMENT_STRING_TEST",
-      "line": 1195,
+      "line": 1196,
       "path": "src/lumina_plasma.c",
       "text": "* For a dilute Planck, J = W * sigma_SB*T^4/pi, so at any trial T the amplitude"
     },
     {
       "category": "COMMENT_STRING_TEST",
-      "line": 1196,
+      "line": 1197,
       "path": "src/lumina_plasma.c",
       "text": "* is fixed analytically by W(T) = pi*J/(sigma_SB*T^4); only the SHAPE (T) is"
     },
     {
       "category": "COMMENT_STRING_TEST",
-      "line": 1277,
+      "line": 1278,
       "path": "src/lumina_plasma.c",
       "text": "/* [ARTIS-PARITY C1] per-bin (W,T_R) dilute-BB radiation field.  */"
     },
     {
       "category": "COMMENT_STRING_TEST",
-      "line": 1283,
+      "line": 1284,
       "path": "src/lumina_plasma.c",
       "text": "/* then radfield(nu)=W\u00b7planck(nu,T_R) is evaluated back onto the  */"
     },
     {
       "category": "COMMENT_STRING_TEST",
-      "line": 1387,
+      "line": 1388,
       "path": "src/lumina_plasma.c",
       "text": "* byte-identical). In railed+starved deep-EUV coarse bins the (W,T_R) fit"
     },
     {
       "category": "COMMENT_STRING_TEST",
-      "line": 1388,
+      "line": 1389,
       "path": "src/lumina_plasma.c",
       "text": "* degenerates (T_R rails to 250 kK, W~1e-10, RJ plateau) and inflates"
     },
     {
       "category": "COMMENT_STRING_TEST",
-      "line": 1420,
+      "line": 1421,
       "path": "src/lumina_plasma.c",
       "text": "/* individually (its own W from its own Planck integral), which is the   */"
     },
     {
       "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
-      "line": 1455,
+      "line": 1456,
       "path": "src/lumina_plasma.c",
       "text": "\"iter,shell,bin,lam_lo_A,lam_hi_A,J_bin,W,T_R,mode\\n\");"
     },
     {
       "category": "COMMENT_STRING_TEST",
-      "line": 1529,
+      "line": 1530,
       "path": "src/lumina_plasma.c",
       "text": "/* ARTIS floor (fit_parameters:796): J_bin<=0 -> W=0 -> zero field. */"
     },
     {
       "category": "COMMENT_STRING_TEST",
-      "line": 1536,
+      "line": 1537,
       "path": "src/lumina_plasma.c",
       "text": "*   W    := J_bin / int_bin B_nu(T_e) dnu   (radfield.cc:776,778,"
     },
     {
       "category": "COMMENT_STRING_TEST",
-      "line": 1538,
+      "line": 1539,
       "path": "src/lumina_plasma.c",
       "text": "* plus ARTIS's W>1e4 / non-finite rail retry (radfield.cc:780-795),"
     },
     {
       "category": "COMMENT_STRING_TEST",
-      "line": 1542,
+      "line": 1543,
       "path": "src/lumina_plasma.c",
       "text": "* exit above already ran, so the ARTIS `else {T_R=0; W=0;}` branch"
     },
     {
       "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
-      "line": 1567,
+      "line": 1568,
       "path": "src/lumina_plasma.c",
       "text": "double W  = (P > 0.0) ? J_c / P : 0.0;"
     },
     {
       "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
-      "line": 1568,
+      "line": 1569,
       "path": "src/lumina_plasma.c",
       "text": "if (W > 1e4 || !isfinite(W)) {       /* fit_parameters:780 rail handling */"
     },
     {
       "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
-      "line": 1570,
+      "line": 1571,
       "path": "src/lumina_plasma.c",
       "text": "W = (P > 0.0) ? J_c / P : 0.0;"
     },
     {
       "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
-      "line": 1571,
+      "line": 1572,
       "path": "src/lumina_plasma.c",
       "text": "if (W > 1e4 || !isfinite(W)) { TR = 0.0; W = 0.0; }"
     },
     {
       "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
-      "line": 1574,
+      "line": 1575,
       "path": "src/lumina_plasma.c",
       "text": "W_c[c] = W; TR_c[c] = TR;"
     },
     {
       "category": "COMMENT_STRING_TEST",
-      "line": 1618,
+      "line": 1619,
       "path": "src/lumina_plasma.c",
       "text": "* field is written back, so W/T_R are exactly the values the evaluation"
     },
     {
       "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
-      "line": 1633,
+      "line": 1634,
       "path": "src/lumina_plasma.c",
       "text": "mode = \"empty\";                 /* ARTIS J_bin<=0: W=T_R=0 */"
     },
     {
       "category": "COMMENT_STRING_TEST",
-      "line": 1683,
+      "line": 1684,
       "path": "src/lumina_plasma.c",
       "text": "*            (W,T_R per coarse bin) is dumped separately by"
     },
     {
       "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
-      "line": 1792,
+      "line": 1793,
       "path": "src/lumina_plasma.c",
       "text": "double J_c = raw_J[c] * norm, W = 0.0, TR = 0.0;"
     },
     {
       "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
-      "line": 1797,
+      "line": 1798,
       "path": "src/lumina_plasma.c",
       "text": "W = (P > 0.0) ? J_c / P : 0.0;"
     },
     {
       "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
-      "line": 1798,
+      "line": 1799,
       "path": "src/lumina_plasma.c",
       "text": "if (W > 1e4 || !isfinite(W)) {"
     },
     {
       "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
-      "line": 1800,
+      "line": 1801,
       "path": "src/lumina_plasma.c",
       "text": "W = (P > 0.0) ? J_c / P : 0.0;"
     },
     {
       "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
-      "line": 1801,
+      "line": 1802,
       "path": "src/lumina_plasma.c",
       "text": "if (W > 1e4 || !isfinite(W)) { TR = 0.0; W = 0.0; }"
     },
     {
       "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
-      "line": 1810,
+      "line": 1811,
       "path": "src/lumina_plasma.c",
       "text": "W, TR, Te, J_c, B_c, (B_c > 0.0) ? J_c / B_c : -1.0);"
     },
     {
       "category": "DIAGNOSTIC_SHADOW_CANDIDATE",
-      "line": 1814,
+      "line": 1815,
       "path": "src/lumina_plasma.c",
       "text": "printf(\"[DIAG-T2] per-bin (W,T_R,mc_J,B) field census -> lumina_census_perbin_field.csv\\n\");"
     },
     {
       "category": "COMMENT_STRING_TEST",
-      "line": 1939,
+      "line": 1940,
       "path": "src/lumina_plasma.c",
       "text": "/* P3 (2026-05-14): Two-component ion-lock \u2014 W-threshold conditional LTE-at-T_e."
     },
     {
       "category": "COMMENT_STRING_TEST",
-      "line": 1940,
+      "line": 1941,
       "path": "src/lumina_plasma.c",
       "text": "*   LUMINA_LOCK_W_THRESH   shell W threshold (>= activates LTE-at-T_e lock; default 0 = off)"
     },
     {
       "category": "COMMENT_STRING_TEST",
-      "line": 1943,
+      "line": 1944,
       "path": "src/lumina_plasma.c",
       "text": "* Effect: inner shells (W>thresh) get phi = phi_LTE_at_Te (pure Saha at T_e, more"
     },
     {
       "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
-      "line": 1985,
+      "line": 1986,
       "path": "src/lumina_plasma.c",
       "text": "int Z, int k, double W) {"
     },
     {
       "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
-      "line": 1986,
+      "line": 1987,
       "path": "src/lumina_plasma.c",
       "text": "if (lock_w_thresh <= 0.0 || W < lock_w_thresh) return phi_neb;"
     },
     {
       "category": "COMMENT_STRING_TEST",
-      "line": 2329,
+      "line": 2330,
       "path": "src/lumina_plasma.c",
       "text": "*   phi_neb' = phi_neb * boost * (T_e/T_rad)^t_ratio_exp"
     },
     {
       "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
-      "line": 2377,
+      "line": 2378,
       "path": "src/lumina_plasma.c",
       "text": "double T_e, double T_rad) {"
     },
     {
       "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
-      "line": 2386,
+      "line": 2387,
       "path": "src/lumina_plasma.c",
       "text": "if (ml_phi_neb_t_ratio_exp != 0.0 && T_rad > 0.0) {"
     },
     {
       "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
-      "line": 2387,
+      "line": 2388,
       "path": "src/lumina_plasma.c",
       "text": "double t_ratio = T_e / T_rad;"
     },
     {
       "category": "COMMENT_STRING_TEST",
-      "line": 2395,
+      "line": 2396,
       "path": "src/lumina_plasma.c",
       "text": "*   phi_nebular = phi_lte * W * (zeta*delta + W*(1-zeta)) * sqrt(T_e/T_rad)"
     },
     {
       "category": "COMMENT_STRING_TEST",
-      "line": 2399,
+      "line": 2400,
       "path": "src/lumina_plasma.c",
       "text": "* g_electron = (2*pi*m_e*kB*T_rad/h^2)^1.5"
     },
     {
       "category": "COMMENT_STRING_TEST",
-      "line": 2400,
+      "line": 2401,
       "path": "src/lumina_plasma.c",
       "text": "* delta = (T_e/T_rad) * exp(chi * (beta_rad - beta_electron))  for chi >= chi_0"
     },
     {
       "category": "COMMENT_STRING_TEST",
-      "line": 2401,
+      "line": 2402,
       "path": "src/lumina_plasma.c",
       "text": "* beta_rad = 1/(kB*T_rad), beta_electron = 1/(kB*T_e)"
     },
     {
       "category": "COMMENT_STRING_TEST",
-      "line": 2414,
+      "line": 2415,
       "path": "src/lumina_plasma.c",
       "text": "* Replaces the interim B2 pin (LTE Saha at T_e, W=1) with the ARTIS rate-SE"
     },
     {
       "category": "COMMENT_STRING_TEST",
-      "line": 2456,
+      "line": 2457,
       "path": "src/lumina_plasma.c",
       "text": "* T_e (the B3 partition functions are built at T_e,W=1 under parity, so this"
     },
     {
       "category": "PRODUCTION_READ",
-      "line": 2624,
+      "line": 2625,
       "path": "src/lumina_plasma.c",
       "text": "double T_rad = plasma->T_rad[s];"
     },
     {
       "category": "PRODUCTION_READ",
-      "line": 2626,
+      "line": 2627,
       "path": "src/lumina_plasma.c",
       "text": "double W     = plasma->W[s];"
     },
     {
       "category": "COMMENT_STRING_TEST",
-      "line": 2633,
+      "line": 2634,
       "path": "src/lumina_plasma.c",
       "text": "/* g_electron = (2*pi*m_e*kB*T_rad/h^2)^1.5 */"
     },
     {
       "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
-      "line": 2634,
+      "line": 2635,
       "path": "src/lumina_plasma.c",
       "text": "double g_electron = pow(2.0 * M_PI_VAL * M_ELECTRON * K_BOLTZMANN * T_rad"
     },
     {
       "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
-      "line": 2637,
+      "line": 2638,
       "path": "src/lumina_plasma.c",
       "text": "double beta_rad = 1.0 / (K_BOLTZMANN * T_rad);"
     },
     {
       "category": "COMMENT_STRING_TEST",
-      "line": 2655,
+      "line": 2656,
       "path": "src/lumina_plasma.c",
       "text": "/* Dilute partition functions (W-weighted, consistent with level pops) */"
     },
     {
       "category": "COMMENT_STRING_TEST",
-      "line": 2668,
+      "line": 2669,
       "path": "src/lumina_plasma.c",
       "text": "*   Original:  phi_neb = phi_lte * W * (zeta*delta + W*(1-zeta)) * sqrt(Te/Trad)"
     },
     {
       "category": "COMMENT_STRING_TEST",
-      "line": 2670,
+      "line": 2671,
       "path": "src/lumina_plasma.c",
       "text": "*              -> at low T_rad+high chi, phi_lte->0 AND delta->inf simultaneously => NaN."
     },
     {
       "category": "COMMENT_STRING_TEST",
-      "line": 2685,
+      "line": 2686,
       "path": "src/lumina_plasma.c",
       "text": "* Lucy-Mazzali Saha at (T_rad, W, zeta). Under parity, evaluate"
     },
     {
       "category": "COMMENT_STRING_TEST",
-      "line": 2686,
+      "line": 2687,
       "path": "src/lumina_plasma.c",
       "text": "* that pin as pure LTE Saha at T_e with W=1 (g_electron at T_e,"
     },
     {
       "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
-      "line": 2695,
-      "path": "src/lumina_plasma.c",
-      "text": "double zeta = interpolate_zeta(atom, Z_elem, stage, T_rad);"
-    },
-    {
-      "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
       "line": 2696,
       "path": "src/lumina_plasma.c",
-      "text": "double sqrt_te_tr = sqrt(T_e / T_rad);"
+      "text": "double zeta = interpolate_zeta(atom, Z_elem, stage, T_rad);"
     },
     {
       "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
       "line": 2697,
       "path": "src/lumina_plasma.c",
-      "text": "phi_neb = W * sqrt_te_tr *"
+      "text": "double sqrt_te_tr = sqrt(T_e / T_rad);"
     },
     {
       "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
       "line": 2698,
       "path": "src/lumina_plasma.c",
-      "text": "(zeta * (T_e / T_rad) * phi_LTE_at_Te +"
+      "text": "phi_neb = W * sqrt_te_tr *"
     },
     {
       "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
       "line": 2699,
       "path": "src/lumina_plasma.c",
-      "text": "W * (1.0 - zeta) * phi_LTE_at_Trad);"
+      "text": "(zeta * (T_e / T_rad) * phi_LTE_at_Te +"
     },
     {
       "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
       "line": 2700,
       "path": "src/lumina_plasma.c",
-      "text": "phi_neb = apply_ml_phi_neb_correction(phi_neb, Z_elem, stage, T_e, T_rad);"
+      "text": "W * (1.0 - zeta) * phi_LTE_at_Trad);"
     },
     {
       "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
       "line": 2701,
       "path": "src/lumina_plasma.c",
+      "text": "phi_neb = apply_ml_phi_neb_correction(phi_neb, Z_elem, stage, T_e, T_rad);"
+    },
+    {
+      "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
+      "line": 2702,
+      "path": "src/lumina_plasma.c",
       "text": "phi_neb = apply_twocomp_lock(phi_neb, phi_LTE_at_Te, Z_elem, stage, W);"
     },
     {
       "category": "COMMENT_STRING_TEST",
-      "line": 3103,
+      "line": 3104,
       "path": "src/lumina_plasma.c",
       "text": "/* Default mode (self_consistent=0): T_e = ratio \u00d7 T_rad       */"
     },
     {
       "category": "PRODUCTION_READ",
-      "line": 3131,
+      "line": 3132,
       "path": "src/lumina_plasma.c",
       "text": "plasma->T_e[s] = plasma->T_e_T_rad_ratio * plasma->T_rad[s];"
-    },
-    {
-      "category": "COMMENT_STRING_TEST",
-      "line": 3137,
-      "path": "src/lumina_plasma.c",
-      "text": "*   Compton: q_C = (T_rad - T_e) / t_Compton"
     },
     {
       "category": "COMMENT_STRING_TEST",
       "line": 3138,
       "path": "src/lumina_plasma.c",
-      "text": "*   Collisional (line/PI thermalization): q_coll \u2248 f_coll \u00d7 (T_rad - T_e) / t_coll"
+      "text": "*   Compton: q_C = (T_rad - T_e) / t_Compton"
     },
     {
       "category": "COMMENT_STRING_TEST",
-      "line": 3145,
+      "line": 3139,
       "path": "src/lumina_plasma.c",
-      "text": "*   (\u0393_C + \u0393_coll)(T_rad - T_e) + G = \u0393_ad \u00d7 T_e"
+      "text": "*   Collisional (line/PI thermalization): q_coll \u2248 f_coll \u00d7 (T_rad - T_e) / t_coll"
     },
     {
       "category": "COMMENT_STRING_TEST",
       "line": 3146,
       "path": "src/lumina_plasma.c",
+      "text": "*   (\u0393_C + \u0393_coll)(T_rad - T_e) + G = \u0393_ad \u00d7 T_e"
+    },
+    {
+      "category": "COMMENT_STRING_TEST",
+      "line": 3147,
+      "path": "src/lumina_plasma.c",
       "text": "*   T_e = (\u0393_eff \u00d7 T_rad + G) / (\u0393_eff + \u0393_ad)"
     },
     {
       "category": "COMMENT_STRING_TEST",
-      "line": 3149,
+      "line": 3150,
       "path": "src/lumina_plasma.c",
       "text": "*   u_rad = 4 W \u03c3_SB T_rad\u2074 / c"
     },
     {
       "category": "COMMENT_STRING_TEST",
-      "line": 3156,
+      "line": 3157,
       "path": "src/lumina_plasma.c",
       "text": "/* Collisional boost: line/PI interactions couple T_e to T_rad"
     },
     {
       "category": "COMMENT_STRING_TEST",
-      "line": 3158,
+      "line": 3159,
       "path": "src/lumina_plasma.c",
       "text": "* TARDIS-like T_e/T_rad \u2248 0.97 inner. Set LUMINA_F_COLL_BOOST=0"
     },
     {
       "category": "COMMENT_STRING_TEST",
-      "line": 3159,
+      "line": 3160,
       "path": "src/lumina_plasma.c",
       "text": "* for pure Compton-adiabatic balance (T_e \u2248 0.7 T_rad inner) \u2014"
     },
     {
       "category": "PRODUCTION_READ",
-      "line": 3170,
+      "line": 3171,
       "path": "src/lumina_plasma.c",
       "text": "double T_rad = plasma->T_rad[s];"
     },
     {
       "category": "PRODUCTION_READ",
-      "line": 3171,
+      "line": 3172,
       "path": "src/lumina_plasma.c",
       "text": "double W     = plasma->W[s];"
-    },
-    {
-      "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
-      "line": 3173,
-      "path": "src/lumina_plasma.c",
-      "text": "if (T_rad <= 0.0 || n_e <= 0.0) {"
     },
     {
       "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
       "line": 3174,
       "path": "src/lumina_plasma.c",
+      "text": "if (T_rad <= 0.0 || n_e <= 0.0) {"
+    },
+    {
+      "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
+      "line": 3175,
+      "path": "src/lumina_plasma.c",
       "text": "plasma->T_e[s] = plasma->T_e_T_rad_ratio * T_rad;"
     },
     {
       "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
-      "line": 3179,
+      "line": 3180,
       "path": "src/lumina_plasma.c",
       "text": "double u_rad = 4.0 * W * SIGMA_SB * T_rad * T_rad * T_rad * T_rad / C_SPEED_OF_LIGHT;"
     },
     {
       "category": "COMMENT_STRING_TEST",
-      "line": 3190,
+      "line": 3191,
       "path": "src/lumina_plasma.c",
       "text": "/* Steady state: T_e = (\u0393_eff \u00d7 T_rad + G) / (\u0393_eff + \u0393_ad) */"
     },
     {
       "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
-      "line": 3191,
+      "line": 3192,
       "path": "src/lumina_plasma.c",
       "text": "double T_e = (Gamma_eff * T_rad + G) / (Gamma_eff + Gamma_ad);"
     },
     {
       "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
-      "line": 3194,
+      "line": 3195,
       "path": "src/lumina_plasma.c",
       "text": "if (T_e < 0.3 * T_rad) T_e = 0.3 * T_rad;"
     },
     {
       "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
-      "line": 3195,
+      "line": 3196,
       "path": "src/lumina_plasma.c",
       "text": "if (T_e > 1.5 * T_rad) T_e = 1.5 * T_rad;"
     },
     {
       "category": "COMMENT_STRING_TEST",
-      "line": 3859,
+      "line": 3860,
       "path": "src/lumina_plasma.c",
       "text": "* (cap_factor \u00d7 W\u00b7B_\u03bd(T_rad)) re-imposes a Mazzali-Lucy expectation"
     },
     {
       "category": "COMMENT_STRING_TEST",
-      "line": 3870,
+      "line": 3871,
       "path": "src/lumina_plasma.c",
       "text": "* requirement, SIROCCO/Python macro-atom docs). At low T_rad in outer"
     },
     {
       "category": "COMMENT_STRING_TEST",
-      "line": 3873,
+      "line": 3874,
       "path": "src/lumina_plasma.c",
       "text": "* Floor the binned-J up-rate at j_floor_factor\u00b7W\u00b7B_\u03bd(T_rad): under-sampled"
     },
     {
       "category": "COMMENT_STRING_TEST",
-      "line": 3885,
+      "line": 3886,
       "path": "src/lumina_plasma.c",
       "text": "* the represented radiation field. J<=factor*W*B and J>=factor*W*B are"
     },
     {
       "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
-      "line": 4122,
+      "line": 4123,
       "path": "src/lumina_plasma.c",
       "text": "\"B_lu*W*B(nu,T_rad) (ARTIS/TARDIS dilute-blackbody, decoupled T_rad; \""
     },
     {
       "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
-      "line": 4172,
+      "line": 4173,
       "path": "src/lumina_plasma.c",
       "text": "\"W*B(nu,T_rad) pump and the bin-field switch is INERT ***\\n\");"
     },
     {
       "category": "PRODUCTION_READ",
-      "line": 4478,
+      "line": 4479,
       "path": "src/lumina_plasma.c",
       "text": "double W     = plasma->W[s];"
     },
     {
       "category": "PRODUCTION_READ",
-      "line": 4479,
+      "line": 4480,
       "path": "src/lumina_plasma.c",
       "text": "double T_rad = plasma->T_rad[s];"
     },
     {
       "category": "COMMENT_STRING_TEST",
-      "line": 4644,
+      "line": 4645,
       "path": "src/lumina_plasma.c",
       "text": "* B_lu\u00b7W\u00b7B(\u03bd,T_rad). T_rad is the radiation COLOR"
     },
     {
       "category": "COMMENT_STRING_TEST",
-      "line": 4646,
+      "line": 4647,
       "path": "src/lumina_plasma.c",
       "text": "* line-forming region T_rad > T_e (dilute-hot UV"
     },
     {
       "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
-      "line": 4654,
+      "line": 4655,
       "path": "src/lumina_plasma.c",
       "text": "W * planck_bnu(T_rad, nu_line);"
     },
     {
       "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
-      "line": 4694,
+      "line": 4695,
       "path": "src/lumina_plasma.c",
       "text": "double J_lte = W * planck_bnu(T_rad, nu_line);"
     },
     {
       "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
-      "line": 4776,
+      "line": 4777,
       "path": "src/lumina_plasma.c",
       "text": "kp_gup[line_id] >= 0 && T_rad > 0.0) {"
     },
     {
       "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
-      "line": 4780,
+      "line": 4781,
       "path": "src/lumina_plasma.c",
       "text": "double w_lo2 = atom->level_metastable[glo] ? 1.0 : W;"
     },
     {
       "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
-      "line": 4781,
+      "line": 4782,
       "path": "src/lumina_plasma.c",
       "text": "double w_up2 = atom->level_metastable[gup] ? 1.0 : W;"
     },
     {
       "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
-      "line": 4784,
+      "line": 4785,
       "path": "src/lumina_plasma.c",
       "text": "EV_TO_ERG / (K_BOLTZMANN * T_rad);"
     },
     {
       "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
-      "line": 4799,
+      "line": 4800,
       "path": "src/lumina_plasma.c",
       "text": "legacy_rate_shadow = atom->line_B_lu[line_id] * W *"
     },
     {
       "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
-      "line": 4800,
+      "line": 4801,
       "path": "src/lumina_plasma.c",
       "text": "planck_bnu(T_rad, nu_line);"
     },
     {
       "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
-      "line": 5837,
+      "line": 5838,
       "path": "src/lumina_plasma.c",
       "text": "use_j_nu ? \"MC_histogram\" : \"W*Bnu\","
     },
     {
       "category": "COMMENT_STRING_TEST",
-      "line": 6781,
+      "line": 6782,
       "path": "src/lumina_plasma.c",
       "text": "* the poisoned-T_rad shell s=40, exploding n_e to 9.565e7 (48x charge"
     },
     {
       "category": "COMMENT_STRING_TEST",
-      "line": 8713,
+      "line": 8769,
       "path": "src/lumina_plasma.c",
       "text": "* Boltzmann@T_rad fallback fills the ~0 pops. Env-gated (default off) so the"
     },
     {
       "category": "COMMENT_STRING_TEST",
-      "line": 8929,
+      "line": 8985,
       "path": "src/lumina_plasma.c",
       "text": "* (g_i/g_ground) * margin, routing it to the Boltzmann@T_rad fallback."
     },
     {
       "category": "COMMENT_STRING_TEST",
-      "line": 8954,
+      "line": 9010,
       "path": "src/lumina_plasma.c",
       "text": "* bisection on [0.1, 2.0]*T_rad. Operator-split: NLTE level populations"
     },
     {
       "category": "PRODUCTION_READ",
-      "line": 10565,
+      "line": 10621,
       "path": "src/lumina_plasma.c",
       "text": "double T_rad = plasma->T_rad[s];"
     },
     {
       "category": "PRODUCTION_READ",
-      "line": 10566,
+      "line": 10622,
       "path": "src/lumina_plasma.c",
       "text": "double W = plasma->W[s];"
     },
     {
       "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
-      "line": 10567,
+      "line": 10623,
       "path": "src/lumina_plasma.c",
       "text": "(void)W;"
     },
     {
       "category": "COMMENT_STRING_TEST",
-      "line": 10649,
+      "line": 10705,
       "path": "src/lumina_plasma.c",
       "text": "* NLTE-weight ONLY where W(s)>WTHR (deep/continuum-thick, CMFGEN"
     },
     {
       "category": "PRODUCTION_READ",
-      "line": 10669,
+      "line": 10725,
       "path": "src/lumina_plasma.c",
       "text": "plasma->W[s] > g_stage4_gph_wthr) {   /* [A1] depth gate */"
     },
     {
       "category": "PRODUCTION_READ",
-      "line": 11057,
+      "line": 11113,
       "path": "src/lumina_plasma.c",
       "text": "double Te_pump = plasma->T_e ? plasma->T_e[s] : plasma->T_rad[s];"
     },
     {
       "category": "PRODUCTION_READ",
-      "line": 11099,
+      "line": 11155,
       "path": "src/lumina_plasma.c",
       "text": "? plasma->T_e[s] : plasma->T_rad[s];"
     },
     {
       "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
-      "line": 11304,
+      "line": 11360,
       "path": "src/lumina_plasma.c",
       "text": "(void)T_rad;"
     },
     {
       "category": "COMMENT_STRING_TEST",
-      "line": 11514,
+      "line": 11570,
       "path": "src/lumina_plasma.c",
       "text": "* cold thick shell J\u0304(color~T_rad)>B(T_e) is real absorption heating"
     },
     {
       "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
-      "line": 11854,
+      "line": 11910,
       "path": "src/lumina_plasma.c",
       "text": "static double radeq_net(double T_e, double T_rad, double n_e,"
     },
     {
       "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
-      "line": 11861,
+      "line": 11917,
       "path": "src/lumina_plasma.c",
       "text": "double H = H_photo + H_gamma + compton_heat_coef * (T_rad - T_e);"
     },
     {
       "category": "COMMENT_STRING_TEST",
-      "line": 11928,
+      "line": 11984,
       "path": "src/lumina_plasma.c",
       "text": "/* Frequency-moment Compton exchange; never a T_rad proxy. */"
     },
     {
       "category": "COMMENT_STRING_TEST",
-      "line": 12031,
+      "line": 12087,
       "path": "src/lumina_plasma.c",
       "text": "plasma->T_e[s] = plasma->T_e_T_rad_ratio * plasma->T_rad[s];"
     },
     {
       "category": "COMMENT_STRING_TEST",
-      "line": 12064,
+      "line": 12120,
       "path": "src/lumina_plasma.c",
       "text": "* dilute-Boltzmann(T_rad) pops that are NOT in SE with the solved T_e, so their"
     },
     {
       "category": "COMMENT_STRING_TEST",
-      "line": 12123,
+      "line": 12179,
       "path": "src/lumina_plasma.c",
       "text": "* so T_e tracks the dilute-Planck color temperature: T_e = ratio\u00b7T_rad"
     },
     {
       "category": "COMMENT_STRING_TEST",
-      "line": 12138,
+      "line": 12194,
       "path": "src/lumina_plasma.c",
       "text": "*   0 \"color\"   : T_e = ratio\u00b7T_rad \u2014 the trapped dilute-Planck color temp"
     },
     {
       "category": "COMMENT_STRING_TEST",
-      "line": 12143,
+      "line": 12199,
       "path": "src/lumina_plasma.c",
       "text": "*                 W\u00b7B_\u03bd(T_rad) (not the shot-noise-collapsed MC J_\u03bd). Photo-"
     },
     {
       "category": "COMMENT_STRING_TEST",
-      "line": 12144,
+      "line": 12200,
       "path": "src/lumina_plasma.c",
       "text": "*                 heating \u221d W\u00b7B(T_rad) but cooling \u221d full local emissivity, so"
     },
     {
       "category": "COMMENT_STRING_TEST",
-      "line": 12145,
+      "line": 12201,
       "path": "src/lumina_plasma.c",
       "text": "*                 T_e decouples freely BELOW T_rad \u2192 lands near the gas temp."
     },
     {
       "category": "COMMENT_STRING_TEST",
-      "line": 12151,
+      "line": 12207,
       "path": "src/lumina_plasma.c",
       "text": "*                 source J_eff(\u03bd) instead of the bare dilute Planck W\u00b7B_\u03bd(T_rad)."
     },
     {
       "category": "COMMENT_STRING_TEST",
-      "line": 12152,
+      "line": 12208,
       "path": "src/lumina_plasma.c",
       "text": "*                 Per \u03bd-bin: J_eff = \u03b2_bin\u00b7W\u00b7B_\u03bd(T_rad) + (1\u2212\u03b2_bin)\u00b7S\u0304_bin, where"
     },
     {
       "category": "COMMENT_STRING_TEST",
-      "line": 12172,
+      "line": 12228,
       "path": "src/lumina_plasma.c",
       "text": "* f_hi>=0 (heating dominates even at 2*T_rad -> Thi, the +200% spike"
     },
     {
       "category": "PRODUCTION_READ",
-      "line": 12241,
+      "line": 12297,
       "path": "src/lumina_plasma.c",
       "text": "double T_rad = plasma->T_rad[s];"
     },
     {
       "category": "PRODUCTION_READ",
-      "line": 12242,
+      "line": 12298,
       "path": "src/lumina_plasma.c",
       "text": "double W     = plasma->W[s];"
     },
     {
       "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
-      "line": 12244,
+      "line": 12300,
       "path": "src/lumina_plasma.c",
       "text": "if (T_rad <= 0.0 || n_e <= 0.0) {"
     },
     {
       "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
-      "line": 12245,
+      "line": 12301,
       "path": "src/lumina_plasma.c",
       "text": "plasma->T_e[s] = plasma->T_e_T_rad_ratio * T_rad;"
     },
     {
       "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
-      "line": 12274,
+      "line": 12330,
       "path": "src/lumina_plasma.c",
       "text": ": plasma->T_e_T_rad_ratio * T_rad;"
     },
     {
       "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
-      "line": 12280,
+      "line": 12336,
       "path": "src/lumina_plasma.c",
       "text": "double H_photo_dilute = 0.0;   /* same bf heating but vs W\u00b7B_\u03bd(T_rad) field */"
     },
     {
       "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
-      "line": 12284,
+      "line": 12340,
       "path": "src/lumina_plasma.c",
       "text": "double beta_rad_h = 1.0 / (K_BOLTZMANN * T_rad);"
     },
     {
       "category": "COMMENT_STRING_TEST",
-      "line": 12290,
+      "line": 12346,
       "path": "src/lumina_plasma.c",
       "text": "* line source S\u0304_bin, then J_eff = \u03b2_bin\u00b7W\u00b7B_\u03bd(T_rad) + (1\u2212\u03b2_bin)\u00b7S\u0304_bin."
     },
     {
       "category": "COMMENT_STRING_TEST",
-      "line": 12409,
+      "line": 12465,
       "path": "src/lumina_plasma.c",
       "text": "/* dilute-Planck heating: W\u00b7B_\u03bd(T_rad), the nebular field the"
     },
     {
       "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
-      "line": 12414,
+      "line": 12470,
       "path": "src/lumina_plasma.c",
       "text": "integ_dilute += geom * W * bnu;"
     },
     {
       "category": "COMMENT_STRING_TEST",
-      "line": 12437,
+      "line": 12493,
       "path": "src/lumina_plasma.c",
       "text": "* (J~B(T_rad)<B(T_e), so deposition never entered eta)."
     },
     {
       "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
-      "line": 12457,
+      "line": 12513,
       "path": "src/lumina_plasma.c",
       "text": ": plasma->T_e_T_rad_ratio * T_rad;"
     },
     {
       "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
-      "line": 12472,
+      "line": 12528,
       "path": "src/lumina_plasma.c",
       "text": "double Btr = planck_bnu(T_rad, nu);"
     },
     {
       "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
-      "line": 12497,
+      "line": 12553,
       "path": "src/lumina_plasma.c",
       "text": "s0_pass, s, Te0, T_rad, H_gamma, rad_cont, rad_line, radiated,"
     },
     {
       "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
-      "line": 12503,
+      "line": 12559,
       "path": "src/lumina_plasma.c",
       "text": "double u_rad = 4.0 * W * SIGMA_SB * T_rad * T_rad * T_rad * T_rad /"
     },
     {
       "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
-      "line": 12507,
+      "line": 12563,
       "path": "src/lumina_plasma.c",
       "text": "double compton_heat_coef = 1.5 * n_e * K_BOLTZMANN * Gamma_C; /* \u00d7(T_rad-T_e) */"
     },
     {
       "category": "COMMENT_STRING_TEST",
-      "line": 12512,
+      "line": 12568,
       "path": "src/lumina_plasma.c",
       "text": "* the sole LTE@T_e reference and never reconstruct a T_rad/W population. */"
     },
     {
       "category": "COMMENT_STRING_TEST",
-      "line": 12609,
+      "line": 12665,
       "path": "src/lumina_plasma.c",
       "text": "/* Diagnostic: term-by-term breakdown at T_e=T_rad (Compton term = 0). */"
     },
     {
       "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
-      "line": 12613,
+      "line": 12669,
       "path": "src/lumina_plasma.c",
       "text": "double Tt = T_rad, sqTt = sqrt(Tt);"
     },
     {
       "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
-      "line": 12621,
+      "line": 12677,
       "path": "src/lumina_plasma.c",
       "text": "s, n_e, T_rad, n_active, H_photo, H_gamma, C_ff, C_ad, C_rec, C_coll,"
     },
     {
       "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
-      "line": 12630,
+      "line": 12686,
       "path": "src/lumina_plasma.c",
       "text": "double Tc = (plasma->T_e[s] > 100.0) ? plasma->T_e[s] : T_rad;"
     },
     {
       "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
-      "line": 12647,
+      "line": 12703,
       "path": "src/lumina_plasma.c",
       "text": "plasma->T_e[s] = plasma->T_e_T_rad_ratio * T_rad;"
     },
     {
       "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
-      "line": 12659,
+      "line": 12715,
       "path": "src/lumina_plasma.c",
       "text": "double alpha_rec = 2.6e-13 * pow(T_rad / 1.0e4, -0.8);  /* cm^3 s^-1 */"
     },
     {
       "category": "COMMENT_STRING_TEST",
-      "line": 12665,
+      "line": 12721,
       "path": "src/lumina_plasma.c",
       "text": "/* nebular(1): heating=cooling vs the bare dilute W\u00b7B_\u03bd(T_rad)."
     },
     {
       "category": "COMMENT_STRING_TEST",
-      "line": 12668,
+      "line": 12724,
       "path": "src/lumina_plasma.c",
       "text": "* decouple freely below T_rad. Wide low range. */"
     },
     {
       "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
-      "line": 12670,
+      "line": 12726,
       "path": "src/lumina_plasma.c",
       "text": "double Tlo = 0.02 * T_rad, Thi = T_rad;"
     },
     {
       "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
-      "line": 12671,
+      "line": 12727,
       "path": "src/lumina_plasma.c",
       "text": "double f_lo = radeq_net(Tlo, T_rad, n_e, H_src, H_gamma,"
     },
     {
       "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
-      "line": 12675,
+      "line": 12731,
       "path": "src/lumina_plasma.c",
       "text": "double f_hi = radeq_net(Thi, T_rad, n_e, H_src, H_gamma,"
     },
     {
       "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
-      "line": 12684,
+      "line": 12740,
       "path": "src/lumina_plasma.c",
       "text": "double fm = radeq_net(Tm, T_rad, n_e, H_src, H_gamma,"
     },
     {
       "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
-      "line": 12701,
+      "line": 12757,
       "path": "src/lumina_plasma.c",
       "text": "T_e = T_rad * ratio * ratio;          /* (t_0/t)^2 */"
     },
     {
       "category": "COMMENT_STRING_TEST",
-      "line": 12704,
+      "line": 12760,
       "path": "src/lumina_plasma.c",
       "text": "/* color (default): T_e = ratio\u00b7T_rad (trapped dilute Planck). */"
     },
     {
       "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
-      "line": 12705,
+      "line": 12761,
       "path": "src/lumina_plasma.c",
       "text": "T_e = plasma->T_e_T_rad_ratio * T_rad;"
     },
     {
       "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
-      "line": 12717,
+      "line": 12773,
       "path": "src/lumina_plasma.c",
       "text": "double Tlo = 0.1 * T_rad, Thi = 2.0 * T_rad;"
     },
     {
       "category": "COMMENT_STRING_TEST",
-      "line": 12718,
+      "line": 12774,
       "path": "src/lumina_plasma.c",
       "text": "/* Wide physical T_e bracket (LUMINA_RADEQ_WIDE_BRACKET): the 2\u00b7T_rad cap is a"
     },
     {
       "category": "COMMENT_STRING_TEST",
-      "line": 12721,
+      "line": 12777,
       "path": "src/lumina_plasma.c",
       "text": "* outer reaches T_e\u226b2\u00b7T_rad (toy06: ~24600 K = 7.8\u00b7T_rad), which the 2\u00b7T_rad"
     },
     {
       "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
-      "line": 12728,
+      "line": 12784,
       "path": "src/lumina_plasma.c",
       "text": "double f_lo = radeq_net(Tlo, T_rad, n_e, H_photo, H_gamma,"
     },
     {
       "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
-      "line": 12734,
+      "line": 12790,
       "path": "src/lumina_plasma.c",
       "text": "double f_hi = radeq_net(Thi, T_rad, n_e, H_photo, H_gamma,"
     },
     {
       "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
-      "line": 12750,
+      "line": 12806,
       "path": "src/lumina_plasma.c",
       "text": "double fm = radeq_net(Tm, T_rad, n_e, H_photo, H_gamma,"
     },
     {
       "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
-      "line": 12782,
+      "line": 12838,
       "path": "src/lumina_plasma.c",
       "text": "printf(\"  [RADEQ] T_e/T_rad: shell0=%.3f shell%d=%.3f (T_e[0]=%.0f K)\\n\","
     },
     {
       "category": "PRODUCTION_READ",
-      "line": 12783,
+      "line": 12839,
       "path": "src/lumina_plasma.c",
       "text": "plasma->T_rad[0] > 0 ? plasma->T_e[0] / plasma->T_rad[0] : 0.0,"
     },
     {
       "category": "PRODUCTION_READ",
-      "line": 12785,
+      "line": 12841,
       "path": "src/lumina_plasma.c",
       "text": "plasma->T_rad[n_shells - 1] > 0 ?"
     },
     {
       "category": "PRODUCTION_READ",
-      "line": 12786,
+      "line": 12842,
       "path": "src/lumina_plasma.c",
       "text": "plasma->T_e[n_shells - 1] / plasma->T_rad[n_shells - 1] : 0.0,"
     },
     {
       "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
-      "line": 12788,
+      "line": 12844,
       "path": "src/lumina_plasma.c",
       "text": "printf(\"  [RADEQ] NO-ROOT fallback: %ld pinned-hi (T_e=2*T_rad, heating>cool), \""
     },
     {
       "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
-      "line": 12789,
+      "line": 12845,
       "path": "src/lumina_plasma.c",
       "text": "\"%ld pinned-lo (T_e=0.1*T_rad), %ld floor-pinned (1000K) of %d shells\\n\","
     },
     {
       "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
-      "line": 12792,
+      "line": 12848,
       "path": "src/lumina_plasma.c",
       "text": "const char *mname = hybrid_mode == 1 ? \"nebular(W\u00b7B_\u03bd)\" :"
     },
     {
       "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
-      "line": 12794,
+      "line": 12850,
       "path": "src/lumina_plasma.c",
       "text": "hybrid_mode == 3 ? \"blanket(J_eff)\" : \"color(ratio\u00b7T_rad)\";"
     },
     {
       "category": "COMMENT_STRING_TEST",
-      "line": 12821,
+      "line": 12877,
       "path": "src/lumina_plasma.c",
       "text": "*                                   on BOTH T_e and T_rad)"
     },
     {
       "category": "PRODUCTION_READ",
-      "line": 12842,
+      "line": 12898,
       "path": "src/lumina_plasma.c",
       "text": "double T_rad = plasma->T_rad[s];"
     },
     {
       "category": "PRODUCTION_READ",
-      "line": 12843,
+      "line": 12899,
       "path": "src/lumina_plasma.c",
       "text": "double W     = plasma->W[s];"
     },
     {
       "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
-      "line": 12845,
+      "line": 12901,
       "path": "src/lumina_plasma.c",
       "text": "if (T_rad <= 0.0 || n_e <= 0.0) return 0.0;"
     },
     {
       "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
-      "line": 12846,
+      "line": 12902,
       "path": "src/lumina_plasma.c",
       "text": "double g_electron = pow(2.0 * M_PI_VAL * M_ELECTRON * K_BOLTZMANN * T_rad"
     },
     {
       "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
-      "line": 12848,
+      "line": 12904,
       "path": "src/lumina_plasma.c",
       "text": "double beta_rad = 1.0 / (K_BOLTZMANN * T_rad);"
     },
     {
       "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
-      "line": 12850,
+      "line": 12906,
       "path": "src/lumina_plasma.c",
       "text": "double sqrt_te_tr = sqrt(T_e / T_rad);"
     },
     {
       "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
-      "line": 12881,
+      "line": 12937,
       "path": "src/lumina_plasma.c",
       "text": "double zeta = interpolate_zeta(atom, Z_elem, stage, T_rad);"
     },
     {
       "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
-      "line": 12882,
+      "line": 12938,
       "path": "src/lumina_plasma.c",
       "text": "double phi_neb = W * sqrt_te_tr *"
     },
     {
       "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
-      "line": 12883,
+      "line": 12939,
       "path": "src/lumina_plasma.c",
       "text": "(zeta * (T_e / T_rad) * phi_LTE_at_Te +"
     },
     {
       "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
-      "line": 12884,
+      "line": 12940,
       "path": "src/lumina_plasma.c",
       "text": "W * (1.0 - zeta) * phi_LTE_at_Trad);"
     },
     {
       "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
-      "line": 12885,
+      "line": 12941,
       "path": "src/lumina_plasma.c",
       "text": "phi_neb = apply_ml_phi_neb_correction(phi_neb, Z_elem, stage, T_e, T_rad);"
     },
     {
       "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
-      "line": 12886,
+      "line": 12942,
       "path": "src/lumina_plasma.c",
       "text": "phi_neb = apply_twocomp_lock(phi_neb, phi_LTE_at_Te, Z_elem, stage, W);"
     },
     {
       "category": "COMMENT_STRING_TEST",
-      "line": 12925,
+      "line": 12981,
       "path": "src/lumina_plasma.c",
       "text": "* and NO wrong-W nebular baseline. In the thick limit J_\u03bd\u2192B(T_e) it recovers"
     },
     {
       "category": "COMMENT_STRING_TEST",
-      "line": 13025,
+      "line": 13081,
       "path": "src/lumina_plasma.c",
       "text": "* non-local FUV field with the local thermal pool W\u00b7B_\u03bd(T_e^lag);"
     },
     {
       "category": "COMMENT_STRING_TEST",
-      "line": 13034,
+      "line": 13090,
       "path": "src/lumina_plasma.c",
       "text": "* Planck W*B_nu(T_inner). Tests the \"inner FUV J over-thermalized"
     },
     {
       "category": "PRODUCTION_READ",
-      "line": 13126,
+      "line": 13182,
       "path": "src/lumina_plasma.c",
       "text": "double T_rad = plasma->T_rad[s];"
     },
     {
       "category": "PRODUCTION_READ",
-      "line": 13127,
+      "line": 13183,
       "path": "src/lumina_plasma.c",
       "text": "double W     = plasma->W[s];"
     },
     {
       "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
-      "line": 13129,
+      "line": 13185,
       "path": "src/lumina_plasma.c",
       "text": "if (T_rad <= 0.0 || n_e <= 0.0 || t_exp <= 0.0) return 0.0;"
     },
     {
       "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
-      "line": 13130,
+      "line": 13186,
       "path": "src/lumina_plasma.c",
       "text": "double g_electron = pow(2.0 * M_PI_VAL * M_ELECTRON * K_BOLTZMANN * T_rad"
     },
     {
       "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
-      "line": 13132,
+      "line": 13188,
       "path": "src/lumina_plasma.c",
       "text": "double beta_rad = 1.0 / (K_BOLTZMANN * T_rad);"
     },
     {
       "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
-      "line": 13134,
+      "line": 13190,
       "path": "src/lumina_plasma.c",
       "text": "double sqrt_te_tr = sqrt(T_e / T_rad);"
     },
     {
       "category": "COMMENT_STRING_TEST",
-      "line": 13138,
+      "line": 13194,
       "path": "src/lumina_plasma.c",
       "text": "* photoionization rate, evaluate the recombination \u03b1 at T_rad (the field's"
     },
     {
       "category": "COMMENT_STRING_TEST",
-      "line": 13207,
+      "line": 13263,
       "path": "src/lumina_plasma.c",
       "text": "/* recomb T: T_e physically; T_rad only under the same-T diagnostic for"
     },
     {
       "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
-      "line": 13209,
+      "line": 13265,
       "path": "src/lumina_plasma.c",
       "text": "double T_rec = (jnu_alpha_trad && using_jnu) ? T_rad : T_e;"
     },
     {
       "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
-      "line": 13223,
+      "line": 13279,
       "path": "src/lumina_plasma.c",
       "text": "double zeta = interpolate_zeta(atom, Z_elem, stage, T_rad);"
     },
     {
       "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
-      "line": 13224,
+      "line": 13280,
       "path": "src/lumina_plasma.c",
       "text": "double phi_neb = W * sqrt_te_tr *"
     },
     {
       "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
-      "line": 13225,
+      "line": 13281,
       "path": "src/lumina_plasma.c",
       "text": "(zeta * (T_e / T_rad) * phi_LTE_at_Te +"
     },
     {
       "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
-      "line": 13226,
+      "line": 13282,
       "path": "src/lumina_plasma.c",
       "text": "W * (1.0 - zeta) * phi_LTE_at_Trad);"
     },
     {
       "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
-      "line": 13227,
+      "line": 13283,
       "path": "src/lumina_plasma.c",
       "text": "phi_neb = apply_ml_phi_neb_correction(phi_neb, Z_elem, stage, T_e, T_rad);"
     },
     {
       "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
-      "line": 13228,
+      "line": 13284,
       "path": "src/lumina_plasma.c",
       "text": "phi_neb = apply_twocomp_lock(phi_neb, phi_LTE_at_Te, Z_elem, stage, W);"
     },
     {
       "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
-      "line": 13372,
+      "line": 13428,
       "path": "src/lumina_plasma.c",
       "text": "double T_rad, W, Te_lag, H_photo, H_gamma, compton0, ff0, C_bb_esc;"
     },
     {
       "category": "PRODUCTION_READ",
-      "line": 13409,
+      "line": 13465,
       "path": "src/lumina_plasma.c",
       "text": "return radeq_net(T, sh->T_rad, n, sh->H_photo, sh->H_gamma,"
     },
     {
       "category": "PRODUCTION_READ",
-      "line": 13431,
+      "line": 13487,
       "path": "src/lumina_plasma.c",
       "text": "return sh->compton0 * n * (sh->T_rad - T) - 2.0 * C_ff - C_ad;"
     },
     {
       "category": "COMMENT_STRING_TEST",
-      "line": 13932,
+      "line": 13988,
       "path": "src/lumina_plasma.c",
       "text": "/* A3 incr-1: diagonal-\u039b* radiation response (J follows W\u00b7B(T_e) inside the"
     },
     {
       "category": "PRODUCTION_READ",
-      "line": 14086,
+      "line": 14142,
       "path": "src/lumina_plasma.c",
       "text": "double T_rad = plasma->T_rad[s];"
     },
     {
       "category": "PRODUCTION_READ",
-      "line": 14087,
+      "line": 14143,
       "path": "src/lumina_plasma.c",
       "text": "double W     = plasma->W[s];"
     },
     {
       "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
-      "line": 14088,
+      "line": 14144,
       "path": "src/lumina_plasma.c",
       "text": "if (T_rad <= 0.0 || plasma->n_electron[s] <= 0.0) continue;"
     },
     {
       "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
-      "line": 14101,
+      "line": 14157,
       "path": "src/lumina_plasma.c",
       "text": "double alpha_rec = 2.6e-13 * pow(T_rad / 1.0e4, -0.8);"
     },
     {
       "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
-      "line": 14114,
+      "line": 14170,
       "path": "src/lumina_plasma.c",
       "text": "double beta_rad_h = 1.0 / (K_BOLTZMANN * T_rad);"
     },
     {
       "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
-      "line": 14180,
+      "line": 14236,
       "path": "src/lumina_plasma.c",
       "text": "double u_rad = 4.0 * W * SIGMA_SB * T_rad * T_rad * T_rad * T_rad /"
     },
     {
       "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
-      "line": 14184,
+      "line": 14240,
       "path": "src/lumina_plasma.c",
       "text": "double compton0 = 1.5 * K_BOLTZMANN * Gamma_C;   /* \u00d7n_e \u00d7(T_rad\u2212T_e) */"
     },
     {
       "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
-      "line": 14292,
+      "line": 14348,
       "path": "src/lumina_plasma.c",
       "text": ": plasma->T_e_T_rad_ratio * T_rad;"
     },
     {
       "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
-      "line": 14293,
+      "line": 14349,
       "path": "src/lumina_plasma.c",
       "text": "if (T_e <= 100.0) T_e = plasma->T_e_T_rad_ratio * T_rad;"
     },
     {
       "category": "COMMENT_STRING_TEST",
-      "line": 14313,
+      "line": 14369,
       "path": "src/lumina_plasma.c",
       "text": "* so J tracks W\u00b7B(T_e) only where it should. B_lag is the response anchor. */"
     },
     {
       "category": "COMMENT_STRING_TEST",
-      "line": 14340,
+      "line": 14396,
       "path": "src/lumina_plasma.c",
       "text": "* slope, so the thick limit drives T_e -> color temp of J* (= T_rad)"
     },
     {
       "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
-      "line": 14407,
+      "line": 14463,
       "path": "src/lumina_plasma.c",
       "text": "\"L=%.3e cm T_lag=%.0f W=%.3f\\n\","
     },
     {
       "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
-      "line": 14408,
+      "line": 14464,
       "path": "src/lumina_plasma.c",
       "text": "s, nb ? lm / nb : 0.0, nb, Lscale, T_e, W);"
     },
     {
       "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
-      "line": 14418,
+      "line": 14474,
       "path": "src/lumina_plasma.c",
       "text": "double T_lag = (T_e > 100.0) ? T_e : plasma->T_e_T_rad_ratio * T_rad;"
     },
     {
       "category": "COMMENT_STRING_TEST",
-      "line": 14419,
+      "line": 14475,
       "path": "src/lumina_plasma.c",
       "text": "/* B3-1: blend J_\u03bd toward W\u00b7B(T_e^lag) by \u039b* inside the photoion"
     },
     {
       "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
-      "line": 14428,
+      "line": 14484,
       "path": "src/lumina_plasma.c",
       "text": "jbl, jbb, W, wbfloor_T,"
     },
     {
       "category": "COMMENT_STRING_TEST",
-      "line": 14509,
+      "line": 14565,
       "path": "src/lumina_plasma.c",
       "text": "/* T_hi: upper bound of the coupled-Newton T_e trial. Default 3\u00b7T_rad. The"
     },
     {
       "category": "COMMENT_STRING_TEST",
-      "line": 14510,
+      "line": 14566,
       "path": "src/lumina_plasma.c",
       "text": "* thin outer can be super-thermal (CMFGEN toy06 sh49 T_e\u22488\u00b7T_rad, hot ionised"
     },
     {
       "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
-      "line": 14519,
+      "line": 14575,
       "path": "src/lumina_plasma.c",
       "text": "double T_lo = 0.03 * T_rad, T_hi = cn_thi_fac * T_rad;"
     },
     {
       "category": "PRODUCTION_READ",
-      "line": 14526,
+      "line": 14582,
       "path": "src/lumina_plasma.c",
       "text": "sh->T_rad = T_rad; sh->W = W; sh->Te_lag = Te_lag;"
     },
     {
       "category": "COMMENT_STRING_TEST",
-      "line": 14554,
+      "line": 14610,
       "path": "src/lumina_plasma.c",
       "text": "* photosphere) probed alongside fractions of T_rad. */"
     },
     {
       "category": "COMMENT_STRING_TEST",
-      "line": 14558,
+      "line": 14614,
       "path": "src/lumina_plasma.c",
       "text": "/* Wide grid in ABSOLUTE T_e (the thin outer is super-thermal, T_e\u226bT_rad,"
     },
     {
       "category": "COMMENT_STRING_TEST",
-      "line": 14559,
+      "line": 14615,
       "path": "src/lumina_plasma.c",
       "text": "* so the old frac\u00d7T_rad grid \u22642\u00b7T_rad missed the real root). */"
     },
     {
       "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
-      "line": 14567,
+      "line": 14623,
       "path": "src/lumina_plasma.c",
       "text": "printf(\"    [CN-RTRUTH s=%d] H_photo=%.3e H_gamma=%.3e C_esc=%.3e n_e=%.3e T_rad=%.1f n_act=%ld\\n\","
     },
     {
       "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
-      "line": 14568,
+      "line": 14624,
       "path": "src/lumina_plasma.c",
       "text": "s, H_photo, H_gamma, C_bb_esc, n_e, T_rad, n_active);"
     },
     {
       "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
-      "line": 14579,
+      "line": 14635,
       "path": "src/lumina_plasma.c",
       "text": "double r_on = radeq_net(TT, T_rad, n_e, H_photo, H_gamma,"
     },
     {
       "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
-      "line": 14583,
+      "line": 14639,
       "path": "src/lumina_plasma.c",
       "text": "double r_off = radeq_net(TT, T_rad, n_e, H_photo, H_gamma,"
     },
     {
       "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
-      "line": 14597,
+      "line": 14653,
       "path": "src/lumina_plasma.c",
       "text": "double r1 = radeq_net(T_e, T_rad, n_e, H_photo, H_gamma,"
     },
     {
       "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
-      "line": 14641,
+      "line": 14697,
       "path": "src/lumina_plasma.c",
       "text": "J12 = compton0 * n_e * (T_rad - T_e)"
     },
     {
       "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
-      "line": 14644,
+      "line": 14700,
       "path": "src/lumina_plasma.c",
       "text": "double f1T = radeq_net(T_e + dT, T_rad, n_e, H_photo, H_gamma,"
     },
     {
       "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
-      "line": 14650,
+      "line": 14706,
       "path": "src/lumina_plasma.c",
       "text": "double f1n = radeq_net(T_e, T_rad, ne_x, H_photo, H_gamma,"
     },
     {
       "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
-      "line": 14666,
+      "line": 14722,
       "path": "src/lumina_plasma.c",
       "text": "double r1_T = radeq_net(T_e + dT, T_rad, n_e, H_photo, H_gamma,"
     },
     {
       "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
-      "line": 14673,
+      "line": 14729,
       "path": "src/lumina_plasma.c",
       "text": "double r1_n = radeq_net(T_e, T_rad, ne_x,"
     },
     {
       "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
-      "line": 14709,
+      "line": 14765,
       "path": "src/lumina_plasma.c",
       "text": "double q1 = radeq_net(Tt, T_rad, nt, H_photo, H_gamma,"
     },
     {
       "category": "COMMENT_STRING_TEST",
-      "line": 15242,
+      "line": 15298,
       "path": "src/lumina_plasma.c",
       "text": "/* Cap super-Planckian J_nu in UV (\u03bb < lambda_max) at W_cap * B_nu(T_rad)."
     },
     {
       "category": "COMMENT_STRING_TEST",
-      "line": 15243,
+      "line": 15299,
       "path": "src/lumina_plasma.c",
       "text": "* UV reprocessing in inner shells drives W to 1.7\u20132.7 (see"
     },
     {
       "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
-      "line": 15267,
+      "line": 15323,
       "path": "src/lumina_plasma.c",
       "text": "printf(\"  [J_nu UV cap] enabled: %.0f A <= lambda <= %.0f A, W <= %.2f\\n\","
     },
     {
       "category": "PRODUCTION_READ",
-      "line": 15282,
+      "line": 15338,
       "path": "src/lumina_plasma.c",
       "text": "double T = plasma->T_rad[s];"
     },
     {
       "category": "PRODUCTION_READ",
-      "line": 15513,
+      "line": 15569,
       "path": "src/lumina_plasma.c",
       "text": "double T_rad = plasma->T_rad[shell];"
     },
     {
       "category": "COMMENT_STRING_TEST",
-      "line": 15681,
+      "line": 15737,
       "path": "src/lumina_plasma.c",
       "text": "* J_bar/B(T_e)~=0.97 even where W~=0.43) -> detailed balance forces b_k=1"
     },
     {
       "category": "COMMENT_STRING_TEST",
-      "line": 15683,
+      "line": 15739,
       "path": "src/lumina_plasma.c",
       "text": "* blackbody J_bar_line = W(s)*B(nu_line,T_R), where T_R is a radiation color"
     },
     {
       "category": "COMMENT_STRING_TEST",
-      "line": 15685,
+      "line": 15741,
       "path": "src/lumina_plasma.c",
       "text": "* core; hotter = photospheric color in the line-forming layers) and W(s)<1 the"
     },
     {
       "category": "COMMENT_STRING_TEST",
-      "line": 15686,
+      "line": 15742,
       "path": "src/lumina_plasma.c",
       "text": "* geometric dilution. With J_bar = W*B(nu,T_R) != B(nu,T_e), detailed balance no"
     },
     {
       "category": "COMMENT_STRING_TEST",
-      "line": 15688,
+      "line": 15744,
       "path": "src/lumina_plasma.c",
       "text": "* macroatom.cc:571-604). T_R source: plasma->T_rad is the binned-J dilute-Planck"
     },
     {
       "category": "COMMENT_STRING_TEST",
-      "line": 15690,
+      "line": 15746,
       "path": "src/lumina_plasma.c",
       "text": "* (measured T_rad~=T_e) so it is NOT the hot photospheric color. We instead take"
     },
     {
       "category": "COMMENT_STRING_TEST",
-      "line": 15692,
+      "line": 15748,
       "path": "src/lumina_plasma.c",
       "text": "* photospheric T_inner proxy -- deepest/hottest, W~=1, fully thermalized to the"
     },
     {
       "category": "COMMENT_STRING_TEST",
-      "line": 15693,
+      "line": 15749,
       "path": "src/lumina_plasma.c",
       "text": "* inner-boundary BB -- and carry it outward with the per-shell dilution W(s)."
     },
     {
       "category": "COMMENT_STRING_TEST",
-      "line": 15695,
+      "line": 15751,
       "path": "src/lumina_plasma.c",
       "text": "* shell T_rad is the faithful, wiring-free proxy for it. Override the color with"
     },
     {
       "category": "COMMENT_STRING_TEST",
-      "line": 15696,
+      "line": 15752,
       "path": "src/lumina_plasma.c",
       "text": "* LUMINA_NLTE_DILUTE_TR_K (float, K) for testing; default = innermost T_rad. */"
     },
     {
       "category": "PRODUCTION_READ",
-      "line": 15705,
+      "line": 15761,
       "path": "src/lumina_plasma.c",
       "text": "double dilute_W = dilute_on ? plasma->W[shell] : 0.0;"
     },
     {
       "category": "PRODUCTION_READ",
-      "line": 15707,
+      "line": 15763,
       "path": "src/lumina_plasma.c",
       "text": "? ((dilute_tr_override > 0.0) ? dilute_tr_override : plasma->T_rad[0])"
     },
     {
       "category": "COMMENT_STRING_TEST",
-      "line": 15830,
+      "line": 15886,
       "path": "src/lumina_plasma.c",
       "text": "* radiative rates with J_bar_line = W(s)*B(nu_line,T_R), T_R the hot"
     },
     {
       "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
-      "line": 15841,
+      "line": 15897,
       "path": "src/lumina_plasma.c",
       "text": "jd_mode = 4; jd_beta = 1.0;   /* [withParityP GATE2] dilute W*B(T_R) */"
     },
     {
       "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
-      "line": 16983,
+      "line": 17039,
       "path": "src/lumina_plasma.c",
       "text": "fprintf(fp, \"Z,ion_lo,shell,N_levels,T_e,T_rad,W,n_e,\""
     },
     {
       "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
-      "line": 17004,
+      "line": 17060,
       "path": "src/lumina_plasma.c",
       "text": "Z_d, ion_lo_d, shell, N, T_e, T_rad,"
     },
     {
       "category": "PRODUCTION_READ",
-      "line": 17005,
+      "line": 17061,
       "path": "src/lumina_plasma.c",
       "text": "plasma->W[shell], n_e,"
     },
     {
       "category": "COMMENT_STRING_TEST",
-      "line": 17185,
+      "line": 17241,
       "path": "src/lumina_plasma.c",
       "text": "* W\u00b7\u03b6-Saha values. NLTE then only redistributes excited levels within"
     },
     {
       "category": "COMMENT_STRING_TEST",
-      "line": 17186,
+      "line": 17242,
       "path": "src/lumina_plasma.c",
       "text": "* each ion. Avoids the Milne-T_e-vs-T_rad over-ionization trap that DR"
     },
     {
       "category": "COMMENT_STRING_TEST",
-      "line": 17218,
+      "line": 17274,
       "path": "src/lumina_plasma.c",
       "text": "* own-ion ground (ground_hi), T_e, NO dilution W. Default anchors all"
     },
     {
       "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
-      "line": 17242,
+      "line": 17298,
       "path": "src/lumina_plasma.c",
       "text": "exp(-dE / (K_BOLTZMANN * T_e));   /* T_e, no W */"
     },
     {
       "category": "COMMENT_STRING_TEST",
-      "line": 17324,
+      "line": 17380,
       "path": "src/lumina_plasma.c",
       "text": "* getrf garbage -> Boltzmann@T_rad fallback -> super-thermal S_l. FIX: solve in"
     },
     {
       "category": "COMMENT_STRING_TEST",
-      "line": 18456,
+      "line": 18512,
       "path": "src/lumina_plasma.c",
       "text": "/* Non-thermal ionizations = deposition / W, where W = mean energy per ion pair"
     },
     {
       "category": "COMMENT_STRING_TEST",
-      "line": 18460,
+      "line": 18516,
       "path": "src/lumina_plasma.c",
       "text": "* the thin outer. Physical rate (no free parameter): heating/W. (LUMINA_NT_LEGACY"
     },
     {
       "category": "COMMENT_STRING_TEST",
-      "line": 18461,
+      "line": 18517,
       "path": "src/lumina_plasma.c",
       "text": "* restores the old 0.05\u00b7heating/W for the A/B record.) */"
     },
     {
       "category": "COMMENT_STRING_TEST",
-      "line": 18464,
+      "line": 18520,
       "path": "src/lumina_plasma.c",
       "text": "* heating/W max rate with eta_ion=1) over-ionizes the inner ~20\u00d7 \u2014 the physical"
     },
     {
       "category": "PRODUCTION_READ",
-      "line": 18588,
+      "line": 18644,
       "path": "src/lumina_plasma.c",
       "text": "double T_rad = plasma->T_rad[s];"
     },
     {
       "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
-      "line": 18597,
+      "line": 18653,
       "path": "src/lumina_plasma.c",
       "text": "double v_th = sqrt(2.0 * K_BOLTZMANN * T_rad / (mass_amu * AMU));"
     },
     {
       "category": "COMMENT_STRING_TEST",
-      "line": 18757,
+      "line": 18813,
       "path": "src/lumina_plasma.c",
       "text": "* audit bounded the W*B(T_rad) fallback leg at 0.07% of the 2000-4000A"
     },
     {
       "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
-      "line": 18803,
+      "line": 18859,
       "path": "src/lumina_plasma.c",
       "text": "printf(\"  [FI] inner Planck dilution W=%.3f (LUMINA_FI_INNER_DILUTE)\\n\", fi_W_inner);"
     },
     {
       "category": "COMMENT_STRING_TEST",
-      "line": 18811,
+      "line": 18867,
       "path": "src/lumina_plasma.c",
       "text": "*                      exp(-E_k/kT_rad), w_k = 1 (metastable) else W. The"
     },
     {
       "category": "COMMENT_STRING_TEST",
-      "line": 18812,
+      "line": 18868,
       "path": "src/lumina_plasma.c",
       "text": "*                      code records w_upper/w_lower = 1, W, or 1/W."
     },
     {
       "category": "COMMENT_STRING_TEST",
-      "line": 18817,
+      "line": 18873,
       "path": "src/lumina_plasma.c",
       "text": "* W*B(T_rad), a value that belongs to no population in the run. */"
     },
     {
       "category": "PRODUCTION_READ",
-      "line": 18956,
+      "line": 19012,
       "path": "src/lumina_plasma.c",
       "text": "double S_cont = plasma->W[shell_mid] *"
     },
     {
       "category": "PRODUCTION_READ",
-      "line": 18957,
+      "line": 19013,
       "path": "src/lumina_plasma.c",
       "text": "planck_bnu(plasma->T_rad[shell_mid], nu_obs);"
     },
     {
       "category": "COMMENT_STRING_TEST",
-      "line": 18971,
+      "line": 19027,
       "path": "src/lumina_plasma.c",
       "text": "* dilute-LTE W*B(T_rad) for lines outside the NLTE network. */"
     },
     {
       "category": "PRODUCTION_READ",
-      "line": 18976,
+      "line": 19032,
       "path": "src/lumina_plasma.c",
       "text": "S = plasma->W[shell] * planck_bnu(plasma->T_rad[shell], nu_l);"
     },
     {
       "category": "COMMENT_STRING_TEST",
-      "line": 18988,
+      "line": 19044,
       "path": "src/lumina_plasma.c",
       "text": "* x = (w_u/w_l) exp(-h nu/k T_rad), and the emission below is"
     },
     {
       "category": "COMMENT_STRING_TEST",
-      "line": 18991,
+      "line": 19047,
       "path": "src/lumina_plasma.c",
       "text": "* W*B(T_rad) is NOT this number (for two equally diluted"
     },
     {
       "category": "COMMENT_STRING_TEST",
-      "line": 18992,
+      "line": 19048,
       "path": "src/lumina_plasma.c",
       "text": "* levels the pair-consistent source is B(T_rad), undiluted)."
     },
     {
       "category": "PRODUCTION_READ",
-      "line": 19003,
+      "line": 19059,
       "path": "src/lumina_plasma.c",
       "text": "double Tr = plasma->T_rad[shell], Wl = plasma->W[shell];"
     },
     {
       "category": "PRODUCTION_READ",
-      "line": 19059,
+      "line": 19115,
       "path": "src/lumina_plasma.c",
       "text": "double S_cont = plasma->W[shell_mid] *"
     },
     {
       "category": "PRODUCTION_READ",
-      "line": 19060,
+      "line": 19116,
       "path": "src/lumina_plasma.c",
       "text": "planck_bnu(plasma->T_rad[shell_mid], nu_obs);"
     },
     {
       "category": "COMMENT_STRING_TEST",
-      "line": 19115,
+      "line": 19171,
       "path": "src/lumina_plasma.c",
       "text": "*               T_inner, whose emergent luminosity is W * 4*pi*r^2*sigma*T^4."
     },
     {
       "category": "COMMENT_STRING_TEST",
-      "line": 19154,
+      "line": 19210,
       "path": "src/lumina_plasma.c",
       "text": "*   L_inj_win = W*4pi*r_in^2 * pi*int_win B_lambda(T_inner) dlambda"
     },
     {
       "category": "DEFINITION_ASSIGNMENT_ARGUMENT_OR_STRING",
-      "line": 19181,
+      "line": 19237,
       "path": "src/lumina_plasma.c",
       "text": "\"(L_inj=%.6e erg/s = W%.3f*4pi*r_in^2*sigma*T_inner^4, \""
     },
     {
       "category": "PRODUCTION_READ",
-      "line": 19309,
+      "line": 19365,
       "path": "src/lumina_plasma.c",
       "text": "S_es = plasma->W[shell] * planck_bnu(plasma->T_rad[shell], nu_cmf);"
     },
     {
       "category": "PRODUCTION_READ",
-      "line": 19311,
+      "line": 19367,
       "path": "src/lumina_plasma.c",
       "text": "S_es = plasma->W[shell] * planck_bnu(plasma->T_rad[shell], nu_cmf);"
     },
     {
       "category": "COMMENT_STRING_TEST",
-      "line": 19366,
+      "line": 19422,
       "path": "src/lumina_plasma.c",
       "text": "* dilute-LTE source W*B(T_rad) -- still not coherent scatter. */"
     },
     {
       "category": "PRODUCTION_READ",
-      "line": 19370,
+      "line": 19426,
       "path": "src/lumina_plasma.c",
       "text": "S_l = plasma->W[shell] * planck_bnu(plasma->T_rad[shell], nu_l);"
     }
@@ -3668,11 +3422,11 @@
       "marker": "A2_16_NEG_CAPABILITY_LIFETIME_FAIL"
     }
   },
-  "raw_scalar_hits": 604,
+  "raw_scalar_hits": 563,
   "reason_codes": [
     "BLOCKED_PRODUCTION_SCALAR_READS_REMAIN",
     "BLOCKED_G0_HELPER_NOT_ISOLATED",
-    "BLOCKED_UPSTREAM_A2_13_15_NOT_CLOSED"
+    "BLOCKED_REQUIRED_TWO_SEED_MANIFEST_ABSENT"
   ],
   "required_files": [
     "src/lumina_element_wide.c",
@@ -3701,7 +3455,9 @@
     "tradfix_option_attempts": null
   },
   "schema": "A2_16_SEED_READ_TRACE_V1",
-  "source_files_expected": 40,
-  "source_files_scanned": 40,
-  "status": "BLOCKED_UPSTREAM_NOT_CLOSED"
+  "source_files_expected": 48,
+  "source_files_scanned": 48,
+  "status": "BLOCKED_A2_16_IMPLEMENTATION_PREREQUISITES",
+  "two_seed_manifest": "validation/a2_16/A2_16_TWO_SEED_MANIFEST.json",
+  "upstream_a2_13_15_status": "A2_13_15_PRODUCTION_MIGRATION_CLOSED"
 }

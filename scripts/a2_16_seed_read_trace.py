@@ -100,11 +100,30 @@ def main() -> int:
         blockers.append("BLOCKED_PRODUCTION_SCALAR_READS_REMAIN")
     if g0_target != 0:
         blockers.append("BLOCKED_G0_HELPER_NOT_ISOLATED")
-    blockers.append("BLOCKED_UPSTREAM_A2_13_15_NOT_CLOSED")
+    stage_path = ROOT / "validation/a2_13_15/stage_status.json"
+    try:
+        upstream = json.loads(stage_path.read_text()).get("stage_status")
+    except (OSError, json.JSONDecodeError):
+        upstream = "MISSING_OR_INVALID"
+    upstream_closed = upstream == "A2_13_15_PRODUCTION_MIGRATION_CLOSED"
+    if not upstream_closed:
+        blockers.append("BLOCKED_UPSTREAM_A2_13_15_NOT_CLOSED")
+
+    seed_manifest = ROOT / "validation/a2_16/A2_16_TWO_SEED_MANIFEST.json"
+    if not seed_manifest.is_file():
+        blockers.append("BLOCKED_REQUIRED_TWO_SEED_MANIFEST_ABSENT")
+
+    status = (
+        "BLOCKED_UPSTREAM_NOT_CLOSED" if not upstream_closed
+        else "BLOCKED_A2_16_IMPLEMENTATION_PREREQUISITES" if blockers
+        else "READY_A2_16_IMPLEMENTATION"
+    )
 
     report = {
         "schema": "A2_16_SEED_READ_TRACE_V1",
-        "status": "BLOCKED_UPSTREAM_NOT_CLOSED",
+        "status": status,
+        "upstream_a2_13_15_status": upstream,
+        "two_seed_manifest": str(seed_manifest.relative_to(ROOT)),
         "reason_codes": blockers,
         "source_files_scanned": len(files),
         "source_files_expected": len(files),
@@ -144,11 +163,11 @@ def main() -> int:
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(text)
     print(
-        "A2_16_BLOCKED_UPSTREAM_NOT_CLOSED "
+        f"A2_16_{status} "
         f"files={len(files)} raw_hits={len(hits)} production_reads={production} "
         f"g0_unisolated={g0_target}"
     )
-    return 3
+    return 3 if not upstream_closed else (4 if blockers else 0)
 
 
 if __name__ == "__main__":
