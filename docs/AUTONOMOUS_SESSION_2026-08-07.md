@@ -95,12 +95,6 @@ COUPLED_LAMBDA_STAR 81 · RADEQ_LINE_RE 78 · RADEQ_LINE_RESPOND 77
 내가 한 일을 잘못 보고한 것(가설 3, "금지 2종만 제거"라 했으나 실제로는 34종 누락)이
 근원이다. 추측을 쌓지 말고 **깨끗한 단일 실험**으로 갔어야 했다.
 
-잡 225869(`_vac`) · 225870(`_jnu4`) PENDING. 타 사용자 18잡 대기 중.
-네 번의 실패를 거쳐 원인 3개를 확정했다:
-1. 두 잡이 같은 저장소에서 `make` 동시 실행 → 사전 빌드로 수리
-2. env 를 참조 런처에서 **기억으로 다시 씀**(50종 중 16종만) → 소스 상속으로 수리
-3. `LUMINA_CMF_EPAY_HOTF` 등 폐기 노브 → 소스 유도 unset 으로 수리
-
 ## 5. ★이 세션의 반복 실패 (자기 기재)
 
 **첫 목록이 짧았던 것이 열 번.** 생산 덱 오인 · 6파일만 비교 · `--deck` 배선 ·
@@ -114,6 +108,18 @@ env 12→22→23 · env 418→482→483 · T3 env 50→16.
 
 1. **죽은 노브 1,384건** — 과거 A/B 판정에 걸린다. 대장 재해석 필요?
 2. **챔피언 재현 불가 36런처** — EPAY 기전 복원 / 재현 불가 표시 / 새 기준 수립
-3. **`seal_no_verifier` 11건** — 봉인에 검증기 부여
-4. C2 함대 이관 처분(C10 때문에 재설계 필요)
-5. T3 결과 착지 후 대장 v3 첫 점 기록
+3. **★A2-13 무봉인 편집** — A2-18 재판정에서 폐합으로 집계돼 있다.
+   사후 검증 / 재봉인 / 기재만 중 판정
+4. C2 함대 이관 처분(C10 때문에 재설계 필요 — 비-NLTE 런처는 사망이 아니라 no-op)
+5. **게이트 4종이 어느 덱에서 판정하는가** — A2 게이트 기본 덱이 `_ftos` 3 · bare 3 으로 갈림
+6. T3 착지 후 대장 v3 첫 점 기록
+
+## 7. 다음 사람이 바로 할 수 있는 것
+
+- `python3 scripts/verify_seals.py` — 봉인 무결성 (현재 PASS, SUPERSEDED 1건 표시)
+- `python3 scripts/check_legacy_knob_registry.py` — 노브 레지스트리 drift (현재 PASS)
+- `python3 scripts/instrumentation_debt_census.py` — 부채 수치 + **패턴 민감도**
+- `python3 scripts/derive_env_universe.py` — env 전집 재도출(헤더는 별도 생성 필요)
+- `python3 scripts/deck_provenance_audit.py` — 덱 계보 stamp 갱신
+- `bash` 로 T3: `sbatch -p h200,h100 --export=NONE,T3_DECK=<덱>,PKTS=400000,NITER=12 scripts/run_t3_deck_ab.slurm`
+  ⚠ 먼저 `make lumina_cuda` 를 **한 번만** 돌릴 것(잡 안에서 빌드하지 않는다)
