@@ -72,6 +72,8 @@ C5 는 덱만 다룬다. 그러나 GPH_JTABLE/TE_TABLE 게이트가 로드하는
 | 실물 | 상태 |
 |---|---|
 | `tests/zinert_canonical_tau_fixture.c` + `scripts/run_zinert_selftest.py` | **수리 주장(음성대조 미기록)** — 덱별 표 + 미등록 fail-closed. 핀이 **두 곳에 이중**이라 하나만 고치면 증상이 동일해 오진을 유발했다 |
+| **C1 잔여 판정(2026-08-07)**: sha256 리터럴 4개는 **결박 대상이 드러나 있고 자기검증**한다 — 상수 바로 위에 대상 경로가 있고 코드가 `sha256_file(COHORT) == COHORT_SHA256` 로 대조한다. **canonical-tau 패턴이 아니다** ⟹ C1 부채 아님 | 해소 |
+| ⚠**새 발견**: A2 게이트 스크립트의 **기본 덱이 갈려 있다** — `_ftos` 3회 · bare 3회. 둘 다 T3 가 만드는 덱이 아니다. 게이트 4종이 풀릴 때 **어느 덱에서 판정하는가**가 미정이다 | 미결 |
 | ⚠**검수 지적(Q2, HIGH)**: 기계 기준이 "64자리 sha256"뿐이라 **C1 을 낳은 사건 자체(FNV64+정수 카운트 핀)를 자기 grep 이 못 찾는다.** 누락 형태 = 16-hex FNV64 · 정수 카운트 핀 · float 기대값 · `tests/*.c` 전수 | 미수리 |
 | 64자리 sha256 리터럴을 든 python 검증 스크립트 **4개** | `a2_06_l1bb_gate.py` · `emiss_t5_rank1.py` · `uv_t2n9_offline.py` · `verify_trad_fix.py` — 기대값인지 기록값인지 **미판정** |
 
