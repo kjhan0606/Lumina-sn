@@ -80,7 +80,11 @@ unset $UNSET_LIST
 export LUMINA_MODEL_DIR="$MODEL"
 export LUMINA_DEPOSITION_FILE="$MODEL/deposition_cmfgen.csv"
 export LUMINA_CMFGEN_SIGMA_BF="$MODEL/cmfgen_sigma_bf.bin"
-export EVENT_LOG=1 EVENT_LOG_CAP_MB=128        # 캠페인 상설: 전 런 이벤트로그 ON
+export EVENT_LOG=1 EVENT_LOG_CAP_MB=128
+# 노브 표면 동결 4단계 — 신규 런처는 STRICT 를 켠다. 미등록 LUMINA_* 가 하나라도 있으면
+# 로드 단계에서 거부된다. 기존 함대는 이 값을 켜지 않으므로 영향받지 않는다.
+# 2026-08-07 T3 를 네 번 죽인 "모르는 노브가 조용히 들어오는" 경로를 원천 차단한다.
+export LUMINA_ENV_STRICT=1        # 캠페인 상설: 전 런 이벤트로그 ON
 
 # ★잡 안에서 빌드하지 않는다.  2026-08-07 첫 제출에서 두 잡이 1초 차로 시작해 같은
 # 저장소에서 make 를 동시에 돌렸고, 실행 중인 바이너리가 덮어써져 둘 다 exit 1 로 죽었다

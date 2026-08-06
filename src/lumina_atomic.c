@@ -839,7 +839,7 @@ static int config_prec_resolve_boundary_temperature(
  * 거부로 바로 켜지 않는 이유: 그러면 C2 사고(하드 거부 env 강화 시 호출자 미이관으로
  * 런처 83-166 개 사망)를 자발적으로 반복하게 된다. 보고 → 집계 → 이관 → 거부 순으로 간다.
  * 이 단계는 동작을 바꾸지 않으므로 진행 중인 어떤 것과도 충돌하지 않는다. */
-static void lumina_env_surface_report(void) {
+static int lumina_env_surface_report(void) {
     extern char **environ;
     int unknown = 0, total = 0;
     char names[64][96];
@@ -860,12 +860,28 @@ static void lumina_env_surface_report(void) {
             unknown++;
         }
     }
-    printf("[ENV-SURFACE] set=%d known=%d unknown=%d universe=%d (report-only)\n",
-           total, total - unknown, unknown, LUMINA_ENV_UNIVERSE_COUNT);
+    /* 4단계 — 거부.  단 **게이트 뒤에** 둔다.
+     * 호출자 이관이 끝나지 않은 채 전역으로 켜면 C2 사고(런처 83-166 사망)를 그대로
+     * 반복한다.  LUMINA_ENV_STRICT=1 을 켠 런만 거부되고, 기존 함대는 영향받지 않는다.
+     * 신규 런처는 이것을 켜서 "모르는 노브가 조용히 들어오는" 경로를 원천 차단한다.
+     * 이관이 끝나면 기본값을 뒤집는다(그때는 별도 기대 변경집합 사전등록과 함께). */
+    const char *strict = getenv("LUMINA_ENV_STRICT");
+    int strict_on = strict && atoi(strict) != 0;
+    printf("[ENV-SURFACE] set=%d known=%d unknown=%d universe=%d (%s)\n",
+           total, total - unknown, unknown, LUMINA_ENV_UNIVERSE_COUNT,
+           strict_on ? "STRICT: unknown is fatal" : "report-only");
     for (int i = 0; i < unknown && i < 64; i++)
         printf("[ENV-SURFACE]   unknown: %s\n", names[i]);
     if (unknown > 64) printf("[ENV-SURFACE]   ... +%d more\n", unknown - 64);
     fflush(stdout);
+    if (strict_on && unknown > 0) {
+        fprintf(stderr,
+                "BLOCKED_UNKNOWN_ENV: %d LUMINA_* not in src/env_universe.h "
+                "(LUMINA_ENV_STRICT=1). 오타이거나 제거된 노브다 — 조용히 무시하지 않는다.\n",
+                unknown);
+        return -1;
+    }
+    return 0;
 }
 
 int load_tardis_reference_data(const char *ref_dir, Geometry *geo,
@@ -875,7 +891,8 @@ int load_tardis_reference_data(const char *ref_dir, Geometry *geo,
     int n; /* Phase 2 - Step 10 */
     double config_prec_deck_T_inner = 0.0;
 
-    lumina_env_surface_report();
+    if (lumina_env_surface_report() != 0)
+        return -1;
 
     if (seed_capability_reject_obsolete_options() != SEED_OK)
         return -1;

@@ -2,13 +2,13 @@
  "schema": "lumina-env-universe-v1",
  "note": "손으로 세지 않는다. 네 갈래를 기계로 모은다. (4)래퍼 호출부가 함정이다.",
  "counts": {
-  "literal_getenv": 418,
+  "literal_getenv": 419,
   "env_arrays": 38,
   "constructed": 51,
   "wrapper_calls": 7
  },
- "union_total": 482,
- "lumina_prefixed": 482,
+ "union_total": 483,
+ "lumina_prefixed": 483,
  "non_lumina": [],
  "missed_without_wrapper_scan": [
   "LUMINA_CONFIG_PREC",
@@ -19,7 +19,7 @@
   "lumina_plasma.c": 211,
   "lumina_cuda.cu": 148,
   "lumina_cmfgen.c": 85,
-  "lumina_atomic.c": 65,
+  "lumina_atomic.c": 66,
   "lumina_element_wide.c": 25,
   "lumina_main.c": 21,
   "lumina_nlte_assemble.cu": 8,
@@ -227,6 +227,7 @@
   "LUMINA_EMISS_AB_SEED",
   "LUMINA_EMIT_EBOOST_FIX",
   "LUMINA_ENERGY_BUDGET",
+  "LUMINA_ENV_STRICT",
   "LUMINA_EPS_IR",
   "LUMINA_EPS_UV",
   "LUMINA_EPS_UV_2STEP",

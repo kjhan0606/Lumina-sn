@@ -2,13 +2,13 @@
  * scripts/derive_env_universe.py 가 src 에서 기계적으로 도출한다.
  * 손으로 세면 짧아진다 — 2026-08-06~07 에 같은 종류의 목록을 열 번 세었고 열 번 다 짧았다.
  *
- * 갈래: getenv 리터럴 418 · env 배열 38 · snprintf 조립 51 · 래퍼 호출부 7  ⟹ 합집합 482
+ * 갈래: getenv 리터럴 419 · env 배열 38 · snprintf 조립 51 · 래퍼 호출부 7  ⟹ 합집합 483
  * 래퍼 스캔이 없었으면 놓쳤을 것: LUMINA_CONFIG_PREC, LUMINA_NLTE_ELEMENT_WIDE_COMMIT, LUMINA_NLTE_ELEMENT_WIDE_DUMP
  */
 #ifndef LUMINA_ENV_UNIVERSE_H
 #define LUMINA_ENV_UNIVERSE_H
 
-#define LUMINA_ENV_UNIVERSE_COUNT 482
+#define LUMINA_ENV_UNIVERSE_COUNT 483
 
 static const char *const LUMINA_ENV_UNIVERSE[] = {
     "LUMINA_A2_02C_CAPTURE_GENERATION",
@@ -209,6 +209,7 @@ static const char *const LUMINA_ENV_UNIVERSE[] = {
     "LUMINA_EMISS_AB_SEED",
     "LUMINA_EMIT_EBOOST_FIX",
     "LUMINA_ENERGY_BUDGET",
+    "LUMINA_ENV_STRICT",
     "LUMINA_EPS_IR",
     "LUMINA_EPS_UV",
     "LUMINA_EPS_UV_2STEP",
