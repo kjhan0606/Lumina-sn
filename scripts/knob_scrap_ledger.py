@@ -33,6 +33,15 @@ S_CONTRACT = {
     "LUMINA_CONFIG_PREC",     # CONFIG-PREC: 경계온도 우선순위 계약
     "LUMINA_ENV_STRICT",      # 노브 표면 동결 4단계: 미등록 env 거부
 }
+# ★판별식(2026-08-07 추가): OFF 경로가 ON 경로에 있는 것(자료·항·기전)을 **결여**하면
+# 그것은 스위치가 아니라 **덧붙임**이다 — 화석이 아니라 아직 켜지 않은 수리일 수 있다.
+# 기계적 기준은 이 부류를 과소보호한다(default-off 는 "화석"과 "미점화"를 구분 못 한다).
+# 파일별 스크랩 전에 감싸는 블록을 읽고 이 목록에 올린다.
+S_PHYS = {
+    "LUMINA_TOPSTAGE_ANCHOR",   # 최상단 이온 바닥준위 주입 = ARTIS SINGLE_LEVEL_TOP_ION 의 부분 구현
+    "LUMINA_ALPHA_SPINGATE",    # level_mult 적재 — Fe alpha 5x 근원의 실물 수리
+    "LUMINA_SPINGATE_MULT",     # 위 level_mult 경로 지정 (입력)
+}
 # 값이 경로·자원인 것 (노브가 아니다)
 PATHY = re.compile(r"(FILE|DIR|PATH|CSV|_H5|_NPY|_BIN$|DUMP_PATH)")
 # 규약상 물리가 아닌 이름 (feedback_clamps_are_not_physics_fix_the_solver)
@@ -42,6 +51,8 @@ CLAMPY = re.compile(r"(CLAMP|FLOOR|CEIL|CAP$|_CAP_|MIN$|MAX$)")
 def classify(name: str, e: dict) -> tuple[str, str]:
     if name in S_CONTRACT:
         return "S-CONTRACT", "0층 계약이 요구하는 게이트"
+    if name in S_PHYS:
+        return "S-PHYS", "OFF 경로가 결여하는 기전을 감싼다 — 스위치가 아니라 덧붙임"
     if PATHY.search(name):
         return "S-INPUT", "값이 경로·자원 지정 — 노브가 아니라 입력"
     if CLAMPY.search(name):
@@ -80,12 +91,13 @@ def main() -> int:
     d.mkdir(parents=True, exist_ok=True)
     (d / "KNOB_SCRAP_LEDGER.json").write_text(json.dumps(out, indent=1, ensure_ascii=False))
 
-    order = ["S-CONTRACT", "S-INPUT", "P-VERDICT", "SCRAP-CLAMP", "SCRAP-FOSSIL", "SCRAP-DEAD"]
+    order = ["S-CONTRACT", "S-PHYS", "S-INPUT", "P-VERDICT", "SCRAP-CLAMP", "SCRAP-FOSSIL", "SCRAP-DEAD"]
     md = ["# 창고 대장 — 노브 스크랩", "",
           "생성 `scripts/knob_scrap_ledger.py`. **생존이 예외, 스크랩이 기본.**", "",
           "| 부류 | 수 | 뜻 |", "|---|---|---|"]
     meaning = {
         "S-CONTRACT": "0층 계약이 요구 — 확증된 자산",
+        "S-PHYS": "**OFF 경로가 결여하는 기전 — 스위치가 아니라 덧붙임**",
         "S-INPUT": "경로·자원 지정 — 노브가 아니라 입력",
         "P-VERDICT": "**판정런이 넘김 — 개별 물리 판정 대상**",
         "SCRAP-CLAMP": "이름이 clamp/floor/ceil — 규약상 물리가 아니다",
