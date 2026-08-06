@@ -1,0 +1,36 @@
+{
+ "schema": "lumina-layer1-remeasure-02a-v1",
+ "deck": "/home/kjhan/BACKUP/Eunha.A1/Claude/Lumina-sn/data/tardis_reference_toy06_19p48d_sivcaiv_ftos",
+ "total_lines": 2220953,
+ "unmatched_level_g": 0,
+ "compared": 2220953,
+ "relative_error": {
+  "max": 1.92608896368784e-07,
+  "median": 1.9260889546304437e-07,
+  "p95": 1.9260889586746806e-07,
+  "p99.9": 1.9260889611252708e-07
+ },
+ "counts_over_threshold": {
+  "1e-12": 2220953,
+  "1e-9": 2220953,
+  "1e-6": 0,
+  "1e-3": 0,
+  "1e-1": 0
+ },
+ "formula": "A_ul = 8*pi^2*e^2/(m_e*c*lambda_cm^2) * (g_l/g_u) * f_lu",
+ "constants": {
+  "e_esu": 4.80320471257e-10,
+  "m_e_g": 9.1093837015e-28,
+  "c_cms": 29979245800.0,
+  "prefactor": 0.6670251776074012
+ },
+ "implied_deck_constant": {
+  "e_esu": 4.80320425e-10,
+  "match": "exact (rel 0.0)",
+  "prefactor": 0.6670250491324184,
+  "prefactor_spread_over_2.22M_lines": 9.978316468451696e-13,
+  "codata2018_prefactor": 0.6670251776074012,
+  "constant_offset": 1.9260889e-07
+ },
+ "verdict": "DECK_INTERNALLY_EXACT_CONSTANT_OFFSET_ONLY"
+}

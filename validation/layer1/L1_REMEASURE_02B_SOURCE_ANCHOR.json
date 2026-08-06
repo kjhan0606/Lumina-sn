@@ -1,0 +1,138 @@
+{
+ "schema": "lumina-layer1-remeasure-02b-v1",
+ "deck_prefactor_e": 4.80320425e-10,
+ "ions": {
+  "Fe III": {
+   "source": "FE/III/19apr23/osc_data",
+   "source_transitions": 136263,
+   "matched": 136263,
+   "deck_lines": 136263,
+   "1_deck_f_vs_source_f": {
+    "n": 136263,
+    "median": 0.00011248159072474044,
+    "p95": 0.00039445206684714874,
+    "max": 0.0012956444669666983,
+    "over_1e-6": 135530,
+    "over_1e-4": 74250,
+    "over_1e-3": 11
+   },
+   "2_deck_A_vs_source_A": {
+    "n": 136263,
+    "median": 0.0,
+    "p95": 0.0,
+    "max": 0.0,
+    "over_1e-6": 0,
+    "over_1e-4": 0,
+    "over_1e-3": 0
+   },
+   "3_source_A_vs_source_f_derived_A": {
+    "n": 136263,
+    "median": 0.00011248159072494796,
+    "p95": 0.00039445206689354924,
+    "max": 0.0012956444669666371,
+    "over_1e-6": 135530,
+    "over_1e-4": 74250,
+    "over_1e-3": 11
+   }
+  },
+  "Co III": {
+   "source": "COB/III/18oct00/coiii_osc.dat",
+   "source_transitions": 68462,
+   "matched": 68462,
+   "deck_lines": 68462,
+   "1_deck_f_vs_source_f": {
+    "n": 68462,
+    "median": 0.0005066054710581448,
+    "p95": 0.0006146927774380474,
+    "max": 0.0014177794716754286,
+    "over_1e-6": 66802,
+    "over_1e-4": 34598,
+    "over_1e-3": 31
+   },
+   "2_deck_A_vs_source_A": {
+    "n": 68462,
+    "median": 0.0,
+    "p95": 0.0,
+    "max": 0.0,
+    "over_1e-6": 0,
+    "over_1e-4": 0,
+    "over_1e-3": 0
+   },
+   "3_source_A_vs_source_f_derived_A": {
+    "n": 68462,
+    "median": 0.0005066054710173723,
+    "p95": 0.0006146927772115636,
+    "max": 0.001417779471571096,
+    "over_1e-6": 66802,
+    "over_1e-4": 34598,
+    "over_1e-3": 31
+   }
+  },
+  "Co IV": {
+   "source": "COB/IV/18oct00/coiv_osc.dat",
+   "source_transitions": 69425,
+   "matched": 69425,
+   "deck_lines": 69425,
+   "1_deck_f_vs_source_f": {
+    "n": 69425,
+    "median": 1.998932204575213e-05,
+    "p95": 0.0006156522494563507,
+    "max": 0.001367120020861687,
+    "over_1e-6": 67107,
+    "over_1e-4": 21934,
+    "over_1e-3": 10
+   },
+   "2_deck_A_vs_source_A": {
+    "n": 69425,
+    "median": 0.0,
+    "p95": 0.0,
+    "max": 0.0,
+    "over_1e-6": 0,
+    "over_1e-4": 0,
+    "over_1e-3": 0
+   },
+   "3_source_A_vs_source_f_derived_A": {
+    "n": 69425,
+    "median": 1.99893215678935e-05,
+    "p95": 0.0006156522494232831,
+    "max": 0.001367120020861487,
+    "over_1e-6": 67107,
+    "over_1e-4": 21934,
+    "over_1e-3": 10
+   }
+  },
+  "S II": {
+   "source": "SUL/II/19apr23/osc_data",
+   "source_transitions": 8527,
+   "matched": 8527,
+   "deck_lines": 8527,
+   "1_deck_f_vs_source_f": {
+    "n": 8527,
+    "median": 0.00010611114651032952,
+    "p95": 0.0004061412732892348,
+    "max": 0.0010747685219907241,
+    "over_1e-6": 8468,
+    "over_1e-4": 4446,
+    "over_1e-3": 4
+   },
+   "2_deck_A_vs_source_A": {
+    "n": 8527,
+    "median": 0.0,
+    "p95": 0.0,
+    "max": 0.0,
+    "over_1e-6": 0,
+    "over_1e-4": 0,
+    "over_1e-3": 0
+   },
+   "3_source_A_vs_source_f_derived_A": {
+    "n": 8527,
+    "median": 0.00010611114650872029,
+    "p95": 0.00040614127330548735,
+    "max": 0.0010747685219950939,
+    "over_1e-6": 8468,
+    "over_1e-4": 4446,
+    "over_1e-3": 4
+   }
+  }
+ }
+}

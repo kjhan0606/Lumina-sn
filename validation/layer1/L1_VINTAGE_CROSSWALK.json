@@ -1,0 +1,203 @@
+{
+ "schema": "lumina-layer1-vintage-crosswalk-v2",
+ "note": "CMFGEN species prefix 는 원소기호가 아니다 (Si->Sk, Ni->Nk, II->2). v1 은 Si II 를 S III 파일과 오매칭했다.",
+ "deck": "data/tardis_reference_toy06_19p48d_sivcaiv_ftos",
+ "run": "/gpfs/kjhan/cmfgen_runs/toy06_19.48d_jnu4",
+ "summary": {
+  "same_source": 27,
+  "different_source": 0,
+  "not_in_run": 0,
+  "compared": 27
+ },
+ "rows": [
+  {
+   "ion": "Si II",
+   "run_file": "Sk2_F_OSCDAT",
+   "status": "SAME_SOURCE",
+   "lumina_osc": "SIL/II/19apr23/osc_data",
+   "run_osc": "SIL/II/19apr23/osc_data"
+  },
+  {
+   "ion": "Si III",
+   "run_file": "SkIII_F_OSCDAT",
+   "status": "SAME_SOURCE",
+   "lumina_osc": "SIL/III/19apr23/osc_data",
+   "run_osc": "SIL/III/19apr23/osc_data"
+  },
+  {
+   "ion": "Si IV",
+   "run_file": "SkIV_F_OSCDAT",
+   "status": "SAME_SOURCE",
+   "lumina_osc": "SIL/IV/5dec96/osc_op_split.dat",
+   "run_osc": "SIL/IV/5dec96/osc_op_split.dat"
+  },
+  {
+   "ion": "Si V",
+   "run_file": "SkV_F_OSCDAT",
+   "status": "SAME_SOURCE",
+   "lumina_osc": "SIL/V/19apr23/osc_data",
+   "run_osc": "SIL/V/19apr23/osc_data"
+  },
+  {
+   "ion": "S II",
+   "run_file": "S2_F_OSCDAT",
+   "status": "SAME_SOURCE",
+   "lumina_osc": "SUL/II/19apr23/osc_data",
+   "run_osc": "SUL/II/19apr23/osc_data"
+  },
+  {
+   "ion": "S III",
+   "run_file": "SIII_F_OSCDAT",
+   "status": "SAME_SOURCE",
+   "lumina_osc": "SUL/III/3oct00/siiiosc_fin.dat",
+   "run_osc": "SUL/III/3oct00/siiiosc_fin.dat"
+  },
+  {
+   "ion": "S IV",
+   "run_file": "SIV_F_OSCDAT",
+   "status": "SAME_SOURCE",
+   "lumina_osc": "SUL/IV/3oct00/sivosc_fin.dat",
+   "run_osc": "SUL/IV/3oct00/sivosc_fin.dat"
+  },
+  {
+   "ion": "S V",
+   "run_file": "SV_F_OSCDAT",
+   "status": "SAME_SOURCE",
+   "lumina_osc": "SUL/V/3oct00/svosc_fin.dat",
+   "run_osc": "SUL/V/3oct00/svosc_fin.dat"
+  },
+  {
+   "ion": "Ca II",
+   "run_file": "Ca2_F_OSCDAT",
+   "status": "SAME_SOURCE",
+   "lumina_osc": "CA/II/19apr23/osc_data",
+   "run_osc": "CA/II/19apr23/osc_data"
+  },
+  {
+   "ion": "Ca III",
+   "run_file": "CaIII_F_OSCDAT",
+   "status": "SAME_SOURCE",
+   "lumina_osc": "CA/III/10apr99/osc_op_sp.dat",
+   "run_osc": "CA/III/10apr99/osc_op_sp.dat"
+  },
+  {
+   "ion": "Ca IV",
+   "run_file": "CaIV_F_OSCDAT",
+   "status": "SAME_SOURCE",
+   "lumina_osc": "CA/IV/10apr99/osc_op_sp.dat",
+   "run_osc": "CA/IV/10apr99/osc_op_sp.dat"
+  },
+  {
+   "ion": "Ca V",
+   "run_file": "CaV_F_OSCDAT",
+   "status": "SAME_SOURCE",
+   "lumina_osc": "CA/V/10apr99/osc_op_sp.dat",
+   "run_osc": "CA/V/10apr99/osc_op_sp.dat"
+  },
+  {
+   "ion": "Fe II",
+   "run_file": "Fe2_F_OSCDAT",
+   "status": "SAME_SOURCE",
+   "lumina_osc": "FE/II/19apr23/osc_data",
+   "run_osc": "FE/II/19apr23/osc_data"
+  },
+  {
+   "ion": "Fe III",
+   "run_file": "FeIII_F_OSCDAT",
+   "status": "SAME_SOURCE",
+   "lumina_osc": "FE/III/19apr23/osc_data",
+   "run_osc": "FE/III/19apr23/osc_data"
+  },
+  {
+   "ion": "Fe IV",
+   "run_file": "FeIV_F_OSCDAT",
+   "status": "SAME_SOURCE",
+   "lumina_osc": "FE/IV/18oct00/feiv_osc.dat",
+   "run_osc": "FE/IV/18oct00/feiv_osc.dat"
+  },
+  {
+   "ion": "Fe V",
+   "run_file": "FeV_F_OSCDAT",
+   "status": "SAME_SOURCE",
+   "lumina_osc": "FE/V/18oct00/fev_osc.dat",
+   "run_osc": "FE/V/18oct00/fev_osc.dat"
+  },
+  {
+   "ion": "Fe VI",
+   "run_file": "FeSIX_F_OSCDAT",
+   "status": "SAME_SOURCE",
+   "lumina_osc": "FE/VI/18oct00/fevi_osc.dat",
+   "run_osc": "FE/VI/18oct00/fevi_osc.dat"
+  },
+  {
+   "ion": "Co II",
+   "run_file": "Co2_F_OSCDAT",
+   "status": "SAME_SOURCE",
+   "lumina_osc": "COB/II/18oct00/coii_osc.dat",
+   "run_osc": "COB/II/18oct00/coii_osc.dat"
+  },
+  {
+   "ion": "Co III",
+   "run_file": "CoIII_F_OSCDAT",
+   "status": "SAME_SOURCE",
+   "lumina_osc": "COB/III/18oct00/coiii_osc.dat",
+   "run_osc": "COB/III/18oct00/coiii_osc.dat"
+  },
+  {
+   "ion": "Co IV",
+   "run_file": "CoIV_F_OSCDAT",
+   "status": "SAME_SOURCE",
+   "lumina_osc": "COB/IV/18oct00/coiv_osc.dat",
+   "run_osc": "COB/IV/18oct00/coiv_osc.dat"
+  },
+  {
+   "ion": "Co V",
+   "run_file": "CoV_F_OSCDAT",
+   "status": "SAME_SOURCE",
+   "lumina_osc": "COB/V/18oct00/cov_osc.dat",
+   "run_osc": "COB/V/18oct00/cov_osc.dat"
+  },
+  {
+   "ion": "Co VI",
+   "run_file": "CoSIX_F_OSCDAT",
+   "status": "SAME_SOURCE",
+   "lumina_osc": "COB/VI/18oct00/covi_osc.dat",
+   "run_osc": "COB/VI/18oct00/covi_osc.dat"
+  },
+  {
+   "ion": "Ni II",
+   "run_file": "Nk2_F_OSCDAT",
+   "status": "SAME_SOURCE",
+   "lumina_osc": "NICK/II/18oct00/nkii_osc.dat",
+   "run_osc": "NICK/II/18oct00/nkii_osc.dat"
+  },
+  {
+   "ion": "Ni III",
+   "run_file": "NkIII_F_OSCDAT",
+   "status": "SAME_SOURCE",
+   "lumina_osc": "NICK/III/18oct00/nkiii_osc.dat",
+   "run_osc": "NICK/III/18oct00/nkiii_osc.dat"
+  },
+  {
+   "ion": "Ni IV",
+   "run_file": "NkIV_F_OSCDAT",
+   "status": "SAME_SOURCE",
+   "lumina_osc": "NICK/IV/18oct00/nkiv_osc.dat",
+   "run_osc": "NICK/IV/18oct00/nkiv_osc.dat"
+  },
+  {
+   "ion": "Ni V",
+   "run_file": "NkV_F_OSCDAT",
+   "status": "SAME_SOURCE",
+   "lumina_osc": "NICK/V/18oct00/nkv_osc.dat",
+   "run_osc": "NICK/V/18oct00/nkv_osc.dat"
+  },
+  {
+   "ion": "Ni VI",
+   "run_file": "NkSIX_F_OSCDAT",
+   "status": "SAME_SOURCE",
+   "lumina_osc": "NICK/VI/18oct00/nkvi_osc.dat",
+   "run_osc": "NICK/VI/18oct00/nkvi_osc.dat"
+  }
+ ]
+}
