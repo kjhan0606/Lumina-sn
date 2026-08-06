@@ -661,7 +661,7 @@ int cmfgen_dump_line_populations(const CMFGENState *cs, const Geometry *geo,
         opac->n_shells != cs->n_shells || atom->n_lines != opac->n_lines ||
         !opac->tau_sobolev || !opac->line_list_nu || !cs->nu || !cs->dnu ||
         !cs->chi_line || !cs->chi_line_th || !cs->chi_abs || !cs->chi_tot ||
-        !plasma->T_e || !plasma->T_rad || !atom->line_atomic_number ||
+        !plasma->T_e || !atom->line_atomic_number ||
         !atom->line_ion_number || !atom->line_level_lower ||
         !atom->line_level_upper || !atom->level_g || !atom->level_num ||
         !nlte->global_to_nlte_level || !nlte->nlte_level_populations) {
@@ -916,7 +916,7 @@ int cmfgen_dump_line_populations(const CMFGENState *cs, const Geometry *geo,
     long disp_n[4]={0,0,0,0};
     for (int s=0;s<NS;s++) {
         double dr_s = geo->r_outer[s] - geo->r_inner[s];
-        int hot = (plasma->T_e[s] > epay_hotf * plasma->T_rad[s]);
+        int hot = 0; /* legacy scalar-temperature classifier removed */
         for (int b=0;b<NB;b++) {
             size_t idx=(size_t)s*NB+b;
             unsigned char d=0;   /* pass-1 legacy source: eta_line live */
@@ -947,11 +947,11 @@ int cmfgen_dump_line_populations(const CMFGENState *cs, const Geometry *geo,
     }
     CMFSHA256 sha; cmf_sha256_init(&sha);
     int fail=0;
-    const unsigned char magic[8]={'L','C','M','F','L','P','0','1'};
+    const unsigned char magic[8]={'L','C','M','F','L','P','0','2'};
 #define LW(call) do { if (!fail && (call)) fail=1; } while (0)
     LW(cmf_dump_bytes(fp,&sha,magic,sizeof(magic)));
     LW(cmf_dump_u32(fp,&sha,UINT32_C(0x01020304)));
-    LW(cmf_dump_u32(fp,&sha,UINT32_C(1)));
+    LW(cmf_dump_u32(fp,&sha,UINT32_C(2)));
     LW(cmf_dump_u64(fp,&sha,(uint64_t)iter));
     LW(cmf_dump_u64(fp,&sha,(uint64_t)field_generation));
     LW(cmf_dump_u32(fp,&sha,(uint32_t)NS));
@@ -978,7 +978,6 @@ int cmfgen_dump_line_populations(const CMFGENState *cs, const Geometry *geo,
     for (int si=0;si<sel.n_shells_sel;si++) {
         int s=sel.shells[si];
         LW(cmf_dump_f64(fp,&sha,plasma->T_e[s]));
-        LW(cmf_dump_f64(fp,&sha,plasma->T_rad[s]));
         LW(cmf_dump_f64(fp,&sha,plasma->n_electron ? plasma->n_electron[s]
                                                    : opac->electron_density[s]));
         LW(cmf_dump_f64(fp,&sha,geo->r_outer[s]-geo->r_inner[s]));
@@ -1620,7 +1619,6 @@ int cmfgen_emiss_ab_state_sha256(const CMFGENState *cs,
     cmf_hash_f64_array(&sha,cs->dnu,cs->n_bins);
     cmf_hash_f64_array(&sha,cs->J,cells); /* lagged field consumed by EPAY */
     cmf_hash_f64_array(&sha,plasma->T_e,cs->n_shells);
-    cmf_hash_f64_array(&sha,plasma->T_rad,cs->n_shells);
     cmf_hash_f64_array(&sha,plasma->n_electron,cs->n_shells);
     cmf_hash_f64_array(&sha,opac->electron_density,cs->n_shells);
     cmf_hash_f64_array(&sha,opac->line_list_nu,opac->n_lines);
@@ -2152,7 +2150,7 @@ static void cmfgen_assemble_impl(CMFGENState *cs, const Geometry *geo,
               if (!hf_once) { hf_once = 1;
                   const char *hf = getenv("LUMINA_CMF_EPAY_HOTF");
                   if (hf) epay_hotf = atof(hf); } }
-            int hot_regime = (Te > epay_hotf * plasma->T_rad[s]);
+            int hot_regime = 0; /* scalar-temperature EPAY branch retired */
             double dr_s = geo->r_outer[s] - geo->r_inner[s];
             unsigned char r1ev=CMF_R1_EV_REACHED|CMF_R1_EV_EPAY_ELIGIBLE|
                                CMF_R1_EV_BRANCH;

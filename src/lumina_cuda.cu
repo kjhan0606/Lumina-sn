@@ -142,9 +142,8 @@ typedef struct {                           /* Phase 6 - Step 1 */
     double  nlte_nu_min;
     double  nlte_d_log_nu;
 
-    /* BF opacity: chi_bf grid + T_rad for BF absorption re-emission */
+    /* BF opacity and checked continuum-event route inputs. */
     double *d_chi_bf;                      /* [n_shells * BF_N_FREQ_BINS] or NULL */
-    double *d_T_rad;                       /* [n_shells] for BF Planck re-emission */
     int    *d_bf_activation_level;         /* [n_shells * BF_N_FREQ_BINS] macro-atom level or -1 */
     /* [Wave-2 D-1] Exact continuum-event route table. NULL/default zero when
      * LUMINA_FIX_BF_CONTINUUM_EVENT is off. */
@@ -273,10 +272,6 @@ static void cuda_allocate(CudaDeviceData *dev, Geometry *geo,
     /* Phase 6 - Step 1: Geometry */
     CUDA_CHECK(cudaMalloc(&dev->d_r_inner, ns * sizeof(double)));                   /* Phase 6 - Step 1 */
     CUDA_CHECK(cudaMalloc(&dev->d_r_outer, ns * sizeof(double)));                   /* Phase 6 - Step 1 */
-
-    /* A2-12 GL05: legacy scalar ownership is retired.  The deferred A2-15
-     * argument stays NULL and cannot qualify a transport launch. */
-    dev->d_T_rad = NULL;
 
     /* Phase 6 - Step 1: Estimators */
     CUDA_CHECK(cudaMalloc(&dev->d_j_estimator, ns * sizeof(double)));               /* Phase 6 - Step 1 */
@@ -719,19 +714,6 @@ static void nlte_equilibrate_system(double *A_cm, double *b, int N, double *csca
 static int nlte_equilibrate_enabled(void) {
     static int init = 0, on = 0;
     if (!init) { const char *e = getenv("LUMINA_NLTE_EQUILIBRATE");
-                 on = (e && atoi(e) != 0) ? 1 : 0; init = 1; }
-    return on;
-}
-
-/* Singular-matrix Boltzmann fallback temperature (2026-06-18). The rate matrix
- * goes singular precisely when collisions dominate (high n_e, inner shells) ->
- * the level distribution there is the LTE limit at T_e, NOT T_rad. The legacy
- * fallback used Boltzmann@T_rad; at inner shells T_rad is 1-4% hotter than T_e,
- * which injects a spurious super-thermal S_l/B(T_e)>1 on every fallback line.
- * LUMINA_NLTE_FALLBACK_TE=1 falls back to Boltzmann@T_e instead. */
-static int nlte_fallback_te_enabled(void) {
-    static int init = 0, on = 0;
-    if (!init) { const char *e = getenv("LUMINA_NLTE_FALLBACK_TE");
                  on = (e && atoi(e) != 0) ? 1 : 0; init = 1; }
     return on;
 }
@@ -1504,9 +1486,7 @@ static int nlte_solve_all_gpu(NLTEConfig *nlte, AtomicData *atom,
                      * separately to its nebular total — otherwise the combined
                      * rescale dumps the upper-ion nebular into the lower-ion level
                      * range when over-ionization is severe (Ni II/III bug). */
-                    double T_rad = (nlte_fallback_te_enabled() && plasma->T_e &&
-                                    plasma->T_e[s] > 0.0)
-                                   ? plasma->T_e[s] : plasma->T_rad[s];
+                    double T_rad = plasma->T_e[s];
                     int Z_nl = nlte->nlte_Z[lo];
                     int gpu_fb_lock_mode = nlte_ion_lock_active(nlte->current_iter) ||
                                             nlte_per_ion_rescale_active() ||
@@ -1660,7 +1640,7 @@ static int nlte_solve_all_gpu(NLTEConfig *nlte, AtomicData *atom,
                              * totals in lock mode) is preserved exactly; only the SHAPE
                              * of the collapsed/over-populated levels changes (they carry
                              * negligible density, so the rescale factor barely moves). */
-                            double T_e_s = plasma->T_e ? plasma->T_e[s] : plasma->T_rad[s];
+                            double T_e_s = plasma->T_e[s];
                             double kTe = K_BOLTZMANN * (T_e_s > 0.0 ? T_e_s : 1.0);
                             double xmax = 0.0;
                             for (int i = 0; i < N; i++) { double a = fabs(x[i]); if (a > xmax) xmax = a; }
@@ -1691,7 +1671,7 @@ static int nlte_solve_all_gpu(NLTEConfig *nlte, AtomicData *atom,
                                 }
                             }
                         } else if (lte_floor) {
-                            double T_e_s = plasma->T_e ? plasma->T_e[s] : plasma->T_rad[s];
+                            double T_e_s = plasma->T_e[s];
                             double kTe = K_BOLTZMANN * (T_e_s > 0.0 ? T_e_s : 1.0);
                             double xmax = 0.0;
                             for (int i = 0; i < N; i++) { double a = fabs(x[i]); if (a > xmax) xmax = a; }
@@ -1721,7 +1701,7 @@ static int nlte_solve_all_gpu(NLTEConfig *nlte, AtomicData *atom,
                             }
                         }
                         if (floorm_mode != 1 && bk_ceil > 0.0) {
-                            double T_e_s = plasma->T_e ? plasma->T_e[s] : plasma->T_rad[s];
+                            double T_e_s = plasma->T_e[s];
                             double kTe = K_BOLTZMANN * (T_e_s > 0.0 ? T_e_s : 1.0);
                             double xg_lo = x[0];
                             double xg_hi = (n_lo_super < N) ? x[n_lo_super] : 0.0;
@@ -2037,7 +2017,7 @@ static int nlte_solve_all_gpu(NLTEConfig *nlte, AtomicData *atom,
             if (!fp) {
                 fprintf(stderr, "[NLTE-DUMP] failed to open %s\n", path);
             } else {
-                fprintf(fp, "Z,ion,shell,level_idx,global_idx,E_eV,g,n_pop,T_e,T_rad,W,n_ion_total\n");
+                fprintf(fp, "Z,ion,shell,level_idx,global_idx,E_eV,g,n_pop,T_e,n_ion_total\n");
                 for (int ii = 0; ii < nlte->n_nlte_ions; ii++) {
                     int Zv  = nlte->nlte_Z[ii];
                     int ion = nlte->nlte_ion[ii];
@@ -2057,15 +2037,12 @@ static int nlte_solve_all_gpu(NLTEConfig *nlte, AtomicData *atom,
                         for (int s = 0; s < n_shells; s++) {
                             double n_pop = nlte->nlte_level_populations[
                                 (size_t)l * n_shells + s];
-                            double T_e   = plasma->T_e ? plasma->T_e[s] :
-                                           plasma->T_e_T_rad_ratio * plasma->T_rad[s];
-                            double T_rad = plasma->T_rad[s];
-                            double W     = plasma->W[s];
+                            double T_e = plasma->T_e[s];
                             double n_ion = (ip >= 0) ?
                                 atom->ion_number_density[ip * n_shells + s] : 0.0;
-                            fprintf(fp, "%d,%d,%d,%d,%d,%.6f,%d,%.6e,%.2f,%.2f,%.6e,%.6e\n",
+                            fprintf(fp, "%d,%d,%d,%d,%d,%.6f,%d,%.6e,%.2f,%.6e\n",
                                     Zv, ion, s, local_l, gi, E_eV, gw, n_pop,
-                                    T_e, T_rad, W, n_ion);
+                                    T_e, n_ion);
                         }
                     }
                 }
@@ -2106,8 +2083,7 @@ static int nlte_solve_all_gpu(NLTEConfig *nlte, AtomicData *atom,
                     if (s < 0 || s >= n_shells) continue;
                     double n17 = nlte->nlte_level_populations[(size_t)nl17 * n_shells + s];
                     double n0  = nlte->nlte_level_populations[(size_t)nl0  * n_shells + s];
-                    double T_e = plasma->T_e ? plasma->T_e[s] :
-                                 plasma->T_e_T_rad_ratio * plasma->T_rad[s];
+                    double T_e = plasma->T_e[s];
                     if (n0 > 0.0 && T_e > 0.0 && g0 > 0) {
                         double boltz = ((double)g17 / (double)g0) *
                                        exp(-dE / (K_BOLTZMANN * T_e));
@@ -7121,10 +7097,11 @@ int main(int argc, char *argv[]) {
     for (int i = 0; i < geo.n_shells; i++)
         plasma.n_electron[i] = opacity.electron_density[i];
 
-    /* P6: Initialize per-shell electron temperature */
+    /* A2-17: generation-zero material temperature is a material seed. */
     plasma.T_e = (double *)malloc(geo.n_shells * sizeof(double));
-    compute_electron_temperature(&plasma, NULL, geo.time_explosion, geo.n_shells, 0);
-    plasma.T_e_generation = 0;  /* ratio-derived seed is not A2-07 qualified */
+    for (int i = 0; i < geo.n_shells; i++)
+        plasma.T_e[i] = opacity.t_electrons[i];
+    plasma.T_e_generation = 0;
 
     int n_packets = config.n_packets;
     if (argc > 2) n_packets = atoi(argv[2]);
@@ -7488,7 +7465,7 @@ int main(int argc, char *argv[]) {
     if (radeq_te || self_consistent_te)
         printf("  T_e: RADIATIVE EQUILIBRIUM full balance (heating=cooling, no free params)\n");
     else
-        printf("  Self-consistent T_e: disabled (ratio=%.2f)\n", plasma.T_e_T_rad_ratio);
+        printf("  Self-consistent T_e: disabled (generation-zero material seed)\n");
     double spec_min = 500.0, spec_max = 20000.0;
     int spec_bins = 2000;
     if (getenv("LUMINA_SPEC_RANGE")) {
@@ -8584,8 +8561,7 @@ int main(int argc, char *argv[]) {
                                     burned = (fe_tot > 0.0 && fe_hi > 0.5 * fe_tot) ? 1 : 0;
                                 }
                                 kpr_cg[s] = burned;
-                                double Wsh = (plasma.W ? plasma.W[s] : 0.0);
-                                int q = (plasma.W && Wsh > kpr_bsrc_tau) ? 1 : 0; /* deep tier UNCHANGED */
+                                int q = 0; /* legacy scalar depth tier removed */
                                 int is_phot = 0;
                                 int src_sh = kpr_bsrc_src;   /* deep default (scalar SRC) */
                                 /* [OTS-TAUBF] PHYSICAL per-cell case-A/B criterion (replaces
@@ -8607,8 +8583,8 @@ int main(int argc, char *argv[]) {
                                 double P_ots = (ots_mode == 1)
                                     ? ((tau_bf >= ots_tau) ? 1.0 : 0.0)  /* binary tau>=thr */
                                     : -expm1(-tau_bf);                    /* graded 1-exp(-tau) */
-                                /* optional extra W floor guard (default off => bsrc_wfloor=0). */
-                                if (bsrc_wfloor > 0.0 && !(Wsh > bsrc_wfloor)) P_ots = 0.0;
+                                /* The former scalar-field floor guard is an
+                                 * obsolete option rejected by the loader. */
                                 kpr_tau[s]      = tau_bf;
                                 kpr_ots_prob[s] = P_ots;
                                 /* [BSRC_PHOT] Prong A: extend the -4 exit BELOW the deep
@@ -10052,11 +10028,10 @@ int main(int argc, char *argv[]) {
 
             FILE *pf = fopen("lumina_plasma_state.csv", "w");
             if (pf) {
-                fprintf(pf, "shell_id,W,T_rad,n_e,T_e\n");
+                fprintf(pf, "shell_id,T_e,n_e\n");
                 for (int i = 0; i < geo.n_shells; i++)
-                    fprintf(pf, "%d,%.10f,%.6f,%.6e,%.6f\n", i,
-                            plasma.W[i], plasma.T_rad[i],
-                            plasma.n_electron[i], plasma.T_e[i]);
+                    fprintf(pf, "%d,%.6f,%.6e\n", i, plasma.T_e[i],
+                            plasma.n_electron[i]);
                 fclose(pf);
                 printf("Pure-CMFGEN plasma state written to "
                        "lumina_plasma_state.csv\n");
@@ -10715,9 +10690,8 @@ int main(int argc, char *argv[]) {
                     &nlte, &atom_data, &opacity,
                     geo.time_explosion, geo.n_shells);
             } else {
-                compute_electron_temperature(&plasma,
-                    gamma_dep_enabled ? &gamma_dep : NULL,
-                    geo.time_explosion, geo.n_shells, self_consistent_te);
+                /* Preserve the committed material temperature.  Radiation has
+                 * no scalar-temperature owner after A2-17. */
                 plasma.T_e_generation = 0;
             }
 
@@ -10861,12 +10835,10 @@ int main(int argc, char *argv[]) {
         }
 
         /* Phase 6 - Step 8: Print plasma state */
-        printf("  Shell  W_LUMINA   T_rad_LUM   T_e_LUM    T_e/T_r   nubar/j\n");
+        printf("  Shell  T_e_LUM    nubar/j\n");
         for (int i = 0; i < geo.n_shells; i += 5) {
             double ratio = est->nu_bar_estimator[i] / est->j_estimator[i];
-            double te_ratio = plasma.T_rad[i] > 0 ? plasma.T_e[i] / plasma.T_rad[i] : 0.0;
-            printf("  %3d    %.6f   %.2f K   %.2f K   %.4f   %.4e\n",
-                   i, plasma.W[i], plasma.T_rad[i], plasma.T_e[i], te_ratio, ratio);
+            printf("  %3d    %.2f K   %.4e\n", i, plasma.T_e[i], ratio);
         }
 
         /* Phase 6 - Step 8: Update T_inner (after hold iterations) */
@@ -10931,42 +10903,7 @@ int main(int argc, char *argv[]) {
             "final iteration, GPU transport");
     }
 
-    char path[512]; /* Phase 6 - Step 8 */
-    snprintf(path, sizeof(path), "%s/plasma_state.csv", ref_dir); /* Phase 6 - Step 8 */
-    FILE *ref_fp = fopen(path, "r"); /* Phase 6 - Step 8 */
-    double tardis_W[30], tardis_T_rad[30]; /* Phase 6 - Step 8 */
-    if (ref_fp) { /* Phase 6 - Step 8 */
-        char buf[1024]; /* Phase 6 - Step 8 */
-        fgets(buf, sizeof(buf), ref_fp); /* Phase 6 - Step 8: skip header */
-        int i = 0; /* Phase 6 - Step 8 */
-        while (fgets(buf, sizeof(buf), ref_fp) && i < 30) { /* Phase 6 - Step 8 */
-            int sid; /* Phase 6 - Step 8 */
-            sscanf(buf, "%d,%lf,%lf", &sid, &tardis_W[i], &tardis_T_rad[i]); /* Phase 6 - Step 8 */
-            i++; /* Phase 6 - Step 8 */
-        }
-        fclose(ref_fp); /* Phase 6 - Step 8 */
-
-        printf("\nShell  W_LUMINA   W_TARDIS   W_err%%   T_rad_LUM  T_rad_TAR  T_err%%\n"); /* Phase 6 - Step 8 */
-        printf("-----  --------   --------   ------   ---------  ---------  ------\n");      /* Phase 6 - Step 8 */
-        for (int i = 0; i < geo.n_shells; i++) { /* Phase 6 - Step 8 */
-            double w_err = (plasma.W[i] - tardis_W[i]) / tardis_W[i] * 100.0;    /* Phase 6 - Step 8 */
-            double t_err = (plasma.T_rad[i] - tardis_T_rad[i]) / tardis_T_rad[i] * 100.0; /* Phase 6 - Step 8 */
-            printf("  %3d  %8.6f   %8.6f   %+6.1f   %9.2f  %9.2f  %+6.1f\n",   /* Phase 6 - Step 8 */
-                   i, plasma.W[i], tardis_W[i], w_err,                            /* Phase 6 - Step 8 */
-                   plasma.T_rad[i], tardis_T_rad[i], t_err);                      /* Phase 6 - Step 8 */
-        }
-
-        double sum_w_err = 0.0, sum_t_err = 0.0; /* Phase 6 - Step 8 */
-        for (int i = 0; i < geo.n_shells; i++) { /* Phase 6 - Step 8 */
-            sum_w_err += fabs((plasma.W[i] - tardis_W[i]) / tardis_W[i]); /* Phase 6 - Step 8 */
-            sum_t_err += fabs((plasma.T_rad[i] - tardis_T_rad[i]) / tardis_T_rad[i]); /* Phase 6 - Step 8 */
-        }
-        printf("\nMean |W error|: %.2f%%\n", sum_w_err / geo.n_shells * 100.0);     /* Phase 6 - Step 8 */
-        printf("Mean |T_rad error|: %.2f%%\n", sum_t_err / geo.n_shells * 100.0);   /* Phase 6 - Step 8 */
-        printf("T_inner final: %.2f K (TARDIS: 10521.52 K, err: %.2f%%)\n",         /* Phase 6 - Step 8 */
-               config.T_inner,                                                        /* Phase 6 - Step 8 */
-               (config.T_inner - 10521.52) / 10521.52 * 100.0);                      /* Phase 6 - Step 8 */
-    }
+    printf("T_inner final: %.2f K\n", config.T_inner);
 
     /* Write real spectrum to CSV */
     const char *output_file = "lumina_spectrum.csv";
@@ -11088,9 +11025,10 @@ int main(int argc, char *argv[]) {
     /* Phase 6 - Step 8: Write final plasma state */
     out = fopen("lumina_plasma_state.csv", "w"); /* Phase 6 - Step 8 */
     if (out) { /* Phase 6 - Step 8 */
-        fprintf(out, "shell_id,W,T_rad,n_e,T_e\n"); /* +T_e: RADEQ solver target, vs CMFGEN gas temperature */
+        fprintf(out, "shell_id,T_e,n_e\n");
         for (int i = 0; i < geo.n_shells; i++) { /* Phase 6 - Step 8 */
-            fprintf(out, "%d,%.10f,%.6f,%.6e,%.6f\n", i, plasma.W[i], plasma.T_rad[i], plasma.n_electron[i], plasma.T_e[i]); /* Phase 6 - Step 8 */
+            fprintf(out, "%d,%.6f,%.6e\n", i, plasma.T_e[i],
+                    plasma.n_electron[i]);
         }
         fclose(out); /* Phase 6 - Step 8 */
         printf("Plasma state written to lumina_plasma_state.csv\n"); /* Phase 6 - Step 8 */

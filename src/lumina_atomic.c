@@ -3,6 +3,7 @@
  * This ensures bit-for-bit matching with TARDIS ground truth. */
 
 #include "lumina.h" /* Phase 2 - Step 7 */
+#include "seed_capability.h"
 #include <errno.h>  /* composition parser: distinguish ERANGE from valid zero */
 #include <limits.h> /* composition parser: validate Z before narrowing to int */
 
@@ -648,25 +649,14 @@ static int config_prec_parse_positive_double(const char *name,
 
 static int config_prec_resolve_boundary_temperature(
         const char *ref_dir, double deck_T_inner,
-        const double *W, int n_W, const double *T_rad, int n_T_rad,
-        int expected_shells,
         double *effective_T_inner) {
     int strict = 0;
     if (config_prec_parse_switch("LUMINA_CONFIG_PREC", &strict) != 0)
         return -1;
 
     printf("  [CONFIG-PREC] priority=argv>env>config.json>compiled-default; "
-           "plasma_state.csv=consistency-witness (never override); gate=%s\n",
+           "native J_nu seed owns radiation initialization; gate=%s\n",
            strict ? "ON" : "OFF");
-
-    if (!W || !T_rad || n_W <= 0 || n_T_rad <= 0 || n_W != n_T_rad ||
-        n_W != expected_shells) {
-        fprintf(stderr,
-                "[CONFIG-PREC][FATAL] malformed plasma_state.csv in %s: "
-                "W_rows=%d T_rad_rows=%d geometry_shells=%d\n",
-                ref_dir, n_W, n_T_rad, expected_shells);
-        return -1;
-    }
     if (!isfinite(deck_T_inner) || deck_T_inner <= 0.0) {
         fprintf(stderr,
                 "[CONFIG-PREC][FATAL] config.json:T_inner_K=%.17g is not "
@@ -674,60 +664,8 @@ static int config_prec_resolve_boundary_temperature(
         return -1;
     }
 
-    int invalid_rows = 0;
-    int color_rows = 0;
-    double color_first = 0.0;
-    double color_min = 0.0;
-    double color_max = 0.0;
-    for (int s = 0; s < n_W; s++) {
-        if (!isfinite(W[s]) || W[s] <= 0.0 || W[s] > 1.0 ||
-            !isfinite(T_rad[s]) || T_rad[s] <= 0.0) {
-            invalid_rows++;
-            continue;
-        }
-        double color = T_rad[s] / pow(W[s], 0.25);
-        if (!isfinite(color) || color <= 0.0) {
-            invalid_rows++;
-            continue;
-        }
-        if (color_rows == 0) {
-            color_first = color_min = color_max = color;
-        } else {
-            if (color < color_min) color_min = color;
-            if (color > color_max) color_max = color;
-        }
-        color_rows++;
-    }
-
-    double spread = color_rows > 0 ? color_max - color_min : INFINITY;
-    double profile_tol = color_rows > 0
-        ? CONFIG_PREC_T_PROFILE_ABS_TOL_K +
-          CONFIG_PREC_T_REL_TOL * fmax(fabs(color_min), fabs(color_max))
-        : 0.0;
-    double delta = color_rows > 0
-        ? fabs(deck_T_inner - color_first) : INFINITY;
-    double decl_tol = CONFIG_PREC_T_DECL_ABS_TOL_K +
-        CONFIG_PREC_T_REL_TOL * fmax(fabs(deck_T_inner), fabs(color_first));
-    double rel = color_rows > 0 ? delta / fabs(deck_T_inner) : INFINITY;
-    int violation = invalid_rows != 0 || color_rows != n_W ||
-                    spread > profile_tol || delta > decl_tol;
-
-    printf("  [CONFIG-PREC] deck=%s config.json:T_inner_K=%.9f K; "
-           "plasma inferred-color=%.9f K; spread=%.9g K; "
-           "delta=%.9f K (%.6f%%); limits(decl/profile)=%.6g/%.6g K\n",
-           ref_dir, deck_T_inner, color_first, spread, delta, 100.0 * rel,
-           decl_tol, profile_tol);
-
-    if (violation) {
-        FILE *stream = strict ? stderr : stdout;
-        fprintf(stream,
-                "[CONFIG-PREC][%s] boundary-temperature declarations disagree "
-                "or are not certifiable: invalid_rows=%d color_rows=%d/%d\n",
-                strict ? "FATAL" : "WARN", invalid_rows, color_rows, n_W);
-        if (strict) return -1;
-    } else {
-        printf("  [CONFIG-PREC][PASS] boundary-temperature declarations agree\n");
-    }
+    (void)ref_dir;
+    (void)strict;
 
     *effective_T_inner = deck_T_inner;
     const char *override = getenv("LUMINA_T_INNER_FIX");
@@ -757,6 +695,39 @@ int load_tardis_reference_data(const char *ref_dir, Geometry *geo,
     char path[512]; /* Phase 2 - Step 10 */
     int n; /* Phase 2 - Step 10 */
     double config_prec_deck_T_inner = 0.0;
+
+    if (seed_capability_reject_obsolete_options() != SEED_OK)
+        return -1;
+    {
+        static const char *const retired_scalar_options[] = {
+            "LUMINA_FIXED_TRAD_PROFILE",
+            "LUMINA_W_CAP",
+            "LUMINA_VALIDATE_PLASMA",
+            "LUMINA_OUTER_TE_DAMP_FACTOR",
+            "LUMINA_OUTER_TE_DAMP_SMIN",
+            "LUMINA_F_COLL_BOOST",
+            "LUMINA_KPEMISS_BSRC_TAU",
+            "LUMINA_BSRC_WFLOOR",
+            "LUMINA_CMF_EPAY_HOTF"
+        };
+        for (size_t i = 0;
+             i < sizeof(retired_scalar_options) / sizeof(retired_scalar_options[0]);
+             ++i) {
+            if (getenv(retired_scalar_options[i]) != NULL) {
+                fprintf(stderr,
+                        "BLOCKED_OBSOLETE_SCALAR_OPTION: %s was removed by A2-17\n",
+                        retired_scalar_options[i]);
+                return -1;
+            }
+        }
+        const char *epay = getenv("LUMINA_CMF_EPAY");
+        if (epay != NULL && atoi(epay) >= 2) {
+            fprintf(stderr,
+                    "BLOCKED_OBSOLETE_SCALAR_OPTION: LUMINA_CMF_EPAY>=2 "
+                    "requires the retired scalar hot/cold classifier\n");
+            return -1;
+        }
+    }
 
     /* Optional Wave-1 field is NULL unless its gate explicitly requests it.
      * The legacy loaders use a stack PlasmaState, so initialize the new member
@@ -819,22 +790,11 @@ int load_tardis_reference_data(const char *ref_dir, Geometry *geo,
         if (missing) return -1;
         config_prec_deck_T_inner = config->T_inner;
 
-        /* Optional: T_e/T_rad ratio (default 0.9 if absent) */
-        plasma->T_e_T_rad_ratio = 0.9;
-        p = strstr(buf, "\"T_e_T_rad_ratio\"");
-        if (p) { p = strchr(p, ':'); plasma->T_e_T_rad_ratio = atof(p + 1); }
-        /* Env override (perturbation test: does the 0.9 seed/fallback anchor the
-         * converged T_e?). LUMINA_TE_TRAD_RATIO=0.7 etc. overrides config. */
-        { const char *e = getenv("LUMINA_TE_TRAD_RATIO");
-          if (e && atof(e) > 0.0) plasma->T_e_T_rad_ratio = atof(e); }
-
         printf("  Config: t_exp=%.6e s, T_inner=%.2f K, L=%.3e erg/s\n", /* Phase 2 - Step 10b */
                geo->time_explosion, config->T_inner, config->luminosity_requested); /* Phase 2 - Step 10b */
         printf("    n_packets=%d, n_iter=%d (config-file defaults, pre-override;"
-               " effective values in 'Simulation parameters' below), seed=%lu,"
-               " T_e/T_rad=%.3f\n",
-               config->n_packets, config->n_iterations, config->seed,
-               plasma->T_e_T_rad_ratio);
+               " effective values in 'Simulation parameters' below), seed=%lu\n",
+               config->n_packets, config->n_iterations, config->seed);
     }
 
     /* Phase 2 - Step 10c: Load electron densities */
@@ -843,35 +803,12 @@ int load_tardis_reference_data(const char *ref_dir, Geometry *geo,
     printf("  Electron densities: n_e[0]=%.6e, n_e[%d]=%.6e cm^-3\n", /* Phase 2 - Step 10c */
            opacity->electron_density[0], n - 1, opacity->electron_density[n - 1]); /* Phase 2 - Step 10c */
 
-    /* Phase 2 - Step 10d: Load plasma state (W, T_rad) */
-    snprintf(path, sizeof(path), "%s/plasma_state.csv", ref_dir); /* Phase 2 - Step 10d */
-    plasma->n_shells = geo->n_shells; /* Phase 2 - Step 10d */
-    int n_W = 0, n_T_rad = 0;
-    plasma->W = read_csv_column(path, "W", &n_W); /* Phase 2 - Step 10d */
-    plasma->T_rad = read_csv_column(path, "T_rad", &n_T_rad); /* Phase 2 - Step 10d */
-    if (config_prec_resolve_boundary_temperature(
-            ref_dir, config_prec_deck_T_inner,
-            plasma->W, n_W, plasma->T_rad, n_T_rad,
-            geo->n_shells,
-            &config->T_inner) != 0)
+    /* A2-17: runtime never opens legacy scalar columns. Native J_nu loading is
+     * owned by jnu_seed.c and the generation-zero seed capability. */
+    plasma->n_shells = geo->n_shells;
+    if (config_prec_resolve_boundary_temperature(ref_dir,
+            config_prec_deck_T_inner, &config->T_inner) != 0)
         return -1;
-    n = n_T_rad;
-    /* AUDIT DEFECT #5 FIX (LUMINA_TRAD_COLOR_FIX=1): the toy06 builder wrote
-     * T_rad = T_inner*W^0.25 — the ENERGY-EQUIVALENT temperature, not the
-     * COLOR temperature. A dilute photospheric field keeps the photospheric
-     * COLOR (J_nu = W*B_nu(T_color~T_phot)); W alone carries the dilution.
-     * jdump falsified the seed (solved outer color 12,493K vs seed 3,134K),
-     * and the coldest-seed shell (s=40) is the one captured by the hot strip
-     * basin in the early transient. Fix at load: T_rad[s] = T_rad[0] (constant
-     * photospheric color), W untouched. Gated, default OFF. */
-    { const char *tc = getenv("LUMINA_TRAD_COLOR_FIX");
-      if (tc && atoi(tc) && n > 0) {
-          for (int i2 = 1; i2 < n; i2++) plasma->T_rad[i2] = plasma->T_rad[0];
-          printf("  [TRAD-COLOR-FIX] T_rad[s>=1] := T_rad[0]=%.0f K (W unchanged)\n",
-                 plasma->T_rad[0]);
-      } }
-    printf("  Plasma: W[0]=%.6f, T_rad[0]=%.2f K\n", /* Phase 2 - Step 10d */
-           plasma->W[0], plasma->T_rad[0]); /* Phase 2 - Step 10d */
 
     /* Phase 2 - Step 10d2: Load density */
     snprintf(path, sizeof(path), "%s/density.csv", ref_dir); /* Phase 2 - Step 10d2 */
@@ -909,10 +846,10 @@ int load_tardis_reference_data(const char *ref_dir, Geometry *geo,
         }
     }
 
-    /* Phase 2 - Step 10d3: T_electrons = T_rad for now (TARDIS uses T_e ≈ 0.9 * T_rad) */
+    /* Generation-zero material-temperature seed; radiation is not consulted. */
     opacity->t_electrons = (double *)malloc(geo->n_shells * sizeof(double)); /* Phase 2 - Step 10d3 */
     for (int i = 0; i < geo->n_shells; i++) { /* Phase 2 - Step 10d3 */
-        opacity->t_electrons[i] = plasma->T_rad[i]; /* Phase 2 - Step 10d3 */
+        opacity->t_electrons[i] = config->T_inner;
     }
 
     /* Phase 2 - Step 10e: Load line list (nu, sorted descending) */
@@ -1102,8 +1039,6 @@ void free_opacity_state(OpacityState *op) { /* Phase 2 - Step 11 */
 }
 
 void free_plasma_state(PlasmaState *ps) { /* Phase 2 - Step 11 */
-    free(ps->W); /* Phase 2 - Step 11 */
-    free(ps->T_rad); /* Phase 2 - Step 11 */
     free(ps->rho); /* Phase 2 - Step 11 */
     free(ps->n_electron); /* Task #072 */
     free(ps->clump_factor); /* Wave-1 BF; NULL-safe and absent on gate OFF */

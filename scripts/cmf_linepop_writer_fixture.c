@@ -109,7 +109,7 @@ int main(int argc, char **argv) {
     cs.frozen_morph_eps=-1.0; cs.cont_only=0;
     opac.n_lines=NL; opac.n_shells=NS; opac.line_list_nu=line_nu;
     opac.tau_sobolev=tau; opac.line_source_S=src_S; opac.electron_density=ne;
-    plasma.T_e=Te; plasma.T_rad=Tr; plasma.n_electron=ne;
+    plasma.T_e=Te; plasma.n_electron=ne;
     nlte.global_to_nlte_level=g2n; nlte.nlte_level_populations=pops;
     nlte.nlte_line_map=line_map; nlte.n_nlte_levels_total=3;
     atom.n_lines=NL; atom.n_levels=3; atom.n_ion_pops=1;

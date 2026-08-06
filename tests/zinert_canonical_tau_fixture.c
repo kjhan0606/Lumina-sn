@@ -108,18 +108,14 @@ int main(int argc, char **argv) {
         atom.partition_functions[ip] = 1.0 + 0.125 * (double)(ip % 7);
     }
 
-    double T_rad[1] = {10000.0};
     double T_e[1] = {10000.0};
-    double W[1] = {0.5};
     PlasmaState plasma;
     OpacityState opacity;
     memset(&plasma, 0, sizeof plasma);
     memset(&opacity, 0, sizeof opacity);
     plasma.n_shells = 1;
-    plasma.T_rad = T_rad;
     plasma.T_e = T_e;
     plasma.T_e_generation = 1;
-    plasma.W = W;
     opacity.n_lines = atom.n_lines;
     opacity.n_shells = 1;
     opacity.tau_sobolev = tau;

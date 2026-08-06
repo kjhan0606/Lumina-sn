@@ -25,9 +25,7 @@ int main(void) {
     int line_upper[4] = {1, 1, 1, 99};
     double line_f[4] = {0.25, 0.25, 0.25, 0.25};
     double line_lam[4] = {5e-5, 5e-5, 5e-5, 5e-5};
-    double T_rad[1] = {10000.0};
     double T_e[1] = {9000.0};
-    double W[1] = {0.5};
     double tau[4] = {-1.0, -1.0, -1.0, -1.0};
 
     memset(&atom, 0, sizeof atom);
@@ -55,10 +53,8 @@ int main(void) {
     atom.line_f_lu = line_f;
     atom.line_wavelength_cm = line_lam;
     plasma.n_shells = 1;
-    plasma.T_rad = T_rad;
     plasma.T_e = T_e;
     plasma.T_e_generation = 1;
-    plasma.W = W;
     opacity.n_lines = 4;
     opacity.n_shells = 1;
     opacity.tau_sobolev = tau;

@@ -89,9 +89,6 @@ int main(int argc, char *argv[]) {
     AtomicData atom_data; /* Task #072 */
     memset(&config, 0, sizeof(config)); /* Phase 5 - Step 3 */
 
-    /* Default T_e/T_rad ratio (will be overridden by config.json if present) */
-    plasma.T_e_T_rad_ratio = 0.9;
-
     /* Phase 5 - Step 3: Set defaults matching TARDIS sn2011fe.yml */
     config.enable_full_relativity = false; /* Phase 5 - Step 3 */
     config.disable_line_scattering = false; /* Phase 5 - Step 3 */
@@ -148,8 +145,9 @@ int main(int argc, char *argv[]) {
 
     /* P6: Initialize per-shell electron temperature */
     plasma.T_e = (double *)malloc(geo.n_shells * sizeof(double));
-    compute_electron_temperature(&plasma, NULL, geo.time_explosion, geo.n_shells, 0);
-    /* Ratio-derived T_e is an unqualified diagnostic seed. Only the A2-10
+    for (int i = 0; i < geo.n_shells; ++i)
+        plasma.T_e[i] = opacity.t_electrons[i];
+    /* This is an unqualified generation-zero material seed. Only the A2-10
      * radiative-equilibrium supplier below may mint a production generation. */
     plasma.T_e_generation = 0;
 
@@ -235,7 +233,7 @@ int main(int argc, char *argv[]) {
     if (self_consistent_te || radeq_te)
         printf("  Self-consistent T_e: ENABLED (full radiative-equilibrium balance)\n");
     else
-        printf("  Self-consistent T_e: disabled (ratio=%.2f)\n", plasma.T_e_T_rad_ratio);
+        printf("  Self-consistent T_e: disabled (generation-zero material seed)\n");
 
     /* Multi-epoch rescaling: override t_exp via environment variable */
     const char *time_exp_env = getenv("LUMINA_TIME_EXPLOSION");
@@ -351,10 +349,9 @@ int main(int argc, char *argv[]) {
 
             FILE *pf = fopen("lumina_plasma_state.csv", "w");
             if (pf) {
-                fprintf(pf, "shell_id,T_e,T_rad,W,n_e\n");
+                fprintf(pf, "shell_id,T_e,n_e\n");
                 for (int i = 0; i < geo.n_shells; i++)
-                    fprintf(pf, "%d,%.6f,%.6f,%.10f,%.6e\n", i,
-                            plasma.T_e[i], plasma.T_rad[i], plasma.W[i],
+                    fprintf(pf, "%d,%.6f,%.6e\n", i, plasma.T_e[i],
                             plasma.n_electron ? plasma.n_electron[i]
                                               : opacity.electron_density[i]);
                 fclose(pf);
@@ -633,9 +630,8 @@ int main(int argc, char *argv[]) {
                     &nlte, &atom_data, &opacity,
                     geo.time_explosion, geo.n_shells);
             } else {
-                compute_electron_temperature(&plasma,
-                    gamma_dep_enabled ? &gamma_dep : NULL,
-                    geo.time_explosion, geo.n_shells, self_consistent_te);
+                /* Preserve the committed material temperature.  Radiation has
+                 * no scalar-temperature owner after A2-17. */
                 plasma.T_e_generation = 0;
             }
 
@@ -702,80 +698,11 @@ int main(int argc, char *argv[]) {
             }
         }
 
-        /* Task #072: Validation mode — compute plasma state with reference values on iter 0 */
-        if (iter == 0 && getenv("LUMINA_VALIDATE_PLASMA")) {
-            printf("  [Validation] Computing plasma state with reference W, T_rad...\n");
-            /* Save current W, T_rad (reference values) */
-            double *save_W = (double *)malloc(geo.n_shells * sizeof(double));
-            double *save_T = (double *)malloc(geo.n_shells * sizeof(double));
-            memcpy(save_W, plasma.W, geo.n_shells * sizeof(double));
-            memcpy(save_T, plasma.T_rad, geo.n_shells * sizeof(double));
-            /* Restore reference for plasma computation */
-            char ref_path[512];
-            snprintf(ref_path, sizeof(ref_path), "%s/plasma_state.csv", ref_dir);
-            FILE *ref_f = fopen(ref_path, "r");
-            if (ref_f) {
-                char buf2[1024];
-                fgets(buf2, sizeof(buf2), ref_f); /* skip header */
-                int si = 0;
-                while (fgets(buf2, sizeof(buf2), ref_f) && si < geo.n_shells) {
-                    int sid;
-                    double w, t;
-                    sscanf(buf2, "%d,%lf,%lf", &sid, &w, &t);
-                    plasma.W[si] = w;
-                    plasma.T_rad[si] = t;
-                    si++;
-                }
-                fclose(ref_f);
-            }
-            /* Restore reference n_e */
-            for (int i = 0; i < geo.n_shells; i++)
-                plasma.n_electron[i] = opacity.electron_density[i];
-            compute_electron_temperature(&plasma, NULL, geo.time_explosion, geo.n_shells, 0);
-            plasma.T_e_generation = 0;
-            if (compute_plasma_state(&atom_data, &plasma, &opacity,
-                                     geo.time_explosion) != 0) {
-                fprintf(stderr, "[A2-07][FATAL] validation population transaction failed\n");
-                return EXIT_FAILURE;
-            }
-            /* Write validation tau to file */
-            FILE *vf = fopen("lumina_tau_validation.csv", "w");
-            if (vf) {
-                fprintf(vf, "line,tau_lumina_s0,validity,generation\n");
-                /* Load TARDIS tau for comparison (already in opacity.tau_sobolev before overwrite) */
-                /* Actually tau_sobolev was already overwritten. Load from file */
-                int tr, tc;
-                char tau_path[512];
-                snprintf(tau_path, sizeof(tau_path), "%s/tau_sobolev.npy", ref_dir);
-                /* Can't easily reload npy in C. Print what we have */
-                fprintf(vf, "# LUMINA tau computed with TARDIS reference W/T_rad\n");
-                fprintf(vf, "# Compare with tardis_reference/tau_sobolev.npy\n");
-                for (int l = 0; l < opacity.n_lines; l++) {
-                    size_t k=(size_t)l*geo.n_shells;
-                    A208Validity validity=opacity.tau_validity
-                        ? opacity.tau_validity[k]
-                        : (opacity.tau_sobolev[k]==0.0?A208_EXACT_ZERO:A208_VALID);
-                    fprintf(vf, "%d,%.10e,%s,%llu\n", l,
-                            opacity.tau_sobolev[k],a208_validity_name(validity),
-                            (unsigned long long)opacity.tau_computed_generation);
-                }
-                fclose(vf);
-                printf("  [Validation] tau written to lumina_tau_validation.csv\n");
-                (void)tr; (void)tc; (void)tau_path;
-            }
-            /* Restore the LUMINA-computed values for continued iteration */
-            memcpy(plasma.W, save_W, geo.n_shells * sizeof(double));
-            memcpy(plasma.T_rad, save_T, geo.n_shells * sizeof(double));
-            free(save_W);
-            free(save_T);
-        }
-
-        /* Phase 5 - Step 6: Print plasma state comparison */
-        printf("  Shell  W_LUMINA   T_rad_LUM  nubar/j\n"); /* Phase 5 - Step 6 */
+        /* Phase 5 - Step 6: Print canonical estimator diagnostics. */
+        printf("  Shell  T_e         nubar/j\n");
         for (int i = 0; i < geo.n_shells; i += 5) { /* Phase 5 - Step 6: print every 5th */
             double ratio = est->nu_bar_estimator[i] / est->j_estimator[i]; /* Phase 5 - Step 6 */
-            printf("  %3d    %.6f   %.2f K   %.4e\n", /* Phase 5 - Step 6 */
-                   i, plasma.W[i], plasma.T_rad[i], ratio); /* Phase 5 - Step 6 */
+            printf("  %3d    %.2f K   %.4e\n", i, plasma.T_e[i], ratio);
         }
 
         /* Phase 5 - Step 7: Update T_inner (after hold iterations) */
@@ -828,51 +755,7 @@ int main(int argc, char *argv[]) {
     macro_atom_fate_print("final iteration, CPU transport");
     macro_atom_cycle_print("final iteration, CPU transport");
 
-    /* Phase 5 - Step 8: Load TARDIS reference for comparison */
-    char path[512]; /* Phase 5 - Step 8 */
-    snprintf(path, sizeof(path), "%s/plasma_state.csv", ref_dir); /* Phase 5 - Step 8 */
-
-    /* Phase 5 - Step 8: Read TARDIS W and T_rad */
-    FILE *ref_fp = fopen(path, "r"); /* Phase 5 - Step 8 */
-    /* A1: stack arrays were [30] — would corrupt for ref dirs with n_shells>30.
-     * Allocate to geo.n_shells so audit comparison works for any geometry. */
-    double *tardis_W     = (double *)calloc((size_t)geo.n_shells, sizeof(double));
-    double *tardis_T_rad = (double *)calloc((size_t)geo.n_shells, sizeof(double));
-    if (ref_fp) { /* Phase 5 - Step 8 */
-        char buf[1024]; /* Phase 5 - Step 8 */
-        fgets(buf, sizeof(buf), ref_fp); /* Phase 5 - Step 8: skip header */
-        int i = 0; /* Phase 5 - Step 8 */
-        while (fgets(buf, sizeof(buf), ref_fp) && i < geo.n_shells) {
-            int sid; /* Phase 5 - Step 8 */
-            sscanf(buf, "%d,%lf,%lf", &sid, &tardis_W[i], &tardis_T_rad[i]); /* Phase 5 - Step 8 */
-            i++; /* Phase 5 - Step 8 */
-        }
-        fclose(ref_fp); /* Phase 5 - Step 8 */
-
-        printf("\nShell  W_LUMINA   W_TARDIS   W_err%%   T_rad_LUM  T_rad_TAR  T_err%%\n"); /* Phase 5 - Step 8 */
-        printf("-----  --------   --------   ------   ---------  ---------  ------\n"); /* Phase 5 - Step 8 */
-        for (int i = 0; i < geo.n_shells; i++) { /* Phase 5 - Step 8 */
-            double w_err = (plasma.W[i] - tardis_W[i]) / tardis_W[i] * 100.0; /* Phase 5 - Step 8 */
-            double t_err = (plasma.T_rad[i] - tardis_T_rad[i]) / tardis_T_rad[i] * 100.0; /* Phase 5 - Step 8 */
-            printf("  %3d  %8.6f   %8.6f   %+6.1f   %9.2f  %9.2f  %+6.1f\n", /* Phase 5 - Step 8 */
-                   i, plasma.W[i], tardis_W[i], w_err, /* Phase 5 - Step 8 */
-                   plasma.T_rad[i], tardis_T_rad[i], t_err); /* Phase 5 - Step 8 */
-        }
-
-        /* Phase 5 - Step 8: Compute mean absolute errors */
-        double sum_w_err = 0.0, sum_t_err = 0.0; /* Phase 5 - Step 8 */
-        for (int i = 0; i < geo.n_shells; i++) { /* Phase 5 - Step 8 */
-            sum_w_err += fabs((plasma.W[i] - tardis_W[i]) / tardis_W[i]); /* Phase 5 - Step 8 */
-            sum_t_err += fabs((plasma.T_rad[i] - tardis_T_rad[i]) / tardis_T_rad[i]); /* Phase 5 - Step 8 */
-        }
-        printf("\nMean |W error|: %.2f%%\n", sum_w_err / geo.n_shells * 100.0); /* Phase 5 - Step 8 */
-        printf("Mean |T_rad error|: %.2f%%\n", sum_t_err / geo.n_shells * 100.0); /* Phase 5 - Step 8 */
-        printf("T_inner final: %.2f K (TARDIS: 10521.52 K, err: %.2f%%)\n", /* Phase 5 - Step 8 */
-               config.T_inner, /* Phase 5 - Step 8 */
-               (config.T_inner - 10521.52) / 10521.52 * 100.0); /* Phase 5 - Step 8 */
-    }
-    free(tardis_W);      /* A1 */
-    free(tardis_T_rad);  /* A1 */
+    printf("T_inner final: %.2f K\n", config.T_inner);
 
     /* Phase 5 - Step 9: Write spectrum to CSV */
     const char *output_file = "lumina_spectrum.csv"; /* Phase 5 - Step 9 */
@@ -950,12 +833,13 @@ int main(int argc, char *argv[]) {
         }
     }
 
-    /* Phase 5 - Step 9b: Write final plasma state */
+    /* Phase 5 - Step 9b: Write material state; radiation has its own schema. */
     out = fopen("lumina_plasma_state.csv", "w"); /* Phase 5 - Step 9b */
     if (out) { /* Phase 5 - Step 9b */
-        fprintf(out, "shell_id,W,T_rad\n"); /* Phase 5 - Step 9b */
+        fprintf(out, "shell_id,T_e,n_e\n");
         for (int i = 0; i < geo.n_shells; i++) { /* Phase 5 - Step 9b */
-            fprintf(out, "%d,%.10f,%.6f\n", i, plasma.W[i], plasma.T_rad[i]); /* Phase 5 - Step 9b */
+            fprintf(out, "%d,%.6f,%.6e\n", i, plasma.T_e[i],
+                    plasma.n_electron[i]);
         }
         fclose(out); /* Phase 5 - Step 9b */
         printf("Plasma state written to lumina_plasma_state.csv\n"); /* Phase 5 - Step 9b */

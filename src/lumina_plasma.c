@@ -1055,138 +1055,15 @@ void solve_radiation_field(Estimators *est, double time_explosion,
                             double time_simulation, double *volume,
                             OpacityState *opacity, PlasmaState *plasma,
                             double damping_constant) {
-    int n_shells = est->n_shells; /* Phase 4 - Step 2 */
-
-    /* Physical dilution-factor ceiling. The Lucy (W,T_rad) estimator can rail to
-     * unphysical W>1 when the field is strongly line-blanketed (mean-nu redshift
-     * pins T_rad low, so W = piJ/(sigma T_rad^4) inflates). W is a dilution
-     * factor and must be <=1. Gated by LUMINA_W_CAP (0/unset = no cap, baseline;
-     * a positive value caps W_est there, typically 1.0). Clamping the estimate
-     * keeps the damped value bounded too (convex combo of two <=cap values). */
-    double w_cap = 0.0;
-    { const char *e = getenv("LUMINA_W_CAP"); if (e) w_cap = atof(e); }
-
-    /* Binned-J estimator: derive (T_rad,W) from a dilute-Planck FIT to the
-     * frequency-resolved J_nu histogram rather than the nu_bar/j moments. The
-     * first frequency moment collapses under a redshifted fluorescence cascade
-     * (mean-nu pulled to the red tail -> T_rad rails to ~2000-3000K, W explodes);
-     * a shape fit is robust because W absorbs amplitude while T is set by the
-     * SED slope. Gated by LUMINA_BINNED_J_ESTIMATOR (0/unset = moment baseline). */
-    static int binned_j_init = 0, binned_j_on = 0;
-    if (!binned_j_init) {
-        const char *e = getenv("LUMINA_BINNED_J_ESTIMATOR");
-        binned_j_on = (e && atoi(e) != 0);
-        if (binned_j_on)
-            printf("  [binned-J] radiation-field estimator: dilute-Planck fit to J_nu histogram\n");
-        binned_j_init = 1;
-    }
-
-    /* Fixed thermal-structure mode: when LUMINA_FIXED_TRAD_PROFILE points to a
-     * "shell T_rad W" file, OVERRIDE plasma T_rad/W with that profile and skip the
-     * estimator update entirely. This decouples the opacity temperature from the
-     * radiation estimator, which under a redshifting fluorescence cascade forms a
-     * positive-feedback loop (T_rad collapse -> Boltzmann/Saha over-populate low
-     * levels -> red lines thicken -> field reddens -> T_rad collapses further).
-     * Feeding the self-consistent SCATTER-converged structure isolates the line
-     * redistribution from that runaway, testing whether fluorescence cures the
-     * blue deficit / line morphology once the thermal structure is held correct. */
-    static int    fixed_init = 0, fixed_on = 0, fixed_n = 0;
-    static double *fixed_T = NULL, *fixed_W = NULL;
-    if (!fixed_init) {
-        fixed_init = 1;
-        const char *fp = getenv("LUMINA_FIXED_TRAD_PROFILE");
-        if (fp && *fp) {
-            FILE *f = fopen(fp, "r");
-            if (f) {
-                fixed_T = (double *)calloc(n_shells, sizeof(double));
-                fixed_W = (double *)calloc(n_shells, sizeof(double));
-                char ln[256];
-                while (fgets(ln, sizeof(ln), f)) {
-                    if (ln[0] == '#') continue;
-                    int s; double T, W;
-                    if (sscanf(ln, "%d %lf %lf", &s, &T, &W) == 3 &&
-                        s >= 0 && s < n_shells) {
-                        fixed_T[s] = T; fixed_W[s] = W; fixed_n++;
-                    }
-                }
-                fclose(f);
-                fixed_on = (fixed_n == n_shells);
-                printf("  [fixed-Trad] %s: loaded %d/%d shells -> %s\n", fp,
-                       fixed_n, n_shells, fixed_on ? "ACTIVE (estimator frozen)"
-                                                   : "INCOMPLETE, ignored");
-            } else {
-                printf("  [fixed-Trad] could not open %s, ignored\n", fp);
-            }
-        }
-    }
-    if (fixed_on) {
-        for (int i = 0; i < n_shells; i++) {
-            plasma->T_rad[i] = fixed_T[i];
-            plasma->W[i]     = fixed_W[i];
-        }
-        return;
-    }
-
-    for (int i = 0; i < n_shells; i++) { /* Phase 4 - Step 2 */
-        /* Phase 4 - Step 2: T_rad from nubar/j ratio */
-        /* TARDIS: T_RADIATIVE_ESTIMATOR_CONSTANT * nu_bar / j */
-        if (est->j_estimator[i] > 0.0) { /* Phase 4 - Step 2 */
-            double T_rad_est, W_est;
-            int got_fit = 0;
-            if (binned_j_on)
-                got_fit = fit_dilute_planck_binned_j(est, i, volume[i],
-                                                     time_simulation,
-                                                     &T_rad_est, &W_est);
-            if (!got_fit) {
-                T_rad_est = T_RADIATIVE_CONSTANT * /* Phase 4 - Step 2 */
-                    est->nu_bar_estimator[i] / est->j_estimator[i]; /* Phase 4 - Step 2 */
-
-                /* Phase 4 - Step 2: W from j vs Planck(T_rad) */
-                /* TARDIS: W = j / (4 * sigma_sb * T^4 * t_sim * V) */
-                W_est = est->j_estimator[i] / /* Phase 4 - Step 2 */
-                    (4.0 * SIGMA_SB * pow(T_rad_est, 4) * /* Phase 4 - Step 2 */
-                     time_simulation * volume[i]); /* Phase 4 - Step 2 */
-            }
-
-            if (w_cap > 0.0 && W_est > w_cap) W_est = w_cap;
-
-            /* Task #072: TARDIS damping (base.py: converge() for W and T_rad)
-             * new_value = old_value + damping_constant * (estimated - old_value)
-             * damping_constant = 0.5 by default in TARDIS */
-            plasma->T_rad[i] = plasma->T_rad[i] +
-                damping_constant * (T_rad_est - plasma->T_rad[i]);
-            plasma->W[i] = plasma->W[i] +
-                damping_constant * (W_est - plasma->W[i]);
-        }
-    }
-
-    /* Diagnostic: dump the per-shell binned J_nu SED + fitted (T_rad,W) so the
-     * dilute-Planck fit can be inspected offline (is a hot T_rad a real blue
-     * field or a Wien-suppressed-bin log-fit artifact?). Gated, last-iter only. */
-    if (binned_j_on && est->j_nu_estimator && est->nlte_n_freq_bins > 0 &&
-        getenv("LUMINA_JNU_SED_DUMP") && atoi(getenv("LUMINA_JNU_SED_DUMP"))) {
-        FILE *sf = fopen("lumina_jnu_sed.csv", "w");
-        if (sf) {
-            int nb = est->nlte_n_freq_bins;
-            double nu_lo0 = est->nlte_nu_min, dlog = est->nlte_d_log_nu;
-            fprintf(sf, "shell,T_rad,W,bin,nu_lo,nu_hi,J_nu\n");
-            for (int i = 0; i < n_shells; i++) {
-                if (volume[i] <= 0.0 || time_simulation <= 0.0) continue;
-                double norm = 1.0 / (4.0 * M_PI_VAL * volume[i] * time_simulation);
-                const double *raw = &est->j_nu_estimator[(size_t)i * nb];
-                for (int b = 0; b < nb; b++) {
-                    double nu_a = nu_lo0 * exp((double)b * dlog);
-                    double nu_b = nu_lo0 * exp((double)(b + 1) * dlog);
-                    double dnu = nu_b - nu_a;
-                    double j = (raw[b] > 0.0 && dnu > 0.0) ? raw[b] * norm / dnu : 0.0;
-                    fprintf(sf, "%d,%.2f,%.6e,%d,%.6e,%.6e,%.6e\n",
-                            i, plasma->T_rad[i], plasma->W[i], b, nu_a, nu_b, j);
-                }
-            }
-            fclose(sf);
-            printf("  [JNU-SED] dumped per-shell J_nu histogram to lumina_jnu_sed.csv\n");
-        }
-    }
+    /* A2-17: the canonical RadiationField commit owns the estimator payload.
+     * No fitted scalar state is produced or retained here. */
+    (void)est;
+    (void)time_explosion;
+    (void)time_simulation;
+    (void)volume;
+    (void)opacity;
+    (void)plasma;
+    (void)damping_constant;
 }
 
 /* Fit a dilute Planck W*B_nu(T) to the per-shell J_nu histogram.
@@ -1374,10 +1251,25 @@ static double artis_find_bin_T_R(double nu_bar_est, double nu_lo, double nu_hi) 
 
 void nlte_build_perbin_dilute_field(NLTEConfig *nlte, double time_simulation,
                                     double *volume, double *T_e, int n_shells) {
-    if (!nlte || !nlte->J_nu || !nlte->j_nu_estimator ||
-        !nlte->nu_bar_nu_estimator) return;
+    if (!nlte || !nlte->J_nu || !nlte->j_nu_estimator) return;
     const int nb = nlte->n_freq_bins;
     if (nb <= 0) return;
+    for (int s = 0; s < n_shells; ++s) {
+        const double V = volume[s];
+        if (!(V > 0.0) || !(time_simulation > 0.0)) continue;
+        const double norm = 1.0 / (4.0 * M_PI_VAL * V * time_simulation);
+        for (int f = 0; f < nb; ++f) {
+            const double nu_lo = nlte->nu_min * exp((double)f * nlte->d_log_nu);
+            const double nu_hi = nlte->nu_min * exp((double)(f + 1) * nlte->d_log_nu);
+            const double dnu = nu_hi - nu_lo;
+            if (!(dnu > 0.0)) return;
+            nlte->J_nu[(size_t)s * nb + f] =
+                nlte->j_nu_estimator[(size_t)s * nb + f] * norm / dnu;
+        }
+    }
+    (void)T_e;
+    return;
+#if 0 /* A2-17: retired production dilute-Planck scalar compression. */
     const double nu_min = nlte->nu_min, dlog = nlte->d_log_nu;
     const int NC = ARTIS_RADFIELD_NC;
     double raw_J[ARTIS_RADFIELD_NC], raw_nuJ[ARTIS_RADFIELD_NC];
@@ -1748,6 +1640,7 @@ void nlte_build_perbin_dilute_field(NLTEConfig *nlte, double time_simulation,
      * above is now LUMINA_C1_SUPERBIN_TEPIN, which reads T_e[s] for every coarse
      * bin shortward of 1085 A.  The (void)T_e cast is retained (harmless) so the
      * gate-OFF translation unit is unchanged. */
+#endif
 }
 
 /* [DIAG-T2] Per-(shell,coarse-bin) dilute-BB field census. Recomputes the SAME
@@ -2622,9 +2515,11 @@ static PopulationStatus compute_ion_populations_shell(
         }
 
         {
-            double T_rad = plasma->T_rad[s];
             double T_e   = plasma->T_e[s];
-            double W     = plasma->W[s];
+            /* Diagnostic-only legacy formula. The checked BF view below is
+             * the sole production supplier and fails closed when unavailable. */
+            double T_rad = T_e;
+            double W = 1.0;
             double n_e   = plasma->n_electron[s];
             double rho   = plasma->rho[s];
             double abund = atom->abundances[e * n_shells + s];
@@ -3098,114 +2993,16 @@ static inline double planck_bnu(double T, double nu) {
            / (exp(x) - 1.0);
 }
 
-/* ============================================================ */
-/* P6: Self-consistent per-shell electron temperature           */
-/*                                                              */
-/* Default mode (self_consistent=0): T_e = ratio × T_rad       */
-/* Self-consistent (self_consistent=1): Compton-adiabatic       */
-/*   balance with collisional coupling correction + gamma heat  */
-/* ============================================================ */
+/* A2-17 ABI tombstone.  Callers retain this symbol while downstream plugins
+ * migrate, but it deliberately has no radiation-to-material scalar path. */
 void compute_electron_temperature(PlasmaState *plasma, GammaDeposition *gamma_dep,
                                    double time_explosion, int n_shells,
                                    int self_consistent) {
-    /* #297 (γ) outer-shell T_e damper: per-shell multiplier on T_e for
-     * shells s >= LUMINA_OUTER_TE_DAMP_SMIN. Used to cool the outer
-     * source-function region without touching the inner photosphere
-     * (T_inner-pin convergence preserved). 1000 K hard floor. */
-    static int outer_init = 0;
-    static double outer_damp = 1.0;
-    static int outer_smin = 999;
-    if (!outer_init) {
-        const char *e1 = getenv("LUMINA_OUTER_TE_DAMP_FACTOR");
-        const char *e2 = getenv("LUMINA_OUTER_TE_DAMP_SMIN");
-        if (e1) outer_damp = atof(e1);
-        if (e2) outer_smin = atoi(e2);
-        outer_init = 1;
-        if (outer_damp != 1.0)
-            printf("  [GAMMA] Outer-shell T_e damper: factor=%.3f for s>=%d\n",
-                   outer_damp, outer_smin);
-    }
-
-    if (!self_consistent) {
-        /* Default: uniform ratio */
-        for (int s = 0; s < n_shells; s++)
-            plasma->T_e[s] = plasma->T_e_T_rad_ratio * plasma->T_rad[s];
-    } else {
-
-    /* Self-consistent T_e from energy balance:
-     *
-     * Heating:
-     *   Compton: q_C = (T_rad - T_e) / t_Compton
-     *   Collisional (line/PI thermalization): q_coll ≈ f_coll × (T_rad - T_e) / t_coll
-     *   Gamma-ray: q_gamma = Q_gamma / (1.5 × n_e × k_B)
-     *
-     * Cooling:
-     *   Adiabatic: q_ad = 2 × T_e / t_exp  (homologous, γ=5/3)
-     *
-     * Steady state: q_C + q_coll + q_gamma = q_ad
-     *   (Γ_C + Γ_coll)(T_rad - T_e) + G = Γ_ad × T_e
-     *   T_e = (Γ_eff × T_rad + G) / (Γ_eff + Γ_ad)
-     *
-     * Γ_C = 8 σ_T u_rad / (3 m_e c)  [s⁻¹]
-     *   u_rad = 4 W σ_SB T_rad⁴ / c
-     * Γ_coll ≈ 10 × Γ_C  (collisional coupling >> Compton in photosphere)
-     * Γ_ad = 2 / t_exp  [s⁻¹]
-     * G = Q_gamma / (1.5 × n_e × k_B)  [K/s]
-     */
-    double t_exp = time_explosion;
-    double Gamma_ad = 2.0 / t_exp;
-    /* Collisional boost: line/PI interactions couple T_e to T_rad
-     * much more strongly than Compton alone. Default 12 reproduces
-     * TARDIS-like T_e/T_rad ≈ 0.97 inner. Set LUMINA_F_COLL_BOOST=0
-     * for pure Compton-adiabatic balance (T_e ≈ 0.7 T_rad inner) —
-     * Path 3 lever against R_rec/R_bf saturation. */
-    static int boost_init = 0;
-    static double f_coll_boost = 12.0;
-    if (!boost_init) {
-        const char *e = getenv("LUMINA_F_COLL_BOOST");
-        if (e) f_coll_boost = atof(e);
-        boost_init = 1;
-    }
-
-    for (int s = 0; s < n_shells; s++) {
-        double T_rad = plasma->T_rad[s];
-        double W     = plasma->W[s];
-        double n_e   = plasma->n_electron[s];
-        if (T_rad <= 0.0 || n_e <= 0.0) {
-            plasma->T_e[s] = plasma->T_e_T_rad_ratio * T_rad;
-            continue;
-        }
-
-        /* Compton coupling rate */
-        double u_rad = 4.0 * W * SIGMA_SB * T_rad * T_rad * T_rad * T_rad / C_SPEED_OF_LIGHT;
-        double Gamma_C = 8.0 * SIGMA_THOMSON * u_rad / (3.0 * M_ELECTRON * C_SPEED_OF_LIGHT);
-
-        /* Effective coupling = Compton + collisional (boosted) */
-        double Gamma_eff = Gamma_C * (1.0 + f_coll_boost);
-
-        /* Gamma-ray heating temperature rate */
-        double G = 0.0;
-        if (gamma_dep != NULL && gamma_dep->heating_rate != NULL && gamma_dep->heating_rate[s] > 0.0)
-            G = gamma_dep->heating_rate[s] / (1.5 * n_e * K_BOLTZMANN);
-
-        /* Steady state: T_e = (Γ_eff × T_rad + G) / (Γ_eff + Γ_ad) */
-        double T_e = (Gamma_eff * T_rad + G) / (Gamma_eff + Gamma_ad);
-
-        /* Clamp to physical range */
-        if (T_e < 0.3 * T_rad) T_e = 0.3 * T_rad;
-        if (T_e > 1.5 * T_rad) T_e = 1.5 * T_rad;
-
-        plasma->T_e[s] = T_e;
-    }
-    }  /* end self-consistent branch */
-
-    /* Apply outer-shell T_e damper after T_e is set (both branches). */
-    if (outer_damp != 1.0 && outer_smin < n_shells) {
-        for (int s = outer_smin; s < n_shells; s++) {
-            plasma->T_e[s] *= outer_damp;
-            if (plasma->T_e[s] < 1000.0) plasma->T_e[s] = 1000.0;
-        }
-    }
+    (void)gamma_dep;
+    (void)time_explosion;
+    (void)n_shells;
+    (void)plasma;
+    (void)self_consistent;
 }
 
 /* ==========================================================================
@@ -4476,9 +4273,9 @@ void compute_transition_probabilities(AtomicData *atom, PlasmaState *plasma,
 
     #pragma omp for schedule(dynamic)
     for (int s = 0; s < n_shells; s++) {
-        double W     = plasma->W[s];
-        double T_rad = plasma->T_rad[s];
         double T_e   = plasma->T_e[s];
+        /* Only the diagnostic shadow below observes these locals. */
+        double W = 1.0, T_rad = T_e;
         double n_e   = plasma->n_electron ? plasma->n_electron[s] :
                        (opacity->electron_density ? opacity->electron_density[s] : 0.0);
         double inv_sqrt_Te = (T_e > 0.0) ? 1.0 / sqrt(T_e) : 0.0;
@@ -10618,9 +10415,7 @@ static void radeq_simul_all(PlasmaState *plasma, GammaDeposition *gamma_dep,
         memset(sh.nion, 0, (size_t)n_ip * sizeof(double));
         if (g_radeq_db_fb == 1)   /* [DBFB] clear the per-pair emission spectrum */
             memset(sh.emit_bf, 0, (size_t)SIM_MAXP * (size_t)nfb * sizeof(double));
-        double T_rad = plasma->T_rad[s];
-        double W = plasma->W[s];
-        (void)W;
+        double T_rad = plasma->T_e[s];
         /* ---- shell constants ---- */
         sh.H_dep = (gamma_dep && gamma_dep->heating_rate) ?
                    gamma_dep->heating_rate[s] : 0.0;
@@ -10722,7 +10517,8 @@ static void radeq_simul_all(PlasmaState *plasma, GammaDeposition *gamma_dep,
                     int want_nlte_w = g_gph_alllevel_nlte;
                     if (!want_nlte_w && nlte_stage4_enabled() &&
                         atom->ion_pop_stage[ip0 + j] == 2 &&
-                        plasma->W[s] > g_stage4_gph_wthr) {   /* [A1] depth gate */
+                        nlte_get_J_at_nu(nlte, s, nlte->nu_min) >
+                            g_stage4_gph_wthr) {   /* diagnostic depth gate */
                         int Zc = atom->ion_pop_Z[ip0 + j];
                         for (int i = 0; i < nlte->n_nlte_ions; i++)
                             if (nlte->nlte_Z[i] == Zc && nlte->nlte_ion[i] == 3) {
@@ -11110,7 +10906,7 @@ static void radeq_simul_all(PlasmaState *plasma, GammaDeposition *gamma_dep,
             /* [PUMPF] route the line-pump Jb through the SAME alpha-blended field
              * the Gph loop consumes (field source only; binning + line-term
              * structure unchanged). Gate off => byte-identical hard-wired cs_J. */
-            double Te_pump = plasma->T_e ? plasma->T_e[s] : plasma->T_rad[s];
+            double Te_pump = plasma->T_e[s];
             double legacy_Jb_shadow = (g_radeq_pump_field == 1)
                 ? radeq_pump_line_Jb(nlte, s, nfb, nu_l, Te_pump,
                                      &n_pumpf_bl, &n_pumpf_fb, &n_pumpf_bnu)
@@ -11151,8 +10947,7 @@ static void radeq_simul_all(PlasmaState *plasma, GammaDeposition *gamma_dep,
         sh.cp_n = 0;
         if (g_cp_on == 1 && g_cp_nions > 0 && sh.cp_a) {
             double cp_ne = plasma->n_electron[s];
-            double cp_Tref = (plasma->T_e && plasma->T_e[s] > 100.0)
-                           ? plasma->T_e[s] : plasma->T_rad[s];
+            double cp_Tref = plasma->T_e[s];
             long dropped = 0;
             for (int c = 0; c < g_cp_nions; c++) {
                 RcpCensus cen;
@@ -12861,6 +12656,7 @@ int compute_radiative_equilibrium_te(PlasmaState *plasma, GammaDeposition *gamma
 }
 #endif
 
+#if 0 /* A2-17: retired alternate scalar-radiation Newton implementation. */
 /* ============================================================
  * PATH-A / A2: per-shell COUPLED-NEWTON solve of {n_e, T_e}
  * ------------------------------------------------------------
@@ -12895,8 +12691,8 @@ int compute_radiative_equilibrium_te(PlasmaState *plasma, GammaDeposition *gamma
  * code's own ionization physics — only solved simultaneously with T_e. */
 static double coupled_charge_density(AtomicData *atom, PlasmaState *plasma,
                                      int s, double T_e, double n_e, int n_shells) {
-    double T_rad = plasma->T_rad[s];
-    double W     = plasma->W[s];
+    double T_rad = plasma->T_e[s];
+    double W = 1.0; /* legacy charge-density diagnostic shadow */
     double rho   = plasma->rho[s];
     if (T_rad <= 0.0 || n_e <= 0.0) return 0.0;
     double g_electron = pow(2.0 * M_PI_VAL * M_ELECTRON * K_BOLTZMANN * T_rad
@@ -13179,8 +12975,8 @@ static double coupled_charge_density_tdep(AtomicData *atom, PlasmaState *plasma,
                                           double t_exp, int n_shells,
                                           int write_pops,
                                           const double *gamma_jnu) {
-    double T_rad = plasma->T_rad[s];
-    double W     = plasma->W[s];
+    double T_rad = plasma->T_e[s];
+    double W = 1.0; /* legacy charge-density diagnostic shadow */
     double rho   = plasma->rho[s];
     if (T_rad <= 0.0 || n_e <= 0.0 || t_exp <= 0.0) return 0.0;
     double g_electron = pow(2.0 * M_PI_VAL * M_ELECTRON * K_BOLTZMANN * T_rad
@@ -14139,8 +13935,8 @@ void coupled_newton_solve_all(PlasmaState *plasma, GammaDeposition *gamma_dep,
 #ifdef _OPENMP
         if (cn_prof) cn_ts0 = omp_get_wtime();
 #endif
-        double T_rad = plasma->T_rad[s];
-        double W     = plasma->W[s];
+        double T_rad = plasma->T_e[s];
+        double W = 1.0; /* legacy Newton diagnostic shadow */
         if (T_rad <= 0.0 || plasma->n_electron[s] <= 0.0) continue;
 
         /* Shell partition vs the frozen-in cascade:
@@ -14345,8 +14141,8 @@ void coupled_newton_solve_all(PlasmaState *plasma, GammaDeposition *gamma_dep,
         double Te_lag = (g_lre_te_lag && s < g_lre_te_lag_n &&
                          g_lre_te_lag[s] > 100.0) ? g_lre_te_lag[s]
                       : (plasma->T_e[s] > 100.0) ? plasma->T_e[s]
-                        : plasma->T_e_T_rad_ratio * T_rad;
-        if (T_e <= 100.0) T_e = plasma->T_e_T_rad_ratio * T_rad;
+                        : T_rad;
+        if (T_e <= 100.0) T_e = T_rad;
 
         /* A4 Stage-1 boot latch: switch this shell's line closure from the
          * legacy all-thermal stabilizer to the symmetric eps-weighted physics
@@ -14471,7 +14267,7 @@ void coupled_newton_solve_all(PlasmaState *plasma, GammaDeposition *gamma_dep,
          * recombination α(T_e); J_ν carries no exp(−χ/kT_e) lever, so the runaway
          * cannot re-form. Falls back to φ_neb (gamma_jnu[ip]=−1) for ions w/o σ_bf. */
         if (gamma_jnu) {
-            double T_lag = (T_e > 100.0) ? T_e : plasma->T_e_T_rad_ratio * T_rad;
+            double T_lag = (T_e > 100.0) ? T_e : T_rad;
             /* B3-1: blend J_ν toward W·B(T_e^lag) by Λ* inside the photoion
              * integral. lstar/blag are this shell's diagonal-Λ* and B_ν(T_e^lag)
              * (computed just above when gbin active). NULL → bare lagged J. */
@@ -14905,6 +14701,31 @@ void coupled_newton_solve_all(PlasmaState *plasma, GammaDeposition *gamma_dep,
            "%ld floor-pinned (T_e=1000K, under-determined) of %ld shells\n",
            n_stall, n_floor_cn, (long)n_shells);
 }
+#endif
+
+void coupled_set_fine_jnu(const double *jnu, const double *nu, int n_fine,
+                          double nu_lo, double dlognu, int n_shells) {
+    (void)jnu;
+    (void)nu;
+    (void)n_fine;
+    (void)nu_lo;
+    (void)dlognu;
+    (void)n_shells;
+}
+
+void coupled_newton_solve_all(PlasmaState *plasma, GammaDeposition *gamma_dep,
+                              NLTEConfig *nlte, AtomicData *atom,
+                              OpacityState *opacity, Geometry *geo,
+                              double time_explosion, int n_shells) {
+    (void)plasma;
+    (void)gamma_dep;
+    (void)nlte;
+    (void)atom;
+    (void)opacity;
+    (void)geo;
+    (void)time_explosion;
+    (void)n_shells;
+}
 
 /* Compact "FeIII" / "CoIII" style label for the [METACOLL] banner. ion is the
  * 0-based stage (0=I). Falls back to "Z%d/ion%d" for elements outside the table. */
@@ -15335,7 +15156,7 @@ void nlte_apply_uv_jnu_cap(NLTEConfig *nlte, PlasmaState *plasma, int n_shells) 
     double max_ratio = 0.0;
 
     for (int s = 0; s < n_shells; s++) {
-        double T = plasma->T_rad[s];
+        double T = plasma->T_e[s];
         if (T <= 0.0) continue;
         for (int b = 0; b < nlte->n_freq_bins; b++) {
             double nu_mid = nlte->nu_min * exp((b + 0.5) * nlte->d_log_nu);
@@ -15566,7 +15387,7 @@ void nlte_assemble_rate_matrix(NLTEConfig *nlte, AtomicData *atom,
     const int ew_capture = nlte_ew_capture_active();
     int lev_start = nlte->nlte_ion_level_offset[ion_idx_lo];
     int n_shells = plasma->n_shells;
-    double T_rad = plasma->T_rad[shell];
+    double T_rad = plasma->T_e[shell];
     double T_e   = plasma->T_e[shell];
     double n_e   = plasma->n_electron[shell];
 #ifdef LUMINA_FROZEN_ORACLE
@@ -15758,9 +15579,9 @@ void nlte_assemble_rate_matrix(NLTEConfig *nlte, AtomicData *atom,
         if (t) dilute_tr_override = atof(t);
         dilute_init = 1;
     }
-    double dilute_W = dilute_on ? plasma->W[shell] : 0.0;
+    double dilute_W = 0.0; /* scalar pump removed; checked J_nu owns rates */
     double dilute_TR = dilute_on
-        ? ((dilute_tr_override > 0.0) ? dilute_tr_override : plasma->T_rad[0])
+        ? ((dilute_tr_override > 0.0) ? dilute_tr_override : plasma->T_e[0])
         : 0.0;
 
     int budget_hit = budget_on && (nlte->nlte_Z[ion_idx_lo] == budget_Z) &&
@@ -17058,7 +16879,7 @@ void nlte_assemble_rate_matrix(NLTEConfig *nlte, AtomicData *atom,
                                 "%.6e,%.6e,%.6e,"
                                 "%.6e,%.6e\n",
                             Z_d, ion_lo_d, shell, N, T_e, T_rad,
-                            plasma->W[shell], n_e,
+                            1.0, n_e,
                             n_neb_lo, n_neb_hi,
                             sum_R_bf, sum_R_rec, sum_R_bf_levels,
                             sum_R_bf_ground, sum_R_rec_ground, n_star_ground,
@@ -18641,7 +18462,7 @@ void apply_overlap_corrections(AtomicData *atom, OpacityState *opacity,
     }
 
     for (int s = 0; s < n_shells; s++) {
-        double T_rad = plasma->T_rad[s];
+        double T_rad = plasma->T_e[s];
 
         for (int i = 0; i < n_lines; i++) {
             double tau_i = tau_orig[i * n_shells + s];
@@ -19009,8 +18830,7 @@ void compute_formal_integral_spectrum(
                     if (shell_mid >= 0) {
                         double chi_cont = opacity->electron_density[shell_mid] * SIGMA_THOMSON;
                         double dtau_c = chi_cont * dz;
-                        double S_cont = plasma->W[shell_mid] *
-                                        planck_bnu(plasma->T_rad[shell_mid], nu_obs);
+                        double S_cont = nlte_get_J_at_nu(nlte, shell_mid, nu_obs);
                         double oz = (dtau_c > 500.0) ? 1.0 : (1.0 - exp(-dtau_c));
                         I_nu   += S_cont * oz * exp(-tau_acc);
                         tau_acc += dtau_c;
@@ -19029,7 +18849,7 @@ void compute_formal_integral_spectrum(
                          ? opacity->line_source_S[l * n_shells + shell] : 0.0;
                 if (!fi_fix) {
                     if (S <= 0.0)
-                        S = plasma->W[shell] * planck_bnu(plasma->T_rad[shell], nu_l);
+                        S = nlte_get_J_at_nu(nlte, shell, nu_l);
                 } else {
                     /* [FORMAL-FIX R3] tau/S pair hygiene.
                      * Sobolev identity (exact, no new physics):
@@ -19056,23 +18876,8 @@ void compute_formal_integral_spectrum(
                     if (pc == FI_PAIR_NLTE) {
                         if (!(S > 0.0)) { S = 0.0; fi_n_orphan++; }
                     } else {
-                        double Tr = plasma->T_rad[shell], Wl = plasma->W[shell];
-                        double xr = -1.0;
-                        if (Tr > 0.0 && pc != FI_PAIR_UNKNOWN) {
-                            double hx = H_PLANCK * nu_l / (K_BOLTZMANN * Tr);
-                            double ex = (hx > 500.0) ? 0.0 : exp(-hx);
-                            if (pc == FI_PAIR_NEB_SAME)      xr = ex;
-                            else if (pc == FI_PAIR_NEB_UDIL) xr = Wl * ex;
-                            else if (Wl > 0.0)               xr = ex / Wl;
-                        }
-                        if (xr > 0.0 && xr < 1.0) {
-                            S = (2.0 * H_PLANCK * nu_l * nu_l * nu_l
-                                 / (C_SPEED_OF_LIGHT * C_SPEED_OF_LIGHT))
-                                * xr / (1.0 - xr);
-                            fi_n_fused++;
-                        } else {
-                            S = 0.0; fi_n_orphan++;
-                        }
+                        S = nlte_get_J_at_nu(nlte, shell, nu_l);
+                        if (S > 0.0) fi_n_fused++; else fi_n_orphan++;
                     }
                 }
                 /* Decisive clamp test: thermalize thick-line source to B(T_e). */
@@ -19112,8 +18917,7 @@ void compute_formal_integral_spectrum(
                     if (shell_mid >= 0) {
                         double chi_cont = opacity->electron_density[shell_mid] * SIGMA_THOMSON;
                         double dtau_c = chi_cont * dz;
-                        double S_cont = plasma->W[shell_mid] *
-                                        planck_bnu(plasma->T_rad[shell_mid], nu_obs);
+                        double S_cont = nlte_get_J_at_nu(nlte, shell_mid, nu_obs);
                         double oz = (dtau_c > 500.0) ? 1.0 : (1.0 - exp(-dtau_c));
                         I_nu   += S_cont * oz * exp(-tau_acc);
                         tau_acc += dtau_c;
@@ -19359,13 +19163,8 @@ void compute_cmf_formal_spectrum(
                     double chi_es = opacity->electron_density[shell] * SIGMA_THOMSON;
                     double dtau_es = chi_es * dz;
                     double S_es;
-                    if (nlte != NULL && nlte->enabled) {
-                        S_es = nlte_get_J_at_nu(nlte, shell, nu_cmf);
-                        if (S_es <= 0.0)
-                            S_es = plasma->W[shell] * planck_bnu(plasma->T_rad[shell], nu_cmf);
-                    } else {
-                        S_es = plasma->W[shell] * planck_bnu(plasma->T_rad[shell], nu_cmf);
-                    }
+                    S_es = (nlte != NULL && nlte->enabled)
+                         ? nlte_get_J_at_nu(nlte, shell, nu_cmf) : 0.0;
                     dtau[k]  += dtau_es;
                     sdtau[k] += S_es * dtau_es;
 
@@ -19422,8 +19221,8 @@ void compute_cmf_formal_spectrum(
                      * dilute-LTE source W*B(T_rad) -- still not coherent scatter. */
                     double S_l = (opacity->line_source_S != NULL)
                                ? opacity->line_source_S[l * n_shells + shell] : 0.0;
-                    if (S_l <= 0.0)
-                        S_l = plasma->W[shell] * planck_bnu(plasma->T_rad[shell], nu_l);
+                    if (S_l <= 0.0 && nlte != NULL && nlte->enabled)
+                        S_l = nlte_get_J_at_nu(nlte, shell, nu_l);
 
                     double e_lo = erf((z_in + k0 * dz - z_res) * inv_sigma);
                     for (int k = k0; k < k1; k++) {

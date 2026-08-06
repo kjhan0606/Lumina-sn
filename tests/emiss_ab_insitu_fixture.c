@@ -94,7 +94,7 @@ int main(int argc, char **argv) {
     nlte.nlte_line_map=line_map; nlte.nlte_level_populations=pop;
 
     PlasmaState plasma={0}; plasma.n_shells=NS; plasma.T_e=Te;
-    plasma.T_rad=Te; plasma.n_electron=ne;
+    plasma.n_electron=ne;
     CMFGENState a,b,b2,seeded;
     if (init_state(&a,NS,NB) || init_state(&b,NS,NB) ||
         init_state(&b2,NS,NB) ||

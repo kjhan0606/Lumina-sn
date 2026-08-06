@@ -58,14 +58,10 @@ int main(void) {
     atom.line_wavelength_cm = line_lambda;
     atom.line_nu = line_nu;
 
-    double W[1] = {0.5};
-    double T_rad[1] = {10000.0};
     double rho[1] = {1.0e-14};
     double n_e[1] = {1.0e8};
     double T_e[1] = {9000.0};
     plasma.n_shells = 1;
-    plasma.W = W;
-    plasma.T_rad = T_rad;
     plasma.rho = rho;
     plasma.n_electron = n_e;
     plasma.T_e = T_e;

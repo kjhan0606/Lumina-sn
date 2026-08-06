@@ -27,8 +27,6 @@ int main(void) {
     int level_g[3] = {1, 1, 1};
     int level_meta[3] = {1, 1, 1};
 
-    double W[1] = {0.5};
-    double T_rad[1] = {10000.0};
     double rho[1] = {28.0 * AMU * 123.0};
     double n_e[1] = {1e8};
     double T_e[1] = {9000.0};
@@ -54,8 +52,6 @@ int main(void) {
     atom.level_g = level_g;
     atom.level_metastable = level_meta;
     plasma.n_shells = 1;
-    plasma.W = W;
-    plasma.T_rad = T_rad;
     plasma.rho = rho;
     plasma.n_electron = n_e;
     plasma.T_e = T_e;

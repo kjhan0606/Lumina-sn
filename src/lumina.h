@@ -373,14 +373,11 @@ typedef struct {
 /* Phase 2 - Step 4: Plasma state for convergence */
 typedef struct {
     int     n_shells;         /* Phase 2 - Step 4 */
-    double *W;                /* Phase 2 - Step 4: [n_shells] dilution factor */
-    double *T_rad;            /* Phase 2 - Step 4: [n_shells] radiation temp [K] */
     double *rho;              /* Phase 2 - Step 4: [n_shells] density [g/cm^3] */
     double *n_electron;       /* Task #072: [n_shells] self-consistent n_e */
     double *clump_factor;      /* [Wave-1 BF] [n_shells] local/mean density factor;
                                * NULL means smooth plasma (factor 1). Allocated only
                                * for FIX_BF_STIM_RECOMB so its OFF heap is unchanged. */
-    double  T_e_T_rad_ratio;  /* T_e/T_rad ratio for Saha equation (default 0.9) */
     double *T_e;              /* P6: [n_shells] per-shell electron temperature [K] */
     uint64_t T_e_generation;  /* A2-07: supplied T_e input generation */
     ElectronTemperaturePublication te_publication; /* A2-10 sole production owner */
