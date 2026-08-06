@@ -1,0 +1,201 @@
+{
+ "schema": "lumina-instrumentation-debt-census-v1",
+ "doc": "docs/INSTRUMENTATION_DEBT_CENSUS.md",
+ "tree_anchor": {
+  "git_head": "fa17ac0e39656baece861558041e75936419c4fc",
+  "git_head_short": "fa17ac0",
+  "branch": "thenmc-macroatom-fluorescence",
+  "tracked_modified": 0,
+  "untracked": 404,
+  "note": "미추적이 많은 더러운 트리에서의 집계다. 앵커 없이 인용 금지."
+ },
+ "read_this_first": "단일 수치가 아니라 spread_ratio 를 보라. 1.0 에서 멀수록 그 수치는 패턴 아티팩트다. 98->157 교정이 그 실증이었다.",
+ "C9_contract_copies": {
+  "plasma_hard_fatal": {
+   "n": 10,
+   "env": [
+    "LUMINA_C2_MATRIX_BF",
+    "LUMINA_FROZENIN",
+    "LUMINA_NLTE_BF_JEQB",
+    "LUMINA_NLTE_BK_PARTIAL",
+    "LUMINA_NLTE_FLOOR_MODE",
+    "LUMINA_NLTE_FLOOR_REG",
+    "LUMINA_NLTE_FORCE_LTE_LEVELS",
+    "LUMINA_NLTE_JEQB",
+    "LUMINA_NLTE_LTE_REPAIR",
+    "LUMINA_TOPSTAGE_THERMALIZE"
+   ]
+  },
+  "element_wide_diagnostic_only": {
+   "n": 16,
+   "env": [
+    "LUMINA_DR_FLOOR_CMS",
+    "LUMINA_NLTE_BK_CEIL",
+    "LUMINA_NLTE_BK_PARTIAL",
+    "LUMINA_NLTE_COLL_FLOOR",
+    "LUMINA_NLTE_FLOOR_MODE",
+    "LUMINA_NLTE_FLOOR_REG",
+    "LUMINA_NLTE_FORCE_LTE_LEVELS",
+    "LUMINA_NLTE_ION_LOCK",
+    "LUMINA_NLTE_LTE_FLOOR",
+    "LUMINA_NLTE_LTE_REPAIR",
+    "LUMINA_NLTE_METASTABLE_COLL",
+    "LUMINA_NLTE_PER_ION_RESCALE",
+    "LUMINA_NLTE_STAGE4",
+    "LUMINA_STAGE4_BK_CAP",
+    "LUMINA_SUPER_CUTOFF",
+    "LUMINA_TIMEDEP_ION"
+   ],
+   "note": "세기만 하고 막지 않는다 (C8 fail-open)"
+  },
+  "seed_capability_obsolete": {
+   "n": 2,
+   "env": [
+    "LUMINA_TE_TRAD_RATIO",
+    "LUMINA_TRAD_COLOR_FIX"
+   ]
+  },
+  "union": [
+   "LUMINA_C2_MATRIX_BF",
+   "LUMINA_DR_FLOOR_CMS",
+   "LUMINA_FROZENIN",
+   "LUMINA_NLTE_BF_JEQB",
+   "LUMINA_NLTE_BK_CEIL",
+   "LUMINA_NLTE_BK_PARTIAL",
+   "LUMINA_NLTE_COLL_FLOOR",
+   "LUMINA_NLTE_FLOOR_MODE",
+   "LUMINA_NLTE_FLOOR_REG",
+   "LUMINA_NLTE_FORCE_LTE_LEVELS",
+   "LUMINA_NLTE_ION_LOCK",
+   "LUMINA_NLTE_JEQB",
+   "LUMINA_NLTE_LTE_FLOOR",
+   "LUMINA_NLTE_LTE_REPAIR",
+   "LUMINA_NLTE_METASTABLE_COLL",
+   "LUMINA_NLTE_PER_ION_RESCALE",
+   "LUMINA_NLTE_STAGE4",
+   "LUMINA_STAGE4_BK_CAP",
+   "LUMINA_SUPER_CUTOFF",
+   "LUMINA_TE_TRAD_RATIO",
+   "LUMINA_TIMEDEP_ION",
+   "LUMINA_TOPSTAGE_THERMALIZE",
+   "LUMINA_TRAD_COLOR_FIX"
+  ],
+  "plasma_minus_ew": [
+   "LUMINA_C2_MATRIX_BF",
+   "LUMINA_FROZENIN",
+   "LUMINA_NLTE_BF_JEQB",
+   "LUMINA_NLTE_JEQB",
+   "LUMINA_TOPSTAGE_THERMALIZE"
+  ],
+  "ew_minus_plasma": [
+   "LUMINA_DR_FLOOR_CMS",
+   "LUMINA_NLTE_BK_CEIL",
+   "LUMINA_NLTE_COLL_FLOOR",
+   "LUMINA_NLTE_ION_LOCK",
+   "LUMINA_NLTE_LTE_FLOOR",
+   "LUMINA_NLTE_METASTABLE_COLL",
+   "LUMINA_NLTE_PER_ION_RESCALE",
+   "LUMINA_NLTE_STAGE4",
+   "LUMINA_STAGE4_BK_CAP",
+   "LUMINA_SUPER_CUTOFF",
+   "LUMINA_TIMEDEP_ION"
+  ],
+  "divergence_is_the_defect": "같은 성격의 계약이 서로 다른 원소로 3사본 존재한다 (C9)"
+ },
+ "C2_hard_reject_env": {
+  "n": 12,
+  "env": [
+   "LUMINA_C2_MATRIX_BF",
+   "LUMINA_FROZENIN",
+   "LUMINA_NLTE_BF_JEQB",
+   "LUMINA_NLTE_BK_PARTIAL",
+   "LUMINA_NLTE_FLOOR_MODE",
+   "LUMINA_NLTE_FLOOR_REG",
+   "LUMINA_NLTE_FORCE_LTE_LEVELS",
+   "LUMINA_NLTE_JEQB",
+   "LUMINA_NLTE_LTE_REPAIR",
+   "LUMINA_TE_TRAD_RATIO",
+   "LUMINA_TOPSTAGE_THERMALIZE",
+   "LUMINA_TRAD_COLOR_FIX"
+  ]
+ },
+ "C2_launchers_affected": {
+  "question": "하드 거부 env 를 설정하는 scripts/*.sh 는 몇 개인가",
+  "patterns": {
+   "p1_export_prefix_nonzero": "grep -rlE 'export .*(LUMINA_C2_MATRIX_BF|LUMINA_FROZENIN|LUMINA_NLTE_BF_JEQB|LUMINA_NLTE_BK_PARTIAL|LUMINA_NLTE_FLOOR_MODE|LUMINA_NLTE_FLOOR_REG|LUMINA_NLTE_FORCE_LTE_LEVELS|LUMINA_NLTE_JEQB|LUMINA_NLTE_LTE_REPAIR|LUMINA_TE_TRAD_RATIO|LUMINA_TOPSTAGE_THERMALIZE|LUMINA_TRAD_COLOR_FIX)=[^0 ]' scripts/*.sh 2>/dev/null | wc -l",
+   "p2_any_assignment": "grep -rlE '(LUMINA_C2_MATRIX_BF|LUMINA_FROZENIN|LUMINA_NLTE_BF_JEQB|LUMINA_NLTE_BK_PARTIAL|LUMINA_NLTE_FLOOR_MODE|LUMINA_NLTE_FLOOR_REG|LUMINA_NLTE_FORCE_LTE_LEVELS|LUMINA_NLTE_JEQB|LUMINA_NLTE_LTE_REPAIR|LUMINA_TE_TRAD_RATIO|LUMINA_TOPSTAGE_THERMALIZE|LUMINA_TRAD_COLOR_FIX)=' scripts/*.sh 2>/dev/null | wc -l",
+   "p3_assignment_nonzero_anywhere": "grep -rlE '(LUMINA_C2_MATRIX_BF|LUMINA_FROZENIN|LUMINA_NLTE_BF_JEQB|LUMINA_NLTE_BK_PARTIAL|LUMINA_NLTE_FLOOR_MODE|LUMINA_NLTE_FLOOR_REG|LUMINA_NLTE_FORCE_LTE_LEVELS|LUMINA_NLTE_JEQB|LUMINA_NLTE_LTE_REPAIR|LUMINA_TE_TRAD_RATIO|LUMINA_TOPSTAGE_THERMALIZE|LUMINA_TRAD_COLOR_FIX)=[^0 ]' scripts/*.sh 2>/dev/null | wc -l"
+  },
+  "counts": {
+   "p1_export_prefix_nonzero": 83,
+   "p2_any_assignment": 166,
+   "p3_assignment_nonzero_anywhere": 157
+  },
+  "min": 83,
+  "max": 166,
+  "spread_ratio": 2.0
+ },
+ "C2_caveats": [
+  "정적 grep 은 ${VAR-default} 파라미터화와 sbatch --export=ALL 상속을 판정할 수 없다 (Fable Q2)",
+  "plasma 사이트는 enable_nlte && iter>=nlte_start_iter 에서만 검사한다 — 비-NLTE 런처는 사망이 아니라 no-op 다 (C10). '발동' 수는 상한이 아니라 후보 수다"
+ ],
+ "C1_pinned_expectations": {
+  "question": "검증에 쓰이는 하드코딩 기대값은 몇 곳인가",
+  "patterns": {
+   "sha256_64hex_in_scripts": "grep -rlE '\"[0-9a-f]{64}\"' scripts/*.py 2>/dev/null | wc -l",
+   "fnv64_16hex_in_c": "grep -rlE 'UINT64_C\\(0x[0-9a-f]{16}\\)' tests/*.c src/*.c 2>/dev/null | wc -l",
+   "expected_ident_in_c": "grep -rlE 'expected_[a-z_]*(hash|fnv|lines|count|shells)' tests/*.c src/*.c 2>/dev/null | wc -l"
+  },
+  "counts": {
+   "sha256_64hex_in_scripts": 4,
+   "fnv64_16hex_in_c": 2,
+   "expected_ident_in_c": 3
+  },
+  "min": 2,
+  "max": 4,
+  "spread_ratio": 2.0
+ },
+ "C5_deck_provenance": {
+  "deck_families_total": 107,
+  "with_vintage_manifest": 6,
+  "with_provenance_stamp": 3,
+  "note": "앞선 census 는 toy06_19p48d 계열 9덱만 셌다. 전 계열로 넓힌 수치다"
+ },
+ "C7_reproduction": {
+  "validation_json_total": 152,
+  "without_schema_field": 20,
+  "with_schema_but_no_producer": 29,
+  "orphans": [
+   "validation/a2_02/A2_02_RESOLUTION_INPUT.json",
+   "validation/a2_02c/A2_02C_EFFORT_MANIFEST.json",
+   "validation/a2_02c/A2_02C_EFFORT_MANIFEST_V2.json",
+   "validation/a2_07/A2_07_ORACLE_CONTRACT.json",
+   "validation/a2_09/A2_09_CHANGED_OUTPUT_ALLOWLIST.json",
+   "validation/a2_09/A2_09_EMISSIVITY_COMPONENTS_MANIFEST.json",
+   "validation/a2_10/A2_10_CHANGED_OUTPUT_ALLOWLIST.json",
+   "validation/a2_10/A2_10_TERM_MANIFEST.json",
+   "validation/a2_12/A2_12_GPU_LIFECYCLE_VERDICT.json",
+   "validation/a2_12/cpu_invariance.json",
+   "validation/a2_12/source_manifest.json",
+   "validation/a2_13_15/a2_13_changed_output_allowlist.json",
+   "validation/a2_13_15/a2_14_changed_output_allowlist.json",
+   "validation/a2_13_15/a2_14_production_changed_output_allowlist.json",
+   "validation/a2_13_15/a2_15_changed_output_allowlist.json",
+   "validation/a2_13_15/a2_15_production_changed_output_allowlist.json",
+   "validation/a2_13_15/cpu_invariance.json",
+   "validation/a2_13_15/implementation_start_manifest.json",
+   "validation/a2_13_15/stage_status.json",
+   "validation/a2_16/A2_16_CLOSURE.json",
+   "validation/a2_16/A2_16_LAUNCHER_FLEET_BREAKAGE.json",
+   "validation/a2_16/C2_CALLER_MIGRATION_CENSUS.json",
+   "validation/a2_16/FATAL_CONTRACT_SWEEP.json",
+   "validation/a2_18/A2_18_GATE_ROLLUP.json",
+   "validation/a2_18/A2_18_OPHYS_ORACLE_REFUSAL.json",
+   "validation/layer1/L1_REMEASURE_02A_INTERNAL_AUL.json",
+   "validation/layer1/L1_REMEASURE_02B_SOURCE_ANCHOR.json",
+   "validation/layer1/L1_VINTAGE_CROSSWALK.json",
+   "validation/uv_t1t2/preregistration.json"
+  ],
+  "caveat": "schema 를 f-string 으로 합성하는 생성자는 리터럴 grep 이 못 찾는다 (Fable Q2). 또한 CSV·MD·npy 산출물은 이 프레임 밖이다"
+ }
+}
