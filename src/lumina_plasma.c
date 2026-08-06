@@ -11836,8 +11836,9 @@ int compute_radiative_equilibrium_te(PlasmaState *plasma, GammaDeposition *gamma
                                      NLTEConfig *nlte, AtomicData *atom,
                                      OpacityState *opacity,
                                      double time_explosion, int n_shells) {
-    /* A2-10 is the only production Te path.  The legacy body below is retained
-     * as unreachable diagnostic/oracle code until its A2-11 formal inputs land. */
+    /* A2-10 is the only production Te path.  A failed transaction preserves
+     * the previously committed material temperature; there is no scalar-
+     * radiation fallback. */
     return a210_production_solve(plasma,gamma_dep,nlte,atom,opacity,
                                  time_explosion,n_shells);
 }
