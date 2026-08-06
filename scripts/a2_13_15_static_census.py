@@ -79,13 +79,15 @@ def main() -> int:
     for stage_id, filename, pattern in LEDGER:
         text = (ROOT / "src" / filename).read_text(errors="replace")
         matches = list(re.finditer(pattern, text))
+        terminal = ("CLOSED_A2_13_GPU_RATE" if stage_id.startswith("G13-") else
+                    "CLOSED_A2_14_GPU_SIGNED_OPACITY" if stage_id.startswith("G14-") else
+                    "CLOSED_A2_15_GPU_EMISSIVITY")
         ledger_rows.append({
             "id": stage_id,
             "file": f"src/{filename}",
             "pattern": pattern,
             "match_count": len(matches),
-            "disposition": "BLOCKED_UPSTREAM_A2_12_NOT_READY_GUARD_RETAINED"
-            if matches else "REMOVED",
+            "disposition": terminal,
         })
         if not matches:
             # Removal is a valid final disposition; absence is not an error.
@@ -121,6 +123,22 @@ def main() -> int:
     if "radiation_view.line_jbar" not in production["lumina_nlte_assemble.cu"] or \
        "radiation_view.line_id" not in production["lumina_nlte_assemble.cu"]:
         errors.append("BB LineJbarCache device lookup missing")
+    if "gpu_opacity_production_bind(" not in production["lumina_cuda.cu"] or \
+       "opacity_view_ce.bf_event_measure" not in production["lumina_cuda.cu"]:
+        errors.append("A2-14 checked signed/event-measure production view missing")
+    emissivity_header = (ROOT / "src/gpu_emissivity_kernels.h").read_text()
+    if ("gpu_emissivity_production_bind(" not in production["lumina_cuda.cu"] or
+            "gpu_emissivity_sample_device" not in emissivity_header):
+        errors.append("A2-15 checked emissivity/CDF transport view missing")
+    if "GPU_OPACITY_NOT_MIGRATED" in production["lumina_bf_gemm.cu"]:
+        errors.append("A2-14 production guard remains")
+    if "GPU_EMISSIVITY_NOT_MIGRATED" in production["lumina_cuda.cu"]:
+        errors.append("A2-15 production guard remains")
+    bf_code = re.sub(r"/\*.*?\*/|//.*?$", "", production["lumina_bf_gemm.cu"],
+                     flags=re.MULTILINE | re.DOTALL)
+    for forbidden in ("d_T_rad", "d_W", "plasma->T_rad", "plasma->W"):
+        if forbidden in bf_code:
+            errors.append(f"A2-14 BF scalar read remains: {forbidden}")
     if "fine_correct_R_bf();" in production["lumina_nlte_gemm.cu"] or \
        "nlte_rates_gpu_set_fine(" in production["lumina_cuda.cu"]:
         errors.append("forbidden production fine-grid BF call remains")
@@ -152,6 +170,9 @@ def main() -> int:
             "bb_scalar_comment_tombstones": sum(asm.count(x) - asm_code.count(x) for x in ("plasma->W", "plasma->T_rad", "d_W", "d_T_rad")),
             "a2_14_production_guard": "GPU_OPACITY_NOT_MIGRATED" in production["lumina_bf_gemm.cu"],
             "a2_15_production_guard": "GPU_EMISSIVITY_NOT_MIGRATED" in production["lumina_cuda.cu"],
+            "a2_14_checked_production_view": "gpu_opacity_production_bind(" in production["lumina_cuda.cu"],
+            "a2_15_checked_production_view": "gpu_emissivity_production_bind(" in production["lumina_cuda.cu"],
+            "a2_15_cdf_sampler": "gpu_emissivity_sample_device" in production["lumina_cuda.cu"],
         },
         "errors": errors,
     }

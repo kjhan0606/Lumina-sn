@@ -118,6 +118,7 @@ DISPOSITION_OVERRIDES = {
 }
 
 A2_07_COMPLETION_COMMIT = "3ddd95c0de20abea3284ca326ce41b7968d4b26d"
+A2_14_COMPLETION_COMMIT = "65498e18e9826ea0cdb5906b71cebecef4b82637"
 
 # These exact census rows lost their registered token in the A2-07 migration.
 # They retain symbol/meaning/new-source/stage/final-status unchanged; only the
@@ -131,6 +132,10 @@ COMPLETED_ROWS = {
         146, 147, 148, 149, 150, 151, 154, 155,
     )
 }
+COMPLETED_ROWS.update({
+    index: ("A2-14", A2_14_COMPLETION_COMMIT)
+    for index in range(39, 52)
+})
 
 ADDENDUM_MARKER = "## ADDENDUM ("
 REQUIRED_ADDENDA = (

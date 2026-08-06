@@ -17,11 +17,15 @@ extern "C" {             /* Phase 6 - Step 1 */
 #include "lumina.h"      /* Phase 6 - Step 1 */
 #include "lumina_cmfgen.h"  /* pure-CMFGEN parallel radiation path */
 #include "gpu_radiation_field.h"
+#include "gpu_opacity_kernels.h"
+#include "gpu_emissivity_kernels.h"
 int nlte_precompute_within_sl_frac_checked(
     NLTEConfig *, AtomicData *, PlasmaState *, int);
 }                        /* Phase 6 - Step 1 */
 
 static GpuRadiationFieldCounters g_a2_12_transport_counters;
+static GpuPhysicsCounters g_a2_14_opacity_counters;
+static GpuPhysicsCounters g_a2_15_emissivity_counters;
 
 /* ============================================================ */
 /* cuBLAS batched NLTE solver data structure                    */
@@ -565,6 +569,33 @@ static void cuda_upload_bf(CudaDeviceData *dev, BFOpacity *bf,
         CUDA_CHECK(cudaMemcpy(dev->d_bf_event_has_sigma, bf->event_has_sigma,
                    nr * sizeof(int), cudaMemcpyHostToDevice));
     }
+}
+
+static int cuda_bind_a2_14_15_publications(
+    OpacityState *opacity, BFOpacity *bf, AtomicData *atom,
+    PlasmaState *plasma, NLTEConfig *nlte, double epoch,
+    GpuOpacityDeviceView *opacity_view,
+    GpuEmissivityDeviceView *emissivity_view)
+{
+    GpuRadiationFieldReport report;
+    GpuRadiationFieldDeviceView rf;
+    if (!opacity || !bf || !atom || !plasma || !nlte ||
+        !opacity_view || !emissivity_view) return -1;
+    if (gpu_radiation_field_production_bind(&nlte->radiation_field,
+            &report, NULL) != GPU_RF_OK ||
+        gpu_radiation_field_production_view(&nlte->radiation_field,
+            &rf, &report) != GPU_RF_OK) return -1;
+    if (a208_publish_cpu_opacity(opacity, bf, atom, plasma, nlte, epoch) != 0 ||
+        a209_publish_cpu_emissivity(opacity, bf, atom, plasma, nlte, epoch) != 0)
+        return -1;
+    gpu_physics_counters_init(&g_a2_14_opacity_counters, rf.generation);
+    gpu_physics_counters_init(&g_a2_15_emissivity_counters, rf.generation);
+    if (gpu_opacity_production_bind(&opacity->cpu_opacity, &rf,
+            opacity_view, &g_a2_14_opacity_counters, NULL) != 0 ||
+        gpu_emissivity_production_bind(&opacity->cpu_emissivity, &rf,
+            emissivity_view, &g_a2_15_emissivity_counters, NULL) != 0)
+        return -1;
+    return 0;
 }
 
 /* NLTE: download J_nu from GPU to CPU NLTEConfig */
@@ -3757,19 +3788,20 @@ double d_sample_planck_frequency(double T, uint64_t *rng) {
     return -log(r1 * r2 * r3 * r4) / l_min * kT_h;
 }
 
-/* BF absorption: thermalize packet — re-emit as Planck(T_rad), reset line ID */
+/* A2-15 BF absorption: one draw from the checked generation-bound eta CDF. */
 __device__
 void d_bf_absorption_event(double *pkt_r, double *pkt_mu, double *pkt_nu,
                             int *pkt_next_line_id, double t_exp,
-                            const double *d_T_rad, int shell_id,
+                            GpuEmissivityDeviceView emissivity_view, int shell_id,
                             const double *d_line_list_nu, int n_lines,
                             uint64_t *rng) {
     /* 1. New isotropic direction */
     *pkt_mu = d_rng_mu(rng);
 
-    /* 2. Sample comoving frequency from Planck(T_rad) */
-    double T_rad = d_T_rad[shell_id];
-    double comov_nu = d_sample_planck_frequency(T_rad, rng);
+    /* 2. The CPU and GPU contracts each consume exactly this one uniform. */
+    double comov_nu = 0.0;
+    (void)gpu_emissivity_sample_device(emissivity_view, shell_id,
+                                        d_rng_uniform(rng), &comov_nu);
 
     /* 3. Transform to lab frame */
     double inv_doppler = d_get_inverse_doppler_factor(*pkt_r, *pkt_mu, t_exp);
@@ -3787,29 +3819,20 @@ void d_bf_absorption_event(double *pkt_r, double *pkt_mu, double *pkt_nu,
     *pkt_next_line_id = lo;
 }
 
-/* [EPS-UV 2STEP] Band-constrained variant: Planck(T_rad) re-emission rejection-
- * sampled into [nu_lo, nu_hi]. Used by the 2-step UV→opt→red cascade so the
- * packet lands in the optical band and red flux can emerge from natural line
- * physics afterward. Falls back to a uniform draw within the band if the
- * rejection loop fails to find a sample within 256 attempts (very rare at
- * SN T_rad ~ 8000 K when band straddles the Wien peak). */
+/* Historical band arguments remain ABI-local, but A2-15 has one CDF and one
+ * draw-count contract; no rejection or uniform fallback is permitted. */
 __device__
 void d_bf_absorption_event_band(double *pkt_r, double *pkt_mu, double *pkt_nu,
                                  int *pkt_next_line_id, double t_exp,
-                                 const double *d_T_rad, int shell_id,
+                                 GpuEmissivityDeviceView emissivity_view, int shell_id,
                                  const double *d_line_list_nu, int n_lines,
                                  double nu_lo, double nu_hi,
                                  uint64_t *rng) {
     *pkt_mu = d_rng_mu(rng);
-    double T_rad = d_T_rad[shell_id];
-    double comov_nu = -1.0;
-    for (int attempt = 0; attempt < 256; attempt++) {
-        double cand = d_sample_planck_frequency(T_rad, rng);
-        if (cand >= nu_lo && cand <= nu_hi) { comov_nu = cand; break; }
-    }
-    if (comov_nu < 0.0) {
-        comov_nu = nu_lo + (nu_hi - nu_lo) * d_rng_uniform(rng);
-    }
+    double comov_nu = 0.0;
+    (void)nu_lo; (void)nu_hi;
+    (void)gpu_emissivity_sample_device(emissivity_view, shell_id,
+                                        d_rng_uniform(rng), &comov_nu);
     double inv_doppler = d_get_inverse_doppler_factor(*pkt_r, *pkt_mu, t_exp);
     *pkt_nu = comov_nu * inv_doppler;
     double comov_check = *pkt_nu * d_get_doppler_factor(*pkt_r, *pkt_mu, t_exp);
@@ -5355,7 +5378,7 @@ void d_line_scatter_event(double *r, double *mu, double *nu, double *energy,
                            const int *d_line_atomic_number,
                            const int *d_line_ion_number,
                            int fe_scatter_mode,
-                           const double *d_T_rad, int n_lines,
+                           GpuEmissivityDeviceView emissivity_view, int n_lines,
                            /* [KROMER] emitted line_id out (-1 for continuum); NULL-safe */
                            int *out_emit_line,
                            /* [FLUOR-MATRIX] line cascade traversed k-packet pool */
@@ -5454,14 +5477,14 @@ void d_line_scatter_event(double *r, double *mu, double *nu, double *energy,
                 d_rng_uniform(rng) < d_eps_uv) {
                 if (d_eps_uv_2step) {
                     d_bf_absorption_event_band(r, mu, nu, next_line_id, t_exp,
-                                                d_T_rad, shell_id,
+                                                emissivity_view, shell_id,
                                                 d_line_list_nu, n_lines,
                                                 d_eps_uv_2step_nu_lo,
                                                 d_eps_uv_2step_nu_hi, rng);
                     d_eboost_refix(energy, comov_energy, *r, *mu, t_exp, 0);
                 } else {
                     d_bf_absorption_event(r, mu, nu, next_line_id, t_exp,
-                                           d_T_rad, shell_id,
+                                           emissivity_view, shell_id,
                                            d_line_list_nu, n_lines, rng);
                     d_eboost_refix(energy, comov_energy, *r, *mu, t_exp, 1);
                 }
@@ -5479,7 +5502,7 @@ void d_line_scatter_event(double *r, double *mu, double *nu, double *energy,
                 double lam_A_entry = (C_SPEED_OF_LIGHT / ma_entry_comov_nu) * 1.0e8;
                 if (lam_A_entry > 7000.0 && d_rng_uniform(rng) < d_eps_ir) {
                     d_bf_absorption_event(r, mu, nu, next_line_id, t_exp,
-                                           d_T_rad, shell_id,
+                                           emissivity_view, shell_id,
                                            d_line_list_nu, n_lines, rng);
                     d_eboost_refix(energy, comov_energy, *r, *mu, t_exp, 2);
                     double ma_exit_comov_nu_th = *nu *
@@ -5741,13 +5764,13 @@ void d_line_scatter_event(double *r, double *mu, double *nu, double *energy,
                     d_rng_uniform(rng) < d_eps_uv) {
                     if (d_eps_uv_2step) {
                         d_bf_absorption_event_band(r, mu, nu, next_line_id, t_exp,
-                                                    d_T_rad, shell_id,
+                                                    emissivity_view, shell_id,
                                                     d_line_list_nu, n_lines,
                                                     d_eps_uv_2step_nu_lo,
                                                     d_eps_uv_2step_nu_hi, rng);
                     } else {
                         d_bf_absorption_event(r, mu, nu, next_line_id, t_exp,
-                                               d_T_rad, shell_id,
+                                               emissivity_view, shell_id,
                                                d_line_list_nu, n_lines, rng);
                     }
                     d_eboost_refix(energy, comov_energy, *r, *mu, t_exp, 9);
@@ -5986,7 +6009,7 @@ void transport_kernel(
     /* Virtual packet spectrum */
     double *d_virtual_spectrum, double L_inner,
     /* BF opacity arrays */
-    const double *d_chi_bf, const double *d_T_rad,
+    const double *d_chi_bf, GpuEmissivityDeviceView emissivity_view,
     const int *d_bf_activation_level,
     const double *d_bf_event_chi, const double *d_bf_event_weight,
     const double *d_bf_event_stim_ratio,
@@ -6250,7 +6273,7 @@ void transport_kernel(
                                   d_line_atomic_number,
                                   d_line_ion_number,
                                   fe_scatter_mode,
-                                  d_T_rad, n_lines,
+                                  emissivity_view, n_lines,
                                   &kr_out_emit,                           /* [KROMER] */
                                   &fluor_via_kpacket,                     /* [FLUOR-MATRIX] */
                                   &fluor_route_classified,                /* [FLUOR-MATRIX] */
@@ -6560,7 +6583,7 @@ void transport_kernel(
                      * is a separate decision. */
                     d_bf_absorption_event(&pkt_r, &pkt_mu, &pkt_nu,
                                            &pkt_next_line_id, t_exp,
-                                           d_T_rad, pkt_shell_id,
+                                           emissivity_view, pkt_shell_id,
                                            d_line_list_nu, n_lines, rng);
                     last_reset_inner = 0;   /* f_in: bf re-emission reset frequency */
                     if (d_event_log_on) { double _d = d_get_doppler_factor(pkt_r, pkt_mu, t_exp); /* [EVENT-LOG] etype 8 (legacy bf re-emit) */
@@ -8817,10 +8840,16 @@ int main(int argc, char *argv[]) {
                                                                : 1.0 / L_inner_ce;
                         double packet_energy_ce = 1.0 / (double)n_packets;
                         uint64_t iter_seed_ce = config.seed + (uint64_t)it * 1000000ULL;
-                        if (gpu_rf_block_unmigrated(&g_a2_12_transport_counters,
-                                GPU_EMISSIVITY_NOT_MIGRATED,
-                                "lumina_cuda.co_evolve.transport") != 0)
+                        GpuOpacityDeviceView opacity_view_ce;
+                        GpuEmissivityDeviceView emissivity_view_ce;
+                        if (cuda_bind_a2_14_15_publications(&opacity, &bf,
+                                &atom_data, &plasma, &nlte,
+                                geo.time_explosion, &opacity_view_ce,
+                                &emissivity_view_ce) != 0) {
+                            fprintf(stderr, "[A2-14/15][BLOCKED] checked production "
+                                    "publication unavailable site=co_evolve\n");
                             return EXIT_FAILURE;
+                        }
                         gpu_rf_record_physical_launch(&g_a2_12_transport_counters);
                         transport_kernel<<<blocks, threads_per_block>>>(
                             dev.d_r_inner, dev.d_r_outer,
@@ -8851,7 +8880,8 @@ int main(int argc, char *argv[]) {
                             (enable_virtual && it == pc_iter - 1)
                                 ? dev.d_virtual_spectrum : (double *)NULL,
                             L_inner_ce,
-                            dev.d_chi_bf, dev.d_T_rad, dev.d_bf_activation_level,
+                            opacity_view_ce.bf_event_measure,
+                            emissivity_view_ce, dev.d_bf_activation_level,
                             dev.d_bf_event_chi, dev.d_bf_event_weight,
                             dev.d_bf_event_stim_ratio,
                             dev.d_bf_event_nu_edge, dev.d_bf_event_sigma0,
@@ -10242,10 +10272,15 @@ int main(int argc, char *argv[]) {
         cuda_upload_recomb(&dev, &opacity, geo.n_shells);
         cuda_upload_iup(&dev, &opacity, geo.n_shells);
 
-        if (gpu_rf_block_unmigrated(&g_a2_12_transport_counters,
-                GPU_EMISSIVITY_NOT_MIGRATED,
-                "lumina_cuda.final.transport") != 0)
+        GpuOpacityDeviceView opacity_view_final;
+        GpuEmissivityDeviceView emissivity_view_final;
+        if (cuda_bind_a2_14_15_publications(&opacity, &bf, &atom_data,
+                &plasma, &nlte, geo.time_explosion, &opacity_view_final,
+                &emissivity_view_final) != 0) {
+            fprintf(stderr, "[A2-14/15][BLOCKED] checked production "
+                            "publication unavailable site=final\n");
             return EXIT_FAILURE;
+        }
         gpu_rf_record_physical_launch(&g_a2_12_transport_counters);
         transport_kernel<<<blocks, threads_per_block>>>(
             dev.d_r_inner, dev.d_r_outer,
@@ -10270,7 +10305,8 @@ int main(int argc, char *argv[]) {
             dev.d_escaped_emit_line, dev.d_escaped_in_line, dev.d_escaped_in_nu, /* [KROMER] */
             dev.d_n_escaped, dev.d_n_reabsorbed,
             enable_virtual ? dev.d_virtual_spectrum : (double *)NULL, L_inner,
-            dev.d_chi_bf, dev.d_T_rad, dev.d_bf_activation_level,
+            opacity_view_final.bf_event_measure,
+            emissivity_view_final, dev.d_bf_activation_level,
             dev.d_bf_event_chi, dev.d_bf_event_weight,
             dev.d_bf_event_stim_ratio,
             dev.d_bf_event_nu_edge, dev.d_bf_event_sigma0,
@@ -11103,6 +11139,8 @@ int main(int argc, char *argv[]) {
     free(volume);                 /* Phase 6 - Step 8 */
     free_atomic_data(&atom_data); /* Task #072 */
     if (enable_nlte) {
+        gpu_emissivity_production_release();
+        gpu_opacity_production_release();
         gpu_radiation_field_production_release();
         cuda_nlte_solver_free(&nlte_solver);
         nlte_free(&nlte);

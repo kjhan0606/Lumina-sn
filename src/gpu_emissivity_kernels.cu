@@ -2,6 +2,22 @@
 
 #include <cuda_runtime.h>
 #include <math.h>
+#include <string.h>
+
+typedef struct {
+    double *edges, *eta, *cdf;
+    GpuEmissivityDeviceView view;
+} GpuEmissivityProductionMirror;
+
+static GpuEmissivityProductionMirror production_emissivity;
+
+static void production_emissivity_clear(void)
+{
+    if (production_emissivity.edges) cudaFree(production_emissivity.edges);
+    if (production_emissivity.eta) cudaFree(production_emissivity.eta);
+    if (production_emissivity.cdf) cudaFree(production_emissivity.cdf);
+    memset(&production_emissivity, 0, sizeof(production_emissivity));
+}
 
 __global__ static void emissivity_cdf_kernel(GpuRadiationFieldDeviceView view,
     const double *component, const double *u, double *total, double *cdf,
@@ -99,3 +115,80 @@ fail:
     cudaFree(d_nu); cudaFree(d_status); free(status); c->blocked_launches++;
     return -1;
 }
+
+int gpu_emissivity_production_bind(const CpuEmissivityPublication *p,
+    const GpuRadiationFieldDeviceView *rf, GpuEmissivityDeviceView *out,
+    GpuPhysicsCounters *c, void *cuda_stream)
+{
+    if (!p || !rf || !out || !c || !p->committed_emissivity_generation ||
+        p->cdf_generation != p->committed_emissivity_generation ||
+        p->opacity_generation != p->committed_emissivity_generation ||
+        p->radfield_generation != rf->generation ||
+        p->line_view_generation != rf->generation ||
+        p->n_shells != rf->n_shells || p->n_bins != rf->n_bins ||
+        p->redistribution_status != EMISS_OK || !p->nu_edge ||
+        !p->eta_reemit || !p->reemit_cdf) {
+        c->blocked_generation++; c->blocked_launches++; return -1;
+    }
+    size_t cells = p->n_shells * p->n_bins;
+    for (size_t i = 0; i < cells; ++i) {
+        if ((p->cell_status[i] != EMISS_OK &&
+             p->cell_status[i] != EMISS_EXACT_ZERO) ||
+            !isfinite(p->eta_reemit[i]) || p->eta_reemit[i] < 0.0 ||
+            !isfinite(p->reemit_cdf[i]) || p->reemit_cdf[i] < 0.0 ||
+            p->reemit_cdf[i] > 1.0) {
+            c->blocked_nonfinite++; c->blocked_launches++; return -1;
+        }
+    }
+    production_emissivity_clear();
+    cudaStream_t stream = (cudaStream_t)cuda_stream;
+    size_t edge_bytes = (p->n_bins + 1) * sizeof(double);
+    size_t cell_bytes = cells * sizeof(double);
+    if (cudaMalloc(&production_emissivity.edges, edge_bytes) != cudaSuccess ||
+        cudaMalloc(&production_emissivity.eta, cell_bytes) != cudaSuccess ||
+        cudaMalloc(&production_emissivity.cdf, cell_bytes) != cudaSuccess ||
+        cudaMemcpyAsync(production_emissivity.edges, p->nu_edge, edge_bytes,
+                        cudaMemcpyHostToDevice, stream) != cudaSuccess ||
+        cudaMemcpyAsync(production_emissivity.eta, p->eta_reemit, cell_bytes,
+                        cudaMemcpyHostToDevice, stream) != cudaSuccess ||
+        cudaMemcpyAsync(production_emissivity.cdf, p->reemit_cdf, cell_bytes,
+                        cudaMemcpyHostToDevice, stream) != cudaSuccess ||
+        cudaStreamSynchronize(stream) != cudaSuccess) goto fail;
+    production_emissivity.view.frequency_bin_edges = production_emissivity.edges;
+    production_emissivity.view.eta_reemit = production_emissivity.eta;
+    production_emissivity.view.reemit_cdf = production_emissivity.cdf;
+    production_emissivity.view.emissivity_generation =
+        p->committed_emissivity_generation;
+    production_emissivity.view.opacity_generation = p->opacity_generation;
+    production_emissivity.view.radiation_generation = p->radfield_generation;
+    production_emissivity.view.line_generation = p->line_view_generation;
+    production_emissivity.view.n_shells = p->n_shells;
+    production_emissivity.view.n_bins = p->n_bins;
+    c->emissivity_cells_attempted += cells;
+    c->emissivity_cells_published += cells;
+    c->gpu_generation = rf->generation;
+    c->line_generation = rf->generation;
+    *out = production_emissivity.view;
+    return 0;
+fail:
+    production_emissivity_clear(); c->blocked_launches++; return -1;
+}
+
+int gpu_emissivity_production_view(const CpuEmissivityPublication *p,
+    const GpuRadiationFieldDeviceView *rf, GpuEmissivityDeviceView *out,
+    GpuPhysicsCounters *c)
+{
+    if (!p || !rf || !out || !c ||
+        production_emissivity.view.emissivity_generation !=
+            p->committed_emissivity_generation ||
+        production_emissivity.view.radiation_generation != rf->generation ||
+        production_emissivity.view.line_generation != rf->generation) {
+        if (c) { c->blocked_generation++; c->blocked_launches++; }
+        return -1;
+    }
+    *out = production_emissivity.view;
+    return 0;
+}
+
+void gpu_emissivity_production_release(void)
+{ production_emissivity_clear(); }
