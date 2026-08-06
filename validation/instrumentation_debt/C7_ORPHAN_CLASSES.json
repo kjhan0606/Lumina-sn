@@ -1,0 +1,44 @@
+{
+ "schema": "lumina-c7-orphan-classification-v1",
+ "total": 29,
+ "classes": {
+  "seal_with_verifier": [
+   "validation/a2_09/A2_09_CHANGED_OUTPUT_ALLOWLIST.json",
+   "validation/a2_10/A2_10_CHANGED_OUTPUT_ALLOWLIST.json"
+  ],
+  "seal_no_verifier": [
+   "validation/a2_02c/A2_02C_EFFORT_MANIFEST.json",
+   "validation/a2_02c/A2_02C_EFFORT_MANIFEST_V2.json",
+   "validation/a2_09/A2_09_EMISSIVITY_COMPONENTS_MANIFEST.json",
+   "validation/a2_10/A2_10_TERM_MANIFEST.json",
+   "validation/a2_12/source_manifest.json",
+   "validation/a2_13_15/a2_13_changed_output_allowlist.json",
+   "validation/a2_13_15/a2_14_changed_output_allowlist.json",
+   "validation/a2_13_15/a2_14_production_changed_output_allowlist.json",
+   "validation/a2_13_15/a2_15_changed_output_allowlist.json",
+   "validation/a2_13_15/a2_15_production_changed_output_allowlist.json",
+   "validation/a2_13_15/implementation_start_manifest.json"
+  ],
+  "measurement": [
+   "validation/a2_02/A2_02_RESOLUTION_INPUT.json",
+   "validation/a2_07/A2_07_ORACLE_CONTRACT.json",
+   "validation/a2_12/cpu_invariance.json",
+   "validation/a2_13_15/cpu_invariance.json",
+   "validation/a2_16/A2_16_LAUNCHER_FLEET_BREAKAGE.json",
+   "validation/a2_16/C2_CALLER_MIGRATION_CENSUS.json",
+   "validation/a2_16/FATAL_CONTRACT_SWEEP.json",
+   "validation/a2_18/A2_18_OPHYS_ORACLE_REFUSAL.json",
+   "validation/layer1/L1_REMEASURE_02A_INTERNAL_AUL.json",
+   "validation/layer1/L1_REMEASURE_02B_SOURCE_ANCHOR.json",
+   "validation/layer1/L1_VINTAGE_CROSSWALK.json",
+   "validation/uv_t1t2/preregistration.json"
+  ],
+  "status_record": [
+   "validation/a2_12/A2_12_GPU_LIFECYCLE_VERDICT.json",
+   "validation/a2_13_15/stage_status.json",
+   "validation/a2_16/A2_16_CLOSURE.json",
+   "validation/a2_18/A2_18_GATE_ROLLUP.json"
+  ]
+ },
+ "note": "seal/allowlist 은 \"재생성\"이 아니라 **검증기**가 재현 경로다(봉인은 의도적으로 손으로 만든 약속이므로 재생성하면 봉인이 아니다). measurement 만 생성 스크립트가 필요하다."
+}

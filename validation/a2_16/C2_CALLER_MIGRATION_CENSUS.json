@@ -1,105 +1,160 @@
 {
- "schema": "lumina-c2-caller-migration-census-v1",
- "when": "2026-08-06",
- "method": "운전석 기계 census (Codex 4회 연속 탐색 중 종료로 위임 불가 — 증거는 운전석이 모으고 판정만 위임하는 방식으로 전환)",
- "hard_reject_env_total": 12,
- "sites": [
-  "src/lumina_atomic.c:838 -> src/seed_capability.c:79 (obsolete scalar)",
-  "src/lumina_plasma.c:14958-14982 (forbidden population knobs)"
- ],
+ "schema": "lumina-c2-caller-migration-census-v2",
+ "git_head": "efce407",
+ "untracked_files": 405,
+ "hard_reject_env_total": 22,
  "per_env": [
   {
-   "env": "LUMINA_TE_TRAD_RATIO",
-   "launchers_setting": 78,
-   "launchers_triggering": 78,
-   "trigger": "non-empty"
-  },
-  {
-   "env": "LUMINA_TRAD_COLOR_FIX",
-   "launchers_setting": 12,
-   "launchers_triggering": 12,
-   "trigger": "non-empty"
+   "env": "LUMINA_BSRC_WFLOOR",
+   "launchers_setting": 0,
+   "launchers_nonzero": 0,
+   "trigger": "atoi!=0"
   },
   {
    "env": "LUMINA_C2_MATRIX_BF",
    "launchers_setting": 0,
-   "launchers_triggering": 0,
+   "launchers_nonzero": 0,
+   "trigger": "atoi!=0"
+  },
+  {
+   "env": "LUMINA_CMF_EPAY",
+   "launchers_setting": 3,
+   "launchers_nonzero": 3,
+   "trigger": "atoi!=0"
+  },
+  {
+   "env": "LUMINA_CMF_EPAY_HOTF",
+   "launchers_setting": 3,
+   "launchers_nonzero": 0,
+   "trigger": "atoi!=0"
+  },
+  {
+   "env": "LUMINA_FIXED_TRAD_PROFILE",
+   "launchers_setting": 4,
+   "launchers_nonzero": 4,
    "trigger": "atoi!=0"
   },
   {
    "env": "LUMINA_FROZENIN",
    "launchers_setting": 92,
-   "launchers_triggering": 37,
+   "launchers_nonzero": 37,
+   "trigger": "atoi!=0"
+  },
+  {
+   "env": "LUMINA_F_COLL_BOOST",
+   "launchers_setting": 2,
+   "launchers_nonzero": 2,
+   "trigger": "atoi!=0"
+  },
+  {
+   "env": "LUMINA_KPEMISS_BSRC_TAU",
+   "launchers_setting": 25,
+   "launchers_nonzero": 0,
    "trigger": "atoi!=0"
   },
   {
    "env": "LUMINA_NLTE_BF_JEQB",
    "launchers_setting": 1,
-   "launchers_triggering": 1,
+   "launchers_nonzero": 1,
    "trigger": "atoi!=0"
   },
   {
    "env": "LUMINA_NLTE_BK_PARTIAL",
    "launchers_setting": 1,
-   "launchers_triggering": 1,
+   "launchers_nonzero": 1,
    "trigger": "atoi!=0"
   },
   {
    "env": "LUMINA_NLTE_FLOOR_MODE",
    "launchers_setting": 18,
-   "launchers_triggering": 9,
+   "launchers_nonzero": 9,
    "trigger": "atoi!=0"
   },
   {
    "env": "LUMINA_NLTE_FLOOR_REG",
    "launchers_setting": 146,
-   "launchers_triggering": 71,
+   "launchers_nonzero": 71,
    "trigger": "atoi!=0"
   },
   {
    "env": "LUMINA_NLTE_FORCE_LTE_LEVELS",
    "launchers_setting": 2,
-   "launchers_triggering": 2,
+   "launchers_nonzero": 2,
    "trigger": "atoi!=0"
   },
   {
    "env": "LUMINA_NLTE_JEQB",
    "launchers_setting": 1,
-   "launchers_triggering": 1,
+   "launchers_nonzero": 1,
    "trigger": "atoi!=0"
   },
   {
    "env": "LUMINA_NLTE_LTE_REPAIR",
    "launchers_setting": 1,
-   "launchers_triggering": 1,
+   "launchers_nonzero": 1,
    "trigger": "atoi!=0"
+  },
+  {
+   "env": "LUMINA_OUTER_TE_DAMP_FACTOR",
+   "launchers_setting": 1,
+   "launchers_nonzero": 1,
+   "trigger": "atoi!=0"
+  },
+  {
+   "env": "LUMINA_OUTER_TE_DAMP_SMIN",
+   "launchers_setting": 1,
+   "launchers_nonzero": 1,
+   "trigger": "atoi!=0"
+  },
+  {
+   "env": "LUMINA_TE_TRAD_RATIO",
+   "launchers_setting": 78,
+   "launchers_nonzero": 78,
+   "trigger": "non-empty"
   },
   {
    "env": "LUMINA_TOPSTAGE_THERMALIZE",
    "launchers_setting": 1,
-   "launchers_triggering": 1,
+   "launchers_nonzero": 1,
+   "trigger": "atoi!=0"
+  },
+  {
+   "env": "LUMINA_TRAD_COLOR_FIX",
+   "launchers_setting": 12,
+   "launchers_nonzero": 12,
+   "trigger": "non-empty"
+  },
+  {
+   "env": "LUMINA_VALIDATE_PLASMA",
+   "launchers_setting": 0,
+   "launchers_nonzero": 0,
+   "trigger": "atoi!=0"
+  },
+  {
+   "env": "LUMINA_W_CAP",
+   "launchers_setting": 1,
+   "launchers_nonzero": 1,
    "trigger": "atoi!=0"
   }
  ],
- "launchers_affected_union": 157,
- "correction": "앞선 집계 98(78+20)은 과소였다. grep 에 export 접두를 요구하고 [^0 ] 로 좁혔다. 실제 157.",
- "disposition_split": {
-  "semantically_neutral_removal": [
-   "LUMINA_TE_TRAD_RATIO",
-   "LUMINA_TRAD_COLOR_FIX"
-  ],
-  "real_feature_deliberately_forbidden": [
-   "LUMINA_FROZENIN",
-   "LUMINA_NLTE_FLOOR_REG",
-   "LUMINA_NLTE_FLOOR_MODE",
-   "LUMINA_NLTE_FORCE_LTE_LEVELS",
-   "LUMINA_NLTE_LTE_REPAIR",
-   "LUMINA_NLTE_JEQB",
-   "LUMINA_NLTE_BF_JEQB",
-   "LUMINA_NLTE_BK_PARTIAL",
-   "LUMINA_C2_MATRIX_BF",
-   "LUMINA_TOPSTAGE_THERMALIZE"
-  ],
-  "note": "앞 2종은 죽은 노브라 export 제거가 의미 중립. 뒤 10종은 실제 기능이었고 A2-07 이 의도적으로 금지했다 — 줄을 지우면 그 런의 의미가 바뀐다. 자동 이관 금지, 실행 불가 표시가 맞다."
- }
+ "launchers_affected": {
+  "patterns": {
+   "p1_export_prefix_nonzero": "grep -rlE 'export .*(LUMINA_BSRC_WFLOOR|LUMINA_C2_MATRIX_BF|LUMINA_CMF_EPAY|LUMINA_CMF_EPAY_HOTF|LUMINA_FIXED_TRAD_PROFILE|LUMINA_FROZENIN|LUMINA_F_COLL_BOOST|LUMINA_KPEMISS_BSRC_TAU|LUMINA_NLTE_BF_JEQB|LUMINA_NLTE_BK_PARTIAL|LUMINA_NLTE_FLOOR_MODE|LUMINA_NLTE_FLOOR_REG|LUMINA_NLTE_FORCE_LTE_LEVELS|LUMINA_NLTE_JEQB|LUMINA_NLTE_LTE_REPAIR|LUMINA_OUTER_TE_DAMP_FACTOR|LUMINA_OUTER_TE_DAMP_SMIN|LUMINA_TE_TRAD_RATIO|LUMINA_TOPSTAGE_THERMALIZE|LUMINA_TRAD_COLOR_FIX|LUMINA_VALIDATE_PLASMA|LUMINA_W_CAP)=[^0 ]' scripts/*.sh 2>/dev/null | wc -l",
+   "p2_any_assignment": "grep -rlE '(LUMINA_BSRC_WFLOOR|LUMINA_C2_MATRIX_BF|LUMINA_CMF_EPAY|LUMINA_CMF_EPAY_HOTF|LUMINA_FIXED_TRAD_PROFILE|LUMINA_FROZENIN|LUMINA_F_COLL_BOOST|LUMINA_KPEMISS_BSRC_TAU|LUMINA_NLTE_BF_JEQB|LUMINA_NLTE_BK_PARTIAL|LUMINA_NLTE_FLOOR_MODE|LUMINA_NLTE_FLOOR_REG|LUMINA_NLTE_FORCE_LTE_LEVELS|LUMINA_NLTE_JEQB|LUMINA_NLTE_LTE_REPAIR|LUMINA_OUTER_TE_DAMP_FACTOR|LUMINA_OUTER_TE_DAMP_SMIN|LUMINA_TE_TRAD_RATIO|LUMINA_TOPSTAGE_THERMALIZE|LUMINA_TRAD_COLOR_FIX|LUMINA_VALIDATE_PLASMA|LUMINA_W_CAP)=' scripts/*.sh 2>/dev/null | wc -l",
+   "p3_assignment_nonzero": "grep -rlE '(LUMINA_BSRC_WFLOOR|LUMINA_C2_MATRIX_BF|LUMINA_CMF_EPAY|LUMINA_CMF_EPAY_HOTF|LUMINA_FIXED_TRAD_PROFILE|LUMINA_FROZENIN|LUMINA_F_COLL_BOOST|LUMINA_KPEMISS_BSRC_TAU|LUMINA_NLTE_BF_JEQB|LUMINA_NLTE_BK_PARTIAL|LUMINA_NLTE_FLOOR_MODE|LUMINA_NLTE_FLOOR_REG|LUMINA_NLTE_FORCE_LTE_LEVELS|LUMINA_NLTE_JEQB|LUMINA_NLTE_LTE_REPAIR|LUMINA_OUTER_TE_DAMP_FACTOR|LUMINA_OUTER_TE_DAMP_SMIN|LUMINA_TE_TRAD_RATIO|LUMINA_TOPSTAGE_THERMALIZE|LUMINA_TRAD_COLOR_FIX|LUMINA_VALIDATE_PLASMA|LUMINA_W_CAP)=[^0 ]' scripts/*.sh 2>/dev/null | wc -l"
+  },
+  "counts": {
+   "p1_export_prefix_nonzero": 83,
+   "p2_any_assignment": 174,
+   "p3_assignment_nonzero": 158
+  },
+  "min": 83,
+  "max": 174,
+  "spread_ratio": 2.0963855421686746
+ },
+ "read_this_first": "단일 수치가 아니라 spread 를 보라. 98->157->83-166 이 그 실증이다.",
+ "caveats": [
+  "정적 grep 은 ${VAR-default} 파라미터화와 sbatch --export=ALL 상속을 판정할 수 없다",
+  "plasma 사이트는 enable_nlte && iter>=nlte_start_iter 안에서만 검사한다 (C10) — 비-NLTE 런처는 사망이 아니라 no-op 다"
+ ]
 }
