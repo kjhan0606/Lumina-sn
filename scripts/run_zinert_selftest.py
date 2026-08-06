@@ -64,13 +64,14 @@ def main() -> int:
     parser.add_argument("--a2-09", type=Path, required=True)
     parser.add_argument("--a2-10", type=Path, required=True)
     parser.add_argument("--a2-12-contract", type=Path, required=True)
+    parser.add_argument("--a2-13-15-contract", type=Path, required=True)
     parser.add_argument("--deck", type=Path, required=True)
     parser.add_argument("--verify", type=Path, required=True)
     parser.add_argument("--serial", action="store_true")
     parser.add_argument("--scratch-root", type=Path)
     args = parser.parse_args()
 
-    paths = [args.validator, args.tau, args.population, args.canonical_tau, args.a2_08, args.a2_09, args.a2_10, args.a2_12_contract, args.verify]
+    paths = [args.validator, args.tau, args.population, args.canonical_tau, args.a2_08, args.a2_09, args.a2_10, args.a2_12_contract, args.a2_13_15_contract, args.verify]
     if any(not path.resolve().is_file() for path in paths) or not args.deck.resolve().is_dir():
         parser.error("all Z-INERT binaries, verifier, and deck must exist")
     scratch_context = None
@@ -92,6 +93,7 @@ def main() -> int:
         ("a2-09-emissivity", (str(args.a2_09.resolve()),), False),
         ("a2-10-radeq", (str(args.a2_10.resolve()),), False),
         ("a2-12-gpu-lifecycle-contract", (str(args.a2_12_contract.resolve()),), False),
+        ("a2-13-15-gpu-physics-contract", (str(args.a2_13_15_contract.resolve()),), False),
         ("verify", (sys.executable, str(args.verify.resolve()), "--deck", str(args.deck.resolve())), False),
     )
     tasks = [

@@ -10,8 +10,8 @@ LDFLAGS += -fopenmp
 endif
 
 # Source files (in src/)
-SOURCES = src/lumina_main.c src/lumina_transport.c src/a2_02c_segment_capture.c src/radiation_field.c src/bf_rate_jnu.c src/line_jbar.c src/population_contract.c src/opacity_publication.c src/emissivity_publication.c src/radeq_publication.c src/lumina_plasma.c src/lumina_element_wide.c src/lumina_atomic.c src/lumina_cmfgen.c
-HEADERS = src/lumina.h src/a2_02c_segment_capture.h src/radiation_field.h src/bf_rate_jnu.h src/line_jbar.h src/population_contract.h src/opacity_publication.h src/emissivity_publication.h src/radeq_publication.h
+SOURCES = src/lumina_main.c src/lumina_transport.c src/a2_02c_segment_capture.c src/radiation_field.c src/bf_rate_jnu.c src/line_jbar.c src/population_contract.c src/opacity_publication.c src/emissivity_publication.c src/radeq_publication.c src/gpu_physics_contract.c src/lumina_plasma.c src/lumina_element_wide.c src/lumina_atomic.c src/lumina_cmfgen.c
+HEADERS = src/lumina.h src/a2_02c_segment_capture.h src/radiation_field.h src/bf_rate_jnu.h src/line_jbar.h src/population_contract.h src/opacity_publication.h src/emissivity_publication.h src/radeq_publication.h src/gpu_physics_contract.h
 TARGET = lumina
 POPULATION_SRC = src/population_contract.c
 A2_PUBLICATION_SRC = src/opacity_publication.c src/emissivity_publication.c src/radeq_publication.c
@@ -43,10 +43,14 @@ CUDA_NLTE_ASM   = src/lumina_nlte_assemble.cu
 CUDA_CMF_SOLVE  = src/lumina_cmf_solve.cu
 CUDA_RF_MIRROR  = src/gpu_radiation_field.cu
 GPU_RF_CONTRACT = src/gpu_radiation_field_contract.c
+GPU_PHYSICS_CONTRACT = src/gpu_physics_contract.c
+GPU_PHYSICS_KERNELS = src/gpu_physics_kernels.cu
+GPU_OPACITY_KERNELS = src/gpu_opacity_kernels.cu
+GPU_EMISSIVITY_KERNELS = src/gpu_emissivity_kernels.cu
 
 cuda: lumina_cuda
-lumina_cuda: $(CUDA_SRC) $(CUDA_BF_GEMM) $(CUDA_NLTE_GEMM) $(CUDA_NLTE_ASM) $(CUDA_CMF_SOLVE) $(CUDA_RF_MIRROR) $(GPU_RF_CONTRACT) src/lumina_atomic.c src/lumina_plasma.c $(POPULATION_SRC) $(A2_PUBLICATION_SRC) src/bf_rate_jnu.c src/radiation_field.c src/lumina_element_wide.c src/lumina_cmfgen.c $(HEADERS)
-	$(NVCC) $(NVFLAGS) -o lumina_cuda $(CUDA_SRC) $(CUDA_BF_GEMM) $(CUDA_NLTE_GEMM) $(CUDA_NLTE_ASM) $(CUDA_CMF_SOLVE) $(CUDA_RF_MIRROR) $(GPU_RF_CONTRACT) src/lumina_atomic.c src/lumina_plasma.c $(POPULATION_SRC) $(A2_PUBLICATION_SRC) src/bf_rate_jnu.c src/radiation_field.c src/lumina_element_wide.c src/lumina_cmfgen.c $(NVLDFLAGS)
+lumina_cuda: $(CUDA_SRC) $(CUDA_BF_GEMM) $(CUDA_NLTE_GEMM) $(CUDA_NLTE_ASM) $(CUDA_CMF_SOLVE) $(CUDA_RF_MIRROR) $(GPU_RF_CONTRACT) $(GPU_PHYSICS_CONTRACT) $(GPU_PHYSICS_KERNELS) $(GPU_OPACITY_KERNELS) $(GPU_EMISSIVITY_KERNELS) src/lumina_atomic.c src/lumina_plasma.c $(POPULATION_SRC) $(A2_PUBLICATION_SRC) src/bf_rate_jnu.c src/radiation_field.c src/lumina_element_wide.c src/lumina_cmfgen.c $(HEADERS)
+	$(NVCC) $(NVFLAGS) -o lumina_cuda $(CUDA_SRC) $(CUDA_BF_GEMM) $(CUDA_NLTE_GEMM) $(CUDA_NLTE_ASM) $(CUDA_CMF_SOLVE) $(CUDA_RF_MIRROR) $(GPU_RF_CONTRACT) $(GPU_PHYSICS_CONTRACT) $(GPU_PHYSICS_KERNELS) $(GPU_OPACITY_KERNELS) $(GPU_EMISSIVITY_KERNELS) src/lumina_atomic.c src/lumina_plasma.c $(POPULATION_SRC) $(A2_PUBLICATION_SRC) src/bf_rate_jnu.c src/radiation_field.c src/lumina_element_wide.c src/lumina_cmfgen.c $(NVLDFLAGS)
 
 # Task #39 validation harness
 bench_bf_gemm: bench_bf_gemm.c $(CUDA_BF_GEMM) src/lumina_atomic.c src/lumina_plasma.c $(POPULATION_SRC) src/bf_rate_jnu.c src/radiation_field.c src/lumina_element_wide.c $(HEADERS)
@@ -64,9 +68,18 @@ selftest_a2_12_contract: tests/a2_12_contract_selftest.c $(GPU_RF_CONTRACT) src/
 	$(CC) -O2 -Wall -Wextra -std=c11 -Isrc -o $@ \
 		tests/a2_12_contract_selftest.c $(GPU_RF_CONTRACT)
 
+selftest_a2_13_15_contract: tests/a2_13_15_contract_selftest.c $(GPU_PHYSICS_CONTRACT) src/gpu_physics_contract.h
+	$(CC) -O2 -Wall -Wextra -std=c11 -Isrc -o $@ \
+		tests/a2_13_15_contract_selftest.c $(GPU_PHYSICS_CONTRACT)
+
 selftest_a2_12_gpu_lifecycle: tests/a2_12_gpu_lifecycle_selftest.cu $(CUDA_RF_MIRROR) $(GPU_RF_CONTRACT) src/radiation_field.c src/gpu_radiation_field.h src/gpu_radiation_field_contract.h src/radiation_field.h
 	$(NVCC) $(NVFLAGS) -Isrc -o $@ tests/a2_12_gpu_lifecycle_selftest.cu \
 		$(CUDA_RF_MIRROR) $(GPU_RF_CONTRACT) src/radiation_field.c $(NVLDFLAGS)
+
+selftest_a2_13_gpu_oracle: tests/a2_13_gpu_oracle.cu $(GPU_PHYSICS_KERNELS) $(GPU_OPACITY_KERNELS) $(GPU_EMISSIVITY_KERNELS) $(CUDA_RF_MIRROR) $(GPU_RF_CONTRACT) $(GPU_PHYSICS_CONTRACT) src/bf_rate_jnu.c src/radiation_field.c
+	$(NVCC) $(NVFLAGS) -Isrc -o $@ tests/a2_13_gpu_oracle.cu \
+		$(GPU_PHYSICS_KERNELS) $(GPU_OPACITY_KERNELS) $(GPU_EMISSIVITY_KERNELS) $(CUDA_RF_MIRROR) $(GPU_RF_CONTRACT) \
+		$(GPU_PHYSICS_CONTRACT) src/bf_rate_jnu.c src/radiation_field.c $(NVLDFLAGS)
 
 # Known-answer (Saha) self-test of the ionization/photoionization path — CPU only
 selftest_ioniz_saha: selftest_ioniz_saha.c src/lumina_plasma.c $(POPULATION_SRC) $(A2_PUBLICATION_SRC) src/bf_rate_jnu.c src/radiation_field.c src/lumina_element_wide.c src/lumina_atomic.c $(HEADERS)
@@ -190,7 +203,8 @@ clean:
 		selftest_a2_03_radiation_field \
 		selftest_a2_03_producer_parity_fixture selftest_a2_04_commit \
 		selftest_a2_04_replay_commit selftest_a2_12_contract \
-		selftest_a2_12_gpu_lifecycle *.o
+		selftest_a2_13_15_contract \
+		selftest_a2_12_gpu_lifecycle selftest_a2_13_gpu_oracle *.o
 
 # Run with defaults
 run: $(TARGET)
@@ -207,7 +221,8 @@ omp:
 .PHONY: all clean run test omp cuda selftest_emiss_e11_fluor_matrix \
 	selftest_a2_03_radiation_field selftest_a2_03_producer_parity_fixture \
 	selftest_a2_04_commit selftest_a2_04_replay_commit \
-	selftest_a2_12_contract selftest_a2_12_gpu_lifecycle
+	selftest_a2_12_contract selftest_a2_12_gpu_lifecycle \
+	selftest_a2_13_15_contract selftest_a2_13_gpu_oracle
 
 # A2-05 canonical-view bf rate selftest (analytic closed forms + R6 validity)
 selftest_a2_05_bf_rate: tests/a2_05_bf_rate_selftest.c src/bf_rate_jnu.c src/radiation_field.c $(HEADERS)

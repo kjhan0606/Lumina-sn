@@ -1,0 +1,8 @@
+{
+  "schema": "A2_13_15_CPU_INVARIANCE_V1",
+  "base_head": "2aaf6c7968494840a9ea66da8c48dc4e1639584d",
+  "command": "git diff HEAD -- src/lumina_main.c src/lumina_transport.c src/radiation_field.c src/bf_rate_jnu.c src/line_jbar.c src/population_contract.c src/opacity_publication.c src/emissivity_publication.c src/radeq_publication.c src/lumina_plasma.c src/lumina_element_wide.c src/lumina_atomic.c src/lumina_cmfgen.c | wc -l",
+  "diff_lines": 0,
+  "verdict": "PASS",
+  "reason": "GPU contract/oracle CUDA TUs and runners were added; existing CPU production translation units are byte-unchanged."
+}

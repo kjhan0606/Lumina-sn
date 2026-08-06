@@ -1,0 +1,19 @@
+{
+  "schema": "A2_13_15_STAGE_STATUS_V1",
+  "stage_status": "BLOCKED_PRODUCTION_NOT_MIGRATED",
+  "marker": "A2_13_15_BLOCKED_PRODUCTION_NOT_MIGRATED",
+  "partitions_tried": [],
+  "last_runner_rc": 3,
+  "gpu_execution_performed_by_implementer": false,
+  "a2_12_lifecycle": "FIXTURE_REPAIRED_PENDING_DRIVING_SEAT_RERUN",
+  "internal_contract_selftest": "PASS",
+  "bf_cpu_oracle": "GPU_RUNNER_COMPILED_NOT_RUN",
+  "bb_cpu_oracle": "GPU_RUNNER_COMPILED_NOT_RUN",
+  "opacity_cpu_oracle": "GPU_RUNNER_COMPILED_NOT_RUN",
+  "emissivity_cpu_oracle": "GPU_RUNNER_COMPILED_NOT_RUN",
+  "half_oracle_verifier_negative_controls": "PASS",
+  "eligible_gpu_evidence": "PENDING_DRIVING_SEAT",
+  "production_guard_removed": false,
+  "full_nlte_integration_run": false,
+  "physical_launches": 0
+}
