@@ -1,0 +1,35 @@
+{
+ "schema": "lumina-fatal-contract-sweep-v1",
+ "when": "2026-08-06, T3 제출 전 프리플라이트",
+ "why": "오늘 같은 부류를 세 번 밟았다(구 덱 30열 npy · canonical-tau 이중 핀 · A2-16 폐기옵션). 새 런처를 쓰기 전에 시작 경로의 하드 실패 계약을 세어 둔다.",
+ "mines": [
+  {
+   "id": "A2-16 obsolete scalar options",
+   "site": "src/lumina_atomic.c:838 -> seed_capability.c:79",
+   "env": [
+    "LUMINA_TE_TRAD_RATIO",
+    "LUMINA_TRAD_COLOR_FIX"
+   ],
+   "trigger": "if (v && *v) — 값을 보지 않는다. 항등값 1.0 도 FATAL",
+   "launchers_affected": 78
+  },
+  {
+   "id": "A2-07 forbidden population knobs",
+   "site": "src/lumina_plasma.c:14958-14982",
+   "env": [
+    "LUMINA_NLTE_FLOOR_REG",
+    "LUMINA_TOPSTAGE_THERMALIZE",
+    "LUMINA_NLTE_BK_PARTIAL",
+    "LUMINA_NLTE_BF_JEQB",
+    "LUMINA_C2_MATRIX_BF",
+    "LUMINA_NLTE_JEQB",
+    "LUMINA_FROZENIN"
+   ],
+   "trigger": "atoi(value) != 0 — =0 은 통과",
+   "launchers_affected": 20,
+   "note": "실제로 걸리는 것은 LUMINA_FROZENIN 하나. 나머지 6개는 런처에서 켜는 곳이 없다"
+  }
+ ],
+ "conclusion": "A2 캠페인이 계약을 강화하면서 **호출자를 이관하지 않았다**. 두 건 모두 생산 로더/솔버 경로이므로 기존 런처는 시작 단계에서 죽는다.",
+ "disposition": "T3 는 두 부류를 모두 피하는 새 런처로 진행. 함대 이관은 별건 미결."
+}
