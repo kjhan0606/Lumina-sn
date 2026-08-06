@@ -1,0 +1,1071 @@
+{
+  "schema": "A2_12_CUDA_CONSUMER_CENSUS_V1",
+  "baseline": "068fb36",
+  "tracked_build_authoritative_files": [
+    "src/lumina_cuda.cu",
+    "src/lumina_bf_gemm.cu",
+    "src/lumina_nlte_assemble.cu",
+    "src/lumina_cmf_solve.cu",
+    "src/lumina_nlte_gemm.cu"
+  ],
+  "counts": {
+    "src/lumina_cuda.cu": 86,
+    "src/lumina_bf_gemm.cu": 13,
+    "src/lumina_nlte_assemble.cu": 14,
+    "src/lumina_cmf_solve.cu": 10,
+    "src/lumina_nlte_gemm.cu": 7
+  },
+  "total_rows": 130,
+  "rows": [
+    {
+      "census_id": "C001",
+      "file": "src/lumina_cuda.cu",
+      "baseline_line": 127,
+      "source_sha256": "cfd6be3177b292a8a790ffed33ed42659d376a87113daa0b0c45a7e367ec5078",
+      "group": "LEGACY_GLOBAL_J_PRODUCER",
+      "disposition": "PRODUCER_ONLY:NOT_CANONICAL_MIRROR"
+    },
+    {
+      "census_id": "C002",
+      "file": "src/lumina_cuda.cu",
+      "baseline_line": 128,
+      "source_sha256": "06281558c789431601b62a97bde13c7526342c51978d9029b791a0f26c9d001d",
+      "group": "LEGACY_GLOBAL_J_PRODUCER",
+      "disposition": "PRODUCER_ONLY:NOT_CANONICAL_MIRROR"
+    },
+    {
+      "census_id": "C003",
+      "file": "src/lumina_cuda.cu",
+      "baseline_line": 131,
+      "source_sha256": "22ca89844a74ba23b9966b44d87bde19feb9c3eb468d5662672669559bac4a12",
+      "group": "LEGACY_LINE_PRODUCER",
+      "disposition": "PRODUCER_ONLY:NOT_CANONICAL_MIRROR"
+    },
+    {
+      "census_id": "C004",
+      "file": "src/lumina_cuda.cu",
+      "baseline_line": 132,
+      "source_sha256": "77a0c3f6fac4ebf600d5bf351abee3503d05f95201f93c5452bc05db97334953",
+      "group": "LEGACY_LINE_PRODUCER",
+      "disposition": "PRODUCER_ONLY:NOT_CANONICAL_MIRROR"
+    },
+    {
+      "census_id": "C005",
+      "file": "src/lumina_cuda.cu",
+      "baseline_line": 133,
+      "source_sha256": "f8ce90b2494653cf69489df70c997b795405471959b6f1cc3eadc8f0c0d9a814",
+      "group": "LEGACY_BLUE_WING_PRODUCER",
+      "disposition": "PRODUCER_ONLY:NOT_CANONICAL_MIRROR"
+    },
+    {
+      "census_id": "C006",
+      "file": "src/lumina_cuda.cu",
+      "baseline_line": 140,
+      "source_sha256": "56da9e6f3181d4b78cd544e42c63bb3c91865231d51a5bc99b78755eafd63e5e",
+      "group": "TRANSPORT_SCALAR",
+      "disposition": "GPU_EMISSIVITY_NOT_MIGRATED:A2-15_DEFER"
+    },
+    {
+      "census_id": "C007",
+      "file": "src/lumina_cuda.cu",
+      "baseline_line": 270,
+      "source_sha256": "917074418e09813620d902ef8f4e5105043a6de41943b1a83ca3cc61522392ee",
+      "group": "TRANSPORT_SCALAR",
+      "disposition": "GPU_EMISSIVITY_NOT_MIGRATED:A2-15_DEFER"
+    },
+    {
+      "census_id": "C008",
+      "file": "src/lumina_cuda.cu",
+      "baseline_line": 272,
+      "source_sha256": "22e8b078fe9c7399691a42893cef70050cccce07e063124a51bff93672615150",
+      "group": "TRANSPORT_SCALAR",
+      "disposition": "GPU_EMISSIVITY_NOT_MIGRATED:A2-15_DEFER"
+    },
+    {
+      "census_id": "C009",
+      "file": "src/lumina_cuda.cu",
+      "baseline_line": 273,
+      "source_sha256": "2be0c3f15d808591c32d467cba2cb5524259a7015e029de246de3d3430fa6290",
+      "group": "TRANSPORT_SCALAR",
+      "disposition": "GPU_EMISSIVITY_NOT_MIGRATED:A2-15_DEFER"
+    },
+    {
+      "census_id": "C010",
+      "file": "src/lumina_cuda.cu",
+      "baseline_line": 304,
+      "source_sha256": "afe13cae750bed1caaeff68c12e9be4913ee8a63c7092aff26b18a126b20c152",
+      "group": "LEGACY_GLOBAL_J_PRODUCER",
+      "disposition": "PRODUCER_ONLY:NOT_CANONICAL_MIRROR"
+    },
+    {
+      "census_id": "C011",
+      "file": "src/lumina_cuda.cu",
+      "baseline_line": 305,
+      "source_sha256": "fa95113d93ddf839665d42a90e5af70f93217dbfc1f0f748a072f869ccf63a4a",
+      "group": "LEGACY_GLOBAL_J_PRODUCER",
+      "disposition": "PRODUCER_ONLY:NOT_CANONICAL_MIRROR"
+    },
+    {
+      "census_id": "C012",
+      "file": "src/lumina_cuda.cu",
+      "baseline_line": 308,
+      "source_sha256": "0b0a9553839bb0fd6d72941ca57cdf6fbc6ea522f80eaa5226d631e77243d00a",
+      "group": "LEGACY_LINE_PRODUCER",
+      "disposition": "PRODUCER_ONLY:NOT_CANONICAL_MIRROR"
+    },
+    {
+      "census_id": "C013",
+      "file": "src/lumina_cuda.cu",
+      "baseline_line": 309,
+      "source_sha256": "d9bc54d6cb103c11700be32b897c12896aa5519a5a4a63b79832c82ecc93b512",
+      "group": "LEGACY_LINE_PRODUCER",
+      "disposition": "PRODUCER_ONLY:NOT_CANONICAL_MIRROR"
+    },
+    {
+      "census_id": "C014",
+      "file": "src/lumina_cuda.cu",
+      "baseline_line": 310,
+      "source_sha256": "338436a77cbb85e0d53b50a63a018cefa654f004d343dc231037ab684d1218b4",
+      "group": "LEGACY_BLUE_WING_PRODUCER",
+      "disposition": "PRODUCER_ONLY:NOT_CANONICAL_MIRROR"
+    },
+    {
+      "census_id": "C015",
+      "file": "src/lumina_cuda.cu",
+      "baseline_line": 318,
+      "source_sha256": "8f65d7e2cc7e987092384b223dbbf864e98e675c64886c56eb6d487d48651d7b",
+      "group": "LEGACY_GLOBAL_J_PRODUCER",
+      "disposition": "PRODUCER_ONLY:NOT_CANONICAL_MIRROR"
+    },
+    {
+      "census_id": "C016",
+      "file": "src/lumina_cuda.cu",
+      "baseline_line": 319,
+      "source_sha256": "31674973db14b77f2d2fee4738b7a7f1700fef881fad50ecdbc2922298b35c0f",
+      "group": "LEGACY_GLOBAL_J_PRODUCER",
+      "disposition": "PRODUCER_ONLY:NOT_CANONICAL_MIRROR"
+    },
+    {
+      "census_id": "C017",
+      "file": "src/lumina_cuda.cu",
+      "baseline_line": 321,
+      "source_sha256": "9c6e81c913c13685cad2549fb8682714e2afc4a1bb16bad3c3dc26eb1aeb99ad",
+      "group": "LEGACY_GLOBAL_J_PRODUCER",
+      "disposition": "PRODUCER_ONLY:NOT_CANONICAL_MIRROR"
+    },
+    {
+      "census_id": "C018",
+      "file": "src/lumina_cuda.cu",
+      "baseline_line": 322,
+      "source_sha256": "c312fbb155c77ff27c46367948839af9113a76ad63e50aa5f9e2d0fb191921cf",
+      "group": "LEGACY_GLOBAL_J_PRODUCER",
+      "disposition": "PRODUCER_ONLY:NOT_CANONICAL_MIRROR"
+    },
+    {
+      "census_id": "C019",
+      "file": "src/lumina_cuda.cu",
+      "baseline_line": 340,
+      "source_sha256": "fe61cc7ff3c043701a0248f9b159235148f6f410170fdb2a815c49a5ebe3fe9c",
+      "group": "TRANSPORT_SCALAR",
+      "disposition": "GPU_EMISSIVITY_NOT_MIGRATED:A2-15_DEFER"
+    },
+    {
+      "census_id": "C020",
+      "file": "src/lumina_cuda.cu",
+      "baseline_line": 341,
+      "source_sha256": "3f0855b3928a5a63bb0ee70b3d58f2f343cf281d9202ca9905ffa609f3759c53",
+      "group": "TRANSPORT_SCALAR",
+      "disposition": "GPU_EMISSIVITY_NOT_MIGRATED:A2-15_DEFER"
+    },
+    {
+      "census_id": "C021",
+      "file": "src/lumina_cuda.cu",
+      "baseline_line": 342,
+      "source_sha256": "fe806b42837eaca22deb63786ae1209c6665d6920f7f5de5da6744070c3b50e0",
+      "group": "TRANSPORT_SCALAR",
+      "disposition": "GPU_EMISSIVITY_NOT_MIGRATED:A2-15_DEFER"
+    },
+    {
+      "census_id": "C022",
+      "file": "src/lumina_cuda.cu",
+      "baseline_line": 529,
+      "source_sha256": "cd17d07a927f99a96c85736eb49a2ba343f2344cd9efccf36449677d3cb672d7",
+      "group": "TRANSPORT_SCALAR",
+      "disposition": "GPU_EMISSIVITY_NOT_MIGRATED:A2-15_DEFER"
+    },
+    {
+      "census_id": "C023",
+      "file": "src/lumina_cuda.cu",
+      "baseline_line": 530,
+      "source_sha256": "a991ee7ce609fdb9ada95212e19371549a08d29eb9a0385c957e1eda81172449",
+      "group": "TRANSPORT_SCALAR",
+      "disposition": "GPU_EMISSIVITY_NOT_MIGRATED:A2-15_DEFER"
+    },
+    {
+      "census_id": "C024",
+      "file": "src/lumina_cuda.cu",
+      "baseline_line": 574,
+      "source_sha256": "148687bb1b907d38bbabbdea5eeb5c327849177630fa7b58f21aae59b093e6ef",
+      "group": "LEGACY_GLOBAL_J_PRODUCER",
+      "disposition": "PRODUCER_ONLY:NOT_CANONICAL_MIRROR"
+    },
+    {
+      "census_id": "C025",
+      "file": "src/lumina_cuda.cu",
+      "baseline_line": 576,
+      "source_sha256": "6d24317f292f32d22b38f74e7b2e0efffdecb2be50867a1db65c0d2cb8d29546",
+      "group": "LEGACY_GLOBAL_J_PRODUCER",
+      "disposition": "PRODUCER_ONLY:NOT_CANONICAL_MIRROR"
+    },
+    {
+      "census_id": "C026",
+      "file": "src/lumina_cuda.cu",
+      "baseline_line": 578,
+      "source_sha256": "59345529a46299b8217be6ac7e89a876ae7418d78458c9f3bbac2449fcf69a7b",
+      "group": "LEGACY_GLOBAL_J_PRODUCER",
+      "disposition": "PRODUCER_ONLY:NOT_CANONICAL_MIRROR"
+    },
+    {
+      "census_id": "C027",
+      "file": "src/lumina_cuda.cu",
+      "baseline_line": 580,
+      "source_sha256": "54acd3eb32d606d84bbc23ce833dc1f818f067dcb4639e5f46f1a7c19c854bb1",
+      "group": "LEGACY_GLOBAL_J_PRODUCER",
+      "disposition": "PRODUCER_ONLY:NOT_CANONICAL_MIRROR"
+    },
+    {
+      "census_id": "C028",
+      "file": "src/lumina_cuda.cu",
+      "baseline_line": 2186,
+      "source_sha256": "111daf148206d78db82dd0b457ba8f22c8c8ead773cd806a086ac5f2609c7702",
+      "group": "LEGACY_GLOBAL_J_PRODUCER",
+      "disposition": "PRODUCER_ONLY:NOT_CANONICAL_MIRROR"
+    },
+    {
+      "census_id": "C029",
+      "file": "src/lumina_cuda.cu",
+      "baseline_line": 2187,
+      "source_sha256": "6827955bed64cc94c8e39e7c22675ece70c46667f60e7cd6110aff29e442e2ba",
+      "group": "LEGACY_GLOBAL_J_PRODUCER",
+      "disposition": "PRODUCER_ONLY:NOT_CANONICAL_MIRROR"
+    },
+    {
+      "census_id": "C030",
+      "file": "src/lumina_cuda.cu",
+      "baseline_line": 2190,
+      "source_sha256": "02bd8cb47f3687883eb65a2db59b2f6146ed83ca394b7a9fabcc73afe553df9b",
+      "group": "LEGACY_GLOBAL_J_PRODUCER",
+      "disposition": "PRODUCER_ONLY:NOT_CANONICAL_MIRROR"
+    },
+    {
+      "census_id": "C031",
+      "file": "src/lumina_cuda.cu",
+      "baseline_line": 2191,
+      "source_sha256": "8da22db2f4a33e829e0af07ff43a60fd93ee72cc384321cff85c97b60511a6ab",
+      "group": "LEGACY_GLOBAL_J_PRODUCER",
+      "disposition": "PRODUCER_ONLY:NOT_CANONICAL_MIRROR"
+    },
+    {
+      "census_id": "C032",
+      "file": "src/lumina_cuda.cu",
+      "baseline_line": 3278,
+      "source_sha256": "f68167924acf775f41b429860ebde429a7f411359b52efaa2a8102785d24baaa",
+      "group": "LEGACY_GLOBAL_J_PRODUCER",
+      "disposition": "PRODUCER_ONLY:NOT_CANONICAL_MIRROR"
+    },
+    {
+      "census_id": "C033",
+      "file": "src/lumina_cuda.cu",
+      "baseline_line": 3279,
+      "source_sha256": "dd0626c4670ab88dc8a21ac6caf45c3d67f328cc49bd75c2daf249bdc2e685ac",
+      "group": "LEGACY_GLOBAL_J_PRODUCER",
+      "disposition": "PRODUCER_ONLY:NOT_CANONICAL_MIRROR"
+    },
+    {
+      "census_id": "C034",
+      "file": "src/lumina_cuda.cu",
+      "baseline_line": 3282,
+      "source_sha256": "d9294bb9df1af8933f0c795b2befeefefdca2367429327496bd003e9063f2ef1",
+      "group": "LEGACY_LINE_PRODUCER",
+      "disposition": "PRODUCER_ONLY:NOT_CANONICAL_MIRROR"
+    },
+    {
+      "census_id": "C035",
+      "file": "src/lumina_cuda.cu",
+      "baseline_line": 3283,
+      "source_sha256": "dcc3dcfc7176363a5668482b6fa80db8a0cc20dbd74ca7135ac912174903e411",
+      "group": "LEGACY_LINE_PRODUCER",
+      "disposition": "PRODUCER_ONLY:NOT_CANONICAL_MIRROR"
+    },
+    {
+      "census_id": "C036",
+      "file": "src/lumina_cuda.cu",
+      "baseline_line": 3284,
+      "source_sha256": "e07fc6ba835ba6580fc5e34e36552b7939f805378e2458001dbbc35404a127bd",
+      "group": "LEGACY_BLUE_WING_PRODUCER",
+      "disposition": "PRODUCER_ONLY:NOT_CANONICAL_MIRROR"
+    },
+    {
+      "census_id": "C037",
+      "file": "src/lumina_cuda.cu",
+      "baseline_line": 3286,
+      "source_sha256": "845bdb4d45d2c629e32669c2ddd99d984b40dd0fe11259c63f8faa0b69a94adf",
+      "group": "TRANSPORT_SCALAR",
+      "disposition": "GPU_EMISSIVITY_NOT_MIGRATED:A2-15_DEFER"
+    },
+    {
+      "census_id": "C038",
+      "file": "src/lumina_cuda.cu",
+      "baseline_line": 3503,
+      "source_sha256": "29be94a5517f9991f97754b0acc5c35d64fd809955128593a4175472b6eccdc3",
+      "group": "LEGACY_GLOBAL_J_PRODUCER",
+      "disposition": "PRODUCER_ONLY:NOT_CANONICAL_MIRROR"
+    },
+    {
+      "census_id": "C039",
+      "file": "src/lumina_cuda.cu",
+      "baseline_line": 3520,
+      "source_sha256": "9b3e134545e672a097e40438237f21728a40ae3297621ccebf3ee4c0b7d7818b",
+      "group": "LEGACY_GLOBAL_J_PRODUCER",
+      "disposition": "PRODUCER_ONLY:NOT_CANONICAL_MIRROR"
+    },
+    {
+      "census_id": "C040",
+      "file": "src/lumina_cuda.cu",
+      "baseline_line": 3521,
+      "source_sha256": "d0d0fb2a9a388a2d2f30bac4436c7aa4d39fedba6a76798a9789b414aa02006c",
+      "group": "LEGACY_GLOBAL_J_PRODUCER",
+      "disposition": "PRODUCER_ONLY:NOT_CANONICAL_MIRROR"
+    },
+    {
+      "census_id": "C041",
+      "file": "src/lumina_cuda.cu",
+      "baseline_line": 3753,
+      "source_sha256": "c6025452e288a57e27824c5c18f034e5ed31c65f9d9efae7bd28cb826b0af4b1",
+      "group": "TRANSPORT_SCALAR",
+      "disposition": "GPU_EMISSIVITY_NOT_MIGRATED:A2-15_DEFER"
+    },
+    {
+      "census_id": "C042",
+      "file": "src/lumina_cuda.cu",
+      "baseline_line": 3760,
+      "source_sha256": "0c910980c1717cd47e45ce2286fafbf8f3eb4b09b2f28bc7079ce3a5273f5c41",
+      "group": "TRANSPORT_SCALAR",
+      "disposition": "GPU_EMISSIVITY_NOT_MIGRATED:A2-15_DEFER"
+    },
+    {
+      "census_id": "C043",
+      "file": "src/lumina_cuda.cu",
+      "baseline_line": 3788,
+      "source_sha256": "3070c23eda8df2faac5b7422f59311961d63207d59e75f410447f8f1104aea18",
+      "group": "TRANSPORT_SCALAR",
+      "disposition": "GPU_EMISSIVITY_NOT_MIGRATED:A2-15_DEFER"
+    },
+    {
+      "census_id": "C044",
+      "file": "src/lumina_cuda.cu",
+      "baseline_line": 3793,
+      "source_sha256": "0c910980c1717cd47e45ce2286fafbf8f3eb4b09b2f28bc7079ce3a5273f5c41",
+      "group": "TRANSPORT_SCALAR",
+      "disposition": "GPU_EMISSIVITY_NOT_MIGRATED:A2-15_DEFER"
+    },
+    {
+      "census_id": "C045",
+      "file": "src/lumina_cuda.cu",
+      "baseline_line": 5347,
+      "source_sha256": "c7f3f02c585a13336b570598cfbeab1be1c7d3a2aec6d194aca2ab6d65a5c81a",
+      "group": "TRANSPORT_SCALAR",
+      "disposition": "GPU_EMISSIVITY_NOT_MIGRATED:A2-15_DEFER"
+    },
+    {
+      "census_id": "C046",
+      "file": "src/lumina_cuda.cu",
+      "baseline_line": 5446,
+      "source_sha256": "d4a52c79ccf69023e1f4aa934e09e6e5a4e98a69c7abd579c58dc72a6ee83ec9",
+      "group": "TRANSPORT_SCALAR",
+      "disposition": "GPU_EMISSIVITY_NOT_MIGRATED:A2-15_DEFER"
+    },
+    {
+      "census_id": "C047",
+      "file": "src/lumina_cuda.cu",
+      "baseline_line": 5453,
+      "source_sha256": "3078e76a797276184e344d53244e051aee09ab9de16672d626088e4c666c2811",
+      "group": "TRANSPORT_SCALAR",
+      "disposition": "GPU_EMISSIVITY_NOT_MIGRATED:A2-15_DEFER"
+    },
+    {
+      "census_id": "C048",
+      "file": "src/lumina_cuda.cu",
+      "baseline_line": 5471,
+      "source_sha256": "3078e76a797276184e344d53244e051aee09ab9de16672d626088e4c666c2811",
+      "group": "TRANSPORT_SCALAR",
+      "disposition": "GPU_EMISSIVITY_NOT_MIGRATED:A2-15_DEFER"
+    },
+    {
+      "census_id": "C049",
+      "file": "src/lumina_cuda.cu",
+      "baseline_line": 5733,
+      "source_sha256": "d0052fcc895229a2d701aefe79e8a5e96757d49b0c75f985ec72ff133c7d4c7b",
+      "group": "TRANSPORT_SCALAR",
+      "disposition": "GPU_EMISSIVITY_NOT_MIGRATED:A2-15_DEFER"
+    },
+    {
+      "census_id": "C050",
+      "file": "src/lumina_cuda.cu",
+      "baseline_line": 5739,
+      "source_sha256": "4a89d2cfd6f146db2f11bff49b265d1efdd06d144821c8dcaedcd15c64f92657",
+      "group": "TRANSPORT_SCALAR",
+      "disposition": "GPU_EMISSIVITY_NOT_MIGRATED:A2-15_DEFER"
+    },
+    {
+      "census_id": "C051",
+      "file": "src/lumina_cuda.cu",
+      "baseline_line": 5964,
+      "source_sha256": "1fe8e5219cbd579f242744e0df23ad848b3002f4333a9a6b543873581a2be594",
+      "group": "LEGACY_GLOBAL_J_PRODUCER",
+      "disposition": "PRODUCER_ONLY:NOT_CANONICAL_MIRROR"
+    },
+    {
+      "census_id": "C052",
+      "file": "src/lumina_cuda.cu",
+      "baseline_line": 5978,
+      "source_sha256": "5bb9432d2375d68fad64fe6f814c7fd8ab4c3b4994b349a50770bfe4d85d09ce",
+      "group": "TRANSPORT_SCALAR",
+      "disposition": "GPU_EMISSIVITY_NOT_MIGRATED:A2-15_DEFER"
+    },
+    {
+      "census_id": "C053",
+      "file": "src/lumina_cuda.cu",
+      "baseline_line": 6159,
+      "source_sha256": "64923c47a30ab5255e63e73a194930d7f5b4cfe217c087c1131cb70d2f0f11ad",
+      "group": "LEGACY_GLOBAL_J_PRODUCER",
+      "disposition": "PRODUCER_ONLY:NOT_CANONICAL_MIRROR"
+    },
+    {
+      "census_id": "C054",
+      "file": "src/lumina_cuda.cu",
+      "baseline_line": 6242,
+      "source_sha256": "588fb051c8220f475f58f7025a47e4c7e1b5ba4c1e2eb68801cfcd57d6c02838",
+      "group": "TRANSPORT_SCALAR",
+      "disposition": "GPU_EMISSIVITY_NOT_MIGRATED:A2-15_DEFER"
+    },
+    {
+      "census_id": "C055",
+      "file": "src/lumina_cuda.cu",
+      "baseline_line": 6552,
+      "source_sha256": "fa7554a48c378c47b6051f81429e2d85914750e60a78c00e90f199925ae2c3f5",
+      "group": "TRANSPORT_SCALAR",
+      "disposition": "GPU_EMISSIVITY_NOT_MIGRATED:A2-15_DEFER"
+    },
+    {
+      "census_id": "C056",
+      "file": "src/lumina_cuda.cu",
+      "baseline_line": 7996,
+      "source_sha256": "2a725c3dae8e1e719dda3be48b3ab6cc87590cbe51fdb4cd91fca97d71f3ca7c",
+      "group": "LEGACY_LINE_PRODUCER",
+      "disposition": "PRODUCER_ONLY:NOT_CANONICAL_MIRROR"
+    },
+    {
+      "census_id": "C057",
+      "file": "src/lumina_cuda.cu",
+      "baseline_line": 7997,
+      "source_sha256": "50f0ac8584e76d0e5ba2689a1759abf1a7a1671e81660cf9be369a072165b2b3",
+      "group": "LEGACY_LINE_PRODUCER",
+      "disposition": "PRODUCER_ONLY:NOT_CANONICAL_MIRROR"
+    },
+    {
+      "census_id": "C058",
+      "file": "src/lumina_cuda.cu",
+      "baseline_line": 8001,
+      "source_sha256": "e91f410168058155069835672d2d69cdc57bba4ae9d6569da115f49472675b62",
+      "group": "LEGACY_LINE_PRODUCER",
+      "disposition": "PRODUCER_ONLY:NOT_CANONICAL_MIRROR"
+    },
+    {
+      "census_id": "C059",
+      "file": "src/lumina_cuda.cu",
+      "baseline_line": 8006,
+      "source_sha256": "c7b16b45839609b9d433336bb83f8deb01503336b08a2d1ce7d4be6d1924d171",
+      "group": "LEGACY_BLUE_WING_PRODUCER",
+      "disposition": "PRODUCER_ONLY:NOT_CANONICAL_MIRROR"
+    },
+    {
+      "census_id": "C060",
+      "file": "src/lumina_cuda.cu",
+      "baseline_line": 8008,
+      "source_sha256": "77c1575d7977075db6e85b88dcab5b40e5aba1f667dbc2afe5951328c6fd4436",
+      "group": "LEGACY_BLUE_WING_PRODUCER",
+      "disposition": "PRODUCER_ONLY:NOT_CANONICAL_MIRROR"
+    },
+    {
+      "census_id": "C061",
+      "file": "src/lumina_cuda.cu",
+      "baseline_line": 8793,
+      "source_sha256": "a4bfefa6e504daf11f4fd6f4a4db7c436afef85d679f692ead7db4db2f831853",
+      "group": "LEGACY_LINE_PRODUCER",
+      "disposition": "PRODUCER_ONLY:NOT_CANONICAL_MIRROR"
+    },
+    {
+      "census_id": "C062",
+      "file": "src/lumina_cuda.cu",
+      "baseline_line": 8795,
+      "source_sha256": "dc5218e65fa929e7ad5b2fcac910e5f60357ec337c4b73a4675168723238bc64",
+      "group": "LEGACY_LINE_PRODUCER",
+      "disposition": "PRODUCER_ONLY:NOT_CANONICAL_MIRROR"
+    },
+    {
+      "census_id": "C063",
+      "file": "src/lumina_cuda.cu",
+      "baseline_line": 8796,
+      "source_sha256": "2a436523253c6ce3d1d6f391c7ec87fa021f860ec0ae20f890950f96031540f9",
+      "group": "LEGACY_LINE_PRODUCER",
+      "disposition": "PRODUCER_ONLY:NOT_CANONICAL_MIRROR"
+    },
+    {
+      "census_id": "C064",
+      "file": "src/lumina_cuda.cu",
+      "baseline_line": 8798,
+      "source_sha256": "f9bc43d5e7476efb05954cff3247191bc4e0d670a61f5d7ceffdf2615f60ee48",
+      "group": "LEGACY_BLUE_WING_PRODUCER",
+      "disposition": "PRODUCER_ONLY:NOT_CANONICAL_MIRROR"
+    },
+    {
+      "census_id": "C065",
+      "file": "src/lumina_cuda.cu",
+      "baseline_line": 8800,
+      "source_sha256": "f72611cd5f7f9d51f63df4ceb0a9bcacb8c94baa031c7fa271166d7cd6746e52",
+      "group": "LEGACY_BLUE_WING_PRODUCER",
+      "disposition": "PRODUCER_ONLY:NOT_CANONICAL_MIRROR"
+    },
+    {
+      "census_id": "C066",
+      "file": "src/lumina_cuda.cu",
+      "baseline_line": 8827,
+      "source_sha256": "eebcc52b54973627e5767465539898525f75d18a55210355cfba94920469abd3",
+      "group": "LEGACY_GLOBAL_J_PRODUCER",
+      "disposition": "PRODUCER_ONLY:NOT_CANONICAL_MIRROR"
+    },
+    {
+      "census_id": "C067",
+      "file": "src/lumina_cuda.cu",
+      "baseline_line": 8842,
+      "source_sha256": "f09a086615974ff7ffeff995227dda1918c8ccb63254c4e9a5782c24f0526210",
+      "group": "TRANSPORT_SCALAR",
+      "disposition": "GPU_EMISSIVITY_NOT_MIGRATED:A2-15_DEFER"
+    },
+    {
+      "census_id": "C068",
+      "file": "src/lumina_cuda.cu",
+      "baseline_line": 8993,
+      "source_sha256": "3b67b7db7519411ecd351105858983085518fb5f02c7f7d23490768e0b3b2d29",
+      "group": "LEGACY_BLUE_WING_PRODUCER",
+      "disposition": "PRODUCER_ONLY:NOT_CANONICAL_MIRROR"
+    },
+    {
+      "census_id": "C069",
+      "file": "src/lumina_cuda.cu",
+      "baseline_line": 9206,
+      "source_sha256": "2743fad652bb64484074f90ab3095a8aff33dfb445d1ffae27ea6d5e5cf6cbe2",
+      "group": "LEGACY_LINE_PRODUCER",
+      "disposition": "PRODUCER_ONLY:NOT_CANONICAL_MIRROR"
+    },
+    {
+      "census_id": "C070",
+      "file": "src/lumina_cuda.cu",
+      "baseline_line": 9208,
+      "source_sha256": "b9c736b64d216341967a98e779daa67bb4723bc675bfb9f01b9995c7110795ec",
+      "group": "LEGACY_LINE_PRODUCER",
+      "disposition": "PRODUCER_ONLY:NOT_CANONICAL_MIRROR"
+    },
+    {
+      "census_id": "C071",
+      "file": "src/lumina_cuda.cu",
+      "baseline_line": 9210,
+      "source_sha256": "61cfedccb0798f10cff2aea78d8b9753bf9fa832f5d03d15bbd317271db6d5d8",
+      "group": "LEGACY_LINE_PRODUCER",
+      "disposition": "PRODUCER_ONLY:NOT_CANONICAL_MIRROR"
+    },
+    {
+      "census_id": "C072",
+      "file": "src/lumina_cuda.cu",
+      "baseline_line": 9300,
+      "source_sha256": "b9ac3fe5eeba590e0f883151a60091336b56a7e209f31baf8679eb19ff6fc696",
+      "group": "LEGACY_BLUE_WING_PRODUCER",
+      "disposition": "PRODUCER_ONLY:NOT_CANONICAL_MIRROR"
+    },
+    {
+      "census_id": "C073",
+      "file": "src/lumina_cuda.cu",
+      "baseline_line": 9302,
+      "source_sha256": "e244e030225f5540d759c38259b0b9230701a0b8c451903ec2135dfe388edd13",
+      "group": "LEGACY_BLUE_WING_PRODUCER",
+      "disposition": "PRODUCER_ONLY:NOT_CANONICAL_MIRROR"
+    },
+    {
+      "census_id": "C074",
+      "file": "src/lumina_cuda.cu",
+      "baseline_line": 10170,
+      "source_sha256": "a504a37a292d3aa404667279880ec645c7130de87080fb7eb2b1ae546d161cf7",
+      "group": "LEGACY_LINE_PRODUCER",
+      "disposition": "PRODUCER_ONLY:NOT_CANONICAL_MIRROR"
+    },
+    {
+      "census_id": "C075",
+      "file": "src/lumina_cuda.cu",
+      "baseline_line": 10171,
+      "source_sha256": "a1f35fadd32753b467c817b9754457b88d388bfda620830045623dd6eec1fe64",
+      "group": "LEGACY_LINE_PRODUCER",
+      "disposition": "PRODUCER_ONLY:NOT_CANONICAL_MIRROR"
+    },
+    {
+      "census_id": "C076",
+      "file": "src/lumina_cuda.cu",
+      "baseline_line": 10175,
+      "source_sha256": "fb35b96d9b990689c596f0ec3a433f1f64c56162c41c6367bf5f85dfea070e33",
+      "group": "LEGACY_LINE_PRODUCER",
+      "disposition": "PRODUCER_ONLY:NOT_CANONICAL_MIRROR"
+    },
+    {
+      "census_id": "C077",
+      "file": "src/lumina_cuda.cu",
+      "baseline_line": 10192,
+      "source_sha256": "f9dbaf16ed816e1fbab075a632c699218770a4af0d171ff321945d242874760e",
+      "group": "LEGACY_LINE_PRODUCER",
+      "disposition": "PRODUCER_ONLY:NOT_CANONICAL_MIRROR"
+    },
+    {
+      "census_id": "C078",
+      "file": "src/lumina_cuda.cu",
+      "baseline_line": 10194,
+      "source_sha256": "e3f57d64ab061a7a50f1e869d8b1d8e4b2533ba934a19f7da6260f621df37db8",
+      "group": "LEGACY_LINE_PRODUCER",
+      "disposition": "PRODUCER_ONLY:NOT_CANONICAL_MIRROR"
+    },
+    {
+      "census_id": "C079",
+      "file": "src/lumina_cuda.cu",
+      "baseline_line": 10195,
+      "source_sha256": "d385a94635940f73dd43b135643ef20dc2d4e8f09d50476d425ee489ec3a1e2d",
+      "group": "LEGACY_LINE_PRODUCER",
+      "disposition": "PRODUCER_ONLY:NOT_CANONICAL_MIRROR"
+    },
+    {
+      "census_id": "C080",
+      "file": "src/lumina_cuda.cu",
+      "baseline_line": 10247,
+      "source_sha256": "83671d3f43adb2fbed6eeac2f81a50b5991a08ce0f67f1c0515dca3fba693e6a",
+      "group": "LEGACY_GLOBAL_J_PRODUCER",
+      "disposition": "PRODUCER_ONLY:NOT_CANONICAL_MIRROR"
+    },
+    {
+      "census_id": "C081",
+      "file": "src/lumina_cuda.cu",
+      "baseline_line": 10256,
+      "source_sha256": "60ff83a8e437d2fe565e06bdf60d8f7932a91d37e04da091e45b32a2a8f19eaa",
+      "group": "TRANSPORT_SCALAR",
+      "disposition": "GPU_EMISSIVITY_NOT_MIGRATED:A2-15_DEFER"
+    },
+    {
+      "census_id": "C082",
+      "file": "src/lumina_cuda.cu",
+      "baseline_line": 10444,
+      "source_sha256": "7f42f922ae07fbaac9affb6da11ef84c1b6224656be4bf3f55c52a6241fd85a3",
+      "group": "LEGACY_LINE_PRODUCER",
+      "disposition": "PRODUCER_ONLY:NOT_CANONICAL_MIRROR"
+    },
+    {
+      "census_id": "C083",
+      "file": "src/lumina_cuda.cu",
+      "baseline_line": 10446,
+      "source_sha256": "9c2bdc0e7eedfc7b3dce4e4612efb8d3ea21f713f31d618982920e929184531d",
+      "group": "LEGACY_LINE_PRODUCER",
+      "disposition": "PRODUCER_ONLY:NOT_CANONICAL_MIRROR"
+    },
+    {
+      "census_id": "C084",
+      "file": "src/lumina_cuda.cu",
+      "baseline_line": 10448,
+      "source_sha256": "77db86d4a18377e2960fa78ad6b6e3fb3e97769b354b428a2d761ecd5e299acd",
+      "group": "LEGACY_LINE_PRODUCER",
+      "disposition": "PRODUCER_ONLY:NOT_CANONICAL_MIRROR"
+    },
+    {
+      "census_id": "C085",
+      "file": "src/lumina_cuda.cu",
+      "baseline_line": 10601,
+      "source_sha256": "c83041c08febe32e02104a3ef082264ef0063c56bc32aefac501fab0643b5954",
+      "group": "CANONICAL_NAME_REFERENCE",
+      "disposition": "LIFECYCLE_ONLY"
+    },
+    {
+      "census_id": "C086",
+      "file": "src/lumina_cuda.cu",
+      "baseline_line": 10618,
+      "source_sha256": "2df08b42ff05341800fb43b95ef68f4feddb48c2c2c4133bafd6fd39d2686413",
+      "group": "CANONICAL_NAME_REFERENCE",
+      "disposition": "LIFECYCLE_ONLY"
+    },
+    {
+      "census_id": "C087",
+      "file": "src/lumina_bf_gemm.cu",
+      "baseline_line": 44,
+      "source_sha256": "3d6504a480be256559fd0cd02b50d836b991e99ea869f3fa1740cdec05480b30",
+      "group": "BF_GEMM_SCALAR",
+      "disposition": "GPU_OPACITY_NOT_MIGRATED:A2-14_DEFER"
+    },
+    {
+      "census_id": "C088",
+      "file": "src/lumina_bf_gemm.cu",
+      "baseline_line": 45,
+      "source_sha256": "1a5fd6c2db9d8a863848239c032a939c26fc7670d47978354114b91429038385",
+      "group": "BF_GEMM_SCALAR",
+      "disposition": "GPU_OPACITY_NOT_MIGRATED:A2-14_DEFER"
+    },
+    {
+      "census_id": "C089",
+      "file": "src/lumina_bf_gemm.cu",
+      "baseline_line": 140,
+      "source_sha256": "09d69a3b0c6fc8fc471b87a62675e634ee0803806e1f3ee6528c10eb383b12c4",
+      "group": "BF_GEMM_SCALAR",
+      "disposition": "GPU_OPACITY_NOT_MIGRATED:A2-14_DEFER"
+    },
+    {
+      "census_id": "C090",
+      "file": "src/lumina_bf_gemm.cu",
+      "baseline_line": 141,
+      "source_sha256": "c12f67bf3166969bd6ceca1fe908a02a2c270c407491d27690c120011602b551",
+      "group": "BF_GEMM_SCALAR",
+      "disposition": "GPU_OPACITY_NOT_MIGRATED:A2-14_DEFER"
+    },
+    {
+      "census_id": "C091",
+      "file": "src/lumina_bf_gemm.cu",
+      "baseline_line": 208,
+      "source_sha256": "75401362c4024c20a3d6614bd241b603ad6fc4603569f5b052556125295abe5d",
+      "group": "BF_GEMM_SCALAR",
+      "disposition": "GPU_OPACITY_NOT_MIGRATED:A2-14_DEFER"
+    },
+    {
+      "census_id": "C092",
+      "file": "src/lumina_bf_gemm.cu",
+      "baseline_line": 210,
+      "source_sha256": "4fab68100bc0ea9d313b83146f1c1abb9155296519b7baa6787d435df6668486",
+      "group": "BF_GEMM_SCALAR",
+      "disposition": "GPU_OPACITY_NOT_MIGRATED:A2-14_DEFER"
+    },
+    {
+      "census_id": "C093",
+      "file": "src/lumina_bf_gemm.cu",
+      "baseline_line": 225,
+      "source_sha256": "454de5e00915da493fa097114ed1b45ed6883bde02162b7b7d4f16b781dbaf78",
+      "group": "BF_GEMM_SCALAR",
+      "disposition": "GPU_OPACITY_NOT_MIGRATED:A2-14_DEFER"
+    },
+    {
+      "census_id": "C094",
+      "file": "src/lumina_bf_gemm.cu",
+      "baseline_line": 296,
+      "source_sha256": "8c73132d65156cd22e4fc82a5f8526d8b3d6f648cc3ca9aeb31656573d594579",
+      "group": "BF_GEMM_SCALAR",
+      "disposition": "GPU_OPACITY_NOT_MIGRATED:A2-14_DEFER"
+    },
+    {
+      "census_id": "C095",
+      "file": "src/lumina_bf_gemm.cu",
+      "baseline_line": 297,
+      "source_sha256": "c13976f642802fe797cac4d2576c86bbdaa56f98c68cb86ff343e60d246a06dd",
+      "group": "BF_GEMM_SCALAR",
+      "disposition": "GPU_OPACITY_NOT_MIGRATED:A2-14_DEFER"
+    },
+    {
+      "census_id": "C096",
+      "file": "src/lumina_bf_gemm.cu",
+      "baseline_line": 303,
+      "source_sha256": "7871c8733d3617ef3cfb24a0b41749149e952e621f7023ba458adf7519218292",
+      "group": "BF_GEMM_SCALAR",
+      "disposition": "GPU_OPACITY_NOT_MIGRATED:A2-14_DEFER"
+    },
+    {
+      "census_id": "C097",
+      "file": "src/lumina_bf_gemm.cu",
+      "baseline_line": 304,
+      "source_sha256": "757fcc272f527e3d90018a0b04e0a40fdbda5e6c64b78729bd8dfc3d24459763",
+      "group": "BF_GEMM_SCALAR",
+      "disposition": "GPU_OPACITY_NOT_MIGRATED:A2-14_DEFER"
+    },
+    {
+      "census_id": "C098",
+      "file": "src/lumina_bf_gemm.cu",
+      "baseline_line": 390,
+      "source_sha256": "486f97765e4e178e03f499fc5f9a48bbb35d22d23c7ff6986f0f2b3e33d640b6",
+      "group": "BF_GEMM_SCALAR",
+      "disposition": "GPU_OPACITY_NOT_MIGRATED:A2-14_DEFER"
+    },
+    {
+      "census_id": "C099",
+      "file": "src/lumina_bf_gemm.cu",
+      "baseline_line": 391,
+      "source_sha256": "567f7efe6f94b68872919e7a56df4a78c926b24a9e7618e203bd9ee0c3977836",
+      "group": "BF_GEMM_SCALAR",
+      "disposition": "GPU_OPACITY_NOT_MIGRATED:A2-14_DEFER"
+    },
+    {
+      "census_id": "C100",
+      "file": "src/lumina_nlte_assemble.cu",
+      "baseline_line": 88,
+      "source_sha256": "de957fce98dded743da5f15ae23033dea868c8463a2fae46d8ea463fffe31a39",
+      "group": "NLTE_ASSEMBLY_LEGACY_FIELD",
+      "disposition": "GPU_RATE_NOT_MIGRATED:A2-13_DEFER"
+    },
+    {
+      "census_id": "C101",
+      "file": "src/lumina_nlte_assemble.cu",
+      "baseline_line": 91,
+      "source_sha256": "bb9a21d9581ba249a24eb759c035b5ebf8a5c6a2f89b064dfcab714388cae4d8",
+      "group": "NLTE_ASSEMBLY_LEGACY_FIELD",
+      "disposition": "GPU_RATE_NOT_MIGRATED:A2-13_DEFER"
+    },
+    {
+      "census_id": "C102",
+      "file": "src/lumina_nlte_assemble.cu",
+      "baseline_line": 140,
+      "source_sha256": "c434ca73d642d43588241b2b8b4805013fb01f6d587dcd654de906b8057ff657",
+      "group": "NLTE_ASSEMBLY_LEGACY_FIELD",
+      "disposition": "GPU_RATE_NOT_MIGRATED:A2-13_DEFER"
+    },
+    {
+      "census_id": "C103",
+      "file": "src/lumina_nlte_assemble.cu",
+      "baseline_line": 141,
+      "source_sha256": "da2d75e7f0e8835f7b9a6842972e74526bc09694e8eaeb402ff9d9ee2eafc4ef",
+      "group": "NLTE_ASSEMBLY_LEGACY_FIELD",
+      "disposition": "GPU_RATE_NOT_MIGRATED:A2-13_DEFER"
+    },
+    {
+      "census_id": "C104",
+      "file": "src/lumina_nlte_assemble.cu",
+      "baseline_line": 169,
+      "source_sha256": "d45bec74691fa4730fc8bd632a4dc25537a1cd891b9e0c9f435671cf599c5c71",
+      "group": "NLTE_ASSEMBLY_LEGACY_FIELD",
+      "disposition": "GPU_RATE_NOT_MIGRATED:A2-13_DEFER"
+    },
+    {
+      "census_id": "C105",
+      "file": "src/lumina_nlte_assemble.cu",
+      "baseline_line": 171,
+      "source_sha256": "31e14182ab48969816100b5c56282f2d4b6cc3114e488fb8f92cc0844c0586ca",
+      "group": "NLTE_ASSEMBLY_LEGACY_FIELD",
+      "disposition": "GPU_RATE_NOT_MIGRATED:A2-13_DEFER"
+    },
+    {
+      "census_id": "C106",
+      "file": "src/lumina_nlte_assemble.cu",
+      "baseline_line": 353,
+      "source_sha256": "cdc136a88c395cbbfbc244325f8b2cf059d70aa8e35910c0d8747a88a0a61e49",
+      "group": "NLTE_ASSEMBLY_LEGACY_FIELD",
+      "disposition": "GPU_RATE_NOT_MIGRATED:A2-13_DEFER"
+    },
+    {
+      "census_id": "C107",
+      "file": "src/lumina_nlte_assemble.cu",
+      "baseline_line": 357,
+      "source_sha256": "500d8d797f03e33626e8a45070ac54b9c29efeb65b041cc6c74044c90a6d4e64",
+      "group": "NLTE_ASSEMBLY_LEGACY_FIELD",
+      "disposition": "GPU_RATE_NOT_MIGRATED:A2-13_DEFER"
+    },
+    {
+      "census_id": "C108",
+      "file": "src/lumina_nlte_assemble.cu",
+      "baseline_line": 406,
+      "source_sha256": "cc9afabf6f8c217808a29dc8456564e84d1555e07a88d3c90ba1fbaaede68af2",
+      "group": "NLTE_ASSEMBLY_LEGACY_FIELD",
+      "disposition": "GPU_RATE_NOT_MIGRATED:A2-13_DEFER"
+    },
+    {
+      "census_id": "C109",
+      "file": "src/lumina_nlte_assemble.cu",
+      "baseline_line": 413,
+      "source_sha256": "36be61f90f405174ceb59168cff24d166333bd8c4dcc7dbda783b12b9195cb0e",
+      "group": "NLTE_ASSEMBLY_LEGACY_FIELD",
+      "disposition": "GPU_RATE_NOT_MIGRATED:A2-13_DEFER"
+    },
+    {
+      "census_id": "C110",
+      "file": "src/lumina_nlte_assemble.cu",
+      "baseline_line": 463,
+      "source_sha256": "556c32d7b2fdad4a259efce299e21cf0f897b00b4cdd59630d3f252771232c0a",
+      "group": "NLTE_ASSEMBLY_LEGACY_FIELD",
+      "disposition": "GPU_RATE_NOT_MIGRATED:A2-13_DEFER"
+    },
+    {
+      "census_id": "C111",
+      "file": "src/lumina_nlte_assemble.cu",
+      "baseline_line": 464,
+      "source_sha256": "e21e3feb92d72a929ab7f00e428e428f3858f88be4ad2db7b509938fd1617e41",
+      "group": "NLTE_ASSEMBLY_LEGACY_FIELD",
+      "disposition": "GPU_RATE_NOT_MIGRATED:A2-13_DEFER"
+    },
+    {
+      "census_id": "C112",
+      "file": "src/lumina_nlte_assemble.cu",
+      "baseline_line": 483,
+      "source_sha256": "dadcb27484a0d03aec7743356d0537d14413f961d730c8ce255f6d60af1e1fae",
+      "group": "NLTE_ASSEMBLY_LEGACY_FIELD",
+      "disposition": "GPU_RATE_NOT_MIGRATED:A2-13_DEFER"
+    },
+    {
+      "census_id": "C113",
+      "file": "src/lumina_nlte_assemble.cu",
+      "baseline_line": 484,
+      "source_sha256": "f90b50d0d258e6c61a0ac6f0c203d603721d0a8bc51c5d40efcb895d3ef1aecb",
+      "group": "NLTE_ASSEMBLY_LEGACY_FIELD",
+      "disposition": "GPU_RATE_NOT_MIGRATED:A2-13_DEFER"
+    },
+    {
+      "census_id": "C114",
+      "file": "src/lumina_cmf_solve.cu",
+      "baseline_line": 253,
+      "source_sha256": "65740fef638c4ead401b20233df36040ddaa720485a68a87f7f870724c69eaec",
+      "group": "CMF_J_GPU_TRANSFER",
+      "disposition": "BLOCKED_GPU_FALLBACK_FORBIDDEN"
+    },
+    {
+      "census_id": "C115",
+      "file": "src/lumina_cmf_solve.cu",
+      "baseline_line": 262,
+      "source_sha256": "114a3dd4b32a4c8217c11a21beab6510da59915dce0f3adbf74b4e210c560174",
+      "group": "CMF_J_GPU_TRANSFER",
+      "disposition": "BLOCKED_GPU_FALLBACK_FORBIDDEN"
+    },
+    {
+      "census_id": "C116",
+      "file": "src/lumina_cmf_solve.cu",
+      "baseline_line": 263,
+      "source_sha256": "564d226a02be9fbcdcce303c89c1563e964d1d994fd0b8665e016c1d592a02fc",
+      "group": "CMF_J_GPU_TRANSFER",
+      "disposition": "BLOCKED_GPU_FALLBACK_FORBIDDEN"
+    },
+    {
+      "census_id": "C117",
+      "file": "src/lumina_cmf_solve.cu",
+      "baseline_line": 286,
+      "source_sha256": "b692cfb222d6673f4e9879ff18f1e90ec95bae936b68f17391ffeb3e3d4cc637",
+      "group": "CMF_J_GPU_TRANSFER",
+      "disposition": "BLOCKED_GPU_FALLBACK_FORBIDDEN"
+    },
+    {
+      "census_id": "C118",
+      "file": "src/lumina_cmf_solve.cu",
+      "baseline_line": 314,
+      "source_sha256": "6a9bdcc0b774c19d8a1dad8cb456776f944c282f99c93edcea698f3c5ac6148f",
+      "group": "CMF_J_GPU_TRANSFER",
+      "disposition": "BLOCKED_GPU_FALLBACK_FORBIDDEN"
+    },
+    {
+      "census_id": "C119",
+      "file": "src/lumina_cmf_solve.cu",
+      "baseline_line": 316,
+      "source_sha256": "ee4198cea1bf48ace8a66902114b89e8a8649335bc01d5e890c9213d51e7f858",
+      "group": "CMF_J_GPU_TRANSFER",
+      "disposition": "BLOCKED_GPU_FALLBACK_FORBIDDEN"
+    },
+    {
+      "census_id": "C120",
+      "file": "src/lumina_cmf_solve.cu",
+      "baseline_line": 317,
+      "source_sha256": "d210f8b7c327af4f53d8ec3bacfb52a2ffbeabc73e29ef861de3bf87af662a2b",
+      "group": "CMF_J_GPU_TRANSFER",
+      "disposition": "BLOCKED_GPU_FALLBACK_FORBIDDEN"
+    },
+    {
+      "census_id": "C121",
+      "file": "src/lumina_cmf_solve.cu",
+      "baseline_line": 319,
+      "source_sha256": "fca702a628e2ee12193d341211f9170d30f72cc708388776be17dc1774ff8145",
+      "group": "CMF_J_GPU_TRANSFER",
+      "disposition": "BLOCKED_GPU_FALLBACK_FORBIDDEN"
+    },
+    {
+      "census_id": "C122",
+      "file": "src/lumina_cmf_solve.cu",
+      "baseline_line": 330,
+      "source_sha256": "dd2a938b46d0779a6780677edd6df0652f734156ef33b7e3d599f1d3f80638ea",
+      "group": "CMF_J_GPU_TRANSFER",
+      "disposition": "BLOCKED_GPU_FALLBACK_FORBIDDEN"
+    },
+    {
+      "census_id": "C123",
+      "file": "src/lumina_cmf_solve.cu",
+      "baseline_line": 333,
+      "source_sha256": "28d27ae259b910d46d8953bb5cc51e4c123e5ccf7307710bf71a51404ed07b60",
+      "group": "CMF_J_GPU_TRANSFER",
+      "disposition": "BLOCKED_GPU_FALLBACK_FORBIDDEN"
+    },
+    {
+      "census_id": "C124",
+      "file": "src/lumina_nlte_gemm.cu",
+      "baseline_line": 52,
+      "source_sha256": "1b47e1dc4e4f584f07caf78c379a46e9551fe3f1e48ef558dfcf3e80d3539454",
+      "group": "NLTE_RATE_GEMM",
+      "disposition": "GPU_RATE_NOT_MIGRATED:A2-13_DEFER"
+    },
+    {
+      "census_id": "C125",
+      "file": "src/lumina_nlte_gemm.cu",
+      "baseline_line": 265,
+      "source_sha256": "f7f752e2de7f66104e0fe6b9bd6245e8d5a05b0da41f8f47bf007fff80f927e5",
+      "group": "NLTE_RATE_GEMM",
+      "disposition": "GPU_RATE_NOT_MIGRATED:A2-13_DEFER"
+    },
+    {
+      "census_id": "C126",
+      "file": "src/lumina_nlte_gemm.cu",
+      "baseline_line": 325,
+      "source_sha256": "a856aebb53e32a04ad4535ca0bb93da7912621ff454d0f13df6db264d51dcb53",
+      "group": "NLTE_RATE_GEMM",
+      "disposition": "GPU_RATE_NOT_MIGRATED:A2-13_DEFER"
+    },
+    {
+      "census_id": "C127",
+      "file": "src/lumina_nlte_gemm.cu",
+      "baseline_line": 352,
+      "source_sha256": "97f406c3fd1786cf4d93008c1efeed51868b681576eb66b30d8f44d7fd592e1b",
+      "group": "NLTE_RATE_GEMM",
+      "disposition": "GPU_RATE_NOT_MIGRATED:A2-13_DEFER"
+    },
+    {
+      "census_id": "C128",
+      "file": "src/lumina_nlte_gemm.cu",
+      "baseline_line": 423,
+      "source_sha256": "4589028ef194e67de60b232e04ab99a36a2304a653130d20341c3ee5de412da1",
+      "group": "NLTE_RATE_GEMM",
+      "disposition": "GPU_RATE_NOT_MIGRATED:A2-13_DEFER"
+    },
+    {
+      "census_id": "C129",
+      "file": "src/lumina_nlte_gemm.cu",
+      "baseline_line": 439,
+      "source_sha256": "ad2ade2e7815f731b33bd2553fa70b93f1b15eb15e08be18867350157469e1fb",
+      "group": "NLTE_RATE_GEMM",
+      "disposition": "GPU_RATE_NOT_MIGRATED:A2-13_DEFER"
+    },
+    {
+      "census_id": "C130",
+      "file": "src/lumina_nlte_gemm.cu",
+      "baseline_line": 475,
+      "source_sha256": "1fde5cd284b9f6aaf1a74d9769419338c262c756e5bcb7067d9f4ac78d9bf8cc",
+      "group": "NLTE_RATE_GEMM",
+      "disposition": "GPU_RATE_NOT_MIGRATED:A2-13_DEFER"
+    }
+  ],
+  "discovered_outside_census": [],
+  "archival_untracked_excluded": [
+    "backup_groupA_1422/lumina_cuda.cu",
+    "backup_groupA_1422/lumina_nlte_assemble.cu",
+    "impl_withParityAA/orig/lumina_cuda.cu",
+    "impl_withParityW/orig/lumina_cuda.cu",
+    "impl_withParityY/orig/lumina_cuda.cu"
+  ],
+  "status": "PASS",
+  "failures": []
+}

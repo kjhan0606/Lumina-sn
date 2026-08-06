@@ -1,0 +1,20 @@
+{
+  "schema": "A2_12_CPU_INVARIANCE_V1",
+  "status": "PARTIAL",
+  "cpu_physics_formula_diff": 0,
+  "changed_cpu_control_flow": ["CMF GPU failure propagation only"],
+  "a2_03_producer_parity": "PASS",
+  "a2_04_replay_synthetic": "PASS",
+  "a2_05_bf_rate": "PASS",
+  "a2_06_line_jbar": "PASS",
+  "a2_06_dual_commit": "PASS",
+  "a2_07_population": "PASS",
+  "z_inert_10_rows": "PASS",
+  "full_battery": "NOT_RUN_BY_USER_DIRECTION",
+  "production_output_byte_compare": "UNVERIFIED",
+  "known_upstream_failures": [
+    "a2_03_callgraph_audit stale expectation rejects A2-05 checked read API",
+    "cmf_linepop_roundtrip invalid eta_line",
+    "ioniz_saha four inner lanes rc=1 despite wrapper rc=0"
+  ]
+}

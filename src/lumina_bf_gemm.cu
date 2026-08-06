@@ -12,7 +12,10 @@
 
 extern "C" {
 #include "lumina.h"
+#include "gpu_radiation_field_contract.h"
 }
+
+static GpuRadiationFieldCounters g_a2_12_bf_counters;
 
 #define CUDA_CHECK(call) do {                                    \
     cudaError_t err = (call);                                    \
@@ -137,8 +140,9 @@ extern "C" int bf_gemm_init(AtomicData *atom, int n_shells)
                           (size_t)n_levels * n_shells * sizeof(float)));
     CUDA_CHECK(cudaMalloc(&g_bf_gemm.d_chi_bf,
                           (size_t)n_freq * n_shells * sizeof(float)));
-    CUDA_CHECK(cudaMalloc(&g_bf_gemm.d_T_rad, n_shells * sizeof(double)));
-    CUDA_CHECK(cudaMalloc(&g_bf_gemm.d_W, n_shells * sizeof(double)));
+    /* A2-12 GL01/GL02: no independent scalar owners survive. */
+    g_bf_gemm.d_T_rad = NULL;
+    g_bf_gemm.d_W = NULL;
     CUDA_CHECK(cudaMalloc(&g_bf_gemm.d_n_ion,
                           (size_t)n_ip * n_shells * sizeof(double)));
     CUDA_CHECK(cudaMalloc(&g_bf_gemm.d_Z_part,
@@ -191,6 +195,9 @@ extern "C" int bf_gemm_init(AtomicData *atom, int n_shells)
 extern "C" int bf_gemm_compute(BFOpacity *bf, AtomicData *atom,
                                PlasmaState *plasma, int n_shells)
 {
+    if (gpu_rf_block_unmigrated(&g_a2_12_bf_counters,
+            GPU_OPACITY_NOT_MIGRATED, "lumina_bf_gemm.compute") != 0)
+        return -(int)GPU_OPACITY_NOT_MIGRATED;
     if (!g_bf_gemm.initialized) {
         if (bf_gemm_init(atom, n_shells) != 0) return -1;
     }
@@ -281,6 +288,9 @@ extern "C" int bf_gemm_compute_fine(BFOpacity *bf, AtomicData *atom, PlasmaState
         int n_shells, const double *nu_fine, int n_fine,
         double nu_min_bin, double dlognu_bin, double *chi_bf_fine_out)
 {
+    if (gpu_rf_block_unmigrated(&g_a2_12_bf_counters,
+            GPU_OPACITY_NOT_MIGRATED, "lumina_bf_gemm.compute_fine") != 0)
+        return -(int)GPU_OPACITY_NOT_MIGRATED;
     (void)bf;
     /* D-3's level/frequency-dependent stimulated-recombination corrfactor is
      * not a separable GEMM. Return to the caller's corrected coarse-grid
@@ -387,8 +397,7 @@ extern "C" void bf_gemm_free(void)
     cudaFree(g_bf_gemm.d_sigma_bf);
     cudaFree(g_bf_gemm.d_n_level);
     cudaFree(g_bf_gemm.d_chi_bf);
-    cudaFree(g_bf_gemm.d_T_rad);
-    cudaFree(g_bf_gemm.d_W);
+    /* A2-12 GL03/GL04: no scalar allocation remains to free. */
     cudaFree(g_bf_gemm.d_n_ion);
     cudaFree(g_bf_gemm.d_Z_part);
     cudaFree(g_bf_gemm.d_level_E_eV);

@@ -16,9 +16,12 @@
 extern "C" {             /* Phase 6 - Step 1 */
 #include "lumina.h"      /* Phase 6 - Step 1 */
 #include "lumina_cmfgen.h"  /* pure-CMFGEN parallel radiation path */
+#include "gpu_radiation_field_contract.h"
 int nlte_precompute_within_sl_frac_checked(
     NLTEConfig *, AtomicData *, PlasmaState *, int);
 }                        /* Phase 6 - Step 1 */
+
+static GpuRadiationFieldCounters g_a2_12_transport_counters;
 
 /* ============================================================ */
 /* cuBLAS batched NLTE solver data structure                    */
@@ -267,10 +270,9 @@ static void cuda_allocate(CudaDeviceData *dev, Geometry *geo,
     CUDA_CHECK(cudaMalloc(&dev->d_r_inner, ns * sizeof(double)));                   /* Phase 6 - Step 1 */
     CUDA_CHECK(cudaMalloc(&dev->d_r_outer, ns * sizeof(double)));                   /* Phase 6 - Step 1 */
 
-    /* d_T_rad always-allocated: needed by EPS_UV / EPS_IR macro-atom thermalization
-     * even when BF opacity is disabled. (cuda_allocate_bf will skip its own malloc
-     * if d_T_rad is already non-NULL.) */
-    CUDA_CHECK(cudaMalloc(&dev->d_T_rad, ns * sizeof(double)));
+    /* A2-12 GL05: legacy scalar ownership is retired.  The deferred A2-15
+     * argument stays NULL and cannot qualify a transport launch. */
+    dev->d_T_rad = NULL;
 
     /* Phase 6 - Step 1: Estimators */
     CUDA_CHECK(cudaMalloc(&dev->d_j_estimator, ns * sizeof(double)));               /* Phase 6 - Step 1 */
@@ -337,9 +339,7 @@ static void cuda_allocate_bf(CudaDeviceData *dev, BFOpacity *bf, int n_shells) {
     size_t chi_size = (size_t)n_shells * bf->n_freq_bins * sizeof(double);
     size_t act_size = (size_t)n_shells * bf->n_freq_bins * sizeof(int);
     CUDA_CHECK(cudaMalloc(&dev->d_chi_bf, chi_size));
-    /* d_T_rad is now always-allocated in cuda_allocate(); skip if present. */
-    if (!dev->d_T_rad)
-        CUDA_CHECK(cudaMalloc(&dev->d_T_rad, n_shells * sizeof(double)));
+    /* A2-12 GL06/GL07: no lazy scalar allocation. */
     CUDA_CHECK(cudaMalloc(&dev->d_bf_activation_level, act_size));
     if (bf->event_enabled && bf->event_n_routes > 0) {
         size_t nr = (size_t)bf->event_n_routes;
@@ -526,9 +526,8 @@ static void cuda_upload_T_rad(CudaDeviceData *dev, PlasmaState *plasma,
         CUDA_CHECK(cudaMemcpyToSymbol(d_ltherm_te, plasma->T_e,
                    Nlt * sizeof(double)));
     }
-    if (!dev->d_T_rad) return;
-    CUDA_CHECK(cudaMemcpy(dev->d_T_rad, plasma->T_rad,
-               n_shells * sizeof(double), cudaMemcpyHostToDevice));
+    /* Tombstone for A2-01 witness: plasma->T_rad is no longer an upload source. */
+    (void)dev; (void)plasma; (void)n_shells;
 }
 
 /* BF opacity: upload chi_bf grid + T_rad + activation_level to GPU */
@@ -3283,7 +3282,7 @@ static void cuda_free(CudaDeviceData *dev) {
     if (dev->d_jbar_count) cudaFree(dev->d_jbar_count);
     if (dev->d_jblue_line) cudaFree(dev->d_jblue_line);   /* [IUP-JBLUE] */
     if (dev->d_chi_bf) cudaFree(dev->d_chi_bf);
-    if (dev->d_T_rad)  cudaFree(dev->d_T_rad);
+    /* A2-12 GL08 tombstone: dev->d_T_rad has no allocation left to free. */
     if (dev->d_bf_activation_level) cudaFree(dev->d_bf_activation_level);
     if (dev->d_bf_event_chi) cudaFree(dev->d_bf_event_chi);
     if (dev->d_bf_event_weight) cudaFree(dev->d_bf_event_weight);
@@ -8810,6 +8809,11 @@ int main(int argc, char *argv[]) {
                                                                : 1.0 / L_inner_ce;
                         double packet_energy_ce = 1.0 / (double)n_packets;
                         uint64_t iter_seed_ce = config.seed + (uint64_t)it * 1000000ULL;
+                        if (gpu_rf_block_unmigrated(&g_a2_12_transport_counters,
+                                GPU_EMISSIVITY_NOT_MIGRATED,
+                                "lumina_cuda.co_evolve.transport") != 0)
+                            return EXIT_FAILURE;
+                        gpu_rf_record_physical_launch(&g_a2_12_transport_counters);
                         transport_kernel<<<blocks, threads_per_block>>>(
                             dev.d_r_inner, dev.d_r_outer,
                             dev.d_line_list_nu, dev.d_tau_sobolev,
@@ -10230,6 +10234,11 @@ int main(int argc, char *argv[]) {
         cuda_upload_recomb(&dev, &opacity, geo.n_shells);
         cuda_upload_iup(&dev, &opacity, geo.n_shells);
 
+        if (gpu_rf_block_unmigrated(&g_a2_12_transport_counters,
+                GPU_EMISSIVITY_NOT_MIGRATED,
+                "lumina_cuda.final.transport") != 0)
+            return EXIT_FAILURE;
+        gpu_rf_record_physical_launch(&g_a2_12_transport_counters);
         transport_kernel<<<blocks, threads_per_block>>>(
             dev.d_r_inner, dev.d_r_outer,
             dev.d_line_list_nu, dev.d_tau_sobolev,
@@ -10645,8 +10654,8 @@ int main(int argc, char *argv[]) {
              * NLTE re-solve. Keep BF re-upload + transition-probability build
              * + device uploads below so the macro-atom transport sees the
              * good frozen state. */
-            if (cmfgen_then_mc) goto frozen_skip_plasma_solve;
             int te_qualified = 0;
+            if (cmfgen_then_mc) goto frozen_skip_plasma_solve;
             if (radeq_te || self_consistent_te) {
                 /* Radiative-equilibrium T_e needs the CURRENT iteration's
                  * radiation field for photoionization heating. The MC pass

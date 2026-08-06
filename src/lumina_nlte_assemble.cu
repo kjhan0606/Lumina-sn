@@ -46,8 +46,11 @@
 
 extern "C" {
 #include "lumina.h"
+#include "gpu_radiation_field_contract.h"
 int nlte_coll_fix_enabled(void);   /* defined in lumina_plasma.c */
 }
+
+static GpuRadiationFieldCounters g_a2_12_nlte_asm_counters;
 
 #define ACUDA_CHECK(call) do {                                   \
     cudaError_t err = (call);                                    \
@@ -393,6 +396,9 @@ extern "C" int nlte_assemble_gpu_supported(void)
 
 extern "C" void nlte_assemble_gpu_refresh(NLTEConfig *nlte, PlasmaState *plasma)
 {
+    if (gpu_rf_block_unmigrated(&g_a2_12_nlte_asm_counters,
+            GPU_RATE_NOT_MIGRATED, "lumina_nlte_assemble.refresh") != 0)
+        return;
     if (!g_asm.initialized) return;
     int n_shells = g_asm.n_shells;
     int n_freq   = g_asm.n_freq;
@@ -433,6 +439,9 @@ extern "C" void nlte_assemble_bb_gpu_pair(double *h_matrices, int N, int n_shell
                                           int pair_lo, int pair_hi, int super_start,
                                           int n_lo_super, const int *active)
 {
+    if (gpu_rf_block_unmigrated(&g_a2_12_nlte_asm_counters,
+            GPU_RATE_NOT_MIGRATED, "lumina_nlte_assemble.bb_pair") != 0)
+        return;
     if (!g_asm.initialized || N <= 0) return;
 
     size_t elems = (size_t)n_shells * N * N;

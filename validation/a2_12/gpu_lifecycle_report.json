@@ -1,0 +1,17 @@
+{
+  "schema": "A2_12_GPU_LIFECYCLE_REPORT_V1",
+  "stage_status": "UNVERIFIED_GPU_NODE",
+  "marker": "A2_12_GPU_EXECUTION_UNVERIFIED",
+  "compile_status": "PASS",
+  "gpu_execution_performed": false,
+  "reason": "Implementer contract forbids GPU execution; driving seat submits SLURM h200 then h100.",
+  "lifecycle_positive": "UNVERIFIED",
+  "generation_prelaunch": "UNVERIFIED",
+  "line_mapping_profile_qset": "UNVERIFIED",
+  "validity_no_fallback": "UNVERIFIED",
+  "upload_byte_ledger": "UNVERIFIED",
+  "gpu_node_evidence": "UNVERIFIED",
+  "physical_launches": 0,
+  "blocked_launches": 0,
+  "fallback_attempts": 0
+}

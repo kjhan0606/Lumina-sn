@@ -1,0 +1,16 @@
+{
+  "schema": "A2_12_NEGATIVE_CONTROLS_V1",
+  "execution": "UNVERIFIED_GPU_NODE",
+  "physical_launches": 0,
+  "expected": {
+    "N1": [41, "A2_12_NEG_CPU_STALE_FAIL"],
+    "N2": [42, "A2_12_NEG_CACHE_GENERATION_FAIL"],
+    "N3": [43, "A2_12_NEG_LINE_ID_MAPPING_FAIL"],
+    "N4": [44, "A2_12_NEG_CPU_GPU_GENERATION_FAIL"],
+    "N5": [45, "A2_12_NEG_PARTIAL_UPLOAD_FAIL"],
+    "N6": [46, "A2_12_NEG_INVALID_VALIDITY_FAIL"],
+    "N7": [47, "A2_12_NEG_FALLBACK_FAIL"],
+    "N8": [48, "A2_12_NEG_UPLOAD_BYTES_FAIL"],
+    "N9": [49, "A2_12_NEG_RESET_GENERATION_FAIL"]
+  }
+}

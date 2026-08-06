@@ -19,7 +19,8 @@
 #define CM_C      2.99792458e10    /* cm/s             */
 #define CM_SIGMA_T 6.6524587e-25   /* Thomson cm^2     */
 
-/* GPU comoving-frame formal solver (lumina_cmf_solve.cu); -1 -> CPU fallback. */
+/* GPU comoving-frame formal solver (lumina_cmf_solve.cu); nonzero is terminal
+ * for the current attempt (A2-12 forbids same-attempt CPU substitution). */
 int cmf_solve_J_gpu(int NS, int NB, int NP, int adv_split, double a_lam,
     const double *chi_tot, const double *chi_es, const double *chi_abs,
     const double *S_fixed, double *J,
@@ -3469,8 +3470,8 @@ int cmfgen_commit_jnu(const CMFGENState *cs, NLTEConfig *nlte,
  *   transport-only sub-gate); =1 (default) the full CMF coupling.
  * Source = S_fixed + (chi_es/chi_tot)*J (the ALI scattering source, same as the
  * binned solver). Validated standalone in lumina_cmf_selftest.c (gates 2a/4a/2c). */
-static void cmf_solve_J(CMFGENState *cs, const Geometry *geo, double T_inner,
-                        int n_ali_iter)
+static int cmf_solve_J(CMFGENState *cs, const Geometry *geo, double T_inner,
+                       int n_ali_iter)
 {
     int NS = cs->n_shells, NB = cs->n_bins;
     double t_exp = geo->time_explosion;
@@ -3534,7 +3535,7 @@ static void cmf_solve_J(CMFGENState *cs, const Geometry *geo, double T_inner,
      * mu = rz/rmid). */
     double *Bin_h=NULL,*adv_h=NULL,*advc_h=NULL,*Jin=NULL,*Jcpu=NULL;
     int *shell_off=NULL,*shell_k=NULL,*shell_seg=NULL; double *shell_mu=NULL;
-    int nsamp=0, cpu_iters=n_ali_iter, gpu_iters=0;
+    int nsamp=0, cpu_iters=n_ali_iter, gpu_iters=0, solve_rc=0;
     if (use_gpu >= 1) {
         Bin_h=malloc(NB*sizeof(double)); adv_h=malloc(NB*sizeof(double)); advc_h=malloc(NB*sizeof(double));
         for (int b=0;b<NB;++b){ Bin_h[b]=cm_planck(cs->nu[b],T_inner);
@@ -3574,14 +3575,45 @@ static void cmf_solve_J(CMFGENState *cs, const Geometry *geo, double T_inner,
             "likely NOT converged. Use LUMINA_CMF_ALAM=0 (static limit) for the GPU path.\n",
             n_ali_iter);
 
-    /* use_gpu==1: attempt the GPU solve first; on failure fall through to CPU. */
+    /* use_gpu==1 is one GPU attempt.  Failure is terminal for that attempt:
+     * never execute or publish the CPU solver as a replacement. */
     int run_cpu = (use_gpu != 1);
     if (use_gpu == 1) {
         int rc = cmf_solve_J_gpu(NS, NB, NP, adv_split, a_lam,
             cs->chi_tot, cs->chi_es, cs->chi_abs, cs->S_fixed, cs->J,
             Bin_h, adv_h, advc_h, rn, rsh, rz, rcore, rzin,
             shell_off, shell_k, shell_seg, shell_mu, nsamp, n_ali_iter, 1e-4, &gpu_iters);
-        if (rc != 0) { fprintf(stderr, "[cmf_gpu] GPU solve failed (rc=%d) -> CPU fallback\n", rc); run_cpu = 1; }
+        if (rc != 0) {
+            fprintf(stderr, "[cmf_gpu] GPU solve failed rc=%d "
+                    "BLOCKED_GPU_FALLBACK_FORBIDDEN fallback_attempts=1 "
+                    "physical_launches=0\n", rc);
+            solve_rc = -1;
+            goto cmf_solve_cleanup;
+        }
+    }
+    if (use_gpu == 2) {
+        /* A/B ordering is GPU-first.  Therefore a GPU failure cannot execute,
+         * much less publish, the CPU solver in the same attempt. */
+        int rc = cmf_solve_J_gpu(NS, NB, NP, adv_split, a_lam,
+            cs->chi_tot, cs->chi_es, cs->chi_abs, cs->S_fixed, cs->J,
+            Bin_h, adv_h, advc_h, rn, rsh, rz, rcore, rzin,
+            shell_off, shell_k, shell_seg, shell_mu, nsamp, n_ali_iter, 1e-4, &gpu_iters);
+        if (rc != 0) {
+            fprintf(stderr, "[cmf_gpu] SELF-CHECK GPU-first solve failed rc=%d "
+                    "BLOCKED_GPU_FALLBACK_FORBIDDEN fallback_attempts=1 "
+                    "physical_launches=0\n", rc);
+            memcpy(cs->J, Jin, (size_t)NS*NB*sizeof(double));
+            solve_rc = -1;
+            goto cmf_solve_cleanup;
+        }
+        Jcpu = malloc((size_t)NS*NB*sizeof(double));
+        if (!Jcpu) {
+            memcpy(cs->J, Jin, (size_t)NS*NB*sizeof(double));
+            solve_rc = -1;
+            goto cmf_solve_cleanup;
+        }
+        memcpy(Jcpu, cs->J, (size_t)NS*NB*sizeof(double)); /* GPU result */
+        memcpy(cs->J, Jin, (size_t)NS*NB*sizeof(double));  /* CPU same input */
     }
 
     if (run_cpu)
@@ -3687,37 +3719,26 @@ static void cmf_solve_J(CMFGENState *cs, const Geometry *geo, double T_inner,
         if (maxrel < 1e-4 && it > 0) { cpu_iters = it + 1; break; }
     }
 
-    /* --- self-check (use_gpu==2): re-solve on the GPU from the SAME input and
-     * report the max relative difference in the converged J + ALI iter counts.
-     * Keeps the CPU field as authoritative so a stray =2 never perturbs a run. */
+    /* --- self-check (use_gpu==2): GPU already completed successfully before
+     * the CPU solve. Compare the two results; keep CPU authoritative. */
     if (use_gpu == 2) {
-        Jcpu = malloc((size_t)NS*NB*sizeof(double));
-        memcpy(Jcpu, cs->J, (size_t)NS*NB*sizeof(double));   /* converged CPU field */
-        memcpy(cs->J, Jin,  (size_t)NS*NB*sizeof(double));   /* restore solver input */
-        int rc = cmf_solve_J_gpu(NS, NB, NP, adv_split, a_lam,
-            cs->chi_tot, cs->chi_es, cs->chi_abs, cs->S_fixed, cs->J,
-            Bin_h, adv_h, advc_h, rn, rsh, rz, rcore, rzin,
-            shell_off, shell_k, shell_seg, shell_mu, nsamp, n_ali_iter, 1e-4, &gpu_iters);
-        if (rc == 0) {
-            double maxrel=0.0, l2n=0.0, l2d=0.0; size_t worst=0;
-            for (size_t i=0;i<(size_t)NS*NB;++i){ double dn=fabs(cs->J[i]-Jcpu[i]);
-                double d=dn/(fabs(Jcpu[i])+1e-30); if(d>maxrel){maxrel=d;worst=i;}
-                l2n+=dn*dn; l2d+=Jcpu[i]*Jcpu[i]; }
-            fprintf(stderr,
-                "[cmf_gpu] SELF-CHECK NS=%d NB=%d NP=%d adv_split=%d: max rel diff(J_gpu vs J_cpu)=%.3e "
-                "L2 rel=%.3e  (worst s=%d b=%d: cpu=%.4e gpu=%.4e)  ALI iters cpu=%d gpu=%d\n",
-                NS, NB, NP, adv_split, maxrel, (l2d>0)?sqrt(l2n/l2d):0.0,
-                (int)(worst/NB),(int)(worst%NB), Jcpu[worst], cs->J[worst], cpu_iters, gpu_iters);
-        } else {
-            fprintf(stderr, "[cmf_gpu] SELF-CHECK GPU solve failed (rc=%d)\n", rc);
-        }
-        memcpy(cs->J, Jcpu, (size_t)NS*NB*sizeof(double));   /* keep CPU as authoritative */
+        double maxrel=0.0, l2n=0.0, l2d=0.0; size_t worst=0;
+        for (size_t i=0;i<(size_t)NS*NB;++i){ double dn=fabs(Jcpu[i]-cs->J[i]);
+            double d=dn/(fabs(cs->J[i])+1e-30); if(d>maxrel){maxrel=d;worst=i;}
+            l2n+=dn*dn; l2d+=cs->J[i]*cs->J[i]; }
+        fprintf(stderr,
+            "[cmf_gpu] SELF-CHECK NS=%d NB=%d NP=%d adv_split=%d: max rel diff(J_gpu vs J_cpu)=%.3e "
+            "L2 rel=%.3e  (worst s=%d b=%d: cpu=%.4e gpu=%.4e)  ALI iters cpu=%d gpu=%d\n",
+            NS, NB, NP, adv_split, maxrel, (l2d>0)?sqrt(l2n/l2d):0.0,
+            (int)(worst/NB),(int)(worst%NB), cs->J[worst], Jcpu[worst], cpu_iters, gpu_iters);
     }
+cmf_solve_cleanup:
     (void)cpu_iters;
     free(Bin_h);free(adv_h);free(advc_h);free(shell_off);free(shell_k);free(shell_seg);free(shell_mu);
     free(Jin);free(Jcpu);
     free(rmid);free(lam);free(p);free(rn);free(rsh);free(rz);free(rcore);free(rzin);
     free(Iin_p);free(Iout_p);free(Iin_c);free(Iout_c);free(muL);free(IpL);free(ImL);free(cnt);free(S);free(Jnew);
+    return solve_rc;
 }
 
 /* ===================================================================
@@ -5142,8 +5163,15 @@ int cmfgen_run(Geometry *geo, OpacityState *opac, BFOpacity *bf,
         }
 
         cmfgen_assemble(&cs, geo, opac, bf, plasma);
-        if (cmf_lineres) cmf_solve_J(&cs, geo, T_inner, n_ali);   /* P1 line-resolved CMF */
-        else             cmfgen_solve_J(&cs, geo, T_inner, n_ali);/* binned (champion) */
+        if (cmf_lineres) {
+            if (cmf_solve_J(&cs, geo, T_inner, n_ali) != 0) {
+                fprintf(stderr, "[CMFGEN][FATAL] GPU CMF lifecycle failure; no CPU publication\n");
+                cmfgen_free(&cs);
+                return -1;
+            }
+        } else {
+            cmfgen_solve_J(&cs, geo, T_inner, n_ali);/* binned (champion) */
+        }
         if (cmfgen_stage32_rung1_maybe_dump(&cs,geo,opac,plasma,
                                              iter,n_iter) != 0) {
             cmfgen_free(&cs);

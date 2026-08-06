@@ -223,8 +223,8 @@ __global__ void k_update(long n, const double *Jnew, double *J, double *d_maxrel
 }
 
 /* ============================================================================
- * Host entry. Returns 0 on success (-1 on CUDA/alloc failure -> caller falls back
- * to CPU). On success J[] holds the converged field; *iters_out = ALI iters used.
+ * Host entry. Returns 0 on success and nonzero on CUDA/alloc failure.  A2-12
+ * forbids converting that failure into a CPU solve in the same attempt.
  * ============================================================================ */
 extern "C" int cmf_solve_J_gpu(
     int NS, int NB, int NP, int adv_split, double a_lam,
@@ -245,7 +245,8 @@ extern "C" int cmf_solve_J_gpu(
     size_t need = (4 * segsz + 6 * cell) * sizeof(double);
     size_t freeB = 0, totB = 0;
     if (cudaMemGetInfo(&freeB, &totB) == cudaSuccess && need > freeB) {
-        fprintf(stderr, "[cmf_gpu] need %.1f GB > free %.1f GB on device -> CPU fallback\n",
+        fprintf(stderr, "[cmf_gpu] need %.1f GB > free %.1f GB; "
+                "BLOCKED_GPU_FALLBACK_FORBIDDEN fallback_attempts=1 physical_launches=0\n",
                 need / 1e9, freeB / 1e9);
         return -1;
     }

@@ -29,7 +29,10 @@
 
 extern "C" {
 #include "lumina.h"
+#include "gpu_radiation_field_contract.h"
 }
+
+static GpuRadiationFieldCounters g_a2_12_nlte_gemm_counters;
 
 #define CUDA_CHECK(call) do {                                    \
     cudaError_t err = (call);                                    \
@@ -406,6 +409,9 @@ static int fine_correct_R_bf(void)
  * persistent buffers. The buffers stay valid until nlte_rates_gpu_free(). */
 extern "C" int nlte_rates_gpu_compute(NLTEConfig *nlte, NLTERateLookup *out_lookup)
 {
+    if (gpu_rf_block_unmigrated(&g_a2_12_nlte_gemm_counters,
+            GPU_RATE_NOT_MIGRATED, "lumina_nlte_gemm.rate_gemm") != 0)
+        return -(int)GPU_RATE_NOT_MIGRATED;
     if (!g_nlte_gemm.initialized) return -1;
     int n_freq = g_nlte_gemm.n_freq;
     int n_shells = g_nlte_gemm.n_shells;

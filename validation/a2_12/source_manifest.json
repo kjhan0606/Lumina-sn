@@ -1,0 +1,27 @@
+{
+  "schema": "A2_12_SOURCE_MANIFEST_V1",
+  "spec_revision": 11,
+  "base_head": "068fb36dc182b00757f4b4e6a1a4cd56a1f25500",
+  "spec_sha256": "cf202e27ebfe296f8c3dc1db2d1bf0a27463a0b03bca46ce23ca7864d283797a",
+  "tracked_cuda_at_freeze": [
+    "src/lumina_bf_gemm.cu",
+    "src/lumina_cmf_solve.cu",
+    "src/lumina_cuda.cu",
+    "src/lumina_nlte_assemble.cu",
+    "src/lumina_nlte_gemm.cu"
+  ],
+  "frozen_cuda_sha256": {
+    "src/lumina_cuda.cu": "1f84348797fd205bd719ac65b0f546fcedc59d1c8b533b0a9841643f530255b1",
+    "src/lumina_bf_gemm.cu": "0a44286cf11390f3326752d7ef647526ff8cc98c79f181ceb08bf93dbfd03c92",
+    "src/lumina_nlte_assemble.cu": "99d37ee127e5e269959835bc12431c17f62b350d0d602211e8f06affaf44a9b6",
+    "src/lumina_cmf_solve.cu": "510d4ca884c04d6edce00dacb9d5d47a1b644698bd7e91ab7769c2720c8b475d",
+    "src/lumina_nlte_gemm.cu": "23976e128ca31cb09df2619e91abbdece9848b1d4740d5dcdb25b48c678f37a2"
+  },
+  "compiler": {
+    "cc": "gcc",
+    "nvcc": "Cuda compilation tools, release 13.0, V13.0.88",
+    "cuda_arches": ["sm_80", "sm_86", "sm_90"]
+  },
+  "census_rows": 130,
+  "census_counts": [86, 13, 14, 10, 7]
+}
