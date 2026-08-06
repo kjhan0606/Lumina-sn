@@ -326,13 +326,26 @@ CMFGEN_LINKS_PATH = (Path(os.environ['CMFGEN_LINKS']).expanduser()
 _LINK_KINDS = ('osc', 'f_to_s', 'phot', 'col')
 
 
+# CMFGEN 런이 상류 원자데이터의 오타를 고쳐 쓸 때는 정본 트리를 건드리지 않고
+# <run>/atomic_local/<ELEM>/<ion>/<vintage>/ 로 복사해 고친다(예: toy06_19p48d_modern
+# PROVENANCE.txt sec.9 — 19apr23 S III / Co II phot_data_A 의 PHOT_PARAMS 오타.
+# 고치지 않으면 CMFGEN 이 SUB_PHOT_GEN 에서 즉사한다).  덱을 그 런에 맞추려면
+# 같은 파일을 먹어야 하므로 이 경로를 받되, **덮어쓴 사실을 반드시 기록**한다.
+ATOMIC_LOCAL_OVERRIDES: list[dict] = []
+
+
 def _atomic_path_identity(path: Path) -> tuple[tuple[int, int], str]:
     """Return ((Z, stage), vintage) encoded in an atomic-tree path."""
     parts = path.parts
-    positions = [i for i, part in enumerate(parts) if part == 'atomic']
+    positions = [i for i, part in enumerate(parts)
+                 if part in ('atomic', 'atomic_local')]
     if not positions:
         raise ValueError(f"atomic tree component absent from link source: {path}")
     i = positions[-1]
+    if parts[i] == 'atomic_local':
+        rec = {'path': str(path), 'tail': '/'.join(parts[i + 1:])}
+        if rec not in ATOMIC_LOCAL_OVERRIDES:
+            ATOMIC_LOCAL_OVERRIDES.append(rec)
     if i + 1 < len(parts) and parts[i + 1] == 'cmfgen':
         i += 1
     if i + 4 >= len(parts):
