@@ -1,0 +1,15 @@
+{
+  "schema": "lumina-a2-18-campaign-closure-v1",
+  "head": "d47a596182e9",
+  "gates": {
+    "validation/a2_05/L1BF_GATE_LEDGER.json": "PASS",
+    "validation/a2_06/A2_06_L1BB_GATE.json": "BLOCKED_MISSING_RATE_EXPORT",
+    "validation/a2_07/A2_07_GATE_SELF_CHECK.json": "PASS",
+    "validation/a2_08/A2_08_L4_GATE.json": "BLOCKED_MISSING_CHI_DATA",
+    "validation/a2_09/A2_09_L3_GATE.json": "BLOCKED_MISSING_ETA_DATA",
+    "validation/a2_09/A2_09_L5_GATE.json": "BLOCKED_MISSING_ETA_DATA",
+    "validation/a2_10/A2_10_L6_GATE.json": "BLOCKED_FIXED_T_AND_MISSING_LINEHEAT",
+    "validation/a2_16/A2_16_SEED_READ_TRACE.json": "BLOCKED_UPSTREAM_NOT_CLOSED",
+    "validation/a2_17/A2_17_STATIC_READ_TRACE.json": "BLOCKED_UPSTREAM_NOT_CLOSED"
+  }
+}
