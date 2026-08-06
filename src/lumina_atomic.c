@@ -4,6 +4,7 @@
 
 #include "lumina.h" /* Phase 2 - Step 7 */
 #include "seed_capability.h"
+#include "env_universe.h"
 #include <errno.h>  /* composition parser: distinguish ERANGE from valid zero */
 #include <limits.h> /* composition parser: validate Z before narrowing to int */
 
@@ -828,12 +829,53 @@ static int config_prec_resolve_boundary_temperature(
 /* Phase 2 - Step 10: Main data loader                          */
 /* ============================================================ */
 
+
+/* 노브 표면 동결 1단계 — **보고만 한다. 아무것도 막지 않는다.**
+ *
+ * 환경의 LUMINA_* 중 src 가 읽지 않는 것(= src/env_universe.h 의 482종 밖)을 센다.
+ * 지금까지는 **모르는 노브가 조용히 들어왔고**, 그것이 2026-08-07 T3 제출을 두 번
+ * 죽였다(LUMINA_CMF_EPAY_HOTF 가 내 프리플라이트 레지스트리에 없어 통과했다).
+ *
+ * 거부로 바로 켜지 않는 이유: 그러면 C2 사고(하드 거부 env 강화 시 호출자 미이관으로
+ * 런처 83-166 개 사망)를 자발적으로 반복하게 된다. 보고 → 집계 → 이관 → 거부 순으로 간다.
+ * 이 단계는 동작을 바꾸지 않으므로 진행 중인 어떤 것과도 충돌하지 않는다. */
+static void lumina_env_surface_report(void) {
+    extern char **environ;
+    int unknown = 0, total = 0;
+    char names[64][96];
+    for (char **e = environ; *e; e++) {
+        if (strncmp(*e, "LUMINA_", 7) != 0) continue;
+        total++;
+        const char *eq = strchr(*e, '=');
+        size_t nlen = eq ? (size_t)(eq - *e) : strlen(*e);
+        int known = 0;
+        for (int i = 0; i < LUMINA_ENV_UNIVERSE_COUNT; i++)
+            if (strlen(LUMINA_ENV_UNIVERSE[i]) == nlen &&
+                strncmp(LUMINA_ENV_UNIVERSE[i], *e, nlen) == 0) { known = 1; break; }
+        if (!known) {
+            if (unknown < 64) {
+                size_t c = nlen < 95 ? nlen : 95;
+                memcpy(names[unknown], *e, c); names[unknown][c] = 0;
+            }
+            unknown++;
+        }
+    }
+    printf("[ENV-SURFACE] set=%d known=%d unknown=%d universe=%d (report-only)\n",
+           total, total - unknown, unknown, LUMINA_ENV_UNIVERSE_COUNT);
+    for (int i = 0; i < unknown && i < 64; i++)
+        printf("[ENV-SURFACE]   unknown: %s\n", names[i]);
+    if (unknown > 64) printf("[ENV-SURFACE]   ... +%d more\n", unknown - 64);
+    fflush(stdout);
+}
+
 int load_tardis_reference_data(const char *ref_dir, Geometry *geo,
                                 OpacityState *opacity, PlasmaState *plasma,
                                 MCConfig *config) {
     char path[512]; /* Phase 2 - Step 10 */
     int n; /* Phase 2 - Step 10 */
     double config_prec_deck_T_inner = 0.0;
+
+    lumina_env_surface_report();
 
     if (seed_capability_reject_obsolete_options() != SEED_OK)
         return -1;
