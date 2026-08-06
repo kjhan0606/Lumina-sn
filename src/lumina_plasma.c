@@ -6485,8 +6485,22 @@ int lumina_prepare_solver_owned_tau(AtomicData *atom, PlasmaState *plasma,
         fprintf(stderr, "[K-FRESH][FATAL] cannot prepare solver-owned tau\n");
         return -1;
     }
-    if (compute_plasma_state(atom, plasma, opacity, time_explosion) != 0)
+    if (compute_plasma_state(atom, plasma, opacity, time_explosion) != 0) {
+        /* ★침묵 금지.  T3 를 여섯 번 죽인 것이 이 조용한 return 이다(2026-08-07).
+         * compute_plasma_state 는 실패 이유를 population_last_error 에 적지만
+         * 그것을 읽는 곳이 하나도 없었다 — 런은 `exit 1`, 메시지 없음만 남기고
+         * 사라졌고, 나는 그 위에 가설을 다섯 번 쌓았다.
+         * 진단은 이유를 아는 곳에서 나와야 한다. */
+        fprintf(stderr,
+                "[K-FRESH][FATAL] compute_plasma_state failed: %s "
+                "(consumer=%s n_shells=%d T_e_gen=%llu err_count=%llu)\n",
+                population_status_name(plasma->population_last_error),
+                first_consumer ? first_consumer : "(null)",
+                plasma->n_shells,
+                (unsigned long long)plasma->T_e_generation,
+                (unsigned long long)plasma->population_error_count);
         return -1;
+    }
     return tau_sobolev_assert_fresh(opacity, first_consumer);
 }
 
