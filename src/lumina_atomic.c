@@ -884,6 +884,15 @@ static int lumina_env_surface_report(void) {
     return 0;
 }
 
+
+/* 로더 단계 추적 — 2026-08-07.
+ * T3 런이 여섯 번 **오류 메시지 없이** exit 1 로 죽었고, 나는 가설을 다섯 번 세워
+ * 다섯 번 틀렸다(make 경합·footer·덱·CSV 전부 오진). 근원은 마지막 성공 지점을
+ * 로그에서 추정해야 했다는 것이다 — 추정하지 않아도 되게 만든다.
+ * 실패하면 **마지막 [LOAD-STAGE] 가 사망 지점**이다. 보고만 하고 아무것도 막지 않는다. */
+#define LOAD_STAGE(name) do { \
+    printf("[LOAD-STAGE] %s\n", (name)); fflush(stdout); } while (0)
+
 int load_tardis_reference_data(const char *ref_dir, Geometry *geo,
                                 OpacityState *opacity, PlasmaState *plasma,
                                 MCConfig *config) {
@@ -932,6 +941,7 @@ int load_tardis_reference_data(const char *ref_dir, Geometry *geo,
      * here rather than relying on caller zeroing. */
     plasma->clump_factor = NULL;
 
+    LOAD_STAGE("geometry");
     printf("Loading TARDIS reference data from %s...\n", ref_dir); /* Phase 2 - Step 10 */
 
     /* Phase 2 - Step 10a: Load geometry */
@@ -1089,6 +1099,7 @@ int load_tardis_reference_data(const char *ref_dir, Geometry *geo,
 
     /* K-SHAPE: establish the transition row authority from macro_atom_data.csv
      * before either NPY can influence runtime dimensions. */
+    LOAD_STAGE("macro_atom_data");
     snprintf(path, sizeof(path), "%s/macro_atom_data.csv", ref_dir);
     int nt=0, nd=0, nl=0;
     opacity->transition_type = read_csv_column_int(path, "transition_type", &nt);
@@ -1110,6 +1121,7 @@ int load_tardis_reference_data(const char *ref_dir, Geometry *geo,
 
     /* Phase 2 - Step 10f: Load tau_sobolev [n_lines, n_shells].  This disk
      * value is a shape/epoch-checked seed only; K-FRESH marks it stale below. */
+    LOAD_STAGE("tau_sobolev");
     snprintf(path, sizeof(path), "%s/tau_sobolev.npy", ref_dir); /* Phase 2 - Step 10f */
     int tr=0, tc=0; /* Phase 2 - Step 10f */
     opacity->tau_sobolev = read_npy_f64_strict_2d(path, &tr, &tc);
@@ -1138,6 +1150,7 @@ int load_tardis_reference_data(const char *ref_dir, Geometry *geo,
         (size_t)opacity->n_lines * opacity->n_shells, sizeof(A208Validity));
 
     /* Phase 2 - Step 10g: Load transition probabilities [n_trans, n_shells] */
+    LOAD_STAGE("transition_probabilities");
     snprintf(path, sizeof(path), "%s/transition_probabilities.npy", ref_dir); /* Phase 2 - Step 10g */
     opacity->transition_probabilities = read_npy_f64_strict_2d(path, &tr, &tc);
     printf("  transition_probabilities: [%d x %d]\n", tr, tc); /* Phase 2 - Step 10g */
@@ -1194,6 +1207,7 @@ int load_tardis_reference_data(const char *ref_dir, Geometry *geo,
     opacity->chi_ff_nnionpart  = NULL;   /* [ARTIS-PARITY D5] lazily built under parity */
 
     printf("Data loading complete.\n"); /* Phase 2 - Step 10 */
+    LOAD_STAGE("reference_data_done");
     return 0; /* Phase 2 - Step 10 */
 }
 
@@ -2120,7 +2134,9 @@ int load_atomic_data(AtomicData *atom, const char *ref_dir, int n_shells) {
         }
     }
 
+    LOAD_STAGE("atomic_data_complete");
     printf("Atomic data loading complete.\n");
+    LOAD_STAGE("atomic_data_return");
     return 0;
 }
 
