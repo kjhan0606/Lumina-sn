@@ -1,0 +1,123 @@
+{
+ "schema": "lumina-c8-ungated-lever-census-v1",
+ "git_head": "0f1f69c",
+ "finding": "element_wide 가 관측만 하는 11종이 **전부 살아있는 물리 레버**다 — 세어지기만 하는 죽은 노브가 하나도 없다. 그리고 **전부 클램프 대장 미등재**다.",
+ "why_it_matters": "캠페인 상설 원칙은 clamp/floor 금지(정확해가 위반 가능한 가드는 잘못된 것)이고 클램프 대장 88항목이 그 census 다. 그러나 그 대장은 **코드 안의 클램프**를 셌지 **env 로 켜지는 클램프**는 세지 않았다 — 대장 자신의 프레임이 한 부류를 통째로 배제했다.",
+ "gate_status": "게이트 없음. element_wide 가 legacy_guard_configured_count 로 CSV 에 세어 넣을 뿐 아무것도 막지 않는다(C8 fail-open).",
+ "levers": [
+  {
+   "knob": "LUMINA_DR_FLOOR_CMS",
+   "physics_read_sites": [
+    "src/lumina_plasma.c:14060"
+   ],
+   "launchers_setting": 2,
+   "clamp_register": "UNREGISTERED",
+   "name_suggests_clamp": true
+  },
+  {
+   "knob": "LUMINA_NLTE_BK_CEIL",
+   "physics_read_sites": [
+    "src/lumina_cuda.cu:1616"
+   ],
+   "launchers_setting": 1,
+   "clamp_register": "UNREGISTERED",
+   "name_suggests_clamp": true
+  },
+  {
+   "knob": "LUMINA_NLTE_COLL_FLOOR",
+   "physics_read_sites": [
+    "src/lumina_plasma.c:12662",
+    "src/lumina_nlte_assemble.cu:407"
+   ],
+   "launchers_setting": 1,
+   "clamp_register": "UNREGISTERED",
+   "name_suggests_clamp": true
+  },
+  {
+   "knob": "LUMINA_NLTE_ION_LOCK",
+   "physics_read_sites": [
+    "src/lumina_plasma.c:6295",
+    "src/lumina_plasma.c:8535"
+   ],
+   "launchers_setting": 91,
+   "clamp_register": "UNREGISTERED",
+   "name_suggests_clamp": true
+  },
+  {
+   "knob": "LUMINA_NLTE_LTE_FLOOR",
+   "physics_read_sites": [
+    "src/lumina_cuda.cu:1633"
+   ],
+   "launchers_setting": 80,
+   "clamp_register": "UNREGISTERED",
+   "name_suggests_clamp": true
+  },
+  {
+   "knob": "LUMINA_NLTE_METASTABLE_COLL",
+   "physics_read_sites": [
+    "src/lumina_plasma.c:8701"
+   ],
+   "launchers_setting": 15,
+   "clamp_register": "UNREGISTERED",
+   "name_suggests_clamp": false
+  },
+  {
+   "knob": "LUMINA_NLTE_PER_ION_RESCALE",
+   "physics_read_sites": [
+    "src/lumina_plasma.c:6296",
+    "src/lumina_plasma.c:8553"
+   ],
+   "launchers_setting": 92,
+   "clamp_register": "UNREGISTERED",
+   "name_suggests_clamp": false
+  },
+  {
+   "knob": "LUMINA_NLTE_STAGE4",
+   "physics_read_sites": [
+    "src/lumina_plasma.c:8588"
+   ],
+   "launchers_setting": 27,
+   "clamp_register": "UNREGISTERED",
+   "name_suggests_clamp": false
+  },
+  {
+   "knob": "LUMINA_STAGE4_BK_CAP",
+   "physics_read_sites": [
+    "src/lumina_plasma.c:10513"
+   ],
+   "launchers_setting": 25,
+   "clamp_register": "UNREGISTERED",
+   "name_suggests_clamp": true
+  },
+  {
+   "knob": "LUMINA_SUPER_CUTOFF",
+   "physics_read_sites": [
+    "src/lumina_atomic.c:1386",
+    "src/lumina_element_wide.c:2044"
+   ],
+   "launchers_setting": 76,
+   "clamp_register": "UNREGISTERED",
+   "name_suggests_clamp": true
+  },
+  {
+   "knob": "LUMINA_TIMEDEP_ION",
+   "physics_read_sites": [
+    "src/lumina_plasma.c:8662"
+   ],
+   "launchers_setting": 1,
+   "clamp_register": "UNREGISTERED",
+   "name_suggests_clamp": false
+  }
+ ],
+ "names_suggesting_clamp": [
+  "LUMINA_DR_FLOOR_CMS",
+  "LUMINA_NLTE_BK_CEIL",
+  "LUMINA_NLTE_COLL_FLOOR",
+  "LUMINA_NLTE_ION_LOCK",
+  "LUMINA_NLTE_LTE_FLOOR",
+  "LUMINA_STAGE4_BK_CAP",
+  "LUMINA_SUPER_CUTOFF"
+ ],
+ "disposition": "미결 — 처분은 노브별 물리 판단이며 운전석이 임의로 정하지 않는다. 선택지: (1) 클램프 대장에 등재 후 개별 판정 (2) 게이트 추가(강제) — 단 76-92 런처가 설정하므로 C2 와 같은 함대 사고가 된다 (3) 현행 유지 + 기재",
+ "caveat": "physics_read_sites 는 getenv 호출 지점이지 그 값이 실제로 물리를 바꾸는지까지 확인한 것은 아니다. 노브별 확인 필요."
+}
