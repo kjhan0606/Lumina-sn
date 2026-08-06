@@ -130,6 +130,17 @@ def match_levels_to_cmfgen(carsus_sub: pd.DataFrame, cmfgen_levels: np.ndarray):
 
 
 def main() -> None:
+    # 덱마다 준위 집합이 다르면 이 표는 이식 불가하다(_ophys 는 36,547 준위,
+    # _ftos 는 31,792).  덱을 지정할 수 있어야 파이프라인이 완결된다.
+    import argparse
+    global REF_DIR, LEVELS_CSV, OUT_CSV
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--ref-dir", type=Path, default=REF_DIR)
+    a = ap.parse_args()
+    REF_DIR = a.ref_dir.resolve()
+    LEVELS_CSV = REF_DIR / "levels.csv"
+    OUT_CSV = REF_DIR / "level_multiplicity.csv"
+
     log(f"levels : {LEVELS_CSV}")
     log(f"config : {CONFIG_YML}")
     log(f"output : {OUT_CSV}")

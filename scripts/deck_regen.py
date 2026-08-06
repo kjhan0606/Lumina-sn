@@ -83,6 +83,9 @@ def main() -> int:
                    help="companion 파일을 가져올 provenance 덱")
     p.add_argument("--n-shells", type=int, default=0,
                    help="0 이면 geometry.csv 행 수에서 자동 결정")
+    p.add_argument("--compare-to", type=Path,
+                   default=Path("data/tardis_reference_toy06_19p48d_sivcaiv_ftos"),
+                   help="완전성 게이트 기준 덱 — 여기 있는 파일이 하나라도 없으면 실패")
     a = p.parse_args()
 
     links = a.links.expanduser().resolve()
@@ -121,6 +124,56 @@ def main() -> int:
     rc = subprocess.call([sys.executable, str(FINALIZE), str(new), str(n_shells)])
     if rc != 0:
         raise SystemExit(f"finalize failed rc={rc} — deck is INCOMPLETE: {new}")
+
+    # expand+finalize 만으로는 덱이 완결되지 않는다.  기존 드라이버 5개가 전부
+    # 여기서 멈춰 있었고(수동 후속 단계에 의존), 그 결과 충돌자료 34개 파일
+    # (ige_col_*_cmfgen.bin)·level_multiplicity·ma_radrecomb 이 통째로 빠진
+    # 덱이 만들어질 수 있었다.  전 단계를 여기서 돌린다.
+    for label, cmd in [
+        # --source-manifest 를 반드시 준다.  없으면 sources=None 이 되어 빌더가
+        # 원본 vintage 를 **스스로 고른다**(build_cmfgen_coldata_all.py:693).
+        # 그러면 osc 쪽에서 닫은 vintage 혼입이 충돌자료 경로로 재진입한다 —
+        # 덱의 선/준위는 링크가 정한 vintage, 충돌강도는 빌더가 고른 vintage 가 된다.
+        ("coldata", [sys.executable, str(ROOT / "scripts/build_cmfgen_coldata_all.py"),
+                     "--ref-dir", str(new), "--write",
+                     "--source-manifest", str(new / "atomic_vintage_manifest.csv")]),
+        ("level_multiplicity", [sys.executable,
+                                str(ROOT / "scripts/bake_level_multiplicity.py"),
+                                "--ref-dir", str(new)]),
+        ("ma_radrecomb", [sys.executable,
+                          str(ROOT / "scripts/build_ma_radrecomb_target.py"), str(new)]),
+    ]:
+        print(f"=== {label}")
+        rc = subprocess.call(cmd)
+        if rc != 0:
+            raise SystemExit(f"{label} failed rc={rc} — deck is INCOMPLETE: {new}")
+
+    # ★stale 게이트 — 빌더는 성공한 이온만 쓰고 실패한 이온의 기존 파일은 지우지
+    # 않는다.  같은 덱에 두 번 구우면 "성공분 + 이전 실패분" 혼합이 남고, 그것은
+    # 어느 한쪽보다 나쁘다(잘못된 vintage 의 Omega 가 조용히 실린다).
+    import csv as _csv
+    man = new / "coldata_cmfgen_manifest.csv"
+    if man.is_file():
+        ok = {Path(r["out_bin"]).name for r in _csv.DictReader(man.open())
+              if r.get("status") == "OK" and r.get("out_bin")}
+        stale = sorted(p.name for p in new.glob("ige_col_*") if p.name not in ok)
+        if stale:
+            raise SystemExit(
+                f"deck has {len(stale)} stale collision file(s) not in the manifest "
+                f"OK set — wrong-vintage Omega would ship silently: {stale[:8]}")
+
+    # ★완전성 게이트 — 이 결함 부류가 재발하지 않게 하는 구조적 장치.
+    # 기준 덱에 있는 파일이 새 덱에 하나라도 없으면 덱을 완성으로 선언하지 않는다.
+    ref_deck = (a.compare_to if a.compare_to.is_absolute() else ROOT / a.compare_to)
+    ref_names = {p.name for p in ref_deck.iterdir()} if ref_deck.is_dir() else set()
+    if not ref_names:
+        raise SystemExit(f"completeness reference deck unreadable: {ref_deck}")
+    have = {p.name for p in new.iterdir()}
+    missing = sorted(n for n in ref_names - have if not n.startswith("."))
+    if missing:
+        raise SystemExit(
+            f"deck INCOMPLETE — {len(missing)} artifact(s) absent vs reference: "
+            + ", ".join(missing[:12]) + (" ..." if len(missing) > 12 else ""))
 
     stamp = {
         "schema": "lumina-deck-provenance-v1",
