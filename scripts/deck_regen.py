@@ -148,6 +148,24 @@ def main() -> int:
         if rc != 0:
             raise SystemExit(f"{label} failed rc={rc} — deck is INCOMPLETE: {new}")
 
+    stamp = {
+        "schema": "lumina-deck-provenance-v1",
+        "deck": str(new),
+        "cmfgen_links": str(links),
+        "cmfgen_links_sha256": hashlib.sha256(links.read_bytes()).hexdigest(),
+        "provenance_base": str(base),
+        "env": env,
+        "n_shells": n_shells,
+        "finalized": True,
+        # 런이 정본 원자 트리 대신 로컬 수리본을 쓴 지점 — 공시 대상이다.
+        "atomic_local_overrides": [
+            dict(r, sha256=hashlib.sha256(Path(r["path"]).read_bytes()).hexdigest())
+            for r in getattr(module, "ATOMIC_LOCAL_OVERRIDES", [])
+        ],
+        "note": "덱은 대조 CMFGEN 런에 종속된다 — links 가 vintage 를 정한다",
+    }
+    (new / "DECK_PROVENANCE.json").write_text(json.dumps(stamp, indent=1,
+                                                         ensure_ascii=False))
     # ★stale 게이트 — 빌더는 성공한 이온만 쓰고 실패한 이온의 기존 파일은 지우지
     # 않는다.  같은 덱에 두 번 구우면 "성공분 + 이전 실패분" 혼합이 남고, 그것은
     # 어느 한쪽보다 나쁘다(잘못된 vintage 의 Omega 가 조용히 실린다).
@@ -175,24 +193,6 @@ def main() -> int:
             f"deck INCOMPLETE — {len(missing)} artifact(s) absent vs reference: "
             + ", ".join(missing[:12]) + (" ..." if len(missing) > 12 else ""))
 
-    stamp = {
-        "schema": "lumina-deck-provenance-v1",
-        "deck": str(new),
-        "cmfgen_links": str(links),
-        "cmfgen_links_sha256": hashlib.sha256(links.read_bytes()).hexdigest(),
-        "provenance_base": str(base),
-        "env": env,
-        "n_shells": n_shells,
-        "finalized": True,
-        # 런이 정본 원자 트리 대신 로컬 수리본을 쓴 지점 — 공시 대상이다.
-        "atomic_local_overrides": [
-            dict(r, sha256=hashlib.sha256(Path(r["path"]).read_bytes()).hexdigest())
-            for r in getattr(module, "ATOMIC_LOCAL_OVERRIDES", [])
-        ],
-        "note": "덱은 대조 CMFGEN 런에 종속된다 — links 가 vintage 를 정한다",
-    }
-    (new / "DECK_PROVENANCE.json").write_text(json.dumps(stamp, indent=1,
-                                                         ensure_ascii=False))
     print(f"created deck: {new}  (finalized, provenance stamped)")
     return 0
 
