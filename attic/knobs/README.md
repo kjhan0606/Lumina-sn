@@ -17,3 +17,30 @@ user 지시(2026-08-07): **"비물리와 계측용 노브들을 소스코드들�
 제거는 **분기를 없애고 현 값을 무조건 경로로 못박는 것**이다. 그래야 현 설정에 대해
 바이트 동일이 유지되고, "그 값이 옳은 물리인가" 라는 질문이 **하나로 닫힌다**
 (노브가 있는 한 "다른 값을 넣으면 다른 물리" 가 따라붙어 판정이 안 닫힌다).
+
+## 파일별 정독 결과 (기계 분류가 틀린 사례)
+
+| 파일 | 기계 분류 스크랩 | 정독 후 실제 스크랩 | 비고 |
+|---|---|---|---|
+| `lumina_main.c` | 11 | **11** | 전부 스위치였다 |
+| `lumina_atomic.c` | 9 | **0** | 전부 덧붙임·가드·입력이었다 |
+
+`lumina_atomic.c` 9건의 정체:
+- `TOPSTAGE_ANCHOR` — 최상단 이온 바닥준위 주입(ARTIS SINGLE_LEVEL_TOP_ION 부분 구현)
+- `ALPHA_SPINGATE` + `SPINGATE_MULT` — 스핀-금지 재결합 판별(Fe α 5× 근원 수리)
+- `FIX_BF_STIM_RECOMB` + `BF_CLUMP_FACTOR` — 유도재결합 + clumping.
+  주석이 명시한다: *"Keep the field absent on the gate-OFF path"* — OFF 는 그 물리가 없다
+- `FIX_BF_CONTINUUM_EVENT` + `MA_RADRECOMB_TARGET` — D-1 연속체 event selector 수리
+- `CMF_EPAY` — A2-17 은퇴 **강제 가드**. 스크랩하면 폐기된 분류기를 요구하는 설정이 조용히 통과
+- `T_INNER_FIX` — CONFIG-PREC 우선순위 사슬(argv > env > config.json > default)의 env 단
+
+⟹ **일괄 sweep 이었다면 물리 수리 4건·강제 가드 1건·계약 1건을 지웠다.**
+파일별 정독 없이는 스크랩하지 않는다.
+
+## 미해결 (기재)
+
+`LUMINA_T_INNER_FIX` 는 한 이름으로 **두 가지**를 했다:
+(a) CONFIG-PREC 의 초기 T_inner 지정 [lumina_atomic.c, 존치]
+(b) 반복 중 T_inner 핀(update_t_inner 무력화) [lumina_main.c, 스크랩됨]
+현 설정이 이 env 를 쓰지 않으므로 동작은 불변이나, **의미가 갈라진 채 남았다**.
+L1-5(물질 입력의 물리화)에서 판정할 것.
