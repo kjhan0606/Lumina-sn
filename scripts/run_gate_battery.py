@@ -22,6 +22,24 @@ BATTERY_ORDER = ("D", "K", "Z", "CP")
 EXPECTED_ROWS = {"D": 19, "K": 7, "Z": 6, "CP": 4}
 
 
+def run_census_preflight() -> int:
+    """Fail before expensive builds when the A2-01 anchor ledger is stale."""
+    command = (
+        sys.executable,
+        str(ROOT / "scripts/a2_01_census_contract.py"),
+        "check",
+    )
+    proc = subprocess.run(
+        command, cwd=ROOT, text=True, capture_output=True, check=False
+    )
+    if proc.stdout:
+        print(proc.stdout, end="")
+    if proc.stderr:
+        print(proc.stderr, end="", file=sys.stderr)
+    print(f"PREFLIGHT name=A2_01_CENSUS rc={proc.returncode}")
+    return proc.returncode
+
+
 def cpu_link_sources() -> tuple[str, ...]:
     """All src/*.c except translation units that define their own main()."""
     import glob as _glob
@@ -348,6 +366,10 @@ def main() -> int:
             f"GATE_BATTERY node={os.uname().nodename} cpu_count={os.cpu_count()} "
             f"scratch={scratch}"
         )
+        census_rc = run_census_preflight()
+        if census_rc != 0:
+            print("GATE_BATTERY_SUMMARY verdict=FAIL rc=1 preflight=A2_01_CENSUS")
+            return 1
         fixtures = build_all(build, base, args.cache_root.resolve())
 
         if args.verify_equivalence:
