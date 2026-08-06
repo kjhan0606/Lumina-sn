@@ -187,7 +187,13 @@ def main() -> int:
     if not ref_names:
         raise SystemExit(f"completeness reference deck unreadable: {ref_deck}")
     have = {p.name for p in new.iterdir()}
-    missing = sorted(n for n in ref_names - have if not n.startswith("."))
+    # verification.log 는 덱 내용이 아니라 **검증기 실행 기록**이다.  기준으로 쓰는
+    # _ftos 의 것은 심지어 실패를 담고 있고("R4 verifier contract failure:
+    # 'NoneType' object has no attribute '__dict__'" — 풀 I17 잔여 ①), 실제 생산 덱과
+    # _sivcaiv 에는 아예 없다.  완전성 기준에서 제외한다.
+    NOT_DECK_CONTENT = {"verification.log"}
+    missing = sorted(n for n in ref_names - have
+                     if not n.startswith(".") and n not in NOT_DECK_CONTENT)
     if missing:
         raise SystemExit(
             f"deck INCOMPLETE — {len(missing)} artifact(s) absent vs reference: "
