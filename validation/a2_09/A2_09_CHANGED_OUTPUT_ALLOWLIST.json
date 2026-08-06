@@ -1,0 +1,119 @@
+{
+  "baseline_head": "8a9f861efb12e749fd47926b8e78be17d4ba8070",
+  "canonicalization": "utf8-sorted-keys-indent2-lf-final-lf",
+  "created_before_source_edit": true,
+  "entries": [
+    {
+      "allowed_change_kind": "ETA_COMPONENT_PUBLICATION",
+      "artifact_or_symbol": "eta_bb",
+      "before_value_or_sha256": "fixture:legacy-line-emissivity",
+      "expected_after_constraint": "status==EMISS_OK && component_closure<=1e-10",
+      "id": "ETA-BB-L100-S0-B1-TRUE-EMISSION",
+      "identity": {
+        "bin": 1,
+        "channel": "bound_bound",
+        "event_kind": "true_emission",
+        "line_or_route": "line:100",
+        "shell": 0
+      },
+      "identity_kind": "channel_line_or_route_shell_bin_event_kind",
+      "owner_stage": "A2-09",
+      "reason_code": "GENERATION_BOUND_ETA_BB"
+    },
+    {
+      "allowed_change_kind": "ETA_COMPONENT_PUBLICATION",
+      "artifact_or_symbol": "eta_bf",
+      "before_value_or_sha256": "fixture:legacy-milne-emissivity",
+      "expected_after_constraint": "status==EMISS_OK && component_closure<=1e-10",
+      "id": "ETA-BF-R7-S0-B2-TRUE-EMISSION",
+      "identity": {
+        "bin": 2,
+        "channel": "bound_free",
+        "event_kind": "true_emission",
+        "line_or_route": "route:7",
+        "shell": 0
+      },
+      "identity_kind": "channel_line_or_route_shell_bin_event_kind",
+      "owner_stage": "A2-09",
+      "reason_code": "GENERATION_BOUND_ETA_BF"
+    },
+    {
+      "allowed_change_kind": "ETA_COMPONENT_PUBLICATION",
+      "artifact_or_symbol": "eta_ff",
+      "before_value_or_sha256": "fixture:legacy-free-free-emissivity",
+      "expected_after_constraint": "status==EMISS_OK && component_closure<=1e-10",
+      "id": "ETA-FF-CONTINUUM-S0-B3-TRUE-EMISSION",
+      "identity": {
+        "bin": 3,
+        "channel": "free_free",
+        "event_kind": "true_emission",
+        "line_or_route": "continuum:ff",
+        "shell": 0
+      },
+      "identity_kind": "channel_line_or_route_shell_bin_event_kind",
+      "owner_stage": "A2-09",
+      "reason_code": "GENERATION_BOUND_ETA_FF"
+    },
+    {
+      "allowed_change_kind": "TRANSITION_PROBABILITY_PUBLICATION",
+      "artifact_or_symbol": "transition_probability",
+      "before_value_or_sha256": "fixture:legacy-planck-or-raw-field-weight",
+      "expected_after_constraint": "sum_probability_within_1e-10 && energy_closure<=1e-8",
+      "id": "TRANSITION-BB-L100-S0-B1-INTERNAL-DOWN",
+      "identity": {
+        "bin": 1,
+        "channel": "bound_bound",
+        "event_kind": "internal_down",
+        "line_or_route": "line:100",
+        "shell": 0
+      },
+      "identity_kind": "channel_line_or_route_shell_bin_event_kind",
+      "owner_stage": "A2-09",
+      "reason_code": "CHECKED_JBAR_POPULATION_WEIGHT"
+    },
+    {
+      "allowed_change_kind": "REDISTRIBUTION_CDF",
+      "artifact_or_symbol": "eta_reemit_cdf",
+      "before_value_or_sha256": "fixture:legacy-channel-cdf",
+      "expected_after_constraint": "monotone && cdf_last_bitwise_one && generation==1",
+      "id": "CDF-BF-R7-S0-B2-CONTINUUM-EXIT",
+      "identity": {
+        "bin": 2,
+        "channel": "bound_free",
+        "event_kind": "continuum_exit",
+        "line_or_route": "route:7",
+        "shell": 0
+      },
+      "identity_kind": "channel_line_or_route_shell_bin_event_kind",
+      "owner_stage": "A2-09",
+      "reason_code": "ETA_REEMIT_SINGLE_CDF"
+    },
+    {
+      "allowed_change_kind": "PACKET_FREQUENCY_AND_RNG_DRAW_COUNT",
+      "artifact_or_symbol": "old7897_reemit_frequency",
+      "before_value_or_sha256": "fixture:sample_planck_frequency",
+      "expected_after_constraint": "sampler==eta_reemit_cdf && rng_draws==1",
+      "id": "OLD7897-BF-R7-S0-B2-PACKET-REEMIT",
+      "identity": {
+        "bin": 2,
+        "channel": "bound_free",
+        "event_kind": "packet_reemit",
+        "line_or_route": "route:7",
+        "shell": 0
+      },
+      "identity_kind": "channel_line_or_route_shell_bin_event_kind",
+      "owner_stage": "A2-09",
+      "reason_code": "REMOVE_PLANCK_REEMISSION_SAMPLE"
+    }
+  ],
+  "forbidden_scopes": [
+    "all_Te",
+    "all_emissivity",
+    "formal_spectrum",
+    "gpu_lifecycle_or_rates",
+    "physics_changed",
+    "whole_spectrum"
+  ],
+  "schema": "lumina-a2-09-changed-output-allowlist-v1",
+  "stage": "A2-09"
+}
