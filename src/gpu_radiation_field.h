@@ -43,6 +43,23 @@ typedef struct {
 
 typedef struct GpuRadiationFieldMirror GpuRadiationFieldMirror;
 
+/* Read-only device descriptor published only from a READY mirror.  Consumers
+ * must obtain it for every generation; no raw mirror buffer accessor exists. */
+typedef struct {
+    const double *frequency_bin_edges;
+    const double *J_nu;
+    const RadiationFieldValidityState *field_validity;
+    const uint64_t *line_id;
+    const double *line_jbar;
+    const LineJbarValidityState *line_validity;
+    const uint64_t *line_count;
+    const double *line_se;
+    uint64_t generation;
+    size_t n_shells;
+    size_t n_bins;
+    size_t n_lines;
+} GpuRadiationFieldDeviceView;
+
 GpuRadiationFieldMirror *gpu_radiation_field_create(void);
 GpuRadiationFieldStatus gpu_radiation_field_sync(
     const RadiationFieldOwner *owner, double expected_epoch,
@@ -54,6 +71,12 @@ GpuRadiationFieldStatus gpu_radiation_field_sync(
 GpuRadiationFieldStatus gpu_radiation_field_require_ready(
     const RadiationFieldOwner *owner, uint64_t expected_generation,
     const GpuRadiationFieldMirror *mirror, GpuRadiationFieldReport *report);
+GpuRadiationFieldStatus gpu_radiation_field_device_view(
+    const RadiationFieldOwner *owner, uint64_t expected_generation,
+    const char *expected_q_set_hash, uint64_t expected_profile_id,
+    const char *expected_profile_hash,
+    const GpuRadiationFieldMirror *mirror,
+    GpuRadiationFieldDeviceView *out, GpuRadiationFieldReport *report);
 GpuRadiationFieldStatus gpu_radiation_field_reset(
     const RadiationFieldOwner *owner, uint64_t required_generation,
     GpuRadiationFieldMirror *mirror, GpuRadiationFieldReport *report,

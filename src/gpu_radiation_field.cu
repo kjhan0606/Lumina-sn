@@ -414,6 +414,46 @@ GpuRadiationFieldStatus gpu_radiation_field_require_ready(
     return status;
 }
 
+GpuRadiationFieldStatus gpu_radiation_field_device_view(
+    const RadiationFieldOwner *owner, uint64_t expected_generation,
+    const char *expected_q_set_hash, uint64_t expected_profile_id,
+    const char *expected_profile_hash,
+    const GpuRadiationFieldMirror *mirror,
+    GpuRadiationFieldDeviceView *out, GpuRadiationFieldReport *report)
+{
+    if (!out) {
+        if (report) report->status = GPU_RF_NOT_READY;
+        return GPU_RF_NOT_READY;
+    }
+    memset(out, 0, sizeof(*out));
+    GpuRadiationFieldStatus status = gpu_radiation_field_require_ready(
+        owner, expected_generation, mirror, report);
+    if (status != GPU_RF_OK) return status;
+    if (!expected_q_set_hash || !expected_profile_hash ||
+        strcmp(expected_q_set_hash, mirror->q_set_sha256) != 0 ||
+        expected_profile_id != mirror->profile_id ||
+        strcmp(expected_profile_hash, mirror->profile_sha256) != 0) {
+        if (report) report->status = GPU_RF_PROFILE_OR_QSET_MISMATCH;
+        return GPU_RF_PROFILE_OR_QSET_MISMATCH;
+    }
+    out->frequency_bin_edges =
+        (const double *)mirror->live.component[C_FIELD_EDGE];
+    out->J_nu = (const double *)mirror->live.component[C_FIELD_VALUE];
+    out->field_validity = (const RadiationFieldValidityState *)
+        mirror->live.component[C_FIELD_VALIDITY];
+    out->line_id = (const uint64_t *)mirror->live.component[C_LINE_ID];
+    out->line_jbar = (const double *)mirror->live.component[C_LINE_VALUE];
+    out->line_validity = (const LineJbarValidityState *)
+        mirror->live.component[C_LINE_VALIDITY];
+    out->line_count = (const uint64_t *)mirror->live.component[C_LINE_COUNT];
+    out->line_se = (const double *)mirror->live.component[C_LINE_SE];
+    out->generation = mirror->gpu_committed_generation;
+    out->n_shells = mirror->n_shells;
+    out->n_bins = mirror->n_bins;
+    out->n_lines = mirror->n_lines;
+    return GPU_RF_OK;
+}
+
 GpuRadiationFieldStatus gpu_radiation_field_reset(
     const RadiationFieldOwner *owner, uint64_t required_generation,
     GpuRadiationFieldMirror *mirror, GpuRadiationFieldReport *report,
