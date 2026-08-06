@@ -11,7 +11,19 @@ endif
 
 # Source files (in src/)
 SOURCES = src/lumina_main.c src/lumina_transport.c src/a2_02c_segment_capture.c src/radiation_field.c src/bf_rate_jnu.c src/line_jbar.c src/seed_capability.c src/jnu_seed.c src/population_contract.c src/opacity_publication.c src/emissivity_publication.c src/radeq_publication.c src/gpu_physics_contract.c src/lumina_plasma.c src/lumina_element_wide.c src/lumina_atomic.c src/lumina_cmfgen.c
-HEADERS = src/lumina.h src/a2_02c_segment_capture.h src/radiation_field.h src/bf_rate_jnu.h src/line_jbar.h src/seed_capability.h src/jnu_seed.h src/population_contract.h src/opacity_publication.h src/emissivity_publication.h src/radeq_publication.h src/gpu_physics_contract.h
+# ★2026-08-07: 이 목록이 12개였고, src 가 실제로 #include 하는 헤더는 21개였다.
+#   빠진 9개는 바뀌어도 리빌드가 일어나지 않는다 — 그 중에 **계약 헤더**들이 있었다
+#   (gpu_radiation_field_contract · gpu_physics_kernels · lumina_cmfgen).
+#   T3 잡 226529 진단 중 발각: env_universe.h 를 483→496 으로 재생성했는데
+#   `make` 가 "up to date" 라 했고 바이너리는 옛 전집을 유지했다.
+#   목록은 `python3 scripts/check_makefile_headers.py` 가 기계로 대조한다.
+HEADERS = src/lumina.h src/a2_02c_segment_capture.h src/radiation_field.h src/bf_rate_jnu.h \
+          src/line_jbar.h src/seed_capability.h src/jnu_seed.h src/population_contract.h \
+          src/opacity_publication.h src/emissivity_publication.h src/radeq_publication.h \
+          src/gpu_physics_contract.h \
+          src/env_universe.h src/gpu_emissivity_kernels.h src/gpu_opacity_kernels.h \
+          src/gpu_physics_kernels.h src/gpu_radiation_field.h src/gpu_radiation_field_contract.h \
+          src/lumina_cmf_field.h src/lumina_cmfgen.h src/lumina_radeq_col_pairs.h
 TARGET = lumina
 POPULATION_SRC = src/population_contract.c
 A2_PUBLICATION_SRC = src/opacity_publication.c src/emissivity_publication.c src/radeq_publication.c
