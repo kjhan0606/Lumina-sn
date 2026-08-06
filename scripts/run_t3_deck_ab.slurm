@@ -60,8 +60,20 @@ NITER="${NITER:-12}"
 eval "$(grep -E '^export ' "$REF_LAUNCHER")"          # 39 export 줄, 실행줄은 포함 안 됨
 N_INHERITED=$(grep -cE '^export ' "$REF_LAUNCHER")
 
-# 금지 env 만 이름으로 제거 (src/legacy_knob_registry.h 의 ENFORCE_FATAL 중 참조가 켜는 것)
-UNSET_LIST="LUMINA_TE_TRAD_RATIO LUMINA_TRAD_COLOR_FIX"
+# 금지 env 를 **소스에서 유도해** 전량 unset 한다 (손으로 목록을 적지 않는다).
+#   레지스트리 ENFORCE_FATAL  +  lumina_atomic.c 의 A2-17 retired_scalar_options[]
+# ★2026-08-07: 참조(챔피언) 런처는 LUMINA_CMF_EPAY=2 와 LUMINA_CMF_EPAY_HOTF=0 을 켠다.
+#   A2-17 이 "retired scalar hot/cold classifier" 를 제거했으므로 그 설정은 현 코드에서
+#   **거부된다** ⟹ 챔피언 설정은 재현 불가다. 여기서 unset 하면 그것은 챔피언 설정이
+#   아니라 **다른 물리**다. T3 의 목적(덱 A/B)에는 무해하다 — 두 arm 이 동일하기 때문이다.
+#   그러나 이 런을 "챔피언 재현"이라 부르면 안 된다.
+UNSET_LIST=$(
+  { grep -oE 'X\("(LUMINA_[A-Z0-9_]+)", +LK_ENFORCE_FATAL' src/legacy_knob_registry.h \
+      | grep -oE 'LUMINA_[A-Z0-9_]+'
+    sed -n '/retired_scalar_options\[\]/,/};/p' src/lumina_atomic.c \
+      | grep -oE '"LUMINA_[A-Z0-9_]+"' | tr -d '"'
+    echo LUMINA_CMF_EPAY
+  } | sort -u | tr '\n' ' ')
 unset $UNSET_LIST
 
 # T3 고유 설정만 덮어쓴다

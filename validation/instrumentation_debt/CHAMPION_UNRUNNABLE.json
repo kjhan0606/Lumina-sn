@@ -1,0 +1,149 @@
+{
+ "schema": "lumina-champion-unrunnable-v1",
+ "git_head": "9efb95c",
+ "finding": "A2-17 이 제거한 scalar hot/cold classifier 에 의존하는 런처는 현 코드로 재현 불가하다. 참조(챔피언) 런처 run_coevolve_s01.sh 가 LUMINA_CMF_EPAY=2 와 LUMINA_CMF_EPAY_HOTF=0 을 켠다.",
+ "reject_site": "src/lumina_atomic.c retired_scalar_options[] (설정만 해도 거부, 값 무관) + LUMINA_CMF_EPAY>=2 (사유: requires the retired scalar hot/cold classifier)",
+ "retired_options": [
+  "LUMINA_FIXED_TRAD_PROFILE",
+  "LUMINA_W_CAP",
+  "LUMINA_VALIDATE_PLASMA",
+  "LUMINA_OUTER_TE_DAMP_FACTOR",
+  "LUMINA_OUTER_TE_DAMP_SMIN",
+  "LUMINA_F_COLL_BOOST",
+  "LUMINA_KPEMISS_BSRC_TAU",
+  "LUMINA_BSRC_WFLOOR",
+  "LUMINA_CMF_EPAY_HOTF",
+  "LUMINA_CMF_EPAY"
+ ],
+ "unrunnable_launchers": 36,
+ "by_option": {
+  "LUMINA_KPEMISS_BSRC_TAU": 25,
+  "LUMINA_FIXED_TRAD_PROFILE": 4,
+  "LUMINA_CMF_EPAY_HOTF": 3,
+  "LUMINA_CMF_EPAY": 3,
+  "LUMINA_CMF_EPAY>=2": 3,
+  "LUMINA_F_COLL_BOOST": 2,
+  "LUMINA_OUTER_TE_DAMP_FACTOR": 1,
+  "LUMINA_OUTER_TE_DAMP_SMIN": 1,
+  "LUMINA_W_CAP": 1
+ },
+ "launchers": {
+  "run_bfdark.sh": [
+   "LUMINA_CMF_EPAY_HOTF",
+   "LUMINA_CMF_EPAY",
+   "LUMINA_CMF_EPAY>=2"
+  ],
+  "run_coevolve_s01.sh": [
+   "LUMINA_CMF_EPAY_HOTF",
+   "LUMINA_CMF_EPAY",
+   "LUMINA_CMF_EPAY>=2"
+  ],
+  "run_coldata_syn08.sh": [
+   "LUMINA_KPEMISS_BSRC_TAU"
+  ],
+  "sbatch_aud1.sh": [
+   "LUMINA_KPEMISS_BSRC_TAU"
+  ],
+  "sbatch_aud2.sh": [
+   "LUMINA_KPEMISS_BSRC_TAU"
+  ],
+  "sbatch_aud3.sh": [
+   "LUMINA_KPEMISS_BSRC_TAU"
+  ],
+  "sbatch_euv461.sh": [
+   "LUMINA_KPEMISS_BSRC_TAU"
+  ],
+  "sbatch_fbcb.sh": [
+   "LUMINA_KPEMISS_BSRC_TAU"
+  ],
+  "sbatch_fbckt.sh": [
+   "LUMINA_KPEMISS_BSRC_TAU"
+  ],
+  "sbatch_jbl2.sh": [
+   "LUMINA_KPEMISS_BSRC_TAU"
+  ],
+  "sbatch_kpr.sh": [
+   "LUMINA_KPEMISS_BSRC_TAU"
+  ],
+  "sbatch_kpr10.sh": [
+   "LUMINA_KPEMISS_BSRC_TAU"
+  ],
+  "sbatch_kpr10b.sh": [
+   "LUMINA_KPEMISS_BSRC_TAU"
+  ],
+  "sbatch_kpr2.sh": [
+   "LUMINA_KPEMISS_BSRC_TAU"
+  ],
+  "sbatch_kpr3.sh": [
+   "LUMINA_KPEMISS_BSRC_TAU"
+  ],
+  "sbatch_kpr4.sh": [
+   "LUMINA_KPEMISS_BSRC_TAU"
+  ],
+  "sbatch_kpr5.sh": [
+   "LUMINA_KPEMISS_BSRC_TAU"
+  ],
+  "sbatch_kpr5jt.sh": [
+   "LUMINA_KPEMISS_BSRC_TAU"
+  ],
+  "sbatch_kpr6.sh": [
+   "LUMINA_KPEMISS_BSRC_TAU"
+  ],
+  "sbatch_kpr7.sh": [
+   "LUMINA_KPEMISS_BSRC_TAU"
+  ],
+  "sbatch_kpr8.sh": [
+   "LUMINA_KPEMISS_BSRC_TAU"
+  ],
+  "sbatch_kpr9.sh": [
+   "LUMINA_KPEMISS_BSRC_TAU"
+  ],
+  "sbatch_kpr_nob3.sh": [
+   "LUMINA_KPEMISS_BSRC_TAU"
+  ],
+  "sbatch_milne.sh": [
+   "LUMINA_KPEMISS_BSRC_TAU"
+  ],
+  "sbatch_milnec2.sh": [
+   "LUMINA_KPEMISS_BSRC_TAU"
+  ],
+  "sbatch_milnec2ne64.sh": [
+   "LUMINA_KPEMISS_BSRC_TAU"
+  ],
+  "sbatch_tepop1.sh": [
+   "LUMINA_KPEMISS_BSRC_TAU"
+  ],
+  "slurm_aulbranch_validate.sh": [
+   "LUMINA_FIXED_TRAD_PROFILE"
+  ],
+  "slurm_fcoll_sweep.sh": [
+   "LUMINA_F_COLL_BOOST"
+  ],
+  "slurm_fixtrad_fluorescence.sh": [
+   "LUMINA_FIXED_TRAD_PROFILE"
+  ],
+  "slurm_jcap_test.sh": [
+   "LUMINA_FIXED_TRAD_PROFILE"
+  ],
+  "slurm_ma_internal_cap.sh": [
+   "LUMINA_FIXED_TRAD_PROFILE"
+  ],
+  "slurm_paper_ddc15_paperli_2002bo_metafix_ratedump_sce.sh": [
+   "LUMINA_F_COLL_BOOST"
+  ],
+  "slurm_paper_ddc15_v3asEfloor_gamma_sweep_2002bo.sh": [
+   "LUMINA_OUTER_TE_DAMP_FACTOR",
+   "LUMINA_OUTER_TE_DAMP_SMIN"
+  ],
+  "slurm_radeq_diag.sh": [
+   "LUMINA_W_CAP"
+  ],
+  "test_thenmc_bin.sh": [
+   "LUMINA_CMF_EPAY_HOTF",
+   "LUMINA_CMF_EPAY",
+   "LUMINA_CMF_EPAY>=2"
+  ]
+ },
+ "consequence": "해당 런처의 과거 결과는 현 코드로 재현할 수 없다. unset 하고 돌리면 그것은 같은 런이 아니라 **다른 물리**다. T3 는 두 arm 이 동일 설정이므로 덱 A/B 는 성립하나 \"챔피언 재현\"이라 불러서는 안 된다.",
+ "disposition": "미결 — (1) EPAY 기전을 되살릴지 (2) 해당 런처를 재현 불가로 표시할지 (3) 새 기준 설정을 세울지"
+}
