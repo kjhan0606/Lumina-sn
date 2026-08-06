@@ -31,7 +31,7 @@ except ImportError:  # pragma: no cover - reported cleanly by main
     np = None
 
 
-LEDGER_SCHEMA_VERSION = 2
+LEDGER_SCHEMA_VERSION = 3   # v3: deck 축 추가 (C5)
 C_A_S = 2.99792458e18
 C_CGS = 2.99792458e10
 EDDFACTOR_FL_TO_HZ = 1.0e15
@@ -1110,6 +1110,42 @@ def input_inventory(run: Path) -> dict[str, Any]:
     return result
 
 
+def deck_axis(model_dir: Path) -> dict[str, Any]:
+    """덱을 **일급 축**으로 기록한다 (C5 수리).
+
+    v2 까지 덱은 `binary_identifier.argv` 와 `model_geometry` 안에 문자열로 묻혀 있었다.
+    스키마 필드가 아니어서 "이 행이 어느 덱에서 나왔나"를 조회할 수 없었고,
+    그래서 138행 전체가 덱 축 없이 쌓였다.  덱이 바뀌면 metric 은 비교 불가가 되는데
+    그 사실이 행에 적혀 있지 않았다 — 그것이 결함이다.
+
+    유도 가능한 것만 유도하고 모르는 것은 UNKNOWN 으로 남긴다(추정하지 않는다).
+    """
+    d: dict[str, Any] = {"path": str(model_dir), "name": model_dir.name,
+                         "atomic_provenance": "UNKNOWN", "cmfgen_links": None,
+                         "shape": {}, "known_defects": []}
+    for fname in ("DECK_PROVENANCE.json", "DECK_PROVENANCE_AUDIT.json"):
+        f = model_dir / fname
+        if not f.is_file():
+            continue
+        try:
+            j = json.loads(f.read_text())
+        except Exception:
+            continue
+        d["stamp"] = fname
+        d["cmfgen_links"] = j.get("cmfgen_links")
+        d["atomic_provenance"] = j.get("atomic_provenance") or (
+            "RECORDED (links + sha256)" if j.get("cmfgen_links") else "UNKNOWN")
+        d["shape"] = j.get("shape", d["shape"])
+        d["known_defects"] = j.get("known_defects", [])
+        break
+    for fname, key in (("line_list.csv", "n_lines"), ("levels.csv", "n_levels")):
+        f = model_dir / fname
+        if key not in d["shape"] and f.is_file():
+            with f.open() as fh:
+                d["shape"][key] = max(0, sum(1 for _ in fh) - 1)
+    return d
+
+
 def build_row(
     run: Path, repo: Path, oracle: CMFOracle, model_override: Path | None = None
 ) -> dict[str, Any]:
@@ -1159,6 +1195,7 @@ def build_row(
         "metric_definitions": copy.deepcopy(METRIC_DEFINITIONS),
         "metric_definitions_sha256": json_hash(METRIC_DEFINITIONS),
         "model_geometry": str(geometry_path),
+        "deck": deck_axis(model_dir),
         "cmfgen_oracle": {"directory": str(oracle.cmf_dir.resolve()), "truth_directory": str(oracle.truth_dir.resolve())},
         "input_inventory": input_inventory(run),
         "metrics": metrics,
@@ -1172,6 +1209,7 @@ def validate_row(row: dict[str, Any]) -> None:
         "ledger_schema_version", "run_path", "run_kind", "run_directory_mtime",
         "binary_identifier", "gate_set", "measured_at", "metric_definitions",
         "metric_definitions_sha256", "input_inventory", "metrics",
+        "deck",   # v3: 덱은 일급 축이다. 없으면 그 행은 비교 불가다 (C5)
     }
     missing = sorted(required - set(row))
     if missing:
@@ -1184,6 +1222,9 @@ def validate_row(row: dict[str, Any]) -> None:
         raise LedgerError(f"metric order/set mismatch: {tuple(row['metrics'])}")
     if row["run_kind"] not in ("logs", "scratch", "UNDEFINED"):
         raise LedgerError("invalid run_kind")
+    # 덱 축은 비어 있어도 되지만 **필드는 있어야 한다** — UNKNOWN 은 기재이고 부재는 침묵이다
+    if not isinstance(row["deck"], dict) or "name" not in row["deck"]:
+        raise LedgerError("deck axis missing or malformed")
     uv = row["metrics"]["uv_quotient"]
     if uv["status"] == "DEFINED" and not (0.0 <= uv["uv_fraction"] <= 1.0):
         raise LedgerError(f"UV fraction outside [0,1]: {uv['uv_fraction']}")
