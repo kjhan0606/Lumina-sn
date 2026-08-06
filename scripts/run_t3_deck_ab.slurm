@@ -11,9 +11,16 @@ set -euo pipefail
 # 목적: 회귀 대장에 **새 덱 축**의 첫 점을 찍는다. 구 축과의 비교가 아니다 —
 # 구 생산 덱(bare)은 현 로더가 거부하므로(0-K 형상 30열/50셸) 재현 자체가 불가능하다.
 # 두 arm 의 차이는 **수소꼴 정확 평가 하나**로 격리된다:
-#     _vac   = jnu4 vintage + I20 수리
-#     _jnu4  = jnu4 vintage + I20 수리 + CMFGEN_EXACT_HYD
+#     _ophys           = O-PHYS vintage
+#     _ophys_exacthyd  = O-PHYS vintage + CMFGEN_EXACT_HYD=1 (타입 2/3/8/9 정확 평가, BAKEFIX2)
 # 나중에 문제가 생겼을 때 이등분할 수 있는 축을 지금 만들어 둔다.
+#
+# ★2026-08-07 정정: 이 주석은 원래 arm 을 `_vac` / `_jnu4` 라 적었고 **그것이 틀렸다**.
+#   실측(DECK_PROVENANCE.json): _jnu4 의 cmfgen_links_sha256=3596b927… 는 _ophys 계열의
+#   f395a07c… 와 **다른 vintage** 다.  그 쌍으로 A/B 를 하면 vintage 와 수소꼴이 교락된다.
+#   _ophys 와 _ophys_exacthyd 만이 links sha 와 atomic_local_overrides 가 동일하고
+#   CMFGEN_EXACT_HYD 하나로 갈린다 — 단일 변수 A/B 의 조건을 실제로 만족한다.
+#   잡 225869(_vac)·225870(_jnu4) 은 이 잘못된 주석을 따라 제출된 것이다.
 #
 # ★폐기·금지 env 를 설정하지 않는다 — src/legacy_knob_registry.h 의 ENFORCE_FATAL 12종.
 #   참조 런처 run_coevolve_s01.sh 는 LUMINA_TE_TRAD_RATIO=1.0 과
@@ -76,6 +83,21 @@ UNSET_LIST=$(
   } | sort -u | tr '\n' ' ')
 unset $UNSET_LIST
 
+# --- 죽은 노브 여과: **상속분에 한한다** ---
+# ★잡 226529 는 여기서 죽었다(BLOCKED_UNKNOWN_ENV 15종, 로더 진입 전).  진단:
+#   · LUMINA_MODEL_DIR 1종 = **게이트의 오탐**.  src 는 안 읽지만 셸이 쓴다(12개 스크립트).
+#     전집을 "src 가 읽는 것"으로 정의한 것이 결함이었다 ⟹ 5번째 갈래를 넣어 496 으로 수리.
+#   · 나머지 14종 = **진짜 죽은 노브**.  참조 런처가 설정하는데 src 참조 0회(또는 주석뿐):
+#     RADEQ_COOL_* · COUPLED_* · RADEQ_LINE_R* · CN_DAMP · NLTE_FALLBACK_TE · TDEP_EQIC …
+#     unset 은 **구성상 무해**하다 — 아무도 읽지 않는 값을 지우기 때문이다.
+#
+# 상속분만 여과하는 이유: 전체에 자동 여과를 걸면 T3 자신의 오타까지 조용히 지워져
+# STRICT 가 무력해진다.  아래 T3 고유 설정은 STRICT 아래 그대로 둔다.
+UNIVERSE=$(grep -oE '"LUMINA_[A-Z0-9_]+"' src/env_universe.h | tr -d '"' | sort -u)
+DEAD_INHERITED=$(comm -23 <(env | grep -oE '^LUMINA_[A-Z0-9_]+' | sort -u) <(echo "$UNIVERSE"))
+if [[ -n "$DEAD_INHERITED" ]]; then unset $DEAD_INHERITED; fi
+N_DEAD=$(echo "$DEAD_INHERITED" | grep -c . || true)
+
 # T3 고유 설정만 덮어쓴다
 export LUMINA_MODEL_DIR="$MODEL"
 export LUMINA_DEPOSITION_FILE="$MODEL/deposition_cmfgen.csv"
@@ -100,6 +122,7 @@ PKTS="${PKTS:-400000}"; NIT="${NITER:-12}"
   echo "  binary_sha256=$BIN_SHA"
   echo "  env_inherited_from=$REF_LAUNCHER ($N_INHERITED export lines)"
   echo "  env_unset=$UNSET_LIST"
+  echo "  env_unset_dead=$N_DEAD: $(echo $DEAD_INHERITED | tr '\n' ' ')"
   echo "  deck=$MODEL"
   echo "  deck_provenance=$(python3 -c "import json;print(json.load(open('$MODEL/DECK_PROVENANCE.json')).get('cmfgen_links','UNKNOWN'))")"
   echo "  argv=./lumina_cuda $MODEL $PKTS $NIT spectrum nlte"

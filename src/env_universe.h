@@ -1,14 +1,19 @@
 /* GENERATED — do not edit by hand.
- * scripts/derive_env_universe.py 가 src 에서 기계적으로 도출한다.
- * 손으로 세면 짧아진다 — 2026-08-06~07 에 같은 종류의 목록을 열 번 세었고 열 번 다 짧았다.
+ * scripts/derive_env_universe.py 가 기계적으로 도출한다.
+ * 손으로 세면 짧아진다 — 2026-08-06~07 에 같은 종류의 목록을 열한 번 세었고 열한 번 다 짧았다.
  *
- * 갈래: getenv 리터럴 419 · env 배열 38 · snprintf 조립 51 · 래퍼 호출부 7  ⟹ 합집합 483
+ * 갈래: literal_getenv 419 · env_arrays 38 · constructed 51 · wrapper_calls 7 · nonsrc_consumers 24  ⟹ 합집합 496
  * 래퍼 스캔이 없었으면 놓쳤을 것: LUMINA_CONFIG_PREC, LUMINA_NLTE_ELEMENT_WIDE_COMMIT, LUMINA_NLTE_ELEMENT_WIDE_DUMP
+ * ★src 밖 소비자만 아는 이름(5번 갈래가 없었으면 STRICT 가 오탐했을 것): 13
+ *   LUMINA_BIN, LUMINA_MODEL_DIR, LUMINA_REF_DIR, LUMINA_RUN_BIN, LUMINA_RUN_ROOT, LUMINA_SIGMA_BIN, LUMINA_SIGMA_BIN_LEVELS, LUMINA_SIGMA_COIII_PATCH, LUMINA_SPEC_ARG, LUMINA_SRC_REF, LUMINA_STAGE0_CSV, LUMINA_X_OUTER_SCALE_FAC, LUMINA_X_OUTER_SCALE_Z
+ *
+ * 전집의 정의 = "**어떤 소비자든 읽는 이름**".  src 가 안 읽는다는 사실은
+ * 죽은 노브 census 의 몫이지 이 목록의 몫이 아니다.
  */
 #ifndef LUMINA_ENV_UNIVERSE_H
 #define LUMINA_ENV_UNIVERSE_H
 
-#define LUMINA_ENV_UNIVERSE_COUNT 483
+#define LUMINA_ENV_UNIVERSE_COUNT 496
 
 static const char *const LUMINA_ENV_UNIVERSE[] = {
     "LUMINA_A2_02C_CAPTURE_GENERATION",
@@ -67,6 +72,7 @@ static const char *const LUMINA_ENV_UNIVERSE[] = {
     "LUMINA_BF_GEMM",
     "LUMINA_BF_OPACITY",
     "LUMINA_BF_RATE_POPS",
+    "LUMINA_BIN",
     "LUMINA_BINNED_J_ESTIMATOR",
     "LUMINA_BSRC_WFLOOR",
     "LUMINA_BUDGET_SHELL",
@@ -350,6 +356,7 @@ static const char *const LUMINA_ENV_UNIVERSE[] = {
     "LUMINA_ML_PHI_NEB_IONMASK",
     "LUMINA_ML_PHI_NEB_T_RATIO_EXP",
     "LUMINA_ML_PHI_NEB_ZMASK",
+    "LUMINA_MODEL_DIR",
     "LUMINA_NLTE",
     "LUMINA_NLTE_ASSEMBLE_GPU",
     "LUMINA_NLTE_BF_JEQB",
@@ -435,8 +442,14 @@ static const char *const LUMINA_ENV_UNIVERSE[] = {
     "LUMINA_RADFIELD_SHADOW_DUMP",
     "LUMINA_RATES_FIX",
     "LUMINA_REC_SPINGATE",
+    "LUMINA_REF_DIR",
     "LUMINA_RR_TAU_THRESH",
+    "LUMINA_RUN_BIN",
+    "LUMINA_RUN_ROOT",
     "LUMINA_SELF_CONSISTENT_TE",
+    "LUMINA_SIGMA_BIN",
+    "LUMINA_SIGMA_BIN_LEVELS",
+    "LUMINA_SIGMA_COIII_PATCH",
     "LUMINA_SIMUL_CAP_TOPION",
     "LUMINA_SIMUL_ION_DAMP",
     "LUMINA_SIMUL_NESTED",
@@ -445,8 +458,11 @@ static const char *const LUMINA_ENV_UNIVERSE[] = {
     "LUMINA_SIMUL_TRACE",
     "LUMINA_SL_DUMP",
     "LUMINA_SL_WRITE_SKIPZ",
+    "LUMINA_SPEC_ARG",
     "LUMINA_SPEC_RANGE",
     "LUMINA_SPINGATE_MULT",
+    "LUMINA_SRC_REF",
+    "LUMINA_STAGE0_CSV",
     "LUMINA_STAGE32_RUNG1_DUMP",
     "LUMINA_STAGE32_RUNG1_ITER",
     "LUMINA_STAGE4_BK_CAP",
@@ -490,6 +506,8 @@ static const char *const LUMINA_ENV_UNIVERSE[] = {
     "LUMINA_UVOPT_EMIT_ZMASK4",
     "LUMINA_VALIDATE_PLASMA",
     "LUMINA_W_CAP",
+    "LUMINA_X_OUTER_SCALE_FAC",
+    "LUMINA_X_OUTER_SCALE_Z",
     "LUMINA_ZETA_OVERRIDE_IONMASK",
     "LUMINA_ZETA_OVERRIDE_VAL",
     "LUMINA_ZETA_OVERRIDE_ZMASK",
