@@ -89,6 +89,18 @@ const GpuRadiationFieldCounters *gpu_radiation_field_counters(
 GpuRadiationFieldState gpu_radiation_field_state(
     const GpuRadiationFieldMirror *mirror);
 
+/* Process-wide production binding.  lumina_cuda has one canonical CPU owner
+ * and one CUDA context; this bridge publishes exactly one A2-12 mirror for all
+ * A2-13 consumers.  It is not an owner/setter: every bind revalidates the CPU
+ * owner's generation and the checked descriptor remains read-only. */
+GpuRadiationFieldStatus gpu_radiation_field_production_bind(
+    const RadiationFieldOwner *owner, GpuRadiationFieldReport *report,
+    void *cuda_stream);
+GpuRadiationFieldStatus gpu_radiation_field_production_view(
+    const RadiationFieldOwner *owner, GpuRadiationFieldDeviceView *out,
+    GpuRadiationFieldReport *report);
+void gpu_radiation_field_production_release(void);
+
 #ifdef __cplusplus
 }
 #endif

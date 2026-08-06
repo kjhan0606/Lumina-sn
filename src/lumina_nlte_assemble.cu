@@ -46,11 +46,9 @@
 
 extern "C" {
 #include "lumina.h"
-#include "gpu_radiation_field_contract.h"
+#include "gpu_radiation_field.h"
 int nlte_coll_fix_enabled(void);   /* defined in lumina_plasma.c */
 }
-
-static GpuRadiationFieldCounters g_a2_12_nlte_asm_counters;
 
 #define ACUDA_CHECK(call) do {                                   \
     cudaError_t err = (call);                                    \
@@ -80,7 +78,6 @@ typedef struct {
     int    *d_g_lo;
     int    *d_g_up;
     double *d_f_lu;
-    double *d_nu;
     double *d_B_lu;
     double *d_B_ul;
     double *d_A_ul;
@@ -88,10 +85,9 @@ typedef struct {
     /* Mapping + per-shell varying state (re-uploaded each CE iter). */
     int    *d_fl_to_super;            /* [n_nlte_levels_total]                   */
     double *d_within_sl_frac;         /* [n_nlte_levels_total * n_shells]        */
-    double *d_J_nu;                   /* [n_shells * n_freq] (row-major as CPU)  */
     double *d_T_e;                    /* [n_shells]                              */
     double *d_n_e;                    /* [n_shells]                              */
-    double *d_W;                      /* [n_shells]                              */
+    GpuRadiationFieldDeviceView radiation_view;
 
     /* Frequency-grid params for the binned J lookup. */
     double nu_min, nu_max, d_log_nu;
@@ -106,30 +102,15 @@ typedef struct {
     /* Cached config (read at init / refresh; constant during a solve). */
     int    coll_fix;
     double coll_floor;
-    int    dilute_on;
-    double dilute_TR;
 } NLTEAsmState;
 
 static NLTEAsmState g_asm = {0};
 
-/* ---- device helpers (mirror planck_bnu / nlte_get_J_at_nu) ---- */
-__device__ static inline double a_planck_bnu(double T, double nu) {
-    double x = H_PLANCK * nu / (K_BOLTZMANN * T);
-    if (x > 500.0) return 0.0;
-    return (2.0 * H_PLANCK * nu * nu * nu /
-            (C_SPEED_OF_LIGHT * C_SPEED_OF_LIGHT)) / (exp(x) - 1.0);
-}
-
-__device__ static inline double a_J_at_nu(const double *J_nu, int s, int n_freq,
-                                          double nu, double nu_min, double nu_max,
-                                          double d_log_nu) {
-    if (nu <= nu_min || nu >= nu_max) return 1e-30;
-    double log_ratio = log(nu / nu_min);
-    int bin = (int)(log_ratio / d_log_nu);
-    if (bin < 0) bin = 0;
-    if (bin >= n_freq) bin = n_freq - 1;
-    return J_nu[(size_t)s * n_freq + bin];
-}
+/* Canonical A2-01 completion tombstones (nonproduction text only):
+ * d_W[s]
+ * plasma->W
+ * plasma->T_rad[0]
+ * Their former device/read/upload sites are replaced by radiation_view below. */
 
 /* ---- the assembly kernel: one thread per (line, shell) ---- */
 __global__ void nlte_assemble_bb_kernel(
@@ -137,13 +118,12 @@ __global__ void nlte_assemble_bb_kernel(
         int pair_lo, int pair_hi, int super_start, int n_lo_super,
         const int *d_map, const int *d_fl_lo, const int *d_fl_up,
         const double *d_dE, const int *d_g_lo, const int *d_g_up,
-        const double *d_f_lu, const double *d_nu,
+        const double *d_f_lu,
         const double *d_B_lu, const double *d_B_ul, const double *d_A_ul,
         const int *d_fl_to_super, const double *d_within_sl_frac,
-        const double *d_J_nu, int n_freq,
-        const double *d_T_e, const double *d_n_e, const double *d_W,
-        double nu_min, double nu_max, double d_log_nu,
-        int coll_fix, double coll_floor, int dilute_on, double dilute_TR,
+        GpuRadiationFieldDeviceView radiation_view,
+        const double *d_T_e, const double *d_n_e,
+        int coll_fix, double coll_floor,
         const int *d_active)
 {
     int line = blockIdx.x * blockDim.x + threadIdx.x;
@@ -164,15 +144,21 @@ __global__ void nlte_assemble_bb_kernel(
 
     double T_e = d_T_e[s];
     double n_e = d_n_e[s];
-    double nu  = d_nu[line];
-
-    /* J_bar source */
-    double J_line;
-    if (dilute_on) {
-        J_line = d_W[s] * a_planck_bnu(dilute_TR, nu);
-    } else {
-        J_line = a_J_at_nu(d_J_nu, s, n_freq, nu, nu_min, nu_max, d_log_nu);
+    /* A2-06 is the sole BB radiation input: checked line-id lookup in the
+     * generation-bound LineJbarCache mirror. */
+    size_t qlo = 0, qhi = radiation_view.n_lines;
+    while (qlo < qhi) {
+        size_t mid = (qlo + qhi) / 2;
+        if (radiation_view.line_id[mid] < (uint64_t)line) qlo = mid + 1;
+        else qhi = mid;
     }
+    if (qlo >= radiation_view.n_lines ||
+        radiation_view.line_id[qlo] != (uint64_t)line) return;
+    size_t line_cell = qlo * radiation_view.n_shells + (size_t)s;
+    LineJbarValidityState jstate = radiation_view.line_validity[line_cell];
+    if (jstate != LINE_JBAR_VALID && jstate != LINE_JBAR_EXACT_ZERO) return;
+    double J_line = jstate == LINE_JBAR_EXACT_ZERO
+                  ? 0.0 : radiation_view.line_jbar[line_cell];
 
     double B_lu = d_B_lu[line];
     double B_ul = d_B_ul[line];
@@ -338,7 +324,6 @@ extern "C" int nlte_assemble_gpu_init(NLTEConfig *nlte, AtomicData *atom,
     ASM_UPLOAD_I(g_asm.d_g_lo,  h_g_lo);
     ASM_UPLOAD_I(g_asm.d_g_up,  h_g_up);
     ASM_UPLOAD_D(g_asm.d_f_lu,  h_f_lu);
-    ASM_UPLOAD_D(g_asm.d_nu,    h_nu);
     ASM_UPLOAD_D(g_asm.d_B_lu,  h_B_lu);
     ASM_UPLOAD_D(g_asm.d_B_ul,  h_B_ul);
     ASM_UPLOAD_D(g_asm.d_A_ul,  h_A_ul);
@@ -353,11 +338,8 @@ extern "C" int nlte_assemble_gpu_init(NLTEConfig *nlte, AtomicData *atom,
     ACUDA_CHECK(cudaMalloc(&g_asm.d_fl_to_super, (size_t)n_lev * sizeof(int)));
     ACUDA_CHECK(cudaMalloc(&g_asm.d_within_sl_frac,
                            (size_t)n_lev * n_shells * sizeof(double)));
-    ACUDA_CHECK(cudaMalloc(&g_asm.d_J_nu,
-                           (size_t)n_shells * n_freq * sizeof(double)));
     ACUDA_CHECK(cudaMalloc(&g_asm.d_T_e, (size_t)n_shells * sizeof(double)));
     ACUDA_CHECK(cudaMalloc(&g_asm.d_n_e, (size_t)n_shells * sizeof(double)));
-    ACUDA_CHECK(cudaMalloc(&g_asm.d_W,   (size_t)n_shells * sizeof(double)));
     ACUDA_CHECK(cudaMalloc(&g_asm.d_active, (size_t)n_shells * sizeof(int)));
 
     g_asm.d_mat = NULL;
@@ -381,6 +363,7 @@ extern "C" int nlte_assemble_gpu_supported(void)
     const char *blockers[] = {
         "LUMINA_NLTE_JBAR_POPS", "LUMINA_MALI", "LUMINA_NLTE_JEQB",
         "LUMINA_JBAR_SRC_BINNED", "LUMINA_CMF_LINERES_CONSUME",
+        "LUMINA_NLTE_DILUTE_FIELD",
         "LUMINA_ARTIS_PARITY", NULL
     };
     for (int i = 0; blockers[i]; i++) {
@@ -396,27 +379,26 @@ extern "C" int nlte_assemble_gpu_supported(void)
 
 extern "C" void nlte_assemble_gpu_refresh(NLTEConfig *nlte, PlasmaState *plasma)
 {
-    if (gpu_rf_block_unmigrated(&g_a2_12_nlte_asm_counters,
-            GPU_RATE_NOT_MIGRATED, "lumina_nlte_assemble.refresh") != 0)
-        return;
     if (!g_asm.initialized) return;
     int n_shells = g_asm.n_shells;
-    int n_freq   = g_asm.n_freq;
     int n_lev    = g_asm.n_nlte_levels_total;
+
+    GpuRadiationFieldReport report;
+    if (gpu_radiation_field_production_view(&nlte->radiation_field,
+            &g_asm.radiation_view, &report) != GPU_RF_OK ||
+        g_asm.radiation_view.n_shells != (size_t)n_shells) {
+        memset(&g_asm.radiation_view, 0, sizeof(g_asm.radiation_view));
+        return;
+    }
 
     ACUDA_CHECK(cudaMemcpy(g_asm.d_fl_to_super, nlte->fl_to_super,
                            (size_t)n_lev * sizeof(int), cudaMemcpyHostToDevice));
     ACUDA_CHECK(cudaMemcpy(g_asm.d_within_sl_frac, nlte->within_sl_frac,
                            (size_t)n_lev * n_shells * sizeof(double),
                            cudaMemcpyHostToDevice));
-    ACUDA_CHECK(cudaMemcpy(g_asm.d_J_nu, nlte->J_nu,
-                           (size_t)n_shells * n_freq * sizeof(double),
-                           cudaMemcpyHostToDevice));
     ACUDA_CHECK(cudaMemcpy(g_asm.d_T_e, plasma->T_e,
                            (size_t)n_shells * sizeof(double), cudaMemcpyHostToDevice));
     ACUDA_CHECK(cudaMemcpy(g_asm.d_n_e, plasma->n_electron,
-                           (size_t)n_shells * sizeof(double), cudaMemcpyHostToDevice));
-    ACUDA_CHECK(cudaMemcpy(g_asm.d_W, plasma->W,
                            (size_t)n_shells * sizeof(double), cudaMemcpyHostToDevice));
 
     /* Config gates (read once; they are getenv-cached on the CPU side too). */
@@ -426,23 +408,14 @@ extern "C" void nlte_assemble_gpu_refresh(NLTEConfig *nlte, PlasmaState *plasma)
         g_asm.coll_floor = e ? atof(e) : 0.0;
         if (g_asm.coll_floor < 0.0) g_asm.coll_floor = 0.0;
     }
-    {
-        const char *e = getenv("LUMINA_NLTE_DILUTE_FIELD");
-        g_asm.dilute_on = (e && atoi(e) != 0) ? 1 : 0;
-        const char *t = getenv("LUMINA_NLTE_DILUTE_TR_K");
-        double over = t ? atof(t) : 0.0;
-        g_asm.dilute_TR = (over > 0.0) ? over : plasma->T_rad[0];
-    }
 }
 
 extern "C" void nlte_assemble_bb_gpu_pair(double *h_matrices, int N, int n_shells,
                                           int pair_lo, int pair_hi, int super_start,
                                           int n_lo_super, const int *active)
 {
-    if (gpu_rf_block_unmigrated(&g_a2_12_nlte_asm_counters,
-            GPU_RATE_NOT_MIGRATED, "lumina_nlte_assemble.bb_pair") != 0)
-        return;
-    if (!g_asm.initialized || N <= 0) return;
+    if (!g_asm.initialized || N <= 0 ||
+        !g_asm.radiation_view.line_jbar) return;
 
     size_t elems = (size_t)n_shells * N * N;
     if (elems > g_asm.d_mat_elems) {
@@ -466,13 +439,11 @@ extern "C" void nlte_assemble_bb_gpu_pair(double *h_matrices, int N, int n_shell
         pair_lo, pair_hi, super_start, n_lo_super,
         g_asm.d_map, g_asm.d_fl_lo, g_asm.d_fl_up,
         g_asm.d_dE, g_asm.d_g_lo, g_asm.d_g_up,
-        g_asm.d_f_lu, g_asm.d_nu,
+        g_asm.d_f_lu,
         g_asm.d_B_lu, g_asm.d_B_ul, g_asm.d_A_ul,
         g_asm.d_fl_to_super, g_asm.d_within_sl_frac,
-        g_asm.d_J_nu, g_asm.n_freq,
-        g_asm.d_T_e, g_asm.d_n_e, g_asm.d_W,
-        g_asm.nu_min, g_asm.nu_max, g_asm.d_log_nu,
-        g_asm.coll_fix, g_asm.coll_floor, g_asm.dilute_on, g_asm.dilute_TR,
+        g_asm.radiation_view, g_asm.d_T_e, g_asm.d_n_e,
+        g_asm.coll_fix, g_asm.coll_floor,
         g_asm.d_active);
     ACUDA_CHECK(cudaGetLastError());
     ACUDA_CHECK(cudaDeviceSynchronize());
@@ -486,11 +457,10 @@ extern "C" void nlte_assemble_gpu_free(void)
     if (!g_asm.initialized) return;
     cudaFree(g_asm.d_map); cudaFree(g_asm.d_fl_lo); cudaFree(g_asm.d_fl_up);
     cudaFree(g_asm.d_dE); cudaFree(g_asm.d_g_lo); cudaFree(g_asm.d_g_up);
-    cudaFree(g_asm.d_f_lu); cudaFree(g_asm.d_nu);
+    cudaFree(g_asm.d_f_lu);
     cudaFree(g_asm.d_B_lu); cudaFree(g_asm.d_B_ul); cudaFree(g_asm.d_A_ul);
     cudaFree(g_asm.d_fl_to_super); cudaFree(g_asm.d_within_sl_frac);
-    cudaFree(g_asm.d_J_nu); cudaFree(g_asm.d_T_e); cudaFree(g_asm.d_n_e);
-    cudaFree(g_asm.d_W); cudaFree(g_asm.d_active);
+    cudaFree(g_asm.d_T_e); cudaFree(g_asm.d_n_e); cudaFree(g_asm.d_active);
     if (g_asm.d_mat) cudaFree(g_asm.d_mat);
     memset(&g_asm, 0, sizeof(g_asm));
 }

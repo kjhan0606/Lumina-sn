@@ -21,11 +21,16 @@ if (( gpu_mem < 80000 )); then
   exit 75
 fi
 
-make selftest_a2_12_gpu_lifecycle selftest_a2_13_15_contract \
+module load cuda
+make lumina_cuda selftest_a2_12_gpu_lifecycle selftest_a2_13_15_contract \
   selftest_a2_13_gpu_oracle
+git rev-parse HEAD > "$out_dir/source_head.txt"
+env | LC_ALL=C sort > "$out_dir/job_environment.txt"
 sha256sum src/gpu_radiation_field.cu src/gpu_physics_kernels.cu \
   src/gpu_opacity_kernels.cu src/gpu_emissivity_kernels.cu \
-  selftest_a2_12_gpu_lifecycle selftest_a2_13_gpu_oracle \
+  src/lumina_cuda.cu src/lumina_nlte_gemm.cu \
+  src/lumina_nlte_assemble.cu scripts/run_a2_13_15_gpu.py \
+  lumina_cuda selftest_a2_12_gpu_lifecycle selftest_a2_13_gpu_oracle \
   > "$out_dir/source_binary.sha256"
 python3 scripts/run_a2_12_gpu_lifecycle.py \
   --binary ./selftest_a2_12_gpu_lifecycle --out-dir "$out_dir/a2_12"

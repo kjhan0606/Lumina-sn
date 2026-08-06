@@ -97,6 +97,7 @@ int main(void)
                 cpu_bf.gamma, gpu_bf.gamma); return 72;
     }
     counters.cpu_gpu_bf_compared++;
+    puts("A2_13_BF_CPU_GPU_ORACLE PASS");
 
     const double B_lu = 2.5, B_ul = 1.25, A_ul = 9.0;
     GpuBbRateCell gpu_bb;
@@ -112,6 +113,7 @@ int main(void)
         return 73;
     }
     counters.cpu_gpu_bb_compared++;
+    puts("A2_13_BB_CPU_GPU_ORACLE PASS");
 
     const double es[3] = {2.0, 1.0, 0.5};
     const double bb[3] = {-0.25, -2.0, 0.0};
@@ -130,6 +132,7 @@ int main(void)
             return 76;
         }
     }
+    puts("A2_14_OPACITY_CPU_GPU_ORACLE PASS");
 
     const size_t cells = device_view.n_shells * device_view.n_bins;
     double *component = (double *)calloc(5 * cells, sizeof(double));
@@ -153,6 +156,7 @@ int main(void)
             !(sample_nu[s] <= cpu_view.frequency_bin_edges[cpu_view.n_bins]))
             return 80;
     }
+    puts("A2_15_EMISSIVITY_CPU_GPU_ORACLE PASS");
     counters.rng_draws_cpu += device_view.n_shells;
     free(component); free(eta_total); free(cdf);
     if (counters.cpu_gpu_bf_compared != 1 ||

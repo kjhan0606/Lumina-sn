@@ -54,6 +54,9 @@ struct GpuRadiationFieldMirror {
     GpuRadiationFieldCounters counters;
 };
 
+static GpuRadiationFieldMirror *production_mirror;
+static const RadiationFieldOwner *production_owner;
+
 enum {
     C_FIELD_EDGE = 0, C_FIELD_VALUE = 1, C_FIELD_VALIDITY = 2,
     C_LINE_ID = 3, C_LINE_VALUE = 4, C_LINE_VALIDITY = 5,
@@ -516,4 +519,54 @@ GpuRadiationFieldState gpu_radiation_field_state(
     const GpuRadiationFieldMirror *mirror)
 {
     return mirror ? mirror->state : GPU_RF_EMPTY;
+}
+
+GpuRadiationFieldStatus gpu_radiation_field_production_bind(
+    const RadiationFieldOwner *owner, GpuRadiationFieldReport *report,
+    void *cuda_stream)
+{
+    if (!owner || !owner->enabled ||
+        owner->field.generation.required_generation == 0 ||
+        owner->field.generation.required_generation !=
+            owner->field.generation.computed_generation ||
+        !owner->line_jbar_cache.q_set_hash ||
+        !owner->line_profile_hash_storage || owner->line_profile_id == 0) {
+        if (report) { memset(report, 0, sizeof(*report));
+                      report->status = GPU_RF_NOT_READY; }
+        return GPU_RF_NOT_READY;
+    }
+    if (!production_mirror) production_mirror = gpu_radiation_field_create();
+    if (!production_mirror) return GPU_RF_ALLOCATION_FAILURE;
+    uint64_t generation = owner->field.generation.required_generation;
+    if (production_owner == owner &&
+        gpu_radiation_field_state(production_mirror) == GPU_RF_READY &&
+        production_mirror->gpu_committed_generation == generation)
+        return gpu_radiation_field_require_ready(owner, generation,
+                                                  production_mirror, report);
+    GpuRadiationFieldStatus status = gpu_radiation_field_sync(
+        owner, owner->field.epoch, owner->field.J_nu.n_shells, generation,
+        owner->line_jbar_cache.q_set_hash, owner->line_profile_id,
+        owner->line_profile_hash_storage, production_mirror, report,
+        cuda_stream, GPU_RF_POISON_NONE);
+    if (status == GPU_RF_OK) production_owner = owner;
+    return status;
+}
+
+GpuRadiationFieldStatus gpu_radiation_field_production_view(
+    const RadiationFieldOwner *owner, GpuRadiationFieldDeviceView *out,
+    GpuRadiationFieldReport *report)
+{
+    if (!owner || owner != production_owner || !production_mirror)
+        return GPU_RF_NOT_READY;
+    return gpu_radiation_field_device_view(
+        owner, owner->field.generation.required_generation,
+        owner->line_jbar_cache.q_set_hash, owner->line_profile_id,
+        owner->line_profile_hash_storage, production_mirror, out, report);
+}
+
+void gpu_radiation_field_production_release(void)
+{
+    if (production_mirror) gpu_radiation_field_destroy(production_mirror);
+    production_mirror = NULL;
+    production_owner = NULL;
 }

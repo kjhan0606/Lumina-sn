@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run the A2-13~15 GPU micro-oracle without claiming production closure."""
+"""Run A2-13~15 GPU oracles and preserve every independent lane verdict."""
 
 from __future__ import annotations
 
@@ -39,22 +39,38 @@ def main() -> int:
         "rc": 3, "stdout": "", "stderr": "A2_12_LIFECYCLE_NOT_PASS\n",
         "binary_sha256": sha256(args.oracle)}
     contract = run(args.contract)
-    marker = "A2_13_15_BLOCKED_PRODUCTION_NOT_MIGRATED"
-    micro_pass = (lifecycle_pass and oracle["rc"] == 0 and
-                  "A2_13_15_GPU_ORACLE PASS" in str(oracle["stdout"]) and
-                  contract["rc"] == 0)
+    stdout = str(oracle["stdout"])
+    bf_pass = lifecycle_pass and oracle["rc"] == 0 and \
+        "A2_13_BF_CPU_GPU_ORACLE PASS" in stdout
+    bb_pass = lifecycle_pass and oracle["rc"] == 0 and \
+        "A2_13_BB_CPU_GPU_ORACLE PASS" in stdout
+    opacity_pass = lifecycle_pass and oracle["rc"] == 0 and \
+        "A2_14_OPACITY_CPU_GPU_ORACLE PASS" in stdout
+    emissivity_pass = lifecycle_pass and oracle["rc"] == 0 and \
+        "A2_15_EMISSIVITY_CPU_GPU_ORACLE PASS" in stdout
+    half_oracle_controls = (contract["rc"] == 0 and
+        stdout.count("A2_13_BF_CPU_GPU_ORACLE PASS") == 1 and
+        stdout.count("A2_13_BB_CPU_GPU_ORACLE PASS") == 1 and
+        "A2_13_NEG_HALF_ORACLE_FAIL" in str(contract["stdout"]))
+    a2_13_pass = bf_pass and bb_pass and half_oracle_controls
+    micro_pass = a2_13_pass and opacity_pass and emissivity_pass
+    marker = ("A2_13_15_BLOCKED_A2_14_15_PRODUCTION_NOT_MIGRATED"
+              if micro_pass else "A2_13_15_GPU_ORACLE_FAIL")
     report = {
         "schema": "A2_13_15_GPU_ORACLE_REPORT_V1",
-        "stage_status": "BLOCKED_PRODUCTION_NOT_MIGRATED",
+        "stage_status": ("BLOCKED_A2_14_15_PRODUCTION_NOT_MIGRATED"
+                         if micro_pass else "FAIL"),
         "marker": marker,
         "a2_12_lifecycle_pass": lifecycle_pass,
         "micro_oracle_pass": micro_pass,
-        "bf_oracle": "PASS" if micro_pass else "FAIL_OR_BLOCKED",
-        "bb_oracle": "PASS" if micro_pass else "FAIL_OR_BLOCKED",
-        "bf_bb_conjunction": "PASS" if micro_pass else "FAIL_OR_BLOCKED",
-        "opacity_oracle": "PASS" if micro_pass else "FAIL_OR_BLOCKED",
-        "emissivity_oracle": "PASS" if micro_pass else "FAIL_OR_BLOCKED",
-        "production_guard_removed": False,
+        "bf_oracle": "PASS" if bf_pass else "FAIL_OR_BLOCKED",
+        "bb_oracle": "PASS" if bb_pass else "FAIL_OR_BLOCKED",
+        "bf_bb_conjunction": "PASS" if a2_13_pass else "FAIL_OR_BLOCKED",
+        "half_oracle_negative_controls": "PASS" if half_oracle_controls else "FAIL",
+        "opacity_oracle": "PASS" if opacity_pass else "FAIL_OR_BLOCKED",
+        "emissivity_oracle": "PASS" if emissivity_pass else "FAIL_OR_BLOCKED",
+        "production_guard_removed": {"A2_13_BF": True, "A2_13_BB": True,
+                                      "A2_14": False, "A2_15": False},
         "full_nlte_integration_run": False,
         "oracle": oracle,
         "contract": contract,
@@ -63,9 +79,9 @@ def main() -> int:
     out.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n")
     (args.out_dir / "gpu_oracle_report.json.sha256").write_text(
         f"{sha256(out)}  gpu_oracle_report.json\n")
-    print(f"{marker} micro_oracle_pass={str(micro_pass).lower()} "
-          "production_guard_removed=false")
-    return 3
+    print(f"{marker} bf={bf_pass} bb={bb_pass} conjunction={a2_13_pass} "
+          f"opacity={opacity_pass} emissivity={emissivity_pass}")
+    return 3 if micro_pass else 4
 
 
 if __name__ == "__main__":

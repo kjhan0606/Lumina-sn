@@ -1168,8 +1168,8 @@ void nlte_writeback_ion_stage(NLTEConfig *nlte, AtomicData *atom,
 int  nlte_rates_gpu_init(NLTEConfig *nlte, AtomicData *atom, int n_shells);
 int  nlte_rates_gpu_compute(NLTEConfig *nlte, NLTERateLookup *out_lookup);
 void nlte_rates_gpu_free(void);
-/* Register the producer's fine-ν field so nlte_rates_gpu_compute corrects R_bf over
- * the fine window (frequency-resolved photoionization). Pass jnu=NULL to disable. */
+/* Deprecated diagnostic hook. A2-13 production never calls it: BF rates consume
+ * only the selected global RadiationField mirror. */
 void nlte_rates_gpu_set_fine(const double *jnu, const double *nu, int n_fine,
                              double nu_lo, double dlognu, int n_shells, AtomicData *atom);
 
@@ -1185,8 +1185,7 @@ int  nlte_assemble_gpu_init(NLTEConfig *nlte, AtomicData *atom,
  * Axelrod collisions + coll-floor). Returns 0 if a sealed/experimental bb mode
  * is on (JBAR_POPS, MALI, JEQB, LINERES consumer, ...) -> caller stays on CPU. */
 int  nlte_assemble_gpu_supported(void);
-/* Re-upload per-iteration varying data (within_sl_frac, per-shell T_e/n_e/
- * T_rad/W, J_nu). Call once per CE iteration before the pair loop. */
+/* Refresh material state and acquire the checked A2-06 LineJbarCache mirror. */
 void nlte_assemble_gpu_refresh(NLTEConfig *nlte, PlasmaState *plasma);
 /* Add the bb+collisional contributions for one ion pair to the per-shell
  * column-major matrices held in h_matrices[n_shells*N*N] (which already hold

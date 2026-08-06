@@ -110,6 +110,26 @@ def main() -> int:
     contract = (ROOT / "src/gpu_physics_contract.c").read_text()
     if "bf_cpu_oracle_pass && i->bb_cpu_oracle_pass" not in contract:
         errors.append("BF/BB conjunction missing")
+    production = {
+        p.name: p.read_text(errors="replace") for p in CUDA_FILES
+    }
+    if "gpu_radiation_field_production_bind(" not in production["lumina_cuda.cu"]:
+        errors.append("production A2-12 mirror bind missing")
+    if "canonical_jnu_to_float" not in production["lumina_nlte_gemm.cu"] or \
+       "gpu_radiation_field_production_view(" not in production["lumina_nlte_gemm.cu"]:
+        errors.append("BF canonical global-grid device view missing")
+    if "radiation_view.line_jbar" not in production["lumina_nlte_assemble.cu"] or \
+       "radiation_view.line_id" not in production["lumina_nlte_assemble.cu"]:
+        errors.append("BB LineJbarCache device lookup missing")
+    if "fine_correct_R_bf();" in production["lumina_nlte_gemm.cu"] or \
+       "nlte_rates_gpu_set_fine(" in production["lumina_cuda.cu"]:
+        errors.append("forbidden production fine-grid BF call remains")
+    asm = production["lumina_nlte_assemble.cu"]
+    asm_code = re.sub(r"/\*.*?\*/|//.*?$", "", asm,
+                      flags=re.MULTILINE | re.DOTALL)
+    for forbidden in ("plasma->W", "plasma->T_rad", "d_W", "d_T_rad"):
+        if forbidden in asm_code:
+            errors.append(f"BB production scalar read remains: {forbidden}")
     report = {
         "schema": "A2_13_15_STATIC_CENSUS_V1",
         "status": "PASS" if not errors else "FAIL",
@@ -123,6 +143,16 @@ def main() -> int:
         "outside_ledger_raw_hit_count": len(trace),
         "outside_ledger_raw_hits": trace,
         "z_direct_link_occurrences": z_direct_links,
+        "production_wiring": {
+            "a2_12_single_mirror_bind": "gpu_radiation_field_production_bind(" in production["lumina_cuda.cu"],
+            "bf_global_grid_device_view": "canonical_jnu_to_float" in production["lumina_nlte_gemm.cu"],
+            "bb_line_cache_device_lookup": "radiation_view.line_jbar" in asm,
+            "fine_grid_production_calls": production["lumina_nlte_gemm.cu"].count("fine_correct_R_bf();") + production["lumina_cuda.cu"].count("nlte_rates_gpu_set_fine("),
+            "bb_scalar_reads": sum(asm_code.count(x) for x in ("plasma->W", "plasma->T_rad", "d_W", "d_T_rad")),
+            "bb_scalar_comment_tombstones": sum(asm.count(x) - asm_code.count(x) for x in ("plasma->W", "plasma->T_rad", "d_W", "d_T_rad")),
+            "a2_14_production_guard": "GPU_OPACITY_NOT_MIGRATED" in production["lumina_bf_gemm.cu"],
+            "a2_15_production_guard": "GPU_EMISSIVITY_NOT_MIGRATED" in production["lumina_cuda.cu"],
+        },
         "errors": errors,
     }
     output = args.output or ROOT / "validation/a2_13_15/static_census.json"

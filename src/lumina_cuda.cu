@@ -16,7 +16,7 @@
 extern "C" {             /* Phase 6 - Step 1 */
 #include "lumina.h"      /* Phase 6 - Step 1 */
 #include "lumina_cmfgen.h"  /* pure-CMFGEN parallel radiation path */
-#include "gpu_radiation_field_contract.h"
+#include "gpu_radiation_field.h"
 int nlte_precompute_within_sl_frac_checked(
     NLTEConfig *, AtomicData *, PlasmaState *, int);
 }                        /* Phase 6 - Step 1 */
@@ -1016,6 +1016,18 @@ static int nlte_solve_all_gpu(NLTEConfig *nlte, AtomicData *atom,
         return -1;
     }
 
+    GpuRadiationFieldReport rf_report;
+    GpuRadiationFieldStatus rf_status = gpu_radiation_field_production_bind(
+        &nlte->radiation_field, &rf_report, NULL);
+    if (rf_status != GPU_RF_OK) {
+        fprintf(stderr, "[A2-13][BLOCKED] production mirror status=%s "
+                "generation=%llu physical_launches=0\n",
+                gpu_rf_status_name(rf_status),
+                (unsigned long long)
+                    nlte->radiation_field.field.generation.required_generation);
+        return -(int)rf_status;
+    }
+
     /* Pair layout from the centralized builder (16 base pairs, or 23 with the O
      * triplet + stage-IV (III,IV) pairs under LUMINA_NLTE_STAGE4). Overlap pairs
      * share a prior slot; the solve loop detects that generically below. */
@@ -1078,7 +1090,7 @@ static int nlte_solve_all_gpu(NLTEConfig *nlte, AtomicData *atom,
      * 2=GPU bb + per-pair max-rel-diff self-check vs full CPU assembly).
      * The CPU still assembles everything except the bb loop. Disabled (CPU
      * fallback) if a sealed/experimental bb mode is active. */
-    int asm_gpu_mode = 0;
+    int asm_gpu_mode = 1;
     {
         const char *e = getenv("LUMINA_NLTE_ASSEMBLE_GPU");
         if (e) asm_gpu_mode = atoi(e);
@@ -8328,12 +8340,8 @@ int main(int argc, char *argv[]) {
                                 cmfgen_fine_jbar(&cs, &geo, &opacity, config.T_inner, &plasma);
                         }
                     }
-                    /* Register the producer's fine-ν field for the photoion GEMM
-                     * correction (nlte_rates_gpu_compute). No-op if the producer did
-                     * not retain it (gate LUMINA_CMF_FINE_PHOTOION → opacity.jnu_fine). */
-                    nlte_rates_gpu_set_fine(opacity.jnu_fine, opacity.nu_fine,
-                        opacity.n_fine, opacity.nu_lo_fine, opacity.dlognu_fine,
-                        geo.n_shells, &atom_data);
+                    /* A2-13: the diagnostic fine field is never registered as a
+                     * production BF-rate input; only the global mirror is legal. */
                     /* Option-2 integral RE: register the CMFGEN line opacity/
                      * source so the Newton T_e solve can add the radiative line
                      * term (LUMINA_RADEQ_LINE_RE=1). */
@@ -11095,6 +11103,7 @@ int main(int argc, char *argv[]) {
     free(volume);                 /* Phase 6 - Step 8 */
     free_atomic_data(&atom_data); /* Task #072 */
     if (enable_nlte) {
+        gpu_radiation_field_production_release();
         cuda_nlte_solver_free(&nlte_solver);
         nlte_free(&nlte);
     }

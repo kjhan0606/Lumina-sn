@@ -2,8 +2,25 @@
 
 기준 HEAD: `2aaf6c7968494840a9ea66da8c48dc4e1639584d`
 
-최종 상태: **`BLOCKED_PRODUCTION_NOT_MIGRATED`**  
-marker: `A2_13_15_BLOCKED_PRODUCTION_NOT_MIGRATED`  
+## 개정 11 production 이관 addendum
+
+- A2-13 production solver는 `gpu_radiation_field_production_bind()`에서 A2-12의
+  단일 READY mirror를 generation마다 검증한다. BF GEMM은 mirror의 4,000-bin 전역
+  grid/J를 device에서 직접 FP32 staging하고, CPU A2-05와 같은 legacy sigma step을
+  canonical edge에 적분해 K를 만든다. fine-grid correction 호출은 0이다.
+- BB assembly는 원래 line index를 `LineJbarCache.line_id`에서 찾고 같은 generation의
+  `line_jbar/validity`만 쓴다. `d_W`, `plasma->W`, `plasma->T_rad[0]` production read는
+  0이며 A2-01용 comment tombstone 3개만 남는다.
+- A2-13 rate guard는 해제했다. A2-14 opacity guard와 A2-15 transport/emissivity guard는
+  각각 population-native opacity 입력 API와 checked emissivity/CDF transport API가
+  아직 없어 유지한다. 따라서 통합 상태는
+  `BLOCKED_A2_14_15_PRODUCTION_NOT_MIGRATED`이며 A2-13 GPU oracle도 운전석 실행 전에는
+  PASS로 승격하지 않는다.
+- runner는 BF/BB marker를 독립 판정하고 둘의 논리곱만 A2-13 PASS로 기록한다. H200/H100,
+  80 GB, `$SLURM_SUBMIT_DIR`, `/gpfs` 규약과 source/binary/environment hash를 보존한다.
+
+최종 상태: **`BLOCKED_A2_14_15_PRODUCTION_NOT_MIGRATED`**
+marker: `A2_13_15_BLOCKED_A2_14_15_PRODUCTION_NOT_MIGRATED`
 구현자는 GPU 실행을 하지 않았다. A2-12 fixture의 CPU-side commit 실패는 수리했지만
 운전석 재실행과 production call-site 이관이 남았으므로 BF, BB, opacity, emissivity 중
 어느 단계도 최종 PASS로 승격하지 않았다.
@@ -33,10 +50,8 @@ marker: `A2_13_15_BLOCKED_PRODUCTION_NOT_MIGRATED`
 - `scripts/a2_13_15_static_census.py`는 원장 25행과 지정된 `.cu` 5개 전부를 읽고,
   원장 밖 raw hit를 파일/줄/token/text로 `validation/a2_13_15/static_census.json`에 남긴다.
 
-중요: 기존 GPU production consumer에는 A2-12의 `GPU_*_NOT_MIGRATED` fail-closed guard가
-남아 있다. 새 kernel은 `lumina_cuda`에 링크됐지만 `lumina_bf_gemm`, `lumina_nlte_assemble`,
-transport call site가 아직 descriptor API로 교체되지 않았다. guard 제거는 금지했으며
-physical production 이관 완료를 주장하지 않는다.
+중요: A2-13 BF/BB production consumer는 checked descriptor로 교체됐다. A2-14의
+`lumina_bf_gemm`과 A2-15 transport에는 각 단계의 fail-closed guard가 남아 있다.
 
 ## 원장 25행 처분
 

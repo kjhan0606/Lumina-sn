@@ -29,10 +29,8 @@
 
 extern "C" {
 #include "lumina.h"
-#include "gpu_radiation_field_contract.h"
+#include "gpu_radiation_field.h"
 }
-
-static GpuRadiationFieldCounters g_a2_12_nlte_gemm_counters;
 
 #define CUDA_CHECK(call) do {                                    \
     cudaError_t err = (call);                                    \
@@ -55,7 +53,6 @@ typedef struct {
     float  *d_J_nu;        /* [n_freq * n_shells] col-major */
     float  *d_R_bf;        /* [L_phot * n_shells] col-major */
 
-    float  *h_J_nu;        /* [n_freq * n_shells] host staging */
     float  *h_R_bf_f32;    /* [L_phot * n_shells] host download buffer */
     double *h_R_bf;        /* [L_phot * n_shells] FP32→FP64 promoted */
 
@@ -69,6 +66,60 @@ typedef struct {
 } NLTERatesGemmState;
 
 static NLTERatesGemmState g_nlte_gemm = {0};
+
+__global__ static void canonical_jnu_to_float(
+    GpuRadiationFieldDeviceView view, float *out)
+{
+    size_t i = (size_t)blockIdx.x * blockDim.x + threadIdx.x;
+    size_t n = view.n_shells * view.n_bins;
+    if (i >= n) return;
+    RadiationFieldValidityState state = view.field_validity[i];
+    out[i] = state == RADIATION_FIELD_EXACT_ZERO ? 0.0f
+           : state == RADIATION_FIELD_VALID ? (float)view.J_nu[i] : NAN;
+}
+
+static double legacy_step_sigma(int bb, double nu_min, double dlog,
+    const double *sigma_row, double sigma0, double threshold)
+{
+    double lo = exp(log(nu_min) + bb * dlog);
+    double hi = exp(log(nu_min) + (bb + 1) * dlog);
+    if (sigma_row) {
+        double s = sigma_row[bb];
+        return s > 0.0 && isfinite(s) ? s : 0.0;
+    }
+    if (lo >= threshold)
+        return sigma0 * pow(threshold / sqrt(lo * hi), 3.0);
+    if (hi > threshold) {
+        double x = threshold / hi;
+        return sigma0 * (1.0 - x * x * x) /
+               (3.0 * log(hi / threshold));
+    }
+    return 0.0;
+}
+
+static double canonical_bf_kernel(double edge_lo, double edge_hi, int nfb,
+    double nu_min, double dlog, const double *sigma_row, double sigma0,
+    double threshold)
+{
+    double lo = edge_lo > threshold ? edge_lo : threshold;
+    if (!(edge_hi > lo)) return 0.0;
+    int first = (int)floor(log(lo / nu_min) / dlog);
+    int last = (int)floor(log(nextafter(edge_hi, lo) / nu_min) / dlog);
+    if (first < 0) first = 0;
+    if (last >= nfb) last = nfb - 1;
+    if (last < first) return 0.0;
+    double sum = 0.0;
+    for (int bb = first; bb <= last; ++bb) {
+        double blo = exp(log(nu_min) + bb * dlog);
+        double bhi = exp(log(nu_min) + (bb + 1) * dlog);
+        double a = lo > blo ? lo : blo;
+        double b = edge_hi < bhi ? edge_hi : bhi;
+        double s = legacy_step_sigma(bb, nu_min, dlog, sigma_row,
+                                     sigma0, threshold);
+        if (b > a && s > 0.0) sum += s * log(b / a);
+    }
+    return sum * 4.0 * M_PI_VAL / H_PLANCK;
+}
 
 /* Fine-ν local field registered by the producer (cmfgen_fine_jbar) so the binned
  * R_bf GEMM can be corrected over the fine window (LUMINA_CMF_FINE_PHOTOION).
@@ -89,7 +140,12 @@ extern "C" int nlte_rates_gpu_init(NLTEConfig *nlte, AtomicData *atom, int n_she
     if (g_nlte_gemm.initialized) return 0;
     if (!nlte || !nlte->enabled || n_shells <= 0) return -1;
 
-    int n_freq = nlte->n_freq_bins;
+    if (nlte->radfield_view_status != RADIATION_FIELD_VIEW_OK ||
+        !nlte->radfield_view.frequency_bin_edges ||
+        nlte->radfield_view.n_bins != LUMINA_RADFIELD_N_BINS)
+        return -1;
+    int legacy_n_freq = nlte->n_freq_bins;
+    int n_freq = (int)nlte->radfield_view.n_bins;
     /* Pair (lo,hi)+names from the centralized builder (single source of truth;
      * mirrors the GPU/CPU solve exactly). 16 base pairs, or 23 with the O triplet
      * + stage-IV (III,IV) pairs under LUMINA_NLTE_STAGE4. Only lo is needed here:
@@ -142,19 +198,16 @@ extern "C" int nlte_rates_gpu_init(NLTEConfig *nlte, AtomicData *atom, int n_she
 
     /* Pre-compute per-bin ν_bin (geometric mid) and Δν_bin (linear width). */
     double *nu_bin   = (double *)malloc(n_freq * sizeof(double));
-    double *dnu_bin  = (double *)malloc(n_freq * sizeof(double));
     for (int bb = 0; bb < n_freq; bb++) {
-        double log_lo = log(nlte->nu_min) + bb * nlte->d_log_nu;
-        double lo  = exp(log_lo);
-        double hi  = exp(log_lo + nlte->d_log_nu);
-        nu_bin[bb]  = exp(log_lo + 0.5 * nlte->d_log_nu);
-        dnu_bin[bb] = hi - lo;
+        double lo = nlte->radfield_view.frequency_bin_edges[bb];
+        double hi = nlte->radfield_view.frequency_bin_edges[bb + 1];
+        nu_bin[bb] = sqrt(lo * hi);
     }
 
     /* Task #138: per-level σ_bf source. CMFGEN tabulated grid shares the
      * NLTE J_ν grid (NLTE_N_FREQ_BINS, log-spaced); direct index, no interp. */
     const int use_cmfgen = atom->cmfgen_loaded &&
-                           atom->cmfgen_n_freq_bins == n_freq;
+                           atom->cmfgen_n_freq_bins == legacy_n_freq;
     int n_active_levels = 0, n_cmfgen_levels = 0, n_kramers_levels = 0;
 
     /* FINE-PHOTOION reach diagnostic (LUMINA_CMF_FINE_PHOTOION_DIAG): per ion stage,
@@ -210,26 +263,20 @@ extern "C" int nlte_rates_gpu_init(NLTEConfig *nlte, AtomicData *atom, int n_she
             int level_has_cmfgen = use_cmfgen &&
                                    atom->cmfgen_has_sigma[global_lev];
             const double *sigma_row = level_has_cmfgen ?
-                &atom->cmfgen_sigma_bf[(size_t)global_lev * (size_t)n_freq] : NULL;
+                &atom->cmfgen_sigma_bf[(size_t)global_lev *
+                                        (size_t)legacy_n_freq] : NULL;
 
             int idx = phot_offset[p] + lev;
             g_nlte_gemm.col_glev[idx]  = level_has_cmfgen ? global_lev : -1;
             g_nlte_gemm.col_nu_th[idx] = nu_thresh;
             g_nlte_gemm.col_sig0[idx]  = level_has_cmfgen ? -1.0 : sigma_0;
             float *K_col = h_K + (size_t)idx * n_freq;
-            for (int bb = 0; bb < n_freq; bb++) {
-                double sigma;
-                if (sigma_row) {
-                    sigma = sigma_row[bb];
-                    if (sigma <= 0.0) continue;
-                } else {
-                    if (nu_bin[bb] < nu_thresh) continue;
-                    sigma = sigma_0 * pow(nu_thresh / nu_bin[bb], 3.0);
-                }
-                double k_val = sigma * 4.0 * M_PI_VAL /
-                               (H_PLANCK * nu_bin[bb]) * dnu_bin[bb];
-                K_col[bb] = (float)k_val;
-            }
+            for (int bb = 0; bb < n_freq; bb++)
+                K_col[bb] = (float)canonical_bf_kernel(
+                    nlte->radfield_view.frequency_bin_edges[bb],
+                    nlte->radfield_view.frequency_bin_edges[bb + 1],
+                    legacy_n_freq, nlte->nu_min, nlte->d_log_nu, sigma_row,
+                    sigma_0, nu_thresh);
             if (fph_diag) {   /* in-window photoion-weight fraction for this edge */
                 double wtot=0.0, win=0.0;
                 for (int bb=0; bb<n_freq; bb++) {
@@ -258,7 +305,7 @@ extern "C" int nlte_rates_gpu_init(NLTEConfig *nlte, AtomicData *atom, int n_she
                     st==0?"neutral":st==1?"I+":st==2?"II+":st>=3?"III+":"",
                     fph_cnt[st], fph_cmf[st], fph_fsum[st]/(double)fph_cnt[st]);
     }
-    free(nu_bin); free(dnu_bin);
+    free(nu_bin);
 
     /* Allocate device + host buffers */
     CUDA_CHECK(cudaMalloc(&g_nlte_gemm.d_K, K_bytes));
@@ -270,7 +317,6 @@ extern "C" int nlte_rates_gpu_init(NLTEConfig *nlte, AtomicData *atom, int n_she
     CUDA_CHECK(cudaMalloc(&g_nlte_gemm.d_R_bf,
                           (size_t)L_phot * n_shells * sizeof(float)));
 
-    g_nlte_gemm.h_J_nu     = (float  *)malloc((size_t)n_freq * n_shells * sizeof(float));
     g_nlte_gemm.h_R_bf_f32 = (float  *)malloc((size_t)L_phot * n_shells * sizeof(float));
     g_nlte_gemm.h_R_bf     = (double *)malloc((size_t)L_phot * n_shells * sizeof(double));
 
@@ -409,26 +455,21 @@ static int fine_correct_R_bf(void)
  * persistent buffers. The buffers stay valid until nlte_rates_gpu_free(). */
 extern "C" int nlte_rates_gpu_compute(NLTEConfig *nlte, NLTERateLookup *out_lookup)
 {
-    if (gpu_rf_block_unmigrated(&g_a2_12_nlte_gemm_counters,
-            GPU_RATE_NOT_MIGRATED, "lumina_nlte_gemm.rate_gemm") != 0)
-        return -(int)GPU_RATE_NOT_MIGRATED;
     if (!g_nlte_gemm.initialized) return -1;
     int n_freq = g_nlte_gemm.n_freq;
     int n_shells = g_nlte_gemm.n_shells;
     int L_phot = g_nlte_gemm.L_phot;
 
-    /* Stage J_nu as col-major [n_freq × n_shells] FP32.
-     * NLTEConfig stores it row-major [n_shells × n_freq] doubles. */
-    for (int bb = 0; bb < n_freq; bb++)
-        for (int s = 0; s < n_shells; s++)
-            g_nlte_gemm.h_J_nu[s * n_freq + bb] =
-                (float)nlte->J_nu[s * n_freq + bb];
-    /* Note: above lays out as col-major view automatically because
-     * h_J_nu[s*n_freq + bb] is the (bb, s) element of [n_freq × n_shells]
-     * col-major (lda=n_freq). */
-    CUDA_CHECK(cudaMemcpy(g_nlte_gemm.d_J_nu, g_nlte_gemm.h_J_nu,
-                          (size_t)n_freq * n_shells * sizeof(float),
-                          cudaMemcpyHostToDevice));
+    GpuRadiationFieldDeviceView view;
+    GpuRadiationFieldReport report;
+    if (gpu_radiation_field_production_view(&nlte->radiation_field, &view,
+            &report) != GPU_RF_OK || view.n_bins != (size_t)n_freq ||
+        view.n_shells != (size_t)n_shells)
+        return -(int)GPU_RATE_NOT_MIGRATED;
+    size_t cells = view.n_bins * view.n_shells;
+    canonical_jnu_to_float<<<(unsigned)((cells + 255) / 256), 256>>>(
+        view, g_nlte_gemm.d_J_nu);
+    if (cudaGetLastError() != cudaSuccess) return -1;
 
     /* GEMM: R_bf = K^T · J_nu
      *   A = K     [n_freq × L_phot]  col-major, op=T → effective [L_phot × n_freq]
@@ -452,9 +493,7 @@ extern "C" int nlte_rates_gpu_compute(NLTEConfig *nlte, NLTERateLookup *out_look
         return -1;
     }
 
-    /* Fine-ν photoion correction over the producer's window (gated by the producer
-     * having registered a fine field via nlte_rates_gpu_set_fine). No-op otherwise. */
-    fine_correct_R_bf();
+    /* A2-13 forbids the diagnostic fine grid as a production rate input. */
 
     CUDA_CHECK(cudaMemcpy(g_nlte_gemm.h_R_bf_f32, g_nlte_gemm.d_R_bf,
                           (size_t)L_phot * n_shells * sizeof(float),
@@ -481,7 +520,6 @@ extern "C" void nlte_rates_gpu_free(void)
     cudaFree(g_nlte_gemm.d_J_nu);
     cudaFree(g_nlte_gemm.d_R_bf);
     free(g_nlte_gemm.phot_offset);
-    free(g_nlte_gemm.h_J_nu);
     free(g_nlte_gemm.h_R_bf_f32);
     free(g_nlte_gemm.h_R_bf);
     free(g_nlte_gemm.col_glev);
