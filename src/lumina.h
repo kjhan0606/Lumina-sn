@@ -16,6 +16,7 @@
 #include "population_contract.h" /* A2-07 CPU population owner contract */
 #include "opacity_publication.h" /* A2-08 signed CPU opacity/status owner */
 #include "emissivity_publication.h" /* A2-09 CPU eta/redistribution owner */
+#include "radeq_publication.h" /* A2-10 term ledger/root/Te owner */
 
 /* ============================================================ */
 /* Phase 2 - Step 2: Physical constants (CGS, matching TARDIS)  */
@@ -382,6 +383,7 @@ typedef struct {
     double  T_e_T_rad_ratio;  /* T_e/T_rad ratio for Saha equation (default 0.9) */
     double *T_e;              /* P6: [n_shells] per-shell electron temperature [K] */
     uint64_t T_e_generation;  /* A2-07: supplied T_e input generation */
+    ElectronTemperaturePublication te_publication; /* A2-10 sole production owner */
     PopulationStatus population_last_error;
     uint64_t population_error_count;
 } PlasmaState;                /* Phase 2 - Step 4 */

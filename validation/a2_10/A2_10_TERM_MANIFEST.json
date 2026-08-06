@@ -1,0 +1,24 @@
+{
+  "cooling_terms": [
+    "radiative_recombination",
+    "line_emission",
+    "collisional_line",
+    "free_free_emission",
+    "Compton_cooling",
+    "adiabatic_cooling"
+  ],
+  "heating_terms": [
+    "photoionization",
+    "line_absorption",
+    "free_free_absorption",
+    "Compton_heating",
+    "gamma_deposition",
+    "nonthermal_heating"
+  ],
+  "line_owner_closure_tolerance": 1e-12,
+  "line_owner_rule": "m_line in {0,1}; radiative XOR collisional_or_escape",
+  "schema": "lumina-a2-10-term-manifest-v1",
+  "te_context_domain": "A2-10:Te-context:v1",
+  "te_manifest_owner": "A2-07:population_te_manifest_sha256",
+  "units": "erg s^-1 cm^-3"
+}

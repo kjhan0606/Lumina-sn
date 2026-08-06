@@ -651,6 +651,7 @@ int main(int argc, char *argv[]) {
                         iter);
                 return EXIT_FAILURE;
             }
+            if(te_qualified&&(atom_data.partition_stamp.te_generation!=plasma.te_publication.committed_te_generation||strcmp(atom_data.partition_stamp.te_manifest_sha256,plasma.te_publication.te_manifest_sha256))){fprintf(stderr,"[A2-10][FATAL] A2-07 Te/population stamp mismatch iter=%d\n",iter);return EXIT_FAILURE;}
 
             /* Recompute BF opacity grid after plasma update */
             if (bf_opacity_enabled)
@@ -689,6 +690,7 @@ int main(int argc, char *argv[]) {
                     enable_nlte ? &nlte : NULL,geo.time_explosion);
                 if(emiss_rc!=0)
                     fprintf(stderr,"[A2-09][BLOCKED] publication rc=%d iter=%d\n",emiss_rc,iter);
+                else if(te_qualified){plasma.te_publication.population_generation=atom_data.population_committed_generation;plasma.te_publication.opacity_generation=opacity.cpu_opacity.generation_committed;plasma.te_publication.emissivity_generation=opacity.cpu_emissivity.committed_emissivity_generation;}
             }
 
             /* Dynamic transition probability recomputation */

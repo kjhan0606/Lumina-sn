@@ -1,0 +1,9 @@
+{
+  "baseline_head": "bf2af37fa11a18c2529559311a7a23fd0c41b60c",
+  "blob_id": "155c261f6cd9dc5d52a278b10a380085fad6ab61",
+  "created_before_source_edit": true,
+  "json_sha256": "e8d3eb5745b50d465c97bf4db20858670da114681907e1830309943b8e59e5ba",
+  "seal_commit": "540ebbd3bf66d29b7f36cf813301cf8c5df5d998",
+  "seal_kind": "ancestor-local-commit",
+  "sidecar_blob_id": "26ef4d7106fc67ed959ae098059ab03791665cb7"
+}

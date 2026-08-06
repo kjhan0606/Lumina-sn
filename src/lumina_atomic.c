@@ -1108,6 +1108,7 @@ void free_plasma_state(PlasmaState *ps) { /* Phase 2 - Step 11 */
     free(ps->n_electron); /* Task #072 */
     free(ps->clump_factor); /* Wave-1 BF; NULL-safe and absent on gate OFF */
     free(ps->T_e); /* P6: per-shell electron temperature */
+    a210_publication_free(&ps->te_publication);
 }
 
 Estimators *create_estimators(int n_shells, int n_lines) { /* Phase 2 - Step 11 */

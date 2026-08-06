@@ -1,0 +1,12 @@
+{
+  "CHAIN": "BLOCKED_FIXED_T_AND_MISSING_LINEHEAT",
+  "ORACLE_INPUT": "BLOCKED_FIXED_T_AND_MISSING_LINEHEAT",
+  "child_rc": 3,
+  "heat_residual_qualified": false,
+  "line_owner_overlap_shells": 0,
+  "max_line_owner_closure": 0.0,
+  "reason_code": "BLOCKED_FIXED_T_AND_MISSING_LINEHEAT",
+  "status": "BLOCKED_FIXED_T_AND_MISSING_LINEHEAT",
+  "truth_f_cov": null,
+  "wrapper_rc": 0
+}

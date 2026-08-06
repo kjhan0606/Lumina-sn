@@ -157,8 +157,8 @@
 | 이관 완료(A2-07·3ddd95c0de20abea3284ca326ce41b7968d4b26d) | plasma->W[s] | plasma.W | [transition_probability] macro-atom transition population dilution | Jbar[RadiationField.J_nu] | A2-09 | DERIVE_TRANSITION_PROBABILITY_FROM_JBAR |
 | 이관 완료(A2-07·3ddd95c0de20abea3284ca326ce41b7968d4b26d) | plasma->T_rad[s] | plasma.T_rad | [rate_Boltzmann] Boltzmann rate temperature | plasma->T_e | A2-07 | USE_MATTER_TEMPERATURE_FOR_BOLTZMANN_RATE |
 | 이관 완료(A2-07·3ddd95c0de20abea3284ca326ce41b7968d4b26d) | plasma->W[s] | plasma.W | [rate_Boltzmann] Boltzmann rate dilution | plasma->T_e | A2-07 | USE_MATTER_TEMPERATURE_FOR_BOLTZMANN_RATE |
-| src/lumina_plasma.c:12561 | plasma->T_rad[s] | plasma.T_rad | [rate_radeq] RADEQ rate temperature | RadiationField.J_nu | A2-10 | USE_CANONICAL_FIELD_IN_RADEQ |
-| src/lumina_plasma.c:12562 | plasma->W[s] | plasma.W | [rate_radeq] RADEQ rate dilution | RadiationField.J_nu | A2-10 | USE_CANONICAL_FIELD_IN_RADEQ |
+| src/lumina_plasma.c:12561 | plasma->T_rad[s] | plasma.T_rad | [rate_radeq] RADEQ rate temperature | A210TermLedger.checked_J_nu | A2-10 | USE_TYPED_TERM_LEDGER_IN_RADEQ |
+| src/lumina_plasma.c:12562 | plasma->W[s] | plasma.W | [rate_radeq] RADEQ rate dilution | A210TermLedger.checked_J_nu | A2-10 | USE_TYPED_TERM_LEDGER_IN_RADEQ |
 | 이관 완료(A2-07·3ddd95c0de20abea3284ca326ce41b7968d4b26d) | plasma->T_rad[s] | plasma.T_rad | [Boltzmann_diagnostic] level-population Boltzmann diagnostic | plasma->T_e | A2-07 | DIAGNOSE_BOLTZMANN_WITH_MATTER_TEMPERATURE |
 | 이관 완료(A2-07·3ddd95c0de20abea3284ca326ce41b7968d4b26d) | plasma->W[s] | plasma.W | [Boltzmann_diagnostic] level-population dilution diagnostic | plasma->T_e | A2-07 | DIAGNOSE_BOLTZMANN_WITH_MATTER_TEMPERATURE |
 | src/lumina_atomic.c:915 | plasma->T_rad[i] | plasma.T_rad | [seed] initial electron-temperature seed | RadiationField.J_nu | A2-16 | LIMIT_SCALAR_SEED_TO_GENERATION_ZERO |
@@ -322,3 +322,23 @@ E01–E03/E05–E11/E13–E17/E19–E21은 새 publication/CDF/fail-closed 소�
 이관했고, E04/E12/E16은 checked 진단만 유지했다. E18 formal 수식은 diff 0으로
 A2-11에 인계한다. L-3/L-5는 ETA truth 부재로 두 lane 모두
 `BLOCKED_MISSING_ETA_DATA`, child rc 3이며 내부 analytic PASS와 합치지 않았다.
+
+## ADDENDUM (A2-10 구현, 2026-08-06) — J_nu 항별 복사평형·Te 소유권 종결
+
+canonical 157행의 `rate_radeq` 2행을 모두 generation-bound checked
+`A210TermLedger.checked_J_nu`로 이관했다. `scripts/a2_10_radeq_census.py`가
+R01–R18과 저작 시점 direct `T_e` writer 14행을 전량 분류하며 raw unknown은 0이다.
+
+| 고정 ID | A2-10 1:1 처분 |
+|---|---|
+| `A2-01:rate_radeq:T_rad` | scalar radiation-temperature 입력을 제거하고 photo/line/FF/Compton 등 checked `J_nu` 항별 ledger로 이관 |
+| `A2-01:rate_radeq:W` | dilution/Saha 공급을 제거하고 A2-07 population과 동일 epoch의 typed heating/cooling ledger로 이관 |
+
+R01–R17은 generation-zero seed, generation-bound input, typed term builder, atomic
+root transaction으로 분류했고 R18은 production 무기여 offline oracle로 유지했다.
+14 writer는 4개 generation-zero seed와 10개 legacy-unreachable로 분류했으며,
+신규 production publish는 `a210_solve_transaction` 내 단일 commit loop만 허용한다.
+line owner는 radiative 또는 collisional/escape 하나만 갖고 overlap은 rc 5로
+거부한다. `te_manifest_sha256`는 A2-07 서명 계약을 변경하지 않고,
+geometry/solve epoch은 `te_context_sha256`로 분리했다. L-6은 현 truth가
+fixed-T이고 LINEHEAT가 없어 `BLOCKED_FIXED_T_AND_MISSING_LINEHEAT` rc 3을 유지한다.

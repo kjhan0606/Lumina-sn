@@ -1406,18 +1406,18 @@
       "symbol": "plasma->T_rad[s]",
       "current_source": "plasma.T_rad",
       "physical_meaning": "[rate_radeq] RADEQ rate temperature",
-      "new_source": "RadiationField.J_nu",
+      "new_source": "A210TermLedger.checked_J_nu",
       "migration_stage": "A2-10",
-      "final_status": "USE_CANONICAL_FIELD_IN_RADEQ"
+      "final_status": "USE_TYPED_TERM_LEDGER_IN_RADEQ"
     },
     {
       "file_line": "src/lumina_plasma.c:12562",
       "symbol": "plasma->W[s]",
       "current_source": "plasma.W",
       "physical_meaning": "[rate_radeq] RADEQ rate dilution",
-      "new_source": "RadiationField.J_nu",
+      "new_source": "A210TermLedger.checked_J_nu",
       "migration_stage": "A2-10",
-      "final_status": "USE_CANONICAL_FIELD_IN_RADEQ"
+      "final_status": "USE_TYPED_TERM_LEDGER_IN_RADEQ"
     },
     {
       "file_line": "이관 완료(A2-07·3ddd95c0de20abea3284ca326ce41b7968d4b26d)",

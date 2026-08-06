@@ -10,8 +10,8 @@ LDFLAGS += -fopenmp
 endif
 
 # Source files (in src/)
-SOURCES = src/lumina_main.c src/lumina_transport.c src/a2_02c_segment_capture.c src/radiation_field.c src/bf_rate_jnu.c src/line_jbar.c src/population_contract.c src/opacity_publication.c src/emissivity_publication.c src/lumina_plasma.c src/lumina_element_wide.c src/lumina_atomic.c src/lumina_cmfgen.c
-HEADERS = src/lumina.h src/a2_02c_segment_capture.h src/radiation_field.h src/bf_rate_jnu.h src/line_jbar.h src/population_contract.h src/opacity_publication.h src/emissivity_publication.h
+SOURCES = src/lumina_main.c src/lumina_transport.c src/a2_02c_segment_capture.c src/radiation_field.c src/bf_rate_jnu.c src/line_jbar.c src/population_contract.c src/opacity_publication.c src/emissivity_publication.c src/radeq_publication.c src/lumina_plasma.c src/lumina_element_wide.c src/lumina_atomic.c src/lumina_cmfgen.c
+HEADERS = src/lumina.h src/a2_02c_segment_capture.h src/radiation_field.h src/bf_rate_jnu.h src/line_jbar.h src/population_contract.h src/opacity_publication.h src/emissivity_publication.h src/radeq_publication.h
 TARGET = lumina
 POPULATION_SRC = src/population_contract.c
 
@@ -226,6 +226,11 @@ selftest_a2_09_emissivity: tests/a2_09_emissivity_selftest.c src/emissivity_publ
 	$(CC) -O2 -Wall -Wextra -std=c11 -Isrc -o $@ \
 		tests/a2_09_emissivity_selftest.c src/emissivity_publication.c $(LDFLAGS)
 	python3 scripts/run_a2_09_selftest.py --binary ./selftest_a2_09_emissivity
+
+selftest_a2_10_radeq: tests/a2_10_radeq_selftest.c src/radeq_publication.c src/population_contract.c src/radeq_publication.h
+	$(CC) -O2 -Wall -Wextra -std=c11 -Isrc -o $@ \
+		tests/a2_10_radeq_selftest.c src/radeq_publication.c src/population_contract.c $(LDFLAGS)
+	python3 scripts/run_a2_10_selftest.py --binary ./selftest_a2_10_radeq
 
 # A2-07 generation-bound Z(T_e), validity and transactional-publish contract.
 selftest_a2_07_population: tests/a2_07_population_selftest.c src/population_contract.c src/population_contract.h

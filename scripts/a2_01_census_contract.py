@@ -86,7 +86,7 @@ ROLE_POLICY = {
     "Boltzmann_partition": ("plasma->T_e", "A2-07", "USE_MATTER_TEMPERATURE"),
     "transition_probability": ("Jbar[RadiationField.J_nu]", "A2-09", "DERIVE_TRANSITION_PROBABILITY_FROM_JBAR"),
     "rate_Boltzmann": ("plasma->T_e", "A2-07", "USE_MATTER_TEMPERATURE_FOR_BOLTZMANN_RATE"),
-    "rate_radeq": ("RadiationField.J_nu", "A2-10", "USE_CANONICAL_FIELD_IN_RADEQ"),
+    "rate_radeq": ("A210TermLedger.checked_J_nu", "A2-10", "USE_TYPED_TERM_LEDGER_IN_RADEQ"),
     "Boltzmann_diagnostic": ("plasma->T_e", "A2-07", "DIAGNOSE_BOLTZMANN_WITH_MATTER_TEMPERATURE"),
     "seed": ("RadiationField.J_nu", "A2-16", "LIMIT_SCALAR_SEED_TO_GENERATION_ZERO"),
     "emissivity": ("CpuEmissivityPublication.eta_reemit", "A2-09", "REPLACE_PLANCK_REEMISSION_SOURCE"),
@@ -101,6 +101,7 @@ ALLOWED_NEW_SOURCES = {
     "RadiationField generation-bound diagnostic",
     "plasma->T_e",
     "CpuEmissivityPublication.eta_reemit",
+    "A210TermLedger.checked_J_nu",
 }
 
 # Rows 1-24 were dispositioned more precisely by the reviewed A2-05/A2-06
@@ -138,6 +139,7 @@ REQUIRED_ADDENDA = (
     "## ADDENDUM (A2-07 구현, 2026-08-06)",
     "## ADDENDUM (A2-08 구현, 2026-08-06)",
     "## ADDENDUM (A2-09 구현, 2026-08-06)",
+    "## ADDENDUM (A2-10 구현, 2026-08-06)",
 )
 
 
@@ -455,8 +457,11 @@ def validate(repo: Path, document: dict[str, object] | None = None) -> list[str]
             # Later A-2 stages may insert checked-view/capability guards above a
             # canonical row. Preserve the reviewed 157-row renderer and bind the
             # same path/token to the nearest live line instead of rewriting it.
-            lo = max(0, site.line - 257)
-            hi = min(len(lines), site.line + 256)
+            # A2-09/A2-10 add two generation-bound publication TUs and their
+            # integration blocks.  That moves several later reviewed anchors
+            # by roughly 280 lines while preserving their exact path/token.
+            lo = max(0, site.line - 513)
+            hi = min(len(lines), site.line + 512)
             relocated = any(
                 len(token_matches(lines[candidate], site.token)) >= site.occurrence
                 for candidate in range(lo, hi)

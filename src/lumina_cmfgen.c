@@ -5289,6 +5289,7 @@ int cmfgen_run(Geometry *geo, OpacityState *opac, BFOpacity *bf,
                     iter);
             return -1;
         }
+        if(atom->partition_stamp.te_generation!=plasma->te_publication.committed_te_generation||strcmp(atom->partition_stamp.te_manifest_sha256,plasma->te_publication.te_manifest_sha256)){fprintf(stderr,"[A2-10][FATAL] CMF Te/population stamp mismatch iter=%d\n",iter);return -1;}
         if (nlte && nlte->enabled) {
             /* UNDER-RELAXED lagged solve (codex requirement): when the cont_only-J_inc
              * mode-3 pump is active (LUMINA_CMF_JINC_CONT), damp the population update

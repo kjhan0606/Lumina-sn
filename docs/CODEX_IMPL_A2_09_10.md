@@ -9,9 +9,9 @@
 | 순서 | 소속 | 커밋 | 내용 |
 |---:|---|---|---|
 | 1 | A2-09 seal | `36b84264da0dfdf6c2feb2827de47b628e28466e` | allowlist JSON+sha256만 봉인 |
-| 2 | A2-09 구현 | 구현 커밋에서 확정 | eta/transition/CDF/old7897/selftest/gate |
-| 3 | A2-10 seal | A2-09 구현 뒤 생성 | Te changed-output allowlist만 봉인 |
-| 4 | A2-10 구현 | 최종 구현 커밋 | term ledger/root/Te publication/L-6/최종 보고 |
+| 2 | A2-09 구현 | `bf2af37fa11a18c2529559311a7a23fd0c41b60c` | eta/transition/CDF/old7897/selftest/gate |
+| 3 | A2-10 seal | `540ebbd3bf66d29b7f36cf813301cf8c5df5d998` | Te changed-output allowlist JSON+sha256만 봉인 |
+| 4 | A2-10 구현 | `SELF` (본 보고서를 포함한 최종 커밋; 작업트리 사후 증명에 실제 hash 기록) | term ledger/root/Te publication/L-6/최종 보고 |
 
 ## A2-09 처분과 구현
 
@@ -47,13 +47,62 @@ last-channel fallback은 0이다.
 - 신규 TU는 Z-validator/tau/population/canonical 네 build에 직접 link했고 독립
   `a2-09-emissivity` case를 추가했다. 전체 배터리는 운전석 지시대로 실행하지 않는다.
 
-## A2-10
+## A2-10 처분과 구현
 
-A2-09 구현 커밋 이후 별도 seal을 만든 다음 이 절을 완성한다.
+원장 `rate_radeq` 2행은 `T_rad/W` 스칼라 공급을 제거하고
+generation-bound `A210TermLedger.checked_J_nu`로 1:1 이관했다. R01–R18은
+18군 전량, 저작 시점 direct `T_e` writer는 14행 전량을 분류했고 unknown=0이다.
+R18은 production 무기여 offline oracle로 유지했다.
+
+`radeq_publication.c`/`.h`는 photoionization, line, free-free, Compton, gamma,
+nonthermal, recombination, collisional, adiabatic 항을 heating/cooling 상쇄 전
+별도 기록한다. 양의 유한 bracket에서 항별 `J_nu` 잔차의 root를 풀고,
+no bracket/root/nonfinite/stale이면 Te/ne 부분 게시 없이 rollback한다.
+
+line은 `radiative_line_included && collisional_or_escape_included` overlap을 먼저
+`RADEQ_TERM_SCHEMA` rc 5로 거부한다. 모든 shell에서 owner의 수는 정확히 1이며,
+`normalized_line_owner_closure<=1e-12`다. 실제 카운터 `line_owner_overlap_shells`/
+`line_owner_closure_failures`를 둘 다 출력하고, L-6은 둘의 0을 필수로 요구한다.
+
+A2-07 `population_te_manifest_sha256(const double*,size_t,char[65])` 선언·정의의
+blob은 변경하지 않았다. Te 게시와 population stamp의 manifest는 bit-exact로
+비교하며 geometry/solve epoch은 별도 `te_context_sha256` domain에 결박했다.
+
+### A2-10 seal 증거
+
+- baseline: `bf2af37fa11a18c2529559311a7a23fd0c41b60c`
+- seal: `540ebbd3bf66d29b7f36cf813301cf8c5df5d998`
+- JSON blob: `155c261f6cd9dc5d52a278b10a380085fad6ab61`
+- sidecar blob: `26ef4d7106fc67ed959ae098059ab03791665cb7`
+- current/sidecar/sealed SHA-256:
+  `e8d3eb5745b50d465c97bf4db20858670da114681907e1830309943b8e59e5ba` (3중 일치, verifier rc 0)
+
+### A2-10 게이트 산출물
+
+- `make lumina`: rc 0. 기존 warning은 남았으나 신규 error는 0.
+- A2-01 census: rows=157, completed=20, unclassified=0, rc 0.
+- A2-10 census: R01–R18=18, direct writer=14, unknown=0,
+  A2-07 signature unchanged=true, production `T_rad/W` read=0, rc 0.
+- analytic root: `Te=5000 K`, `E_balance=0`, manifest exact=true,
+  context separate=true, partial publish=0.
+- owner: overlap_shells=0, closure_failures=0, max closure=0.
+- N1–N8 child rc: `4,4,4,5,5,5,4,5`; wrapper rc는 모두 0.
+- L-6 CHAIN·ORACLE_INPUT: `BLOCKED_FIXED_T_AND_MISSING_LINEHEAT`, child rc 3,
+  `truth_f_cov=null`, `heat_residual_qualified=false`. analytic PASS를 L-6 PASS로 승격하지 않았다.
+- Z-INERT: Z-validator/tau/population/canonical 네 hard-coded build에 A2-09/A2-10 TU를
+  직접 link했고 A2-08/A2-09/A2-10 독립 case를 포함한 Z=9 선별 build/run rc 0.
+  전체 D/K/Z/CP 배터리는 요청대로 실행하지 않았다.
+- A2-03–A2-10 생산 target/selftest와 A2-04 replay wrapper 회귀: 전부 rc 0.
+- 대장은 `validation/a2_10/A2_10_REGRESSION_LEDGER.jsonl` 정확히 1행이며,
+  게이트 JSON SHA-256은 L-6 `07756aa9...b8181c`, census `884bef9a...bfe2`,
+  selftest `76590b8b...51d`, term manifest `07931c21...7033`이다.
 
 ## 남은 위험과 A2-11 인계
 
-ETA_DATA/INFO가 없어 L-3/L-5 coverage와 물리 metric은 계산할 수 없다. 대형 model에서
+ETA_DATA/INFO가 없어 L-3/L-5 coverage와 물리 metric은 계산할 수 없다. L-6도
+released-T/LINEHEAT truth가 없어 물리 Te·term metric을 아직 인증할 수 없다. 대형 model에서
 line source가 undefined거나 eta가 비유한이면 publication 전체가 정직하게 막힌다.
 formal source division, signed amplification, observer spectrum은 수정하지 않았고 A2-11에
-그대로 인계한다. `.cu` diff는 0이며 GPU lifecycle/rate/emissivity는 A2-12+ 소유다.
+그대로 인계한다. A2-11은 signed opacity/emissivity publication을 generation/stamp
+검증 후 formal source에 소비하고, line owner 배타성을 재해석하지 않아야 한다.
+`.cu` diff는 0이며 GPU lifecycle/rate/emissivity는 A2-12+ 소유다.

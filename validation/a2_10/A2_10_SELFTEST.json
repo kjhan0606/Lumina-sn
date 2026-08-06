@@ -1,0 +1,83 @@
+{
+  "binary_sha256": "8d345b75744f39cb0ebc4e20bea3f8adfa2974b7019820d80d370c5856354d3c",
+  "child_rc": 0,
+  "metric_values": {
+    "E_balance": 0.0,
+    "Te_root_K": 5000.0,
+    "line_owner_closure_failures": 0,
+    "line_owner_overlap_shells": 0,
+    "max_line_owner_closure": 0.0,
+    "partial_publish": 0,
+    "te_context_separate": true,
+    "te_manifest_exact_match": true
+  },
+  "negative_controls": {
+    "N1": {
+      "child_rc": 4,
+      "ci_half_width": 0.0,
+      "marker": "A2_10_NEG_PHOTOHEAT_DROP",
+      "reason_code": "EXPECTED_REJECTION",
+      "status": "PASS",
+      "wrapper_rc": 0
+    },
+    "N2": {
+      "child_rc": 4,
+      "ci_half_width": 0.0,
+      "marker": "A2_10_NEG_NEIGHBOR_TE",
+      "reason_code": "EXPECTED_REJECTION",
+      "status": "PASS",
+      "wrapper_rc": 0
+    },
+    "N3": {
+      "child_rc": 4,
+      "ci_half_width": 0.0,
+      "marker": "A2_10_NEG_CANCEL_PAIR",
+      "reason_code": "EXPECTED_REJECTION",
+      "status": "PASS",
+      "wrapper_rc": 0
+    },
+    "N4": {
+      "child_rc": 5,
+      "ci_half_width": 0.0,
+      "marker": "A2_10_NEG_STALE_TERM",
+      "reason_code": "EXPECTED_REJECTION",
+      "status": "PASS",
+      "wrapper_rc": 0
+    },
+    "N5": {
+      "child_rc": 5,
+      "ci_half_width": 0.0,
+      "marker": "A2_10_NEG_PLANCK_FIELD",
+      "reason_code": "EXPECTED_REJECTION",
+      "status": "PASS",
+      "wrapper_rc": 0
+    },
+    "N6": {
+      "child_rc": 5,
+      "ci_half_width": 0.0,
+      "marker": "A2_10_NEG_ROOT_PIN",
+      "reason_code": "EXPECTED_REJECTION",
+      "status": "PASS",
+      "wrapper_rc": 0
+    },
+    "N7": {
+      "child_rc": 4,
+      "ci_half_width": 0.0,
+      "marker": "A2_10_NEG_TERM_SIGN",
+      "reason_code": "EXPECTED_REJECTION",
+      "status": "PASS",
+      "wrapper_rc": 0
+    },
+    "N8": {
+      "child_rc": 5,
+      "ci_half_width": 0.0,
+      "marker": "A2_10_NEG_TE_MANIFEST",
+      "reason_code": "EXPECTED_REJECTION",
+      "status": "PASS",
+      "wrapper_rc": 0
+    }
+  },
+  "reason_code": "INTERNAL_RADEQ_TERM_ROOT_TRANSACTION",
+  "status": "PASS",
+  "wrapper_rc": 0
+}

@@ -11876,10 +11876,121 @@ static double radeq_net(double T_e, double T_rad, double n_e,
     return H - C;
 }
 
+typedef struct {
+    const CpuOpacityPublication *op;
+    const CpuEmissivityPublication *em;
+    const double *J;
+    const double *te_ref,*ne;
+    const GammaDeposition *gamma;
+    size_t ns,nb;
+    double time_explosion;
+} A210ProdContext;
+
+static RadeqStatus a210_production_residual(size_t s,double te,
+                                            A210TermLedger*l,void*opaque){
+    A210ProdContext*c=(A210ProdContext*)opaque;
+    if(!c||!l||s>=c->ns||!isfinite(te)||te<=0)return RADEQ_INVALID_TE_TRIAL;
+    memset(l,0,sizeof(*l));
+    for(int k=0;k<A210_NHEAT;k++)l->heating_status[k]=A210_EXACT_ZERO;
+    for(int k=0;k<A210_NCOOL;k++)l->cooling_status[k]=A210_EXACT_ZERO;
+    double photo_abs=0,line_abs=0,ff_abs=0,recomb=0,line_emit=0,ff_emit=0;
+    double j_int=0,jnu_int=0;
+    for(size_t b=0;b<c->nb;b++){
+        size_t i=s*c->nb+b;double dnu=c->em->nu_edge[b+1]-c->em->nu_edge[b];
+        double J=c->J[i];
+        if(!isfinite(J)||J<0||!(dnu>0))return RADEQ_TERM_SCHEMA;
+        photo_abs+=c->op->chi_bf[i]*J*dnu;
+        line_abs+=c->op->chi_bb[i]*J*dnu;
+        ff_abs+=c->op->chi_ff[i]*J*dnu;
+        recomb+=c->em->eta_bf[i]*sqrt(c->te_ref[s]/te)*dnu;
+        line_emit+=c->em->eta_bb[i]*dnu;
+        ff_emit+=c->em->eta_ff[i]*sqrt(te/c->te_ref[s])*dnu;
+        double nu=sqrt(c->em->nu_edge[b]*c->em->nu_edge[b+1]);
+        j_int+=J*dnu;jnu_int+=J*nu*dnu;
+    }
+    const double fourpi=4.0*M_PI_VAL;
+    photo_abs*=fourpi;line_abs*=fourpi;ff_abs*=fourpi;
+    recomb*=fourpi;line_emit*=fourpi;ff_emit*=fourpi;
+    if(photo_abs>=0){l->heating[A210_PHOTO]=photo_abs;l->heating_status[A210_PHOTO]=photo_abs?A210_INCLUDED:A210_EXACT_ZERO;}
+    else{recomb-=photo_abs;l->heating_status[A210_PHOTO]=A210_INCLUDED;}
+    l->A_line=line_abs;l->E_line=line_emit;l->m_line=1;
+    l->radiative_line_included=1;l->collisional_or_escape_included=0;
+    if(line_abs>=0)l->heating[A210_LINE_ABS]=line_abs;
+    else l->cooling[A210_LINE_EMIT]-=line_abs;
+    l->heating_status[A210_LINE_ABS]=line_abs?A210_INCLUDED:A210_EXACT_ZERO;
+    l->cooling[A210_LINE_EMIT]+=line_emit;
+    l->cooling_status[A210_LINE_EMIT]=line_emit?A210_INCLUDED:A210_EXACT_ZERO;
+    if(ff_abs>=0)l->heating[A210_FF_ABS]=ff_abs;
+    else ff_emit-=ff_abs;
+    l->heating_status[A210_FF_ABS]=ff_abs?A210_INCLUDED:A210_EXACT_ZERO;
+    l->cooling[A210_RECOMB]=recomb;l->cooling_status[A210_RECOMB]=recomb?A210_INCLUDED:A210_EXACT_ZERO;
+    l->cooling[A210_FF_EMIT]=ff_emit;l->cooling_status[A210_FF_EMIT]=ff_emit?A210_INCLUDED:A210_EXACT_ZERO;
+    /* Frequency-moment Compton exchange; never a T_rad proxy. */
+    if(j_int>0){double trad=H_PLANCK*(jnu_int/j_int)/(4.0*K_BOLTZMANN);double q=4.0*K_BOLTZMANN*SIGMA_THOMSON*c->ne[s]/(9.1093837015e-28*C_SPEED_OF_LIGHT*C_SPEED_OF_LIGHT)*fourpi*j_int*(trad-te);if(q>=0){l->heating[A210_COMPTON_H]=q;l->heating_status[A210_COMPTON_H]=q?A210_INCLUDED:A210_EXACT_ZERO;}else{l->cooling[A210_COMPTON_C]=-q;l->cooling_status[A210_COMPTON_C]=A210_INCLUDED;}}
+    double qg=(c->gamma&&c->gamma->heating_rate)?c->gamma->heating_rate[s]:0;
+    if(!isfinite(qg)||qg<0)return RADEQ_SIGN_MISMATCH;
+    l->heating[A210_GAMMA]=qg;l->heating_status[A210_GAMMA]=qg?A210_INCLUDED:A210_EXACT_ZERO;
+    l->heating_status[A210_NONTHERMAL]=A210_EXACT_ZERO;
+    l->cooling[A210_ADIABATIC]=1.5*c->ne[s]*K_BOLTZMANN*te*(2.0/c->time_explosion);
+    l->cooling_status[A210_ADIABATIC]=l->cooling[A210_ADIABATIC]?A210_INCLUDED:A210_EXACT_ZERO;
+    l->cooling_status[A210_COLL_LINE]=A210_REPLACED_NOT_APPLICABLE;
+    return a210_line_owner_finalize(l);
+}
+
+static int a210_rebin_checked_J(const RadiationFieldView*rf,
+                                const CpuEmissivityPublication*em,double*out){
+    if(!rf||!em||!out||!rf->frequency_bin_edges||!rf->J_nu)return-1;
+    for(size_t s=0;s<em->n_shells;s++)for(size_t b=0;b<em->n_bins;b++){
+        double lo=em->nu_edge[b],hi=em->nu_edge[b+1],integ=0,covered=0;
+        for(size_t q=0;q<rf->n_bins;q++){double a=fmax(lo,rf->frequency_bin_edges[q]),z=fmin(hi,rf->frequency_bin_edges[q+1]);if(z<=a)continue;size_t qi=s*rf->n_bins+q;if(rf->validity[qi]!=RADIATION_FIELD_VALID&&rf->validity[qi]!=RADIATION_FIELD_EXACT_ZERO)return-1;integ+=rf->J_nu[qi]*(z-a);covered+=z-a;}
+        if(fabs(covered-(hi-lo))>1e-10*(hi-lo))return-1;
+        out[s*em->n_bins+b]=integ/(hi-lo);
+    }return 0;
+}
+
+static int a210_production_solve(PlasmaState*plasma,GammaDeposition*gamma,
+ NLTEConfig*nlte,AtomicData*atom,OpacityState*opacity,double epoch,int ns){
+    A210Counters*ct=a210_counters();
+    if(getenv("LUMINA_FIXED_TE_PROFILE")){ct->fixed_te_attempts++;return 0;}
+    if(!plasma||!nlte||!atom||!opacity||ns<=0||
+       nlte->radfield_view_status!=RADIATION_FIELD_VIEW_OK){ct->blocked_stale++;return 0;}
+    const CpuOpacityPublication*op=&opacity->cpu_opacity;
+    const CpuEmissivityPublication*em=&opacity->cpu_emissivity;
+    if(!op->generation_committed||!em->committed_emissivity_generation||
+       op->generation_committed!=em->opacity_generation||
+       em->radfield_generation!=nlte->radfield_view.generation||
+       em->population_generation!=atom->population_committed_generation||
+       em->n_shells!=(size_t)ns||op->n_shells!=(size_t)ns||
+       em->n_bins!=op->n_bins){ct->blocked_stale++;return 0;}
+    size_t n=(size_t)ns,nb=em->n_bins;double*J=malloc(n*nb*sizeof(double));double*lo=malloc(n*sizeof(double));double*hi=malloc(n*sizeof(double));
+    if(!J||!lo||!hi){free(J);free(lo);free(hi);return 0;}
+    if(a210_rebin_checked_J(&nlte->radfield_view,em,J)){ct->blocked_missing_term++;free(J);free(lo);free(hi);return 0;}
+    for(size_t s=0;s<n;s++){lo[s]=10.0;hi[s]=1.0e7;}
+    char geo[65];RadiationField*f=&nlte->radiation_field.field;
+    if(a210_geometry_sha256(f->shell_boundaries.values,f->shell_boundaries.count,geo)!=RADEQ_OK){ct->te_context_mismatch++;free(J);free(lo);free(hi);return 0;}
+    A210ProdContext c={op,em,J,plasma->T_e,plasma->n_electron,gamma,n,nb,epoch};
+    uint64_t gen=plasma->T_e_generation+1;if(gen==0)gen=1;
+    int rc=a210_solve_transaction(&plasma->te_publication,lo,hi,plasma->n_electron,n,(uint64_t)llround(epoch),gen,geo,a210_production_residual,&c,plasma->T_e,plasma->n_electron);
+    free(J);free(lo);free(hi);if(rc)return 0;
+    plasma->te_publication.radfield_generation=nlte->radfield_view.generation;
+    plasma->te_publication.bf_rate_generation=nlte->radfield_view.generation;
+    plasma->te_publication.line_view_generation=nlte->line_view.generation;
+    plasma->te_publication.population_generation=atom->population_committed_generation;
+    plasma->te_publication.opacity_generation=op->generation_committed;
+    plasma->te_publication.emissivity_generation=em->committed_emissivity_generation;
+    return 1;
+}
+
 int compute_radiative_equilibrium_te(PlasmaState *plasma, GammaDeposition *gamma_dep,
                                      NLTEConfig *nlte, AtomicData *atom,
                                      OpacityState *opacity,
                                      double time_explosion, int n_shells) {
+    /* A2-10 is the only production Te path.  The legacy body below is retained
+     * as unreachable diagnostic/oracle code until its A2-11 formal inputs land. */
+    return a210_production_solve(plasma,gamma_dep,nlte,atom,opacity,
+                                 time_explosion,n_shells);
+}
+#if 0
     radeq_fb_rate_register(atom, plasma, n_shells);  /* LUMINA_RADEQ_FB_RATE */
     /* LUMINA_RADEQ_SIMUL=1: ARTIS-mirror simultaneous solve replaces the
      * whole operator-split radeq below (single ownership of T_e/n_e/ions). */
@@ -12692,6 +12803,7 @@ int compute_radiative_equilibrium_te(PlasmaState *plasma, GammaDeposition *gamma
         if (!isfinite(plasma->T_e[s]) || plasma->T_e[s] <= 0.0) return 0;
     return 1;
 }
+#endif
 
 /* ============================================================
  * PATH-A / A2: per-shell COUPLED-NEWTON solve of {n_e, T_e}
@@ -15028,6 +15140,7 @@ int nlte_init(NLTEConfig *nlte, AtomicData *atom, OpacityState *opacity,
 
 void nlte_free(NLTEConfig *nlte) {
     a209_counters_print(stdout);
+    a210_counters_print(stdout);
     population_counters_print(stdout, &nlte->population_counters);
     fflush(stdout);
     /* A2-05 R4/R6 observability: the zero-consumer gate and the blocked-term
