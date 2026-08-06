@@ -1,0 +1,6658 @@
+{
+ "schema": "lumina-knob-scrap-ledger-v1",
+ "principle": "생존이 예외, 스크랩이 기본. 살아남으려면 입력이거나 · 0층 계약이 요구하거나 · 판정된 물리 배선도에 있어야 한다.",
+ "counts": {
+  "SCRAP-DEAD": 104,
+  "S-INPUT": 7,
+  "SCRAP-FOSSIL": 218,
+  "P-VERDICT": 47,
+  "SCRAP-CLAMP": 42,
+  "S-CONTRACT": 1
+ },
+ "total": 419,
+ "knobs": {
+  "LUMINA_A2_02C_CAPTURE_GENERATION": {
+   "class": "SCRAP-DEAD",
+   "why": "아무 런처도 설정하지 않음 — 분기가 밟히지 않는다",
+   "sites": [
+    "src/a2_02c_segment_capture.c:52"
+   ],
+   "files": [
+    "a2_02c_segment_capture.c"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 0,
+   "live_last_run": false
+  },
+  "LUMINA_A2_02C_CAPTURE_PATH": {
+   "class": "S-INPUT",
+   "why": "값이 경로·자원 지정 — 노브가 아니라 입력",
+   "sites": [
+    "src/a2_02c_segment_capture.c:70"
+   ],
+   "files": [
+    "a2_02c_segment_capture.c"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 0,
+   "live_last_run": false
+  },
+  "LUMINA_A2_02C_SEGMENT_CAPTURE": {
+   "class": "SCRAP-DEAD",
+   "why": "아무 런처도 설정하지 않음 — 분기가 밟히지 않는다",
+   "sites": [
+    "src/a2_02c_segment_capture.c:46"
+   ],
+   "files": [
+    "a2_02c_segment_capture.c"
+   ],
+   "functions": [
+    "d"
+   ],
+   "launchers": 0,
+   "live_last_run": false
+  },
+  "LUMINA_A4_SRC_BLEND": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 1개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_plasma.c:11678",
+    "src/lumina_plasma.c:11836"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 1,
+   "live_last_run": false
+  },
+  "LUMINA_A4_STAGE1": {
+   "class": "SCRAP-DEAD",
+   "why": "아무 런처도 설정하지 않음 — 분기가 밟히지 않는다",
+   "sites": [
+    "src/lumina_plasma.c:11676",
+    "src/lumina_plasma.c:11834"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 0,
+   "live_last_run": false
+  },
+  "LUMINA_ALPHA_SPINGATE": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 26개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_atomic.c:2056",
+    "src/lumina_plasma.c:6077",
+    "src/lumina_plasma.c:10318",
+    "src/lumina_plasma.c:10318"
+   ],
+   "files": [
+    "lumina_atomic.c",
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 26,
+   "live_last_run": false
+  },
+  "LUMINA_ARTIS_PARITY": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 25개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_plasma.c:392"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 25,
+   "live_last_run": false
+  },
+  "LUMINA_BF_CLUMP_FACTOR": {
+   "class": "SCRAP-DEAD",
+   "why": "아무 런처도 설정하지 않음 — 분기가 밟히지 않는다",
+   "sites": [
+    "src/lumina_atomic.c:1049"
+   ],
+   "files": [
+    "lumina_atomic.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 0,
+   "live_last_run": false
+  },
+  "LUMINA_BF_GEMM": {
+   "class": "SCRAP-DEAD",
+   "why": "아무 런처도 설정하지 않음 — 분기가 밟히지 않는다",
+   "sites": [
+    "src/lumina_plasma.c:7419"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 0,
+   "live_last_run": false
+  },
+  "LUMINA_BF_OPACITY": {
+   "class": "P-VERDICT",
+   "why": "판정런이 실제로 넘김 — 물리 판정 대상",
+   "sites": [
+    "src/lumina_cuda.cu:7329",
+    "src/lumina_cuda.cu:7330",
+    "src/lumina_main.c:207",
+    "src/lumina_main.c:208"
+   ],
+   "files": [
+    "lumina_cuda.cu",
+    "lumina_main.c"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 299,
+   "live_last_run": true
+  },
+  "LUMINA_BF_RATE_POPS": {
+   "class": "P-VERDICT",
+   "why": "판정런이 실제로 넘김 — 물리 판정 대상",
+   "sites": [
+    "src/lumina_plasma.c:9420"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 25,
+   "live_last_run": true
+  },
+  "LUMINA_BINNED_J_ESTIMATOR": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 33개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_cuda.cu:10646",
+    "src/lumina_cuda.cu:10647"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 33,
+   "live_last_run": false
+  },
+  "LUMINA_BUDGET_SHELL": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 1개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_plasma.c:12823"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 1,
+   "live_last_run": false
+  },
+  "LUMINA_BUDGET_STAGE": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 1개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_plasma.c:12822"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 1,
+   "live_last_run": false
+  },
+  "LUMINA_BUDGET_Z": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 1개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_plasma.c:12821"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 1,
+   "live_last_run": false
+  },
+  "LUMINA_C1_BIN_DUMP": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 21개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_plasma.c:1342"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 21,
+   "live_last_run": false
+  },
+  "LUMINA_C1_DEGEN_FALLBACK": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 22개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_plasma.c:1286"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 22,
+   "live_last_run": false
+  },
+  "LUMINA_C1_SUPERBIN_TEPIN": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 21개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_plasma.c:1324"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 21,
+   "live_last_run": false
+  },
+  "LUMINA_C2_BFR_DUMP": {
+   "class": "SCRAP-DEAD",
+   "why": "아무 런처도 설정하지 않음 — 분기가 밟히지 않는다",
+   "sites": [
+    "src/lumina_plasma.c:1373"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 0,
+   "live_last_run": false
+  },
+  "LUMINA_C2_MATRIX_BF": {
+   "class": "SCRAP-DEAD",
+   "why": "아무 런처도 설정하지 않음 — 분기가 밟히지 않는다",
+   "sites": [
+    "src/lumina_plasma.c:413"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 0,
+   "live_last_run": false
+  },
+  "LUMINA_CAP_FORCE_ESCAPE": {
+   "class": "SCRAP-CLAMP",
+   "why": "이름이 clamp/floor/ceil — 규약상 물리가 아니다(개별 확인 필요)",
+   "sites": [
+    "src/lumina_cuda.cu:7175",
+    "src/lumina_cuda.cu:7176"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 2,
+   "live_last_run": false
+  },
+  "LUMINA_CAP_REAL_ONLY": {
+   "class": "SCRAP-CLAMP",
+   "why": "이름이 clamp/floor/ceil — 규약상 물리가 아니다(개별 확인 필요)",
+   "sites": [
+    "src/lumina_cuda.cu:7169",
+    "src/lumina_cuda.cu:7170"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 1,
+   "live_last_run": false
+  },
+  "LUMINA_CMFGEN_ALI_ITER": {
+   "class": "P-VERDICT",
+   "why": "판정런이 실제로 넘김 — 물리 판정 대상",
+   "sites": [
+    "src/lumina_cmfgen.c:4958",
+    "src/lumina_cmfgen.c:5019",
+    "src/lumina_cmfgen.c:5088",
+    "src/lumina_cmfgen.c:5145",
+    "src/lumina_cuda.cu:7905"
+   ],
+   "files": [
+    "lumina_cmfgen.c",
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "n",
+    "t"
+   ],
+   "launchers": 80,
+   "live_last_run": true
+  },
+  "LUMINA_CMFGEN_ALI_MINIT": {
+   "class": "SCRAP-DEAD",
+   "why": "아무 런처도 설정하지 않음 — 분기가 밟히지 않는다",
+   "sites": [
+    "src/lumina_cmfgen.c:2550"
+   ],
+   "files": [
+    "lumina_cmfgen.c"
+   ],
+   "functions": [
+    "J"
+   ],
+   "launchers": 0,
+   "live_last_run": false
+  },
+  "LUMINA_CMFGEN_ALI_TOL": {
+   "class": "SCRAP-DEAD",
+   "why": "아무 런처도 설정하지 않음 — 분기가 밟히지 않는다",
+   "sites": [
+    "src/lumina_cmfgen.c:2545"
+   ],
+   "files": [
+    "lumina_cmfgen.c"
+   ],
+   "functions": [
+    "J"
+   ],
+   "launchers": 0,
+   "live_last_run": false
+  },
+  "LUMINA_CMFGEN_CELLDIAG": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 1개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_cmfgen.c:2566"
+   ],
+   "files": [
+    "lumina_cmfgen.c"
+   ],
+   "functions": [
+    "J"
+   ],
+   "launchers": 1,
+   "live_last_run": false
+  },
+  "LUMINA_CMFGEN_COLOR_BANDS": {
+   "class": "SCRAP-DEAD",
+   "why": "아무 런처도 설정하지 않음 — 분기가 밟히지 않는다",
+   "sites": [
+    "src/lumina_cmfgen.c:2693"
+   ],
+   "files": [
+    "lumina_cmfgen.c"
+   ],
+   "functions": [
+    "r"
+   ],
+   "launchers": 0,
+   "live_last_run": false
+  },
+  "LUMINA_CMFGEN_EPS_CAP": {
+   "class": "SCRAP-CLAMP",
+   "why": "이름이 clamp/floor/ceil — 규약상 물리가 아니다(개별 확인 필요)",
+   "sites": [
+    "src/lumina_cmfgen.c:696",
+    "src/lumina_cmfgen.c:1127",
+    "src/lumina_cmfgen.c:1770"
+   ],
+   "files": [
+    "lumina_cmfgen.c"
+   ],
+   "functions": [
+    "g1",
+    "l",
+    "s"
+   ],
+   "launchers": 0,
+   "live_last_run": false
+  },
+  "LUMINA_CMFGEN_EPS_FLOOR": {
+   "class": "SCRAP-CLAMP",
+   "why": "이름이 clamp/floor/ceil — 규약상 물리가 아니다(개별 확인 필요)",
+   "sites": [
+    "src/lumina_cmfgen.c:695",
+    "src/lumina_cmfgen.c:1126",
+    "src/lumina_cmfgen.c:1768"
+   ],
+   "files": [
+    "lumina_cmfgen.c"
+   ],
+   "functions": [
+    "g1",
+    "l",
+    "s"
+   ],
+   "launchers": 0,
+   "live_last_run": false
+  },
+  "LUMINA_CMFGEN_FEATURE_Z": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 1개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_cuda.cu:9648"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 1,
+   "live_last_run": false
+  },
+  "LUMINA_CMFGEN_FROZEN_ALI": {
+   "class": "P-VERDICT",
+   "why": "판정런이 실제로 넘김 — 물리 판정 대상",
+   "sites": [
+    "src/lumina_cuda.cu:9601"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 76,
+   "live_last_run": true
+  },
+  "LUMINA_CMFGEN_FROZEN_CONT": {
+   "class": "P-VERDICT",
+   "why": "판정런이 실제로 넘김 — 물리 판정 대상",
+   "sites": [
+    "src/lumina_cuda.cu:9611"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 76,
+   "live_last_run": true
+  },
+  "LUMINA_CMFGEN_FROZEN_EPS": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 1개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_cuda.cu:9598"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 1,
+   "live_last_run": false
+  },
+  "LUMINA_CMFGEN_FROZEN_FEATURE_ONLY": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 1개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_cuda.cu:9645"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 1,
+   "live_last_run": false
+  },
+  "LUMINA_CMFGEN_FROZEN_MORPH": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 1개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_cuda.cu:9595"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 1,
+   "live_last_run": false
+  },
+  "LUMINA_CMFGEN_JDUMP": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 8개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_cmfgen.c:2801"
+   ],
+   "files": [
+    "lumina_cmfgen.c"
+   ],
+   "functions": [
+    "e"
+   ],
+   "launchers": 8,
+   "live_last_run": false
+  },
+  "LUMINA_CMFGEN_LAMBDA_TRI": {
+   "class": "SCRAP-DEAD",
+   "why": "아무 런처도 설정하지 않음 — 분기가 밟히지 않는다",
+   "sites": [
+    "src/lumina_cmfgen.c:2543"
+   ],
+   "files": [
+    "lumina_cmfgen.c"
+   ],
+   "functions": [
+    "J"
+   ],
+   "launchers": 0,
+   "live_last_run": false
+  },
+  "LUMINA_CMFGEN_LINE_EPS": {
+   "class": "SCRAP-DEAD",
+   "why": "아무 런처도 설정하지 않음 — 분기가 밟히지 않는다",
+   "sites": [
+    "src/lumina_cmfgen.c:700",
+    "src/lumina_cmfgen.c:1914"
+   ],
+   "files": [
+    "lumina_cmfgen.c"
+   ],
+   "functions": [
+    "l",
+    "s"
+   ],
+   "launchers": 0,
+   "live_last_run": false
+  },
+  "LUMINA_CMFGEN_LINE_EPS_GATE": {
+   "class": "SCRAP-DEAD",
+   "why": "아무 런처도 설정하지 않음 — 분기가 밟히지 않는다",
+   "sites": [
+    "src/lumina_cmfgen.c:701",
+    "src/lumina_cmfgen.c:1916"
+   ],
+   "files": [
+    "lumina_cmfgen.c"
+   ],
+   "functions": [
+    "l",
+    "s"
+   ],
+   "launchers": 0,
+   "live_last_run": false
+  },
+  "LUMINA_CMFGEN_LINE_EPS_PHYS": {
+   "class": "P-VERDICT",
+   "why": "판정런이 실제로 넘김 — 물리 판정 대상",
+   "sites": [
+    "src/lumina_cmfgen.c:693",
+    "src/lumina_cmfgen.c:1766"
+   ],
+   "files": [
+    "lumina_cmfgen.c"
+   ],
+   "functions": [
+    "l",
+    "s"
+   ],
+   "launchers": 69,
+   "live_last_run": true
+  },
+  "LUMINA_CMFGEN_LINE_EPS_UV": {
+   "class": "SCRAP-DEAD",
+   "why": "아무 런처도 설정하지 않음 — 분기가 밟히지 않는다",
+   "sites": [
+    "src/lumina_cmfgen.c:702",
+    "src/lumina_cmfgen.c:1779",
+    "src/lumina_plasma.c:11674",
+    "src/lumina_plasma.c:11832"
+   ],
+   "files": [
+    "lumina_cmfgen.c",
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)",
+    "l",
+    "s"
+   ],
+   "launchers": 0,
+   "live_last_run": false
+  },
+  "LUMINA_CMFGEN_SIGMA_BF": {
+   "class": "P-VERDICT",
+   "why": "판정런이 실제로 넘김 — 물리 판정 대상",
+   "sites": [
+    "src/lumina_cuda.cu:6942",
+    "src/lumina_main.c:132"
+   ],
+   "files": [
+    "lumina_cuda.cu",
+    "lumina_main.c"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 304,
+   "live_last_run": true
+  },
+  "LUMINA_CMFGEN_SRC_NLTE": {
+   "class": "SCRAP-DEAD",
+   "why": "아무 런처도 설정하지 않음 — 분기가 밟히지 않는다",
+   "sites": [
+    "src/lumina_cmfgen.c:697",
+    "src/lumina_cmfgen.c:1764"
+   ],
+   "files": [
+    "lumina_cmfgen.c"
+   ],
+   "functions": [
+    "l",
+    "s"
+   ],
+   "launchers": 0,
+   "live_last_run": false
+  },
+  "LUMINA_CMFGEN_THEN_MC": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 79개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_cuda.cu:7336",
+    "src/lumina_cuda.cu:7337"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 79,
+   "live_last_run": false
+  },
+  "LUMINA_CMF_ADV_SPLIT": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 15개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_cmfgen.c:3491"
+   ],
+   "files": [
+    "lumina_cmfgen.c"
+   ],
+   "functions": [
+    "J"
+   ],
+   "launchers": 15,
+   "live_last_run": false
+  },
+  "LUMINA_CMF_ALAM": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 1개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_cmfgen.c:3477"
+   ],
+   "files": [
+    "lumina_cmfgen.c"
+   ],
+   "functions": [
+    "J"
+   ],
+   "launchers": 1,
+   "live_last_run": false
+  },
+  "LUMINA_CMF_BF_MILNE": {
+   "class": "P-VERDICT",
+   "why": "판정런이 실제로 넘김 — 물리 판정 대상",
+   "sites": [
+    "src/lumina_plasma.c:7360"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 5,
+   "live_last_run": true
+  },
+  "LUMINA_CMF_CONTONLY": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 1개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_cmfgen.c:5143"
+   ],
+   "files": [
+    "lumina_cmfgen.c"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 1,
+   "live_last_run": false
+  },
+  "LUMINA_CMF_DEP_FRAC": {
+   "class": "SCRAP-DEAD",
+   "why": "아무 런처도 설정하지 않음 — 분기가 밟히지 않는다",
+   "sites": [
+    "src/lumina_cmfgen.c:1731"
+   ],
+   "files": [
+    "lumina_cmfgen.c"
+   ],
+   "functions": [
+    "l"
+   ],
+   "launchers": 0,
+   "live_last_run": false
+  },
+  "LUMINA_CMF_DEP_SOURCE": {
+   "class": "P-VERDICT",
+   "why": "판정런이 실제로 넘김 — 물리 판정 대상",
+   "sites": [
+    "src/lumina_cmfgen.c:1729"
+   ],
+   "files": [
+    "lumina_cmfgen.c"
+   ],
+   "functions": [
+    "l"
+   ],
+   "launchers": 74,
+   "live_last_run": true
+  },
+  "LUMINA_CMF_EPAY": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 4개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_atomic.c:930",
+    "src/lumina_cmfgen.c:704",
+    "src/lumina_cmfgen.c:1937"
+   ],
+   "files": [
+    "lumina_atomic.c",
+    "lumina_cmfgen.c"
+   ],
+   "functions": [
+    "(file scope)",
+    "l",
+    "s"
+   ],
+   "launchers": 4,
+   "live_last_run": false
+  },
+  "LUMINA_CMF_EPAY_HOTF": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 4개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_cmfgen.c:708",
+    "src/lumina_cmfgen.c:2151"
+   ],
+   "files": [
+    "lumina_cmfgen.c"
+   ],
+   "functions": [
+    "l",
+    "s"
+   ],
+   "launchers": 4,
+   "live_last_run": false
+  },
+  "LUMINA_CMF_EPAY_SMIN": {
+   "class": "SCRAP-CLAMP",
+   "why": "이름이 clamp/floor/ceil — 규약상 물리가 아니다(개별 확인 필요)",
+   "sites": [
+    "src/lumina_cmfgen.c:706",
+    "src/lumina_cmfgen.c:1942"
+   ],
+   "files": [
+    "lumina_cmfgen.c"
+   ],
+   "functions": [
+    "l",
+    "s"
+   ],
+   "launchers": 3,
+   "live_last_run": true
+  },
+  "LUMINA_CMF_EPAY_TAU": {
+   "class": "SCRAP-DEAD",
+   "why": "아무 런처도 설정하지 않음 — 분기가 밟히지 않는다",
+   "sites": [
+    "src/lumina_cmfgen.c:1940"
+   ],
+   "files": [
+    "lumina_cmfgen.c"
+   ],
+   "functions": [
+    "l"
+   ],
+   "launchers": 0,
+   "live_last_run": false
+  },
+  "LUMINA_CMF_EPAY_TAUBIN": {
+   "class": "P-VERDICT",
+   "why": "판정런이 실제로 넘김 — 물리 판정 대상",
+   "sites": [
+    "src/lumina_cmfgen.c:707",
+    "src/lumina_cmfgen.c:1944"
+   ],
+   "files": [
+    "lumina_cmfgen.c"
+   ],
+   "functions": [
+    "l",
+    "s"
+   ],
+   "launchers": 2,
+   "live_last_run": true
+  },
+  "LUMINA_CMF_EPAY_TAUEFF": {
+   "class": "SCRAP-DEAD",
+   "why": "아무 런처도 설정하지 않음 — 분기가 밟히지 않는다",
+   "sites": [
+    "src/lumina_cmfgen.c:678",
+    "src/lumina_cmfgen.c:1972"
+   ],
+   "files": [
+    "lumina_cmfgen.c"
+   ],
+   "functions": [
+    "l",
+    "s"
+   ],
+   "launchers": 0,
+   "live_last_run": false
+  },
+  "LUMINA_CMF_FINE_ALI": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 16개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_cmfgen.c:4072"
+   ],
+   "files": [
+    "lumina_cmfgen.c"
+   ],
+   "functions": [
+    "r"
+   ],
+   "launchers": 16,
+   "live_last_run": false
+  },
+  "LUMINA_CMF_FINE_BF_DIAG": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 1개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_cmfgen.c:4173"
+   ],
+   "files": [
+    "lumina_cmfgen.c"
+   ],
+   "functions": [
+    "r"
+   ],
+   "launchers": 1,
+   "live_last_run": false
+  },
+  "LUMINA_CMF_FINE_BF_OPAC": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 2개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_cmfgen.c:4151"
+   ],
+   "files": [
+    "lumina_cmfgen.c"
+   ],
+   "functions": [
+    "r"
+   ],
+   "launchers": 2,
+   "live_last_run": false
+  },
+  "LUMINA_CMF_FINE_CONTONLY": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 1개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_cmfgen.c:4200"
+   ],
+   "files": [
+    "lumina_cmfgen.c"
+   ],
+   "functions": [
+    "r"
+   ],
+   "launchers": 1,
+   "live_last_run": false
+  },
+  "LUMINA_CMF_FINE_DIAG": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 32개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_cmfgen.c:4062"
+   ],
+   "files": [
+    "lumina_cmfgen.c"
+   ],
+   "functions": [
+    "r"
+   ],
+   "launchers": 32,
+   "live_last_run": false
+  },
+  "LUMINA_CMF_FINE_EMERGENT": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 1개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_cmfgen.c:4439"
+   ],
+   "files": [
+    "lumina_cmfgen.c"
+   ],
+   "functions": [
+    "r"
+   ],
+   "launchers": 1,
+   "live_last_run": false
+  },
+  "LUMINA_CMF_FINE_EMERGENT_OBS": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 1개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_cmfgen.c:4444"
+   ],
+   "files": [
+    "lumina_cmfgen.c"
+   ],
+   "functions": [
+    "r"
+   ],
+   "launchers": 1,
+   "live_last_run": false
+  },
+  "LUMINA_CMF_FINE_JMAP": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 3개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_cmfgen.c:4410"
+   ],
+   "files": [
+    "lumina_cmfgen.c"
+   ],
+   "functions": [
+    "r"
+   ],
+   "launchers": 3,
+   "live_last_run": false
+  },
+  "LUMINA_CMF_FINE_LAMHI": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 3개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_cmfgen.c:4067",
+    "src/lumina_nlte_gemm.cu:223",
+    "src/lumina_plasma.c:3590"
+   ],
+   "files": [
+    "lumina_cmfgen.c",
+    "lumina_nlte_gemm.cu",
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)",
+    "l",
+    "r"
+   ],
+   "launchers": 3,
+   "live_last_run": false
+  },
+  "LUMINA_CMF_FINE_LAMLO": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 32개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_cmfgen.c:4066",
+    "src/lumina_nlte_gemm.cu:222",
+    "src/lumina_plasma.c:3589"
+   ],
+   "files": [
+    "lumina_cmfgen.c",
+    "lumina_nlte_gemm.cu",
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)",
+    "l",
+    "r"
+   ],
+   "launchers": 32,
+   "live_last_run": false
+  },
+  "LUMINA_CMF_FINE_LINEDUMP": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 14개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_cmfgen.c:4551"
+   ],
+   "files": [
+    "lumina_cmfgen.c"
+   ],
+   "functions": [
+    "r"
+   ],
+   "launchers": 14,
+   "live_last_run": false
+  },
+  "LUMINA_CMF_FINE_LINEDUMP_SHELL": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 14개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_cmfgen.c:4554"
+   ],
+   "files": [
+    "lumina_cmfgen.c"
+   ],
+   "functions": [
+    "r"
+   ],
+   "launchers": 14,
+   "live_last_run": false
+  },
+  "LUMINA_CMF_FINE_LINE_EPS": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 2개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_cmfgen.c:4090"
+   ],
+   "files": [
+    "lumina_cmfgen.c"
+   ],
+   "functions": [
+    "r"
+   ],
+   "launchers": 2,
+   "live_last_run": false
+  },
+  "LUMINA_CMF_FINE_OBS_NOBS": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 1개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_cmfgen.c:3904"
+   ],
+   "files": [
+    "lumina_cmfgen.c"
+   ],
+   "functions": [
+    "s"
+   ],
+   "launchers": 1,
+   "live_last_run": false
+  },
+  "LUMINA_CMF_FINE_OBS_SCATTER": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 1개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_cmfgen.c:3883"
+   ],
+   "files": [
+    "lumina_cmfgen.c"
+   ],
+   "functions": [
+    "s"
+   ],
+   "launchers": 1,
+   "live_last_run": false
+  },
+  "LUMINA_CMF_FINE_PHOTOION": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 30개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_cmfgen.c:4609"
+   ],
+   "files": [
+    "lumina_cmfgen.c"
+   ],
+   "functions": [
+    "r"
+   ],
+   "launchers": 30,
+   "live_last_run": false
+  },
+  "LUMINA_CMF_FINE_PHOTOION_DIAG": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 1개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_nlte_gemm.cu:220"
+   ],
+   "files": [
+    "lumina_nlte_gemm.cu"
+   ],
+   "functions": [
+    "l"
+   ],
+   "launchers": 1,
+   "live_last_run": false
+  },
+  "LUMINA_CMF_FINE_PPD": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 30개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_cmfgen.c:4071"
+   ],
+   "files": [
+    "lumina_cmfgen.c"
+   ],
+   "functions": [
+    "r"
+   ],
+   "launchers": 30,
+   "live_last_run": false
+  },
+  "LUMINA_CMF_FINE_SL_CLAMP": {
+   "class": "SCRAP-CLAMP",
+   "why": "이름이 clamp/floor/ceil — 규약상 물리가 아니다(개별 확인 필요)",
+   "sites": [
+    "src/lumina_cmfgen.c:3886",
+    "src/lumina_cmfgen.c:4078"
+   ],
+   "files": [
+    "lumina_cmfgen.c"
+   ],
+   "functions": [
+    "r",
+    "s"
+   ],
+   "launchers": 1,
+   "live_last_run": false
+  },
+  "LUMINA_CMF_FINE_TAUMIN": {
+   "class": "SCRAP-CLAMP",
+   "why": "이름이 clamp/floor/ceil — 규약상 물리가 아니다(개별 확인 필요)",
+   "sites": [
+    "src/lumina_cmfgen.c:4212"
+   ],
+   "files": [
+    "lumina_cmfgen.c"
+   ],
+   "functions": [
+    "r"
+   ],
+   "launchers": 1,
+   "live_last_run": false
+  },
+  "LUMINA_CMF_FINE_VDOP": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 2개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_cmfgen.c:4069"
+   ],
+   "files": [
+    "lumina_cmfgen.c"
+   ],
+   "functions": [
+    "r"
+   ],
+   "launchers": 2,
+   "live_last_run": false
+  },
+  "LUMINA_CMF_FROZEN_CHIETA_DUMP": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 5개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_cuda.cu:8162"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 5,
+   "live_last_run": false
+  },
+  "LUMINA_CMF_FROZEN_CHIETA_ITER": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 6개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_cuda.cu:7947",
+    "src/lumina_cuda.cu:8165"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 6,
+   "live_last_run": false
+  },
+  "LUMINA_CMF_FSOLVE_SELFTEST": {
+   "class": "SCRAP-DEAD",
+   "why": "아무 런처도 설정하지 않음 — 분기가 밟히지 않는다",
+   "sites": [
+    "src/lumina_cuda.cu:7899",
+    "src/lumina_cuda.cu:7900"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 0,
+   "live_last_run": false
+  },
+  "LUMINA_CMF_FSOLVE_TAUES": {
+   "class": "SCRAP-DEAD",
+   "why": "아무 런처도 설정하지 않음 — 분기가 밟히지 않는다",
+   "sites": [
+    "src/lumina_cmfgen.c:4954"
+   ],
+   "files": [
+    "lumina_cmfgen.c"
+   ],
+   "functions": [
+    "t"
+   ],
+   "launchers": 0,
+   "live_last_run": false
+  },
+  "LUMINA_CMF_INNER_DILUTE": {
+   "class": "SCRAP-DEAD",
+   "why": "아무 런처도 설정하지 않음 — 분기가 밟히지 않는다",
+   "sites": [
+    "src/lumina_plasma.c:16421"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 0,
+   "live_last_run": false
+  },
+  "LUMINA_CMF_JINC_CONT": {
+   "class": "SCRAP-DEAD",
+   "why": "아무 런처도 설정하지 않음 — 분기가 밟히지 않는다",
+   "sites": [
+    "src/lumina_cmfgen.c:5221",
+    "src/lumina_cmfgen.c:5327"
+   ],
+   "files": [
+    "lumina_cmfgen.c"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 0,
+   "live_last_run": false
+  },
+  "LUMINA_CMF_LINEPOP_DUMP": {
+   "class": "SCRAP-DEAD",
+   "why": "아무 런처도 설정하지 않음 — 분기가 밟히지 않는다",
+   "sites": [
+    "src/lumina_cuda.cu:8195"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 0,
+   "live_last_run": false
+  },
+  "LUMINA_CMF_LINEPOP_LAM": {
+   "class": "SCRAP-DEAD",
+   "why": "아무 런처도 설정하지 않음 — 분기가 밟히지 않는다",
+   "sites": [
+    "src/lumina_cmfgen.c:579"
+   ],
+   "files": [
+    "lumina_cmfgen.c"
+   ],
+   "functions": [
+    "l"
+   ],
+   "launchers": 0,
+   "live_last_run": false
+  },
+  "LUMINA_CMF_LINEPOP_MAXROWS": {
+   "class": "SCRAP-DEAD",
+   "why": "아무 런처도 설정하지 않음 — 분기가 밟히지 않는다",
+   "sites": [
+    "src/lumina_cmfgen.c:589"
+   ],
+   "files": [
+    "lumina_cmfgen.c"
+   ],
+   "functions": [
+    "l"
+   ],
+   "launchers": 0,
+   "live_last_run": false
+  },
+  "LUMINA_CMF_LINEPOP_SHELLS": {
+   "class": "SCRAP-DEAD",
+   "why": "아무 런처도 설정하지 않음 — 분기가 밟히지 않는다",
+   "sites": [
+    "src/lumina_cmfgen.c:547"
+   ],
+   "files": [
+    "lumina_cmfgen.c"
+   ],
+   "functions": [
+    "l"
+   ],
+   "launchers": 0,
+   "live_last_run": false
+  },
+  "LUMINA_CMF_LINERES": {
+   "class": "SCRAP-DEAD",
+   "why": "아무 런처도 설정하지 않음 — 분기가 밟히지 않는다",
+   "sites": [
+    "src/lumina_cmfgen.c:5142"
+   ],
+   "files": [
+    "lumina_cmfgen.c"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 0,
+   "live_last_run": false
+  },
+  "LUMINA_CMF_LINERES_CONSUME": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 4개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_plasma.c:12975"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 4,
+   "live_last_run": false
+  },
+  "LUMINA_CMF_LINERES_JBAR": {
+   "class": "P-VERDICT",
+   "why": "판정런이 실제로 넘김 — 물리 판정 대상",
+   "sites": [
+    "src/lumina_cmfgen.c:5200",
+    "src/lumina_cuda.cu:8340",
+    "src/lumina_cuda.cu:8409",
+    "src/lumina_cuda.cu:8410",
+    "src/lumina_plasma.c:3943"
+   ],
+   "files": [
+    "lumina_cmfgen.c",
+    "lumina_cuda.cu",
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)",
+    "n"
+   ],
+   "launchers": 35,
+   "live_last_run": true
+  },
+  "LUMINA_CMF_LINE_SOB_EPS": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 1개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_cmfgen.c:3225",
+    "src/lumina_cmfgen.c:3893"
+   ],
+   "files": [
+    "lumina_cmfgen.c"
+   ],
+   "functions": [
+    "s"
+   ],
+   "launchers": 1,
+   "live_last_run": false
+  },
+  "LUMINA_CMF_NIMPACT": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 1개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_cuda.cu:10016",
+    "src/lumina_cuda.cu:10979",
+    "src/lumina_main.c:821"
+   ],
+   "files": [
+    "lumina_cuda.cu",
+    "lumina_main.c"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 1,
+   "live_last_run": false
+  },
+  "LUMINA_CMF_NLTE_SELFTEST": {
+   "class": "SCRAP-DEAD",
+   "why": "아무 런처도 설정하지 않음 — 분기가 밟히지 않는다",
+   "sites": [
+    "src/lumina_cuda.cu:6798",
+    "src/lumina_cuda.cu:6799"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 0,
+   "live_last_run": false
+  },
+  "LUMINA_CMF_NSIGMA": {
+   "class": "SCRAP-DEAD",
+   "why": "아무 런처도 설정하지 않음 — 분기가 밟히지 않는다",
+   "sites": [
+    "src/lumina_plasma.c:16420"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 0,
+   "live_last_run": false
+  },
+  "LUMINA_CMF_NZ": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 1개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_cuda.cu:10015",
+    "src/lumina_cuda.cu:10978",
+    "src/lumina_main.c:820"
+   ],
+   "files": [
+    "lumina_cuda.cu",
+    "lumina_main.c"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 1,
+   "live_last_run": false
+  },
+  "LUMINA_CMF_OBSERVER_FRAME": {
+   "class": "SCRAP-DEAD",
+   "why": "아무 런처도 설정하지 않음 — 분기가 밟히지 않는다",
+   "sites": [
+    "src/lumina_cmfgen.c:5370",
+    "src/lumina_cuda.cu:9565"
+   ],
+   "files": [
+    "lumina_cmfgen.c",
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 0,
+   "live_last_run": false
+  },
+  "LUMINA_CMF_OBS_CONTONLY": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 1개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_cmfgen.c:3232",
+    "src/lumina_cmfgen.c:3896"
+   ],
+   "files": [
+    "lumina_cmfgen.c"
+   ],
+   "functions": [
+    "s"
+   ],
+   "launchers": 1,
+   "live_last_run": false
+  },
+  "LUMINA_CMF_OBS_DIAG": {
+   "class": "SCRAP-DEAD",
+   "why": "아무 런처도 설정하지 않음 — 분기가 밟히지 않는다",
+   "sites": [
+    "src/lumina_cmfgen.c:3230"
+   ],
+   "files": [
+    "lumina_cmfgen.c"
+   ],
+   "functions": [
+    "s"
+   ],
+   "launchers": 0,
+   "live_last_run": false
+  },
+  "LUMINA_CMF_OBS_DVRES": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 1개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_cmfgen.c:3060"
+   ],
+   "files": [
+    "lumina_cmfgen.c"
+   ],
+   "functions": [
+    "c"
+   ],
+   "launchers": 1,
+   "live_last_run": false
+  },
+  "LUMINA_CMF_OBS_FAITHFUL": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 1개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_cmfgen.c:3898"
+   ],
+   "files": [
+    "lumina_cmfgen.c"
+   ],
+   "functions": [
+    "s"
+   ],
+   "launchers": 1,
+   "live_last_run": false
+  },
+  "LUMINA_CMF_OBS_JBARDET": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 1개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_cmfgen.c:3897"
+   ],
+   "files": [
+    "lumina_cmfgen.c"
+   ],
+   "functions": [
+    "s"
+   ],
+   "launchers": 1,
+   "live_last_run": false
+  },
+  "LUMINA_CMF_OBS_NOEMIT": {
+   "class": "SCRAP-DEAD",
+   "why": "아무 런처도 설정하지 않음 — 분기가 밟히지 않는다",
+   "sites": [
+    "src/lumina_cmfgen.c:3229"
+   ],
+   "files": [
+    "lumina_cmfgen.c"
+   ],
+   "functions": [
+    "s"
+   ],
+   "launchers": 0,
+   "live_last_run": false
+  },
+  "LUMINA_CMF_OBS_NRAY": {
+   "class": "SCRAP-DEAD",
+   "why": "아무 런처도 설정하지 않음 — 분기가 밟히지 않는다",
+   "sites": [
+    "src/lumina_cmfgen.c:3273",
+    "src/lumina_cmfgen.c:3906"
+   ],
+   "files": [
+    "lumina_cmfgen.c"
+   ],
+   "functions": [
+    "s"
+   ],
+   "launchers": 0,
+   "live_last_run": false
+  },
+  "LUMINA_CMF_OBS_PRAY_LAM": {
+   "class": "SCRAP-DEAD",
+   "why": "아무 런처도 설정하지 않음 — 분기가 밟히지 않는다",
+   "sites": [
+    "src/lumina_cmfgen.c:3235"
+   ],
+   "files": [
+    "lumina_cmfgen.c"
+   ],
+   "functions": [
+    "s"
+   ],
+   "launchers": 0,
+   "live_last_run": false
+  },
+  "LUMINA_CMF_OBS_SEI": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 1개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_cmfgen.c:3899"
+   ],
+   "files": [
+    "lumina_cmfgen.c"
+   ],
+   "functions": [
+    "s"
+   ],
+   "launchers": 1,
+   "live_last_run": false
+  },
+  "LUMINA_CMF_OBS_SEI_CMV": {
+   "class": "SCRAP-DEAD",
+   "why": "아무 런처도 설정하지 않음 — 분기가 밟히지 않는다",
+   "sites": [
+    "src/lumina_cmfgen.c:3900"
+   ],
+   "files": [
+    "lumina_cmfgen.c"
+   ],
+   "functions": [
+    "s"
+   ],
+   "launchers": 0,
+   "live_last_run": false
+  },
+  "LUMINA_CMF_OBS_SELFTEST": {
+   "class": "SCRAP-DEAD",
+   "why": "아무 런처도 설정하지 않음 — 분기가 밟히지 않는다",
+   "sites": [
+    "src/lumina_cmfgen.c:5116",
+    "src/lumina_cuda.cu:7895"
+   ],
+   "files": [
+    "lumina_cmfgen.c",
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 0,
+   "live_last_run": false
+  },
+  "LUMINA_CMF_OBS_SOBOLEV": {
+   "class": "SCRAP-DEAD",
+   "why": "아무 런처도 설정하지 않음 — 분기가 밟히지 않는다",
+   "sites": [
+    "src/lumina_cmfgen.c:3223"
+   ],
+   "files": [
+    "lumina_cmfgen.c"
+   ],
+   "functions": [
+    "s"
+   ],
+   "launchers": 0,
+   "live_last_run": false
+  },
+  "LUMINA_CMF_OBS_SRCJ": {
+   "class": "SCRAP-DEAD",
+   "why": "아무 런처도 설정하지 않음 — 분기가 밟히지 않는다",
+   "sites": [
+    "src/lumina_cmfgen.c:3231",
+    "src/lumina_cmfgen.c:3901"
+   ],
+   "files": [
+    "lumina_cmfgen.c"
+   ],
+   "functions": [
+    "s"
+   ],
+   "launchers": 0,
+   "live_last_run": false
+  },
+  "LUMINA_CMF_OBS_TAUMIN": {
+   "class": "SCRAP-CLAMP",
+   "why": "이름이 clamp/floor/ceil — 규약상 물리가 아니다(개별 확인 필요)",
+   "sites": [
+    "src/lumina_cmfgen.c:3233",
+    "src/lumina_cmfgen.c:3887"
+   ],
+   "files": [
+    "lumina_cmfgen.c"
+   ],
+   "functions": [
+    "s"
+   ],
+   "launchers": 0,
+   "live_last_run": false
+  },
+  "LUMINA_CMF_OTS": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 1개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_plasma.c:7362"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 1,
+   "live_last_run": false
+  },
+  "LUMINA_CMF_OVERLAP": {
+   "class": "SCRAP-DEAD",
+   "why": "아무 런처도 설정하지 않음 — 분기가 밟히지 않는다",
+   "sites": [
+    "src/lumina_cmfgen.c:5255"
+   ],
+   "files": [
+    "lumina_cmfgen.c"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 0,
+   "live_last_run": false
+  },
+  "LUMINA_CMF_PLASMA_SELFTEST": {
+   "class": "SCRAP-DEAD",
+   "why": "아무 런처도 설정하지 않음 — 분기가 밟히지 않는다",
+   "sites": [
+    "src/lumina_cuda.cu:6801",
+    "src/lumina_cuda.cu:6802"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 0,
+   "live_last_run": false
+  },
+  "LUMINA_CMF_SELFTEST_JBAR": {
+   "class": "SCRAP-DEAD",
+   "why": "아무 런처도 설정하지 않음 — 분기가 밟히지 않는다",
+   "sites": [
+    "src/lumina_cmfgen.c:5077",
+    "src/lumina_cmfgen.c:5077"
+   ],
+   "files": [
+    "lumina_cmfgen.c"
+   ],
+   "functions": [
+    "t"
+   ],
+   "launchers": 0,
+   "live_last_run": false
+  },
+  "LUMINA_CMF_SELFTEST_NS": {
+   "class": "SCRAP-DEAD",
+   "why": "아무 런처도 설정하지 않음 — 분기가 밟히지 않는다",
+   "sites": [
+    "src/lumina_cmfgen.c:4932",
+    "src/lumina_cmfgen.c:5031"
+   ],
+   "files": [
+    "lumina_cmfgen.c"
+   ],
+   "functions": [
+    "t"
+   ],
+   "launchers": 0,
+   "live_last_run": false
+  },
+  "LUMINA_CMF_SELFTEST_TAUS": {
+   "class": "SCRAP-DEAD",
+   "why": "아무 런처도 설정하지 않음 — 분기가 밟히지 않는다",
+   "sites": [
+    "src/lumina_cmfgen.c:5036"
+   ],
+   "files": [
+    "lumina_cmfgen.c"
+   ],
+   "functions": [
+    "t"
+   ],
+   "launchers": 0,
+   "live_last_run": false
+  },
+  "LUMINA_CMF_SELFTEST_VSCALE": {
+   "class": "SCRAP-DEAD",
+   "why": "아무 런처도 설정하지 않음 — 분기가 밟히지 않는다",
+   "sites": [
+    "src/lumina_cmfgen.c:5034"
+   ],
+   "files": [
+    "lumina_cmfgen.c"
+   ],
+   "functions": [
+    "t"
+   ],
+   "launchers": 0,
+   "live_last_run": false
+  },
+  "LUMINA_CMF_SOLVE_GPU": {
+   "class": "P-VERDICT",
+   "why": "판정런이 실제로 넘김 — 물리 판정 대상",
+   "sites": [
+    "src/lumina_cmfgen.c:3498"
+   ],
+   "files": [
+    "lumina_cmfgen.c"
+   ],
+   "functions": [
+    "J"
+   ],
+   "launchers": 31,
+   "live_last_run": true
+  },
+  "LUMINA_CMF_SOLVE_SELFTEST": {
+   "class": "SCRAP-DEAD",
+   "why": "아무 런처도 설정하지 않음 — 분기가 밟히지 않는다",
+   "sites": [
+    "src/lumina_cuda.cu:6804",
+    "src/lumina_cuda.cu:6805"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 0,
+   "live_last_run": false
+  },
+  "LUMINA_CMF_SOLVE_SELFTEST_NF": {
+   "class": "SCRAP-DEAD",
+   "why": "아무 런처도 설정하지 않음 — 분기가 밟히지 않는다",
+   "sites": [
+    "src/lumina_cmfgen.c:4987"
+   ],
+   "files": [
+    "lumina_cmfgen.c"
+   ],
+   "functions": [
+    "t"
+   ],
+   "launchers": 0,
+   "live_last_run": false
+  },
+  "LUMINA_CMF_SOLVE_SELFTEST_NS": {
+   "class": "SCRAP-DEAD",
+   "why": "아무 런처도 설정하지 않음 — 분기가 밟히지 않는다",
+   "sites": [
+    "src/lumina_cmfgen.c:4986"
+   ],
+   "files": [
+    "lumina_cmfgen.c"
+   ],
+   "functions": [
+    "t"
+   ],
+   "launchers": 0,
+   "live_last_run": false
+  },
+  "LUMINA_CMF_SOLVE_SELFTEST_TAUS": {
+   "class": "SCRAP-DEAD",
+   "why": "아무 런처도 설정하지 않음 — 분기가 밟히지 않는다",
+   "sites": [
+    "src/lumina_cmfgen.c:4989"
+   ],
+   "files": [
+    "lumina_cmfgen.c"
+   ],
+   "functions": [
+    "t"
+   ],
+   "launchers": 0,
+   "live_last_run": false
+  },
+  "LUMINA_CMF_TAU_CUTOFF": {
+   "class": "SCRAP-DEAD",
+   "why": "아무 런처도 설정하지 않음 — 분기가 밟히지 않는다",
+   "sites": [
+    "src/lumina_plasma.c:16419"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 0,
+   "live_last_run": false
+  },
+  "LUMINA_CMF_VTURB_KMS": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 1개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_cuda.cu:10017",
+    "src/lumina_cuda.cu:10980",
+    "src/lumina_main.c:822"
+   ],
+   "files": [
+    "lumina_cuda.cu",
+    "lumina_main.c"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 1,
+   "live_last_run": false
+  },
+  "LUMINA_COEVOLVE_JBAR_DAMP": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 1개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_cuda.cu:9281",
+    "src/lumina_cuda.cu:9357",
+    "src/lumina_cuda.cu:9874"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 1,
+   "live_last_run": false
+  },
+  "LUMINA_COEVOLVE_PHOTOION_ALPHA": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 60개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_cuda.cu:7980",
+    "src/lumina_cuda.cu:7981",
+    "src/lumina_plasma.c:10510"
+   ],
+   "files": [
+    "lumina_cuda.cu",
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)",
+    "n"
+   ],
+   "launchers": 60,
+   "live_last_run": false
+  },
+  "LUMINA_COEVOLVE_PHOTOION_MC": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 60개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_cuda.cu:7978",
+    "src/lumina_cuda.cu:7979"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 60,
+   "live_last_run": false
+  },
+  "LUMINA_COEVOLVE_PHOTOION_OCC": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 2개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_plasma.c:9895",
+    "src/lumina_plasma.c:9896"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 2,
+   "live_last_run": false
+  },
+  "LUMINA_COEVOLVE_TAU_FLOOR": {
+   "class": "SCRAP-CLAMP",
+   "why": "이름이 clamp/floor/ceil — 규약상 물리가 아니다(개별 확인 필요)",
+   "sites": [
+    "src/lumina_cuda.cu:8717"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 0,
+   "live_last_run": false
+  },
+  "LUMINA_COUPLED_NEWTON": {
+   "class": "P-VERDICT",
+   "why": "판정런이 실제로 넘김 — 물리 판정 대상",
+   "sites": [
+    "src/lumina_cuda.cu:8383",
+    "src/lumina_cuda.cu:8384",
+    "src/lumina_cuda.cu:10726",
+    "src/lumina_cuda.cu:10727"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 88,
+   "live_last_run": true
+  },
+  "LUMINA_DEPOSITION_FILE": {
+   "class": "S-INPUT",
+   "why": "값이 경로·자원 지정 — 노브가 아니라 입력",
+   "sites": [
+    "src/lumina_cuda.cu:7801"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 77,
+   "live_last_run": true
+  },
+  "LUMINA_DETFLUOR_SL_CEIL": {
+   "class": "SCRAP-CLAMP",
+   "why": "이름이 clamp/floor/ceil — 규약상 물리가 아니다(개별 확인 필요)",
+   "sites": [
+    "src/lumina_cuda.cu:6832",
+    "src/lumina_cuda.cu:6837",
+    "src/lumina_cuda.cu:6837"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 0,
+   "live_last_run": false
+  },
+  "LUMINA_DIAG_SHELL": {
+   "class": "SCRAP-DEAD",
+   "why": "아무 런처도 설정하지 않음 — 분기가 밟히지 않는다",
+   "sites": [
+    "src/lumina_plasma.c:12604"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 0,
+   "live_last_run": false
+  },
+  "LUMINA_DIAG_TE_PIN": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 1개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_plasma.c:10220"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 1,
+   "live_last_run": false
+  },
+  "LUMINA_DIFFUSE_INNER_BC": {
+   "class": "P-VERDICT",
+   "why": "판정런이 실제로 넘김 — 물리 판정 대상",
+   "sites": [
+    "src/lumina_cuda.cu:7200",
+    "src/lumina_cuda.cu:7201"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 117,
+   "live_last_run": true
+  },
+  "LUMINA_DIFFUSION_INNER_BC": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 11개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_cuda.cu:10863",
+    "src/lumina_main.c:727"
+   ],
+   "files": [
+    "lumina_cuda.cu",
+    "lumina_main.c"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 11,
+   "live_last_run": false
+  },
+  "LUMINA_DIP_TRACE": {
+   "class": "P-VERDICT",
+   "why": "판정런이 실제로 넘김 — 물리 판정 대상",
+   "sites": [
+    "src/lumina_cuda.cu:8422",
+    "src/lumina_cuda.cu:8422"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 48,
+   "live_last_run": true
+  },
+  "LUMINA_DR_BOOST": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 2개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_plasma.c:8599"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 2,
+   "live_last_run": false
+  },
+  "LUMINA_DR_FLOOR_CMS": {
+   "class": "SCRAP-CLAMP",
+   "why": "이름이 clamp/floor/ceil — 규약상 물리가 아니다(개별 확인 필요)",
+   "sites": [
+    "src/lumina_plasma.c:14237"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 2,
+   "live_last_run": false
+  },
+  "LUMINA_DYNAMIC_TRANSPROB": {
+   "class": "P-VERDICT",
+   "why": "판정런이 실제로 넘김 — 물리 판정 대상",
+   "sites": [
+    "src/lumina_cuda.cu:7144",
+    "src/lumina_cuda.cu:7145",
+    "src/lumina_main.c:186",
+    "src/lumina_main.c:187"
+   ],
+   "files": [
+    "lumina_cuda.cu",
+    "lumina_main.c"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 298,
+   "live_last_run": true
+  },
+  "LUMINA_EMERGENT_MODE": {
+   "class": "SCRAP-DEAD",
+   "why": "아무 런처도 설정하지 않음 — 분기가 밟히지 않는다",
+   "sites": [
+    "src/lumina_cuda.cu:6818"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 0,
+   "live_last_run": false
+  },
+  "LUMINA_EMISS_AB_DUMP": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 4개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_cuda.cu:7934"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 4,
+   "live_last_run": false
+  },
+  "LUMINA_EMISS_AB_SEED": {
+   "class": "SCRAP-DEAD",
+   "why": "아무 런처도 설정하지 않음 — 분기가 밟히지 않는다",
+   "sites": [
+    "src/lumina_cuda.cu:7957"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 0,
+   "live_last_run": false
+  },
+  "LUMINA_EMIT_EBOOST_FIX": {
+   "class": "SCRAP-DEAD",
+   "why": "아무 런처도 설정하지 않음 — 분기가 밟히지 않는다",
+   "sites": [
+    "src/lumina_cuda.cu:7454",
+    "src/lumina_cuda.cu:7455"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 0,
+   "live_last_run": false
+  },
+  "LUMINA_ENERGY_BUDGET": {
+   "class": "P-VERDICT",
+   "why": "판정런이 실제로 넘김 — 물리 판정 대상",
+   "sites": [
+    "src/lumina_cuda.cu:10460",
+    "src/lumina_cuda.cu:10461"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 117,
+   "live_last_run": true
+  },
+  "LUMINA_ENV_STRICT": {
+   "class": "S-CONTRACT",
+   "why": "0층 계약이 요구하는 게이트",
+   "sites": [
+    "src/lumina_atomic.c:868"
+   ],
+   "files": [
+    "lumina_atomic.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 2,
+   "live_last_run": true
+  },
+  "LUMINA_EPS_IR": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 8개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_cuda.cu:7265",
+    "src/lumina_cuda.cu:7266"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 8,
+   "live_last_run": false
+  },
+  "LUMINA_EPS_UV": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 47개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_cuda.cu:7246",
+    "src/lumina_cuda.cu:7247"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 47,
+   "live_last_run": false
+  },
+  "LUMINA_EPS_UV_2STEP": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 1개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_cuda.cu:7297",
+    "src/lumina_cuda.cu:7298"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 1,
+   "live_last_run": false
+  },
+  "LUMINA_EPS_UV_2STEP_BAND_HI": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 1개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_cuda.cu:7301",
+    "src/lumina_cuda.cu:7302"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 1,
+   "live_last_run": false
+  },
+  "LUMINA_EPS_UV_2STEP_BAND_LO": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 1개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_cuda.cu:7299",
+    "src/lumina_cuda.cu:7300"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 1,
+   "live_last_run": false
+  },
+  "LUMINA_EPS_UV_RED_ONLY": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 43개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_cuda.cu:7283",
+    "src/lumina_cuda.cu:7284"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 43,
+   "live_last_run": false
+  },
+  "LUMINA_ETLA_ALLOW_HEAT": {
+   "class": "P-VERDICT",
+   "why": "판정런이 실제로 넘김 — 물리 판정 대상",
+   "sites": [
+    "src/lumina_plasma.c:11546"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 24,
+   "live_last_run": true
+  },
+  "LUMINA_EVENT_LOG": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 76개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_cuda.cu:7989",
+    "src/lumina_cuda.cu:7990"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 76,
+   "live_last_run": false
+  },
+  "LUMINA_EVENT_LOG_CAP": {
+   "class": "SCRAP-CLAMP",
+   "why": "이름이 clamp/floor/ceil — 규약상 물리가 아니다(개별 확인 필요)",
+   "sites": [
+    "src/lumina_cuda.cu:8000",
+    "src/lumina_cuda.cu:8001"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 67,
+   "live_last_run": false
+  },
+  "LUMINA_EVENT_LOG_ESCATTER": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 26개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_cuda.cu:8006",
+    "src/lumina_cuda.cu:8007"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 26,
+   "live_last_run": false
+  },
+  "LUMINA_EVENT_LOG_ITERS": {
+   "class": "SCRAP-DEAD",
+   "why": "아무 런처도 설정하지 않음 — 분기가 밟히지 않는다",
+   "sites": [
+    "src/lumina_cuda.cu:8008"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 0,
+   "live_last_run": false
+  },
+  "LUMINA_EVENT_LOG_LAMBDA_MAX": {
+   "class": "SCRAP-CLAMP",
+   "why": "이름이 clamp/floor/ceil — 규약상 물리가 아니다(개별 확인 필요)",
+   "sites": [
+    "src/lumina_cuda.cu:8004",
+    "src/lumina_cuda.cu:8005"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 1,
+   "live_last_run": false
+  },
+  "LUMINA_EW_FROZEN_COMMIT": {
+   "class": "SCRAP-DEAD",
+   "why": "아무 런처도 설정하지 않음 — 분기가 밟히지 않는다",
+   "sites": [
+    "src/lumina_element_wide.c:199",
+    "src/lumina_element_wide.c:2457"
+   ],
+   "files": [
+    "lumina_element_wide.c"
+   ],
+   "functions": [
+    "d"
+   ],
+   "launchers": 0,
+   "live_last_run": false
+  },
+  "LUMINA_FB_COOL_KT": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 24개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_plasma.c:3605"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 24,
+   "live_last_run": false
+  },
+  "LUMINA_FB_MILNE_EXACT": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 4개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_plasma.c:5221"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 4,
+   "live_last_run": false
+  },
+  "LUMINA_FEIII_COLDATA": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 1개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_cuda.cu:6988",
+    "src/lumina_plasma.c:8937"
+   ],
+   "files": [
+    "lumina_cuda.cu",
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)",
+    "n"
+   ],
+   "launchers": 1,
+   "live_last_run": false
+  },
+  "LUMINA_FE_SCATTER": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 2개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_cuda.cu:7149",
+    "src/lumina_cuda.cu:7150",
+    "src/lumina_main.c:192",
+    "src/lumina_main.c:193"
+   ],
+   "files": [
+    "lumina_cuda.cu",
+    "lumina_main.c"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 2,
+   "live_last_run": false
+  },
+  "LUMINA_FINE_NCHUNK": {
+   "class": "SCRAP-DEAD",
+   "why": "아무 런처도 설정하지 않음 — 분기가 밟히지 않는다",
+   "sites": [
+    "src/lumina_cmfgen.c:4263"
+   ],
+   "files": [
+    "lumina_cmfgen.c"
+   ],
+   "functions": [
+    "r"
+   ],
+   "launchers": 0,
+   "live_last_run": false
+  },
+  "LUMINA_FINE_OWNER": {
+   "class": "SCRAP-DEAD",
+   "why": "아무 런처도 설정하지 않음 — 분기가 밟히지 않는다",
+   "sites": [
+    "src/lumina_cmfgen.c:4249"
+   ],
+   "files": [
+    "lumina_cmfgen.c"
+   ],
+   "functions": [
+    "r"
+   ],
+   "launchers": 0,
+   "live_last_run": false
+  },
+  "LUMINA_FIXED_NE_PROFILE": {
+   "class": "S-INPUT",
+   "why": "값이 경로·자원 지정 — 노브가 아니라 입력",
+   "sites": [
+    "src/lumina_plasma.c:6691"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 2,
+   "live_last_run": false
+  },
+  "LUMINA_FIXED_TE_PROFILE": {
+   "class": "S-INPUT",
+   "why": "값이 경로·자원 지정 — 노브가 아니라 입력",
+   "sites": [
+    "src/lumina_plasma.c:11982"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 2,
+   "live_last_run": false
+  },
+  "LUMINA_FIX_BF_CONTINUUM_EVENT": {
+   "class": "SCRAP-DEAD",
+   "why": "아무 런처도 설정하지 않음 — 분기가 밟히지 않는다",
+   "sites": [
+    "src/lumina_atomic.c:2123",
+    "src/lumina_plasma.c:6971"
+   ],
+   "files": [
+    "lumina_atomic.c",
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 0,
+   "live_last_run": false
+  },
+  "LUMINA_FIX_BF_ETA_SPINGATE": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 1개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_plasma.c:6980"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 1,
+   "live_last_run": false
+  },
+  "LUMINA_FIX_BF_MULTI_EDGE": {
+   "class": "SCRAP-DEAD",
+   "why": "아무 런처도 설정하지 않음 — 분기가 밟히지 않는다",
+   "sites": [
+    "src/lumina_cuda.cu:7228",
+    "src/lumina_plasma.c:6957"
+   ],
+   "files": [
+    "lumina_cuda.cu",
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)",
+    "n"
+   ],
+   "launchers": 0,
+   "live_last_run": false
+  },
+  "LUMINA_FIX_BF_NEUTRAL": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 1개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_plasma.c:6948"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 1,
+   "live_last_run": false
+  },
+  "LUMINA_FIX_BF_STIM_RECOMB": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 1개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_atomic.c:1030",
+    "src/lumina_atomic.c:2122",
+    "src/lumina_plasma.c:6939"
+   ],
+   "files": [
+    "lumina_atomic.c",
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 1,
+   "live_last_run": false
+  },
+  "LUMINA_FIX_MA_J_UNCLAMP": {
+   "class": "SCRAP-CLAMP",
+   "why": "이름이 clamp/floor/ceil — 규약상 물리가 아니다(개별 확인 필요)",
+   "sites": [
+    "src/lumina_plasma.c:3740"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 0,
+   "live_last_run": false
+  },
+  "LUMINA_FIX_MA_NO_LINE_THERM": {
+   "class": "SCRAP-DEAD",
+   "why": "아무 런처도 설정하지 않음 — 분기가 밟히지 않는다",
+   "sites": [
+    "src/lumina_cuda.cu:7404"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 0,
+   "live_last_run": false
+  },
+  "LUMINA_FI_CLAMP_SL": {
+   "class": "SCRAP-CLAMP",
+   "why": "이름이 clamp/floor/ceil — 규약상 물리가 아니다(개별 확인 필요)",
+   "sites": [
+    "src/lumina_plasma.c:15964"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 1,
+   "live_last_run": false
+  },
+  "LUMINA_FI_CONT_OPACITY": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 3개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_plasma.c:15933"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 3,
+   "live_last_run": false
+  },
+  "LUMINA_FI_FOREST_NOBLANK": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 1개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_plasma.c:15979"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 1,
+   "live_last_run": false
+  },
+  "LUMINA_FI_INNER_DILUTE": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 2개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_plasma.c:15934"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 2,
+   "live_last_run": false
+  },
+  "LUMINA_FI_LEDGER": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 1개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_plasma.c:15981"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 1,
+   "live_last_run": false
+  },
+  "LUMINA_FI_TAU_CUTOFF": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 1개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_plasma.c:15932"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 1,
+   "live_last_run": false
+  },
+  "LUMINA_FLUOR_MATRIX_DUMP": {
+   "class": "SCRAP-DEAD",
+   "why": "아무 런처도 설정하지 않음 — 분기가 밟히지 않는다",
+   "sites": [
+    "src/lumina_cuda.cu:7347"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 0,
+   "live_last_run": false
+  },
+  "LUMINA_FLUOR_MATRIX_ITER": {
+   "class": "SCRAP-DEAD",
+   "why": "아무 런처도 설정하지 않음 — 분기가 밟히지 않는다",
+   "sites": [
+    "src/lumina_cuda.cu:4306"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "t"
+   ],
+   "launchers": 0,
+   "live_last_run": false
+  },
+  "LUMINA_FLUOR_MATRIX_OVERWRITE": {
+   "class": "SCRAP-DEAD",
+   "why": "아무 런처도 설정하지 않음 — 분기가 밟히지 않는다",
+   "sites": [
+    "src/lumina_cuda.cu:4316"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "t"
+   ],
+   "launchers": 0,
+   "live_last_run": false
+  },
+  "LUMINA_FLUOR_ORACLE_LAM_HI": {
+   "class": "SCRAP-DEAD",
+   "why": "아무 런처도 설정하지 않음 — 분기가 밟히지 않는다",
+   "sites": [
+    "src/lumina_plasma.c:14905"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 0,
+   "live_last_run": false
+  },
+  "LUMINA_FLUOR_ORACLE_LAM_LO": {
+   "class": "SCRAP-DEAD",
+   "why": "아무 런처도 설정하지 않음 — 분기가 밟히지 않는다",
+   "sites": [
+    "src/lumina_plasma.c:14904"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 0,
+   "live_last_run": false
+  },
+  "LUMINA_FLUOR_ORACLE_X": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 1개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_plasma.c:14902"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 1,
+   "live_last_run": false
+  },
+  "LUMINA_FORMAL_CONS_WINDOW": {
+   "class": "SCRAP-DEAD",
+   "why": "아무 런처도 설정하지 않음 — 분기가 밟히지 않는다",
+   "sites": [
+    "src/lumina_plasma.c:16344"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 0,
+   "live_last_run": false
+  },
+  "LUMINA_FORMAL_FIX": {
+   "class": "SCRAP-DEAD",
+   "why": "아무 런처도 설정하지 않음 — 분기가 밟히지 않는다",
+   "sites": [
+    "src/lumina_plasma.c:15957"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 0,
+   "live_last_run": false
+  },
+  "LUMINA_FROZENIN": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 92개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_plasma.c:6004",
+    "src/lumina_plasma.c:6632"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 92,
+   "live_last_run": false
+  },
+  "LUMINA_FROZENIN_DR": {
+   "class": "P-VERDICT",
+   "why": "판정런이 실제로 넘김 — 물리 판정 대상",
+   "sites": [
+    "src/lumina_plasma.c:6174",
+    "src/lumina_plasma.c:10319",
+    "src/lumina_plasma.c:10319"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 41,
+   "live_last_run": true
+  },
+  "LUMINA_FROZENIN_NT": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 2개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_plasma.c:6431"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 2,
+   "live_last_run": false
+  },
+  "LUMINA_FROZENIN_NT_THR": {
+   "class": "SCRAP-DEAD",
+   "why": "아무 런처도 설정하지 않음 — 분기가 밟히지 않는다",
+   "sites": [
+    "src/lumina_plasma.c:6433"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 0,
+   "live_last_run": false
+  },
+  "LUMINA_GAMMA_DEP": {
+   "class": "P-VERDICT",
+   "why": "판정런이 실제로 넘김 — 물리 판정 대상",
+   "sites": [
+    "src/lumina_cuda.cu:7321",
+    "src/lumina_cuda.cu:7321",
+    "src/lumina_main.c:199",
+    "src/lumina_main.c:199"
+   ],
+   "files": [
+    "lumina_cuda.cu",
+    "lumina_main.c"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 76,
+   "live_last_run": true
+  },
+  "LUMINA_GATEB_ORACLE_CAPTURE": {
+   "class": "SCRAP-DEAD",
+   "why": "아무 런처도 설정하지 않음 — 분기가 밟히지 않는다",
+   "sites": [
+    "src/lumina_cuda.cu:8920",
+    "src/lumina_cuda.cu:8921",
+    "src/lumina_plasma.c:12636"
+   ],
+   "files": [
+    "lumina_cuda.cu",
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)",
+    "n"
+   ],
+   "launchers": 0,
+   "live_last_run": false
+  },
+  "LUMINA_GPH_ALLLEVEL": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 59개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_plasma.c:10278"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 59,
+   "live_last_run": false
+  },
+  "LUMINA_GPH_ALLLEVEL_NLTE": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 22개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_plasma.c:10297"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 22,
+   "live_last_run": false
+  },
+  "LUMINA_GPH_JTABLE": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 3개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_plasma.c:10338"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 3,
+   "live_last_run": false
+  },
+  "LUMINA_GPH_SIGMA_CMFGEN": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 66개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_plasma.c:10235"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 66,
+   "live_last_run": false
+  },
+  "LUMINA_HRESP_CLAMP": {
+   "class": "SCRAP-CLAMP",
+   "why": "이름이 clamp/floor/ceil — 규약상 물리가 아니다(개별 확인 필요)",
+   "sites": [
+    "src/lumina_plasma.c:11473"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 27,
+   "live_last_run": true
+  },
+  "LUMINA_INNER_BB_SCALE": {
+   "class": "P-VERDICT",
+   "why": "판정런이 실제로 넘김 — 물리 판정 대상",
+   "sites": [
+    "src/lumina_cmfgen.c:85"
+   ],
+   "files": [
+    "lumina_cmfgen.c"
+   ],
+   "functions": [
+    "e"
+   ],
+   "launchers": 73,
+   "live_last_run": true
+  },
+  "LUMINA_IONIZ_SELFTEST": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 1개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_plasma.c:9848"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 1,
+   "live_last_run": false
+  },
+  "LUMINA_ION_FRAC_DUMP": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 1개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_plasma.c:6892",
+    "src/lumina_plasma.c:6892"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 1,
+   "live_last_run": false
+  },
+  "LUMINA_ION_FRAC_Z": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 1개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_plasma.c:6895"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 1,
+   "live_last_run": false
+  },
+  "LUMINA_ION_NT": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 1개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_plasma.c:2516"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 1,
+   "live_last_run": false
+  },
+  "LUMINA_ION_POP_DUMP": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 99개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_cuda.cu:10054",
+    "src/lumina_cuda.cu:10054",
+    "src/lumina_cuda.cu:11052",
+    "src/lumina_cuda.cu:11052"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 99,
+   "live_last_run": false
+  },
+  "LUMINA_ION_POP_DUMP_ITER": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 6개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_cuda.cu:8430",
+    "src/lumina_cuda.cu:8431"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 6,
+   "live_last_run": false
+  },
+  "LUMINA_IUP_BINFIELD": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 2개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_plasma.c:4009"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 2,
+   "live_last_run": false
+  },
+  "LUMINA_IUP_JBLUE": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 5개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_cuda.cu:8028",
+    "src/lumina_cuda.cu:8028",
+    "src/lumina_plasma.c:3977"
+   ],
+   "files": [
+    "lumina_cuda.cu",
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)",
+    "n"
+   ],
+   "launchers": 5,
+   "live_last_run": false
+  },
+  "LUMINA_JBAR_DAMP_UNIFY": {
+   "class": "SCRAP-DEAD",
+   "why": "아무 런처도 설정하지 않음 — 분기가 밟히지 않는다",
+   "sites": [
+    "src/lumina_cuda.cu:942"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "y"
+   ],
+   "launchers": 0,
+   "live_last_run": false
+  },
+  "LUMINA_JBAR_DUMP": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 19개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_plasma.c:12630"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 19,
+   "live_last_run": false
+  },
+  "LUMINA_JBAR_DUMP_IONS": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 9개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_plasma.c:12633"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 9,
+   "live_last_run": false
+  },
+  "LUMINA_JBAR_LINE_DUMP": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 1개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_cuda.cu:10513",
+    "src/lumina_cuda.cu:10514"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 1,
+   "live_last_run": false
+  },
+  "LUMINA_JBAR_MIN": {
+   "class": "SCRAP-CLAMP",
+   "why": "이름이 clamp/floor/ceil — 규약상 물리가 아니다(개별 확인 필요)",
+   "sites": [
+    "src/lumina_cuda.cu:9877",
+    "src/lumina_plasma.c:3958",
+    "src/lumina_plasma.c:12947"
+   ],
+   "files": [
+    "lumina_cuda.cu",
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)",
+    "n"
+   ],
+   "launchers": 2,
+   "live_last_run": false
+  },
+  "LUMINA_JBAR_POPS_DAMP": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 1개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_cmfgen.c:5329",
+    "src/lumina_cuda.cu:9876",
+    "src/lumina_cuda.cu:10554"
+   ],
+   "files": [
+    "lumina_cmfgen.c",
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 1,
+   "live_last_run": false
+  },
+  "LUMINA_JBAR_SRC_BINNED": {
+   "class": "SCRAP-DEAD",
+   "why": "아무 런처도 설정하지 않음 — 분기가 밟히지 않는다",
+   "sites": [
+    "src/lumina_plasma.c:12960"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 0,
+   "live_last_run": false
+  },
+  "LUMINA_JBAR_UNIFY": {
+   "class": "SCRAP-DEAD",
+   "why": "아무 런처도 설정하지 않음 — 분기가 밟히지 않는다",
+   "sites": [
+    "src/lumina_plasma.c:3956"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 0,
+   "live_last_run": false
+  },
+  "LUMINA_JNU_FINE_DUMP": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 22개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_plasma.c:1713",
+    "src/lumina_plasma.c:1713"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 22,
+   "live_last_run": false
+  },
+  "LUMINA_JPROBE": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 3개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_cuda.cu:8313",
+    "src/lumina_cuda.cu:8382",
+    "src/lumina_cuda.cu:8401"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 3,
+   "live_last_run": false
+  },
+  "LUMINA_J_CAP_FACTOR": {
+   "class": "SCRAP-CLAMP",
+   "why": "이름이 clamp/floor/ceil — 규약상 물리가 아니다(개별 확인 필요)",
+   "sites": [
+    "src/lumina_plasma.c:3713"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 2,
+   "live_last_run": false
+  },
+  "LUMINA_J_DAMP": {
+   "class": "P-VERDICT",
+   "why": "판정런이 실제로 넘김 — 물리 판정 대상",
+   "sites": [
+    "src/lumina_cuda.cu:8141"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 19,
+   "live_last_run": true
+  },
+  "LUMINA_J_FLOOR_FACTOR": {
+   "class": "SCRAP-CLAMP",
+   "why": "이름이 clamp/floor/ceil — 규약상 물리가 아니다(개별 확인 필요)",
+   "sites": [
+    "src/lumina_plasma.c:3729"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 0,
+   "live_last_run": false
+  },
+  "LUMINA_J_NU_UV_CAP": {
+   "class": "SCRAP-CLAMP",
+   "why": "이름이 clamp/floor/ceil — 규약상 물리가 아니다(개별 확인 필요)",
+   "sites": [
+    "src/lumina_plasma.c:12453"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 2,
+   "live_last_run": false
+  },
+  "LUMINA_J_NU_UV_CAP_LAMBDA_MAX": {
+   "class": "SCRAP-CLAMP",
+   "why": "이름이 clamp/floor/ceil — 규약상 물리가 아니다(개별 확인 필요)",
+   "sites": [
+    "src/lumina_plasma.c:12455"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 2,
+   "live_last_run": false
+  },
+  "LUMINA_J_NU_UV_CAP_LAMBDA_MIN": {
+   "class": "SCRAP-CLAMP",
+   "why": "이름이 clamp/floor/ceil — 규약상 물리가 아니다(개별 확인 필요)",
+   "sites": [
+    "src/lumina_plasma.c:12457"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 2,
+   "live_last_run": false
+  },
+  "LUMINA_J_NU_UV_W_CAP": {
+   "class": "SCRAP-CLAMP",
+   "why": "이름이 clamp/floor/ceil — 규약상 물리가 아니다(개별 확인 필요)",
+   "sites": [
+    "src/lumina_plasma.c:12459"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 2,
+   "live_last_run": false
+  },
+  "LUMINA_KPACKET": {
+   "class": "P-VERDICT",
+   "why": "판정런이 실제로 넘김 — 물리 판정 대상",
+   "sites": [
+    "src/lumina_cuda.cu:225",
+    "src/lumina_cuda.cu:225",
+    "src/lumina_cuda.cu:7034",
+    "src/lumina_cuda.cu:7035",
+    "src/lumina_plasma.c:4048"
+   ],
+   "files": [
+    "lumina_cuda.cu",
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)",
+    "e",
+    "n"
+   ],
+   "launchers": 84,
+   "live_last_run": true
+  },
+  "LUMINA_KPACKET_EXIT": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 59개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_cuda.cu:7213",
+    "src/lumina_cuda.cu:7214"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 59,
+   "live_last_run": false
+  },
+  "LUMINA_KPACKET_ONESHOT": {
+   "class": "SCRAP-DEAD",
+   "why": "아무 런처도 설정하지 않음 — 분기가 밟히지 않는다",
+   "sites": [
+    "src/lumina_cuda.cu:7208",
+    "src/lumina_cuda.cu:7209"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 0,
+   "live_last_run": false
+  },
+  "LUMINA_KPEMISS_BSRC_PHOT": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 16개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_cuda.cu:7606",
+    "src/lumina_cuda.cu:7607"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 16,
+   "live_last_run": false
+  },
+  "LUMINA_KPEMISS_BSRC_PHOT_SRC": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 16개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_cuda.cu:7612"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 16,
+   "live_last_run": false
+  },
+  "LUMINA_KPEMISS_BSRC_PHOT_WFLOOR": {
+   "class": "SCRAP-CLAMP",
+   "why": "이름이 clamp/floor/ceil — 규약상 물리가 아니다(개별 확인 필요)",
+   "sites": [
+    "src/lumina_cuda.cu:7609"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 1,
+   "live_last_run": false
+  },
+  "LUMINA_KPEMISS_BSRC_PHOT_XION": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 14개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_cuda.cu:7614",
+    "src/lumina_cuda.cu:7615"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 14,
+   "live_last_run": false
+  },
+  "LUMINA_KPEMISS_BSRC_SRC": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 22개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_cuda.cu:7581"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 22,
+   "live_last_run": false
+  },
+  "LUMINA_KPEMISS_BSRC_TAU": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 25개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_cuda.cu:7576",
+    "src/lumina_cuda.cu:7577"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 25,
+   "live_last_run": false
+  },
+  "LUMINA_KPEMISS_BSRC_WFLOOR": {
+   "class": "SCRAP-CLAMP",
+   "why": "이름이 clamp/floor/ceil — 규약상 물리가 아니다(개별 확인 필요)",
+   "sites": [
+    "src/lumina_cuda.cu:7610"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 0,
+   "live_last_run": false
+  },
+  "LUMINA_KPEMISS_COOLGUARD": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 23개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_cuda.cu:7656"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 23,
+   "live_last_run": false
+  },
+  "LUMINA_KPEMISS_FB_OTS": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 16개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_cuda.cu:7616",
+    "src/lumina_cuda.cu:7617"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 16,
+   "live_last_run": false
+  },
+  "LUMINA_KPEMISS_FB_OTS_NUMIN": {
+   "class": "SCRAP-CLAMP",
+   "why": "이름이 clamp/floor/ceil — 규약상 물리가 아니다(개별 확인 필요)",
+   "sites": [
+    "src/lumina_cuda.cu:7618"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 16,
+   "live_last_run": false
+  },
+  "LUMINA_KPEMISS_OTS_MODE": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 15개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_cuda.cu:7621"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 15,
+   "live_last_run": false
+  },
+  "LUMINA_KPEMISS_OTS_TAU": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 15개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_cuda.cu:7623"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 15,
+   "live_last_run": false
+  },
+  "LUMINA_KPEMISS_REPAIR": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 26개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_cuda.cu:7567",
+    "src/lumina_cuda.cu:7568"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 26,
+   "live_last_run": false
+  },
+  "LUMINA_KPEMISS_SE_POPS": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 26개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_cuda.cu:7574",
+    "src/lumina_cuda.cu:7575"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 26,
+   "live_last_run": false
+  },
+  "LUMINA_KPKT_FB_MULTI": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 29개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_plasma.c:6958"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 29,
+   "live_last_run": false
+  },
+  "LUMINA_KROMER": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 57개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_cuda.cu:298",
+    "src/lumina_cuda.cu:298",
+    "src/lumina_cuda.cu:7874",
+    "src/lumina_cuda.cu:7874"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "e",
+    "n"
+   ],
+   "launchers": 57,
+   "live_last_run": false
+  },
+  "LUMINA_LEVELPOP_DUMP": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 3개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_cuda.cu:9810"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 3,
+   "live_last_run": false
+  },
+  "LUMINA_LINE_BSRC": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 26개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_cuda.cu:7441",
+    "src/lumina_cuda.cu:7441"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 26,
+   "live_last_run": false
+  },
+  "LUMINA_LINE_BSRC_MODE": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 26개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_cuda.cu:7444",
+    "src/lumina_cuda.cu:7444"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 26,
+   "live_last_run": false
+  },
+  "LUMINA_LINE_INTERACTION": {
+   "class": "P-VERDICT",
+   "why": "판정런이 실제로 넘김 — 물리 판정 대상",
+   "sites": [
+    "src/lumina_cuda.cu:6912",
+    "src/lumina_main.c:102"
+   ],
+   "files": [
+    "lumina_cuda.cu",
+    "lumina_main.c"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 139,
+   "live_last_run": true
+  },
+  "LUMINA_LINE_THERM": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 15개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_cuda.cu:7407",
+    "src/lumina_cuda.cu:7408",
+    "src/lumina_plasma.c:10188",
+    "src/lumina_plasma.c:10188"
+   ],
+   "files": [
+    "lumina_cuda.cu",
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)",
+    "n"
+   ],
+   "launchers": 15,
+   "live_last_run": false
+  },
+  "LUMINA_LINE_THERM_SMAX": {
+   "class": "SCRAP-CLAMP",
+   "why": "이름이 clamp/floor/ceil — 규약상 물리가 아니다(개별 확인 필요)",
+   "sites": [
+    "src/lumina_cuda.cu:7411",
+    "src/lumina_cuda.cu:7411",
+    "src/lumina_cuda.cu:7420",
+    "src/lumina_plasma.c:10190",
+    "src/lumina_plasma.c:10190"
+   ],
+   "files": [
+    "lumina_cuda.cu",
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)",
+    "n"
+   ],
+   "launchers": 15,
+   "live_last_run": false
+  },
+  "LUMINA_LOCK_IONMASK": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 1개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_plasma.c:1861"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 1,
+   "live_last_run": false
+  },
+  "LUMINA_LOCK_W_THRESH": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 1개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_plasma.c:1848"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 1,
+   "live_last_run": false
+  },
+  "LUMINA_LOCK_ZMASK": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 1개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_plasma.c:1851"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 1,
+   "live_last_run": false
+  },
+  "LUMINA_MACROATOM_BF": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 2개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_plasma.c:3274"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 2,
+   "live_last_run": false
+  },
+  "LUMINA_MACROATOM_EWEIGHT": {
+   "class": "P-VERDICT",
+   "why": "판정런이 실제로 넘김 — 물리 판정 대상",
+   "sites": [
+    "src/lumina_plasma.c:4078"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 76,
+   "live_last_run": true
+  },
+  "LUMINA_MACROATOM_IDOWN_BETA": {
+   "class": "P-VERDICT",
+   "why": "판정런이 실제로 넘김 — 물리 판정 대상",
+   "sites": [
+    "src/lumina_plasma.c:3913"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 2,
+   "live_last_run": true
+  },
+  "LUMINA_MACROATOM_IDOWN_COLL": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 1개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_plasma.c:3919"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 1,
+   "live_last_run": false
+  },
+  "LUMINA_MACROATOM_IUP_BETA": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 2개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_plasma.c:3973"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 2,
+   "live_last_run": false
+  },
+  "LUMINA_MACROATOM_IUP_TRAD": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 1개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_plasma.c:3968"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 1,
+   "live_last_run": false
+  },
+  "LUMINA_MACROATOM_NEUTRAL_E": {
+   "class": "P-VERDICT",
+   "why": "판정런이 실제로 넘김 — 물리 판정 대상",
+   "sites": [
+    "src/lumina_plasma.c:4089"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 75,
+   "live_last_run": true
+  },
+  "LUMINA_MACRO_UV_IDOWN_FACTOR": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 3개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_plasma.c:3870"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 3,
+   "live_last_run": false
+  },
+  "LUMINA_MACRO_UV_IDOWN_IONMASK": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 3개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_plasma.c:3873"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 3,
+   "live_last_run": false
+  },
+  "LUMINA_MACRO_UV_IDOWN_THRESH": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 3개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_plasma.c:3871"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 3,
+   "live_last_run": false
+  },
+  "LUMINA_MACRO_UV_IDOWN_ZMASK": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 3개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_plasma.c:3872"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 3,
+   "live_last_run": false
+  },
+  "LUMINA_MALI": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 1개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_element_wide.c:2109",
+    "src/lumina_plasma.c:12849"
+   ],
+   "files": [
+    "lumina_element_wide.c",
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)",
+    "l"
+   ],
+   "launchers": 1,
+   "live_last_run": false
+  },
+  "LUMINA_MAX_INTERACTIONS": {
+   "class": "P-VERDICT",
+   "why": "판정런이 실제로 넘김 — 물리 판정 대상",
+   "sites": [
+    "src/lumina_cuda.cu:7156",
+    "src/lumina_cuda.cu:7157"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 110,
+   "live_last_run": true
+  },
+  "LUMINA_MAX_TOTAL_STEPS": {
+   "class": "SCRAP-DEAD",
+   "why": "아무 런처도 설정하지 않음 — 분기가 밟히지 않는다",
+   "sites": [
+    "src/lumina_cuda.cu:7181",
+    "src/lumina_cuda.cu:7182"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 0,
+   "live_last_run": false
+  },
+  "LUMINA_MA_CAP_EMIT": {
+   "class": "SCRAP-CLAMP",
+   "why": "이름이 clamp/floor/ceil — 규약상 물리가 아니다(개별 확인 필요)",
+   "sites": [
+    "src/lumina_cuda.cu:7219",
+    "src/lumina_cuda.cu:7220",
+    "src/lumina_cuda.cu:8950",
+    "src/lumina_cuda.cu:8951"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 1,
+   "live_last_run": false
+  },
+  "LUMINA_MA_COLLISION_LIMIT_EV": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 1개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_plasma.c:3924"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 1,
+   "live_last_run": false
+  },
+  "LUMINA_MA_FATE_ZIHIST": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 3개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_cuda.cu:7312",
+    "src/lumina_cuda.cu:7313"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 3,
+   "live_last_run": false
+  },
+  "LUMINA_MA_INTERNAL_CAP": {
+   "class": "SCRAP-CLAMP",
+   "why": "이름이 clamp/floor/ceil — 규약상 물리가 아니다(개별 확인 필요)",
+   "sites": [
+    "src/lumina_cuda.cu:7191",
+    "src/lumina_cuda.cu:7192"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 1,
+   "live_last_run": false
+  },
+  "LUMINA_MA_LINE_DESTRUCT": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 23개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_cuda.cu:266",
+    "src/lumina_cuda.cu:267",
+    "src/lumina_plasma.c:4272"
+   ],
+   "files": [
+    "lumina_cuda.cu",
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)",
+    "e"
+   ],
+   "launchers": 23,
+   "live_last_run": false
+  },
+  "LUMINA_MA_RADRECOMB": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 22개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_cuda.cu:6962",
+    "src/lumina_plasma.c:3295",
+    "src/lumina_plasma.c:7488"
+   ],
+   "files": [
+    "lumina_cuda.cu",
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)",
+    "n"
+   ],
+   "launchers": 22,
+   "live_last_run": false
+  },
+  "LUMINA_MA_RADRECOMB_TARGET": {
+   "class": "SCRAP-DEAD",
+   "why": "아무 런처도 설정하지 않음 — 분기가 밟히지 않는다",
+   "sites": [
+    "src/lumina_atomic.c:2126",
+    "src/lumina_cuda.cu:6965"
+   ],
+   "files": [
+    "lumina_atomic.c",
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "(file scope)",
+    "n"
+   ],
+   "launchers": 0,
+   "live_last_run": false
+  },
+  "LUMINA_MA_REAL_UPSILON": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 22개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_plasma.c:4151"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 22,
+   "live_last_run": false
+  },
+  "LUMINA_MC_COEVOLVE": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 1개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_cuda.cu:7345",
+    "src/lumina_cuda.cu:7346"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 1,
+   "live_last_run": false
+  },
+  "LUMINA_MC_COEVOLVE_CONSUME": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 1개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_cuda.cu:9235",
+    "src/lumina_cuda.cu:9873"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 1,
+   "live_last_run": false
+  },
+  "LUMINA_MC_COEVOLVE_INJECT": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 2개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_cuda.cu:8713"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 2,
+   "live_last_run": false
+  },
+  "LUMINA_MC_INJECT_SHELL": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 2개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_cuda.cu:8760",
+    "src/lumina_cuda.cu:10147"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 2,
+   "live_last_run": false
+  },
+  "LUMINA_MC_JDUMP": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 2개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_cuda.cu:10535",
+    "src/lumina_cuda.cu:10535",
+    "src/lumina_plasma.c:12418"
+   ],
+   "files": [
+    "lumina_cuda.cu",
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)",
+    "n"
+   ],
+   "launchers": 2,
+   "live_last_run": false
+  },
+  "LUMINA_ML_PHI_NEB_BOOST": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 1개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_plasma.c:2270"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 1,
+   "live_last_run": false
+  },
+  "LUMINA_ML_PHI_NEB_IONMASK": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 1개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_plasma.c:2285"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 1,
+   "live_last_run": false
+  },
+  "LUMINA_ML_PHI_NEB_T_RATIO_EXP": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 1개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_plasma.c:2272"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 1,
+   "live_last_run": false
+  },
+  "LUMINA_ML_PHI_NEB_ZMASK": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 1개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_plasma.c:2275"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 1,
+   "live_last_run": false
+  },
+  "LUMINA_NLTE": {
+   "class": "P-VERDICT",
+   "why": "판정런이 실제로 넘김 — 물리 판정 대상",
+   "sites": [
+    "src/lumina_cuda.cu:7128",
+    "src/lumina_cuda.cu:7128",
+    "src/lumina_main.c:175",
+    "src/lumina_main.c:175"
+   ],
+   "files": [
+    "lumina_cuda.cu",
+    "lumina_main.c"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 75,
+   "live_last_run": true
+  },
+  "LUMINA_NLTE_ASSEMBLE_GPU": {
+   "class": "P-VERDICT",
+   "why": "판정런이 실제로 넘김 — 물리 판정 대상",
+   "sites": [
+    "src/lumina_cuda.cu:1108"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "u"
+   ],
+   "launchers": 75,
+   "live_last_run": true
+  },
+  "LUMINA_NLTE_BF_JEQB": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 1개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_plasma.c:414"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 1,
+   "live_last_run": false
+  },
+  "LUMINA_NLTE_BK_CEIL": {
+   "class": "SCRAP-CLAMP",
+   "why": "이름이 clamp/floor/ceil — 규약상 물리가 아니다(개별 확인 필요)",
+   "sites": [
+    "src/lumina_cuda.cu:1616"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "u"
+   ],
+   "launchers": 1,
+   "live_last_run": false
+  },
+  "LUMINA_NLTE_BK_PARTIAL": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 1개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_cuda.cu:1565",
+    "src/lumina_plasma.c:14527"
+   ],
+   "files": [
+    "lumina_cuda.cu",
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)",
+    "u"
+   ],
+   "launchers": 1,
+   "live_last_run": false
+  },
+  "LUMINA_NLTE_BK_PIN_THR": {
+   "class": "SCRAP-DEAD",
+   "why": "아무 런처도 설정하지 않음 — 분기가 밟히지 않는다",
+   "sites": [
+    "src/lumina_plasma.c:14562"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 0,
+   "live_last_run": false
+  },
+  "LUMINA_NLTE_BUDGET_DUMP": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 1개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_plasma.c:12819"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 1,
+   "live_last_run": false
+  },
+  "LUMINA_NLTE_COLL_FIX": {
+   "class": "P-VERDICT",
+   "why": "판정런이 실제로 넘김 — 물리 판정 대상",
+   "sites": [
+    "src/lumina_plasma.c:8858"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 79,
+   "live_last_run": true
+  },
+  "LUMINA_NLTE_COLL_FLOOR": {
+   "class": "SCRAP-CLAMP",
+   "why": "이름이 clamp/floor/ceil — 규약상 물리가 아니다(개별 확인 필요)",
+   "sites": [
+    "src/lumina_nlte_assemble.cu:407",
+    "src/lumina_plasma.c:12839"
+   ],
+   "files": [
+    "lumina_nlte_assemble.cu",
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)",
+    "x"
+   ],
+   "launchers": 1,
+   "live_last_run": false
+  },
+  "LUMINA_NLTE_DILUTE_FIELD": {
+   "class": "SCRAP-DEAD",
+   "why": "아무 런처도 설정하지 않음 — 분기가 밟히지 않는다",
+   "sites": [
+    "src/lumina_plasma.c:12894"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 0,
+   "live_last_run": false
+  },
+  "LUMINA_NLTE_DILUTE_TR_K": {
+   "class": "SCRAP-DEAD",
+   "why": "아무 런처도 설정하지 않음 — 분기가 밟히지 않는다",
+   "sites": [
+    "src/lumina_plasma.c:12896"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 0,
+   "live_last_run": false
+  },
+  "LUMINA_NLTE_ELEMENT_WIDE": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 1개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_element_wide.c:100"
+   ],
+   "files": [
+    "lumina_element_wide.c"
+   ],
+   "functions": [
+    "e"
+   ],
+   "launchers": 1,
+   "live_last_run": false
+  },
+  "LUMINA_NLTE_ELEMENT_WIDE_DUMP_DIR": {
+   "class": "S-INPUT",
+   "why": "값이 경로·자원 지정 — 노브가 아니라 입력",
+   "sites": [
+    "src/lumina_element_wide.c:165"
+   ],
+   "files": [
+    "lumina_element_wide.c"
+   ],
+   "functions": [
+    "e"
+   ],
+   "launchers": 0,
+   "live_last_run": false
+  },
+  "LUMINA_NLTE_ELEMENT_WIDE_SHELL": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 1개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_element_wide.c:109"
+   ],
+   "files": [
+    "lumina_element_wide.c"
+   ],
+   "functions": [
+    "e"
+   ],
+   "launchers": 1,
+   "live_last_run": false
+  },
+  "LUMINA_NLTE_ELEMENT_WIDE_Z": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 1개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_element_wide.c:108"
+   ],
+   "files": [
+    "lumina_element_wide.c"
+   ],
+   "functions": [
+    "e"
+   ],
+   "launchers": 1,
+   "live_last_run": false
+  },
+  "LUMINA_NLTE_EQUILIBRATE": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 1개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_cuda.cu:716"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "d"
+   ],
+   "launchers": 1,
+   "live_last_run": false
+  },
+  "LUMINA_NLTE_FINAL_RESOLVE": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 22개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_cuda.cu:9259",
+    "src/lumina_cuda.cu:9870"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 22,
+   "live_last_run": false
+  },
+  "LUMINA_NLTE_FLOOR_BKMAX": {
+   "class": "SCRAP-CLAMP",
+   "why": "이름이 clamp/floor/ceil — 규약상 물리가 아니다(개별 확인 필요)",
+   "sites": [
+    "src/lumina_cuda.cu:1136"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "u"
+   ],
+   "launchers": 18,
+   "live_last_run": false
+  },
+  "LUMINA_NLTE_FLOOR_MODE": {
+   "class": "SCRAP-CLAMP",
+   "why": "이름이 clamp/floor/ceil — 규약상 물리가 아니다(개별 확인 필요)",
+   "sites": [
+    "src/lumina_cuda.cu:1134"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "u"
+   ],
+   "launchers": 18,
+   "live_last_run": false
+  },
+  "LUMINA_NLTE_FLOOR_REG": {
+   "class": "SCRAP-CLAMP",
+   "why": "이름이 clamp/floor/ceil — 규약상 물리가 아니다(개별 확인 필요)",
+   "sites": [
+    "src/lumina_plasma.c:12779"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 146,
+   "live_last_run": false
+  },
+  "LUMINA_NLTE_FORCE_LTE_LEVELS": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 2개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_cuda.cu:1397"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "u"
+   ],
+   "launchers": 2,
+   "live_last_run": false
+  },
+  "LUMINA_NLTE_GREY_ITERS": {
+   "class": "P-VERDICT",
+   "why": "판정런이 실제로 넘김 — 물리 판정 대상",
+   "sites": [
+    "src/lumina_cuda.cu:1413"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "u"
+   ],
+   "launchers": 75,
+   "live_last_run": true
+  },
+  "LUMINA_NLTE_GREY_TAU": {
+   "class": "P-VERDICT",
+   "why": "판정런이 실제로 넘김 — 물리 판정 대상",
+   "sites": [
+    "src/lumina_cuda.cu:1412"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "u"
+   ],
+   "launchers": 75,
+   "live_last_run": true
+  },
+  "LUMINA_NLTE_INV_CEIL": {
+   "class": "SCRAP-CLAMP",
+   "why": "이름이 clamp/floor/ceil — 규약상 물리가 아니다(개별 확인 필요)",
+   "sites": [
+    "src/lumina_plasma.c:8965"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 130,
+   "live_last_run": true
+  },
+  "LUMINA_NLTE_ION_LOCK": {
+   "class": "P-VERDICT",
+   "why": "판정런이 실제로 넘김 — 물리 판정 대상",
+   "sites": [
+    "src/lumina_plasma.c:6346",
+    "src/lumina_plasma.c:8712"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 91,
+   "live_last_run": true
+  },
+  "LUMINA_NLTE_JBAR_POPS": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 2개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_cuda.cu:9875",
+    "src/lumina_cuda.cu:10552",
+    "src/lumina_element_wide.c:2108",
+    "src/lumina_plasma.c:12867"
+   ],
+   "files": [
+    "lumina_cuda.cu",
+    "lumina_element_wide.c",
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)",
+    "l",
+    "n"
+   ],
+   "launchers": 2,
+   "live_last_run": false
+  },
+  "LUMINA_NLTE_JEQB": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 1개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_cuda.cu:8320",
+    "src/lumina_cuda.cu:8320",
+    "src/lumina_plasma.c:12998"
+   ],
+   "files": [
+    "lumina_cuda.cu",
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)",
+    "n"
+   ],
+   "launchers": 1,
+   "live_last_run": false
+  },
+  "LUMINA_NLTE_LEVEL_DUMP": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 49개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_cuda.cu:2010",
+    "src/lumina_plasma.c:15572"
+   ],
+   "files": [
+    "lumina_cuda.cu",
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)",
+    "u"
+   ],
+   "launchers": 49,
+   "live_last_run": false
+  },
+  "LUMINA_NLTE_LOCK_START_ITER": {
+   "class": "P-VERDICT",
+   "why": "판정런이 실제로 넘김 — 물리 판정 대상",
+   "sites": [
+    "src/lumina_plasma.c:8713"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 81,
+   "live_last_run": true
+  },
+  "LUMINA_NLTE_LTE_FLOOR": {
+   "class": "SCRAP-CLAMP",
+   "why": "이름이 clamp/floor/ceil — 규약상 물리가 아니다(개별 확인 필요)",
+   "sites": [
+    "src/lumina_cuda.cu:1633"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "u"
+   ],
+   "launchers": 81,
+   "live_last_run": true
+  },
+  "LUMINA_NLTE_LTE_NCRIT": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 1개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_cuda.cu:753"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "t"
+   ],
+   "launchers": 1,
+   "live_last_run": false
+  },
+  "LUMINA_NLTE_MATDUMP": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 2개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_cuda.cu:1346"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "u"
+   ],
+   "launchers": 2,
+   "live_last_run": false
+  },
+  "LUMINA_NLTE_MATDUMP_PATH": {
+   "class": "S-INPUT",
+   "why": "값이 경로·자원 지정 — 노브가 아니라 입력",
+   "sites": [
+    "src/lumina_cuda.cu:1351"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "u"
+   ],
+   "launchers": 1,
+   "live_last_run": false
+  },
+  "LUMINA_NLTE_METACOLL_MODE": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 10개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_plasma.c:8898"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 10,
+   "live_last_run": false
+  },
+  "LUMINA_NLTE_METACOLL_OMEGA": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 10개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_plasma.c:8914"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 10,
+   "live_last_run": false
+  },
+  "LUMINA_NLTE_METASTABLE_COLL": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 15개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_plasma.c:8878"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 15,
+   "live_last_run": false
+  },
+  "LUMINA_NLTE_NO_ML_LOCK": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 1개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_plasma.c:1901"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 1,
+   "live_last_run": false
+  },
+  "LUMINA_NLTE_NSTAR_DUMP": {
+   "class": "SCRAP-DEAD",
+   "why": "아무 런처도 설정하지 않음 — 분기가 밟히지 않는다",
+   "sites": [
+    "src/lumina_plasma.c:14470"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 0,
+   "live_last_run": false
+  },
+  "LUMINA_NLTE_NSTAR_PATH": {
+   "class": "S-INPUT",
+   "why": "값이 경로·자원 지정 — 노브가 아니라 입력",
+   "sites": [
+    "src/lumina_plasma.c:14496"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 0,
+   "live_last_run": false
+  },
+  "LUMINA_NLTE_OPACITY_IONSTAGE": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 2개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_plasma.c:2983"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 2,
+   "live_last_run": false
+  },
+  "LUMINA_NLTE_PER_ION_RESCALE": {
+   "class": "P-VERDICT",
+   "why": "판정런이 실제로 넘김 — 물리 판정 대상",
+   "sites": [
+    "src/lumina_plasma.c:6347",
+    "src/lumina_plasma.c:8730"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 92,
+   "live_last_run": true
+  },
+  "LUMINA_NLTE_RATES_GEMM": {
+   "class": "SCRAP-DEAD",
+   "why": "아무 런처도 설정하지 않음 — 분기가 밟히지 않는다",
+   "sites": [
+    "src/lumina_cuda.cu:1090",
+    "src/lumina_cuda.cu:1090"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "u"
+   ],
+   "launchers": 0,
+   "live_last_run": false
+  },
+  "LUMINA_NLTE_RATE_DUMP": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 21개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_plasma.c:14168"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 21,
+   "live_last_run": false
+  },
+  "LUMINA_NLTE_RESID_CHECK": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 1개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_cuda.cu:730"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "d"
+   ],
+   "launchers": 1,
+   "live_last_run": false
+  },
+  "LUMINA_NLTE_RESID_TOL": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 1개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_cuda.cu:736"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "l"
+   ],
+   "launchers": 1,
+   "live_last_run": false
+  },
+  "LUMINA_NLTE_SKIP_DEAD": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 10개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_plasma.c:8749"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 10,
+   "live_last_run": false
+  },
+  "LUMINA_NLTE_SKIP_Z": {
+   "class": "P-VERDICT",
+   "why": "판정런이 실제로 넘김 — 물리 판정 대상",
+   "sites": [
+    "src/lumina_cuda.cu:1879",
+    "src/lumina_plasma.c:14859"
+   ],
+   "files": [
+    "lumina_cuda.cu",
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)",
+    "u"
+   ],
+   "launchers": 310,
+   "live_last_run": true
+  },
+  "LUMINA_NLTE_STAGE4": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 27개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_plasma.c:8765"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 27,
+   "live_last_run": false
+  },
+  "LUMINA_NLTE_START_ITER": {
+   "class": "P-VERDICT",
+   "why": "판정런이 실제로 넘김 — 물리 판정 대상",
+   "sites": [
+    "src/lumina_cuda.cu:7137",
+    "src/lumina_cuda.cu:7138",
+    "src/lumina_main.c:180",
+    "src/lumina_main.c:181"
+   ],
+   "files": [
+    "lumina_cuda.cu",
+    "lumina_main.c"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 301,
+   "live_last_run": true
+  },
+  "LUMINA_NT_FULL": {
+   "class": "SCRAP-DEAD",
+   "why": "아무 런처도 설정하지 않음 — 분기가 밟히지 않는다",
+   "sites": [
+    "src/lumina_plasma.c:15664"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 0,
+   "live_last_run": false
+  },
+  "LUMINA_OMEGA_CMFGEN": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 2개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_plasma.c:868"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 2,
+   "live_last_run": false
+  },
+  "LUMINA_OMEGA_CMFGEN_SET": {
+   "class": "SCRAP-DEAD",
+   "why": "아무 런처도 설정하지 않음 — 분기가 밟히지 않는다",
+   "sites": [
+    "src/lumina_plasma.c:877"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 0,
+   "live_last_run": false
+  },
+  "LUMINA_OPACITY_SKIP_Z": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 1개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_plasma.c:2821"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 1,
+   "live_last_run": false
+  },
+  "LUMINA_OUTER_ION_BOOST": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 3개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_plasma.c:2638"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 3,
+   "live_last_run": false
+  },
+  "LUMINA_OUTER_TE_SEED": {
+   "class": "SCRAP-DEAD",
+   "why": "아무 런처도 설정하지 않음 — 분기가 밟히지 않는다",
+   "sites": [
+    "src/lumina_cuda.cu:7919"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 0,
+   "live_last_run": false
+  },
+  "LUMINA_OVERLAP_CORR": {
+   "class": "SCRAP-DEAD",
+   "why": "아무 런처도 설정하지 않음 — 분기가 밟히지 않는다",
+   "sites": [
+    "src/lumina_cuda.cu:7325",
+    "src/lumina_cuda.cu:7326",
+    "src/lumina_main.c:203",
+    "src/lumina_main.c:204",
+    "src/lumina_plasma.c:6797",
+    "src/lumina_plasma.c:6797"
+   ],
+   "files": [
+    "lumina_cuda.cu",
+    "lumina_main.c",
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)",
+    "n"
+   ],
+   "launchers": 0,
+   "live_last_run": false
+  },
+  "LUMINA_OVERLAP_FOUT": {
+   "class": "SCRAP-DEAD",
+   "why": "아무 런처도 설정하지 않음 — 분기가 밟히지 않는다",
+   "sites": [
+    "src/lumina_cmfgen.c:5256"
+   ],
+   "files": [
+    "lumina_cmfgen.c"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 0,
+   "live_last_run": false
+  },
+  "LUMINA_POP_ION": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 1개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_cuda.cu:1348",
+    "src/lumina_cuda.cu:1348",
+    "src/lumina_cuda.cu:1471",
+    "src/lumina_cuda.cu:1471",
+    "src/lumina_plasma.c:14472",
+    "src/lumina_plasma.c:14472"
+   ],
+   "files": [
+    "lumina_cuda.cu",
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)",
+    "u"
+   ],
+   "launchers": 1,
+   "live_last_run": false
+  },
+  "LUMINA_POP_SHELL": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 2개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_cuda.cu:1349",
+    "src/lumina_cuda.cu:1349",
+    "src/lumina_cuda.cu:1472",
+    "src/lumina_cuda.cu:1472",
+    "src/lumina_plasma.c:14473",
+    "src/lumina_plasma.c:14473"
+   ],
+   "files": [
+    "lumina_cuda.cu",
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)",
+    "u"
+   ],
+   "launchers": 2,
+   "live_last_run": false
+  },
+  "LUMINA_POP_TRACE": {
+   "class": "SCRAP-DEAD",
+   "why": "아무 런처도 설정하지 않음 — 분기가 밟히지 않는다",
+   "sites": [
+    "src/lumina_cuda.cu:1469",
+    "src/lumina_cuda.cu:1773"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "u"
+   ],
+   "launchers": 0,
+   "live_last_run": false
+  },
+  "LUMINA_POP_Z": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 1개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_cuda.cu:1347",
+    "src/lumina_cuda.cu:1347",
+    "src/lumina_cuda.cu:1470",
+    "src/lumina_cuda.cu:1470",
+    "src/lumina_plasma.c:14471",
+    "src/lumina_plasma.c:14471"
+   ],
+   "files": [
+    "lumina_cuda.cu",
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)",
+    "u"
+   ],
+   "launchers": 1,
+   "live_last_run": false
+  },
+  "LUMINA_PURE_CMFGEN": {
+   "class": "P-VERDICT",
+   "why": "판정런이 실제로 넘김 — 물리 판정 대상",
+   "sites": [
+    "src/lumina_cuda.cu:7528",
+    "src/lumina_cuda.cu:7893",
+    "src/lumina_main.c:347"
+   ],
+   "files": [
+    "lumina_cuda.cu",
+    "lumina_main.c"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 82,
+   "live_last_run": true
+  },
+  "LUMINA_PURE_CMFGEN_ITER": {
+   "class": "P-VERDICT",
+   "why": "판정런이 실제로 넘김 — 물리 판정 대상",
+   "sites": [
+    "src/lumina_cuda.cu:7902",
+    "src/lumina_main.c:349"
+   ],
+   "files": [
+    "lumina_cuda.cu",
+    "lumina_main.c"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 82,
+   "live_last_run": true
+  },
+  "LUMINA_RADEQ_COLPAIRS_MAXLEV": {
+   "class": "SCRAP-DEAD",
+   "why": "아무 런처도 설정하지 않음 — 분기가 밟히지 않는다",
+   "sites": [
+    "src/lumina_plasma.c:10026"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 0,
+   "live_last_run": false
+  },
+  "LUMINA_RADEQ_COL_PAIRS": {
+   "class": "SCRAP-DEAD",
+   "why": "아무 런처도 설정하지 않음 — 분기가 밟히지 않는다",
+   "sites": [
+    "src/lumina_plasma.c:10024"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 0,
+   "live_last_run": false
+  },
+  "LUMINA_RADEQ_DAMP": {
+   "class": "P-VERDICT",
+   "why": "판정런이 실제로 넘김 — 물리 판정 대상",
+   "sites": [
+    "src/lumina_plasma.c:10184"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 79,
+   "live_last_run": true
+  },
+  "LUMINA_RADEQ_DB_FB": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 37개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_plasma.c:10452"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 37,
+   "live_last_run": false
+  },
+  "LUMINA_RADEQ_DIAG": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 101개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_cmfgen.c:1526",
+    "src/lumina_plasma.c:11167",
+    "src/lumina_plasma.c:11184",
+    "src/lumina_plasma.c:11324"
+   ],
+   "files": [
+    "lumina_cmfgen.c",
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)",
+    "t"
+   ],
+   "launchers": 101,
+   "live_last_run": false
+  },
+  "LUMINA_RADEQ_FB_RATE": {
+   "class": "P-VERDICT",
+   "why": "판정런이 실제로 넘김 — 물리 판정 대상",
+   "sites": [
+    "src/lumina_plasma.c:9422"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 29,
+   "live_last_run": true
+  },
+  "LUMINA_RADEQ_LINE_CULL": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 1개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_plasma.c:11058"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 1,
+   "live_last_run": false
+  },
+  "LUMINA_RADEQ_OMEGA_FLOOR": {
+   "class": "SCRAP-CLAMP",
+   "why": "이름이 clamp/floor/ceil — 규약상 물리가 아니다(개별 확인 필요)",
+   "sites": [
+    "src/lumina_plasma.c:9150",
+    "src/lumina_plasma.c:9325"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 20,
+   "live_last_run": false
+  },
+  "LUMINA_RADEQ_PUMP_FALLBACK": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 20개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_plasma.c:10525"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 20,
+   "live_last_run": false
+  },
+  "LUMINA_RADEQ_PUMP_FIELD": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 21개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_plasma.c:10505"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 21,
+   "live_last_run": false
+  },
+  "LUMINA_RADEQ_TE": {
+   "class": "P-VERDICT",
+   "why": "판정런이 실제로 넘김 — 물리 판정 대상",
+   "sites": [
+    "src/lumina_cuda.cu:7357",
+    "src/lumina_cuda.cu:7358",
+    "src/lumina_main.c:214",
+    "src/lumina_main.c:215"
+   ],
+   "files": [
+    "lumina_cuda.cu",
+    "lumina_main.c"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 108,
+   "live_last_run": true
+  },
+  "LUMINA_RADEQ_VR_GAUNT": {
+   "class": "SCRAP-DEAD",
+   "why": "아무 런처도 설정하지 않음 — 분기가 밟히지 않는다",
+   "sites": [
+    "src/lumina_plasma.c:9109"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 0,
+   "live_last_run": false
+  },
+  "LUMINA_RADEQ_VR_STD": {
+   "class": "P-VERDICT",
+   "why": "판정런이 실제로 넘김 — 물리 판정 대상",
+   "sites": [
+    "src/lumina_plasma.c:9245"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 20,
+   "live_last_run": true
+  },
+  "LUMINA_RADFIELD_COMMIT_DUMP": {
+   "class": "SCRAP-DEAD",
+   "why": "아무 런처도 설정하지 않음 — 분기가 밟히지 않는다",
+   "sites": [
+    "src/radiation_field.c:668"
+   ],
+   "files": [
+    "radiation_field.c"
+   ],
+   "functions": [
+    "d"
+   ],
+   "launchers": 0,
+   "live_last_run": false
+  },
+  "LUMINA_RADFIELD_SHADOW_DUMP": {
+   "class": "SCRAP-DEAD",
+   "why": "아무 런처도 설정하지 않음 — 분기가 밟히지 않는다",
+   "sites": [
+    "src/radiation_field.c:669"
+   ],
+   "files": [
+    "radiation_field.c"
+   ],
+   "functions": [
+    "d"
+   ],
+   "launchers": 0,
+   "live_last_run": false
+  },
+  "LUMINA_RATES_FIX": {
+   "class": "SCRAP-DEAD",
+   "why": "아무 런처도 설정하지 않음 — 분기가 밟히지 않는다",
+   "sites": [
+    "src/lumina_plasma.c:685"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 0,
+   "live_last_run": false
+  },
+  "LUMINA_REC_SPINGATE": {
+   "class": "SCRAP-DEAD",
+   "why": "아무 런처도 설정하지 않음 — 분기가 밟히지 않는다",
+   "sites": [
+    "src/lumina_plasma.c:3171"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 0,
+   "live_last_run": false
+  },
+  "LUMINA_RR_TAU_THRESH": {
+   "class": "SCRAP-DEAD",
+   "why": "아무 런처도 설정하지 않음 — 분기가 밟히지 않는다",
+   "sites": [
+    "src/lumina_plasma.c:3696"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 0,
+   "live_last_run": false
+  },
+  "LUMINA_SELF_CONSISTENT_TE": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 3개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_cuda.cu:7333",
+    "src/lumina_cuda.cu:7334",
+    "src/lumina_main.c:211",
+    "src/lumina_main.c:212"
+   ],
+   "files": [
+    "lumina_cuda.cu",
+    "lumina_main.c"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 3,
+   "live_last_run": false
+  },
+  "LUMINA_SIMUL_CAP_TOPION": {
+   "class": "SCRAP-CLAMP",
+   "why": "이름이 clamp/floor/ceil — 규약상 물리가 아니다(개별 확인 필요)",
+   "sites": [
+    "src/lumina_plasma.c:9612"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 23,
+   "live_last_run": false
+  },
+  "LUMINA_SIMUL_ION_DAMP": {
+   "class": "SCRAP-DEAD",
+   "why": "아무 런처도 설정하지 않음 — 분기가 밟히지 않는다",
+   "sites": [
+    "src/lumina_plasma.c:11301"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 0,
+   "live_last_run": false
+  },
+  "LUMINA_SIMUL_NESTED": {
+   "class": "P-VERDICT",
+   "why": "판정런이 실제로 넘김 — 물리 판정 대상",
+   "sites": [
+    "src/lumina_plasma.c:10534"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 2,
+   "live_last_run": true
+  },
+  "LUMINA_SIMUL_NESTED_NL": {
+   "class": "SCRAP-DEAD",
+   "why": "아무 런처도 설정하지 않음 — 분기가 밟히지 않는다",
+   "sites": [
+    "src/lumina_plasma.c:10536"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 0,
+   "live_last_run": false
+  },
+  "LUMINA_SIMUL_NTP": {
+   "class": "SCRAP-DEAD",
+   "why": "아무 런처도 설정하지 않음 — 분기가 밟히지 않는다",
+   "sites": [
+    "src/lumina_plasma.c:10996"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 0,
+   "live_last_run": false
+  },
+  "LUMINA_SIMUL_TRACE": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 3개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_plasma.c:11182"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 3,
+   "live_last_run": false
+  },
+  "LUMINA_SL_DUMP": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 1개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_cuda.cu:9769"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 1,
+   "live_last_run": false
+  },
+  "LUMINA_SL_WRITE_SKIPZ": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 3개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_plasma.c:14847"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 3,
+   "live_last_run": false
+  },
+  "LUMINA_SPEC_RANGE": {
+   "class": "SCRAP-DEAD",
+   "why": "아무 런처도 설정하지 않음 — 분기가 밟히지 않는다",
+   "sites": [
+    "src/lumina_cuda.cu:7476",
+    "src/lumina_cuda.cu:7477",
+    "src/lumina_main.c:279",
+    "src/lumina_main.c:281",
+    "src/lumina_main.c:287"
+   ],
+   "files": [
+    "lumina_cuda.cu",
+    "lumina_main.c"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 0,
+   "live_last_run": false
+  },
+  "LUMINA_SPINGATE_MULT": {
+   "class": "SCRAP-DEAD",
+   "why": "아무 런처도 설정하지 않음 — 분기가 밟히지 않는다",
+   "sites": [
+    "src/lumina_atomic.c:2059"
+   ],
+   "files": [
+    "lumina_atomic.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 0,
+   "live_last_run": false
+  },
+  "LUMINA_STAGE32_RUNG1_DUMP": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 1개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_cmfgen.c:1406",
+    "src/lumina_cmfgen.c:1485"
+   ],
+   "files": [
+    "lumina_cmfgen.c"
+   ],
+   "functions": [
+    "p",
+    "t"
+   ],
+   "launchers": 1,
+   "live_last_run": false
+  },
+  "LUMINA_STAGE32_RUNG1_ITER": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 1개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_cmfgen.c:1408"
+   ],
+   "files": [
+    "lumina_cmfgen.c"
+   ],
+   "functions": [
+    "p"
+   ],
+   "launchers": 1,
+   "live_last_run": false
+  },
+  "LUMINA_STAGE4_BK_CAP": {
+   "class": "SCRAP-CLAMP",
+   "why": "이름이 clamp/floor/ceil — 규약상 물리가 아니다(개별 확인 필요)",
+   "sites": [
+    "src/lumina_plasma.c:10690"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 25,
+   "live_last_run": false
+  },
+  "LUMINA_STAGE4_GPH_WTHR": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 25개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_plasma.c:10685"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 25,
+   "live_last_run": false
+  },
+  "LUMINA_SUPER_CUTOFF": {
+   "class": "P-VERDICT",
+   "why": "판정런이 실제로 넘김 — 물리 판정 대상",
+   "sites": [
+    "src/lumina_atomic.c:1459",
+    "src/lumina_element_wide.c:2044"
+   ],
+   "files": [
+    "lumina_atomic.c",
+    "lumina_element_wide.c"
+   ],
+   "functions": [
+    "(file scope)",
+    "l"
+   ],
+   "launchers": 76,
+   "live_last_run": true
+  },
+  "LUMINA_SUPER_LEVELS": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 26개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_plasma.c:12222"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 26,
+   "live_last_run": false
+  },
+  "LUMINA_TAU_BY_ION": {
+   "class": "P-VERDICT",
+   "why": "판정런이 실제로 넘김 — 물리 판정 대상",
+   "sites": [
+    "src/lumina_plasma.c:6841",
+    "src/lumina_plasma.c:6841"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 123,
+   "live_last_run": true
+  },
+  "LUMINA_TAU_BY_ION_LAM_HI": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 2개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_plasma.c:6853",
+    "src/lumina_plasma.c:6854"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 2,
+   "live_last_run": false
+  },
+  "LUMINA_TAU_BY_ION_LAM_LO": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 2개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_plasma.c:6851",
+    "src/lumina_plasma.c:6852"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 2,
+   "live_last_run": false
+  },
+  "LUMINA_TAU_BY_ION_SHELL": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 2개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_plasma.c:6844",
+    "src/lumina_plasma.c:6845"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 2,
+   "live_last_run": false
+  },
+  "LUMINA_TE_STEP_CLAMP": {
+   "class": "SCRAP-CLAMP",
+   "why": "이름이 clamp/floor/ceil — 규약상 물리가 아니다(개별 확인 필요)",
+   "sites": [
+    "src/lumina_plasma.c:9495"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 27,
+   "live_last_run": true
+  },
+  "LUMINA_TE_TABLE": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 4개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_plasma.c:10408"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 4,
+   "live_last_run": false
+  },
+  "LUMINA_TIMEDEP_ION": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 1개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_plasma.c:8839"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 1,
+   "live_last_run": false
+  },
+  "LUMINA_TIME_EXPLOSION": {
+   "class": "SCRAP-DEAD",
+   "why": "아무 런처도 설정하지 않음 — 분기가 밟히지 않는다",
+   "sites": [
+    "src/lumina_cuda.cu:7482",
+    "src/lumina_main.c:244"
+   ],
+   "files": [
+    "lumina_cuda.cu",
+    "lumina_main.c"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 0,
+   "live_last_run": false
+  },
+  "LUMINA_TINNER_COLOR": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 2개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_cuda.cu:7386",
+    "src/lumina_cuda.cu:7386"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 2,
+   "live_last_run": false
+  },
+  "LUMINA_TOPSTAGE_ANCHOR": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 1개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_atomic.c:2677"
+   ],
+   "files": [
+    "lumina_atomic.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 1,
+   "live_last_run": false
+  },
+  "LUMINA_TOPSTAGE_DEPARTURE": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 1개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_plasma.c:12802"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 1,
+   "live_last_run": false
+  },
+  "LUMINA_TOPSTAGE_IV": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 2개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_plasma.c:14003"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 2,
+   "live_last_run": false
+  },
+  "LUMINA_TOPSTAGE_IV_DIAG": {
+   "class": "SCRAP-DEAD",
+   "why": "아무 런처도 설정하지 않음 — 분기가 밟히지 않는다",
+   "sites": [
+    "src/lumina_plasma.c:14028"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 0,
+   "live_last_run": false
+  },
+  "LUMINA_TOPSTAGE_IV_ZONLY": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 1개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_plasma.c:14005"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 1,
+   "live_last_run": false
+  },
+  "LUMINA_TOPSTAGE_THERMALIZE": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 1개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_plasma.c:12800"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 1,
+   "live_last_run": false
+  },
+  "LUMINA_TRANSPORT": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 1개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_cuda.cu:10013",
+    "src/lumina_cuda.cu:10976",
+    "src/lumina_main.c:818"
+   ],
+   "files": [
+    "lumina_cuda.cu",
+    "lumina_main.c"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 1,
+   "live_last_run": false
+  },
+  "LUMINA_T_INNER_FIX": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 3개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_atomic.c:811",
+    "src/lumina_cuda.cu:10861",
+    "src/lumina_main.c:725"
+   ],
+   "files": [
+    "lumina_atomic.c",
+    "lumina_cuda.cu",
+    "lumina_main.c"
+   ],
+   "functions": [
+    "(file scope)",
+    "n"
+   ],
+   "launchers": 3,
+   "live_last_run": false
+  },
+  "LUMINA_UVOPT_EMIT_BOOST": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 23개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_plasma.c:3788"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 23,
+   "live_last_run": false
+  },
+  "LUMINA_UVOPT_EMIT_BOOST2": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 18개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_plasma.c:3791"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 18,
+   "live_last_run": false
+  },
+  "LUMINA_UVOPT_EMIT_BOOST3": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 18개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_plasma.c:3794"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 18,
+   "live_last_run": false
+  },
+  "LUMINA_UVOPT_EMIT_BOOST4": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 1개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_plasma.c:3797"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 1,
+   "live_last_run": false
+  },
+  "LUMINA_UVOPT_EMIT_IONMASK": {
+   "class": "SCRAP-DEAD",
+   "why": "아무 런처도 설정하지 않음 — 분기가 밟히지 않는다",
+   "sites": [
+    "src/lumina_plasma.c:3831"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 0,
+   "live_last_run": false
+  },
+  "LUMINA_UVOPT_EMIT_IONMASK4": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 1개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_plasma.c:3856"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 1,
+   "live_last_run": false
+  },
+  "LUMINA_UVOPT_EMIT_LAM_MAX": {
+   "class": "SCRAP-CLAMP",
+   "why": "이름이 clamp/floor/ceil — 규약상 물리가 아니다(개별 확인 필요)",
+   "sites": [
+    "src/lumina_plasma.c:3790"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 18,
+   "live_last_run": false
+  },
+  "LUMINA_UVOPT_EMIT_LAM_MAX2": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 18개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_plasma.c:3793"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 18,
+   "live_last_run": false
+  },
+  "LUMINA_UVOPT_EMIT_LAM_MAX3": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 18개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_plasma.c:3796"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 18,
+   "live_last_run": false
+  },
+  "LUMINA_UVOPT_EMIT_LAM_MAX4": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 1개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_plasma.c:3799"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 1,
+   "live_last_run": false
+  },
+  "LUMINA_UVOPT_EMIT_LAM_MIN": {
+   "class": "SCRAP-CLAMP",
+   "why": "이름이 clamp/floor/ceil — 규약상 물리가 아니다(개별 확인 필요)",
+   "sites": [
+    "src/lumina_plasma.c:3789"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 18,
+   "live_last_run": false
+  },
+  "LUMINA_UVOPT_EMIT_LAM_MIN2": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 18개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_plasma.c:3792"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 18,
+   "live_last_run": false
+  },
+  "LUMINA_UVOPT_EMIT_LAM_MIN3": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 18개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_plasma.c:3795"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 18,
+   "live_last_run": false
+  },
+  "LUMINA_UVOPT_EMIT_LAM_MIN4": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 1개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_plasma.c:3798"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 1,
+   "live_last_run": false
+  },
+  "LUMINA_UVOPT_EMIT_ZMASK": {
+   "class": "SCRAP-DEAD",
+   "why": "아무 런처도 설정하지 않음 — 분기가 밟히지 않는다",
+   "sites": [
+    "src/lumina_plasma.c:3819"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 0,
+   "live_last_run": false
+  },
+  "LUMINA_UVOPT_EMIT_ZMASK4": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 1개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_plasma.c:3844"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 1,
+   "live_last_run": false
+  },
+  "LUMINA_ZETA_OVERRIDE_IONMASK": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 1개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_plasma.c:1814"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 1,
+   "live_last_run": false
+  },
+  "LUMINA_ZETA_OVERRIDE_VAL": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 1개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_plasma.c:1824"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 1,
+   "live_last_run": false
+  },
+  "LUMINA_ZETA_OVERRIDE_ZMASK": {
+   "class": "SCRAP-FOSSIL",
+   "why": "과거 런처 1개만 설정 — 실패의 화석층",
+   "sites": [
+    "src/lumina_plasma.c:1804"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 1,
+   "live_last_run": false
+  },
+  "LUMINA_ZINERT_AUDIT": {
+   "class": "SCRAP-DEAD",
+   "why": "아무 런처도 설정하지 않음 — 분기가 밟히지 않는다",
+   "sites": [
+    "src/lumina_cuda.cu:1980",
+    "src/lumina_plasma.c:2107"
+   ],
+   "files": [
+    "lumina_cuda.cu",
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)",
+    "u"
+   ],
+   "launchers": 0,
+   "live_last_run": false
+  }
+ }
+}

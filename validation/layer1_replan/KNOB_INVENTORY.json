@@ -1,0 +1,6312 @@
+{
+ "schema": "lumina-knob-inventory-v1",
+ "note": "분류하지 않는다 — 분류에 필요한 사실만 모은다. 생존이 예외이고 스크랩이 기본이라는 기준은 대장(attic/knobs/)에 있다.",
+ "n_literal_getenv_names": 419,
+ "n_universe": 496,
+ "names_without_literal_getenv": [
+  "LUMINA_AUL_SCALE2_FACTOR",
+  "LUMINA_AUL_SCALE2_IONMASK",
+  "LUMINA_AUL_SCALE2_LAMBDA_MAX",
+  "LUMINA_AUL_SCALE2_LAMBDA_MIN",
+  "LUMINA_AUL_SCALE2_ZMASK",
+  "LUMINA_AUL_SCALE3_FACTOR",
+  "LUMINA_AUL_SCALE3_IONMASK",
+  "LUMINA_AUL_SCALE3_LAMBDA_MAX",
+  "LUMINA_AUL_SCALE3_LAMBDA_MIN",
+  "LUMINA_AUL_SCALE3_ZMASK",
+  "LUMINA_AUL_SCALE4_FACTOR",
+  "LUMINA_AUL_SCALE4_IONMASK",
+  "LUMINA_AUL_SCALE4_LAMBDA_MAX",
+  "LUMINA_AUL_SCALE4_LAMBDA_MIN",
+  "LUMINA_AUL_SCALE4_ZMASK",
+  "LUMINA_AUL_SCALE5_FACTOR",
+  "LUMINA_AUL_SCALE5_IONMASK",
+  "LUMINA_AUL_SCALE5_LAMBDA_MAX",
+  "LUMINA_AUL_SCALE5_LAMBDA_MIN",
+  "LUMINA_AUL_SCALE5_ZMASK",
+  "LUMINA_AUL_SCALE6_FACTOR",
+  "LUMINA_AUL_SCALE6_IONMASK",
+  "LUMINA_AUL_SCALE6_LAMBDA_MAX",
+  "LUMINA_AUL_SCALE6_LAMBDA_MIN",
+  "LUMINA_AUL_SCALE6_ZMASK",
+  "LUMINA_AUL_SCALE7_FACTOR",
+  "LUMINA_AUL_SCALE7_IONMASK",
+  "LUMINA_AUL_SCALE7_LAMBDA_MAX",
+  "LUMINA_AUL_SCALE7_LAMBDA_MIN",
+  "LUMINA_AUL_SCALE7_ZMASK",
+  "LUMINA_AUL_SCALE8_FACTOR",
+  "LUMINA_AUL_SCALE8_IONMASK",
+  "LUMINA_AUL_SCALE8_LAMBDA_MAX",
+  "LUMINA_AUL_SCALE8_LAMBDA_MIN",
+  "LUMINA_AUL_SCALE8_ZMASK",
+  "LUMINA_AUL_SCALE9_FACTOR",
+  "LUMINA_AUL_SCALE9_IONMASK",
+  "LUMINA_AUL_SCALE9_LAMBDA_MAX",
+  "LUMINA_AUL_SCALE9_LAMBDA_MIN",
+  "LUMINA_AUL_SCALE9_ZMASK",
+  "LUMINA_AUL_SCALE_FACTOR",
+  "LUMINA_AUL_SCALE_IONMASK",
+  "LUMINA_AUL_SCALE_LAMBDA_MAX",
+  "LUMINA_AUL_SCALE_LAMBDA_MIN",
+  "LUMINA_AUL_SCALE_ZMASK",
+  "LUMINA_BIN",
+  "LUMINA_BSRC_WFLOOR",
+  "LUMINA_CONFIG_PREC",
+  "LUMINA_DR_BOOST_AUTOSTRUCT",
+  "LUMINA_DR_BOOST_BADNELL",
+  "LUMINA_DR_BOOST_CMFGEN",
+  "LUMINA_DR_BOOST_EST_ISOEL",
+  "LUMINA_DR_BOOST_MAZZOTTA",
+  "LUMINA_DR_BOOST_NORAD",
+  "LUMINA_FIXED_TRAD_PROFILE",
+  "LUMINA_F_COLL_BOOST",
+  "LUMINA_MODEL_DIR",
+  "LUMINA_NLTE_ELEMENT_WIDE_COMMIT",
+  "LUMINA_NLTE_ELEMENT_WIDE_DUMP",
+  "LUMINA_NLTE_LTE_REPAIR",
+  "LUMINA_OUTER_TE_DAMP_FACTOR",
+  "LUMINA_OUTER_TE_DAMP_SMIN",
+  "LUMINA_REF_DIR",
+  "LUMINA_RUN_BIN",
+  "LUMINA_RUN_ROOT",
+  "LUMINA_SIGMA_BIN",
+  "LUMINA_SIGMA_BIN_LEVELS",
+  "LUMINA_SIGMA_COIII_PATCH",
+  "LUMINA_SPEC_ARG",
+  "LUMINA_SRC_REF",
+  "LUMINA_STAGE0_CSV",
+  "LUMINA_TE_TRAD_RATIO",
+  "LUMINA_TRAD_COLOR_FIX",
+  "LUMINA_VALIDATE_PLASMA",
+  "LUMINA_W_CAP",
+  "LUMINA_X_OUTER_SCALE_FAC",
+  "LUMINA_X_OUTER_SCALE_Z"
+ ],
+ "live_last_run_count": 59,
+ "knobs": {
+  "LUMINA_A2_02C_CAPTURE_GENERATION": {
+   "sites": [
+    "src/a2_02c_segment_capture.c:52"
+   ],
+   "files": [
+    "a2_02c_segment_capture.c"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 0,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_A2_02C_CAPTURE_PATH": {
+   "sites": [
+    "src/a2_02c_segment_capture.c:70"
+   ],
+   "files": [
+    "a2_02c_segment_capture.c"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 0,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_A2_02C_SEGMENT_CAPTURE": {
+   "sites": [
+    "src/a2_02c_segment_capture.c:46"
+   ],
+   "files": [
+    "a2_02c_segment_capture.c"
+   ],
+   "functions": [
+    "d"
+   ],
+   "launchers": 0,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_A4_SRC_BLEND": {
+   "sites": [
+    "src/lumina_plasma.c:11678",
+    "src/lumina_plasma.c:11836"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 1,
+   "live_last_run": false,
+   "n_sites": 2
+  },
+  "LUMINA_A4_STAGE1": {
+   "sites": [
+    "src/lumina_plasma.c:11676",
+    "src/lumina_plasma.c:11834"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 0,
+   "live_last_run": false,
+   "n_sites": 2
+  },
+  "LUMINA_ALPHA_SPINGATE": {
+   "sites": [
+    "src/lumina_atomic.c:2056",
+    "src/lumina_plasma.c:6077",
+    "src/lumina_plasma.c:10318",
+    "src/lumina_plasma.c:10318"
+   ],
+   "files": [
+    "lumina_atomic.c",
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 26,
+   "live_last_run": false,
+   "n_sites": 4
+  },
+  "LUMINA_ARTIS_PARITY": {
+   "sites": [
+    "src/lumina_plasma.c:392"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 25,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_BF_CLUMP_FACTOR": {
+   "sites": [
+    "src/lumina_atomic.c:1049"
+   ],
+   "files": [
+    "lumina_atomic.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 0,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_BF_GEMM": {
+   "sites": [
+    "src/lumina_plasma.c:7419"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 0,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_BF_OPACITY": {
+   "sites": [
+    "src/lumina_cuda.cu:7329",
+    "src/lumina_cuda.cu:7330",
+    "src/lumina_main.c:207",
+    "src/lumina_main.c:208"
+   ],
+   "files": [
+    "lumina_cuda.cu",
+    "lumina_main.c"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 299,
+   "live_last_run": true,
+   "n_sites": 4
+  },
+  "LUMINA_BF_RATE_POPS": {
+   "sites": [
+    "src/lumina_plasma.c:9420"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 25,
+   "live_last_run": true,
+   "n_sites": 1
+  },
+  "LUMINA_BINNED_J_ESTIMATOR": {
+   "sites": [
+    "src/lumina_cuda.cu:10646",
+    "src/lumina_cuda.cu:10647"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 33,
+   "live_last_run": false,
+   "n_sites": 2
+  },
+  "LUMINA_BUDGET_SHELL": {
+   "sites": [
+    "src/lumina_plasma.c:12823"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 1,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_BUDGET_STAGE": {
+   "sites": [
+    "src/lumina_plasma.c:12822"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 1,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_BUDGET_Z": {
+   "sites": [
+    "src/lumina_plasma.c:12821"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 1,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_C1_BIN_DUMP": {
+   "sites": [
+    "src/lumina_plasma.c:1342"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 21,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_C1_DEGEN_FALLBACK": {
+   "sites": [
+    "src/lumina_plasma.c:1286"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 22,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_C1_SUPERBIN_TEPIN": {
+   "sites": [
+    "src/lumina_plasma.c:1324"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 21,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_C2_BFR_DUMP": {
+   "sites": [
+    "src/lumina_plasma.c:1373"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 0,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_C2_MATRIX_BF": {
+   "sites": [
+    "src/lumina_plasma.c:413"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 0,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_CAP_FORCE_ESCAPE": {
+   "sites": [
+    "src/lumina_cuda.cu:7175",
+    "src/lumina_cuda.cu:7176"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 2,
+   "live_last_run": false,
+   "n_sites": 2
+  },
+  "LUMINA_CAP_REAL_ONLY": {
+   "sites": [
+    "src/lumina_cuda.cu:7169",
+    "src/lumina_cuda.cu:7170"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 1,
+   "live_last_run": false,
+   "n_sites": 2
+  },
+  "LUMINA_CMFGEN_ALI_ITER": {
+   "sites": [
+    "src/lumina_cmfgen.c:4958",
+    "src/lumina_cmfgen.c:5019",
+    "src/lumina_cmfgen.c:5088",
+    "src/lumina_cmfgen.c:5145",
+    "src/lumina_cuda.cu:7905"
+   ],
+   "files": [
+    "lumina_cmfgen.c",
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "n",
+    "t"
+   ],
+   "launchers": 80,
+   "live_last_run": true,
+   "n_sites": 5
+  },
+  "LUMINA_CMFGEN_ALI_MINIT": {
+   "sites": [
+    "src/lumina_cmfgen.c:2550"
+   ],
+   "files": [
+    "lumina_cmfgen.c"
+   ],
+   "functions": [
+    "J"
+   ],
+   "launchers": 0,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_CMFGEN_ALI_TOL": {
+   "sites": [
+    "src/lumina_cmfgen.c:2545"
+   ],
+   "files": [
+    "lumina_cmfgen.c"
+   ],
+   "functions": [
+    "J"
+   ],
+   "launchers": 0,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_CMFGEN_CELLDIAG": {
+   "sites": [
+    "src/lumina_cmfgen.c:2566"
+   ],
+   "files": [
+    "lumina_cmfgen.c"
+   ],
+   "functions": [
+    "J"
+   ],
+   "launchers": 1,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_CMFGEN_COLOR_BANDS": {
+   "sites": [
+    "src/lumina_cmfgen.c:2693"
+   ],
+   "files": [
+    "lumina_cmfgen.c"
+   ],
+   "functions": [
+    "r"
+   ],
+   "launchers": 0,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_CMFGEN_EPS_CAP": {
+   "sites": [
+    "src/lumina_cmfgen.c:696",
+    "src/lumina_cmfgen.c:1127",
+    "src/lumina_cmfgen.c:1770"
+   ],
+   "files": [
+    "lumina_cmfgen.c"
+   ],
+   "functions": [
+    "g1",
+    "l",
+    "s"
+   ],
+   "launchers": 0,
+   "live_last_run": false,
+   "n_sites": 3
+  },
+  "LUMINA_CMFGEN_EPS_FLOOR": {
+   "sites": [
+    "src/lumina_cmfgen.c:695",
+    "src/lumina_cmfgen.c:1126",
+    "src/lumina_cmfgen.c:1768"
+   ],
+   "files": [
+    "lumina_cmfgen.c"
+   ],
+   "functions": [
+    "g1",
+    "l",
+    "s"
+   ],
+   "launchers": 0,
+   "live_last_run": false,
+   "n_sites": 3
+  },
+  "LUMINA_CMFGEN_FEATURE_Z": {
+   "sites": [
+    "src/lumina_cuda.cu:9648"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 1,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_CMFGEN_FROZEN_ALI": {
+   "sites": [
+    "src/lumina_cuda.cu:9601"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 76,
+   "live_last_run": true,
+   "n_sites": 1
+  },
+  "LUMINA_CMFGEN_FROZEN_CONT": {
+   "sites": [
+    "src/lumina_cuda.cu:9611"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 76,
+   "live_last_run": true,
+   "n_sites": 1
+  },
+  "LUMINA_CMFGEN_FROZEN_EPS": {
+   "sites": [
+    "src/lumina_cuda.cu:9598"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 1,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_CMFGEN_FROZEN_FEATURE_ONLY": {
+   "sites": [
+    "src/lumina_cuda.cu:9645"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 1,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_CMFGEN_FROZEN_MORPH": {
+   "sites": [
+    "src/lumina_cuda.cu:9595"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 1,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_CMFGEN_JDUMP": {
+   "sites": [
+    "src/lumina_cmfgen.c:2801"
+   ],
+   "files": [
+    "lumina_cmfgen.c"
+   ],
+   "functions": [
+    "e"
+   ],
+   "launchers": 8,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_CMFGEN_LAMBDA_TRI": {
+   "sites": [
+    "src/lumina_cmfgen.c:2543"
+   ],
+   "files": [
+    "lumina_cmfgen.c"
+   ],
+   "functions": [
+    "J"
+   ],
+   "launchers": 0,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_CMFGEN_LINE_EPS": {
+   "sites": [
+    "src/lumina_cmfgen.c:700",
+    "src/lumina_cmfgen.c:1914"
+   ],
+   "files": [
+    "lumina_cmfgen.c"
+   ],
+   "functions": [
+    "l",
+    "s"
+   ],
+   "launchers": 0,
+   "live_last_run": false,
+   "n_sites": 2
+  },
+  "LUMINA_CMFGEN_LINE_EPS_GATE": {
+   "sites": [
+    "src/lumina_cmfgen.c:701",
+    "src/lumina_cmfgen.c:1916"
+   ],
+   "files": [
+    "lumina_cmfgen.c"
+   ],
+   "functions": [
+    "l",
+    "s"
+   ],
+   "launchers": 0,
+   "live_last_run": false,
+   "n_sites": 2
+  },
+  "LUMINA_CMFGEN_LINE_EPS_PHYS": {
+   "sites": [
+    "src/lumina_cmfgen.c:693",
+    "src/lumina_cmfgen.c:1766"
+   ],
+   "files": [
+    "lumina_cmfgen.c"
+   ],
+   "functions": [
+    "l",
+    "s"
+   ],
+   "launchers": 69,
+   "live_last_run": true,
+   "n_sites": 2
+  },
+  "LUMINA_CMFGEN_LINE_EPS_UV": {
+   "sites": [
+    "src/lumina_cmfgen.c:702",
+    "src/lumina_cmfgen.c:1779",
+    "src/lumina_plasma.c:11674",
+    "src/lumina_plasma.c:11832"
+   ],
+   "files": [
+    "lumina_cmfgen.c",
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)",
+    "l",
+    "s"
+   ],
+   "launchers": 0,
+   "live_last_run": false,
+   "n_sites": 4
+  },
+  "LUMINA_CMFGEN_SIGMA_BF": {
+   "sites": [
+    "src/lumina_cuda.cu:6942",
+    "src/lumina_main.c:132"
+   ],
+   "files": [
+    "lumina_cuda.cu",
+    "lumina_main.c"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 304,
+   "live_last_run": true,
+   "n_sites": 2
+  },
+  "LUMINA_CMFGEN_SRC_NLTE": {
+   "sites": [
+    "src/lumina_cmfgen.c:697",
+    "src/lumina_cmfgen.c:1764"
+   ],
+   "files": [
+    "lumina_cmfgen.c"
+   ],
+   "functions": [
+    "l",
+    "s"
+   ],
+   "launchers": 0,
+   "live_last_run": false,
+   "n_sites": 2
+  },
+  "LUMINA_CMFGEN_THEN_MC": {
+   "sites": [
+    "src/lumina_cuda.cu:7336",
+    "src/lumina_cuda.cu:7337"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 79,
+   "live_last_run": false,
+   "n_sites": 2
+  },
+  "LUMINA_CMF_ADV_SPLIT": {
+   "sites": [
+    "src/lumina_cmfgen.c:3491"
+   ],
+   "files": [
+    "lumina_cmfgen.c"
+   ],
+   "functions": [
+    "J"
+   ],
+   "launchers": 15,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_CMF_ALAM": {
+   "sites": [
+    "src/lumina_cmfgen.c:3477"
+   ],
+   "files": [
+    "lumina_cmfgen.c"
+   ],
+   "functions": [
+    "J"
+   ],
+   "launchers": 1,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_CMF_BF_MILNE": {
+   "sites": [
+    "src/lumina_plasma.c:7360"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 5,
+   "live_last_run": true,
+   "n_sites": 1
+  },
+  "LUMINA_CMF_CONTONLY": {
+   "sites": [
+    "src/lumina_cmfgen.c:5143"
+   ],
+   "files": [
+    "lumina_cmfgen.c"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 1,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_CMF_DEP_FRAC": {
+   "sites": [
+    "src/lumina_cmfgen.c:1731"
+   ],
+   "files": [
+    "lumina_cmfgen.c"
+   ],
+   "functions": [
+    "l"
+   ],
+   "launchers": 0,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_CMF_DEP_SOURCE": {
+   "sites": [
+    "src/lumina_cmfgen.c:1729"
+   ],
+   "files": [
+    "lumina_cmfgen.c"
+   ],
+   "functions": [
+    "l"
+   ],
+   "launchers": 74,
+   "live_last_run": true,
+   "n_sites": 1
+  },
+  "LUMINA_CMF_EPAY": {
+   "sites": [
+    "src/lumina_atomic.c:930",
+    "src/lumina_cmfgen.c:704",
+    "src/lumina_cmfgen.c:1937"
+   ],
+   "files": [
+    "lumina_atomic.c",
+    "lumina_cmfgen.c"
+   ],
+   "functions": [
+    "(file scope)",
+    "l",
+    "s"
+   ],
+   "launchers": 4,
+   "live_last_run": false,
+   "n_sites": 3
+  },
+  "LUMINA_CMF_EPAY_HOTF": {
+   "sites": [
+    "src/lumina_cmfgen.c:708",
+    "src/lumina_cmfgen.c:2151"
+   ],
+   "files": [
+    "lumina_cmfgen.c"
+   ],
+   "functions": [
+    "l",
+    "s"
+   ],
+   "launchers": 4,
+   "live_last_run": false,
+   "n_sites": 2
+  },
+  "LUMINA_CMF_EPAY_SMIN": {
+   "sites": [
+    "src/lumina_cmfgen.c:706",
+    "src/lumina_cmfgen.c:1942"
+   ],
+   "files": [
+    "lumina_cmfgen.c"
+   ],
+   "functions": [
+    "l",
+    "s"
+   ],
+   "launchers": 3,
+   "live_last_run": true,
+   "n_sites": 2
+  },
+  "LUMINA_CMF_EPAY_TAU": {
+   "sites": [
+    "src/lumina_cmfgen.c:1940"
+   ],
+   "files": [
+    "lumina_cmfgen.c"
+   ],
+   "functions": [
+    "l"
+   ],
+   "launchers": 0,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_CMF_EPAY_TAUBIN": {
+   "sites": [
+    "src/lumina_cmfgen.c:707",
+    "src/lumina_cmfgen.c:1944"
+   ],
+   "files": [
+    "lumina_cmfgen.c"
+   ],
+   "functions": [
+    "l",
+    "s"
+   ],
+   "launchers": 2,
+   "live_last_run": true,
+   "n_sites": 2
+  },
+  "LUMINA_CMF_EPAY_TAUEFF": {
+   "sites": [
+    "src/lumina_cmfgen.c:678",
+    "src/lumina_cmfgen.c:1972"
+   ],
+   "files": [
+    "lumina_cmfgen.c"
+   ],
+   "functions": [
+    "l",
+    "s"
+   ],
+   "launchers": 0,
+   "live_last_run": false,
+   "n_sites": 2
+  },
+  "LUMINA_CMF_FINE_ALI": {
+   "sites": [
+    "src/lumina_cmfgen.c:4072"
+   ],
+   "files": [
+    "lumina_cmfgen.c"
+   ],
+   "functions": [
+    "r"
+   ],
+   "launchers": 16,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_CMF_FINE_BF_DIAG": {
+   "sites": [
+    "src/lumina_cmfgen.c:4173"
+   ],
+   "files": [
+    "lumina_cmfgen.c"
+   ],
+   "functions": [
+    "r"
+   ],
+   "launchers": 1,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_CMF_FINE_BF_OPAC": {
+   "sites": [
+    "src/lumina_cmfgen.c:4151"
+   ],
+   "files": [
+    "lumina_cmfgen.c"
+   ],
+   "functions": [
+    "r"
+   ],
+   "launchers": 2,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_CMF_FINE_CONTONLY": {
+   "sites": [
+    "src/lumina_cmfgen.c:4200"
+   ],
+   "files": [
+    "lumina_cmfgen.c"
+   ],
+   "functions": [
+    "r"
+   ],
+   "launchers": 1,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_CMF_FINE_DIAG": {
+   "sites": [
+    "src/lumina_cmfgen.c:4062"
+   ],
+   "files": [
+    "lumina_cmfgen.c"
+   ],
+   "functions": [
+    "r"
+   ],
+   "launchers": 32,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_CMF_FINE_EMERGENT": {
+   "sites": [
+    "src/lumina_cmfgen.c:4439"
+   ],
+   "files": [
+    "lumina_cmfgen.c"
+   ],
+   "functions": [
+    "r"
+   ],
+   "launchers": 1,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_CMF_FINE_EMERGENT_OBS": {
+   "sites": [
+    "src/lumina_cmfgen.c:4444"
+   ],
+   "files": [
+    "lumina_cmfgen.c"
+   ],
+   "functions": [
+    "r"
+   ],
+   "launchers": 1,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_CMF_FINE_JMAP": {
+   "sites": [
+    "src/lumina_cmfgen.c:4410"
+   ],
+   "files": [
+    "lumina_cmfgen.c"
+   ],
+   "functions": [
+    "r"
+   ],
+   "launchers": 3,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_CMF_FINE_LAMHI": {
+   "sites": [
+    "src/lumina_cmfgen.c:4067",
+    "src/lumina_nlte_gemm.cu:223",
+    "src/lumina_plasma.c:3590"
+   ],
+   "files": [
+    "lumina_cmfgen.c",
+    "lumina_nlte_gemm.cu",
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)",
+    "l",
+    "r"
+   ],
+   "launchers": 3,
+   "live_last_run": false,
+   "n_sites": 3
+  },
+  "LUMINA_CMF_FINE_LAMLO": {
+   "sites": [
+    "src/lumina_cmfgen.c:4066",
+    "src/lumina_nlte_gemm.cu:222",
+    "src/lumina_plasma.c:3589"
+   ],
+   "files": [
+    "lumina_cmfgen.c",
+    "lumina_nlte_gemm.cu",
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)",
+    "l",
+    "r"
+   ],
+   "launchers": 32,
+   "live_last_run": false,
+   "n_sites": 3
+  },
+  "LUMINA_CMF_FINE_LINEDUMP": {
+   "sites": [
+    "src/lumina_cmfgen.c:4551"
+   ],
+   "files": [
+    "lumina_cmfgen.c"
+   ],
+   "functions": [
+    "r"
+   ],
+   "launchers": 14,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_CMF_FINE_LINEDUMP_SHELL": {
+   "sites": [
+    "src/lumina_cmfgen.c:4554"
+   ],
+   "files": [
+    "lumina_cmfgen.c"
+   ],
+   "functions": [
+    "r"
+   ],
+   "launchers": 14,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_CMF_FINE_LINE_EPS": {
+   "sites": [
+    "src/lumina_cmfgen.c:4090"
+   ],
+   "files": [
+    "lumina_cmfgen.c"
+   ],
+   "functions": [
+    "r"
+   ],
+   "launchers": 2,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_CMF_FINE_OBS_NOBS": {
+   "sites": [
+    "src/lumina_cmfgen.c:3904"
+   ],
+   "files": [
+    "lumina_cmfgen.c"
+   ],
+   "functions": [
+    "s"
+   ],
+   "launchers": 1,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_CMF_FINE_OBS_SCATTER": {
+   "sites": [
+    "src/lumina_cmfgen.c:3883"
+   ],
+   "files": [
+    "lumina_cmfgen.c"
+   ],
+   "functions": [
+    "s"
+   ],
+   "launchers": 1,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_CMF_FINE_PHOTOION": {
+   "sites": [
+    "src/lumina_cmfgen.c:4609"
+   ],
+   "files": [
+    "lumina_cmfgen.c"
+   ],
+   "functions": [
+    "r"
+   ],
+   "launchers": 30,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_CMF_FINE_PHOTOION_DIAG": {
+   "sites": [
+    "src/lumina_nlte_gemm.cu:220"
+   ],
+   "files": [
+    "lumina_nlte_gemm.cu"
+   ],
+   "functions": [
+    "l"
+   ],
+   "launchers": 1,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_CMF_FINE_PPD": {
+   "sites": [
+    "src/lumina_cmfgen.c:4071"
+   ],
+   "files": [
+    "lumina_cmfgen.c"
+   ],
+   "functions": [
+    "r"
+   ],
+   "launchers": 30,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_CMF_FINE_SL_CLAMP": {
+   "sites": [
+    "src/lumina_cmfgen.c:3886",
+    "src/lumina_cmfgen.c:4078"
+   ],
+   "files": [
+    "lumina_cmfgen.c"
+   ],
+   "functions": [
+    "r",
+    "s"
+   ],
+   "launchers": 1,
+   "live_last_run": false,
+   "n_sites": 2
+  },
+  "LUMINA_CMF_FINE_TAUMIN": {
+   "sites": [
+    "src/lumina_cmfgen.c:4212"
+   ],
+   "files": [
+    "lumina_cmfgen.c"
+   ],
+   "functions": [
+    "r"
+   ],
+   "launchers": 1,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_CMF_FINE_VDOP": {
+   "sites": [
+    "src/lumina_cmfgen.c:4069"
+   ],
+   "files": [
+    "lumina_cmfgen.c"
+   ],
+   "functions": [
+    "r"
+   ],
+   "launchers": 2,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_CMF_FROZEN_CHIETA_DUMP": {
+   "sites": [
+    "src/lumina_cuda.cu:8162"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 5,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_CMF_FROZEN_CHIETA_ITER": {
+   "sites": [
+    "src/lumina_cuda.cu:7947",
+    "src/lumina_cuda.cu:8165"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 6,
+   "live_last_run": false,
+   "n_sites": 2
+  },
+  "LUMINA_CMF_FSOLVE_SELFTEST": {
+   "sites": [
+    "src/lumina_cuda.cu:7899",
+    "src/lumina_cuda.cu:7900"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 0,
+   "live_last_run": false,
+   "n_sites": 2
+  },
+  "LUMINA_CMF_FSOLVE_TAUES": {
+   "sites": [
+    "src/lumina_cmfgen.c:4954"
+   ],
+   "files": [
+    "lumina_cmfgen.c"
+   ],
+   "functions": [
+    "t"
+   ],
+   "launchers": 0,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_CMF_INNER_DILUTE": {
+   "sites": [
+    "src/lumina_plasma.c:16421"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 0,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_CMF_JINC_CONT": {
+   "sites": [
+    "src/lumina_cmfgen.c:5221",
+    "src/lumina_cmfgen.c:5327"
+   ],
+   "files": [
+    "lumina_cmfgen.c"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 0,
+   "live_last_run": false,
+   "n_sites": 2
+  },
+  "LUMINA_CMF_LINEPOP_DUMP": {
+   "sites": [
+    "src/lumina_cuda.cu:8195"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 0,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_CMF_LINEPOP_LAM": {
+   "sites": [
+    "src/lumina_cmfgen.c:579"
+   ],
+   "files": [
+    "lumina_cmfgen.c"
+   ],
+   "functions": [
+    "l"
+   ],
+   "launchers": 0,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_CMF_LINEPOP_MAXROWS": {
+   "sites": [
+    "src/lumina_cmfgen.c:589"
+   ],
+   "files": [
+    "lumina_cmfgen.c"
+   ],
+   "functions": [
+    "l"
+   ],
+   "launchers": 0,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_CMF_LINEPOP_SHELLS": {
+   "sites": [
+    "src/lumina_cmfgen.c:547"
+   ],
+   "files": [
+    "lumina_cmfgen.c"
+   ],
+   "functions": [
+    "l"
+   ],
+   "launchers": 0,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_CMF_LINERES": {
+   "sites": [
+    "src/lumina_cmfgen.c:5142"
+   ],
+   "files": [
+    "lumina_cmfgen.c"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 0,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_CMF_LINERES_CONSUME": {
+   "sites": [
+    "src/lumina_plasma.c:12975"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 4,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_CMF_LINERES_JBAR": {
+   "sites": [
+    "src/lumina_cmfgen.c:5200",
+    "src/lumina_cuda.cu:8340",
+    "src/lumina_cuda.cu:8409",
+    "src/lumina_cuda.cu:8410",
+    "src/lumina_plasma.c:3943"
+   ],
+   "files": [
+    "lumina_cmfgen.c",
+    "lumina_cuda.cu",
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)",
+    "n"
+   ],
+   "launchers": 35,
+   "live_last_run": true,
+   "n_sites": 5
+  },
+  "LUMINA_CMF_LINE_SOB_EPS": {
+   "sites": [
+    "src/lumina_cmfgen.c:3225",
+    "src/lumina_cmfgen.c:3893"
+   ],
+   "files": [
+    "lumina_cmfgen.c"
+   ],
+   "functions": [
+    "s"
+   ],
+   "launchers": 1,
+   "live_last_run": false,
+   "n_sites": 2
+  },
+  "LUMINA_CMF_NIMPACT": {
+   "sites": [
+    "src/lumina_cuda.cu:10016",
+    "src/lumina_cuda.cu:10979",
+    "src/lumina_main.c:821"
+   ],
+   "files": [
+    "lumina_cuda.cu",
+    "lumina_main.c"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 1,
+   "live_last_run": false,
+   "n_sites": 3
+  },
+  "LUMINA_CMF_NLTE_SELFTEST": {
+   "sites": [
+    "src/lumina_cuda.cu:6798",
+    "src/lumina_cuda.cu:6799"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 0,
+   "live_last_run": false,
+   "n_sites": 2
+  },
+  "LUMINA_CMF_NSIGMA": {
+   "sites": [
+    "src/lumina_plasma.c:16420"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 0,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_CMF_NZ": {
+   "sites": [
+    "src/lumina_cuda.cu:10015",
+    "src/lumina_cuda.cu:10978",
+    "src/lumina_main.c:820"
+   ],
+   "files": [
+    "lumina_cuda.cu",
+    "lumina_main.c"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 1,
+   "live_last_run": false,
+   "n_sites": 3
+  },
+  "LUMINA_CMF_OBSERVER_FRAME": {
+   "sites": [
+    "src/lumina_cmfgen.c:5370",
+    "src/lumina_cuda.cu:9565"
+   ],
+   "files": [
+    "lumina_cmfgen.c",
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 0,
+   "live_last_run": false,
+   "n_sites": 2
+  },
+  "LUMINA_CMF_OBS_CONTONLY": {
+   "sites": [
+    "src/lumina_cmfgen.c:3232",
+    "src/lumina_cmfgen.c:3896"
+   ],
+   "files": [
+    "lumina_cmfgen.c"
+   ],
+   "functions": [
+    "s"
+   ],
+   "launchers": 1,
+   "live_last_run": false,
+   "n_sites": 2
+  },
+  "LUMINA_CMF_OBS_DIAG": {
+   "sites": [
+    "src/lumina_cmfgen.c:3230"
+   ],
+   "files": [
+    "lumina_cmfgen.c"
+   ],
+   "functions": [
+    "s"
+   ],
+   "launchers": 0,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_CMF_OBS_DVRES": {
+   "sites": [
+    "src/lumina_cmfgen.c:3060"
+   ],
+   "files": [
+    "lumina_cmfgen.c"
+   ],
+   "functions": [
+    "c"
+   ],
+   "launchers": 1,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_CMF_OBS_FAITHFUL": {
+   "sites": [
+    "src/lumina_cmfgen.c:3898"
+   ],
+   "files": [
+    "lumina_cmfgen.c"
+   ],
+   "functions": [
+    "s"
+   ],
+   "launchers": 1,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_CMF_OBS_JBARDET": {
+   "sites": [
+    "src/lumina_cmfgen.c:3897"
+   ],
+   "files": [
+    "lumina_cmfgen.c"
+   ],
+   "functions": [
+    "s"
+   ],
+   "launchers": 1,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_CMF_OBS_NOEMIT": {
+   "sites": [
+    "src/lumina_cmfgen.c:3229"
+   ],
+   "files": [
+    "lumina_cmfgen.c"
+   ],
+   "functions": [
+    "s"
+   ],
+   "launchers": 0,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_CMF_OBS_NRAY": {
+   "sites": [
+    "src/lumina_cmfgen.c:3273",
+    "src/lumina_cmfgen.c:3906"
+   ],
+   "files": [
+    "lumina_cmfgen.c"
+   ],
+   "functions": [
+    "s"
+   ],
+   "launchers": 0,
+   "live_last_run": false,
+   "n_sites": 2
+  },
+  "LUMINA_CMF_OBS_PRAY_LAM": {
+   "sites": [
+    "src/lumina_cmfgen.c:3235"
+   ],
+   "files": [
+    "lumina_cmfgen.c"
+   ],
+   "functions": [
+    "s"
+   ],
+   "launchers": 0,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_CMF_OBS_SEI": {
+   "sites": [
+    "src/lumina_cmfgen.c:3899"
+   ],
+   "files": [
+    "lumina_cmfgen.c"
+   ],
+   "functions": [
+    "s"
+   ],
+   "launchers": 1,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_CMF_OBS_SEI_CMV": {
+   "sites": [
+    "src/lumina_cmfgen.c:3900"
+   ],
+   "files": [
+    "lumina_cmfgen.c"
+   ],
+   "functions": [
+    "s"
+   ],
+   "launchers": 0,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_CMF_OBS_SELFTEST": {
+   "sites": [
+    "src/lumina_cmfgen.c:5116",
+    "src/lumina_cuda.cu:7895"
+   ],
+   "files": [
+    "lumina_cmfgen.c",
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 0,
+   "live_last_run": false,
+   "n_sites": 2
+  },
+  "LUMINA_CMF_OBS_SOBOLEV": {
+   "sites": [
+    "src/lumina_cmfgen.c:3223"
+   ],
+   "files": [
+    "lumina_cmfgen.c"
+   ],
+   "functions": [
+    "s"
+   ],
+   "launchers": 0,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_CMF_OBS_SRCJ": {
+   "sites": [
+    "src/lumina_cmfgen.c:3231",
+    "src/lumina_cmfgen.c:3901"
+   ],
+   "files": [
+    "lumina_cmfgen.c"
+   ],
+   "functions": [
+    "s"
+   ],
+   "launchers": 0,
+   "live_last_run": false,
+   "n_sites": 2
+  },
+  "LUMINA_CMF_OBS_TAUMIN": {
+   "sites": [
+    "src/lumina_cmfgen.c:3233",
+    "src/lumina_cmfgen.c:3887"
+   ],
+   "files": [
+    "lumina_cmfgen.c"
+   ],
+   "functions": [
+    "s"
+   ],
+   "launchers": 0,
+   "live_last_run": false,
+   "n_sites": 2
+  },
+  "LUMINA_CMF_OTS": {
+   "sites": [
+    "src/lumina_plasma.c:7362"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 1,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_CMF_OVERLAP": {
+   "sites": [
+    "src/lumina_cmfgen.c:5255"
+   ],
+   "files": [
+    "lumina_cmfgen.c"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 0,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_CMF_PLASMA_SELFTEST": {
+   "sites": [
+    "src/lumina_cuda.cu:6801",
+    "src/lumina_cuda.cu:6802"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 0,
+   "live_last_run": false,
+   "n_sites": 2
+  },
+  "LUMINA_CMF_SELFTEST_JBAR": {
+   "sites": [
+    "src/lumina_cmfgen.c:5077",
+    "src/lumina_cmfgen.c:5077"
+   ],
+   "files": [
+    "lumina_cmfgen.c"
+   ],
+   "functions": [
+    "t"
+   ],
+   "launchers": 0,
+   "live_last_run": false,
+   "n_sites": 2
+  },
+  "LUMINA_CMF_SELFTEST_NS": {
+   "sites": [
+    "src/lumina_cmfgen.c:4932",
+    "src/lumina_cmfgen.c:5031"
+   ],
+   "files": [
+    "lumina_cmfgen.c"
+   ],
+   "functions": [
+    "t"
+   ],
+   "launchers": 0,
+   "live_last_run": false,
+   "n_sites": 2
+  },
+  "LUMINA_CMF_SELFTEST_TAUS": {
+   "sites": [
+    "src/lumina_cmfgen.c:5036"
+   ],
+   "files": [
+    "lumina_cmfgen.c"
+   ],
+   "functions": [
+    "t"
+   ],
+   "launchers": 0,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_CMF_SELFTEST_VSCALE": {
+   "sites": [
+    "src/lumina_cmfgen.c:5034"
+   ],
+   "files": [
+    "lumina_cmfgen.c"
+   ],
+   "functions": [
+    "t"
+   ],
+   "launchers": 0,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_CMF_SOLVE_GPU": {
+   "sites": [
+    "src/lumina_cmfgen.c:3498"
+   ],
+   "files": [
+    "lumina_cmfgen.c"
+   ],
+   "functions": [
+    "J"
+   ],
+   "launchers": 31,
+   "live_last_run": true,
+   "n_sites": 1
+  },
+  "LUMINA_CMF_SOLVE_SELFTEST": {
+   "sites": [
+    "src/lumina_cuda.cu:6804",
+    "src/lumina_cuda.cu:6805"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 0,
+   "live_last_run": false,
+   "n_sites": 2
+  },
+  "LUMINA_CMF_SOLVE_SELFTEST_NF": {
+   "sites": [
+    "src/lumina_cmfgen.c:4987"
+   ],
+   "files": [
+    "lumina_cmfgen.c"
+   ],
+   "functions": [
+    "t"
+   ],
+   "launchers": 0,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_CMF_SOLVE_SELFTEST_NS": {
+   "sites": [
+    "src/lumina_cmfgen.c:4986"
+   ],
+   "files": [
+    "lumina_cmfgen.c"
+   ],
+   "functions": [
+    "t"
+   ],
+   "launchers": 0,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_CMF_SOLVE_SELFTEST_TAUS": {
+   "sites": [
+    "src/lumina_cmfgen.c:4989"
+   ],
+   "files": [
+    "lumina_cmfgen.c"
+   ],
+   "functions": [
+    "t"
+   ],
+   "launchers": 0,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_CMF_TAU_CUTOFF": {
+   "sites": [
+    "src/lumina_plasma.c:16419"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 0,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_CMF_VTURB_KMS": {
+   "sites": [
+    "src/lumina_cuda.cu:10017",
+    "src/lumina_cuda.cu:10980",
+    "src/lumina_main.c:822"
+   ],
+   "files": [
+    "lumina_cuda.cu",
+    "lumina_main.c"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 1,
+   "live_last_run": false,
+   "n_sites": 3
+  },
+  "LUMINA_COEVOLVE_JBAR_DAMP": {
+   "sites": [
+    "src/lumina_cuda.cu:9281",
+    "src/lumina_cuda.cu:9357",
+    "src/lumina_cuda.cu:9874"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 1,
+   "live_last_run": false,
+   "n_sites": 3
+  },
+  "LUMINA_COEVOLVE_PHOTOION_ALPHA": {
+   "sites": [
+    "src/lumina_cuda.cu:7980",
+    "src/lumina_cuda.cu:7981",
+    "src/lumina_plasma.c:10510"
+   ],
+   "files": [
+    "lumina_cuda.cu",
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)",
+    "n"
+   ],
+   "launchers": 60,
+   "live_last_run": false,
+   "n_sites": 3
+  },
+  "LUMINA_COEVOLVE_PHOTOION_MC": {
+   "sites": [
+    "src/lumina_cuda.cu:7978",
+    "src/lumina_cuda.cu:7979"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 60,
+   "live_last_run": false,
+   "n_sites": 2
+  },
+  "LUMINA_COEVOLVE_PHOTOION_OCC": {
+   "sites": [
+    "src/lumina_plasma.c:9895",
+    "src/lumina_plasma.c:9896"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 2,
+   "live_last_run": false,
+   "n_sites": 2
+  },
+  "LUMINA_COEVOLVE_TAU_FLOOR": {
+   "sites": [
+    "src/lumina_cuda.cu:8717"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 0,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_COUPLED_NEWTON": {
+   "sites": [
+    "src/lumina_cuda.cu:8383",
+    "src/lumina_cuda.cu:8384",
+    "src/lumina_cuda.cu:10726",
+    "src/lumina_cuda.cu:10727"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 88,
+   "live_last_run": true,
+   "n_sites": 4
+  },
+  "LUMINA_DEPOSITION_FILE": {
+   "sites": [
+    "src/lumina_cuda.cu:7801"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 77,
+   "live_last_run": true,
+   "n_sites": 1
+  },
+  "LUMINA_DETFLUOR_SL_CEIL": {
+   "sites": [
+    "src/lumina_cuda.cu:6832",
+    "src/lumina_cuda.cu:6837",
+    "src/lumina_cuda.cu:6837"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 0,
+   "live_last_run": false,
+   "n_sites": 3
+  },
+  "LUMINA_DIAG_SHELL": {
+   "sites": [
+    "src/lumina_plasma.c:12604"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 0,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_DIAG_TE_PIN": {
+   "sites": [
+    "src/lumina_plasma.c:10220"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 1,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_DIFFUSE_INNER_BC": {
+   "sites": [
+    "src/lumina_cuda.cu:7200",
+    "src/lumina_cuda.cu:7201"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 117,
+   "live_last_run": true,
+   "n_sites": 2
+  },
+  "LUMINA_DIFFUSION_INNER_BC": {
+   "sites": [
+    "src/lumina_cuda.cu:10863",
+    "src/lumina_main.c:727"
+   ],
+   "files": [
+    "lumina_cuda.cu",
+    "lumina_main.c"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 11,
+   "live_last_run": false,
+   "n_sites": 2
+  },
+  "LUMINA_DIP_TRACE": {
+   "sites": [
+    "src/lumina_cuda.cu:8422",
+    "src/lumina_cuda.cu:8422"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 48,
+   "live_last_run": true,
+   "n_sites": 2
+  },
+  "LUMINA_DR_BOOST": {
+   "sites": [
+    "src/lumina_plasma.c:8599"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 2,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_DR_FLOOR_CMS": {
+   "sites": [
+    "src/lumina_plasma.c:14237"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 2,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_DYNAMIC_TRANSPROB": {
+   "sites": [
+    "src/lumina_cuda.cu:7144",
+    "src/lumina_cuda.cu:7145",
+    "src/lumina_main.c:186",
+    "src/lumina_main.c:187"
+   ],
+   "files": [
+    "lumina_cuda.cu",
+    "lumina_main.c"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 298,
+   "live_last_run": true,
+   "n_sites": 4
+  },
+  "LUMINA_EMERGENT_MODE": {
+   "sites": [
+    "src/lumina_cuda.cu:6818"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 0,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_EMISS_AB_DUMP": {
+   "sites": [
+    "src/lumina_cuda.cu:7934"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 4,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_EMISS_AB_SEED": {
+   "sites": [
+    "src/lumina_cuda.cu:7957"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 0,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_EMIT_EBOOST_FIX": {
+   "sites": [
+    "src/lumina_cuda.cu:7454",
+    "src/lumina_cuda.cu:7455"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 0,
+   "live_last_run": false,
+   "n_sites": 2
+  },
+  "LUMINA_ENERGY_BUDGET": {
+   "sites": [
+    "src/lumina_cuda.cu:10460",
+    "src/lumina_cuda.cu:10461"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 117,
+   "live_last_run": true,
+   "n_sites": 2
+  },
+  "LUMINA_ENV_STRICT": {
+   "sites": [
+    "src/lumina_atomic.c:868"
+   ],
+   "files": [
+    "lumina_atomic.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 2,
+   "live_last_run": true,
+   "n_sites": 1
+  },
+  "LUMINA_EPS_IR": {
+   "sites": [
+    "src/lumina_cuda.cu:7265",
+    "src/lumina_cuda.cu:7266"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 8,
+   "live_last_run": false,
+   "n_sites": 2
+  },
+  "LUMINA_EPS_UV": {
+   "sites": [
+    "src/lumina_cuda.cu:7246",
+    "src/lumina_cuda.cu:7247"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 47,
+   "live_last_run": false,
+   "n_sites": 2
+  },
+  "LUMINA_EPS_UV_2STEP": {
+   "sites": [
+    "src/lumina_cuda.cu:7297",
+    "src/lumina_cuda.cu:7298"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 1,
+   "live_last_run": false,
+   "n_sites": 2
+  },
+  "LUMINA_EPS_UV_2STEP_BAND_HI": {
+   "sites": [
+    "src/lumina_cuda.cu:7301",
+    "src/lumina_cuda.cu:7302"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 1,
+   "live_last_run": false,
+   "n_sites": 2
+  },
+  "LUMINA_EPS_UV_2STEP_BAND_LO": {
+   "sites": [
+    "src/lumina_cuda.cu:7299",
+    "src/lumina_cuda.cu:7300"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 1,
+   "live_last_run": false,
+   "n_sites": 2
+  },
+  "LUMINA_EPS_UV_RED_ONLY": {
+   "sites": [
+    "src/lumina_cuda.cu:7283",
+    "src/lumina_cuda.cu:7284"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 43,
+   "live_last_run": false,
+   "n_sites": 2
+  },
+  "LUMINA_ETLA_ALLOW_HEAT": {
+   "sites": [
+    "src/lumina_plasma.c:11546"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 24,
+   "live_last_run": true,
+   "n_sites": 1
+  },
+  "LUMINA_EVENT_LOG": {
+   "sites": [
+    "src/lumina_cuda.cu:7989",
+    "src/lumina_cuda.cu:7990"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 76,
+   "live_last_run": false,
+   "n_sites": 2
+  },
+  "LUMINA_EVENT_LOG_CAP": {
+   "sites": [
+    "src/lumina_cuda.cu:8000",
+    "src/lumina_cuda.cu:8001"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 67,
+   "live_last_run": false,
+   "n_sites": 2
+  },
+  "LUMINA_EVENT_LOG_ESCATTER": {
+   "sites": [
+    "src/lumina_cuda.cu:8006",
+    "src/lumina_cuda.cu:8007"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 26,
+   "live_last_run": false,
+   "n_sites": 2
+  },
+  "LUMINA_EVENT_LOG_ITERS": {
+   "sites": [
+    "src/lumina_cuda.cu:8008"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 0,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_EVENT_LOG_LAMBDA_MAX": {
+   "sites": [
+    "src/lumina_cuda.cu:8004",
+    "src/lumina_cuda.cu:8005"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 1,
+   "live_last_run": false,
+   "n_sites": 2
+  },
+  "LUMINA_EW_FROZEN_COMMIT": {
+   "sites": [
+    "src/lumina_element_wide.c:199",
+    "src/lumina_element_wide.c:2457"
+   ],
+   "files": [
+    "lumina_element_wide.c"
+   ],
+   "functions": [
+    "d"
+   ],
+   "launchers": 0,
+   "live_last_run": false,
+   "n_sites": 2
+  },
+  "LUMINA_FB_COOL_KT": {
+   "sites": [
+    "src/lumina_plasma.c:3605"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 24,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_FB_MILNE_EXACT": {
+   "sites": [
+    "src/lumina_plasma.c:5221"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 4,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_FEIII_COLDATA": {
+   "sites": [
+    "src/lumina_cuda.cu:6988",
+    "src/lumina_plasma.c:8937"
+   ],
+   "files": [
+    "lumina_cuda.cu",
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)",
+    "n"
+   ],
+   "launchers": 1,
+   "live_last_run": false,
+   "n_sites": 2
+  },
+  "LUMINA_FE_SCATTER": {
+   "sites": [
+    "src/lumina_cuda.cu:7149",
+    "src/lumina_cuda.cu:7150",
+    "src/lumina_main.c:192",
+    "src/lumina_main.c:193"
+   ],
+   "files": [
+    "lumina_cuda.cu",
+    "lumina_main.c"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 2,
+   "live_last_run": false,
+   "n_sites": 4
+  },
+  "LUMINA_FINE_NCHUNK": {
+   "sites": [
+    "src/lumina_cmfgen.c:4263"
+   ],
+   "files": [
+    "lumina_cmfgen.c"
+   ],
+   "functions": [
+    "r"
+   ],
+   "launchers": 0,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_FINE_OWNER": {
+   "sites": [
+    "src/lumina_cmfgen.c:4249"
+   ],
+   "files": [
+    "lumina_cmfgen.c"
+   ],
+   "functions": [
+    "r"
+   ],
+   "launchers": 0,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_FIXED_NE_PROFILE": {
+   "sites": [
+    "src/lumina_plasma.c:6691"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 2,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_FIXED_TE_PROFILE": {
+   "sites": [
+    "src/lumina_plasma.c:11982"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 2,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_FIX_BF_CONTINUUM_EVENT": {
+   "sites": [
+    "src/lumina_atomic.c:2123",
+    "src/lumina_plasma.c:6971"
+   ],
+   "files": [
+    "lumina_atomic.c",
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 0,
+   "live_last_run": false,
+   "n_sites": 2
+  },
+  "LUMINA_FIX_BF_ETA_SPINGATE": {
+   "sites": [
+    "src/lumina_plasma.c:6980"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 1,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_FIX_BF_MULTI_EDGE": {
+   "sites": [
+    "src/lumina_cuda.cu:7228",
+    "src/lumina_plasma.c:6957"
+   ],
+   "files": [
+    "lumina_cuda.cu",
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)",
+    "n"
+   ],
+   "launchers": 0,
+   "live_last_run": false,
+   "n_sites": 2
+  },
+  "LUMINA_FIX_BF_NEUTRAL": {
+   "sites": [
+    "src/lumina_plasma.c:6948"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 1,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_FIX_BF_STIM_RECOMB": {
+   "sites": [
+    "src/lumina_atomic.c:1030",
+    "src/lumina_atomic.c:2122",
+    "src/lumina_plasma.c:6939"
+   ],
+   "files": [
+    "lumina_atomic.c",
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 1,
+   "live_last_run": false,
+   "n_sites": 3
+  },
+  "LUMINA_FIX_MA_J_UNCLAMP": {
+   "sites": [
+    "src/lumina_plasma.c:3740"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 0,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_FIX_MA_NO_LINE_THERM": {
+   "sites": [
+    "src/lumina_cuda.cu:7404"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 0,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_FI_CLAMP_SL": {
+   "sites": [
+    "src/lumina_plasma.c:15964"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 1,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_FI_CONT_OPACITY": {
+   "sites": [
+    "src/lumina_plasma.c:15933"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 3,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_FI_FOREST_NOBLANK": {
+   "sites": [
+    "src/lumina_plasma.c:15979"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 1,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_FI_INNER_DILUTE": {
+   "sites": [
+    "src/lumina_plasma.c:15934"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 2,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_FI_LEDGER": {
+   "sites": [
+    "src/lumina_plasma.c:15981"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 1,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_FI_TAU_CUTOFF": {
+   "sites": [
+    "src/lumina_plasma.c:15932"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 1,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_FLUOR_MATRIX_DUMP": {
+   "sites": [
+    "src/lumina_cuda.cu:7347"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 0,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_FLUOR_MATRIX_ITER": {
+   "sites": [
+    "src/lumina_cuda.cu:4306"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "t"
+   ],
+   "launchers": 0,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_FLUOR_MATRIX_OVERWRITE": {
+   "sites": [
+    "src/lumina_cuda.cu:4316"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "t"
+   ],
+   "launchers": 0,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_FLUOR_ORACLE_LAM_HI": {
+   "sites": [
+    "src/lumina_plasma.c:14905"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 0,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_FLUOR_ORACLE_LAM_LO": {
+   "sites": [
+    "src/lumina_plasma.c:14904"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 0,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_FLUOR_ORACLE_X": {
+   "sites": [
+    "src/lumina_plasma.c:14902"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 1,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_FORMAL_CONS_WINDOW": {
+   "sites": [
+    "src/lumina_plasma.c:16344"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 0,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_FORMAL_FIX": {
+   "sites": [
+    "src/lumina_plasma.c:15957"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 0,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_FROZENIN": {
+   "sites": [
+    "src/lumina_plasma.c:6004",
+    "src/lumina_plasma.c:6632"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 92,
+   "live_last_run": false,
+   "n_sites": 2
+  },
+  "LUMINA_FROZENIN_DR": {
+   "sites": [
+    "src/lumina_plasma.c:6174",
+    "src/lumina_plasma.c:10319",
+    "src/lumina_plasma.c:10319"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 41,
+   "live_last_run": true,
+   "n_sites": 3
+  },
+  "LUMINA_FROZENIN_NT": {
+   "sites": [
+    "src/lumina_plasma.c:6431"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 2,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_FROZENIN_NT_THR": {
+   "sites": [
+    "src/lumina_plasma.c:6433"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 0,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_GAMMA_DEP": {
+   "sites": [
+    "src/lumina_cuda.cu:7321",
+    "src/lumina_cuda.cu:7321",
+    "src/lumina_main.c:199",
+    "src/lumina_main.c:199"
+   ],
+   "files": [
+    "lumina_cuda.cu",
+    "lumina_main.c"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 76,
+   "live_last_run": true,
+   "n_sites": 4
+  },
+  "LUMINA_GATEB_ORACLE_CAPTURE": {
+   "sites": [
+    "src/lumina_cuda.cu:8920",
+    "src/lumina_cuda.cu:8921",
+    "src/lumina_plasma.c:12636"
+   ],
+   "files": [
+    "lumina_cuda.cu",
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)",
+    "n"
+   ],
+   "launchers": 0,
+   "live_last_run": false,
+   "n_sites": 3
+  },
+  "LUMINA_GPH_ALLLEVEL": {
+   "sites": [
+    "src/lumina_plasma.c:10278"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 59,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_GPH_ALLLEVEL_NLTE": {
+   "sites": [
+    "src/lumina_plasma.c:10297"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 22,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_GPH_JTABLE": {
+   "sites": [
+    "src/lumina_plasma.c:10338"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 3,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_GPH_SIGMA_CMFGEN": {
+   "sites": [
+    "src/lumina_plasma.c:10235"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 66,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_HRESP_CLAMP": {
+   "sites": [
+    "src/lumina_plasma.c:11473"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 27,
+   "live_last_run": true,
+   "n_sites": 1
+  },
+  "LUMINA_INNER_BB_SCALE": {
+   "sites": [
+    "src/lumina_cmfgen.c:85"
+   ],
+   "files": [
+    "lumina_cmfgen.c"
+   ],
+   "functions": [
+    "e"
+   ],
+   "launchers": 73,
+   "live_last_run": true,
+   "n_sites": 1
+  },
+  "LUMINA_IONIZ_SELFTEST": {
+   "sites": [
+    "src/lumina_plasma.c:9848"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 1,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_ION_FRAC_DUMP": {
+   "sites": [
+    "src/lumina_plasma.c:6892",
+    "src/lumina_plasma.c:6892"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 1,
+   "live_last_run": false,
+   "n_sites": 2
+  },
+  "LUMINA_ION_FRAC_Z": {
+   "sites": [
+    "src/lumina_plasma.c:6895"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 1,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_ION_NT": {
+   "sites": [
+    "src/lumina_plasma.c:2516"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 1,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_ION_POP_DUMP": {
+   "sites": [
+    "src/lumina_cuda.cu:10054",
+    "src/lumina_cuda.cu:10054",
+    "src/lumina_cuda.cu:11052",
+    "src/lumina_cuda.cu:11052"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 99,
+   "live_last_run": false,
+   "n_sites": 4
+  },
+  "LUMINA_ION_POP_DUMP_ITER": {
+   "sites": [
+    "src/lumina_cuda.cu:8430",
+    "src/lumina_cuda.cu:8431"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 6,
+   "live_last_run": false,
+   "n_sites": 2
+  },
+  "LUMINA_IUP_BINFIELD": {
+   "sites": [
+    "src/lumina_plasma.c:4009"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 2,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_IUP_JBLUE": {
+   "sites": [
+    "src/lumina_cuda.cu:8028",
+    "src/lumina_cuda.cu:8028",
+    "src/lumina_plasma.c:3977"
+   ],
+   "files": [
+    "lumina_cuda.cu",
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)",
+    "n"
+   ],
+   "launchers": 5,
+   "live_last_run": false,
+   "n_sites": 3
+  },
+  "LUMINA_JBAR_DAMP_UNIFY": {
+   "sites": [
+    "src/lumina_cuda.cu:942"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "y"
+   ],
+   "launchers": 0,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_JBAR_DUMP": {
+   "sites": [
+    "src/lumina_plasma.c:12630"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 19,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_JBAR_DUMP_IONS": {
+   "sites": [
+    "src/lumina_plasma.c:12633"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 9,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_JBAR_LINE_DUMP": {
+   "sites": [
+    "src/lumina_cuda.cu:10513",
+    "src/lumina_cuda.cu:10514"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 1,
+   "live_last_run": false,
+   "n_sites": 2
+  },
+  "LUMINA_JBAR_MIN": {
+   "sites": [
+    "src/lumina_cuda.cu:9877",
+    "src/lumina_plasma.c:3958",
+    "src/lumina_plasma.c:12947"
+   ],
+   "files": [
+    "lumina_cuda.cu",
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)",
+    "n"
+   ],
+   "launchers": 2,
+   "live_last_run": false,
+   "n_sites": 3
+  },
+  "LUMINA_JBAR_POPS_DAMP": {
+   "sites": [
+    "src/lumina_cmfgen.c:5329",
+    "src/lumina_cuda.cu:9876",
+    "src/lumina_cuda.cu:10554"
+   ],
+   "files": [
+    "lumina_cmfgen.c",
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 1,
+   "live_last_run": false,
+   "n_sites": 3
+  },
+  "LUMINA_JBAR_SRC_BINNED": {
+   "sites": [
+    "src/lumina_plasma.c:12960"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 0,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_JBAR_UNIFY": {
+   "sites": [
+    "src/lumina_plasma.c:3956"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 0,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_JNU_FINE_DUMP": {
+   "sites": [
+    "src/lumina_plasma.c:1713",
+    "src/lumina_plasma.c:1713"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 22,
+   "live_last_run": false,
+   "n_sites": 2
+  },
+  "LUMINA_JPROBE": {
+   "sites": [
+    "src/lumina_cuda.cu:8313",
+    "src/lumina_cuda.cu:8382",
+    "src/lumina_cuda.cu:8401"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 3,
+   "live_last_run": false,
+   "n_sites": 3
+  },
+  "LUMINA_J_CAP_FACTOR": {
+   "sites": [
+    "src/lumina_plasma.c:3713"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 2,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_J_DAMP": {
+   "sites": [
+    "src/lumina_cuda.cu:8141"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 19,
+   "live_last_run": true,
+   "n_sites": 1
+  },
+  "LUMINA_J_FLOOR_FACTOR": {
+   "sites": [
+    "src/lumina_plasma.c:3729"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 0,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_J_NU_UV_CAP": {
+   "sites": [
+    "src/lumina_plasma.c:12453"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 2,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_J_NU_UV_CAP_LAMBDA_MAX": {
+   "sites": [
+    "src/lumina_plasma.c:12455"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 2,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_J_NU_UV_CAP_LAMBDA_MIN": {
+   "sites": [
+    "src/lumina_plasma.c:12457"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 2,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_J_NU_UV_W_CAP": {
+   "sites": [
+    "src/lumina_plasma.c:12459"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 2,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_KPACKET": {
+   "sites": [
+    "src/lumina_cuda.cu:225",
+    "src/lumina_cuda.cu:225",
+    "src/lumina_cuda.cu:7034",
+    "src/lumina_cuda.cu:7035",
+    "src/lumina_plasma.c:4048"
+   ],
+   "files": [
+    "lumina_cuda.cu",
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)",
+    "e",
+    "n"
+   ],
+   "launchers": 84,
+   "live_last_run": true,
+   "n_sites": 5
+  },
+  "LUMINA_KPACKET_EXIT": {
+   "sites": [
+    "src/lumina_cuda.cu:7213",
+    "src/lumina_cuda.cu:7214"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 59,
+   "live_last_run": false,
+   "n_sites": 2
+  },
+  "LUMINA_KPACKET_ONESHOT": {
+   "sites": [
+    "src/lumina_cuda.cu:7208",
+    "src/lumina_cuda.cu:7209"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 0,
+   "live_last_run": false,
+   "n_sites": 2
+  },
+  "LUMINA_KPEMISS_BSRC_PHOT": {
+   "sites": [
+    "src/lumina_cuda.cu:7606",
+    "src/lumina_cuda.cu:7607"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 16,
+   "live_last_run": false,
+   "n_sites": 2
+  },
+  "LUMINA_KPEMISS_BSRC_PHOT_SRC": {
+   "sites": [
+    "src/lumina_cuda.cu:7612"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 16,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_KPEMISS_BSRC_PHOT_WFLOOR": {
+   "sites": [
+    "src/lumina_cuda.cu:7609"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 1,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_KPEMISS_BSRC_PHOT_XION": {
+   "sites": [
+    "src/lumina_cuda.cu:7614",
+    "src/lumina_cuda.cu:7615"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 14,
+   "live_last_run": false,
+   "n_sites": 2
+  },
+  "LUMINA_KPEMISS_BSRC_SRC": {
+   "sites": [
+    "src/lumina_cuda.cu:7581"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 22,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_KPEMISS_BSRC_TAU": {
+   "sites": [
+    "src/lumina_cuda.cu:7576",
+    "src/lumina_cuda.cu:7577"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 25,
+   "live_last_run": false,
+   "n_sites": 2
+  },
+  "LUMINA_KPEMISS_BSRC_WFLOOR": {
+   "sites": [
+    "src/lumina_cuda.cu:7610"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 0,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_KPEMISS_COOLGUARD": {
+   "sites": [
+    "src/lumina_cuda.cu:7656"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 23,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_KPEMISS_FB_OTS": {
+   "sites": [
+    "src/lumina_cuda.cu:7616",
+    "src/lumina_cuda.cu:7617"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 16,
+   "live_last_run": false,
+   "n_sites": 2
+  },
+  "LUMINA_KPEMISS_FB_OTS_NUMIN": {
+   "sites": [
+    "src/lumina_cuda.cu:7618"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 16,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_KPEMISS_OTS_MODE": {
+   "sites": [
+    "src/lumina_cuda.cu:7621"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 15,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_KPEMISS_OTS_TAU": {
+   "sites": [
+    "src/lumina_cuda.cu:7623"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 15,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_KPEMISS_REPAIR": {
+   "sites": [
+    "src/lumina_cuda.cu:7567",
+    "src/lumina_cuda.cu:7568"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 26,
+   "live_last_run": false,
+   "n_sites": 2
+  },
+  "LUMINA_KPEMISS_SE_POPS": {
+   "sites": [
+    "src/lumina_cuda.cu:7574",
+    "src/lumina_cuda.cu:7575"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 26,
+   "live_last_run": false,
+   "n_sites": 2
+  },
+  "LUMINA_KPKT_FB_MULTI": {
+   "sites": [
+    "src/lumina_plasma.c:6958"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 29,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_KROMER": {
+   "sites": [
+    "src/lumina_cuda.cu:298",
+    "src/lumina_cuda.cu:298",
+    "src/lumina_cuda.cu:7874",
+    "src/lumina_cuda.cu:7874"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "e",
+    "n"
+   ],
+   "launchers": 57,
+   "live_last_run": false,
+   "n_sites": 4
+  },
+  "LUMINA_LEVELPOP_DUMP": {
+   "sites": [
+    "src/lumina_cuda.cu:9810"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 3,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_LINE_BSRC": {
+   "sites": [
+    "src/lumina_cuda.cu:7441",
+    "src/lumina_cuda.cu:7441"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 26,
+   "live_last_run": false,
+   "n_sites": 2
+  },
+  "LUMINA_LINE_BSRC_MODE": {
+   "sites": [
+    "src/lumina_cuda.cu:7444",
+    "src/lumina_cuda.cu:7444"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 26,
+   "live_last_run": false,
+   "n_sites": 2
+  },
+  "LUMINA_LINE_INTERACTION": {
+   "sites": [
+    "src/lumina_cuda.cu:6912",
+    "src/lumina_main.c:102"
+   ],
+   "files": [
+    "lumina_cuda.cu",
+    "lumina_main.c"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 139,
+   "live_last_run": true,
+   "n_sites": 2
+  },
+  "LUMINA_LINE_THERM": {
+   "sites": [
+    "src/lumina_cuda.cu:7407",
+    "src/lumina_cuda.cu:7408",
+    "src/lumina_plasma.c:10188",
+    "src/lumina_plasma.c:10188"
+   ],
+   "files": [
+    "lumina_cuda.cu",
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)",
+    "n"
+   ],
+   "launchers": 15,
+   "live_last_run": false,
+   "n_sites": 4
+  },
+  "LUMINA_LINE_THERM_SMAX": {
+   "sites": [
+    "src/lumina_cuda.cu:7411",
+    "src/lumina_cuda.cu:7411",
+    "src/lumina_cuda.cu:7420",
+    "src/lumina_plasma.c:10190",
+    "src/lumina_plasma.c:10190"
+   ],
+   "files": [
+    "lumina_cuda.cu",
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)",
+    "n"
+   ],
+   "launchers": 15,
+   "live_last_run": false,
+   "n_sites": 5
+  },
+  "LUMINA_LOCK_IONMASK": {
+   "sites": [
+    "src/lumina_plasma.c:1861"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 1,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_LOCK_W_THRESH": {
+   "sites": [
+    "src/lumina_plasma.c:1848"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 1,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_LOCK_ZMASK": {
+   "sites": [
+    "src/lumina_plasma.c:1851"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 1,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_MACROATOM_BF": {
+   "sites": [
+    "src/lumina_plasma.c:3274"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 2,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_MACROATOM_EWEIGHT": {
+   "sites": [
+    "src/lumina_plasma.c:4078"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 76,
+   "live_last_run": true,
+   "n_sites": 1
+  },
+  "LUMINA_MACROATOM_IDOWN_BETA": {
+   "sites": [
+    "src/lumina_plasma.c:3913"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 2,
+   "live_last_run": true,
+   "n_sites": 1
+  },
+  "LUMINA_MACROATOM_IDOWN_COLL": {
+   "sites": [
+    "src/lumina_plasma.c:3919"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 1,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_MACROATOM_IUP_BETA": {
+   "sites": [
+    "src/lumina_plasma.c:3973"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 2,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_MACROATOM_IUP_TRAD": {
+   "sites": [
+    "src/lumina_plasma.c:3968"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 1,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_MACROATOM_NEUTRAL_E": {
+   "sites": [
+    "src/lumina_plasma.c:4089"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 75,
+   "live_last_run": true,
+   "n_sites": 1
+  },
+  "LUMINA_MACRO_UV_IDOWN_FACTOR": {
+   "sites": [
+    "src/lumina_plasma.c:3870"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 3,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_MACRO_UV_IDOWN_IONMASK": {
+   "sites": [
+    "src/lumina_plasma.c:3873"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 3,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_MACRO_UV_IDOWN_THRESH": {
+   "sites": [
+    "src/lumina_plasma.c:3871"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 3,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_MACRO_UV_IDOWN_ZMASK": {
+   "sites": [
+    "src/lumina_plasma.c:3872"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 3,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_MALI": {
+   "sites": [
+    "src/lumina_element_wide.c:2109",
+    "src/lumina_plasma.c:12849"
+   ],
+   "files": [
+    "lumina_element_wide.c",
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)",
+    "l"
+   ],
+   "launchers": 1,
+   "live_last_run": false,
+   "n_sites": 2
+  },
+  "LUMINA_MAX_INTERACTIONS": {
+   "sites": [
+    "src/lumina_cuda.cu:7156",
+    "src/lumina_cuda.cu:7157"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 110,
+   "live_last_run": true,
+   "n_sites": 2
+  },
+  "LUMINA_MAX_TOTAL_STEPS": {
+   "sites": [
+    "src/lumina_cuda.cu:7181",
+    "src/lumina_cuda.cu:7182"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 0,
+   "live_last_run": false,
+   "n_sites": 2
+  },
+  "LUMINA_MA_CAP_EMIT": {
+   "sites": [
+    "src/lumina_cuda.cu:7219",
+    "src/lumina_cuda.cu:7220",
+    "src/lumina_cuda.cu:8950",
+    "src/lumina_cuda.cu:8951"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 1,
+   "live_last_run": false,
+   "n_sites": 4
+  },
+  "LUMINA_MA_COLLISION_LIMIT_EV": {
+   "sites": [
+    "src/lumina_plasma.c:3924"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 1,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_MA_FATE_ZIHIST": {
+   "sites": [
+    "src/lumina_cuda.cu:7312",
+    "src/lumina_cuda.cu:7313"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 3,
+   "live_last_run": false,
+   "n_sites": 2
+  },
+  "LUMINA_MA_INTERNAL_CAP": {
+   "sites": [
+    "src/lumina_cuda.cu:7191",
+    "src/lumina_cuda.cu:7192"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 1,
+   "live_last_run": false,
+   "n_sites": 2
+  },
+  "LUMINA_MA_LINE_DESTRUCT": {
+   "sites": [
+    "src/lumina_cuda.cu:266",
+    "src/lumina_cuda.cu:267",
+    "src/lumina_plasma.c:4272"
+   ],
+   "files": [
+    "lumina_cuda.cu",
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)",
+    "e"
+   ],
+   "launchers": 23,
+   "live_last_run": false,
+   "n_sites": 3
+  },
+  "LUMINA_MA_RADRECOMB": {
+   "sites": [
+    "src/lumina_cuda.cu:6962",
+    "src/lumina_plasma.c:3295",
+    "src/lumina_plasma.c:7488"
+   ],
+   "files": [
+    "lumina_cuda.cu",
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)",
+    "n"
+   ],
+   "launchers": 22,
+   "live_last_run": false,
+   "n_sites": 3
+  },
+  "LUMINA_MA_RADRECOMB_TARGET": {
+   "sites": [
+    "src/lumina_atomic.c:2126",
+    "src/lumina_cuda.cu:6965"
+   ],
+   "files": [
+    "lumina_atomic.c",
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "(file scope)",
+    "n"
+   ],
+   "launchers": 0,
+   "live_last_run": false,
+   "n_sites": 2
+  },
+  "LUMINA_MA_REAL_UPSILON": {
+   "sites": [
+    "src/lumina_plasma.c:4151"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 22,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_MC_COEVOLVE": {
+   "sites": [
+    "src/lumina_cuda.cu:7345",
+    "src/lumina_cuda.cu:7346"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 1,
+   "live_last_run": false,
+   "n_sites": 2
+  },
+  "LUMINA_MC_COEVOLVE_CONSUME": {
+   "sites": [
+    "src/lumina_cuda.cu:9235",
+    "src/lumina_cuda.cu:9873"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 1,
+   "live_last_run": false,
+   "n_sites": 2
+  },
+  "LUMINA_MC_COEVOLVE_INJECT": {
+   "sites": [
+    "src/lumina_cuda.cu:8713"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 2,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_MC_INJECT_SHELL": {
+   "sites": [
+    "src/lumina_cuda.cu:8760",
+    "src/lumina_cuda.cu:10147"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 2,
+   "live_last_run": false,
+   "n_sites": 2
+  },
+  "LUMINA_MC_JDUMP": {
+   "sites": [
+    "src/lumina_cuda.cu:10535",
+    "src/lumina_cuda.cu:10535",
+    "src/lumina_plasma.c:12418"
+   ],
+   "files": [
+    "lumina_cuda.cu",
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)",
+    "n"
+   ],
+   "launchers": 2,
+   "live_last_run": false,
+   "n_sites": 3
+  },
+  "LUMINA_ML_PHI_NEB_BOOST": {
+   "sites": [
+    "src/lumina_plasma.c:2270"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 1,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_ML_PHI_NEB_IONMASK": {
+   "sites": [
+    "src/lumina_plasma.c:2285"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 1,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_ML_PHI_NEB_T_RATIO_EXP": {
+   "sites": [
+    "src/lumina_plasma.c:2272"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 1,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_ML_PHI_NEB_ZMASK": {
+   "sites": [
+    "src/lumina_plasma.c:2275"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 1,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_NLTE": {
+   "sites": [
+    "src/lumina_cuda.cu:7128",
+    "src/lumina_cuda.cu:7128",
+    "src/lumina_main.c:175",
+    "src/lumina_main.c:175"
+   ],
+   "files": [
+    "lumina_cuda.cu",
+    "lumina_main.c"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 75,
+   "live_last_run": true,
+   "n_sites": 4
+  },
+  "LUMINA_NLTE_ASSEMBLE_GPU": {
+   "sites": [
+    "src/lumina_cuda.cu:1108"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "u"
+   ],
+   "launchers": 75,
+   "live_last_run": true,
+   "n_sites": 1
+  },
+  "LUMINA_NLTE_BF_JEQB": {
+   "sites": [
+    "src/lumina_plasma.c:414"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 1,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_NLTE_BK_CEIL": {
+   "sites": [
+    "src/lumina_cuda.cu:1616"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "u"
+   ],
+   "launchers": 1,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_NLTE_BK_PARTIAL": {
+   "sites": [
+    "src/lumina_cuda.cu:1565",
+    "src/lumina_plasma.c:14527"
+   ],
+   "files": [
+    "lumina_cuda.cu",
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)",
+    "u"
+   ],
+   "launchers": 1,
+   "live_last_run": false,
+   "n_sites": 2
+  },
+  "LUMINA_NLTE_BK_PIN_THR": {
+   "sites": [
+    "src/lumina_plasma.c:14562"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 0,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_NLTE_BUDGET_DUMP": {
+   "sites": [
+    "src/lumina_plasma.c:12819"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 1,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_NLTE_COLL_FIX": {
+   "sites": [
+    "src/lumina_plasma.c:8858"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 79,
+   "live_last_run": true,
+   "n_sites": 1
+  },
+  "LUMINA_NLTE_COLL_FLOOR": {
+   "sites": [
+    "src/lumina_nlte_assemble.cu:407",
+    "src/lumina_plasma.c:12839"
+   ],
+   "files": [
+    "lumina_nlte_assemble.cu",
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)",
+    "x"
+   ],
+   "launchers": 1,
+   "live_last_run": false,
+   "n_sites": 2
+  },
+  "LUMINA_NLTE_DILUTE_FIELD": {
+   "sites": [
+    "src/lumina_plasma.c:12894"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 0,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_NLTE_DILUTE_TR_K": {
+   "sites": [
+    "src/lumina_plasma.c:12896"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 0,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_NLTE_ELEMENT_WIDE": {
+   "sites": [
+    "src/lumina_element_wide.c:100"
+   ],
+   "files": [
+    "lumina_element_wide.c"
+   ],
+   "functions": [
+    "e"
+   ],
+   "launchers": 1,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_NLTE_ELEMENT_WIDE_DUMP_DIR": {
+   "sites": [
+    "src/lumina_element_wide.c:165"
+   ],
+   "files": [
+    "lumina_element_wide.c"
+   ],
+   "functions": [
+    "e"
+   ],
+   "launchers": 0,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_NLTE_ELEMENT_WIDE_SHELL": {
+   "sites": [
+    "src/lumina_element_wide.c:109"
+   ],
+   "files": [
+    "lumina_element_wide.c"
+   ],
+   "functions": [
+    "e"
+   ],
+   "launchers": 1,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_NLTE_ELEMENT_WIDE_Z": {
+   "sites": [
+    "src/lumina_element_wide.c:108"
+   ],
+   "files": [
+    "lumina_element_wide.c"
+   ],
+   "functions": [
+    "e"
+   ],
+   "launchers": 1,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_NLTE_EQUILIBRATE": {
+   "sites": [
+    "src/lumina_cuda.cu:716"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "d"
+   ],
+   "launchers": 1,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_NLTE_FINAL_RESOLVE": {
+   "sites": [
+    "src/lumina_cuda.cu:9259",
+    "src/lumina_cuda.cu:9870"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 22,
+   "live_last_run": false,
+   "n_sites": 2
+  },
+  "LUMINA_NLTE_FLOOR_BKMAX": {
+   "sites": [
+    "src/lumina_cuda.cu:1136"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "u"
+   ],
+   "launchers": 18,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_NLTE_FLOOR_MODE": {
+   "sites": [
+    "src/lumina_cuda.cu:1134"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "u"
+   ],
+   "launchers": 18,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_NLTE_FLOOR_REG": {
+   "sites": [
+    "src/lumina_plasma.c:12779"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 146,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_NLTE_FORCE_LTE_LEVELS": {
+   "sites": [
+    "src/lumina_cuda.cu:1397"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "u"
+   ],
+   "launchers": 2,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_NLTE_GREY_ITERS": {
+   "sites": [
+    "src/lumina_cuda.cu:1413"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "u"
+   ],
+   "launchers": 75,
+   "live_last_run": true,
+   "n_sites": 1
+  },
+  "LUMINA_NLTE_GREY_TAU": {
+   "sites": [
+    "src/lumina_cuda.cu:1412"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "u"
+   ],
+   "launchers": 75,
+   "live_last_run": true,
+   "n_sites": 1
+  },
+  "LUMINA_NLTE_INV_CEIL": {
+   "sites": [
+    "src/lumina_plasma.c:8965"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 130,
+   "live_last_run": true,
+   "n_sites": 1
+  },
+  "LUMINA_NLTE_ION_LOCK": {
+   "sites": [
+    "src/lumina_plasma.c:6346",
+    "src/lumina_plasma.c:8712"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 91,
+   "live_last_run": true,
+   "n_sites": 2
+  },
+  "LUMINA_NLTE_JBAR_POPS": {
+   "sites": [
+    "src/lumina_cuda.cu:9875",
+    "src/lumina_cuda.cu:10552",
+    "src/lumina_element_wide.c:2108",
+    "src/lumina_plasma.c:12867"
+   ],
+   "files": [
+    "lumina_cuda.cu",
+    "lumina_element_wide.c",
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)",
+    "l",
+    "n"
+   ],
+   "launchers": 2,
+   "live_last_run": false,
+   "n_sites": 4
+  },
+  "LUMINA_NLTE_JEQB": {
+   "sites": [
+    "src/lumina_cuda.cu:8320",
+    "src/lumina_cuda.cu:8320",
+    "src/lumina_plasma.c:12998"
+   ],
+   "files": [
+    "lumina_cuda.cu",
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)",
+    "n"
+   ],
+   "launchers": 1,
+   "live_last_run": false,
+   "n_sites": 3
+  },
+  "LUMINA_NLTE_LEVEL_DUMP": {
+   "sites": [
+    "src/lumina_cuda.cu:2010",
+    "src/lumina_plasma.c:15572"
+   ],
+   "files": [
+    "lumina_cuda.cu",
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)",
+    "u"
+   ],
+   "launchers": 49,
+   "live_last_run": false,
+   "n_sites": 2
+  },
+  "LUMINA_NLTE_LOCK_START_ITER": {
+   "sites": [
+    "src/lumina_plasma.c:8713"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 81,
+   "live_last_run": true,
+   "n_sites": 1
+  },
+  "LUMINA_NLTE_LTE_FLOOR": {
+   "sites": [
+    "src/lumina_cuda.cu:1633"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "u"
+   ],
+   "launchers": 81,
+   "live_last_run": true,
+   "n_sites": 1
+  },
+  "LUMINA_NLTE_LTE_NCRIT": {
+   "sites": [
+    "src/lumina_cuda.cu:753"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "t"
+   ],
+   "launchers": 1,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_NLTE_MATDUMP": {
+   "sites": [
+    "src/lumina_cuda.cu:1346"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "u"
+   ],
+   "launchers": 2,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_NLTE_MATDUMP_PATH": {
+   "sites": [
+    "src/lumina_cuda.cu:1351"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "u"
+   ],
+   "launchers": 1,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_NLTE_METACOLL_MODE": {
+   "sites": [
+    "src/lumina_plasma.c:8898"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 10,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_NLTE_METACOLL_OMEGA": {
+   "sites": [
+    "src/lumina_plasma.c:8914"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 10,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_NLTE_METASTABLE_COLL": {
+   "sites": [
+    "src/lumina_plasma.c:8878"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 15,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_NLTE_NO_ML_LOCK": {
+   "sites": [
+    "src/lumina_plasma.c:1901"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 1,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_NLTE_NSTAR_DUMP": {
+   "sites": [
+    "src/lumina_plasma.c:14470"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 0,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_NLTE_NSTAR_PATH": {
+   "sites": [
+    "src/lumina_plasma.c:14496"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 0,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_NLTE_OPACITY_IONSTAGE": {
+   "sites": [
+    "src/lumina_plasma.c:2983"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 2,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_NLTE_PER_ION_RESCALE": {
+   "sites": [
+    "src/lumina_plasma.c:6347",
+    "src/lumina_plasma.c:8730"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 92,
+   "live_last_run": true,
+   "n_sites": 2
+  },
+  "LUMINA_NLTE_RATES_GEMM": {
+   "sites": [
+    "src/lumina_cuda.cu:1090",
+    "src/lumina_cuda.cu:1090"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "u"
+   ],
+   "launchers": 0,
+   "live_last_run": false,
+   "n_sites": 2
+  },
+  "LUMINA_NLTE_RATE_DUMP": {
+   "sites": [
+    "src/lumina_plasma.c:14168"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 21,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_NLTE_RESID_CHECK": {
+   "sites": [
+    "src/lumina_cuda.cu:730"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "d"
+   ],
+   "launchers": 1,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_NLTE_RESID_TOL": {
+   "sites": [
+    "src/lumina_cuda.cu:736"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "l"
+   ],
+   "launchers": 1,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_NLTE_SKIP_DEAD": {
+   "sites": [
+    "src/lumina_plasma.c:8749"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 10,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_NLTE_SKIP_Z": {
+   "sites": [
+    "src/lumina_cuda.cu:1879",
+    "src/lumina_plasma.c:14859"
+   ],
+   "files": [
+    "lumina_cuda.cu",
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)",
+    "u"
+   ],
+   "launchers": 310,
+   "live_last_run": true,
+   "n_sites": 2
+  },
+  "LUMINA_NLTE_STAGE4": {
+   "sites": [
+    "src/lumina_plasma.c:8765"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 27,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_NLTE_START_ITER": {
+   "sites": [
+    "src/lumina_cuda.cu:7137",
+    "src/lumina_cuda.cu:7138",
+    "src/lumina_main.c:180",
+    "src/lumina_main.c:181"
+   ],
+   "files": [
+    "lumina_cuda.cu",
+    "lumina_main.c"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 301,
+   "live_last_run": true,
+   "n_sites": 4
+  },
+  "LUMINA_NT_FULL": {
+   "sites": [
+    "src/lumina_plasma.c:15664"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 0,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_OMEGA_CMFGEN": {
+   "sites": [
+    "src/lumina_plasma.c:868"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 2,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_OMEGA_CMFGEN_SET": {
+   "sites": [
+    "src/lumina_plasma.c:877"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 0,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_OPACITY_SKIP_Z": {
+   "sites": [
+    "src/lumina_plasma.c:2821"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 1,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_OUTER_ION_BOOST": {
+   "sites": [
+    "src/lumina_plasma.c:2638"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 3,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_OUTER_TE_SEED": {
+   "sites": [
+    "src/lumina_cuda.cu:7919"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 0,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_OVERLAP_CORR": {
+   "sites": [
+    "src/lumina_cuda.cu:7325",
+    "src/lumina_cuda.cu:7326",
+    "src/lumina_main.c:203",
+    "src/lumina_main.c:204",
+    "src/lumina_plasma.c:6797",
+    "src/lumina_plasma.c:6797"
+   ],
+   "files": [
+    "lumina_cuda.cu",
+    "lumina_main.c",
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)",
+    "n"
+   ],
+   "launchers": 0,
+   "live_last_run": false,
+   "n_sites": 6
+  },
+  "LUMINA_OVERLAP_FOUT": {
+   "sites": [
+    "src/lumina_cmfgen.c:5256"
+   ],
+   "files": [
+    "lumina_cmfgen.c"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 0,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_POP_ION": {
+   "sites": [
+    "src/lumina_cuda.cu:1348",
+    "src/lumina_cuda.cu:1348",
+    "src/lumina_cuda.cu:1471",
+    "src/lumina_cuda.cu:1471",
+    "src/lumina_plasma.c:14472",
+    "src/lumina_plasma.c:14472"
+   ],
+   "files": [
+    "lumina_cuda.cu",
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)",
+    "u"
+   ],
+   "launchers": 1,
+   "live_last_run": false,
+   "n_sites": 6
+  },
+  "LUMINA_POP_SHELL": {
+   "sites": [
+    "src/lumina_cuda.cu:1349",
+    "src/lumina_cuda.cu:1349",
+    "src/lumina_cuda.cu:1472",
+    "src/lumina_cuda.cu:1472",
+    "src/lumina_plasma.c:14473",
+    "src/lumina_plasma.c:14473"
+   ],
+   "files": [
+    "lumina_cuda.cu",
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)",
+    "u"
+   ],
+   "launchers": 2,
+   "live_last_run": false,
+   "n_sites": 6
+  },
+  "LUMINA_POP_TRACE": {
+   "sites": [
+    "src/lumina_cuda.cu:1469",
+    "src/lumina_cuda.cu:1773"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "u"
+   ],
+   "launchers": 0,
+   "live_last_run": false,
+   "n_sites": 2
+  },
+  "LUMINA_POP_Z": {
+   "sites": [
+    "src/lumina_cuda.cu:1347",
+    "src/lumina_cuda.cu:1347",
+    "src/lumina_cuda.cu:1470",
+    "src/lumina_cuda.cu:1470",
+    "src/lumina_plasma.c:14471",
+    "src/lumina_plasma.c:14471"
+   ],
+   "files": [
+    "lumina_cuda.cu",
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)",
+    "u"
+   ],
+   "launchers": 1,
+   "live_last_run": false,
+   "n_sites": 6
+  },
+  "LUMINA_PURE_CMFGEN": {
+   "sites": [
+    "src/lumina_cuda.cu:7528",
+    "src/lumina_cuda.cu:7893",
+    "src/lumina_main.c:347"
+   ],
+   "files": [
+    "lumina_cuda.cu",
+    "lumina_main.c"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 82,
+   "live_last_run": true,
+   "n_sites": 3
+  },
+  "LUMINA_PURE_CMFGEN_ITER": {
+   "sites": [
+    "src/lumina_cuda.cu:7902",
+    "src/lumina_main.c:349"
+   ],
+   "files": [
+    "lumina_cuda.cu",
+    "lumina_main.c"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 82,
+   "live_last_run": true,
+   "n_sites": 2
+  },
+  "LUMINA_RADEQ_COLPAIRS_MAXLEV": {
+   "sites": [
+    "src/lumina_plasma.c:10026"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 0,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_RADEQ_COL_PAIRS": {
+   "sites": [
+    "src/lumina_plasma.c:10024"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 0,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_RADEQ_DAMP": {
+   "sites": [
+    "src/lumina_plasma.c:10184"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 79,
+   "live_last_run": true,
+   "n_sites": 1
+  },
+  "LUMINA_RADEQ_DB_FB": {
+   "sites": [
+    "src/lumina_plasma.c:10452"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 37,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_RADEQ_DIAG": {
+   "sites": [
+    "src/lumina_cmfgen.c:1526",
+    "src/lumina_plasma.c:11167",
+    "src/lumina_plasma.c:11184",
+    "src/lumina_plasma.c:11324"
+   ],
+   "files": [
+    "lumina_cmfgen.c",
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)",
+    "t"
+   ],
+   "launchers": 101,
+   "live_last_run": false,
+   "n_sites": 4
+  },
+  "LUMINA_RADEQ_FB_RATE": {
+   "sites": [
+    "src/lumina_plasma.c:9422"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 29,
+   "live_last_run": true,
+   "n_sites": 1
+  },
+  "LUMINA_RADEQ_LINE_CULL": {
+   "sites": [
+    "src/lumina_plasma.c:11058"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 1,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_RADEQ_OMEGA_FLOOR": {
+   "sites": [
+    "src/lumina_plasma.c:9150",
+    "src/lumina_plasma.c:9325"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 20,
+   "live_last_run": false,
+   "n_sites": 2
+  },
+  "LUMINA_RADEQ_PUMP_FALLBACK": {
+   "sites": [
+    "src/lumina_plasma.c:10525"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 20,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_RADEQ_PUMP_FIELD": {
+   "sites": [
+    "src/lumina_plasma.c:10505"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 21,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_RADEQ_TE": {
+   "sites": [
+    "src/lumina_cuda.cu:7357",
+    "src/lumina_cuda.cu:7358",
+    "src/lumina_main.c:214",
+    "src/lumina_main.c:215"
+   ],
+   "files": [
+    "lumina_cuda.cu",
+    "lumina_main.c"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 108,
+   "live_last_run": true,
+   "n_sites": 4
+  },
+  "LUMINA_RADEQ_VR_GAUNT": {
+   "sites": [
+    "src/lumina_plasma.c:9109"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 0,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_RADEQ_VR_STD": {
+   "sites": [
+    "src/lumina_plasma.c:9245"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 20,
+   "live_last_run": true,
+   "n_sites": 1
+  },
+  "LUMINA_RADFIELD_COMMIT_DUMP": {
+   "sites": [
+    "src/radiation_field.c:668"
+   ],
+   "files": [
+    "radiation_field.c"
+   ],
+   "functions": [
+    "d"
+   ],
+   "launchers": 0,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_RADFIELD_SHADOW_DUMP": {
+   "sites": [
+    "src/radiation_field.c:669"
+   ],
+   "files": [
+    "radiation_field.c"
+   ],
+   "functions": [
+    "d"
+   ],
+   "launchers": 0,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_RATES_FIX": {
+   "sites": [
+    "src/lumina_plasma.c:685"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 0,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_REC_SPINGATE": {
+   "sites": [
+    "src/lumina_plasma.c:3171"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 0,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_RR_TAU_THRESH": {
+   "sites": [
+    "src/lumina_plasma.c:3696"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 0,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_SELF_CONSISTENT_TE": {
+   "sites": [
+    "src/lumina_cuda.cu:7333",
+    "src/lumina_cuda.cu:7334",
+    "src/lumina_main.c:211",
+    "src/lumina_main.c:212"
+   ],
+   "files": [
+    "lumina_cuda.cu",
+    "lumina_main.c"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 3,
+   "live_last_run": false,
+   "n_sites": 4
+  },
+  "LUMINA_SIMUL_CAP_TOPION": {
+   "sites": [
+    "src/lumina_plasma.c:9612"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 23,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_SIMUL_ION_DAMP": {
+   "sites": [
+    "src/lumina_plasma.c:11301"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 0,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_SIMUL_NESTED": {
+   "sites": [
+    "src/lumina_plasma.c:10534"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 2,
+   "live_last_run": true,
+   "n_sites": 1
+  },
+  "LUMINA_SIMUL_NESTED_NL": {
+   "sites": [
+    "src/lumina_plasma.c:10536"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 0,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_SIMUL_NTP": {
+   "sites": [
+    "src/lumina_plasma.c:10996"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 0,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_SIMUL_TRACE": {
+   "sites": [
+    "src/lumina_plasma.c:11182"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 3,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_SL_DUMP": {
+   "sites": [
+    "src/lumina_cuda.cu:9769"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 1,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_SL_WRITE_SKIPZ": {
+   "sites": [
+    "src/lumina_plasma.c:14847"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 3,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_SPEC_RANGE": {
+   "sites": [
+    "src/lumina_cuda.cu:7476",
+    "src/lumina_cuda.cu:7477",
+    "src/lumina_main.c:279",
+    "src/lumina_main.c:281",
+    "src/lumina_main.c:287"
+   ],
+   "files": [
+    "lumina_cuda.cu",
+    "lumina_main.c"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 0,
+   "live_last_run": false,
+   "n_sites": 5
+  },
+  "LUMINA_SPINGATE_MULT": {
+   "sites": [
+    "src/lumina_atomic.c:2059"
+   ],
+   "files": [
+    "lumina_atomic.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 0,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_STAGE32_RUNG1_DUMP": {
+   "sites": [
+    "src/lumina_cmfgen.c:1406",
+    "src/lumina_cmfgen.c:1485"
+   ],
+   "files": [
+    "lumina_cmfgen.c"
+   ],
+   "functions": [
+    "p",
+    "t"
+   ],
+   "launchers": 1,
+   "live_last_run": false,
+   "n_sites": 2
+  },
+  "LUMINA_STAGE32_RUNG1_ITER": {
+   "sites": [
+    "src/lumina_cmfgen.c:1408"
+   ],
+   "files": [
+    "lumina_cmfgen.c"
+   ],
+   "functions": [
+    "p"
+   ],
+   "launchers": 1,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_STAGE4_BK_CAP": {
+   "sites": [
+    "src/lumina_plasma.c:10690"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 25,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_STAGE4_GPH_WTHR": {
+   "sites": [
+    "src/lumina_plasma.c:10685"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 25,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_SUPER_CUTOFF": {
+   "sites": [
+    "src/lumina_atomic.c:1459",
+    "src/lumina_element_wide.c:2044"
+   ],
+   "files": [
+    "lumina_atomic.c",
+    "lumina_element_wide.c"
+   ],
+   "functions": [
+    "(file scope)",
+    "l"
+   ],
+   "launchers": 76,
+   "live_last_run": true,
+   "n_sites": 2
+  },
+  "LUMINA_SUPER_LEVELS": {
+   "sites": [
+    "src/lumina_plasma.c:12222"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 26,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_TAU_BY_ION": {
+   "sites": [
+    "src/lumina_plasma.c:6841",
+    "src/lumina_plasma.c:6841"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 123,
+   "live_last_run": true,
+   "n_sites": 2
+  },
+  "LUMINA_TAU_BY_ION_LAM_HI": {
+   "sites": [
+    "src/lumina_plasma.c:6853",
+    "src/lumina_plasma.c:6854"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 2,
+   "live_last_run": false,
+   "n_sites": 2
+  },
+  "LUMINA_TAU_BY_ION_LAM_LO": {
+   "sites": [
+    "src/lumina_plasma.c:6851",
+    "src/lumina_plasma.c:6852"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 2,
+   "live_last_run": false,
+   "n_sites": 2
+  },
+  "LUMINA_TAU_BY_ION_SHELL": {
+   "sites": [
+    "src/lumina_plasma.c:6844",
+    "src/lumina_plasma.c:6845"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 2,
+   "live_last_run": false,
+   "n_sites": 2
+  },
+  "LUMINA_TE_STEP_CLAMP": {
+   "sites": [
+    "src/lumina_plasma.c:9495"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 27,
+   "live_last_run": true,
+   "n_sites": 1
+  },
+  "LUMINA_TE_TABLE": {
+   "sites": [
+    "src/lumina_plasma.c:10408"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 4,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_TIMEDEP_ION": {
+   "sites": [
+    "src/lumina_plasma.c:8839"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 1,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_TIME_EXPLOSION": {
+   "sites": [
+    "src/lumina_cuda.cu:7482",
+    "src/lumina_main.c:244"
+   ],
+   "files": [
+    "lumina_cuda.cu",
+    "lumina_main.c"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 0,
+   "live_last_run": false,
+   "n_sites": 2
+  },
+  "LUMINA_TINNER_COLOR": {
+   "sites": [
+    "src/lumina_cuda.cu:7386",
+    "src/lumina_cuda.cu:7386"
+   ],
+   "files": [
+    "lumina_cuda.cu"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 2,
+   "live_last_run": false,
+   "n_sites": 2
+  },
+  "LUMINA_TOPSTAGE_ANCHOR": {
+   "sites": [
+    "src/lumina_atomic.c:2677"
+   ],
+   "files": [
+    "lumina_atomic.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 1,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_TOPSTAGE_DEPARTURE": {
+   "sites": [
+    "src/lumina_plasma.c:12802"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 1,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_TOPSTAGE_IV": {
+   "sites": [
+    "src/lumina_plasma.c:14003"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 2,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_TOPSTAGE_IV_DIAG": {
+   "sites": [
+    "src/lumina_plasma.c:14028"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 0,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_TOPSTAGE_IV_ZONLY": {
+   "sites": [
+    "src/lumina_plasma.c:14005"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 1,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_TOPSTAGE_THERMALIZE": {
+   "sites": [
+    "src/lumina_plasma.c:12800"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 1,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_TRANSPORT": {
+   "sites": [
+    "src/lumina_cuda.cu:10013",
+    "src/lumina_cuda.cu:10976",
+    "src/lumina_main.c:818"
+   ],
+   "files": [
+    "lumina_cuda.cu",
+    "lumina_main.c"
+   ],
+   "functions": [
+    "n"
+   ],
+   "launchers": 1,
+   "live_last_run": false,
+   "n_sites": 3
+  },
+  "LUMINA_T_INNER_FIX": {
+   "sites": [
+    "src/lumina_atomic.c:811",
+    "src/lumina_cuda.cu:10861",
+    "src/lumina_main.c:725"
+   ],
+   "files": [
+    "lumina_atomic.c",
+    "lumina_cuda.cu",
+    "lumina_main.c"
+   ],
+   "functions": [
+    "(file scope)",
+    "n"
+   ],
+   "launchers": 3,
+   "live_last_run": false,
+   "n_sites": 3
+  },
+  "LUMINA_UVOPT_EMIT_BOOST": {
+   "sites": [
+    "src/lumina_plasma.c:3788"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 23,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_UVOPT_EMIT_BOOST2": {
+   "sites": [
+    "src/lumina_plasma.c:3791"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 18,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_UVOPT_EMIT_BOOST3": {
+   "sites": [
+    "src/lumina_plasma.c:3794"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 18,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_UVOPT_EMIT_BOOST4": {
+   "sites": [
+    "src/lumina_plasma.c:3797"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 1,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_UVOPT_EMIT_IONMASK": {
+   "sites": [
+    "src/lumina_plasma.c:3831"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 0,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_UVOPT_EMIT_IONMASK4": {
+   "sites": [
+    "src/lumina_plasma.c:3856"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 1,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_UVOPT_EMIT_LAM_MAX": {
+   "sites": [
+    "src/lumina_plasma.c:3790"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 18,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_UVOPT_EMIT_LAM_MAX2": {
+   "sites": [
+    "src/lumina_plasma.c:3793"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 18,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_UVOPT_EMIT_LAM_MAX3": {
+   "sites": [
+    "src/lumina_plasma.c:3796"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 18,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_UVOPT_EMIT_LAM_MAX4": {
+   "sites": [
+    "src/lumina_plasma.c:3799"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 1,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_UVOPT_EMIT_LAM_MIN": {
+   "sites": [
+    "src/lumina_plasma.c:3789"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 18,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_UVOPT_EMIT_LAM_MIN2": {
+   "sites": [
+    "src/lumina_plasma.c:3792"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 18,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_UVOPT_EMIT_LAM_MIN3": {
+   "sites": [
+    "src/lumina_plasma.c:3795"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 18,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_UVOPT_EMIT_LAM_MIN4": {
+   "sites": [
+    "src/lumina_plasma.c:3798"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 1,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_UVOPT_EMIT_ZMASK": {
+   "sites": [
+    "src/lumina_plasma.c:3819"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 0,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_UVOPT_EMIT_ZMASK4": {
+   "sites": [
+    "src/lumina_plasma.c:3844"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 1,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_ZETA_OVERRIDE_IONMASK": {
+   "sites": [
+    "src/lumina_plasma.c:1814"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 1,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_ZETA_OVERRIDE_VAL": {
+   "sites": [
+    "src/lumina_plasma.c:1824"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 1,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_ZETA_OVERRIDE_ZMASK": {
+   "sites": [
+    "src/lumina_plasma.c:1804"
+   ],
+   "files": [
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)"
+   ],
+   "launchers": 1,
+   "live_last_run": false,
+   "n_sites": 1
+  },
+  "LUMINA_ZINERT_AUDIT": {
+   "sites": [
+    "src/lumina_cuda.cu:1980",
+    "src/lumina_plasma.c:2107"
+   ],
+   "files": [
+    "lumina_cuda.cu",
+    "lumina_plasma.c"
+   ],
+   "functions": [
+    "(file scope)",
+    "u"
+   ],
+   "launchers": 0,
+   "live_last_run": false,
+   "n_sites": 2
+  }
+ }
+}
