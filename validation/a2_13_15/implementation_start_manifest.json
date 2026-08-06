@@ -1,1 +1,26 @@
-{"schema":"A2_13_15_IMPLEMENTATION_START_V1","base_head":"2aaf6c7968494840a9ea66da8c48dc4e1639584d","census_preflight":"PASS rows=157 completed=20 unclassified=0","source_edit_started":true,"seal_status":"BLOCKED_GIT_READ_ONLY","seal_error":"fatal: Unable to create .git/index.lock: Read-only file system","seal_commit":"UNAVAILABLE","allowlist_blob_ids":{"A2-13":"UNAVAILABLE","A2-14":"UNAVAILABLE","A2-15":"UNAVAILABLE"},"allowlist_sha256":{"A2-13":"0e8072921fa4d14dd22d630b206eac4e3a0a25d94ca3e78e47a6c97a50387516","A2-14":"da904c87821d890705ad492780ea12434069e6fa746e0305d3a3358b10c61c0b","A2-15":"0ab61c499e0c2bec1c833a5f3242e762ac80f8741234f84fce425a860bf1edef"}}
+{
+  "schema": "A2_13_15_IMPLEMENTATION_START_V2",
+  "base_head": "93ff153",
+  "scope": [
+    "A2-14_PRODUCTION",
+    "A2-15_PRODUCTION"
+  ],
+  "source_edit_started": true,
+  "git_mode": "ALTERNATE_METADATA_BECAUSE_WORKSPACE_DOT_GIT_READ_ONLY",
+  "seal_status": "PASS_BEFORE_SOURCE_EDIT",
+  "seal_commits": {
+    "A2-14": "19c8ab0",
+    "A2-15": "1178878"
+  },
+  "allowlist_sha256": {
+    "A2-14": "c755c8948cdcd99ad24bec1426cbd296c6387856264e59a15fc70a09ee322230",
+    "A2-15": "eba79a48c8f9ad0330d41f55e17701d3da304e3926a423c9faf9dde4c0e63b32"
+  },
+  "production_commits": {
+    "A2-14": "65498e18e9826ea0cdb5906b71cebecef4b82637",
+    "A2-15": "84a148159185004f6f25db4bed51a3d5b5896d44",
+    "A2-14_FINE_GRID_FAIL_CLOSED": "c65800e91071e4aa9367cdf4af4e72f12b4c8b37"
+  },
+  "gpu_execution_by_implementer": false,
+  "gpu_micro_oracle_evidence": "PASS_SLURM_218079_USER_REPORTED"
+}

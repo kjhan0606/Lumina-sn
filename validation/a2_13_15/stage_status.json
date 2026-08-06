@@ -1,29 +1,39 @@
 {
   "schema": "A2_13_15_STAGE_STATUS_V1",
-  "stage_status": "BLOCKED_A2_14_15_PRODUCTION_NOT_MIGRATED",
-  "marker": "A2_13_15_BLOCKED_A2_14_15_PRODUCTION_NOT_MIGRATED",
-  "partitions_tried": [],
-  "last_runner_rc": 3,
+  "stage_status": "A2_13_15_PRODUCTION_MIGRATION_CLOSED",
+  "marker": "A2_13_15_PRODUCTION_MIGRATION_CLOSED",
+  "partitions_tried": [
+    "USER_REPORTED_SLURM_218079"
+  ],
+  "last_runner_rc": 0,
   "gpu_execution_performed_by_implementer": false,
   "a2_12_lifecycle": "PASS_SLURM_218009_H200",
   "internal_contract_selftest": "PASS",
-  "bf_cpu_oracle": "GPU_RUNNER_COMPILED_NOT_RUN",
-  "bb_cpu_oracle": "GPU_RUNNER_COMPILED_NOT_RUN",
-  "opacity_cpu_oracle": "GPU_RUNNER_COMPILED_NOT_RUN",
-  "emissivity_cpu_oracle": "GPU_RUNNER_COMPILED_NOT_RUN",
+  "bf_cpu_oracle": "PASS_SLURM_218079_USER_REPORTED",
+  "bb_cpu_oracle": "PASS_SLURM_218079_USER_REPORTED",
+  "opacity_cpu_oracle": "PASS_SLURM_218079_USER_REPORTED",
+  "emissivity_cpu_oracle": "PASS_SLURM_218079_USER_REPORTED",
   "half_oracle_verifier_negative_controls": "PASS",
-  "eligible_gpu_evidence": "PENDING_DRIVING_SEAT",
+  "eligible_gpu_evidence": "PASS_USER_REPORTED_SLURM_218079",
   "production_guard_removed": {
     "A2_13_BF": true,
     "A2_13_BB": true,
-    "A2_14": false,
-    "A2_15": false
+    "A2_14": true,
+    "A2_15": true
   },
-  "blocked_reasons": [
-    "BLOCKED_A2_14_POPULATION_NATIVE_OPACITY_PRODUCTION_API_MISSING",
-    "BLOCKED_A2_15_CHECKED_EMISSIVITY_CDF_TRANSPORT_API_MISSING",
-    "BLOCKED_GPU_ORACLE_NOT_RUN_BY_IMPLEMENTER"
-  ],
+  "production_contract": {
+    "checked_view_consumption": true,
+    "generation_binding": true,
+    "fallback_forbidden": true,
+    "coarse_jnu_reintegration": false,
+    "fine_grid_runtime": false,
+    "single_rng_draw_cdf": true
+  },
+  "blocked_reasons": [],
+  "external_truth_gates": {
+    "A2_08_L4": "BLOCKED_MISSING_CHI_DATA",
+    "A2_09_L3_L5": "BLOCKED_MISSING_ETA_DATA"
+  },
   "full_nlte_integration_run": false,
-  "physical_launches": 0
+  "physical_launches_by_implementer": 0
 }

@@ -44,26 +44,26 @@
 | src/lumina_cuda.cu:10903 | plasma.T_rad[i] | plasma.T_rad | [comparator] CUDA-host T_rad comparison report | RadiationField generation-bound diagnostic | A2-11 | KEEP_DIAGNOSTIC_ONLY |
 | src/lumina_cuda.cu:10908 | plasma.W[i] | plasma.W | [comparator] CUDA-host W mean error | RadiationField generation-bound diagnostic | A2-11 | KEEP_DIAGNOSTIC_ONLY |
 | src/lumina_cuda.cu:10909 | plasma.T_rad[i] | plasma.T_rad | [comparator] CUDA-host T_rad mean error | RadiationField generation-bound diagnostic | A2-11 | KEEP_DIAGNOSTIC_ONLY |
-| src/lumina_bf_gemm.cu:82 | T_rad[s] | GPU BF-kernel T_rad parameter | [GPU_opacity_rate] GPU bound-free Boltzmann factor | RadiationField.J_nu | A2-14 | REPLACE_GPU_SCALAR_OPACITY_RATE_READ |
-| src/lumina_bf_gemm.cu:83 | W[s] | GPU BF-kernel W parameter | [GPU_opacity_rate] GPU bound-free dilution factor | RadiationField.J_nu | A2-14 | REPLACE_GPU_SCALAR_OPACITY_RATE_READ |
-| src/lumina_bf_gemm.cu:208 | plasma->T_rad | plasma.T_rad upload source | [GPU_opacity_rate] GPU BF rate state upload | RadiationField.J_nu | A2-14 | REPLACE_GPU_SCALAR_OPACITY_RATE_READ |
-| src/lumina_bf_gemm.cu:210 | plasma->W | plasma.W upload source | [GPU_opacity_rate] GPU BF rate state upload | RadiationField.J_nu | A2-14 | REPLACE_GPU_SCALAR_OPACITY_RATE_READ |
-| src/lumina_bf_gemm.cu:225 | g_bf_gemm.d_T_rad | GPU BF T_rad buffer | [GPU_opacity_rate] GPU BF kernel argument | RadiationField.J_nu | A2-14 | REPLACE_GPU_SCALAR_OPACITY_RATE_READ |
-| src/lumina_bf_gemm.cu:225 | g_bf_gemm.d_W | GPU BF W buffer | [GPU_opacity_rate] GPU BF kernel argument | RadiationField.J_nu | A2-14 | REPLACE_GPU_SCALAR_OPACITY_RATE_READ |
-| src/lumina_bf_gemm.cu:296 | plasma->T_rad | plasma.T_rad refresh source | [GPU_opacity_rate] GPU BF iteration refresh | RadiationField.J_nu | A2-14 | REPLACE_GPU_SCALAR_OPACITY_RATE_READ |
-| src/lumina_bf_gemm.cu:297 | plasma->W | plasma.W refresh source | [GPU_opacity_rate] GPU BF iteration refresh | RadiationField.J_nu | A2-14 | REPLACE_GPU_SCALAR_OPACITY_RATE_READ |
-| src/lumina_bf_gemm.cu:303 | g_bf_gemm.d_T_rad | GPU BF T_rad buffer | [GPU_opacity_rate] GPU BF refreshed kernel argument | RadiationField.J_nu | A2-14 | REPLACE_GPU_SCALAR_OPACITY_RATE_READ |
-| src/lumina_bf_gemm.cu:304 | g_bf_gemm.d_W | GPU BF W buffer | [GPU_opacity_rate] GPU BF refreshed kernel argument | RadiationField.J_nu | A2-14 | REPLACE_GPU_SCALAR_OPACITY_RATE_READ |
-| src/lumina_nlte_assemble.cu:169 | d_W[s] | GPU NLTE assembly W parameter | [GPU_opacity_rate] GPU bound-bound Planck fallback | RadiationField.J_nu | A2-14 | REPLACE_GPU_SCALAR_OPACITY_RATE_READ |
-| src/lumina_nlte_assemble.cu:413 | plasma->W | plasma.W upload source | [GPU_opacity_rate] GPU NLTE assembly upload | RadiationField.J_nu | A2-14 | REPLACE_GPU_SCALAR_OPACITY_RATE_READ |
-| src/lumina_nlte_assemble.cu:428 | plasma->T_rad[0] | plasma.T_rad | [GPU_opacity_rate] GPU NLTE dilute temperature fallback | RadiationField.J_nu | A2-14 | REPLACE_GPU_SCALAR_OPACITY_RATE_READ |
-| src/lumina_cuda.cu:3760 | d_T_rad[shell_id] | GPU transport T_rad array | [GPU_transport] GPU BF re-emission temperature read | RadiationField generation lifecycle | A2-12 | REPLACE_GPU_SCALAR_TRANSPORT_STATE |
-| src/lumina_cuda.cu:3793 | d_T_rad[shell_id] | GPU transport T_rad array | [GPU_transport] GPU band re-emission temperature read | RadiationField generation lifecycle | A2-12 | REPLACE_GPU_SCALAR_TRANSPORT_STATE |
-| src/lumina_cuda.cu:5978 | d_T_rad | GPU transport T_rad pointer | [GPU_transport] transport kernel scalar-field argument | RadiationField generation lifecycle | A2-12 | REPLACE_GPU_SCALAR_TRANSPORT_STATE |
-| src/lumina_cuda.cu:6242 | d_T_rad | GPU transport T_rad pointer | [GPU_transport] transport interaction call | RadiationField generation lifecycle | A2-12 | REPLACE_GPU_SCALAR_TRANSPORT_STATE |
-| src/lumina_cuda.cu:6552 | d_T_rad | GPU transport T_rad pointer | [GPU_transport] legacy BF re-emission call | RadiationField generation lifecycle | A2-12 | REPLACE_GPU_SCALAR_TRANSPORT_STATE |
-| src/lumina_cuda.cu:8842 | dev.d_T_rad | GPU device T_rad owner | [GPU_transport] main transport launch argument | RadiationField generation lifecycle | A2-12 | REPLACE_GPU_SCALAR_TRANSPORT_STATE |
-| src/lumina_cuda.cu:10256 | dev.d_T_rad | GPU device T_rad owner | [GPU_transport] final transport launch argument | RadiationField generation lifecycle | A2-12 | REPLACE_GPU_SCALAR_TRANSPORT_STATE |
+| 이관 완료(A2-14·65498e18e9826ea0cdb5906b71cebecef4b82637) | T_rad[s] | GPU BF-kernel T_rad parameter | [GPU_opacity_rate] GPU bound-free Boltzmann factor | RadiationField.J_nu | A2-14 | REPLACE_GPU_SCALAR_OPACITY_RATE_READ |
+| 이관 완료(A2-14·65498e18e9826ea0cdb5906b71cebecef4b82637) | W[s] | GPU BF-kernel W parameter | [GPU_opacity_rate] GPU bound-free dilution factor | RadiationField.J_nu | A2-14 | REPLACE_GPU_SCALAR_OPACITY_RATE_READ |
+| 이관 완료(A2-14·65498e18e9826ea0cdb5906b71cebecef4b82637) | plasma->T_rad | plasma.T_rad upload source | [GPU_opacity_rate] GPU BF rate state upload | RadiationField.J_nu | A2-14 | REPLACE_GPU_SCALAR_OPACITY_RATE_READ |
+| 이관 완료(A2-14·65498e18e9826ea0cdb5906b71cebecef4b82637) | plasma->W | plasma.W upload source | [GPU_opacity_rate] GPU BF rate state upload | RadiationField.J_nu | A2-14 | REPLACE_GPU_SCALAR_OPACITY_RATE_READ |
+| 이관 완료(A2-14·65498e18e9826ea0cdb5906b71cebecef4b82637) | g_bf_gemm.d_T_rad | GPU BF T_rad buffer | [GPU_opacity_rate] GPU BF kernel argument | RadiationField.J_nu | A2-14 | REPLACE_GPU_SCALAR_OPACITY_RATE_READ |
+| 이관 완료(A2-14·65498e18e9826ea0cdb5906b71cebecef4b82637) | g_bf_gemm.d_W | GPU BF W buffer | [GPU_opacity_rate] GPU BF kernel argument | RadiationField.J_nu | A2-14 | REPLACE_GPU_SCALAR_OPACITY_RATE_READ |
+| 이관 완료(A2-14·65498e18e9826ea0cdb5906b71cebecef4b82637) | plasma->T_rad | plasma.T_rad refresh source | [GPU_opacity_rate] GPU BF iteration refresh | RadiationField.J_nu | A2-14 | REPLACE_GPU_SCALAR_OPACITY_RATE_READ |
+| 이관 완료(A2-14·65498e18e9826ea0cdb5906b71cebecef4b82637) | plasma->W | plasma.W refresh source | [GPU_opacity_rate] GPU BF iteration refresh | RadiationField.J_nu | A2-14 | REPLACE_GPU_SCALAR_OPACITY_RATE_READ |
+| 이관 완료(A2-14·65498e18e9826ea0cdb5906b71cebecef4b82637) | g_bf_gemm.d_T_rad | GPU BF T_rad buffer | [GPU_opacity_rate] GPU BF refreshed kernel argument | RadiationField.J_nu | A2-14 | REPLACE_GPU_SCALAR_OPACITY_RATE_READ |
+| 이관 완료(A2-14·65498e18e9826ea0cdb5906b71cebecef4b82637) | g_bf_gemm.d_W | GPU BF W buffer | [GPU_opacity_rate] GPU BF refreshed kernel argument | RadiationField.J_nu | A2-14 | REPLACE_GPU_SCALAR_OPACITY_RATE_READ |
+| 이관 완료(A2-14·65498e18e9826ea0cdb5906b71cebecef4b82637) | d_W[s] | GPU NLTE assembly W parameter | [GPU_opacity_rate] GPU bound-bound Planck fallback | RadiationField.J_nu | A2-14 | REPLACE_GPU_SCALAR_OPACITY_RATE_READ |
+| 이관 완료(A2-14·65498e18e9826ea0cdb5906b71cebecef4b82637) | plasma->W | plasma.W upload source | [GPU_opacity_rate] GPU NLTE assembly upload | RadiationField.J_nu | A2-14 | REPLACE_GPU_SCALAR_OPACITY_RATE_READ |
+| 이관 완료(A2-14·65498e18e9826ea0cdb5906b71cebecef4b82637) | plasma->T_rad[0] | plasma.T_rad | [GPU_opacity_rate] GPU NLTE dilute temperature fallback | RadiationField.J_nu | A2-14 | REPLACE_GPU_SCALAR_OPACITY_RATE_READ |
+| 이관 완료(A2-15·84a148159185004f6f25db4bed51a3d5b5896d44) | d_T_rad[shell_id] | GPU transport T_rad array | [GPU_transport] GPU BF re-emission temperature read | RadiationField generation lifecycle | A2-12 | REPLACE_GPU_SCALAR_TRANSPORT_STATE |
+| 이관 완료(A2-15·84a148159185004f6f25db4bed51a3d5b5896d44) | d_T_rad[shell_id] | GPU transport T_rad array | [GPU_transport] GPU band re-emission temperature read | RadiationField generation lifecycle | A2-12 | REPLACE_GPU_SCALAR_TRANSPORT_STATE |
+| 이관 완료(A2-15·84a148159185004f6f25db4bed51a3d5b5896d44) | d_T_rad | GPU transport T_rad pointer | [GPU_transport] transport kernel scalar-field argument | RadiationField generation lifecycle | A2-12 | REPLACE_GPU_SCALAR_TRANSPORT_STATE |
+| 이관 완료(A2-15·84a148159185004f6f25db4bed51a3d5b5896d44) | d_T_rad | GPU transport T_rad pointer | [GPU_transport] transport interaction call | RadiationField generation lifecycle | A2-12 | REPLACE_GPU_SCALAR_TRANSPORT_STATE |
+| 이관 완료(A2-15·84a148159185004f6f25db4bed51a3d5b5896d44) | d_T_rad | GPU transport T_rad pointer | [GPU_transport] legacy BF re-emission call | RadiationField generation lifecycle | A2-12 | REPLACE_GPU_SCALAR_TRANSPORT_STATE |
+| 이관 완료(A2-15·84a148159185004f6f25db4bed51a3d5b5896d44) | dev.d_T_rad | GPU device T_rad owner | [GPU_transport] main transport launch argument | RadiationField generation lifecycle | A2-12 | REPLACE_GPU_SCALAR_TRANSPORT_STATE |
+| 이관 완료(A2-15·84a148159185004f6f25db4bed51a3d5b5896d44) | dev.d_T_rad | GPU device T_rad owner | [GPU_transport] final transport launch argument | RadiationField generation lifecycle | A2-12 | REPLACE_GPU_SCALAR_TRANSPORT_STATE |
 | src/lumina_cuda.cu:8557 | plasma.W[s] | plasma.W | [GPU_transport] GPU-host packet source tier | RadiationField generation lifecycle | A2-12 | REPLACE_GPU_SCALAR_TRANSPORT_STATE |
 | src/lumina_cuda.cu:8558 | plasma.W | plasma.W owner pointer | [GPU_transport] GPU-host packet source validity gate | RadiationField generation lifecycle | A2-12 | REPLACE_GPU_SCALAR_TRANSPORT_STATE |
 | src/lumina_cuda.cu:10814 | plasma.T_rad[i] | plasma.T_rad | [GPU_transport] GPU-host transport temperature ratio | RadiationField generation lifecycle | A2-12 | REPLACE_GPU_SCALAR_TRANSPORT_STATE |
@@ -86,10 +86,10 @@
 | src/lumina_plasma.c:18776 | plasma->W[shell_mid] | plasma.W | [formal_transfer] red-side continuum source | RadiationField.J_nu | A2-11 | REPLACE_FORMAL_TRANSFER_SCALAR_READ |
 | src/lumina_plasma.c:18777 | plasma->T_rad[shell_mid] | plasma.T_rad | [formal_transfer] red-side continuum source | RadiationField.J_nu | A2-11 | REPLACE_FORMAL_TRANSFER_SCALAR_READ |
 | src/lumina_plasma.c:19026 | plasma->W[shell] | plasma.W | [formal_transfer] electron-scattering source fallback | RadiationField.J_nu | A2-11 | REPLACE_FORMAL_TRANSFER_SCALAR_READ |
-| src/lumina_bf_gemm.cu:140 | g_bf_gemm.d_T_rad | GPU BF T_rad allocation | [GPU_lifecycle] allocate GPU scalar owner | RadiationField generation lifecycle | A2-12 | REMOVE_GPU_SCALAR_LIFECYCLE |
-| src/lumina_bf_gemm.cu:141 | g_bf_gemm.d_W | GPU BF W allocation | [GPU_lifecycle] allocate GPU scalar owner | RadiationField generation lifecycle | A2-12 | REMOVE_GPU_SCALAR_LIFECYCLE |
-| src/lumina_bf_gemm.cu:390 | g_bf_gemm.d_T_rad | GPU BF T_rad allocation | [GPU_lifecycle] free GPU scalar owner | RadiationField generation lifecycle | A2-12 | REMOVE_GPU_SCALAR_LIFECYCLE |
-| src/lumina_bf_gemm.cu:391 | g_bf_gemm.d_W | GPU BF W allocation | [GPU_lifecycle] free GPU scalar owner | RadiationField generation lifecycle | A2-12 | REMOVE_GPU_SCALAR_LIFECYCLE |
+| 이관 완료(A2-14·65498e18e9826ea0cdb5906b71cebecef4b82637) | g_bf_gemm.d_T_rad | GPU BF T_rad allocation | [GPU_lifecycle] allocate GPU scalar owner | RadiationField generation lifecycle | A2-12 | REMOVE_GPU_SCALAR_LIFECYCLE |
+| 이관 완료(A2-14·65498e18e9826ea0cdb5906b71cebecef4b82637) | g_bf_gemm.d_W | GPU BF W allocation | [GPU_lifecycle] allocate GPU scalar owner | RadiationField generation lifecycle | A2-12 | REMOVE_GPU_SCALAR_LIFECYCLE |
+| 이관 완료(A2-14·65498e18e9826ea0cdb5906b71cebecef4b82637) | g_bf_gemm.d_T_rad | GPU BF T_rad allocation | [GPU_lifecycle] free GPU scalar owner | RadiationField generation lifecycle | A2-12 | REMOVE_GPU_SCALAR_LIFECYCLE |
+| 이관 완료(A2-14·65498e18e9826ea0cdb5906b71cebecef4b82637) | g_bf_gemm.d_W | GPU BF W allocation | [GPU_lifecycle] free GPU scalar owner | RadiationField generation lifecycle | A2-12 | REMOVE_GPU_SCALAR_LIFECYCLE |
 | src/lumina_cuda.cu:273 | dev->d_T_rad | GPU transport T_rad allocation | [GPU_lifecycle] allocate GPU scalar owner | RadiationField generation lifecycle | A2-12 | REMOVE_GPU_SCALAR_LIFECYCLE |
 | src/lumina_cuda.cu:341 | dev->d_T_rad | GPU transport T_rad allocation | [GPU_lifecycle] test GPU scalar allocation | RadiationField generation lifecycle | A2-12 | REMOVE_GPU_SCALAR_LIFECYCLE |
 | src/lumina_cuda.cu:342 | dev->d_T_rad | GPU transport T_rad allocation | [GPU_lifecycle] lazy allocate GPU scalar owner | RadiationField generation lifecycle | A2-12 | REMOVE_GPU_SCALAR_LIFECYCLE |
@@ -131,10 +131,10 @@
 | src/lumina_cmfgen.c:970 | plasma->T_rad[s] | plasma.T_rad | [diagnostic] CMF frozen-state diagnostic | RadiationField generation-bound diagnostic | A2-11 | KEEP_OUTPUT_ONLY_DIAGNOSTIC |
 | src/lumina_cmfgen.c:1612 | plasma->T_rad | plasma.T_rad owner array | [diagnostic] CMF state checksum diagnostic | RadiationField generation-bound diagnostic | A2-11 | KEEP_OUTPUT_ONLY_DIAGNOSTIC |
 | src/lumina_element_wide.c:2325 | plasma->W[shell] | plasma.W | [diagnostic] element-wide provenance diagnostic | RadiationField generation-bound diagnostic | A2-11 | KEEP_OUTPUT_ONLY_DIAGNOSTIC |
-| src/lumina_cuda.cu:5446 | d_T_rad | GPU transport T_rad pointer | [GPU_emissivity] GPU macro-atom Planck re-emission | RadiationField.J_nu | A2-15 | REPLACE_GPU_PLANCK_EMISSIVITY_READ |
-| src/lumina_cuda.cu:5453 | d_T_rad | GPU transport T_rad pointer | [GPU_emissivity] GPU UV thermalization | RadiationField.J_nu | A2-15 | REPLACE_GPU_PLANCK_EMISSIVITY_READ |
-| src/lumina_cuda.cu:5471 | d_T_rad | GPU transport T_rad pointer | [GPU_emissivity] GPU IR thermalization | RadiationField.J_nu | A2-15 | REPLACE_GPU_PLANCK_EMISSIVITY_READ |
-| src/lumina_cuda.cu:5733 | d_T_rad | GPU transport T_rad pointer | [GPU_emissivity] GPU packet source re-emission | RadiationField.J_nu | A2-15 | REPLACE_GPU_PLANCK_EMISSIVITY_READ |
+| 이관 완료(A2-15·84a148159185004f6f25db4bed51a3d5b5896d44) | d_T_rad | GPU transport T_rad pointer | [GPU_emissivity] GPU macro-atom Planck re-emission | RadiationField.J_nu | A2-15 | REPLACE_GPU_PLANCK_EMISSIVITY_READ |
+| 이관 완료(A2-15·84a148159185004f6f25db4bed51a3d5b5896d44) | d_T_rad | GPU transport T_rad pointer | [GPU_emissivity] GPU UV thermalization | RadiationField.J_nu | A2-15 | REPLACE_GPU_PLANCK_EMISSIVITY_READ |
+| 이관 완료(A2-15·84a148159185004f6f25db4bed51a3d5b5896d44) | d_T_rad | GPU transport T_rad pointer | [GPU_emissivity] GPU IR thermalization | RadiationField.J_nu | A2-15 | REPLACE_GPU_PLANCK_EMISSIVITY_READ |
+| 이관 완료(A2-15·84a148159185004f6f25db4bed51a3d5b5896d44) | d_T_rad | GPU transport T_rad pointer | [GPU_emissivity] GPU packet source re-emission | RadiationField.J_nu | A2-15 | REPLACE_GPU_PLANCK_EMISSIVITY_READ |
 | src/lumina_plasma.c:14127 | W | local alias of plasma->W[s] | [rate_diagnostic] coupled-rate luminosity diagnostic | RadiationField generation-bound diagnostic | A2-06 | DERIVE_RATE_DIAGNOSTIC_FROM_CANONICAL_FIELD |
 | src/lumina_plasma.c:14147 | W | local alias of plasma->W[s] | [rate_diagnostic] coupled-rate floor diagnostic | RadiationField generation-bound diagnostic | A2-06 | DERIVE_RATE_DIAGNOSTIC_FROM_CANONICAL_FIELD |
 | src/lumina_plasma.c:14287 | T_rad | local alias of plasma->T_rad[s] | [rate_diagnostic] coupled-rate residual diagnostic | RadiationField generation-bound diagnostic | A2-06 | DERIVE_RATE_DIAGNOSTIC_FROM_CANONICAL_FIELD |

@@ -2,175 +2,175 @@
   "errors": [],
   "ledger_rows": [
     {
-      "disposition": "BLOCKED_UPSTREAM_A2_12_NOT_READY_GUARD_RETAINED",
+      "disposition": "CLOSED_A2_13_GPU_RATE",
       "file": "src/lumina_cuda.cu",
       "id": "G13-01",
       "match_count": 4,
       "pattern": "plasma->T_e\\[s\\].*plasma->T_rad\\[s\\]"
     },
     {
-      "disposition": "BLOCKED_UPSTREAM_A2_12_NOT_READY_GUARD_RETAINED",
+      "disposition": "CLOSED_A2_13_GPU_RATE",
       "file": "src/lumina_cuda.cu",
       "id": "G13-02",
-      "match_count": 103,
+      "match_count": 80,
       "pattern": "T_rad"
     },
     {
-      "disposition": "BLOCKED_UPSTREAM_A2_12_NOT_READY_GUARD_RETAINED",
+      "disposition": "CLOSED_A2_13_GPU_RATE",
       "file": "src/lumina_cuda.cu",
       "id": "G13-03",
-      "match_count": 103,
+      "match_count": 80,
       "pattern": "T_rad"
     },
     {
-      "disposition": "BLOCKED_UPSTREAM_A2_12_NOT_READY_GUARD_RETAINED",
+      "disposition": "CLOSED_A2_13_GPU_RATE",
       "file": "src/lumina_cuda.cu",
       "id": "G13-04",
-      "match_count": 103,
+      "match_count": 80,
       "pattern": "T_rad"
     },
     {
-      "disposition": "BLOCKED_UPSTREAM_A2_12_NOT_READY_GUARD_RETAINED",
+      "disposition": "CLOSED_A2_13_GPU_RATE",
       "file": "src/lumina_cuda.cu",
       "id": "G13-05",
       "match_count": 220,
       "pattern": "T_e"
     },
     {
-      "disposition": "BLOCKED_UPSTREAM_A2_12_NOT_READY_GUARD_RETAINED",
+      "disposition": "CLOSED_A2_13_GPU_RATE",
       "file": "src/lumina_cuda.cu",
       "id": "G13-06",
-      "match_count": 103,
+      "match_count": 80,
       "pattern": "T_rad"
     },
     {
-      "disposition": "BLOCKED_UPSTREAM_A2_12_NOT_READY_GUARD_RETAINED",
+      "disposition": "CLOSED_A2_13_GPU_RATE",
       "file": "src/lumina_cuda.cu",
       "id": "G13-07",
       "match_count": 45,
       "pattern": "\\bW\\b"
     },
     {
-      "disposition": "BLOCKED_UPSTREAM_A2_12_NOT_READY_GUARD_RETAINED",
+      "disposition": "CLOSED_A2_13_GPU_RATE",
       "file": "src/lumina_cuda.cu",
       "id": "G13-08",
-      "match_count": 103,
+      "match_count": 80,
       "pattern": "T_rad"
     },
     {
-      "disposition": "BLOCKED_UPSTREAM_A2_12_NOT_READY_GUARD_RETAINED",
+      "disposition": "CLOSED_A2_14_GPU_SIGNED_OPACITY",
       "file": "src/lumina_bf_gemm.cu",
       "id": "G14-01",
-      "match_count": 13,
+      "match_count": 0,
       "pattern": "T_rad"
     },
     {
-      "disposition": "BLOCKED_UPSTREAM_A2_12_NOT_READY_GUARD_RETAINED",
+      "disposition": "CLOSED_A2_14_GPU_SIGNED_OPACITY",
       "file": "src/lumina_bf_gemm.cu",
       "id": "G14-02",
-      "match_count": 4,
+      "match_count": 0,
       "pattern": "\\bW\\b"
     },
     {
-      "disposition": "BLOCKED_UPSTREAM_A2_12_NOT_READY_GUARD_RETAINED",
+      "disposition": "CLOSED_A2_14_GPU_SIGNED_OPACITY",
       "file": "src/lumina_bf_gemm.cu",
       "id": "G14-03",
-      "match_count": 6,
+      "match_count": 0,
       "pattern": "d_T_rad"
     },
     {
-      "disposition": "BLOCKED_UPSTREAM_A2_12_NOT_READY_GUARD_RETAINED",
+      "disposition": "CLOSED_A2_14_GPU_SIGNED_OPACITY",
       "file": "src/lumina_bf_gemm.cu",
       "id": "G14-04",
-      "match_count": 6,
+      "match_count": 0,
       "pattern": "d_W"
     },
     {
-      "disposition": "BLOCKED_UPSTREAM_A2_12_NOT_READY_GUARD_RETAINED",
+      "disposition": "CLOSED_A2_14_GPU_SIGNED_OPACITY",
       "file": "src/lumina_bf_gemm.cu",
       "id": "G14-05",
-      "match_count": 6,
+      "match_count": 0,
       "pattern": "d_T_rad"
     },
     {
-      "disposition": "BLOCKED_UPSTREAM_A2_12_NOT_READY_GUARD_RETAINED",
+      "disposition": "CLOSED_A2_14_GPU_SIGNED_OPACITY",
       "file": "src/lumina_bf_gemm.cu",
       "id": "G14-06",
-      "match_count": 6,
+      "match_count": 0,
       "pattern": "d_W"
     },
     {
-      "disposition": "BLOCKED_UPSTREAM_A2_12_NOT_READY_GUARD_RETAINED",
+      "disposition": "CLOSED_A2_14_GPU_SIGNED_OPACITY",
       "file": "src/lumina_bf_gemm.cu",
       "id": "G14-07",
-      "match_count": 13,
+      "match_count": 0,
       "pattern": "T_rad"
     },
     {
-      "disposition": "BLOCKED_UPSTREAM_A2_12_NOT_READY_GUARD_RETAINED",
+      "disposition": "CLOSED_A2_14_GPU_SIGNED_OPACITY",
       "file": "src/lumina_bf_gemm.cu",
       "id": "G14-08",
-      "match_count": 4,
+      "match_count": 0,
       "pattern": "\\bW\\b"
     },
     {
-      "disposition": "BLOCKED_UPSTREAM_A2_12_NOT_READY_GUARD_RETAINED",
+      "disposition": "CLOSED_A2_14_GPU_SIGNED_OPACITY",
       "file": "src/lumina_bf_gemm.cu",
       "id": "G14-09",
-      "match_count": 6,
+      "match_count": 0,
       "pattern": "d_T_rad"
     },
     {
-      "disposition": "BLOCKED_UPSTREAM_A2_12_NOT_READY_GUARD_RETAINED",
+      "disposition": "CLOSED_A2_14_GPU_SIGNED_OPACITY",
       "file": "src/lumina_bf_gemm.cu",
       "id": "G14-10",
-      "match_count": 6,
+      "match_count": 0,
       "pattern": "d_W"
     },
     {
-      "disposition": "REMOVED",
+      "disposition": "CLOSED_A2_14_GPU_SIGNED_OPACITY",
       "file": "src/lumina_nlte_assemble.cu",
       "id": "G14-11",
       "match_count": 0,
       "pattern": "a_planck_bnu|dilute"
     },
     {
-      "disposition": "BLOCKED_UPSTREAM_A2_12_NOT_READY_GUARD_RETAINED",
+      "disposition": "CLOSED_A2_14_GPU_SIGNED_OPACITY",
       "file": "src/lumina_nlte_assemble.cu",
       "id": "G14-12",
       "match_count": 2,
       "pattern": "plasma->W|d_W"
     },
     {
-      "disposition": "BLOCKED_UPSTREAM_A2_12_NOT_READY_GUARD_RETAINED",
+      "disposition": "CLOSED_A2_14_GPU_SIGNED_OPACITY",
       "file": "src/lumina_nlte_assemble.cu",
       "id": "G14-13",
       "match_count": 1,
       "pattern": "T_rad\\[0\\]"
     },
     {
-      "disposition": "BLOCKED_UPSTREAM_A2_12_NOT_READY_GUARD_RETAINED",
+      "disposition": "CLOSED_A2_15_GPU_EMISSIVITY",
       "file": "src/lumina_cuda.cu",
       "id": "G15-01",
       "match_count": 9,
       "pattern": "d_bf_absorption_event"
     },
     {
-      "disposition": "BLOCKED_UPSTREAM_A2_12_NOT_READY_GUARD_RETAINED",
+      "disposition": "CLOSED_A2_15_GPU_EMISSIVITY",
       "file": "src/lumina_cuda.cu",
       "id": "G15-02",
-      "match_count": 27,
+      "match_count": 12,
       "pattern": "d_T_rad"
     },
     {
-      "disposition": "BLOCKED_UPSTREAM_A2_12_NOT_READY_GUARD_RETAINED",
+      "disposition": "CLOSED_A2_15_GPU_EMISSIVITY",
       "file": "src/lumina_cuda.cu",
       "id": "G15-03",
-      "match_count": 27,
+      "match_count": 12,
       "pattern": "d_T_rad"
     },
     {
-      "disposition": "BLOCKED_UPSTREAM_A2_12_NOT_READY_GUARD_RETAINED",
+      "disposition": "CLOSED_A2_15_GPU_EMISSIVITY",
       "file": "src/lumina_cuda.cu",
       "id": "G15-04",
       "match_count": 9,
@@ -184,234 +184,228 @@
     "src/gpu_emissivity_kernels.cu"
   ],
   "outside_ledger_grep_command": "rg -n 'T_rad|d_T_rad|W|d_W|J_nu|d_J_nu|j_blue|d_jbar_line|planck|chi_|eta_|transition_probabilities|kpacket_cdf' src/*.cu",
-  "outside_ledger_raw_hit_count": 323,
+  "outside_ledger_raw_hit_count": 278,
   "outside_ledger_raw_hits": [
     {
       "file": "src/lumina_cuda.cu",
-      "line": 129,
+      "line": 133,
       "text": "/* NLTE: J_nu frequency histogram (atomicAdd target) */",
       "token": "J_nu"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 134,
+      "line": 138,
       "text": "double *d_jbar_line;                    /* [n_lines*n_shells] MC-estimator J_bar (THEN_MC) or NULL */",
       "token": "d_jbar_line"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 141,
+      "line": 145,
       "text": "/* BF opacity: chi_bf grid + T_rad for BF absorption re-emission */",
       "token": "T_rad"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 143,
+      "line": 147,
       "text": "double *d_T_rad;                       /* [n_shells] for BF Planck re-emission */",
       "token": "d_T_rad"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 143,
+      "line": 147,
       "text": "double *d_T_rad;                       /* [n_shells] for BF Planck re-emission */",
       "token": "Planck"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 275,
+      "line": 279,
       "text": "dev->d_T_rad = NULL;",
       "token": "d_T_rad"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 305,
+      "line": 309,
       "text": "/* NLTE: J_nu estimator (allocated but NULL-checked in kernel) */",
       "token": "J_nu"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 310,
+      "line": 314,
       "text": "dev->d_jbar_line = NULL;",
       "token": "d_jbar_line"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 316,
+      "line": 320,
       "text": "/* NLTE: allocate J_nu estimator on GPU */",
       "token": "J_nu"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 326,
+      "line": 330,
       "text": "* the J_nu histogram; only accumulated when armed under LUMINA_ARTIS_PARITY. */",
       "token": "J_nu"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 334,
+      "line": 338,
       "text": "printf(\"  [NLTE] GPU J_nu estimator: %.1f KB\\n\", size / 1024.0);",
       "token": "J_nu"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 406,
+      "line": 410,
       "text": "/* Planck(T_e[shell]) instead of the line-selected frequency \u2014    */",
       "token": "Planck"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 413,
+      "line": 417,
       "text": "/* with the identical RNG draw sequence (the 5 Planck uniforms    */",
       "token": "Planck"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 416,
+      "line": 420,
       "text": "/* the volumetric-birth Planck sampler (d_birth_te) and the       */",
       "token": "Planck"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 434,
+      "line": 438,
       "text": "/* re-emission COMOVING frequency is redrawn from Planck(T_e) at  */",
       "token": "Planck"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 438,
+      "line": 442,
       "text": "/* and d_ltherm_reemit (the 5-uniform Planck sampler). MODE 1 =   */",
       "token": "Planck"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 440,
+      "line": 444,
       "text": "/* re-emit if the Planck draw lands blueward of 1290 A comoving,  */",
       "token": "Planck"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 511,
+      "line": 515,
       "text": "/* Upload T_rad to GPU. Always-callable (independent of BF status) \u2014 needed",
       "token": "T_rad"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 515,
+      "line": 519,
       "text": "/* Path A: per-shell T_e for k-packet free-free nu sampling (independent of T_rad). */",
       "token": "T_rad"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 529,
+      "line": 533,
       "text": "/* Tombstone for A2-01 witness: plasma->T_rad is no longer an upload source. */",
       "token": "T_rad"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 533,
+      "line": 537,
       "text": "/* BF opacity: upload chi_bf grid + T_rad + activation_level to GPU */",
       "token": "T_rad"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 570,
+      "line": 601,
       "text": "/* NLTE: download J_nu from GPU to CPU NLTEConfig */",
       "token": "J_nu"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 583,
+      "line": 614,
       "text": "* host can build the per-bin (W,T_R) field + normalize \u0393_bf. */",
       "token": "W"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 697,
+      "line": 728,
       "text": "* the level distribution there is the LTE limit at T_e, NOT T_rad. The legacy",
       "token": "T_rad"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 698,
+      "line": 729,
       "text": "* fallback used Boltzmann@T_rad; at inner shells T_rad is 1-4% hotter than T_e,",
       "token": "T_rad"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 698,
+      "line": 729,
       "text": "* fallback used Boltzmann@T_rad; at inner shells T_rad is 1-4% hotter than T_e,",
       "token": "T_rad"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 1070,
+      "line": 1101,
       "text": "* J_nu is constant across the CE iterations, so we compute R_bf once",
       "token": "J_nu"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 1137,
+      "line": 1168,
       "text": "* per-shell T_e/n_e/W, J_nu) before this iteration's pair loop. */",
       "token": "W"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 1137,
+      "line": 1168,
       "text": "* per-shell T_e/n_e/W, J_nu) before this iteration's pair loop. */",
       "token": "J_nu"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 1377,
+      "line": 1408,
       "text": "* every shell and use Boltzmann@T_rad (i.e. only the ion-lock",
       "token": "T_rad"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 1471,
+      "line": 1502,
       "text": "* spurious inner super-thermal S_l the T_rad fallback injects),",
       "token": "T_rad"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 1472,
+      "line": 1503,
       "text": "* else legacy T_rad. In ion-lock mode, rescale each ion",
       "token": "T_rad"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 1476,
+      "line": 1507,
       "text": "double T_rad = (nlte_fallback_te_enabled() && plasma->T_e &&",
       "token": "T_rad"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 1478,
+      "line": 1509,
       "text": "? plasma->T_e[s] : plasma->T_rad[s];",
       "token": "T_rad"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 1490,
+      "line": 1521,
       "text": "\"ret=%d info=%d -> Boltzmann@T_rad lock=%d\\n\",",
       "token": "T_rad"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 1509,
+      "line": 1540,
       "text": "double pop = (double)g * exp(-E / (K_BOLTZMANN * T_rad));",
       "token": "T_rad"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 1546,
+      "line": 1577,
       "text": "* to break the Milne-T_e-vs-T_rad over-ionization trap. */",
-      "token": "T_rad"
-    },
-    {
-      "file": "src/lumina_cuda.cu",
-      "line": 1632,
-      "text": "double T_e_s = plasma->T_e ? plasma->T_e[s] : plasma->T_rad[s];",
       "token": "T_rad"
     },
     {
@@ -422,1599 +416,1335 @@
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 1693,
+      "line": 1694,
       "text": "double T_e_s = plasma->T_e ? plasma->T_e[s] : plasma->T_rad[s];",
       "token": "T_rad"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 2009,
+      "line": 1724,
+      "text": "double T_e_s = plasma->T_e ? plasma->T_e[s] : plasma->T_rad[s];",
+      "token": "T_rad"
+    },
+    {
+      "file": "src/lumina_cuda.cu",
+      "line": 2040,
       "text": "fprintf(fp, \"Z,ion,shell,level_idx,global_idx,E_eV,g,n_pop,T_e,T_rad,W,n_ion_total\\n\");",
       "token": "T_rad"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 2009,
+      "line": 2040,
       "text": "fprintf(fp, \"Z,ion,shell,level_idx,global_idx,E_eV,g,n_pop,T_e,T_rad,W,n_ion_total\\n\");",
       "token": "W"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 2030,
+      "line": 2061,
       "text": "plasma->T_e_T_rad_ratio * plasma->T_rad[s];",
       "token": "T_rad"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 2031,
+      "line": 2062,
       "text": "double T_rad = plasma->T_rad[s];",
       "token": "T_rad"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 2031,
+      "line": 2062,
       "text": "double T_rad = plasma->T_rad[s];",
       "token": "T_rad"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 2032,
+      "line": 2063,
       "text": "double W     = plasma->W[s];",
       "token": "W"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 2032,
+      "line": 2063,
       "text": "double W     = plasma->W[s];",
       "token": "W"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 2037,
+      "line": 2068,
       "text": "T_e, T_rad, W, n_ion);",
       "token": "T_rad"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 2037,
+      "line": 2068,
       "text": "T_e, T_rad, W, n_ion);",
       "token": "W"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 2079,
+      "line": 2110,
       "text": "plasma->T_e_T_rad_ratio * plasma->T_rad[s];",
       "token": "T_rad"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 2135,
+      "line": 2166,
       "text": "opacity->transition_probabilities,                                    /* Phase 6 - Step 1 */",
       "token": "transition_probabilities"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 2159,
+      "line": 2190,
       "text": "if (dev->d_kpacket_cdf && opacity->kpacket_cdf) {",
       "token": "kpacket_cdf"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 2160,
+      "line": 2191,
       "text": "CUDA_CHECK(cudaMemcpy(dev->d_kpacket_cdf, opacity->kpacket_cdf,",
       "token": "kpacket_cdf"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 2226,
+      "line": 2257,
       "text": "* Planck(T_rad) thermalization (BF-style). Set from LUMINA_EPS_UV. */",
       "token": "Planck"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 2226,
+      "line": 2257,
       "text": "* Planck(T_rad) thermalization (BF-style). Set from LUMINA_EPS_UV. */",
       "token": "T_rad"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 2238,
+      "line": 2269,
       "text": "* couples the line cascade to T_e and re-emits near the local Planck peak,",
       "token": "Planck"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 2473,
+      "line": 2504,
       "text": "* continuum-thick shells (host flags W(s)>tau into d_kpr_qualify, the SAME depth",
       "token": "W"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 2474,
+      "line": 2505,
       "text": "* map as STAGE4-R2 A1) a forming k-packet re-emits from Planck(T_e[shell]) \u2014 a",
       "token": "Planck"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 2476,
+      "line": 2507,
       "text": "* resonant kpacket_cdf line forest. Master gate (LUMINA_KPEMISS_REPAIR) off =>",
       "token": "kpacket_cdf"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 2481,
+      "line": 2512,
       "text": "* (returns -4) and the caller's -4 branch consumes 5 Planck + 1 mu uniforms \u2014",
       "token": "Planck"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 2483,
+      "line": 2514,
       "text": "* array (n_shells=50 << 256), uploaded per iteration from plasma.W. */",
       "token": "W"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 2489,
+      "line": 2520,
       "text": "* k-packet exit. SRC=1 (default, = withKpr2) draws pure Planck(T_e[shell]); SRC=2",
       "token": "Planck"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 2493,
+      "line": 2524,
       "text": "* instead of into the low-opacity continuum window where a pure-Planck draw",
       "token": "Planck"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 2495,
+      "line": 2526,
       "text": "* ORIGINAL Planck branch verbatim (d_kpr_bsrc_src static-init 1); the SRC=2 branch",
       "token": "Planck"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 2497,
+      "line": 2528,
       "text": "* via the inverse-CDF residual) + 1 mu; SRC=1 = 5 Planck uniforms + 1 mu. A",
       "token": "Planck"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 2499,
+      "line": 2530,
       "text": "* opacity) falls back to pure Planck (counted in d_kpr_chi_fallback). The CDF is a",
       "token": "Planck"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 2503,
+      "line": 2534,
       "text": "__device__ int              d_kpr_bsrc_src   = 1;    /* 1=Planck, 2=chi-weighted */",
       "token": "Planck"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 2508,
+      "line": 2539,
       "text": "__device__ unsigned long long d_kpr_chi_fallback = 0; /* degenerate-CDF Planck fallbacks */",
       "token": "Planck"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 2520,
+      "line": 2551,
       "text": "__device__ int d_kpr_bsrc_src_sh[256];     /* per-shell -4 exit src (1=Planck,2=chi) */",
       "token": "Planck"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 2521,
+      "line": 2552,
       "text": "__device__ int d_kpr_is_phot[256];         /* 1 => phot tier (WFLOOR<W<=TAU)     */",
       "token": "W"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 2545,
+      "line": 2576,
       "text": "/* ---- [OTS-TAUBF] PHYSICAL case-A/B criterion (replaces the W>WFLOOR constant) --",
       "token": "W"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 2568,
+      "line": 2599,
       "text": "void cuda_kpr_set_src(int v) {                        /* 1=Planck (default), 2=chi */",
       "token": "Planck"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 2624,
+      "line": 2655,
       "text": "* and the phot-tier flag (WFLOOR<W<=TAU), and arm the per-shell src selection.",
       "token": "W"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 2870,
+      "line": 2901,
       "text": "* replaced by Planck(T_rad) thermalization. Counterpart to LUMINA_EPS_UV;",
       "token": "Planck"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 2870,
+      "line": 2901,
       "text": "* replaced by Planck(T_rad) thermalization. Counterpart to LUMINA_EPS_UV;",
       "token": "T_rad"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 2891,
+      "line": 2922,
       "text": "* instead of full Planck(T_rad) thermalization the packet is re-emitted into",
       "token": "Planck"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 2891,
+      "line": 2922,
       "text": "* instead of full Planck(T_rad) thermalization the packet is re-emitted into",
       "token": "T_rad"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 2892,
+      "line": 2923,
       "text": "* an *optical band* [LO,HI]\u00c5 (rejection-sampled Planck(T_rad)). Normal",
       "token": "Planck"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 2892,
+      "line": 2923,
       "text": "* an *optical band* [LO,HI]\u00c5 (rejection-sampled Planck(T_rad)). Normal",
       "token": "T_rad"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 2966,
+      "line": 2997,
       "text": "* its energy bundle preserved and frequency re-thermalized to Planck(T_inner).",
       "token": "Planck"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 2988,
+      "line": 3019,
       "text": "/* MC-estimator macro-atom (THEN_MC): per-line Sobolev j_blue J_bar accumulators.",
       "token": "j_blue"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 3046,
+      "line": 3077,
       "text": "* boundary-SED Planck injection at ~3505 \u2014 replacing the Wien scale k*T_inner/h",
       "token": "Planck"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 3048,
+      "line": 3079,
       "text": "* (Planck(T_e[shell])) and the T_inner controller are left byte-untouched: this",
       "token": "Planck"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 3293,
+      "line": 3324,
       "text": "if (dev->d_jbar_line) cudaFree(dev->d_jbar_line);",
       "token": "d_jbar_line"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 3293,
+      "line": 3324,
       "text": "if (dev->d_jbar_line) cudaFree(dev->d_jbar_line);",
       "token": "d_jbar_line"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 3297,
+      "line": 3328,
       "text": "/* A2-12 GL08 tombstone: dev->d_T_rad has no allocation left to free. */",
       "token": "d_T_rad"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 3522,
+      "line": 3553,
       "text": "/* NLTE: bin into J_nu frequency histogram */",
       "token": "J_nu"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 3548,
+      "line": 3579,
       "text": "/* j_blue and Edotlu are too large for atomic writes (137252 * 30 doubles) */",
       "token": "j_blue"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 3549,
+      "line": 3580,
       "text": "/* CPU handles these in plasma solve; GPU only needs j/nu_bar for W,T_rad */",
       "token": "W"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 3549,
+      "line": 3580,
       "text": "/* CPU handles these in plasma solve; GPU only needs j/nu_bar for W,T_rad */",
       "token": "T_rad"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 3710,
+      "line": 3741,
       "text": "* uniform-in-volume radius, comoving SED = Planck(T_e[shell]) via d_birth_te[]. The",
       "token": "Planck"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 3736,
+      "line": 3767,
       "text": "/* Sample Planck frequency using Bjorkman-Wood method */",
       "token": "Planck"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 3760,
-      "text": "/* BF absorption: thermalize packet \u2014 re-emit as Planck(T_rad), reset line ID */",
-      "token": "Planck"
-    },
-    {
-      "file": "src/lumina_cuda.cu",
-      "line": 3760,
-      "text": "/* BF absorption: thermalize packet \u2014 re-emit as Planck(T_rad), reset line ID */",
-      "token": "T_rad"
-    },
-    {
-      "file": "src/lumina_cuda.cu",
-      "line": 3764,
-      "text": "const double *d_T_rad, int shell_id,",
-      "token": "d_T_rad"
-    },
-    {
-      "file": "src/lumina_cuda.cu",
-      "line": 3770,
-      "text": "/* 2. Sample comoving frequency from Planck(T_rad) */",
-      "token": "Planck"
-    },
-    {
-      "file": "src/lumina_cuda.cu",
-      "line": 3770,
-      "text": "/* 2. Sample comoving frequency from Planck(T_rad) */",
-      "token": "T_rad"
-    },
-    {
-      "file": "src/lumina_cuda.cu",
-      "line": 3771,
-      "text": "double T_rad = d_T_rad[shell_id];",
-      "token": "T_rad"
-    },
-    {
-      "file": "src/lumina_cuda.cu",
-      "line": 3771,
-      "text": "double T_rad = d_T_rad[shell_id];",
-      "token": "d_T_rad"
-    },
-    {
-      "file": "src/lumina_cuda.cu",
-      "line": 3772,
-      "text": "double comov_nu = d_sample_planck_frequency(T_rad, rng);",
-      "token": "T_rad"
-    },
-    {
-      "file": "src/lumina_cuda.cu",
-      "line": 3790,
-      "text": "/* [EPS-UV 2STEP] Band-constrained variant: Planck(T_rad) re-emission rejection-",
-      "token": "Planck"
-    },
-    {
-      "file": "src/lumina_cuda.cu",
-      "line": 3790,
-      "text": "/* [EPS-UV 2STEP] Band-constrained variant: Planck(T_rad) re-emission rejection-",
-      "token": "T_rad"
-    },
-    {
-      "file": "src/lumina_cuda.cu",
-      "line": 3795,
-      "text": "* SN T_rad ~ 8000 K when band straddles the Wien peak). */",
-      "token": "T_rad"
-    },
-    {
-      "file": "src/lumina_cuda.cu",
-      "line": 3799,
-      "text": "const double *d_T_rad, int shell_id,",
-      "token": "d_T_rad"
-    },
-    {
-      "file": "src/lumina_cuda.cu",
-      "line": 3804,
-      "text": "double T_rad = d_T_rad[shell_id];",
-      "token": "T_rad"
-    },
-    {
-      "file": "src/lumina_cuda.cu",
-      "line": 3804,
-      "text": "double T_rad = d_T_rad[shell_id];",
-      "token": "d_T_rad"
-    },
-    {
-      "file": "src/lumina_cuda.cu",
-      "line": 3807,
-      "text": "double cand = d_sample_planck_frequency(T_rad, rng);",
-      "token": "T_rad"
-    },
-    {
-      "file": "src/lumina_cuda.cu",
-      "line": 3923,
+      "line": 3946,
       "text": "/* Phase 6 - Step 5: per-line Sobolev j_blue estimator (MC-estimator",
       "token": "j_blue"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 4002,
+      "line": 4025,
       "text": "* selected comoving frequency with a Planck(T_e[shell]) draw, keeping the SAME",
       "token": "Planck"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 4033,
+      "line": 4056,
       "text": "* Planck uniforms of d_ltherm_reemit \u2014 in BOTH MODE 2 accept and reject \u2014 so the",
       "token": "Planck"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 4047,
+      "line": 4070,
       "text": "d_line_list_nu, n_lines, rng); /* 5 Planck uniforms */",
       "token": "Planck"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 4067,
+      "line": 4090,
       "text": "* [0,1) conditional on the bin). Then draws mu exactly as the Planck path. If the",
       "token": "Planck"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 4069,
+      "line": 4092,
       "text": "* pure Planck(Te_sh) draw and counts d_kpr_chi_fallback. next_line_id is re-seeded",
       "token": "Planck"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 4070,
+      "line": 4093,
       "text": "* by descending-list binary search on the comoving nu, identical to the Planck -4",
       "token": "Planck"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 4094,
+      "line": 4117,
       "text": "} else {                                        /* degenerate -> Planck fallback */",
       "token": "Planck"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 4111,
+      "line": 4134,
       "text": "*                 1 uniform bin + 1 mu, or 5 Planck + 1 mu on a degenerate CDF);",
       "token": "Planck"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 4112,
+      "line": 4135,
       "text": "*   src_sel!=2 -> pure Planck(T_e) (5 Planck uniforms + 1 mu);",
       "token": "Planck"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 4112,
+      "line": 4135,
       "text": "*   src_sel!=2 -> pure Planck(T_e) (5 Planck uniforms + 1 mu);",
       "token": "Planck"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 4125,
+      "line": 4148,
       "text": "} else if (Te_sh > 0.0) {              /* [SRC=1] pure Planck(T_e)          */",
       "token": "Planck"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 4964,
+      "line": 4987,
       "text": "* the local Planck(T_e) peak. Bounded by d_ma_internal_cap (each roll is a",
       "token": "Planck"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 5004,
+      "line": 5027,
       "text": "* (W>tau, host-flagged) re-emit the k-packet from Planck(T_e)",
       "token": "W"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 5004,
+      "line": 5027,
       "text": "* (W>tau, host-flagged) re-emit the k-packet from Planck(T_e)",
       "token": "Planck"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 5005,
+      "line": 5028,
       "text": "* instead of the resonant kpacket_cdf forest. Master gate off",
       "token": "kpacket_cdf"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 5009,
+      "line": 5032,
       "text": "* shell returns -4 here (0 uniforms) and the caller draws Planck. */",
       "token": "Planck"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 5358,
-      "text": "const double *d_T_rad, int n_lines,",
-      "token": "d_T_rad"
-    },
-    {
-      "file": "src/lumina_cuda.cu",
-      "line": 5447,
+      "line": 5470,
       "text": "* macro-atom cascade with a Planck(T_rad) thermalization. This",
       "token": "Planck"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 5447,
+      "line": 5470,
       "text": "* macro-atom cascade with a Planck(T_rad) thermalization. This",
       "token": "T_rad"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 5457,
-      "text": "d_T_rad, shell_id,",
-      "token": "d_T_rad"
-    },
-    {
-      "file": "src/lumina_cuda.cu",
-      "line": 5464,
-      "text": "d_T_rad, shell_id,",
-      "token": "d_T_rad"
-    },
-    {
-      "file": "src/lumina_cuda.cu",
-      "line": 5476,
+      "line": 5499,
       "text": "* thermalize back to Planck(T_rad) instead of running the cascade.",
       "token": "Planck"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 5476,
+      "line": 5499,
       "text": "* thermalize back to Planck(T_rad) instead of running the cascade.",
       "token": "T_rad"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 5482,
-      "text": "d_T_rad, shell_id,",
-      "token": "d_T_rad"
-    },
-    {
-      "file": "src/lumina_cuda.cu",
-      "line": 5677,
+      "line": 5700,
       "text": "* the comoving frequency from Planck(T_e[shell]) (the thick-zone",
       "token": "Planck"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 5678,
+      "line": 5701,
       "text": "* thermal source) instead of the resonant kpacket_cdf line, re-emit",
       "token": "kpacket_cdf"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 5680,
+      "line": 5703,
       "text": "* (T_e per shell) + the Planck sampler; bookkeeping mirrors the -2",
       "token": "Planck"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 5736,
+      "line": 5759,
       "text": "* as Planck(T_rad). Kills UV\u2192red conversion only; keeps",
       "token": "Planck"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 5736,
+      "line": 5759,
       "text": "* as Planck(T_rad). Kills UV\u2192red conversion only; keeps",
       "token": "T_rad"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 5744,
-      "text": "d_T_rad, shell_id,",
-      "token": "d_T_rad"
-    },
-    {
-      "file": "src/lumina_cuda.cu",
-      "line": 5750,
-      "text": "d_T_rad, shell_id,",
-      "token": "d_T_rad"
-    },
-    {
-      "file": "src/lumina_cuda.cu",
-      "line": 5921,
+      "line": 5944,
       "text": "/* Bjorkman-Wood Planck frequency sampler (comoving nu).        */",
       "token": "Planck"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 5974,
+      "line": 5997,
       "text": "/* NLTE: J_nu frequency histogram */",
       "token": "J_nu"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 5989,
-      "text": "const double *d_chi_bf, const double *d_T_rad,",
-      "token": "d_T_rad"
-    },
-    {
-      "file": "src/lumina_cuda.cu",
-      "line": 6020,
+      "line": 6043,
       "text": "* injection at r_inner[d_inject_shell] (deterministic J CDF or Planck(T_inner));",
       "token": "Planck"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 6023,
+      "line": 6046,
       "text": "* radius; comoving SED = Planck(T_e[shell])). The else path preserves the exact",
       "token": "Planck"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 6039,
+      "line": 6062,
       "text": "pkt_nu = d_sample_planck_frequency(d_birth_te[sb], rng); /* comoving Planck(T_e) */",
       "token": "Planck"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 6047,
+      "line": 6070,
       "text": "/* [TINCOL] boundary-SED Planck injection \u2014 T_inner-colored (recolored when on) */",
       "token": "Planck"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 6188,
+      "line": 6211,
       "text": "* and re-thermalize its comoving frequency to Planck(T_inner)",
       "token": "Planck"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 6199,
+      "line": 6222,
       "text": "/* [TINCOL] diffuse inner-BC re-emission \u2014 Planck(T_inner) color",
       "token": "Planck"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 6253,
-      "text": "d_T_rad, n_lines,",
-      "token": "d_T_rad"
-    },
-    {
-      "file": "src/lumina_cuda.cu",
-      "line": 6357,
+      "line": 6380,
       "text": "* the cold-Planck(T_rad) resample which reddens the SED (the",
       "token": "Planck"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 6357,
+      "line": 6380,
       "text": "* the cold-Planck(T_rad) resample which reddens the SED (the",
       "token": "T_rad"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 6359,
+      "line": 6382,
       "text": "* local-Planck continuum). Active only when the k-packet pool is",
       "token": "Planck"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 6563,
-      "text": "d_T_rad, pkt_shell_id,",
-      "token": "d_T_rad"
-    },
-    {
-      "file": "src/lumina_cuda.cu",
-      "line": 7009,
+      "line": 7032,
       "text": "printf(\"  B2 ionization closure = LTE Saha @T_e,W=1; ion split rate-SE\\n\");",
       "token": "W"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 7011,
+      "line": 7034,
       "text": "printf(\"  B3 partition functions @T_e, undiluted (W=1)\\n\");",
       "token": "W"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 7238,
+      "line": 7261,
       "text": "* call is replaced by Planck(T_rad) re-emission. Set with LUMINA_EPS_UV. */",
       "token": "Planck"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 7238,
+      "line": 7261,
       "text": "* call is replaced by Planck(T_rad) re-emission. Set with LUMINA_EPS_UV. */",
       "token": "T_rad"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 7245,
+      "line": 7268,
       "text": "/* [ARTIS-PARITY D4] EPS_UV Planck(T_rad) UV-entry thermalization is a Lumina-",
       "token": "Planck"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 7245,
+      "line": 7268,
       "text": "/* [ARTIS-PARITY D4] EPS_UV Planck(T_rad) UV-entry thermalization is a Lumina-",
       "token": "T_rad"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 7256,
+      "line": 7279,
       "text": "* call with Planck(T_rad) thermalization for activations at lam>7000 A.",
       "token": "Planck"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 7256,
+      "line": 7279,
       "text": "* call with Planck(T_rad) thermalization for activations at lam>7000 A.",
       "token": "T_rad"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 7264,
+      "line": 7287,
       "text": "/* [ARTIS-PARITY D4] EPS_IR Planck(T_rad) NIR-entry thermalization: no ARTIS",
       "token": "Planck"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 7264,
+      "line": 7287,
       "text": "/* [ARTIS-PARITY D4] EPS_IR Planck(T_rad) NIR-entry thermalization: no ARTIS",
       "token": "T_rad"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 7286,
+      "line": 7309,
       "text": "* optical band [LO,HI]\u00c5 (Planck(T_rad) rejection sample) instead of full",
       "token": "Planck"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 7286,
+      "line": 7309,
       "text": "* optical band [LO,HI]\u00c5 (Planck(T_rad) rejection sample) instead of full",
       "token": "T_rad"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 7301,
+      "line": 7324,
       "text": "printf(\"[EPS-UV-2STEP] band-constrained re-emit: \u03bb\u2208[%.0f,%.0f]\u00c5 (Planck(T_rad) rejection)\\n\",",
       "token": "Planck"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 7301,
+      "line": 7324,
       "text": "printf(\"[EPS-UV-2STEP] band-constrained re-emit: \u03bb\u2208[%.0f,%.0f]\u00c5 (Planck(T_rad) rejection)\\n\",",
       "token": "T_rad"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 7337,
+      "line": 7360,
       "text": "* buffer only (no state feedback); nlte.J_nu is not modified. Mirrors the",
       "token": "J_nu"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 7377,
+      "line": 7400,
       "text": "* boundary-SED Planck injection are recolored to Planck(T_color) while packet",
       "token": "Planck"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 7377,
+      "line": 7400,
       "text": "* boundary-SED Planck injection are recolored to Planck(T_color) while packet",
       "token": "Planck"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 7396,
+      "line": 7419,
       "text": "/* [ARTIS-PARITY D4] LTHERM per-shell Planck(T_e) line re-emission (S->B override)",
       "token": "Planck"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 7434,
+      "line": 7457,
       "text": "/* [ARTIS-PARITY D4] BSRC per-line Planck(T_e) source (stage-IV forest S->B",
       "token": "Planck"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 7559,
+      "line": 7582,
       "text": "int kpr_bsrc_src = 1;   /* B3 -4 exit frequency source: 1=Planck, 2=chi-weighted */",
       "token": "Planck"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 7567,
+      "line": 7590,
       "text": "* else (incl. unset) => pure Planck(T_e), draw-identical to withKpr2. */",
       "token": "Planck"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 7576,
+      "line": 7599,
       "text": "* B(T_e) exit to the photosphere (thick tier W>WFLOOR) with a per-shell src",
       "token": "W"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 7584,
+      "line": 7607,
       "text": "double bsrc_wfloor   = 0.0;    /* optional extra W floor guard (0 = off) */",
       "token": "W"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 7585,
+      "line": 7608,
       "text": "int    bsrc_phot_src = 1;      /* phot-tier -4 exit src: 1=Planck (default), 2=chi */",
       "token": "Planck"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 7648,
+      "line": 7671,
       "text": "\"KPKT_FB_MULTI=%d (B2) BSRC_TAU=%.3f (B3, W>thr) -> B(T_e) exit %s \"",
       "token": "W"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 7654,
+      "line": 7677,
       "text": ": \"pure Planck(T_e)\",",
       "token": "Planck"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 7663,
+      "line": 7686,
       "text": "\"WFLOOR-guard=%.3f (0=off) -- W>WFLOOR CONSTANT RETIRED\\n\",",
       "token": "W"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 7669,
+      "line": 7692,
       "text": "\"(phot tier: W<=TAU=%.3f AND tau_bf-qualified -> -4 B(T_e) exit; \"",
       "token": "W"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 7670,
+      "line": 7693,
       "text": "\"deep W>TAU keeps SRC=%d)\\n\",",
       "token": "W"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 7848,
+      "line": 7871,
       "text": "/* T_rad upload (always; needed by EPS_UV / EPS_IR macro-atom paths even",
       "token": "T_rad"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 7877,
+      "line": 7900,
       "text": "/* deterministic J_nu + downstream solvers (CPU), dump plasma.   */",
       "token": "J_nu"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 7914,
+      "line": 7937,
       "text": "* buffer nlte_Jmc (reduced MC J_nu, kept OUT of the state). GB-scale",
       "token": "J_nu"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 8007,
+      "line": 8030,
       "text": "CUDA_CHECK(cudaMalloc(&dev.d_jbar_line,  njb * sizeof(double)));",
       "token": "d_jbar_line"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 8012,
+      "line": 8035,
       "text": "cuda_set_jbar_ptrs(dev.d_jbar_line, dev.d_jbar_count, 1);",
       "token": "d_jbar_line"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 8028,
+      "line": 8051,
       "text": "* (per-bin nu_bar for the (W,T_R) fit + the bf-rate \u0393_bf estimator).",
       "token": "W"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 8029,
+      "line": 8052,
       "text": "* The MC field is rebuilt into nlte.J_nu each iter and drives the",
       "token": "J_nu"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 8034,
+      "line": 8057,
       "text": "printf(\"[ARTIS-PARITY C1] per-bin (W,T_R) dilute-BB field: %d coarse \"",
       "token": "W"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 8035,
+      "line": 8058,
       "text": "\"bins fit (radfield.cc find_bin_T_R/W=J/planckint), evaluated \"",
       "token": "W"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 8036,
+      "line": 8059,
       "text": "\"radfield(nu)=W*planck onto the %d-bin grid; empty bin -> 0\\n\",",
       "token": "W"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 8036,
+      "line": 8059,
       "text": "\"radfield(nu)=W*planck onto the %d-bin grid; empty bin -> 0\\n\",",
       "token": "planck"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 8294,
+      "line": 8317,
       "text": "* it>0: keep the MC-sampled per-bin (W,T_R) field that the previous",
       "token": "W"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 8296,
+      "line": 8319,
       "text": "* nlte.J_nu, so the photoion + bb-excitation rates read the",
       "token": "J_nu"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 8300,
+      "line": 8323,
       "text": "if(getenv(\"LUMINA_JPROBE\")) printf(\"  [JPROBE A-postwrite] J[49,760]=%.3e ne40=%.3e Te40=%.0f\\n\", nlte.J_nu[(size_t)49*cs.n_bins+760], plasma.n_electron[40], plasma.T_e[40]);",
       "token": "J_nu"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 8302,
+      "line": 8325,
       "text": "* radiation field J_nu with the local Planck B(nu,Te) so bb + bf +",
       "token": "J_nu"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 8302,
+      "line": 8325,
       "text": "* radiation field J_nu with the local Planck B(nu,Te) so bb + bf +",
       "token": "Planck"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 8305,
+      "line": 8328,
       "text": "* + Planck), not an interpretive metric: if S_l/B stays >1, a rate",
       "token": "Planck"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 8312,
+      "line": 8335,
       "text": "nlte.J_nu[(size_t)s*cs.n_bins+b] =",
       "token": "J_nu"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 8369,
+      "line": 8392,
       "text": "if(getenv(\"LUMINA_JPROBE\")) printf(\"  [JPROBE C-postplasma] J[49,760]=%.3e ne40=%.3e Te40=%.0f\\n\", nlte.J_nu[(size_t)49*cs.n_bins+760], plasma.n_electron[40], plasma.T_e[40]);",
       "token": "J_nu"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 8388,
+      "line": 8411,
       "text": "if(getenv(\"LUMINA_JPROBE\")) printf(\"  [JPROBE D-postnlte] J[49,760]=%.3e ne40=%.3e Te40=%.0f\\n\", nlte.J_nu[(size_t)49*cs.n_bins+760], plasma.n_electron[40], plasma.T_e[40]);",
       "token": "J_nu"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 8434,
+      "line": 8457,
       "text": "* THIS iter's just-solved pops and reduce the binned J_nu into",
       "token": "J_nu"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 8435,
+      "line": 8458,
       "text": "* the SHADOW buffer nlte_Jmc. nlte.J_nu and plasma state are NOT",
       "token": "J_nu"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 8444,
+      "line": 8467,
       "text": "*     writes opacity.transition_probabilities / p_kpacket /",
       "token": "transition_probabilities"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 8445,
+      "line": 8468,
       "text": "*     kpacket_cdf / recomb (transport-only tables the plasma",
       "token": "kpacket_cdf"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 8465,
+      "line": 8488,
       "text": "opacity.transition_probabilities,",
       "token": "transition_probabilities"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 8487,
+      "line": 8510,
       "text": "if (dev.d_kpacket_cdf && opacity.kpacket_cdf)",
       "token": "kpacket_cdf"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 8488,
+      "line": 8511,
       "text": "CUDA_CHECK(cudaMemcpy(dev.d_kpacket_cdf, opacity.kpacket_cdf,",
       "token": "kpacket_cdf"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 8564,
+      "line": 8587,
       "text": "double Wsh = (plasma.W ? plasma.W[s] : 0.0);",
-      "token": "W"
-    },
-    {
-      "file": "src/lumina_cuda.cu",
-      "line": 8564,
-      "text": "double Wsh = (plasma.W ? plasma.W[s] : 0.0);",
-      "token": "W"
-    },
-    {
-      "file": "src/lumina_cuda.cu",
-      "line": 8565,
-      "text": "int q = (plasma.W && Wsh > kpr_bsrc_tau) ? 1 : 0; /* deep tier UNCHANGED */",
-      "token": "W"
-    },
-    {
-      "file": "src/lumina_cuda.cu",
-      "line": 8569,
-      "text": "* the W>WFLOOR constant). tau_bf = chi_bf(404A)*L_shell:",
       "token": "W"
     },
     {
       "file": "src/lumina_cuda.cu",
       "line": 8587,
-      "text": "/* optional extra W floor guard (default off => bsrc_wfloor=0). */",
+      "text": "double Wsh = (plasma.W ? plasma.W[s] : 0.0);",
+      "token": "W"
+    },
+    {
+      "file": "src/lumina_cuda.cu",
+      "line": 8588,
+      "text": "int q = (plasma.W && Wsh > kpr_bsrc_tau) ? 1 : 0; /* deep tier UNCHANGED */",
       "token": "W"
     },
     {
       "file": "src/lumina_cuda.cu",
       "line": 8592,
+      "text": "* the W>WFLOOR constant). tau_bf = chi_bf(404A)*L_shell:",
+      "token": "W"
+    },
+    {
+      "file": "src/lumina_cuda.cu",
+      "line": 8610,
+      "text": "/* optional extra W floor guard (default off => bsrc_wfloor=0). */",
+      "token": "W"
+    },
+    {
+      "file": "src/lumina_cuda.cu",
+      "line": 8615,
       "text": "* boundary to any tau_bf-qualified phot shell (was: W>WFLOOR).",
       "token": "W"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 8638,
+      "line": 8661,
       "text": "* device sampler counts it and draws pure Planck. Grid",
       "token": "Planck"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 8680,
+      "line": 8703,
       "text": "/* Refresh device bf continuum + T_rad + k-packet T_e from",
       "token": "T_rad"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 8695,
+      "line": 8718,
       "text": "*       into smin's weight + the boundary L), Planck(T_e[s]) SED, so",
       "token": "Planck"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 8738,
+      "line": 8761,
       "text": "* Planck(T_inner) instead of a stale frequency CDF. */",
       "token": "Planck"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 8750,
+      "line": 8773,
       "text": "if (s_inj > 0 && s_inj < geo.n_shells && nlte.J_nu) {",
       "token": "J_nu"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 8758,
+      "line": 8781,
       "text": "double J = nlte.J_nu[(size_t)s_inj * nlte.n_freq_bins + b];",
       "token": "J_nu"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 8800,
+      "line": 8823,
       "text": "if (dev.d_jbar_line) {",
       "token": "d_jbar_line"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 8802,
+      "line": 8825,
       "text": "CUDA_CHECK(cudaMemset(dev.d_jbar_line,  0, njb * sizeof(double)));",
       "token": "d_jbar_line"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 8854,
-      "text": "dev.d_chi_bf, dev.d_T_rad, dev.d_bf_activation_level,",
-      "token": "d_T_rad"
-    },
-    {
-      "file": "src/lumina_cuda.cu",
-      "line": 9000,
+      "line": 9030,
       "text": "\"check qualify mask (W>tau) ***\" : \"\",",
       "token": "W"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 9056,
+      "line": 9086,
       "text": "\"bypass=%ld (IUP_TRAD pump or no J_nu) \"",
       "token": "J_nu"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 9118,
+      "line": 9148,
       "text": "*     nlte_normalize_j_nu writes physical J_nu. Point J_nu at",
       "token": "J_nu"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 9118,
+      "line": 9148,
       "text": "*     nlte_normalize_j_nu writes physical J_nu. Point J_nu at",
       "token": "J_nu"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 9120,
+      "line": 9150,
       "text": "*     nlte.J_nu is never overwritten (Stage-1 = shadow only). */",
       "token": "J_nu"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 9123,
+      "line": 9153,
       "text": "double *saved_Jnu = nlte.J_nu;",
       "token": "J_nu"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 9124,
+      "line": 9154,
       "text": "nlte.J_nu = nlte_Jmc;",
       "token": "J_nu"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 9126,
+      "line": 9156,
       "text": "nlte.J_nu = saved_Jnu;",
       "token": "J_nu"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 9128,
+      "line": 9158,
       "text": "/* [ARTIS-PARITY C1/C3] rebuild nlte.J_nu from THIS iter's MC",
       "token": "J_nu"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 9129,
+      "line": 9159,
       "text": "* estimators via the ARTIS per-bin (W,T_R) dilute-BB fit, and",
       "token": "W"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 9138,
+      "line": 9168,
       "text": "* (mc_J, B_nu(T_e), C1 W/T_R) \u2014 all reflect THIS iter now that",
       "token": "W"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 9218,
+      "line": 9248,
       "text": "if (coev_consume && dev.d_jbar_line) {",
       "token": "d_jbar_line"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 9220,
+      "line": 9250,
       "text": "CUDA_CHECK(cudaMemcpy(opacity.jbar_line, dev.d_jbar_line,",
       "token": "d_jbar_line"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 10025,
+      "line": 10055,
       "text": "fprintf(pf, \"shell_id,W,T_rad,n_e,T_e\\n\");",
       "token": "W"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 10025,
+      "line": 10055,
       "text": "fprintf(pf, \"shell_id,W,T_rad,n_e,T_e\\n\");",
       "token": "T_rad"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 10028,
+      "line": 10058,
       "text": "plasma.W[i], plasma.T_rad[i],",
       "token": "W"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 10028,
+      "line": 10058,
       "text": "plasma.W[i], plasma.T_rad[i],",
       "token": "T_rad"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 10090,
+      "line": 10120,
       "text": "opacity.transition_probabilities,",
       "token": "transition_probabilities"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 10103,
+      "line": 10133,
       "text": "if (dev.d_kpacket_cdf && opacity.kpacket_cdf)",
       "token": "kpacket_cdf"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 10104,
+      "line": 10134,
       "text": "CUDA_CHECK(cudaMemcpy(dev.d_kpacket_cdf, opacity.kpacket_cdf,",
       "token": "kpacket_cdf"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 10125,
+      "line": 10155,
       "text": "* converged deterministic J(nu, s) (nlte.J_nu row -> CDF). The core",
       "token": "J_nu"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 10131,
+      "line": 10161,
       "text": "if (s_inj > 0 && s_inj < geo.n_shells && nlte.J_nu) {",
       "token": "J_nu"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 10139,
+      "line": 10169,
       "text": "double J = nlte.J_nu[(size_t)s_inj * nlte.n_freq_bins + b];",
       "token": "J_nu"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 10182,
+      "line": 10212,
       "text": "CUDA_CHECK(cudaMalloc(&dev.d_jbar_line,  njb * sizeof(double)));",
       "token": "d_jbar_line"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 10187,
+      "line": 10217,
       "text": "cuda_set_jbar_ptrs(dev.d_jbar_line, dev.d_jbar_count, 1);",
       "token": "d_jbar_line"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 10204,
+      "line": 10234,
       "text": "if (cmfgen_then_mc && dev.d_jbar_line) {  /* MC-estimator: fresh J_bar accumulation per pass */",
       "token": "d_jbar_line"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 10206,
+      "line": 10236,
       "text": "CUDA_CHECK(cudaMemset(dev.d_jbar_line,  0, njb * sizeof(double)));",
       "token": "d_jbar_line"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 10273,
-      "text": "dev.d_chi_bf, dev.d_T_rad, dev.d_bf_activation_level,",
-      "token": "d_T_rad"
-    },
-    {
-      "file": "src/lumina_cuda.cu",
-      "line": 10461,
+      "line": 10497,
       "text": "if (cmfgen_then_mc && dev.d_jbar_line) {",
       "token": "d_jbar_line"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 10463,
+      "line": 10499,
       "text": "CUDA_CHECK(cudaMemcpy(opacity.jbar_line, dev.d_jbar_line,",
       "token": "d_jbar_line"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 10508,
+      "line": 10544,
       "text": "* plasma goto at ~4181), so download+normalize the MC binned J_nu here",
       "token": "J_nu"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 10603,
+      "line": 10639,
       "text": "opacity.transition_probabilities,",
       "token": "transition_probabilities"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 10610,
+      "line": 10646,
       "text": "if (dev.d_kpacket_cdf && opacity.kpacket_cdf)",
       "token": "kpacket_cdf"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 10611,
+      "line": 10647,
       "text": "CUDA_CHECK(cudaMemcpy(dev.d_kpacket_cdf, opacity.kpacket_cdf,",
       "token": "kpacket_cdf"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 10617,
+      "line": 10653,
       "text": "/* Binned-J estimator: download the raw J_nu histogram and expose it on",
       "token": "J_nu"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 10618,
+      "line": 10654,
       "text": "* est so solve_radiation_field can fit a dilute Planck to the",
       "token": "Planck"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 10631,
+      "line": 10667,
       "text": "/* Option (8): freeze W/T_rad too once ion-lock activates \u2014 true",
       "token": "W"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 10631,
+      "line": 10667,
       "text": "/* Option (8): freeze W/T_rad too once ion-lock activates \u2014 true",
       "token": "T_rad"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 10671,
+      "line": 10707,
       "text": "* J_nu now (the later NLTE block re-normalizes harmlessly,",
       "token": "J_nu"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 10672,
+      "line": 10708,
       "text": "* since normalize recomputes J_nu from the raw estimator). */",
       "token": "J_nu"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 10716,
+      "line": 10752,
       "text": "/* EPS_UV / EPS_IR need fresh T_rad even when BF is disabled. */",
       "token": "T_rad"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 10781,
+      "line": 10817,
       "text": "* transition_probabilities (frozen carsus values) using fresh",
       "token": "transition_probabilities"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 10802,
+      "line": 10838,
       "text": "opacity.transition_probabilities,",
       "token": "transition_probabilities"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 10818,
+      "line": 10854,
       "text": "if (dev.d_kpacket_cdf && opacity.kpacket_cdf) {",
       "token": "kpacket_cdf"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 10819,
+      "line": 10855,
       "text": "CUDA_CHECK(cudaMemcpy(dev.d_kpacket_cdf, opacity.kpacket_cdf,",
       "token": "kpacket_cdf"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 10831,
+      "line": 10867,
       "text": "double te_ratio = plasma.T_rad[i] > 0 ? plasma.T_e[i] / plasma.T_rad[i] : 0.0;",
       "token": "T_rad"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 10831,
+      "line": 10867,
       "text": "double te_ratio = plasma.T_rad[i] > 0 ? plasma.T_e[i] / plasma.T_rad[i] : 0.0;",
       "token": "T_rad"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 10833,
+      "line": 10869,
       "text": "i, plasma.W[i], plasma.T_rad[i], plasma.T_e[i], te_ratio, ratio);",
       "token": "W"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 10833,
+      "line": 10869,
       "text": "i, plasma.W[i], plasma.T_rad[i], plasma.T_e[i], te_ratio, ratio);",
       "token": "T_rad"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 10916,
+      "line": 10952,
       "text": "double w_err = (plasma.W[i] - tardis_W[i]) / tardis_W[i] * 100.0;    /* Phase 6 - Step 8 */",
       "token": "W"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 10917,
+      "line": 10953,
       "text": "double t_err = (plasma.T_rad[i] - tardis_T_rad[i]) / tardis_T_rad[i] * 100.0; /* Phase 6 - Step 8 */",
       "token": "T_rad"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 10919,
+      "line": 10955,
       "text": "i, plasma.W[i], tardis_W[i], w_err,                            /* Phase 6 - Step 8 */",
       "token": "W"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 10920,
+      "line": 10956,
       "text": "plasma.T_rad[i], tardis_T_rad[i], t_err);                      /* Phase 6 - Step 8 */",
       "token": "T_rad"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 10925,
+      "line": 10961,
       "text": "sum_w_err += fabs((plasma.W[i] - tardis_W[i]) / tardis_W[i]); /* Phase 6 - Step 8 */",
       "token": "W"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 10926,
+      "line": 10962,
       "text": "sum_t_err += fabs((plasma.T_rad[i] - tardis_T_rad[i]) / tardis_T_rad[i]); /* Phase 6 - Step 8 */",
       "token": "T_rad"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 10928,
+      "line": 10964,
       "text": "printf(\"\\nMean |W error|: %.2f%%\\n\", sum_w_err / geo.n_shells * 100.0);     /* Phase 6 - Step 8 */",
       "token": "W"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 10929,
+      "line": 10965,
       "text": "printf(\"Mean |T_rad error|: %.2f%%\\n\", sum_t_err / geo.n_shells * 100.0);   /* Phase 6 - Step 8 */",
       "token": "T_rad"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 11055,
+      "line": 11091,
       "text": "fprintf(out, \"shell_id,W,T_rad,n_e,T_e\\n\"); /* +T_e: RADEQ solver target, vs CMFGEN gas temperature */",
       "token": "W"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 11055,
+      "line": 11091,
       "text": "fprintf(out, \"shell_id,W,T_rad,n_e,T_e\\n\"); /* +T_e: RADEQ solver target, vs CMFGEN gas temperature */",
       "token": "T_rad"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 11057,
+      "line": 11093,
       "text": "fprintf(out, \"%d,%.10f,%.6f,%.6e,%.6f\\n\", i, plasma.W[i], plasma.T_rad[i], plasma.n_electron[i], plasma.T_e[i]); /* Phase 6 - Step 8 */",
       "token": "W"
     },
     {
       "file": "src/lumina_cuda.cu",
-      "line": 11057,
+      "line": 11093,
       "text": "fprintf(out, \"%d,%.10f,%.6f,%.6e,%.6f\\n\", i, plasma.W[i], plasma.T_rad[i], plasma.n_electron[i], plasma.T_e[i]); /* Phase 6 - Step 8 */",
       "token": "T_rad"
     },
     {
       "file": "src/lumina_bf_gemm.cu",
-      "line": 47,
-      "text": "double *d_T_rad;          /* [n_shells] */",
-      "token": "d_T_rad"
-    },
-    {
-      "file": "src/lumina_bf_gemm.cu",
-      "line": 48,
-      "text": "double *d_W;              /* [n_shells] */",
-      "token": "d_W"
-    },
-    {
-      "file": "src/lumina_bf_gemm.cu",
-      "line": 65,
-      "text": "const double *T_rad, const double *W,",
-      "token": "T_rad"
-    },
-    {
-      "file": "src/lumina_bf_gemm.cu",
-      "line": 65,
-      "text": "const double *T_rad, const double *W,",
-      "token": "W"
-    },
-    {
-      "file": "src/lumina_bf_gemm.cu",
-      "line": 85,
-      "text": "double T_rad_s = T_rad[s];",
-      "token": "T_rad"
-    },
-    {
-      "file": "src/lumina_bf_gemm.cu",
-      "line": 86,
-      "text": "double W_s     = W[s];",
-      "token": "W"
-    },
-    {
-      "file": "src/lumina_bf_gemm.cu",
-      "line": 144,
-      "text": "g_bf_gemm.d_T_rad = NULL;",
-      "token": "d_T_rad"
-    },
-    {
-      "file": "src/lumina_bf_gemm.cu",
-      "line": 145,
-      "text": "g_bf_gemm.d_W = NULL;",
-      "token": "d_W"
-    },
-    {
-      "file": "src/lumina_bf_gemm.cu",
-      "line": 215,
-      "text": "CUDA_CHECK(cudaMemcpy(g_bf_gemm.d_T_rad, plasma->T_rad,",
-      "token": "d_T_rad"
-    },
-    {
-      "file": "src/lumina_bf_gemm.cu",
-      "line": 215,
-      "text": "CUDA_CHECK(cudaMemcpy(g_bf_gemm.d_T_rad, plasma->T_rad,",
-      "token": "T_rad"
-    },
-    {
-      "file": "src/lumina_bf_gemm.cu",
-      "line": 217,
-      "text": "CUDA_CHECK(cudaMemcpy(g_bf_gemm.d_W, plasma->W,",
-      "token": "d_W"
-    },
-    {
-      "file": "src/lumina_bf_gemm.cu",
-      "line": 217,
-      "text": "CUDA_CHECK(cudaMemcpy(g_bf_gemm.d_W, plasma->W,",
-      "token": "W"
-    },
-    {
-      "file": "src/lumina_bf_gemm.cu",
-      "line": 232,
-      "text": "g_bf_gemm.d_T_rad, g_bf_gemm.d_W,",
-      "token": "d_T_rad"
-    },
-    {
-      "file": "src/lumina_bf_gemm.cu",
-      "line": 232,
-      "text": "g_bf_gemm.d_T_rad, g_bf_gemm.d_W,",
-      "token": "d_W"
-    },
-    {
-      "file": "src/lumina_bf_gemm.cu",
-      "line": 306,
-      "text": "CUDA_CHECK(cudaMemcpy(g_bf_gemm.d_T_rad, plasma->T_rad, n_shells*sizeof(double), cudaMemcpyHostToDevice));",
-      "token": "d_T_rad"
-    },
-    {
-      "file": "src/lumina_bf_gemm.cu",
-      "line": 306,
-      "text": "CUDA_CHECK(cudaMemcpy(g_bf_gemm.d_T_rad, plasma->T_rad, n_shells*sizeof(double), cudaMemcpyHostToDevice));",
-      "token": "T_rad"
-    },
-    {
-      "file": "src/lumina_bf_gemm.cu",
-      "line": 307,
-      "text": "CUDA_CHECK(cudaMemcpy(g_bf_gemm.d_W, plasma->W, n_shells*sizeof(double), cudaMemcpyHostToDevice));",
-      "token": "d_W"
-    },
-    {
-      "file": "src/lumina_bf_gemm.cu",
-      "line": 307,
-      "text": "CUDA_CHECK(cudaMemcpy(g_bf_gemm.d_W, plasma->W, n_shells*sizeof(double), cudaMemcpyHostToDevice));",
-      "token": "W"
-    },
-    {
-      "file": "src/lumina_bf_gemm.cu",
-      "line": 313,
-      "text": "bf_compute_n_level_kernel<<<grid,block>>>(g_bf_gemm.d_n_level, g_bf_gemm.d_T_rad,",
-      "token": "d_T_rad"
-    },
-    {
-      "file": "src/lumina_bf_gemm.cu",
-      "line": 314,
-      "text": "g_bf_gemm.d_W, g_bf_gemm.d_n_ion, g_bf_gemm.d_Z_part, g_bf_gemm.d_level_E_eV,",
-      "token": "d_W"
+      "line": 156,
+      "text": "* this explicit -1 route with its checked emissivity CDF, never Planck. */",
+      "token": "Planck"
     },
     {
       "file": "src/lumina_nlte_gemm.cu",
@@ -2127,8 +1857,11 @@
   ],
   "production_wiring": {
     "a2_12_single_mirror_bind": true,
-    "a2_14_production_guard": true,
-    "a2_15_production_guard": true,
+    "a2_14_checked_production_view": true,
+    "a2_14_production_guard": false,
+    "a2_15_cdf_sampler": true,
+    "a2_15_checked_production_view": true,
+    "a2_15_production_guard": false,
     "bb_line_cache_device_lookup": true,
     "bb_scalar_comment_tombstones": 3,
     "bb_scalar_reads": 0,
@@ -2144,12 +1877,12 @@
   ],
   "schema": "A2_13_15_STATIC_CENSUS_V1",
   "source_sha256": {
-    "src/gpu_emissivity_kernels.cu": "df6a5d11f8c233aadf2d4381295f28cc6fb3c59f8d62ae8099607c7366792a35",
-    "src/gpu_opacity_kernels.cu": "900db7d69dbc49f0521c7cded11a3fcad5b44e19d6a2e2e384a8a5542be97721",
+    "src/gpu_emissivity_kernels.cu": "2afb58a8ea13c8c3eec136aff3c09bdeb4a8d8b8b075a2344836723ce5e45f57",
+    "src/gpu_opacity_kernels.cu": "67d4fed596c367bd30cff5394103ce320d525954fc983ed98c9754100ef94904",
     "src/gpu_physics_kernels.cu": "b54c9127f0495832cfe6058502b37f98410bab6ff90f87a0ef67082c1923cc83",
-    "src/lumina_bf_gemm.cu": "076ac75b07b870e6c22459f964a4f4b7aacbdd32ff79fe8d0f02c3b1cdf6dabc",
+    "src/lumina_bf_gemm.cu": "8759e000f24d98ec151d070a8ef6a7f6acf429d2072e2cd3aaba9ac81ad463c8",
     "src/lumina_cmf_solve.cu": "65466d7b99828706ad7f8cc44d1806fcd83f6e0de64e424ed39d9f6fb471f73b",
-    "src/lumina_cuda.cu": "0d25275bae7c1254a0d36934b947017bef2349503bd42180cfb84be543b6c534",
+    "src/lumina_cuda.cu": "38f16be029c188b5411adeff1100e2f75a065902f489d620afd10a2799976dcc",
     "src/lumina_nlte_assemble.cu": "f2d1b1347fd821a14372bee17c796bd01fd34f3ab4db45baf06f64c3a0586688",
     "src/lumina_nlte_gemm.cu": "fb93d0004dfeff73d44c471f7d801b054b086a2b56722d0ae243f599180492da"
   },

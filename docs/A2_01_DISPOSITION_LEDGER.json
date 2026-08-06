@@ -385,7 +385,7 @@
       "final_status": "KEEP_DIAGNOSTIC_ONLY"
     },
     {
-      "file_line": "src/lumina_bf_gemm.cu:82",
+      "file_line": "이관 완료(A2-14·65498e18e9826ea0cdb5906b71cebecef4b82637)",
       "symbol": "T_rad[s]",
       "current_source": "GPU BF-kernel T_rad parameter",
       "physical_meaning": "[GPU_opacity_rate] GPU bound-free Boltzmann factor",
@@ -394,7 +394,7 @@
       "final_status": "REPLACE_GPU_SCALAR_OPACITY_RATE_READ"
     },
     {
-      "file_line": "src/lumina_bf_gemm.cu:83",
+      "file_line": "이관 완료(A2-14·65498e18e9826ea0cdb5906b71cebecef4b82637)",
       "symbol": "W[s]",
       "current_source": "GPU BF-kernel W parameter",
       "physical_meaning": "[GPU_opacity_rate] GPU bound-free dilution factor",
@@ -403,7 +403,7 @@
       "final_status": "REPLACE_GPU_SCALAR_OPACITY_RATE_READ"
     },
     {
-      "file_line": "src/lumina_bf_gemm.cu:208",
+      "file_line": "이관 완료(A2-14·65498e18e9826ea0cdb5906b71cebecef4b82637)",
       "symbol": "plasma->T_rad",
       "current_source": "plasma.T_rad upload source",
       "physical_meaning": "[GPU_opacity_rate] GPU BF rate state upload",
@@ -412,7 +412,7 @@
       "final_status": "REPLACE_GPU_SCALAR_OPACITY_RATE_READ"
     },
     {
-      "file_line": "src/lumina_bf_gemm.cu:210",
+      "file_line": "이관 완료(A2-14·65498e18e9826ea0cdb5906b71cebecef4b82637)",
       "symbol": "plasma->W",
       "current_source": "plasma.W upload source",
       "physical_meaning": "[GPU_opacity_rate] GPU BF rate state upload",
@@ -421,7 +421,7 @@
       "final_status": "REPLACE_GPU_SCALAR_OPACITY_RATE_READ"
     },
     {
-      "file_line": "src/lumina_bf_gemm.cu:225",
+      "file_line": "이관 완료(A2-14·65498e18e9826ea0cdb5906b71cebecef4b82637)",
       "symbol": "g_bf_gemm.d_T_rad",
       "current_source": "GPU BF T_rad buffer",
       "physical_meaning": "[GPU_opacity_rate] GPU BF kernel argument",
@@ -430,7 +430,7 @@
       "final_status": "REPLACE_GPU_SCALAR_OPACITY_RATE_READ"
     },
     {
-      "file_line": "src/lumina_bf_gemm.cu:225",
+      "file_line": "이관 완료(A2-14·65498e18e9826ea0cdb5906b71cebecef4b82637)",
       "symbol": "g_bf_gemm.d_W",
       "current_source": "GPU BF W buffer",
       "physical_meaning": "[GPU_opacity_rate] GPU BF kernel argument",
@@ -439,7 +439,7 @@
       "final_status": "REPLACE_GPU_SCALAR_OPACITY_RATE_READ"
     },
     {
-      "file_line": "src/lumina_bf_gemm.cu:296",
+      "file_line": "이관 완료(A2-14·65498e18e9826ea0cdb5906b71cebecef4b82637)",
       "symbol": "plasma->T_rad",
       "current_source": "plasma.T_rad refresh source",
       "physical_meaning": "[GPU_opacity_rate] GPU BF iteration refresh",
@@ -448,7 +448,7 @@
       "final_status": "REPLACE_GPU_SCALAR_OPACITY_RATE_READ"
     },
     {
-      "file_line": "src/lumina_bf_gemm.cu:297",
+      "file_line": "이관 완료(A2-14·65498e18e9826ea0cdb5906b71cebecef4b82637)",
       "symbol": "plasma->W",
       "current_source": "plasma.W refresh source",
       "physical_meaning": "[GPU_opacity_rate] GPU BF iteration refresh",
@@ -457,7 +457,7 @@
       "final_status": "REPLACE_GPU_SCALAR_OPACITY_RATE_READ"
     },
     {
-      "file_line": "src/lumina_bf_gemm.cu:303",
+      "file_line": "이관 완료(A2-14·65498e18e9826ea0cdb5906b71cebecef4b82637)",
       "symbol": "g_bf_gemm.d_T_rad",
       "current_source": "GPU BF T_rad buffer",
       "physical_meaning": "[GPU_opacity_rate] GPU BF refreshed kernel argument",
@@ -466,7 +466,7 @@
       "final_status": "REPLACE_GPU_SCALAR_OPACITY_RATE_READ"
     },
     {
-      "file_line": "src/lumina_bf_gemm.cu:304",
+      "file_line": "이관 완료(A2-14·65498e18e9826ea0cdb5906b71cebecef4b82637)",
       "symbol": "g_bf_gemm.d_W",
       "current_source": "GPU BF W buffer",
       "physical_meaning": "[GPU_opacity_rate] GPU BF refreshed kernel argument",
@@ -475,7 +475,7 @@
       "final_status": "REPLACE_GPU_SCALAR_OPACITY_RATE_READ"
     },
     {
-      "file_line": "src/lumina_nlte_assemble.cu:169",
+      "file_line": "이관 완료(A2-14·65498e18e9826ea0cdb5906b71cebecef4b82637)",
       "symbol": "d_W[s]",
       "current_source": "GPU NLTE assembly W parameter",
       "physical_meaning": "[GPU_opacity_rate] GPU bound-bound Planck fallback",
@@ -484,7 +484,7 @@
       "final_status": "REPLACE_GPU_SCALAR_OPACITY_RATE_READ"
     },
     {
-      "file_line": "src/lumina_nlte_assemble.cu:413",
+      "file_line": "이관 완료(A2-14·65498e18e9826ea0cdb5906b71cebecef4b82637)",
       "symbol": "plasma->W",
       "current_source": "plasma.W upload source",
       "physical_meaning": "[GPU_opacity_rate] GPU NLTE assembly upload",
@@ -493,7 +493,7 @@
       "final_status": "REPLACE_GPU_SCALAR_OPACITY_RATE_READ"
     },
     {
-      "file_line": "src/lumina_nlte_assemble.cu:428",
+      "file_line": "이관 완료(A2-14·65498e18e9826ea0cdb5906b71cebecef4b82637)",
       "symbol": "plasma->T_rad[0]",
       "current_source": "plasma.T_rad",
       "physical_meaning": "[GPU_opacity_rate] GPU NLTE dilute temperature fallback",
@@ -502,7 +502,7 @@
       "final_status": "REPLACE_GPU_SCALAR_OPACITY_RATE_READ"
     },
     {
-      "file_line": "src/lumina_cuda.cu:3760",
+      "file_line": "이관 완료(A2-15·84a148159185004f6f25db4bed51a3d5b5896d44)",
       "symbol": "d_T_rad[shell_id]",
       "current_source": "GPU transport T_rad array",
       "physical_meaning": "[GPU_transport] GPU BF re-emission temperature read",
@@ -511,7 +511,7 @@
       "final_status": "REPLACE_GPU_SCALAR_TRANSPORT_STATE"
     },
     {
-      "file_line": "src/lumina_cuda.cu:3793",
+      "file_line": "이관 완료(A2-15·84a148159185004f6f25db4bed51a3d5b5896d44)",
       "symbol": "d_T_rad[shell_id]",
       "current_source": "GPU transport T_rad array",
       "physical_meaning": "[GPU_transport] GPU band re-emission temperature read",
@@ -520,7 +520,7 @@
       "final_status": "REPLACE_GPU_SCALAR_TRANSPORT_STATE"
     },
     {
-      "file_line": "src/lumina_cuda.cu:5978",
+      "file_line": "이관 완료(A2-15·84a148159185004f6f25db4bed51a3d5b5896d44)",
       "symbol": "d_T_rad",
       "current_source": "GPU transport T_rad pointer",
       "physical_meaning": "[GPU_transport] transport kernel scalar-field argument",
@@ -529,7 +529,7 @@
       "final_status": "REPLACE_GPU_SCALAR_TRANSPORT_STATE"
     },
     {
-      "file_line": "src/lumina_cuda.cu:6242",
+      "file_line": "이관 완료(A2-15·84a148159185004f6f25db4bed51a3d5b5896d44)",
       "symbol": "d_T_rad",
       "current_source": "GPU transport T_rad pointer",
       "physical_meaning": "[GPU_transport] transport interaction call",
@@ -538,7 +538,7 @@
       "final_status": "REPLACE_GPU_SCALAR_TRANSPORT_STATE"
     },
     {
-      "file_line": "src/lumina_cuda.cu:6552",
+      "file_line": "이관 완료(A2-15·84a148159185004f6f25db4bed51a3d5b5896d44)",
       "symbol": "d_T_rad",
       "current_source": "GPU transport T_rad pointer",
       "physical_meaning": "[GPU_transport] legacy BF re-emission call",
@@ -547,7 +547,7 @@
       "final_status": "REPLACE_GPU_SCALAR_TRANSPORT_STATE"
     },
     {
-      "file_line": "src/lumina_cuda.cu:8842",
+      "file_line": "이관 완료(A2-15·84a148159185004f6f25db4bed51a3d5b5896d44)",
       "symbol": "dev.d_T_rad",
       "current_source": "GPU device T_rad owner",
       "physical_meaning": "[GPU_transport] main transport launch argument",
@@ -556,7 +556,7 @@
       "final_status": "REPLACE_GPU_SCALAR_TRANSPORT_STATE"
     },
     {
-      "file_line": "src/lumina_cuda.cu:10256",
+      "file_line": "이관 완료(A2-15·84a148159185004f6f25db4bed51a3d5b5896d44)",
       "symbol": "dev.d_T_rad",
       "current_source": "GPU device T_rad owner",
       "physical_meaning": "[GPU_transport] final transport launch argument",
@@ -763,7 +763,7 @@
       "final_status": "REPLACE_FORMAL_TRANSFER_SCALAR_READ"
     },
     {
-      "file_line": "src/lumina_bf_gemm.cu:140",
+      "file_line": "이관 완료(A2-14·65498e18e9826ea0cdb5906b71cebecef4b82637)",
       "symbol": "g_bf_gemm.d_T_rad",
       "current_source": "GPU BF T_rad allocation",
       "physical_meaning": "[GPU_lifecycle] allocate GPU scalar owner",
@@ -772,7 +772,7 @@
       "final_status": "REMOVE_GPU_SCALAR_LIFECYCLE"
     },
     {
-      "file_line": "src/lumina_bf_gemm.cu:141",
+      "file_line": "이관 완료(A2-14·65498e18e9826ea0cdb5906b71cebecef4b82637)",
       "symbol": "g_bf_gemm.d_W",
       "current_source": "GPU BF W allocation",
       "physical_meaning": "[GPU_lifecycle] allocate GPU scalar owner",
@@ -781,7 +781,7 @@
       "final_status": "REMOVE_GPU_SCALAR_LIFECYCLE"
     },
     {
-      "file_line": "src/lumina_bf_gemm.cu:390",
+      "file_line": "이관 완료(A2-14·65498e18e9826ea0cdb5906b71cebecef4b82637)",
       "symbol": "g_bf_gemm.d_T_rad",
       "current_source": "GPU BF T_rad allocation",
       "physical_meaning": "[GPU_lifecycle] free GPU scalar owner",
@@ -790,7 +790,7 @@
       "final_status": "REMOVE_GPU_SCALAR_LIFECYCLE"
     },
     {
-      "file_line": "src/lumina_bf_gemm.cu:391",
+      "file_line": "이관 완료(A2-14·65498e18e9826ea0cdb5906b71cebecef4b82637)",
       "symbol": "g_bf_gemm.d_W",
       "current_source": "GPU BF W allocation",
       "physical_meaning": "[GPU_lifecycle] free GPU scalar owner",
@@ -1168,7 +1168,7 @@
       "final_status": "KEEP_OUTPUT_ONLY_DIAGNOSTIC"
     },
     {
-      "file_line": "src/lumina_cuda.cu:5446",
+      "file_line": "이관 완료(A2-15·84a148159185004f6f25db4bed51a3d5b5896d44)",
       "symbol": "d_T_rad",
       "current_source": "GPU transport T_rad pointer",
       "physical_meaning": "[GPU_emissivity] GPU macro-atom Planck re-emission",
@@ -1177,7 +1177,7 @@
       "final_status": "REPLACE_GPU_PLANCK_EMISSIVITY_READ"
     },
     {
-      "file_line": "src/lumina_cuda.cu:5453",
+      "file_line": "이관 완료(A2-15·84a148159185004f6f25db4bed51a3d5b5896d44)",
       "symbol": "d_T_rad",
       "current_source": "GPU transport T_rad pointer",
       "physical_meaning": "[GPU_emissivity] GPU UV thermalization",
@@ -1186,7 +1186,7 @@
       "final_status": "REPLACE_GPU_PLANCK_EMISSIVITY_READ"
     },
     {
-      "file_line": "src/lumina_cuda.cu:5471",
+      "file_line": "이관 완료(A2-15·84a148159185004f6f25db4bed51a3d5b5896d44)",
       "symbol": "d_T_rad",
       "current_source": "GPU transport T_rad pointer",
       "physical_meaning": "[GPU_emissivity] GPU IR thermalization",
@@ -1195,7 +1195,7 @@
       "final_status": "REPLACE_GPU_PLANCK_EMISSIVITY_READ"
     },
     {
-      "file_line": "src/lumina_cuda.cu:5733",
+      "file_line": "이관 완료(A2-15·84a148159185004f6f25db4bed51a3d5b5896d44)",
       "symbol": "d_T_rad",
       "current_source": "GPU transport T_rad pointer",
       "physical_meaning": "[GPU_emissivity] GPU packet source re-emission",
