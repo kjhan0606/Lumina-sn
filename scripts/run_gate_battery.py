@@ -40,6 +40,37 @@ def run_census_preflight() -> int:
     return proc.returncode
 
 
+# ★C6 수리 — 검증기를 preflight 에 묶는다.
+# 수동 호출 검증기는 안 돌리면 없는 것과 같다(census C6: 검증기 미실행).
+# 2026-08-07 에 만든 셋을 배터리가 매번 돌리게 해서 "존재하지만 실행 안 됨"을 없앤다.
+PREFLIGHTS = (
+    ("A2_01_CENSUS", "scripts/a2_01_census_contract.py", ("check",)),
+    ("SEAL_INTEGRITY", "scripts/verify_seals.py", ()),
+    ("LEGACY_KNOB_REGISTRY", "scripts/check_legacy_knob_registry.py", ()),
+)
+
+
+def run_preflights() -> tuple[int, str]:
+    """모든 preflight 를 돌리고 **하나라도 실패하면** 비싼 빌드 전에 멈춘다.
+
+    실패한 preflight 의 **실제 이름**을 돌려준다 — 2026-08-07 첫 판에서 요약이
+    항상 A2_01_CENSUS 로 하드코딩돼 있어 LEGACY_KNOB_REGISTRY 실패를 엉뚱한
+    이름에 귀속시켰다. 잘못된 표지는 없는 것보다 나쁘다.
+    """
+    worst, failed = 0, ""
+    for name, script, args in PREFLIGHTS:
+        proc = subprocess.run((sys.executable, str(ROOT / script)) + args,
+                              cwd=ROOT, text=True, capture_output=True, check=False)
+        if proc.stdout:
+            print(proc.stdout, end="")
+        if proc.stderr:
+            print(proc.stderr, end="", file=sys.stderr)
+        print(f"PREFLIGHT name={name} rc={proc.returncode}")
+        if proc.returncode and not failed:
+            worst, failed = proc.returncode, name
+    return worst, failed
+
+
 def cpu_link_sources() -> tuple[str, ...]:
     """All src/*.c except translation units that define their own main()."""
     import glob as _glob
@@ -447,9 +478,9 @@ def main() -> int:
             f"GATE_BATTERY node={os.uname().nodename} cpu_count={os.cpu_count()} "
             f"scratch={scratch}"
         )
-        census_rc = run_census_preflight()
+        census_rc, failed_preflight = run_preflights()
         if census_rc != 0:
-            print("GATE_BATTERY_SUMMARY verdict=FAIL rc=1 preflight=A2_01_CENSUS")
+            print(f"GATE_BATTERY_SUMMARY verdict=FAIL rc=1 preflight={failed_preflight}")
             return 1
         fixtures = build_all(build, base, args.cache_root.resolve())
 

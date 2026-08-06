@@ -33,11 +33,32 @@ def block(path: Path, start_pat: str, end_pat: str = r"\};") -> set[str]:
     return set(re.findall(r'"(LUMINA_[A-Z0-9_]+)"', seg))
 
 
+def a2_17_obsolete() -> set[str]:
+    """A2-17 폐기 스칼라 목록.
+
+    ★문자 창(±N자)으로 잡으면 근처 코드가 바뀔 때마다 **오탐**이 난다.
+    2026-08-07 에 실제로 그랬다: 같은 파일에 env 스캔을 넣자 그 안의
+    `getenv("LUMINA_ENV_STRICT")` 가 창에 들어와 DRIFT 로 보고됐다.
+    오탐은 검증기의 신뢰를 깎으므로 **배열 선언~닫는 중괄호**로 정확히 자른다.
+    """
+    txt = (ROOT / "src/lumina_atomic.c").read_text()
+    out: set[str] = set()
+    m = re.search(r"retired_scalar_options\[\]\s*=\s*\{", txt)
+    if m:
+        seg = txt[m.end():]
+        end = seg.find("}")
+        out |= set(re.findall(r'"(LUMINA_[A-Z0-9_]+)"', seg[: end if end > 0 else 0]))
+    # 배열 밖의 개별 검사(값 조건부)도 사이트의 일부다
+    if re.search(r'getenv\("LUMINA_CMF_EPAY"\)', txt):
+        out.add("LUMINA_CMF_EPAY")
+    return out
+
+
 def registry() -> dict[str, tuple[str, str]]:
     txt = (ROOT / "src/legacy_knob_registry.h").read_text()
     out = {}
     for name, disp, enf, obs in re.findall(
-            r'X\("(LUMINA_[A-Z0-9_]+)",\s*(LK_\w+),\s*"([PS\-]+)",\s*"([E\-]+)"\)', txt):
+            r'X\("(LUMINA_[A-Z0-9_]+)",\s*(LK_\w+),\s*"([PSA\-]+)",\s*"([E\-]+)"\)', txt):
         out[name] = (enf, obs)
     return out
 
@@ -48,9 +69,11 @@ def main() -> int:
         "P": block(ROOT / "src/lumina_plasma.c", r"forbidden_population_knobs\[\]"),
         "E": block(ROOT / "src/lumina_element_wide.c", r"ew_guard_config_count\(void\)"),
         "S": block(ROOT / "src/seed_capability.c", r"static const char \*obsolete\[\]"),
+        # ★A: A2-17 폐기 스칼라. 첫 작성이 이 사이트를 통째로 놓쳤다 (T3 실패로 발견)
+        "A": a2_17_obsolete(),
     }
     reg_by_site = {k: {n for n, (e, o) in reg.items() if k in (e + o)}
-                   for k in ("P", "E", "S")}
+                   for k in ("P", "E", "S", "A")}
 
     rc = 0
     print(f"registry entries: {len(reg)}")
