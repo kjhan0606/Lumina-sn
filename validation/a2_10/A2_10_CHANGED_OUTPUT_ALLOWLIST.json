@@ -1,0 +1,107 @@
+{
+  "baseline_head": "bf2af37fa11a18c2529559311a7a23fd0c41b60c",
+  "canonicalization": "utf8-sorted-keys-indent2-lf-final-lf",
+  "created_before_source_edit": true,
+  "entries": [
+    {
+      "allowed_change_kind": "HEATING_TERM_PUBLICATION",
+      "artifact_or_symbol": "photoionization_heating",
+      "before_value_or_sha256": "fixture:legacy-net-or-planck-proxy",
+      "expected_after_constraint": "canonical_J_nu_integral && generation==1",
+      "id": "PHOTOHEAT-S0-EPOCH1",
+      "identity": {
+        "shell": 0,
+        "solve_epoch": 1,
+        "term": "photoionization"
+      },
+      "identity_kind": "term_shell_solve_epoch",
+      "owner_stage": "A2-10",
+      "reason_code": "JNU_PHOTOELECTRON_HEATING"
+    },
+    {
+      "allowed_change_kind": "EXCLUSIVE_LINE_TERM_PUBLICATION",
+      "artifact_or_symbol": "radiative_line_heating_cooling",
+      "before_value_or_sha256": "fixture:legacy-overlapping-line-ledger",
+      "expected_after_constraint": "m_line==1 && overlap==false && closure<=1e-12",
+      "id": "LINE-RADIATIVE-S0-EPOCH1",
+      "identity": {
+        "shell": 0,
+        "solve_epoch": 1,
+        "term": "line_radiative"
+      },
+      "identity_kind": "term_shell_solve_epoch",
+      "owner_stage": "A2-10",
+      "reason_code": "LINE_OWNER_OPTION2_EXCLUSIVE"
+    },
+    {
+      "allowed_change_kind": "HEATING_COOLING_TERM_PUBLICATION",
+      "artifact_or_symbol": "free_free_net_split",
+      "before_value_or_sha256": "fixture:legacy-net-free-free",
+      "expected_after_constraint": "canonical_J_nu && pre_cancellation_terms",
+      "id": "FREEFREE-S0-EPOCH1",
+      "identity": {
+        "shell": 0,
+        "solve_epoch": 1,
+        "term": "free_free"
+      },
+      "identity_kind": "term_shell_solve_epoch",
+      "owner_stage": "A2-10",
+      "reason_code": "JNU_FREE_FREE_LEDGER"
+    },
+    {
+      "allowed_change_kind": "COOLING_TERM_PUBLICATION",
+      "artifact_or_symbol": "radiative_recombination_cooling",
+      "before_value_or_sha256": "fixture:legacy-recombination-net",
+      "expected_after_constraint": "A2_09_Milne_crosswalk && generation==1",
+      "id": "RECOMB-S0-EPOCH1",
+      "identity": {
+        "shell": 0,
+        "solve_epoch": 1,
+        "term": "radiative_recombination"
+      },
+      "identity_kind": "term_shell_solve_epoch",
+      "owner_stage": "A2-10",
+      "reason_code": "MILNE_RECOMBINATION_COOLING"
+    },
+    {
+      "allowed_change_kind": "EXTERNAL_TERM_PUBLICATION",
+      "artifact_or_symbol": "gamma_nonthermal_adiabatic",
+      "before_value_or_sha256": "fixture:legacy-untyped-external",
+      "expected_after_constraint": "provenance==external_nonradiative && generation==1",
+      "id": "EXTERNAL-S0-EPOCH1",
+      "identity": {
+        "shell": 0,
+        "solve_epoch": 1,
+        "term": "external_nonradiative"
+      },
+      "identity_kind": "term_shell_solve_epoch",
+      "owner_stage": "A2-10",
+      "reason_code": "EXPLICIT_EXTERNAL_ENERGY_TERMS"
+    },
+    {
+      "allowed_change_kind": "ATOMIC_TE_NE_POPULATION_PUBLICATION",
+      "artifact_or_symbol": "ElectronTemperaturePublication",
+      "before_value_or_sha256": "fixture:fixed-or-direct-Te-writer",
+      "expected_after_constraint": "root_converged && Te_population_opacity_eta_atomic",
+      "id": "TE-NE-POP-S0-EPOCH1",
+      "identity": {
+        "shell": 0,
+        "solve_epoch": 1,
+        "term": "electron_temperature_population"
+      },
+      "identity_kind": "term_shell_solve_epoch",
+      "owner_stage": "A2-10",
+      "reason_code": "RADIATIVE_EQUILIBRIUM_ROOT_COMMIT"
+    }
+  ],
+  "forbidden_scopes": [
+    "all_Te",
+    "cdf_or_transition_probability",
+    "formal_spectrum",
+    "gpu_lifecycle_or_rates",
+    "physics_changed",
+    "whole_spectrum"
+  ],
+  "schema": "lumina-a2-10-changed-output-allowlist-v1",
+  "stage": "A2-10"
+}
