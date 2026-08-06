@@ -217,3 +217,43 @@ slurm_zeta_clean_smoke.sh:158
 - `band_link`: `D`는 formal source/opacity/τ·구적에 직접 연결, `E`는 packet energy/event ledger 연결, `I`는 state/rate를 통한 간접 연결, `M`은 판정 metric/comparator, `N`은 기존 문서에서 직접 연결 근거가 없다는 뜻이다. `D`의 공통 관측은 총입력 대비 ×18.07 비보존과 formal 출력의 2500–5000 Å 점유율 71.80–72.49%다. `I`는 반드시 `relT 착지 후 확정`이다.
 - `fix_stage`: Wave1/2 및 `FORMAL_FIX`가 이미 정물리 우회경로를 만든 경우를 먼저 표기하고, 나머지는 동등화 계획 v2의 최초 구조 수리 Stage를 적었다. `계측`은 삭제가 아니라 오차상한·발화량·에너지 장부를 먼저 확보한다는 뜻이다.
 - `priority`: P001이 최상위다. 정렬 잣대는 **판정 잣대 오염 > 보존 위반 연루 > 인구 대체 > 기타**이며, 같은 층에서는 B형 즉시성, A형 군집 승수, 직접 계량, 생산경로 여부 순으로 정했다. C09 중심 군집(C09/C22/C40/C44/C66)은 한 상류 수리가 다섯 clamp를 함께 퇴역시킬 수 있어 승수를 적용했다.
+
+---
+
+## ★env 제어 클램프 — 88대장 프레임 밖 (2026-08-07, C8 적발)
+
+> **이 절이 추가된 이유**: 88대장과 위 96행은 **코드 안에 박힌 클램프**를 셌다.
+> **env 로 켜지는 클램프**는 프레임 밖이었다 — 대장 자신의 목록이 한 부류를
+> 통째로 배제하고 있었다. C9 레지스트리(`src/legacy_knob_registry.h`)가
+> "관측만 되고 강제되지 않는 노브 11종"을 세워 주면서 드러났다.
+>
+> 실측 판별: **11종 전부 살아있는 물리 레버**다(세어지기만 하는 죽은 노브 0).
+> `src/lumina_element_wide.c` 의 `ew_guard_config_count()` 가 CSV 에 세어 넣을 뿐
+> **아무것도 막지 않는다**(C8 fail-open).
+>
+> **처분 = 등재.** 게이트 추가는 기각했다 — 76–92 런처가 설정하므로 C2 와 같은
+> 함대 사고(하드 거부 env 12종 · 영향 런처 83–166)를 알면서 반복하는 것이 된다.
+> 개별 물리 판정은 대장 운용 규약대로 **단계별 검사 완료 후 조인**한다.
+> **개별 선행 패치 금지**가 이 절에도 그대로 적용된다.
+>
+> ⚠ caveat: `file:line` 은 `getenv` 호출 지점이지 그 값이 실제로 물리를 바꾸는
+> 경로까지 확인한 것은 아니다. 노브별 확인이 남는다.
+> 정본 실측 = `validation/instrumentation_debt/C8_UNGATED_LEVERS.json`
+
+| ID | file:line | 물리량 | 유형 | 게이트 | 3문 분류 | 카운터 | 88대장 대응 | oracle_verdict | band_link | fix_stage | priority | intro_reason | upstream_bug |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| E01 | src/lumina_plasma.c:14060 | env `LUMINA_DR_FLOOR_CMS` | floor/cap | **없음(fail-open)** | 미분류 | N(관측만) | **미등재** | — | — | — | 미정 | C8 | — |
+| E02 | src/lumina_cuda.cu:1616 | env `LUMINA_NLTE_BK_CEIL` | floor/cap | **없음(fail-open)** | 미분류 | N(관측만) | **미등재** | — | — | — | 미정 | C8 | — |
+| E03 | src/lumina_plasma.c:12662 | env `LUMINA_NLTE_COLL_FLOOR` | floor/cap | **없음(fail-open)** | 미분류 | N(관측만) | **미등재** | — | — | — | 미정 | C8 | — |
+| E04 | src/lumina_plasma.c:6295 | env `LUMINA_NLTE_ION_LOCK` | floor/cap | **없음(fail-open)** | 미분류 | N(관측만) | **미등재** | — | — | — | 미정 | C8 | — |
+| E05 | src/lumina_cuda.cu:1633 | env `LUMINA_NLTE_LTE_FLOOR` | floor/cap | **없음(fail-open)** | 미분류 | N(관측만) | **미등재** | — | — | — | 미정 | C8 | — |
+| E06 | src/lumina_plasma.c:8701 | env `LUMINA_NLTE_METASTABLE_COLL` | lever | **없음(fail-open)** | 미분류 | N(관측만) | **미등재** | — | — | — | 미정 | C8 | — |
+| E07 | src/lumina_plasma.c:6296 | env `LUMINA_NLTE_PER_ION_RESCALE` | lever | **없음(fail-open)** | 미분류 | N(관측만) | **미등재** | — | — | — | 미정 | C8 | — |
+| E08 | src/lumina_plasma.c:8588 | env `LUMINA_NLTE_STAGE4` | lever | **없음(fail-open)** | 미분류 | N(관측만) | **미등재** | — | — | — | 미정 | C8 | — |
+| E09 | src/lumina_plasma.c:10513 | env `LUMINA_STAGE4_BK_CAP` | floor/cap | **없음(fail-open)** | 미분류 | N(관측만) | **미등재** | — | — | — | 미정 | C8 | — |
+| E10 | src/lumina_atomic.c:1386 | env `LUMINA_SUPER_CUTOFF` | floor/cap | **없음(fail-open)** | 미분류 | N(관측만) | **미등재** | — | — | — | 미정 | C8 | — |
+| E11 | src/lumina_plasma.c:8662 | env `LUMINA_TIMEDEP_ION` | lever | **없음(fail-open)** | 미분류 | N(관측만) | **미등재** | — | — | — | 미정 | C8 | — |
+
+**런처 노출**(설정하는 `scripts/*.sh` 수): PER_ION_RESCALE 92 · ION_LOCK 91 ·
+LTE_FLOOR 80 · SUPER_CUTOFF 76 · STAGE4 27 · STAGE4_BK_CAP 25 · METASTABLE_COLL 15 ·
+나머지 1–2. **이름이 floor/ceiling/cap/lock/cutoff 인 것만 5종**이다.
