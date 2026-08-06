@@ -31,7 +31,8 @@
 
 /* X(env 이름, 처분, 강제 사이트, 관측 사이트)
  *
- * 강제 사이트 표기:  P=lumina_plasma.c nlte_solve_all  S=seed_capability.c  -=없음
+ * 강제 사이트 표기:  P=lumina_plasma.c nlte_solve_all  S=seed_capability.c
+ *                    A=lumina_atomic.c:840-870 (A2-17 폐기)  -=없음
  * 관측 사이트 표기:  E=lumina_element_wide.c ew_guard_config_count  -=없음
  *
  * ⚠ 강제 P 는 `enable_nlte && iter >= nlte_start_iter` 안에서만 검사된다
@@ -53,7 +54,22 @@
     /* --- 폐기 스칼라 (A2-16; 값을 보지 않는다 — 항등값 1.0 도 FATAL) --- */   \
     X("LUMINA_TE_TRAD_RATIO",         LK_ENFORCE_FATAL, "S", "-")              \
     X("LUMINA_TRAD_COLOR_FIX",        LK_ENFORCE_FATAL, "S", "-")              \
-    /* --- ★관측만 (8종).  아무것도 막지 않는다 — 이것이 C8 의 실물이다 --- */  \
+    /* --- A2-17 폐기 스칼라 (src/lumina_atomic.c:840-870, 사이트 표기 A) ---
+     * ★2026-08-07 T3 제출 실패로 발견됐다. C9 레지스트리 첫 작성이 이 **네 번째
+     * 강제 사이트를 통째로 놓쳤고**, 그래서 레지스트리를 읽는 T3 프리플라이트도
+     * LUMINA_CMF_EPAY_HOTF 를 통과시켰다 — 계측이 자기 구멍으로 런을 죽였다.
+     * 하드 거부 env 는 12종이 아니라 **22종**이다. */                        \
+    X("LUMINA_BSRC_WFLOOR",           LK_ENFORCE_FATAL, "A", "-")              \
+    X("LUMINA_CMF_EPAY",              LK_ENFORCE_FATAL, "A", "-")              \
+    X("LUMINA_CMF_EPAY_HOTF",         LK_ENFORCE_FATAL, "A", "-")              \
+    X("LUMINA_FIXED_TRAD_PROFILE",    LK_ENFORCE_FATAL, "A", "-")              \
+    X("LUMINA_F_COLL_BOOST",          LK_ENFORCE_FATAL, "A", "-")              \
+    X("LUMINA_KPEMISS_BSRC_TAU",      LK_ENFORCE_FATAL, "A", "-")              \
+    X("LUMINA_OUTER_TE_DAMP_FACTOR",  LK_ENFORCE_FATAL, "A", "-")              \
+    X("LUMINA_OUTER_TE_DAMP_SMIN",    LK_ENFORCE_FATAL, "A", "-")              \
+    X("LUMINA_VALIDATE_PLASMA",       LK_ENFORCE_FATAL, "A", "-")              \
+    X("LUMINA_W_CAP",                 LK_ENFORCE_FATAL, "A", "-")              \
+    /* --- ★관측만 (11종).  아무것도 막지 않는다 — 이것이 C8 의 실물이다 --- */  \
     X("LUMINA_NLTE_COLL_FLOOR",       LK_OBSERVE_ONLY,  "-", "E")              \
     X("LUMINA_NLTE_LTE_FLOOR",        LK_OBSERVE_ONLY,  "-", "E")              \
     X("LUMINA_NLTE_BK_CEIL",          LK_OBSERVE_ONLY,  "-", "E")              \
