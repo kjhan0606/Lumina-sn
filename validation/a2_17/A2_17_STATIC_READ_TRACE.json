@@ -1,16 +1,25 @@
 {
-  "classified_scalar_hits": 33,
-  "comment_string_test_hits": 33,
-  "diagnostic_derivations": 0,
+  "classified_scalar_hits": 15,
+  "comment_string_test_hits": 14,
+  "config_prec_integrity_witness_checked": true,
+  "diagnostic_derivations": 1,
   "duplicate_hits": 0,
   "fallback_attempts": 0,
   "forbidden_return_paths": 0,
   "hits": [
     {
-      "category": "COMMENT_STRING_TEST",
+      "category": "DIAGNOSTIC_DERIVATION",
+      "line": 728,
+      "path": "src/lumina_atomic.c",
+      "reason": "row-local CONFIG-PREC deck-integrity witness; not retained or published into radiation/material state",
+      "text": "double color = row_trad / pow(row_w, 0.25);",
+      "token": "double color = row_trad / pow(row_w, 0.25)"
+    },
+    {
+      "category": "TEST_ONLY",
       "line": 1663,
       "path": "src/lumina_cmf_selftest.c",
-      "reason": "comment, string, or compile-disabled historical witness",
+      "reason": "compiled selftest expression",
       "text": "double Tp=cases[ci].Tphot,W=cases[ci].W;",
       "token": ".W"
     },
@@ -18,7 +27,7 @@
       "category": "COMMENT_STRING_TEST",
       "line": 2734,
       "path": "src/lumina_cmfgen.c",
-      "reason": "comment, string, or compile-disabled historical witness",
+      "reason": "comment or string witness",
       "text": "* the solved J, and the ratios J/B (->1 thick, ->W thin) and J/S (->1 thick).",
       "token": "->W"
     },
@@ -26,7 +35,7 @@
       "category": "COMMENT_STRING_TEST",
       "line": 2744,
       "path": "src/lumina_cmfgen.c",
-      "reason": "comment, string, or compile-disabled historical witness",
+      "reason": "comment or string witness",
       "text": "printf(\"[CMFGEN-VALID] thick(J/B->1,J/S->1) / thin(J/B->W) limit check\\n\");",
       "token": "->W"
     },
@@ -34,7 +43,7 @@
       "category": "COMMENT_STRING_TEST",
       "line": 3024,
       "path": "src/lumina_cmfgen.c",
-      "reason": "comment, string, or compile-disabled historical witness",
+      "reason": "comment or string witness",
       "text": "* (producer jbar_line_det). W*B backlight (below",
       "token": ". W"
     },
@@ -42,7 +51,7 @@
       "category": "COMMENT_STRING_TEST",
       "line": 3135,
       "path": "src/lumina_cmfgen.c",
-      "reason": "comment, string, or compile-disabled historical witness",
+      "reason": "comment or string witness",
       "text": "* 0.5 clean continuum, self-refilling the trough). W(r) is the point-",
       "token": ". W"
     },
@@ -50,7 +59,7 @@
       "category": "COMMENT_STRING_TEST",
       "line": 528,
       "path": "src/lumina_cuda.cu",
-      "reason": "comment, string, or compile-disabled historical witness",
+      "reason": "comment or string witness",
       "text": "/* Tombstone for A2-01 witness: plasma->T_rad is no longer an upload source. */",
       "token": "->T_rad"
     },
@@ -58,7 +67,7 @@
       "category": "COMMENT_STRING_TEST",
       "line": 2490,
       "path": "src/lumina_cuda.cu",
-      "reason": "comment, string, or compile-disabled historical witness",
+      "reason": "comment or string witness",
       "text": "* array (n_shells=50 << 256), uploaded per iteration from plasma.W. */",
       "token": ".W"
     },
@@ -66,31 +75,15 @@
       "category": "COMMENT_STRING_TEST",
       "line": 3304,
       "path": "src/lumina_cuda.cu",
-      "reason": "comment, string, or compile-disabled historical witness",
+      "reason": "comment or string witness",
       "text": "/* A2-12 GL08 tombstone: dev->d_T_rad has no allocation left to free. */",
       "token": "d_T_rad"
     },
     {
       "category": "COMMENT_STRING_TEST",
-      "line": 2332,
-      "path": "src/lumina_element_wide.c",
-      "reason": "comment, string, or compile-disabled historical witness",
-      "text": "if(fp){fprintf(fp,\"key,value\\nrun_id,iter%04d\\nZ,%d\\nshell,%d\\nassembler,lumina_element_wide_cpu\\nstage_window,II-IV\\nN,%d\\nT_e,%.17g\\nn_e,%.17g\\nT_rad,%.17g\\nW,%.17g\\nn_element,%.17g\\natomic_checksum,%016llx\\natomic_checksum_before,%016llx\\nidentity_checksum_verified,%d\\nsolve_attempted,%d\\np_elem_valid,%d\\nconservation_rows,%d\\ncharge_rows,%d\\ncandidate_assembler_calls,%d\\ncandidate_pair_owner_calls,%d\\nfallback_route,pair_wise_16_original_order\\nsave_restore_calls,%d\\nper_ion_pin_calls,%d\\ntopstage_IV_calls,%d\\nrad_bb,%s\\ncoll_bb,%s\\nnt_bb,inactive:no_bound_bound_NT_producer\\nrad_bf,%s\\ncoll_bf,%s\\nnt_bf,%s\\nautoion,inactive:no_autoion_data_producer\\nDR,%s\\ncharge_exchange,inactive:Stage2A_element_independent_contract\\nC48_SUPER_CUTOFF,input_projection:%d_levels_hashed_identity_not_runtime_guard\\nC65_STAGE4_BK_CAP,bypassed_for_element_wide_target\\nhot_cold_required,%d\\nhot_cold_rebuilds,%d\\nhot_cold_matrix_byte_identical,%d\\nhot_cold_matrix_max_abs,%.17g\\nartifact_identity,identity\\nartifact_matrix_raw,matrix_raw\\nartifact_matrix_normalized,matrix_normalized\\nartifact_matrix_equilibrated,matrix_equilibrated\\nartifact_solution,solution\\nartifact_diagnostics,diagnostics\\nartifact_provenance,provenance\\nartifact_manifest,manifest\\nverdict,%s\\n\",iter,Z,shell_label,N,plasma->T_e[shell],plasma->n_electron[shell],plasma->T_rad[shell],plasma->W[shell],n_elem,(unsigned long long)checksum,(unsigned long long)checksum_before,!coverage.checksum_mismatch,solve_attempted,p_elem_valid,1,0,fire.candidate_assembler_calls,fire.candidate_pair_owner_calls,fire.save_restore_calls,fire.per_ion_pin_calls,fire.topstage_IV_calls,fire.channel_events[NLTE_EW_RAD_BB]?\"active\":\"missing\",fire.channel_events[NLTE_EW_COLL_BB]?\"active\":\"missing\",fire.channel_events[NLTE_EW_RAD_BF]?\"active\":\"missing\",fire.channel_events[NLTE_EW_COLL_BF]?\"active\":\"missing\",fire.channel_events[NLTE_EW_NT_BF]?\"active\":\"inactive:no_nonthermal_deposition\",ew_maxabs(plane[NLTE_EW_AUTOION_DR],N)>0.0?\"active\":\"inactive:no_positive_DR_rate\",c48_projected_levels,hot_cold_required,hot_cold_rebuilds,hot_cold_identical,hot_cold_max_abs,verdict);fprintf(fp,\"kramers_fallback_firing_count,%d\\ncontinuum_deletion_firing_count,%d\\nbf_estimator_bin_consumptions,%d\\nbf_pref_J_bin_consumptions,%d\\nbf_JEQB_bin_consumptions,%d\\ncommit_requested,%d\\ncommit_performed,%d\\ncommit_blocked_by,%s\\npair_inverse_saha_cap_register,legacy_pair_1e30_cap_unchanged\\nrecombination_weighting_contract,EW_within_sl_frac;pair_D5_unweighted_defect_not_replicated\\ngrid_mismatch_policy,pair_policy_adopted:Kramers_fallback_counted\\n\",fire.kramers_fallback,fire.continuum_deleted,fire.bf_estimator_bins,fire.bf_pref_j_bins,fire.bf_jeqb_bins,commit_requested,commit_performed,commit_blocked_by);ew_close_dump(fp,path);}",
-      "token": "->T_rad"
-    },
-    {
-      "category": "COMMENT_STRING_TEST",
-      "line": 2332,
-      "path": "src/lumina_element_wide.c",
-      "reason": "comment, string, or compile-disabled historical witness",
-      "text": "if(fp){fprintf(fp,\"key,value\\nrun_id,iter%04d\\nZ,%d\\nshell,%d\\nassembler,lumina_element_wide_cpu\\nstage_window,II-IV\\nN,%d\\nT_e,%.17g\\nn_e,%.17g\\nT_rad,%.17g\\nW,%.17g\\nn_element,%.17g\\natomic_checksum,%016llx\\natomic_checksum_before,%016llx\\nidentity_checksum_verified,%d\\nsolve_attempted,%d\\np_elem_valid,%d\\nconservation_rows,%d\\ncharge_rows,%d\\ncandidate_assembler_calls,%d\\ncandidate_pair_owner_calls,%d\\nfallback_route,pair_wise_16_original_order\\nsave_restore_calls,%d\\nper_ion_pin_calls,%d\\ntopstage_IV_calls,%d\\nrad_bb,%s\\ncoll_bb,%s\\nnt_bb,inactive:no_bound_bound_NT_producer\\nrad_bf,%s\\ncoll_bf,%s\\nnt_bf,%s\\nautoion,inactive:no_autoion_data_producer\\nDR,%s\\ncharge_exchange,inactive:Stage2A_element_independent_contract\\nC48_SUPER_CUTOFF,input_projection:%d_levels_hashed_identity_not_runtime_guard\\nC65_STAGE4_BK_CAP,bypassed_for_element_wide_target\\nhot_cold_required,%d\\nhot_cold_rebuilds,%d\\nhot_cold_matrix_byte_identical,%d\\nhot_cold_matrix_max_abs,%.17g\\nartifact_identity,identity\\nartifact_matrix_raw,matrix_raw\\nartifact_matrix_normalized,matrix_normalized\\nartifact_matrix_equilibrated,matrix_equilibrated\\nartifact_solution,solution\\nartifact_diagnostics,diagnostics\\nartifact_provenance,provenance\\nartifact_manifest,manifest\\nverdict,%s\\n\",iter,Z,shell_label,N,plasma->T_e[shell],plasma->n_electron[shell],plasma->T_rad[shell],plasma->W[shell],n_elem,(unsigned long long)checksum,(unsigned long long)checksum_before,!coverage.checksum_mismatch,solve_attempted,p_elem_valid,1,0,fire.candidate_assembler_calls,fire.candidate_pair_owner_calls,fire.save_restore_calls,fire.per_ion_pin_calls,fire.topstage_IV_calls,fire.channel_events[NLTE_EW_RAD_BB]?\"active\":\"missing\",fire.channel_events[NLTE_EW_COLL_BB]?\"active\":\"missing\",fire.channel_events[NLTE_EW_RAD_BF]?\"active\":\"missing\",fire.channel_events[NLTE_EW_COLL_BF]?\"active\":\"missing\",fire.channel_events[NLTE_EW_NT_BF]?\"active\":\"inactive:no_nonthermal_deposition\",ew_maxabs(plane[NLTE_EW_AUTOION_DR],N)>0.0?\"active\":\"inactive:no_positive_DR_rate\",c48_projected_levels,hot_cold_required,hot_cold_rebuilds,hot_cold_identical,hot_cold_max_abs,verdict);fprintf(fp,\"kramers_fallback_firing_count,%d\\ncontinuum_deletion_firing_count,%d\\nbf_estimator_bin_consumptions,%d\\nbf_pref_J_bin_consumptions,%d\\nbf_JEQB_bin_consumptions,%d\\ncommit_requested,%d\\ncommit_performed,%d\\ncommit_blocked_by,%s\\npair_inverse_saha_cap_register,legacy_pair_1e30_cap_unchanged\\nrecombination_weighting_contract,EW_within_sl_frac;pair_D5_unweighted_defect_not_replicated\\ngrid_mismatch_policy,pair_policy_adopted:Kramers_fallback_counted\\n\",fire.kramers_fallback,fire.continuum_deleted,fire.bf_estimator_bins,fire.bf_pref_j_bins,fire.bf_jeqb_bins,commit_requested,commit_performed,commit_blocked_by);ew_close_dump(fp,path);}",
-      "token": "->W"
-    },
-    {
-      "category": "COMMENT_STRING_TEST",
       "line": 110,
       "path": "src/lumina_nlte_assemble.cu",
-      "reason": "comment, string, or compile-disabled historical witness",
+      "reason": "comment or string witness",
       "text": "* d_W[s]",
       "token": "d_W"
     },
@@ -98,7 +91,7 @@
       "category": "COMMENT_STRING_TEST",
       "line": 111,
       "path": "src/lumina_nlte_assemble.cu",
-      "reason": "comment, string, or compile-disabled historical witness",
+      "reason": "comment or string witness",
       "text": "* plasma->W",
       "token": "->W"
     },
@@ -106,7 +99,7 @@
       "category": "COMMENT_STRING_TEST",
       "line": 112,
       "path": "src/lumina_nlte_assemble.cu",
-      "reason": "comment, string, or compile-disabled historical witness",
+      "reason": "comment or string witness",
       "text": "* plasma->T_rad[0]",
       "token": "->T_rad"
     },
@@ -114,7 +107,7 @@
       "category": "COMMENT_STRING_TEST",
       "line": 1422,
       "path": "src/lumina_plasma.c",
-      "reason": "comment, string, or compile-disabled historical witness",
+      "reason": "comment or string witness",
       "text": "/* ARTIS floor (fit_parameters:796): J_bin<=0 -> W=0 -> zero field. */",
       "token": "-> W"
     },
@@ -122,151 +115,15 @@
       "category": "COMMENT_STRING_TEST",
       "line": 4442,
       "path": "src/lumina_plasma.c",
-      "reason": "comment, string, or compile-disabled historical witness",
+      "reason": "comment or string witness",
       "text": "* B_lu\u00b7W\u00b7B(\u03bd,T_rad). T_rad is the radiation COLOR",
       "token": ". T_rad"
     },
     {
       "category": "COMMENT_STRING_TEST",
-      "line": 11882,
+      "line": 12705,
       "path": "src/lumina_plasma.c",
-      "reason": "comment, string, or compile-disabled historical witness",
-      "text": "plasma->T_e[s] = plasma->T_e_T_rad_ratio * plasma->T_rad[s];",
-      "token": "T_e_T_rad_ratio"
-    },
-    {
-      "category": "COMMENT_STRING_TEST",
-      "line": 11882,
-      "path": "src/lumina_plasma.c",
-      "reason": "comment, string, or compile-disabled historical witness",
-      "text": "plasma->T_e[s] = plasma->T_e_T_rad_ratio * plasma->T_rad[s];",
-      "token": "->T_rad"
-    },
-    {
-      "category": "COMMENT_STRING_TEST",
-      "line": 12092,
-      "path": "src/lumina_plasma.c",
-      "reason": "comment, string, or compile-disabled historical witness",
-      "text": "double T_rad = plasma->T_rad[s];",
-      "token": "->T_rad"
-    },
-    {
-      "category": "COMMENT_STRING_TEST",
-      "line": 12093,
-      "path": "src/lumina_plasma.c",
-      "reason": "comment, string, or compile-disabled historical witness",
-      "text": "double W     = plasma->W[s];",
-      "token": "->W"
-    },
-    {
-      "category": "COMMENT_STRING_TEST",
-      "line": 12096,
-      "path": "src/lumina_plasma.c",
-      "reason": "comment, string, or compile-disabled historical witness",
-      "text": "plasma->T_e[s] = plasma->T_e_T_rad_ratio * T_rad;",
-      "token": "T_e_T_rad_ratio"
-    },
-    {
-      "category": "COMMENT_STRING_TEST",
-      "line": 12125,
-      "path": "src/lumina_plasma.c",
-      "reason": "comment, string, or compile-disabled historical witness",
-      "text": ": plasma->T_e_T_rad_ratio * T_rad;",
-      "token": "T_e_T_rad_ratio"
-    },
-    {
-      "category": "COMMENT_STRING_TEST",
-      "line": 12308,
-      "path": "src/lumina_plasma.c",
-      "reason": "comment, string, or compile-disabled historical witness",
-      "text": ": plasma->T_e_T_rad_ratio * T_rad;",
-      "token": "T_e_T_rad_ratio"
-    },
-    {
-      "category": "COMMENT_STRING_TEST",
-      "line": 12498,
-      "path": "src/lumina_plasma.c",
-      "reason": "comment, string, or compile-disabled historical witness",
-      "text": "plasma->T_e[s] = plasma->T_e_T_rad_ratio * T_rad;",
-      "token": "T_e_T_rad_ratio"
-    },
-    {
-      "category": "COMMENT_STRING_TEST",
-      "line": 12556,
-      "path": "src/lumina_plasma.c",
-      "reason": "comment, string, or compile-disabled historical witness",
-      "text": "T_e = plasma->T_e_T_rad_ratio * T_rad;",
-      "token": "T_e_T_rad_ratio"
-    },
-    {
-      "category": "COMMENT_STRING_TEST",
-      "line": 12634,
-      "path": "src/lumina_plasma.c",
-      "reason": "comment, string, or compile-disabled historical witness",
-      "text": "plasma->T_rad[0] > 0 ? plasma->T_e[0] / plasma->T_rad[0] : 0.0,",
-      "token": "->T_rad"
-    },
-    {
-      "category": "COMMENT_STRING_TEST",
-      "line": 12634,
-      "path": "src/lumina_plasma.c",
-      "reason": "comment, string, or compile-disabled historical witness",
-      "text": "plasma->T_rad[0] > 0 ? plasma->T_e[0] / plasma->T_rad[0] : 0.0,",
-      "token": "->T_rad"
-    },
-    {
-      "category": "COMMENT_STRING_TEST",
-      "line": 12636,
-      "path": "src/lumina_plasma.c",
-      "reason": "comment, string, or compile-disabled historical witness",
-      "text": "plasma->T_rad[n_shells - 1] > 0 ?",
-      "token": "->T_rad"
-    },
-    {
-      "category": "COMMENT_STRING_TEST",
-      "line": 12637,
-      "path": "src/lumina_plasma.c",
-      "reason": "comment, string, or compile-disabled historical witness",
-      "text": "plasma->T_e[n_shells - 1] / plasma->T_rad[n_shells - 1] : 0.0,",
-      "token": "->T_rad"
-    },
-    {
-      "category": "COMMENT_STRING_TEST",
-      "line": 13261,
-      "path": "src/lumina_plasma.c",
-      "reason": "comment, string, or compile-disabled historical witness",
-      "text": "return radeq_net(T, sh->T_rad, n, sh->H_photo, sh->H_gamma,",
-      "token": "->T_rad"
-    },
-    {
-      "category": "COMMENT_STRING_TEST",
-      "line": 13283,
-      "path": "src/lumina_plasma.c",
-      "reason": "comment, string, or compile-disabled historical witness",
-      "text": "return sh->compton0 * n * (sh->T_rad - T) - 2.0 * C_ff - C_ad;",
-      "token": "->T_rad"
-    },
-    {
-      "category": "COMMENT_STRING_TEST",
-      "line": 14378,
-      "path": "src/lumina_plasma.c",
-      "reason": "comment, string, or compile-disabled historical witness",
-      "text": "sh->T_rad = T_rad; sh->W = W; sh->Te_lag = Te_lag;",
-      "token": "->T_rad"
-    },
-    {
-      "category": "COMMENT_STRING_TEST",
-      "line": 14378,
-      "path": "src/lumina_plasma.c",
-      "reason": "comment, string, or compile-disabled historical witness",
-      "text": "sh->T_rad = T_rad; sh->W = W; sh->Te_lag = Te_lag;",
-      "token": "->W"
-    },
-    {
-      "category": "COMMENT_STRING_TEST",
-      "line": 15565,
-      "path": "src/lumina_plasma.c",
-      "reason": "comment, string, or compile-disabled historical witness",
+      "reason": "comment or string witness",
       "text": "* macroatom.cc:571-604). T_R source: plasma->T_rad is the binned-J dilute-Planck",
       "token": "->T_rad"
     }
@@ -354,15 +211,15 @@
   "production_link_command_sha256": "36c5994964c2b7638d75f2aa7a4686c0917b07f652c1c7f5318b0cb4f1785b0e",
   "production_link_map_offline_converter_objects": 0,
   "production_reads": 0,
-  "raw_scalar_hits": 33,
+  "raw_scalar_hits": 15,
   "reason_codes": [],
   "renamed_scalar_alias_hits": 0,
   "required_files": [
     "src/lumina_element_wide.c",
     "src/lumina_main.c"
   ],
-  "runtime_diagnostic_reads": 0,
-  "runtime_production_read_attempts": 0,
+  "runtime_diagnostic_reads": null,
+  "runtime_production_read_attempts": null,
   "scalar_allocations": 0,
   "scalar_env_options": 0,
   "scalar_frees": 0,

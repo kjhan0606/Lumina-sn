@@ -7,7 +7,7 @@
       "owning_commit": "\uc774\uad00 \uc644\ub8cc(A2-06\u00b7ece5aef8e192e2166b647ee00aae5fdd1f935a1c)",
       "post_witness_or_absence_query": "rg -n --fixed-strings 'W' src || true",
       "pre_witness": "local alias of plasma->W[s]",
-      "runtime_counter": "production_read_attempts=0",
+      "runtime_counter": "not_measured_by_static_trace",
       "static_category": "MIGRATED_PRODUCTION_READ",
       "terminal_state": "CLOSED_A2_06_CANONICAL_JBAR"
     },
@@ -16,7 +16,7 @@
       "owning_commit": "\uc774\uad00 \uc644\ub8cc(A2-06\u00b7ece5aef8e192e2166b647ee00aae5fdd1f935a1c)",
       "post_witness_or_absence_query": "rg -n --fixed-strings 'T_rad' src || true",
       "pre_witness": "local alias of plasma->T_rad[s]",
-      "runtime_counter": "production_read_attempts=0",
+      "runtime_counter": "not_measured_by_static_trace",
       "static_category": "MIGRATED_PRODUCTION_READ",
       "terminal_state": "CLOSED_A2_06_CANONICAL_JBAR"
     },
@@ -25,7 +25,7 @@
       "owning_commit": "\uc774\uad00 \uc644\ub8cc(A2-06\u00b7ece5aef8e192e2166b647ee00aae5fdd1f935a1c)",
       "post_witness_or_absence_query": "rg -n --fixed-strings 'W' src || true",
       "pre_witness": "local alias of plasma->W[s]",
-      "runtime_counter": "production_read_attempts=0",
+      "runtime_counter": "not_measured_by_static_trace",
       "static_category": "MIGRATED_PRODUCTION_READ",
       "terminal_state": "CLOSED_A2_06_CANONICAL_JBAR"
     },
@@ -34,7 +34,7 @@
       "owning_commit": "\uc774\uad00 \uc644\ub8cc(A2-06\u00b7ece5aef8e192e2166b647ee00aae5fdd1f935a1c)",
       "post_witness_or_absence_query": "rg -n --fixed-strings 'T_rad' src || true",
       "pre_witness": "local alias of plasma->T_rad[s]",
-      "runtime_counter": "production_read_attempts=0",
+      "runtime_counter": "not_measured_by_static_trace",
       "static_category": "MIGRATED_PRODUCTION_READ",
       "terminal_state": "CLOSED_A2_06_CANONICAL_JBAR"
     },
@@ -43,7 +43,7 @@
       "owning_commit": "\uc774\uad00 \uc644\ub8cc(A2-06\u00b7ece5aef8e192e2166b647ee00aae5fdd1f935a1c)",
       "post_witness_or_absence_query": "rg -n --fixed-strings 'W' src || true",
       "pre_witness": "local alias of plasma->W[s]",
-      "runtime_counter": "production_read_attempts=0",
+      "runtime_counter": "not_measured_by_static_trace",
       "static_category": "MIGRATED_PRODUCTION_READ",
       "terminal_state": "CLOSED_A2_06_CANONICAL_JBAR"
     },
@@ -52,7 +52,7 @@
       "owning_commit": "\uc774\uad00 \uc644\ub8cc(A2-06\u00b7ece5aef8e192e2166b647ee00aae5fdd1f935a1c)",
       "post_witness_or_absence_query": "rg -n --fixed-strings 'T_rad' src || true",
       "pre_witness": "local alias of plasma->T_rad[s]",
-      "runtime_counter": "production_read_attempts=0",
+      "runtime_counter": "not_measured_by_static_trace",
       "static_category": "MIGRATED_PRODUCTION_READ",
       "terminal_state": "CLOSED_A2_06_CANONICAL_JBAR"
     },
@@ -61,7 +61,7 @@
       "owning_commit": "\uc774\uad00 \uc644\ub8cc(A2-07\u00b73ddd95c0de20abea3284ca326ce41b7968d4b26d)",
       "post_witness_or_absence_query": "rg -n --fixed-strings 'T_rad' src || true",
       "pre_witness": "local alias of plasma->T_rad[s]",
-      "runtime_counter": "production_read_attempts=0",
+      "runtime_counter": "not_measured_by_static_trace",
       "static_category": "MIGRATED_PRODUCTION_READ",
       "terminal_state": "CLOSED_A2_07_MATTER_TE"
     },
@@ -70,7 +70,7 @@
       "owning_commit": "\uc774\uad00 \uc644\ub8cc(A2-07\u00b73ddd95c0de20abea3284ca326ce41b7968d4b26d)",
       "post_witness_or_absence_query": "rg -n --fixed-strings 'W' src || true",
       "pre_witness": "local alias of plasma->W[s]",
-      "runtime_counter": "production_read_attempts=0",
+      "runtime_counter": "not_measured_by_static_trace",
       "static_category": "MIGRATED_PRODUCTION_READ",
       "terminal_state": "CLOSED_A2_07_MATTER_TE"
     },
@@ -79,7 +79,7 @@
       "owning_commit": "\uc774\uad00 \uc644\ub8cc(A2-07\u00b73ddd95c0de20abea3284ca326ce41b7968d4b26d)",
       "post_witness_or_absence_query": "rg -n --fixed-strings 'T_rad' src || true",
       "pre_witness": "bf_rate_pop argument from plasma->T_rad",
-      "runtime_counter": "production_read_attempts=0",
+      "runtime_counter": "not_measured_by_static_trace",
       "static_category": "MIGRATED_PRODUCTION_READ",
       "terminal_state": "CLOSED_A2_07_MATTER_TE"
     },
@@ -88,7 +88,7 @@
       "owning_commit": "\uc774\uad00 \uc644\ub8cc(A2-07\u00b73ddd95c0de20abea3284ca326ce41b7968d4b26d)",
       "post_witness_or_absence_query": "rg -n --fixed-strings 'W' src || true",
       "pre_witness": "bf_rate_pop argument from plasma->W",
-      "runtime_counter": "production_read_attempts=0",
+      "runtime_counter": "not_measured_by_static_trace",
       "static_category": "MIGRATED_PRODUCTION_READ",
       "terminal_state": "CLOSED_A2_07_MATTER_TE"
     },
@@ -97,7 +97,7 @@
       "owning_commit": "\uc774\uad00 \uc644\ub8cc(A2-06\u00b7ece5aef8e192e2166b647ee00aae5fdd1f935a1c)",
       "post_witness_or_absence_query": "rg -n --fixed-strings 'W' src || true",
       "pre_witness": "local alias of plasma->W[s]",
-      "runtime_counter": "production_read_attempts=0",
+      "runtime_counter": "not_measured_by_static_trace",
       "static_category": "MIGRATED_PRODUCTION_READ",
       "terminal_state": "CLOSED_A2_06_CANONICAL_JBAR"
     },
@@ -106,7 +106,7 @@
       "owning_commit": "\uc774\uad00 \uc644\ub8cc(A2-06\u00b7ece5aef8e192e2166b647ee00aae5fdd1f935a1c)",
       "post_witness_or_absence_query": "rg -n --fixed-strings 'T_rad' src || true",
       "pre_witness": "local alias of plasma->T_rad[s]",
-      "runtime_counter": "production_read_attempts=0",
+      "runtime_counter": "not_measured_by_static_trace",
       "static_category": "MIGRATED_PRODUCTION_READ",
       "terminal_state": "CLOSED_A2_06_CANONICAL_JBAR"
     },
@@ -115,7 +115,7 @@
       "owning_commit": "\uc774\uad00 \uc644\ub8cc(A2-06\u00b7ece5aef8e192e2166b647ee00aae5fdd1f935a1c)",
       "post_witness_or_absence_query": "rg -n --fixed-strings 'W' src || true",
       "pre_witness": "local alias of plasma->W[s]",
-      "runtime_counter": "production_read_attempts=0",
+      "runtime_counter": "not_measured_by_static_trace",
       "static_category": "MIGRATED_PRODUCTION_READ",
       "terminal_state": "CLOSED_A2_06_CANONICAL_JBAR"
     },
@@ -124,7 +124,7 @@
       "owning_commit": "\uc774\uad00 \uc644\ub8cc(A2-06\u00b7ece5aef8e192e2166b647ee00aae5fdd1f935a1c)",
       "post_witness_or_absence_query": "rg -n --fixed-strings 'T_rad' src || true",
       "pre_witness": "local alias of plasma->T_rad[s]",
-      "runtime_counter": "production_read_attempts=0",
+      "runtime_counter": "not_measured_by_static_trace",
       "static_category": "MIGRATED_PRODUCTION_READ",
       "terminal_state": "CLOSED_A2_06_CANONICAL_JBAR"
     },
@@ -133,7 +133,7 @@
       "owning_commit": "\uc774\uad00 \uc644\ub8cc(A2-07\u00b73ddd95c0de20abea3284ca326ce41b7968d4b26d)",
       "post_witness_or_absence_query": "rg -n --fixed-strings 'W' src || true",
       "pre_witness": "local alias of plasma->W[s]",
-      "runtime_counter": "production_read_attempts=0",
+      "runtime_counter": "not_measured_by_static_trace",
       "static_category": "MIGRATED_PRODUCTION_READ",
       "terminal_state": "CLOSED_A2_07_MATTER_TE"
     },
@@ -142,25 +142,25 @@
       "owning_commit": "\uc774\uad00 \uc644\ub8cc(A2-07\u00b73ddd95c0de20abea3284ca326ce41b7968d4b26d)",
       "post_witness_or_absence_query": "rg -n --fixed-strings 'T_rad' src || true",
       "pre_witness": "local alias of plasma->T_rad[s]",
-      "runtime_counter": "production_read_attempts=0",
+      "runtime_counter": "not_measured_by_static_trace",
       "static_category": "MIGRATED_PRODUCTION_READ",
       "terminal_state": "CLOSED_A2_07_MATTER_TE"
     },
     {
       "id": 17,
-      "owning_commit": "\uc774\uad00 \uc644\ub8cc(A2-17\u00b7dd9cd398698914b5e004e33d1c8ec41fcd5f411f)",
+      "owning_commit": "\uc774\uad00 \uc644\ub8cc(A2-17\u00b7bb9340836c03381a9bb1fc39eccb21d0d21a97f4)",
       "post_witness_or_absence_query": "rg -n --fixed-strings 'W' src || true",
       "pre_witness": "local alias of plasma->W[s]",
-      "runtime_counter": "production_read_attempts=0",
+      "runtime_counter": "not_measured_by_static_trace",
       "static_category": "DIAGNOSTIC_DERIVATION",
       "terminal_state": "DIAGNOSTIC_ONLY_CANONICAL_DERIVED"
     },
     {
       "id": 18,
-      "owning_commit": "\uc774\uad00 \uc644\ub8cc(A2-17\u00b7dd9cd398698914b5e004e33d1c8ec41fcd5f411f)",
+      "owning_commit": "\uc774\uad00 \uc644\ub8cc(A2-17\u00b7bb9340836c03381a9bb1fc39eccb21d0d21a97f4)",
       "post_witness_or_absence_query": "rg -n --fixed-strings 'T_rad' src || true",
       "pre_witness": "local alias of plasma->T_rad[s]",
-      "runtime_counter": "production_read_attempts=0",
+      "runtime_counter": "not_measured_by_static_trace",
       "static_category": "DIAGNOSTIC_DERIVATION",
       "terminal_state": "DIAGNOSTIC_ONLY_CANONICAL_DERIVED"
     },
@@ -169,7 +169,7 @@
       "owning_commit": "\uc774\uad00 \uc644\ub8cc(A2-06\u00b7ece5aef8e192e2166b647ee00aae5fdd1f935a1c)",
       "post_witness_or_absence_query": "rg -n --fixed-strings 'W' src || true",
       "pre_witness": "local alias of plasma->W[s]",
-      "runtime_counter": "production_read_attempts=0",
+      "runtime_counter": "not_measured_by_static_trace",
       "static_category": "MIGRATED_PRODUCTION_READ",
       "terminal_state": "CLOSED_A2_06_CANONICAL_JBAR"
     },
@@ -178,7 +178,7 @@
       "owning_commit": "\uc774\uad00 \uc644\ub8cc(A2-06\u00b7ece5aef8e192e2166b647ee00aae5fdd1f935a1c)",
       "post_witness_or_absence_query": "rg -n --fixed-strings 'W' src || true",
       "pre_witness": "local alias of plasma->W[s]",
-      "runtime_counter": "production_read_attempts=0",
+      "runtime_counter": "not_measured_by_static_trace",
       "static_category": "MIGRATED_PRODUCTION_READ",
       "terminal_state": "CLOSED_A2_06_CANONICAL_JBAR"
     },
@@ -187,7 +187,7 @@
       "owning_commit": "\uc774\uad00 \uc644\ub8cc(A2-07\u00b73ddd95c0de20abea3284ca326ce41b7968d4b26d)",
       "post_witness_or_absence_query": "rg -n --fixed-strings 'W' src || true",
       "pre_witness": "local alias of plasma->W[s]",
-      "runtime_counter": "production_read_attempts=0",
+      "runtime_counter": "not_measured_by_static_trace",
       "static_category": "MIGRATED_PRODUCTION_READ",
       "terminal_state": "CLOSED_A2_07_MATTER_TE"
     },
@@ -196,7 +196,7 @@
       "owning_commit": "\uc774\uad00 \uc644\ub8cc(A2-07\u00b73ddd95c0de20abea3284ca326ce41b7968d4b26d)",
       "post_witness_or_absence_query": "rg -n --fixed-strings 'T_rad' src || true",
       "pre_witness": "local alias of plasma->T_rad[s]",
-      "runtime_counter": "production_read_attempts=0",
+      "runtime_counter": "not_measured_by_static_trace",
       "static_category": "MIGRATED_PRODUCTION_READ",
       "terminal_state": "CLOSED_A2_07_MATTER_TE"
     },
@@ -205,7 +205,7 @@
       "owning_commit": "\uc774\uad00 \uc644\ub8cc(A2-06\u00b7ece5aef8e192e2166b647ee00aae5fdd1f935a1c)",
       "post_witness_or_absence_query": "rg -n --fixed-strings 'W' src || true",
       "pre_witness": "local alias of plasma->W[s]",
-      "runtime_counter": "production_read_attempts=0",
+      "runtime_counter": "not_measured_by_static_trace",
       "static_category": "MIGRATED_PRODUCTION_READ",
       "terminal_state": "CLOSED_A2_06_CANONICAL_JBAR"
     },
@@ -214,133 +214,133 @@
       "owning_commit": "\uc774\uad00 \uc644\ub8cc(A2-06\u00b7ece5aef8e192e2166b647ee00aae5fdd1f935a1c)",
       "post_witness_or_absence_query": "rg -n --fixed-strings 'W' src || true",
       "pre_witness": "local alias of plasma->W[s]",
-      "runtime_counter": "production_read_attempts=0",
+      "runtime_counter": "not_measured_by_static_trace",
       "static_category": "MIGRATED_PRODUCTION_READ",
       "terminal_state": "CLOSED_A2_06_CANONICAL_JBAR"
     },
     {
       "id": 25,
-      "owning_commit": "\uc774\uad00 \uc644\ub8cc(A2-17\u00b7dd9cd398698914b5e004e33d1c8ec41fcd5f411f)",
+      "owning_commit": "\uc774\uad00 \uc644\ub8cc(A2-17\u00b7bb9340836c03381a9bb1fc39eccb21d0d21a97f4)",
       "post_witness_or_absence_query": "rg -n --fixed-strings 'plasma.W[i]' src || true",
       "pre_witness": "plasma.W",
-      "runtime_counter": "production_read_attempts=0",
+      "runtime_counter": "not_measured_by_static_trace",
       "static_category": "DIAGNOSTIC_DERIVATION",
       "terminal_state": "DIAGNOSTIC_ONLY_CANONICAL_DERIVED"
     },
     {
       "id": 26,
-      "owning_commit": "\uc774\uad00 \uc644\ub8cc(A2-17\u00b7dd9cd398698914b5e004e33d1c8ec41fcd5f411f)",
+      "owning_commit": "\uc774\uad00 \uc644\ub8cc(A2-17\u00b7bb9340836c03381a9bb1fc39eccb21d0d21a97f4)",
       "post_witness_or_absence_query": "rg -n --fixed-strings 'plasma.T_rad[i]' src || true",
       "pre_witness": "plasma.T_rad",
-      "runtime_counter": "production_read_attempts=0",
+      "runtime_counter": "not_measured_by_static_trace",
       "static_category": "DIAGNOSTIC_DERIVATION",
       "terminal_state": "DIAGNOSTIC_ONLY_CANONICAL_DERIVED"
     },
     {
       "id": 27,
-      "owning_commit": "\uc774\uad00 \uc644\ub8cc(A2-17\u00b7dd9cd398698914b5e004e33d1c8ec41fcd5f411f)",
+      "owning_commit": "\uc774\uad00 \uc644\ub8cc(A2-17\u00b7bb9340836c03381a9bb1fc39eccb21d0d21a97f4)",
       "post_witness_or_absence_query": "rg -n --fixed-strings 'plasma.W[i]' src || true",
       "pre_witness": "plasma.W",
-      "runtime_counter": "production_read_attempts=0",
+      "runtime_counter": "not_measured_by_static_trace",
       "static_category": "DIAGNOSTIC_DERIVATION",
       "terminal_state": "DIAGNOSTIC_ONLY_CANONICAL_DERIVED"
     },
     {
       "id": 28,
-      "owning_commit": "\uc774\uad00 \uc644\ub8cc(A2-17\u00b7dd9cd398698914b5e004e33d1c8ec41fcd5f411f)",
+      "owning_commit": "\uc774\uad00 \uc644\ub8cc(A2-17\u00b7bb9340836c03381a9bb1fc39eccb21d0d21a97f4)",
       "post_witness_or_absence_query": "rg -n --fixed-strings 'plasma.T_rad[i]' src || true",
       "pre_witness": "plasma.T_rad",
-      "runtime_counter": "production_read_attempts=0",
+      "runtime_counter": "not_measured_by_static_trace",
       "static_category": "DIAGNOSTIC_DERIVATION",
       "terminal_state": "DIAGNOSTIC_ONLY_CANONICAL_DERIVED"
     },
     {
       "id": 29,
-      "owning_commit": "\uc774\uad00 \uc644\ub8cc(A2-17\u00b7dd9cd398698914b5e004e33d1c8ec41fcd5f411f)",
+      "owning_commit": "\uc774\uad00 \uc644\ub8cc(A2-17\u00b7bb9340836c03381a9bb1fc39eccb21d0d21a97f4)",
       "post_witness_or_absence_query": "rg -n --fixed-strings 'plasma.W[i]' src || true",
       "pre_witness": "plasma.W",
-      "runtime_counter": "production_read_attempts=0",
+      "runtime_counter": "not_measured_by_static_trace",
       "static_category": "DIAGNOSTIC_DERIVATION",
       "terminal_state": "DIAGNOSTIC_ONLY_CANONICAL_DERIVED"
     },
     {
       "id": 30,
-      "owning_commit": "\uc774\uad00 \uc644\ub8cc(A2-17\u00b7dd9cd398698914b5e004e33d1c8ec41fcd5f411f)",
+      "owning_commit": "\uc774\uad00 \uc644\ub8cc(A2-17\u00b7bb9340836c03381a9bb1fc39eccb21d0d21a97f4)",
       "post_witness_or_absence_query": "rg -n --fixed-strings 'plasma.T_rad[i]' src || true",
       "pre_witness": "plasma.T_rad",
-      "runtime_counter": "production_read_attempts=0",
+      "runtime_counter": "not_measured_by_static_trace",
       "static_category": "DIAGNOSTIC_DERIVATION",
       "terminal_state": "DIAGNOSTIC_ONLY_CANONICAL_DERIVED"
     },
     {
       "id": 31,
-      "owning_commit": "\uc774\uad00 \uc644\ub8cc(A2-17\u00b7dd9cd398698914b5e004e33d1c8ec41fcd5f411f)",
+      "owning_commit": "\uc774\uad00 \uc644\ub8cc(A2-17\u00b7bb9340836c03381a9bb1fc39eccb21d0d21a97f4)",
       "post_witness_or_absence_query": "rg -n --fixed-strings 'plasma.W[i]' src || true",
       "pre_witness": "plasma.W",
-      "runtime_counter": "production_read_attempts=0",
+      "runtime_counter": "not_measured_by_static_trace",
       "static_category": "DIAGNOSTIC_DERIVATION",
       "terminal_state": "DIAGNOSTIC_ONLY_CANONICAL_DERIVED"
     },
     {
       "id": 32,
-      "owning_commit": "\uc774\uad00 \uc644\ub8cc(A2-17\u00b7dd9cd398698914b5e004e33d1c8ec41fcd5f411f)",
+      "owning_commit": "\uc774\uad00 \uc644\ub8cc(A2-17\u00b7bb9340836c03381a9bb1fc39eccb21d0d21a97f4)",
       "post_witness_or_absence_query": "rg -n --fixed-strings 'plasma.T_rad[i]' src || true",
       "pre_witness": "plasma.T_rad",
-      "runtime_counter": "production_read_attempts=0",
+      "runtime_counter": "not_measured_by_static_trace",
       "static_category": "DIAGNOSTIC_DERIVATION",
       "terminal_state": "DIAGNOSTIC_ONLY_CANONICAL_DERIVED"
     },
     {
       "id": 33,
-      "owning_commit": "\uc774\uad00 \uc644\ub8cc(A2-17\u00b7dd9cd398698914b5e004e33d1c8ec41fcd5f411f)",
+      "owning_commit": "\uc774\uad00 \uc644\ub8cc(A2-17\u00b7bb9340836c03381a9bb1fc39eccb21d0d21a97f4)",
       "post_witness_or_absence_query": "rg -n --fixed-strings 'plasma.W[i]' src || true",
       "pre_witness": "plasma.W",
-      "runtime_counter": "production_read_attempts=0",
+      "runtime_counter": "not_measured_by_static_trace",
       "static_category": "DIAGNOSTIC_DERIVATION",
       "terminal_state": "DIAGNOSTIC_ONLY_CANONICAL_DERIVED"
     },
     {
       "id": 34,
-      "owning_commit": "\uc774\uad00 \uc644\ub8cc(A2-17\u00b7dd9cd398698914b5e004e33d1c8ec41fcd5f411f)",
+      "owning_commit": "\uc774\uad00 \uc644\ub8cc(A2-17\u00b7bb9340836c03381a9bb1fc39eccb21d0d21a97f4)",
       "post_witness_or_absence_query": "rg -n --fixed-strings 'plasma.T_rad[i]' src || true",
       "pre_witness": "plasma.T_rad",
-      "runtime_counter": "production_read_attempts=0",
+      "runtime_counter": "not_measured_by_static_trace",
       "static_category": "DIAGNOSTIC_DERIVATION",
       "terminal_state": "DIAGNOSTIC_ONLY_CANONICAL_DERIVED"
     },
     {
       "id": 35,
-      "owning_commit": "\uc774\uad00 \uc644\ub8cc(A2-17\u00b7dd9cd398698914b5e004e33d1c8ec41fcd5f411f)",
+      "owning_commit": "\uc774\uad00 \uc644\ub8cc(A2-17\u00b7bb9340836c03381a9bb1fc39eccb21d0d21a97f4)",
       "post_witness_or_absence_query": "rg -n --fixed-strings 'plasma.W[i]' src || true",
       "pre_witness": "plasma.W",
-      "runtime_counter": "production_read_attempts=0",
+      "runtime_counter": "not_measured_by_static_trace",
       "static_category": "DIAGNOSTIC_DERIVATION",
       "terminal_state": "DIAGNOSTIC_ONLY_CANONICAL_DERIVED"
     },
     {
       "id": 36,
-      "owning_commit": "\uc774\uad00 \uc644\ub8cc(A2-17\u00b7dd9cd398698914b5e004e33d1c8ec41fcd5f411f)",
+      "owning_commit": "\uc774\uad00 \uc644\ub8cc(A2-17\u00b7bb9340836c03381a9bb1fc39eccb21d0d21a97f4)",
       "post_witness_or_absence_query": "rg -n --fixed-strings 'plasma.T_rad[i]' src || true",
       "pre_witness": "plasma.T_rad",
-      "runtime_counter": "production_read_attempts=0",
+      "runtime_counter": "not_measured_by_static_trace",
       "static_category": "DIAGNOSTIC_DERIVATION",
       "terminal_state": "DIAGNOSTIC_ONLY_CANONICAL_DERIVED"
     },
     {
       "id": 37,
-      "owning_commit": "\uc774\uad00 \uc644\ub8cc(A2-17\u00b7dd9cd398698914b5e004e33d1c8ec41fcd5f411f)",
+      "owning_commit": "\uc774\uad00 \uc644\ub8cc(A2-17\u00b7bb9340836c03381a9bb1fc39eccb21d0d21a97f4)",
       "post_witness_or_absence_query": "rg -n --fixed-strings 'plasma.W[i]' src || true",
       "pre_witness": "plasma.W",
-      "runtime_counter": "production_read_attempts=0",
+      "runtime_counter": "not_measured_by_static_trace",
       "static_category": "DIAGNOSTIC_DERIVATION",
       "terminal_state": "DIAGNOSTIC_ONLY_CANONICAL_DERIVED"
     },
     {
       "id": 38,
-      "owning_commit": "\uc774\uad00 \uc644\ub8cc(A2-17\u00b7dd9cd398698914b5e004e33d1c8ec41fcd5f411f)",
+      "owning_commit": "\uc774\uad00 \uc644\ub8cc(A2-17\u00b7bb9340836c03381a9bb1fc39eccb21d0d21a97f4)",
       "post_witness_or_absence_query": "rg -n --fixed-strings 'plasma.T_rad[i]' src || true",
       "pre_witness": "plasma.T_rad",
-      "runtime_counter": "production_read_attempts=0",
+      "runtime_counter": "not_measured_by_static_trace",
       "static_category": "DIAGNOSTIC_DERIVATION",
       "terminal_state": "DIAGNOSTIC_ONLY_CANONICAL_DERIVED"
     },
@@ -349,7 +349,7 @@
       "owning_commit": "\uc774\uad00 \uc644\ub8cc(A2-14\u00b765498e18e9826ea0cdb5906b71cebecef4b82637)",
       "post_witness_or_absence_query": "rg -n --fixed-strings 'T_rad[s]' src || true",
       "pre_witness": "GPU BF-kernel T_rad parameter",
-      "runtime_counter": "production_read_attempts=0",
+      "runtime_counter": "not_measured_by_static_trace",
       "static_category": "MIGRATED_PRODUCTION_READ",
       "terminal_state": "CLOSED_A2_14_GPU_SIGNED_OPACITY"
     },
@@ -358,7 +358,7 @@
       "owning_commit": "\uc774\uad00 \uc644\ub8cc(A2-14\u00b765498e18e9826ea0cdb5906b71cebecef4b82637)",
       "post_witness_or_absence_query": "rg -n --fixed-strings 'W[s]' src || true",
       "pre_witness": "GPU BF-kernel W parameter",
-      "runtime_counter": "production_read_attempts=0",
+      "runtime_counter": "not_measured_by_static_trace",
       "static_category": "MIGRATED_PRODUCTION_READ",
       "terminal_state": "CLOSED_A2_14_GPU_SIGNED_OPACITY"
     },
@@ -367,7 +367,7 @@
       "owning_commit": "\uc774\uad00 \uc644\ub8cc(A2-14\u00b765498e18e9826ea0cdb5906b71cebecef4b82637)",
       "post_witness_or_absence_query": "rg -n --fixed-strings 'plasma->T_rad' src || true",
       "pre_witness": "plasma.T_rad upload source",
-      "runtime_counter": "production_read_attempts=0",
+      "runtime_counter": "not_measured_by_static_trace",
       "static_category": "MIGRATED_PRODUCTION_READ",
       "terminal_state": "CLOSED_A2_14_GPU_SIGNED_OPACITY"
     },
@@ -376,7 +376,7 @@
       "owning_commit": "\uc774\uad00 \uc644\ub8cc(A2-14\u00b765498e18e9826ea0cdb5906b71cebecef4b82637)",
       "post_witness_or_absence_query": "rg -n --fixed-strings 'plasma->W' src || true",
       "pre_witness": "plasma.W upload source",
-      "runtime_counter": "production_read_attempts=0",
+      "runtime_counter": "not_measured_by_static_trace",
       "static_category": "MIGRATED_PRODUCTION_READ",
       "terminal_state": "CLOSED_A2_14_GPU_SIGNED_OPACITY"
     },
@@ -385,7 +385,7 @@
       "owning_commit": "\uc774\uad00 \uc644\ub8cc(A2-14\u00b765498e18e9826ea0cdb5906b71cebecef4b82637)",
       "post_witness_or_absence_query": "rg -n --fixed-strings 'g_bf_gemm.d_T_rad' src || true",
       "pre_witness": "GPU BF T_rad buffer",
-      "runtime_counter": "production_read_attempts=0",
+      "runtime_counter": "not_measured_by_static_trace",
       "static_category": "MIGRATED_PRODUCTION_READ",
       "terminal_state": "CLOSED_A2_14_GPU_SIGNED_OPACITY"
     },
@@ -394,7 +394,7 @@
       "owning_commit": "\uc774\uad00 \uc644\ub8cc(A2-14\u00b765498e18e9826ea0cdb5906b71cebecef4b82637)",
       "post_witness_or_absence_query": "rg -n --fixed-strings 'g_bf_gemm.d_W' src || true",
       "pre_witness": "GPU BF W buffer",
-      "runtime_counter": "production_read_attempts=0",
+      "runtime_counter": "not_measured_by_static_trace",
       "static_category": "MIGRATED_PRODUCTION_READ",
       "terminal_state": "CLOSED_A2_14_GPU_SIGNED_OPACITY"
     },
@@ -403,7 +403,7 @@
       "owning_commit": "\uc774\uad00 \uc644\ub8cc(A2-14\u00b765498e18e9826ea0cdb5906b71cebecef4b82637)",
       "post_witness_or_absence_query": "rg -n --fixed-strings 'plasma->T_rad' src || true",
       "pre_witness": "plasma.T_rad refresh source",
-      "runtime_counter": "production_read_attempts=0",
+      "runtime_counter": "not_measured_by_static_trace",
       "static_category": "MIGRATED_PRODUCTION_READ",
       "terminal_state": "CLOSED_A2_14_GPU_SIGNED_OPACITY"
     },
@@ -412,7 +412,7 @@
       "owning_commit": "\uc774\uad00 \uc644\ub8cc(A2-14\u00b765498e18e9826ea0cdb5906b71cebecef4b82637)",
       "post_witness_or_absence_query": "rg -n --fixed-strings 'plasma->W' src || true",
       "pre_witness": "plasma.W refresh source",
-      "runtime_counter": "production_read_attempts=0",
+      "runtime_counter": "not_measured_by_static_trace",
       "static_category": "MIGRATED_PRODUCTION_READ",
       "terminal_state": "CLOSED_A2_14_GPU_SIGNED_OPACITY"
     },
@@ -421,7 +421,7 @@
       "owning_commit": "\uc774\uad00 \uc644\ub8cc(A2-14\u00b765498e18e9826ea0cdb5906b71cebecef4b82637)",
       "post_witness_or_absence_query": "rg -n --fixed-strings 'g_bf_gemm.d_T_rad' src || true",
       "pre_witness": "GPU BF T_rad buffer",
-      "runtime_counter": "production_read_attempts=0",
+      "runtime_counter": "not_measured_by_static_trace",
       "static_category": "MIGRATED_PRODUCTION_READ",
       "terminal_state": "CLOSED_A2_14_GPU_SIGNED_OPACITY"
     },
@@ -430,7 +430,7 @@
       "owning_commit": "\uc774\uad00 \uc644\ub8cc(A2-14\u00b765498e18e9826ea0cdb5906b71cebecef4b82637)",
       "post_witness_or_absence_query": "rg -n --fixed-strings 'g_bf_gemm.d_W' src || true",
       "pre_witness": "GPU BF W buffer",
-      "runtime_counter": "production_read_attempts=0",
+      "runtime_counter": "not_measured_by_static_trace",
       "static_category": "MIGRATED_PRODUCTION_READ",
       "terminal_state": "CLOSED_A2_14_GPU_SIGNED_OPACITY"
     },
@@ -439,7 +439,7 @@
       "owning_commit": "\uc774\uad00 \uc644\ub8cc(A2-14\u00b765498e18e9826ea0cdb5906b71cebecef4b82637)",
       "post_witness_or_absence_query": "rg -n --fixed-strings 'd_W[s]' src || true",
       "pre_witness": "GPU NLTE assembly W parameter",
-      "runtime_counter": "production_read_attempts=0",
+      "runtime_counter": "not_measured_by_static_trace",
       "static_category": "MIGRATED_PRODUCTION_READ",
       "terminal_state": "CLOSED_A2_14_GPU_SIGNED_OPACITY"
     },
@@ -448,7 +448,7 @@
       "owning_commit": "\uc774\uad00 \uc644\ub8cc(A2-14\u00b765498e18e9826ea0cdb5906b71cebecef4b82637)",
       "post_witness_or_absence_query": "rg -n --fixed-strings 'plasma->W' src || true",
       "pre_witness": "plasma.W upload source",
-      "runtime_counter": "production_read_attempts=0",
+      "runtime_counter": "not_measured_by_static_trace",
       "static_category": "MIGRATED_PRODUCTION_READ",
       "terminal_state": "CLOSED_A2_14_GPU_SIGNED_OPACITY"
     },
@@ -457,7 +457,7 @@
       "owning_commit": "\uc774\uad00 \uc644\ub8cc(A2-14\u00b765498e18e9826ea0cdb5906b71cebecef4b82637)",
       "post_witness_or_absence_query": "rg -n --fixed-strings 'plasma->T_rad[0]' src || true",
       "pre_witness": "plasma.T_rad",
-      "runtime_counter": "production_read_attempts=0",
+      "runtime_counter": "not_measured_by_static_trace",
       "static_category": "MIGRATED_PRODUCTION_READ",
       "terminal_state": "CLOSED_A2_14_GPU_SIGNED_OPACITY"
     },
@@ -466,7 +466,7 @@
       "owning_commit": "\uc774\uad00 \uc644\ub8cc(A2-15\u00b784a148159185004f6f25db4bed51a3d5b5896d44)",
       "post_witness_or_absence_query": "rg -n --fixed-strings 'd_T_rad[shell_id]' src || true",
       "pre_witness": "GPU transport T_rad array",
-      "runtime_counter": "production_read_attempts=0",
+      "runtime_counter": "not_measured_by_static_trace",
       "static_category": "MIGRATED_PRODUCTION_READ",
       "terminal_state": "CLOSED_A2_12_15_GPU_NO_SCALAR"
     },
@@ -475,7 +475,7 @@
       "owning_commit": "\uc774\uad00 \uc644\ub8cc(A2-15\u00b784a148159185004f6f25db4bed51a3d5b5896d44)",
       "post_witness_or_absence_query": "rg -n --fixed-strings 'd_T_rad[shell_id]' src || true",
       "pre_witness": "GPU transport T_rad array",
-      "runtime_counter": "production_read_attempts=0",
+      "runtime_counter": "not_measured_by_static_trace",
       "static_category": "MIGRATED_PRODUCTION_READ",
       "terminal_state": "CLOSED_A2_12_15_GPU_NO_SCALAR"
     },
@@ -484,7 +484,7 @@
       "owning_commit": "\uc774\uad00 \uc644\ub8cc(A2-15\u00b784a148159185004f6f25db4bed51a3d5b5896d44)",
       "post_witness_or_absence_query": "rg -n --fixed-strings 'd_T_rad' src || true",
       "pre_witness": "GPU transport T_rad pointer",
-      "runtime_counter": "production_read_attempts=0",
+      "runtime_counter": "not_measured_by_static_trace",
       "static_category": "MIGRATED_PRODUCTION_READ",
       "terminal_state": "CLOSED_A2_12_15_GPU_NO_SCALAR"
     },
@@ -493,7 +493,7 @@
       "owning_commit": "\uc774\uad00 \uc644\ub8cc(A2-15\u00b784a148159185004f6f25db4bed51a3d5b5896d44)",
       "post_witness_or_absence_query": "rg -n --fixed-strings 'd_T_rad' src || true",
       "pre_witness": "GPU transport T_rad pointer",
-      "runtime_counter": "production_read_attempts=0",
+      "runtime_counter": "not_measured_by_static_trace",
       "static_category": "MIGRATED_PRODUCTION_READ",
       "terminal_state": "CLOSED_A2_12_15_GPU_NO_SCALAR"
     },
@@ -502,7 +502,7 @@
       "owning_commit": "\uc774\uad00 \uc644\ub8cc(A2-15\u00b784a148159185004f6f25db4bed51a3d5b5896d44)",
       "post_witness_or_absence_query": "rg -n --fixed-strings 'd_T_rad' src || true",
       "pre_witness": "GPU transport T_rad pointer",
-      "runtime_counter": "production_read_attempts=0",
+      "runtime_counter": "not_measured_by_static_trace",
       "static_category": "MIGRATED_PRODUCTION_READ",
       "terminal_state": "CLOSED_A2_12_15_GPU_NO_SCALAR"
     },
@@ -511,7 +511,7 @@
       "owning_commit": "\uc774\uad00 \uc644\ub8cc(A2-15\u00b784a148159185004f6f25db4bed51a3d5b5896d44)",
       "post_witness_or_absence_query": "rg -n --fixed-strings 'dev.d_T_rad' src || true",
       "pre_witness": "GPU device T_rad owner",
-      "runtime_counter": "production_read_attempts=0",
+      "runtime_counter": "not_measured_by_static_trace",
       "static_category": "MIGRATED_PRODUCTION_READ",
       "terminal_state": "CLOSED_A2_12_15_GPU_NO_SCALAR"
     },
@@ -520,7 +520,7 @@
       "owning_commit": "\uc774\uad00 \uc644\ub8cc(A2-15\u00b784a148159185004f6f25db4bed51a3d5b5896d44)",
       "post_witness_or_absence_query": "rg -n --fixed-strings 'dev.d_T_rad' src || true",
       "pre_witness": "GPU device T_rad owner",
-      "runtime_counter": "production_read_attempts=0",
+      "runtime_counter": "not_measured_by_static_trace",
       "static_category": "MIGRATED_PRODUCTION_READ",
       "terminal_state": "CLOSED_A2_12_15_GPU_NO_SCALAR"
     },
@@ -529,7 +529,7 @@
       "owning_commit": "\uc774\uad00 \uc644\ub8cc(A2-12\u00b77f72c0d95f9ae94166b856e54008ac230ca3c504)",
       "post_witness_or_absence_query": "rg -n --fixed-strings 'plasma.W[s]' src || true",
       "pre_witness": "plasma.W",
-      "runtime_counter": "production_read_attempts=0",
+      "runtime_counter": "not_measured_by_static_trace",
       "static_category": "MIGRATED_PRODUCTION_READ",
       "terminal_state": "CLOSED_A2_12_15_GPU_NO_SCALAR"
     },
@@ -538,7 +538,7 @@
       "owning_commit": "\uc774\uad00 \uc644\ub8cc(A2-12\u00b77f72c0d95f9ae94166b856e54008ac230ca3c504)",
       "post_witness_or_absence_query": "rg -n --fixed-strings 'plasma.W' src || true",
       "pre_witness": "plasma.W owner pointer",
-      "runtime_counter": "production_read_attempts=0",
+      "runtime_counter": "not_measured_by_static_trace",
       "static_category": "MIGRATED_PRODUCTION_READ",
       "terminal_state": "CLOSED_A2_12_15_GPU_NO_SCALAR"
     },
@@ -547,7 +547,7 @@
       "owning_commit": "\uc774\uad00 \uc644\ub8cc(A2-12\u00b77f72c0d95f9ae94166b856e54008ac230ca3c504)",
       "post_witness_or_absence_query": "rg -n --fixed-strings 'plasma.T_rad[i]' src || true",
       "pre_witness": "plasma.T_rad",
-      "runtime_counter": "production_read_attempts=0",
+      "runtime_counter": "not_measured_by_static_trace",
       "static_category": "MIGRATED_PRODUCTION_READ",
       "terminal_state": "CLOSED_A2_12_15_GPU_NO_SCALAR"
     },
@@ -556,7 +556,7 @@
       "owning_commit": "\uc774\uad00 \uc644\ub8cc(A2-12\u00b77f72c0d95f9ae94166b856e54008ac230ca3c504)",
       "post_witness_or_absence_query": "rg -n --fixed-strings 'plasma.T_rad[i]' src || true",
       "pre_witness": "plasma.T_rad",
-      "runtime_counter": "production_read_attempts=0",
+      "runtime_counter": "not_measured_by_static_trace",
       "static_category": "MIGRATED_PRODUCTION_READ",
       "terminal_state": "CLOSED_A2_12_15_GPU_NO_SCALAR"
     },
@@ -565,7 +565,7 @@
       "owning_commit": "\uc774\uad00 \uc644\ub8cc(A2-08\u00b78a9f861efb12e749fd47926b8e78be17d4ba8070)",
       "post_witness_or_absence_query": "rg -n --fixed-strings 'plasma->T_rad[s]' src || true",
       "pre_witness": "plasma.T_rad",
-      "runtime_counter": "production_read_attempts=0",
+      "runtime_counter": "not_measured_by_static_trace",
       "static_category": "MIGRATED_PRODUCTION_READ",
       "terminal_state": "CLOSED_A2_08_SIGNED_OPACITY"
     },
@@ -574,7 +574,7 @@
       "owning_commit": "\uc774\uad00 \uc644\ub8cc(A2-08\u00b78a9f861efb12e749fd47926b8e78be17d4ba8070)",
       "post_witness_or_absence_query": "rg -n --fixed-strings 'plasma->W[s]' src || true",
       "pre_witness": "plasma.W",
-      "runtime_counter": "production_read_attempts=0",
+      "runtime_counter": "not_measured_by_static_trace",
       "static_category": "MIGRATED_PRODUCTION_READ",
       "terminal_state": "CLOSED_A2_08_SIGNED_OPACITY"
     },
@@ -583,7 +583,7 @@
       "owning_commit": "\uc774\uad00 \uc644\ub8cc(A2-08\u00b78a9f861efb12e749fd47926b8e78be17d4ba8070)",
       "post_witness_or_absence_query": "rg -n --fixed-strings 'T_rad' src || true",
       "pre_witness": "local alias of plasma->T_rad[s]",
-      "runtime_counter": "production_read_attempts=0",
+      "runtime_counter": "not_measured_by_static_trace",
       "static_category": "MIGRATED_PRODUCTION_READ",
       "terminal_state": "CLOSED_A2_08_SIGNED_OPACITY"
     },
@@ -592,7 +592,7 @@
       "owning_commit": "\uc774\uad00 \uc644\ub8cc(A2-08\u00b78a9f861efb12e749fd47926b8e78be17d4ba8070)",
       "post_witness_or_absence_query": "rg -n --fixed-strings 'T_rad' src || true",
       "pre_witness": "local alias of plasma->T_rad[s]",
-      "runtime_counter": "production_read_attempts=0",
+      "runtime_counter": "not_measured_by_static_trace",
       "static_category": "MIGRATED_PRODUCTION_READ",
       "terminal_state": "CLOSED_A2_08_SIGNED_OPACITY"
     },
@@ -601,7 +601,7 @@
       "owning_commit": "\uc774\uad00 \uc644\ub8cc(A2-08\u00b78a9f861efb12e749fd47926b8e78be17d4ba8070)",
       "post_witness_or_absence_query": "rg -n --fixed-strings 'W' src || true",
       "pre_witness": "local alias of plasma->W[s]",
-      "runtime_counter": "production_read_attempts=0",
+      "runtime_counter": "not_measured_by_static_trace",
       "static_category": "MIGRATED_PRODUCTION_READ",
       "terminal_state": "CLOSED_A2_08_SIGNED_OPACITY"
     },
@@ -610,7 +610,7 @@
       "owning_commit": "\uc774\uad00 \uc644\ub8cc(A2-08\u00b78a9f861efb12e749fd47926b8e78be17d4ba8070)",
       "post_witness_or_absence_query": "rg -n --fixed-strings 'T_rad' src || true",
       "pre_witness": "local alias of plasma->T_rad[s]",
-      "runtime_counter": "production_read_attempts=0",
+      "runtime_counter": "not_measured_by_static_trace",
       "static_category": "MIGRATED_PRODUCTION_READ",
       "terminal_state": "CLOSED_A2_08_SIGNED_OPACITY"
     },
@@ -619,7 +619,7 @@
       "owning_commit": "\uc774\uad00 \uc644\ub8cc(A2-08\u00b78a9f861efb12e749fd47926b8e78be17d4ba8070)",
       "post_witness_or_absence_query": "rg -n --fixed-strings 'W' src || true",
       "pre_witness": "local alias of plasma->W[s]",
-      "runtime_counter": "production_read_attempts=0",
+      "runtime_counter": "not_measured_by_static_trace",
       "static_category": "MIGRATED_PRODUCTION_READ",
       "terminal_state": "CLOSED_A2_08_SIGNED_OPACITY"
     },
@@ -628,7 +628,7 @@
       "owning_commit": "\uc774\uad00 \uc644\ub8cc(A2-08\u00b78a9f861efb12e749fd47926b8e78be17d4ba8070)",
       "post_witness_or_absence_query": "rg -n --fixed-strings 'T_rad' src || true",
       "pre_witness": "local alias of plasma->T_rad[s]",
-      "runtime_counter": "production_read_attempts=0",
+      "runtime_counter": "not_measured_by_static_trace",
       "static_category": "MIGRATED_PRODUCTION_READ",
       "terminal_state": "CLOSED_A2_08_SIGNED_OPACITY"
     },
@@ -637,7 +637,7 @@
       "owning_commit": "\uc774\uad00 \uc644\ub8cc(A2-08\u00b78a9f861efb12e749fd47926b8e78be17d4ba8070)",
       "post_witness_or_absence_query": "rg -n --fixed-strings 'W' src || true",
       "pre_witness": "local alias of plasma->W[s]",
-      "runtime_counter": "production_read_attempts=0",
+      "runtime_counter": "not_measured_by_static_trace",
       "static_category": "MIGRATED_PRODUCTION_READ",
       "terminal_state": "CLOSED_A2_08_SIGNED_OPACITY"
     },
@@ -646,7 +646,7 @@
       "owning_commit": "\uc774\uad00 \uc644\ub8cc(A2-11\u00b79b73c042dcc5feae75c58ff8e00547b33ea36d93)",
       "post_witness_or_absence_query": "rg -n --fixed-strings 'plasma->W[shell_mid]' src || true",
       "pre_witness": "plasma.W",
-      "runtime_counter": "production_read_attempts=0",
+      "runtime_counter": "not_measured_by_static_trace",
       "static_category": "MIGRATED_PRODUCTION_READ",
       "terminal_state": "CLOSED_A2_11_FORMAL_NO_SCALAR"
     },
@@ -655,7 +655,7 @@
       "owning_commit": "\uc774\uad00 \uc644\ub8cc(A2-11\u00b79b73c042dcc5feae75c58ff8e00547b33ea36d93)",
       "post_witness_or_absence_query": "rg -n --fixed-strings 'plasma->T_rad[shell_mid]' src || true",
       "pre_witness": "plasma.T_rad",
-      "runtime_counter": "production_read_attempts=0",
+      "runtime_counter": "not_measured_by_static_trace",
       "static_category": "MIGRATED_PRODUCTION_READ",
       "terminal_state": "CLOSED_A2_11_FORMAL_NO_SCALAR"
     },
@@ -664,7 +664,7 @@
       "owning_commit": "\uc774\uad00 \uc644\ub8cc(A2-11\u00b79b73c042dcc5feae75c58ff8e00547b33ea36d93)",
       "post_witness_or_absence_query": "rg -n --fixed-strings 'plasma->W[shell]' src || true",
       "pre_witness": "plasma.W",
-      "runtime_counter": "production_read_attempts=0",
+      "runtime_counter": "not_measured_by_static_trace",
       "static_category": "MIGRATED_PRODUCTION_READ",
       "terminal_state": "CLOSED_A2_11_FORMAL_NO_SCALAR"
     },
@@ -673,7 +673,7 @@
       "owning_commit": "\uc774\uad00 \uc644\ub8cc(A2-11\u00b79b73c042dcc5feae75c58ff8e00547b33ea36d93)",
       "post_witness_or_absence_query": "rg -n --fixed-strings 'plasma->T_rad[shell]' src || true",
       "pre_witness": "plasma.T_rad",
-      "runtime_counter": "production_read_attempts=0",
+      "runtime_counter": "not_measured_by_static_trace",
       "static_category": "MIGRATED_PRODUCTION_READ",
       "terminal_state": "CLOSED_A2_11_FORMAL_NO_SCALAR"
     },
@@ -682,7 +682,7 @@
       "owning_commit": "\uc774\uad00 \uc644\ub8cc(A2-11\u00b79b73c042dcc5feae75c58ff8e00547b33ea36d93)",
       "post_witness_or_absence_query": "rg -n --fixed-strings 'plasma->T_rad[shell]' src || true",
       "pre_witness": "plasma.T_rad",
-      "runtime_counter": "production_read_attempts=0",
+      "runtime_counter": "not_measured_by_static_trace",
       "static_category": "MIGRATED_PRODUCTION_READ",
       "terminal_state": "CLOSED_A2_11_FORMAL_NO_SCALAR"
     },
@@ -691,7 +691,7 @@
       "owning_commit": "\uc774\uad00 \uc644\ub8cc(A2-11\u00b79b73c042dcc5feae75c58ff8e00547b33ea36d93)",
       "post_witness_or_absence_query": "rg -n --fixed-strings 'plasma->W[shell]' src || true",
       "pre_witness": "plasma.W",
-      "runtime_counter": "production_read_attempts=0",
+      "runtime_counter": "not_measured_by_static_trace",
       "static_category": "MIGRATED_PRODUCTION_READ",
       "terminal_state": "CLOSED_A2_11_FORMAL_NO_SCALAR"
     },
@@ -700,7 +700,7 @@
       "owning_commit": "\uc774\uad00 \uc644\ub8cc(A2-11\u00b79b73c042dcc5feae75c58ff8e00547b33ea36d93)",
       "post_witness_or_absence_query": "rg -n --fixed-strings 'plasma->W[shell_mid]' src || true",
       "pre_witness": "plasma.W",
-      "runtime_counter": "production_read_attempts=0",
+      "runtime_counter": "not_measured_by_static_trace",
       "static_category": "MIGRATED_PRODUCTION_READ",
       "terminal_state": "CLOSED_A2_11_FORMAL_NO_SCALAR"
     },
@@ -709,7 +709,7 @@
       "owning_commit": "\uc774\uad00 \uc644\ub8cc(A2-11\u00b79b73c042dcc5feae75c58ff8e00547b33ea36d93)",
       "post_witness_or_absence_query": "rg -n --fixed-strings 'plasma->T_rad[shell_mid]' src || true",
       "pre_witness": "plasma.T_rad",
-      "runtime_counter": "production_read_attempts=0",
+      "runtime_counter": "not_measured_by_static_trace",
       "static_category": "MIGRATED_PRODUCTION_READ",
       "terminal_state": "CLOSED_A2_11_FORMAL_NO_SCALAR"
     },
@@ -718,7 +718,7 @@
       "owning_commit": "\uc774\uad00 \uc644\ub8cc(A2-11\u00b79b73c042dcc5feae75c58ff8e00547b33ea36d93)",
       "post_witness_or_absence_query": "rg -n --fixed-strings 'plasma->W[shell]' src || true",
       "pre_witness": "plasma.W",
-      "runtime_counter": "production_read_attempts=0",
+      "runtime_counter": "not_measured_by_static_trace",
       "static_category": "MIGRATED_PRODUCTION_READ",
       "terminal_state": "CLOSED_A2_11_FORMAL_NO_SCALAR"
     },
@@ -727,7 +727,7 @@
       "owning_commit": "\uc774\uad00 \uc644\ub8cc(A2-14\u00b765498e18e9826ea0cdb5906b71cebecef4b82637)",
       "post_witness_or_absence_query": "rg -n --fixed-strings 'g_bf_gemm.d_T_rad' src || true",
       "pre_witness": "GPU BF T_rad allocation",
-      "runtime_counter": "production_read_attempts=0",
+      "runtime_counter": "not_measured_by_static_trace",
       "static_category": "MIGRATED_PRODUCTION_READ",
       "terminal_state": "CLOSED_A2_12_15_GPU_NO_SCALAR"
     },
@@ -736,7 +736,7 @@
       "owning_commit": "\uc774\uad00 \uc644\ub8cc(A2-14\u00b765498e18e9826ea0cdb5906b71cebecef4b82637)",
       "post_witness_or_absence_query": "rg -n --fixed-strings 'g_bf_gemm.d_W' src || true",
       "pre_witness": "GPU BF W allocation",
-      "runtime_counter": "production_read_attempts=0",
+      "runtime_counter": "not_measured_by_static_trace",
       "static_category": "MIGRATED_PRODUCTION_READ",
       "terminal_state": "CLOSED_A2_12_15_GPU_NO_SCALAR"
     },
@@ -745,7 +745,7 @@
       "owning_commit": "\uc774\uad00 \uc644\ub8cc(A2-14\u00b765498e18e9826ea0cdb5906b71cebecef4b82637)",
       "post_witness_or_absence_query": "rg -n --fixed-strings 'g_bf_gemm.d_T_rad' src || true",
       "pre_witness": "GPU BF T_rad allocation",
-      "runtime_counter": "production_read_attempts=0",
+      "runtime_counter": "not_measured_by_static_trace",
       "static_category": "MIGRATED_PRODUCTION_READ",
       "terminal_state": "CLOSED_A2_12_15_GPU_NO_SCALAR"
     },
@@ -754,7 +754,7 @@
       "owning_commit": "\uc774\uad00 \uc644\ub8cc(A2-14\u00b765498e18e9826ea0cdb5906b71cebecef4b82637)",
       "post_witness_or_absence_query": "rg -n --fixed-strings 'g_bf_gemm.d_W' src || true",
       "pre_witness": "GPU BF W allocation",
-      "runtime_counter": "production_read_attempts=0",
+      "runtime_counter": "not_measured_by_static_trace",
       "static_category": "MIGRATED_PRODUCTION_READ",
       "terminal_state": "CLOSED_A2_12_15_GPU_NO_SCALAR"
     },
@@ -763,7 +763,7 @@
       "owning_commit": "\uc774\uad00 \uc644\ub8cc(A2-12\u00b77f72c0d95f9ae94166b856e54008ac230ca3c504)",
       "post_witness_or_absence_query": "rg -n --fixed-strings 'dev->d_T_rad' src || true",
       "pre_witness": "GPU transport T_rad allocation",
-      "runtime_counter": "production_read_attempts=0",
+      "runtime_counter": "not_measured_by_static_trace",
       "static_category": "MIGRATED_PRODUCTION_READ",
       "terminal_state": "CLOSED_A2_12_15_GPU_NO_SCALAR"
     },
@@ -772,7 +772,7 @@
       "owning_commit": "\uc774\uad00 \uc644\ub8cc(A2-12\u00b77f72c0d95f9ae94166b856e54008ac230ca3c504)",
       "post_witness_or_absence_query": "rg -n --fixed-strings 'dev->d_T_rad' src || true",
       "pre_witness": "GPU transport T_rad allocation",
-      "runtime_counter": "production_read_attempts=0",
+      "runtime_counter": "not_measured_by_static_trace",
       "static_category": "MIGRATED_PRODUCTION_READ",
       "terminal_state": "CLOSED_A2_12_15_GPU_NO_SCALAR"
     },
@@ -781,7 +781,7 @@
       "owning_commit": "\uc774\uad00 \uc644\ub8cc(A2-12\u00b77f72c0d95f9ae94166b856e54008ac230ca3c504)",
       "post_witness_or_absence_query": "rg -n --fixed-strings 'dev->d_T_rad' src || true",
       "pre_witness": "GPU transport T_rad allocation",
-      "runtime_counter": "production_read_attempts=0",
+      "runtime_counter": "not_measured_by_static_trace",
       "static_category": "MIGRATED_PRODUCTION_READ",
       "terminal_state": "CLOSED_A2_12_15_GPU_NO_SCALAR"
     },
@@ -790,7 +790,7 @@
       "owning_commit": "\uc774\uad00 \uc644\ub8cc(A2-12\u00b77f72c0d95f9ae94166b856e54008ac230ca3c504)",
       "post_witness_or_absence_query": "rg -n --fixed-strings 'dev->d_T_rad' src || true",
       "pre_witness": "GPU transport T_rad allocation",
-      "runtime_counter": "production_read_attempts=0",
+      "runtime_counter": "not_measured_by_static_trace",
       "static_category": "MIGRATED_PRODUCTION_READ",
       "terminal_state": "CLOSED_A2_12_15_GPU_NO_SCALAR"
     },
@@ -799,7 +799,7 @@
       "owning_commit": "\uc774\uad00 \uc644\ub8cc(A2-13\u00b7d47a596182e9e04cb05b74ce816966dd3a29e466)",
       "post_witness_or_absence_query": "rg -n --fixed-strings 'plasma->T_rad[s]' src || true",
       "pre_witness": "plasma.T_rad",
-      "runtime_counter": "production_read_attempts=0",
+      "runtime_counter": "not_measured_by_static_trace",
       "static_category": "MIGRATED_PRODUCTION_READ",
       "terminal_state": "CLOSED_A2_13_GPU_RATE"
     },
@@ -808,7 +808,7 @@
       "owning_commit": "\uc774\uad00 \uc644\ub8cc(A2-13\u00b7d47a596182e9e04cb05b74ce816966dd3a29e466)",
       "post_witness_or_absence_query": "rg -n --fixed-strings 'plasma->T_rad[s]' src || true",
       "pre_witness": "plasma.T_rad",
-      "runtime_counter": "production_read_attempts=0",
+      "runtime_counter": "not_measured_by_static_trace",
       "static_category": "MIGRATED_PRODUCTION_READ",
       "terminal_state": "CLOSED_A2_13_GPU_RATE"
     },
@@ -817,7 +817,7 @@
       "owning_commit": "\uc774\uad00 \uc644\ub8cc(A2-13\u00b7d47a596182e9e04cb05b74ce816966dd3a29e466)",
       "post_witness_or_absence_query": "rg -n --fixed-strings 'plasma->T_rad[s]' src || true",
       "pre_witness": "plasma.T_rad",
-      "runtime_counter": "production_read_attempts=0",
+      "runtime_counter": "not_measured_by_static_trace",
       "static_category": "MIGRATED_PRODUCTION_READ",
       "terminal_state": "CLOSED_A2_13_GPU_RATE"
     },
@@ -826,7 +826,7 @@
       "owning_commit": "\uc774\uad00 \uc644\ub8cc(A2-13\u00b7d47a596182e9e04cb05b74ce816966dd3a29e466)",
       "post_witness_or_absence_query": "rg -n --fixed-strings 'plasma->T_rad[s]' src || true",
       "pre_witness": "plasma.T_rad",
-      "runtime_counter": "production_read_attempts=0",
+      "runtime_counter": "not_measured_by_static_trace",
       "static_category": "MIGRATED_PRODUCTION_READ",
       "terminal_state": "CLOSED_A2_13_GPU_RATE"
     },
@@ -835,7 +835,7 @@
       "owning_commit": "\uc774\uad00 \uc644\ub8cc(A2-13\u00b7d47a596182e9e04cb05b74ce816966dd3a29e466)",
       "post_witness_or_absence_query": "rg -n --fixed-strings 'plasma->T_rad[s]' src || true",
       "pre_witness": "plasma.T_rad",
-      "runtime_counter": "production_read_attempts=0",
+      "runtime_counter": "not_measured_by_static_trace",
       "static_category": "MIGRATED_PRODUCTION_READ",
       "terminal_state": "CLOSED_A2_13_GPU_RATE"
     },
@@ -844,7 +844,7 @@
       "owning_commit": "\uc774\uad00 \uc644\ub8cc(A2-13\u00b7d47a596182e9e04cb05b74ce816966dd3a29e466)",
       "post_witness_or_absence_query": "rg -n --fixed-strings 'plasma->T_rad[s]' src || true",
       "pre_witness": "plasma.T_rad",
-      "runtime_counter": "production_read_attempts=0",
+      "runtime_counter": "not_measured_by_static_trace",
       "static_category": "MIGRATED_PRODUCTION_READ",
       "terminal_state": "CLOSED_A2_13_GPU_RATE"
     },
@@ -853,7 +853,7 @@
       "owning_commit": "\uc774\uad00 \uc644\ub8cc(A2-13\u00b7d47a596182e9e04cb05b74ce816966dd3a29e466)",
       "post_witness_or_absence_query": "rg -n --fixed-strings 'plasma->W[s]' src || true",
       "pre_witness": "plasma.W",
-      "runtime_counter": "production_read_attempts=0",
+      "runtime_counter": "not_measured_by_static_trace",
       "static_category": "MIGRATED_PRODUCTION_READ",
       "terminal_state": "CLOSED_A2_13_GPU_RATE"
     },
@@ -862,7 +862,7 @@
       "owning_commit": "\uc774\uad00 \uc644\ub8cc(A2-13\u00b7d47a596182e9e04cb05b74ce816966dd3a29e466)",
       "post_witness_or_absence_query": "rg -n --fixed-strings 'plasma->T_rad[s]' src || true",
       "pre_witness": "plasma.T_rad",
-      "runtime_counter": "production_read_attempts=0",
+      "runtime_counter": "not_measured_by_static_trace",
       "static_category": "MIGRATED_PRODUCTION_READ",
       "terminal_state": "CLOSED_A2_13_GPU_RATE"
     },
@@ -871,7 +871,7 @@
       "owning_commit": "\uc774\uad00 \uc644\ub8cc(A2-04\u00b7bafd2bbdfbcdb7e84b6f573b37785e30185865f0)",
       "post_witness_or_absence_query": "rg -n --fixed-strings 'W' src || true",
       "pre_witness": "plasma-state W input array",
-      "runtime_counter": "production_read_attempts=0",
+      "runtime_counter": "not_measured_by_static_trace",
       "static_category": "MIGRATED_PRODUCTION_READ",
       "terminal_state": "CLOSED_A2_04_CANONICAL_COMMIT"
     },
@@ -880,7 +880,7 @@
       "owning_commit": "\uc774\uad00 \uc644\ub8cc(A2-04\u00b7bafd2bbdfbcdb7e84b6f573b37785e30185865f0)",
       "post_witness_or_absence_query": "rg -n --fixed-strings 'T_rad' src || true",
       "pre_witness": "plasma-state T_rad input array",
-      "runtime_counter": "production_read_attempts=0",
+      "runtime_counter": "not_measured_by_static_trace",
       "static_category": "MIGRATED_PRODUCTION_READ",
       "terminal_state": "CLOSED_A2_04_CANONICAL_COMMIT"
     },
@@ -889,7 +889,7 @@
       "owning_commit": "\uc774\uad00 \uc644\ub8cc(A2-04\u00b7bafd2bbdfbcdb7e84b6f573b37785e30185865f0)",
       "post_witness_or_absence_query": "rg -n --fixed-strings 'W[s]' src || true",
       "pre_witness": "plasma-state W input array",
-      "runtime_counter": "production_read_attempts=0",
+      "runtime_counter": "not_measured_by_static_trace",
       "static_category": "MIGRATED_PRODUCTION_READ",
       "terminal_state": "CLOSED_A2_04_CANONICAL_COMMIT"
     },
@@ -898,7 +898,7 @@
       "owning_commit": "\uc774\uad00 \uc644\ub8cc(A2-04\u00b7bafd2bbdfbcdb7e84b6f573b37785e30185865f0)",
       "post_witness_or_absence_query": "rg -n --fixed-strings 'T_rad[s]' src || true",
       "pre_witness": "plasma-state T_rad input array",
-      "runtime_counter": "production_read_attempts=0",
+      "runtime_counter": "not_measured_by_static_trace",
       "static_category": "MIGRATED_PRODUCTION_READ",
       "terminal_state": "CLOSED_A2_04_CANONICAL_COMMIT"
     },
@@ -907,7 +907,7 @@
       "owning_commit": "\uc774\uad00 \uc644\ub8cc(A2-04\u00b7bafd2bbdfbcdb7e84b6f573b37785e30185865f0)",
       "post_witness_or_absence_query": "rg -n --fixed-strings 'T_rad[s]' src || true",
       "pre_witness": "plasma-state T_rad input array",
-      "runtime_counter": "production_read_attempts=0",
+      "runtime_counter": "not_measured_by_static_trace",
       "static_category": "MIGRATED_PRODUCTION_READ",
       "terminal_state": "CLOSED_A2_04_CANONICAL_COMMIT"
     },
@@ -916,7 +916,7 @@
       "owning_commit": "\uc774\uad00 \uc644\ub8cc(A2-04\u00b7bafd2bbdfbcdb7e84b6f573b37785e30185865f0)",
       "post_witness_or_absence_query": "rg -n --fixed-strings 'W[s]' src || true",
       "pre_witness": "plasma-state W input array",
-      "runtime_counter": "production_read_attempts=0",
+      "runtime_counter": "not_measured_by_static_trace",
       "static_category": "MIGRATED_PRODUCTION_READ",
       "terminal_state": "CLOSED_A2_04_CANONICAL_COMMIT"
     },
@@ -925,7 +925,7 @@
       "owning_commit": "\uc774\uad00 \uc644\ub8cc(A2-04\u00b7bafd2bbdfbcdb7e84b6f573b37785e30185865f0)",
       "post_witness_or_absence_query": "rg -n --fixed-strings 'plasma->T_rad' src || true",
       "pre_witness": "plasma.T_rad owner pointer",
-      "runtime_counter": "production_read_attempts=0",
+      "runtime_counter": "not_measured_by_static_trace",
       "static_category": "MIGRATED_PRODUCTION_READ",
       "terminal_state": "CLOSED_A2_04_CANONICAL_COMMIT"
     },
@@ -934,7 +934,7 @@
       "owning_commit": "\uc774\uad00 \uc644\ub8cc(A2-04\u00b7bafd2bbdfbcdb7e84b6f573b37785e30185865f0)",
       "post_witness_or_absence_query": "rg -n --fixed-strings 'plasma->T_rad[i2]' src || true",
       "pre_witness": "plasma.T_rad",
-      "runtime_counter": "production_read_attempts=0",
+      "runtime_counter": "not_measured_by_static_trace",
       "static_category": "MIGRATED_PRODUCTION_READ",
       "terminal_state": "CLOSED_A2_04_CANONICAL_COMMIT"
     },
@@ -943,7 +943,7 @@
       "owning_commit": "\uc774\uad00 \uc644\ub8cc(A2-04\u00b7bafd2bbdfbcdb7e84b6f573b37785e30185865f0)",
       "post_witness_or_absence_query": "rg -n --fixed-strings 'plasma->T_rad[i]' src || true",
       "pre_witness": "plasma.T_rad",
-      "runtime_counter": "production_read_attempts=0",
+      "runtime_counter": "not_measured_by_static_trace",
       "static_category": "MIGRATED_PRODUCTION_READ",
       "terminal_state": "CLOSED_A2_04_CANONICAL_COMMIT"
     },
@@ -952,7 +952,7 @@
       "owning_commit": "\uc774\uad00 \uc644\ub8cc(A2-04\u00b7bafd2bbdfbcdb7e84b6f573b37785e30185865f0)",
       "post_witness_or_absence_query": "rg -n --fixed-strings 'plasma->W[i]' src || true",
       "pre_witness": "plasma.W",
-      "runtime_counter": "production_read_attempts=0",
+      "runtime_counter": "not_measured_by_static_trace",
       "static_category": "MIGRATED_PRODUCTION_READ",
       "terminal_state": "CLOSED_A2_04_CANONICAL_COMMIT"
     },
@@ -961,7 +961,7 @@
       "owning_commit": "\uc774\uad00 \uc644\ub8cc(A2-04\u00b7bafd2bbdfbcdb7e84b6f573b37785e30185865f0)",
       "post_witness_or_absence_query": "rg -n --fixed-strings 'plasma->T_rad[i]' src || true",
       "pre_witness": "plasma.T_rad",
-      "runtime_counter": "production_read_attempts=0",
+      "runtime_counter": "not_measured_by_static_trace",
       "static_category": "MIGRATED_PRODUCTION_READ",
       "terminal_state": "CLOSED_A2_04_CANONICAL_COMMIT"
     },
@@ -970,7 +970,7 @@
       "owning_commit": "\uc774\uad00 \uc644\ub8cc(A2-04\u00b7bafd2bbdfbcdb7e84b6f573b37785e30185865f0)",
       "post_witness_or_absence_query": "rg -n --fixed-strings 'plasma->T_rad[i]' src || true",
       "pre_witness": "plasma.T_rad",
-      "runtime_counter": "production_read_attempts=0",
+      "runtime_counter": "not_measured_by_static_trace",
       "static_category": "MIGRATED_PRODUCTION_READ",
       "terminal_state": "CLOSED_A2_04_CANONICAL_COMMIT"
     },
@@ -979,7 +979,7 @@
       "owning_commit": "\uc774\uad00 \uc644\ub8cc(A2-04\u00b7bafd2bbdfbcdb7e84b6f573b37785e30185865f0)",
       "post_witness_or_absence_query": "rg -n --fixed-strings 'plasma->W[i]' src || true",
       "pre_witness": "plasma.W",
-      "runtime_counter": "production_read_attempts=0",
+      "runtime_counter": "not_measured_by_static_trace",
       "static_category": "MIGRATED_PRODUCTION_READ",
       "terminal_state": "CLOSED_A2_04_CANONICAL_COMMIT"
     },
@@ -988,7 +988,7 @@
       "owning_commit": "\uc774\uad00 \uc644\ub8cc(A2-04\u00b7bafd2bbdfbcdb7e84b6f573b37785e30185865f0)",
       "post_witness_or_absence_query": "rg -n --fixed-strings 'plasma->W[i]' src || true",
       "pre_witness": "plasma.W",
-      "runtime_counter": "production_read_attempts=0",
+      "runtime_counter": "not_measured_by_static_trace",
       "static_category": "MIGRATED_PRODUCTION_READ",
       "terminal_state": "CLOSED_A2_04_CANONICAL_COMMIT"
     },
@@ -997,7 +997,7 @@
       "owning_commit": "\uc774\uad00 \uc644\ub8cc(A2-16\u00b7686a4a1fadcd1a57e10dbf8ee37c17b248c87841)",
       "post_witness_or_absence_query": "rg -n --fixed-strings 'plasma->T_rad[s]' src || true",
       "pre_witness": "plasma.T_rad",
-      "runtime_counter": "production_read_attempts=0",
+      "runtime_counter": "not_measured_by_static_trace",
       "static_category": "MIGRATED_PRODUCTION_READ",
       "terminal_state": "CLOSED_A2_16_G0_SEED_REVOKED"
     },
@@ -1006,7 +1006,7 @@
       "owning_commit": "\uc774\uad00 \uc644\ub8cc(A2-16\u00b7686a4a1fadcd1a57e10dbf8ee37c17b248c87841)",
       "post_witness_or_absence_query": "rg -n --fixed-strings 'plasma->T_rad[s]' src || true",
       "pre_witness": "plasma.T_rad",
-      "runtime_counter": "production_read_attempts=0",
+      "runtime_counter": "not_measured_by_static_trace",
       "static_category": "MIGRATED_PRODUCTION_READ",
       "terminal_state": "CLOSED_A2_16_G0_SEED_REVOKED"
     },
@@ -1015,7 +1015,7 @@
       "owning_commit": "\uc774\uad00 \uc644\ub8cc(A2-16\u00b7686a4a1fadcd1a57e10dbf8ee37c17b248c87841)",
       "post_witness_or_absence_query": "rg -n --fixed-strings 'plasma->W[s]' src || true",
       "pre_witness": "plasma.W",
-      "runtime_counter": "production_read_attempts=0",
+      "runtime_counter": "not_measured_by_static_trace",
       "static_category": "MIGRATED_PRODUCTION_READ",
       "terminal_state": "CLOSED_A2_16_G0_SEED_REVOKED"
     },
@@ -1024,7 +1024,7 @@
       "owning_commit": "\uc774\uad00 \uc644\ub8cc(A2-16\u00b7686a4a1fadcd1a57e10dbf8ee37c17b248c87841)",
       "post_witness_or_absence_query": "rg -n --fixed-strings 'T_rad' src || true",
       "pre_witness": "local alias of plasma->T_rad[s]",
-      "runtime_counter": "production_read_attempts=0",
+      "runtime_counter": "not_measured_by_static_trace",
       "static_category": "MIGRATED_PRODUCTION_READ",
       "terminal_state": "CLOSED_A2_16_G0_SEED_REVOKED"
     },
@@ -1033,7 +1033,7 @@
       "owning_commit": "\uc774\uad00 \uc644\ub8cc(A2-16\u00b7686a4a1fadcd1a57e10dbf8ee37c17b248c87841)",
       "post_witness_or_absence_query": "rg -n --fixed-strings 'plasma->T_rad[s]' src || true",
       "pre_witness": "plasma.T_rad",
-      "runtime_counter": "production_read_attempts=0",
+      "runtime_counter": "not_measured_by_static_trace",
       "static_category": "MIGRATED_PRODUCTION_READ",
       "terminal_state": "CLOSED_A2_16_G0_SEED_REVOKED"
     },
@@ -1042,7 +1042,7 @@
       "owning_commit": "\uc774\uad00 \uc644\ub8cc(A2-16\u00b7686a4a1fadcd1a57e10dbf8ee37c17b248c87841)",
       "post_witness_or_absence_query": "rg -n --fixed-strings 'T_rad' src || true",
       "pre_witness": "local alias of plasma->T_rad[s]",
-      "runtime_counter": "production_read_attempts=0",
+      "runtime_counter": "not_measured_by_static_trace",
       "static_category": "MIGRATED_PRODUCTION_READ",
       "terminal_state": "CLOSED_A2_16_G0_SEED_REVOKED"
     },
@@ -1051,7 +1051,7 @@
       "owning_commit": "\uc774\uad00 \uc644\ub8cc(A2-16\u00b7686a4a1fadcd1a57e10dbf8ee37c17b248c87841)",
       "post_witness_or_absence_query": "rg -n --fixed-strings 'plasma->W' src || true",
       "pre_witness": "plasma.W owner pointer",
-      "runtime_counter": "production_read_attempts=0",
+      "runtime_counter": "not_measured_by_static_trace",
       "static_category": "MIGRATED_PRODUCTION_READ",
       "terminal_state": "CLOSED_A2_16_G0_SEED_REVOKED"
     },
@@ -1060,7 +1060,7 @@
       "owning_commit": "\uc774\uad00 \uc644\ub8cc(A2-16\u00b7686a4a1fadcd1a57e10dbf8ee37c17b248c87841)",
       "post_witness_or_absence_query": "rg -n --fixed-strings 'plasma->T_rad' src || true",
       "pre_witness": "plasma.T_rad owner pointer",
-      "runtime_counter": "production_read_attempts=0",
+      "runtime_counter": "not_measured_by_static_trace",
       "static_category": "MIGRATED_PRODUCTION_READ",
       "terminal_state": "CLOSED_A2_16_G0_SEED_REVOKED"
     },
@@ -1069,7 +1069,7 @@
       "owning_commit": "\uc774\uad00 \uc644\ub8cc(A2-16\u00b7686a4a1fadcd1a57e10dbf8ee37c17b248c87841)",
       "post_witness_or_absence_query": "rg -n --fixed-strings 'plasma->W' src || true",
       "pre_witness": "plasma.W owner pointer",
-      "runtime_counter": "production_read_attempts=0",
+      "runtime_counter": "not_measured_by_static_trace",
       "static_category": "MIGRATED_PRODUCTION_READ",
       "terminal_state": "CLOSED_A2_16_G0_SEED_REVOKED"
     },
@@ -1078,7 +1078,7 @@
       "owning_commit": "\uc774\uad00 \uc644\ub8cc(A2-16\u00b7686a4a1fadcd1a57e10dbf8ee37c17b248c87841)",
       "post_witness_or_absence_query": "rg -n --fixed-strings 'plasma->T_rad' src || true",
       "pre_witness": "plasma.T_rad owner pointer",
-      "runtime_counter": "production_read_attempts=0",
+      "runtime_counter": "not_measured_by_static_trace",
       "static_category": "MIGRATED_PRODUCTION_READ",
       "terminal_state": "CLOSED_A2_16_G0_SEED_REVOKED"
     },
@@ -1087,43 +1087,43 @@
       "owning_commit": "\uc774\uad00 \uc644\ub8cc(A2-16\u00b7686a4a1fadcd1a57e10dbf8ee37c17b248c87841)",
       "post_witness_or_absence_query": "rg -n --fixed-strings 'plasma->W[0]' src || true",
       "pre_witness": "plasma.W",
-      "runtime_counter": "production_read_attempts=0",
+      "runtime_counter": "not_measured_by_static_trace",
       "static_category": "MIGRATED_PRODUCTION_READ",
       "terminal_state": "CLOSED_A2_16_G0_SEED_REVOKED"
     },
     {
       "id": 122,
-      "owning_commit": "\uc774\uad00 \uc644\ub8cc(A2-17\u00b7dd9cd398698914b5e004e33d1c8ec41fcd5f411f)",
+      "owning_commit": "\uc774\uad00 \uc644\ub8cc(A2-17\u00b7bb9340836c03381a9bb1fc39eccb21d0d21a97f4)",
       "post_witness_or_absence_query": "rg -n --fixed-strings 'plasma->T_rad[i]' src || true",
       "pre_witness": "plasma.T_rad",
-      "runtime_counter": "production_read_attempts=0",
+      "runtime_counter": "not_measured_by_static_trace",
       "static_category": "DIAGNOSTIC_DERIVATION",
       "terminal_state": "DIAGNOSTIC_ONLY_CANONICAL_DERIVED"
     },
     {
       "id": 123,
-      "owning_commit": "\uc774\uad00 \uc644\ub8cc(A2-17\u00b7dd9cd398698914b5e004e33d1c8ec41fcd5f411f)",
+      "owning_commit": "\uc774\uad00 \uc644\ub8cc(A2-17\u00b7bb9340836c03381a9bb1fc39eccb21d0d21a97f4)",
       "post_witness_or_absence_query": "rg -n --fixed-strings 'plasma->T_rad[s]' src || true",
       "pre_witness": "plasma.T_rad",
-      "runtime_counter": "production_read_attempts=0",
+      "runtime_counter": "not_measured_by_static_trace",
       "static_category": "DIAGNOSTIC_DERIVATION",
       "terminal_state": "DIAGNOSTIC_ONLY_CANONICAL_DERIVED"
     },
     {
       "id": 124,
-      "owning_commit": "\uc774\uad00 \uc644\ub8cc(A2-17\u00b7dd9cd398698914b5e004e33d1c8ec41fcd5f411f)",
+      "owning_commit": "\uc774\uad00 \uc644\ub8cc(A2-17\u00b7bb9340836c03381a9bb1fc39eccb21d0d21a97f4)",
       "post_witness_or_absence_query": "rg -n --fixed-strings 'plasma->T_rad' src || true",
       "pre_witness": "plasma.T_rad owner array",
-      "runtime_counter": "production_read_attempts=0",
+      "runtime_counter": "not_measured_by_static_trace",
       "static_category": "DIAGNOSTIC_DERIVATION",
       "terminal_state": "DIAGNOSTIC_ONLY_CANONICAL_DERIVED"
     },
     {
       "id": 125,
-      "owning_commit": "\uc774\uad00 \uc644\ub8cc(A2-17\u00b7dd9cd398698914b5e004e33d1c8ec41fcd5f411f)",
+      "owning_commit": "\uc774\uad00 \uc644\ub8cc(A2-17\u00b7bb9340836c03381a9bb1fc39eccb21d0d21a97f4)",
       "post_witness_or_absence_query": "rg -n --fixed-strings 'plasma->W[shell]' src || true",
       "pre_witness": "plasma.W",
-      "runtime_counter": "production_read_attempts=0",
+      "runtime_counter": "not_measured_by_static_trace",
       "static_category": "DIAGNOSTIC_DERIVATION",
       "terminal_state": "DIAGNOSTIC_ONLY_CANONICAL_DERIVED"
     },
@@ -1132,7 +1132,7 @@
       "owning_commit": "\uc774\uad00 \uc644\ub8cc(A2-15\u00b784a148159185004f6f25db4bed51a3d5b5896d44)",
       "post_witness_or_absence_query": "rg -n --fixed-strings 'd_T_rad' src || true",
       "pre_witness": "GPU transport T_rad pointer",
-      "runtime_counter": "production_read_attempts=0",
+      "runtime_counter": "not_measured_by_static_trace",
       "static_category": "MIGRATED_PRODUCTION_READ",
       "terminal_state": "CLOSED_A2_15_GPU_EMISSIVITY"
     },
@@ -1141,7 +1141,7 @@
       "owning_commit": "\uc774\uad00 \uc644\ub8cc(A2-15\u00b784a148159185004f6f25db4bed51a3d5b5896d44)",
       "post_witness_or_absence_query": "rg -n --fixed-strings 'd_T_rad' src || true",
       "pre_witness": "GPU transport T_rad pointer",
-      "runtime_counter": "production_read_attempts=0",
+      "runtime_counter": "not_measured_by_static_trace",
       "static_category": "MIGRATED_PRODUCTION_READ",
       "terminal_state": "CLOSED_A2_15_GPU_EMISSIVITY"
     },
@@ -1150,7 +1150,7 @@
       "owning_commit": "\uc774\uad00 \uc644\ub8cc(A2-15\u00b784a148159185004f6f25db4bed51a3d5b5896d44)",
       "post_witness_or_absence_query": "rg -n --fixed-strings 'd_T_rad' src || true",
       "pre_witness": "GPU transport T_rad pointer",
-      "runtime_counter": "production_read_attempts=0",
+      "runtime_counter": "not_measured_by_static_trace",
       "static_category": "MIGRATED_PRODUCTION_READ",
       "terminal_state": "CLOSED_A2_15_GPU_EMISSIVITY"
     },
@@ -1159,34 +1159,34 @@
       "owning_commit": "\uc774\uad00 \uc644\ub8cc(A2-15\u00b784a148159185004f6f25db4bed51a3d5b5896d44)",
       "post_witness_or_absence_query": "rg -n --fixed-strings 'd_T_rad' src || true",
       "pre_witness": "GPU transport T_rad pointer",
-      "runtime_counter": "production_read_attempts=0",
+      "runtime_counter": "not_measured_by_static_trace",
       "static_category": "MIGRATED_PRODUCTION_READ",
       "terminal_state": "CLOSED_A2_15_GPU_EMISSIVITY"
     },
     {
       "id": 130,
-      "owning_commit": "\uc774\uad00 \uc644\ub8cc(A2-17\u00b7dd9cd398698914b5e004e33d1c8ec41fcd5f411f)",
+      "owning_commit": "\uc774\uad00 \uc644\ub8cc(A2-17\u00b7bb9340836c03381a9bb1fc39eccb21d0d21a97f4)",
       "post_witness_or_absence_query": "rg -n --fixed-strings 'W' src || true",
       "pre_witness": "local alias of plasma->W[s]",
-      "runtime_counter": "production_read_attempts=0",
+      "runtime_counter": "not_measured_by_static_trace",
       "static_category": "DIAGNOSTIC_DERIVATION",
       "terminal_state": "DIAGNOSTIC_ONLY_CANONICAL_DERIVED"
     },
     {
       "id": 131,
-      "owning_commit": "\uc774\uad00 \uc644\ub8cc(A2-17\u00b7dd9cd398698914b5e004e33d1c8ec41fcd5f411f)",
+      "owning_commit": "\uc774\uad00 \uc644\ub8cc(A2-17\u00b7bb9340836c03381a9bb1fc39eccb21d0d21a97f4)",
       "post_witness_or_absence_query": "rg -n --fixed-strings 'W' src || true",
       "pre_witness": "local alias of plasma->W[s]",
-      "runtime_counter": "production_read_attempts=0",
+      "runtime_counter": "not_measured_by_static_trace",
       "static_category": "DIAGNOSTIC_DERIVATION",
       "terminal_state": "DIAGNOSTIC_ONLY_CANONICAL_DERIVED"
     },
     {
       "id": 132,
-      "owning_commit": "\uc774\uad00 \uc644\ub8cc(A2-17\u00b7dd9cd398698914b5e004e33d1c8ec41fcd5f411f)",
+      "owning_commit": "\uc774\uad00 \uc644\ub8cc(A2-17\u00b7bb9340836c03381a9bb1fc39eccb21d0d21a97f4)",
       "post_witness_or_absence_query": "rg -n --fixed-strings 'T_rad' src || true",
       "pre_witness": "local alias of plasma->T_rad[s]",
-      "runtime_counter": "production_read_attempts=0",
+      "runtime_counter": "not_measured_by_static_trace",
       "static_category": "DIAGNOSTIC_DERIVATION",
       "terminal_state": "DIAGNOSTIC_ONLY_CANONICAL_DERIVED"
     },
@@ -1195,7 +1195,7 @@
       "owning_commit": "\uc774\uad00 \uc644\ub8cc(A2-12\u00b77f72c0d95f9ae94166b856e54008ac230ca3c504)",
       "post_witness_or_absence_query": "rg -n --fixed-strings 'plasma->T_rad' src || true",
       "pre_witness": "plasma.T_rad upload source",
-      "runtime_counter": "production_read_attempts=0",
+      "runtime_counter": "not_measured_by_static_trace",
       "static_category": "MIGRATED_PRODUCTION_READ",
       "terminal_state": "CLOSED_A2_12_15_GPU_NO_SCALAR"
     },
@@ -1204,7 +1204,7 @@
       "owning_commit": "\uc774\uad00 \uc644\ub8cc(A2-12\u00b77f72c0d95f9ae94166b856e54008ac230ca3c504)",
       "post_witness_or_absence_query": "rg -n --fixed-strings 'plasma.W[i]' src || true",
       "pre_witness": "plasma.W",
-      "runtime_counter": "production_read_attempts=0",
+      "runtime_counter": "not_measured_by_static_trace",
       "static_category": "MIGRATED_PRODUCTION_READ",
       "terminal_state": "CLOSED_A2_12_15_GPU_NO_SCALAR"
     },
@@ -1213,7 +1213,7 @@
       "owning_commit": "\uc774\uad00 \uc644\ub8cc(A2-12\u00b77f72c0d95f9ae94166b856e54008ac230ca3c504)",
       "post_witness_or_absence_query": "rg -n --fixed-strings 'plasma.T_rad[i]' src || true",
       "pre_witness": "plasma.T_rad",
-      "runtime_counter": "production_read_attempts=0",
+      "runtime_counter": "not_measured_by_static_trace",
       "static_category": "MIGRATED_PRODUCTION_READ",
       "terminal_state": "CLOSED_A2_12_15_GPU_NO_SCALAR"
     },
@@ -1222,7 +1222,7 @@
       "owning_commit": "\uc774\uad00 \uc644\ub8cc(A2-08\u00b78a9f861efb12e749fd47926b8e78be17d4ba8070)",
       "post_witness_or_absence_query": "rg -n --fixed-strings 'plasma->T_rad[s]' src || true",
       "pre_witness": "plasma.T_rad",
-      "runtime_counter": "production_read_attempts=0",
+      "runtime_counter": "not_measured_by_static_trace",
       "static_category": "MIGRATED_PRODUCTION_READ",
       "terminal_state": "CLOSED_A2_08_SIGNED_OPACITY"
     },
@@ -1231,7 +1231,7 @@
       "owning_commit": "\uc774\uad00 \uc644\ub8cc(A2-08\u00b78a9f861efb12e749fd47926b8e78be17d4ba8070)",
       "post_witness_or_absence_query": "rg -n --fixed-strings 'plasma->T_rad[s]' src || true",
       "pre_witness": "plasma.T_rad",
-      "runtime_counter": "production_read_attempts=0",
+      "runtime_counter": "not_measured_by_static_trace",
       "static_category": "MIGRATED_PRODUCTION_READ",
       "terminal_state": "CLOSED_A2_08_SIGNED_OPACITY"
     },
@@ -1240,7 +1240,7 @@
       "owning_commit": "\uc774\uad00 \uc644\ub8cc(A2-08\u00b78a9f861efb12e749fd47926b8e78be17d4ba8070)",
       "post_witness_or_absence_query": "rg -n --fixed-strings 'T_rad' src || true",
       "pre_witness": "local alias of plasma->T_rad[s]",
-      "runtime_counter": "production_read_attempts=0",
+      "runtime_counter": "not_measured_by_static_trace",
       "static_category": "MIGRATED_PRODUCTION_READ",
       "terminal_state": "CLOSED_A2_08_SIGNED_OPACITY"
     },
@@ -1249,7 +1249,7 @@
       "owning_commit": "\uc774\uad00 \uc644\ub8cc(A2-16\u00b7686a4a1fadcd1a57e10dbf8ee37c17b248c87841)",
       "post_witness_or_absence_query": "rg -n --fixed-strings 'plasma->T_rad[shell]' src || true",
       "pre_witness": "plasma.T_rad",
-      "runtime_counter": "production_read_attempts=0",
+      "runtime_counter": "not_measured_by_static_trace",
       "static_category": "MIGRATED_PRODUCTION_READ",
       "terminal_state": "CLOSED_A2_16_G0_SEED_REVOKED"
     },
@@ -1258,7 +1258,7 @@
       "owning_commit": "\uc774\uad00 \uc644\ub8cc(A2-16\u00b7686a4a1fadcd1a57e10dbf8ee37c17b248c87841)",
       "post_witness_or_absence_query": "rg -n --fixed-strings 'plasma->W[shell]' src || true",
       "pre_witness": "plasma.W",
-      "runtime_counter": "production_read_attempts=0",
+      "runtime_counter": "not_measured_by_static_trace",
       "static_category": "MIGRATED_PRODUCTION_READ",
       "terminal_state": "CLOSED_A2_16_G0_SEED_REVOKED"
     },
@@ -1267,43 +1267,43 @@
       "owning_commit": "\uc774\uad00 \uc644\ub8cc(A2-16\u00b7686a4a1fadcd1a57e10dbf8ee37c17b248c87841)",
       "post_witness_or_absence_query": "rg -n --fixed-strings 'plasma->T_rad[0]' src || true",
       "pre_witness": "plasma.T_rad",
-      "runtime_counter": "production_read_attempts=0",
+      "runtime_counter": "not_measured_by_static_trace",
       "static_category": "MIGRATED_PRODUCTION_READ",
       "terminal_state": "CLOSED_A2_16_G0_SEED_REVOKED"
     },
     {
       "id": 142,
-      "owning_commit": "\uc774\uad00 \uc644\ub8cc(A2-17\u00b7dd9cd398698914b5e004e33d1c8ec41fcd5f411f)",
+      "owning_commit": "\uc774\uad00 \uc644\ub8cc(A2-17\u00b7bb9340836c03381a9bb1fc39eccb21d0d21a97f4)",
       "post_witness_or_absence_query": "rg -n --fixed-strings 'ps->W' src || true",
       "pre_witness": "plasma.W allocation",
-      "runtime_counter": "production_read_attempts=0",
+      "runtime_counter": "not_measured_by_static_trace",
       "static_category": "OWNER_LIFECYCLE",
       "terminal_state": "REMOVED_A2_17_SCALAR_OWNER_LIFECYCLE_OUTPUT"
     },
     {
       "id": 143,
-      "owning_commit": "\uc774\uad00 \uc644\ub8cc(A2-17\u00b7dd9cd398698914b5e004e33d1c8ec41fcd5f411f)",
+      "owning_commit": "\uc774\uad00 \uc644\ub8cc(A2-17\u00b7bb9340836c03381a9bb1fc39eccb21d0d21a97f4)",
       "post_witness_or_absence_query": "rg -n --fixed-strings 'ps->T_rad' src || true",
       "pre_witness": "plasma.T_rad allocation",
-      "runtime_counter": "production_read_attempts=0",
+      "runtime_counter": "not_measured_by_static_trace",
       "static_category": "OWNER_LIFECYCLE",
       "terminal_state": "REMOVED_A2_17_SCALAR_OWNER_LIFECYCLE_OUTPUT"
     },
     {
       "id": 144,
-      "owning_commit": "\uc774\uad00 \uc644\ub8cc(A2-17\u00b7dd9cd398698914b5e004e33d1c8ec41fcd5f411f)",
+      "owning_commit": "\uc774\uad00 \uc644\ub8cc(A2-17\u00b7bb9340836c03381a9bb1fc39eccb21d0d21a97f4)",
       "post_witness_or_absence_query": "rg -n --fixed-strings 'plasma.T_rad[i]' src || true",
       "pre_witness": "plasma.T_rad",
-      "runtime_counter": "production_read_attempts=0",
+      "runtime_counter": "not_measured_by_static_trace",
       "static_category": "OWNER_LIFECYCLE",
       "terminal_state": "REMOVED_A2_17_SCALAR_OWNER_LIFECYCLE_OUTPUT"
     },
     {
       "id": 145,
-      "owning_commit": "\uc774\uad00 \uc644\ub8cc(A2-17\u00b7dd9cd398698914b5e004e33d1c8ec41fcd5f411f)",
+      "owning_commit": "\uc774\uad00 \uc644\ub8cc(A2-17\u00b7bb9340836c03381a9bb1fc39eccb21d0d21a97f4)",
       "post_witness_or_absence_query": "rg -n --fixed-strings 'plasma.W[i]' src || true",
       "pre_witness": "plasma.W",
-      "runtime_counter": "production_read_attempts=0",
+      "runtime_counter": "not_measured_by_static_trace",
       "static_category": "OWNER_LIFECYCLE",
       "terminal_state": "REMOVED_A2_17_SCALAR_OWNER_LIFECYCLE_OUTPUT"
     },
@@ -1312,7 +1312,7 @@
       "owning_commit": "\uc774\uad00 \uc644\ub8cc(A2-07\u00b73ddd95c0de20abea3284ca326ce41b7968d4b26d)",
       "post_witness_or_absence_query": "rg -n --fixed-strings 'plasma->T_rad[s]' src || true",
       "pre_witness": "plasma.T_rad",
-      "runtime_counter": "production_read_attempts=0",
+      "runtime_counter": "not_measured_by_static_trace",
       "static_category": "MIGRATED_PRODUCTION_READ",
       "terminal_state": "CLOSED_A2_07_MATTER_TE"
     },
@@ -1321,7 +1321,7 @@
       "owning_commit": "\uc774\uad00 \uc644\ub8cc(A2-07\u00b73ddd95c0de20abea3284ca326ce41b7968d4b26d)",
       "post_witness_or_absence_query": "rg -n --fixed-strings 'plasma->W[s]' src || true",
       "pre_witness": "plasma.W",
-      "runtime_counter": "production_read_attempts=0",
+      "runtime_counter": "not_measured_by_static_trace",
       "static_category": "MIGRATED_PRODUCTION_READ",
       "terminal_state": "CLOSED_A2_07_MATTER_TE"
     },
@@ -1330,7 +1330,7 @@
       "owning_commit": "\uc774\uad00 \uc644\ub8cc(A2-09\u00b7bf2af37fa11a18c2529559311a7a23fd0c41b60c)",
       "post_witness_or_absence_query": "rg -n --fixed-strings 'plasma->T_rad[s]' src || true",
       "pre_witness": "plasma.T_rad",
-      "runtime_counter": "production_read_attempts=0",
+      "runtime_counter": "not_measured_by_static_trace",
       "static_category": "MIGRATED_PRODUCTION_READ",
       "terminal_state": "CLOSED_A2_09_EMISSIVITY"
     },
@@ -1339,7 +1339,7 @@
       "owning_commit": "\uc774\uad00 \uc644\ub8cc(A2-09\u00b7bf2af37fa11a18c2529559311a7a23fd0c41b60c)",
       "post_witness_or_absence_query": "rg -n --fixed-strings 'plasma->W[s]' src || true",
       "pre_witness": "plasma.W",
-      "runtime_counter": "production_read_attempts=0",
+      "runtime_counter": "not_measured_by_static_trace",
       "static_category": "MIGRATED_PRODUCTION_READ",
       "terminal_state": "CLOSED_A2_09_EMISSIVITY"
     },
@@ -1348,7 +1348,7 @@
       "owning_commit": "\uc774\uad00 \uc644\ub8cc(A2-07\u00b73ddd95c0de20abea3284ca326ce41b7968d4b26d)",
       "post_witness_or_absence_query": "rg -n --fixed-strings 'plasma->T_rad[s]' src || true",
       "pre_witness": "plasma.T_rad",
-      "runtime_counter": "production_read_attempts=0",
+      "runtime_counter": "not_measured_by_static_trace",
       "static_category": "MIGRATED_PRODUCTION_READ",
       "terminal_state": "CLOSED_A2_07_MATTER_TE"
     },
@@ -1357,7 +1357,7 @@
       "owning_commit": "\uc774\uad00 \uc644\ub8cc(A2-07\u00b73ddd95c0de20abea3284ca326ce41b7968d4b26d)",
       "post_witness_or_absence_query": "rg -n --fixed-strings 'plasma->W[s]' src || true",
       "pre_witness": "plasma.W",
-      "runtime_counter": "production_read_attempts=0",
+      "runtime_counter": "not_measured_by_static_trace",
       "static_category": "MIGRATED_PRODUCTION_READ",
       "terminal_state": "CLOSED_A2_07_MATTER_TE"
     },
@@ -1366,7 +1366,7 @@
       "owning_commit": "\uc774\uad00 \uc644\ub8cc(A2-10\u00b7068fb36dc182b00757f4b4e6a1a4cd56a1f25500)",
       "post_witness_or_absence_query": "rg -n --fixed-strings 'plasma->T_rad[s]' src || true",
       "pre_witness": "plasma.T_rad",
-      "runtime_counter": "production_read_attempts=0",
+      "runtime_counter": "not_measured_by_static_trace",
       "static_category": "MIGRATED_PRODUCTION_READ",
       "terminal_state": "CLOSED_A2_10_RADEQ_CANONICAL"
     },
@@ -1375,7 +1375,7 @@
       "owning_commit": "\uc774\uad00 \uc644\ub8cc(A2-10\u00b7068fb36dc182b00757f4b4e6a1a4cd56a1f25500)",
       "post_witness_or_absence_query": "rg -n --fixed-strings 'plasma->W[s]' src || true",
       "pre_witness": "plasma.W",
-      "runtime_counter": "production_read_attempts=0",
+      "runtime_counter": "not_measured_by_static_trace",
       "static_category": "MIGRATED_PRODUCTION_READ",
       "terminal_state": "CLOSED_A2_10_RADEQ_CANONICAL"
     },
@@ -1384,7 +1384,7 @@
       "owning_commit": "\uc774\uad00 \uc644\ub8cc(A2-07\u00b73ddd95c0de20abea3284ca326ce41b7968d4b26d)",
       "post_witness_or_absence_query": "rg -n --fixed-strings 'plasma->T_rad[s]' src || true",
       "pre_witness": "plasma.T_rad",
-      "runtime_counter": "production_read_attempts=0",
+      "runtime_counter": "not_measured_by_static_trace",
       "static_category": "MIGRATED_PRODUCTION_READ",
       "terminal_state": "CLOSED_A2_07_MATTER_TE"
     },
@@ -1393,7 +1393,7 @@
       "owning_commit": "\uc774\uad00 \uc644\ub8cc(A2-07\u00b73ddd95c0de20abea3284ca326ce41b7968d4b26d)",
       "post_witness_or_absence_query": "rg -n --fixed-strings 'plasma->W[s]' src || true",
       "pre_witness": "plasma.W",
-      "runtime_counter": "production_read_attempts=0",
+      "runtime_counter": "not_measured_by_static_trace",
       "static_category": "MIGRATED_PRODUCTION_READ",
       "terminal_state": "CLOSED_A2_07_MATTER_TE"
     },
@@ -1402,7 +1402,7 @@
       "owning_commit": "\uc774\uad00 \uc644\ub8cc(A2-16\u00b7686a4a1fadcd1a57e10dbf8ee37c17b248c87841)",
       "post_witness_or_absence_query": "rg -n --fixed-strings 'plasma->T_rad[i]' src || true",
       "pre_witness": "plasma.T_rad",
-      "runtime_counter": "production_read_attempts=0",
+      "runtime_counter": "not_measured_by_static_trace",
       "static_category": "MIGRATED_PRODUCTION_READ",
       "terminal_state": "CLOSED_A2_16_G0_SEED_REVOKED"
     },
@@ -1411,7 +1411,7 @@
       "owning_commit": "\uc774\uad00 \uc644\ub8cc(A2-09\u00b7bf2af37fa11a18c2529559311a7a23fd0c41b60c)",
       "post_witness_or_absence_query": "rg -n --fixed-strings 'a209_sample_reemit_frequency' src || true",
       "pre_witness": "CpuEmissivityPublication.eta_reemit",
-      "runtime_counter": "production_read_attempts=0",
+      "runtime_counter": "not_measured_by_static_trace",
       "static_category": "MIGRATED_PRODUCTION_READ",
       "terminal_state": "CLOSED_A2_09_EMISSIVITY"
     }

@@ -187,7 +187,7 @@
       "final_status": "CLOSED_A2_07_MATTER_TE"
     },
     {
-      "file_line": "이관 완료(A2-17·dd9cd398698914b5e004e33d1c8ec41fcd5f411f)",
+      "file_line": "이관 완료(A2-17·bb9340836c03381a9bb1fc39eccb21d0d21a97f4)",
       "symbol": "W",
       "current_source": "local alias of plasma->W[s]",
       "physical_meaning": "[rate] dilute photoheating integral",
@@ -196,7 +196,7 @@
       "final_status": "DIAGNOSTIC_ONLY_CANONICAL_DERIVED"
     },
     {
-      "file_line": "이관 완료(A2-17·dd9cd398698914b5e004e33d1c8ec41fcd5f411f)",
+      "file_line": "이관 완료(A2-17·bb9340836c03381a9bb1fc39eccb21d0d21a97f4)",
       "symbol": "T_rad",
       "current_source": "local alias of plasma->T_rad[s]",
       "physical_meaning": "[rate] Planck comparison in rate integral",
@@ -259,7 +259,7 @@
       "final_status": "CLOSED_A2_06_CANONICAL_JBAR"
     },
     {
-      "file_line": "이관 완료(A2-17·dd9cd398698914b5e004e33d1c8ec41fcd5f411f)",
+      "file_line": "이관 완료(A2-17·bb9340836c03381a9bb1fc39eccb21d0d21a97f4)",
       "symbol": "plasma.W[i]",
       "current_source": "plasma.W",
       "physical_meaning": "[comparator] CPU reference W comparator",
@@ -268,7 +268,7 @@
       "final_status": "DIAGNOSTIC_ONLY_CANONICAL_DERIVED"
     },
     {
-      "file_line": "이관 완료(A2-17·dd9cd398698914b5e004e33d1c8ec41fcd5f411f)",
+      "file_line": "이관 완료(A2-17·bb9340836c03381a9bb1fc39eccb21d0d21a97f4)",
       "symbol": "plasma.T_rad[i]",
       "current_source": "plasma.T_rad",
       "physical_meaning": "[comparator] CPU reference T_rad comparator",
@@ -277,7 +277,7 @@
       "final_status": "DIAGNOSTIC_ONLY_CANONICAL_DERIVED"
     },
     {
-      "file_line": "이관 완료(A2-17·dd9cd398698914b5e004e33d1c8ec41fcd5f411f)",
+      "file_line": "이관 완료(A2-17·bb9340836c03381a9bb1fc39eccb21d0d21a97f4)",
       "symbol": "plasma.W[i]",
       "current_source": "plasma.W",
       "physical_meaning": "[comparator] CPU W comparison report",
@@ -286,7 +286,7 @@
       "final_status": "DIAGNOSTIC_ONLY_CANONICAL_DERIVED"
     },
     {
-      "file_line": "이관 완료(A2-17·dd9cd398698914b5e004e33d1c8ec41fcd5f411f)",
+      "file_line": "이관 완료(A2-17·bb9340836c03381a9bb1fc39eccb21d0d21a97f4)",
       "symbol": "plasma.T_rad[i]",
       "current_source": "plasma.T_rad",
       "physical_meaning": "[comparator] CPU T_rad comparison report",
@@ -295,7 +295,7 @@
       "final_status": "DIAGNOSTIC_ONLY_CANONICAL_DERIVED"
     },
     {
-      "file_line": "이관 완료(A2-17·dd9cd398698914b5e004e33d1c8ec41fcd5f411f)",
+      "file_line": "이관 완료(A2-17·bb9340836c03381a9bb1fc39eccb21d0d21a97f4)",
       "symbol": "plasma.W[i]",
       "current_source": "plasma.W",
       "physical_meaning": "[comparator] CPU W mean error",
@@ -304,7 +304,7 @@
       "final_status": "DIAGNOSTIC_ONLY_CANONICAL_DERIVED"
     },
     {
-      "file_line": "이관 완료(A2-17·dd9cd398698914b5e004e33d1c8ec41fcd5f411f)",
+      "file_line": "이관 완료(A2-17·bb9340836c03381a9bb1fc39eccb21d0d21a97f4)",
       "symbol": "plasma.T_rad[i]",
       "current_source": "plasma.T_rad",
       "physical_meaning": "[comparator] CPU T_rad mean error",
@@ -313,7 +313,7 @@
       "final_status": "DIAGNOSTIC_ONLY_CANONICAL_DERIVED"
     },
     {
-      "file_line": "이관 완료(A2-17·dd9cd398698914b5e004e33d1c8ec41fcd5f411f)",
+      "file_line": "이관 완료(A2-17·bb9340836c03381a9bb1fc39eccb21d0d21a97f4)",
       "symbol": "plasma.W[i]",
       "current_source": "plasma.W",
       "physical_meaning": "[comparator] CPU scalar comparison CSV",
@@ -322,7 +322,7 @@
       "final_status": "DIAGNOSTIC_ONLY_CANONICAL_DERIVED"
     },
     {
-      "file_line": "이관 완료(A2-17·dd9cd398698914b5e004e33d1c8ec41fcd5f411f)",
+      "file_line": "이관 완료(A2-17·bb9340836c03381a9bb1fc39eccb21d0d21a97f4)",
       "symbol": "plasma.T_rad[i]",
       "current_source": "plasma.T_rad",
       "physical_meaning": "[comparator] CPU scalar comparison CSV",
@@ -331,7 +331,7 @@
       "final_status": "DIAGNOSTIC_ONLY_CANONICAL_DERIVED"
     },
     {
-      "file_line": "이관 완료(A2-17·dd9cd398698914b5e004e33d1c8ec41fcd5f411f)",
+      "file_line": "이관 완료(A2-17·bb9340836c03381a9bb1fc39eccb21d0d21a97f4)",
       "symbol": "plasma.W[i]",
       "current_source": "plasma.W",
       "physical_meaning": "[comparator] CUDA-host reference W comparator",
@@ -340,7 +340,7 @@
       "final_status": "DIAGNOSTIC_ONLY_CANONICAL_DERIVED"
     },
     {
-      "file_line": "이관 완료(A2-17·dd9cd398698914b5e004e33d1c8ec41fcd5f411f)",
+      "file_line": "이관 완료(A2-17·bb9340836c03381a9bb1fc39eccb21d0d21a97f4)",
       "symbol": "plasma.T_rad[i]",
       "current_source": "plasma.T_rad",
       "physical_meaning": "[comparator] CUDA-host reference T_rad comparator",
@@ -349,7 +349,7 @@
       "final_status": "DIAGNOSTIC_ONLY_CANONICAL_DERIVED"
     },
     {
-      "file_line": "이관 완료(A2-17·dd9cd398698914b5e004e33d1c8ec41fcd5f411f)",
+      "file_line": "이관 완료(A2-17·bb9340836c03381a9bb1fc39eccb21d0d21a97f4)",
       "symbol": "plasma.W[i]",
       "current_source": "plasma.W",
       "physical_meaning": "[comparator] CUDA-host W comparison report",
@@ -358,7 +358,7 @@
       "final_status": "DIAGNOSTIC_ONLY_CANONICAL_DERIVED"
     },
     {
-      "file_line": "이관 완료(A2-17·dd9cd398698914b5e004e33d1c8ec41fcd5f411f)",
+      "file_line": "이관 완료(A2-17·bb9340836c03381a9bb1fc39eccb21d0d21a97f4)",
       "symbol": "plasma.T_rad[i]",
       "current_source": "plasma.T_rad",
       "physical_meaning": "[comparator] CUDA-host T_rad comparison report",
@@ -367,7 +367,7 @@
       "final_status": "DIAGNOSTIC_ONLY_CANONICAL_DERIVED"
     },
     {
-      "file_line": "이관 완료(A2-17·dd9cd398698914b5e004e33d1c8ec41fcd5f411f)",
+      "file_line": "이관 완료(A2-17·bb9340836c03381a9bb1fc39eccb21d0d21a97f4)",
       "symbol": "plasma.W[i]",
       "current_source": "plasma.W",
       "physical_meaning": "[comparator] CUDA-host W mean error",
@@ -376,7 +376,7 @@
       "final_status": "DIAGNOSTIC_ONLY_CANONICAL_DERIVED"
     },
     {
-      "file_line": "이관 완료(A2-17·dd9cd398698914b5e004e33d1c8ec41fcd5f411f)",
+      "file_line": "이관 완료(A2-17·bb9340836c03381a9bb1fc39eccb21d0d21a97f4)",
       "symbol": "plasma.T_rad[i]",
       "current_source": "plasma.T_rad",
       "physical_meaning": "[comparator] CUDA-host T_rad mean error",
@@ -1132,7 +1132,7 @@
       "final_status": "CLOSED_A2_16_G0_SEED_REVOKED"
     },
     {
-      "file_line": "이관 완료(A2-17·dd9cd398698914b5e004e33d1c8ec41fcd5f411f)",
+      "file_line": "이관 완료(A2-17·bb9340836c03381a9bb1fc39eccb21d0d21a97f4)",
       "symbol": "plasma->T_rad[i]",
       "current_source": "plasma.T_rad",
       "physical_meaning": "[diagnostic] binned-field fit diagnostic",
@@ -1141,7 +1141,7 @@
       "final_status": "DIAGNOSTIC_ONLY_CANONICAL_DERIVED"
     },
     {
-      "file_line": "이관 완료(A2-17·dd9cd398698914b5e004e33d1c8ec41fcd5f411f)",
+      "file_line": "이관 완료(A2-17·bb9340836c03381a9bb1fc39eccb21d0d21a97f4)",
       "symbol": "plasma->T_rad[s]",
       "current_source": "plasma.T_rad",
       "physical_meaning": "[diagnostic] CMF frozen-state diagnostic",
@@ -1150,7 +1150,7 @@
       "final_status": "DIAGNOSTIC_ONLY_CANONICAL_DERIVED"
     },
     {
-      "file_line": "이관 완료(A2-17·dd9cd398698914b5e004e33d1c8ec41fcd5f411f)",
+      "file_line": "이관 완료(A2-17·bb9340836c03381a9bb1fc39eccb21d0d21a97f4)",
       "symbol": "plasma->T_rad",
       "current_source": "plasma.T_rad owner array",
       "physical_meaning": "[diagnostic] CMF state checksum diagnostic",
@@ -1159,7 +1159,7 @@
       "final_status": "DIAGNOSTIC_ONLY_CANONICAL_DERIVED"
     },
     {
-      "file_line": "이관 완료(A2-17·dd9cd398698914b5e004e33d1c8ec41fcd5f411f)",
+      "file_line": "이관 완료(A2-17·bb9340836c03381a9bb1fc39eccb21d0d21a97f4)",
       "symbol": "plasma->W[shell]",
       "current_source": "plasma.W",
       "physical_meaning": "[diagnostic] element-wide provenance diagnostic",
@@ -1204,7 +1204,7 @@
       "final_status": "CLOSED_A2_15_GPU_EMISSIVITY"
     },
     {
-      "file_line": "이관 완료(A2-17·dd9cd398698914b5e004e33d1c8ec41fcd5f411f)",
+      "file_line": "이관 완료(A2-17·bb9340836c03381a9bb1fc39eccb21d0d21a97f4)",
       "symbol": "W",
       "current_source": "local alias of plasma->W[s]",
       "physical_meaning": "[rate_diagnostic] coupled-rate luminosity diagnostic",
@@ -1213,7 +1213,7 @@
       "final_status": "DIAGNOSTIC_ONLY_CANONICAL_DERIVED"
     },
     {
-      "file_line": "이관 완료(A2-17·dd9cd398698914b5e004e33d1c8ec41fcd5f411f)",
+      "file_line": "이관 완료(A2-17·bb9340836c03381a9bb1fc39eccb21d0d21a97f4)",
       "symbol": "W",
       "current_source": "local alias of plasma->W[s]",
       "physical_meaning": "[rate_diagnostic] coupled-rate floor diagnostic",
@@ -1222,7 +1222,7 @@
       "final_status": "DIAGNOSTIC_ONLY_CANONICAL_DERIVED"
     },
     {
-      "file_line": "이관 완료(A2-17·dd9cd398698914b5e004e33d1c8ec41fcd5f411f)",
+      "file_line": "이관 완료(A2-17·bb9340836c03381a9bb1fc39eccb21d0d21a97f4)",
       "symbol": "T_rad",
       "current_source": "local alias of plasma->T_rad[s]",
       "physical_meaning": "[rate_diagnostic] coupled-rate residual diagnostic",
@@ -1312,7 +1312,7 @@
       "final_status": "CLOSED_A2_16_G0_SEED_REVOKED"
     },
     {
-      "file_line": "이관 완료(A2-17·dd9cd398698914b5e004e33d1c8ec41fcd5f411f)",
+      "file_line": "이관 완료(A2-17·bb9340836c03381a9bb1fc39eccb21d0d21a97f4)",
       "symbol": "ps->W",
       "current_source": "plasma.W allocation",
       "physical_meaning": "[lifecycle] free scalar owner",
@@ -1321,7 +1321,7 @@
       "final_status": "REMOVED_A2_17_SCALAR_OWNER_LIFECYCLE_OUTPUT"
     },
     {
-      "file_line": "이관 완료(A2-17·dd9cd398698914b5e004e33d1c8ec41fcd5f411f)",
+      "file_line": "이관 완료(A2-17·bb9340836c03381a9bb1fc39eccb21d0d21a97f4)",
       "symbol": "ps->T_rad",
       "current_source": "plasma.T_rad allocation",
       "physical_meaning": "[lifecycle] free scalar owner",
@@ -1330,7 +1330,7 @@
       "final_status": "REMOVED_A2_17_SCALAR_OWNER_LIFECYCLE_OUTPUT"
     },
     {
-      "file_line": "이관 완료(A2-17·dd9cd398698914b5e004e33d1c8ec41fcd5f411f)",
+      "file_line": "이관 완료(A2-17·bb9340836c03381a9bb1fc39eccb21d0d21a97f4)",
       "symbol": "plasma.T_rad[i]",
       "current_source": "plasma.T_rad",
       "physical_meaning": "[output] CPU plasma-state owner output",
@@ -1339,7 +1339,7 @@
       "final_status": "REMOVED_A2_17_SCALAR_OWNER_LIFECYCLE_OUTPUT"
     },
     {
-      "file_line": "이관 완료(A2-17·dd9cd398698914b5e004e33d1c8ec41fcd5f411f)",
+      "file_line": "이관 완료(A2-17·bb9340836c03381a9bb1fc39eccb21d0d21a97f4)",
       "symbol": "plasma.W[i]",
       "current_source": "plasma.W",
       "physical_meaning": "[output] CUDA plasma-state owner output",

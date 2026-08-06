@@ -1,4 +1,40 @@
-# A2-16 + A2-17 구현 보고서 — 시작 장벽 판정 (개정 11)
+# A2-16 + A2-17 구현 보고서 — A2-17 실결함 수리 (개정 13)
+
+## 개정 13 결론
+
+운전석 CP 실측의 `child_rc=-11` 3건을 재현하고 수리했다. A2-17이 runtime
+`PlasmaState.W/T_rad` owner를 제거할 때 CONFIG-PREC의 `plasma_state.csv` 일관성
+witness 검사까지 함께 제거한 것이 직접 원인이다. strict mismatch 3건이 의도된 FATAL에서
+멈추지 않고 불완전한 scratch fixture의 다음 입력으로 진행하면서 NULL을 역참조했다.
+
+static classifier가 이를 놓친 이유는 두 가지다. 첫째, owner 토큰마다 해당 문자 범위를
+판정하지 않고 같은 줄의 첫 code match를 모든 토큰에 재사용했다. 둘째, direct owner
+표현만 세어 CONFIG-PREC witness 자체가 사라진 semantic regression을 검사하지 않았다.
+개정 13 classifier는 offset-preserving lexical mask로 comment/string/compile-disabled/test/
+production을 토큰별 분류하며, CONFIG-PREC witness 존재와 fail-closed 배선을 별도 invariant로
+검사한다. 정적 스캐너가 측정하지 않은 runtime counter는 더 이상 0으로 기재하지 않고
+`null`/`not_measured_by_static_trace`로 기록한다.
+
+잔여 표현 처분은 다음과 같다.
+
+| 위치/종류 | 재분류 | 처분 |
+|---|---|---|
+| 옛 `lumina_plasma.c:11882`의 `T_rad -> T_e` 쓰기 | production fallback | 전체 compile-disabled legacy RADEQ 본문 삭제. 활성 경로는 A2-10 publication만 소비하고 실패 시 기존 publication을 보존한다. |
+| 옛 `lumina_plasma.c:12092-12093` | production aliases | 같은 legacy 본문과 함께 삭제. |
+| 옛 `lumina_plasma.c:12634-12637` | diagnostic output | 같은 legacy 본문과 함께 삭제; 0/NaN 대체값을 만들지 않는다. |
+| 옛 `lumina_element_wide.c:2332` | retired dump | compile-disabled scalar schema를 삭제. 활성 dump는 `T_e/n_e` material schema만 기록한다. |
+| CONFIG-PREC `W/T_rad` 열 | diagnostic integrity witness | 행 단위 local 축약만 수행하고 owner/배열에 저장하지 않는다. 없거나 malformed면 `unavailable` FATAL; radiation/material seed로 소비하지 않는다. |
+
+검증 결과는 `make lumina` rc=0, Makefile `selftest*` 30개 target rc=0,
+`scripts/a2_01_census_contract.py check`의 `rows=157 completed=157` rc=0이며,
+CONFIG-PREC 네 직접 실행은 모두 `child_rc=1`, case marker 발견, wrapper 4/4 PASS다.
+수리 classifier 결과는 `raw=15`, `classified=15`, `production_reads=0`,
+`diagnostic_derivations=1`, unknown/duplicate=0이다. 코드 수리 owning commit은
+`bb9340836c03381a9bb1fc39eccb21d0d21a97f4`이다.
+
+---
+
+## 개정 11 기록(역사적)
 
 ## 판정
 
