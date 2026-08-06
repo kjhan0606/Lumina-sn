@@ -2754,11 +2754,21 @@ static int compute_electron_density(AtomicData *atom, PlasmaState *plasma,
     init_ml_phi_neb_correction();
     init_zeta_override();
     init_twocomp_lock();
+    /* ★2026-08-07: 이 함수는 네 곳에서 침묵하며 -1 을 냈다.  상위는 POP_NE_NOT_CONVERGED
+     * 하나만 보므로 "수렴 실패" 와 "입력이 애초에 비유한" 이 구분되지 않았다.
+     * 실패 경로에서만 찍는다. */
+#define NE_FAIL(fmt, ...) do {                                                  \
+        fprintf(stderr, "[A2-07][n_e][FATAL] shell %d: " fmt "\n",              \
+                s, ##__VA_ARGS__);                                              \
+        return -1;                                                              \
+    } while (0)
     for (int s = 0; s < n_shells; s++) {
         double n_e = plasma->n_electron[s];
-        if (!isfinite(n_e) || n_e <= 0.0) return -1;
+        if (!isfinite(n_e) || n_e <= 0.0)
+            NE_FAIL("seed n_e invalid: %.17g", n_e);
 
         int shell_converged = 0;
+        double last_new = 0.0, last_old = 0.0;
         for (int iteration = 0; iteration < 100; iteration++) {
             double n_e_old = n_e;
 
@@ -2766,7 +2776,9 @@ static int compute_electron_density(AtomicData *atom, PlasmaState *plasma,
              * the final ion population solve; no independent selector/fallback. */
             PopulationStatus ion_status =
                 compute_ion_populations_shell(atom, plasma, s, n_shells);
-            if (ion_status != POP_OK) return -1;
+            if (ion_status != POP_OK)
+                NE_FAIL("ion populations failed at iter %d: %s (n_e=%.6e)",
+                        iteration, population_status_name(ion_status), n_e);
 
             /* Sum electron density: n_e_new = sum(ion_stage * n_ion) */
             double n_e_new = 0.0;
@@ -2776,7 +2788,9 @@ static int compute_electron_density(AtomicData *atom, PlasmaState *plasma,
                 if (isfinite(n_ion_contrib) && n_ion_contrib > 0.0)
                     n_e_new += charge * n_ion_contrib;
             }
-            if (!isfinite(n_e_new) || n_e_new <= 0.0) return -1;
+            if (!isfinite(n_e_new) || n_e_new <= 0.0)
+                NE_FAIL("sum(charge*n_ion) invalid at iter %d: %.17g", iteration, n_e_new);
+            last_new = n_e_new; last_old = n_e_old;
 
             /* TARDIS-style damped update: n_e = 0.5 * (n_e_new + n_e_old) */
             n_e = 0.5 * (n_e_new + n_e_old);
@@ -2788,9 +2802,13 @@ static int compute_electron_density(AtomicData *atom, PlasmaState *plasma,
                 break;
             }
         }
-        if (!shell_converged) return -1;
+        if (!shell_converged)
+            NE_FAIL("no convergence in 100 iters: last n_e_new=%.6e n_e_old=%.6e "
+                    "rel=%.3e (threshold 0.05)", last_new, last_old,
+                    last_old > 0.0 ? fabs(last_new - last_old) / last_old : -1.0);
     }
     return 0;
+#undef NE_FAIL
 }
 
 /* Task #072 Step 4d: Compute tau_sobolev from ion populations */
@@ -6702,6 +6720,55 @@ int compute_plasma_state(AtomicData *atom, PlasmaState *plasma,
         compute_ion_populations(atom, plasma, n_shells);
     if (ion_status != POP_OK)
         A2_07_PLASMA_ABORT(ion_status);
+
+    /* ★T0(2026-08-07) 최상단 reservoir 근사의 **유효 영역 검사**.
+     *
+     * 로더는 전리에너지 n 개에 대해 population n+1 개를 만들므로 원소마다 최상단
+     * population 에 속박준위가 없다(실측 15/74, 전부 최상단, 덱 3종 동일).
+     * 기준 배선 ARTIS 는 그 이온에 준위 1 개(바닥)를 주어 Z=g_ground 를 쓰는데
+     * (SINGLE_LEVEL_TOP_ION), 우리 덱에는 그 g 가 없어 지금은 Z=1 을 대입한다.
+     *
+     * Z=1 은 g=1 에서만 정확하다.  그러므로 **미지의 g 를 가정하지 않고 상한으로 감싼다**:
+     * 참 분율은 Z=1 로 얻은 분율의 최대 G_BOUND 배다(Saha 비가 Z_top 에 선형).
+     * 그 상한이 MAX_TRUE 를 넘으면 근사가 유효하지 않다 ⟹ **값을 누르지 않고 거부**한다.
+     * 누르면 그것이 클램프다. */
+#define A2_07_RESERVOIR_G_BOUND    30.0   /* 이 단계들 바닥 g 의 보수적 상한(가정, 기재) */
+#define A2_07_RESERVOIR_MAX_TRUE   1.0e-2 /* 참 분율 상한이 원소의 1% 를 넘으면 거부 */
+    {
+        double worst = 0.0;
+        int worst_ip = -1, worst_s = -1;
+        for (int e = 0; e < atom->n_elements; e++) {
+            int b = atom->elem_ion_offset[e], t = atom->elem_ion_offset[e + 1];
+            for (int s = 0; s < n_shells; s++) {
+                double tot = 0.0;
+                for (int ip = b; ip < t; ip++)
+                    tot += atom->ion_number_density[(size_t)ip * n_shells + s];
+                if (!(tot > 0.0)) continue;
+                for (int ip = b; ip < t; ip++) {
+                    if (atom->level_offset[ip + 1] > atom->level_offset[ip]) continue;
+                    double f = atom->ion_number_density[(size_t)ip * n_shells + s] / tot;
+                    if (f > worst) { worst = f; worst_ip = ip; worst_s = s; }
+                }
+            }
+        }
+        printf("  [A2-07] level-less reservoir: max fraction=%.3e "
+               "(x%.0f bound = %.3e, limit %.0e)\n",
+               worst, A2_07_RESERVOIR_G_BOUND,
+               worst * A2_07_RESERVOIR_G_BOUND, A2_07_RESERVOIR_MAX_TRUE);
+        if (worst * A2_07_RESERVOIR_G_BOUND > A2_07_RESERVOIR_MAX_TRUE) {
+            fprintf(stderr,
+                    "[A2-07][FATAL] level-less top stage is populated: ion_pop %d "
+                    "(Z=%d stage=%d) shell %d fraction=%.3e -> bounded true %.3e > %.0e.\n"
+                    "  Z=1 대입이 유효하지 않다. 그 이온의 바닥 g 를 도입해 준위 1 개를 주어야 한다\n"
+                    "  (ARTIS SINGLE_LEVEL_TOP_ION 과 같은 배선).\n",
+                    worst_ip,
+                    atom->ion_pop_Z ? atom->ion_pop_Z[worst_ip] : -1,
+                    atom->ion_pop_stage ? atom->ion_pop_stage[worst_ip] : -1,
+                    worst_s, worst, worst * A2_07_RESERVOIR_G_BOUND,
+                    A2_07_RESERVOIR_MAX_TRUE);
+            A2_07_PLASMA_ABORT(POP_INVALID_PARTITION);
+        }
+    }
 
     /* Task #7: frozen-in recombination freeze-out (gated LUMINA_FROZENIN).
      * Overrides outer-shell ion populations + n_e with the time-dependent

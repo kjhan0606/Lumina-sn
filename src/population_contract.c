@@ -87,7 +87,23 @@ PopulationStatus population_partition_ion(const PopulationAtomicView *a,size_t i
     if(!out||!a||!a->level_offset||!a->energy_eV||!a->g||ion>=a->n_ions)
         return POP_ATOMIC_MISSING;
     if(!isfinite(te)||te<=0.0)return POP_INVALID_TE;
-    int lo=a->level_offset[ion],hi=a->level_offset[ion+1];if(lo<0||hi<=lo||(size_t)hi>a->n_levels)return POP_ATOMIC_MISSING;double e0=INFINITY;
+    int lo=a->level_offset[ion],hi=a->level_offset[ion+1];
+    if(lo<0||hi<lo||(size_t)hi>a->n_levels)return POP_ATOMIC_MISSING;
+    /* ★2026-08-07 T0: hi==lo 는 **손상이 아니라 정상**이다.  로더가 전리에너지 n 개에
+     * 대해 population n+1 개를 만들므로 원소마다 최상단 population 은 속박준위가 없다
+     * (실측 15/74, 전부 원소 최상단; 덱 3종 동일).  구 조건 `hi<=lo` 가 이 정상을
+     * POP_ATOMIC_MISSING 으로 거부해 compute_plasma_state 가 전혀 성공할 수 없었다.
+     * ★기준 배선(ARTIS)은 최상단 이온에 준위를 **0 개가 아니라 1 개** 준다:
+     *   input.cc:1226 "optionally limit the top ion to one level and no transitions"
+     *   input.cc:153  "in case the top ion has nlevelsmax = 1"
+     * 그러면 Z = g_ground 이지 1 이 아니다.  우리 로더가 그 한 준위를 떨어뜨렸다.
+     * 그 이온의 바닥 g 는 덱에도 구조체에도 없으므로 여기서 지어낼 수 없다 ⟹
+     * Z=1 은 **g=1(무구조·맨핵)에서만 정확한 임시 대입**이며, 미지의 g 를 가정하지 않고
+     * 소비자 쪽에서 **상한으로 감싸 검사**한다(lumina_plasma.c reservoir 게이트).
+     * 정본 수리 = 최상단 15 이온의 바닥 g 를 외부 앵커로 도입해 준위 1 개를 실제로 주는 것.
+     * 대장 기재: docs/CLASSIC_DEBT_CENSUS.md (검증불가 고아 금지 — 방치하지 않는다). */
+    if(hi==lo){*out=1.0;return POP_OK;}
+    double e0=INFINITY;
     for(int l=lo;l<hi;l++)
         if((!a->runtime_membership||a->runtime_membership[l]>=0)&&isfinite(a->energy_eV[l])&&a->g[l]>0&&a->energy_eV[l]<e0)
             e0=a->energy_eV[l];
