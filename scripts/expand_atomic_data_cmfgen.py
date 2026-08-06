@@ -302,6 +302,15 @@ H_CGS  = 6.62607015e-27
 K_CGS  = 1.380649e-16
 EV_TO_ERG = 1.602176634e-12
 
+# I20 수리 (docs/I20_AIR_WAVELENGTH_REPAIR_CONTRACT.md).
+# 전하는 SI-2019 정의값에서 유도한 참값을 쓴다: e[C]=1.602176634e-19 (정확),
+# c (정확) ⟹ e[esu] = e[C]*c/10.  구값 4.80320425e-10 은 계보 불명이었고
+# CMFGEN 의 4.80320427e-10 은 CODATA-2006 이라 둘 다 참값이 아니다.
+ME_CGS = 9.1093837015e-28                     # g
+E_CGS  = 1.602176634e-19 * C_CGS / 10.0       # = 4.803204712...e-10 esu
+# A_ul = A_PREFACTOR * f_lu * (g_lo/g_up) * nu^2   —  genosc_v6.f:313-317 과 동형
+A_PREFACTOR = 8.0 * np.pi**2 * E_CGS**2 / (ME_CGS * C_CGS**3)
+
 # Pre-bake target grid: must match NLTE_NU_{MIN,MAX} / NLTE_N_FREQ_BINS in
 # src/lumina.h.  If those constants change, regenerate the binary.
 BF_NU_MIN     = 1.5e14   # c / 20000 A
@@ -660,31 +669,51 @@ def build_global_levels(ion_data: dict):
 
 
 def build_lines(ion_data: dict, level_lookup: dict, per_ion_g: dict):
-    """Collect all transitions and sort by descending nu."""
-    Zs, ions, los, ups, lams, fs, As = [], [], [], [], [], [], []
+    """Collect all transitions and sort by descending nu.
+
+    I20 수리 (docs/I20_AIR_WAVELENGTH_REPAIR_CONTRACT.md):
+    CMFGEN osc 파일의 lambda 열은 lambda>2000A 에서 **공기파장**이고 A 열은 f 열과
+    ~1e-5 어긋난다.  CMFGEN 자신은 둘 다 읽지 않는다 — genosc_v6.f:278-286 이 f 와
+    준위 인덱스만 읽고, :205 에서 nu 를 준위 에너지(진공)로 재계산하며, :313-317 에서
+    A 를 f 로부터 만든다.  여기서도 같은 방식으로 산출한다:
+
+        nu   = (E_up - E_lo) * c                     [준위 에너지, 진공]
+        f_lu = 원본 osc f 열 (abs — genosc_v6.f:305-309)
+        A_ul = A_PREFACTOR * f_lu * (g_lo/g_up) * nu^2
+
+    구현 이전에는 lam <- t['lam_A'](공기), nu <- c/lam, A <- t['A'] 였고,
+    그 결과 45/58 이온의 635,169선(덱 28.6%)이 82-85 km/s 어긋나 있었다.
+    """
+    Zs, ions, los, ups, fs, nus, glos, gups = [], [], [], [], [], [], [], []
     for (Z, stage), d in sorted(ion_data.items()):
         ion_csv = stage - 1
         gs = per_ion_g[(Z, stage)]
+        E_cm = d['levels']['E_cm']
         for t in d['trans']:
             i = int(t['i']); j = int(t['j'])
             if i > j: i, j = j, i           # ensure lower < upper
             if i < 1 or j > d['n_kept']:    continue
             if (Z, stage, i) not in level_lookup: continue
             if (Z, stage, j) not in level_lookup: continue
+            dE_cm = float(E_cm[j - 1]) - float(E_cm[i - 1])
+            if not (dE_cm > 0.0):           # 축퇴/역전은 선이 아니다
+                continue
             Zs.append(Z); ions.append(ion_csv)
             los.append(i - 1); ups.append(j - 1)
-            lams.append(float(t['lam_A']))
-            fs.append(float(t['f']))   # f_lu (absorption oscillator)
-            As.append(float(t['A']))   # A_ul (s^-1)
+            fs.append(abs(float(t['f'])))   # f_lu (absorption oscillator)
+            nus.append(dE_cm * C_CGS)       # Hz, 진공
+            glos.append(float(gs[i - 1])); gups.append(float(gs[j - 1]))
 
     Z_arr   = np.array(Zs, dtype='i4')
     ion_arr = np.array(ions, dtype='i4')
     lo_arr  = np.array(los, dtype='i4')
     up_arr  = np.array(ups, dtype='i4')
-    lam_arr = np.array(lams, dtype='f8')
     f_arr   = np.array(fs, dtype='f8')
-    A_arr   = np.array(As, dtype='f8')
-    nu_arr  = np.where(lam_arr > 0, C_CGS / (lam_arr * 1e-8), 0.0)
+    nu_arr  = np.array(nus, dtype='f8')
+    glo_arr = np.array(glos, dtype='f8')
+    gup_arr = np.array(gups, dtype='f8')
+    lam_arr = np.where(nu_arr > 0, C_CGS / nu_arr * 1e8, 0.0)   # Angstrom, 진공
+    A_arr   = A_PREFACTOR * f_arr * (glo_arr / gup_arr) * nu_arr**2
 
     valid = (nu_arr > 0) & (lam_arr > 0)
     Z_arr   = Z_arr[valid];   ion_arr = ion_arr[valid]

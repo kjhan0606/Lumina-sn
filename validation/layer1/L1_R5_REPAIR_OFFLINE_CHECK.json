@@ -1,0 +1,79 @@
+{
+ "schema": "lumina-i20-repair-offline-check-v1",
+ "e_true": 4.803204712570263e-10,
+ "e_cmfgen": 4.80320427e-10,
+ "expected_G1": 1.8428126669078893e-07,
+ "ions": {
+  "Ni III": {
+   "lines": 66486,
+   "dropped_dE_le_0": 0,
+   "G1b_A_vs_cmfgen_same_e_max": 0.0,
+   "G1_A_vs_cmfgen_true_e_median": 1.842812327414442e-07,
+   "G2_f_vs_source_f_max": 0.0,
+   "G3_nu_max": 0.0,
+   "G4_lam_max": 2.9429375445033647e-16,
+   "air_band_lines": 42446,
+   "vac_band_lines": 24040,
+   "N1_negative_control_AIR_median": 0.0005583832514659405,
+   "N1_negative_control_VAC_median": 4.3635433452954913e-07,
+   "PASS": true
+  },
+  "Ni II": {
+   "lines": 51707,
+   "dropped_dE_le_0": 0,
+   "G1b_A_vs_cmfgen_same_e_max": 0.0,
+   "G1_A_vs_cmfgen_true_e_median": 1.8428123274186134e-07,
+   "G2_f_vs_source_f_max": 0.0,
+   "G3_nu_max": 0.0,
+   "G4_lam_max": 2.9430000722641117e-16,
+   "air_band_lines": 41239,
+   "vac_band_lines": 10468,
+   "N1_negative_control_AIR_median": 0.0005495646607169061,
+   "N1_negative_control_VAC_median": 4.030830187956925e-07,
+   "PASS": true
+  },
+  "Co III": {
+   "lines": 68462,
+   "dropped_dE_le_0": 0,
+   "G1b_A_vs_cmfgen_same_e_max": 0.0,
+   "G1_A_vs_cmfgen_true_e_median": 1.8428123274153844e-07,
+   "G2_f_vs_source_f_max": 0.0,
+   "G3_nu_max": 0.0,
+   "G4_lam_max": 2.9415882636385486e-16,
+   "air_band_lines": 34608,
+   "vac_band_lines": 33854,
+   "N1_negative_control_AIR_median": 0.0005576918388643796,
+   "N1_negative_control_VAC_median": 4.407544629217792e-07,
+   "PASS": true
+  },
+  "Ca IV": {
+   "lines": 8532,
+   "dropped_dE_le_0": 0,
+   "G1b_A_vs_cmfgen_same_e_max": 0.0,
+   "G1_A_vs_cmfgen_true_e_median": 1.8428123274283712e-07,
+   "G2_f_vs_source_f_max": 0.0,
+   "G3_nu_max": 0.0,
+   "G4_lam_max": 2.848244093911489e-16,
+   "air_band_lines": 3929,
+   "vac_band_lines": 4603,
+   "N1_negative_control_AIR_median": 0.0005554706616547889,
+   "N1_negative_control_VAC_median": 6.018997281278822e-07,
+   "PASS": true
+  },
+  "S III": {
+   "lines": 6190,
+   "dropped_dE_le_0": 0,
+   "G1b_A_vs_cmfgen_same_e_max": 0.0,
+   "G1_A_vs_cmfgen_true_e_median": 1.8428123274328957e-07,
+   "G2_f_vs_source_f_max": 0.0,
+   "G3_nu_max": 0.0,
+   "G4_lam_max": 2.681779733393342e-16,
+   "air_band_lines": 3857,
+   "vac_band_lines": 2333,
+   "N1_negative_control_AIR_median": 0.0005531259224486393,
+   "N1_negative_control_VAC_median": 4.570949476351904e-07,
+   "PASS": true
+  }
+ },
+ "ALL_PASS": true
+}

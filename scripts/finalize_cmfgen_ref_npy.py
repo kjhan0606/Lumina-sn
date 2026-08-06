@@ -78,16 +78,20 @@ def main(ref_dir: Path, n_shells: int = 30) -> None:
     # CGS constants
     C_CGS  = 2.99792458e10      # cm/s
     H_CGS  = 6.62607015e-27     # erg·s
-    ME_CGS = 9.1093837015e-28   # g
-    E_CGS  = 4.80320425e-10     # esu (statcoulomb)
     nu_arr  = ll["nu"].to_numpy(dtype=np.float64)
-    lam_arr = ll["wavelength_cm"].to_numpy(dtype=np.float64)
     A_ul_arr = ll["A_ul"].to_numpy(dtype=np.float64)
 
     B_ul_new = (C_CGS**2 / (2.0 * H_CGS * nu_arr**3)) * A_ul_arr
     B_lu_new = (g_u / g_l) * B_ul_new
-    f_lu_new = (ME_CGS * C_CGS / (8.0 * np.pi**2 * E_CGS**2)) * \
-               (lam_arr**2) * (g_u / g_l) * A_ul_arr
+
+    # I20 수리 (docs/I20_AIR_WAVELENGTH_REPAIR_CONTRACT.md):
+    # 여기서 f_lu 를 A_ul 과 wavelength_cm 으로 **역산하던 코드를 제거**했다.
+    # 그 역산은 (a) 원본 osc 의 f 열을 버리고 — CMFGEN 이 실제로 소비하는 것은
+    # 바로 그 f 열이다(genosc_v6.f:278) — (b) lambda>2000A 에서 공기파장인
+    # lambda 열을 진공인 양 써서 f 에 -5.6e-4 = -2*(n_air-1) 계통 오차를 넣었다.
+    # 이제 f_lu 는 expand_atomic_data_cmfgen.build_lines 가 원본 f 열에서 실어
+    # 오고, A_ul 이 그 f 에서 유도되므로 A<->f 무모순이 by-construction 확보된다.
+    f_lu_arr = ll["f_lu"].to_numpy(dtype=np.float64)
 
     # Drift check vs stored values (informational): largest fractional change
     def _frac_max(new, old):
@@ -98,12 +102,11 @@ def main(ref_dir: Path, n_shells: int = 30) -> None:
         return float(np.max(np.abs(new[ok] - old[ok]) / np.abs(old[ok])))
     drift_Bul = _frac_max(B_ul_new, ll["B_ul"])
     drift_Blu = _frac_max(B_lu_new, ll["B_lu"])
-    drift_flu = _frac_max(f_lu_new, ll["f_lu"])
+    drift_flu = 0.0                      # f_lu 는 더 이상 여기서 바뀌지 않는다
     ll["B_ul"] = B_ul_new
     ll["B_lu"] = B_lu_new
-    ll["f_lu"] = f_lu_new
     # f_ul = -(g_l/g_u) * f_lu  (negative emission oscillator strength convention)
-    ll["f_ul"] = -(g_l / g_u) * f_lu_new
+    ll["f_ul"] = -(g_l / g_u) * f_lu_arr
 
     # Exact detailed balance check on the new values
     db_lhs = B_lu_new * g_l
