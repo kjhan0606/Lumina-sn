@@ -10,8 +10,8 @@ LDFLAGS += -fopenmp
 endif
 
 # Source files (in src/)
-SOURCES = src/lumina_main.c src/lumina_transport.c src/a2_02c_segment_capture.c src/radiation_field.c src/bf_rate_jnu.c src/line_jbar.c src/seed_capability.c src/population_contract.c src/opacity_publication.c src/emissivity_publication.c src/radeq_publication.c src/gpu_physics_contract.c src/lumina_plasma.c src/lumina_element_wide.c src/lumina_atomic.c src/lumina_cmfgen.c
-HEADERS = src/lumina.h src/a2_02c_segment_capture.h src/radiation_field.h src/bf_rate_jnu.h src/line_jbar.h src/seed_capability.h src/population_contract.h src/opacity_publication.h src/emissivity_publication.h src/radeq_publication.h src/gpu_physics_contract.h
+SOURCES = src/lumina_main.c src/lumina_transport.c src/a2_02c_segment_capture.c src/radiation_field.c src/bf_rate_jnu.c src/line_jbar.c src/seed_capability.c src/jnu_seed.c src/population_contract.c src/opacity_publication.c src/emissivity_publication.c src/radeq_publication.c src/gpu_physics_contract.c src/lumina_plasma.c src/lumina_element_wide.c src/lumina_atomic.c src/lumina_cmfgen.c
+HEADERS = src/lumina.h src/a2_02c_segment_capture.h src/radiation_field.h src/bf_rate_jnu.h src/line_jbar.h src/seed_capability.h src/jnu_seed.h src/population_contract.h src/opacity_publication.h src/emissivity_publication.h src/radeq_publication.h src/gpu_physics_contract.h
 TARGET = lumina
 POPULATION_SRC = src/population_contract.c
 A2_PUBLICATION_SRC = src/opacity_publication.c src/emissivity_publication.c src/radeq_publication.c
@@ -269,3 +269,17 @@ selftest_a2_07_population: tests/a2_07_population_selftest.c src/population_cont
 selftest_a2_16_seed: tests/a2_16_seed_capability_selftest.c src/seed_capability.c src/seed_capability.h
 	$(CC) -O2 -Wall -Wextra -std=gnu11 -D_GNU_SOURCE -Isrc -o selftest_a2_16_seed \
 		tests/a2_16_seed_capability_selftest.c src/seed_capability.c $(LDFLAGS)
+
+# A2-17 native J_nu seed codec. The legacy W/T_rad parser is deliberately
+# confined to the separate offline executable and is never in SOURCES.
+selftest_a2_17_jnu_seed: tests/a2_17_jnu_seed_selftest.c src/jnu_seed.c \
+		src/jnu_seed.h src/radiation_field.c src/seed_capability.c
+	$(CC) -O2 -Wall -Wextra -std=gnu11 -D_GNU_SOURCE -Isrc -o $@ \
+		tests/a2_17_jnu_seed_selftest.c src/jnu_seed.c \
+		src/radiation_field.c src/seed_capability.c $(LDFLAGS)
+
+lumina_legacy_seed_converter: tools/lumina_legacy_seed_converter.c \
+		src/jnu_seed.c src/jnu_seed.h src/radiation_field.c src/seed_capability.c
+	$(CC) -O2 -Wall -Wextra -std=gnu11 -D_GNU_SOURCE -Isrc -o $@ \
+		tools/lumina_legacy_seed_converter.c src/jnu_seed.c \
+		src/radiation_field.c src/seed_capability.c $(LDFLAGS)

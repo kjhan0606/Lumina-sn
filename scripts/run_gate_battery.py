@@ -19,7 +19,7 @@ from generate_composition_d_fixtures import cached_materialize
 
 ROOT = Path(__file__).resolve().parents[1]
 BATTERY_ORDER = ("D", "K", "Z", "CP")
-EXPECTED_ROWS = {"D": 19, "K": 7, "Z": 11, "CP": 4}
+EXPECTED_ROWS = {"D": 19, "K": 7, "Z": 12, "CP": 4}
 
 
 def run_census_preflight() -> int:
@@ -143,7 +143,7 @@ def build_specs(build: Path, cc: str) -> tuple[Build, ...]:
                 "src/opacity_publication.c",
                 "src/emissivity_publication.c",
                 "src/radeq_publication.c",
-                "src/gpu_radiation_field_contract.c", "src/seed_capability.c",
+                "src/gpu_radiation_field_contract.c", "src/jnu_seed.c", "src/seed_capability.c",
                 "src/gpu_physics_contract.c",
                 "-lm", "-o", str(build / "zinert_validator"),
             ),
@@ -153,7 +153,7 @@ def build_specs(build: Path, cc: str) -> tuple[Build, ...]:
             "Z-tau",
             common_z + (
                 "-DLUMINA_FROZEN_ORACLE", "tests/zinert_tau_fixture.c",
-                "src/lumina_plasma.c", "src/bf_rate_jnu.c", "src/population_contract.c", "src/opacity_publication.c", "src/emissivity_publication.c", "src/radeq_publication.c", "src/gpu_radiation_field_contract.c", "src/seed_capability.c", "src/gpu_physics_contract.c", "-lm", "-o", str(build / "zinert_tau"),
+                "src/lumina_plasma.c", "src/bf_rate_jnu.c", "src/population_contract.c", "src/opacity_publication.c", "src/emissivity_publication.c", "src/radeq_publication.c", "src/gpu_radiation_field_contract.c", "src/jnu_seed.c", "src/seed_capability.c", "src/gpu_physics_contract.c", "-lm", "-o", str(build / "zinert_tau"),
             ),
             build / "zinert_tau",
         ),
@@ -165,7 +165,7 @@ def build_specs(build: Path, cc: str) -> tuple[Build, ...]:
                 "src/opacity_publication.c",
                 "src/emissivity_publication.c",
                 "src/radeq_publication.c",
-                "src/gpu_radiation_field_contract.c", "src/seed_capability.c",
+                "src/gpu_radiation_field_contract.c", "src/jnu_seed.c", "src/seed_capability.c",
                 "src/gpu_physics_contract.c",
                 "-lm", "-o", str(build / "zinert_population"),
             ),
@@ -177,7 +177,7 @@ def build_specs(build: Path, cc: str) -> tuple[Build, ...]:
                 "-DLUMINA_FROZEN_ORACLE", "tests/zinert_canonical_tau_fixture.c",
                 "src/lumina_plasma.c", "src/lumina_element_wide.c",
                 "src/bf_rate_jnu.c", "src/population_contract.c",
-                "src/lumina_atomic.c", "src/opacity_publication.c", "src/emissivity_publication.c", "src/radeq_publication.c", "src/gpu_radiation_field_contract.c", "src/seed_capability.c", "src/gpu_physics_contract.c", "-lm", "-o",
+                "src/lumina_atomic.c", "src/opacity_publication.c", "src/emissivity_publication.c", "src/radeq_publication.c", "src/gpu_radiation_field_contract.c", "src/jnu_seed.c", "src/seed_capability.c", "src/gpu_physics_contract.c", "-lm", "-o",
                 str(build / "zinert_canonical_tau"),
             ),
             build / "zinert_canonical_tau",
@@ -186,7 +186,7 @@ def build_specs(build: Path, cc: str) -> tuple[Build, ...]:
             "Z-a2-12",
             common_z + (
                 "tests/a2_12_contract_selftest.c",
-                "src/gpu_radiation_field_contract.c", "src/seed_capability.c", "-o",
+                "src/gpu_radiation_field_contract.c", "src/jnu_seed.c", "src/seed_capability.c", "-o",
                 str(build / "a2_12_contract"),
             ),
             build / "a2_12_contract",
@@ -199,6 +199,15 @@ def build_specs(build: Path, cc: str) -> tuple[Build, ...]:
                 str(build / "a2_13_15_contract"),
             ),
             build / "a2_13_15_contract",
+        ),
+        Build(
+            "Z-a2-17",
+            common_z + (
+                "tests/a2_17_jnu_seed_selftest.c", "src/jnu_seed.c",
+                "src/radiation_field.c", "src/seed_capability.c", "-lm", "-o",
+                str(build / "a2_17_jnu_seed"),
+            ),
+            build / "a2_17_jnu_seed",
         ),
         Build(
             "Z-a2-08",
@@ -299,6 +308,7 @@ def runner_specs(
                 "--a2-10", str(build / "a2_10_radeq"),
                 "--a2-12-contract", str(build / "a2_12_contract"),
                 "--a2-13-15-contract", str(build / "a2_13_15_contract"),
+                "--a2-17-jnu-seed", str(build / "a2_17_jnu_seed"),
                 "--deck", str(deck), "--verify", str(ROOT / "scripts/verify_zinert.py"),
                 "--scratch-root", str(scratch / "Z"),
             ) + serial_arg,
