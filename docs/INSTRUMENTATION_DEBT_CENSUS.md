@@ -205,6 +205,63 @@ C8(fail-open)과 C9(사본 비동기)가 겹치는 지점이다.
 (생산 덱 오인 · 6파일만 비교 · `--deck` 배선 · C2 집계 98→157).
 전수로 세기 전에는 어떤 수치도 하한으로 취급한다.
 
+## ★노브 표면 동결 1–4단계 완료 (2026-08-07)
+
+user 지시로 4단계(거부)까지 도달했다. 정본 = `scripts/derive_env_universe.py` ·
+`src/env_universe.h`(생성물) · `src/lumina_atomic.c` 의 `lumina_env_surface_report()`.
+
+| 단계 | 내용 | 증거 |
+|---|---|---|
+| 1 보고만 | 환경의 `LUMINA_*` 중 전집 밖인 것을 센다. 동작 불변 | 음성대조: 가짜 노브 2개 주입 → 정확히 2개 탐지 |
+| 2 집계 | 전 런처 정적 집계 | 런처 404 · env 설정 11,101 · **죽은 노브 1,384(12.5%)** · 종류 50 |
+| 3 이관 | T3 런처가 must-unset 22종을 **소스에서 유도** | 손으로 목록을 적지 않는다 |
+| 4 거부 | `LUMINA_ENV_STRICT=1` 인 런만 미등록 env 거부 | 양성(통과)·음성(거부) 대조 통과 |
+
+배터리: 새 덱·구 덱(통제) 양쪽 `verdict=PASS rc=0` — 동작을 바꾸지 않았음을 확인.
+
+### env 전집 도출 — 손으로 세지 않는다
+
+```
+getenv 리터럴 419 · env 배열 38 · snprintf 조립 51 · ★래퍼 호출부 7  ⟹ 합집합 483
+```
+
+**(4) 래퍼가 함정이다.** 리터럴이 `getenv` 옆이 아니라 호출부에 있어서
+`grep 'getenv("'` 로는 **원리적으로 안 보인다**. 래퍼 스캔이 없었으면
+`LUMINA_CONFIG_PREC` 등 3종을 놓쳤을 것이다.
+(앞서 보고한 "418종"은 64종 짧았다 — 열 번째)
+
+### ★1단계가 곧바로 드러낸 것 — 죽은 노브 1,384건
+
+런처가 설정하지만 **src 가 읽지 않는** 노브. C10(silent no-op)의 첫 실측이다.
+
+| 죽은 노브 | 설정 런처 |
+|---|---|
+| `LUMINA_RADEQ_COOL_NLTE_ONLY` | 102 |
+| `LUMINA_RADEQ_COOL_ESCAPE` | 99 |
+| `LUMINA_RADEQ_COOL_NONNEG` | 97 |
+| `LUMINA_COUPLED_TDEP` | 88 |
+| `LUMINA_COUPLED_JNU_PHOTOION` | 84 |
+| `LUMINA_COUPLED_JNU_LSTAR` · `COUPLED_LAMBDA_STAR` | 81 |
+| `LUMINA_RADEQ_LINE_RE` · `RADEQ_LINE_RESPOND` | 78 · 77 |
+
+**복사평형·coupled 솔버 노브**다 — 캠페인이 몇 달째 디버깅해 온 물리다.
+검증: `COUPLED_JNU_PHOTOION`·`RADEQ_LINE_RESPOND`·`CN_DAMP` 는 src 언급 **0회**.
+`NLTE_FALLBACK_TE` 는 `lumina_cuda.cu:1482` **주석에만** 있다(읽던 코드가 제거되고 주석만 남음).
+
+⟹ **회귀 대장의 `gate_set`(111 항목)에 아무 일도 하지 않은 설정이 들어 있다.**
+이 노브를 변화시킨 과거 A/B 는 동일 설정끼리 비교했을 수 있다. 별도 추적 필요.
+
+### ★부수 발견 — 챔피언 설정이 재현 불가다
+
+정본 `validation/instrumentation_debt/CHAMPION_UNRUNNABLE.json`.
+참조(챔피언) 런처가 `LUMINA_CMF_EPAY=2` 와 `LUMINA_CMF_EPAY_HOTF=0` 을 켜는데,
+A2-17 이 *"retired scalar hot/cold classifier"* 를 제거해 현 코드가 **로드 단계에서 거부**한다.
+전수 **재현 불가 런처 36개**(KPEMISS_BSRC_TAU 25 · FIXED_TRAD_PROFILE 4 · CMF_EPAY 계열 3 …).
+
+그 런처들의 과거 결과는 현 코드로 재현할 수 없다. unset 하고 돌리면 같은 런이 아니라
+**다른 물리**다. T3 는 두 arm 이 동일 설정이므로 덱 A/B 는 성립하나
+**"챔피언 재현"이라 불러서는 안 된다.**
+
 ## 미결 (판정 필요)
 
 1. **C2 처분** — 2갈래 중 어느 쪽을, 어느 런처 집합에
