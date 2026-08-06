@@ -66,10 +66,19 @@ Co IV 서사는 **세 축 중 두 축(Υ·σ)이 vintage 아티팩트로 해소*
 
 ## 4. 미결 — 이 측정이 **덮지 못한 것**
 
-- **type 20(표 형식) 140 준위 미검증.** `_ophys` 의 Co IV 중 140 준위가 tabulated OP
-  표이고 이번 비교는 type 1 만 했다. CMFGEN 은 표를 `NU_NORM` 상에서 선형보간하고
-  (`sub_phot_gen.f:400-406`), Lumina 는 `np.interp` 를 쓴다(`expand:1229-1243`) —
-  보간 규약이 같은지 별도 확인이 필요하다.
+- ~~**type 20(표 형식) 140 준위 미검증**~~ → **소스 대조로 해소(2026-08-06)**:
+
+  | 구간 | CMFGEN (`sub_phot_gen.f:393-406`) | Lumina (`expand:1229-1243`) | 판정 |
+  |---|---|---|---|
+  | 마디 사이 | `U` 선형보간, `U=FREQ/EDGE` | `np.interp(nu,…)` | **동등** (`nu_pts=energy·ν_th` 이므로 ν 선형 = U 선형) |
+  | 마지막 마디 **위** | `CROSS_A(N)·(NU_NORM(N)/U)³` — **ν⁻³ 감쇠** | `right=sig_pts[-1]` — **상수 유지** | **상이** |
+  | 첫 마디 **아래** | `CROSS_A[1]` | `left=0.0` | **상이** |
+
+  경계 2건은 **의도적 미변경**이다 — `expand_atomic_data_cmfgen.py:1014-1018` 이
+  *"NOT changed here (VERDICT 3.2, 'latent, not live') … Measured effect −0.24% (S II s0).
+  Kept so this bake is a single-variable change"* 라고 이미 기재해 뒀다.
+  ⚠ 이 −0.24% 는 **선행 certification 의 측정치를 인용**한 것이고 이번에 재측정하지
+  않았다. 고빈도에서 Lumina σ 가 CMFGEN 보다 크므로 방향은 **Γ 과대**다.
 - **I3 전체(다른 이온) 미재측정.** 구 I3 상위 기여는 Ni II 33.3% · Co III 27.1% ·
   S III 13.1% · S IV 5.8% · S V 5.7% 였다. Ni II 는 위 코드 주석이 이미
   18oct00 Seaton ↔ 19apr23 type-20 교체를 지목하므로 **같은 vintage 아티팩트일 가능성이
