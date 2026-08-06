@@ -58,10 +58,10 @@ CPU transport/solver 계산식은 변경하지 않았다.
 - `module load cuda && make lumina_cuda -j2`: rc 0; 기존 미사용 항목 warning만 보존.
 - `selftest_a2_13_15_contract`: rc 0. BF-only/BB-only 양방향 half-oracle 음성대조를 모두
   거부했다.
-- `selftest_a2_08_signed_opacity`: 내부 fixture PASS; wrapper truth gate는
-  `BLOCKED_MISSING_CHI_DATA`를 그대로 반환한다.
-- `selftest_a2_09_emissivity`: 내부 fixture PASS; wrapper truth gate는
-  `BLOCKED_MISSING_ETA_DATA`를 그대로 반환한다.
+- `selftest_a2_08_signed_opacity`: binary/wrapper rc 0; wrapper는 L4를
+  `BLOCKED_MISSING_CHI_DATA`로 명시한다.
+- `selftest_a2_09_emissivity`: binary/wrapper rc 0; wrapper는 L3/L5를
+  `BLOCKED_MISSING_ETA_DATA`로 명시한다.
 - 전체 Makefile `selftest*` target 28개를 build 대상으로 재검증했다. CUDA binary는
   컴파일만 하고 실행하지 않았다. gate wrapper의 의도된 BLOCKED rc는 별도 기록한다.
 - `scripts/a2_13_15_static_census.py check`: rc 0, ledger 25/25, CUDA files 8/8,
@@ -93,8 +93,8 @@ A2-17은 A2-16 closure가 시작 장벽이므로 계속 **`BLOCKED_UPSTREAM_NOT_
 
 ```bash
 sbatch --partition=h200 --gres=gpu:h200:1 --mem=96G --time=04:00:00 \
-  --export=ALL,repo_root="$SLURM_SUBMIT_DIR",A2_ARTIFACT_ROOT=/gpfs/$USER/lumina/a2_13_15 \
-  "$SLURM_SUBMIT_DIR/scripts/run_a2_13_15_gpu.slurm"
+  --export=ALL,A2_ARTIFACT_ROOT=/gpfs/$USER/lumina/a2_13_15 \
+  scripts/run_a2_13_15_gpu.slurm
 ```
 
 H200을 사용할 수 없을 때만 같은 규약으로 H100 partition/GRES를 사용한다.
