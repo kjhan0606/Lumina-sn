@@ -1353,7 +1353,7 @@ CMFGEN `SN_HYDRO_DATA` 셀 경계 **1,000–36,000 km/s** vs Lumina 50셸 **3,90
 
 | # | 항목 | 층 | 상태 | 근거 / 비고 |
 |---|---|---|---|---|
-| I1 | **충돌강도 Υ** | 1 | **잔류 — 확정 불일치** | **Co IV 표 4,455전이 전부가 Fe III 표의 정확한 부분집합**(최대 절대차 **0**, 4,357개는 레벨명까지 동일, 98개는 이름만 상이). 출처 `COB/IV/19apr23/col_data` 대 `FE/III/19apr23/col_data`. **CMFGEN 런의 Co IV tabulated 전이 = 0개**. 부수: 전 선 census **tabulated 29,840 / van Regemorter 1,742,025(67%) / `OMEGA_SET=0.1` 812,267(31%)** — 표 있는 선은 1.2%뿐 |
+| I1 | **충돌강도 Υ** | 1 | **★해소(불일치) + 공유맹점 신규** | **2026-08-06 재판정** — 정본 `validation/layer1/L1_I1_I19_VERDICT.md`. 구 근거 "Lumina 4,455 대 CMFGEN 0"은 **vintage 아티팩트**였다(jnu4 의 `COB/IV/18oct00/col_guess.dat` 가 0 전이 선언). 덱-런 종속 방침 적용 후 `_vac`=0(jnu4 도 0) · `_ophys`=4,455(O-PHYS 와 동일 파일) — **양쪽 다 identity**. 단 Co IV Υ 가 Fe III 값인 것은 실측 확증(무순서쌍 4,357 비트동일, 최대 절대차 0, Co IV 전용 98; 원본 헤더가 `Zha96_FeIII_col` / *"Using FeIII values?"* 라고 자백). Co³⁺·Fe²⁺ 는 **3d⁶ 등전자**라 의도된 대용이다. **CMFGEN 도 같은 값을 쓰므로 CMFGEN 대조로는 영원히 검출 불가** ⟹ 신규 부류 **공유 맹점**으로 이관, 외부 독립 앵커로만 판정 가능. 전 선 census(tabulated 1.2%·VR 67%·OMEGA_SET 31%)는 유효 |
 | I2 | `A_ul` | 1 | **잔류 — 이온별 세분** | 엄격결합 880,406선 중 **75,075 불일치**(임계 `r>1e-6`, 사전 고정). 상위: **Ni III 28.4% · Ni II 21.9% · Co III 17.4% · Ca IV 11.3% · S III 7.4%**(상위5=86%). UV창(600–3000Å) 안 **46.1%**. `r≥1`은 **76선**뿐. 부호 중립(중앙비 0.9999869, 중앙 log비 −5.7e-6 dex) ⟹ **체계 편향 아닌 꼬리 문제** |
 | I2a | └ **Fe IV** | 1 | **확정 불일치 (제거 실패)** | ⚠**분모 함정**: `4,336`은 전체가 아니라 **양쪽에 다 있는 선**이다. **CMFGEN Fe IV 72,223선 중 Lumina에 67,887선이 없다**(→ I17). 남은 2선도 실제 **10배 차이**. 임계 `1e-6/1e-9/1e-12` 전부 2건 |
 | I2b | └ **Ni IV** | 1 | 잔류 | **3,658/4,085 (90%)** 불일치. σ는 완전 일치 ⟹ 별개 경로 결함 |
@@ -1521,7 +1521,17 @@ VERDICT: all four R1 vintage gates PASS      종료코드 0
 ② `scripts/gate_ftos.py`는 **존재하지 않는다**(운전석 발주서 오기). `gate_ftos`는
 `verify_deck_r4_ftos.py:82`의 내부 함수이며 CLI는 `--off-control` 필수.
 
-### ★I19 충돌표 상실 — census 확정 (판정은 미결)
+### ★I19 충돌표 상실 — **CLOSE** (2026-08-06 재판정)
+
+> **판정**: 정본 `validation/layer1/L1_I1_I19_VERDICT.md`. `_ftos` 에서 7이온 mapped 가
+> 11,329 → 0 이 된 것은 **상실이 아니라 정합**이었다 — 그 덱이 따르던 jnu4 런 자신이
+> 그 이온들에 tabulated Ω 를 갖고 있지 않다(`col_guess.dat` 0 전이 선언). 덱이 런보다
+> 많이 갖고 있던 구 상태가 오히려 불일치였다. 덱-런 종속 방침(user 08-06) 아래에서
+> 질문 자체가 소멸한다 — **덱은 언제나 자기 런과 같다.** 요구됐던 identity/physics-change
+> metric 은 불요. 7이온 중 대용은 **Co IV 하나뿐**이고 나머지 6은 이온별 실제 출판 자료다
+> (Storey·Liang09·Nahar23·Bautista02·Ramsbottom/Storey23·Fernández-Menchero19).
+
+#### 구 census 기록 (보존)
 
 ```
 7이온 (14,3 Si IV · 20,3 Ca IV · 27,1 Co II · 27,3 Co IV · 28,1 Ni II · 28,2 Ni III · 28,3 Ni IV)
