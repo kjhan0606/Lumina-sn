@@ -1,0 +1,10 @@
+{
+ "schema": "lumina-a2-16-launcher-fleet-breakage-v1",
+ "found": "2026-08-06 T3 제출 직전 프리플라이트",
+ "mechanism": "A2-16 이 LUMINA_TE_TRAD_RATIO / LUMINA_TRAD_COLOR_FIX 를 폐기 옵션으로 만들고 seed_capability_reject_obsolete_options() 를 생산 로더(src/lumina_atomic.c:838)에서 호출한다. 코드는 값을 보지 않는다 — if (v && *v) 이므로 항등값 1.0 도 FATAL 이다.",
+ "blast_radius_launchers_setting_obsolete_env": 78,
+ "why_unnoticed": "A2-16 은 2026-08-06 커밋(686a4a1)이고 그 이후 생산 GPU 런을 시도한 적이 없다.",
+ "consequence": "현 바이너리로 기존 생산 런처를 돌리면 덱 로드 단계에서 즉사한다. GPU 예산이 낭비된다.",
+ "disposition": "미결 — 처분 선택지: (1) 런처 78개에서 폐기 export 제거 (2) 거부 조건을 좁힘(단 \"지금 무해하니 통과\"는 캠페인 금지 논법) (3) 신규 런처만 폐기 옵션을 쓰지 않음(T3 는 이 경로로 진행)",
+ "note": "T3 는 폐기 옵션을 설정하지 않는 새 런처로 진행한다. 함대 전체 처분은 별건."
+}
