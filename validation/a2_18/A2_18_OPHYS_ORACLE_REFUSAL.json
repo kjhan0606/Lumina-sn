@@ -1,0 +1,26 @@
+{
+ "schema": "lumina-a2-18-ophys-oracle-refusal-v1",
+ "run": "/gpfs/kjhan/cmfgen_runs/toy06_19p48d_ophys",
+ "formal_exit": "CMF_FLUX has finished (104 LS loops, fatal=0)",
+ "truth_files_present": {
+  "CHI_DATA": 345912112,
+  "ETA_DATA": 345912112,
+  "NETRATE": 1092258825,
+  "TOTRATE": 1277066175,
+  "EDDFACTOR": 345912112,
+  "JH_AT_CURRENT_TIME": 691814032,
+  "OBSFLUX": 13117864
+ },
+ "attestation_stdout": "",
+ "attestation_stderr": "REFUSE: expected exactly F [FIX_T], found ['T']",
+ "measured_nonconvergence_iter103": {
+  "max_pct_increase_depth19": 90300.0,
+  "max_pct_decrease_depth6": 1070000.0,
+  "solveba_v13_max_change": 10000000.0,
+  "temperature_held_fixed_events": 56,
+  "luminosity_inner_over_outer": 4157.934655861233
+ },
+ "verdict": "ORACLE_REFUSED_BY_CONTRACT",
+ "reason": "FIX_T=T (계약은 F 를 요구) + population 보정 9e4~1e7%",
+ "withdrawn": "사전 합의했던 PASS_UNCONVERGED_ORACLE 명명을 철회한다 — 이 크기에서는 방어 불가이고 기계 계약이 애초에 거부한다"
+}

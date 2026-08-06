@@ -76,20 +76,25 @@
 - `validation/a2_07/` — population/partition 정본과 L-2 게이트 인프라
 - 음성대조 패턴(poison별 marker·기대 FAIL·rc)과 truth-측 f_cov 규약 — 층 1 게이트에 재사용
 
-## 6. 진입 시점 A-2 상태 (2026-08-06 확정)
+## 6. A-2 상태 (2026-08-06 재판정)
 
-**16/18 폐합.** 정본 = `validation/a2_18/A2_18_CAMPAIGN_CLOSURE.md`.
+**18/18 폐합.** 정본 = `validation/a2_18/A2_18_CAMPAIGN_CLOSURE.md`(재판정본).
 
-- **폐합**: A2-00~A2-13 + 잣대 복구 + A2-11 마디. A2-12는 GPU 검증(H200)까지 완료.
-- **미완 2단계**: A2-14/15(GPU opacity·emissivity rate — production API 부재.
-  **마이크로 오라클은 bf·bb·conjunction·opacity·emissivity 전부 CPU와 일치**하므로
-  산술이 아니라 배선 문제), 그에 의존하는 A2-16/17(증거 커밋만).
-- **게이트**: L-1bf PASS · L-2 self-check PASS · A2-12 GPU PASS(음성대조 9종
-  `physical_launches=0`) / L-1bb·L-4·L-3·L-5·L-6 BLOCKED(전부 O-PHYS 진리 부재).
-  **PASS 세탁 0건.**
+- **폐합**: A2-00~A2-17 전 단계. 초판의 미완 2단계(A2-14/15 → A2-16/17)가 닫혔다.
+  원장 157행·미분류 0, `src/` production 스칼라 역참조 0(잔여 1건은 완료 tombstone 주석).
+- **게이트**: L-1bf PASS · L-2 self PASS · A2-12 GPU PASS · A2-13~15 마이크로 오라클 일치 /
+  L-1bb·L-4·L-3·L-5·L-6 **BLOCKED**.
+  ⚠**차단 사유가 바뀌었다**: `BLOCKED_MISSING_*`(파일 부재) →
+  **`BLOCKED_ORACLE_NOT_CERTIFIED`**. O-PHYS formal 이 정상 종료해 진리 파일은 전부
+  확보됐으나(CHI/ETA 각 346MB, 475,154 레코드 검증), 기계 계약이 오라클 인증을 거부했다:
+  `REFUSE: expected exactly F [FIX_T], found ['T']` + population 보정 9e4–1e7%.
+  사전 합의했던 `PASS_UNCONVERGED_ORACLE` 명명은 **철회**했다.
+  남은 것은 파일 생산이 아니라 **수렴한 free-T 런 하나**다.
+- **PASS 세탁 0건.**
 
-층 1 진입에 필요한 A-2 산출물은 전부 확보됐다(§2 표). 미완 2단계는 GPU rate 배선으로,
-층 1의 입력축 감사와 독립이다.
+층 1 진입에 필요한 A-2 산출물은 전부 확보됐고, 실제로 층 1은 이미 진입해
+**I20(공기파장 규약) 확정·수리·인수**까지 마쳤다 — 게이트가 하나도 안 풀린 상태에서.
+이것이 "층 1은 고리 안쪽 BLOCKED 와 독립"이라는 §7 판단의 실측 확인이다.
 
 ## 7. 층 1 진입을 막지 *않는* 것 — 정직한 미결 목록
 
