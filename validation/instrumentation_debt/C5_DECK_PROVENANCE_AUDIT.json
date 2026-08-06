@@ -1,0 +1,207 @@
+{
+ "schema": "lumina-c5-deck-provenance-audit-summary-v1",
+ "git_head": "cf5c042",
+ "decks_total": 107,
+ "live": 33,
+ "stamped": 33,
+ "by_deck": {
+  "tardis_reference": {
+   "refs": 33,
+   "atomic_provenance": "UNKNOWN",
+   "known_defects": 1,
+   "stamp": "DECK_PROVENANCE.json"
+  },
+  "tardis_reference_cmfgen": {
+   "refs": 11,
+   "atomic_provenance": "UNKNOWN",
+   "known_defects": 1,
+   "stamp": "DECK_PROVENANCE.json"
+  },
+  "tardis_reference_cmfgen_superlev": {
+   "refs": 1,
+   "atomic_provenance": "UNKNOWN",
+   "known_defects": 1,
+   "stamp": "DECK_PROVENANCE.json"
+  },
+  "tardis_reference_cmfgen_superlev_ionfix_ddc15strat": {
+   "refs": 1,
+   "atomic_provenance": "UNKNOWN",
+   "known_defects": 1,
+   "stamp": "DECK_PROVENANCE.json"
+  },
+  "tardis_reference_cmfgen_superlev_ionfix_ddc15strat_sivcaiv": {
+   "refs": 2,
+   "atomic_provenance": "UNKNOWN",
+   "known_defects": 1,
+   "stamp": "DECK_PROVENANCE.json"
+  },
+  "tardis_reference_ddc15_0p976d": {
+   "refs": 25,
+   "atomic_provenance": "UNKNOWN",
+   "known_defects": 1,
+   "stamp": "DECK_PROVENANCE.json"
+  },
+  "tardis_reference_ddc15real": {
+   "refs": 2,
+   "atomic_provenance": "UNKNOWN",
+   "known_defects": 1,
+   "stamp": "DECK_PROVENANCE.json"
+  },
+  "tardis_reference_g2_prescription": {
+   "refs": 1,
+   "atomic_provenance": "UNKNOWN",
+   "known_defects": 1,
+   "stamp": "DECK_PROVENANCE.json"
+  },
+  "tardis_reference_strat6_2011fe_physical": {
+   "refs": 78,
+   "atomic_provenance": "UNKNOWN",
+   "known_defects": 1,
+   "stamp": "DECK_PROVENANCE.json"
+  },
+  "tardis_reference_strat6_2011fe_physical_outerFe": {
+   "refs": 2,
+   "atomic_provenance": "UNKNOWN",
+   "known_defects": 1,
+   "stamp": "DECK_PROVENANCE.json"
+  },
+  "tardis_reference_strat6_aszeta": {
+   "refs": 2,
+   "atomic_provenance": "UNKNOWN",
+   "known_defects": 1,
+   "stamp": "DECK_PROVENANCE.json"
+  },
+  "tardis_reference_strat6_higherL_aulboost": {
+   "refs": 28,
+   "atomic_provenance": "UNKNOWN",
+   "known_defects": 1,
+   "stamp": "DECK_PROVENANCE.json"
+  },
+  "tardis_reference_strat6_higherL_aulboost_L19": {
+   "refs": 16,
+   "atomic_provenance": "UNKNOWN",
+   "known_defects": 1,
+   "stamp": "DECK_PROVENANCE.json"
+  },
+  "tardis_reference_strat6_higherL_aulboost_L19_outerFe": {
+   "refs": 2,
+   "atomic_provenance": "UNKNOWN",
+   "known_defects": 1,
+   "stamp": "DECK_PROVENANCE.json"
+  },
+  "tardis_reference_strat6_higherL_aulboost_L19_outerFe10x": {
+   "refs": 5,
+   "atomic_provenance": "UNKNOWN",
+   "known_defects": 1,
+   "stamp": "DECK_PROVENANCE.json"
+  },
+  "tardis_reference_strat6_higherL_aulboost_L19_outerFe10x_v11500k": {
+   "refs": 1,
+   "atomic_provenance": "UNKNOWN",
+   "known_defects": 1,
+   "stamp": "DECK_PROVENANCE.json"
+  },
+  "tardis_reference_strat6_higherL_aulboost_L19_outerFe5x_v11500k": {
+   "refs": 2,
+   "atomic_provenance": "UNKNOWN",
+   "known_defects": 1,
+   "stamp": "DECK_PROVENANCE.json"
+  },
+  "tardis_reference_toy06_19p48d": {
+   "refs": 126,
+   "atomic_provenance": "UNKNOWN",
+   "known_defects": 2,
+   "stamp": "DECK_PROVENANCE.json"
+  },
+  "tardis_reference_toy06_19p48d_ophys": {
+   "refs": 1,
+   "atomic_provenance": "RECORDED (links + sha256)",
+   "known_defects": 0,
+   "stamp": "DECK_PROVENANCE_AUDIT.json"
+  },
+  "tardis_reference_toy06_19p48d_ophys_exacthyd": {
+   "refs": 1,
+   "atomic_provenance": "RECORDED (links + sha256)",
+   "known_defects": 0,
+   "stamp": "DECK_PROVENANCE_AUDIT.json"
+  },
+  "tardis_reference_toy06_19p48d_sivcaiv": {
+   "refs": 28,
+   "atomic_provenance": "UNKNOWN",
+   "known_defects": 1,
+   "stamp": "DECK_PROVENANCE.json"
+  },
+  "tardis_reference_toy06_19p48d_sivcaiv_ftos": {
+   "refs": 21,
+   "atomic_provenance": "RECORDED (atomic_vintage_manifest.csv)",
+   "known_defects": 0,
+   "stamp": "DECK_PROVENANCE.json"
+  },
+  "tardis_reference_toy06_19p48d_sivcaiv_fullcov": {
+   "refs": 6,
+   "atomic_provenance": "UNKNOWN",
+   "known_defects": 1,
+   "stamp": "DECK_PROVENANCE.json"
+  },
+  "tardis_reference_toy06_19p48d_sivcaiv_links": {
+   "refs": 18,
+   "atomic_provenance": "RECORDED (atomic_vintage_manifest.csv)",
+   "known_defects": 0,
+   "stamp": "DECK_PROVENANCE.json"
+  },
+  "tardis_reference_toy06_19p48d_sivcaiv_vac": {
+   "refs": 1,
+   "atomic_provenance": "RECORDED (atomic_vintage_manifest.csv)",
+   "known_defects": 0,
+   "stamp": "DECK_PROVENANCE.json"
+  },
+  "tardis_reference_v3_femerge": {
+   "refs": 23,
+   "atomic_provenance": "UNKNOWN",
+   "known_defects": 1,
+   "stamp": "DECK_PROVENANCE.json"
+  },
+  "tardis_reference_v3_femerge_capraise": {
+   "refs": 6,
+   "atomic_provenance": "UNKNOWN",
+   "known_defects": 1,
+   "stamp": "DECK_PROVENANCE.json"
+  },
+  "tardis_reference_v3_femerge_capraise_asE": {
+   "refs": 12,
+   "atomic_provenance": "UNKNOWN",
+   "known_defects": 1,
+   "stamp": "DECK_PROVENANCE.json"
+  },
+  "tardis_reference_v3_femerge_capraise_asbb": {
+   "refs": 1,
+   "atomic_provenance": "UNKNOWN",
+   "known_defects": 1,
+   "stamp": "DECK_PROVENANCE.json"
+  },
+  "tardis_reference_v3_femerge_capraise_bbfix_asE": {
+   "refs": 4,
+   "atomic_provenance": "UNKNOWN",
+   "known_defects": 1,
+   "stamp": "DECK_PROVENANCE.json"
+  },
+  "tardis_reference_v3_femerge_capraise_bbfix_metafix_asE": {
+   "refs": 6,
+   "atomic_provenance": "UNKNOWN",
+   "known_defects": 1,
+   "stamp": "DECK_PROVENANCE.json"
+  },
+  "tardis_reference_v3_femerge_capraise_bbfix_metafix_asE_einsteinFix": {
+   "refs": 8,
+   "atomic_provenance": "UNKNOWN",
+   "known_defects": 1,
+   "stamp": "DECK_PROVENANCE.json"
+  },
+  "tardis_reference_zeta_clean": {
+   "refs": 15,
+   "atomic_provenance": "UNKNOWN",
+   "known_defects": 1,
+   "stamp": "DECK_PROVENANCE.json"
+  }
+ }
+}
