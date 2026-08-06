@@ -270,10 +270,13 @@ def build_all(build: Path, base: Path, cache_root: Path) -> Path:
 
 
 def runner_specs(
-    build: Path, fixtures: Path, scratch: Path, *, serial: bool
+    build: Path, fixtures: Path, scratch: Path, *, serial: bool,
+    deck: Path | None = None
 ) -> tuple[Run, ...]:
     serial_arg = ("--serial",) if serial else ()
-    deck = ROOT / "data/tardis_reference_toy06_19p48d"
+    # 덱은 인자로 받는다.  기본값은 종래 생산 덱이라 후방호환이며,
+    # 덱 전환(docs/DECK_TRANSITION_SCOPING.md T2)에서 새 덱을 지정해 돌린다.
+    deck = deck or (ROOT / "data/tardis_reference_toy06_19p48d")
     return (
         Run(
             "D",
@@ -353,8 +356,9 @@ def run_all(
     *,
     serial: bool,
     render: bool,
+    deck: Path | None = None,
 ) -> tuple[int, dict[str, RunResult]]:
-    runs = runner_specs(build, fixtures, scratch, serial=serial)
+    runs = runner_specs(build, fixtures, scratch, serial=serial, deck=deck)
     lock = threading.Lock()
     results: dict[str, RunResult] = {}
     if serial:
@@ -404,6 +408,8 @@ def main() -> int:
         default=Path("/tmp/lumina-composition-d-fixture-cache"),
     )
     parser.add_argument("--scratch-root", type=Path)
+    parser.add_argument("--deck", type=Path, default=None,
+                        help="게이트를 돌릴 덱 (기본=종래 생산 덱). 덱 전환 T2 에서 지정")
     parser.add_argument("--log", type=Path)
     args = parser.parse_args()
     if args.serial and args.verify_equivalence:
@@ -431,7 +437,8 @@ def main() -> int:
             scratch = Path(scratch_context.name)
         build = scratch / "build"
         build.mkdir()
-        base = ROOT / "data/tardis_reference_toy06_19p48d"
+        base = (args.deck.resolve() if args.deck
+                else ROOT / "data/tardis_reference_toy06_19p48d")
         print(
             f"GATE_BATTERY node={os.uname().nodename} cpu_count={os.cpu_count()} "
             f"scratch={scratch}"
@@ -444,10 +451,10 @@ def main() -> int:
 
         if args.verify_equivalence:
             serial_rc, serial_results = run_all(
-                build, fixtures, scratch / "serial", serial=True, render=False
+                build, fixtures, scratch / "serial", serial=True, render=False, deck=base
             )
             parallel_rc, parallel_results = run_all(
-                build, fixtures, scratch / "parallel", serial=False, render=False
+                build, fixtures, scratch / "parallel", serial=False, render=False, deck=base
             )
             serial_table = result_table(serial_results)
             parallel_table = result_table(parallel_results)
@@ -468,6 +475,7 @@ def main() -> int:
             build, fixtures, scratch / ("serial" if args.serial else "parallel"),
             serial=args.serial,
             render=True,
+            deck=base,
         )
         print(f"GATE_BATTERY_SUMMARY verdict={'PASS' if rc == 0 else 'FAIL'} rc={rc}")
         return rc
