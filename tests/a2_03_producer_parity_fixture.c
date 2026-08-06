@@ -34,9 +34,9 @@ int main(void)
     RPacket packet;
     memset(&packet, 0, sizeof(packet));
     packet.current_shell_id = 0;
-    update_base_estimators(&packet, 3.0, &estimator, 5.0e14, 2.0);
-    update_base_estimators(&packet, 7.0, &estimator, 8.0e14, 4.0);
-    update_base_estimators(&packet, 11.0, &estimator, 8.0e14, 5.0);
+    update_base_estimators(&packet, 3.0, &estimator, 5.0e14, 2.0, 5.0e14, 2.0);
+    update_base_estimators(&packet, 7.0, &estimator, 8.0e14, 4.0, 8.0e14, 4.0);
+    update_base_estimators(&packet, 11.0, &estimator, 8.0e14, 5.0, 8.0e14, 5.0);
 
     if (shadow.enabled && radiation_field_accumulator_reduce(
             &shadow.accumulator,

@@ -2909,16 +2909,22 @@ static void compute_tau_sobolev(AtomicData *atom, PlasmaState *plasma,
 
         /* Diagnostic: zero-out lines for masked Z */
         if (Z > 0 && Z < 100 && opacity_skip_z[Z]) {
-            for (int s = 0; s < n_shells; s++)
+            for (int s = 0; s < n_shells; s++) {
                 opacity->tau_sobolev[line * n_shells + s] = 0.0;
+                if (opacity->tau_validity)
+                    opacity->tau_validity[line * n_shells + s] = A208_EXACT_ZERO;
+            }
             continue;
         }
 
         /* Find ion population index */
         int ip = find_ion_pop_idx(atom, Z, ion_stage);
         if (ip < 0) {
-            for (int s = 0; s < n_shells; s++)
+            for (int s = 0; s < n_shells; s++) {
                 opacity->tau_sobolev[line * n_shells + s] = 0.0;
+                if (opacity->tau_validity)
+                    opacity->tau_validity[line * n_shells + s] = A208_MISS;
+            }
             continue;
         }
 
@@ -2935,8 +2941,11 @@ static void compute_tau_sobolev(AtomicData *atom, PlasmaState *plasma,
         }
 
         if (lower_idx < 0 || upper_idx < 0) {
-            for (int s = 0; s < n_shells; s++)
+            for (int s = 0; s < n_shells; s++) {
                 opacity->tau_sobolev[line * n_shells + s] = 0.0;
+                if (opacity->tau_validity)
+                    opacity->tau_validity[line * n_shells + s] = A208_MISS;
+            }
             continue;
         }
 
@@ -2954,6 +2963,8 @@ static void compute_tau_sobolev(AtomicData *atom, PlasmaState *plasma,
             double n_ion = atom->ion_number_density[ip * n_shells + s];
             if (element_inactive) {
                 opacity->tau_sobolev[(size_t)line * n_shells + s] = 0.0;
+                if (opacity->tau_validity)
+                    opacity->tau_validity[(size_t)line * n_shells + s] = A208_EXACT_ZERO;
                 continue;
             }
             if (!plasma || !plasma->T_e || s >= plasma->n_shells ||
@@ -2963,6 +2974,8 @@ static void compute_tau_sobolev(AtomicData *atom, PlasmaState *plasma,
                  * Z-inert short circuit above, but fail closed for active
                  * lines instead of dereferencing a missing T_e view. */
                 opacity->tau_sobolev[(size_t)line * n_shells + s] = NAN;
+                if (opacity->tau_validity)
+                    opacity->tau_validity[(size_t)line * n_shells + s] = A208_INVALID_TE;
                 continue;
             }
             double T_e = plasma->T_e[s];
@@ -2977,22 +2990,20 @@ static void compute_tau_sobolev(AtomicData *atom, PlasmaState *plasma,
             if ((ps_lo != POP_OK && ps_lo != POP_EXACT_ZERO) ||
                 (ps_up != POP_OK && ps_up != POP_EXACT_ZERO)) {
                 opacity->tau_sobolev[(size_t)line * n_shells + s] = NAN;
+                if (opacity->tau_validity)
+                    opacity->tau_validity[(size_t)line * n_shells + s] = A208_INVALID_POPULATION;
                 continue;
             }
             double n_lower = n_ion * f_lower;
             double n_upper = n_ion * f_upper;
 
-            /* Stimulated emission correction */
-            double stim_corr = 1.0;
-            if (n_lower > 0.0 && n_upper > 0.0) {
-                stim_corr = 1.0 - (g_lower * n_upper) / (g_upper * n_lower);
-                if (stim_corr < 0.0) stim_corr = 0.0; /* population inversion -> no absorption */
-            }
-
-            /* tau_sobolev = SOBOLEV_COEFF * f_lu * lambda_cm * t_exp * n_lower * stim_corr */
-            double tau = SOBOLEV_COEFF * f_lu * lam_cm * time_explosion * n_lower * stim_corr;
-            if (tau < 1e-100) tau = 1e-100;
-            opacity->tau_sobolev[line * n_shells + s] = tau;
+            A208ValueView tau = a208_signed_sobolev(
+                SOBOLEV_COEFF, f_lu, lam_cm, time_explosion,
+                n_lower, n_upper, g_lower, g_upper,
+                opacity->tau_required_generation);
+            opacity->tau_sobolev[line * n_shells + s] = tau.value;
+            if (opacity->tau_validity)
+                opacity->tau_validity[line * n_shells + s] = tau.validity;
         }
     }
 }
@@ -3815,6 +3826,15 @@ void compute_transition_probabilities(AtomicData *atom, PlasmaState *plasma,
                                        double damping_constant, int apply_damping,
                                        Geometry *geom) {
     int n_shells = opacity->n_shells;
+    if (opacity->tau_sobolev) {
+        size_t n=(size_t)opacity->n_lines*n_shells;
+        for(size_t k=0;k<n;k++) if(opacity->tau_sobolev[k]<0.0) {
+            a208_counters()->blocked_negative_transition++;
+            fprintf(stderr,"[A2-08][BLOCKED] consumer=P06 reason="
+                    "BLOCKED_NEGATIVE_OPACITY_SEMANTICS identity=%zu rc=3\n",k);
+            return;
+        }
+    }
 
     /* [MA-RADRECOMB tau-gate] optically-thin threshold for the RADRECOMB continuum
      * emit decision (dig_E2 double-count repair). Edges with tau_bf > thresh are
@@ -7060,20 +7080,9 @@ static double bf_event_route_contribution(const BFOpacity *bf, int shell,
     }
     if (!(sigma > 0.0)) return 0.0;
 
-    double corr = 1.0;
-    double ratio = bf->event_stim_ratio
-                 ? bf->event_stim_ratio[
-                       (size_t)shell * bf->event_n_routes + route]
-                 : -1.0;
-    if (ratio >= 0.0 && bf->event_Te && bf->event_Te[shell] > 0.0) {
-        const double ARTIS_H = 6.6260755e-27;
-        const double ARTIS_KB = 1.38064852e-16;
-        double stim = ratio * exp(-(ARTIS_H / ARTIS_KB) *
-                                  (nu - edge) / bf->event_Te[shell]);
-        corr = fmax(0.0, 1.0 - stim);
-    }
-    double contrib = w * sigma * corr;
-    return (contrib > 0.0) ? contrib : 0.0;
+    /* Packet selection consumes the independently nonnegative gross measure.
+     * Stimulated recombination belongs only to the signed net coefficient. */
+    return w * sigma;
 }
 
 /* CPU mirror of the D-1 GPU route draw. Returns the selected route index and
@@ -7128,7 +7137,7 @@ double bf_get_chi(BFOpacity *bf, int shell, double nu) {
 
 /* D-1's bound-free-only endpoint. Legacy chi_bf also contains free-free;
  * selecting this grid keeps ARTIS' bf and ff absorption channels distinct. */
-double bf_get_event_chi(BFOpacity *bf, int shell, double nu) {
+double bf_get_event_measure(BFOpacity *bf, int shell, double nu) {
     if (!bf->event_enabled || !bf->event_chi_bf ||
         nu < bf->nu_min || nu >= bf->nu_max) return 0.0;
     double x = log(nu / bf->nu_min) / bf->d_log_nu;
@@ -7783,7 +7792,7 @@ void compute_bf_opacity(BFOpacity *bf, AtomicData *atom, PlasmaState *plasma,
                             double corrfactor = 1.0;
                             if (stim_route_valid[q]) {
                                 double stimfactor = stim_route_ratio[q] * expfactor;
-                                corrfactor = fmax(0.0, 1.0 - stimfactor);
+                                corrfactor = 1.0 - stimfactor;
                             }
                             probability_sum += p;
                             weighted_corr += p * corrfactor;
@@ -7794,7 +7803,7 @@ void compute_bf_opacity(BFOpacity *bf, AtomicData *atom, PlasmaState *plasma,
                     int idx = s * bf->n_freq_bins + b;
                     bf->chi_bf[idx] += chi_contrib;
                     if (bf->event_enabled && bf->event_chi_bf)
-                        bf->event_chi_bf[idx] += chi_contrib;
+                        bf->event_chi_bf[idx] += chi_spont_base;
 #ifdef LUMINA_FROZEN_ORACLE
                     double oracle_eta_contrib = 0.0;
 #endif
@@ -8001,6 +8010,85 @@ compute_ff:
            chi_bf_max_uv, chi_ff_max_uv, chi_e0, chi_bf_max_uv/chi_e0, chi_ff_max_uv/chi_e0);
     printf("  [BF] Macro-atom activation: %d/%d bins have valid levels\n",
            n_activated, (int)grid_size);
+}
+
+int a208_publish_cpu_opacity(OpacityState *opacity, const BFOpacity *bf,
+                             const AtomicData *atom, const PlasmaState *plasma,
+                             const NLTEConfig *nlte,
+                             double epoch) {
+    if (!opacity || !atom || !plasma || !plasma->n_electron || !plasma->T_e ||
+        opacity->n_shells<=0 || opacity->n_lines<0) return 5;
+    size_t ns=(size_t)opacity->n_shells;
+    size_t nb=bf?(size_t)bf->n_freq_bins:(size_t)NLTE_N_FREQ_BINS;
+    CpuOpacityPublication candidate={0};
+    /* The line publication is the generation-bound OpacityState value/status
+     * pair; avoid a second multi-gigabyte copy of the 125M-cell line slab. */
+    if(a208_publication_init(&candidate,ns,nb,0,0)) return 2;
+    candidate.generation_required=opacity->cpu_opacity.generation_required+1;
+    candidate.epoch=epoch;
+    candidate.population_generation=atom->population_committed_generation;
+    candidate.partition_generation=atom->population_committed_generation;
+    candidate.te_generation=plasma->T_e_generation;
+    candidate.ne_generation=atom->population_committed_generation;
+    candidate.tau_generation=opacity->tau_computed_generation;
+    candidate.radiation_generation=nlte?nlte->radfield_view.generation:0;
+    candidate.line_jbar_generation=nlte?nlte->line_view.generation:0;
+    double nu_min=bf?bf->nu_min:NLTE_NU_MIN;
+    double dlog=bf?bf->d_log_nu:log(NLTE_NU_MAX/NLTE_NU_MIN)/(double)nb;
+    for(size_t b=0;b<=nb;b++) candidate.frequency_edges[b]=nu_min*exp(dlog*(double)b);
+    A208Counters *ctr=a208_counters();
+    ctr->generation_required=candidate.generation_required;
+    ctr->shells_attempted+=ns;ctr->cells_attempted+=ns*nb;
+    for(size_t s=0;s<ns;s++) {
+        double Te=plasma->T_e[s],ne=plasma->n_electron[s],z2ni=0.0;
+        if(!isfinite(Te)||Te<=0.0||!isfinite(ne)||ne<0.0){a208_publication_free(&candidate);return 5;}
+        for(int ip=0;ip<atom->n_ion_pops;ip++){
+            double ni=atom->ion_number_density[(size_t)ip*ns+s];
+            double z=(double)atom->ion_pop_stage[ip];
+            if(isfinite(ni)&&ni>=0.0)z2ni+=z*z*ni;
+        }
+        for(size_t b=0;b<nb;b++) {
+            size_t k=s*nb+b;double nu=sqrt(candidate.frequency_edges[b]*candidate.frequency_edges[b+1]);
+            double es=ne*SIGMA_THOMSON;
+            double x=H_PLANCK*nu/(K_BOLTZMANN*Te);
+            double ff=C_FF_OPACITY/sqrt(Te)*ne*z2ni/(nu*nu*nu)*(-expm1(-x));
+            double legacy=bf?bf->chi_bf[k]:ff;
+            double bfnet=legacy-ff;
+            candidate.chi_es[k]=es;candidate.chi_bf[k]=bfnet;candidate.chi_ff[k]=ff;
+            candidate.chi_validity[k]=(es==0.0)?A208_EXACT_ZERO:A208_VALID;
+            candidate.chi_validity[2*ns*nb+k]=(bfnet==0.0)?A208_EXACT_ZERO:A208_VALID;
+            candidate.chi_validity[3*ns*nb+k]=(ff==0.0)?A208_EXACT_ZERO:A208_VALID;
+            ctr->es_terms++;ctr->bf_terms++;ctr->ff_terms++;
+        }
+    }
+    for(int l=0;l<opacity->n_lines;l++) {
+        double nu=opacity->line_list_nu?opacity->line_list_nu[l]:0.0;
+        if(!(nu>candidate.frequency_edges[0]&&nu<candidate.frequency_edges[nb]))continue;
+        size_t b=(size_t)(log(nu/nu_min)/dlog);if(b>=nb)b=nb-1;
+        double dnu=candidate.frequency_edges[b+1]-candidate.frequency_edges[b];
+        for(size_t s=0;s<ns;s++) {
+            size_t lk=(size_t)l*ns+s,ck=s*nb+b;
+            double tau=opacity->tau_sobolev[lk];
+            A208Validity tv=opacity->tau_validity?opacity->tau_validity[lk]:
+                (isfinite(tau)?(tau==0.0?A208_EXACT_ZERO:A208_VALID):A208_NONFINITE);
+            if(tv==A208_VALID) {
+                double frac=-expm1(-tau);
+                double term=nu*frac/(C_SPEED_OF_LIGHT*epoch*dnu);
+                if(!isfinite(term)){candidate.chi_validity[ns*nb+ck]=A208_NONFINITE;ctr->nonfinite_failures++;}
+                else {candidate.chi_bb[ck]+=term;ctr->bb_terms++;if(term<0.0)ctr->negative_bb_line_shells++;}
+            }
+        }
+    }
+    for(size_t k=0;k<ns*nb;k++) {
+        if(candidate.chi_validity[ns*nb+k]==0)
+            candidate.chi_validity[ns*nb+k]=candidate.chi_bb[k]==0.0?A208_EXACT_ZERO:A208_VALID;
+        candidate.chi_total[k]=((candidate.chi_es[k]+candidate.chi_bb[k])+candidate.chi_bf[k])+candidate.chi_ff[k];
+        if(candidate.chi_bf[k]<0.0)ctr->negative_bf_shell_bins++;
+        if(candidate.chi_total[k]<0.0)ctr->negative_total_shell_bins++;
+    }
+    if(a208_publication_commit(&opacity->cpu_opacity,&candidate)!=0){ctr->partial_publish_attempts++;a208_publication_free(&candidate);return 5;}
+    ctr->shells_published+=ns;ctr->cells_published+=ns*nb;
+    return 0;
 }
 
 /* Sample Planck frequency using Bjorkman-Wood method (4-random) */
@@ -12050,33 +12138,71 @@ int compute_radiative_equilibrium_te(PlasmaState *plasma, GammaDeposition *gamma
          * bins see the penetrating diluted photospheric field. Built once per shell. */
         if (hybrid_mode == 3 && opacity != NULL && opacity->tau_sobolev != NULL) {
             int onl = opacity->n_lines;
+            int heating_blocked = 0;
             for (int bb = 0; bb < nfb; bb++) { bl_tau[bb] = 0.0; bl_w[bb] = 0.0; bl_wS[bb] = 0.0; }
             double inv_dln = 1.0 / nlte->d_log_nu;
             double lnu_min = log(nlte->nu_min);
             for (int l = 0; l < onl; l++) {
                 double tau_l = opacity->tau_sobolev[(size_t)l * n_shells + s];
-                if (tau_l <= 0.0) continue;
+                size_t line_cell=(size_t)l*n_shells+s;
+                A208Validity tau_status=opacity->tau_validity
+                    ? opacity->tau_validity[line_cell]
+                    : (isfinite(tau_l)?(tau_l==0.0?A208_EXACT_ZERO:A208_VALID):A208_NONFINITE);
+                if (tau_status!=A208_VALID && tau_status!=A208_EXACT_ZERO) {
+                    heating_blocked=1;break;
+                }
+                if (tau_l < 0.0) {
+                    a208_counters()->blocked_negative_heating++;
+                    fprintf(stderr,"[A2-08][BLOCKED] consumer=P09 reason="
+                            "BLOCKED_NEGATIVE_OPACITY_SEMANTICS line=%d shell=%d rc=3\n",l,s);
+                    heating_blocked=1;break;
+                }
+                if (tau_l == 0.0) continue;
                 double nu_l = opacity->line_list_nu[l];
                 if (nu_l <= nlte->nu_min) continue;
                 int bb = (int)((log(nu_l) - lnu_min) * inv_dln);
                 if (bb < 0 || bb >= nfb) continue;
                 double w = 1.0 - exp(-tau_l);   /* line absorption fraction */
-                double S_l = (opacity->line_source_S != NULL)
-                           ? opacity->line_source_S[(size_t)l * n_shells + s] : 0.0;
-                if (S_l <= 0.0) S_l = W * planck_bnu(T_rad, nu_l);  /* dilute fallback */
+                A208Validity source_status=opacity->line_source_validity
+                    ? opacity->line_source_validity[line_cell] : A208_UNSAMPLED;
+                if (!opacity->line_source_S ||
+                    (source_status!=A208_VALID && source_status!=A208_EXACT_ZERO)) {
+                    a208_counters()->fallback_attempts++;
+                    heating_blocked=1;break;
+                }
+                double S_l=opacity->line_source_S[line_cell];
                 bl_tau[bb] += tau_l;
                 bl_w[bb]   += w;
                 bl_wS[bb]  += w * S_l;
             }
+            if (heating_blocked) continue;
             for (int bb = 0; bb < nfb; bb++) {
                 double nu_bin = nu_mid[bb];
-                double WB = W * planck_bnu(T_rad, nu_bin);
-                if (bl_w[bb] <= 0.0) { Jeff_blanket[bb] = WB; continue; }
+                const RadiationFieldView *rv=nlte?&nlte->radfield_view:NULL;
+                if (!nlte || nlte->radfield_view_status!=RADIATION_FIELD_VIEW_OK ||
+                    !rv ||
+                    !rv->frequency_bin_edges || !rv->J_nu || !rv->validity ||
+                    (size_t)s>=rv->n_shells || nu_bin<rv->frequency_bin_edges[0] ||
+                    nu_bin>=rv->frequency_bin_edges[rv->n_bins]) {
+                    a208_counters()->raw_view_attempts++;
+                    heating_blocked=1;break;
+                }
+                size_t lo=0,hi=rv->n_bins;
+                while(lo+1<hi){size_t mid=(lo+hi)/2;if(rv->frequency_bin_edges[mid]<=nu_bin)lo=mid;else hi=mid;}
+                size_t rk=(size_t)s*rv->n_bins+lo;
+                if(rv->validity[rk]!=RADIATION_FIELD_VALID &&
+                   rv->validity[rk]!=RADIATION_FIELD_EXACT_ZERO){
+                    a208_counters()->blocked_unsampled++;
+                    heating_blocked=1;break;
+                }
+                double J_base=rv->J_nu[rk];
+                if (bl_w[bb] <= 0.0) { Jeff_blanket[bb] = J_base; continue; }
                 double tb = bl_tau[bb];
                 double beta_bin = (tb > 1.0e-6) ? (1.0 - exp(-tb)) / tb : 1.0;
                 double Sbar = bl_wS[bb] / bl_w[bb];
-                Jeff_blanket[bb] = beta_bin * WB + (1.0 - beta_bin) * Sbar;
+                Jeff_blanket[bb] = beta_bin * J_base + (1.0 - beta_bin) * Sbar;
             }
+            if (heating_blocked) continue;
         }
         for (int i = 0; i < nlte->n_nlte_ions; i++) {
             int Z = nlte->nlte_Z[i];
@@ -17498,6 +17624,10 @@ void nlte_update_tau_sobolev(NLTEConfig *nlte, AtomicData *atom,
                 opacity->tau_sobolev[(size_t)line * n_shells + s] = 0.0;
                 if (opacity->line_source_S)
                     opacity->line_source_S[(size_t)line * n_shells + s] = 0.0;
+                if (opacity->tau_validity)
+                    opacity->tau_validity[(size_t)line * n_shells + s] = A208_EXACT_ZERO;
+                if (opacity->line_source_validity)
+                    opacity->line_source_validity[(size_t)line * n_shells + s] = A208_EXACT_ZERO;
                 continue;
             }
             if (candidate_only_slot) {
@@ -17511,35 +17641,31 @@ void nlte_update_tau_sobolev(NLTEConfig *nlte, AtomicData *atom,
             double n_lower = nlte->nlte_level_populations[nlte_lo * n_shells + s];
             double n_upper = nlte->nlte_level_populations[nlte_up * n_shells + s];
 
-            /* Stimulated emission correction */
-            double stim_corr = 1.0;
-            if (n_lower > 0.0 && n_upper > 0.0 && g_lo > 0 && g_up > 0) {
-                stim_corr = 1.0 - ((double)g_lo * n_upper) / ((double)g_up * n_lower);
-                if (stim_corr < 0.0) stim_corr = 0.0;
-            }
-
-            double tau_nlte = SOBOLEV_COEFF * f_lu * lam_cm * time_explosion *
-                              n_lower * stim_corr;
-            if (!(tau_nlte > 1e-100)) tau_nlte = 1e-100;  /* NaN-catching */
+            A208ValueView tau_view = a208_signed_sobolev(
+                SOBOLEV_COEFF, f_lu, lam_cm, time_explosion,
+                n_lower, n_upper, g_lo, g_up,
+                opacity->tau_required_generation);
             if (!skip_tau)   /* SKIP_Z elements keep their nebular tau */
-                opacity->tau_sobolev[line * n_shells + s] = tau_nlte;
+                opacity->tau_sobolev[line * n_shells + s] = tau_view.value;
+            if (!skip_tau && opacity->tau_validity)
+                opacity->tau_validity[line * n_shells + s] = tau_view.validity;
 
             /* CMF NLTE line source function (paper-method, fluorescence-bearing):
              * S_l = (2hv^3/c^2) / (g_u n_l / (g_l n_u) - 1), from the NLTE level
              * pops. Stored for the CMF formal solver; <=0 left for fallback. */
-            double S_l = 0.0;
-            if (n_lower > 0.0 && n_upper > 0.0 && g_lo > 0 && g_up > 0) {
-                double ratio = ((double)g_up * n_lower) / ((double)g_lo * n_upper);
-                double denom = ratio - 1.0;
-                if (denom > 1e-30) S_l = src_prefac / denom;
-            }
+            A208ValueView source_view = a208_line_source(
+                src_prefac, n_lower, n_upper, g_lo, g_up,
+                opacity->tau_required_generation);
+            double S_l = source_view.value;
             /* F0 fluorescence falsifier: impose S_l = X*B on Fe 4475-window lines */
             if (fluor_oracle_x > 1.0 && Z == 26 &&
                 lam_cm >= fluor_lam_lo_cm && lam_cm <= fluor_lam_hi_cm) {
-                S_l *= fluor_oracle_x;
+                if (source_view.validity == A208_VALID) S_l *= fluor_oracle_x;
                 fluor_hits++;
             }
             opacity->line_source_S[line * n_shells + s] = S_l;
+            if (opacity->line_source_validity)
+                opacity->line_source_validity[line * n_shells + s] = source_view.validity;
         }
     }
     if (fluor_oracle_x > 1.0)

@@ -275,3 +275,33 @@ partition/LTE reference는 단일 `population_lte_level_fraction`/`population_pa
 `validation/a2_07/A2_07_STATIC_CENSUS.json` 및 `docs/CODEX_IMPL_A2_07.md`에 있으며,
 생산 CPU population call graph의 금지 읽기 0, 별도 `partition_functions_Te` 저장소 0을
 검사한다. A2-10 온도 해법, A2-13 GPU, 명시적 A2-06 진단 shadow만 좁은 allowlist다.
+
+## ADDENDUM (A2-08 구현, 2026-08-06) — signed opacity 소비지점 54행 처분
+
+canonical 157행은 변경하지 않았다. A2-08의 별도 정적 원장
+`validation/a2_08/A2_08_SIGNED_CONSUMER_CENSUS.json`이 CPU semantic consumer
+54행을 이관 16, 잔류-허용 4, `BLOCKED_NEGATIVE_OPACITY_SEMANTICS` 34로 고정한다.
+목록 밖 consumer, 미분류 lexical hit, 중복 처분은 각각 0이다.
+
+| 고정 ID | A2-08 처분 |
+|---|---|
+| `A2-01:old2435:T_rad` | dead nebular opacity/rate shadow 제거 |
+| `A2-01:old2437:W` | dead nebular opacity/rate shadow 제거 |
+| `A2-01:old2498:T_rad` | dead zeta shadow 제거 |
+| `A2-01:old2499:T_rad` | dead Te/Trad shadow 제거 |
+| `A2-01:old2500:W` | dead dilution shadow 제거 |
+| `A2-01:old2501:T_rad` | dead ratio shadow 제거 |
+| `A2-01:old2502:W` | dead non-meta dilution shadow 제거 |
+| `A2-01:old2503:T_rad` | output-only checked diagnostic으로 격리 |
+| `A2-01:old2504:W` | output-only checked diagnostic으로 격리 |
+| `A2-01:old908:T_rad` | opacity scalar regime 선택 제거; source는 A2-09 BLOCKED |
+| `A2-01:old2144:T_rad` | signed publication으로 이관; formal 소비는 A2-11 BLOCKED |
+| `A2-01:old18010:T_rad` | A2-11 인계, A2-08 수식 diff 0 |
+| `A2-06:old11908:W` | P10 checked line-source/status view |
+| `A2-06:old11908:T_rad` | P10; Trad fallback 0 |
+| `A2-06:old11915:W` | P10 checked `RadiationFieldView.J_nu` |
+| `A2-06:old11915:T_rad` | P10; Trad fallback 0 |
+| `A2-01:old7897:T_rad` | A2-09 유지, A2-08 source diff 0 |
+
+`old7897`, BF Planck 재방출, `eta_reemit`, CDF/sampler와 RNG draw count는 A2-09
+소유로 유지한다. formal 내부 수식과 GPU 경로도 각각 A2-11과 A2-12+에 그대로 인계한다.

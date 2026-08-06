@@ -997,6 +997,10 @@ int load_tardis_reference_data(const char *ref_dir, Geometry *geo,
     /* CMF: per-line NLTE source function, populated during plasma/NLTE update.
      * 0 (calloc default) signals "use fallback" in the CMF solver. */
     opacity->line_source_S = (double *)calloc((size_t)opacity->n_lines * opacity->n_shells, sizeof(double));
+    opacity->tau_validity = (A208Validity *)calloc(
+        (size_t)opacity->n_lines * opacity->n_shells, sizeof(A208Validity));
+    opacity->line_source_validity = (A208Validity *)calloc(
+        (size_t)opacity->n_lines * opacity->n_shells, sizeof(A208Validity));
 
     /* Phase 2 - Step 10g: Load transition probabilities [n_trans, n_shells] */
     snprintf(path, sizeof(path), "%s/transition_probabilities.npy", ref_dir); /* Phase 2 - Step 10g */
@@ -1073,6 +1077,9 @@ void free_opacity_state(OpacityState *op) { /* Phase 2 - Step 11 */
     free(op->line_list_nu); /* Phase 2 - Step 11 */
     free(op->tau_sobolev); /* Phase 2 - Step 11 */
     free(op->line_source_S);
+    free(op->tau_validity);
+    free(op->line_source_validity);
+    a208_publication_free(&op->cpu_opacity);
     free(op->electron_density); /* Phase 2 - Step 11 */
     free(op->t_electrons); /* Phase 2 - Step 11 */
     free(op->macro_block_references); /* Phase 2 - Step 11 */

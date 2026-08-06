@@ -524,6 +524,18 @@ void line_scatter_event(RPacket *pkt, double time_explosion,
 void single_packet_loop(RPacket *pkt, Geometry *geo, OpacityState *opacity,
                           Estimators *est, MCConfig *config,
                           BFOpacity *bf, PlasmaState *plasma, RNG *rng) {
+    int shell0 = pkt->current_shell_id;
+    for (int l = 0; l < opacity->n_lines; l++) {
+        size_t k = (size_t)l * opacity->n_shells + shell0;
+        if (opacity->tau_sobolev[k] < 0.0) {
+            a208_counters()->blocked_negative_transport++;
+            fprintf(stderr, "[A2-08][BLOCKED] consumer=T01 reason="
+                    "BLOCKED_NEGATIVE_OPACITY_SEMANTICS line=%d shell=%d rc=3\n",
+                    l, shell0);
+            pkt->status = PACKET_REABSORBED;
+            return;
+        }
+    }
     /* Phase 3 - Step 11: Set initial packet properties (partial relativity) */
     /* TARDIS: set_packet_props_partial_relativity */
     double inv_doppler = get_inverse_doppler_factor(pkt->r, pkt->mu, /* Phase 3 - Step 11 */
@@ -562,9 +574,15 @@ void single_packet_loop(RPacket *pkt, Geometry *geo, OpacityState *opacity,
         double chi_e = opacity->electron_density[shell] * SIGMA_THOMSON; /* Phase 3 - Step 11 */
         double chi_bf_val = 0.0;
         if (bf && bf->enabled) {
-            chi_bf_val = bf->event_enabled
-                       ? bf_get_event_chi(bf, shell, comov_nu)
-                       : bf_get_chi(bf, shell, comov_nu);
+            if (!bf->event_enabled) {
+                a208_counters()->event_measure_unavailable++;
+                a208_counters()->blocked_negative_transport++;
+                fprintf(stderr, "[A2-08][BLOCKED] consumer=T03 reason="
+                        "EVENT_MEASURE_UNAVAILABLE rc=3\n");
+                pkt->status = PACKET_REABSORBED;
+                return;
+            }
+            chi_bf_val = bf_get_event_measure(bf, shell, comov_nu);
         }
         double chi_continuum = chi_e + chi_bf_val; /* e-scattering + bound-free */
 

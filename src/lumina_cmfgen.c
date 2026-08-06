@@ -734,7 +734,10 @@ int cmfgen_dump_line_populations(const CMFGENState *cs, const Geometry *geo,
         int s = sel.shells[si];
         for (int l=0;l<n_lines;l++) {
             double tau = opac->tau_sobolev[(size_t)l*NS+s];
-            if (tau <= 1e-12) continue;
+            if (opac->tau_validity &&
+                opac->tau_validity[(size_t)l*NS+s] != A208_VALID &&
+                opac->tau_validity[(size_t)l*NS+s] != A208_EXACT_ZERO) continue;
+            if (tau == 0.0) continue;
             double nu_l = opac->line_list_nu[l];
             if (nu_l <= cs->nu_min || nu_l >= cs->nu_max) continue;
             int b = (int)floor(log(nu_l/cs->nu_min)/cs->d_log_nu);
@@ -775,7 +778,12 @@ int cmfgen_dump_line_populations(const CMFGENState *cs, const Geometry *geo,
                                          : opac->electron_density[s];
         for (int l=0;l<n_lines;l++) {
             double tau = opac->tau_sobolev[(size_t)l*NS+s];
-            if (tau <= 1e-12) continue;
+            A208Validity tau_status = opac->tau_validity
+                ? opac->tau_validity[(size_t)l*NS+s]
+                : (isfinite(tau) ? (tau == 0.0 ? A208_EXACT_ZERO : A208_VALID)
+                                 : A208_NONFINITE);
+            if (tau_status != A208_VALID && tau_status != A208_EXACT_ZERO) continue;
+            if (tau == 0.0) continue;
             double nu_l = opac->line_list_nu[l];
             if (nu_l <= cs->nu_min || nu_l >= cs->nu_max) continue;
             int b = (int)floor(log(nu_l/cs->nu_min)/cs->d_log_nu);
@@ -783,10 +791,12 @@ int cmfgen_dump_line_populations(const CMFGENState *cs, const Geometry *geo,
             double frac = (tau > 1e-6) ? -expm1(-tau) : tau;
             double w = frac * nu_l * inv_ct / cs->dnu[b];
             double Sl_pop = opac->line_source_S
-                          ? opac->line_source_S[(size_t)l*NS+s] : 0.0;
-            double Sl = src_nlte ? Sl_pop : 0.0;
-            int sl_fallback = (Sl <= 0.0);
-            if (Sl <= 0.0) Sl = cm_planck(nu_l, Te);
+                          ? opac->line_source_S[(size_t)l*NS+s] : NAN;
+            A208Validity source_status = opac->line_source_validity
+                ? opac->line_source_validity[(size_t)l*NS+s] : A208_UNSAMPLED;
+            double Sl = src_nlte ? Sl_pop : NAN;
+            int sl_fallback = source_status != A208_VALID &&
+                              source_status != A208_EXACT_ZERO;
             size_t ridx=(size_t)si*NB+b;
             chi_rep[ridx] += w;
             double el = 1.0, eta_l;
@@ -830,12 +840,12 @@ int cmfgen_dump_line_populations(const CMFGENState *cs, const Geometry *geo,
             double tau_pop = -1.0;
             if ((flags & CMF_LP_F_POPS_DEFINED) && g_lo > 0 && g_up > 0 &&
                 atom->line_f_lu && atom->line_wavelength_cm) {
-                double stim = 1.0 - ((double)g_lo*n_upper)/((double)g_up*n_lower);
-                if (stim < 0.0) { stim = 0.0; flags |= CMF_LP_F_STIM_CLAMPED; }
-                tau_pop = SOBOLEV_COEFF * atom->line_f_lu[l] *
-                          atom->line_wavelength_cm[l] * geo->time_explosion *
-                          n_lower * stim;
-                if (!(tau_pop > 1e-100)) tau_pop = 1e-100;
+                A208ValueView roundtrip = a208_signed_sobolev(
+                    SOBOLEV_COEFF, atom->line_f_lu[l],
+                    atom->line_wavelength_cm[l], geo->time_explosion,
+                    n_lower, n_upper, g_lo, g_up,
+                    opac->tau_computed_generation);
+                tau_pop = roundtrip.value;
                 if (memcmp(&tau_pop,&tau,sizeof(double))==0)
                     flags |= CMF_LP_F_TAU_ROUNDTRIP;
             }
@@ -5085,6 +5095,24 @@ int cmfgen_run(Geometry *geo, OpacityState *opac, BFOpacity *bf,
                GammaDeposition *gamma, double T_inner, int n_iter)
 {
     if (getenv("LUMINA_CMF_OBS_SELFTEST")) { cmf_obs_selftest(); return 0; }
+    if (opac && opac->tau_sobolev) {
+        size_t n=(size_t)opac->n_lines*opac->n_shells;
+        for(size_t k=0;k<n;k++) if(opac->tau_sobolev[k]<0.0) {
+            a208_counters()->blocked_negative_formal++;
+            fprintf(stderr,"[A2-08][BLOCKED] consumer=F01-G23 reason="
+                    "BLOCKED_NEGATIVE_OPACITY_SEMANTICS identity=%zu rc=3\n",k);
+            return 3;
+        }
+    }
+    if (bf && bf->chi_bf) {
+        size_t n=(size_t)bf->n_shells*bf->n_freq_bins;
+        for(size_t k=0;k<n;k++) if(bf->chi_bf[k]<0.0) {
+            a208_counters()->blocked_negative_formal++;
+            fprintf(stderr,"[A2-08][BLOCKED] consumer=F01-G23 reason="
+                    "BLOCKED_NEGATIVE_OPACITY_SEMANTICS bf_identity=%zu rc=3\n",k);
+            return 3;
+        }
+    }
     CMFGENState cs;
     if (cmfgen_init(&cs, geo) != 0) return -1;
 
@@ -5109,6 +5137,9 @@ int cmfgen_run(Geometry *geo, OpacityState *opac, BFOpacity *bf,
 
         /* refresh bf opacity for current ionization/T_e */
         if (bf) compute_bf_opacity(bf, atom, plasma, cs.n_shells);
+        if (a208_publish_cpu_opacity(opac,bf,atom,plasma,nlte,t_exp)!=0) {
+            cmfgen_free(&cs);return 5;
+        }
 
         cmfgen_assemble(&cs, geo, opac, bf, plasma);
         if (cmf_lineres) cmf_solve_J(&cs, geo, T_inner, n_ali);   /* P1 line-resolved CMF */
@@ -5124,12 +5155,14 @@ int cmfgen_run(Geometry *geo, OpacityState *opac, BFOpacity *bf,
                                cs.n_shells, cs.n_bins);
         if (cs.diag && iter == n_iter - 1)
             cmfgen_validate(&cs, geo, plasma);
+        a208_counters()->replay_line_blocks_attempted++;
         if (cmfgen_commit_jnu(&cs, nlte, geo, (uint64_t)(iter + 1)) != 0) {
             fprintf(stderr, "[RADIATION-FIELD][FATAL] pure-CMFGEN commit failed iter=%d\n",
                     iter);
             cmfgen_free(&cs);
             return -1;
         }
+        a208_counters()->replay_line_blocks_committed++;
 
         /* P7 PRODUCER (LUMINA_CMF_LINERES_JBAR=1): fine-grid line-resolved J_bar_l
          * over the UV pump window. Fills opac->jbar_line_det; the plasma bb-rate

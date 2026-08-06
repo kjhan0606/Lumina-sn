@@ -15,7 +15,7 @@ from gate_parallel import run_cases, worker_count
 
 CANONICAL_TAU_EXPECTATION = (
     "active_lines=2211572 active_tau_bit_differences=0 "
-    "active_tau_fnv64=1cfbc8dba0b0f23f"
+    "active_tau_fnv64=4a80c65d9c37fad9"
 )
 
 
@@ -60,13 +60,14 @@ def main() -> int:
     parser.add_argument("--tau", type=Path, required=True)
     parser.add_argument("--population", type=Path, required=True)
     parser.add_argument("--canonical-tau", type=Path, required=True)
+    parser.add_argument("--a2-08", type=Path, required=True)
     parser.add_argument("--deck", type=Path, required=True)
     parser.add_argument("--verify", type=Path, required=True)
     parser.add_argument("--serial", action="store_true")
     parser.add_argument("--scratch-root", type=Path)
     args = parser.parse_args()
 
-    paths = [args.validator, args.tau, args.population, args.canonical_tau, args.verify]
+    paths = [args.validator, args.tau, args.population, args.canonical_tau, args.a2_08, args.verify]
     if any(not path.resolve().is_file() for path in paths) or not args.deck.resolve().is_dir():
         parser.error("all Z-INERT binaries, verifier, and deck must exist")
     scratch_context = None
@@ -84,6 +85,7 @@ def main() -> int:
         ("tau", (str(args.tau.resolve()),), False),
         ("population", (str(args.population.resolve()),), False),
         ("canonical-tau", (str(args.canonical_tau.resolve()), str(args.deck.resolve())), False),
+        ("a2-08-signed-opacity", (str(args.a2_08.resolve()),), False),
         ("verify", (sys.executable, str(args.verify.resolve()), "--deck", str(args.deck.resolve())), False),
     )
     tasks = [

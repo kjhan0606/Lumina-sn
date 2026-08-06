@@ -672,6 +672,14 @@ int main(int argc, char *argv[]) {
                     apply_overlap_corrections(&atom_data, &opacity, &plasma);
             }
 
+            if (a208_publish_cpu_opacity(&opacity,
+                    bf_opacity_enabled ? &bf : NULL,&atom_data,&plasma,
+                    enable_nlte ? &nlte : NULL,
+                    geo.time_explosion) != 0) {
+                fprintf(stderr,"[A2-08][FATAL] signed opacity publication failed iter=%d\n",iter);
+                return EXIT_FAILURE;
+            }
+
             /* Dynamic transition probability recomputation */
             if (enable_transprob_update && iter >= config.hold_iterations) {
                 compute_transition_probabilities(&atom_data, &plasma, &opacity,
@@ -720,7 +728,7 @@ int main(int argc, char *argv[]) {
             /* Write validation tau to file */
             FILE *vf = fopen("lumina_tau_validation.csv", "w");
             if (vf) {
-                fprintf(vf, "line,tau_lumina_s0,tau_tardis_s0\n");
+                fprintf(vf, "line,tau_lumina_s0,validity,generation\n");
                 /* Load TARDIS tau for comparison (already in opacity.tau_sobolev before overwrite) */
                 /* Actually tau_sobolev was already overwritten. Load from file */
                 int tr, tc;
@@ -730,7 +738,13 @@ int main(int argc, char *argv[]) {
                 fprintf(vf, "# LUMINA tau computed with TARDIS reference W/T_rad\n");
                 fprintf(vf, "# Compare with tardis_reference/tau_sobolev.npy\n");
                 for (int l = 0; l < opacity.n_lines; l++) {
-                    fprintf(vf, "%d,%.10e\n", l, opacity.tau_sobolev[l * geo.n_shells + 0]);
+                    size_t k=(size_t)l*geo.n_shells;
+                    A208Validity validity=opacity.tau_validity
+                        ? opacity.tau_validity[k]
+                        : (opacity.tau_sobolev[k]==0.0?A208_EXACT_ZERO:A208_VALID);
+                    fprintf(vf, "%d,%.10e,%s,%llu\n", l,
+                            opacity.tau_sobolev[k],a208_validity_name(validity),
+                            (unsigned long long)opacity.tau_computed_generation);
                 }
                 fclose(vf);
                 printf("  [Validation] tau written to lumina_tau_validation.csv\n");

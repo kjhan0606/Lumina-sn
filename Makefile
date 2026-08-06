@@ -10,8 +10,8 @@ LDFLAGS += -fopenmp
 endif
 
 # Source files (in src/)
-SOURCES = src/lumina_main.c src/lumina_transport.c src/a2_02c_segment_capture.c src/radiation_field.c src/bf_rate_jnu.c src/line_jbar.c src/population_contract.c src/lumina_plasma.c src/lumina_element_wide.c src/lumina_atomic.c src/lumina_cmfgen.c
-HEADERS = src/lumina.h src/a2_02c_segment_capture.h src/radiation_field.h src/bf_rate_jnu.h src/line_jbar.h src/population_contract.h
+SOURCES = src/lumina_main.c src/lumina_transport.c src/a2_02c_segment_capture.c src/radiation_field.c src/bf_rate_jnu.c src/line_jbar.c src/population_contract.c src/opacity_publication.c src/lumina_plasma.c src/lumina_element_wide.c src/lumina_atomic.c src/lumina_cmfgen.c
+HEADERS = src/lumina.h src/a2_02c_segment_capture.h src/radiation_field.h src/bf_rate_jnu.h src/line_jbar.h src/population_contract.h src/opacity_publication.h
 TARGET = lumina
 POPULATION_SRC = src/population_contract.c
 
@@ -157,7 +157,7 @@ selftest_a2_03_radiation_field: tests/a2_03_radiation_field_selftest.c src/radia
 selftest_a2_03_producer_parity_fixture: tests/a2_03_producer_parity_fixture.c src/lumina_transport.c src/radiation_field.c $(HEADERS)
 	$(CC) -O2 -Wall -Wextra -std=c11 -ffunction-sections -fdata-sections \
 		-Isrc -Wl,--gc-sections -o $@ tests/a2_03_producer_parity_fixture.c \
-		src/lumina_transport.c src/radiation_field.c $(LDFLAGS)
+		src/lumina_transport.c src/radiation_field.c src/line_jbar.c $(LDFLAGS)
 
 # A2-04 single producer-commit API, atomic generation and failure injection.
 selftest_a2_04_commit: tests/a2_04_commit_selftest.c src/radiation_field.c src/radiation_field.h
@@ -216,6 +216,11 @@ selftest_a2_06_line_jbar: tests/a2_06_line_jbar_selftest.c src/line_jbar.c src/l
 selftest_a2_06_dual_commit: tests/a2_06_dual_commit_selftest.c src/radiation_field.c $(HEADERS)
 	$(CC) -O2 -std=gnu11 -Isrc -o selftest_a2_06_dual_commit \
 		tests/a2_06_dual_commit_selftest.c src/radiation_field.c $(LDFLAGS)
+
+selftest_a2_08_signed_opacity: tests/a2_08_signed_opacity_selftest.c src/opacity_publication.c src/opacity_publication.h
+	$(CC) -O2 -Wall -Wextra -std=c11 -Isrc -o $@ \
+		tests/a2_08_signed_opacity_selftest.c src/opacity_publication.c $(LDFLAGS)
+	python3 scripts/run_a2_08_selftest.py --binary ./selftest_a2_08_signed_opacity
 
 # A2-07 generation-bound Z(T_e), validity and transactional-publish contract.
 selftest_a2_07_population: tests/a2_07_population_selftest.c src/population_contract.c src/population_contract.h

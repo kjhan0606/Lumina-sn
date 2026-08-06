@@ -1,0 +1,95 @@
+{
+  "child_rc": 0,
+  "metric_values": {
+    "band_closure": 0.0,
+    "cell_closure": 0.0,
+    "negative_bf_route_shell_bins": 1,
+    "negative_tau_line_shells": 1,
+    "replay_atomicity": 1
+  },
+  "negative_controls": {
+    "N1": {
+      "after_hash": "poisoned",
+      "before_hash": "baseline",
+      "child_rc": 4,
+      "marker": "A2_08_NEG_STIM_OFF",
+      "reason_code": "EXPECTED_REJECTION",
+      "status": "PASS",
+      "witness": "synthetic-identity",
+      "wrapper_rc": 0
+    },
+    "N2": {
+      "after_hash": "poisoned",
+      "before_hash": "baseline",
+      "child_rc": 4,
+      "marker": "A2_08_NEG_BF_EDGE_SHIFT",
+      "reason_code": "EXPECTED_REJECTION",
+      "status": "PASS",
+      "witness": "synthetic-identity",
+      "wrapper_rc": 0
+    },
+    "N3": {
+      "after_hash": "poisoned",
+      "before_hash": "baseline",
+      "child_rc": 4,
+      "marker": "A2_08_NEG_CHANNEL_DROP",
+      "reason_code": "EXPECTED_REJECTION",
+      "status": "PASS",
+      "witness": "synthetic-identity",
+      "wrapper_rc": 0
+    },
+    "N4": {
+      "after_hash": "poisoned",
+      "before_hash": "baseline",
+      "child_rc": 5,
+      "marker": "A2_08_NEG_CHI_CLAMP",
+      "reason_code": "EXPECTED_REJECTION",
+      "status": "PASS",
+      "witness": "synthetic-identity",
+      "wrapper_rc": 0
+    },
+    "N5": {
+      "after_hash": "poisoned",
+      "before_hash": "baseline",
+      "child_rc": 5,
+      "marker": "A2_08_NEG_A209_SCOPE",
+      "reason_code": "EXPECTED_REJECTION",
+      "status": "PASS",
+      "witness": "synthetic-identity",
+      "wrapper_rc": 0
+    },
+    "N6": {
+      "after_hash": "poisoned",
+      "before_hash": "baseline",
+      "child_rc": 5,
+      "marker": "A2_08_NEG_RAW_JBAR",
+      "reason_code": "EXPECTED_REJECTION",
+      "status": "PASS",
+      "witness": "synthetic-identity",
+      "wrapper_rc": 0
+    },
+    "N7": {
+      "after_hash": "poisoned",
+      "before_hash": "baseline",
+      "child_rc": 5,
+      "marker": "A2_08_NEG_STALE_SOURCE",
+      "reason_code": "EXPECTED_REJECTION",
+      "status": "PASS",
+      "witness": "synthetic-identity",
+      "wrapper_rc": 0
+    },
+    "N8": {
+      "after_hash": "poisoned",
+      "before_hash": "baseline",
+      "child_rc": 5,
+      "marker": "A2_08_NEG_REPLAY_LINELESS",
+      "reason_code": "EXPECTED_REJECTION",
+      "status": "PASS",
+      "witness": "synthetic-identity",
+      "wrapper_rc": 0
+    }
+  },
+  "reason_code": "INTERNAL_SIGNED_OPACITY_PUBLISH",
+  "status": "PASS",
+  "wrapper_rc": 0
+}

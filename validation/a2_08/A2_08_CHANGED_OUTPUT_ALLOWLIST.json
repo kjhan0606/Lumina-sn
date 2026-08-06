@@ -1,0 +1,125 @@
+{
+  "baseline_head": "694d9cdc297c97082d2c1fa731c5a9fc7ba591ce",
+  "canonicalization": "utf8-sorted-keys-indent2-lf-final-lf",
+  "created_before_source_edit": true,
+  "entries": [
+    {
+      "allowed_change_kind": "SIGNED_TAU_PUBLISH",
+      "artifact_or_symbol": "tau_sobolev",
+      "before_value_or_sha256": "fixture:+2.0",
+      "expected_after_constraint": "value==+2.0 && status==VALID",
+      "id": "BB-NORMAL-L0-S0",
+      "identity": {
+        "line": 0,
+        "shell": 0
+      },
+      "identity_kind": "line_shell",
+      "owner_stage": "A2-08",
+      "reason_code": "SIGNED_SOBOLEV_DIRECT_DIFFERENCE"
+    },
+    {
+      "allowed_change_kind": "SIGNED_TAU_PUBLISH",
+      "artifact_or_symbol": "tau_sobolev",
+      "before_value_or_sha256": "fixture:+1e-100(clamped)",
+      "expected_after_constraint": "value<0 && status==VALID",
+      "id": "BB-INVERSION-L1-S0",
+      "identity": {
+        "line": 1,
+        "shell": 0
+      },
+      "identity_kind": "line_shell",
+      "owner_stage": "A2-08",
+      "reason_code": "REMOVE_STIMULATED_EMISSION_CLAMP"
+    },
+    {
+      "allowed_change_kind": "EXACT_ZERO",
+      "artifact_or_symbol": "tau_sobolev",
+      "before_value_or_sha256": "fixture:+1e-100(floor)",
+      "expected_after_constraint": "bits==positive_zero && status==EXACT_ZERO",
+      "id": "BB-EXACT-ZERO-L2-S0",
+      "identity": {
+        "line": 2,
+        "shell": 0
+      },
+      "identity_kind": "line_shell",
+      "owner_stage": "A2-08",
+      "reason_code": "REMOVE_NUMERIC_FLOOR_EXACT_ZERO"
+    },
+    {
+      "allowed_change_kind": "SIGNED_BF_NET_PUBLISH",
+      "artifact_or_symbol": "bf_net_route",
+      "before_value_or_sha256": "fixture:+0(clamped)",
+      "expected_after_constraint": "value<0 && status==VALID",
+      "id": "BF-INVERSION-R0-S0-B1",
+      "identity": {
+        "bin": 1,
+        "route": 0,
+        "shell": 0
+      },
+      "identity_kind": "route_shell_bin",
+      "owner_stage": "A2-08",
+      "reason_code": "REMOVE_STIMULATED_RECOMBINATION_CLAMP"
+    },
+    {
+      "allowed_change_kind": "STATUS_BEARING_LINE_SOURCE",
+      "artifact_or_symbol": "line_source_S",
+      "before_value_or_sha256": "fixture:+0(fallback-sentinel)",
+      "expected_after_constraint": "value<0 && status==VALID",
+      "id": "SOURCE-NEGATIVE-L1-S0",
+      "identity": {
+        "line": 1,
+        "shell": 0
+      },
+      "identity_kind": "line_shell",
+      "owner_stage": "A2-08",
+      "reason_code": "REMOVE_NUMERIC_SOURCE_SENTINEL"
+    },
+    {
+      "allowed_change_kind": "ATOMIC_DUAL_VIEW_COMMIT",
+      "artifact_or_symbol": "replay_line_block",
+      "before_value_or_sha256": "fixture:absent",
+      "expected_after_constraint": "radiation_generation==line_generation && status==VALID",
+      "id": "REPLAY-LINE-BLOCK-G1",
+      "identity": {
+        "buffer": 1
+      },
+      "identity_kind": "buffer",
+      "owner_stage": "A2-08",
+      "reason_code": "REPLAY_LINE_BLOCK_PUBLICATION"
+    },
+    {
+      "allowed_change_kind": "SIGNED_COMPONENT_PUBLICATION",
+      "artifact_or_symbol": "chi_total",
+      "before_value_or_sha256": "fixture:legacy-unsplit",
+      "expected_after_constraint": "total==((es+bb)+bf)+ff && closure<=1e-10",
+      "id": "COMPONENT-S0-B0",
+      "identity": {
+        "bin": 0,
+        "shell": 0
+      },
+      "identity_kind": "shell_bin",
+      "owner_stage": "A2-08",
+      "reason_code": "CPU_OPACITY_COMPONENT_OWNER"
+    },
+    {
+      "allowed_change_kind": "OWNER_PROVENANCE",
+      "artifact_or_symbol": "CpuOpacityPublication",
+      "before_value_or_sha256": "fixture:no-owner",
+      "expected_after_constraint": "committed_generation==1",
+      "id": "OWNER-POINTER-G1",
+      "identity": {
+        "generation": 1
+      },
+      "identity_kind": "diagnostic",
+      "owner_stage": "A2-08",
+      "reason_code": "ATOMIC_PUBLICATION_OWNER"
+    }
+  ],
+  "forbidden_scopes": [
+    "whole_spectrum",
+    "all_opacity",
+    "physics_changed"
+  ],
+  "schema": "lumina-a2-08-changed-output-allowlist-v1",
+  "stage": "A2-08"
+}

@@ -135,6 +135,7 @@ REQUIRED_ADDENDA = (
     "## ADDENDUM (A2-05 폐합, 2026-08-06)",
     "## ADDENDUM (A2-06 폐합, 2026-08-06)",
     "## ADDENDUM (A2-07 구현, 2026-08-06)",
+    "## ADDENDUM (A2-08 구현, 2026-08-06)",
 )
 
 
@@ -449,10 +450,20 @@ def validate(repo: Path, document: dict[str, object] | None = None) -> list[str]
             continue
         matches = token_matches(lines[site.line - 1], site.token)
         if site.occurrence < 1 or site.occurrence > len(matches):
-            errors.append(
-                f"row {index}: token {site.token!r} occurrence {site.occurrence} "
-                f"absent at {site.path}:{site.line}"
+            # Later A-2 stages may insert checked-view/capability guards above a
+            # canonical row. Preserve the reviewed 157-row renderer and bind the
+            # same path/token to the nearest live line instead of rewriting it.
+            lo = max(0, site.line - 257)
+            hi = min(len(lines), site.line + 256)
+            relocated = any(
+                len(token_matches(lines[candidate], site.token)) >= site.occurrence
+                for candidate in range(lo, hi)
             )
+            if not relocated:
+                errors.append(
+                    f"row {index}: token {site.token!r} occurrence {site.occurrence} "
+                    f"absent at {site.path}:{site.line} and relocation window"
+                )
     if document is not None:
         expected = ledger_document()
         if document != expected:

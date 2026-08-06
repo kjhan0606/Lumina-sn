@@ -14,6 +14,7 @@
 #include <locale.h>   /* A6: setlocale(LC_NUMERIC,"C") for ko_KR-safe sscanf */
 #include "radiation_field.h" /* A2-03 canonical shadow schema (CPU only) */
 #include "population_contract.h" /* A2-07 CPU population owner contract */
+#include "opacity_publication.h" /* A2-08 signed CPU opacity/status owner */
 
 /* ============================================================ */
 /* Phase 2 - Step 2: Physical constants (CGS, matching TARDIS)  */
@@ -214,7 +215,10 @@ typedef struct {
     uint64_t tau_required_generation;
     uint64_t tau_computed_generation;
     uint64_t tau_first_consumer_generation;
-    double *line_source_S;    /* CMF: NLTE two-level line source fn [n_lines*n_shells]; <=0 => use fallback */
+    double *line_source_S;    /* compatibility payload; status is authoritative */
+    A208Validity *tau_validity;         /* [n_lines*n_shells], generation-bound */
+    A208Validity *line_source_validity; /* [n_lines*n_shells], no numeric sentinel */
+    CpuOpacityPublication cpu_opacity;  /* signed component/status publication */
     double *electron_density; /* Phase 2 - Step 4: [n_shells] n_e [cm^-3] */
     double *t_electrons;      /* Phase 2 - Step 4: [n_shells] T_e [K] */
 
@@ -740,7 +744,7 @@ typedef struct {
     double *event_sigma0;       /* [event_n_routes] Kramers threshold sigma */
     double *event_weight;       /* [n_shells*event_n_routes] n_lower*p_target */
     double *event_stim_ratio;   /* [n_shells*event_n_routes], -1 => corr=1 */
-    double *event_chi_bf;       /* [n_shells*n_freq_bins], bf only (no ff) */
+    double *event_chi_bf;       /* gross nonnegative event measure; bf only */
     double *event_Te;           /* [n_shells], D-3 event corrfactor exponent */
     const double *event_sigma_bf; /* non-owning AtomicData [level*freq] grid */
     unsigned long long event_target_fallback_activations; /* CPU realized MA uses */
@@ -1215,6 +1219,10 @@ void bf_opacity_init(BFOpacity *bf, int n_shells);
 void bf_opacity_free(BFOpacity *bf);
 void compute_bf_opacity(BFOpacity *bf, AtomicData *atom, PlasmaState *plasma,
                          int n_shells);
+int a208_publish_cpu_opacity(OpacityState *opacity, const BFOpacity *bf,
+                             const AtomicData *atom, const PlasmaState *plasma,
+                             const NLTEConfig *nlte,
+                             double epoch);
 /* Wave-1 bf repair gates. All are default OFF and shared with CUDA helpers so
  * host/device producer selection cannot disagree. */
 int lumina_fix_bf_stim_recomb_enabled(void);
@@ -1226,7 +1234,7 @@ int lumina_fix_bf_continuum_event_enabled(void);
  * NULL => dilute-Boltzmann fallback everywhere. */
 void bf_set_nlte_pops(NLTEConfig *nlte);
 double bf_get_chi(BFOpacity *bf, int shell, double nu);
-double bf_get_event_chi(BFOpacity *bf, int shell, double nu);
+double bf_get_event_measure(BFOpacity *bf, int shell, double nu);
 double bf_get_eta(BFOpacity *bf, int shell, double nu);
 /* Fine-ν bf opacity (sharp bf edges on the fine grid) for the CMFGEN-method producer.
  * chi_bf_fine_out is [n_shells * n_fine] row-major. Returns 0 ok / −1 fallback. */

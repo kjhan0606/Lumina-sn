@@ -1,0 +1,10 @@
+{
+  "baseline_head": "694d9cdc297c97082d2c1fa731c5a9fc7ba591ce",
+  "blob_id": "b65e5d8ac121f9c1b2feadd160ab0eebc1c4a129",
+  "created_before_source_edit": true,
+  "json_sha256": "e0f89c1b9851543f995d459890d7d32bdf62bf642d7e8bdb6957e7f5a482fafb",
+  "object_directory": "validation/a2_08/A2_08_SEAL_OBJECTS",
+  "seal_commit": "78e1879877fd6dbe435a24aabfb21c66ef3ef158",
+  "seal_kind": "object-only-no-ref-update",
+  "sidecar_blob_id": "2be8a260afce43bcdcac1b632bce9953ba8c4019"
+}

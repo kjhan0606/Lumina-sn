@@ -1,0 +1,9 @@
+{
+  "CHAIN": "BLOCKED_MISSING_CHI_DATA",
+  "ORACLE_INPUT": "BLOCKED_MISSING_CHI_DATA",
+  "child_rc": 3,
+  "reason_code": "BLOCKED_MISSING_CHI_DATA",
+  "status": "BLOCKED_MISSING_CHI_DATA",
+  "truth_f_cov": null,
+  "wrapper_rc": 0
+}

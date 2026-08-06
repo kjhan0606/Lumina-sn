@@ -1,0 +1,15 @@
+{
+  "frame": "comoving",
+  "frequency_edge_hash": "8a6ae15122001229edb8866f56e342af12ae8187203c3e3b33931743e7c0c48d",
+  "frequency_edge_units": "Hz",
+  "generation": 1,
+  "schema": "lumina-a2-08-opacity-components-v1",
+  "shell_geometry_hash": "synthetic",
+  "signed_net": true,
+  "summation_order": "((es+bb)+bf)+ff",
+  "units": "cm^-1",
+  "validity_counts": {
+    "EXACT_ZERO": 1,
+    "VALID": 7
+  }
+}

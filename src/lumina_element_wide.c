@@ -1784,8 +1784,9 @@ static int ew_boundary_tau_add(double tau, int is_boundary,
                                double *tau_all, double *tau_boundary) {
     if (!tau_all || !tau_boundary || !isfinite(tau) ||
         !isfinite(*tau_all) || !isfinite(*tau_boundary)) goto nonfinite;
-    tau = fabs(tau);
-    *tau_all += tau;
+    A208ValueView signed_tau = {tau, tau == 0.0 ? A208_EXACT_ZERO : A208_VALID, 0};
+    A208TauInteractionMeasure measure = a208_tau_interaction_measure(signed_tau);
+    *tau_all += measure.value;
     if (!isfinite(*tau_all)) goto nonfinite;
     if (is_boundary) {
         *tau_boundary += tau;
@@ -2245,8 +2246,13 @@ static int ew_run_impl(NLTEConfig *nlte, AtomicData *atom,
             int st=atom->line_ion_number[line];
             int is_boundary=st==0||(!boundary.active&&st==4)||
                             (boundary.active&&st>=5);
-            double tau=opacity->tau_sobolev[
-                (size_t)line*plasma->n_shells+shell];
+            size_t tau_index=(size_t)line*plasma->n_shells+shell;
+            double tau=opacity->tau_sobolev[tau_index];
+            if(opacity->tau_validity &&
+               opacity->tau_validity[tau_index]!=A208_VALID &&
+               opacity->tau_validity[tau_index]!=A208_EXACT_ZERO){
+                tau_all=INFINITY;tau_boundary=INFINITY;break;
+            }
             if(ew_boundary_tau_add(tau,is_boundary,
                                    &tau_all,&tau_boundary)!=0) break;
         }

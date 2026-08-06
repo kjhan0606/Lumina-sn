@@ -49,23 +49,18 @@ static double canonical_active_tau(const AtomicData *atom, int line,
                          exp(-upper_boltz) / Z_part;
         n_upper = n_ion * f_upper;
     }
-    double stim = 1.0;
-    if (n_lower > 0.0 && n_upper > 0.0) {
-        stim = 1.0 - (atom->level_g[lower] * n_upper) /
-                     (atom->level_g[upper] * n_lower);
-        if (stim < 0.0) stim = 0.0;
-    }
     double tau = SOBOLEV_COEFF * atom->line_f_lu[line] *
                  atom->line_wavelength_cm[line] * time_explosion *
-                 n_lower * stim;
-    if (tau < 1e-100) tau = 1e-100;
+                 (n_lower - ((double)atom->level_g[lower] /
+                             (double)atom->level_g[upper]) * n_upper);
+    if (tau == 0.0) tau = 0.0;
     return tau;
 }
 
 int main(int argc, char **argv) {
     static const long expected_active_lines = 2211572;
     static const uint64_t expected_active_tau_fnv64 =
-        UINT64_C(0x1cfbc8dba0b0f23f);
+        UINT64_C(0x4a80c65d9c37fad9);
     if (argc != 2) {
         fprintf(stderr, "usage: %s REFERENCE_DECK\n", argv[0]);
         return 64;
