@@ -31,5 +31,15 @@
   }
  ],
  "conclusion": "A2 캠페인이 계약을 강화하면서 **호출자를 이관하지 않았다**. 두 건 모두 생산 로더/솔버 경로이므로 기존 런처는 시작 단계에서 죽는다.",
- "disposition": "T3 는 두 부류를 모두 피하는 새 런처로 진행. 함대 이관은 별건 미결."
+ "disposition": "T3 는 두 부류를 모두 피하는 새 런처로 진행. 함대 이관은 별건 미결.",
+ "SUPERSEDED": {
+  "by": "validation/a2_16/C2_CALLER_MIGRATION_CENSUS.json + docs/INSTRUMENTATION_DEBT_CENSUS.md",
+  "when": "2026-08-07 Fable L3 검수(Q3-1)로 화석 확정",
+  "errors": [
+   "plasma 금지 env 를 7종으로 기재했으나 실코드는 10종이다 (src/lumina_plasma.c:14954-14964 실측)",
+   "\"나머지 6개는 런처에서 켜는 곳이 없다\"고 기재했으나 그중 4종(BF_JEQB·BK_PARTIAL·JEQB·TOPSTAGE_THERMALIZE)이 각 1개 런처에서 발동한다",
+   "이 파일과 C2 census 가 서로 모순인 채 둘 다 validation/ 에 남아 있었다 — 잣대 사고 사례17(화석 CSV)과 동일 기전을 자기 발밑에서 재생산"
+  ],
+  "disposition": "폐기하지 않고 화석으로 표시한다(append-only 규율). 인용 금지."
+ }
 }
