@@ -1,0 +1,28 @@
+{
+ "schema": "lumina-a2-13-unsealed-implementation-v1",
+ "git_head": "77528c5",
+ "found_by": "scripts/verify_seals.py (C7 수리로 신설한 봉인 검증기) — 첫 실행에서 즉시 적발",
+ "finding": "A2-13 의 implementation_start_manifest(V1)가 A2-14/15 의 V2 로 교체되면서 **A2-13 이 봉인 없이 src 편집에 들어갔다는 기록이 트리에서 사라졌다.**",
+ "v1_commit": "50e21b6",
+ "v1_scope": "A2-13",
+ "v1_record": {
+  "schema": "A2_13_15_IMPLEMENTATION_START_V1",
+  "base_head": "2aaf6c7968494840a9ea66da8c48dc4e1639584d",
+  "source_edit_started": true,
+  "seal_status": "BLOCKED_GIT_READ_ONLY",
+  "seal_error": "fatal: Unable to create .git/index.lock: Read-only file system",
+  "seal_commit": "UNAVAILABLE",
+  "allowlist_blob_ids": {
+   "A2-13": "UNAVAILABLE",
+   "A2-14": "UNAVAILABLE",
+   "A2-15": "UNAVAILABLE"
+  }
+ },
+ "v2_scope": [
+  "A2-14_PRODUCTION",
+  "A2-15_PRODUCTION"
+ ],
+ "why_it_matters": "캠페인 규율은 **첫 src 편집 전에 changed-output allowlist 를 봉인**하는 것이다. V1 은 seal_status=BLOCKED_GIT_READ_ONLY 이고 allowlist_blob_ids 가 전부 UNAVAILABLE 이면서 source_edit_started=true 다 — 즉 A2-13 은 **봉인 없이 편집됐다**. V2 는 A2-14/15 만 덮으므로 그 사실이 현 트리에는 없다.",
+ "disposition": "미결 — A2-13 의 변경집합을 사후 검증할지, 재봉인할지, 기재만 할지 판정 필요. A2-13 은 A2-18 재판정에서 폐합으로 집계돼 있다(d47a596).",
+ "note": "변조가 아니라 교체다. 그러나 교체가 실패 기록을 지웠으므로 append-only 규율 위반에 준한다."
+}
