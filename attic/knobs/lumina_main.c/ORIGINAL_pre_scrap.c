@@ -187,8 +187,10 @@ int main(int argc, char *argv[]) {
         atoi(getenv("LUMINA_DYNAMIC_TRANSPROB")) > 0)
         enable_transprob_update = 1;
 
-    /* Fe scatter = macro-atom.  [스크랩 2026-08-07] LUMINA_FE_SCATTER (attic/knobs) */
+    /* Fe two-level atom scatter: LUMINA_FE_SCATTER=1 (Fe II only) or =2 (all Fe) */
     config.fe_scatter_mode = 0;
+    if (getenv("LUMINA_FE_SCATTER"))
+        config.fe_scatter_mode = atoi(getenv("LUMINA_FE_SCATTER"));
     config.line_atomic_number = atom_data.line_atomic_number;
     config.line_ion_number = atom_data.line_ion_number;
 
@@ -197,13 +199,17 @@ int main(int argc, char *argv[]) {
     if (getenv("LUMINA_GAMMA_DEP") && atoi(getenv("LUMINA_GAMMA_DEP")) > 0)
         gamma_dep_enabled = 1;
 
-    /* [스크랩 2026-08-07] LUMINA_OVERLAP_CORR — 선중첩 보정은 꺼진 채였다 (attic/knobs) */
+    /* Line overlap correction: LUMINA_OVERLAP_CORR=1 (handled inside compute_plasma_state) */
+    int overlap_corr_enabled = (getenv("LUMINA_OVERLAP_CORR") &&
+                                 atoi(getenv("LUMINA_OVERLAP_CORR")) > 0);
 
     /* Bound-free opacity: LUMINA_BF_OPACITY=1 */
     int bf_opacity_enabled = (getenv("LUMINA_BF_OPACITY") &&
                                atoi(getenv("LUMINA_BF_OPACITY")) > 0);
 
-    /* [스크랩 2026-08-07] LUMINA_SELF_CONSISTENT_TE — radeq 와 OR 로 묶인 구 경로 (attic/knobs) */
+    /* P6: Self-consistent T_e: LUMINA_SELF_CONSISTENT_TE=1 */
+    int self_consistent_te = (getenv("LUMINA_SELF_CONSISTENT_TE") &&
+                               atoi(getenv("LUMINA_SELF_CONSISTENT_TE")) > 0);
     /* Task #20: real radiative-equilibrium T_e: LUMINA_RADEQ_TE=1 */
     int radeq_te = (getenv("LUMINA_RADEQ_TE") &&
                      atoi(getenv("LUMINA_RADEQ_TE")) > 0);
@@ -227,13 +233,22 @@ int main(int argc, char *argv[]) {
     printf("  Fe scatter: %s\n", config.fe_scatter_mode == 2 ? "ALL Fe TWO-LEVEL" :
                                   config.fe_scatter_mode == 1 ? "Fe II TWO-LEVEL" : "MACRO-ATOM");
     printf("  Gamma-ray deposition: %s\n", gamma_dep_enabled ? "ENABLED" : "disabled");
+    printf("  Line overlap correction: %s\n", overlap_corr_enabled ? "ENABLED" : "disabled");
     printf("  BF+FF opacity: %s\n", bf_opacity_enabled ? "ENABLED" : "disabled");
-    if (radeq_te)
+    if (self_consistent_te || radeq_te)
         printf("  Self-consistent T_e: ENABLED (full radiative-equilibrium balance)\n");
     else
         printf("  Self-consistent T_e: disabled (generation-zero material seed)\n");
 
-    /* [스크랩 2026-08-07] LUMINA_TIME_EXPLOSION 다중 epoch 재척도 (attic/knobs) */
+    /* Multi-epoch rescaling: override t_exp via environment variable */
+    const char *time_exp_env = getenv("LUMINA_TIME_EXPLOSION");
+    if (time_exp_env) {
+        double t_new_days = atof(time_exp_env);
+        double t_new = t_new_days * 86400.0;
+        printf("  Epoch rescale: t_exp %.2f -> %.2f days (ratio %.4f)\n",
+               geo.time_explosion / 86400.0, t_new_days, t_new / geo.time_explosion);
+        rescale_epoch(&geo, &plasma, t_new);
+    }
 
     /* K-FRESH: tau is solver-owned.  The deck NPY is only an epoch-validated
      * seed and must be overwritten before transport or pure-CMFGEN consumes it. */
@@ -261,7 +276,19 @@ int main(int argc, char *argv[]) {
     Estimators *est = create_estimators(geo.n_shells, opacity.n_lines); /* Phase 5 - Step 4 */
     double spec_min = 500.0, spec_max = 20000.0;
     int spec_bins = 2000;
-    /* [스크랩 2026-08-07] LUMINA_SPEC_RANGE — 스펙트럼 범위는 위 기본값 고정 (attic/knobs) */
+    if (getenv("LUMINA_SPEC_RANGE")) {
+        /* A4: previously unchecked sscanf — malformed string left arbitrary defaults. */
+        int nf = sscanf(getenv("LUMINA_SPEC_RANGE"), "%lf,%lf,%d",
+                        &spec_min, &spec_max, &spec_bins);
+        if (nf != 3 || spec_min <= 0.0 || spec_max <= spec_min || spec_bins <= 0) {
+            fprintf(stderr,
+                "ERROR: LUMINA_SPEC_RANGE='%s' must be 'min,max,bins' with "
+                "min>0, max>min, bins>0 (parsed %d fields → %.3f,%.3f,%d)\n",
+                getenv("LUMINA_SPEC_RANGE"), nf, spec_min, spec_max, spec_bins);
+            return 1;
+        }
+        printf("  Spectrum range: %.0f-%.0f A, %d bins\n", spec_min, spec_max, spec_bins);
+    }
     Spectrum *spec = create_spectrum(spec_min, spec_max, spec_bins);
 
     Spectrum *spec_rot = enable_rotation ? create_spectrum(spec_min, spec_max, spec_bins) : NULL;
@@ -604,7 +631,7 @@ int main(int argc, char *argv[]) {
              * omitted photoionization/collisional heating and floor-saturated at
              * early epochs. No free parameters; under-relaxed via LUMINA_RADEQ_DAMP. */
             int te_qualified = 0;
-            if (radeq_te) {
+            if (radeq_te || self_consistent_te) {
                 /* Radiative-equilibrium T_e needs the CURRENT iteration's
                  * radiation field; normalize J_nu now (re-normalized later in
                  * the NLTE block, harmlessly — it recomputes from the raw
@@ -650,6 +677,9 @@ int main(int argc, char *argv[]) {
                     return EXIT_FAILURE;
                 }
 
+                /* Re-apply overlap corrections after NLTE tau update */
+                if (overlap_corr_enabled)
+                    apply_overlap_corrections(&atom_data, &opacity, &plasma);
             }
 
             if (a208_publish_cpu_opacity(&opacity,
@@ -692,9 +722,27 @@ int main(int argc, char *argv[]) {
         if (iter >= config.hold_iterations) { /* Phase 5 - Step 7 */
             double old_T = config.T_inner; /* Phase 5 - Step 7 */
             int t_inner_frozen = nlte_ion_lock_active(iter);
-            /* [스크랩 2026-08-07] LUMINA_DIFFUSION_INNER_BC · LUMINA_T_INNER_FIX
-             * — 고정-L 확산 BC 와 T_inner 핀. 둘 다 미설정이 기본이었다 (attic/knobs) */
-            if (!t_inner_frozen) {
+            const char *t_pin_env = getenv("LUMINA_T_INNER_FIX");
+            double t_pin = t_pin_env ? atof(t_pin_env) : 0.0;
+            const char *diff_bc_env = getenv("LUMINA_DIFFUSION_INNER_BC");
+            int diff_bc = diff_bc_env ? atoi(diff_bc_env) : 0;
+            if (diff_bc) {
+                /* A1 (path-A, 2-agent verified): fixed-L diffusion inner BC.
+                 * CMFGEN fixes the base luminosity and lets T_inner follow the
+                 * diffusion relation; no feedback controller chasing emergent
+                 * L_em (which ping-pongs when ionization shifts). HD2012 3.2.2. */
+                double R_in = geo.r_inner[0];
+                config.T_inner = pow(config.luminosity_requested /
+                                     (4.0 * M_PI_VAL * R_in * R_in * SIGMA_SB),
+                                     0.25);
+                printf("  T_inner: %.2f K (fixed-L diffusion BC, L_req=%.3e, "
+                       "L_em=%.3e)\n",
+                       config.T_inner, config.luminosity_requested, L_emitted);
+            } else if (t_pin > 0.0) {
+                config.T_inner = t_pin;
+                printf("  T_inner: %.2f K (pinned LUMINA_T_INNER_FIX, L_em=%.3e, L_req=%.3e)\n",
+                       config.T_inner, L_emitted, config.luminosity_requested);
+            } else if (!t_inner_frozen) {
                 update_t_inner(&config, L_emitted);
                 printf("  T_inner: %.2f K -> %.2f K (L_em=%.3e, L_req=%.3e)\n",
                        old_T, config.T_inner, L_emitted, config.luminosity_requested);
@@ -765,8 +813,38 @@ int main(int argc, char *argv[]) {
         free_spectrum(spec_fi);
     }
 
-    /* [스크랩 2026-08-07] LUMINA_TRANSPORT=cmf 진입점과 LUMINA_CMF_{NZ,NIMPACT,VTURB_KMS}
-     * — 결정론 팔의 정본은 lumina_cmfgen.c 이며 이쪽은 구 진입점이다 (attic/knobs) */
+    /* CMF formal solver (paper-method line transfer), gated by LUMINA_TRANSPORT=cmf */
+    {
+        const char *_transport = getenv("LUMINA_TRANSPORT");
+        if (_transport && strcmp(_transport, "cmf") == 0) {
+            const char *_nz   = getenv("LUMINA_CMF_NZ");
+            const char *_nimp = getenv("LUMINA_CMF_NIMPACT");
+            const char *_vt   = getenv("LUMINA_CMF_VTURB_KMS");
+            int cmf_nz   = _nz   ? atoi(_nz)   : 2000;
+            int cmf_nimp = _nimp ? atoi(_nimp) : 50;
+            /* Blondin+2013 microturbulence not specified in-repo; default below
+             * is a documented placeholder — tune via LUMINA_CMF_VTURB_KMS. */
+            double v_turb_cms = (_vt ? atof(_vt) : 0.0) * 1.0e5;
+            if (cmf_nz < 1) cmf_nz = 2000;
+            if (cmf_nimp < 1) cmf_nimp = 50;
+
+            Spectrum *spec_cmf = create_spectrum(spec_min, spec_max, spec_bins);
+            compute_cmf_formal_spectrum(
+                &geo, &plasma, &opacity, &atom_data,
+                nlte.enabled ? &nlte : NULL,
+                bf_opacity_enabled ? &bf : NULL,
+                config.T_inner, spec_cmf, cmf_nimp, cmf_nz, v_turb_cms);
+            FILE *cf = fopen("lumina_spectrum_cmf.csv", "w");
+            if (cf) {
+                fprintf(cf, "wavelength_angstrom,flux\n");
+                for (int i = 0; i < spec_cmf->n_bins; i++)
+                    fprintf(cf, "%.6f,%.6e\n", spec_cmf->wavelength[i], spec_cmf->flux[i]);
+                fclose(cf);
+                printf("CMF formal spectrum written to lumina_spectrum_cmf.csv\n");
+            }
+            free_spectrum(spec_cmf);
+        }
+    }
 
     /* Phase 5 - Step 9b: Write material state; radiation has its own schema. */
     out = fopen("lumina_plasma_state.csv", "w"); /* Phase 5 - Step 9b */
