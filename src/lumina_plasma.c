@@ -2180,6 +2180,39 @@ static PopulationStatus compute_partition_functions(AtomicData *atom,
         printf("  [A2-07] partition Z(T_e) committed generation=%llu te_generation=%llu\n",
                (unsigned long long)generation,
                (unsigned long long)plasma->T_e_generation);
+    else {
+        /* 실패 경로 전용 진단.  상위는 상태 코드만 받으므로 **어느 이온이** 걸렸는지
+         * 알 수 없다 — 침묵으로 되돌아가지 않도록 여기서 특정한다. */
+        fprintf(stderr, "[A2-07][FATAL] partition build failed: %s "
+                "(n_ions=%zu n_levels=%zu pub=%p te_gen=%llu)\n",
+                population_status_name(status), view.n_ions, view.n_levels,
+                (void *)atom->partition_functions,
+                (unsigned long long)plasma->T_e_generation);
+        if (!view.level_offset || !view.energy_eV || !view.g)
+            fprintf(stderr, "  view missing: level_offset=%p energy_eV=%p g=%p\n",
+                    (void *)view.level_offset, (void *)view.energy_eV,
+                    (void *)view.g);
+        else {
+            int n_empty = 0;
+            for (size_t i = 0; i < view.n_ions; i++) {
+                int lo = view.level_offset[i], hi = view.level_offset[i + 1];
+                if (hi > lo) continue;
+                n_empty++;
+                int z = atom->ion_pop_Z ? atom->ion_pop_Z[i] : -1;
+                int st = atom->ion_pop_stage ? atom->ion_pop_stage[i] : -1;
+                /* 그 원소의 최상단 population 인가?  최상단이면 준위가 없는 것이
+                 * 결손이 아니라 **정상**이다(전리 에너지 n 개 -> population n+1 개). */
+                int top = 0;
+                if (atom->ion_pop_Z && i + 1 < view.n_ions)
+                    top = (atom->ion_pop_Z[i + 1] != z);
+                else if (i + 1 == view.n_ions)
+                    top = 1;
+                fprintf(stderr, "  empty ion_pop %zu: Z=%d stage=%d (lo=%d hi=%d)%s\n",
+                        i, z, st, lo, hi, top ? "  <- 원소 최상단" : "");
+            }
+            fprintf(stderr, "  empty ion_pops total=%d / %zu\n", n_empty, view.n_ions);
+        }
+    }
     return status;
 }
 
@@ -6474,6 +6507,69 @@ int tau_sobolev_assert_fresh(OpacityState *opacity, const char *consumer) {
                (unsigned long long)opacity->tau_computed_generation,
                (unsigned long long)opacity->tau_required_generation);
     }
+    return 0;
+}
+
+/* A2-07/A2-10 부트스트랩: 덱의 seed T_e 를 **1세대로 발행**한다.
+ *
+ * 왜 필요한가.  반복 안 순서는 수송 → T_e → 플라즈마/tau 다.  따라서 반복 0 의 수송에
+ * 솔버가 만든 tau 를 주려면 그 앞에 플라즈마 풀이가 있어야 하고, 그러려면 **발행된 T_e**
+ * 가 있어야 한다.  그런데 복사장이 아직 없으므로 radeq 는 돌 수 없다:
+ *
+ *     tau ← population ← 발행된 T_e ← 복사장 ← 수송 ← tau
+ *
+ * 이 고리를 끊는 정직한 지점은 "첫 상태는 seed 온도의 LTE" 하나뿐이며 CMFGEN·ARTIS 가
+ * 실제로 하는 방식이다.  A2-07 은 seed 를 `generation-zero material seed` 로 두어
+ * **소비 금지**했고, 이 함수는 그것을 명시적 1세대 발행으로 승격한다 — 계약 개정이다
+ * (user 판정 2026-08-07, 안 B; docs/RUNG_SEED_TE_PUBLICATION.md).
+ *
+ * radeq 발행이 **아니다**.  구분이 대장에 남도록:
+ *   · A2-10 계수기의 seed_generation_attempts 를 올린다(그 자리는 비어 있었다)
+ *   · [A2-10][SEED] 배너를 찍는다 — radeq 발행과 로그에서 절대 섞이지 않게
+ *
+ * 불변식은 radeq 와 동일하게 지킨다: gen = T_e_generation + 1, committed = gen,
+ * manifest = sha256(seed T_e).  그래야 반복 0 의 A2-10 스탬프 대조가 성립한다.
+ *
+ * seed 가 비유한·비양수면 **고치지 않고 거부**한다(fail-closed).  잘못된 seed 를
+ * 눌러 담는 순간 그것이 클램프다.
+ */
+int lumina_publish_seed_te(PlasmaState *plasma, const char *reason) {
+    if (!plasma || !plasma->T_e || plasma->n_shells <= 0) {
+        fprintf(stderr, "[A2-10][SEED][FATAL] invalid plasma for seed publication\n");
+        return -1;
+    }
+    if (plasma->T_e_generation != 0) {
+        /* 부트스트랩은 1회다.  두 번째 호출은 radeq 발행을 덮어쓸 수 있으므로 버그다. */
+        fprintf(stderr,
+                "[A2-10][SEED][FATAL] T_e already published (generation=%llu) — "
+                "seed bootstrap is once per run\n",
+                (unsigned long long)plasma->T_e_generation);
+        return -1;
+    }
+    for (int s = 0; s < plasma->n_shells; s++) {
+        if (!isfinite(plasma->T_e[s]) || plasma->T_e[s] <= 0.0) {
+            fprintf(stderr,
+                    "[A2-10][SEED][FATAL] deck seed T_e invalid at shell %d: %.17g "
+                    "(fail-closed: seed 는 고치지 않는다)\n", s, plasma->T_e[s]);
+            return -1;
+        }
+    }
+    char te_hash[65];
+    if (population_te_manifest_sha256(plasma->T_e, (size_t)plasma->n_shells,
+                                      te_hash) != POP_OK) {
+        fprintf(stderr, "[A2-10][SEED][FATAL] te manifest hash failed\n");
+        return -1;
+    }
+    uint64_t gen = plasma->T_e_generation + 1;   /* == 1 */
+    plasma->te_publication.required_te_generation = gen;
+    plasma->te_publication.committed_te_generation = gen;
+    memcpy(plasma->te_publication.te_manifest_sha256, te_hash, sizeof(te_hash));
+    plasma->T_e_generation = gen;
+    a210_counters()->seed_generation_attempts++;
+    printf("[A2-10][SEED] bootstrap T_e published generation=%llu n_shells=%d "
+           "manifest=%.12s reason=%s\n",
+           (unsigned long long)gen, plasma->n_shells, te_hash,
+           reason ? reason : "(none)");
     return 0;
 }
 

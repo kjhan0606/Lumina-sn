@@ -88,6 +88,11 @@ int main(int argc, char *argv[]) {
     MCConfig config; /* Phase 5 - Step 3 */
     AtomicData atom_data; /* Task #072 */
     memset(&config, 0, sizeof(config)); /* Phase 5 - Step 3 */
+    /* ★2026-08-07: plasma 는 자동 변수인데 영초기화되지 않았고, 개별 필드만 대입됐다.
+     * 그래서 plasma.te_publication (A2-10 소유 구조체)이 쓰레기값이었다 —
+     * 첫 radeq 의 `old=*pub; *pub=c; a210_publication_free(&old)` 가
+     * **쓰레기 포인터를 해제**한다.  영초기화하면 free(NULL) 이므로 무해하다. */
+    memset(&plasma, 0, sizeof(plasma));
 
     /* Phase 5 - Step 3: Set defaults matching TARDIS sn2011fe.yml */
     config.enable_full_relativity = false; /* Phase 5 - Step 3 */
@@ -247,6 +252,14 @@ int main(int argc, char *argv[]) {
 
     /* K-FRESH: tau is solver-owned.  The deck NPY is only an epoch-validated
      * seed and must be overwritten before transport or pure-CMFGEN consumes it. */
+    /* 안 B(user 판정 2026-08-07): 아래 K-FRESH 가 플라즈마를 풀려면 **발행된 T_e** 가
+     * 있어야 하는데, 이 지점엔 복사장이 없어 radeq 가 돌 수 없다.  덱 seed T_e 를
+     * 1세대로 발행해 고리를 끊는다 — 첫 상태는 seed 온도의 LTE(CMFGEN·ARTIS 방식).
+     * radeq 발행이 아니며 A2-10 대장에 seed 로 계수된다. */
+    if (lumina_publish_seed_te(&plasma,
+            "deck seed T_e — bootstrap before first transport (CPU)") != 0)
+        return EXIT_FAILURE;
+
     if (lumina_prepare_solver_owned_tau(&atom_data, &plasma, &opacity,
             geo.time_explosion, "CPU transport/CMFGEN") != 0)
         return EXIT_FAILURE;

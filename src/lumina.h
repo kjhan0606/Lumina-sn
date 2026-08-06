@@ -958,6 +958,11 @@ int compute_plasma_state(AtomicData *atom, PlasmaState *plasma,
 void tau_sobolev_require_refresh(OpacityState *opacity, const char *reason);
 void tau_sobolev_mark_computed(OpacityState *opacity, const char *producer);
 int  tau_sobolev_assert_fresh(OpacityState *opacity, const char *consumer);
+/* A2-07/A2-10 부트스트랩: 덱 seed T_e 를 1세대로 발행(런당 1회).
+ * 반복 0 의 수송에 solver-owned tau 를 주기 위한 유일한 정직한 진입점.
+ * 정본 docs/RUNG_SEED_TE_PUBLICATION.md */
+int  lumina_publish_seed_te(PlasmaState *plasma, const char *reason);
+
 int  lumina_prepare_solver_owned_tau(AtomicData *atom, PlasmaState *plasma,
                                      OpacityState *opacity,
                                      double time_explosion,

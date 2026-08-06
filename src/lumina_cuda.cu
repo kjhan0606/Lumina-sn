@@ -6894,6 +6894,11 @@ int main(int argc, char *argv[]) {
      * probabilities dereferenced garbage jbar_count in the THEN_MC pass
      * (SIGSEGV). Zero the whole struct before the loaders fill it. */
     memset(&opacity, 0, sizeof(opacity));
+    /* ★2026-08-07: plasma 도 **같은 부류**였다 — 위 OpacityState 사고의 형제.
+     * plasma.te_publication (A2-10 소유 구조체)이 stack garbage 라서
+     * 첫 radeq 의 `old=*pub; *pub=c; a210_publication_free(&old)` 가
+     * 쓰레기 포인터를 해제한다.  영초기화하면 free(NULL) 이므로 무해하다. */
+    memset(&plasma, 0, sizeof(plasma));
     opacity.jbar_line_det = NULL;  /* P7 Stage-II: deterministic line-resolved J_bar (producer fills it) */
     opacity.recomb_block_refs = NULL; opacity.recomb_dest_level = NULL;  /* [MACROATOM_BF] */
     opacity.recomb_nu_edge = NULL; opacity.recomb_is_emit = NULL;
@@ -7485,6 +7490,14 @@ int main(int argc, char *argv[]) {
 
     /* K-FRESH: overwrite the shape/epoch-validated disk seed before cuda_upload
      * or the first pure-CMFGEN assembly can observe it. */
+    /* 안 B(user 판정 2026-08-07): 아래 K-FRESH 가 플라즈마를 풀려면 **발행된 T_e** 가
+     * 있어야 하는데, 이 지점엔 복사장이 없어 radeq 가 돌 수 없다.  덱 seed T_e 를
+     * 1세대로 발행해 고리를 끊는다 — 첫 상태는 seed 온도의 LTE(CMFGEN·ARTIS 방식).
+     * 여기서 발행하지 않으면 cuda_upload 가 **seed tau 를 디바이스로** 올린다. */
+    if (lumina_publish_seed_te(&plasma,
+            "deck seed T_e — bootstrap before first transport (CUDA)") != 0)
+        return EXIT_FAILURE;
+
     if (lumina_prepare_solver_owned_tau(&atom_data, &plasma, &opacity,
             geo.time_explosion, "CUDA upload/CMFGEN/transport") != 0)
         return EXIT_FAILURE;

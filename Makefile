@@ -97,6 +97,10 @@ selftest_a2_13_gpu_oracle: tests/a2_13_gpu_oracle.cu $(GPU_PHYSICS_KERNELS) $(GP
 selftest_ioniz_saha: selftest_ioniz_saha.c src/lumina_plasma.c $(POPULATION_SRC) $(A2_PUBLICATION_SRC) src/bf_rate_jnu.c src/radiation_field.c src/seed_capability.c src/lumina_element_wide.c src/lumina_atomic.c $(HEADERS)
 	$(CC) -O2 -std=gnu11 -D_GNU_SOURCE -o selftest_ioniz_saha selftest_ioniz_saha.c src/lumina_plasma.c $(POPULATION_SRC) $(A2_PUBLICATION_SRC) src/bf_rate_jnu.c src/radiation_field.c src/seed_capability.c src/lumina_element_wide.c src/lumina_atomic.c $(LDFLAGS)
 
+# seed T_e 부트스트랩 발행의 음성대조 배터리 (docs/RUNG_SEED_TE_PUBLICATION.md G2/G4/G5)
+selftest_seed_te_publish: tests/seed_te_publish_selftest.c src/lumina_plasma.c $(POPULATION_SRC) $(A2_PUBLICATION_SRC) src/bf_rate_jnu.c src/radiation_field.c src/seed_capability.c src/lumina_element_wide.c src/lumina_atomic.c $(HEADERS)
+	$(CC) -O2 -std=gnu11 -D_GNU_SOURCE -o $@ tests/seed_te_publish_selftest.c src/lumina_plasma.c $(POPULATION_SRC) $(A2_PUBLICATION_SRC) src/bf_rate_jnu.c src/radiation_field.c src/seed_capability.c src/lumina_element_wide.c src/lumina_atomic.c $(LDFLAGS)
+
 # Gate-B Phase-1.6 deterministic frozen-cell oracle (CPU single-thread observer)
 bench_frozen_oracle: bench_frozen_oracle.c src/lumina_plasma.c $(POPULATION_SRC) src/bf_rate_jnu.c src/radiation_field.c src/seed_capability.c src/lumina_element_wide.c src/lumina_atomic.c $(HEADERS)
 	$(CC) -O2 -Wall -Wextra -std=gnu11 -D_GNU_SOURCE -DLUMINA_FROZEN_ORACLE \
