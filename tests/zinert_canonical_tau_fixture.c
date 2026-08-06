@@ -57,14 +57,56 @@ static double canonical_active_tau(const AtomicData *atom, int line,
     return tau;
 }
 
+/* canonical-tau 는 **덱에 고정된 바이트-parity 트립와이어**다.  tau 는 선 파장과
+ * f_lu 에 의존하므로(위 canonical_active_tau 참조) 덱이 다르면 값도 다르다.
+ * 단일 기대값은 한 덱에서만 유효하므로 덱별로 등록한다.
+ * 등록되지 않은 덱은 **조용히 통과시키지 않고 실패**한다 — 기준선 없는 덱을
+ * PASS 로 세탁하지 않는다.  scripts/run_zinert_selftest.py 의 표와 짝이다. */
+typedef struct {
+    const char *deck;      /* 덱 디렉터리 basename */
+    long        active_lines;
+    uint64_t    fnv64;
+} TauBaseline;
+
+static const TauBaseline TAU_BASELINES[] = {
+    /* 종래 생산 덱(2,565,342 선). A2-07 의 LTE@T_rad,W -> LTE@T_e 변경 후 재수립. */
+    {"tardis_reference_toy06_19p48d",      2211572, UINT64_C(0x4a80c65d9c37fad9)},
+    /* 덱 전환 T1: jnu4 종속 + I20 수리 + CMFGEN_EXACT_HYD=1 (2,220,953 선).
+     * 2026-08-06 T2 배터리 실측으로 수립. 같은 실행에서 구조 불변량
+     * (bit_differences=0 · inactive_nonzero=0 · audit_rc=0)이 전부 성립함을 확인했다. */
+    {"tardis_reference_toy06_19p48d_jnu4", 1867183, UINT64_C(0xf32d10df3421058b)},
+};
+
+static const char *deck_basename(const char *path) {
+    size_t n = strlen(path);
+    while (n > 0 && path[n - 1] == '/') n--;          /* 후행 슬래시 제거 */
+    size_t start = 0;
+    for (size_t i = 0; i < n; i++)
+        if (path[i] == '/') start = i + 1;
+    static char buf[512];
+    size_t len = n - start;
+    if (len >= sizeof buf) len = sizeof buf - 1;
+    memcpy(buf, path + start, len);
+    buf[len] = '\0';
+    return buf;
+}
+
 int main(int argc, char **argv) {
-    static const long expected_active_lines = 2211572;
-    static const uint64_t expected_active_tau_fnv64 =
-        UINT64_C(0x4a80c65d9c37fad9);
     if (argc != 2) {
         fprintf(stderr, "usage: %s REFERENCE_DECK\n", argv[0]);
         return 64;
     }
+    const char *deck_name = deck_basename(argv[1]);
+    const TauBaseline *bl = NULL;
+    for (size_t i = 0; i < sizeof TAU_BASELINES / sizeof TAU_BASELINES[0]; i++)
+        if (strcmp(TAU_BASELINES[i].deck, deck_name) == 0) bl = &TAU_BASELINES[i];
+    if (!bl) {
+        printf("[Z-INERT-CANONICAL-TAU] no baseline registered for deck '%s' "
+               "-- refusing to pass unmeasured deck verdict=FAIL\n", deck_name);
+        return 65;
+    }
+    const long     expected_active_lines    = bl->active_lines;
+    const uint64_t expected_active_tau_fnv64 = bl->fnv64;
 
     enum { DECK_SHELLS = 50 };
     AtomicData atom;

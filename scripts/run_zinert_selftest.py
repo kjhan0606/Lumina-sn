@@ -13,10 +13,23 @@ from pathlib import Path
 
 from gate_parallel import run_cases, worker_count
 
-CANONICAL_TAU_EXPECTATION = (
-    "active_lines=2211572 active_tau_bit_differences=0 "
-    "active_tau_fnv64=4a80c65d9c37fad9"
-)
+# canonical-tau 는 **덱에 고정된 바이트-parity 트립와이어**다.  tau 는 선 파장·f 에
+# 의존하므로 덱이 다르면 값도 다르다 — 단일 기대값은 한 덱에서만 유효하다.
+# 등록되지 않은 덱은 **조용히 통과시키지 않고 실패**한다(기준선 없는 덱을 PASS 로
+# 세탁하지 않는다).  새 덱을 추가할 때는 측정 출처를 주석으로 남긴다.
+CANONICAL_TAU_BASELINE = {
+    # 종래 생산 덱 (2,565,342 선). A2-07 에서 LTE@T_rad,W -> LTE@T_e 변경 후 재수립.
+    "tardis_reference_toy06_19p48d":
+        "active_lines=2211572 active_tau_bit_differences=0 "
+        "active_tau_fnv64=4a80c65d9c37fad9",
+    # 덱 전환 T1 (docs/DECK_TRANSITION_SCOPING.md): jnu4 종속 + I20 수리 +
+    # CMFGEN_EXACT_HYD=1.  2,220,953 선.  2026-08-06 T2 배터리 실측으로 수립하며,
+    # 같은 실행에서 구조 불변량(active_tau_bit_differences=0 · inactive_nonzero=0 ·
+    # audit_rc=0)이 전부 성립함을 확인했다 — 실패를 덮은 것이 아니라 기준선을 연 것이다.
+    "tardis_reference_toy06_19p48d_jnu4":
+        "active_lines=1867183 active_tau_bit_differences=0 "
+        "active_tau_fnv64=f32d10df3421058b",
+}
 
 
 @dataclass(frozen=True)
@@ -25,6 +38,7 @@ class Case:
     command: tuple[str, ...]
     expect_nonzero: bool
     scratch: Path
+    deck_name: str = ""      # canonical-tau 기대값을 덱별로 고르기 위해
 
 
 @dataclass(frozen=True)
@@ -50,7 +64,13 @@ def run_case(case: Case) -> Result:
     )
     ok = proc.returncode != 0 if case.expect_nonzero else proc.returncode == 0
     if case.case_id == "canonical-tau":
-        ok = ok and CANONICAL_TAU_EXPECTATION in proc.stdout
+        expected = CANONICAL_TAU_BASELINE.get(case.deck_name)
+        if expected is None:
+            print(f"CANONICAL_TAU no baseline registered for deck "
+                  f"'{case.deck_name}' -- refusing to pass unmeasured deck")
+            ok = False
+        else:
+            ok = ok and expected in proc.stdout
     return Result(case.case_id, proc.returncode, proc.stdout, ok)
 
 
@@ -99,7 +119,8 @@ def main() -> int:
         ("verify", (sys.executable, str(args.verify.resolve()), "--deck", str(args.deck.resolve())), False),
     )
     tasks = [
-        Case(case_id, command, expect_nonzero, scratch_root / case_id)
+        Case(case_id, command, expect_nonzero, scratch_root / case_id,
+             args.deck.resolve().name)
         for case_id, command, expect_nonzero in definitions
     ]
     print(
