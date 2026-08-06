@@ -77,6 +77,21 @@ def prepare(case: Case) -> Path:
         target.unlink()
         with (case.source / "tau_sobolev.npy").open("rb") as src:
             target.write_bytes(src.read(100_000))
+    elif case.mutation == "npy-30col":
+        # ★C3 수리 (Fable L3 Q3-2): 음성1 은 **살아있는 결함 덱**을 픽스처로 쓰고 있었다
+        # (data/tardis_reference_toy06_19p48d 의 geometry=50 / npy=30열).
+        # 그 덱이 고쳐지는 순간 대조가 조용히 무력해진다 — 그것이 C3 의 정의 그 자체다.
+        # 음성 픽스처는 **찾는 것이 아니라 만드는 것**이다. 나머지 5종처럼 변조로 만든다:
+        # 행 수는 유지하고 열만 30 으로 줄여 npy/geometry 불일치를 재현한다.
+        target = deck / "tau_sobolev.npy"
+        target.unlink()
+        src_arr = np.load(case.source / "tau_sobolev.npy", mmap_mode="r",
+                          allow_pickle=False)
+        arr = np.lib.format.open_memmap(
+            target, mode="w+", dtype=src_arr.dtype, shape=(src_arr.shape[0], 30))
+        arr[:] = 0.0
+        del arr
+        replace_contract(deck, case.source, "n_shells=50", "n_shells=30")
     elif case.mutation == "stale-sentinel":
         target = deck / "tau_sobolev.npy"
         target.unlink()
@@ -151,7 +166,7 @@ def main() -> int:
     scratch_root.mkdir(parents=True, exist_ok=True)
     definitions = (
         ("positive", "양성: 정상 _sivcaiv (계약 있음, 50열)", "OK", "none", positive),
-        ("canonical-30", "음성1: 30열 정본 덱", "FATAL", "none", negative),
+        ("canonical-30", "음성1: npy 30열 대 geometry 50셸(구성)", "FATAL", "npy-30col", positive),
         ("no-contract", "음성2: 계약 파일 없음", "FATAL", "no-contract", positive),
         ("bad-line-hash", "음성3: line_list 해시 불일치", "FATAL", "bad-hash", positive),
         ("bad-shells", "음성4: 계약 n_shells=30", "FATAL", "bad-shells", positive),

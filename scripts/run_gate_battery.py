@@ -294,12 +294,9 @@ def runner_specs(
                 "--loader", str(build / "kshape_harness"),
                 "--positive-deck",
                 str(ROOT / "data/tardis_reference_toy06_19p48d_sivcaiv"),
-                # ★음성 픽스처는 --deck 을 따르면 안 된다.  K 게이트의 음성1
-                # "30열 정본 덱"은 **실제로 그 결함을 가진 덱**을 쓴다 —
-                # data/tardis_reference_toy06_19p48d 는 geometry 가 50셸인데
-                # npy 가 30열이다(0-K 형상 fail-open, 805회 발화 이력).
-                # 결함 없는 덱을 넘기면 잡을 것이 없어 음성대조가 무력해진다
-                # (2026-08-06 T2 에서 실제로 MISS 발생).  픽스처를 고정한다.
+                # 음성1 은 2026-08-07 부터 **구성형 변조**(npy-30col)로 만든다 —
+                # 살아있는 결함 덱에 의존하지 않는다(C3 수리, Fable Q3-2).
+                # 이 인자는 남겨 두되 픽스처의 결함 의존은 없어졌다.
                 "--negative-deck",
                 str(ROOT / "data/tardis_reference_toy06_19p48d"),
                 "--scratch-root", str(scratch / "K"),
