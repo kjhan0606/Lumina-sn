@@ -2,167 +2,167 @@
 
 - 행 수: 157
 - 미분류: 0
-- 이 표는 측량 결과이며 A2-01에서 공급원을 교체하지 않는다.
+- A2-17 zero-consumer 감사로 157행의 종결 상태와 owning commit을 고정한다.
 
 | 파일:행 | 심볼 | 현재 공급원 | 물리 의미 | 새 공급원 | 이행 단계 | 최종 상태 |
 |---|---|---|---|---|---|---|
-| src/lumina_plasma.c:4632 | W | local alias of plasma->W[s] | [rate] bound-bound dilute Planck pump | RadiationField.J_nu | A2-06 | REPLACE_SCALAR_RATE_READ |
-| src/lumina_plasma.c:4632 | T_rad | local alias of plasma->T_rad[s] | [rate] bound-bound Planck color | RadiationField.J_nu | A2-06 | REPLACE_SCALAR_RATE_READ |
-| src/lumina_plasma.c:4672 | W | local alias of plasma->W[s] | [rate] LTE comparison field amplitude | RadiationField.J_nu | A2-06 | REPLACE_SCALAR_RATE_READ |
-| src/lumina_plasma.c:4672 | T_rad | local alias of plasma->T_rad[s] | [rate] LTE comparison field color | RadiationField.J_nu | A2-06 | REPLACE_SCALAR_RATE_READ |
-| src/lumina_plasma.c:4777 | W | local alias of plasma->W[s] | [rate] line upward radiative rate | RadiationField.J_nu | A2-06 | REPLACE_SCALAR_RATE_READ |
-| src/lumina_plasma.c:4778 | T_rad | local alias of plasma->T_rad[s] | [rate] line upward radiative rate | RadiationField.J_nu | A2-06 | REPLACE_SCALAR_RATE_READ |
-| 이관 완료(A2-07·3ddd95c0de20abea3284ca326ce41b7968d4b26d) | T_rad | local alias of plasma->T_rad[s] | [rate] Boltzmann fallback exponent in line rate | RadiationField.J_nu | A2-06 | REPLACE_SCALAR_RATE_READ |
-| 이관 완료(A2-07·3ddd95c0de20abea3284ca326ce41b7968d4b26d) | W | local alias of plasma->W[s] | [rate] metastable dilution in line rate | RadiationField.J_nu | A2-06 | REPLACE_SCALAR_RATE_READ |
-| 이관 완료(A2-07·3ddd95c0de20abea3284ca326ce41b7968d4b26d) | T_rad | bf_rate_pop argument from plasma->T_rad | [rate] bound-free population exponent | RadiationField.J_nu | A2-07 | REPLACE_SCALAR_RATE_READ |
-| 이관 완료(A2-07·3ddd95c0de20abea3284ca326ce41b7968d4b26d) | W | bf_rate_pop argument from plasma->W | [rate] bound-free population dilution | RadiationField.J_nu | A2-07 | REPLACE_SCALAR_RATE_READ |
-| src/lumina_plasma.c:12066 | W | local alias of plasma->W[s] | [rate] line source fallback | RadiationField.J_nu | A2-06 | REPLACE_SCALAR_RATE_READ |
-| src/lumina_plasma.c:12066 | T_rad | local alias of plasma->T_rad[s] | [rate] line source fallback | RadiationField.J_nu | A2-06 | REPLACE_SCALAR_RATE_READ |
-| src/lumina_plasma.c:12073 | W | local alias of plasma->W[s] | [rate] bin field construction | RadiationField.J_nu | A2-06 | REPLACE_SCALAR_RATE_READ |
-| src/lumina_plasma.c:12073 | T_rad | local alias of plasma->T_rad[s] | [rate] bin field construction | RadiationField.J_nu | A2-06 | REPLACE_SCALAR_RATE_READ |
-| 이관 완료(A2-07·3ddd95c0de20abea3284ca326ce41b7968d4b26d) | W | local alias of plasma->W[s] | [rate] bound-free rate population call | RadiationField.J_nu | A2-07 | REPLACE_SCALAR_RATE_READ |
-| 이관 완료(A2-07·3ddd95c0de20abea3284ca326ce41b7968d4b26d) | T_rad | local alias of plasma->T_rad[s] | [rate] bound-free rate population call | RadiationField.J_nu | A2-07 | REPLACE_SCALAR_RATE_READ |
-| src/lumina_plasma.c:12134 | W | local alias of plasma->W[s] | [rate] dilute photoheating integral | (진단 유지) | 진단 | KEEP_DIAGNOSTIC_READ |
-| src/lumina_plasma.c:12192 | T_rad | local alias of plasma->T_rad[s] | [rate] Planck comparison in rate integral | (진단 유지) | 진단 | KEEP_DIAGNOSTIC_READ |
-| 이관 완료(A2-07·3ddd95c0de20abea3284ca326ce41b7968d4b26d) | W | local alias of plasma->W[s] | [rate] lower-level radiative weight | RadiationField.J_nu | A2-06 | REPLACE_SCALAR_RATE_READ |
-| 이관 완료(A2-07·3ddd95c0de20abea3284ca326ce41b7968d4b26d) | W | local alias of plasma->W[s] | [rate] upper-level radiative weight | RadiationField.J_nu | A2-06 | REPLACE_SCALAR_RATE_READ |
-| 이관 완료(A2-07·3ddd95c0de20abea3284ca326ce41b7968d4b26d) | W | local alias of plasma->W[s] | [rate] coupled bound-free rate call | RadiationField.J_nu | A2-07 | REPLACE_SCALAR_RATE_READ |
-| 이관 완료(A2-07·3ddd95c0de20abea3284ca326ce41b7968d4b26d) | T_rad | local alias of plasma->T_rad[s] | [rate] coupled bound-free rate call | RadiationField.J_nu | A2-07 | REPLACE_SCALAR_RATE_READ |
-| 이관 완료(A2-07·3ddd95c0de20abea3284ca326ce41b7968d4b26d) | W | local alias of plasma->W[s] | [rate] coupled lower-level weight | RadiationField.J_nu | A2-06 | REPLACE_SCALAR_RATE_READ |
-| 이관 완료(A2-07·3ddd95c0de20abea3284ca326ce41b7968d4b26d) | W | local alias of plasma->W[s] | [rate] coupled upper-level weight | RadiationField.J_nu | A2-06 | REPLACE_SCALAR_RATE_READ |
-| src/lumina_main.c:828 | plasma.W[i] | plasma.W | [comparator] CPU reference W comparator | RadiationField generation-bound diagnostic | A2-11 | KEEP_DIAGNOSTIC_ONLY |
-| src/lumina_main.c:829 | plasma.T_rad[i] | plasma.T_rad | [comparator] CPU reference T_rad comparator | RadiationField generation-bound diagnostic | A2-11 | KEEP_DIAGNOSTIC_ONLY |
-| src/lumina_main.c:831 | plasma.W[i] | plasma.W | [comparator] CPU W comparison report | RadiationField generation-bound diagnostic | A2-11 | KEEP_DIAGNOSTIC_ONLY |
-| src/lumina_main.c:832 | plasma.T_rad[i] | plasma.T_rad | [comparator] CPU T_rad comparison report | RadiationField generation-bound diagnostic | A2-11 | KEEP_DIAGNOSTIC_ONLY |
-| src/lumina_main.c:838 | plasma.W[i] | plasma.W | [comparator] CPU W mean error | RadiationField generation-bound diagnostic | A2-11 | KEEP_DIAGNOSTIC_ONLY |
-| src/lumina_main.c:839 | plasma.T_rad[i] | plasma.T_rad | [comparator] CPU T_rad mean error | RadiationField generation-bound diagnostic | A2-11 | KEEP_DIAGNOSTIC_ONLY |
-| src/lumina_main.c:931 | plasma.W[i] | plasma.W | [comparator] CPU scalar comparison CSV | RadiationField generation-bound diagnostic | A2-11 | KEEP_DIAGNOSTIC_ONLY |
-| src/lumina_main.c:931 | plasma.T_rad[i] | plasma.T_rad | [comparator] CPU scalar comparison CSV | RadiationField generation-bound diagnostic | A2-11 | KEEP_DIAGNOSTIC_ONLY |
-| src/lumina_cuda.cu:10899 | plasma.W[i] | plasma.W | [comparator] CUDA-host reference W comparator | RadiationField generation-bound diagnostic | A2-11 | KEEP_DIAGNOSTIC_ONLY |
-| src/lumina_cuda.cu:10900 | plasma.T_rad[i] | plasma.T_rad | [comparator] CUDA-host reference T_rad comparator | RadiationField generation-bound diagnostic | A2-11 | KEEP_DIAGNOSTIC_ONLY |
-| src/lumina_cuda.cu:10902 | plasma.W[i] | plasma.W | [comparator] CUDA-host W comparison report | RadiationField generation-bound diagnostic | A2-11 | KEEP_DIAGNOSTIC_ONLY |
-| src/lumina_cuda.cu:10903 | plasma.T_rad[i] | plasma.T_rad | [comparator] CUDA-host T_rad comparison report | RadiationField generation-bound diagnostic | A2-11 | KEEP_DIAGNOSTIC_ONLY |
-| src/lumina_cuda.cu:10908 | plasma.W[i] | plasma.W | [comparator] CUDA-host W mean error | RadiationField generation-bound diagnostic | A2-11 | KEEP_DIAGNOSTIC_ONLY |
-| src/lumina_cuda.cu:10909 | plasma.T_rad[i] | plasma.T_rad | [comparator] CUDA-host T_rad mean error | RadiationField generation-bound diagnostic | A2-11 | KEEP_DIAGNOSTIC_ONLY |
-| 이관 완료(A2-14·65498e18e9826ea0cdb5906b71cebecef4b82637) | T_rad[s] | GPU BF-kernel T_rad parameter | [GPU_opacity_rate] GPU bound-free Boltzmann factor | RadiationField.J_nu | A2-14 | REPLACE_GPU_SCALAR_OPACITY_RATE_READ |
-| 이관 완료(A2-14·65498e18e9826ea0cdb5906b71cebecef4b82637) | W[s] | GPU BF-kernel W parameter | [GPU_opacity_rate] GPU bound-free dilution factor | RadiationField.J_nu | A2-14 | REPLACE_GPU_SCALAR_OPACITY_RATE_READ |
-| 이관 완료(A2-14·65498e18e9826ea0cdb5906b71cebecef4b82637) | plasma->T_rad | plasma.T_rad upload source | [GPU_opacity_rate] GPU BF rate state upload | RadiationField.J_nu | A2-14 | REPLACE_GPU_SCALAR_OPACITY_RATE_READ |
-| 이관 완료(A2-14·65498e18e9826ea0cdb5906b71cebecef4b82637) | plasma->W | plasma.W upload source | [GPU_opacity_rate] GPU BF rate state upload | RadiationField.J_nu | A2-14 | REPLACE_GPU_SCALAR_OPACITY_RATE_READ |
-| 이관 완료(A2-14·65498e18e9826ea0cdb5906b71cebecef4b82637) | g_bf_gemm.d_T_rad | GPU BF T_rad buffer | [GPU_opacity_rate] GPU BF kernel argument | RadiationField.J_nu | A2-14 | REPLACE_GPU_SCALAR_OPACITY_RATE_READ |
-| 이관 완료(A2-14·65498e18e9826ea0cdb5906b71cebecef4b82637) | g_bf_gemm.d_W | GPU BF W buffer | [GPU_opacity_rate] GPU BF kernel argument | RadiationField.J_nu | A2-14 | REPLACE_GPU_SCALAR_OPACITY_RATE_READ |
-| 이관 완료(A2-14·65498e18e9826ea0cdb5906b71cebecef4b82637) | plasma->T_rad | plasma.T_rad refresh source | [GPU_opacity_rate] GPU BF iteration refresh | RadiationField.J_nu | A2-14 | REPLACE_GPU_SCALAR_OPACITY_RATE_READ |
-| 이관 완료(A2-14·65498e18e9826ea0cdb5906b71cebecef4b82637) | plasma->W | plasma.W refresh source | [GPU_opacity_rate] GPU BF iteration refresh | RadiationField.J_nu | A2-14 | REPLACE_GPU_SCALAR_OPACITY_RATE_READ |
-| 이관 완료(A2-14·65498e18e9826ea0cdb5906b71cebecef4b82637) | g_bf_gemm.d_T_rad | GPU BF T_rad buffer | [GPU_opacity_rate] GPU BF refreshed kernel argument | RadiationField.J_nu | A2-14 | REPLACE_GPU_SCALAR_OPACITY_RATE_READ |
-| 이관 완료(A2-14·65498e18e9826ea0cdb5906b71cebecef4b82637) | g_bf_gemm.d_W | GPU BF W buffer | [GPU_opacity_rate] GPU BF refreshed kernel argument | RadiationField.J_nu | A2-14 | REPLACE_GPU_SCALAR_OPACITY_RATE_READ |
-| 이관 완료(A2-14·65498e18e9826ea0cdb5906b71cebecef4b82637) | d_W[s] | GPU NLTE assembly W parameter | [GPU_opacity_rate] GPU bound-bound Planck fallback | RadiationField.J_nu | A2-14 | REPLACE_GPU_SCALAR_OPACITY_RATE_READ |
-| 이관 완료(A2-14·65498e18e9826ea0cdb5906b71cebecef4b82637) | plasma->W | plasma.W upload source | [GPU_opacity_rate] GPU NLTE assembly upload | RadiationField.J_nu | A2-14 | REPLACE_GPU_SCALAR_OPACITY_RATE_READ |
-| 이관 완료(A2-14·65498e18e9826ea0cdb5906b71cebecef4b82637) | plasma->T_rad[0] | plasma.T_rad | [GPU_opacity_rate] GPU NLTE dilute temperature fallback | RadiationField.J_nu | A2-14 | REPLACE_GPU_SCALAR_OPACITY_RATE_READ |
-| 이관 완료(A2-15·84a148159185004f6f25db4bed51a3d5b5896d44) | d_T_rad[shell_id] | GPU transport T_rad array | [GPU_transport] GPU BF re-emission temperature read | RadiationField generation lifecycle | A2-12 | REPLACE_GPU_SCALAR_TRANSPORT_STATE |
-| 이관 완료(A2-15·84a148159185004f6f25db4bed51a3d5b5896d44) | d_T_rad[shell_id] | GPU transport T_rad array | [GPU_transport] GPU band re-emission temperature read | RadiationField generation lifecycle | A2-12 | REPLACE_GPU_SCALAR_TRANSPORT_STATE |
-| 이관 완료(A2-15·84a148159185004f6f25db4bed51a3d5b5896d44) | d_T_rad | GPU transport T_rad pointer | [GPU_transport] transport kernel scalar-field argument | RadiationField generation lifecycle | A2-12 | REPLACE_GPU_SCALAR_TRANSPORT_STATE |
-| 이관 완료(A2-15·84a148159185004f6f25db4bed51a3d5b5896d44) | d_T_rad | GPU transport T_rad pointer | [GPU_transport] transport interaction call | RadiationField generation lifecycle | A2-12 | REPLACE_GPU_SCALAR_TRANSPORT_STATE |
-| 이관 완료(A2-15·84a148159185004f6f25db4bed51a3d5b5896d44) | d_T_rad | GPU transport T_rad pointer | [GPU_transport] legacy BF re-emission call | RadiationField generation lifecycle | A2-12 | REPLACE_GPU_SCALAR_TRANSPORT_STATE |
-| 이관 완료(A2-15·84a148159185004f6f25db4bed51a3d5b5896d44) | dev.d_T_rad | GPU device T_rad owner | [GPU_transport] main transport launch argument | RadiationField generation lifecycle | A2-12 | REPLACE_GPU_SCALAR_TRANSPORT_STATE |
-| 이관 완료(A2-15·84a148159185004f6f25db4bed51a3d5b5896d44) | dev.d_T_rad | GPU device T_rad owner | [GPU_transport] final transport launch argument | RadiationField generation lifecycle | A2-12 | REPLACE_GPU_SCALAR_TRANSPORT_STATE |
-| src/lumina_cuda.cu:8557 | plasma.W[s] | plasma.W | [GPU_transport] GPU-host packet source tier | RadiationField generation lifecycle | A2-12 | REPLACE_GPU_SCALAR_TRANSPORT_STATE |
-| src/lumina_cuda.cu:8558 | plasma.W | plasma.W owner pointer | [GPU_transport] GPU-host packet source validity gate | RadiationField generation lifecycle | A2-12 | REPLACE_GPU_SCALAR_TRANSPORT_STATE |
-| src/lumina_cuda.cu:10814 | plasma.T_rad[i] | plasma.T_rad | [GPU_transport] GPU-host transport temperature ratio | RadiationField generation lifecycle | A2-12 | REPLACE_GPU_SCALAR_TRANSPORT_STATE |
-| src/lumina_cuda.cu:10814 | plasma.T_rad[i] | plasma.T_rad | [GPU_transport] GPU-host transport temperature ratio denominator | RadiationField generation lifecycle | A2-12 | REPLACE_GPU_SCALAR_TRANSPORT_STATE |
-| src/lumina_plasma.c:2624 | plasma->T_rad[s] | plasma.T_rad | [opacity_rate] nebular ionization opacity/rate temperature | RadiationField.J_nu | A2-08 | REPLACE_SCALAR_OPACITY_RATE_READ |
-| src/lumina_plasma.c:2626 | plasma->W[s] | plasma.W | [opacity_rate] nebular ionization opacity/rate dilution | RadiationField.J_nu | A2-08 | REPLACE_SCALAR_OPACITY_RATE_READ |
-| src/lumina_plasma.c:2695 | T_rad | local alias of plasma->T_rad[s] | [opacity_rate] zeta interpolation temperature | RadiationField.J_nu | A2-08 | REPLACE_SCALAR_OPACITY_RATE_READ |
-| src/lumina_plasma.c:2696 | T_rad | local alias of plasma->T_rad[s] | [opacity_rate] electron-to-radiation temperature ratio | RadiationField.J_nu | A2-08 | REPLACE_SCALAR_OPACITY_RATE_READ |
-| src/lumina_plasma.c:2697 | W | local alias of plasma->W[s] | [opacity_rate] nebular rate dilution | RadiationField.J_nu | A2-08 | REPLACE_SCALAR_OPACITY_RATE_READ |
-| src/lumina_plasma.c:2698 | T_rad | local alias of plasma->T_rad[s] | [opacity_rate] nebular rate temperature ratio | RadiationField.J_nu | A2-08 | REPLACE_SCALAR_OPACITY_RATE_READ |
-| src/lumina_plasma.c:2699 | W | local alias of plasma->W[s] | [opacity_rate] non-metastable dilution term | RadiationField.J_nu | A2-08 | REPLACE_SCALAR_OPACITY_RATE_READ |
-| src/lumina_plasma.c:2700 | T_rad | local alias of plasma->T_rad[s] | [opacity_rate] ML correction temperature | RadiationField.J_nu | A2-08 | REPLACE_SCALAR_OPACITY_RATE_READ |
-| src/lumina_plasma.c:2701 | W | local alias of plasma->W[s] | [opacity_rate] two-component rate lock threshold | RadiationField.J_nu | A2-08 | REPLACE_SCALAR_OPACITY_RATE_READ |
-| src/lumina_plasma.c:18673 | plasma->W[shell_mid] | plasma.W | [formal_transfer] observer continuum source | RadiationField.J_nu | A2-11 | REPLACE_FORMAL_TRANSFER_SCALAR_READ |
-| src/lumina_plasma.c:18674 | plasma->T_rad[shell_mid] | plasma.T_rad | [formal_transfer] observer continuum source | RadiationField.J_nu | A2-11 | REPLACE_FORMAL_TRANSFER_SCALAR_READ |
-| src/lumina_plasma.c:18693 | plasma->W[shell] | plasma.W | [formal_transfer] observer line fallback source | RadiationField.J_nu | A2-11 | REPLACE_FORMAL_TRANSFER_SCALAR_READ |
-| src/lumina_plasma.c:18693 | plasma->T_rad[shell] | plasma.T_rad | [formal_transfer] observer line fallback source | RadiationField.J_nu | A2-11 | REPLACE_FORMAL_TRANSFER_SCALAR_READ |
-| src/lumina_plasma.c:18720 | plasma->T_rad[shell] | plasma.T_rad | [formal_transfer] formal-transfer thermal width | RadiationField.J_nu | A2-11 | REPLACE_FORMAL_TRANSFER_SCALAR_READ |
-| src/lumina_plasma.c:18720 | plasma->W[shell] | plasma.W | [formal_transfer] formal-transfer dilution | RadiationField.J_nu | A2-11 | REPLACE_FORMAL_TRANSFER_SCALAR_READ |
-| src/lumina_plasma.c:18776 | plasma->W[shell_mid] | plasma.W | [formal_transfer] red-side continuum source | RadiationField.J_nu | A2-11 | REPLACE_FORMAL_TRANSFER_SCALAR_READ |
-| src/lumina_plasma.c:18777 | plasma->T_rad[shell_mid] | plasma.T_rad | [formal_transfer] red-side continuum source | RadiationField.J_nu | A2-11 | REPLACE_FORMAL_TRANSFER_SCALAR_READ |
-| src/lumina_plasma.c:19026 | plasma->W[shell] | plasma.W | [formal_transfer] electron-scattering source fallback | RadiationField.J_nu | A2-11 | REPLACE_FORMAL_TRANSFER_SCALAR_READ |
-| 이관 완료(A2-14·65498e18e9826ea0cdb5906b71cebecef4b82637) | g_bf_gemm.d_T_rad | GPU BF T_rad allocation | [GPU_lifecycle] allocate GPU scalar owner | RadiationField generation lifecycle | A2-12 | REMOVE_GPU_SCALAR_LIFECYCLE |
-| 이관 완료(A2-14·65498e18e9826ea0cdb5906b71cebecef4b82637) | g_bf_gemm.d_W | GPU BF W allocation | [GPU_lifecycle] allocate GPU scalar owner | RadiationField generation lifecycle | A2-12 | REMOVE_GPU_SCALAR_LIFECYCLE |
-| 이관 완료(A2-14·65498e18e9826ea0cdb5906b71cebecef4b82637) | g_bf_gemm.d_T_rad | GPU BF T_rad allocation | [GPU_lifecycle] free GPU scalar owner | RadiationField generation lifecycle | A2-12 | REMOVE_GPU_SCALAR_LIFECYCLE |
-| 이관 완료(A2-14·65498e18e9826ea0cdb5906b71cebecef4b82637) | g_bf_gemm.d_W | GPU BF W allocation | [GPU_lifecycle] free GPU scalar owner | RadiationField generation lifecycle | A2-12 | REMOVE_GPU_SCALAR_LIFECYCLE |
-| src/lumina_cuda.cu:273 | dev->d_T_rad | GPU transport T_rad allocation | [GPU_lifecycle] allocate GPU scalar owner | RadiationField generation lifecycle | A2-12 | REMOVE_GPU_SCALAR_LIFECYCLE |
-| src/lumina_cuda.cu:341 | dev->d_T_rad | GPU transport T_rad allocation | [GPU_lifecycle] test GPU scalar allocation | RadiationField generation lifecycle | A2-12 | REMOVE_GPU_SCALAR_LIFECYCLE |
-| src/lumina_cuda.cu:342 | dev->d_T_rad | GPU transport T_rad allocation | [GPU_lifecycle] lazy allocate GPU scalar owner | RadiationField generation lifecycle | A2-12 | REMOVE_GPU_SCALAR_LIFECYCLE |
-| src/lumina_cuda.cu:3286 | dev->d_T_rad | GPU transport T_rad allocation | [GPU_lifecycle] free GPU scalar owner | RadiationField generation lifecycle | A2-12 | REMOVE_GPU_SCALAR_LIFECYCLE |
-| src/lumina_cuda.cu:1467 | plasma->T_rad[s] | plasma.T_rad | [GPU_rate] GPU-host NLTE Boltzmann fallback | RadiationField.J_nu | A2-13 | REPLACE_GPU_SCALAR_RATE_READ |
-| src/lumina_cuda.cu:1621 | plasma->T_rad[s] | plasma.T_rad | [GPU_rate] GPU-host lower-ion fallback | RadiationField.J_nu | A2-13 | REPLACE_GPU_SCALAR_RATE_READ |
-| src/lumina_cuda.cu:1652 | plasma->T_rad[s] | plasma.T_rad | [GPU_rate] GPU-host upper-ion fallback | RadiationField.J_nu | A2-13 | REPLACE_GPU_SCALAR_RATE_READ |
-| src/lumina_cuda.cu:1682 | plasma->T_rad[s] | plasma.T_rad | [GPU_rate] GPU-host top-stage fallback | RadiationField.J_nu | A2-13 | REPLACE_GPU_SCALAR_RATE_READ |
-| src/lumina_cuda.cu:2019 | plasma->T_rad[s] | plasma.T_rad | [GPU_rate] GPU-host rate dump electron seed | RadiationField.J_nu | A2-13 | REPLACE_GPU_SCALAR_RATE_READ |
-| src/lumina_cuda.cu:2020 | plasma->T_rad[s] | plasma.T_rad | [GPU_rate] GPU-host rate dump radiation temperature | RadiationField.J_nu | A2-13 | REPLACE_GPU_SCALAR_RATE_READ |
-| src/lumina_cuda.cu:2021 | plasma->W[s] | plasma.W | [GPU_rate] GPU-host rate dump dilution | RadiationField.J_nu | A2-13 | REPLACE_GPU_SCALAR_RATE_READ |
-| src/lumina_cuda.cu:2068 | plasma->T_rad[s] | plasma.T_rad | [GPU_rate] GPU-host rate fallback seed | RadiationField.J_nu | A2-13 | REPLACE_GPU_SCALAR_RATE_READ |
-| src/lumina_atomic.c:662 | W | plasma-state W input array | [owner_validation] validate owner presence | RadiationField commit API | A2-04 | VALIDATE_CANONICAL_FIELD_INSTEAD |
-| src/lumina_atomic.c:662 | T_rad | plasma-state T_rad input array | [owner_validation] validate owner presence | RadiationField commit API | A2-04 | VALIDATE_CANONICAL_FIELD_INSTEAD |
-| src/lumina_atomic.c:683 | W[s] | plasma-state W input array | [owner_validation] validate finite physical dilution | RadiationField commit API | A2-04 | VALIDATE_CANONICAL_FIELD_INSTEAD |
-| src/lumina_atomic.c:684 | T_rad[s] | plasma-state T_rad input array | [owner_validation] validate finite positive color temperature | RadiationField commit API | A2-04 | VALIDATE_CANONICAL_FIELD_INSTEAD |
-| src/lumina_atomic.c:688 | T_rad[s] | plasma-state T_rad input array | [owner_validation] validate color invariant | RadiationField commit API | A2-04 | VALIDATE_CANONICAL_FIELD_INSTEAD |
-| src/lumina_atomic.c:688 | W[s] | plasma-state W input array | [owner_validation] validate color invariant | RadiationField commit API | A2-04 | VALIDATE_CANONICAL_FIELD_INSTEAD |
-| src/lumina_cmfgen.c:663 | plasma->T_rad | plasma.T_rad owner pointer | [owner_validation] CMF solver owner-presence validation | RadiationField commit API | A2-04 | VALIDATE_CANONICAL_FIELD_INSTEAD |
-| src/lumina_atomic.c:869 | plasma->T_rad[i2] | plasma.T_rad | [owner_update] fixed-color profile overwrite | RadiationField commit API | A2-04 | REMOVE_SCALAR_OWNER_UPDATE |
-| src/lumina_plasma.c:1123 | plasma->T_rad[i] | plasma.T_rad | [owner_update] fixed radiation profile update | RadiationField commit API | A2-04 | REMOVE_SCALAR_OWNER_UPDATE |
-| src/lumina_plasma.c:1124 | plasma->W[i] | plasma.W | [owner_update] fixed radiation profile update | RadiationField commit API | A2-04 | REMOVE_SCALAR_OWNER_UPDATE |
-| src/lumina_plasma.c:1155 | plasma->T_rad[i] | plasma.T_rad | [owner_update] damped T_rad owner update | RadiationField commit API | A2-04 | REMOVE_SCALAR_OWNER_UPDATE |
-| src/lumina_plasma.c:1156 | plasma->T_rad[i] | plasma.T_rad | [owner_update] damped T_rad prior generation read | RadiationField commit API | A2-04 | REMOVE_SCALAR_OWNER_UPDATE |
-| src/lumina_plasma.c:1157 | plasma->W[i] | plasma.W | [owner_update] damped W owner update | RadiationField commit API | A2-04 | REMOVE_SCALAR_OWNER_UPDATE |
-| src/lumina_plasma.c:1158 | plasma->W[i] | plasma.W | [owner_update] damped W prior generation read | RadiationField commit API | A2-04 | REMOVE_SCALAR_OWNER_UPDATE |
-| src/lumina_plasma.c:3120 | plasma->T_rad[s] | plasma.T_rad | [seed_radeq] electron-temperature seed | RadiationField.J_nu | A2-16 | LIMIT_TO_GENERATION_ZERO_SEED |
-| src/lumina_plasma.c:3159 | plasma->T_rad[s] | plasma.T_rad | [seed_radeq] analytic RADEQ radiation seed | RadiationField.J_nu | A2-16 | LIMIT_TO_GENERATION_ZERO_SEED |
-| src/lumina_plasma.c:3160 | plasma->W[s] | plasma.W | [seed_radeq] analytic RADEQ energy-density seed | RadiationField.J_nu | A2-16 | LIMIT_TO_GENERATION_ZERO_SEED |
-| src/lumina_plasma.c:3163 | T_rad | local alias of plasma->T_rad[s] | [seed_radeq] invalid-cell electron-temperature seed | RadiationField.J_nu | A2-16 | LIMIT_TO_GENERATION_ZERO_SEED |
-| src/lumina_plasma.c:11789 | plasma->T_rad[s] | plasma.T_rad | [seed_radeq] RADEQ disabled-path seed | RadiationField.J_nu | A2-16 | LIMIT_TO_GENERATION_ZERO_SEED |
-| src/lumina_plasma.c:12003 | T_rad | local alias of plasma->T_rad[s] | [seed_radeq] RADEQ invalid-cell seed | RadiationField.J_nu | A2-16 | LIMIT_TO_GENERATION_ZERO_SEED |
-| src/lumina_atomic.c:850 | plasma->W | plasma.W owner pointer | [input_owner] load W column as runtime owner | RadiationField.J_nu | A2-16 | MOVE_TO_OFFLINE_LEGACY_CONVERTER |
-| src/lumina_atomic.c:851 | plasma->T_rad | plasma.T_rad owner pointer | [input_owner] load T_rad column as runtime owner | RadiationField.J_nu | A2-16 | MOVE_TO_OFFLINE_LEGACY_CONVERTER |
-| src/lumina_atomic.c:854 | plasma->W | plasma.W owner pointer | [input_owner] pass W owner into cross-field validation | RadiationField.J_nu | A2-16 | MOVE_TO_OFFLINE_LEGACY_CONVERTER |
-| src/lumina_atomic.c:854 | plasma->T_rad | plasma.T_rad owner pointer | [input_owner] pass T_rad owner into cross-field validation | RadiationField.J_nu | A2-16 | MOVE_TO_OFFLINE_LEGACY_CONVERTER |
-| src/lumina_atomic.c:874 | plasma->W[0] | plasma.W | [input_owner] loaded owner summary | RadiationField.J_nu | A2-16 | MOVE_TO_OFFLINE_LEGACY_CONVERTER |
-| src/lumina_plasma.c:1182 | plasma->T_rad[i] | plasma.T_rad | [diagnostic] binned-field fit diagnostic | RadiationField generation-bound diagnostic | A2-11 | KEEP_OUTPUT_ONLY_DIAGNOSTIC |
-| src/lumina_cmfgen.c:970 | plasma->T_rad[s] | plasma.T_rad | [diagnostic] CMF frozen-state diagnostic | RadiationField generation-bound diagnostic | A2-11 | KEEP_OUTPUT_ONLY_DIAGNOSTIC |
-| src/lumina_cmfgen.c:1612 | plasma->T_rad | plasma.T_rad owner array | [diagnostic] CMF state checksum diagnostic | RadiationField generation-bound diagnostic | A2-11 | KEEP_OUTPUT_ONLY_DIAGNOSTIC |
-| src/lumina_element_wide.c:2325 | plasma->W[shell] | plasma.W | [diagnostic] element-wide provenance diagnostic | RadiationField generation-bound diagnostic | A2-11 | KEEP_OUTPUT_ONLY_DIAGNOSTIC |
-| 이관 완료(A2-15·84a148159185004f6f25db4bed51a3d5b5896d44) | d_T_rad | GPU transport T_rad pointer | [GPU_emissivity] GPU macro-atom Planck re-emission | RadiationField.J_nu | A2-15 | REPLACE_GPU_PLANCK_EMISSIVITY_READ |
-| 이관 완료(A2-15·84a148159185004f6f25db4bed51a3d5b5896d44) | d_T_rad | GPU transport T_rad pointer | [GPU_emissivity] GPU UV thermalization | RadiationField.J_nu | A2-15 | REPLACE_GPU_PLANCK_EMISSIVITY_READ |
-| 이관 완료(A2-15·84a148159185004f6f25db4bed51a3d5b5896d44) | d_T_rad | GPU transport T_rad pointer | [GPU_emissivity] GPU IR thermalization | RadiationField.J_nu | A2-15 | REPLACE_GPU_PLANCK_EMISSIVITY_READ |
-| 이관 완료(A2-15·84a148159185004f6f25db4bed51a3d5b5896d44) | d_T_rad | GPU transport T_rad pointer | [GPU_emissivity] GPU packet source re-emission | RadiationField.J_nu | A2-15 | REPLACE_GPU_PLANCK_EMISSIVITY_READ |
-| src/lumina_plasma.c:14127 | W | local alias of plasma->W[s] | [rate_diagnostic] coupled-rate luminosity diagnostic | RadiationField generation-bound diagnostic | A2-06 | DERIVE_RATE_DIAGNOSTIC_FROM_CANONICAL_FIELD |
-| src/lumina_plasma.c:14147 | W | local alias of plasma->W[s] | [rate_diagnostic] coupled-rate floor diagnostic | RadiationField generation-bound diagnostic | A2-06 | DERIVE_RATE_DIAGNOSTIC_FROM_CANONICAL_FIELD |
-| src/lumina_plasma.c:14287 | T_rad | local alias of plasma->T_rad[s] | [rate_diagnostic] coupled-rate residual diagnostic | RadiationField generation-bound diagnostic | A2-06 | DERIVE_RATE_DIAGNOSTIC_FROM_CANONICAL_FIELD |
-| src/lumina_cuda.cu:530 | plasma->T_rad | plasma.T_rad upload source | [GPU_transfer] transport scalar upload | RadiationField generation lifecycle | A2-12 | REPLACE_GPU_TRANSFER_SCALAR_READ |
-| src/lumina_cuda.cu:10016 | plasma.W[i] | plasma.W | [GPU_transfer] GPU transfer-state CSV | RadiationField generation lifecycle | A2-12 | REPLACE_GPU_TRANSFER_SCALAR_READ |
-| src/lumina_cuda.cu:10016 | plasma.T_rad[i] | plasma.T_rad | [GPU_transfer] GPU transfer-state CSV | RadiationField generation lifecycle | A2-12 | REPLACE_GPU_TRANSFER_SCALAR_READ |
-| src/lumina_cmfgen.c:908 | plasma->T_rad[s] | plasma.T_rad | [opacity] CMF emissivity/opacity regime split | RadiationField.J_nu | A2-08 | REPLACE_OPACITY_SCALAR_READ |
-| src/lumina_cmfgen.c:2144 | plasma->T_rad[s] | plasma.T_rad | [opacity] CMF hot-regime opacity split | RadiationField.J_nu | A2-08 | REPLACE_OPACITY_SCALAR_READ |
-| src/lumina_plasma.c:18314 | T_rad | local alias of plasma->T_rad[s] | [opacity] formal opacity thermal width | RadiationField.J_nu | A2-08 | REPLACE_OPACITY_SCALAR_READ |
-| src/lumina_plasma.c:15230 | plasma->T_rad[shell] | plasma.T_rad | [seed_rate] NLTE rate seed temperature | RadiationField.J_nu | A2-16 | LIMIT_RATE_SEED_TO_GENERATION_ZERO |
-| src/lumina_plasma.c:15422 | plasma->W[shell] | plasma.W | [seed_rate] dilute GPU-assembly seed field | RadiationField.J_nu | A2-16 | LIMIT_RATE_SEED_TO_GENERATION_ZERO |
-| src/lumina_plasma.c:15424 | plasma->T_rad[0] | plasma.T_rad | [seed_rate] dilute GPU-assembly seed color | RadiationField.J_nu | A2-16 | LIMIT_RATE_SEED_TO_GENERATION_ZERO |
-| src/lumina_atomic.c:1097 | ps->W | plasma.W allocation | [lifecycle] free scalar owner | RadiationField generation lifecycle | A2-17 | REMOVE_SCALAR_LIFECYCLE |
-| src/lumina_atomic.c:1098 | ps->T_rad | plasma.T_rad allocation | [lifecycle] free scalar owner | RadiationField generation lifecycle | A2-17 | REMOVE_SCALAR_LIFECYCLE |
-| src/lumina_main.c:357 | plasma.T_rad[i] | plasma.T_rad | [output] CPU plasma-state owner output | RadiationField generation-bound diagnostic | A2-17 | REMOVE_SCALAR_OWNER_OUTPUT |
-| src/lumina_cuda.cu:11040 | plasma.W[i] | plasma.W | [output] CUDA plasma-state owner output | RadiationField generation-bound diagnostic | A2-17 | REMOVE_SCALAR_OWNER_OUTPUT |
-| 이관 완료(A2-07·3ddd95c0de20abea3284ca326ce41b7968d4b26d) | plasma->T_rad[s] | plasma.T_rad | [Boltzmann_partition] partition-function temperature | plasma->T_e | A2-07 | USE_MATTER_TEMPERATURE |
-| 이관 완료(A2-07·3ddd95c0de20abea3284ca326ce41b7968d4b26d) | plasma->W[s] | plasma.W | [Boltzmann_partition] non-metastable partition dilution | plasma->T_e | A2-07 | USE_MATTER_TEMPERATURE |
-| 이관 완료(A2-07·3ddd95c0de20abea3284ca326ce41b7968d4b26d) | plasma->T_rad[s] | plasma.T_rad | [transition_probability] macro-atom transition population temperature | Jbar[RadiationField.J_nu] | A2-09 | DERIVE_TRANSITION_PROBABILITY_FROM_JBAR |
-| 이관 완료(A2-07·3ddd95c0de20abea3284ca326ce41b7968d4b26d) | plasma->W[s] | plasma.W | [transition_probability] macro-atom transition population dilution | Jbar[RadiationField.J_nu] | A2-09 | DERIVE_TRANSITION_PROBABILITY_FROM_JBAR |
-| 이관 완료(A2-07·3ddd95c0de20abea3284ca326ce41b7968d4b26d) | plasma->T_rad[s] | plasma.T_rad | [rate_Boltzmann] Boltzmann rate temperature | plasma->T_e | A2-07 | USE_MATTER_TEMPERATURE_FOR_BOLTZMANN_RATE |
-| 이관 완료(A2-07·3ddd95c0de20abea3284ca326ce41b7968d4b26d) | plasma->W[s] | plasma.W | [rate_Boltzmann] Boltzmann rate dilution | plasma->T_e | A2-07 | USE_MATTER_TEMPERATURE_FOR_BOLTZMANN_RATE |
-| src/lumina_plasma.c:12561 | plasma->T_rad[s] | plasma.T_rad | [rate_radeq] RADEQ rate temperature | A210TermLedger.checked_J_nu | A2-10 | USE_TYPED_TERM_LEDGER_IN_RADEQ |
-| src/lumina_plasma.c:12562 | plasma->W[s] | plasma.W | [rate_radeq] RADEQ rate dilution | A210TermLedger.checked_J_nu | A2-10 | USE_TYPED_TERM_LEDGER_IN_RADEQ |
-| 이관 완료(A2-07·3ddd95c0de20abea3284ca326ce41b7968d4b26d) | plasma->T_rad[s] | plasma.T_rad | [Boltzmann_diagnostic] level-population Boltzmann diagnostic | plasma->T_e | A2-07 | DIAGNOSE_BOLTZMANN_WITH_MATTER_TEMPERATURE |
-| 이관 완료(A2-07·3ddd95c0de20abea3284ca326ce41b7968d4b26d) | plasma->W[s] | plasma.W | [Boltzmann_diagnostic] level-population dilution diagnostic | plasma->T_e | A2-07 | DIAGNOSE_BOLTZMANN_WITH_MATTER_TEMPERATURE |
-| src/lumina_atomic.c:915 | plasma->T_rad[i] | plasma.T_rad | [seed] initial electron-temperature seed | RadiationField.J_nu | A2-16 | LIMIT_SCALAR_SEED_TO_GENERATION_ZERO |
-| src/lumina_plasma.c:8172 | a209_sample_reemit_frequency | CpuEmissivityPublication.eta_reemit | [emissivity] CPU BF generation-bound eta re-emission | CpuEmissivityPublication.eta_reemit | A2-09 | REPLACE_PLANCK_REEMISSION_SOURCE |
+| 이관 완료(A2-06·ece5aef8e192e2166b647ee00aae5fdd1f935a1c) | W | local alias of plasma->W[s] | [rate] bound-bound dilute Planck pump | RadiationField.J_nu | A2-06 | CLOSED_A2_06_CANONICAL_JBAR |
+| 이관 완료(A2-06·ece5aef8e192e2166b647ee00aae5fdd1f935a1c) | T_rad | local alias of plasma->T_rad[s] | [rate] bound-bound Planck color | RadiationField.J_nu | A2-06 | CLOSED_A2_06_CANONICAL_JBAR |
+| 이관 완료(A2-06·ece5aef8e192e2166b647ee00aae5fdd1f935a1c) | W | local alias of plasma->W[s] | [rate] LTE comparison field amplitude | RadiationField.J_nu | A2-06 | CLOSED_A2_06_CANONICAL_JBAR |
+| 이관 완료(A2-06·ece5aef8e192e2166b647ee00aae5fdd1f935a1c) | T_rad | local alias of plasma->T_rad[s] | [rate] LTE comparison field color | RadiationField.J_nu | A2-06 | CLOSED_A2_06_CANONICAL_JBAR |
+| 이관 완료(A2-06·ece5aef8e192e2166b647ee00aae5fdd1f935a1c) | W | local alias of plasma->W[s] | [rate] line upward radiative rate | RadiationField.J_nu | A2-06 | CLOSED_A2_06_CANONICAL_JBAR |
+| 이관 완료(A2-06·ece5aef8e192e2166b647ee00aae5fdd1f935a1c) | T_rad | local alias of plasma->T_rad[s] | [rate] line upward radiative rate | RadiationField.J_nu | A2-06 | CLOSED_A2_06_CANONICAL_JBAR |
+| 이관 완료(A2-07·3ddd95c0de20abea3284ca326ce41b7968d4b26d) | T_rad | local alias of plasma->T_rad[s] | [rate] Boltzmann fallback exponent in line rate | RadiationField.J_nu | A2-07 | CLOSED_A2_07_MATTER_TE |
+| 이관 완료(A2-07·3ddd95c0de20abea3284ca326ce41b7968d4b26d) | W | local alias of plasma->W[s] | [rate] metastable dilution in line rate | RadiationField.J_nu | A2-07 | CLOSED_A2_07_MATTER_TE |
+| 이관 완료(A2-07·3ddd95c0de20abea3284ca326ce41b7968d4b26d) | T_rad | bf_rate_pop argument from plasma->T_rad | [rate] bound-free population exponent | RadiationField.J_nu | A2-07 | CLOSED_A2_07_MATTER_TE |
+| 이관 완료(A2-07·3ddd95c0de20abea3284ca326ce41b7968d4b26d) | W | bf_rate_pop argument from plasma->W | [rate] bound-free population dilution | RadiationField.J_nu | A2-07 | CLOSED_A2_07_MATTER_TE |
+| 이관 완료(A2-06·ece5aef8e192e2166b647ee00aae5fdd1f935a1c) | W | local alias of plasma->W[s] | [rate] line source fallback | RadiationField.J_nu | A2-06 | CLOSED_A2_06_CANONICAL_JBAR |
+| 이관 완료(A2-06·ece5aef8e192e2166b647ee00aae5fdd1f935a1c) | T_rad | local alias of plasma->T_rad[s] | [rate] line source fallback | RadiationField.J_nu | A2-06 | CLOSED_A2_06_CANONICAL_JBAR |
+| 이관 완료(A2-06·ece5aef8e192e2166b647ee00aae5fdd1f935a1c) | W | local alias of plasma->W[s] | [rate] bin field construction | RadiationField.J_nu | A2-06 | CLOSED_A2_06_CANONICAL_JBAR |
+| 이관 완료(A2-06·ece5aef8e192e2166b647ee00aae5fdd1f935a1c) | T_rad | local alias of plasma->T_rad[s] | [rate] bin field construction | RadiationField.J_nu | A2-06 | CLOSED_A2_06_CANONICAL_JBAR |
+| 이관 완료(A2-07·3ddd95c0de20abea3284ca326ce41b7968d4b26d) | W | local alias of plasma->W[s] | [rate] bound-free rate population call | RadiationField.J_nu | A2-07 | CLOSED_A2_07_MATTER_TE |
+| 이관 완료(A2-07·3ddd95c0de20abea3284ca326ce41b7968d4b26d) | T_rad | local alias of plasma->T_rad[s] | [rate] bound-free rate population call | RadiationField.J_nu | A2-07 | CLOSED_A2_07_MATTER_TE |
+| 이관 완료(A2-17·dd9cd398698914b5e004e33d1c8ec41fcd5f411f) | W | local alias of plasma->W[s] | [rate] dilute photoheating integral | (진단 유지) | A2-17 | DIAGNOSTIC_ONLY_CANONICAL_DERIVED |
+| 이관 완료(A2-17·dd9cd398698914b5e004e33d1c8ec41fcd5f411f) | T_rad | local alias of plasma->T_rad[s] | [rate] Planck comparison in rate integral | (진단 유지) | A2-17 | DIAGNOSTIC_ONLY_CANONICAL_DERIVED |
+| 이관 완료(A2-06·ece5aef8e192e2166b647ee00aae5fdd1f935a1c) | W | local alias of plasma->W[s] | [rate] lower-level radiative weight | RadiationField.J_nu | A2-06 | CLOSED_A2_06_CANONICAL_JBAR |
+| 이관 완료(A2-06·ece5aef8e192e2166b647ee00aae5fdd1f935a1c) | W | local alias of plasma->W[s] | [rate] upper-level radiative weight | RadiationField.J_nu | A2-06 | CLOSED_A2_06_CANONICAL_JBAR |
+| 이관 완료(A2-07·3ddd95c0de20abea3284ca326ce41b7968d4b26d) | W | local alias of plasma->W[s] | [rate] coupled bound-free rate call | RadiationField.J_nu | A2-07 | CLOSED_A2_07_MATTER_TE |
+| 이관 완료(A2-07·3ddd95c0de20abea3284ca326ce41b7968d4b26d) | T_rad | local alias of plasma->T_rad[s] | [rate] coupled bound-free rate call | RadiationField.J_nu | A2-07 | CLOSED_A2_07_MATTER_TE |
+| 이관 완료(A2-06·ece5aef8e192e2166b647ee00aae5fdd1f935a1c) | W | local alias of plasma->W[s] | [rate] coupled lower-level weight | RadiationField.J_nu | A2-06 | CLOSED_A2_06_CANONICAL_JBAR |
+| 이관 완료(A2-06·ece5aef8e192e2166b647ee00aae5fdd1f935a1c) | W | local alias of plasma->W[s] | [rate] coupled upper-level weight | RadiationField.J_nu | A2-06 | CLOSED_A2_06_CANONICAL_JBAR |
+| 이관 완료(A2-17·dd9cd398698914b5e004e33d1c8ec41fcd5f411f) | plasma.W[i] | plasma.W | [comparator] CPU reference W comparator | RadiationField generation-bound diagnostic | A2-17 | DIAGNOSTIC_ONLY_CANONICAL_DERIVED |
+| 이관 완료(A2-17·dd9cd398698914b5e004e33d1c8ec41fcd5f411f) | plasma.T_rad[i] | plasma.T_rad | [comparator] CPU reference T_rad comparator | RadiationField generation-bound diagnostic | A2-17 | DIAGNOSTIC_ONLY_CANONICAL_DERIVED |
+| 이관 완료(A2-17·dd9cd398698914b5e004e33d1c8ec41fcd5f411f) | plasma.W[i] | plasma.W | [comparator] CPU W comparison report | RadiationField generation-bound diagnostic | A2-17 | DIAGNOSTIC_ONLY_CANONICAL_DERIVED |
+| 이관 완료(A2-17·dd9cd398698914b5e004e33d1c8ec41fcd5f411f) | plasma.T_rad[i] | plasma.T_rad | [comparator] CPU T_rad comparison report | RadiationField generation-bound diagnostic | A2-17 | DIAGNOSTIC_ONLY_CANONICAL_DERIVED |
+| 이관 완료(A2-17·dd9cd398698914b5e004e33d1c8ec41fcd5f411f) | plasma.W[i] | plasma.W | [comparator] CPU W mean error | RadiationField generation-bound diagnostic | A2-17 | DIAGNOSTIC_ONLY_CANONICAL_DERIVED |
+| 이관 완료(A2-17·dd9cd398698914b5e004e33d1c8ec41fcd5f411f) | plasma.T_rad[i] | plasma.T_rad | [comparator] CPU T_rad mean error | RadiationField generation-bound diagnostic | A2-17 | DIAGNOSTIC_ONLY_CANONICAL_DERIVED |
+| 이관 완료(A2-17·dd9cd398698914b5e004e33d1c8ec41fcd5f411f) | plasma.W[i] | plasma.W | [comparator] CPU scalar comparison CSV | RadiationField generation-bound diagnostic | A2-17 | DIAGNOSTIC_ONLY_CANONICAL_DERIVED |
+| 이관 완료(A2-17·dd9cd398698914b5e004e33d1c8ec41fcd5f411f) | plasma.T_rad[i] | plasma.T_rad | [comparator] CPU scalar comparison CSV | RadiationField generation-bound diagnostic | A2-17 | DIAGNOSTIC_ONLY_CANONICAL_DERIVED |
+| 이관 완료(A2-17·dd9cd398698914b5e004e33d1c8ec41fcd5f411f) | plasma.W[i] | plasma.W | [comparator] CUDA-host reference W comparator | RadiationField generation-bound diagnostic | A2-17 | DIAGNOSTIC_ONLY_CANONICAL_DERIVED |
+| 이관 완료(A2-17·dd9cd398698914b5e004e33d1c8ec41fcd5f411f) | plasma.T_rad[i] | plasma.T_rad | [comparator] CUDA-host reference T_rad comparator | RadiationField generation-bound diagnostic | A2-17 | DIAGNOSTIC_ONLY_CANONICAL_DERIVED |
+| 이관 완료(A2-17·dd9cd398698914b5e004e33d1c8ec41fcd5f411f) | plasma.W[i] | plasma.W | [comparator] CUDA-host W comparison report | RadiationField generation-bound diagnostic | A2-17 | DIAGNOSTIC_ONLY_CANONICAL_DERIVED |
+| 이관 완료(A2-17·dd9cd398698914b5e004e33d1c8ec41fcd5f411f) | plasma.T_rad[i] | plasma.T_rad | [comparator] CUDA-host T_rad comparison report | RadiationField generation-bound diagnostic | A2-17 | DIAGNOSTIC_ONLY_CANONICAL_DERIVED |
+| 이관 완료(A2-17·dd9cd398698914b5e004e33d1c8ec41fcd5f411f) | plasma.W[i] | plasma.W | [comparator] CUDA-host W mean error | RadiationField generation-bound diagnostic | A2-17 | DIAGNOSTIC_ONLY_CANONICAL_DERIVED |
+| 이관 완료(A2-17·dd9cd398698914b5e004e33d1c8ec41fcd5f411f) | plasma.T_rad[i] | plasma.T_rad | [comparator] CUDA-host T_rad mean error | RadiationField generation-bound diagnostic | A2-17 | DIAGNOSTIC_ONLY_CANONICAL_DERIVED |
+| 이관 완료(A2-14·65498e18e9826ea0cdb5906b71cebecef4b82637) | T_rad[s] | GPU BF-kernel T_rad parameter | [GPU_opacity_rate] GPU bound-free Boltzmann factor | RadiationField.J_nu | A2-14 | CLOSED_A2_14_GPU_SIGNED_OPACITY |
+| 이관 완료(A2-14·65498e18e9826ea0cdb5906b71cebecef4b82637) | W[s] | GPU BF-kernel W parameter | [GPU_opacity_rate] GPU bound-free dilution factor | RadiationField.J_nu | A2-14 | CLOSED_A2_14_GPU_SIGNED_OPACITY |
+| 이관 완료(A2-14·65498e18e9826ea0cdb5906b71cebecef4b82637) | plasma->T_rad | plasma.T_rad upload source | [GPU_opacity_rate] GPU BF rate state upload | RadiationField.J_nu | A2-14 | CLOSED_A2_14_GPU_SIGNED_OPACITY |
+| 이관 완료(A2-14·65498e18e9826ea0cdb5906b71cebecef4b82637) | plasma->W | plasma.W upload source | [GPU_opacity_rate] GPU BF rate state upload | RadiationField.J_nu | A2-14 | CLOSED_A2_14_GPU_SIGNED_OPACITY |
+| 이관 완료(A2-14·65498e18e9826ea0cdb5906b71cebecef4b82637) | g_bf_gemm.d_T_rad | GPU BF T_rad buffer | [GPU_opacity_rate] GPU BF kernel argument | RadiationField.J_nu | A2-14 | CLOSED_A2_14_GPU_SIGNED_OPACITY |
+| 이관 완료(A2-14·65498e18e9826ea0cdb5906b71cebecef4b82637) | g_bf_gemm.d_W | GPU BF W buffer | [GPU_opacity_rate] GPU BF kernel argument | RadiationField.J_nu | A2-14 | CLOSED_A2_14_GPU_SIGNED_OPACITY |
+| 이관 완료(A2-14·65498e18e9826ea0cdb5906b71cebecef4b82637) | plasma->T_rad | plasma.T_rad refresh source | [GPU_opacity_rate] GPU BF iteration refresh | RadiationField.J_nu | A2-14 | CLOSED_A2_14_GPU_SIGNED_OPACITY |
+| 이관 완료(A2-14·65498e18e9826ea0cdb5906b71cebecef4b82637) | plasma->W | plasma.W refresh source | [GPU_opacity_rate] GPU BF iteration refresh | RadiationField.J_nu | A2-14 | CLOSED_A2_14_GPU_SIGNED_OPACITY |
+| 이관 완료(A2-14·65498e18e9826ea0cdb5906b71cebecef4b82637) | g_bf_gemm.d_T_rad | GPU BF T_rad buffer | [GPU_opacity_rate] GPU BF refreshed kernel argument | RadiationField.J_nu | A2-14 | CLOSED_A2_14_GPU_SIGNED_OPACITY |
+| 이관 완료(A2-14·65498e18e9826ea0cdb5906b71cebecef4b82637) | g_bf_gemm.d_W | GPU BF W buffer | [GPU_opacity_rate] GPU BF refreshed kernel argument | RadiationField.J_nu | A2-14 | CLOSED_A2_14_GPU_SIGNED_OPACITY |
+| 이관 완료(A2-14·65498e18e9826ea0cdb5906b71cebecef4b82637) | d_W[s] | GPU NLTE assembly W parameter | [GPU_opacity_rate] GPU bound-bound Planck fallback | RadiationField.J_nu | A2-14 | CLOSED_A2_14_GPU_SIGNED_OPACITY |
+| 이관 완료(A2-14·65498e18e9826ea0cdb5906b71cebecef4b82637) | plasma->W | plasma.W upload source | [GPU_opacity_rate] GPU NLTE assembly upload | RadiationField.J_nu | A2-14 | CLOSED_A2_14_GPU_SIGNED_OPACITY |
+| 이관 완료(A2-14·65498e18e9826ea0cdb5906b71cebecef4b82637) | plasma->T_rad[0] | plasma.T_rad | [GPU_opacity_rate] GPU NLTE dilute temperature fallback | RadiationField.J_nu | A2-14 | CLOSED_A2_14_GPU_SIGNED_OPACITY |
+| 이관 완료(A2-15·84a148159185004f6f25db4bed51a3d5b5896d44) | d_T_rad[shell_id] | GPU transport T_rad array | [GPU_transport] GPU BF re-emission temperature read | RadiationField generation lifecycle | A2-12 | CLOSED_A2_12_15_GPU_NO_SCALAR |
+| 이관 완료(A2-15·84a148159185004f6f25db4bed51a3d5b5896d44) | d_T_rad[shell_id] | GPU transport T_rad array | [GPU_transport] GPU band re-emission temperature read | RadiationField generation lifecycle | A2-12 | CLOSED_A2_12_15_GPU_NO_SCALAR |
+| 이관 완료(A2-15·84a148159185004f6f25db4bed51a3d5b5896d44) | d_T_rad | GPU transport T_rad pointer | [GPU_transport] transport kernel scalar-field argument | RadiationField generation lifecycle | A2-12 | CLOSED_A2_12_15_GPU_NO_SCALAR |
+| 이관 완료(A2-15·84a148159185004f6f25db4bed51a3d5b5896d44) | d_T_rad | GPU transport T_rad pointer | [GPU_transport] transport interaction call | RadiationField generation lifecycle | A2-12 | CLOSED_A2_12_15_GPU_NO_SCALAR |
+| 이관 완료(A2-15·84a148159185004f6f25db4bed51a3d5b5896d44) | d_T_rad | GPU transport T_rad pointer | [GPU_transport] legacy BF re-emission call | RadiationField generation lifecycle | A2-12 | CLOSED_A2_12_15_GPU_NO_SCALAR |
+| 이관 완료(A2-15·84a148159185004f6f25db4bed51a3d5b5896d44) | dev.d_T_rad | GPU device T_rad owner | [GPU_transport] main transport launch argument | RadiationField generation lifecycle | A2-12 | CLOSED_A2_12_15_GPU_NO_SCALAR |
+| 이관 완료(A2-15·84a148159185004f6f25db4bed51a3d5b5896d44) | dev.d_T_rad | GPU device T_rad owner | [GPU_transport] final transport launch argument | RadiationField generation lifecycle | A2-12 | CLOSED_A2_12_15_GPU_NO_SCALAR |
+| 이관 완료(A2-12·7f72c0d95f9ae94166b856e54008ac230ca3c504) | plasma.W[s] | plasma.W | [GPU_transport] GPU-host packet source tier | RadiationField generation lifecycle | A2-12 | CLOSED_A2_12_15_GPU_NO_SCALAR |
+| 이관 완료(A2-12·7f72c0d95f9ae94166b856e54008ac230ca3c504) | plasma.W | plasma.W owner pointer | [GPU_transport] GPU-host packet source validity gate | RadiationField generation lifecycle | A2-12 | CLOSED_A2_12_15_GPU_NO_SCALAR |
+| 이관 완료(A2-12·7f72c0d95f9ae94166b856e54008ac230ca3c504) | plasma.T_rad[i] | plasma.T_rad | [GPU_transport] GPU-host transport temperature ratio | RadiationField generation lifecycle | A2-12 | CLOSED_A2_12_15_GPU_NO_SCALAR |
+| 이관 완료(A2-12·7f72c0d95f9ae94166b856e54008ac230ca3c504) | plasma.T_rad[i] | plasma.T_rad | [GPU_transport] GPU-host transport temperature ratio denominator | RadiationField generation lifecycle | A2-12 | CLOSED_A2_12_15_GPU_NO_SCALAR |
+| 이관 완료(A2-08·8a9f861efb12e749fd47926b8e78be17d4ba8070) | plasma->T_rad[s] | plasma.T_rad | [opacity_rate] nebular ionization opacity/rate temperature | RadiationField.J_nu | A2-08 | CLOSED_A2_08_SIGNED_OPACITY |
+| 이관 완료(A2-08·8a9f861efb12e749fd47926b8e78be17d4ba8070) | plasma->W[s] | plasma.W | [opacity_rate] nebular ionization opacity/rate dilution | RadiationField.J_nu | A2-08 | CLOSED_A2_08_SIGNED_OPACITY |
+| 이관 완료(A2-08·8a9f861efb12e749fd47926b8e78be17d4ba8070) | T_rad | local alias of plasma->T_rad[s] | [opacity_rate] zeta interpolation temperature | RadiationField.J_nu | A2-08 | CLOSED_A2_08_SIGNED_OPACITY |
+| 이관 완료(A2-08·8a9f861efb12e749fd47926b8e78be17d4ba8070) | T_rad | local alias of plasma->T_rad[s] | [opacity_rate] electron-to-radiation temperature ratio | RadiationField.J_nu | A2-08 | CLOSED_A2_08_SIGNED_OPACITY |
+| 이관 완료(A2-08·8a9f861efb12e749fd47926b8e78be17d4ba8070) | W | local alias of plasma->W[s] | [opacity_rate] nebular rate dilution | RadiationField.J_nu | A2-08 | CLOSED_A2_08_SIGNED_OPACITY |
+| 이관 완료(A2-08·8a9f861efb12e749fd47926b8e78be17d4ba8070) | T_rad | local alias of plasma->T_rad[s] | [opacity_rate] nebular rate temperature ratio | RadiationField.J_nu | A2-08 | CLOSED_A2_08_SIGNED_OPACITY |
+| 이관 완료(A2-08·8a9f861efb12e749fd47926b8e78be17d4ba8070) | W | local alias of plasma->W[s] | [opacity_rate] non-metastable dilution term | RadiationField.J_nu | A2-08 | CLOSED_A2_08_SIGNED_OPACITY |
+| 이관 완료(A2-08·8a9f861efb12e749fd47926b8e78be17d4ba8070) | T_rad | local alias of plasma->T_rad[s] | [opacity_rate] ML correction temperature | RadiationField.J_nu | A2-08 | CLOSED_A2_08_SIGNED_OPACITY |
+| 이관 완료(A2-08·8a9f861efb12e749fd47926b8e78be17d4ba8070) | W | local alias of plasma->W[s] | [opacity_rate] two-component rate lock threshold | RadiationField.J_nu | A2-08 | CLOSED_A2_08_SIGNED_OPACITY |
+| 이관 완료(A2-11·9b73c042dcc5feae75c58ff8e00547b33ea36d93) | plasma->W[shell_mid] | plasma.W | [formal_transfer] observer continuum source | RadiationField.J_nu | A2-11 | CLOSED_A2_11_FORMAL_NO_SCALAR |
+| 이관 완료(A2-11·9b73c042dcc5feae75c58ff8e00547b33ea36d93) | plasma->T_rad[shell_mid] | plasma.T_rad | [formal_transfer] observer continuum source | RadiationField.J_nu | A2-11 | CLOSED_A2_11_FORMAL_NO_SCALAR |
+| 이관 완료(A2-11·9b73c042dcc5feae75c58ff8e00547b33ea36d93) | plasma->W[shell] | plasma.W | [formal_transfer] observer line fallback source | RadiationField.J_nu | A2-11 | CLOSED_A2_11_FORMAL_NO_SCALAR |
+| 이관 완료(A2-11·9b73c042dcc5feae75c58ff8e00547b33ea36d93) | plasma->T_rad[shell] | plasma.T_rad | [formal_transfer] observer line fallback source | RadiationField.J_nu | A2-11 | CLOSED_A2_11_FORMAL_NO_SCALAR |
+| 이관 완료(A2-11·9b73c042dcc5feae75c58ff8e00547b33ea36d93) | plasma->T_rad[shell] | plasma.T_rad | [formal_transfer] formal-transfer thermal width | RadiationField.J_nu | A2-11 | CLOSED_A2_11_FORMAL_NO_SCALAR |
+| 이관 완료(A2-11·9b73c042dcc5feae75c58ff8e00547b33ea36d93) | plasma->W[shell] | plasma.W | [formal_transfer] formal-transfer dilution | RadiationField.J_nu | A2-11 | CLOSED_A2_11_FORMAL_NO_SCALAR |
+| 이관 완료(A2-11·9b73c042dcc5feae75c58ff8e00547b33ea36d93) | plasma->W[shell_mid] | plasma.W | [formal_transfer] red-side continuum source | RadiationField.J_nu | A2-11 | CLOSED_A2_11_FORMAL_NO_SCALAR |
+| 이관 완료(A2-11·9b73c042dcc5feae75c58ff8e00547b33ea36d93) | plasma->T_rad[shell_mid] | plasma.T_rad | [formal_transfer] red-side continuum source | RadiationField.J_nu | A2-11 | CLOSED_A2_11_FORMAL_NO_SCALAR |
+| 이관 완료(A2-11·9b73c042dcc5feae75c58ff8e00547b33ea36d93) | plasma->W[shell] | plasma.W | [formal_transfer] electron-scattering source fallback | RadiationField.J_nu | A2-11 | CLOSED_A2_11_FORMAL_NO_SCALAR |
+| 이관 완료(A2-14·65498e18e9826ea0cdb5906b71cebecef4b82637) | g_bf_gemm.d_T_rad | GPU BF T_rad allocation | [GPU_lifecycle] allocate GPU scalar owner | RadiationField generation lifecycle | A2-12 | CLOSED_A2_12_15_GPU_NO_SCALAR |
+| 이관 완료(A2-14·65498e18e9826ea0cdb5906b71cebecef4b82637) | g_bf_gemm.d_W | GPU BF W allocation | [GPU_lifecycle] allocate GPU scalar owner | RadiationField generation lifecycle | A2-12 | CLOSED_A2_12_15_GPU_NO_SCALAR |
+| 이관 완료(A2-14·65498e18e9826ea0cdb5906b71cebecef4b82637) | g_bf_gemm.d_T_rad | GPU BF T_rad allocation | [GPU_lifecycle] free GPU scalar owner | RadiationField generation lifecycle | A2-12 | CLOSED_A2_12_15_GPU_NO_SCALAR |
+| 이관 완료(A2-14·65498e18e9826ea0cdb5906b71cebecef4b82637) | g_bf_gemm.d_W | GPU BF W allocation | [GPU_lifecycle] free GPU scalar owner | RadiationField generation lifecycle | A2-12 | CLOSED_A2_12_15_GPU_NO_SCALAR |
+| 이관 완료(A2-12·7f72c0d95f9ae94166b856e54008ac230ca3c504) | dev->d_T_rad | GPU transport T_rad allocation | [GPU_lifecycle] allocate GPU scalar owner | RadiationField generation lifecycle | A2-12 | CLOSED_A2_12_15_GPU_NO_SCALAR |
+| 이관 완료(A2-12·7f72c0d95f9ae94166b856e54008ac230ca3c504) | dev->d_T_rad | GPU transport T_rad allocation | [GPU_lifecycle] test GPU scalar allocation | RadiationField generation lifecycle | A2-12 | CLOSED_A2_12_15_GPU_NO_SCALAR |
+| 이관 완료(A2-12·7f72c0d95f9ae94166b856e54008ac230ca3c504) | dev->d_T_rad | GPU transport T_rad allocation | [GPU_lifecycle] lazy allocate GPU scalar owner | RadiationField generation lifecycle | A2-12 | CLOSED_A2_12_15_GPU_NO_SCALAR |
+| 이관 완료(A2-12·7f72c0d95f9ae94166b856e54008ac230ca3c504) | dev->d_T_rad | GPU transport T_rad allocation | [GPU_lifecycle] free GPU scalar owner | RadiationField generation lifecycle | A2-12 | CLOSED_A2_12_15_GPU_NO_SCALAR |
+| 이관 완료(A2-13·d47a596182e9e04cb05b74ce816966dd3a29e466) | plasma->T_rad[s] | plasma.T_rad | [GPU_rate] GPU-host NLTE Boltzmann fallback | RadiationField.J_nu | A2-13 | CLOSED_A2_13_GPU_RATE |
+| 이관 완료(A2-13·d47a596182e9e04cb05b74ce816966dd3a29e466) | plasma->T_rad[s] | plasma.T_rad | [GPU_rate] GPU-host lower-ion fallback | RadiationField.J_nu | A2-13 | CLOSED_A2_13_GPU_RATE |
+| 이관 완료(A2-13·d47a596182e9e04cb05b74ce816966dd3a29e466) | plasma->T_rad[s] | plasma.T_rad | [GPU_rate] GPU-host upper-ion fallback | RadiationField.J_nu | A2-13 | CLOSED_A2_13_GPU_RATE |
+| 이관 완료(A2-13·d47a596182e9e04cb05b74ce816966dd3a29e466) | plasma->T_rad[s] | plasma.T_rad | [GPU_rate] GPU-host top-stage fallback | RadiationField.J_nu | A2-13 | CLOSED_A2_13_GPU_RATE |
+| 이관 완료(A2-13·d47a596182e9e04cb05b74ce816966dd3a29e466) | plasma->T_rad[s] | plasma.T_rad | [GPU_rate] GPU-host rate dump electron seed | RadiationField.J_nu | A2-13 | CLOSED_A2_13_GPU_RATE |
+| 이관 완료(A2-13·d47a596182e9e04cb05b74ce816966dd3a29e466) | plasma->T_rad[s] | plasma.T_rad | [GPU_rate] GPU-host rate dump radiation temperature | RadiationField.J_nu | A2-13 | CLOSED_A2_13_GPU_RATE |
+| 이관 완료(A2-13·d47a596182e9e04cb05b74ce816966dd3a29e466) | plasma->W[s] | plasma.W | [GPU_rate] GPU-host rate dump dilution | RadiationField.J_nu | A2-13 | CLOSED_A2_13_GPU_RATE |
+| 이관 완료(A2-13·d47a596182e9e04cb05b74ce816966dd3a29e466) | plasma->T_rad[s] | plasma.T_rad | [GPU_rate] GPU-host rate fallback seed | RadiationField.J_nu | A2-13 | CLOSED_A2_13_GPU_RATE |
+| 이관 완료(A2-04·bafd2bbdfbcdb7e84b6f573b37785e30185865f0) | W | plasma-state W input array | [owner_validation] validate owner presence | RadiationField commit API | A2-04 | CLOSED_A2_04_CANONICAL_COMMIT |
+| 이관 완료(A2-04·bafd2bbdfbcdb7e84b6f573b37785e30185865f0) | T_rad | plasma-state T_rad input array | [owner_validation] validate owner presence | RadiationField commit API | A2-04 | CLOSED_A2_04_CANONICAL_COMMIT |
+| 이관 완료(A2-04·bafd2bbdfbcdb7e84b6f573b37785e30185865f0) | W[s] | plasma-state W input array | [owner_validation] validate finite physical dilution | RadiationField commit API | A2-04 | CLOSED_A2_04_CANONICAL_COMMIT |
+| 이관 완료(A2-04·bafd2bbdfbcdb7e84b6f573b37785e30185865f0) | T_rad[s] | plasma-state T_rad input array | [owner_validation] validate finite positive color temperature | RadiationField commit API | A2-04 | CLOSED_A2_04_CANONICAL_COMMIT |
+| 이관 완료(A2-04·bafd2bbdfbcdb7e84b6f573b37785e30185865f0) | T_rad[s] | plasma-state T_rad input array | [owner_validation] validate color invariant | RadiationField commit API | A2-04 | CLOSED_A2_04_CANONICAL_COMMIT |
+| 이관 완료(A2-04·bafd2bbdfbcdb7e84b6f573b37785e30185865f0) | W[s] | plasma-state W input array | [owner_validation] validate color invariant | RadiationField commit API | A2-04 | CLOSED_A2_04_CANONICAL_COMMIT |
+| 이관 완료(A2-04·bafd2bbdfbcdb7e84b6f573b37785e30185865f0) | plasma->T_rad | plasma.T_rad owner pointer | [owner_validation] CMF solver owner-presence validation | RadiationField commit API | A2-04 | CLOSED_A2_04_CANONICAL_COMMIT |
+| 이관 완료(A2-04·bafd2bbdfbcdb7e84b6f573b37785e30185865f0) | plasma->T_rad[i2] | plasma.T_rad | [owner_update] fixed-color profile overwrite | RadiationField commit API | A2-04 | CLOSED_A2_04_CANONICAL_COMMIT |
+| 이관 완료(A2-04·bafd2bbdfbcdb7e84b6f573b37785e30185865f0) | plasma->T_rad[i] | plasma.T_rad | [owner_update] fixed radiation profile update | RadiationField commit API | A2-04 | CLOSED_A2_04_CANONICAL_COMMIT |
+| 이관 완료(A2-04·bafd2bbdfbcdb7e84b6f573b37785e30185865f0) | plasma->W[i] | plasma.W | [owner_update] fixed radiation profile update | RadiationField commit API | A2-04 | CLOSED_A2_04_CANONICAL_COMMIT |
+| 이관 완료(A2-04·bafd2bbdfbcdb7e84b6f573b37785e30185865f0) | plasma->T_rad[i] | plasma.T_rad | [owner_update] damped T_rad owner update | RadiationField commit API | A2-04 | CLOSED_A2_04_CANONICAL_COMMIT |
+| 이관 완료(A2-04·bafd2bbdfbcdb7e84b6f573b37785e30185865f0) | plasma->T_rad[i] | plasma.T_rad | [owner_update] damped T_rad prior generation read | RadiationField commit API | A2-04 | CLOSED_A2_04_CANONICAL_COMMIT |
+| 이관 완료(A2-04·bafd2bbdfbcdb7e84b6f573b37785e30185865f0) | plasma->W[i] | plasma.W | [owner_update] damped W owner update | RadiationField commit API | A2-04 | CLOSED_A2_04_CANONICAL_COMMIT |
+| 이관 완료(A2-04·bafd2bbdfbcdb7e84b6f573b37785e30185865f0) | plasma->W[i] | plasma.W | [owner_update] damped W prior generation read | RadiationField commit API | A2-04 | CLOSED_A2_04_CANONICAL_COMMIT |
+| 이관 완료(A2-16·686a4a1fadcd1a57e10dbf8ee37c17b248c87841) | plasma->T_rad[s] | plasma.T_rad | [seed_radeq] electron-temperature seed | RadiationField.J_nu | A2-16 | CLOSED_A2_16_G0_SEED_REVOKED |
+| 이관 완료(A2-16·686a4a1fadcd1a57e10dbf8ee37c17b248c87841) | plasma->T_rad[s] | plasma.T_rad | [seed_radeq] analytic RADEQ radiation seed | RadiationField.J_nu | A2-16 | CLOSED_A2_16_G0_SEED_REVOKED |
+| 이관 완료(A2-16·686a4a1fadcd1a57e10dbf8ee37c17b248c87841) | plasma->W[s] | plasma.W | [seed_radeq] analytic RADEQ energy-density seed | RadiationField.J_nu | A2-16 | CLOSED_A2_16_G0_SEED_REVOKED |
+| 이관 완료(A2-16·686a4a1fadcd1a57e10dbf8ee37c17b248c87841) | T_rad | local alias of plasma->T_rad[s] | [seed_radeq] invalid-cell electron-temperature seed | RadiationField.J_nu | A2-16 | CLOSED_A2_16_G0_SEED_REVOKED |
+| 이관 완료(A2-16·686a4a1fadcd1a57e10dbf8ee37c17b248c87841) | plasma->T_rad[s] | plasma.T_rad | [seed_radeq] RADEQ disabled-path seed | RadiationField.J_nu | A2-16 | CLOSED_A2_16_G0_SEED_REVOKED |
+| 이관 완료(A2-16·686a4a1fadcd1a57e10dbf8ee37c17b248c87841) | T_rad | local alias of plasma->T_rad[s] | [seed_radeq] RADEQ invalid-cell seed | RadiationField.J_nu | A2-16 | CLOSED_A2_16_G0_SEED_REVOKED |
+| 이관 완료(A2-16·686a4a1fadcd1a57e10dbf8ee37c17b248c87841) | plasma->W | plasma.W owner pointer | [input_owner] load W column as runtime owner | RadiationField.J_nu | A2-16 | CLOSED_A2_16_G0_SEED_REVOKED |
+| 이관 완료(A2-16·686a4a1fadcd1a57e10dbf8ee37c17b248c87841) | plasma->T_rad | plasma.T_rad owner pointer | [input_owner] load T_rad column as runtime owner | RadiationField.J_nu | A2-16 | CLOSED_A2_16_G0_SEED_REVOKED |
+| 이관 완료(A2-16·686a4a1fadcd1a57e10dbf8ee37c17b248c87841) | plasma->W | plasma.W owner pointer | [input_owner] pass W owner into cross-field validation | RadiationField.J_nu | A2-16 | CLOSED_A2_16_G0_SEED_REVOKED |
+| 이관 완료(A2-16·686a4a1fadcd1a57e10dbf8ee37c17b248c87841) | plasma->T_rad | plasma.T_rad owner pointer | [input_owner] pass T_rad owner into cross-field validation | RadiationField.J_nu | A2-16 | CLOSED_A2_16_G0_SEED_REVOKED |
+| 이관 완료(A2-16·686a4a1fadcd1a57e10dbf8ee37c17b248c87841) | plasma->W[0] | plasma.W | [input_owner] loaded owner summary | RadiationField.J_nu | A2-16 | CLOSED_A2_16_G0_SEED_REVOKED |
+| 이관 완료(A2-17·dd9cd398698914b5e004e33d1c8ec41fcd5f411f) | plasma->T_rad[i] | plasma.T_rad | [diagnostic] binned-field fit diagnostic | RadiationField generation-bound diagnostic | A2-17 | DIAGNOSTIC_ONLY_CANONICAL_DERIVED |
+| 이관 완료(A2-17·dd9cd398698914b5e004e33d1c8ec41fcd5f411f) | plasma->T_rad[s] | plasma.T_rad | [diagnostic] CMF frozen-state diagnostic | RadiationField generation-bound diagnostic | A2-17 | DIAGNOSTIC_ONLY_CANONICAL_DERIVED |
+| 이관 완료(A2-17·dd9cd398698914b5e004e33d1c8ec41fcd5f411f) | plasma->T_rad | plasma.T_rad owner array | [diagnostic] CMF state checksum diagnostic | RadiationField generation-bound diagnostic | A2-17 | DIAGNOSTIC_ONLY_CANONICAL_DERIVED |
+| 이관 완료(A2-17·dd9cd398698914b5e004e33d1c8ec41fcd5f411f) | plasma->W[shell] | plasma.W | [diagnostic] element-wide provenance diagnostic | RadiationField generation-bound diagnostic | A2-17 | DIAGNOSTIC_ONLY_CANONICAL_DERIVED |
+| 이관 완료(A2-15·84a148159185004f6f25db4bed51a3d5b5896d44) | d_T_rad | GPU transport T_rad pointer | [GPU_emissivity] GPU macro-atom Planck re-emission | RadiationField.J_nu | A2-15 | CLOSED_A2_15_GPU_EMISSIVITY |
+| 이관 완료(A2-15·84a148159185004f6f25db4bed51a3d5b5896d44) | d_T_rad | GPU transport T_rad pointer | [GPU_emissivity] GPU UV thermalization | RadiationField.J_nu | A2-15 | CLOSED_A2_15_GPU_EMISSIVITY |
+| 이관 완료(A2-15·84a148159185004f6f25db4bed51a3d5b5896d44) | d_T_rad | GPU transport T_rad pointer | [GPU_emissivity] GPU IR thermalization | RadiationField.J_nu | A2-15 | CLOSED_A2_15_GPU_EMISSIVITY |
+| 이관 완료(A2-15·84a148159185004f6f25db4bed51a3d5b5896d44) | d_T_rad | GPU transport T_rad pointer | [GPU_emissivity] GPU packet source re-emission | RadiationField.J_nu | A2-15 | CLOSED_A2_15_GPU_EMISSIVITY |
+| 이관 완료(A2-17·dd9cd398698914b5e004e33d1c8ec41fcd5f411f) | W | local alias of plasma->W[s] | [rate_diagnostic] coupled-rate luminosity diagnostic | RadiationField generation-bound diagnostic | A2-17 | DIAGNOSTIC_ONLY_CANONICAL_DERIVED |
+| 이관 완료(A2-17·dd9cd398698914b5e004e33d1c8ec41fcd5f411f) | W | local alias of plasma->W[s] | [rate_diagnostic] coupled-rate floor diagnostic | RadiationField generation-bound diagnostic | A2-17 | DIAGNOSTIC_ONLY_CANONICAL_DERIVED |
+| 이관 완료(A2-17·dd9cd398698914b5e004e33d1c8ec41fcd5f411f) | T_rad | local alias of plasma->T_rad[s] | [rate_diagnostic] coupled-rate residual diagnostic | RadiationField generation-bound diagnostic | A2-17 | DIAGNOSTIC_ONLY_CANONICAL_DERIVED |
+| 이관 완료(A2-12·7f72c0d95f9ae94166b856e54008ac230ca3c504) | plasma->T_rad | plasma.T_rad upload source | [GPU_transfer] transport scalar upload | RadiationField generation lifecycle | A2-12 | CLOSED_A2_12_15_GPU_NO_SCALAR |
+| 이관 완료(A2-12·7f72c0d95f9ae94166b856e54008ac230ca3c504) | plasma.W[i] | plasma.W | [GPU_transfer] GPU transfer-state CSV | RadiationField generation lifecycle | A2-12 | CLOSED_A2_12_15_GPU_NO_SCALAR |
+| 이관 완료(A2-12·7f72c0d95f9ae94166b856e54008ac230ca3c504) | plasma.T_rad[i] | plasma.T_rad | [GPU_transfer] GPU transfer-state CSV | RadiationField generation lifecycle | A2-12 | CLOSED_A2_12_15_GPU_NO_SCALAR |
+| 이관 완료(A2-08·8a9f861efb12e749fd47926b8e78be17d4ba8070) | plasma->T_rad[s] | plasma.T_rad | [opacity] CMF emissivity/opacity regime split | RadiationField.J_nu | A2-08 | CLOSED_A2_08_SIGNED_OPACITY |
+| 이관 완료(A2-08·8a9f861efb12e749fd47926b8e78be17d4ba8070) | plasma->T_rad[s] | plasma.T_rad | [opacity] CMF hot-regime opacity split | RadiationField.J_nu | A2-08 | CLOSED_A2_08_SIGNED_OPACITY |
+| 이관 완료(A2-08·8a9f861efb12e749fd47926b8e78be17d4ba8070) | T_rad | local alias of plasma->T_rad[s] | [opacity] formal opacity thermal width | RadiationField.J_nu | A2-08 | CLOSED_A2_08_SIGNED_OPACITY |
+| 이관 완료(A2-16·686a4a1fadcd1a57e10dbf8ee37c17b248c87841) | plasma->T_rad[shell] | plasma.T_rad | [seed_rate] NLTE rate seed temperature | RadiationField.J_nu | A2-16 | CLOSED_A2_16_G0_SEED_REVOKED |
+| 이관 완료(A2-16·686a4a1fadcd1a57e10dbf8ee37c17b248c87841) | plasma->W[shell] | plasma.W | [seed_rate] dilute GPU-assembly seed field | RadiationField.J_nu | A2-16 | CLOSED_A2_16_G0_SEED_REVOKED |
+| 이관 완료(A2-16·686a4a1fadcd1a57e10dbf8ee37c17b248c87841) | plasma->T_rad[0] | plasma.T_rad | [seed_rate] dilute GPU-assembly seed color | RadiationField.J_nu | A2-16 | CLOSED_A2_16_G0_SEED_REVOKED |
+| 이관 완료(A2-17·dd9cd398698914b5e004e33d1c8ec41fcd5f411f) | ps->W | plasma.W allocation | [lifecycle] free scalar owner | RadiationField generation lifecycle | A2-17 | REMOVED_A2_17_SCALAR_OWNER_LIFECYCLE_OUTPUT |
+| 이관 완료(A2-17·dd9cd398698914b5e004e33d1c8ec41fcd5f411f) | ps->T_rad | plasma.T_rad allocation | [lifecycle] free scalar owner | RadiationField generation lifecycle | A2-17 | REMOVED_A2_17_SCALAR_OWNER_LIFECYCLE_OUTPUT |
+| 이관 완료(A2-17·dd9cd398698914b5e004e33d1c8ec41fcd5f411f) | plasma.T_rad[i] | plasma.T_rad | [output] CPU plasma-state owner output | RadiationField generation-bound diagnostic | A2-17 | REMOVED_A2_17_SCALAR_OWNER_LIFECYCLE_OUTPUT |
+| 이관 완료(A2-17·dd9cd398698914b5e004e33d1c8ec41fcd5f411f) | plasma.W[i] | plasma.W | [output] CUDA plasma-state owner output | RadiationField generation-bound diagnostic | A2-17 | REMOVED_A2_17_SCALAR_OWNER_LIFECYCLE_OUTPUT |
+| 이관 완료(A2-07·3ddd95c0de20abea3284ca326ce41b7968d4b26d) | plasma->T_rad[s] | plasma.T_rad | [Boltzmann_partition] partition-function temperature | plasma->T_e | A2-07 | CLOSED_A2_07_MATTER_TE |
+| 이관 완료(A2-07·3ddd95c0de20abea3284ca326ce41b7968d4b26d) | plasma->W[s] | plasma.W | [Boltzmann_partition] non-metastable partition dilution | plasma->T_e | A2-07 | CLOSED_A2_07_MATTER_TE |
+| 이관 완료(A2-09·bf2af37fa11a18c2529559311a7a23fd0c41b60c) | plasma->T_rad[s] | plasma.T_rad | [transition_probability] macro-atom transition population temperature | Jbar[RadiationField.J_nu] | A2-09 | CLOSED_A2_09_EMISSIVITY |
+| 이관 완료(A2-09·bf2af37fa11a18c2529559311a7a23fd0c41b60c) | plasma->W[s] | plasma.W | [transition_probability] macro-atom transition population dilution | Jbar[RadiationField.J_nu] | A2-09 | CLOSED_A2_09_EMISSIVITY |
+| 이관 완료(A2-07·3ddd95c0de20abea3284ca326ce41b7968d4b26d) | plasma->T_rad[s] | plasma.T_rad | [rate_Boltzmann] Boltzmann rate temperature | plasma->T_e | A2-07 | CLOSED_A2_07_MATTER_TE |
+| 이관 완료(A2-07·3ddd95c0de20abea3284ca326ce41b7968d4b26d) | plasma->W[s] | plasma.W | [rate_Boltzmann] Boltzmann rate dilution | plasma->T_e | A2-07 | CLOSED_A2_07_MATTER_TE |
+| 이관 완료(A2-10·068fb36dc182b00757f4b4e6a1a4cd56a1f25500) | plasma->T_rad[s] | plasma.T_rad | [rate_radeq] RADEQ rate temperature | A210TermLedger.checked_J_nu | A2-10 | CLOSED_A2_10_RADEQ_CANONICAL |
+| 이관 완료(A2-10·068fb36dc182b00757f4b4e6a1a4cd56a1f25500) | plasma->W[s] | plasma.W | [rate_radeq] RADEQ rate dilution | A210TermLedger.checked_J_nu | A2-10 | CLOSED_A2_10_RADEQ_CANONICAL |
+| 이관 완료(A2-07·3ddd95c0de20abea3284ca326ce41b7968d4b26d) | plasma->T_rad[s] | plasma.T_rad | [Boltzmann_diagnostic] level-population Boltzmann diagnostic | plasma->T_e | A2-07 | CLOSED_A2_07_MATTER_TE |
+| 이관 완료(A2-07·3ddd95c0de20abea3284ca326ce41b7968d4b26d) | plasma->W[s] | plasma.W | [Boltzmann_diagnostic] level-population dilution diagnostic | plasma->T_e | A2-07 | CLOSED_A2_07_MATTER_TE |
+| 이관 완료(A2-16·686a4a1fadcd1a57e10dbf8ee37c17b248c87841) | plasma->T_rad[i] | plasma.T_rad | [seed] initial electron-temperature seed | RadiationField.J_nu | A2-16 | CLOSED_A2_16_G0_SEED_REVOKED |
+| 이관 완료(A2-09·bf2af37fa11a18c2529559311a7a23fd0c41b60c) | a209_sample_reemit_frequency | CpuEmissivityPublication.eta_reemit | [emissivity] CPU BF generation-bound eta re-emission | CpuEmissivityPublication.eta_reemit | A2-09 | CLOSED_A2_09_EMISSIVITY |
 
 ## ADDENDUM (A2-05 폐합, 2026-08-06) — R3 재배치 + bf_rate_estimator 소비 실측 이관분
 

@@ -1,0 +1,12 @@
+{
+  "blocked_as_pass_count": 0,
+  "cmfgen_edd_factor_candidates": [],
+  "comparison_lanes": "NOT_RUN_MISSING_SECOND_SEED_AND_TRUTH",
+  "legacy_seed_cells": 120000,
+  "legacy_seed_provenance": "DILUTE_PLANCK_LEGACY_APPROXIMATION",
+  "legacy_seed_source": "data/tardis_reference",
+  "reason_code": "SEED_INDEPENDENCE_PENDING_A2_18",
+  "schema": "A2_17_TWO_SEED_MANIFEST_GATE_V1",
+  "status": "BLOCKED_MISSING_CMFGEN_EDDFACTOR_SEED",
+  "truth_f_cov": "BLOCKED_MISSING_TRUTH_SIDE_F_COV"
+}

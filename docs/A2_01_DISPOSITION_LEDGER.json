@@ -1,6 +1,6 @@
 {
   "schema": "lumina-a2-01-disposition-ledger-v1",
-  "stage": "A2-01",
+  "stage": "A2-17-terminal",
   "row_count": 157,
   "unclassified": 0,
   "role_counts": {
@@ -43,58 +43,58 @@
   ],
   "rows": [
     {
-      "file_line": "src/lumina_plasma.c:4632",
+      "file_line": "이관 완료(A2-06·ece5aef8e192e2166b647ee00aae5fdd1f935a1c)",
       "symbol": "W",
       "current_source": "local alias of plasma->W[s]",
       "physical_meaning": "[rate] bound-bound dilute Planck pump",
       "new_source": "RadiationField.J_nu",
       "migration_stage": "A2-06",
-      "final_status": "REPLACE_SCALAR_RATE_READ"
+      "final_status": "CLOSED_A2_06_CANONICAL_JBAR"
     },
     {
-      "file_line": "src/lumina_plasma.c:4632",
+      "file_line": "이관 완료(A2-06·ece5aef8e192e2166b647ee00aae5fdd1f935a1c)",
       "symbol": "T_rad",
       "current_source": "local alias of plasma->T_rad[s]",
       "physical_meaning": "[rate] bound-bound Planck color",
       "new_source": "RadiationField.J_nu",
       "migration_stage": "A2-06",
-      "final_status": "REPLACE_SCALAR_RATE_READ"
+      "final_status": "CLOSED_A2_06_CANONICAL_JBAR"
     },
     {
-      "file_line": "src/lumina_plasma.c:4672",
+      "file_line": "이관 완료(A2-06·ece5aef8e192e2166b647ee00aae5fdd1f935a1c)",
       "symbol": "W",
       "current_source": "local alias of plasma->W[s]",
       "physical_meaning": "[rate] LTE comparison field amplitude",
       "new_source": "RadiationField.J_nu",
       "migration_stage": "A2-06",
-      "final_status": "REPLACE_SCALAR_RATE_READ"
+      "final_status": "CLOSED_A2_06_CANONICAL_JBAR"
     },
     {
-      "file_line": "src/lumina_plasma.c:4672",
+      "file_line": "이관 완료(A2-06·ece5aef8e192e2166b647ee00aae5fdd1f935a1c)",
       "symbol": "T_rad",
       "current_source": "local alias of plasma->T_rad[s]",
       "physical_meaning": "[rate] LTE comparison field color",
       "new_source": "RadiationField.J_nu",
       "migration_stage": "A2-06",
-      "final_status": "REPLACE_SCALAR_RATE_READ"
+      "final_status": "CLOSED_A2_06_CANONICAL_JBAR"
     },
     {
-      "file_line": "src/lumina_plasma.c:4777",
+      "file_line": "이관 완료(A2-06·ece5aef8e192e2166b647ee00aae5fdd1f935a1c)",
       "symbol": "W",
       "current_source": "local alias of plasma->W[s]",
       "physical_meaning": "[rate] line upward radiative rate",
       "new_source": "RadiationField.J_nu",
       "migration_stage": "A2-06",
-      "final_status": "REPLACE_SCALAR_RATE_READ"
+      "final_status": "CLOSED_A2_06_CANONICAL_JBAR"
     },
     {
-      "file_line": "src/lumina_plasma.c:4778",
+      "file_line": "이관 완료(A2-06·ece5aef8e192e2166b647ee00aae5fdd1f935a1c)",
       "symbol": "T_rad",
       "current_source": "local alias of plasma->T_rad[s]",
       "physical_meaning": "[rate] line upward radiative rate",
       "new_source": "RadiationField.J_nu",
       "migration_stage": "A2-06",
-      "final_status": "REPLACE_SCALAR_RATE_READ"
+      "final_status": "CLOSED_A2_06_CANONICAL_JBAR"
     },
     {
       "file_line": "이관 완료(A2-07·3ddd95c0de20abea3284ca326ce41b7968d4b26d)",
@@ -102,8 +102,8 @@
       "current_source": "local alias of plasma->T_rad[s]",
       "physical_meaning": "[rate] Boltzmann fallback exponent in line rate",
       "new_source": "RadiationField.J_nu",
-      "migration_stage": "A2-06",
-      "final_status": "REPLACE_SCALAR_RATE_READ"
+      "migration_stage": "A2-07",
+      "final_status": "CLOSED_A2_07_MATTER_TE"
     },
     {
       "file_line": "이관 완료(A2-07·3ddd95c0de20abea3284ca326ce41b7968d4b26d)",
@@ -111,8 +111,8 @@
       "current_source": "local alias of plasma->W[s]",
       "physical_meaning": "[rate] metastable dilution in line rate",
       "new_source": "RadiationField.J_nu",
-      "migration_stage": "A2-06",
-      "final_status": "REPLACE_SCALAR_RATE_READ"
+      "migration_stage": "A2-07",
+      "final_status": "CLOSED_A2_07_MATTER_TE"
     },
     {
       "file_line": "이관 완료(A2-07·3ddd95c0de20abea3284ca326ce41b7968d4b26d)",
@@ -121,7 +121,7 @@
       "physical_meaning": "[rate] bound-free population exponent",
       "new_source": "RadiationField.J_nu",
       "migration_stage": "A2-07",
-      "final_status": "REPLACE_SCALAR_RATE_READ"
+      "final_status": "CLOSED_A2_07_MATTER_TE"
     },
     {
       "file_line": "이관 완료(A2-07·3ddd95c0de20abea3284ca326ce41b7968d4b26d)",
@@ -130,43 +130,43 @@
       "physical_meaning": "[rate] bound-free population dilution",
       "new_source": "RadiationField.J_nu",
       "migration_stage": "A2-07",
-      "final_status": "REPLACE_SCALAR_RATE_READ"
+      "final_status": "CLOSED_A2_07_MATTER_TE"
     },
     {
-      "file_line": "src/lumina_plasma.c:12066",
+      "file_line": "이관 완료(A2-06·ece5aef8e192e2166b647ee00aae5fdd1f935a1c)",
       "symbol": "W",
       "current_source": "local alias of plasma->W[s]",
       "physical_meaning": "[rate] line source fallback",
       "new_source": "RadiationField.J_nu",
       "migration_stage": "A2-06",
-      "final_status": "REPLACE_SCALAR_RATE_READ"
+      "final_status": "CLOSED_A2_06_CANONICAL_JBAR"
     },
     {
-      "file_line": "src/lumina_plasma.c:12066",
+      "file_line": "이관 완료(A2-06·ece5aef8e192e2166b647ee00aae5fdd1f935a1c)",
       "symbol": "T_rad",
       "current_source": "local alias of plasma->T_rad[s]",
       "physical_meaning": "[rate] line source fallback",
       "new_source": "RadiationField.J_nu",
       "migration_stage": "A2-06",
-      "final_status": "REPLACE_SCALAR_RATE_READ"
+      "final_status": "CLOSED_A2_06_CANONICAL_JBAR"
     },
     {
-      "file_line": "src/lumina_plasma.c:12073",
+      "file_line": "이관 완료(A2-06·ece5aef8e192e2166b647ee00aae5fdd1f935a1c)",
       "symbol": "W",
       "current_source": "local alias of plasma->W[s]",
       "physical_meaning": "[rate] bin field construction",
       "new_source": "RadiationField.J_nu",
       "migration_stage": "A2-06",
-      "final_status": "REPLACE_SCALAR_RATE_READ"
+      "final_status": "CLOSED_A2_06_CANONICAL_JBAR"
     },
     {
-      "file_line": "src/lumina_plasma.c:12073",
+      "file_line": "이관 완료(A2-06·ece5aef8e192e2166b647ee00aae5fdd1f935a1c)",
       "symbol": "T_rad",
       "current_source": "local alias of plasma->T_rad[s]",
       "physical_meaning": "[rate] bin field construction",
       "new_source": "RadiationField.J_nu",
       "migration_stage": "A2-06",
-      "final_status": "REPLACE_SCALAR_RATE_READ"
+      "final_status": "CLOSED_A2_06_CANONICAL_JBAR"
     },
     {
       "file_line": "이관 완료(A2-07·3ddd95c0de20abea3284ca326ce41b7968d4b26d)",
@@ -175,7 +175,7 @@
       "physical_meaning": "[rate] bound-free rate population call",
       "new_source": "RadiationField.J_nu",
       "migration_stage": "A2-07",
-      "final_status": "REPLACE_SCALAR_RATE_READ"
+      "final_status": "CLOSED_A2_07_MATTER_TE"
     },
     {
       "file_line": "이관 완료(A2-07·3ddd95c0de20abea3284ca326ce41b7968d4b26d)",
@@ -184,43 +184,43 @@
       "physical_meaning": "[rate] bound-free rate population call",
       "new_source": "RadiationField.J_nu",
       "migration_stage": "A2-07",
-      "final_status": "REPLACE_SCALAR_RATE_READ"
+      "final_status": "CLOSED_A2_07_MATTER_TE"
     },
     {
-      "file_line": "src/lumina_plasma.c:12134",
+      "file_line": "이관 완료(A2-17·dd9cd398698914b5e004e33d1c8ec41fcd5f411f)",
       "symbol": "W",
       "current_source": "local alias of plasma->W[s]",
       "physical_meaning": "[rate] dilute photoheating integral",
       "new_source": "(진단 유지)",
-      "migration_stage": "진단",
-      "final_status": "KEEP_DIAGNOSTIC_READ"
+      "migration_stage": "A2-17",
+      "final_status": "DIAGNOSTIC_ONLY_CANONICAL_DERIVED"
     },
     {
-      "file_line": "src/lumina_plasma.c:12192",
+      "file_line": "이관 완료(A2-17·dd9cd398698914b5e004e33d1c8ec41fcd5f411f)",
       "symbol": "T_rad",
       "current_source": "local alias of plasma->T_rad[s]",
       "physical_meaning": "[rate] Planck comparison in rate integral",
       "new_source": "(진단 유지)",
-      "migration_stage": "진단",
-      "final_status": "KEEP_DIAGNOSTIC_READ"
+      "migration_stage": "A2-17",
+      "final_status": "DIAGNOSTIC_ONLY_CANONICAL_DERIVED"
     },
     {
-      "file_line": "이관 완료(A2-07·3ddd95c0de20abea3284ca326ce41b7968d4b26d)",
+      "file_line": "이관 완료(A2-06·ece5aef8e192e2166b647ee00aae5fdd1f935a1c)",
       "symbol": "W",
       "current_source": "local alias of plasma->W[s]",
       "physical_meaning": "[rate] lower-level radiative weight",
       "new_source": "RadiationField.J_nu",
       "migration_stage": "A2-06",
-      "final_status": "REPLACE_SCALAR_RATE_READ"
+      "final_status": "CLOSED_A2_06_CANONICAL_JBAR"
     },
     {
-      "file_line": "이관 완료(A2-07·3ddd95c0de20abea3284ca326ce41b7968d4b26d)",
+      "file_line": "이관 완료(A2-06·ece5aef8e192e2166b647ee00aae5fdd1f935a1c)",
       "symbol": "W",
       "current_source": "local alias of plasma->W[s]",
       "physical_meaning": "[rate] upper-level radiative weight",
       "new_source": "RadiationField.J_nu",
       "migration_stage": "A2-06",
-      "final_status": "REPLACE_SCALAR_RATE_READ"
+      "final_status": "CLOSED_A2_06_CANONICAL_JBAR"
     },
     {
       "file_line": "이관 완료(A2-07·3ddd95c0de20abea3284ca326ce41b7968d4b26d)",
@@ -229,7 +229,7 @@
       "physical_meaning": "[rate] coupled bound-free rate call",
       "new_source": "RadiationField.J_nu",
       "migration_stage": "A2-07",
-      "final_status": "REPLACE_SCALAR_RATE_READ"
+      "final_status": "CLOSED_A2_07_MATTER_TE"
     },
     {
       "file_line": "이관 완료(A2-07·3ddd95c0de20abea3284ca326ce41b7968d4b26d)",
@@ -238,151 +238,151 @@
       "physical_meaning": "[rate] coupled bound-free rate call",
       "new_source": "RadiationField.J_nu",
       "migration_stage": "A2-07",
-      "final_status": "REPLACE_SCALAR_RATE_READ"
+      "final_status": "CLOSED_A2_07_MATTER_TE"
     },
     {
-      "file_line": "이관 완료(A2-07·3ddd95c0de20abea3284ca326ce41b7968d4b26d)",
+      "file_line": "이관 완료(A2-06·ece5aef8e192e2166b647ee00aae5fdd1f935a1c)",
       "symbol": "W",
       "current_source": "local alias of plasma->W[s]",
       "physical_meaning": "[rate] coupled lower-level weight",
       "new_source": "RadiationField.J_nu",
       "migration_stage": "A2-06",
-      "final_status": "REPLACE_SCALAR_RATE_READ"
+      "final_status": "CLOSED_A2_06_CANONICAL_JBAR"
     },
     {
-      "file_line": "이관 완료(A2-07·3ddd95c0de20abea3284ca326ce41b7968d4b26d)",
+      "file_line": "이관 완료(A2-06·ece5aef8e192e2166b647ee00aae5fdd1f935a1c)",
       "symbol": "W",
       "current_source": "local alias of plasma->W[s]",
       "physical_meaning": "[rate] coupled upper-level weight",
       "new_source": "RadiationField.J_nu",
       "migration_stage": "A2-06",
-      "final_status": "REPLACE_SCALAR_RATE_READ"
+      "final_status": "CLOSED_A2_06_CANONICAL_JBAR"
     },
     {
-      "file_line": "src/lumina_main.c:828",
+      "file_line": "이관 완료(A2-17·dd9cd398698914b5e004e33d1c8ec41fcd5f411f)",
       "symbol": "plasma.W[i]",
       "current_source": "plasma.W",
       "physical_meaning": "[comparator] CPU reference W comparator",
       "new_source": "RadiationField generation-bound diagnostic",
-      "migration_stage": "A2-11",
-      "final_status": "KEEP_DIAGNOSTIC_ONLY"
+      "migration_stage": "A2-17",
+      "final_status": "DIAGNOSTIC_ONLY_CANONICAL_DERIVED"
     },
     {
-      "file_line": "src/lumina_main.c:829",
+      "file_line": "이관 완료(A2-17·dd9cd398698914b5e004e33d1c8ec41fcd5f411f)",
       "symbol": "plasma.T_rad[i]",
       "current_source": "plasma.T_rad",
       "physical_meaning": "[comparator] CPU reference T_rad comparator",
       "new_source": "RadiationField generation-bound diagnostic",
-      "migration_stage": "A2-11",
-      "final_status": "KEEP_DIAGNOSTIC_ONLY"
+      "migration_stage": "A2-17",
+      "final_status": "DIAGNOSTIC_ONLY_CANONICAL_DERIVED"
     },
     {
-      "file_line": "src/lumina_main.c:831",
+      "file_line": "이관 완료(A2-17·dd9cd398698914b5e004e33d1c8ec41fcd5f411f)",
       "symbol": "plasma.W[i]",
       "current_source": "plasma.W",
       "physical_meaning": "[comparator] CPU W comparison report",
       "new_source": "RadiationField generation-bound diagnostic",
-      "migration_stage": "A2-11",
-      "final_status": "KEEP_DIAGNOSTIC_ONLY"
+      "migration_stage": "A2-17",
+      "final_status": "DIAGNOSTIC_ONLY_CANONICAL_DERIVED"
     },
     {
-      "file_line": "src/lumina_main.c:832",
+      "file_line": "이관 완료(A2-17·dd9cd398698914b5e004e33d1c8ec41fcd5f411f)",
       "symbol": "plasma.T_rad[i]",
       "current_source": "plasma.T_rad",
       "physical_meaning": "[comparator] CPU T_rad comparison report",
       "new_source": "RadiationField generation-bound diagnostic",
-      "migration_stage": "A2-11",
-      "final_status": "KEEP_DIAGNOSTIC_ONLY"
+      "migration_stage": "A2-17",
+      "final_status": "DIAGNOSTIC_ONLY_CANONICAL_DERIVED"
     },
     {
-      "file_line": "src/lumina_main.c:838",
+      "file_line": "이관 완료(A2-17·dd9cd398698914b5e004e33d1c8ec41fcd5f411f)",
       "symbol": "plasma.W[i]",
       "current_source": "plasma.W",
       "physical_meaning": "[comparator] CPU W mean error",
       "new_source": "RadiationField generation-bound diagnostic",
-      "migration_stage": "A2-11",
-      "final_status": "KEEP_DIAGNOSTIC_ONLY"
+      "migration_stage": "A2-17",
+      "final_status": "DIAGNOSTIC_ONLY_CANONICAL_DERIVED"
     },
     {
-      "file_line": "src/lumina_main.c:839",
+      "file_line": "이관 완료(A2-17·dd9cd398698914b5e004e33d1c8ec41fcd5f411f)",
       "symbol": "plasma.T_rad[i]",
       "current_source": "plasma.T_rad",
       "physical_meaning": "[comparator] CPU T_rad mean error",
       "new_source": "RadiationField generation-bound diagnostic",
-      "migration_stage": "A2-11",
-      "final_status": "KEEP_DIAGNOSTIC_ONLY"
+      "migration_stage": "A2-17",
+      "final_status": "DIAGNOSTIC_ONLY_CANONICAL_DERIVED"
     },
     {
-      "file_line": "src/lumina_main.c:931",
+      "file_line": "이관 완료(A2-17·dd9cd398698914b5e004e33d1c8ec41fcd5f411f)",
       "symbol": "plasma.W[i]",
       "current_source": "plasma.W",
       "physical_meaning": "[comparator] CPU scalar comparison CSV",
       "new_source": "RadiationField generation-bound diagnostic",
-      "migration_stage": "A2-11",
-      "final_status": "KEEP_DIAGNOSTIC_ONLY"
+      "migration_stage": "A2-17",
+      "final_status": "DIAGNOSTIC_ONLY_CANONICAL_DERIVED"
     },
     {
-      "file_line": "src/lumina_main.c:931",
+      "file_line": "이관 완료(A2-17·dd9cd398698914b5e004e33d1c8ec41fcd5f411f)",
       "symbol": "plasma.T_rad[i]",
       "current_source": "plasma.T_rad",
       "physical_meaning": "[comparator] CPU scalar comparison CSV",
       "new_source": "RadiationField generation-bound diagnostic",
-      "migration_stage": "A2-11",
-      "final_status": "KEEP_DIAGNOSTIC_ONLY"
+      "migration_stage": "A2-17",
+      "final_status": "DIAGNOSTIC_ONLY_CANONICAL_DERIVED"
     },
     {
-      "file_line": "src/lumina_cuda.cu:10899",
+      "file_line": "이관 완료(A2-17·dd9cd398698914b5e004e33d1c8ec41fcd5f411f)",
       "symbol": "plasma.W[i]",
       "current_source": "plasma.W",
       "physical_meaning": "[comparator] CUDA-host reference W comparator",
       "new_source": "RadiationField generation-bound diagnostic",
-      "migration_stage": "A2-11",
-      "final_status": "KEEP_DIAGNOSTIC_ONLY"
+      "migration_stage": "A2-17",
+      "final_status": "DIAGNOSTIC_ONLY_CANONICAL_DERIVED"
     },
     {
-      "file_line": "src/lumina_cuda.cu:10900",
+      "file_line": "이관 완료(A2-17·dd9cd398698914b5e004e33d1c8ec41fcd5f411f)",
       "symbol": "plasma.T_rad[i]",
       "current_source": "plasma.T_rad",
       "physical_meaning": "[comparator] CUDA-host reference T_rad comparator",
       "new_source": "RadiationField generation-bound diagnostic",
-      "migration_stage": "A2-11",
-      "final_status": "KEEP_DIAGNOSTIC_ONLY"
+      "migration_stage": "A2-17",
+      "final_status": "DIAGNOSTIC_ONLY_CANONICAL_DERIVED"
     },
     {
-      "file_line": "src/lumina_cuda.cu:10902",
+      "file_line": "이관 완료(A2-17·dd9cd398698914b5e004e33d1c8ec41fcd5f411f)",
       "symbol": "plasma.W[i]",
       "current_source": "plasma.W",
       "physical_meaning": "[comparator] CUDA-host W comparison report",
       "new_source": "RadiationField generation-bound diagnostic",
-      "migration_stage": "A2-11",
-      "final_status": "KEEP_DIAGNOSTIC_ONLY"
+      "migration_stage": "A2-17",
+      "final_status": "DIAGNOSTIC_ONLY_CANONICAL_DERIVED"
     },
     {
-      "file_line": "src/lumina_cuda.cu:10903",
+      "file_line": "이관 완료(A2-17·dd9cd398698914b5e004e33d1c8ec41fcd5f411f)",
       "symbol": "plasma.T_rad[i]",
       "current_source": "plasma.T_rad",
       "physical_meaning": "[comparator] CUDA-host T_rad comparison report",
       "new_source": "RadiationField generation-bound diagnostic",
-      "migration_stage": "A2-11",
-      "final_status": "KEEP_DIAGNOSTIC_ONLY"
+      "migration_stage": "A2-17",
+      "final_status": "DIAGNOSTIC_ONLY_CANONICAL_DERIVED"
     },
     {
-      "file_line": "src/lumina_cuda.cu:10908",
+      "file_line": "이관 완료(A2-17·dd9cd398698914b5e004e33d1c8ec41fcd5f411f)",
       "symbol": "plasma.W[i]",
       "current_source": "plasma.W",
       "physical_meaning": "[comparator] CUDA-host W mean error",
       "new_source": "RadiationField generation-bound diagnostic",
-      "migration_stage": "A2-11",
-      "final_status": "KEEP_DIAGNOSTIC_ONLY"
+      "migration_stage": "A2-17",
+      "final_status": "DIAGNOSTIC_ONLY_CANONICAL_DERIVED"
     },
     {
-      "file_line": "src/lumina_cuda.cu:10909",
+      "file_line": "이관 완료(A2-17·dd9cd398698914b5e004e33d1c8ec41fcd5f411f)",
       "symbol": "plasma.T_rad[i]",
       "current_source": "plasma.T_rad",
       "physical_meaning": "[comparator] CUDA-host T_rad mean error",
       "new_source": "RadiationField generation-bound diagnostic",
-      "migration_stage": "A2-11",
-      "final_status": "KEEP_DIAGNOSTIC_ONLY"
+      "migration_stage": "A2-17",
+      "final_status": "DIAGNOSTIC_ONLY_CANONICAL_DERIVED"
     },
     {
       "file_line": "이관 완료(A2-14·65498e18e9826ea0cdb5906b71cebecef4b82637)",
@@ -391,7 +391,7 @@
       "physical_meaning": "[GPU_opacity_rate] GPU bound-free Boltzmann factor",
       "new_source": "RadiationField.J_nu",
       "migration_stage": "A2-14",
-      "final_status": "REPLACE_GPU_SCALAR_OPACITY_RATE_READ"
+      "final_status": "CLOSED_A2_14_GPU_SIGNED_OPACITY"
     },
     {
       "file_line": "이관 완료(A2-14·65498e18e9826ea0cdb5906b71cebecef4b82637)",
@@ -400,7 +400,7 @@
       "physical_meaning": "[GPU_opacity_rate] GPU bound-free dilution factor",
       "new_source": "RadiationField.J_nu",
       "migration_stage": "A2-14",
-      "final_status": "REPLACE_GPU_SCALAR_OPACITY_RATE_READ"
+      "final_status": "CLOSED_A2_14_GPU_SIGNED_OPACITY"
     },
     {
       "file_line": "이관 완료(A2-14·65498e18e9826ea0cdb5906b71cebecef4b82637)",
@@ -409,7 +409,7 @@
       "physical_meaning": "[GPU_opacity_rate] GPU BF rate state upload",
       "new_source": "RadiationField.J_nu",
       "migration_stage": "A2-14",
-      "final_status": "REPLACE_GPU_SCALAR_OPACITY_RATE_READ"
+      "final_status": "CLOSED_A2_14_GPU_SIGNED_OPACITY"
     },
     {
       "file_line": "이관 완료(A2-14·65498e18e9826ea0cdb5906b71cebecef4b82637)",
@@ -418,7 +418,7 @@
       "physical_meaning": "[GPU_opacity_rate] GPU BF rate state upload",
       "new_source": "RadiationField.J_nu",
       "migration_stage": "A2-14",
-      "final_status": "REPLACE_GPU_SCALAR_OPACITY_RATE_READ"
+      "final_status": "CLOSED_A2_14_GPU_SIGNED_OPACITY"
     },
     {
       "file_line": "이관 완료(A2-14·65498e18e9826ea0cdb5906b71cebecef4b82637)",
@@ -427,7 +427,7 @@
       "physical_meaning": "[GPU_opacity_rate] GPU BF kernel argument",
       "new_source": "RadiationField.J_nu",
       "migration_stage": "A2-14",
-      "final_status": "REPLACE_GPU_SCALAR_OPACITY_RATE_READ"
+      "final_status": "CLOSED_A2_14_GPU_SIGNED_OPACITY"
     },
     {
       "file_line": "이관 완료(A2-14·65498e18e9826ea0cdb5906b71cebecef4b82637)",
@@ -436,7 +436,7 @@
       "physical_meaning": "[GPU_opacity_rate] GPU BF kernel argument",
       "new_source": "RadiationField.J_nu",
       "migration_stage": "A2-14",
-      "final_status": "REPLACE_GPU_SCALAR_OPACITY_RATE_READ"
+      "final_status": "CLOSED_A2_14_GPU_SIGNED_OPACITY"
     },
     {
       "file_line": "이관 완료(A2-14·65498e18e9826ea0cdb5906b71cebecef4b82637)",
@@ -445,7 +445,7 @@
       "physical_meaning": "[GPU_opacity_rate] GPU BF iteration refresh",
       "new_source": "RadiationField.J_nu",
       "migration_stage": "A2-14",
-      "final_status": "REPLACE_GPU_SCALAR_OPACITY_RATE_READ"
+      "final_status": "CLOSED_A2_14_GPU_SIGNED_OPACITY"
     },
     {
       "file_line": "이관 완료(A2-14·65498e18e9826ea0cdb5906b71cebecef4b82637)",
@@ -454,7 +454,7 @@
       "physical_meaning": "[GPU_opacity_rate] GPU BF iteration refresh",
       "new_source": "RadiationField.J_nu",
       "migration_stage": "A2-14",
-      "final_status": "REPLACE_GPU_SCALAR_OPACITY_RATE_READ"
+      "final_status": "CLOSED_A2_14_GPU_SIGNED_OPACITY"
     },
     {
       "file_line": "이관 완료(A2-14·65498e18e9826ea0cdb5906b71cebecef4b82637)",
@@ -463,7 +463,7 @@
       "physical_meaning": "[GPU_opacity_rate] GPU BF refreshed kernel argument",
       "new_source": "RadiationField.J_nu",
       "migration_stage": "A2-14",
-      "final_status": "REPLACE_GPU_SCALAR_OPACITY_RATE_READ"
+      "final_status": "CLOSED_A2_14_GPU_SIGNED_OPACITY"
     },
     {
       "file_line": "이관 완료(A2-14·65498e18e9826ea0cdb5906b71cebecef4b82637)",
@@ -472,7 +472,7 @@
       "physical_meaning": "[GPU_opacity_rate] GPU BF refreshed kernel argument",
       "new_source": "RadiationField.J_nu",
       "migration_stage": "A2-14",
-      "final_status": "REPLACE_GPU_SCALAR_OPACITY_RATE_READ"
+      "final_status": "CLOSED_A2_14_GPU_SIGNED_OPACITY"
     },
     {
       "file_line": "이관 완료(A2-14·65498e18e9826ea0cdb5906b71cebecef4b82637)",
@@ -481,7 +481,7 @@
       "physical_meaning": "[GPU_opacity_rate] GPU bound-bound Planck fallback",
       "new_source": "RadiationField.J_nu",
       "migration_stage": "A2-14",
-      "final_status": "REPLACE_GPU_SCALAR_OPACITY_RATE_READ"
+      "final_status": "CLOSED_A2_14_GPU_SIGNED_OPACITY"
     },
     {
       "file_line": "이관 완료(A2-14·65498e18e9826ea0cdb5906b71cebecef4b82637)",
@@ -490,7 +490,7 @@
       "physical_meaning": "[GPU_opacity_rate] GPU NLTE assembly upload",
       "new_source": "RadiationField.J_nu",
       "migration_stage": "A2-14",
-      "final_status": "REPLACE_GPU_SCALAR_OPACITY_RATE_READ"
+      "final_status": "CLOSED_A2_14_GPU_SIGNED_OPACITY"
     },
     {
       "file_line": "이관 완료(A2-14·65498e18e9826ea0cdb5906b71cebecef4b82637)",
@@ -499,7 +499,7 @@
       "physical_meaning": "[GPU_opacity_rate] GPU NLTE dilute temperature fallback",
       "new_source": "RadiationField.J_nu",
       "migration_stage": "A2-14",
-      "final_status": "REPLACE_GPU_SCALAR_OPACITY_RATE_READ"
+      "final_status": "CLOSED_A2_14_GPU_SIGNED_OPACITY"
     },
     {
       "file_line": "이관 완료(A2-15·84a148159185004f6f25db4bed51a3d5b5896d44)",
@@ -508,7 +508,7 @@
       "physical_meaning": "[GPU_transport] GPU BF re-emission temperature read",
       "new_source": "RadiationField generation lifecycle",
       "migration_stage": "A2-12",
-      "final_status": "REPLACE_GPU_SCALAR_TRANSPORT_STATE"
+      "final_status": "CLOSED_A2_12_15_GPU_NO_SCALAR"
     },
     {
       "file_line": "이관 완료(A2-15·84a148159185004f6f25db4bed51a3d5b5896d44)",
@@ -517,7 +517,7 @@
       "physical_meaning": "[GPU_transport] GPU band re-emission temperature read",
       "new_source": "RadiationField generation lifecycle",
       "migration_stage": "A2-12",
-      "final_status": "REPLACE_GPU_SCALAR_TRANSPORT_STATE"
+      "final_status": "CLOSED_A2_12_15_GPU_NO_SCALAR"
     },
     {
       "file_line": "이관 완료(A2-15·84a148159185004f6f25db4bed51a3d5b5896d44)",
@@ -526,7 +526,7 @@
       "physical_meaning": "[GPU_transport] transport kernel scalar-field argument",
       "new_source": "RadiationField generation lifecycle",
       "migration_stage": "A2-12",
-      "final_status": "REPLACE_GPU_SCALAR_TRANSPORT_STATE"
+      "final_status": "CLOSED_A2_12_15_GPU_NO_SCALAR"
     },
     {
       "file_line": "이관 완료(A2-15·84a148159185004f6f25db4bed51a3d5b5896d44)",
@@ -535,7 +535,7 @@
       "physical_meaning": "[GPU_transport] transport interaction call",
       "new_source": "RadiationField generation lifecycle",
       "migration_stage": "A2-12",
-      "final_status": "REPLACE_GPU_SCALAR_TRANSPORT_STATE"
+      "final_status": "CLOSED_A2_12_15_GPU_NO_SCALAR"
     },
     {
       "file_line": "이관 완료(A2-15·84a148159185004f6f25db4bed51a3d5b5896d44)",
@@ -544,7 +544,7 @@
       "physical_meaning": "[GPU_transport] legacy BF re-emission call",
       "new_source": "RadiationField generation lifecycle",
       "migration_stage": "A2-12",
-      "final_status": "REPLACE_GPU_SCALAR_TRANSPORT_STATE"
+      "final_status": "CLOSED_A2_12_15_GPU_NO_SCALAR"
     },
     {
       "file_line": "이관 완료(A2-15·84a148159185004f6f25db4bed51a3d5b5896d44)",
@@ -553,7 +553,7 @@
       "physical_meaning": "[GPU_transport] main transport launch argument",
       "new_source": "RadiationField generation lifecycle",
       "migration_stage": "A2-12",
-      "final_status": "REPLACE_GPU_SCALAR_TRANSPORT_STATE"
+      "final_status": "CLOSED_A2_12_15_GPU_NO_SCALAR"
     },
     {
       "file_line": "이관 완료(A2-15·84a148159185004f6f25db4bed51a3d5b5896d44)",
@@ -562,205 +562,205 @@
       "physical_meaning": "[GPU_transport] final transport launch argument",
       "new_source": "RadiationField generation lifecycle",
       "migration_stage": "A2-12",
-      "final_status": "REPLACE_GPU_SCALAR_TRANSPORT_STATE"
+      "final_status": "CLOSED_A2_12_15_GPU_NO_SCALAR"
     },
     {
-      "file_line": "src/lumina_cuda.cu:8557",
+      "file_line": "이관 완료(A2-12·7f72c0d95f9ae94166b856e54008ac230ca3c504)",
       "symbol": "plasma.W[s]",
       "current_source": "plasma.W",
       "physical_meaning": "[GPU_transport] GPU-host packet source tier",
       "new_source": "RadiationField generation lifecycle",
       "migration_stage": "A2-12",
-      "final_status": "REPLACE_GPU_SCALAR_TRANSPORT_STATE"
+      "final_status": "CLOSED_A2_12_15_GPU_NO_SCALAR"
     },
     {
-      "file_line": "src/lumina_cuda.cu:8558",
+      "file_line": "이관 완료(A2-12·7f72c0d95f9ae94166b856e54008ac230ca3c504)",
       "symbol": "plasma.W",
       "current_source": "plasma.W owner pointer",
       "physical_meaning": "[GPU_transport] GPU-host packet source validity gate",
       "new_source": "RadiationField generation lifecycle",
       "migration_stage": "A2-12",
-      "final_status": "REPLACE_GPU_SCALAR_TRANSPORT_STATE"
+      "final_status": "CLOSED_A2_12_15_GPU_NO_SCALAR"
     },
     {
-      "file_line": "src/lumina_cuda.cu:10814",
+      "file_line": "이관 완료(A2-12·7f72c0d95f9ae94166b856e54008ac230ca3c504)",
       "symbol": "plasma.T_rad[i]",
       "current_source": "plasma.T_rad",
       "physical_meaning": "[GPU_transport] GPU-host transport temperature ratio",
       "new_source": "RadiationField generation lifecycle",
       "migration_stage": "A2-12",
-      "final_status": "REPLACE_GPU_SCALAR_TRANSPORT_STATE"
+      "final_status": "CLOSED_A2_12_15_GPU_NO_SCALAR"
     },
     {
-      "file_line": "src/lumina_cuda.cu:10814",
+      "file_line": "이관 완료(A2-12·7f72c0d95f9ae94166b856e54008ac230ca3c504)",
       "symbol": "plasma.T_rad[i]",
       "current_source": "plasma.T_rad",
       "physical_meaning": "[GPU_transport] GPU-host transport temperature ratio denominator",
       "new_source": "RadiationField generation lifecycle",
       "migration_stage": "A2-12",
-      "final_status": "REPLACE_GPU_SCALAR_TRANSPORT_STATE"
+      "final_status": "CLOSED_A2_12_15_GPU_NO_SCALAR"
     },
     {
-      "file_line": "src/lumina_plasma.c:2624",
+      "file_line": "이관 완료(A2-08·8a9f861efb12e749fd47926b8e78be17d4ba8070)",
       "symbol": "plasma->T_rad[s]",
       "current_source": "plasma.T_rad",
       "physical_meaning": "[opacity_rate] nebular ionization opacity/rate temperature",
       "new_source": "RadiationField.J_nu",
       "migration_stage": "A2-08",
-      "final_status": "REPLACE_SCALAR_OPACITY_RATE_READ"
+      "final_status": "CLOSED_A2_08_SIGNED_OPACITY"
     },
     {
-      "file_line": "src/lumina_plasma.c:2626",
+      "file_line": "이관 완료(A2-08·8a9f861efb12e749fd47926b8e78be17d4ba8070)",
       "symbol": "plasma->W[s]",
       "current_source": "plasma.W",
       "physical_meaning": "[opacity_rate] nebular ionization opacity/rate dilution",
       "new_source": "RadiationField.J_nu",
       "migration_stage": "A2-08",
-      "final_status": "REPLACE_SCALAR_OPACITY_RATE_READ"
+      "final_status": "CLOSED_A2_08_SIGNED_OPACITY"
     },
     {
-      "file_line": "src/lumina_plasma.c:2695",
+      "file_line": "이관 완료(A2-08·8a9f861efb12e749fd47926b8e78be17d4ba8070)",
       "symbol": "T_rad",
       "current_source": "local alias of plasma->T_rad[s]",
       "physical_meaning": "[opacity_rate] zeta interpolation temperature",
       "new_source": "RadiationField.J_nu",
       "migration_stage": "A2-08",
-      "final_status": "REPLACE_SCALAR_OPACITY_RATE_READ"
+      "final_status": "CLOSED_A2_08_SIGNED_OPACITY"
     },
     {
-      "file_line": "src/lumina_plasma.c:2696",
+      "file_line": "이관 완료(A2-08·8a9f861efb12e749fd47926b8e78be17d4ba8070)",
       "symbol": "T_rad",
       "current_source": "local alias of plasma->T_rad[s]",
       "physical_meaning": "[opacity_rate] electron-to-radiation temperature ratio",
       "new_source": "RadiationField.J_nu",
       "migration_stage": "A2-08",
-      "final_status": "REPLACE_SCALAR_OPACITY_RATE_READ"
+      "final_status": "CLOSED_A2_08_SIGNED_OPACITY"
     },
     {
-      "file_line": "src/lumina_plasma.c:2697",
+      "file_line": "이관 완료(A2-08·8a9f861efb12e749fd47926b8e78be17d4ba8070)",
       "symbol": "W",
       "current_source": "local alias of plasma->W[s]",
       "physical_meaning": "[opacity_rate] nebular rate dilution",
       "new_source": "RadiationField.J_nu",
       "migration_stage": "A2-08",
-      "final_status": "REPLACE_SCALAR_OPACITY_RATE_READ"
+      "final_status": "CLOSED_A2_08_SIGNED_OPACITY"
     },
     {
-      "file_line": "src/lumina_plasma.c:2698",
+      "file_line": "이관 완료(A2-08·8a9f861efb12e749fd47926b8e78be17d4ba8070)",
       "symbol": "T_rad",
       "current_source": "local alias of plasma->T_rad[s]",
       "physical_meaning": "[opacity_rate] nebular rate temperature ratio",
       "new_source": "RadiationField.J_nu",
       "migration_stage": "A2-08",
-      "final_status": "REPLACE_SCALAR_OPACITY_RATE_READ"
+      "final_status": "CLOSED_A2_08_SIGNED_OPACITY"
     },
     {
-      "file_line": "src/lumina_plasma.c:2699",
+      "file_line": "이관 완료(A2-08·8a9f861efb12e749fd47926b8e78be17d4ba8070)",
       "symbol": "W",
       "current_source": "local alias of plasma->W[s]",
       "physical_meaning": "[opacity_rate] non-metastable dilution term",
       "new_source": "RadiationField.J_nu",
       "migration_stage": "A2-08",
-      "final_status": "REPLACE_SCALAR_OPACITY_RATE_READ"
+      "final_status": "CLOSED_A2_08_SIGNED_OPACITY"
     },
     {
-      "file_line": "src/lumina_plasma.c:2700",
+      "file_line": "이관 완료(A2-08·8a9f861efb12e749fd47926b8e78be17d4ba8070)",
       "symbol": "T_rad",
       "current_source": "local alias of plasma->T_rad[s]",
       "physical_meaning": "[opacity_rate] ML correction temperature",
       "new_source": "RadiationField.J_nu",
       "migration_stage": "A2-08",
-      "final_status": "REPLACE_SCALAR_OPACITY_RATE_READ"
+      "final_status": "CLOSED_A2_08_SIGNED_OPACITY"
     },
     {
-      "file_line": "src/lumina_plasma.c:2701",
+      "file_line": "이관 완료(A2-08·8a9f861efb12e749fd47926b8e78be17d4ba8070)",
       "symbol": "W",
       "current_source": "local alias of plasma->W[s]",
       "physical_meaning": "[opacity_rate] two-component rate lock threshold",
       "new_source": "RadiationField.J_nu",
       "migration_stage": "A2-08",
-      "final_status": "REPLACE_SCALAR_OPACITY_RATE_READ"
+      "final_status": "CLOSED_A2_08_SIGNED_OPACITY"
     },
     {
-      "file_line": "src/lumina_plasma.c:18673",
+      "file_line": "이관 완료(A2-11·9b73c042dcc5feae75c58ff8e00547b33ea36d93)",
       "symbol": "plasma->W[shell_mid]",
       "current_source": "plasma.W",
       "physical_meaning": "[formal_transfer] observer continuum source",
       "new_source": "RadiationField.J_nu",
       "migration_stage": "A2-11",
-      "final_status": "REPLACE_FORMAL_TRANSFER_SCALAR_READ"
+      "final_status": "CLOSED_A2_11_FORMAL_NO_SCALAR"
     },
     {
-      "file_line": "src/lumina_plasma.c:18674",
+      "file_line": "이관 완료(A2-11·9b73c042dcc5feae75c58ff8e00547b33ea36d93)",
       "symbol": "plasma->T_rad[shell_mid]",
       "current_source": "plasma.T_rad",
       "physical_meaning": "[formal_transfer] observer continuum source",
       "new_source": "RadiationField.J_nu",
       "migration_stage": "A2-11",
-      "final_status": "REPLACE_FORMAL_TRANSFER_SCALAR_READ"
+      "final_status": "CLOSED_A2_11_FORMAL_NO_SCALAR"
     },
     {
-      "file_line": "src/lumina_plasma.c:18693",
+      "file_line": "이관 완료(A2-11·9b73c042dcc5feae75c58ff8e00547b33ea36d93)",
       "symbol": "plasma->W[shell]",
       "current_source": "plasma.W",
       "physical_meaning": "[formal_transfer] observer line fallback source",
       "new_source": "RadiationField.J_nu",
       "migration_stage": "A2-11",
-      "final_status": "REPLACE_FORMAL_TRANSFER_SCALAR_READ"
+      "final_status": "CLOSED_A2_11_FORMAL_NO_SCALAR"
     },
     {
-      "file_line": "src/lumina_plasma.c:18693",
+      "file_line": "이관 완료(A2-11·9b73c042dcc5feae75c58ff8e00547b33ea36d93)",
       "symbol": "plasma->T_rad[shell]",
       "current_source": "plasma.T_rad",
       "physical_meaning": "[formal_transfer] observer line fallback source",
       "new_source": "RadiationField.J_nu",
       "migration_stage": "A2-11",
-      "final_status": "REPLACE_FORMAL_TRANSFER_SCALAR_READ"
+      "final_status": "CLOSED_A2_11_FORMAL_NO_SCALAR"
     },
     {
-      "file_line": "src/lumina_plasma.c:18720",
+      "file_line": "이관 완료(A2-11·9b73c042dcc5feae75c58ff8e00547b33ea36d93)",
       "symbol": "plasma->T_rad[shell]",
       "current_source": "plasma.T_rad",
       "physical_meaning": "[formal_transfer] formal-transfer thermal width",
       "new_source": "RadiationField.J_nu",
       "migration_stage": "A2-11",
-      "final_status": "REPLACE_FORMAL_TRANSFER_SCALAR_READ"
+      "final_status": "CLOSED_A2_11_FORMAL_NO_SCALAR"
     },
     {
-      "file_line": "src/lumina_plasma.c:18720",
+      "file_line": "이관 완료(A2-11·9b73c042dcc5feae75c58ff8e00547b33ea36d93)",
       "symbol": "plasma->W[shell]",
       "current_source": "plasma.W",
       "physical_meaning": "[formal_transfer] formal-transfer dilution",
       "new_source": "RadiationField.J_nu",
       "migration_stage": "A2-11",
-      "final_status": "REPLACE_FORMAL_TRANSFER_SCALAR_READ"
+      "final_status": "CLOSED_A2_11_FORMAL_NO_SCALAR"
     },
     {
-      "file_line": "src/lumina_plasma.c:18776",
+      "file_line": "이관 완료(A2-11·9b73c042dcc5feae75c58ff8e00547b33ea36d93)",
       "symbol": "plasma->W[shell_mid]",
       "current_source": "plasma.W",
       "physical_meaning": "[formal_transfer] red-side continuum source",
       "new_source": "RadiationField.J_nu",
       "migration_stage": "A2-11",
-      "final_status": "REPLACE_FORMAL_TRANSFER_SCALAR_READ"
+      "final_status": "CLOSED_A2_11_FORMAL_NO_SCALAR"
     },
     {
-      "file_line": "src/lumina_plasma.c:18777",
+      "file_line": "이관 완료(A2-11·9b73c042dcc5feae75c58ff8e00547b33ea36d93)",
       "symbol": "plasma->T_rad[shell_mid]",
       "current_source": "plasma.T_rad",
       "physical_meaning": "[formal_transfer] red-side continuum source",
       "new_source": "RadiationField.J_nu",
       "migration_stage": "A2-11",
-      "final_status": "REPLACE_FORMAL_TRANSFER_SCALAR_READ"
+      "final_status": "CLOSED_A2_11_FORMAL_NO_SCALAR"
     },
     {
-      "file_line": "src/lumina_plasma.c:19026",
+      "file_line": "이관 완료(A2-11·9b73c042dcc5feae75c58ff8e00547b33ea36d93)",
       "symbol": "plasma->W[shell]",
       "current_source": "plasma.W",
       "physical_meaning": "[formal_transfer] electron-scattering source fallback",
       "new_source": "RadiationField.J_nu",
       "migration_stage": "A2-11",
-      "final_status": "REPLACE_FORMAL_TRANSFER_SCALAR_READ"
+      "final_status": "CLOSED_A2_11_FORMAL_NO_SCALAR"
     },
     {
       "file_line": "이관 완료(A2-14·65498e18e9826ea0cdb5906b71cebecef4b82637)",
@@ -769,7 +769,7 @@
       "physical_meaning": "[GPU_lifecycle] allocate GPU scalar owner",
       "new_source": "RadiationField generation lifecycle",
       "migration_stage": "A2-12",
-      "final_status": "REMOVE_GPU_SCALAR_LIFECYCLE"
+      "final_status": "CLOSED_A2_12_15_GPU_NO_SCALAR"
     },
     {
       "file_line": "이관 완료(A2-14·65498e18e9826ea0cdb5906b71cebecef4b82637)",
@@ -778,7 +778,7 @@
       "physical_meaning": "[GPU_lifecycle] allocate GPU scalar owner",
       "new_source": "RadiationField generation lifecycle",
       "migration_stage": "A2-12",
-      "final_status": "REMOVE_GPU_SCALAR_LIFECYCLE"
+      "final_status": "CLOSED_A2_12_15_GPU_NO_SCALAR"
     },
     {
       "file_line": "이관 완료(A2-14·65498e18e9826ea0cdb5906b71cebecef4b82637)",
@@ -787,7 +787,7 @@
       "physical_meaning": "[GPU_lifecycle] free GPU scalar owner",
       "new_source": "RadiationField generation lifecycle",
       "migration_stage": "A2-12",
-      "final_status": "REMOVE_GPU_SCALAR_LIFECYCLE"
+      "final_status": "CLOSED_A2_12_15_GPU_NO_SCALAR"
     },
     {
       "file_line": "이관 완료(A2-14·65498e18e9826ea0cdb5906b71cebecef4b82637)",
@@ -796,376 +796,376 @@
       "physical_meaning": "[GPU_lifecycle] free GPU scalar owner",
       "new_source": "RadiationField generation lifecycle",
       "migration_stage": "A2-12",
-      "final_status": "REMOVE_GPU_SCALAR_LIFECYCLE"
+      "final_status": "CLOSED_A2_12_15_GPU_NO_SCALAR"
     },
     {
-      "file_line": "src/lumina_cuda.cu:273",
+      "file_line": "이관 완료(A2-12·7f72c0d95f9ae94166b856e54008ac230ca3c504)",
       "symbol": "dev->d_T_rad",
       "current_source": "GPU transport T_rad allocation",
       "physical_meaning": "[GPU_lifecycle] allocate GPU scalar owner",
       "new_source": "RadiationField generation lifecycle",
       "migration_stage": "A2-12",
-      "final_status": "REMOVE_GPU_SCALAR_LIFECYCLE"
+      "final_status": "CLOSED_A2_12_15_GPU_NO_SCALAR"
     },
     {
-      "file_line": "src/lumina_cuda.cu:341",
+      "file_line": "이관 완료(A2-12·7f72c0d95f9ae94166b856e54008ac230ca3c504)",
       "symbol": "dev->d_T_rad",
       "current_source": "GPU transport T_rad allocation",
       "physical_meaning": "[GPU_lifecycle] test GPU scalar allocation",
       "new_source": "RadiationField generation lifecycle",
       "migration_stage": "A2-12",
-      "final_status": "REMOVE_GPU_SCALAR_LIFECYCLE"
+      "final_status": "CLOSED_A2_12_15_GPU_NO_SCALAR"
     },
     {
-      "file_line": "src/lumina_cuda.cu:342",
+      "file_line": "이관 완료(A2-12·7f72c0d95f9ae94166b856e54008ac230ca3c504)",
       "symbol": "dev->d_T_rad",
       "current_source": "GPU transport T_rad allocation",
       "physical_meaning": "[GPU_lifecycle] lazy allocate GPU scalar owner",
       "new_source": "RadiationField generation lifecycle",
       "migration_stage": "A2-12",
-      "final_status": "REMOVE_GPU_SCALAR_LIFECYCLE"
+      "final_status": "CLOSED_A2_12_15_GPU_NO_SCALAR"
     },
     {
-      "file_line": "src/lumina_cuda.cu:3286",
+      "file_line": "이관 완료(A2-12·7f72c0d95f9ae94166b856e54008ac230ca3c504)",
       "symbol": "dev->d_T_rad",
       "current_source": "GPU transport T_rad allocation",
       "physical_meaning": "[GPU_lifecycle] free GPU scalar owner",
       "new_source": "RadiationField generation lifecycle",
       "migration_stage": "A2-12",
-      "final_status": "REMOVE_GPU_SCALAR_LIFECYCLE"
+      "final_status": "CLOSED_A2_12_15_GPU_NO_SCALAR"
     },
     {
-      "file_line": "src/lumina_cuda.cu:1467",
+      "file_line": "이관 완료(A2-13·d47a596182e9e04cb05b74ce816966dd3a29e466)",
       "symbol": "plasma->T_rad[s]",
       "current_source": "plasma.T_rad",
       "physical_meaning": "[GPU_rate] GPU-host NLTE Boltzmann fallback",
       "new_source": "RadiationField.J_nu",
       "migration_stage": "A2-13",
-      "final_status": "REPLACE_GPU_SCALAR_RATE_READ"
+      "final_status": "CLOSED_A2_13_GPU_RATE"
     },
     {
-      "file_line": "src/lumina_cuda.cu:1621",
+      "file_line": "이관 완료(A2-13·d47a596182e9e04cb05b74ce816966dd3a29e466)",
       "symbol": "plasma->T_rad[s]",
       "current_source": "plasma.T_rad",
       "physical_meaning": "[GPU_rate] GPU-host lower-ion fallback",
       "new_source": "RadiationField.J_nu",
       "migration_stage": "A2-13",
-      "final_status": "REPLACE_GPU_SCALAR_RATE_READ"
+      "final_status": "CLOSED_A2_13_GPU_RATE"
     },
     {
-      "file_line": "src/lumina_cuda.cu:1652",
+      "file_line": "이관 완료(A2-13·d47a596182e9e04cb05b74ce816966dd3a29e466)",
       "symbol": "plasma->T_rad[s]",
       "current_source": "plasma.T_rad",
       "physical_meaning": "[GPU_rate] GPU-host upper-ion fallback",
       "new_source": "RadiationField.J_nu",
       "migration_stage": "A2-13",
-      "final_status": "REPLACE_GPU_SCALAR_RATE_READ"
+      "final_status": "CLOSED_A2_13_GPU_RATE"
     },
     {
-      "file_line": "src/lumina_cuda.cu:1682",
+      "file_line": "이관 완료(A2-13·d47a596182e9e04cb05b74ce816966dd3a29e466)",
       "symbol": "plasma->T_rad[s]",
       "current_source": "plasma.T_rad",
       "physical_meaning": "[GPU_rate] GPU-host top-stage fallback",
       "new_source": "RadiationField.J_nu",
       "migration_stage": "A2-13",
-      "final_status": "REPLACE_GPU_SCALAR_RATE_READ"
+      "final_status": "CLOSED_A2_13_GPU_RATE"
     },
     {
-      "file_line": "src/lumina_cuda.cu:2019",
+      "file_line": "이관 완료(A2-13·d47a596182e9e04cb05b74ce816966dd3a29e466)",
       "symbol": "plasma->T_rad[s]",
       "current_source": "plasma.T_rad",
       "physical_meaning": "[GPU_rate] GPU-host rate dump electron seed",
       "new_source": "RadiationField.J_nu",
       "migration_stage": "A2-13",
-      "final_status": "REPLACE_GPU_SCALAR_RATE_READ"
+      "final_status": "CLOSED_A2_13_GPU_RATE"
     },
     {
-      "file_line": "src/lumina_cuda.cu:2020",
+      "file_line": "이관 완료(A2-13·d47a596182e9e04cb05b74ce816966dd3a29e466)",
       "symbol": "plasma->T_rad[s]",
       "current_source": "plasma.T_rad",
       "physical_meaning": "[GPU_rate] GPU-host rate dump radiation temperature",
       "new_source": "RadiationField.J_nu",
       "migration_stage": "A2-13",
-      "final_status": "REPLACE_GPU_SCALAR_RATE_READ"
+      "final_status": "CLOSED_A2_13_GPU_RATE"
     },
     {
-      "file_line": "src/lumina_cuda.cu:2021",
+      "file_line": "이관 완료(A2-13·d47a596182e9e04cb05b74ce816966dd3a29e466)",
       "symbol": "plasma->W[s]",
       "current_source": "plasma.W",
       "physical_meaning": "[GPU_rate] GPU-host rate dump dilution",
       "new_source": "RadiationField.J_nu",
       "migration_stage": "A2-13",
-      "final_status": "REPLACE_GPU_SCALAR_RATE_READ"
+      "final_status": "CLOSED_A2_13_GPU_RATE"
     },
     {
-      "file_line": "src/lumina_cuda.cu:2068",
+      "file_line": "이관 완료(A2-13·d47a596182e9e04cb05b74ce816966dd3a29e466)",
       "symbol": "plasma->T_rad[s]",
       "current_source": "plasma.T_rad",
       "physical_meaning": "[GPU_rate] GPU-host rate fallback seed",
       "new_source": "RadiationField.J_nu",
       "migration_stage": "A2-13",
-      "final_status": "REPLACE_GPU_SCALAR_RATE_READ"
+      "final_status": "CLOSED_A2_13_GPU_RATE"
     },
     {
-      "file_line": "src/lumina_atomic.c:662",
+      "file_line": "이관 완료(A2-04·bafd2bbdfbcdb7e84b6f573b37785e30185865f0)",
       "symbol": "W",
       "current_source": "plasma-state W input array",
       "physical_meaning": "[owner_validation] validate owner presence",
       "new_source": "RadiationField commit API",
       "migration_stage": "A2-04",
-      "final_status": "VALIDATE_CANONICAL_FIELD_INSTEAD"
+      "final_status": "CLOSED_A2_04_CANONICAL_COMMIT"
     },
     {
-      "file_line": "src/lumina_atomic.c:662",
+      "file_line": "이관 완료(A2-04·bafd2bbdfbcdb7e84b6f573b37785e30185865f0)",
       "symbol": "T_rad",
       "current_source": "plasma-state T_rad input array",
       "physical_meaning": "[owner_validation] validate owner presence",
       "new_source": "RadiationField commit API",
       "migration_stage": "A2-04",
-      "final_status": "VALIDATE_CANONICAL_FIELD_INSTEAD"
+      "final_status": "CLOSED_A2_04_CANONICAL_COMMIT"
     },
     {
-      "file_line": "src/lumina_atomic.c:683",
+      "file_line": "이관 완료(A2-04·bafd2bbdfbcdb7e84b6f573b37785e30185865f0)",
       "symbol": "W[s]",
       "current_source": "plasma-state W input array",
       "physical_meaning": "[owner_validation] validate finite physical dilution",
       "new_source": "RadiationField commit API",
       "migration_stage": "A2-04",
-      "final_status": "VALIDATE_CANONICAL_FIELD_INSTEAD"
+      "final_status": "CLOSED_A2_04_CANONICAL_COMMIT"
     },
     {
-      "file_line": "src/lumina_atomic.c:684",
+      "file_line": "이관 완료(A2-04·bafd2bbdfbcdb7e84b6f573b37785e30185865f0)",
       "symbol": "T_rad[s]",
       "current_source": "plasma-state T_rad input array",
       "physical_meaning": "[owner_validation] validate finite positive color temperature",
       "new_source": "RadiationField commit API",
       "migration_stage": "A2-04",
-      "final_status": "VALIDATE_CANONICAL_FIELD_INSTEAD"
+      "final_status": "CLOSED_A2_04_CANONICAL_COMMIT"
     },
     {
-      "file_line": "src/lumina_atomic.c:688",
+      "file_line": "이관 완료(A2-04·bafd2bbdfbcdb7e84b6f573b37785e30185865f0)",
       "symbol": "T_rad[s]",
       "current_source": "plasma-state T_rad input array",
       "physical_meaning": "[owner_validation] validate color invariant",
       "new_source": "RadiationField commit API",
       "migration_stage": "A2-04",
-      "final_status": "VALIDATE_CANONICAL_FIELD_INSTEAD"
+      "final_status": "CLOSED_A2_04_CANONICAL_COMMIT"
     },
     {
-      "file_line": "src/lumina_atomic.c:688",
+      "file_line": "이관 완료(A2-04·bafd2bbdfbcdb7e84b6f573b37785e30185865f0)",
       "symbol": "W[s]",
       "current_source": "plasma-state W input array",
       "physical_meaning": "[owner_validation] validate color invariant",
       "new_source": "RadiationField commit API",
       "migration_stage": "A2-04",
-      "final_status": "VALIDATE_CANONICAL_FIELD_INSTEAD"
+      "final_status": "CLOSED_A2_04_CANONICAL_COMMIT"
     },
     {
-      "file_line": "src/lumina_cmfgen.c:663",
+      "file_line": "이관 완료(A2-04·bafd2bbdfbcdb7e84b6f573b37785e30185865f0)",
       "symbol": "plasma->T_rad",
       "current_source": "plasma.T_rad owner pointer",
       "physical_meaning": "[owner_validation] CMF solver owner-presence validation",
       "new_source": "RadiationField commit API",
       "migration_stage": "A2-04",
-      "final_status": "VALIDATE_CANONICAL_FIELD_INSTEAD"
+      "final_status": "CLOSED_A2_04_CANONICAL_COMMIT"
     },
     {
-      "file_line": "src/lumina_atomic.c:869",
+      "file_line": "이관 완료(A2-04·bafd2bbdfbcdb7e84b6f573b37785e30185865f0)",
       "symbol": "plasma->T_rad[i2]",
       "current_source": "plasma.T_rad",
       "physical_meaning": "[owner_update] fixed-color profile overwrite",
       "new_source": "RadiationField commit API",
       "migration_stage": "A2-04",
-      "final_status": "REMOVE_SCALAR_OWNER_UPDATE"
+      "final_status": "CLOSED_A2_04_CANONICAL_COMMIT"
     },
     {
-      "file_line": "src/lumina_plasma.c:1123",
+      "file_line": "이관 완료(A2-04·bafd2bbdfbcdb7e84b6f573b37785e30185865f0)",
       "symbol": "plasma->T_rad[i]",
       "current_source": "plasma.T_rad",
       "physical_meaning": "[owner_update] fixed radiation profile update",
       "new_source": "RadiationField commit API",
       "migration_stage": "A2-04",
-      "final_status": "REMOVE_SCALAR_OWNER_UPDATE"
+      "final_status": "CLOSED_A2_04_CANONICAL_COMMIT"
     },
     {
-      "file_line": "src/lumina_plasma.c:1124",
+      "file_line": "이관 완료(A2-04·bafd2bbdfbcdb7e84b6f573b37785e30185865f0)",
       "symbol": "plasma->W[i]",
       "current_source": "plasma.W",
       "physical_meaning": "[owner_update] fixed radiation profile update",
       "new_source": "RadiationField commit API",
       "migration_stage": "A2-04",
-      "final_status": "REMOVE_SCALAR_OWNER_UPDATE"
+      "final_status": "CLOSED_A2_04_CANONICAL_COMMIT"
     },
     {
-      "file_line": "src/lumina_plasma.c:1155",
+      "file_line": "이관 완료(A2-04·bafd2bbdfbcdb7e84b6f573b37785e30185865f0)",
       "symbol": "plasma->T_rad[i]",
       "current_source": "plasma.T_rad",
       "physical_meaning": "[owner_update] damped T_rad owner update",
       "new_source": "RadiationField commit API",
       "migration_stage": "A2-04",
-      "final_status": "REMOVE_SCALAR_OWNER_UPDATE"
+      "final_status": "CLOSED_A2_04_CANONICAL_COMMIT"
     },
     {
-      "file_line": "src/lumina_plasma.c:1156",
+      "file_line": "이관 완료(A2-04·bafd2bbdfbcdb7e84b6f573b37785e30185865f0)",
       "symbol": "plasma->T_rad[i]",
       "current_source": "plasma.T_rad",
       "physical_meaning": "[owner_update] damped T_rad prior generation read",
       "new_source": "RadiationField commit API",
       "migration_stage": "A2-04",
-      "final_status": "REMOVE_SCALAR_OWNER_UPDATE"
+      "final_status": "CLOSED_A2_04_CANONICAL_COMMIT"
     },
     {
-      "file_line": "src/lumina_plasma.c:1157",
+      "file_line": "이관 완료(A2-04·bafd2bbdfbcdb7e84b6f573b37785e30185865f0)",
       "symbol": "plasma->W[i]",
       "current_source": "plasma.W",
       "physical_meaning": "[owner_update] damped W owner update",
       "new_source": "RadiationField commit API",
       "migration_stage": "A2-04",
-      "final_status": "REMOVE_SCALAR_OWNER_UPDATE"
+      "final_status": "CLOSED_A2_04_CANONICAL_COMMIT"
     },
     {
-      "file_line": "src/lumina_plasma.c:1158",
+      "file_line": "이관 완료(A2-04·bafd2bbdfbcdb7e84b6f573b37785e30185865f0)",
       "symbol": "plasma->W[i]",
       "current_source": "plasma.W",
       "physical_meaning": "[owner_update] damped W prior generation read",
       "new_source": "RadiationField commit API",
       "migration_stage": "A2-04",
-      "final_status": "REMOVE_SCALAR_OWNER_UPDATE"
+      "final_status": "CLOSED_A2_04_CANONICAL_COMMIT"
     },
     {
-      "file_line": "src/lumina_plasma.c:3120",
+      "file_line": "이관 완료(A2-16·686a4a1fadcd1a57e10dbf8ee37c17b248c87841)",
       "symbol": "plasma->T_rad[s]",
       "current_source": "plasma.T_rad",
       "physical_meaning": "[seed_radeq] electron-temperature seed",
       "new_source": "RadiationField.J_nu",
       "migration_stage": "A2-16",
-      "final_status": "LIMIT_TO_GENERATION_ZERO_SEED"
+      "final_status": "CLOSED_A2_16_G0_SEED_REVOKED"
     },
     {
-      "file_line": "src/lumina_plasma.c:3159",
+      "file_line": "이관 완료(A2-16·686a4a1fadcd1a57e10dbf8ee37c17b248c87841)",
       "symbol": "plasma->T_rad[s]",
       "current_source": "plasma.T_rad",
       "physical_meaning": "[seed_radeq] analytic RADEQ radiation seed",
       "new_source": "RadiationField.J_nu",
       "migration_stage": "A2-16",
-      "final_status": "LIMIT_TO_GENERATION_ZERO_SEED"
+      "final_status": "CLOSED_A2_16_G0_SEED_REVOKED"
     },
     {
-      "file_line": "src/lumina_plasma.c:3160",
+      "file_line": "이관 완료(A2-16·686a4a1fadcd1a57e10dbf8ee37c17b248c87841)",
       "symbol": "plasma->W[s]",
       "current_source": "plasma.W",
       "physical_meaning": "[seed_radeq] analytic RADEQ energy-density seed",
       "new_source": "RadiationField.J_nu",
       "migration_stage": "A2-16",
-      "final_status": "LIMIT_TO_GENERATION_ZERO_SEED"
+      "final_status": "CLOSED_A2_16_G0_SEED_REVOKED"
     },
     {
-      "file_line": "src/lumina_plasma.c:3163",
+      "file_line": "이관 완료(A2-16·686a4a1fadcd1a57e10dbf8ee37c17b248c87841)",
       "symbol": "T_rad",
       "current_source": "local alias of plasma->T_rad[s]",
       "physical_meaning": "[seed_radeq] invalid-cell electron-temperature seed",
       "new_source": "RadiationField.J_nu",
       "migration_stage": "A2-16",
-      "final_status": "LIMIT_TO_GENERATION_ZERO_SEED"
+      "final_status": "CLOSED_A2_16_G0_SEED_REVOKED"
     },
     {
-      "file_line": "src/lumina_plasma.c:11789",
+      "file_line": "이관 완료(A2-16·686a4a1fadcd1a57e10dbf8ee37c17b248c87841)",
       "symbol": "plasma->T_rad[s]",
       "current_source": "plasma.T_rad",
       "physical_meaning": "[seed_radeq] RADEQ disabled-path seed",
       "new_source": "RadiationField.J_nu",
       "migration_stage": "A2-16",
-      "final_status": "LIMIT_TO_GENERATION_ZERO_SEED"
+      "final_status": "CLOSED_A2_16_G0_SEED_REVOKED"
     },
     {
-      "file_line": "src/lumina_plasma.c:12003",
+      "file_line": "이관 완료(A2-16·686a4a1fadcd1a57e10dbf8ee37c17b248c87841)",
       "symbol": "T_rad",
       "current_source": "local alias of plasma->T_rad[s]",
       "physical_meaning": "[seed_radeq] RADEQ invalid-cell seed",
       "new_source": "RadiationField.J_nu",
       "migration_stage": "A2-16",
-      "final_status": "LIMIT_TO_GENERATION_ZERO_SEED"
+      "final_status": "CLOSED_A2_16_G0_SEED_REVOKED"
     },
     {
-      "file_line": "src/lumina_atomic.c:850",
+      "file_line": "이관 완료(A2-16·686a4a1fadcd1a57e10dbf8ee37c17b248c87841)",
       "symbol": "plasma->W",
       "current_source": "plasma.W owner pointer",
       "physical_meaning": "[input_owner] load W column as runtime owner",
       "new_source": "RadiationField.J_nu",
       "migration_stage": "A2-16",
-      "final_status": "MOVE_TO_OFFLINE_LEGACY_CONVERTER"
+      "final_status": "CLOSED_A2_16_G0_SEED_REVOKED"
     },
     {
-      "file_line": "src/lumina_atomic.c:851",
+      "file_line": "이관 완료(A2-16·686a4a1fadcd1a57e10dbf8ee37c17b248c87841)",
       "symbol": "plasma->T_rad",
       "current_source": "plasma.T_rad owner pointer",
       "physical_meaning": "[input_owner] load T_rad column as runtime owner",
       "new_source": "RadiationField.J_nu",
       "migration_stage": "A2-16",
-      "final_status": "MOVE_TO_OFFLINE_LEGACY_CONVERTER"
+      "final_status": "CLOSED_A2_16_G0_SEED_REVOKED"
     },
     {
-      "file_line": "src/lumina_atomic.c:854",
+      "file_line": "이관 완료(A2-16·686a4a1fadcd1a57e10dbf8ee37c17b248c87841)",
       "symbol": "plasma->W",
       "current_source": "plasma.W owner pointer",
       "physical_meaning": "[input_owner] pass W owner into cross-field validation",
       "new_source": "RadiationField.J_nu",
       "migration_stage": "A2-16",
-      "final_status": "MOVE_TO_OFFLINE_LEGACY_CONVERTER"
+      "final_status": "CLOSED_A2_16_G0_SEED_REVOKED"
     },
     {
-      "file_line": "src/lumina_atomic.c:854",
+      "file_line": "이관 완료(A2-16·686a4a1fadcd1a57e10dbf8ee37c17b248c87841)",
       "symbol": "plasma->T_rad",
       "current_source": "plasma.T_rad owner pointer",
       "physical_meaning": "[input_owner] pass T_rad owner into cross-field validation",
       "new_source": "RadiationField.J_nu",
       "migration_stage": "A2-16",
-      "final_status": "MOVE_TO_OFFLINE_LEGACY_CONVERTER"
+      "final_status": "CLOSED_A2_16_G0_SEED_REVOKED"
     },
     {
-      "file_line": "src/lumina_atomic.c:874",
+      "file_line": "이관 완료(A2-16·686a4a1fadcd1a57e10dbf8ee37c17b248c87841)",
       "symbol": "plasma->W[0]",
       "current_source": "plasma.W",
       "physical_meaning": "[input_owner] loaded owner summary",
       "new_source": "RadiationField.J_nu",
       "migration_stage": "A2-16",
-      "final_status": "MOVE_TO_OFFLINE_LEGACY_CONVERTER"
+      "final_status": "CLOSED_A2_16_G0_SEED_REVOKED"
     },
     {
-      "file_line": "src/lumina_plasma.c:1182",
+      "file_line": "이관 완료(A2-17·dd9cd398698914b5e004e33d1c8ec41fcd5f411f)",
       "symbol": "plasma->T_rad[i]",
       "current_source": "plasma.T_rad",
       "physical_meaning": "[diagnostic] binned-field fit diagnostic",
       "new_source": "RadiationField generation-bound diagnostic",
-      "migration_stage": "A2-11",
-      "final_status": "KEEP_OUTPUT_ONLY_DIAGNOSTIC"
+      "migration_stage": "A2-17",
+      "final_status": "DIAGNOSTIC_ONLY_CANONICAL_DERIVED"
     },
     {
-      "file_line": "src/lumina_cmfgen.c:970",
+      "file_line": "이관 완료(A2-17·dd9cd398698914b5e004e33d1c8ec41fcd5f411f)",
       "symbol": "plasma->T_rad[s]",
       "current_source": "plasma.T_rad",
       "physical_meaning": "[diagnostic] CMF frozen-state diagnostic",
       "new_source": "RadiationField generation-bound diagnostic",
-      "migration_stage": "A2-11",
-      "final_status": "KEEP_OUTPUT_ONLY_DIAGNOSTIC"
+      "migration_stage": "A2-17",
+      "final_status": "DIAGNOSTIC_ONLY_CANONICAL_DERIVED"
     },
     {
-      "file_line": "src/lumina_cmfgen.c:1612",
+      "file_line": "이관 완료(A2-17·dd9cd398698914b5e004e33d1c8ec41fcd5f411f)",
       "symbol": "plasma->T_rad",
       "current_source": "plasma.T_rad owner array",
       "physical_meaning": "[diagnostic] CMF state checksum diagnostic",
       "new_source": "RadiationField generation-bound diagnostic",
-      "migration_stage": "A2-11",
-      "final_status": "KEEP_OUTPUT_ONLY_DIAGNOSTIC"
+      "migration_stage": "A2-17",
+      "final_status": "DIAGNOSTIC_ONLY_CANONICAL_DERIVED"
     },
     {
-      "file_line": "src/lumina_element_wide.c:2325",
+      "file_line": "이관 완료(A2-17·dd9cd398698914b5e004e33d1c8ec41fcd5f411f)",
       "symbol": "plasma->W[shell]",
       "current_source": "plasma.W",
       "physical_meaning": "[diagnostic] element-wide provenance diagnostic",
       "new_source": "RadiationField generation-bound diagnostic",
-      "migration_stage": "A2-11",
-      "final_status": "KEEP_OUTPUT_ONLY_DIAGNOSTIC"
+      "migration_stage": "A2-17",
+      "final_status": "DIAGNOSTIC_ONLY_CANONICAL_DERIVED"
     },
     {
       "file_line": "이관 완료(A2-15·84a148159185004f6f25db4bed51a3d5b5896d44)",
@@ -1174,7 +1174,7 @@
       "physical_meaning": "[GPU_emissivity] GPU macro-atom Planck re-emission",
       "new_source": "RadiationField.J_nu",
       "migration_stage": "A2-15",
-      "final_status": "REPLACE_GPU_PLANCK_EMISSIVITY_READ"
+      "final_status": "CLOSED_A2_15_GPU_EMISSIVITY"
     },
     {
       "file_line": "이관 완료(A2-15·84a148159185004f6f25db4bed51a3d5b5896d44)",
@@ -1183,7 +1183,7 @@
       "physical_meaning": "[GPU_emissivity] GPU UV thermalization",
       "new_source": "RadiationField.J_nu",
       "migration_stage": "A2-15",
-      "final_status": "REPLACE_GPU_PLANCK_EMISSIVITY_READ"
+      "final_status": "CLOSED_A2_15_GPU_EMISSIVITY"
     },
     {
       "file_line": "이관 완료(A2-15·84a148159185004f6f25db4bed51a3d5b5896d44)",
@@ -1192,7 +1192,7 @@
       "physical_meaning": "[GPU_emissivity] GPU IR thermalization",
       "new_source": "RadiationField.J_nu",
       "migration_stage": "A2-15",
-      "final_status": "REPLACE_GPU_PLANCK_EMISSIVITY_READ"
+      "final_status": "CLOSED_A2_15_GPU_EMISSIVITY"
     },
     {
       "file_line": "이관 완료(A2-15·84a148159185004f6f25db4bed51a3d5b5896d44)",
@@ -1201,151 +1201,151 @@
       "physical_meaning": "[GPU_emissivity] GPU packet source re-emission",
       "new_source": "RadiationField.J_nu",
       "migration_stage": "A2-15",
-      "final_status": "REPLACE_GPU_PLANCK_EMISSIVITY_READ"
+      "final_status": "CLOSED_A2_15_GPU_EMISSIVITY"
     },
     {
-      "file_line": "src/lumina_plasma.c:14127",
+      "file_line": "이관 완료(A2-17·dd9cd398698914b5e004e33d1c8ec41fcd5f411f)",
       "symbol": "W",
       "current_source": "local alias of plasma->W[s]",
       "physical_meaning": "[rate_diagnostic] coupled-rate luminosity diagnostic",
       "new_source": "RadiationField generation-bound diagnostic",
-      "migration_stage": "A2-06",
-      "final_status": "DERIVE_RATE_DIAGNOSTIC_FROM_CANONICAL_FIELD"
+      "migration_stage": "A2-17",
+      "final_status": "DIAGNOSTIC_ONLY_CANONICAL_DERIVED"
     },
     {
-      "file_line": "src/lumina_plasma.c:14147",
+      "file_line": "이관 완료(A2-17·dd9cd398698914b5e004e33d1c8ec41fcd5f411f)",
       "symbol": "W",
       "current_source": "local alias of plasma->W[s]",
       "physical_meaning": "[rate_diagnostic] coupled-rate floor diagnostic",
       "new_source": "RadiationField generation-bound diagnostic",
-      "migration_stage": "A2-06",
-      "final_status": "DERIVE_RATE_DIAGNOSTIC_FROM_CANONICAL_FIELD"
+      "migration_stage": "A2-17",
+      "final_status": "DIAGNOSTIC_ONLY_CANONICAL_DERIVED"
     },
     {
-      "file_line": "src/lumina_plasma.c:14287",
+      "file_line": "이관 완료(A2-17·dd9cd398698914b5e004e33d1c8ec41fcd5f411f)",
       "symbol": "T_rad",
       "current_source": "local alias of plasma->T_rad[s]",
       "physical_meaning": "[rate_diagnostic] coupled-rate residual diagnostic",
       "new_source": "RadiationField generation-bound diagnostic",
-      "migration_stage": "A2-06",
-      "final_status": "DERIVE_RATE_DIAGNOSTIC_FROM_CANONICAL_FIELD"
+      "migration_stage": "A2-17",
+      "final_status": "DIAGNOSTIC_ONLY_CANONICAL_DERIVED"
     },
     {
-      "file_line": "src/lumina_cuda.cu:530",
+      "file_line": "이관 완료(A2-12·7f72c0d95f9ae94166b856e54008ac230ca3c504)",
       "symbol": "plasma->T_rad",
       "current_source": "plasma.T_rad upload source",
       "physical_meaning": "[GPU_transfer] transport scalar upload",
       "new_source": "RadiationField generation lifecycle",
       "migration_stage": "A2-12",
-      "final_status": "REPLACE_GPU_TRANSFER_SCALAR_READ"
+      "final_status": "CLOSED_A2_12_15_GPU_NO_SCALAR"
     },
     {
-      "file_line": "src/lumina_cuda.cu:10016",
+      "file_line": "이관 완료(A2-12·7f72c0d95f9ae94166b856e54008ac230ca3c504)",
       "symbol": "plasma.W[i]",
       "current_source": "plasma.W",
       "physical_meaning": "[GPU_transfer] GPU transfer-state CSV",
       "new_source": "RadiationField generation lifecycle",
       "migration_stage": "A2-12",
-      "final_status": "REPLACE_GPU_TRANSFER_SCALAR_READ"
+      "final_status": "CLOSED_A2_12_15_GPU_NO_SCALAR"
     },
     {
-      "file_line": "src/lumina_cuda.cu:10016",
+      "file_line": "이관 완료(A2-12·7f72c0d95f9ae94166b856e54008ac230ca3c504)",
       "symbol": "plasma.T_rad[i]",
       "current_source": "plasma.T_rad",
       "physical_meaning": "[GPU_transfer] GPU transfer-state CSV",
       "new_source": "RadiationField generation lifecycle",
       "migration_stage": "A2-12",
-      "final_status": "REPLACE_GPU_TRANSFER_SCALAR_READ"
+      "final_status": "CLOSED_A2_12_15_GPU_NO_SCALAR"
     },
     {
-      "file_line": "src/lumina_cmfgen.c:908",
+      "file_line": "이관 완료(A2-08·8a9f861efb12e749fd47926b8e78be17d4ba8070)",
       "symbol": "plasma->T_rad[s]",
       "current_source": "plasma.T_rad",
       "physical_meaning": "[opacity] CMF emissivity/opacity regime split",
       "new_source": "RadiationField.J_nu",
       "migration_stage": "A2-08",
-      "final_status": "REPLACE_OPACITY_SCALAR_READ"
+      "final_status": "CLOSED_A2_08_SIGNED_OPACITY"
     },
     {
-      "file_line": "src/lumina_cmfgen.c:2144",
+      "file_line": "이관 완료(A2-08·8a9f861efb12e749fd47926b8e78be17d4ba8070)",
       "symbol": "plasma->T_rad[s]",
       "current_source": "plasma.T_rad",
       "physical_meaning": "[opacity] CMF hot-regime opacity split",
       "new_source": "RadiationField.J_nu",
       "migration_stage": "A2-08",
-      "final_status": "REPLACE_OPACITY_SCALAR_READ"
+      "final_status": "CLOSED_A2_08_SIGNED_OPACITY"
     },
     {
-      "file_line": "src/lumina_plasma.c:18314",
+      "file_line": "이관 완료(A2-08·8a9f861efb12e749fd47926b8e78be17d4ba8070)",
       "symbol": "T_rad",
       "current_source": "local alias of plasma->T_rad[s]",
       "physical_meaning": "[opacity] formal opacity thermal width",
       "new_source": "RadiationField.J_nu",
       "migration_stage": "A2-08",
-      "final_status": "REPLACE_OPACITY_SCALAR_READ"
+      "final_status": "CLOSED_A2_08_SIGNED_OPACITY"
     },
     {
-      "file_line": "src/lumina_plasma.c:15230",
+      "file_line": "이관 완료(A2-16·686a4a1fadcd1a57e10dbf8ee37c17b248c87841)",
       "symbol": "plasma->T_rad[shell]",
       "current_source": "plasma.T_rad",
       "physical_meaning": "[seed_rate] NLTE rate seed temperature",
       "new_source": "RadiationField.J_nu",
       "migration_stage": "A2-16",
-      "final_status": "LIMIT_RATE_SEED_TO_GENERATION_ZERO"
+      "final_status": "CLOSED_A2_16_G0_SEED_REVOKED"
     },
     {
-      "file_line": "src/lumina_plasma.c:15422",
+      "file_line": "이관 완료(A2-16·686a4a1fadcd1a57e10dbf8ee37c17b248c87841)",
       "symbol": "plasma->W[shell]",
       "current_source": "plasma.W",
       "physical_meaning": "[seed_rate] dilute GPU-assembly seed field",
       "new_source": "RadiationField.J_nu",
       "migration_stage": "A2-16",
-      "final_status": "LIMIT_RATE_SEED_TO_GENERATION_ZERO"
+      "final_status": "CLOSED_A2_16_G0_SEED_REVOKED"
     },
     {
-      "file_line": "src/lumina_plasma.c:15424",
+      "file_line": "이관 완료(A2-16·686a4a1fadcd1a57e10dbf8ee37c17b248c87841)",
       "symbol": "plasma->T_rad[0]",
       "current_source": "plasma.T_rad",
       "physical_meaning": "[seed_rate] dilute GPU-assembly seed color",
       "new_source": "RadiationField.J_nu",
       "migration_stage": "A2-16",
-      "final_status": "LIMIT_RATE_SEED_TO_GENERATION_ZERO"
+      "final_status": "CLOSED_A2_16_G0_SEED_REVOKED"
     },
     {
-      "file_line": "src/lumina_atomic.c:1097",
+      "file_line": "이관 완료(A2-17·dd9cd398698914b5e004e33d1c8ec41fcd5f411f)",
       "symbol": "ps->W",
       "current_source": "plasma.W allocation",
       "physical_meaning": "[lifecycle] free scalar owner",
       "new_source": "RadiationField generation lifecycle",
       "migration_stage": "A2-17",
-      "final_status": "REMOVE_SCALAR_LIFECYCLE"
+      "final_status": "REMOVED_A2_17_SCALAR_OWNER_LIFECYCLE_OUTPUT"
     },
     {
-      "file_line": "src/lumina_atomic.c:1098",
+      "file_line": "이관 완료(A2-17·dd9cd398698914b5e004e33d1c8ec41fcd5f411f)",
       "symbol": "ps->T_rad",
       "current_source": "plasma.T_rad allocation",
       "physical_meaning": "[lifecycle] free scalar owner",
       "new_source": "RadiationField generation lifecycle",
       "migration_stage": "A2-17",
-      "final_status": "REMOVE_SCALAR_LIFECYCLE"
+      "final_status": "REMOVED_A2_17_SCALAR_OWNER_LIFECYCLE_OUTPUT"
     },
     {
-      "file_line": "src/lumina_main.c:357",
+      "file_line": "이관 완료(A2-17·dd9cd398698914b5e004e33d1c8ec41fcd5f411f)",
       "symbol": "plasma.T_rad[i]",
       "current_source": "plasma.T_rad",
       "physical_meaning": "[output] CPU plasma-state owner output",
       "new_source": "RadiationField generation-bound diagnostic",
       "migration_stage": "A2-17",
-      "final_status": "REMOVE_SCALAR_OWNER_OUTPUT"
+      "final_status": "REMOVED_A2_17_SCALAR_OWNER_LIFECYCLE_OUTPUT"
     },
     {
-      "file_line": "src/lumina_cuda.cu:11040",
+      "file_line": "이관 완료(A2-17·dd9cd398698914b5e004e33d1c8ec41fcd5f411f)",
       "symbol": "plasma.W[i]",
       "current_source": "plasma.W",
       "physical_meaning": "[output] CUDA plasma-state owner output",
       "new_source": "RadiationField generation-bound diagnostic",
       "migration_stage": "A2-17",
-      "final_status": "REMOVE_SCALAR_OWNER_OUTPUT"
+      "final_status": "REMOVED_A2_17_SCALAR_OWNER_LIFECYCLE_OUTPUT"
     },
     {
       "file_line": "이관 완료(A2-07·3ddd95c0de20abea3284ca326ce41b7968d4b26d)",
@@ -1354,7 +1354,7 @@
       "physical_meaning": "[Boltzmann_partition] partition-function temperature",
       "new_source": "plasma->T_e",
       "migration_stage": "A2-07",
-      "final_status": "USE_MATTER_TEMPERATURE"
+      "final_status": "CLOSED_A2_07_MATTER_TE"
     },
     {
       "file_line": "이관 완료(A2-07·3ddd95c0de20abea3284ca326ce41b7968d4b26d)",
@@ -1363,25 +1363,25 @@
       "physical_meaning": "[Boltzmann_partition] non-metastable partition dilution",
       "new_source": "plasma->T_e",
       "migration_stage": "A2-07",
-      "final_status": "USE_MATTER_TEMPERATURE"
+      "final_status": "CLOSED_A2_07_MATTER_TE"
     },
     {
-      "file_line": "이관 완료(A2-07·3ddd95c0de20abea3284ca326ce41b7968d4b26d)",
+      "file_line": "이관 완료(A2-09·bf2af37fa11a18c2529559311a7a23fd0c41b60c)",
       "symbol": "plasma->T_rad[s]",
       "current_source": "plasma.T_rad",
       "physical_meaning": "[transition_probability] macro-atom transition population temperature",
       "new_source": "Jbar[RadiationField.J_nu]",
       "migration_stage": "A2-09",
-      "final_status": "DERIVE_TRANSITION_PROBABILITY_FROM_JBAR"
+      "final_status": "CLOSED_A2_09_EMISSIVITY"
     },
     {
-      "file_line": "이관 완료(A2-07·3ddd95c0de20abea3284ca326ce41b7968d4b26d)",
+      "file_line": "이관 완료(A2-09·bf2af37fa11a18c2529559311a7a23fd0c41b60c)",
       "symbol": "plasma->W[s]",
       "current_source": "plasma.W",
       "physical_meaning": "[transition_probability] macro-atom transition population dilution",
       "new_source": "Jbar[RadiationField.J_nu]",
       "migration_stage": "A2-09",
-      "final_status": "DERIVE_TRANSITION_PROBABILITY_FROM_JBAR"
+      "final_status": "CLOSED_A2_09_EMISSIVITY"
     },
     {
       "file_line": "이관 완료(A2-07·3ddd95c0de20abea3284ca326ce41b7968d4b26d)",
@@ -1390,7 +1390,7 @@
       "physical_meaning": "[rate_Boltzmann] Boltzmann rate temperature",
       "new_source": "plasma->T_e",
       "migration_stage": "A2-07",
-      "final_status": "USE_MATTER_TEMPERATURE_FOR_BOLTZMANN_RATE"
+      "final_status": "CLOSED_A2_07_MATTER_TE"
     },
     {
       "file_line": "이관 완료(A2-07·3ddd95c0de20abea3284ca326ce41b7968d4b26d)",
@@ -1399,25 +1399,25 @@
       "physical_meaning": "[rate_Boltzmann] Boltzmann rate dilution",
       "new_source": "plasma->T_e",
       "migration_stage": "A2-07",
-      "final_status": "USE_MATTER_TEMPERATURE_FOR_BOLTZMANN_RATE"
+      "final_status": "CLOSED_A2_07_MATTER_TE"
     },
     {
-      "file_line": "src/lumina_plasma.c:12561",
+      "file_line": "이관 완료(A2-10·068fb36dc182b00757f4b4e6a1a4cd56a1f25500)",
       "symbol": "plasma->T_rad[s]",
       "current_source": "plasma.T_rad",
       "physical_meaning": "[rate_radeq] RADEQ rate temperature",
       "new_source": "A210TermLedger.checked_J_nu",
       "migration_stage": "A2-10",
-      "final_status": "USE_TYPED_TERM_LEDGER_IN_RADEQ"
+      "final_status": "CLOSED_A2_10_RADEQ_CANONICAL"
     },
     {
-      "file_line": "src/lumina_plasma.c:12562",
+      "file_line": "이관 완료(A2-10·068fb36dc182b00757f4b4e6a1a4cd56a1f25500)",
       "symbol": "plasma->W[s]",
       "current_source": "plasma.W",
       "physical_meaning": "[rate_radeq] RADEQ rate dilution",
       "new_source": "A210TermLedger.checked_J_nu",
       "migration_stage": "A2-10",
-      "final_status": "USE_TYPED_TERM_LEDGER_IN_RADEQ"
+      "final_status": "CLOSED_A2_10_RADEQ_CANONICAL"
     },
     {
       "file_line": "이관 완료(A2-07·3ddd95c0de20abea3284ca326ce41b7968d4b26d)",
@@ -1426,7 +1426,7 @@
       "physical_meaning": "[Boltzmann_diagnostic] level-population Boltzmann diagnostic",
       "new_source": "plasma->T_e",
       "migration_stage": "A2-07",
-      "final_status": "DIAGNOSE_BOLTZMANN_WITH_MATTER_TEMPERATURE"
+      "final_status": "CLOSED_A2_07_MATTER_TE"
     },
     {
       "file_line": "이관 완료(A2-07·3ddd95c0de20abea3284ca326ce41b7968d4b26d)",
@@ -1435,25 +1435,25 @@
       "physical_meaning": "[Boltzmann_diagnostic] level-population dilution diagnostic",
       "new_source": "plasma->T_e",
       "migration_stage": "A2-07",
-      "final_status": "DIAGNOSE_BOLTZMANN_WITH_MATTER_TEMPERATURE"
+      "final_status": "CLOSED_A2_07_MATTER_TE"
     },
     {
-      "file_line": "src/lumina_atomic.c:915",
+      "file_line": "이관 완료(A2-16·686a4a1fadcd1a57e10dbf8ee37c17b248c87841)",
       "symbol": "plasma->T_rad[i]",
       "current_source": "plasma.T_rad",
       "physical_meaning": "[seed] initial electron-temperature seed",
       "new_source": "RadiationField.J_nu",
       "migration_stage": "A2-16",
-      "final_status": "LIMIT_SCALAR_SEED_TO_GENERATION_ZERO"
+      "final_status": "CLOSED_A2_16_G0_SEED_REVOKED"
     },
     {
-      "file_line": "src/lumina_plasma.c:8172",
+      "file_line": "이관 완료(A2-09·bf2af37fa11a18c2529559311a7a23fd0c41b60c)",
       "symbol": "a209_sample_reemit_frequency",
       "current_source": "CpuEmissivityPublication.eta_reemit",
       "physical_meaning": "[emissivity] CPU BF generation-bound eta re-emission",
       "new_source": "CpuEmissivityPublication.eta_reemit",
       "migration_stage": "A2-09",
-      "final_status": "REPLACE_PLANCK_REEMISSION_SOURCE"
+      "final_status": "CLOSED_A2_09_EMISSIVITY"
     }
   ]
 }

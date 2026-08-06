@@ -120,6 +120,73 @@ DISPOSITION_OVERRIDES = {
 A2_07_COMPLETION_COMMIT = "3ddd95c0de20abea3284ca326ce41b7968d4b26d"
 A2_14_COMPLETION_COMMIT = "65498e18e9826ea0cdb5906b71cebecef4b82637"
 A2_15_COMPLETION_COMMIT = "84a148159185004f6f25db4bed51a3d5b5896d44"
+A2_17_COMPLETION_COMMIT = "dd9cd398698914b5e004e33d1c8ec41fcd5f411f"
+
+TERMINAL_RANGES = (
+    (1, 6, "CLOSED_A2_06_CANONICAL_JBAR"),
+    (7, 10, "CLOSED_A2_07_MATTER_TE"),
+    (11, 14, "CLOSED_A2_06_CANONICAL_JBAR"),
+    (15, 16, "CLOSED_A2_07_MATTER_TE"),
+    (17, 18, "DIAGNOSTIC_ONLY_CANONICAL_DERIVED"),
+    (19, 20, "CLOSED_A2_06_CANONICAL_JBAR"),
+    (21, 22, "CLOSED_A2_07_MATTER_TE"),
+    (23, 24, "CLOSED_A2_06_CANONICAL_JBAR"),
+    (25, 38, "DIAGNOSTIC_ONLY_CANONICAL_DERIVED"),
+    (39, 51, "CLOSED_A2_14_GPU_SIGNED_OPACITY"),
+    (52, 62, "CLOSED_A2_12_15_GPU_NO_SCALAR"),
+    (63, 71, "CLOSED_A2_08_SIGNED_OPACITY"),
+    (72, 80, "CLOSED_A2_11_FORMAL_NO_SCALAR"),
+    (81, 88, "CLOSED_A2_12_15_GPU_NO_SCALAR"),
+    (89, 96, "CLOSED_A2_13_GPU_RATE"),
+    (97, 110, "CLOSED_A2_04_CANONICAL_COMMIT"),
+    (111, 121, "CLOSED_A2_16_G0_SEED_REVOKED"),
+    (122, 125, "DIAGNOSTIC_ONLY_CANONICAL_DERIVED"),
+    (126, 129, "CLOSED_A2_15_GPU_EMISSIVITY"),
+    (130, 132, "DIAGNOSTIC_ONLY_CANONICAL_DERIVED"),
+    (133, 135, "CLOSED_A2_12_15_GPU_NO_SCALAR"),
+    (136, 138, "CLOSED_A2_08_SIGNED_OPACITY"),
+    (139, 141, "CLOSED_A2_16_G0_SEED_REVOKED"),
+    (142, 145, "REMOVED_A2_17_SCALAR_OWNER_LIFECYCLE_OUTPUT"),
+    (146, 147, "CLOSED_A2_07_MATTER_TE"),
+    (148, 149, "CLOSED_A2_09_EMISSIVITY"),
+    (150, 151, "CLOSED_A2_07_MATTER_TE"),
+    (152, 153, "CLOSED_A2_10_RADEQ_CANONICAL"),
+    (154, 155, "CLOSED_A2_07_MATTER_TE"),
+    (156, 156, "CLOSED_A2_16_G0_SEED_REVOKED"),
+    (157, 157, "CLOSED_A2_09_EMISSIVITY"),
+)
+
+COMMIT_BY_STAGE = {
+    "A2-04": "bafd2bbdfbcdb7e84b6f573b37785e30185865f0",
+    "A2-06": "ece5aef8e192e2166b647ee00aae5fdd1f935a1c",
+    "A2-07": "3ddd95c0de20abea3284ca326ce41b7968d4b26d",
+    "A2-08": "8a9f861efb12e749fd47926b8e78be17d4ba8070",
+    "A2-09": "bf2af37fa11a18c2529559311a7a23fd0c41b60c",
+    "A2-10": "068fb36dc182b00757f4b4e6a1a4cd56a1f25500",
+    "A2-11": "9b73c042dcc5feae75c58ff8e00547b33ea36d93",
+    "A2-12": "7f72c0d95f9ae94166b856e54008ac230ca3c504",
+    "A2-13": "d47a596182e9e04cb05b74ce816966dd3a29e466",
+    "A2-14": "65498e18e9826ea0cdb5906b71cebecef4b82637",
+    "A2-15": "84a148159185004f6f25db4bed51a3d5b5896d44",
+    "A2-16": "686a4a1fadcd1a57e10dbf8ee37c17b248c87841",
+    "A2-17": A2_17_COMPLETION_COMMIT,
+}
+
+
+def terminal_state(index: int) -> str:
+    for first, last, state in TERMINAL_RANGES:
+        if first <= index <= last:
+            return state
+    raise ValueError(f"no terminal state for row {index}")
+
+
+def terminal_stage(state: str) -> str:
+    if state.startswith("DIAGNOSTIC_ONLY"):
+        return "A2-17"
+    match = re.search(r"A2_(\d+)", state)
+    if not match:
+        raise ValueError(f"no stage in terminal state {state}")
+    return f"A2-{match.group(1)}"
 
 # These exact census rows lost their registered token in the A2-07 migration.
 # They retain symbol/meaning/new-source/stage/final-status unchanged; only the
@@ -137,6 +204,15 @@ COMPLETED_ROWS.update({
     index: ("A2-14", A2_14_COMPLETION_COMMIT)
     for index in range(39, 52)
 })
+
+# A2-17 is the final zero-consumer audit. Every canonical row now has a stable
+# terminal state and a stage-specific owning commit; no vanished legacy token
+# is treated as a current source witness.
+COMPLETED_ROWS = {
+    index: (terminal_stage(terminal_state(index)),
+            COMMIT_BY_STAGE[terminal_stage(terminal_state(index))])
+    for index in range(1, 158)
+}
 COMPLETED_ROWS.update({
     index: ("A2-14", A2_14_COMPLETION_COMMIT)
     for index in (81, 82, 83, 84)
@@ -360,6 +436,8 @@ def row_for_site(index: int, site: Site) -> dict[str, str]:
     source, stage, status = DISPOSITION_OVERRIDES.get(
         index, ROLE_POLICY[site.role]
     )
+    stage = terminal_stage(terminal_state(index))
+    status = terminal_state(index)
     return {
         "file_line": (
             completion_marker(index)
@@ -379,7 +457,7 @@ def ledger_document() -> dict[str, object]:
     rows = [row_for_site(index, site) for index, site in enumerate(SITES, 1)]
     return {
         "schema": SCHEMA,
-        "stage": "A2-01",
+        "stage": "A2-17-terminal",
         "row_count": len(rows),
         "unclassified": 0,
         "role_counts": dict(Counter(site.role for site in SITES)),
@@ -396,7 +474,7 @@ def markdown(document: dict[str, object], addenda: str = "") -> str:
         "",
         f"- 행 수: {document['row_count']}",
         f"- 미분류: {document['unclassified']}",
-        "- 이 표는 측량 결과이며 A2-01에서 공급원을 교체하지 않는다.",
+        "- A2-17 zero-consumer 감사로 157행의 종결 상태와 owning commit을 고정한다.",
         "",
         "| 파일:행 | 심볼 | 현재 공급원 | 물리 의미 | 새 공급원 | 이행 단계 | 최종 상태 |",
         "|---|---|---|---|---|---|---|",
