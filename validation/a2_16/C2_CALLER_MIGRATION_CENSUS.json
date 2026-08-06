@@ -1,0 +1,105 @@
+{
+ "schema": "lumina-c2-caller-migration-census-v1",
+ "when": "2026-08-06",
+ "method": "운전석 기계 census (Codex 4회 연속 탐색 중 종료로 위임 불가 — 증거는 운전석이 모으고 판정만 위임하는 방식으로 전환)",
+ "hard_reject_env_total": 12,
+ "sites": [
+  "src/lumina_atomic.c:838 -> src/seed_capability.c:79 (obsolete scalar)",
+  "src/lumina_plasma.c:14958-14982 (forbidden population knobs)"
+ ],
+ "per_env": [
+  {
+   "env": "LUMINA_TE_TRAD_RATIO",
+   "launchers_setting": 78,
+   "launchers_triggering": 78,
+   "trigger": "non-empty"
+  },
+  {
+   "env": "LUMINA_TRAD_COLOR_FIX",
+   "launchers_setting": 12,
+   "launchers_triggering": 12,
+   "trigger": "non-empty"
+  },
+  {
+   "env": "LUMINA_C2_MATRIX_BF",
+   "launchers_setting": 0,
+   "launchers_triggering": 0,
+   "trigger": "atoi!=0"
+  },
+  {
+   "env": "LUMINA_FROZENIN",
+   "launchers_setting": 92,
+   "launchers_triggering": 37,
+   "trigger": "atoi!=0"
+  },
+  {
+   "env": "LUMINA_NLTE_BF_JEQB",
+   "launchers_setting": 1,
+   "launchers_triggering": 1,
+   "trigger": "atoi!=0"
+  },
+  {
+   "env": "LUMINA_NLTE_BK_PARTIAL",
+   "launchers_setting": 1,
+   "launchers_triggering": 1,
+   "trigger": "atoi!=0"
+  },
+  {
+   "env": "LUMINA_NLTE_FLOOR_MODE",
+   "launchers_setting": 18,
+   "launchers_triggering": 9,
+   "trigger": "atoi!=0"
+  },
+  {
+   "env": "LUMINA_NLTE_FLOOR_REG",
+   "launchers_setting": 146,
+   "launchers_triggering": 71,
+   "trigger": "atoi!=0"
+  },
+  {
+   "env": "LUMINA_NLTE_FORCE_LTE_LEVELS",
+   "launchers_setting": 2,
+   "launchers_triggering": 2,
+   "trigger": "atoi!=0"
+  },
+  {
+   "env": "LUMINA_NLTE_JEQB",
+   "launchers_setting": 1,
+   "launchers_triggering": 1,
+   "trigger": "atoi!=0"
+  },
+  {
+   "env": "LUMINA_NLTE_LTE_REPAIR",
+   "launchers_setting": 1,
+   "launchers_triggering": 1,
+   "trigger": "atoi!=0"
+  },
+  {
+   "env": "LUMINA_TOPSTAGE_THERMALIZE",
+   "launchers_setting": 1,
+   "launchers_triggering": 1,
+   "trigger": "atoi!=0"
+  }
+ ],
+ "launchers_affected_union": 157,
+ "correction": "앞선 집계 98(78+20)은 과소였다. grep 에 export 접두를 요구하고 [^0 ] 로 좁혔다. 실제 157.",
+ "disposition_split": {
+  "semantically_neutral_removal": [
+   "LUMINA_TE_TRAD_RATIO",
+   "LUMINA_TRAD_COLOR_FIX"
+  ],
+  "real_feature_deliberately_forbidden": [
+   "LUMINA_FROZENIN",
+   "LUMINA_NLTE_FLOOR_REG",
+   "LUMINA_NLTE_FLOOR_MODE",
+   "LUMINA_NLTE_FORCE_LTE_LEVELS",
+   "LUMINA_NLTE_LTE_REPAIR",
+   "LUMINA_NLTE_JEQB",
+   "LUMINA_NLTE_BF_JEQB",
+   "LUMINA_NLTE_BK_PARTIAL",
+   "LUMINA_C2_MATRIX_BF",
+   "LUMINA_TOPSTAGE_THERMALIZE"
+  ],
+  "note": "앞 2종은 죽은 노브라 export 제거가 의미 중립. 뒤 10종은 실제 기능이었고 A2-07 이 의도적으로 금지했다 — 줄을 지우면 그 런의 의미가 바뀐다. 자동 이관 금지, 실행 불가 표시가 맞다."
+ }
+}
