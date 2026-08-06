@@ -160,18 +160,20 @@ extern "C" int bf_gemm_compute(BFOpacity *bf, AtomicData *atom,
     return 0;
 }
 
-/* Fine-ν bf opacity: chi_bf_fine[s,i] = Σ_l n_level[s,l]·σ_bf,l(ν_i) with the bf EDGES
- * resolved at the exact photoion threshold on the fine grid (sharp onset at thr_l +
- * nearest-bin σ magnitude). This is the CMFGEN-method fix: it makes the producer's fine
- * continuum field develop the across-edge frequency structure that the binned grid (and
- * the log-ν interpolation in cmfgen_fine_jbar) averages away. Same dilute-LTE n_level and
- * TF32 GEMM as bf_gemm_compute, just on the fine ν grid, frequency-TILED + memory-aware.
- * chi_bf_fine_out is [n_shells * n_fine] row-major. Returns 0 on success, -1 on failure
- * (caller keeps the interpolated continuum). */
+/* A2-14 production contract: fine-ν reconstruction is not an admissible opacity
+ * input.  Keep the ABI only for the legacy opt-in caller, but fail the process before
+ * it can manufacture a second radiation grid or fall back to interpolated opacity. */
 extern "C" int bf_gemm_compute_fine(BFOpacity *bf, AtomicData *atom, PlasmaState *plasma,
         int n_shells, const double *nu_fine, int n_fine,
         double nu_min_bin, double dlognu_bin, double *chi_bf_fine_out)
 {
+    (void)bf; (void)atom; (void)plasma; (void)n_shells; (void)nu_fine; (void)n_fine;
+    (void)nu_min_bin; (void)dlognu_bin; (void)chi_bf_fine_out;
+    fprintf(stderr, "[A2-14][FATAL] fine-grid GPU opacity is forbidden; "
+                    "use the checked canonical RadiationField view\n");
+    exit(EXIT_FAILURE);
+
+#if 0 /* historical implementation retained only as a source-level tombstone */
     (void)bf;
     /* D-3's level/frequency-dependent stimulated-recombination corrfactor is
      * not a separable GEMM. Return to the caller's corrected coarse-grid
@@ -260,6 +262,7 @@ extern "C" int bf_gemm_compute_fine(BFOpacity *bf, AtomicData *atom, PlasmaState
     }
     free(h_sig); free(h_chi); cudaFree(d_sig); cudaFree(d_chi);
     return 0;
+#endif
 }
 
 extern "C" void bf_gemm_free(void)
