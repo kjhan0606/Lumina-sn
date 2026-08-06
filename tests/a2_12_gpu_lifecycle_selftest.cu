@@ -1,6 +1,7 @@
 #include "gpu_radiation_field.h"
 
 #include <math.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -10,26 +11,60 @@ static const char Q_HASH[] =
 static const char PROFILE_HASH[] =
     "2222222222222222222222222222222222222222222222222222222222222222";
 
-static int commit_fixture(RadiationFieldOwner *owner, uint64_t generation,
-                          size_t n_shells)
+typedef enum {
+    FIXTURE_OK = 0,
+    FIXTURE_BAD_ARGUMENT = 1,
+    FIXTURE_SIZE_OVERFLOW = 2,
+    FIXTURE_HOST_ALLOCATION = 3,
+    FIXTURE_COMMIT_REJECTED = 4
+} FixtureStatus;
+
+static const char *fixture_status_name(FixtureStatus status)
 {
+    switch (status) {
+    case FIXTURE_OK: return "OK";
+    case FIXTURE_BAD_ARGUMENT: return "BAD_ARGUMENT";
+    case FIXTURE_SIZE_OVERFLOW: return "SIZE_OVERFLOW";
+    case FIXTURE_HOST_ALLOCATION: return "HOST_ALLOCATION";
+    case FIXTURE_COMMIT_REJECTED: return "COMMIT_REJECTED";
+    default: return "UNKNOWN";
+    }
+}
+
+static FixtureStatus commit_fixture(RadiationFieldOwner *owner,
+                                    uint64_t generation, size_t n_shells)
+{
+    if (!owner || !owner->enabled || generation == 0 || n_shells == 0 ||
+        n_shells > 4 || owner->field.J_nu.n_shells != n_shells)
+        return FIXTURE_BAD_ARGUMENT;
+    if (n_shells > SIZE_MAX / (size_t)LUMINA_RADFIELD_N_BINS ||
+        n_shells * (size_t)LUMINA_RADFIELD_N_BINS > SIZE_MAX / sizeof(double))
+        return FIXTURE_SIZE_OVERFLOW;
     size_t cells = n_shells * LUMINA_RADFIELD_N_BINS;
     double *j = (double *)malloc(cells * sizeof(double));
     RadiationFieldValidityState *validity =
         (RadiationFieldValidityState *)malloc(cells * sizeof(*validity));
     uint64_t line_id[2] = {17, 29};
-    double line_jbar[8], line_se[8];
+    double line_jbar[8];
     int32_t line_validity[8];
-    if (!j || !validity || n_shells > 4) return -1;
+    if (!j || !validity) {
+        free(j);
+        free(validity);
+        return FIXTURE_HOST_ALLOCATION;
+    }
     for (size_t i = 0; i < cells; ++i) {
         j[i] = (double)(i + 1) * 1e-20;
         validity[i] = RADIATION_FIELD_VALID;
     }
     for (size_t i = 0; i < 2 * n_shells; ++i) {
         line_jbar[i] = (double)(i + 1) * 1e-12;
-        line_se[i] = 0.0;
         line_validity[i] = LINE_JBAR_VALID;
     }
+    /* radiation_field_commit requires a finite, contiguous shell geometry.
+     * The old fixture omitted both pointers, so every GPU-node invocation
+     * stopped in the CPU commit validator before any CUDA operation. */
+    const double v_inner[4] = {1.0e8, 2.0e8, 3.0e8, 4.0e8};
+    const double v_outer[4] = {2.0e8, 3.0e8, 4.0e8, 5.0e8};
     RadiationFieldCommitRequest request;
     memset(&request, 0, sizeof(request));
     request.provenance_kind = RADIATION_FIELD_PROVENANCE_CMFGEN_REPLAY;
@@ -37,6 +72,8 @@ static int commit_fixture(RadiationFieldOwner *owner, uint64_t generation,
     request.generation = generation;
     request.epoch = 86400.0;
     request.n_shells = n_shells;
+    request.v_inner = v_inner;
+    request.v_outer = v_outer;
     request.source_n_bins = LUMINA_RADFIELD_N_BINS;
     request.source_frequency_bin_edges = owner->field.frequency_bin_edges.values;
     request.source_J_nu = j;
@@ -52,7 +89,14 @@ static int commit_fixture(RadiationFieldOwner *owner, uint64_t generation,
     int rc = radiation_field_commit(owner, &request);
     free(j);
     free(validity);
-    return rc;
+    return rc == 0 ? FIXTURE_OK : FIXTURE_COMMIT_REJECTED;
+}
+
+static int valid_mode(const char *mode)
+{
+    if (!strcmp(mode, "positive") || !strcmp(mode, "fixture")) return 1;
+    return mode[0] == 'N' && mode[1] >= '1' && mode[1] <= '9' &&
+           mode[2] == '\0';
 }
 
 static int expected_failure(const char *mode, const char *marker, int rc)
@@ -65,6 +109,11 @@ static int expected_failure(const char *mode, const char *marker, int rc)
 
 int main(int argc, char **argv)
 {
+    if (argc > 2 || (argc == 2 && !valid_mode(argv[1]))) {
+        fprintf(stderr, "A2_12_FIXTURE_BAD_ARGUMENT usage=%s "
+                "[positive|fixture|N1..N9]\n", argv[0]);
+        return 2;
+    }
     const char *mode = argc > 1 ? argv[1] : "positive";
     RadiationFieldOwner owner;
     GpuRadiationFieldMirror *mirror = NULL;
@@ -72,10 +121,32 @@ int main(int argc, char **argv)
     GpuRadiationFieldStatus status;
     memset(&owner, 0, sizeof(owner));
     memset(&report, 0, sizeof(report));
-    if (radiation_field_owner_init(&owner, 2) != 0 ||
-        commit_fixture(&owner, 1, 2) != 0 ||
-        !(mirror = gpu_radiation_field_create())) {
-        fprintf(stderr, "A2_12_FIXTURE_SETUP_FAIL\n");
+    if (radiation_field_owner_init(&owner, 2) != 0) {
+        fprintf(stderr, "A2_12_FIXTURE_OWNER_INIT_FAIL n_shells=2 "
+                "host_bytes_min=%zu\n",
+                2 * (size_t)LUMINA_RADFIELD_N_BINS *
+                    (2 * sizeof(double) + sizeof(RadiationFieldValidityState) +
+                     2 * sizeof(uint64_t)));
+        return 70;
+    }
+    FixtureStatus fixture_status = commit_fixture(&owner, 1, 2);
+    if (fixture_status != FIXTURE_OK) {
+        fprintf(stderr, "A2_12_FIXTURE_COMMIT_FAIL reason=%s generation=1 "
+                "n_shells=2 n_bins=%d geometry=present\n",
+                fixture_status_name(fixture_status), LUMINA_RADFIELD_N_BINS);
+        radiation_field_owner_free(&owner);
+        return 70;
+    }
+    if (!strcmp(mode, "fixture")) {
+        printf("A2_12_FIXTURE_CPU PASS generation=1 n_shells=2 n_bins=%d\n",
+               LUMINA_RADFIELD_N_BINS);
+        radiation_field_owner_free(&owner);
+        return 0;
+    }
+    mirror = gpu_radiation_field_create();
+    if (!mirror) {
+        fprintf(stderr, "A2_12_FIXTURE_MIRROR_CREATE_FAIL reason=HOST_ALLOCATION\n");
+        radiation_field_owner_free(&owner);
         return 70;
     }
 
