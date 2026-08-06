@@ -647,15 +647,115 @@ static int config_prec_parse_positive_double(const char *name,
     return 0;
 }
 
+typedef struct {
+    int rows;
+    int invalid_rows;
+    double color_first;
+    double color_min;
+    double color_max;
+} ConfigPrecWitness;
+
+/* Read the retired scalar columns only as a deck-integrity witness.  Values
+ * are reduced row-by-row and are never published into PlasmaState, retained,
+ * or used to seed radiation/material state. */
+static int config_prec_read_witness(const char *ref_dir,
+                                    ConfigPrecWitness *witness) {
+    char path[512];
+    char line[4096];
+    int w_col = -1, trad_col = -1;
+    snprintf(path, sizeof(path), "%s/plasma_state.csv", ref_dir);
+    FILE *fp = fopen(path, "r");
+    if (!fp || !fgets(line, sizeof(line), fp)) {
+        if (fp) fclose(fp);
+        fprintf(stderr,
+                "[CONFIG-PREC][FATAL] plasma_state.csv witness unavailable in %s\n",
+                ref_dir);
+        return -1;
+    }
+
+    int column = 0;
+    for (char *field = line; field && *field; column++) {
+        char *end = strpbrk(field, ",\r\n");
+        char saved = end ? *end : '\0';
+        if (end) *end = '\0';
+        while (*field == ' ' || *field == '\t') field++;
+        if (strcmp(field, "W") == 0) w_col = column;
+        if (strcmp(field, "T_rad") == 0) trad_col = column;
+        if (!end || saved != ',') break;
+        *end = saved;
+        field = end + 1;
+    }
+    if (w_col < 0 || trad_col < 0) {
+        fclose(fp);
+        fprintf(stderr,
+                "[CONFIG-PREC][FATAL] plasma_state.csv witness columns unavailable in %s\n",
+                ref_dir);
+        return -1;
+    }
+
+    memset(witness, 0, sizeof(*witness));
+    while (fgets(line, sizeof(line), fp)) {
+        if (line[0] == '\n' || line[0] == '\r') continue;
+        double row_w = NAN, row_trad = NAN;
+        int row_column = 0;
+        for (char *field = line; field && *field; row_column++) {
+            char *end = strpbrk(field, ",\r\n");
+            char saved = end ? *end : '\0';
+            if (end) *end = '\0';
+            if (row_column == w_col || row_column == trad_col) {
+                char *number_end = NULL;
+                errno = 0;
+                double value = strtod(field, &number_end);
+                while (number_end && (*number_end == ' ' || *number_end == '\t'))
+                    number_end++;
+                if (errno == ERANGE || number_end == field ||
+                    (number_end && *number_end != '\0'))
+                    value = NAN;
+                if (row_column == w_col) row_w = value;
+                if (row_column == trad_col) row_trad = value;
+            }
+            if (!end || saved != ',') break;
+            *end = saved;
+            field = end + 1;
+        }
+
+        witness->rows++;
+        if (!isfinite(row_w) || row_w <= 0.0 || row_w > 1.0 ||
+            !isfinite(row_trad) || row_trad <= 0.0) {
+            witness->invalid_rows++;
+            continue;
+        }
+        double color = row_trad / pow(row_w, 0.25);
+        if (!isfinite(color) || color <= 0.0) {
+            witness->invalid_rows++;
+            continue;
+        }
+        if (witness->rows - witness->invalid_rows == 1) {
+            witness->color_first = witness->color_min = witness->color_max = color;
+        } else {
+            if (color < witness->color_min) witness->color_min = color;
+            if (color > witness->color_max) witness->color_max = color;
+        }
+    }
+    if (ferror(fp) || fclose(fp) != 0) {
+        fprintf(stderr,
+                "[CONFIG-PREC][FATAL] plasma_state.csv witness read failed in %s\n",
+                ref_dir);
+        return -1;
+    }
+    return 0;
+}
+
 static int config_prec_resolve_boundary_temperature(
         const char *ref_dir, double deck_T_inner,
-        double *effective_T_inner) {
+        int expected_shells, double *effective_T_inner) {
     int strict = 0;
     if (config_prec_parse_switch("LUMINA_CONFIG_PREC", &strict) != 0)
         return -1;
 
     printf("  [CONFIG-PREC] priority=argv>env>config.json>compiled-default; "
-           "native J_nu seed owns radiation initialization; gate=%s\n",
+           "plasma_state.csv=integrity-witness-only; native J_nu seed owns "
+           "radiation initialization; gate=%s\n",
            strict ? "ON" : "OFF");
     if (!isfinite(deck_T_inner) || deck_T_inner <= 0.0) {
         fprintf(stderr,
@@ -664,8 +764,47 @@ static int config_prec_resolve_boundary_temperature(
         return -1;
     }
 
-    (void)ref_dir;
-    (void)strict;
+    ConfigPrecWitness witness;
+    if (config_prec_read_witness(ref_dir, &witness) != 0) return -1;
+    int valid_rows = witness.rows - witness.invalid_rows;
+    double spread = valid_rows > 0
+        ? witness.color_max - witness.color_min : INFINITY;
+    double profile_tol = valid_rows > 0
+        ? CONFIG_PREC_T_PROFILE_ABS_TOL_K +
+          CONFIG_PREC_T_REL_TOL *
+              fmax(fabs(witness.color_min), fabs(witness.color_max))
+        : 0.0;
+    double delta = valid_rows > 0
+        ? fabs(deck_T_inner - witness.color_first) : INFINITY;
+    double decl_tol = CONFIG_PREC_T_DECL_ABS_TOL_K +
+        CONFIG_PREC_T_REL_TOL *
+            fmax(fabs(deck_T_inner), fabs(witness.color_first));
+    double rel = valid_rows > 0 ? delta / fabs(deck_T_inner) : INFINITY;
+    int violation = witness.invalid_rows != 0 ||
+                    witness.rows != expected_shells ||
+                    spread > profile_tol || delta > decl_tol;
+
+    if (valid_rows > 0) {
+        printf("  [CONFIG-PREC] deck=%s config.json:T_inner_K=%.9f K; "
+               "plasma inferred-color=%.9f K; spread=%.9g K; "
+               "delta=%.9f K (%.6f%%); limits(decl/profile)=%.6g/%.6g K\n",
+               ref_dir, deck_T_inner, witness.color_first, spread, delta,
+               100.0 * rel, decl_tol, profile_tol);
+    } else {
+        printf("  [CONFIG-PREC] deck=%s plasma inferred-color=unavailable\n",
+               ref_dir);
+    }
+    if (violation) {
+        FILE *stream = strict ? stderr : stdout;
+        fprintf(stream,
+                "[CONFIG-PREC][%s] boundary-temperature declarations disagree "
+                "or are not certifiable: invalid_rows=%d color_rows=%d/%d\n",
+                strict ? "FATAL" : "WARN", witness.invalid_rows, valid_rows,
+                witness.rows);
+        if (strict) return -1;
+    } else {
+        printf("  [CONFIG-PREC][PASS] boundary-temperature declarations agree\n");
+    }
 
     *effective_T_inner = deck_T_inner;
     const char *override = getenv("LUMINA_T_INNER_FIX");
@@ -807,7 +946,7 @@ int load_tardis_reference_data(const char *ref_dir, Geometry *geo,
      * owned by jnu_seed.c and the generation-zero seed capability. */
     plasma->n_shells = geo->n_shells;
     if (config_prec_resolve_boundary_temperature(ref_dir,
-            config_prec_deck_T_inner, &config->T_inner) != 0)
+            config_prec_deck_T_inner, geo->n_shells, &config->T_inner) != 0)
         return -1;
 
     /* Phase 2 - Step 10d2: Load density */

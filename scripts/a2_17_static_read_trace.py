@@ -27,6 +27,9 @@ RENAMED_OWNER_RE = re.compile(
     r"\b(?:color_temperature|radiation_fit|radiation_dilution|dilution_factor)\b"
 )
 SCALAR_COLUMN_RE = re.compile(r'"[^"\n]*shell_id[^"\n]*\b(?:W|T_rad)\b[^"\n]*"')
+CONFIG_PREC_WITNESS_RE = re.compile(
+    r"\bdouble\s+color\s*=\s*row_trad\s*/\s*pow\(row_w\s*,\s*0\.25\s*\)"
+)
 
 NEGATIVE_CONTROLS = {
     "N17-1": ("A2_17_NEG_MAIN_OMITTED_FAIL", 41),
@@ -55,7 +58,7 @@ OBSOLETE_OPTIONS = {
 
 
 def strip_code(line: str, block_comment: bool) -> tuple[str, bool]:
-    """Return code with strings/comments blanked and updated comment state."""
+    """Blank strings/comments without changing character offsets."""
     out: list[str] = []
     i = 0
     quote = ""
@@ -63,26 +66,35 @@ def strip_code(line: str, block_comment: bool) -> tuple[str, bool]:
         if block_comment:
             end = line.find("*/", i)
             if end < 0:
+                out.extend(" " * (len(line) - i))
                 return "".join(out), True
+            out.extend(" " * (end + 2 - i))
             i = end + 2
             block_comment = False
             continue
         if quote:
             if line[i] == "\\":
+                out.append(" ")
+                if i + 1 < len(line):
+                    out.append(" ")
                 i += 2
                 continue
             if line[i] == quote:
                 quote = ""
+            out.append(" ")
             i += 1
             continue
         if line.startswith("//", i):
+            out.extend(" " * (len(line) - i))
             break
         if line.startswith("/*", i):
             block_comment = True
+            out.extend("  ")
             i += 2
             continue
         if line[i] in {'"', "'"}:
             quote = line[i]
+            out.append(" ")
             i += 1
             continue
         out.append(line[i])
@@ -114,16 +126,39 @@ def scan_sources(omit: set[str] | None = None) -> tuple[list[str], list[dict[str
             code, block_comment = strip_code(line, block_comment)
             raw_matches = list(OWNER_RE.finditer(line))
             for match in raw_matches:
-                code_match = OWNER_RE.search(code)
                 is_test = "selftest" in path.name or path.name.startswith("cmf_pcygni")
-                category = "PRODUCTION_READ" if not inactive_depth and code_match and not is_test else "COMMENT_STRING_TEST"
+                code_match = OWNER_RE.fullmatch(code[match.start():match.end()])
+                if not code_match:
+                    category = "COMMENT_STRING_TEST"
+                    reason = "comment or string witness"
+                elif inactive_depth:
+                    category = "COMPILE_DISABLED_HISTORICAL"
+                    reason = "compile-disabled historical witness"
+                elif is_test:
+                    category = "TEST_ONLY"
+                    reason = "compiled selftest expression"
+                else:
+                    category = "PRODUCTION_READ"
+                    reason = "compiled owner expression"
                 hits.append({
                     "path": rel,
                     "line": lineno,
                     "token": match.group(0),
                     "category": category,
-                    "reason": "compiled owner expression" if category == "PRODUCTION_READ"
-                              else "comment, string, or compile-disabled historical witness",
+                    "reason": reason,
+                    "text": line.strip(),
+                })
+            witness_match = CONFIG_PREC_WITNESS_RE.search(code)
+            if witness_match:
+                hits.append({
+                    "path": rel,
+                    "line": lineno,
+                    "token": witness_match.group(0),
+                    "category": "DIAGNOSTIC_DERIVATION",
+                    "reason": (
+                        "row-local CONFIG-PREC deck-integrity witness; not retained "
+                        "or published into radiation/material state"
+                    ),
                     "text": line.strip(),
                 })
             if re.match(r"#\s*endif\b", stripped):
@@ -166,7 +201,7 @@ def ledger_rows() -> list[dict[str, object]]:
                 else "OWNER_LIFECYCLE" if status.startswith("REMOVED_")
                 else "MIGRATED_PRODUCTION_READ"
             ),
-            "runtime_counter": "production_read_attempts=0",
+            "runtime_counter": "not_measured_by_static_trace",
             "terminal_state": status,
         })
     return result
@@ -188,6 +223,17 @@ def obsolete_options_are_rejected() -> bool:
         "BLOCKED_OBSOLETE_SCALAR_OPTION" in texts
         and "is obsolete" in texts
     )
+
+
+def config_prec_witness_is_checked() -> bool:
+    text = (ROOT / "src/lumina_atomic.c").read_text(errors="replace")
+    required = (
+        "config_prec_read_witness(ref_dir, &witness)",
+        "plasma_state.csv=integrity-witness-only",
+        "boundary-temperature declarations disagree",
+        "if (strict) return -1",
+    )
+    return all(token in text for token in required)
 
 
 def seed_gate() -> dict[str, object]:
@@ -232,14 +278,12 @@ def build_report(run_negatives: bool) -> tuple[dict[str, object], int]:
     renamed = []
     for rel in files:
         text = (ROOT / rel).read_text(errors="replace")
-        for match in RENAMED_OWNER_RE.finditer(text):
-            # Existing occurrences are documentation or diagnostic fit code;
-            # production reachability is separately guarded by the owner scan.
-            line = text.count("\n", 0, match.start()) + 1
-            source_line = text.splitlines()[line - 1]
-            code, _ = strip_code(source_line, False)
-            if RENAMED_OWNER_RE.search(code):
-                renamed.append({"path": rel, "line": line, "token": match.group(0)})
+        block_comment = False
+        for line, source_line in enumerate(text.splitlines(), 1):
+            code, block_comment = strip_code(source_line, block_comment)
+            for match in RENAMED_OWNER_RE.finditer(code):
+                renamed.append({"path": rel, "line": line,
+                                "token": match.group(0)})
     # Only names that represent stored/returned owner aliases are forbidden.
     renamed_owner_hits = [h for h in renamed if h["token"] in {"color_temperature", "radiation_fit", "radiation_dilution", "dilution_factor"}]
     link_command = production_link_command()
@@ -267,6 +311,7 @@ def build_report(run_negatives: bool) -> tuple[dict[str, object], int]:
         terminal = []
         ledger_error = str(exc)
     rejected = obsolete_options_are_rejected()
+    config_prec_checked = config_prec_witness_is_checked()
     failures = []
     if missing: failures.append("SOURCE_INVENTORY_MISSING_REQUIRED")
     if production: failures.append("PRODUCTION_SCALAR_READS")
@@ -275,6 +320,7 @@ def build_report(run_negatives: bool) -> tuple[dict[str, object], int]:
     if scalar_columns: failures.append("SCALAR_OUTPUT_COLUMNS")
     if len(terminal) != 157: failures.append("LEDGER_CARDINALITY_OR_TERMINAL_STATE")
     if not rejected: failures.append("OBSOLETE_OPTIONS_NOT_REJECTED")
+    if not config_prec_checked: failures.append("CONFIG_PREC_WITNESS_NOT_CHECKED")
     negatives = negative_controls() if run_negatives else {}
     if run_negatives and any(v["wrapper_rc"] != 0 for v in negatives.values()):
         failures.append("NEGATIVE_CONTROL")
@@ -293,9 +339,15 @@ def build_report(run_negatives: bool) -> tuple[dict[str, object], int]:
         "unknown_hits": 0,
         "duplicate_hits": 0,
         "production_reads": len(production),
-        "diagnostic_derivations": 0,
+        "diagnostic_derivations": sum(
+            hit["category"] == "DIAGNOSTIC_DERIVATION" for hit in hits
+        ),
         "offline_converter_reads": len(offline),
-        "comment_string_test_hits": len(hits) - len(production),
+        "comment_string_test_hits": sum(
+            hit["category"] in {
+                "COMMENT_STRING_TEST", "COMPILE_DISABLED_HISTORICAL", "TEST_ONLY"
+            } for hit in hits
+        ),
         "scalar_owner_fields": 0 if not production else len(production),
         "scalar_allocations": 0,
         "scalar_frees": 0,
@@ -305,10 +357,11 @@ def build_report(run_negatives: bool) -> tuple[dict[str, object], int]:
         "scalar_env_options": 0 if rejected else 1,
         "renamed_scalar_alias_hits": len(renamed_owner_hits),
         "forbidden_return_paths": 0,
-        "runtime_production_read_attempts": 0,
-        "runtime_diagnostic_reads": 0,
+        "runtime_production_read_attempts": None,
+        "runtime_diagnostic_reads": None,
         "obsolete_option_attempts": 0,
         "fallback_attempts": 0,
+        "config_prec_integrity_witness_checked": config_prec_checked,
         "production_link_map_offline_converter_objects": int(converter_linked),
         "production_link_command_sha256": hashlib.sha256(link_command.encode()).hexdigest(),
         "ledger_rows": len(terminal),
