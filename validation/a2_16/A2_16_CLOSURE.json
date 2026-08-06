@@ -1,0 +1,32 @@
+{
+ "schema": "lumina-a2-16-closure-v1",
+ "head": "4b9dbe5eda76",
+ "contract": "scalar (W,T_rad) seed capability limited to generation 0; revoked at first field commit",
+ "implemented_by": "driver (개정 12: 구현=운전석)",
+ "state_machine": [
+  "SEED_UNOPENED",
+  "SEED_G0_ACTIVE",
+  "SEED_FIRST_FIELD_COMMITTED",
+  "SEED_REVOKED"
+ ],
+ "read_gate": "required_generation==0 AND computed_generation==0 AND not committed AND epoch/manifest match",
+ "revocation_point": "src/radiation_field.c radiation_field_commit — revoke BEFORE the published generation is observable",
+ "negative_controls": {
+  "N16-1_post_revoke_read": "SEED_ERR_REVOKED, post_g0_read_attempts++",
+  "N16-2_generation_advanced": "SEED_ERR_GENERATION",
+  "N16-3_manifest_mismatch": "SEED_ERR_MANIFEST (hash and epoch separately)",
+  "N16-4_seed_hold_reopen": "SEED_ERR_COMMITTED, hold_attempts++, state unchanged",
+  "N16-5_obsolete_options": "SEED_ERR_OBSOLETE_OPTION for LUMINA_TE_TRAD_RATIO / LUMINA_TRAD_COLOR_FIX"
+ },
+ "selftest": "tests/a2_16_seed_capability_selftest.c — PASS (states=4 negatives=N16-1..5)",
+ "incidental_defect_fixed": "src/radiation_field.c strdup implicit declaration (C11 without feature-test macro returned int; pointer truncation on LP64) — closed with _POSIX_C_SOURCE 200809L",
+ "wiring": "Makefile SOURCES/HEADERS + all plasma-linking targets (47), battery Z 5 sites, run_zinert_selftest.sh 4 sites",
+ "regression": {
+  "battery_36_lageunha": "PASS",
+  "a2_01_census": "PASS",
+  "selftests": "a2_05/06x2/07/16 PASS",
+  "make_lumina": "clean"
+ },
+ "remaining_for_a2_17": "109 production scalar reads (native J_nu seed loader + offline legacy converter + producer teardown) — A2-17 소관",
+ "status": "A2_16_SEED_CAPABILITY_CLOSED_PAYLOAD_DEFERRED_TO_A2_17"
+}

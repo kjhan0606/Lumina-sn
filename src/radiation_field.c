@@ -1,4 +1,8 @@
+/* strdup 은 C11 표준이 아니다. feature test 없이 쓰면 암시적 선언(int 반환)이 되어
+ * LP64 에서 포인터가 절단된다 — 실제 잠재 결함이라 여기서 닫는다. */
+#define _POSIX_C_SOURCE 200809L
 #include "radiation_field.h"
+#include "seed_capability.h"
 
 #include <errno.h>
 #include <math.h>
@@ -597,6 +601,12 @@ int radiation_field_commit(RadiationFieldOwner *shadow,
         request->out_of_grid_contribution_count;
     field->generation.required_generation = request->generation;
     field->generation.computed_generation = request->generation;
+    /* A2-16: the scalar seed's capability dies here — revoke BEFORE any caller
+     * can observe the published generation, so no post-commit read can slip
+     * through.  The owner's seed payload is zeroed by its owner afterwards. */
+    if (shadow->seed_capability)
+        (void)seed_capability_revoke_on_first_commit(
+            (SeedCapability *)shadow->seed_capability);
     shadow->line_jbar_cache.generation.required_generation = request->generation;
     shadow->line_jbar_cache.units = field->units;
     shadow->line_jbar_cache.frame = field->frame;

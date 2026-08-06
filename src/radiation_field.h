@@ -145,6 +145,9 @@ typedef struct {
     /* A2-06 owner-internal line-cache helpers (not part of the A2-03 public
      * schema): compact ascending line-id array for view/lookup, and owned
      * storage backing the per-entry profile_hash pointers. */
+    /* A2-16: opaque SeedCapability* — the commit choke point revokes it the
+     * moment the first commit publishes.  NULL when no seed is in play. */
+    void     *seed_capability;
     uint64_t *line_ids_compact;
     size_t    line_n_compact;
     uint64_t  line_profile_id;
