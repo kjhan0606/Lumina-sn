@@ -15,6 +15,7 @@
 #include "radiation_field.h" /* A2-03 canonical shadow schema (CPU only) */
 #include "population_contract.h" /* A2-07 CPU population owner contract */
 #include "opacity_publication.h" /* A2-08 signed CPU opacity/status owner */
+#include "emissivity_publication.h" /* A2-09 CPU eta/redistribution owner */
 
 /* ============================================================ */
 /* Phase 2 - Step 2: Physical constants (CGS, matching TARDIS)  */
@@ -219,6 +220,7 @@ typedef struct {
     A208Validity *tau_validity;         /* [n_lines*n_shells], generation-bound */
     A208Validity *line_source_validity; /* [n_lines*n_shells], no numeric sentinel */
     CpuOpacityPublication cpu_opacity;  /* signed component/status publication */
+    CpuEmissivityPublication cpu_emissivity; /* A2-09 immutable eta/CDF owner */
     double *electron_density; /* Phase 2 - Step 4: [n_shells] n_e [cm^-3] */
     double *t_electrons;      /* Phase 2 - Step 4: [n_shells] T_e [K] */
 
@@ -1223,6 +1225,10 @@ int a208_publish_cpu_opacity(OpacityState *opacity, const BFOpacity *bf,
                              const AtomicData *atom, const PlasmaState *plasma,
                              const NLTEConfig *nlte,
                              double epoch);
+int a209_publish_cpu_emissivity(OpacityState *opacity, const BFOpacity *bf,
+                                const AtomicData *atom,
+                                const PlasmaState *plasma,
+                                const NLTEConfig *nlte, double epoch);
 /* Wave-1 bf repair gates. All are default OFF and shared with CUDA helpers so
  * host/device producer selection cannot disagree. */
 int lumina_fix_bf_stim_recomb_enabled(void);
@@ -1258,7 +1264,6 @@ int  bf_gemm_compute(BFOpacity *bf, AtomicData *atom, PlasmaState *plasma,
 void bf_gemm_free(void);
 void bf_absorption_event(RPacket *pkt, double time_explosion,
                           PlasmaState *plasma, OpacityState *opacity, RNG *rng);
-double sample_planck_frequency(double T, RNG *rng);
 
 /* P6: Self-consistent per-shell electron temperature */
 void compute_electron_temperature(PlasmaState *plasma, GammaDeposition *gamma_dep,

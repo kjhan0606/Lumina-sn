@@ -1080,6 +1080,7 @@ void free_opacity_state(OpacityState *op) { /* Phase 2 - Step 11 */
     free(op->tau_validity);
     free(op->line_source_validity);
     a208_publication_free(&op->cpu_opacity);
+    a209_publication_free(&op->cpu_emissivity);
     free(op->electron_density); /* Phase 2 - Step 11 */
     free(op->t_electrons); /* Phase 2 - Step 11 */
     free(op->macro_block_references); /* Phase 2 - Step 11 */

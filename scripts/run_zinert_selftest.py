@@ -61,13 +61,14 @@ def main() -> int:
     parser.add_argument("--population", type=Path, required=True)
     parser.add_argument("--canonical-tau", type=Path, required=True)
     parser.add_argument("--a2-08", type=Path, required=True)
+    parser.add_argument("--a2-09", type=Path, required=True)
     parser.add_argument("--deck", type=Path, required=True)
     parser.add_argument("--verify", type=Path, required=True)
     parser.add_argument("--serial", action="store_true")
     parser.add_argument("--scratch-root", type=Path)
     args = parser.parse_args()
 
-    paths = [args.validator, args.tau, args.population, args.canonical_tau, args.a2_08, args.verify]
+    paths = [args.validator, args.tau, args.population, args.canonical_tau, args.a2_08, args.a2_09, args.verify]
     if any(not path.resolve().is_file() for path in paths) or not args.deck.resolve().is_dir():
         parser.error("all Z-INERT binaries, verifier, and deck must exist")
     scratch_context = None
@@ -86,6 +87,7 @@ def main() -> int:
         ("population", (str(args.population.resolve()),), False),
         ("canonical-tau", (str(args.canonical_tau.resolve()), str(args.deck.resolve())), False),
         ("a2-08-signed-opacity", (str(args.a2_08.resolve()),), False),
+        ("a2-09-emissivity", (str(args.a2_09.resolve()),), False),
         ("verify", (sys.executable, str(args.verify.resolve()), "--deck", str(args.deck.resolve())), False),
     )
     tasks = [

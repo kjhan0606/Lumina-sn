@@ -1,0 +1,20 @@
+{
+  "cdf_semantics": "eta_reemit_times_delta_nu_equal_energy_packet",
+  "component_closure_tolerance": 1e-10,
+  "components": [
+    "eta_bb",
+    "eta_bf",
+    "eta_ff",
+    "eta_true_total",
+    "eta_scattering_source",
+    "eta_total_for_declared_semantics"
+  ],
+  "frame": "comoving",
+  "frequency_representation": "bin_edges",
+  "l3_status": "BLOCKED_MISSING_ETA_DATA",
+  "l5_status": "BLOCKED_MISSING_ETA_DATA",
+  "schema": "lumina-a2-09-emissivity-components-v1",
+  "summation_order": "compensated((eta_bb+eta_bf)+eta_ff)",
+  "truth_f_cov": null,
+  "units": "erg s^-1 cm^-3 Hz^-1 sr^-1"
+}

@@ -680,6 +680,17 @@ int main(int argc, char *argv[]) {
                 return EXIT_FAILURE;
             }
 
+            /* A2-09 publishes only from the checked A2-05..08 generations.
+             * Truth/coverage insufficiency is a surfaced BLOCKED state, not a
+             * license to retain an old eta/CDF or synthesize Planck emission. */
+            {
+                int emiss_rc=a209_publish_cpu_emissivity(&opacity,
+                    bf_opacity_enabled ? &bf : NULL,&atom_data,&plasma,
+                    enable_nlte ? &nlte : NULL,geo.time_explosion);
+                if(emiss_rc!=0)
+                    fprintf(stderr,"[A2-09][BLOCKED] publication rc=%d iter=%d\n",emiss_rc,iter);
+            }
+
             /* Dynamic transition probability recomputation */
             if (enable_transprob_update && iter >= config.hold_iterations) {
                 compute_transition_probabilities(&atom_data, &plasma, &opacity,

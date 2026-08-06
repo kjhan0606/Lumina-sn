@@ -19,7 +19,7 @@ from generate_composition_d_fixtures import cached_materialize
 
 ROOT = Path(__file__).resolve().parents[1]
 BATTERY_ORDER = ("D", "K", "Z", "CP")
-EXPECTED_ROWS = {"D": 19, "K": 7, "Z": 7, "CP": 4}
+EXPECTED_ROWS = {"D": 19, "K": 7, "Z": 8, "CP": 4}
 
 
 def run_census_preflight() -> int:
@@ -141,6 +141,7 @@ def build_specs(build: Path, cc: str) -> tuple[Build, ...]:
                 "tests/abundance_zero_nlte_fixture.c", "src/lumina_plasma.c",
                 "src/bf_rate_jnu.c", "src/population_contract.c",
                 "src/opacity_publication.c",
+                "src/emissivity_publication.c",
                 "-lm", "-o", str(build / "zinert_validator"),
             ),
             build / "zinert_validator",
@@ -149,7 +150,7 @@ def build_specs(build: Path, cc: str) -> tuple[Build, ...]:
             "Z-tau",
             common_z + (
                 "-DLUMINA_FROZEN_ORACLE", "tests/zinert_tau_fixture.c",
-                "src/lumina_plasma.c", "src/bf_rate_jnu.c", "src/population_contract.c", "src/opacity_publication.c", "-lm", "-o", str(build / "zinert_tau"),
+                "src/lumina_plasma.c", "src/bf_rate_jnu.c", "src/population_contract.c", "src/opacity_publication.c", "src/emissivity_publication.c", "-lm", "-o", str(build / "zinert_tau"),
             ),
             build / "zinert_tau",
         ),
@@ -159,6 +160,7 @@ def build_specs(build: Path, cc: str) -> tuple[Build, ...]:
                 "tests/zinert_population_fixture.c", "src/lumina_plasma.c",
                 "src/bf_rate_jnu.c", "src/population_contract.c",
                 "src/opacity_publication.c",
+                "src/emissivity_publication.c",
                 "-lm", "-o", str(build / "zinert_population"),
             ),
             build / "zinert_population",
@@ -169,7 +171,7 @@ def build_specs(build: Path, cc: str) -> tuple[Build, ...]:
                 "-DLUMINA_FROZEN_ORACLE", "tests/zinert_canonical_tau_fixture.c",
                 "src/lumina_plasma.c", "src/lumina_element_wide.c",
                 "src/bf_rate_jnu.c", "src/population_contract.c",
-                "src/lumina_atomic.c", "src/opacity_publication.c", "-lm", "-o",
+                "src/lumina_atomic.c", "src/opacity_publication.c", "src/emissivity_publication.c", "-lm", "-o",
                 str(build / "zinert_canonical_tau"),
             ),
             build / "zinert_canonical_tau",
@@ -182,6 +184,15 @@ def build_specs(build: Path, cc: str) -> tuple[Build, ...]:
                 str(build / "a2_08_signed_opacity"),
             ),
             build / "a2_08_signed_opacity",
+        ),
+        Build(
+            "Z-a2-09",
+            common_z + (
+                "tests/a2_09_emissivity_selftest.c",
+                "src/emissivity_publication.c", "-lm", "-o",
+                str(build / "a2_09_emissivity"),
+            ),
+            build / "a2_09_emissivity",
         ),
     )
 
@@ -251,6 +262,7 @@ def runner_specs(
                 "--population", str(build / "zinert_population"),
                 "--canonical-tau", str(build / "zinert_canonical_tau"),
                 "--a2-08", str(build / "a2_08_signed_opacity"),
+                "--a2-09", str(build / "a2_09_emissivity"),
                 "--deck", str(deck), "--verify", str(ROOT / "scripts/verify_zinert.py"),
                 "--scratch-root", str(scratch / "Z"),
             ) + serial_arg,

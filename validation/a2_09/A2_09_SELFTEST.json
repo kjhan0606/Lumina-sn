@@ -1,0 +1,80 @@
+{
+  "binary_sha256": "be1a2b2c1e1f28eebd832dd5632a7025031b07b282a167a6ae2cf91b9039f69f",
+  "child_rc": 0,
+  "metric_values": {
+    "analytic_ci_half_width": 0.0,
+    "cdf_last": 1.0,
+    "component_closure": 0.0,
+    "partial_publish": 0,
+    "planck_production_calls": 0
+  },
+  "negative_controls": {
+    "N1": {
+      "child_rc": 4,
+      "ci_half_width": 0.0,
+      "marker": "A2_09_NEG_DEST_PERMUTE",
+      "reason_code": "EXPECTED_REJECTION",
+      "status": "PASS",
+      "wrapper_rc": 0
+    },
+    "N2": {
+      "child_rc": 5,
+      "ci_half_width": 0.0,
+      "marker": "A2_09_NEG_PLANCK_REEMIT",
+      "reason_code": "EXPECTED_REJECTION",
+      "status": "PASS",
+      "wrapper_rc": 0
+    },
+    "N3": {
+      "child_rc": 4,
+      "ci_half_width": 0.0,
+      "marker": "A2_09_NEG_LINE_DROP",
+      "reason_code": "EXPECTED_REJECTION",
+      "status": "PASS",
+      "wrapper_rc": 0
+    },
+    "N4": {
+      "child_rc": 4,
+      "ci_half_width": 0.0,
+      "marker": "A2_09_NEG_FB_DROP",
+      "reason_code": "EXPECTED_REJECTION",
+      "status": "PASS",
+      "wrapper_rc": 0
+    },
+    "N5": {
+      "child_rc": 4,
+      "ci_half_width": 0.0,
+      "marker": "A2_09_NEG_FF_DROP",
+      "reason_code": "EXPECTED_REJECTION",
+      "status": "PASS",
+      "wrapper_rc": 0
+    },
+    "N6": {
+      "child_rc": 4,
+      "ci_half_width": 0.0,
+      "marker": "A2_09_NEG_CDF_SWAP",
+      "reason_code": "EXPECTED_REJECTION",
+      "status": "PASS",
+      "wrapper_rc": 0
+    },
+    "N7": {
+      "child_rc": 5,
+      "ci_half_width": 0.0,
+      "marker": "A2_09_NEG_STALE_INPUT",
+      "reason_code": "EXPECTED_REJECTION",
+      "status": "PASS",
+      "wrapper_rc": 0
+    },
+    "N8": {
+      "child_rc": 5,
+      "ci_half_width": 0.0,
+      "marker": "A2_09_NEG_CDF_HASH",
+      "reason_code": "EXPECTED_REJECTION",
+      "status": "PASS",
+      "wrapper_rc": 0
+    }
+  },
+  "reason_code": "INTERNAL_EMISSIVITY_CDF",
+  "status": "PASS",
+  "wrapper_rc": 0
+}

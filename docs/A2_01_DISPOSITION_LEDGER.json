@@ -1447,11 +1447,11 @@
       "final_status": "LIMIT_SCALAR_SEED_TO_GENERATION_ZERO"
     },
     {
-      "file_line": "src/lumina_plasma.c:8043",
-      "symbol": "plasma->T_rad[pkt->current_shell_id]",
-      "current_source": "plasma.T_rad",
-      "physical_meaning": "[emissivity] CPU BF Planck re-emission",
-      "new_source": "RadiationField.J_nu",
+      "file_line": "src/lumina_plasma.c:8172",
+      "symbol": "a209_sample_reemit_frequency",
+      "current_source": "CpuEmissivityPublication.eta_reemit",
+      "physical_meaning": "[emissivity] CPU BF generation-bound eta re-emission",
+      "new_source": "CpuEmissivityPublication.eta_reemit",
       "migration_stage": "A2-09",
       "final_status": "REPLACE_PLANCK_REEMISSION_SOURCE"
     }

@@ -3825,6 +3825,8 @@ void compute_transition_probabilities(AtomicData *atom, PlasmaState *plasma,
                                        NLTEConfig *nlte,
                                        double damping_constant, int apply_damping,
                                        Geometry *geom) {
+    (void)damping_constant;
+    (void)apply_damping;
     int n_shells = opacity->n_shells;
     if (opacity->tau_sobolev) {
         size_t n=(size_t)opacity->n_lines*n_shells;
@@ -5187,14 +5189,15 @@ void compute_transition_probabilities(AtomicData *atom, PlasmaState *plasma,
             if (sum_rates > 0.0) {
                 for (int tid = block_start; tid < block_end; tid++) {
                     double p_new = rates_buf[tid - block_start] / sum_rates;
-                    if (apply_damping) {
-                        double p_old = opacity->transition_probabilities[tid * n_shells + s];
-                        p_new = p_old + damping_constant * (p_new - p_old);
-                    }
                     opacity->transition_probabilities[tid * n_shells + s] = p_new;
                 }
+            } else {
+                /* A2-09: an empty block is invalid.  Never retain an older
+                 * generation or manufacture a final BB channel. */
+                a209_counters()->transition_empty++;
+                for (int tid=block_start;tid<block_end;tid++)
+                    opacity->transition_probabilities[tid*n_shells+s]=0.0;
             }
-            /* If sum_rates == 0: keep existing probabilities (degenerate level) */
 
             /* Normalize the recomb-cascade weights by the recomb-inclusive
              * sum_rates (no damping on this channel). */
@@ -8091,6 +8094,42 @@ int a208_publish_cpu_opacity(OpacityState *opacity, const BFOpacity *bf,
     return 0;
 }
 
+int a209_publish_cpu_emissivity(OpacityState *opacity,const BFOpacity *bf,
+ const AtomicData *atom,const PlasmaState *plasma,const NLTEConfig *nlte,double epoch){
+ if(!opacity||!bf||!atom||!plasma||!nlte||!bf->eta_bf||
+    opacity->cpu_opacity.generation_committed==0){a209_counters()->blocked_stale_opacity++;return 3;}
+ size_t ns=(size_t)opacity->n_shells,nb=(size_t)bf->n_freq_bins,n=ns*nb;
+ CpuEmissivityPublication c={0};if(a209_publication_init(&c,ns,nb))return 2;
+ c.required_emissivity_generation=opacity->cpu_opacity.generation_committed;
+ c.radfield_generation=nlte->radfield_view.generation;
+ c.line_view_generation=nlte->line_view.generation;
+ c.population_generation=atom->population_committed_generation;
+ c.opacity_generation=opacity->cpu_opacity.generation_committed;
+ c.te_generation=plasma->T_e_generation;
+ A209Counters*ctr=a209_counters();ctr->generation_required=c.required_emissivity_generation;
+ ctr->shells_attempted+=ns;ctr->cells_attempted+=n;
+ if(!c.radfield_generation){ctr->blocked_stale_rf++;a209_publication_free(&c);return 3;}
+ if(!c.line_view_generation){ctr->blocked_stale_line++;a209_publication_free(&c);return 3;}
+ if(!c.population_generation){ctr->blocked_stale_pop++;a209_publication_free(&c);return 3;}
+ memcpy(c.nu_edge,opacity->cpu_opacity.frequency_edges,(nb+1)*sizeof(double));
+ for(size_t s=0;s<ns;s++){
+  double Te=plasma->T_e[s];if(!isfinite(Te)||Te<=0){a209_publication_free(&c);return 5;}
+  for(size_t b=0;b<nb;b++){size_t i=s*nb+b;double nu=sqrt(c.nu_edge[b]*c.nu_edge[b+1]);
+   double B=planck_bnu(Te,nu),ff=opacity->cpu_opacity.chi_ff[i]*B;
+   double bfeta=bf->eta_bf[i]-ff;
+   if(!isfinite(ff)||ff<0||!isfinite(bfeta)||bfeta<0){ctr->nonfinite_failures++;a209_publication_free(&c);return 5;}
+   c.eta_ff[i]=ff;c.eta_bf[i]=bfeta;c.component_status[2*n+i]=ff==0?EMISS_EXACT_ZERO:EMISS_OK;c.component_status[n+i]=bfeta==0?EMISS_EXACT_ZERO:EMISS_OK;ctr->ff_terms++;ctr->bf_terms++;
+  }
+ }
+ /* Deposit each status-bearing line source on the same conservative bin used
+  * by A2-08.  Signed chi and signed S multiply; no abs/clip/source fallback. */
+ double dlog=log(c.nu_edge[nb]/c.nu_edge[0])/(double)nb;
+ for(int l=0;l<opacity->n_lines;l++){double nu=opacity->line_list_nu[l];if(!(nu>c.nu_edge[0]&&nu<c.nu_edge[nb]))continue;size_t b=(size_t)(log(nu/c.nu_edge[0])/dlog);if(b>=nb)b=nb-1;double dnu=c.nu_edge[b+1]-c.nu_edge[b];for(size_t s=0;s<ns;s++){size_t lk=(size_t)l*ns+s,i=s*nb+b;A208Validity sv=opacity->line_source_validity?opacity->line_source_validity[lk]:A208_SOURCE_CANCELLATION_SINGULAR;if(sv!=A208_VALID&&sv!=A208_EXACT_ZERO){ctr->blocked_source++;continue;}double tau=opacity->tau_sobolev[lk];double chi=nu*(-expm1(-tau))/(C_SPEED_OF_LIGHT*epoch*dnu);double eta=chi*opacity->line_source_S[lk];if(!isfinite(eta)||eta<0){ctr->blocked_source++;continue;}c.eta_bb[i]+=eta;ctr->bb_terms++;}}
+ for(size_t i=0;i<n;i++){c.component_status[i]=c.eta_bb[i]==0?EMISS_EXACT_ZERO:EMISS_OK;c.component_status[3*n+i]=EMISS_EXACT_ZERO;c.component_status[4*n+i]=EMISS_EXACT_ZERO;c.eta_true_total[i]=(c.eta_bb[i]+c.eta_bf[i])+c.eta_ff[i];c.eta_total_for_declared_semantics[i]=c.eta_true_total[i];c.cell_status[i]=c.eta_true_total[i]==0?EMISS_EXACT_ZERO:EMISS_OK;if(c.cell_status[i]==EMISS_EXACT_ZERO)ctr->exact_zero_terms++;}
+ if(a209_build_reemit_cdf(&c,0x7)||a209_publication_commit(&opacity->cpu_emissivity,&c)){a209_publication_free(&c);return 5;}
+ ctr->shells_published+=ns;ctr->cells_published+=n;return 0;
+}
+
 /* Sample Planck frequency using Bjorkman-Wood method (4-random) */
 double sample_planck_frequency(double T, RNG *rng) {
     double kT_h = K_BOLTZMANN * T / H_PLANCK;
@@ -8120,16 +8159,20 @@ double sample_planck_frequency(double T, RNG *rng) {
     return x * kT_h;
 }
 
-/* BF absorption event: thermalize packet — re-emit as Planck(T_rad) */
+/* BF absorption event: A2-09 eta_reemit is the only frequency law. */
 void bf_absorption_event(RPacket *pkt, double time_explosion,
                           PlasmaState *plasma, OpacityState *opacity,
                           RNG *rng) {
     /* 1. New isotropic direction */
     pkt->mu = rng_mu(rng);
 
-    /* 2. Sample new comoving frequency from Planck(T_rad) */
-    double T_rad = plasma->T_rad[pkt->current_shell_id];
-    double comov_nu = sample_planck_frequency(T_rad, rng);
+    /* 2. One fixed-stream draw selects the piecewise-constant eta CDF. */
+    (void)plasma;
+    double comov_nu=0.0;
+    if(a209_sample_reemit_frequency(&opacity->cpu_emissivity,
+       (size_t)pkt->current_shell_id,
+       opacity->cpu_emissivity.committed_emissivity_generation,
+       rng_uniform(rng),&comov_nu)!=0){pkt->status=PACKET_REABSORBED;return;}
 
     /* 3. Transform to lab frame (inline Doppler to avoid lumina_transport.c dependency) */
     double beta = pkt->r / (C_SPEED_OF_LIGHT * time_explosion);
@@ -14984,6 +15027,7 @@ int nlte_init(NLTEConfig *nlte, AtomicData *atom, OpacityState *opacity,
 }
 
 void nlte_free(NLTEConfig *nlte) {
+    a209_counters_print(stdout);
     population_counters_print(stdout, &nlte->population_counters);
     fflush(stdout);
     /* A2-05 R4/R6 observability: the zero-consumer gate and the blocked-term

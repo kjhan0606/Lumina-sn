@@ -162,7 +162,7 @@
 | 이관 완료(A2-07·3ddd95c0de20abea3284ca326ce41b7968d4b26d) | plasma->T_rad[s] | plasma.T_rad | [Boltzmann_diagnostic] level-population Boltzmann diagnostic | plasma->T_e | A2-07 | DIAGNOSE_BOLTZMANN_WITH_MATTER_TEMPERATURE |
 | 이관 완료(A2-07·3ddd95c0de20abea3284ca326ce41b7968d4b26d) | plasma->W[s] | plasma.W | [Boltzmann_diagnostic] level-population dilution diagnostic | plasma->T_e | A2-07 | DIAGNOSE_BOLTZMANN_WITH_MATTER_TEMPERATURE |
 | src/lumina_atomic.c:915 | plasma->T_rad[i] | plasma.T_rad | [seed] initial electron-temperature seed | RadiationField.J_nu | A2-16 | LIMIT_SCALAR_SEED_TO_GENERATION_ZERO |
-| src/lumina_plasma.c:8043 | plasma->T_rad[pkt->current_shell_id] | plasma.T_rad | [emissivity] CPU BF Planck re-emission | RadiationField.J_nu | A2-09 | REPLACE_PLANCK_REEMISSION_SOURCE |
+| src/lumina_plasma.c:8172 | a209_sample_reemit_frequency | CpuEmissivityPublication.eta_reemit | [emissivity] CPU BF generation-bound eta re-emission | CpuEmissivityPublication.eta_reemit | A2-09 | REPLACE_PLANCK_REEMISSION_SOURCE |
 
 ## ADDENDUM (A2-05 폐합, 2026-08-06) — R3 재배치 + bf_rate_estimator 소비 실측 이관분
 
@@ -305,3 +305,20 @@ canonical 157행은 변경하지 않았다. A2-08의 별도 정적 원장
 
 `old7897`, BF Planck 재방출, `eta_reemit`, CDF/sampler와 RNG draw count는 A2-09
 소유로 유지한다. formal 내부 수식과 GPU 경로도 각각 A2-11과 A2-12+에 그대로 인계한다.
+
+## ADDENDUM (A2-09 구현, 2026-08-06) — CPU emissivity·재분배 3행 종결
+
+canonical 157행은 유지했다. `scripts/a2_09_emissivity_census.py`가 원장 밖
+E01–E21을 누락·중복 없이 분류하며 unknown은 0이다. formal 소비 E18은
+`BLOCKED_A2_11`, GPU emissivity는 A2-15로 남겨 두 단계 범위를 침범하지 않았다.
+
+| 고정 ID | A2-09 1:1 처분 |
+|---|---|
+| `A2-01:transition_probability:T_rad` | production internal-up은 A2-06 checked Jbar만 소비하며 Planck/raw-field 코드는 진단 shadow로 격리 |
+| `A2-01:transition_probability:W` | production probability의 dilution/metastable 분기와 old-probability damping/retention 제거 |
+| `A2-01:old7897:T_rad` | `a209_sample_reemit_frequency`가 committed `eta_reemit` CDF만 한 draw로 표본; Planck production call 0 |
+
+E01–E03/E05–E11/E13–E17/E19–E21은 새 publication/CDF/fail-closed 소비로
+이관했고, E04/E12/E16은 checked 진단만 유지했다. E18 formal 수식은 diff 0으로
+A2-11에 인계한다. L-3/L-5는 ETA truth 부재로 두 lane 모두
+`BLOCKED_MISSING_ETA_DATA`, child rc 3이며 내부 analytic PASS와 합치지 않았다.

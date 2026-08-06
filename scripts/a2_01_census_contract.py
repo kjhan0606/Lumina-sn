@@ -89,7 +89,7 @@ ROLE_POLICY = {
     "rate_radeq": ("RadiationField.J_nu", "A2-10", "USE_CANONICAL_FIELD_IN_RADEQ"),
     "Boltzmann_diagnostic": ("plasma->T_e", "A2-07", "DIAGNOSE_BOLTZMANN_WITH_MATTER_TEMPERATURE"),
     "seed": ("RadiationField.J_nu", "A2-16", "LIMIT_SCALAR_SEED_TO_GENERATION_ZERO"),
-    "emissivity": ("RadiationField.J_nu", "A2-09", "REPLACE_PLANCK_REEMISSION_SOURCE"),
+    "emissivity": ("CpuEmissivityPublication.eta_reemit", "A2-09", "REPLACE_PLANCK_REEMISSION_SOURCE"),
 }
 
 ALLOWED_NEW_SOURCES = {
@@ -100,6 +100,7 @@ ALLOWED_NEW_SOURCES = {
     "RadiationField generation lifecycle",
     "RadiationField generation-bound diagnostic",
     "plasma->T_e",
+    "CpuEmissivityPublication.eta_reemit",
 }
 
 # Rows 1-24 were dispositioned more precisely by the reviewed A2-05/A2-06
@@ -136,6 +137,7 @@ REQUIRED_ADDENDA = (
     "## ADDENDUM (A2-06 폐합, 2026-08-06)",
     "## ADDENDUM (A2-07 구현, 2026-08-06)",
     "## ADDENDUM (A2-08 구현, 2026-08-06)",
+    "## ADDENDUM (A2-09 구현, 2026-08-06)",
 )
 
 
@@ -312,7 +314,7 @@ rate_radeq|src/lumina_plasma.c:12562|plasma->W[s]|plasma.W|read|plasma->W[s]|1|R
 Boltzmann_diagnostic|src/lumina_plasma.c:17832|plasma->T_rad[s]|plasma.T_rad|read|plasma->T_rad[s]|1|level-population Boltzmann diagnostic
 Boltzmann_diagnostic|src/lumina_plasma.c:17833|plasma->W[s]|plasma.W|read|plasma->W[s]|1|level-population dilution diagnostic
 seed|src/lumina_atomic.c:915|plasma->T_rad[i]|plasma.T_rad|read|plasma->T_rad[i]|1|initial electron-temperature seed
-emissivity|src/lumina_plasma.c:8043|plasma->T_rad[pkt->current_shell_id]|plasma.T_rad|read|plasma->T_rad[pkt->current_shell_id]|1|CPU BF Planck re-emission
+emissivity|src/lumina_plasma.c:8172|a209_sample_reemit_frequency|CpuEmissivityPublication.eta_reemit|read|a209_sample_reemit_frequency|1|CPU BF generation-bound eta re-emission
 """.strip()
 
 

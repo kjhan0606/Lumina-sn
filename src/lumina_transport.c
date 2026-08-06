@@ -386,8 +386,7 @@ void macro_atom_interaction(int activation_level_id, int current_shell_id,
         if (activation_level_id < 0 || activation_level_id >= opacity->n_macro_levels) { /* Phase 3 - Step 9 */
             fprintf(stderr, "[MACRO BUG] activation_level_id=%d out of range [0,%d) at iter %d\n", /* Phase 3 - Step 9 */
                     activation_level_id, opacity->n_macro_levels, ma_iter); /* Phase 3 - Step 9 */
-            current_type = MA_BB_EMISSION; /* Phase 3 - Step 9 */
-            *out_transition_type = current_type; /* Phase 3 - Step 9 */
+            a209_counters()->transition_empty++;
             break; /* Phase 3 - Step 9 */
         }
 
@@ -416,17 +415,11 @@ void macro_atom_interaction(int activation_level_id, int current_shell_id,
 
         if (!found) { /* Phase 3 - Step 9 */
             if (block_start >= block_end) { /* Phase 3 - Step 9: empty block */
-                /* Phase 3 - Step 9: No transitions available — force BB emission */
-                current_type = MA_BB_EMISSION; /* Phase 3 - Step 9 */
-                *out_transition_type = current_type; /* Phase 3 - Step 9 */
+                a209_counters()->transition_empty++;
                 break; /* Phase 3 - Step 9 */
             }
-            /* Phase 3 - Step 9: Probabilities didn't sum to 1 — pick last */
-            int tid = block_end - 1; /* Phase 3 - Step 9 */
-            activation_level_id = opacity->destination_level_id[tid]; /* Phase 3 - Step 9 */
-            current_type = opacity->transition_type[tid]; /* Phase 3 - Step 9 */
-            *out_transition_id = tid; /* Phase 3 - Step 9 */
-            *out_transition_type = current_type; /* Phase 3 - Step 9 */
+            a209_counters()->transition_norm_fail++;
+            break;
         }
     }
 
@@ -453,6 +446,8 @@ void macro_atom_event(int dest_level_idx, RPacket *pkt,
 
     macro_atom_interaction(dest_level_idx, pkt->current_shell_id, /* Phase 3 - Step 9b */
                             opacity, rng, &transition_id, &transition_type); /* Phase 3 - Step 9b */
+
+    if(transition_id<0){pkt->status=PACKET_REABSORBED;return;}
 
     if (transition_type == MA_BB_EMISSION) { /* Phase 3 - Step 9b */
         /* P8: Orphaned level (no transitions) → resonance scatter at activation line */
