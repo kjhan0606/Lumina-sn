@@ -37,12 +37,25 @@ import re
 import sys
 from pathlib import Path
 
-PRE = re.compile(
+# 형식 1 — 수리 전(운전석 계측).  a209 가 아예 없던 시절의 진단.
+PRE_OLD = re.compile(
     r"\[A2-10\]\[PRE\]\s+iter=(\d+)\s+te_gen=(\d+)\s+\|\s+radfield:\s+status=(-?\d+)\s+gen=(\d+)"
     r"\s+\|\s+line:\s+status=(-?\d+)\s+gen=(\d+)"
     r"\s+\|\s+opacity:\s+req=(\d+)\s+com=(\d+)\s+rad=(\d+)\s+pop=(\d+)"
     r"\s+\|\s+emissivity:\s+com=(\d+)"
     r"\s+\|\s+A2-10\s+blocked_stale=(\d+)\s+missing_term=(\d+)\s+schema=(\d+)")
+
+# 형식 2 — R7 수리 후.  헬퍼가 lane 을 붙이고, A2-10 에 **도달한 경우에만** 찍는다.
+PRE_R7 = re.compile(
+    r"\[A2-10\]\[PRE\]\s+lane=(\w+)\s+iter=(\d+)\s+te_gen=(\d+)"
+    r"\s+rad=(\d+)\s+line=(\d+)\s+opacity=(\d+)\s+emissivity=(\d+)\s+population=(\d+)")
+
+# ★R7 이후 판정에 반드시 필요한 것 — A2-10 에 **도달하지 못한** 경우의 위상 기록.
+# PRE 줄이 없다고 rc=3(계측 누락)으로 읽으면 안 된다.  차단도 관측이다.
+PHASE = re.compile(
+    r"\[R7\]\[PHASE\]\s+lane=(\w+)\s+iter=(\d+)\s+phase=(\w+)(.*)")
+BLOCK = re.compile(
+    r"\[(A2-0[89]|A2-10)\]\[(BLOCKED|FATAL)\]\s+event=(\w+)\s+lane=(\w+)\s+iter=(\d+)(.*)")
 
 
 def main(argv: list[str]) -> int:
@@ -50,8 +63,25 @@ def main(argv: list[str]) -> int:
         print(__doc__.strip().splitlines()[-1]); return 3
     total_bad, seen = 0, 0
     for p in argv[1:]:
+        name = Path(p).name
         txt = Path(p).read_text(errors="ignore")
-        for m in PRE.finditer(txt):
+
+        # ---- 위상 궤적 (R7 이후) : 어디까지 갔는지가 판정의 절반이다 ----
+        phases = [(m.group(1), int(m.group(2)), m.group(3), m.group(4).strip())
+                  for m in PHASE.finditer(txt)]
+        blocks = [(m.group(1), m.group(2), m.group(3), m.group(4), int(m.group(5)),
+                   m.group(6).strip()) for m in BLOCK.finditer(txt)]
+        if phases or blocks:
+            reached = {}
+            for lane, it, ph, _ in phases:
+                reached.setdefault((lane, it), []).append(ph)
+            for (lane, it), phs in sorted(reached.items()):
+                print(f"  {name} lane={lane} iter={it}: 위상 {' -> '.join(phs)}")
+            for site, kind, ev, lane, it, rest in blocks:
+                print(f"      [{site}][{kind}] {ev} lane={lane} iter={it}  {rest}")
+
+        # ---- 형식 1 (수리 전) ----
+        for m in PRE_OLD.finditer(txt):
             seen += 1
             (it, te, rst, rgen, lst, lgen,
              oreq, ocom, orad, opop, ecom, bstale, bmiss, bsch) = (int(x) for x in m.groups())
@@ -65,17 +95,39 @@ def main(argv: list[str]) -> int:
             if bstale:
                 bad.append(f"P4 A2-10 blocked_stale={bstale}")
             tag = "PASS" if not bad else "FAIL"
-            print(f"  {Path(p).name} iter={it}: {tag}"
+            print(f"  {name} iter={it} [수리전형식]: {tag}"
                   f"  [te_gen={te} rad={rst}/{rgen} opac={ocom}/{orad} emiss={ecom}]")
             for b in bad:
                 print(f"      **{b}**")
-            # R6 소관 — 분리 보고, 판정에 넣지 않는다
             if lst != 0 or lgen == 0:
                 print(f"      (R6 소관·기대 결과) line: status={lst} gen={lgen}")
             total_bad += len(bad)
+
+        # ---- 형식 2 (R7 이후) : A2-10 에 도달한 반복만 찍힌다 ----
+        for m in PRE_R7.finditer(txt):
+            seen += 1
+            lane = m.group(1)
+            it, te, rgen, lgen, ocom, ecom, mgen = (int(x) for x in m.groups()[1:])
+            bad = []
+            if ecom == 0:
+                bad.append("P1 emissivity com=0 — a209 발행이 없다")
+            if ocom != rgen:
+                bad.append(f"P2/P3 opacity({ocom}) != radiation({rgen})")
+            if ecom != rgen:
+                bad.append(f"P2 emissivity({ecom}) != radiation({rgen})")
+            if lgen != rgen:
+                bad.append(f"P5 line view({lgen}) != radiation({rgen})")
+            tag = "PASS" if not bad else "FAIL"
+            print(f"  {name} lane={lane} iter={it}: {tag}"
+                  f"  [te={te} r={rgen} line={lgen} o={ocom} e={ecom} m={mgen}]")
+            for b in bad:
+                print(f"      **{b}**")
+            total_bad += len(bad)
+
     if not seen:
-        print("  [A2-10][PRE] 줄이 없다 — 계측이 빠졌거나 그 지점 이전에 죽었다")
-        return 3
+        # ★차단도 관측이다.  위상 궤적이 있으면 "계측 누락"이 아니다.
+        print("  A2-10 에 도달한 반복이 없다 — 위상 궤적으로 판정하라(위 줄).")
+        return 4
     print(f"\nPUBLICATION_PHASE records={seen} violations={total_bad} "
           f"verdict={'PASS' if not total_bad else 'FAIL'}")
     return 0 if not total_bad else 2
