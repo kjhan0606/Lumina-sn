@@ -2091,8 +2091,19 @@ int load_atomic_data(AtomicData *atom, const char *ref_dir, int n_shells) {
             atom->topion_ion_index = idx;
             atom->topion_E_cm = ecm;
             atom->topion_g = gg;
-            printf("  [R0] top-ion partition catalog: %zu levels mapped"
+            printf("  [R0] partition catalog: %zu levels mapped"
                    " (%d rows had no matching ion-pop)\n", n, n_unmapped);
+            /* ★어느 ion-pop 이 준위가 없고, 그것이 catalog 로 해소되는지 전수 보고.
+             * 2026-08-07: 격리 덱에서 준위 없는 population 이 **최상단이 아니라 stage 0**
+             * 이었다(격리가 중성 이온을 걷어냄).  전제를 가리지 않도록 실측을 찍는다. */
+            for (int q = 0; q < total_ion_pops; q++) {
+                if (atom->level_offset[q + 1] > atom->level_offset[q]) continue;
+                size_t hit = 0;
+                for (size_t k = 0; k < n; k++) if (idx[k] == q) hit++;
+                printf("    [R0] level-less ion-pop %d: Z=%d stage=%d  catalog=%zu %s\n",
+                       q, atom->ion_pop_Z[q], atom->ion_pop_stage[q], hit,
+                       hit ? "OK" : "**없음 -> POP_ATOMIC_MISSING 이어야 한다**");
+            }
         }
     }
 

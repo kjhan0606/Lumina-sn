@@ -17,7 +17,17 @@ LOG=$OUT/chain.log
 : > "$LOG"
 say () { echo "[$(date '+%H:%M:%S')] $*" | tee -a "$LOG"; }
 
+# ★리빌드 경합 방지: 체인이 도는 동안 바이너리가 바뀌면 가드(rc=70)가 걸린다.
+# 시작 시 sha 를 고정하고, 매 런 전에 같은지 확인한다.
+BIN_SHA=$(sha256sum "$R/lumina" | cut -d" " -f1)
+say "바이너리 고정 sha=${BIN_SHA:0:12}"
+
 run_deck () {  # $1=덱경로 $2=로그이름 $3=패킷
+  cur=$(sha256sum "$R/lumina" | cut -d" " -f1)
+  if [ "$cur" != "$BIN_SHA" ]; then
+    say "  ⚠ 바이너리가 체인 도중 바뀌었다 (${BIN_SHA:0:12} -> ${cur:0:12}) — 새 sha 로 계속"
+    BIN_SHA=$cur
+  fi
   ssh lageunha "cd $R && timeout 5400 env T3_DECK=$1 PKTS=${3:-800} NITER=1 OMP=32 \
       bash scripts/t3_cpu_repro.sh > /tmp/kjhan_$2.log 2>&1; echo rc=\$?" 2>&1 | tail -1
   ssh lageunha "cp /tmp/kjhan_$2.log $OUT/$2.log" 2>/dev/null

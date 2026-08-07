@@ -46,7 +46,11 @@ export OMP_NUM_THREADS="${OMP:-32}"
 # ★2026-08-07: 오늘 CPU 런이 전부 **단일 코어**로 돌았다.  Makefile 의 OMP 는 스레드 수가
 # 아니라 **빌드 스위치**(`ifdef OMP -> -fopenmp`)인데 `make lumina` 로만 빌드해 OpenMP 가
 # 아예 없었다.  그래서 여기 OMP_NUM_THREADS 는 무시됐다.  하네스가 그것을 잡는다.
-if ! nm ./lumina 2>/dev/null | grep -q 'GOMP\|omp_get'; then
+# ⚠`grep -q` 를 파이프에 쓰면 안 된다: 첫 일치에서 즉시 종료하며 파이프를 닫아
+# nm 이 SIGPIPE 로 죽고, `set -o pipefail` 때문에 파이프라인이 비0 이 된다 ⟹ 오판.
+# 2026-08-07 에 이 가드가 멀쩡한 바이너리를 세 번 거부했다.  계수로 받는다.
+_omp_syms=$(nm ./lumina 2>/dev/null | grep -c 'GOMP\|omp_get' || true)
+if [ "${_omp_syms:-0}" -eq 0 ]; then
   echo "[HARNESS][FATAL] ./lumina 에 OpenMP 가 없다 — 'rm -f lumina && make OMP=1 lumina' 로 빌드하라." >&2
   echo "  (Makefile 의 OMP 는 스레드 수가 아니라 빌드 스위치다.  스레드 수는 이 스크립트의 OMP=)" >&2
   exit 70
