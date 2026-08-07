@@ -12361,13 +12361,47 @@ static RadeqStatus a210_production_residual(size_t s,double te,
     return a210_line_owner_finalize(l);
 }
 
+/* ★2026-08-08 계측: 이 함수의 실패가 A2-10 의 RADEQ_TERM_MISSING 이고, 두 팔이
+ * **같은 지점**에서 막힌다.  MC 는 원인이 밝혀졌으나(사건 측도 부재 -> 전송 사망)
+ * DET 는 패킷이 없으므로 표본 문제일 수 없다.  실패 조건이 둘뿐이므로
+ * **어느 쪽인지·어디서인지**만 찍으면 확정된다.  판정 로직은 바꾸지 않는다. */
 static int a210_rebin_checked_J(const RadiationFieldView*rf,
                                 const CpuEmissivityPublication*em,double*out){
     if(!rf||!em||!out||!rf->frequency_bin_edges||!rf->J_nu)return-1;
     for(size_t s=0;s<em->n_shells;s++)for(size_t b=0;b<em->n_bins;b++){
         double lo=em->nu_edge[b],hi=em->nu_edge[b+1],integ=0,covered=0;
-        for(size_t q=0;q<rf->n_bins;q++){double a=fmax(lo,rf->frequency_bin_edges[q]),z=fmin(hi,rf->frequency_bin_edges[q+1]);if(z<=a)continue;size_t qi=s*rf->n_bins+q;if(rf->validity[qi]!=RADIATION_FIELD_VALID&&rf->validity[qi]!=RADIATION_FIELD_EXACT_ZERO)return-1;integ+=rf->J_nu[qi]*(z-a);covered+=z-a;}
-        if(fabs(covered-(hi-lo))>1e-10*(hi-lo))return-1;
+        for(size_t q=0;q<rf->n_bins;q++){double a=fmax(lo,rf->frequency_bin_edges[q]),z=fmin(hi,rf->frequency_bin_edges[q+1]);if(z<=a)continue;size_t qi=s*rf->n_bins+q;
+            if(rf->validity[qi]!=RADIATION_FIELD_VALID&&rf->validity[qi]!=RADIATION_FIELD_EXACT_ZERO){
+                /* 전 방출률 범위에 대한 validity 히스토그램을 한 번만 낸다 */
+                static int said=0;
+                if(!said){said=1;
+                    unsigned long h[8]={0};size_t nbad_bins=0;
+                    for(size_t bb=0;bb<em->n_bins;bb++){
+                        double l2=em->nu_edge[bb],h2=em->nu_edge[bb+1];int bad=0;
+                        for(size_t qq=0;qq<rf->n_bins;qq++){
+                            double a2=fmax(l2,rf->frequency_bin_edges[qq]),z2=fmin(h2,rf->frequency_bin_edges[qq+1]);
+                            if(z2<=a2)continue;int v=(int)rf->validity[s*rf->n_bins+qq];
+                            h[(v>=0&&v<8)?v:0]++;
+                            if(v!=RADIATION_FIELD_VALID&&v!=RADIATION_FIELD_EXACT_ZERO)bad=1;}
+                        if(bad)nbad_bins++;}
+                    fprintf(stderr,"[A2-10][REBIN-DIAG] first_fail shell=%zu em_bin=%zu "
+                        "nu=[%.6e,%.6e] rf_validity=%d | em_bins_blocked=%zu/%zu | "
+                        "hist(0..7)=%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu | "
+                        "em_range=[%.6e,%.6e] rf_range=[%.6e,%.6e]\n",
+                        s,b,lo,hi,(int)rf->validity[qi],nbad_bins,em->n_bins,
+                        h[0],h[1],h[2],h[3],h[4],h[5],h[6],h[7],
+                        em->nu_edge[0],em->nu_edge[em->n_bins],
+                        rf->frequency_bin_edges[0],rf->frequency_bin_edges[rf->n_bins]);
+                }
+                return-1;
+            }
+            integ+=rf->J_nu[qi]*(z-a);covered+=z-a;}
+        if(fabs(covered-(hi-lo))>1e-10*(hi-lo)){
+            static int said2=0;
+            if(!said2){said2=1;fprintf(stderr,"[A2-10][REBIN-DIAG] coverage_shortfall "
+                "shell=%zu em_bin=%zu covered=%.17g width=%.17g\n",s,b,covered,hi-lo);}
+            return-1;
+        }
         out[s*em->n_bins+b]=integ/(hi-lo);
     }return 0;
 }
