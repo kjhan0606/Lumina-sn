@@ -41,7 +41,16 @@ export LUMINA_MODEL_DIR="$MODEL"
 export LUMINA_DEPOSITION_FILE="$MODEL/deposition_cmfgen.csv"
 export LUMINA_CMFGEN_SIGMA_BF="$MODEL/cmfgen_sigma_bf.bin"
 export LUMINA_ENV_STRICT=1
-export OMP_NUM_THREADS="${OMP:-8}"
+export OMP_NUM_THREADS="${OMP:-32}"
+
+# ★2026-08-07: 오늘 CPU 런이 전부 **단일 코어**로 돌았다.  Makefile 의 OMP 는 스레드 수가
+# 아니라 **빌드 스위치**(`ifdef OMP -> -fopenmp`)인데 `make lumina` 로만 빌드해 OpenMP 가
+# 아예 없었다.  그래서 여기 OMP_NUM_THREADS 는 무시됐다.  하네스가 그것을 잡는다.
+if ! nm ./lumina 2>/dev/null | grep -q 'GOMP\|omp_get'; then
+  echo "[HARNESS][FATAL] ./lumina 에 OpenMP 가 없다 — 'rm -f lumina && make OMP=1 lumina' 로 빌드하라." >&2
+  echo "  (Makefile 의 OMP 는 스레드 수가 아니라 빌드 스위치다.  스레드 수는 이 스크립트의 OMP=)" >&2
+  exit 70
+fi
 
 echo "=== T3_CPU_REPRO deck=$(basename "$MODEL") host=$(hostname) OMP=$OMP_NUM_THREADS ==="
 set +e

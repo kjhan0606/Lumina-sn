@@ -5133,7 +5133,10 @@ int cmfgen_run(Geometry *geo, OpacityState *opac, BFOpacity *bf,
         }
     }
     CMFGENState cs;
-    if (cmfgen_init(&cs, geo) != 0) return -1;
+    if (cmfgen_init(&cs, geo) != 0) {
+        fprintf(stderr, "[CMFGEN][FATAL] cmfgen_init failed\n");
+        return -1;
+    }
 
     /* P1 gate 1a: LUMINA_CMF_CONTONLY=1 forces continuum-only assemble (line
      * opacity zeroed) so the CMF J-producer can be compared to cmfgen_solve_J
@@ -5157,6 +5160,18 @@ int cmfgen_run(Geometry *geo, OpacityState *opac, BFOpacity *bf,
         /* refresh bf opacity for current ionization/T_e */
         if (bf) compute_bf_opacity(bf, atom, plasma, cs.n_shells);
         if (a208_publish_cpu_opacity(opac,bf,atom,plasma,nlte,t_exp)!=0) {
+            /* ★침묵 금지(2026-08-07).  L1-1 로 물질 사슬이 선 뒤 결정론 팔이 여기서
+             * 죽었는데 메시지가 없어 "deterministic path failed" 만 남았다.
+             * 이 지점은 배선도의 R7(발행 위상) 소관이다 — a208/a209 는 field commit
+             * 직후·T_e 호출 전에 발행돼야 A2-10 동세대 삼중항이 성립한다. */
+            A208Counters *c8 = a208_counters();
+            fprintf(stderr,
+                    "[A2-08][FATAL] CPU opacity publication failed at iter=%d "
+                    "(blocked_stale=%llu attempted=%llu committed=%llu)\n",
+                    iter,
+                    (unsigned long long)c8->blocked_stale,
+                    (unsigned long long)c8->replay_line_blocks_attempted,
+                    (unsigned long long)c8->replay_line_blocks_committed);
             cmfgen_free(&cs);return 5;
         }
 
@@ -5172,6 +5187,8 @@ int cmfgen_run(Geometry *geo, OpacityState *opac, BFOpacity *bf,
         }
         if (cmfgen_stage32_rung1_maybe_dump(&cs,geo,opac,plasma,
                                              iter,n_iter) != 0) {
+            /* ★침묵 금지(2026-08-07) */
+            fprintf(stderr, "[CMFGEN][FATAL] stage32 rung1 dump failed iter=%d\n", iter);
             cmfgen_free(&cs);
             return -1;
         }
@@ -5303,12 +5320,51 @@ int cmfgen_run(Geometry *geo, OpacityState *opac, BFOpacity *bf,
                                  cs.chi_line, cs.chi_line_cls,
                                  cs.n_shells, cs.n_bins);
 
+        /* ★Codex 가설 확정/기각용 계측(2026-08-07).  A2-10 입구가 요구하는 동세대
+         * 삼중항(opacity·emissivity·radiation)이 이 시점에 무엇인지 그대로 찍는다.
+         * 가설: pure lane 에 a209(emissivity) 발행이 없어 emissivity committed=0 이고
+         * 그 때문에 A2-10 이 blocked_stale 로 자격을 주지 않는다(원인=R7 발행 위상). */
+        {
+            A210Counters *ct10 = a210_counters();
+            fprintf(stderr,
+                "[A2-10][PRE] iter=%d te_gen=%llu | radfield: status=%d gen=%llu | "
+                "line: status=%d gen=%llu | opacity: req=%llu com=%llu rad=%llu pop=%llu | "
+                "emissivity: com=%llu | A2-10 blocked_stale=%llu missing_term=%llu schema=%llu\n",
+                iter, (unsigned long long)plasma->T_e_generation,
+                nlte ? (int)nlte->radfield_view_status : -1,
+                (unsigned long long)(nlte ? nlte->radfield_view.generation : 0),
+                nlte ? (int)nlte->line_view_status : -1,
+                (unsigned long long)(nlte ? nlte->line_view.generation : 0),
+                (unsigned long long)opac->cpu_opacity.generation_required,
+                (unsigned long long)opac->cpu_opacity.generation_committed,
+                (unsigned long long)opac->cpu_opacity.radiation_generation,
+                (unsigned long long)opac->cpu_opacity.population_generation,
+                (unsigned long long)opac->cpu_emissivity.committed_emissivity_generation,
+                (unsigned long long)ct10->blocked_stale,
+                (unsigned long long)ct10->blocked_missing_term,
+                (unsigned long long)ct10->blocked_schema);
+        }
+
         /* downstream solvers reused unchanged */
         int te_qualified = compute_radiative_equilibrium_te(
             plasma, gamma, nlte, atom, opac, t_exp, cs.n_shells);
         if (!te_qualified) plasma->T_e_generation = 0;
-        if (!te_qualified) return -1;
-        if (plasma->T_e_generation == UINT64_MAX) return -1;
+        if (!te_qualified) {
+            /* ★침묵 금지(2026-08-07).
+             * ⚠정정: 초판 주석은 이 실패를 R8(세대 보존) 소관이라 적었는데 **틀렸다**.
+             * Codex 가설: 자격 실패의 원인은 **R7(발행 위상)** — 현재 결정론 J 에 결박된
+             * CpuEmissivityPublication(a209)이 pure lane 에 없어 A2-10 의 동세대 삼중항이
+             * 성립하지 않는다.  R8 소관은 실패 **후** T_e_generation 을 0 으로 지우는 행위뿐이다.
+             * 그리고 아래 te_generation 출력은 이미 0 으로 덮인 **사후 값**이지 입구 값이 아니다. */
+            fprintf(stderr, "[CMFGEN][FATAL] radiative-equilibrium T_e not qualified "
+                            "iter=%d (te_generation=%llu)\n",
+                    iter, (unsigned long long)plasma->T_e_generation);
+            return -1;
+        }
+        if (plasma->T_e_generation == UINT64_MAX) {
+            fprintf(stderr, "[CMFGEN][FATAL] T_e generation overflow\n");
+            return -1;
+        }
         plasma->T_e_generation++;
         if (compute_plasma_state(atom, plasma, opac, t_exp) != 0) {
             fprintf(stderr, "[A2-07][FATAL] CMF population transaction failed iter=%d\n",

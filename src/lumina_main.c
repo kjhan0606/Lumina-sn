@@ -93,6 +93,10 @@ int main(int argc, char *argv[]) {
      * 첫 radeq 의 `old=*pub; *pub=c; a210_publication_free(&old)` 가
      * **쓰레기 포인터를 해제**한다.  영초기화하면 free(NULL) 이므로 무해하다. */
     memset(&plasma, 0, sizeof(plasma));
+    /* ★2026-08-07: OpacityState 도 같은 부류였다.  GPU 쪽(lumina_cuda.cu)에는 이미
+     * memset 이 있고 그 주석이 SIGSEGV 사고를 기록해 두었는데 **CPU 쪽에만 없었다**.
+     * 로더가 필드별로 채우므로 새로 늘어난 필드(발행 세대 등)가 stack garbage 로 남는다. */
+    memset(&opacity, 0, sizeof(opacity));
 
     /* Phase 5 - Step 3: Set defaults matching TARDIS sn2011fe.yml */
     config.enable_full_relativity = false; /* Phase 5 - Step 3 */
