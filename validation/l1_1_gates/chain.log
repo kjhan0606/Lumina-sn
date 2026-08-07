@@ -1,3 +1,108 @@
 [17:48:06] 바이너리 고정 sha=4e213a5a1072
 [17:48:06] === G6 덱 3종 ===
 [17:48:06]   런 시작: _sivcaiv_active
+[18:31:15]   종료 _sivcaiv_active rc=1
+      [R0] partition catalog: 1944 levels mapped (1536 rows had no matching ion-pop)
+        [R0] level-less ion-pop 4: Z=14 stage=5  catalog=279 OK
+        [R0] level-less ion-pop 9: Z=16 stage=5  catalog=35 OK
+        [R0] level-less ion-pop 14: Z=20 stage=5  catalog=301 OK
+        [R0] level-less ion-pop 20: Z=26 stage=6  catalog=1195 OK
+        [R0] level-less ion-pop 26: Z=27 stage=6  catalog=70 OK
+        [R0] level-less ion-pop 32: Z=28 stage=6  catalog=64 OK
+    [BOOTSTRAP] iteration-0 material supplier OPEN (seed-T_e LTE/Saha, provenance=BOOTSTRAP_LTE_SAHA, reason=iteration-0 material (CPU))
+      [A2-07][n_e] charge-conservation residual: max=1.586e-02 at shell 3 (bootstrap; 기록만 — 수렴기준 미변경)
+      [A2-07] level-less reservoir: max fraction=1.849e-93 (x30 bound = 5.546e-92, limit 1e-02)
+    [K-FRESH] first consumer=CPU transport/CMFGEN computed_generation=2 required_generation=2 owner=solver
+    [BOOTSTRAP] CLOSED — supplies=8100; 이후 반복은 fail-closed
+    [A2-10][PRE] iter=0 te_gen=1 | radfield: status=0 gen=1 | line: status=-1 gen=0 | opacity: req=1 com=1 rad=0 pop=1 | emissivity: com=0 | A2-10 blocked_stale=0 missing_term=0 schema=0
+    [CMFGEN][FATAL] radiative-equilibrium T_e not qualified iter=0 (te_generation=0)
+    [CMFGEN][FATAL] deterministic path failed
+    === EXIT=1 ===
+[18:31:15]   런 시작: _ophys
+[19:03:22]   종료 _ophys rc=1
+      [R0] partition catalog: 3480 levels mapped (0 rows had no matching ion-pop)
+        [R0] level-less ion-pop 3: Z=6 stage=3  catalog=64 OK
+        [R0] level-less ion-pop 7: Z=8 stage=3  catalog=168 OK
+        [R0] level-less ion-pop 11: Z=12 stage=3  catalog=265 OK
+        [R0] level-less ion-pop 16: Z=13 stage=4  catalog=283 OK
+        [R0] level-less ion-pop 22: Z=14 stage=5  catalog=279 OK
+        [R0] level-less ion-pop 28: Z=16 stage=5  catalog=35 OK
+        [R0] level-less ion-pop 34: Z=20 stage=5  catalog=301 OK
+        [R0] level-less ion-pop 38: Z=21 stage=3  catalog=128 OK
+        [R0] level-less ion-pop 42: Z=22 stage=4  catalog=64 OK
+        [R0] level-less ion-pop 44: Z=23 stage=1  catalog=323 OK
+        [R0] level-less ion-pop 49: Z=24 stage=4  catalog=134 OK
+        [R0] level-less ion-pop 52: Z=25 stage=3  catalog=107 OK
+        [R0] level-less ion-pop 59: Z=26 stage=6  catalog=1195 OK
+        [R0] level-less ion-pop 66: Z=27 stage=6  catalog=70 OK
+        [R0] level-less ion-pop 73: Z=28 stage=6  catalog=64 OK
+    [BOOTSTRAP] iteration-0 material supplier OPEN (seed-T_e LTE/Saha, provenance=BOOTSTRAP_LTE_SAHA, reason=iteration-0 material (CPU))
+      [A2-07][n_e] charge-conservation residual: max=1.586e-02 at shell 3 (bootstrap; 기록만 — 수렴기준 미변경)
+      [A2-07] level-less reservoir: max fraction=1.849e-93 (x30 bound = 5.546e-92, limit 1e-02)
+    [K-FRESH] first consumer=CPU transport/CMFGEN computed_generation=2 required_generation=2 owner=solver
+    [BOOTSTRAP] CLOSED — supplies=9900; 이후 반복은 fail-closed
+    [A2-10][PRE] iter=0 te_gen=1 | radfield: status=0 gen=1 | line: status=-1 gen=0 | opacity: req=1 com=1 rad=0 pop=1 | emissivity: com=0 | A2-10 blocked_stale=0 missing_term=0 schema=0
+    [CMFGEN][FATAL] radiative-equilibrium T_e not qualified iter=0 (te_generation=0)
+    [CMFGEN][FATAL] deterministic path failed
+    === EXIT=1 ===
+[19:03:22]   런 시작: _jnu4
+[19:22:20]   종료 _jnu4 rc=1
+      [R0] partition catalog: 3480 levels mapped (0 rows had no matching ion-pop)
+        [R0] level-less ion-pop 3: Z=6 stage=3  catalog=64 OK
+        [R0] level-less ion-pop 7: Z=8 stage=3  catalog=168 OK
+        [R0] level-less ion-pop 11: Z=12 stage=3  catalog=265 OK
+        [R0] level-less ion-pop 16: Z=13 stage=4  catalog=283 OK
+        [R0] level-less ion-pop 22: Z=14 stage=5  catalog=279 OK
+        [R0] level-less ion-pop 28: Z=16 stage=5  catalog=35 OK
+        [R0] level-less ion-pop 34: Z=20 stage=5  catalog=301 OK
+        [R0] level-less ion-pop 38: Z=21 stage=3  catalog=128 OK
+        [R0] level-less ion-pop 42: Z=22 stage=4  catalog=64 OK
+        [R0] level-less ion-pop 44: Z=23 stage=1  catalog=323 OK
+        [R0] level-less ion-pop 49: Z=24 stage=4  catalog=134 OK
+        [R0] level-less ion-pop 52: Z=25 stage=3  catalog=107 OK
+        [R0] level-less ion-pop 59: Z=26 stage=6  catalog=1195 OK
+        [R0] level-less ion-pop 66: Z=27 stage=6  catalog=70 OK
+        [R0] level-less ion-pop 73: Z=28 stage=6  catalog=64 OK
+    [BOOTSTRAP] iteration-0 material supplier OPEN (seed-T_e LTE/Saha, provenance=BOOTSTRAP_LTE_SAHA, reason=iteration-0 material (CPU))
+      [A2-07][n_e] charge-conservation residual: max=1.586e-02 at shell 3 (bootstrap; 기록만 — 수렴기준 미변경)
+      [A2-07] level-less reservoir: max fraction=1.849e-93 (x30 bound = 5.546e-92, limit 1e-02)
+    [K-FRESH] first consumer=CPU transport/CMFGEN computed_generation=2 required_generation=2 owner=solver
+    [BOOTSTRAP] CLOSED — supplies=9900; 이후 반복은 fail-closed
+    [A2-10][PRE] iter=0 te_gen=1 | radfield: status=0 gen=1 | line: status=-1 gen=0 | opacity: req=1 com=1 rad=0 pop=1 | emissivity: com=0 | A2-10 blocked_stale=0 missing_term=0 schema=0
+    [CMFGEN][FATAL] radiative-equilibrium T_e not qualified iter=0 (te_generation=0)
+    [CMFGEN][FATAL] deterministic path failed
+    === EXIT=1 ===
+[19:22:20] === G4/G5 음성대조 배터리 ===
+      valid seed                                     rc=0   expect=accept    PASS
+      double publish                                 rc=-1  expect=REJECT    PASS
+      NaN in seed T_e                                rc=-1  expect=REJECT    PASS
+      T_e == 0                                       rc=-1  expect=REJECT    PASS
+      T_e < 0                                        rc=-1  expect=REJECT    PASS
+      T_e == inf                                     rc=-1  expect=REJECT    PASS
+      n_shells == 0                                  rc=-1  expect=REJECT    PASS
+      T_e == NULL                                    rc=-1  expect=REJECT    PASS
+      plasma == NULL                                 rc=-1  expect=REJECT    PASS
+    SEED_TE_PUBLISH fails=0 verdict=PASS
+    seed_rc=0
+      lumina_bootstrap_active() before open                got=0   want=0   PASS
+      window_open rc                                       got=0   want=0   PASS
+      active while open                                    got=1   want=1   PASS
+      second open rc (BOOTSTRAP_REENTRY)                   got=1   want=1   PASS
+      active after close                                   got=0   want=0   PASS
+      reopen rc (must be refused)                          got=1   want=1   PASS
+      still inactive                                       got=0   want=0   PASS
+      active after double close                            got=0   want=0   PASS
+    BOOTSTRAP_WINDOW fails=0 verdict=PASS
+    window_rc=0
+[19:22:20] === R0 음성대조 (catalog {E=0,g=0}) ===
+[19:44:16]   종료 rc=1
+      [A2-07] level-less reservoir: max fraction=1.849e-93 (x30 bound = 5.546e-92, limit 1e-02)
+    === EXIT=1 ===
+[19:44:16]   catalog 복원
+[19:44:16] === G7 전하합 섭동 (덱 정본 불변 — 링크 사본에 abundances 만 교체) ===
+[20:05:33]   종료 rc=1
+      [A2-07][n_e] charge-conservation residual: max=1.669e-02 at shell 3 (bootstrap; 기록만 — 수렴기준 미변경)
+      [A2-07] level-less reservoir: max fraction=1.849e-93 (x30 bound = 5.546e-92, limit 1e-02)
+    === EXIT=1 ===
+[20:05:34]   섭동 덱 제거
+[20:05:34] === CHAIN COMPLETE ===

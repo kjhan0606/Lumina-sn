@@ -2177,6 +2177,19 @@ static PopulationStatus compute_partition_functions(AtomicData *atom,
     PopulationAtomicView view = population_atomic_view(atom);
     uint64_t generation = atom->population_committed_generation + 1;
     if (generation == 0) return POP_STALE_DERIVED_TEMPERATURE;
+    /* ★진단(2026-08-07): 뷰가 보는 level-less 이온과 catalog 해소 상태.
+     * 결함 주입 음성대조가 통과해 버려서, 뷰와 로더가 같은 것을 보는지 확인한다. */
+    { static int once=0; if(!once){ once=1;
+        int nless=0; for(size_t i=0;i<view.n_ions;i++)
+            if(view.level_offset[i+1]==view.level_offset[i]) nless++;
+        fprintf(stderr,"[A2-07][VIEW] n_ions=%zu n_levels=%zu level-less=%d "
+                "topion_n=%zu\n", view.n_ions, view.n_levels, nless, view.topion_n);
+        for(size_t i=0;i<view.n_ions;i++){
+            if(view.level_offset[i+1]!=view.level_offset[i]) continue;
+            double z=-1; PopulationStatus st=population_partition_ion(&view,i,plasma->T_e[0],&z);
+            fprintf(stderr,"  [A2-07][VIEW] ion %zu level-less -> %s Z=%g\n",
+                    i, population_status_name(st), z);
+        } } }
     PopulationStatus status = population_partition_build(
         &view, plasma->T_e, (size_t)n_shells, generation,
         plasma->T_e_generation, atom->partition_functions,

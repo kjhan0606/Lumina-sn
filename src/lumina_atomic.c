@@ -2068,9 +2068,11 @@ int load_atomic_data(AtomicData *atom, const char *ref_dir, int n_shells) {
                 int z = 0, stage = 0, li = 0;
                 double e = 0.0, g = 0.0;
                 char lbl[64], prov[64];
+                /* ★2026-08-07 수리: 변환 지정자 7개에 인자 6개였다 — 마지막 %63s 에
+                 * 대응 포인터가 없어 **미정의 동작**(스택 침범)이었고, 그 결과
+                 * Z 가 1e-65 같은 값으로 나오고 결함 주입 음성대조가 통과했다. */
                 if (sscanf(ln, "%d,%d,%63[^,],%d,%lf,%lf,%63s",
-                           &z, &stage, lbl, &li, &e, &g) < 6) continue;
-                (void)prov;
+                           &z, &stage, lbl, &li, &e, &g, prov) < 6) continue;
                 /* (Z,stage) -> ion-pop 인덱스.  없으면 조용히 버리지 않고 센다. */
                 int ip = -1;
                 for (int q = 0; q < total_ion_pops; q++)

@@ -1,0 +1,152 @@
+[HARNESS] unset LUMINA_CMF_SOLVE_GPU (was '1') — CPU-only node
+=== T3_CPU_REPRO deck=tardis_reference_toy06_19p48d_sivcaiv_active host=LagEunha OMP=32 ===
+============================================================
+LUMINA-SN v2.0 — TARDIS-Faithful Reimplementation
+============================================================
+[ENV-SURFACE] set=58 known=58 unknown=0 universe=496 (STRICT: unknown is fatal)
+[LOAD-STAGE] geometry
+Loading TARDIS reference data from data/tardis_reference_toy06_19p48d_sivcaiv_active...
+  Geometry: 50 shells
+    r_inner[0] = 6.563981e+14 cm, r_outer[49] = 6.782780e+15 cm
+    v_inner[0] = 3.900000e+08 cm/s, v_outer[49] = 4.030000e+09 cm/s
+  Config: t_exp=1.683072e+06 s, T_inner=10020.00 K, L=3.093e+42 erg/s
+    n_packets=200000, n_iter=20 (config-file defaults, pre-override; effective values in 'Simulation parameters' below), seed=23111963
+  Electron densities: n_e[0]=1.612460e+09, n_e[49]=1.387105e+04 cm^-3
+  [CONFIG-PREC] priority=argv>env>config.json>compiled-default; plasma_state.csv=integrity-witness-only; native J_nu seed owns radiation initialization; gate=OFF
+  [CONFIG-PREC] deck=data/tardis_reference_toy06_19p48d_sivcaiv_active config.json:T_inner_K=10020.000000000 K; plasma inferred-color=14172.549003072 K; spread=3.63797881e-12 K; delta=4152.549003072 K (41.442605%); limits(decl/profile)=5.00001/0.0100142 K
+[CONFIG-PREC][WARN] boundary-temperature declarations disagree or are not certifiable: invalid_rows=0 color_rows=50/50
+  [CONFIG-PREC] effective T_inner=10020.000000000 K source=config.json:T_inner_K (argv channel not defined)
+  Lines: 2588798 total, nu[0]=3.949386e+16 Hz (75.9 A), nu[2588797]=1.918672e+09 Hz (1562499781.1 A)
+  Line order: DESCENDING (correct, 2588797 pairs)
+[LOAD-STAGE] macro_atom_data
+  K-SHAPE contract: line epoch cbd81c4f9b3bd85d...; dtype=<f8 byte_order=little order=C
+[LOAD-STAGE] tau_sobolev
+  tau_sobolev: [2588798 x 50] (expect [2588798 x 50])
+[LOAD-STAGE] transition_probabilities
+  transition_probabilities: [7766394 x 50]
+  Macro-atom: 24542 levels, 7766394 transitions
+  Macro transitions loaded: 7766394 entries
+  line2macro_level_upper: 2588798 entries
+Data loading complete.
+[LOAD-STAGE] reference_data_done
+
+Loading atomic data for plasma solver...
+  Line columns: 2588798 lines loaded (including A_ul, B_lu, B_ul, nu)
+  [A2-06] configuration-label hash binding active (24542 levels)
+  Levels: 24542 loaded (super_level column present, super-levels active)
+  [ARTIS super-cutoff] K=100: 21919 levels lumped → per-ion ≤100 explicit + 1 super-level (set LUMINA_SUPER_LEVELS=1 to activate)
+  Ionization: 27 entries
+  Zeta: 27 ions x 20 temps, data [27 x 20]
+  Elements: 6 (14,16,20,26,27,28)
+  Ion populations: 33 total
+  Level offsets built: 24542 total levels mapped
+  [R0] partition catalog: 750 levels mapped (1536 rows had no matching ion-pop)
+    [R0] level-less ion-pop 4: Z=14 stage=5  catalog=279 OK
+    [R0] level-less ion-pop 9: Z=16 stage=5  catalog=35 OK
+    [R0] level-less ion-pop 14: Z=20 stage=5  catalog=301 OK
+    [R0] level-less ion-pop 20: Z=26 stage=6  catalog=1 OK
+    [R0] level-less ion-pop 26: Z=27 stage=6  catalog=70 OK
+    [R0] level-less ion-pop 32: Z=28 stage=6  catalog=64 OK
+[LOAD-STAGE] atomic_data_complete
+Atomic data loading complete.
+[LOAD-STAGE] atomic_data_return
+  CMFGEN sigma_bf: 24394/24542 levels (99.4%) on 1000-bin grid
+
+Simulation parameters:
+  Packets: 400 [source=argv[2]], Iterations: 1 [source=argv[3]]
+  Line interaction: MACROATOM
+  Spectrum mode: real only
+  NLTE: ENABLED from iter 3 (first 2 non-NLTE)
+  T_inner: 10020.00 K (resolved and logged by CONFIG-PREC loader)
+  Transition probs: DYNAMIC
+  Fe scatter: MACRO-ATOM
+  Gamma-ray deposition: ENABLED
+  BF+FF opacity: ENABLED
+  Self-consistent T_e: ENABLED (full radiative-equilibrium balance)
+[A2-10][SEED] bootstrap T_e published generation=1 n_shells=50 manifest=25b03b07ae22 reason=deck seed T_e — bootstrap before first transport (CPU)
+[BOOTSTRAP] iteration-0 material supplier OPEN (seed-T_e LTE/Saha, provenance=BOOTSTRAP_LTE_SAHA, reason=iteration-0 material (CPU))
+  [Plasma] Computing partition functions...
+  [A2-07] partition Z(T_e) committed generation=1 te_generation=1
+  [Plasma] Computing electron density (iterative)...
+  [A2-07][n_e] charge-conservation residual: max=1.586e-02 at shell 3 (bootstrap; 기록만 — 수렴기준 미변경)
+    n_e[0]=3.1739e+09, n_e[49]=3.4760e+04
+  [Plasma] Computing ion populations...
+  [A2-07] level-less reservoir: max fraction=1.849e-93 (x30 bound = 5.546e-92, limit 1e-02)
+  [Plasma] Computing tau_sobolev...
+    Shell 0: tau_min=4.92e-87, tau_max=1.63e+07, lines with tau>1: 36631/2588798
+    [TAU-DIAG] tau>1 by band: UV(1700-3000)=3991/366288 (sum=2547475.1) | blue(3000-4500)=105/246335 (sum=1037.7) | opt(4500-7000)=14/278379 (sum=90.6)
+    [TAU-BY-ION] shell 0 (tau_tot[1700-10000A]=2.549e+06) top ions:
+      Z=27 ion= 2  tau_sum=1.405e+06 (55.1%)  N(tau>1)=964
+      Z=26 ion= 2  tau_sum=6.036e+05 (23.7%)  N(tau>1)=808
+      Z=27 ion= 1  tau_sum=3.461e+05 (13.6%)  N(tau>1)=1085
+      Z=28 ion= 2  tau_sum=9.211e+04 (3.6%)  N(tau>1)=304
+      Z=28 ion= 1  tau_sum=8.054e+04 (3.2%)  N(tau>1)=337
+      Z=26 ion= 1  tau_sum=2.165e+04 (0.8%)  N(tau>1)=613
+      Z=26 ion= 3  tau_sum=1.650e-04 (0.0%)  N(tau>1)=0
+      Z=27 ion= 3  tau_sum=1.325e-04 (0.0%)  N(tau>1)=0
+      Z=28 ion= 3  tau_sum=6.721e-06 (0.0%)  N(tau>1)=0
+      Z=26 ion= 4  tau_sum=1.758e-19 (0.0%)  N(tau>1)=0
+      Z=28 ion= 4  tau_sum=2.004e-21 (0.0%)  N(tau>1)=0
+      Z=27 ion= 4  tau_sum=9.033e-27 (0.0%)  N(tau>1)=0
+      Z=26 ion= 5  tau_sum=6.751e-56 (0.0%)  N(tau>1)=0
+      Z=27 ion= 5  tau_sum=1.555e-58 (0.0%)  N(tau>1)=0
+      Z=28 ion= 5  tau_sum=1.772e-62 (0.0%)  N(tau>1)=0
+[K-FRESH] first consumer=CPU transport/CMFGEN computed_generation=2 required_generation=2 owner=solver
+[BOOTSTRAP] CLOSED — supplies=8100; 이후 반복은 fail-closed
+
+--- NLTE Initialization ---
+  [NLTE] Total NLTE levels: 13015
+    Z=14 ion=1: 125 levels
+    Z=14 ion=2: 147 levels
+    Z=20 ion=1: 62 levels
+    Z=20 ion=2: 232 levels
+    Z=26 ion=1: 2599 levels
+    Z=26 ion=2: 1500 levels
+    Z=16 ion=1: 322 levels
+    Z=16 ion=2: 256 levels
+    Z=27 ion=1: 2558 levels
+    Z=27 ion=2: 3214 levels
+    Z=28 ion=1: 1000 levels
+    Z=28 ion=2: 1000 levels
+    Z=6 ion=1: 0 levels
+    Z=6 ion=2: 0 levels
+    Z=12 ion=1: 0 levels
+    Z=12 ion=2: 0 levels
+    Z=22 ion=1: 0 levels
+    Z=22 ion=2: 0 levels
+    Z=24 ion=1: 0 levels
+    Z=24 ion=2: 0 levels
+    Z=13 ion=1: 0 levels
+    Z=13 ion=2: 0 levels
+    Z=21 ion=1: 0 levels
+    Z=21 ion=2: 0 levels
+    Z=23 ion=1: 0 levels
+    Z=23 ion=2: 0 levels
+    Z=25 ion=1: 0 levels
+    Z=25 ion=2: 0 levels
+    Z=8 ion=0: 0 levels
+    Z=8 ion=1: 0 levels
+    Z=8 ion=2: 0 levels
+  [NLTE] Super-levels: off (identity) (13015 FL -> 1173 SL across ions)
+  [NLTE] Lines mapped to NLTE ions: 1777859 / 2588798
+  [NLTE] Initialization complete. Memory: 5.7 MB
+  [A2-06] Q_g lines=1777859 q_set_hash=08db84862c9332ee... profile=1
+
+--- Gamma-ray Deposition Initialized ---
+[BF-MILNE] eta_bf source-function build ON (ALL levels)
+[BF-DIAG] σ_bf source over 14683 active levels (shell 0): CMFGEN=14567 (99.2%), Kramers=116 (0.8%)
+  [BF+FF] Shell 0 (optical): chi_bf=9.79e-18  chi_ff=1.61e-18  chi_e=2.11e-15  (bf/e=4.64e-03  ff/e=7.61e-04)
+  [BF+FF] Shell 0 (UV):      chi_bf=1.80e-14  chi_ff=1.17e-19  chi_e=2.11e-15  (bf/e=8.52e+00  ff/e=5.54e-05)
+  [BF] Macro-atom activation: 49734/50000 bins have valid levels
+
+--- BF+FF Opacity Initialized (1000 freq bins) ---
+
+=== PURE-CMFGEN deterministic radiation path (MC transport bypassed) ===
+[CMFGEN] pure deterministic radiation driver: 50 shells, 1000 bins, 58 rays, 1 outer iters, 8 ALI/iter, t_exp=1.6831e+06 s
+  [BF+FF] Shell 0 (optical): chi_bf=9.79e-18  chi_ff=1.61e-18  chi_e=2.11e-15  (bf/e=4.64e-03  ff/e=7.61e-04)
+  [BF+FF] Shell 0 (UV):      chi_bf=1.80e-14  chi_ff=1.17e-19  chi_e=2.11e-15  (bf/e=8.52e+00  ff/e=5.54e-05)
+  [BF] Macro-atom activation: 49734/50000 bins have valid levels
+[A2-10][PRE] iter=0 te_gen=1 | radfield: status=0 gen=1 | line: status=-1 gen=0 | opacity: req=1 com=1 rad=0 pop=1 | emissivity: com=0 | A2-10 blocked_stale=0 missing_term=0 schema=0
+[CMFGEN][FATAL] radiative-equilibrium T_e not qualified iter=0 (te_generation=0)
+[CMFGEN][FATAL] deterministic path failed
+=== EXIT=1 ===
