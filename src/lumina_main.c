@@ -245,8 +245,15 @@ int main(int argc, char *argv[]) {
             "deck seed T_e — bootstrap before first transport (CPU)") != 0)
         return EXIT_FAILURE;
 
-    if (lumina_prepare_solver_owned_tau(&atom_data, &plasma, &opacity,
-            geo.time_explosion, "CPU transport/CMFGEN") != 0)
+    /* L1-1: 반복 0 에는 복사장이 없어 rate-SE 가 원리적으로 불가능하다.  그 한 번만
+     * seed-T_e LTE(Saha)로 물질을 공급하는 창을 연다.  창은 **바로 아래에서 닫으므로**
+     * 반복 >=1 은 여전히 fail-closed 다(사전등록 게이트 G3). */
+    if (lumina_bootstrap_window_open("iteration-0 material (CPU)") != 0)
+        return EXIT_FAILURE;
+    int _kfresh_rc = lumina_prepare_solver_owned_tau(&atom_data, &plasma, &opacity,
+            geo.time_explosion, "CPU transport/CMFGEN");
+    lumina_bootstrap_window_close();
+    if (_kfresh_rc != 0)
         return EXIT_FAILURE;
 
     /* Phase 5 - Step 4: Compute shell volumes */

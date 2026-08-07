@@ -28,6 +28,15 @@ UNIVERSE=$(grep -oE '"LUMINA_[A-Z0-9_]+"' src/env_universe.h | tr -d '"' | sort 
 DEAD=$(comm -23 <(env | grep -oE '^LUMINA_[A-Z0-9_]+' | sort -u) <(echo "$UNIVERSE"))
 if [[ -n "$DEAD" ]]; then unset $DEAD; fi
 
+# ★이 하네스는 **GPU 없는 노드**에서 CPU 바이너리를 돌린다.  참조 런처는
+# LUMINA_CMF_SOLVE_GPU=1 을 상속시키는데, 그러면 결정론 팔이 GPU 솔버를 요구하고
+# 계약이 조용한 CPU 폴백을 옳게 거부한다(BLOCKED_GPU_FALLBACK_FORBIDDEN).
+# 하네스이므로 여기서만 내린다 — **숨기지 않고 찍는다**.  물리 설정은 건드리지 않는다.
+if [[ -n "${LUMINA_CMF_SOLVE_GPU-}" ]]; then
+  echo "[HARNESS] unset LUMINA_CMF_SOLVE_GPU (was '$LUMINA_CMF_SOLVE_GPU') — CPU-only node"
+  unset LUMINA_CMF_SOLVE_GPU
+fi
+
 export LUMINA_MODEL_DIR="$MODEL"
 export LUMINA_DEPOSITION_FILE="$MODEL/deposition_cmfgen.csv"
 export LUMINA_CMFGEN_SIGMA_BF="$MODEL/cmfgen_sigma_bf.bin"

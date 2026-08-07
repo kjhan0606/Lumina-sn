@@ -963,6 +963,14 @@ int  tau_sobolev_assert_fresh(OpacityState *opacity, const char *consumer);
  * 정본 docs/RUNG_SEED_TE_PUBLICATION.md */
 int  lumina_publish_seed_te(PlasmaState *plasma, const char *reason);
 
+/* L1-1 반복 0 물질 공급자 — 부트스트랩 창(런당 1회, 노브 아님).
+ * 열려 있는 동안에만 seed-T_e LTE(Saha)가 이온비를 공급한다.  루프 진입 전에 닫으므로
+ * 반복 >=1 은 여전히 fail-closed 다.  정본 docs/RUNG_L1_1_BOOTSTRAP_SUPPLIER.md */
+int  lumina_bootstrap_window_open(const char *reason);
+void lumina_bootstrap_window_close(void);
+int  lumina_bootstrap_active(void);
+void lumina_bootstrap_note_supply(void);
+
 int  lumina_prepare_solver_owned_tau(AtomicData *atom, PlasmaState *plasma,
                                      OpacityState *opacity,
                                      double time_explosion,

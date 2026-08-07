@@ -2640,18 +2640,43 @@ static PopulationStatus compute_ion_populations_shell(
                              ib_f = (f>0)?f:1.0; ib_s = sm; } else ib_f = 1.0; }
                   if (ib_f != 1.0 && s >= ib_s) phi_neb *= ib_f; }
 
-                /* ratio n_{i+1}/n_i */
-                /* The legacy nebular/Saha value above is a shadow diagnostic.
-                 * The only physical supplier is the checked canonical BF view. */
-                (void)phi_neb;
-                if (!r1_use) {
-                    free(ratios);
-                    return POP_BF_STALE;
-                }
+                /* ratio n_{i+1}/n_i
+                 *
+                 * 정상(반복 ≥1): 유일한 물리 공급자는 검사된 canonical BF view 다.
+                 *
+                 * ★반복 0(부트스트랩): 복사장이 아직 없으므로 rate-SE 는 원리적으로
+                 * 불가능하다 — 어떤 수송이든 opacity/source 를 요구하고 그것은 population 을
+                 * 요구한다(인과 순서).  이 지점은 2026-08-07 까지 **절단**돼 있었다:
+                 * 바로 위 주석(`2347`)이 "Fail-closed to the B2 LTE-Saha pin otherwise
+                 * (mirrors ARTIS's LTE start)" 라 선언해 놓고, 실물은 Saha 값을
+                 * `(void)phi_neb` 로 버리고 POP_BF_STALE 을 냈다.  그 결과 CPU·GPU 양쪽
+                 * main 이 첫 수송에 **도달하지 못했다**.
+                 *
+                 * 복원한다.  단 **부트스트랩 창이 열려 있을 때만** — 창은 런당 1회이며
+                 * 루프 진입 전에 닫힌다.  반복 ≥1 에서 장이 깨지면 여전히 fail-closed 다.
+                 * 그렇게 하지 않으면 LTE 로 조용히 미끄러져 결함을 은폐한다 —
+                 * 이 캠페인이 고치려는 바로 그 병이다. */
                 double ratio = 0.0;
-                PopulationStatus ratio_status = parity_rate_se_ratio_checked(
-                    atom, g_bf_nlte_pops, s, n_shells, ip_cur, ip_next,
-                    T_e, n_e, chi_erg, gamma_nt_atom, &ratio);
+                PopulationStatus ratio_status;
+                if (!r1_use) {
+                    if (!lumina_bootstrap_active()) {
+                        free(ratios);
+                        return POP_BF_STALE;
+                    }
+                    /* Saha 비: phi = n_{i+1} n_e / n_i  ⟹  ratio = phi / n_e */
+                    if (!(n_e > 0.0) || !isfinite(n_e) || !isfinite(phi_neb) ||
+                        phi_neb < 0.0) {
+                        free(ratios);
+                        return POP_NONFINITE;
+                    }
+                    ratio = phi_neb / n_e;
+                    ratio_status = POP_OK;
+                    lumina_bootstrap_note_supply();
+                } else {
+                    ratio_status = parity_rate_se_ratio_checked(
+                        atom, g_bf_nlte_pops, s, n_shells, ip_cur, ip_next,
+                        T_e, n_e, chi_erg, gamma_nt_atom, &ratio);
+                }
                 if (ratio_status != POP_OK && ratio_status != POP_EXACT_ZERO) {
                     if (g_bf_nlte_pops->population_error_count == 0)
                         g_bf_nlte_pops->population_first_error = ratio_status;
@@ -6526,6 +6551,47 @@ int tau_sobolev_assert_fresh(OpacityState *opacity, const char *consumer) {
                (unsigned long long)opacity->tau_required_generation);
     }
     return 0;
+}
+
+/* ============================================================
+ * L1-1 반복 0 물질 공급자 — 부트스트랩 창 (런당 1회)
+ *
+ * 왜 창인가.  반복 0 에는 복사장이 없어 rate-SE 가 원리적으로 불가능하다.  그 한 번만
+ * seed-T_e LTE(Saha)로 물질 상태를 공급한다.  창은 **루프 진입 전에 닫히므로**
+ * 반복 ≥1 에서 장이 깨지면 여전히 fail-closed 다 — LTE 로 조용히 미끄러지지 않는다.
+ * (사전등록 게이트 G3; 그 미끄러짐이 이 캠페인이 고치려는 병이다.)
+ *
+ * ★노브가 아니다.  env 로 열 수 없고, 열고 닫는 것은 main 의 명시적 호출뿐이며
+ * 런당 1회로 래치된다(재진입은 BOOTSTRAP_REENTRY).
+ * ============================================================ */
+static int g_bootstrap_window = 0;   /* 지금 열려 있는가 */
+static int g_bootstrap_used   = 0;   /* 이 런에서 이미 썼는가 */
+static long g_bootstrap_supplies = 0;/* 실제로 공급한 (원소×셸) 횟수 */
+
+int lumina_bootstrap_active(void) { return g_bootstrap_window; }
+
+void lumina_bootstrap_note_supply(void) { g_bootstrap_supplies++; }
+
+int lumina_bootstrap_window_open(const char *reason) {
+    if (g_bootstrap_used) {
+        fprintf(stderr, "BOOTSTRAP_REENTRY: 부트스트랩 창은 런당 1회다 "
+                        "(요청=%s)\n", reason ? reason : "(none)");
+        return -1;
+    }
+    g_bootstrap_used = 1;
+    g_bootstrap_window = 1;
+    g_bootstrap_supplies = 0;
+    printf("[BOOTSTRAP] iteration-0 material supplier OPEN "
+           "(seed-T_e LTE/Saha, provenance=BOOTSTRAP_LTE_SAHA, reason=%s)\n",
+           reason ? reason : "(none)");
+    return 0;
+}
+
+void lumina_bootstrap_window_close(void) {
+    if (!g_bootstrap_window) return;
+    g_bootstrap_window = 0;
+    printf("[BOOTSTRAP] CLOSED — supplies=%ld; 이후 반복은 fail-closed\n",
+           g_bootstrap_supplies);
 }
 
 /* A2-07/A2-10 부트스트랩: 덱의 seed T_e 를 **1세대로 발행**한다.
