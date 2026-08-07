@@ -441,6 +441,16 @@ typedef struct {
     /* Lookup: ion_offset[elem_idx] = first ion index for element elem_idx */
     /* n_ion_pops_per_elem[elem_idx] = number of ion populations */
     int     n_ion_pops;               /* total ion populations (153) */
+    /* ★R0(2026-08-07) 분배함수 전용 최상단 이온 준위 catalog.
+     * 공용 준위 배열에 넣지 않는다 — 넣으면 NLTE 미지수·ma_radrecomb_target·
+     * BF 단면 [n_levels x n_freq] 계약·macro-atom block·충돌 sidecar 가 전부 없는 자료를
+     * 요구한다(Codex 설계 판정 (c)).  population_partition_build 하나만 읽는다.
+     * 자료 data/atomic/topion_levels.csv (CMFGEN 21jun23 12종 + Cloudy/Stout-NIST 3종). */
+    size_t  topion_n;
+    int    *topion_ion_index;         /* [topion_n] ion-pop 인덱스 */
+    double *topion_E_cm;              /* [topion_n] cm^-1 */
+    double *topion_g;                 /* [topion_n] */
+
     int    *ion_pop_Z;                /* [n_ion_pops] atomic number */
     int    *ion_pop_stage;            /* [n_ion_pops] ion stage (0..Z) */
     int    *elem_ion_offset;          /* [n_elements+1] offset into ion_pop arrays */

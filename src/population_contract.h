@@ -63,6 +63,23 @@ typedef struct {
     const int *runtime_membership; /* NULL or n_levels; negative means absent */
     const int *level_Z;            /* optional hash identity */
     const int *level_ion;          /* optional hash identity */
+
+    /* ★R0(2026-08-07): **분배함수 전용** 최상단 이온 준위 catalog.
+     * 로더가 전리에너지 n 개 -> population n+1 개를 만들어 원소마다 최상단 population 의
+     * 속박준위가 0 개다(실측 15/74).  단일 g 대입은 최대 80배 틀린다
+     * (V II: g_first=1 vs Z(10kK)=80.9).
+     *
+     * 이 catalog 를 **공용 준위 배열에 넣지 않는** 이유(Codex 설계 판정 (c)):
+     * 넣으면 NLTE 미지수 등록 · ma_radrecomb_target 의 전역 준위 인덱스 ·
+     * BF 단면 [n_levels x n_freq] 계약 · macro-atom block reference ·
+     * 충돌강도 sidecar 준위 수 검사가 전부 **없는 자료**를 요구하게 된다.
+     * 전용 catalog 는 population_partition_build 하나만 읽는다.
+     *
+     * 이것은 runtime_membership 과 별개인 **thermodynamic membership** 이다. */
+    size_t topion_n;               /* catalog 항목 수 (0 이면 없음) */
+    const int *topion_ion_index;   /* topion_n — **ion-pop 인덱스**(level_offset 과 같은 키) */
+    const double *topion_E_cm;     /* topion_n, cm^-1 */
+    const double *topion_g;        /* topion_n */
 } PopulationAtomicView;
 
 typedef struct {

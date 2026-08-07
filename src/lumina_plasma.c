@@ -2160,6 +2160,11 @@ static PopulationAtomicView population_atomic_view(const AtomicData *atom) {
     view.g = atom ? atom->level_g : NULL;
     view.level_Z = atom ? atom->level_Z : NULL;
     view.level_ion = atom ? atom->level_ion : NULL;
+    /* R0: 분배함수 전용 catalog (thermodynamic membership) */
+    view.topion_n = atom ? atom->topion_n : 0;
+    view.topion_ion_index = atom ? atom->topion_ion_index : NULL;
+    view.topion_E_cm = atom ? atom->topion_E_cm : NULL;
+    view.topion_g = atom ? atom->topion_g : NULL;
     return view;
 }
 
@@ -2787,6 +2792,8 @@ static int compute_electron_density(AtomicData *atom, PlasmaState *plasma,
                 s, ##__VA_ARGS__);                                              \
         return -1;                                                              \
     } while (0)
+    double ne_charge_residual_max = 0.0;
+    int    ne_charge_residual_shell = -1;
     for (int s = 0; s < n_shells; s++) {
         double n_e = plasma->n_electron[s];
         if (!isfinite(n_e) || n_e <= 0.0)
@@ -2831,7 +2838,23 @@ static int compute_electron_density(AtomicData *atom, PlasmaState *plasma,
             NE_FAIL("no convergence in 100 iters: last n_e_new=%.6e n_e_old=%.6e "
                     "rel=%.3e (threshold 0.05)", last_new, last_old,
                     last_old > 0.0 ? fabs(last_new - last_old) / last_old : -1.0);
+
+        /* ★O8(사전등록): **전하보존 잔차를 장부에 남긴다.**
+         * 수렴 판정은 반복 스텝의 상대변화(|new-old|/old < 0.05)를 보는데, 그것은
+         * "더 이상 움직이지 않는다" 일 뿐 **전하가 맞는다**는 뜻이 아니다.
+         * 실제 보존 잔차는 채택된 n_e 와 그 n_e 가 낳는 sum(Z_i n_i) 의 차다.
+         * 여기서는 **기록만** 한다 — 수렴 기준을 바꾸는 것은 R4 의 몫이다
+         * (Fable G 조건 8: TARDIS 5% 상수 대체 기준은 R4 착수 전 사전등록). */
+        double q_res = (n_e > 0.0) ? fabs(last_new - n_e) / n_e : -1.0;
+        if (q_res > ne_charge_residual_max) {
+            ne_charge_residual_max = q_res;
+            ne_charge_residual_shell = s;
+        }
     }
+    printf("  [A2-07][n_e] charge-conservation residual: max=%.3e at shell %d "
+           "(%s; 기록만 — 수렴기준 미변경)\n",
+           ne_charge_residual_max, ne_charge_residual_shell,
+           lumina_bootstrap_active() ? "bootstrap" : "steady");
     return 0;
 #undef NE_FAIL
 }

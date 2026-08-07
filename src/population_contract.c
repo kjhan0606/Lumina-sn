@@ -6,6 +6,8 @@
 
 #define POP_EV_TO_ERG 1.602176634e-12
 #define POP_K_BOLTZMANN 1.380649e-16
+/* R0: catalog 는 cm^-1 로 온다 (CMFGEN osc · Cloudy Stout 공통 단위) */
+#define POP_CM1_TO_ERG 1.98644586e-16
 
 typedef struct {
     uint32_t h[8];
@@ -102,7 +104,32 @@ PopulationStatus population_partition_ion(const PopulationAtomicView *a,size_t i
      * 소비자 쪽에서 **상한으로 감싸 검사**한다(lumina_plasma.c reservoir 게이트).
      * 정본 수리 = 최상단 15 이온의 바닥 g 를 외부 앵커로 도입해 준위 1 개를 실제로 주는 것.
      * 대장 기재: docs/CLASSIC_DEBT_CENSUS.md (검증불가 고아 금지 — 방치하지 않는다). */
-    if(hi==lo){*out=1.0;return POP_OK;}
+    if(hi==lo){
+        /* ★R0(2026-08-07): 준위 없는 최상단 이온.  **Z=1 임시 대입을 폐기**한다 —
+         * 실측으로 최대 80배 틀렸다(V II: Z(10kK)=80.88 vs 1).
+         * 분배함수 전용 catalog(thermodynamic membership)에서 Z(T)=Sum g_i exp(-E_i/kT) 를
+         * 다른 이온과 **같은 식**으로 계산한다.  catalog 가 없으면 지어내지 않고 거부한다. */
+        if(!a->topion_n||!a->topion_ion_index||!a->topion_E_cm||!a->topion_g)
+            return POP_ATOMIC_MISSING;
+        /* catalog 는 **ion-pop 인덱스**로 키가 걸린다(level_offset 과 같은 키). */
+        double sum=0.0,e0=INFINITY;size_t cnt=0;
+        for(size_t k=0;k<a->topion_n;k++){
+            if((size_t)a->topion_ion_index[k]!=ion) continue;
+            if(a->topion_g[k]>0.0&&isfinite(a->topion_E_cm[k])&&a->topion_E_cm[k]<e0)
+                e0=a->topion_E_cm[k];
+            cnt++;
+        }
+        if(!cnt) return POP_ATOMIC_MISSING;
+        if(!isfinite(e0)) return POP_INVALID_PARTITION;
+        for(size_t k=0;k<a->topion_n;k++){
+            if((size_t)a->topion_ion_index[k]!=ion) continue;
+            if(!(a->topion_g[k]>0.0)||!isfinite(a->topion_E_cm[k])) continue;
+            double x=(a->topion_E_cm[k]-e0)*POP_CM1_TO_ERG/(POP_K_BOLTZMANN*te);
+            if(x<745.0) sum+=a->topion_g[k]*exp(-x);
+        }
+        if(!(sum>0.0)||!isfinite(sum)) return POP_INVALID_PARTITION;
+        *out=sum; return POP_OK;
+    }
     double e0=INFINITY;
     for(int l=lo;l<hi;l++)
         if((!a->runtime_membership||a->runtime_membership[l]>=0)&&isfinite(a->energy_eV[l])&&a->g[l]>0&&a->energy_eV[l]<e0)

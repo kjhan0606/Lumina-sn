@@ -2042,6 +2042,60 @@ int load_atomic_data(AtomicData *atom, const char *ref_dir, int n_shells) {
                 atom->level_offset[total_ion_pops], atom->n_levels);
     }
 
+    /* --- ★R0: 분배함수 전용 최상단 이온 준위 catalog ------------------------
+     * 로더가 전리에너지 n 개 -> population n+1 개를 만들어 원소마다 최상단 population 의
+     * 속박준위가 0 개다(실측 15/74).  단일 g 대입은 최대 80배 틀린다
+     * (V II: g_first=1 vs Z(10kK)=80.9) ⟹ 준위 목록으로 Z(T) 를 정확히 계산한다.
+     * **공용 준위 배열에 넣지 않는다**(Codex 설계 판정 (c)) — 넣으면 NLTE 미지수 등록,
+     * ma_radrecomb_target 의 전역 인덱스, BF 단면 [n_levels x n_freq] 계약,
+     * macro-atom block, 충돌 sidecar 준위 수 검사가 전부 **없는 자료**를 요구한다.
+     * 여기서 만든 catalog 는 population_partition_build 하나만 읽는다. */
+    {
+        const char *tp = "data/atomic/topion_levels.csv";
+        FILE *tf = fopen(tp, "r");
+        if (!tf) {
+            fprintf(stderr, "[R0][WARN] %s 없음 — 준위 없는 최상단 이온은 "
+                            "POP_ATOMIC_MISSING 으로 거부된다(지어내지 않는다)\n", tp);
+        } else {
+            char ln[512];
+            size_t cap = 4096, n = 0;
+            int *idx = (int *)malloc(cap * sizeof(int));
+            double *ecm = (double *)malloc(cap * sizeof(double));
+            double *gg  = (double *)malloc(cap * sizeof(double));
+            int n_unmapped = 0;
+            fgets(ln, sizeof(ln), tf);          /* header */
+            while (fgets(ln, sizeof(ln), tf)) {
+                int z = 0, stage = 0, li = 0;
+                double e = 0.0, g = 0.0;
+                char lbl[64], prov[64];
+                if (sscanf(ln, "%d,%d,%63[^,],%d,%lf,%lf,%63s",
+                           &z, &stage, lbl, &li, &e, &g) < 6) continue;
+                (void)prov;
+                /* (Z,stage) -> ion-pop 인덱스.  없으면 조용히 버리지 않고 센다. */
+                int ip = -1;
+                for (int q = 0; q < total_ion_pops; q++)
+                    if (atom->ion_pop_Z[q] == z && atom->ion_pop_stage[q] == stage) {
+                        ip = q; break;
+                    }
+                if (ip < 0) { n_unmapped++; continue; }
+                if (n == cap) {
+                    cap *= 2;
+                    idx = (int *)realloc(idx, cap * sizeof(int));
+                    ecm = (double *)realloc(ecm, cap * sizeof(double));
+                    gg  = (double *)realloc(gg,  cap * sizeof(double));
+                }
+                idx[n] = ip; ecm[n] = e; gg[n] = g; n++;
+            }
+            fclose(tf);
+            atom->topion_n = n;
+            atom->topion_ion_index = idx;
+            atom->topion_E_cm = ecm;
+            atom->topion_g = gg;
+            printf("  [R0] top-ion partition catalog: %zu levels mapped"
+                   " (%d rows had no matching ion-pop)\n", n, n_unmapped);
+        }
+    }
+
     /* --- [ALPHA-SPINGATE] optional per-level spin multiplicity (2S+1) ---------
      * Loaded ONLY when LUMINA_ALPHA_SPINGATE=1 -> when the gate is off this
      * whole block is skipped and atom->level_mult stays NULL (memset above),
