@@ -1005,6 +1005,19 @@ static int nlte_solve_all_gpu(NLTEConfig *nlte, AtomicData *atom,
                                 double time_explosion, int n_shells,
                                 CudaNLTESolver *sol,
                                 GammaDeposition *gamma_dep) {
+    GammaDepositionPublicationStatus gamma_status =
+        gamma_deposition_require(gamma_dep, time_explosion);
+    if (gamma_status != GAMMA_PUBLICATION_OK) {
+        fprintf(stderr,
+                "[GAMMA][BLOCKED] consumer=NLTE_NONTHERMAL_GPU "
+                "reason=%s expected_epoch=%.17g generation=%llu "
+                "published_epoch=%.17g action=TERMINATE\n",
+                gamma_deposition_publication_status_name(gamma_status),
+                time_explosion,
+                (unsigned long long)(gamma_dep ? gamma_dep->generation : 0),
+                gamma_dep ? gamma_dep->epoch : 0.0);
+        return -1;
+    }
     if (nlte_element_wide_config_status() != 0) {
         fprintf(stderr, "[EW] invalid gate configuration; GPU solve aborted\n");
         return -1;
@@ -7807,6 +7820,14 @@ int main(int argc, char *argv[]) {
          * gives an identical heating source to isolate the rest of the physics. */
         const char *depf = getenv("LUMINA_DEPOSITION_FILE");
         if (depf) {
+            double *external_heating_rate = (double *)calloc(
+                (size_t)geo.n_shells, sizeof(double));
+            if (!external_heating_rate) {
+                fprintf(stderr,
+                        "[GAMMA][BLOCKED] reason=GAMMA_EXTERNAL_ALLOCATION_FAILED "
+                        "file=%s action=TERMINATE\n", depf);
+                return EXIT_FAILURE;
+            }
             FILE *df = fopen(depf, "r");
             if (df) {
                 char line[256]; int nread = 0, sid; double hr;
@@ -7814,17 +7835,28 @@ int main(int argc, char *argv[]) {
                 while (fgets(line, sizeof line, df)) {
                     if (sscanf(line, "%d,%lf", &sid, &hr) == 2 &&
                         sid >= 0 && sid < geo.n_shells) {
-                        gamma_dep.heating_rate[sid] = hr; nread++;
+                        external_heating_rate[sid] = hr; nread++;
                     }
                 }
                 fclose(df);
                 printf("  [DEPOSITION] injected %d shells from %s (external)\n", nread, depf);
-                /* the file gives only heating_rate; derive the non-thermal
-                 * ionization rate (+register it for the freeze-out guard) so the
-                 * thin outer can be kept ionized as in ARTIS. */
-                gamma_deposition_compute_nonthermal(&gamma_dep);
+                int gamma_rc = gamma_deposition_publish(
+                    &gamma_dep, GAMMA_PROVENANCE_EXTERNAL_FILE,
+                    geo.time_explosion, &atom_data, &plasma, &geo,
+                    external_heating_rate);
+                free(external_heating_rate);
+                if (gamma_rc != 0) {
+                    fprintf(stderr,
+                            "[GAMMA][FATAL] lane=CUDA_EXTERNAL rc=%d file=%s\n",
+                            gamma_rc, depf);
+                    return EXIT_FAILURE;
+                }
             } else {
-                printf("  [DEPOSITION] WARN: cannot open %s\n", depf);
+                free(external_heating_rate);
+                fprintf(stderr,
+                        "[GAMMA][BLOCKED] reason=GAMMA_EXTERNAL_OPEN_FAILED "
+                        "file=%s action=TERMINATE\n", depf);
+                return EXIT_FAILURE;
             }
         }
     }
@@ -10675,8 +10707,16 @@ int main(int argc, char *argv[]) {
             printf("  [plasma frozen by ion-lock; transport-only iter %d]\n", iter);
         } else if (iter > 0) {
             /* Gamma-ray deposition: compute heating/ionization rates */
-            if (gamma_dep_enabled) {
-                compute_gamma_deposition(&gamma_dep, &atom_data, &plasma, &geo);
+            if (gamma_dep_enabled && gamma_dep.generation == 0) {
+                int gamma_rc = gamma_deposition_publish(
+                    &gamma_dep, GAMMA_PROVENANCE_INTERNAL_BATEMAN,
+                    geo.time_explosion, &atom_data, &plasma, &geo, NULL);
+                if (gamma_rc != 0) {
+                    fprintf(stderr,
+                            "[GAMMA][FATAL] lane=CUDA_MC iter=%d rc=%d\n",
+                            iter, gamma_rc);
+                    return EXIT_FAILURE;
+                }
                 printf("  [Gamma] heating_rate[0]=%.2e, [%d]=%.2e erg/s/cm3\n",
                        gamma_dep.heating_rate[0], geo.n_shells - 1,
                        gamma_dep.heating_rate[geo.n_shells - 1]);

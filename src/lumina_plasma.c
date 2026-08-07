@@ -8277,6 +8277,8 @@ static const char *r7_a210_block_reason(const A210Counters *before,
         return "RADEQ_STALE_INPUT";
     if (after->blocked_missing_term > before->blocked_missing_term)
         return "RADEQ_TERM_MISSING";
+    if (after->blocked_gamma_unpublished > before->blocked_gamma_unpublished)
+        return "RADEQ_GAMMA_UNPUBLISHED";
     if (after->blocked_schema > before->blocked_schema)
         return "RADEQ_TERM_SCHEMA";
     if (after->blocked_sign > before->blocked_sign)
@@ -8480,7 +8482,8 @@ int lumina_r7_publish_and_solve_te(OpacityState *opacity,
                 "te_manifest_preserved=%d generation_preserved=%d "
                 "material_update=BLOCKED action=TERMINATE "
                 "blocked_stale_delta=%llu no_bracket_delta=%llu "
-                "missing_term_delta=%llu schema_delta=%llu\n",
+                "missing_term_delta=%llu blocked_gamma_delta=%llu "
+                "schema_delta=%llu\n",
                 lane, iter, reason, (unsigned long long)t,
                 (unsigned long long)plasma->T_e_generation,
                 te_preserved, generation_preserved,
@@ -8490,6 +8493,8 @@ int lumina_r7_publish_and_solve_te(OpacityState *opacity,
                                      before.no_bracket),
                 (unsigned long long)(after.blocked_missing_term -
                                      before.blocked_missing_term),
+                (unsigned long long)(after.blocked_gamma_unpublished -
+                                     before.blocked_gamma_unpublished),
                 (unsigned long long)(after.blocked_schema -
                                      before.blocked_schema));
 
@@ -8500,6 +8505,28 @@ int lumina_r7_publish_and_solve_te(OpacityState *opacity,
             return 5;
         }
         return 4;
+    }
+
+    if (strcmp(lane, "MC") == 0) {
+        const ElectronTemperaturePublication *tepub = &plasma->te_publication;
+        for (int s = 0; s < n_shells; ++s) {
+            const A210TermLedger *ledger = &tepub->ledger[s];
+            double m1 = ledger->sum_heating != 0.0
+                      ? ledger->heating[A210_GAMMA] / ledger->sum_heating
+                      : NAN;
+            double m2 = ledger->photoionization_rate != 0.0
+                      ? gamma_dep->nonthermal_ioniz_rate[s] /
+                        ledger->photoionization_rate
+                      : NAN;
+            fprintf(stderr,
+                    "[GAMMA-MEASURE] lane=MC epoch=%.17g generation=%llu "
+                    "shell=%d M1_qgamma_over_a210_heat=%.17g "
+                    "M1_status=%s M2_nt_over_photoion=%.17g M2_status=%s\n",
+                    epoch, (unsigned long long)gamma_dep->generation, s, m1,
+                    ledger->sum_heating != 0.0 ? "DEFINED" : "EXACT_ZERO_DENOM",
+                    m2, ledger->photoionization_rate != 0.0
+                        ? "DEFINED" : "EXACT_ZERO_DENOM");
+        }
     }
 
     if (plasma->T_e_generation != t + 1 ||
@@ -12288,26 +12315,28 @@ static RadeqStatus a210_production_residual(size_t s,double te,
     memset(l,0,sizeof(*l));
     for(int k=0;k<A210_NHEAT;k++)l->heating_status[k]=A210_EXACT_ZERO;
     for(int k=0;k<A210_NCOOL;k++)l->cooling_status[k]=A210_EXACT_ZERO;
-    double photo_abs=0,line_abs=0,ff_abs=0,recomb=0,line_emit=0,ff_emit=0;
+    double photo_abs=0,photo_rate=0,line_abs=0,ff_abs=0,recomb=0,line_emit=0,ff_emit=0;
     double j_int=0,jnu_int=0;
     for(size_t b=0;b<c->nb;b++){
         size_t i=s*c->nb+b;double dnu=c->em->nu_edge[b+1]-c->em->nu_edge[b];
         double J=c->J[i];
         if(!isfinite(J)||J<0||!(dnu>0))return RADEQ_TERM_SCHEMA;
+        double nu=sqrt(c->em->nu_edge[b]*c->em->nu_edge[b+1]);
         photo_abs+=c->op->chi_bf[i]*J*dnu;
+        photo_rate+=c->op->chi_bf[i]*J*dnu/(H_PLANCK*nu);
         line_abs+=c->op->chi_bb[i]*J*dnu;
         ff_abs+=c->op->chi_ff[i]*J*dnu;
         recomb+=c->em->eta_bf[i]*sqrt(c->te_ref[s]/te)*dnu;
         line_emit+=c->em->eta_bb[i]*dnu;
         ff_emit+=c->em->eta_ff[i]*sqrt(te/c->te_ref[s])*dnu;
-        double nu=sqrt(c->em->nu_edge[b]*c->em->nu_edge[b+1]);
         j_int+=J*dnu;jnu_int+=J*nu*dnu;
     }
     const double fourpi=4.0*M_PI_VAL;
-    photo_abs*=fourpi;line_abs*=fourpi;ff_abs*=fourpi;
+    photo_abs*=fourpi;photo_rate*=fourpi;line_abs*=fourpi;ff_abs*=fourpi;
     recomb*=fourpi;line_emit*=fourpi;ff_emit*=fourpi;
     if(photo_abs>=0){l->heating[A210_PHOTO]=photo_abs;l->heating_status[A210_PHOTO]=photo_abs?A210_INCLUDED:A210_EXACT_ZERO;}
     else{recomb-=photo_abs;l->heating_status[A210_PHOTO]=A210_INCLUDED;}
+    l->photoionization_rate=photo_rate;
     l->A_line=line_abs;l->E_line=line_emit;l->m_line=1;
     l->radiative_line_included=1;l->collisional_or_escape_included=0;
     if(line_abs>=0)l->heating[A210_LINE_ABS]=line_abs;
@@ -12347,6 +12376,18 @@ static int a210_production_solve(PlasmaState*plasma,GammaDeposition*gamma,
  NLTEConfig*nlte,AtomicData*atom,OpacityState*opacity,double epoch,int ns){
     A210Counters*ct=a210_counters();
     if(getenv("LUMINA_FIXED_TE_PROFILE")){ct->fixed_te_attempts++;return 0;}
+    GammaDepositionPublicationStatus gamma_status=
+        gamma_deposition_require(gamma,epoch);
+    if(gamma_status!=GAMMA_PUBLICATION_OK){
+        ct->blocked_gamma_unpublished++;
+        fprintf(stderr,"[A2-10][BLOCKED] reason=RADEQ_GAMMA_UNPUBLISHED "
+                "gamma_status=%s expected_epoch=%.17g generation=%llu "
+                "published_epoch=%.17g material_update=BLOCKED action=TERMINATE\n",
+                gamma_deposition_publication_status_name(gamma_status),epoch,
+                (unsigned long long)(gamma?gamma->generation:0),
+                gamma?gamma->epoch:0.0);
+        return 0;
+    }
     if(!plasma||!nlte||!atom||!opacity||ns<=0||
        nlte->radfield_view_status!=RADIATION_FIELD_VIEW_OK){ct->blocked_stale++;return 0;}
     const CpuOpacityPublication*op=&opacity->cpu_opacity;
@@ -13073,7 +13114,7 @@ static int nlte_jbar_dump_want(int Z, int ion) {
     return 0;
 }
 
-void nlte_assemble_rate_matrix(NLTEConfig *nlte, AtomicData *atom,
+int nlte_assemble_rate_matrix(NLTEConfig *nlte, AtomicData *atom,
                                 PlasmaState *plasma, OpacityState *opacity,
                                 int ion_idx_lo, int ion_idx_hi,
                                 int shell, double time_explosion,
@@ -13081,6 +13122,19 @@ void nlte_assemble_rate_matrix(NLTEConfig *nlte, AtomicData *atom,
                                 GammaDeposition *gamma_dep,
                                 const NLTERateLookup *lookup,
                                 int pair_idx) {
+    GammaDepositionPublicationStatus gamma_status =
+        gamma_deposition_require(gamma_dep, time_explosion);
+    if (gamma_status != GAMMA_PUBLICATION_OK) {
+        fprintf(stderr,
+                "[GAMMA][BLOCKED] consumer=NLTE_NONTHERMAL "
+                "reason=%s expected_epoch=%.17g generation=%llu "
+                "published_epoch=%.17g action=TERMINATE\n",
+                gamma_deposition_publication_status_name(gamma_status),
+                time_explosion,
+                (unsigned long long)(gamma_dep ? gamma_dep->generation : 0),
+                gamma_dep ? gamma_dep->epoch : 0.0);
+        return -1;
+    }
     const int ew_capture = nlte_ew_capture_active();
     int lev_start = nlte->nlte_ion_level_offset[ion_idx_lo];
     int n_shells = plasma->n_shells;
@@ -14715,7 +14769,7 @@ void nlte_assemble_rate_matrix(NLTEConfig *nlte, AtomicData *atom,
      * zero TOPSTAGE_IV, time-dependent, pin, floor, anchor and repair calls. */
     if (ew_capture) {
         free(bb_connected);
-        return;
+        return 0;
     }
 
     /* ---- Time-dependent ionization: backward-Euler dn_i/dt term (option A) ----
@@ -15028,6 +15082,7 @@ void nlte_assemble_rate_matrix(NLTEConfig *nlte, AtomicData *atom,
     #undef ACM
     #undef SOLVE_OF
     #undef FRAC_OF
+    return 0;
 }
 
 /* CPU NLTE solver: assemble + Gauss elimination for one ion pair in one shell */
@@ -15066,11 +15121,11 @@ static int nlte_solve_ion_shell(NLTEConfig *nlte, AtomicData *atom,
 
     if (!has_nonfinite) {
         uint64_t population_errors_before = nlte->population_error_count;
-        nlte_assemble_rate_matrix(nlte, atom, plasma, opacity,
-                                   ion_idx_lo, ion_idx_hi, shell, time_explosion,
-                                   A_cm, b, N, gamma_dep,
-                                   NULL, -1);
-        if (nlte->population_error_count != population_errors_before)
+        int assembly_rc = nlte_assemble_rate_matrix(
+            nlte, atom, plasma, opacity, ion_idx_lo, ion_idx_hi, shell,
+            time_explosion, A_cm, b, N, gamma_dep, NULL, -1);
+        if (assembly_rc != 0 ||
+            nlte->population_error_count != population_errors_before)
             ret = -1;
         else {
             PopulationStatus rank_status = population_dense_rank_check(
@@ -15506,6 +15561,20 @@ int nlte_solve_all(NLTEConfig *nlte, AtomicData *atom, PlasmaState *plasma,
                      OpacityState *opacity, double time_explosion,
                      int n_shells, GammaDeposition *gamma_dep) {
     printf("  [NLTE] Solving rate equations (with CE coupling)...\n");
+
+    GammaDepositionPublicationStatus gamma_status =
+        gamma_deposition_require(gamma_dep, time_explosion);
+    if (gamma_status != GAMMA_PUBLICATION_OK) {
+        fprintf(stderr,
+                "[GAMMA][BLOCKED] consumer=NLTE_NONTHERMAL "
+                "reason=%s expected_epoch=%.17g generation=%llu "
+                "published_epoch=%.17g action=TERMINATE\n",
+                gamma_deposition_publication_status_name(gamma_status),
+                time_explosion,
+                (unsigned long long)(gamma_dep ? gamma_dep->generation : 0),
+                gamma_dep ? gamma_dep->epoch : 0.0);
+        return -1;
+    }
 
     const char *forbidden_population_knobs[] = {
         "LUMINA_NLTE_FORCE_LTE_LEVELS",
@@ -16012,6 +16081,157 @@ int nlte_solve_all(NLTEConfig *nlte, AtomicData *atom, PlasmaState *plasma,
 /* Gamma-ray energy deposition from 56Ni/56Co decay             */
 /* ============================================================ */
 
+typedef struct {
+    uint32_t h[8];
+    uint64_t bits;
+    unsigned char block[64];
+    size_t used;
+} GammaManifestSha256;
+
+static uint32_t gamma_manifest_rotr(uint32_t x, unsigned n) {
+    return (x >> n) | (x << (32U - n));
+}
+
+static void gamma_manifest_sha256_block(
+    GammaManifestSha256 *s, const unsigned char block[64]) {
+    static const uint32_t k[64] = {
+        0x428a2f98U,0x71374491U,0xb5c0fbcfU,0xe9b5dba5U,
+        0x3956c25bU,0x59f111f1U,0x923f82a4U,0xab1c5ed5U,
+        0xd807aa98U,0x12835b01U,0x243185beU,0x550c7dc3U,
+        0x72be5d74U,0x80deb1feU,0x9bdc06a7U,0xc19bf174U,
+        0xe49b69c1U,0xefbe4786U,0x0fc19dc6U,0x240ca1ccU,
+        0x2de92c6fU,0x4a7484aaU,0x5cb0a9dcU,0x76f988daU,
+        0x983e5152U,0xa831c66dU,0xb00327c8U,0xbf597fc7U,
+        0xc6e00bf3U,0xd5a79147U,0x06ca6351U,0x14292967U,
+        0x27b70a85U,0x2e1b2138U,0x4d2c6dfcU,0x53380d13U,
+        0x650a7354U,0x766a0abbU,0x81c2c92eU,0x92722c85U,
+        0xa2bfe8a1U,0xa81a664bU,0xc24b8b70U,0xc76c51a3U,
+        0xd192e819U,0xd6990624U,0xf40e3585U,0x106aa070U,
+        0x19a4c116U,0x1e376c08U,0x2748774cU,0x34b0bcb5U,
+        0x391c0cb3U,0x4ed8aa4aU,0x5b9cca4fU,0x682e6ff3U,
+        0x748f82eeU,0x78a5636fU,0x84c87814U,0x8cc70208U,
+        0x90befffaU,0xa4506cebU,0xbef9a3f7U,0xc67178f2U
+    };
+    uint32_t w[64];
+    for (int i = 0; i < 16; ++i) {
+        w[i] = ((uint32_t)block[4*i] << 24) |
+               ((uint32_t)block[4*i+1] << 16) |
+               ((uint32_t)block[4*i+2] << 8) |
+               (uint32_t)block[4*i+3];
+    }
+    for (int i = 16; i < 64; ++i) {
+        uint32_t a = w[i-15], b = w[i-2];
+        uint32_t s0 = gamma_manifest_rotr(a,7) ^
+                      gamma_manifest_rotr(a,18) ^ (a >> 3);
+        uint32_t s1 = gamma_manifest_rotr(b,17) ^
+                      gamma_manifest_rotr(b,19) ^ (b >> 10);
+        w[i] = w[i-16] + s0 + w[i-7] + s1;
+    }
+    uint32_t a=s->h[0],b=s->h[1],c=s->h[2],d=s->h[3];
+    uint32_t e=s->h[4],f=s->h[5],g=s->h[6],h=s->h[7];
+    for (int i = 0; i < 64; ++i) {
+        uint32_t S1=gamma_manifest_rotr(e,6)^gamma_manifest_rotr(e,11)^
+                    gamma_manifest_rotr(e,25);
+        uint32_t ch=(e&f)^(~e&g),t1=h+S1+ch+k[i]+w[i];
+        uint32_t S0=gamma_manifest_rotr(a,2)^gamma_manifest_rotr(a,13)^
+                    gamma_manifest_rotr(a,22);
+        uint32_t maj=(a&b)^(a&c)^(b&c),t2=S0+maj;
+        h=g;g=f;f=e;e=d+t1;d=c;c=b;b=a;a=t1+t2;
+    }
+    s->h[0]+=a;s->h[1]+=b;s->h[2]+=c;s->h[3]+=d;
+    s->h[4]+=e;s->h[5]+=f;s->h[6]+=g;s->h[7]+=h;
+}
+
+static void gamma_manifest_sha256_init(GammaManifestSha256 *s) {
+    static const uint32_t h[8] = {
+        0x6a09e667U,0xbb67ae85U,0x3c6ef372U,0xa54ff53aU,
+        0x510e527fU,0x9b05688cU,0x1f83d9abU,0x5be0cd19U
+    };
+    memcpy(s->h,h,sizeof(h));
+    s->bits=0;
+    s->used=0;
+}
+
+static void gamma_manifest_sha256_update(
+    GammaManifestSha256 *s, const void *data, size_t n) {
+    const unsigned char *p=(const unsigned char*)data;
+    s->bits+=(uint64_t)n*8U;
+    while(n){
+        size_t room=64-s->used,t=n<room?n:room;
+        memcpy(s->block+s->used,p,t);
+        s->used+=t;p+=t;n-=t;
+        if(s->used==64){
+            gamma_manifest_sha256_block(s,s->block);
+            s->used=0;
+        }
+    }
+}
+
+static void gamma_manifest_hash_u64(GammaManifestSha256 *s, uint64_t x) {
+    unsigned char b[8];
+    for(int i=0;i<8;++i)b[7-i]=(unsigned char)(x>>(8*i));
+    gamma_manifest_sha256_update(s,b,8);
+}
+
+static void gamma_manifest_hash_f64(GammaManifestSha256 *s, double x) {
+    uint64_t u;
+    memcpy(&u,&x,sizeof(u));
+    gamma_manifest_hash_u64(s,u);
+}
+
+static void gamma_manifest_sha256_final(
+    GammaManifestSha256 *s, char out[65]) {
+    uint64_t bits=s->bits;
+    unsigned char one=0x80,zero=0,len[8],digest[32];
+    gamma_manifest_sha256_update(s,&one,1);
+    while(s->used!=56)gamma_manifest_sha256_update(s,&zero,1);
+    for(int i=0;i<8;++i)len[7-i]=(unsigned char)(bits>>(8*i));
+    gamma_manifest_sha256_update(s,len,8);
+    for(int i=0;i<8;++i){
+        digest[4*i]=(unsigned char)(s->h[i]>>24);
+        digest[4*i+1]=(unsigned char)(s->h[i]>>16);
+        digest[4*i+2]=(unsigned char)(s->h[i]>>8);
+        digest[4*i+3]=(unsigned char)s->h[i];
+    }
+    static const char hex[]="0123456789abcdef";
+    for(int i=0;i<32;++i){
+        out[2*i]=hex[digest[i]>>4];
+        out[2*i+1]=hex[digest[i]&15];
+    }
+    out[64]='\0';
+}
+
+static int gamma_nonnegative_manifest_sha256(
+    const double *values, size_t n, const char *domain, char out[65]) {
+    if(!values||n==0||!domain||!out)return -1;
+    GammaManifestSha256 s;
+    gamma_manifest_sha256_init(&s);
+    gamma_manifest_sha256_update(&s,domain,strlen(domain));
+    gamma_manifest_hash_u64(&s,(uint64_t)n);
+    for(size_t i=0;i<n;++i){
+        if(!isfinite(values[i])||values[i]<0.0)return -1;
+        gamma_manifest_hash_u64(&s,(uint64_t)i);
+        gamma_manifest_hash_f64(&s,values[i]);
+    }
+    gamma_manifest_sha256_final(&s,out);
+    return 0;
+}
+
+static int gamma_heating_rate_manifest_sha256(
+    const double *values, size_t n, char out[65]) {
+    static const char domain[] =
+        "GAMMA:q_dep:erg/s/cm3:IEEE754:shell-order:v1";
+    return gamma_nonnegative_manifest_sha256(values,n,domain,out);
+}
+
+static int gamma_nonthermal_ioniz_rate_manifest_sha256(
+    const double *values, size_t n, char out[65]) {
+    static const char domain[] =
+        "GAMMA:nonthermal_ioniz_rate:ionizations/s/cm3:IEEE754:"
+        "shell-order:v1";
+    return gamma_nonnegative_manifest_sha256(values,n,domain,out);
+}
+
 /* Physical constants for 56Ni/56Co decay */
 #define LAMBDA_NI56   1.318e-6    /* 56Ni decay constant [s⁻¹], t½=6.077d */
 #define LAMBDA_CO56   1.038e-7    /* 56Co decay constant [s⁻¹], t½=77.27d */
@@ -16025,7 +16245,7 @@ int nlte_solve_all(NLTEConfig *nlte, AtomicData *atom, PlasmaState *plasma,
  * for the freeze-out guard. Shared by compute_gamma_deposition AND the external
  * deposition-file path (cuda.cu), which only loads heating_rate — without this the
  * non-thermal ionization is silently ZERO in ARTIS-comparison runs. */
-void gamma_deposition_compute_nonthermal(GammaDeposition *gd) {
+static void gamma_deposition_compute_nonthermal(GammaDeposition *gd) {
     if (!gd || !gd->nonthermal_ioniz_rate || !gd->heating_rate) return;
     /* Non-thermal ionizations = deposition / W, where W = mean energy per ion pair
      * (Kozma&Fransson 1992; ~33-35 eV) ALREADY includes the heating/excitation
@@ -16053,6 +16273,11 @@ void gamma_deposition_init(GammaDeposition *gd, int n_shells) {
     gd->n_shells = n_shells;
     gd->heating_rate = (double *)calloc(n_shells, sizeof(double));
     gd->nonthermal_ioniz_rate = (double *)calloc(n_shells, sizeof(double));
+    gd->generation = 0;
+    gd->epoch = 0.0;
+    gd->provenance = GAMMA_PROVENANCE_NONE;
+    gd->heating_rate_manifest_sha256[0] = '\0';
+    gd->nonthermal_ioniz_rate_manifest_sha256[0] = '\0';
 }
 
 void gamma_deposition_free(GammaDeposition *gd) {
@@ -16060,10 +16285,15 @@ void gamma_deposition_free(GammaDeposition *gd) {
     free(gd->nonthermal_ioniz_rate);
     gd->heating_rate = NULL;
     gd->nonthermal_ioniz_rate = NULL;
+    gd->generation = 0;
+    gd->epoch = 0.0;
+    gd->provenance = GAMMA_PROVENANCE_NONE;
+    gd->heating_rate_manifest_sha256[0] = '\0';
+    gd->nonthermal_ioniz_rate_manifest_sha256[0] = '\0';
 }
 
-void compute_gamma_deposition(GammaDeposition *gd, AtomicData *atom,
-                               PlasmaState *plasma, Geometry *geo) {
+static void compute_gamma_deposition(GammaDeposition *gd, AtomicData *atom,
+                                      PlasmaState *plasma, Geometry *geo) {
     int n_shells = gd->n_shells;
     double t_exp = geo->time_explosion;
 
@@ -16128,6 +16358,125 @@ void compute_gamma_deposition(GammaDeposition *gd, AtomicData *atom,
 
     free(epsilon_gamma);
     free(column_density);
+}
+
+const char *gamma_deposition_provenance_name(
+    GammaDepositionProvenance provenance) {
+    switch (provenance) {
+    case GAMMA_PROVENANCE_INTERNAL_BATEMAN: return "INTERNAL_BATEMAN";
+    case GAMMA_PROVENANCE_EXTERNAL_FILE: return "EXTERNAL_FILE";
+    default: return "NONE";
+    }
+}
+
+const char *gamma_deposition_publication_status_name(
+    GammaDepositionPublicationStatus status) {
+    switch (status) {
+    case GAMMA_PUBLICATION_OK: return "GAMMA_PUBLICATION_OK";
+    case GAMMA_PUBLICATION_UNPUBLISHED: return "GAMMA_UNPUBLISHED";
+    case GAMMA_PUBLICATION_STALE_EPOCH: return "GAMMA_STALE_EPOCH";
+    case GAMMA_PUBLICATION_MANIFEST_MISMATCH:
+        return "GAMMA_MANIFEST_MISMATCH";
+    default: return "GAMMA_PUBLICATION_INVALID_STATUS";
+    }
+}
+
+GammaDepositionPublicationStatus gamma_deposition_require(
+    const GammaDeposition *gd, double expected_epoch) {
+    if (!gd || gd->generation == 0 || gd->n_shells <= 0 ||
+        !gd->heating_rate || !gd->nonthermal_ioniz_rate ||
+        (gd->provenance != GAMMA_PROVENANCE_INTERNAL_BATEMAN &&
+         gd->provenance != GAMMA_PROVENANCE_EXTERNAL_FILE) ||
+        gd->heating_rate_manifest_sha256[0] == '\0' ||
+        gd->nonthermal_ioniz_rate_manifest_sha256[0] == '\0')
+        return GAMMA_PUBLICATION_UNPUBLISHED;
+    if (!isfinite(expected_epoch) || gd->epoch != expected_epoch)
+        return GAMMA_PUBLICATION_STALE_EPOCH;
+    char heating_manifest[65], nonthermal_manifest[65];
+    if (gamma_heating_rate_manifest_sha256(
+            gd->heating_rate,(size_t)gd->n_shells,heating_manifest) != 0 ||
+        gamma_nonthermal_ioniz_rate_manifest_sha256(
+            gd->nonthermal_ioniz_rate,(size_t)gd->n_shells,
+            nonthermal_manifest) != 0 ||
+        strcmp(heating_manifest,gd->heating_rate_manifest_sha256) != 0 ||
+        strcmp(nonthermal_manifest,
+               gd->nonthermal_ioniz_rate_manifest_sha256) != 0)
+        return GAMMA_PUBLICATION_MANIFEST_MISMATCH;
+    return GAMMA_PUBLICATION_OK;
+}
+
+int gamma_deposition_publish(GammaDeposition *gd,
+                             GammaDepositionProvenance provenance,
+                             double epoch, AtomicData *atom,
+                             PlasmaState *plasma, Geometry *geo,
+                             const double *external_heating_rate) {
+    if (!gd || gd->n_shells <= 0 || !gd->heating_rate ||
+        !gd->nonthermal_ioniz_rate || !isfinite(epoch) ||
+        (provenance != GAMMA_PROVENANCE_INTERNAL_BATEMAN &&
+         provenance != GAMMA_PROVENANCE_EXTERNAL_FILE) ||
+        (provenance == GAMMA_PROVENANCE_INTERNAL_BATEMAN &&
+         (!atom || !plasma || !geo)) ||
+        (provenance == GAMMA_PROVENANCE_EXTERNAL_FILE &&
+         !external_heating_rate)) {
+        fprintf(stderr,
+                "[GAMMA][BLOCKED] reason=GAMMA_INVALID_PUBLICATION_INPUT "
+                "epoch=%.17g provenance=%s action=TERMINATE\n",
+                epoch, gamma_deposition_provenance_name(provenance));
+        return 5;
+    }
+    if (gd->generation != 0 && gd->epoch == epoch) {
+        fprintf(stderr,
+                "[GAMMA][BLOCKED] reason=GAMMA_DOUBLE_PUBLISH epoch=%.17g "
+                "generation=%llu existing_provenance=%s "
+                "attempted_provenance=%s array_preserved=1 action=TERMINATE\n",
+                epoch, (unsigned long long)gd->generation,
+                gamma_deposition_provenance_name(gd->provenance),
+                gamma_deposition_provenance_name(provenance));
+        return 4;
+    }
+    if (gd->generation == UINT64_MAX) {
+        fprintf(stderr,
+                "[GAMMA][BLOCKED] reason=GAMMA_GENERATION_OVERFLOW "
+                "epoch=%.17g action=TERMINATE\n", epoch);
+        return 5;
+    }
+
+    if (provenance == GAMMA_PROVENANCE_INTERNAL_BATEMAN)
+        compute_gamma_deposition(gd, atom, plasma, geo);
+    else {
+        memcpy(gd->heating_rate, external_heating_rate,
+               (size_t)gd->n_shells * sizeof(double));
+        gamma_deposition_compute_nonthermal(gd);
+    }
+
+    char heating_manifest[65], nonthermal_manifest[65];
+    if (gamma_heating_rate_manifest_sha256(
+            gd->heating_rate,(size_t)gd->n_shells,heating_manifest) != 0 ||
+        gamma_nonthermal_ioniz_rate_manifest_sha256(
+            gd->nonthermal_ioniz_rate,(size_t)gd->n_shells,
+            nonthermal_manifest) != 0) {
+        fprintf(stderr,
+                "[GAMMA][BLOCKED] reason=GAMMA_MANIFEST_BUILD_FAILED "
+                "epoch=%.17g provenance=%s action=TERMINATE\n",
+                epoch, gamma_deposition_provenance_name(provenance));
+        return 5;
+    }
+    gd->generation++;
+    gd->epoch = epoch;
+    gd->provenance = provenance;
+    memcpy(gd->heating_rate_manifest_sha256,heating_manifest,
+           sizeof(gd->heating_rate_manifest_sha256));
+    memcpy(gd->nonthermal_ioniz_rate_manifest_sha256,nonthermal_manifest,
+           sizeof(gd->nonthermal_ioniz_rate_manifest_sha256));
+    fprintf(stderr,
+            "[GAMMA][PUBLISHED] generation=%llu epoch=%.17g provenance=%s "
+            "heating_manifest_sha256=%s "
+            "nonthermal_manifest_sha256=%s shells=%d\n",
+            (unsigned long long)gd->generation, gd->epoch,
+            gamma_deposition_provenance_name(gd->provenance),
+            gd->heating_rate_manifest_sha256,
+            gd->nonthermal_ioniz_rate_manifest_sha256,gd->n_shells);
+    return 0;
 }
 
 /* ============================================================ */

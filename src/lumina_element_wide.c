@@ -1982,8 +1982,9 @@ static int ew_rebuild_matrix(NLTEConfig *nlte, AtomicData *atom,
         EWFireCounts ignored; memset(&ignored,0,sizeof(ignored));
         ew_capture_begin(nlte,atom,shell,plasma->n_shells,lo,Np,N,base,
                          pair==1,plane,ledger);
-        nlte_assemble_rate_matrix(nlte,atom,plasma,opacity,lo,hi,shell,
-                                  time_explosion,tmpA,tmpb,Np,gamma_dep,NULL,-1);
+        if(nlte_assemble_rate_matrix(nlte,atom,plasma,opacity,lo,hi,shell,
+                                    time_explosion,tmpA,tmpb,Np,gamma_dep,NULL,-1)!=0)
+            failed=1;
         ew_capture_end(NULL,NULL,NULL,NULL,&ignored);
         free(tmpA);free(tmpb);
     }
@@ -2004,6 +2005,18 @@ static int ew_run_impl(NLTEConfig *nlte, AtomicData *atom,
     if (verdict_pass_out) *verdict_pass_out = 0;
     if (nlte_element_wide_config_status() != 0) return -1;
     if (!nlte_element_wide_matches(Z, shell_label)) return 0;
+    GammaDepositionPublicationStatus gamma_status=
+        gamma_deposition_require(gamma_dep,time_explosion);
+    if(gamma_status!=GAMMA_PUBLICATION_OK){
+        fprintf(stderr,"[GAMMA][BLOCKED] consumer=ELEMENT_WIDE_NONTHERMAL "
+                "reason=%s expected_epoch=%.17g generation=%llu "
+                "published_epoch=%.17g action=TERMINATE\n",
+                gamma_deposition_publication_status_name(gamma_status),
+                time_explosion,
+                (unsigned long long)(gamma_dep?gamma_dep->generation:0),
+                gamma_dep?gamma_dep->epoch:0.0);
+        return -1;
+    }
     ew_dump_failed = 0;
     EWPrivateView private_view;
     memset(&private_view, 0, sizeof(private_view));
@@ -2087,8 +2100,10 @@ static int ew_run_impl(NLTEConfig *nlte, AtomicData *atom,
                          plane,expected_outflow);
         unsigned long calls_before[3], calls_after[3];
         nlte_ew_runtime_counts_snapshot(calls_before);
-        nlte_assemble_rate_matrix(nlte,atom,plasma,opacity,lo,hi,shell,
-                                  time_explosion,tmpA,tmpb,Np,gamma_dep,NULL,-1);
+        if(nlte_assemble_rate_matrix(nlte,atom,plasma,opacity,lo,hi,shell,
+                                    time_explosion,tmpA,tmpb,Np,gamma_dep,NULL,-1)!=0){
+            free(tmpA);free(tmpb);goto cleanup_fail;
+        }
         nlte_ew_runtime_counts_snapshot(calls_after);
         ew_capture_end(&target_expected,&target_mapped,&target_fail,&bad_rate,&fire);
         fire.save_restore_calls += (int)(calls_after[0] - calls_before[0]);

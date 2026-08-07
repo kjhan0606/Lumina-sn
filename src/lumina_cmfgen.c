@@ -5199,6 +5199,22 @@ int cmfgen_run(Geometry *geo, OpacityState *opac, BFOpacity *bf,
         }
         a208_counters()->replay_line_blocks_committed++;
 
+        /* R7 phase: commit/view -> gamma publication -> A2-08/A2-09/A2-10.
+         * The publication is once per physical explosion epoch, before any
+         * material mutation. */
+        if (gamma && gamma->generation == 0) {
+            int gamma_rc = gamma_deposition_publish(
+                gamma, GAMMA_PROVENANCE_INTERNAL_BATEMAN, t_exp,
+                atom, plasma, geo, NULL);
+            if (gamma_rc != 0) {
+                fprintf(stderr,
+                        "[GAMMA][FATAL] lane=DET iter=%d rc=%d\n",
+                        iter, gamma_rc);
+                cmfgen_free(&cs);
+                return gamma_rc;
+            }
+        }
+
         {
             int r7_rc = lumina_r7_publish_and_solve_te(
                 opac, bf, atom, plasma, nlte, gamma,

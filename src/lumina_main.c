@@ -396,17 +396,6 @@ int main(int argc, char *argv[]) {
 
         printf("\n--- Iteration %d/%d ---\n", iter + 1, n_iterations); /* Phase 5 - Step 5 */
 
-        /* A2-10 input derived from the currently committed material.  Compute it
-         * before the radiation commit so the post-commit R7 barrier can remain
-         * commit -> view -> a208 -> a209 -> A2-10 with no material mutation. */
-        if (!material_locked && gamma_dep_enabled &&
-            (iter > 0 || radeq_te)) {
-            compute_gamma_deposition(&gamma_dep, &atom_data, &plasma, &geo);
-            printf("  [Gamma] heating_rate[0]=%.2e, [%d]=%.2e erg/s/cm3\n",
-                   gamma_dep.heating_rate[0], geo.n_shells - 1,
-                   gamma_dep.heating_rate[geo.n_shells - 1]);
-        }
-
         /* Phase 5 - Step 5: Reset estimators */
         reset_estimators(est); /* Phase 5 - Step 5 */
         reset_spectrum(spec); /* Phase 5 - Step 5 */
@@ -553,6 +542,24 @@ int main(int argc, char *argv[]) {
                         "status=%d\n", nlte.line_view_status);
                 return EXIT_FAILURE;
             }
+        }
+
+        /* Gamma publication owns the immutable physical epoch.  It follows the
+         * R7 commit/view barrier and precedes A2-10 and every material update. */
+        if (!material_locked && gamma_dep_enabled &&
+            gamma_dep.generation == 0) {
+            int gamma_rc = gamma_deposition_publish(
+                &gamma_dep, GAMMA_PROVENANCE_INTERNAL_BATEMAN,
+                geo.time_explosion, &atom_data, &plasma, &geo, NULL);
+            if (gamma_rc != 0) {
+                fprintf(stderr,
+                        "[GAMMA][FATAL] lane=MC iter=%d rc=%d\n",
+                        iter, gamma_rc);
+                return EXIT_FAILURE;
+            }
+            printf("  [Gamma] heating_rate[0]=%.2e, [%d]=%.2e erg/s/cm3\n",
+                   gamma_dep.heating_rate[0], geo.n_shells - 1,
+                   gamma_dep.heating_rate[geo.n_shells - 1]);
         }
 
         {

@@ -710,10 +710,28 @@ const DRCoefficient* dr_lookup(int Z, int ion_recomb);
 /* Gamma-ray energy deposition from 56Ni/56Co decay             */
 /* ============================================================ */
 
+typedef enum {
+    GAMMA_PROVENANCE_NONE = 0,
+    GAMMA_PROVENANCE_INTERNAL_BATEMAN,
+    GAMMA_PROVENANCE_EXTERNAL_FILE
+} GammaDepositionProvenance;
+
+typedef enum {
+    GAMMA_PUBLICATION_OK = 0,
+    GAMMA_PUBLICATION_UNPUBLISHED,
+    GAMMA_PUBLICATION_STALE_EPOCH,
+    GAMMA_PUBLICATION_MANIFEST_MISMATCH
+} GammaDepositionPublicationStatus;
+
 typedef struct {
     int     n_shells;
     double *heating_rate;           /* [n_shells] erg/s/cm³ */
     double *nonthermal_ioniz_rate;  /* [n_shells] ionizations/s/cm³ */
+    uint64_t generation;            /* zero until the first publication */
+    double epoch;                   /* explosion epoch owned by this publication */
+    GammaDepositionProvenance provenance;
+    char heating_rate_manifest_sha256[65];
+    char nonthermal_ioniz_rate_manifest_sha256[65];
 } GammaDeposition;
 
 /* ============================================================ */
@@ -1117,7 +1135,7 @@ typedef struct {
 /* NLTE: Assemble rate matrix (column-major A[N*N] + RHS b[N]) for GPU/CPU solve.
  * pair_idx is the index in the GPU pair list (0..n_pairs-1) when lookup != NULL;
  * ignored otherwise. */
-void nlte_assemble_rate_matrix(NLTEConfig *nlte, AtomicData *atom,
+int nlte_assemble_rate_matrix(NLTEConfig *nlte, AtomicData *atom,
                                 PlasmaState *plasma, OpacityState *opacity,
                                 int ion_idx_lo, int ion_idx_hi,
                                 int shell, double time_explosion,
@@ -1222,11 +1240,17 @@ void nlte_assemble_gpu_free(void);
 
 /* Gamma-ray deposition: 56Ni/56Co decay energy deposition */
 void gamma_deposition_init(GammaDeposition *gd, int n_shells);
-void compute_gamma_deposition(GammaDeposition *gd, AtomicData *atom,
-                               PlasmaState *plasma, Geometry *geo);
-/* Derive nonthermal_ioniz_rate from heating_rate + register for the freeze guard.
- * Call after loading an external deposition file (which sets only heating_rate). */
-void gamma_deposition_compute_nonthermal(GammaDeposition *gd);
+int gamma_deposition_publish(GammaDeposition *gd,
+                             GammaDepositionProvenance provenance,
+                             double epoch, AtomicData *atom,
+                             PlasmaState *plasma, Geometry *geo,
+                             const double *external_heating_rate);
+GammaDepositionPublicationStatus gamma_deposition_require(
+    const GammaDeposition *gd, double expected_epoch);
+const char *gamma_deposition_publication_status_name(
+    GammaDepositionPublicationStatus status);
+const char *gamma_deposition_provenance_name(
+    GammaDepositionProvenance provenance);
 /* Register the fine-ν local field (from cmfgen_fine_jbar) so bf photoion rates
  * integrate on the fine grid (LUMINA_CMF_FINE_PHOTOION). */
 void coupled_set_fine_jnu(const double *jnu, const double *nu, int n_fine,

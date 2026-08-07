@@ -14,7 +14,7 @@ typedef enum {
  RADEQ_NOT_CONVERGED,RADEQ_POPULATION_NOT_CONVERGED,RADEQ_CHARGE_NOT_CONVERGED,
  RADEQ_HEAT_RESIDUAL,RADEQ_TE_MANIFEST_MISMATCH,RADEQ_TE_CONTEXT_MISMATCH,
  RADEQ_UNQUALIFIED_TE,RADEQ_FIXED_T,RADEQ_FORBIDDEN_FALLBACK,
- RADEQ_PARTIAL_PUBLISH,RADEQ_NONFINITE
+ RADEQ_PARTIAL_PUBLISH,RADEQ_NONFINITE,RADEQ_GAMMA_UNPUBLISHED
 } RadeqStatus;
 typedef enum { A210_INCLUDED=1,A210_EXACT_ZERO,A210_REPLACED_NOT_APPLICABLE,A210_MISSING } A210TermStatus;
 typedef enum { A210_PHOTO=0,A210_LINE_ABS,A210_FF_ABS,A210_COMPTON_H,A210_GAMMA,A210_NONTHERMAL,A210_NHEAT } A210HeatTerm;
@@ -24,6 +24,7 @@ typedef struct {
  double heating[A210_NHEAT],cooling[A210_NCOOL];
  A210TermStatus heating_status[A210_NHEAT],cooling_status[A210_NCOOL];
  double A_line,E_line,Q_line_rad,C_line_ce;
+ double photoionization_rate;
  int m_line,radiative_line_included,collisional_or_escape_included;
  int line_owner_overlap;
  double line_owner_closure,normalized_line_owner_closure;
@@ -49,7 +50,8 @@ typedef struct {
  uint64_t gamma_heat_terms,nonthermal_heat_terms,recomb_cool_terms,line_cool_terms;
  uint64_t collisional_cool_terms,ff_cool_terms,compton_cool_terms,adiabatic_cool_terms;
  uint64_t exact_zero_balance,no_bracket,no_root,nonconverged,charge_nonconverged;
- uint64_t blocked_stale,blocked_missing_term,blocked_schema,blocked_sign;
+ uint64_t blocked_stale,blocked_missing_term,blocked_gamma_unpublished;
+ uint64_t blocked_schema,blocked_sign;
  uint64_t te_manifest_mismatch,te_context_mismatch,fixed_te_attempts,seed_generation_attempts;
  uint64_t line_radiative_owner_shells,line_collisional_escape_owner_shells;
  uint64_t line_replaced_collisional_terms,line_replaced_radiative_terms;
