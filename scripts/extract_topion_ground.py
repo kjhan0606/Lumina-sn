@@ -60,16 +60,26 @@ def parse_level_record(line: str):
     if len(tok) < 4:
         return None
     name = tok[0]
-    # 준위명은 `2s_2Se[1/2]` 처럼 **숫자로 시작할 수 있다**.  판별식은 "문자를 포함한다".
-    if not re.search(r"[A-Za-z]", name):
+    # 준위명은 `2s_2Se[1/2]` 처럼 숫자로 시작할 수도, `13___` 처럼 **문자가 아예 없을 수도**
+    # 있다(CMFGEN 의 병합 준위).  그래서 "문자를 포함한다" 는 틀린 판별식이다 —
+    # 2026-08-07 에 그것 때문에 C IV 64개 중 18개를 놓쳤고, 파서가 모자란 수를 채우려
+    # **전이 블록**까지 읽어 f 를 g 로, A 를 E 로 기록했다.
+    # 옳은 판별식: **실수로 파싱되지 않는다**(헤더 줄은 숫자이므로 여전히 걸러진다).
+    try:
+        float(name)
         return None
+    except ValueError:
+        pass
     try:
         g = float(tok[1]); e = float(tok[2])
     except ValueError:
         return None
     lid = None
     for x in tok[3:]:
-        if re.fullmatch(r"\d+", x):
+        # CMFGEN 은 준위 ID 에 **음수**를 쓰기도 한다(O IV: `... 1.781E+03  -7`).
+        # 2026-08-07 에 `\d+` 만 받아 324개 중 78개만 파싱했고, 모자란 수를 채우려
+        # 파서가 전이 블록으로 넘어갔다.
+        if re.fullmatch(r"-?\d+", x):
             lid = int(x); break
     if lid is None:
         return None
@@ -90,8 +100,7 @@ def read_cmfgen(dirpath: Path) -> tuple[float, float, str]:
         rec = parse_level_record(line) if n_declared is not None else None
         if rec:
             g, e, lid = rec
-            if lid != 1:
-                raise SystemExit(f"FAIL {f}: 첫 준위 ID={lid} (1 이어야 한다)")
+            # ID 규약이 판본마다 다르므로(양수·음수) 판별의 무게는 **E0=0 과 g>0** 에 둔다.
             if abs(e) > 1e-6:
                 raise SystemExit(f"FAIL {f}: 첫 준위 E={e} (0 이어야 한다)")
             if not (g > 0):
@@ -120,7 +129,7 @@ def all_levels_cmfgen(dirpath: Path) -> list[tuple[float, float]]:
     """Z(T) 계산용 — 선언된 준위 전체를 (E cm^-1, g) 로 읽는다."""
     cands = sorted(dirpath.glob("*/osc*")) + sorted(dirpath.glob("*/*osc*"))
     f = cands[0]
-    out, started, n_declared = [], False, None
+    out, started, n_declared, in_block = [], False, None, False
     for line in f.read_text(errors="ignore").splitlines():
         if "!Number of energy levels" in line:
             n_declared = int(line.split()[0]); started = True; continue
@@ -128,10 +137,20 @@ def all_levels_cmfgen(dirpath: Path) -> list[tuple[float, float]]:
             continue
         rec = parse_level_record(line)
         if rec:
+            in_block = True
             g, e, _ = rec
             out.append((e, g))
             if n_declared and len(out) >= n_declared:
                 break
+        elif in_block:
+            # ★블록 경계.  레코드가 시작된 뒤 처음 파싱 실패하는 줄이 준위 블록의 끝이다.
+            # 2026-08-07: 이 경계를 안 잡아서 파서가 **전이 블록**으로 넘어갔고
+            # f 를 g 로, A 를 E 로 읽었다(Fe VII 1195행 중 1041행이 전이 자료였다).
+            # n_declared 상한은 *파싱된 레코드*를 세므로 경계를 지키지 못한다.
+            break
+    if n_declared and len(out) != n_declared:
+        raise SystemExit(f"FAIL {f}: 준위 {len(out)}개만 파싱(선언 {n_declared}) — "
+                         f"블록 경계나 레코드 형식이 다르다")
     return out
 
 
