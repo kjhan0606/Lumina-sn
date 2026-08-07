@@ -116,6 +116,35 @@ def read_stout(f: Path) -> tuple[float, float, str]:
     raise SystemExit(f"FAIL {f}: 준위 레코드 없음")
 
 
+def all_levels_cmfgen(dirpath: Path) -> list[tuple[float, float]]:
+    """Z(T) 계산용 — 선언된 준위 전체를 (E cm^-1, g) 로 읽는다."""
+    cands = sorted(dirpath.glob("*/osc*")) + sorted(dirpath.glob("*/*osc*"))
+    f = cands[0]
+    out, started, n_declared = [], False, None
+    for line in f.read_text(errors="ignore").splitlines():
+        if "!Number of energy levels" in line:
+            n_declared = int(line.split()[0]); started = True; continue
+        if not started:
+            continue
+        rec = parse_level_record(line)
+        if rec:
+            g, e, _ = rec
+            out.append((e, g))
+            if n_declared and len(out) >= n_declared:
+                break
+    return out
+
+
+def all_levels_stout(f: Path) -> list[tuple[float, float]]:
+    out = []
+    for line in f.read_text(errors="ignore").splitlines():
+        p = line.split("\t")
+        if len(p) < 3 or not p[0].strip().isdigit():
+            continue
+        out.append((float(p[1]), float(p[2])))
+    return out
+
+
 def main() -> int:
     rows = []
     for z, stage, label, cmf_dir, stout_f in TARGETS:
@@ -139,6 +168,22 @@ def main() -> int:
     print(f"\n{len(rows)} 이온 -> {out}")
     if len(rows) != 15:
         print("⚠ 15 이온이 아니다 — fail-closed"); return 2
+
+    # ★준위 전체를 실어 Z(T) 를 계산할 수 있게 한다.
+    # 단일 g 대입은 최대 80배 틀린다(V II: g_first=1 vs Z(10kK)=80.9) — 실측.
+    lv_out = ROOT / "data/atomic/topion_levels.csv"
+    with lv_out.open("w", newline="") as fh:
+        w = csv.writer(fh)
+        w.writerow(["Z", "ion_stage_0based", "label", "level_index",
+                    "E_cm-1", "g", "provenance"])
+        for z, stage, label, cmf_dir, stout_f in TARGETS:
+            if cmf_dir is not None:
+                lv = all_levels_cmfgen(cmf_dir); prov = "CMFGEN_21jun23"
+            else:
+                lv = all_levels_stout(stout_f); prov = "CLOUDY_STOUT_NIST"
+            for i, (e, g) in enumerate(lv):
+                w.writerow([z, stage, label, i + 1, f"{e:.6f}", f"{g:.1f}", prov])
+    print(f"준위 전체 -> {lv_out}")
 
     # ★등전자 일치 검사 — CMFGEN 을 부르지 않고 얻는 독립 검증.
     # 전자 수가 같으면 바닥 항이 같으므로 g₀ 도 같아야 한다.  값을 잘못 읽으면 깨진다.
