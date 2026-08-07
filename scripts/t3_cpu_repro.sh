@@ -62,16 +62,22 @@ export OMP_NUM_THREADS="${OMP:-32}"
 # ⚠`grep -q` 를 파이프에 쓰면 안 된다: 첫 일치에서 즉시 종료하며 파이프를 닫아
 # nm 이 SIGPIPE 로 죽고, `set -o pipefail` 때문에 파이프라인이 비0 이 된다 ⟹ 오판.
 # 2026-08-07 에 이 가드가 멀쩡한 바이너리를 세 번 거부했다.  계수로 받는다.
-_omp_syms=$(nm ./lumina 2>/dev/null | grep -c 'GOMP\|omp_get' || true)
+# ★2026-08-08: 바이너리를 T3_BIN 으로 지정할 수 있다(기본 ./lumina).
+# A/B 를 하려고 ./lumina 를 서로 덮어쓰면 **동시 실행이 서로의 바이너리를 밟는다**.
+# 지정 경로로 돌리면 그 경합 자체가 없어진다.  무엇으로 돌았는지 찍는다.
+BIN="${T3_BIN:-./lumina}"
+[[ -x "$BIN" ]] || { echo "[HARNESS][FATAL] 실행 불가: $BIN" >&2; exit 66; }
+
+_omp_syms=$(nm "$BIN" 2>/dev/null | grep -c 'GOMP\|omp_get' || true)
 if [ "${_omp_syms:-0}" -eq 0 ]; then
-  echo "[HARNESS][FATAL] ./lumina 에 OpenMP 가 없다 — 'rm -f lumina && make OMP=1 lumina' 로 빌드하라." >&2
+  echo "[HARNESS][FATAL] $BIN 에 OpenMP 가 없다 — 'rm -f lumina && make OMP=1 lumina' 로 빌드하라." >&2
   echo "  (Makefile 의 OMP 는 스레드 수가 아니라 빌드 스위치다.  스레드 수는 이 스크립트의 OMP=)" >&2
   exit 70
 fi
 
-echo "=== T3_CPU_REPRO deck=$(basename "$MODEL") host=$(hostname) OMP=$OMP_NUM_THREADS ==="
+echo "=== T3_CPU_REPRO deck=$(basename "$MODEL") host=$(hostname) OMP=$OMP_NUM_THREADS bin=$BIN sha=$(sha256sum "$BIN" | cut -c1-12) ==="
 set +e
-./lumina "$MODEL" "${PKTS:-2000}" "${NITER:-1}" spectrum nlte 2>&1
+"$BIN" "$MODEL" "${PKTS:-2000}" "${NITER:-1}" spectrum nlte 2>&1
 rc=$?
 set -e
 echo "=== EXIT=$rc ==="
