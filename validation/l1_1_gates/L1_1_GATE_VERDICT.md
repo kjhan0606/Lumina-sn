@@ -16,7 +16,7 @@
 | **G5** | 재진입 거부 | **PASS** | 8항목 `fails=0`. 닫힌 뒤 **재개방 불가**(래치) 포함 |
 | **G6** | 덱 3종 동일 통과 | **PASS** | `_sivcaiv_active`·`_ophys`·`_jnu4` 세 덱 모두 사슬이 동일하게 섬 |
 | **G7** | 전하합 섭동 → 잔차 검출 | **미달(설계 결함)** | 게이트가 **기록만** 하고 문턱이 없어 FAIL 이 시연되지 않는다 |
-| **R0 음성** | catalog `{E=0,g=0}` → `POP_INVALID_PARTITION` | **무효 → 결함 적발** | 주입은 걸렸으나(`catalog=1`) 통과했다. 추적 결과 **로더 결함**(아래) |
+| **R0 음성** | catalog `{E=0,g=0}` → `POP_INVALID_PARTITION` | **PASS**(재실행) | 아래 §재실행 |
 | **O7** | population m=1 provenance | 관측됨 | `[A2-07] partition Z(T_e) committed generation=1` |
 | **O8** | 전하보존 잔차 기록 | 관측됨 | `max=1.586e-02 at shell 3` |
 
@@ -108,3 +108,31 @@ stage 지목), 한 건은 주입은 됐으나 별도 결함이 결과를 덮었�
 **남은 것은 두 가지 성격이 다르다**:
 - G1 은 **R7 소관**(사전등록된 기대 결과)
 - R0 음성대조·G7 은 **내 시험 설계 결함**(계약의 결함이 아니다)
+
+
+---
+
+## R0 음성대조 재실행 (2026-08-08) — **PASS**
+
+첫 실행이 무효였던 이유: **주입이 실재하는지 확인하지 않았다.**  당시 catalog 자료의
+절반이 이미 깨져 있어(전이 블록 오독) 주입이 묻혔다.
+
+재실행은 3단계 전부를 확인했다:
+
+| 단계 | 확인 방법 | 결과 |
+|---|---|---|
+| 주입 | Fe VII 1,195행 → `{E=0,g=0}` 1행 | 7,242 → 6,048 |
+| **결함 실재** | `scripts/check_topion_catalog.py` | **FAIL** — `C4 Z(5000K)=0 < g0=5.0` |
+| 런타임 도달 | `[R0]` 진단 | `level-less ion-pop 20: catalog=1` |
+| **거부** | 런 | **`POP_INVALID_PARTITION`** |
+
+```
+[A2-07][VIEW] ion 20 level-less -> POP_INVALID_PARTITION Z=-1
+[A2-07][FATAL] partition build failed: POP_INVALID_PARTITION
+[K-FRESH][FATAL] compute_plasma_state failed: POP_INVALID_PARTITION
+=== EXIT=1 ===
+```
+
+★규약으로 삼는다: **주입한 결함이 실재하는지 독립 검사로 먼저 확인하지 않으면
+음성대조는 무효다.**  "주입했는데 통과" 를 "결함 없음" 으로 읽으면 안 된다 —
+오늘은 그것이 자료 절반이 깨진 것을 덮고 있었다.
