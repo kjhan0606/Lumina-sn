@@ -46,8 +46,15 @@ typedef enum {
     RADIATION_FIELD_PROVENANCE_NONE = 0,
     RADIATION_FIELD_PROVENANCE_MC_PATH_LENGTH = 1,
     RADIATION_FIELD_PROVENANCE_CMFGEN_REPLAY = 2,
-    RADIATION_FIELD_PROVENANCE_DILUTE_PLANCK_LEGACY_APPROXIMATION = 3
+    RADIATION_FIELD_PROVENANCE_DILUTE_PLANCK_LEGACY_APPROXIMATION = 3,
+    /* R6: this names the deterministic line-profile quadrature itself.  It is
+     * deliberately not CMFGEN_REPLAY: that provenance names the continuum
+     * rebin, while this one names Jbar_l = Int(phi_l J_nu)dnu/Int(phi_l)dnu. */
+    RADIATION_FIELD_PROVENANCE_CMFGEN_LINE_PROFILE_INTEGRAL = 4
 } RadiationFieldProvenanceKind;
+
+#define LUMINA_LINE_JBAR_DETERMINISTIC_PRODUCER \
+    "A2-06:line-Jbar:deterministic-profile-integral:v1"
 
 typedef struct {
     RadiationFieldProvenanceKind kind;
@@ -124,6 +131,10 @@ typedef struct {
     uint64_t *sample_count;
     double *variance_or_standard_error;
     const char *q_set_hash;
+    /* COUNT means MC packet samples.  DETERMINISTIC means sample_count and
+     * variance_or_standard_error are not applicable (stored as zero), not a
+     * claim that an estimated variance is exactly zero. */
+    RadiationFieldEstimatorStatisticKind statistic_kind;
     RadiationFieldUnits units;
     RadiationFieldFrame frame;
     RadiationFieldProvenance provenance;
@@ -197,6 +208,8 @@ typedef struct {
     const char     *line_q_set_hash;     /* SHA-256 hex */
     uint64_t        line_profile_id;
     const char     *line_profile_hash;   /* SHA-256 hex */
+    RadiationFieldProvenanceKind line_provenance_kind;
+    const char     *line_producer;
     const double   *line_sum;            /* [line_n*n_shells] MC only */
     const double   *line_sumsq;          /* [line_n*n_shells] MC only */
     const uint64_t *line_count;          /* [line_n*n_shells] MC only */
@@ -284,6 +297,7 @@ typedef struct {
     const LineJbarValidityState *validity;
     const uint64_t *count;
     const double   *se;              /* [n_lines*n_shells] standard error */
+    RadiationFieldEstimatorStatisticKind statistic_kind;
     uint64_t generation;
 } LineJbarView;
 
@@ -293,6 +307,7 @@ int radiation_field_line_jbar_view(const RadiationFieldOwner *owner,
                                    uint64_t expected_generation,
                                    const char *expected_q_set_hash,
                                    uint64_t expected_profile_id,
+                                   const char *expected_profile_hash,
                                    LineJbarView *out);
 
 typedef struct {
@@ -300,6 +315,7 @@ typedef struct {
     LineJbarValidityState validity;
     uint64_t count;
     double se;
+    RadiationFieldEstimatorStatisticKind statistic_kind;
 } LineJbarValue;
 
 /* MISS (line_id not in Q_g) is a distinct error, never a value. */

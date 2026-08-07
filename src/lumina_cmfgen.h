@@ -261,11 +261,13 @@ void cmfgen_write_jnu(const CMFGENState *cs, NLTEConfig *nlte);
  * RadiationField commit API as MC, then refresh the temporary legacy view for
  * pre-A2-05 consumers. */
 int cmfgen_commit_jnu(const CMFGENState *cs, NLTEConfig *nlte,
-                      const Geometry *geo, uint64_t generation);
+                      const Geometry *geo, const OpacityState *opac,
+                      uint64_t generation);
 
-/* P7 PRODUCER: fine-grid line-resolved J_bar_l over a wavelength window
+/* P7/R6 PRODUCER: fine-grid line-resolved J_bar_l over a wavelength window
  * (default 1000-4000 A). Reuses cmf_solve_J on a fine Doppler-resolved mesh,
- * fills opac->jbar_line_det[n_lines*n_shells] (sentinel -1 outside window).
+ * fills private opac->jbar_line_det[n_lines*n_shells] (sentinel -1 outside
+ * window).  The canonical commit translates that sentinel to UNSAMPLED.
  * Env: LUMINA_CMF_FINE_{LAMLO,LAMHI,VDOP,PPD,ALI,DIAG}. */
 void cmfgen_fine_jbar(CMFGENState *csb, const Geometry *geo,
                       OpacityState *opac, double T_inner, PlasmaState *plasma);

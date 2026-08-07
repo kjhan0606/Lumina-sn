@@ -271,11 +271,14 @@ typedef struct {
      * as jbar_line, consumed by the (B_lu - B_ul n_u/n_l)*beta*J_blue up-rate.
      * NULL unless LUMINA_IUP_JBLUE=1 (co-evolve transport). */
     double *jblue_line;                  /* [n_lines * n_shells] normalized blue-wing J_blue or NULL */
-    /* P7 Stage-II: DETERMINISTIC line-resolved J_bar_l = Int phi_l J_nu dnu from the
-     * fine-grid CMF solve (NOT the MC estimator above; the validated cure for the
-     * binned-J contrast-collapse, ladder gates 4c/5b). NULL until the producer fills
-     * it; consumed by the bb up-rate only when LUMINA_CMF_LINERES_JBAR=1. */
+    /* P7 Stage-II / R6: DETERMINISTIC line-resolved J_bar_l = Int phi_l J_nu dnu
+     * from the fine-grid CMF solve (NOT the MC estimator above).  In the canonical
+     * pure-CMFGEN lane this is a required producer input to the atomic radiation
+     * commit; negative storage is private producer state and is translated to
+     * selective UNSAMPLED before publication. */
     double *jbar_line_det;               /* [n_lines * n_shells] or NULL */
+    double  jbar_line_det_vdoppler_cms;  /* producer profile identity; 0 = absent */
+    double  jbar_line_det_ndoppler;       /* symmetric support in Doppler widths */
     /* Fine-ν LOCAL continuum mean intensity from the cmfgen_fine_jbar producer,
      * retained (instead of freed) so bound-free PHOTOIONIZATION rates can be
      * integrated on the fine grid — the binned J collapses at the UV bf edges in

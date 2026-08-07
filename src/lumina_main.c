@@ -302,6 +302,8 @@ int main(int argc, char *argv[]) {
         if (!line_ids_u64) { fprintf(stderr, "[A2-06][FATAL] oom\n"); return EXIT_FAILURE; }
         for (size_t qi_ = 0; qi_ < line_qset.n_q; qi_++)
             line_ids_u64[qi_] = (uint64_t)line_qset.line_id[qi_];
+        /* R6: main owns the one frozen Q_g used by both publication arms. */
+        nlte.line_qset = &line_qset;
     }
 
     /* Gamma-ray deposition: initialize if enabled */
@@ -365,6 +367,9 @@ int main(int argc, char *argv[]) {
             free(volume);
             free_atomic_data(&atom_data);
             if (enable_nlte) { radiation_field_owner_free(&nlte.radiation_field); nlte_free(&nlte); }
+            line_jbar_accumulator_free(&line_acc);
+            line_jbar_qset_free(&line_qset);
+            free(line_ids_u64);
             if (gamma_dep_enabled) gamma_deposition_free(&gamma_dep);
             if (bf_opacity_enabled) bf_opacity_free(&bf);
             printf("\nDone (pure-CMFGEN).\n");
@@ -536,6 +541,7 @@ int main(int argc, char *argv[]) {
             nlte.line_view_status = radiation_field_line_jbar_view(
                 &nlte.radiation_field, geo.time_explosion, (size_t)geo.n_shells,
                 (uint64_t)(iter+1), line_qset.q_set_hash, line_qset.profile_id,
+                line_qset.profile_hash,
                 &nlte.line_view);
             if (nlte.line_view_status != LINE_JBAR_VIEW_OK) {
                 fprintf(stderr, "[A2-06][FATAL] line view refresh failed "
@@ -775,6 +781,9 @@ int main(int argc, char *argv[]) {
     free(volume); /* Phase 5 - Step 10 */
     free_atomic_data(&atom_data); /* Task #072 */
     if (enable_nlte) { radiation_field_owner_free(&nlte.radiation_field); nlte_free(&nlte); }
+    line_jbar_accumulator_free(&line_acc);
+    line_jbar_qset_free(&line_qset);
+    free(line_ids_u64);
     if (gamma_dep_enabled) gamma_deposition_free(&gamma_dep);
     if (bf_opacity_enabled && bf.event_enabled)
         printf("[BF-PHIXS-FALLBACK] CPU upper-ground fallback activations=%llu\n",

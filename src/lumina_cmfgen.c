@@ -6,6 +6,7 @@
 /* LUMINA_PURE_CMFGEN=1 dispatches cmfgen_run() from main.       */
 /* ============================================================ */
 #include "lumina_cmfgen.h"
+#include "line_jbar.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -3397,20 +3398,47 @@ void cmfgen_write_jnu(const CMFGENState *cs, NLTEConfig *nlte)
 }
 
 int cmfgen_commit_jnu(const CMFGENState *cs, NLTEConfig *nlte,
-                      const Geometry *geo, uint64_t generation)
+                      const Geometry *geo, const OpacityState *opac,
+                      uint64_t generation)
 {
-    if (!cs || !nlte || !geo || !cs->J || cs->n_shells <= 0 ||
+    if (!cs || !nlte || !geo || !opac || !cs->J || cs->n_shells <= 0 ||
         cs->n_bins <= 0 || geo->n_shells != cs->n_shells ||
-        !nlte->radiation_field.enabled)
+        opac->n_shells != cs->n_shells || !nlte->radiation_field.enabled)
         return -1;
+
+    const LineJbarQSet *qset = (const LineJbarQSet *)nlte->line_qset;
+    if (!qset || qset->n_q == 0 || !qset->line_id || !qset->line_nu ||
+        strlen(qset->q_set_hash) != 64 || strlen(qset->profile_hash) != 64 ||
+        !opac->jbar_line_det || !opac->line_list_nu) {
+        fprintf(stderr,
+                "[R6][BLOCKED] reason=DETERMINISTIC_LINE_JBAR_MISSING\n");
+        return -1;
+    }
+    if (qset->profile_id != LINE_JBAR_PROFILE_GAUSS_VD10 ||
+        opac->jbar_line_det_vdoppler_cms != LINE_JBAR_VDOPPLER_CMS ||
+        opac->jbar_line_det_ndoppler != LINE_JBAR_PROFILE_NDOPPLER) {
+        fprintf(stderr,
+                "[R6][BLOCKED] reason=PROFILE_MISMATCH "
+                "q_profile=%llu det_vdop=%.17g det_ndop=%.17g\n",
+                (unsigned long long)qset->profile_id,
+                opac->jbar_line_det_vdoppler_cms,
+                opac->jbar_line_det_ndoppler);
+        return -1;
+    }
 
     size_t bins = (size_t)cs->n_bins;
     size_t cells = (size_t)cs->n_shells * bins;
+    size_t line_cells = qset->n_q * (size_t)cs->n_shells;
     double *edges = (double *)malloc((bins + 1) * sizeof(double));
     RadiationFieldValidityState *validity =
         (RadiationFieldValidityState *)malloc(cells * sizeof(*validity));
-    if (!edges || !validity) {
-        free(edges); free(validity);
+    uint64_t *line_id = (uint64_t *)malloc(qset->n_q * sizeof(*line_id));
+    double *line_jbar = (double *)malloc(line_cells * sizeof(*line_jbar));
+    int32_t *line_validity =
+        (int32_t *)malloc(line_cells * sizeof(*line_validity));
+    if (!edges || !validity || !line_id || !line_jbar || !line_validity) {
+        free(edges); free(validity); free(line_id); free(line_jbar);
+        free(line_validity);
         return -1;
     }
     for (size_t b = 0; b <= bins; ++b)
@@ -3419,11 +3447,62 @@ int cmfgen_commit_jnu(const CMFGENState *cs, NLTEConfig *nlte,
     edges[bins] = cs->nu_max;
     for (size_t i = 0; i < cells; ++i) {
         if (!isfinite(cs->J[i]) || cs->J[i] < 0.0) {
-            free(edges); free(validity);
+            free(edges); free(validity); free(line_id); free(line_jbar);
+            free(line_validity);
             return -1;
         }
         validity[i] = cs->J[i] == 0.0
             ? RADIATION_FIELD_EXACT_ZERO : RADIATION_FIELD_VALID;
+    }
+
+    size_t valid_lines = 0, partial_lines = 0, unsampled_lines = 0;
+    size_t valid_cells = 0, exact_zero_cells = 0;
+    for (size_t q = 0; q < qset->n_q; q++) {
+        int lid = qset->line_id[q];
+        if (lid < 0 || lid >= opac->n_lines ||
+            !isfinite(qset->line_nu[q]) || qset->line_nu[q] <= 0.0 ||
+            qset->line_nu[q] != opac->line_list_nu[lid]) {
+            fprintf(stderr,
+                    "[R6][BLOCKED] reason=QSET_LINE_IDENTITY_MISMATCH q=%zu "
+                    "line_id=%d\n", q, lid);
+            free(edges); free(validity); free(line_id); free(line_jbar);
+            free(line_validity);
+            return -1;
+        }
+        line_id[q] = (uint64_t)lid;
+        size_t covered_shells = 0;
+        for (size_t s = 0; s < (size_t)cs->n_shells; s++) {
+            size_t src = (size_t)lid * (size_t)cs->n_shells + s;
+            size_t dst = q * (size_t)cs->n_shells + s;
+            double raw = opac->jbar_line_det[src];
+            if (raw == -1.0) {
+                line_jbar[dst] = 0.0;
+                line_validity[dst] = LINE_JBAR_UNSAMPLED;
+            } else if (!isfinite(raw) || raw < 0.0) {
+                fprintf(stderr,
+                        "[R6][BLOCKED] reason=INVALID_PRIVATE_SENTINEL "
+                        "line_id=%d shell=%zu value=%.17g\n", lid, s, raw);
+                free(edges); free(validity); free(line_id); free(line_jbar);
+                free(line_validity);
+                return -1;
+            } else {
+                line_jbar[dst] = raw;
+                line_validity[dst] = raw == 0.0
+                    ? LINE_JBAR_EXACT_ZERO : LINE_JBAR_VALID;
+                covered_shells++;
+                if (raw == 0.0) exact_zero_cells++; else valid_cells++;
+            }
+        }
+        if (covered_shells == (size_t)cs->n_shells) valid_lines++;
+        else if (covered_shells > 0) partial_lines++;
+        else unsampled_lines++;
+    }
+    if (valid_cells + exact_zero_cells == 0) {
+        fprintf(stderr,
+                "[R6][BLOCKED] reason=DETERMINISTIC_LINE_JBAR_NO_VALID_CELLS\n");
+        free(edges); free(validity); free(line_id); free(line_jbar);
+        free(line_validity);
+        return -1;
     }
 
     RadiationFieldCommitRequest request;
@@ -3440,14 +3519,52 @@ int cmfgen_commit_jnu(const CMFGENState *cs, NLTEConfig *nlte,
     request.source_J_nu = cs->J;
     request.source_validity = validity;
     request.statistic_kind = RADIATION_FIELD_DETERMINISTIC;
+    request.line_n = qset->n_q;
+    request.line_id = line_id;
+    request.line_q_set_hash = qset->q_set_hash;
+    request.line_profile_id = qset->profile_id;
+    request.line_profile_hash = qset->profile_hash;
+    request.line_provenance_kind =
+        RADIATION_FIELD_PROVENANCE_CMFGEN_LINE_PROFILE_INTEGRAL;
+    request.line_producer = LUMINA_LINE_JBAR_DETERMINISTIC_PRODUCER;
+    request.line_jbar = line_jbar;
+    request.line_validity = line_validity;
     int rc = radiation_field_commit(&nlte->radiation_field, &request);
-    free(edges); free(validity);
+    free(edges); free(validity); free(line_id); free(line_jbar);
+    free(line_validity);
     if (rc != 0) return -1;
     /* A2-05: the only replay-lane view refresh point. */
     nlte->radfield_view_status = radiation_field_read_view(
         &nlte->radiation_field, geo->time_explosion, (size_t)cs->n_shells,
         generation, &nlte->radfield_view);
     if (nlte->radfield_view_status != RADIATION_FIELD_VIEW_OK) return -1;
+    nlte->line_view_status = radiation_field_line_jbar_view(
+        &nlte->radiation_field, geo->time_explosion, (size_t)cs->n_shells,
+        generation, qset->q_set_hash, qset->profile_id, qset->profile_hash,
+        &nlte->line_view);
+    if (nlte->line_view_status != LINE_JBAR_VIEW_OK) {
+        fprintf(stderr,
+                "[R6][BLOCKED] reason=LINE_JBAR_VIEW status=%d\n",
+                nlte->line_view_status);
+        return -1;
+    }
+    fprintf(stderr,
+            "[R6][LINE-IDENTITY] lane=DET generation=%llu "
+            "q_set_hash=%s profile_id=%llu profile_hash=%s "
+            "statistic_kind=DETERMINISTIC provenance=%s\n",
+            (unsigned long long)generation, qset->q_set_hash,
+            (unsigned long long)qset->profile_id, qset->profile_hash,
+            LUMINA_LINE_JBAR_DETERMINISTIC_PRODUCER);
+    fprintf(stderr,
+            "[R6][LINE-COVERAGE] generation=%llu all_lines=%d q_lines=%zu "
+            "valid_lines=%zu partial_lines=%zu unsampled_lines=%zu "
+            "valid_pct_qset=%.6f valid_pct_all=%.6f "
+            "valid_cells=%zu exact_zero_cells=%zu\n",
+            (unsigned long long)generation, opac->n_lines, qset->n_q, valid_lines,
+            partial_lines, unsampled_lines,
+            100.0 * (double)valid_lines / (double)qset->n_q,
+            100.0 * (double)valid_lines / (double)opac->n_lines,
+            valid_cells, exact_zero_cells);
 
     /* Temporary compatibility view: A2-05+ migrates consumers to the canonical
      * field.  This copy preserves pre-migration rate/opacity/emissivity output. */
@@ -4040,11 +4157,10 @@ static int cmfgen_fine_emergent_obs(const CMFGENState *fs, const Geometry *geo,
  * NLTE loop re-derives S_l from the J_bar this produces -- the lagged-J
  * scheme validated in gate 5d). After the solve, extracts per line
  *     J_bar_l = Int phi_l J dnu / Int phi_l dnu
- * into opac->jbar_line_det (sentinel -1 for lines outside the window, so
- * the plasma bb-rate falls back). Standalone-validated: gates 3a/4b/4c/5*.
+ * into opac->jbar_line_det (private sentinel -1 outside the window; R6 maps
+ * it to public UNSAMPLED). Standalone-validated: gates 3a/4b/4c/5*.
  *
- * Caller allocates opac->jbar_line_det[n_lines*n_shells]. The plasma
- * bb-rate reads it under LUMINA_CMF_LINERES_JBAR. */
+ * Caller allocates opac->jbar_line_det[n_lines*n_shells]. */
 /* bf + atom registered by cuda.cu so the producer can build the fine bf continuum
  * opacity (LUMINA_CMF_FINE_BF_OPAC). NULL → keep the interpolated continuum. */
 static BFOpacity   *g_fine_bf   = NULL;
@@ -4057,6 +4173,8 @@ void cmfgen_fine_jbar(CMFGENState *csb, const Geometry *geo,
                       OpacityState *opac, double T_inner, PlasmaState *plasma)
 {
     int NS = csb->n_shells, NL = opac->n_lines;
+    opac->jbar_line_det_vdoppler_cms = 0.0;
+    opac->jbar_line_det_ndoppler = 0.0;
     if (NL <= 0 || !opac->jbar_line_det) return;
     double t_exp = geo->time_explosion;
     int diag = 0; { const char *e=getenv("LUMINA_CMF_FINE_DIAG"); if(e) diag=atoi(e); }
@@ -4472,6 +4590,10 @@ void cmfgen_fine_jbar(CMFGENState *csb, const Geometry *geo,
             opac->jbar_line_det[(size_t)l*NS+s] = (den > 0.0) ? num/den : -1.0;
         }
     }
+    /* R6 identity evidence.  Publication accepts this field only when these
+     * actual producer parameters equal the frozen MC profile definition. */
+    opac->jbar_line_det_vdoppler_cms = vdop;
+    opac->jbar_line_det_ndoppler = 4.0;
 
     if (diag) {   /* J_bar_l sanity + S_l/B (b_k proxy) per-iter at warm+cold shells.
                    * Loop over {0(inner warm), 6, NS/2(cold)} so an A/B + iteration
@@ -5190,8 +5312,31 @@ int cmfgen_run(Geometry *geo, OpacityState *opac, BFOpacity *bf,
                                  cs.chi_line, cs.chi_line_cls,
                                  cs.n_shells, cs.n_bins);
 
+        /* R6 contract: deterministic line-Jbar is not optional configuration.
+         * Produce it before the commit so continuum and selective line views
+         * become visible at one generation and one choke point. */
+        if (opac->n_lines <= 0 || !opac->tau_sobolev) {
+            fprintf(stderr,
+                    "[R6][BLOCKED] reason=DETERMINISTIC_LINE_INPUT_MISSING "
+                    "iter=%d\n", iter);
+            cmfgen_free(&cs);
+            return -1;
+        }
+        if (!opac->jbar_line_det)
+            opac->jbar_line_det = (double *)malloc(
+                (size_t)opac->n_lines * (size_t)cs.n_shells * sizeof(double));
+        if (!opac->jbar_line_det) {
+            fprintf(stderr,
+                    "[R6][FATAL] reason=DETERMINISTIC_LINE_JBAR_ALLOCATION "
+                    "iter=%d\n", iter);
+            cmfgen_free(&cs);
+            return -1;
+        }
+        cmfgen_fine_jbar(&cs, geo, opac, T_inner, plasma);
+
         a208_counters()->replay_line_blocks_attempted++;
-        if (cmfgen_commit_jnu(&cs, nlte, geo, (uint64_t)(iter + 1)) != 0) {
+        if (cmfgen_commit_jnu(&cs, nlte, geo, opac,
+                              (uint64_t)(iter + 1)) != 0) {
             fprintf(stderr, "[RADIATION-FIELD][FATAL] pure-CMFGEN commit failed iter=%d\n",
                     iter);
             cmfgen_free(&cs);
@@ -5225,24 +5370,6 @@ int cmfgen_run(Geometry *geo, OpacityState *opac, BFOpacity *bf,
                         iter, r7_rc);
                 cmfgen_free(&cs);
                 return r7_rc;
-            }
-        }
-
-        /* P7 PRODUCER (LUMINA_CMF_LINERES_JBAR=1): fine-grid line-resolved J_bar_l
-         * over the UV pump window. Fills opac->jbar_line_det; the plasma bb-rate
-         * reads it (top priority, sentinel -1 => fall back). The binned cs above
-         * already supplied the smooth continuum that cmfgen_fine_jbar interpolates,
-         * and line_source_S carries the lagged line source (5d lagged-J scheme). */
-        {
-            static int lineres_jbar = -1;
-            if (lineres_jbar < 0) { const char *e = getenv("LUMINA_CMF_LINERES_JBAR");
-                lineres_jbar = (e && atoi(e)) ? 1 : 0; }
-            if (lineres_jbar && opac->n_lines > 0 && opac->tau_sobolev) {
-                if (!opac->jbar_line_det)
-                    opac->jbar_line_det = (double*)malloc(
-                        (size_t)opac->n_lines * cs.n_shells * sizeof(double));
-                if (opac->jbar_line_det)
-                    cmfgen_fine_jbar(&cs, geo, opac, T_inner, plasma);
             }
         }
 

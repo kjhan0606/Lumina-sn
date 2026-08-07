@@ -27,6 +27,20 @@ static void radiation_field_mark_all(RadiationField *field,
         field->validity.values[i] = state;
 }
 
+static void line_jbar_cache_release(LineJbarCache *cache)
+{
+    free(cache->shell_id);
+    free(cache->line_id);
+    free(cache->profile_id);
+    free(cache->profile_hash);
+    free(cache->jbar_value);
+    free(cache->validity);
+    free(cache->sample_count);
+    free(cache->variance_or_standard_error);
+    free((char *)cache->q_set_hash);
+    memset(cache, 0, sizeof(*cache));
+}
+
 int radiation_field_owner_init(RadiationFieldOwner *shadow, size_t n_shells)
 {
     if (!shadow || n_shells == 0) return -1;
@@ -100,15 +114,7 @@ void radiation_field_owner_free(RadiationFieldOwner *shadow)
     free(shadow->field.estimator_count_or_variance.variance);
     free(shadow->accumulator.raw_path_length);
     free(shadow->accumulator.contribution_count);
-    free(shadow->line_jbar_cache.shell_id);
-    free(shadow->line_jbar_cache.line_id);
-    free(shadow->line_jbar_cache.profile_id);
-    free(shadow->line_jbar_cache.profile_hash);
-    free(shadow->line_jbar_cache.jbar_value);
-    free(shadow->line_jbar_cache.validity);
-    free(shadow->line_jbar_cache.sample_count);
-    free(shadow->line_jbar_cache.variance_or_standard_error);
-    free((char *)shadow->line_jbar_cache.q_set_hash);
+    line_jbar_cache_release(&shadow->line_jbar_cache);
     free(shadow->line_ids_compact);
     free(shadow->line_profile_hash_storage);
     memset(shadow, 0, sizeof(*shadow));
@@ -440,11 +446,31 @@ static int radiation_field_prepare_line(
     double *se)
 {
     size_t n = request->line_n * request->n_shells;
-    int mc = request->provenance_kind == RADIATION_FIELD_PROVENANCE_MC_PATH_LENGTH;
+    int mc = request->statistic_kind == RADIATION_FIELD_ESTIMATOR_COUNT;
+    RadiationFieldProvenanceKind line_provenance =
+        request->line_provenance_kind != RADIATION_FIELD_PROVENANCE_NONE
+        ? request->line_provenance_kind : request->provenance_kind;
+    const char *line_producer = request->line_producer
+        ? request->line_producer : request->producer;
     if (!request->line_id || !request->line_q_set_hash ||
         strlen(request->line_q_set_hash) != 64 ||
-        !request->line_profile_hash || request->line_profile_id == 0)
+        !request->line_profile_hash || strlen(request->line_profile_hash) != 64 ||
+        request->line_profile_id == 0)
         return -1;
+    if (mc) {
+        if (line_provenance != RADIATION_FIELD_PROVENANCE_MC_PATH_LENGTH ||
+            !line_producer)
+            return -1;
+    } else if (request->statistic_kind == RADIATION_FIELD_DETERMINISTIC) {
+        if (line_provenance !=
+                RADIATION_FIELD_PROVENANCE_CMFGEN_LINE_PROFILE_INTEGRAL ||
+            !line_producer ||
+            strcmp(line_producer,
+                   LUMINA_LINE_JBAR_DETERMINISTIC_PRODUCER) != 0)
+            return -1;
+    } else {
+        return -1;
+    }
     for (size_t i = 1; i < request->line_n; i++)
         if (request->line_id[i] <= request->line_id[i - 1]) return -1;
     if (mc) {
@@ -485,35 +511,22 @@ static int radiation_field_prepare_line(
             if (v != LINE_JBAR_VALID && v != LINE_JBAR_EXACT_ZERO &&
                 v != LINE_JBAR_UNSAMPLED && v != LINE_JBAR_OUT_OF_BB_DOMAIN)
                 return -1;
-            if (!isfinite(request->line_jbar[i]) || request->line_jbar[i] < 0.0)
+            if (!isfinite(request->line_jbar[i]) || request->line_jbar[i] < 0.0) {
+                fprintf(stderr,
+                        "[LINE_JBAR][BLOCKED] reason=NEGATIVE_OR_NONFINITE_JBAR "
+                        "cell=%zu validity=%d value=%.17g\n",
+                        i, (int)v, request->line_jbar[i]);
                 return -1;
-            if (v != LINE_JBAR_VALID && request->line_jbar[i] != 0.0) return -1;
+            }
+            if ((v == LINE_JBAR_VALID && request->line_jbar[i] <= 0.0) ||
+                (v != LINE_JBAR_VALID && request->line_jbar[i] != 0.0))
+                return -1;
             value[i] = request->line_jbar[i];
             validity[i] = (LineJbarValidityState)v;
             count[i] = 0; se[i] = 0.0;
         }
     }
     return 0;
-}
-
-static int radiation_field_line_cache_reserve(LineJbarCache *cache, size_t n)
-{
-    if (cache->entry_count == n && cache->jbar_value) return 0;
-    free(cache->shell_id); free(cache->line_id); free(cache->profile_id);
-    free(cache->profile_hash); free(cache->jbar_value); free(cache->validity);
-    free(cache->sample_count); free(cache->variance_or_standard_error);
-    cache->shell_id = malloc(n * sizeof(uint64_t));
-    cache->line_id = malloc(n * sizeof(uint64_t));
-    cache->profile_id = malloc(n * sizeof(uint64_t));
-    cache->profile_hash = malloc(n * sizeof(const char *));
-    cache->jbar_value = malloc(n * sizeof(double));
-    cache->validity = malloc(n * sizeof(LineJbarValidityState));
-    cache->sample_count = malloc(n * sizeof(uint64_t));
-    cache->variance_or_standard_error = malloc(n * sizeof(double));
-    cache->entry_count = n;
-    return (cache->shell_id && cache->line_id && cache->profile_id &&
-            cache->profile_hash && cache->jbar_value && cache->validity &&
-            cache->sample_count && cache->variance_or_standard_error) ? 0 : -1;
 }
 
 int radiation_field_commit(RadiationFieldOwner *shadow,
@@ -575,6 +588,68 @@ int radiation_field_commit(RadiationFieldOwner *shadow,
         }
     }
 
+    /* R6: allocate and fill the complete line cache, identity strings and
+     * compact index before touching either public view.  Allocation failure
+     * therefore leaves the previous continuum and line generations intact. */
+    LineJbarCache staged_line;
+    memset(&staged_line, 0, sizeof(staged_line));
+    uint64_t *staged_line_ids = NULL;
+    char *staged_profile_hash = NULL;
+    if (request->line_n > 0) {
+        RadiationFieldProvenanceKind line_provenance =
+            request->line_provenance_kind != RADIATION_FIELD_PROVENANCE_NONE
+            ? request->line_provenance_kind : request->provenance_kind;
+        const char *line_producer = request->line_producer
+            ? request->line_producer : request->producer;
+        staged_line.shell_id = malloc(lcells * sizeof(uint64_t));
+        staged_line.line_id = malloc(lcells * sizeof(uint64_t));
+        staged_line.profile_id = malloc(lcells * sizeof(uint64_t));
+        staged_line.profile_hash = malloc(lcells * sizeof(const char *));
+        staged_line.jbar_value = malloc(lcells * sizeof(double));
+        staged_line.validity = malloc(lcells * sizeof(LineJbarValidityState));
+        staged_line.sample_count = malloc(lcells * sizeof(uint64_t));
+        staged_line.variance_or_standard_error = malloc(lcells * sizeof(double));
+        staged_line.q_set_hash = strdup(request->line_q_set_hash);
+        staged_profile_hash = strdup(request->line_profile_hash);
+        staged_line_ids = malloc(request->line_n * sizeof(uint64_t));
+        if (!staged_line.shell_id || !staged_line.line_id ||
+            !staged_line.profile_id || !staged_line.profile_hash ||
+            !staged_line.jbar_value || !staged_line.validity ||
+            !staged_line.sample_count ||
+            !staged_line.variance_or_standard_error ||
+            !staged_line.q_set_hash || !staged_profile_hash ||
+            !staged_line_ids) {
+            line_jbar_cache_release(&staged_line);
+            free(staged_profile_hash); free(staged_line_ids);
+            free(values); free(validity); free(count);
+            free(lv); free(lse); free(lval); free(lct);
+            return -1;
+        }
+        staged_line.entry_count = lcells;
+        staged_line.generation.required_generation = request->generation;
+        staged_line.generation.computed_generation = request->generation;
+        staged_line.statistic_kind = request->statistic_kind;
+        staged_line.units = field->units;
+        staged_line.frame = field->frame;
+        staged_line.provenance.kind = line_provenance;
+        staged_line.provenance.producer = line_producer;
+        memcpy(staged_line_ids, request->line_id,
+               request->line_n * sizeof(uint64_t));
+        for (size_t q = 0; q < request->line_n; q++)
+            for (size_t s = 0; s < request->n_shells; s++) {
+                size_t i = q * request->n_shells + s;
+                staged_line.shell_id[i] = (uint64_t)s;
+                staged_line.line_id[i] = request->line_id[q];
+                staged_line.profile_id[i] = request->line_profile_id;
+                staged_line.profile_hash[i] = staged_profile_hash;
+                staged_line.jbar_value[i] = lv[i];
+                staged_line.validity[i] = lval[i];
+                staged_line.sample_count[i] = lct[i];
+                staged_line.variance_or_standard_error[i] = lse[i];
+            }
+    }
+    free(lv); free(lse); free(lval); free(lct);
+
     uint64_t total = 0;
     if (request->statistic_kind == RADIATION_FIELD_ESTIMATOR_COUNT)
         for (size_t i = 0; i < cells; ++i) total += count[i];
@@ -607,55 +682,21 @@ int radiation_field_commit(RadiationFieldOwner *shadow,
     if (shadow->seed_capability)
         (void)seed_capability_revoke_on_first_commit(
             (SeedCapability *)shadow->seed_capability);
-    shadow->line_jbar_cache.generation.required_generation = request->generation;
-    shadow->line_jbar_cache.units = field->units;
-    shadow->line_jbar_cache.frame = field->frame;
     if (request->line_n > 0) {
-        LineJbarCache *cache = &shadow->line_jbar_cache;
-        if (radiation_field_line_cache_reserve(cache, lcells) != 0) {
-            /* reserve failed AFTER J publish would break atomicity -- so the
-             * reserve is the only allocation here and it precedes every cache
-             * write; on failure the cache stays computed=0 (stale) while the
-             * J field has already published.  Prevent that: reserve BEFORE
-             * publish would be better, but reserve cannot fail after the
-             * first iteration (same size).  Treat failure as fatal. */
-            free(lv); free(lse); free(lval); free(lct);
-            free(values); free(validity); free(count);
-            return -1;
-        }
-        for (size_t q = 0; q < request->line_n; q++)
-            for (size_t s = 0; s < request->n_shells; s++) {
-                size_t i = q * request->n_shells + s;
-                cache->shell_id[i] = (uint64_t)s;
-                cache->line_id[i] = request->line_id[q];
-                cache->profile_id[i] = request->line_profile_id;
-                cache->profile_hash[i] = cache->q_set_hash; /* placeholder, set below */
-                cache->jbar_value[i] = lv[i];
-                cache->validity[i] = lval[i];
-                cache->sample_count[i] = lct[i];
-                cache->variance_or_standard_error[i] = lse[i];
-            }
-        free((char *)cache->q_set_hash);
-        cache->q_set_hash = strdup(request->line_q_set_hash);
+        line_jbar_cache_release(&shadow->line_jbar_cache);
+        shadow->line_jbar_cache = staged_line;
         free((char *)shadow->line_profile_hash_storage);
-        shadow->line_profile_hash_storage = strdup(request->line_profile_hash);
+        shadow->line_profile_hash_storage = staged_profile_hash;
         shadow->line_profile_id = request->line_profile_id;
-        for (size_t i = 0; i < lcells; i++)
-            cache->profile_hash[i] = shadow->line_profile_hash_storage;
         shadow->line_n_compact = request->line_n;
         free(shadow->line_ids_compact);
-        shadow->line_ids_compact = malloc(request->line_n * sizeof(uint64_t));
-        if (shadow->line_ids_compact)
-            memcpy(shadow->line_ids_compact, request->line_id,
-                   request->line_n * sizeof(uint64_t));
-        cache->provenance.kind = request->provenance_kind;
-        cache->provenance.producer = request->producer;
-        cache->generation.computed_generation = request->generation;
+        shadow->line_ids_compact = staged_line_ids;
     } else {
+        shadow->line_jbar_cache.generation.required_generation =
+            request->generation;
         shadow->line_jbar_cache.generation.computed_generation = 0;
         shadow->line_jbar_cache.provenance.kind = RADIATION_FIELD_PROVENANCE_NONE;
     }
-    free(lv); free(lse); free(lval); free(lct);
 
     free(values); free(validity); free(count);
     if (radiation_field_validate_owner(shadow) != 0) return -1;
@@ -774,6 +815,7 @@ int radiation_field_line_jbar_view(const RadiationFieldOwner *owner,
                                    uint64_t expected_generation,
                                    const char *expected_q_set_hash,
                                    uint64_t expected_profile_id,
+                                   const char *expected_profile_hash,
                                    LineJbarView *out)
 {
     if (!out) return LINE_JBAR_VIEW_QHASH;
@@ -792,10 +834,17 @@ int radiation_field_line_jbar_view(const RadiationFieldOwner *owner,
         owner->field.generation.computed_generation != expected_generation)
         return LINE_JBAR_VIEW_STALE_GENERATION;
     if (!expected_q_set_hash || !cache->q_set_hash ||
-        strcmp(cache->q_set_hash, expected_q_set_hash) != 0)
+        strcmp(cache->q_set_hash, expected_q_set_hash) != 0) {
+        fprintf(stderr,
+                "[LINE_JBAR_VIEW][BLOCKED] reason=QHASH_MISMATCH\n");
         return LINE_JBAR_VIEW_QHASH;
+    }
     if (expected_profile_id == 0 ||
         owner->line_profile_id != expected_profile_id ||
+        !expected_profile_hash || !owner->line_profile_hash_storage ||
+        strcmp(owner->line_profile_hash_storage, expected_profile_hash) != 0 ||
+        (cache->statistic_kind != RADIATION_FIELD_ESTIMATOR_COUNT &&
+         cache->statistic_kind != RADIATION_FIELD_DETERMINISTIC) ||
         !owner->line_ids_compact || owner->line_n_compact == 0 ||
         !cache->jbar_value || !cache->validity || !cache->sample_count ||
         !cache->variance_or_standard_error)
@@ -807,6 +856,7 @@ int radiation_field_line_jbar_view(const RadiationFieldOwner *owner,
     out->validity = cache->validity;
     out->count = cache->sample_count;
     out->se = cache->variance_or_standard_error;
+    out->statistic_kind = cache->statistic_kind;
     out->generation = expected_generation;
     return LINE_JBAR_VIEW_OK;
 }
@@ -824,9 +874,26 @@ int line_jbar_lookup(const LineJbarView *view, size_t shell,
     if (a >= view->n_lines || view->line_id[a] != line_id)
         return -2;                       /* MISS: distinct error, no value */
     size_t i = a * view->n_shells + shell;
+    if ((view->statistic_kind != RADIATION_FIELD_ESTIMATOR_COUNT &&
+         view->statistic_kind != RADIATION_FIELD_DETERMINISTIC) ||
+        (view->statistic_kind == RADIATION_FIELD_DETERMINISTIC &&
+         (view->count[i] != 0 || view->se[i] != 0.0)) ||
+        !isfinite(view->jbar[i]) || view->jbar[i] < 0.0 ||
+        (view->validity[i] == LINE_JBAR_VALID && view->jbar[i] <= 0.0) ||
+        (view->validity[i] != LINE_JBAR_VALID && view->jbar[i] != 0.0)) {
+        fprintf(stderr,
+                "[LINE_JBAR_LOOKUP][BLOCKED] reason=NEGATIVE_OR_INVALID_JBAR "
+                "line_id=%llu shell=%zu validity=%d value=%.17g "
+                "statistic_kind=%d\n",
+                (unsigned long long)line_id, shell,
+                (int)view->validity[i], view->jbar[i],
+                (int)view->statistic_kind);
+        return -3;
+    }
     out->jbar = view->jbar[i];
     out->validity = view->validity[i];
     out->count = view->count[i];
     out->se = view->se[i];
+    out->statistic_kind = view->statistic_kind;
     return 0;
 }
