@@ -37,6 +37,19 @@ if [[ -n "${LUMINA_CMF_SOLVE_GPU-}" ]]; then
   unset LUMINA_CMF_SOLVE_GPU
 fi
 
+# ★2026-08-08: 위 `eval` 이 런처의 export 를 **호출자 env 뒤에** 적용한다.  그래서
+# `env LUMINA_PURE_CMFGEN=0 bash t3_cpu_repro.sh` 가 조용히 무시됐다 — run_coevolve_s01.sh:30
+# 이 LUMINA_PURE_CMFGEN=1 을 다시 export 한다.  R7 판정에서 **DET 를 두 번 돌리고 하나를
+# MC 라 불렀다**(로그의 `lane=DET` 가 잡았다).  팔 선택은 eval **뒤에** 하고, 찍는다.
+if [[ -n "${T3_LANE-}" ]]; then
+  case "$T3_LANE" in
+    MC)  export LUMINA_PURE_CMFGEN=0 ;;
+    DET) export LUMINA_PURE_CMFGEN=1 ;;
+    *)   echo "[HARNESS][FATAL] T3_LANE=$T3_LANE (MC|DET 만)" >&2; exit 65 ;;
+  esac
+  echo "[HARNESS] T3_LANE=$T3_LANE -> LUMINA_PURE_CMFGEN=$LUMINA_PURE_CMFGEN"
+fi
+
 export LUMINA_MODEL_DIR="$MODEL"
 export LUMINA_DEPOSITION_FILE="$MODEL/deposition_cmfgen.csv"
 export LUMINA_CMFGEN_SIGMA_BF="$MODEL/cmfgen_sigma_bf.bin"
