@@ -86,6 +86,20 @@ def main() -> int:
                 bad.append(f"C4 {label}: Z({T:.0f}K)={Zt:.3e} < g0={g0_decl} — 자료가 깨졌다")
                 break
 
+    # ★C8 vintage 일관성 — 2026-08-07 추가.
+    # 운전석 파서가 `sorted(glob)[0]`(알파벳 첫 번째)로 골라 S VI 만 1999 년판이 섞였다.
+    # 덱은 `_pick_latest`/링크 규칙을 쓰므로, catalog 만 다른 vintage 면 **vintage 혼입**이다.
+    # C1~C7 은 이것을 못 잡는다 — 값 자체는 물리적으로 정상이기 때문이다.
+    vint = defaultdict(set)
+    for r in ground.values():
+        src = r.get("source_file", "")
+        if "/atomic/" in src:                       # CMFGEN 원본만 대상
+            parts = Path(src).parts
+            vint["CMFGEN"].add(parts[-2])           # 날짜 디렉토리
+    for prov, dates in vint.items():
+        if len(dates) > 1:
+            bad.append(f"C8 {prov} vintage 혼입: {sorted(dates)} — 덱과 같은 규칙으로 골라야 한다")
+
     # C6 등전자 일치
     seq = defaultdict(set)
     for (z, st), r in ground.items():

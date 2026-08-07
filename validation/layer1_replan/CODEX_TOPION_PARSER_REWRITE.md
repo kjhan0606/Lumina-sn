@@ -1,3 +1,4 @@
+```python
 #!/usr/bin/env python3
 """최상단 이온 15종의 전 준위와 바닥준위를 추출한다.
 
@@ -694,3 +695,4 @@ def main() -> int:
 
 if __name__ == "__main__":
     sys.exit(main())
+```

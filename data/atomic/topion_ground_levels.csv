@@ -4,8 +4,8 @@ Z,ion_stage_0based,label,E0_cm-1,g0,provenance,source_file
 12,3,Mg IV,-0.000000,4.0,CMFGEN_21jun23,/gpfs/kjhan/cmfgen_21jun23/atomic/MG/IV/19apr23/osc_data
 13,4,Al V,-0.000000,4.0,CMFGEN_21jun23,/gpfs/kjhan/cmfgen_21jun23/atomic/AL/V/19apr23/osc_data
 14,5,Si VI,0.000000,4.0,CMFGEN_21jun23,/gpfs/kjhan/cmfgen_21jun23/atomic/SIL/VI/19apr23/osc_data
-16,5,S VI,0.000000,2.0,CMFGEN_21jun23,/gpfs/kjhan/cmfgen_21jun23/atomic/SUL/VI/08jul99/osc_op_split.dat
-20,5,Ca VI,0.000000,4.0,CMFGEN_21jun23,/gpfs/kjhan/cmfgen_21jun23/atomic/CA/VI/10apr99/osc_op_sp.dat
+16,5,S VI,0.000000,2.0,CMFGEN_21jun23,/gpfs/kjhan/cmfgen_21jun23/atomic/SUL/VI/19apr23/osc_data
+20,5,Ca VI,0.000000,4.0,CMFGEN_21jun23,/gpfs/kjhan/cmfgen_21jun23/atomic/CA/VI/19apr23/osc_data
 21,3,Sc IV,0.000000,1.0,CLOUDY_STOUT_NIST,/gpfs/kjhan/cloudy-master/data/stout/sc/sc_4/sc_4.nrg
 22,4,Ti V,0.000000,1.0,CLOUDY_STOUT_NIST,/gpfs/kjhan/cloudy-master/data/stout/ti/ti_5/ti_5.nrg
 23,1,V II,0.000000,1.0,CLOUDY_STOUT_NIST,/gpfs/kjhan/cloudy-master/data/stout/v/v_2/v_2.nrg
