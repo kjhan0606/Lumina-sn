@@ -1,10 +1,11 @@
 /* strdup 은 C11 표준이 아니다. feature test 없이 쓰면 암시적 선언(int 반환)이 되어
  * LP64 에서 포인터가 절단된다 — 실제 잠재 결함이라 여기서 닫는다. */
 #define _POSIX_C_SOURCE 200809L
-#include "radiation_field.h"
+#include "lumina.h"
 #include "seed_capability.h"
 
 #include <errno.h>
+#include <float.h>
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -13,6 +14,56 @@
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
 #endif
+
+static double radiation_field_canonical_edge(size_t b)
+{
+    int j = LUMINA_RADFIELD_J_LO + (int)b;
+    int k = LUMINA_RADFIELD_REFINEMENT_K;
+    if (j >= 0 && j <= k * NLTE_N_FREQ_BINS && j % k == 0) {
+        int bf_edge = j / k;
+        if (bf_edge == 0) return NLTE_NU_MIN;
+        if (bf_edge == NLTE_N_FREQ_BINS) return NLTE_NU_MAX;
+        return NLTE_NU_MIN * exp((double)bf_edge *
+            log(NLTE_NU_MAX / NLTE_NU_MIN) / (double)NLTE_N_FREQ_BINS);
+    }
+    return NLTE_NU_MIN * exp((double)j * LUMINA_RADFIELD_DLOG);
+}
+
+static int radiation_field_alignment_contract_ok(const double *edges)
+{
+    const size_t lo = (size_t)(-LUMINA_RADFIELD_J_LO);
+    const size_t hi = lo + (size_t)LUMINA_RADFIELD_REFINEMENT_K *
+                           (size_t)NLTE_N_FREQ_BINS;
+    double dlog = LUMINA_RADFIELD_DLOG;
+    if (!edges || !(dlog > 0.0) || !isfinite(dlog) ||
+        lo >= (size_t)LUMINA_RADFIELD_N_BINS ||
+        hi > (size_t)LUMINA_RADFIELD_N_BINS ||
+        edges[lo] != NLTE_NU_MIN || edges[hi] != NLTE_NU_MAX) {
+        fprintf(stderr,
+                "[RADIATION-FIELD][FATAL] reason=GRID_ALIGNMENT_VIOLATION "
+                "K=%d j_lo=%d j_hi=%d bf_bins=%d anchor_lo=%zu "
+                "anchor_hi=%zu\n",
+                LUMINA_RADFIELD_REFINEMENT_K, LUMINA_RADFIELD_J_LO,
+                LUMINA_RADFIELD_J_HI, NLTE_N_FREQ_BINS, lo, hi);
+        return 0;
+    }
+    for (int bf = 0; bf <= NLTE_N_FREQ_BINS; ++bf) {
+        size_t at = lo + (size_t)LUMINA_RADFIELD_REFINEMENT_K * (size_t)bf;
+        double expected = bf == 0 ? NLTE_NU_MIN :
+            (bf == NLTE_N_FREQ_BINS ? NLTE_NU_MAX :
+             NLTE_NU_MIN * exp((double)bf *
+                 log(NLTE_NU_MAX / NLTE_NU_MIN) /
+                 (double)NLTE_N_FREQ_BINS));
+        if (edges[at] != expected) {
+            fprintf(stderr,
+                    "[RADIATION-FIELD][FATAL] reason=GRID_ALIGNMENT_VIOLATION "
+                    "bf_edge=%d canonical_edge=%zu got=%.17g expected=%.17g\n",
+                    bf, at, edges[at], expected);
+            return 0;
+        }
+    }
+    return 1;
+}
 
 static size_t radiation_field_cell_count(size_t n_shells)
 {
@@ -39,6 +90,44 @@ static void line_jbar_cache_release(LineJbarCache *cache)
     free(cache->variance_or_standard_error);
     free((char *)cache->q_set_hash);
     memset(cache, 0, sizeof(*cache));
+}
+
+GridContainmentStatus grid_containment_check(
+    const double *producer_edges, size_t producer_n_bins,
+    const double *consumer_edges, size_t consumer_n_bins,
+    size_t margin_bins, GridContainmentResult *out)
+{
+    GridContainmentResult result;
+    memset(&result, 0, sizeof(result));
+    result.status = GRID_CONTAINMENT_INVALID_GRID;
+    if (!producer_edges || !consumer_edges || producer_n_bins == 0 ||
+        consumer_n_bins == 0 || margin_bins > producer_n_bins / 2)
+        goto done;
+    for (size_t i = 0; i <= producer_n_bins; ++i)
+        if (!isfinite(producer_edges[i]) || producer_edges[i] <= 0.0 ||
+            (i > 0 && producer_edges[i] <= producer_edges[i - 1]))
+            goto done;
+    for (size_t i = 0; i <= consumer_n_bins; ++i)
+        if (!isfinite(consumer_edges[i]) || consumer_edges[i] <= 0.0 ||
+            (i > 0 && consumer_edges[i] <= consumer_edges[i - 1]))
+            goto done;
+
+    result.producer_min = producer_edges[margin_bins];
+    result.producer_max = producer_edges[producer_n_bins - margin_bins];
+    result.consumer_min = consumer_edges[0];
+    result.consumer_max = consumer_edges[consumer_n_bins];
+    int low = result.producer_min > result.consumer_min;
+    int high = result.producer_max < result.consumer_max;
+    result.low_shortfall_hz = low
+        ? result.producer_min - result.consumer_min : 0.0;
+    result.high_shortfall_hz = high
+        ? result.consumer_max - result.producer_max : 0.0;
+    result.status = low && high ? GRID_CONTAINMENT_BOTH_SHORTFALL :
+        (low ? GRID_CONTAINMENT_LOW_SHORTFALL :
+         (high ? GRID_CONTAINMENT_HIGH_SHORTFALL : GRID_CONTAINMENT_OK));
+done:
+    if (out) *out = result;
+    return result.status;
 }
 
 int radiation_field_owner_init(RadiationFieldOwner *shadow, size_t n_shells)
@@ -90,14 +179,13 @@ int radiation_field_owner_init(RadiationFieldOwner *shadow, size_t n_shells)
         return -1;
     }
 
-    double dlog = log(LUMINA_RADFIELD_NU_MAX_HZ / LUMINA_RADFIELD_NU_MIN_HZ) /
-                  (double)LUMINA_RADFIELD_N_BINS;
     for (size_t b = 0; b <= LUMINA_RADFIELD_N_BINS; ++b)
-        field->frequency_bin_edges.values[b] =
-            LUMINA_RADFIELD_NU_MIN_HZ * exp((double)b * dlog);
-    field->frequency_bin_edges.values[0] = LUMINA_RADFIELD_NU_MIN_HZ;
-    field->frequency_bin_edges.values[LUMINA_RADFIELD_N_BINS] =
-        LUMINA_RADFIELD_NU_MAX_HZ;
+        field->frequency_bin_edges.values[b] = radiation_field_canonical_edge(b);
+    if (!radiation_field_alignment_contract_ok(
+            field->frequency_bin_edges.values)) {
+        radiation_field_owner_free(shadow);
+        return -1;
+    }
     radiation_field_mark_all(field, RADIATION_FIELD_STALE);
     shadow->enabled = 1;
     return 0;
@@ -186,8 +274,7 @@ int radiation_field_accumulator_add(RadiationFieldAccumulator *accumulator,
         accumulator->out_of_grid_contribution_count++;
         return 1;
     }
-    double dlog = log(LUMINA_RADFIELD_NU_MAX_HZ / LUMINA_RADFIELD_NU_MIN_HZ) /
-                  (double)LUMINA_RADFIELD_N_BINS;
+    double dlog = LUMINA_RADFIELD_DLOG;
     size_t bin = comoving_nu == LUMINA_RADFIELD_NU_MAX_HZ
         ? LUMINA_RADFIELD_N_BINS - 1
         : (size_t)(log(comoving_nu / LUMINA_RADFIELD_NU_MIN_HZ) / dlog);
@@ -543,6 +630,35 @@ int radiation_field_commit(RadiationFieldOwner *shadow,
          request->provenance_kind != RADIATION_FIELD_PROVENANCE_CMFGEN_REPLAY))
         return -1;
 
+    /* Publication-time ownership of the source -> NLTE consumer relation.
+     * The MC source is already the canonical grid; deterministic replay names
+     * its actual source grid.  The wider canonical tails may remain explicitly
+     * OUT_OF_GRID, but every downstream NLTE/BF bin must be fully covered. */
+    const double consumer_edges[2] = { NLTE_NU_MIN, NLTE_NU_MAX };
+    const double *producer_edges =
+        request->provenance_kind == RADIATION_FIELD_PROVENANCE_MC_PATH_LENGTH
+        ? field->frequency_bin_edges.values
+        : request->source_frequency_bin_edges;
+    size_t producer_n_bins =
+        request->provenance_kind == RADIATION_FIELD_PROVENANCE_MC_PATH_LENGTH
+        ? field->frequency_bin_edges.count - 1
+        : request->source_n_bins;
+    GridContainmentResult containment;
+    GridContainmentStatus containment_status = grid_containment_check(
+        producer_edges, producer_n_bins, consumer_edges, 1, 0, &containment);
+    if (containment_status != GRID_CONTAINMENT_OK) {
+        fprintf(stderr,
+                "[RADIATION-FIELD][BLOCKED] "
+                "reason=GRID_CONTAINMENT_VIOLATION status=%d producer=%s "
+                "producer_range=[%.17g,%.17g] consumer_range=[%.17g,%.17g] "
+                "low_shortfall_hz=%.17g high_shortfall_hz=%.17g\n",
+                (int)containment_status, request->producer,
+                containment.producer_min, containment.producer_max,
+                containment.consumer_min, containment.consumer_max,
+                containment.low_shortfall_hz, containment.high_shortfall_hz);
+        return -1;
+    }
+
     size_t cells = radiation_field_cell_count(request->n_shells);
     double *values = (double *)calloc(cells, sizeof(double));
     RadiationFieldValidityState *validity =
@@ -777,20 +893,15 @@ int radiation_field_read_view(const RadiationFieldOwner *owner,
         !field->frequency_bin_edges.values || !field->J_nu.values ||
         !field->validity.values || !field->estimator_count_or_variance.count)
         return RADIATION_FIELD_VIEW_GRID;
-    /* Canonical-grid identity (R5 edge shape): every edge is recomputed from
-     * the A2-02 authority by the SAME expression owner-init uses, so any
-     * interior tampering fails bit-exactly, not just monotonically.  One pass
-     * of 4001 exp() per view refresh (once per commit) is negligible. */
+    /* Canonical-grid identity: every edge is recomputed from the NLTE-derived
+     * option-B expression owner-init uses, including exact K-boundaries. */
     {
         const double *edges = field->frequency_bin_edges.values;
         if (edges[0] != LUMINA_RADFIELD_NU_MIN_HZ ||
             edges[LUMINA_RADFIELD_N_BINS] != LUMINA_RADFIELD_NU_MAX_HZ)
             return RADIATION_FIELD_VIEW_GRID;
-        double dlog = log(LUMINA_RADFIELD_NU_MAX_HZ /
-                          LUMINA_RADFIELD_NU_MIN_HZ) /
-                      (double)LUMINA_RADFIELD_N_BINS;
         for (size_t b = 1; b < LUMINA_RADFIELD_N_BINS; ++b) {
-            if (edges[b] != LUMINA_RADFIELD_NU_MIN_HZ * exp((double)b * dlog))
+            if (edges[b] != radiation_field_canonical_edge(b))
                 return RADIATION_FIELD_VIEW_GRID;
             if (!(edges[b] > edges[b - 1]))
                 return RADIATION_FIELD_VIEW_GRID;

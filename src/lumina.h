@@ -12,6 +12,14 @@
 #include <stdint.h>   /* Phase 2 - Step 1 */
 #include <float.h>    /* Phase 2 - Step 1 */
 #include <locale.h>   /* A6: setlocale(LC_NUMERIC,"C") for ko_KR-safe sscanf */
+
+/* The NLTE/BF grid is the frequency-grid authority.  radiation_field.h derives
+ * the canonical grid from these three definitions; keep them before that
+ * include so there cannot be an independent canonical literal set. */
+#define NLTE_N_FREQ_BINS  1000
+#define NLTE_NU_MIN       1.5e14    /* c / 20000 A */
+#define NLTE_NU_MAX       3.0e16    /* c / 100 A */
+
 #include "radiation_field.h" /* A2-03 canonical shadow schema (CPU only) */
 #include "population_contract.h" /* A2-07 CPU population owner contract */
 #include "opacity_publication.h" /* A2-08 signed CPU opacity/status owner */
@@ -543,9 +551,6 @@ typedef struct {
 /* NLTE: Configuration and data structures                      */
 /* ============================================================ */
 
-#define NLTE_N_FREQ_BINS  1000
-#define NLTE_NU_MIN       1.5e14    /* c / 20000 A */
-#define NLTE_NU_MAX       3.0e16    /* c / 100 A */
 /* Baseline (gate OFF, LUMINA_NLTE_STAGE4 absent): 14 II/III pairs + O I/II/III
  * overlap = 31 slots, 16 pairs (slot 29 = O II shared). Byte-identical baseline. */
 #define NLTE_BASE_IONS    31

@@ -1,18 +1,52 @@
 #ifndef LUMINA_RADIATION_FIELD_H
 #define LUMINA_RADIATION_FIELD_H
 
+#include <math.h>
 #include <stddef.h>
 #include <stdint.h>
 
-/* A2-02 amended-union authority.  The edges are log-spaced over the exact
- * closed union recorded in validation/a2_02c/A2_02C_FREQUENCY_UNION.json. */
-#define LUMINA_RADFIELD_N_BINS 4000
-#define LUMINA_RADFIELD_NU_MIN_HZ 1.4402928950097124e12
-#define LUMINA_RADFIELD_NU_MAX_HZ 4.032418413741097e16
+/* Grid-containment contract, option B.  The NLTE/BF grid in lumina.h is the
+ * sole authority; the canonical grid is its integer K-fold refinement.  The
+ * integer offsets retain the previous canonical union with outward rounding,
+ * without retaining an independent set of frequency literals. */
+#define LUMINA_RADFIELD_REFINEMENT_K 2
+#define LUMINA_RADFIELD_J_LO (-1754)
+#define LUMINA_RADFIELD_J_HI 2112
+#define LUMINA_RADFIELD_N_BINS \
+    (LUMINA_RADFIELD_J_HI - LUMINA_RADFIELD_J_LO)
+#define LUMINA_RADFIELD_DLOG \
+    (log(NLTE_NU_MAX / NLTE_NU_MIN) / \
+     ((double)LUMINA_RADFIELD_REFINEMENT_K * (double)NLTE_N_FREQ_BINS))
+#define LUMINA_RADFIELD_NU_MIN_HZ \
+    (NLTE_NU_MIN * exp((double)LUMINA_RADFIELD_J_LO * LUMINA_RADFIELD_DLOG))
+#define LUMINA_RADFIELD_NU_MAX_HZ \
+    (NLTE_NU_MIN * exp((double)LUMINA_RADFIELD_J_HI * LUMINA_RADFIELD_DLOG))
+/* SHA-256 identities of the option-B union descriptor and edge-formula
+ * descriptor above.  They intentionally invalidate old-grid seed assets. */
 #define LUMINA_RADFIELD_UNION_SHA256 \
-    "1443c069eb710acb31c6470442637e43ad11eb57191fbc3a265363cd4d61321c"
+    "5be9f762c37871c275a50c22b4b033d5a0ad0edd67b03887ae6823ea1fa0378a"
 #define LUMINA_RADFIELD_EDGE_SHA256 \
-    "ec3f94d923b42e036afd3fde71fc63a2477d4c95ca252583b40ed730a0b48f76"
+    "5e8d69a83353e6d4af7c0e84db48569d2a07e9fd07ed3a4e7da899be17ed2be8"
+
+/* Changing K to a non-integral value (NB1), or away from the selected option,
+ * is a compile-time contract violation rather than a runtime approximation. */
+#ifdef __cplusplus
+static_assert(LUMINA_RADFIELD_REFINEMENT_K == 2,
+              "GRID_ALIGNMENT_VIOLATION: K must be the integer 2");
+static_assert(LUMINA_RADFIELD_J_LO == -1754 &&
+              LUMINA_RADFIELD_J_HI == 2112,
+              "GRID_ALIGNMENT_VIOLATION: canonical origin moved");
+static_assert(LUMINA_RADFIELD_N_BINS == 3866,
+              "GRID_ALIGNMENT_VIOLATION: canonical offset span changed");
+#else
+_Static_assert(LUMINA_RADFIELD_REFINEMENT_K == 2,
+               "GRID_ALIGNMENT_VIOLATION: K must be the integer 2");
+_Static_assert(LUMINA_RADFIELD_J_LO == -1754 &&
+               LUMINA_RADFIELD_J_HI == 2112,
+               "GRID_ALIGNMENT_VIOLATION: canonical origin moved");
+_Static_assert(LUMINA_RADFIELD_N_BINS == 3866,
+               "GRID_ALIGNMENT_VIOLATION: canonical offset span changed");
+#endif
 
 typedef struct {
     size_t count;
@@ -169,6 +203,24 @@ typedef struct {
  * always-enabled RadiationFieldOwner as of A2-04. */
 typedef RadiationFieldOwner RadiationFieldShadow;
 
+typedef enum {
+    GRID_CONTAINMENT_OK = 0,
+    GRID_CONTAINMENT_INVALID_GRID = 1,
+    GRID_CONTAINMENT_LOW_SHORTFALL = 2,
+    GRID_CONTAINMENT_HIGH_SHORTFALL = 3,
+    GRID_CONTAINMENT_BOTH_SHORTFALL = 4
+} GridContainmentStatus;
+
+typedef struct {
+    GridContainmentStatus status;
+    double producer_min;
+    double producer_max;
+    double consumer_min;
+    double consumer_max;
+    double low_shortfall_hz;
+    double high_shortfall_hz;
+} GridContainmentResult;
+
 /* A2-04 producer transaction.  The public RadiationField is changed only by
  * radiation_field_commit().  MC supplies its raw path-length work buffer and
  * normalization factors; deterministic producers supply source-grid bin
@@ -225,6 +277,10 @@ extern "C" {
 
 int radiation_field_owner_init(RadiationFieldOwner *owner, size_t n_shells);
 void radiation_field_owner_free(RadiationFieldOwner *owner);
+GridContainmentStatus grid_containment_check(
+    const double *producer_edges, size_t producer_n_bins,
+    const double *consumer_edges, size_t consumer_n_bins,
+    size_t margin_bins, GridContainmentResult *out);
 int radiation_field_begin_mc(RadiationFieldOwner *owner,
                              const double *v_inner,
                              const double *v_outer,
