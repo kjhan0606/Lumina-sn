@@ -1250,6 +1250,15 @@ int a209_publish_cpu_emissivity(OpacityState *opacity, const BFOpacity *bf,
                                 const AtomicData *atom,
                                 const PlasmaState *plasma,
                                 const NLTEConfig *nlte, double epoch);
+int lumina_r7_publish_and_solve_te(OpacityState *opacity,
+                                   const BFOpacity *bf,
+                                   AtomicData *atom,
+                                   PlasmaState *plasma,
+                                   NLTEConfig *nlte,
+                                   GammaDeposition *gamma_dep,
+                                   double epoch, int n_shells,
+                                   int solve_te,
+                                   const char *lane, int iter);
 /* Wave-1 bf repair gates. All are default OFF and shared with CUDA helpers so
  * host/device producer selection cannot disagree. */
 int lumina_fix_bf_stim_recomb_enabled(void);

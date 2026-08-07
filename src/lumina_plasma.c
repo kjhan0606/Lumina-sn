@@ -8262,6 +8262,271 @@ int a209_publish_cpu_emissivity(OpacityState *opacity,const BFOpacity *bf,
  ctr->shells_published+=ns;ctr->cells_published+=n;return 0;
 }
 
+static const char *r7_a210_block_reason(const A210Counters *before,
+                                        const A210Counters *after)
+{
+    if (after->no_bracket > before->no_bracket)
+        return "RADEQ_NO_BRACKET";
+    if (after->no_root > before->no_root)
+        return "RADEQ_NO_ROOT";
+    if (after->nonconverged > before->nonconverged)
+        return "RADEQ_NOT_CONVERGED";
+    if (after->charge_nonconverged > before->charge_nonconverged)
+        return "RADEQ_CHARGE_NOT_CONVERGED";
+    if (after->blocked_stale > before->blocked_stale)
+        return "RADEQ_STALE_INPUT";
+    if (after->blocked_missing_term > before->blocked_missing_term)
+        return "RADEQ_TERM_MISSING";
+    if (after->blocked_schema > before->blocked_schema)
+        return "RADEQ_TERM_SCHEMA";
+    if (after->blocked_sign > before->blocked_sign)
+        return "RADEQ_SIGN_MISMATCH";
+    if (after->te_manifest_mismatch > before->te_manifest_mismatch)
+        return "RADEQ_TE_MANIFEST_MISMATCH";
+    if (after->te_context_mismatch > before->te_context_mismatch)
+        return "RADEQ_TE_CONTEXT_MISMATCH";
+    if (after->nonfinite_failures > before->nonfinite_failures)
+        return "RADEQ_NONFINITE";
+    return "RADEQ_UNQUALIFIED_TE";
+}
+
+int lumina_r7_publish_and_solve_te(OpacityState *opacity,
+                                   const BFOpacity *bf,
+                                   AtomicData *atom,
+                                   PlasmaState *plasma,
+                                   NLTEConfig *nlte,
+                                   GammaDeposition *gamma_dep,
+                                   double epoch, int n_shells,
+                                   int solve_te,
+                                   const char *lane, int iter)
+{
+    if (!lane) lane = "UNKNOWN";
+    if (!opacity || !bf || !atom || !plasma || !nlte ||
+        !plasma->T_e || n_shells <= 0) {
+        fprintf(stderr,
+                "[R7][FATAL] event=R7_INVALID_PHASE_INPUT "
+                "lane=%s iter=%d\n", lane, iter);
+        return 5;
+    }
+
+    uint64_t r = nlte->radfield_view.generation;
+    uint64_t m = atom->population_committed_generation;
+    uint64_t t = plasma->T_e_generation;
+
+    fprintf(stderr,
+            "[R7][PHASE] lane=%s iter=%d phase=view "
+            "rad_status=%d r=%llu line_status=%d line_r=%llu "
+            "population_m=%llu te_t=%llu\n",
+            lane, iter, (int)nlte->radfield_view_status,
+            (unsigned long long)r, (int)nlte->line_view_status,
+            (unsigned long long)nlte->line_view.generation,
+            (unsigned long long)m, (unsigned long long)t);
+
+    if (nlte->radfield_view_status != RADIATION_FIELD_VIEW_OK || r == 0) {
+        a208_counters()->blocked_stale++;
+        fprintf(stderr,
+                "[A2-08][BLOCKED] event=R7_PUBLICATION_BLOCKED "
+                "lane=%s iter=%d reason=STALE_RADIATION_VIEW "
+                "rad_status=%d r=%llu\n",
+                lane, iter, (int)nlte->radfield_view_status,
+                (unsigned long long)r);
+        return 3;
+    }
+
+    int rc = a208_publish_cpu_opacity(opacity, bf, atom, plasma, nlte,
+                                      epoch);
+    if (rc != 0) {
+        A208Counters *c = a208_counters();
+        fprintf(stderr,
+                "[A2-08][BLOCKED] event=R7_PUBLICATION_BLOCKED "
+                "lane=%s iter=%d rc=%d blocked_stale=%llu "
+                "partial_publish=%llu\n",
+                lane, iter, rc,
+                (unsigned long long)c->blocked_stale,
+                (unsigned long long)c->partial_publish_attempts);
+        return rc;
+    }
+
+    const CpuOpacityPublication *op = &opacity->cpu_opacity;
+    if (op->generation_committed != r ||
+        op->radiation_generation != r ||
+        op->population_generation != m ||
+        op->te_generation != t ||
+        op->line_jbar_generation != nlte->line_view.generation) {
+        fprintf(stderr,
+                "[A2-08][FATAL] event=R7_GENERATION_MISMATCH "
+                "lane=%s iter=%d r=%llu o=%llu op_rad=%llu "
+                "op_line=%llu op_pop=%llu op_te=%llu\n",
+                lane, iter, (unsigned long long)r,
+                (unsigned long long)op->generation_committed,
+                (unsigned long long)op->radiation_generation,
+                (unsigned long long)op->line_jbar_generation,
+                (unsigned long long)op->population_generation,
+                (unsigned long long)op->te_generation);
+        return 5;
+    }
+
+    fprintf(stderr,
+            "[R7][PHASE] lane=%s iter=%d phase=a208 r=%llu o=%llu\n",
+            lane, iter, (unsigned long long)r,
+            (unsigned long long)op->generation_committed);
+
+    rc = a209_publish_cpu_emissivity(opacity, bf, atom, plasma, nlte,
+                                     epoch);
+    if (rc != 0) {
+        A209Counters *c = a209_counters();
+        fprintf(stderr,
+                "[A2-09][BLOCKED] event=R7_PUBLICATION_BLOCKED "
+                "lane=%s iter=%d rc=%d r=%llu o=%llu "
+                "blocked_stale_rf=%llu blocked_stale_line=%llu "
+                "blocked_stale_pop=%llu blocked_stale_opacity=%llu\n",
+                lane, iter, rc, (unsigned long long)r,
+                (unsigned long long)op->generation_committed,
+                (unsigned long long)c->blocked_stale_rf,
+                (unsigned long long)c->blocked_stale_line,
+                (unsigned long long)c->blocked_stale_pop,
+                (unsigned long long)c->blocked_stale_opacity);
+        return rc;
+    }
+
+    const CpuEmissivityPublication *em = &opacity->cpu_emissivity;
+    if (nlte->line_view_status != LINE_JBAR_VIEW_OK ||
+        nlte->line_view.generation != r ||
+        em->committed_emissivity_generation != r ||
+        em->opacity_generation != r ||
+        em->radfield_generation != r ||
+        em->line_view_generation != r ||
+        em->population_generation != m ||
+        em->te_generation != t) {
+        fprintf(stderr,
+                "[A2-09][FATAL] event=R7_GENERATION_MISMATCH "
+                "lane=%s iter=%d r=%llu line_status=%d line_r=%llu "
+                "e=%llu em_o=%llu em_rad=%llu em_line=%llu "
+                "em_pop=%llu em_te=%llu\n",
+                lane, iter, (unsigned long long)r,
+                (int)nlte->line_view_status,
+                (unsigned long long)nlte->line_view.generation,
+                (unsigned long long)em->committed_emissivity_generation,
+                (unsigned long long)em->opacity_generation,
+                (unsigned long long)em->radfield_generation,
+                (unsigned long long)em->line_view_generation,
+                (unsigned long long)em->population_generation,
+                (unsigned long long)em->te_generation);
+        return 5;
+    }
+
+    fprintf(stderr,
+            "[R7][PHASE] lane=%s iter=%d phase=a209 "
+            "r=%llu o=%llu e=%llu\n",
+            lane, iter, (unsigned long long)r,
+            (unsigned long long)op->generation_committed,
+            (unsigned long long)em->committed_emissivity_generation);
+
+    if (!solve_te) {
+        fprintf(stderr,
+                "[R7][PHASE] lane=%s iter=%d phase=A2-10 "
+                "action=NOT_REQUESTED te_generation=%llu\n",
+                lane, iter, (unsigned long long)t);
+        return 0;
+    }
+
+    if (t == UINT64_MAX) {
+        fprintf(stderr,
+                "[A2-10][BLOCKED] event=R7_MATERIAL_UPDATE_BLOCKED "
+                "lane=%s iter=%d reason=TE_GENERATION_OVERFLOW "
+                "te_generation=%llu material_update=BLOCKED "
+                "action=TERMINATE\n",
+                lane, iter, (unsigned long long)t);
+        return 5;
+    }
+
+    char te_before[65], te_after[65];
+    if (population_te_manifest_sha256(plasma->T_e, (size_t)n_shells,
+                                      te_before) != POP_OK) {
+        fprintf(stderr,
+                "[A2-10][FATAL] lane=%s iter=%d "
+                "reason=TE_MANIFEST_SNAPSHOT_FAILED\n", lane, iter);
+        return 5;
+    }
+
+    A210Counters before = *a210_counters();
+    fprintf(stderr,
+            "[A2-10][PRE] lane=%s iter=%d te_gen=%llu "
+            "rad=%llu line=%llu opacity=%llu emissivity=%llu "
+            "population=%llu\n",
+            lane, iter, (unsigned long long)t,
+            (unsigned long long)r,
+            (unsigned long long)nlte->line_view.generation,
+            (unsigned long long)op->generation_committed,
+            (unsigned long long)em->committed_emissivity_generation,
+            (unsigned long long)m);
+
+    int qualified = compute_radiative_equilibrium_te(
+        plasma, gamma_dep, nlte, atom, opacity, epoch, n_shells);
+    A210Counters after = *a210_counters();
+
+    if (!qualified) {
+        int manifest_ok =
+            population_te_manifest_sha256(plasma->T_e, (size_t)n_shells,
+                                          te_after) == POP_OK;
+        int te_preserved = manifest_ok && strcmp(te_before, te_after) == 0;
+        int generation_preserved = plasma->T_e_generation == t;
+        const char *reason = r7_a210_block_reason(&before, &after);
+
+        fprintf(stderr,
+                "[A2-10][BLOCKED] event=R7_MATERIAL_UPDATE_BLOCKED "
+                "lane=%s iter=%d reason=%s "
+                "te_generation_before=%llu te_generation_after=%llu "
+                "te_manifest_preserved=%d generation_preserved=%d "
+                "material_update=BLOCKED action=TERMINATE "
+                "blocked_stale_delta=%llu no_bracket_delta=%llu "
+                "missing_term_delta=%llu schema_delta=%llu\n",
+                lane, iter, reason, (unsigned long long)t,
+                (unsigned long long)plasma->T_e_generation,
+                te_preserved, generation_preserved,
+                (unsigned long long)(after.blocked_stale -
+                                     before.blocked_stale),
+                (unsigned long long)(after.no_bracket -
+                                     before.no_bracket),
+                (unsigned long long)(after.blocked_missing_term -
+                                     before.blocked_missing_term),
+                (unsigned long long)(after.blocked_schema -
+                                     before.blocked_schema));
+
+        if (!te_preserved || !generation_preserved) {
+            fprintf(stderr,
+                    "[A2-10][FATAL] event=R8_PRESERVATION_VIOLATION "
+                    "lane=%s iter=%d\n", lane, iter);
+            return 5;
+        }
+        return 4;
+    }
+
+    if (plasma->T_e_generation != t + 1 ||
+        plasma->te_publication.committed_te_generation !=
+            plasma->T_e_generation) {
+        fprintf(stderr,
+                "[A2-10][FATAL] event=R7_TE_COMMIT_MISMATCH "
+                "lane=%s iter=%d before=%llu plasma=%llu publication=%llu\n",
+                lane, iter, (unsigned long long)t,
+                (unsigned long long)plasma->T_e_generation,
+                (unsigned long long)
+                    plasma->te_publication.committed_te_generation);
+        return 5;
+    }
+
+    fprintf(stderr,
+            "[R7][PHASE] event=R7_MATERIAL_PHASE_COMMITTED "
+            "lane=%s iter=%d phase=A2-10 r=%llu o=%llu e=%llu "
+            "te_generation=%llu->%llu\n",
+            lane, iter, (unsigned long long)r,
+            (unsigned long long)op->generation_committed,
+            (unsigned long long)em->committed_emissivity_generation,
+            (unsigned long long)t,
+            (unsigned long long)plasma->T_e_generation);
+    return 0;
+}
+
 /* Sample Planck frequency using Bjorkman-Wood method (4-random) */
 double sample_planck_frequency(double T, RNG *rng) {
     double kT_h = K_BOLTZMANN * T / H_PLANCK;
@@ -12115,11 +12380,23 @@ int compute_radiative_equilibrium_te(PlasmaState *plasma, GammaDeposition *gamma
                                      NLTEConfig *nlte, AtomicData *atom,
                                      OpacityState *opacity,
                                      double time_explosion, int n_shells) {
-    /* A2-10 is the only production Te path.  A failed transaction preserves
-     * the previously committed material temperature; there is no scalar-
-     * radiation fallback. */
-    return a210_production_solve(plasma,gamma_dep,nlte,atom,opacity,
-                                 time_explosion,n_shells);
+    if (!plasma || plasma->T_e_generation == UINT64_MAX)
+        return 0;
+
+    uint64_t old_generation = plasma->T_e_generation;
+    int qualified = a210_production_solve(
+        plasma, gamma_dep, nlte, atom, opacity, time_explosion, n_shells);
+
+    if (!qualified)
+        return 0;
+
+    if (plasma->te_publication.committed_te_generation !=
+        old_generation + 1)
+        return 0;
+
+    plasma->T_e_generation =
+        plasma->te_publication.committed_te_generation;
+    return 1;
 }
 
 

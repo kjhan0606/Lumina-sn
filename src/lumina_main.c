@@ -391,7 +391,21 @@ int main(int argc, char *argv[]) {
     /* ============================================================ */
 
     for (int iter = 0; iter < n_iterations; iter++) { /* Phase 5 - Step 5 */
+        int te_qualified = 0;
+        int material_locked = iter > 0 && nlte_ion_lock_active(iter);
+
         printf("\n--- Iteration %d/%d ---\n", iter + 1, n_iterations); /* Phase 5 - Step 5 */
+
+        /* A2-10 input derived from the currently committed material.  Compute it
+         * before the radiation commit so the post-commit R7 barrier can remain
+         * commit -> view -> a208 -> a209 -> A2-10 with no material mutation. */
+        if (!material_locked && gamma_dep_enabled &&
+            (iter > 0 || radeq_te)) {
+            compute_gamma_deposition(&gamma_dep, &atom_data, &plasma, &geo);
+            printf("  [Gamma] heating_rate[0]=%.2e, [%d]=%.2e erg/s/cm3\n",
+                   gamma_dep.heating_rate[0], geo.n_shells - 1,
+                   gamma_dep.heating_rate[geo.n_shells - 1]);
+        }
 
         /* Phase 5 - Step 5: Reset estimators */
         reset_estimators(est); /* Phase 5 - Step 5 */
@@ -541,6 +555,22 @@ int main(int argc, char *argv[]) {
             }
         }
 
+        {
+            int r7_rc = lumina_r7_publish_and_solve_te(
+                &opacity, bf_opacity_enabled ? &bf : NULL,
+                &atom_data, &plasma, enable_nlte ? &nlte : NULL,
+                gamma_dep_enabled ? &gamma_dep : NULL,
+                geo.time_explosion, geo.n_shells,
+                radeq_te && !material_locked, "MC", iter);
+            if (r7_rc != 0) {
+                fprintf(stderr,
+                        "[R7][FATAL] lane=MC iter=%d rc=%d\n",
+                        iter, r7_rc);
+                return EXIT_FAILURE;
+            }
+            te_qualified = radeq_te && !material_locked;
+        }
+
         /* Phase 5 - Step 5b: Spectrum binning + L_emitted from actual packets */
         double L_emitted = 0.0;
         double rot_weight_sum = 0.0;
@@ -586,58 +616,15 @@ int main(int argc, char *argv[]) {
 
         /* Option (8): freeze W/T_rad too once ion-lock activates — true
          * transport-only iteration; plasma state from converged free-NLTE iter. */
-        if (!(iter > 0 && nlte_ion_lock_active(iter))) {
+        if (!material_locked) {
             /* Phase 5 - Step 6: Solve radiation field */
             solve_radiation_field(est, geo.time_explosion, time_simulation, volume,
                                    &opacity, &plasma, config.damping_constant);
         }
 
-        /* Task #072: Recompute tau_sobolev from updated W, T_rad.
-         * Option (8): skip ALL plasma updates once ion-lock activates — freeze
-         * plasma at the converged free-NLTE state, transport packets only. */
-        if (iter > 0 && nlte_ion_lock_active(iter)) {
+        if (material_locked) {
             printf("  [plasma frozen by ion-lock; transport-only iter %d]\n", iter);
-        } else if (iter > 0) {
-            /* Gamma-ray deposition: compute heating/ionization rates */
-            if (gamma_dep_enabled) {
-                compute_gamma_deposition(&gamma_dep, &atom_data, &plasma, &geo);
-                printf("  [Gamma] heating_rate[0]=%.2e, [%d]=%.2e erg/s/cm3\n",
-                       gamma_dep.heating_rate[0], geo.n_shells - 1,
-                       gamma_dep.heating_rate[geo.n_shells - 1]);
-            }
-
-            /* P6: Update per-shell T_e before plasma state.
-             * Both LUMINA_RADEQ_TE and LUMINA_SELF_CONSISTENT_TE now route to the
-             * complete radiative-equilibrium balance (photoionization + Compton +
-             * gamma heating vs. recombination + free-free + collisional bound-bound
-             * + adiabatic cooling). The old Compton-only + f_coll_boost path
-             * (compute_electron_temperature self_consistent branch) is retired: it
-             * omitted photoionization/collisional heating and floor-saturated at
-             * early epochs. No free parameters; under-relaxed via LUMINA_RADEQ_DAMP. */
-            int te_qualified = 0;
-            if (radeq_te) {
-                /* Radiative-equilibrium T_e needs the CURRENT iteration's
-                 * radiation field; normalize J_nu now (re-normalized later in
-                 * the NLTE block, harmlessly — it recomputes from the raw
-                 * estimator). */
-                if (enable_nlte && iter >= nlte_start_iter)
-                    nlte_normalize_j_nu(&nlte, time_simulation, volume, geo.n_shells);
-                te_qualified = compute_radiative_equilibrium_te(&plasma,
-                    gamma_dep_enabled ? &gamma_dep : NULL,
-                    &nlte, &atom_data, &opacity,
-                    geo.time_explosion, geo.n_shells);
-            } else {
-                /* Preserve the committed material temperature.  Radiation has
-                 * no scalar-temperature owner after A2-17. */
-                plasma.T_e_generation = 0;
-            }
-
-            if (te_qualified) {
-                if (plasma.T_e_generation == UINT64_MAX) return EXIT_FAILURE;
-                plasma.T_e_generation++;
-            } else {
-                plasma.T_e_generation = 0;
-            }
+        } else if (iter > 0 || te_qualified) {
             if (compute_plasma_state(&atom_data, &plasma, &opacity,
                                      geo.time_explosion) != 0) {
                 fprintf(stderr, "[A2-07][FATAL] population transaction failed at iter=%d\n",
@@ -661,26 +648,6 @@ int main(int argc, char *argv[]) {
                     return EXIT_FAILURE;
                 }
 
-            }
-
-            if (a208_publish_cpu_opacity(&opacity,
-                    bf_opacity_enabled ? &bf : NULL,&atom_data,&plasma,
-                    enable_nlte ? &nlte : NULL,
-                    geo.time_explosion) != 0) {
-                fprintf(stderr,"[A2-08][FATAL] signed opacity publication failed iter=%d\n",iter);
-                return EXIT_FAILURE;
-            }
-
-            /* A2-09 publishes only from the checked A2-05..08 generations.
-             * Truth/coverage insufficiency is a surfaced BLOCKED state, not a
-             * license to retain an old eta/CDF or synthesize Planck emission. */
-            {
-                int emiss_rc=a209_publish_cpu_emissivity(&opacity,
-                    bf_opacity_enabled ? &bf : NULL,&atom_data,&plasma,
-                    enable_nlte ? &nlte : NULL,geo.time_explosion);
-                if(emiss_rc!=0)
-                    fprintf(stderr,"[A2-09][BLOCKED] publication rc=%d iter=%d\n",emiss_rc,iter);
-                else if(te_qualified){plasma.te_publication.population_generation=atom_data.population_committed_generation;plasma.te_publication.opacity_generation=opacity.cpu_opacity.generation_committed;plasma.te_publication.emissivity_generation=opacity.cpu_emissivity.committed_emissivity_generation;}
             }
 
             /* Dynamic transition probability recomputation */
