@@ -214,8 +214,13 @@ GpuRadiationFieldStatus gpu_radiation_field_sync(
         RADIATION_FIELD_VIEW_OK)
         return fail_sync(mirror, report, GPU_RF_SHAPE_OR_HASH_MISMATCH,
                          &candidate, 0, 0);
+    /* ★2026-08-08: DET-R6(3ca077d)가 이 view API 에 expected_profile_hash 를 추가하고
+     * GPU 호출부를 안 고쳐 **GPU 빌드가 깨진 채 커밋**됐다(CPU 타깃만 빌드했다).
+     * 인자는 이 함수의 매개변수로 이미 들어와 있다 — 넘기기만 하면 된다.
+     * NULL 을 넘기는 것은 검사 무력화이므로 금지. */
     if (radiation_field_line_jbar_view(owner, expected_epoch, expected_n_shells,
             expected_generation, expected_q_set_hash, expected_profile_id,
+            expected_profile_hash,
             &line_view) != LINE_JBAR_VIEW_OK)
         return fail_sync(mirror, report, GPU_RF_PROFILE_OR_QSET_MISMATCH,
                          &candidate, 0, 0);

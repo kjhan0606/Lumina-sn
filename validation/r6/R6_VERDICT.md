@@ -106,3 +106,49 @@ if(fabs(covered-(hi-lo))>1e-10*(hi-lo)) return-1;   /* 방출률 빈 경계를 �
 
 **남는 것**: 계약 구현(같은 원자적 commit·q-set 정체성·선별 validity)은 부정되지 않는다.
 R6-1(a209 통과)·R6-5(적용범위)·N6-4 는 유효하다.
+
+---
+
+# ★2차 정정 (2026-08-08 오전) — **DET-R6 는 GPU 빌드를 깨뜨린 채 커밋됐다**
+
+MC-EVT 검사 중 `make cuda` 가 실패해 발견했다.  **클린 커밋 트리에서 재현**된다.
+
+```
+DET-R6(3ca077d) 가 radiation_field_line_jbar_view 에 expected_profile_hash 를 추가하고
+GPU 호출부 gpu_radiation_field.cu:219 는 고치지 않았다.
+  nvcc: too few arguments in function call
+```
+
+**원인은 운전석이다.**  DET-R6 에서 `make OMP=1 lumina`(CPU) 만 돌리고 "빌드 OK" 로 적었다.
+**SH-GRID 도 CPU 만 빌드했다 — 두 단 연속이다.**
+못 본 쪽이 하필 **생산 경로**(GPU, `BF_OPACITY=1` 런처 299개)였다.
+
+이 결함은 감사가 지목한 세 건(증거 강도 부족)과 **같은 계급이면서 더 무겁다** —
+증거가 약한 것이 아니라 **아예 안 본 것**이다.
+
+## 수리
+
+인자가 이미 `gpu_radiation_field_sync` 의 매개변수로 들어와 있어(`:183`) 넘기기만 하면 된다.
+외부 호출부(`:546-549`)는 `owner->line_profile_hash_storage` 를 실제로 전달한다.
+`NULL` 전달은 검사 무력화이므로 금지로 주석에 명시했다.
+
+```
+make cuda  rc=0, 오류 0, lumina_cuda 갱신됨
+호출부 전수 3곳 — 전부 실제 값 전달(NULL 없음):
+   lumina_cmfgen.c:3541  qset->profile_hash
+   lumina_main.c:541     line_qset.profile_hash
+   gpu_radiation_field.cu:221  expected_profile_hash
+```
+
+## 감리에 올릴 질문
+
+CPU 두 곳은 **q-set 의 해시**(독립 생산자)로 대조하는데 GPU 는 **owner 자신의 저장본**으로
+대조한다.  미러 검증으로는 타당할 수 있으나 q-set 생산자와의 **독립 대조는 아니다**.
+이 비대칭이 의도된 것인가?  — 운전석은 판단하지 않고 올린다.
+
+## 규약 보강
+
+`docs/RUNG_CLOSURE_PROTOCOL.md` 에 **빌드 게이트**를 신설했다:
+`.cu`·공유 헤더·공용 API 시그니처를 건드리면 **두 타깃 다** 빌드해야 게이트 통과 ·
+빌드 산출은 **타임스탬프와 sha 로 확인**(`make` 는 최신이면 rc=0 으로 아무 일도 안 한다) ·
+**API 시그니처를 바꾸면 호출부 전수 grep**.
