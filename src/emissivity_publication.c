@@ -21,12 +21,150 @@ static void *za(size_t n,size_t w){return n?calloc(n,w):NULL;}
 static int good(EmissivityStatus s){return s==EMISS_OK||s==EMISS_EXACT_ZERO;}
 static double kadd(double sum,double x,double*c){double y=x-*c,t=sum+y;*c=(t-sum)-y;return t;}
 
+EmissivityStatus a209_sobolev_line_eta(double n_upper,double A_ul,double nu,
+ double tau,double delta_nu,double*beta_escape,double*eta_nu){
+ const double h=6.62607015e-27,pi=3.141592653589793238462643383279502884;
+ if(!beta_escape||!eta_nu)return EMISS_SOURCE_UNDEFINED;
+ *beta_escape=NAN;*eta_nu=NAN;
+ if(!isfinite(n_upper)||n_upper<0.0||!isfinite(A_ul)||A_ul<0.0||
+    !isfinite(nu)||nu<=0.0||!isfinite(tau)||
+    !isfinite(delta_nu)||delta_nu<=0.0)return EMISS_NONFINITE;
+ double beta=(tau==0.0)?1.0:-expm1(-tau)/tau;
+ if(!isfinite(beta)||beta<=0.0)return EMISS_NONFINITE;
+ double eta=n_upper*A_ul*h*nu*beta/(4.0*pi*delta_nu);
+ if(!isfinite(eta)||eta<0.0)return EMISS_NONFINITE;
+ *beta_escape=beta;*eta_nu=eta;
+ return eta==0.0?EMISS_EXACT_ZERO:EMISS_OK;
+}
+
+static int a209_line_generation_view_valid(const A209LineGenerationView*v){
+ return v&&v->tau_computed_generation!=0&&
+        v->tau_computed_generation==v->tau_required_generation&&
+        v->opacity_tau_generation==v->tau_computed_generation&&
+        v->population_generation!=0&&
+        v->opacity_population_generation==v->population_generation&&
+        v->te_generation!=0&&v->opacity_te_generation==v->te_generation&&
+        (v->nlte_population_generation==0||
+         v->nlte_population_generation==v->population_generation)&&
+        isfinite(v->opacity_epoch)&&isfinite(v->requested_epoch)&&
+        v->opacity_epoch==v->requested_epoch;
+}
+
+EmissivityStatus a209_line_generation_bracket(
+ const A209LineGenerationView*begin,const A209LineGenerationView*end){
+ if(!a209_line_generation_view_valid(begin))return EMISS_STALE_OPACITY;
+ if(!end)return EMISS_OK;
+ if(!a209_line_generation_view_valid(end))return EMISS_STALE_OPACITY;
+ return begin->tau_required_generation==end->tau_required_generation&&
+        begin->tau_computed_generation==end->tau_computed_generation&&
+        begin->opacity_tau_generation==end->opacity_tau_generation&&
+        begin->population_generation==end->population_generation&&
+        begin->opacity_population_generation==end->opacity_population_generation&&
+        begin->te_generation==end->te_generation&&
+        begin->opacity_te_generation==end->opacity_te_generation&&
+        begin->nlte_population_generation==end->nlte_population_generation&&
+        begin->opacity_epoch==end->opacity_epoch&&
+        begin->requested_epoch==end->requested_epoch
+        ?EMISS_OK:EMISS_STALE_OPACITY;
+}
+
 int a209_publication_init(CpuEmissivityPublication*p,size_t ns,size_t nb){if(!p||!ns||!nb)return-1;memset(p,0,sizeof(*p));p->n_shells=ns;p->n_bins=nb;size_t n=ns*nb;p->nu_edge=za(nb+1,sizeof(double));p->eta_bb=za(n,sizeof(double));p->eta_bf=za(n,sizeof(double));p->eta_ff=za(n,sizeof(double));p->eta_true_total=za(n,sizeof(double));p->eta_scattering_source=za(n,sizeof(double));p->eta_total_for_declared_semantics=za(n,sizeof(double));p->eta_reemit=za(n,sizeof(double));p->reemit_cdf=za(n,sizeof(double));p->cell_status=za(n,sizeof(*p->cell_status));p->component_status=za(5*n,sizeof(*p->component_status));if(!p->nu_edge||!p->eta_bb||!p->eta_bf||!p->eta_ff||!p->eta_true_total||!p->eta_scattering_source||!p->eta_total_for_declared_semantics||!p->eta_reemit||!p->reemit_cdf||!p->cell_status||!p->component_status){a209_publication_free(p);return-1;}return 0;}
 void a209_publication_free(CpuEmissivityPublication*p){if(!p)return;free(p->nu_edge);free(p->eta_bb);free(p->eta_bf);free(p->eta_ff);free(p->eta_true_total);free(p->eta_scattering_source);free(p->eta_total_for_declared_semantics);free(p->eta_reemit);free(p->reemit_cdf);free(p->cell_status);free(p->component_status);memset(p,0,sizeof(*p));}
 double a209_publication_max_closure(const CpuEmissivityPublication*p,size_t*wi){if(!p)return INFINITY;double worst=0;size_t at=0,n=p->n_shells*p->n_bins;for(size_t i=0;i<n;i++){double c=0,s=0;s=kadd(s,p->eta_bb[i],&c);s=kadd(s,p->eta_bf[i],&c);s=kadd(s,p->eta_ff[i],&c);s+=c;double all=s+p->eta_scattering_source[i],scale=fmax(fabs(p->eta_bb[i])+fabs(p->eta_bf[i])+fabs(p->eta_ff[i])+fabs(p->eta_scattering_source[i]),DBL_MIN);double e=fmax(fabs(p->eta_true_total[i]-s),fabs(p->eta_total_for_declared_semantics[i]-all))/scale;if(e>worst){worst=e;at=i;}}if(wi)*wi=at;return worst;}
-int a209_build_reemit_cdf(CpuEmissivityPublication*p,unsigned mask){if(!p||!p->required_emissivity_generation){g_ctr.cdf_stale++;return 5;}g_ctr.cdf_attempted+=p->n_shells;size_t nb=p->n_bins;for(size_t s=0;s<p->n_shells;s++){double sum=0,c=0;for(size_t b=0;b<nb;b++){size_t i=s*nb+b;if(!good(p->cell_status[i])||!isfinite(p->eta_true_total[i])||p->eta_true_total[i]<0){g_ctr.cdf_invalid++;p->redistribution_status=EMISS_CDF_INVALID;return 5;}p->eta_reemit[i]=p->eta_true_total[i];double w=p->eta_reemit[i]*(p->nu_edge[b+1]-p->nu_edge[b]);sum=kadd(sum,w,&c);p->reemit_cdf[i]=sum;}sum+=c;if(!(sum>0)||!isfinite(sum)){g_ctr.cdf_empty++;p->redistribution_status=EMISS_CDF_EMPTY;return 5;}double prev=0;for(size_t b=0;b<nb;b++){size_t i=s*nb+b;double v=(b+1==nb)?1.0:p->reemit_cdf[i]/sum;if(!isfinite(v)||v<prev){g_ctr.cdf_invalid++;p->redistribution_status=EMISS_CDF_INVALID;return 5;}p->reemit_cdf[i]=v;prev=v;}}
- A209Sha h;sha_init(&h);const char d[]="A2-09:eta-reemit-cdf:v1";sha_up(&h,d,sizeof(d)-1);sha_u64(&h,p->required_emissivity_generation);sha_u64(&h,p->n_shells);sha_u64(&h,p->n_bins);sha_u64(&h,mask);for(size_t b=0;b<=p->n_bins;b++)sha_f64(&h,p->nu_edge[b]);for(size_t i=0;i<p->n_shells*p->n_bins;i++)sha_f64(&h,p->eta_reemit[i]);sha_done(&h,p->cdf_manifest_sha256);p->cdf_generation=p->required_emissivity_generation;p->channel_mask=mask;p->redistribution_status=EMISS_OK;g_ctr.cdf_committed+=p->n_shells;return 0;}
-int a209_publication_commit(CpuEmissivityPublication*pub,CpuEmissivityPublication*c){if(!pub||!c||!c->required_emissivity_generation||c->committed_emissivity_generation){g_ctr.partial_publish_attempts++;return 5;}size_t n=c->n_shells*c->n_bins;for(size_t i=0;i<n;i++){if(!good(c->cell_status[i])){g_ctr.partial_publish_attempts++;return 5;}for(size_t k=0;k<5;k++)if(!good(c->component_status[k*n+i])){g_ctr.partial_publish_attempts++;return 5;}}if(a209_publication_max_closure(c,NULL)>1e-10||c->redistribution_status!=EMISS_OK||c->cdf_generation!=c->required_emissivity_generation){g_ctr.partial_publish_attempts++;return 5;}c->committed_emissivity_generation=c->required_emissivity_generation;CpuEmissivityPublication old=*pub;*pub=*c;memset(c,0,sizeof(*c));a209_publication_free(&old);g_ctr.generation_committed=pub->committed_emissivity_generation;return 0;}
+int a209_build_reemit_cdf_counted(CpuEmissivityPublication *p,
+                                  unsigned mask,
+                                  A209Counters *counter_sink) {
+ if(!p||!p->required_emissivity_generation){
+  if(counter_sink)counter_sink->cdf_stale++;
+  return 5;
+ }
+ if(counter_sink)counter_sink->cdf_attempted+=p->n_shells;
+ size_t nb=p->n_bins;
+ for(size_t s=0;s<p->n_shells;s++){
+  double sum=0,c=0;
+  for(size_t b=0;b<nb;b++){
+   size_t i=s*nb+b;
+   if(!good(p->cell_status[i])||!isfinite(p->eta_true_total[i])||
+      p->eta_true_total[i]<0){
+    if(counter_sink)counter_sink->cdf_invalid++;
+    p->redistribution_status=EMISS_CDF_INVALID;
+    return 5;
+   }
+   p->eta_reemit[i]=p->eta_true_total[i];
+   double w=p->eta_reemit[i]*(p->nu_edge[b+1]-p->nu_edge[b]);
+   sum=kadd(sum,w,&c);p->reemit_cdf[i]=sum;
+  }
+  sum+=c;
+  if(!(sum>0)||!isfinite(sum)){
+   if(counter_sink)counter_sink->cdf_empty++;
+   p->redistribution_status=EMISS_CDF_EMPTY;
+   return 5;
+  }
+  double prev=0;
+  for(size_t b=0;b<nb;b++){
+   size_t i=s*nb+b;
+   double v=(b+1==nb)?1.0:p->reemit_cdf[i]/sum;
+   if(!isfinite(v)||v<prev){
+    if(counter_sink)counter_sink->cdf_invalid++;
+    p->redistribution_status=EMISS_CDF_INVALID;
+    return 5;
+   }
+   p->reemit_cdf[i]=v;prev=v;
+  }
+ }
+ A209Sha h;sha_init(&h);const char d[]="A2-09:eta-reemit-cdf:v1";
+ sha_up(&h,d,sizeof(d)-1);sha_u64(&h,p->required_emissivity_generation);
+ sha_u64(&h,p->n_shells);sha_u64(&h,p->n_bins);sha_u64(&h,mask);
+ for(size_t b=0;b<=p->n_bins;b++)sha_f64(&h,p->nu_edge[b]);
+ for(size_t i=0;i<p->n_shells*p->n_bins;i++)sha_f64(&h,p->eta_reemit[i]);
+ sha_done(&h,p->cdf_manifest_sha256);
+ p->cdf_generation=p->required_emissivity_generation;p->channel_mask=mask;
+ p->redistribution_status=EMISS_OK;
+ if(counter_sink)counter_sink->cdf_committed+=p->n_shells;
+ return 0;
+}
+
+int a209_build_reemit_cdf(CpuEmissivityPublication *p,unsigned mask){
+ return a209_build_reemit_cdf_counted(p,mask,&g_ctr);
+}
+
+int a209_publication_commit_counted(CpuEmissivityPublication *pub,
+                                    CpuEmissivityPublication *c,
+                                    A209Counters *counter_sink) {
+ if(!pub||!c||!c->required_emissivity_generation||
+    c->committed_emissivity_generation){
+  if(counter_sink)counter_sink->partial_publish_attempts++;
+  return 5;
+ }
+ size_t n=c->n_shells*c->n_bins;
+ for(size_t i=0;i<n;i++){
+  if(!good(c->cell_status[i])){
+   if(counter_sink)counter_sink->partial_publish_attempts++;
+   return 5;
+  }
+  for(size_t k=0;k<5;k++)if(!good(c->component_status[k*n+i])){
+   if(counter_sink)counter_sink->partial_publish_attempts++;
+   return 5;
+  }
+ }
+ if(a209_publication_max_closure(c,NULL)>1e-10||
+    c->redistribution_status!=EMISS_OK||
+    c->cdf_generation!=c->required_emissivity_generation){
+  if(counter_sink)counter_sink->partial_publish_attempts++;
+  return 5;
+ }
+ c->committed_emissivity_generation=c->required_emissivity_generation;
+ CpuEmissivityPublication old=*pub;*pub=*c;memset(c,0,sizeof(*c));
+ a209_publication_free(&old);
+ if(counter_sink)counter_sink->generation_committed=
+     pub->committed_emissivity_generation;
+ return 0;
+}
+
+int a209_publication_commit(CpuEmissivityPublication *pub,
+                            CpuEmissivityPublication *c) {
+ return a209_publication_commit_counted(pub,c,&g_ctr);
+}
 int a209_sample_reemit_frequency(const CpuEmissivityPublication*p,size_t s,uint64_t gen,double u,double*nu){g_ctr.sampler_calls++;if(!p||!nu||s>=p->n_shells||p->committed_emissivity_generation!=gen||p->cdf_generation!=gen||p->redistribution_status!=EMISS_OK){g_ctr.sampler_generation_mismatch++;return 5;}if(!isfinite(u)||u<0||u>=1){g_ctr.cdf_invalid++;return 5;}g_ctr.sampler_draws++;size_t lo=0,hi=p->n_bins-1;const double*cdf=p->reemit_cdf+s*p->n_bins;while(lo<hi){size_t m=(lo+hi)/2;if(cdf[m]<u)lo=m+1;else hi=m;}double c0=lo?cdf[lo-1]:0,c1=cdf[lo],f=(c1>c0)?(u-c0)/(c1-c0):0;*nu=p->nu_edge[lo]+f*(p->nu_edge[lo+1]-p->nu_edge[lo]);return(isfinite(*nu)&&*nu>0)?0:5;}
 EmissivityStatus a209_transition_block(const double*w,const double*e,size_t n,double in,double*p,double*err){g_ctr.transition_blocks_attempted++;if(!w||!p||!n){g_ctr.transition_empty++;return EMISS_TRANSITION_EMPTY;}double sum=0,c=0,es=0,ec=0;for(size_t i=0;i<n;i++){if(!isfinite(w[i])||w[i]<0|| (e&&(!isfinite(e[i])||e[i]<0))){g_ctr.transition_nonfinite++;return EMISS_TRANSITION_NONFINITE;}sum=kadd(sum,w[i],&c);}sum+=c;if(!(sum>0)||!isfinite(sum)){g_ctr.transition_empty++;return EMISS_TRANSITION_EMPTY;}double ps=0,pc=0;for(size_t i=0;i<n;i++){p[i]=w[i]/sum;ps=kadd(ps,p[i],&pc);if(e)es=kadd(es,p[i]*e[i],&ec);}ps+=pc;if(fabs(ps-1)>1e-10){g_ctr.transition_norm_fail++;return EMISS_TRANSITION_NOT_NORMALIZED;}double ne=0;if(e){es+=ec;double scale=fmax(fabs(in),DBL_MIN);ne=fabs(es-in)/scale;if(ne>1e-8){g_ctr.energy_closure_fail++;if(err)*err=ne;return EMISS_ENERGY_NOT_CLOSED;}}if(err)*err=ne;g_ctr.transition_blocks_published++;g_ctr.transition_channels+=n;return EMISS_OK;}
 const char*a209_status_name(EmissivityStatus s){static const char*n[]={"INVALID","EMISS_OK","EMISS_EXACT_ZERO","EMISS_STALE_RF","EMISS_STALE_LINE","EMISS_STALE_POP","EMISS_STALE_OPACITY","EMISS_UNSAMPLED","EMISS_OOG","EMISS_MISS","EMISS_PROFILE_MISMATCH","EMISS_QUERY_HASH_MISMATCH","EMISS_INVALID_TE","EMISS_INVALID_NE","EMISS_ATOMIC_MISSING","EMISS_SOURCE_UNDEFINED","EMISS_COMPONENT_INCOMPLETE","EMISS_NEGATIVE_EVENT_UNSUPPORTED","EMISS_TRANSITION_EMPTY","EMISS_TRANSITION_NONFINITE","EMISS_TRANSITION_NOT_NORMALIZED","EMISS_ENERGY_NOT_CLOSED","EMISS_CDF_EMPTY","EMISS_CDF_STALE","EMISS_CDF_INVALID","EMISS_FORBIDDEN_PLANCK","EMISS_PARTIAL_PUBLISH","EMISS_NONFINITE"};return s>=EMISS_OK&&s<=EMISS_NONFINITE?n[s]:n[0];}

@@ -13,13 +13,7 @@
 #include <float.h>    /* Phase 2 - Step 1 */
 #include <locale.h>   /* A6: setlocale(LC_NUMERIC,"C") for ko_KR-safe sscanf */
 
-/* The NLTE/BF grid is the frequency-grid authority.  radiation_field.h derives
- * the canonical grid from these three definitions; keep them before that
- * include so there cannot be an independent canonical literal set. */
-#define NLTE_N_FREQ_BINS  1000
-#define NLTE_NU_MIN       1.5e14    /* c / 20000 A */
-#define NLTE_NU_MAX       3.0e16    /* c / 100 A */
-
+#include "lumina_frequency_grid.h" /* single NLTE/BF grid authority */
 #include "radiation_field.h" /* A2-03 canonical shadow schema (CPU only) */
 #include "population_contract.h" /* A2-07 CPU population owner contract */
 #include "opacity_publication.h" /* A2-08 signed CPU opacity/status owner */
@@ -285,8 +279,33 @@ typedef struct {
      * commit; negative storage is private producer state and is translated to
      * selective UNSAMPLED before publication. */
     double *jbar_line_det;               /* [n_lines * n_shells] or NULL */
+    double *jbar_line_det_error_upper;   /* certified local |delta Jbar| upper */
+    /* Stage-4 read-only independent continuum probe.  These arrays contain
+     * the same Gaussian line-profile average applied to a separately solved
+     * line-free continuum field; they are never consumed by the NLTE/rate
+     * publisher.  NULL/0 means the opt-in capture was not requested. */
+    double *jbar_line_det_continuum;             /* [n_lines*n_shells] */
+    double *jbar_line_det_continuum_error_upper; /* certified local bound */
+    int     jbar_line_det_continuum_captured;
     double  jbar_line_det_vdoppler_cms;  /* producer profile identity; 0 = absent */
     double  jbar_line_det_ndoppler;       /* symmetric support in Doppler widths */
+    int     jbar_line_det_operator;       /* 1=sealed init Gaussian, 2=CMFGEN Sobolev */
+    int     jbar_line_det_exact_converged;/* exact characteristic qualified */
+    int     jbar_line_det_exact_iterations;
+    int     jbar_line_det_exact_iteration_cap;
+    double  jbar_line_det_exact_residual;
+    double  jbar_line_det_exact_tolerance;
+    double  jbar_line_det_exact_absolute_error_bound;
+    double  jbar_line_det_exact_max_scattering_ratio;
+    int     jbar_line_det_error_envelope_verified;
+    size_t  jbar_line_det_error_refinement_iterations;
+    double  jbar_line_det_component_error_min;
+    double  jbar_line_det_component_error_max;
+    double  jbar_line_det_profile_error_min;
+    double  jbar_line_det_profile_error_max;
+    int     jbar_line_det_grid_n_bins;
+    double  jbar_line_det_grid_nu_min;    /* first sampled fine-grid centre */
+    double  jbar_line_det_grid_nu_max;    /* last sampled fine-grid centre */
     /* Fine-ν LOCAL continuum mean intensity from the cmfgen_fine_jbar producer,
      * retained (instead of freed) so bound-free PHOTOIONIZATION rates can be
      * integrated on the fine grid — the binned J collapses at the UV bf edges in
@@ -355,9 +374,10 @@ typedef struct {
     double  nlte_nu_min;
     double  nlte_d_log_nu;
     RadiationFieldAccumulator *radiation_field_accumulator; /* canonical producer work */
-    /* A2-06 selective line-Jbar estimator (SPEC_A2_06_V5).  qset/accumulator
-     * are shared (owned by the driver); partial is thread-local per packet.
-     * Opaque pointers keep this header free of line_jbar.h. */
+    /* A2-06 selective line-Jbar estimator (SPEC_A2_06_V5).  The pointer names
+     * are retained for ABI/source compatibility; production MC now supplies
+     * the Q_E set, while its Q_g identity remains a checked owner subset.
+     * Set/accumulator are driver-owned; partial is thread-local per packet. */
     void *line_jbar_qset;
     void *line_jbar_accumulator;
     void *line_jbar_partial;
@@ -435,6 +455,16 @@ typedef struct {
     int    *ioniz_ion;                /* [n_ionization] ion number */
     double *ioniz_energy_eV;          /* [n_ionization] chi in eV */
 
+    /* Neutral-ground energy-zero reference only.  These rows fill missing
+     * links needed to accumulate an ion's absolute internal energy; they are
+     * never counted when constructing ion populations, rate ladders, or NLTE
+     * unknowns.  Regular deck ionization data remains authoritative whenever
+     * the same (Z,ion) link is present. */
+    int     n_ionization_reference;
+    int    *ioniz_ref_Z;              /* [n_ionization_reference] */
+    int    *ioniz_ref_ion;            /* [n_ionization_reference] */
+    double *ioniz_ref_energy_eV;       /* [n_ionization_reference] */
+
     /* Zeta factors (from zeta_data.npy + zeta_ions.csv + zeta_temps.csv) */
     int     n_zeta_ions;
     int    *zeta_Z;                   /* [n_zeta_ions] */
@@ -456,7 +486,8 @@ typedef struct {
      * 공용 준위 배열에 넣지 않는다 — 넣으면 NLTE 미지수·ma_radrecomb_target·
      * BF 단면 [n_levels x n_freq] 계약·macro-atom block·충돌 sidecar 가 전부 없는 자료를
      * 요구한다(Codex 설계 판정 (c)).  population_partition_build 하나만 읽는다.
-     * 자료 data/atomic/topion_levels.csv (CMFGEN 21jun23 12종 + Cloudy/Stout-NIST 3종). */
+     * 자료 LUMINA_TOPION_LEVELS_FILE 또는 기본 data/atomic/topion_levels.csv
+     * (CMFGEN 21jun23 12종 + Cloudy/Stout-NIST 3종). */
     size_t  topion_n;
     int    *topion_ion_index;         /* [topion_n] ion-pop 인덱스 */
     double *topion_E_cm;              /* [topion_n] cm^-1 */
@@ -570,6 +601,25 @@ typedef struct {
 #define NLTE_MAX_IONS     38
 #define NLTE_PAIR_COUNT   23        /* maximum pair-array capacity */
 
+/* EW owner-path instrumentation is material to the A2-07 trial verdict but
+ * must not leak into process-global counters during a private all-shell trial.
+ * A NULL NLTEConfig sink retains the legacy process-global destination. */
+typedef struct {
+    unsigned long save_restore_calls;
+    unsigned long per_ion_pin_calls;
+    unsigned long topstage_IV_calls;
+} NLTEEWRuntimeCounts;
+
+enum {
+    NLTE_SOLVE_EFFECT_PROGRESS = 1u << 0,
+    NLTE_SOLVE_EFFECT_DIAGNOSTIC_FILES = 1u << 1,
+    NLTE_SOLVE_EFFECT_RUNTIME_MANIFESTS = 1u << 2,
+    /* Narrow opt-in exception for a user-authorized private-trial matrix
+     * capture.  It does not enable any of the ordinary diagnostic files. */
+    NLTE_SOLVE_EFFECT_FORENSIC_MATRIX = 1u << 3,
+    NLTE_SOLVE_EFFECT_ALL = (1u << 4) - 1u
+};
+
 typedef struct {
     int    enabled;
     int    n_freq_bins;
@@ -621,12 +671,18 @@ typedef struct {
     uint64_t bf_view_blocked_out_of_grid;
     uint64_t bf_view_blocked_stale;
 
-    /* A2-06: checked line-Jbar view (refresh at commit choke points only) +
-     * R6-style counters.  line_qset is the frozen Q_g (opaque; owner=main). */
+    /* A2-06: checked line-Jbar rate view (refresh at commit choke points only)
+     * + R6-style counters.  line_qset is the frozen Q_g; line_eset is the
+     * frozen all-BB energy domain Q_E.  DET publishes one Q_E numeric cache
+     * and line_view addresses its Q_g subset. */
     LineJbarView line_view;
     int      line_view_status;                /* LineJbarViewStatus */
     const void *line_qset;
+    LineJbarView line_energy_view;
+    int      line_energy_view_status;         /* LineJbarViewStatus */
+    const void *line_eset;
     uint64_t bb_view_rate_terms;
+    uint64_t bb_view_excluded_out_of_domain; /* graph exclusion, not an error */
     uint64_t bb_view_blocked_stale;
     uint64_t bb_view_blocked_unsampled;
     uint64_t bb_view_blocked_oog;
@@ -641,6 +697,9 @@ typedef struct {
     PopulationStatus population_first_error;
     uint64_t population_error_count;
     PopulationCounters population_counters;
+    NLTEEWRuntimeCounts *ew_runtime_counts_sink; /* NULL=legacy global; candidate=private */
+    unsigned solve_effects_allowed;
+    int solve_effect_policy_explicit; /* zero keeps legacy all-effects behavior */
 
     /* Current iteration index (set by host before each nlte_solve_all call). */
     int    current_iter;
@@ -663,6 +722,15 @@ typedef struct {
      * everywhere afterward (replaces the permanent density LTE_NCRIT zone). */
     double *shell_tau;                              /* [n_shells] inward tau_es */
 } NLTEConfig;
+
+void nlte_ew_runtime_counts_merge_for(
+    const NLTEConfig *nlte, const NLTEEWRuntimeCounts *delta);
+
+static inline int nlte_solve_effect_allowed(
+        const NLTEConfig *nlte, unsigned effect) {
+    return !nlte || !nlte->solve_effect_policy_explicit ||
+           (nlte->solve_effects_allowed & effect) != 0;
+}
 
 /* ============================================================ */
 /* Step 1.5: Charge Exchange Coupling                           */
@@ -746,12 +814,31 @@ typedef struct {
 /* Bound-free (photoionization) opacity                        */
 /* ============================================================ */
 
+/* E-lane continuum event-measure contract.  This domain is owned by the
+ * bound-free packet-event quantity; it deliberately does not reuse a plasma,
+ * temperature, or deposition manifest domain. */
+#define BF_EVENT_MEASURE_DOMAIN "lumina.bound_free.event_measure.v1"
+#define BF_EVENT_MEASURE_INVARIANT "finite_and_nonnegative_at_every_consumer"
+
+typedef enum {
+    BF_EVENT_MEASURE_OK = 0,
+    BF_EVENT_MEASURE_UNAVAILABLE,
+    BF_EVENT_MEASURE_NEGATIVE,
+    BF_EVENT_MEASURE_OUT_OF_GRID
+} BfEventMeasureStatus;
+
+typedef enum {
+    EVENT_MEASURE_PROVENANCE_NONE = 0,
+    EVENT_MEASURE_SPONTANEOUS,
+    EVENT_MEASURE_LEGACY_ARGMAX
+} BfEventMeasureProvenance;
+
 typedef struct {
     int     enabled;
-    int     n_freq_bins;    /* NLTE_N_FREQ_BINS (1000) */
+    int     n_freq_bins;    /* NLTE_N_FREQ_BINS (1234 under closed SH-GRID) */
     int     n_shells;
-    double  nu_min;         /* NLTE_NU_MIN (1.5e14 Hz = c/20000A) */
-    double  nu_max;         /* NLTE_NU_MAX (3.0e16 Hz = c/100A) */
+    double  nu_min;         /* NLTE_NU_MIN (SH-GRID: 5.84127859196e13 Hz) */
+    double  nu_max;         /* NLTE_NU_MAX (4.0362581455823112e16 Hz) */
     double  d_log_nu;       /* log(nu_max/nu_min) / n_freq_bins */
     double *chi_bf;         /* [n_shells * n_freq_bins] cm^-1 */
     double *eta_bf;         /* [n_shells * n_freq_bins] erg/s/cm^3/Hz/sr — bf(+ff)
@@ -781,7 +868,15 @@ typedef struct {
     double *event_sigma0;       /* [event_n_routes] Kramers threshold sigma */
     double *event_weight;       /* [n_shells*event_n_routes] n_lower*p_target */
     double *event_stim_ratio;   /* [n_shells*event_n_routes], -1 => corr=1 */
-    double *event_chi_bf;       /* gross nonnegative event measure; bf only */
+    /* Canonical event grid is always a separately produced quantity.  The
+     * comparison grid holds the other named producer for an always-on
+     * auxiliary array observer; it is never a consumer fallback.  Registered
+     * ME2 remains the production GPU ON/OFF spectrum comparison. */
+    double *event_chi_bf;       /* selected producer, bf only */
+    double *event_chi_bf_comparison; /* unselected producer, observer only */
+    BfEventMeasureProvenance event_measure_provenance;
+    uint64_t event_measure_generation;
+    uint64_t event_measure_hash;
     double *event_Te;           /* [n_shells], D-3 event corrfactor exponent */
     const double *event_sigma_bf; /* non-owning AtomicData [level*freq] grid */
     unsigned long long event_target_fallback_activations; /* CPU realized MA uses */
@@ -1120,6 +1215,12 @@ int  lumina_zinert_validate(const AtomicData *atom, const NLTEConfig *nlte,
                             const char *stage);
 int  lumina_zinert_element_inactive(const AtomicData *atom, int element,
                                     int n_shells);
+int  nlte_zinert_pair_exact_zero(NLTEConfig *nlte, AtomicData *atom,
+                                 PlasmaState *plasma, int ion_idx_lo,
+                                 int ion_idx_hi, int shell);
+int  nlte_zero_total_pair_exact_zero(NLTEConfig *nlte, AtomicData *atom,
+                                     PlasmaState *plasma, int ion_idx_lo,
+                                     int ion_idx_hi, int shell);
 
 /* Refresh per-line Sobolev optical depths + NLTE line source from the current
  * NLTE level populations (writes opacity->tau_sobolev, opacity->line_source_S).
@@ -1271,6 +1372,7 @@ void apply_overlap_corrections(AtomicData *atom, OpacityState *opacity,
 
 /* Bound-free opacity: Kramers photoionization cross-section grid */
 void bf_opacity_init(BFOpacity *bf, int n_shells);
+int bf_opacity_init_checked(BFOpacity *bf, int n_shells);
 void bf_opacity_free(BFOpacity *bf);
 void compute_bf_opacity(BFOpacity *bf, AtomicData *atom, PlasmaState *plasma,
                          int n_shells);
@@ -1283,7 +1385,7 @@ int a209_publish_cpu_emissivity(OpacityState *opacity, const BFOpacity *bf,
                                 const PlasmaState *plasma,
                                 const NLTEConfig *nlte, double epoch);
 int lumina_r7_publish_and_solve_te(OpacityState *opacity,
-                                   const BFOpacity *bf,
+                                   BFOpacity *bf,
                                    AtomicData *atom,
                                    PlasmaState *plasma,
                                    NLTEConfig *nlte,
@@ -1291,6 +1393,16 @@ int lumina_r7_publish_and_solve_te(OpacityState *opacity,
                                    double epoch, int n_shells,
                                    int solve_te,
                                    const char *lane, int iter);
+/* A2-INIT: exactly-once seed-material predictor (R1 -> P2 at the published
+ * seed Te, population m->m+1, Te bytes/generation/publication untouched).
+ * Nonzero return terminates the run; no fallback exists. */
+int lumina_init_seed_material_predictor(OpacityState *opacity,
+                                        BFOpacity *bf,
+                                        AtomicData *atom,
+                                        PlasmaState *plasma,
+                                        NLTEConfig *nlte,
+                                        GammaDeposition *gamma_dep,
+                                        double epoch, int n_shells);
 /* Wave-1 bf repair gates. All are default OFF and shared with CUDA helpers so
  * host/device producer selection cannot disagree. */
 int lumina_fix_bf_stim_recomb_enabled(void);
@@ -1305,16 +1417,37 @@ int bf_fill_committed_level_populations(const AtomicData *atom,
                                         const PlasmaState *plasma,
                                         int n_shells, float *out);
 double bf_get_chi(BFOpacity *bf, int shell, double nu);
-double bf_get_event_measure(BFOpacity *bf, int shell, double nu);
+BfEventMeasureStatus bf_event_measure_get(const BFOpacity *bf, int shell,
+                                           double nu, double *out);
+const char *bf_event_measure_status_name(BfEventMeasureStatus status);
+const char *bf_event_measure_provenance_name(
+    BfEventMeasureProvenance provenance);
 double bf_get_eta(BFOpacity *bf, int shell, double nu);
 /* Fine-ν bf opacity (sharp bf edges on the fine grid) for the CMFGEN-method producer.
  * chi_bf_fine_out is [n_shells * n_fine] row-major. Returns 0 ok / −1 fallback. */
 int bf_gemm_compute_fine(BFOpacity *bf, AtomicData *atom, PlasmaState *plasma,
         int n_shells, const double *nu_fine, int n_fine,
         double nu_min_bin, double dlognu_bin, double *chi_bf_fine_out);
-/* Register bf + atom so cmfgen_fine_jbar can build the fine bf continuum opacity
- * (LUMINA_CMF_FINE_BF_OPAC). Pass NULL to disable. */
-void cmfgen_fine_set_bf_atom(BFOpacity *bf, AtomicData *atom);
+typedef EmissivityStatus (*LuminaLineUpperPopulationFunction)(
+    const AtomicData *atom, const PlasmaState *plasma,
+    const NLTEConfig *nlte, int line, size_t shell, size_t n_shells,
+    double *n_upper);
+typedef int (*LuminaLineUpperPopulationFillFunction)(
+    const AtomicData *atom, const PlasmaState *plasma,
+    const NLTEConfig *nlte, size_t n_lines, size_t n_shells,
+    double *n_upper_line_shell);
+/* Register the material context used by the deterministic Q_E producer. */
+void cmfgen_fine_set_bf_atom(
+    BFOpacity *bf, AtomicData *atom, NLTEConfig *nlte,
+    LuminaLineUpperPopulationFillFunction upper_population_fill);
+EmissivityStatus lumina_line_upper_population_for_tau(
+    const AtomicData *atom, const PlasmaState *plasma,
+    const NLTEConfig *nlte, int line, size_t shell, size_t n_shells,
+    double *n_upper);
+int lumina_line_upper_population_fill_for_tau(
+    const AtomicData *atom, const PlasmaState *plasma,
+    const NLTEConfig *nlte, size_t n_lines, size_t n_shells,
+    double *n_upper_line_shell);
 int    bf_get_activation_level(BFOpacity *bf, int shell, double nu);
 int    bf_sample_continuum_event(BFOpacity *bf, int shell, double nu,
                                  RNG *rng, int *target, double *nu_edge);
@@ -1339,7 +1472,7 @@ void compute_electron_temperature(PlasmaState *plasma, GammaDeposition *gamma_de
  * LUMINA_RADEQ_TE=1. Uses lagged NLTE pops + J_nu (operator-split). */
 int compute_radiative_equilibrium_te(PlasmaState *plasma, GammaDeposition *gamma_dep,
                                      NLTEConfig *nlte, AtomicData *atom,
-                                     OpacityState *opacity,
+                                     OpacityState *opacity, BFOpacity *bf,
                                      double time_explosion, int n_shells);
 
 /* PATH-A / A2: per-shell COUPLED-NEWTON solve of {n_e, T_e} (simultaneous

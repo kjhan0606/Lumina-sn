@@ -10,6 +10,9 @@
 
 typedef struct {
     void *component[GPU_RF_COMPONENT_COUNT];
+    /* Transient host gather buffers.  They are populated only when a sparse
+     * Q_g view addresses a Q_E numeric cache, and never become mirror state. */
+    void *host_component[GPU_RF_COMPONENT_COUNT];
     uint64_t bytes[GPU_RF_COMPONENT_COUNT];
     cudaEvent_t start_event;
     cudaEvent_t stop_event;
@@ -85,13 +88,24 @@ static void free_buffers(GpuRfBuffers *buffers)
     if (!buffers) return;
     for (i = 0; i < GPU_RF_COMPONENT_COUNT; ++i) {
         if (buffers->component[i]) cudaFree(buffers->component[i]);
+        free(buffers->host_component[i]);
         buffers->component[i] = NULL;
+        buffers->host_component[i] = NULL;
         buffers->bytes[i] = 0;
     }
     if (buffers->start_event) cudaEventDestroy(buffers->start_event);
     if (buffers->stop_event) cudaEventDestroy(buffers->stop_event);
     buffers->start_event = NULL;
     buffers->stop_event = NULL;
+}
+
+static void free_host_buffers(GpuRfBuffers *buffers)
+{
+    if (!buffers) return;
+    for (int i = 0; i < GPU_RF_COMPONENT_COUNT; ++i) {
+        free(buffers->host_component[i]);
+        buffers->host_component[i] = NULL;
+    }
 }
 
 static uint64_t buffer_total(const GpuRfBuffers *buffers)
@@ -165,6 +179,48 @@ static int compute_bytes(size_t n_shells, size_t n_bins, size_t n_lines,
     return 0;
 }
 
+/* Materialize the Q_g rate view in compact order when its numeric cells live
+ * in a larger Q_E cache.  Every association is made through cache_index;
+ * contiguous copying from the cache base is intentionally forbidden. */
+static int stage_sparse_rate_view(const LineJbarView *view,
+                                  GpuRfBuffers *candidate)
+{
+    if (!view || !candidate) return -1;
+    if (!view->cache_index) return 0;
+    if (!view->line_id || !view->jbar || !view->validity || !view->count ||
+        !view->se || view->n_lines == 0 || view->n_shells == 0 ||
+        view->cache_n_lines < view->n_lines)
+        return -1;
+    const int component[] = {
+        C_LINE_VALUE, C_LINE_VALIDITY, C_LINE_COUNT, C_LINE_SE
+    };
+    for (size_t k = 0; k < sizeof(component) / sizeof(component[0]); ++k) {
+        int c = component[k];
+        candidate->host_component[c] = malloc((size_t)candidate->bytes[c]);
+        if (!candidate->host_component[c]) return -1;
+    }
+    double *jbar = (double *)candidate->host_component[C_LINE_VALUE];
+    LineJbarValidityState *validity = (LineJbarValidityState *)
+        candidate->host_component[C_LINE_VALIDITY];
+    uint64_t *count = (uint64_t *)candidate->host_component[C_LINE_COUNT];
+    double *se = (double *)candidate->host_component[C_LINE_SE];
+    for (size_t q = 0; q < view->n_lines; ++q) {
+        size_t at = view->cache_index[q];
+        if (at >= view->cache_n_lines) return -1;
+        size_t src = at * view->n_shells;
+        size_t dst = q * view->n_shells;
+        memcpy(jbar + dst, view->jbar + src,
+               view->n_shells * sizeof(*jbar));
+        memcpy(validity + dst, view->validity + src,
+               view->n_shells * sizeof(*validity));
+        memcpy(count + dst, view->count + src,
+               view->n_shells * sizeof(*count));
+        memcpy(se + dst, view->se + src,
+               view->n_shells * sizeof(*se));
+    }
+    return 0;
+}
+
 GpuRadiationFieldMirror *gpu_radiation_field_create(void)
 {
     GpuRadiationFieldMirror *mirror =
@@ -190,7 +246,7 @@ GpuRadiationFieldStatus gpu_radiation_field_sync(
     GpuRfFixedMetadata metadata;
     cudaStream_t stream = (cudaStream_t)cuda_stream;
     uint64_t invalid_field = 0, invalid_line = 0, copied = 0;
-    size_t field_cells, line_cells;
+    size_t field_cells;
     int i;
     memset(&candidate, 0, sizeof(candidate));
     memset(&metadata, 0, sizeof(metadata));
@@ -241,21 +297,32 @@ GpuRadiationFieldStatus gpu_radiation_field_sync(
             return fail_sync(mirror, report, GPU_RF_LINE_ID_MISMATCH,
                              &candidate, 0, 0);
     if (!expected_q_set_hash || !expected_profile_hash ||
-        !owner->line_jbar_cache.q_set_hash ||
+        !owner->line_rate_graph_hash_storage ||
         !owner->line_profile_hash_storage ||
-        strcmp(expected_q_set_hash, owner->line_jbar_cache.q_set_hash) != 0 ||
+        strcmp(expected_q_set_hash,
+               owner->line_rate_graph_hash_storage) != 0 ||
+        !line_view.rate_graph_hash ||
+        strcmp(expected_q_set_hash, line_view.rate_graph_hash) != 0 ||
         expected_profile_id != owner->line_profile_id ||
         strcmp(expected_profile_hash, owner->line_profile_hash_storage) != 0)
         return fail_sync(mirror, report, GPU_RF_PROFILE_OR_QSET_MISMATCH,
                          &candidate, 0, 0);
     field_cells = field_view.n_shells * field_view.n_bins;
-    line_cells = line_view.n_lines * line_view.n_shells;
     for (size_t k = 0; k < field_cells; ++k)
         if (field_view.validity[k] != RADIATION_FIELD_VALID &&
             field_view.validity[k] != RADIATION_FIELD_EXACT_ZERO) invalid_field++;
-    for (size_t k = 0; k < line_cells; ++k)
-        if (line_view.validity[k] != LINE_JBAR_VALID &&
-            line_view.validity[k] != LINE_JBAR_EXACT_ZERO) invalid_line++;
+    for (size_t q = 0; q < line_view.n_lines; ++q) {
+        size_t at = line_view.cache_index ? line_view.cache_index[q] : q;
+        if (at >= line_view.cache_n_lines)
+            return fail_sync(mirror, report, GPU_RF_LINE_ID_MISMATCH,
+                             &candidate, 0, 0);
+        for (size_t s = 0; s < line_view.n_shells; ++s) {
+            size_t k = at * line_view.n_shells + s;
+            if (line_view.validity[k] != LINE_JBAR_VALID &&
+                line_view.validity[k] != LINE_JBAR_EXACT_ZERO)
+                invalid_line++;
+        }
+    }
     if (invalid_field || invalid_line)
         return fail_sync(mirror, report, GPU_RF_INVALID_CELL, &candidate,
                          invalid_field, invalid_line);
@@ -265,6 +332,9 @@ GpuRadiationFieldStatus gpu_radiation_field_sync(
     if (compute_bytes(field_view.n_shells, field_view.n_bins,
                       line_view.n_lines, &candidate, report) != 0)
         return fail_sync(mirror, report, GPU_RF_SHAPE_OR_HASH_MISMATCH,
+                         &candidate, 0, 0);
+    if (stage_sparse_rate_view(&line_view, &candidate) != 0)
+        return fail_sync(mirror, report, GPU_RF_ALLOCATION_FAILURE,
                          &candidate, 0, 0);
     if (poison == GPU_RF_POISON_REPORTED_BYTES && report)
         report->cache_upload_bytes -= candidate.bytes[C_LINE_SE];
@@ -286,8 +356,16 @@ GpuRadiationFieldStatus gpu_radiation_field_sync(
 
     const void *sources[GPU_RF_COMPONENT_COUNT] = {
         field_view.frequency_bin_edges, field_view.J_nu, field_view.validity,
-        line_view.line_id, line_view.jbar, line_view.validity,
-        line_view.count, line_view.se, &metadata
+        line_view.line_id,
+        candidate.host_component[C_LINE_VALUE]
+            ? candidate.host_component[C_LINE_VALUE] : line_view.jbar,
+        candidate.host_component[C_LINE_VALIDITY]
+            ? candidate.host_component[C_LINE_VALIDITY] : line_view.validity,
+        candidate.host_component[C_LINE_COUNT]
+            ? candidate.host_component[C_LINE_COUNT] : line_view.count,
+        candidate.host_component[C_LINE_SE]
+            ? candidate.host_component[C_LINE_SE] : line_view.se,
+        &metadata
     };
     metadata.required_generation = owner->field.generation.required_generation;
     metadata.computed_generation = owner->field.generation.computed_generation;
@@ -351,6 +429,10 @@ GpuRadiationFieldStatus gpu_radiation_field_sync(
         return fail_sync(mirror, report, GPU_RF_UPLOAD_BYTES_MISMATCH,
                          &candidate, 0, 0);
 
+    /* D2H attestation above consumed the last references to the transient
+     * sparse gather.  Device buffers alone become public mirror state. */
+    free_host_buffers(&candidate);
+
     GpuRfBuffers old = mirror->live;
     cudaEvent_t old_ready_event = mirror->ready_event;
     mirror->live = candidate;
@@ -412,7 +494,7 @@ GpuRadiationFieldStatus gpu_radiation_field_require_ready(
         status = GPU_RF_CPU_GPU_GENERATION_MISMATCH;
     else if (mirror->n_shells != owner->field.J_nu.n_shells ||
              mirror->n_bins != owner->field.J_nu.n_bins ||
-             mirror->n_lines != owner->line_n_compact ||
+             mirror->n_lines != owner->line_rate_graph_n_compact ||
              mirror->units != owner->field.units || mirror->frame != owner->field.frame ||
              mirror->epoch != owner->field.epoch)
         status = GPU_RF_SHAPE_OR_HASH_MISMATCH;
@@ -534,7 +616,7 @@ GpuRadiationFieldStatus gpu_radiation_field_production_bind(
         owner->field.generation.required_generation == 0 ||
         owner->field.generation.required_generation !=
             owner->field.generation.computed_generation ||
-        !owner->line_jbar_cache.q_set_hash ||
+        !owner->line_rate_graph_hash_storage ||
         !owner->line_profile_hash_storage || owner->line_profile_id == 0) {
         if (report) { memset(report, 0, sizeof(*report));
                       report->status = GPU_RF_NOT_READY; }
@@ -550,7 +632,7 @@ GpuRadiationFieldStatus gpu_radiation_field_production_bind(
                                                   production_mirror, report);
     GpuRadiationFieldStatus status = gpu_radiation_field_sync(
         owner, owner->field.epoch, owner->field.J_nu.n_shells, generation,
-        owner->line_jbar_cache.q_set_hash, owner->line_profile_id,
+        owner->line_rate_graph_hash_storage, owner->line_profile_id,
         owner->line_profile_hash_storage, production_mirror, report,
         cuda_stream, GPU_RF_POISON_NONE);
     if (status == GPU_RF_OK) production_owner = owner;
@@ -565,7 +647,7 @@ GpuRadiationFieldStatus gpu_radiation_field_production_view(
         return GPU_RF_NOT_READY;
     return gpu_radiation_field_device_view(
         owner, owner->field.generation.required_generation,
-        owner->line_jbar_cache.q_set_hash, owner->line_profile_id,
+        owner->line_rate_graph_hash_storage, owner->line_profile_id,
         owner->line_profile_hash_storage, production_mirror, out, report);
 }
 

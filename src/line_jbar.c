@@ -15,6 +15,185 @@
 #endif
 #define C_CGS 2.99792458e10
 
+static int proof_multiply_up(double a, double b, double *upper)
+{
+    if (!upper || !(a >= 0.0) || !(b >= 0.0) ||
+        !isfinite(a) || !isfinite(b)) return -1;
+    if (a == 0.0 || b == 0.0) {
+        *upper = 0.0;
+        return 0;
+    }
+    double product = a * b;
+    if (!isfinite(product)) return -1;
+    *upper = product == 0.0 ? nextafter(0.0, INFINITY)
+                            : nextafter(product, INFINITY);
+    return isfinite(*upper) ? 0 : -1;
+}
+
+static int proof_add_up(double a, double b, double *upper)
+{
+    if (!upper || !(a >= 0.0) || !(b >= 0.0) ||
+        !isfinite(a) || !isfinite(b)) return -1;
+    double sum = a + b;
+    if (!isfinite(sum)) return -1;
+    *upper = (a == 0.0 || b == 0.0) ? sum : nextafter(sum, INFINITY);
+    return isfinite(*upper) ? 0 : -1;
+}
+
+static int proof_add_down(double a, double b, double *lower)
+{
+    if (!lower || !(a >= 0.0) || !(b >= 0.0) ||
+        !isfinite(a) || !isfinite(b)) return -1;
+    double sum = a + b;
+    if (!isfinite(sum)) return -1;
+    *lower = (a == 0.0 || b == 0.0) ? sum : nextafter(sum, 0.0);
+    return 0;
+}
+
+static int proof_divide_up(double numerator, double denominator,
+                           double *upper)
+{
+    if (!upper || !(numerator >= 0.0) || !(denominator > 0.0) ||
+        !isfinite(numerator) || !isfinite(denominator)) return -1;
+    if (numerator == 0.0) {
+        *upper = 0.0;
+        return 0;
+    }
+    double quotient = numerator / denominator;
+    if (!isfinite(quotient)) return -1;
+    *upper = quotient == 0.0 ? nextafter(0.0, INFINITY)
+                             : nextafter(quotient, INFINITY);
+    return isfinite(*upper) ? 0 : -1;
+}
+
+LineJbarProfileStatus line_jbar_gaussian_discrete_shells(
+    size_t n_shells, size_t n_bins,
+    const double *nu, const double *dnu,
+    const double *value, const double *value_error_upper,
+    double line_nu, double vdoppler_cms, double ndoppler,
+    double *value_average, double *error_average_upper,
+    LineJbarProfileReport *report)
+{
+    LineJbarProfileReport local;
+    memset(&local, 0, sizeof(local));
+    local.first_bin = SIZE_MAX;
+    local.last_bin = SIZE_MAX;
+    local.error_upper_min = INFINITY;
+    if (report) *report = local;
+    if (n_shells == 0 || n_bins < 2 || !nu || !dnu || !value ||
+        !value_error_upper || !value_average || !error_average_upper ||
+        !(line_nu > 0.0) || !(vdoppler_cms > 0.0) ||
+        !(ndoppler > 0.0) || !isfinite(line_nu) ||
+        !isfinite(vdoppler_cms) || !isfinite(ndoppler) ||
+        n_shells > SIZE_MAX / n_bins)
+        return LINE_JBAR_PROFILE_INVALID_INPUT;
+    if (!(nu[0] > 0.0) || !(nu[n_bins - 1] > nu[0]) ||
+        !isfinite(nu[0]) || !isfinite(nu[n_bins - 1]))
+        return LINE_JBAR_PROFILE_INVALID_INPUT;
+
+    double dnu_doppler = line_nu * vdoppler_cms / C_CGS;
+    double fractional_width = ndoppler * vdoppler_cms / C_CGS;
+    double support_lo = line_nu * (1.0 - fractional_width);
+    double support_hi = line_nu * (1.0 + fractional_width);
+    if (!(dnu_doppler > 0.0) || !(support_lo > 0.0) ||
+        !(support_hi > support_lo) || !isfinite(support_hi))
+        return LINE_JBAR_PROFILE_INVALID_INPUT;
+    if (support_lo < nu[0] || support_hi > nu[n_bins - 1])
+        return LINE_JBAR_PROFILE_UNCOVERED;
+
+    size_t lo = 0, hi = n_bins;
+    while (lo < hi) {
+        size_t mid = lo + (hi - lo) / 2U;
+        if (nu[mid] < support_lo) lo = mid + 1U;
+        else hi = mid;
+    }
+    size_t first = lo;
+    lo = first; hi = n_bins;
+    while (lo < hi) {
+        size_t mid = lo + (hi - lo) / 2U;
+        if (nu[mid] <= support_hi) lo = mid + 1U;
+        else hi = mid;
+    }
+    size_t last_exclusive = lo;
+    /* The authoritative membership is |x|<=ndoppler below.  Include one
+     * adjacent centre on each side so an independently rounded support-edge
+     * product cannot omit a boundary bin. */
+    if (first > 0) --first;
+    if (last_exclusive < n_bins) ++last_exclusive;
+    if (first >= last_exclusive) return LINE_JBAR_PROFILE_UNCOVERED;
+    for (size_t s = 0; s < n_shells; ++s) {
+        value_average[s] = 0.0;
+        error_average_upper[s] = 0.0;
+    }
+
+    double denominator = 0.0;
+    double denominator_lower = 0.0;
+    size_t used = 0;
+    for (size_t i = first; i < last_exclusive; ++i) {
+        if (!(nu[i] > 0.0) || !(dnu[i] > 0.0) ||
+            !isfinite(nu[i]) || !isfinite(dnu[i]) ||
+            (i > first && !(nu[i] > nu[i - 1])))
+            return LINE_JBAR_PROFILE_INVALID_INPUT;
+        double x = (nu[i] - line_nu) / dnu_doppler;
+        if (!isfinite(x) || fabs(x) > ndoppler) continue;
+        double weight = exp(-x * x) * dnu[i];
+        if (!(weight > 0.0) || !isfinite(weight))
+            return LINE_JBAR_PROFILE_NONFINITE;
+        double next_denominator = denominator + weight;
+        double next_denominator_lower;
+        if (!isfinite(next_denominator) ||
+            proof_add_down(denominator_lower, weight,
+                           &next_denominator_lower) != 0)
+            return LINE_JBAR_PROFILE_NONFINITE;
+        denominator = next_denominator;
+        denominator_lower = next_denominator_lower;
+        ++used;
+        for (size_t s = 0; s < n_shells; ++s) {
+            size_t cell = s * n_bins + i;
+            double physical = value[cell];
+            double error = value_error_upper[cell];
+            if (!(physical >= 0.0) || !(error >= 0.0) ||
+                !isfinite(physical) || !isfinite(error))
+                return LINE_JBAR_PROFILE_NONFINITE;
+            double contribution = weight * physical;
+            double error_product, error_sum;
+            if (!isfinite(contribution) ||
+                proof_multiply_up(weight, error, &error_product) != 0 ||
+                proof_add_up(error_average_upper[s], error_product,
+                             &error_sum) != 0)
+                return LINE_JBAR_PROFILE_NONFINITE;
+            value_average[s] += contribution;
+            if (!isfinite(value_average[s]))
+                return LINE_JBAR_PROFILE_NONFINITE;
+            error_average_upper[s] = error_sum;
+        }
+    }
+    if (used == 0 || !(denominator > 0.0) ||
+        !(denominator_lower > 0.0) || !isfinite(denominator))
+        return LINE_JBAR_PROFILE_UNCOVERED;
+    double error_min = INFINITY, error_max = 0.0;
+    for (size_t s = 0; s < n_shells; ++s) {
+        value_average[s] /= denominator;
+        if (!(value_average[s] >= 0.0) || !isfinite(value_average[s]) ||
+            proof_divide_up(error_average_upper[s], denominator_lower,
+                            &error_average_upper[s]) != 0)
+            return LINE_JBAR_PROFILE_NONFINITE;
+        if (error_average_upper[s] < error_min)
+            error_min = error_average_upper[s];
+        if (error_average_upper[s] > error_max)
+            error_max = error_average_upper[s];
+    }
+    local.first_bin = first;
+    local.last_bin = last_exclusive - 1U;
+    local.contributing_bins = used;
+    local.weight_sum = denominator;
+    local.weight_sum_lower = denominator_lower;
+    local.error_upper_min = error_min;
+    local.error_upper_max = error_max;
+    if (report) *report = local;
+    return LINE_JBAR_PROFILE_OK;
+}
+
 /* ---- tiny SHA-256 (FIPS 180-4), enough for Q-set/profile binding ---- */
 typedef struct { uint32_t h[8]; uint64_t len; uint8_t buf[64]; size_t n; } Sha256;
 static const uint32_t K256[64] = {
@@ -66,12 +245,59 @@ static void sha256_hex(Sha256 *s,char out[65]){
     out[64]=0;
 }
 
-/* ---- Q_g ---- */
+/* ---- Q_g / Q_E immutable membership ---- */
 static int cmp_by_nu(const void *xa, const void *xb, void *ctx)
 {
     const double *nu = ctx;
     size_t a = *(const size_t *)xa, b = *(const size_t *)xb;
     return nu[a] < nu[b] ? -1 : nu[a] > nu[b] ? 1 : (a < b ? -1 : a > b);
+}
+
+int line_jbar_bb_domain_mask_build(uint8_t *mask, int n_lines,
+                                   const double *line_nu_all,
+                                   const int *nlte_line_map,
+                                   size_t *inside_enabled,
+                                   size_t *outside_enabled)
+{
+    size_t inside = 0, outside = 0;
+    if (!mask || n_lines <= 0 || !line_nu_all || !nlte_line_map) return -1;
+    for (int l = 0; l < n_lines; ++l) {
+        mask[l] = 0;
+        if (nlte_line_map[l] < 0) continue;
+        if (!(line_nu_all[l] > 0.0) || !isfinite(line_nu_all[l])) return -1;
+        if (line_jbar_frequency_in_bb_domain(line_nu_all[l])) {
+            mask[l] = 1;
+            ++inside;
+        } else {
+            ++outside;
+        }
+    }
+    if (inside_enabled) *inside_enabled = inside;
+    if (outside_enabled) *outside_enabled = outside;
+    return inside ? 0 : -1;
+}
+
+int line_jbar_qset_profile_support_covered(const LineJbarQSet *q,
+                                           double grid_nu_min,
+                                           double grid_nu_max,
+                                           size_t *first_bad_q)
+{
+    if (first_bad_q) *first_bad_q = SIZE_MAX;
+    if (!q || q->n_q == 0 || !q->line_nu ||
+        !(grid_nu_min > 0.0) || !(grid_nu_max > grid_nu_min) ||
+        !isfinite(grid_nu_min) || !isfinite(grid_nu_max)) return -1;
+    double width = LINE_JBAR_PROFILE_NDOPPLER *
+                   LINE_JBAR_VDOPPLER_CMS / C_CGS;
+    for (size_t i = 0; i < q->n_q; ++i) {
+        double nu = q->line_nu[i];
+        if (!line_jbar_frequency_in_bb_domain(nu) ||
+            nu * (1.0 - width) < grid_nu_min ||
+            nu * (1.0 + width) > grid_nu_max) {
+            if (first_bad_q) *first_bad_q = i;
+            return -1;
+        }
+    }
+    return 0;
 }
 
 int line_jbar_qset_build(LineJbarQSet *q, int n_lines,
@@ -101,14 +327,122 @@ int line_jbar_qset_build(LineJbarQSet *q, int n_lines,
     for (size_t i = 0; i < n; i++) q->by_nu[i] = i;
     qsort_r(q->by_nu, n, sizeof(size_t), cmp_by_nu, q->line_nu);
     Sha256 s; sha256_init(&s);
+    if (bb_in_domain) {
+        const char *domain_tag = "BB_IN_DOMAIN|";
+        memcpy(q->domain_contract_hash,
+               LINE_JBAR_BB_DOMAIN_CONTRACT_SHA256, 65);
+        sha256_update(&s, domain_tag, strlen(domain_tag));
+        sha256_update(&s, q->domain_contract_hash, 64);
+    }
     sha256_update(&s, q->line_id, n * sizeof(int));
     sha256_hex(&s, q->q_set_hash);
     q->profile_id = LINE_JBAR_PROFILE_GAUSS_VD10;
-    Sha256 sp; sha256_init(&sp);
-    const char *pdesc = "gauss;v_D=10km/s;support=4;normalized";
-    sha256_update(&sp, pdesc, strlen(pdesc));
-    sha256_hex(&sp, q->profile_hash);
+    memcpy(q->profile_hash, LINE_JBAR_PROFILE_SHA256, 65);
+    q->set_kind = LINE_JBAR_SET_RATE_GRAPH;
     return 0;
+}
+
+int line_jbar_eset_build(LineJbarESet *e, int n_lines,
+                         const double *line_nu_all)
+{
+    if (!e || n_lines <= 0 || !line_nu_all) return -1;
+    memset(e, 0, sizeof(*e));
+    size_t n = 0;
+    for (int l = 0; l < n_lines; ++l) {
+        if (!(line_nu_all[l] > 0.0) || !isfinite(line_nu_all[l])) return -1;
+        if (line_jbar_frequency_in_bb_domain(line_nu_all[l])) ++n;
+    }
+    if (n == 0) return -1;
+    e->n_q = n;
+    e->line_id = malloc(n * sizeof(int));
+    e->line_nu = malloc(n * sizeof(double));
+    e->by_nu = malloc(n * sizeof(size_t));
+    if (!e->line_id || !e->line_nu || !e->by_nu) {
+        line_jbar_qset_free(e);
+        return -1;
+    }
+    size_t k = 0;
+    for (int l = 0; l < n_lines; ++l) {
+        if (!line_jbar_frequency_in_bb_domain(line_nu_all[l])) continue;
+        e->line_id[k] = l;
+        e->line_nu[k] = line_nu_all[l];
+        e->by_nu[k] = k;
+        ++k;
+    }
+    qsort_r(e->by_nu, n, sizeof(size_t), cmp_by_nu, e->line_nu);
+    memcpy(e->domain_contract_hash,
+           LINE_JBAR_BB_DOMAIN_CONTRACT_SHA256, 65);
+    Sha256 s;
+    sha256_init(&s);
+    const char *domain_tag = "BB_ENERGY_DOMAIN|";
+    sha256_update(&s, domain_tag, strlen(domain_tag));
+    sha256_update(&s, e->domain_contract_hash, 64);
+    sha256_update(&s, e->line_id, n * sizeof(int));
+    sha256_hex(&s, e->q_set_hash);
+    e->profile_id = LINE_JBAR_PROFILE_GAUSS_VD10;
+    memcpy(e->profile_hash, LINE_JBAR_PROFILE_SHA256, 65);
+    e->set_kind = LINE_JBAR_SET_ENERGY_DOMAIN;
+    return 0;
+}
+
+static int line_jbar_set_hash_matches(const LineJbarQSet *set,
+                                      const char *tag)
+{
+    if (!set || !tag || !set->line_id || set->n_q == 0 ||
+        strlen(set->q_set_hash) != 64 ||
+        strcmp(set->domain_contract_hash,
+               LINE_JBAR_BB_DOMAIN_CONTRACT_SHA256) != 0)
+        return 0;
+    Sha256 s;
+    char actual[65];
+    sha256_init(&s);
+    sha256_update(&s, tag, strlen(tag));
+    sha256_update(&s, set->domain_contract_hash, 64);
+    sha256_update(&s, set->line_id, set->n_q * sizeof(int));
+    sha256_hex(&s, actual);
+    return strcmp(actual, set->q_set_hash) == 0;
+}
+
+LineJbarSubsetStatus line_jbar_qset_subset_of_eset(
+        const LineJbarQSet *q, const LineJbarESet *e,
+        size_t *first_missing_q)
+{
+    if (first_missing_q) *first_missing_q = SIZE_MAX;
+    if (!q || !e || q->set_kind != LINE_JBAR_SET_RATE_GRAPH ||
+        e->set_kind != LINE_JBAR_SET_ENERGY_DOMAIN ||
+        !q->line_id || !q->line_nu || !e->line_id || !e->line_nu ||
+        q->n_q == 0 || e->n_q == 0)
+        return LINE_JBAR_SUBSET_INVALID;
+    if (strcmp(q->domain_contract_hash, e->domain_contract_hash) != 0 ||
+        q->profile_id != e->profile_id ||
+        strcmp(q->profile_hash, e->profile_hash) != 0)
+        return LINE_JBAR_SUBSET_IDENTITY_MISMATCH;
+    if (!line_jbar_set_hash_matches(q, "BB_IN_DOMAIN|") ||
+        !line_jbar_set_hash_matches(e, "BB_ENERGY_DOMAIN|"))
+        return LINE_JBAR_SUBSET_HASH_MISMATCH;
+
+    for (size_t i = 0; i < q->n_q; ++i)
+        if (q->line_id[i] < 0 ||
+            (i && q->line_id[i] <= q->line_id[i - 1]))
+            return LINE_JBAR_SUBSET_INVALID;
+    for (size_t i = 0; i < e->n_q; ++i)
+        if (e->line_id[i] < 0 ||
+            (i && e->line_id[i] <= e->line_id[i - 1]))
+            return LINE_JBAR_SUBSET_INVALID;
+
+    size_t ie = 0;
+    for (size_t iq = 0; iq < q->n_q; ++iq) {
+        while (ie < e->n_q && e->line_id[ie] < q->line_id[iq]) ++ie;
+        if (ie == e->n_q || e->line_id[ie] != q->line_id[iq]) {
+            if (first_missing_q) *first_missing_q = iq;
+            return LINE_JBAR_SUBSET_MISSING_LINE;
+        }
+        if (e->line_nu[ie] != q->line_nu[iq]) {
+            if (first_missing_q) *first_missing_q = iq;
+            return LINE_JBAR_SUBSET_FREQUENCY_MISMATCH;
+        }
+    }
+    return LINE_JBAR_SUBSET_OK;
 }
 
 void line_jbar_qset_free(LineJbarQSet *q)
@@ -122,10 +456,15 @@ void line_jbar_qset_free(LineJbarQSet *q)
 int line_jbar_accumulator_init(LineJbarAccumulator *a, size_t n_q, size_t n_shells)
 {
     if (!a || !n_q || !n_shells || n_shells > 255) return -1;
+    if (n_q > SIZE_MAX / n_shells) return -1;
+    size_t cells = n_q * n_shells;
+    if (cells > SIZE_MAX / sizeof(double) ||
+        cells > SIZE_MAX / sizeof(uint64_t))
+        return -1;
     a->n_q = n_q; a->n_shells = n_shells; a->error_latch = 0;
-    a->sum = calloc(n_q * n_shells, sizeof(double));
-    a->sumsq = calloc(n_q * n_shells, sizeof(double));
-    a->count = calloc(n_q * n_shells, sizeof(uint64_t));
+    a->sum = calloc(cells, sizeof(double));
+    a->sumsq = calloc(cells, sizeof(double));
+    a->count = calloc(cells, sizeof(uint64_t));
     if (!a->sum || !a->sumsq || !a->count) { line_jbar_accumulator_free(a); return -1; }
     return 0;
 }

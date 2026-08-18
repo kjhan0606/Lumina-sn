@@ -6,7 +6,7 @@
  * 계측·배선 부채 census C9(Fable L3 Q1-2): 같은 성격의 계약이 서로 다른 원소로
  * 3사본 존재했다.
  *
- *   src/lumina_plasma.c      forbidden_population_knobs[]   10종  강제(FATAL)
+ *   src/lumina_plasma.c      population/numeric-repair lists 22종 강제(FATAL)
  *   src/lumina_element_wide.c ew_guard_config_count()       16종  관측만
  *   src/seed_capability.c    obsolete[]                      2종  강제(FATAL)
  *
@@ -45,12 +45,24 @@
     X("LUMINA_NLTE_FLOOR_MODE",       LK_ENFORCE_FATAL, "P", "E")              \
     X("LUMINA_NLTE_FLOOR_REG",        LK_ENFORCE_FATAL, "P", "E")              \
     X("LUMINA_NLTE_BK_PARTIAL",       LK_ENFORCE_FATAL, "P", "E")              \
+    X("LUMINA_NLTE_COLL_FLOOR",       LK_ENFORCE_FATAL, "P", "E")              \
+    X("LUMINA_NLTE_LTE_FLOOR",        LK_ENFORCE_FATAL, "P", "E")              \
+    X("LUMINA_NLTE_BK_CEIL",          LK_ENFORCE_FATAL, "P", "E")              \
+    X("LUMINA_DR_FLOOR_CMS",          LK_ENFORCE_FATAL, "P", "E")              \
+    X("LUMINA_STAGE4_BK_CAP",         LK_ENFORCE_FATAL, "P", "E")              \
     /* --- 강제만 (관측 목록에 없다 → element-wide 진단이 과소보고) --- */      \
     X("LUMINA_TOPSTAGE_THERMALIZE",   LK_ENFORCE_FATAL, "P", "-")              \
     X("LUMINA_NLTE_BF_JEQB",          LK_ENFORCE_FATAL, "P", "-")              \
     X("LUMINA_C2_MATRIX_BF",          LK_ENFORCE_FATAL, "P", "-")              \
     X("LUMINA_NLTE_JEQB",             LK_ENFORCE_FATAL, "P", "-")              \
+    X("LUMINA_NLTE_FALLBACK_TE",      LK_ENFORCE_FATAL, "P", "-")              \
     X("LUMINA_FROZENIN",              LK_ENFORCE_FATAL, "P", "-")              \
+    X("LUMINA_NLTE_FLOOR_BKMAX",      LK_ENFORCE_FATAL, "P", "-")              \
+    X("LUMINA_NLTE_INV_CEIL",         LK_ENFORCE_FATAL, "P", "-")              \
+    X("LUMINA_HRESP_CLAMP",           LK_ENFORCE_FATAL, "P", "-")              \
+    X("LUMINA_TE_STEP_CLAMP",         LK_ENFORCE_FATAL, "P", "-")              \
+    X("LUMINA_J_CAP_FACTOR",          LK_ENFORCE_FATAL, "P", "-")              \
+    X("LUMINA_J_FLOOR_FACTOR",        LK_ENFORCE_FATAL, "P", "-")              \
     /* --- 폐기 스칼라 (A2-16; 값을 보지 않는다 — 항등값 1.0 도 FATAL) --- */   \
     X("LUMINA_TE_TRAD_RATIO",         LK_ENFORCE_FATAL, "S", "-")              \
     X("LUMINA_TRAD_COLOR_FIX",        LK_ENFORCE_FATAL, "S", "-")              \
@@ -69,16 +81,11 @@
     X("LUMINA_OUTER_TE_DAMP_SMIN",    LK_ENFORCE_FATAL, "A", "-")              \
     X("LUMINA_VALIDATE_PLASMA",       LK_ENFORCE_FATAL, "A", "-")              \
     X("LUMINA_W_CAP",                 LK_ENFORCE_FATAL, "A", "-")              \
-    /* --- ★관측만 (11종).  아무것도 막지 않는다 — 이것이 C8 의 실물이다 --- */  \
-    X("LUMINA_NLTE_COLL_FLOOR",       LK_OBSERVE_ONLY,  "-", "E")              \
-    X("LUMINA_NLTE_LTE_FLOOR",        LK_OBSERVE_ONLY,  "-", "E")              \
-    X("LUMINA_NLTE_BK_CEIL",          LK_OBSERVE_ONLY,  "-", "E")              \
+    /* --- 관측만. 구조/소유권 선택이며 수치 repair가 아니다. --- */            \
     X("LUMINA_NLTE_ION_LOCK",         LK_OBSERVE_ONLY,  "-", "E")              \
     X("LUMINA_NLTE_METASTABLE_COLL",  LK_OBSERVE_ONLY,  "-", "E")              \
     X("LUMINA_NLTE_PER_ION_RESCALE",  LK_OBSERVE_ONLY,  "-", "E")              \
     X("LUMINA_NLTE_STAGE4",           LK_OBSERVE_ONLY,  "-", "E")              \
-    X("LUMINA_DR_FLOOR_CMS",          LK_OBSERVE_ONLY,  "-", "E")              \
-    X("LUMINA_STAGE4_BK_CAP",         LK_OBSERVE_ONLY,  "-", "E")              \
     X("LUMINA_SUPER_CUTOFF",          LK_OBSERVE_ONLY,  "-", "E")              \
     X("LUMINA_TIMEDEP_ION",           LK_OBSERVE_ONLY,  "-", "E")
 

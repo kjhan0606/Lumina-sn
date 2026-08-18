@@ -22,9 +22,8 @@ static int make_seed(const char *path, int poison_edge, int poison_s44)
     double *fe=malloc((nb+1)*sizeof(*fe)); unsigned char *v=malloc(cells); double *j=malloc(cells*sizeof(*j));
     if(!ids||!se||!fe||!v||!j)return -1;
     for(size_t s=0;s<ns;s++){ids[s]=s;se[s]=1.0e8*(double)(s+1);}se[ns]=1.0e8*(double)(ns+1);
-    double dl=log(LUMINA_RADFIELD_NU_MAX_HZ/LUMINA_RADFIELD_NU_MIN_HZ)/(double)nb;
-    for(size_t b=0;b<=nb;b++) fe[b]=LUMINA_RADFIELD_NU_MIN_HZ*exp((double)b*dl);
-    fe[0]=LUMINA_RADFIELD_NU_MIN_HZ;fe[nb]=LUMINA_RADFIELD_NU_MAX_HZ;
+    for(size_t b=0;b<=nb;b++)
+        fe[b]=radiation_field_canonical_frequency_edge(b);
     for(size_t q=0;q<cells;q++){v[q]=RADIATION_FIELD_VALID;j[q]=1.0e-12*(double)(q+1);}
     if(poison_s44)v[44*nb+17]=RADIATION_FIELD_UNSAMPLED;
     FILE*f=fopen(path,"wb");int bad=!f||fwrite(&h,sizeof(h),1,f)!=1||fwrite(ids,sizeof(*ids),ns,f)!=ns||fwrite(se,sizeof(*se),ns+1,f)!=ns+1||fwrite(fe,sizeof(*fe),nb+1,f)!=nb+1||fwrite(v,1,cells,f)!=cells||fwrite(j,sizeof(*j),cells,f)!=cells;if(f&&fclose(f))bad=1;

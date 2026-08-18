@@ -73,7 +73,8 @@ typedef struct {
      * 넣으면 NLTE 미지수 등록 · ma_radrecomb_target 의 전역 준위 인덱스 ·
      * BF 단면 [n_levels x n_freq] 계약 · macro-atom block reference ·
      * 충돌강도 sidecar 준위 수 검사가 전부 **없는 자료**를 요구하게 된다.
-     * 전용 catalog 는 population_partition_build 하나만 읽는다.
+     * 전용 catalog 는 population_partition_build 하나만 읽는다. 그 값은 partition을
+     * 통해 모든 material consumer에 영향을 주므로 atomic_model_sha256에도 포함된다.
      *
      * 이것은 runtime_membership 과 별개인 **thermodynamic membership** 이다. */
     size_t topion_n;               /* catalog 항목 수 (0 이면 없음) */
@@ -97,6 +98,39 @@ typedef struct {
     PopulationStatus status;
 } PopulationTransaction;
 
+/* Dense statistical-equilibrium solve diagnostics.  The solver operates on a
+ * column-major matrix, preserves matrix/RHS bytes, and applies only algebraic
+ * row/column equilibration plus mixed-precision iterative refinement.  It does
+ * not clamp, floor, pin, or otherwise alter the physical solution. */
+#define POP_DENSE_BACKWARD_ERROR_LIMIT 1.0e-12
+typedef struct {
+    size_t rank;
+    int equilibration_iterations;
+    int refinement_iterations;
+    double pivot_growth;
+    double initial_backward_error;
+    double final_backward_error;
+} PopulationLinearSolveDiagnostic;
+
+/* Cancellation-free stationary solve for an irreducible continuous-time
+ * generator.  The input is the pre-constraint, column-major rate matrix:
+ * off-diagonal A[dest,source] entries are transition rates and each diagonal
+ * is the negative source outflow.  GTH uses only the nonnegative
+ * off-diagonals and rebuilds every outflow in long double; it does not clamp,
+ * floor, exponentiate, or otherwise force a general linear solution positive.
+ * generator_recognized=0 means the input is not eligible for this solver and
+ * the caller may use its general linear path.  Once recognized, any non-OK
+ * result is a genuine generator solve failure and must fail closed. */
+#define POP_GENERATOR_COLUMN_ERROR_LIMIT 1.0e-12
+#define POP_GENERATOR_RESIDUAL_LIMIT 1.0e-12
+typedef struct {
+    int generator_recognized;
+    double input_column_relative_error;
+    double exact_generator_componentwise_residual;
+    double minimum_population;
+    double maximum_population;
+} PopulationGeneratorSolveDiagnostic;
+
 const char *population_status_name(PopulationStatus status);
 
 PopulationStatus population_te_manifest_sha256(const double *te,
@@ -117,9 +151,44 @@ PopulationStatus population_partition_view_check(
     const double *te, size_t n_shells,
     uint64_t required_population_generation, uint64_t te_generation);
 
+/* Build the full-level fractions within each super-level from the exact same
+ * generation-bound T_e/atomic view used for the partition functions.  Output
+ * and stamp are published together only after every shell succeeds. */
+PopulationStatus population_within_superlevel_build(
+    const PopulationDerivedStamp *partition_stamp,
+    const PopulationAtomicView *atomic,
+    const double *te,
+    size_t n_shells,
+    uint64_t required_population_generation,
+    uint64_t te_generation,
+    size_t n_full_levels,
+    int super_mode,
+    size_t n_superlevels,
+    const int *nlte_to_global_level,
+    const int *full_to_superlevel,
+    const int *super_anchor_global_level,
+    double *fractions,
+    PopulationDerivedStamp *fraction_stamp);
+
 PopulationStatus population_lte_level_fraction(
     const PopulationAtomicView *atomic, size_t ion, size_t level,
     double te, double partition, double *fraction);
+
+/* One line-level number-density contract shared by the bulk Sobolev writer
+ * and A2-09.  LTE is reconstructed from the committed ion density and the
+ * T_e partition; NLTE accepts only the already selected committed level
+ * density.  Keeping both branches here makes their zero/nonfinite semantics
+ * identical and directly testable. */
+typedef enum {
+    POP_LINE_VIEW_LTE_TE = 1,
+    POP_LINE_VIEW_NLTE_COMMITTED = 2
+} PopulationLineView;
+
+PopulationStatus population_line_level_number_density(
+    PopulationLineView view, const PopulationAtomicView *atomic,
+    size_t ion, size_t level, double te, double partition,
+    double ion_number_density, double nlte_level_number_density,
+    double *number_density);
 
 PopulationStatus population_rate_views_check(
     PopulationStatus bf_status, uint64_t bf_generation,
@@ -127,6 +196,18 @@ PopulationStatus population_rate_views_check(
     uint64_t required_rate_generation);
 PopulationStatus population_dense_rank_check(const double *matrix, size_t n,
                                               double relative_tolerance);
+PopulationStatus population_dense_solve_equilibrated(
+    const double *matrix_column_major,
+    const double *rhs,
+    size_t n,
+    double *solution,
+    PopulationLinearSolveDiagnostic *diagnostic);
+PopulationStatus population_generator_stationary_gth(
+    const double *generator_column_major,
+    size_t n,
+    double total_population,
+    double *solution,
+    PopulationGeneratorSolveDiagnostic *diagnostic);
 PopulationStatus population_superlevel_aggregate(
     const double *level_population, const int *membership, size_t n_levels,
     size_t n_superlevels, double *super_population);

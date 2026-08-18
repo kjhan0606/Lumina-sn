@@ -56,10 +56,11 @@ int bf_rate_gamma_from_view(const RadiationFieldView *view, size_t shell,
 /* Legacy-grid adapter shared by production (nlte_bf_gamma_canonical) and the
  * L-1bf gate fixture, so both run byte-identical arithmetic: the per-bin
  * sigma_row (or the Kramers sigma_0*(nu_th/nu_c)^3 evaluation at legacy bin
- * centres, zero below nu_th as the legacy loops did) is re-encoded as a
- * bin-constant step tabulation over the nfb-bin log grid and integrated
- * against the canonical view.  node_nu/node_sigma are caller scratch of at
- * least 2*nfb entries each. */
+ * centres) is re-encoded as a bin-constant step tabulation over the nfb-bin
+ * log grid and integrated against the canonical view.  A stored full-bin
+ * average in the physical threshold bin is rescaled onto its active
+ * [nu_th,nu_hi] support while preserving integral sigma*dnu.  node_nu and
+ * node_sigma are caller scratch of at least 2*nfb entries each. */
 int bf_rate_gamma_legacy_grid(const RadiationFieldView *view, size_t shell,
                               int nfb, double nu_min, double d_log_nu,
                               const double *sigma_row, double sigma_0,

@@ -8,6 +8,11 @@ void nlte_ew_note_save_restore_call(void);
 void nlte_ew_note_per_ion_pin_call(void);
 void nlte_ew_note_topstage_IV_call(void);
 void nlte_ew_runtime_counts_snapshot(unsigned long out[3]);
+void nlte_ew_note_save_restore_call_for(const NLTEConfig *nlte);
+void nlte_ew_note_per_ion_pin_call_for(const NLTEConfig *nlte);
+void nlte_ew_note_topstage_IV_call_for(const NLTEConfig *nlte);
+void nlte_ew_runtime_counts_snapshot_for(
+    const NLTEConfig *nlte, unsigned long out[3]);
 void nlte_ew_test_capture_counters_reset(void);
 void nlte_ew_test_capture_counters_bump(void);
 void nlte_ew_test_capture_counters_snapshot(int out[19]);
@@ -65,7 +70,31 @@ int main(void) {
            ledger_matrix[2], ledger_exact);
     printf("invalid_rate_bad_rate=%d arrays_unchanged=%d\n",
            bad_rate, invalid_unchanged);
+
+    NLTEConfig private_nlte = {0};
+    NLTEEWRuntimeCounts private_counts = {0};
+    unsigned long global_before_private[3], global_after_private[3];
+    unsigned long private_after[3];
+    private_nlte.ew_runtime_counts_sink = &private_counts;
+    nlte_ew_runtime_counts_snapshot(global_before_private);
+#pragma omp parallel for schedule(static)
+    for (int i = 0; i < N; i++) {
+        nlte_ew_note_save_restore_call_for(&private_nlte);
+        nlte_ew_note_per_ion_pin_call_for(&private_nlte);
+        nlte_ew_note_topstage_IV_call_for(&private_nlte);
+    }
+    nlte_ew_runtime_counts_snapshot_for(&private_nlte, private_after);
+    nlte_ew_runtime_counts_snapshot(global_after_private);
+    int private_exact = private_after[0] == N && private_after[1] == N &&
+                        private_after[2] == N;
+    int global_unchanged =
+        global_after_private[0] == global_before_private[0] &&
+        global_after_private[1] == global_before_private[1] &&
+        global_after_private[2] == global_before_private[2];
+    printf("private_sink_exact=%d process_global_unchanged=%d\n",
+           private_exact, global_unchanged);
     return capture_ok && ledger_exact && invalid_unchanged &&
+           private_exact && global_unchanged &&
            after[0] - before[0] == expected &&
            after[1] - before[1] == expected &&
            after[2] - before[2] == expected ? 0 : 1;

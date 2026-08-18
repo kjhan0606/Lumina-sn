@@ -15,8 +15,9 @@
 #define M_PI 3.14159265358979323846
 #endif
 
-static double radiation_field_canonical_edge(size_t b)
+double radiation_field_canonical_frequency_edge(size_t b)
 {
+    if (b > (size_t)LUMINA_RADFIELD_N_BINS) return NAN;
     int j = LUMINA_RADFIELD_J_LO + (int)b;
     int k = LUMINA_RADFIELD_REFINEMENT_K;
     if (j >= 0 && j <= k * NLTE_N_FREQ_BINS && j % k == 0) {
@@ -180,7 +181,8 @@ int radiation_field_owner_init(RadiationFieldOwner *shadow, size_t n_shells)
     }
 
     for (size_t b = 0; b <= LUMINA_RADFIELD_N_BINS; ++b)
-        field->frequency_bin_edges.values[b] = radiation_field_canonical_edge(b);
+        field->frequency_bin_edges.values[b] =
+            radiation_field_canonical_frequency_edge(b);
     if (!radiation_field_alignment_contract_ok(
             field->frequency_bin_edges.values)) {
         radiation_field_owner_free(shadow);
@@ -205,6 +207,9 @@ void radiation_field_owner_free(RadiationFieldOwner *shadow)
     line_jbar_cache_release(&shadow->line_jbar_cache);
     free(shadow->line_ids_compact);
     free(shadow->line_profile_hash_storage);
+    free(shadow->line_rate_graph_ids_compact);
+    free(shadow->line_rate_graph_cache_index);
+    free(shadow->line_rate_graph_hash_storage);
     memset(shadow, 0, sizeof(*shadow));
 }
 
@@ -338,6 +343,49 @@ int radiation_field_validate_owner(const RadiationFieldOwner *shadow)
         }
         if (field->estimator_count_or_variance.kind ==
                 RADIATION_FIELD_DETERMINISTIC && count != 0)
+            return -1;
+    }
+    const LineJbarCache *cache = &shadow->line_jbar_cache;
+    if (cache->generation.computed_generation ==
+            field->generation.computed_generation) {
+        if ((cache->set_kind != LINE_JBAR_SET_RATE_GRAPH &&
+             cache->set_kind != LINE_JBAR_SET_ENERGY_DOMAIN) ||
+            cache->generation.required_generation !=
+                field->generation.required_generation ||
+            !cache->q_set_hash || strlen(cache->q_set_hash) != 64 ||
+            !shadow->line_ids_compact || shadow->line_n_compact == 0 ||
+            !shadow->line_rate_graph_ids_compact ||
+            shadow->line_rate_graph_n_compact == 0 ||
+            !shadow->line_rate_graph_cache_index ||
+            !shadow->line_rate_graph_hash_storage ||
+            strlen(shadow->line_rate_graph_hash_storage) != 64 ||
+            !shadow->line_profile_hash_storage ||
+            shadow->line_profile_id == 0 || !cache->jbar_value ||
+            !cache->validity || !cache->sample_count ||
+            !cache->variance_or_standard_error ||
+            shadow->line_n_compact > SIZE_MAX / field->J_nu.n_shells ||
+            cache->entry_count != shadow->line_n_compact *
+                                  field->J_nu.n_shells)
+            return -1;
+        for (size_t i = 0; i < shadow->line_n_compact; ++i)
+            if (i && shadow->line_ids_compact[i] <=
+                     shadow->line_ids_compact[i - 1])
+                return -1;
+        for (size_t i = 0; i < shadow->line_rate_graph_n_compact; ++i) {
+            size_t at = shadow->line_rate_graph_cache_index[i];
+            if ((i && shadow->line_rate_graph_ids_compact[i] <=
+                      shadow->line_rate_graph_ids_compact[i - 1]) ||
+                at >= shadow->line_n_compact ||
+                shadow->line_ids_compact[at] !=
+                    shadow->line_rate_graph_ids_compact[i])
+                return -1;
+            if (cache->set_kind == LINE_JBAR_SET_RATE_GRAPH && at != i)
+                return -1;
+        }
+        if (cache->set_kind == LINE_JBAR_SET_RATE_GRAPH &&
+            (shadow->line_rate_graph_n_compact != shadow->line_n_compact ||
+             strcmp(shadow->line_rate_graph_hash_storage,
+                    cache->q_set_hash) != 0))
             return -1;
     }
     return 0;
@@ -552,8 +600,10 @@ static int radiation_field_prepare_line(
         if (line_provenance !=
                 RADIATION_FIELD_PROVENANCE_CMFGEN_LINE_PROFILE_INTEGRAL ||
             !line_producer ||
-            strcmp(line_producer,
-                   LUMINA_LINE_JBAR_DETERMINISTIC_PRODUCER) != 0)
+            (strcmp(line_producer,
+                    LUMINA_LINE_JBAR_DETERMINISTIC_PRODUCER) != 0 &&
+             strcmp(line_producer,
+                    LUMINA_LINE_JBAR_CMFGEN_NONOVERLAP_SOBOLEV_PRODUCER) != 0))
             return -1;
     } else {
         return -1;
@@ -584,8 +634,26 @@ static int radiation_field_prepare_line(
                     value[i] = 0.0; se[i] = 0.0;
                     validity[i] = LINE_JBAR_EXACT_ZERO;
                 } else {
-                    double s2 = (sq - sum * sum / N) / (N - 1.0);
-                    if (s2 < 0.0) s2 = 0.0;
+                    /* Preserve the signed cancellation result.  A negative
+                     * variance numerator is not rounded into an apparently
+                     * certain measurement: it invalidates the whole atomic
+                     * publication, leaving the previous generation intact. */
+                    double variance_numerator = fma(-sum / N, sum, sq);
+                    if (!isfinite(variance_numerator) ||
+                        variance_numerator < 0.0) {
+                        fprintf(stderr,
+                                "[LINE_JBAR][BLOCKED] reason=NEGATIVE_MC_"
+                                "VARIANCE_NUMERATOR q=%zu shell=%zu "
+                                "sum=%.17g sumsq=%.17g packets=%llu "
+                                "numerator=%.17g\n",
+                                q, s, sum, sq,
+                                (unsigned long long)request->line_n_packets,
+                                variance_numerator);
+                        return -1;
+                    }
+                    if (variance_numerator == 0.0)
+                        variance_numerator = 0.0; /* canonical +0, no floor */
+                    double s2 = variance_numerator / (N - 1.0);
                     value[i] = norm * sum;
                     se[i] = norm * sqrt(N * s2);
                     validity[i] = LINE_JBAR_VALID;
@@ -610,9 +678,98 @@ static int radiation_field_prepare_line(
                 return -1;
             value[i] = request->line_jbar[i];
             validity[i] = (LineJbarValidityState)v;
-            count[i] = 0; se[i] = 0.0;
+            count[i] = 0;
+            if (request->line_error_upper) {
+                double error_upper = request->line_error_upper[i];
+                if (!(error_upper >= 0.0) || !isfinite(error_upper) ||
+                    (v != LINE_JBAR_VALID &&
+                     v != LINE_JBAR_EXACT_ZERO && error_upper != 0.0))
+                    return -1;
+                se[i] = error_upper;
+            } else {
+                se[i] = 0.0;
+            }
         }
     }
+    return 0;
+}
+
+static LineJbarSetKind radiation_field_request_line_set_kind(
+        const RadiationFieldCommitRequest *request)
+{
+    return request->line_set_kind == LINE_JBAR_SET_UNSPECIFIED
+         ? LINE_JBAR_SET_RATE_GRAPH : request->line_set_kind;
+}
+
+/* Stage Q_g identity and its sparse map into the numeric cache.  This runs
+ * before public mutation and owns no numeric Jbar copy. */
+static int radiation_field_prepare_line_membership(
+        const RadiationFieldCommitRequest *request,
+        uint64_t **rate_ids_out, size_t **cache_index_out,
+        size_t *rate_n_out, char **rate_hash_out)
+{
+    if (!request || !rate_ids_out || !cache_index_out || !rate_n_out ||
+        !rate_hash_out || request->line_n == 0 || !request->line_id ||
+        !request->line_q_set_hash)
+        return -1;
+    *rate_ids_out = NULL;
+    *cache_index_out = NULL;
+    *rate_n_out = 0;
+    *rate_hash_out = NULL;
+
+    LineJbarSetKind kind = radiation_field_request_line_set_kind(request);
+    const uint64_t *source_ids = NULL;
+    const char *source_hash = NULL;
+    size_t source_n = 0;
+    if (kind == LINE_JBAR_SET_RATE_GRAPH) {
+        if (request->line_rate_graph_n != 0 || request->line_rate_graph_id ||
+            request->line_rate_graph_hash)
+            return -1;
+        source_ids = request->line_id;
+        source_n = request->line_n;
+        source_hash = request->line_q_set_hash;
+    } else if (kind == LINE_JBAR_SET_ENERGY_DOMAIN) {
+        if (request->line_rate_graph_n == 0 ||
+            request->line_rate_graph_n > request->line_n ||
+            !request->line_rate_graph_id ||
+            !request->line_rate_graph_hash ||
+            strlen(request->line_rate_graph_hash) != 64)
+            return -1;
+        source_ids = request->line_rate_graph_id;
+        source_n = request->line_rate_graph_n;
+        source_hash = request->line_rate_graph_hash;
+    } else {
+        return -1;
+    }
+
+    uint64_t *rate_ids = malloc(source_n * sizeof(*rate_ids));
+    size_t *cache_index = malloc(source_n * sizeof(*cache_index));
+    char *rate_hash = strdup(source_hash);
+    if (!rate_ids || !cache_index || !rate_hash) {
+        free(rate_ids); free(cache_index); free(rate_hash);
+        return -1;
+    }
+    memcpy(rate_ids, source_ids, source_n * sizeof(*rate_ids));
+    size_t cache_at = 0;
+    for (size_t q = 0; q < source_n; ++q) {
+        if (q && source_ids[q] <= source_ids[q - 1]) {
+            free(rate_ids); free(cache_index); free(rate_hash);
+            return -1;
+        }
+        while (cache_at < request->line_n &&
+               request->line_id[cache_at] < source_ids[q])
+            ++cache_at;
+        if (cache_at == request->line_n ||
+            request->line_id[cache_at] != source_ids[q]) {
+            free(rate_ids); free(cache_index); free(rate_hash);
+            return -1;
+        }
+        cache_index[q] = cache_at;
+    }
+    *rate_ids_out = rate_ids;
+    *cache_index_out = cache_index;
+    *rate_n_out = source_n;
+    *rate_hash_out = rate_hash;
     return 0;
 }
 
@@ -686,6 +843,11 @@ int radiation_field_commit(RadiationFieldOwner *shadow,
     double *lv = NULL, *lse = NULL;
     LineJbarValidityState *lval = NULL;
     uint64_t *lct = NULL;
+    if (request->line_n > 0 &&
+        request->n_shells > SIZE_MAX / request->line_n) {
+        free(values); free(validity); free(count);
+        return -1;
+    }
     size_t lcells = request->line_n * request->n_shells;
     if (request->line_error_latch) {
         free(values); free(validity); free(count);
@@ -711,12 +873,23 @@ int radiation_field_commit(RadiationFieldOwner *shadow,
     memset(&staged_line, 0, sizeof(staged_line));
     uint64_t *staged_line_ids = NULL;
     char *staged_profile_hash = NULL;
+    uint64_t *staged_rate_ids = NULL;
+    size_t *staged_rate_cache_index = NULL;
+    size_t staged_rate_n = 0;
+    char *staged_rate_hash = NULL;
     if (request->line_n > 0) {
         RadiationFieldProvenanceKind line_provenance =
             request->line_provenance_kind != RADIATION_FIELD_PROVENANCE_NONE
             ? request->line_provenance_kind : request->provenance_kind;
         const char *line_producer = request->line_producer
             ? request->line_producer : request->producer;
+        if (radiation_field_prepare_line_membership(
+                request, &staged_rate_ids, &staged_rate_cache_index,
+                &staged_rate_n, &staged_rate_hash) != 0) {
+            free(values); free(validity); free(count);
+            free(lv); free(lse); free(lval); free(lct);
+            return -1;
+        }
         staged_line.shell_id = malloc(lcells * sizeof(uint64_t));
         staged_line.line_id = malloc(lcells * sizeof(uint64_t));
         staged_line.profile_id = malloc(lcells * sizeof(uint64_t));
@@ -737,11 +910,14 @@ int radiation_field_commit(RadiationFieldOwner *shadow,
             !staged_line_ids) {
             line_jbar_cache_release(&staged_line);
             free(staged_profile_hash); free(staged_line_ids);
+            free(staged_rate_ids); free(staged_rate_cache_index);
+            free(staged_rate_hash);
             free(values); free(validity); free(count);
             free(lv); free(lse); free(lval); free(lct);
             return -1;
         }
         staged_line.entry_count = lcells;
+        staged_line.set_kind = radiation_field_request_line_set_kind(request);
         staged_line.generation.required_generation = request->generation;
         staged_line.generation.computed_generation = request->generation;
         staged_line.statistic_kind = request->statistic_kind;
@@ -807,6 +983,13 @@ int radiation_field_commit(RadiationFieldOwner *shadow,
         shadow->line_n_compact = request->line_n;
         free(shadow->line_ids_compact);
         shadow->line_ids_compact = staged_line_ids;
+        free(shadow->line_rate_graph_ids_compact);
+        free(shadow->line_rate_graph_cache_index);
+        free(shadow->line_rate_graph_hash_storage);
+        shadow->line_rate_graph_ids_compact = staged_rate_ids;
+        shadow->line_rate_graph_cache_index = staged_rate_cache_index;
+        shadow->line_rate_graph_n_compact = staged_rate_n;
+        shadow->line_rate_graph_hash_storage = staged_rate_hash;
     } else {
         shadow->line_jbar_cache.generation.required_generation =
             request->generation;
@@ -901,7 +1084,7 @@ int radiation_field_read_view(const RadiationFieldOwner *owner,
             edges[LUMINA_RADFIELD_N_BINS] != LUMINA_RADFIELD_NU_MAX_HZ)
             return RADIATION_FIELD_VIEW_GRID;
         for (size_t b = 1; b < LUMINA_RADFIELD_N_BINS; ++b) {
-            if (edges[b] != radiation_field_canonical_edge(b))
+            if (edges[b] != radiation_field_canonical_frequency_edge(b))
                 return RADIATION_FIELD_VIEW_GRID;
             if (!(edges[b] > edges[b - 1]))
                 return RADIATION_FIELD_VIEW_GRID;
@@ -920,16 +1103,13 @@ int radiation_field_read_view(const RadiationFieldOwner *owner,
     return RADIATION_FIELD_VIEW_OK;
 }
 
-int radiation_field_line_jbar_view(const RadiationFieldOwner *owner,
-                                   double expected_epoch,
-                                   size_t expected_n_shells,
-                                   uint64_t expected_generation,
-                                   const char *expected_q_set_hash,
-                                   uint64_t expected_profile_id,
-                                   const char *expected_profile_hash,
-                                   LineJbarView *out)
+static LineJbarViewStatus radiation_field_line_jbar_view_base(
+        const RadiationFieldOwner *owner, double expected_epoch,
+        size_t expected_n_shells, uint64_t expected_generation,
+        uint64_t expected_profile_id, const char *expected_profile_hash,
+        LineJbarView *out)
 {
-    if (!out) return LINE_JBAR_VIEW_QHASH;
+    if (!out) return LINE_JBAR_VIEW_PROFILE;
     memset(out, 0, sizeof(*out));
     if (!owner || !owner->enabled) return LINE_JBAR_VIEW_DISABLED;
     const LineJbarCache *cache = &owner->line_jbar_cache;
@@ -944,12 +1124,6 @@ int radiation_field_line_jbar_view(const RadiationFieldOwner *owner,
         cache->generation.computed_generation != expected_generation ||
         owner->field.generation.computed_generation != expected_generation)
         return LINE_JBAR_VIEW_STALE_GENERATION;
-    if (!expected_q_set_hash || !cache->q_set_hash ||
-        strcmp(cache->q_set_hash, expected_q_set_hash) != 0) {
-        fprintf(stderr,
-                "[LINE_JBAR_VIEW][BLOCKED] reason=QHASH_MISMATCH\n");
-        return LINE_JBAR_VIEW_QHASH;
-    }
     if (expected_profile_id == 0 ||
         owner->line_profile_id != expected_profile_id ||
         !expected_profile_hash || !owner->line_profile_hash_storage ||
@@ -960,35 +1134,127 @@ int radiation_field_line_jbar_view(const RadiationFieldOwner *owner,
         !cache->jbar_value || !cache->validity || !cache->sample_count ||
         !cache->variance_or_standard_error)
         return LINE_JBAR_VIEW_PROFILE;
-    out->n_lines = owner->line_n_compact;
+    if ((cache->set_kind != LINE_JBAR_SET_RATE_GRAPH &&
+         cache->set_kind != LINE_JBAR_SET_ENERGY_DOMAIN) ||
+        !cache->q_set_hash || strlen(cache->q_set_hash) != 64 ||
+        owner->line_n_compact > SIZE_MAX / expected_n_shells ||
+        cache->entry_count != owner->line_n_compact * expected_n_shells)
+        return LINE_JBAR_VIEW_SET_KIND;
+    out->cache_n_lines = owner->line_n_compact;
     out->n_shells = expected_n_shells;
-    out->line_id = owner->line_ids_compact;
     out->jbar = cache->jbar_value;
     out->validity = cache->validity;
     out->count = cache->sample_count;
     out->se = cache->variance_or_standard_error;
+    out->cache_set_hash = cache->q_set_hash;
+    out->rate_graph_hash = owner->line_rate_graph_hash_storage;
+    out->cache_set_kind = cache->set_kind;
     out->statistic_kind = cache->statistic_kind;
     out->generation = expected_generation;
     return LINE_JBAR_VIEW_OK;
 }
 
-int line_jbar_lookup(const LineJbarView *view, size_t shell,
-                     uint64_t line_id, LineJbarValue *out)
+int radiation_field_line_jbar_rate_view(const RadiationFieldOwner *owner,
+                                        double expected_epoch,
+                                        size_t expected_n_shells,
+                                        uint64_t expected_generation,
+                                        const char *expected_q_set_hash,
+                                        uint64_t expected_profile_id,
+                                        const char *expected_profile_hash,
+                                        LineJbarView *out)
 {
-    if (!view || !out || !view->jbar || shell >= view->n_shells) return -1;
-    memset(out, 0, sizeof(*out));
-    size_t a = 0, b = view->n_lines;
-    while (a < b) {
-        size_t m = (a + b) / 2;
-        if (view->line_id[m] < line_id) a = m + 1; else b = m;
+    LineJbarViewStatus status = radiation_field_line_jbar_view_base(
+        owner, expected_epoch, expected_n_shells, expected_generation,
+        expected_profile_id, expected_profile_hash, out);
+    if (status != LINE_JBAR_VIEW_OK) return status;
+    if (!expected_q_set_hash || !owner->line_rate_graph_hash_storage ||
+        strcmp(owner->line_rate_graph_hash_storage,
+               expected_q_set_hash) != 0) {
+        memset(out, 0, sizeof(*out));
+        fprintf(stderr,
+                "[LINE_JBAR_VIEW][BLOCKED] reason=QHASH_MISMATCH\n");
+        return LINE_JBAR_VIEW_QHASH;
     }
-    if (a >= view->n_lines || view->line_id[a] != line_id)
+    if (!owner->line_rate_graph_ids_compact ||
+        !owner->line_rate_graph_cache_index ||
+        owner->line_rate_graph_n_compact == 0) {
+        memset(out, 0, sizeof(*out));
+        return LINE_JBAR_VIEW_SUBSET;
+    }
+    out->n_lines = owner->line_rate_graph_n_compact;
+    out->line_id = owner->line_rate_graph_ids_compact;
+    out->cache_index = out->cache_set_kind == LINE_JBAR_SET_RATE_GRAPH
+                     ? NULL : owner->line_rate_graph_cache_index;
+    return LINE_JBAR_VIEW_OK;
+}
+
+int radiation_field_line_jbar_energy_view(const RadiationFieldOwner *owner,
+                                          double expected_epoch,
+                                          size_t expected_n_shells,
+                                          uint64_t expected_generation,
+                                          const char *expected_e_set_hash,
+                                          uint64_t expected_profile_id,
+                                          const char *expected_profile_hash,
+                                          LineJbarView *out)
+{
+    LineJbarViewStatus status = radiation_field_line_jbar_view_base(
+        owner, expected_epoch, expected_n_shells, expected_generation,
+        expected_profile_id, expected_profile_hash, out);
+    if (status != LINE_JBAR_VIEW_OK) return status;
+    if (out->cache_set_kind != LINE_JBAR_SET_ENERGY_DOMAIN) {
+        memset(out, 0, sizeof(*out));
+        return LINE_JBAR_VIEW_SET_KIND;
+    }
+    if (!expected_e_set_hash || !out->cache_set_hash ||
+        strcmp(out->cache_set_hash, expected_e_set_hash) != 0) {
+        memset(out, 0, sizeof(*out));
+        fprintf(stderr,
+                "[LINE_JBAR_VIEW][BLOCKED] reason=EHASH_MISMATCH\n");
+        return LINE_JBAR_VIEW_QHASH;
+    }
+    out->n_lines = out->cache_n_lines;
+    out->line_id = owner->line_ids_compact;
+    out->cache_index = NULL;
+    return LINE_JBAR_VIEW_OK;
+}
+
+/* Compatibility entry point: population/rate consumers request Q_g. */
+int radiation_field_line_jbar_view(const RadiationFieldOwner *owner,
+                                   double expected_epoch,
+                                   size_t expected_n_shells,
+                                   uint64_t expected_generation,
+                                   const char *expected_q_set_hash,
+                                   uint64_t expected_profile_id,
+                                   const char *expected_profile_hash,
+                                   LineJbarView *out)
+{
+    return radiation_field_line_jbar_rate_view(
+        owner, expected_epoch, expected_n_shells, expected_generation,
+        expected_q_set_hash, expected_profile_id, expected_profile_hash, out);
+}
+
+static int line_jbar_lookup_resolved(const LineJbarView *view, size_t shell,
+                                     size_t requested_index, uint64_t line_id,
+                                     LineJbarValue *out)
+{
+    if (!view || !out || !view->line_id || !view->jbar || !view->validity ||
+        !view->count || !view->se || view->n_lines == 0 ||
+        view->cache_n_lines == 0 || shell >= view->n_shells)
+        return -1;
+    memset(out, 0, sizeof(*out));
+    if (requested_index >= view->n_lines ||
+        view->line_id[requested_index] != line_id)
         return -2;                       /* MISS: distinct error, no value */
-    size_t i = a * view->n_shells + shell;
+    size_t cache_line = view->cache_index
+                      ? view->cache_index[requested_index]
+                      : requested_index;
+    if (cache_line >= view->cache_n_lines) return -3;
+    size_t i = cache_line * view->n_shells + shell;
     if ((view->statistic_kind != RADIATION_FIELD_ESTIMATOR_COUNT &&
          view->statistic_kind != RADIATION_FIELD_DETERMINISTIC) ||
         (view->statistic_kind == RADIATION_FIELD_DETERMINISTIC &&
-         (view->count[i] != 0 || view->se[i] != 0.0)) ||
+         view->count[i] != 0) ||
+        !(view->se[i] >= 0.0) || !isfinite(view->se[i]) ||
         !isfinite(view->jbar[i]) || view->jbar[i] < 0.0 ||
         (view->validity[i] == LINE_JBAR_VALID && view->jbar[i] <= 0.0) ||
         (view->validity[i] != LINE_JBAR_VALID && view->jbar[i] != 0.0)) {
@@ -1007,4 +1273,27 @@ int line_jbar_lookup(const LineJbarView *view, size_t shell,
     out->se = view->se[i];
     out->statistic_kind = view->statistic_kind;
     return 0;
+}
+
+int line_jbar_lookup_index(const LineJbarView *view, size_t shell,
+                           size_t requested_index, uint64_t line_id,
+                           LineJbarValue *out)
+{
+    return line_jbar_lookup_resolved(
+        view, shell, requested_index, line_id, out);
+}
+
+int line_jbar_lookup(const LineJbarView *view, size_t shell,
+                     uint64_t line_id, LineJbarValue *out)
+{
+    if (!view || !out || !view->line_id || !view->jbar || !view->validity ||
+        !view->count || !view->se || view->n_lines == 0 ||
+        view->cache_n_lines == 0 || shell >= view->n_shells)
+        return -1;
+    size_t a = 0, b = view->n_lines;
+    while (a < b) {
+        size_t m = (a + b) / 2;
+        if (view->line_id[m] < line_id) a = m + 1; else b = m;
+    }
+    return line_jbar_lookup_resolved(view, shell, a, line_id, out);
 }

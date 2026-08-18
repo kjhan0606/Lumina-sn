@@ -13,11 +13,12 @@ static A208Validity numeric_status(double x) {
     return x == 0.0 ? A208_EXACT_ZERO : A208_VALID;
 }
 
-A208ValueView a208_signed_sobolev(double coefficient, double f_lu,
+A208ValueView a208_signed_sobolev_counted(double coefficient, double f_lu,
                                   double lambda_cm, double time_explosion,
                                   double n_lower, double n_upper,
                                   double g_lower, double g_upper,
-                                  uint64_t generation) {
+                                  uint64_t generation,
+                                  A208Counters *counter_sink) {
     A208ValueView out = {NAN, A208_INVALID_POPULATION, generation};
     if (!isfinite(n_lower) || !isfinite(n_upper) || n_lower < 0.0 || n_upper < 0.0)
         return out;
@@ -27,14 +28,26 @@ A208ValueView a208_signed_sobolev(double coefficient, double f_lu,
     out.validity = numeric_status(out.value);
     if (out.validity == A208_EXACT_ZERO) out.value = 0.0;
     if (out.validity == A208_VALID && out.value < 0.0)
-        g_a208.negative_tau_line_shells++;
-    if (out.validity == A208_NONFINITE) g_a208.nonfinite_failures++;
+        if (counter_sink) counter_sink->negative_tau_line_shells++;
+    if (out.validity == A208_NONFINITE && counter_sink)
+        counter_sink->nonfinite_failures++;
     return out;
 }
 
-A208ValueView a208_line_source(double prefactor, double n_lower,
+A208ValueView a208_signed_sobolev(double coefficient, double f_lu,
+                                  double lambda_cm, double time_explosion,
+                                  double n_lower, double n_upper,
+                                  double g_lower, double g_upper,
+                                  uint64_t generation) {
+    return a208_signed_sobolev_counted(
+        coefficient, f_lu, lambda_cm, time_explosion,
+        n_lower, n_upper, g_lower, g_upper, generation, &g_a208);
+}
+
+A208ValueView a208_line_source_counted(double prefactor, double n_lower,
                                double n_upper, double g_lower, double g_upper,
-                               uint64_t generation) {
+                               uint64_t generation,
+                               A208Counters *counter_sink) {
     A208ValueView out = {NAN, A208_INVALID_POPULATION, generation};
     if (!isfinite(n_lower) || !isfinite(n_upper) || n_lower < 0.0 || n_upper < 0.0 ||
         !(g_lower > 0.0) || !(g_upper > 0.0)) return out;
@@ -42,20 +55,30 @@ A208ValueView a208_line_source(double prefactor, double n_lower,
     if (chi_factor == 0.0) {
         if (n_upper == 0.0) {
             out.value = 0.0; out.validity = A208_EXACT_ZERO;
-            g_a208.source_exact_zero++;
+            if (counter_sink) counter_sink->source_exact_zero++;
         } else {
             out.validity = A208_SOURCE_CANCELLATION_SINGULAR;
-            g_a208.source_cancellation_singular++;
+            if (counter_sink) counter_sink->source_cancellation_singular++;
         }
         return out;
     }
     out.value = prefactor * (g_lower / g_upper) * n_upper / chi_factor;
     out.validity = numeric_status(out.value);
     if (out.validity == A208_VALID) {
-        g_a208.source_valid++;
-        if (out.value < 0.0) g_a208.source_negative++;
+        if (counter_sink) {
+            counter_sink->source_valid++;
+            if (out.value < 0.0) counter_sink->source_negative++;
+        }
     }
     return out;
+}
+
+A208ValueView a208_line_source(double prefactor, double n_lower,
+                               double n_upper, double g_lower, double g_upper,
+                               uint64_t generation) {
+    return a208_line_source_counted(
+        prefactor, n_lower, n_upper, g_lower, g_upper,
+        generation, &g_a208);
 }
 
 int a208_bf_split(double gross, double stimulated_ratio, double exponent,
@@ -116,8 +139,9 @@ void a208_publication_free(CpuOpacityPublication *p) {
     free(p->bf_route_validity); memset(p,0,sizeof(*p));
 }
 
-int a208_publication_commit(CpuOpacityPublication *public_p,
-                            CpuOpacityPublication *candidate) {
+int a208_publication_commit_counted(CpuOpacityPublication *public_p,
+                                    CpuOpacityPublication *candidate,
+                                    A208Counters *counter_sink) {
     if (!public_p || !candidate ||
         candidate->generation_required == 0 ||
         candidate->generation_committed != 0) return -1;
@@ -130,8 +154,14 @@ int a208_publication_commit(CpuOpacityPublication *public_p,
     candidate->generation_committed=candidate->generation_required;
     CpuOpacityPublication old=*public_p; *public_p=*candidate;
     memset(candidate,0,sizeof(*candidate)); a208_publication_free(&old);
-    g_a208.generation_committed=public_p->generation_committed;
+    if (counter_sink)
+        counter_sink->generation_committed=public_p->generation_committed;
     return 0;
+}
+
+int a208_publication_commit(CpuOpacityPublication *public_p,
+                            CpuOpacityPublication *candidate) {
+    return a208_publication_commit_counted(public_p, candidate, &g_a208);
 }
 
 double a208_publication_max_closure(const CpuOpacityPublication *p,

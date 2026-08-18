@@ -8,6 +8,8 @@
 
 static const char Q_HASH[] =
     "1111111111111111111111111111111111111111111111111111111111111111";
+static const char E_HASH[] =
+    "3333333333333333333333333333333333333333333333333333333333333333";
 static const char PROFILE_HASH[] =
     "2222222222222222222222222222222222222222222222222222222222222222";
 
@@ -44,9 +46,10 @@ static FixtureStatus commit_fixture(RadiationFieldOwner *owner,
     double *j = (double *)malloc(cells * sizeof(double));
     RadiationFieldValidityState *validity =
         (RadiationFieldValidityState *)malloc(cells * sizeof(*validity));
-    uint64_t line_id[2] = {17, 29};
-    double line_jbar[8];
-    int32_t line_validity[8];
+    uint64_t line_id[4] = {11, 17, 23, 29};
+    uint64_t rate_line_id[2] = {17, 29};
+    double line_jbar[16];
+    int32_t line_validity[16];
     if (!j || !validity) {
         free(j);
         free(validity);
@@ -56,7 +59,7 @@ static FixtureStatus commit_fixture(RadiationFieldOwner *owner,
         j[i] = (double)(i + 1) * 1e-20;
         validity[i] = RADIATION_FIELD_VALID;
     }
-    for (size_t i = 0; i < 2 * n_shells; ++i) {
+    for (size_t i = 0; i < 4 * n_shells; ++i) {
         line_jbar[i] = (double)(i + 1) * 1e-12;
         line_validity[i] = LINE_JBAR_VALID;
     }
@@ -79,11 +82,18 @@ static FixtureStatus commit_fixture(RadiationFieldOwner *owner,
     request.source_J_nu = j;
     request.source_validity = validity;
     request.statistic_kind = RADIATION_FIELD_DETERMINISTIC;
-    request.line_n = 2;
+    request.line_n = 4;
     request.line_id = line_id;
-    request.line_q_set_hash = Q_HASH;
+    request.line_q_set_hash = E_HASH;
+    request.line_set_kind = LINE_JBAR_SET_ENERGY_DOMAIN;
+    request.line_rate_graph_n = 2;
+    request.line_rate_graph_id = rate_line_id;
+    request.line_rate_graph_hash = Q_HASH;
     request.line_profile_id = 7;
     request.line_profile_hash = PROFILE_HASH;
+    request.line_provenance_kind =
+        RADIATION_FIELD_PROVENANCE_CMFGEN_LINE_PROFILE_INTEGRAL;
+    request.line_producer = LUMINA_LINE_JBAR_DETERMINISTIC_PRODUCER;
     request.line_jbar = line_jbar;
     request.line_validity = line_validity;
     int rc = radiation_field_commit(owner, &request);
@@ -216,6 +226,25 @@ int main(int argc, char **argv)
             report.total_upload_bytes != report.committed_bytes ||
             report.cache_upload_bytes == 0)
             return 71;
+        GpuRadiationFieldDeviceView device_view;
+        uint64_t gathered_id[2] = {0, 0};
+        double gathered_jbar[4] = {0.0, 0.0, 0.0, 0.0};
+        if (gpu_radiation_field_device_view(
+                &owner, 1, Q_HASH, 7, PROFILE_HASH, mirror,
+                &device_view, &report) != GPU_RF_OK ||
+            device_view.n_lines != 2 || device_view.n_shells != 2 ||
+            cudaMemcpy(gathered_id, device_view.line_id,
+                       sizeof(gathered_id), cudaMemcpyDeviceToHost) !=
+                cudaSuccess ||
+            cudaMemcpy(gathered_jbar, device_view.line_jbar,
+                       sizeof(gathered_jbar), cudaMemcpyDeviceToHost) !=
+                cudaSuccess ||
+            gathered_id[0] != 17 || gathered_id[1] != 29 ||
+            gathered_jbar[0] != 3.0e-12 ||
+            gathered_jbar[1] != 4.0e-12 ||
+            gathered_jbar[2] != 7.0e-12 ||
+            gathered_jbar[3] != 8.0e-12)
+            return 75;
         if (gpu_radiation_field_reset(&owner, 1, mirror, &report, NULL) != GPU_RF_OK ||
             gpu_radiation_field_state(mirror) != GPU_RF_DIRTY)
             return 72;
@@ -227,7 +256,8 @@ int main(int argc, char **argv)
         if (gpu_radiation_field_state(mirror) != GPU_RF_EMPTY ||
             !gpu_rf_counters_conserve(gpu_radiation_field_counters(mirror)))
             return 74;
-        printf("A2_12_GPU_LIFECYCLE PASS n_shells=%zu n_bins=%zu n_lines=%zu "
+        printf("A2_12_GPU_LIFECYCLE PASS sparse_qg_from_qe=PASS "
+               "n_shells=%zu n_bins=%zu n_lines=%zu "
                "cache_upload_bytes=%llu total_upload_bytes=%llu\n",
                report.n_shells, report.n_bins, report.n_lines,
                (unsigned long long)report.cache_upload_bytes,

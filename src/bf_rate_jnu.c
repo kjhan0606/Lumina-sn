@@ -148,6 +148,12 @@ int bf_rate_gamma_legacy_grid(const RadiationFieldView *view, size_t shell,
         if (sigma_row) {
             sg = sigma_row[bb];
             if (!(sg > 0.0) || !isfinite(sg)) sg = 0.0;
+            /* A stored CMFGEN value is the linear-frequency average over the
+             * complete bin, including zero support below a physical edge.
+             * Locate that conserved sigma*dnu mass on its actual active
+             * sub-interval before coupling it to a non-constant J_nu. */
+            if (sg > 0.0 && lo < nu_thresh && hi > nu_thresh)
+                sg *= (hi - lo) / (hi - nu_thresh);
         } else if (lo >= nu_thresh) {
             sg = sigma_0 * pow(nu_thresh / nu_c, 3.0);
         } else if (hi > nu_thresh) {
@@ -164,6 +170,9 @@ int bf_rate_gamma_legacy_grid(const RadiationFieldView *view, size_t shell,
         node_nu[np] = lo;    node_sigma[np] = sg;    np++;
         node_nu[np] = hi;    node_sigma[np] = sg;    np++;
     }
+    /* Both lanes now carry an explicit physical edge.  For stored CMFGEN rows
+     * the first partial-bin step was rescaled above, so this clamp locates the
+     * full-bin-average mass without cutting it twice. */
     BfCrossSection cs = {np, node_nu, node_sigma, nu_thresh};
     return bf_rate_gamma_from_view(view, shell, &cs, out);
 }

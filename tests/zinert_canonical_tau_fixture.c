@@ -75,6 +75,12 @@ static const TauBaseline TAU_BASELINES[] = {
      * 2026-08-06 T2 배터리 실측으로 수립. 같은 실행에서 구조 불변량
      * (bit_differences=0 · inactive_nonzero=0 · audit_rc=0)이 전부 성립함을 확인했다. */
     {"tardis_reference_toy06_19p48d_jnu4", 1867183, UINT64_C(0xf32d10df3421058b)},
+    /* 19apr23 active-only quarantine deck after SH-GRID and exact-Hyd
+     * promotion.  2026-08-08 fail-closed MEASURE_ONLY run: inactive_nonzero=0,
+     * bit_differences=0, audit_rc=0.  Sigma changes cannot enter this tau-only
+     * fixture; the value pins the sealed line/level topology. */
+    {"tardis_reference_toy06_19p48d_sivcaiv_active",
+                                              2588798, UINT64_C(0x6c53c2f89ad53e47)},
 };
 
 static const char *deck_basename(const char *path) {
@@ -100,13 +106,12 @@ int main(int argc, char **argv) {
     const TauBaseline *bl = NULL;
     for (size_t i = 0; i < sizeof TAU_BASELINES / sizeof TAU_BASELINES[0]; i++)
         if (strcmp(TAU_BASELINES[i].deck, deck_name) == 0) bl = &TAU_BASELINES[i];
-    if (!bl) {
-        printf("[Z-INERT-CANONICAL-TAU] no baseline registered for deck '%s' "
-               "-- refusing to pass unmeasured deck verdict=FAIL\n", deck_name);
-        return 65;
-    }
-    const long     expected_active_lines    = bl->active_lines;
-    const uint64_t expected_active_tau_fnv64 = bl->fnv64;
+    const int baseline_registered = bl != NULL;
+    if (!baseline_registered)
+        printf("[Z-INERT-CANONICAL-TAU] no baseline registered for deck '%s'; "
+               "measuring invariants but refusing PASS\n", deck_name);
+    const long expected_active_lines = bl ? bl->active_lines : -1;
+    const uint64_t expected_active_tau_fnv64 = bl ? bl->fnv64 : UINT64_C(0);
 
     enum { DECK_SHELLS = 50 };
     AtomicData atom;
@@ -191,15 +196,16 @@ int main(int argc, char **argv) {
 
     int audit_rc = lumina_zinert_validate(&atom, NULL, &opacity, 1,
                                           "canonical-tau-transport");
+    int passed = baseline_registered && !audit_rc && inactive_nonzero == 0 &&
+                 active_lines == expected_active_lines &&
+                 active_bit_differences == 0 &&
+                 active_hash == expected_active_tau_fnv64;
     printf("[Z-INERT-CANONICAL-TAU] inactive_lines=%ld inactive_nonzero=%ld "
            "active_lines=%ld active_tau_bit_differences=%ld "
            "active_tau_fnv64=%016llx audit_rc=%d verdict=%s\n",
            inactive_lines, inactive_nonzero, active_lines,
            active_bit_differences, (unsigned long long)active_hash, audit_rc,
-           (!audit_rc && inactive_nonzero == 0 &&
-            active_lines == expected_active_lines &&
-            active_bit_differences == 0 &&
-            active_hash == expected_active_tau_fnv64) ? "PASS" : "FAIL");
+           passed ? "PASS" : (baseline_registered ? "FAIL" : "MEASURE_ONLY"));
 
     free(atom.abundances);
     free(atom.ion_number_density);
@@ -211,6 +217,7 @@ int main(int argc, char **argv) {
     atom.partition_functions = original_partition;
     free_atomic_data(&atom);
 
+    if (!baseline_registered) return 65;
     return (audit_rc || inactive_nonzero != 0 ||
             active_lines != expected_active_lines ||
             active_bit_differences != 0 ||

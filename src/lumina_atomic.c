@@ -1226,6 +1226,10 @@ void free_opacity_state(OpacityState *op) { /* Phase 2 - Step 11 */
     free(op->line_list_nu); /* Phase 2 - Step 11 */
     free(op->tau_sobolev); /* Phase 2 - Step 11 */
     free(op->line_source_S);
+    free(op->jbar_line_det);
+    free(op->jbar_line_det_error_upper);
+    free(op->jbar_line_det_continuum);
+    free(op->jbar_line_det_continuum_error_upper);
     free(op->tau_validity);
     free(op->line_source_validity);
     a208_publication_free(&op->cpu_opacity);
@@ -1476,6 +1480,79 @@ int load_atomic_data(AtomicData *atom, const char *ref_dir, int n_shells) {
     atom->ioniz_energy_eV = read_csv_column(path, "ionization_energy_eV", &n);
     atom->n_ionization = n;
     printf("  Ionization: %d entries\n", n);
+
+    /* --- Neutral-ground internal-energy reference -------------------------
+     * The active-only deck deliberately starts represented ladders at stage
+     * II, so its rate/population ionization table contains no q=0 rows.  The
+     * CMFGEN adiabatic internal energy still uses the neutral ground as its
+     * energy zero.  Load those missing scalar links into a separate catalog:
+     * this array is consumed only by atomic_internal_energy.c and MUST NOT
+     * participate in the ion-population construction below. */
+    {
+        const char *rp_env = getenv("LUMINA_IONIZATION_REFERENCE_FILE");
+        const char *rp = rp_env;
+        int nz = 0, nq = 0, ne = 0;
+        FILE *probe = NULL;
+        if (!rp || !*rp) rp = "data/atomic/ionization_reference.csv";
+        probe = fopen(rp, "r");
+        if (!probe) {
+            if (rp_env && *rp_env) {
+                fprintf(stderr,
+                        "[ATOMIC-ENERGY-REFERENCE][FATAL] cannot open "
+                        "explicit catalog %s: %s\n", rp, strerror(errno));
+                return -1;
+            }
+            fprintf(stderr,
+                    "[ATOMIC-ENERGY-REFERENCE][WARN] default catalog %s "
+                    "unavailable; neutral-ground internal energy will "
+                    "fail closed if the model deck lacks a required link\n",
+                    rp);
+        } else {
+            fclose(probe);
+            atom->ioniz_ref_Z = read_csv_column_int(
+                rp, "atomic_number", &nz);
+            atom->ioniz_ref_ion = read_csv_column_int(
+                rp, "ion_number", &nq);
+            atom->ioniz_ref_energy_eV = read_csv_column(
+                rp, "ionization_energy_eV", &ne);
+            if (!atom->ioniz_ref_Z || !atom->ioniz_ref_ion ||
+                !atom->ioniz_ref_energy_eV || nz <= 0 || nq != nz ||
+                ne != nz) {
+                fprintf(stderr,
+                        "[ATOMIC-ENERGY-REFERENCE][FATAL] invalid catalog %s "
+                        "counts=%d:%d:%d\n", rp, nz, nq, ne);
+                return -1;
+            }
+            atom->n_ionization_reference = nz;
+            for (int i = 0; i < nz; ++i) {
+                if (atom->ioniz_ref_Z[i] <= 0 ||
+                    atom->ioniz_ref_ion[i] < 0 ||
+                    !isfinite(atom->ioniz_ref_energy_eV[i]) ||
+                    atom->ioniz_ref_energy_eV[i] <= 0.0) {
+                    fprintf(stderr,
+                            "[ATOMIC-ENERGY-REFERENCE][FATAL] invalid row=%d "
+                            "Z=%d ion=%d chi=%.17g file=%s\n", i,
+                            atom->ioniz_ref_Z[i], atom->ioniz_ref_ion[i],
+                            atom->ioniz_ref_energy_eV[i], rp);
+                    return -1;
+                }
+                for (int j = 0; j < i; ++j) {
+                    if (atom->ioniz_ref_Z[j] == atom->ioniz_ref_Z[i] &&
+                        atom->ioniz_ref_ion[j] == atom->ioniz_ref_ion[i]) {
+                        fprintf(stderr,
+                                "[ATOMIC-ENERGY-REFERENCE][FATAL] duplicate "
+                                "Z=%d ion=%d rows=%d:%d file=%s\n",
+                                atom->ioniz_ref_Z[i], atom->ioniz_ref_ion[i],
+                                j, i, rp);
+                        return -1;
+                    }
+                }
+            }
+            printf("  Atomic energy reference: %d entries "
+                   "(energy-zero only)\n",
+                   atom->n_ionization_reference);
+        }
+    }
 
     /* --- Zeta data --- */
     snprintf(path, sizeof(path), "%s/zeta_ions.csv", ref_dir);
@@ -2051,7 +2128,8 @@ int load_atomic_data(AtomicData *atom, const char *ref_dir, int n_shells) {
      * macro-atom block, 충돌 sidecar 준위 수 검사가 전부 **없는 자료**를 요구한다.
      * 여기서 만든 catalog 는 population_partition_build 하나만 읽는다. */
     {
-        const char *tp = "data/atomic/topion_levels.csv";
+        const char *tp = getenv("LUMINA_TOPION_LEVELS_FILE");
+        if (!tp || !*tp) tp = "data/atomic/topion_levels.csv";
         FILE *tf = fopen(tp, "r");
         if (!tf) {
             fprintf(stderr, "[R0][WARN] %s 없음 — 준위 없는 최상단 이온은 "
@@ -2216,12 +2294,13 @@ int load_atomic_data(AtomicData *atom, const char *ref_dir, int n_shells) {
  *   int8   has_cmfgen[n_levels]   (padded to 8-byte alignment)
  *   double sigma_cm2[n_levels * n_freq_bins]
  *
- * Returns 0 on success (grid loaded into atom->cmfgen_*), -1 on missing file
- * or schema mismatch (atom->cmfgen_loaded stays 0 → Kramers fallback). */
+ * Returns 0 on success and -1 on any missing/stale/corrupt asset.  A caller
+ * that requested CMFGEN data must treat -1 as fatal; silently falling back
+ * would turn a stale SH-GRID asset into a different physical model. */
 int load_cmfgen_sigma_bf(AtomicData *atom, const char *path) {
     FILE *fp = fopen(path, "rb");
     if (!fp) {
-        printf("  CMFGEN sigma_bf: %s not found, using Kramers fallback\n", path);
+        fprintf(stderr, "ERROR: CMFGEN sigma_bf asset not found: %s\n", path);
         atom->cmfgen_loaded = 0;
         return -1;
     }
@@ -2253,9 +2332,26 @@ int load_cmfgen_sigma_bf(AtomicData *atom, const char *path) {
         fclose(fp);
         return -1;
     }
+    if (!isfinite(nu_min) || !isfinite(nu_max) ||
+        nu_min != NLTE_NU_MIN || nu_max != NLTE_NU_MAX) {
+        fprintf(stderr,
+                "ERROR: %s stale frequency range=[%.17g,%.17g] "
+                "expected=[%.17g,%.17g]\n",
+                path, nu_min, nu_max, (double)NLTE_NU_MIN,
+                (double)NLTE_NU_MAX);
+        fclose(fp);
+        return -1;
+    }
 
     /* Read has_cmfgen[n_levels] as int8 then promote to int */
     int8_t *flag8 = (int8_t *)malloc((size_t)n_lev);
+    int *has_sigma = NULL;
+    double *sigma_bf = NULL;
+    if (!flag8) {
+        fprintf(stderr, "ERROR: %s has_cmfgen allocation failed\n", path);
+        fclose(fp);
+        return -1;
+    }
     if (fread(flag8, 1, (size_t)n_lev, fp) != (size_t)n_lev) {
         fprintf(stderr, "ERROR: %s has_cmfgen read failed\n", path);
         free(flag8);
@@ -2264,29 +2360,73 @@ int load_cmfgen_sigma_bf(AtomicData *atom, const char *path) {
     }
     /* Skip 8-byte alignment pad */
     int pad = (8 - (n_lev % 8)) % 8;
-    if (pad > 0) fseek(fp, pad, SEEK_CUR);
+    if (pad > 0) {
+        unsigned char padding[8] = {0};
+        if (fread(padding, 1, (size_t)pad, fp) != (size_t)pad) {
+            fprintf(stderr, "ERROR: %s alignment pad read failed\n", path);
+            free(flag8);
+            fclose(fp);
+            return -1;
+        }
+        for (int i = 0; i < pad; ++i) {
+            if (padding[i] != 0) {
+                fprintf(stderr, "ERROR: %s nonzero alignment pad\n", path);
+                free(flag8);
+                fclose(fp);
+                return -1;
+            }
+        }
+    }
 
-    atom->cmfgen_has_sigma = (int *)malloc((size_t)n_lev * sizeof(int));
+    has_sigma = (int *)malloc((size_t)n_lev * sizeof(int));
+    if (!has_sigma) {
+        fprintf(stderr, "ERROR: %s promoted flag allocation failed\n", path);
+        free(flag8);
+        fclose(fp);
+        return -1;
+    }
     int n_with = 0;
     for (int i = 0; i < n_lev; i++) {
-        atom->cmfgen_has_sigma[i] = flag8[i];
+        if (flag8[i] != 0 && flag8[i] != 1) {
+            fprintf(stderr, "ERROR: %s invalid has_cmfgen[%d]=%d\n",
+                    path, i, (int)flag8[i]);
+            free(flag8);
+            free(has_sigma);
+            fclose(fp);
+            return -1;
+        }
+        has_sigma[i] = flag8[i];
         if (flag8[i]) n_with++;
     }
     free(flag8);
 
     size_t grid_n = (size_t)n_lev * (size_t)n_freq;
-    atom->cmfgen_sigma_bf = (double *)malloc(grid_n * sizeof(double));
-    if (fread(atom->cmfgen_sigma_bf, sizeof(double), grid_n, fp) != grid_n) {
+    if (n_lev <= 0 || grid_n / (size_t)n_lev != (size_t)n_freq ||
+        grid_n > SIZE_MAX / sizeof(double)) {
+        fprintf(stderr, "ERROR: %s sigma grid size overflow\n", path);
+        free(has_sigma);
+        fclose(fp);
+        return -1;
+    }
+    sigma_bf = (double *)malloc(grid_n * sizeof(double));
+    if (!sigma_bf || fread(sigma_bf, sizeof(double), grid_n, fp) != grid_n) {
         fprintf(stderr, "ERROR: %s sigma grid read failed\n", path);
-        free(atom->cmfgen_has_sigma);
-        free(atom->cmfgen_sigma_bf);
-        atom->cmfgen_has_sigma = NULL;
-        atom->cmfgen_sigma_bf = NULL;
+        free(has_sigma);
+        free(sigma_bf);
+        fclose(fp);
+        return -1;
+    }
+    if (fgetc(fp) != EOF || ferror(fp)) {
+        fprintf(stderr, "ERROR: %s has trailing bytes or read error\n", path);
+        free(has_sigma);
+        free(sigma_bf);
         fclose(fp);
         return -1;
     }
     fclose(fp);
 
+    atom->cmfgen_has_sigma = has_sigma;
+    atom->cmfgen_sigma_bf = sigma_bf;
     atom->cmfgen_n_freq_bins = n_freq;
     atom->cmfgen_nu_min = nu_min;
     atom->cmfgen_nu_max = nu_max;
@@ -2817,6 +2957,9 @@ void free_atomic_data(AtomicData *atom) {
     free(atom->ioniz_Z);
     free(atom->ioniz_ion);
     free(atom->ioniz_energy_eV);
+    free(atom->ioniz_ref_Z);
+    free(atom->ioniz_ref_ion);
+    free(atom->ioniz_ref_energy_eV);
     free(atom->zeta_Z);
     free(atom->zeta_ion);
     free(atom->zeta_data);

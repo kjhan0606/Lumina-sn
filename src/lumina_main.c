@@ -3,6 +3,7 @@
  * Compares output W, T_rad, spectrum vs TARDIS ground truth. */
 
 #include "lumina.h"
+#include "physics_comparison.h"
 #include "line_jbar.h" /* Phase 5 - Step 1 */
 #include "lumina_cmfgen.h"  /* pure-CMFGEN parallel radiation path */
 #ifdef _OPENMP
@@ -142,7 +143,12 @@ int main(int argc, char *argv[]) {
             else if (strchr(cmf_env, '/'))
                 cmf_path = cmf_env;
         }
-        if (cmf_enable) load_cmfgen_sigma_bf(&atom_data, cmf_path);
+        if (cmf_enable && load_cmfgen_sigma_bf(&atom_data, cmf_path) != 0) {
+            fprintf(stderr,
+                    "[SH-GRID][FATAL] requested CMFGEN sigma grid is unavailable or stale: %s\n",
+                    cmf_path);
+            return 1;
+        }
     }
     /* Top-stage continuum anchor: inject synthetic IV ground levels (gated,
      * default off). After cmfgen_sigma_bf load, before nlte_init (mirrors GPU). */
@@ -280,30 +286,82 @@ int main(int argc, char *argv[]) {
     /* NLTE: Initialize if enabled */
     NLTEConfig nlte;
     LineJbarQSet line_qset; memset(&line_qset, 0, sizeof(line_qset)); /* A2-06 */
+    LineJbarESet line_eset; memset(&line_eset, 0, sizeof(line_eset));
     LineJbarAccumulator line_acc; memset(&line_acc, 0, sizeof(line_acc)); /* A2-06 */
-    uint64_t *line_ids_u64 = NULL; /* A2-06: commit-request line_id form */
+    uint64_t *line_rate_ids_u64 = NULL;
+    uint64_t *line_energy_ids_u64 = NULL;
     memset(&nlte, 0, sizeof(nlte));
     if (enable_nlte) {
         printf("\n--- NLTE Initialization ---\n");
         if (nlte_init(&nlte, &atom_data, &opacity, geo.n_shells) != 0 || radiation_field_owner_init(&nlte.radiation_field, (size_t)geo.n_shells) != 0) { fprintf(stderr, "[RADIATION-FIELD][FATAL] initialization failed\n"); return EXIT_FAILURE; }
         bf_set_nlte_pops(&nlte);
-        /* A2-06: Q_g = enabled bound-bound rate-graph lines (nlte_line_map>=0),
-         * frozen + hashed before any accumulation (SPEC_A2_06_V5). */
+        /* A2-06: Q_g = enabled BB rate graph intersected with the amended
+         * closed 100--20000 A line-centre domain. Keep nlte_line_map intact: out-of-domain
+         * transitions still own spontaneous/collisional terms. */
+        uint8_t *bb_domain_mask = (uint8_t *)malloc(
+            (size_t)opacity.n_lines * sizeof(uint8_t));
+        size_t bb_inside = 0, bb_outside = 0;
+        if (!bb_domain_mask || line_jbar_bb_domain_mask_build(
+                bb_domain_mask, opacity.n_lines, opacity.line_list_nu,
+                nlte.nlte_line_map, &bb_inside, &bb_outside) != 0) {
+            free(bb_domain_mask);
+            fprintf(stderr, "[A2-06][FATAL] BB_IN_DOMAIN mask build failed\n");
+            return EXIT_FAILURE;
+        }
         if (line_jbar_qset_build(&line_qset, opacity.n_lines,
                                  opacity.line_list_nu, nlte.nlte_line_map,
-                                 NULL) != 0) {
+                                 bb_domain_mask) != 0) {
+            free(bb_domain_mask);
             fprintf(stderr, "[A2-06][FATAL] Q_g build failed\n");
             return EXIT_FAILURE;
         }
-        printf("  [A2-06] Q_g lines=%zu q_set_hash=%.16s... profile=%llu\n",
-               line_qset.n_q, line_qset.q_set_hash,
+        free(bb_domain_mask);
+        if (line_qset.n_q != bb_inside) {
+            fprintf(stderr,
+                    "[A2-06][FATAL] BB_IN_DOMAIN/Q_g count mismatch "
+                    "inside=%zu q=%zu\n", bb_inside, line_qset.n_q);
+            return EXIT_FAILURE;
+        }
+        if (line_jbar_eset_build(&line_eset, opacity.n_lines,
+                                 opacity.line_list_nu) != 0) {
+            fprintf(stderr, "[A2-06][FATAL] Q_E build failed\n");
+            return EXIT_FAILURE;
+        }
+        size_t first_missing_q = SIZE_MAX;
+        LineJbarSubsetStatus subset_status = line_jbar_qset_subset_of_eset(
+            &line_qset, &line_eset, &first_missing_q);
+        if (subset_status != LINE_JBAR_SUBSET_OK) {
+            fprintf(stderr,
+                    "[A2-06][FATAL] Q_g subset Q_E validation failed "
+                    "status=%d first_missing_q=%zu\n",
+                    (int)subset_status, first_missing_q);
+            return EXIT_FAILURE;
+        }
+        printf("  [A2-06] Q_g lines=%zu Q_E lines=%zu "
+               "excluded_rate_out_of_domain=%zu q_hash=%.16s... "
+               "e_hash=%.16s... domain_hash=%.16s... profile=%llu\n",
+               line_qset.n_q, line_eset.n_q, bb_outside,
+               line_qset.q_set_hash,
+               line_eset.q_set_hash,
+               line_qset.domain_contract_hash,
                (unsigned long long)line_qset.profile_id);
-        line_ids_u64 = (uint64_t *)malloc(line_qset.n_q * sizeof(uint64_t));
-        if (!line_ids_u64) { fprintf(stderr, "[A2-06][FATAL] oom\n"); return EXIT_FAILURE; }
+        line_rate_ids_u64 =
+            (uint64_t *)malloc(line_qset.n_q * sizeof(uint64_t));
+        line_energy_ids_u64 =
+            (uint64_t *)malloc(line_eset.n_q * sizeof(uint64_t));
+        if (!line_rate_ids_u64 || !line_energy_ids_u64) {
+            fprintf(stderr, "[A2-06][FATAL] line identity allocation oom\n");
+            return EXIT_FAILURE;
+        }
         for (size_t qi_ = 0; qi_ < line_qset.n_q; qi_++)
-            line_ids_u64[qi_] = (uint64_t)line_qset.line_id[qi_];
-        /* R6: main owns the one frozen Q_g used by both publication arms. */
+            line_rate_ids_u64[qi_] = (uint64_t)line_qset.line_id[qi_];
+        for (size_t ei_ = 0; ei_ < line_eset.n_q; ei_++)
+            line_energy_ids_u64[ei_] = (uint64_t)line_eset.line_id[ei_];
+        /* R6: main owns frozen identities; DET publishes one Q_E cache and
+         * exposes Q_g through its validated sparse subset.  Both DET and CPU
+         * MC publish Q_E numeric candidates under the same membership. */
         nlte.line_qset = &line_qset;
+        nlte.line_eset = &line_eset;
     }
 
     /* Gamma-ray deposition: initialize if enabled */
@@ -323,6 +381,10 @@ int main(int argc, char *argv[]) {
         compute_bf_opacity(&bf, &atom_data, &plasma, geo.n_shells);
         printf("\n--- BF+FF Opacity Initialized (%d freq bins) ---\n", bf.n_freq_bins);
     }
+    cmfgen_fine_set_bf_atom(
+        bf_opacity_enabled ? &bf : NULL, &atom_data,
+        enable_nlte ? &nlte : NULL,
+        lumina_line_upper_population_fill_for_tau);
 
     /* ============================================================ */
     /* PURE-CMFGEN parallel path (LUMINA_PURE_CMFGEN=1): bypass the   */
@@ -369,7 +431,9 @@ int main(int argc, char *argv[]) {
             if (enable_nlte) { radiation_field_owner_free(&nlte.radiation_field); nlte_free(&nlte); }
             line_jbar_accumulator_free(&line_acc);
             line_jbar_qset_free(&line_qset);
-            free(line_ids_u64);
+            line_jbar_qset_free(&line_eset);
+            free(line_rate_ids_u64);
+            free(line_energy_ids_u64);
             if (gamma_dep_enabled) gamma_deposition_free(&gamma_dep);
             if (bf_opacity_enabled) bf_opacity_free(&bf);
             printf("\nDone (pure-CMFGEN).\n");
@@ -429,9 +493,10 @@ int main(int argc, char *argv[]) {
         double *escaped_mu = enable_rotation ? (double *)malloc(n_packets * sizeof(double)) : NULL;
         int n_escaped = 0; /* Phase 5 - Step 5 */
         int n_reabsorbed = 0; int radiation_field_commit_error = 0; /* Phase 5 - Step 5; A2-04 */
-        if (enable_nlte && line_qset.n_q > 0) { /* A2-06: fresh per generation */
+        uint64_t me3_t03_before = a208_counters()->event_measure_t03_blocks;
+        if (enable_nlte && line_eset.n_q > 0) { /* Q_E: fresh per generation */
             line_jbar_accumulator_free(&line_acc);
-            if (line_jbar_accumulator_init(&line_acc, line_qset.n_q,
+            if (line_jbar_accumulator_init(&line_acc, line_eset.n_q,
                                            (size_t)geo.n_shells) != 0)
                 radiation_field_commit_error = 1;
         }
@@ -460,11 +525,11 @@ int main(int argc, char *argv[]) {
             int local_escaped = 0, local_reabsorbed = 0; /* Phase 5 - Step 5 */
             LineJbarPacketPartial line_partial; /* A2-06 thread-local */
             memset(&line_partial, 0, sizeof(line_partial));
-            if (enable_nlte && line_qset.n_q > 0) {
+            if (enable_nlte && line_eset.n_q > 0) {
                 if (line_jbar_partial_init(&line_partial) != 0)
                     radiation_field_commit_error = 1;
                 else {
-                    local_est->line_jbar_qset = &line_qset;
+                    local_est->line_jbar_qset = &line_eset;
                     local_est->line_jbar_accumulator = &line_acc;
                     local_est->line_jbar_partial = &line_partial;
                 }
@@ -534,11 +599,82 @@ int main(int argc, char *argv[]) {
                 local_est->line_jbar_accumulator = NULL;
             }
             free_estimators(local_est); /* Phase 5 - Step 5 */
-        } a2_02c_capture_end(); if (radiation_field_commit_error || (enable_nlte && radiation_field_commit(&nlte.radiation_field, &(RadiationFieldCommitRequest){ .provenance_kind=RADIATION_FIELD_PROVENANCE_MC_PATH_LENGTH, .producer="CPU_MC_COMOVING_PATH_LENGTH_BIN_AVERAGE", .generation=(uint64_t)(iter+1), .epoch=geo.time_explosion, .n_shells=(size_t)geo.n_shells, .v_inner=geo.v_inner, .v_outer=geo.v_outer, .source_n_bins=LUMINA_RADFIELD_N_BINS, .statistic_kind=RADIATION_FIELD_ESTIMATOR_COUNT, .source_count=nlte.radiation_field.accumulator.contribution_count, .raw_path_length=nlte.radiation_field.accumulator.raw_path_length, .volume=volume, .time_simulation=time_simulation, .out_of_grid_contribution_count=nlte.radiation_field.accumulator.out_of_grid_contribution_count, .line_n=line_qset.n_q, .line_id=(const uint64_t*)line_ids_u64, .line_q_set_hash=line_qset.q_set_hash, .line_profile_id=line_qset.profile_id, .line_profile_hash=line_qset.profile_hash, .line_sum=line_acc.sum, .line_sumsq=line_acc.sumsq, .line_count=line_acc.count, .line_n_packets=(uint64_t)n_packets, .line_error_latch=line_acc.error_latch }) != 0)) { fprintf(stderr, "[RADIATION-FIELD][FATAL] MC commit failed\n"); return EXIT_FAILURE; } /* A2-02C/A2-04 + A2-06 dual-view commit */
+        }
+        a2_02c_capture_end();
+        if (radiation_field_commit_error) {
+            fprintf(stderr,
+                    "[RADIATION-FIELD][FATAL] MC accumulator failed\n");
+            return EXIT_FAILURE;
+        }
+        if (enable_nlte) {
+            RadiationFieldCommitRequest mc_request;
+            memset(&mc_request, 0, sizeof(mc_request));
+            mc_request.provenance_kind =
+                RADIATION_FIELD_PROVENANCE_MC_PATH_LENGTH;
+            mc_request.producer =
+                "CPU_MC_COMOVING_PATH_LENGTH_BIN_AVERAGE";
+            mc_request.generation = (uint64_t)(iter + 1);
+            mc_request.epoch = geo.time_explosion;
+            mc_request.n_shells = (size_t)geo.n_shells;
+            mc_request.v_inner = geo.v_inner;
+            mc_request.v_outer = geo.v_outer;
+            mc_request.source_n_bins = LUMINA_RADFIELD_N_BINS;
+            mc_request.statistic_kind = RADIATION_FIELD_ESTIMATOR_COUNT;
+            mc_request.source_count =
+                nlte.radiation_field.accumulator.contribution_count;
+            mc_request.raw_path_length =
+                nlte.radiation_field.accumulator.raw_path_length;
+            mc_request.volume = volume;
+            mc_request.time_simulation = time_simulation;
+            mc_request.out_of_grid_contribution_count =
+                nlte.radiation_field.accumulator.out_of_grid_contribution_count;
+            mc_request.line_n = line_eset.n_q;
+            mc_request.line_id = line_energy_ids_u64;
+            mc_request.line_q_set_hash = line_eset.q_set_hash;
+            mc_request.line_set_kind = LINE_JBAR_SET_ENERGY_DOMAIN;
+            mc_request.line_rate_graph_n = line_qset.n_q;
+            mc_request.line_rate_graph_id = line_rate_ids_u64;
+            mc_request.line_rate_graph_hash = line_qset.q_set_hash;
+            mc_request.line_profile_id = line_eset.profile_id;
+            mc_request.line_profile_hash = line_eset.profile_hash;
+            mc_request.line_sum = line_acc.sum;
+            mc_request.line_sumsq = line_acc.sumsq;
+            mc_request.line_count = line_acc.count;
+            mc_request.line_n_packets = (uint64_t)n_packets;
+            mc_request.line_error_latch = line_acc.error_latch;
+            if (radiation_field_commit(
+                    &nlte.radiation_field, &mc_request) != 0) {
+                fprintf(stderr,
+                        "[RADIATION-FIELD][FATAL] MC Q_E commit failed\n");
+                return EXIT_FAILURE;
+            }
+        } /* A2-02C/A2-04 + Q_E/Q_g atomic dual-view commit */
         if (enable_nlte) { nlte.radfield_view_status = radiation_field_read_view(&nlte.radiation_field, geo.time_explosion, (size_t)geo.n_shells, (uint64_t)(iter+1), &nlte.radfield_view); if (nlte.radfield_view_status != RADIATION_FIELD_VIEW_OK) { fprintf(stderr, "[RADIATION-FIELD][FATAL] view refresh failed after MC commit status=%d\n", nlte.radfield_view_status); return EXIT_FAILURE; } } /* A2-05: the only MC-lane view refresh point */
-        if (enable_nlte && line_qset.n_q > 0) { /* A2-06: line view refresh */
+        {
+            size_t filled = 0, total = 0;
+            if (enable_nlte && nlte.j_nu_estimator) {
+                total = (size_t)geo.n_shells * nlte.n_freq_bins;
+                for (size_t i = 0; i < total; ++i)
+                    if (isfinite(nlte.j_nu_estimator[i]) &&
+                        nlte.j_nu_estimator[i] != 0.0) filled++;
+            }
+            uint64_t t03_blocks =
+                a208_counters()->event_measure_t03_blocks - me3_t03_before;
+            printf("[E-ME3] lane=CPU_MC iter=%d producer=%s "
+                   "t03_blocks=%llu radiation_bins_filled=%zu "
+                   "radiation_bins_total=%zu fill_fraction=%.17g\n",
+                   iter,
+                   bf_opacity_enabled
+                     ? bf_event_measure_provenance_name(
+                           bf.event_measure_provenance)
+                     : "EVENT_MEASURE_PROVENANCE_NONE",
+                   (unsigned long long)t03_blocks, filled, total,
+                   total ? (double)filled/(double)total : 0.0);
+        }
+        if (enable_nlte && line_eset.n_q > 0) { /* Q_g + Q_E view refresh */
             nlte.line_qset = &line_qset;
-            nlte.line_view_status = radiation_field_line_jbar_view(
+            nlte.line_eset = &line_eset;
+            nlte.line_view_status = radiation_field_line_jbar_rate_view(
                 &nlte.radiation_field, geo.time_explosion, (size_t)geo.n_shells,
                 (uint64_t)(iter+1), line_qset.q_set_hash, line_qset.profile_id,
                 line_qset.profile_hash,
@@ -548,6 +684,22 @@ int main(int argc, char *argv[]) {
                         "status=%d\n", nlte.line_view_status);
                 return EXIT_FAILURE;
             }
+            nlte.line_energy_view_status =
+                radiation_field_line_jbar_energy_view(
+                    &nlte.radiation_field, geo.time_explosion,
+                    (size_t)geo.n_shells, (uint64_t)(iter + 1),
+                    line_eset.q_set_hash, line_eset.profile_id,
+                    line_eset.profile_hash, &nlte.line_energy_view);
+            if (nlte.line_energy_view_status != LINE_JBAR_VIEW_OK) {
+                fprintf(stderr,
+                        "[A2-06][FATAL] energy view refresh failed status=%d\n",
+                        nlte.line_energy_view_status);
+                return EXIT_FAILURE;
+            }
+            printf("[A2-06][MC-LINE-IDENTITY] generation=%d "
+                   "q_lines=%zu q_hash=%s e_lines=%zu e_hash=%s\n",
+                   iter + 1, line_qset.n_q, line_qset.q_set_hash,
+                   line_eset.n_q, line_eset.q_set_hash);
         }
 
         /* Gamma publication owns the immutable physical epoch.  It follows the
@@ -582,6 +734,18 @@ int main(int argc, char *argv[]) {
                 return EXIT_FAILURE;
             }
             te_qualified = radeq_te && !material_locked;
+            if (te_qualified) {
+                PhysicsComparisonStatus dump_status =
+                    physics_comparison_dump_if_requested(
+                        "MC",iter,&geo,&atom_data,&plasma,&opacity,&nlte);
+                if (dump_status != PHYSICS_COMPARISON_OK &&
+                    dump_status != PHYSICS_COMPARISON_NOT_REQUESTED) {
+                    fprintf(stderr,
+                            "[PHYSICS-COMPARISON][FATAL] lane=MC iter=%d status=%s\n",
+                            iter,physics_comparison_status_name(dump_status));
+                    return EXIT_FAILURE;
+                }
+            }
         }
 
         /* Phase 5 - Step 5b: Spectrum binning + L_emitted from actual packets */
@@ -638,29 +802,40 @@ int main(int argc, char *argv[]) {
         if (material_locked) {
             printf("  [plasma frozen by ion-lock; transport-only iter %d]\n", iter);
         } else if (iter > 0 || te_qualified) {
-            if (compute_plasma_state(&atom_data, &plasma, &opacity,
-                                     geo.time_explosion) != 0) {
-                fprintf(stderr, "[A2-07][FATAL] population transaction failed at iter=%d\n",
-                        iter);
-                return EXIT_FAILURE;
-            }
-            if(te_qualified&&(atom_data.partition_stamp.te_generation!=plasma.te_publication.committed_te_generation||strcmp(atom_data.partition_stamp.te_manifest_sha256,plasma.te_publication.te_manifest_sha256))){fprintf(stderr,"[A2-10][FATAL] A2-07 Te/population stamp mismatch iter=%d\n",iter);return EXIT_FAILURE;}
-
-            /* Recompute BF opacity grid after plasma update */
-            if (bf_opacity_enabled)
-                compute_bf_opacity(&bf, &atom_data, &plasma, geo.n_shells);
-
-            /* NLTE: solve rate equations and update tau for NLTE lines */
-            if (enable_nlte && iter >= nlte_start_iter) {
-                nlte.current_iter = iter;
-                nlte_normalize_j_nu(&nlte, time_simulation, volume, geo.n_shells);
-                if (nlte_solve_all(&nlte, &atom_data, &plasma, &opacity,
-                                   geo.time_explosion, geo.n_shells,
-                                   gamma_dep_enabled ? &gamma_dep : NULL) != 0) {
-                    fprintf(stderr, "[NLTE][FATAL] solve failed at iter=%d\n", iter);
+            if (!te_qualified) {
+                if (compute_plasma_state(&atom_data, &plasma, &opacity,
+                                         geo.time_explosion) != 0) {
+                    fprintf(stderr,
+                            "[A2-07][FATAL] population transaction failed at iter=%d\n",
+                            iter);
                     return EXIT_FAILURE;
                 }
 
+                /* Legacy fixed-Te material update.  The qualified A2-10 path
+                 * has already committed BF, populations and EW tau together. */
+                if (bf_opacity_enabled)
+                    compute_bf_opacity(&bf, &atom_data, &plasma, geo.n_shells);
+
+                if (enable_nlte && iter >= nlte_start_iter) {
+                    nlte.current_iter = iter;
+                    nlte_normalize_j_nu(&nlte, time_simulation, volume,
+                                        geo.n_shells);
+                    if (nlte_solve_all(&nlte, &atom_data, &plasma, &opacity,
+                                       geo.time_explosion, geo.n_shells,
+                                       gamma_dep_enabled ? &gamma_dep : NULL) != 0) {
+                        fprintf(stderr, "[NLTE][FATAL] solve failed at iter=%d\n",
+                                iter);
+                        return EXIT_FAILURE;
+                    }
+                }
+            } else if (atom_data.partition_stamp.te_generation !=
+                           plasma.te_publication.committed_te_generation ||
+                       strcmp(atom_data.partition_stamp.te_manifest_sha256,
+                              plasma.te_publication.te_manifest_sha256) != 0) {
+                fprintf(stderr,
+                        "[A2-10][FATAL] committed Te/population stamp mismatch iter=%d\n",
+                        iter);
+                return EXIT_FAILURE;
             }
 
             /* Dynamic transition probability recomputation */
@@ -783,7 +958,9 @@ int main(int argc, char *argv[]) {
     if (enable_nlte) { radiation_field_owner_free(&nlte.radiation_field); nlte_free(&nlte); }
     line_jbar_accumulator_free(&line_acc);
     line_jbar_qset_free(&line_qset);
-    free(line_ids_u64);
+    line_jbar_qset_free(&line_eset);
+    free(line_rate_ids_u64);
+    free(line_energy_ids_u64);
     if (gamma_dep_enabled) gamma_deposition_free(&gamma_dep);
     if (bf_opacity_enabled && bf.event_enabled)
         printf("[BF-PHIXS-FALLBACK] CPU upper-ground fallback activations=%llu\n",

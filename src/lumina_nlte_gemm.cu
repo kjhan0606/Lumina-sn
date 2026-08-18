@@ -85,7 +85,10 @@ static double legacy_step_sigma(int bb, double nu_min, double dlog,
     double hi = exp(log(nu_min) + (bb + 1) * dlog);
     if (sigma_row) {
         double s = sigma_row[bb];
-        return s > 0.0 && isfinite(s) ? s : 0.0;
+        if (!(s > 0.0) || !isfinite(s)) return 0.0;
+        if (lo < threshold && hi > threshold)
+            s *= (hi - lo) / (hi - threshold);
+        return s;
     }
     if (lo >= threshold)
         return sigma0 * pow(threshold / sqrt(lo * hi), 3.0);
@@ -101,6 +104,9 @@ static double canonical_bf_kernel(double edge_lo, double edge_hi, int nfb,
     double nu_min, double dlog, const double *sigma_row, double sigma0,
     double threshold)
 {
+    /* CMFGEN rows contain full-bin averages.  legacy_step_sigma relocates the
+     * first-bin mass onto its active support, so both stored and Kramers lanes
+     * use the same explicit physical-edge clamp here. */
     double lo = edge_lo > threshold ? edge_lo : threshold;
     if (!(edge_hi > lo)) return 0.0;
     int first = (int)floor(log(lo / nu_min) / dlog);

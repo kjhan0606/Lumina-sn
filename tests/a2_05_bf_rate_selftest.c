@@ -384,6 +384,46 @@ static void run_kramers_adapter_test(void)
     kramers_case(0.997, "below-centre");   /* lo < nu_th < centre */
 }
 
+/* A CMFGEN sigma row stores the average over the WHOLE legacy bin.  In the
+ * threshold bin the consumer relocates that conserved sigma*dnu mass onto
+ * [nu_th,hi], then applies the explicit physical edge. */
+static void run_cmfgen_partial_bin_adapter_test(void)
+{
+    const double J0 = 1.0e-4;
+    const double SIGMA_AVG = 2.5e-19;
+    TestField tf;
+    test_field_init(&tf, 512, 0.5e15, 5.0e16);
+    for (size_t b = 0; b < tf.n_bins; ++b) tf.J[b] = J0;
+
+    const int nfb = 400;
+    const double nu_min = 0.6e15;
+    const double dln = log(4.0e16 / nu_min) / nfb;
+    const int tb = (int)(log(1.0e15 / nu_min) / dln);
+    const double lo = nu_min * exp(tb * dln);
+    const double hi = nu_min * exp((tb + 1) * dln);
+    const double centre = sqrt(lo * hi);
+    const double nu_th = centre * 1.003;  /* centre < threshold < hi */
+    CHECK(nu_th > centre && nu_th < hi, "cmf-partial-setup");
+
+    double *sigma_row = calloc((size_t)nfb, sizeof(double));
+    double *node_nu = malloc(2 * (size_t)nfb * sizeof(double));
+    double *node_sg = malloc(2 * (size_t)nfb * sizeof(double));
+    sigma_row[tb] = SIGMA_AVG;
+    BfRateResult r;
+    CHECK(bf_rate_gamma_legacy_grid(&tf.view, 0, nfb, nu_min, dln,
+                                    sigma_row, 0.0, nu_th,
+                                    node_nu, node_sg, &r) == 0,
+          "cmf-partial-rc");
+    CHECK(r.state == BF_RATE_VALID, "cmf-partial-state");
+    double sigma_active = SIGMA_AVG * (hi - lo) / (hi - nu_th);
+    double want = 4.0 * M_PI * J0 * sigma_active / H_CGS * log(hi / nu_th);
+    CHECK(rel_err(r.gamma, want) < 1.0e-11,
+          "cmf-partial-active-support-mass");
+
+    free(sigma_row); free(node_nu); free(node_sg);
+    test_field_free(&tf);
+}
+
 /* EXACT_ZERO + small missing weight: with every sigma-weighted bin either
  * EXACT_ZERO or a tiny (w_miss <= tol) UNSAMPLED remainder, the honest state
  * is VALID with gamma 0 and w_miss recorded -- NOT EXACT_ZERO (R6). */
@@ -413,11 +453,64 @@ static void run_zero_plus_missing_test(void)
     test_field_free(&tf);
 }
 
+/* SH-GRID upper closure regression: the active Si V ground edge was above the
+ * 1178-bin predecessor but lies in the final 1234th bin of the closed grid.
+ * The old Kramers adapter must report structural OOG; the freshly baked CMFGEN
+ * partial-bin row on the new grid must produce a finite positive rate. */
+static void run_sh_grid_upper_closure_test(void)
+{
+    const double J0 = 1.0e-4;
+    const double NU_SI_V = 4.0324184137410968e16;
+    const double SIGMA_AVG = 4.9461745780367031e-19;
+    const double OLD_MAX = 3.0e16;
+    const int OLD_N = 1178;
+    const double dln = log(NLTE_NU_MAX / NLTE_NU_MIN) /
+                       (double)NLTE_N_FREQ_BINS;
+    CHECK(NLTE_N_FREQ_BINS == 1234, "upper-grid-bin-contract");
+    CHECK(NLTE_NU_MAX > NU_SI_V, "upper-grid-threshold-contained");
+
+    TestField tf;
+    test_field_init(&tf, LUMINA_RADFIELD_N_BINS,
+                    LUMINA_RADFIELD_NU_MIN_HZ,
+                    LUMINA_RADFIELD_NU_MAX_HZ);
+    for (size_t b = 0; b < tf.n_bins; ++b) tf.J[b] = J0;
+
+    double *old_nu = malloc(2 * (size_t)OLD_N * sizeof(double));
+    double *old_sg = malloc(2 * (size_t)OLD_N * sizeof(double));
+    BfRateResult old_rate;
+    CHECK(bf_rate_gamma_legacy_grid(&tf.view, 0, OLD_N, NLTE_NU_MIN,
+                                    log(OLD_MAX / NLTE_NU_MIN) / OLD_N,
+                                    NULL, 7.91e-20, NU_SI_V,
+                                    old_nu, old_sg, &old_rate) == 0,
+          "upper-grid-predecessor-rc");
+    CHECK(old_rate.state == BF_RATE_OUT_OF_GRID,
+          "upper-grid-predecessor-oog");
+
+    double *row = calloc((size_t)NLTE_N_FREQ_BINS, sizeof(double));
+    double *node_nu = malloc(2 * (size_t)NLTE_N_FREQ_BINS * sizeof(double));
+    double *node_sg = malloc(2 * (size_t)NLTE_N_FREQ_BINS * sizeof(double));
+    row[NLTE_N_FREQ_BINS - 1] = SIGMA_AVG;
+    BfRateResult closed_rate;
+    CHECK(bf_rate_gamma_legacy_grid(&tf.view, 0, NLTE_N_FREQ_BINS,
+                                    NLTE_NU_MIN, dln, row, 0.0, NU_SI_V,
+                                    node_nu, node_sg, &closed_rate) == 0,
+          "upper-grid-closed-rc");
+    CHECK(closed_rate.state == BF_RATE_VALID,
+          "upper-grid-closed-valid");
+    CHECK(isfinite(closed_rate.gamma) && closed_rate.gamma > 0.0,
+          "upper-grid-closed-positive");
+
+    free(old_nu); free(old_sg); free(row); free(node_nu); free(node_sg);
+    test_field_free(&tf);
+}
+
 int main(void)
 {
     run_integrator_tests();
     run_kramers_adapter_test();
+    run_cmfgen_partial_bin_adapter_test();
     run_zero_plus_missing_test();
+    run_sh_grid_upper_closure_test();
     run_read_view_tests();
     if (failures) {
         fprintf(stderr, "A2_05_BF_RATE_SELFTEST FAIL failures=%d\n", failures);

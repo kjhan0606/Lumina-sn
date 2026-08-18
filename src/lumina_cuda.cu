@@ -15,6 +15,8 @@
 /* Phase 6 - Step 1: Include shared header for struct definitions */
 extern "C" {             /* Phase 6 - Step 1 */
 #include "lumina.h"      /* Phase 6 - Step 1 */
+#include "bf_event_measure_access.h" /* MC-EVT shared CPU/GPU classifier */
+#include "line_jbar.h"   /* transactional DET frozen Q_g */
 #include "lumina_cmfgen.h"  /* pure-CMFGEN parallel radiation path */
 #include "gpu_radiation_field.h"
 #include "gpu_opacity_kernels.h"
@@ -338,6 +340,7 @@ static void cuda_allocate_bf(CudaDeviceData *dev, BFOpacity *bf, int n_shells) {
     size_t chi_size = (size_t)n_shells * bf->n_freq_bins * sizeof(double);
     size_t act_size = (size_t)n_shells * bf->n_freq_bins * sizeof(int);
     CUDA_CHECK(cudaMalloc(&dev->d_chi_bf, chi_size));
+    CUDA_CHECK(cudaMalloc(&dev->d_bf_event_chi, chi_size));
     /* A2-12 GL06/GL07: no lazy scalar allocation. */
     CUDA_CHECK(cudaMalloc(&dev->d_bf_activation_level, act_size));
     if (bf->event_enabled && bf->event_n_routes > 0) {
@@ -345,7 +348,6 @@ static void cuda_allocate_bf(CudaDeviceData *dev, BFOpacity *bf, int n_shells) {
         size_t route_d = nr * sizeof(double);
         size_t route_i = nr * sizeof(int);
         size_t shell_route_d = (size_t)n_shells * nr * sizeof(double);
-        CUDA_CHECK(cudaMalloc(&dev->d_bf_event_chi, chi_size));
         CUDA_CHECK(cudaMalloc(&dev->d_bf_event_weight, shell_route_d));
         CUDA_CHECK(cudaMalloc(&dev->d_bf_event_stim_ratio, shell_route_d));
         CUDA_CHECK(cudaMalloc(&dev->d_bf_event_nu_edge, route_d));
@@ -537,13 +539,13 @@ static void cuda_upload_bf(CudaDeviceData *dev, BFOpacity *bf,
     size_t act_size = (size_t)n_shells * bf->n_freq_bins * sizeof(int);
     CUDA_CHECK(cudaMemcpy(dev->d_chi_bf, bf->chi_bf, chi_size,
                cudaMemcpyHostToDevice));
+    CUDA_CHECK(cudaMemcpy(dev->d_bf_event_chi, bf->event_chi_bf, chi_size,
+               cudaMemcpyHostToDevice));
     cuda_upload_T_rad(dev, plasma, n_shells);
     CUDA_CHECK(cudaMemcpy(dev->d_bf_activation_level, bf->activation_level,
                act_size, cudaMemcpyHostToDevice));
     if (dev->bf_event_enabled && bf->event_enabled) {
         size_t nr = (size_t)bf->event_n_routes;
-        CUDA_CHECK(cudaMemcpy(dev->d_bf_event_chi, bf->event_chi_bf,
-                   chi_size, cudaMemcpyHostToDevice));
         CUDA_CHECK(cudaMemcpy(dev->d_bf_event_weight, bf->event_weight,
                    (size_t)n_shells * nr * sizeof(double),
                    cudaMemcpyHostToDevice));
@@ -590,6 +592,45 @@ static int cuda_bind_a2_14_15_publications(
         gpu_emissivity_production_bind(&opacity->cpu_emissivity, &rf,
             emissivity_view, &g_a2_15_emissivity_counters, NULL) != 0)
         return -1;
+    if (opacity_view->bf_event_measure_provenance !=
+        opacity->cpu_opacity.bf_event_measure_provenance) {
+        fprintf(stderr, "[E-E2][BLOCKED] reason=GPU_PROVENANCE_MISMATCH "
+                "cpu=%d gpu=%d rc=3\n",
+                opacity->cpu_opacity.bf_event_measure_provenance,
+                opacity_view->bf_event_measure_provenance);
+        return -1;
+    }
+    /* E2: verify the exact device field consumed by transport, not merely the
+     * older auxiliary BF upload.  This observer is always on. */
+    {
+        size_t cells = opacity->cpu_opacity.n_shells *
+                       opacity->cpu_opacity.n_bins;
+        size_t bytes = cells * sizeof(double);
+        double *device_copy = (double *)malloc(bytes);
+        if (!device_copy) {
+            fprintf(stderr, "[E-E2][BLOCKED] reason=HOST_VERIFY_ALLOCATION "
+                    "bytes=%zu rc=3\n", bytes);
+            return -1;
+        }
+        CUDA_CHECK(cudaMemcpy(device_copy, opacity_view->bf_event_measure,
+                   bytes, cudaMemcpyDeviceToHost));
+        if (memcmp(device_copy, opacity->cpu_opacity.bf_event_measure,
+                   bytes) != 0) {
+            fprintf(stderr, "[E-E2][BLOCKED] reason=CPU_GPU_EVENT_ARRAY_MISMATCH "
+                    "producer=%s cells=%zu rc=3\n",
+                    bf_event_measure_provenance_name(
+                        bf->event_measure_provenance), cells);
+            free(device_copy);
+            return -1;
+        }
+        free(device_copy);
+        printf("[E-E2] producer=%s cpu_event_measure_hash=%016llx "
+               "gpu_event_measure_hash=%016llx match=1 cells=%zu\n",
+               bf_event_measure_provenance_name(
+                   bf->event_measure_provenance),
+               (unsigned long long)bf->event_measure_hash,
+               (unsigned long long)bf->event_measure_hash, cells);
+    }
     return 0;
 }
 
@@ -998,8 +1039,13 @@ static void lumina_write_levelpop_csv(const char *path, NLTEConfig *nlte,
     fclose(lp);
 }
 
-/* GPU NLTE master solver: assemble on CPU (OpenMP), solve on GPU (cuBLAS batched).
- * Step 1.5: Iterative CE convergence wrapper — same logic as CPU nlte_solve_all. */
+/* Legacy GPU NLTE master solver.  Its historical read-back path repairs
+ * singular/non-finite vectors with Boltzmann populations and replaces negative
+ * components by floors/caps.  That is not a legal population producer: a
+ * negative physical population is an algorithm/assembly failure that must keep
+ * the prior generation byte-identical.  All callers therefore enter the shared
+ * transactional CPU authority below.  The old body remains only for forensic
+ * code comparison and is unreachable from production. */
 static int nlte_solve_all_gpu(NLTEConfig *nlte, AtomicData *atom,
                                 PlasmaState *plasma, OpacityState *opacity,
                                 double time_explosion, int n_shells,
@@ -1022,14 +1068,19 @@ static int nlte_solve_all_gpu(NLTEConfig *nlte, AtomicData *atom,
         fprintf(stderr, "[EW] invalid gate configuration; GPU solve aborted\n");
         return -1;
     }
-    /* Wave-3's authority is the CPU double-precision reference solver.  Even in
-     * the CUDA binary an explicitly armed element-wide run routes here and does
-     * not assemble or solve an overlapping GPU pair system. */
-    if (nlte_element_wide_enabled()) {
-        (void)sol;
-        return nlte_solve_all(nlte, atom, plasma, opacity, time_explosion,
-                              n_shells, gamma_dep);
+    (void)sol;
+    static int route_reported = 0;
+    if (!route_reported) {
+        fprintf(stderr,
+                "[NLTE-GPU][FAIL-CLOSED-ROUTE] producer=A2-07-CPU-TRANSACTIONAL "
+                "legacy_boltzmann_fallback=0 negative_floor=0 bk_cap=0 "
+                "rollback=BYTE_PRESERVED\n");
+        route_reported = 1;
     }
+    return nlte_solve_all(nlte, atom, plasma, opacity, time_explosion,
+                          n_shells, gamma_dep);
+
+#if 0 /* Forensic-only legacy implementation; never compiled into production. */
     printf("  [NLTE-GPU] Solving rate equations (cuBLAS batched, with CE)...\n");
 
     /* Refresh within-super-level Boltzmann fractions at the current T_e BEFORE
@@ -1880,115 +1931,12 @@ static int nlte_solve_all_gpu(NLTEConfig *nlte, AtomicData *atom,
     nlte_writeback_ion_stage(nlte, atom, plasma, opacity, time_explosion,
                              n_shells, pairs, n_pairs);
 
-    /* Update tau_sobolev for NLTE lines (same as CPU path) */
-    printf("  [NLTE-GPU] Updating tau_sobolev from NLTE populations...\n");
-    tau_sobolev_require_refresh(opacity, "nlte_solve_gpu");
-    {
-        /* Per-Z skip mask via LUMINA_NLTE_SKIP_Z (comma list). */
-        static int gpu_skip_z[100];
-        static int gpu_skip_init = 0;
-        if (!gpu_skip_init) {
-            gpu_skip_init = 1;
-            const char *e = getenv("LUMINA_NLTE_SKIP_Z");
-            if (e && *e) {
-                char buf[256]; strncpy(buf, e, sizeof(buf)-1); buf[sizeof(buf)-1]=0;
-                char *tok = strtok(buf, ", \t");
-                while (tok) { int z = atoi(tok); if (z>0 && z<100) gpu_skip_z[z]=1; tok = strtok(NULL, ", \t"); }
-                printf("  [NLTE-GPU] LUMINA_NLTE_SKIP_Z active (nebular tau kept): ");
-                for (int i=1;i<100;i++) if (gpu_skip_z[i]) printf("%d ", i);
-                printf("\n");
-            }
-        }
-        int n_lines = opacity->n_lines;
-        for (int line = 0; line < n_lines; line++) {
-            int ion_idx = nlte->nlte_line_map[line];
-            if (ion_idx < 0) continue;
-
-            int Z     = atom->line_atomic_number[line];
-            /* The plain `continue` here also skipped the line_source_S write
-             * below, so a SKIP_Z element got NO line source and every consumer
-             * silently fell back to B(T_e) — an LTE source for a strongly NLTE
-             * ion (Si II/Si III, measured 2026-07-27). Keep the tau skip, restore
-             * the source write under LUMINA_SL_WRITE_SKIPZ=1. Mirrors
-             * nlte_update_tau_sobolev in lumina_plasma.c. */
-            int skip_tau = (Z > 0 && Z < 100 && gpu_skip_z[Z]);
-            if (skip_tau && !nlte_sl_write_on_skipz()) continue;
-            int ion_s = atom->line_ion_number[line];
-            double f_lu   = atom->line_f_lu[line];
-            double lam_cm = atom->line_wavelength_cm[line];
-
-            int ip = -1;
-            for (int j = 0; j < atom->n_ion_pops; j++) {
-                if (atom->ion_pop_Z[j] == Z && atom->ion_pop_stage[j] == ion_s) {
-                    ip = j; break;
-                }
-            }
-            if (ip < 0) continue;
-            int lev_base = atom->level_offset[ip];
-            int lev_top  = atom->level_offset[ip + 1];
-
-            int lower_global = -1, upper_global = -1;
-            for (int l = lev_base; l < lev_top; l++) {
-                if (atom->level_num[l] == atom->line_level_lower[line]) lower_global = l;
-                if (atom->level_num[l] == atom->line_level_upper[line]) upper_global = l;
-                if (lower_global >= 0 && upper_global >= 0) break;
-            }
-            if (lower_global < 0 || upper_global < 0) continue;
-
-            int nlte_lo = nlte->global_to_nlte_level[lower_global];
-            int nlte_up = nlte->global_to_nlte_level[upper_global];
-            if (nlte_lo < 0 || nlte_up < 0) continue;
-
-            int g_lo = atom->level_g[lower_global];
-            int g_up = atom->level_g[upper_global];
-            int element_index = -1;
-            for (int e = 0; e < atom->n_elements; e++) {
-                if (atom->element_Z[e] == Z) { element_index = e; break; }
-            }
-            int element_inactive = element_index >= 0 &&
-                lumina_zinert_element_inactive(atom, element_index, n_shells);
-
-            /* CMF NLTE line source S_l = (2hv^3/c^2)/(g_u n_l/(g_l n_u) - 1):
-             * MUST be written here too — this GPU tau update was the only
-             * writer-path omission (audit 2026-06-12); line_source_S stayed
-             * empty so cmfgen_assemble's B(T_e) fallback fired for 100% of
-             * the forest in every GPU run (maximal local thermalization). */
-            double nu_l = C_SPEED_OF_LIGHT / lam_cm;
-            double src_prefac = 2.0 * H_PLANCK * nu_l * nu_l * nu_l /
-                                (C_SPEED_OF_LIGHT * C_SPEED_OF_LIGHT);
-            for (int s = 0; s < n_shells; s++) {
-                if (element_inactive) {
-                    opacity->tau_sobolev[(size_t)line * n_shells + s] = 0.0;
-                    if (opacity->line_source_S)
-                        opacity->line_source_S[(size_t)line * n_shells + s] = 0.0;
-                    continue;
-                }
-                double n_lower = nlte->nlte_level_populations[nlte_lo * n_shells + s];
-                double n_upper = nlte->nlte_level_populations[nlte_up * n_shells + s];
-                double stim_corr = 1.0;
-                if (n_lower > 0.0 && n_upper > 0.0 && g_lo > 0 && g_up > 0) {
-                    stim_corr = 1.0 - ((double)g_lo * n_upper) / ((double)g_up * n_lower);
-                    if (stim_corr < 0.0) stim_corr = 0.0;
-                }
-                double tau_nlte = SOBOLEV_COEFF * f_lu * lam_cm * time_explosion *
-                                  n_lower * stim_corr;
-                if (!(tau_nlte > 1e-100)) tau_nlte = 1e-100;  /* NaN-catching */
-                if (!skip_tau)   /* SKIP_Z elements keep their nebular tau */
-                    opacity->tau_sobolev[line * n_shells + s] = tau_nlte;
-
-                double S_l = 0.0;
-                if (n_lower > 0.0 && n_upper > 0.0 && g_lo > 0 && g_up > 0) {
-                    double ratio = ((double)g_up * n_lower) /
-                                   ((double)g_lo * n_upper);
-                    double denom = ratio - 1.0;
-                    if (denom > 1e-30) S_l = src_prefac / denom;
-                }
-                if (opacity->line_source_S)
-                    opacity->line_source_S[line * n_shells + s] = S_l;
-            }
-        }
-    }
-    tau_sobolev_mark_computed(opacity, "nlte_solve_gpu");
+    /* The host population array is authoritative after the GPU solve.  Route
+     * both CPU and GPU solve lanes through one tau/source writer so pair/EW
+     * ownership, SKIP_Z, signed tau and generation advancement cannot drift. */
+    printf("  [NLTE-GPU] Updating tau_sobolev through shared host writer...\n");
+    nlte_update_tau_sobolev(nlte, atom, opacity,
+                             time_explosion, n_shells);
     {
         const char *zinert = getenv("LUMINA_ZINERT_AUDIT");
         if (zinert && atoi(zinert) != 0 &&
@@ -2112,6 +2060,7 @@ static int nlte_solve_all_gpu(NLTEConfig *nlte, AtomicData *atom,
         }
     }
     return 0;
+#endif
 }
 
 /* [FB-MULTI] re-upload the per-shell per-continuum fb edge tables (rebuilt each
@@ -2569,7 +2518,7 @@ __device__ unsigned long long d_kpr_xion_kept = 0;    /* same-ion cascades kept 
  *   chi_bf(nu0) = Sigma_l n_level * sigma_bf(CMFGEN)   [lumina_plasma.c:3784, the
  *                 population-weighted bf opacity at the Fe III 404A ground edge —
  *                 exactly sigma_bf * n_lower(ground), the SAME opacity transport
- *                 re-absorbs on at d_bf_get_chi (cuda.cu:4221)];
+ *                 re-absorbs on through d_bf_event_measure_get];
  *   L_shell     = geo.r_outer[s]-geo.r_inner[s] (comoving shell width, cm).
  * The host uploads the per-shell probability each iter; the device applies it:
  *   d_kpr_ots_mode: 0=off, 1=binary (P in {0,1}, host-encoded in the masks; no
@@ -3572,21 +3521,55 @@ void d_update_base_estimators(double *d_j_est, double *d_nu_bar_est,
 /* BF opacity device functions                                  */
 /* ============================================================ */
 
-/* Lookup chi_bf from precomputed grid (linear interpolation in log-nu) */
+/* E-lane device mirror of bf_event_measure_get.  Slot 0 is physical transport,
+ * slot 1 is the virtual-packet ray; both are reported with the same named
+ * status and neither substitutes d_chi_bf. */
+__device__ unsigned long long d_bf_event_measure_blocks[8];
+
+static void cuda_bf_event_measure_blocks_reset(void) {
+    unsigned long long zero[8] = {0};
+    CUDA_CHECK(cudaMemcpyToSymbol(d_bf_event_measure_blocks, zero,
+                                  sizeof(zero)));
+}
+
+static void cuda_bf_event_measure_blocks_report(const char *site) {
+    unsigned long long h[8] = {0};
+    static const char *status_name[4] = {
+        "OK", "EVENT_MEASURE_UNAVAILABLE",
+        "BLOCKED_NEGATIVE_OPACITY_SEMANTICS", "EVENT_MEASURE_OUT_OF_GRID"
+    };
+    CUDA_CHECK(cudaMemcpyFromSymbol(h, d_bf_event_measure_blocks, sizeof(h)));
+    for (int status = BF_EVENT_MEASURE_UNAVAILABLE;
+         status <= BF_EVENT_MEASURE_OUT_OF_GRID; ++status) {
+        if (h[2 * status])
+            fprintf(stderr, "[A2-08][BLOCKED] consumer=GPU-T03 site=%s "
+                    "reason=%s count=%llu rc=3\n", site,
+                    status_name[status], h[2 * status]);
+        if (h[2 * status + 1])
+            fprintf(stderr, "[A2-08][BLOCKED] consumer=GPU-VPACKET site=%s "
+                    "reason=%s count=%llu rc=3\n", site,
+                    status_name[status], h[2 * status + 1]);
+    }
+}
+
 __device__ __forceinline__
-double d_bf_get_chi(const double *d_chi_bf, int bf_n_freq_bins,
+void d_bf_event_measure_record_block(int status, int consumer) {
+    if (status >= BF_EVENT_MEASURE_UNAVAILABLE &&
+        status <= BF_EVENT_MEASURE_OUT_OF_GRID)
+        atomicAdd(&d_bf_event_measure_blocks[2 * status + consumer], 1ULL);
+}
+
+/* Lookup the selected, provenance-bearing event grid. */
+__device__ __forceinline__
+BfEventMeasureStatus d_bf_event_measure_get(
+                     const double *d_event_measure,
+                     int event_measure_provenance,
+                     int bf_n_freq_bins, int n_shells,
                      double bf_nu_min, double bf_nu_max, double bf_d_log_nu,
-                     int shell, double nu) {
-    if (d_chi_bf == NULL || nu < bf_nu_min || nu >= bf_nu_max) return 0.0;
-    double log_ratio = log(nu / bf_nu_min);
-    int bin = (int)(log_ratio / bf_d_log_nu);
-    if (bin < 0) return 0.0;
-    if (bin >= bf_n_freq_bins - 1)
-        return d_chi_bf[shell * bf_n_freq_bins + bf_n_freq_bins - 1];
-    double frac = log_ratio / bf_d_log_nu - (double)bin;
-    double chi0 = d_chi_bf[shell * bf_n_freq_bins + bin];
-    double chi1 = d_chi_bf[shell * bf_n_freq_bins + bin + 1];
-    return chi0 + frac * (chi1 - chi0);
+                     int shell, double nu, double *out) {
+    return bf_event_measure_lookup_raw(
+        d_event_measure, event_measure_provenance, bf_n_freq_bins, n_shells,
+        bf_nu_min, bf_nu_max, bf_d_log_nu, shell, nu, out);
 }
 
 /* Lookup macro-atom activation level for BF absorption at given frequency */
@@ -3713,7 +3696,7 @@ int d_bf_sample_continuum_route(
 __device__ int    d_inject_shell = 0;
 __device__ int    d_inject_nb = 0;
 __device__ double d_inject_numin = 0.0, d_inject_dlognu = 0.0;
-__device__ double d_inject_cdf[1024];
+__device__ double d_inject_cdf[NLTE_N_FREQ_BINS];
 __device__ __forceinline__ double d_sample_inject_nu(uint64_t *rng) {
     double u = d_rng_uniform(rng);
     int lo = 0, hi = d_inject_nb - 1;
@@ -5785,7 +5768,8 @@ void d_trace_virtual_packet(
     const double *d_r_inner, const double *d_r_outer,
     const double *d_line_list_nu, const double *d_tau_sobolev,
     const double *d_electron_density,
-    const double *d_chi_bf, int bf_enabled, int bf_n_freq_bins,
+    const double *d_chi_bf, int bf_enabled,
+    int bf_event_measure_provenance, int bf_n_freq_bins,
     double bf_nu_min, double bf_nu_max, double bf_d_log_nu,
     int n_lines, int n_shells,
     int n_vpackets,
@@ -5836,9 +5820,17 @@ void d_trace_virtual_packet(
                 double chi_cont_s = SIGMA_THOMSON * d_electron_density[s];
                 if (bf_enabled && d_chi_bf != NULL) {
                     double nu_mid = nu_lab * (1.0 - 0.5 * z_cur * inv_ct);
-                    chi_cont_s += d_bf_get_chi(d_chi_bf, bf_n_freq_bins,
-                                                bf_nu_min, bf_nu_max, bf_d_log_nu,
-                                                s, nu_mid);
+                    double event_measure = 0.0;
+                    BfEventMeasureStatus event_status =
+                        d_bf_event_measure_get(d_chi_bf,
+                            bf_event_measure_provenance, bf_n_freq_bins,
+                            n_shells, bf_nu_min, bf_nu_max, bf_d_log_nu,
+                            s, nu_mid, &event_measure);
+                    if (event_status != BF_EVENT_MEASURE_OK) {
+                        d_bf_event_measure_record_block(event_status, 1);
+                        return;
+                    }
+                    chi_cont_s += event_measure;
                 }
                 tau_total += chi_cont_s * seg_len;
             }
@@ -5867,9 +5859,17 @@ void d_trace_virtual_packet(
                 double chi_cont_s = SIGMA_THOMSON * d_electron_density[s];
                 if (bf_enabled && d_chi_bf != NULL) {
                     double nu_mid = nu_lab * (1.0 - 0.5 * (z_cur + z_bnd) * inv_ct);
-                    chi_cont_s += d_bf_get_chi(d_chi_bf, bf_n_freq_bins,
-                                                bf_nu_min, bf_nu_max, bf_d_log_nu,
-                                                s, nu_mid);
+                    double event_measure = 0.0;
+                    BfEventMeasureStatus event_status =
+                        d_bf_event_measure_get(d_chi_bf,
+                            bf_event_measure_provenance, bf_n_freq_bins,
+                            n_shells, bf_nu_min, bf_nu_max, bf_d_log_nu,
+                            s, nu_mid, &event_measure);
+                    if (event_status != BF_EVENT_MEASURE_OK) {
+                        d_bf_event_measure_record_block(event_status, 1);
+                        return;
+                    }
+                    chi_cont_s += event_measure;
                 }
                 tau_total += chi_cont_s * seg_len;
             }
@@ -5903,9 +5903,17 @@ void d_trace_virtual_packet(
             double chi_cont_s = SIGMA_THOMSON * d_electron_density[s];
             if (bf_enabled && d_chi_bf != NULL) {
                 double nu_mid = nu_lab * (1.0 - 0.5 * (z_cur + z_bnd) * inv_ct);
-                chi_cont_s += d_bf_get_chi(d_chi_bf, bf_n_freq_bins,
-                                            bf_nu_min, bf_nu_max, bf_d_log_nu,
-                                            s, nu_mid);
+                double event_measure = 0.0;
+                BfEventMeasureStatus event_status =
+                    d_bf_event_measure_get(d_chi_bf,
+                        bf_event_measure_provenance, bf_n_freq_bins,
+                        n_shells, bf_nu_min, bf_nu_max, bf_d_log_nu,
+                        s, nu_mid, &event_measure);
+                if (event_status != BF_EVENT_MEASURE_OK) {
+                    d_bf_event_measure_record_block(event_status, 1);
+                    return;
+                }
+                chi_cont_s += event_measure;
             }
             tau_total += chi_cont_s * seg_len;
         }
@@ -6008,6 +6016,7 @@ void transport_kernel(
     const int *d_bf_event_target_fallback,
     const int *d_bf_event_has_sigma,
     int bf_event_enabled, int bf_event_n_routes,
+    int bf_event_measure_provenance,
     int bf_enabled, int bf_n_freq_bins,
     double bf_nu_min, double bf_nu_max, double bf_d_log_nu,
     /* Phase 6 - Step 7: Scalars */
@@ -6091,7 +6100,8 @@ void transport_kernel(
                                     t_exp, L_inner, d_r_inner, d_r_outer,
                                     d_line_list_nu, d_tau_sobolev,
                                     d_electron_density,
-                                    d_chi_bf, bf_enabled, bf_n_freq_bins,
+                                    d_chi_bf, bf_enabled,
+                                    bf_event_measure_provenance, bf_n_freq_bins,
                                     bf_nu_min, bf_nu_max, bf_d_log_nu,
                                     n_lines, n_shells, N_VPACKETS,
                                     d_virtual_spectrum, rng);
@@ -6120,12 +6130,15 @@ void transport_kernel(
         double comov_nu_bf = pkt_nu * doppler_bf;
         double chi_bf_val = 0.0;
         if (bf_enabled && d_chi_bf != NULL) {
-            const double *bf_event_grid =
-                (bf_event_enabled && d_bf_event_chi)
-                  ? d_bf_event_chi : d_chi_bf;
-            chi_bf_val = d_bf_get_chi(bf_event_grid, bf_n_freq_bins,
-                                       bf_nu_min, bf_nu_max, bf_d_log_nu,
-                                       shell, comov_nu_bf);
+            BfEventMeasureStatus event_status = d_bf_event_measure_get(
+                d_chi_bf, bf_event_measure_provenance, bf_n_freq_bins,
+                n_shells, bf_nu_min, bf_nu_max, bf_d_log_nu,
+                shell, comov_nu_bf, &chi_bf_val);
+            if (event_status != BF_EVENT_MEASURE_OK) {
+                d_bf_event_measure_record_block(event_status, 0);
+                pkt_status = 2;
+                break;
+            }
         }
         /* [ARTIS-PARITY D5] continuum free-free HEATING opacity (r->k channel,
          * ARTIS rpkt.cc:649-661). chi_ff = nnionpart/nu^3 * n_e * (1-exp(-h nu/kT_e))
@@ -6286,7 +6299,9 @@ void transport_kernel(
                                             d_r_inner, d_r_outer,
                                             d_line_list_nu, d_tau_sobolev,
                                             d_electron_density,
-                                            d_chi_bf, bf_enabled, bf_n_freq_bins,
+                                            d_chi_bf, bf_enabled,
+                                            bf_event_measure_provenance,
+                                            bf_n_freq_bins,
                                             bf_nu_min, bf_nu_max, bf_d_log_nu,
                                             n_lines, n_shells, N_VPACKETS,
                                             d_virtual_spectrum, rng);
@@ -6673,7 +6688,9 @@ void transport_kernel(
                                             d_r_inner, d_r_outer,
                                             d_line_list_nu, d_tau_sobolev,
                                             d_electron_density,
-                                            d_chi_bf, bf_enabled, bf_n_freq_bins,
+                                            d_chi_bf, bf_enabled,
+                                            bf_event_measure_provenance,
+                                            bf_n_freq_bins,
                                             bf_nu_min, bf_nu_max, bf_d_log_nu,
                                             n_lines, n_shells, N_VPACKETS,
                                             d_virtual_spectrum, rng);
@@ -6816,6 +6833,9 @@ int main(int argc, char *argv[]) {
     }
     if (getenv("LUMINA_CMF_SOLVE_SELFTEST")) {  /* GPU cmf_solve_J A/B (set LUMINA_CMF_SOLVE_GPU=2) */
         cmf_solve_gpu_selftest(getenv("LUMINA_CMF_SOLVE_SELFTEST")); return 0;
+    }
+    if (getenv("LUMINA_CMF_EXACT_OWNER_SELFTEST")) {
+        return cmf_exact_owner_selftest();
     }
     printf("============================================================\n"); /* Phase 6 - Step 8 */
     printf("LUMINA-SN v2.0 CUDA — Phase 6 GPU Transport\n");                 /* Phase 6 - Step 8 */
@@ -6961,7 +6981,12 @@ int main(int argc, char *argv[]) {
             else if (strchr(cmf_env, '/'))
                 cmf_path = cmf_env;
         }
-        if (cmf_enable) load_cmfgen_sigma_bf(&atom_data, cmf_path);
+        if (cmf_enable && load_cmfgen_sigma_bf(&atom_data, cmf_path) != 0) {
+            fprintf(stderr,
+                    "[SH-GRID][FATAL] requested CMFGEN sigma grid is unavailable or stale: %s\n",
+                    cmf_path);
+            return EXIT_FAILURE;
+        }
     }
     /* [MA-RADRECOMB] Un-block the ion-changing macro-atom RADRECOMB continuum
      * (B4/D1/M1 data gap, dig_E1). ONE gate LUMINA_MA_RADRECOMB=1 loads the
@@ -7776,12 +7801,94 @@ int main(int argc, char *argv[]) {
 
     /* NLTE: Initialize if enabled */
     NLTEConfig nlte;
+    LineJbarQSet det_line_qset;
+    LineJbarESet det_line_eset;
+    memset(&det_line_qset, 0, sizeof(det_line_qset));
+    memset(&det_line_eset, 0, sizeof(det_line_eset));
+    int det_transactional_requested =
+        getenv("LUMINA_DET_TRANSACTIONAL") &&
+        atoi(getenv("LUMINA_DET_TRANSACTIONAL")) != 0;
     memset(&nlte, 0, sizeof(nlte));
     CudaNLTESolver nlte_solver;
     memset(&nlte_solver, 0, sizeof(nlte_solver));
     if (enable_nlte) {
         printf("\n--- NLTE Initialization ---\n");
-        nlte_init(&nlte, &atom_data, &opacity, geo.n_shells);
+        if (nlte_init(&nlte, &atom_data, &opacity, geo.n_shells) != 0) {
+            fprintf(stderr, "[NLTE-GPU][FATAL] initialization failed\n");
+            return EXIT_FAILURE;
+        }
+        /* The historical CUDA MC/pure experiment loop never owned the A2-04
+         * canonical field or A2-06 Q_g.  The transactional DET dispatch below
+         * calls cmfgen_run(), whose first commit requires both.  Initialize the
+         * same owners as lumina_main.c, but only for this explicit lane so old
+         * CUDA experiment launchers retain their allocation footprint. */
+        if (det_transactional_requested) {
+            if (radiation_field_owner_init(
+                    &nlte.radiation_field, (size_t)geo.n_shells) != 0) {
+                fprintf(stderr,
+                        "[DET-TRANSACTIONAL][FATAL] radiation owner "
+                        "initialization failed\n");
+                return EXIT_FAILURE;
+            }
+            uint8_t *bb_domain_mask = (uint8_t *)malloc(
+                (size_t)opacity.n_lines * sizeof(uint8_t));
+            size_t bb_inside = 0, bb_outside = 0;
+            if (!bb_domain_mask || line_jbar_bb_domain_mask_build(
+                    bb_domain_mask, opacity.n_lines, opacity.line_list_nu,
+                    nlte.nlte_line_map, &bb_inside, &bb_outside) != 0) {
+                free(bb_domain_mask);
+                fprintf(stderr,
+                        "[DET-TRANSACTIONAL][FATAL] BB_IN_DOMAIN mask "
+                        "build failed\n");
+                return EXIT_FAILURE;
+            }
+            if (line_jbar_qset_build(
+                    &det_line_qset, opacity.n_lines,
+                    opacity.line_list_nu, nlte.nlte_line_map,
+                    bb_domain_mask) != 0) {
+                free(bb_domain_mask);
+                fprintf(stderr,
+                        "[DET-TRANSACTIONAL][FATAL] Q_g build failed\n");
+                return EXIT_FAILURE;
+            }
+            free(bb_domain_mask);
+            if (det_line_qset.n_q != bb_inside) {
+                fprintf(stderr,
+                        "[DET-TRANSACTIONAL][FATAL] BB_IN_DOMAIN/Q_g count "
+                        "mismatch inside=%zu q=%zu\n",
+                        bb_inside, det_line_qset.n_q);
+                return EXIT_FAILURE;
+            }
+            if (line_jbar_eset_build(
+                    &det_line_eset, opacity.n_lines,
+                    opacity.line_list_nu) != 0) {
+                fprintf(stderr,
+                        "[DET-TRANSACTIONAL][FATAL] Q_E build failed\n");
+                return EXIT_FAILURE;
+            }
+            size_t first_missing_q = SIZE_MAX;
+            LineJbarSubsetStatus subset_status =
+                line_jbar_qset_subset_of_eset(
+                    &det_line_qset, &det_line_eset, &first_missing_q);
+            if (subset_status != LINE_JBAR_SUBSET_OK) {
+                fprintf(stderr,
+                        "[DET-TRANSACTIONAL][FATAL] Q_g subset Q_E "
+                        "validation failed status=%d first_missing_q=%zu\n",
+                        (int)subset_status, first_missing_q);
+                return EXIT_FAILURE;
+            }
+            nlte.line_qset = &det_line_qset;
+            nlte.line_eset = &det_line_eset;
+            printf("  [DET-TRANSACTIONAL] Q_g lines=%zu Q_E lines=%zu "
+                   "excluded_rate_out_of_domain=%zu q_set_hash=%.16s... "
+                   "e_set_hash=%.16s... "
+                   "domain_hash=%.16s... profile=%llu owner_generation=0\n",
+                   det_line_qset.n_q, det_line_eset.n_q, bb_outside,
+                   det_line_qset.q_set_hash,
+                   det_line_eset.q_set_hash,
+                   det_line_qset.domain_contract_hash,
+                   (unsigned long long)det_line_qset.profile_id);
+        }
         /* [BF-NLTE-POPS] Fix A: register the live NLTE config so compute_bf_opacity
          * can source chi_bf level pops from the NLTE solve (gate LUMINA_BF_NLTE_POPS).
          * Struct address + population buffer are stable across outer iterations, so
@@ -7894,7 +8001,9 @@ int main(int argc, char *argv[]) {
         printf("--- BF+FF Opacity Initialized (%d freq bins) ---\n", bf.n_freq_bins);
         /* Register bf+atom so the fine-ν producer can build the sharp-edge bf
          * continuum opacity (LUMINA_CMF_FINE_BF_OPAC). */
-        cmfgen_fine_set_bf_atom(&bf, &atom_data);
+        cmfgen_fine_set_bf_atom(
+            &bf, &atom_data, enable_nlte ? &nlte : NULL,
+            lumina_line_upper_population_fill_for_tau);
     }
 
     /* T_rad upload (always; needed by EPS_UV / EPS_IR macro-atom paths even
@@ -7946,6 +8055,59 @@ int main(int argc, char *argv[]) {
             if (n_ali < 1) n_ali = 1;
             printf("\n=== PURE-CMFGEN deterministic radiation path "
                    "(GPU MC transport bypassed; NLTE on GPU) ===\n");
+
+            /* The sealed DET lane has one transaction owner.  The historical
+             * CUDA-host pure loop below predates R6/R7 and still calls A210
+             * directly, without first committing the canonical radiation and
+             * line-Jbar views or publishing A208/A209.  It consequently cannot
+             * produce a qualified material generation.  Route only the explicit
+             * production DET mode through cmfgen_run(), whose ordering is:
+             *
+             *   assemble -> formal solve -> deterministic line-Jbar ->
+             *   canonical commit/view -> A208 -> A209 -> A210 single commit.
+             *
+             * Keeping this selection explicit preserves the legacy CUDA-host
+             * experiment loop for old diagnostic launchers while preventing a
+             * comparison flight from silently using two transaction owners. */
+            if (det_transactional_requested) {
+                if (!enable_nlte) {
+                    fprintf(stderr,
+                            "[DET-TRANSACTIONAL][FATAL] NLTE is required\n");
+                    return EXIT_FAILURE;
+                }
+                printf("[DET-TRANSACTIONAL] owner=cmfgen_run "
+                       "legacy_cuda_host_loop=BYPASSED\n");
+                int det_rc = cmfgen_run(
+                    &geo, &opacity, bf_opacity_enabled ? &bf : NULL,
+                    &plasma, &nlte, &atom_data,
+                    gamma_dep_enabled ? &gamma_dep : NULL,
+                    config.T_inner, pc_iter);
+                if (det_rc != 0) {
+                    fprintf(stderr,
+                            "[DET-TRANSACTIONAL][FATAL] cmfgen_run rc=%d\n",
+                            det_rc);
+                    return EXIT_FAILURE;
+                }
+                FILE *pf = fopen("lumina_plasma_state.csv", "w");
+                if (!pf) {
+                    fprintf(stderr,
+                            "[DET-TRANSACTIONAL][FATAL] plasma-state output "
+                            "open failed\n");
+                    return EXIT_FAILURE;
+                }
+                fprintf(pf, "shell_id,T_e,n_e\n");
+                for (int s = 0; s < geo.n_shells; ++s)
+                    fprintf(pf, "%d,%.6f,%.6e\n", s, plasma.T_e[s],
+                            plasma.n_electron[s]);
+                if (fclose(pf) != 0) {
+                    fprintf(stderr,
+                            "[DET-TRANSACTIONAL][FATAL] plasma-state output "
+                            "close failed\n");
+                    return EXIT_FAILURE;
+                }
+                printf("[DET-TRANSACTIONAL] status=COMPLETE\n");
+                return EXIT_SUCCESS;
+            }
 
             /* Orchestrate the CMFGEN loop here so the NLTE step uses the GPU
              * (GEMM) solver — cmfgen_run() internally uses the slow CPU NLTE. */
@@ -8388,8 +8550,16 @@ int main(int argc, char *argv[]) {
                             if (!opacity.jbar_line_det)
                                 opacity.jbar_line_det = (double*)malloc(
                                     (size_t)opacity.n_lines * cs.n_shells * sizeof(double));
-                            if (opacity.jbar_line_det)
-                                cmfgen_fine_jbar(&cs, &geo, &opacity, config.T_inner, &plasma);
+                            if (opacity.jbar_line_det &&
+                                cmfgen_fine_jbar(
+                                    &cs, &geo, &opacity, config.T_inner,
+                                    &plasma,
+                                    CMF_FINE_LINE_OPERATOR_INIT_SHARED_GAUSSIAN) != 0) {
+                                fprintf(stderr,
+                                        "[R6][FATAL] diagnostic fine-Jbar "
+                                        "producer failed iter=%d\n", it);
+                                return EXIT_FAILURE;
+                            }
                         }
                     }
                     /* A2-13: the diagnostic fine field is never registered as a
@@ -8407,17 +8577,14 @@ int main(int argc, char *argv[]) {
 
                     int te_qualified = compute_radiative_equilibrium_te(&plasma,
                         gamma_dep_enabled ? &gamma_dep : NULL,
-                        enable_nlte ? &nlte : NULL, &atom_data, &opacity,
+                        enable_nlte ? &nlte : NULL, &atom_data, &opacity, &bf,
                         geo.time_explosion, geo.n_shells);
                     if (!te_qualified) plasma.T_e_generation = 0;
                     if (!te_qualified || plasma.T_e_generation == UINT64_MAX)
                         return EXIT_FAILURE;
-                    plasma.T_e_generation++;
-                    if (compute_plasma_state(&atom_data, &plasma, &opacity,
-                                             geo.time_explosion) != 0) {
-                        fprintf(stderr, "[A2-07][FATAL] CUDA-host population transaction failed\n");
-                        return EXIT_FAILURE;
-                    }
+                    /* A2-10 commits T_e, n_e and the matching A2-07 population
+                     * as one bundle; a second generation bump/solve here would
+                     * split the material transaction. */
                     if(getenv("LUMINA_JPROBE")) printf("  [JPROBE C-postplasma] J[49,760]=%.3e ne40=%.3e Te40=%.0f\n", nlte.J_nu[(size_t)49*cs.n_bins+760], plasma.n_electron[40], plasma.T_e[40]);
                     if (getenv("LUMINA_COUPLED_NEWTON") &&
                         atoi(getenv("LUMINA_COUPLED_NEWTON")) && enable_nlte)
@@ -8426,17 +8593,29 @@ int main(int argc, char *argv[]) {
                             &nlte, &atom_data, &opacity, &geo,
                             geo.time_explosion, geo.n_shells);
                     if (enable_nlte && it >= nlte_start_iter) {
-                        nlte_apply_uv_jnu_cap(&nlte, &plasma, geo.n_shells);
-                        nlte_jbar_dump_arm(it);     /* [withParityP GATE2] bracket the authoritative per-iter solve */
-                        if (nlte_solve_all_gpu(
-                                &nlte, &atom_data, &plasma, &opacity,
-                                geo.time_explosion, geo.n_shells, &nlte_solver,
-                                gamma_dep_enabled ? &gamma_dep : NULL) != 0) {
+                        /* A2-10 has already committed T_e, n_e, populations,
+                         * opacity and emissivity as one transaction.  Re-solving
+                         * populations here used to split that generation and,
+                         * in CUDA builds, entered a legacy negative-floor/
+                         * Boltzmann-fallback path.  The committed bundle is the
+                         * only material authority for this iteration. */
+                        if (nlte.population_committed_generation !=
+                                atom_data.population_committed_generation ||
+                            nlte.population_committed_generation == 0) {
                             fprintf(stderr,
-                                    "[NLTE-GPU][FATAL] solve failed iter=%d\n", it);
+                                    "[A2-07][FATAL] split population generation "
+                                    "iter=%d nlte=%llu atom=%llu\n", it,
+                                    (unsigned long long)
+                                        nlte.population_committed_generation,
+                                    (unsigned long long)
+                                        atom_data.population_committed_generation);
                             return EXIT_FAILURE;
                         }
-                        nlte_jbar_dump_disarm();    /* [withParityP GATE2] */
+                        fprintf(stderr,
+                                "[A2-07][BUNDLE-OWNER] iter=%d generation=%llu "
+                                "second_solve=0 floor=0 cap=0 clamp=0\n",
+                                it, (unsigned long long)
+                                    nlte.population_committed_generation);
                     if(getenv("LUMINA_JPROBE")) printf("  [JPROBE D-postnlte] J[49,760]=%.3e ne40=%.3e Te40=%.0f\n", nlte.J_nu[(size_t)49*cs.n_bins+760], plasma.n_electron[40], plasma.T_e[40]);
                         /* P7 (LUMINA_CMF_LINERES_JBAR=1): refresh per-line
                          * tau_sobolev + line_source_S from the just-solved NLTE
@@ -8800,8 +8979,13 @@ int main(int argc, char *argv[]) {
                                 int s_inj = ie ? atoi(ie) : 0;
                                 if (s_inj > 0 && s_inj < geo.n_shells && nlte.J_nu) {
                                     int NB = nlte.n_freq_bins;
-                                    if (NB > 1024) NB = 1024;
-                                    static double cdf_ce[1024];
+                                    if (NB != NLTE_N_FREQ_BINS) {
+                                        fprintf(stderr,
+                                                "[INJECT][FATAL] grid bins=%d expected=%d\n",
+                                                NB, NLTE_N_FREQ_BINS);
+                                        return EXIT_FAILURE;
+                                    }
+                                    static double cdf_ce[NLTE_N_FREQ_BINS];
                                     double acc = 0.0;
                                     double dlognu = log(nlte.nu_max / nlte.nu_min) / nlte.n_freq_bins;
                                     for (int b = 0; b < NB; b++) {
@@ -8878,6 +9062,7 @@ int main(int argc, char *argv[]) {
                                     "publication unavailable site=co_evolve\n");
                             return EXIT_FAILURE;
                         }
+                        cuda_bf_event_measure_blocks_reset();
                         gpu_rf_record_physical_launch(&g_a2_12_transport_counters);
                         transport_kernel<<<blocks, threads_per_block>>>(
                             dev.d_r_inner, dev.d_r_outer,
@@ -8918,6 +9103,7 @@ int main(int argc, char *argv[]) {
                             dev.d_bf_event_target_fallback,
                             dev.d_bf_event_has_sigma,
                             dev.bf_event_enabled, dev.bf_event_n_routes,
+                            opacity_view_ce.bf_event_measure_provenance,
                             dev.bf_enabled, dev.bf_n_freq_bins,
                             dev.bf_nu_min, dev.bf_nu_max, dev.bf_d_log_nu,
                             n_packets, geo.n_shells, opacity.n_lines,
@@ -8927,6 +9113,7 @@ int main(int argc, char *argv[]) {
                             iter_seed_ce);
                         CUDA_CHECK(cudaDeviceSynchronize());
                         CUDA_CHECK(cudaGetLastError());
+                        cuda_bf_event_measure_blocks_report("co_evolve");
                         if (cuda_fluor_matrix_dump(it) != 0) return EXIT_FAILURE;
                         /* [MA-LINE-DESTRUCT L2] realized terminal-photon destruction
                          * this co-evolve iter — printed UNCONDITIONALLY (destroyed=0
@@ -10187,8 +10374,13 @@ int main(int argc, char *argv[]) {
             int s_inj = ie ? atoi(ie) : 0;
             if (s_inj > 0 && s_inj < geo.n_shells && nlte.J_nu) {
                 int NB = nlte.n_freq_bins;
-                if (NB > 1024) NB = 1024;
-                static double cdf[1024];
+                if (NB != NLTE_N_FREQ_BINS) {
+                    fprintf(stderr,
+                            "[INJECT][FATAL] grid bins=%d expected=%d\n",
+                            NB, NLTE_N_FREQ_BINS);
+                    return EXIT_FAILURE;
+                }
+                static double cdf[NLTE_N_FREQ_BINS];
                 double acc = 0.0;
                 double dlognu = log(nlte.nu_max / nlte.nu_min) / nlte.n_freq_bins;
                 for (int b = 0; b < NB; b++) {
@@ -10308,6 +10500,7 @@ int main(int argc, char *argv[]) {
                             "publication unavailable site=final\n");
             return EXIT_FAILURE;
         }
+        cuda_bf_event_measure_blocks_reset();
         gpu_rf_record_physical_launch(&g_a2_12_transport_counters);
         transport_kernel<<<blocks, threads_per_block>>>(
             dev.d_r_inner, dev.d_r_outer,
@@ -10342,6 +10535,7 @@ int main(int argc, char *argv[]) {
             dev.d_bf_event_target_fallback,
             dev.d_bf_event_has_sigma,
             dev.bf_event_enabled, dev.bf_event_n_routes,
+            opacity_view_final.bf_event_measure_provenance,
             dev.bf_enabled, dev.bf_n_freq_bins,
             dev.bf_nu_min, dev.bf_nu_max, dev.bf_d_log_nu,
             n_packets, geo.n_shells, opacity.n_lines,
@@ -10357,6 +10551,7 @@ int main(int argc, char *argv[]) {
 
         /* Phase 6 - Step 8: Check for kernel errors */
         CUDA_CHECK(cudaGetLastError()); /* Phase 6 - Step 8 */
+        cuda_bf_event_measure_blocks_report("final");
         if (cuda_fluor_matrix_dump(iter) != 0) return EXIT_FAILURE;
 
         /* [CAP] report packets that hit the interaction cap this iteration */
@@ -10747,7 +10942,7 @@ int main(int argc, char *argv[]) {
                 }
                 te_qualified = compute_radiative_equilibrium_te(&plasma,
                     gamma_dep_enabled ? &gamma_dep : NULL,
-                    &nlte, &atom_data, &opacity,
+                    &nlte, &atom_data, &opacity, &bf,
                     geo.time_explosion, geo.n_shells);
             } else {
                 /* Preserve the committed material temperature.  Radiation has
@@ -10755,16 +10950,13 @@ int main(int argc, char *argv[]) {
                 plasma.T_e_generation = 0;
             }
 
-            if (te_qualified) {
-                if (plasma.T_e_generation == UINT64_MAX) return EXIT_FAILURE;
-                plasma.T_e_generation++;
-            } else {
+            if (!te_qualified) {
                 plasma.T_e_generation = 0;
-            }
-            if (compute_plasma_state(&atom_data, &plasma, &opacity,
-                                     geo.time_explosion) != 0) {
-                fprintf(stderr, "[A2-07][FATAL] CUDA validation population transaction failed\n");
-                return EXIT_FAILURE;
+                if (compute_plasma_state(&atom_data, &plasma, &opacity,
+                                         geo.time_explosion) != 0) {
+                    fprintf(stderr, "[A2-07][FATAL] CUDA validation population transaction failed\n");
+                    return EXIT_FAILURE;
+                }
             }
 
             /* PATH-A / A2: replace the operator-split RADEQ→ionization fixed point
@@ -10815,24 +11007,31 @@ int main(int argc, char *argv[]) {
              * the iron-curtain density — not by any single line's magnitude.
              * NLTE first solves at end of iter (nlte_start_iter); if it inflates
              * the high-tau line count, macro-atom re-emission re-traverses the
-             * forest and interaction counts explode. Also sanitize NaN/Inf -> floor
-             * (NaN/Inf in tau are bugs; they would poison the tau-event compare). */
+             * forest and interaction counts explode.  A non-finite tau is a
+             * producer failure: diagnostics must never rewrite a generation-
+             * committed slab behind its token. */
             {
                 size_t ntau = (size_t)opacity.n_lines * geo.n_shells;
                 long c1 = 0, c10 = 0, c100 = 0, c1e3 = 0, cbad = 0;
                 double tmax = 0.0;
                 for (size_t k = 0; k < ntau; k++) {
                     double t = opacity.tau_sobolev[k];
-                    if (!isfinite(t)) { opacity.tau_sobolev[k] = 0.0; cbad++; continue; }
+                    if (!isfinite(t)) { cbad++; continue; }
                     if (t > tmax) tmax = t;
                     if (t > 1.0)   c1++;
                     if (t > 10.0)  c10++;
                     if (t > 100.0) c100++;
                     if (t > 1e3)   c1e3++;
                 }
-                printf("  [TAU-DIAG] post-NLTE iter%d: tau_max=%.3e  N(tau>1)=%ld  >10=%ld  >100=%ld  >1e3=%ld  NaN/Inf=%ld (sanitized)\n",
+                printf("  [TAU-DIAG] post-NLTE iter%d: tau_max=%.3e  N(tau>1)=%ld  >10=%ld  >100=%ld  >1e3=%ld  NaN/Inf=%ld\n",
                        iter, tmax, c1, c10, c100, c1e3, cbad);
                 fflush(stdout);
+                if (cbad) {
+                    fprintf(stderr,
+                            "[TAU-DIAG][FATAL] nonfinite committed tau cells=%ld "
+                            "iter=%d action=TERMINATE\n", cbad, iter);
+                    return EXIT_FAILURE;
+                }
             }
 
             /* Dynamic transition probability recomputation. THEN-MC: ALWAYS
@@ -11141,6 +11340,10 @@ int main(int argc, char *argv[]) {
         gpu_opacity_production_release();
         gpu_radiation_field_production_release();
         cuda_nlte_solver_free(&nlte_solver);
+        if (det_transactional_requested)
+            radiation_field_owner_free(&nlte.radiation_field);
+        line_jbar_qset_free(&det_line_qset);
+        line_jbar_qset_free(&det_line_eset);
         nlte_free(&nlte);
     }
     if (gamma_dep_enabled) gamma_deposition_free(&gamma_dep);

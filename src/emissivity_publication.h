@@ -51,6 +51,23 @@ typedef struct {
     uint64_t nonfinite_failures;
 } A209Counters;
 
+/* Small immutable token view bracketing A2-09's read of the raw Sobolev slab.
+ * Numeric tau stays in OpacityState to avoid a second ~125M-cell copy, but a
+ * writer that advances any bound generation during consumption invalidates
+ * the private emissivity candidate. */
+typedef struct {
+    uint64_t tau_required_generation;
+    uint64_t tau_computed_generation;
+    uint64_t opacity_tau_generation;
+    uint64_t population_generation;
+    uint64_t opacity_population_generation;
+    uint64_t te_generation;
+    uint64_t opacity_te_generation;
+    uint64_t nlte_population_generation;
+    double opacity_epoch;
+    double requested_epoch;
+} A209LineGenerationView;
+
 int a209_publication_init(CpuEmissivityPublication *p, size_t n_shells,
                           size_t n_bins);
 void a209_publication_free(CpuEmissivityPublication *p);
@@ -58,8 +75,14 @@ double a209_publication_max_closure(const CpuEmissivityPublication *p,
                                     size_t *worst_cell);
 int a209_publication_commit(CpuEmissivityPublication *published,
                             CpuEmissivityPublication *candidate);
+int a209_publication_commit_counted(CpuEmissivityPublication *published,
+                                    CpuEmissivityPublication *candidate,
+                                    A209Counters *counter_sink);
 int a209_build_reemit_cdf(CpuEmissivityPublication *candidate,
                           unsigned channel_mask);
+int a209_build_reemit_cdf_counted(CpuEmissivityPublication *candidate,
+                                  unsigned channel_mask,
+                                  A209Counters *counter_sink);
 int a209_sample_reemit_frequency(const CpuEmissivityPublication *p,
                                  size_t shell, uint64_t required_generation,
                                  double uniform_draw, double *frequency);
@@ -68,6 +91,16 @@ EmissivityStatus a209_transition_block(const double *weight,
                                        size_t n_channels, double input_energy,
                                        double *probability,
                                        double *normalized_energy_error);
+/* Direct Sobolev line emissivity.  This is deliberately population-native:
+ * it never constructs or divides by a line source function, so the
+ * n_l-(g_l/g_u)n_u -> 0 limit remains finite when n_u > 0. */
+EmissivityStatus a209_sobolev_line_eta(double n_upper, double A_ul,
+                                       double nu, double tau,
+                                       double delta_nu, double *beta_escape,
+                                       double *eta_nu);
+EmissivityStatus a209_line_generation_bracket(
+    const A209LineGenerationView *begin,
+    const A209LineGenerationView *end);
 const char *a209_status_name(EmissivityStatus status);
 A209Counters *a209_counters(void);
 void a209_counters_reset(void);

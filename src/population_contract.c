@@ -1,6 +1,8 @@
 #include "population_contract.h"
 
+#include <float.h>
 #include <math.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -81,9 +83,26 @@ PopulationStatus population_te_manifest_sha256(const double *te,size_t n,char ou
 }
 PopulationStatus population_atomic_model_sha256(const PopulationAtomicView *a,char out[65]){
     if(!a||!out||!a->level_offset||!a->energy_eV||!a->g||a->n_ions==0||a->n_levels==0)return POP_ATOMIC_MISSING;
-    PopSha256 s;pop_sha_init(&s);const char d[]="A2-07:atomic-partition-membership:v1";pop_sha_update(&s,d,sizeof(d)-1);pop_hash_u64(&s,a->n_ions);pop_hash_u64(&s,a->n_levels);
+    if(a->topion_n&&(!a->topion_ion_index||!a->topion_E_cm||!a->topion_g))
+        return POP_ATOMIC_MISSING;
+    PopSha256 s;pop_sha_init(&s);const char d[]="A2-07:atomic-partition-membership:v2:topion-bound";pop_sha_update(&s,d,sizeof(d)-1);pop_hash_u64(&s,a->n_ions);pop_hash_u64(&s,a->n_levels);
     for(size_t i=0;i<=a->n_ions;i++)pop_hash_i32(&s,a->level_offset[i]);
-    for(size_t i=0;i<a->n_levels;i++){pop_hash_f64(&s,a->energy_eV[i]);pop_hash_i32(&s,a->g[i]);pop_hash_i32(&s,a->runtime_membership?a->runtime_membership[i]:0);pop_hash_i32(&s,a->level_Z?a->level_Z[i]:0);pop_hash_i32(&s,a->level_ion?a->level_ion[i]:0);}pop_sha_final(&s,out);return POP_OK;
+    for(size_t i=0;i<a->n_levels;i++){pop_hash_f64(&s,a->energy_eV[i]);pop_hash_i32(&s,a->g[i]);pop_hash_i32(&s,a->runtime_membership?a->runtime_membership[i]:0);pop_hash_i32(&s,a->level_Z?a->level_Z[i]:0);pop_hash_i32(&s,a->level_ion?a->level_ion[i]:0);}
+    /* The level-less top-ion catalog participates in Z(T_e), hence in n_e,
+     * populations, tau, opacity, emissivity, and A210.  Omitting it let a
+     * catalog mutation retain the same atomic_model_sha256.  Bind the exact
+     * thermodynamic membership values in canonical loader order. */
+    pop_hash_u64(&s,a->topion_n);
+    for(size_t i=0;i<a->topion_n;i++){
+        if(a->topion_ion_index[i]<0||(size_t)a->topion_ion_index[i]>=a->n_ions||
+           !isfinite(a->topion_E_cm[i])||a->topion_E_cm[i]<0.0||
+           !isfinite(a->topion_g[i])||a->topion_g[i]<=0.0)
+            return POP_INVALID_PARTITION;
+        pop_hash_i32(&s,a->topion_ion_index[i]);
+        pop_hash_f64(&s,a->topion_E_cm[i]);
+        pop_hash_f64(&s,a->topion_g[i]);
+    }
+    pop_sha_final(&s,out);return POP_OK;
 }
 PopulationStatus population_partition_ion(const PopulationAtomicView *a,size_t ion,double te,double *out){
     if(!out||!a||!a->level_offset||!a->energy_eV||!a->g||ion>=a->n_ions)
@@ -149,6 +168,120 @@ PopulationStatus population_partition_view_check(const PopulationDerivedStamp *s
         return POP_STALE_DERIVED_TEMPERATURE;
     char th[65],ah[65];PopulationStatus rc=population_te_manifest_sha256(te,ns,th);if(rc!=POP_OK)return rc;rc=population_atomic_model_sha256(a,ah);if(rc!=POP_OK)return rc;return (!strcmp(th,st->te_manifest_sha256)&&!strcmp(ah,st->atomic_model_sha256))?POP_OK:POP_STALE_DERIVED_TEMPERATURE;
 }
+
+PopulationStatus population_within_superlevel_build(
+        const PopulationDerivedStamp *partition_stamp,
+        const PopulationAtomicView *atomic,
+        const double *te,
+        size_t n_shells,
+        uint64_t required_population_generation,
+        uint64_t te_generation,
+        size_t n_full_levels,
+        int super_mode,
+        size_t n_superlevels,
+        const int *nlte_to_global_level,
+        const int *full_to_superlevel,
+        const int *super_anchor_global_level,
+        double *fractions,
+        PopulationDerivedStamp *fraction_stamp) {
+    if (!fractions || !fraction_stamp || !atomic || n_full_levels == 0 ||
+        n_shells == 0 || n_full_levels > SIZE_MAX / n_shells ||
+        n_full_levels * n_shells > SIZE_MAX / sizeof(double))
+        return POP_ATOMIC_MISSING;
+    PopulationStatus status = population_partition_view_check(
+        partition_stamp, atomic, te, n_shells,
+        required_population_generation, te_generation);
+    if (status != POP_OK) return status;
+
+    size_t count = n_full_levels * n_shells;
+    double *work = (double *)malloc(count * sizeof(*work));
+    if (!work) return POP_SOLVE_FAILED;
+    if (!super_mode) {
+        for (size_t i = 0; i < count; ++i) work[i] = 1.0;
+    } else {
+        if (n_superlevels == 0 ||
+            n_superlevels > SIZE_MAX / sizeof(double) ||
+            !nlte_to_global_level ||
+            !full_to_superlevel || !super_anchor_global_level) {
+            free(work);
+            return POP_ATOMIC_MISSING;
+        }
+        double *super_partition = (double *)malloc(
+            n_superlevels * sizeof(*super_partition));
+        if (!super_partition) {
+            free(work);
+            return POP_SOLVE_FAILED;
+        }
+        for (size_t shell = 0; shell < n_shells; ++shell) {
+            double temperature = te[shell];
+            if (!isfinite(temperature) || temperature <= 0.0) {
+                status = POP_INVALID_TE;
+                break;
+            }
+            for (size_t sl = 0; sl < n_superlevels; ++sl)
+                super_partition[sl] = 0.0;
+            for (size_t level = 0; level < n_full_levels; ++level) {
+                int global_level = nlte_to_global_level[level];
+                int superlevel = full_to_superlevel[level];
+                if (global_level < 0 ||
+                    (size_t)global_level >= atomic->n_levels ||
+                    superlevel < 0 ||
+                    (size_t)superlevel >= n_superlevels) {
+                    status = POP_ATOMIC_MISSING;
+                    break;
+                }
+                int anchor = super_anchor_global_level[superlevel];
+                if (anchor < 0 || (size_t)anchor >= atomic->n_levels ||
+                    atomic->g[global_level] <= 0 ||
+                    !isfinite(atomic->energy_eV[global_level]) ||
+                    !isfinite(atomic->energy_eV[anchor])) {
+                    status = POP_ATOMIC_MISSING;
+                    break;
+                }
+                double relative_energy =
+                    (atomic->energy_eV[global_level] -
+                     atomic->energy_eV[anchor]) * POP_EV_TO_ERG;
+                if (!isfinite(relative_energy) || relative_energy < 0.0) {
+                    status = POP_INVALID_PARTITION;
+                    break;
+                }
+                double weight = (double)atomic->g[global_level] *
+                    exp(-relative_energy /
+                        (POP_K_BOLTZMANN * temperature));
+                if (!isfinite(weight) || weight < 0.0) {
+                    status = POP_NONFINITE;
+                    break;
+                }
+                work[level * n_shells + shell] = weight;
+                super_partition[superlevel] += weight;
+            }
+            if (status != POP_OK) break;
+            for (size_t level = 0; level < n_full_levels; ++level) {
+                int superlevel = full_to_superlevel[level];
+                double z = super_partition[superlevel];
+                if (!isfinite(z) || z <= 0.0) {
+                    status = POP_INVALID_PARTITION;
+                    break;
+                }
+                work[level * n_shells + shell] /= z;
+            }
+            if (status != POP_OK) break;
+        }
+        free(super_partition);
+        if (status != POP_OK) {
+            free(work);
+            return status;
+        }
+    }
+
+    PopulationDerivedStamp completed_stamp = *partition_stamp;
+    completed_stamp.n_items = n_full_levels;
+    memcpy(fractions, work, count * sizeof(*fractions));
+    *fraction_stamp = completed_stamp;
+    free(work);
+    return POP_OK;
+}
+
 PopulationStatus population_lte_level_fraction(const PopulationAtomicView *a,size_t ion,size_t level,double te,double z,double *f){
     if(!f||!a||ion>=a->n_ions||level>=a->n_levels)
         return POP_ATOMIC_MISSING;
@@ -163,6 +296,27 @@ PopulationStatus population_lte_level_fraction(const PopulationAtomicView *a,siz
     *f=(x<745.0)?(double)a->g[level]*exp(-x)/z:0.0;
     if(!isfinite(*f)||*f<0.0)return POP_NONFINITE;
     return *f==0.0?POP_EXACT_ZERO:POP_OK;
+}
+PopulationStatus population_line_level_number_density(
+        PopulationLineView view,const PopulationAtomicView *a,size_t ion,
+        size_t level,double te,double z,double nion,double nnlte,double *nlevel){
+    if(!nlevel)return POP_ATOMIC_MISSING;
+    *nlevel=NAN;
+    if(view==POP_LINE_VIEW_NLTE_COMMITTED){
+        if(!isfinite(nnlte)||nnlte<0.0)return POP_NONFINITE;
+        *nlevel=nnlte;
+        return nnlte==0.0?POP_EXACT_ZERO:POP_OK;
+    }
+    if(view!=POP_LINE_VIEW_LTE_TE)return POP_FORBIDDEN_FALLBACK;
+    if(!isfinite(nion)||nion<0.0)return POP_NONFINITE;
+    double fraction=NAN;
+    PopulationStatus status=population_lte_level_fraction(
+        a,ion,level,te,z,&fraction);
+    if(status!=POP_OK&&status!=POP_EXACT_ZERO)return status;
+    double value=nion*fraction;
+    if(!isfinite(value)||value<0.0)return POP_NONFINITE;
+    *nlevel=value;
+    return value==0.0?POP_EXACT_ZERO:POP_OK;
 }
 PopulationStatus population_rate_views_check(
         PopulationStatus bf_status, uint64_t bf_generation,
@@ -216,6 +370,456 @@ PopulationStatus population_dense_rank_check(const double *matrix, size_t n,
     free(work);
     return rank == n ? POP_OK : POP_RANK_INCOMPLETE;
 }
+
+#define POP_CM(A,n,i,j) ((A)[(j) * (n) + (i)])
+
+static double pop_stable_norm2_row(const double *matrix, size_t n, size_t row)
+{
+    double scale = 0.0, sumsq = 1.0;
+    for (size_t col = 0; col < n; ++col) {
+        double value = fabs(POP_CM(matrix, n, row, col));
+        if (value == 0.0) continue;
+        if (scale < value) {
+            double ratio = scale / value;
+            sumsq = 1.0 + sumsq * ratio * ratio;
+            scale = value;
+        } else {
+            double ratio = value / scale;
+            sumsq += ratio * ratio;
+        }
+    }
+    return scale == 0.0 ? 0.0 : scale * sqrt(sumsq);
+}
+
+static double pop_stable_norm2_column(
+    const double *matrix, size_t n, size_t col)
+{
+    double scale = 0.0, sumsq = 1.0;
+    for (size_t row = 0; row < n; ++row) {
+        double value = fabs(POP_CM(matrix, n, row, col));
+        if (value == 0.0) continue;
+        if (scale < value) {
+            double ratio = scale / value;
+            sumsq = 1.0 + sumsq * ratio * ratio;
+            scale = value;
+        } else {
+            double ratio = value / scale;
+            sumsq += ratio * ratio;
+        }
+    }
+    return scale == 0.0 ? 0.0 : scale * sqrt(sumsq);
+}
+
+/* ARTIS nltepop.cc row/column balancing: A' = R A C, b' = R b and
+ * x = C y.  Each sequential index update uses
+ * f=sqrt(||column_i||_2/||row_i||_2), R_i*=f and C_i/=f. */
+static int pop_dense_equilibrate(
+    double *matrix, double *rhs, size_t n,
+    double *row_scale, double *column_scale)
+{
+    for (size_t i = 0; i < n; ++i)
+        row_scale[i] = column_scale[i] = 1.0;
+    int iterations = 0;
+    for (int iteration = 0; iteration < 10; ++iteration) {
+        int changed = 0;
+        for (size_t i = 0; i < n; ++i) {
+            double row_norm = pop_stable_norm2_row(matrix, n, i);
+            double column_norm = pop_stable_norm2_column(matrix, n, i);
+            if (!(row_norm > 0.0) || !(column_norm > 0.0) ||
+                !isfinite(row_norm) || !isfinite(column_norm))
+                return -1;
+            double exponent = 0.5 * (log(column_norm) - log(row_norm));
+            double factor = exp(exponent);
+            if (!(factor > 0.0) || !isfinite(factor)) return -1;
+            if (fabs(factor - 1.0) <= 1.0e-3) continue;
+            changed = 1;
+            for (size_t col = 0; col < n; ++col)
+                POP_CM(matrix, n, i, col) *= factor;
+            rhs[i] *= factor;
+            row_scale[i] *= factor;
+            for (size_t row = 0; row < n; ++row)
+                POP_CM(matrix, n, row, i) /= factor;
+            column_scale[i] /= factor;
+            if (!isfinite(rhs[i]) || !isfinite(row_scale[i]) ||
+                !isfinite(column_scale[i]))
+                return -1;
+        }
+        iterations = iteration + 1;
+        if (!changed) break;
+    }
+    for (size_t i = 0; i < n * n; ++i)
+        if (!isfinite(matrix[i])) return -1;
+    return iterations;
+}
+
+static PopulationStatus pop_dense_lu_factor(
+    double *matrix, size_t n, size_t *pivots,
+    size_t *rank, double *pivot_growth)
+{
+    double matrix_max = 0.0;
+    for (size_t i = 0; i < n * n; ++i) {
+        double value = fabs(matrix[i]);
+        if (!isfinite(value)) return POP_NONFINITE;
+        if (value > matrix_max) matrix_max = value;
+    }
+    if (!(matrix_max > 0.0)) return POP_RANK_INCOMPLETE;
+    double tolerance = DBL_EPSILON * (double)n * matrix_max;
+    *rank = 0;
+    for (size_t k = 0; k < n; ++k) {
+        size_t pivot = k;
+        double best = fabs(POP_CM(matrix, n, k, k));
+        for (size_t row = k + 1; row < n; ++row) {
+            double value = fabs(POP_CM(matrix, n, row, k));
+            if (value > best) { best = value; pivot = row; }
+        }
+        pivots[k] = pivot;
+        if (!(best > tolerance) || !isfinite(best))
+            return POP_RANK_INCOMPLETE;
+        (*rank)++;
+        if (pivot != k) {
+            for (size_t col = 0; col < n; ++col) {
+                double value = POP_CM(matrix, n, k, col);
+                POP_CM(matrix, n, k, col) =
+                    POP_CM(matrix, n, pivot, col);
+                POP_CM(matrix, n, pivot, col) = value;
+            }
+        }
+        double diagonal = POP_CM(matrix, n, k, k);
+        for (size_t row = k + 1; row < n; ++row) {
+            POP_CM(matrix, n, row, k) /= diagonal;
+            double multiplier = POP_CM(matrix, n, row, k);
+            for (size_t col = k + 1; col < n; ++col)
+                POP_CM(matrix, n, row, col) -=
+                    multiplier * POP_CM(matrix, n, k, col);
+        }
+    }
+    double upper_max = 0.0;
+    for (size_t row = 0; row < n; ++row)
+        for (size_t col = row; col < n; ++col) {
+            double value = fabs(POP_CM(matrix, n, row, col));
+            if (!isfinite(value)) return POP_NONFINITE;
+            if (value > upper_max) upper_max = value;
+        }
+    *pivot_growth = upper_max / matrix_max;
+    return isfinite(*pivot_growth) ? POP_OK : POP_NONFINITE;
+}
+
+static PopulationStatus pop_dense_lu_solve(
+    const double *lu, size_t n, const size_t *pivots,
+    const double *rhs, double *solution)
+{
+    memcpy(solution, rhs, n * sizeof(*solution));
+    for (size_t k = 0; k < n; ++k) {
+        size_t pivot = pivots[k];
+        if (pivot != k) {
+            double value = solution[k];
+            solution[k] = solution[pivot];
+            solution[pivot] = value;
+        }
+    }
+    for (size_t row = 0; row < n; ++row)
+        for (size_t col = 0; col < row; ++col)
+            solution[row] -= POP_CM(lu, n, row, col) * solution[col];
+    for (size_t back = n; back-- > 0;) {
+        for (size_t col = back + 1; col < n; ++col)
+            solution[back] -= POP_CM(lu, n, back, col) * solution[col];
+        double diagonal = POP_CM(lu, n, back, back);
+        if (diagonal == 0.0 || !isfinite(diagonal)) return POP_SOLVE_FAILED;
+        solution[back] /= diagonal;
+        if (!isfinite(solution[back])) return POP_NONFINITE;
+    }
+    return POP_OK;
+}
+
+/* Componentwise backward error of the original, unscaled Ax=b.  The residual
+ * accumulation is long double so refinement gains information beyond the
+ * double-precision LU without changing the physical coefficients. */
+static double pop_dense_backward_error(
+    const double *matrix, const double *rhs, const double *solution,
+    size_t n, double *residual)
+{
+    long double worst = 0.0L;
+    for (size_t row = 0; row < n; ++row) {
+        long double ax = 0.0L, denominator = fabsl((long double)rhs[row]);
+        for (size_t col = 0; col < n; ++col) {
+            long double a = (long double)POP_CM(matrix, n, row, col);
+            long double x = (long double)solution[col];
+            ax += a * x;
+            denominator += fabsl(a) * fabsl(x);
+        }
+        long double value = (long double)rhs[row] - ax;
+        residual[row] = (double)value;
+        long double relative = denominator > 0.0L
+            ? fabsl(value) / denominator : fabsl(value);
+        if (relative > worst) worst = relative;
+    }
+    return (double)worst;
+}
+
+PopulationStatus population_dense_solve_equilibrated(
+    const double *matrix, const double *rhs, size_t n, double *solution,
+    PopulationLinearSolveDiagnostic *diagnostic)
+{
+    PopulationLinearSolveDiagnostic local;
+    if (!diagnostic) diagnostic = &local;
+    memset(diagnostic, 0, sizeof(*diagnostic));
+    diagnostic->pivot_growth = INFINITY;
+    diagnostic->initial_backward_error = INFINITY;
+    diagnostic->final_backward_error = INFINITY;
+    if (!matrix || !rhs || !solution || n == 0 || n > SIZE_MAX / n ||
+        n * n > SIZE_MAX / sizeof(double) || n > SIZE_MAX / sizeof(double) ||
+        n > SIZE_MAX / sizeof(size_t))
+        return POP_SOLVE_FAILED;
+    for (size_t i = 0; i < n * n; ++i)
+        if (!isfinite(matrix[i])) return POP_NONFINITE;
+    for (size_t i = 0; i < n; ++i)
+        if (!isfinite(rhs[i])) return POP_NONFINITE;
+
+    double *equilibrated = (double *)malloc(n * n * sizeof(double));
+    double *scaled_rhs = (double *)malloc(n * sizeof(double));
+    double *lu = (double *)malloc(n * n * sizeof(double));
+    double *row_scale = (double *)malloc(n * sizeof(double));
+    double *column_scale = (double *)malloc(n * sizeof(double));
+    double *scaled_solution = (double *)malloc(n * sizeof(double));
+    double *residual = (double *)malloc(n * sizeof(double));
+    double *scaled_residual = (double *)malloc(n * sizeof(double));
+    double *correction = (double *)malloc(n * sizeof(double));
+    double *work_solution = (double *)malloc(n * sizeof(double));
+    size_t *pivots = (size_t *)malloc(n * sizeof(size_t));
+    if (!equilibrated || !scaled_rhs || !lu || !row_scale ||
+        !column_scale || !scaled_solution || !residual || !scaled_residual ||
+        !correction || !work_solution || !pivots) {
+        free(equilibrated); free(scaled_rhs); free(lu); free(row_scale);
+        free(column_scale); free(scaled_solution); free(residual);
+        free(scaled_residual); free(correction); free(work_solution);
+        free(pivots);
+        return POP_SOLVE_FAILED;
+    }
+    memcpy(equilibrated, matrix, n * n * sizeof(double));
+    memcpy(scaled_rhs, rhs, n * sizeof(double));
+    diagnostic->equilibration_iterations = pop_dense_equilibrate(
+        equilibrated, scaled_rhs, n, row_scale, column_scale);
+    PopulationStatus status = POP_OK;
+    if (diagnostic->equilibration_iterations < 0) {
+        status = POP_RANK_INCOMPLETE;
+        goto done;
+    }
+    memcpy(lu, equilibrated, n * n * sizeof(double));
+    status = pop_dense_lu_factor(
+        lu, n, pivots, &diagnostic->rank, &diagnostic->pivot_growth);
+    if (status != POP_OK) goto done;
+    status = pop_dense_lu_solve(
+        lu, n, pivots, scaled_rhs, scaled_solution);
+    if (status != POP_OK) goto done;
+    for (size_t i = 0; i < n; ++i) {
+        work_solution[i] = column_scale[i] * scaled_solution[i];
+        if (!isfinite(work_solution[i])) { status = POP_NONFINITE; goto done; }
+    }
+
+    for (int iteration = 0; iteration <= 10; ++iteration) {
+        double error = pop_dense_backward_error(
+            matrix, rhs, work_solution, n, residual);
+        if (iteration == 0) diagnostic->initial_backward_error = error;
+        diagnostic->final_backward_error = error;
+        diagnostic->refinement_iterations = iteration;
+        if (!isfinite(error)) { status = POP_NONFINITE; goto done; }
+        if ((iteration >= 2 && error <= 1.0e-15) || iteration == 10) break;
+        for (size_t i = 0; i < n; ++i)
+            scaled_residual[i] = row_scale[i] * residual[i];
+        status = pop_dense_lu_solve(
+            lu, n, pivots, scaled_residual, correction);
+        if (status != POP_OK) goto done;
+        for (size_t i = 0; i < n; ++i) {
+            work_solution[i] += column_scale[i] * correction[i];
+            if (!isfinite(work_solution[i])) {
+                status = POP_NONFINITE;
+                goto done;
+            }
+        }
+    }
+    if (!(diagnostic->final_backward_error <=
+          POP_DENSE_BACKWARD_ERROR_LIMIT)) {
+        status = POP_SOLVE_FAILED;
+        goto done;
+    }
+    memcpy(solution, work_solution, n * sizeof(double));
+
+done:
+    free(equilibrated); free(scaled_rhs); free(lu); free(row_scale);
+    free(column_scale); free(scaled_solution); free(residual);
+    free(scaled_residual); free(correction); free(work_solution); free(pivots);
+    return status;
+}
+
+PopulationStatus population_generator_stationary_gth(
+    const double *generator, size_t n, double total_population,
+    double *solution, PopulationGeneratorSolveDiagnostic *diagnostic)
+{
+    PopulationGeneratorSolveDiagnostic local;
+    if (!diagnostic) diagnostic = &local;
+    memset(diagnostic, 0, sizeof(*diagnostic));
+    diagnostic->input_column_relative_error = INFINITY;
+    diagnostic->exact_generator_componentwise_residual = INFINITY;
+    diagnostic->minimum_population = NAN;
+    diagnostic->maximum_population = NAN;
+    if (!generator || !solution || n == 0 || !isfinite(total_population) ||
+        !(total_population > 0.0) || n > SIZE_MAX / n ||
+        n * n > SIZE_MAX / sizeof(long double) ||
+        n > SIZE_MAX / sizeof(long double) ||
+        n > SIZE_MAX / sizeof(double))
+        return POP_SOLVE_FAILED;
+
+    /* Recognize a rounded physical generator without repairing it in place.
+     * The diagonal is checked as provenance, then excluded from the solve. */
+    long double worst_column_error = 0.0L;
+    for (size_t source = 0; source < n; ++source) {
+        long double outflow = 0.0L;
+        double diagonal = POP_CM(generator, n, source, source);
+        if (!isfinite(diagonal) || diagonal > 0.0)
+            return isfinite(diagonal) ? POP_SOLVE_FAILED : POP_NONFINITE;
+        for (size_t dest = 0; dest < n; ++dest) {
+            if (dest == source) continue;
+            double rate = POP_CM(generator, n, dest, source);
+            if (!isfinite(rate)) return POP_NONFINITE;
+            if (rate < 0.0) return POP_SOLVE_FAILED;
+            outflow += (long double)rate;
+        }
+        long double denominator = fmaxl(fabsl((long double)diagonal), outflow);
+        long double error = denominator > 0.0L
+            ? fabsl((long double)diagonal + outflow) / denominator
+            : fabsl((long double)diagonal + outflow);
+        if (error > worst_column_error) worst_column_error = error;
+    }
+    diagnostic->input_column_relative_error = (double)worst_column_error;
+    if (!(worst_column_error <= POP_GENERATOR_COLUMN_ERROR_LIMIT))
+        return POP_SOLVE_FAILED;
+    diagnostic->generator_recognized = 1;
+
+    long double *work = (long double *)calloc(n * n, sizeof(*work));
+    long double *denominator = (long double *)calloc(n, sizeof(*denominator));
+    long double *probability = (long double *)calloc(n, sizeof(*probability));
+    double *projected = (double *)malloc(n * sizeof(*projected));
+    if (!work || !denominator || !probability || !projected) {
+        free(work); free(denominator); free(probability); free(projected);
+        return POP_SOLVE_FAILED;
+    }
+
+    /* Row-generator view q(source,dest).  In column-major A[dest,source]
+     * this has the same linear byte index, but not the same matrix semantics. */
+    for (size_t source = 0; source < n; ++source)
+        for (size_t dest = 0; dest < n; ++dest)
+            if (dest != source)
+                work[source * n + dest] =
+                    (long double)POP_CM(generator, n, dest, source);
+
+    PopulationStatus status = POP_OK;
+    /* Continuous-time Grassmann-Taksar-Heyman state reduction. */
+    for (size_t reduced = n; reduced-- > 1;) {
+        long double scale = 0.0L;
+        for (size_t dest = 0; dest < reduced; ++dest)
+            scale += work[reduced * n + dest];
+        if (!(scale > 0.0L) || !isfinite(scale)) {
+            status = isfinite(scale) ? POP_RANK_INCOMPLETE : POP_NONFINITE;
+            goto done;
+        }
+        denominator[reduced] = scale;
+        for (size_t source = 0; source < reduced; ++source) {
+            long double factor = work[source * n + reduced] / scale;
+            if (!isfinite(factor)) { status = POP_NONFINITE; goto done; }
+            for (size_t dest = 0; dest < reduced; ++dest) {
+                work[source * n + dest] +=
+                    factor * work[reduced * n + dest];
+                if (!isfinite(work[source * n + dest])) {
+                    status = POP_NONFINITE;
+                    goto done;
+                }
+            }
+        }
+    }
+
+    probability[0] = 1.0L;
+    for (size_t state = 1; state < n; ++state) {
+        long double incoming = 0.0L;
+        for (size_t source = 0; source < state; ++source)
+            incoming += probability[source] * work[source * n + state];
+        if (!(incoming > 0.0L) || !(denominator[state] > 0.0L) ||
+            !isfinite(incoming)) {
+            status = isfinite(incoming) ? POP_RANK_INCOMPLETE : POP_NONFINITE;
+            goto done;
+        }
+        probability[state] = incoming / denominator[state];
+        if (!(probability[state] > 0.0L) || !isfinite(probability[state])) {
+            status = POP_NONFINITE;
+            goto done;
+        }
+    }
+    {
+        long double probability_sum = 0.0L;
+        for (size_t state = 0; state < n; ++state)
+            probability_sum += probability[state];
+        if (!(probability_sum > 0.0L) || !isfinite(probability_sum)) {
+            status = POP_NONFINITE;
+            goto done;
+        }
+        long double normalization =
+            (long double)total_population / probability_sum;
+        double minimum = INFINITY, maximum = -INFINITY;
+        for (size_t state = 0; state < n; ++state) {
+            long double value = probability[state] * normalization;
+            projected[state] = (double)value;
+            if (!(projected[state] > 0.0) || !isfinite(projected[state])) {
+                status = POP_NONFINITE;
+                goto done;
+            }
+            if (projected[state] < minimum) minimum = projected[state];
+            if (projected[state] > maximum) maximum = projected[state];
+        }
+        diagnostic->minimum_population = minimum;
+        diagnostic->maximum_population = maximum;
+    }
+
+    /* Residual against the exact generator defined by the imported
+     * off-diagonals.  Its diagonal is an extended-precision outflow sum, not
+     * the cancellation-contaminated float64 diagonal from assembly. */
+    {
+        long double worst = 0.0L;
+        for (size_t state = 0; state < n; ++state) {
+            long double balance = 0.0L, scale = 0.0L, outflow = 0.0L;
+            for (size_t other = 0; other < n; ++other) {
+                if (other == state) continue;
+                long double incoming_rate =
+                    (long double)POP_CM(generator, n, state, other);
+                long double outgoing_rate =
+                    (long double)POP_CM(generator, n, other, state);
+                long double incoming =
+                    incoming_rate * (long double)projected[other];
+                outflow += outgoing_rate;
+                balance += incoming;
+                scale += fabsl(incoming);
+            }
+            long double outgoing =
+                outflow * (long double)projected[state];
+            balance -= outgoing;
+            scale += fabsl(outgoing);
+            long double relative = scale > 0.0L
+                ? fabsl(balance) / scale : fabsl(balance);
+            if (relative > worst) worst = relative;
+        }
+        diagnostic->exact_generator_componentwise_residual = (double)worst;
+        if (!(worst <= POP_GENERATOR_RESIDUAL_LIMIT)) {
+            status = POP_SOLVE_FAILED;
+            goto done;
+        }
+    }
+    memcpy(solution, projected, n * sizeof(*solution));
+
+done:
+    free(work); free(denominator); free(probability); free(projected);
+    return status;
+}
+
+#undef POP_CM
+
 PopulationStatus population_superlevel_aggregate(
         const double *level_population, const int *membership, size_t n_levels,
         size_t n_superlevels, double *super_population) {

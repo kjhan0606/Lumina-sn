@@ -21,6 +21,7 @@ typedef struct {
 typedef struct {
     const double *chi_es, *chi_bb, *chi_bf, *chi_ff, *chi_total;
     const double *bf_event_measure;
+    int bf_event_measure_provenance;
     uint64_t opacity_generation, radiation_generation, line_generation;
     size_t n_shells, n_bins;
 } GpuOpacityDeviceView;

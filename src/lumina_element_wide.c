@@ -12,6 +12,7 @@
 
 #include <errno.h>
 #include <float.h>
+#include <limits.h>
 #include <math.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -19,6 +20,17 @@
 #include <string.h>
 
 #define EW(A,n,i,j) ((A)[(size_t)(j) * (size_t)(n) + (size_t)(i)])
+
+/* See the CMFGEN full-bin-average contract in bf_rate_jnu.c. */
+static inline double ew_cmfgen_partial_bin_eval_nu(double log_nu_lo,
+                                                    double d_log_nu,
+                                                    double nu_threshold)
+{
+    double nu_c = exp(log_nu_lo + 0.5 * d_log_nu);
+    double nu_hi = exp(log_nu_lo + d_log_nu);
+    return (nu_c < nu_threshold && nu_hi > nu_threshold)
+         ? 0.5 * (nu_threshold + nu_hi) : nu_c;
+}
 
 /* Shared implementations live in lumina_plasma.c; keeping the declarations
  * here avoids widening the public header for Wave-3.2-only plumbing. */
@@ -328,62 +340,99 @@ typedef struct {
     int per_ion_pin_calls, topstage_IV_calls;
 } EWFireCounts;
 
-typedef struct {
-    unsigned long save_restore_calls;
-    unsigned long per_ion_pin_calls;
-    unsigned long topstage_IV_calls;
-} EWRuntimeCounts;
-static EWRuntimeCounts ew_runtime_counts;
+static NLTEEWRuntimeCounts ew_runtime_counts;
+
+static NLTEEWRuntimeCounts *ew_runtime_counts_for(const NLTEConfig *nlte) {
+    return nlte && nlte->ew_runtime_counts_sink
+         ? nlte->ew_runtime_counts_sink : &ew_runtime_counts;
+}
+
+static unsigned long ew_counter_add(unsigned long a,unsigned long b) {
+    return ULONG_MAX-a<b?ULONG_MAX:a+b;
+}
+
+void nlte_ew_runtime_counts_merge_for(
+        const NLTEConfig *nlte,const NLTEEWRuntimeCounts *delta) {
+    if(!delta)return;
+    NLTEEWRuntimeCounts *counts=ew_runtime_counts_for(nlte);
+    counts->save_restore_calls=ew_counter_add(
+        counts->save_restore_calls,delta->save_restore_calls);
+    counts->per_ion_pin_calls=ew_counter_add(
+        counts->per_ion_pin_calls,delta->per_ion_pin_calls);
+    counts->topstage_IV_calls=ew_counter_add(
+        counts->topstage_IV_calls,delta->topstage_IV_calls);
+}
+
+void nlte_ew_note_save_restore_call_for(const NLTEConfig *nlte) {
+    if (nlte_element_wide_enabled()) {
+        NLTEEWRuntimeCounts *counts = ew_runtime_counts_for(nlte);
+#ifdef _OPENMP
+#pragma omp atomic update
+#endif
+        counts->save_restore_calls++;
+    }
+}
+void nlte_ew_note_per_ion_pin_call_for(const NLTEConfig *nlte) {
+    if (nlte_element_wide_enabled()) {
+        NLTEEWRuntimeCounts *counts = ew_runtime_counts_for(nlte);
+#ifdef _OPENMP
+#pragma omp atomic update
+#endif
+        counts->per_ion_pin_calls++;
+    }
+}
+void nlte_ew_note_topstage_IV_call_for(const NLTEConfig *nlte) {
+    if (nlte_element_wide_enabled()) {
+        NLTEEWRuntimeCounts *counts = ew_runtime_counts_for(nlte);
+#ifdef _OPENMP
+#pragma omp atomic update
+#endif
+        counts->topstage_IV_calls++;
+    }
+}
 
 void nlte_ew_note_save_restore_call(void) {
-    if (nlte_element_wide_enabled()) {
-#ifdef _OPENMP
-#pragma omp atomic update
-#endif
-        ew_runtime_counts.save_restore_calls++;
-    }
+    nlte_ew_note_save_restore_call_for(NULL);
 }
 void nlte_ew_note_per_ion_pin_call(void) {
-    if (nlte_element_wide_enabled()) {
-#ifdef _OPENMP
-#pragma omp atomic update
-#endif
-        ew_runtime_counts.per_ion_pin_calls++;
-    }
+    nlte_ew_note_per_ion_pin_call_for(NULL);
 }
 void nlte_ew_note_topstage_IV_call(void) {
-    if (nlte_element_wide_enabled()) {
+    nlte_ew_note_topstage_IV_call_for(NULL);
+}
+
+void nlte_ew_runtime_counts_snapshot_for(
+        const NLTEConfig *nlte, unsigned long out[3]) {
+    if (!out) return;
+    NLTEEWRuntimeCounts *counts = ew_runtime_counts_for(nlte);
 #ifdef _OPENMP
-#pragma omp atomic update
+#pragma omp atomic read
 #endif
-        ew_runtime_counts.topstage_IV_calls++;
-    }
+    out[0] = counts->save_restore_calls;
+#ifdef _OPENMP
+#pragma omp atomic read
+#endif
+    out[1] = counts->per_ion_pin_calls;
+#ifdef _OPENMP
+#pragma omp atomic read
+#endif
+    out[2] = counts->topstage_IV_calls;
 }
 void nlte_ew_runtime_counts_snapshot(unsigned long out[3]) {
-    if (!out) return;
-#ifdef _OPENMP
-#pragma omp atomic read
-#endif
-    out[0] = ew_runtime_counts.save_restore_calls;
-#ifdef _OPENMP
-#pragma omp atomic read
-#endif
-    out[1] = ew_runtime_counts.per_ion_pin_calls;
-#ifdef _OPENMP
-#pragma omp atomic read
-#endif
-    out[2] = ew_runtime_counts.topstage_IV_calls;
+    nlte_ew_runtime_counts_snapshot_for(NULL, out);
 }
 
 /* Publish after nlte_solve_all has traversed the real pair-owner paths.  The
  * earlier candidate-window values are intentionally not promoted: save/restore
  * lives outside that window and topstage is excluded while capture is active. */
 int nlte_ew_publish_runtime_counts(const NLTEConfig *nlte) {
+    if (!nlte || !nlte_solve_effect_allowed(
+            nlte, NLTE_SOLVE_EFFECT_RUNTIME_MANIFESTS)) return 0;
     ew_parse_gate();
-    if (!nlte || !ew_gate.enabled || !ew_gate.dump) return 0;
+    if (!ew_gate.enabled || !ew_gate.dump) return 0;
     int failed = 0;
     unsigned long counts[3];
-    nlte_ew_runtime_counts_snapshot(counts);
+    nlte_ew_runtime_counts_snapshot_for(nlte, counts);
     const int zlist[2] = {16, 26};
     for (int zi = 0; zi < 2; zi++) {
         int Z = zlist[zi];
@@ -602,7 +651,7 @@ void nlte_ew_capture_bf_target_rates(int lower_global, int lower_sl,
         for (int bb = 0; bb < n->n_freq_bins; bb++) {
             double loglo = log(n->nu_min) + bb * n->d_log_nu;
             double nu = exp(loglo + 0.5 * n->d_log_nu);
-            if (nu < nu_threshold) continue;
+            if (!sigma_row && nu < nu_threshold) continue;
             double sigma = sigma_row ? sigma_row[bb] :
                 sigma_0 * pow(nu_threshold / nu, 3.0);
             if (!(sigma > 0.0) || !isfinite(sigma)) continue;
@@ -620,9 +669,13 @@ void nlte_ew_capture_bf_target_rates(int lower_global, int lower_sl,
                 ew_atomic_inc_int(&ew_cap.bf_pref_j_bins);
                 ew_atomic_inc_int(&ew_cap.bf_jeqb_bins);
             }
-            double x = H_PLANCK * nu / kTe;
+            double nu_milne = sigma_row
+                ? ew_cmfgen_partial_bin_eval_nu(loglo, n->d_log_nu,
+                                                nu_threshold)
+                : nu;
+            double x = H_PLANCK * nu_milne / kTe;
             if (x < 700.0) {
-                double spont = 2.0 * H_PLANCK * nu * nu * nu /
+                double spont = 2.0 * H_PLANCK * nu_milne * nu_milne * nu_milne /
                                (C_SPEED_OF_LIGHT * C_SPEED_OF_LIGHT);
                 milne += pref * (spont + J) * exp(-x);
             }
@@ -1118,7 +1171,6 @@ static void ew_boundary_mass_assemble(EWBoundaryMass *bm, NLTEConfig *n,
             for(int bb=0;bb<n->n_freq_bins;bb++){
                 double loglo=log(n->nu_min)+bb*n->d_log_nu;
                 double nu=exp(loglo+0.5*n->d_log_nu);
-                if(nu<nu0)continue;
                 double sigma=sigma_row[bb];
                 if(!(sigma>0.0)||!isfinite(sigma))continue;
                 if(sigma_edge==0.0)sigma_edge=sigma;
@@ -1138,8 +1190,10 @@ static void ew_boundary_mass_assemble(EWBoundaryMass *bm, NLTEConfig *n,
 #endif
                     fire->bf_jeqb_bins++;
                 }
-                double x=H_PLANCK*nu/kT;
-                double spont=2.0*H_PLANCK*nu*nu*nu/
+                double nu_milne=ew_cmfgen_partial_bin_eval_nu(
+                    loglo,n->d_log_nu,nu0);
+                double x=H_PLANCK*nu_milne/kT;
+                double spont=2.0*H_PLANCK*nu_milne*nu_milne*nu_milne/
                              (C_SPEED_OF_LIGHT*C_SPEED_OF_LIGHT);
                 double term=pref*(spont+J)*exp(-x);
                 if(!isfinite(term)){bm->bad_count++;continue;}
@@ -2005,6 +2059,8 @@ static int ew_run_impl(NLTEConfig *nlte, AtomicData *atom,
     if (verdict_pass_out) *verdict_pass_out = 0;
     if (nlte_element_wide_config_status() != 0) return -1;
     if (!nlte_element_wide_matches(Z, shell_label)) return 0;
+    const int artifacts_enabled = ew_gate.dump && nlte_solve_effect_allowed(
+        nlte, NLTE_SOLVE_EFFECT_DIAGNOSTIC_FILES);
     GammaDepositionPublicationStatus gamma_status=
         gamma_deposition_require(gamma_dep,time_explosion);
     if(gamma_status!=GAMMA_PUBLICATION_OK){
@@ -2017,7 +2073,7 @@ static int ew_run_impl(NLTEConfig *nlte, AtomicData *atom,
                 gamma_dep?gamma_dep->epoch:0.0);
         return -1;
     }
-    ew_dump_failed = 0;
+    if (artifacts_enabled) ew_dump_failed = 0;
     EWPrivateView private_view;
     memset(&private_view, 0, sizeof(private_view));
     if (!commit_requested) {
@@ -2099,12 +2155,12 @@ static int ew_run_impl(NLTEConfig *nlte, AtomicData *atom,
         ew_capture_begin(nlte,atom,shell,plasma->n_shells,lo,Np,N,base,pair==1,
                          plane,expected_outflow);
         unsigned long calls_before[3], calls_after[3];
-        nlte_ew_runtime_counts_snapshot(calls_before);
+        nlte_ew_runtime_counts_snapshot_for(nlte, calls_before);
         if(nlte_assemble_rate_matrix(nlte,atom,plasma,opacity,lo,hi,shell,
                                     time_explosion,tmpA,tmpb,Np,gamma_dep,NULL,-1)!=0){
             free(tmpA);free(tmpb);goto cleanup_fail;
         }
-        nlte_ew_runtime_counts_snapshot(calls_after);
+        nlte_ew_runtime_counts_snapshot_for(nlte, calls_after);
         ew_capture_end(&target_expected,&target_mapped,&target_fail,&bad_rate,&fire);
         fire.save_restore_calls += (int)(calls_after[0] - calls_before[0]);
         fire.per_ion_pin_calls += (int)(calls_after[1] - calls_before[1]);
@@ -2331,7 +2387,7 @@ static int ew_run_impl(NLTEConfig *nlte, AtomicData *atom,
          "EW_VALID_P_ELEM_SCOPE_FAIL":
          (commit_requested?"EW_FAIL_FALLBACK_BASELINE":"EW_FAIL_SHADOW"));
 
-    if(ew_gate.dump){
+    if(artifacts_enabled){
         ew_dump_identity(nlte,atom,slots,N,iter,Z,shell_label,checksum);
         ew_dump_raw(plane,N,iter,Z,shell_label);
         ew_dump_sparse_matrix("matrix_normalized",Anorm,b,NULL,NULL,N,iter,Z,shell_label);
@@ -2399,7 +2455,7 @@ static int ew_run_impl(NLTEConfig *nlte, AtomicData *atom,
         }
     }
 
-    if (ew_dump_failed) {
+    if (artifacts_enabled && ew_dump_failed) {
         fprintf(stderr, "[EW][I/O-FAIL] Z=%d s=%d artifacts incomplete; commit blocked\n",
                 Z, shell_label);
         if (verdict_pass_out) *verdict_pass_out = 0;

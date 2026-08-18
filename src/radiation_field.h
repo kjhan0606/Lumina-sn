@@ -1,17 +1,20 @@
 #ifndef LUMINA_RADIATION_FIELD_H
 #define LUMINA_RADIATION_FIELD_H
 
+#include "lumina_frequency_grid.h"
+#include "line_jbar.h"
+
 #include <math.h>
 #include <stddef.h>
 #include <stdint.h>
 
-/* Grid-containment contract, option B.  The NLTE/BF grid in lumina.h is the
+/* Grid-containment contract, option B.  The NLTE/BF frequency-grid header is the
  * sole authority; the canonical grid is its integer K-fold refinement.  The
  * integer offsets retain the previous canonical union with outward rounding,
  * without retaining an independent set of frequency literals. */
 #define LUMINA_RADFIELD_REFINEMENT_K 2
-#define LUMINA_RADFIELD_J_LO (-1754)
-#define LUMINA_RADFIELD_J_HI 2112
+#define LUMINA_RADFIELD_J_LO (-1398)
+#define LUMINA_RADFIELD_J_HI 2468
 #define LUMINA_RADFIELD_N_BINS \
     (LUMINA_RADFIELD_J_HI - LUMINA_RADFIELD_J_LO)
 #define LUMINA_RADFIELD_DLOG \
@@ -24,26 +27,36 @@
 /* SHA-256 identities of the option-B union descriptor and edge-formula
  * descriptor above.  They intentionally invalidate old-grid seed assets. */
 #define LUMINA_RADFIELD_UNION_SHA256 \
-    "5be9f762c37871c275a50c22b4b033d5a0ad0edd67b03887ae6823ea1fa0378a"
+    "23edc48d848c13b3abb82cc199dda883ca7f57cb94685e37961c3e2e94b4fe20"
 #define LUMINA_RADFIELD_EDGE_SHA256 \
-    "5e8d69a83353e6d4af7c0e84db48569d2a07e9fd07ed3a4e7da899be17ed2be8"
+    "8388614bbfcaf2f01d101216301ef12c680f15d09ad50fc05b521429e4b75def"
+
+/* Exact canonical edge constructor, including bit-identical NLTE/BF anchor
+ * edges.  Returns NaN when edge_index is outside [0, N_BINS]. */
+double radiation_field_canonical_frequency_edge(size_t edge_index);
 
 /* Changing K to a non-integral value (NB1), or away from the selected option,
  * is a compile-time contract violation rather than a runtime approximation. */
 #ifdef __cplusplus
 static_assert(LUMINA_RADFIELD_REFINEMENT_K == 2,
               "GRID_ALIGNMENT_VIOLATION: K must be the integer 2");
-static_assert(LUMINA_RADFIELD_J_LO == -1754 &&
-              LUMINA_RADFIELD_J_HI == 2112,
+static_assert(LUMINA_RADFIELD_J_LO == -1398 &&
+              LUMINA_RADFIELD_J_HI == 2468,
               "GRID_ALIGNMENT_VIOLATION: canonical origin moved");
+static_assert(LUMINA_RADFIELD_J_HI ==
+              LUMINA_RADFIELD_REFINEMENT_K * NLTE_N_FREQ_BINS,
+              "GRID_ALIGNMENT_VIOLATION: BF high edge must close the union");
 static_assert(LUMINA_RADFIELD_N_BINS == 3866,
               "GRID_ALIGNMENT_VIOLATION: canonical offset span changed");
 #else
 _Static_assert(LUMINA_RADFIELD_REFINEMENT_K == 2,
                "GRID_ALIGNMENT_VIOLATION: K must be the integer 2");
-_Static_assert(LUMINA_RADFIELD_J_LO == -1754 &&
-               LUMINA_RADFIELD_J_HI == 2112,
+_Static_assert(LUMINA_RADFIELD_J_LO == -1398 &&
+               LUMINA_RADFIELD_J_HI == 2468,
                "GRID_ALIGNMENT_VIOLATION: canonical origin moved");
+_Static_assert(LUMINA_RADFIELD_J_HI ==
+               LUMINA_RADFIELD_REFINEMENT_K * NLTE_N_FREQ_BINS,
+               "GRID_ALIGNMENT_VIOLATION: BF high edge must close the union");
 _Static_assert(LUMINA_RADFIELD_N_BINS == 3866,
                "GRID_ALIGNMENT_VIOLATION: canonical offset span changed");
 #endif
@@ -89,6 +102,8 @@ typedef enum {
 
 #define LUMINA_LINE_JBAR_DETERMINISTIC_PRODUCER \
     "A2-06:line-Jbar:deterministic-profile-integral:v1"
+#define LUMINA_LINE_JBAR_CMFGEN_NONOVERLAP_SOBOLEV_PRODUCER \
+    "A2-10:line-Jbar:cmfgen-nonoverlap-sobolev-sigma0:v1"
 
 typedef struct {
     RadiationFieldProvenanceKind kind;
@@ -164,10 +179,13 @@ typedef struct {
     LineJbarValidityState *validity;
     uint64_t *sample_count;
     double *variance_or_standard_error;
+    /* Compatibility name: this is the hash of the numeric cache membership.
+     * It names Q_g for a legacy cache and Q_E for the production superset. */
     const char *q_set_hash;
-    /* COUNT means MC packet samples.  DETERMINISTIC means sample_count and
-     * variance_or_standard_error are not applicable (stored as zero), not a
-     * claim that an estimated variance is exactly zero. */
+    LineJbarSetKind set_kind;
+    /* COUNT means MC packet samples.  For DETERMINISTIC, sample_count is zero
+     * and variance_or_standard_error stores a certified absolute error upper
+     * when the producer supplies one (otherwise zero for legacy fixtures). */
     RadiationFieldEstimatorStatisticKind statistic_kind;
     RadiationFieldUnits units;
     RadiationFieldFrame frame;
@@ -197,6 +215,12 @@ typedef struct {
     size_t    line_n_compact;
     uint64_t  line_profile_id;
     char     *line_profile_hash_storage;
+    /* Q_g graph identity and its sparse mapping into the one numeric cache.
+     * No second Q_g Jbar/value slab is owned. */
+    uint64_t *line_rate_graph_ids_compact;
+    size_t    line_rate_graph_n_compact;
+    size_t   *line_rate_graph_cache_index;
+    char     *line_rate_graph_hash_storage;
 } RadiationFieldOwner;
 
 /* Source-compatible name for A2-03 fixtures only; production owns an
@@ -257,7 +281,13 @@ typedef struct {
      * Deterministic (replay) form: jbar/validity given directly. */
     size_t          line_n;              /* 0 = no line block this commit */
     const uint64_t *line_id;             /* [line_n] */
-    const char     *line_q_set_hash;     /* SHA-256 hex */
+    const char     *line_q_set_hash;     /* cache-set SHA-256: Q_g or Q_E */
+    /* Zero retains legacy Q_g semantics.  Q_E commits must carry the Q_g
+     * subset descriptor below; commit validates and stores its sparse map. */
+    LineJbarSetKind line_set_kind;
+    size_t          line_rate_graph_n;
+    const uint64_t *line_rate_graph_id;
+    const char     *line_rate_graph_hash;
     uint64_t        line_profile_id;
     const char     *line_profile_hash;   /* SHA-256 hex */
     RadiationFieldProvenanceKind line_provenance_kind;
@@ -268,6 +298,7 @@ typedef struct {
     uint64_t        line_n_packets;      /* N incl. zero contributors */
     int             line_error_latch;    /* accumulation failure => refuse */
     const double   *line_jbar;           /* [line_n*n_shells] deterministic */
+    const double   *line_error_upper;    /* certified |delta Jbar|, deterministic */
     const int32_t  *line_validity;       /* [line_n*n_shells] deterministic */
 } RadiationFieldCommitRequest;
 
@@ -342,17 +373,26 @@ typedef enum {
     LINE_JBAR_VIEW_EPOCH_SHELLS = -3,
     LINE_JBAR_VIEW_STALE_GENERATION = -4,
     LINE_JBAR_VIEW_QHASH = -5,
-    LINE_JBAR_VIEW_PROFILE = -6
+    LINE_JBAR_VIEW_PROFILE = -6,
+    LINE_JBAR_VIEW_SET_KIND = -7,
+    LINE_JBAR_VIEW_SUBSET = -8
 } LineJbarViewStatus;
 
 typedef struct {
-    size_t n_lines;                  /* Q_g size */
+    size_t n_lines;                  /* requested membership size */
+    size_t cache_n_lines;            /* numeric cache membership size */
     size_t n_shells;
     const uint64_t *line_id;         /* [n_lines] ascending */
-    const double   *jbar;            /* [n_lines*n_shells] */
+    /* NULL means requested index == cache index.  A Q_g view over a Q_E cache
+     * carries [n_lines] sparse indices and still aliases one numeric slab. */
+    const size_t   *cache_index;
+    const double   *jbar;            /* [cache_n_lines*n_shells] */
     const LineJbarValidityState *validity;
     const uint64_t *count;
-    const double   *se;              /* [n_lines*n_shells] standard error */
+    const double   *se;              /* [cache_n_lines*n_shells] standard error */
+    const char     *cache_set_hash;
+    const char     *rate_graph_hash;
+    LineJbarSetKind cache_set_kind;
     RadiationFieldEstimatorStatisticKind statistic_kind;
     uint64_t generation;
 } LineJbarView;
@@ -366,6 +406,24 @@ int radiation_field_line_jbar_view(const RadiationFieldOwner *owner,
                                    const char *expected_profile_hash,
                                    LineJbarView *out);
 
+int radiation_field_line_jbar_rate_view(const RadiationFieldOwner *owner,
+                                        double expected_epoch,
+                                        size_t expected_n_shells,
+                                        uint64_t expected_generation,
+                                        const char *expected_q_set_hash,
+                                        uint64_t expected_profile_id,
+                                        const char *expected_profile_hash,
+                                        LineJbarView *out);
+
+int radiation_field_line_jbar_energy_view(const RadiationFieldOwner *owner,
+                                          double expected_epoch,
+                                          size_t expected_n_shells,
+                                          uint64_t expected_generation,
+                                          const char *expected_e_set_hash,
+                                          uint64_t expected_profile_id,
+                                          const char *expected_profile_hash,
+                                          LineJbarView *out);
+
 typedef struct {
     double jbar;
     LineJbarValidityState validity;
@@ -374,9 +432,17 @@ typedef struct {
     RadiationFieldEstimatorStatisticKind statistic_kind;
 } LineJbarValue;
 
-/* MISS (line_id not in Q_g) is a distinct error, never a value. */
+/* MISS (line_id not in the requested view membership) is a distinct error,
+ * never a value. */
 int line_jbar_lookup(const LineJbarView *view, size_t shell,
                      uint64_t line_id, LineJbarValue *out);
+
+/* O(1) form for consumers already iterating the checked view membership.
+ * requested_index must name line_id exactly; a mismatch remains a MISS and
+ * never aliases another cache cell. */
+int line_jbar_lookup_index(const LineJbarView *view, size_t shell,
+                           size_t requested_index, uint64_t line_id,
+                           LineJbarValue *out);
 
 #ifdef __cplusplus
 }

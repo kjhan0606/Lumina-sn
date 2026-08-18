@@ -122,7 +122,7 @@ void update_base_estimators(RPacket *pkt, double distance, Estimators *est,
             est->radiation_field_accumulator, (size_t)shell,
             comov_nu, comov_energy * distance);
 
-    /* A2-06: same measure, phi-weighted selective line estimator.  The
+    /* A2-06/Q_E: same measure, phi-weighted all-energy-line estimator.  The
      * segment's comoving nu/energy vary linearly between the endpoints; any
      * add failure latches the shared accumulator so the commit refuses. */
     if (est->line_jbar_partial != NULL && est->line_jbar_qset != NULL) {
@@ -569,15 +569,29 @@ void single_packet_loop(RPacket *pkt, Geometry *geo, OpacityState *opacity,
         double chi_e = opacity->electron_density[shell] * SIGMA_THOMSON; /* Phase 3 - Step 11 */
         double chi_bf_val = 0.0;
         if (bf && bf->enabled) {
-            if (!bf->event_enabled) {
+            BfEventMeasureStatus event_status =
+                bf_event_measure_get(bf, shell, comov_nu, &chi_bf_val);
+            if (event_status != BF_EVENT_MEASURE_OK) {
+                #ifdef _OPENMP
+                #pragma omp atomic update
+                #endif
                 a208_counters()->event_measure_unavailable++;
+                #ifdef _OPENMP
+                #pragma omp atomic update
+                #endif
                 a208_counters()->blocked_negative_transport++;
-                fprintf(stderr, "[A2-08][BLOCKED] consumer=T03 reason="
-                        "EVENT_MEASURE_UNAVAILABLE rc=3\n");
+                #ifdef _OPENMP
+                #pragma omp atomic update
+                #endif
+                a208_counters()->event_measure_t03_blocks++;
+                fprintf(stderr, "[A2-08][BLOCKED] consumer=T03 reason=%s "
+                        "producer=%s shell=%d nu=%.17g rc=3\n",
+                        bf_event_measure_status_name(event_status),
+                        bf_event_measure_provenance_name(
+                            bf->event_measure_provenance), shell, comov_nu);
                 pkt->status = PACKET_REABSORBED;
                 return;
             }
-            chi_bf_val = bf_get_event_measure(bf, shell, comov_nu);
         }
         double chi_continuum = chi_e + chi_bf_val; /* e-scattering + bound-free */
 

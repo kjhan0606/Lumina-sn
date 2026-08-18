@@ -13,7 +13,7 @@
 /*   - source S = (chi_es*J + chi_abs*B + chi_line*S_line)/chi   */
 /*   - coherent isotropic e-scattering closed by diagonal ALI    */
 /* The emergent J_nu(shell,bin) is written into NLTEConfig.J_nu  */
-/* on the existing 1000-bin grid, then ALL downstream solvers    */
+/* on the canonical NLTE/BF grid, then ALL downstream solvers    */
 /* (RADEQ T_e, plasma ionization, bf opacity, NLTE pops) are     */
 /* reused unchanged.  The MC code path is never touched.         */
 /* ============================================================ */
@@ -152,6 +152,7 @@ typedef struct {
 void cmf_obs_selftest(void);  /* confirmation-ladder T1 single-line P-Cygni test */
 void cmf_fsolve_selftest(const char *mode);  /* confirmation-ladder F cmf_solve_J test */
 void cmf_solve_gpu_selftest(const char *mode);  /* GPU cmf_solve_J A/B vs CPU (LUMINA_CMF_SOLVE_GPU=2) */
+int cmf_exact_owner_selftest(void);  /* production exact-owner CPU/A40x4 smoke */
 void cmf_nlte_selftest(const char *mode);  /* confirmation-ladder N populations/S_l test */
 void cmf_plasma_selftest(const char *mode);  /* confirmation-ladder P ionization/energy test */
 
@@ -264,13 +265,23 @@ int cmfgen_commit_jnu(const CMFGENState *cs, NLTEConfig *nlte,
                       const Geometry *geo, const OpacityState *opac,
                       uint64_t generation);
 
-/* P7/R6 PRODUCER: fine-grid line-resolved J_bar_l over a wavelength window
- * (default 1000-4000 A). Reuses cmf_solve_J on a fine Doppler-resolved mesh,
- * fills private opac->jbar_line_det[n_lines*n_shells] (sentinel -1 outside
- * window).  The canonical commit translates that sentinel to UNSAMPLED.
- * Env: LUMINA_CMF_FINE_{LAMLO,LAMHI,VDOP,PPD,ALI,DIAG}. */
-void cmfgen_fine_jbar(CMFGENState *csb, const Geometry *geo,
-                      OpacityState *opac, double T_inner, PlasmaState *plasma);
+typedef enum {
+    /* Sealed initialization reference operator.  It exists only for R1 so the
+     * fixed seed-material predictor retains its audited k24 input. */
+    CMF_FINE_LINE_OPERATOR_INIT_SHARED_GAUSSIAN = 1,
+    /* Production parity operator for R2 and later: continuum-only exact CMF
+     * field followed by a per-line CMFGEN non-overlap Sobolev response. */
+    CMF_FINE_LINE_OPERATOR_CMFGEN_NONOVERLAP_SOBOLEV = 2
+} CMFFineLineOperator;
+
+/* P7/R6 PRODUCER: exact sliding drifting-characteristic continuum field plus
+ * the explicitly selected line operator over the amended 100--20000 A BB
+ * rate graph. Returns nonzero without publication on allocation, arithmetic,
+ * reservoir coverage, material-census, or residual failure.
+ * Env: LUMINA_CMF_FINE_{LAMLO,LAMHI,VDOP,PPD,ALI,TOL,DIAG}. */
+int cmfgen_fine_jbar(CMFGENState *csb, const Geometry *geo,
+                     OpacityState *opac, double T_inner, PlasmaState *plasma,
+                     CMFFineLineOperator line_operator);
 
 /* Thick/thin-limit sanity print (J/B, J/S, radial tau) for chosen shells. */
 void cmfgen_validate(const CMFGENState *cs, const Geometry *geo,

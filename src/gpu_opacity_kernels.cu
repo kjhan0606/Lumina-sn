@@ -146,6 +146,8 @@ int gpu_opacity_production_bind(const CpuOpacityPublication *p,
     production_opacity.view.chi_bf = production_opacity.component[2];
     production_opacity.view.chi_ff = production_opacity.component[3];
     production_opacity.view.bf_event_measure = production_opacity.component[4];
+    production_opacity.view.bf_event_measure_provenance =
+        p->bf_event_measure_provenance;
     production_opacity.view.chi_total = production_opacity.component[5];
     production_opacity.view.opacity_generation = p->generation_committed;
     production_opacity.view.radiation_generation = p->radiation_generation;

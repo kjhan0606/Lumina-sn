@@ -38,6 +38,18 @@ int main(void) {
     if(src_zero.validity!=A208_EXACT_ZERO || src_negative.validity!=A208_VALID ||
        !(src_negative.value<0) || src_singular.validity!=A208_SOURCE_CANCELLATION_SINGULAR)
         return fail("line source value/status separation");
+    A208Counters counters_before_private = *a208_counters();
+    A208ValueView private_inversion = a208_signed_sobolev_counted(
+        1,1,1,1,0,2,1,1,1,NULL);
+    A208ValueView private_source = a208_line_source_counted(
+        10,1,2,1,1,1,NULL);
+    if (private_inversion.value != inversion.value ||
+        private_inversion.validity != inversion.validity ||
+        private_source.value != src_negative.value ||
+        private_source.validity != src_negative.validity ||
+        memcmp(a208_counters(), &counters_before_private,
+               sizeof(counters_before_private)) != 0)
+        return fail("private tau/source counter sink isolation");
 
     A208SignedBfNet net; A208NonnegativeEventMeasure gross;
     if(a208_bf_split(3.0,2.0,1.0,&net,&gross)||net.value!=-3.0||gross.value!=3.0)
@@ -77,6 +89,25 @@ int main(void) {
     if(a208_publication_commit(&pub,&bad)==0||pub.generation_committed!=1)
         return fail("partial publish rejection");
     a208_publication_free(&bad);
+
+    A208Counters global_before_counted_commit = *a208_counters();
+    A208Counters private_commit_counters = {0};
+    CpuOpacityPublication private_pub = {0}, private_cand = {0};
+    if (a208_publication_init(&private_cand, 1, 1, 0, 0))
+        return fail("private publication init");
+    private_cand.generation_required = 9;
+    private_cand.frequency_edges[0] = 1.0;
+    private_cand.frequency_edges[1] = 2.0;
+    for (size_t c = 0; c < 4; ++c)
+        private_cand.chi_validity[c] = A208_EXACT_ZERO;
+    if (a208_publication_commit_counted(
+            &private_pub, &private_cand, &private_commit_counters) != 0 ||
+        private_pub.generation_committed != 9 ||
+        private_commit_counters.generation_committed != 9 ||
+        memcmp(a208_counters(), &global_before_counted_commit,
+               sizeof(global_before_counted_commit)) != 0)
+        return fail("private publication counter sink isolation");
+    a208_publication_free(&private_pub);
 
     A208ValueView blocked_values[2]={normal,inversion}; size_t first=99;
     if(a208_capability_check(A208_BLOCK_UNSUPPORTED,blocked_values,2,"T01",

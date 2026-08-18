@@ -96,7 +96,11 @@ int main(void)
                             saved_count, generation),
           "double-normalization-no-publish");
 
-    size_t first = 100, last = 3900, source_bins = last - first;
+    /* The canonical option-B grid currently ends at 3866.  The historical
+     * literal 3900 read beyond frequency_bin_edges and turned the replay
+     * upper edge into zero.  Bind the fixture to the actual owner contract. */
+    size_t first = 100, last = LUMINA_RADFIELD_N_BINS;
+    size_t source_bins = last - first;
     double *source_edges = (double *)malloc((source_bins + 1) * sizeof(double));
     double *source_values = (double *)malloc(source_bins * sizeof(double));
     RadiationFieldValidityState *source_state =

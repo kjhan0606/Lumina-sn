@@ -34,7 +34,9 @@ int main(void)
     RadiationFieldShadow shadow;
     CHECK(radiation_field_owner_init(&shadow, 2) == 0, "on-init");
     CHECK(shadow.enabled == 1, "on-enabled");
-    CHECK(shadow.field.frequency_bin_edges.count == 4001, "selected-4000-bin-grid");
+    CHECK(shadow.field.frequency_bin_edges.count ==
+          (size_t)LUMINA_RADFIELD_N_BINS + 1,
+          "selected-canonical-bin-grid");
     CHECK(strcmp(shadow.field.provenance.frequency_union_sha256,
                  LUMINA_RADFIELD_UNION_SHA256) == 0, "amended-union-binding");
     CHECK(strcmp(shadow.field.provenance.frequency_edge_sha256,
@@ -150,6 +152,7 @@ int main(void)
     unsetenv("LUMINA_RADFIELD_SHADOW");
     if (failures != 0) return 1;
     printf("A2_03_RADIATION_FIELD_SELFTEST PASS negative_9=PASS "
-           "negative_10=PASS negative_11=PASS fields=10 bins=4000\n");
+           "negative_10=PASS negative_11=PASS fields=10 bins=%d\n",
+           LUMINA_RADFIELD_N_BINS);
     return 0;
 }

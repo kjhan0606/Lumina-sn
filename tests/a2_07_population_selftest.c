@@ -29,7 +29,11 @@ int main(void) {
     int g[] = {2, 4, 1, 3, 9};
     int z[] = {8, 8, 26, 26, 26};
     int ion[] = {1, 1, 2, 2, 2};
-    PopulationAtomicView a = {2, 5, offset, energy, g, NULL, z, ion};
+    PopulationAtomicView a = {
+        .n_ions = 2, .n_levels = 5, .level_offset = offset,
+        .energy_eV = energy, .g = g, .runtime_membership = NULL,
+        .level_Z = z, .level_ion = ion
+    };
     double te[] = {4000.0, 10000.0, 140000.0};
     double pub[6];
     for (int i = 0; i < 6; i++) pub[i] = -7.0;
@@ -54,6 +58,33 @@ int main(void) {
           POP_STALE_DERIVED_TEMPERATURE, "T_e bit stale");
     CHECK(population_partition_view_check(&stamp, &a, te, 3, 8, 11) ==
           POP_STALE_DERIVED_TEMPERATURE, "generation stale");
+
+    /* R0 provenance negative control: the thermodynamic-only top-ion catalog
+     * changes Z(T_e), so adding or mutating it must stale the atomic identity. */
+    int topion_index[] = {1};
+    double topion_energy_cm[] = {0.0};
+    double topion_g[] = {2.0};
+    PopulationAtomicView with_topion = a;
+    with_topion.topion_n = 1;
+    with_topion.topion_ion_index = topion_index;
+    with_topion.topion_E_cm = topion_energy_cm;
+    with_topion.topion_g = topion_g;
+    double top_pub[6];
+    PopulationDerivedStamp top_stamp;
+    CHECK(population_partition_build(&with_topion, te, 3, 17, 11,
+                                     top_pub, &top_stamp) == POP_OK,
+          "top-ion atomic identity build");
+    CHECK(population_partition_view_check(&top_stamp, &a, te, 3, 17, 11) ==
+          POP_STALE_DERIVED_TEMPERATURE, "top-ion addition changes atomic hash");
+    topion_g[0] = 3.0;
+    CHECK(population_partition_view_check(&top_stamp, &with_topion, te, 3,
+                                          17, 11) ==
+          POP_STALE_DERIVED_TEMPERATURE, "top-ion value changes atomic hash");
+    topion_g[0] = 2.0;
+    with_topion.topion_E_cm = NULL;
+    CHECK(population_atomic_model_sha256(&with_topion,
+                                         top_stamp.atomic_model_sha256) ==
+          POP_ATOMIC_MISSING, "partial top-ion catalog rejected");
 
     double before[6]; memcpy(before, pub, sizeof(pub));
     double bad0[] = {4000.0, 0.0, 140000.0};
@@ -108,6 +139,140 @@ int main(void) {
     CHECK(population_dense_rank_check(singular, 2, 1e-14) ==
           POP_RANK_INCOMPLETE, "isolated/singular row rejected");
 
+    /* Detailed-balance SE known answer with a 14-decade population span.
+     * The production solver must recover the raw positive solution through
+     * algebraic equilibration/refinement; no negative tolerance or clamp is
+     * present in this test or in the solver contract. */
+    enum { SE_N = 10 };
+    double se_matrix[SE_N * SE_N] = {0.0};
+    double se_rhs[SE_N] = {0.0};
+    double se_true[SE_N], se_solution[SE_N];
+    const double per_level = 14.0 * log(10.0) / (SE_N - 1);
+    double se_total = 0.0;
+    for (int i = 0; i < SE_N; ++i) {
+        se_true[i] = exp(-per_level * i);
+        se_total += se_true[i];
+    }
+    for (int row = 0; row < SE_N; ++row) {
+        double outflow = 0.0;
+        for (int col = 0; col < SE_N; ++col) {
+            if (row == col) continue;
+            double rate_col_to_row = col < row
+                ? 1.0 : se_true[row] / se_true[col];
+            se_matrix[col * SE_N + row] = rate_col_to_row;
+            double rate_row_to_col = row < col
+                ? 1.0 : se_true[col] / se_true[row];
+            outflow += rate_row_to_col;
+        }
+        se_matrix[row * SE_N + row] = -outflow;
+    }
+    for (int col = 0; col < SE_N; ++col)
+        se_matrix[col * SE_N] = 1.0;
+    se_rhs[0] = se_total;
+    double se_matrix_before[SE_N * SE_N], se_rhs_before[SE_N];
+    memcpy(se_matrix_before, se_matrix, sizeof(se_matrix));
+    memcpy(se_rhs_before, se_rhs, sizeof(se_rhs));
+    PopulationLinearSolveDiagnostic se_diagnostic;
+    CHECK(population_dense_solve_equilibrated(
+              se_matrix, se_rhs, SE_N, se_solution, &se_diagnostic) == POP_OK,
+          "equilibrated detailed-balance solve accepted");
+    double se_max_relative = 0.0;
+    for (int i = 0; i < SE_N; ++i) {
+        double relative = fabs(se_solution[i] - se_true[i]) / se_true[i];
+        if (relative > se_max_relative) se_max_relative = relative;
+        CHECK(isfinite(se_solution[i]) && se_solution[i] > 0.0,
+              "equilibrated raw solution is strictly positive");
+    }
+    CHECK(se_max_relative <= 1.0e-7,
+          "equilibrated detailed-balance known answer recovered");
+    CHECK(se_diagnostic.rank == SE_N &&
+          se_diagnostic.equilibration_iterations > 0 &&
+          se_diagnostic.refinement_iterations >= 2 &&
+          isfinite(se_diagnostic.pivot_growth) &&
+          se_diagnostic.final_backward_error <=
+              POP_DENSE_BACKWARD_ERROR_LIMIT,
+          "equilibrated solve diagnostics satisfy contract");
+    CHECK(memcmp(se_matrix, se_matrix_before, sizeof(se_matrix)) == 0 &&
+          memcmp(se_rhs, se_rhs_before, sizeof(se_rhs)) == 0,
+          "equilibrated solve preserves matrix and RHS bytes");
+    double se_bad[SE_N * SE_N];
+    memcpy(se_bad, se_matrix, sizeof(se_bad));
+    for (int row = 0; row < SE_N; ++row)
+        se_bad[1 * SE_N + row] = se_bad[0 * SE_N + row];
+    CHECK(population_dense_solve_equilibrated(
+              se_bad, se_rhs, SE_N, se_solution, &se_diagnostic) ==
+              POP_RANK_INCOMPLETE,
+          "equilibrated singular system fails closed");
+
+    /* Irreducible generator with a 40-decade stationary span.  GTH consumes
+     * only positive transition rates, so rounded large outflow diagonals
+     * cannot create a forward negative population. */
+    enum { GTH_N = 9 };
+    double gth_generator[GTH_N * GTH_N] = {0.0};
+    double gth_true[GTH_N], gth_solution[GTH_N];
+    long double gth_weight = 1.0L, gth_weight_sum = 0.0L;
+    for (int i = 0; i < GTH_N; ++i) {
+        gth_true[i] = (double)gth_weight;
+        gth_weight_sum += gth_weight;
+        gth_weight *= 1.0e-5L;
+        if (i + 1 < GTH_N) {
+            gth_generator[i * GTH_N + (i + 1)] = 1.0;
+            gth_generator[i * GTH_N + i] -= 1.0;
+            gth_generator[(i + 1) * GTH_N + i] = 1.0e5;
+            gth_generator[(i + 1) * GTH_N + (i + 1)] -= 1.0e5;
+        }
+    }
+    const double gth_total = 7.25e7;
+    for (int i = 0; i < GTH_N; ++i)
+        gth_true[i] = (double)((long double)gth_true[i] *
+                              (long double)gth_total / gth_weight_sum);
+    double gth_before[GTH_N * GTH_N];
+    memcpy(gth_before, gth_generator, sizeof(gth_before));
+    PopulationGeneratorSolveDiagnostic gth_diagnostic;
+    CHECK(population_generator_stationary_gth(
+              gth_generator, GTH_N, gth_total, gth_solution,
+              &gth_diagnostic) == POP_OK,
+          "GTH irreducible generator solve accepted");
+    for (int i = 0; i < GTH_N; ++i) {
+        double relative = fabs(gth_solution[i] - gth_true[i]) / gth_true[i];
+        CHECK(isfinite(gth_solution[i]) && gth_solution[i] > 0.0 &&
+              relative <= 1.0e-12,
+              "GTH known stationary distribution recovered positive");
+    }
+    CHECK(gth_diagnostic.generator_recognized == 1 &&
+          gth_diagnostic.input_column_relative_error <=
+              POP_GENERATOR_COLUMN_ERROR_LIMIT &&
+          gth_diagnostic.exact_generator_componentwise_residual <=
+              POP_GENERATOR_RESIDUAL_LIMIT &&
+          gth_diagnostic.minimum_population > 0.0 &&
+          gth_diagnostic.maximum_population <= gth_total,
+          "GTH diagnostics satisfy generator contract");
+    CHECK(memcmp(gth_before, gth_generator, sizeof(gth_before)) == 0,
+          "GTH preserves generator bytes");
+
+    double non_generator[GTH_N * GTH_N];
+    memcpy(non_generator, gth_generator, sizeof(non_generator));
+    non_generator[0 * GTH_N + 1] = -1.0;
+    CHECK(population_generator_stationary_gth(
+              non_generator, GTH_N, gth_total, gth_solution,
+              &gth_diagnostic) == POP_SOLVE_FAILED &&
+          gth_diagnostic.generator_recognized == 0,
+          "negative off-diagonal is ineligible, not clamped");
+
+    /* Two closed communicating classes are a valid reducible generator but
+     * have no unique stationary vector from one total; fail closed. */
+    double reducible[] = {
+        -1.0, 1.0, 0.0, 0.0,
+         1.0,-1.0, 0.0, 0.0,
+         0.0, 0.0,-2.0, 2.0,
+         0.0, 0.0, 2.0,-2.0
+    };
+    CHECK(population_generator_stationary_gth(
+              reducible, 4, 1.0, gth_solution, &gth_diagnostic) ==
+              POP_RANK_INCOMPLETE &&
+          gth_diagnostic.generator_recognized == 1,
+          "reducible generator fails closed");
+
     double fine[] = {1.0, 2.0, 4.0};
     int member[] = {0, 0, 1};
     double super[] = {-1.0, -1.0};
@@ -121,6 +286,25 @@ int main(void) {
     double fraction = -1.0;
     CHECK(population_lte_level_fraction(&a, 1, 4, te[0], pub[3], &fraction) ==
           POP_EXACT_ZERO || fraction >= 0.0, "underflow is explicit zero");
+
+    /* The bulk tau writer and A2-09 use this same routine.  Exercise both
+     * source branches so a future reader-only reimplementation cannot hide
+     * behind formula tests. */
+    double line_lte = -1.0, line_nlte = -1.0;
+    PopulationStatus line_lte_status = population_line_level_number_density(
+        POP_LINE_VIEW_LTE_TE, &a, 1, 3, te[0], pub[3],
+        2.5e8, NAN, &line_lte);
+    CHECK((line_lte_status == POP_OK || line_lte_status == POP_EXACT_ZERO) &&
+          isfinite(line_lte) && line_lte >= 0.0,
+          "shared LTE line population branch");
+    CHECK(population_line_level_number_density(
+              POP_LINE_VIEW_NLTE_COMMITTED, &a, 1, 3, NAN, NAN,
+              NAN, 7.25e6, &line_nlte) == POP_OK && line_nlte == 7.25e6,
+          "committed NLTE line population branch");
+    CHECK(population_line_level_number_density(
+              POP_LINE_VIEW_NLTE_COMMITTED, &a, 1, 3, NAN, NAN,
+              NAN, -1.0, &line_nlte) == POP_NONFINITE,
+          "negative NLTE line population rejected");
 
     PopulationCounters c = {0};
     population_counter_note(&c, POP_EXACT_ZERO);

@@ -6,13 +6,84 @@
 /* LUMINA_PURE_CMFGEN=1 dispatches cmfgen_run() from main.       */
 /* ============================================================ */
 #include "lumina_cmfgen.h"
+#include "physics_comparison.h"
 #include "line_jbar.h"
+#include "line_net_rate.h"
+#include "cmf_exact_sliding.h"
+#ifdef LUMINA_HAS_CUDA_BF_GEMM
+#include "cmf_exact_multigpu.h"
+#endif
+#ifndef CMF_MGPU_REPORT_MAX_DEVICES
+#define CMF_MGPU_REPORT_MAX_DEVICES 32
+#endif
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
 #include <errno.h>
+#include <limits.h>
 #include <stdint.h>
+#include <time.h>
+
+static double cmf_wall_seconds(void)
+{
+    struct timespec ts;
+    if (timespec_get(&ts, TIME_UTC) != TIME_UTC) return 0.0;
+    return (double)ts.tv_sec + 1.0e-9 * (double)ts.tv_nsec;
+}
+
+/* Fine exact-solver ownership.  Unset or zero keeps the serial CPU owner;
+ * a positive value requests exactly that many visible CUDA devices.  Invalid
+ * text is terminal instead of being silently interpreted by atoi(). */
+static int cmf_fine_multigpu_device_request(int *requested)
+{
+    const char *text = getenv("LUMINA_CMF_FINE_MGPU_DEVICES");
+    if (!requested) return -1;
+    *requested = 0;
+    if (!text) return 0;
+    if (!*text) return -1;
+    errno = 0;
+    char *end = NULL;
+    long value = strtol(text, &end, 10);
+    if (errno != 0 || !end || *end != '\0' || value < 0 || value > INT_MAX)
+        return -1;
+    *requested = (int)value;
+    return 0;
+}
+
+/* Proof-only configuration.  Refinement applies residual+K(e) to an already
+ * verified error supersolution; it never changes the converged physical J.
+ * Invalid or excessive requests fail closed instead of wrapping size_t. */
+static int cmf_fine_envelope_refinement_request(size_t *requested)
+{
+    const char *text = getenv("LUMINA_CMF_FINE_ENVELOPE_REFINEMENTS");
+    if (!requested) return -1;
+    *requested = 8U;
+    if (!text) return 0;
+    if (!*text || *text == '-') return -1;
+    errno = 0;
+    char *end = NULL;
+    unsigned long long value = strtoull(text, &end, 10);
+    if (errno != 0 || !end || *end != '\0' || value < 1U || value > 64U)
+        return -1;
+    *requested = (size_t)value;
+    return 0;
+}
+
+static int cmf_optional_binary_env(const char *name, int *enabled)
+{
+    const char *text;
+    if (!name || !enabled) return -1;
+    text = getenv(name);
+    *enabled = 0;
+    if (!text) return 0;
+    if (strcmp(text, "0") == 0) return 0;
+    if (strcmp(text, "1") == 0) {
+        *enabled = 1;
+        return 0;
+    }
+    return -1;
+}
 
 /* Physical constants (cgs) — local copies; planck_bnu in plasma.c is static. */
 #define CM_H      6.62607015e-27   /* erg s            */
@@ -68,12 +139,17 @@ static int cmf_dcmp(const void *a, const void *b) {
 }
 
 static inline double cm_planck(double nu, double T) {
-    if (T <= 0.0) return 0.0;
+    if (!(nu > 0.0) || !isfinite(nu) || T < 0.0 || !isfinite(T)) return NAN;
+    if (T == 0.0) return 0.0;
     double x = CM_H * nu / (CM_KB * T);
-    if (x > 7.0e2) return 0.0;            /* underflow guard */
-    double denom = expm1(x);
-    if (denom <= 0.0) return 0.0;
-    return (2.0 * CM_H * nu * nu * nu) / (CM_C * CM_C * denom);
+    double prefactor = (2.0 * CM_H * nu * nu * nu) / (CM_C * CM_C);
+    if (x > 50.0) {
+        /* Algebraically identical Wien form.  Any zero is then IEEE
+         * underflow of the represented value, not an imposed floor. */
+        double y = exp(-x);
+        return prefactor * y / (1.0 - y);
+    }
+    return prefactor / expm1(x);
 }
 
 /* Inner blackbody amplitude dilution (LUMINA_INNER_BB_SCALE, default 1.0). Read
@@ -3403,51 +3479,193 @@ int cmfgen_commit_jnu(const CMFGENState *cs, NLTEConfig *nlte,
 {
     if (!cs || !nlte || !geo || !opac || !cs->J || cs->n_shells <= 0 ||
         cs->n_bins <= 0 || geo->n_shells != cs->n_shells ||
-        opac->n_shells != cs->n_shells || !nlte->radiation_field.enabled)
+        opac->n_shells != cs->n_shells || !nlte->radiation_field.enabled) {
+        fprintf(stderr,
+                "[R6][BLOCKED] reason=DETERMINISTIC_OWNER_PRECONDITION "
+                "cs=%p nlte=%p geo=%p opac=%p J=%p shells=%d bins=%d "
+                "geo_shells=%d opac_shells=%d owner_enabled=%d "
+                "request_generation=%llu\n",
+                (const void *)cs, (void *)nlte, (const void *)geo,
+                (const void *)opac, cs ? (void *)cs->J : NULL,
+                cs ? cs->n_shells : -1, cs ? cs->n_bins : -1,
+                geo ? geo->n_shells : -1, opac ? opac->n_shells : -1,
+                nlte ? nlte->radiation_field.enabled : 0,
+                (unsigned long long)generation);
         return -1;
+    }
+
+    const char *line_producer = NULL;
+    if (opac->jbar_line_det_operator ==
+            CMF_FINE_LINE_OPERATOR_INIT_SHARED_GAUSSIAN)
+        line_producer = LUMINA_LINE_JBAR_DETERMINISTIC_PRODUCER;
+    else if (opac->jbar_line_det_operator ==
+                 CMF_FINE_LINE_OPERATOR_CMFGEN_NONOVERLAP_SOBOLEV)
+        line_producer =
+            LUMINA_LINE_JBAR_CMFGEN_NONOVERLAP_SOBOLEV_PRODUCER;
+    else {
+        fprintf(stderr,
+                "[R6][BLOCKED] reason=DETERMINISTIC_LINE_OPERATOR_MISSING "
+                "operator=%d\n", opac->jbar_line_det_operator);
+        return -1;
+    }
 
     const LineJbarQSet *qset = (const LineJbarQSet *)nlte->line_qset;
+    const LineJbarESet *eset = (const LineJbarESet *)nlte->line_eset;
     if (!qset || qset->n_q == 0 || !qset->line_id || !qset->line_nu ||
         strlen(qset->q_set_hash) != 64 || strlen(qset->profile_hash) != 64 ||
+        !eset || eset->n_q == 0 || !eset->line_id || !eset->line_nu ||
+        strlen(eset->q_set_hash) != 64 || strlen(eset->profile_hash) != 64 ||
         !opac->jbar_line_det || !opac->line_list_nu) {
         fprintf(stderr,
-                "[R6][BLOCKED] reason=DETERMINISTIC_LINE_JBAR_MISSING\n");
+                "[R6][BLOCKED] reason=DETERMINISTIC_LINE_SET_MISSING\n");
+        return -1;
+    }
+    size_t first_missing_q = SIZE_MAX;
+    LineJbarSubsetStatus subset_status = line_jbar_qset_subset_of_eset(
+        qset, eset, &first_missing_q);
+    if (subset_status != LINE_JBAR_SUBSET_OK) {
+        fprintf(stderr,
+                "[R6][BLOCKED] reason=QG_NOT_SUBSET_QE status=%d "
+                "first_missing_q=%zu q_lines=%zu e_lines=%zu\n",
+                (int)subset_status, first_missing_q, qset->n_q, eset->n_q);
         return -1;
     }
     if (qset->profile_id != LINE_JBAR_PROFILE_GAUSS_VD10 ||
+        strcmp(qset->profile_hash, LINE_JBAR_PROFILE_SHA256) != 0 ||
+        strcmp(qset->domain_contract_hash,
+               LINE_JBAR_BB_DOMAIN_CONTRACT_SHA256) != 0 ||
         opac->jbar_line_det_vdoppler_cms != LINE_JBAR_VDOPPLER_CMS ||
         opac->jbar_line_det_ndoppler != LINE_JBAR_PROFILE_NDOPPLER) {
         fprintf(stderr,
                 "[R6][BLOCKED] reason=PROFILE_MISMATCH "
-                "q_profile=%llu det_vdop=%.17g det_ndop=%.17g\n",
+                "q_profile=%llu profile_hash=%s domain_hash=%s "
+                "det_vdop=%.17g det_ndop=%.17g\n",
                 (unsigned long long)qset->profile_id,
+                qset->profile_hash, qset->domain_contract_hash,
                 opac->jbar_line_det_vdoppler_cms,
                 opac->jbar_line_det_ndoppler);
+        return -1;
+    }
+    if (!opac->jbar_line_det_exact_converged ||
+        opac->jbar_line_det_exact_iterations < 2 ||
+        opac->jbar_line_det_exact_iterations >
+            opac->jbar_line_det_exact_iteration_cap ||
+        !(opac->jbar_line_det_exact_tolerance > 0.0) ||
+        !isfinite(opac->jbar_line_det_exact_tolerance) ||
+        !(opac->jbar_line_det_exact_residual >= 0.0) ||
+        !isfinite(opac->jbar_line_det_exact_residual) ||
+        !(opac->jbar_line_det_exact_residual <
+          opac->jbar_line_det_exact_tolerance) ||
+        !(opac->jbar_line_det_exact_max_scattering_ratio >= 0.0) ||
+        !(opac->jbar_line_det_exact_max_scattering_ratio < 1.0) ||
+        !opac->jbar_line_det_error_upper ||
+        !opac->jbar_line_det_error_envelope_verified ||
+        opac->jbar_line_det_error_refinement_iterations == 0 ||
+        !(opac->jbar_line_det_component_error_min >= 0.0) ||
+        !isfinite(opac->jbar_line_det_component_error_min) ||
+        !(opac->jbar_line_det_component_error_max >=
+          opac->jbar_line_det_component_error_min) ||
+        !isfinite(opac->jbar_line_det_component_error_max) ||
+        !(opac->jbar_line_det_profile_error_min >= 0.0) ||
+        !isfinite(opac->jbar_line_det_profile_error_min) ||
+        !(opac->jbar_line_det_profile_error_max >=
+          opac->jbar_line_det_profile_error_min) ||
+        !isfinite(opac->jbar_line_det_profile_error_max) ||
+        opac->jbar_line_det_grid_n_bins < 2 ||
+        !(opac->jbar_line_det_grid_nu_min > 0.0) ||
+        !(opac->jbar_line_det_grid_nu_max >
+          opac->jbar_line_det_grid_nu_min)) {
+        fprintf(stderr,
+                "[R6][BLOCKED] reason=EXACT_SOLVER_QUALIFICATION "
+                "converged=%d iterations=%d cap=%d residual=%.17g "
+                "tolerance=%.17g absolute_error_bound=%.17g "
+                "scattering_ratio_bound=%.17g fine_bins=%d "
+                "component_envelope=%d refinements=%zu "
+                "component_error=[%.17g,%.17g] profile_error=[%.17g,%.17g] "
+                "fine_nu=[%.17g,%.17g]\n",
+                opac->jbar_line_det_exact_converged,
+                opac->jbar_line_det_exact_iterations,
+                opac->jbar_line_det_exact_iteration_cap,
+                opac->jbar_line_det_exact_residual,
+                opac->jbar_line_det_exact_tolerance,
+                opac->jbar_line_det_exact_absolute_error_bound,
+                opac->jbar_line_det_exact_max_scattering_ratio,
+                opac->jbar_line_det_grid_n_bins,
+                opac->jbar_line_det_error_envelope_verified,
+                opac->jbar_line_det_error_refinement_iterations,
+                opac->jbar_line_det_component_error_min,
+                opac->jbar_line_det_component_error_max,
+                opac->jbar_line_det_profile_error_min,
+                opac->jbar_line_det_profile_error_max,
+                opac->jbar_line_det_grid_nu_min,
+                opac->jbar_line_det_grid_nu_max);
+        return -1;
+    }
+
+    size_t first_bad_e = SIZE_MAX;
+    if (line_jbar_qset_profile_support_covered(
+            eset, opac->jbar_line_det_grid_nu_min,
+            opac->jbar_line_det_grid_nu_max, &first_bad_e) != 0) {
+        if (first_bad_e < eset->n_q) {
+            double profile_width = LINE_JBAR_PROFILE_NDOPPLER *
+                                   LINE_JBAR_VDOPPLER_CMS / CM_C;
+            double line_nu = eset->line_nu[first_bad_e];
+            fprintf(stderr,
+                    "[R6][BLOCKED] reason=ESET_PROFILE_SUPPORT_COVERAGE "
+                    "e=%zu line_id=%d line_nu=%.17g support=[%.17g,%.17g] "
+                    "fine=[%.17g,%.17g] domain_hash=%s\n",
+                    first_bad_e, eset->line_id[first_bad_e], line_nu,
+                    line_nu * (1.0 - profile_width),
+                    line_nu * (1.0 + profile_width),
+                    opac->jbar_line_det_grid_nu_min,
+                    opac->jbar_line_det_grid_nu_max,
+                    eset->domain_contract_hash);
+        } else {
+            fprintf(stderr,
+                    "[R6][BLOCKED] reason=ESET_PROFILE_SUPPORT_PRECONDITION "
+                    "e_lines=%zu fine=[%.17g,%.17g] domain_hash=%s\n",
+                    eset->n_q, opac->jbar_line_det_grid_nu_min,
+                    opac->jbar_line_det_grid_nu_max,
+                    eset->domain_contract_hash);
+        }
         return -1;
     }
 
     size_t bins = (size_t)cs->n_bins;
     size_t cells = (size_t)cs->n_shells * bins;
-    size_t line_cells = qset->n_q * (size_t)cs->n_shells;
+    if (eset->n_q > SIZE_MAX / (size_t)cs->n_shells) return -1;
+    size_t line_cells = eset->n_q * (size_t)cs->n_shells;
     double *edges = (double *)malloc((bins + 1) * sizeof(double));
     RadiationFieldValidityState *validity =
         (RadiationFieldValidityState *)malloc(cells * sizeof(*validity));
-    uint64_t *line_id = (uint64_t *)malloc(qset->n_q * sizeof(*line_id));
+    uint64_t *line_id = (uint64_t *)malloc(eset->n_q * sizeof(*line_id));
+    uint64_t *rate_line_id =
+        (uint64_t *)malloc(qset->n_q * sizeof(*rate_line_id));
     double *line_jbar = (double *)malloc(line_cells * sizeof(*line_jbar));
+    double *line_error = (double *)malloc(line_cells * sizeof(*line_error));
     int32_t *line_validity =
         (int32_t *)malloc(line_cells * sizeof(*line_validity));
-    if (!edges || !validity || !line_id || !line_jbar || !line_validity) {
-        free(edges); free(validity); free(line_id); free(line_jbar);
+    if (!edges || !validity || !line_id || !rate_line_id || !line_jbar ||
+        !line_error || !line_validity) {
+        free(edges); free(validity); free(line_id); free(rate_line_id);
+        free(line_jbar); free(line_error);
         free(line_validity);
         return -1;
     }
+    for (size_t q = 0; q < qset->n_q; ++q)
+        rate_line_id[q] = (uint64_t)qset->line_id[q];
     for (size_t b = 0; b <= bins; ++b)
         edges[b] = cs->nu_min * exp((double)b * cs->d_log_nu);
     edges[0] = cs->nu_min;
     edges[bins] = cs->nu_max;
     for (size_t i = 0; i < cells; ++i) {
         if (!isfinite(cs->J[i]) || cs->J[i] < 0.0) {
-            free(edges); free(validity); free(line_id); free(line_jbar);
+            fprintf(stderr,
+                    "[R6][BLOCKED] reason=DETERMINISTIC_J_INVALID "
+                    "cell=%zu value=%.17g generation=%llu\n",
+                    i, cs->J[i], (unsigned long long)generation);
+            free(edges); free(validity); free(line_id); free(rate_line_id);
+            free(line_jbar); free(line_error);
             free(line_validity);
             return -1;
         }
@@ -3457,36 +3675,53 @@ int cmfgen_commit_jnu(const CMFGENState *cs, NLTEConfig *nlte,
 
     size_t valid_lines = 0, partial_lines = 0, unsampled_lines = 0;
     size_t valid_cells = 0, exact_zero_cells = 0;
-    for (size_t q = 0; q < qset->n_q; q++) {
-        int lid = qset->line_id[q];
+    for (size_t e = 0; e < eset->n_q; e++) {
+        int lid = eset->line_id[e];
         if (lid < 0 || lid >= opac->n_lines ||
-            !isfinite(qset->line_nu[q]) || qset->line_nu[q] <= 0.0 ||
-            qset->line_nu[q] != opac->line_list_nu[lid]) {
+            !isfinite(eset->line_nu[e]) || eset->line_nu[e] <= 0.0 ||
+            eset->line_nu[e] != opac->line_list_nu[lid]) {
             fprintf(stderr,
-                    "[R6][BLOCKED] reason=QSET_LINE_IDENTITY_MISMATCH q=%zu "
-                    "line_id=%d\n", q, lid);
-            free(edges); free(validity); free(line_id); free(line_jbar);
+                    "[R6][BLOCKED] reason=ESET_LINE_IDENTITY_MISMATCH e=%zu "
+                    "line_id=%d\n", e, lid);
+            free(edges); free(validity); free(line_id); free(rate_line_id);
+                free(line_jbar); free(line_error);
             free(line_validity);
             return -1;
         }
-        line_id[q] = (uint64_t)lid;
+        line_id[e] = (uint64_t)lid;
         size_t covered_shells = 0;
         for (size_t s = 0; s < (size_t)cs->n_shells; s++) {
             size_t src = (size_t)lid * (size_t)cs->n_shells + s;
-            size_t dst = q * (size_t)cs->n_shells + s;
+            size_t dst = e * (size_t)cs->n_shells + s;
             double raw = opac->jbar_line_det[src];
+            double error_upper = opac->jbar_line_det_error_upper[src];
             if (raw == -1.0) {
+                if (error_upper != -1.0) {
+                    fprintf(stderr,
+                            "[R6][BLOCKED] reason=LINE_ERROR_SENTINEL_MISMATCH "
+                            "line_id=%d shell=%zu Jbar=%.17g error=%.17g\n",
+                            lid, s, raw, error_upper);
+                    free(edges); free(validity); free(line_id);
+                    free(rate_line_id); free(line_jbar); free(line_error);
+                    free(line_validity);
+                    return -1;
+                }
                 line_jbar[dst] = 0.0;
+                line_error[dst] = 0.0;
                 line_validity[dst] = LINE_JBAR_UNSAMPLED;
-            } else if (!isfinite(raw) || raw < 0.0) {
+            } else if (!isfinite(raw) || raw < 0.0 ||
+                       !(error_upper >= 0.0) || !isfinite(error_upper)) {
                 fprintf(stderr,
                         "[R6][BLOCKED] reason=INVALID_PRIVATE_SENTINEL "
-                        "line_id=%d shell=%zu value=%.17g\n", lid, s, raw);
-                free(edges); free(validity); free(line_id); free(line_jbar);
+                        "line_id=%d shell=%zu value=%.17g error=%.17g\n",
+                        lid, s, raw, error_upper);
+                free(edges); free(validity); free(line_id);
+                free(rate_line_id); free(line_jbar); free(line_error);
                 free(line_validity);
                 return -1;
             } else {
                 line_jbar[dst] = raw;
+                line_error[dst] = error_upper;
                 line_validity[dst] = raw == 0.0
                     ? LINE_JBAR_EXACT_ZERO : LINE_JBAR_VALID;
                 covered_shells++;
@@ -3497,10 +3732,19 @@ int cmfgen_commit_jnu(const CMFGENState *cs, NLTEConfig *nlte,
         else if (covered_shells > 0) partial_lines++;
         else unsampled_lines++;
     }
-    if (valid_cells + exact_zero_cells == 0) {
+    if (valid_lines != eset->n_q || partial_lines != 0 ||
+        unsampled_lines != 0 || valid_cells + exact_zero_cells == 0) {
         fprintf(stderr,
-                "[R6][BLOCKED] reason=DETERMINISTIC_LINE_JBAR_NO_VALID_CELLS\n");
-        free(edges); free(validity); free(line_id); free(line_jbar);
+                "[R6][BLOCKED] reason=DETERMINISTIC_LINE_JBAR_INCOMPLETE "
+                "e_lines=%zu valid_lines=%zu partial_lines=%zu "
+                "unsampled_lines=%zu valid_cells=%zu exact_zero_cells=%zu "
+                "residual=%.17g tolerance=%.17g\n",
+                eset->n_q, valid_lines, partial_lines, unsampled_lines,
+                valid_cells, exact_zero_cells,
+                opac->jbar_line_det_exact_residual,
+                opac->jbar_line_det_exact_tolerance);
+        free(edges); free(validity); free(line_id); free(rate_line_id);
+        free(line_jbar); free(line_error);
         free(line_validity);
         return -1;
     }
@@ -3519,26 +3763,42 @@ int cmfgen_commit_jnu(const CMFGENState *cs, NLTEConfig *nlte,
     request.source_J_nu = cs->J;
     request.source_validity = validity;
     request.statistic_kind = RADIATION_FIELD_DETERMINISTIC;
-    request.line_n = qset->n_q;
+    request.line_n = eset->n_q;
     request.line_id = line_id;
-    request.line_q_set_hash = qset->q_set_hash;
-    request.line_profile_id = qset->profile_id;
-    request.line_profile_hash = qset->profile_hash;
+    request.line_q_set_hash = eset->q_set_hash;
+    request.line_set_kind = LINE_JBAR_SET_ENERGY_DOMAIN;
+    request.line_rate_graph_n = qset->n_q;
+    request.line_rate_graph_id = rate_line_id;
+    request.line_rate_graph_hash = qset->q_set_hash;
+    request.line_profile_id = eset->profile_id;
+    request.line_profile_hash = eset->profile_hash;
     request.line_provenance_kind =
         RADIATION_FIELD_PROVENANCE_CMFGEN_LINE_PROFILE_INTEGRAL;
-    request.line_producer = LUMINA_LINE_JBAR_DETERMINISTIC_PRODUCER;
+    request.line_producer = line_producer;
     request.line_jbar = line_jbar;
+    request.line_error_upper = line_error;
     request.line_validity = line_validity;
     int rc = radiation_field_commit(&nlte->radiation_field, &request);
-    free(edges); free(validity); free(line_id); free(line_jbar);
+    free(edges); free(validity); free(line_id); free(rate_line_id);
+    free(line_jbar); free(line_error);
     free(line_validity);
-    if (rc != 0) return -1;
+    if (rc != 0) {
+        fprintf(stderr,
+                "[R6][BLOCKED] reason=CANONICAL_COMMIT_REJECTED "
+                "request_generation=%llu owner_required=%llu "
+                "owner_computed=%llu owner_valid=%d\n",
+                (unsigned long long)generation,
+                (unsigned long long)nlte->radiation_field.field.generation.required_generation,
+                (unsigned long long)nlte->radiation_field.field.generation.computed_generation,
+                radiation_field_validate_owner(&nlte->radiation_field) == 0);
+        return -1;
+    }
     /* A2-05: the only replay-lane view refresh point. */
     nlte->radfield_view_status = radiation_field_read_view(
         &nlte->radiation_field, geo->time_explosion, (size_t)cs->n_shells,
         generation, &nlte->radfield_view);
     if (nlte->radfield_view_status != RADIATION_FIELD_VIEW_OK) return -1;
-    nlte->line_view_status = radiation_field_line_jbar_view(
+    nlte->line_view_status = radiation_field_line_jbar_rate_view(
         &nlte->radiation_field, geo->time_explosion, (size_t)cs->n_shells,
         generation, qset->q_set_hash, qset->profile_id, qset->profile_hash,
         &nlte->line_view);
@@ -3548,21 +3808,56 @@ int cmfgen_commit_jnu(const CMFGENState *cs, NLTEConfig *nlte,
                 nlte->line_view_status);
         return -1;
     }
+    nlte->line_energy_view_status = radiation_field_line_jbar_energy_view(
+        &nlte->radiation_field, geo->time_explosion, (size_t)cs->n_shells,
+        generation, eset->q_set_hash, eset->profile_id, eset->profile_hash,
+        &nlte->line_energy_view);
+    if (nlte->line_energy_view_status != LINE_JBAR_VIEW_OK) {
+        fprintf(stderr,
+                "[R6][BLOCKED] reason=LINE_JBAR_ENERGY_VIEW status=%d\n",
+                nlte->line_energy_view_status);
+        return -1;
+    }
     fprintf(stderr,
             "[R6][LINE-IDENTITY] lane=DET generation=%llu "
-            "q_set_hash=%s profile_id=%llu profile_hash=%s "
+            "q_lines=%zu q_set_hash=%s e_lines=%zu e_set_hash=%s "
+            "domain_hash=%s profile_id=%llu profile_hash=%s "
+            "exact_iterations=%d exact_cap=%d exact_residual=%.17g "
+            "exact_tolerance=%.17g absolute_error_bound=%.17g "
+            "scattering_ratio_bound=%.17g fine_bins=%d "
+            "component_envelope=%d refinements=%zu "
+            "component_error=[%.17g,%.17g] profile_error=[%.17g,%.17g] "
+            "fine_nu=[%.17g,%.17g] "
             "statistic_kind=DETERMINISTIC provenance=%s\n",
-            (unsigned long long)generation, qset->q_set_hash,
+            (unsigned long long)generation, qset->n_q, qset->q_set_hash,
+            eset->n_q, eset->q_set_hash,
+            qset->domain_contract_hash,
             (unsigned long long)qset->profile_id, qset->profile_hash,
-            LUMINA_LINE_JBAR_DETERMINISTIC_PRODUCER);
+            opac->jbar_line_det_exact_iterations,
+            opac->jbar_line_det_exact_iteration_cap,
+            opac->jbar_line_det_exact_residual,
+            opac->jbar_line_det_exact_tolerance,
+            opac->jbar_line_det_exact_absolute_error_bound,
+            opac->jbar_line_det_exact_max_scattering_ratio,
+            opac->jbar_line_det_grid_n_bins,
+            opac->jbar_line_det_error_envelope_verified,
+            opac->jbar_line_det_error_refinement_iterations,
+            opac->jbar_line_det_component_error_min,
+            opac->jbar_line_det_component_error_max,
+            opac->jbar_line_det_profile_error_min,
+            opac->jbar_line_det_profile_error_max,
+            opac->jbar_line_det_grid_nu_min,
+            opac->jbar_line_det_grid_nu_max,
+            line_producer);
     fprintf(stderr,
             "[R6][LINE-COVERAGE] generation=%llu all_lines=%d q_lines=%zu "
+            "e_lines=%zu "
             "valid_lines=%zu partial_lines=%zu unsampled_lines=%zu "
-            "valid_pct_qset=%.6f valid_pct_all=%.6f "
+            "valid_pct_eset=%.6f valid_pct_all=%.6f "
             "valid_cells=%zu exact_zero_cells=%zu\n",
-            (unsigned long long)generation, opac->n_lines, qset->n_q, valid_lines,
-            partial_lines, unsampled_lines,
-            100.0 * (double)valid_lines / (double)qset->n_q,
+            (unsigned long long)generation, opac->n_lines, qset->n_q,
+            eset->n_q, valid_lines, partial_lines, unsampled_lines,
+            100.0 * (double)valid_lines / (double)eset->n_q,
             100.0 * (double)valid_lines / (double)opac->n_lines,
             valid_cells, exact_zero_cells);
 
@@ -4144,19 +4439,28 @@ static int cmfgen_fine_emergent_obs(const CMFGENState *fs, const Geometry *geo,
 /* ===================================================================
  * P7 PRODUCER: fine-grid line-resolved J_bar_l (gate II producer).
  *
- * Reuses the VALIDATED frequency-coupled kernel cmf_solve_J on a fine
- * uniform-log frequency mesh spanning a wavelength window (default
- * 1000-4000 A, the fluorescence pump region). Each line is deposited as a
- * Gaussian profile with center opacity
- *     chi0 = (1-e^{-tau_S}) / (sqrt(pi) * vdop * t_exp)
- * so that  Int chi_line dnu = (1-e^{-tau_S}) * nu_l/(c t_exp), which ties
- * back exactly to the binned expansion opacity (the I-2 deposition).
+ * Reuses the validated frequency-coupled formal kernel on a fine uniform-log
+ * frequency mesh spanning a wavelength window (default 1000-4000 A, the
+ * fluorescence pump region).  When the registered Q_E material context is
+ * present, the initialization-reference operator deposits every line from the
+ * CMFGEN direct-bracket material:
+ *     Int chi_line dnu = tau_S * nu_l/(c t_exp)
+ *     Int eta_line dnu = n_u A_ul h nu_l/(4 pi)
+ * with the typed CMFGEN tau<-0.5 replacement.  R2 and later instead solve the
+ * exact fine continuum only, then apply the same material line-by-line through
+ * the CMFGEN non-overlap Sobolev EXPONX operator.  This preserves physical
+ * mild negative tau without summing signed profiles into shared extinction.
+ * The initialization-only shared operator remains explicit so R1 stays the
+ * audited seed-predictor input; it is never selected by line sign.
+ * The historical (1-exp(-tau_S)) expansion-opacity/source deposit remains only
+ * for standalone legacy diagnostics lacking Q_E context.
  * Continuum (chi_es, chi_abs) is log-nu interpolated from the binned state.
  * Lines carry their lagged source S_l (line_source_S, fallback B(nu_l,Te))
  * in S_fixed; electron scattering is the ALI scattering channel (the outer
  * NLTE loop re-derives S_l from the J_bar this produces -- the lagged-J
- * scheme validated in gate 5d). After the solve, extracts per line
- *     J_bar_l = Int phi_l J dnu / Int phi_l dnu
+ * scheme validated in gate 5d). After the solve, samples the continuum with
+ * the registered profile and, in the production operator, computes
+ *     J_bar_l = beta J_cont + (1-beta) S_l
  * into opac->jbar_line_det (private sentinel -1 outside the window; R6 maps
  * it to public UNSAMPLED). Standalone-validated: gates 3a/4b/4c/5*.
  *
@@ -4165,29 +4469,521 @@ static int cmfgen_fine_emergent_obs(const CMFGENState *fs, const Geometry *geo,
  * opacity (LUMINA_CMF_FINE_BF_OPAC). NULL → keep the interpolated continuum. */
 static BFOpacity   *g_fine_bf   = NULL;
 static AtomicData  *g_fine_atom = NULL;
-void cmfgen_fine_set_bf_atom(BFOpacity *bf, AtomicData *atom) {
-    g_fine_bf = bf; g_fine_atom = atom;
+static NLTEConfig  *g_fine_nlte = NULL;
+static LuminaLineUpperPopulationFillFunction g_fine_upper_population_fill = NULL;
+void cmfgen_fine_set_bf_atom(
+        BFOpacity *bf, AtomicData *atom, NLTEConfig *nlte,
+        LuminaLineUpperPopulationFillFunction upper_population_fill) {
+    g_fine_bf = bf; g_fine_atom = atom; g_fine_nlte = nlte;
+    g_fine_upper_population_fill = upper_population_fill;
 }
 
-void cmfgen_fine_jbar(CMFGENState *csb, const Geometry *geo,
-                      OpacityState *opac, double T_inner, PlasmaState *plasma)
+static int cmf_fine_global_level(const AtomicData *atom, int line, int upper) {
+    if (!atom || line < 0 || line >= atom->n_lines || !atom->level_Z ||
+        !atom->level_ion || !atom->level_num || !atom->line_atomic_number ||
+        !atom->line_ion_number || !atom->line_level_lower ||
+        !atom->line_level_upper)
+        return -1;
+    int Z = atom->line_atomic_number[line];
+    int ion = atom->line_ion_number[line];
+    int level = upper ? atom->line_level_upper[line]
+                      : atom->line_level_lower[line];
+    for (int g = 0; g < atom->n_levels; ++g)
+        if (atom->level_Z[g] == Z && atom->level_ion[g] == ion &&
+            atom->level_num[g] == level)
+            return g;
+    return -1;
+}
+
+static int cmf_fine_line_material(
+        const OpacityState *opac,const PlasmaState *plasma,
+        int line,int shell,int n_shells,double nu,double tau,double dnu_d,
+        double time_explosion,double legacy_chi0_pref,int parity,
+        int legacy_source_nlte,double line_eps,double sl_clamp,
+        const double *upper_population_cache,
+        double *chi0,double *eta0,double *source_diag,
+        int *srce_chk_applied,int *clamped){
+    if(!opac||!plasma||!chi0||!eta0||!source_diag||
+       !srce_chk_applied||!clamped||line<0||shell<0||
+       shell>=n_shells||!(dnu_d>0.0))return-1;
+    *chi0=0.0;*eta0=0.0;*source_diag=0.0;
+    *srce_chk_applied=0;*clamped=0;
+    double B=cm_planck(nu,plasma->T_e[shell]);
+    if(parity){
+        size_t cell=(size_t)line*(size_t)n_shells+(size_t)shell;
+        if(!opac->tau_validity||
+           (opac->tau_validity[cell]!=A208_VALID&&
+            opac->tau_validity[cell]!=A208_EXACT_ZERO)||
+           !g_fine_atom||!g_fine_nlte||!upper_population_cache)
+            return-1;
+        double nupper=upper_population_cache[cell];
+        LineNetSobolevMaterial material;
+        double Aul=g_fine_atom->line_A_ul?
+            g_fine_atom->line_A_ul[line]:NAN;
+        if(!isfinite(nupper)||nupper<0.0||line_net_sobolev_material(
+               nupper,Aul,nu,tau,time_explosion,
+               LINE_NET_NEGATIVE_OPACITY_CMFGEN_SRCE_CHK,1,
+               &material)!=0)return-1;
+        *chi0=material.effective_integrated_opacity/
+              (1.7724538509055160*dnu_d);
+        *eta0=material.emission_per_sr/(1.7724538509055160*dnu_d);
+        if (*chi0 != 0.0) {
+            double ratio = *eta0 / *chi0;
+            *source_diag = isfinite(ratio) ? ratio : 0.0;
+        }
+        *srce_chk_applied=material.srce_chk_applied;
+        return 0;
+    }
+    if(tau<=1.0e-12)return 1;
+    double fraction=tau>1.0e-6?-expm1(-tau):tau;
+    *chi0=fraction*legacy_chi0_pref;
+    double source=legacy_source_nlte&&opac->line_source_S?
+        opac->line_source_S[(size_t)line*(size_t)n_shells+(size_t)shell]:0.0;
+    if(source<=0.0)source=B;
+    if(sl_clamp>0.0&&B>0.0&&source>sl_clamp*B){
+        source=sl_clamp*B;*clamped=1;
+    }
+    double emit=line_eps<1.0?line_eps*B:source;
+    *eta0=*chi0*emit;*source_diag=emit;
+    return 0;
+}
+
+typedef enum {
+    CMF_FINE_OWNER_CONFIG_OK = 0,
+    CMF_FINE_OWNER_INVALID_DEVICE_REQUEST = 1,
+    CMF_FINE_OWNER_CUDA_NOT_LINKED = 2
+} CMFFineOwnerConfigStatus;
+
+typedef struct {
+    CMFFineOwnerConfigStatus config_status;
+    int multigpu_requested;
+    int multigpu_status;
+    int devices_used;
+    int visible_devices;
+    int epoch_block_size;
+    int epoch_batch_cardinality;
+    int epoch_direct_replay_max_window;
+    int weighted_partition;
+    size_t max_device_allocated_bytes;
+    size_t total_device_allocated_bytes;
+    int device_partition_count;
+    int device_ray_begin[CMF_MGPU_REPORT_MAX_DEVICES];
+    int device_ray_end[CMF_MGPU_REPORT_MAX_DEVICES];
+    size_t device_owned_segment_work[CMF_MGPU_REPORT_MAX_DEVICES];
+    size_t device_computed_segment_work[CMF_MGPU_REPORT_MAX_DEVICES];
+    size_t device_allocated_bytes[CMF_MGPU_REPORT_MAX_DEVICES];
+    double initialization_seconds;
+    double source_assembly_seconds;
+    double host_to_device_seconds;
+    double device_sweep_seconds;
+    double device_to_host_seconds;
+    double host_reduction_seconds;
+    double convergence_check_seconds;
+    double fixed_point_solve_seconds;
+    double envelope_context_setup_seconds;
+    double bounds_seconds;
+    double envelope_residual_seconds;
+    double envelope_verify_seconds;
+    double envelope_refine_seconds;
+    double publication_seconds;
+    double cleanup_seconds;
+    double total_seconds;
+    int failure_phase;
+    int failure_iteration;
+    int failure_device_index;
+    int failure_ray_begin;
+    int failure_ray_end;
+    int failure_segment_index;
+    int failure_bin_index;
+    double failure_value;
+    CMFExactReport exact;
+} CMFFineOwnerResult;
+
+/* Sole serial/multi-GPU dispatch used by the production fine-grid owner and
+ * its pre-model smoke.  No non-OK multi-GPU attempt falls back to the CPU. */
+static int cmf_fine_exact_owner_solve(
+    int n_shells, int n_bins, double dlognu, const double *nu,
+    const double *r_inner, const double *r_outer, double time_explosion,
+    double T_inner, double inner_boundary_scale,
+    const double *chi_tot, const double *chi_es,
+    const double *S_fixed, double *J, double *error_upper,
+    size_t envelope_refinements, int iteration_cap, double tolerance,
+    CMFFineOwnerResult *result)
+{
+    if (!result) return -1;
+    memset(result, 0, sizeof(*result));
+    result->exact.status = CMF_EXACT_INVALID_INPUT;
+    result->exact.final_max_relative_change = INFINITY;
+    result->exact.final_max_absolute_change = INFINITY;
+    result->exact.max_scattering_ratio = INFINITY;
+    result->exact.fixed_point_absolute_error_bound = INFINITY;
+    result->exact.componentwise_residual_upper_max = INFINITY;
+    result->exact.componentwise_error_upper_min = INFINITY;
+    result->exact.componentwise_error_upper_max = INFINITY;
+    result->failure_iteration = -1;
+    result->failure_device_index = -1;
+    result->failure_ray_begin = -1;
+    result->failure_ray_end = -1;
+    result->failure_segment_index = -1;
+    result->failure_bin_index = -1;
+    result->failure_value = NAN;
+    int requested_devices = 0;
+    if (cmf_fine_multigpu_device_request(&requested_devices) != 0) {
+        result->config_status = CMF_FINE_OWNER_INVALID_DEVICE_REQUEST;
+        return -1;
+    }
+    result->multigpu_requested = requested_devices;
+    if (requested_devices == 0) {
+        CMFExactStatus status = cmf_exact_characteristic_solve_with_envelope(
+            n_shells, n_bins, dlognu, nu, r_inner, r_outer,
+            time_explosion, T_inner, inner_boundary_scale,
+            chi_tot, chi_es, S_fixed, J, error_upper,
+            envelope_refinements, iteration_cap, tolerance,
+            CMF_EXACT_MODE_POSITIVE_SLIDING, &result->exact);
+        return status == CMF_EXACT_OK ? 0 : -1;
+    }
+#ifdef LUMINA_HAS_CUDA_BF_GEMM
+    const CMFMultiGPUEpochSchedule schedule = {128, 64, 32};
+    CMFMultiGPUReport report;
+    CMFMultiGPUStatus status =
+        cmf_exact_multigpu_positive_solve_envelope_epoch_partitioned(
+            n_shells, n_bins, dlognu, nu, r_inner, r_outer,
+            time_explosion, T_inner, inner_boundary_scale,
+            chi_tot, chi_es, S_fixed, J, error_upper,
+            envelope_refinements,
+            CMF_MGPU_PARTITION_WEIGHTED_SEGMENTS, &schedule,
+            requested_devices, iteration_cap, tolerance, &report);
+    result->multigpu_status = (int)status;
+    result->devices_used = report.devices_used;
+    result->visible_devices = report.visible_devices;
+    result->epoch_block_size = report.epoch_block_size;
+    result->epoch_batch_cardinality = report.epoch_batch_cardinality;
+    result->epoch_direct_replay_max_window =
+        report.epoch_direct_replay_max_window;
+    result->weighted_partition = report.weighted_contiguous_ray_partition;
+    result->max_device_allocated_bytes = report.max_device_allocated_bytes;
+    result->total_device_allocated_bytes = report.total_device_allocated_bytes;
+    result->device_partition_count = report.device_partition_count;
+    for (int device = 0; device < report.device_partition_count; ++device) {
+        result->device_ray_begin[device] = report.device_ray_begin[device];
+        result->device_ray_end[device] = report.device_ray_end[device];
+        result->device_owned_segment_work[device] =
+            report.device_owned_segment_work[device];
+        result->device_computed_segment_work[device] =
+            report.device_computed_segment_work[device];
+        result->device_allocated_bytes[device] =
+            report.device_allocated_bytes[device];
+    }
+    result->initialization_seconds = report.initialization_seconds;
+    result->source_assembly_seconds = report.source_assembly_seconds;
+    result->host_to_device_seconds = report.host_to_device_seconds;
+    result->device_sweep_seconds = report.device_sweep_seconds;
+    result->device_to_host_seconds = report.device_to_host_seconds;
+    result->host_reduction_seconds = report.host_reduction_seconds;
+    result->convergence_check_seconds = report.convergence_check_seconds;
+    result->fixed_point_solve_seconds = report.fixed_point_solve_seconds;
+    result->envelope_context_setup_seconds =
+        report.envelope_context_setup_seconds;
+    result->bounds_seconds = report.bounds_seconds;
+    result->envelope_residual_seconds = report.envelope_residual_seconds;
+    result->envelope_verify_seconds = report.envelope_verify_seconds;
+    result->envelope_refine_seconds = report.envelope_refine_seconds;
+    result->publication_seconds = report.publication_seconds;
+    result->cleanup_seconds = report.cleanup_seconds;
+    result->total_seconds = report.total_seconds;
+    result->failure_phase = report.failure_phase;
+    result->failure_iteration = report.failure_iteration;
+    result->failure_device_index = report.failure_device_index;
+    result->failure_ray_begin = report.failure_ray_begin;
+    result->failure_ray_end = report.failure_ray_end;
+    result->failure_segment_index = report.failure_segment_index;
+    result->failure_bin_index = report.failure_bin_index;
+    result->failure_value = report.failure_nearest;
+    result->exact.status = status == CMF_MGPU_OK ?
+        CMF_EXACT_OK : CMF_EXACT_NONFINITE;
+    result->exact.mode = CMF_EXACT_MODE_POSITIVE_SLIDING;
+    result->exact.iterations_used = report.iterations_used;
+    result->exact.iteration_cap = report.iteration_cap;
+    result->exact.tolerance = report.tolerance;
+    result->exact.final_max_relative_change =
+        report.final_max_relative_change;
+    result->exact.final_max_absolute_change =
+        report.final_max_absolute_change;
+    result->exact.max_scattering_ratio = report.max_scattering_ratio;
+    result->exact.fixed_point_absolute_error_bound =
+        report.fixed_point_absolute_error_bound;
+    result->exact.max_characteristic_drift_bins =
+        report.max_characteristic_drift_bins;
+    result->exact.n_rays = report.n_rays;
+    result->exact.componentwise_error_envelope_verified =
+        report.componentwise_error_envelope_verified;
+    result->exact.componentwise_error_seed_attempts =
+        report.componentwise_error_seed_attempts;
+    result->exact.componentwise_error_refinement_iterations =
+        report.componentwise_error_refinement_iterations;
+    result->exact.componentwise_residual_upper_max =
+        report.componentwise_residual_upper_max;
+    result->exact.componentwise_error_upper_min =
+        report.componentwise_error_upper_min;
+    result->exact.componentwise_error_upper_max =
+        report.componentwise_error_upper_max;
+    return status == CMF_MGPU_OK ? 0 : -1;
+#else
+    result->config_status = CMF_FINE_OWNER_CUDA_NOT_LINKED;
+    return -1;
+#endif
+}
+
+int cmf_exact_owner_selftest(void)
+{
+#ifndef LUMINA_HAS_CUDA_BF_GEMM
+    fprintf(stderr, "CMF_EXACT_OWNER_SELFTEST_BLOCKED CUDA_NOT_LINKED\n");
+    return 77;
+#else
+    enum { NS = 3, NB = 96, CELLS = NS * NB };
+    const double dlognu = 1.0e-3;
+    const double time_explosion = 1.0e6;
+    double r_inner[NS] = {3.0e14, 4.0e14, 5.0e14};
+    double r_outer[NS] = {4.0e14, 5.0e14, 6.0e14};
+    double nu[NB], chi_tot[CELLS], chi_es[CELLS], fixed[CELLS];
+    double initial[CELLS], cpu_J[CELLS], gpu_J[CELLS];
+    double cpu_error[CELLS], gpu_error[CELLS];
+    for (int b = 0; b < NB; ++b)
+        nu[b] = 1.0e15 * exp(((double)b + 0.5) * dlognu);
+    for (int s = 0; s < NS; ++s) {
+        for (int b = 0; b < NB; ++b) {
+            size_t cell = (size_t)s * NB + (size_t)b;
+            double ripple = 1.0 + 0.35 * sin(0.17 * b + 0.4 * s);
+            chi_tot[cell] = (2.0 + s) * 1.0e-15 * ripple;
+            chi_es[cell] = 0.27 * chi_tot[cell];
+            fixed[cell] = (1.0 + 0.1 * s) * 1.0e-7 *
+                          (1.0 + 0.2 * cos(0.11 * b));
+            initial[cell] = cpu_J[cell] = gpu_J[cell] = 0.8e-7;
+            cpu_error[cell] = gpu_error[cell] = -1.0;
+        }
+    }
+    CMFExactReport cpu_report;
+    CMFExactStatus cpu_status =
+        cmf_exact_characteristic_solve_with_envelope(
+            NS, NB, dlognu, nu, r_inner, r_outer, time_explosion,
+            10000.0, 1.0, chi_tot, chi_es, fixed, cpu_J, cpu_error,
+            8U, 120, 1.0e-13, CMF_EXACT_MODE_POSITIVE_SLIDING,
+            &cpu_report);
+    CMFFineOwnerResult gpu_result;
+    int gpu_rc = cmf_fine_exact_owner_solve(
+        NS, NB, dlognu, nu, r_inner, r_outer, time_explosion,
+        10000.0, 1.0, chi_tot, chi_es, fixed, gpu_J, gpu_error,
+        8U, 120, 1.0e-13, &gpu_result);
+    if (cpu_status != CMF_EXACT_OK || gpu_rc != 0 ||
+        gpu_result.multigpu_requested <= 0 ||
+        gpu_result.devices_used != gpu_result.multigpu_requested ||
+        gpu_result.exact.status != CMF_EXACT_OK ||
+        !gpu_result.exact.componentwise_error_envelope_verified ||
+        gpu_result.exact.componentwise_error_refinement_iterations != 8U ||
+        !(gpu_result.exact.max_scattering_ratio >= 0.0) ||
+        !(gpu_result.exact.max_scattering_ratio < 1.0) ||
+        !isfinite(gpu_result.exact.fixed_point_absolute_error_bound)) {
+        fprintf(stderr,
+                "CMF_EXACT_OWNER_SELFTEST_FAIL owner cpu_status=%s "
+                "gpu_status=%s devices=%d/%d envelope=%d refinements=%zu\n",
+                cmf_exact_status_name(cpu_status),
+                cmf_multigpu_status_name(
+                    (CMFMultiGPUStatus)gpu_result.multigpu_status),
+                gpu_result.devices_used, gpu_result.multigpu_requested,
+                gpu_result.exact.componentwise_error_envelope_verified,
+                gpu_result.exact.componentwise_error_refinement_iterations);
+        return 1;
+    }
+    double max_relative_J = 0.0, max_relative_error = 0.0;
+    double max_enclosure_overlap_ratio = 0.0;
+    double finite_min = INFINITY, finite_max = 0.0;
+    for (size_t cell = 0; cell < (size_t)CELLS; ++cell) {
+        if (!(gpu_J[cell] >= 0.0) || !isfinite(gpu_J[cell]) ||
+            !(gpu_error[cell] >= 0.0) || !isfinite(gpu_error[cell])) {
+            fprintf(stderr,
+                    "CMF_EXACT_OWNER_SELFTEST_FAIL nonfinite cell=%zu "
+                    "J=%.17g error=%.17g\n",
+                    cell, gpu_J[cell], gpu_error[cell]);
+            return 1;
+        }
+        double rel_J = fabs(gpu_J[cell] - cpu_J[cell]) /
+                       (fabs(cpu_J[cell]) + 1.0e-300);
+        double rel_error = fabs(gpu_error[cell] - cpu_error[cell]) /
+                           (fabs(cpu_error[cell]) + 1.0e-300);
+        long double distance = fabsl(
+            (long double)gpu_J[cell] - (long double)cpu_J[cell]);
+        long double combined_envelope =
+            (long double)gpu_error[cell] + (long double)cpu_error[cell];
+        if (!(distance <= combined_envelope)) {
+            fprintf(stderr,
+                    "CMF_EXACT_OWNER_SELFTEST_FAIL disjoint_envelope cell=%zu "
+                    "distance=%.21Lg cpu_error=%.17g gpu_error=%.17g\n",
+                    cell, distance, cpu_error[cell], gpu_error[cell]);
+            return 1;
+        }
+        double overlap_ratio = combined_envelope > 0.0L ?
+            (double)(distance / combined_envelope) : 0.0;
+        if (overlap_ratio > max_enclosure_overlap_ratio)
+            max_enclosure_overlap_ratio = overlap_ratio;
+        if (rel_J > max_relative_J) max_relative_J = rel_J;
+        if (rel_error > max_relative_error) max_relative_error = rel_error;
+        if (gpu_J[cell] < finite_min) finite_min = gpu_J[cell];
+        if (gpu_J[cell] > finite_max) finite_max = gpu_J[cell];
+    }
+    if (!(max_relative_J <= 1.0e-12)) {
+        fprintf(stderr,
+                "CMF_EXACT_OWNER_SELFTEST_FAIL cpu_gpu max_rel_J=%.17g\n",
+                max_relative_J);
+        return 1;
+    }
+
+    double bad_chi[CELLS], rejected_J[CELLS], rejected_error[CELLS];
+    double rejected_J_before[CELLS], rejected_error_before[CELLS];
+    memcpy(bad_chi, chi_tot, sizeof(bad_chi));
+    memcpy(rejected_J, initial, sizeof(rejected_J));
+    for (size_t cell = 0; cell < (size_t)CELLS; ++cell)
+        rejected_error[cell] = 5.0 + (double)cell;
+    memcpy(rejected_J_before, rejected_J, sizeof(rejected_J));
+    memcpy(rejected_error_before, rejected_error, sizeof(rejected_error));
+    bad_chi[3] = -1.0;
+    CMFFineOwnerResult rejected_result;
+    int rejected_rc = cmf_fine_exact_owner_solve(
+        NS, NB, dlognu, nu, r_inner, r_outer, time_explosion,
+        10000.0, 1.0, bad_chi, chi_es, fixed,
+        rejected_J, rejected_error, 8U, 120, 1.0e-13,
+        &rejected_result);
+    if (rejected_rc == 0 ||
+        rejected_result.multigpu_status != CMF_MGPU_NONFINITE ||
+        memcmp(rejected_J, rejected_J_before, sizeof(rejected_J)) != 0 ||
+        memcmp(rejected_error, rejected_error_before,
+               sizeof(rejected_error)) != 0) {
+        fprintf(stderr,
+                "CMF_EXACT_OWNER_SELFTEST_FAIL transactional status=%s "
+                "J_preserved=%d error_preserved=%d\n",
+                cmf_multigpu_status_name(
+                    (CMFMultiGPUStatus)rejected_result.multigpu_status),
+                memcmp(rejected_J, rejected_J_before,
+                       sizeof(rejected_J)) == 0,
+                memcmp(rejected_error, rejected_error_before,
+                       sizeof(rejected_error)) == 0);
+        return 1;
+    }
+
+    const char *saved_request = getenv("LUMINA_CMF_FINE_MGPU_DEVICES");
+    char saved_copy[64];
+    if (!saved_request || strlen(saved_request) >= sizeof(saved_copy)) {
+        fprintf(stderr,
+                "CMF_EXACT_OWNER_SELFTEST_FAIL missing_device_request\n");
+        return 1;
+    }
+    strcpy(saved_copy, saved_request);
+    setenv("LUMINA_CMF_FINE_MGPU_DEVICES", "invalid", 1);
+    memcpy(rejected_J, initial, sizeof(rejected_J));
+    memcpy(rejected_J_before, rejected_J, sizeof(rejected_J));
+    CMFFineOwnerResult invalid_result;
+    int invalid_rc = cmf_fine_exact_owner_solve(
+        NS, NB, dlognu, nu, r_inner, r_outer, time_explosion,
+        10000.0, 1.0, chi_tot, chi_es, fixed,
+        rejected_J, rejected_error, 8U, 120, 1.0e-13,
+        &invalid_result);
+    setenv("LUMINA_CMF_FINE_MGPU_DEVICES", saved_copy, 1);
+    if (invalid_rc == 0 ||
+        invalid_result.config_status !=
+            CMF_FINE_OWNER_INVALID_DEVICE_REQUEST ||
+        memcmp(rejected_J, rejected_J_before, sizeof(rejected_J)) != 0) {
+        fprintf(stderr,
+                "CMF_EXACT_OWNER_SELFTEST_FAIL invalid_config rc=%d "
+                "config=%d J_preserved=%d\n",
+                invalid_rc, (int)invalid_result.config_status,
+                memcmp(rejected_J, rejected_J_before,
+                       sizeof(rejected_J)) == 0);
+        return 1;
+    }
+    printf("CMF_EXACT_OWNER_SELFTEST PASS devices=%d visible=%d "
+           "finite_J=[%.17g,%.17g] max_rel_cpu_gpu_J=%.17g "
+           "max_rel_cpu_gpu_error_width=%.17g "
+           "max_enclosure_overlap_ratio=%.17g "
+           "component_error=[%.17g,%.17g] "
+           "transactional_negative=PASS invalid_config=PASS "
+           "floor=0 clamp=0 jitter=0 repair=0\n",
+           gpu_result.devices_used, gpu_result.visible_devices,
+           finite_min, finite_max, max_relative_J, max_relative_error,
+           max_enclosure_overlap_ratio,
+           gpu_result.exact.componentwise_error_upper_min,
+           gpu_result.exact.componentwise_error_upper_max);
+    return 0;
+#endif
+}
+
+int cmfgen_fine_jbar(CMFGENState *csb, const Geometry *geo,
+                     OpacityState *opac, double T_inner, PlasmaState *plasma,
+                     CMFFineLineOperator line_operator)
 {
     int NS = csb->n_shells, NL = opac->n_lines;
     opac->jbar_line_det_vdoppler_cms = 0.0;
     opac->jbar_line_det_ndoppler = 0.0;
-    if (NL <= 0 || !opac->jbar_line_det) return;
+    opac->jbar_line_det_operator = 0;
+    opac->jbar_line_det_exact_converged = 0;
+    opac->jbar_line_det_exact_iterations = 0;
+    opac->jbar_line_det_exact_iteration_cap = 0;
+    opac->jbar_line_det_exact_residual = INFINITY;
+    opac->jbar_line_det_exact_tolerance = 0.0;
+    opac->jbar_line_det_exact_absolute_error_bound = INFINITY;
+    opac->jbar_line_det_exact_max_scattering_ratio = INFINITY;
+    opac->jbar_line_det_error_envelope_verified = 0;
+    opac->jbar_line_det_error_refinement_iterations = 0;
+    opac->jbar_line_det_component_error_min = INFINITY;
+    opac->jbar_line_det_component_error_max = INFINITY;
+    opac->jbar_line_det_profile_error_min = INFINITY;
+    opac->jbar_line_det_profile_error_max = INFINITY;
+    opac->jbar_line_det_grid_n_bins = 0;
+    opac->jbar_line_det_grid_nu_min = 0.0;
+    opac->jbar_line_det_grid_nu_max = 0.0;
+    opac->jbar_line_det_continuum_captured = 0;
+    free(opac->jbar_line_det_continuum);
+    free(opac->jbar_line_det_continuum_error_upper);
+    opac->jbar_line_det_continuum = NULL;
+    opac->jbar_line_det_continuum_error_upper = NULL;
+    if (NL <= 0 || !opac->jbar_line_det || !geo || !plasma ||
+        (line_operator != CMF_FINE_LINE_OPERATOR_INIT_SHARED_GAUSSIAN &&
+         line_operator !=
+             CMF_FINE_LINE_OPERATOR_CMFGEN_NONOVERLAP_SOBOLEV))
+        return -1;
     double t_exp = geo->time_explosion;
     int diag = 0; { const char *e=getenv("LUMINA_CMF_FINE_DIAG"); if(e) diag=atoi(e); }
+    int independent_capture_requested = 0;
+    if (cmf_optional_binary_env("LUMINA_A210_INDEPENDENT_CAPTURE",
+                                &independent_capture_requested) != 0) {
+        fprintf(stderr,
+                "[cmf_fine][BLOCKED] reason=INVALID_INDEPENDENT_CAPTURE_REQUEST "
+                "value=%s expected=0_or_1\n",
+                getenv("LUMINA_A210_INDEPENDENT_CAPTURE") ?
+                    getenv("LUMINA_A210_INDEPENDENT_CAPTURE") : "(unset)");
+        return -1;
+    }
 
     /* --- window + resolution (env-tunable) --- */
-    double lam_lo = 1000.0, lam_hi = 4000.0;   /* Angstrom */
+    double lam_lo = LINE_JBAR_BB_LAMBDA_MIN_ANGSTROM;
+    double lam_hi = LINE_JBAR_BB_LAMBDA_MAX_ANGSTROM; /* line-centre domain, A */
     { const char *e=getenv("LUMINA_CMF_FINE_LAMLO"); if(e) lam_lo=atof(e); }
     { const char *e=getenv("LUMINA_CMF_FINE_LAMHI"); if(e) lam_hi=atof(e); }
     double vdop = 1.0e6;                        /* cm/s, Doppler width  */
     { const char *e=getenv("LUMINA_CMF_FINE_VDOP"); if(e) vdop=atof(e); }
     double ppd = 12.0;                          /* fine points / vdop   */
     { const char *e=getenv("LUMINA_CMF_FINE_PPD"); if(e) ppd=atof(e); }
-    int n_ali = 24; { const char *e=getenv("LUMINA_CMF_FINE_ALI"); if(e) n_ali=atoi(e); }
+    int n_ali = 64; { const char *e=getenv("LUMINA_CMF_FINE_ALI"); if(e) n_ali=atoi(e); }
+    double solve_tol = 1.0e-8;
+    { const char *e=getenv("LUMINA_CMF_FINE_TOL"); if(e) solve_tol=atof(e); }
+    size_t envelope_refinements = 8U;
+    if (cmf_fine_envelope_refinement_request(&envelope_refinements) != 0) {
+        fprintf(stderr,
+                "[cmf_fine][BLOCKED] reason=INVALID_ENVELOPE_REFINEMENTS "
+                "value=%s allowed=1:64 physical_values_modified=0\n",
+                getenv("LUMINA_CMF_FINE_ENVELOPE_REFINEMENTS") ?
+                    getenv("LUMINA_CMF_FINE_ENVELOPE_REFINEMENTS") :
+                    "(unset)");
+        return -1;
+    }
     /* Stage-2-pre stabilization: clamp lagged super-thermal S_l in the line
      * emissivity deposit. The cold-shell NLTE matrix is ill-conditioned ->
      * S_l/B can be huge (numerical artifact, rates are DB-correct); the closed
@@ -4205,21 +5001,145 @@ void cmfgen_fine_jbar(CMFGENState *csb, const Geometry *geo,
      * outward (W*B(T_phot) > cold B(T_e)) -> super-thermal pump -> fluorescence.
      * eps=1.0 (default) = legacy pure-thermal (byte-identical). FROZEN-PLASMA
      * staged use: converge thermal first, then enable as a perturbation. */
-    double line_eps = 1.0; { const char *e=getenv("LUMINA_CMF_FINE_LINE_EPS"); if(e) line_eps=atof(e);
-        if (line_eps < 0.0) line_eps = 0.0; if (line_eps > 1.0) line_eps = 1.0; }
+    double line_eps = 1.0;
+    { const char *e=getenv("LUMINA_CMF_FINE_LINE_EPS"); if(e) line_eps=atof(e); }
 
-    double nu_lo = CM_C / (lam_hi * 1.0e-8);    /* red edge  = low nu   */
-    double nu_hi = CM_C / (lam_lo * 1.0e-8);    /* blue edge = high nu  */
+    if (!(lam_lo > 0.0) || !(lam_hi > lam_lo) || !(vdop > 0.0) ||
+        !(ppd > 0.0) || n_ali < 2 || !(solve_tol > 0.0) ||
+        !isfinite(lam_lo) || !isfinite(lam_hi) || !isfinite(vdop) ||
+        !isfinite(ppd) || !isfinite(solve_tol) || !isfinite(sl_clamp) ||
+        sl_clamp < 0.0 || !isfinite(line_eps) || line_eps < 0.0 ||
+        line_eps > 1.0) {
+        fprintf(stderr, "[cmf_fine][BLOCKED] reason=INVALID_SOLVE_CONFIG\n");
+        return -1;
+    }
+    /* Only the final non-overlap Sobolev producer is consumed by the Stage-4
+     * saturation rows.  The initialization producer remains byte-for-byte
+     * free of the extra diagnostic solve. */
+    int independent_capture = independent_capture_requested &&
+        line_operator == CMF_FINE_LINE_OPERATOR_CMFGEN_NONOVERLAP_SOBOLEV;
+    if (independent_capture && line_eps != 1.0) {
+        /* The independent solve is intentionally line-free.  When eps<1 the
+         * production assembly folds a line-scattering term into chi_es; using
+         * subtraction here would manufacture a large-number cancellation and
+         * would not be an independent physical continuum. */
+        fprintf(stderr,
+                "[cmf_fine][BLOCKED] reason=INDEPENDENT_CAPTURE_REQUIRES_"
+                "PURE_CONTINUUM_SCATTERING line_eps=%.17g "
+                "physical_values_modified=0 floor=0 cap=0 clamp=0 jitter=0 repair=0\n",
+                line_eps);
+        return -1;
+    }
+    if (independent_capture) {
+        const char *photoion = getenv("LUMINA_CMF_FINE_PHOTOION");
+        if (photoion && strcmp(photoion, "0") != 0) {
+            /* The fine-photoion lane transfers ownership of fs.J to the
+             * coupled BF integrator after this routine.  Refuse the probe
+             * rather than accidentally transferring the line-free field. */
+            fprintf(stderr,
+                    "[cmf_fine][BLOCKED] reason=INDEPENDENT_CAPTURE_"
+                    "INCOMPATIBLE_FINE_PHOTOION value=%s physical_values_modified=0 "
+                    "floor=0 cap=0 clamp=0 jitter=0 repair=0\n", photoion);
+            return -1;
+        }
+    }
     double dlognu = (vdop / CM_C) / ppd;
-    int NF = (int)(log(nu_hi / nu_lo) / dlognu) + 1;
-    if (NF < 2) return;
+    double profile_width = LINE_JBAR_PROFILE_NDOPPLER * vdop / CM_C;
+    if (!(profile_width > 0.0) || !(profile_width < 1.0)) {
+        fprintf(stderr, "[cmf_fine][BLOCKED] reason=INVALID_PROFILE_WIDTH value=%.17g\n",
+                profile_width);
+        return -1;
+    }
+    double line_nu_lo = CM_C / (lam_hi * 1.0e-8);
+    double line_nu_hi = CM_C / (lam_lo * 1.0e-8);
+    double support_nu_lo = line_nu_lo * (1.0 - profile_width);
+    double support_nu_hi = line_nu_hi * (1.0 + profile_width);
+    /* Redward bins cannot affect Q_g (the characteristic is blue->red), but
+     * every Q profile wing must fit.  Blueward radiation is causal upstream:
+     * use the canonical union-owner edge as the reservoir, then prove below
+     * that it exceeds the maximum geometry-specific upstream requirement. */
+    double reservoir_nu_hi = LUMINA_RADFIELD_NU_MAX_HZ;
+    if (reservoir_nu_hi < support_nu_hi) reservoir_nu_hi = support_nu_hi;
+    double max_upstream_log_shift = 0.0;
+    {
+        double rmid[256];
+        if (NS > (int)(sizeof(rmid) / sizeof(rmid[0])) ||
+            !(geo->time_explosion > 0.0)) {
+            fprintf(stderr,
+                    "[cmf_fine][BLOCKED] reason=INVALID_RESERVOIR_GEOMETRY "
+                    "shells=%d t_exp=%.17g\n", NS, geo->time_explosion);
+            return -1;
+        }
+        for (int s = 0; s < NS; ++s)
+            rmid[s] = 0.5 * (geo->r_inner[s] + geo->r_outer[s]);
+        for (int k = 0; k < NS + 16; ++k) {
+            double impact = k < 16
+                ? rmid[0] * (double)k / 16.0 : rmid[k - 16];
+            double z_outer = 0.0;
+            for (int s = NS - 1; s >= 0; --s) {
+                if (rmid[s] <= impact) break;
+                if (z_outer == 0.0)
+                    z_outer = sqrt(rmid[s] * rmid[s] - impact * impact);
+            }
+            double z_inner = impact < rmid[0]
+                ? sqrt(rmid[0] * rmid[0] - impact * impact) : 0.0;
+            double shift = (z_outer - z_inner) /
+                           (geo->time_explosion * CM_C);
+            if (shift > max_upstream_log_shift) max_upstream_log_shift = shift;
+        }
+    }
+    double required_upstream_nu = support_nu_hi * exp(max_upstream_log_shift);
+    if (!isfinite(required_upstream_nu) || required_upstream_nu > reservoir_nu_hi) {
+        fprintf(stderr,
+                "[cmf_fine][BLOCKED] reason=BLUE_RESERVOIR_COVERAGE "
+                "support_nu_hi=%.17g max_log_shift=%.17g required=%.17g "
+                "available=%.17g canonical_edge_hash=%s\n",
+                support_nu_hi, max_upstream_log_shift, required_upstream_nu,
+                reservoir_nu_hi, LUMINA_RADFIELD_EDGE_SHA256);
+        return -1;
+    }
+    double nu_lo = support_nu_lo * exp(-0.5 * dlognu);
+    double requested_nu_hi = reservoir_nu_hi * exp(0.5 * dlognu);
+    double span = log(requested_nu_hi / nu_lo) / dlognu;
+    if (!(span > 0.0) || !isfinite(span) || span > (double)INT32_MAX - 2.0) {
+        fprintf(stderr, "[cmf_fine][BLOCKED] reason=INVALID_GRID_SPAN span=%.17g\n",
+                span);
+        return -1;
+    }
+    int NF = (int)ceil(span);
+    if (NF < 2) return -1;
+    double nu_hi = nu_lo * exp((double)NF * dlognu);
 
     /* default ALL lines to the sentinel (out-of-window fall back) */
-    for (size_t i = 0; i < (size_t)NL * NS; ++i) opac->jbar_line_det[i] = -1.0;
+    if ((size_t)NL > SIZE_MAX / (size_t)NS ||
+        (size_t)NL * (size_t)NS > SIZE_MAX / sizeof(double)) {
+        fprintf(stderr,
+                "[cmf_fine][BLOCKED] reason=LINE_ERROR_SIZE_OVERFLOW "
+                "lines=%d shells=%d\n", NL, NS);
+        return -1;
+    }
+    size_t line_cells = (size_t)NL * (size_t)NS;
+    if (!opac->jbar_line_det_error_upper)
+        opac->jbar_line_det_error_upper =
+            (double *)malloc(line_cells * sizeof(double));
+    if (!opac->jbar_line_det_error_upper) {
+        fprintf(stderr,
+                "[cmf_fine][BLOCKED] reason=LINE_ERROR_ALLOCATION "
+                "cells=%zu bytes=%zu\n",
+                line_cells, line_cells * sizeof(double));
+        return -1;
+    }
+    for (size_t i = 0; i < line_cells; ++i) {
+        opac->jbar_line_det[i] = -1.0;
+        opac->jbar_line_det_error_upper[i] = -1.0;
+    }
 
     if (diag) fprintf(stderr,
-        "[cmf_fine] window %.0f-%.0f A  vdop=%.1f km/s ppd=%.0f  NF=%d (%.1fM cells)\n",
-        lam_lo, lam_hi, vdop/1e5, ppd, NF, (double)NF*NS/1e6);
+        "[cmf_fine] BB centers %.0f-%.0f A support_red=%.6f A "
+        "reservoir_blue=%.6f A vdop=%.1f km/s ppd=%.0f NF=%d (%.1fM cells)\n",
+        lam_lo, lam_hi, CM_C/support_nu_lo*1.0e8,
+        CM_C/reservoir_nu_hi*1.0e8, vdop/1e5, ppd, NF,
+        (double)NF*NS/1e6);
 
     /* --- fine state: only the fields cmf_solve_J reads, plus chi_line/dnu --- */
     CMFGENState fs; memset(&fs, 0, sizeof fs);
@@ -4238,7 +5158,7 @@ void cmfgen_fine_jbar(CMFGENState *csb, const Geometry *geo,
         !fs.S_fixed||!fs.J||!eta) {
         fprintf(stderr, "[cmf_fine] alloc failed (NF=%d NS=%d)\n", NF, NS);
         free(fs.nu);free(fs.dnu);free(fs.chi_es);free(fs.chi_abs);free(fs.chi_line);
-        free(fs.chi_tot);free(fs.S_fixed);free(fs.J);free(eta); return;
+        free(fs.chi_tot);free(fs.S_fixed);free(fs.J);free(eta); return -1;
     }
     for (int i = 0; i < NF; ++i) {
         fs.nu[i]  = nu_lo * exp((i + 0.5) * dlognu);
@@ -4272,16 +5192,40 @@ void cmfgen_fine_jbar(CMFGENState *csb, const Geometry *geo,
             if (chi_bf_fine && bf_gemm_compute_fine(g_fine_bf, g_fine_atom, plasma, NS,
                     fs.nu, NF, g_fine_bf->nu_min, g_fine_bf->d_log_nu, chi_bf_fine) == 0) {
                 double sum_old = 0.0, sum_new = 0.0;
-                #pragma omp parallel for schedule(static) reduction(+:sum_old,sum_new)
+                size_t first_invalid = SIZE_MAX;
+                #pragma omp parallel for schedule(static) \
+                    reduction(+:sum_old,sum_new) reduction(min:first_invalid)
                 for (int s = 0; s < NS; ++s)
                     for (int i = 0; i < NF; ++i) {
                         size_t k = (size_t)s*NF + i;
                         double smeared_bf = bf_get_chi(g_fine_bf, s, fs.nu[i]);
                         double newabs = fs.chi_abs[k] - smeared_bf + chi_bf_fine[k];
-                        if (newabs < 0.0) newabs = chi_bf_fine[k];   /* ff floor guard */
+                        if (!isfinite(newabs) || newabs < 0.0)
+                            if (k < first_invalid) first_invalid = k;
                         sum_old += fs.chi_abs[k]; sum_new += newabs;
                         fs.chi_abs[k] = newabs;
                     }
+                if (first_invalid != SIZE_MAX) {
+                    int bad_shell = (int)(first_invalid / (size_t)NF);
+                    int bad_bin = (int)(first_invalid % (size_t)NF);
+                    double smeared = bf_get_chi(
+                        g_fine_bf, bad_shell, fs.nu[bad_bin]);
+                    double sharp = chi_bf_fine[first_invalid];
+                    double assembled = fs.chi_abs[first_invalid];
+                    double interpolated = assembled + smeared - sharp;
+                    fprintf(stderr,
+                            "[FINE-BF-OPAC][BLOCKED] reason=NEGATIVE_OR_"
+                            "NONFINITE_TRUE_ABSORPTION shell=%d bin=%d nu=%.17g "
+                            "interpolated=%.17g smeared_bf=%.17g sharp_bf=%.17g "
+                            "assembled=%.17g floor=0 clamp=0 fallback=0\n",
+                            bad_shell,bad_bin,fs.nu[bad_bin],interpolated,
+                            smeared,sharp,assembled);
+                    free(chi_bf_fine);
+                    free(fs.nu);free(fs.dnu);free(fs.chi_es);free(fs.chi_abs);
+                    free(fs.chi_line);free(fs.chi_tot);free(fs.S_fixed);free(fs.J);
+                    free(eta);
+                    return -1;
+                }
                 fprintf(stderr, "[FINE-BF-OPAC] sharp-edge bf continuum applied "
                         "(NS=%d NF=%d, Σchi_abs %.3e -> %.3e)\n", NS, NF, sum_old, sum_new);
                 /* DIAG: for the outer shell, show how much the bf sharpening changed
@@ -4303,7 +5247,14 @@ void cmfgen_fine_jbar(CMFGENState *csb, const Geometry *geo,
                     }
                 }
             } else {
-                fprintf(stderr, "[FINE-BF-OPAC] compute failed -> interpolated continuum\n");
+                fprintf(stderr,
+                        "[FINE-BF-OPAC][BLOCKED] requested sharp-edge "
+                        "continuum compute failed\n");
+                free(chi_bf_fine);
+                free(fs.nu);free(fs.dnu);free(fs.chi_es);free(fs.chi_abs);
+                free(fs.chi_line);free(fs.chi_tot);free(fs.S_fixed);free(fs.J);
+                free(eta);
+                return -1;
             }
             free(chi_bf_fine);
         }
@@ -4320,6 +5271,11 @@ void cmfgen_fine_jbar(CMFGENState *csb, const Geometry *geo,
     double chi0_pref = 1.0 / (SQRTPI * vdop * t_exp);   /* chi0 = (1-e^-tau)*pref */
     int src_nlte = (opac->line_source_S != NULL);
     long n_inwin = 0, n_clamped = 0;
+    long srce_chk_cells = 0;
+    int material_error = 0;
+    uint64_t signed_cells = 0, exact_zero_tau_cells = 0;
+    uint64_t raw_negative_cells = 0, mild_negative_cells = 0;
+    uint64_t srce_chk_expected_cells = 0;
     double max_slb = 0.0;   /* max S_l/B(Te) over deposited lines (diagnostic) */
     /* Strong-line threshold: skip lines whose Sobolev tau is below fine_taumin in
      * every shell. The dense UV pump forest (1000-3000A) is otherwise intractable
@@ -4329,6 +5285,64 @@ void cmfgen_fine_jbar(CMFGENState *csb, const Geometry *geo,
     double fine_taumin = 1e-12;
     { const char *e = getenv("LUMINA_CMF_FINE_TAUMIN"); if (e) fine_taumin = atof(e); }
     long n_skip_weak = 0;
+    int line_net_parity = g_fine_atom && g_fine_nlte &&
+        g_fine_upper_population_fill && g_fine_nlte->line_eset;
+    int sobolev_operator = line_net_parity &&
+        line_operator == CMF_FINE_LINE_OPERATOR_CMFGEN_NONOVERLAP_SOBOLEV;
+    if (line_operator ==
+            CMF_FINE_LINE_OPERATOR_CMFGEN_NONOVERLAP_SOBOLEV &&
+        !line_net_parity) {
+        fprintf(stderr,
+                "[cmf_fine][BLOCKED] reason=SOBOLEV_OPERATOR_WITHOUT_PARITY "
+                "operator=%d action=TERMINATE\n", (int)line_operator);
+        free(fs.nu);free(fs.dnu);free(fs.chi_es);free(fs.chi_abs);
+        free(fs.chi_line);free(fs.chi_tot);free(fs.S_fixed);free(fs.J);
+        free(eta);return -1;
+    }
+    if (line_net_parity &&
+        (fine_contonly || line_eps != 1.0 || sl_clamp != 0.0 ||
+         fine_taumin > 1.0e-12)) {
+        fprintf(stderr,
+                "[cmf_fine][BLOCKED] reason=LINE_NET_PARITY_CONFIG "
+                "contonly=%d line_eps=%.17g sl_clamp=%.17g taumin=%.17g "
+                "required=full_raw_material_SRCE_CHK\n",
+                fine_contonly,line_eps,sl_clamp,fine_taumin);
+        free(fs.nu);free(fs.dnu);free(fs.chi_es);free(fs.chi_abs);
+        free(fs.chi_line);free(fs.chi_tot);free(fs.S_fixed);free(fs.J);
+        free(eta);return -1;
+    }
+    double *upper_population_cache = NULL;
+    if (line_net_parity) {
+        if ((size_t)NL > SIZE_MAX / (size_t)NS ||
+            (size_t)NL * (size_t)NS > SIZE_MAX / sizeof(double)) {
+            fprintf(stderr,
+                    "[cmf_fine][BLOCKED] reason=UPPER_POPULATION_SHAPE\n");
+            free(fs.nu);free(fs.dnu);free(fs.chi_es);free(fs.chi_abs);
+            free(fs.chi_line);free(fs.chi_tot);free(fs.S_fixed);free(fs.J);
+            free(eta);return -1;
+        }
+        size_t population_cells = (size_t)NL * (size_t)NS;
+        upper_population_cache = malloc(
+            population_cells * sizeof(*upper_population_cache));
+        if (!upper_population_cache ||
+            g_fine_upper_population_fill(
+                g_fine_atom, plasma, g_fine_nlte, (size_t)NL, (size_t)NS,
+                upper_population_cache) != 0) {
+            fprintf(stderr,
+                    "[cmf_fine][BLOCKED] reason=UPPER_POPULATION_BULK_BUILD\n");
+            free(upper_population_cache);
+            free(fs.nu);free(fs.dnu);free(fs.chi_es);free(fs.chi_abs);
+            free(fs.chi_line);free(fs.chi_tot);free(fs.S_fixed);free(fs.J);
+            free(eta);return -1;
+        }
+        fprintf(stderr,
+                "[cmf_fine][LINE-MATERIAL] mode=%s "
+                "upper_population_cells=%zu bytes=%zu\n",
+                sobolev_operator ? "CMFGEN_NONOVERLAP_SOBOLEV" :
+                                   "INIT_SHARED_GAUSSIAN",
+                population_cells,
+                population_cells * sizeof(*upper_population_cache));
+    }
     /* OMP enabler: the per-line deposit accumulates into chi_line[s,:]/eta[s,:], so
      * parallelising over LINES would race. Instead precompute the per-line in-window
      * + weak-skip flag SERIALLY (cheap, read-only), then parallelise the deposit over
@@ -4337,9 +5351,17 @@ void cmfgen_fine_jbar(CMFGENState *csb, const Geometry *geo,
     char *line_use = NULL;
     if (!fine_contonly) {
         line_use = (char *)malloc((size_t)NL);
+        if (!line_use) {
+            fprintf(stderr,
+                    "[cmf_fine][BLOCKED] reason=LINE_SELECTION_ALLOCATION\n");
+            free(fs.nu);free(fs.dnu);free(fs.chi_es);free(fs.chi_abs);
+            free(fs.chi_line);free(fs.chi_tot);free(fs.S_fixed);free(fs.J);
+            free(eta);free(upper_population_cache);
+            return -1;
+        }
         for (int l = 0; l < NL; ++l) {
             double nu_l = opac->line_list_nu[l];
-            char use = (nu_l > nu_lo && nu_l < nu_hi) ? 1 : 0;
+            char use = (nu_l >= line_nu_lo && nu_l <= line_nu_hi) ? 1 : 0;
             if (use) {
                 ++n_inwin;
                 if (fine_taumin > 1e-12) {        /* skip line if weak in ALL shells */
@@ -4353,6 +5375,129 @@ void cmfgen_fine_jbar(CMFGENState *csb, const Geometry *geo,
             }
             line_use[l] = use;
         }
+    }
+    if (line_net_parity) {
+        double minimum_tau = 0.0;
+        #pragma omp parallel for schedule(static) collapse(2) \
+            reduction(+:signed_cells,exact_zero_tau_cells,raw_negative_cells, \
+                        mild_negative_cells,srce_chk_expected_cells, \
+                        srce_chk_cells) reduction(|:material_error) \
+            reduction(min:minimum_tau)
+        for (int l = 0; l < NL; ++l) {
+            for (int s = 0; s < NS; ++s) {
+                if (!line_use[l]) continue;
+                size_t cell = (size_t)l * (size_t)NS + (size_t)s;
+                double tau = opac->tau_sobolev[cell];
+                int validity = opac->tau_validity[cell];
+                if (validity == A208_EXACT_ZERO) {
+                    ++exact_zero_tau_cells;
+                } else if (validity == A208_VALID && isfinite(tau)) {
+                    ++signed_cells;
+                    if (tau < minimum_tau) minimum_tau = tau;
+                    if (tau < 0.0) {
+                        ++raw_negative_cells;
+                        if (tau < -0.5) ++srce_chk_expected_cells;
+                        else ++mild_negative_cells;
+                    }
+                } else {
+                    material_error = 1;
+                    continue;
+                }
+                double nupper = upper_population_cache[cell];
+                double Aul = g_fine_atom->line_A_ul ?
+                    g_fine_atom->line_A_ul[l] : NAN;
+                LineNetSobolevMaterial material;
+                if (!isfinite(nupper) || nupper < 0.0 ||
+                    line_net_sobolev_material(
+                        nupper, Aul, opac->line_list_nu[l], tau, t_exp,
+                        LINE_NET_NEGATIVE_OPACITY_CMFGEN_SRCE_CHK, 1,
+                        &material) != 0) {
+                    material_error = 1;
+                    continue;
+                }
+                srce_chk_cells += material.srce_chk_applied;
+            }
+        }
+        size_t minimum_cell = SIZE_MAX;
+        if (raw_negative_cells != 0) {
+            #pragma omp parallel for schedule(static) collapse(2) \
+                reduction(min:minimum_cell)
+            for (int l = 0; l < NL; ++l) {
+                for (int s = 0; s < NS; ++s) {
+                    size_t cell = (size_t)l * (size_t)NS + (size_t)s;
+                    if (line_use[l] && opac->tau_sobolev[cell] == minimum_tau &&
+                        cell < minimum_cell)
+                        minimum_cell = cell;
+                }
+            }
+        }
+        int minimum_line = minimum_cell == SIZE_MAX ? -1
+                         : (int)(minimum_cell / (size_t)NS);
+        int minimum_shell = minimum_cell == SIZE_MAX ? -1
+                          : (int)(minimum_cell % (size_t)NS);
+        double n_upper = minimum_cell == SIZE_MAX ? NAN
+                       : upper_population_cache[minimum_cell];
+        int lower_global = minimum_line < 0 ? -1
+                         : cmf_fine_global_level(g_fine_atom, minimum_line, 0);
+        int upper_global = minimum_line < 0 ? -1
+                         : cmf_fine_global_level(g_fine_atom, minimum_line, 1);
+        double stimulated_upper = NAN, population_difference = NAN;
+        double reconstructed_lower = NAN;
+        if (minimum_line >= 0 && lower_global >= 0 && upper_global >= 0 &&
+            g_fine_atom->level_g && g_fine_atom->line_f_lu &&
+            g_fine_atom->line_wavelength_cm) {
+            double g_lower = g_fine_atom->level_g[lower_global];
+            double g_upper = g_fine_atom->level_g[upper_global];
+            double denominator = SOBOLEV_COEFF *
+                g_fine_atom->line_f_lu[minimum_line] *
+                g_fine_atom->line_wavelength_cm[minimum_line] * t_exp;
+            if (g_lower > 0.0 && g_upper > 0.0 && denominator != 0.0 &&
+                isfinite(denominator)) {
+                stimulated_upper = (g_lower / g_upper) * n_upper;
+                population_difference = minimum_tau / denominator;
+                reconstructed_lower = stimulated_upper + population_difference;
+            }
+        }
+        fprintf(stderr,
+                "[cmf_fine][SIGNED-MATERIAL-CENSUS] line_shells=%llu "
+                "exact_zero_tau=%llu raw_negative=%llu mild_negative=%llu "
+                "srce_chk=%llu minimum_line=%d minimum_shell=%d "
+                "minimum_tau=%.17g n_upper=%.17g stimulated_upper=%.17g "
+                "population_difference_from_tau=%.17g "
+                "reconstructed_n_lower=%.17g raw_preserved=1 floor=0 "
+                "clamp=0 jitter=0\n",
+                (unsigned long long)signed_cells,
+                (unsigned long long)exact_zero_tau_cells,
+                (unsigned long long)raw_negative_cells,
+                (unsigned long long)mild_negative_cells,
+                (unsigned long long)srce_chk_expected_cells,
+                minimum_line,minimum_shell,minimum_tau,n_upper,
+                stimulated_upper,population_difference,reconstructed_lower);
+        if (material_error ||
+            (uint64_t)srce_chk_cells != srce_chk_expected_cells) {
+            fprintf(stderr,
+                    "[cmf_fine][BLOCKED] reason=SIGNED_MATERIAL_CENSUS_MISMATCH "
+                    "srce_chk_expected=%llu srce_chk_material=%ld "
+                    "material_error=%d raw_preserved=1 floor=0 clamp=0 "
+                    "jitter=0 repair=0 action=TERMINATE\n",
+                    (unsigned long long)srce_chk_expected_cells,
+                    srce_chk_cells,material_error);
+            free(line_use);free(upper_population_cache);
+            free(fs.nu);free(fs.dnu);free(fs.chi_es);free(fs.chi_abs);
+            free(fs.chi_line);free(fs.chi_tot);free(fs.S_fixed);free(fs.J);
+            free(eta);return -1;
+        }
+        fprintf(stderr,
+                "[cmf_fine][SIGNED-MATERIAL-POLICY] operator=%s "
+                "srce_chk_expected=%llu srce_chk_material=%ld "
+                "raw_preserved=1 floor=0 clamp=0 jitter=0 repair=0\n",
+                sobolev_operator ? "CMFGEN_NONOVERLAP_SOBOLEV" :
+                                   "INIT_SHARED_GAUSSIAN",
+                (unsigned long long)srce_chk_expected_cells,
+                srce_chk_cells);
+        /* The census count is independent evidence.  Runtime line-operator
+         * accounting below starts from zero and must reproduce it. */
+        srce_chk_cells = 0;
     }
     /* [OWNER] load-balance redesign (user #1, 2026-07-06): the legacy loop is
      * shell-parallel (width 50, inner-shell tail-dominated -> ~18 cores).
@@ -4376,14 +5521,15 @@ void cmfgen_fine_jbar(CMFGENState *csb, const Geometry *geo,
         }
         if (!nu_desc_ok) fine_owner = 0;
     }
-    if (fine_owner && !fine_contonly) {
+    if (fine_owner && !fine_contonly && !sobolev_operator) {
         int nch = 512;
         { const char *e = getenv("LUMINA_FINE_NCHUNK"); if (e) nch = atoi(e); }
         if (nch < 1) nch = 1; if (nch > NF) nch = NF;
         int chunk_sz = (NF + nch - 1) / nch;
         double marg = 8.0 * vdop / CM_C + 4.0 * dlognu;   /* window guard */
         #pragma omp parallel for schedule(dynamic) collapse(2) \
-                reduction(max:max_slb) reduction(+:n_clamped)
+                reduction(max:max_slb) reduction(+:n_clamped,srce_chk_cells) \
+                reduction(|:material_error)
         for (int s = 0; s < NS; ++s) {
             for (int ch = 0; ch < nch; ++ch) {
                 const int ICLO = ch * chunk_sz;
@@ -4407,7 +5553,6 @@ void cmfgen_fine_jbar(CMFGENState *csb, const Geometry *geo,
             if (!line_use[l]) continue;
             double nu_l = opac->line_list_nu[l];
             double tau = opac->tau_sobolev[(size_t)l * NS + s];
-            if (tau <= 1e-12) continue;
             double dnuD = nu_l * vdop / CM_C;
             double xc = log(nu_l / nu_lo) / dlognu - 0.5;
             int half  = (int)ceil(4.0 * dnuD / (nu_l * dlognu)) + 1;
@@ -4415,38 +5560,44 @@ void cmfgen_fine_jbar(CMFGENState *csb, const Geometry *geo,
             int i0 = ic - half, i1 = ic + half;
             if (i0 < ICLO) i0 = ICLO; if (i1 > ICHI) i1 = ICHI;
             if (i0 > i1) continue;
-            double frac = (tau > 1e-6) ? -expm1(-tau) : tau;   /* 1-e^{-tau} */
-            double chi0 = frac * chi0_pref;
+            double chi0 = 0.0, eta0 = 0.0, source_diag = 0.0;
+            int srce_chk = 0, clamped = 0;
+            int material_rc = cmf_fine_line_material(
+                opac, plasma, l, s, NS, nu_l, tau, dnuD, t_exp,
+                chi0_pref, line_net_parity, src_nlte, line_eps, sl_clamp,
+                upper_population_cache,
+                &chi0, &eta0, &source_diag, &srce_chk, &clamped);
+            if (material_rc > 0) continue;
+            if (material_rc < 0) { material_error = 1; continue; }
+            n_clamped += clamped;
+            /* A profile may touch two owner chunks. Count its material
+             * identity once, in the unique chunk containing its centre. */
+            if (srce_chk && ic >= ICLO && ic <= ICHI) ++srce_chk_cells;
             double Bl = cm_planck(nu_l, plasma->T_e[s]);
-            double Sl = src_nlte ? opac->line_source_S[(size_t)l*NS+s] : 0.0;
-            if (Sl <= 0.0) Sl = Bl;
-            if (Bl > 0.0) {
-                double rb = Sl / Bl; if (rb > max_slb) max_slb = rb;
+            if (Bl > 0.0 && source_diag > 0.0) {
+                double rb = source_diag / Bl;
+                if (rb > max_slb) max_slb = rb;
             }
-            if (sl_clamp > 0.0 && Bl > 0.0 && Sl > sl_clamp * Bl) {
-                Sl = sl_clamp * Bl;
-                ++n_clamped;
-            }
-            double emit = (line_eps < 1.0) ? (line_eps * Bl) : Sl;
             for (int i = i0; i <= i1; ++i) {
                 double xv = (fs.nu[i] - nu_l) / dnuD;
+                if (fabs(xv) > LINE_JBAR_PROFILE_NDOPPLER) continue;
                 double p  = exp(-xv * xv);
                 double cl = chi0 * p;
                 fs.chi_line[(size_t)s*NF+i] += cl;
-                eta        [(size_t)s*NF+i] += cl * emit;
+                eta        [(size_t)s*NF+i] += eta0 * p;
             }
                 }
             }
         }
-    } else if (!fine_contonly) {
-    #pragma omp parallel for schedule(dynamic) reduction(max:max_slb) reduction(+:n_clamped)
+    } else if (!fine_contonly && !sobolev_operator) {
+    #pragma omp parallel for schedule(dynamic) reduction(max:max_slb) \
+            reduction(+:n_clamped,srce_chk_cells) reduction(|:material_error)
     for (int s = 0; s < NS; ++s) {
         const int ICLO = 0, ICHI = NF - 1;
         for (int l = 0; l < NL; ++l) {
             if (!line_use[l]) continue;
             double nu_l = opac->line_list_nu[l];
             double tau = opac->tau_sobolev[(size_t)l * NS + s];
-            if (tau <= 1e-12) continue;
             double dnuD = nu_l * vdop / CM_C;
             double xc = log(nu_l / nu_lo) / dlognu - 0.5;
             int half  = (int)ceil(4.0 * dnuD / (nu_l * dlognu)) + 1;
@@ -4454,36 +5605,51 @@ void cmfgen_fine_jbar(CMFGENState *csb, const Geometry *geo,
             int i0 = ic - half, i1 = ic + half;
             if (i0 < ICLO) i0 = ICLO; if (i1 > ICHI) i1 = ICHI;
             if (i0 > i1) continue;
-            double frac = (tau > 1e-6) ? -expm1(-tau) : tau;   /* 1-e^{-tau} */
-            double chi0 = frac * chi0_pref;
+            double chi0 = 0.0, eta0 = 0.0, source_diag = 0.0;
+            int srce_chk = 0, clamped = 0;
+            int material_rc = cmf_fine_line_material(
+                opac, plasma, l, s, NS, nu_l, tau, dnuD, t_exp,
+                chi0_pref, line_net_parity, src_nlte, line_eps, sl_clamp,
+                upper_population_cache,
+                &chi0, &eta0, &source_diag, &srce_chk, &clamped);
+            if (material_rc > 0) continue;
+            if (material_rc < 0) { material_error = 1; continue; }
+            n_clamped += clamped;
+            srce_chk_cells += srce_chk;
             double Bl = cm_planck(nu_l, plasma->T_e[s]);
-            double Sl = src_nlte ? opac->line_source_S[(size_t)l*NS+s] : 0.0;
-            if (Sl <= 0.0) Sl = Bl;
-            if (Bl > 0.0) {
-                double rb = Sl / Bl; if (rb > max_slb) max_slb = rb;
+            if (Bl > 0.0 && source_diag > 0.0) {
+                double rb = source_diag / Bl;
+                if (rb > max_slb) max_slb = rb;
             }
-            if (sl_clamp > 0.0 && Bl > 0.0 && Sl > sl_clamp * Bl) {
-                Sl = sl_clamp * Bl;
-                ++n_clamped;
-            }
-            double emit = (line_eps < 1.0) ? (line_eps * Bl) : Sl;
             for (int i = i0; i <= i1; ++i) {
                 double xv = (fs.nu[i] - nu_l) / dnuD;
+                if (fabs(xv) > LINE_JBAR_PROFILE_NDOPPLER) continue;
                 double p  = exp(-xv * xv);
                 double cl = chi0 * p;
                 fs.chi_line[(size_t)s*NF+i] += cl;
-                eta        [(size_t)s*NF+i] += cl * emit;
+                eta        [(size_t)s*NF+i] += eta0 * p;
             }
         }
     }
     }
     free(line_use);
+    free(upper_population_cache);
+    if (material_error) {
+        fprintf(stderr,
+                "[cmf_fine][BLOCKED] reason=LINE_NET_MATERIAL_INVALID "
+                "mode=%s\n", line_net_parity ? "CMFGEN_DIRECT" : "LEGACY");
+        free(fs.nu);free(fs.dnu);free(fs.chi_es);free(fs.chi_abs);
+        free(fs.chi_line);free(fs.chi_tot);free(fs.S_fixed);free(fs.J);
+        free(eta);
+        return -1;
+    }
 
     /* --- assemble chi_tot + S_fixed.  eps<1: fold (1-eps)*chi_line into chi_es
      * (ALI scattering albedo) so the line forest scatters the photospheric UV
      * field instead of thermalising it; eta already holds only eps*chi_line*B.
      * Total opacity is preserved: chi_es+(1-eps)cl + chi_abs + eps*cl = orig. */
-    #pragma omp parallel for schedule(static)
+    size_t first_assembly_invalid = SIZE_MAX;
+    #pragma omp parallel for schedule(static) reduction(min:first_assembly_invalid)
     for (int s = 0; s < NS; ++s) {
         double Te = plasma->T_e[s];
         for (int i = 0; i < NF; ++i) {
@@ -4493,33 +5659,525 @@ void cmfgen_fine_jbar(CMFGENState *csb, const Geometry *geo,
             double ct = fs.chi_es[idx] + fs.chi_abs[idx] + chi_ln_th;
             fs.chi_tot[idx] = ct;
             double Bnu = cm_planck(fs.nu[i], Te);
-            fs.S_fixed[idx] = (ct > 0.0)
-                ? (fs.chi_abs[idx]*Bnu + eta[idx]) / ct : 0.0;
+            double numerator = fs.chi_abs[idx]*Bnu + eta[idx];
+            if (isfinite(ct) && isfinite(numerator) && ct > 0.0 &&
+                numerator >= 0.0)
+                fs.S_fixed[idx] = numerator / ct;
+            else if (ct == 0.0 && numerator == 0.0)
+                fs.S_fixed[idx] = 0.0; /* algebraic exact-zero provenance */
+            else {
+                fs.S_fixed[idx] = NAN;
+                if (idx < first_assembly_invalid)
+                    first_assembly_invalid = idx;
+            }
             fs.J[idx] = Bnu;                              /* warm ALI start */
         }
     }
+    if (first_assembly_invalid != SIZE_MAX) {
+        size_t bad_shell = first_assembly_invalid / (size_t)NF;
+        size_t bad_bin = first_assembly_invalid % (size_t)NF;
+        double Bnu = cm_planck(fs.nu[bad_bin], plasma->T_e[bad_shell]);
+        double numerator = fs.chi_abs[first_assembly_invalid] * Bnu +
+                           eta[first_assembly_invalid];
+        fprintf(stderr,
+                "[cmf_fine][BLOCKED] reason=NEGATIVE_OR_NONFINITE_TOTAL_SOURCE "
+                "shell=%zu bin=%zu nu=%.17g chi_es=%.17g chi_abs=%.17g "
+                "chi_line=%.17g chi_tot=%.17g eta_line=%.17g "
+                "source_numerator=%.17g floor=0 clamp=0 fallback=0\n",
+                bad_shell,bad_bin,fs.nu[bad_bin],
+                fs.chi_es[first_assembly_invalid],
+                fs.chi_abs[first_assembly_invalid],
+                fs.chi_line[first_assembly_invalid],
+                fs.chi_tot[first_assembly_invalid],
+                eta[first_assembly_invalid],numerator);
+        free(fs.nu);free(fs.dnu);free(fs.chi_es);free(fs.chi_abs);
+        free(fs.chi_line);free(fs.chi_tot);free(fs.S_fixed);free(fs.J);
+        free(eta);
+        return -1;
+    }
 
-    if (diag) {   /* tie-back: Int chi_line dnu vs Sobolev expectation (shell NS/2) */
+    if (diag && sobolev_operator) {
+        fprintf(stderr,
+                "[cmf_fine][LINE-OPERATOR] mode=CMFGEN_NONOVERLAP_SOBOLEV "
+                "fine_exact_field=CONTINUUM_ONLY shared_line_deposit_cells=0 "
+                "signed_cells=%llu exact_zero_tau=%llu raw_negative=%llu "
+                "mild_negative=%llu srce_chk_expected=%llu raw_preserved=1 "
+                "floor=0 clamp=0 jitter=0 repair=0\n",
+                (unsigned long long)signed_cells,
+                (unsigned long long)exact_zero_tau_cells,
+                (unsigned long long)raw_negative_cells,
+                (unsigned long long)mild_negative_cells,
+                (unsigned long long)srce_chk_expected_cells);
+    } else if (diag) {   /* shared-profile initialization tie-back */
         int st = NS/2; double got=0.0, exp_=0.0;
         for (int i = 0; i < NF; ++i) got += fs.chi_line[(size_t)st*NF+i]*fs.dnu[i];
         for (int l = 0; l < NL; ++l) { double nu_l=opac->line_list_nu[l];
-            if (nu_l<=nu_lo||nu_l>=nu_hi) continue;
+            if (nu_l < line_nu_lo || nu_l > line_nu_hi) continue;
             double tau=opac->tau_sobolev[(size_t)l*NS+st];
-            double frac=(tau>1e-6)?-expm1(-tau):(tau>0?tau:0);
-            exp_ += frac*nu_l/(CM_C*t_exp); }
+            if (line_net_parity) {
+                LineNetSobolevMaterial material;
+                if (line_net_sobolev_material(
+                        0.0, 0.0, nu_l, tau, t_exp,
+                        LINE_NET_NEGATIVE_OPACITY_CMFGEN_SRCE_CHK, 1,
+                        &material) == 0)
+                    exp_ += material.effective_integrated_opacity;
+            } else {
+                double frac=(tau>1e-6)?-expm1(-tau):(tau>0?tau:0);
+                exp_ += frac*nu_l/(CM_C*t_exp);
+            } }
         fprintf(stderr,
             "[cmf_fine] S_l deposit: max S_l/B=%.3e  clamped=%ld/%ld lines (sl_clamp=%.1f)  "
             "skipped weak(tau<%.2g)=%ld  line_eps=%.3g%s\n",
             max_slb, n_clamped, n_inwin, sl_clamp, fine_taumin, n_skip_weak,
-            line_eps, (line_eps < 1.0) ? " [SCATTERING pump]" : " [thermal]");
+            line_eps, (line_eps < 1.0) ? " [SCATTERING pump]" :
+            (line_net_parity ? " [INIT shared CMFGEN material]" : " [thermal]"));
         fprintf(stderr,
             "[cmf_fine] lines in window=%ld  tie-back shell %d: "
-            "Int chi_line dnu=%.4e  Sobolev expect=%.4e  ratio=%.4f\n",
-            n_inwin, st, got, exp_, (exp_>0)?got/exp_:0.0);
+            "Int chi_line dnu=%.4e  material expect=%.4e  ratio=%.4f "
+            "mode=%s srce_chk_line_shells=%ld\n",
+            n_inwin, st, got, exp_, (exp_!=0.0)?got/exp_:0.0,
+            line_net_parity ? "INIT_SHARED_GAUSSIAN" : "LEGACY_EXPANSION",
+            srce_chk_cells);
     }
 
-    /* --- solve frequency-coupled J on the fine mesh (validated kernel) --- */
-    cmf_solve_J(&fs, geo, T_inner, n_ali);
+    /* --- exact frequency-coupled solve on true drifting characteristics --- */
+    size_t fine_cells = (size_t)NS * (size_t)NF;
+    int ab_enabled = 0;
+    int external_fixture_enabled = 0;
+    int ab_requested_devices = 0;
+    if (cmf_optional_binary_env("LUMINA_CMF_FINE_MGPU_AB", &ab_enabled) != 0) {
+        fprintf(stderr,
+                "[cmf_fine][BLOCKED] reason=INVALID_MGPU_AB_REQUEST "
+                "value=%s expected=0_or_1\n",
+                getenv("LUMINA_CMF_FINE_MGPU_AB") ?
+                    getenv("LUMINA_CMF_FINE_MGPU_AB") : "(unset)");
+        free(fs.nu);free(fs.dnu);free(fs.chi_es);free(fs.chi_abs);
+        free(fs.chi_line);free(fs.chi_tot);free(fs.S_fixed);free(fs.J);
+        free(eta);
+        return -1;
+    }
+    if (cmf_optional_binary_env(
+            "LUMINA_CMF_FINE_EXTERNAL_FIXTURE",
+            &external_fixture_enabled) != 0) {
+        fprintf(stderr,
+                "[cmf_fine][BLOCKED] reason=INVALID_EXTERNAL_FIXTURE_REQUEST "
+                "value=%s expected=0_or_1\n",
+                getenv("LUMINA_CMF_FINE_EXTERNAL_FIXTURE") ?
+                    getenv("LUMINA_CMF_FINE_EXTERNAL_FIXTURE") : "(unset)");
+        free(fs.nu);free(fs.dnu);free(fs.chi_es);free(fs.chi_abs);
+        free(fs.chi_line);free(fs.chi_tot);free(fs.S_fixed);free(fs.J);
+        free(eta);
+        return -1;
+    }
+    if (ab_enabled &&
+        (cmf_fine_multigpu_device_request(&ab_requested_devices) != 0 ||
+         ab_requested_devices <= 0)) {
+        fprintf(stderr,
+                "[cmf_fine][BLOCKED] reason=MGPU_AB_REQUIRES_POSITIVE_DEVICES "
+                "value=%s\n",
+                getenv("LUMINA_CMF_FINE_MGPU_DEVICES") ?
+                    getenv("LUMINA_CMF_FINE_MGPU_DEVICES") : "(unset)");
+        free(fs.nu);free(fs.dnu);free(fs.chi_es);free(fs.chi_abs);
+        free(fs.chi_line);free(fs.chi_tot);free(fs.S_fixed);free(fs.J);
+        free(eta);
+        return -1;
+    }
+#ifndef LUMINA_HAS_CUDA_BF_GEMM
+    if (ab_enabled) {
+        fprintf(stderr,
+                "[cmf_fine][BLOCKED] reason=MGPU_AB_REQUESTED_IN_CPU_BUILD "
+                "devices=%d\n", ab_requested_devices);
+        free(fs.nu);free(fs.dnu);free(fs.chi_es);free(fs.chi_abs);
+        free(fs.chi_line);free(fs.chi_tot);free(fs.S_fixed);free(fs.J);
+        free(eta);
+        return -1;
+    }
+#endif
+    double *fine_error_upper =
+        (double *)malloc(fine_cells * sizeof(*fine_error_upper));
+    if (!fine_error_upper) {
+        fprintf(stderr,
+                "[cmf_fine][BLOCKED] reason=COMPONENT_ERROR_ALLOCATION "
+                "cells=%zu bytes=%zu\n",
+                fine_cells, fine_cells * sizeof(*fine_error_upper));
+        free(fs.nu);free(fs.dnu);free(fs.chi_es);free(fs.chi_abs);
+        free(fs.chi_line);free(fs.chi_tot);free(fs.S_fixed);free(fs.J);
+        free(eta);
+        return -1;
+    }
+    double *ab_cpu_J = NULL;
+    double *ab_cpu_error_upper = NULL;
+    CMFExactReport ab_cpu_report;
+    CMFExactStatus ab_cpu_status = CMF_EXACT_INVALID_INPUT;
+    double ab_cpu_seconds = 0.0;
+    if (ab_enabled) {
+        ab_cpu_J = (double *)malloc(fine_cells * sizeof(*ab_cpu_J));
+        ab_cpu_error_upper =
+            (double *)malloc(fine_cells * sizeof(*ab_cpu_error_upper));
+        if (!ab_cpu_J || !ab_cpu_error_upper) {
+            fprintf(stderr,
+                    "[cmf_fine][BLOCKED] reason=MGPU_AB_CPU_ALLOCATION "
+                    "cells=%zu bytes_per_array=%zu\n",
+                    fine_cells, fine_cells * sizeof(*ab_cpu_J));
+            free(ab_cpu_J); free(ab_cpu_error_upper);
+            free(fs.nu);free(fs.dnu);free(fs.chi_es);free(fs.chi_abs);
+            free(fs.chi_line);free(fs.chi_tot);free(fs.S_fixed);free(fs.J);
+            free(eta); free(fine_error_upper);
+            return -1;
+        }
+        memcpy(ab_cpu_J, fs.J, fine_cells * sizeof(*ab_cpu_J));
+        double ab_cpu_start = cmf_wall_seconds();
+        ab_cpu_status = cmf_exact_characteristic_solve_with_envelope(
+            NS, NF, dlognu, fs.nu, geo->r_inner, geo->r_outer,
+            geo->time_explosion, T_inner, cmf_inner_bb_scale(),
+            fs.chi_tot, fs.chi_es, fs.S_fixed,
+            ab_cpu_J, ab_cpu_error_upper, envelope_refinements,
+            n_ali, solve_tol, CMF_EXACT_MODE_POSITIVE_SLIDING,
+            &ab_cpu_report);
+        ab_cpu_seconds = cmf_wall_seconds() - ab_cpu_start;
+        if (ab_cpu_status != CMF_EXACT_OK) {
+            fprintf(stderr,
+                    "[cmf_fine][BLOCKED] reason=MGPU_AB_CPU_BASELINE "
+                    "status=%s iterations=%d residual=%.17g "
+                    "absolute_change=%.17g component_envelope=%d "
+                    "floor=0 clamp=0 jitter=0 fallback=0\n",
+                    cmf_exact_status_name(ab_cpu_status),
+                    ab_cpu_report.iterations_used,
+                    ab_cpu_report.final_max_relative_change,
+                    ab_cpu_report.final_max_absolute_change,
+                    ab_cpu_report.componentwise_error_envelope_verified);
+            free(ab_cpu_J); free(ab_cpu_error_upper);
+            free(fs.nu);free(fs.dnu);free(fs.chi_es);free(fs.chi_abs);
+            free(fs.chi_line);free(fs.chi_tot);free(fs.S_fixed);free(fs.J);
+            free(eta); free(fine_error_upper);
+            return -1;
+        }
+    }
+    CMFFineOwnerResult owner_result;
+    double owner_start = cmf_wall_seconds();
+    int owner_rc = cmf_fine_exact_owner_solve(
+        NS, NF, dlognu, fs.nu, geo->r_inner, geo->r_outer,
+        geo->time_explosion, T_inner, cmf_inner_bb_scale(),
+        fs.chi_tot, fs.chi_es, fs.S_fixed, fs.J, fine_error_upper,
+        envelope_refinements, n_ali, solve_tol, &owner_result);
+    double owner_seconds = cmf_wall_seconds() - owner_start;
+    CMFExactReport exact_report = owner_result.exact;
+    if (owner_result.config_status ==
+            CMF_FINE_OWNER_INVALID_DEVICE_REQUEST) {
+        fprintf(stderr,
+                "[cmf_fine][BLOCKED] reason=INVALID_MGPU_DEVICE_REQUEST "
+                "value=%s\n",
+                getenv("LUMINA_CMF_FINE_MGPU_DEVICES") ?
+                    getenv("LUMINA_CMF_FINE_MGPU_DEVICES") : "(unset)");
+    } else if (owner_result.config_status ==
+                   CMF_FINE_OWNER_CUDA_NOT_LINKED) {
+        fprintf(stderr,
+                "[cmf_fine][BLOCKED] reason=MULTIGPU_REQUESTED_IN_CPU_BUILD "
+                "devices=%d\n", owner_result.multigpu_requested);
+    } else if (owner_result.multigpu_requested > 0) {
+#ifdef LUMINA_HAS_CUDA_BF_GEMM
+        fprintf(stderr,
+                "[cmf_fine][EXACT-MULTIGPU-EPOCH] status=%s devices=%d/%d "
+                "iterations=%d cap=%d residual=%.17g tolerance=%.17g "
+                "absolute_change=%.17g scattering_ratio_bound=%.17g "
+                "absolute_error_bound=%.17g component_envelope=%d "
+                "seed_attempts=%zu refinements=%zu "
+                "component_residual_upper=%.17g "
+                "component_error=[%.17g,%.17g] max_drift_bins=%.17g "
+                "schedule=%d/%d/%d partition_weighted=%d "
+                "max_device_bytes=%zu total_device_bytes=%zu "
+                "failure_phase=%d failure_iteration=%d failure_device=%d "
+                "failure_ray=[%d,%d) failure_segment=%d failure_bin=%d "
+                "failure_value=%.17g floor=0 clamp=0 jitter=0 "
+                "domain_hash=%s canonical_edge_hash=%s\n",
+                cmf_multigpu_status_name(
+                    (CMFMultiGPUStatus)owner_result.multigpu_status),
+                owner_result.devices_used, owner_result.visible_devices,
+                exact_report.iterations_used, exact_report.iteration_cap,
+                exact_report.final_max_relative_change,
+                exact_report.tolerance,
+                exact_report.final_max_absolute_change,
+                exact_report.max_scattering_ratio,
+                exact_report.fixed_point_absolute_error_bound,
+                exact_report.componentwise_error_envelope_verified,
+                exact_report.componentwise_error_seed_attempts,
+                exact_report.componentwise_error_refinement_iterations,
+                exact_report.componentwise_residual_upper_max,
+                exact_report.componentwise_error_upper_min,
+                exact_report.componentwise_error_upper_max,
+                exact_report.max_characteristic_drift_bins,
+                owner_result.epoch_block_size,
+                owner_result.epoch_batch_cardinality,
+                owner_result.epoch_direct_replay_max_window,
+                owner_result.weighted_partition,
+                owner_result.max_device_allocated_bytes,
+                owner_result.total_device_allocated_bytes,
+                owner_result.failure_phase,
+                owner_result.failure_iteration,
+                owner_result.failure_device_index,
+                owner_result.failure_ray_begin,
+                owner_result.failure_ray_end,
+                owner_result.failure_segment_index,
+                owner_result.failure_bin_index,
+                owner_result.failure_value,
+                LINE_JBAR_BB_DOMAIN_CONTRACT_SHA256,
+                LUMINA_RADFIELD_EDGE_SHA256);
+        fprintf(stderr,
+                "[cmf_fine][EXACT-MULTIGPU-TIMING] devices=%d "
+                "initialization_s=%.9f fixed_point_s=%.9f "
+                "source_assembly_s=%.9f h2d_s=%.9f "
+                "device_sweep_s=%.9f d2h_s=%.9f host_reduction_s=%.9f "
+                "convergence_check_s=%.9f envelope_context_setup_s=%.9f "
+                "bounds_s=%.9f envelope_residual_s=%.9f "
+                "envelope_verify_s=%.9f envelope_refine_s=%.9f "
+                "publication_s=%.9f cleanup_s=%.9f "
+                "reported_total_s=%.9f caller_total_s=%.9f "
+                "convergence_denominator_floor=0\n",
+                owner_result.devices_used,
+                owner_result.initialization_seconds,
+                owner_result.fixed_point_solve_seconds,
+                owner_result.source_assembly_seconds,
+                owner_result.host_to_device_seconds,
+                owner_result.device_sweep_seconds,
+                owner_result.device_to_host_seconds,
+                owner_result.host_reduction_seconds,
+                owner_result.convergence_check_seconds,
+                owner_result.envelope_context_setup_seconds,
+                owner_result.bounds_seconds,
+                owner_result.envelope_residual_seconds,
+                owner_result.envelope_verify_seconds,
+                owner_result.envelope_refine_seconds,
+                owner_result.publication_seconds,
+                owner_result.cleanup_seconds,
+                owner_result.total_seconds, owner_seconds);
+        for (int device = 0;
+             device < owner_result.device_partition_count; ++device) {
+            fprintf(stderr,
+                    "[cmf_fine][EXACT-MULTIGPU-DEVICE] index=%d "
+                    "rays=[%d,%d) owned_segment_work=%zu "
+                    "computed_segment_work=%zu allocated_bytes=%zu\n",
+                    device, owner_result.device_ray_begin[device],
+                    owner_result.device_ray_end[device],
+                    owner_result.device_owned_segment_work[device],
+                    owner_result.device_computed_segment_work[device],
+                    owner_result.device_allocated_bytes[device]);
+        }
+#endif
+    } else {
+        fprintf(stderr,
+                "[cmf_fine][EXACT-POSITIVE-SLIDING] status=%s iterations=%d cap=%d "
+                "residual=%.17g tolerance=%.17g absolute_change=%.17g "
+                "scattering_ratio_bound=%.17g absolute_error_bound=%.17g "
+                "component_envelope=%d seed_attempts=%zu refinements=%zu "
+                "component_residual_upper=%.17g component_error=[%.17g,%.17g] "
+                "max_drift_bins=%.17g "
+                "negative_recurrence=%llu first_negative=%.17g "
+                "domain_hash=%s canonical_edge_hash=%s\n",
+                cmf_exact_status_name(exact_report.status),
+                exact_report.iterations_used, exact_report.iteration_cap,
+                exact_report.final_max_relative_change,
+                exact_report.tolerance,
+                exact_report.final_max_absolute_change,
+                exact_report.max_scattering_ratio,
+                exact_report.fixed_point_absolute_error_bound,
+                exact_report.componentwise_error_envelope_verified,
+                exact_report.componentwise_error_seed_attempts,
+                exact_report.componentwise_error_refinement_iterations,
+                exact_report.componentwise_residual_upper_max,
+                exact_report.componentwise_error_upper_min,
+                exact_report.componentwise_error_upper_max,
+                exact_report.max_characteristic_drift_bins,
+                (unsigned long long)exact_report.negative_recurrence_count,
+                exact_report.first_negative_recurrence,
+                LINE_JBAR_BB_DOMAIN_CONTRACT_SHA256,
+                LUMINA_RADFIELD_EDGE_SHA256);
+    }
+    if (owner_rc != 0) {
+        free(fs.nu);free(fs.dnu);free(fs.chi_es);free(fs.chi_abs);
+        free(fs.chi_line);free(fs.chi_tot);free(fs.S_fixed);free(fs.J);
+        free(eta); free(fine_error_upper);
+        free(ab_cpu_J); free(ab_cpu_error_upper);
+        return -1;
+    }
+    if (ab_enabled) {
+        double ab_compare_start = cmf_wall_seconds();
+        size_t ab_bad_cell = SIZE_MAX;
+        const char *ab_bad_reason = NULL;
+        double max_relative_J = 0.0;
+        double max_relative_error_width = 0.0;
+        double max_distance_over_combined_envelope = 0.0;
+        double cpu_J_min = INFINITY, cpu_J_max = -INFINITY;
+        double gpu_J_min = INFINITY, gpu_J_max = -INFINITY;
+        for (size_t cell = 0; cell < fine_cells; ++cell) {
+            double cpu_J = ab_cpu_J[cell];
+            double gpu_J = fs.J[cell];
+            double cpu_error = ab_cpu_error_upper[cell];
+            double gpu_error = fine_error_upper[cell];
+            if (!(cpu_J >= 0.0) || !isfinite(cpu_J) ||
+                !(gpu_J >= 0.0) || !isfinite(gpu_J) ||
+                !(cpu_error >= 0.0) || !isfinite(cpu_error) ||
+                !(gpu_error >= 0.0) || !isfinite(gpu_error)) {
+                ab_bad_cell = cell;
+                ab_bad_reason = "NEGATIVE_OR_NONFINITE_AB_VALUE";
+                break;
+            }
+            long double distance = fabsl(
+                (long double)gpu_J - (long double)cpu_J);
+            long double combined_envelope =
+                (long double)gpu_error + (long double)cpu_error;
+            if (!(distance <= combined_envelope)) {
+                ab_bad_cell = cell;
+                ab_bad_reason = "DISJOINT_CPU_GPU_ENVELOPES";
+                break;
+            }
+            double J_scale = fabs(cpu_J) > fabs(gpu_J) ?
+                fabs(cpu_J) : fabs(gpu_J);
+            double error_scale = cpu_error > gpu_error ?
+                cpu_error : gpu_error;
+            double relative_J = J_scale > 0.0 ?
+                (double)(distance / (long double)J_scale) : 0.0;
+            double relative_error_width = error_scale > 0.0 ?
+                fabs(gpu_error - cpu_error) / error_scale : 0.0;
+            double distance_over_envelope = combined_envelope > 0.0L ?
+                (double)(distance / combined_envelope) : 0.0;
+            if (relative_J > max_relative_J)
+                max_relative_J = relative_J;
+            if (relative_error_width > max_relative_error_width)
+                max_relative_error_width = relative_error_width;
+            if (distance_over_envelope >
+                max_distance_over_combined_envelope)
+                max_distance_over_combined_envelope =
+                    distance_over_envelope;
+            if (cpu_J < cpu_J_min) cpu_J_min = cpu_J;
+            if (cpu_J > cpu_J_max) cpu_J_max = cpu_J;
+            if (gpu_J < gpu_J_min) gpu_J_min = gpu_J;
+            if (gpu_J > gpu_J_max) gpu_J_max = gpu_J;
+        }
+        if (ab_bad_cell != SIZE_MAX) {
+            fprintf(stderr,
+                    "[cmf_fine][BLOCKED] reason=%s cell=%zu shell=%zu bin=%zu "
+                    "cpu_J=%.17g gpu_J=%.17g cpu_error=%.17g "
+                    "gpu_error=%.17g floor=0 clamp=0 jitter=0 fallback=0\n",
+                    ab_bad_reason, ab_bad_cell,
+                    ab_bad_cell / (size_t)NF,
+                    ab_bad_cell % (size_t)NF,
+                    ab_cpu_J[ab_bad_cell], fs.J[ab_bad_cell],
+                    ab_cpu_error_upper[ab_bad_cell],
+                    fine_error_upper[ab_bad_cell]);
+            free(ab_cpu_J); free(ab_cpu_error_upper);
+            free(fs.nu);free(fs.dnu);free(fs.chi_es);free(fs.chi_abs);
+            free(fs.chi_line);free(fs.chi_tot);free(fs.S_fixed);free(fs.J);
+            free(eta); free(fine_error_upper);
+            return -1;
+        }
+        if (!(max_relative_J <= 1.0e-12)) {
+            fprintf(stderr,
+                    "[cmf_fine][BLOCKED] reason=MGPU_AB_J_MISMATCH "
+                    "max_relative_J=%.17g tolerance=1e-12 "
+                    "floor=0 clamp=0 jitter=0 fallback=0\n",
+                    max_relative_J);
+            free(ab_cpu_J); free(ab_cpu_error_upper);
+            free(fs.nu);free(fs.dnu);free(fs.chi_es);free(fs.chi_abs);
+            free(fs.chi_line);free(fs.chi_tot);free(fs.S_fixed);free(fs.J);
+            free(eta); free(fine_error_upper);
+            return -1;
+        }
+        double ab_comparison_seconds = cmf_wall_seconds() - ab_compare_start;
+        fprintf(stderr,
+                "[cmf_fine][EXACT-MULTIGPU-AB] PASS cells=%zu devices=%d "
+                "cpu_iterations=%d gpu_iterations=%d "
+                "finite_cpu_J=[%.17g,%.17g] "
+                "finite_gpu_J=[%.17g,%.17g] max_relative_J=%.17g "
+                "max_relative_error_width=%.17g "
+                "max_distance_over_combined_envelope=%.17g "
+                "cpu_component_error=[%.17g,%.17g] "
+                "gpu_component_error=[%.17g,%.17g] "
+                "cpu_baseline_s=%.9f gpu_owner_s=%.9f comparison_s=%.9f "
+                "floor=0 clamp=0 jitter=0 repair=0\n",
+                fine_cells, owner_result.devices_used,
+                ab_cpu_report.iterations_used, exact_report.iterations_used,
+                cpu_J_min, cpu_J_max, gpu_J_min, gpu_J_max,
+                max_relative_J, max_relative_error_width,
+                max_distance_over_combined_envelope,
+                ab_cpu_report.componentwise_error_upper_min,
+                ab_cpu_report.componentwise_error_upper_max,
+                exact_report.componentwise_error_upper_min,
+                exact_report.componentwise_error_upper_max,
+                ab_cpu_seconds, owner_seconds, ab_comparison_seconds);
+        free(ab_cpu_J); free(ab_cpu_error_upper);
+    }
+
+    /* Read-only external-code fixture.  Each row is the production exact J_nu
+     * at an actual fine-bin centre and the shell midpoint velocity.  An
+     * independent CMFGEN reader can therefore evaluate the same scalar J_nu
+     * definition at exactly these coordinates without reusing Lumina's
+     * transport implementation. */
+    if (external_fixture_enabled) {
+        static const double target_lambda_A[] = {
+            350.0, 600.0, 1000.0, 1500.0,
+            2500.0, 5000.0, 10000.0, 15000.0
+        };
+        FILE *fixture = fopen("lumina_cmf_fine_external_fixture.csv", "w");
+        int fixture_failed = fixture == NULL;
+        if (fixture) {
+            fprintf(fixture,
+                    "shell,v_mid_km_s,target_lambda_A,actual_lambda_A,"
+                    "nu_hz,J_nu\n");
+            for (int shell = 0; shell < NS && !fixture_failed; ++shell) {
+                double v_mid = 0.5 *
+                    (geo->v_inner[shell] + geo->v_outer[shell]) / 1.0e5;
+                if (!isfinite(v_mid)) {
+                    fixture_failed = 1;
+                    break;
+                }
+                for (size_t point = 0;
+                     point < sizeof(target_lambda_A) /
+                                 sizeof(target_lambda_A[0]); ++point) {
+                    double target_nu = CM_C /
+                        (target_lambda_A[point] * 1.0e-8);
+                    double position = log(target_nu / nu_lo) / dlognu - 0.5;
+                    long nearest = lround(position);
+                    if (nearest < 0 || nearest >= NF) {
+                        fixture_failed = 1;
+                        break;
+                    }
+                    size_t cell = (size_t)shell * (size_t)NF +
+                                  (size_t)nearest;
+                    double value = fs.J[cell];
+                    double actual_lambda = CM_C / fs.nu[nearest] * 1.0e8;
+                    if (!(value >= 0.0) || !isfinite(value) ||
+                        !(actual_lambda > 0.0) || !isfinite(actual_lambda)) {
+                        fixture_failed = 1;
+                        break;
+                    }
+                    fprintf(fixture,
+                            "%d,%.17g,%.17g,%.17g,%.17g,%.17g\n",
+                            shell, v_mid, target_lambda_A[point],
+                            actual_lambda, fs.nu[nearest], value);
+                }
+            }
+            if (fclose(fixture) != 0) fixture_failed = 1;
+        }
+        if (fixture_failed) {
+            fprintf(stderr,
+                    "[cmf_fine][BLOCKED] "
+                    "reason=EXTERNAL_FIXTURE_PUBLICATION_FAILED "
+                    "floor=0 clamp=0 jitter=0 repair=0\n");
+            free(fs.nu);free(fs.dnu);free(fs.chi_es);free(fs.chi_abs);
+            free(fs.chi_line);free(fs.chi_tot);free(fs.S_fixed);free(fs.J);
+            free(eta); free(fine_error_upper);
+            return -1;
+        }
+        fprintf(stderr,
+                "[cmf_fine][EXTERNAL-JNU-FIXTURE] PASS rows=%zu shells=%d "
+                "points_per_shell=%zu file=lumina_cmf_fine_external_fixture.csv "
+                "quantity=J_nu units=erg_s-1_cm-2_Hz-1_sr-1 "
+                "coordinate=actual_fine_bin_center floor=0 clamp=0 jitter=0 "
+                "repair=0\n",
+                (size_t)NS * sizeof(target_lambda_A) /
+                    sizeof(target_lambda_A[0]),
+                NS, sizeof(target_lambda_A) / sizeof(target_lambda_A[0]));
+    }
 
     /* --- DIAGNOSTIC: J/B(lambda, shell) map (LUMINA_CMF_FINE_JMAP=1).
      * Locates WHERE (wavelength, shell) the fine field is super-thermal -> the
@@ -4564,31 +6222,334 @@ void cmfgen_fine_jbar(CMFGENState *csb, const Geometry *geo,
           cmfgen_fine_emergent_obs(&fs, geo, T_inner, opac, plasma->T_e,
                                    "lumina_spectrum_freqres_obs.csv"); }
 
-    /* --- extract J_bar_l = Int phi_l J dnu / Int phi_l dnu per line --- */
-    /* Per-line J_bar_l extraction: each line writes its own [l*NS .. ] slice of
-     * jbar_line_det (read-only fine field fs.J) -> embarrassingly parallel. */
+    /* --- extract J_bar_l and certified delta-J_bar from the same profile --- */
+    int profile_failed = 0;
+    int first_profile_bad_line = INT_MAX;
+    int first_profile_bad_status = LINE_JBAR_PROFILE_OK;
+    double profile_error_min = INFINITY, profile_error_max = 0.0;
+    double sobolev_beta_min = INFINITY, sobolev_beta_max = 0.0;
+    unsigned long long sobolev_jbar_cells = 0;
+    unsigned long long sobolev_srce_chk_cells = 0;
+    double *sobolev_upper_population_cache = NULL;
+    if (sobolev_operator) {
+        size_t population_cells = (size_t)NL * (size_t)NS;
+        sobolev_upper_population_cache = malloc(
+            population_cells * sizeof(*sobolev_upper_population_cache));
+        if (!sobolev_upper_population_cache ||
+            g_fine_upper_population_fill(
+                g_fine_atom, plasma, g_fine_nlte, (size_t)NL, (size_t)NS,
+                sobolev_upper_population_cache) != 0) {
+            fprintf(stderr,
+                    "[cmf_fine][BLOCKED] "
+                    "reason=SOBOLEV_UPPER_POPULATION_BULK_BUILD "
+                    "floor=0 clamp=0 jitter=0 repair=0 action=TERMINATE\n");
+            free(sobolev_upper_population_cache);
+            free(fs.nu);free(fs.dnu);free(fs.chi_es);free(fs.chi_abs);
+            free(fs.chi_line);free(fs.chi_tot);free(fs.S_fixed);free(fs.J);
+            free(eta); free(fine_error_upper);
+            return -1;
+        }
+    }
     #ifdef _OPENMP
-    #pragma omp parallel for schedule(dynamic, 64)
+    #pragma omp parallel for schedule(dynamic, 64) reduction(|:profile_failed) \
+        reduction(min:profile_error_min,sobolev_beta_min) \
+        reduction(max:profile_error_max,sobolev_beta_max) \
+        reduction(+:sobolev_jbar_cells,sobolev_srce_chk_cells)
     #endif
     for (int l = 0; l < NL; ++l) {
         double nu_l = opac->line_list_nu[l];
-        if (nu_l <= nu_lo || nu_l >= nu_hi) continue;
-        double dnuD = nu_l * vdop / CM_C;
-        double xc = log(nu_l / nu_lo) / dlognu - 0.5;
-        int half  = (int)ceil(4.0 * dnuD / (nu_l * dlognu)) + 1;
-        int ic = (int)floor(xc + 0.5);
-        int i0 = ic - half, i1 = ic + half;
-        if (i0 < 0) i0 = 0; if (i1 >= NF) i1 = NF - 1;
-        for (int s = 0; s < NS; ++s) {
-            double num = 0.0, den = 0.0;
-            for (int i = i0; i <= i1; ++i) {
-                double xv = (fs.nu[i] - nu_l) / dnuD;
-                double p  = exp(-xv * xv) * fs.dnu[i];
-                num += p * fs.J[(size_t)s*NF+i];
-                den += p;
+        if (nu_l < line_nu_lo || nu_l > line_nu_hi) continue;
+        double line_value[256], line_error[256];
+        LineJbarProfileReport profile_report;
+        LineJbarProfileStatus profile_status =
+            line_jbar_gaussian_discrete_shells(
+                (size_t)NS, (size_t)NF, fs.nu, fs.dnu, fs.J,
+                fine_error_upper, nu_l, vdop,
+                LINE_JBAR_PROFILE_NDOPPLER,
+                line_value, line_error, &profile_report);
+        if (profile_status != LINE_JBAR_PROFILE_OK) {
+            profile_failed = 1;
+            #ifdef _OPENMP
+            #pragma omp critical(cmf_profile_failure)
+            #endif
+            {
+                if (l < first_profile_bad_line) {
+                    first_profile_bad_line = l;
+                    first_profile_bad_status = (int)profile_status;
+                }
             }
-            opac->jbar_line_det[(size_t)l*NS+s] = (den > 0.0) ? num/den : -1.0;
+            continue;
         }
+        for (int s = 0; s < NS; ++s) {
+            size_t cell = (size_t)l * (size_t)NS + (size_t)s;
+            if (sobolev_operator) {
+                int validity = opac->tau_validity[cell];
+                double tau = opac->tau_sobolev[cell];
+                double nupper = sobolev_upper_population_cache[cell];
+                double Aul = g_fine_atom->line_A_ul ?
+                    g_fine_atom->line_A_ul[l] : NAN;
+                LineNetSobolevMaterial material;
+                LineNetSobolevRadiation radiation;
+                if ((validity != A208_VALID &&
+                     validity != A208_EXACT_ZERO) ||
+                    !isfinite(tau) || !isfinite(nupper) || nupper < 0.0 ||
+                    line_net_sobolev_material(
+                        nupper, Aul, nu_l, tau, t_exp,
+                        LINE_NET_NEGATIVE_OPACITY_CMFGEN_SRCE_CHK, 1,
+                        &material) != 0 ||
+                    line_net_sobolev_radiation(
+                        &material, line_value[s], line_error[s], nu_l,
+                        t_exp, &radiation) != 0) {
+                    profile_failed = 1;
+                    #ifdef _OPENMP
+                    #pragma omp critical(cmf_profile_failure)
+                    #endif
+                    {
+                        if (l < first_profile_bad_line) {
+                            first_profile_bad_line = l;
+                            first_profile_bad_status = -10;
+                        }
+                    }
+                    continue;
+                }
+                opac->jbar_line_det[cell] = radiation.jbar;
+                opac->jbar_line_det_error_upper[cell] =
+                    radiation.jbar_absolute_uncertainty;
+                ++sobolev_jbar_cells;
+                sobolev_srce_chk_cells += material.srce_chk_applied;
+                if (radiation.beta < sobolev_beta_min)
+                    sobolev_beta_min = radiation.beta;
+                if (radiation.beta > sobolev_beta_max)
+                    sobolev_beta_max = radiation.beta;
+                if (radiation.jbar_absolute_uncertainty < profile_error_min)
+                    profile_error_min =
+                        radiation.jbar_absolute_uncertainty;
+                if (radiation.jbar_absolute_uncertainty > profile_error_max)
+                    profile_error_max =
+                        radiation.jbar_absolute_uncertainty;
+            } else {
+                opac->jbar_line_det[cell] = line_value[s];
+                opac->jbar_line_det_error_upper[cell] = line_error[s];
+            }
+        }
+        if (!sobolev_operator) {
+            if (profile_report.error_upper_min < profile_error_min)
+                profile_error_min = profile_report.error_upper_min;
+            if (profile_report.error_upper_max > profile_error_max)
+                profile_error_max = profile_report.error_upper_max;
+        }
+    }
+    free(sobolev_upper_population_cache);
+    if (sobolev_operator &&
+        (sobolev_srce_chk_cells != srce_chk_expected_cells ||
+         sobolev_jbar_cells != signed_cells + exact_zero_tau_cells)) {
+        profile_failed = 1;
+        if (first_profile_bad_line == INT_MAX) {
+            first_profile_bad_line = -1;
+            first_profile_bad_status = -11;
+        }
+    }
+    if (profile_failed || !isfinite(profile_error_min) ||
+        !isfinite(profile_error_max) ||
+        (sobolev_operator &&
+         (!isfinite(sobolev_beta_min) || !isfinite(sobolev_beta_max) ||
+          sobolev_beta_min <= 0.0 || sobolev_beta_max <= 0.0))) {
+        fprintf(stderr,
+                "[cmf_fine][BLOCKED] reason=LINE_OPERATOR_ERROR_ENVELOPE "
+                "operator=%s first_line=%d status=%d "
+                "jbar_cells=%llu expected_cells=%llu "
+                "srce_chk_applied=%llu srce_chk_expected=%llu "
+                "component_error=[%.17g,%.17g] floor=0 clamp=0 "
+                "jitter=0 repair=0\n",
+                sobolev_operator ? "CMFGEN_NONOVERLAP_SOBOLEV" :
+                                   "INIT_SHARED_GAUSSIAN",
+                first_profile_bad_line, first_profile_bad_status,
+                sobolev_jbar_cells,
+                (unsigned long long)(signed_cells + exact_zero_tau_cells),
+                sobolev_srce_chk_cells,
+                (unsigned long long)srce_chk_expected_cells,
+                exact_report.componentwise_error_upper_min,
+                exact_report.componentwise_error_upper_max);
+        free(fs.nu);free(fs.dnu);free(fs.chi_es);free(fs.chi_abs);
+        free(fs.chi_line);free(fs.chi_tot);free(fs.S_fixed);free(fs.J);
+        free(eta); free(fine_error_upper);
+        return -1;
+    }
+    /* Stage-4 independent probe.  The production line field above has already
+     * been profiled and stored.  In this opt-in diagnostic lane reuse the
+     * fine-grid buffers for a second exact solve with the line deposit omitted;
+     * no production rate or publication array is changed. */
+    if (independent_capture) {
+        size_t first_cont_bad = SIZE_MAX;
+        #ifdef _OPENMP
+        #pragma omp parallel for schedule(static) reduction(min:first_cont_bad)
+        #endif
+        for (size_t cell = 0; cell < fine_cells; ++cell) {
+            int shell = (int)(cell / (size_t)NF);
+            int bin = (int)(cell % (size_t)NF);
+            double ce = fs.chi_es[cell];
+            double ca = fs.chi_abs[cell];
+            double ct = ce + ca;
+            double Bnu = cm_planck(fs.nu[bin], plasma->T_e[shell]);
+            if (!(ce >= 0.0) || !isfinite(ce) || !(ca >= 0.0) ||
+                !isfinite(ca) || !(ct >= 0.0) || !isfinite(ct) ||
+                !(Bnu >= 0.0) || !isfinite(Bnu)) {
+                if (cell < first_cont_bad) first_cont_bad = cell;
+                continue;
+            }
+            fs.chi_tot[cell] = ct;
+            double numerator = ca * Bnu;
+            if (!isfinite(numerator) || numerator < 0.0) {
+                if (cell < first_cont_bad) first_cont_bad = cell;
+            } else if (ct > 0.0) {
+                fs.S_fixed[cell] = numerator / ct;
+                if (!isfinite(fs.S_fixed[cell]))
+                    if (cell < first_cont_bad) first_cont_bad = cell;
+            } else if (numerator == 0.0) {
+                fs.S_fixed[cell] = 0.0;
+            } else {
+                if (cell < first_cont_bad) first_cont_bad = cell;
+            }
+            fs.J[cell] = Bnu;
+        }
+        if (first_cont_bad != SIZE_MAX) {
+            size_t bad_shell = first_cont_bad / (size_t)NF;
+            size_t bad_bin = first_cont_bad % (size_t)NF;
+            fprintf(stderr,
+                    "[cmf_fine][BLOCKED] reason=INDEPENDENT_CONTINUUM_"
+                    "ASSEMBLY shell=%zu bin=%zu nu=%.17g chi_es=%.17g "
+                    "chi_abs=%.17g chi_tot=%.17g floor=0 cap=0 clamp=0 "
+                    "jitter=0 repair=0\n", bad_shell, bad_bin,
+                    fs.nu[bad_bin], fs.chi_es[first_cont_bad],
+                    fs.chi_abs[first_cont_bad], fs.chi_tot[first_cont_bad]);
+            free(fs.nu);free(fs.dnu);free(fs.chi_es);free(fs.chi_abs);
+            free(fs.chi_line);free(fs.chi_tot);free(fs.S_fixed);free(fs.J);
+            free(eta); free(fine_error_upper);
+            return -1;
+        }
+        CMFFineOwnerResult continuum_result;
+        double continuum_start = cmf_wall_seconds();
+        int continuum_rc = cmf_fine_exact_owner_solve(
+            NS, NF, dlognu, fs.nu, geo->r_inner, geo->r_outer,
+            geo->time_explosion, T_inner, cmf_inner_bb_scale(),
+            fs.chi_tot, fs.chi_es, fs.S_fixed, fs.J, fine_error_upper,
+            envelope_refinements, n_ali, solve_tol, &continuum_result);
+        double continuum_seconds = cmf_wall_seconds() - continuum_start;
+        if (continuum_rc != 0) {
+            fprintf(stderr,
+                    "[cmf_fine][BLOCKED] reason=INDEPENDENT_CONTINUUM_"
+                    "SOLVE status=%s seconds=%.9f floor=0 cap=0 clamp=0 "
+                    "jitter=0 repair=0\n",
+                    cmf_exact_status_name(continuum_result.exact.status),
+                    continuum_seconds);
+            free(fs.nu);free(fs.dnu);free(fs.chi_es);free(fs.chi_abs);
+            free(fs.chi_line);free(fs.chi_tot);free(fs.S_fixed);free(fs.J);
+            free(eta); free(fine_error_upper);
+            return -1;
+        }
+        opac->jbar_line_det_continuum =
+            (double *)malloc(line_cells * sizeof(double));
+        opac->jbar_line_det_continuum_error_upper =
+            (double *)malloc(line_cells * sizeof(double));
+        if (!opac->jbar_line_det_continuum ||
+            !opac->jbar_line_det_continuum_error_upper) {
+            fprintf(stderr,
+                    "[cmf_fine][BLOCKED] reason=INDEPENDENT_CONTINUUM_"
+                    "LINE_ALLOCATION cells=%zu floor=0 cap=0 clamp=0 "
+                    "jitter=0 repair=0\n", line_cells);
+            free(opac->jbar_line_det_continuum);
+            free(opac->jbar_line_det_continuum_error_upper);
+            opac->jbar_line_det_continuum = NULL;
+            opac->jbar_line_det_continuum_error_upper = NULL;
+            free(fs.nu);free(fs.dnu);free(fs.chi_es);free(fs.chi_abs);
+            free(fs.chi_line);free(fs.chi_tot);free(fs.S_fixed);free(fs.J);
+            free(eta); free(fine_error_upper);
+            return -1;
+        }
+        for (size_t cell = 0; cell < line_cells; ++cell) {
+            opac->jbar_line_det_continuum[cell] = -1.0;
+            opac->jbar_line_det_continuum_error_upper[cell] = -1.0;
+        }
+        int continuum_profile_failed = 0;
+        unsigned long long continuum_jbar_cells = 0;
+        #ifdef _OPENMP
+        #pragma omp parallel for schedule(dynamic, 64) reduction(|:continuum_profile_failed) \
+            reduction(+:continuum_jbar_cells)
+        #endif
+        for (int l = 0; l < NL; ++l) {
+            double nu_l = opac->line_list_nu[l];
+            if (nu_l < line_nu_lo || nu_l > line_nu_hi) continue;
+            double line_value[256], line_error[256];
+            LineJbarProfileReport cont_profile_report;
+            LineJbarProfileStatus cont_profile_status =
+                line_jbar_gaussian_discrete_shells(
+                    (size_t)NS, (size_t)NF, fs.nu, fs.dnu, fs.J,
+                    fine_error_upper, nu_l, vdop,
+                    LINE_JBAR_PROFILE_NDOPPLER, line_value, line_error,
+                    &cont_profile_report);
+            if (cont_profile_status != LINE_JBAR_PROFILE_OK) {
+                continuum_profile_failed = 1;
+                continue;
+            }
+            for (int s = 0; s < NS; ++s) {
+                size_t cell = (size_t)l * (size_t)NS + (size_t)s;
+                if (!(line_value[s] >= 0.0) || !isfinite(line_value[s]) ||
+                    !(line_error[s] >= 0.0) || !isfinite(line_error[s])) {
+                    continuum_profile_failed = 1;
+                    continue;
+                }
+                opac->jbar_line_det_continuum[cell] = line_value[s];
+                opac->jbar_line_det_continuum_error_upper[cell] = line_error[s];
+                ++continuum_jbar_cells;
+            }
+        }
+        if (continuum_profile_failed || continuum_jbar_cells == 0) {
+            fprintf(stderr,
+                    "[cmf_fine][BLOCKED] reason=INDEPENDENT_CONTINUUM_"
+                    "PROFILE cells=%llu failed=%d floor=0 cap=0 clamp=0 "
+                    "jitter=0 repair=0\n", continuum_jbar_cells,
+                    continuum_profile_failed);
+            free(opac->jbar_line_det_continuum);
+            free(opac->jbar_line_det_continuum_error_upper);
+            opac->jbar_line_det_continuum = NULL;
+            opac->jbar_line_det_continuum_error_upper = NULL;
+            free(fs.nu);free(fs.dnu);free(fs.chi_es);free(fs.chi_abs);
+            free(fs.chi_line);free(fs.chi_tot);free(fs.S_fixed);free(fs.J);
+            free(eta); free(fine_error_upper);
+            return -1;
+        }
+        opac->jbar_line_det_continuum_captured = 1;
+        fprintf(stderr,
+                "[cmf_fine][INDEPENDENT-JCONT] PASS cells=%llu "
+                "operator=LINE_FREE_CONTINUUM exact_status=%s iterations=%d "
+                "residual=%.17g tolerance=%.17g error_envelope=%d "
+                "refinements=%zu seconds=%.9f source=chi_abs*B/(chi_es+chi_abs) "
+                "line_material_reused=0 physical_values_modified=0 floor=0 "
+                "cap=0 clamp=0 jitter=0 repair=0\n",
+                continuum_jbar_cells,
+                cmf_exact_status_name(continuum_result.exact.status),
+                continuum_result.exact.iterations_used,
+                continuum_result.exact.final_max_relative_change,
+                continuum_result.exact.tolerance,
+                continuum_result.exact.componentwise_error_envelope_verified,
+                continuum_result.exact.componentwise_error_refinement_iterations,
+                continuum_seconds);
+    }
+    if (sobolev_operator) {
+        srce_chk_cells = (long)sobolev_srce_chk_cells;
+        fprintf(stderr,
+                "[cmf_fine][SOBOLEV-LINE-OPERATOR] status=PASS "
+                "mode=CMFGEN_NONOVERLAP_HOMOLOGY_SIGMA0 "
+                "continuum_sampling=GAUSSIAN_PROFILE "
+                "jbar_cells=%llu raw_negative=%llu mild_negative=%llu "
+                "srce_chk_expected=%llu srce_chk_applied=%llu "
+                "beta_min=%.17g beta_max=%.17g all_jbar_finite=1 "
+                "raw_preserved=1 floor=0 cap=0 clamp=0 jitter=0 repair=0\n",
+                sobolev_jbar_cells,
+                (unsigned long long)raw_negative_cells,
+                (unsigned long long)mild_negative_cells,
+                (unsigned long long)srce_chk_expected_cells,
+                sobolev_srce_chk_cells,sobolev_beta_min,sobolev_beta_max);
     }
     /* R6 identity evidence.  Publication accepts this field only when these
      * actual producer parameters equal the frozen MC profile definition. */
@@ -4741,6 +6702,33 @@ void cmfgen_fine_jbar(CMFGENState *csb, const Geometry *geo,
 
     free(fs.nu);free(fs.dnu);free(fs.chi_es);free(fs.chi_abs);free(fs.chi_line);
     free(fs.chi_tot);free(fs.S_fixed);free(fs.J);free(eta);
+    free(fine_error_upper);
+    opac->jbar_line_det_exact_converged = 1;
+    opac->jbar_line_det_exact_iterations = exact_report.iterations_used;
+    opac->jbar_line_det_exact_iteration_cap = exact_report.iteration_cap;
+    opac->jbar_line_det_exact_residual =
+        exact_report.final_max_relative_change;
+    opac->jbar_line_det_exact_tolerance = exact_report.tolerance;
+    opac->jbar_line_det_exact_absolute_error_bound =
+        exact_report.fixed_point_absolute_error_bound;
+    opac->jbar_line_det_exact_max_scattering_ratio =
+        exact_report.max_scattering_ratio;
+    opac->jbar_line_det_error_envelope_verified =
+        exact_report.componentwise_error_envelope_verified;
+    opac->jbar_line_det_error_refinement_iterations =
+        exact_report.componentwise_error_refinement_iterations;
+    opac->jbar_line_det_component_error_min =
+        exact_report.componentwise_error_upper_min;
+    opac->jbar_line_det_component_error_max =
+        exact_report.componentwise_error_upper_max;
+    opac->jbar_line_det_profile_error_min = profile_error_min;
+    opac->jbar_line_det_profile_error_max = profile_error_max;
+    opac->jbar_line_det_grid_n_bins = NF;
+    opac->jbar_line_det_grid_nu_min = nu_lo * exp(0.5 * dlognu);
+    opac->jbar_line_det_grid_nu_max =
+        nu_lo * exp(((double)NF - 0.5) * dlognu);
+    opac->jbar_line_det_operator = (int)line_operator;
+    return 0;
 }
 
 /* ===================================================================
@@ -5236,15 +7224,41 @@ int cmfgen_run(Geometry *geo, OpacityState *opac, BFOpacity *bf,
                GammaDeposition *gamma, double T_inner, int n_iter)
 {
     if (getenv("LUMINA_CMF_OBS_SELFTEST")) { cmf_obs_selftest(); return 0; }
-    if (opac && opac->tau_sobolev) {
-        size_t n=(size_t)opac->n_lines*opac->n_shells;
-        for(size_t k=0;k<n;k++) if(opac->tau_sobolev[k]<0.0) {
-            a208_counters()->blocked_negative_formal++;
-            fprintf(stderr,"[A2-08][BLOCKED] consumer=F01-G23 reason="
-                    "BLOCKED_NEGATIVE_OPACITY_SEMANTICS identity=%zu rc=3\n",k);
-            return 3;
+    int validation_exit_after_r6 = 0;
+    if (cmf_optional_binary_env(
+            "LUMINA_VALIDATION_EXIT_AFTER_R6",
+            &validation_exit_after_r6) != 0) {
+        fprintf(stderr,
+                "[VALIDATION][BLOCKED] reason=INVALID_EXIT_AFTER_R6 "
+                "value=%s expected=0_or_1\n",
+                getenv("LUMINA_VALIDATION_EXIT_AFTER_R6") ?
+                    getenv("LUMINA_VALIDATION_EXIT_AFTER_R6") : "(unset)");
+        return -1;
+    }
+    if (validation_exit_after_r6) {
+        int ab_enabled = 0;
+        int requested_devices = 0;
+        if (n_iter != 1 ||
+            cmf_optional_binary_env(
+                "LUMINA_CMF_FINE_MGPU_AB", &ab_enabled) != 0 ||
+            !ab_enabled ||
+            cmf_fine_multigpu_device_request(&requested_devices) != 0 ||
+            requested_devices <= 0) {
+            fprintf(stderr,
+                    "[VALIDATION][BLOCKED] "
+                    "reason=EXIT_AFTER_R6_REQUIRES_SINGLE_ITER_MGPU_AB "
+                    "n_iter=%d ab=%s devices=%s\n",
+                    n_iter,
+                    getenv("LUMINA_CMF_FINE_MGPU_AB") ?
+                        getenv("LUMINA_CMF_FINE_MGPU_AB") : "(unset)",
+                    getenv("LUMINA_CMF_FINE_MGPU_DEVICES") ?
+                        getenv("LUMINA_CMF_FINE_MGPU_DEVICES") : "(unset)");
+            return -1;
         }
     }
+    /* Signed line opacity is resolved by the line-resolved producer: CMFGEN
+     * SRCE_CHK replaces tau<-0.5 while the mild interval [-0.5,0) remains
+     * signed.  Do not reject or clamp it at this outer dispatcher. */
     if (bf && bf->chi_bf) {
         size_t n=(size_t)bf->n_shells*bf->n_freq_bins;
         for(size_t k=0;k<n;k++) if(bf->chi_bf[k]<0.0) {
@@ -5276,8 +7290,19 @@ int cmfgen_run(Geometry *geo, OpacityState *opac, BFOpacity *bf,
            cs.n_shells, cs.n_bins, cs.n_rays, n_iter, n_ali, geo->time_explosion);
 
     double t_exp = geo->time_explosion;
-    for (int iter = 0; iter < n_iter; ++iter) {
-        if (nlte) nlte->current_iter = iter;
+    /* A2-INIT (2026-08-16): pass 0 is the separately-labelled initialization
+     * pass — R1 from the bootstrap material, then exactly one fixed-seed-Te
+     * NLTE material predictor commit (INIT_SEED_MATERIAL_PREDICTOR).  It
+     * consumes none of the user's n_iter logical iterations and produces no
+     * physics-comparison snapshot.  Ordinary logical iterations keep their
+     * 0..n_iter-1 numbering.  The radiation generation is a monotonic commit
+     * counter (owner contract: previous+1), not iter+1: the init pass owns
+     * generation 1 and logical iteration k owns generation k+2. */
+    uint64_t rad_generation = 0;
+    for (int pass = 0; pass < (n_iter > 0 ? n_iter + 1 : 0); ++pass) {
+        const int init_pass = (pass == 0);
+        const int iter = pass - 1;
+        if (nlte) nlte->current_iter = init_pass ? 0 : iter;
 
         /* refresh bf opacity for current ionization/T_e */
         if (bf) compute_bf_opacity(bf, atom, plasma, cs.n_shells);
@@ -5292,7 +7317,8 @@ int cmfgen_run(Geometry *geo, OpacityState *opac, BFOpacity *bf,
         } else {
             cmfgen_solve_J(&cs, geo, T_inner, n_ali);/* binned (champion) */
         }
-        if (cmfgen_stage32_rung1_maybe_dump(&cs,geo,opac,plasma,
+        if (!init_pass &&
+            cmfgen_stage32_rung1_maybe_dump(&cs,geo,opac,plasma,
                                              iter,n_iter) != 0) {
             /* ★침묵 금지(2026-08-07) */
             fprintf(stderr, "[CMFGEN][FATAL] stage32 rung1 dump failed iter=%d\n", iter);
@@ -5332,17 +7358,36 @@ int cmfgen_run(Geometry *geo, OpacityState *opac, BFOpacity *bf,
             cmfgen_free(&cs);
             return -1;
         }
-        cmfgen_fine_jbar(&cs, geo, opac, T_inner, plasma);
+        CMFFineLineOperator line_operator = init_pass
+            ? CMF_FINE_LINE_OPERATOR_INIT_SHARED_GAUSSIAN
+            : CMF_FINE_LINE_OPERATOR_CMFGEN_NONOVERLAP_SOBOLEV;
+        if (cmfgen_fine_jbar(&cs, geo, opac, T_inner, plasma,
+                             line_operator) != 0) {
+            fprintf(stderr,
+                    "[R6][BLOCKED] reason=DETERMINISTIC_LINE_JBAR_PRODUCER "
+                    "iter=%d\n", iter);
+            cmfgen_free(&cs);
+            return -1;
+        }
 
         a208_counters()->replay_line_blocks_attempted++;
-        if (cmfgen_commit_jnu(&cs, nlte, geo, opac,
-                              (uint64_t)(iter + 1)) != 0) {
+        ++rad_generation;
+        if (cmfgen_commit_jnu(&cs, nlte, geo, opac, rad_generation) != 0) {
             fprintf(stderr, "[RADIATION-FIELD][FATAL] pure-CMFGEN commit failed iter=%d\n",
                     iter);
             cmfgen_free(&cs);
             return -1;
         }
         a208_counters()->replay_line_blocks_committed++;
+
+        if (validation_exit_after_r6) {
+            fprintf(stderr,
+                    "[VALIDATION][EXIT-AFTER-R6] PASS iter=%d generation=%llu "
+                    "downstream_r7=NOT_RUN a2_10=NOT_RUN spectra=NOT_WRITTEN\n",
+                    iter, (unsigned long long)rad_generation);
+            cmfgen_free(&cs);
+            return 0;
+        }
 
         /* R7 phase: commit/view -> gamma publication -> A2-08/A2-09/A2-10.
          * The publication is once per physical explosion epoch, before any
@@ -5360,6 +7405,25 @@ int cmfgen_run(Geometry *geo, OpacityState *opac, BFOpacity *bf,
             }
         }
 
+        if (init_pass) {
+            /* Exactly-once, unconditional: NLTE material predictor at the
+             * published seed Te.  Commits population m->m+1 while the public
+             * Te bytes/generation/publication stay byte-identical; R2 (the
+             * next pass's exact publication) is then computed from P2 before
+             * the first A2-10 root.  Failure terminates — no LTE/Saha or
+             * old-material fallback exists past this point. */
+            int seed_rc = lumina_init_seed_material_predictor(
+                opac, bf, atom, plasma, nlte, gamma, t_exp, cs.n_shells);
+            if (seed_rc != 0) {
+                fprintf(stderr,
+                        "[A2-INIT][FATAL] lane=DET "
+                        "event=SEED_MATERIAL_PREDICTOR rc=%d\n", seed_rc);
+                cmfgen_free(&cs);
+                return seed_rc;
+            }
+            continue;
+        }
+
         {
             int r7_rc = lumina_r7_publish_and_solve_te(
                 opac, bf, atom, plasma, nlte, gamma,
@@ -5370,6 +7434,17 @@ int cmfgen_run(Geometry *geo, OpacityState *opac, BFOpacity *bf,
                         iter, r7_rc);
                 cmfgen_free(&cs);
                 return r7_rc;
+            }
+            PhysicsComparisonStatus dump_status =
+                physics_comparison_dump_if_requested(
+                    "DET",iter,geo,atom,plasma,opac,nlte);
+            if (dump_status != PHYSICS_COMPARISON_OK &&
+                dump_status != PHYSICS_COMPARISON_NOT_REQUESTED) {
+                fprintf(stderr,
+                        "[PHYSICS-COMPARISON][FATAL] lane=DET iter=%d status=%s\n",
+                        iter,physics_comparison_status_name(dump_status));
+                cmfgen_free(&cs);
+                return -1;
             }
         }
 
@@ -5457,49 +7532,20 @@ int cmfgen_run(Geometry *geo, OpacityState *opac, BFOpacity *bf,
                 memcpy(cs.J, Jsave, NS*NB*sizeof(double));     /* restore full J */
             }
         }
-        if (compute_plasma_state(atom, plasma, opac, t_exp) != 0) {
-            fprintf(stderr, "[A2-07][FATAL] CMF population transaction failed iter=%d\n",
+        /* R7/A2-10 has already committed Te, ne, populations, BF, EW tau,
+         * A208 and A209 as one material generation.  A second population or
+         * NLTE solve here would split that transaction.  Optional J_inc/line
+         * overlap values produced above are deliberately lagged inputs for
+         * the next outer iteration's private candidate bundle. */
+        if (atom->partition_stamp.te_generation !=
+                plasma->te_publication.committed_te_generation ||
+            strcmp(atom->partition_stamp.te_manifest_sha256,
+                   plasma->te_publication.te_manifest_sha256) != 0) {
+            fprintf(stderr,
+                    "[A2-10][FATAL] committed CMF Te/population stamp mismatch "
+                    "iter=%d\n",
                     iter);
             return -1;
-        }
-        if(atom->partition_stamp.te_generation!=plasma->te_publication.committed_te_generation||strcmp(atom->partition_stamp.te_manifest_sha256,plasma->te_publication.te_manifest_sha256)){fprintf(stderr,"[A2-10][FATAL] CMF Te/population stamp mismatch iter=%d\n",iter);return -1;}
-        if (nlte && nlte->enabled) {
-            /* UNDER-RELAXED lagged solve (codex requirement): when the cont_only-J_inc
-             * mode-3 pump is active (LUMINA_CMF_JINC_CONT), damp the population update
-             * between outer passes (pops = (1-a)*old + a*new, a=LUMINA_JBAR_POPS_DAMP,
-             * default 0.3) so the lagged jbar->bb->pop loop cannot oscillate to runaway.
-             * jbar_line is held fixed during the solve (computed above from current pops
-             * = lagged); the damping tames the outer loop. */
-            static int jdamp = -1; static double jeta = 0.3;
-            if (jdamp < 0) { const char *e = getenv("LUMINA_CMF_JINC_CONT");
-                jdamp = (e && atoi(e)) ? 1 : 0;
-                const char *d = getenv("LUMINA_JBAR_POPS_DAMP"); if (d) jeta = atof(d); }
-            if (jdamp && nlte->nlte_level_populations) {
-                size_t npop = (size_t)nlte->n_nlte_levels_total * cs.n_shells;
-                static double *pop_old = NULL; static size_t pop_n = 0;
-                if (pop_n != npop) { free(pop_old);
-                    pop_old = (double*)malloc(npop*sizeof(double)); pop_n = npop; }
-                memcpy(pop_old, nlte->nlte_level_populations, npop*sizeof(double));
-                if (nlte_solve_all(nlte, atom, plasma, opac, t_exp,
-                                   cs.n_shells, gamma) != 0) {
-                    fprintf(stderr, "[CMFGEN][FATAL] NLTE solve failed iter=%d\n",
-                            iter);
-                    cmfgen_free(&cs);
-                    return -1;
-                }
-                for (size_t k = 0; k < npop; ++k)
-                    nlte->nlte_level_populations[k] =
-                        (1.0 - jeta)*pop_old[k] + jeta*nlte->nlte_level_populations[k];
-                nlte_update_tau_sobolev(nlte, atom, opac, t_exp, cs.n_shells);
-            } else {
-                if (nlte_solve_all(nlte, atom, plasma, opac, t_exp,
-                                   cs.n_shells, gamma) != 0) {
-                    fprintf(stderr, "[CMFGEN][FATAL] NLTE solve failed iter=%d\n",
-                            iter);
-                    cmfgen_free(&cs);
-                    return -1;
-                }
-            }
         }
 
         if (cs.diag) {

@@ -50,6 +50,7 @@ typedef struct {
     A208Validity *tau_validity, *line_source_validity;
     double *bf_net_route, *bf_event_measure;
     A208Validity *bf_route_validity;
+    int bf_event_measure_provenance;
 } CpuOpacityPublication;
 
 typedef struct {
@@ -66,6 +67,7 @@ typedef struct {
     uint64_t blocked_profile, blocked_qhash, blocked_population, blocked_te, blocked_ne;
     uint64_t source_valid, source_exact_zero, source_negative;
     uint64_t source_cancellation_singular, event_measure_unavailable;
+    uint64_t event_measure_t03_blocks;
     uint64_t closure_failures, nonfinite_failures;
     uint64_t fallback_attempts, abs_attempts, zero_clamp_attempts, floor_attempts;
     uint64_t raw_view_attempts, partial_publish_attempts;
@@ -77,9 +79,21 @@ A208ValueView a208_signed_sobolev(double coefficient, double f_lu,
                                   double n_lower, double n_upper,
                                   double g_lower, double g_upper,
                                   uint64_t generation);
+A208ValueView a208_signed_sobolev_counted(
+                                  double coefficient, double f_lu,
+                                  double lambda_cm, double time_explosion,
+                                  double n_lower, double n_upper,
+                                  double g_lower, double g_upper,
+                                  uint64_t generation,
+                                  A208Counters *counter_sink);
 A208ValueView a208_line_source(double prefactor, double n_lower,
                                double n_upper, double g_lower, double g_upper,
                                uint64_t generation);
+A208ValueView a208_line_source_counted(
+                               double prefactor, double n_lower,
+                               double n_upper, double g_lower, double g_upper,
+                               uint64_t generation,
+                               A208Counters *counter_sink);
 int a208_bf_split(double gross, double stimulated_ratio, double exponent,
                   A208SignedBfNet *net,
                   A208NonnegativeEventMeasure *event_measure);
@@ -90,6 +104,9 @@ int a208_publication_init(CpuOpacityPublication *p, size_t n_shells,
 void a208_publication_free(CpuOpacityPublication *p);
 int a208_publication_commit(CpuOpacityPublication *public_p,
                             CpuOpacityPublication *candidate);
+int a208_publication_commit_counted(CpuOpacityPublication *public_p,
+                                    CpuOpacityPublication *candidate,
+                                    A208Counters *counter_sink);
 double a208_publication_max_closure(const CpuOpacityPublication *p,
                                     size_t *worst_cell);
 int a208_capability_check(A208ConsumerCapability capability,
