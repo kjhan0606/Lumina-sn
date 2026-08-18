@@ -1,0 +1,8 @@
+[GAMMA][PUBLISHED] generation=1 epoch=1683072 provenance=EXTERNAL_FILE heating_manifest_sha256=2d932e53e44906be108047abe4a791d7a8f9f25a907ee6867cf77b3b7b7f73aa nonthermal_manifest_sha256=7bf2dfe748c8410b41bb5e82359e6bf9e0e69a5efc044c50d5837b4b6c0c0cfc shells=2
+[GAMMA][PUBLISHED] generation=1 epoch=1683072 provenance=EXTERNAL_FILE heating_manifest_sha256=f7c6d16912ccc1864b79f52883ba391bbb49a0c1d5f1015cd04e60183ba4cccb nonthermal_manifest_sha256=d3c64edb799b6f4893612928be421dd8f38ecfccaa41d6e7de89659f8195bf1c shells=2
+[GAMMA][PUBLISHED] generation=2 epoch=1683073 provenance=EXTERNAL_FILE heating_manifest_sha256=9d28a140199b9392f6394713fac9f288c844b31ef9a8bab39aaa6434ffabd751 nonthermal_manifest_sha256=c02843dcc80d74ce817f4280853ab1ebf0456d03aa9430dde50953d8e635e3fd shells=2
+[LINE_JBAR_VIEW][BLOCKED] reason=QHASH_MISMATCH
+[LINE_JBAR][BLOCKED] reason=NEGATIVE_OR_NONFINITE_JBAR cell=1 validity=1 value=-1
+N6-3 trace commit_rc=-1 view_rc=-4 lookup_rc=-1 validity=0 jbar=0 rejected_at=commit injection_commit_attempted=1
+PASS gate_recovery NC2 NC4 N6-2 N6-3 positive_controls=4
+RC=0

@@ -1,0 +1,4 @@
+[MC-EVT][BF-EDGE-CENSUS] ref=data/tardis_reference_toy06_19p48d_sivcaiv_active sigma=data/tardis_reference_toy06_19p48d_sivcaiv_active/cmfgen_sigma_bf.bin levels=24542 sigma_bins=1234 sigma_grid=[5.84127859e+13,4.03625815e+16] transport_nu_min=5.84127859e+13
+[MC-EVT][BF-EDGE-CENSUS] positive=24542 above=24542 below_or_at_all=0 default_active=0 neutral_option=0 cmfgen=0 kramers_fallback=0 nonpositive=0 missing_ip=0
+[MC-EVT][BF-EDGE-CENSUS][PASS] active_below_or_at_nu_min=0 oog_bf_exact_zero_contract=ELIGIBLE rc=0
+[MC-EVT][BF-EDGE-CENSUS][SELFTEST] status=PASS rc=0
