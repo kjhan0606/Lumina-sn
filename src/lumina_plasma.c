@@ -13875,6 +13875,7 @@ typedef struct {
     size_t count;
     size_t capacity;
     long double total_scaled_emission;
+    size_t zero_opacity_emitting_rows;   /* Z-1: tau==0 && n_upper>0 */
 } A210LineSaturationDiagnostic;
 
 static int a210_line_saturation_target_ion(void) {
@@ -13905,14 +13906,16 @@ static void a210_line_saturation_free(A210LineSaturationDiagnostic *diag){
 }
 
 static void a210_line_saturation_blocked(
-        const char *reason,const char *phase,size_t rows){
+        const char *reason,const char *phase,size_t rows,
+        size_t zero_opacity_emitting_rows){
     fprintf(stderr,
         "[A2-10][LINE-SATURATION-BLOCKED] reason=%s phase=%s shell=0 "
         "candidate_rows=%zu target_Z=26,27,28 target_ion=%d complete=0 "
         "interpretation=DIAGNOSTIC_ONLY physical_values_modified=0 "
-        "clamp=0 floor=0 cap=0 jitter=0 repair=0\n",
+        "clamp=0 floor=0 cap=0 jitter=0 repair=0 "
+        "zero_opacity_emitting_rows=%zu\n",
         reason?reason:"UNKNOWN",phase?phase:"INTERIOR",rows,
-        a210_line_saturation_log_target_ion());
+        a210_line_saturation_log_target_ion(),zero_opacity_emitting_rows);
 }
 
 static int a210_line_saturation_init(
@@ -13923,13 +13926,15 @@ static int a210_line_saturation_init(
     const char *value=getenv("LUMINA_A210_LINE_SATURATION_DIAG");
     if(!value||strcmp(value,"0")==0)return 0;
     if(strcmp(value,"1")!=0&&strcmp(value,"2")!=0){
-        a210_line_saturation_blocked("INVALID_ENV_VALUE",phase,0);
+        a210_line_saturation_blocked("INVALID_ENV_VALUE",phase,0,
+                                     diag->zero_opacity_emitting_rows);
         return-1;
     }
     const int target_ion=a210_line_saturation_target_ion();
     if(target_ion<0){
         a210_line_saturation_blocked("INVALID_TARGET_ION_ENV_VALUE",
-                                     phase,0);
+                                     phase,0,
+                                     diag->zero_opacity_emitting_rows);
         return-1;
     }
     diag->requested=1;
@@ -13940,7 +13945,8 @@ static int a210_line_saturation_init(
     if(!atom||atom->n_lines<=0||!atom->line_atomic_number||
        !atom->line_ion_number||!atom->line_level_lower||
        !atom->line_level_upper){
-        a210_line_saturation_blocked("MISSING_ATOMIC_IDENTITY",phase,0);
+        a210_line_saturation_blocked("MISSING_ATOMIC_IDENTITY",phase,0,
+                                     diag->zero_opacity_emitting_rows);
         return-1;
     }
     return 0;
@@ -13987,9 +13993,12 @@ static int a210_line_saturation_add(
        !isfinite(result->cancellation_condition)||
        !isfinite((double)rate_factor)||rate_factor<=0.0L){
         a210_line_saturation_blocked("INVALID_ROW_PROVENANCE",
-                                     "REQUESTED_TE",diag->count);
+                                     "REQUESTED_TE",diag->count,
+                                     diag->zero_opacity_emitting_rows);
         return-1;
     }
+    /* Z-1 계측: 판정 분기보다 앞. 이 카운터는 target ion 범위 안의 census 다. */
+    if(tau==0.0&&n_upper>0.0)diag->zero_opacity_emitting_rows++;
     long double scaled_emission=
         (long double)result->emission_per_sr*rate_factor;
     long double scaled_absorption=
@@ -13997,14 +14006,16 @@ static int a210_line_saturation_add(
     if(!(scaled_emission>=0.0L)||!isfinite(scaled_emission)||
        !isfinite(scaled_absorption)){
         a210_line_saturation_blocked("NONFINITE_SCALED_COMPONENT",
-                                     "REQUESTED_TE",diag->count);
+                                     "REQUESTED_TE",diag->count,
+                                     diag->zero_opacity_emitting_rows);
         return-1;
     }
     if(scaled_emission==0.0L)return 0;
     double beta=NAN,companion=NAN;
     if(line_net_cmfgen_exponx(material->effective_tau,&beta,&companion)!=0){
         a210_line_saturation_blocked("EXPONX_FAILED","REQUESTED_TE",
-                                     diag->count);
+                                     diag->count,
+                                     diag->zero_opacity_emitting_rows);
         return-1;
     }
     double one_minus_beta=material->effective_tau*companion;
@@ -14019,27 +14030,52 @@ static int a210_line_saturation_add(
        !isfinite(jbar_over_source)||
        (source_defined&&!isfinite(source_function))){
         a210_line_saturation_blocked("NONFINITE_DERIVED_DIAGNOSTIC",
-                                     "REQUESTED_TE",diag->count);
+                                     "REQUESTED_TE",diag->count,
+                                     diag->zero_opacity_emitting_rows);
         return-1;
     }
     if(independent_capture &&
        (!source_defined || !isfinite(source_function))){
+        fprintf(stderr,
+            "[A2-10][ZERO-OPACITY-WITNESS] phase=REQUESTED_TE "
+            "shell=%zu line=%d Z=%d ion=%d ion_slot=%d "
+            "lower_global=%d upper_global=%d tau_validity=%d "
+            "tau_raw=%.17g n_upper=%.17g A_ul=%.17g nu=%.17g "
+            "raw_integrated_opacity=%.17g "
+            "effective_integrated_opacity=%.17g effective_tau=%.17g "
+            "emission_per_sr=%.17g srce_chk=%d "
+            "exact_zero_provenance=%d source_defined=%d "
+            "source_function_finite=%d "
+            "result_emission_per_sr=%.17g result_absorption_per_sr=%.17g "
+            "physical_values_modified=0 clamp=0 floor=0 cap=0 jitter=0 "
+            "repair=0\n",
+            shell,line,Z,ion,authority->ip,authority->lower_global,
+            authority->upper_global,(int)tau_validity,tau,n_upper,A_ul,nu,
+            material->raw_integrated_opacity,
+            material->effective_integrated_opacity,material->effective_tau,
+            material->emission_per_sr,material->srce_chk_applied,
+            material->exact_zero_provenance,source_defined,
+            isfinite(source_function)?1:0,result->emission_per_sr,
+            result->absorption_per_sr);
         a210_line_saturation_blocked("INDEPENDENT_SPROBE_UNDEFINED",
-                                     "REQUESTED_TE",diag->count);
+                                     "REQUESTED_TE",diag->count,
+                                     diag->zero_opacity_emitting_rows);
         return-1;
     }
     if(diag->count==diag->capacity){
         size_t next=diag->capacity?2*diag->capacity:4096;
         if(next<diag->capacity||next>SIZE_MAX/sizeof(*diag->row)){
             a210_line_saturation_blocked("ROW_CAPACITY_OVERFLOW",
-                                         "REQUESTED_TE",diag->count);
+                                         "REQUESTED_TE",diag->count,
+                                     diag->zero_opacity_emitting_rows);
             return-2;
         }
         A210LineSaturationRow *grown=realloc(
             diag->row,next*sizeof(*diag->row));
         if(!grown){
             a210_line_saturation_blocked("ALLOCATION_FAILED",
-                                         "REQUESTED_TE",diag->count);
+                                         "REQUESTED_TE",diag->count,
+                                     diag->zero_opacity_emitting_rows);
             return-2;
         }
         diag->row=grown;diag->capacity=next;
@@ -14090,7 +14126,8 @@ static int a210_line_saturation_add(
     diag->total_scaled_emission+=scaled_emission;
     if(!isfinite(diag->total_scaled_emission)){
         a210_line_saturation_blocked("NONFINITE_TOTAL_EMISSION",
-                                     "REQUESTED_TE",diag->count);
+                                     "REQUESTED_TE",diag->count,
+                                     diag->zero_opacity_emitting_rows);
         return-1;
     }
     return 0;
@@ -14127,7 +14164,8 @@ static int a210_line_saturation_log_per_ion_union(
     unsigned char *selected=calloc(diag->count,sizeof(*selected));
     if(!selected){
         a210_line_saturation_blocked("ALLOCATION_FAILED",
-                                     "REQUESTED_TE",diag->count);
+                                     "REQUESTED_TE",diag->count,
+                                     diag->zero_opacity_emitting_rows);
         return-2;
     }
     for(size_t i=0;i<diag->count;i++){
@@ -14135,7 +14173,8 @@ static int a210_line_saturation_log_per_ion_union(
         if(k<0){
             free(selected);
             a210_line_saturation_blocked("UNEXPECTED_TARGET_IDENTITY",
-                                         "REQUESTED_TE",diag->count);
+                                         "REQUESTED_TE",diag->count,
+                                     diag->zero_opacity_emitting_rows);
             return-1;
         }
         ion_total[k]+=diag->row[i].scaled_emission;
@@ -14143,7 +14182,8 @@ static int a210_line_saturation_log_per_ion_union(
         if(!isfinite(ion_total[k])){
             free(selected);
             a210_line_saturation_blocked("NONFINITE_ION_TOTAL_EMISSION",
-                                         "REQUESTED_TE",diag->count);
+                                         "REQUESTED_TE",diag->count,
+                                     diag->zero_opacity_emitting_rows);
             return-1;
         }
     }
@@ -14151,7 +14191,8 @@ static int a210_line_saturation_log_per_ion_union(
         if(ion_candidates[k]==0||!(ion_total[k]>0.0L)){
             free(selected);
             a210_line_saturation_blocked("MISSING_POSITIVE_TARGET_ION",
-                                         "REQUESTED_TE",diag->count);
+                                         "REQUESTED_TE",diag->count,
+                                     diag->zero_opacity_emitting_rows);
             return-1;
         }
     }
@@ -14170,7 +14211,8 @@ static int a210_line_saturation_log_per_ion_union(
             if(!isfinite(ion_selected[k])||!isfinite(selected_emission)){
                 free(selected);
                 a210_line_saturation_blocked("NONFINITE_UNION_SELECTION",
-                                             "REQUESTED_TE",diag->count);
+                                             "REQUESTED_TE",diag->count,
+                                     diag->zero_opacity_emitting_rows);
                 return-1;
             }
         }
@@ -14181,14 +14223,16 @@ static int a210_line_saturation_log_per_ion_union(
            !(ion_before_last[k]<target)){
             free(selected);
             a210_line_saturation_blocked("PER_ION_SELECTION_INCOMPLETE",
-                                         "REQUESTED_TE",diag->count);
+                                         "REQUESTED_TE",diag->count,
+                                     diag->zero_opacity_emitting_rows);
             return-1;
         }
     }
     if(selected_rows==0||selected_rows>diag->count){
         free(selected);
         a210_line_saturation_blocked("UNION_SELECTION_INCOMPLETE",
-                                     "REQUESTED_TE",diag->count);
+                                     "REQUESTED_TE",diag->count,
+                                     diag->zero_opacity_emitting_rows);
         return-1;
     }
 
@@ -14287,7 +14331,8 @@ static int a210_line_saturation_log_per_ion_union(
             ion_total[k],ion_cumulative[k],ion_fraction)<0){
             free(selected);
             a210_line_saturation_blocked("STDERR_WRITE_FAILED",
-                                         "REQUESTED_TE",diag->count);
+                                         "REQUESTED_TE",diag->count,
+                                     diag->zero_opacity_emitting_rows);
             return-1;
         }
     }
@@ -14307,7 +14352,8 @@ static int a210_line_saturation_log_per_ion_union(
             ion_selected[k],fraction)<0){
             free(selected);
             a210_line_saturation_blocked("STDERR_WRITE_FAILED",
-                                         "REQUESTED_TE",diag->count);
+                                         "REQUESTED_TE",diag->count,
+                                     diag->zero_opacity_emitting_rows);
             return-1;
         }
     }
@@ -14321,12 +14367,15 @@ static int a210_line_saturation_log_per_ion_union(
         "selection_target_fraction=0.9 selected_reaches_target=1 "
         "selection_mode=PER_ION_UNION complete=1 "
         "interpretation=DIAGNOSTIC_ONLY physical_values_modified=0 "
-        "clamp=0 floor=0 cap=0 jitter=0 repair=0\n",
+        "clamp=0 floor=0 cap=0 jitter=0 repair=0 "
+        "zero_opacity_emitting_rows=%zu\n",
         diag->target_ion,diag->count,selected_rows,diag->total_scaled_emission,
-        selected_emission,selected_fraction)<0){
+        selected_emission,selected_fraction,
+        diag->zero_opacity_emitting_rows)<0){
         free(selected);
         a210_line_saturation_blocked("STDERR_WRITE_FAILED",
-                                     "REQUESTED_TE",diag->count);
+                                     "REQUESTED_TE",diag->count,
+                                     diag->zero_opacity_emitting_rows);
         return-1;
     }
     free(selected);
@@ -14339,7 +14388,8 @@ static int a210_line_saturation_log_complete(
     if(diag->count==0||!(diag->total_scaled_emission>0.0L)||
        !isfinite(diag->total_scaled_emission)){
         a210_line_saturation_blocked("NO_POSITIVE_TARGET_EMISSION",
-                                     "REQUESTED_TE",diag?diag->count:0);
+                                     "REQUESTED_TE",diag?diag->count:0,
+                                     diag?diag->zero_opacity_emitting_rows:0);
         return-1;
     }
     if(diag->mode==2)return a210_line_saturation_log_per_ion_union(diag);
@@ -14358,7 +14408,8 @@ static int a210_line_saturation_log_complete(
        !(selected_emission>=target_emission)||
        !isfinite(selected_emission)){
         a210_line_saturation_blocked("SELECTION_INCOMPLETE",
-                                     "REQUESTED_TE",diag->count);
+                                     "REQUESTED_TE",diag->count,
+                                     diag->zero_opacity_emitting_rows);
         return-1;
     }
     long double cumulative=0.0L;
@@ -14437,7 +14488,8 @@ static int a210_line_saturation_log_complete(
             row->scaled_absorption,cumulative,fraction,
             sproducer_suffix)<0){
             a210_line_saturation_blocked("STDERR_WRITE_FAILED",
-                                         "REQUESTED_TE",diag->count);
+                                         "REQUESTED_TE",diag->count,
+                                     diag->zero_opacity_emitting_rows);
             return-1;
         }
     }
@@ -14451,11 +14503,12 @@ static int a210_line_saturation_log_complete(
         "selection_target_fraction=0.9 selected_reaches_target=1 "
         "complete=1 interpretation=DIAGNOSTIC_ONLY "
         "physical_values_modified=0 clamp=0 floor=0 cap=0 jitter=0 "
-        "repair=0\n",
+        "repair=0 zero_opacity_emitting_rows=%zu\n",
         diag->target_ion,diag->count,selected,diag->total_scaled_emission,selected_emission,
-        selected_fraction)<0){
+        selected_fraction,diag->zero_opacity_emitting_rows)<0){
         a210_line_saturation_blocked("STDERR_WRITE_FAILED",
-                                     "REQUESTED_TE",diag->count);
+                                     "REQUESTED_TE",diag->count,
+                                     diag->zero_opacity_emitting_rows);
         return-1;
     }
     return 0;
@@ -15247,7 +15300,8 @@ static RadeqStatus a210_private_line_energy_build(
     else if(status!=RADEQ_OK&&saturation_diag.active)
         a210_line_saturation_blocked(
             "UPSTREAM_LINE_SCAN_INCOMPLETE",endpoint_phase,
-            saturation_diag.count);
+            saturation_diag.count,
+            saturation_diag.zero_opacity_emitting_rows);
     if(status==RADEQ_OK)
         a210_line_ion_owner_log_complete(
             &ion_owner,atom,candidate,endpoint_phase,signed_sum,absolute_sum,

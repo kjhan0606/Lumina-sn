@@ -74,7 +74,22 @@ III 런에서 `phase=REQUESTED_TE status=RADEQ_TERM_SCHEMA valid=0`,
 
 ## 3. 단계
 
-### Z-1 계측 (이 단의 첫 실행) — 판정런 0회, 기존 봉인 로그 재사용 불가 ⟹ 계측 추가 필요
+### Z-1 계측 (이 단의 첫 실행) — 기존 봉인 로그 재사용 불가 ⟹ 계측 추가 필요
+
+★**런 노브 (감사 지적 1 — 틀리면 런 하나를 버린다)**
+카운터는 `diag->active` 안에서만 증가하고 `diag->active` 는
+`LUMINA_A210_LINE_SATURATION_DIAG` 가 켜야 선다(`lumina_plasma.c:13943,13970`).
+⟹ **census 런은 `LUMINA_A210_LINE_SATURATION_DIAG=2` 를 켠 채
+`LUMINA_A210_INDEPENDENT_CAPTURE` 만 끈다.** 둘 다 끄면 카운터가 0회 증가하고
+SUMMARY 도 안 찍힌다. `scripts/stage_a210_line_saturation_diagnostic.sh:112` 는 둘 다 켜므로
+그 스테이징을 그대로 쓰면 부분합만 얻는다.
+
+★**카운터의 정확한 스코프 (감사 지적 3 — 대장 기재 필수 문구)**
+이 수는 "스캔 전체" 가 **아니다**. **shell 0 · target ion 후보행 중** `tau==0 && n_upper>0` 인 수다.
+빠지는 것: shell≠0 전부 · target ion 밖 전부 · 주파수 창 밖 · 비활성 Z ·
+`UNRESOLVED_CANCELLATION`/`INVALID_INPUT` 셀 · **첫 차단 이후 전부**(노브 ON 런은 접두 부분합).
+SUMMARY 가 여러 줄이면 각 줄은 독립 부분합이므로 **합산 금지**.
+⟹ "III 전체에 tau==0 행이 N개" 로 읽으면 틀린다.
 차단 시점에 그 행의 `line·Z·ion·tau_raw·tau_validity·n_upper·A_ul·emission_per_sr·
 effective_integrated_opacity·exact_zero_provenance` 를 한 줄로 찍는다.
 **판정 로직 불변**(차단은 그대로 하되 무엇을 막았는지 기록한다).
@@ -98,7 +113,7 @@ coverage 결손은 **별도 단**으로 다뤄야 한다.
 | **Z1** | Z-1 계측이 III 재현런에서 차단 행의 전 필드를 찍는다. **판정 로직 불변**(차단 시점·사유 동일) |
 | **Z2** | `tau==0 && n_upper>0` 행 수가 요약에 실린다. IV·III 양쪽에서 그 수를 보고 |
 | **Z3** | (수리 후) **III 가 Stage-4 row 를 낸다** — S2 덧셈 항등이 III 에서도 bit 로 성립하는가 |
-| **Z4** | (수리 후) **IV byte 불변** — `scripts/byte_parity_compare.py` 로 IV 재현런 대 봉인 IV 를 대조. 수리가 IV 를 건드리지 않았음을 진짜 byte 비교로 증명 |
+| **Z4** | (수리 후) **IV byte 불변 — 값 파일 한정**. `scripts/byte_parity_compare.py` Tier1 로 IV 재현런의 값 산출물(`lumina_spectrum.csv` 등)을 봉인 IV 와 대조. ⚠**stderr 로그 전체에 걸면 자동 실패**한다 — Z-1 이 SUMMARY 줄에 `zero_opacity_emitting_rows=` 를 더했고 그것은 IV 에서도 바뀌기 때문(감사 지적 2). 로그를 대조하려면 그 토큰의 정규화 규칙을 **선언**하고 Tier2 census 에 남길 것 |
 | **Z5** | 음성 대조: 진단 노브 **OFF** 에서 III 가 A2-10 을 통과하는가(= 차단이 진단 탓임을 시연) |
 
 ★**Z5 가 이 단의 NC3 다** — "진단이 원인" 이라는 주장을 주입 없이 시연한다.
@@ -121,6 +136,21 @@ user 지시 **"syn101 수동 제출은 금지. 해당 노드는 정상 운영중
 
 사전등록·검수·판정·감리=**Fable**(감리는 독립 컨텍스트) / 코딩=**Codex** /
 빌드·실행·대장·커밋=**운전석**.
+
+## 6.5 감사 (2026-08-19, Fable 독립 컨텍스트)
+
+Z-1 적용 diff 를 독립 감사에 넘겨 **승인(조건부)** 을 받았다.
+- 코드 수정 불필요: word-diff 전수로 판정 로직·반환값·차단 시점 불변 확인,
+  호출부 26곳 전수 갱신, 포맷/인자 22:22·7:7·7:7 손 계수 + `-Wformat=2` 일치.
+- 손 이관본이 Codex 원안보다 두 곳 정확(실물 `%.21Lg` 보존, `isfinite(...)?1:0`).
+- 조건 3건은 전부 코드 밖이며 위 §3·§4 에 반영했다(런 노브·Z4 문언·대장 문구).
+- **권고(Z-2 착수 시)**: `[A2-10][ZERO-OPACITY-WITNESS]` 접두사를
+  `LINE-SATURATION-` 네임스페이스 안으로 옮길 것. 차단을 걷어내는 순간
+  `scripts/compare_a210_phase_baseline_streams.py:78-79` 가 이 줄을 phase 스트림에 담아
+  조용히 레코드 수 불일치로 깨진다.
+- **한계 기재**: Z-1 산출은 **수 1개 + 증인 행 1개**뿐이다. §2 가 요구한 "목록" 과
+  "(a) 정당한 exact-zero 인가 (b) coverage 결손인가" 는 **그 한 행에 한해서만** 판별된다.
+  Z-2 안 선택 근거로 삼기 전에 이 한계를 명시할 것.
 
 ## 7. 처분 원칙
 
