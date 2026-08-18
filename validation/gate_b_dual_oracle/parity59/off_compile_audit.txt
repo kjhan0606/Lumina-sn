@@ -1,0 +1,5 @@
+compile_default_rc=0
+compile_explicit_off_rc=0
+oracle_symbols_default=0
+oracle_symbols_explicit_off=0
+default_vs_explicit_off_cmp_rc=0

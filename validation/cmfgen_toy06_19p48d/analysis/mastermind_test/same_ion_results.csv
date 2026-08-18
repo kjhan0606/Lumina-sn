@@ -1,0 +1,27 @@
+run,kind,key,same_ion_pct,n
+gphall,shellgroup,overall,17.150,63918064
+gphall,shellgroup,s0-2 (deep),37.061,8542885
+gphall,shellgroup,s3-6 (mid),15.634,35010733
+gphall,shellgroup,s7-9 (phot),8.974,16765036
+gphall,donor_s0-2,Z27.IV,84.555,3446518
+gphall,donor_s0-2,Z27.III,9.851,1451430
+gphall,donor_s0-2,Z26.III,2.581,1208837
+gphall,donor_s0-2,Z28.IV,5.825,1059744
+gphall,donor_s0-2,Z28.III,1.349,722394
+gphall,donor_s0-2,Z26.IV,1.323,298272
+gphall,donor_s0-2,Z27.II,0.647,199347
+gphall,donor_s0-2,Z26.II,0.549,99333
+gphall,donor_s0-2,Z28.II,0.714,56980
+gphall,donor_s0-2,Z26.V,0.000,30
+gphall,donor_s7-9,Z27.III,10.494,10503330
+gphall,donor_s7-9,Z26.III,2.468,3507741
+gphall,donor_s7-9,Z28.III,1.600,1702374
+gphall,donor_s7-9,Z16.III,78.761,346683
+gphall,donor_s7-9,Z14.III,3.440,240359
+gphall,donor_s7-9,Z14.II,0.524,226533
+gphall,donor_s7-9,Z16.II,0.257,117305
+gphall,donor_s7-9,Z27.IV,6.191,33436
+gphall,donor_s7-9,Z14.IV,2.007,28258
+gphall,donor_s7-9,Z27.II,3.855,25834
+gphall,coiv_pile_deep,coiv_absorber_frac,41.031,7102359
+gphall,siii_phot,n_siii_emit_s79,,13482635

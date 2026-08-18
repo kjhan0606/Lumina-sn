@@ -1,0 +1,5 @@
+dataset,quantity,delta_T_K,rounded_endpoint_delta_K,definition
+capture_188932,R_committed_to_own,1573.768431590419,1573,successive endpoint difference (descriptive ladder; not assumed independent)
+capture_188932,J_own_to_cmf,-4415.608641822655,-4415,successive endpoint difference (descriptive ladder; not assumed independent)
+capture_188932,O_cmf_to_truth,374.20076623223576,374,successive endpoint difference (descriptive ladder; not assumed independent)
+capture_188932,whole_truth_minus_committed,-2467.6394440000004,-2468,successive endpoint difference (descriptive ladder; not assumed independent)

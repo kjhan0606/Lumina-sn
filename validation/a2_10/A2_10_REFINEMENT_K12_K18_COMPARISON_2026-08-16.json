@@ -1,0 +1,126 @@
+{
+  "baseline": {
+    "csv": "/gpfs/kjhan/lumina/a210_cancellation_census_mgpu_k12/det1234_20260815T162808Z_8d09f31330da/a210_cancellation_census.csv",
+    "refinements": 12,
+    "sha256": "79cee8d37409c297c4b5797782e7de4b248908e92d87f74feee7a6c0ab44ede2",
+    "unresolved": 19
+  },
+  "candidate": {
+    "csv": "/gpfs/kjhan/lumina/a210_cancellation_census_mgpu_k18/det1234_20260816T002655Z_8d09f31330da/a210_cancellation_census.csv",
+    "refinements": 18,
+    "sha256": "738d06da379020b4d097b531de7d67fbbdfdb08027ccace7462162a55fe5ede0",
+    "unresolved": 0
+  },
+  "candidate_to_baseline_bound_ratio": {
+    "maximum": null,
+    "minimum": null
+  },
+  "cap": 0,
+  "clamp": 0,
+  "floor": 0,
+  "jitter": 0,
+  "physical_values_modified": false,
+  "reason_code": "PHYSICAL_IDENTITY_PRESERVED_AND_BOUND_NONINCREASING",
+  "resolved_count": 19,
+  "resolved_line_shell": [
+    [
+      "LOWER",
+      1760735,
+      6
+    ],
+    [
+      "LOWER",
+      1982794,
+      7
+    ],
+    [
+      "LOWER",
+      1987977,
+      10
+    ],
+    [
+      "LOWER",
+      2048218,
+      7
+    ],
+    [
+      "LOWER",
+      2056373,
+      7
+    ],
+    [
+      "LOWER",
+      2099685,
+      6
+    ],
+    [
+      "LOWER",
+      2101776,
+      0
+    ],
+    [
+      "LOWER",
+      2101933,
+      0
+    ],
+    [
+      "LOWER",
+      2134552,
+      3
+    ],
+    [
+      "LOWER",
+      2159144,
+      2
+    ],
+    [
+      "LOWER",
+      2159246,
+      2
+    ],
+    [
+      "LOWER",
+      2176915,
+      10
+    ],
+    [
+      "UPPER",
+      1826881,
+      7
+    ],
+    [
+      "UPPER",
+      1999730,
+      10
+    ],
+    [
+      "UPPER",
+      2007173,
+      4
+    ],
+    [
+      "UPPER",
+      2101776,
+      0
+    ],
+    [
+      "UPPER",
+      2101933,
+      0
+    ],
+    [
+      "UPPER",
+      2159144,
+      2
+    ],
+    [
+      "UPPER",
+      2159246,
+      2
+    ]
+  ],
+  "schema": "lumina-a2-10-refinement-only-comparison-v1",
+  "status": "PASS",
+  "surviving": [],
+  "surviving_count": 0
+}

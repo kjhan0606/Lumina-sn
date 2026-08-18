@@ -1,0 +1,7 @@
+rank,ion,element_Z,element_mass_frac_outer,ionfrac_deep_v4183,ionfrac_phot_v9901,pct_element_mass_in_stage(19.48d),absolute_stage_mass_g,impact,rationale
+1,Ca IV,20,0.10,0.161,0.025,3.7,2.98e30,LOW-MODERATE,"largest absolute stage-IV ion column in toy06; Ca IV present across transition+outer; but Ca III=96.2% dominates"
+2,S IV,16,0.35,0.951,0.0074,0.8,2.28e30,LOW,"95% S IV fraction is in IGE core where X_S~0; where S exists it is S II/S III; strong FUV resonance lines make small population still FUV-relevant"
+3,S V,16,0.35,0.040,1.3e-5,0.01,2.46e28,NEGLIGIBLE,"<0.1% of S mass; skip"
+4,Ca V,20,0.10,5.9e-4,1.3e-4,0.06,5.14e28,NEGLIGIBLE,"<0.1% of Ca mass; skip"
+5,C IV / O IV / Mg IV / Mn IV,6/8/12/25,0.0,-,-,0.0,0.0,ZERO,"element abundance = 0 in toy06 composition; no impact on this benchmark"
+6,Sc IV / V IV,21/23,0.0,-,-,0.0,0.0,ZERO/ABSENT,"not in CMFGEN atomic tree AND zero abundance in toy06"

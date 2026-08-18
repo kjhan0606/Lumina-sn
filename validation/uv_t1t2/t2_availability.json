@@ -1,0 +1,115 @@
+{
+  "A_B2_array_comparison": {
+    "J_producer": {
+      "bitwise_equal": true,
+      "different_cells": 0,
+      "max_abs_difference": 0.0
+    },
+    "chi_coherent": {
+      "bitwise_equal": true,
+      "different_cells": 0,
+      "max_abs_difference": 0.0
+    },
+    "chi_total": {
+      "bitwise_equal": true,
+      "different_cells": 0,
+      "max_abs_difference": 0.0
+    },
+    "dnu": {
+      "bitwise_equal": true,
+      "different_cells": 0,
+      "max_abs_difference": 0.0
+    },
+    "eta_coherent": {
+      "bitwise_equal": true,
+      "different_cells": 0,
+      "max_abs_difference": 0.0
+    },
+    "eta_fixed": {
+      "bitwise_equal": false,
+      "different_cells": 6646,
+      "max_abs_difference": 4.7095022617963364e-12
+    },
+    "eta_total": {
+      "bitwise_equal": false,
+      "different_cells": 6646,
+      "max_abs_difference": 4.7095022617963364e-12
+    },
+    "nu": {
+      "bitwise_equal": true,
+      "different_cells": 0,
+      "max_abs_difference": 0.0
+    },
+    "r_edge": {
+      "bitwise_equal": true,
+      "different_cells": 0,
+      "max_abs_difference": 0.0
+    }
+  },
+  "B0_over_CMFGEN": null,
+  "B1_over_CMFGEN": null,
+  "B2_common_assembly_state_sha256": "302a64e2e394d74a9bbbb92d26a0eb009dacda88145b10e42d3f0b280bf4b044",
+  "B2_line_emissivity_formula": "covered:hnu-over-4pi-times-Aul-times-n_upper-over-dnu;undefined:production-A-retained",
+  "BALL_over_CMFGEN": null,
+  "amplitude_cause_final_confirmation": "UNRESOLVED",
+  "blocking_evidence": [
+    "LCMFCE01 contains chi_total and chi_coherent but does not serialize chi_line, chi_line_th, chi_abs, or per-line opacity; exact removal of the production line assembly is therefore impossible.",
+    "B2 serializes population-native eta only: its chi_total and chi_coherent arrays are bitwise identical to A.",
+    "The supplied fine-line tau dump covers shell 8 only, while the stage31 formal solve consumes all 50 radial shells.",
+    "The available lumina_levelpop.csv is written after the iteration-10 A/B2 capture and immediately before the logged final pure-CMFGEN iteration 11 resolve; it is not an authenticated iteration-10 population payload.",
+    "No exact iteration-10 lower-level population array is present, so the requested stimulated-opacity factor cannot be assembled without changing population epoch or inventing a proxy."
+  ],
+  "capture_logged_before_levelpop_dump": true,
+  "clamp_floor_fallback": 0,
+  "exact_population_native_chi_eta_pair_available": false,
+  "fine_linedump_s8_columns": [
+    "line_id",
+    "shell",
+    "lambda_A",
+    "nu",
+    "J_fine",
+    "J_binned",
+    "S_l",
+    "B",
+    "SoverB",
+    "Jbin_over_Jfine",
+    "tau_sob",
+    "Sl_times_esc"
+  ],
+  "fine_linedump_shells_present": [
+    8,
+    45,
+    49
+  ],
+  "forbidden_substitutions_not_used": [
+    "final-iteration level populations for iteration-10 populations",
+    "chi_coherent-minus-minimum as a full native chi replacement",
+    "B2 eta-only stage31 failure as a T2 result",
+    "clamp, floor, tolerance relaxation, or solver-guard bypass"
+  ],
+  "input_capture": "/gpfs/kjhan/lumina_runner2/scratch/emiss_ab2_capture_188766",
+  "input_sha256": {
+    "A": "ac62eae5bec6d6beaf06d513c2cef38386b365f6b7826cff61c4edc0f2a34011",
+    "B2": "775c9e844b4000551caba7061be79ea8a7b4e25173139910ad447fc4b6689f5a",
+    "chieta": "ac62eae5bec6d6beaf06d513c2cef38386b365f6b7826cff61c4edc0f2a34011"
+  },
+  "levelpop_dump_precedes_logged_final_iter11_resolve": true,
+  "new_model_or_gpu_run": false,
+  "payload_arrays": [
+    "r_edge",
+    "nu",
+    "dnu",
+    "chi_total",
+    "chi_coherent",
+    "eta_fixed",
+    "eta_coherent",
+    "eta_total",
+    "J_producer"
+  ],
+  "prediction_retained_unmeasured": "BALL should collapse from the A-lane 11.70379136 times CMFGEN to order unity when native chi and eta are paired.",
+  "preregistered_gate": "0.3333333333333333 <= BALL/CMFGEN <= 3.0",
+  "production_code_modified": false,
+  "residual_shape_separation": "UNRESOLVED",
+  "schema": "lumina-uv-t2-input-availability-v1",
+  "status": "UNRESOLVED"
+}

@@ -1,0 +1,93 @@
+=== Phase 1: parse CMFGEN ions ===
+  Si V   :  203/  203 lev,   3086/  3086 trn, phot=Y col=-  (19apr23)
+  Ca III :  232/  232 lev,   3497/  3497 trn, phot=Y col=-  (19apr23)  VM[phot] osc=osc_data(19apr23) phot=phot_smooth.dat(10apr99) col<-19apr23
+  Ca V   :  528/  613 lev,  14017/ 18272 trn, phot=Y col=-  (19apr23)  VM[phot] osc=osc_data(19apr23) phot=phot_smooth.dat(10apr99) col<-19apr23
+  Fe IV  : 1000/ 1000 lev,  72223/ 72223 trn, phot=Y col=Y  (19apr23)  VM[phot] osc=osc_data(19apr23) phot=phot_sm_3000.dat(18oct00) col<-19apr23
+  Fe V   : 1000/ 1000 lev,  72213/ 72213 trn, phot=Y col=-  (19apr23)  VM[phot] osc=osc_data(19apr23) phot=phot_sm_3000.dat(18oct00) col<-19apr23
+  Fe VI  : 2000/ 2000 lev, 185392/185392 trn, phot=Y col=Y  (19apr23)
+  Co IV  : 1000/ 1000 lev,  69803/ 69803 trn, phot=Y col=Y  (19apr23)
+  Co V   : 1000/ 1000 lev,  75923/ 75923 trn, phot=Y col=-  (19apr23)
+  Co VI  : 1000/ 1000 lev,  75118/ 75118 trn, phot=Y col=-  (19apr23)
+  Ni IV  : 1000/ 1000 lev,  73012/ 73012 trn, phot=Y col=Y  (19apr23)  VM[phot] osc=osc_data(19apr23) phot=phot_data.dat(18oct00) col<-19apr23
+  Ni V   : 1000/ 1000 lev,  76049/ 76049 trn, phot=Y col=-  (19apr23)
+  Ni VI  : 1000/ 1000 lev,  79169/ 79169 trn, phot=Y col=-  (19apr23)
+
+==============================================================================
+PRESCAN over newly exposed levels
+==============================================================================
+
+--- Si V (Z=14, stage=5) osc=19apr23 levels 0 -> 203 (new 203)
+    new levels with a phot entry: 203   without: 0
+    baker evaluator tags on new levels: {'hyd2': 17, 'nu_th>grid': 1, 'tab': 185}
+    validity: 0 violations
+
+--- Ca III (Z=20, stage=3) osc=19apr23 levels 200 -> 232 (new 32)
+    new levels with a phot entry: 32   without: 0
+    baker evaluator tags on new levels: {'seaton': 15, 'tab': 17}
+    validity: 0 violations
+
+--- Ca V (Z=20, stage=5) osc=19apr23 levels 200 -> 528 (new 328)
+    new levels with a phot entry: 328   without: 0
+    baker evaluator tags on new levels: {'seaton': 69, 'tab': 259}
+    validity: 0 violations
+
+--- Fe IV (Z=26, stage=4) osc=19apr23 levels 200 -> 1000 (new 800)
+    new levels with a phot entry: 800   without: 0
+    baker evaluator tags on new levels: {'seaton': 208, 'tab': 592}
+    validity: 0 violations
+
+--- Fe V (Z=26, stage=5) osc=19apr23 levels 200 -> 1000 (new 800)
+    new levels with a phot entry: 800   without: 0
+    baker evaluator tags on new levels: {'seaton': 184, 'tab': 616}
+    validity: 0 violations
+
+--- Fe VI (Z=26, stage=6) osc=19apr23 levels 0 -> 2000 (new 2000)
+    new levels with a phot entry: 2000   without: 0
+    baker evaluator tags on new levels: {'seaton': 1092, 'tab': 908}
+    validity: 0 violations
+
+--- Co IV (Z=27, stage=4) osc=19apr23 levels 200 -> 1000 (new 800)
+    new levels with a phot entry: 800   without: 0
+    baker evaluator tags on new levels: {'seaton': 541, 'tab': 259}
+    validity: 0 violations
+
+--- Co V (Z=27, stage=5) osc=19apr23 levels 0 -> 1000 (new 1000)
+    new levels with a phot entry: 1000   without: 0
+    baker evaluator tags on new levels: {'seaton': 1000}
+    validity: 0 violations
+
+--- Co VI (Z=27, stage=6) osc=19apr23 levels 0 -> 1000 (new 1000)
+    new levels with a phot entry: 1000   without: 0
+    baker evaluator tags on new levels: {'seaton': 1000}
+    validity: 0 violations
+
+--- Ni IV (Z=28, stage=4) osc=19apr23 levels 200 -> 1000 (new 800)
+    new levels with a phot entry: 800   without: 0
+    baker evaluator tags on new levels: {'seaton': 800}
+    validity: 0 violations
+
+--- Ni V (Z=28, stage=5) osc=19apr23 levels 0 -> 1000 (new 1000)
+    new levels with a phot entry: 1000   without: 0
+    baker evaluator tags on new levels: {'seaton': 1000}
+    validity: 0 violations
+
+--- Ni VI (Z=28, stage=6) osc=19apr23 levels 0 -> 1000 (new 1000)
+    new levels with a phot entry: 1000   without: 0
+    baker evaluator tags on new levels: {'seaton': 1000}
+    validity: 0 violations
+
+==============================================================================
+ion        Z  st   old   new   +lvl   phot  nophot  viol
+Si V      14   5     0   203    203    203       0     0
+Ca III    20   3   200   232     32     32       0     0
+Ca V      20   5   200   528    328    328       0     0
+Fe IV     26   4   200  1000    800    800       0     0
+Fe V      26   5   200  1000    800    800       0     0
+Fe VI     26   6     0  2000   2000   2000       0     0
+Co IV     27   4   200  1000    800    800       0     0
+Co V      27   5     0  1000   1000   1000       0     0
+Co VI     27   6     0  1000   1000   1000       0     0
+Ni IV     28   4   200  1000    800    800       0     0
+Ni V      28   5     0  1000   1000   1000       0     0
+Ni VI     28   6     0  1000   1000   1000       0     0
+TOTAL VIOLATIONS = 0

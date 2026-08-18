@@ -1,0 +1,15 @@
+run,kind,key,value,n
+gphground,exit_census,ff_fb_pct_of_exits,0.0094,63988415
+gphground,same_ion,overall,37.767,63982405
+gphground,same_ion,s0-2,38.060,40217600
+gphground,same_ion,s7-9,20.275,578394
+gphground,deep_attractor,CoIV_emit_energy_pct,6.925,40217615
+gphground,deep_pile,CoIV_selfrecycle_pct,0.789,2789970
+gphground,phot_attractor,SIII_emit_energy_pct,26.617,578413
+evlog,exit_census,ff_fb_pct_of_exits,0.0000,63986206
+evlog,same_ion,overall,37.146,63986183
+evlog,same_ion,s0-2,38.410,38299771
+evlog,same_ion,s7-9,21.970,908578
+evlog,deep_attractor,CoIV_emit_energy_pct,6.694,38299805
+evlog,deep_pile,CoIV_selfrecycle_pct,0.742,2569393
+evlog,phot_attractor,SIII_emit_energy_pct,15.274,908599

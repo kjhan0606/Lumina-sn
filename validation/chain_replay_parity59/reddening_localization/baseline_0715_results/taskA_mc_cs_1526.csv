@@ -1,0 +1,4 @@
+shell_label,shell,v_kms,target_A,native_bin_A,mc_J,cs_J,mc_over_cs,source_file,source_fields
+s0,0,4264,1526.17,1526.087,0.006430898,0.0001647432,39.035893439000816,logs/coevolve_consume_a10_kx_gphall/lumina_coevolve_field.csv,wavelength_A; mc_J; cs_J
+s2,2,5720,1526.17,1526.087,0.007630391,0.0004655455,16.39021534952008,logs/coevolve_consume_a10_kx_gphall/lumina_coevolve_field.csv,wavelength_A; mc_J; cs_J
+s4,4,7176,1526.17,1526.087,0.008537472,0.0007089581,12.042280072686948,logs/coevolve_consume_a10_kx_gphall/lumina_coevolve_field.csv,wavelength_A; mc_J; cs_J

@@ -1,0 +1,19 @@
+{
+  "clamp_or_floor_added": false,
+  "coherent_frozen": true,
+  "construction": "shell-8 observed-column line return removed; energy-normalized sparse R output added by bin width; outside-grid energy side-ledgered",
+  "e10_diagnostic_only": true,
+  "eta_decomposition_bitwise": true,
+  "eta_decomposition_max_abs": 0,
+  "fallback_added": false,
+  "field_generation": 10,
+  "frequency_descending": true,
+  "iteration": 10,
+  "post_damping": true,
+  "preregistration_sha256": "f47271c00697cfcc7020cf9b67d4a8b4f609486569614f89ae6fc58fdfcfc6ac",
+  "repair_implemented": false,
+  "schema": "LCMFCE01-v1",
+  "sha256": "6bc7441384cb686ed5e2a287286f4b77cd548ad7323b36c6447e711679726c91",
+  "source_payload_sha256": "0bd71b413e77d49382b85e188988d2750fcd5bcd38ead800fc2faf2640b6d5e0",
+  "unsupported_bins_unchanged_not_inferred_identity": true
+}

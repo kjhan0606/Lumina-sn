@@ -1,0 +1,110 @@
+{
+  "definitions": {
+    "activation": "most recent earlier EventRec.etype==1 for the same pkt_id, cleared after the first event whose chan is in the terminal-channel set",
+    "all_internal_emission": "EventRec.etype in {2 line emission/thermal line-site exit, 4 kpacket free-free/B(T_e), 5 kpacket free-bound/recombination, 8 legacy bf re-emission}",
+    "cap": 0,
+    "clamp": 0,
+    "conditioning": "stored non-random prefix only; no extrapolation to the dropped tail",
+    "emitted_band": "LT600=[0,600), B0=[600,1000), B1=[1000,1500), B2=[1500,2000), B3=[2000,2500), B4=[2500,3000], GT3000=(3000,+inf) Angstrom, from lumina_events_lines.bin lambda_A",
+    "emitted_ion": "lumina_events_lines.bin Z and zero-based ion indexed by the emission line_id",
+    "energy": "EventRec.energy cast from stored float32 to float64 and accumulated in stored-record order",
+    "fallback": 0,
+    "floor": 0,
+    "line_emission": "EventRec.etype==2 and 0<=line_id<n_lines",
+    "prior_origin": "latest classified origin since the preceding recognized terminal: LINE_ACTIVATION for etype1, BF_ABSORPTION for etype3, OTHER_NONTERMINAL only if neither was already present, otherwise NONE_SINCE_TERMINAL",
+    "route_partition": "ordered exclusive partition: chan 0x12; then prior BF with chan 0x15/0x38; then chan 0x16; then all remaining channel-origin rows",
+    "terminal_channels_hex": [
+      "0x10",
+      "0x11",
+      "0x12",
+      "0x14",
+      "0x15",
+      "0x16",
+      "0x24",
+      "0x38",
+      "0x3A",
+      "0x50",
+      "0x51"
+    ],
+    "undefined_policy": "JSON null and CSV UNDEFINED only for a zero denominator; no replacement value",
+    "without_activation": "eligible line emission for which that per-packet activation state is absent immediately before processing the emission"
+  },
+  "output_tables": {
+    "by_band": "unpaired_by_band.csv",
+    "by_channel": "unpaired_by_channel.csv",
+    "by_channel_prior_origin": "unpaired_by_channel_prior_origin.csv",
+    "by_ion": "unpaired_by_ion.csv",
+    "by_ion_band_shell": "unpaired_by_ion_band_shell.csv",
+    "by_shell": "unpaired_by_shell.csv"
+  },
+  "provenance": {
+    "capture_metadata": {
+      "attempted_records": 970557175,
+      "dropped_tail_records": 570557175,
+      "electron_scatter_logged": false,
+      "event_cap_records": 400000000,
+      "event_iteration": 11,
+      "event_iteration_mode": "final",
+      "lambda_max_A": 0.0,
+      "n_iterations": 12,
+      "n_packets": 100000
+    },
+    "capture_stdout": "/gpfs/kjhan/lumina_runner2/scratch/instr_capture_188932/stdout.log",
+    "events": {
+      "bytes": 8000000032,
+      "path": "/gpfs/kjhan/lumina_runner2/scratch/instr_capture_188932/lumina_events.bin",
+      "sha256_reported_by_upstream_not_recomputed": "371bf11b8e092ff33bb75715867bea84c5192b5120b100e79343989ad1fa46f1"
+    },
+    "lines": {
+      "bytes": 20673064,
+      "path": "/gpfs/kjhan/lumina_runner2/scratch/instr_capture_188932/lumina_events_lines.bin",
+      "sha256_reported_by_upstream_not_recomputed": "cc88243364f86e8e4962f2caab581c17f146f5735bbf6aa73d195a5853d15a6d"
+    },
+    "upstream_pairing_json": "/gpfs/kjhan/lumina_runner2/scratch/instr_capture_188932/pile_ion_attribution/pile_ion_attribution.json"
+  },
+  "route_partition": [
+    {
+      "fraction_of_all_missing_energy": 1.0,
+      "missing_energy": 3.692732472009652,
+      "missing_events": 496950,
+      "route_class": "EXPLICIT_NONLINE_KPKT_COLLEXC"
+    },
+    {
+      "fraction_of_all_missing_energy": 0.0,
+      "missing_energy": 0.0,
+      "missing_events": 0,
+      "route_class": "BF_ORIGIN_THEN_MA_LINE_EXIT"
+    },
+    {
+      "fraction_of_all_missing_energy": 0.0,
+      "missing_energy": 0.0,
+      "missing_events": 0,
+      "route_class": "LINE_ONLY_BB_ROUTE_WITHOUT_STORED_ACTIVATION"
+    },
+    {
+      "fraction_of_all_missing_energy": 0.0,
+      "missing_energy": 0.0,
+      "missing_events": 0,
+      "route_class": "OTHER_UNRESOLVED"
+    }
+  ],
+  "schema": "codex-unpaired-line-emission-v1",
+  "status": "PASS",
+  "totals": {
+    "activation_records": 199491999,
+    "activations_unpaired_at_stored_prefix_tail": 7858,
+    "all_internal_emission_energy": 1576.330917329106,
+    "all_internal_emission_events": 199982232,
+    "all_valid_line_emission_energy": 1575.9331060066093,
+    "all_valid_line_emission_events": 199931546,
+    "bf_absorption_records": 497831,
+    "line_emission_energy_without_activation": 3.692732472009652,
+    "line_emissions_without_activation": 496950,
+    "missing_fraction_of_all_internal_emission_energy": 0.0023426124752196843,
+    "missing_fraction_of_all_internal_emission_events": 0.002484970764802745,
+    "missing_fraction_of_all_valid_line_emission_energy": 0.002343203818699501,
+    "missing_fraction_of_all_valid_line_emission_events": 0.0024856007465675276,
+    "recognized_terminal_records": 200010004,
+    "stored_records_processed": 400000000
+  }
+}

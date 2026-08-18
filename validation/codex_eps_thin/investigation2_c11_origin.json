@@ -1,0 +1,46 @@
+{
+  "definitions": {
+    "all_deep_emission_denominator": "sum EventRec.energy for all deep/emission records in the 11 exhaustive taskB ledger wavelength bands; continuum etype 4/5 remains in this denominator",
+    "cap": 0,
+    "clamp": 0,
+    "co_iv_pile_numerator": "sum EventRec.energy for pile/deep/emission records with valid line_id whose emitted line table has Z=27, ion_number=3",
+    "deep": "EventRec.shell in {0,1,2}",
+    "emission": "EventRec etype in {2 line-emit,4 kpkt-ff,5 kpkt-fb}",
+    "event_archive": "logs/coevolve_consume_a10_kx_gphall/lumina_events.bin, stored CAP128M iter11 prefix",
+    "event_wavelength": "2.99792458e18/EventRec.nu_comov Angstrom",
+    "fallback": 0,
+    "floor": 0,
+    "pile": "1290 <= event_wavelength_A < 2000"
+  },
+  "quantity_class": "event-ledger packet comoving energy weight; not mc_J field dump",
+  "schema": "codex-c11-origin-v1",
+  "sources": {
+    "band_ledger": "/home/kjhan/BACKUP/Eunha.A1/Claude/Lumina-sn/validation/cmfgen_toy06_19p48d/analysis/reddening_localization/taskB_band_ledger.csv",
+    "band_ledger_fields": [
+      "group",
+      "band",
+      "emitE"
+    ],
+    "claim": "/home/kjhan/BACKUP/Eunha.A1/Claude/Lumina-sn/validation/cmfgen_toy06_19p48d/analysis/criminal_record/CRIMINAL_RECORD.md:64",
+    "ion_table": "/home/kjhan/BACKUP/Eunha.A1/Claude/Lumina-sn/validation/cmfgen_toy06_19p48d/analysis/reddening_localization/taskB_top_ions.csv",
+    "ion_table_fields": [
+      "group",
+      "role",
+      "Z",
+      "ion_idx",
+      "E",
+      "frac_of_role"
+    ],
+    "producer_script": "/home/kjhan/BACKUP/Eunha.A1/Claude/Lumina-sn/validation/cmfgen_toy06_19p48d/analysis/reddening_localization/taskB_event_forensics.py"
+  },
+  "status": "REPRODUCED",
+  "values": {
+    "all_deep_emission_energy": 16.838951877972704,
+    "co_iv_deep_1290_2000_emission_energy": 13.631468772888184,
+    "co_iv_deep_pile_fraction_of_all_deep_emission": 0.8095200266424967,
+    "co_iv_fraction_of_deep_pile": 0.8404277837287241,
+    "deep_1290_2000_emission_energy": 16.21967887878418,
+    "pile_fraction_of_all_deep_emission": 0.9632237799789306,
+    "product_of_reported_factors": 0.8095200266424968
+  }
+}

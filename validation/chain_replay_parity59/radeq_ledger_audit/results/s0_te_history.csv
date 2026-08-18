@@ -1,0 +1,13 @@
+solve_index,prev_T_e_K,committed_T_e_K,radeq_root,source_file,source_line,source_fields
+1,10470,11183,root-found,/gpfs/kjhan/lumina_runner2/scratch/instr_capture_188932/stdout.log,371,[TEHOLD] s0 T_e; prev; radeq_root
+2,11183,12988,root-found,/gpfs/kjhan/lumina_runner2/scratch/instr_capture_188932/stdout.log,3811,[TEHOLD] s0 T_e; prev; radeq_root
+3,12988,13451,root-found,/gpfs/kjhan/lumina_runner2/scratch/instr_capture_188932/stdout.log,7227,[TEHOLD] s0 T_e; prev; radeq_root
+4,13451,15170,root-found,/gpfs/kjhan/lumina_runner2/scratch/instr_capture_188932/stdout.log,10689,[TEHOLD] s0 T_e; prev; radeq_root
+5,15170,16999,root-found,/gpfs/kjhan/lumina_runner2/scratch/instr_capture_188932/stdout.log,14155,[TEHOLD] s0 T_e; prev; radeq_root
+6,16999,18197,root-found,/gpfs/kjhan/lumina_runner2/scratch/instr_capture_188932/stdout.log,17622,[TEHOLD] s0 T_e; prev; radeq_root
+7,18197,19228,root-found,/gpfs/kjhan/lumina_runner2/scratch/instr_capture_188932/stdout.log,21088,[TEHOLD] s0 T_e; prev; radeq_root
+8,19228,20071,root-found,/gpfs/kjhan/lumina_runner2/scratch/instr_capture_188932/stdout.log,24551,[TEHOLD] s0 T_e; prev; radeq_root
+9,20071,20714,root-found,/gpfs/kjhan/lumina_runner2/scratch/instr_capture_188932/stdout.log,27641,[TEHOLD] s0 T_e; prev; radeq_root
+10,20714,21081,root-found,/gpfs/kjhan/lumina_runner2/scratch/instr_capture_188932/stdout.log,30535,[TEHOLD] s0 T_e; prev; radeq_root
+11,21081,21226,root-found,/gpfs/kjhan/lumina_runner2/scratch/instr_capture_188932/stdout.log,33393,[TEHOLD] s0 T_e; prev; radeq_root
+12,21226,21228,root-found,/gpfs/kjhan/lumina_runner2/scratch/instr_capture_188932/stdout.log,35914,[TEHOLD] s0 T_e; prev; radeq_root

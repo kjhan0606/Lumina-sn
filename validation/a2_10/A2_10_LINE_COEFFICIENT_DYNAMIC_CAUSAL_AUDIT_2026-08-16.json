@@ -1,0 +1,146 @@
+{
+  "schema": "lumina-a210-line-coefficient-dynamic-causal-audit-v1",
+  "run": {
+    "root": "/gpfs/kjhan/lumina/a210_line_coefficient_identity_k24/det1234_20260816T092600Z_c2b667007c6a",
+    "node": "syn101",
+    "gpu_indices": [5, 6],
+    "binary_sha256": "c2b667007c6a1ae1453530c1dfa33e7877e877dea703bfb3f2f511598cb7dd6c",
+    "stderr_sha256": "98ccfee05d2776439200972e513cca611dad033c039fee49c15fb5417e3568d2",
+    "stdout_sha256": "baa766097c830922b01ab6717563539a20e79dbaa2abaf45e3c91ebfd52e7147",
+    "model_rc": 1,
+    "wrapper_rc": 70,
+    "termination": "EXPECTED_FAIL_CLOSED_RADEQ_NO_BRACKET",
+    "tripwire_conflict": false
+  },
+  "sealed_reference_identity": {
+    "status": "PASS",
+    "reason": "EXACT_AND_R6_FIELDS_BIT_EXACT",
+    "reference_stderr_sha256": "60cbf73f511a77acd3a708a6b32e84b281451d58140e34d5cab2fad59802a050",
+    "candidate_stderr_sha256": "98ccfee05d2776439200972e513cca611dad033c039fee49c15fb5417e3568d2",
+    "comparison_report_sha256": "1cd9c2d7645c83758fcadaa156e0510c01ba2a3ecfd319da84e99462d6cf5a41",
+    "exact_iterations": 45,
+    "exact_residual": 9.666278272498034e-09,
+    "refinements": 24,
+    "component_error_max": 2.6699338943402563e-10,
+    "valid_cells": 109014300,
+    "partial_cells": 0,
+    "unsampled_cells": 0
+  },
+  "diagnostic_records": {
+    "line_identity": 150,
+    "endpoint_finite": 100,
+    "phase_batches": {
+      "LOWER": 1,
+      "UPPER": 1,
+      "INTERIOR": 1
+    },
+    "arithmetic_identity": "PASS_RATE_SUBTRACTIONS_AND_TAU_SIGN_DECOMPOSITION",
+    "maximum_cross_accumulation_closure": 1.4136301859550026e-08,
+    "cross_accumulation_interpretation": "REPORTED_DIFFERENCE_BETWEEN_INDEPENDENT_BINARY64_ACCUMULATION_PATHS_NOT_A_PHYSICAL_TOLERANCE"
+  },
+  "endpoint_brackets": {
+    "current_transport_coefficient": 46,
+    "exact_global_sobolev_constant": 46,
+    "einstein_per_line_coefficient": 46,
+    "recovered_by_exact_global_constant": [],
+    "recovered_by_einstein_per_line": [],
+    "lost_by_exact_global_constant": [],
+    "lost_by_einstein_per_line": []
+  },
+  "no_bracket_shells": [
+    {
+      "shell": 0,
+      "lower": {
+        "T_e_K": 3500.0,
+        "current_residual": -5.908760793929219,
+        "exact_constant_residual": -5.909094644249742,
+        "einstein_consistent_residual": -5.909095131091645,
+        "constant_delta": 0.0003338503205227994,
+        "serialization_delta": 4.868419027914683e-07
+      },
+      "upper": {
+        "T_e_K": 140000.0,
+        "current_residual": -149142448.23160025,
+        "exact_constant_residual": -149142448.23414654,
+        "einstein_consistent_residual": -149142448.2341374,
+        "constant_delta": 0.0025462806224823,
+        "serialization_delta": -9.149312973022461e-06
+      }
+    },
+    {
+      "shell": 1,
+      "lower": {
+        "T_e_K": 3500.0,
+        "current_residual": -4.731268031092232,
+        "exact_constant_residual": -4.7315283013178355,
+        "einstein_consistent_residual": -4.731528679797151
+      },
+      "upper": {
+        "T_e_K": 140000.0,
+        "current_residual": -116518600.78833137,
+        "exact_constant_residual": -116518600.79024695,
+        "einstein_consistent_residual": -116518600.79023941
+      }
+    },
+    {
+      "shell": 2,
+      "lower": {
+        "T_e_K": 3500.0,
+        "current_residual": -3.779252182303791,
+        "exact_constant_residual": -3.779455052003405,
+        "einstein_consistent_residual": -3.779455344908223
+      },
+      "upper": {
+        "T_e_K": 140000.0,
+        "current_residual": -90943150.65725867,
+        "exact_constant_residual": -90943150.65869658,
+        "einstein_consistent_residual": -90943150.65869038
+      }
+    },
+    {
+      "shell": 3,
+      "lower": {
+        "T_e_K": 3500.0,
+        "current_residual": -3.013522283006399,
+        "exact_constant_residual": -3.013680496316318,
+        "einstein_consistent_residual": -3.013680722584773
+      },
+      "upper": {
+        "T_e_K": 140000.0,
+        "current_residual": -70987246.1725842,
+        "exact_constant_residual": -70987246.1736637,
+        "einstein_consistent_residual": -70987246.17365862
+      }
+    }
+  ],
+  "geometric_midpoint": {
+    "T_e_K": 22135.943621178667,
+    "endpoint_no_bracket": 4,
+    "interior_bracket": 0,
+    "still_same_sign": 4,
+    "shell_residuals": [
+      -5012.575797604936,
+      -3900.447367815216,
+      -3032.8033250590665,
+      -2359.436897025398
+    ],
+    "action": "DIAGNOSTIC_ONLY",
+    "solver_result": "RADEQ_NO_BRACKET"
+  },
+  "causal_verdict": {
+    "sobolev_constant_and_serialization_inconsistency_is_real": true,
+    "causes_current_no_bracket": false,
+    "evidence": "All three coefficient forms retain exactly the same four no-bracket shells and the exact/global correction makes their residuals slightly more negative.",
+    "production_constant_changed": false,
+    "atomic_deck_changed": false,
+    "next_probe": "PRIVATE_PUBLIC_SEED_TEMPERATURE_EVALUATION"
+  },
+  "physical_mutation": 0,
+  "floor": 0,
+  "cap": 0,
+  "clamp": 0,
+  "jitter": 0,
+  "repair": 0,
+  "publication": "BLOCKED",
+  "verdict": "COMPLETE_NOT_CAUSAL"
+}

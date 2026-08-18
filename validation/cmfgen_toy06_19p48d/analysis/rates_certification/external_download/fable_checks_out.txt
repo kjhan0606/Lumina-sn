@@ -1,0 +1,151 @@
+/home/kjhan/BACKUP/Eunha.A1/Claude/Lumina-sn/validation/cmfgen_toy06_19p48d/analysis/rates_certification/external_download/fable_checks.py:297: DeprecationWarning: `trapz` is deprecated. Use `trapezoid` instead, or one of the numerical integration functions in `scipy.integrate`.
+  I_own_above = float(np.trapz(s_own[m], nu_own[m]))
+/home/kjhan/BACKUP/Eunha.A1/Claude/Lumina-sn/validation/cmfgen_toy06_19p48d/analysis/rates_certification/external_download/fable_checks.py:299: DeprecationWarning: `trapz` is deprecated. Use `trapezoid` instead, or one of the numerical integration functions in `scipy.integrate`.
+  I_own_all = float(np.trapz(s_own[m2], nu_own[m2]))
+/home/kjhan/BACKUP/Eunha.A1/Claude/Lumina-sn/validation/cmfgen_toy06_19p48d/analysis/rates_certification/external_download/fable_checks.py:161: DeprecationWarning: `trapz` is deprecated. Use `trapezoid` instead, or one of the numerical integration functions in `scipy.integrate`.
+  return float(np.trapz(sg[m], nu[m])) if m.sum() > 2 else 0.0
+/home/kjhan/BACKUP/Eunha.A1/Claude/Lumina-sn/validation/cmfgen_toy06_19p48d/analysis/rates_certification/external_download/fable_checks.py:167: DeprecationWarning: `trapz` is deprecated. Use `trapezoid` instead, or one of the numerical integration functions in `scipy.integrate`.
+  return 0.5 * gratio * lam3 * (8.0 * math.pi / (C * C)) * float(np.trapz(nu * nu * sg * w, nu))
+/home/kjhan/BACKUP/Eunha.A1/Claude/Lumina-sn/validation/cmfgen_toy06_19p48d/analysis/rates_certification/external_download/fable_checks.py:443: DeprecationWarning: datetime.datetime.utcfromtimestamp() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.fromtimestamp(timestamp, datetime.UTC).
+  mts = datetime.datetime.utcfromtimestamp(mt).strftime('%Y-%m-%d %H:%M:%S')
+
+====================================================================================================
+C1  NORAD file inventory (sha256/bytes) + rrc round trip
+====================================================================================================
+  ni2.px.gd.txt    bytes     56019 (claim     56019)  sha256 MATCH
+  ni2.px.txt       bytes  53156229 (claim  53156229)  sha256 MATCH
+  ni2.ptpx.txt     bytes  77416568 (claim  77416568)  sha256 MATCH
+  ni2.en.ls.txt    bytes     46237 (claim     46237)  sha256 MATCH
+  ni2.rrc.txt      bytes    548605 (claim    548605)  sha256 MATCH
+  rrc vs repo raw_ni2.rrc.txt byte-identical: True
+  C1 => CONFIRMED
+
+====================================================================================================
+Parsing raw inputs
+====================================================================================================
+  phot_data_A: 499 entries total, 237 type-20, other types [1, 2, 8]
+  px.gd: zz=28 nn=26 ntg=41 SLpi=(2, 2, 0, 1) BE=-1.27605 ntot=2166
+  px.txt: 580 blocks, total pairs 2112236
+
+====================================================================================================
+C2  CMFGEN entry 0 vs NORAD ground (x = E_Ry/|BE|)
+====================================================================================================
+  CMFGEN entry 0: cfg='3d9_2De' type=20 npts=2166
+  NORAD px.gd  : SLpi=(2, 2, 0, 1) BE=-1.27605 Ry, ntot=2166
+  npts equal: True;  max|x_CMF - E/|BE|| = 4.999e-08
+
+====================================================================================================
+C3  ground sigma diff: expect exactly 2 clipped points
+====================================================================================================
+  differing sigma points (exact float !=): 2 at indices [494, 616]
+    idx 494: E=1.815627 Ry  NORAD sig=2.7780e+06  CMFGEN sig=2.7780e+04  ratio NORAD/CMF=100
+      neighbors NORAD: 9.9240e+03 | 8.1790e+03
+      raw NORAD line : '  1.815627E+00 2.778E+06'
+    idx 616: E=1.906326 Ry  NORAD sig=1.0290e+07  CMFGEN sig=1.0290e+06  ratio NORAD/CMF=10
+      neighbors NORAD: 4.5200e+05 | 2.4030e+05
+      raw NORAD line : '  1.906326E+00 1.029E+07'
+  NORAD ground top-5 sigma:
+    1.0290e+07 Mb @ 1.906326 Ry (idx 616)
+    2.7780e+06 Mb @ 1.815627 Ry (idx 494)
+    1.3610e+06 Mb @ 1.955588 Ry (idx 792)
+    9.1870e+05 Mb @ 1.955443 Ry (idx 791)
+    8.6590e+05 Mb @ 1.956440 Ry (idx 798)
+  CMFGEN entry-0 max sigma = 1.3610e+06 Mb @ x=1.5325324 (-> E = 1.955588 Ry)
+  NORAD 3rd-largest = 1.3610e+06 @ 1.955588 Ry ; CMF max == NORAD 3rd (exact): True
+    idx 494: NORAD token '2.778E+06'  CMFGEN value 2.7780E+04
+    idx 616: NORAD token '1.029E+07'  CMFGEN value 1.0290E+06
+
+====================================================================================================
+C5  threshold rescale ratio
+====================================================================================================
+  CMFGEN osc ionization = 146541.56 cm^-1 = 18.16884 eV -> nu_th 4.393205e+15 Hz = 682.40 A
+  OP |BE| = 1.27605 Ry -> nu_th 4.198003e+15 Hz = 714.13 A
+  rescale ratio = 1.046499   (claim 1.046499; report lam_OP 714.15 A vs measured 714.13)
+  E(Ry) as eV: 17.36154 eV ; NIST-vintage claim 18.169 eV; 18.169/17.36154 = 1.046508
+
+====================================================================================================
+C4  I_grid / alpha reproductions
+====================================================================================================
+  (a) CMFGEN own-node trapz: 5.3744 (nodes>=nu_th) / 5.3750 (all nodes)   [report 5.3750]
+  (b) certification method: I_grid = 5.3941  alpha_gnd = 3.0631e-14  sig_th = 2.4896
+      log line 9 claims     I_grid = 5.3941e+00 alpha_gnd = 3.0631e-14  sig_th = 2.4896
+  (c) NORAD cert-method: rescaled 25.4914 / native 24.3597   [claims 25.49 / 24.36]
+      NORAD own-node trapz: rescaled 25.8941 / native 24.7435   [report 25.8941 / 24.7435]
+      alpha_gnd NORAD: rescaled 1.4495e-13 / native 1.8284e-13  ratio vs CMFGEN 4.732 / 5.969   [claim x4.73]
+  (d) CMFGEN with ONLY the 2 clipped points restored: I_grid = 25.4919 alpha = 1.4495e-13   [claims 25.492 / 1.4495e-13]
+      2-point share of restored I_grid: 78.8%   [claim 79%]
+
+====================================================================================================
+C6  exhaustive classification of all type-20 entries vs px.txt blocks
+====================================================================================================
+  type-20 entries: 237  =>  bit-identical 217 / tail-truncated 19 / value-modified 1 / no-match 0
+  ambiguous fingerprint matches (>1 candidate block): 16
+  truncated entries (all):
+    entry   5 3d8(3P)4s_2Pe                cut  3460/ 3608 first_nonincreasing_idx  3460 agrees=True
+    entry  14 3d8(1S)4s_2Se                cut  3865/ 4008 first_nonincreasing_idx  3865 agrees=True
+    entry  24 3d7_4s2_2Pe                  cut  4003/ 4136 first_nonincreasing_idx  4003 agrees=True
+    entry  28 3d7(2P)4s2_2Pe               cut  3411/ 3521 first_nonincreasing_idx  3411 agrees=True
+    entry  39 3d8(3F)4d_2Pe                cut  4147/ 4282 first_nonincreasing_idx  4147 agrees=True
+    entry  54 3d8(3P)5s_2Pe                cut  3089/ 3179 first_nonincreasing_idx  3089 agrees=True
+    entry  58 3d8(1D)4d_2Pe                cut  3455/ 3565 first_nonincreasing_idx  3455 agrees=True
+    entry  59 3d8(1D)4d_2Se                cut  2443/ 2516 first_nonincreasing_idx  2443 agrees=True
+    entry  67 3d8(3P)4d_2Pe                cut  3613/ 3708 first_nonincreasing_idx  3613 agrees=True
+    entry  79 3d8(3F)5d_2Pe                cut  2733/ 2823 first_nonincreasing_idx  2733 agrees=True
+    entry 115 3d8(3F)6d_2Pe                cut  3311/ 3415 first_nonincreasing_idx  3311 agrees=True
+    entry 126 3d8(3P)6s_2Pe                cut  3397/ 3530 first_nonincreasing_idx  3397 agrees=True
+    entry 129 3d8(1D)5d_2Pe                cut  2721/ 2810 first_nonincreasing_idx  2721 agrees=True
+    entry 130 3d8(1D)5d_2Se                cut  2427/ 2508 first_nonincreasing_idx  2427 agrees=True
+    entry 154 3d8(3F)6g_2Pe                cut  2993/ 3085 first_nonincreasing_idx  2993 agrees=True
+    entry 162 3d8(3F)7d_2Pe                cut  3273/ 3377 first_nonincreasing_idx  3273 agrees=True
+    entry 165 3d8(3P)5d_2Pe                cut  3358/ 3454 first_nonincreasing_idx  3358 agrees=True
+    entry 173 3d8(3F)7g_2Pe                cut  3229/ 3336 first_nonincreasing_idx  3229 agrees=True
+    entry 195 3d8(3F)8d_2Pe                cut  3027/ 3118 first_nonincreasing_idx  3027 agrees=True
+  value-modified entries:
+    entry   0 3d9_2De                      2 points differ at [494, 616]
+  all truncation cuts == first non-increasing E index: True
+  px.gd sigma column identical to px.txt block(s): [292]
+
+====================================================================================================
+C7  file-wide max sigma
+====================================================================================================
+  CMFGEN max sigma over all type-20 tables = 6.6560e+06 Mb in '3d8(3F)6s_2Fe'
+  NORAD px.txt blocks containing this exact value: [325]
+
+====================================================================================================
+C9  grid statistics
+====================================================================================================
+  Ni II CMFGEN ground dln(nu): mean 4.4755e-04 median 6.6935e-05  -> LUMINA(5.3e-3)/median = 79.2x  [claims 4.4755e-4 / 6.691e-5 / 79.2x]
+
+====================================================================================================
+C8  TOPbase: hashes, units round-trip, traps
+====================================================================================================
+  p20.18.gz  bytes   152611 sha MATCH  gz-mtime 2002-09-17 12:53:52
+  p20.17.gz  bytes   822442 sha MATCH  gz-mtime 2002-09-17 12:53:51
+  p20.16.gz  bytes  2023116 sha MATCH  gz-mtime 2002-09-17 12:53:51
+  e20.18.gz  bytes     1327 sha MATCH  gz-mtime 2002-09-17 12:48:55
+  e20.17.gz  bytes     2799 sha MATCH  gz-mtime 2002-09-17 12:48:55
+  e20.16.gz  bytes     4993 sha MATCH  gz-mtime 2002-09-17 12:48:55
+  f20.18.gz  bytes    22016 sha MATCH  gz-mtime 2002-09-17 12:52:08
+  f20.17.gz  bytes    51717 sha MATCH  gz-mtime 2002-09-17 12:52:08
+  f20.16.gz  bytes   136925 sha MATCH  gz-mtime 2002-09-17 12:52:08
+  all 9 gz match PROVENANCE table: True
+  Ca III: blocks 178 (claim 178), pairs 19881 (claim 19881), terminator-at-EOF leftover lines 0
+    e-file ground E = -3.68369 Ry -> E_th 3.68369 (claim 3.68369);  grid[0] 3.593695, E_th-grid[0] = 0.089995 vs z^2/100 = 0.090000
+    ground NP 122, dln(nu) median 2.000e-02 (claim 2.00e-02); f3 distinct count 151 first3 [0.092403, 0.092523, 0.092825]
+    round-trip: sigma(p-file, linear @E_th) = 9.6121 Mb (claim 9.6121)
+    CMFGEN phot_smooth entry0 '3s2_3p6_1Se' type 20 npts 112, sigma(u=1) = 9.6080 Mb (claim 9.6080); ratio 1.0004
+  Ca IV: blocks 322 (claim 322), pairs 109674 (claim 109674), terminator-at-EOF leftover lines 0
+    e-file ground E = -4.9919 Ry -> E_th 4.9919 (claim 4.9919);  grid[0] 4.831904, E_th-grid[0] = 0.159996 vs z^2/100 = 0.160000
+    ground NP 455, dln(nu) median 2.385e-04 (claim 2.39e-04); f3 distinct count 320 first3 [0.163586, 0.164544, 0.164958]
+  Ca V: blocks 442 (claim 442), pairs 278060 (claim 278060), terminator-at-EOF leftover lines 0
+    e-file ground E = -6.23865 Ry -> E_th 6.23865 (claim 6.23865);  grid[0] 5.988648, E_th-grid[0] = 0.250002 vs z^2/100 = 0.250000
+    ground NP 643, dln(nu) median 1.898e-04 (claim 1.90e-04); f3 distinct count 2 first3 [0.0, 0.246793]
+    f3 == 0.246793 for ALL 442 blocks: False
+
+====================================================================================================
+C10b  ptpx nr-walk
+====================================================================================================
+  blocks 533 (claim 533), pairs 3095334 (claim 3,095,334), terminator 0 0 0 0 found: True, non-blank lines after terminator: 0
+  first block: SLpi=(2, 0, 0, 1) ntot=12565 nr=12587 (ntot != nr -> ntot-walk desyncs)
+
+CSV written: fable_c6_classification.csv

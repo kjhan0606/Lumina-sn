@@ -1,0 +1,25 @@
+A2-05 L-1bf GATE (ORACLE_INPUT lane, deterministic)
+  run=/gpfs/kjhan/cmfgen_runs/toy06_19p48d_ophys
+  fixture=/home/kjhan/BACKUP/Eunha.A1/Claude/Lumina-sn/l1bf_fixture
+  shells: s0:d67(v=4394) s1:d63(v=5841) s2:d60(v=7019) s3:d58(v=7983) s4:d57(v=8572) s5:d56(v=9133) s6:d54(v=10164) s7:d53(v=10706) s8:d51(v=11815)
+  canonical rebin: 3866 bins x 9 shells; validity counts VALID=27163 EXACT_ZERO=4607 OUT_OF_GRID=3024 (0.4s)
+  BF asset: nlev=24542 nbin=1234 nu=[58412785919616.062,40362581455823112]
+  [Co III] NF=3214 sigma=3214/3214; bandmask excluded shells: ['s8']
+  [Fe III] NF=1500 sigma=1500/1500; bandmask excluded shells: ['s7', 's8']
+  [S II] NF=322 sigma=315/322; bandmask excluded shells: NONE
+  [S III] NF=256 sigma=256/256; bandmask excluded shells: ['s8']
+  fixture main lane done (8.4s)
+
+  --- ORACLE_INPUT verdict: Gamma_view / Gamma_PRRR (limits (0.5, 2.0) all, (0.8, 1.25) s6-s8; bandmask live) ---
+  Co III  vs PRRR : s0=0.996 s1=0.998 s2=0.996 s3=0.994 s4=0.994 s5=0.992 s6=0.962 s7=0.907 s8=EXCL(1.305)  | E_1=0.0041 f_cov(99.9% active,min)=1.0000
+  Co III  view/BF-midpoint (diagnostic delta): s0=0.9999 s1=0.9998 s2=0.9997 s3=0.9996 s4=0.9995 s5=0.9994 s6=0.9990 s7=0.9990 s8=0.9993
+  Fe III  vs PRRR : s0=0.991 s1=0.991 s2=0.991 s3=0.989 s4=0.989 s5=0.989 s6=0.978 s7=EXCL(0.937) s8=EXCL(1.288)  | E_1=0.0086 f_cov(99.9% active,min)=1.0000
+  Fe III  view/BF-midpoint (diagnostic delta): s0=0.9998 s1=0.9997 s2=0.9996 s3=0.9995 s4=0.9994 s5=0.9994 s6=0.9993 s7=0.9994 s8=0.9997
+  S II    vs PRRR : s0=COVLIM(1.000) s1=COVLIM(1.001) s2=COVLIM(0.997) s3=COVLIM(0.993) s4=COVLIM(0.992) s5=COVLIM(0.992) s6=COVLIM(0.990) s7=COVLIM(0.989) s8=COVLIM(1.109)  | E_1=0.0001 f_cov(99.9% active,min)=1.0000
+  S II    view/BF-midpoint (diagnostic delta): s0=1.0000 s1=0.9999 s2=0.9999 s3=0.9999 s4=0.9999 s5=0.9999 s6=0.9998 s7=0.9998 s8=0.9991
+  S II    blocked population share (R6, excluded from the numerator): s0=6.09e-06 s1=9.61e-07 s2=1.05e-07 s3=1.45e-08 s4=5.17e-09 s5=1.70e-09 s6=1.50e-10 s7=9.72e-11 s8=7.97e-10
+  S III   vs PRRR : s0=0.995 s1=0.993 s2=0.989 s3=0.986 s4=0.984 s5=0.983 s6=0.972 s7=0.927 s8=EXCL(1.397)  | E_1=0.0053 f_cov(99.9% active,min)=1.0000
+  S III   view/BF-midpoint (diagnostic delta): s0=0.9999 s1=0.9999 s2=0.9999 s3=0.9999 s4=0.9999 s5=0.9998 s6=0.9998 s7=0.9997 s8=0.9999
+
+  ORACLE_INPUT lane: deterministic commit => Poisson CI = 0 for every term; ORDER 6.3 CI qualification is trivially met (recorded, not waived).
+  GATE verdict: PASS

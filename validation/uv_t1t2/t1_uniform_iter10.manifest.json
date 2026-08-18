@@ -1,0 +1,20 @@
+{
+  "all_other_shells_unchanged": true,
+  "capture_A_sha256": "894a4ee805c1640d4e28d9c1c9ad9e3591fd845ee78bce1c3e83c8048863d5dc",
+  "chi_total_unchanged": true,
+  "clamp_floor_fallback": false,
+  "coherent_frozen": true,
+  "construction": "shell-8 chi_coherent reduced to chi_e proxy; all same-bin nonthermal line-return energy redistributed with R[j,i]=1/1000",
+  "diagnostic": "UV-T1-uniform-R-shell8",
+  "eta_decomposition_bitwise": true,
+  "eta_decomposition_max_abs": 0,
+  "field_generation": 10,
+  "frequency_descending": true,
+  "iteration": 10,
+  "post_damping": true,
+  "preregistration_sha256": "b516c32267c265a0e7060e228b6f9a4e68a3d10eea913a0da86653364f3c75ae",
+  "production_code_modified": false,
+  "schema": "LCMFCE01-v1",
+  "sha256": "9457508d4681562e7a428305acab892d41fea3c0bc01e463c0ed6ca7eb1c690b",
+  "source_payload_sha256": "0bd71b413e77d49382b85e188988d2750fcd5bcd38ead800fc2faf2640b6d5e0"
+}

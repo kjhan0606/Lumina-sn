@@ -1,0 +1,63 @@
+{
+  "candidate_occurrence": 0,
+  "candidate_refinements": 30,
+  "candidate_sha256": "7033453d7e6be2363ef17d99149cd22cf5936438905e8517e86d1ad8d7e29b3c",
+  "candidate_stderr": "/gpfs/kjhan/lumina/a210_targeted_gate_a100x2_nonoverlap_sobolev_k30/det1234_20260816T165757Z_d5f769212cf6/stderr.log",
+  "cap": 0,
+  "clamp": 0,
+  "comparison_mode": "PROOF_REFINEMENT_ONLY",
+  "differences": [],
+  "floor": 0,
+  "jitter": 0,
+  "physical_values_modified": false,
+  "proof_bounds_nonincreasing": true,
+  "proof_field_changes": [
+    {
+      "candidate": "[1.4045043904788691e-96,1.7997420448285821e-11]",
+      "field": "component_error",
+      "record": "[cmf_fine][EXACT-MULTIGPU-EPOCH]",
+      "reference": "[1.4045043904788691e-96,2.6699338943402563e-10]",
+      "upper_bound_ratio": 0.06740773802091832
+    },
+    {
+      "candidate": "30",
+      "field": "refinements",
+      "record": "[cmf_fine][EXACT-MULTIGPU-EPOCH]",
+      "reference": "24"
+    },
+    {
+      "candidate": "[1.4045043904788691e-96,1.7997420448285821e-11]",
+      "field": "component_error",
+      "record": "[R6][LINE-IDENTITY]",
+      "reference": "[1.4045043904788691e-96,2.6699338943402563e-10]",
+      "upper_bound_ratio": 0.06740773802091832
+    },
+    {
+      "candidate": "[4.1250062187938735e-66,1.7994672967902888e-11]",
+      "field": "profile_error",
+      "record": "[R6][LINE-IDENTITY]",
+      "reference": "[4.1250062187938735e-66,2.6695397784909486e-10]",
+      "upper_bound_ratio": 0.06740739775780757
+    },
+    {
+      "candidate": "30",
+      "field": "refinements",
+      "record": "[R6][LINE-IDENTITY]",
+      "reference": "24"
+    }
+  ],
+  "reason": "PHYSICAL_AND_SOLVER_FIELDS_BIT_EXACT_PROOF_BOUNDS_CONTRACTED",
+  "records_compared": [
+    "[cmf_fine][SIGNED-MATERIAL-CENSUS]",
+    "[cmf_fine][EXACT-MULTIGPU-EPOCH]",
+    "[R6][LINE-IDENTITY]",
+    "[R6][LINE-COVERAGE]"
+  ],
+  "reference_occurrence": 0,
+  "reference_refinements": 24,
+  "reference_sha256": "bb8f03940d04b6200a5f03744c9526d273c5d623e42917052890d01629ec28e6",
+  "reference_stderr": "/gpfs/kjhan/lumina/a210_targeted_gate_a100x2_nonoverlap_sobolev_k24/det1234_20260816T150135Z_1b8d19fa6101/stderr.log",
+  "repair": 0,
+  "schema": "LUMINA_A210_TARGETED_REFERENCE_COMPARISON_V1",
+  "status": "PASS"
+}

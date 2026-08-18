@@ -1,0 +1,5 @@
+dataset,quantity,minimum_K,maximum_K,width_K,definition
+capture_188932,R,-2841.840210232236,1573.768431590419,4415.608641822655,range of marginal attribution over all 6 orders
+capture_188932,J,-4415.608641822655,0.0,4415.608641822655,range of marginal attribution over all 6 orders
+capture_188932,O,374.20076623223576,374.20076623223576,0.0,range of marginal attribution over all 6 orders
+capture_188932,cumulative_final_minus_whole,0.0,0.0,0.0,must be zero for each telescoping order; not an additivity proof

@@ -1,0 +1,5 @@
+quantity,status,required_input,reason
+historical-estimator parity59 own-cs.J coupled root,RESOLVED,lumina plasma/field/ion captures plus historical atomic model,22801.40787559042 K from the baseline-gated parameterized copy
+historical-estimator parity59 CMFGEN-J coupled root,RESOLVED,same state plus CMFGEN jtable,18385.799233767764 K from the baseline-gated parameterized copy
+historical-estimator lever additivity,RESOLVED,R/J/O factorial cube and all six orders,sum standalone minus whole = 4415.608641822655 K; order-attribution width = 4415.608641822655 K
+exact parity59 production-solver DB_FB/BF_RATE_POPS counterfactual roots,UNRESOLVED,trial-T Gph/Hex/emit_bf/ETLA tables or a separately validated current-solver mirror,the requested artifact is the 2026-07-19 estimator applied to parity59 captured state; it is not relabeled as the current production solver

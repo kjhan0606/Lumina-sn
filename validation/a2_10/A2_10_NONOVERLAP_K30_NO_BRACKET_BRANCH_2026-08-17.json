@@ -1,0 +1,164 @@
+{
+  "cap": 0,
+  "clamp": 0,
+  "floor": 0,
+  "gate_pass": false,
+  "interpretation": "K30_ENDPOINT_PROOF_RESOLVED; PHYSICAL_ENDPOINT_AND_PUBLIC_SEED_NO_BRACKET_PRESERVED; GEOMETRIC_MID_PROOF_BLOCKED_SEPARATELY",
+  "jitter": 0,
+  "next_action": "ROOT_CAUSE_MATCHED_STATE_LINE_RATE_WITHOUT_PHYSICAL_REPAIR",
+  "physical_values_modified": false,
+  "repair": 0,
+  "requirements": {
+    "k30_endpoint_proof": {
+      "report": "/home/kjhan/BACKUP/Eunha.A1/Claude/Lumina-sn/validation/a2_10/A2_10_NONOVERLAP_K30_PROOF_WITNESSES_2026-08-17.json",
+      "report_sha256": "f6344bee66b4e3e6a4e850ff0c09d71ee75e4cdad1fcae6b3d33574e079c18da",
+      "status": "PASS",
+      "witnesses": [
+        {
+          "bound_to_required_ratio": 0.060311609497464516,
+          "jbar_absolute_uncertainty": 5.456555776564797e-13,
+          "line": 1154618,
+          "phase": "LOWER",
+          "physical_values_bit_exact_to_k24": true,
+          "required_jbar_bound": 9.047272692654951e-12,
+          "shell": 5,
+          "signed_rate_to_uncertainty_ratio": 16.58055568956487,
+          "status": "OK_HEATING"
+        },
+        {
+          "bound_to_required_ratio": 0.05771346719097574,
+          "jbar_absolute_uncertainty": 2.0933135159453707e-14,
+          "line": 894169,
+          "phase": "UPPER",
+          "physical_values_bit_exact_to_k24": true,
+          "required_jbar_bound": 3.6270798096716807e-13,
+          "shell": 27,
+          "signed_rate_to_uncertainty_ratio": 17.326978410272382,
+          "status": "OK_COOLING"
+        }
+      ]
+    },
+    "line_identity_and_no_bracket": {
+      "endpoint_brackets": 46,
+      "endpoint_no_bracket_shells": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "geometric_mid": "DIAGNOSTIC_PROOF_BLOCKED_NOT_A_PHYSICAL_VERDICT",
+      "public_seed": {
+        "still_same_sign": 4,
+        "temperature_K": 10020.0
+      },
+      "report": "/home/kjhan/BACKUP/Eunha.A1/Claude/Lumina-sn/validation/a2_10/A2_10_NONOVERLAP_K30_LINE_IDENTITY_2026-08-17.json",
+      "report_sha256": "fc62524fdd786b882970ae6d4990673907f0d278ece1060daa30c11b07db1307",
+      "status": "PASS"
+    },
+    "r1_reference_identity": {
+      "occurrence": 0,
+      "physical_and_solver_fields_bit_exact": true,
+      "report": "/home/kjhan/BACKUP/Eunha.A1/Claude/Lumina-sn/validation/a2_10/A2_10_NONOVERLAP_K30_R1_PROOF_REFERENCE_2026-08-17.json",
+      "report_sha256": "bb0df7dd5fd7b5a0fcf35d4e9f393cacd042d9dde29eba66afd3e7f197627f2e",
+      "status": "PASS",
+      "upper_bound_ratios": [
+        0.06740773802091832,
+        0.06740773802091832,
+        0.06740739775780757
+      ]
+    },
+    "r2_reference_identity": {
+      "occurrence": 1,
+      "physical_and_solver_fields_bit_exact": true,
+      "report": "/home/kjhan/BACKUP/Eunha.A1/Claude/Lumina-sn/validation/a2_10/A2_10_NONOVERLAP_K30_R2_PROOF_REFERENCE_2026-08-17.json",
+      "report_sha256": "8e41a2410c4f53965b7c969a477ea9d3fdc20c22ca567c7f9b124e895ccb3638",
+      "status": "PASS",
+      "upper_bound_ratios": [
+        0.08755866469574501,
+        0.08755866469574501,
+        0.08628814234588542
+      ]
+    },
+    "run": {
+      "binary_sha256": "d5f769212cf6ac4b40aa86515fb9a550626336fd591ada8748ea113f29ee2075",
+      "model_rc": 1,
+      "physics": {
+        "coevolution_generations": [
+          1,
+          2
+        ],
+        "endpoint_no_bracket_shells": [
+          0,
+          1,
+          2,
+          3
+        ],
+        "first_shell_endpoint_residuals": {
+          "lower": -2.578184624877838,
+          "upper": -149141498.21730232
+        },
+        "geometric_mid": {
+          "line": 894169,
+          "physical_verdict": "NOT_AVAILABLE",
+          "reason": "LOCAL_CANCELLATION_PROOF_UNRESOLVED",
+          "shell": 11
+        },
+        "line_operator": "CMFGEN_NONOVERLAP_HOMOLOGY_SIGMA0",
+        "public_seed_residuals": [
+          -3.464855311153355,
+          -2.710478501611025,
+          -2.116858269080278,
+          -1.653197660559971
+        ],
+        "r2_signed_material": {
+          "exact_zero_tau": 86148134,
+          "mild_negative": 4246577,
+          "raw_negative": 4246581,
+          "signed_cells": 22866166,
+          "srce_chk": 4
+        },
+        "refinements": 30,
+        "te_publication": "PRESERVED_UNCHANGED"
+      },
+      "repair": {
+        "cap": 0,
+        "clamp": 0,
+        "floor": 0,
+        "jitter": 0,
+        "physical_values_modified": false,
+        "repair": 0,
+        "zero_environment_variables": [
+          "LUMINA_NLTE_LTE_FLOOR",
+          "LUMINA_NLTE_FLOOR_MODE",
+          "LUMINA_NLTE_FLOOR_REG",
+          "LUMINA_NLTE_BK_CEIL",
+          "LUMINA_NLTE_INV_CEIL",
+          "LUMINA_NLTE_COLL_FLOOR",
+          "LUMINA_DR_FLOOR_CMS",
+          "LUMINA_STAGE4_BK_CAP",
+          "LUMINA_HRESP_CLAMP",
+          "LUMINA_TE_STEP_CLAMP",
+          "LUMINA_J_CAP_FACTOR",
+          "LUMINA_J_FLOOR_FACTOR",
+          "LUMINA_RADEQ_LINE_CULL",
+          "LUMINA_NLTE_GREY_TAU",
+          "LUMINA_NLTE_ASSEMBLE_GPU",
+          "LUMINA_NLTE_FALLBACK_TE"
+        ]
+      },
+      "run_root": "/gpfs/kjhan/lumina/a210_targeted_gate_a100x2_nonoverlap_sobolev_k30/det1234_20260816T165757Z_d5f769212cf6",
+      "status": "PASS",
+      "stderr_sha256": "7033453d7e6be2363ef17d99149cd22cf5936438905e8517e86d1ad8d7e29b3c",
+      "stdout_sha256": "850250192270d8de4f0998fedbc07ba7f720b85b8d1563a142080a8fc9b93ebe",
+      "tripwire": {
+        "gpu_count": 2,
+        "gpu_family": "A100",
+        "status": "NATURAL_CHILD_FAILURE_WITHOUT_CONFLICT",
+        "supervisor_log_sha256": "81694c0f452d9816438be158c42cb97d2891b51514e0ee319cc000bfee1c1fae"
+      },
+      "wrapper_rc": 70
+    }
+  },
+  "schema": "lumina-a210-k30-no-bracket-branch-audit-v1",
+  "status": "PASS"
+}

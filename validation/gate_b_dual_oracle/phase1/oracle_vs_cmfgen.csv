@@ -1,0 +1,485 @@
+shell,lumina_velocity_km_s,cmfgen_depth_1based,cmfgen_velocity_km_s,category,quantity,Z,stage,transition,lumina_value,cmfgen_value,lumina_over_cmfgen,unit,cmfgen_source,status,note
+0,4.264000000e+03,67,4.394182351e+03,state,T_e,0,-1,,2.120268337e+04,1.853588700e+04,1.143872067e+00,K,RVTJ:Temperature (10^4K)*1e4,compared,
+0,4.264000000e+03,67,4.394182351e+03,state,n_e,0,-1,,4.621814000e+09,4.852872100e+09,9.523873502e-01,cm^-3,RVTJ:Electron density,compared,
+0,4.264000000e+03,67,4.394182351e+03,state,T_rad,0,-1,,1.047009324e+04,,,K,,unavailable,RVTJ has no directly identical Lumina dilute-field scalar
+0,4.264000000e+03,67,4.394182351e+03,state,W,0,-1,,2.978587262e-01,,,dimensionless,,unavailable,RVTJ has no directly identical Lumina dilute-field scalar
+0,4.264000000e+03,67,4.394182351e+03,state,n_ion,14,1,,0.000000000e+00,,,cm^-3,,unavailable,CMFGEN population mapping is not certified for this row in Phase-1 comparator
+0,4.264000000e+03,67,4.394182351e+03,state,ion_fraction,14,1,,,,,dimensionless,,lumina_unavailable,all recorded stages summed
+0,4.264000000e+03,67,4.394182351e+03,state,b_k_representative,14,1,level0,-1.000000000e+00,,,dimensionless,,unavailable,CMFGEN population mapping is not certified for this row in Phase-1 comparator
+0,4.264000000e+03,67,4.394182351e+03,state,n_ion,14,2,,0.000000000e+00,,,cm^-3,,unavailable,CMFGEN population mapping is not certified for this row in Phase-1 comparator
+0,4.264000000e+03,67,4.394182351e+03,state,ion_fraction,14,2,,,,,dimensionless,,lumina_unavailable,all recorded stages summed
+0,4.264000000e+03,67,4.394182351e+03,state,b_k_representative,14,2,level0,-1.000000000e+00,,,dimensionless,,unavailable,CMFGEN population mapping is not certified for this row in Phase-1 comparator
+0,4.264000000e+03,67,4.394182351e+03,state,n_ion,16,1,,0.000000000e+00,,,cm^-3,,unavailable,CMFGEN population mapping is not certified for this row in Phase-1 comparator
+0,4.264000000e+03,67,4.394182351e+03,state,ion_fraction,16,1,,,,,dimensionless,,lumina_unavailable,all recorded stages summed
+0,4.264000000e+03,67,4.394182351e+03,state,b_k_representative,16,1,level0,-1.000000000e+00,,,dimensionless,,unavailable,CMFGEN population mapping is not certified for this row in Phase-1 comparator
+0,4.264000000e+03,67,4.394182351e+03,state,n_ion,16,2,,0.000000000e+00,,,cm^-3,,unavailable,CMFGEN population mapping is not certified for this row in Phase-1 comparator
+0,4.264000000e+03,67,4.394182351e+03,state,ion_fraction,16,2,,,,,dimensionless,,lumina_unavailable,all recorded stages summed
+0,4.264000000e+03,67,4.394182351e+03,state,b_k_representative,16,2,level0,-1.000000000e+00,,,dimensionless,,unavailable,CMFGEN population mapping is not certified for this row in Phase-1 comparator
+0,4.264000000e+03,67,4.394182351e+03,state,n_ion,26,1,,1.269776000e+02,,,cm^-3,,unavailable,CMFGEN population mapping is not certified for this row in Phase-1 comparator
+0,4.264000000e+03,67,4.394182351e+03,state,ion_fraction,26,1,,7.663781789e-07,,,dimensionless,,unavailable,CMFGEN population mapping is not certified for this row in Phase-1 comparator
+0,4.264000000e+03,67,4.394182351e+03,state,b_k_representative,26,1,level0,1.000000000e+00,,,dimensionless,,unavailable,CMFGEN population mapping is not certified for this row in Phase-1 comparator
+0,4.264000000e+03,67,4.394182351e+03,state,n_ion,26,2,,6.951980000e+05,,,cm^-3,,unavailable,CMFGEN population mapping is not certified for this row in Phase-1 comparator
+0,4.264000000e+03,67,4.394182351e+03,state,ion_fraction,26,2,,4.195894215e-03,,,dimensionless,,unavailable,CMFGEN population mapping is not certified for this row in Phase-1 comparator
+0,4.264000000e+03,67,4.394182351e+03,state,b_k_representative,26,2,level0,1.000000000e+00,,,dimensionless,,unavailable,CMFGEN population mapping is not certified for this row in Phase-1 comparator
+0,4.264000000e+03,67,4.394182351e+03,state,n_ion,26,3,,1.627114000e+08,,,cm^-3,,unavailable,CMFGEN population mapping is not certified for this row in Phase-1 comparator
+0,4.264000000e+03,67,4.394182351e+03,state,ion_fraction,26,3,,9.820509005e-01,,,dimensionless,,unavailable,CMFGEN population mapping is not certified for this row in Phase-1 comparator
+0,4.264000000e+03,67,4.394182351e+03,state,b_k_representative,26,3,,,,,dimensionless,,lumina_unavailable,maximum-population recorded level
+0,4.264000000e+03,67,4.394182351e+03,state,n_ion,27,2,,1.782755000e+08,,,cm^-3,,unavailable,CMFGEN population mapping is not certified for this row in Phase-1 comparator
+0,4.264000000e+03,67,4.394182351e+03,state,ion_fraction,27,2,,1.401470586e-01,,,dimensionless,,unavailable,CMFGEN population mapping is not certified for this row in Phase-1 comparator
+0,4.264000000e+03,67,4.394182351e+03,state,b_k_representative,27,2,level0,1.000000000e+00,,,dimensionless,,unavailable,CMFGEN population mapping is not certified for this row in Phase-1 comparator
+0,4.264000000e+03,67,4.394182351e+03,thermal,heating_photoion,0,-1,,,,,erg_s^-1_cm^-3,,lumina_unavailable,kept as explicit orphan for Phase-1 review
+0,4.264000000e+03,67,4.394182351e+03,thermal,heating_deposition,0,-1,,,,,erg_s^-1_cm^-3,,lumina_unavailable,kept as explicit orphan for Phase-1 review
+0,4.264000000e+03,67,4.394182351e+03,thermal,heating_MA_LINE_DESTRUCT,0,-1,,,,,erg_s^-1_cm^-3,,lumina_unavailable,kept as explicit orphan for Phase-1 review
+0,4.264000000e+03,67,4.394182351e+03,thermal,cooling_bf,0,-1,,,,,erg_s^-1_cm^-3,,lumina_unavailable,kept as explicit orphan for Phase-1 review
+0,4.264000000e+03,67,4.394182351e+03,thermal,cooling_bb_collisional,0,-1,,,,,erg_s^-1_cm^-3,,lumina_unavailable,kept as explicit orphan for Phase-1 review
+0,4.264000000e+03,67,4.394182351e+03,thermal,cooling_adiabatic,0,-1,,,,,erg_s^-1_cm^-3,,lumina_unavailable,kept as explicit orphan for Phase-1 review
+0,4.264000000e+03,67,4.394182351e+03,thermal,thermal_net,0,-1,,,,,erg_s^-1_cm^-3,,lumina_unavailable,kept as explicit orphan for Phase-1 review
+0,4.264000000e+03,67,4.394182351e+03,bf,Gamma_photoion_total,14,1,,0.000000000e+00,2.079745202e-02,0.000000000e+00,s^-1,Sk2PRRR:sum(PR)/Ion Density,compared,
+0,4.264000000e+03,67,4.394182351e+03,bf,alpha_recomb_total,14,1,,2.814759720e-13,,,cm^3_s^-1,Sk2PRRR:Radiative Recombination Coefficient for explicitly treated levels,unavailable,PRRR labels this coefficient but gives no inline unit and no validated repository alpha parser; numeric comparison withheld
+0,4.264000000e+03,67,4.394182351e+03,bf,alpha_recomb_spont,14,1,,2.586042181e-13,,,cm^3_s^-1,,unavailable,PRRR does not label a validated spontaneous/stimulated coefficient split
+0,4.264000000e+03,67,4.394182351e+03,bf,alpha_recomb_stim,14,1,,2.287175394e-14,,,cm^3_s^-1,,unavailable,PRRR does not label a validated spontaneous/stimulated coefficient split
+0,4.264000000e+03,67,4.394182351e+03,bf,chi_bf_at_1000A,14,1,,0.000000000e+00,,,cm^-1,,unavailable,RVTJ/PRRR/GENCOOL/EDDFACTOR provide no validated monochromatic anchor
+0,4.264000000e+03,67,4.394182351e+03,bf,eta_bf_at_1000A,14,1,,0.000000000e+00,,,erg_s^-1_cm^-3_Hz^-1_sr^-1,,unavailable,RVTJ/PRRR/GENCOOL/EDDFACTOR provide no validated monochromatic anchor
+0,4.264000000e+03,67,4.394182351e+03,bf,chi_bf_at_5000A,14,1,,0.000000000e+00,,,cm^-1,,unavailable,RVTJ/PRRR/GENCOOL/EDDFACTOR provide no validated monochromatic anchor
+0,4.264000000e+03,67,4.394182351e+03,bf,eta_bf_at_5000A,14,1,,0.000000000e+00,,,erg_s^-1_cm^-3_Hz^-1_sr^-1,,unavailable,RVTJ/PRRR/GENCOOL/EDDFACTOR provide no validated monochromatic anchor
+0,4.264000000e+03,67,4.394182351e+03,bb,jbar_representative,14,1,,,,,,,lumina_unavailable,no_positive_lower-level population flow selected
+0,4.264000000e+03,67,4.394182351e+03,bb,R_lu_radiative,14,1,,,,,,,lumina_unavailable,no_positive lower-level population flow selected
+0,4.264000000e+03,67,4.394182351e+03,bb,R_ul_stimulated,14,1,,,,,,,lumina_unavailable,no_positive lower-level population flow selected
+0,4.264000000e+03,67,4.394182351e+03,bb,R_ul_spontaneous,14,1,,,,,,,lumina_unavailable,no_positive lower-level population flow selected
+0,4.264000000e+03,67,4.394182351e+03,collisional,C_lu,14,1,,,,,,,lumina_unavailable,no_positive lower-level population flow selected
+0,4.264000000e+03,67,4.394182351e+03,collisional,C_ul,14,1,,,,,,,lumina_unavailable,no_positive lower-level population flow selected
+0,4.264000000e+03,67,4.394182351e+03,bf,Gamma_photoion_total,14,2,,,3.859157743e-02,,,SkIIIPRRR:sum(PR)/Ion Density,lumina_unavailable,ion is not a lower member of an assembled NLTE pair
+0,4.264000000e+03,67,4.394182351e+03,bf,alpha_recomb_total,14,2,,,,,,SkIIIPRRR:Radiative Recombination Coefficient for explicitly treated levels,lumina_unavailable,ion is not a lower member of an assembled NLTE pair
+0,4.264000000e+03,67,4.394182351e+03,bf,alpha_recomb_spont,14,2,,,,,,,lumina_unavailable,ion is not a lower member of an assembled NLTE pair
+0,4.264000000e+03,67,4.394182351e+03,bf,alpha_recomb_stim,14,2,,,,,,,lumina_unavailable,ion is not a lower member of an assembled NLTE pair
+0,4.264000000e+03,67,4.394182351e+03,bf,chi_bf_at_1000A,14,2,,0.000000000e+00,,,cm^-1,,unavailable,RVTJ/PRRR/GENCOOL/EDDFACTOR provide no validated monochromatic anchor
+0,4.264000000e+03,67,4.394182351e+03,bf,eta_bf_at_1000A,14,2,,0.000000000e+00,,,erg_s^-1_cm^-3_Hz^-1_sr^-1,,unavailable,RVTJ/PRRR/GENCOOL/EDDFACTOR provide no validated monochromatic anchor
+0,4.264000000e+03,67,4.394182351e+03,bf,chi_bf_at_5000A,14,2,,0.000000000e+00,,,cm^-1,,unavailable,RVTJ/PRRR/GENCOOL/EDDFACTOR provide no validated monochromatic anchor
+0,4.264000000e+03,67,4.394182351e+03,bf,eta_bf_at_5000A,14,2,,0.000000000e+00,,,erg_s^-1_cm^-3_Hz^-1_sr^-1,,unavailable,RVTJ/PRRR/GENCOOL/EDDFACTOR provide no validated monochromatic anchor
+0,4.264000000e+03,67,4.394182351e+03,bb,jbar_representative,14,2,,,,,,,lumina_unavailable,no_positive_lower-level population flow selected
+0,4.264000000e+03,67,4.394182351e+03,bb,R_lu_radiative,14,2,,,,,,,lumina_unavailable,no_positive lower-level population flow selected
+0,4.264000000e+03,67,4.394182351e+03,bb,R_ul_stimulated,14,2,,,,,,,lumina_unavailable,no_positive lower-level population flow selected
+0,4.264000000e+03,67,4.394182351e+03,bb,R_ul_spontaneous,14,2,,,,,,,lumina_unavailable,no_positive lower-level population flow selected
+0,4.264000000e+03,67,4.394182351e+03,collisional,C_lu,14,2,,,,,,,lumina_unavailable,no_positive lower-level population flow selected
+0,4.264000000e+03,67,4.394182351e+03,collisional,C_ul,14,2,,,,,,,lumina_unavailable,no_positive lower-level population flow selected
+0,4.264000000e+03,67,4.394182351e+03,bf,Gamma_photoion_total,16,1,,0.000000000e+00,1.274938583e-02,0.000000000e+00,s^-1,S2PRRR:sum(PR)/Ion Density,compared,
+0,4.264000000e+03,67,4.394182351e+03,bf,alpha_recomb_total,16,1,,3.248770734e-12,,,cm^3_s^-1,S2PRRR:Radiative Recombination Coefficient for explicitly treated levels,unavailable,PRRR labels this coefficient but gives no inline unit and no validated repository alpha parser; numeric comparison withheld
+0,4.264000000e+03,67,4.394182351e+03,bf,alpha_recomb_spont,16,1,,3.070512652e-12,,,cm^3_s^-1,,unavailable,PRRR does not label a validated spontaneous/stimulated coefficient split
+0,4.264000000e+03,67,4.394182351e+03,bf,alpha_recomb_stim,16,1,,1.782580828e-13,,,cm^3_s^-1,,unavailable,PRRR does not label a validated spontaneous/stimulated coefficient split
+0,4.264000000e+03,67,4.394182351e+03,bf,chi_bf_at_1000A,16,1,,0.000000000e+00,,,cm^-1,,unavailable,RVTJ/PRRR/GENCOOL/EDDFACTOR provide no validated monochromatic anchor
+0,4.264000000e+03,67,4.394182351e+03,bf,eta_bf_at_1000A,16,1,,0.000000000e+00,,,erg_s^-1_cm^-3_Hz^-1_sr^-1,,unavailable,RVTJ/PRRR/GENCOOL/EDDFACTOR provide no validated monochromatic anchor
+0,4.264000000e+03,67,4.394182351e+03,bf,chi_bf_at_5000A,16,1,,0.000000000e+00,,,cm^-1,,unavailable,RVTJ/PRRR/GENCOOL/EDDFACTOR provide no validated monochromatic anchor
+0,4.264000000e+03,67,4.394182351e+03,bf,eta_bf_at_5000A,16,1,,0.000000000e+00,,,erg_s^-1_cm^-3_Hz^-1_sr^-1,,unavailable,RVTJ/PRRR/GENCOOL/EDDFACTOR provide no validated monochromatic anchor
+0,4.264000000e+03,67,4.394182351e+03,bb,jbar_representative,16,1,,,,,,,lumina_unavailable,no_positive_lower-level population flow selected
+0,4.264000000e+03,67,4.394182351e+03,bb,R_lu_radiative,16,1,,,,,,,lumina_unavailable,no_positive lower-level population flow selected
+0,4.264000000e+03,67,4.394182351e+03,bb,R_ul_stimulated,16,1,,,,,,,lumina_unavailable,no_positive lower-level population flow selected
+0,4.264000000e+03,67,4.394182351e+03,bb,R_ul_spontaneous,16,1,,,,,,,lumina_unavailable,no_positive lower-level population flow selected
+0,4.264000000e+03,67,4.394182351e+03,collisional,C_lu,16,1,,,,,,,lumina_unavailable,no_positive lower-level population flow selected
+0,4.264000000e+03,67,4.394182351e+03,collisional,C_ul,16,1,,,,,,,lumina_unavailable,no_positive lower-level population flow selected
+0,4.264000000e+03,67,4.394182351e+03,bf,Gamma_photoion_total,16,2,,,6.180486048e-02,,,SIIIPRRR:sum(PR)/Ion Density,lumina_unavailable,ion is not a lower member of an assembled NLTE pair
+0,4.264000000e+03,67,4.394182351e+03,bf,alpha_recomb_total,16,2,,,,,,SIIIPRRR:Radiative Recombination Coefficient for explicitly treated levels,lumina_unavailable,ion is not a lower member of an assembled NLTE pair
+0,4.264000000e+03,67,4.394182351e+03,bf,alpha_recomb_spont,16,2,,,,,,,lumina_unavailable,ion is not a lower member of an assembled NLTE pair
+0,4.264000000e+03,67,4.394182351e+03,bf,alpha_recomb_stim,16,2,,,,,,,lumina_unavailable,ion is not a lower member of an assembled NLTE pair
+0,4.264000000e+03,67,4.394182351e+03,bf,chi_bf_at_1000A,16,2,,0.000000000e+00,,,cm^-1,,unavailable,RVTJ/PRRR/GENCOOL/EDDFACTOR provide no validated monochromatic anchor
+0,4.264000000e+03,67,4.394182351e+03,bf,eta_bf_at_1000A,16,2,,0.000000000e+00,,,erg_s^-1_cm^-3_Hz^-1_sr^-1,,unavailable,RVTJ/PRRR/GENCOOL/EDDFACTOR provide no validated monochromatic anchor
+0,4.264000000e+03,67,4.394182351e+03,bf,chi_bf_at_5000A,16,2,,0.000000000e+00,,,cm^-1,,unavailable,RVTJ/PRRR/GENCOOL/EDDFACTOR provide no validated monochromatic anchor
+0,4.264000000e+03,67,4.394182351e+03,bf,eta_bf_at_5000A,16,2,,0.000000000e+00,,,erg_s^-1_cm^-3_Hz^-1_sr^-1,,unavailable,RVTJ/PRRR/GENCOOL/EDDFACTOR provide no validated monochromatic anchor
+0,4.264000000e+03,67,4.394182351e+03,bb,jbar_representative,16,2,,,,,,,lumina_unavailable,no_positive_lower-level population flow selected
+0,4.264000000e+03,67,4.394182351e+03,bb,R_lu_radiative,16,2,,,,,,,lumina_unavailable,no_positive lower-level population flow selected
+0,4.264000000e+03,67,4.394182351e+03,bb,R_ul_stimulated,16,2,,,,,,,lumina_unavailable,no_positive lower-level population flow selected
+0,4.264000000e+03,67,4.394182351e+03,bb,R_ul_spontaneous,16,2,,,,,,,lumina_unavailable,no_positive lower-level population flow selected
+0,4.264000000e+03,67,4.394182351e+03,collisional,C_lu,16,2,,,,,,,lumina_unavailable,no_positive lower-level population flow selected
+0,4.264000000e+03,67,4.394182351e+03,collisional,C_ul,16,2,,,,,,,lumina_unavailable,no_positive lower-level population flow selected
+0,4.264000000e+03,67,4.394182351e+03,bf,Gamma_photoion_total,26,1,,8.330218723e+05,7.624200139e-03,1.092602315e+08,s^-1,Fe2PRRR:sum(PR)/Ion Density,compared,
+0,4.264000000e+03,67,4.394182351e+03,bf,alpha_recomb_total,26,1,,6.262463113e-12,,,cm^3_s^-1,Fe2PRRR:Radiative Recombination Coefficient for explicitly treated levels,unavailable,PRRR labels this coefficient but gives no inline unit and no validated repository alpha parser; numeric comparison withheld
+0,4.264000000e+03,67,4.394182351e+03,bf,alpha_recomb_spont,26,1,,5.933686598e-12,,,cm^3_s^-1,,unavailable,PRRR does not label a validated spontaneous/stimulated coefficient split
+0,4.264000000e+03,67,4.394182351e+03,bf,alpha_recomb_stim,26,1,,3.287765145e-13,,,cm^3_s^-1,,unavailable,PRRR does not label a validated spontaneous/stimulated coefficient split
+0,4.264000000e+03,67,4.394182351e+03,bf,chi_bf_at_1000A,26,1,,1.805008539e-18,,,cm^-1,,unavailable,RVTJ/PRRR/GENCOOL/EDDFACTOR provide no validated monochromatic anchor
+0,4.264000000e+03,67,4.394182351e+03,bf,eta_bf_at_1000A,26,1,,1.415093487e-24,,,erg_s^-1_cm^-3_Hz^-1_sr^-1,,unavailable,RVTJ/PRRR/GENCOOL/EDDFACTOR provide no validated monochromatic anchor
+0,4.264000000e+03,67,4.394182351e+03,bf,chi_bf_at_5000A,26,1,,3.705485261e-22,,,cm^-1,,unavailable,RVTJ/PRRR/GENCOOL/EDDFACTOR provide no validated monochromatic anchor
+0,4.264000000e+03,67,4.394182351e+03,bf,eta_bf_at_5000A,26,1,,1.069798404e-25,,,erg_s^-1_cm^-3_Hz^-1_sr^-1,,unavailable,RVTJ/PRRR/GENCOOL/EDDFACTOR provide no validated monochromatic anchor
+0,4.264000000e+03,67,4.394182351e+03,bb,jbar_representative,26,1,line661085_l0_u68_2382.7640A,1.501866504e-03,9.379098742e-04,1.601290854e+00,erg_s^-1_cm^-2_Hz^-1_sr^-1,EDDFACTOR:record_frequency=1.258150482e+15Hz,compared,nearest native CMFGEN frequency at speed-matched depth
+0,4.264000000e+03,67,4.394182351e+03,bb,jbar_input_raw,26,1,,,,,,,lumina_unavailable,line absent from frozen jbar writer
+0,4.264000000e+03,67,4.394182351e+03,bb,sobolev_beta,26,1,line661085_l0_u68_2382.7640A,1.000000000e+00,,,dimensionless,,unavailable,GENCOOL/EDDFACTOR do not expose the matched representative transition rate
+0,4.264000000e+03,67,4.394182351e+03,bb,R_lu_radiative,26,1,line661085_l0_u68_2382.7640A,1.922690324e+07,,,s^-1,,unavailable,GENCOOL/EDDFACTOR do not expose the matched representative transition rate
+0,4.264000000e+03,67,4.394182351e+03,bb,R_ul_stimulated,26,1,line661085_l0_u68_2382.7640A,1.602241937e+07,,,s^-1,,unavailable,GENCOOL/EDDFACTOR do not expose the matched representative transition rate
+0,4.264000000e+03,67,4.394182351e+03,bb,R_ul_spontaneous,26,1,line661085_l0_u68_2382.7640A,3.133000000e+08,,,s^-1,,unavailable,GENCOOL/EDDFACTOR do not expose the matched representative transition rate
+0,4.264000000e+03,67,4.394182351e+03,collisional,C_lu,26,1,line661085_l0_u68_2382.7640A,1.587665979e-01,,,s^-1,,unavailable,GENCOOL exposes aggregate collisional cooling not this representative C rate
+0,4.264000000e+03,67,4.394182351e+03,collisional,C_ul,26,1,line661085_l0_u68_2382.7640A,2.282423724e+00,,,s^-1,,unavailable,GENCOOL exposes aggregate collisional cooling not this representative C rate
+0,4.264000000e+03,67,4.394182351e+03,bf,Gamma_photoion_total,26,2,,,1.500688313e-01,,,FeIIIPRRR:sum(PR)/Ion Density,lumina_unavailable,ion is not a lower member of an assembled NLTE pair
+0,4.264000000e+03,67,4.394182351e+03,bf,alpha_recomb_total,26,2,,,,,,FeIIIPRRR:Radiative Recombination Coefficient for explicitly treated levels,lumina_unavailable,ion is not a lower member of an assembled NLTE pair
+0,4.264000000e+03,67,4.394182351e+03,bf,alpha_recomb_spont,26,2,,,,,,,lumina_unavailable,ion is not a lower member of an assembled NLTE pair
+0,4.264000000e+03,67,4.394182351e+03,bf,alpha_recomb_stim,26,2,,,,,,,lumina_unavailable,ion is not a lower member of an assembled NLTE pair
+0,4.264000000e+03,67,4.394182351e+03,bf,chi_bf_at_1000A,26,2,,7.318324588e-21,,,cm^-1,,unavailable,RVTJ/PRRR/GENCOOL/EDDFACTOR provide no validated monochromatic anchor
+0,4.264000000e+03,67,4.394182351e+03,bf,eta_bf_at_1000A,26,2,,2.209733078e-21,,,erg_s^-1_cm^-3_Hz^-1_sr^-1,,unavailable,RVTJ/PRRR/GENCOOL/EDDFACTOR provide no validated monochromatic anchor
+0,4.264000000e+03,67,4.394182351e+03,bf,chi_bf_at_5000A,26,2,,4.986916855e-25,,,cm^-1,,unavailable,RVTJ/PRRR/GENCOOL/EDDFACTOR provide no validated monochromatic anchor
+0,4.264000000e+03,67,4.394182351e+03,bf,eta_bf_at_5000A,26,2,,5.525864926e-23,,,erg_s^-1_cm^-3_Hz^-1_sr^-1,,unavailable,RVTJ/PRRR/GENCOOL/EDDFACTOR provide no validated monochromatic anchor
+0,4.264000000e+03,67,4.394182351e+03,bb,jbar_representative,26,2,line534905_l17_u65_1895.4724A,1.793868012e-03,8.027568538e-04,2.234634315e+00,erg_s^-1_cm^-2_Hz^-1_sr^-1,EDDFACTOR:record_frequency=1.581590788e+15Hz,compared,nearest native CMFGEN frequency at speed-matched depth
+0,4.264000000e+03,67,4.394182351e+03,bb,jbar_input_raw,26,2,,,,,,,lumina_unavailable,line absent from frozen jbar writer
+0,4.264000000e+03,67,4.394182351e+03,bb,sobolev_beta,26,2,line534905_l17_u65_1895.4724A,1.000000000e+00,,,dimensionless,,unavailable,GENCOOL/EDDFACTOR do not expose the matched representative transition rate
+0,4.264000000e+03,67,4.394182351e+03,bb,R_lu_radiative,26,2,line534905_l17_u65_1895.4724A,2.665838011e+07,,,s^-1,,unavailable,GENCOOL/EDDFACTOR do not expose the matched representative transition rate
+0,4.264000000e+03,67,4.394182351e+03,bb,R_ul_stimulated,26,2,line534905_l17_u65_1895.4724A,2.073429564e+07,,,s^-1,,unavailable,GENCOOL/EDDFACTOR do not expose the matched representative transition rate
+0,4.264000000e+03,67,4.394182351e+03,bb,R_ul_spontaneous,26,2,line534905_l17_u65_1895.4724A,6.743000000e+08,,,s^-1,,unavailable,GENCOOL/EDDFACTOR do not expose the matched representative transition rate
+0,4.264000000e+03,67,4.394182351e+03,collisional,C_lu,26,2,line534905_l17_u65_1895.4724A,1.090680413e-01,,,s^-1,,unavailable,GENCOOL exposes aggregate collisional cooling not this representative C rate
+0,4.264000000e+03,67,4.394182351e+03,collisional,C_ul,26,2,line534905_l17_u65_1895.4724A,3.043231632e+00,,,s^-1,,unavailable,GENCOOL exposes aggregate collisional cooling not this representative C rate
+0,4.264000000e+03,67,4.394182351e+03,bf,Gamma_photoion_total,26,3,,,6.010451034e-02,,,FeIVPRRR:sum(PR)/Ion Density,lumina_unavailable,ion is not a lower member of an assembled NLTE pair
+0,4.264000000e+03,67,4.394182351e+03,bf,alpha_recomb_total,26,3,,,,,,FeIVPRRR:Radiative Recombination Coefficient for explicitly treated levels,lumina_unavailable,ion is not a lower member of an assembled NLTE pair
+0,4.264000000e+03,67,4.394182351e+03,bf,alpha_recomb_spont,26,3,,,,,,,lumina_unavailable,ion is not a lower member of an assembled NLTE pair
+0,4.264000000e+03,67,4.394182351e+03,bf,alpha_recomb_stim,26,3,,,,,,,lumina_unavailable,ion is not a lower member of an assembled NLTE pair
+0,4.264000000e+03,67,4.394182351e+03,bf,chi_bf_at_1000A,26,3,,0.000000000e+00,,,cm^-1,,unavailable,RVTJ/PRRR/GENCOOL/EDDFACTOR provide no validated monochromatic anchor
+0,4.264000000e+03,67,4.394182351e+03,bf,eta_bf_at_1000A,26,3,,0.000000000e+00,,,erg_s^-1_cm^-3_Hz^-1_sr^-1,,unavailable,RVTJ/PRRR/GENCOOL/EDDFACTOR provide no validated monochromatic anchor
+0,4.264000000e+03,67,4.394182351e+03,bf,chi_bf_at_5000A,26,3,,0.000000000e+00,,,cm^-1,,unavailable,RVTJ/PRRR/GENCOOL/EDDFACTOR provide no validated monochromatic anchor
+0,4.264000000e+03,67,4.394182351e+03,bf,eta_bf_at_5000A,26,3,,0.000000000e+00,,,erg_s^-1_cm^-3_Hz^-1_sr^-1,,unavailable,RVTJ/PRRR/GENCOOL/EDDFACTOR provide no validated monochromatic anchor
+0,4.264000000e+03,67,4.394182351e+03,bb,jbar_representative,26,3,,,,,,,lumina_unavailable,no_positive_lower-level population flow selected
+0,4.264000000e+03,67,4.394182351e+03,bb,R_lu_radiative,26,3,,,,,,,lumina_unavailable,no_positive lower-level population flow selected
+0,4.264000000e+03,67,4.394182351e+03,bb,R_ul_stimulated,26,3,,,,,,,lumina_unavailable,no_positive lower-level population flow selected
+0,4.264000000e+03,67,4.394182351e+03,bb,R_ul_spontaneous,26,3,,,,,,,lumina_unavailable,no_positive lower-level population flow selected
+0,4.264000000e+03,67,4.394182351e+03,collisional,C_lu,26,3,,,,,,,lumina_unavailable,no_positive lower-level population flow selected
+0,4.264000000e+03,67,4.394182351e+03,collisional,C_ul,26,3,,,,,,,lumina_unavailable,no_positive lower-level population flow selected
+0,4.264000000e+03,67,4.394182351e+03,bf,Gamma_photoion_total,27,2,,,2.206255374e-02,,,CoIIIPRRR:sum(PR)/Ion Density,lumina_unavailable,ion is not a lower member of an assembled NLTE pair
+0,4.264000000e+03,67,4.394182351e+03,bf,alpha_recomb_total,27,2,,,,,,CoIIIPRRR:Radiative Recombination Coefficient for explicitly treated levels,lumina_unavailable,ion is not a lower member of an assembled NLTE pair
+0,4.264000000e+03,67,4.394182351e+03,bf,alpha_recomb_spont,27,2,,,,,,,lumina_unavailable,ion is not a lower member of an assembled NLTE pair
+0,4.264000000e+03,67,4.394182351e+03,bf,alpha_recomb_stim,27,2,,,,,,,lumina_unavailable,ion is not a lower member of an assembled NLTE pair
+0,4.264000000e+03,67,4.394182351e+03,bf,chi_bf_at_1000A,27,2,,3.847070019e-20,,,cm^-1,,unavailable,RVTJ/PRRR/GENCOOL/EDDFACTOR provide no validated monochromatic anchor
+0,4.264000000e+03,67,4.394182351e+03,bf,eta_bf_at_1000A,27,2,,2.587965814e-21,,,erg_s^-1_cm^-3_Hz^-1_sr^-1,,unavailable,RVTJ/PRRR/GENCOOL/EDDFACTOR provide no validated monochromatic anchor
+0,4.264000000e+03,67,4.394182351e+03,bf,chi_bf_at_5000A,27,2,,6.339884366e-24,,,cm^-1,,unavailable,RVTJ/PRRR/GENCOOL/EDDFACTOR provide no validated monochromatic anchor
+0,4.264000000e+03,67,4.394182351e+03,bf,eta_bf_at_5000A,27,2,,1.521080495e-22,,,erg_s^-1_cm^-3_Hz^-1_sr^-1,,unavailable,RVTJ/PRRR/GENCOOL/EDDFACTOR provide no validated monochromatic anchor
+0,4.264000000e+03,67,4.394182351e+03,bb,jbar_representative,27,2,line192390_l0_u80_939.0620A,3.226170349e-04,9.231811683e-05,3.494623222e+00,erg_s^-1_cm^-2_Hz^-1_sr^-1,EDDFACTOR:record_frequency=3.192526570e+15Hz,compared,nearest native CMFGEN frequency at speed-matched depth
+0,4.264000000e+03,67,4.394182351e+03,bb,jbar_input_raw,27,2,,,,,,,lumina_unavailable,line absent from frozen jbar writer
+0,4.264000000e+03,67,4.394182351e+03,bb,sobolev_beta,27,2,line192390_l0_u80_939.0620A,1.000000000e+00,,,dimensionless,,unavailable,GENCOOL/EDDFACTOR do not expose the matched representative transition rate
+0,4.264000000e+03,67,4.394182351e+03,bb,R_lu_radiative,27,2,line192390_l0_u80_939.0620A,4.564734223e+05,,,s^-1,,unavailable,GENCOOL/EDDFACTOR do not expose the matched representative transition rate
+0,4.264000000e+03,67,4.394182351e+03,bb,R_ul_stimulated,27,2,line192390_l0_u80_939.0620A,5.705917779e+05,,,s^-1,,unavailable,GENCOOL/EDDFACTOR do not expose the matched representative transition rate
+0,4.264000000e+03,67,4.394182351e+03,bb,R_ul_spontaneous,27,2,line192390_l0_u80_939.0620A,8.485200000e+08,,,s^-1,,unavailable,GENCOOL/EDDFACTOR do not expose the matched representative transition rate
+0,4.264000000e+03,67,4.394182351e+03,collisional,C_lu,27,2,line192390_l0_u80_939.0620A,1.992010750e-03,,,s^-1,,unavailable,GENCOOL exposes aggregate collisional cooling not this representative C rate
+0,4.264000000e+03,67,4.394182351e+03,collisional,C_ul,27,2,line192390_l0_u80_939.0620A,3.423635586e+00,,,s^-1,,unavailable,GENCOOL exposes aggregate collisional cooling not this representative C rate
+0,4.264000000e+03,67,4.394182351e+03,ff,chi_ff_at_1000A,0,-1,,5.820118274e-21,,,cm^-1,,unavailable,RVTJ/PRRR/GENCOOL/EDDFACTOR provide no validated monochromatic anchor
+0,4.264000000e+03,67,4.394182351e+03,ff,eta_ff_at_1000A,0,-1,,2.603593254e-24,,,erg_s^-1_cm^-3_Hz^-1_sr^-1,,unavailable,RVTJ/PRRR/GENCOOL/EDDFACTOR provide no validated monochromatic anchor
+0,4.264000000e+03,67,4.394182351e+03,ff,chi_ff_at_5000A,0,-1,,5.428757595e-19,,,cm^-1,,unavailable,RVTJ/PRRR/GENCOOL/EDDFACTOR provide no validated monochromatic anchor
+0,4.264000000e+03,67,4.394182351e+03,ff,eta_ff_at_5000A,0,-1,,5.979705908e-22,,,erg_s^-1_cm^-3_Hz^-1_sr^-1,,unavailable,RVTJ/PRRR/GENCOOL/EDDFACTOR provide no validated monochromatic anchor
+0,4.264000000e+03,67,4.394182351e+03,ff,cooling_ff_grid,0,-1,,9.183513888e-06,,,erg_s^-1_cm^-3,,unavailable,GENCOOL '(ion) Free-Free Cooling' has no inline unit and no validated repository parser; no unit assumption made
+8,1.008800000e+04,54,1.016350575e+04,state,T_e,0,-1,,1.200772780e+04,1.032347600e+04,1.163147742e+00,K,RVTJ:Temperature (10^4K)*1e4,compared,
+8,1.008800000e+04,54,1.016350575e+04,state,n_e,0,-1,,7.496125000e+08,7.341043400e+08,1.021125280e+00,cm^-3,RVTJ:Electron density,compared,
+8,1.008800000e+04,54,1.016350575e+04,state,T_rad,0,-1,,1.047009324e+04,,,K,,unavailable,RVTJ has no directly identical Lumina dilute-field scalar
+8,1.008800000e+04,54,1.016350575e+04,state,W,0,-1,,3.887582090e-02,,,dimensionless,,unavailable,RVTJ has no directly identical Lumina dilute-field scalar
+8,1.008800000e+04,54,1.016350575e+04,state,n_ion,14,1,,4.811713000e+03,,,cm^-3,,unavailable,CMFGEN population mapping is not certified for this row in Phase-1 comparator
+8,1.008800000e+04,54,1.016350575e+04,state,ion_fraction,14,1,,2.487394707e-05,,,dimensionless,,unavailable,CMFGEN population mapping is not certified for this row in Phase-1 comparator
+8,1.008800000e+04,54,1.016350575e+04,state,b_k_representative,14,1,level1,9.331700000e-01,,,dimensionless,,unavailable,CMFGEN population mapping is not certified for this row in Phase-1 comparator
+8,1.008800000e+04,54,1.016350575e+04,state,n_ion,14,2,,1.904457000e+08,,,cm^-3,,unavailable,CMFGEN population mapping is not certified for this row in Phase-1 comparator
+8,1.008800000e+04,54,1.016350575e+04,state,ion_fraction,14,2,,9.845010005e-01,,,dimensionless,,unavailable,CMFGEN population mapping is not certified for this row in Phase-1 comparator
+8,1.008800000e+04,54,1.016350575e+04,state,b_k_representative,14,2,level0,1.000000000e+00,,,dimensionless,,unavailable,CMFGEN population mapping is not certified for this row in Phase-1 comparator
+8,1.008800000e+04,54,1.016350575e+04,state,n_ion,16,1,,1.907218000e+06,,,cm^-3,,unavailable,CMFGEN population mapping is not certified for this row in Phase-1 comparator
+8,1.008800000e+04,54,1.016350575e+04,state,ion_fraction,16,1,,1.768843253e-02,,,dimensionless,,unavailable,CMFGEN population mapping is not certified for this row in Phase-1 comparator
+8,1.008800000e+04,54,1.016350575e+04,state,b_k_representative,16,1,level0,1.000000000e+00,,,dimensionless,,unavailable,CMFGEN population mapping is not certified for this row in Phase-1 comparator
+8,1.008800000e+04,54,1.016350575e+04,state,n_ion,16,2,,1.048402000e+08,,,cm^-3,,unavailable,CMFGEN population mapping is not certified for this row in Phase-1 comparator
+8,1.008800000e+04,54,1.016350575e+04,state,ion_fraction,16,2,,9.723370923e-01,,,dimensionless,,unavailable,CMFGEN population mapping is not certified for this row in Phase-1 comparator
+8,1.008800000e+04,54,1.016350575e+04,state,b_k_representative,16,2,level2,9.922300000e-01,,,dimensionless,,unavailable,CMFGEN population mapping is not certified for this row in Phase-1 comparator
+8,1.008800000e+04,54,1.016350575e+04,state,n_ion,26,1,,4.226677000e+01,,,cm^-3,,unavailable,CMFGEN population mapping is not certified for this row in Phase-1 comparator
+8,1.008800000e+04,54,1.016350575e+04,state,ion_fraction,26,1,,8.749347633e-06,,,dimensionless,,unavailable,CMFGEN population mapping is not certified for this row in Phase-1 comparator
+8,1.008800000e+04,54,1.016350575e+04,state,b_k_representative,26,1,level0,1.000000000e+00,,,dimensionless,,unavailable,CMFGEN population mapping is not certified for this row in Phase-1 comparator
+8,1.008800000e+04,54,1.016350575e+04,state,n_ion,26,2,,4.540674000e+06,,,cm^-3,,unavailable,CMFGEN population mapping is not certified for this row in Phase-1 comparator
+8,1.008800000e+04,54,1.016350575e+04,state,ion_fraction,26,2,,9.399330802e-01,,,dimensionless,,unavailable,CMFGEN population mapping is not certified for this row in Phase-1 comparator
+8,1.008800000e+04,54,1.016350575e+04,state,b_k_representative,26,2,level0,1.000000000e+00,,,dimensionless,,unavailable,CMFGEN population mapping is not certified for this row in Phase-1 comparator
+8,1.008800000e+04,54,1.016350575e+04,state,n_ion,26,3,,2.883758000e+05,,,cm^-3,,unavailable,CMFGEN population mapping is not certified for this row in Phase-1 comparator
+8,1.008800000e+04,54,1.016350575e+04,state,ion_fraction,26,3,,5.969465193e-02,,,dimensionless,,unavailable,CMFGEN population mapping is not certified for this row in Phase-1 comparator
+8,1.008800000e+04,54,1.016350575e+04,state,b_k_representative,26,3,,,,,dimensionless,,lumina_unavailable,maximum-population recorded level
+8,1.008800000e+04,54,1.016350575e+04,state,n_ion,27,2,,3.621273000e+07,,,cm^-3,,unavailable,CMFGEN population mapping is not certified for this row in Phase-1 comparator
+8,1.008800000e+04,54,1.016350575e+04,state,ion_fraction,27,2,,9.763697248e-01,,,dimensionless,,unavailable,CMFGEN population mapping is not certified for this row in Phase-1 comparator
+8,1.008800000e+04,54,1.016350575e+04,state,b_k_representative,27,2,level0,1.000000000e+00,,,dimensionless,,unavailable,CMFGEN population mapping is not certified for this row in Phase-1 comparator
+8,1.008800000e+04,54,1.016350575e+04,thermal,heating_photoion,0,-1,,,,,erg_s^-1_cm^-3,,lumina_unavailable,kept as explicit orphan for Phase-1 review
+8,1.008800000e+04,54,1.016350575e+04,thermal,heating_deposition,0,-1,,,,,erg_s^-1_cm^-3,,lumina_unavailable,kept as explicit orphan for Phase-1 review
+8,1.008800000e+04,54,1.016350575e+04,thermal,heating_MA_LINE_DESTRUCT,0,-1,,,,,erg_s^-1_cm^-3,,lumina_unavailable,kept as explicit orphan for Phase-1 review
+8,1.008800000e+04,54,1.016350575e+04,thermal,cooling_bf,0,-1,,,,,erg_s^-1_cm^-3,,lumina_unavailable,kept as explicit orphan for Phase-1 review
+8,1.008800000e+04,54,1.016350575e+04,thermal,cooling_bb_collisional,0,-1,,,,,erg_s^-1_cm^-3,,lumina_unavailable,kept as explicit orphan for Phase-1 review
+8,1.008800000e+04,54,1.016350575e+04,thermal,cooling_adiabatic,0,-1,,,,,erg_s^-1_cm^-3,,lumina_unavailable,kept as explicit orphan for Phase-1 review
+8,1.008800000e+04,54,1.016350575e+04,thermal,thermal_net,0,-1,,,,,erg_s^-1_cm^-3,,lumina_unavailable,kept as explicit orphan for Phase-1 review
+8,1.008800000e+04,54,1.016350575e+04,bf,Gamma_photoion_total,14,1,,4.993938812e+01,1.968552105e-03,2.536858841e+04,s^-1,Sk2PRRR:sum(PR)/Ion Density,compared,
+8,1.008800000e+04,54,1.016350575e+04,bf,alpha_recomb_total,14,1,,3.725460613e-13,,,cm^3_s^-1,Sk2PRRR:Radiative Recombination Coefficient for explicitly treated levels,unavailable,PRRR labels this coefficient but gives no inline unit and no validated repository alpha parser; numeric comparison withheld
+8,1.008800000e+04,54,1.016350575e+04,bf,alpha_recomb_spont,14,1,,3.695404174e-13,,,cm^3_s^-1,,unavailable,PRRR does not label a validated spontaneous/stimulated coefficient split
+8,1.008800000e+04,54,1.016350575e+04,bf,alpha_recomb_stim,14,1,,3.005643959e-15,,,cm^3_s^-1,,unavailable,PRRR does not label a validated spontaneous/stimulated coefficient split
+8,1.008800000e+04,54,1.016350575e+04,bf,chi_bf_at_1000A,14,1,,7.891777884e-19,,,cm^-1,,unavailable,RVTJ/PRRR/GENCOOL/EDDFACTOR provide no validated monochromatic anchor
+8,1.008800000e+04,54,1.016350575e+04,bf,eta_bf_at_1000A,14,1,,2.164001662e-23,,,erg_s^-1_cm^-3_Hz^-1_sr^-1,,unavailable,RVTJ/PRRR/GENCOOL/EDDFACTOR provide no validated monochromatic anchor
+8,1.008800000e+04,54,1.016350575e+04,bf,chi_bf_at_5000A,14,1,,3.618974944e-22,,,cm^-1,,unavailable,RVTJ/PRRR/GENCOOL/EDDFACTOR provide no validated monochromatic anchor
+8,1.008800000e+04,54,1.016350575e+04,bf,eta_bf_at_5000A,14,1,,4.072021641e-24,,,erg_s^-1_cm^-3_Hz^-1_sr^-1,,unavailable,RVTJ/PRRR/GENCOOL/EDDFACTOR provide no validated monochromatic anchor
+8,1.008800000e+04,54,1.016350575e+04,bb,jbar_representative,14,1,line403575_l1_u7_1533.4307A,2.034428000e-05,1.459557936e-05,1.393865875e+00,erg_s^-1_cm^-2_Hz^-1_sr^-1,EDDFACTOR:record_frequency=1.955062180e+15Hz,compared,nearest native CMFGEN frequency at speed-matched depth
+8,1.008800000e+04,54,1.016350575e+04,bb,jbar_input_raw,14,1,line403575_l1_u7_1533.4307A,2.034428000e-05,1.459557936e-05,1.393865875e+00,erg_s^-1_cm^-2_Hz^-1_sr^-1,EDDFACTOR:record_frequency=1.955062180e+15Hz,compared,nearest native CMFGEN frequency at speed-matched depth
+8,1.008800000e+04,54,1.016350575e+04,bb,sobolev_beta,14,1,line403575_l1_u7_1533.4307A,9.085341000e-02,,,dimensionless,,unavailable,GENCOOL/EDDFACTOR do not expose the matched representative transition rate
+8,1.008800000e+04,54,1.016350575e+04,bb,R_lu_radiative,14,1,line403575_l1_u7_1533.4307A,6.329306610e+03,,,s^-1,,unavailable,GENCOOL/EDDFACTOR do not expose the matched representative transition rate
+8,1.008800000e+04,54,1.016350575e+04,bb,R_ul_stimulated,14,1,line403575_l1_u7_1533.4307A,1.265861322e+04,,,s^-1,,unavailable,GENCOOL/EDDFACTOR do not expose the matched representative transition rate
+8,1.008800000e+04,54,1.016350575e+04,bb,R_ul_spontaneous,14,1,line403575_l1_u7_1533.4307A,6.855798319e+07,,,s^-1,,unavailable,GENCOOL/EDDFACTOR do not expose the matched representative transition rate
+8,1.008800000e+04,54,1.016350575e+04,collisional,C_lu,14,1,line403575_l1_u7_1533.4307A,5.963064352e-04,,,s^-1,,unavailable,GENCOOL exposes aggregate collisional cooling not this representative C rate
+8,1.008800000e+04,54,1.016350575e+04,collisional,C_ul,14,1,line403575_l1_u7_1533.4307A,2.951459826e+00,,,s^-1,,unavailable,GENCOOL exposes aggregate collisional cooling not this representative C rate
+8,1.008800000e+04,54,1.016350575e+04,bf,Gamma_photoion_total,14,2,,,6.991962620e-03,,,SkIIIPRRR:sum(PR)/Ion Density,lumina_unavailable,ion is not a lower member of an assembled NLTE pair
+8,1.008800000e+04,54,1.016350575e+04,bf,alpha_recomb_total,14,2,,,,,,SkIIIPRRR:Radiative Recombination Coefficient for explicitly treated levels,lumina_unavailable,ion is not a lower member of an assembled NLTE pair
+8,1.008800000e+04,54,1.016350575e+04,bf,alpha_recomb_spont,14,2,,,,,,,lumina_unavailable,ion is not a lower member of an assembled NLTE pair
+8,1.008800000e+04,54,1.016350575e+04,bf,alpha_recomb_stim,14,2,,,,,,,lumina_unavailable,ion is not a lower member of an assembled NLTE pair
+8,1.008800000e+04,54,1.016350575e+04,bf,chi_bf_at_1000A,14,2,,7.788677036e-21,,,cm^-1,,unavailable,RVTJ/PRRR/GENCOOL/EDDFACTOR provide no validated monochromatic anchor
+8,1.008800000e+04,54,1.016350575e+04,bf,eta_bf_at_1000A,14,2,,1.202130647e-24,,,erg_s^-1_cm^-3_Hz^-1_sr^-1,,unavailable,RVTJ/PRRR/GENCOOL/EDDFACTOR provide no validated monochromatic anchor
+8,1.008800000e+04,54,1.016350575e+04,bf,chi_bf_at_5000A,14,2,,3.107888386e-24,,,cm^-1,,unavailable,RVTJ/PRRR/GENCOOL/EDDFACTOR provide no validated monochromatic anchor
+8,1.008800000e+04,54,1.016350575e+04,bf,eta_bf_at_5000A,14,2,,2.221391866e-25,,,erg_s^-1_cm^-3_Hz^-1_sr^-1,,unavailable,RVTJ/PRRR/GENCOOL/EDDFACTOR provide no validated monochromatic anchor
+8,1.008800000e+04,54,1.016350575e+04,bb,jbar_representative,14,2,line699750_l4_u5_2542.5813A,7.490040000e-05,7.959250361e-05,9.410484229e-01,erg_s^-1_cm^-2_Hz^-1_sr^-1,EDDFACTOR:record_frequency=1.179078297e+15Hz,compared,nearest native CMFGEN frequency at speed-matched depth
+8,1.008800000e+04,54,1.016350575e+04,bb,jbar_input_raw,14,2,line699750_l4_u5_2542.5813A,7.490040000e-05,7.959250361e-05,9.410484229e-01,erg_s^-1_cm^-2_Hz^-1_sr^-1,EDDFACTOR:record_frequency=1.179078297e+15Hz,compared,nearest native CMFGEN frequency at speed-matched depth
+8,1.008800000e+04,54,1.016350575e+04,bb,sobolev_beta,14,2,line699750_l4_u5_2542.5813A,7.947586000e-02,,,dimensionless,,unavailable,GENCOOL/EDDFACTOR do not expose the matched representative transition rate
+8,1.008800000e+04,54,1.016350575e+04,bb,R_lu_radiative,14,2,line699750_l4_u5_2542.5813A,1.143581345e+04,,,s^-1,,unavailable,GENCOOL/EDDFACTOR do not expose the matched representative transition rate
+8,1.008800000e+04,54,1.016350575e+04,bb,R_ul_stimulated,14,2,line699750_l4_u5_2542.5813A,6.861488072e+03,,,s^-1,,unavailable,GENCOOL/EDDFACTOR do not expose the matched representative transition rate
+8,1.008800000e+04,54,1.016350575e+04,bb,R_ul_spontaneous,14,2,line699750_l4_u5_2542.5813A,2.214197460e+06,,,s^-1,,unavailable,GENCOOL/EDDFACTOR do not expose the matched representative transition rate
+8,1.008800000e+04,54,1.016350575e+04,collisional,C_lu,14,2,line699750_l4_u5_2542.5813A,1.767268957e-02,,,s^-1,,unavailable,GENCOOL exposes aggregate collisional cooling not this representative C rate
+8,1.008800000e+04,54,1.016350575e+04,collisional,C_ul,14,2,line699750_l4_u5_2542.5813A,1.180583930e+00,,,s^-1,,unavailable,GENCOOL exposes aggregate collisional cooling not this representative C rate
+8,1.008800000e+04,54,1.016350575e+04,bf,Gamma_photoion_total,16,1,,1.725658118e+00,2.002659369e-03,8.616832923e+02,s^-1,S2PRRR:sum(PR)/Ion Density,compared,
+8,1.008800000e+04,54,1.016350575e+04,bf,alpha_recomb_total,16,1,,4.404188091e-12,,,cm^3_s^-1,S2PRRR:Radiative Recombination Coefficient for explicitly treated levels,unavailable,PRRR labels this coefficient but gives no inline unit and no validated repository alpha parser; numeric comparison withheld
+8,1.008800000e+04,54,1.016350575e+04,bf,alpha_recomb_spont,16,1,,4.383480779e-12,,,cm^3_s^-1,,unavailable,PRRR does not label a validated spontaneous/stimulated coefficient split
+8,1.008800000e+04,54,1.016350575e+04,bf,alpha_recomb_stim,16,1,,2.070731129e-14,,,cm^3_s^-1,,unavailable,PRRR does not label a validated spontaneous/stimulated coefficient split
+8,1.008800000e+04,54,1.016350575e+04,bf,chi_bf_at_1000A,16,1,,4.963835720e-19,,,cm^-1,,unavailable,RVTJ/PRRR/GENCOOL/EDDFACTOR provide no validated monochromatic anchor
+8,1.008800000e+04,54,1.016350575e+04,bf,eta_bf_at_1000A,16,1,,4.958054753e-24,,,erg_s^-1_cm^-3_Hz^-1_sr^-1,,unavailable,RVTJ/PRRR/GENCOOL/EDDFACTOR provide no validated monochromatic anchor
+8,1.008800000e+04,54,1.016350575e+04,bf,chi_bf_at_5000A,16,1,,9.300886521e-22,,,cm^-1,,unavailable,RVTJ/PRRR/GENCOOL/EDDFACTOR provide no validated monochromatic anchor
+8,1.008800000e+04,54,1.016350575e+04,bf,eta_bf_at_5000A,16,1,,2.443989611e-24,,,erg_s^-1_cm^-3_Hz^-1_sr^-1,,unavailable,RVTJ/PRRR/GENCOOL/EDDFACTOR provide no validated monochromatic anchor
+8,1.008800000e+04,54,1.016350575e+04,bb,jbar_representative,16,1,line180330_l0_u15_906.8761A,2.193058971e-06,1.092832775e-07,2.006765372e+01,erg_s^-1_cm^-2_Hz^-1_sr^-1,EDDFACTOR:record_frequency=3.305787835e+15Hz,compared,nearest native CMFGEN frequency at speed-matched depth
+8,1.008800000e+04,54,1.016350575e+04,bb,jbar_input_raw,16,1,,,,,,,lumina_unavailable,line absent from frozen jbar writer
+8,1.008800000e+04,54,1.016350575e+04,bb,sobolev_beta,16,1,line180330_l0_u15_906.8761A,1.000000000e+00,,,dimensionless,,unavailable,GENCOOL/EDDFACTOR do not expose the matched representative transition rate
+8,1.008800000e+04,54,1.016350575e+04,bb,R_lu_radiative,16,1,line180330_l0_u15_906.8761A,6.712869390e+03,,,s^-1,,unavailable,GENCOOL/EDDFACTOR do not expose the matched representative transition rate
+8,1.008800000e+04,54,1.016350575e+04,bb,R_ul_stimulated,16,1,line180330_l0_u15_906.8761A,4.475246260e+03,,,s^-1,,unavailable,GENCOOL/EDDFACTOR do not expose the matched representative transition rate
+8,1.008800000e+04,54,1.016350575e+04,bb,R_ul_spontaneous,16,1,line180330_l0_u15_906.8761A,1.087000000e+09,,,s^-1,,unavailable,GENCOOL/EDDFACTOR do not expose the matched representative transition rate
+8,1.008800000e+04,54,1.016350575e+04,collisional,C_lu,16,1,line180330_l0_u15_906.8761A,2.697105694e-06,,,s^-1,,unavailable,GENCOOL exposes aggregate collisional cooling not this representative C rate
+8,1.008800000e+04,54,1.016350575e+04,collisional,C_ul,16,1,line180330_l0_u15_906.8761A,9.838199419e-01,,,s^-1,,unavailable,GENCOOL exposes aggregate collisional cooling not this representative C rate
+8,1.008800000e+04,54,1.016350575e+04,bf,Gamma_photoion_total,16,2,,,1.105512869e-02,,,SIIIPRRR:sum(PR)/Ion Density,lumina_unavailable,ion is not a lower member of an assembled NLTE pair
+8,1.008800000e+04,54,1.016350575e+04,bf,alpha_recomb_total,16,2,,,,,,SIIIPRRR:Radiative Recombination Coefficient for explicitly treated levels,lumina_unavailable,ion is not a lower member of an assembled NLTE pair
+8,1.008800000e+04,54,1.016350575e+04,bf,alpha_recomb_spont,16,2,,,,,,,lumina_unavailable,ion is not a lower member of an assembled NLTE pair
+8,1.008800000e+04,54,1.016350575e+04,bf,alpha_recomb_stim,16,2,,,,,,,lumina_unavailable,ion is not a lower member of an assembled NLTE pair
+8,1.008800000e+04,54,1.016350575e+04,bf,chi_bf_at_1000A,16,2,,1.445993493e-20,,,cm^-1,,unavailable,RVTJ/PRRR/GENCOOL/EDDFACTOR provide no validated monochromatic anchor
+8,1.008800000e+04,54,1.016350575e+04,bf,eta_bf_at_1000A,16,2,,1.064051647e-24,,,erg_s^-1_cm^-3_Hz^-1_sr^-1,,unavailable,RVTJ/PRRR/GENCOOL/EDDFACTOR provide no validated monochromatic anchor
+8,1.008800000e+04,54,1.016350575e+04,bf,chi_bf_at_5000A,16,2,,6.069879846e-26,,,cm^-1,,unavailable,RVTJ/PRRR/GENCOOL/EDDFACTOR provide no validated monochromatic anchor
+8,1.008800000e+04,54,1.016350575e+04,bf,eta_bf_at_5000A,16,2,,4.027008111e-26,,,erg_s^-1_cm^-3_Hz^-1_sr^-1,,unavailable,RVTJ/PRRR/GENCOOL/EDDFACTOR provide no validated monochromatic anchor
+8,1.008800000e+04,54,1.016350575e+04,bb,jbar_representative,16,2,line280644_l2_u8_1200.9660A,1.077846238e-05,1.790743976e-06,6.018985698e+00,erg_s^-1_cm^-2_Hz^-1_sr^-1,EDDFACTOR:record_frequency=2.496300635e+15Hz,compared,nearest native CMFGEN frequency at speed-matched depth
+8,1.008800000e+04,54,1.016350575e+04,bb,jbar_input_raw,16,2,,,,,,,lumina_unavailable,line absent from frozen jbar writer
+8,1.008800000e+04,54,1.016350575e+04,bb,sobolev_beta,16,2,line280644_l2_u8_1200.9660A,1.000000000e+00,,,dimensionless,,unavailable,GENCOOL/EDDFACTOR do not expose the matched representative transition rate
+8,1.008800000e+04,54,1.016350575e+04,bb,R_lu_radiative,16,2,line280644_l2_u8_1200.9660A,4.346849046e+03,,,s^-1,,unavailable,GENCOOL/EDDFACTOR do not expose the matched representative transition rate
+8,1.008800000e+04,54,1.016350575e+04,bb,R_ul_stimulated,16,2,line280644_l2_u8_1200.9660A,3.104892175e+03,,,s^-1,,unavailable,GENCOOL/EDDFACTOR do not expose the matched representative transition rate
+8,1.008800000e+04,54,1.016350575e+04,bb,R_ul_spontaneous,16,2,line280644_l2_u8_1200.9660A,6.607000000e+07,,,s^-1,,unavailable,GENCOOL/EDDFACTOR do not expose the matched representative transition rate
+8,1.008800000e+04,54,1.016350575e+04,collisional,C_lu,16,2,line280644_l2_u8_1200.9660A,5.484293958e-05,,,s^-1,,unavailable,GENCOOL exposes aggregate collisional cooling not this representative C rate
+8,1.008800000e+04,54,1.016350575e+04,collisional,C_ul,16,2,line280644_l2_u8_1200.9660A,8.432742359e-01,,,s^-1,,unavailable,GENCOOL exposes aggregate collisional cooling not this representative C rate
+8,1.008800000e+04,54,1.016350575e+04,bf,Gamma_photoion_total,26,1,,9.398721146e+02,1.141949575e-03,8.230416958e+05,s^-1,Fe2PRRR:sum(PR)/Ion Density,compared,
+8,1.008800000e+04,54,1.016350575e+04,bf,alpha_recomb_total,26,1,,8.527487329e-12,,,cm^3_s^-1,Fe2PRRR:Radiative Recombination Coefficient for explicitly treated levels,unavailable,PRRR labels this coefficient but gives no inline unit and no validated repository alpha parser; numeric comparison withheld
+8,1.008800000e+04,54,1.016350575e+04,bf,alpha_recomb_spont,26,1,,8.488543759e-12,,,cm^3_s^-1,,unavailable,PRRR does not label a validated spontaneous/stimulated coefficient split
+8,1.008800000e+04,54,1.016350575e+04,bf,alpha_recomb_stim,26,1,,3.894357069e-14,,,cm^3_s^-1,,unavailable,PRRR does not label a validated spontaneous/stimulated coefficient split
+8,1.008800000e+04,54,1.016350575e+04,bf,chi_bf_at_1000A,26,1,,1.632496368e-19,,,cm^-1,,unavailable,RVTJ/PRRR/GENCOOL/EDDFACTOR provide no validated monochromatic anchor
+8,1.008800000e+04,54,1.016350575e+04,bf,eta_bf_at_1000A,26,1,,3.845760212e-24,,,erg_s^-1_cm^-3_Hz^-1_sr^-1,,unavailable,RVTJ/PRRR/GENCOOL/EDDFACTOR provide no validated monochromatic anchor
+8,1.008800000e+04,54,1.016350575e+04,bf,chi_bf_at_5000A,26,1,,3.351323585e-23,,,cm^-1,,unavailable,RVTJ/PRRR/GENCOOL/EDDFACTOR provide no validated monochromatic anchor
+8,1.008800000e+04,54,1.016350575e+04,bf,eta_bf_at_5000A,26,1,,3.667319542e-25,,,erg_s^-1_cm^-3_Hz^-1_sr^-1,,unavailable,RVTJ/PRRR/GENCOOL/EDDFACTOR provide no validated monochromatic anchor
+8,1.008800000e+04,54,1.016350575e+04,bb,jbar_representative,26,1,line661085_l0_u68_2382.7640A,6.640636433e-05,6.789423149e-05,9.780855145e-01,erg_s^-1_cm^-2_Hz^-1_sr^-1,EDDFACTOR:record_frequency=1.258150482e+15Hz,compared,nearest native CMFGEN frequency at speed-matched depth
+8,1.008800000e+04,54,1.016350575e+04,bb,jbar_input_raw,26,1,,,,,,,lumina_unavailable,line absent from frozen jbar writer
+8,1.008800000e+04,54,1.016350575e+04,bb,sobolev_beta,26,1,line661085_l0_u68_2382.7640A,1.000000000e+00,,,dimensionless,,unavailable,GENCOOL/EDDFACTOR do not expose the matched representative transition rate
+8,1.008800000e+04,54,1.016350575e+04,bb,R_lu_radiative,26,1,line661085_l0_u68_2382.7640A,8.501346413e+05,,,s^-1,,unavailable,GENCOOL/EDDFACTOR do not expose the matched representative transition rate
+8,1.008800000e+04,54,1.016350575e+04,bb,R_ul_stimulated,26,1,line661085_l0_u68_2382.7640A,7.084455345e+05,,,s^-1,,unavailable,GENCOOL/EDDFACTOR do not expose the matched representative transition rate
+8,1.008800000e+04,54,1.016350575e+04,bb,R_ul_spontaneous,26,1,line661085_l0_u68_2382.7640A,3.133000000e+08,,,s^-1,,unavailable,GENCOOL/EDDFACTOR do not expose the matched representative transition rate
+8,1.008800000e+04,54,1.016350575e+04,collisional,C_lu,26,1,line661085_l0_u68_2382.7640A,3.865012486e-03,,,s^-1,,unavailable,GENCOOL exposes aggregate collisional cooling not this representative C rate
+8,1.008800000e+04,54,1.016350575e+04,collisional,C_ul,26,1,line661085_l0_u68_2382.7640A,4.919099709e-01,,,s^-1,,unavailable,GENCOOL exposes aggregate collisional cooling not this representative C rate
+8,1.008800000e+04,54,1.016350575e+04,bf,Gamma_photoion_total,26,2,,,2.703202600e-02,,,FeIIIPRRR:sum(PR)/Ion Density,lumina_unavailable,ion is not a lower member of an assembled NLTE pair
+8,1.008800000e+04,54,1.016350575e+04,bf,alpha_recomb_total,26,2,,,,,,FeIIIPRRR:Radiative Recombination Coefficient for explicitly treated levels,lumina_unavailable,ion is not a lower member of an assembled NLTE pair
+8,1.008800000e+04,54,1.016350575e+04,bf,alpha_recomb_spont,26,2,,,,,,,lumina_unavailable,ion is not a lower member of an assembled NLTE pair
+8,1.008800000e+04,54,1.016350575e+04,bf,alpha_recomb_stim,26,2,,,,,,,lumina_unavailable,ion is not a lower member of an assembled NLTE pair
+8,1.008800000e+04,54,1.016350575e+04,bf,chi_bf_at_1000A,26,2,,1.080744294e-20,,,cm^-1,,unavailable,RVTJ/PRRR/GENCOOL/EDDFACTOR provide no validated monochromatic anchor
+8,1.008800000e+04,54,1.016350575e+04,bf,eta_bf_at_1000A,26,2,,2.316503915e-24,,,erg_s^-1_cm^-3_Hz^-1_sr^-1,,unavailable,RVTJ/PRRR/GENCOOL/EDDFACTOR provide no validated monochromatic anchor
+8,1.008800000e+04,54,1.016350575e+04,bf,chi_bf_at_5000A,26,2,,7.364502450e-25,,,cm^-1,,unavailable,RVTJ/PRRR/GENCOOL/EDDFACTOR provide no validated monochromatic anchor
+8,1.008800000e+04,54,1.016350575e+04,bf,eta_bf_at_5000A,26,2,,7.374335984e-26,,,erg_s^-1_cm^-3_Hz^-1_sr^-1,,unavailable,RVTJ/PRRR/GENCOOL/EDDFACTOR provide no validated monochromatic anchor
+8,1.008800000e+04,54,1.016350575e+04,bb,jbar_representative,26,2,line534905_l17_u65_1895.4724A,4.033624221e-05,3.084237016e-05,1.307819146e+00,erg_s^-1_cm^-2_Hz^-1_sr^-1,EDDFACTOR:record_frequency=1.581590788e+15Hz,compared,nearest native CMFGEN frequency at speed-matched depth
+8,1.008800000e+04,54,1.016350575e+04,bb,jbar_input_raw,26,2,,,,,,,lumina_unavailable,line absent from frozen jbar writer
+8,1.008800000e+04,54,1.016350575e+04,bb,sobolev_beta,26,2,line534905_l17_u65_1895.4724A,1.000000000e+00,,,dimensionless,,unavailable,GENCOOL/EDDFACTOR do not expose the matched representative transition rate
+8,1.008800000e+04,54,1.016350575e+04,bb,R_lu_radiative,26,2,line534905_l17_u65_1895.4724A,5.994303204e+05,,,s^-1,,unavailable,GENCOOL/EDDFACTOR do not expose the matched representative transition rate
+8,1.008800000e+04,54,1.016350575e+04,bb,R_ul_stimulated,26,2,line534905_l17_u65_1895.4724A,4.662235825e+05,,,s^-1,,unavailable,GENCOOL/EDDFACTOR do not expose the matched representative transition rate
+8,1.008800000e+04,54,1.016350575e+04,bb,R_ul_spontaneous,26,2,line534905_l17_u65_1895.4724A,6.743000000e+08,,,s^-1,,unavailable,GENCOOL/EDDFACTOR do not expose the matched representative transition rate
+8,1.008800000e+04,54,1.016350575e+04,collisional,C_lu,26,2,line534905_l17_u65_1895.4724A,1.515680472e-03,,,s^-1,,unavailable,GENCOOL exposes aggregate collisional cooling not this representative C rate
+8,1.008800000e+04,54,1.016350575e+04,collisional,C_ul,26,2,line534905_l17_u65_1895.4724A,6.558799613e-01,,,s^-1,,unavailable,GENCOOL exposes aggregate collisional cooling not this representative C rate
+8,1.008800000e+04,54,1.016350575e+04,bf,Gamma_photoion_total,26,3,,,1.146921064e-02,,,FeIVPRRR:sum(PR)/Ion Density,lumina_unavailable,ion is not a lower member of an assembled NLTE pair
+8,1.008800000e+04,54,1.016350575e+04,bf,alpha_recomb_total,26,3,,,,,,FeIVPRRR:Radiative Recombination Coefficient for explicitly treated levels,lumina_unavailable,ion is not a lower member of an assembled NLTE pair
+8,1.008800000e+04,54,1.016350575e+04,bf,alpha_recomb_spont,26,3,,,,,,,lumina_unavailable,ion is not a lower member of an assembled NLTE pair
+8,1.008800000e+04,54,1.016350575e+04,bf,alpha_recomb_stim,26,3,,,,,,,lumina_unavailable,ion is not a lower member of an assembled NLTE pair
+8,1.008800000e+04,54,1.016350575e+04,bf,chi_bf_at_1000A,26,3,,0.000000000e+00,,,cm^-1,,unavailable,RVTJ/PRRR/GENCOOL/EDDFACTOR provide no validated monochromatic anchor
+8,1.008800000e+04,54,1.016350575e+04,bf,eta_bf_at_1000A,26,3,,0.000000000e+00,,,erg_s^-1_cm^-3_Hz^-1_sr^-1,,unavailable,RVTJ/PRRR/GENCOOL/EDDFACTOR provide no validated monochromatic anchor
+8,1.008800000e+04,54,1.016350575e+04,bf,chi_bf_at_5000A,26,3,,0.000000000e+00,,,cm^-1,,unavailable,RVTJ/PRRR/GENCOOL/EDDFACTOR provide no validated monochromatic anchor
+8,1.008800000e+04,54,1.016350575e+04,bf,eta_bf_at_5000A,26,3,,0.000000000e+00,,,erg_s^-1_cm^-3_Hz^-1_sr^-1,,unavailable,RVTJ/PRRR/GENCOOL/EDDFACTOR provide no validated monochromatic anchor
+8,1.008800000e+04,54,1.016350575e+04,bb,jbar_representative,26,3,,,,,,,lumina_unavailable,no_positive_lower-level population flow selected
+8,1.008800000e+04,54,1.016350575e+04,bb,R_lu_radiative,26,3,,,,,,,lumina_unavailable,no_positive lower-level population flow selected
+8,1.008800000e+04,54,1.016350575e+04,bb,R_ul_stimulated,26,3,,,,,,,lumina_unavailable,no_positive lower-level population flow selected
+8,1.008800000e+04,54,1.016350575e+04,bb,R_ul_spontaneous,26,3,,,,,,,lumina_unavailable,no_positive lower-level population flow selected
+8,1.008800000e+04,54,1.016350575e+04,collisional,C_lu,26,3,,,,,,,lumina_unavailable,no_positive lower-level population flow selected
+8,1.008800000e+04,54,1.016350575e+04,collisional,C_ul,26,3,,,,,,,lumina_unavailable,no_positive lower-level population flow selected
+8,1.008800000e+04,54,1.016350575e+04,bf,Gamma_photoion_total,27,2,,,3.472347902e-03,,,CoIIIPRRR:sum(PR)/Ion Density,lumina_unavailable,ion is not a lower member of an assembled NLTE pair
+8,1.008800000e+04,54,1.016350575e+04,bf,alpha_recomb_total,27,2,,,,,,CoIIIPRRR:Radiative Recombination Coefficient for explicitly treated levels,lumina_unavailable,ion is not a lower member of an assembled NLTE pair
+8,1.008800000e+04,54,1.016350575e+04,bf,alpha_recomb_spont,27,2,,,,,,,lumina_unavailable,ion is not a lower member of an assembled NLTE pair
+8,1.008800000e+04,54,1.016350575e+04,bf,alpha_recomb_stim,27,2,,,,,,,lumina_unavailable,ion is not a lower member of an assembled NLTE pair
+8,1.008800000e+04,54,1.016350575e+04,bf,chi_bf_at_1000A,27,2,,1.541389967e-21,,,cm^-1,,unavailable,RVTJ/PRRR/GENCOOL/EDDFACTOR provide no validated monochromatic anchor
+8,1.008800000e+04,54,1.016350575e+04,bf,eta_bf_at_1000A,27,2,,8.076396159e-25,,,erg_s^-1_cm^-3_Hz^-1_sr^-1,,unavailable,RVTJ/PRRR/GENCOOL/EDDFACTOR provide no validated monochromatic anchor
+8,1.008800000e+04,54,1.016350575e+04,bf,chi_bf_at_5000A,27,2,,2.540175798e-25,,,cm^-1,,unavailable,RVTJ/PRRR/GENCOOL/EDDFACTOR provide no validated monochromatic anchor
+8,1.008800000e+04,54,1.016350575e+04,bf,eta_bf_at_5000A,27,2,,6.182187604e-26,,,erg_s^-1_cm^-3_Hz^-1_sr^-1,,unavailable,RVTJ/PRRR/GENCOOL/EDDFACTOR provide no validated monochromatic anchor
+8,1.008800000e+04,54,1.016350575e+04,bb,jbar_representative,27,2,line496213_l17_u71_1760.3558A,3.326616389e-05,2.209465584e-05,1.505620369e+00,erg_s^-1_cm^-2_Hz^-1_sr^-1,EDDFACTOR:record_frequency=1.702989105e+15Hz,compared,nearest native CMFGEN frequency at speed-matched depth
+8,1.008800000e+04,54,1.016350575e+04,bb,jbar_input_raw,27,2,,,,,,,lumina_unavailable,line absent from frozen jbar writer
+8,1.008800000e+04,54,1.016350575e+04,bb,sobolev_beta,27,2,line496213_l17_u71_1760.3558A,1.000000000e+00,,,dimensionless,,unavailable,GENCOOL/EDDFACTOR do not expose the matched representative transition rate
+8,1.008800000e+04,54,1.016350575e+04,bb,R_lu_radiative,27,2,line496213_l17_u71_1760.3558A,3.746644687e+05,,,s^-1,,unavailable,GENCOOL/EDDFACTOR do not expose the matched representative transition rate
+8,1.008800000e+04,54,1.016350575e+04,bb,R_ul_stimulated,27,2,line496213_l17_u71_1760.3558A,3.122203906e+05,,,s^-1,,unavailable,GENCOOL/EDDFACTOR do not expose the matched representative transition rate
+8,1.008800000e+04,54,1.016350575e+04,bb,R_ul_spontaneous,27,2,line496213_l17_u71_1760.3558A,6.835400000e+08,,,s^-1,,unavailable,GENCOOL/EDDFACTOR do not expose the matched representative transition rate
+8,1.008800000e+04,54,1.016350575e+04,collisional,C_lu,27,2,line496213_l17_u71_1760.3558A,6.531076921e-04,,,s^-1,,unavailable,GENCOOL exposes aggregate collisional cooling not this representative C rate
+8,1.008800000e+04,54,1.016350575e+04,collisional,C_ul,27,2,line496213_l17_u71_1760.3558A,4.919099709e-01,,,s^-1,,unavailable,GENCOOL exposes aggregate collisional cooling not this representative C rate
+8,1.008800000e+04,54,1.016350575e+04,ff,chi_ff_at_1000A,0,-1,,1.414833469e-22,,,cm^-1,,unavailable,RVTJ/PRRR/GENCOOL/EDDFACTOR provide no validated monochromatic anchor
+8,1.008800000e+04,54,1.016350575e+04,ff,eta_ff_at_1000A,0,-1,,3.479661962e-28,,,erg_s^-1_cm^-3_Hz^-1_sr^-1,,unavailable,RVTJ/PRRR/GENCOOL/EDDFACTOR provide no validated monochromatic anchor
+8,1.008800000e+04,54,1.016350575e+04,ff,chi_ff_at_5000A,0,-1,,1.613544138e-20,,,cm^-1,,unavailable,RVTJ/PRRR/GENCOOL/EDDFACTOR provide no validated monochromatic anchor
+8,1.008800000e+04,54,1.016350575e+04,ff,eta_ff_at_5000A,0,-1,,5.136516229e-24,,,erg_s^-1_cm^-3_Hz^-1_sr^-1,,unavailable,RVTJ/PRRR/GENCOOL/EDDFACTOR provide no validated monochromatic anchor
+8,1.008800000e+04,54,1.016350575e+04,ff,cooling_ff_grid,0,-1,,9.737656353e-08,,,erg_s^-1_cm^-3,,unavailable,GENCOOL '(ion) Free-Free Cooling' has no inline unit and no validated repository parser; no unit assumption made
+45,3.702400000e+04,1,3.597528805e+04,state,T_e,0,-1,,1.189706591e+04,1.649763900e+04,7.211374856e-01,K,RVTJ:Temperature (10^4K)*1e4,compared,
+45,3.702400000e+04,1,3.597528805e+04,state,n_e,0,-1,,1.017327000e+05,2.004388500e+05,5.075498088e-01,cm^-3,RVTJ:Electron density,compared,
+45,3.702400000e+04,1,3.597528805e+04,state,T_rad,0,-1,,1.047009324e+04,,,K,,unavailable,RVTJ has no directly identical Lumina dilute-field scalar
+45,3.702400000e+04,1,3.597528805e+04,state,W,0,-1,,2.781713000e-03,,,dimensionless,,unavailable,RVTJ has no directly identical Lumina dilute-field scalar
+45,3.702400000e+04,1,3.597528805e+04,state,n_ion,14,1,,9.175982000e-01,,,cm^-3,,unavailable,CMFGEN population mapping is not certified for this row in Phase-1 comparator
+45,3.702400000e+04,1,3.597528805e+04,state,ion_fraction,14,1,,4.076155384e-05,,,dimensionless,,unavailable,CMFGEN population mapping is not certified for this row in Phase-1 comparator
+45,3.702400000e+04,1,3.597528805e+04,state,b_k_representative,14,1,level1,1.145500000e+00,,,dimensionless,,unavailable,CMFGEN population mapping is not certified for this row in Phase-1 comparator
+45,3.702400000e+04,1,3.597528805e+04,state,n_ion,14,2,,7.365567000e+03,,,cm^-3,,unavailable,CMFGEN population mapping is not certified for this row in Phase-1 comparator
+45,3.702400000e+04,1,3.597528805e+04,state,ion_fraction,14,2,,3.271932702e-01,,,dimensionless,,unavailable,CMFGEN population mapping is not certified for this row in Phase-1 comparator
+45,3.702400000e+04,1,3.597528805e+04,state,b_k_representative,14,2,level0,1.000000000e+00,,,dimensionless,,unavailable,CMFGEN population mapping is not certified for this row in Phase-1 comparator
+45,3.702400000e+04,1,3.597528805e+04,state,n_ion,16,1,,5.447148000e+02,,,cm^-3,,unavailable,CMFGEN population mapping is not certified for this row in Phase-1 comparator
+45,3.702400000e+04,1,3.597528805e+04,state,ion_fraction,16,1,,4.341212831e-02,,,dimensionless,,unavailable,CMFGEN population mapping is not certified for this row in Phase-1 comparator
+45,3.702400000e+04,1,3.597528805e+04,state,b_k_representative,16,1,level0,1.000000000e+00,,,dimensionless,,unavailable,CMFGEN population mapping is not certified for this row in Phase-1 comparator
+45,3.702400000e+04,1,3.597528805e+04,state,n_ion,16,2,,4.461870000e+03,,,cm^-3,,unavailable,CMFGEN population mapping is not certified for this row in Phase-1 comparator
+45,3.702400000e+04,1,3.597528805e+04,state,ion_fraction,16,2,,3.555975952e-01,,,dimensionless,,unavailable,CMFGEN population mapping is not certified for this row in Phase-1 comparator
+45,3.702400000e+04,1,3.597528805e+04,state,b_k_representative,16,2,level2,8.204300000e-01,,,dimensionless,,unavailable,CMFGEN population mapping is not certified for this row in Phase-1 comparator
+45,3.702400000e+04,1,3.597528805e+04,state,n_ion,26,1,,0.000000000e+00,,,cm^-3,,unavailable,CMFGEN population mapping is not certified for this row in Phase-1 comparator
+45,3.702400000e+04,1,3.597528805e+04,state,ion_fraction,26,1,,,,,dimensionless,,lumina_unavailable,all recorded stages summed
+45,3.702400000e+04,1,3.597528805e+04,state,b_k_representative,26,1,level0,-1.000000000e+00,,,dimensionless,,unavailable,CMFGEN population mapping is not certified for this row in Phase-1 comparator
+45,3.702400000e+04,1,3.597528805e+04,state,n_ion,26,2,,0.000000000e+00,,,cm^-3,,unavailable,CMFGEN population mapping is not certified for this row in Phase-1 comparator
+45,3.702400000e+04,1,3.597528805e+04,state,ion_fraction,26,2,,,,,dimensionless,,lumina_unavailable,all recorded stages summed
+45,3.702400000e+04,1,3.597528805e+04,state,b_k_representative,26,2,level0,-1.000000000e+00,,,dimensionless,,unavailable,CMFGEN population mapping is not certified for this row in Phase-1 comparator
+45,3.702400000e+04,1,3.597528805e+04,state,n_ion,26,3,,0.000000000e+00,,,cm^-3,,unavailable,CMFGEN population mapping is not certified for this row in Phase-1 comparator
+45,3.702400000e+04,1,3.597528805e+04,state,ion_fraction,26,3,,,,,dimensionless,,lumina_unavailable,all recorded stages summed
+45,3.702400000e+04,1,3.597528805e+04,state,b_k_representative,26,3,,,,,dimensionless,,lumina_unavailable,maximum-population recorded level
+45,3.702400000e+04,1,3.597528805e+04,state,n_ion,27,2,,0.000000000e+00,,,cm^-3,,unavailable,CMFGEN population mapping is not certified for this row in Phase-1 comparator
+45,3.702400000e+04,1,3.597528805e+04,state,ion_fraction,27,2,,,,,dimensionless,,lumina_unavailable,all recorded stages summed
+45,3.702400000e+04,1,3.597528805e+04,state,b_k_representative,27,2,level0,-1.000000000e+00,,,dimensionless,,unavailable,CMFGEN population mapping is not certified for this row in Phase-1 comparator
+45,3.702400000e+04,1,3.597528805e+04,thermal,heating_photoion,0,-1,,,,,erg_s^-1_cm^-3,,lumina_unavailable,kept as explicit orphan for Phase-1 review
+45,3.702400000e+04,1,3.597528805e+04,thermal,heating_deposition,0,-1,,,,,erg_s^-1_cm^-3,,lumina_unavailable,kept as explicit orphan for Phase-1 review
+45,3.702400000e+04,1,3.597528805e+04,thermal,heating_MA_LINE_DESTRUCT,0,-1,,,,,erg_s^-1_cm^-3,,lumina_unavailable,kept as explicit orphan for Phase-1 review
+45,3.702400000e+04,1,3.597528805e+04,thermal,cooling_bf,0,-1,,,,,erg_s^-1_cm^-3,,lumina_unavailable,kept as explicit orphan for Phase-1 review
+45,3.702400000e+04,1,3.597528805e+04,thermal,cooling_bb_collisional,0,-1,,,,,erg_s^-1_cm^-3,,lumina_unavailable,kept as explicit orphan for Phase-1 review
+45,3.702400000e+04,1,3.597528805e+04,thermal,cooling_adiabatic,0,-1,,,,,erg_s^-1_cm^-3,,lumina_unavailable,kept as explicit orphan for Phase-1 review
+45,3.702400000e+04,1,3.597528805e+04,thermal,thermal_net,0,-1,,,,,erg_s^-1_cm^-3,,lumina_unavailable,kept as explicit orphan for Phase-1 review
+45,3.702400000e+04,1,3.597528805e+04,bf,Gamma_photoion_total,14,1,,4.094554828e-01,6.651445554e-07,6.155887159e+05,s^-1,Sk2PRRR:sum(PR)/Ion Density,compared,
+45,3.702400000e+04,1,3.597528805e+04,bf,alpha_recomb_total,14,1,,3.716356889e-13,,,cm^3_s^-1,Sk2PRRR:Radiative Recombination Coefficient for explicitly treated levels,unavailable,PRRR labels this coefficient but gives no inline unit and no validated repository alpha parser; numeric comparison withheld
+45,3.702400000e+04,1,3.597528805e+04,bf,alpha_recomb_spont,14,1,,3.716189170e-13,,,cm^3_s^-1,,unavailable,PRRR does not label a validated spontaneous/stimulated coefficient split
+45,3.702400000e+04,1,3.597528805e+04,bf,alpha_recomb_stim,14,1,,1.677192313e-17,,,cm^3_s^-1,,unavailable,PRRR does not label a validated spontaneous/stimulated coefficient split
+45,3.702400000e+04,1,3.597528805e+04,bf,chi_bf_at_1000A,14,1,,1.077932879e-23,,,cm^-1,,unavailable,RVTJ/PRRR/GENCOOL/EDDFACTOR provide no validated monochromatic anchor
+45,3.702400000e+04,1,3.597528805e+04,bf,eta_bf_at_1000A,14,1,,1.136388401e-31,,,erg_s^-1_cm^-3_Hz^-1_sr^-1,,unavailable,RVTJ/PRRR/GENCOOL/EDDFACTOR provide no validated monochromatic anchor
+45,3.702400000e+04,1,3.597528805e+04,bf,chi_bf_at_5000A,14,1,,4.943134663e-27,,,cm^-1,,unavailable,RVTJ/PRRR/GENCOOL/EDDFACTOR provide no validated monochromatic anchor
+45,3.702400000e+04,1,3.597528805e+04,bf,eta_bf_at_5000A,14,1,,2.160397995e-32,,,erg_s^-1_cm^-3_Hz^-1_sr^-1,,unavailable,RVTJ/PRRR/GENCOOL/EDDFACTOR provide no validated monochromatic anchor
+45,3.702400000e+04,1,3.597528805e+04,bb,jbar_representative,14,1,line403575_l1_u7_1533.4307A,6.524693000e-07,4.964944612e-06,1.314152223e-01,erg_s^-1_cm^-2_Hz^-1_sr^-1,EDDFACTOR:record_frequency=1.955062180e+15Hz,compared,nearest native CMFGEN frequency at speed-matched depth
+45,3.702400000e+04,1,3.597528805e+04,bb,jbar_input_raw,14,1,line403575_l1_u7_1533.4307A,6.524693000e-07,4.964944612e-06,1.314152223e-01,erg_s^-1_cm^-2_Hz^-1_sr^-1,EDDFACTOR:record_frequency=1.955062180e+15Hz,compared,nearest native CMFGEN frequency at speed-matched depth
+45,3.702400000e+04,1,3.597528805e+04,bb,sobolev_beta,14,1,line403575_l1_u7_1533.4307A,9.999248000e-01,,,dimensionless,,unavailable,GENCOOL/EDDFACTOR do not expose the matched representative transition rate
+45,3.702400000e+04,1,3.597528805e+04,bb,R_lu_radiative,14,1,line403575_l1_u7_1533.4307A,2.234086580e+03,,,s^-1,,unavailable,GENCOOL/EDDFACTOR do not expose the matched representative transition rate
+45,3.702400000e+04,1,3.597528805e+04,bb,R_ul_stimulated,14,1,line403575_l1_u7_1533.4307A,4.468173160e+03,,,s^-1,,unavailable,GENCOOL/EDDFACTOR do not expose the matched representative transition rate
+45,3.702400000e+04,1,3.597528805e+04,bb,R_ul_spontaneous,14,1,line403575_l1_u7_1533.4307A,7.545432541e+08,,,s^-1,,unavailable,GENCOOL/EDDFACTOR do not expose the matched representative transition rate
+45,3.702400000e+04,1,3.597528805e+04,collisional,C_lu,14,1,line403575_l1_u7_1533.4307A,7.560288406e-08,,,s^-1,,unavailable,GENCOOL exposes aggregate collisional cooling not this representative C rate
+45,3.702400000e+04,1,3.597528805e+04,collisional,C_ul,14,1,line403575_l1_u7_1533.4307A,4.024121737e-04,,,s^-1,,unavailable,GENCOOL exposes aggregate collisional cooling not this representative C rate
+45,3.702400000e+04,1,3.597528805e+04,bf,Gamma_photoion_total,14,2,,,8.009172359e-07,,,SkIIIPRRR:sum(PR)/Ion Density,lumina_unavailable,ion is not a lower member of an assembled NLTE pair
+45,3.702400000e+04,1,3.597528805e+04,bf,alpha_recomb_total,14,2,,,,,,SkIIIPRRR:Radiative Recombination Coefficient for explicitly treated levels,lumina_unavailable,ion is not a lower member of an assembled NLTE pair
+45,3.702400000e+04,1,3.597528805e+04,bf,alpha_recomb_spont,14,2,,,,,,,lumina_unavailable,ion is not a lower member of an assembled NLTE pair
+45,3.702400000e+04,1,3.597528805e+04,bf,alpha_recomb_stim,14,2,,,,,,,lumina_unavailable,ion is not a lower member of an assembled NLTE pair
+45,3.702400000e+04,1,3.597528805e+04,bf,chi_bf_at_1000A,14,2,,2.157363519e-26,,,cm^-1,,unavailable,RVTJ/PRRR/GENCOOL/EDDFACTOR provide no validated monochromatic anchor
+45,3.702400000e+04,1,3.597528805e+04,bf,eta_bf_at_1000A,14,2,,8.296907032e-31,,,erg_s^-1_cm^-3_Hz^-1_sr^-1,,unavailable,RVTJ/PRRR/GENCOOL/EDDFACTOR provide no validated monochromatic anchor
+45,3.702400000e+04,1,3.597528805e+04,bf,chi_bf_at_5000A,14,2,,8.608451723e-30,,,cm^-1,,unavailable,RVTJ/PRRR/GENCOOL/EDDFACTOR provide no validated monochromatic anchor
+45,3.702400000e+04,1,3.597528805e+04,bf,eta_bf_at_5000A,14,2,,1.537665840e-31,,,erg_s^-1_cm^-3_Hz^-1_sr^-1,,unavailable,RVTJ/PRRR/GENCOOL/EDDFACTOR provide no validated monochromatic anchor
+45,3.702400000e+04,1,3.597528805e+04,bb,jbar_representative,14,2,line282644_l0_u4_1206.5000A,1.034507000e-07,2.987722140e-06,3.462527475e-02,erg_s^-1_cm^-2_Hz^-1_sr^-1,EDDFACTOR:record_frequency=2.484850976e+15Hz,compared,nearest native CMFGEN frequency at speed-matched depth
+45,3.702400000e+04,1,3.597528805e+04,bb,jbar_input_raw,14,2,line282644_l0_u4_1206.5000A,1.034507000e-07,2.987722140e-06,3.462527475e-02,erg_s^-1_cm^-2_Hz^-1_sr^-1,EDDFACTOR:record_frequency=2.484850976e+15Hz,compared,nearest native CMFGEN frequency at speed-matched depth
+45,3.702400000e+04,1,3.597528805e+04,bb,sobolev_beta,14,2,line282644_l0_u4_1206.5000A,1.503867000e-04,,,dimensionless,,unavailable,GENCOOL/EDDFACTOR do not expose the matched representative transition rate
+45,3.702400000e+04,1,3.597528805e+04,bb,R_lu_radiative,14,2,line282644_l0_u4_1206.5000A,5.358106794e-01,,,s^-1,,unavailable,GENCOOL/EDDFACTOR do not expose the matched representative transition rate
+45,3.702400000e+04,1,3.597528805e+04,bb,R_ul_stimulated,14,2,line282644_l0_u4_1206.5000A,1.786035598e-01,,,s^-1,,unavailable,GENCOOL/EDDFACTOR do not expose the matched representative transition rate
+45,3.702400000e+04,1,3.597528805e+04,bb,R_ul_spontaneous,14,2,line282644_l0_u4_1206.5000A,3.905542599e+05,,,s^-1,,unavailable,GENCOOL/EDDFACTOR do not expose the matched representative transition rate
+45,3.702400000e+04,1,3.597528805e+04,collisional,C_lu,14,2,line282644_l0_u4_1206.5000A,3.568451703e-08,,,s^-1,,unavailable,GENCOOL exposes aggregate collisional cooling not this representative C rate
+45,3.702400000e+04,1,3.597528805e+04,collisional,C_ul,14,2,line282644_l0_u4_1206.5000A,2.682747825e-04,,,s^-1,,unavailable,GENCOOL exposes aggregate collisional cooling not this representative C rate
+45,3.702400000e+04,1,3.597528805e+04,bf,Gamma_photoion_total,16,1,,1.317759645e-03,6.446397152e-07,2.044180050e+03,s^-1,S2PRRR:sum(PR)/Ion Density,compared,
+45,3.702400000e+04,1,3.597528805e+04,bf,alpha_recomb_total,16,1,,4.408246992e-12,,,cm^3_s^-1,S2PRRR:Radiative Recombination Coefficient for explicitly treated levels,unavailable,PRRR labels this coefficient but gives no inline unit and no validated repository alpha parser; numeric comparison withheld
+45,3.702400000e+04,1,3.597528805e+04,bf,alpha_recomb_spont,16,1,,4.408124862e-12,,,cm^3_s^-1,,unavailable,PRRR does not label a validated spontaneous/stimulated coefficient split
+45,3.702400000e+04,1,3.597528805e+04,bf,alpha_recomb_stim,16,1,,1.221297927e-16,,,cm^3_s^-1,,unavailable,PRRR does not label a validated spontaneous/stimulated coefficient split
+45,3.702400000e+04,1,3.597528805e+04,bf,chi_bf_at_1000A,16,1,,1.022374017e-23,,,cm^-1,,unavailable,RVTJ/PRRR/GENCOOL/EDDFACTOR provide no validated monochromatic anchor
+45,3.702400000e+04,1,3.597528805e+04,bf,eta_bf_at_1000A,16,1,,2.854680859e-32,,,erg_s^-1_cm^-3_Hz^-1_sr^-1,,unavailable,RVTJ/PRRR/GENCOOL/EDDFACTOR provide no validated monochromatic anchor
+45,3.702400000e+04,1,3.597528805e+04,bf,chi_bf_at_5000A,16,1,,9.785336893e-26,,,cm^-1,,unavailable,RVTJ/PRRR/GENCOOL/EDDFACTOR provide no validated monochromatic anchor
+45,3.702400000e+04,1,3.597528805e+04,bf,eta_bf_at_5000A,16,1,,1.429588173e-32,,,erg_s^-1_cm^-3_Hz^-1_sr^-1,,unavailable,RVTJ/PRRR/GENCOOL/EDDFACTOR provide no validated monochromatic anchor
+45,3.702400000e+04,1,3.597528805e+04,bb,jbar_representative,16,1,line301666_l0_u5_1259.5189A,1.697185642e-07,1.515018823e-06,1.120240631e-01,erg_s^-1_cm^-2_Hz^-1_sr^-1,EDDFACTOR:record_frequency=2.380247636e+15Hz,compared,nearest native CMFGEN frequency at speed-matched depth
+45,3.702400000e+04,1,3.597528805e+04,bb,jbar_input_raw,16,1,,,,,,,lumina_unavailable,line absent from frozen jbar writer
+45,3.702400000e+04,1,3.597528805e+04,bb,sobolev_beta,16,1,line301666_l0_u5_1259.5189A,1.000000000e+00,,,dimensionless,,unavailable,GENCOOL/EDDFACTOR do not expose the matched representative transition rate
+45,3.702400000e+04,1,3.597528805e+04,bb,R_lu_radiative,16,1,line301666_l0_u5_1259.5189A,6.532334678e+01,,,s^-1,,unavailable,GENCOOL/EDDFACTOR do not expose the matched representative transition rate
+45,3.702400000e+04,1,3.597528805e+04,bb,R_ul_stimulated,16,1,line301666_l0_u5_1259.5189A,4.354889785e+01,,,s^-1,,unavailable,GENCOOL/EDDFACTOR do not expose the matched representative transition rate
+45,3.702400000e+04,1,3.597528805e+04,bb,R_ul_spontaneous,16,1,line301666_l0_u5_1259.5189A,5.102000000e+07,,,s^-1,,unavailable,GENCOOL/EDDFACTOR do not expose the matched representative transition rate
+45,3.702400000e+04,1,3.597528805e+04,collisional,C_lu,16,1,line301666_l0_u5_1259.5189A,1.360406573e-08,,,s^-1,,unavailable,GENCOOL exposes aggregate collisional cooling not this representative C rate
+45,3.702400000e+04,1,3.597528805e+04,collisional,C_ul,16,1,line301666_l0_u5_1259.5189A,1.341373912e-04,,,s^-1,,unavailable,GENCOOL exposes aggregate collisional cooling not this representative C rate
+45,3.702400000e+04,1,3.597528805e+04,bf,Gamma_photoion_total,16,2,,,2.788495075e-06,,,SIIIPRRR:sum(PR)/Ion Density,lumina_unavailable,ion is not a lower member of an assembled NLTE pair
+45,3.702400000e+04,1,3.597528805e+04,bf,alpha_recomb_total,16,2,,,,,,SIIIPRRR:Radiative Recombination Coefficient for explicitly treated levels,lumina_unavailable,ion is not a lower member of an assembled NLTE pair
+45,3.702400000e+04,1,3.597528805e+04,bf,alpha_recomb_spont,16,2,,,,,,,lumina_unavailable,ion is not a lower member of an assembled NLTE pair
+45,3.702400000e+04,1,3.597528805e+04,bf,alpha_recomb_stim,16,2,,,,,,,lumina_unavailable,ion is not a lower member of an assembled NLTE pair
+45,3.702400000e+04,1,3.597528805e+04,bf,chi_bf_at_1000A,16,2,,6.090403245e-25,,,cm^-1,,unavailable,RVTJ/PRRR/GENCOOL/EDDFACTOR provide no validated monochromatic anchor
+45,3.702400000e+04,1,3.597528805e+04,bf,eta_bf_at_1000A,16,2,,8.128372616e-31,,,erg_s^-1_cm^-3_Hz^-1_sr^-1,,unavailable,RVTJ/PRRR/GENCOOL/EDDFACTOR provide no validated monochromatic anchor
+45,3.702400000e+04,1,3.597528805e+04,bf,chi_bf_at_5000A,16,2,,1.852758895e-31,,,cm^-1,,unavailable,RVTJ/PRRR/GENCOOL/EDDFACTOR provide no validated monochromatic anchor
+45,3.702400000e+04,1,3.597528805e+04,bf,eta_bf_at_5000A,16,2,,3.082599569e-32,,,erg_s^-1_cm^-3_Hz^-1_sr^-1,,unavailable,RVTJ/PRRR/GENCOOL/EDDFACTOR provide no validated monochromatic anchor
+45,3.702400000e+04,1,3.597528805e+04,bb,jbar_representative,16,2,line280644_l2_u8_1200.9660A,1.425776769e-07,2.786116394e-06,5.117434333e-02,erg_s^-1_cm^-2_Hz^-1_sr^-1,EDDFACTOR:record_frequency=2.496300635e+15Hz,compared,nearest native CMFGEN frequency at speed-matched depth
+45,3.702400000e+04,1,3.597528805e+04,bb,jbar_input_raw,16,2,,,,,,,lumina_unavailable,line absent from frozen jbar writer
+45,3.702400000e+04,1,3.597528805e+04,bb,sobolev_beta,16,2,line280644_l2_u8_1200.9660A,1.000000000e+00,,,dimensionless,,unavailable,GENCOOL/EDDFACTOR do not expose the matched representative transition rate
+45,3.702400000e+04,1,3.597528805e+04,bb,R_lu_radiative,16,2,line280644_l2_u8_1200.9660A,5.750019037e+01,,,s^-1,,unavailable,GENCOOL/EDDFACTOR do not expose the matched representative transition rate
+45,3.702400000e+04,1,3.597528805e+04,bb,R_ul_stimulated,16,2,line280644_l2_u8_1200.9660A,4.107156455e+01,,,s^-1,,unavailable,GENCOOL/EDDFACTOR do not expose the matched representative transition rate
+45,3.702400000e+04,1,3.597528805e+04,bb,R_ul_spontaneous,16,2,line280644_l2_u8_1200.9660A,6.607000000e+07,,,s^-1,,unavailable,GENCOOL/EDDFACTOR do not expose the matched representative transition rate
+45,3.702400000e+04,1,3.597528805e+04,collisional,C_lu,16,2,line280644_l2_u8_1200.9660A,6.814771478e-09,,,s^-1,,unavailable,GENCOOL exposes aggregate collisional cooling not this representative C rate
+45,3.702400000e+04,1,3.597528805e+04,collisional,C_ul,16,2,line280644_l2_u8_1200.9660A,1.149749068e-04,,,s^-1,,unavailable,GENCOOL exposes aggregate collisional cooling not this representative C rate
+45,3.702400000e+04,1,3.597528805e+04,bf,Gamma_photoion_total,26,1,,0.000000000e+00,3.357747661e-07,0.000000000e+00,s^-1,Fe2PRRR:sum(PR)/Ion Density,compared,
+45,3.702400000e+04,1,3.597528805e+04,bf,alpha_recomb_total,26,1,,8.536615548e-12,,,cm^3_s^-1,Fe2PRRR:Radiative Recombination Coefficient for explicitly treated levels,unavailable,PRRR labels this coefficient but gives no inline unit and no validated repository alpha parser; numeric comparison withheld
+45,3.702400000e+04,1,3.597528805e+04,bf,alpha_recomb_spont,26,1,,8.536384829e-12,,,cm^3_s^-1,,unavailable,PRRR does not label a validated spontaneous/stimulated coefficient split
+45,3.702400000e+04,1,3.597528805e+04,bf,alpha_recomb_stim,26,1,,2.307184068e-16,,,cm^3_s^-1,,unavailable,PRRR does not label a validated spontaneous/stimulated coefficient split
+45,3.702400000e+04,1,3.597528805e+04,bf,chi_bf_at_1000A,26,1,,0.000000000e+00,,,cm^-1,,unavailable,RVTJ/PRRR/GENCOOL/EDDFACTOR provide no validated monochromatic anchor
+45,3.702400000e+04,1,3.597528805e+04,bf,eta_bf_at_1000A,26,1,,0.000000000e+00,,,erg_s^-1_cm^-3_Hz^-1_sr^-1,,unavailable,RVTJ/PRRR/GENCOOL/EDDFACTOR provide no validated monochromatic anchor
+45,3.702400000e+04,1,3.597528805e+04,bf,chi_bf_at_5000A,26,1,,0.000000000e+00,,,cm^-1,,unavailable,RVTJ/PRRR/GENCOOL/EDDFACTOR provide no validated monochromatic anchor
+45,3.702400000e+04,1,3.597528805e+04,bf,eta_bf_at_5000A,26,1,,0.000000000e+00,,,erg_s^-1_cm^-3_Hz^-1_sr^-1,,unavailable,RVTJ/PRRR/GENCOOL/EDDFACTOR provide no validated monochromatic anchor
+45,3.702400000e+04,1,3.597528805e+04,bb,jbar_representative,26,1,,,,,,,lumina_unavailable,no_positive_lower-level population flow selected
+45,3.702400000e+04,1,3.597528805e+04,bb,R_lu_radiative,26,1,,,,,,,lumina_unavailable,no_positive lower-level population flow selected
+45,3.702400000e+04,1,3.597528805e+04,bb,R_ul_stimulated,26,1,,,,,,,lumina_unavailable,no_positive lower-level population flow selected
+45,3.702400000e+04,1,3.597528805e+04,bb,R_ul_spontaneous,26,1,,,,,,,lumina_unavailable,no_positive lower-level population flow selected
+45,3.702400000e+04,1,3.597528805e+04,collisional,C_lu,26,1,,,,,,,lumina_unavailable,no_positive lower-level population flow selected
+45,3.702400000e+04,1,3.597528805e+04,collisional,C_ul,26,1,,,,,,,lumina_unavailable,no_positive lower-level population flow selected
+45,3.702400000e+04,1,3.597528805e+04,bf,Gamma_photoion_total,26,2,,,6.546615055e-06,,,FeIIIPRRR:sum(PR)/Ion Density,lumina_unavailable,ion is not a lower member of an assembled NLTE pair
+45,3.702400000e+04,1,3.597528805e+04,bf,alpha_recomb_total,26,2,,,,,,FeIIIPRRR:Radiative Recombination Coefficient for explicitly treated levels,lumina_unavailable,ion is not a lower member of an assembled NLTE pair
+45,3.702400000e+04,1,3.597528805e+04,bf,alpha_recomb_spont,26,2,,,,,,,lumina_unavailable,ion is not a lower member of an assembled NLTE pair
+45,3.702400000e+04,1,3.597528805e+04,bf,alpha_recomb_stim,26,2,,,,,,,lumina_unavailable,ion is not a lower member of an assembled NLTE pair
+45,3.702400000e+04,1,3.597528805e+04,bf,chi_bf_at_1000A,26,2,,0.000000000e+00,,,cm^-1,,unavailable,RVTJ/PRRR/GENCOOL/EDDFACTOR provide no validated monochromatic anchor
+45,3.702400000e+04,1,3.597528805e+04,bf,eta_bf_at_1000A,26,2,,0.000000000e+00,,,erg_s^-1_cm^-3_Hz^-1_sr^-1,,unavailable,RVTJ/PRRR/GENCOOL/EDDFACTOR provide no validated monochromatic anchor
+45,3.702400000e+04,1,3.597528805e+04,bf,chi_bf_at_5000A,26,2,,0.000000000e+00,,,cm^-1,,unavailable,RVTJ/PRRR/GENCOOL/EDDFACTOR provide no validated monochromatic anchor
+45,3.702400000e+04,1,3.597528805e+04,bf,eta_bf_at_5000A,26,2,,0.000000000e+00,,,erg_s^-1_cm^-3_Hz^-1_sr^-1,,unavailable,RVTJ/PRRR/GENCOOL/EDDFACTOR provide no validated monochromatic anchor
+45,3.702400000e+04,1,3.597528805e+04,bb,jbar_representative,26,2,,,,,,,lumina_unavailable,no_positive_lower-level population flow selected
+45,3.702400000e+04,1,3.597528805e+04,bb,R_lu_radiative,26,2,,,,,,,lumina_unavailable,no_positive lower-level population flow selected
+45,3.702400000e+04,1,3.597528805e+04,bb,R_ul_stimulated,26,2,,,,,,,lumina_unavailable,no_positive lower-level population flow selected
+45,3.702400000e+04,1,3.597528805e+04,bb,R_ul_spontaneous,26,2,,,,,,,lumina_unavailable,no_positive lower-level population flow selected
+45,3.702400000e+04,1,3.597528805e+04,collisional,C_lu,26,2,,,,,,,lumina_unavailable,no_positive lower-level population flow selected
+45,3.702400000e+04,1,3.597528805e+04,collisional,C_ul,26,2,,,,,,,lumina_unavailable,no_positive lower-level population flow selected
+45,3.702400000e+04,1,3.597528805e+04,bf,Gamma_photoion_total,26,3,,,2.861489444e-06,,,FeIVPRRR:sum(PR)/Ion Density,lumina_unavailable,ion is not a lower member of an assembled NLTE pair
+45,3.702400000e+04,1,3.597528805e+04,bf,alpha_recomb_total,26,3,,,,,,FeIVPRRR:Radiative Recombination Coefficient for explicitly treated levels,lumina_unavailable,ion is not a lower member of an assembled NLTE pair
+45,3.702400000e+04,1,3.597528805e+04,bf,alpha_recomb_spont,26,3,,,,,,,lumina_unavailable,ion is not a lower member of an assembled NLTE pair
+45,3.702400000e+04,1,3.597528805e+04,bf,alpha_recomb_stim,26,3,,,,,,,lumina_unavailable,ion is not a lower member of an assembled NLTE pair
+45,3.702400000e+04,1,3.597528805e+04,bf,chi_bf_at_1000A,26,3,,0.000000000e+00,,,cm^-1,,unavailable,RVTJ/PRRR/GENCOOL/EDDFACTOR provide no validated monochromatic anchor
+45,3.702400000e+04,1,3.597528805e+04,bf,eta_bf_at_1000A,26,3,,0.000000000e+00,,,erg_s^-1_cm^-3_Hz^-1_sr^-1,,unavailable,RVTJ/PRRR/GENCOOL/EDDFACTOR provide no validated monochromatic anchor
+45,3.702400000e+04,1,3.597528805e+04,bf,chi_bf_at_5000A,26,3,,0.000000000e+00,,,cm^-1,,unavailable,RVTJ/PRRR/GENCOOL/EDDFACTOR provide no validated monochromatic anchor
+45,3.702400000e+04,1,3.597528805e+04,bf,eta_bf_at_5000A,26,3,,0.000000000e+00,,,erg_s^-1_cm^-3_Hz^-1_sr^-1,,unavailable,RVTJ/PRRR/GENCOOL/EDDFACTOR provide no validated monochromatic anchor
+45,3.702400000e+04,1,3.597528805e+04,bb,jbar_representative,26,3,,,,,,,lumina_unavailable,no_positive_lower-level population flow selected
+45,3.702400000e+04,1,3.597528805e+04,bb,R_lu_radiative,26,3,,,,,,,lumina_unavailable,no_positive lower-level population flow selected
+45,3.702400000e+04,1,3.597528805e+04,bb,R_ul_stimulated,26,3,,,,,,,lumina_unavailable,no_positive lower-level population flow selected
+45,3.702400000e+04,1,3.597528805e+04,bb,R_ul_spontaneous,26,3,,,,,,,lumina_unavailable,no_positive lower-level population flow selected
+45,3.702400000e+04,1,3.597528805e+04,collisional,C_lu,26,3,,,,,,,lumina_unavailable,no_positive lower-level population flow selected
+45,3.702400000e+04,1,3.597528805e+04,collisional,C_ul,26,3,,,,,,,lumina_unavailable,no_positive lower-level population flow selected
+45,3.702400000e+04,1,3.597528805e+04,bf,Gamma_photoion_total,27,2,,,7.887404239e-07,,,CoIIIPRRR:sum(PR)/Ion Density,lumina_unavailable,ion is not a lower member of an assembled NLTE pair
+45,3.702400000e+04,1,3.597528805e+04,bf,alpha_recomb_total,27,2,,,,,,CoIIIPRRR:Radiative Recombination Coefficient for explicitly treated levels,lumina_unavailable,ion is not a lower member of an assembled NLTE pair
+45,3.702400000e+04,1,3.597528805e+04,bf,alpha_recomb_spont,27,2,,,,,,,lumina_unavailable,ion is not a lower member of an assembled NLTE pair
+45,3.702400000e+04,1,3.597528805e+04,bf,alpha_recomb_stim,27,2,,,,,,,lumina_unavailable,ion is not a lower member of an assembled NLTE pair
+45,3.702400000e+04,1,3.597528805e+04,bf,chi_bf_at_1000A,27,2,,0.000000000e+00,,,cm^-1,,unavailable,RVTJ/PRRR/GENCOOL/EDDFACTOR provide no validated monochromatic anchor
+45,3.702400000e+04,1,3.597528805e+04,bf,eta_bf_at_1000A,27,2,,0.000000000e+00,,,erg_s^-1_cm^-3_Hz^-1_sr^-1,,unavailable,RVTJ/PRRR/GENCOOL/EDDFACTOR provide no validated monochromatic anchor
+45,3.702400000e+04,1,3.597528805e+04,bf,chi_bf_at_5000A,27,2,,0.000000000e+00,,,cm^-1,,unavailable,RVTJ/PRRR/GENCOOL/EDDFACTOR provide no validated monochromatic anchor
+45,3.702400000e+04,1,3.597528805e+04,bf,eta_bf_at_5000A,27,2,,0.000000000e+00,,,erg_s^-1_cm^-3_Hz^-1_sr^-1,,unavailable,RVTJ/PRRR/GENCOOL/EDDFACTOR provide no validated monochromatic anchor
+45,3.702400000e+04,1,3.597528805e+04,bb,jbar_representative,27,2,,,,,,,lumina_unavailable,no_positive_lower-level population flow selected
+45,3.702400000e+04,1,3.597528805e+04,bb,R_lu_radiative,27,2,,,,,,,lumina_unavailable,no_positive lower-level population flow selected
+45,3.702400000e+04,1,3.597528805e+04,bb,R_ul_stimulated,27,2,,,,,,,lumina_unavailable,no_positive lower-level population flow selected
+45,3.702400000e+04,1,3.597528805e+04,bb,R_ul_spontaneous,27,2,,,,,,,lumina_unavailable,no_positive lower-level population flow selected
+45,3.702400000e+04,1,3.597528805e+04,collisional,C_lu,27,2,,,,,,,lumina_unavailable,no_positive lower-level population flow selected
+45,3.702400000e+04,1,3.597528805e+04,collisional,C_ul,27,2,,,,,,,lumina_unavailable,no_positive lower-level population flow selected
+45,3.702400000e+04,1,3.597528805e+04,ff,chi_ff_at_1000A,0,-1,,3.642468432e-30,,,cm^-1,,unavailable,RVTJ/PRRR/GENCOOL/EDDFACTOR provide no validated monochromatic anchor
+45,3.702400000e+04,1,3.597528805e+04,ff,eta_ff_at_1000A,0,-1,,8.012496091e-36,,,erg_s^-1_cm^-3_Hz^-1_sr^-1,,unavailable,RVTJ/PRRR/GENCOOL/EDDFACTOR provide no validated monochromatic anchor
+45,3.702400000e+04,1,3.597528805e+04,ff,chi_ff_at_5000A,0,-1,,4.163216927e-28,,,cm^-1,,unavailable,RVTJ/PRRR/GENCOOL/EDDFACTOR provide no validated monochromatic anchor
+45,3.702400000e+04,1,3.597528805e+04,ff,eta_ff_at_5000A,0,-1,,1.293239865e-31,,,erg_s^-1_cm^-3_Hz^-1_sr^-1,,unavailable,RVTJ/PRRR/GENCOOL/EDDFACTOR provide no validated monochromatic anchor
+45,3.702400000e+04,1,3.597528805e+04,ff,cooling_ff_grid,0,-1,,2.470027703e-15,,,erg_s^-1_cm^-3,,unavailable,GENCOOL '(ion) Free-Free Cooling' has no inline unit and no validated repository parser; no unit assumption made

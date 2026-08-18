@@ -1,0 +1,6 @@
+shell,offset,bf_euv_heat_fix,cs_fallback_fix_euv,cs_fallback_fix_all,coolant_fix,C1_fix,pump_mc_to_cmf_info,closure_pct_euv,closure_pct_all
+0,1621,-557,-88,-246,-2,-42,307,42,52
+2,3097,-777,-68,-633,-126,-33,475,32,51
+4,1699,-5,-3,-350,-146,-95,252,15,35
+6,1522,-269,-33,-699,-38,-76,83,27,71
+8,1798,-656,-56,-1683,-137,-38,122,49,140

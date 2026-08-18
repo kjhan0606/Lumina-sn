@@ -1,0 +1,110 @@
+{
+  "cap": 0,
+  "clamp": 0,
+  "floor": 0,
+  "jitter": 0,
+  "maximum_relative_error": "1E-12",
+  "observed_line_shell": [
+    [
+      15,
+      10
+    ],
+    [
+      1279130,
+      18
+    ]
+  ],
+  "physical_values_modified": false,
+  "reason_code": "LINE_NET_IDENTITIES_AND_REQUIRED_BOUNDS_REPRODUCED",
+  "schema": "lumina-a2-10-cancellation-witness-audit-v1",
+  "source_log": "/gpfs/kjhan/lumina/det_convergence_single_total_mgpu/det1234_20260815T084331Z_653f94b7f991/stderr.log",
+  "source_sha256": "f92a3a45de4ea9de5730766d8e0840fabed7696f7b67dd0909db83e513d9323f",
+  "status": "PASS",
+  "witness_count": 2,
+  "witnesses": [
+    {
+      "identity_max_relative_error": 1.3792900527997823e-16,
+      "identity_relative_errors": {
+        "absorption_identity": 3.055343672686964e-17,
+        "cancellation_condition_identity": 0.0,
+        "net_fma_identity": 3.055343672686964e-17,
+        "signed_rate_identity": 1.3792900527997823e-16,
+        "uncertainty_identity": 7.760924841212898e-17
+      },
+      "inputs": {
+        "chi_effective": "2.6297471840772978E-8",
+        "deck_scale": "0.99999982161488121",
+        "eta_per_sr": "3.4046285166846181E-162",
+        "jbar": "2.9609771047620172E-51",
+        "jbar_bound": "2.0938704855191517E-50"
+      },
+      "line": 15,
+      "phase": "UNSPECIFIED",
+      "proof_requirement": {
+        "current_jbar_bound": "2.0938704855191517E-50",
+        "current_to_required_bound_ratio": "7.071552435010950497987968748637984206606475489057855290312134231778632607311068002350929503114101514",
+        "one_sided_jbar_threshold_eta_over_chi": "1.294660010399137945972288382106248600929247203595481152345600236597580196146918876409480240772481526E-154",
+        "required_symmetric_jbar_bound_strictly_below": "2.96097710476201720000000000000000000000000000000000000000000000000000000000000000000E-51",
+        "signed_rate_to_uncertainty_ratio": "0.1414116644386377192794002645067976005692856232741321633805228986530768116134592073493470679605734907"
+      },
+      "reconstructed": {
+        "absolute_uncertainty": "6.9194822653875244370158180177813439115925741339060967244504608610876133070669820179814534E-57",
+        "absorption_per_sr": "7.78662120336526473790803825312216E-59",
+        "cancellation_condition": "1",
+        "net_per_sr": "-7.786621203365264737908038253122160000000000000000000000000000000000000000000000000000000000000000000E-59",
+        "signed_rate": "-9.784955042020853549629115655243884122220780876049970780446780530078576656850594554119434400000000000E-58"
+      },
+      "repair_counters": {
+        "clamp": 0,
+        "floor": 0,
+        "jitter": 0
+      },
+      "shell": 10,
+      "signed_direction": "HEATING",
+      "source_line_number": 422,
+      "status": "UNRESOLVED_CANCELLATION"
+    },
+    {
+      "identity_max_relative_error": 1.2246806772541337e-13,
+      "identity_relative_errors": {
+        "absorption_identity": 2.4904429802046008e-17,
+        "cancellation_condition_identity": 1.2246806772541337e-13,
+        "net_fma_identity": 1.224537447247768e-13,
+        "signed_rate_identity": 1.223781009794666e-13,
+        "uncertainty_identity": 8.958255947875979e-17
+      },
+      "inputs": {
+        "chi_effective": "9.7379405430504441E-33",
+        "deck_scale": "0.99999994892852551",
+        "eta_per_sr": "1.919589616555497E-37",
+        "jbar": "0.000019711586301764101",
+        "jbar_bound": "1.3423475903514383E-9"
+      },
+      "line": 1279130,
+      "phase": "UNSPECIFIED",
+      "proof_requirement": {
+        "current_jbar_bound": "1.3423475903514383E-9",
+        "current_to_required_bound_ratio": "1.501417532521736995280605519924227240961568580125571448343778201588900482383608287036935747928822606",
+        "one_sided_jbar_threshold_eta_over_chi": "0.00001971248035525773302821359641457727583099122054685294208328095513863282448785550075608550245533265907",
+        "required_symmetric_jbar_bound_strictly_below": "8.940534936320282135964145772758309912205468529420832809551386328244878555007560855024553326590695731E-10",
+        "signed_rate_to_uncertainty_ratio": "0.6660372470277666425909076319099845201830891953570853622126864027621766041095968559487677851897433925"
+      },
+      "reconstructed": {
+        "absolute_uncertainty": "1.64263831225282834715174430947857823521932869384594370975783328387882566538433293335917487E-40",
+        "absorption_per_sr": "1.919502554157864047804116614872541E-37",
+        "cancellation_condition": "44095.87003218833133599751306600764828915280490003684580304892161810383633149365531067546030166344716",
+        "net_per_sr": "8.7062397632952195883385127459E-42",
+        "signed_rate": "1.0940582993552107112229640845137749652512612893736670800000624767771520945435703357211E-40"
+      },
+      "repair_counters": {
+        "clamp": 0,
+        "floor": 0,
+        "jitter": 0
+      },
+      "shell": 18,
+      "signed_direction": "COOLING",
+      "source_line_number": 826,
+      "status": "UNRESOLVED_CANCELLATION"
+    }
+  ]
+}

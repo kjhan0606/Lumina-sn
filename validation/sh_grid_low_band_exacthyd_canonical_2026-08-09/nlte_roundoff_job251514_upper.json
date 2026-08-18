@@ -1,0 +1,45 @@
+[
+  {
+    "condition_2_balanced": 2560752.1712021437,
+    "condition_2_raw": 7459267621.427819,
+    "condition_inf_balanced": 4332513.095595239,
+    "condition_inf_raw": 12233821871.837479,
+    "double": {
+      "componentwise_backward_error": 1.2533590087538786e-14,
+      "maximum_abs": 1.807273248637863e-14,
+      "minimum": -4.595383712714697e-22,
+      "minimum_index": 0,
+      "negative_count": 10,
+      "negative_relative_scale": 2.5427166125422514e-08
+    },
+    "equilibration_iterations": 10,
+    "gamma_N": 4.485301019485834e-14,
+    "header": {
+      "N": 202,
+      "Z": 14,
+      "ion": 1,
+      "n_lo": 101,
+      "shell": 4
+    },
+    "high_precision": {
+      "componentwise_backward_error_after_float64_projection": 2.8843112115302955e-16,
+      "decimal_digits": 80,
+      "max_abs_difference_from_double": 1.8932661725304283e-29,
+      "max_relative_difference_from_double": 1.0475815840008586e-15,
+      "maximum_abs": 1.8072732486378612e-14,
+      "minimum": -4.595383712714602e-22,
+      "minimum_index": 0,
+      "negative_count": 10,
+      "negative_relative_scale": 2.5427166125422015e-08
+    },
+    "historical_negative_bound_balanced_y": 3.427132787877153e-24,
+    "historical_negative_bound_raw": 9.91693731025007e-18,
+    "path": "/gpfs/kjhan/lumina/det_convergence/det1234_20260808T145122Z_09b2f7bc4f05/work/nlte_matrix.cpu.T0x1.117p+17.bin",
+    "row_cancellation": {
+      "infinite_zero_rhs_rows": 0,
+      "max_finite_zero_rhs": 1.9555558604573932e+18,
+      "median_finite_zero_rhs": 7012501588330400.0,
+      "zero_rhs_rows": 200
+    }
+  }
+]

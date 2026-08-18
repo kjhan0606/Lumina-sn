@@ -1,0 +1,9 @@
+dataset,R_root,J_cmf_field,O_truth_residual,temperature_K,delta_from_committed_K,definition
+capture_188932,0,0,0,21227.639444,0.0,"F(R,J,O)=(committed if R=0 else [own if J=0 else CMF]) + O*(truth-CMF)"
+capture_188932,0,0,1,21601.840210232236,374.20076623223576,"F(R,J,O)=(committed if R=0 else [own if J=0 else CMF]) + O*(truth-CMF)"
+capture_188932,0,1,0,21227.639444,0.0,"F(R,J,O)=(committed if R=0 else [own if J=0 else CMF]) + O*(truth-CMF)"
+capture_188932,0,1,1,21601.840210232236,374.20076623223576,"F(R,J,O)=(committed if R=0 else [own if J=0 else CMF]) + O*(truth-CMF)"
+capture_188932,1,0,0,22801.40787559042,1573.768431590419,"F(R,J,O)=(committed if R=0 else [own if J=0 else CMF]) + O*(truth-CMF)"
+capture_188932,1,0,1,23175.608641822655,1947.9691978226547,"F(R,J,O)=(committed if R=0 else [own if J=0 else CMF]) + O*(truth-CMF)"
+capture_188932,1,1,0,18385.799233767764,-2841.840210232236,"F(R,J,O)=(committed if R=0 else [own if J=0 else CMF]) + O*(truth-CMF)"
+capture_188932,1,1,1,18760.0,-2467.6394440000004,"F(R,J,O)=(committed if R=0 else [own if J=0 else CMF]) + O*(truth-CMF)"

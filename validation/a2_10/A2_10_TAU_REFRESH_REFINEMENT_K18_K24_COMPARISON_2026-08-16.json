@@ -1,0 +1,61 @@
+{
+  "baseline": {
+    "csv": "/gpfs/kjhan/lumina/a210_tau_refresh_cancellation_census_k18/det1234_20260816T041828Z_2135362336fd/a210_cancellation_census.csv",
+    "refinements": 18,
+    "sha256": "2df0a7d9853a697a2fa0da778e400c51ec80e7f337532f60be412b98366f5ca3",
+    "unresolved": 6
+  },
+  "candidate": {
+    "csv": "/gpfs/kjhan/lumina/a210_tau_refresh_cancellation_census_k24/det1234_20260816T052635Z_2135362336fd/a210_cancellation_census.csv",
+    "refinements": 24,
+    "sha256": "738d06da379020b4d097b531de7d67fbbdfdb08027ccace7462162a55fe5ede0",
+    "unresolved": 0
+  },
+  "candidate_to_baseline_bound_ratio": {
+    "maximum": null,
+    "minimum": null
+  },
+  "cap": 0,
+  "clamp": 0,
+  "floor": 0,
+  "jitter": 0,
+  "physical_values_modified": false,
+  "reason_code": "PHYSICAL_IDENTITY_PRESERVED_AND_BOUND_NONINCREASING",
+  "resolved_count": 6,
+  "resolved_line_shell": [
+    [
+      "LOWER",
+      2026622,
+      10
+    ],
+    [
+      "LOWER",
+      2057234,
+      8
+    ],
+    [
+      "LOWER",
+      2061586,
+      8
+    ],
+    [
+      "LOWER",
+      2131012,
+      9
+    ],
+    [
+      "LOWER",
+      2149336,
+      9
+    ],
+    [
+      "LOWER",
+      2162161,
+      9
+    ]
+  ],
+  "schema": "lumina-a2-10-refinement-only-comparison-v1",
+  "status": "PASS",
+  "surviving": [],
+  "surviving_count": 0
+}

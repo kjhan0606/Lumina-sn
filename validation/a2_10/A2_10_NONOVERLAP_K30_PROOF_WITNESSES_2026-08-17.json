@@ -1,0 +1,39 @@
+{
+  "baseline": "/home/kjhan/BACKUP/Eunha.A1/Claude/Lumina-sn/validation/a2_10/A2_10_NONOVERLAP_K24_PROOF_WITNESSES_2026-08-17.json",
+  "baseline_sha256": "06f81208f5c2f896390af4df273b0754dc0590cd3eea0e089a3446091a64735c",
+  "baseline_source_sha256": "bb8f03940d04b6200a5f03744c9526d273c5d623e42917052890d01629ec28e6",
+  "candidate_log_sha256": "7033453d7e6be2363ef17d99149cd22cf5936438905e8517e86d1ad8d7e29b3c",
+  "cap": 0,
+  "clamp": 0,
+  "floor": 0,
+  "jitter": 0,
+  "physical_values_modified": false,
+  "repair": 0,
+  "repair_audit_observations": 10,
+  "schema": "lumina-a2-10-k30-proof-witness-resolution-v1",
+  "status": "PASS",
+  "witnesses": [
+    {
+      "bound_to_required_ratio": 0.060311609497464516,
+      "jbar_absolute_uncertainty": 5.456555776564797e-13,
+      "line": 1154618,
+      "phase": "LOWER",
+      "physical_values_bit_exact_to_k24": true,
+      "required_jbar_bound": 9.047272692654951e-12,
+      "shell": 5,
+      "signed_rate_to_uncertainty_ratio": 16.58055568956487,
+      "status": "OK_HEATING"
+    },
+    {
+      "bound_to_required_ratio": 0.05771346719097574,
+      "jbar_absolute_uncertainty": 2.0933135159453707e-14,
+      "line": 894169,
+      "phase": "UPPER",
+      "physical_values_bit_exact_to_k24": true,
+      "required_jbar_bound": 3.6270798096716807e-13,
+      "shell": 27,
+      "signed_rate_to_uncertainty_ratio": 17.326978410272382,
+      "status": "OK_COOLING"
+    }
+  ]
+}

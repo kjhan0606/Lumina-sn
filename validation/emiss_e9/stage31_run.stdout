@@ -1,0 +1,455 @@
+[INPUT] CMFGEN EDDFACTOR_INFO: exists=1 bytes=284 lines=4 schema=text
+[INPUT] CMFGEN EDDFACTOR: exists=1 bytes=142832872 schema=OK records=196199 header_records=14 ND=90 good_freq=196185 bad_freq=0 nu=[3.498970e+12,1.000000e+18]Hz FINISH=1 endian=LE
+[UNIT] FL(1e15 Hz)->Hz->FL max_rel=2.220e-16; Hz->Angstrom->Hz max_rel=2.220e-16; J_nu kept in native CGS erg cm^-2 s^-1 Hz^-1 sr^-1
+{
+  "bands": [
+    {
+      "J_det_over_CMFGEN": 8.290551056587633,
+      "J_det_over_arithmetic_effective_J": 0.9815529265773875,
+      "J_det_relative_to_prediction": 0.9804591268640861,
+      "band": "B0",
+      "hit_within_10pct": true,
+      "lambda_hi_A": 1000.0,
+      "lambda_lo_A": 600.0,
+      "preregistered_J_over_CMFGEN": 8.455784468144271
+    },
+    {
+      "J_det_over_CMFGEN": 4.916142857911386,
+      "J_det_over_arithmetic_effective_J": 0.996540140358454,
+      "J_det_relative_to_prediction": 0.9956854828915135,
+      "band": "B1",
+      "hit_within_10pct": true,
+      "lambda_hi_A": 1500.0,
+      "lambda_lo_A": 1000.0,
+      "preregistered_J_over_CMFGEN": 4.937445551214321
+    },
+    {
+      "J_det_over_CMFGEN": 1.8398808355193037,
+      "J_det_over_arithmetic_effective_J": 0.9925519624499999,
+      "J_det_relative_to_prediction": 0.9916716591145966,
+      "band": "B2",
+      "hit_within_10pct": true,
+      "lambda_hi_A": 2000.0,
+      "lambda_lo_A": 1500.0,
+      "preregistered_J_over_CMFGEN": 1.8553326785218622
+    },
+    {
+      "J_det_over_CMFGEN": 0.2083608662891564,
+      "J_det_over_arithmetic_effective_J": 0.9850914718053142,
+      "J_det_relative_to_prediction": 0.9850536103426379,
+      "band": "B3",
+      "hit_within_10pct": true,
+      "lambda_hi_A": 2500.0,
+      "lambda_lo_A": 2000.0,
+      "preregistered_J_over_CMFGEN": 0.21152236193183518
+    },
+    {
+      "J_det_over_CMFGEN": 0.3368046856373799,
+      "J_det_over_arithmetic_effective_J": 1.0165864072092046,
+      "J_det_relative_to_prediction": 1.01649875592917,
+      "band": "B4",
+      "hit_within_10pct": true,
+      "lambda_hi_A": 3000.0,
+      "lambda_lo_A": 2500.0,
+      "preregistered_J_over_CMFGEN": 0.3313380205069809
+    },
+    {
+      "J_det_over_CMFGEN": 0.93228813450081,
+      "J_det_over_arithmetic_effective_J": 0.9960799321992206,
+      "J_det_relative_to_prediction": 0.9953459991711315,
+      "band": "BALL",
+      "hit_within_10pct": true,
+      "lambda_hi_A": 3000.0,
+      "lambda_lo_A": 600.0,
+      "preregistered_J_over_CMFGEN": 0.9366472917730794
+    }
+  ],
+  "cmfgen": {
+    "EDDFACTOR_bytes": 142832872,
+    "RVTJ_bytes": 604183,
+    "bin_integral_max_abs_error": 2.220446049250313e-16,
+    "bin_integral_ratio_max": 1.0000000000000002,
+    "bin_integral_ratio_min": 0.9999999999999998,
+    "finish": 1.0,
+    "reader": {
+      "ND": 90,
+      "bad": 0,
+      "finish": 1.0,
+      "fl_roundtrip": 2.220446049250313e-16,
+      "good": 196185,
+      "int_size": 4,
+      "little": true,
+      "nu_max": 1e+18,
+      "nu_min": 3498970000000.0,
+      "nu_roundtrip": 2.220446049250313e-16,
+      "recl": 728,
+      "records": 196199,
+      "unit_size": 1,
+      "word": 8
+    },
+    "run": "/gpfs/kjhan/cmfgen_runs/toy06_19.48d_jnu4",
+    "shell_brackets": [
+      {
+        "status": "resolved",
+        "v0": 4092.3914953,
+        "v1": 4394.1823505,
+        "velocity_kms": 4264.0,
+        "weight": 0.5686338792017842
+      },
+      {
+        "status": "resolved",
+        "v0": 4718.2285839,
+        "v1": 5066.1714044,
+        "velocity_kms": 4992.0,
+        "weight": 0.7868287545251995
+      },
+      {
+        "status": "resolved",
+        "v0": 5439.7730509,
+        "v1": 5840.9257175,
+        "velocity_kms": 5720.0,
+        "weight": 0.6985543720177273
+      },
+      {
+        "status": "resolved",
+        "v0": 6271.661137,
+        "v1": 6663.9769781,
+        "velocity_kms": 6448.0,
+        "weight": 0.44948188302967756
+      },
+      {
+        "status": "resolved",
+        "v0": 7018.7576274,
+        "v1": 7435.1541349,
+        "velocity_kms": 7176.0,
+        "weight": 0.3776265404915767
+      },
+      {
+        "status": "resolved",
+        "v0": 7435.1541349,
+        "v1": 7983.4549335,
+        "velocity_kms": 7904.0,
+        "weight": 0.8550887875726685
+      },
+      {
+        "status": "resolved",
+        "v0": 8572.1898321,
+        "v1": 9132.8822241,
+        "velocity_kms": 8632.0,
+        "weight": 0.10667198048943621
+      },
+      {
+        "status": "resolved",
+        "v0": 9132.8822241,
+        "v1": 9610.0173342,
+        "velocity_kms": 9360.0,
+        "weight": 0.47600306724944197
+      },
+      {
+        "status": "resolved",
+        "v0": 9610.0173342,
+        "v1": 10163.50575,
+        "velocity_kms": 10088.0,
+        "weight": 0.8635820590917592
+      },
+      {
+        "status": "resolved",
+        "v0": 10706.464425,
+        "v1": 11256.119932,
+        "velocity_kms": 10816.0,
+        "weight": 0.19928041037529345
+      },
+      {
+        "status": "resolved",
+        "v0": 11256.119932,
+        "v1": 11814.574274,
+        "velocity_kms": 11544.0,
+        "weight": 0.5154943678457422
+      },
+      {
+        "status": "resolved",
+        "v0": 11814.574274,
+        "v1": 12376.055806,
+        "velocity_kms": 12272.0,
+        "weight": 0.8146763516346601
+      },
+      {
+        "status": "resolved",
+        "v0": 12936.0982,
+        "v1": 13496.047373,
+        "velocity_kms": 13000.0,
+        "weight": 0.11412071502425408
+      },
+      {
+        "status": "resolved",
+        "v0": 13496.047373,
+        "v1": 14056.473143,
+        "velocity_kms": 13728.0,
+        "weight": 0.4138864403041292
+      },
+      {
+        "status": "resolved",
+        "v0": 14056.473143,
+        "v1": 14617.648395,
+        "velocity_kms": 14456.0,
+        "weight": 0.7119466790028726
+      },
+      {
+        "status": "resolved",
+        "v0": 15178.76148,
+        "v1": 15741.635247,
+        "velocity_kms": 15184.0,
+        "weight": 0.00930674035125318
+      },
+      {
+        "status": "resolved",
+        "v0": 15741.635247,
+        "v1": 16306.855147,
+        "velocity_kms": 15912.0,
+        "weight": 0.3014132251889925
+      },
+      {
+        "status": "resolved",
+        "v0": 16306.855147,
+        "v1": 16875.28639,
+        "velocity_kms": 16640.0,
+        "weight": 0.5860776604075566
+      },
+      {
+        "status": "resolved",
+        "v0": 16875.28639,
+        "v1": 17446.816315,
+        "velocity_kms": 17368.0,
+        "weight": 0.8620959086263065
+      },
+      {
+        "status": "resolved",
+        "v0": 18021.470042,
+        "v1": 18600.316808,
+        "velocity_kms": 18096.0,
+        "weight": 0.12875593745651043
+      },
+      {
+        "status": "resolved",
+        "v0": 18600.316808,
+        "v1": 19183.653601,
+        "velocity_kms": 18824.0,
+        "weight": 0.38345462635681815
+      },
+      {
+        "status": "resolved",
+        "v0": 19183.653601,
+        "v1": 19768.655989,
+        "velocity_kms": 19552.0,
+        "weight": 0.6296493938414487
+      },
+      {
+        "status": "resolved",
+        "v0": 19768.655989,
+        "v1": 20356.092088,
+        "velocity_kms": 20280.0,
+        "weight": 0.870467463389578
+      },
+      {
+        "status": "resolved",
+        "v0": 20943.793072,
+        "v1": 21533.881295,
+        "velocity_kms": 21008.0,
+        "weight": 0.10880903142511918
+      },
+      {
+        "status": "resolved",
+        "v0": 21533.881295,
+        "v1": 22127.251375,
+        "velocity_kms": 21736.0,
+        "weight": 0.3406284068114802
+      },
+      {
+        "status": "resolved",
+        "v0": 22127.251375,
+        "v1": 22719.845804,
+        "velocity_kms": 22464.0,
+        "weight": 0.5682615436804921
+      },
+      {
+        "status": "resolved",
+        "v0": 22719.845804,
+        "v1": 23315.177103,
+        "velocity_kms": 23192.0,
+        "weight": 0.793094864646111
+      },
+      {
+        "status": "resolved",
+        "v0": 23909.688047,
+        "v1": 24505.36785,
+        "velocity_kms": 23920.0,
+        "weight": 0.01731123490853084
+      },
+      {
+        "status": "resolved",
+        "v0": 24505.36785,
+        "v1": 25103.084363,
+        "velocity_kms": 24648.0,
+        "weight": 0.2386284248432677
+      },
+      {
+        "status": "resolved",
+        "v0": 25103.084363,
+        "v1": 25702.348976,
+        "velocity_kms": 25376.0,
+        "weight": 0.4554175752740443
+      },
+      {
+        "status": "resolved",
+        "v0": 25702.348976,
+        "v1": 26302.687806,
+        "velocity_kms": 26104.0,
+        "weight": 0.6690405549812569
+      },
+      {
+        "status": "resolved",
+        "v0": 26302.687806,
+        "v1": 26903.747431,
+        "velocity_kms": 26832.0,
+        "weight": 0.8806317576230478
+      },
+      {
+        "status": "resolved",
+        "v0": 27505.364384,
+        "v1": 28107.677855,
+        "velocity_kms": 27560.0,
+        "weight": 0.09070960327234563
+      },
+      {
+        "status": "resolved",
+        "v0": 28107.677855,
+        "v1": 28711.047603,
+        "velocity_kms": 28288.0,
+        "weight": 0.2988584455845126
+      },
+      {
+        "status": "resolved",
+        "v0": 28711.047603,
+        "v1": 29315.936463,
+        "velocity_kms": 29016.0,
+        "weight": 0.504146161660179
+      },
+      {
+        "status": "resolved",
+        "v0": 29315.936463,
+        "v1": 29922.773904,
+        "velocity_kms": 29744.0,
+        "weight": 0.705400669237875
+      },
+      {
+        "status": "resolved",
+        "v0": 29922.773904,
+        "v1": 30531.846237,
+        "velocity_kms": 30472.0,
+        "weight": 0.9017419873511122
+      },
+      {
+        "status": "resolved",
+        "v0": 31143.427304,
+        "v1": 31757.818766,
+        "velocity_kms": 31200.0,
+        "weight": 0.09207923530682025
+      },
+      {
+        "status": "resolved",
+        "v0": 31757.818766,
+        "v1": 32375.398439,
+        "velocity_kms": 31928.0,
+        "weight": 0.27556158571948275
+      },
+      {
+        "status": "resolved",
+        "v0": 32375.398439,
+        "v1": 32996.652494,
+        "velocity_kms": 32656.0,
+        "weight": 0.45166958467578766
+      },
+      {
+        "status": "resolved",
+        "v0": 32996.652494,
+        "v1": 33559.855034,
+        "velocity_kms": 33384.0,
+        "weight": 0.6877588052070919
+      },
+      {
+        "status": "resolved",
+        "v0": 34070.309267,
+        "v1": 34558.425833,
+        "velocity_kms": 34112.0,
+        "weight": 0.08541142813825894
+      },
+      {
+        "status": "resolved",
+        "v0": 34558.425833,
+        "v1": 35025.747429,
+        "velocity_kms": 34840.0,
+        "weight": 0.6025276156935788
+      },
+      {
+        "status": "resolved",
+        "v0": 35497.71049,
+        "v1": 35663.366654,
+        "velocity_kms": 35568.0,
+        "weight": 0.42430965623471967
+      },
+      {
+        "status": "UNRESOLVED-outside-RVTJ-grid",
+        "velocity_kms": 36296.0
+      },
+      {
+        "status": "UNRESOLVED-outside-RVTJ-grid",
+        "velocity_kms": 37024.0
+      },
+      {
+        "status": "UNRESOLVED-outside-RVTJ-grid",
+        "velocity_kms": 37752.0
+      },
+      {
+        "status": "UNRESOLVED-outside-RVTJ-grid",
+        "velocity_kms": 38480.0
+      },
+      {
+        "status": "UNRESOLVED-outside-RVTJ-grid",
+        "velocity_kms": 39208.0
+      },
+      {
+        "status": "UNRESOLVED-outside-RVTJ-grid",
+        "velocity_kms": 39936.0
+      }
+    ],
+    "unresolved_shells_outside_RVTJ_grid": [
+      44,
+      45,
+      46,
+      47,
+      48,
+      49
+    ]
+  },
+  "driver_metadata": {
+    "bdf_eta_negative": "358662",
+    "clamp": "0",
+    "nonfinite": "0",
+    "sign_uncertain": "0",
+    "solution_negative_excess": "0",
+    "solution_roundoff_enclosure_restart": "1624",
+    "solution_sign_indeterminate_subtruncation": "974903",
+    "solution_subtruncation": "118679",
+    "source_iterations": "1",
+    "source_residual": "0",
+    "transport_residual": "8.1805699875510057e-07"
+  },
+  "formal_solve_only": true,
+  "jdet_sha256": "59ea65a2ac716c1324b853a85b03de77d175442b3473372dbaf1e5c47899a473",
+  "payload_sha256": "f67c31c0920ee30ccef289ac0daab3a04896cd820321b979a77c9273baa600b2",
+  "repair_implemented": false,
+  "scattering_reconvergence": false,
+  "schema": "lumina-emiss-e9-stage31-v1",
+  "shell": 8,
+  "trip_1208_recurred": false
+}

@@ -1,0 +1,166 @@
+[popcob] ND=90 ions=['Co2', 'CoIII', 'CoIV', 'CoV', 'CoSIX']
+[osc]    CoIII levels=1000 parsed=1000 chi=270200.0 cm^-1 = 33.500530 eV
+[phot]   terms=386 unit=Megabarns splitJ=False routes=1
+[edd]    ND=90 nfreq=196185 nu=[3.4990e+12,1.0000e+18] Hz lam=[3.00,8.568e+05] A FINISH=1.0
+[rvtj]   V=[35975,1025] km/s  Te=[16498,23021] K
+
+=== V1  POPCOB round-trip (DCI(ion) == ground pop of next ion) ===
+      Co2 DCI / CoIII   ground : min=1.00000000 max=1.00000000   off-by->1e-6 depths: 0/90
+    CoIII DCI / CoIV    ground : min=1.00000000 max=1.00000000   off-by->1e-6 depths: 0/90
+     CoIV DCI / CoV     ground : min=1.00000000 max=1.00000000   off-by->1e-6 depths: 0/90
+      CoV DCI / CoSIX   ground : min=1.00000000 max=1.00000000   off-by->1e-6 depths: 0/90
+  V1 = PASS
+
+=== V3  level -> phot-term matching by NAME ===
+  matched 1000/1000 levels  (100.00%)  cs_type histogram={1: 1000}
+  distinct phot terms used = 386 of 386 in file
+  Seaton params: A1 unique=[1.0]  A2 unique=[2.0]  A0(Mb) range=[1.6826,4.3755]
+  UNMATCHED: none
+
+  levels above the ionization limit (nu_th<=0): 0
+  nu_th(ground) = 8.100392e+15 Hz  (osc column 8.10039e15) lam_th = 370.096 A
+
+=== V4  population closure ===
+  modelled Co stages = Co II..Co VI (+Co VII ground via DCI); Co VII excited and Co VIII+ are NOT in the model, so closure must fail where Co is highly ionized.
+  SUM_ions SUM_l n_l (+top DCI) / POP_SPECIES(Co): min=0.015029 max=1.071608
+  n_CoIII: min=1.6758e-11 max=2.8094e+08 cm^-3
+  Co III ion fraction: min=0.0000 max=1.0638
+  closure at the 9 forming-shell depths:
+    s0 depth= 67 v=    4394 POP_SPECIES=1.28186e+09 sum=1.28190e+09 ratio=1.000033  X(CoIII)=0.0012
+    s1 depth= 63 v=    5841 POP_SPECIES=7.77645e+08 sum=7.77821e+08 ratio=1.000226  X(CoIII)=0.0206
+    s2 depth= 60 v=    7019 POP_SPECIES=5.06990e+08 sum=5.06629e+08 ratio=0.999290  X(CoIII)=0.3662
+    s3 depth= 58 v=    7983 POP_SPECIES=2.93857e+08 sum=2.92405e+08 ratio=0.995057  X(CoIII)=0.8982
+    s4 depth= 57 v=    8572 POP_SPECIES=1.88801e+08 sum=1.86216e+08 ratio=0.986310  X(CoIII)=0.9605   <-- OFF
+    s5 depth= 56 v=    9133 POP_SPECIES=1.14255e+08 sum=1.12442e+08 ratio=0.984127  X(CoIII)=0.9788   <-- OFF
+    s6 depth= 54 v=   10164 POP_SPECIES=3.53189e+07 sum=3.21317e+07 ratio=0.909759  X(CoIII)=0.9095   <-- OFF
+    s7 depth= 53 v=   10706 POP_SPECIES=1.57706e+07 sum=1.39140e+07 ratio=0.882277  X(CoIII)=0.8820   <-- OFF
+    s8 depth= 51 v=   11815 POP_SPECIES=1.05652e+06 sum=1.13218e+06 ratio=1.071608  X(CoIII)=1.0638   <-- OFF
+  V4 = PARTIAL (closure tol 5e-3 at the forming shells)
+
+=== rates ===
+=== cross-checks ===
+  radiation field units: INT J dnu (innermost, d=90) = 4.7894e+12 vs sigma*T^4/pi = 5.0694e+12  ratio=0.9448
+  brute-force ground R(s0) = 4.437683e-01  vs cumulative-kernel 4.437683e-01  rel.diff=+0.00000%
+
+=== V2  Gamma_gnd anchor reproduction (repo gamma_feiii_coiii_formingshells.csv) ===
+  shell v_target  v_cmfgen depth      anchor   this work   ratio
+     s0     4264    4394.2    67  4.3443e-01  4.4377e-01   1.022
+     s1     5720    5840.9    63  1.6147e-02  1.6330e-02   1.011
+     s2     7176    7018.8    60  3.8711e-04  3.9358e-04   1.017
+     s3     7904    7983.5    58  1.6823e-05  1.7138e-05   1.019
+     s4     8632    8572.2    57  3.6805e-06  3.7530e-06   1.020
+     s5     9360    9132.9    56  6.6631e-07  6.8029e-07   1.021
+     s6    10088   10163.5    54  1.8844e-08  1.9284e-08   1.023
+     s7    10816   10706.5    53  1.9468e-08  1.9904e-08   1.022
+     s8    11544   11814.6    51  1.7267e-07  1.7578e-07   1.018
+  V2 = PASS (factor-2 gate, all 9 shells)
+
+=== integration convergence: 2x refined nu grid, top-5 contributing levels at s0 ===
+  lev#  12 3d7_a2He[11/2]             R=2.619022e+00  R(2x)=2.618706e+00  rel.diff=-0.0121%
+  lev#  30 3d6(3H)4s_a4He[13/2]       R=9.603388e+01  R(2x)=9.602956e+01  rel.diff=-0.0045%
+  lev#   1 3d7_a4Fe[9/2]              R=4.437683e-01  R(2x)=4.437079e-01  rel.diff=-0.0136%
+  lev#   8 3d7_a2Ge[9/2]              R=1.675058e+00  R(2x)=1.674841e+00  rel.diff=-0.0130%
+  lev#  14 3d7_a2He[9/2]              R=2.756785e+00  R(2x)=2.756460e+00  rel.diff=-0.0118%
+  Gamma_all(s0) native=1.490332e+01  2x=1.490303e+01  rel.diff=-0.0020%
+
+=== forming shells: Gamma_all / Gamma_gnd ===
+  shell    v_cmf      Te    n_CoIII       G_gnd       G_all    ratio     G_boltz  b-ratio  no_sig%
+     s0     4394   18536  1.484e+06  4.4377e-01  1.4903e+01   33.584  2.1305e+01   48.009   0.0000
+     s1     5841   16154  1.600e+07  1.6330e-02  5.9794e-01   36.615  9.0401e-01   55.357   0.0000
+     s2     7019   13925  1.857e+08  3.9358e-04  1.5625e-02   39.700  2.0618e-02   52.385   0.0000
+     s3     7983   12560  2.639e+08  1.7138e-05  7.2948e-04   42.566  9.4629e-04   55.217   0.0000
+     s4     8572   11987  1.813e+08  3.7530e-06  1.6775e-04   44.698  2.1155e-04   56.369   0.0000
+     s5     9133   11387  1.118e+08  6.8029e-07  3.2534e-05   47.824  3.8617e-05   56.765   0.0000
+     s6    10164   10323  3.212e+07  1.9284e-08  1.1000e-06   57.042  1.1650e-06   60.414   0.0000
+     s7    10706   10118  1.391e+07  1.9904e-08  1.4914e-06   74.931  8.7820e-07   44.121   0.0000
+     s8    11815   10173  1.124e+06  1.7578e-07  2.3885e-05  135.880  4.6974e-06   26.724   0.0000
+
+=== how concentrated is Gamma_all? (no single level dominates -> report the spread) ===
+  shell  N(50%)  N(90%)  N(99%)  <E_l>_w(eV) <lam_th>_w(A) | contribution share by E_l band (eV)
+                                                            | 0-1  1-3  3-6  6-10  10-14  14-18  18-40
+     s0     169     651     925       17.671        1011.8 | 0.019  0.044  0.030  0.099  0.125  0.205  0.479
+     s1     175     656     927       17.847        1023.1 | 0.019  0.042  0.028  0.093  0.122  0.207  0.488
+     s2     181     660     928       18.041        1033.6 | 0.020  0.041  0.026  0.087  0.117  0.209  0.500
+     s3     177     653     926       17.949        1024.3 | 0.020  0.041  0.026  0.087  0.118  0.215  0.493
+     s4     171     645     923       17.827        1013.3 | 0.019  0.041  0.027  0.090  0.118  0.220  0.484
+     s5     167     639     922       17.756        1006.4 | 0.018  0.042  0.027  0.092  0.116  0.226  0.479
+     s6     173     637     920       17.995        1017.3 | 0.016  0.040  0.025  0.089  0.107  0.229  0.494
+     s7     172     620     913       18.086        1013.5 | 0.013  0.035  0.023  0.092  0.110  0.232  0.495
+     s8     148     573     892       18.830        1032.8 | 0.007  0.035  0.012  0.032  0.076  0.344  0.493
+
+=== super-level view (CoIII_F_TO_S): which SOLVED degree of freedom carries Gamma_all ===
+  1000 F-levels -> 52 super levels; F_TO_S level names/order identical to CoIII_F_OSCDAT (independent confirmation of the level ordering used for POPCOB)
+  within-super-level n_l/(g exp(-E/kTe)) spread at s0: median=3.20e-08 max=9.33e-08  -> Boltzmann-at-Te inside each SL is CONFIRMED
+  s0: top super levels (share | SL# | E_min eV | n_F): 0.094|SL20|15.27eV|43, 0.067|SL45|25.61eV|148, 0.061|SL10|8.79eV|15, 0.053|SL21|15.62eV|25, 0.041|SL33|22.13eV|47, 0.037|SL42|24.38eV|60, 0.036|SL38|23.91eV|62, 0.036|SL23|17.22eV|22
+      super levels for 50%/90% of Gamma_all: 11/31 of 52
+  s6: top super levels (share | SL# | E_min eV | n_F): 0.100|SL20|15.27eV|43, 0.063|SL45|25.61eV|148, 0.059|SL21|15.62eV|25, 0.056|SL10|8.79eV|15, 0.046|SL33|22.13eV|47, 0.044|SL23|17.22eV|22, 0.041|SL42|24.38eV|60, 0.041|SL38|23.91eV|62
+      super levels for 50%/90% of Gamma_all: 10/31 of 52
+  s8: top super levels (share | SL# | E_min eV | n_F): 0.148|SL20|15.27eV|43, 0.088|SL21|15.62eV|25, 0.077|SL23|17.22eV|22, 0.053|SL42|24.38eV|60, 0.048|SL45|25.61eV|148, 0.043|SL26|19.30eV|19, 0.040|SL46|26.19eV|74, 0.038|SL38|23.91eV|62
+      super levels for 50%/90% of Gamma_all: 8/27 of 52
+
+=== V5  vs CMFGEN's OWN converged rate (CoIIIPRRR, PRRR_SL_V6:126) ===
+  PR(SL,d) = n_SL * R_SL [cm^-3 s^-1]  =>  Gamma_all_CMFGEN = SUM_SL PR / n_CoIII
+  shell depth  Gamma_all(this)  Gamma_all(CMFGEN)   ratio
+     s0    67       1.4903e+01         1.5012e+01   0.993
+     s1    63       5.9794e-01         6.0238e-01   0.993
+     s2    60       1.5625e-02         1.5744e-02   0.992
+     s3    58       7.2948e-04         7.3611e-04   0.991
+     s4    57       1.6775e-04         1.6959e-04   0.989
+     s5    56       3.2534e-05         3.3052e-05   0.984
+     s6    54       1.1000e-06         1.1302e-06   0.973
+     s7    53       1.4914e-06         1.5354e-06   0.971
+     s8    51       2.3885e-05         2.7150e-05   0.880
+  V5 = PASS (factor-2 gate vs CMFGEN's own rate)
+  V5b ground super level SL1 = ['3d7_a4Fe[9/2]', '3d7_a4Fe[7/2]', '3d7_a4Fe[5/2]', '3d7_a4Fe[3/2]']
+  shell depth   R_SL1(this)   R_SL1(CMFGEN)   ratio  Gamma_gnd(J=9/2)
+     s0    67    4.7176e-01      4.7571e-01   0.992        4.4377e-01
+     s1    63    1.7476e-02      1.7606e-02   0.993        1.6330e-02
+     s2    60    4.2485e-04      4.2765e-04   0.993        3.9358e-04
+     s3    58    1.8669e-05      1.8806e-05   0.993        1.7138e-05
+     s4    57    4.1126e-06      4.1496e-06   0.991        3.7530e-06
+     s5    56    7.5138e-07      7.6178e-07   0.986        6.8029e-07
+     s6    54    2.1702e-08      2.2266e-08   0.975        1.9284e-08
+     s7    53    2.2861e-08      2.3523e-08   0.972        1.9904e-08
+     s8    51    2.1890e-07      2.4896e-07   0.879        1.7578e-07
+
+[out] /home/kjhan/BACKUP/Eunha.A1/Claude/Lumina-sn/validation/cmfgen_toy06_19p48d/analysis/gamma_coiii_alllevel/gamma_coiii_alllevel.csv
+[out] /home/kjhan/BACKUP/Eunha.A1/Claude/Lumina-sn/validation/cmfgen_toy06_19p48d/analysis/gamma_coiii_alllevel/gamma_coiii_level_breakdown.csv
+
+--- s0 (depth 67, v=4394 km/s, Te=18536 K) top-10 contributors to Gamma_all=1.4903e+01 ---
+    #   lev name                          E(eV)    lam_th    sig0      n_l/n         R_l   share
+    1    12 3d7_a2He[11/2]                2.817     404.1   1.757  4.630e-02   2.619e+00  0.0081
+    2    30 3d6(3H)4s_a4He[13/2]          8.880     503.6   1.961  1.114e-03   9.603e+01  0.0072
+    3     1 3d7_a4Fe[9/2]                 0.000     370.1   1.683  2.308e-01   4.438e-01  0.0069
+    4     8 3d7_a2Ge[9/2]                 2.105     394.9   1.737  6.073e-02   1.675e+00  0.0068
+    5    14 3d7_a2He[9/2]                 2.905     405.2   1.757  3.651e-02   2.757e+00  0.0068
+    6    56 3d6(1I)4s_a2Ie[13/2]         10.597     541.3   2.032  3.764e-04   2.571e+02  0.0065
+    7    31 3d6(3H)4s_a4He[11/2]          8.911     504.2   1.961  9.368e-04   9.772e+01  0.0061
+    8    18 3d6(5D)4s_a6De[9/2]           5.758     446.9   1.849  5.872e-03   1.542e+01  0.0061
+    9    40 3d6(3G)4s_a4Ge[11/2]          9.487     516.3   1.987  6.532e-04   1.366e+02  0.0060
+   10    44 3d6(3H)4s_b2He[11/2]          9.598     518.7   1.990  6.082e-04   1.454e+02  0.0059
+
+--- s6 (depth 54, v=10164 km/s, Te=10323 K) top-10 contributors to Gamma_all=1.1000e-06 ---
+    #   lev name                          E(eV)    lam_th    sig0      n_l/n         R_l   share
+    1    12 3d7_a2He[11/2]                2.817     404.1   1.757  1.778e-02   4.583e-07  0.0074
+    2    30 3d6(3H)4s_a4He[13/2]          8.880     503.6   1.961  2.606e-05   2.780e-04  0.0066
+    3     8 3d7_a2Ge[9/2]                 2.105     394.9   1.737  3.222e-02   2.158e-07  0.0063
+    4    14 3d7_a2He[9/2]                 2.905     405.2   1.757  1.341e-02   5.026e-07  0.0061
+    5     1 3d7_a4Fe[9/2]                 0.000     370.1   1.683  3.329e-01   1.928e-08  0.0058
+    6    56 3d6(1I)4s_a2Ie[13/2]         10.597     541.3   2.032  3.805e-06   1.655e-03  0.0057
+    7    31 3d6(3H)4s_a4He[11/2]          8.911     504.2   1.961  2.157e-05   2.887e-04  0.0057
+    8    40 3d6(3G)4s_a4Ge[11/2]          9.487     516.3   1.987  1.129e-05   5.263e-04  0.0054
+    9    44 3d6(3H)4s_b2He[11/2]          9.598     518.7   1.990  9.965e-06   5.913e-04  0.0054
+   10    18 3d6(5D)4s_a6De[9/2]           5.758     446.9   1.849  5.416e-04   1.031e-05  0.0051
+
+--- s8 (depth 51, v=11815 km/s, Te=10173 K) top-10 contributors to Gamma_all=2.3885e-05 ---
+    #   lev name                          E(eV)    lam_th    sig0      n_l/n         R_l   share
+    1   198 3d6(1I)4p_y2Io[13/2]         17.589     779.2   2.438  7.957e-09   2.096e+01  0.0070
+    2    12 3d7_a2He[11/2]                2.817     404.1   1.757  2.706e-02   6.151e-06  0.0070
+    3   117 3d6(3H)4p_4Io[15/2]          15.637     694.1   2.296  5.877e-08   2.650e+00  0.0065
+    4   178 3d6(a1G)4p_x2Ho[11/2]        17.251     763.0   2.411  1.004e-08   1.525e+01  0.0064
+    5   174 3d6(1I)4p_z2Ko[15/2]         17.139     757.8   2.400  1.101e-08   1.351e+01  0.0062
+    6   196 3d6(1I)4p_w2Ho[11/2]         17.505     775.1   2.432  7.507e-09   1.951e+01  0.0061
+    7   131 3d6(3H)4p_z2Io[13/2]         15.829     701.6   2.316  4.290e-08   3.350e+00  0.0060
+    8   199 3d6(1I)4p_y2Io[11/2]         17.590     779.3   2.438  6.815e-09   2.097e+01  0.0060
+    9   111 3d6(3H)4p_4Io[13/2]          15.532     690.0   2.296  5.794e-08   2.423e+00  0.0059
+   10   159 3d6(3G)4p_y4Ho[13/2]         16.413     725.6   2.353  2.122e-08   6.441e+00  0.0057

@@ -1,0 +1,3 @@
+quantity,status,required_file,reason
+tau_FUV and Lumina expansion/Rosseland line opacity,RESOLVED,validation/chain_replay_parity59/trapping_audit/results/tau_lumina_line.csv,persistent output from parameterized audit_t_expop.py
+line-list levels absent from level-population dump,UNRESOLVED,/gpfs/kjhan/lumina_runner2/scratch/instr_capture_188932/lumina_levelpop.csv,lower hit fraction=0.9394638219777324; upper hit fraction=0.9394638219777324; see tau_lumina_line.csv for the historical convention

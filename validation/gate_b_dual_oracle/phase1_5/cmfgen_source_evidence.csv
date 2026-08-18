@@ -1,0 +1,6 @@
+evidence,source_file,physical_line_1based,source_text
+ne_writer_header,/gpfs/kjhan/cmfgen_src/cur_cmf/new_main/cmfgen_sub.f,4421,"WRITE(LU_POP,'(A)')' Electron density'"
+ne_writer_value,/gpfs/kjhan/cmfgen_src/cur_cmf/new_main/cmfgen_sub.f,4423,"WRITE(LU_POP,'(1X,1P8E16.7)')ED"
+ne_unit_declaration,/gpfs/kjhan/cmfgen_src/cur_cmf/new_main/mod_subs/mod_cmfgen.f,211,"REAL(KIND=LDP), ALLOCATABLE :: ED(:)		!Electron density (#/cm^3)"
+alpha_division,/gpfs/kjhan/cmfgen_src/cur_cmf/subs/wrrecomchk_v3.f,155,TOTRR(J)=TOTRR(J)/ED(J)/DHYD(J)
+gencool_unit,/gpfs/kjhan/cmfgen_src/cur_cmf/subs/wrcoolgen_v2.f,56,"1  '(/,3X,A,'' Bound-Free Cooling [ergs/cm**3/s]'')')DESC(1:L)"

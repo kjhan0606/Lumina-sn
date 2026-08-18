@@ -1,0 +1,17 @@
+[harness] lines kept=630387 (from 793505, stride=1.00, deposit=all)
+[harness] wrote detjbar_n800_all.csv
+[harness] wrote iterhist_n800_all.csv
+# chi_line multiplier=1  (1=r-similar, 1/r=624.2 restores production blanket)
+# NB=800 NS=50 NP=66  dlognu=1.735037e-03  r=NB/NB_prod=0.001602  vdop=6.2418e+08 cm/s (ppd=12.0)
+# n_ali(LAG)=32   production-equivalent (20000*r=32.0)
+# drift budget: D(core ray, inbound)=69 bins   D(max over rays)=153 bins
+# n_ali/D_core=0.466   n_ali/D_max=0.209   (production: 0.467 / 0.210)
+# chi_es[0]=2.9015e-15 adv=1.1433e-14  kappa0=n_ali*chi_tot0/adv=24.823
+# shell  0: chi_es=2.902e-15 <chi_line>=7.893e-14  kappa_es=8.121 kappa_line=220.939
+# shell 12: chi_es=1.705e-16 <chi_line>=3.485e-15  kappa_es=0.477 kappa_line=9.754
+# shell 24: chi_es=8.514e-18 <chi_line>=1.279e-15  kappa_es=0.024 kappa_line=3.579
+# shell 36: chi_es=4.655e-19 <chi_line>=6.861e-16  kappa_es=0.001 kappa_line=1.920
+# shell 48: chi_es=3.199e-20 <chi_line>=2.999e-16  kappa_es=0.000 kappa_line=0.839
+# REF: ALI iters=15 (tol=1.0e-09) maxrel_last=1.721e-10  2.0 s
+# LAG: iters used=32 / n_ali=32 (tol=1e-4 EARLY STOP not reached) maxrel_last=1.018e-01  0.2 s
+# LAG-CONVERGED(n=4000 used=503 tol=1e-9): max rel vs REF=1.154e-08  L2 rel=1.629e-10  [same fixed point check]

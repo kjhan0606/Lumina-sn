@@ -1,0 +1,86 @@
+{
+  "active_input_bins": 305,
+  "destination": {
+    "EUV_100_600": {
+      "count": 480,
+      "count_fraction_of_paired": 0.0002585277812337915,
+      "energy": 0.0037088403248617396,
+      "energy_fraction_of_terminal": 0.00025750465718328455
+    },
+    "IR_10000_20000": {
+      "count": 351,
+      "count_fraction_of_paired": 0.00018904844002721005,
+      "energy": 0.002741462357562341,
+      "energy_fraction_of_terminal": 0.0001903396379274662
+    },
+    "UV_600_3000": {
+      "count": 1789496,
+      "count_fraction_of_paired": 0.963821730014052,
+      "energy": 13.882394229957299,
+      "energy_fraction_of_terminal": 0.9638541576204482
+    },
+    "optical_3000_10000": {
+      "count": 66297,
+      "count_fraction_of_paired": 0.035707533984284744,
+      "energy": 0.5138214876164966,
+      "energy_fraction_of_terminal": 0.03567460834998973
+    },
+    "outside_100_20000_or_unmapped": {
+      "count": 43,
+      "count_fraction_of_paired": 2.3159780402193825e-05,
+      "energy": 0.00033688241319396184,
+      "energy_fraction_of_terminal": 2.3389734451245924e-05
+    }
+  },
+  "energy_conservation_output_over_input": 1.0000007503197117,
+  "energy_conservation_relative_error": 7.503197116953686e-07,
+  "event_archive": {
+    "attempted_records": 970557187,
+    "dropped_records": 570557187,
+    "iteration": 11,
+    "line_records": 2584132,
+    "status": "TRUNCATED_PREFIX-not-an-unbiased-random-sample",
+    "stored_fraction": 0.4121343959508488,
+    "stored_records": 400000000
+  },
+  "full_iteration11_matrix": "UNRESOLVED-event cap retained a non-random prefix",
+  "input_wavelength_A": [
+    600.0,
+    3000.0
+  ],
+  "iteration10_matrix": "UNRESOLVED-no iteration-10 raw event archive",
+  "matrix_shape": [
+    1000,
+    1000
+  ],
+  "normalization": "column/input-bin stochastic; count and packet-energy probabilities both retained",
+  "paired_input_energy": 14.402992095820537,
+  "paired_terminals": 1856667,
+  "schema": "lumina-emiss-e9-redistribution-v1",
+  "shell": 8,
+  "sparse_nonzero_edges": 92287,
+  "terminal_channels": {
+    "0x10": {
+      "count": 8,
+      "energy": 6.383795835063211e-05
+    },
+    "0x11": {
+      "count": 27,
+      "energy": 0.00022245898117034812
+    },
+    "0x16": {
+      "count": 33817,
+      "energy": 0.26211634480591783
+    },
+    "0x38": {
+      "count": 1821978,
+      "energy": 14.13409383358453
+    },
+    "0x3A": {
+      "count": 837,
+      "energy": 0.0065064273394455086
+    }
+  },
+  "terminal_output_energy": 14.403002902669414,
+  "update_cadence_observed": "one archived matrix from final iteration 11 only"
+}

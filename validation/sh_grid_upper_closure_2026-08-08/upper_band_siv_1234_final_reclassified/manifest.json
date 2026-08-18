@@ -1,0 +1,70 @@
+{
+  "accuracy_checks": {
+    "finite_nonnegative": true,
+    "identity": true,
+    "milne_integral_closure": true,
+    "photo_rate_accuracy": false,
+    "sigma_reconstruction": true,
+    "threshold_contained": true
+  },
+  "accuracy_verdict": "FAIL",
+  "gates": {
+    "milne_integral_depth_max_rel": 0.02,
+    "photo_rate_accuracy_rule": "relative error only",
+    "photo_rate_depth_max_rel": 0.02,
+    "photo_rate_error_per_epoch": 1e-12,
+    "photo_rate_impact_rule": "separate classification; never substitutes for accuracy"
+  },
+  "grid": {
+    "dlog_nu": 0.005298317366548036,
+    "first_bin": 1178,
+    "n_bins": 56,
+    "nu_hi_hz": 4.036258145582311e+16,
+    "nu_lo_hz": 2.9999999999999988e+16
+  },
+  "impact_checks": {
+    "photo_rate_effect_negligible": true
+  },
+  "impact_verdict": "NEGLIGIBLE",
+  "input_sha256": {
+    "/gpfs/kjhan/cmfgen_21jun23/atomic/SIL/V/19apr23/phot_data_A_sm_3000": "8d6609658da76f99b8aee903e852b4684dd8c47f92efcb81185e356f9bcbc263",
+    "/gpfs/kjhan/cmfgen_runs/toy06_19p48d_ophys/EDDFACTOR": "5c5671663700f451779b5f58f52035aad218d12b0bdbd58fca5349653f668d4f",
+    "/gpfs/kjhan/cmfgen_runs/toy06_19p48d_ophys/RVTJ": "893775d9ccc37edd7e9c99a5343b6e975cab5c2054bc2a2e89dce4f32459f715",
+    "/gpfs/kjhan/cmfgen_runs/toy06_19p48d_ophys/atomic_links.txt": "f395a07c887330d54dfc34271b1d9688c288e85c8487896778f3ba18ff039f52",
+    "/home/kjhan/BACKUP/Eunha.A1/Claude/Lumina-sn/data/tardis_reference_toy06_19p48d_sivcaiv_active/cmfgen_sigma_bf.bin": "90d04042c17bcc5f2c7c521b65a9bb0f824179d79493f82ad40deaa7185cc3ad"
+  },
+  "metrics": {
+    "high_band_nonzero_bins": 1,
+    "milne_integral_depth_max_rel": 0.014211377458876795,
+    "photo_rate_binned_max_s1": 1.7373185183549906e-27,
+    "photo_rate_binned_min_s1": 1.5404970634201877e-79,
+    "photo_rate_depth_max_abs_s1": 1.002831261371062e-28,
+    "photo_rate_depth_max_rel": 0.6195048628854368,
+    "photo_rate_error_per_epoch": 1.687837216738316e-22,
+    "photo_rate_native_max_s1": 1.6370353922178844e-27,
+    "photo_rate_native_min_s1": 1.3766791177327095e-79,
+    "photo_rate_ratio_max": 1.3365093753449022,
+    "photo_rate_ratio_min": 0.3804951371145632,
+    "sigma_reconstruction_max_abs_cm2": 0.0,
+    "sigma_reconstruction_max_rel": 0.0
+  },
+  "schema": "lumina-sh-grid-upper-band-closure-v1",
+  "scope": "same-snapshot discretisation accuracy plus separately reported physical impact; not solver convergence",
+  "snapshot": {
+    "depths": 90,
+    "edd_finish_record": 1.0,
+    "native_frequency_points": 813,
+    "run": "/gpfs/kjhan/cmfgen_runs/toy06_19p48d_ophys"
+  },
+  "verdict": "ACCURACY_FAIL_EFFECT_NEGLIGIBLE",
+  "witness": {
+    "atomic_number": 14,
+    "cs_type": 20,
+    "global_level": 333,
+    "ion_number": 4,
+    "level_number": 0,
+    "nu_threshold_hz": 4.032418413740806e+16,
+    "sigma_path": "tab",
+    "threshold_eV": 166.76742574188802
+  }
+}

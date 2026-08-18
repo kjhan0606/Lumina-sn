@@ -1,0 +1,53 @@
+{
+  "dataset": "baseline_0715",
+  "committed_K": 13119.874754,
+  "own_cs_root_K": 16616.557658787002,
+  "cmfgen_J_root_K": 18277.37719498443,
+  "truth_K": 18760.0,
+  "rvtj_linear_truth_K": 18760.319890793377,
+  "historical_levers_K": {
+    "R_committed_to_own": 3496.6829047870015,
+    "J_own_to_cmf": 1660.8195361974285,
+    "O_cmf_to_truth": 482.6228050155696,
+    "whole_truth_minus_committed": 5640.125246
+  },
+  "rounded_endpoints_K": {
+    "committed": 13120,
+    "own": 16617,
+    "cmf": 18277,
+    "truth": 18760
+  },
+  "rounded_historical_levers_K": {
+    "R_committed_to_own": 3497,
+    "J_own_to_cmf": 1660,
+    "O_cmf_to_truth": 483,
+    "whole_truth_minus_committed": 5640
+  },
+  "standalone_K": {
+    "R": 3496.6829047870015,
+    "J": 0.0,
+    "O": 482.6228050155696
+  },
+  "standalone_directional_closure_K": {
+    "R": 3496.6829047870015,
+    "J": 0.0,
+    "O": 482.6228050155696
+  },
+  "sum_standalone_K": 3979.305709802571,
+  "sum_directional_closure_K": 3979.305709802571,
+  "total_discrepancy_magnitude_K": 5640.125246,
+  "sum_directional_closure_minus_total_discrepancy_K": -1660.8195361974285,
+  "whole_K": 5640.125246,
+  "sum_standalone_minus_whole_K": -1660.8195361974285,
+  "R_x_J_interaction_K": 1660.8195361974285,
+  "cumulative_final_minus_whole_min_K": 0.0,
+  "cumulative_final_minus_whole_max_K": 0.0,
+  "order_attribution_width_K": {
+    "R": 1660.8195361974285,
+    "J": 1660.8195361974285,
+    "O": 0.0
+  },
+  "baseline_gate": true,
+  "line_count_used": 2139858,
+  "definition": "historical 2026-07-19 analytic coupled-root estimator; lowest +to- root on 24 geometric intervals from 3500 to 140000 K and 40 bisections; ion adjacent-stage ratios scale as (T/T_committed)^0.8; H_photo is the historical fixed CLI scalar"
+}

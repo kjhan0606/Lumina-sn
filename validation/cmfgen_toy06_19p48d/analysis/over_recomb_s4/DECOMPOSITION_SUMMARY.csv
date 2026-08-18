@@ -1,0 +1,29 @@
+quantity,s4_v7176,s6_v8632,source
+# ionization balance R = n(FeIV)/n(FeIII) = Gamma / (ne*alpha)
+Te_L_K,13433,11901,kpr6/lumina_plasma_state.csv
+Te_C_K,13658,11923,jnu4 RVTJ interp to v_mid
+ne_L_percm3,1.281e9,9.808e8,kpr6/lumina_plasma_state.csv
+ne_C_percm3,1.612e9,1.001e9,jnu4 RVTJ interp to v_mid
+alpha_L_Milne_cm3s,2.514e-11,2.930e-11,db frozenin_alpha_rr @ Te_L
+alpha_C_Milne_cm3s,2.456e-11,2.923e-11,db frozenin_alpha_rr @ Te_C
+Gph_L_gnd_pers,1.482e-6,2.089e-6,db kpr6 field
+Gph_C_gnd_pers,6.916e-3,1.160e-4,db jnu4 field
+Gph_L_boltz_pers,5.616e-3,2.011e-4,db kpr6 field
+Gph_C_boltz_pers,1.703e-1,3.516e-3,db jnu4 field
+R_L_actual,0.1317,0.0172,kpr6/lumina_ion_pops.csv
+R_C_actual,2.658,0.0746,published ionfrac_fe interp to v_mid
+f_FeIV_L,0.116,0.0169,kpr6 ion pops
+f_FeIV_C,0.727,0.0694,published ionfrac_fe (matches task 0.727)
+# --- decomposition of R_L/R_C = [Gph_L/Gph_C]*[alpha_C/alpha_L]*[ne_C/ne_L] ---
+R_L_over_R_C,0.0496,0.2307,== 20.2x / 4.3x under-ionized
+factor_Gph_L_over_C,0.0330,0.0572,GAMMA DEFICIT 30.3x / 17.5x  <-- carries the discrepancy
+factor_alpha_C_over_L,0.977,0.998,alpha ~EQUAL (not the culprit)
+factor_ne_C_over_L,1.258,1.021,minor, OFFSETTING direction
+# --- Gph deficit is band-localized (band-mean J_nu ratio LUM/CMFGEN) ---
+Jband_EUV_lt912_LoverC,0.043,0.024,OTS(<911A) kill: 23x/42x down
+Jband_FUV_912_2000_LoverC,0.080,0.031,BSRC_PHOT thermalization: 12.6x/32x down
+Jband_nearUV_2000_4000_LoverC,0.580,0.271,mild
+Jband_opt_4000_9000_LoverC,2.824,1.992,INTACT / higher (not suppressed)
+# verdict
+culprit,GAMMA_photoion_field_deficit,,candidate2 GUILTY
+exonerated,alpha_inflation_SPINGATE,,candidate1 NOT the cause (FROZENIN=0; alpha_L==alpha_C==CMFGEN-consistent)

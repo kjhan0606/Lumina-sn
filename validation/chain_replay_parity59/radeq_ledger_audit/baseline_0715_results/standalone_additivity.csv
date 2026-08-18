@@ -1,0 +1,11 @@
+dataset,quantity,delta_T_K,definition
+baseline_0715,R,3496.6829047870015,"F(single factor)-F(0,0,0)"
+baseline_0715,J,0.0,"F(single factor)-F(0,0,0)"
+baseline_0715,O,482.6228050155696,"F(single factor)-F(0,0,0)"
+baseline_0715,sum_standalone,3979.305709802571,R_alone + J_alone + O_alone
+baseline_0715,whole,5640.125246,"F(1,1,1)-F(0,0,0) = truth-committed"
+baseline_0715,sum_standalone_minus_whole,-1660.8195361974285,primary non-additivity statistic
+baseline_0715,R_x_J_interaction,1660.8195361974285,"F(1,1,0)-F(1,0,0)-F(0,1,0)+F(0,0,0)"
+baseline_0715,sum_directional_closure,3979.305709802571,sum sign(truth-committed)*standalone_delta; positive means closes the original gap
+baseline_0715,total_discrepancy_magnitude,5640.125246,absolute value of truth-committed
+baseline_0715,sum_directional_closure_minus_total_discrepancy,-1660.8195361974285,additivity statistic expressed as closure of the original discrepancy

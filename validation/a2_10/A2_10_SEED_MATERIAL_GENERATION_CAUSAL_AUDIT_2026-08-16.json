@@ -1,0 +1,95 @@
+{
+  "schema": "LUMINA_A210_SEED_MATERIAL_GENERATION_CAUSAL_AUDIT_V1",
+  "status": "PASS_CAUSE_LOCALIZED",
+  "run": {
+    "root": "/gpfs/kjhan/lumina/a210_cmfgen_mapped_line_k24/det1234_20260816T110100Z_6a44c34c558f",
+    "binary_sha256": "6a44c34c558f0157170958aa9ed5b858d76b0856fddf8907b36ca81f35dcc0f3",
+    "stdout_sha256": "d5f71a4f8047bdea70475c49859202bd5155a9a5baa983008ee1c99ee75a4478",
+    "stderr_sha256": "c1e14d5c4f1a5dc1a92c56d9e57f57fefd03f94b7196d55bd885d20b7f67e059",
+    "model_rc": 1,
+    "wrapper_rc": 70,
+    "expected_termination": "RADEQ_NO_BRACKET_FAIL_CLOSED",
+    "tripwire_intervened": false
+  },
+  "sealed_radiation_identity": {
+    "exact_iterations": 45,
+    "exact_residual": 9.666278272498034e-09,
+    "exact_tolerance": 1e-08,
+    "q_lines": 1391131,
+    "e_lines": 2180286,
+    "valid_cells": 109014300,
+    "reference_comparison": "EXACT_AND_R6_FIELDS_BIT_EXACT",
+    "reference_report": "A2_10_MAPPED_LINE_K24_REFERENCE_COMPARISON_2026-08-16.json"
+  },
+  "root_sign_evidence": {
+    "shells": [0, 1, 2, 3],
+    "lower_temperature_K": 3500.0,
+    "upper_temperature_K": 140000.0,
+    "public_seed_temperature_K": 10020.0,
+    "geometric_mid_temperature_K": 22135.943621178667,
+    "public_seed_residuals": [
+      -7.24206747895658,
+      -5.648863292725333,
+      -4.4018082697472,
+      -3.430927425186005
+    ],
+    "geometric_mid_residuals": [
+      -5012.575797604936,
+      -3900.447367815216,
+      -3032.8033250590665,
+      -2359.436897025398
+    ],
+    "interior_brackets": 0,
+    "still_same_sign_shells": 4,
+    "interpretation": "ADDING_A_KNOT_OR_EXTENDING_THE_EXISTING_BRACKET_IS_NOT_CAUSAL"
+  },
+  "finite_mapped_transition": {
+    "lumina_line_zero_based": 233521,
+    "lumina_shell": 0,
+    "cmfgen_line_one_based": 76887,
+    "transition": "Co IV 606.784334 Angstrom",
+    "coordinate_mass_density_relative_difference": 0.0012776001331676,
+    "lumina_public_seed": {
+      "temperature_K": 10020.0,
+      "eta_per_sr_cgs": 1.6365876243964625e-09,
+      "signed_rate_cgs": 8.59997616921632e-14,
+      "jbar_over_source": 0.999995818345449,
+      "cancellation_condition": 478278.58422961074
+    },
+    "cmfgen_velocity_interpolation": {
+      "temperature_K": 19059.411196903676,
+      "eta_per_sr_cgs": 3.128136760207323,
+      "signed_rate_cgs": 5.41956140597895e-05,
+      "jbar_over_source": 0.9999986321945838,
+      "cancellation_condition": 1465275.5021435039
+    },
+    "lumina_to_cmfgen_eta_ratio": 5.231828880422717e-10,
+    "lumina_to_cmfgen_signed_rate_ratio": 1.5868398796494278e-09,
+    "upper_population_scale_inferred_cmfgen_over_lumina": 1911389000.0,
+    "comparison_report": "A2_10_CMFGEN_MAPPED_LINE_COMPARISON_2026-08-16.json",
+    "scope": "FINITE_SAME_TRANSITION_SCALE_COMPARISON_NOT_STATE_PARITY"
+  },
+  "source_ordering": [
+    "seed Te generation 1 is published before transport",
+    "bootstrap LTE/Saha material P1 and solver-owned tau are committed once",
+    "exact deterministic radiation R1 and line-Jbar are computed from P1",
+    "first A2-10 candidates solve NLTE material P2 at trial Te while consuming fixed R1",
+    "the thermal bracket is therefore attempted before one material-radiation Picard coevolution"
+  ],
+  "falsified_causes": [
+    "insufficient exact or R6 convergence",
+    "K18 versus K24 refinement identity",
+    "Sobolev coefficient or deck serialization as the no-bracket cause",
+    "a missing public-seed or geometric-mid bracket knot",
+    "the rejected pre-core population-tau seed branch"
+  ],
+  "causal_verdict": "INITIAL_LTE_SAHA_MATERIAL_TO_NLTE_TRIAL_MATERIAL_SCALE_MISMATCH_BEFORE_FIRST_COEVOLUTION",
+  "minimal_architectural_candidate": "ONE_EXACTLY_ONCE_FIXED_SEED_TE_NLTE_MATERIAL_PREDICTOR_BETWEEN_R1_AND_R2",
+  "candidate_is_not_yet_accepted": true,
+  "physical_values_modified": false,
+  "floor": 0,
+  "cap": 0,
+  "clamp": 0,
+  "jitter": 0,
+  "repair": 0
+}

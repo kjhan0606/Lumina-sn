@@ -1,0 +1,10 @@
+gate,value,source_file,source_field
+LUMINA_RADEQ_TE,1,/gpfs/kjhan/lumina_runner2/scratch/instr_capture_188932/PARITY59_INSTR.env,export LUMINA_RADEQ_TE
+LUMINA_RADEQ_SIMUL,1,/gpfs/kjhan/lumina_runner2/scratch/instr_capture_188932/PARITY59_INSTR.env,export LUMINA_RADEQ_SIMUL
+LUMINA_RADEQ_DAMP,0.5,/gpfs/kjhan/lumina_runner2/scratch/instr_capture_188932/PARITY59_INSTR.env,export LUMINA_RADEQ_DAMP
+LUMINA_RADEQ_FB_RATE,1,/gpfs/kjhan/lumina_runner2/scratch/instr_capture_188932/PARITY59_INSTR.env,export LUMINA_RADEQ_FB_RATE
+LUMINA_RADEQ_VR_STD,1,/gpfs/kjhan/lumina_runner2/scratch/instr_capture_188932/PARITY59_INSTR.env,export LUMINA_RADEQ_VR_STD
+LUMINA_RADEQ_DB_FB,1,/gpfs/kjhan/lumina_runner2/scratch/instr_capture_188932/PARITY59_INSTR.env,export LUMINA_RADEQ_DB_FB
+LUMINA_BF_RATE_POPS,1,/gpfs/kjhan/lumina_runner2/scratch/instr_capture_188932/PARITY59_INSTR.env,export LUMINA_BF_RATE_POPS
+LUMINA_TE_STEP_CLAMP,1,/gpfs/kjhan/lumina_runner2/scratch/instr_capture_188932/PARITY59_INSTR.env,export LUMINA_TE_STEP_CLAMP
+LUMINA_ETLA_ALLOW_HEAT,1,/gpfs/kjhan/lumina_runner2/scratch/instr_capture_188932/PARITY59_INSTR.env,export LUMINA_ETLA_ALLOW_HEAT

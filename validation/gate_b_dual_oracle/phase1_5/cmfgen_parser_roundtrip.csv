@@ -1,0 +1,10 @@
+shell,quantity,raw_file,header_label,physical_line_1based,depth_1based,raw_value,post_conversion_value,conversion,unit_evidence
+0,velocity,/gpfs/kjhan/cmfgen_runs/toy06_19p48d_modern/RVTJ,Velocity (km/s),35,67,4.3941823505e+03,4.3941823505e+03,identity km/s,RVTJ header
+0,n_e,/gpfs/kjhan/cmfgen_runs/toy06_19p48d_modern/RVTJ,Electron density,61,67,4.8528721000e+09,4.8528721000e+09,identity #/cm^3,mod_cmfgen.f ED(:) declaration + cmfgen_sub.f RVTJ WRITE ED
+0,T_e,/gpfs/kjhan/cmfgen_runs/toy06_19p48d_modern/RVTJ,Temperature (10^4K),74,67,1.8535887000e+00,1.8535887000e+04,multiply 1e4 K,RVTJ header
+8,velocity,/gpfs/kjhan/cmfgen_runs/toy06_19p48d_modern/RVTJ,Velocity (km/s),33,54,1.0163505750e+04,1.0163505750e+04,identity km/s,RVTJ header
+8,n_e,/gpfs/kjhan/cmfgen_runs/toy06_19p48d_modern/RVTJ,Electron density,59,54,7.3410434000e+08,7.3410434000e+08,identity #/cm^3,mod_cmfgen.f ED(:) declaration + cmfgen_sub.f RVTJ WRITE ED
+8,T_e,/gpfs/kjhan/cmfgen_runs/toy06_19p48d_modern/RVTJ,Temperature (10^4K),72,54,1.0323476000e+00,1.0323476000e+04,multiply 1e4 K,RVTJ header
+43,velocity,/gpfs/kjhan/cmfgen_runs/toy06_19p48d_modern/RVTJ,Velocity (km/s),28,10,3.5497710490e+04,3.5497710490e+04,identity km/s,RVTJ header
+43,n_e,/gpfs/kjhan/cmfgen_runs/toy06_19p48d_modern/RVTJ,Electron density,54,10,2.2602505000e+05,2.2602505000e+05,identity #/cm^3,mod_cmfgen.f ED(:) declaration + cmfgen_sub.f RVTJ WRITE ED
+43,T_e,/gpfs/kjhan/cmfgen_runs/toy06_19p48d_modern/RVTJ,Temperature (10^4K),67,10,1.5734202000e+00,1.5734202000e+04,multiply 1e4 K,RVTJ header

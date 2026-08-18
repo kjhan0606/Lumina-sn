@@ -1,0 +1,56 @@
+{
+  "candidate_log": "/gpfs/kjhan/lumina/a210_line_saturation_per_ion_union_a100x2_nonoverlap_sobolev_k36/diag_20260817T042955Z_14b199f12d29/stderr.log",
+  "candidate_log_sha256": "07dc0366951dce4bc19d2832acb503ab74981a31db94914ba3d10822343e173c",
+  "cap": 0,
+  "clamp": 0,
+  "excluded_record_family": "[A2-10][LINE-SATURATION-*]",
+  "floor": 0,
+  "jitter": 0,
+  "phases": [
+    {
+      "phase": "LOWER",
+      "record_count": 216,
+      "stream_sha256": "6e4ce67c7885801d5d71014d85829cde1942700c0b813b325553cb527c0f81a8",
+      "strict_bit_exact": true
+    },
+    {
+      "phase": "UPPER",
+      "record_count": 216,
+      "stream_sha256": "c4cb2d4a4767515230f50ca4d7d9c97147d88e1c1ec7dcfe5f2ae2eb35af33a1",
+      "strict_bit_exact": true
+    },
+    {
+      "phase": "INTERIOR",
+      "record_count": 162,
+      "stream_sha256": "ee0b3b11bf81f9759c863a5c3e82464634469f0c50c602740f439b668acb2d23",
+      "strict_bit_exact": true
+    },
+    {
+      "phase": "PUBLIC_SEED",
+      "record_count": 5,
+      "stream_sha256": "287dd69d31efdac8685b048ec9ca7538f890dfc86d2c7971c9a06f9b17df0988",
+      "strict_bit_exact": true
+    },
+    {
+      "phase": "REQUESTED_TE",
+      "record_count": 221,
+      "stream_sha256": "aa6a417528d4624b57e6052886b33272cff9b57d6a7fedb5a0a8bba38d67ee6a",
+      "strict_bit_exact": true
+    },
+    {
+      "phase": "GEOMETRIC_MID",
+      "record_count": 221,
+      "stream_sha256": "89bb8bf59dfe5eec17a67b92cd881a49085ad921676c5dba255fbefa96dc52d8",
+      "strict_bit_exact": true
+    }
+  ],
+  "physical_tolerance_used": false,
+  "physical_values_modified": false,
+  "pre_record_sha256": "7177e3af670482582806aaf2d9cfb97d1fe829349f0d25e89eee5e4ae4564050",
+  "reference_log": "/gpfs/kjhan/lumina/a210_line_saturation_a100x2_nonoverlap_sobolev_k36/manual_retry_guard3_20260817T011506Z_f9c2d1b826d5/stderr.log",
+  "reference_log_sha256": "55004df4b525068ecdf2ba9910059de9aa7b638461ef1a08cacbd225ff461bc5",
+  "repair": 0,
+  "schema": "lumina-a210-phase-baseline-stream-comparison-v1",
+  "status": "PASS",
+  "verdict": "NON_SATURATION_A210_PHASE_STREAMS_STRICT_BIT_EXACT"
+}

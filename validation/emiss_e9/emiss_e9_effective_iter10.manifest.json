@@ -1,0 +1,17 @@
+{
+  "chi_es_proxy": "per-shell minimum payload chi_coherent (capture-epoch line-free proxy)",
+  "clamp_or_floor_added": false,
+  "coherent_frozen": true,
+  "construction": "cellwise J_old*(eps_old/eps_MC), then eta_fixed+[chi_es_proxy+(1-eps_MC)chi_line_proxy]*J_effective",
+  "e9_diagnostic_only": true,
+  "eta_decomposition_bitwise": true,
+  "eta_decomposition_max_abs": 0,
+  "field_generation": 10,
+  "frequency_descending": true,
+  "iteration": 10,
+  "post_damping": true,
+  "repair_implemented": false,
+  "schema": "LCMFCE01-v1",
+  "sha256": "f67c31c0920ee30ccef289ac0daab3a04896cd820321b979a77c9273baa600b2",
+  "source_payload_sha256": "ac62eae5bec6d6beaf06d513c2cef38386b365f6b7826cff61c4edc0f2a34011"
+}

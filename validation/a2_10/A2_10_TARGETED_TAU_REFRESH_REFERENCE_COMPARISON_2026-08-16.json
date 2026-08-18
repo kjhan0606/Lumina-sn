@@ -1,0 +1,22 @@
+{
+  "candidate_sha256": "f8bfaccdf91abb4dbd7acc123bce73ee8443413bd686039d33727e10c4ebd439",
+  "candidate_stderr": "/gpfs/kjhan/lumina/a210_targeted_gate_a100x2_tau_refresh_k18/det1234_20260816T033242Z_2135362336fd/stderr.log",
+  "cap": 0,
+  "clamp": 0,
+  "differences": [],
+  "floor": 0,
+  "jitter": 0,
+  "physical_values_modified": false,
+  "reason": "EXACT_AND_R6_FIELDS_BIT_EXACT",
+  "records_compared": [
+    "[cmf_fine][SIGNED-MATERIAL-CENSUS]",
+    "[cmf_fine][EXACT-MULTIGPU-EPOCH]",
+    "[R6][LINE-IDENTITY]",
+    "[R6][LINE-COVERAGE]"
+  ],
+  "reference_sha256": "d33891a10f62bace1e3d84d1431a6bf4401aec2cfbfbd6c96ba8f36d1da4d27b",
+  "reference_stderr": "/gpfs/kjhan/lumina/a210_cancellation_census_mgpu_k18/det1234_20260816T002655Z_8d09f31330da/stderr.log",
+  "repair": 0,
+  "schema": "LUMINA_A210_TARGETED_REFERENCE_COMPARISON_V1",
+  "status": "PASS"
+}

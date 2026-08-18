@@ -1,0 +1,339 @@
+{
+  "definitions": {
+    "atomic_A": "line_list.A_ul compared to the matched transition row A field in original CMFGEN osc_data",
+    "cap": 0,
+    "clamp": 0,
+    "collision_coeff": "8.629e-6 times the imported binary transition Upsilon linearly interpolated at production Tref=10400 K",
+    "eps_replay": "C_ul/(C_ul+A_ul*((1-exp(-tau))/tau)); replay uses shell 0 [T_e,T_rad,n_e,t_exp] in LINEPOP iter10 selected_shell_state",
+    "fallback": 0,
+    "floor": 0,
+    "requested_rate": "C_ul=n_e*coeff/(g_up*sqrt(T_e)); final-state n_e,T_e are shell 0 fields n_e,T_e in lumina_plasma_state.csv",
+    "source_product": "eta_l=w*eps_l*S_l_used, using the four fields in scheme_fracture_s0_line_rank.csv",
+    "undefined_policy": "abort; no replacement value"
+  },
+  "lines": [
+    {
+      "A_ul_line_list_s-1": 1.4,
+      "collision_data": {
+        "Tref_K": 10400.0,
+        "binary_path": "/home/kjhan/BACKUP/Eunha.A1/Claude/Lumina-sn/data/tardis_reference_toy06_19p48d_sivcaiv/ige_col_26_3_cmfgen.bin",
+        "coeff_cm3_s-1_K0p5": 5.0496908e-06,
+        "prescription": "coeff=8.629e-6*Upsilon_CMFGEN(Tref), linear-in-T interpolation clamped to table endpoints",
+        "reference": "ZP97_FeIV_col (Zhang and Pradhan)",
+        "source_evidence": {
+          "line": 39,
+          "path": "/gpfs/kjhan/cmfgen_21jun23/atomic/FE/IV/19apr23/col_data",
+          "text": "3d5_6Se[5/2]         -3d5_4Pe[5/2]           5.99E-01  5.91E-01  5.95E-01  5.94E-01  5.87E-01  5.78E-01  5.62E-01  5.52E-01  5.37E-01  5.18E-01  5.03E-01  4.83E-01  4.69E-01  4.59E-01  4.50E-01  4.40E-01  4.32E-01  3.96E-01  3.75E-01  3.43E-01"
+        },
+        "tier": 1,
+        "upsilon_at_Tref": 0.5851999999999999,
+        "van_Regemorter_used": false
+      },
+      "eps_l_captured": 0.9518275211900334,
+      "eps_replay_abs_error": 0.0,
+      "f_lu_line_list": 1.6877911708537733e-09,
+      "g_up": 6,
+      "ion": "Fe IV",
+      "lambda_A": 2835.7400000000002,
+      "level_pair": [
+        0,
+        5
+      ],
+      "line_id": 776418,
+      "lower_energy_eV": 0.0,
+      "original_osc_data": {
+        "A_ul_s-1": 1.4,
+        "evidence": {
+          "line": 1033,
+          "path": "/gpfs/kjhan/cmfgen_21jun23/atomic/FE/IV/19apr23/osc_data",
+          "text": "3d5_6Se[5/2]         -3d5_4Pe[5/2]             1.6888E-09  1.4000E+00    2835.740       1-   6        1"
+        },
+        "f": 1.6888e-09,
+        "lambda_A": 2835.74
+      },
+      "rates_at_iter10_eps_generation_state": {
+        "A_ul_s-1": 1.4,
+        "C_ul_over_A_ul": 18.55580165301571,
+        "C_ul_s-1": 25.97812231422199,
+        "beta_escape": 0.9391186344499249,
+        "eps_prime_at_tau": 0.9518275211900334,
+        "eps_tau_to_zero": 0.9488642798826
+      },
+      "rates_at_requested_final_state": {
+        "A_ul_s-1": 1.4,
+        "C_ul_over_A_ul": 19.093027080634453,
+        "C_ul_s-1": 26.730237912888235,
+        "beta_escape": 0.9391186344499249,
+        "eps_prime_at_tau": 0.9531194187678677,
+        "eps_tau_to_zero": 0.9502314909551984
+      },
+      "source_product_check": {
+        "S_l_used": 0.0017253825790322851,
+        "eps_times_S_l_used": 0.001642266623304767,
+        "eta_l_captured": 7.327200002256418e-19,
+        "w": 4.461638505148295e-16,
+        "w_times_eps_times_S_reconstructed": 7.327200002256418e-19
+      },
+      "tau_used": 0.12697020528624625,
+      "transition_character": {
+        "classification": "E1-forbidden/intercombination-character; exact M1/E2/mixing label is not encoded",
+        "lower_configuration": "3d5_6Se[5/2]",
+        "same_even_parity": true,
+        "spin_multiplicity_changes": true,
+        "upper_configuration": "3d5_4Pe[5/2]"
+      },
+      "upper_energy_eV": 4.3709141336
+    },
+    {
+      "A_ul_line_list_s-1": 0.368,
+      "collision_data": {
+        "Tref_K": 10400.0,
+        "binary_path": "/home/kjhan/BACKUP/Eunha.A1/Claude/Lumina-sn/data/tardis_reference_toy06_19p48d_sivcaiv/ige_col_27_3_cmfgen.bin",
+        "coeff_cm3_s-1_K0p5": 6.2819119999999994e-06,
+        "prescription": "coeff=8.629e-6*Upsilon_CMFGEN(Tref), linear-in-T interpolation clamped to table endpoints",
+        "reference": "Zha96_FeIII_col; CMFGEN file says 'Using FeIII values?'",
+        "source_evidence": {
+          "line": 195,
+          "path": "/gpfs/kjhan/cmfgen_21jun23/atomic/COB/IV/19apr23/col_data",
+          "text": "3d6_3De[3]        -3d6_5De[4]                    6.26E-01  6.07E-01  6.58E-01  6.99E-01  7.27E-01  7.32E-01  7.27E-01  7.21E-01  7.08E-01  6.85E-01  6.65E-01  6.47E-01  6.31E-01  6.17E-01  6.05E-01  5.85E-01  5.69E-01  5.55E-01  5.43E-01  5.33E-01"
+        },
+        "tier": 1,
+        "upsilon_at_Tref": 0.728,
+        "van_Regemorter_used": false
+      },
+      "eps_l_captured": 0.9873850827624182,
+      "eps_replay_abs_error": 0.0,
+      "f_lu_line_list": 3.209390121572844e-10,
+      "g_up": 7,
+      "ion": "Co IV",
+      "lambda_A": 2734.832,
+      "level_pair": [
+        0,
+        20
+      ],
+      "line_id": 748621,
+      "lower_energy_eV": 0.0,
+      "original_osc_data": {
+        "A_ul_s-1": 0.368,
+        "evidence": {
+          "line": 1045,
+          "path": "/gpfs/kjhan/cmfgen_21jun23/atomic/COB/IV/19apr23/osc_data",
+          "text": "3d6_5De[4]        -3d6_3De[3]            3.2113E-10  3.6800E-01    2734.832       1-  21       15"
+        },
+        "f": 3.2113e-10,
+        "lambda_A": 2734.832
+      },
+      "rates_at_iter10_eps_generation_state": {
+        "A_ul_s-1": 0.368,
+        "C_ul_over_A_ul": 75.27317084123284,
+        "C_ul_s-1": 27.700526869573686,
+        "beta_escape": 0.9616965426659024,
+        "eps_prime_at_tau": 0.9873850827624182,
+        "eps_tau_to_zero": 0.9868892300009192
+      },
+      "rates_at_requested_final_state": {
+        "A_ul_s-1": 0.368,
+        "C_ul_over_A_ul": 77.45247099487659,
+        "C_ul_s-1": 28.502509326114588,
+        "beta_escape": 0.9616965426659024,
+        "eps_prime_at_tau": 0.9877356787317104,
+        "eps_tau_to_zero": 0.9872534288937145
+      },
+      "source_product_check": {
+        "S_l_used": 0.0017453682618772872,
+        "eps_times_S_l_used": 0.0017233505857046033,
+        "eta_l_captured": 4.871791448098703e-19,
+        "w": 2.826929986568484e-16,
+        "w_times_eps_times_S_reconstructed": 4.871791448098703e-19
+      },
+      "tau_used": 0.07862781245501962,
+      "transition_character": {
+        "classification": "E1-forbidden/intercombination-character; exact M1/E2/mixing label is not encoded",
+        "lower_configuration": "3d6_5De[4]",
+        "same_even_parity": true,
+        "spin_multiplicity_changes": true,
+        "upper_configuration": "3d6_3De[3]"
+      },
+      "upper_energy_eV": 4.5321803804
+    },
+    {
+      "A_ul_line_list_s-1": 0.88,
+      "collision_data": {
+        "Tref_K": 10400.0,
+        "binary_path": "/home/kjhan/BACKUP/Eunha.A1/Claude/Lumina-sn/data/tardis_reference_toy06_19p48d_sivcaiv/ige_col_26_3_cmfgen.bin",
+        "coeff_cm3_s-1_K0p5": 3.3704873999999998e-06,
+        "prescription": "coeff=8.629e-6*Upsilon_CMFGEN(Tref), linear-in-T interpolation clamped to table endpoints",
+        "reference": "ZP97_FeIV_col (Zhang and Pradhan)",
+        "source_evidence": {
+          "line": 44,
+          "path": "/gpfs/kjhan/cmfgen_21jun23/atomic/FE/IV/19apr23/col_data",
+          "text": "3d5_6Se[5/2]         -3d5_4Pe[3/2]           3.99E-01  3.94E-01  3.97E-01  3.96E-01  3.92E-01  3.85E-01  3.75E-01  3.68E-01  3.58E-01  3.45E-01  3.36E-01  3.22E-01  3.13E-01  3.06E-01  3.01E-01  2.94E-01  2.89E-01  2.67E-01  2.55E-01  2.36E-01"
+        },
+        "tier": 1,
+        "upsilon_at_Tref": 0.3906,
+        "van_Regemorter_used": false
+      },
+      "eps_l_captured": 0.968095755899453,
+      "eps_replay_abs_error": 0.0,
+      "f_lu_line_list": 7.04085469047782e-10,
+      "g_up": 4,
+      "ion": "Fe IV",
+      "lambda_A": 2829.359,
+      "level_pair": [
+        0,
+        6
+      ],
+      "line_id": 774507,
+      "lower_energy_eV": 0.0,
+      "original_osc_data": {
+        "A_ul_s-1": 0.88,
+        "evidence": {
+          "line": 1034,
+          "path": "/gpfs/kjhan/cmfgen_21jun23/atomic/FE/IV/19apr23/osc_data",
+          "text": "3d5_6Se[5/2]         -3d5_4Pe[3/2]             7.0450E-10  8.8000E-01    2829.359       1-   7        2"
+        },
+        "f": 7.045e-10,
+        "lambda_A": 2829.359
+      },
+      "rates_at_iter10_eps_generation_state": {
+        "A_ul_s-1": 0.88,
+        "C_ul_over_A_ul": 29.555905253648056,
+        "C_ul_s-1": 26.00919662321029,
+        "beta_escape": 0.9740346552278094,
+        "eps_prime_at_tau": 0.968095755899453,
+        "eps_tau_to_zero": 0.9672731018211084
+      },
+      "rates_at_requested_final_state": {
+        "A_ul_s-1": 0.88,
+        "C_ul_over_A_ul": 30.41160441100404,
+        "C_ul_s-1": 26.762211881683555,
+        "beta_escape": 0.9740346552278094,
+        "eps_prime_at_tau": 0.9689655943225389,
+        "eps_tau_to_zero": 0.9681646315509538
+      },
+      "source_product_check": {
+        "S_l_used": 0.0017267536511392516,
+        "eps_times_S_l_used": 0.001671662881151794,
+        "eta_l_captured": 3.227116769465599e-19,
+        "w": 1.930482997410387e-16,
+        "w_times_eps_times_S_reconstructed": 3.227116769465599e-19
+      },
+      "tau_used": 0.05284954207053246,
+      "transition_character": {
+        "classification": "E1-forbidden/intercombination-character; exact M1/E2/mixing label is not encoded",
+        "lower_configuration": "3d5_6Se[5/2]",
+        "same_even_parity": true,
+        "spin_multiplicity_changes": true,
+        "upper_configuration": "3d5_4Pe[3/2]"
+      },
+      "upper_energy_eV": 4.3807708773
+    },
+    {
+      "A_ul_line_list_s-1": 3.859,
+      "collision_data": {
+        "Tref_K": 10400.0,
+        "binary_path": "/home/kjhan/BACKUP/Eunha.A1/Claude/Lumina-sn/data/tardis_reference_toy06_19p48d_sivcaiv/ige_col_28_3_cmfgen.bin",
+        "coeff_cm3_s-1_K0p5": 7.8394465e-06,
+        "prescription": "coeff=8.629e-6*Upsilon_CMFGEN(Tref), linear-in-T interpolation clamped to table endpoints",
+        "reference": "Fernandez-Menchero et al. 2019, MNRAS 483, 2154",
+        "source_evidence": {
+          "line": 42,
+          "path": "/gpfs/kjhan/cmfgen_21jun23/atomic/NICK/IV/19apr23/col_data",
+          "text": "3d7_4Fe[9/2]        -3d7_2Fe[7/2]           9.94E-01    9.22E-01    8.77E-01    8.06E-01    7.10E-01    6.34E-01    5.59E-01    4.43E-01    3.37E-01    2.36E-01    1.33E-01    8.21E-02    4.89E-02"
+        },
+        "tier": 1,
+        "upsilon_at_Tref": 0.9085000000000001,
+        "van_Regemorter_used": false
+      },
+      "eps_l_captured": 0.8903060728205255,
+      "eps_replay_abs_error": 0.0,
+      "f_lu_line_list": 2.4060977589932556e-09,
+      "g_up": 8,
+      "ion": "Ni IV",
+      "lambda_A": 2280.055,
+      "level_pair": [
+        0,
+        16
+      ],
+      "line_id": 635410,
+      "lower_energy_eV": 0.0,
+      "original_osc_data": {
+        "A_ul_s-1": 3.859,
+        "evidence": {
+          "line": 1041,
+          "path": "/gpfs/kjhan/cmfgen_21jun23/atomic/NICK/IV/19apr23/osc_data",
+          "text": "3d7_4Fe[9/2]         -3d7_2Fe[7/2]               2.406E-09   3.859E+00    2280.055     1-  17       9   |               |  50.0  |"
+        },
+        "f": 2.406e-09,
+        "lambda_A": 2280.055
+      },
+      "rates_at_iter10_eps_generation_state": {
+        "A_ul_s-1": 3.859,
+        "C_ul_over_A_ul": 7.8381732080500175,
+        "C_ul_s-1": 30.24751040986502,
+        "beta_escape": 0.9657352986260845,
+        "eps_prime_at_tau": 0.8903060728205255,
+        "eps_tau_to_zero": 0.8868544464495021
+      },
+      "rates_at_requested_final_state": {
+        "A_ul_s-1": 3.859,
+        "C_ul_over_A_ul": 8.06510309403315,
+        "C_ul_s-1": 31.12323283987393,
+        "beta_escape": 0.9657352986260845,
+        "eps_prime_at_tau": 0.8930624980056018,
+        "eps_tau_to_zero": 0.8896868585357598
+      },
+      "source_product_check": {
+        "S_l_used": 0.0017686047034875794,
+        "eps_times_S_l_used": 0.0015745995079339368,
+        "eta_l_captured": 3.9943926535569513e-19,
+        "w": 2.5367673706427565e-16,
+        "w_times_eps_times_S_reconstructed": 3.9943926535569513e-19
+      },
+      "tau_used": 0.07014096336444949,
+      "transition_character": {
+        "classification": "E1-forbidden/intercombination-character; exact M1/E2/mixing label is not encoded",
+        "lower_configuration": "3d7_4Fe[9/2]",
+        "same_even_parity": true,
+        "spin_multiplicity_changes": true,
+        "upper_configuration": "3d7_2Fe[7/2]"
+      },
+      "upper_energy_eV": 5.4377733639
+    }
+  ],
+  "negative_controls": {
+    "injected_g_up_plus_one": {
+      "minimum_eps_abs_error": 0.0017761963615102738,
+      "status": "PASS-rejected"
+    },
+    "wrong_epoch_final_state_used_to_replay_iter10_eps": {
+      "maximum_eps_abs_error": 0.002756425185076239,
+      "status": "PASS-rejected"
+    }
+  },
+  "schema": "codex-eps-thin-audit-v1",
+  "self_checks": {
+    "atomic_A_round_trip": "PASS",
+    "collision_pair_present_in_imported_binary": "PASS",
+    "eta_product_round_trip": "PASS",
+    "iter10_eps_replay_max_abs_error": 0.0
+  },
+  "sources": {
+    "levels_csv": "/home/kjhan/BACKUP/Eunha.A1/Claude/Lumina-sn/data/tardis_reference_toy06_19p48d_sivcaiv/levels.csv",
+    "line_list_csv": "/home/kjhan/BACKUP/Eunha.A1/Claude/Lumina-sn/data/tardis_reference_toy06_19p48d_sivcaiv/line_list.csv",
+    "linepop": "/gpfs/kjhan/lumina_runner2/scratch/instr_capture_188932/linepop_iter10",
+    "plasma_state_csv": "/gpfs/kjhan/lumina_runner2/scratch/instr_capture_188932/lumina_plasma_state.csv",
+    "scheme_csv": "/gpfs/kjhan/lumina_runner2/scratch/instr_capture_188932/scheme_fracture_s0/scheme_fracture_s0_line_rank.csv"
+  },
+  "states": {
+    "iter10_eps_generation": {
+      "T_e_K": 21081.34859856876,
+      "n_e_cm-3": 4481706543.77714
+    },
+    "requested_final": {
+      "T_e_K": 21227.639444,
+      "n_e_cm-3": 4627433000.0
+    }
+  },
+  "status": "PASS"
+}

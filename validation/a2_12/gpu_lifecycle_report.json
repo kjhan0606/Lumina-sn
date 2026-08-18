@@ -2,6 +2,6 @@
   "stage": "A2-12",
   "gpu_execution": "COMPLETE",
   "positive_rc": 0,
-  "positive_stdout_sha256": "8927841a12cf1e3b9d19b578ada7c9b208690915244408504709ebee82233b1a",
+  "positive_stdout_sha256": "cec64bce058949ecb7db7f1c48ee2cfd8f4a7658cae0a1cf185ef6754c369135",
   "negative_controls_pass": true
 }

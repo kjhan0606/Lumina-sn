@@ -1,0 +1,4 @@
+shell_label,shell,v_kms,target_A,native_bin_A,mc_J,cs_J,mc_over_cs,source_file,source_fields
+s0,0,4264,1526.17,1526.087,0.007963989,0.002025034,3.932768042413114,/gpfs/kjhan/lumina_runner2/scratch/instr_capture_188932/lumina_coevolve_field.csv,wavelength_A; mc_J; cs_J
+s2,2,5720,1526.17,1526.087,0.0002660475,0.0008594945,0.309539502579714,/gpfs/kjhan/lumina_runner2/scratch/instr_capture_188932/lumina_coevolve_field.csv,wavelength_A; mc_J; cs_J
+s4,4,7176,1526.17,1526.087,6.769741e-05,0.000364811,0.18556844503044043,/gpfs/kjhan/lumina_runner2/scratch/instr_capture_188932/lumina_coevolve_field.csv,wavelength_A; mc_J; cs_J

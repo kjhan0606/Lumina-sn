@@ -1,0 +1,583 @@
+shell,lumina_velocity_km_s,cmfgen_depth_1based,cmfgen_velocity_km_s,category,quantity,Z,stage,transition,lumina_value,cmfgen_value,lumina_over_cmfgen,unit,cmfgen_source,status,note
+0,4.264000000e+03,67,4.394182351e+03,state,T_e,0,-1,,2.120268337e+04,1.853588700e+04,1.143872067e+00,K,RVTJ:Temperature (10^4K)*1e4,compared,
+0,4.264000000e+03,67,4.394182351e+03,state,n_e,0,-1,,4.621814000e+09,4.852872100e+09,9.523873502e-01,cm^-3,RVTJ:Electron density; source-certified #/cm^3,compared,
+0,4.264000000e+03,67,4.394182351e+03,state,T_rad,0,-1,,1.047009324e+04,,,K,,unavailable,RVTJ has no identical Lumina dilute-field scalar
+0,4.264000000e+03,67,4.394182351e+03,state,W,0,-1,,2.978587262e-01,,,dimensionless,,unavailable,RVTJ has no identical Lumina dilute-field scalar
+0,4.264000000e+03,67,4.394182351e+03,state,n_ion,14,1,,0.000000000e+00,2.422900000e-24,0.000000000e+00,cm^-3,Sk2PRRR:Ion Density,compared,
+0,4.264000000e+03,67,4.394182351e+03,state,ion_fraction,14,1,,,,,dimensionless,,lumina_unavailable,recorded element-stage census sums to zero in this frozen cell
+0,4.264000000e+03,67,4.394182351e+03,state,b_k_representative,14,1,,,,,dimensionless,,lumina_unavailable,no positive-population level with a non-sentinel recorded b_k
+0,4.264000000e+03,67,4.394182351e+03,state,n_ion,14,2,,0.000000000e+00,7.013300000e-21,0.000000000e+00,cm^-3,SkIIIPRRR:Ion Density,compared,
+0,4.264000000e+03,67,4.394182351e+03,state,ion_fraction,14,2,,,,,dimensionless,,lumina_unavailable,recorded element-stage census sums to zero in this frozen cell
+0,4.264000000e+03,67,4.394182351e+03,state,b_k_representative,14,2,,,,,dimensionless,,lumina_unavailable,no positive-population level with a non-sentinel recorded b_k
+0,4.264000000e+03,67,4.394182351e+03,state,n_ion,16,1,,0.000000000e+00,2.087800000e-23,0.000000000e+00,cm^-3,S2PRRR:Ion Density,compared,
+0,4.264000000e+03,67,4.394182351e+03,state,ion_fraction,16,1,,,,,dimensionless,,lumina_unavailable,recorded element-stage census sums to zero in this frozen cell
+0,4.264000000e+03,67,4.394182351e+03,state,b_k_representative,16,1,,,,,dimensionless,,lumina_unavailable,no positive-population level with a non-sentinel recorded b_k
+0,4.264000000e+03,67,4.394182351e+03,state,n_ion,16,2,,0.000000000e+00,9.433500000e-21,0.000000000e+00,cm^-3,SIIIPRRR:Ion Density,compared,
+0,4.264000000e+03,67,4.394182351e+03,state,ion_fraction,16,2,,,,,dimensionless,,lumina_unavailable,recorded element-stage census sums to zero in this frozen cell
+0,4.264000000e+03,67,4.394182351e+03,state,b_k_representative,16,2,,,,,dimensionless,,lumina_unavailable,no positive-population level with a non-sentinel recorded b_k
+0,4.264000000e+03,67,4.394182351e+03,state,n_ion,26,1,,1.269776000e+02,2.958500000e+04,4.291958763e-03,cm^-3,Fe2PRRR:Ion Density,compared,
+0,4.264000000e+03,67,4.394182351e+03,state,ion_fraction,26,1,,7.663781789e-07,,,dimensionless,,unavailable,CMFGEN target PRRR files do not constitute a complete element-stage census
+0,4.264000000e+03,67,4.394182351e+03,state,b_k_representative,26,1,level0,1.000000000e+00,1.313211700e+00,7.614918448e-01,dimensionless,Fe2OUT:depth-block level0,compared,
+0,4.264000000e+03,67,4.394182351e+03,state,n_ion,26,2,,6.951980000e+05,7.263400000e+07,9.571247625e-03,cm^-3,FeIIIPRRR:Ion Density,compared,
+0,4.264000000e+03,67,4.394182351e+03,state,ion_fraction,26,2,,4.195894215e-03,,,dimensionless,,unavailable,CMFGEN target PRRR files do not constitute a complete element-stage census
+0,4.264000000e+03,67,4.394182351e+03,state,b_k_representative,26,2,level0,1.000000000e+00,1.175580100e+00,8.506438651e-01,dimensionless,FeIIIOUT:depth-block level0,compared,
+0,4.264000000e+03,67,4.394182351e+03,state,n_ion,26,3,,1.627114000e+08,6.940800000e+05,2.344274435e+02,cm^-3,FeIVPRRR:Ion Density,compared,
+0,4.264000000e+03,67,4.394182351e+03,state,ion_fraction,26,3,,9.820509005e-01,,,dimensionless,,unavailable,CMFGEN target PRRR files do not constitute a complete element-stage census
+0,4.264000000e+03,67,4.394182351e+03,state,b_k_representative,26,3,,,,,dimensionless,,lumina_unavailable,no positive-population level with a non-sentinel recorded b_k
+0,4.264000000e+03,67,4.394182351e+03,state,n_ion,27,2,,1.782755000e+08,7.797000000e+08,2.286462742e-01,cm^-3,CoIIIPRRR:Ion Density,compared,
+0,4.264000000e+03,67,4.394182351e+03,state,ion_fraction,27,2,,1.401470586e-01,,,dimensionless,,unavailable,CMFGEN target PRRR files do not constitute a complete element-stage census
+0,4.264000000e+03,67,4.394182351e+03,state,b_k_representative,27,2,level0,1.000000000e+00,1.259159700e+00,7.941804364e-01,dimensionless,CoIIIOUT:depth-block level0,compared,
+0,4.264000000e+03,67,4.394182351e+03,input,rate_consume_iteration,0,-1,,1.100000000e+01,,,iteration,,unavailable,no registered identical CMFGEN anchor
+0,4.264000000e+03,67,4.394182351e+03,input,field_producer_iteration,0,-1,,1.000000000e+01,,,iteration,,unavailable,no registered identical CMFGEN anchor
+0,4.264000000e+03,67,4.394182351e+03,input,producer_to_consumer_lag,0,-1,,1.000000000e+00,,,iteration,,unavailable,no registered identical CMFGEN anchor
+0,4.264000000e+03,67,4.394182351e+03,input,c1_coarse_bins_loaded,0,-1,,2.400000000e+01,,,count,,unavailable,no registered identical CMFGEN anchor
+0,4.264000000e+03,67,4.394182351e+03,input,jbar_rows_loaded,0,-1,,5.871000000e+03,,,count,,unavailable,no registered identical CMFGEN anchor
+0,4.264000000e+03,67,4.394182351e+03,input,raw_jbar_exact_ions,0,-1,,2.000000000e+00,,,count,,unavailable,no registered identical CMFGEN anchor
+0,4.264000000e+03,67,4.394182351e+03,input,thermal_tail_color_active,0,-1,,0.000000000e+00,,,boolean,,unavailable,no registered identical CMFGEN anchor
+0,4.264000000e+03,67,4.394182351e+03,input,thermal_tri_response_active,0,-1,,0.000000000e+00,,,boolean,,unavailable,no registered identical CMFGEN anchor
+0,4.264000000e+03,67,4.394182351e+03,input,thermal_line_re_active,0,-1,,0.000000000e+00,,,boolean,,unavailable,no registered identical CMFGEN anchor
+0,4.264000000e+03,67,4.394182351e+03,input,thermal_photoion_mc_active,0,-1,,0.000000000e+00,,,boolean,,unavailable,no registered identical CMFGEN anchor
+0,4.264000000e+03,67,4.394182351e+03,input,ma_line_destruct_terminals_global,0,-1,,5.066859740e+08,,,count,,unavailable,no registered identical CMFGEN anchor
+0,4.264000000e+03,67,4.394182351e+03,input,ma_line_destruct_destroyed_global,0,-1,,5.542080000e+05,,,count,,unavailable,no registered identical CMFGEN anchor
+0,4.264000000e+03,67,4.394182351e+03,input,bf_rate_estimator_bins_loaded,0,-1,,1.000000000e+03,,,count,,unavailable,no registered identical CMFGEN anchor
+0,4.264000000e+03,67,4.394182351e+03,input,bf_rate_estimator_bins_expected,0,-1,,1.000000000e+03,,,count,,unavailable,no registered identical CMFGEN anchor
+0,4.264000000e+03,67,4.394182351e+03,input,bf_rate_estimator_positive_consumptions,0,-1,,5.908270000e+06,,,count,,unavailable,no registered identical CMFGEN anchor
+0,4.264000000e+03,67,4.394182351e+03,input,bf_rate_estimator_fallback_consumptions,0,-1,,2.013880000e+06,,,count,,unavailable,no registered identical CMFGEN anchor
+0,4.264000000e+03,67,4.394182351e+03,input,raw_jbar_ion_recorded,14,1,,1.000000000e+00,,,dimensionless,,unavailable,no registered identical CMFGEN anchor
+0,4.264000000e+03,67,4.394182351e+03,input,raw_jbar_ion_recorded,14,2,,1.000000000e+00,,,dimensionless,,unavailable,no registered identical CMFGEN anchor
+0,4.264000000e+03,67,4.394182351e+03,input,raw_jbar_ion_recorded,16,1,,0.000000000e+00,,,dimensionless,,unavailable,no registered identical CMFGEN anchor
+0,4.264000000e+03,67,4.394182351e+03,input,raw_jbar_ion_recorded,16,2,,0.000000000e+00,,,dimensionless,,unavailable,no registered identical CMFGEN anchor
+0,4.264000000e+03,67,4.394182351e+03,input,raw_jbar_ion_recorded,26,1,,0.000000000e+00,,,dimensionless,,unavailable,no registered identical CMFGEN anchor
+0,4.264000000e+03,67,4.394182351e+03,input,raw_jbar_ion_recorded,26,2,,0.000000000e+00,,,dimensionless,,unavailable,no registered identical CMFGEN anchor
+0,4.264000000e+03,67,4.394182351e+03,input,raw_jbar_ion_recorded,26,3,,0.000000000e+00,,,dimensionless,,unavailable,no registered identical CMFGEN anchor
+0,4.264000000e+03,67,4.394182351e+03,input,raw_jbar_ion_recorded,27,2,,0.000000000e+00,,,dimensionless,,unavailable,no registered identical CMFGEN anchor
+0,4.264000000e+03,67,4.394182351e+03,bf,Gamma_photoion_total,14,1,,0.000000000e+00,2.079745202e-02,0.000000000e+00,s^-1,Sk2PRRR:sum(exact N_SL PR)/Ion Density,compared,
+0,4.264000000e+03,67,4.394182351e+03,bf,alpha_recomb_total,14,1,,2.821038359e-13,4.285500000e-12,6.582751976e-02,cm^3_s^-1,"Sk2PRRR:RR/(ED*ion density), source-certified cm^3/s",compared,
+0,4.264000000e+03,67,4.394182351e+03,bf,alpha_recomb_spont,14,1,,2.586042181e-13,,,cm^3_s^-1,,unavailable,CMFGEN PRRR does not expose a separately labelled spontaneous/stimulated alpha split
+0,4.264000000e+03,67,4.394182351e+03,bf,alpha_recomb_stim,14,1,,2.349961787e-14,,,cm^3_s^-1,,unavailable,CMFGEN PRRR does not expose a separately labelled spontaneous/stimulated alpha split
+0,4.264000000e+03,67,4.394182351e+03,bf,chi_bf_at_1000A,14,1,,0.000000000e+00,,,cm^-1,,unavailable,selected CMFGEN files expose no identical monochromatic coefficient
+0,4.264000000e+03,67,4.394182351e+03,bf,eta_bf_at_1000A,14,1,,0.000000000e+00,,,erg_s^-1_cm^-3_Hz^-1_sr^-1,,unavailable,selected CMFGEN files expose no identical monochromatic coefficient
+0,4.264000000e+03,67,4.394182351e+03,bf,chi_bf_at_5000A,14,1,,0.000000000e+00,,,cm^-1,,unavailable,selected CMFGEN files expose no identical monochromatic coefficient
+0,4.264000000e+03,67,4.394182351e+03,bf,eta_bf_at_5000A,14,1,,0.000000000e+00,,,erg_s^-1_cm^-3_Hz^-1_sr^-1,,unavailable,selected CMFGEN files expose no identical monochromatic coefficient
+0,4.264000000e+03,67,4.394182351e+03,bb,jbar_representative,14,1,,,6.938255638e-08,,,EDDFACTOR:nu=3.498970000e+12Hz,lumina_unavailable,no_positive_lower-level population flow selected
+0,4.264000000e+03,67,4.394182351e+03,bb,jbar_input_raw,14,1,,,6.938255638e-08,,,EDDFACTOR:nu=3.498970000e+12Hz,lumina_unavailable,no representative transition was selected
+0,4.264000000e+03,67,4.394182351e+03,bb,sobolev_beta,14,1,,,,,,,lumina_unavailable,no representative transition was selected
+0,4.264000000e+03,67,4.394182351e+03,bb,R_lu_radiative,14,1,,,,,,,lumina_unavailable,no_positive lower-level population flow selected
+0,4.264000000e+03,67,4.394182351e+03,bb,R_ul_stimulated,14,1,,,,,,,lumina_unavailable,no_positive lower-level population flow selected
+0,4.264000000e+03,67,4.394182351e+03,bb,R_ul_spontaneous,14,1,,,,,,,lumina_unavailable,no_positive lower-level population flow selected
+0,4.264000000e+03,67,4.394182351e+03,collisional,C_lu,14,1,,,,,,,lumina_unavailable,no_positive lower-level population flow selected
+0,4.264000000e+03,67,4.394182351e+03,collisional,C_ul,14,1,,,,,,,lumina_unavailable,no_positive lower-level population flow selected
+0,4.264000000e+03,67,4.394182351e+03,bf,Gamma_photoion_total,14,2,,,3.859157743e-02,,,SkIIIPRRR:sum(exact N_SL PR)/Ion Density,lumina_unavailable,ion is not a lower member of an assembled NLTE pair
+0,4.264000000e+03,67,4.394182351e+03,bf,alpha_recomb_total,14,2,,,7.952500000e-12,,,"SkIIIPRRR:RR/(ED*ion density), source-certified cm^3/s",lumina_unavailable,ion is not a lower member of an assembled NLTE pair
+0,4.264000000e+03,67,4.394182351e+03,bf,alpha_recomb_spont,14,2,,,,,,,lumina_unavailable,ion is not a lower member of an assembled NLTE pair
+0,4.264000000e+03,67,4.394182351e+03,bf,alpha_recomb_stim,14,2,,,,,,,lumina_unavailable,ion is not a lower member of an assembled NLTE pair
+0,4.264000000e+03,67,4.394182351e+03,bf,chi_bf_at_1000A,14,2,,0.000000000e+00,,,cm^-1,,unavailable,selected CMFGEN files expose no identical monochromatic coefficient
+0,4.264000000e+03,67,4.394182351e+03,bf,eta_bf_at_1000A,14,2,,0.000000000e+00,,,erg_s^-1_cm^-3_Hz^-1_sr^-1,,unavailable,selected CMFGEN files expose no identical monochromatic coefficient
+0,4.264000000e+03,67,4.394182351e+03,bf,chi_bf_at_5000A,14,2,,0.000000000e+00,,,cm^-1,,unavailable,selected CMFGEN files expose no identical monochromatic coefficient
+0,4.264000000e+03,67,4.394182351e+03,bf,eta_bf_at_5000A,14,2,,0.000000000e+00,,,erg_s^-1_cm^-3_Hz^-1_sr^-1,,unavailable,selected CMFGEN files expose no identical monochromatic coefficient
+0,4.264000000e+03,67,4.394182351e+03,bb,jbar_representative,14,2,,,6.938255638e-08,,,EDDFACTOR:nu=3.498970000e+12Hz,lumina_unavailable,no_positive_lower-level population flow selected
+0,4.264000000e+03,67,4.394182351e+03,bb,jbar_input_raw,14,2,,,6.938255638e-08,,,EDDFACTOR:nu=3.498970000e+12Hz,lumina_unavailable,no representative transition was selected
+0,4.264000000e+03,67,4.394182351e+03,bb,sobolev_beta,14,2,,,,,,,lumina_unavailable,no representative transition was selected
+0,4.264000000e+03,67,4.394182351e+03,bb,R_lu_radiative,14,2,,,,,,,lumina_unavailable,no_positive lower-level population flow selected
+0,4.264000000e+03,67,4.394182351e+03,bb,R_ul_stimulated,14,2,,,,,,,lumina_unavailable,no_positive lower-level population flow selected
+0,4.264000000e+03,67,4.394182351e+03,bb,R_ul_spontaneous,14,2,,,,,,,lumina_unavailable,no_positive lower-level population flow selected
+0,4.264000000e+03,67,4.394182351e+03,collisional,C_lu,14,2,,,,,,,lumina_unavailable,no_positive lower-level population flow selected
+0,4.264000000e+03,67,4.394182351e+03,collisional,C_ul,14,2,,,,,,,lumina_unavailable,no_positive lower-level population flow selected
+0,4.264000000e+03,67,4.394182351e+03,bf,Gamma_photoion_total,16,1,,0.000000000e+00,1.274938583e-02,0.000000000e+00,s^-1,S2PRRR:sum(exact N_SL PR)/Ion Density,compared,
+0,4.264000000e+03,67,4.394182351e+03,bf,alpha_recomb_total,16,1,,3.254912945e-12,2.627200000e-12,1.238928496e+00,cm^3_s^-1,"S2PRRR:RR/(ED*ion density), source-certified cm^3/s",compared,
+0,4.264000000e+03,67,4.394182351e+03,bf,alpha_recomb_spont,16,1,,3.070512652e-12,,,cm^3_s^-1,,unavailable,CMFGEN PRRR does not expose a separately labelled spontaneous/stimulated alpha split
+0,4.264000000e+03,67,4.394182351e+03,bf,alpha_recomb_stim,16,1,,1.844002929e-13,,,cm^3_s^-1,,unavailable,CMFGEN PRRR does not expose a separately labelled spontaneous/stimulated alpha split
+0,4.264000000e+03,67,4.394182351e+03,bf,chi_bf_at_1000A,16,1,,0.000000000e+00,,,cm^-1,,unavailable,selected CMFGEN files expose no identical monochromatic coefficient
+0,4.264000000e+03,67,4.394182351e+03,bf,eta_bf_at_1000A,16,1,,0.000000000e+00,,,erg_s^-1_cm^-3_Hz^-1_sr^-1,,unavailable,selected CMFGEN files expose no identical monochromatic coefficient
+0,4.264000000e+03,67,4.394182351e+03,bf,chi_bf_at_5000A,16,1,,0.000000000e+00,,,cm^-1,,unavailable,selected CMFGEN files expose no identical monochromatic coefficient
+0,4.264000000e+03,67,4.394182351e+03,bf,eta_bf_at_5000A,16,1,,0.000000000e+00,,,erg_s^-1_cm^-3_Hz^-1_sr^-1,,unavailable,selected CMFGEN files expose no identical monochromatic coefficient
+0,4.264000000e+03,67,4.394182351e+03,bb,jbar_representative,16,1,,,6.938255638e-08,,,EDDFACTOR:nu=3.498970000e+12Hz,lumina_unavailable,no_positive_lower-level population flow selected
+0,4.264000000e+03,67,4.394182351e+03,bb,jbar_input_raw,16,1,,,6.938255638e-08,,,EDDFACTOR:nu=3.498970000e+12Hz,lumina_unavailable,no representative transition was selected
+0,4.264000000e+03,67,4.394182351e+03,bb,sobolev_beta,16,1,,,,,,,lumina_unavailable,no representative transition was selected
+0,4.264000000e+03,67,4.394182351e+03,bb,R_lu_radiative,16,1,,,,,,,lumina_unavailable,no_positive lower-level population flow selected
+0,4.264000000e+03,67,4.394182351e+03,bb,R_ul_stimulated,16,1,,,,,,,lumina_unavailable,no_positive lower-level population flow selected
+0,4.264000000e+03,67,4.394182351e+03,bb,R_ul_spontaneous,16,1,,,,,,,lumina_unavailable,no_positive lower-level population flow selected
+0,4.264000000e+03,67,4.394182351e+03,collisional,C_lu,16,1,,,,,,,lumina_unavailable,no_positive lower-level population flow selected
+0,4.264000000e+03,67,4.394182351e+03,collisional,C_ul,16,1,,,,,,,lumina_unavailable,no_positive lower-level population flow selected
+0,4.264000000e+03,67,4.394182351e+03,bf,Gamma_photoion_total,16,2,,,6.180486048e-02,,,SIIIPRRR:sum(exact N_SL PR)/Ion Density,lumina_unavailable,ion is not a lower member of an assembled NLTE pair
+0,4.264000000e+03,67,4.394182351e+03,bf,alpha_recomb_total,16,2,,,1.273600000e-11,,,"SIIIPRRR:RR/(ED*ion density), source-certified cm^3/s",lumina_unavailable,ion is not a lower member of an assembled NLTE pair
+0,4.264000000e+03,67,4.394182351e+03,bf,alpha_recomb_spont,16,2,,,,,,,lumina_unavailable,ion is not a lower member of an assembled NLTE pair
+0,4.264000000e+03,67,4.394182351e+03,bf,alpha_recomb_stim,16,2,,,,,,,lumina_unavailable,ion is not a lower member of an assembled NLTE pair
+0,4.264000000e+03,67,4.394182351e+03,bf,chi_bf_at_1000A,16,2,,0.000000000e+00,,,cm^-1,,unavailable,selected CMFGEN files expose no identical monochromatic coefficient
+0,4.264000000e+03,67,4.394182351e+03,bf,eta_bf_at_1000A,16,2,,0.000000000e+00,,,erg_s^-1_cm^-3_Hz^-1_sr^-1,,unavailable,selected CMFGEN files expose no identical monochromatic coefficient
+0,4.264000000e+03,67,4.394182351e+03,bf,chi_bf_at_5000A,16,2,,0.000000000e+00,,,cm^-1,,unavailable,selected CMFGEN files expose no identical monochromatic coefficient
+0,4.264000000e+03,67,4.394182351e+03,bf,eta_bf_at_5000A,16,2,,0.000000000e+00,,,erg_s^-1_cm^-3_Hz^-1_sr^-1,,unavailable,selected CMFGEN files expose no identical monochromatic coefficient
+0,4.264000000e+03,67,4.394182351e+03,bb,jbar_representative,16,2,,,6.938255638e-08,,,EDDFACTOR:nu=3.498970000e+12Hz,lumina_unavailable,no_positive_lower-level population flow selected
+0,4.264000000e+03,67,4.394182351e+03,bb,jbar_input_raw,16,2,,,6.938255638e-08,,,EDDFACTOR:nu=3.498970000e+12Hz,lumina_unavailable,no representative transition was selected
+0,4.264000000e+03,67,4.394182351e+03,bb,sobolev_beta,16,2,,,,,,,lumina_unavailable,no representative transition was selected
+0,4.264000000e+03,67,4.394182351e+03,bb,R_lu_radiative,16,2,,,,,,,lumina_unavailable,no_positive lower-level population flow selected
+0,4.264000000e+03,67,4.394182351e+03,bb,R_ul_stimulated,16,2,,,,,,,lumina_unavailable,no_positive lower-level population flow selected
+0,4.264000000e+03,67,4.394182351e+03,bb,R_ul_spontaneous,16,2,,,,,,,lumina_unavailable,no_positive lower-level population flow selected
+0,4.264000000e+03,67,4.394182351e+03,collisional,C_lu,16,2,,,,,,,lumina_unavailable,no_positive lower-level population flow selected
+0,4.264000000e+03,67,4.394182351e+03,collisional,C_ul,16,2,,,,,,,lumina_unavailable,no_positive lower-level population flow selected
+0,4.264000000e+03,67,4.394182351e+03,bf,Gamma_photoion_total,26,1,,8.195665289e+05,7.624200139e-03,1.074954112e+08,s^-1,Fe2PRRR:sum(exact N_SL PR)/Ion Density,compared,
+0,4.264000000e+03,67,4.394182351e+03,bf,alpha_recomb_total,26,1,,6.273820098e-12,1.571100000e-12,3.993265927e+00,cm^3_s^-1,"Fe2PRRR:RR/(ED*ion density), source-certified cm^3/s",compared,
+0,4.264000000e+03,67,4.394182351e+03,bf,alpha_recomb_spont,26,1,,5.933686598e-12,,,cm^3_s^-1,,unavailable,CMFGEN PRRR does not expose a separately labelled spontaneous/stimulated alpha split
+0,4.264000000e+03,67,4.394182351e+03,bf,alpha_recomb_stim,26,1,,3.401335001e-13,,,cm^3_s^-1,,unavailable,CMFGEN PRRR does not expose a separately labelled spontaneous/stimulated alpha split
+0,4.264000000e+03,67,4.394182351e+03,bf,chi_bf_at_1000A,26,1,,1.805008539e-18,,,cm^-1,,unavailable,selected CMFGEN files expose no identical monochromatic coefficient
+0,4.264000000e+03,67,4.394182351e+03,bf,eta_bf_at_1000A,26,1,,1.415093487e-24,,,erg_s^-1_cm^-3_Hz^-1_sr^-1,,unavailable,selected CMFGEN files expose no identical monochromatic coefficient
+0,4.264000000e+03,67,4.394182351e+03,bf,chi_bf_at_5000A,26,1,,3.705485261e-22,,,cm^-1,,unavailable,selected CMFGEN files expose no identical monochromatic coefficient
+0,4.264000000e+03,67,4.394182351e+03,bf,eta_bf_at_5000A,26,1,,1.069798404e-25,,,erg_s^-1_cm^-3_Hz^-1_sr^-1,,unavailable,selected CMFGEN files expose no identical monochromatic coefficient
+0,4.264000000e+03,67,4.394182351e+03,bb,jbar_representative,26,1,line661085_l0_u68_2382.7640A,1.525043260e-03,9.379098742e-04,1.626001924e+00,erg_s^-1_cm^-2_Hz^-1_sr^-1,EDDFACTOR:nu=1.258150482e+15Hz,compared,nearest native CMFGEN frequency at speed-matched depth
+0,4.264000000e+03,67,4.394182351e+03,bb,jbar_input_raw,26,1,,,6.938255638e-08,,,EDDFACTOR:nu=3.498970000e+12Hz,lumina_unavailable,original raw-Jbar/tau was filtered before archival; representative J and rates are separately quantified by the production C1-fallback replay
+0,4.264000000e+03,67,4.394182351e+03,bb,sobolev_beta,26,1,line661085_l0_u68_2382.7640A,1.000000000e+00,,,dimensionless,,unavailable,GENCOOL/EDDFACTOR do not expose the matched transition rate/beta
+0,4.264000000e+03,67,4.394182351e+03,bb,R_lu_radiative,26,1,line661085_l0_u68_2382.7640A,1.952361220e+07,,,s^-1,,unavailable,GENCOOL/EDDFACTOR do not expose the matched transition rate/beta
+0,4.264000000e+03,67,4.394182351e+03,bb,R_ul_stimulated,26,1,line661085_l0_u68_2382.7640A,1.626967683e+07,,,s^-1,,unavailable,GENCOOL/EDDFACTOR do not expose the matched transition rate/beta
+0,4.264000000e+03,67,4.394182351e+03,bb,R_ul_spontaneous,26,1,line661085_l0_u68_2382.7640A,3.133000000e+08,,,s^-1,,unavailable,GENCOOL/EDDFACTOR do not expose the matched transition rate/beta
+0,4.264000000e+03,67,4.394182351e+03,collisional,C_lu,26,1,line661085_l0_u68_2382.7640A,1.587665979e-01,,,s^-1,,unavailable,"GENCOOL exposes aggregate collisional cooling, not the representative transition coefficient"
+0,4.264000000e+03,67,4.394182351e+03,collisional,C_ul,26,1,line661085_l0_u68_2382.7640A,2.282423724e+00,,,s^-1,,unavailable,"GENCOOL exposes aggregate collisional cooling, not the representative transition coefficient"
+0,4.264000000e+03,67,4.394182351e+03,bf,Gamma_photoion_total,26,2,,,1.500688313e-01,,,FeIIIPRRR:sum(exact N_SL PR)/Ion Density,lumina_unavailable,ion is not a lower member of an assembled NLTE pair
+0,4.264000000e+03,67,4.394182351e+03,bf,alpha_recomb_total,26,2,,,3.092400000e-11,,,"FeIIIPRRR:RR/(ED*ion density), source-certified cm^3/s",lumina_unavailable,ion is not a lower member of an assembled NLTE pair
+0,4.264000000e+03,67,4.394182351e+03,bf,alpha_recomb_spont,26,2,,,,,,,lumina_unavailable,ion is not a lower member of an assembled NLTE pair
+0,4.264000000e+03,67,4.394182351e+03,bf,alpha_recomb_stim,26,2,,,,,,,lumina_unavailable,ion is not a lower member of an assembled NLTE pair
+0,4.264000000e+03,67,4.394182351e+03,bf,chi_bf_at_1000A,26,2,,7.318324588e-21,,,cm^-1,,unavailable,selected CMFGEN files expose no identical monochromatic coefficient
+0,4.264000000e+03,67,4.394182351e+03,bf,eta_bf_at_1000A,26,2,,2.209733078e-21,,,erg_s^-1_cm^-3_Hz^-1_sr^-1,,unavailable,selected CMFGEN files expose no identical monochromatic coefficient
+0,4.264000000e+03,67,4.394182351e+03,bf,chi_bf_at_5000A,26,2,,4.986916855e-25,,,cm^-1,,unavailable,selected CMFGEN files expose no identical monochromatic coefficient
+0,4.264000000e+03,67,4.394182351e+03,bf,eta_bf_at_5000A,26,2,,5.525864926e-23,,,erg_s^-1_cm^-3_Hz^-1_sr^-1,,unavailable,selected CMFGEN files expose no identical monochromatic coefficient
+0,4.264000000e+03,67,4.394182351e+03,bb,jbar_representative,26,2,line534905_l17_u65_1895.4724A,1.698630454e-03,8.027568538e-04,2.115996202e+00,erg_s^-1_cm^-2_Hz^-1_sr^-1,EDDFACTOR:nu=1.581590788e+15Hz,compared,nearest native CMFGEN frequency at speed-matched depth
+0,4.264000000e+03,67,4.394182351e+03,bb,jbar_input_raw,26,2,,,6.938255638e-08,,,EDDFACTOR:nu=3.498970000e+12Hz,lumina_unavailable,original raw-Jbar/tau was filtered before archival; representative J and rates are separately quantified by the production C1-fallback replay
+0,4.264000000e+03,67,4.394182351e+03,bb,sobolev_beta,26,2,line534905_l17_u65_1895.4724A,1.000000000e+00,,,dimensionless,,unavailable,GENCOOL/EDDFACTOR do not expose the matched transition rate/beta
+0,4.264000000e+03,67,4.394182351e+03,bb,R_lu_radiative,26,2,line534905_l17_u65_1895.4724A,2.524307028e+07,,,s^-1,,unavailable,GENCOOL/EDDFACTOR do not expose the matched transition rate/beta
+0,4.264000000e+03,67,4.394182351e+03,bb,R_ul_stimulated,26,2,line534905_l17_u65_1895.4724A,1.963349911e+07,,,s^-1,,unavailable,GENCOOL/EDDFACTOR do not expose the matched transition rate/beta
+0,4.264000000e+03,67,4.394182351e+03,bb,R_ul_spontaneous,26,2,line534905_l17_u65_1895.4724A,6.743000000e+08,,,s^-1,,unavailable,GENCOOL/EDDFACTOR do not expose the matched transition rate/beta
+0,4.264000000e+03,67,4.394182351e+03,collisional,C_lu,26,2,line534905_l17_u65_1895.4724A,1.090680413e-01,,,s^-1,,unavailable,"GENCOOL exposes aggregate collisional cooling, not the representative transition coefficient"
+0,4.264000000e+03,67,4.394182351e+03,collisional,C_ul,26,2,line534905_l17_u65_1895.4724A,3.043231632e+00,,,s^-1,,unavailable,"GENCOOL exposes aggregate collisional cooling, not the representative transition coefficient"
+0,4.264000000e+03,67,4.394182351e+03,bf,Gamma_photoion_total,26,3,,,6.010451034e-02,,,FeIVPRRR:sum(exact N_SL PR)/Ion Density,lumina_unavailable,ion is not a lower member of an assembled NLTE pair
+0,4.264000000e+03,67,4.394182351e+03,bf,alpha_recomb_total,26,3,,,1.238600000e-11,,,"FeIVPRRR:RR/(ED*ion density), source-certified cm^3/s",lumina_unavailable,ion is not a lower member of an assembled NLTE pair
+0,4.264000000e+03,67,4.394182351e+03,bf,alpha_recomb_spont,26,3,,,,,,,lumina_unavailable,ion is not a lower member of an assembled NLTE pair
+0,4.264000000e+03,67,4.394182351e+03,bf,alpha_recomb_stim,26,3,,,,,,,lumina_unavailable,ion is not a lower member of an assembled NLTE pair
+0,4.264000000e+03,67,4.394182351e+03,bf,chi_bf_at_1000A,26,3,,0.000000000e+00,,,cm^-1,,unavailable,selected CMFGEN files expose no identical monochromatic coefficient
+0,4.264000000e+03,67,4.394182351e+03,bf,eta_bf_at_1000A,26,3,,0.000000000e+00,,,erg_s^-1_cm^-3_Hz^-1_sr^-1,,unavailable,selected CMFGEN files expose no identical monochromatic coefficient
+0,4.264000000e+03,67,4.394182351e+03,bf,chi_bf_at_5000A,26,3,,0.000000000e+00,,,cm^-1,,unavailable,selected CMFGEN files expose no identical monochromatic coefficient
+0,4.264000000e+03,67,4.394182351e+03,bf,eta_bf_at_5000A,26,3,,0.000000000e+00,,,erg_s^-1_cm^-3_Hz^-1_sr^-1,,unavailable,selected CMFGEN files expose no identical monochromatic coefficient
+0,4.264000000e+03,67,4.394182351e+03,bb,jbar_representative,26,3,,,6.938255638e-08,,,EDDFACTOR:nu=3.498970000e+12Hz,lumina_unavailable,no_positive_lower-level population flow selected
+0,4.264000000e+03,67,4.394182351e+03,bb,jbar_input_raw,26,3,,,6.938255638e-08,,,EDDFACTOR:nu=3.498970000e+12Hz,lumina_unavailable,no representative transition was selected
+0,4.264000000e+03,67,4.394182351e+03,bb,sobolev_beta,26,3,,,,,,,lumina_unavailable,no representative transition was selected
+0,4.264000000e+03,67,4.394182351e+03,bb,R_lu_radiative,26,3,,,,,,,lumina_unavailable,no_positive lower-level population flow selected
+0,4.264000000e+03,67,4.394182351e+03,bb,R_ul_stimulated,26,3,,,,,,,lumina_unavailable,no_positive lower-level population flow selected
+0,4.264000000e+03,67,4.394182351e+03,bb,R_ul_spontaneous,26,3,,,,,,,lumina_unavailable,no_positive lower-level population flow selected
+0,4.264000000e+03,67,4.394182351e+03,collisional,C_lu,26,3,,,,,,,lumina_unavailable,no_positive lower-level population flow selected
+0,4.264000000e+03,67,4.394182351e+03,collisional,C_ul,26,3,,,,,,,lumina_unavailable,no_positive lower-level population flow selected
+0,4.264000000e+03,67,4.394182351e+03,bf,Gamma_photoion_total,27,2,,,2.206255374e-02,,,CoIIIPRRR:sum(exact N_SL PR)/Ion Density,lumina_unavailable,ion is not a lower member of an assembled NLTE pair
+0,4.264000000e+03,67,4.394182351e+03,bf,alpha_recomb_total,27,2,,,4.546400000e-12,,,"CoIIIPRRR:RR/(ED*ion density), source-certified cm^3/s",lumina_unavailable,ion is not a lower member of an assembled NLTE pair
+0,4.264000000e+03,67,4.394182351e+03,bf,alpha_recomb_spont,27,2,,,,,,,lumina_unavailable,ion is not a lower member of an assembled NLTE pair
+0,4.264000000e+03,67,4.394182351e+03,bf,alpha_recomb_stim,27,2,,,,,,,lumina_unavailable,ion is not a lower member of an assembled NLTE pair
+0,4.264000000e+03,67,4.394182351e+03,bf,chi_bf_at_1000A,27,2,,3.847070019e-20,,,cm^-1,,unavailable,selected CMFGEN files expose no identical monochromatic coefficient
+0,4.264000000e+03,67,4.394182351e+03,bf,eta_bf_at_1000A,27,2,,2.587965814e-21,,,erg_s^-1_cm^-3_Hz^-1_sr^-1,,unavailable,selected CMFGEN files expose no identical monochromatic coefficient
+0,4.264000000e+03,67,4.394182351e+03,bf,chi_bf_at_5000A,27,2,,6.339884366e-24,,,cm^-1,,unavailable,selected CMFGEN files expose no identical monochromatic coefficient
+0,4.264000000e+03,67,4.394182351e+03,bf,eta_bf_at_5000A,27,2,,1.521080495e-22,,,erg_s^-1_cm^-3_Hz^-1_sr^-1,,unavailable,selected CMFGEN files expose no identical monochromatic coefficient
+0,4.264000000e+03,67,4.394182351e+03,bb,jbar_representative,27,2,line192390_l0_u80_939.0620A,3.085439594e-04,9.231811683e-05,3.342182119e+00,erg_s^-1_cm^-2_Hz^-1_sr^-1,EDDFACTOR:nu=3.192526570e+15Hz,compared,nearest native CMFGEN frequency at speed-matched depth
+0,4.264000000e+03,67,4.394182351e+03,bb,jbar_input_raw,27,2,,,6.938255638e-08,,,EDDFACTOR:nu=3.498970000e+12Hz,lumina_unavailable,original raw-Jbar/tau was filtered before archival; representative J and rates are separately quantified by the production C1-fallback replay
+0,4.264000000e+03,67,4.394182351e+03,bb,sobolev_beta,27,2,line192390_l0_u80_939.0620A,1.000000000e+00,,,dimensionless,,unavailable,GENCOOL/EDDFACTOR do not expose the matched transition rate/beta
+0,4.264000000e+03,67,4.394182351e+03,bb,R_lu_radiative,27,2,line192390_l0_u80_939.0620A,4.365613152e+05,,,s^-1,,unavailable,GENCOOL/EDDFACTOR do not expose the matched transition rate/beta
+0,4.264000000e+03,67,4.394182351e+03,bb,R_ul_stimulated,27,2,line192390_l0_u80_939.0620A,5.457016440e+05,,,s^-1,,unavailable,GENCOOL/EDDFACTOR do not expose the matched transition rate/beta
+0,4.264000000e+03,67,4.394182351e+03,bb,R_ul_spontaneous,27,2,line192390_l0_u80_939.0620A,8.485200000e+08,,,s^-1,,unavailable,GENCOOL/EDDFACTOR do not expose the matched transition rate/beta
+0,4.264000000e+03,67,4.394182351e+03,collisional,C_lu,27,2,line192390_l0_u80_939.0620A,1.992010750e-03,,,s^-1,,unavailable,"GENCOOL exposes aggregate collisional cooling, not the representative transition coefficient"
+0,4.264000000e+03,67,4.394182351e+03,collisional,C_ul,27,2,line192390_l0_u80_939.0620A,3.423635586e+00,,,s^-1,,unavailable,"GENCOOL exposes aggregate collisional cooling, not the representative transition coefficient"
+0,4.264000000e+03,67,4.394182351e+03,ff,chi_ff_at_1000A,0,-1,,5.820118274e-21,,,cm^-1,,unavailable,selected CMFGEN files expose no identical monochromatic coefficient
+0,4.264000000e+03,67,4.394182351e+03,ff,eta_ff_at_1000A,0,-1,,2.603593254e-24,,,erg_s^-1_cm^-3_Hz^-1_sr^-1,,unavailable,selected CMFGEN files expose no identical monochromatic coefficient
+0,4.264000000e+03,67,4.394182351e+03,ff,chi_ff_at_5000A,0,-1,,5.428757595e-19,,,cm^-1,,unavailable,selected CMFGEN files expose no identical monochromatic coefficient
+0,4.264000000e+03,67,4.394182351e+03,ff,eta_ff_at_5000A,0,-1,,5.979705908e-22,,,erg_s^-1_cm^-3_Hz^-1_sr^-1,,unavailable,selected CMFGEN files expose no identical monochromatic coefficient
+0,4.264000000e+03,67,4.394182351e+03,ff,cooling_ff_grid,0,-1,,9.183513888e-06,8.385844420e-06,,erg_s^-1_cm^-3,GENCOOL:sum(all ion Free-Free Cooling),context_only_nonidentical,Lumina row is emissive cooling; GENCOOL FF is net emission-minus-absorption
+0,4.264000000e+03,67,4.394182351e+03,thermal,heating_photoion,0,-1,,1.183341316e-11,,,erg_s^-1_cm^-3,,unavailable,"GENCOOL BF block is net bound-free cooling, not a separate photoion heating rate"
+0,4.264000000e+03,67,4.394182351e+03,thermal,heating_deposition,0,-1,,1.506865000e-03,,,erg_s^-1_cm^-3,,unavailable,GENCOOL has no separately labelled deposition row identical to Lumina's external deposition input
+0,4.264000000e+03,67,4.394182351e+03,thermal,heating_MA_LINE_DESTRUCT,0,-1,,,,,,,lumina_unavailable,archived run retained only global terminal/destroyed event counts; shell ownership and packet-energy/volume normalization are irrecoverable. Re-run capture gate LUMINA_GATEB_ORACLE_CAPTURE writes the required per-shell volumetric ledger
+0,4.264000000e+03,67,4.394182351e+03,thermal,cooling_ff,0,-1,,6.229532186e-06,8.385844420e-06,,erg_s^-1_cm^-3,GENCOOL:sum(all ion Free-Free Cooling),context_only_nonidentical,Lumina row is emissive cooling; GENCOOL FF is net emission-minus-absorption
+0,4.264000000e+03,67,4.394182351e+03,thermal,cooling_bf,0,-1,,2.177445842e-06,-6.380457339e-07,,erg_s^-1_cm^-3,GENCOOL:sum(all ion Bound-Free Cooling),context_only_nonidentical,Lumina row is emission only; GENCOOL BF is net emission-minus-photo-heating; use cooling_bf_net for identical sign accounting
+0,4.264000000e+03,67,4.394182351e+03,thermal,cooling_bf_net,0,-1,,2.177434009e-06,-6.380457339e-07,-3.412661339e+00,erg_s^-1_cm^-3,GENCOOL:sum(all ion Bound-Free Cooling),compared,
+0,4.264000000e+03,67,4.394182351e+03,thermal,cooling_bb_collisional,0,-1,,-2.606312479e-04,3.178162179e-04,-8.200690628e-01,erg_s^-1_cm^-3,GENCOOL:sum(all ion Collisional Cooling),compared,
+0,4.264000000e+03,67,4.394182351e+03,thermal,cooling_adiabatic,0,-1,,3.913483919e-08,,,erg_s^-1_cm^-3,,unavailable,GENCOOL has no separately labelled adiabatic cooling row
+0,4.264000000e+03,67,4.394182351e+03,thermal,thermal_net,0,-1,,1.759050147e-03,-3.255700000e-04,-5.402985984e+00,erg_s^-1_cm^-3,GENCOOL:-Net Cooling Rate (converted C-H to Lumina H-C),compared,
+8,1.008800000e+04,54,1.016350575e+04,state,T_e,0,-1,,1.200772780e+04,1.032347600e+04,1.163147742e+00,K,RVTJ:Temperature (10^4K)*1e4,compared,
+8,1.008800000e+04,54,1.016350575e+04,state,n_e,0,-1,,7.496125000e+08,7.341043400e+08,1.021125280e+00,cm^-3,RVTJ:Electron density; source-certified #/cm^3,compared,
+8,1.008800000e+04,54,1.016350575e+04,state,T_rad,0,-1,,1.047009324e+04,,,K,,unavailable,RVTJ has no identical Lumina dilute-field scalar
+8,1.008800000e+04,54,1.016350575e+04,state,W,0,-1,,3.887582090e-02,,,dimensionless,,unavailable,RVTJ has no identical Lumina dilute-field scalar
+8,1.008800000e+04,54,1.016350575e+04,state,n_ion,14,1,,4.811713000e+03,1.910800000e+08,2.518166736e-05,cm^-3,Sk2PRRR:Ion Density,compared,
+8,1.008800000e+04,54,1.016350575e+04,state,ion_fraction,14,1,,2.487394707e-05,,,dimensionless,,unavailable,CMFGEN target PRRR files do not constitute a complete element-stage census
+8,1.008800000e+04,54,1.016350575e+04,state,b_k_representative,14,1,level1,9.331700000e-01,1.258757700e+00,7.413420391e-01,dimensionless,Sk2OUT:depth-block level1,compared,
+8,1.008800000e+04,54,1.016350575e+04,state,n_ion,14,2,,1.904457000e+08,8.408300000e+04,2.264972706e+03,cm^-3,SkIIIPRRR:Ion Density,compared,
+8,1.008800000e+04,54,1.016350575e+04,state,ion_fraction,14,2,,9.845010005e-01,,,dimensionless,,unavailable,CMFGEN target PRRR files do not constitute a complete element-stage census
+8,1.008800000e+04,54,1.016350575e+04,state,b_k_representative,14,2,level0,1.000000000e+00,1.398275500e+00,7.151666463e-01,dimensionless,SkIIIOUT:depth-block level0,compared,
+8,1.008800000e+04,54,1.016350575e+04,state,n_ion,16,1,,1.907218000e+06,9.269000000e+07,2.057630812e-02,cm^-3,S2PRRR:Ion Density,compared,
+8,1.008800000e+04,54,1.016350575e+04,state,ion_fraction,16,1,,1.768843253e-02,,,dimensionless,,unavailable,CMFGEN target PRRR files do not constitute a complete element-stage census
+8,1.008800000e+04,54,1.016350575e+04,state,b_k_representative,16,1,level0,1.000000000e+00,1.222412700e+00,8.180543281e-01,dimensionless,S2OUT:depth-block level0,compared,
+8,1.008800000e+04,54,1.016350575e+04,state,n_ion,16,2,,1.048402000e+08,4.342100000e+03,2.414504502e+04,cm^-3,SIIIPRRR:Ion Density,compared,
+8,1.008800000e+04,54,1.016350575e+04,state,ion_fraction,16,2,,9.723370923e-01,,,dimensionless,,unavailable,CMFGEN target PRRR files do not constitute a complete element-stage census
+8,1.008800000e+04,54,1.016350575e+04,state,b_k_representative,16,2,level2,9.922300000e-01,1.009351300e+00,9.830373231e-01,dimensionless,SIIIOUT:depth-block level2,compared,
+8,1.008800000e+04,54,1.016350575e+04,state,n_ion,26,1,,4.226677000e+01,3.525600000e+06,1.198853245e-05,cm^-3,Fe2PRRR:Ion Density,compared,
+8,1.008800000e+04,54,1.016350575e+04,state,ion_fraction,26,1,,8.749347633e-06,,,dimensionless,,unavailable,CMFGEN target PRRR files do not constitute a complete element-stage census
+8,1.008800000e+04,54,1.016350575e+04,state,b_k_representative,26,1,level0,1.000000000e+00,1.148429900e+00,8.707540617e-01,dimensionless,Fe2OUT:depth-block level0,compared,
+8,1.008800000e+04,54,1.016350575e+04,state,n_ion,26,2,,4.540674000e+06,7.242000000e+03,6.269917150e+02,cm^-3,FeIIIPRRR:Ion Density,compared,
+8,1.008800000e+04,54,1.016350575e+04,state,ion_fraction,26,2,,9.399330802e-01,,,dimensionless,,unavailable,CMFGEN target PRRR files do not constitute a complete element-stage census
+8,1.008800000e+04,54,1.016350575e+04,state,b_k_representative,26,2,level0,1.000000000e+00,9.280930300e-01,1.077478192e+00,dimensionless,FeIIIOUT:depth-block level0,compared,
+8,1.008800000e+04,54,1.016350575e+04,state,n_ion,26,3,,2.883758000e+05,2.766400000e-10,1.042422643e+15,cm^-3,FeIVPRRR:Ion Density,compared,
+8,1.008800000e+04,54,1.016350575e+04,state,ion_fraction,26,3,,5.969465193e-02,,,dimensionless,,unavailable,CMFGEN target PRRR files do not constitute a complete element-stage census
+8,1.008800000e+04,54,1.016350575e+04,state,b_k_representative,26,3,,,,,dimensionless,,lumina_unavailable,no positive-population level with a non-sentinel recorded b_k
+8,1.008800000e+04,54,1.016350575e+04,state,n_ion,27,2,,3.621273000e+07,7.056000000e+03,5.132189626e+03,cm^-3,CoIIIPRRR:Ion Density,compared,
+8,1.008800000e+04,54,1.016350575e+04,state,ion_fraction,27,2,,9.763697248e-01,,,dimensionless,,unavailable,CMFGEN target PRRR files do not constitute a complete element-stage census
+8,1.008800000e+04,54,1.016350575e+04,state,b_k_representative,27,2,level0,1.000000000e+00,1.170298200e+00,8.544830711e-01,dimensionless,CoIIIOUT:depth-block level0,compared,
+8,1.008800000e+04,54,1.016350575e+04,input,rate_consume_iteration,0,-1,,1.100000000e+01,,,iteration,,unavailable,no registered identical CMFGEN anchor
+8,1.008800000e+04,54,1.016350575e+04,input,field_producer_iteration,0,-1,,1.000000000e+01,,,iteration,,unavailable,no registered identical CMFGEN anchor
+8,1.008800000e+04,54,1.016350575e+04,input,producer_to_consumer_lag,0,-1,,1.000000000e+00,,,iteration,,unavailable,no registered identical CMFGEN anchor
+8,1.008800000e+04,54,1.016350575e+04,input,c1_coarse_bins_loaded,0,-1,,2.400000000e+01,,,count,,unavailable,no registered identical CMFGEN anchor
+8,1.008800000e+04,54,1.016350575e+04,input,jbar_rows_loaded,0,-1,,5.871000000e+03,,,count,,unavailable,no registered identical CMFGEN anchor
+8,1.008800000e+04,54,1.016350575e+04,input,raw_jbar_exact_ions,0,-1,,2.000000000e+00,,,count,,unavailable,no registered identical CMFGEN anchor
+8,1.008800000e+04,54,1.016350575e+04,input,thermal_tail_color_active,0,-1,,0.000000000e+00,,,boolean,,unavailable,no registered identical CMFGEN anchor
+8,1.008800000e+04,54,1.016350575e+04,input,thermal_tri_response_active,0,-1,,0.000000000e+00,,,boolean,,unavailable,no registered identical CMFGEN anchor
+8,1.008800000e+04,54,1.016350575e+04,input,thermal_line_re_active,0,-1,,0.000000000e+00,,,boolean,,unavailable,no registered identical CMFGEN anchor
+8,1.008800000e+04,54,1.016350575e+04,input,thermal_photoion_mc_active,0,-1,,0.000000000e+00,,,boolean,,unavailable,no registered identical CMFGEN anchor
+8,1.008800000e+04,54,1.016350575e+04,input,ma_line_destruct_terminals_global,0,-1,,5.066859740e+08,,,count,,unavailable,no registered identical CMFGEN anchor
+8,1.008800000e+04,54,1.016350575e+04,input,ma_line_destruct_destroyed_global,0,-1,,5.542080000e+05,,,count,,unavailable,no registered identical CMFGEN anchor
+8,1.008800000e+04,54,1.016350575e+04,input,bf_rate_estimator_bins_loaded,0,-1,,1.000000000e+03,,,count,,unavailable,no registered identical CMFGEN anchor
+8,1.008800000e+04,54,1.016350575e+04,input,bf_rate_estimator_bins_expected,0,-1,,1.000000000e+03,,,count,,unavailable,no registered identical CMFGEN anchor
+8,1.008800000e+04,54,1.016350575e+04,input,bf_rate_estimator_positive_consumptions,0,-1,,5.159471000e+06,,,count,,unavailable,no registered identical CMFGEN anchor
+8,1.008800000e+04,54,1.016350575e+04,input,bf_rate_estimator_fallback_consumptions,0,-1,,2.762679000e+06,,,count,,unavailable,no registered identical CMFGEN anchor
+8,1.008800000e+04,54,1.016350575e+04,input,raw_jbar_ion_recorded,14,1,,1.000000000e+00,,,dimensionless,,unavailable,no registered identical CMFGEN anchor
+8,1.008800000e+04,54,1.016350575e+04,input,raw_jbar_ion_recorded,14,2,,1.000000000e+00,,,dimensionless,,unavailable,no registered identical CMFGEN anchor
+8,1.008800000e+04,54,1.016350575e+04,input,raw_jbar_ion_recorded,16,1,,0.000000000e+00,,,dimensionless,,unavailable,no registered identical CMFGEN anchor
+8,1.008800000e+04,54,1.016350575e+04,input,raw_jbar_ion_recorded,16,2,,0.000000000e+00,,,dimensionless,,unavailable,no registered identical CMFGEN anchor
+8,1.008800000e+04,54,1.016350575e+04,input,raw_jbar_ion_recorded,26,1,,0.000000000e+00,,,dimensionless,,unavailable,no registered identical CMFGEN anchor
+8,1.008800000e+04,54,1.016350575e+04,input,raw_jbar_ion_recorded,26,2,,0.000000000e+00,,,dimensionless,,unavailable,no registered identical CMFGEN anchor
+8,1.008800000e+04,54,1.016350575e+04,input,raw_jbar_ion_recorded,26,3,,0.000000000e+00,,,dimensionless,,unavailable,no registered identical CMFGEN anchor
+8,1.008800000e+04,54,1.016350575e+04,input,raw_jbar_ion_recorded,27,2,,0.000000000e+00,,,dimensionless,,unavailable,no registered identical CMFGEN anchor
+8,1.008800000e+04,54,1.016350575e+04,bf,Gamma_photoion_total,14,1,,5.798447653e+01,1.968552105e-03,2.945539332e+04,s^-1,Sk2PRRR:sum(exact N_SL PR)/Ion Density,compared,
+8,1.008800000e+04,54,1.016350575e+04,bf,alpha_recomb_total,14,1,,3.729062990e-13,2.681300000e-12,1.390766788e-01,cm^3_s^-1,"Sk2PRRR:RR/(ED*ion density), source-certified cm^3/s",compared,
+8,1.008800000e+04,54,1.016350575e+04,bf,alpha_recomb_spont,14,1,,3.695404174e-13,,,cm^3_s^-1,,unavailable,CMFGEN PRRR does not expose a separately labelled spontaneous/stimulated alpha split
+8,1.008800000e+04,54,1.016350575e+04,bf,alpha_recomb_stim,14,1,,3.365881618e-15,,,cm^3_s^-1,,unavailable,CMFGEN PRRR does not expose a separately labelled spontaneous/stimulated alpha split
+8,1.008800000e+04,54,1.016350575e+04,bf,chi_bf_at_1000A,14,1,,7.891777884e-19,,,cm^-1,,unavailable,selected CMFGEN files expose no identical monochromatic coefficient
+8,1.008800000e+04,54,1.016350575e+04,bf,eta_bf_at_1000A,14,1,,2.164001662e-23,,,erg_s^-1_cm^-3_Hz^-1_sr^-1,,unavailable,selected CMFGEN files expose no identical monochromatic coefficient
+8,1.008800000e+04,54,1.016350575e+04,bf,chi_bf_at_5000A,14,1,,3.618974944e-22,,,cm^-1,,unavailable,selected CMFGEN files expose no identical monochromatic coefficient
+8,1.008800000e+04,54,1.016350575e+04,bf,eta_bf_at_5000A,14,1,,4.072021641e-24,,,erg_s^-1_cm^-3_Hz^-1_sr^-1,,unavailable,selected CMFGEN files expose no identical monochromatic coefficient
+8,1.008800000e+04,54,1.016350575e+04,bb,jbar_representative,14,1,line403575_l1_u7_1533.4307A,2.034428000e-05,1.459557936e-05,1.393865875e+00,erg_s^-1_cm^-2_Hz^-1_sr^-1,EDDFACTOR:nu=1.955062180e+15Hz,compared,nearest native CMFGEN frequency at speed-matched depth
+8,1.008800000e+04,54,1.016350575e+04,bb,jbar_input_raw,14,1,line403575_l1_u7_1533.4307A,2.034428000e-05,1.459557936e-05,1.393865875e+00,erg_s^-1_cm^-2_Hz^-1_sr^-1,EDDFACTOR:nu=1.955062180e+15Hz,compared,nearest native CMFGEN frequency at speed-matched depth
+8,1.008800000e+04,54,1.016350575e+04,bb,sobolev_beta,14,1,line403575_l1_u7_1533.4307A,9.085341000e-02,,,dimensionless,,unavailable,GENCOOL/EDDFACTOR do not expose the matched transition rate/beta
+8,1.008800000e+04,54,1.016350575e+04,bb,R_lu_radiative,14,1,line403575_l1_u7_1533.4307A,6.329306610e+03,,,s^-1,,unavailable,GENCOOL/EDDFACTOR do not expose the matched transition rate/beta
+8,1.008800000e+04,54,1.016350575e+04,bb,R_ul_stimulated,14,1,line403575_l1_u7_1533.4307A,1.265861322e+04,,,s^-1,,unavailable,GENCOOL/EDDFACTOR do not expose the matched transition rate/beta
+8,1.008800000e+04,54,1.016350575e+04,bb,R_ul_spontaneous,14,1,line403575_l1_u7_1533.4307A,6.855798319e+07,,,s^-1,,unavailable,GENCOOL/EDDFACTOR do not expose the matched transition rate/beta
+8,1.008800000e+04,54,1.016350575e+04,collisional,C_lu,14,1,line403575_l1_u7_1533.4307A,5.963064352e-04,,,s^-1,,unavailable,"GENCOOL exposes aggregate collisional cooling, not the representative transition coefficient"
+8,1.008800000e+04,54,1.016350575e+04,collisional,C_ul,14,1,line403575_l1_u7_1533.4307A,2.951459826e+00,,,s^-1,,unavailable,"GENCOOL exposes aggregate collisional cooling, not the representative transition coefficient"
+8,1.008800000e+04,54,1.016350575e+04,bf,Gamma_photoion_total,14,2,,,6.991962620e-03,,,SkIIIPRRR:sum(exact N_SL PR)/Ion Density,lumina_unavailable,ion is not a lower member of an assembled NLTE pair
+8,1.008800000e+04,54,1.016350575e+04,bf,alpha_recomb_total,14,2,,,9.523400000e-12,,,"SkIIIPRRR:RR/(ED*ion density), source-certified cm^3/s",lumina_unavailable,ion is not a lower member of an assembled NLTE pair
+8,1.008800000e+04,54,1.016350575e+04,bf,alpha_recomb_spont,14,2,,,,,,,lumina_unavailable,ion is not a lower member of an assembled NLTE pair
+8,1.008800000e+04,54,1.016350575e+04,bf,alpha_recomb_stim,14,2,,,,,,,lumina_unavailable,ion is not a lower member of an assembled NLTE pair
+8,1.008800000e+04,54,1.016350575e+04,bf,chi_bf_at_1000A,14,2,,7.788677036e-21,,,cm^-1,,unavailable,selected CMFGEN files expose no identical monochromatic coefficient
+8,1.008800000e+04,54,1.016350575e+04,bf,eta_bf_at_1000A,14,2,,1.202130647e-24,,,erg_s^-1_cm^-3_Hz^-1_sr^-1,,unavailable,selected CMFGEN files expose no identical monochromatic coefficient
+8,1.008800000e+04,54,1.016350575e+04,bf,chi_bf_at_5000A,14,2,,3.107888386e-24,,,cm^-1,,unavailable,selected CMFGEN files expose no identical monochromatic coefficient
+8,1.008800000e+04,54,1.016350575e+04,bf,eta_bf_at_5000A,14,2,,2.221391866e-25,,,erg_s^-1_cm^-3_Hz^-1_sr^-1,,unavailable,selected CMFGEN files expose no identical monochromatic coefficient
+8,1.008800000e+04,54,1.016350575e+04,bb,jbar_representative,14,2,line699750_l4_u5_2542.5813A,7.490040000e-05,7.959250361e-05,9.410484229e-01,erg_s^-1_cm^-2_Hz^-1_sr^-1,EDDFACTOR:nu=1.179078297e+15Hz,compared,nearest native CMFGEN frequency at speed-matched depth
+8,1.008800000e+04,54,1.016350575e+04,bb,jbar_input_raw,14,2,line699750_l4_u5_2542.5813A,7.490040000e-05,7.959250361e-05,9.410484229e-01,erg_s^-1_cm^-2_Hz^-1_sr^-1,EDDFACTOR:nu=1.179078297e+15Hz,compared,nearest native CMFGEN frequency at speed-matched depth
+8,1.008800000e+04,54,1.016350575e+04,bb,sobolev_beta,14,2,line699750_l4_u5_2542.5813A,7.947586000e-02,,,dimensionless,,unavailable,GENCOOL/EDDFACTOR do not expose the matched transition rate/beta
+8,1.008800000e+04,54,1.016350575e+04,bb,R_lu_radiative,14,2,line699750_l4_u5_2542.5813A,1.143581345e+04,,,s^-1,,unavailable,GENCOOL/EDDFACTOR do not expose the matched transition rate/beta
+8,1.008800000e+04,54,1.016350575e+04,bb,R_ul_stimulated,14,2,line699750_l4_u5_2542.5813A,6.861488072e+03,,,s^-1,,unavailable,GENCOOL/EDDFACTOR do not expose the matched transition rate/beta
+8,1.008800000e+04,54,1.016350575e+04,bb,R_ul_spontaneous,14,2,line699750_l4_u5_2542.5813A,2.214197460e+06,,,s^-1,,unavailable,GENCOOL/EDDFACTOR do not expose the matched transition rate/beta
+8,1.008800000e+04,54,1.016350575e+04,collisional,C_lu,14,2,line699750_l4_u5_2542.5813A,1.767268957e-02,,,s^-1,,unavailable,"GENCOOL exposes aggregate collisional cooling, not the representative transition coefficient"
+8,1.008800000e+04,54,1.016350575e+04,collisional,C_ul,14,2,line699750_l4_u5_2542.5813A,1.180583930e+00,,,s^-1,,unavailable,"GENCOOL exposes aggregate collisional cooling, not the representative transition coefficient"
+8,1.008800000e+04,54,1.016350575e+04,bf,Gamma_photoion_total,16,1,,1.906615437e+00,2.002659369e-03,9.520418034e+02,s^-1,S2PRRR:sum(exact N_SL PR)/Ion Density,compared,
+8,1.008800000e+04,54,1.016350575e+04,bf,alpha_recomb_total,16,1,,4.406132087e-12,2.727700000e-12,1.615328697e+00,cm^3_s^-1,"S2PRRR:RR/(ED*ion density), source-certified cm^3/s",compared,
+8,1.008800000e+04,54,1.016350575e+04,bf,alpha_recomb_spont,16,1,,4.383480779e-12,,,cm^3_s^-1,,unavailable,CMFGEN PRRR does not expose a separately labelled spontaneous/stimulated alpha split
+8,1.008800000e+04,54,1.016350575e+04,bf,alpha_recomb_stim,16,1,,2.265130771e-14,,,cm^3_s^-1,,unavailable,CMFGEN PRRR does not expose a separately labelled spontaneous/stimulated alpha split
+8,1.008800000e+04,54,1.016350575e+04,bf,chi_bf_at_1000A,16,1,,4.963835720e-19,,,cm^-1,,unavailable,selected CMFGEN files expose no identical monochromatic coefficient
+8,1.008800000e+04,54,1.016350575e+04,bf,eta_bf_at_1000A,16,1,,4.958054753e-24,,,erg_s^-1_cm^-3_Hz^-1_sr^-1,,unavailable,selected CMFGEN files expose no identical monochromatic coefficient
+8,1.008800000e+04,54,1.016350575e+04,bf,chi_bf_at_5000A,16,1,,9.300886521e-22,,,cm^-1,,unavailable,selected CMFGEN files expose no identical monochromatic coefficient
+8,1.008800000e+04,54,1.016350575e+04,bf,eta_bf_at_5000A,16,1,,2.443989611e-24,,,erg_s^-1_cm^-3_Hz^-1_sr^-1,,unavailable,selected CMFGEN files expose no identical monochromatic coefficient
+8,1.008800000e+04,54,1.016350575e+04,bb,jbar_representative,16,1,line180330_l0_u15_906.8761A,2.590592055e-06,1.092832775e-07,2.370529246e+01,erg_s^-1_cm^-2_Hz^-1_sr^-1,EDDFACTOR:nu=3.305787835e+15Hz,compared,nearest native CMFGEN frequency at speed-matched depth
+8,1.008800000e+04,54,1.016350575e+04,bb,jbar_input_raw,16,1,,,3.233167318e-08,,,EDDFACTOR:nu=3.498970000e+12Hz,lumina_unavailable,original raw-Jbar/tau was filtered before archival; representative J and rates are separately quantified by the production C1-fallback replay
+8,1.008800000e+04,54,1.016350575e+04,bb,sobolev_beta,16,1,line180330_l0_u15_906.8761A,1.000000000e+00,,,dimensionless,,unavailable,GENCOOL/EDDFACTOR do not expose the matched transition rate/beta
+8,1.008800000e+04,54,1.016350575e+04,bb,R_lu_radiative,16,1,line180330_l0_u15_906.8761A,7.929702912e+03,,,s^-1,,unavailable,GENCOOL/EDDFACTOR do not expose the matched transition rate/beta
+8,1.008800000e+04,54,1.016350575e+04,bb,R_ul_stimulated,16,1,line180330_l0_u15_906.8761A,5.286468608e+03,,,s^-1,,unavailable,GENCOOL/EDDFACTOR do not expose the matched transition rate/beta
+8,1.008800000e+04,54,1.016350575e+04,bb,R_ul_spontaneous,16,1,line180330_l0_u15_906.8761A,1.087000000e+09,,,s^-1,,unavailable,GENCOOL/EDDFACTOR do not expose the matched transition rate/beta
+8,1.008800000e+04,54,1.016350575e+04,collisional,C_lu,16,1,line180330_l0_u15_906.8761A,2.697105694e-06,,,s^-1,,unavailable,"GENCOOL exposes aggregate collisional cooling, not the representative transition coefficient"
+8,1.008800000e+04,54,1.016350575e+04,collisional,C_ul,16,1,line180330_l0_u15_906.8761A,9.838199419e-01,,,s^-1,,unavailable,"GENCOOL exposes aggregate collisional cooling, not the representative transition coefficient"
+8,1.008800000e+04,54,1.016350575e+04,bf,Gamma_photoion_total,16,2,,,1.105512869e-02,,,SIIIPRRR:sum(exact N_SL PR)/Ion Density,lumina_unavailable,ion is not a lower member of an assembled NLTE pair
+8,1.008800000e+04,54,1.016350575e+04,bf,alpha_recomb_total,16,2,,,1.505500000e-11,,,"SIIIPRRR:RR/(ED*ion density), source-certified cm^3/s",lumina_unavailable,ion is not a lower member of an assembled NLTE pair
+8,1.008800000e+04,54,1.016350575e+04,bf,alpha_recomb_spont,16,2,,,,,,,lumina_unavailable,ion is not a lower member of an assembled NLTE pair
+8,1.008800000e+04,54,1.016350575e+04,bf,alpha_recomb_stim,16,2,,,,,,,lumina_unavailable,ion is not a lower member of an assembled NLTE pair
+8,1.008800000e+04,54,1.016350575e+04,bf,chi_bf_at_1000A,16,2,,1.445993493e-20,,,cm^-1,,unavailable,selected CMFGEN files expose no identical monochromatic coefficient
+8,1.008800000e+04,54,1.016350575e+04,bf,eta_bf_at_1000A,16,2,,1.064051647e-24,,,erg_s^-1_cm^-3_Hz^-1_sr^-1,,unavailable,selected CMFGEN files expose no identical monochromatic coefficient
+8,1.008800000e+04,54,1.016350575e+04,bf,chi_bf_at_5000A,16,2,,6.069879846e-26,,,cm^-1,,unavailable,selected CMFGEN files expose no identical monochromatic coefficient
+8,1.008800000e+04,54,1.016350575e+04,bf,eta_bf_at_5000A,16,2,,4.027008111e-26,,,erg_s^-1_cm^-3_Hz^-1_sr^-1,,unavailable,selected CMFGEN files expose no identical monochromatic coefficient
+8,1.008800000e+04,54,1.016350575e+04,bb,jbar_representative,16,2,line280644_l2_u8_1200.9660A,1.228486373e-05,1.790743976e-06,6.860201062e+00,erg_s^-1_cm^-2_Hz^-1_sr^-1,EDDFACTOR:nu=2.496300635e+15Hz,compared,nearest native CMFGEN frequency at speed-matched depth
+8,1.008800000e+04,54,1.016350575e+04,bb,jbar_input_raw,16,2,,,3.233167318e-08,,,EDDFACTOR:nu=3.498970000e+12Hz,lumina_unavailable,original raw-Jbar/tau was filtered before archival; representative J and rates are separately quantified by the production C1-fallback replay
+8,1.008800000e+04,54,1.016350575e+04,bb,sobolev_beta,16,2,line280644_l2_u8_1200.9660A,1.000000000e+00,,,dimensionless,,unavailable,GENCOOL/EDDFACTOR do not expose the matched transition rate/beta
+8,1.008800000e+04,54,1.016350575e+04,bb,R_lu_radiative,16,2,line280644_l2_u8_1200.9660A,4.954366057e+03,,,s^-1,,unavailable,GENCOOL/EDDFACTOR do not expose the matched transition rate/beta
+8,1.008800000e+04,54,1.016350575e+04,bb,R_ul_stimulated,16,2,line280644_l2_u8_1200.9660A,3.538832898e+03,,,s^-1,,unavailable,GENCOOL/EDDFACTOR do not expose the matched transition rate/beta
+8,1.008800000e+04,54,1.016350575e+04,bb,R_ul_spontaneous,16,2,line280644_l2_u8_1200.9660A,6.607000000e+07,,,s^-1,,unavailable,GENCOOL/EDDFACTOR do not expose the matched transition rate/beta
+8,1.008800000e+04,54,1.016350575e+04,collisional,C_lu,16,2,line280644_l2_u8_1200.9660A,5.484293958e-05,,,s^-1,,unavailable,"GENCOOL exposes aggregate collisional cooling, not the representative transition coefficient"
+8,1.008800000e+04,54,1.016350575e+04,collisional,C_ul,16,2,line280644_l2_u8_1200.9660A,8.432742359e-01,,,s^-1,,unavailable,"GENCOOL exposes aggregate collisional cooling, not the representative transition coefficient"
+8,1.008800000e+04,54,1.016350575e+04,bf,Gamma_photoion_total,26,1,,1.101894084e+03,1.141949575e-03,9.649235909e+05,s^-1,Fe2PRRR:sum(exact N_SL PR)/Ion Density,compared,
+8,1.008800000e+04,54,1.016350575e+04,bf,alpha_recomb_total,26,1,,8.531386947e-12,1.555500000e-12,5.484658918e+00,cm^3_s^-1,"Fe2PRRR:RR/(ED*ion density), source-certified cm^3/s",compared,
+8,1.008800000e+04,54,1.016350575e+04,bf,alpha_recomb_spont,26,1,,8.488543759e-12,,,cm^3_s^-1,,unavailable,CMFGEN PRRR does not expose a separately labelled spontaneous/stimulated alpha split
+8,1.008800000e+04,54,1.016350575e+04,bf,alpha_recomb_stim,26,1,,4.284318796e-14,,,cm^3_s^-1,,unavailable,CMFGEN PRRR does not expose a separately labelled spontaneous/stimulated alpha split
+8,1.008800000e+04,54,1.016350575e+04,bf,chi_bf_at_1000A,26,1,,1.632496368e-19,,,cm^-1,,unavailable,selected CMFGEN files expose no identical monochromatic coefficient
+8,1.008800000e+04,54,1.016350575e+04,bf,eta_bf_at_1000A,26,1,,3.845760212e-24,,,erg_s^-1_cm^-3_Hz^-1_sr^-1,,unavailable,selected CMFGEN files expose no identical monochromatic coefficient
+8,1.008800000e+04,54,1.016350575e+04,bf,chi_bf_at_5000A,26,1,,3.351323585e-23,,,cm^-1,,unavailable,selected CMFGEN files expose no identical monochromatic coefficient
+8,1.008800000e+04,54,1.016350575e+04,bf,eta_bf_at_5000A,26,1,,3.667319542e-25,,,erg_s^-1_cm^-3_Hz^-1_sr^-1,,unavailable,selected CMFGEN files expose no identical monochromatic coefficient
+8,1.008800000e+04,54,1.016350575e+04,bb,jbar_representative,26,1,line661085_l0_u68_2382.7640A,7.220475899e-05,6.789423149e-05,1.063488862e+00,erg_s^-1_cm^-2_Hz^-1_sr^-1,EDDFACTOR:nu=1.258150482e+15Hz,compared,nearest native CMFGEN frequency at speed-matched depth
+8,1.008800000e+04,54,1.016350575e+04,bb,jbar_input_raw,26,1,,,3.233167318e-08,,,EDDFACTOR:nu=3.498970000e+12Hz,lumina_unavailable,original raw-Jbar/tau was filtered before archival; representative J and rates are separately quantified by the production C1-fallback replay
+8,1.008800000e+04,54,1.016350575e+04,bb,sobolev_beta,26,1,line661085_l0_u68_2382.7640A,1.000000000e+00,,,dimensionless,,unavailable,GENCOOL/EDDFACTOR do not expose the matched transition rate/beta
+8,1.008800000e+04,54,1.016350575e+04,bb,R_lu_radiative,26,1,line661085_l0_u68_2382.7640A,9.243657216e+05,,,s^-1,,unavailable,GENCOOL/EDDFACTOR do not expose the matched transition rate/beta
+8,1.008800000e+04,54,1.016350575e+04,bb,R_ul_stimulated,26,1,line661085_l0_u68_2382.7640A,7.703047680e+05,,,s^-1,,unavailable,GENCOOL/EDDFACTOR do not expose the matched transition rate/beta
+8,1.008800000e+04,54,1.016350575e+04,bb,R_ul_spontaneous,26,1,line661085_l0_u68_2382.7640A,3.133000000e+08,,,s^-1,,unavailable,GENCOOL/EDDFACTOR do not expose the matched transition rate/beta
+8,1.008800000e+04,54,1.016350575e+04,collisional,C_lu,26,1,line661085_l0_u68_2382.7640A,3.865012486e-03,,,s^-1,,unavailable,"GENCOOL exposes aggregate collisional cooling, not the representative transition coefficient"
+8,1.008800000e+04,54,1.016350575e+04,collisional,C_ul,26,1,line661085_l0_u68_2382.7640A,4.919099709e-01,,,s^-1,,unavailable,"GENCOOL exposes aggregate collisional cooling, not the representative transition coefficient"
+8,1.008800000e+04,54,1.016350575e+04,bf,Gamma_photoion_total,26,2,,,2.703202600e-02,,,FeIIIPRRR:sum(exact N_SL PR)/Ion Density,lumina_unavailable,ion is not a lower member of an assembled NLTE pair
+8,1.008800000e+04,54,1.016350575e+04,bf,alpha_recomb_total,26,2,,,3.681400000e-11,,,"FeIIIPRRR:RR/(ED*ion density), source-certified cm^3/s",lumina_unavailable,ion is not a lower member of an assembled NLTE pair
+8,1.008800000e+04,54,1.016350575e+04,bf,alpha_recomb_spont,26,2,,,,,,,lumina_unavailable,ion is not a lower member of an assembled NLTE pair
+8,1.008800000e+04,54,1.016350575e+04,bf,alpha_recomb_stim,26,2,,,,,,,lumina_unavailable,ion is not a lower member of an assembled NLTE pair
+8,1.008800000e+04,54,1.016350575e+04,bf,chi_bf_at_1000A,26,2,,1.080744294e-20,,,cm^-1,,unavailable,selected CMFGEN files expose no identical monochromatic coefficient
+8,1.008800000e+04,54,1.016350575e+04,bf,eta_bf_at_1000A,26,2,,2.316503915e-24,,,erg_s^-1_cm^-3_Hz^-1_sr^-1,,unavailable,selected CMFGEN files expose no identical monochromatic coefficient
+8,1.008800000e+04,54,1.016350575e+04,bf,chi_bf_at_5000A,26,2,,7.364502450e-25,,,cm^-1,,unavailable,selected CMFGEN files expose no identical monochromatic coefficient
+8,1.008800000e+04,54,1.016350575e+04,bf,eta_bf_at_5000A,26,2,,7.374335984e-26,,,erg_s^-1_cm^-3_Hz^-1_sr^-1,,unavailable,selected CMFGEN files expose no identical monochromatic coefficient
+8,1.008800000e+04,54,1.016350575e+04,bb,jbar_representative,26,2,line534905_l17_u65_1895.4724A,4.429685655e-05,3.084237016e-05,1.436233867e+00,erg_s^-1_cm^-2_Hz^-1_sr^-1,EDDFACTOR:nu=1.581590788e+15Hz,compared,nearest native CMFGEN frequency at speed-matched depth
+8,1.008800000e+04,54,1.016350575e+04,bb,jbar_input_raw,26,2,,,3.233167318e-08,,,EDDFACTOR:nu=3.498970000e+12Hz,lumina_unavailable,original raw-Jbar/tau was filtered before archival; representative J and rates are separately quantified by the production C1-fallback replay
+8,1.008800000e+04,54,1.016350575e+04,bb,sobolev_beta,26,2,line534905_l17_u65_1895.4724A,1.000000000e+00,,,dimensionless,,unavailable,GENCOOL/EDDFACTOR do not expose the matched transition rate/beta
+8,1.008800000e+04,54,1.016350575e+04,bb,R_lu_radiative,26,2,line534905_l17_u65_1895.4724A,6.582883645e+05,,,s^-1,,unavailable,GENCOOL/EDDFACTOR do not expose the matched transition rate/beta
+8,1.008800000e+04,54,1.016350575e+04,bb,R_ul_stimulated,26,2,line534905_l17_u65_1895.4724A,5.120020613e+05,,,s^-1,,unavailable,GENCOOL/EDDFACTOR do not expose the matched transition rate/beta
+8,1.008800000e+04,54,1.016350575e+04,bb,R_ul_spontaneous,26,2,line534905_l17_u65_1895.4724A,6.743000000e+08,,,s^-1,,unavailable,GENCOOL/EDDFACTOR do not expose the matched transition rate/beta
+8,1.008800000e+04,54,1.016350575e+04,collisional,C_lu,26,2,line534905_l17_u65_1895.4724A,1.515680472e-03,,,s^-1,,unavailable,"GENCOOL exposes aggregate collisional cooling, not the representative transition coefficient"
+8,1.008800000e+04,54,1.016350575e+04,collisional,C_ul,26,2,line534905_l17_u65_1895.4724A,6.558799613e-01,,,s^-1,,unavailable,"GENCOOL exposes aggregate collisional cooling, not the representative transition coefficient"
+8,1.008800000e+04,54,1.016350575e+04,bf,Gamma_photoion_total,26,3,,,1.146921064e-02,,,FeIVPRRR:sum(exact N_SL PR)/Ion Density,lumina_unavailable,ion is not a lower member of an assembled NLTE pair
+8,1.008800000e+04,54,1.016350575e+04,bf,alpha_recomb_total,26,3,,,1.562000000e-11,,,"FeIVPRRR:RR/(ED*ion density), source-certified cm^3/s",lumina_unavailable,ion is not a lower member of an assembled NLTE pair
+8,1.008800000e+04,54,1.016350575e+04,bf,alpha_recomb_spont,26,3,,,,,,,lumina_unavailable,ion is not a lower member of an assembled NLTE pair
+8,1.008800000e+04,54,1.016350575e+04,bf,alpha_recomb_stim,26,3,,,,,,,lumina_unavailable,ion is not a lower member of an assembled NLTE pair
+8,1.008800000e+04,54,1.016350575e+04,bf,chi_bf_at_1000A,26,3,,0.000000000e+00,,,cm^-1,,unavailable,selected CMFGEN files expose no identical monochromatic coefficient
+8,1.008800000e+04,54,1.016350575e+04,bf,eta_bf_at_1000A,26,3,,0.000000000e+00,,,erg_s^-1_cm^-3_Hz^-1_sr^-1,,unavailable,selected CMFGEN files expose no identical monochromatic coefficient
+8,1.008800000e+04,54,1.016350575e+04,bf,chi_bf_at_5000A,26,3,,0.000000000e+00,,,cm^-1,,unavailable,selected CMFGEN files expose no identical monochromatic coefficient
+8,1.008800000e+04,54,1.016350575e+04,bf,eta_bf_at_5000A,26,3,,0.000000000e+00,,,erg_s^-1_cm^-3_Hz^-1_sr^-1,,unavailable,selected CMFGEN files expose no identical monochromatic coefficient
+8,1.008800000e+04,54,1.016350575e+04,bb,jbar_representative,26,3,,,3.233167318e-08,,,EDDFACTOR:nu=3.498970000e+12Hz,lumina_unavailable,no_positive_lower-level population flow selected
+8,1.008800000e+04,54,1.016350575e+04,bb,jbar_input_raw,26,3,,,3.233167318e-08,,,EDDFACTOR:nu=3.498970000e+12Hz,lumina_unavailable,no representative transition was selected
+8,1.008800000e+04,54,1.016350575e+04,bb,sobolev_beta,26,3,,,,,,,lumina_unavailable,no representative transition was selected
+8,1.008800000e+04,54,1.016350575e+04,bb,R_lu_radiative,26,3,,,,,,,lumina_unavailable,no_positive lower-level population flow selected
+8,1.008800000e+04,54,1.016350575e+04,bb,R_ul_stimulated,26,3,,,,,,,lumina_unavailable,no_positive lower-level population flow selected
+8,1.008800000e+04,54,1.016350575e+04,bb,R_ul_spontaneous,26,3,,,,,,,lumina_unavailable,no_positive lower-level population flow selected
+8,1.008800000e+04,54,1.016350575e+04,collisional,C_lu,26,3,,,,,,,lumina_unavailable,no_positive lower-level population flow selected
+8,1.008800000e+04,54,1.016350575e+04,collisional,C_ul,26,3,,,,,,,lumina_unavailable,no_positive lower-level population flow selected
+8,1.008800000e+04,54,1.016350575e+04,bf,Gamma_photoion_total,27,2,,,3.472347902e-03,,,CoIIIPRRR:sum(exact N_SL PR)/Ion Density,lumina_unavailable,ion is not a lower member of an assembled NLTE pair
+8,1.008800000e+04,54,1.016350575e+04,bf,alpha_recomb_total,27,2,,,4.729600000e-12,,,"CoIIIPRRR:RR/(ED*ion density), source-certified cm^3/s",lumina_unavailable,ion is not a lower member of an assembled NLTE pair
+8,1.008800000e+04,54,1.016350575e+04,bf,alpha_recomb_spont,27,2,,,,,,,lumina_unavailable,ion is not a lower member of an assembled NLTE pair
+8,1.008800000e+04,54,1.016350575e+04,bf,alpha_recomb_stim,27,2,,,,,,,lumina_unavailable,ion is not a lower member of an assembled NLTE pair
+8,1.008800000e+04,54,1.016350575e+04,bf,chi_bf_at_1000A,27,2,,1.541389967e-21,,,cm^-1,,unavailable,selected CMFGEN files expose no identical monochromatic coefficient
+8,1.008800000e+04,54,1.016350575e+04,bf,eta_bf_at_1000A,27,2,,8.076396159e-25,,,erg_s^-1_cm^-3_Hz^-1_sr^-1,,unavailable,selected CMFGEN files expose no identical monochromatic coefficient
+8,1.008800000e+04,54,1.016350575e+04,bf,chi_bf_at_5000A,27,2,,2.540175798e-25,,,cm^-1,,unavailable,selected CMFGEN files expose no identical monochromatic coefficient
+8,1.008800000e+04,54,1.016350575e+04,bf,eta_bf_at_5000A,27,2,,6.182187604e-26,,,erg_s^-1_cm^-3_Hz^-1_sr^-1,,unavailable,selected CMFGEN files expose no identical monochromatic coefficient
+8,1.008800000e+04,54,1.016350575e+04,bb,jbar_representative,27,2,line496213_l17_u71_1760.3558A,3.656652446e-05,2.209465584e-05,1.654994073e+00,erg_s^-1_cm^-2_Hz^-1_sr^-1,EDDFACTOR:nu=1.702989105e+15Hz,compared,nearest native CMFGEN frequency at speed-matched depth
+8,1.008800000e+04,54,1.016350575e+04,bb,jbar_input_raw,27,2,,,3.233167318e-08,,,EDDFACTOR:nu=3.498970000e+12Hz,lumina_unavailable,original raw-Jbar/tau was filtered before archival; representative J and rates are separately quantified by the production C1-fallback replay
+8,1.008800000e+04,54,1.016350575e+04,bb,sobolev_beta,27,2,line496213_l17_u71_1760.3558A,1.000000000e+00,,,dimensionless,,unavailable,GENCOOL/EDDFACTOR do not expose the matched transition rate/beta
+8,1.008800000e+04,54,1.016350575e+04,bb,R_lu_radiative,27,2,line496213_l17_u71_1760.3558A,4.118352061e+05,,,s^-1,,unavailable,GENCOOL/EDDFACTOR do not expose the matched transition rate/beta
+8,1.008800000e+04,54,1.016350575e+04,bb,R_ul_stimulated,27,2,line496213_l17_u71_1760.3558A,3.431960050e+05,,,s^-1,,unavailable,GENCOOL/EDDFACTOR do not expose the matched transition rate/beta
+8,1.008800000e+04,54,1.016350575e+04,bb,R_ul_spontaneous,27,2,line496213_l17_u71_1760.3558A,6.835400000e+08,,,s^-1,,unavailable,GENCOOL/EDDFACTOR do not expose the matched transition rate/beta
+8,1.008800000e+04,54,1.016350575e+04,collisional,C_lu,27,2,line496213_l17_u71_1760.3558A,6.531076921e-04,,,s^-1,,unavailable,"GENCOOL exposes aggregate collisional cooling, not the representative transition coefficient"
+8,1.008800000e+04,54,1.016350575e+04,collisional,C_ul,27,2,line496213_l17_u71_1760.3558A,4.919099709e-01,,,s^-1,,unavailable,"GENCOOL exposes aggregate collisional cooling, not the representative transition coefficient"
+8,1.008800000e+04,54,1.016350575e+04,ff,chi_ff_at_1000A,0,-1,,1.414833469e-22,,,cm^-1,,unavailable,selected CMFGEN files expose no identical monochromatic coefficient
+8,1.008800000e+04,54,1.016350575e+04,ff,eta_ff_at_1000A,0,-1,,3.479661962e-28,,,erg_s^-1_cm^-3_Hz^-1_sr^-1,,unavailable,selected CMFGEN files expose no identical monochromatic coefficient
+8,1.008800000e+04,54,1.016350575e+04,ff,chi_ff_at_5000A,0,-1,,1.613544138e-20,,,cm^-1,,unavailable,selected CMFGEN files expose no identical monochromatic coefficient
+8,1.008800000e+04,54,1.016350575e+04,ff,eta_ff_at_5000A,0,-1,,5.136516229e-24,,,erg_s^-1_cm^-3_Hz^-1_sr^-1,,unavailable,selected CMFGEN files expose no identical monochromatic coefficient
+8,1.008800000e+04,54,1.016350575e+04,ff,cooling_ff_grid,0,-1,,9.737656353e-08,1.428469542e-07,,erg_s^-1_cm^-3,GENCOOL:sum(all ion Free-Free Cooling),context_only_nonidentical,Lumina row is emissive cooling; GENCOOL FF is net emission-minus-absorption
+8,1.008800000e+04,54,1.016350575e+04,thermal,heating_photoion,0,-1,,0.000000000e+00,,,erg_s^-1_cm^-3,,unavailable,"GENCOOL BF block is net bound-free cooling, not a separate photoion heating rate"
+8,1.008800000e+04,54,1.016350575e+04,thermal,heating_deposition,0,-1,,4.574201000e-05,,,erg_s^-1_cm^-3,,unavailable,GENCOOL has no separately labelled deposition row identical to Lumina's external deposition input
+8,1.008800000e+04,54,1.016350575e+04,thermal,heating_MA_LINE_DESTRUCT,0,-1,,,,,,,lumina_unavailable,archived run retained only global terminal/destroyed event counts; shell ownership and packet-energy/volume normalization are irrecoverable. Re-run capture gate LUMINA_GATEB_ORACLE_CAPTURE writes the required per-shell volumetric ledger
+8,1.008800000e+04,54,1.016350575e+04,thermal,cooling_ff,0,-1,,8.411226235e-08,1.428469542e-07,,erg_s^-1_cm^-3,GENCOOL:sum(all ion Free-Free Cooling),context_only_nonidentical,Lumina row is emissive cooling; GENCOOL FF is net emission-minus-absorption
+8,1.008800000e+04,54,1.016350575e+04,thermal,cooling_bf,0,-1,,4.455083766e-17,-1.872651873e-07,,erg_s^-1_cm^-3,GENCOOL:sum(all ion Bound-Free Cooling),context_only_nonidentical,Lumina row is emission only; GENCOOL BF is net emission-minus-photo-heating; use cooling_bf_net for identical sign accounting
+8,1.008800000e+04,54,1.016350575e+04,thermal,cooling_bf_net,0,-1,,4.455083766e-17,-1.872651873e-07,-2.379024009e-10,erg_s^-1_cm^-3,GENCOOL:sum(all ion Bound-Free Cooling),compared,
+8,1.008800000e+04,54,1.016350575e+04,thermal,cooling_bb_collisional,0,-1,,2.601704324e-05,6.064570764e-06,4.290005716e+00,erg_s^-1_cm^-3,GENCOOL:sum(all ion Collisional Cooling),compared,
+8,1.008800000e+04,54,1.016350575e+04,thermal,cooling_adiabatic,0,-1,,2.968711525e-09,,,erg_s^-1_cm^-3,,unavailable,GENCOOL has no separately labelled adiabatic cooling row
+8,1.008800000e+04,54,1.016350575e+04,thermal,thermal_net,0,-1,,1.963788579e-05,-6.022300000e-06,-3.260861429e+00,erg_s^-1_cm^-3,GENCOOL:-Net Cooling Rate (converted C-H to Lumina H-C),compared,
+43,3.556800000e+04,10,3.549771049e+04,state,T_e,0,-1,,1.139110186e+04,1.573420200e+04,7.239707399e-01,K,RVTJ:Temperature (10^4K)*1e4,compared,
+43,3.556800000e+04,10,3.549771049e+04,state,n_e,0,-1,,1.585015000e+05,2.260250500e+05,7.012563430e-01,cm^-3,RVTJ:Electron density; source-certified #/cm^3,compared,
+43,3.556800000e+04,10,3.549771049e+04,state,T_rad,0,-1,,1.047009324e+04,,,K,,unavailable,RVTJ has no identical Lumina dilute-field scalar
+43,3.556800000e+04,10,3.549771049e+04,state,W,0,-1,,3.014821700e-03,,,dimensionless,,unavailable,RVTJ has no identical Lumina dilute-field scalar
+43,3.556800000e+04,10,3.549771049e+04,state,n_ion,14,1,,2.833679000e+00,3.424600000e+00,8.274481691e-01,cm^-3,Sk2PRRR:Ion Density,compared,
+43,3.556800000e+04,10,3.549771049e+04,state,ion_fraction,14,1,,7.612291941e-05,,,dimensionless,,unavailable,CMFGEN target PRRR files do not constitute a complete element-stage census
+43,3.556800000e+04,10,3.549771049e+04,state,b_k_representative,14,1,level1,1.223700000e+00,5.519536800e+01,2.217033864e-02,dimensionless,Sk2OUT:depth-block level1,compared,
+43,3.556800000e+04,10,3.549771049e+04,state,n_ion,14,2,,1.602062000e+04,9.479000000e+03,1.690117101e+00,cm^-3,SkIIIPRRR:Ion Density,compared,
+43,3.556800000e+04,10,3.549771049e+04,state,ion_fraction,14,2,,4.303720941e-01,,,dimensionless,,unavailable,CMFGEN target PRRR files do not constitute a complete element-stage census
+43,3.556800000e+04,10,3.549771049e+04,state,b_k_representative,14,2,level0,1.000000000e+00,6.936665300e+02,1.441614892e-03,dimensionless,SkIIIOUT:depth-block level0,compared,
+43,3.556800000e+04,10,3.549771049e+04,state,n_ion,16,1,,1.793504000e+03,3.075600000e+00,5.831395500e+02,cm^-3,S2PRRR:Ion Density,compared,
+43,3.556800000e+04,10,3.549771049e+04,state,ion_fraction,16,1,,8.643923903e-02,,,dimensionless,,unavailable,CMFGEN target PRRR files do not constitute a complete element-stage census
+43,3.556800000e+04,10,3.549771049e+04,state,b_k_representative,16,1,level0,1.000000000e+00,7.480266600e+00,1.336850748e-01,dimensionless,S2OUT:depth-block level0,compared,
+43,3.556800000e+04,10,3.549771049e+04,state,n_ion,16,2,,9.428136000e+03,1.348300000e+04,6.992609953e-01,cm^-3,SIIIPRRR:Ion Density,compared,
+43,3.556800000e+04,10,3.549771049e+04,state,ion_fraction,16,2,,4.543959206e-01,,,dimensionless,,unavailable,CMFGEN target PRRR files do not constitute a complete element-stage census
+43,3.556800000e+04,10,3.549771049e+04,state,b_k_representative,16,2,level2,1.000200000e+00,4.592922300e+01,2.177698499e-02,dimensionless,SIIIOUT:depth-block level2,compared,
+43,3.556800000e+04,10,3.549771049e+04,state,n_ion,26,1,,0.000000000e+00,5.192200000e-13,0.000000000e+00,cm^-3,Fe2PRRR:Ion Density,compared,
+43,3.556800000e+04,10,3.549771049e+04,state,ion_fraction,26,1,,,,,dimensionless,,lumina_unavailable,recorded element-stage census sums to zero in this frozen cell
+43,3.556800000e+04,10,3.549771049e+04,state,b_k_representative,26,1,,,,,dimensionless,,lumina_unavailable,no positive-population level with a non-sentinel recorded b_k
+43,3.556800000e+04,10,3.549771049e+04,state,n_ion,26,2,,0.000000000e+00,3.469900000e-06,0.000000000e+00,cm^-3,FeIIIPRRR:Ion Density,compared,
+43,3.556800000e+04,10,3.549771049e+04,state,ion_fraction,26,2,,,,,dimensionless,,lumina_unavailable,recorded element-stage census sums to zero in this frozen cell
+43,3.556800000e+04,10,3.549771049e+04,state,b_k_representative,26,2,,,,,dimensionless,,lumina_unavailable,no positive-population level with a non-sentinel recorded b_k
+43,3.556800000e+04,10,3.549771049e+04,state,n_ion,26,3,,0.000000000e+00,3.776700000e-09,0.000000000e+00,cm^-3,FeIVPRRR:Ion Density,compared,
+43,3.556800000e+04,10,3.549771049e+04,state,ion_fraction,26,3,,,,,dimensionless,,lumina_unavailable,recorded element-stage census sums to zero in this frozen cell
+43,3.556800000e+04,10,3.549771049e+04,state,b_k_representative,26,3,,,,,dimensionless,,lumina_unavailable,no positive-population level with a non-sentinel recorded b_k
+43,3.556800000e+04,10,3.549771049e+04,state,n_ion,27,2,,0.000000000e+00,2.777800000e-06,0.000000000e+00,cm^-3,CoIIIPRRR:Ion Density,compared,
+43,3.556800000e+04,10,3.549771049e+04,state,ion_fraction,27,2,,,,,dimensionless,,lumina_unavailable,recorded element-stage census sums to zero in this frozen cell
+43,3.556800000e+04,10,3.549771049e+04,state,b_k_representative,27,2,,,,,dimensionless,,lumina_unavailable,no positive-population level with a non-sentinel recorded b_k
+43,3.556800000e+04,10,3.549771049e+04,input,rate_consume_iteration,0,-1,,1.100000000e+01,,,iteration,,unavailable,no registered identical CMFGEN anchor
+43,3.556800000e+04,10,3.549771049e+04,input,field_producer_iteration,0,-1,,1.000000000e+01,,,iteration,,unavailable,no registered identical CMFGEN anchor
+43,3.556800000e+04,10,3.549771049e+04,input,producer_to_consumer_lag,0,-1,,1.000000000e+00,,,iteration,,unavailable,no registered identical CMFGEN anchor
+43,3.556800000e+04,10,3.549771049e+04,input,c1_coarse_bins_loaded,0,-1,,2.400000000e+01,,,count,,unavailable,no registered identical CMFGEN anchor
+43,3.556800000e+04,10,3.549771049e+04,input,jbar_rows_loaded,0,-1,,5.871000000e+03,,,count,,unavailable,no registered identical CMFGEN anchor
+43,3.556800000e+04,10,3.549771049e+04,input,raw_jbar_exact_ions,0,-1,,2.000000000e+00,,,count,,unavailable,no registered identical CMFGEN anchor
+43,3.556800000e+04,10,3.549771049e+04,input,thermal_tail_color_active,0,-1,,0.000000000e+00,,,boolean,,unavailable,no registered identical CMFGEN anchor
+43,3.556800000e+04,10,3.549771049e+04,input,thermal_tri_response_active,0,-1,,0.000000000e+00,,,boolean,,unavailable,no registered identical CMFGEN anchor
+43,3.556800000e+04,10,3.549771049e+04,input,thermal_line_re_active,0,-1,,0.000000000e+00,,,boolean,,unavailable,no registered identical CMFGEN anchor
+43,3.556800000e+04,10,3.549771049e+04,input,thermal_photoion_mc_active,0,-1,,0.000000000e+00,,,boolean,,unavailable,no registered identical CMFGEN anchor
+43,3.556800000e+04,10,3.549771049e+04,input,ma_line_destruct_terminals_global,0,-1,,5.066859740e+08,,,count,,unavailable,no registered identical CMFGEN anchor
+43,3.556800000e+04,10,3.549771049e+04,input,ma_line_destruct_destroyed_global,0,-1,,5.542080000e+05,,,count,,unavailable,no registered identical CMFGEN anchor
+43,3.556800000e+04,10,3.549771049e+04,input,bf_rate_estimator_bins_loaded,0,-1,,1.000000000e+03,,,count,,unavailable,no registered identical CMFGEN anchor
+43,3.556800000e+04,10,3.549771049e+04,input,bf_rate_estimator_bins_expected,0,-1,,1.000000000e+03,,,count,,unavailable,no registered identical CMFGEN anchor
+43,3.556800000e+04,10,3.549771049e+04,input,bf_rate_estimator_positive_consumptions,0,-1,,4.349259000e+06,,,count,,unavailable,no registered identical CMFGEN anchor
+43,3.556800000e+04,10,3.549771049e+04,input,bf_rate_estimator_fallback_consumptions,0,-1,,3.572891000e+06,,,count,,unavailable,no registered identical CMFGEN anchor
+43,3.556800000e+04,10,3.549771049e+04,input,raw_jbar_ion_recorded,14,1,,1.000000000e+00,,,dimensionless,,unavailable,no registered identical CMFGEN anchor
+43,3.556800000e+04,10,3.549771049e+04,input,raw_jbar_ion_recorded,14,2,,1.000000000e+00,,,dimensionless,,unavailable,no registered identical CMFGEN anchor
+43,3.556800000e+04,10,3.549771049e+04,input,raw_jbar_ion_recorded,16,1,,0.000000000e+00,,,dimensionless,,unavailable,no registered identical CMFGEN anchor
+43,3.556800000e+04,10,3.549771049e+04,input,raw_jbar_ion_recorded,16,2,,0.000000000e+00,,,dimensionless,,unavailable,no registered identical CMFGEN anchor
+43,3.556800000e+04,10,3.549771049e+04,input,raw_jbar_ion_recorded,26,1,,0.000000000e+00,,,dimensionless,,unavailable,no registered identical CMFGEN anchor
+43,3.556800000e+04,10,3.549771049e+04,input,raw_jbar_ion_recorded,26,2,,0.000000000e+00,,,dimensionless,,unavailable,no registered identical CMFGEN anchor
+43,3.556800000e+04,10,3.549771049e+04,input,raw_jbar_ion_recorded,26,3,,0.000000000e+00,,,dimensionless,,unavailable,no registered identical CMFGEN anchor
+43,3.556800000e+04,10,3.549771049e+04,input,raw_jbar_ion_recorded,27,2,,0.000000000e+00,,,dimensionless,,unavailable,no registered identical CMFGEN anchor
+43,3.556800000e+04,10,3.549771049e+04,bf,Gamma_photoion_total,14,1,,4.645082096e-01,7.132393137e-07,6.512655721e+05,s^-1,Sk2PRRR:sum(exact N_SL PR)/Ion Density,compared,
+43,3.556800000e+04,10,3.549771049e+04,bf,alpha_recomb_total,14,1,,3.815220506e-13,3.419600000e-12,1.115692042e-01,cm^3_s^-1,"Sk2PRRR:RR/(ED*ion density), source-certified cm^3/s",compared,
+43,3.556800000e+04,10,3.549771049e+04,bf,alpha_recomb_spont,14,1,,3.815018232e-13,,,cm^3_s^-1,,unavailable,CMFGEN PRRR does not expose a separately labelled spontaneous/stimulated alpha split
+43,3.556800000e+04,10,3.549771049e+04,bf,alpha_recomb_stim,14,1,,2.022744636e-17,,,cm^3_s^-1,,unavailable,CMFGEN PRRR does not expose a separately labelled spontaneous/stimulated alpha split
+43,3.556800000e+04,10,3.549771049e+04,bf,chi_bf_at_1000A,14,1,,3.622973451e-23,,,cm^-1,,unavailable,selected CMFGEN files expose no identical monochromatic coefficient
+43,3.556800000e+04,10,3.549771049e+04,bf,eta_bf_at_1000A,14,1,,3.852072528e-31,,,erg_s^-1_cm^-3_Hz^-1_sr^-1,,unavailable,selected CMFGEN files expose no identical monochromatic coefficient
+43,3.556800000e+04,10,3.549771049e+04,bf,chi_bf_at_5000A,14,1,,1.661406382e-26,,,cm^-1,,unavailable,selected CMFGEN files expose no identical monochromatic coefficient
+43,3.556800000e+04,10,3.549771049e+04,bf,eta_bf_at_5000A,14,1,,7.692912231e-32,,,erg_s^-1_cm^-3_Hz^-1_sr^-1,,unavailable,selected CMFGEN files expose no identical monochromatic coefficient
+43,3.556800000e+04,10,3.549771049e+04,bb,jbar_representative,14,1,line278309_l1_u14_1194.4998A,2.049382000e-07,3.180106631e-06,6.444381394e-02,erg_s^-1_cm^-2_Hz^-1_sr^-1,EDDFACTOR:nu=2.509763745e+15Hz,compared,nearest native CMFGEN frequency at speed-matched depth
+43,3.556800000e+04,10,3.549771049e+04,bb,jbar_input_raw,14,1,line278309_l1_u14_1194.4998A,2.049382000e-07,3.180106631e-06,6.444381394e-02,erg_s^-1_cm^-2_Hz^-1_sr^-1,EDDFACTOR:nu=2.509763745e+15Hz,compared,nearest native CMFGEN frequency at speed-matched depth
+43,3.556800000e+04,10,3.549771049e+04,bb,sobolev_beta,14,1,line278309_l1_u14_1194.4998A,9.989103000e-01,,,dimensionless,,unavailable,GENCOOL/EDDFACTOR do not expose the matched transition rate/beta
+43,3.556800000e+04,10,3.549771049e+04,bb,R_lu_radiative,14,1,line278309_l1_u14_1194.4998A,3.025451309e+03,,,s^-1,,unavailable,GENCOOL/EDDFACTOR do not expose the matched transition rate/beta
+43,3.556800000e+04,10,3.549771049e+04,bb,R_ul_stimulated,14,1,line278309_l1_u14_1194.4998A,3.025451309e+03,,,s^-1,,unavailable,GENCOOL/EDDFACTOR do not expose the matched transition rate/beta
+43,3.556800000e+04,10,3.549771049e+04,bb,R_ul_spontaneous,14,1,line278309_l1_u14_1194.4998A,3.441245984e+09,,,s^-1,,unavailable,GENCOOL/EDDFACTOR do not expose the matched transition rate/beta
+43,3.556800000e+04,10,3.549771049e+04,collisional,C_lu,14,1,line278309_l1_u14_1194.4998A,8.192155789e-09,,,s^-1,,unavailable,"GENCOOL exposes aggregate collisional cooling, not the representative transition coefficient"
+43,3.556800000e+04,10,3.549771049e+04,collisional,C_ul,14,1,line278309_l1_u14_1194.4998A,3.203693695e-04,,,s^-1,,unavailable,"GENCOOL exposes aggregate collisional cooling, not the representative transition coefficient"
+43,3.556800000e+04,10,3.549771049e+04,bf,Gamma_photoion_total,14,2,,,1.084773842e-06,,,SkIIIPRRR:sum(exact N_SL PR)/Ion Density,lumina_unavailable,ion is not a lower member of an assembled NLTE pair
+43,3.556800000e+04,10,3.549771049e+04,bf,alpha_recomb_total,14,2,,,8.134000000e-12,,,"SkIIIPRRR:RR/(ED*ion density), source-certified cm^3/s",lumina_unavailable,ion is not a lower member of an assembled NLTE pair
+43,3.556800000e+04,10,3.549771049e+04,bf,alpha_recomb_spont,14,2,,,,,,,lumina_unavailable,ion is not a lower member of an assembled NLTE pair
+43,3.556800000e+04,10,3.549771049e+04,bf,alpha_recomb_stim,14,2,,,,,,,lumina_unavailable,ion is not a lower member of an assembled NLTE pair
+43,3.556800000e+04,10,3.549771049e+04,bf,chi_bf_at_1000A,14,2,,5.104378996e-26,,,cm^-1,,unavailable,selected CMFGEN files expose no identical monochromatic coefficient
+43,3.556800000e+04,10,3.549771049e+04,bf,eta_bf_at_1000A,14,2,,1.853668487e-30,,,erg_s^-1_cm^-3_Hz^-1_sr^-1,,unavailable,selected CMFGEN files expose no identical monochromatic coefficient
+43,3.556800000e+04,10,3.549771049e+04,bf,chi_bf_at_5000A,14,2,,2.036782387e-29,,,cm^-1,,unavailable,selected CMFGEN files expose no identical monochromatic coefficient
+43,3.556800000e+04,10,3.549771049e+04,bf,eta_bf_at_5000A,14,2,,3.481165546e-31,,,erg_s^-1_cm^-3_Hz^-1_sr^-1,,unavailable,selected CMFGEN files expose no identical monochromatic coefficient
+43,3.556800000e+04,10,3.549771049e+04,bb,jbar_representative,14,2,line533893_l0_u2_1892.0295A,4.742878000e-07,4.485451732e-06,1.057391381e-01,erg_s^-1_cm^-2_Hz^-1_sr^-1,EDDFACTOR:nu=1.584516103e+15Hz,compared,nearest native CMFGEN frequency at speed-matched depth
+43,3.556800000e+04,10,3.549771049e+04,bb,jbar_input_raw,14,2,line533893_l0_u2_1892.0295A,4.742878000e-07,4.485451732e-06,1.057391381e-01,erg_s^-1_cm^-2_Hz^-1_sr^-1,EDDFACTOR:nu=1.584516103e+15Hz,compared,nearest native CMFGEN frequency at speed-matched depth
+43,3.556800000e+04,10,3.549771049e+04,bb,sobolev_beta,14,2,line533893_l0_u2_1892.0295A,8.606439000e-01,,,dimensionless,,unavailable,GENCOOL/EDDFACTOR do not expose the matched transition rate/beta
+43,3.556800000e+04,10,3.549771049e+04,bb,R_lu_radiative,14,2,line533893_l0_u2_1892.0295A,2.983293196e-01,,,s^-1,,unavailable,GENCOOL/EDDFACTOR do not expose the matched transition rate/beta
+43,3.556800000e+04,10,3.549771049e+04,bb,R_ul_stimulated,14,2,line533893_l0_u2_1892.0295A,9.944310654e-02,,,s^-1,,unavailable,GENCOOL/EDDFACTOR do not expose the matched transition rate/beta
+43,3.556800000e+04,10,3.549771049e+04,bb,R_ul_spontaneous,14,2,line533893_l0_u2_1892.0295A,1.229860133e+04,,,s^-1,,unavailable,GENCOOL/EDDFACTOR do not expose the matched transition rate/beta
+43,3.556800000e+04,10,3.549771049e+04,collisional,C_lu,14,2,line533893_l0_u2_1892.0295A,1.616115152e-06,,,s^-1,,unavailable,"GENCOOL exposes aggregate collisional cooling, not the representative transition coefficient"
+43,3.556800000e+04,10,3.549771049e+04,collisional,C_ul,14,2,line533893_l0_u2_1892.0295A,4.271591593e-04,,,s^-1,,unavailable,"GENCOOL exposes aggregate collisional cooling, not the representative transition coefficient"
+43,3.556800000e+04,10,3.549771049e+04,bf,Gamma_photoion_total,16,1,,1.014571646e-03,8.018633925e-07,1.265267445e+03,s^-1,S2PRRR:sum(exact N_SL PR)/Ion Density,compared,
+43,3.556800000e+04,10,3.549771049e+04,bf,alpha_recomb_total,16,1,,4.525480634e-12,2.525400000e-12,1.791985679e+00,cm^3_s^-1,"S2PRRR:RR/(ED*ion density), source-certified cm^3/s",compared,
+43,3.556800000e+04,10,3.549771049e+04,bf,alpha_recomb_spont,16,1,,4.525331883e-12,,,cm^3_s^-1,,unavailable,CMFGEN PRRR does not expose a separately labelled spontaneous/stimulated alpha split
+43,3.556800000e+04,10,3.549771049e+04,bf,alpha_recomb_stim,16,1,,1.487501127e-16,,,cm^3_s^-1,,unavailable,CMFGEN PRRR does not expose a separately labelled spontaneous/stimulated alpha split
+43,3.556800000e+04,10,3.549771049e+04,bf,chi_bf_at_1000A,16,1,,3.751910832e-23,,,cm^-1,,unavailable,selected CMFGEN files expose no identical monochromatic coefficient
+43,3.556800000e+04,10,3.549771049e+04,bf,eta_bf_at_1000A,16,1,,9.248442248e-32,,,erg_s^-1_cm^-3_Hz^-1_sr^-1,,unavailable,selected CMFGEN files expose no identical monochromatic coefficient
+43,3.556800000e+04,10,3.549771049e+04,bf,chi_bf_at_5000A,16,1,,3.350894502e-25,,,cm^-1,,unavailable,selected CMFGEN files expose no identical monochromatic coefficient
+43,3.556800000e+04,10,3.549771049e+04,bf,eta_bf_at_5000A,16,1,,4.993128932e-32,,,erg_s^-1_cm^-3_Hz^-1_sr^-1,,unavailable,selected CMFGEN files expose no identical monochromatic coefficient
+43,3.556800000e+04,10,3.549771049e+04,bb,jbar_representative,16,1,line301666_l0_u5_1259.5189A,1.650350708e-07,1.661025136e-06,9.935735902e-02,erg_s^-1_cm^-2_Hz^-1_sr^-1,EDDFACTOR:nu=2.380247636e+15Hz,compared,nearest native CMFGEN frequency at speed-matched depth
+43,3.556800000e+04,10,3.549771049e+04,bb,jbar_input_raw,16,1,,,1.441368778e-09,,,EDDFACTOR:nu=3.498970000e+12Hz,lumina_unavailable,original raw-Jbar/tau was filtered before archival; representative J and rates are separately quantified by the production C1-fallback replay
+43,3.556800000e+04,10,3.549771049e+04,bb,sobolev_beta,16,1,line301666_l0_u5_1259.5189A,1.000000000e+00,,,dimensionless,,unavailable,GENCOOL/EDDFACTOR do not expose the matched transition rate/beta
+43,3.556800000e+04,10,3.549771049e+04,bb,R_lu_radiative,16,1,line301666_l0_u5_1259.5189A,6.352070681e+01,,,s^-1,,unavailable,GENCOOL/EDDFACTOR do not expose the matched transition rate/beta
+43,3.556800000e+04,10,3.549771049e+04,bb,R_ul_stimulated,16,1,line301666_l0_u5_1259.5189A,4.234713788e+01,,,s^-1,,unavailable,GENCOOL/EDDFACTOR do not expose the matched transition rate/beta
+43,3.556800000e+04,10,3.549771049e+04,bb,R_ul_spontaneous,16,1,line301666_l0_u5_1259.5189A,5.102000000e+07,,,s^-1,,unavailable,GENCOOL/EDDFACTOR do not expose the matched transition rate/beta
+43,3.556800000e+04,10,3.549771049e+04,collisional,C_lu,16,1,line301666_l0_u5_1259.5189A,1.414030988e-08,,,s^-1,,unavailable,"GENCOOL exposes aggregate collisional cooling, not the representative transition coefficient"
+43,3.556800000e+04,10,3.549771049e+04,collisional,C_ul,16,1,line301666_l0_u5_1259.5189A,2.135795796e-04,,,s^-1,,unavailable,"GENCOOL exposes aggregate collisional cooling, not the representative transition coefficient"
+43,3.556800000e+04,10,3.549771049e+04,bf,Gamma_photoion_total,16,2,,,3.230720100e-06,,,SIIIPRRR:sum(exact N_SL PR)/Ion Density,lumina_unavailable,ion is not a lower member of an assembled NLTE pair
+43,3.556800000e+04,10,3.549771049e+04,bf,alpha_recomb_total,16,2,,,1.317700000e-11,,,"SIIIPRRR:RR/(ED*ion density), source-certified cm^3/s",lumina_unavailable,ion is not a lower member of an assembled NLTE pair
+43,3.556800000e+04,10,3.549771049e+04,bf,alpha_recomb_spont,16,2,,,,,,,lumina_unavailable,ion is not a lower member of an assembled NLTE pair
+43,3.556800000e+04,10,3.549771049e+04,bf,alpha_recomb_stim,16,2,,,,,,,lumina_unavailable,ion is not a lower member of an assembled NLTE pair
+43,3.556800000e+04,10,3.549771049e+04,bf,chi_bf_at_1000A,16,2,,1.301255397e-24,,,cm^-1,,unavailable,selected CMFGEN files expose no identical monochromatic coefficient
+43,3.556800000e+04,10,3.549771049e+04,bf,eta_bf_at_1000A,16,2,,1.791647897e-30,,,erg_s^-1_cm^-3_Hz^-1_sr^-1,,unavailable,selected CMFGEN files expose no identical monochromatic coefficient
+43,3.556800000e+04,10,3.549771049e+04,bf,chi_bf_at_5000A,16,2,,4.289916086e-31,,,cm^-1,,unavailable,selected CMFGEN files expose no identical monochromatic coefficient
+43,3.556800000e+04,10,3.549771049e+04,bf,eta_bf_at_5000A,16,2,,6.858317020e-32,,,erg_s^-1_cm^-3_Hz^-1_sr^-1,,unavailable,selected CMFGEN files expose no identical monochromatic coefficient
+43,3.556800000e+04,10,3.549771049e+04,bb,jbar_representative,16,2,line280644_l2_u8_1200.9660A,1.376809485e-07,2.693979064e-06,5.110691110e-02,erg_s^-1_cm^-2_Hz^-1_sr^-1,EDDFACTOR:nu=2.496300635e+15Hz,compared,nearest native CMFGEN frequency at speed-matched depth
+43,3.556800000e+04,10,3.549771049e+04,bb,jbar_input_raw,16,2,,,1.441368778e-09,,,EDDFACTOR:nu=3.498970000e+12Hz,lumina_unavailable,original raw-Jbar/tau was filtered before archival; representative J and rates are separately quantified by the production C1-fallback replay
+43,3.556800000e+04,10,3.549771049e+04,bb,sobolev_beta,16,2,line280644_l2_u8_1200.9660A,1.000000000e+00,,,dimensionless,,unavailable,GENCOOL/EDDFACTOR do not expose the matched transition rate/beta
+43,3.556800000e+04,10,3.549771049e+04,bb,R_lu_radiative,16,2,line280644_l2_u8_1200.9660A,5.552538745e+01,,,s^-1,,unavailable,GENCOOL/EDDFACTOR do not expose the matched transition rate/beta
+43,3.556800000e+04,10,3.549771049e+04,bb,R_ul_stimulated,16,2,line280644_l2_u8_1200.9660A,3.966099104e+01,,,s^-1,,unavailable,GENCOOL/EDDFACTOR do not expose the matched transition rate/beta
+43,3.556800000e+04,10,3.549771049e+04,bb,R_ul_spontaneous,16,2,line280644_l2_u8_1200.9660A,6.607000000e+07,,,s^-1,,unavailable,GENCOOL/EDDFACTOR do not expose the matched transition rate/beta
+43,3.556800000e+04,10,3.549771049e+04,collisional,C_lu,16,2,line280644_l2_u8_1200.9660A,6.937629445e-09,,,s^-1,,unavailable,"GENCOOL exposes aggregate collisional cooling, not the representative transition coefficient"
+43,3.556800000e+04,10,3.549771049e+04,collisional,C_ul,16,2,line280644_l2_u8_1200.9660A,1.830682111e-04,,,s^-1,,unavailable,"GENCOOL exposes aggregate collisional cooling, not the representative transition coefficient"
+43,3.556800000e+04,10,3.549771049e+04,bf,Gamma_photoion_total,26,1,,0.000000000e+00,3.808234420e-07,0.000000000e+00,s^-1,Fe2PRRR:sum(exact N_SL PR)/Ion Density,compared,
+43,3.556800000e+04,10,3.549771049e+04,bf,alpha_recomb_total,26,1,,8.764133334e-12,1.501700000e-12,5.836141262e+00,cm^3_s^-1,"Fe2PRRR:RR/(ED*ion density), source-certified cm^3/s",compared,
+43,3.556800000e+04,10,3.549771049e+04,bf,alpha_recomb_spont,26,1,,8.763853905e-12,,,cm^3_s^-1,,unavailable,CMFGEN PRRR does not expose a separately labelled spontaneous/stimulated alpha split
+43,3.556800000e+04,10,3.549771049e+04,bf,alpha_recomb_stim,26,1,,2.794288239e-16,,,cm^3_s^-1,,unavailable,CMFGEN PRRR does not expose a separately labelled spontaneous/stimulated alpha split
+43,3.556800000e+04,10,3.549771049e+04,bf,chi_bf_at_1000A,26,1,,0.000000000e+00,,,cm^-1,,unavailable,selected CMFGEN files expose no identical monochromatic coefficient
+43,3.556800000e+04,10,3.549771049e+04,bf,eta_bf_at_1000A,26,1,,0.000000000e+00,,,erg_s^-1_cm^-3_Hz^-1_sr^-1,,unavailable,selected CMFGEN files expose no identical monochromatic coefficient
+43,3.556800000e+04,10,3.549771049e+04,bf,chi_bf_at_5000A,26,1,,0.000000000e+00,,,cm^-1,,unavailable,selected CMFGEN files expose no identical monochromatic coefficient
+43,3.556800000e+04,10,3.549771049e+04,bf,eta_bf_at_5000A,26,1,,0.000000000e+00,,,erg_s^-1_cm^-3_Hz^-1_sr^-1,,unavailable,selected CMFGEN files expose no identical monochromatic coefficient
+43,3.556800000e+04,10,3.549771049e+04,bb,jbar_representative,26,1,,,1.441368778e-09,,,EDDFACTOR:nu=3.498970000e+12Hz,lumina_unavailable,no_positive_lower-level population flow selected
+43,3.556800000e+04,10,3.549771049e+04,bb,jbar_input_raw,26,1,,,1.441368778e-09,,,EDDFACTOR:nu=3.498970000e+12Hz,lumina_unavailable,no representative transition was selected
+43,3.556800000e+04,10,3.549771049e+04,bb,sobolev_beta,26,1,,,,,,,lumina_unavailable,no representative transition was selected
+43,3.556800000e+04,10,3.549771049e+04,bb,R_lu_radiative,26,1,,,,,,,lumina_unavailable,no_positive lower-level population flow selected
+43,3.556800000e+04,10,3.549771049e+04,bb,R_ul_stimulated,26,1,,,,,,,lumina_unavailable,no_positive lower-level population flow selected
+43,3.556800000e+04,10,3.549771049e+04,bb,R_ul_spontaneous,26,1,,,,,,,lumina_unavailable,no_positive lower-level population flow selected
+43,3.556800000e+04,10,3.549771049e+04,collisional,C_lu,26,1,,,,,,,lumina_unavailable,no_positive lower-level population flow selected
+43,3.556800000e+04,10,3.549771049e+04,collisional,C_ul,26,1,,,,,,,lumina_unavailable,no_positive lower-level population flow selected
+43,3.556800000e+04,10,3.549771049e+04,bf,Gamma_photoion_total,26,2,,,7.548862879e-06,,,FeIIIPRRR:sum(exact N_SL PR)/Ion Density,lumina_unavailable,ion is not a lower member of an assembled NLTE pair
+43,3.556800000e+04,10,3.549771049e+04,bf,alpha_recomb_total,26,2,,,3.214300000e-11,,,"FeIIIPRRR:RR/(ED*ion density), source-certified cm^3/s",lumina_unavailable,ion is not a lower member of an assembled NLTE pair
+43,3.556800000e+04,10,3.549771049e+04,bf,alpha_recomb_spont,26,2,,,,,,,lumina_unavailable,ion is not a lower member of an assembled NLTE pair
+43,3.556800000e+04,10,3.549771049e+04,bf,alpha_recomb_stim,26,2,,,,,,,lumina_unavailable,ion is not a lower member of an assembled NLTE pair
+43,3.556800000e+04,10,3.549771049e+04,bf,chi_bf_at_1000A,26,2,,0.000000000e+00,,,cm^-1,,unavailable,selected CMFGEN files expose no identical monochromatic coefficient
+43,3.556800000e+04,10,3.549771049e+04,bf,eta_bf_at_1000A,26,2,,0.000000000e+00,,,erg_s^-1_cm^-3_Hz^-1_sr^-1,,unavailable,selected CMFGEN files expose no identical monochromatic coefficient
+43,3.556800000e+04,10,3.549771049e+04,bf,chi_bf_at_5000A,26,2,,0.000000000e+00,,,cm^-1,,unavailable,selected CMFGEN files expose no identical monochromatic coefficient
+43,3.556800000e+04,10,3.549771049e+04,bf,eta_bf_at_5000A,26,2,,0.000000000e+00,,,erg_s^-1_cm^-3_Hz^-1_sr^-1,,unavailable,selected CMFGEN files expose no identical monochromatic coefficient
+43,3.556800000e+04,10,3.549771049e+04,bb,jbar_representative,26,2,,,1.441368778e-09,,,EDDFACTOR:nu=3.498970000e+12Hz,lumina_unavailable,no_positive_lower-level population flow selected
+43,3.556800000e+04,10,3.549771049e+04,bb,jbar_input_raw,26,2,,,1.441368778e-09,,,EDDFACTOR:nu=3.498970000e+12Hz,lumina_unavailable,no representative transition was selected
+43,3.556800000e+04,10,3.549771049e+04,bb,sobolev_beta,26,2,,,,,,,lumina_unavailable,no representative transition was selected
+43,3.556800000e+04,10,3.549771049e+04,bb,R_lu_radiative,26,2,,,,,,,lumina_unavailable,no_positive lower-level population flow selected
+43,3.556800000e+04,10,3.549771049e+04,bb,R_ul_stimulated,26,2,,,,,,,lumina_unavailable,no_positive lower-level population flow selected
+43,3.556800000e+04,10,3.549771049e+04,bb,R_ul_spontaneous,26,2,,,,,,,lumina_unavailable,no_positive lower-level population flow selected
+43,3.556800000e+04,10,3.549771049e+04,collisional,C_lu,26,2,,,,,,,lumina_unavailable,no_positive lower-level population flow selected
+43,3.556800000e+04,10,3.549771049e+04,collisional,C_ul,26,2,,,,,,,lumina_unavailable,no_positive lower-level population flow selected
+43,3.556800000e+04,10,3.549771049e+04,bf,Gamma_photoion_total,26,3,,,2.675418382e-06,,,FeIVPRRR:sum(exact N_SL PR)/Ion Density,lumina_unavailable,ion is not a lower member of an assembled NLTE pair
+43,3.556800000e+04,10,3.549771049e+04,bf,alpha_recomb_total,26,3,,,1.313600000e-11,,,"FeIVPRRR:RR/(ED*ion density), source-certified cm^3/s",lumina_unavailable,ion is not a lower member of an assembled NLTE pair
+43,3.556800000e+04,10,3.549771049e+04,bf,alpha_recomb_spont,26,3,,,,,,,lumina_unavailable,ion is not a lower member of an assembled NLTE pair
+43,3.556800000e+04,10,3.549771049e+04,bf,alpha_recomb_stim,26,3,,,,,,,lumina_unavailable,ion is not a lower member of an assembled NLTE pair
+43,3.556800000e+04,10,3.549771049e+04,bf,chi_bf_at_1000A,26,3,,0.000000000e+00,,,cm^-1,,unavailable,selected CMFGEN files expose no identical monochromatic coefficient
+43,3.556800000e+04,10,3.549771049e+04,bf,eta_bf_at_1000A,26,3,,0.000000000e+00,,,erg_s^-1_cm^-3_Hz^-1_sr^-1,,unavailable,selected CMFGEN files expose no identical monochromatic coefficient
+43,3.556800000e+04,10,3.549771049e+04,bf,chi_bf_at_5000A,26,3,,0.000000000e+00,,,cm^-1,,unavailable,selected CMFGEN files expose no identical monochromatic coefficient
+43,3.556800000e+04,10,3.549771049e+04,bf,eta_bf_at_5000A,26,3,,0.000000000e+00,,,erg_s^-1_cm^-3_Hz^-1_sr^-1,,unavailable,selected CMFGEN files expose no identical monochromatic coefficient
+43,3.556800000e+04,10,3.549771049e+04,bb,jbar_representative,26,3,,,1.441368778e-09,,,EDDFACTOR:nu=3.498970000e+12Hz,lumina_unavailable,no_positive_lower-level population flow selected
+43,3.556800000e+04,10,3.549771049e+04,bb,jbar_input_raw,26,3,,,1.441368778e-09,,,EDDFACTOR:nu=3.498970000e+12Hz,lumina_unavailable,no representative transition was selected
+43,3.556800000e+04,10,3.549771049e+04,bb,sobolev_beta,26,3,,,,,,,lumina_unavailable,no representative transition was selected
+43,3.556800000e+04,10,3.549771049e+04,bb,R_lu_radiative,26,3,,,,,,,lumina_unavailable,no_positive lower-level population flow selected
+43,3.556800000e+04,10,3.549771049e+04,bb,R_ul_stimulated,26,3,,,,,,,lumina_unavailable,no_positive lower-level population flow selected
+43,3.556800000e+04,10,3.549771049e+04,bb,R_ul_spontaneous,26,3,,,,,,,lumina_unavailable,no_positive lower-level population flow selected
+43,3.556800000e+04,10,3.549771049e+04,collisional,C_lu,26,3,,,,,,,lumina_unavailable,no_positive lower-level population flow selected
+43,3.556800000e+04,10,3.549771049e+04,collisional,C_ul,26,3,,,,,,,lumina_unavailable,no_positive lower-level population flow selected
+43,3.556800000e+04,10,3.549771049e+04,bf,Gamma_photoion_total,27,2,,,9.343967238e-07,,,CoIIIPRRR:sum(exact N_SL PR)/Ion Density,lumina_unavailable,ion is not a lower member of an assembled NLTE pair
+43,3.556800000e+04,10,3.549771049e+04,bf,alpha_recomb_total,27,2,,,4.451700000e-12,,,"CoIIIPRRR:RR/(ED*ion density), source-certified cm^3/s",lumina_unavailable,ion is not a lower member of an assembled NLTE pair
+43,3.556800000e+04,10,3.549771049e+04,bf,alpha_recomb_spont,27,2,,,,,,,lumina_unavailable,ion is not a lower member of an assembled NLTE pair
+43,3.556800000e+04,10,3.549771049e+04,bf,alpha_recomb_stim,27,2,,,,,,,lumina_unavailable,ion is not a lower member of an assembled NLTE pair
+43,3.556800000e+04,10,3.549771049e+04,bf,chi_bf_at_1000A,27,2,,0.000000000e+00,,,cm^-1,,unavailable,selected CMFGEN files expose no identical monochromatic coefficient
+43,3.556800000e+04,10,3.549771049e+04,bf,eta_bf_at_1000A,27,2,,0.000000000e+00,,,erg_s^-1_cm^-3_Hz^-1_sr^-1,,unavailable,selected CMFGEN files expose no identical monochromatic coefficient
+43,3.556800000e+04,10,3.549771049e+04,bf,chi_bf_at_5000A,27,2,,0.000000000e+00,,,cm^-1,,unavailable,selected CMFGEN files expose no identical monochromatic coefficient
+43,3.556800000e+04,10,3.549771049e+04,bf,eta_bf_at_5000A,27,2,,0.000000000e+00,,,erg_s^-1_cm^-3_Hz^-1_sr^-1,,unavailable,selected CMFGEN files expose no identical monochromatic coefficient
+43,3.556800000e+04,10,3.549771049e+04,bb,jbar_representative,27,2,,,1.441368778e-09,,,EDDFACTOR:nu=3.498970000e+12Hz,lumina_unavailable,no_positive_lower-level population flow selected
+43,3.556800000e+04,10,3.549771049e+04,bb,jbar_input_raw,27,2,,,1.441368778e-09,,,EDDFACTOR:nu=3.498970000e+12Hz,lumina_unavailable,no representative transition was selected
+43,3.556800000e+04,10,3.549771049e+04,bb,sobolev_beta,27,2,,,,,,,lumina_unavailable,no representative transition was selected
+43,3.556800000e+04,10,3.549771049e+04,bb,R_lu_radiative,27,2,,,,,,,lumina_unavailable,no_positive lower-level population flow selected
+43,3.556800000e+04,10,3.549771049e+04,bb,R_ul_stimulated,27,2,,,,,,,lumina_unavailable,no_positive lower-level population flow selected
+43,3.556800000e+04,10,3.549771049e+04,bb,R_ul_spontaneous,27,2,,,,,,,lumina_unavailable,no_positive lower-level population flow selected
+43,3.556800000e+04,10,3.549771049e+04,collisional,C_lu,27,2,,,,,,,lumina_unavailable,no_positive lower-level population flow selected
+43,3.556800000e+04,10,3.549771049e+04,collisional,C_ul,27,2,,,,,,,lumina_unavailable,no_positive lower-level population flow selected
+43,3.556800000e+04,10,3.549771049e+04,ff,chi_ff_at_1000A,0,-1,,8.581772591e-30,,,cm^-1,,unavailable,selected CMFGEN files expose no identical monochromatic coefficient
+43,3.556800000e+04,10,3.549771049e+04,ff,eta_ff_at_1000A,0,-1,,1.102528932e-35,,,erg_s^-1_cm^-3_Hz^-1_sr^-1,,unavailable,selected CMFGEN files expose no identical monochromatic coefficient
+43,3.556800000e+04,10,3.549771049e+04,ff,chi_ff_at_5000A,0,-1,,9.906320539e-28,,,cm^-1,,unavailable,selected CMFGEN files expose no identical monochromatic coefficient
+43,3.556800000e+04,10,3.549771049e+04,ff,eta_ff_at_5000A,0,-1,,2.736566856e-31,,,erg_s^-1_cm^-3_Hz^-1_sr^-1,,unavailable,selected CMFGEN files expose no identical monochromatic coefficient
+43,3.556800000e+04,10,3.549771049e+04,ff,cooling_ff_grid,0,-1,,5.424196801e-15,3.761005259e-14,,erg_s^-1_cm^-3,GENCOOL:sum(all ion Free-Free Cooling),context_only_nonidentical,Lumina row is emissive cooling; GENCOOL FF is net emission-minus-absorption
+43,3.556800000e+04,10,3.549771049e+04,thermal,heating_photoion,0,-1,,0.000000000e+00,,,erg_s^-1_cm^-3,,unavailable,"GENCOOL BF block is net bound-free cooling, not a separate photoion heating rate"
+43,3.556800000e+04,10,3.549771049e+04,thermal,heating_deposition,0,-1,,1.402481000e-10,,,erg_s^-1_cm^-3,,unavailable,GENCOOL has no separately labelled deposition row identical to Lumina's external deposition input
+43,3.556800000e+04,10,3.549771049e+04,thermal,heating_MA_LINE_DESTRUCT,0,-1,,,,,,,lumina_unavailable,archived run retained only global terminal/destroyed event counts; shell ownership and packet-energy/volume normalization are irrecoverable. Re-run capture gate LUMINA_GATEB_ORACLE_CAPTURE writes the required per-shell volumetric ledger
+43,3.556800000e+04,10,3.549771049e+04,thermal,cooling_ff,0,-1,,1.853738124e-15,3.761005259e-14,,erg_s^-1_cm^-3,GENCOOL:sum(all ion Free-Free Cooling),context_only_nonidentical,Lumina row is emissive cooling; GENCOOL FF is net emission-minus-absorption
+43,3.556800000e+04,10,3.549771049e+04,thermal,cooling_bf,0,-1,,4.091231924e-22,-8.436664147e-14,,erg_s^-1_cm^-3,GENCOOL:sum(all ion Bound-Free Cooling),context_only_nonidentical,Lumina row is emission only; GENCOOL BF is net emission-minus-photo-heating; use cooling_bf_net for identical sign accounting
+43,3.556800000e+04,10,3.549771049e+04,thermal,cooling_bf_net,0,-1,,4.091231924e-22,-8.436664147e-14,-4.849347861e-09,erg_s^-1_cm^-3,GENCOOL:sum(all ion Bound-Free Cooling),compared,
+43,3.556800000e+04,10,3.549771049e+04,thermal,cooling_bb_collisional,0,-1,,7.234346176e-12,3.462384917e-12,2.089411302e+00,erg_s^-1_cm^-3,GENCOOL:sum(all ion Collisional Cooling),compared,
+43,3.556800000e+04,10,3.549771049e+04,thermal,cooling_adiabatic,0,-1,,4.236343899e-13,,,erg_s^-1_cm^-3,,unavailable,GENCOOL has no separately labelled adiabatic cooling row
+43,3.556800000e+04,10,3.549771049e+04,thermal,thermal_net,0,-1,,1.325882657e-10,-1.366200000e-10,-9.704894283e-01,erg_s^-1_cm^-3,GENCOOL:-Net Cooling Rate (converted C-H to Lumina H-C),compared,

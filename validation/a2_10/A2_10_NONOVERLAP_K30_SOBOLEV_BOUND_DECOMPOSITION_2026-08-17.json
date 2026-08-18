@@ -1,0 +1,41 @@
+{
+  "cap": 0,
+  "clamp": 0,
+  "decision": {
+    "blind_rung_escalation": false,
+    "minimum_next_use": "A stronger rung is justified only for the explicitly requested private-temperature callback because no fixed propagated input-bound component was found.",
+    "physical_no_bracket_changed": false
+  },
+  "decomposition": {
+    "additional_noncontracting_propagated_component": 0,
+    "continuum_multiplier": "beta",
+    "local_emission_propagated_input_bound": 0,
+    "propagated_continuum_input_bound": "beta * continuum_j_absolute_uncertainty",
+    "rounding_scope": "The operator contract explicitly does not claim a complete rounding enclosure for beta/companion/Jbar arithmetic."
+  },
+  "floor": 0,
+  "jitter": 0,
+  "line_net_source": "/home/kjhan/BACKUP/Eunha.A1/Claude/Lumina-sn/src/line_net_rate.c",
+  "line_net_source_sha256": "e896d6796c71a77912eaa0ee9500e97360bf309ac74e7fae800279d451605962",
+  "physical_values_modified": 0,
+  "repair": 0,
+  "schema": "a210-sobolev-bound-decomposition-v1",
+  "source_log": "/gpfs/kjhan/lumina/a210_targeted_gate_a100x2_nonoverlap_sobolev_k30/det1234_20260816T165757Z_d5f769212cf6/stderr.log",
+  "source_log_sha256": "7033453d7e6be2363ef17d99149cd22cf5936438905e8517e86d1ad8d7e29b3c",
+  "status": "PASS_CONTRACTING_PROPAGATED_INPUT_BOUND_ONLY",
+  "witness": {
+    "beta": 0.9999985265086464,
+    "beta_times_inferred_bound": 1.2243553787546059e-13,
+    "inferred_pre_sobolev_continuum_bound": 1.2243571828343286e-13,
+    "jbar_bound": 1.2243553787546059e-13,
+    "line": 894169,
+    "line_rate_uncertainty": 1.4566265672471364e-19,
+    "logged_phase": "INTERIOR",
+    "reconstructed_line_rate_uncertainty": 1.4566265672471364e-19,
+    "shell": 11,
+    "signed_rate": -2.153460088228455e-20,
+    "strictly_contracting": true,
+    "tau_raw": 2.9469856021858767e-06,
+    "uncertainty_to_abs_rate": 6.764121495492545
+  }
+}

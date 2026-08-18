@@ -1,0 +1,22 @@
+shell,Te_K,band,dominant_consumer(field_read),u_cs_J,u_mc_J,ratio_mc_over_cs
+0,13120,EUV <912,Gph(mc) + bf-heat(mc),4.8144e-01,2.9233e-01,0.6072
+0,13120,FUV 912-1290,Gph excited-lev(mc) / pump(cs),7.0025e+00,1.9273e+00,0.2752
+0,13120,res-pump 1490-1650,line PUMP (cs)  [Co IV/Fe-Co II],1.7652e+01,1.3650e+02,7.7327
+0,13120,res-pump 1700-2100,line PUMP (cs)  [Fe/Co/Ni II forest],1.5864e+02,6.2511e+00,0.0394
+0,13120,NUV 2100-3000,line cool/pump (cs),1.4405e+02,2.0623e+01,0.1432
+0,13120,opt 3000-7000,line cool (cs),8.4159e+01,1.3545e+02,1.6095
+0,13120,IR >7000,far-IR forbidden cool (cs),2.5765e+01,3.3793e+01,1.3115
+1,13592,EUV <912,Gph(mc) + bf-heat(mc),8.1692e-01,3.4194e-01,0.4186
+1,13592,FUV 912-1290,Gph excited-lev(mc) / pump(cs),1.1561e+01,2.0957e+00,0.1813
+1,13592,res-pump 1490-1650,line PUMP (cs)  [Co IV/Fe-Co II],3.0812e+01,1.7944e+02,5.8238
+1,13592,res-pump 1700-2100,line PUMP (cs)  [Fe/Co/Ni II forest],3.2391e+02,4.0732e+00,0.0126
+1,13592,NUV 2100-3000,line cool/pump (cs),2.3845e+02,1.5704e+01,0.0659
+1,13592,opt 3000-7000,line cool (cs),1.1380e+02,1.1437e+02,1.0050
+1,13592,IR >7000,far-IR forbidden cool (cs),3.3164e+01,2.3998e+01,0.7236
+2,13912,EUV <912,Gph(mc) + bf-heat(mc),1.2059e+00,3.8125e-01,0.3162
+2,13912,FUV 912-1290,Gph excited-lev(mc) / pump(cs),1.6900e+01,1.9963e+00,0.1181
+2,13912,res-pump 1490-1650,line PUMP (cs)  [Co IV/Fe-Co II],4.5267e+01,1.7945e+02,3.9642
+2,13912,res-pump 1700-2100,line PUMP (cs)  [Fe/Co/Ni II forest],3.5686e+02,3.0794e+00,0.0086
+2,13912,NUV 2100-3000,line cool/pump (cs),2.6762e+02,1.4553e+01,0.0544
+2,13912,opt 3000-7000,line cool (cs),1.1360e+02,1.0393e+02,0.9149
+2,13912,IR >7000,far-IR forbidden cool (cs),3.1087e+01,1.8652e+01,0.6000

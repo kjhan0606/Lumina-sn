@@ -1,0 +1,8 @@
+oracle_vs_cmfgen.csv cmp_rc=0
+oracle_vs_cmfgen.md cmp_rc=0
+shell_cmfgen_depth_map.csv cmp_rc=0
+cmfgen_parser_roundtrip.csv cmp_rc=0
+cmfgen_source_evidence.csv cmp_rc=0
+cmfgen_parser_dimensions.csv cmp_rc=0
+cmfgen_snapshot_consistency.csv cmp_rc=0
+coverage_disposition.csv cmp_rc=0

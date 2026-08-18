@@ -1,0 +1,30 @@
+[INPUT] CMFGEN EDDFACTOR_INFO: exists=1 bytes=284 lines=4 schema=text
+[INPUT] CMFGEN EDDFACTOR: exists=1 bytes=142832872 schema=OK records=196199 header_records=14 ND=90 good_freq=196185 bad_freq=0 nu=[3.498970e+12,1.000000e+18]Hz FINISH=1 endian=LE
+[UNIT] FL(1e15 Hz)->Hz->FL max_rel=2.220e-16; Hz->Angstrom->Hz max_rel=2.220e-16; J_nu kept in native CGS erg cm^-2 s^-1 Hz^-1 sr^-1
+{
+  "eps_MC": 0.0024368222433042742,
+  "gain_MC": 410.3705154316153,
+  "BALL": {
+    "band": "BALL",
+    "lambda_lo_A": 600.0,
+    "lambda_hi_A": 3000.0,
+    "J_old_over_CMFGEN": 11.977097469269308,
+    "eps_old_source": 0.0001905672856532837,
+    "gain_old_source": 5247.4903894018325,
+    "eps_MC": 0.0024368222433042742,
+    "gain_MC": 410.3705154316153,
+    "preregistered_J_over_CMFGEN": 0.9366472917731276,
+    "preregistered_low_minus10pct": 0.8429825625958148,
+    "preregistered_high_plus10pct": 1.0303120209504404,
+    "measured_arithmetic_J_effective_over_CMFGEN": 0.9359571499874326,
+    "arithmetic_relative_to_prediction": 0.9992631785819949,
+    "arithmetic_hit_within_10pct": true,
+    "rebuilt_source_over_CMFGEN": 0.9279097230788594,
+    "rebuilt_source_relative_to_prediction": 0.9906714418853149,
+    "rebuilt_source_hit_within_10pct": true,
+    "rebuilt_eps_eff_source": 0.00245980575719821,
+    "rebuilt_gain_source": 406.5361653348713,
+    "opacity_only_source_over_CMFGEN": 11.948754650227748
+  },
+  "effective_payload_sha256": "0bd71b413e77d49382b85e188988d2750fcd5bcd38ead800fc2faf2640b6d5e0"
+}

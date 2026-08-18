@@ -1,0 +1,6 @@
+ion,Z,ion_number,n_levels,max_level,n_lines,nlte_super_levels_K100,role_in_forkA,pair_partner_III_levels,pair_N_super_IIIxIV
+Fe IV,26,3,200,199,4336,101,promote_to_NLTE_top_of_III/IV_pair,1500,202
+Co IV,27,3,200,199,4041,101,promote_to_NLTE_top_of_III/IV_pair,3917,202
+Ni IV,28,3,200,199,4199,101,promote_to_NLTE_top_of_III/IV_pair,1000,202
+Cr IV,24,3,200,199,4609,101,promote_to_NLTE_top_of_III/IV_pair,1000,202
+Ti IV,22,3,126,125,1000,101,promote_to_NLTE_top_of_III/IV_pair,600,202

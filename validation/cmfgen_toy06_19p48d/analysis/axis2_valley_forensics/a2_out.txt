@@ -1,0 +1,208 @@
+
+################################################################################################
+# RUN bsrc.n12  (Fork B 12-iter)
+################################################################################################
+etype hist: {'line-abs': 62253647, 'line-emit': 62282677, 'bf-abs': 44715, 'kpkt-ff': 3726, 'kpkt-fb': 8503, 'escape': 204870, 'e-scat': 3201862}
+
+  [bsrc.n12 s7-9 FUV 918-1290A]  CREATION(line+ff+fb)=4.8267e+00   (e-scat redistribute=2.2314e-02)
+     line-emit  E=4.8267e+00 n= 2,384,739  100.0% of creation
+     kpkt-ff    E=0.0000e+00 n=         0  0.0% of creation
+     kpkt-fb    E=0.0000e+00 n=         0  0.0% of creation
+     e-scat     E=2.2314e-02 n=    11,016  (redistrib)
+     -- TOP CHANNELS (line-by-ion + ff + fb), % of 4.8267e+00 total creation+untab:
+        S III line                       E=4.0623e+00   84.2%
+        Si III line                      E=4.3489e-01    9.0%
+        Co III line                      E=2.4033e-01    5.0%
+        Fe III line                      E=7.6486e-02    1.6%
+        line-emit (untabulated id<0)     E=7.5298e-03    0.2%
+        S II line                        E=1.9654e-03    0.0%
+        Si IV line                       E=1.1916e-03    0.0%
+        Co II line                       E=9.6259e-04    0.0%
+        Si II line                       E=9.1871e-04    0.0%
+        Fe II line                       E=1.0016e-04    0.0%
+
+  [bsrc.n12 s7-9 FEEDER 1290-2000A]  CREATION(line+ff+fb)=1.0126e+01   (e-scat redistribute=4.9017e-02)
+     line-emit  E=1.0126e+01 n= 4,995,534  100.0% of creation
+     kpkt-ff    E=4.4803e-06 n=         2  0.0% of creation
+     kpkt-fb    E=0.0000e+00 n=         0  0.0% of creation
+     e-scat     E=4.9017e-02 n=    24,216  (redistrib)
+     -- TOP CHANNELS (line-by-ion + ff + fb), % of 1.0126e+01 total creation+untab:
+        S III line                       E=6.5850e+00   65.0%
+        Co III line                      E=2.8036e+00   27.7%
+        Si III line                      E=4.1744e-01    4.1%
+        Fe III line                      E=2.5171e-01    2.5%
+        line-emit (untabulated id<0)     E=6.4013e-02    0.6%
+        Si II line                       E=2.2852e-03    0.0%
+        Ni III line                      E=7.9214e-04    0.0%
+        Co II line                       E=4.5481e-04    0.0%
+        S II line                        E=2.5869e-04    0.0%
+        Co IV line                       E=2.0515e-04    0.0%
+
+  [bsrc.n12] FUV-exit(918-1290) redistribution at s[7, 8, 9]: paired=2,384,739
+     ENTRY band of the absorption that fed each FUV emission (energy-weighted):
+        300-450          0.0%  <-- DOWN-conversion (bluer->FUV)
+        450-918         28.2%  <-- DOWN-conversion (bluer->FUV)
+        918-1290        14.5%  (FUV->FUV, in-band scatter/cascade)
+        1290-1490       16.2%  <-- UP-conversion (redder->FUV)
+        1490-1650        8.2%  <-- UP-conversion (redder->FUV)
+        1650-2100_VLY    7.6%  <-- UP-conversion (redder->FUV)
+        2100-4500       19.7%  <-- UP-conversion (redder->FUV)
+        4500-20000       5.6%  <-- UP-conversion (redder->FUV)
+        >20000           0.0%  <-- UP-conversion (redder->FUV)
+     => UP-conversion (entry REDDER, bands 1290-inf feeding FUV) = 57.3%   DOWN-conversion (entry bluer, 100-918) = 28.2%   in-band = 14.5%
+     EXIT ion (emits the FUV photon) (top ions, % of 4.827e+00; id<0=0.2% untab):
+        S III       84.2%
+        Si III       9.0%
+        Co III       5.0%
+        Fe III       1.6%
+        S II         0.0%
+        Si IV        0.0%
+        Co II        0.0%
+        Si II        0.0%
+     ENTRY ion of UP-converted (absorbs the REDDER photon that becomes FUV) (top ions, % of 2.765e+00; id<0=0.0% untab):
+        Co III      74.5%
+        Fe III      19.9%
+        S III        2.6%
+        Si III       1.4%
+        Si II        0.6%
+        S II         0.4%
+        Co IV        0.2%
+        Co II        0.2%
+     ENTRY ion of DOWN-converted (absorbs the bluer photon) (top ions, % of 1.360e+00; id<0=0.0% untab):
+        Co III      75.6%
+        Fe III      17.6%
+        Si II        3.2%
+        S II         2.6%
+        S III        0.7%
+        Fe IV        0.1%
+        Co II        0.1%
+        Si III       0.0%
+
+  [bsrc.n12] ARITHMETIC REMOVAL at s8 (FUV 918-1290):
+
+  [bsrc.n12 s8 FUV 918-1290A]  CREATION(line+ff+fb)=1.7932e+00   (e-scat redistribute=7.5891e-03)
+     line-emit  E=1.7932e+00 n=   887,733  100.0% of creation
+     kpkt-ff    E=0.0000e+00 n=         0  0.0% of creation
+     kpkt-fb    E=0.0000e+00 n=         0  0.0% of creation
+     e-scat     E=7.5891e-03 n=     3,740  (redistrib)
+     -- TOP CHANNELS (line-by-ion + ff + fb), % of 1.7932e+00 total creation+untab:
+        S III line                       E=1.5783e+00   88.0%
+        Si III line                      E=1.2765e-01    7.1%
+        Co III line                      E=6.3601e-02    3.5%
+        Fe III line                      E=2.1176e-02    1.2%
+        Si IV line                       E=9.4330e-04    0.1%
+        S II line                        E=6.3301e-04    0.0%
+        Si II line                       E=3.5954e-04    0.0%
+        line-emit (untabulated id<0)     E=3.2297e-04    0.0%
+        Co II line                       E=2.0550e-04    0.0%
+        Fe II line                       E=3.8312e-05    0.0%
+     s8 FUV mc_J(measured)=5.681e-06   CMFGEN s8 FUV=7.700e-07  (excess +0.87 dex)
+     top-1 channel = S III line : 88.0% of s8 creation
+     top-3 channels: S III line(88.0%); Si III line(7.1%); Co III line(3.5%)
+     s8 FUV WITHOUT top-1 = 6.809e-07  (-0.05 dex vs CMFGEN)
+     s8 FUV WITHOUT top-3 = 7.504e-08  (-1.01 dex vs CMFGEN)
+
+################################################################################################
+# RUN gphall  (B-run(all-lvl Gph))
+################################################################################################
+etype hist: {'line-abs': 63884713, 'line-emit': 63918111, 'bf-abs': 49013, 'kpkt-ff': 4160, 'kpkt-fb': 9330, 'escape': 134673}
+
+  [gphall s7-9 FUV 918-1290A]  CREATION(line+ff+fb)=4.8801e+00   (e-scat redistribute=0.0000e+00)
+     line-emit  E=4.8801e+00 n= 2,579,013  100.0% of creation
+     kpkt-ff    E=0.0000e+00 n=         0  0.0% of creation
+     kpkt-fb    E=0.0000e+00 n=         0  0.0% of creation
+     e-scat     E=0.0000e+00 n=         0  (redistrib)
+     -- TOP CHANNELS (line-by-ion + ff + fb), % of 4.8801e+00 total creation+untab:
+        S III line                       E=4.1476e+00   85.0%
+        Si III line                      E=4.4776e-01    9.2%
+        Co III line                      E=1.8225e-01    3.7%
+        Fe III line                      E=8.3477e-02    1.7%
+        Ni III line                      E=1.0183e-02    0.2%
+        Co IV line                       E=2.9073e-03    0.1%
+        S II line                        E=1.7941e-03    0.0%
+        Ni II line                       E=1.3670e-03    0.0%
+        Si IV line                       E=1.1724e-03    0.0%
+        Co II line                       E=9.9347e-04    0.0%
+
+  [gphall s7-9 FEEDER 1290-2000A]  CREATION(line+ff+fb)=1.0524e+01   (e-scat redistribute=0.0000e+00)
+     line-emit  E=1.0524e+01 n= 5,547,481  100.0% of creation
+     kpkt-ff    E=3.1766e-06 n=         2  0.0% of creation
+     kpkt-fb    E=0.0000e+00 n=         0  0.0% of creation
+     e-scat     E=0.0000e+00 n=         0  (redistrib)
+     -- TOP CHANNELS (line-by-ion + ff + fb), % of 1.0524e+01 total creation+untab:
+        S III line                       E=6.3126e+00   60.0%
+        Co III line                      E=2.4598e+00   23.4%
+        Co IV line                       E=8.3668e-01    8.0%
+        Si III line                      E=4.4788e-01    4.3%
+        Fe III line                      E=2.9615e-01    2.8%
+        Ni III line                      E=1.3726e-01    1.3%
+        Ni IV line                       E=1.8147e-02    0.2%
+        Fe IV line                       E=1.2249e-02    0.1%
+        Si II line                       E=1.6939e-03    0.0%
+        Co II line                       E=5.3699e-04    0.0%
+
+  [gphall] FUV-exit(918-1290) redistribution at s[7, 8, 9]: paired=2,579,013
+     ENTRY band of the absorption that fed each FUV emission (energy-weighted):
+        300-450          0.0%  <-- DOWN-conversion (bluer->FUV)
+        450-918         26.7%  <-- DOWN-conversion (bluer->FUV)
+        918-1290        16.1%  (FUV->FUV, in-band scatter/cascade)
+        1290-1490       15.1%  <-- UP-conversion (redder->FUV)
+        1490-1650       10.1%  <-- UP-conversion (redder->FUV)
+        1650-2100_VLY    8.9%  <-- UP-conversion (redder->FUV)
+        2100-4500       18.6%  <-- UP-conversion (redder->FUV)
+        4500-20000       4.5%  <-- UP-conversion (redder->FUV)
+        >20000           0.0%  <-- UP-conversion (redder->FUV)
+     => UP-conversion (entry REDDER, bands 1290-inf feeding FUV) = 57.2%   DOWN-conversion (entry bluer, 100-918) = 26.7%   in-band = 16.1%
+     EXIT ion (emits the FUV photon) (top ions, % of 4.880e+00; id<0=0.0% untab):
+        S III       85.0%
+        Si III       9.2%
+        Co III       3.7%
+        Fe III       1.7%
+        Ni III       0.2%
+        Co IV        0.1%
+        S II         0.0%
+        Ni II        0.0%
+     ENTRY ion of UP-converted (absorbs the REDDER photon that becomes FUV) (top ions, % of 2.794e+00; id<0=0.0% untab):
+        Co III      62.2%
+        Fe III      19.5%
+        Ni III      13.0%
+        S III        2.6%
+        Si III       1.3%
+        Si II        0.5%
+        S II         0.3%
+        Co IV        0.3%
+     ENTRY ion of DOWN-converted (absorbs the bluer photon) (top ions, % of 1.302e+00; id<0=0.0% untab):
+        Co III      68.2%
+        Fe III      17.6%
+        Ni III       7.2%
+        Si II        3.9%
+        S II         1.9%
+        S III        0.8%
+        Fe IV        0.1%
+        Co II        0.1%
+
+  [gphall] ARITHMETIC REMOVAL at s8 (FUV 918-1290):
+
+  [gphall s8 FUV 918-1290A]  CREATION(line+ff+fb)=1.7886e+00   (e-scat redistribute=0.0000e+00)
+     line-emit  E=1.7886e+00 n=   945,891  100.0% of creation
+     kpkt-ff    E=0.0000e+00 n=         0  0.0% of creation
+     kpkt-fb    E=0.0000e+00 n=         0  0.0% of creation
+     e-scat     E=0.0000e+00 n=         0  (redistrib)
+     -- TOP CHANNELS (line-by-ion + ff + fb), % of 1.7886e+00 total creation+untab:
+        S III line                       E=1.5827e+00   88.5%
+        Si III line                      E=1.2917e-01    7.2%
+        Co III line                      E=5.1432e-02    2.9%
+        Fe III line                      E=2.0462e-02    1.1%
+        Ni III line                      E=2.3472e-03    0.1%
+        Si IV line                       E=9.7285e-04    0.1%
+        S II line                        E=6.0899e-04    0.0%
+        Ni II line                       E=4.2154e-04    0.0%
+        Co IV line                       E=2.3018e-04    0.0%
+        Co II line                       E=1.7480e-04    0.0%
+     s8 FUV mc_J(measured)=6.656e-06   CMFGEN s8 FUV=7.700e-07  (excess +0.94 dex)
+     top-1 channel = S III line : 88.5% of s8 creation
+     top-3 channels: S III line(88.5%); Si III line(7.2%); Co III line(2.9%)
+     s8 FUV WITHOUT top-1 = 7.663e-07  (-0.00 dex vs CMFGEN)
+     s8 FUV WITHOUT top-3 = 9.425e-08  (-0.91 dex vs CMFGEN)
+
+[out] /home/kjhan/BACKUP/Eunha.A1/Claude/Lumina-sn/validation/cmfgen_toy06_19p48d/analysis/axis2_valley_forensics/a2_emission_ledger.csv

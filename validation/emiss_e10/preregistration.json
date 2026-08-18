@@ -1,0 +1,187 @@
+{
+  "acceptance": {
+    "B0_B1": "both exact stage31 J_det/CMFGEN values must fall at least 10% below E9; +/-25% coarse-prediction agreement is secondary",
+    "energy": "event construction error is reported independently; exact application requires abs((grid+outside)/removed-1) <= 1e-12",
+    "optical": "3000-10000 A source energy and stage31 band-integrated J_det must both increase; magnitude is compared with the frozen coarse ratios at +/-25%",
+    "verdict": "shape-to-CMFGEN only if B0 and B1 meet direction/minimum-drop and optical rises without energy loss; otherwise identify bin width, EPAY, boundary, or coverage as residual cause, or UNRESOLVED when discriminating evidence is absent"
+  },
+  "clamp_or_fallback": false,
+  "coarse_transition_probability": {
+    "B0": {
+      "B0": 0.10793978464551374,
+      "B1": 0.15837679947661693,
+      "B2": 0.45502476213075554,
+      "B3": 0.19361381253378082,
+      "B4": 0.03833882283014881,
+      "EUV": 0.0009116774656344101,
+      "IR": 0.0003913309037816862,
+      "OPTICAL": 0.04534683274135749,
+      "OUTSIDE": 5.61772724105711e-05
+    },
+    "B1": {
+      "B0": 0.05339907452929131,
+      "B1": 0.24180778604479236,
+      "B2": 0.42615437635058107,
+      "B3": 0.18664456653933234,
+      "B4": 0.0365126152292597,
+      "EUV": 0.0002608519792494806,
+      "IR": 0.0003338736226856877,
+      "OPTICAL": 0.05485777095182927,
+      "OUTSIDE": 2.9084752978828538e-05
+    },
+    "B2": {
+      "B0": 0.05575055118658217,
+      "B1": 0.145456598254847,
+      "B2": 0.5377570634971877,
+      "B3": 0.19245118932813646,
+      "B4": 0.03772872561456617,
+      "EUV": 0.00022879294454877032,
+      "IR": 0.000125330603103603,
+      "OPTICAL": 0.03048537245684483,
+      "OUTSIDE": 1.6376114183337302e-05
+    },
+    "B3": {
+      "B0": 0.049007574516355304,
+      "B1": 0.13636977264442157,
+      "B2": 0.3925741816314805,
+      "B3": 0.33446587640709674,
+      "B4": 0.0575320563145384,
+      "EUV": 0.00017404840286189854,
+      "IR": 0.0001805168826033359,
+      "OPTICAL": 0.02967609223266712,
+      "OUTSIDE": 1.9880967975155145e-05
+    },
+    "B4": {
+      "B0": 0.04271426567729724,
+      "B1": 0.13199314540923943,
+      "B2": 0.3634043823267459,
+      "B3": 0.2752837169633046,
+      "B4": 0.1488746780034253,
+      "EUV": 0.00015012378276066659,
+      "IR": 0.00013989081528444013,
+      "OPTICAL": 0.037389290407282776,
+      "OUTSIDE": 5.050661465969489e-05
+    }
+  },
+  "eps_MC": 0.0024368222433042742,
+  "known_limit": "band collapse discards within-band source/matrix covariance and does not model nonlocal formal-transport response",
+  "matrix_sha256": "29c432f0638b2e95f2ddeda490745d8ed112796b274790c553ba58a6d5086140",
+  "new_model_or_GPU_run": false,
+  "normalization_sha256": "7aeca6ef9c9a5bdf086423cc8581a7945831f87ab3a52c0685ea9f44fbd6eeff",
+  "payload_sha256": "f67c31c0920ee30ccef289ac0daab3a04896cd820321b979a77c9273baa600b2",
+  "predicted_redistribution": {
+    "added_on_grid_energy": 0.0060427429088403106,
+    "outside_energy": 1.3020568273002668e-07,
+    "relative_closure_error": -1.1102230246251565e-16,
+    "removed_UV_line_return_energy": 0.006042873114523041
+  },
+  "predictions": [
+    {
+      "CMFGEN_shape_target": 1.0,
+      "E9_J_det_over_CMFGEN": 8.290551056587633,
+      "band": "B0",
+      "baseline_source_energy": 0.00021925158081093554,
+      "coarse_predicted_J_det_over_CMFGEN": 12.96845672693582,
+      "coarse_predicted_source_energy": 0.00034296328659595834,
+      "coarse_predicted_source_ratio_to_E9": 1.564245445015521,
+      "coarse_redistributed_energy_added": 0.00034198644754651343,
+      "fractional_drop_required_to_reach_CMFGEN": 0.8793807560951687,
+      "registered_direction": "up",
+      "registered_minimum_fractional_drop": 0.1,
+      "registered_ratio_high_plus25pct": 1.9553068062694012,
+      "registered_ratio_low_minus25pct": 1.1731840837616407,
+      "same_bin_line_return_removed": 0.00021827474176149063,
+      "shape_toward_CMFGEN_requires": "J_det/CMFGEN below E9 by at least 10%; exact result also compared with coarse prediction +/-25%"
+    },
+    {
+      "CMFGEN_shape_target": 1.0,
+      "E9_J_det_over_CMFGEN": 4.916142857911386,
+      "band": "B1",
+      "baseline_source_energy": 0.0013792288110762918,
+      "coarse_predicted_J_det_over_CMFGEN": 3.639370553264568,
+      "coarse_predicted_source_energy": 0.0010210290600419394,
+      "coarse_predicted_source_ratio_to_E9": 0.7402898285203102,
+      "coarse_redistributed_energy_added": 0.0010100074826717555,
+      "fractional_drop_required_to_reach_CMFGEN": 0.7965884985643301,
+      "registered_direction": "down",
+      "registered_minimum_fractional_drop": 0.1,
+      "registered_ratio_high_plus25pct": 0.9253622856503878,
+      "registered_ratio_low_minus25pct": 0.5552173713902326,
+      "same_bin_line_return_removed": 0.0013682072337061078,
+      "shape_toward_CMFGEN_requires": "J_det/CMFGEN below E9 by at least 10%; exact result also compared with coarse prediction +/-25%"
+    },
+    {
+      "band": "B2",
+      "baseline_source_energy": 0.00414167885995847,
+      "coarse_predicted_source_energy": 0.003046840316731295,
+      "coarse_predicted_source_ratio_to_E9": 0.735653443869824,
+      "coarse_redistributed_energy_added": 0.003026375166659455,
+      "registered_direction": "down",
+      "registered_ratio_high_plus25pct": 0.91956680483728,
+      "registered_ratio_low_minus25pct": 0.551740082902368,
+      "same_bin_line_return_removed": 0.00412121370988663
+    },
+    {
+      "band": "B3",
+      "baseline_source_energy": 0.00020712142550115793,
+      "coarse_predicted_source_energy": 0.001197584036720446,
+      "coarse_predicted_source_ratio_to_E9": 5.782038404876422,
+      "coarse_redistributed_energy_added": 0.0011951443253299487,
+      "registered_direction": "up",
+      "registered_ratio_high_plus25pct": 7.227548006095528,
+      "registered_ratio_low_minus25pct": 4.336528803657316,
+      "same_bin_line_return_removed": 0.0002046817141106607
+    },
+    {
+      "band": "B4",
+      "baseline_source_energy": 0.00013361159092149525,
+      "coarse_predicted_source_energy": 0.0002481325055164155,
+      "coarse_predicted_source_ratio_to_E9": 1.8571181123216178,
+      "coarse_redistributed_energy_added": 0.00024501662965307206,
+      "registered_direction": "up",
+      "registered_ratio_high_plus25pct": 2.3213976404020222,
+      "registered_ratio_low_minus25pct": 1.3928385842412134,
+      "same_bin_line_return_removed": 0.0001304957150581518
+    },
+    {
+      "band": "OPTICAL",
+      "baseline_source_energy": 0.0008792700276924288,
+      "coarse_predicted_source_energy": 0.0011008149254736884,
+      "coarse_predicted_source_ratio_to_E9": 1.2519645737984335,
+      "coarse_redistributed_energy_added": 0.0002215448977812597,
+      "registered_direction": "up",
+      "registered_ratio_high_plus25pct": 1.564955717248042,
+      "registered_ratio_low_minus25pct": 0.9389734303488251,
+      "same_bin_line_return_removed": 0.0
+    },
+    {
+      "band": "EUV",
+      "baseline_source_energy": 9.273173692362735e-05,
+      "coarse_predicted_source_energy": 9.428575230755848e-05,
+      "coarse_predicted_source_ratio_to_E9": 1.0167581826404373,
+      "coarse_redistributed_energy_added": 1.554015383931124e-06,
+      "registered_direction": "up",
+      "registered_ratio_high_plus25pct": 1.2709477283005466,
+      "registered_ratio_low_minus25pct": 0.762568636980328,
+      "same_bin_line_return_removed": 0.0
+    },
+    {
+      "band": "IR",
+      "baseline_source_energy": 2.8506665973217614e-05,
+      "coarse_predicted_source_energy": 2.9620609787592776e-05,
+      "coarse_predicted_source_ratio_to_E9": 1.0390766080965668,
+      "coarse_redistributed_energy_added": 1.1139438143751627e-06,
+      "registered_direction": "up",
+      "registered_ratio_high_plus25pct": 1.2988457601207084,
+      "registered_ratio_low_minus25pct": 0.7793074560724251,
+      "same_bin_line_return_removed": 0.0
+    }
+  ],
+  "predictor": "event-energy transition matrix collapsed to broad input/output bands before multiplication by broad-band E9 line-return power",
+  "premeasurement_hypothesis_readout": "B1 is predicted to decrease by about 26%, but B0 is predicted to increase by about 56% because coarse B2-to-B0 inflow exceeds the removed B0 same-bin return.  Therefore this recovered prefix matrix is preregistered to fail the two-band shape gate unless exact-bin covariance and formal transport reverse B0.",
+  "production_code_modified": false,
+  "schema": "lumina-emiss-e10-preregistration-v1",
+  "shell": 8,
+  "source_payload_sha256": "ac62eae5bec6d6beaf06d513c2cef38386b365f6b7826cff61c4edc0f2a34011",
+  "status": "FROZEN-BEFORE-EXACT-BIN-APPLICATION-AND-STAGE31"
+}

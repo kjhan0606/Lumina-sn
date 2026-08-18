@@ -1,0 +1,12 @@
+quantity,source_file,source_field,use
+"committed T_e,n_e",logs/coevolve_consume_a10_kx_gphall/lumina_plasma_state.csv,T_e;n_e,consumed
+own pump,logs/coevolve_consume_a10_kx_gphall/lumina_coevolve_field.csv,bin;cs_J,consumed
+ion calibration,logs/coevolve_consume_a10_kx_gphall/lumina_ion_pops.csv,Z;stage;n_ion,consumed
+level capture,logs/coevolve_consume_a10_kx_gphall/lumina_levelpop.csv,presence checked; fields not consumed by historical estimator,gate-only
+atomic model,data/tardis_reference_toy06_19p48d,line_list.csv;levels.csv;ionization_energies.csv,consumed
+deposition,data/tardis_reference_toy06_19p48d/deposition_cmfgen.csv,heating_rate,consumed
+CMFGEN pump,data/cmfgen_jtable_toy06_19p48d.bin,J_nu sampled on 1000-bin grid,consumed
+CMFGEN J source,/gpfs/kjhan/cmfgen_runs/toy06_19.48d_jnu4/EDDFACTOR,J_nu,jtable lineage
+CMFGEN depth/truth,/gpfs/kjhan/cmfgen_runs/toy06_19.48d_jnu4/RVTJ,Velocity (km/s);Temperature (10^4K),consumed for truth cross-check
+CMFGEN opacity,/gpfs/kjhan/cmfgen_runs/toy06_19.48d_jnu4/MEANOPAC,presence checked; no coupled-root term depends on opacity table,gate-only
+historical photoheating scalar,CLI --photo-heating,7.2e-07,consumed

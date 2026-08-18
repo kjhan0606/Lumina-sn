@@ -1,0 +1,31 @@
+{
+  "cmfgen_dir": "/gpfs/kjhan/cmfgen_runs/toy06_19p48d_modern",
+  "covered_fraction": 0.541328219013237,
+  "covered_levels": 14395,
+  "interpolation": "linear in velocity and log(population); outside-RVTJ shells are NaN, with no extrapolation or endpoint hold",
+  "lumina_shell_velocity_range_km_s": [
+    4264.0,
+    39936.0
+  ],
+  "model_dir": "/home/kjhan/BACKUP/Eunha.A1/Claude/Lumina-sn/data/tardis_reference_toy06_19p48d_sivcaiv",
+  "n_levels": 26592,
+  "n_shells": 50,
+  "n_shells_inside_rvtj": 44,
+  "no_floor_or_clamp": true,
+  "population_binary_sha256": "9c07cc1afb0ded7b03a190f929f0e34f74a5c160655387150798f214294cfb5c",
+  "rvtj_velocity_range_km_s": [
+    1024.9710054,
+    35975.288045
+  ],
+  "saha_source": "CMFGEN LTEPOP_WLD_V2: 2.07078e-22*ne*DIC*T4^-1.5*g/gion*exp(edge*HDKT/T4)",
+  "schema": "E1POP001-v1",
+  "uncovered_levels": 12197,
+  "unresolved_shells_outside_rvtj": [
+    44,
+    45,
+    46,
+    47,
+    48,
+    49
+  ]
+}

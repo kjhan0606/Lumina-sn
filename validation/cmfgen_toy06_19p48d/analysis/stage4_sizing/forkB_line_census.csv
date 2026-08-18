@@ -1,0 +1,18 @@
+category,n_lines,pct_of_forest
+total_transport_forest,2565342,100.0
+NLTE_mapped (untouched by ForkB),2410046,93.95
+"non_NLTE (ForkB candidate set - all)",155296,6.05
+stageIV_Fepeak funnel Fe/Co/Ni IV (min scope),12576,0.49
+stageIV +Cr/Ti IV,18185,0.709
+nonNLTE ion: Ni I,52578,2.05
+nonNLTE ion: Si I,21791,0.849
+nonNLTE ion: S I,19813,0.772
+nonNLTE ion: C I,10204,0.398
+nonNLTE ion: Fe I,6984,0.272
+nonNLTE ion: Cr IV,4609,0.18
+nonNLTE ion: Fe V,4558,0.178
+nonNLTE ion: Cr I,4372,0.17
+nonNLTE ion: Fe IV,4336,0.169
+nonNLTE ion: Ni IV,4199,0.164
+nonNLTE ion: Co IV,4041,0.158
+nonNLTE ion: Ca I,3976,0.155

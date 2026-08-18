@@ -1,0 +1,75 @@
+{
+  "E9_reconstruction_max_abs": 1.9721522630525295e-31,
+  "E9_reconstruction_relative": 1.6102603843547383e-16,
+  "R_column_sum": 1.0,
+  "R_probability_per_output_bin": 0.001,
+  "clamp": 0,
+  "fallback": 0,
+  "injected_uniform_energy": 0.0067651957989972485,
+  "input_wavelength_bin_count": 1000,
+  "n_output_bins": 1000,
+  "negative_cells": 0,
+  "nonfinite_cells": 0,
+  "payload_sha256": "9457508d4681562e7a428305acab892d41fea3c0bc01e463c0ed6ca7eb1c690b",
+  "relative_energy_error": 0.0,
+  "removed_line_return_energy": 0.0067651957989972485,
+  "shell": 8,
+  "source_bands": [
+    {
+      "E9_source_energy": 0.00021509823207668325,
+      "T1_over_E9_source": 3.0367779101228654,
+      "T1_source_energy": 0.0006532055596769532,
+      "band": "B0",
+      "lambda_hi_A": 1000.0,
+      "lambda_lo_A": 600.0
+    },
+    {
+      "E9_source_energy": 0.0013821728324236292,
+      "T1_over_E9_source": 0.3825581536791152,
+      "T1_source_energy": 0.0005287614868374167,
+      "band": "B1",
+      "lambda_hi_A": 1500.0,
+      "lambda_lo_A": 1000.0
+    },
+    {
+      "E9_source_energy": 0.0041379789538250515,
+      "T1_over_E9_source": 0.09371154335797297,
+      "T1_source_energy": 0.0003877763941457559,
+      "band": "B2",
+      "lambda_hi_A": 2000.0,
+      "lambda_lo_A": 1500.0
+    },
+    {
+      "E9_source_energy": 0.00020541277493107518,
+      "T1_over_E9_source": 1.398558264650444,
+      "T1_source_energy": 0.0002872817340446367,
+      "band": "B3",
+      "lambda_hi_A": 2500.0,
+      "lambda_lo_A": 2000.0
+    },
+    {
+      "E9_source_energy": 0.00013760242381472167,
+      "T1_over_E9_source": 1.7151120164747071,
+      "T1_source_energy": 0.00023600357058067454,
+      "band": "B4",
+      "lambda_hi_A": 3000.0,
+      "lambda_lo_A": 2500.0
+    },
+    {
+      "E9_source_energy": 0.006078265217071161,
+      "T1_over_E9_source": 0.3443463999246108,
+      "T1_source_energy": 0.0020930287452854373,
+      "band": "BALL",
+      "lambda_hi_A": 3000.0,
+      "lambda_lo_A": 600.0
+    },
+    {
+      "E9_source_energy": 0.0008792414296069011,
+      "T1_over_E9_source": 2.0412449113133007,
+      "T1_source_energy": 0.0017947470940009183,
+      "band": "OPTICAL",
+      "lambda_hi_A": 10000.0,
+      "lambda_lo_A": 3000.0
+    }
+  ]
+}

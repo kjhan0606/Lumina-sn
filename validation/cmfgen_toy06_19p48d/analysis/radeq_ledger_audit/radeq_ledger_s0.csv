@@ -1,0 +1,33 @@
+# radeq (simul_r1) term-by-term ledger at deep shell s0 (v=4264 km/s), toy06 @19.48d
+# Run: logs/coevolve_consume_a10_kx_gphall  (B-run: RADEQ_TE=1 RADEQ_SIMUL=1 VR_STD=1 DAMP=0.5 FB_RATE=1 COEVOLVE consume, GPH_ALLLEVEL)
+# Committed state: T_e=13119.87 K, n_e=4.426e9, T_rad(pinned)=10470.09 K
+# All rates erg/cm3/s. Balance solved: r(T)=H-C, H=H_dep+H_photo, C=C_ff+C_ad+C_fb+Lambda_line
+# Heating/cooling terms are the EXACT simul_r1 (lumina_plasma.c:4889-4931) formulas.
+section,term,value_cgs,note
+heating,H_dep,1.506865e-03,CMFGEN edep injected verbatim (deposition_cmfgen.csv s0); == CMFGEN's own deposition; 100% of heating
+heating,H_photo_bf_runfield,7.187e-07,bf photoheating ground-Kramers with run mc_J; 0.048% of H_dep; taps ONLY EUV<912A band
+heating,H_photo_bf_cmfgenJ,3.739e-04,same channel with CMFGEN jtable J; x520 larger (EUV starved -2dex in run)
+cooling,C_ff,3.840e-06,1.7112e-27*n_e^2*sqrt(T); 0.25% of H_dep
+cooling,C_ad,2.144e-08,1.5*n_e*k*T*(3/t_exp); negligible
+cooling,C_fb_recomb,3.911e-04,n_e*n_next*alpha_RR*(chi+kT) approx; ~26% of H_dep
+cooling,Lambda_line_collisional_unpumped,1.064e-03,ETLA line cooling with Jb=0 (no radiative pump); ~71% of H_dep; balances deposition
+line_pump,Lambda_line_cs.J_pump,-1.074e-03,SAME lines pumped by run cs.J (super-thermal 1.55x@2500A): flips to NET HEATING
+line_pump,Lambda_line_thermal_pump,3.175e-06,pumped by B(T_e): ~0 (detailed balance, formula validated)
+line_pump,Lambda_line_cmfgenJ_pump,-5.214e-03,pumped by CMFGEN jtable: strong net heating
+# ---- bath energy density band decomposition (mc_J), u=(4pi/c) int J dnu [erg/cm3] ----
+bath,u_total_mcJ,400.2,u(s0); =1.785*a*T_e^4; bath-equiv T=(u/a)^0.25=15166 K (gas 13120 sits 2046K BELOW its own bath-equiv)
+bath,u_total_cmfgen,694.8,CMFGEN u(s0); =0.74*a*T^4 at 18760 (gas hotter than bath = normal diffusion interior)
+bath,u_aTe4_thermal,224.2,a*T_e^4 at 13120; super-thermal EXCESS = 176 erg/cm3
+bath,u_EUV_lt912,0.29,vs Planck13 0.45 (0.65x STARVED) -- the only band bf heating taps
+bath,u_FUV_918_1290,1.93,vs Planck13 5.71 (0.34x STARVED) -- crime-scene band
+bath,u_NUV_1290_3000,227.49,vs Planck13 98.29 (2.31x SUPER-THERMAL) -- where the excess piles up
+bath,u_opt_3000_7000,135.45,vs Planck13 94.96 (1.43x super-thermal)
+bath,u_red_gt7000,33.79,vs Planck13 21.83 (1.55x)
+# ---- radiative-equilibrium root ladder (coupled: ionization re-solved vs T; LOWEST-root march = code) ----
+root,run_committed_T_e,13119.87,stable to 6 sig figs for iters 2-11 (fixed point / likely pin_lo HOLD)
+root,coupled_root_zero_pump,13214,== run committed (run behaves as UN-pumped line cooling)
+root,coupled_root_thermal_pump,14818,detailed-balance floor
+root,coupled_root_run_mcJ_pump,15460,
+root,coupled_root_run_csJ_pump,16617,run's OWN super-thermal cooling field IF fully applied
+root,coupled_root_cmfgen_pump,18277,CMFGEN field -> reproduces CMFGEN truth 18760 (2.6% / +0.03dex)
+root,cmfgen_truth_T_e,18760,ground truth

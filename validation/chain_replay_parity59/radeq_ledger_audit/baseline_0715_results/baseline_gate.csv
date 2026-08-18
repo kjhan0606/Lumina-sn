@@ -1,0 +1,5 @@
+quantity,expected_K,actual_K,status,definition
+cmf,18277,18277,PASS,integer gate uses differences of rounded historical endpoints
+R,3497,3497,PASS,integer gate uses differences of rounded historical endpoints
+J,1660,1660,PASS,integer gate uses differences of rounded historical endpoints
+O,483,483,PASS,integer gate uses differences of rounded historical endpoints

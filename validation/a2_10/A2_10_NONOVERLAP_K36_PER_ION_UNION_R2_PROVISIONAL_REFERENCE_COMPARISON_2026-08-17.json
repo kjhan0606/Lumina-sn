@@ -1,0 +1,29 @@
+{
+  "candidate_occurrence": 1,
+  "candidate_refinements": null,
+  "candidate_sha256": "a3bf6bb4b2c9e60ebe56494e1e4766bb5bf493c9e9a687faa62dc1c3fbf78ca3",
+  "candidate_stderr": "/gpfs/kjhan/lumina/a210_line_saturation_per_ion_union_a100x2_nonoverlap_sobolev_k36/diag_20260817T042955Z_14b199f12d29/stderr.log",
+  "cap": 0,
+  "clamp": 0,
+  "comparison_mode": "STRICT_BIT_EXACT",
+  "differences": [],
+  "floor": 0,
+  "jitter": 0,
+  "physical_values_modified": false,
+  "proof_bounds_nonincreasing": null,
+  "proof_field_changes": [],
+  "reason": "EXACT_AND_R6_FIELDS_BIT_EXACT",
+  "records_compared": [
+    "[cmf_fine][SIGNED-MATERIAL-CENSUS]",
+    "[cmf_fine][EXACT-MULTIGPU-EPOCH]",
+    "[R6][LINE-IDENTITY]",
+    "[R6][LINE-COVERAGE]"
+  ],
+  "reference_occurrence": 1,
+  "reference_refinements": null,
+  "reference_sha256": "55004df4b525068ecdf2ba9910059de9aa7b638461ef1a08cacbd225ff461bc5",
+  "reference_stderr": "/gpfs/kjhan/lumina/a210_line_saturation_a100x2_nonoverlap_sobolev_k36/manual_retry_guard3_20260817T011506Z_f9c2d1b826d5/stderr.log",
+  "repair": 0,
+  "schema": "LUMINA_A210_TARGETED_REFERENCE_COMPARISON_V1",
+  "status": "PASS"
+}

@@ -1,0 +1,87 @@
+=== Phase 1: parse CMFGEN ions ===
+  C  I   :  242/  242 lev,  10204/ 10204 trn, phot=Y col=Y  (19apr23)
+  C  II  :  338/  338 lev,   8017/  8017 trn, phot=Y col=Y  (19apr23)
+  C  III :  243/  243 lev,   5528/  5528 trn, phot=Y col=Y  (19apr23)
+  O  I   :  199/  199 lev,   4193/  4193 trn, phot=Y col=Y  (19apr23)
+  O  II  :  340/  340 lev,   8937/  8937 trn, phot=Y col=Y  (19apr23)
+  O  III :  343/  343 lev,   6519/  6519 trn, phot=Y col=Y  (19apr23)
+  Mg I   :  152/  152 lev,   3511/  3511 trn, phot=Y col=Y  (19apr23)
+  Mg II  :   80/   80 lev,   1993/  1993 trn, phot=Y col=Y  (19apr23)
+  Mg III :  201/  201 lev,   3052/  3052 trn, phot=Y col=-  (19apr23)
+  Al I   :   80/  257 lev,    772/  4985 trn, phot=Y col=Y  (19apr23)
+  Al II  :   80/  156 lev,    510/  3490 trn, phot=Y col=Y  (19apr23)
+  Al III :   80/   80 lev,   2011/  2011 trn, phot=Y col=Y  (19apr23)
+  Al IV  :  201/  201 lev,   3052/  3052 trn, phot=Y col=-  (19apr23)
+  Si I   :  493/  493 lev,  21791/ 21791 trn, phot=Y col=Y  (19apr23)
+  Si II  :  157/  157 lev,   4232/  4232 trn, phot=Y col=Y  (19apr23)
+  Si III :  147/  147 lev,   1639/  1639 trn, phot=Y col=Y  (19apr23)
+  Si IV  :   66/   66 lev,   1112/  1112 trn, phot=Y col=Y  (19apr23)
+  S  I   :  477/  477 lev,  19813/ 19813 trn, phot=Y col=Y  (19apr23)
+  S  II  :  324/  324 lev,   8527/  8527 trn, phot=Y col=Y  (19apr23)
+  S  III :  380/  380 lev,   6234/  6234 trn, phot=Y col=Y  (19apr23)  VM[phot] osc=osc_data(19apr23) phot=phot_sm_3000.dat(3oct00) col<-19apr23
+  S  IV  :  194/  194 lev,   3765/  3765 trn, phot=Y col=Y  (19apr23)  VM[phot] osc=osc_data(19apr23) phot=phot_sm_3000.dat(3oct00) col<-19apr23
+  S  V   :  200/  307 lev,   4010/  9968 trn, phot=Y col=Y  (19apr23)
+  Ca I   :  184/  184 lev,   3976/  3976 trn, phot=Y col=Y  (19apr23)
+  Ca II  :   77/   77 lev,   1736/  1736 trn, phot=Y col=Y  (19apr23)
+  Ca III :  200/  232 lev,   2654/  3497 trn, phot=Y col=-  (19apr23)  VM[phot] osc=osc_data(19apr23) phot=phot_smooth.dat(10apr99) col<-19apr23
+  Ca IV  :  378/  378 lev,   8533/  8533 trn, phot=Y col=-  (19apr23)  VM[phot] osc=osc_data(19apr23) phot=phot_smooth.dat(10apr99) col<-19apr23
+  Ca V   :  200/  613 lev,   2482/ 18272 trn, phot=Y col=-  (19apr23)  VM[phot] osc=osc_data(19apr23) phot=phot_smooth.dat(10apr99) col<-19apr23
+  Sc I   :   60/ 4058 lev,    445/704661 trn, phot=Y col=Y  (19apr23)
+  Sc II  :  500/  908 lev,  24166/ 77253 trn, phot=Y col=Y  (19apr23)
+  Sc III :   87/   87 lev,    687/   687 trn, phot=Y col=-  (19apr23)
+  miss Ti I   : dir absent
+  Ti II  :  600/ 1000 lev,  44778/ 96766 trn, phot=Y col=Y  (19apr23)
+  Ti III :  600/  649 lev,  20666/ 21774 trn, phot=Y col=Y  (19apr23)
+  Ti IV  :  126/  126 lev,   1000/  1000 trn, phot=Y col=-  (19apr23)
+  V  I   :    1/    1 lev,      0/     0 trn, phot=Y col=-  (19apr23)
+  miss V  II  : dir absent
+  Cr I   :  200/  797 lev,   4372/ 49885 trn, phot=Y col=-  (19apr23)
+  Cr II  :  600/ 1000 lev,  26586/ 66933 trn, phot=Y col=Y  (19apr23)
+  Cr III : 1000/ 1000 lev,  74132/ 74132 trn, phot=Y col=Y  (19apr23)
+  Cr IV  :  200/ 1000 lev,   4609/ 67061 trn, phot=Y col=-  (19apr23)
+  miss Mn I   : dir absent
+  Mn II  :  600/ 1000 lev,  23812/ 49066 trn, phot=Y col=-  (19apr23)
+  Mn III : 1000/ 1000 lev,  70218/ 70218 trn, phot=Y col=-  (19apr23)
+  Fe I   :  300/ 1579 lev,   6984/141928 trn, phot=Y col=Y  (19apr23)
+  Fe II  : 2698/ 2698 lev SL=342, 531662/531662 trn, phot=Y col=Y  (19apr23)
+  Fe III : 1500/ 1500 lev, 136263/136263 trn, phot=Y col=Y  (19apr23)
+  Fe IV  :  200/ 1000 lev,   4336/ 72223 trn, phot=Y col=Y  (19apr23)  VM[phot] osc=osc_data(19apr23) phot=phot_sm_3000.dat(18oct00) col<-19apr23
+  Fe V   :  200/ 1000 lev,   4558/ 72213 trn, phot=Y col=-  (19apr23)  VM[phot] osc=osc_data(19apr23) phot=phot_sm_3000.dat(18oct00) col<-19apr23
+  Co I   :  200/ 1950 lev,   3943/272690 trn, phot=Y col=-  (19apr23)
+  Co II  : 2747/ 2747 lev SL=252, 593559/593559 trn, phot=Y col=Y  (19apr23)
+  Co III : 3917/ 3917 lev, 679412/679412 trn, phot=Y col=Y  (19apr23)
+  Co IV  :  200/ 1000 lev,   4041/ 69803 trn, phot=Y col=Y  (19apr23)
+  Ni I   :  800/  811 lev,  52578/ 54190 trn, phot=Y col=Y  (19apr23)
+  Ni II  : 1000/ 1000 lev SL=88,  51812/ 51812 trn, phot=Y col=Y  (19apr23)
+  Ni III : 1000/ 1000 lev,  66511/ 66511 trn, phot=Y col=Y  (19apr23)  VM[phot] osc=osc_data(19apr23) phot=phot_data.dat(18oct00) col<-19apr23
+  Ni IV  :  200/ 1000 lev,   4199/ 73012 trn, phot=Y col=Y  (19apr23)  VM[phot] osc=osc_data(19apr23) phot=phot_data.dat(18oct00) col<-19apr23
+
+=== Phase 2: build global tables (53 ions) ===
+  global levels: 26592
+  global lines:  2584132
+
+=== Phase 3: write CSVs ===
+  levels.csv: 26592 rows
+  line_list.csv: 2584132 rows
+  macro_atom_data.csv: 7752396 rows
+  macro_atom_references.csv: 26592 rows
+  ionization_energies.csv: 53 rows
+  atom_masses.csv + abundances.csv (15 Z)
+  zeta_*.{csv,npy} copied from tardis_reference
+
+=== Phase 4: write HDF5 phot/col (browsable) ===
+  wrote /home/kjhan/BACKUP/Eunha.A1/Claude/Lumina-sn/data/atomic/atomic_data_cmfgen_sivcaiv_bakefix4b.h5
+
+=== Phase 5: bake sigma_bf grid for C loader ===
+  [bakefix2] 10854 levels evaluated EXACTLY on CMFGEN fit types {2: 5315, 3: 272, 8: 5239, 9: 28} (sub_phot_gen.f port; gate CMFGEN_EXACT_HYD=1).
+  [bakefix2]   top ions (Z,stage):count = (27,3):3344, (27,2):2689, (26,2):1973, (28,1):655, (21,2):486, (14,1):345, (16,1):278, (6,3):102
+  [bakefix] WARNING: 11 levels carry the known-wrong params[0]-as-sigma_0 stand-in (CMFGEN fit types {8: 11}); exact evaluation needs HYD_L_DATA/GBF_N_DATA -- see the head note in this file.
+  [bakefix]   most affected ions (Z,stage):count = (27,2):11
+  baked 26087 curves -> 26087/26592 levels covered (98.1%)
+  wrote /home/kjhan/BACKUP/Eunha.A1/Claude/Lumina-sn/data/atomic/cmfgen_sigma_bf_sivcaiv_bakefix4b.bin (26592 x 1000 doubles = 203 MB)
+
+================================================================
+SUMMARY  53 ions  26,592 lev  2,584,132 lines  7,752,396 macro-atom trans
+CSVs:  /home/kjhan/BACKUP/Eunha.A1/Claude/Lumina-sn/data/tardis_reference_cmfgen_sivcaiv_bakefix4b
+HDF5:  /home/kjhan/BACKUP/Eunha.A1/Claude/Lumina-sn/data/atomic/atomic_data_cmfgen_sivcaiv_bakefix4b.h5
+================================================================

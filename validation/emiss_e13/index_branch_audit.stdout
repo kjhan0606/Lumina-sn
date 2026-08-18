@@ -1,0 +1,210 @@
+{
+  "clamp_or_floor_added": false,
+  "grid": {
+    "lambda_center_first_A": 19933.287417090807,
+    "lambda_center_last_A": 100.19590290028295,
+    "n_bins": 1000,
+    "nu_ascending": true,
+    "nu_center_first_Hz": 150397900620726.44,
+    "nu_center_last_Hz": 2.9920630417229708e+16,
+    "wavelength_descending": true
+  },
+  "inputs": {
+    "atomic_dir": "/home/kjhan/BACKUP/Eunha.A1/Claude/Lumina-sn/data/tardis_reference_toy06_19p48d",
+    "chieta": "/gpfs/kjhan/lumina_runner2/scratch/fluormat_capture_188828/chieta_iter10",
+    "chieta_sha256": "894a4ee805c1640d4e28d9c1c9ad9e3591fd845ee78bce1c3e83c8048863d5dc",
+    "e9_payload": "/home/kjhan/BACKUP/Eunha.A1/Claude/Lumina-sn/validation/emiss_e12/e9_same_capture/emiss_e9_effective_iter10",
+    "matrix": "/gpfs/kjhan/lumina_runner2/scratch/fluormat_capture_188828/fluor_matrix_iter10",
+    "matrix_sha256": "2b65dba6f0d0ad5edf42739e445d20a9b4ac892cf180ae5791eee30dcd01c99b",
+    "source_payload": "/gpfs/kjhan/lumina_runner2/scratch/fluormat_capture_188828/emiss_ab_iter10.A"
+  },
+  "kpacket_separation": {
+    "exact_non_kpacket_frequency_moment": "UNRESOLVED",
+    "kpacket_absorbed_fraction": 0.02042051544719128,
+    "matrix_has_edge_level_kpacket_tag": false
+  },
+  "macro_atom_radiative_only_theory": [
+    {
+      "B0_600_1000_exit_fraction": 0.02398403875723952,
+      "UV_600_3000_exit_fraction": 0.9840176302620036,
+      "emitted_probability": 0.9999999999998155,
+      "entry_weight": "B_lu*J_producer*h*nu; lower populations omitted",
+      "excluded_physics": [
+        "Sobolev beta",
+        "collisions",
+        "k-packet",
+        "bound-free ion changes",
+        "lower-level population weighting",
+        "production probability damping"
+      ],
+      "exit_fraction": {
+        "B0": 0.02398403875723952,
+        "B1": 0.0699948829975232,
+        "B2": 0.1387149261710583,
+        "B3": 0.3278822188110331,
+        "B4": 0.42344156352514956,
+        "EUV": 0.0,
+        "IR": 0.0003642121390347939,
+        "OPTICAL": 0.015552441295960909,
+        "OUTSIDE_100_20000": 6.571630299989558e-05
+      },
+      "field_shell": 8,
+      "first_action_probability": {
+        "emit": 0.2581868804381154,
+        "internal_down": 0.6773951989944389,
+        "internal_up": 0.0644179205674457
+      },
+      "ion_number_zero_based": 1,
+      "iterations": 146,
+      "n_levels": 2698,
+      "n_lines": 531662,
+      "neutral_ground_offset_eV": 7.9023808534,
+      "radiative_weights": {
+        "emission": "(A_ul+B_ul*J)*h*nu",
+        "internal_down": "(A_ul+B_ul*J)*E_lower_neutral",
+        "internal_up": "B_lu*J*E_lower_neutral"
+      },
+      "residual_probability": 1.847047585932829e-13,
+      "species": "Fe II"
+    },
+    {
+      "B0_600_1000_exit_fraction": 0.2499969837977244,
+      "UV_600_3000_exit_fraction": 0.8963511920080515,
+      "emitted_probability": 0.999999999999817,
+      "entry_weight": "B_lu*J_producer*h*nu; lower populations omitted",
+      "excluded_physics": [
+        "Sobolev beta",
+        "collisions",
+        "k-packet",
+        "bound-free ion changes",
+        "lower-level population weighting",
+        "production probability damping"
+      ],
+      "exit_fraction": {
+        "B0": 0.2499969837977244,
+        "B1": 0.15606728778209794,
+        "B2": 0.3458019847669275,
+        "B3": 0.10121264186887453,
+        "B4": 0.04327229379242709,
+        "EUV": 0.0994372607327145,
+        "IR": 4.11349109807281e-05,
+        "OPTICAL": 0.004165424125007259,
+        "OUTSIDE_100_20000": 4.988223245473717e-06
+      },
+      "field_shell": 8,
+      "first_action_probability": {
+        "emit": 0.20279317280810344,
+        "internal_down": 0.7797300702010197,
+        "internal_up": 0.017476756990876936
+      },
+      "ion_number_zero_based": 2,
+      "iterations": 257,
+      "n_levels": 1500,
+      "n_lines": 136263,
+      "neutral_ground_offset_eV": 24.0901297491,
+      "radiative_weights": {
+        "emission": "(A_ul+B_ul*J)*h*nu",
+        "internal_down": "(A_ul+B_ul*J)*E_lower_neutral",
+        "internal_up": "B_lu*J*E_lower_neutral"
+      },
+      "residual_probability": 1.8243296249748373e-13,
+      "species": "Fe III"
+    }
+  ],
+  "mirror_both_axes": {
+    "application_contract": "/home/kjhan/BACKUP/Eunha.A1/Claude/Lumina-sn/validation/emiss_e13/mirror_application_contract.json",
+    "frequency": {
+      "B2_input_terminal_energy": 262.369351230096,
+      "B2_to_B0_fraction": 0.1598949253513723,
+      "B2_to_OPTICAL_fraction": 0.015694528570372006,
+      "B2_to_UV_fraction": 0.9282545914857899,
+      "B2_to_higher_nu_fraction": 0.7930438892892311,
+      "B2_to_lower_nu_fraction": 0.17255302995411279,
+      "UV_input_terminal_energy": 2826.86903261593,
+      "UV_to_B0_fraction": 0.190685588389174,
+      "UV_to_OPTICAL_fraction": 0.015132765066386472,
+      "UV_to_UV_fraction": 0.92686067612401,
+      "UV_to_higher_nu_fraction": 0.5072849906018756,
+      "UV_to_lower_nu_fraction": 0.4640458183367836,
+      "energy_weighted_mean_input_nu_Hz": 2828755374538938.0,
+      "energy_weighted_mean_output_nu_Hz": 2820189404262494.5,
+      "higher_nu_energy_fraction": 0.4856245396528197,
+      "lower_nu_energy_fraction": 0.486736259420138,
+      "mean_output_minus_input_nu_Hz": -8565970276443.5,
+      "mean_output_over_input_nu": 0.9969718235965033,
+      "on_grid_energy": 3064.5804568659396,
+      "same_nu_bin_energy_fraction": 0.02763920092704226
+    },
+    "matrix": "/home/kjhan/BACKUP/Eunha.A1/Claude/Lumina-sn/validation/emiss_e13/fluor_matrix_iter10_mirror_both_axes",
+    "matrix_sha256": "e0e76d5114678be6e9eb47e586ce915ae9e0a5b1fdfd56446bb5f6f29c5decad",
+    "source_flow": {
+      "B0_inflow_power": 0.0011329291493141138,
+      "B2_share_of_B0_inflow": 0.6481689184135473,
+      "B2_to_B0_power": 0.0007343294613501093,
+      "active_input_bins": 753,
+      "application_closure_relative": 1.5987211554602254e-14,
+      "injected_on_grid_power": 0.006470097424493843,
+      "operator_column_closure_max_abs": 2.0450308113595383e-13,
+      "outside_grid_power": 1.2228399747792035e-06,
+      "removed_line_return_power": 0.006471320264468519,
+      "source_ratio_to_E9": {
+        "B0": 5.171711803260863,
+        "B1": 2.367666350701843,
+        "B2": 0.24451014729052542,
+        "B3": 1.8773051102759042,
+        "B4": 1.9607412584279884,
+        "EUV": 3.8331957889284034,
+        "IR": 1.0,
+        "OPTICAL": 0.7202136518688784
+      }
+    }
+  },
+  "native": {
+    "frequency": {
+      "B2_input_terminal_energy": 1245.1188116200226,
+      "B2_to_B0_fraction": 0.0867521599703131,
+      "B2_to_OPTICAL_fraction": 0.06162344627743479,
+      "B2_to_UV_fraction": 0.9315230584539148,
+      "B2_to_higher_nu_fraction": 0.5357716502758578,
+      "B2_to_lower_nu_fraction": 0.4328069173508318,
+      "UV_input_terminal_energy": 2828.1844676862966,
+      "UV_to_B0_fraction": 0.09563256483659992,
+      "UV_to_OPTICAL_fraction": 0.06550830008646569,
+      "UV_to_UV_fraction": 0.9273624009603009,
+      "UV_to_higher_nu_fraction": 0.45515924670713737,
+      "UV_to_lower_nu_fraction": 0.5162134916336178,
+      "energy_weighted_mean_input_nu_Hz": 1940097193934148.0,
+      "energy_weighted_mean_output_nu_Hz": 1947070216931451.5,
+      "higher_nu_energy_fraction": 0.486736259420138,
+      "lower_nu_energy_fraction": 0.4856245396528197,
+      "mean_output_minus_input_nu_Hz": 6973022997303.5,
+      "mean_output_over_input_nu": 1.003594161683809,
+      "on_grid_energy": 3064.5804568659396,
+      "same_nu_bin_energy_fraction": 0.02763920092704226
+    },
+    "source_flow": {
+      "B0_inflow_power": 0.0006048435735509514,
+      "B2_share_of_B0_inflow": 0.5492453247038231,
+      "B2_to_B0_power": 0.00033220750495001306,
+      "active_input_bins": 753,
+      "application_closure_relative": -6.661338147750939e-15,
+      "injected_on_grid_power": 0.006764368489028943,
+      "operator_column_closure_max_abs": 2.0450308113595383e-13,
+      "outside_grid_power": 8.27267758206264e-07,
+      "removed_line_return_power": 0.006765195756787194,
+      "source_ratio_to_E9": {
+        "B0": 2.763129051839239,
+        "B1": 1.159140873672601,
+        "B2": 0.7173051819810978,
+        "B3": 3.6948682411300346,
+        "B4": 3.167996245012742,
+        "EUV": 0.36876756289304585,
+        "IR": 0.913783186089933,
+        "OPTICAL": 0.7464965667589564
+      }
+    }
+  },
+  "new_model_or_GPU_run": false,
+  "production_code_modified": false,
+  "schema": "lumina-emiss-e13-index-branch-audit-v1"
+}

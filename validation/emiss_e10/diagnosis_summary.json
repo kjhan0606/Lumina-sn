@@ -1,0 +1,85 @@
+{
+  "B0_redistributed_inflow": {
+    "by_input_band": {
+      "B0": {
+        "energy": 3.046728232382729e-05,
+        "fraction_of_B0_redistributed_inflow": 0.07994480681073694
+      },
+      "B1": {
+        "energy": 7.519279902570445e-05,
+        "fraction_of_B0_redistributed_inflow": 0.1973025925901939
+      },
+      "B2": {
+        "energy": 0.0002602439091791339,
+        "fraction_of_B0_redistributed_inflow": 0.6828685545978587
+      },
+      "B3": {
+        "energy": 9.887024778456519e-06,
+        "fraction_of_B0_redistributed_inflow": 0.025943117520151163
+      },
+      "B4": {
+        "energy": 5.231082362104893e-06,
+        "fraction_of_B0_redistributed_inflow": 0.013726129702171457
+      },
+      "OPTICAL": {
+        "energy": 8.186066487947809e-08,
+        "fraction_of_B0_redistributed_inflow": 0.0002147987788878131
+      }
+    },
+    "dominant_input_band": "B2",
+    "total": 0.00038110395833410656
+  },
+  "boundary_audit": {
+    "3000A_boundary_to_B0_fraction_of_B0_inflow": 0.0002147987788878131,
+    "straddling_input_bins": [
+      357,
+      661
+    ],
+    "straddling_removed_energy_fraction": 0.0015529993700889471
+  },
+  "emergent_indirect": {
+    "current_UV_percent": 42.9,
+    "current_blue_percent": 5.8,
+    "direction_consistent": true,
+    "effective_repeated_interactions_to_UV_target": 15.840129080669456,
+    "limitations": "stage31 does not compute emergent flux; 3000-10000 A is wider than the historical blue diagnostic; escape, shell migration, population feedback, the iteration-11 capped prefix, and repeated interactions are absent",
+    "magnitude_sufficient_single_pass": false,
+    "method": "indirect energy ledger only; assumes every current emergent-UV unit experiences this shell-8 branching once",
+    "single_pass_UV_reduction_points": 1.5663876341111589,
+    "single_pass_blue_upper_bound_percent": 7.33050882146819,
+    "single_pass_blue_upper_increase_points": 1.5305088214681906,
+    "single_pass_implied_UV_percent": 41.33361236588884,
+    "source_weighted_UV_retention_probability": 0.9634874677363366,
+    "source_weighted_optical_probability": 0.03567619630461982,
+    "target_UV_percent": 23.8,
+    "target_blue_percent": 14.5
+  },
+  "residual_cause_readout": {
+    "EPAY": "UNRESOLVED as an independent physical owner: LCMFCE01 has no serialized EPAY field; captured terminal/input float-energy closure is only a 7.5e-7 discrepancy, far below the B0 change",
+    "bin_width": "NOT-SUPPORTED as arithmetic cause: eta*dnu was redistributed and application closure is at roundoff",
+    "boundary": "quantified by the two straddling columns; its contribution is reported and is not the dominant B0 inflow",
+    "observed_immediate_cause": "source-weighted cross-band matrix inflow makes B0 grow; B2 is the dominant B0 input contributor",
+    "production_relevance": "UNRESOLVED because R is an iteration-11 non-random 41.2% event prefix applied to an iteration-10 frozen source"
+  },
+  "schema": "lumina-emiss-e10-diagnosis-v1",
+  "source_weighted_destination_closure_error": 6.661338147750939e-16,
+  "source_weighted_destination_fraction": {
+    "B0": 0.06305950305504002,
+    "B1": 0.1667022794740165,
+    "B2": 0.49658355780096325,
+    "B3": 0.19786822219804642,
+    "B4": 0.0392739052082705,
+    "EUV": 0.0006698641043286708,
+    "IR": 0.00015573471443798887,
+    "OPTICAL": 0.03567619630461982,
+    "OUTSIDE": 1.073714027744941e-05
+  },
+  "verdict": {
+    "B0_stage31_change_fraction": 1.5220882826571391,
+    "B1_stage31_change_fraction": -0.27080618492594766,
+    "optical_gate_pass": true,
+    "readout": "movement is mixed, not a CMFGEN-directed shape repair: B1 and optical improve in the registered direction, but B0 worsens",
+    "shape_gate_pass": false,
+    "structural_repair_design_basis_complete": false
+  }
+}

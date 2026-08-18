@@ -1,0 +1,11 @@
+{
+  "T1": {
+    "readout": "SAME_BIN_COHERENCE_ASSUMPTION_IS_THE_PROBLEM",
+    "status": "RESOLVED"
+  },
+  "T2": {
+    "readout": "UNRESOLVED",
+    "status": "UNRESOLVED"
+  },
+  "schema": "lumina-uv-t1t2-combined-v1"
+}

@@ -1,0 +1,81 @@
+[INPUT] CMFGEN EDDFACTOR_INFO: exists=1 bytes=284 lines=4 schema=text
+[INPUT] CMFGEN EDDFACTOR: exists=1 bytes=142832872 schema=OK records=196199 header_records=14 ND=90 good_freq=196185 bad_freq=0 nu=[3.498970e+12,1.000000e+18]Hz FINISH=1 endian=LE
+[UNIT] FL(1e15 Hz)->Hz->FL max_rel=2.220e-16; Hz->Angstrom->Hz max_rel=2.220e-16; J_nu kept in native CGS erg cm^-2 s^-1 Hz^-1 sr^-1
+{
+  "B0": {
+    "band": "B0",
+    "lambda_lo_A": 600.0,
+    "lambda_hi_A": 1000.0,
+    "E9_J_det_over_CMFGEN": 8.29055105658781,
+    "E10_J_det_over_CMFGEN": 53.97390361245811,
+    "E10_over_E9_J_det": 6.510291444326797,
+    "fractional_change_from_E9": 5.510291444326797,
+    "E10_J_det_over_frozen_J_producer": 6.390195620050686,
+    "exact_source_ratio_to_E9": 5.171711803260877,
+    "preregistered_coarse_ratio": 2.8620610905022565,
+    "J_det_ratio_to_preregistered_ratio": 2.274686402023767,
+    "hit_preregistered_plusminus25pct": false,
+    "direction_matches_preregistration": true,
+    "minimum_10pct_drop_gate": false,
+    "moved_toward_CMFGEN": false,
+    "remaining_excess_factor": 53.97390361245811
+  },
+  "B1": {
+    "band": "B1",
+    "lambda_lo_A": 1000.0,
+    "lambda_hi_A": 1500.0,
+    "E9_J_det_over_CMFGEN": 4.916142857911498,
+    "E10_J_det_over_CMFGEN": 15.492633770789801,
+    "E10_over_E9_J_det": 3.1513798965092454,
+    "fractional_change_from_E9": 2.1513798965092454,
+    "E10_J_det_over_frozen_J_producer": 3.1404765643901302,
+    "exact_source_ratio_to_E9": 2.367666350701845,
+    "preregistered_coarse_ratio": 1.221275948370743,
+    "J_det_ratio_to_preregistered_ratio": 2.580399540917333,
+    "hit_preregistered_plusminus25pct": false,
+    "direction_matches_preregistration": true,
+    "minimum_10pct_drop_gate": false,
+    "moved_toward_CMFGEN": false,
+    "remaining_excess_factor": 15.492633770789801
+  },
+  "OPTICAL": {
+    "band": "OPTICAL",
+    "lambda_lo_A": 3000.0,
+    "lambda_hi_A": 10000.0,
+    "E9_J_det_over_CMFGEN": 6.921038932653002,
+    "E10_J_det_over_CMFGEN": 6.390259869442001,
+    "E10_over_E9_J_det": 0.9233093371709238,
+    "fractional_change_from_E9": -0.07669066282907622,
+    "E10_J_det_over_frozen_J_producer": 0.7192314045031609,
+    "exact_source_ratio_to_E9": 0.7202136518688829,
+    "preregistered_coarse_ratio": 0.8274416933805355,
+    "J_det_ratio_to_preregistered_ratio": 1.1158603011636004,
+    "hit_preregistered_plusminus25pct": true,
+    "direction_matches_preregistration": true
+  },
+  "shape_gate": {
+    "B0_minimum_10pct_drop": false,
+    "B1_minimum_10pct_drop": false,
+    "both_pass": false,
+    "B0_toward_CMFGEN": false,
+    "B1_toward_CMFGEN": false
+  },
+  "optical_gate": {
+    "source_increased": false,
+    "J_det_increased": false,
+    "both_pass": false
+  },
+  "driver_metadata": {
+    "transport_residual": "8.1805706575466152e-07",
+    "source_residual": "0",
+    "source_iterations": "1",
+    "clamp": "0",
+    "bdf_eta_negative": "374482",
+    "solution_negative_excess": "0",
+    "solution_subtruncation": "128754",
+    "solution_sign_indeterminate_subtruncation": "974443",
+    "solution_roundoff_enclosure_restart": "1624",
+    "sign_uncertain": "0",
+    "nonfinite": "0"
+  }
+}

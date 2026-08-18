@@ -1,0 +1,11 @@
+{
+  "schema": "LCMFCE01-v1",
+  "sha256": "fa13326d50fff3d84d89bed0041a7b85828bd91952fcddb134d9942f38f625e1",
+  "iteration": 10,
+  "field_generation": 10,
+  "post_damping": true,
+  "coherent_frozen": true,
+  "frequency_descending": true,
+  "eta_decomposition_bitwise": true,
+  "eta_decomposition_max_abs": 0
+}

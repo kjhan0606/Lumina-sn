@@ -1,0 +1,42 @@
+{
+  "constants": {
+    "c_cgs": 29979245800.0,
+    "e_esu": 4.803204712570263e-10,
+    "e_si_coulomb": 1.602176634e-19,
+    "exact_sobolev_coefficient": 0.026540088545744744,
+    "h_cgs": 6.62607015e-27,
+    "m_electron_cgs": 9.1093837015e-28,
+    "runtime_over_exact_minus_one": 7.251454904544374e-06,
+    "runtime_sobolev_coefficient": 0.026540281
+  },
+  "deck_identity": {
+    "absolute_relative_counts": {
+      "1e-5": 0,
+      "1e-6": 5946,
+      "1e-7": 1773420
+    },
+    "einstein_over_exact_sobolev_minus_one_max": 1.4145372606577666e-06,
+    "einstein_over_exact_sobolev_minus_one_mean": -6.091009234811596e-11,
+    "einstein_over_exact_sobolev_minus_one_min": -1.4082516531788158e-06,
+    "einstein_over_runtime_transport_minus_one_max": -5.364827160070362e-06,
+    "einstein_over_runtime_transport_minus_one_mean": -7.251441834474044e-06,
+    "einstein_over_runtime_transport_minus_one_min": -9.145003031618693e-06,
+    "evaluated_lines": 2588798,
+    "invalid_lines": 0,
+    "maximum_line_id": 2557711,
+    "minimum_line_id": 1204326,
+    "wavelength_nu_over_c_minus_one_max": 4.992908417822406e-07,
+    "wavelength_nu_over_c_minus_one_min": -4.985068036145179e-07
+  },
+  "line_list": "/gpfs/kjhan/lumina/a210_line_coefficient_identity_k24/det1234_20260816T092600Z_c2b667007c6a/input/model/line_list.csv",
+  "physical_mutation": 0,
+  "provenance": {
+    "header_sha256": "df27d30d138340d8111181d7e089b6c5dcb5792cf113aa5f328171a4e6f2cb1a",
+    "line_list_sha256": "cbd81c4f9b3bd85d723b3b1eee6367735e8f52145920412aaf68388b465554b5",
+    "script_sha256": "ff2148736b4cba8c75ee82090d7a83f9f6063b9a428c03889ce0c6190460cd7b",
+    "selftest_sha256": "94e5204db8062a4ea8ea24e3a602dd03b9c225aef1aaed2372d56dca9578a521"
+  },
+  "repair": 0,
+  "schema": "lumina-sobolev-einstein-identity-audit-v1",
+  "verdict": "RUNTIME_CONSTANT_MISMATCH"
+}

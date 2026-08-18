@@ -1,0 +1,64 @@
+claim,run,shell,quantity,value,source,verdict_vs_prior
+# ===== A1: CMFGEN Fe III departure coefficients b_k (THE thermal anchor) =====
+A1,CMFGEN,s6,FeIII_b_gnd,1.5297,FeIIIOUT depth57 V8572 T=11987K,PASS(prior correct)
+A1,CMFGEN,s6,FeIII_b_median,1.0598,FeIIIOUT depth57,PASS
+A1,CMFGEN,s6,FeIII_b_max,1.6447,FeIIIOUT depth57,PASS
+A1,CMFGEN,s6,FeIII_b_range,0.317-1.645,FeIIIOUT depth57 (near-thresh last20 mean=0.57),PASS
+A1,CMFGEN,s7,FeIII_b_median,1.0391,FeIIIOUT depth56 V9133 T=11387K,PASS
+A1,CMFGEN,s7,FeIII_b_max,1.6671,FeIIIOUT depth56,PASS
+A1,CMFGEN,s8,FeIII_b_median,1.0399,FeIIIOUT depth54 V10164 T=10323K,PASS
+A1,CMFGEN,s8,FeIII_b_max,1.6912,FeIIIOUT depth54,PASS
+A1,CMFGEN,sanity_deep,FeIII_b_median,1.004,FeIIIOUT depth90 V1025 (thermal LTE floor),PASS
+A1,CMFGEN,sanity_outer,FeIII_b_gnd,61.4,FeIIIOUT depth1 V35975 (dilute NLTE outer OK),PASS
+# ===== B1: Lumina kpr8 Fe III b_k (populated vs floor-artifact) =====
+B1,kpr8,s6,FeIII_b_median_ALL1500,947.0,levelpop.csv (1400/1500 at n_k floor => RIGGED),PASS-but-rigged
+B1,kpr8,s6,FeIII_b_max_ALL1500,9.227e4,levelpop.csv (floor/Wien-tiny-LTE artifact),PASS-but-rigged
+B1,kpr8,s6,FeIII_b_median_POPULATED,5.13,levelpop.csv n_k>1 (~100 real levels),NEW(clean)
+B1,kpr8,s7,FeIII_b_median_ALL1500,5864.2,levelpop.csv,PASS-but-rigged
+B1,kpr8,s7,FeIII_b_median_POPULATED,16.43,levelpop.csv n_k>1,NEW(clean)
+B1,kpr8,s8,FeIII_b_median_ALL1500,8.100e6,levelpop.csv,PASS-but-rigged
+B1,kpr8,s8,FeIII_b_max_ALL1500,1.208e9,levelpop.csv (NOT a B-run number: it IS kpr8's; floor artifact),PASS-but-rigged
+B1,kpr8,s8,FeIII_b_median_POPULATED,1000.0,levelpop.csv n_k>1 (all at cap),NEW(clean)
+B1,kpr8,all,FeIII_b_CAP,1000.0,plasma.c:5757 g_stage4_bk_cap default 1000,MECHANISM
+B1,kpr8,all,FeIII_nk_FLOOR,"0.022/0.049/0.609 (s6/s7/s8); 1400 of 1500 levels",levelpop.csv,MECHANISM
+# --- B-run (gphall) for contrast: this is where prior 'Fe IV=0' truly belongs ---
+B1,Brun_gphall,s8,FeIII_b_median_ALL1500,1.771e5,gphall/levelpop.csv,context
+B1,Brun_gphall,s8,FeIII_b_median_POPULATED,137.8,gphall/levelpop.csv n_k>1,context
+# ===== B2: Fe IV NLTE level count =====
+B2,kpr8,per_shell,FeIV_nlevels,200,levelpop.csv Z=26 ion=3 (=10000 rows over 50 shells),FAIL_prior(prior said 0)
+B2,kpr8,per_shell,FeIV_b_median,1.0,levelpop.csv (THERMAL; max 54-101),NEW
+B2,Brun_gphall,per_shell,FeIV_nlevels,0,gphall/levelpop.csv (ion=3 absent),context(prior '0' = THIS run)
+# ===== B3: Iron-group over-ionization grade f(IV)=IV/(III+IV), ratio kpr8/CMFGEN =====
+B3,kpr8,s6,fFeIV,0.868,ion_pops.csv IV/(III+IV) [indep-verified],PASS
+B3,CMFGEN,s6,fFeIV,0.069,ion_census.csv,PASS
+B3,ratio,s6,Fe_overion,12.6x,kpr8/CMFGEN,PASS
+B3,ratio,s7,Fe_overion,31x,0.837/0.027,PASS
+B3,ratio,s8,Fe_overion,31x,0.681/0.022,PASS
+B3,ratio,s6,Ni_overion,7.7x,0.384/0.0499,PASS
+B3,ratio,s6,Si_overion,5.4x,0.187/0.0349,PASS
+B3,ratio,s6,Co_overion,3.3x,0.467/0.143,PASS
+B3,ratio,s6,S_overion,MATCHED(S_IV=0),ion_census.csv (pinned in III),PASS
+B3,ratio,s6,Ca_overion,UNDER(Ca_IV=0 vs CMFGEN 0.046),ion_census.csv,PASS
+B3,grade,-,ordering,"Fe(12-31x)>>Ni(7.7x)>Si(5.4x)>Co(3.3x)>S(matched)>Ca(under)",computed,PASS-headline(Co<Ni<Si vs prior Co~Ni)
+# ===== B4: J/B(T_e) at 300-450A (404A Fe III edge) =====
+B4,kpr8,s6,JB_300_450,2.58,thermalization.csv mcK/B,PASS
+B4,kpr8,s7,JB_300_450,208.3,thermalization.csv mcK/B,PASS
+B4,kpr8,s8,JB_300_450,3294,thermalization.csv mcK/B (tiny-abs-flux; noisy),PASS(caveat)
+B4,CMFGEN,s6,JB_300_450,0.62,thermalization.csv JC/B (sub-thermal),PASS
+# ===== A2: CMFGEN UV emissivity line vs continuum (LIMITATION) =====
+A2,CMFGEN,s6,cont_frac_300_450,0.087,eta_chi_source.csv ROLLING-FLOOR HEURISTIC,PARTIAL(not a true bf/ff tag)
+A2,CMFGEN,s6,cont_frac_450_2000,0.0003-0.0006,eta_chi_source.csv heuristic,PARTIAL
+A2,CMFGEN,-,LIMITATION,"ETA_DATA=single TOTAL emissivity (ND=90 x 728 freq); NO per-process line/bf/ff field",ETA_DATA_INFO,LIMITATION
+# ===== A3: CMFGEN UV source function S=eta/chi vs B(T_e) =====
+A3,CMFGEN,s6,SoverB_300_450,0.433,eta_chi_source.csv,PASS
+A3,CMFGEN,s6,SoverB_450_912,0.876,eta_chi_source.csv,PASS
+A3,CMFGEN,s6,SoverB_912_1290,1.585,eta_chi_source.csv (line-pumped SUPER-thermal; NOT in 0.4-0.95),PASS-nuance
+A3,CMFGEN,s6,SoverB_1290_2000,0.551,eta_chi_source.csv,PASS
+A3,CMFGEN,s7,SoverB_450_912,0.951,eta_chi_source.csv,PASS
+A3,CMFGEN,s8,SoverB_450_912,0.432,eta_chi_source.csv,PASS
+# ===== C1: mechanism (recombination destination) =====
+C1,kpr8,s8,FeIII_ground_frac,0.032,levelpop.csv (97% in excited levels),determinable
+C1,kpr8,s8,FeIII_dominant_excited,"level17 E=3.73eV n_k=7.84e5 (51%) b_k=1000cap",levelpop.csv,determinable
+C1,kpr8,s8,FeIII_nearthresh_frac,0.00009,"levelpop E>28eV = 135 of 1.54e6 (~0%; the 1e9 b_k lives here=empty)",RETRACTS-prior-nearthresh-story
+C1,kpr8,-,Trad_vs_Te,"T_rad=10470 pinned < T_e 11072-12787; W=0.039-0.054",plasma_state.csv,determinable(rules out dilBoltz pump)
+C1,-,-,recomb_destination,"fb emission edge = product-stage GROUND ioniz energy",plasma.c:2325-2329 find_ioniz_energy(stage-1),CONFIRMS ground-edge-only

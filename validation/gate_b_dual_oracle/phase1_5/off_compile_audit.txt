@@ -1,0 +1,2 @@
+oracle_symbols=0
+default_vs_explicit_off=byte-identical

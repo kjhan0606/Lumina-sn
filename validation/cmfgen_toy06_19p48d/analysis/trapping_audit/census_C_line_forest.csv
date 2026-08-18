@@ -1,0 +1,19 @@
+metric,value
+total_transport_lines,2565342
+lines_with_level_ge_cutoff100,2512536
+frac_lumped_pct,97.94
+FUV_918_1290_lines,124799
+FUV_lumped,122345
+FUV_frac_lumped_pct,98.03
+
+ion,Z,ion_idx,lumped_lines,total_lines,pct_lumped
+Co III,27,2,678472,679412,100
+Co II,27,1,591940,593559,100
+Fe II,26,1,529324,531662,100
+Fe III,26,2,135478,136263,99
+Cr III,24,2,73049,74132,99
+Mn III,25,2,69595,70218,99
+Ni III,28,2,65522,66511,99
+Ni I,28,0,51561,52578,98
+Ni II,28,1,50714,51812,98
+Ti II,22,1,41216,44778,92

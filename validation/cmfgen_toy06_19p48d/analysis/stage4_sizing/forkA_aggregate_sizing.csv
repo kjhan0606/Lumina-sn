@@ -1,0 +1,4 @@
+scenario,n_slots,n_pairs,n_nlte_levels_total_full,n_super_total,max_N_per_pair,pop_array_MB,pop+within_MB,rate_mat_VRAM_MB,added_pop+within_MB,added_NLTE_mapped_lines
+"CURRENT (Fe/Co/Ni II-III)",31,16,21038,2828,202,8.42,16.83,16.32,0.0,0
+ForkA: +Fe/Co/Ni IV,34,19,21638,3131,202,8.66,17.31,16.32,0.48,12576
+ForkA: +Fe/Co/Ni/Cr/Ti IV,36,21,21964,3333,202,8.79,17.57,16.32,0.741,18185

@@ -1,0 +1,112 @@
+{
+  "status": "FROZEN-BEFORE-EXACT-BIN-APPLICATION-AND-STAGE31",
+  "predictions": [
+    {
+      "band": "B0",
+      "baseline_source_energy": 0.00021925158081093554,
+      "same_bin_line_return_removed": 0.00021827474176149063,
+      "coarse_redistributed_energy_added": 0.00034198644754651343,
+      "coarse_predicted_source_energy": 0.00034296328659595834,
+      "coarse_predicted_source_ratio_to_E9": 1.564245445015521,
+      "registered_ratio_low_minus25pct": 1.1731840837616407,
+      "registered_ratio_high_plus25pct": 1.9553068062694012,
+      "registered_direction": "up",
+      "E9_J_det_over_CMFGEN": 8.290551056587633,
+      "coarse_predicted_J_det_over_CMFGEN": 12.96845672693582,
+      "CMFGEN_shape_target": 1.0,
+      "fractional_drop_required_to_reach_CMFGEN": 0.8793807560951687,
+      "registered_minimum_fractional_drop": 0.1,
+      "shape_toward_CMFGEN_requires": "J_det/CMFGEN below E9 by at least 10%; exact result also compared with coarse prediction +/-25%"
+    },
+    {
+      "band": "B1",
+      "baseline_source_energy": 0.0013792288110762918,
+      "same_bin_line_return_removed": 0.0013682072337061078,
+      "coarse_redistributed_energy_added": 0.0010100074826717555,
+      "coarse_predicted_source_energy": 0.0010210290600419394,
+      "coarse_predicted_source_ratio_to_E9": 0.7402898285203102,
+      "registered_ratio_low_minus25pct": 0.5552173713902326,
+      "registered_ratio_high_plus25pct": 0.9253622856503878,
+      "registered_direction": "down",
+      "E9_J_det_over_CMFGEN": 4.916142857911386,
+      "coarse_predicted_J_det_over_CMFGEN": 3.639370553264568,
+      "CMFGEN_shape_target": 1.0,
+      "fractional_drop_required_to_reach_CMFGEN": 0.7965884985643301,
+      "registered_minimum_fractional_drop": 0.1,
+      "shape_toward_CMFGEN_requires": "J_det/CMFGEN below E9 by at least 10%; exact result also compared with coarse prediction +/-25%"
+    },
+    {
+      "band": "B2",
+      "baseline_source_energy": 0.00414167885995847,
+      "same_bin_line_return_removed": 0.00412121370988663,
+      "coarse_redistributed_energy_added": 0.003026375166659455,
+      "coarse_predicted_source_energy": 0.003046840316731295,
+      "coarse_predicted_source_ratio_to_E9": 0.735653443869824,
+      "registered_ratio_low_minus25pct": 0.551740082902368,
+      "registered_ratio_high_plus25pct": 0.91956680483728,
+      "registered_direction": "down"
+    },
+    {
+      "band": "B3",
+      "baseline_source_energy": 0.00020712142550115793,
+      "same_bin_line_return_removed": 0.0002046817141106607,
+      "coarse_redistributed_energy_added": 0.0011951443253299487,
+      "coarse_predicted_source_energy": 0.001197584036720446,
+      "coarse_predicted_source_ratio_to_E9": 5.782038404876422,
+      "registered_ratio_low_minus25pct": 4.336528803657316,
+      "registered_ratio_high_plus25pct": 7.227548006095528,
+      "registered_direction": "up"
+    },
+    {
+      "band": "B4",
+      "baseline_source_energy": 0.00013361159092149525,
+      "same_bin_line_return_removed": 0.0001304957150581518,
+      "coarse_redistributed_energy_added": 0.00024501662965307206,
+      "coarse_predicted_source_energy": 0.0002481325055164155,
+      "coarse_predicted_source_ratio_to_E9": 1.8571181123216178,
+      "registered_ratio_low_minus25pct": 1.3928385842412134,
+      "registered_ratio_high_plus25pct": 2.3213976404020222,
+      "registered_direction": "up"
+    },
+    {
+      "band": "OPTICAL",
+      "baseline_source_energy": 0.0008792700276924288,
+      "same_bin_line_return_removed": 0.0,
+      "coarse_redistributed_energy_added": 0.0002215448977812597,
+      "coarse_predicted_source_energy": 0.0011008149254736884,
+      "coarse_predicted_source_ratio_to_E9": 1.2519645737984335,
+      "registered_ratio_low_minus25pct": 0.9389734303488251,
+      "registered_ratio_high_plus25pct": 1.564955717248042,
+      "registered_direction": "up"
+    },
+    {
+      "band": "EUV",
+      "baseline_source_energy": 9.273173692362735e-05,
+      "same_bin_line_return_removed": 0.0,
+      "coarse_redistributed_energy_added": 1.554015383931124e-06,
+      "coarse_predicted_source_energy": 9.428575230755848e-05,
+      "coarse_predicted_source_ratio_to_E9": 1.0167581826404373,
+      "registered_ratio_low_minus25pct": 0.762568636980328,
+      "registered_ratio_high_plus25pct": 1.2709477283005466,
+      "registered_direction": "up"
+    },
+    {
+      "band": "IR",
+      "baseline_source_energy": 2.8506665973217614e-05,
+      "same_bin_line_return_removed": 0.0,
+      "coarse_redistributed_energy_added": 1.1139438143751627e-06,
+      "coarse_predicted_source_energy": 2.9620609787592776e-05,
+      "coarse_predicted_source_ratio_to_E9": 1.0390766080965668,
+      "registered_ratio_low_minus25pct": 0.7793074560724251,
+      "registered_ratio_high_plus25pct": 1.2988457601207084,
+      "registered_direction": "up"
+    }
+  ],
+  "predicted_redistribution": {
+    "removed_UV_line_return_energy": 0.006042873114523041,
+    "added_on_grid_energy": 0.0060427429088403106,
+    "outside_energy": 1.3020568273002668e-07,
+    "relative_closure_error": -1.1102230246251565e-16
+  },
+  "preregistration_sha256": "4484e9be7c9cc3034c9bdf9e7f95d2c4fead6a6c7bf0c38195955d76786148b4"
+}

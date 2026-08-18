@@ -1,0 +1,11 @@
+quantity,value
+deep_depth_index,66
+deep_v_kms,4394
+deep_T_K,18536
+deep_ne_cm3,4.8479e+09
+band_A,300.0-2000.0
+line_frac_of_total,0.9966
+continuum_incl_es_frac_of_total,0.0034
+es_frac_of_total,0.0001
+ffbf_frac_of_total,0.0033
+kpacket_continuum_branch_ffbf_vs_line,0.0033

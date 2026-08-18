@@ -1,0 +1,675 @@
+================================================================================================
+RATE-MACHINE CERTIFICATION   (LUMINA sigma-bake + integration layer vs CMFGEN *PRRR)
+  run = /gpfs/kjhan/cmfgen_runs/toy06_19.48d_jnu4
+  ref = /home/kjhan/BACKUP/Eunha.A1/Claude/Lumina-sn/data/tardis_reference_cmfgen_superlev_ionfix_ddc15strat_sivcaiv
+  bin = /home/kjhan/BACKUP/Eunha.A1/Claude/Lumina-sn/data/atomic/cmfgen_sigma_bf_superlev_ionfix_ddc15strat_sivcaiv.bin
+================================================================================================
+[field] EDDFACTOR ND=90 nfreq=196185 nu=[3.4990e+12,1.0000e+18] Hz FINISH=1.0
+[field] RVTJ V=[35975,1025] km/s  Te=[16498,23021] K
+[shells] s0:d67(v=4394)  s1:d63(v=5841)  s2:d60(v=7019)  s3:d58(v=7983)  s4:d57(v=8572)  s5:d56(v=9133)  s6:d54(v=10164)  s7:d53(v=10706)  s8:d51(v=11815)
+[extra]  diagnostic depths (NOT gated): d42(v=16875)  d45(v=15179)  d47(v=14056)  d49(v=12936)  d50(v=12376)
+[grid]  LUMINA: 1000 log bins, nu=[1.500e+14,3.000e+16] Hz  lam=[100,19986] A  dlnnu=5.29832e-03 (=1588 km/s per bin)
+[grid]  bin-averaged J built for 90 depths (0.6s)
+[grid]  quadrature check @s0: SUM Jbar*dnu = 1.572734e+12 vs native INT J dnu over the same range = 1.572734e+12 (ratio 1.000000)
+[bin]   magic=0x434D4644 ver=1 n_levels=26592 n_bins=1000 nu=[1.5000e+14,3.0000e+16] size_ok=True has_cmfgen=26087 (98.1%)
+[ref]   levels.csv rows=26592 vs bin n_levels=26592: MATCH
+
+################################################################################################
+### Ni II   (CMFGEN species name "Nk2")
+################################################################################################
+  [pop]  POPNICK ions=['Nk2', 'NkIII', 'NkIV', 'NkV', 'NkSIX']; Nk2 NF=1000 n_ion=[4.179e-20,7.086e+02] cm^-3; DCI round-trip violations = 0 -> PASS
+  [osc]  Nk2_F_OSCDAT -> /gpfs/kjhan/cmfgen_21jun23/atomic/NICK/II/18oct00/nkii_osc.dat
+         nlev_file=1000 used(NF)=1000 chi=18.168838 eV; lam_th: gnd=682.4 A, top=14828 A; levels with nu_th<1.5e+14: 0
+  [fts]  F_TO_S names identical to osc order over the first 1000: True; NS=59
+  [prrr] Nk2PRRR rows=59; Gamma_truth(s0..s8) = 7.995e+04 1.470e+04 2.149e+03 3.937e+02 1.690e+02 6.756e+01 1.085e+01 1.179e+01 6.506e+01
+  [snap] DI(PRRR)/ground(NkIII,POP): reference scale over the 9 gated shells = 2.0976
+         34/90 depths deviate >5% from that scale: d1-d51 (v=11815-35975 km/s), median deviation factor = 2.8249
+         -> PRRR and POP are NOT from the same state at those depths; Gamma_PRRR is not a truth there.
+         gated shells inside the inconsistent band: ['s8']
+  [phot] PHOTNk2_A -> /gpfs/kjhan/cmfgen_21jun23/atomic/NICK/II/18oct00/phot_data.dat
+         entries=499 data_pairs=1497; cs_type histogram over the 1000 model levels = {1: 1000}; unmatched levels = 0
+         levels with an EXACT CMFGEN evaluator: 1000/1000
+         population share on non-evaluable levels, s0..s8: 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00
+  [A]    native-grid integrals done (19.7s; 180312 native points > 1e13 Hz)
+  [B/C]  binned sigma built (20.1s); baker replica covered 1000/1000 levels
+  [C2]   LUMINA-side data: data/atomic/cmfgen/NICK/II/19apr23/osc_data / data/atomic/cmfgen/NICK/II/19apr23/phot_data_A  (nlev=1000, chi=18.168838 eV) baked 1000/1000
+  [D]    ref rows for (Z=28,ion=1) = 1000; first 1000 are 1:1 with the CMFGEN model levels (max|dE|=5.00e-11 eV, g identical)
+         shipped rows has_cmfgen=1: 1000/1000; sigma>0 anywhere: 1000/1000
+         CMFGEN population share sitting on sigma==0 rows, s0..s8: 0.000 0.000 0.000 0.000 0.000 0.000 0.000 0.000 0.000 0.000 0.000 0.000 0.000 0.000
+  [C2]   provenance: sum|D - C2| / sum|D| over co-covered levels = 7.384e-13 (0 => the shipped binary IS the baker applied to that vintage)
+
+  --- Ni II: LAYER LADDER (Gamma in s^-1; each ratio isolates ONE change) ---
+   sh      v     Te |       PRRR          A  A/PRRR   Ag/A  Bpt/Ag  Bav/Ag  Bpt/Bav   C/Bpt     D/C |          D  D/PRRR
+   s0   4394  18536 |  7.995e+04  7.956e+04   0.995  1.000   1.001   1.000    1.001   1.000   3.550 |  2.826e+05   3.534
+   s1   5841  16154 |  1.470e+04  1.463e+04   0.995  1.000   1.001   1.000    1.001   1.000   2.346 |  3.434e+04   2.336
+   s2   7019  13925 |  2.149e+03  2.138e+03   0.995  1.000   1.001   1.000    1.001   1.000   1.673 |  3.579e+03   1.665
+   s3   7983  12560 |  3.937e+02  3.910e+02   0.993  1.000   1.001   1.000    1.001   1.000   1.378 |  5.392e+02   1.370
+   s4   8572  11987 |  1.690e+02  1.675e+02   0.991  1.000   1.001   1.000    1.001   1.000   1.283 |  2.150e+02   1.272
+   s5   9133  11387 |  6.756e+01  6.656e+01   0.985  1.000   1.001   1.000    1.001   1.000   1.202 |  8.010e+01   1.186
+   s6  10164  10323 |  1.085e+01  1.053e+01   0.970  1.000   1.001   1.000    1.001   1.000   1.114 |  1.174e+01   1.082
+   s7  10706  10118 |  1.179e+01  1.143e+01   0.970  1.000   1.002   1.000    1.002   1.000   1.090 |  1.249e+01   1.059
+   s8  11815  10173 |  6.506e+01  5.427e+01   0.834  1.000   1.002   1.000    1.002   1.000   0.919 |  5.001e+01   0.769
+  d42  16875   9062 |  2.467e+02  8.207e+01   0.333  1.000   0.999   1.000    0.999   1.000   0.682 |  5.587e+01   0.226
+  d45  15179   9558 |  2.671e+02  8.882e+01   0.333  1.000   1.000   1.000    1.000   1.000   0.640 |  5.687e+01   0.213
+  d47  14056   9816 |  2.331e+02  9.005e+01   0.386  1.000   1.001   1.000    1.000   1.000   0.659 |  5.937e+01   0.255
+  d49  12936  10132 |  2.772e+02  9.220e+01   0.333  1.000   1.001   1.000    1.001   1.000   0.699 |  6.449e+01   0.233
+  d50  12376  10287 |  2.727e+02  9.758e+01   0.358  1.000   1.002   1.000    1.001   1.000   0.729 |  7.128e+01   0.261
+
+  --- Ni II: Gamma split by CMFGEN fit type (all shares normalised to Gamma_Bpt, so they are directly comparable) ---
+   s0 type1  n= 1000  exact=  1.00000  baker(C)=  1.00000  shipped(D)=  3.55000   (D-exact) contributes +2.55000 of Gamma
+   s6 type1  n= 1000  exact=  1.00000  baker(C)=  1.00000  shipped(D)=  1.11400   (D-exact) contributes +0.11400 of Gamma
+
+
+  (21.3s for Ni II)
+
+################################################################################################
+### Ni III   (CMFGEN species name "NkIII")
+################################################################################################
+  [pop]  POPNICK ions=['Nk2', 'NkIII', 'NkIV', 'NkV', 'NkSIX']; NkIII NF=1000 n_ion=[4.199e-11,4.829e+07] cm^-3; DCI round-trip violations = 0 -> PASS
+  [osc]  NkIII_F_OSCDAT -> /gpfs/kjhan/cmfgen_21jun23/atomic/NICK/III/18oct00/nkiii_osc.dat
+         nlev_file=1000 used(NF)=1000 chi=35.186716 eV; lam_th: gnd=352.4 A, top=2755 A; levels with nu_th<1.5e+14: 0
+  [fts]  F_TO_S names identical to osc order over the first 1000: True; NS=47
+  [prrr] NkIIIPRRR rows=47; Gamma_truth(s0..s8) = 6.623e+00 2.201e-01 4.657e-03 1.813e-04 3.816e-05 6.750e-06 1.898e-07 2.627e-07 5.255e-06
+  [snap] DI(PRRR)/ground(NkIV,POP): reference scale over the 9 gated shells = 2.4722
+         50/90 depths deviate >5% from that scale: d1-d90 (v=1025-35975 km/s), median deviation factor = 2.4943
+         -> PRRR and POP are NOT from the same state at those depths; Gamma_PRRR is not a truth there.
+         gated shells inside the inconsistent band: NONE
+  [phot] PHOTNkIII_A -> /gpfs/kjhan/cmfgen_21jun23/atomic/NICK/III/18oct00/phot_data.dat
+         entries=444 data_pairs=1332; cs_type histogram over the 1000 model levels = {1: 1000}; unmatched levels = 0
+         levels with an EXACT CMFGEN evaluator: 1000/1000
+         population share on non-evaluable levels, s0..s8: 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00
+  [A]    native-grid integrals done (16.2s; 180312 native points > 1e13 Hz)
+  [B/C]  binned sigma built (16.4s); baker replica covered 1000/1000 levels
+  [C2]   LUMINA-side data: data/atomic/cmfgen/NICK/III/19apr23/osc_data / data/atomic/cmfgen/NICK/III/19apr23/phot_data_A  (nlev=1000, chi=35.186716 eV) baked 1000/1000
+  [D]    ref rows for (Z=28,ion=2) = 1000; first 1000 are 1:1 with the CMFGEN model levels (max|dE|=5.00e-11 eV, g identical)
+         shipped rows has_cmfgen=1: 1000/1000; sigma>0 anywhere: 1000/1000
+         CMFGEN population share sitting on sigma==0 rows, s0..s8: 0.000 0.000 0.000 0.000 0.000 0.000 0.000 0.000 0.000 0.000 0.000 0.000 0.000 0.000
+  [C2]   provenance: sum|D - C2| / sum|D| over co-covered levels = 4.827e-15 (0 => the shipped binary IS the baker applied to that vintage)
+
+  --- Ni III: LAYER LADDER (Gamma in s^-1; each ratio isolates ONE change) ---
+   sh      v     Te |       PRRR          A  A/PRRR   Ag/A  Bpt/Ag  Bav/Ag  Bpt/Bav   C/Bpt     D/C |          D  D/PRRR
+   s0   4394  18536 |  6.623e+00  6.575e+00   0.993  1.000   1.000   1.000    1.000   1.000   1.000 |  6.573e+00   0.992
+   s1   5841  16154 |  2.201e-01  2.185e-01   0.993  1.000   1.000   1.000    0.999   1.000   1.000 |  2.184e-01   0.992
+   s2   7019  13925 |  4.657e-03  4.620e-03   0.992  1.000   1.000   1.000    0.999   1.000   1.000 |  4.619e-03   0.992
+   s3   7983  12560 |  1.813e-04  1.796e-04   0.991  1.000   1.000   1.000    0.999   1.000   1.000 |  1.795e-04   0.990
+   s4   8572  11987 |  3.816e-05  3.774e-05   0.989  1.000   1.000   1.000    0.999   1.000   1.000 |  3.773e-05   0.989
+   s5   9133  11387 |  6.750e-06  6.642e-06   0.984  1.000   0.999   1.000    0.999   1.000   1.000 |  6.638e-06   0.984
+   s6  10164  10323 |  1.898e-07  1.848e-07   0.973  1.000   0.995   0.996    0.999   1.000   1.000 |  1.838e-07   0.968
+   s7  10706  10118 |  2.627e-07  2.558e-07   0.974  1.000   0.996   0.997    0.999   1.000   1.000 |  2.548e-07   0.970
+   s8  11815  10173 |  5.255e-06  4.637e-06   0.882  1.000   1.000   1.000    1.000   1.000   1.000 |  4.634e-06   0.882
+  d42  16875   9062 |  4.135e-05  1.376e-05   0.333  1.000   0.999   1.000    0.998   1.000   1.000 |  1.374e-05   0.332
+  d45  15179   9558 |  3.974e-05  1.320e-05   0.332  1.000   0.999   0.999    1.000   1.000   1.000 |  1.320e-05   0.332
+  d47  14056   9816 |  1.923e-05  1.851e-05   0.962  1.000   1.000   0.999    1.001   1.000   1.000 |  1.851e-05   0.962
+  d49  12936  10132 |  4.550e-05  1.512e-05   0.332  1.000   0.999   1.000    1.000   1.000   1.000 |  1.511e-05   0.332
+  d50  12376  10287 |  2.720e-05  1.907e-05   0.701  1.000   1.001   1.000    1.001   1.000   1.000 |  1.909e-05   0.702
+
+  --- Ni III: Gamma split by CMFGEN fit type (all shares normalised to Gamma_Bpt, so they are directly comparable) ---
+   s0 type1  n= 1000  exact=  1.00000  baker(C)=  1.00000  shipped(D)=  1.00000   (D-exact) contributes -0.00000 of Gamma
+   s6 type1  n= 1000  exact=  1.00000  baker(C)=  1.00000  shipped(D)=  1.00000   (D-exact) contributes -0.00000 of Gamma
+
+
+  (16.9s for Ni III)
+
+################################################################################################
+### Ni IV   (CMFGEN species name "NkIV")
+################################################################################################
+  [pop]  POPNICK ions=['Nk2', 'NkIII', 'NkIV', 'NkV', 'NkSIX']; NkIV NF=1000 n_ion=[1.291e-07,3.217e+08] cm^-3; DCI round-trip violations = 0 -> PASS
+  [osc]  NkIV_F_OSCDAT -> /gpfs/kjhan/cmfgen_21jun23/atomic/NICK/IV/18oct00/nkiv_osc.dat
+         nlev_file=1000 used(NF)=1000 chi=54.925000 eV; lam_th: gnd=225.7 A, top=1263 A; levels with nu_th<1.5e+14: 0
+  [fts]  F_TO_S names identical to osc order over the first 1000: True; NS=54
+  [prrr] NkIVPRRR rows=54; Gamma_truth(s0..s8) = 3.099e-05 1.567e-07 3.766e-10 2.432e-12 2.121e-13 1.385e-14 4.663e-17 5.696e-17 3.532e-15
+  [snap] DI(PRRR)/ground(NkV,POP): reference scale over the 9 gated shells = 2.5187
+         32/90 depths deviate >5% from that scale: d1-d49 (v=12936-35975 km/s), median deviation factor = 2.2915
+         -> PRRR and POP are NOT from the same state at those depths; Gamma_PRRR is not a truth there.
+         gated shells inside the inconsistent band: NONE
+  [phot] PHOTNkIV_A -> /gpfs/kjhan/cmfgen_21jun23/atomic/NICK/IV/18oct00/phot_data.dat
+         entries=417 data_pairs=1251; cs_type histogram over the 1000 model levels = {1: 1000}; unmatched levels = 0
+         levels with an EXACT CMFGEN evaluator: 1000/1000
+         population share on non-evaluable levels, s0..s8: 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00
+  [A]    native-grid integrals done (15.3s; 180312 native points > 1e13 Hz)
+  [B/C]  binned sigma built (15.5s); baker replica covered 1000/1000 levels
+  [C2]   LUMINA-side data: data/atomic/cmfgen/NICK/IV/19apr23/osc_data / data/atomic/cmfgen/NICK/IV/19apr23/phot_data_A  (nlev=1000, chi=54.925000 eV) baked 1000/1000
+  [D]    ref rows = 200; matched by (E,g): 200/1000
+         shipped rows has_cmfgen=1: 200/1000; sigma>0 anywhere: 200/1000
+         CMFGEN population share sitting on sigma==0 rows, s0..s8: 0.000 0.000 0.000 0.000 0.000 0.000 0.000 0.000 0.000 0.000 0.000 0.000 0.000 0.000
+  [C2]   provenance: sum|D - C2| / sum|D| over co-covered levels = 7.146e-15 (0 => the shipped binary IS the baker applied to that vintage)
+
+  --- Ni IV: LAYER LADDER (Gamma in s^-1; each ratio isolates ONE change) ---
+   sh      v     Te |       PRRR          A  A/PRRR   Ag/A  Bpt/Ag  Bav/Ag  Bpt/Bav   C/Bpt     D/C |          D  D/PRRR
+   s0   4394  18536 |  3.099e-05  3.071e-05   0.991  1.000   0.999   1.000    0.999   1.000   0.472 |  1.449e-05   0.468
+   s1   5841  16154 |  1.567e-07  1.553e-07   0.991  1.000   0.974   0.976    0.999   1.000   0.458 |  6.931e-08   0.442
+   s2   7019  13925 |  3.766e-10  3.731e-10   0.991  1.000   0.915   0.916    0.998   1.000   0.420 |  1.432e-10   0.380
+   s3   7983  12560 |  2.432e-12  2.407e-12   0.990  1.000   0.895   0.897    0.998   1.000   0.414 |  8.930e-13   0.367
+   s4   8572  11987 |  2.121e-13  2.097e-13   0.989  1.000   0.888   0.890    0.998   1.000   0.412 |  7.674e-14   0.362
+   s5   9133  11387 |  1.385e-14  1.365e-14   0.985  1.000   0.873   0.875    0.998   1.000   0.402 |  4.787e-15   0.345
+   s6  10164  10323 |  4.663e-17  4.558e-17   0.978  1.000   0.802   0.803    0.999   1.000   0.331 |  1.211e-17   0.260
+   s7  10706  10118 |  5.696e-17  5.562e-17   0.976  1.000   0.857   0.858    0.999   1.000   0.323 |  1.542e-17   0.271
+   s8  11815  10173 |  3.532e-15  3.256e-15   0.922  1.000   0.972   0.973    1.000   1.000   0.305 |  9.668e-16   0.274
+  d42  16875   9062 |  1.459e-13  4.852e-14   0.333  1.000   0.994   1.001    0.993   1.000   0.006 |  3.077e-16   0.002
+  d45  15179   9558 |  2.692e-13  8.941e-14   0.332  1.000   0.995   1.000    0.995   1.000   0.015 |  1.290e-15   0.005
+  d47  14056   9816 |  1.453e-14  1.045e-14   0.719  1.000   0.988   0.991    0.997   1.000   0.098 |  1.014e-15   0.070
+  d49  12936  10132 |  9.078e-14  3.016e-14   0.332  1.000   0.995   0.997    0.998   1.000   0.039 |  1.176e-15   0.013
+  d50  12376  10287 |  2.029e-14  1.304e-14   0.643  1.000   0.988   0.989    0.999   1.000   0.165 |  2.125e-15   0.105
+
+  --- Ni IV: Gamma split by CMFGEN fit type (all shares normalised to Gamma_Bpt, so they are directly comparable) ---
+   s0 type1  n= 1000  exact=  1.00000  baker(C)=  1.00000  shipped(D)=  0.47218   (D-exact) contributes -0.52782 of Gamma
+   s6 type1  n= 1000  exact=  1.00000  baker(C)=  1.00000  shipped(D)=  0.33118   (D-exact) contributes -0.66882 of Gamma
+
+
+  (15.9s for Ni IV)
+
+################################################################################################
+### Co IV   (CMFGEN species name "CoIV")
+################################################################################################
+  [pop]  POPCOB ions=['Co2', 'CoIII', 'CoIV', 'CoV', 'CoSIX']; CoIV NF=1000 n_ion=[1.549e-07,1.888e+09] cm^-3; DCI round-trip violations = 0 -> PASS
+  [osc]  CoIV_F_OSCDAT -> /gpfs/kjhan/cmfgen_21jun23/atomic/COB/IV/18oct00/coiv_osc.dat
+         nlev_file=1000 used(NF)=1000 chi=51.267466 eV; lam_th: gnd=241.8 A, top=1515 A; levels with nu_th<1.5e+14: 0
+  [fts]  F_TO_S names identical to osc order over the first 1000: True; NS=56
+  [prrr] CoIVPRRR rows=56; Gamma_truth(s0..s8) = 2.873e-04 2.153e-06 7.978e-09 7.218e-11 7.342e-12 5.639e-13 2.744e-15 3.322e-15 1.472e-13
+  [snap] DI(PRRR)/ground(CoV,POP): reference scale over the 9 gated shells = 1.0008
+         25/90 depths deviate >5% from that scale: d2-d49 (v=12936-35975 km/s), median deviation factor = 1.1664
+         -> PRRR and POP are NOT from the same state at those depths; Gamma_PRRR is not a truth there.
+         gated shells inside the inconsistent band: NONE
+  [phot] PHOTCoIV_A -> /gpfs/kjhan/cmfgen_21jun23/atomic/COB/IV/18oct00/phot_data.dat
+         entries=407 data_pairs=1221; cs_type histogram over the 1000 model levels = {1: 1000}; unmatched levels = 0
+         levels with an EXACT CMFGEN evaluator: 1000/1000
+         population share on non-evaluable levels, s0..s8: 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00
+  [A]    native-grid integrals done (15.1s; 180312 native points > 1e13 Hz)
+  [B/C]  binned sigma built (15.4s); baker replica covered 1000/1000 levels
+  [C2]   LUMINA-side data: data/atomic/cmfgen/COB/IV/19apr23/osc_data / data/atomic/cmfgen/COB/IV/19apr23/phot_data_A  (nlev=1000, chi=51.267466 eV) baked 1000/1000
+  [D]    ref rows = 200; matched by (E,g): 200/1000
+         shipped rows has_cmfgen=1: 200/1000; sigma>0 anywhere: 200/1000
+         CMFGEN population share sitting on sigma==0 rows, s0..s8: 0.000 0.000 0.000 0.000 0.000 0.000 0.000 0.000 0.000 0.000 0.000 0.000 0.000 0.000
+  [C2]   provenance: sum|D - C2| / sum|D| over co-covered levels = 5.028e-14 (0 => the shipped binary IS the baker applied to that vintage)
+
+  --- Co IV: LAYER LADDER (Gamma in s^-1; each ratio isolates ONE change) ---
+   sh      v     Te |       PRRR          A  A/PRRR   Ag/A  Bpt/Ag  Bav/Ag  Bpt/Bav   C/Bpt     D/C |          D  D/PRRR
+   s0   4394  18536 |  2.873e-04  2.848e-04   0.991  1.000   0.999   1.001    0.998   1.000   1.023 |  2.911e-04   1.013
+   s1   5841  16154 |  2.153e-06  2.135e-06   0.991  1.000   0.997   0.999    0.998   1.000   1.042 |  2.218e-06   1.030
+   s2   7019  13925 |  7.978e-09  7.909e-09   0.991  1.000   0.917   0.918    0.999   1.000   0.724 |  5.251e-09   0.658
+   s3   7983  12560 |  7.218e-11  7.149e-11   0.990  1.000   0.845   0.846    0.999   1.000   0.333 |  2.015e-11   0.279
+   s4   8572  11987 |  7.342e-12  7.263e-12   0.989  1.000   0.842   0.843    0.999   1.000   0.327 |  1.999e-12   0.272
+   s5   9133  11387 |  5.639e-13  5.560e-13   0.986  1.000   0.837   0.838    0.999   1.000   0.317 |  1.475e-13   0.262
+   s6  10164  10323 |  2.744e-15  2.685e-15   0.979  1.000   0.829   0.830    0.999   1.000   0.301 |  6.692e-16   0.244
+   s7  10706  10118 |  3.322e-15  3.246e-15   0.977  1.000   0.886   0.887    0.999   1.000   0.290 |  8.337e-16   0.251
+   s8  11815  10173 |  1.472e-13  1.349e-13   0.917  1.000   0.964   0.964    1.000   1.000   0.265 |  3.446e-14   0.234
+  d42  16875   9062 |  3.364e-12  1.117e-12   0.332  1.000   1.021   1.001    1.020   1.000   0.021 |  2.449e-14   0.007
+  d45  15179   9558 |  8.911e-13  3.295e-13   0.370  1.000   0.997   0.994    1.003   1.000   0.121 |  3.962e-14   0.044
+  d47  14056   9816 |  2.273e-13  1.721e-13   0.757  1.000   0.991   0.991    1.000   1.000   0.157 |  2.685e-14   0.118
+  d49  12936  10132 |  2.346e-12  7.781e-13   0.332  1.000   1.004   0.997    1.007   1.000   0.037 |  2.901e-14   0.012
+  d50  12376  10287 |  6.377e-13  3.671e-13   0.576  1.000   0.984   0.984    1.000   1.000   0.172 |  6.225e-14   0.098
+
+  --- Co IV: Gamma split by CMFGEN fit type (all shares normalised to Gamma_Bpt, so they are directly comparable) ---
+   s0 type1  n= 1000  exact=  1.00000  baker(C)=  1.00000  shipped(D)=  1.02305   (D-exact) contributes +0.02305 of Gamma
+   s6 type1  n= 1000  exact=  1.00000  baker(C)=  1.00000  shipped(D)=  0.30063   (D-exact) contributes -0.69937 of Gamma
+
+
+  (15.8s for Co IV)
+
+################################################################################################
+### Fe IV   (CMFGEN species name "FeIV")
+################################################################################################
+  [pop]  POPIRON ions=['Fe2', 'FeIII', 'FeIV', 'FeV', 'FeSIX']; FeIV NF=1000 n_ion=[1.398e-07,2.240e+08] cm^-3; DCI round-trip violations = 0 -> PASS
+  [osc]  FeIV_F_OSCDAT -> /gpfs/kjhan/cmfgen_21jun23/atomic/FE/IV/18oct00/feiv_osc.dat
+         nlev_file=1000 used(NF)=1000 chi=54.801016 eV; lam_th: gnd=226.2 A, top=1215 A; levels with nu_th<1.5e+14: 0
+  [fts]  F_TO_S names identical to osc order over the first 1000: True; NS=63
+  [prrr] FeIVPRRR rows=63; Gamma_truth(s0..s8) = 1.293e-04 7.674e-07 2.187e-09 1.572e-11 1.389e-12 8.888e-14 2.936e-16 2.528e-16 7.412e-15
+  [snap] DI(PRRR)/ground(FeV,POP): reference scale over the 9 gated shells = 22.8026
+         33/90 depths deviate >5% from that scale: d1-d50 (v=12376-35975 km/s), median deviation factor = 2.4289
+         -> PRRR and POP are NOT from the same state at those depths; Gamma_PRRR is not a truth there.
+         gated shells inside the inconsistent band: NONE
+  [phot] PHOTFeIV_A -> /gpfs/kjhan/cmfgen_21jun23/atomic/FE/IV/18oct00/phot_sm_3000.dat
+         entries=383 data_pairs=15354; cs_type histogram over the 1000 model levels = {1: 228, 20: 772}; unmatched levels = 0
+         levels with an EXACT CMFGEN evaluator: 1000/1000
+         population share on non-evaluable levels, s0..s8: 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00
+  [A]    native-grid integrals done (15.5s; 180312 native points > 1e13 Hz)
+  [B/C]  binned sigma built (15.8s); baker replica covered 1000/1000 levels
+  [C2]   LUMINA-side data: data/atomic/cmfgen/FE/IV/19apr23/osc_data / data/atomic/cmfgen/FE/IV/19apr23/phot_data_A  (nlev=1000, chi=54.801016 eV) baked 1000/1000
+  [D]    ref rows = 200; matched by (E,g): 200/1000
+         shipped rows has_cmfgen=1: 200/1000; sigma>0 anywhere: 200/1000
+         CMFGEN population share sitting on sigma==0 rows, s0..s8: 0.000 0.000 0.000 0.000 0.000 0.000 0.000 0.000 0.000 0.000 0.000 0.000 0.000 0.000
+  [C2]   provenance: sum|D - C2| / sum|D| over co-covered levels = 1.264e-14 (0 => the shipped binary IS the baker applied to that vintage)
+
+  --- Fe IV: LAYER LADDER (Gamma in s^-1; each ratio isolates ONE change) ---
+   sh      v     Te |       PRRR          A  A/PRRR   Ag/A  Bpt/Ag  Bav/Ag  Bpt/Bav   C/Bpt     D/C |          D  D/PRRR
+   s0   4394  18536 |  1.293e-04  1.286e-04   0.995  1.000   1.018   1.001    1.017   1.000   0.790 |  1.034e-04   0.800
+   s1   5841  16154 |  7.674e-07  7.632e-07   0.994  1.000   0.980   0.960    1.021   1.000   0.782 |  5.848e-07   0.762
+   s2   7019  13925 |  2.187e-09  2.174e-09   0.994  1.000   0.370   0.370    0.998   1.000   0.441 |  3.550e-10   0.162
+   s3   7983  12560 |  1.572e-11  1.561e-11   0.993  1.000   0.272   0.272    1.000   1.000   0.275 |  1.168e-12   0.074
+   s4   8572  11987 |  1.389e-12  1.378e-12   0.992  1.000   0.267   0.267    1.001   1.000   0.264 |  9.698e-14   0.070
+   s5   9133  11387 |  8.888e-14  8.790e-14   0.989  1.000   0.272   0.272    1.001   1.000   0.263 |  6.304e-15   0.071
+   s6  10164  10323 |  2.936e-16  2.885e-16   0.982  1.000   0.279   0.279    1.001   1.000   0.244 |  1.965e-17   0.067
+   s7  10706  10118 |  2.528e-16  2.484e-16   0.983  1.000   0.396   0.396    1.001   1.000   0.243 |  2.391e-17   0.095
+   s8  11815  10173 |  7.412e-15  6.922e-15   0.934  1.000   0.730   0.730    1.000   1.000   0.212 |  1.070e-15   0.144
+  d42  16875   9062 |  1.124e-13  3.740e-14   0.333  1.000   0.997   0.997    1.001   1.000   0.012 |  4.466e-16   0.004
+  d45  15179   9558 |  1.539e-13  5.117e-14   0.332  1.000   0.991   0.990    1.001   1.000   0.023 |  1.166e-15   0.008
+  d47  14056   9816 |  2.571e-14  1.551e-14   0.603  1.000   0.969   0.968    1.000   1.000   0.077 |  1.153e-15   0.045
+  d49  12936  10132 |  1.165e-13  3.876e-14   0.333  1.000   0.973   0.973    1.000   1.000   0.037 |  1.406e-15   0.012
+  d50  12376  10287 |  9.354e-14  4.353e-14   0.465  1.000   0.936   0.935    1.001   1.000   0.088 |  3.586e-15   0.038
+
+  --- Fe IV: Gamma split by CMFGEN fit type (all shares normalised to Gamma_Bpt, so they are directly comparable) ---
+   s0 type1  n=  228  exact=  0.14488  baker(C)=  0.14488  shipped(D)=  0.02766   (D-exact) contributes -0.11722 of Gamma
+   s0 type20 n=  772  exact=  0.85512  baker(C)=  0.85512  shipped(D)=  0.76199   (D-exact) contributes -0.09313 of Gamma
+   s6 type1  n=  228  exact=  0.51538  baker(C)=  0.51538  shipped(D)=  0.09650   (D-exact) contributes -0.41888 of Gamma
+   s6 type20 n=  772  exact=  0.48462  baker(C)=  0.48462  shipped(D)=  0.14770   (D-exact) contributes -0.33692 of Gamma
+
+  [res]  tabulated-sigma node spacing over 1<u<5: median dln(nu) = 9.71e-03 (min 4.96e-03, max 2.04e-01) vs LUMINA bin dln(nu) = 5.30e-03  ->  data/bin resolution ratio = 0.55x
+         (ratio > 1 means the bake grid is COARSER than the cross-section table, i.e. structure is being sampled, not resolved)
+
+  (16.2s for Fe IV)
+
+################################################################################################
+### Fe V   (CMFGEN species name "FeV")
+################################################################################################
+  [pop]  POPIRON ions=['Fe2', 'FeIII', 'FeIV', 'FeV', 'FeSIX']; FeV NF=1000 n_ion=[1.112e-15,3.347e+08] cm^-3; DCI round-trip violations = 0 -> PASS
+  [osc]  FeV_F_OSCDAT -> /gpfs/kjhan/cmfgen_21jun23/atomic/FE/V/18oct00/fev_osc.dat
+         nlev_file=1000 used(NF)=1000 chi=73.972320 eV; lam_th: gnd=167.6 A, top=1061 A; levels with nu_th<1.5e+14: 0
+  [fts]  F_TO_S names identical to osc order over the first 1000: True; NS=45
+  [prrr] FeVPRRR rows=45; Gamma_truth(s0..s8) = 3.446e-10 3.143e-13 9.606e-17 1.236e-19 4.725e-21 1.152e-22 5.302e-26 3.433e-26 3.071e-24
+  [snap] DI(PRRR)/ground(FeSIX,POP): reference scale over the 9 gated shells = 6.1112
+         23/90 depths deviate >5% from that scale: d68-d90 (v=1025-4092 km/s), median deviation factor = 1.0642
+         -> PRRR and POP are NOT from the same state at those depths; Gamma_PRRR is not a truth there.
+         gated shells inside the inconsistent band: NONE
+  [phot] PHOTFeV_A -> /gpfs/kjhan/cmfgen_21jun23/atomic/FE/V/18oct00/phot_sm_3000.dat
+         entries=425 data_pairs=21665; cs_type histogram over the 1000 model levels = {1: 189, 20: 811}; unmatched levels = 0
+         levels with an EXACT CMFGEN evaluator: 1000/1000
+         population share on non-evaluable levels, s0..s8: 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00
+  [A]    native-grid integrals done (14.6s; 180312 native points > 1e13 Hz)
+  [B/C]  binned sigma built (14.8s); baker replica covered 1000/1000 levels
+  [C2]   LUMINA-side data: data/atomic/cmfgen/FE/V/19apr23/osc_data / data/atomic/cmfgen/FE/V/19apr23/phot_data_A  (nlev=1000, chi=73.972320 eV) baked 1000/1000
+  [D]    ref rows = 200; matched by (E,g): 200/1000
+         shipped rows has_cmfgen=1: 200/1000; sigma>0 anywhere: 200/1000
+         CMFGEN population share sitting on sigma==0 rows, s0..s8: 0.000 0.000 0.000 0.000 0.000 0.000 0.000 0.000 0.000 0.000 0.000 0.000 0.000 0.000
+  [C2]   provenance: sum|D - C2| / sum|D| over co-covered levels = 6.481e-14 (0 => the shipped binary IS the baker applied to that vintage)
+
+  --- Fe V: LAYER LADDER (Gamma in s^-1; each ratio isolates ONE change) ---
+   sh      v     Te |       PRRR          A  A/PRRR   Ag/A  Bpt/Ag  Bav/Ag  Bpt/Bav   C/Bpt     D/C |          D  D/PRRR
+   s0   4394  18536 |  3.446e-10  3.411e-10   0.990  1.000   0.256   0.256    0.999   1.000   0.208 |  1.815e-11   0.053
+   s1   5841  16154 |  3.143e-13  3.110e-13   0.989  1.000   0.235   0.236    0.998   1.000   0.181 |  1.326e-14   0.042
+   s2   7019  13925 |  9.606e-17  9.502e-17   0.989  1.000   0.251   0.252    0.997   1.000   0.146 |  3.486e-18   0.036
+   s3   7983  12560 |  1.236e-19  1.222e-19   0.989  1.000   0.236   0.237    0.997   1.000   0.119 |  3.429e-21   0.028
+   s4   8572  11987 |  4.725e-21  4.667e-21   0.988  1.000   0.230   0.231    0.997   1.000   0.086 |  9.269e-23   0.020
+   s5   9133  11387 |  1.152e-22  1.136e-22   0.986  1.000   0.236   0.237    0.997   1.000   0.063 |  1.693e-24   0.015
+   s6  10164  10323 |  5.302e-26  5.207e-26   0.982  1.000   0.243   0.244    0.996   1.000   0.020 |  2.542e-28   0.005
+   s7  10706  10118 |  3.433e-26  3.373e-26   0.982  1.000   0.402   0.404    0.996   1.000   0.026 |  3.563e-28   0.010
+   s8  11815  10173 |  3.071e-24  2.876e-24   0.937  1.000   0.828   0.830    0.998   1.000   0.054 |  1.291e-25   0.042
+  d42  16875   9062 |  6.880e-23  2.293e-23   0.333  1.000   0.997   0.999    0.998   1.000   0.001 |  3.019e-26   0.000
+  d45  15179   9558 |  2.779e-23  1.041e-23   0.375  1.000   0.992   0.993    0.999   1.000   0.008 |  8.435e-26   0.003
+  d47  14056   9816 |  1.166e-23  6.796e-24   0.583  1.000   0.976   0.977    0.999   1.000   0.020 |  1.296e-25   0.011
+  d49  12936  10132 |  3.403e-23  1.302e-23   0.383  1.000   0.981   0.982    0.999   1.000   0.012 |  1.541e-25   0.005
+  d50  12376  10287 |  2.401e-23  1.531e-23   0.638  1.000   0.944   0.944    1.000   1.000   0.029 |  4.260e-25   0.018
+
+  --- Fe V: Gamma split by CMFGEN fit type (all shares normalised to Gamma_Bpt, so they are directly comparable) ---
+   s0 type1  n=  189  exact=  0.29304  baker(C)=  0.29304  shipped(D)=  0.02740   (D-exact) contributes -0.26564 of Gamma
+   s0 type20 n=  811  exact=  0.70696  baker(C)=  0.70696  shipped(D)=  0.18046   (D-exact) contributes -0.52650 of Gamma
+   s6 type1  n=  189  exact=  0.30308  baker(C)=  0.30308  shipped(D)=  0.00000   (D-exact) contributes -0.30308 of Gamma
+   s6 type20 n=  811  exact=  0.69692  baker(C)=  0.69692  shipped(D)=  0.02009   (D-exact) contributes -0.67683 of Gamma
+
+  [res]  tabulated-sigma node spacing over 1<u<5: median dln(nu) = 1.99e-02 (min 5.02e-03, max 1.59e-01) vs LUMINA bin dln(nu) = 5.30e-03  ->  data/bin resolution ratio = 0.27x
+         (ratio > 1 means the bake grid is COARSER than the cross-section table, i.e. structure is being sampled, not resolved)
+
+  (15.2s for Fe V)
+
+################################################################################################
+### S IV   (CMFGEN species name "SIV")
+################################################################################################
+  [pop]  POPSUL ions=['S2', 'SIII', 'SIV', 'SV']; SIV NF=176 n_ion=[1.298e-21,2.361e+06] cm^-3; DCI round-trip violations = 0 -> PASS
+  [osc]  SIV_F_OSCDAT -> /gpfs/kjhan/cmfgen_21jun23/atomic/SUL/IV/3oct00/sivosc_fin.dat
+         nlev_file=194 used(NF)=176 chi=47.221862 eV; lam_th: gnd=262.6 A, top=12815 A; levels with nu_th<1.5e+14: 0
+  [fts]  F_TO_S names identical to osc order over the first 176: True; NS=65
+  [prrr] SIVPRRR rows=65; Gamma_truth(s0..s8) = 3.501e-03 3.404e-05 1.868e-07 2.391e-09 2.961e-10 2.882e-11 2.284e-13 3.150e-13 1.663e-11
+  [snap] DI(PRRR)/ground(SV,POP): reference scale over the 9 gated shells = 1.0005
+         33/90 depths deviate >5% from that scale: d1-d50 (v=12376-35975 km/s), median deviation factor = 1.2038
+         -> PRRR and POP are NOT from the same state at those depths; Gamma_PRRR is not a truth there.
+         gated shells inside the inconsistent band: NONE
+  [phot] PHOTSIV_A -> /gpfs/kjhan/cmfgen_21jun23/atomic/SUL/IV/3oct00/phot_sm_3000.dat
+         entries=124 data_pairs=20079; cs_type histogram over the 176 model levels = {1: 10, 2: 4, 3: 5, 20: 157}; unmatched levels = 0
+         levels with an EXACT CMFGEN evaluator: 167/176
+         population share on non-evaluable levels, s0..s8: 3.12e-11 4.06e-13 2.96e-15 4.70e-17 6.26e-18 6.82e-19 6.28e-21 7.27e-21 2.19e-19 3.50e-18 1.49e-18 3.20e-18 3.09e-18 2.56e-18
+  [A]    native-grid integrals done (3.0s; 180312 native points > 1e13 Hz)
+  [B/C]  binned sigma built (3.1s); baker replica covered 176/176 levels
+  [C2]   LUMINA-side data: data/atomic/cmfgen/SUL/IV/19apr23/osc_data / data/atomic/cmfgen/SUL/IV/19apr23/phot_data_A  (nlev=194, chi=47.221862 eV) baked 176/176
+  [D]    ref rows for (Z=16,ion=3) = 194; first 176 are 1:1 with the CMFGEN model levels (max|dE|=6.35e-11 eV, g identical)
+         shipped rows has_cmfgen=1: 176/176; sigma>0 anywhere: 176/176
+         CMFGEN population share sitting on sigma==0 rows, s0..s8: 0.000 0.000 0.000 0.000 0.000 0.000 0.000 0.000 0.000 0.000 0.000 0.000 0.000 0.000
+         SCOPE: the ref carries 18 further levels for this ion that the toy06 model atom does not have (18 of them have sigma>0). They cannot be tested here -- no CMFGEN population exists for them.
+  [C2]   provenance: sum|D - C2| / sum|D| over co-covered levels = 2.011e-12 (0 => the shipped binary IS the baker applied to that vintage)
+
+  --- S IV: LAYER LADDER (Gamma in s^-1; each ratio isolates ONE change) ---
+   sh      v     Te |       PRRR          A  A/PRRR   Ag/A  Bpt/Ag  Bav/Ag  Bpt/Bav   C/Bpt     D/C |          D  D/PRRR
+   s0   4394  18536 |  3.501e-03  3.444e-03   0.984  1.000   1.001   1.000    1.001   1.010   1.022 |  3.561e-03   1.017
+   s1   5841  16154 |  3.404e-05  3.349e-05   0.984  1.000   1.001   1.000    1.001   1.010   1.024 |  3.466e-05   1.018
+   s2   7019  13925 |  1.868e-07  1.839e-07   0.984  1.000   0.996   0.996    1.001   1.010   1.023 |  1.892e-07   1.013
+   s3   7983  12560 |  2.391e-09  2.354e-09   0.985  1.000   0.988   0.988    1.000   1.008   1.024 |  2.400e-09   1.004
+   s4   8572  11987 |  2.961e-10  2.914e-10   0.984  1.000   0.988   0.988    1.000   1.007   1.024 |  2.968e-10   1.002
+   s5   9133  11387 |  2.882e-11  2.828e-11   0.981  1.000   0.988   0.988    1.000   1.006   1.022 |  2.873e-11   0.997
+   s6  10164  10323 |  2.284e-13  2.218e-13   0.971  1.000   0.980   0.980    1.000   1.004   1.010 |  2.204e-13   0.965
+   s7  10706  10118 |  3.150e-13  3.045e-13   0.967  1.000   0.985   0.986    0.999   1.003   1.016 |  3.057e-13   0.970
+   s8  11815  10173 |  1.663e-11  1.587e-11   0.954  1.000   0.994   0.998    0.997   1.001   1.078 |  1.703e-11   1.024
+  d42  16875   9062 |  3.013e-10  1.001e-10   0.332  1.000   1.001   1.000    1.001   1.001   1.059 |  1.062e-10   0.352
+  d45  15179   9558 |  3.344e-10  1.112e-10   0.332  1.000   1.002   1.001    1.002   1.000   1.181 |  1.316e-10   0.394
+  d47  14056   9816 |  4.648e-10  1.664e-10   0.358  1.000   0.997   0.999    0.997   1.001   1.170 |  1.942e-10   0.418
+  d49  12936  10132 |  4.947e-10  1.641e-10   0.332  1.000   0.994   0.999    0.995   1.001   1.115 |  1.821e-10   0.368
+  d50  12376  10287 |  4.439e-10  1.577e-10   0.355  1.000   0.994   0.999    0.995   1.001   1.146 |  1.799e-10   0.405
+
+  --- S IV: Gamma split by CMFGEN fit type (all shares normalised to Gamma_Bpt, so they are directly comparable) ---
+   s0 type1  n=   10  exact=  0.00055  baker(C)=  0.00055  shipped(D)=  0.00055   (D-exact) contributes -0.00000 of Gamma
+   s0 type2  n=    4  exact=  0.00000  baker(C)=  0.00921  shipped(D)=  0.00921   (D-exact) contributes +0.00921 of Gamma
+   s0 type3  n=    5  exact=  0.00000  baker(C)=  0.00116  shipped(D)=  0.00116   (D-exact) contributes +0.00116 of Gamma
+   s0 type20 n=  157  exact=  0.99945  baker(C)=  0.99945  shipped(D)=  1.02187   (D-exact) contributes +0.02242 of Gamma
+   s6 type1  n=   10  exact=  0.00043  baker(C)=  0.00043  shipped(D)=  0.00043   (D-exact) contributes -0.00000 of Gamma
+   s6 type2  n=    4  exact=  0.00000  baker(C)=  0.00369  shipped(D)=  0.00369   (D-exact) contributes +0.00369 of Gamma
+   s6 type3  n=    5  exact=  0.00000  baker(C)=  0.00060  shipped(D)=  0.00060   (D-exact) contributes +0.00060 of Gamma
+   s6 type20 n=  157  exact=  0.99957  baker(C)=  0.99957  shipped(D)=  1.00954   (D-exact) contributes +0.00998 of Gamma
+
+  [res]  tabulated-sigma node spacing over 1<u<5: median dln(nu) = 5.06e-03 (min 4.99e-03, max 1.50e-02) vs LUMINA bin dln(nu) = 5.30e-03  ->  data/bin resolution ratio = 1.05x
+         (ratio > 1 means the bake grid is COARSER than the cross-section table, i.e. structure is being sampled, not resolved)
+
+  (3.2s for S IV)
+
+################################################################################################
+### S V   (CMFGEN species name "SV")
+################################################################################################
+  [pop]  POPSUL ions=['S2', 'SIII', 'SIV', 'SV']; SV NF=163 n_ion=[5.857e-25,4.100e+02] cm^-3; DCI round-trip violations = 0 -> PASS
+  [osc]  SV_F_OSCDAT -> /gpfs/kjhan/cmfgen_21jun23/atomic/SUL/V/3oct00/svosc_fin.dat
+         nlev_file=216 used(NF)=163 chi=72.594496 eV; lam_th: gnd=170.8 A, top=7836 A; levels with nu_th<1.5e+14: 0
+  [fts]  F_TO_S names identical to osc order over the first 163: True; NS=39
+  [prrr] SVPRRR rows=39; Gamma_truth(s0..s8) = 3.420e-09 3.112e-12 1.115e-15 1.408e-18 5.589e-20 1.522e-21 8.986e-25 1.445e-24 7.365e-22
+  [phot] PHOTSV_A -> /gpfs/kjhan/cmfgen_21jun23/atomic/SUL/V/3oct00/phot_sm_3000.dat
+         entries=168 data_pairs=27667; cs_type histogram over the 163 model levels = {1: 7, 20: 156}; unmatched levels = 0
+         levels with an EXACT CMFGEN evaluator: 163/163
+         population share on non-evaluable levels, s0..s8: 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00
+  [A]    native-grid integrals done (2.7s; 180312 native points > 1e13 Hz)
+  [B/C]  binned sigma built (2.8s); baker replica covered 163/163 levels
+  [C2]   LUMINA-side data: data/atomic/cmfgen/SUL/V/19apr23/osc_data / data/atomic/cmfgen/SUL/V/19apr23/phot_data_A  (nlev=307, chi=72.594496 eV) baked 163/163
+  [D]    ref rows = 200; matched by (E,g): 163/163
+         shipped rows has_cmfgen=1: 163/163; sigma>0 anywhere: 163/163
+         CMFGEN population share sitting on sigma==0 rows, s0..s8: 0.000 0.000 0.000 0.000 0.000 0.000 0.000 0.000 0.000 0.000 0.000 0.000 0.000 0.000
+         SCOPE: the ref carries 37 further levels for this ion that the toy06 model atom does not have (37 of them have sigma>0). They cannot be tested here -- no CMFGEN population exists for them.
+  [C2]   provenance: sum|D - C2| / sum|D| over co-covered levels = 8.294e-01 (0 => the shipped binary IS the baker applied to that vintage)
+
+  --- S V: LAYER LADDER (Gamma in s^-1; each ratio isolates ONE change) ---
+   sh      v     Te |       PRRR          A  A/PRRR   Ag/A  Bpt/Ag  Bav/Ag  Bpt/Bav   C/Bpt     D/C |          D  D/PRRR
+   s0   4394  18536 |  3.420e-09  3.409e-09   0.997  1.000   0.979   0.982    0.997   1.000   0.948 |  3.167e-09   0.926
+   s1   5841  16154 |  3.112e-12  3.102e-12   0.997  1.000   0.970   0.971    0.999   1.000   0.945 |  2.843e-12   0.914
+   s2   7019  13925 |  1.115e-15  1.112e-15   0.997  1.000   0.946   0.947    0.999   1.000   0.933 |  9.818e-16   0.880
+   s3   7983  12560 |  1.408e-18  1.402e-18   0.996  1.000   0.770   0.773    0.995   1.000   0.968 |  1.045e-18   0.743
+   s4   8572  11987 |  5.589e-20  5.562e-20   0.995  1.000   0.775   0.779    0.995   1.000   0.966 |  4.165e-20   0.745
+   s5   9133  11387 |  1.522e-21  1.512e-21   0.993  1.000   0.775   0.780    0.994   1.000   0.962 |  1.128e-21   0.741
+   s6  10164  10323 |  8.986e-25  8.877e-25   0.988  1.000   0.788   0.791    0.995   1.000   0.947 |  6.619e-25   0.737
+   s7  10706  10118 |  1.445e-24  1.427e-24   0.987  1.000   0.848   0.853    0.995   1.000   0.936 |  1.134e-24   0.785
+   s8  11815  10173 |  7.365e-22  6.908e-22   0.938  1.000   0.950   0.955    0.994   1.000   0.959 |  6.293e-22   0.854
+  d42  16875   9062 |  1.115e-20  3.720e-21   0.334  1.000   0.992   1.003    0.989   1.000   0.874 |  3.227e-21   0.290
+  d45  15179   9558 |  5.901e-20  2.164e-20   0.367  1.000   0.989   0.996    0.993   1.000   0.741 |  1.586e-20   0.269
+  d47  14056   9816 |  6.818e-20  3.542e-20   0.520  1.000   0.992   0.998    0.995   1.000   0.768 |  2.699e-20   0.396
+  d49  12936  10132 |  1.068e-19  3.747e-20   0.351  1.000   0.993   0.999    0.994   1.000   0.748 |  2.783e-20   0.261
+  d50  12376  10287 |  1.010e-19  5.495e-20   0.544  1.000   0.991   0.997    0.994   1.000   0.675 |  3.676e-20   0.364
+
+  --- S V: Gamma split by CMFGEN fit type (all shares normalised to Gamma_Bpt, so they are directly comparable) ---
+   s0 type1  n=    7  exact=  0.00024  baker(C)=  0.00024  shipped(D)=  0.00299   (D-exact) contributes +0.00275 of Gamma
+   s0 type20 n=  156  exact=  0.99976  baker(C)=  0.99976  shipped(D)=  0.94550   (D-exact) contributes -0.05426 of Gamma
+   s6 type1  n=    7  exact=  0.00026  baker(C)=  0.00026  shipped(D)=  0.00305   (D-exact) contributes +0.00278 of Gamma
+   s6 type20 n=  156  exact=  0.99974  baker(C)=  0.99974  shipped(D)=  0.94380   (D-exact) contributes -0.05594 of Gamma
+
+  [res]  tabulated-sigma node spacing over 1<u<5: median dln(nu) = 5.07e-03 (min 4.99e-03, max 1.12e-01) vs LUMINA bin dln(nu) = 5.30e-03  ->  data/bin resolution ratio = 1.04x
+         (ratio > 1 means the bake grid is COARSER than the cross-section table, i.e. structure is being sampled, not resolved)
+
+  (2.9s for S V)
+
+################################################################################################
+### Ca III   (CMFGEN species name "CaIII")
+################################################################################################
+  [pop]  POPCAL ions=['Ca2', 'CaIII', 'CaIV', 'CaV']; CaIII NF=232 n_ion=[2.916e-22,2.689e+07] cm^-3; DCI round-trip violations = 0 -> PASS
+  [osc]  CaIII_F_OSCDAT -> /gpfs/kjhan/cmfgen_21jun23/atomic/CA/III/10apr99/osc_op_sp.dat
+         nlev_file=232 used(NF)=232 chi=50.909660 eV; lam_th: gnd=243.5 A, top=9909 A; levels with nu_th<1.5e+14: 0
+  [fts]  F_TO_S names identical to osc order over the first 232: True; NS=44
+  [prrr] CaIIIPRRR rows=44; Gamma_truth(s0..s8) = 1.515e-03 1.199e-05 4.683e-08 4.310e-10 4.365e-11 3.313e-12 1.558e-14 1.154e-14 9.276e-14
+  [snap] DI(PRRR)/ground(CaIV,POP): reference scale over the 9 gated shells = 1.3448
+         34/90 depths deviate >5% from that scale: d1-d50 (v=12376-35975 km/s), median deviation factor = 2.6483
+         -> PRRR and POP are NOT from the same state at those depths; Gamma_PRRR is not a truth there.
+         gated shells inside the inconsistent band: NONE
+  [phot] PHOTCaIII_A -> /gpfs/kjhan/cmfgen_21jun23/atomic/CA/III/10apr99/phot_smooth.dat
+         entries=213 data_pairs=50657; cs_type histogram over the 232 model levels = {1: 35, 20: 197}; unmatched levels = 0
+         levels with an EXACT CMFGEN evaluator: 232/232
+         population share on non-evaluable levels, s0..s8: 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00
+  [A]    native-grid integrals done (4.6s; 180312 native points > 1e13 Hz)
+  [B/C]  binned sigma built (4.6s); baker replica covered 232/232 levels
+  [C2]   LUMINA-side data: data/atomic/cmfgen/CA/III/19apr23/osc_data / data/atomic/cmfgen/CA/III/19apr23/phot_data_A  (nlev=232, chi=50.909660 eV) baked 232/232
+  [D]    ref rows = 200; matched by (E,g): 200/232
+         shipped rows has_cmfgen=1: 199/232; sigma>0 anywhere: 199/232
+         CMFGEN population share sitting on sigma==0 rows, s0..s8: 0.000 0.000 0.000 0.000 0.000 0.000 0.000 0.000 0.000 0.000 0.000 0.000 0.000 0.000
+  [C2]   provenance: sum|D - C2| / sum|D| over co-covered levels = 1.624e-14 (0 => the shipped binary IS the baker applied to that vintage)
+
+  --- Ca III: LAYER LADDER (Gamma in s^-1; each ratio isolates ONE change) ---
+   sh      v     Te |       PRRR          A  A/PRRR   Ag/A  Bpt/Ag  Bav/Ag  Bpt/Bav   C/Bpt     D/C |          D  D/PRRR
+   s0   4394  18536 |  1.515e-03  1.504e-03   0.993  1.000   1.003   1.001    1.003   1.000   0.995 |  1.501e-03   0.991
+   s1   5841  16154 |  1.199e-05  1.191e-05   0.993  1.000   1.003   0.999    1.004   1.000   0.995 |  1.188e-05   0.991
+   s2   7019  13925 |  4.683e-08  4.648e-08   0.993  1.000   0.965   0.959    1.006   1.000   0.995 |  4.464e-08   0.953
+   s3   7983  12560 |  4.310e-10  4.272e-10   0.991  1.000   0.962   0.956    1.006   1.000   0.996 |  4.094e-10   0.950
+   s4   8572  11987 |  4.365e-11  4.323e-11   0.990  1.000   0.962   0.956    1.006   1.000   0.997 |  4.146e-11   0.950
+   s5   9133  11387 |  3.313e-12  3.266e-12   0.986  1.000   0.964   0.957    1.007   1.000   0.997 |  3.136e-12   0.947
+   s6  10164  10323 |  1.558e-14  1.526e-14   0.979  1.000   0.963   0.956    1.007   1.000   0.997 |  1.464e-14   0.940
+   s7  10706  10118 |  1.154e-14  1.134e-14   0.983  1.000   0.957   0.955    1.002   1.000   0.996 |  1.081e-14   0.937
+   s8  11815  10173 |  9.276e-14  8.746e-14   0.943  1.000   0.951   0.942    1.009   1.000   0.974 |  8.102e-14   0.873
+  d42  16875   9062 |  4.126e-14  1.369e-14   0.332  1.000   0.959   0.992    0.966   1.000   0.969 |  1.271e-14   0.308
+  d45  15179   9558 |  9.365e-14  3.101e-14   0.331  1.000   0.965   0.978    0.987   1.000   0.960 |  2.873e-14   0.307
+  d47  14056   9816 |  1.508e-13  7.754e-14   0.514  1.000   0.965   0.978    0.986   1.000   0.914 |  6.834e-14   0.453
+  d49  12936  10132 |  1.861e-13  9.257e-14   0.497  1.000   0.973   0.981    0.992   1.000   0.939 |  8.461e-14   0.455
+  d50  12376  10287 |  2.310e-13  1.593e-13   0.690  1.000   0.948   0.954    0.993   1.000   0.959 |  1.448e-13   0.627
+
+  --- Ca III: Gamma split by CMFGEN fit type (all shares normalised to Gamma_Bpt, so they are directly comparable) ---
+   s0 type1  n=   35  exact=  0.00309  baker(C)=  0.00309  shipped(D)=  0.00292   (D-exact) contributes -0.00017 of Gamma
+   s0 type20 n=  197  exact=  0.99691  baker(C)=  0.99691  shipped(D)=  0.99167   (D-exact) contributes -0.00524 of Gamma
+   s6 type1  n=   35  exact=  0.00246  baker(C)=  0.00246  shipped(D)=  0.00236   (D-exact) contributes -0.00010 of Gamma
+   s6 type20 n=  197  exact=  0.99754  baker(C)=  0.99754  shipped(D)=  0.99449   (D-exact) contributes -0.00305 of Gamma
+
+  [res]  tabulated-sigma node spacing over 1<u<5: median dln(nu) = 5.13e-03 (min 5.03e-03, max 8.94e-02) vs LUMINA bin dln(nu) = 5.30e-03  ->  data/bin resolution ratio = 1.03x
+         (ratio > 1 means the bake grid is COARSER than the cross-section table, i.e. structure is being sampled, not resolved)
+
+  (4.7s for Ca III)
+
+################################################################################################
+### Ca IV   (CMFGEN species name "CaIV")
+################################################################################################
+  [pop]  POPCAL ions=['Ca2', 'CaIII', 'CaIV', 'CaV']; CaIV NF=375 n_ion=[1.754e-24,1.023e+01] cm^-3; DCI round-trip violations = 0 -> PASS
+  [osc]  CaIV_F_OSCDAT -> /gpfs/kjhan/cmfgen_21jun23/atomic/CA/IV/10apr99/osc_op_sp.dat
+         nlev_file=378 used(NF)=375 chi=67.100248 eV; lam_th: gnd=184.8 A, top=9091 A; levels with nu_th<1.5e+14: 0
+  [fts]  F_TO_S names identical to osc order over the first 375: True; NS=41
+  [prrr] CaIVPRRR rows=41; Gamma_truth(s0..s8) = 6.497e-08 9.496e-11 5.543e-14 1.086e-16 5.276e-18 1.796e-19 1.622e-22 1.693e-22 1.773e-20
+  [snap] DI(PRRR)/ground(CaV,POP): reference scale over the 9 gated shells = 1.5847
+         51/90 depths deviate >5% from that scale: d1-d90 (v=1025-35975 km/s), median deviation factor = 1.0598
+         -> PRRR and POP are NOT from the same state at those depths; Gamma_PRRR is not a truth there.
+         gated shells inside the inconsistent band: NONE
+  [phot] PHOTCaIV_A -> /gpfs/kjhan/cmfgen_21jun23/atomic/CA/IV/10apr99/phot_smooth.dat
+         entries=338 data_pairs=59574; cs_type histogram over the 375 model levels = {1: 13, 20: 362}; unmatched levels = 0
+         levels with an EXACT CMFGEN evaluator: 375/375
+         population share on non-evaluable levels, s0..s8: 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00
+  [A]    native-grid integrals done (6.5s; 180312 native points > 1e13 Hz)
+  [B/C]  binned sigma built (6.6s); baker replica covered 375/375 levels
+  [C2]   LUMINA-side data: data/atomic/cmfgen/CA/IV/19apr23/osc_data / data/atomic/cmfgen/CA/IV/19apr23/phot_data_A  (nlev=378, chi=67.100248 eV) baked 375/375
+  [D]    ref rows for (Z=20,ion=3) = 378; first 375 are 1:1 with the CMFGEN model levels (max|dE|=4.99e-11 eV, g identical)
+         shipped rows has_cmfgen=1: 373/375; sigma>0 anywhere: 373/375
+         CMFGEN population share sitting on sigma==0 rows, s0..s8: 0.000 0.000 0.000 0.000 0.000 0.000 0.000 0.000 0.000 0.000 0.000 0.000 0.000 0.000
+         SCOPE: the ref carries 3 further levels for this ion that the toy06 model atom does not have (3 of them have sigma>0). They cannot be tested here -- no CMFGEN population exists for them.
+  [C2]   provenance: sum|D - C2| / sum|D| over co-covered levels = 1.046e-13 (0 => the shipped binary IS the baker applied to that vintage)
+
+  --- Ca IV: LAYER LADDER (Gamma in s^-1; each ratio isolates ONE change) ---
+   sh      v     Te |       PRRR          A  A/PRRR   Ag/A  Bpt/Ag  Bav/Ag  Bpt/Bav   C/Bpt     D/C |          D  D/PRRR
+   s0   4394  18536 |  6.497e-08  6.480e-08   0.997  1.000   0.995   0.994    1.001   1.000   0.999 |  6.444e-08   0.992
+   s1   5841  16154 |  9.496e-11  9.467e-11   0.997  1.000   0.995   0.994    1.001   1.000   0.999 |  9.415e-11   0.991
+   s2   7019  13925 |  5.543e-14  5.523e-14   0.996  1.000   0.987   0.986    1.001   1.000   0.999 |  5.446e-14   0.983
+   s3   7983  12560 |  1.086e-16  1.080e-16   0.995  1.000   0.749   0.747    1.002   1.000   0.999 |  8.084e-17   0.745
+   s4   8572  11987 |  5.276e-18  5.246e-18   0.994  1.000   0.555   0.551    1.007   1.000   0.999 |  2.908e-18   0.551
+   s5   9133  11387 |  1.796e-19  1.779e-19   0.991  1.000   0.250   0.247    1.010   1.000   0.998 |  4.433e-20   0.247
+   s6  10164  10323 |  1.622e-22  1.599e-22   0.986  1.000   0.159   0.160    0.990   1.000   0.996 |  2.529e-23   0.156
+   s7  10706  10118 |  1.693e-22  1.669e-22   0.986  1.000   0.191   0.193    0.992   1.000   0.995 |  3.179e-23   0.188
+   s8  11815  10173 |  1.773e-20  1.742e-20   0.983  1.000   0.452   0.455    0.994   1.000   0.994 |  7.834e-21   0.442
+  d42  16875   9062 |  6.278e-19  2.085e-19   0.332  1.000   0.969   0.999    0.970   1.000   0.995 |  2.010e-19   0.320
+  d45  15179   9558 |  1.833e-19  6.521e-20   0.356  1.000   0.926   0.933    0.992   1.000   0.987 |  5.959e-20   0.325
+  d47  14056   9816 |  3.521e-20  2.526e-20   0.717  1.000   0.867   0.868    0.998   1.000   0.987 |  2.161e-20   0.614
+  d49  12936  10132 |  2.263e-20  1.771e-20   0.782  1.000   0.792   0.795    0.996   1.000   0.989 |  1.388e-20   0.614
+  d50  12376  10287 |  4.093e-20  4.112e-20   1.005  1.000   0.666   0.668    0.997   1.000   0.990 |  2.714e-20   0.663
+
+  --- Ca IV: Gamma split by CMFGEN fit type (all shares normalised to Gamma_Bpt, so they are directly comparable) ---
+   s0 type1  n=   13  exact=  0.00013  baker(C)=  0.00013  shipped(D)=  0.00013   (D-exact) contributes -0.00000 of Gamma
+   s0 type20 n=  362  exact=  0.99987  baker(C)=  0.99987  shipped(D)=  0.99936   (D-exact) contributes -0.00051 of Gamma
+   s6 type1  n=   13  exact=  0.00081  baker(C)=  0.00081  shipped(D)=  0.00081   (D-exact) contributes -0.00000 of Gamma
+   s6 type20 n=  362  exact=  0.99919  baker(C)=  0.99919  shipped(D)=  0.99509   (D-exact) contributes -0.00410 of Gamma
+
+  [res]  tabulated-sigma node spacing over 1<u<5: median dln(nu) = 5.12e-03 (min 5.00e-03, max 2.45e-02) vs LUMINA bin dln(nu) = 5.30e-03  ->  data/bin resolution ratio = 1.03x
+         (ratio > 1 means the bake grid is COARSER than the cross-section table, i.e. structure is being sampled, not resolved)
+
+  (6.7s for Ca IV)
+
+################################################################################################
+### Ca V   (CMFGEN species name "CaV")
+################################################################################################
+  [pop]  POPCAL ions=['Ca2', 'CaIII', 'CaIV', 'CaV']; CaV NF=528 n_ion=[2.870e-34,2.526e-06] cm^-3; DCI round-trip violations = 0 -> PASS
+  [osc]  CaV_F_OSCDAT -> /gpfs/kjhan/cmfgen_21jun23/atomic/CA/V/10apr99/osc_op_sp.dat
+         nlev_file=613 used(NF)=528 chi=84.408442 eV; lam_th: gnd=146.9 A, top=7305 A; levels with nu_th<1.5e+14: 0
+  [fts]  F_TO_S names identical to osc order over the first 528: True; NS=70
+  [prrr] CaVPRRR rows=70; Gamma_truth(s0..s8) = 1.270e-12 4.365e-16 4.320e-20 1.958e-23 4.635e-25 6.815e-27 1.047e-30 9.512e-31 2.859e-28
+  [phot] PHOTCaV_A -> /gpfs/kjhan/cmfgen_21jun23/atomic/CA/V/10apr99/phot_smooth.dat
+         entries=596 data_pairs=81958; cs_type histogram over the 528 model levels = {1: 69, 20: 459}; unmatched levels = 0
+         levels with an EXACT CMFGEN evaluator: 528/528
+         population share on non-evaluable levels, s0..s8: 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00
+  [A]    native-grid integrals done (10.5s; 180312 native points > 1e13 Hz)
+  [B/C]  binned sigma built (10.7s); baker replica covered 528/528 levels
+  [C2]   LUMINA-side data: data/atomic/cmfgen/CA/V/19apr23/osc_data / data/atomic/cmfgen/CA/V/19apr23/phot_data_A  (nlev=613, chi=84.408442 eV) baked 528/528
+  [D]    ref rows = 200; matched by (E,g): 200/528
+         shipped rows has_cmfgen=1: 197/528; sigma>0 anywhere: 197/528
+         CMFGEN population share sitting on sigma==0 rows, s0..s8: 0.000 0.000 0.000 0.000 0.000 0.000 0.000 0.000 0.000 0.000 0.000 0.000 0.000 0.000
+  [C2]   provenance: sum|D - C2| / sum|D| over co-covered levels = 1.377e-13 (0 => the shipped binary IS the baker applied to that vintage)
+
+  --- Ca V: LAYER LADDER (Gamma in s^-1; each ratio isolates ONE change) ---
+   sh      v     Te |       PRRR          A  A/PRRR   Ag/A  Bpt/Ag  Bav/Ag  Bpt/Bav   C/Bpt     D/C |          D  D/PRRR
+   s0   4394  18536 |  1.270e-12  1.252e-12   0.986  1.000   0.967   0.963    1.004   1.000   0.968 |  1.172e-12   0.923
+   s1   5841  16154 |  4.365e-16  4.297e-16   0.984  1.000   0.883   0.881    1.002   1.000   0.965 |  3.662e-16   0.839
+   s2   7019  13925 |  4.320e-20  4.243e-20   0.982  1.000   0.819   0.816    1.004   1.000   0.963 |  3.346e-20   0.775
+   s3   7983  12560 |  1.958e-23  1.919e-23   0.980  1.000   0.700   0.685    1.021   1.000   0.958 |  1.286e-23   0.657
+   s4   8572  11987 |  4.635e-25  4.536e-25   0.979  1.000   0.625   0.608    1.028   1.000   0.954 |  2.705e-25   0.584
+   s5   9133  11387 |  6.815e-27  6.655e-27   0.977  1.000   0.619   0.604    1.025   1.000   0.954 |  3.929e-27   0.577
+   s6  10164  10323 |  1.047e-30  1.018e-30   0.972  1.000   0.291   0.290    1.002   1.000   0.901 |  2.669e-31   0.255
+   s7  10706  10118 |  9.512e-31  9.254e-31   0.973  1.000   0.342   0.343    1.000   1.000   0.909 |  2.881e-31   0.303
+   s8  11815  10173 |  2.859e-28  2.743e-28   0.959  1.000   0.680   0.661    1.030   1.000   0.950 |  1.772e-28   0.620
+  d42  16875   9062 |  5.595e-26  1.868e-26   0.334  1.000   0.996   0.996    1.000   1.000   0.271 |  5.053e-27   0.090
+  d45  15179   9558 |  1.784e-27  7.767e-28   0.435  1.000   0.873   0.854    1.022   1.000   0.909 |  6.164e-28   0.345
+  d47  14056   9816 |  4.653e-28  3.742e-28   0.804  1.000   0.688   0.689    0.999   1.000   0.926 |  2.382e-28   0.512
+  d49  12936  10132 |  9.580e-28  4.510e-28   0.471  1.000   0.761   0.765    0.995   1.000   0.880 |  3.020e-28   0.315
+  d50  12376  10287 |  8.878e-28  7.413e-28   0.835  1.000   0.758   0.743    1.021   1.000   0.932 |  5.242e-28   0.590
+
+  --- Ca V: Gamma split by CMFGEN fit type (all shares normalised to Gamma_Bpt, so they are directly comparable) ---
+   s0 type1  n=   69  exact=  0.00030  baker(C)=  0.00030  shipped(D)=  0.00000   (D-exact) contributes -0.00030 of Gamma
+   s0 type20 n=  459  exact=  0.99970  baker(C)=  0.99970  shipped(D)=  0.96768   (D-exact) contributes -0.03202 of Gamma
+   s6 type1  n=   69  exact=  0.00088  baker(C)=  0.00088  shipped(D)=  0.00000   (D-exact) contributes -0.00088 of Gamma
+   s6 type20 n=  459  exact=  0.99912  baker(C)=  0.99912  shipped(D)=  0.90139   (D-exact) contributes -0.09772 of Gamma
+
+  [res]  tabulated-sigma node spacing over 1<u<5: median dln(nu) = 5.09e-03 (min 5.00e-03, max 4.96e-02) vs LUMINA bin dln(nu) = 5.30e-03  ->  data/bin resolution ratio = 1.04x
+         (ratio > 1 means the bake grid is COARSER than the cross-section table, i.e. structure is being sampled, not resolved)
+
+  (10.9s for Ca V)
+
+################################################################################################
+### Si IV   (CMFGEN species name "SkIV")
+################################################################################################
+  [pop]  POPSIL ions=['Sk2', 'SkIII', 'SkIV', 'SkV']; SkIV NF=61 n_ion=[2.094e-22,5.767e+07] cm^-3; DCI round-trip violations = 0 -> PASS
+  [osc]  SkIV_F_OSCDAT -> /gpfs/kjhan/cmfgen_21jun23/atomic/SIL/IV/5dec96/osc_op_split.dat
+         nlev_file=66 used(NF)=61 chi=45.141779 eV; lam_th: gnd=274.7 A, top=12815 A; levels with nu_th<1.5e+14: 0
+  [fts]  F_TO_S names identical to osc order over the first 61: True; NS=50
+  [prrr] SkIVPRRR rows=50; Gamma_truth(s0..s8) = 3.006e-03 3.753e-05 2.518e-07 3.479e-09 4.176e-10 4.160e-11 4.011e-13 4.830e-13 2.215e-11
+  [snap] DI(PRRR)/ground(SkV,POP): reference scale over the 9 gated shells = 1.0000
+         36/90 depths deviate >5% from that scale: d1-d50 (v=12376-35975 km/s), median deviation factor = 1.1697
+         -> PRRR and POP are NOT from the same state at those depths; Gamma_PRRR is not a truth there.
+         gated shells inside the inconsistent band: NONE
+  [phot] PHOTSkIV_A -> /gpfs/kjhan/cmfgen_21jun23/atomic/SIL/IV/5dec96/phot_op.dat
+         entries=55 data_pairs=3790; cs_type histogram over the 61 model levels = {2: 26, 3: 3, 20: 32}; unmatched levels = 0
+         levels with an EXACT CMFGEN evaluator: 32/61
+         population share on non-evaluable levels, s0..s8: 1.06e-08 4.91e-10 1.59e-11 8.59e-13 2.02e-13 4.15e-14 1.93e-15 2.52e-15 2.75e-14 4.43e-15 1.39e-14 3.19e-14 2.54e-14 3.61e-14
+  [A]    native-grid integrals done (0.8s; 180312 native points > 1e13 Hz)
+  [B/C]  binned sigma built (0.8s); baker replica covered 61/61 levels
+  [C2]   LUMINA-side data: data/atomic/cmfgen/SIL/IV/19apr23/osc_data / data/atomic/cmfgen/SIL/IV/19apr23/phot_data_A  (nlev=66, chi=45.141779 eV) baked 61/61
+  [D]    ref rows for (Z=14,ion=3) = 66; first 61 are 1:1 with the CMFGEN model levels (max|dE|=9.58e-11 eV, g identical)
+         shipped rows has_cmfgen=1: 61/61; sigma>0 anywhere: 61/61
+         CMFGEN population share sitting on sigma==0 rows, s0..s8: 0.000 0.000 0.000 0.000 0.000 0.000 0.000 0.000 0.000 0.000 0.000 0.000 0.000 0.000
+         SCOPE: the ref carries 5 further levels for this ion that the toy06 model atom does not have (5 of them have sigma>0). They cannot be tested here -- no CMFGEN population exists for them.
+  [C2]   provenance: sum|D - C2| / sum|D| over co-covered levels = 4.346e-15 (0 => the shipped binary IS the baker applied to that vintage)
+
+  --- Si IV: LAYER LADDER (Gamma in s^-1; each ratio isolates ONE change) ---
+   sh      v     Te |       PRRR          A  A/PRRR   Ag/A  Bpt/Ag  Bav/Ag  Bpt/Bav   C/Bpt     D/C |          D  D/PRRR
+   s0   4394  18536 |  3.006e-03  1.813e-03   0.603  1.000   0.988   1.000    0.988   2.529   1.000 |  4.532e-03   1.507
+   s1   5841  16154 |  3.753e-05  2.267e-05   0.604  1.000   0.987   1.000    0.987   2.513   1.000 |  5.624e-05   1.498
+   s2   7019  13925 |  2.518e-07  1.505e-07   0.598  1.000   0.982   0.997    0.985   2.589   1.000 |  3.828e-07   1.520
+   s3   7983  12560 |  3.479e-09  2.127e-09   0.611  1.000   0.925   0.943    0.981   2.619   1.000 |  5.151e-09   1.481
+   s4   8572  11987 |  4.176e-10  2.624e-10   0.629  1.000   0.920   0.939    0.979   2.523   1.000 |  6.091e-10   1.459
+   s5   9133  11387 |  4.160e-11  2.646e-11   0.636  1.000   0.913   0.934    0.978   2.487   1.000 |  6.010e-11   1.445
+   s6  10164  10323 |  4.011e-13  2.500e-13   0.623  1.000   0.757   0.773    0.979   2.936   1.000 |  5.557e-13   1.385
+   s7  10706  10118 |  4.830e-13  3.004e-13   0.622  1.000   0.782   0.800    0.977   2.934   1.000 |  6.891e-13   1.427
+   s8  11815  10173 |  2.215e-11  1.221e-11   0.551  1.000   0.970   0.985    0.985   2.716   1.000 |  3.215e-11   1.451
+  d42  16875   9062 |  9.582e-12  7.059e-12   0.737  1.000   0.994   0.993    1.001   1.750   1.000 |  1.228e-11   1.282
+  d45  15179   9558 |  2.442e-11  1.764e-11   0.722  1.000   0.992   0.993    0.998   1.973   1.000 |  3.451e-11   1.413
+  d47  14056   9816 |  5.604e-11  2.513e-11   0.448  1.000   0.994   0.991    1.003   2.445   1.000 |  6.105e-11   1.089
+  d49  12936  10132 |  3.404e-11  1.504e-11   0.442  1.000   0.989   0.989    1.000   2.604   1.000 |  3.873e-11   1.138
+  d50  12376  10287 |  5.488e-11  2.933e-11   0.534  1.000   0.984   0.987    0.998   2.080   1.000 |  6.006e-11   1.094
+
+  --- Si IV: Gamma split by CMFGEN fit type (all shares normalised to Gamma_Bpt, so they are directly comparable) ---
+   s0 type2  n=   26  exact=  0.00000  baker(C)=  1.51978  shipped(D)=  1.51978   (D-exact) contributes +1.51978 of Gamma
+   s0 type3  n=    3  exact=  0.00000  baker(C)=  0.00895  shipped(D)=  0.00895   (D-exact) contributes +0.00895 of Gamma
+   s0 type20 n=   32  exact=  1.00000  baker(C)=  1.00000  shipped(D)=  1.00000   (D-exact) contributes -0.00000 of Gamma
+   s6 type2  n=   26  exact=  0.00000  baker(C)=  1.93010  shipped(D)=  1.93010   (D-exact) contributes +1.93010 of Gamma
+   s6 type3  n=    3  exact=  0.00000  baker(C)=  0.00625  shipped(D)=  0.00625   (D-exact) contributes +0.00625 of Gamma
+   s6 type20 n=   32  exact=  1.00000  baker(C)=  1.00000  shipped(D)=  1.00000   (D-exact) contributes -0.00000 of Gamma
+
+  [res]  tabulated-sigma node spacing over 1<u<5: median dln(nu) = 9.97e-03 (min 5.01e-03, max 6.47e-02) vs LUMINA bin dln(nu) = 5.30e-03  ->  data/bin resolution ratio = 0.53x
+         (ratio > 1 means the bake grid is COARSER than the cross-section table, i.e. structure is being sampled, not resolved)
+
+  (0.8s for Si IV)
+
+[out] /home/kjhan/BACKUP/Eunha.A1/Claude/Lumina-sn/validation/cmfgen_toy06_19p48d/analysis/rates_certification/coverage_extension/shipped__new/rates_certification.csv
+[out] /home/kjhan/BACKUP/Eunha.A1/Claude/Lumina-sn/validation/cmfgen_toy06_19p48d/analysis/rates_certification/coverage_extension/shipped__new/rates_certification_alldepth.csv
+
+================================================================================================
+PRE-REGISTERED GATE:  D/PRRR in [0.5,2.0] at every shell AND [0.8,1.25] at s6-s8
+================================================================================================
+      ion       s0       s1       s2       s3       s4       s5       s6       s7       s8   verdict
+    Ni II    3.534    2.336    1.665    1.370    1.272    1.186    1.082    1.059    0.769   FAIL   [all-shell x2 NO; forming 0.8-1.25 NO]
+   Ni III    0.992    0.992    0.992    0.990    0.989    0.984    0.968    0.970    0.882   PASS   [all-shell x2 ok; forming 0.8-1.25 ok]
+    Ni IV    0.468    0.442    0.380    0.367    0.362    0.345    0.260    0.271    0.274   FAIL   [all-shell x2 NO; forming 0.8-1.25 NO]
+    Co IV    1.013    1.030    0.658    0.279    0.272    0.262    0.244    0.251    0.234   FAIL   [all-shell x2 NO; forming 0.8-1.25 NO]
+    Fe IV    0.800    0.762    0.162    0.074    0.070    0.071    0.067    0.095    0.144   FAIL   [all-shell x2 NO; forming 0.8-1.25 NO]
+     Fe V    0.053    0.042    0.036    0.028    0.020    0.015    0.005    0.010    0.042   FAIL   [all-shell x2 NO; forming 0.8-1.25 NO]
+     S IV    1.017    1.018    1.013    1.004    1.002    0.997    0.965    0.970    1.024   PASS   [all-shell x2 ok; forming 0.8-1.25 ok]
+      S V    0.926    0.914    0.880    0.743    0.745    0.741    0.737    0.785    0.854   FAIL   [all-shell x2 ok; forming 0.8-1.25 NO]
+   Ca III    0.991    0.991    0.953    0.950    0.950    0.947    0.940    0.937    0.873   PASS   [all-shell x2 ok; forming 0.8-1.25 ok]
+    Ca IV    0.992    0.991    0.983    0.745    0.551    0.247    0.156    0.188    0.442   FAIL   [all-shell x2 NO; forming 0.8-1.25 NO]
+     Ca V    0.923    0.839    0.775    0.657    0.584    0.577    0.255    0.303    0.620   FAIL   [all-shell x2 NO; forming 0.8-1.25 NO]
+    Si IV    1.507    1.498    1.520    1.481    1.459    1.445    1.385    1.427    1.451   FAIL   [all-shell x2 ok; forming 0.8-1.25 NO]
+
+  CONTROL row -- A/PRRR (CMFGEN sigma, CMFGEN grid; must be ~1 or the whole
+  ladder is meaningless):
+    Ni II    0.995    0.995    0.995    0.993    0.991    0.985    0.970    0.970    0.834
+   Ni III    0.993    0.993    0.992    0.991    0.989    0.984    0.973    0.974    0.882
+    Ni IV    0.991    0.991    0.991    0.990    0.989    0.985    0.978    0.976    0.922
+    Co IV    0.991    0.991    0.991    0.990    0.989    0.986    0.979    0.977    0.917
+    Fe IV    0.995    0.994    0.994    0.993    0.992    0.989    0.982    0.983    0.934
+     Fe V    0.990    0.989    0.989    0.989    0.988    0.986    0.982    0.982    0.937
+     S IV    0.984    0.984    0.984    0.985    0.984    0.981    0.971    0.967    0.954
+      S V    0.997    0.997    0.997    0.996    0.995    0.993    0.988    0.987    0.938
+   Ca III    0.993    0.993    0.993    0.991    0.990    0.986    0.979    0.983    0.943
+    Ca IV    0.997    0.997    0.996    0.995    0.994    0.991    0.986    0.986    0.983
+     Ca V    0.986    0.984    0.982    0.980    0.979    0.977    0.972    0.973    0.959
+    Si IV    0.603    0.604    0.598    0.611    0.629    0.636    0.623    0.622    0.551
+
+  Layer attribution at s6 (forming shell), factor introduced by each layer:
+      ion   A/PRRR     Ag/A   Bpt/Ag  Bpt/Bav    C/Bpt      D/C   D/PRRR
+    Ni II    0.970    1.000    1.001    1.001    1.000    1.114    1.082
+   Ni III    0.973    1.000    0.995    0.999    1.000    1.000    0.968
+    Ni IV    0.978    1.000    0.802    0.999    1.000    0.331    0.260
+    Co IV    0.979    1.000    0.829    0.999    1.000    0.301    0.244
+    Fe IV    0.982    1.000    0.279    1.001    1.000    0.244    0.067
+     Fe V    0.982    1.000    0.243    0.996    1.000    0.020    0.005
+     S IV    0.971    1.000    0.980    1.000    1.004    1.010    0.965
+      S V    0.988    1.000    0.788    0.995    1.000    0.947    0.737
+   Ca III    0.979    1.000    0.963    1.007    1.000    0.997    0.940
+    Ca IV    0.986    1.000    0.159    0.990    1.000    0.996    0.156
+     Ca V    0.972    1.000    0.291    1.002    1.000    0.901    0.255
+    Si IV    0.623    1.000    0.757    0.979    2.936    1.000    1.385

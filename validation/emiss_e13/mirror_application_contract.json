@@ -1,0 +1,150 @@
+{
+  "acceptance": {
+    "H1_B2_to_B0_dominance_disappears": {
+      "charter_readout": "at or below the measured k-packet 2%-scale",
+      "maximum": 0.02042051544719128,
+      "metric": "source-weighted B2 fraction of all B0 redistributed inflow"
+    },
+    "H2_B0_worsening_disappears": {
+      "contrast": "E10 prefix result 20.909501676590434",
+      "maximum": 8.290551056587633,
+      "metric": "stage31 B0 J_det/CMFGEN"
+    },
+    "H3_B0_and_B1_fall": {
+      "B0_maximum": 1.0,
+      "B1_maximum": 1.0,
+      "metric": "E12/E9 stage31 band-integrated J_det"
+    },
+    "H4_optical_rises": {
+      "metric": "E12/E9 source energy and stage31 J_det in 3000-10000 A",
+      "source_minimum": 1.0,
+      "stage31_minimum": 1.0
+    },
+    "energy": "abs((grid+outside)/removed-1) <= 1e-12",
+    "guards": "same E10 stage31 driver, shell=8, nmu=16, T_inner=10020 K, bb_scale=1; trip/nonfinite/solution_negative_excess/clamp must be zero"
+  },
+  "clamp": 0,
+  "e13_posthoc_counterfactual": true,
+  "e13_transform": "input_bin'=N-1-input_bin; output_bin'=N-1-output_bin",
+  "eps_MC": 0.0024368222433042742,
+  "fallback": 0,
+  "formal_matrix_sha256": "e0e76d5114678be6e9eb47e586ce915ae9e0a5b1fdfd56446bb5f6f29c5decad",
+  "known_limit": "band collapse discards within-band source/matrix covariance and does not model nonlocal formal-transport response",
+  "kpacket_absorbed_energy_fraction": 0.02042051544719128,
+  "matrix_iteration": 10,
+  "new_model_or_GPU_run": false,
+  "payload_sha256": "0bd71b413e77d49382b85e188988d2750fcd5bcd38ead800fc2faf2640b6d5e0",
+  "predictions": [
+    {
+      "band": "B0",
+      "baseline_source_energy": 0.0002192515808109432,
+      "coarse_predicted_source_energy": 0.0006275114184701117,
+      "coarse_predicted_source_ratio_to_E9": 2.8620610905022565,
+      "coarse_redistributed_energy_added": 0.0006265345794206668,
+      "lambda_hi_A": 1000.0,
+      "lambda_lo_A": 600.0,
+      "registered_direction": "up",
+      "registered_ratio_high_plus25pct": 3.577576363127821,
+      "registered_ratio_low_minus25pct": 2.1465458178766923,
+      "same_bin_line_return_removed": 0.0002182747417614983
+    },
+    {
+      "band": "B1",
+      "baseline_source_energy": 0.0013792288110763427,
+      "coarse_predicted_source_energy": 0.0016844189742675128,
+      "coarse_predicted_source_ratio_to_E9": 1.221275948370743,
+      "coarse_redistributed_energy_added": 0.0016733973968973293,
+      "lambda_hi_A": 1500.0,
+      "lambda_lo_A": 1000.0,
+      "registered_direction": "up",
+      "registered_ratio_high_plus25pct": 1.5265949354634287,
+      "registered_ratio_low_minus25pct": 0.9159569612780571,
+      "same_bin_line_return_removed": 0.0013682072337061592
+    },
+    {
+      "band": "B2",
+      "baseline_source_energy": 0.004141678859958629,
+      "coarse_predicted_source_energy": 0.002880442726441951,
+      "coarse_predicted_source_ratio_to_E9": 0.6954770815984327,
+      "coarse_redistributed_energy_added": 0.0028599775763701097,
+      "lambda_hi_A": 2000.0,
+      "lambda_lo_A": 1500.0,
+      "registered_direction": "down",
+      "registered_ratio_high_plus25pct": 0.8693463519980409,
+      "registered_ratio_low_minus25pct": 0.5216078111988245,
+      "same_bin_line_return_removed": 0.004121213709886788
+    },
+    {
+      "band": "B3",
+      "baseline_source_energy": 0.00020712142550116815,
+      "coarse_predicted_source_energy": 0.0006118080678003009,
+      "coarse_predicted_source_ratio_to_E9": 2.953861805073615,
+      "coarse_redistributed_energy_added": 0.0006093683564098037,
+      "lambda_hi_A": 2500.0,
+      "lambda_lo_A": 2000.0,
+      "registered_direction": "up",
+      "registered_ratio_high_plus25pct": 3.692327256342019,
+      "registered_ratio_low_minus25pct": 2.2153963538052115,
+      "same_bin_line_return_removed": 0.0002046817141106709
+    },
+    {
+      "band": "B4",
+      "baseline_source_energy": 0.000133611590921557,
+      "coarse_predicted_source_energy": 0.0004782005555369407,
+      "coarse_predicted_source_ratio_to_E9": 3.579034964247158,
+      "coarse_redistributed_energy_added": 0.0004750846796735964,
+      "lambda_hi_A": 3000.0,
+      "lambda_lo_A": 2500.0,
+      "registered_direction": "up",
+      "registered_ratio_high_plus25pct": 4.473793705308948,
+      "registered_ratio_low_minus25pct": 2.6842762231853685,
+      "same_bin_line_return_removed": 0.00013049571505821273
+    },
+    {
+      "band": "OPTICAL",
+      "baseline_source_energy": 0.0008792700276924587,
+      "coarse_predicted_source_energy": 0.0007275446806525984,
+      "coarse_predicted_source_ratio_to_E9": 0.8274416933805355,
+      "coarse_redistributed_energy_added": 0.0004701049331521168,
+      "lambda_hi_A": 10000.0,
+      "lambda_lo_A": 3000.0,
+      "registered_direction": "down",
+      "registered_ratio_high_plus25pct": 1.0343021167256694,
+      "registered_ratio_low_minus25pct": 0.6205812700354016,
+      "same_bin_line_return_removed": 0.0006218302801919771
+    },
+    {
+      "band": "EUV",
+      "baseline_source_energy": 9.273173692363146e-05,
+      "coarse_predicted_source_energy": 4.341950150674481e-05,
+      "coarse_predicted_source_ratio_to_E9": 0.46822698406374746,
+      "coarse_redistributed_energy_added": 4.165803010110356e-05,
+      "lambda_hi_A": 600.0,
+      "lambda_lo_A": 100.0,
+      "registered_direction": "down",
+      "registered_ratio_high_plus25pct": 0.5852837300796844,
+      "registered_ratio_low_minus25pct": 0.3511702380478106,
+      "same_bin_line_return_removed": 9.097026551799021e-05
+    },
+    {
+      "band": "IR",
+      "baseline_source_energy": 2.8506665973219247e-05,
+      "coarse_predicted_source_energy": 2.7190388326649762e-05,
+      "coarse_predicted_source_ratio_to_E9": 0.9538256193198437,
+      "coarse_redistributed_energy_added": 8.205861117381203e-06,
+      "lambda_hi_A": 20000.0,
+      "lambda_lo_A": 10000.0,
+      "registered_direction": "down",
+      "registered_ratio_high_plus25pct": 1.1922820241498047,
+      "registered_ratio_low_minus25pct": 0.7153692144898828,
+      "same_bin_line_return_removed": 9.522138763950691e-06
+    }
+  ],
+  "predictor": "LFMAT001 global event-energy matrix collapsed to broad bands before multiplication by broad-band frozen E9 line-return power",
+  "production_code_modified": false,
+  "schema": "lumina-emiss-e12-preregistration-v1",
+  "shell": 8,
+  "source_iteration": 10,
+  "source_payload_sha256": "894a4ee805c1640d4e28d9c1c9ad9e3591fd845ee78bce1c3e83c8048863d5dc",
+  "status": "FROZEN-BEFORE-EXACT-BIN-APPLICATION-AND-STAGE31"
+}

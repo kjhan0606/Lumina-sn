@@ -1,0 +1,12 @@
+ion,element_Z,ion_number_0based,in_toy06_model,toy06_solves,present_in_lumina,cmfgen_dir_toy06,cmfgen_dir_importer,full_levels,full_lines,phot_entries,f_to_s,Eion_eV,notes
+S IV,16,3,yes,yes(SIV_ISF 65sl/176fl),NO,SUL/IV/3oct00,SUL/IV/19apr23,194,3765,124,yes,47.2219,"deep dominant stage; strong FUV resonance lines 657/748/810/1063 A"
+S V,16,4,yes,yes(SV_ISF 39sl/163fl),NO,SUL/V/3oct00,SUL/V/19apr23,307,9968,259,yes,72.5945,"19apr23=307 lev vs toy06 3oct00=216 lev; pin 3oct00 for exact toy06 match"
+Ca IV,20,3,yes,yes(CaIV_ISF 41sl/375fl),NO,CA/IV/10apr99,CA/IV/19apr23,378,8533,338,yes,67.1002,"largest absolute stage-IV ion mass in toy06"
+Ca V,20,4,yes,yes(CaV_ISF 70sl/528fl),NO,CA/V/10apr99,CA/V/19apr23,613,18272,596,yes,84.4084,"negligible mass fraction (<0.1%)"
+Si IV,14,3,yes,yes(SkIV_ISF 50sl/61fl),YES,SIL/IV/5dec96,-,-,-,-,-,45.1418,"MISLABELED in task as 'Sc IV / Sk'; Sk=SILICON; Si IV ALREADY in Lumina (66 lev)"
+Sc IV,21,3,no,no,NO,SCAN/IV(ABSENT),-,-,-,-,-,-,"NOT in CMFGEN tree (SCAN has only I,II,III); zero abundance in toy06"
+V IV,23,3,no,no,NO,VAN/IV(ABSENT),-,-,-,-,-,-,"NOT in CMFGEN tree (VAN has only neutral V I); zero abundance"
+Mn IV,25,3,no,no,NO,MAN/IV(exists),MAN/IV/19apr23,-,-,-,yes,-,"in tree but toy06 does NOT link/solve; zero abundance in toy06"
+C IV,6,3,no,no,NO,CARB/IV(exists),CARB/IV/19apr23,-,-,-,yes,-,"in tree + in config yml but NOT in toy06; C abundance=0 in toy06"
+Mg IV,12,3,no,no,NO,MG/IV(exists),MG/IV/19apr23,-,-,-,yes,-,"in tree but toy06 does NOT link; Mg absent from toy06 composition"
+O IV,8,3,no,no,NO,OXY/IV(exists),OXY/IV/19apr23,-,-,-,yes,-,"in tree but toy06 does NOT link; O abundance=0 in toy06"

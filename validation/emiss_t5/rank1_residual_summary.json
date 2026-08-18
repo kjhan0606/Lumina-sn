@@ -1,0 +1,120 @@
+{
+  "diagonal_exclusive": {
+    "SVD": {
+      "optimal_rank1_fraction_of_frobenius_energy": 0.6245717303150901,
+      "optimal_rank1_relative_frobenius_residual": 0.6127220166477698,
+      "optimal_rank2_fraction_of_frobenius_energy": 0.759266138453853,
+      "q_proxy_input_energy_weighted_relative_frobenius_residual": 0.3439814173655452,
+      "q_proxy_unweighted_relative_frobenius_residual": 0.6346432012189097,
+      "top_10_singular_values": [
+        2.153421365492633,
+        1.0000291033949917,
+        0.6007350821407048,
+        0.5557677912383389,
+        0.5280799599520589,
+        0.4110246078336892,
+        0.3787905365914046,
+        0.25845764528456205,
+        0.21811447008963925,
+        0.1878769409691583
+      ]
+    },
+    "TVD_row_to_q": {
+      "input_energy_weighted_mean": 0.11732358646290802,
+      "input_energy_weighted_p50": 0.09787516388385104,
+      "input_energy_weighted_p95": 0.22123692415162466,
+      "maximum": 0.9999934199885412,
+      "minimum": 0.04627101390499129
+    },
+    "active_rows": 752,
+    "fixture": "validation/emiss_t5/rank1_diagonal_exclusive.lfmat",
+    "fixture_column_closure_max_abs": 3.0752449704154896e-15,
+    "fixture_sha256": "59ae45b76fa9a8b7a5829ad87a009227dd699aa3f4fe08f202b25040d551db80",
+    "fixture_sparse_edges": 606112,
+    "output_bins": 1000,
+    "q_band_fraction": {
+      "B0": 0.10549058945495998,
+      "B1": 0.25207927811590325,
+      "B2": 0.40008762403091874,
+      "B3": 0.09656115092562918,
+      "B4": 0.07206183439994851,
+      "EUV": 0.0071129390753211005,
+      "IR": 0.001126147830649789,
+      "OPTICAL": 0.06548043616666942
+    },
+    "source_weight_by_input_band": {
+      "B0": 0.03226436666520977,
+      "B1": 0.2022420895154372,
+      "B2": 0.6091788228377196,
+      "B3": 0.030255107945317015,
+      "B4": 0.019289275364152928,
+      "EUV": 0.01344673194585792,
+      "IR": 0.0014075186805297337,
+      "OPTICAL": 0.09191608704577565
+    }
+  },
+  "diagonal_inclusive": {
+    "SVD": {
+      "optimal_rank1_fraction_of_frobenius_energy": 0.5980324753509947,
+      "optimal_rank1_relative_frobenius_residual": 0.634009088774763,
+      "optimal_rank2_fraction_of_frobenius_energy": 0.7285836299155304,
+      "q_proxy_input_energy_weighted_relative_frobenius_residual": 0.4533587754764394,
+      "q_proxy_unweighted_relative_frobenius_residual": 0.6536068946796468,
+      "top_10_singular_values": [
+        2.140370912689492,
+        1.000039178405232,
+        0.6066537476307488,
+        0.5966493519283573,
+        0.529831089530676,
+        0.41298189201592794,
+        0.39239807031329593,
+        0.2610593186511694,
+        0.22277632983827522,
+        0.21215094837181595
+      ]
+    },
+    "TVD_row_to_q": {
+      "input_energy_weighted_mean": 0.12627042148010592,
+      "input_energy_weighted_p50": 0.10515335188928585,
+      "input_energy_weighted_p95": 0.24842266308008648,
+      "maximum": 0.9999935988448405,
+      "minimum": 0.056698356309905634
+    },
+    "active_rows": 752,
+    "fixture": "validation/emiss_t5/rank1_diagonal_inclusive.lfmat",
+    "fixture_column_closure_max_abs": 2.8316679995167108e-15,
+    "fixture_sha256": "ba11c447e4b0541f4204918e63c984340e5f5258fa3df3454846516740ef95bd",
+    "fixture_sparse_edges": 606112,
+    "output_bins": 1000,
+    "q_band_fraction": {
+      "B0": 0.105297390241111,
+      "B1": 0.252203826014824,
+      "B2": 0.40076571960631363,
+      "B3": 0.0973669955274801,
+      "B4": 0.07140703257402334,
+      "EUV": 0.006938211305012464,
+      "IR": 0.0010960860080764339,
+      "OPTICAL": 0.06492473872315893
+    },
+    "source_weight_by_input_band": {
+      "B0": 0.03226436666520977,
+      "B1": 0.2022420895154372,
+      "B2": 0.6091788228377196,
+      "B3": 0.030255107945317015,
+      "B4": 0.019289275364152928,
+      "EUV": 0.01344673194585792,
+      "IR": 0.0014075186805297337,
+      "OPTICAL": 0.09191608704577565
+    }
+  },
+  "input_generation": {
+    "active_input_bins": 752,
+    "diagonal_energy_fraction_of_on_grid": 0.02867740467589144,
+    "edges": 468330,
+    "iteration": 11,
+    "path": "/gpfs/kjhan/lumina_runner2/scratch/fluormat_capture_188828/fluor_matrix_iter10",
+    "q_inclusive_vs_exclusive_TVD": 0.005173446345711751,
+    "sha256": "08ff331222f5ddfadac62e1c716963c22aaf0986e0dbd3615b46145e46735af6"
+  },
+  "schema": "lumina-uv-t5-rank1-residual-v1"
+}

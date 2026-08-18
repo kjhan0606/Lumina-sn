@@ -1,0 +1,5 @@
+dataset,quantity,delta_T_K,rounded_endpoint_delta_K,definition
+baseline_0715,R_committed_to_own,3496.6829047870015,3497,successive endpoint difference (descriptive ladder; not assumed independent)
+baseline_0715,J_own_to_cmf,1660.8195361974285,1660,successive endpoint difference (descriptive ladder; not assumed independent)
+baseline_0715,O_cmf_to_truth,482.6228050155696,483,successive endpoint difference (descriptive ladder; not assumed independent)
+baseline_0715,whole_truth_minus_committed,5640.125246,5640,successive endpoint difference (descriptive ladder; not assumed independent)

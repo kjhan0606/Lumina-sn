@@ -1,0 +1,18 @@
+[harness] lines kept=659463 (from 822581, stride=1.00, deposit=all)
+[harness] wrote detjbar_WIN12800_900.csv
+[harness] wrote iterhist_WIN12800_900.csv
+# S_l/B profile: slb_on=1  s0=1.0000 s25=0.7638 s45=0.5563 s49=0.0597
+# chi_line multiplier=1  (1=r-similar, 1/r=38.97 restores production blanket)
+# NB=13773 NS=50 NP=66  dlognu=1.083127e-04  r=NB/NB_prod=0.025664  vdop=3.8966e+07 cm/s (ppd=12.0)
+# n_ali(LAG)=513   production-equivalent (20000*r=513.3)
+# drift budget: D(core ray, inbound)=1099 bins   D(max over rays)=2446 bins
+# n_ali/D_core=0.467   n_ali/D_max=0.210   (production: 0.467 / 0.210)
+# chi_es[0]=2.9015e-15 adv=1.8299e-13  kappa0=n_ali*chi_tot0/adv=37.807
+# shell  0: chi_es=2.902e-15 <chi_line>=8.507e-14  kappa_es=8.134 kappa_line=238.492
+# shell 12: chi_es=1.705e-16 <chi_line>=3.791e-15  kappa_es=0.478 kappa_line=10.627
+# shell 24: chi_es=8.514e-18 <chi_line>=1.537e-15  kappa_es=0.024 kappa_line=4.309
+# shell 36: chi_es=4.655e-19 <chi_line>=8.552e-16  kappa_es=0.001 kappa_line=2.397
+# shell 48: chi_es=3.199e-20 <chi_line>=3.686e-16  kappa_es=0.000 kappa_line=1.033
+# EXACT drift: A=1.829773e-13 bins/cm  beta(core ray, per shell)=22.42..22.42 bins  (= 1.87..1.87 Doppler widths at ppd=12)
+# window widened: lam_lo=900.0 A -> 973 extra blue bins (shared bins bit-identical to the 1000 A grid)
+# REF: ALI iters=16 (tol=1.0e-09) maxrel_last=2.639e-10  26.6 s

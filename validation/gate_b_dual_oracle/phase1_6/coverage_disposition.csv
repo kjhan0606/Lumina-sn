@@ -1,0 +1,28 @@
+category,status,count,disposition,recoverability,reason
+bb,compared,18,strict_identical_quantity,closed,nearest native CMFGEN frequency at speed-matched depth
+bb,lumina_unavailable,10,capture_gate:LUMINA_GATEB_ORACLE_CAPTURE,recoverable_on_rerun,original raw-Jbar/tau was filtered before archival; representative J and rates are separately quantified by the production C1-fallback replay
+bb,lumina_unavailable,20,snapshot:no_positive_population_flow,irrecoverable_for_snapshot,no representative transition was selected
+bb,lumina_unavailable,30,snapshot:no_positive_population_flow,irrecoverable_for_snapshot,no_positive lower-level population flow selected
+bb,lumina_unavailable,10,snapshot:no_positive_population_flow,irrecoverable_for_snapshot,no_positive_lower-level population flow selected
+bb,unavailable,56,cmfgen_output_has_no_identical_anchor,irrecoverable_with_selected_outputs,GENCOOL/EDDFACTOR do not expose the matched transition rate/beta
+bf,compared,18,strict_identical_quantity,closed,
+bf,lumina_unavailable,60,structural:no_lower_pair_in_frozen_nlte_topology,irrecoverable_for_snapshot,ion is not a lower member of an assembled NLTE pair
+bf,unavailable,18,cmfgen_output_has_no_identical_anchor,irrecoverable_with_selected_outputs,CMFGEN PRRR does not expose a separately labelled spontaneous/stimulated alpha split
+bf,unavailable,96,cmfgen_output_has_no_identical_anchor,irrecoverable_with_selected_outputs,selected CMFGEN files expose no identical monochromatic coefficient
+collisional,lumina_unavailable,20,snapshot:no_positive_population_flow,irrecoverable_for_snapshot,no_positive lower-level population flow selected
+collisional,unavailable,28,cmfgen_output_has_no_identical_anchor,irrecoverable_with_selected_outputs,"GENCOOL exposes aggregate collisional cooling, not the representative transition coefficient"
+ff,context_only_nonidentical,3,numeric_context_nonidentical_quantity,closed,Lumina row is emissive cooling; GENCOOL FF is net emission-minus-absorption
+ff,unavailable,12,cmfgen_output_has_no_identical_anchor,irrecoverable_with_selected_outputs,selected CMFGEN files expose no identical monochromatic coefficient
+input,unavailable,72,cmfgen_output_has_no_identical_anchor,irrecoverable_with_selected_outputs,no registered identical CMFGEN anchor
+state,compared,44,strict_identical_quantity,closed,
+state,lumina_unavailable,10,snapshot:no_positive_population_flow,irrecoverable_for_snapshot,no positive-population level with a non-sentinel recorded b_k
+state,lumina_unavailable,8,snapshot:zero_element_population_census,irrecoverable_for_snapshot,recorded element-stage census sums to zero in this frozen cell
+state,unavailable,16,cmfgen_output_has_no_identical_anchor,irrecoverable_with_selected_outputs,CMFGEN target PRRR files do not constitute a complete element-stage census
+state,unavailable,6,cmfgen_output_has_no_identical_anchor,irrecoverable_with_selected_outputs,RVTJ has no identical Lumina dilute-field scalar
+thermal,compared,9,strict_identical_quantity,closed,
+thermal,context_only_nonidentical,3,numeric_context_nonidentical_quantity,closed,Lumina row is emission only; GENCOOL BF is net emission-minus-photo-heating; use cooling_bf_net for identical sign accounting
+thermal,context_only_nonidentical,3,numeric_context_nonidentical_quantity,closed,Lumina row is emissive cooling; GENCOOL FF is net emission-minus-absorption
+thermal,lumina_unavailable,3,capture_gate:LUMINA_GATEB_ORACLE_CAPTURE,recoverable_on_rerun,archived run retained only global terminal/destroyed event counts; shell ownership and packet-energy/volume normalization are irrecoverable. Re-run capture gate LUMINA_GATEB_ORACLE_CAPTURE writes the required per-shell volumetric ledger
+thermal,unavailable,3,cmfgen_output_has_no_identical_anchor,irrecoverable_with_selected_outputs,"GENCOOL BF block is net bound-free cooling, not a separate photoion heating rate"
+thermal,unavailable,3,cmfgen_output_has_no_identical_anchor,irrecoverable_with_selected_outputs,GENCOOL has no separately labelled adiabatic cooling row
+thermal,unavailable,3,cmfgen_output_has_no_identical_anchor,irrecoverable_with_selected_outputs,GENCOOL has no separately labelled deposition row identical to Lumina's external deposition input

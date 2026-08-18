@@ -1,0 +1,183 @@
+{
+  "cap": 0,
+  "clamp": 0,
+  "comparisons": [
+    {
+      "against_cmfgen_depths": {
+        "67": {
+          "cancellation_condition_ratio": 6.564184308848736e-07,
+          "eta_ratio_lumina_over_cmfgen": 5.1529593229003844e-30,
+          "jbar_over_source_difference": 1.3963427094923155e+19,
+          "signed_rate_ratio_lumina_over_cmfgen": -5.492024816352268e-05
+        },
+        "68": {
+          "cancellation_condition_ratio": 7.201340185926313e-07,
+          "eta_ratio_lumina_over_cmfgen": 3.341599215238306e-30,
+          "jbar_over_source_difference": 1.3963427094923155e+19,
+          "signed_rate_ratio_lumina_over_cmfgen": -3.246366919366415e-05
+        },
+        "90": {
+          "cancellation_condition_ratio": 0.0007288408220591139,
+          "eta_ratio_lumina_over_cmfgen": 3.5721555100725127e-31,
+          "jbar_over_source_difference": 1.3963427094923155e+19,
+          "signed_rate_ratio_lumina_over_cmfgen": -3.431392064028684e-09
+        }
+      },
+      "lumina": {
+        "absorption_per_sr_cgs": 1.8242310958790348e-10,
+        "atom_density_cm3": null,
+        "cancellation_condition": 1.0,
+        "electron_density_cm3": null,
+        "eta_per_sr_cgs": 1.306435077490605e-29,
+        "exact_zero": 0,
+        "inferred_deck_scale": 0.9999999271586448,
+        "jbar": 9.392430352403052e-11,
+        "jbar_absolute_error_bound": 1.799574102903743e-25,
+        "jbar_over_source": 1.3963427094923155e+19,
+        "logged_deck_scale": null,
+        "net_per_sr_cgs": -1.8242310958790348e-10,
+        "phase": "LOWER",
+        "signed_rate_cgs": -2.2923962367241926e-09,
+        "status": "OK_HEATING",
+        "temperature_K": 3500.0
+      }
+    },
+    {
+      "against_cmfgen_depths": {
+        "67": {
+          "cancellation_condition_ratio": 6.564184311927087e-07,
+          "eta_ratio_lumina_over_cmfgen": 0.037405498867252356,
+          "jbar_over_source_difference": -0.9999986869295192,
+          "signed_rate_ratio_lumina_over_cmfgen": 28550.860760648033
+        },
+        "68": {
+          "cancellation_condition_ratio": 7.201340189303464e-07,
+          "eta_ratio_lumina_over_cmfgen": 0.024256777092130005,
+          "jbar_over_source_difference": -0.9999985594985192,
+          "signed_rate_ratio_lumina_over_cmfgen": 16876.575214451714
+        },
+        "90": {
+          "cancellation_condition_ratio": 0.0007288408224009123,
+          "eta_ratio_lumina_over_cmfgen": 0.00259303927146971,
+          "jbar_over_source_difference": -0.9985433797655192,
+          "signed_rate_ratio_lumina_over_cmfgen": 1.7838447623830203
+        }
+      },
+      "lumina": {
+        "absorption_per_sr_cgs": 2.223687528507262e-11,
+        "atom_density_cm3": null,
+        "cancellation_condition": 1.0000000004689615,
+        "electron_density_cm3": null,
+        "eta_per_sr_cgs": 0.09483454603268225,
+        "exact_zero": 0,
+        "inferred_deck_scale": 0.9999999271586447,
+        "jbar": 9.392430352403052e-11,
+        "jbar_absolute_error_bound": 1.799574102903743e-25,
+        "jbar_over_source": 2.344807479482135e-10,
+        "logged_deck_scale": null,
+        "net_per_sr_cgs": 0.09483454601044537,
+        "phase": "UPPER",
+        "signed_rate_cgs": 1.191725965404813,
+        "status": "OK_COOLING",
+        "temperature_K": 140000.0
+      }
+    },
+    {
+      "against_cmfgen_depths": {
+        "67": {
+          "cancellation_condition_ratio": 0.31395087778583997,
+          "eta_ratio_lumina_over_cmfgen": 6.455176841298331e-10,
+          "jbar_over_source_difference": -2.8688185509384567e-06,
+          "signed_rate_ratio_lumina_over_cmfgen": 2.060345492839715e-09
+        },
+        "68": {
+          "cancellation_condition_ratio": 0.3444246788680639,
+          "eta_ratio_lumina_over_cmfgen": 4.186063292066857e-10,
+          "jbar_over_source_difference": -2.7413875509640917e-06,
+          "signed_rate_ratio_lumina_over_cmfgen": 1.2178818694528496e-09
+        },
+        "90": {
+          "cancellation_condition_ratio": 348.5889565031787,
+          "eta_ratio_lumina_over_cmfgen": 4.4748840573337626e-11,
+          "jbar_over_source_difference": 0.0014524383454490586,
+          "signed_rate_ratio_lumina_over_cmfgen": 1.2872944696530287e-13
+        }
+      },
+      "lumina": {
+        "absorption_per_sr_cgs": 1.6365807807523749e-09,
+        "atom_density_cm3": null,
+        "cancellation_condition": 478278.58422961074,
+        "electron_density_cm3": null,
+        "eta_per_sr_cgs": 1.6365876243964625e-09,
+        "exact_zero": 0,
+        "inferred_deck_scale": 0.9999999271586448,
+        "jbar": 9.392430352403052e-11,
+        "jbar_absolute_error_bound": 1.799574102903743e-25,
+        "jbar_over_source": 0.999995818345449,
+        "logged_deck_scale": null,
+        "net_per_sr_cgs": 6.843644087516708e-15,
+        "phase": "PUBLIC_SEED",
+        "signed_rate_cgs": 8.59997616921632e-14,
+        "status": "OK_COOLING",
+        "temperature_K": 10020.0
+      }
+    },
+    {
+      "against_cmfgen_depths": {
+        "67": {
+          "cancellation_condition_ratio": 6.564215428896502e-07,
+          "eta_ratio_lumina_over_cmfgen": 8.26069637846408,
+          "jbar_over_source_difference": -0.9999963167267504,
+          "signed_rate_ratio_lumina_over_cmfgen": 6305207.528770422
+        },
+        "68": {
+          "cancellation_condition_ratio": 7.201374326657288e-07,
+          "eta_ratio_lumina_over_cmfgen": 5.356909458400379,
+          "jbar_over_source_difference": -0.9999961892957504,
+          "signed_rate_ratio_lumina_over_cmfgen": 3727043.8181915605
+        },
+        "90": {
+          "cancellation_condition_ratio": 0.0007288442774101719,
+          "eta_ratio_lumina_over_cmfgen": 0.5726513685878937,
+          "jbar_over_source_difference": -0.9985410095627504,
+          "signed_rate_ratio_lumina_over_cmfgen": 393.94649149904694
+        }
+      },
+      "lumina": {
+        "absorption_per_sr_cgs": 4.964508304582806e-05,
+        "atom_density_cm3": null,
+        "cancellation_condition": 1.000004740885737,
+        "electron_density_cm3": null,
+        "eta_per_sr_cgs": 20.94342849819098,
+        "exact_zero": 0,
+        "inferred_deck_scale": 0.9999999271586447,
+        "jbar": 9.392430352403052e-11,
+        "jbar_absolute_error_bound": 1.799574102903743e-25,
+        "jbar_over_source": 2.3704372495704908e-06,
+        "logged_deck_scale": null,
+        "net_per_sr_cgs": 20.943378853107934,
+        "phase": "GEOMETRIC_MID",
+        "signed_rate_cgs": 263.1822414145343,
+        "status": "OK_COOLING",
+        "temperature_K": 22135.943621178667
+      }
+    }
+  ],
+  "floor": 0,
+  "jitter": 0,
+  "line_id": 233521,
+  "lumina_stderr": "/gpfs/kjhan/lumina/a210_cmfgen_mapped_line_k24/det1234_20260816T110100Z_6a44c34c558f/stderr.log",
+  "lumina_stderr_sha256": "c1e14d5c4f1a5dc1a92c56d9e57f57fefd03f94b7196d55bd885d20b7f67e059",
+  "parity_claim": false,
+  "physical_values_modified": false,
+  "reference": "/home/kjhan/BACKUP/Eunha.A1/Claude/Lumina-sn/validation/a2_10/A2_10_CMFGEN_MAPPED_LINE_76887_2026-08-16.json",
+  "reference_sha256": "0ee73a3d779263664199d77bba1466b71e4a249dbc864bef8ed85a2e99ebb73d",
+  "repair": 0,
+  "same_signed_observable": true,
+  "same_state": false,
+  "same_transition": true,
+  "schema": "lumina-a210-cmfgen-mapped-line-comparison-v1",
+  "shell": 0,
+  "status": "PASS",
+  "verdict": "FINITE_SAME_TRANSITION_SCALE_COMPARISON_NOT_STATE_PARITY"
+}

@@ -1,0 +1,28 @@
+cmfgen_species,Z,stage,elem_dir,roman,ref_vintage,ref_osc,ref_phot,ref_f_to_s,ref_col,ref_osc_md5,ref_phot_md5,baked_by_lumina,baker_pick_latest_vintage,baker_osc,baker_phot,ref_nlev,cur_nlev,vintage_status
+Sk2,14,2,SIL,II,19apr23,osc_data,phot_data_A,f_to_s_79,col_data,d559d6315621561317a25e8f58504614,06737153f386e9f115bec99d190ea298,1,19apr23,osc_data,phot_data_A,157,157,MATCH
+SkIII,14,3,SIL,III,19apr23,osc_data,phot_data_A,f_to_s_ls,col_data,e5d353a9da12c80c41825c3f6cb3df59,b8c82906ecebde3a02f1296e8a99e03a,1,19apr23,osc_data,phot_data_A,147,147,MATCH
+SkIV,14,4,SIL,IV,5dec96,osc_op_split.dat,phot_op.dat,f_to_s_split.dat,col_guess.dat,e94504cd38acc13ce6140aa5d99855c8,445170ccd14eafa50d1364f200d7b452,1,19apr23,osc_data,phot_data_A,66,66,MISMATCH
+SkV,14,5,SIL,V,19apr23,osc_data,phot_data_A_sm_3000,f_to_s_52,col_data,bdfb6e12fa805e5c3b330abf28399ff1,adf7991bc3f2b9cee254a6975e1774a9,0,,,,,,not baked
+S2,16,2,SUL,II,19apr23,osc_data,phot_data_A,f_to_s_56,col_data,e373ea3bbcb53aa40f436065f8f6d2e2,9dd98b20d13545cf59be832bcaf67dc0,1,19apr23,osc_data,phot_data_A,324,324,MATCH
+SIII,16,3,SUL,III,3oct00,siiiosc_fin.dat,phot_sm_3000.dat,f_to_s_127.dat,col_siii.dat,bc2d45caa9591f92ed985eb5ae84480b,f66ffc744506907cecbe783c5d6dd499,1,19apr23,osc_data,phot_data_A,380,380,MISMATCH
+SIV,16,4,SUL,IV,3oct00,sivosc_fin.dat,phot_sm_3000.dat,f_to_s_69.dat,col_siv.dat,00e6ec162325a90973f93ac3b44e5d8c,0ddf243fa5160cca85628b3d84dec4ee,1,19apr23,osc_data,phot_data_A,194,194,MISMATCH
+SV,16,5,SUL,V,3oct00,svosc_fin.dat,phot_sm_3000.dat,f_to_s_50.dat,col_sv.dat,5ce8f48c071fa89bc3035a216129b88e,23443a18b63f5a13cca815f29d503fb7,1,19apr23,osc_data,phot_data_A,216,307,MISMATCH
+Ca2,20,2,CA,II,19apr23,osc_data,phot_data_A,f_to_s_43,col_data,22574dd8ed3084c40cd45d79c26052a1,e84042e4f2187fe1c9337072cd5fa8c9,1,19apr23,osc_data,phot_data_A,77,77,MATCH
+CaIII,20,3,CA,III,10apr99,osc_op_sp.dat,phot_smooth.dat,f_to_s.dat,col_guess.dat,4a954ba907d27f83f3a216a6a1b5a9cf,4d6b5bb2057317281b7929ffb7990ba7,1,19apr23,osc_data,phot_data_A,232,232,MISMATCH
+CaIV,20,4,CA,IV,10apr99,osc_op_sp.dat,phot_smooth.dat,f_to_s.dat,col_guess.dat,84868af8ebf22342310473c3aaca6536,46dc2d7bd4dacc2e4a862ddb999c3a70,1,19apr23,osc_data,phot_data_A,378,378,MISMATCH
+CaV,20,5,CA,V,10apr99,osc_op_sp.dat,phot_smooth.dat,f_to_s.dat,col_guess.dat,33442decbba1bd47cd0f8eb84925fd3d,967a88d59bf400b5107af4b42cb867a3,1,19apr23,osc_data,phot_data_A,613,613,MISMATCH
+Fe2,26,2,FE,II,19apr23,osc_data,phot_data_A,f_to_s_135,col_data,403f1c19c80520a910f4613b486f06d1,9d2fc7bebeb3fd75c514611d8355cf78,1,19apr23,osc_data,phot_data_A,2698,2698,MATCH
+FeIII,26,3,FE,III,19apr23,osc_data,phot_data_A,f_to_s_105,col_data,b6b1c20826d4d3bc89740733f9c7154a,b68d71e039e8652c65ed0564993d2c12,1,19apr23,osc_data,phot_data_A,1500,1500,MATCH
+FeIV,26,4,FE,IV,18oct00,feiv_osc.dat,phot_sm_3000.dat,f_to_s_63.dat,col_data.dat,604b156ce541e9f376dc2e08247a9cda,164cc973f2e1f03ae82d3bae9a231998,1,19apr23,osc_data,phot_data_A,1000,1000,MISMATCH
+FeV,26,5,FE,V,18oct00,fev_osc.dat,phot_sm_3000.dat,f_to_s_45.dat,col_guess.dat,1ae5a32192ffee9413eed8497768f9f3,380c5aec05530c69480dcdbc07ef134d,1,19apr23,osc_data,phot_data_A,1000,1000,MISMATCH
+FeSIX,26,6,FE,VI,18oct00,fevi_osc.dat,phot_sm_3000.dat,f_to_s_67.dat,col_data.dat,d314549589bc7b6413392392564b8ee9,33861f00a4f05285c4b25349b162495c,0,,,,,,not baked
+Co2,27,2,COB,II,18oct00,coii_osc.dat,phot_data.dat,f_to_s_55.dat,col_guess.dat,eb75133efe9374930bb8624866237593,c1d2534c666a95ceb9fd28bc2f0950e1,1,19apr23,osc_data,phot_data_A,1000,2747,MISMATCH
+CoIII,27,3,COB,III,18oct00,coiii_osc.dat,phot_data.dat,f_to_s_52.dat,col_data.dat,b16feca1f77118fdf2b69acb86d64cc0,abce81c2c230f5c5fe62b1b2ebde1d41,1,19apr23,osc_data,phot_data_A,1000,3917,MISMATCH
+CoIV,27,4,COB,IV,18oct00,coiv_osc.dat,phot_data.dat,f_to_s_56.dat,col_guess.dat,d2c677f9224d1c94dc734bf5b756917c,6f79a41d4806610f5aeb4d7112a96844,1,19apr23,osc_data,phot_data_A,1000,1000,MISMATCH
+CoV,27,5,COB,V,18oct00,cov_osc.dat,phot_data.dat,f_to_s_43.dat,col_guess.dat,dac4852581de9dfd2d19b132b04f9725,79681e1c515713462cc9e41d4032a673,0,,,,,,not baked
+CoSIX,27,6,COB,VI,18oct00,covi_osc.dat,phot_data.dat,f_to_s_41.dat,col_guess.dat,ba3a930b7c06669525791951720fe808,fa9585359ad3c49382b2c106e0c0135b,0,,,,,,not baked
+Nk2,28,2,NICK,II,18oct00,nkii_osc.dat,phot_data.dat,f_to_s_59.dat,col_guess.dat,3fe557e6fce9b428cbecdd705aafa54a,675d4af5fbbadc4281cefbed110a8ca4,1,19apr23,osc_data,phot_data_A,1000,1000,MISMATCH
+NkIII,28,3,NICK,III,18oct00,nkiii_osc.dat,phot_data.dat,f_to_s_47.dat,col_guess.dat,ecbfc03b2f802d8f0721421d0886878e,d07cb48b0bd07403c2f138a61f98dc6b,1,19apr23,osc_data,phot_data_A,1000,1000,MISMATCH
+NkIV,28,4,NICK,IV,18oct00,nkiv_osc.dat,phot_data.dat,f_to_s_54.dat,col_guess.dat,526a44409e3080d26e9f6d86f3a140af,47418834df64469aa108e25e5e6e6734,1,19apr23,osc_data,phot_data_A,1000,1000,MISMATCH
+NkV,28,5,NICK,V,18oct00,nkv_osc.dat,phot_data.dat,f_to_s_54.dat,col_guess.dat,432c7e561c3d5740d27a17379ff2d8d8,30a79733628a66a205435ee8b2af10fe,0,,,,,,not baked
+NkSIX,28,6,NICK,VI,18oct00,nkvi_osc.dat,phot_data.dat,f_to_s_62.dat,col_guess.dat,30d59e45d6f3c7d1d3a2fa2be31bc3e4,d6745e97bd071e88760cd01842ceebe3,0,,,,,,not baked

@@ -1,0 +1,12 @@
+{
+  "A_replay_chi_rel_l1": 0.082260596709737357,
+  "A_replay_eta_fixed_rel_l1": 0.35170158184667571,
+  "B_full_ions": 9,
+  "B_projection_lines": 276013,
+  "B_level_shell_cells": 204468,
+  "B_ion_shell_cells": 396,
+  "B_line_shell_cells": 79466068,
+  "B_line_shell_cells_600_3000A": 23119184,
+  "total_line_shell_cells": 129206600,
+  "no_new_clamp": true
+}

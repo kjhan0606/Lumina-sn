@@ -1,0 +1,83 @@
+{
+  "schema": "lumina-cmfgen-line-net-known-answer-v2",
+  "equation": {
+    "unscaled_internal": "q_line = ETAL_MAT * ZNET",
+    "deck_internal": "q_line_re = SCL_FAC * ETAL_MAT * ZNET",
+    "cgs": "q_line_cgs = q_line_re * 4*pi*1e-10"
+  },
+  "units": {
+    "LINEHEAT": "CMFGEN radiative-equilibrium internal units",
+    "q_line_cgs": "erg cm^-3 s^-1",
+    "etal_mat_internal_to_integrated_emissivity_cgs_per_sr": 1e-10,
+    "radiative_equilibrium_internal_to_cgs": 1.2566370614359174e-09,
+    "derivation": [
+      "EMLIN = 1e25*h/(4*pi), frequency is in 1e15 Hz, and number populations are in cm^-3",
+      "the extra 1e10 is CMFGEN's opacity/radius scaling; a volumetric rate restores 4*pi"
+    ]
+  },
+  "sign": "positive=cooling, negative=heating in CMFGEN STEQ_T convention",
+  "depth_indexing": "CMFGEN one-based",
+  "source_writer": {
+    "file": "new_main/cmfgen_sub.f",
+    "header_lines": "2739-2749",
+    "znet_line": "2750",
+    "lineheat_line": "2762",
+    "production_re_lines": "2469-2480",
+    "emlin_definition": "new_main/cmfgen.f:121-122",
+    "cgs_conversion_evidence": "new_main/subs/eval_adiabatic_v3.f:143-170"
+  },
+  "printed_precision": {
+    "LINEHEAT": "Fortran 1P,5E12.4",
+    "NETRATE": "Fortran 1P,5E14.6",
+    "fixture_relative_tolerance": 0.0002
+  },
+  "selection": {
+    "rule": "largest abs(unscaled LINEHEAT) among streamed candidates with finite nonzero ZNET and positive finite derived ETAL_MAT",
+    "candidate_count": 2048,
+    "candidate_distinct_lines": 1571
+  },
+  "deck_policy": {
+    "SCL_LN": true,
+    "SCL_LN_FAC": 0.5,
+    "SCL_DEN_LIM": "default 1e30; not reached by the witness",
+    "production_comparison_quantity": "q_line_cgs_scaled"
+  },
+  "witness": {
+    "line_id": 76887,
+    "transition": "CoIV(3d5(6S)4p_5Po[3]-3d6_5De[4])",
+    "frequency_field": 4.940676,
+    "lower": 1381,
+    "upper": 1401,
+    "scale_factor": 0.997943,
+    "depth_index": 90,
+    "scaled_lineheat": 531630000.0,
+    "q_line": 532725817.0055805,
+    "q_line_internal_unscaled": 532725817.0055805,
+    "q_line_internal_scaled": 531630000.0,
+    "q_line_cgs_unscaled": 0.6694430052329409,
+    "q_line_cgs_scaled": 0.6680659609711768,
+    "znet": 0.00145662,
+    "etal_mat_derived": 365727380514.8772,
+    "etal_mat_internal_derived": 365727380514.8772,
+    "integrated_emissivity_cgs_per_sr_derived": 36.57273805148772,
+    "lower_full": 1,
+    "upper_full": 93,
+    "identity_checks": {
+      "transition": "MATCH",
+      "frequency_field": "MATCH",
+      "lower_upper": "MATCH"
+    }
+  },
+  "sources": {
+    "LINEHEAT": {
+      "path": "/gpfs/kjhan/cmfgen_runs/toy06_19p48d_ophys/LINEHEAT",
+      "size_bytes": 2728673784,
+      "sha256": "e533a503d00ce616982ac5346a0c219afb18a90352e5e1d2bb73dd9e2c3b59c8"
+    },
+    "NETRATE": {
+      "path": "/gpfs/kjhan/cmfgen_runs/toy06_19p48d_ophys/NETRATE",
+      "size_bytes": 1092258825,
+      "sha256": "3066c9e96069f64856fac4e25c8966aca48f6c29a4796c03d283a6161e5e8fee"
+    }
+  }
+}

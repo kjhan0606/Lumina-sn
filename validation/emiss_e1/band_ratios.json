@@ -1,0 +1,728 @@
+{
+  "A_authority": [
+    {
+      "band": "B0",
+      "wavelength_A": [
+        600.0,
+        1000.0
+      ],
+      "J_det": 1.6237890973603676e-06,
+      "J_MC": 1.6248838593209007e-06,
+      "J_CMFGEN": 4.812470338650353e-08,
+      "J_det_over_J_MC": 0.999326252178423,
+      "J_det_over_J_CMFGEN": 33.74128011385844,
+      "J_MC_over_J_CMFGEN": 33.76402855454473,
+      "log10_J_det_over_J_MC": -0.00029270357637984365,
+      "log10_J_det_over_J_CMFGEN": 1.5281615553081964,
+      "log10_J_MC_over_J_CMFGEN": 1.5284542588845764,
+      "d_det": 1.5281615553081964,
+      "d_MC": 1.5284542588845764,
+      "toward_CMFGEN": true,
+      "spectral_det_over_mc": {
+        "median_dex": 0.0013050667378721721,
+        "p10_dex": -0.0028944024120439726,
+        "p90_dex": 0.004364400007000027,
+        "positive_pair_count": 97,
+        "excluded_zero_count": 0
+      },
+      "spectral_det_over_cmfgen": {
+        "median_dex": 1.489588083235862,
+        "p10_dex": 1.2304180390109363,
+        "p90_dex": 1.6581887199750132,
+        "positive_pair_count": 97,
+        "excluded_zero_count": 0
+      },
+      "spectral_mc_over_cmfgen": {
+        "median_dex": 1.4893927901172905,
+        "p10_dex": 1.2244992046418828,
+        "p90_dex": 1.6584536036988575,
+        "positive_pair_count": 97,
+        "excluded_zero_count": 0
+      }
+    },
+    {
+      "band": "B1",
+      "wavelength_A": [
+        1000.0,
+        1500.0
+      ],
+      "J_det": 0.00010008268749612277,
+      "J_MC": 0.00010049207684877895,
+      "J_CMFGEN": 3.108990404312077e-06,
+      "J_det_over_J_MC": 0.9959261529317158,
+      "J_det_over_J_CMFGEN": 32.19137870522568,
+      "J_MC_over_J_CMFGEN": 32.32305789988912,
+      "log10_J_det_over_J_MC": -0.001772862945039804,
+      "log10_J_det_over_J_CMFGEN": 1.507739577221477,
+      "log10_J_MC_over_J_CMFGEN": 1.5095124401665168,
+      "d_det": 1.507739577221477,
+      "d_MC": 1.5095124401665168,
+      "toward_CMFGEN": true,
+      "spectral_det_over_mc": {
+        "median_dex": -0.002321810369529592,
+        "p10_dex": -0.02173998158295168,
+        "p90_dex": 0.04667312695528729,
+        "positive_pair_count": 76,
+        "excluded_zero_count": 0
+      },
+      "spectral_det_over_cmfgen": {
+        "median_dex": 1.5435665628032758,
+        "p10_dex": 1.0923374776786612,
+        "p90_dex": 1.8223004966186798,
+        "positive_pair_count": 76,
+        "excluded_zero_count": 0
+      },
+      "spectral_mc_over_cmfgen": {
+        "median_dex": 1.5470979740524164,
+        "p10_dex": 1.0770927438197972,
+        "p90_dex": 1.8211436180485865,
+        "positive_pair_count": 76,
+        "excluded_zero_count": 0
+      }
+    },
+    {
+      "band": "B2",
+      "wavelength_A": [
+        1500.0,
+        2000.0
+      ],
+      "J_det": 0.00016402472377898323,
+      "J_MC": 0.00016371456191566523,
+      "J_CMFGEN": 2.2196211349837847e-05,
+      "J_det_over_J_MC": 1.0018945282550844,
+      "J_det_over_J_CMFGEN": 7.389762207331906,
+      "J_MC_over_J_CMFGEN": 7.375788567487272,
+      "log10_J_det_over_J_MC": 0.000822004757005532,
+      "log10_J_det_over_J_CMFGEN": 0.8686304636038716,
+      "log10_J_MC_over_J_CMFGEN": 0.8678084588468661,
+      "d_det": 0.8686304636038716,
+      "d_MC": 0.8678084588468661,
+      "toward_CMFGEN": false,
+      "spectral_det_over_mc": {
+        "median_dex": 0.0010388989265125565,
+        "p10_dex": -0.002880067829903478,
+        "p90_dex": 0.0030419113265936775,
+        "positive_pair_count": 55,
+        "excluded_zero_count": 0
+      },
+      "spectral_det_over_cmfgen": {
+        "median_dex": 0.8295303518945453,
+        "p10_dex": 0.7736365819351965,
+        "p90_dex": 1.0637367666162767,
+        "positive_pair_count": 55,
+        "excluded_zero_count": 0
+      },
+      "spectral_mc_over_cmfgen": {
+        "median_dex": 0.8287367930831121,
+        "p10_dex": 0.7721250256931474,
+        "p90_dex": 1.0607269157739632,
+        "positive_pair_count": 55,
+        "excluded_zero_count": 0
+      }
+    },
+    {
+      "band": "B3",
+      "wavelength_A": [
+        2000.0,
+        2500.0
+      ],
+      "J_det": 0.00040424672460186075,
+      "J_MC": 0.0004070615989580901,
+      "J_CMFGEN": 5.8890065117794586e-05,
+      "J_det_over_J_MC": 0.9930848933836198,
+      "J_det_over_J_CMFGEN": 6.864429913488261,
+      "J_MC_over_J_CMFGEN": 6.912228711988465,
+      "log10_J_det_over_J_MC": -0.003013624463170129,
+      "log10_J_det_over_J_CMFGEN": 0.8366044751915829,
+      "log10_J_MC_over_J_CMFGEN": 0.839618099654753,
+      "d_det": 0.8366044751915829,
+      "d_MC": 0.839618099654753,
+      "toward_CMFGEN": true,
+      "spectral_det_over_mc": {
+        "median_dex": 0.001108445615281237,
+        "p10_dex": -0.02296109250630313,
+        "p90_dex": 0.006053697957618506,
+        "positive_pair_count": 42,
+        "excluded_zero_count": 0
+      },
+      "spectral_det_over_cmfgen": {
+        "median_dex": 0.7825362289832357,
+        "p10_dex": 0.746877094781311,
+        "p90_dex": 0.8847669867239826,
+        "positive_pair_count": 42,
+        "excluded_zero_count": 0
+      },
+      "spectral_mc_over_cmfgen": {
+        "median_dex": 0.780507733144386,
+        "p10_dex": 0.7395459611319298,
+        "p90_dex": 0.8589109865318517,
+        "positive_pair_count": 42,
+        "excluded_zero_count": 0
+      }
+    },
+    {
+      "band": "B4",
+      "wavelength_A": [
+        2500.0,
+        3000.0
+      ],
+      "J_det": 0.0013575427344305684,
+      "J_MC": 0.0014195396275590052,
+      "J_CMFGEN": 8.71301887921681e-05,
+      "J_det_over_J_MC": 0.9563260567547208,
+      "J_det_over_J_CMFGEN": 15.580624273278223,
+      "J_MC_over_J_CMFGEN": 16.29216747073781,
+      "log10_J_det_over_J_MC": -0.01939401095950709,
+      "log10_J_det_over_J_CMFGEN": 1.1925848546849647,
+      "log10_J_MC_over_J_CMFGEN": 1.2119788656444719,
+      "d_det": 1.1925848546849647,
+      "d_MC": 1.2119788656444719,
+      "toward_CMFGEN": true,
+      "spectral_det_over_mc": {
+        "median_dex": -0.0007305427778754622,
+        "p10_dex": -0.11647599829864116,
+        "p90_dex": 0.18555919697403464,
+        "positive_pair_count": 34,
+        "excluded_zero_count": 0
+      },
+      "spectral_det_over_cmfgen": {
+        "median_dex": 1.1205287077121668,
+        "p10_dex": 0.7327133891825846,
+        "p90_dex": 1.4972238162835787,
+        "positive_pair_count": 34,
+        "excluded_zero_count": 0
+      },
+      "spectral_mc_over_cmfgen": {
+        "median_dex": 0.9847449201252546,
+        "p10_dex": 0.7119191485452468,
+        "p90_dex": 1.5074081581254462,
+        "positive_pair_count": 34,
+        "excluded_zero_count": 0
+      }
+    },
+    {
+      "band": "BALL",
+      "wavelength_A": [
+        600.0,
+        3000.0
+      ],
+      "J_det": 0.00014453129796175172,
+      "J_MC": 0.00014790638268112036,
+      "J_CMFGEN": 1.2349100694943999e-05,
+      "J_det_over_J_MC": 0.9771809393334623,
+      "J_det_over_J_CMFGEN": 11.703791355505434,
+      "J_MC_over_J_CMFGEN": 11.977097469265642,
+      "log10_J_det_over_J_MC": -0.010025012864208763,
+      "log10_J_det_over_J_CMFGEN": 1.0683265709812027,
+      "log10_J_MC_over_J_CMFGEN": 1.0783515838454114,
+      "d_det": 1.0683265709812027,
+      "d_MC": 1.0783515838454114,
+      "toward_CMFGEN": true,
+      "spectral_det_over_mc": {
+        "median_dex": 0.0010181829358000434,
+        "p10_dex": -0.016683229803582514,
+        "p90_dex": 0.020631063772058995,
+        "positive_pair_count": 304,
+        "excluded_zero_count": 0
+      },
+      "spectral_det_over_cmfgen": {
+        "median_dex": 1.2620286162909808,
+        "p10_dex": 0.775331188511277,
+        "p90_dex": 1.6883223030410457,
+        "positive_pair_count": 304,
+        "excluded_zero_count": 0
+      },
+      "spectral_mc_over_cmfgen": {
+        "median_dex": 1.2589533912815973,
+        "p10_dex": 0.7715840039541384,
+        "p90_dex": 1.689085437959974,
+        "positive_pair_count": 304,
+        "excluded_zero_count": 0
+      }
+    }
+  ],
+  "A_replay": [
+    {
+      "band": "B0",
+      "wavelength_A": [
+        600.0,
+        1000.0
+      ],
+      "J_det": 1.6233485889911864e-06,
+      "J_MC": 1.6248838593209007e-06,
+      "J_CMFGEN": 4.812470338650353e-08,
+      "J_det_over_J_MC": 0.9990551507291383,
+      "J_det_over_J_CMFGEN": 33.73212663678361,
+      "J_MC_over_J_CMFGEN": 33.76402855454473,
+      "log10_J_det_over_J_MC": -0.00041053680282127525,
+      "log10_J_det_over_J_CMFGEN": 1.528043722081755,
+      "log10_J_MC_over_J_CMFGEN": 1.5284542588845764,
+      "d_det": 1.528043722081755,
+      "d_MC": 1.5284542588845764,
+      "toward_CMFGEN": true,
+      "spectral_det_over_mc": {
+        "median_dex": 0.0008948795386097876,
+        "p10_dex": -0.0032640616895253834,
+        "p90_dex": 0.004109429679911107,
+        "positive_pair_count": 97,
+        "excluded_zero_count": 0
+      },
+      "spectral_det_over_cmfgen": {
+        "median_dex": 1.4980859625824936,
+        "p10_dex": 1.2301773105043063,
+        "p90_dex": 1.6577773648504515,
+        "positive_pair_count": 97,
+        "excluded_zero_count": 0
+      },
+      "spectral_mc_over_cmfgen": {
+        "median_dex": 1.4893927901172905,
+        "p10_dex": 1.2244992046418828,
+        "p90_dex": 1.6584536036988575,
+        "positive_pair_count": 97,
+        "excluded_zero_count": 0
+      }
+    },
+    {
+      "band": "B1",
+      "wavelength_A": [
+        1000.0,
+        1500.0
+      ],
+      "J_det": 9.998919741434557e-05,
+      "J_MC": 0.00010049207684877895,
+      "J_CMFGEN": 3.108990404312077e-06,
+      "J_det_over_J_MC": 0.9949958300176229,
+      "J_det_over_J_CMFGEN": 32.16130782380786,
+      "J_MC_over_J_CMFGEN": 32.32305789988912,
+      "log10_J_det_over_J_MC": -0.002178739358928717,
+      "log10_J_det_over_J_CMFGEN": 1.5073337008075882,
+      "log10_J_MC_over_J_CMFGEN": 1.5095124401665168,
+      "d_det": 1.5073337008075882,
+      "d_MC": 1.5095124401665168,
+      "toward_CMFGEN": true,
+      "spectral_det_over_mc": {
+        "median_dex": -0.0024101483800900193,
+        "p10_dex": -0.02244264017751206,
+        "p90_dex": 0.04935164590708035,
+        "positive_pair_count": 76,
+        "excluded_zero_count": 0
+      },
+      "spectral_det_over_cmfgen": {
+        "median_dex": 1.542183814270269,
+        "p10_dex": 1.0912344452961502,
+        "p90_dex": 1.82145526132815,
+        "positive_pair_count": 76,
+        "excluded_zero_count": 0
+      },
+      "spectral_mc_over_cmfgen": {
+        "median_dex": 1.5470979740524164,
+        "p10_dex": 1.0770927438197972,
+        "p90_dex": 1.8211436180485865,
+        "positive_pair_count": 76,
+        "excluded_zero_count": 0
+      }
+    },
+    {
+      "band": "B2",
+      "wavelength_A": [
+        1500.0,
+        2000.0
+      ],
+      "J_det": 0.00016407433204037737,
+      "J_MC": 0.00016371456191566523,
+      "J_CMFGEN": 2.2196211349837847e-05,
+      "J_det_over_J_MC": 1.0021975450473213,
+      "J_det_over_J_CMFGEN": 7.391997195123842,
+      "J_MC_over_J_CMFGEN": 7.375788567487272,
+      "log10_J_det_over_J_MC": 0.0009533345731835668,
+      "log10_J_det_over_J_CMFGEN": 0.8687617934200496,
+      "log10_J_MC_over_J_CMFGEN": 0.8678084588468661,
+      "d_det": 0.8687617934200496,
+      "d_MC": 0.8678084588468661,
+      "toward_CMFGEN": false,
+      "spectral_det_over_mc": {
+        "median_dex": 0.0011850961019784412,
+        "p10_dex": -0.0031756094344463433,
+        "p90_dex": 0.00319963328847767,
+        "positive_pair_count": 55,
+        "excluded_zero_count": 0
+      },
+      "spectral_det_over_cmfgen": {
+        "median_dex": 0.8297632275414568,
+        "p10_dex": 0.7738881179902958,
+        "p90_dex": 1.0638335648140342,
+        "positive_pair_count": 55,
+        "excluded_zero_count": 0
+      },
+      "spectral_mc_over_cmfgen": {
+        "median_dex": 0.8287367930831121,
+        "p10_dex": 0.7721250256931474,
+        "p90_dex": 1.0607269157739632,
+        "positive_pair_count": 55,
+        "excluded_zero_count": 0
+      }
+    },
+    {
+      "band": "B3",
+      "wavelength_A": [
+        2000.0,
+        2500.0
+      ],
+      "J_det": 0.00040436333318423615,
+      "J_MC": 0.0004070615989580901,
+      "J_CMFGEN": 5.8890065117794586e-05,
+      "J_det_over_J_MC": 0.9933713576010107,
+      "J_det_over_J_CMFGEN": 6.8664100196766675,
+      "J_MC_over_J_CMFGEN": 6.912228711988465,
+      "log10_J_det_over_J_MC": -0.0028883664015578116,
+      "log10_J_det_over_J_CMFGEN": 0.8367297332531951,
+      "log10_J_MC_over_J_CMFGEN": 0.839618099654753,
+      "d_det": 0.8367297332531951,
+      "d_MC": 0.839618099654753,
+      "toward_CMFGEN": true,
+      "spectral_det_over_mc": {
+        "median_dex": 0.001150802033415637,
+        "p10_dex": -0.023966640703741472,
+        "p90_dex": 0.0062323991022989,
+        "positive_pair_count": 42,
+        "excluded_zero_count": 0
+      },
+      "spectral_det_over_cmfgen": {
+        "median_dex": 0.7826184283143842,
+        "p10_dex": 0.7476366413163755,
+        "p90_dex": 0.8847366111793936,
+        "positive_pair_count": 42,
+        "excluded_zero_count": 0
+      },
+      "spectral_mc_over_cmfgen": {
+        "median_dex": 0.780507733144386,
+        "p10_dex": 0.7395459611319298,
+        "p90_dex": 0.8589109865318517,
+        "positive_pair_count": 42,
+        "excluded_zero_count": 0
+      }
+    },
+    {
+      "band": "B4",
+      "wavelength_A": [
+        2500.0,
+        3000.0
+      ],
+      "J_det": 0.0013463565706842487,
+      "J_MC": 0.0014195396275590052,
+      "J_CMFGEN": 8.71301887921681e-05,
+      "J_det_over_J_MC": 0.9484459218651051,
+      "J_det_over_J_CMFGEN": 15.452239795964601,
+      "J_MC_over_J_CMFGEN": 16.29216747073781,
+      "log10_J_det_over_J_MC": -0.02298742650975937,
+      "log10_J_det_over_J_CMFGEN": 1.1889914391347125,
+      "log10_J_MC_over_J_CMFGEN": 1.2119788656444719,
+      "d_det": 1.1889914391347125,
+      "d_MC": 1.2119788656444719,
+      "toward_CMFGEN": true,
+      "spectral_det_over_mc": {
+        "median_dex": -0.00032518332954576583,
+        "p10_dex": -0.11772370624496704,
+        "p90_dex": 0.192602501257679,
+        "positive_pair_count": 34,
+        "excluded_zero_count": 0
+      },
+      "spectral_det_over_cmfgen": {
+        "median_dex": 1.1266634496661256,
+        "p10_dex": 0.7402155411425728,
+        "p90_dex": 1.4965673836037316,
+        "positive_pair_count": 34,
+        "excluded_zero_count": 0
+      },
+      "spectral_mc_over_cmfgen": {
+        "median_dex": 0.9847449201252546,
+        "p10_dex": 0.7119191485452468,
+        "p90_dex": 1.5074081581254462,
+        "positive_pair_count": 34,
+        "excluded_zero_count": 0
+      }
+    },
+    {
+      "band": "BALL",
+      "wavelength_A": [
+        600.0,
+        3000.0
+      ],
+      "J_det": 0.00014396334367615927,
+      "J_MC": 0.00014790638268112036,
+      "J_CMFGEN": 1.2349100694943999e-05,
+      "J_det_over_J_MC": 0.9733409814134789,
+      "J_det_over_J_CMFGEN": 11.657799805219915,
+      "J_MC_over_J_CMFGEN": 11.977097469265642,
+      "log10_J_det_over_J_MC": -0.011734990765126163,
+      "log10_J_det_over_J_CMFGEN": 1.0666165930802853,
+      "log10_J_MC_over_J_CMFGEN": 1.0783515838454114,
+      "d_det": 1.0666165930802853,
+      "d_MC": 1.0783515838454114,
+      "toward_CMFGEN": true,
+      "spectral_det_over_mc": {
+        "median_dex": 0.0009563326642369691,
+        "p10_dex": -0.017118653350811235,
+        "p90_dex": 0.023749964489445743,
+        "positive_pair_count": 304,
+        "excluded_zero_count": 0
+      },
+      "spectral_det_over_cmfgen": {
+        "median_dex": 1.2611408940680455,
+        "p10_dex": 0.7753690438284188,
+        "p90_dex": 1.6882683432365644,
+        "positive_pair_count": 304,
+        "excluded_zero_count": 0
+      },
+      "spectral_mc_over_cmfgen": {
+        "median_dex": 1.2589533912815973,
+        "p10_dex": 0.7715840039541384,
+        "p90_dex": 1.689085437959974,
+        "positive_pair_count": 304,
+        "excluded_zero_count": 0
+      }
+    }
+  ],
+  "B": [
+    {
+      "band": "B0",
+      "wavelength_A": [
+        600.0,
+        1000.0
+      ],
+      "J_det": 1.6359771188449258e-06,
+      "J_MC": 1.6248838593209007e-06,
+      "J_CMFGEN": 4.812470338650353e-08,
+      "J_det_over_J_MC": 1.0068271091871523,
+      "J_det_over_J_CMFGEN": 33.99453926408473,
+      "J_MC_over_J_CMFGEN": 33.76402855454473,
+      "log10_J_det_over_J_MC": 0.002954900571087298,
+      "log10_J_det_over_J_CMFGEN": 1.5314091594556636,
+      "log10_J_MC_over_J_CMFGEN": 1.5284542588845764,
+      "d_det": 1.5314091594556636,
+      "d_MC": 1.5284542588845764,
+      "toward_CMFGEN": false,
+      "spectral_det_over_mc": {
+        "median_dex": -0.0003177741899366218,
+        "p10_dex": -0.007997209047324432,
+        "p90_dex": 0.005184492306952592,
+        "positive_pair_count": 97,
+        "excluded_zero_count": 0
+      },
+      "spectral_det_over_cmfgen": {
+        "median_dex": 1.4909915790847632,
+        "p10_dex": 1.2244392872028758,
+        "p90_dex": 1.653645864335059,
+        "positive_pair_count": 97,
+        "excluded_zero_count": 0
+      },
+      "spectral_mc_over_cmfgen": {
+        "median_dex": 1.4893927901172905,
+        "p10_dex": 1.2244992046418828,
+        "p90_dex": 1.6584536036988575,
+        "positive_pair_count": 97,
+        "excluded_zero_count": 0
+      }
+    },
+    {
+      "band": "B1",
+      "wavelength_A": [
+        1000.0,
+        1500.0
+      ],
+      "J_det": 9.77453853336135e-05,
+      "J_MC": 0.00010049207684877895,
+      "J_CMFGEN": 3.108990404312077e-06,
+      "J_det_over_J_MC": 0.97266758135272,
+      "J_det_over_J_CMFGEN": 31.43959054940908,
+      "J_MC_over_J_CMFGEN": 32.32305789988912,
+      "log10_J_det_over_J_MC": -0.012035558756212974,
+      "log10_J_det_over_J_CMFGEN": 1.4974768814103039,
+      "log10_J_MC_over_J_CMFGEN": 1.5095124401665168,
+      "d_det": 1.4974768814103039,
+      "d_MC": 1.5095124401665168,
+      "toward_CMFGEN": true,
+      "spectral_det_over_mc": {
+        "median_dex": -0.0033681438739109823,
+        "p10_dex": -0.05058477779978798,
+        "p90_dex": 0.0704142658225644,
+        "positive_pair_count": 76,
+        "excluded_zero_count": 0
+      },
+      "spectral_det_over_cmfgen": {
+        "median_dex": 1.5151977517412745,
+        "p10_dex": 1.0862951391382127,
+        "p90_dex": 1.8077990209414243,
+        "positive_pair_count": 76,
+        "excluded_zero_count": 0
+      },
+      "spectral_mc_over_cmfgen": {
+        "median_dex": 1.5470979740524164,
+        "p10_dex": 1.0770927438197972,
+        "p90_dex": 1.8211436180485865,
+        "positive_pair_count": 76,
+        "excluded_zero_count": 0
+      }
+    },
+    {
+      "band": "B2",
+      "wavelength_A": [
+        1500.0,
+        2000.0
+      ],
+      "J_det": 0.0001616611644207985,
+      "J_MC": 0.00016371456191566523,
+      "J_CMFGEN": 2.2196211349837847e-05,
+      "J_det_over_J_MC": 0.987457453565282,
+      "J_det_over_J_CMFGEN": 7.283277396886901,
+      "J_MC_over_J_CMFGEN": 7.375788567487272,
+      "log10_J_det_over_J_MC": -0.005481607681137136,
+      "log10_J_det_over_J_CMFGEN": 0.8623268511657289,
+      "log10_J_MC_over_J_CMFGEN": 0.8678084588468661,
+      "d_det": 0.8623268511657289,
+      "d_MC": 0.8678084588468661,
+      "toward_CMFGEN": true,
+      "spectral_det_over_mc": {
+        "median_dex": -0.002223239985369838,
+        "p10_dex": -0.014323107157671324,
+        "p90_dex": 0.002515281943497494,
+        "positive_pair_count": 55,
+        "excluded_zero_count": 0
+      },
+      "spectral_det_over_cmfgen": {
+        "median_dex": 0.8265961069994054,
+        "p10_dex": 0.7682065624080827,
+        "p90_dex": 1.0657460474044176,
+        "positive_pair_count": 55,
+        "excluded_zero_count": 0
+      },
+      "spectral_mc_over_cmfgen": {
+        "median_dex": 0.8287367930831121,
+        "p10_dex": 0.7721250256931474,
+        "p90_dex": 1.0607269157739632,
+        "positive_pair_count": 55,
+        "excluded_zero_count": 0
+      }
+    },
+    {
+      "band": "B3",
+      "wavelength_A": [
+        2000.0,
+        2500.0
+      ],
+      "J_det": 0.00040629281861883753,
+      "J_MC": 0.0004070615989580901,
+      "J_CMFGEN": 5.8890065117794586e-05,
+      "J_det_over_J_MC": 0.9981113906563027,
+      "J_det_over_J_CMFGEN": 6.899174212257232,
+      "J_MC_over_J_CMFGEN": 6.912228711988465,
+      "log10_J_det_over_J_MC": -0.0008209881236181603,
+      "log10_J_det_over_J_CMFGEN": 0.8387971115311348,
+      "log10_J_MC_over_J_CMFGEN": 0.839618099654753,
+      "d_det": 0.8387971115311348,
+      "d_MC": 0.839618099654753,
+      "toward_CMFGEN": true,
+      "spectral_det_over_mc": {
+        "median_dex": -0.0014407691815852505,
+        "p10_dex": -0.029335896286534185,
+        "p90_dex": 0.01102497656955863,
+        "positive_pair_count": 42,
+        "excluded_zero_count": 0
+      },
+      "spectral_det_over_cmfgen": {
+        "median_dex": 0.7791325585330218,
+        "p10_dex": 0.7494734890969885,
+        "p90_dex": 0.8930466695433884,
+        "positive_pair_count": 42,
+        "excluded_zero_count": 0
+      },
+      "spectral_mc_over_cmfgen": {
+        "median_dex": 0.780507733144386,
+        "p10_dex": 0.7395459611319298,
+        "p90_dex": 0.8589109865318517,
+        "positive_pair_count": 42,
+        "excluded_zero_count": 0
+      }
+    },
+    {
+      "band": "B4",
+      "wavelength_A": [
+        2500.0,
+        3000.0
+      ],
+      "J_det": 0.0012982761005686486,
+      "J_MC": 0.0014195396275590052,
+      "J_CMFGEN": 8.71301887921681e-05,
+      "J_det_over_J_MC": 0.9145754548614627,
+      "J_det_over_J_CMFGEN": 14.900416475229159,
+      "J_MC_over_J_CMFGEN": 16.29216747073781,
+      "log10_J_det_over_J_MC": -0.03878045828145292,
+      "log10_J_det_over_J_CMFGEN": 1.173198407363019,
+      "log10_J_MC_over_J_CMFGEN": 1.2119788656444719,
+      "d_det": 1.173198407363019,
+      "d_MC": 1.2119788656444719,
+      "toward_CMFGEN": true,
+      "spectral_det_over_mc": {
+        "median_dex": -0.009253715885720347,
+        "p10_dex": -0.20498474641395445,
+        "p90_dex": 0.25636776739816247,
+        "positive_pair_count": 34,
+        "excluded_zero_count": 0
+      },
+      "spectral_det_over_cmfgen": {
+        "median_dex": 1.038093746103264,
+        "p10_dex": 0.7439790591432045,
+        "p90_dex": 1.51210874929436,
+        "positive_pair_count": 34,
+        "excluded_zero_count": 0
+      },
+      "spectral_mc_over_cmfgen": {
+        "median_dex": 0.9847449201252546,
+        "p10_dex": 0.7119191485452468,
+        "p90_dex": 1.5074081581254462,
+        "positive_pair_count": 34,
+        "excluded_zero_count": 0
+      }
+    },
+    {
+      "band": "BALL",
+      "wavelength_A": [
+        600.0,
+        3000.0
+      ],
+      "J_det": 0.00014084774687027089,
+      "J_MC": 0.00014790638268112036,
+      "J_CMFGEN": 1.2349100694943999e-05,
+      "J_det_over_J_MC": 0.9522763272084912,
+      "J_det_over_J_CMFGEN": 11.405506388650402,
+      "J_MC_over_J_CMFGEN": 11.977097469265642,
+      "log10_J_det_over_J_MC": -0.021237011732578946,
+      "log10_J_det_over_J_CMFGEN": 1.0571145721128326,
+      "log10_J_MC_over_J_CMFGEN": 1.0783515838454114,
+      "d_det": 1.0571145721128326,
+      "d_MC": 1.0783515838454114,
+      "toward_CMFGEN": true,
+      "spectral_det_over_mc": {
+        "median_dex": -0.001422582734680183,
+        "p10_dex": -0.039929064589005574,
+        "p90_dex": 0.030218705038336225,
+        "positive_pair_count": 304,
+        "excluded_zero_count": 0
+      },
+      "spectral_det_over_cmfgen": {
+        "median_dex": 1.252070669102895,
+        "p10_dex": 0.7723547653947764,
+        "p90_dex": 1.685305652783368,
+        "positive_pair_count": 304,
+        "excluded_zero_count": 0
+      },
+      "spectral_mc_over_cmfgen": {
+        "median_dex": 1.2589533912815973,
+        "p10_dex": 0.7715840039541384,
+        "p90_dex": 1.689085437959974,
+        "positive_pair_count": 304,
+        "excluded_zero_count": 0
+      }
+    }
+  ]
+}

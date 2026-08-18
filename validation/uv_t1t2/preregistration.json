@@ -1,0 +1,37 @@
+{
+  "schema": "lumina-uv-t1t2-preregistration-v1",
+  "status": "FROZEN-BEFORE-T1-T2-CONSTRUCTION-AND-STAGE31-MEASUREMENT",
+  "date_kst": "2026-08-02",
+  "scope": {
+    "shell": 8,
+    "n_mu": 16,
+    "T_inner_K": 10020.0,
+    "bb_scale": 1.0,
+    "production_code_modified": false,
+    "new_model_or_gpu_run": false,
+    "clamp_floor_fallback": false
+  },
+  "inputs": {
+    "fluormat_chieta_sha256": "894a4ee805c1640d4e28d9c1c9ad9e3591fd845ee78bce1c3e83c8048863d5dc",
+    "fluormat_A_sha256": "894a4ee805c1640d4e28d9c1c9ad9e3591fd845ee78bce1c3e83c8048863d5dc",
+    "fluormat_B2_sha256": "62159e14f8ef828961e957c1f0697c69b1562c77040467aeecd072d947360d1d",
+    "fluor_matrix_sha256": "08ff331222f5ddfadac62e1c716963c22aaf0986e0dbd3615b46145e46735af6",
+    "e9_same_capture_sha256": "0bd71b413e77d49382b85e188988d2750fcd5bcd38ead800fc2faf2640b6d5e0"
+  },
+  "T1": {
+    "single_factor": "replace same-bin nonthermal line return at shell 8 by a uniform energy-conserving redistribution operator; all other payload cells and chi_total remain frozen",
+    "operator": "R[j,i]=1/1000 for every input i and every canonical output bin j; no outside-grid loss",
+    "eps_MC": 0.0024368222433042742,
+    "prediction_before_measurement": "Removing same-bin reinforcement should lower the extreme B0/B1 shape error relative to E9 and avoid the B2-to-B0 spike seen with E10/E12. Optical is expected to rise because equal log-bin probability gives substantial non-UV destinations.",
+    "shape_improvement_gate": "both abs(log10(B0/CMFGEN)) and abs(log10(B1/CMFGEN)) are smaller than the E9 values",
+    "readout_if_gate_passes": "R_SHAPE_IS_THE_PROBLEM",
+    "readout_if_gate_fails": "SAME_BIN_COHERENCE_ASSUMPTION_IS_THE_PROBLEM"
+  },
+  "T2": {
+    "single_factor": "replace both line chi and line eta by population-native assembly while retaining population, continuum, grid, EPAY, boundary, and solver",
+    "prediction_before_measurement": "BALL should collapse from the A-lane 11.70379136 times CMFGEN to order unity when native chi and eta are paired.",
+    "amplitude_confirmation_gate": "0.3333333333333333 <= BALL/CMFGEN <= 3.0",
+    "residual_shape_gate_after_collapse": "after BALL passes, any B0 or B1 outside [1/3,3] is classified as a separated shape residual",
+    "readout_if_exact_native_input_is_absent_or_solver_fails": "UNRESOLVED"
+  }
+}

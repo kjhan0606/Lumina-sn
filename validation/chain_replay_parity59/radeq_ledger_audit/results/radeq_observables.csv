@@ -1,0 +1,8 @@
+quantity,value,unit,source_file,source_field
+s0_T_e,21227.639444,K,/gpfs/kjhan/lumina_runner2/scratch/instr_capture_188932/lumina_plasma_state.csv,T_e
+s0_n_e,4627433000.0,cm^-3,/gpfs/kjhan/lumina_runner2/scratch/instr_capture_188932/lumina_plasma_state.csv,n_e
+s0_u_mc,1749.06790412017,erg cm^-3,/gpfs/kjhan/lumina_runner2/scratch/instr_capture_188932/lumina_coevolve_field.csv,wavelength_A; mc_J
+s0_u_cs,2675.6022754810065,erg cm^-3,/gpfs/kjhan/lumina_runner2/scratch/instr_capture_188932/lumina_coevolve_field.csv,wavelength_A; cs_J
+s0_bath_equivalent_T_from_mc,21927.51357345116,K,/gpfs/kjhan/lumina_runner2/scratch/instr_capture_188932/lumina_coevolve_field.csv,wavelength_A; mc_J
+TEHOLD_records_all_shells,600,count,/gpfs/kjhan/lumina_runner2/scratch/instr_capture_188932/stdout.log,[TEHOLD]
+TEHOLD_root_found_all_shells,600,count,/gpfs/kjhan/lumina_runner2/scratch/instr_capture_188932/stdout.log,radeq_root

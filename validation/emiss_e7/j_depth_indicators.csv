@@ -1,0 +1,13 @@
+band,inner_shell,outer_shell,delta_ln_J_producer,delta_ln_J_CMFGEN,caveat
+B0,0,8,-4.3711972414188685,-6.707005306600821,effective depth indicator only; geometry and distributed source are entangled
+B0,8,20,-4.531566392872653,2.0996414920427147,effective depth indicator only; geometry and distributed source are entangled
+B1,0,8,-2.38710653897745,-4.647499897176415,effective depth indicator only; geometry and distributed source are entangled
+B1,8,20,-3.4313826029018317,-0.12159849501175571,effective depth indicator only; geometry and distributed source are entangled
+B2,0,8,-2.444464399563769,-3.495073200215277,effective depth indicator only; geometry and distributed source are entangled
+B2,8,20,-3.2866369796082964,1.1221238003053133,effective depth indicator only; geometry and distributed source are entangled
+B3,0,8,-2.16864328748716,-2.7822719334712924,effective depth indicator only; geometry and distributed source are entangled
+B3,8,20,-3.329857284090346,-0.923470628808961,effective depth indicator only; geometry and distributed source are entangled
+B4,0,8,-1.0790707712010463,-2.45738470712151,effective depth indicator only; geometry and distributed source are entangled
+B4,8,20,-3.0488648195848245,-2.150767870414997,effective depth indicator only; geometry and distributed source are entangled
+BALL,0,8,-1.959352818886814,-3.2371274770198997,effective depth indicator only; geometry and distributed source are entangled
+BALL,8,20,-3.197457438942779,-0.05678307729086991,effective depth indicator only; geometry and distributed source are entangled

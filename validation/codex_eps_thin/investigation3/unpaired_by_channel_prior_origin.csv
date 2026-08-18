@@ -1,0 +1,3 @@
+chan,channel_name,prior_origin_since_terminal,missing_events,missing_energy,fraction_of_all_missing_energy
+0x12,KPKT_COLLEXC,BF_ABSORPTION,496784,3.6914270899804933,0.9996464997020355
+0x12,KPKT_COLLEXC,OTHER_NONTERMINAL,166,0.0013053820291588636,0.00035350029796457226

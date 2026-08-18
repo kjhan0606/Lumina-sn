@@ -1,0 +1,83 @@
+{
+  "schema": "lumina-cmfgen-lineheat-finite-reference-v1",
+  "source": {
+    "code": "CMFGEN",
+    "model": "toy06_19p48d_ophys",
+    "lineheat": "/gpfs/kjhan/cmfgen_runs/toy06_19p48d_ophys/LINEHEAT",
+    "lineheat_sha256": "e533a503d00ce616982ac5346a0c219afb18a90352e5e1d2bb73dd9e2c3b59c8",
+    "state_vector": "/gpfs/kjhan/cmfgen_runs/toy06_19p48d_ophys/RVTJ",
+    "state_vector_sha256": "893775d9ccc37edd7e9c99a5343b6e975cab5c2054bc2a2e89dce4f32459f715",
+    "depth_count": 90,
+    "depth_indexing": "CMFGEN_ONE_BASED"
+  },
+  "observable": {
+    "name": "signed_total_line_heating",
+    "equation": "sum_scaled_LINEHEAT*4*pi*1e-10",
+    "units": "erg cm^-3 s^-1",
+    "summation": "ONLINE_NONOVERLAPPING_BINARY64_PARTIALS",
+    "line_records": 789775
+  },
+  "depths": {
+    "67": {
+      "velocity_km_s": 4394.1823505,
+      "temperature_K": 18842.362,
+      "electron_density_cm3": 4852199200.0,
+      "atom_density_cm3": 1615020400.0,
+      "ion_density_cm3": 1615020400.0,
+      "mass_density_g_cm3": 1.4997039e-13,
+      "signed_internal": 1236530.6188519737,
+      "signed_cgs_erg_cm3_s": 0.0015538702032496805,
+      "absolute_internal": 51699130.66511138,
+      "cancellation_condition": 41.80982652343066,
+      "positive_count": 561264,
+      "negative_count": 228511,
+      "zero_count": 0,
+      "max_absolute_internal": 601260.0,
+      "max_absolute_line_id": 77199
+    },
+    "68": {
+      "velocity_km_s": 4092.3914953,
+      "temperature_K": 19345.529,
+      "electron_density_cm3": 5398292200.0,
+      "atom_density_cm3": 1792443700.0,
+      "ion_density_cm3": 1792443700.0,
+      "mass_density_g_cm3": 1.6644587e-13,
+      "signed_internal": 1408154.2604328608,
+      "signed_cgs_erg_cm3_s": 0.0017695388318788178,
+      "absolute_internal": 60229625.16190727,
+      "cancellation_condition": 42.77203631326083,
+      "positive_count": 563312,
+      "negative_count": 226463,
+      "zero_count": 0,
+      "max_absolute_internal": 895620.0,
+      "max_absolute_line_id": 77199
+    }
+  },
+  "shell_zero_velocity_interpolation": {
+    "lumina_velocity_km_s": 4264.0,
+    "fraction_from_depth_67_to_68": 0.4313661207982156,
+    "temperature_K": 19059.411196903676,
+    "electron_density_cm3": 5087765219.00506,
+    "atom_density_cm3": 1691554800.660218,
+    "ion_density_cm3": 1691554800.660218,
+    "mass_density_g_cm3": 1.570773538958886e-13,
+    "lumina_input_mass_density_g_cm3": 1.5687692791189745e-13,
+    "cmfgen_to_lumina_mass_density_ratio": 1.0012776001331676,
+    "signed_cgs_erg_cm3_s": 0.0016469023429593024,
+    "interpretation": "FINITE_SCALE_ONLY_NOT_SAME_STATE_PARITY"
+  },
+  "comparison_scope": {
+    "same_signed_observable": true,
+    "matched_temperature": false,
+    "matched_state": false,
+    "parity_claim": false,
+    "reason": "CMFGEN depths 67/68 are 18.842362/19.345529 kK; the current Lumina bracket endpoints are 3.5/140 kK."
+  },
+  "physical_mutation": 0,
+  "floor": 0,
+  "cap": 0,
+  "clamp": 0,
+  "jitter": 0,
+  "repair": 0,
+  "verdict": "FINITE_REFERENCE_REPRODUCED_MATCHED_STATE_PENDING"
+}

@@ -1,0 +1,126 @@
+[known-answer] Milne integral, H 1s, sigma=6.304e-18 (nu_th/nu)^3, T=1e4 K: alpha = 1.552e-13 cm^3/s   (literature alpha_1s ~ 1.58e-13)
+
+======================================================================================================================
+GROUND-LEVEL THRESHOLD CROSS-SECTION AND MILNE alpha(1e4 K), source by source
+  alpha uses ONE fixed g_l/g_ion per ion (CMFGEN 19apr23 values) so it varies only with sigma.
+======================================================================================================================
+ion      source     cfg/shell                lam_th(A)   type  sig_th(Mb)      I_grid   alpha_gnd
+Ni II    CMF-run     3d9_2De[5/2]                 682.4      1      3.4291  1.2858e-02  2.2814e-14
+Ni II    CMF-19apr23 3d9_2De[5/2]                 682.4     20      2.4896  5.3941e+00  3.0631e-14
+Ni II    ARTIS       level 1 (g=6)                682.4     50      7.2112  3.3019e-02  6.8952e-14
+Ni II    VY95        shell 6 (Eth=18.2 eV)        682.4      0      0.0000  2.1230e-01  5.4586e-14
+         (g_l/g_ion used = 0.2857; CMFGEN 19apr23 g_l=6 g_ion=21)
+
+Ni III   CMF-run     3d8_3Fe[4]                   352.4      1      1.6422  1.0009e-02  4.6101e-14
+Ni III   CMF-19apr23 3d8_3Fe[4]                   352.4      1      1.6422  1.0009e-02  4.6101e-14
+Ni III   ARTIS       level 1 (g=9)                351.0     50      9.3381  2.8897e-02  2.6864e-13
+Ni III   VY95        shell 6 (Eth=35.3 eV)        352.4      0      0.0000  1.6547e-01  2.3358e-13
+         (g_l/g_ion used = 0.3214; CMFGEN 19apr23 g_l=9 g_ion=28)
+
+Co II    CMF-run     3d8_a3Fe[4]                  725.7      1      3.5380  1.2603e-02  2.3415e-14
+Co II    CMF-19apr23 3d8_3Fe[4]                   725.7     20      3.6551  2.0395e-01  6.1228e-14
+Co II    ARTIS       level 1 (g=9)                725.9     50      7.5922  2.9869e-02  7.0420e-14
+Co II    VY95        shell 6 (Eth=17.1 eV)        725.7      0      7.5941  2.0079e-01  5.8349e-14
+         (g_l/g_ion used = 0.3214; CMFGEN 19apr23 g_l=9 g_ion=28)
+
+Co III   CMF-run     3d7_a4Fe[9/2]                370.1      1      1.6826  9.9493e-03  5.3283e-14
+Co III   CMF-19apr23 3d7_a4Fe[9/2]                370.1      9      6.4570  1.6069e-01  2.2819e-13
+Co III   ARTIS       level 1 (g=10)               370.1     50      6.4567  3.1798e-02  2.8252e-13
+Co III   VY95        shell 6 (Eth=33.5 eV)        370.1      0      6.4570  1.5580e-01  2.2824e-13
+         (g_l/g_ion used = 0.4000; CMFGEN 19apr23 g_l=10 g_ion=25)
+
+Fe II    CMF-run     3d6(5D)4s_a6De[9/2]          765.9     20      1.7980  6.7133e-02  1.7074e-14
+Fe II    CMF-19apr23 3d6(5D)4s_a6De[9/2]          765.9     20      1.7980  6.7133e-02  1.7074e-14
+Fe II    ARTIS       level 1 (g=10)               765.8     50      0.3985  2.5021e-02  4.7308e-14
+Fe II    VY95        shell 6 (Eth=21.9 eV)        765.9      0      0.0000  1.5793e-01  1.2056e-16
+Fe II    VFKY96      valence shell (Cloudy)       765.9      0      0.3987  1.7471e-01  4.1629e-15
+         (g_l/g_ion used = 0.4000; CMFGEN 19apr23 g_l=10 g_ion=25)
+
+Fe III   CMF-run     3d6_5De[4]                   404.5     20      2.4910  7.3748e-02  3.7442e-13
+Fe III   CMF-19apr23 3d6_5De[4]                   404.5     20      2.4910  7.3748e-02  3.7442e-13
+Fe III   ARTIS       level 1 (g=9)                404.5     50      3.0187  3.1830e-02  9.4990e-13
+Fe III   VY95        shell 6 (Eth=30.6 eV)        404.5      0     10.5357  1.4658e-01  1.0638e-12
+Fe III   VFKY96      valence shell (Cloudy)       404.5      0      3.0201  1.5997e-01  4.6847e-13
+         (g_l/g_ion used = 1.5000; CMFGEN 19apr23 g_l=9 g_ion=6)
+
+Ca III   CMF-run     3s2_3p6_1Se[0]               243.5     20      9.6080  3.1581e-02  2.5555e-13
+Ca III   CMF-19apr23 3s2_3p6_1Se[0]               243.5     20      9.6080  3.1581e-02  2.5555e-13
+Ca III   ARTIS       level 1 (g=1)                243.5     50      7.8071  6.9577e-03  9.5406e-14
+Ca III   VY95        shell 5 (Eth=50.9 eV)        243.5      0      0.0000  2.1960e-02  2.8551e-14
+Ca III   VFKY96      valence shell (Cloudy)       243.5      0      7.8074  2.9632e-02  2.2084e-13
+         (g_l/g_ion used = 0.1667; CMFGEN 19apr23 g_l=1 g_ion=6)
+
+Ca IV    CMF-run     3s2_3p5_2Po[3/2]             184.8     20      0.6693  1.7044e-02  9.3885e-14
+Ca IV    CMF-19apr23 3s2_3p5_2Po[3/2]             184.8     20      0.6693  1.7044e-02  9.3885e-14
+Ca IV    ARTIS       level 1 (g=4)                184.3     50      0.6876  5.4017e-03  1.3522e-13
+Ca IV    VY95        shell 5 (Eth=67.3 eV)        184.8      0      0.0000  1.7019e-02  1.4697e-13
+Ca IV    VFKY96      valence shell (Cloudy)       184.8      0      0.7014  1.6873e-02  9.5476e-14
+         (g_l/g_ion used = 0.4444; CMFGEN 19apr23 g_l=4 g_ion=9)
+
+Ca V     CMF-run     3s2_3p4_3Pe[2]               146.9     20      1.4840  1.3284e-02  8.7987e-13
+Ca V     CMF-19apr23 3s2_3p4_3Pe[2]               146.9     20      1.4840  1.3284e-02  8.7987e-13
+Ca V     ARTIS       level 1 (g=5)                146.7     50      1.4999  4.3839e-03  8.3450e-13
+Ca V     VY95        shell 5 (Eth=84.5 eV)        146.9      0      0.0000  1.0651e-02  7.1397e-13
+Ca V     VFKY96      valence shell (Cloudy)       146.9      0      1.5156  1.2797e-02  8.9776e-13
+         (g_l/g_ion used = 1.2500; CMFGEN 19apr23 g_l=5 g_ion=4)
+
+S IV     CMF-run     3s2_3p_2Po[1/2]              262.6     20      0.3883  1.0422e-02  1.3621e-13
+S IV     CMF-19apr23 3s2_3p_2Po[1/2]              262.6     20      0.3820  1.0412e-02  1.3434e-13
+S IV     ARTIS       level 1 (g=2)                262.1     50      0.3606  2.0733e-03  2.0185e-13
+S IV     VY95        shell 5 (Eth=47.3 eV)        262.6      0      0.0000  4.7199e-03  1.0012e-13
+S IV     VFKY96      valence shell (Cloudy)       262.6      0      0.3579  1.0853e-02  1.2807e-13
+         (g_l/g_ion used = 2.0000; CMFGEN 19apr23 g_l=2 g_ion=1)
+
+S V      CMF-run     3s2_1Se[0]                   170.8     20      0.4499  4.1506e-03  8.3043e-14
+S V      CMF-19apr23 3s2_1Se[0]                   170.8     20      0.4809  4.1459e-03  8.4573e-14
+S V      ARTIS       level 1 (g=1)                169.8     50      0.4421  1.1060e-03  7.5024e-14
+S V      VY95        shell 4 (Eth=72.7 eV)        170.8      0      0.0000  4.4301e-03  8.9457e-14
+S V      VFKY96      valence shell (Cloudy)       170.8      0      0.4425  4.1617e-03  8.3503e-14
+         (g_l/g_ion used = 0.5000; CMFGEN 19apr23 g_l=1 g_ion=2)
+
+Si IV    CMF-run     3s2Se[0.5]                   274.7     20      0.3035  3.3672e-03  8.9606e-14
+Si IV    CMF-19apr23 3s_2Se[1/2]                  274.7     20      0.3035  3.3672e-03  8.9606e-14
+Si IV    ARTIS       level 1 (g=2)                274.7     50      0.3139  5.5873e-04  7.4159e-14
+Si IV    VY95        shell 4 (Eth=45.1 eV)        274.7      0      0.3139  3.0132e-03  9.1932e-14
+Si IV    VFKY96      valence shell (Cloudy)       274.7      0      0.3139  3.0132e-03  9.1932e-14
+         (g_l/g_ion used = 2.0000; CMFGEN 19apr23 g_l=2 g_ion=1)
+
+======================================================================================================================
+TOTAL (all-level) RECOMBINATION ANCHORS  --  independent of the sigma tables above
+======================================================================================================================
+
+  ALL-LEVEL Milne sum over the CMFGEN sigma tables themselves (no DR, no levels above the file):
+  CMF-sum Ni II   run-vintage  alpha_sum(1e4 K) = 2.7325e-12 cm^3/s (1000 levels summed, 0 skipped, g_ion=18)
+  CMF-sum Ni II   19apr23      alpha_sum(1e4 K) = 2.3703e-12 cm^3/s (954 levels summed, 46 skipped, g_ion=21)
+  CMF-sum Ni III  run-vintage  alpha_sum(1e4 K) = 5.4128e-12 cm^3/s (1000 levels summed, 0 skipped, g_ion=28)
+  CMF-sum Ni III  19apr23      alpha_sum(1e4 K) = 5.4128e-12 cm^3/s (1000 levels summed, 0 skipped, g_ion=28)
+  CMF-sum Co II   run-vintage  alpha_sum(1e4 K) = 2.8350e-12 cm^3/s (1000 levels summed, 0 skipped, g_ion=28)
+  CMF-sum Co II   19apr23      alpha_sum(1e4 K) = 3.7651e-13 cm^3/s (53 levels summed, 2694 skipped, g_ion=28)
+  CMF-sum Co III  run-vintage  alpha_sum(1e4 K) = 7.5588e-12 cm^3/s (1000 levels summed, 0 skipped, g_ion=25)
+  CMF-sum Co III  19apr23      alpha_sum(1e4 K) = 1.7490e-12 cm^3/s (580 levels summed, 3337 skipped, g_ion=25)
+  CMF-sum Fe II   run-vintage  alpha_sum(1e4 K) = 1.0591e-12 cm^3/s (603 levels summed, 2095 skipped, g_ion=25)
+  CMF-sum Fe II   19apr23      alpha_sum(1e4 K) = 1.0591e-12 cm^3/s (603 levels summed, 2095 skipped, g_ion=25)
+  CMF-sum Fe III  run-vintage  alpha_sum(1e4 K) = 3.6891e-11 cm^3/s (1500 levels summed, 0 skipped, g_ion=6)
+  CMF-sum Fe III  19apr23      alpha_sum(1e4 K) = 3.6891e-11 cm^3/s (1500 levels summed, 0 skipped, g_ion=6)
+  CMF-sum Ca III  run-vintage  alpha_sum(1e4 K) = 6.0173e-12 cm^3/s (232 levels summed, 0 skipped, g_ion=6)
+  CMF-sum Ca III  19apr23      alpha_sum(1e4 K) = 6.0173e-12 cm^3/s (232 levels summed, 0 skipped, g_ion=6)
+  CMF-sum Ca IV   run-vintage  alpha_sum(1e4 K) = 2.2029e-11 cm^3/s (378 levels summed, 0 skipped, g_ion=9)
+  CMF-sum Ca IV   19apr23      alpha_sum(1e4 K) = 2.2029e-11 cm^3/s (378 levels summed, 0 skipped, g_ion=9)
+  CMF-sum Ca V    run-vintage  alpha_sum(1e4 K) = 1.5726e-10 cm^3/s (613 levels summed, 0 skipped, g_ion=4)
+  CMF-sum Ca V    19apr23      alpha_sum(1e4 K) = 1.5726e-10 cm^3/s (613 levels summed, 0 skipped, g_ion=4)
+  CMF-sum S IV    run-vintage  alpha_sum(1e4 K) = 4.2264e-11 cm^3/s (170 levels summed, 24 skipped, g_ion=1)
+  CMF-sum S IV    19apr23      alpha_sum(1e4 K) = 4.1300e-11 cm^3/s (170 levels summed, 24 skipped, g_ion=1)
+  CMF-sum S V     run-vintage  alpha_sum(1e4 K) = 4.7207e-11 cm^3/s (167 levels summed, 0 skipped, g_ion=2)
+  CMF-sum S V     19apr23      alpha_sum(1e4 K) = 4.6123e-11 cm^3/s (162 levels summed, 96 skipped, g_ion=2)
+  CMF-sum Si IV   run-vintage  alpha_sum(1e4 K) = 2.2375e-12 cm^3/s (32 levels summed, 34 skipped, g_ion=1)
+  CMF-sum Si IV   19apr23      alpha_sum(1e4 K) = 2.2375e-12 cm^3/s (32 levels summed, 34 skipped, g_ion=1)
+
+  NORAD  Ni II    X+1 + e -> Ni II   alpha_total(RR+DR, 1e4 K) = 4.2751e-12 cm^3/s   [raw_ni2.rrc.txt]
+  NORAD  Fe II    X+1 + e -> Fe II   alpha_total(RR+DR, 1e4 K) = 4.0159e-12 cm^3/s   [raw_fe2.rrc-ls.txt]
+  NORAD  Fe III   X+1 + e -> Fe III   alpha_total(RR+DR, 1e4 K) = 5.0792e-12 cm^3/s   [raw_fe3.rrc.ls.txt]
+  Badnell Si IV   Z=14 N=10 (recombining ion) -> alpha_RR(1e4 K) = 6.5372e-12  [1 shells/terms]
+  Badnell S V     Z=16 N=11 (recombining ion) -> alpha_RR(1e4 K) = 1.2478e-11  [1 shells/terms]
+  Badnell Ca III  Z=20 N=17 (recombining ion) -> alpha_RR(1e4 K) = nan  [0 shells/terms]
+  Badnell Ni II   Z=28 N=26 (recombining ion) -> alpha_RR(1e4 K) = nan  [0 shells/terms]
+  Badnell Co II   Z=27 N=25 (recombining ion) -> alpha_RR(1e4 K) = nan  [0 shells/terms]
+  Badnell Co III  Z=27 N=24 (recombining ion) -> alpha_RR(1e4 K) = nan  [0 shells/terms]

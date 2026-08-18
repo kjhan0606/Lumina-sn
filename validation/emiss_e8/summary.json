@@ -1,0 +1,611 @@
+{
+  "schema": "lumina-emiss-e8-recycling-v1",
+  "arithmetic_only_no_transport_solve": true,
+  "no_new_clamp": true,
+  "payload_sha256": "ac62eae5bec6d6beaf06d513c2cef38386b365f6b7826cff61c4edc0f2a34011",
+  "payload_iteration": 10,
+  "cmfgen": {
+    "run": "/gpfs/kjhan/cmfgen_runs/toy06_19.48d_jnu4",
+    "EDDFACTOR_bytes": 142832872,
+    "RVTJ_bytes": 604183,
+    "finish": 1.0,
+    "reader": {
+      "ND": 90,
+      "recl": 728,
+      "word": 8,
+      "unit_size": 1,
+      "int_size": 4,
+      "little": true,
+      "records": 196199,
+      "good": 196185,
+      "bad": 0,
+      "finish": 1.0,
+      "nu_min": 3498970000000.0,
+      "nu_max": 1e+18,
+      "fl_roundtrip": 2.220446049250313e-16,
+      "nu_roundtrip": 2.220446049250313e-16
+    },
+    "shell_brackets": [
+      {
+        "velocity_kms": 4264.0,
+        "status": "resolved",
+        "v0": 4092.3914953,
+        "v1": 4394.1823505,
+        "weight": 0.5686338792017842
+      },
+      {
+        "velocity_kms": 4992.0,
+        "status": "resolved",
+        "v0": 4718.2285839,
+        "v1": 5066.1714044,
+        "weight": 0.7868287545251995
+      },
+      {
+        "velocity_kms": 5720.0,
+        "status": "resolved",
+        "v0": 5439.7730509,
+        "v1": 5840.9257175,
+        "weight": 0.6985543720177273
+      },
+      {
+        "velocity_kms": 6448.0,
+        "status": "resolved",
+        "v0": 6271.661137,
+        "v1": 6663.9769781,
+        "weight": 0.44948188302967756
+      },
+      {
+        "velocity_kms": 7176.0,
+        "status": "resolved",
+        "v0": 7018.7576274,
+        "v1": 7435.1541349,
+        "weight": 0.3776265404915767
+      },
+      {
+        "velocity_kms": 7904.0,
+        "status": "resolved",
+        "v0": 7435.1541349,
+        "v1": 7983.4549335,
+        "weight": 0.8550887875726685
+      },
+      {
+        "velocity_kms": 8632.0,
+        "status": "resolved",
+        "v0": 8572.1898321,
+        "v1": 9132.8822241,
+        "weight": 0.10667198048943621
+      },
+      {
+        "velocity_kms": 9360.0,
+        "status": "resolved",
+        "v0": 9132.8822241,
+        "v1": 9610.0173342,
+        "weight": 0.47600306724944197
+      },
+      {
+        "velocity_kms": 10088.0,
+        "status": "resolved",
+        "v0": 9610.0173342,
+        "v1": 10163.50575,
+        "weight": 0.8635820590917592
+      },
+      {
+        "velocity_kms": 10816.0,
+        "status": "resolved",
+        "v0": 10706.464425,
+        "v1": 11256.119932,
+        "weight": 0.19928041037529345
+      },
+      {
+        "velocity_kms": 11544.0,
+        "status": "resolved",
+        "v0": 11256.119932,
+        "v1": 11814.574274,
+        "weight": 0.5154943678457422
+      },
+      {
+        "velocity_kms": 12272.0,
+        "status": "resolved",
+        "v0": 11814.574274,
+        "v1": 12376.055806,
+        "weight": 0.8146763516346601
+      },
+      {
+        "velocity_kms": 13000.0,
+        "status": "resolved",
+        "v0": 12936.0982,
+        "v1": 13496.047373,
+        "weight": 0.11412071502425408
+      },
+      {
+        "velocity_kms": 13728.0,
+        "status": "resolved",
+        "v0": 13496.047373,
+        "v1": 14056.473143,
+        "weight": 0.4138864403041292
+      },
+      {
+        "velocity_kms": 14456.0,
+        "status": "resolved",
+        "v0": 14056.473143,
+        "v1": 14617.648395,
+        "weight": 0.7119466790028726
+      },
+      {
+        "velocity_kms": 15184.0,
+        "status": "resolved",
+        "v0": 15178.76148,
+        "v1": 15741.635247,
+        "weight": 0.00930674035125318
+      },
+      {
+        "velocity_kms": 15912.0,
+        "status": "resolved",
+        "v0": 15741.635247,
+        "v1": 16306.855147,
+        "weight": 0.3014132251889925
+      },
+      {
+        "velocity_kms": 16640.0,
+        "status": "resolved",
+        "v0": 16306.855147,
+        "v1": 16875.28639,
+        "weight": 0.5860776604075566
+      },
+      {
+        "velocity_kms": 17368.0,
+        "status": "resolved",
+        "v0": 16875.28639,
+        "v1": 17446.816315,
+        "weight": 0.8620959086263065
+      },
+      {
+        "velocity_kms": 18096.0,
+        "status": "resolved",
+        "v0": 18021.470042,
+        "v1": 18600.316808,
+        "weight": 0.12875593745651043
+      },
+      {
+        "velocity_kms": 18824.0,
+        "status": "resolved",
+        "v0": 18600.316808,
+        "v1": 19183.653601,
+        "weight": 0.38345462635681815
+      },
+      {
+        "velocity_kms": 19552.0,
+        "status": "resolved",
+        "v0": 19183.653601,
+        "v1": 19768.655989,
+        "weight": 0.6296493938414487
+      },
+      {
+        "velocity_kms": 20280.0,
+        "status": "resolved",
+        "v0": 19768.655989,
+        "v1": 20356.092088,
+        "weight": 0.870467463389578
+      },
+      {
+        "velocity_kms": 21008.0,
+        "status": "resolved",
+        "v0": 20943.793072,
+        "v1": 21533.881295,
+        "weight": 0.10880903142511918
+      },
+      {
+        "velocity_kms": 21736.0,
+        "status": "resolved",
+        "v0": 21533.881295,
+        "v1": 22127.251375,
+        "weight": 0.3406284068114802
+      },
+      {
+        "velocity_kms": 22464.0,
+        "status": "resolved",
+        "v0": 22127.251375,
+        "v1": 22719.845804,
+        "weight": 0.5682615436804921
+      },
+      {
+        "velocity_kms": 23192.0,
+        "status": "resolved",
+        "v0": 22719.845804,
+        "v1": 23315.177103,
+        "weight": 0.793094864646111
+      },
+      {
+        "velocity_kms": 23920.0,
+        "status": "resolved",
+        "v0": 23909.688047,
+        "v1": 24505.36785,
+        "weight": 0.01731123490853084
+      },
+      {
+        "velocity_kms": 24648.0,
+        "status": "resolved",
+        "v0": 24505.36785,
+        "v1": 25103.084363,
+        "weight": 0.2386284248432677
+      },
+      {
+        "velocity_kms": 25376.0,
+        "status": "resolved",
+        "v0": 25103.084363,
+        "v1": 25702.348976,
+        "weight": 0.4554175752740443
+      },
+      {
+        "velocity_kms": 26104.0,
+        "status": "resolved",
+        "v0": 25702.348976,
+        "v1": 26302.687806,
+        "weight": 0.6690405549812569
+      },
+      {
+        "velocity_kms": 26832.0,
+        "status": "resolved",
+        "v0": 26302.687806,
+        "v1": 26903.747431,
+        "weight": 0.8806317576230478
+      },
+      {
+        "velocity_kms": 27560.0,
+        "status": "resolved",
+        "v0": 27505.364384,
+        "v1": 28107.677855,
+        "weight": 0.09070960327234563
+      },
+      {
+        "velocity_kms": 28288.0,
+        "status": "resolved",
+        "v0": 28107.677855,
+        "v1": 28711.047603,
+        "weight": 0.2988584455845126
+      },
+      {
+        "velocity_kms": 29016.0,
+        "status": "resolved",
+        "v0": 28711.047603,
+        "v1": 29315.936463,
+        "weight": 0.504146161660179
+      },
+      {
+        "velocity_kms": 29744.0,
+        "status": "resolved",
+        "v0": 29315.936463,
+        "v1": 29922.773904,
+        "weight": 0.705400669237875
+      },
+      {
+        "velocity_kms": 30472.0,
+        "status": "resolved",
+        "v0": 29922.773904,
+        "v1": 30531.846237,
+        "weight": 0.9017419873511122
+      },
+      {
+        "velocity_kms": 31200.0,
+        "status": "resolved",
+        "v0": 31143.427304,
+        "v1": 31757.818766,
+        "weight": 0.09207923530682025
+      },
+      {
+        "velocity_kms": 31928.0,
+        "status": "resolved",
+        "v0": 31757.818766,
+        "v1": 32375.398439,
+        "weight": 0.27556158571948275
+      },
+      {
+        "velocity_kms": 32656.0,
+        "status": "resolved",
+        "v0": 32375.398439,
+        "v1": 32996.652494,
+        "weight": 0.45166958467578766
+      },
+      {
+        "velocity_kms": 33384.0,
+        "status": "resolved",
+        "v0": 32996.652494,
+        "v1": 33559.855034,
+        "weight": 0.6877588052070919
+      },
+      {
+        "velocity_kms": 34112.0,
+        "status": "resolved",
+        "v0": 34070.309267,
+        "v1": 34558.425833,
+        "weight": 0.08541142813825894
+      },
+      {
+        "velocity_kms": 34840.0,
+        "status": "resolved",
+        "v0": 34558.425833,
+        "v1": 35025.747429,
+        "weight": 0.6025276156935788
+      },
+      {
+        "velocity_kms": 35568.0,
+        "status": "resolved",
+        "v0": 35497.71049,
+        "v1": 35663.366654,
+        "weight": 0.42430965623471967
+      },
+      {
+        "velocity_kms": 36296.0,
+        "status": "UNRESOLVED-outside-RVTJ-grid"
+      },
+      {
+        "velocity_kms": 37024.0,
+        "status": "UNRESOLVED-outside-RVTJ-grid"
+      },
+      {
+        "velocity_kms": 37752.0,
+        "status": "UNRESOLVED-outside-RVTJ-grid"
+      },
+      {
+        "velocity_kms": 38480.0,
+        "status": "UNRESOLVED-outside-RVTJ-grid"
+      },
+      {
+        "velocity_kms": 39208.0,
+        "status": "UNRESOLVED-outside-RVTJ-grid"
+      },
+      {
+        "velocity_kms": 39936.0,
+        "status": "UNRESOLVED-outside-RVTJ-grid"
+      }
+    ],
+    "unresolved_shells_outside_RVTJ_grid": [
+      44,
+      45,
+      46,
+      47,
+      48,
+      49
+    ],
+    "bin_integral_ratio_min": 0.9999999999999998,
+    "bin_integral_ratio_max": 1.0000000000000002,
+    "bin_integral_max_abs_error": 2.220446049250313e-16
+  },
+  "definitions": {
+    "cell_eps_eff": "eta_fixed/(eta_fixed+eta_coherent)",
+    "band_eps_eff_source": "integral[(eta_fixed/chi_total)dnu]/integral[(eta_total/chi_total)dnu]",
+    "literal_eta_integral_check": "integral eta_fixed dnu/integral eta_total dnu",
+    "recycle_gain_source": "1/eps_eff_source=S_total_band/S_fixed_band"
+  },
+  "canonical_shells": {
+    "0": {
+      "B0": {
+        "chi_coherent_over_total": 0.979420328446925,
+        "eps_eff_source": 0.006663021891789472,
+        "recycle_gain_source": 150.0820522940579,
+        "eps_eff_literal_eta_integral": 0.009700943144399577,
+        "J_ours_over_CMFGEN": 3.2660716310277755,
+        "CMFGEN_J_over_B_T": 0.7374724296456326
+      },
+      "B1": {
+        "chi_coherent_over_total": 0.999770918586154,
+        "eps_eff_source": 0.00024999491521553185,
+        "recycle_gain_source": 4000.081358206246,
+        "eps_eff_literal_eta_integral": 0.0001652053197973587,
+        "J_ours_over_CMFGEN": 3.3716002531270783,
+        "CMFGEN_J_over_B_T": 0.795686078213622
+      },
+      "B2": {
+        "chi_coherent_over_total": 0.9995079100385497,
+        "eps_eff_source": 0.0006836510508910051,
+        "recycle_gain_source": 1462.7345320345753,
+        "eps_eff_literal_eta_integral": 0.00044379813823346896,
+        "J_ours_over_CMFGEN": 2.579495972272609,
+        "CMFGEN_J_over_B_T": 0.8053389476727865
+      },
+      "B3": {
+        "chi_coherent_over_total": 0.9998250838564756,
+        "eps_eff_source": 0.00015213841611417774,
+        "recycle_gain_source": 6572.961816885973,
+        "eps_eff_literal_eta_integral": 0.00014557127010925632,
+        "J_ours_over_CMFGEN": 3.7421618309171962,
+        "CMFGEN_J_over_B_T": 0.8063050031001695
+      },
+      "B4": {
+        "chi_coherent_over_total": 0.9998604619696543,
+        "eps_eff_source": 0.00010126036650364966,
+        "recycle_gain_source": 9875.532101337572,
+        "eps_eff_literal_eta_integral": 9.533358872182206e-05,
+        "J_ours_over_CMFGEN": 4.105676519641408,
+        "CMFGEN_J_over_B_T": 0.815274309955935
+      },
+      "BALL": {
+        "chi_coherent_over_total": 0.9861316581094576,
+        "eps_eff_source": 0.0006863292809647124,
+        "recycle_gain_source": 1457.0265727179649,
+        "eps_eff_literal_eta_integral": 0.0011083079369147784,
+        "J_ours_over_CMFGEN": 3.337498665365437,
+        "CMFGEN_J_over_B_T": 0.800020965648521
+      }
+    },
+    "8": {
+      "B0": {
+        "chi_coherent_over_total": 0.9720001905275855,
+        "eps_eff_source": 0.0006102720723406604,
+        "recycle_gain_source": 1638.6134075651905,
+        "eps_eff_literal_eta_integral": 0.0009656376031892198,
+        "J_ours_over_CMFGEN": 33.76402855456032,
+        "CMFGEN_J_over_B_T": 0.9188322780073807
+      },
+      "B1": {
+        "chi_coherent_over_total": 0.9988120024754128,
+        "eps_eff_source": 0.00037223202029858433,
+        "recycle_gain_source": 2686.4964470220866,
+        "eps_eff_literal_eta_integral": 0.0003604059271304405,
+        "J_ours_over_CMFGEN": 32.323057899886294,
+        "CMFGEN_J_over_B_T": 0.9114132510979217
+      },
+      "B2": {
+        "chi_coherent_over_total": 0.9993643090955131,
+        "eps_eff_source": 0.0006129671286508344,
+        "recycle_gain_source": 1631.4088525449001,
+        "eps_eff_literal_eta_integral": 0.0007285669337993753,
+        "J_ours_over_CMFGEN": 7.375788567492243,
+        "CMFGEN_J_over_B_T": 0.8386469873115685
+      },
+      "B3": {
+        "chi_coherent_over_total": 0.9999404728984547,
+        "eps_eff_source": 7.456963853321305e-05,
+        "recycle_gain_source": 13410.283590882684,
+        "eps_eff_literal_eta_integral": 5.9714546698043767e-05,
+        "J_ours_over_CMFGEN": 6.91222871198681,
+        "CMFGEN_J_over_B_T": 0.8111236285909018
+      },
+      "B4": {
+        "chi_coherent_over_total": 0.9998002647590792,
+        "eps_eff_source": 4.95582837504105e-05,
+        "recycle_gain_source": 20178.26131825473,
+        "eps_eff_literal_eta_integral": 7.205238066422668e-05,
+        "J_ours_over_CMFGEN": 16.292167470733506,
+        "CMFGEN_J_over_B_T": 0.7061818749139286
+      },
+      "BALL": {
+        "chi_coherent_over_total": 0.9777131496500556,
+        "eps_eff_source": 0.00019056728565335047,
+        "recycle_gain_source": 5247.4903893999945,
+        "eps_eff_literal_eta_integral": 0.00040462025936043695,
+        "J_ours_over_CMFGEN": 11.977097469264498,
+        "CMFGEN_J_over_B_T": 0.7815069147872002
+      }
+    },
+    "20": {
+      "B0": {
+        "chi_coherent_over_total": 0.7143992837634506,
+        "eps_eff_source": 0.0123430158421226,
+        "recycle_gain_source": 81.01747682987923,
+        "eps_eff_literal_eta_integral": 0.004494216182437994,
+        "J_ours_over_CMFGEN": 0.04452021634505493,
+        "CMFGEN_J_over_B_T": 93.05505552299105
+      },
+      "B1": {
+        "chi_coherent_over_total": 0.9994258440494567,
+        "eps_eff_source": 0.0026860693642522236,
+        "recycle_gain_source": 372.29120487675516,
+        "eps_eff_literal_eta_integral": 0.0003251954007225634,
+        "J_ours_over_CMFGEN": 1.1805692465991846,
+        "CMFGEN_J_over_B_T": 4.6113269781248825
+      },
+      "B2": {
+        "chi_coherent_over_total": 0.9946836926590099,
+        "eps_eff_source": 0.005900762014328646,
+        "recycle_gain_source": 169.46963757760938,
+        "eps_eff_literal_eta_integral": 0.013216545608885442,
+        "J_ours_over_CMFGEN": 0.08976519529845262,
+        "CMFGEN_J_over_B_T": 9.538066334271312
+      },
+      "B3": {
+        "chi_coherent_over_total": 0.9999767401782921,
+        "eps_eff_source": 0.00013472432022430147,
+        "recycle_gain_source": 7422.564822261547,
+        "eps_eff_literal_eta_integral": 4.67689404093751e-05,
+        "J_ours_over_CMFGEN": 0.6230711662307331,
+        "CMFGEN_J_over_B_T": 0.906014615826033
+      },
+      "B4": {
+        "chi_coherent_over_total": 0.9999521853622045,
+        "eps_eff_source": 7.950228152072614e-05,
+        "recycle_gain_source": 12578.255376725276,
+        "eps_eff_literal_eta_integral": 3.2467959010098465e-05,
+        "J_ours_over_CMFGEN": 6.636518607461927,
+        "CMFGEN_J_over_B_T": 0.1927553377901026
+      },
+      "BALL": {
+        "chi_coherent_over_total": 0.7489508818906528,
+        "eps_eff_source": 0.0011907350719205295,
+        "recycle_gain_source": 839.8173729670244,
+        "eps_eff_literal_eta_integral": 0.004087559581174177,
+        "J_ours_over_CMFGEN": 0.5180528164389775,
+        "CMFGEN_J_over_B_T": 2.079205024727215
+      }
+    }
+  },
+  "correlations": {
+    "sample_count_B0_to_B4_resolved_CMF": 220,
+    "log10_eps_vs_log10_recycle_gain": {
+      "pearson": -1.0,
+      "spearman": -1.0
+    },
+    "log10_eps_vs_log10_J_ours_over_CMFGEN": {
+      "pearson": -0.5693104155324313,
+      "spearman": -0.5788451677251032
+    },
+    "chi_coherent_fraction_vs_log10_recycle_gain": {
+      "pearson": 0.38274154891299167,
+      "spearman": 0.7081487408642927
+    },
+    "identity_note": "recycle_gain_source=1/eps_eff_source by definition; its anti-correlation is algebraic"
+  },
+  "macro_comparison": {
+    "0": {
+      "eps_eff_source_BALL_payload_iter10": 0.0006863292809647124,
+      "MC_thermal_destruction_iter10": 0.0010230142884397814,
+      "MC_over_deterministic_eps_eff": 1.4905590025269222,
+      "event_local_coherence_destruction_iter11_truncated": 0.9872962898764898,
+      "event_coarse_bin_coherence_destruction_iter11_truncated": 0.9756920840047211,
+      "event_different_line_fraction_iter11_truncated": 0.9870117594186202
+    },
+    "8": {
+      "eps_eff_source_BALL_payload_iter10": 0.00019056728565335047,
+      "MC_thermal_destruction_iter10": 0.0024368222433042742,
+      "MC_over_deterministic_eps_eff": 12.787201302415314,
+      "event_local_coherence_destruction_iter11_truncated": 0.9664215500140844,
+      "event_coarse_bin_coherence_destruction_iter11_truncated": 0.9511641021249367,
+      "event_different_line_fraction_iter11_truncated": 0.9659518912115097
+    },
+    "20": {
+      "eps_eff_source_BALL_payload_iter10": 0.0011907350719205295,
+      "MC_thermal_destruction_iter10": 0.001384321771931868,
+      "MC_over_deterministic_eps_eff": 1.1625774738448778,
+      "event_local_coherence_destruction_iter11_truncated": 0.8851986742205264,
+      "event_coarse_bin_coherence_destruction_iter11_truncated": 0.8212413766524068,
+      "event_different_line_fraction_iter11_truncated": 0.8851408640690639
+    }
+  },
+  "macro_final_census_identity": {
+    "shells_checked": 50,
+    "mismatch_count": 0,
+    "identity": "census.rad_deexc == ma_line_destruct.terminals - destroyed",
+    "global_terminals": 485463658,
+    "global_destroyed": 358143,
+    "global_rad_deexc": 485105515,
+    "global_col_deexc": 4351,
+    "global_rad_recomb": 118732
+  },
+  "event_log": {
+    "event_file": "/gpfs/kjhan/lumina_runner2/scratch/emiss_ab2_capture_188766/lumina_events.bin",
+    "event_records_stored": 400000000,
+    "line_records": 2584132,
+    "max_packet_id": 67583,
+    "pairing_contract": "per-packet file order: bb activation -> next terminal channel",
+    "event_iteration": 11,
+    "event_records_attempted": 970557187,
+    "event_records_dropped": 570557187,
+    "stored_fraction": 0.4121343959508488,
+    "status": "TRUNCATED_PREFIX-not-an-unbiased-random-sample"
+  },
+  "s8_amplitude_closure": {
+    "J_ours_over_CMFGEN": 11.977097469264498,
+    "S_fixed_over_CMFGEN": 0.0022824776789894586,
+    "required_gain_J_over_Sfixed": 5247.410557183291,
+    "measured_recycle_gain_Stotal_over_Sfixed": 5247.4903893999945,
+    "required_eps_inverse_gain": 0.00019057018487548662,
+    "measured_eps_eff_source": 0.00019056728565335047,
+    "S_total_over_J_ours": 1.0000152136402962,
+    "event_same_line_fraction_iter11_truncated": 0.03357844998591562,
+    "event_local_coherence_destruction_iter11_truncated": 0.9664215500140844,
+    "event_same_coarse_bin_fraction_iter11_truncated": 0.04883589787506322,
+    "event_coarse_bin_coherence_destruction_iter11_truncated": 0.9511641021249367
+  },
+  "CMFGEN_equivalent_eps": "UNRESOLVED-no frequency/depth ETA/CHI line-source dump; J/B and J~=S do not uniquely invert epsilon",
+  "CMFGEN_eps_multiplier": "UNRESOLVED"
+}

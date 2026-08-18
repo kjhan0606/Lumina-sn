@@ -1,0 +1,144 @@
+{
+  "generation_caveat": "T5 uses current iteration-11/08ff3312 matrix; E12 targets use the overwritten, unavailable iteration-10/2b65dba6 generation",
+  "optical_target_caveat": "The request says -0.79%, while the canonical E12 artifact records -7.901687%; both readings are judged separately.",
+  "route_close_canonical": true,
+  "route_close_requested_literal_optical": false,
+  "route_close_requested_with_artifact_optical": false,
+  "route_disposition": "UNRESOLVED",
+  "route_disposition_reason": "The authoritative preregistration tests B0/B1/B2-to-B0 and passes, while the task text substitutes an optical fractional-change metric that fails under both its literal and artifact-corrected values. Selecting one after observing the result would be post-hoc.",
+  "same_generation_current_full_R_control_vs_E12": {
+    "B0": {
+      "relative_error": 0.05666237134285959,
+      "target": 26.43249460092573,
+      "value": 27.930222425521514,
+      "within_tolerance": true
+    },
+    "B1": {
+      "relative_error": 0.014497756041773523,
+      "target": 5.65886463035863,
+      "value": 5.74090546924299,
+      "within_tolerance": true
+    },
+    "optical_E12_over_E9_ratio_level": {
+      "relative_error": 0.009394539468131523,
+      "target": 0.9209831266330256,
+      "value": 0.9123309143003885,
+      "within_tolerance": true
+    },
+    "optical_fractional_change_artifact": {
+      "relative_error": 0.10949828769425064,
+      "target": -0.07901687336697438,
+      "value": -0.08766908569961152,
+      "within_tolerance": true
+    }
+  },
+  "schema": "lumina-uv-t5-verdict-v1",
+  "variants": {
+    "diagonal_exclusive": {
+      "metrics": {
+        "B0": {
+          "relative_error": 0.12250693553687395,
+          "target": 26.43249460092573,
+          "value": 29.670658513080106,
+          "within_tolerance": true
+        },
+        "B1": {
+          "relative_error": 0.06065756522496676,
+          "target": 5.65886463035863,
+          "value": 6.002117580773866,
+          "within_tolerance": true
+        },
+        "B2_to_B0": {
+          "relative_error": 0.10911972380687233,
+          "target": 0.5492453247038226,
+          "value": 0.6091788228377196,
+          "within_tolerance": true
+        },
+        "optical_E12_over_E9_ratio_level": {
+          "relative_error": 0.021870734624610044,
+          "target": 0.9209831266330256,
+          "value": 0.9411257041893601,
+          "within_tolerance": true
+        },
+        "optical_artifact_target": {
+          "relative_error": 0.2549148896690368,
+          "target": -0.07901687336697438,
+          "value": -0.058874295810639854,
+          "within_tolerance": false
+        },
+        "optical_request_literal_target": {
+          "relative_error": 6.452442507675929,
+          "target": -0.0079,
+          "value": -0.058874295810639854,
+          "within_tolerance": false
+        }
+      },
+      "preregistered_T5_canonical_pass_B0_B1_B2_to_B0": true,
+      "relative_error_to_same_generation_full_R_J_det_over_CMFGEN": {
+        "B0": 0.06231372099522744,
+        "B1": 0.04550015897846158,
+        "B2": 0.03438363503410755,
+        "B3": 0.0652513366768213,
+        "B4": 0.21783189865852473,
+        "BALL": 0.0682852560343631,
+        "OPTICAL": 0.031561782504161424
+      },
+      "requested_pass_using_E12_artifact_optical_minus7p90pct": false,
+      "requested_pass_using_literal_optical_minus0p79pct": false,
+      "same_E10_stage31_guard_pass": true
+    },
+    "diagonal_inclusive": {
+      "metrics": {
+        "B0": {
+          "relative_error": 0.11479451725397796,
+          "target": 26.43249460092573,
+          "value": 29.466800058457377,
+          "within_tolerance": true
+        },
+        "B1": {
+          "relative_error": 0.06135686567212719,
+          "target": 5.65886463035863,
+          "value": 6.006074827340296,
+          "within_tolerance": true
+        },
+        "B2_to_B0": {
+          "relative_error": 0.10911972380687233,
+          "target": 0.5492453247038226,
+          "value": 0.6091788228377196,
+          "within_tolerance": true
+        },
+        "optical_E12_over_E9_ratio_level": {
+          "relative_error": 0.021282594251858213,
+          "target": 0.9209831266330256,
+          "value": 0.940584036829964,
+          "within_tolerance": true
+        },
+        "optical_artifact_target": {
+          "relative_error": 0.24805980497237398,
+          "target": -0.07901687336697438,
+          "value": -0.059415963170035946,
+          "within_tolerance": false
+        },
+        "optical_request_literal_target": {
+          "relative_error": 6.52100799620708,
+          "target": -0.0079,
+          "value": -0.059415963170035946,
+          "within_tolerance": false
+        }
+      },
+      "preregistered_T5_canonical_pass_B0_B1_B2_to_B0": true,
+      "relative_error_to_same_generation_full_R_J_det_over_CMFGEN": {
+        "B0": 0.05501487276133542,
+        "B1": 0.04618946602029169,
+        "B2": 0.03289776144798555,
+        "B3": 0.05605086672109192,
+        "B4": 0.2055673949716136,
+        "BALL": 0.0657456555002216,
+        "OPTICAL": 0.03096806442346765
+      },
+      "requested_pass_using_E12_artifact_optical_minus7p90pct": false,
+      "requested_pass_using_literal_optical_minus0p79pct": false,
+      "same_E10_stage31_guard_pass": true
+    }
+  }
+}

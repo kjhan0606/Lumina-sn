@@ -1,0 +1,19 @@
+[harness] lines kept=630387 (from 793505, stride=1.00, deposit=all)
+[harness] wrote detjbar_ZL400.csv
+[harness] wrote iterhist_ZL400.csv
+# S_l/B profile: slb_on=1  s0=1.0000 s25=0.7638 s45=0.5563 s49=0.0597
+# chi_line multiplier=1  (1=r-similar, 1/r=1250 restores production blanket)
+# NB=400 NS=50 NP=66  dlognu=3.474422e-03  r=NB/NB_prod=0.000800  vdop=1.2499e+09 cm/s (ppd=12.0)
+# n_ali(LAG)=16   production-equivalent (20000*r=16.0)
+# drift budget: D(core ray, inbound)=34 bins   D(max over rays)=76 bins
+# n_ali/D_core=0.466   n_ali/D_max=0.209   (production: 0.467 / 0.210)
+# chi_es[0]=2.9015e-15 adv=5.7141e-15  kappa0=n_ali*chi_tot0/adv=23.030
+# shell  0: chi_es=2.902e-15 <chi_line>=7.847e-14  kappa_es=8.125 kappa_line=219.736
+# shell 12: chi_es=1.705e-16 <chi_line>=3.418e-15  kappa_es=0.477 kappa_line=9.571
+# shell 24: chi_es=8.514e-18 <chi_line>=1.249e-15  kappa_es=0.024 kappa_line=3.496
+# shell 36: chi_es=4.655e-19 <chi_line>=6.632e-16  kappa_es=0.001 kappa_line=1.857
+# shell 48: chi_es=3.199e-20 <chi_line>=2.853e-16  kappa_es=0.000 kappa_line=0.799
+# EXACT drift: A=5.704191e-15 bins/cm  beta(core ray, per shell)=0.70..0.70 bins  (= 0.06..0.06 Doppler widths at ppd=12)
+# REF: ALI iters=14 (tol=1.0e-09) maxrel_last=5.953e-10  0.7 s
+# EXACT(mode 1): ALI iters=14 (tol=1.0e-09) maxrel_last=7.843e-10  0.1 s  R-clamps=0
+# EXACT vs REF (all cells): max rel=8.826e-02  L2 rel=7.987e-03

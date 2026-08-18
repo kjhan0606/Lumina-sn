@@ -1,0 +1,166 @@
+{
+  "EPAY_interpretation": "formal matrix carries independent absorbed/reemitted energy ledgers; no normalization repair applied",
+  "application_energy": {
+    "full_source_relative_error_including_outside": 1.4876988529977098e-14,
+    "injected_on_grid": 0.006470097424493856,
+    "outside_grid_side_ledger": 1.2228399747792042e-06,
+    "relative_error_to_removed": 1.6209256159527285e-14,
+    "removed_same_bin_line_return": 0.00647132026446853
+  },
+  "bands": [
+    {
+      "E10_over_E9_source_energy": 5.171711803260877,
+      "E10_source_energy": 0.0011339059883635609,
+      "E9_source_energy": 0.0002192515808109432,
+      "band": "B0",
+      "hit_preregistered_plusminus25pct": false,
+      "lambda_hi_A": 1000.0,
+      "lambda_lo_A": 600.0,
+      "preregistered_coarse_ratio": 2.8620610905022565,
+      "ratio_to_preregistered_prediction": 1.8069886140527156,
+      "redistributed_energy_added": 0.001132929149314116
+    },
+    {
+      "E10_over_E9_source_energy": 2.367666350701845,
+      "E10_source_energy": 0.0032655536459039692,
+      "E9_source_energy": 0.0013792288110763427,
+      "band": "B1",
+      "hit_preregistered_plusminus25pct": false,
+      "lambda_hi_A": 1500.0,
+      "lambda_lo_A": 1000.0,
+      "preregistered_coarse_ratio": 1.221275948370743,
+      "ratio_to_preregistered_prediction": 1.938682534328509,
+      "redistributed_energy_added": 0.0032545320685337864
+    },
+    {
+      "E10_over_E9_source_energy": 0.24451014729052525,
+      "E10_source_energy": 0.001012682508078539,
+      "E9_source_energy": 0.004141678859958629,
+      "band": "B2",
+      "hit_preregistered_plusminus25pct": false,
+      "lambda_hi_A": 2000.0,
+      "lambda_lo_A": 1500.0,
+      "preregistered_coarse_ratio": 0.6954770815984327,
+      "ratio_to_preregistered_prediction": 0.351571825671899,
+      "redistributed_energy_added": 0.0009922173580066988
+    },
+    {
+      "E10_over_E9_source_energy": 1.8773051102758718,
+      "E10_source_energy": 0.00038883011054096625,
+      "E9_source_energy": 0.00020712142550116815,
+      "band": "B3",
+      "hit_preregistered_plusminus25pct": false,
+      "lambda_hi_A": 2500.0,
+      "lambda_lo_A": 2000.0,
+      "preregistered_coarse_ratio": 2.953861805073615,
+      "ratio_to_preregistered_prediction": 0.6355426333931307,
+      "redistributed_energy_added": 0.00038639039915046894
+    },
+    {
+      "E10_over_E9_source_energy": 1.9607412584279902,
+      "E10_source_energy": 0.0002619777589240995,
+      "E9_source_energy": 0.000133611590921557,
+      "band": "B4",
+      "hit_preregistered_plusminus25pct": false,
+      "lambda_hi_A": 3000.0,
+      "lambda_lo_A": 2500.0,
+      "preregistered_coarse_ratio": 3.579034964247158,
+      "ratio_to_preregistered_prediction": 0.5478407665794982,
+      "redistributed_energy_added": 0.00025886188306075526
+    },
+    {
+      "E10_over_E9_source_energy": 0.7202136518688829,
+      "E10_source_energy": 0.0006332622776232395,
+      "E9_source_energy": 0.0008792700276924587,
+      "band": "OPTICAL",
+      "hit_preregistered_plusminus25pct": true,
+      "lambda_hi_A": 10000.0,
+      "lambda_lo_A": 3000.0,
+      "preregistered_coarse_ratio": 0.8274416933805355,
+      "ratio_to_preregistered_prediction": 0.8704101541299308,
+      "redistributed_energy_added": 9.146913435799127e-05
+    },
+    {
+      "E10_over_E9_source_energy": 3.8331957889284096,
+      "E10_source_energy": 0.0003554589034756812,
+      "E9_source_energy": 9.273173692363146e-05,
+      "band": "EUV",
+      "hit_preregistered_plusminus25pct": false,
+      "lambda_hi_A": 600.0,
+      "lambda_lo_A": 100.0,
+      "preregistered_coarse_ratio": 0.46822698406374746,
+      "ratio_to_preregistered_prediction": 8.186618711420813,
+      "redistributed_energy_added": 0.00035369743207003994
+    },
+    {
+      "E10_over_E9_source_energy": 1.0,
+      "E10_source_energy": 2.8506665973219247e-05,
+      "E9_source_energy": 2.8506665973219247e-05,
+      "band": "IR",
+      "hit_preregistered_plusminus25pct": true,
+      "lambda_hi_A": 20000.0,
+      "lambda_lo_A": 10000.0,
+      "preregistered_coarse_ratio": 0.9538256193198437,
+      "ratio_to_preregistered_prediction": 1.0484096670763388,
+      "redistributed_energy_added": 0.0
+    }
+  ],
+  "construction_energy": {
+    "max_abs_input_column_relative_error": 3.539667733765128e-05,
+    "output_over_input_relative_error": 3.0443018328440985e-08,
+    "paired_input_energy": 3065.503198962503,
+    "terminal_output_energy": 3065.503292285673
+  },
+  "coverage_and_missing": {
+    "active_boundary_bins_outside_center_UV_selection": 449,
+    "boundary_straddling_active_input_bins": [
+      357,
+      661
+    ],
+    "geometric_center_UV_bins_600_3000": 304,
+    "input_bins_with_unpaired_prefix_tail": 0,
+    "matrix_input_bins": 753,
+    "matrix_shell_resolution": "global_plus_deep_photospheric_envelope_groups_and_per_shell_ledgers",
+    "matrix_uncovered_bins_of_1000": 247,
+    "outside_grid_terminal_count": null,
+    "policy": "only observed columns applied; unsupported bins/shells remain the named frozen E9 baseline and are not claimed as identity R; unobserved edges receive exactly zero, with no smoothing/fill",
+    "sparse_observed_edges": 473045,
+    "uncovered_geometric_center_UV_bins": 0,
+    "unobserved_edges_within_supported_columns": 279955,
+    "unpaired_prefix_tail_count": 0,
+    "unsupported_shells_of_50": 49,
+    "unused_output_bins": 191,
+    "used_output_bins": 809
+  },
+  "matrix_sha256": "e0e76d5114678be6e9eb47e586ce915ae9e0a5b1fdfd56446bb5f6f29c5decad",
+  "matrix_source_schema": "LFMAT001-v1",
+  "new_model_or_GPU_run": false,
+  "operator_normalization": {
+    "acceptance_tolerance": 2e-12,
+    "max_abs_column_sum_minus_one_including_outside": 2.0450308113595383e-13,
+    "negative_probability_count": 0,
+    "nonfinite_probability_count": 0
+  },
+  "payload_sha256": "6bc7441384cb686ed5e2a287286f4b77cd548ad7323b36c6447e711679726c91",
+  "preregistration_sha256": "f47271c00697cfcc7020cf9b67d4a8b4f609486569614f89ae6fc58fdfcfc6ac",
+  "production_code_modified": false,
+  "repair_implemented": false,
+  "schema": "lumina-emiss-e10-redistribution-application-v1",
+  "shell": 8,
+  "source_guards": {
+    "E9_component_reconstruction_max_abs": 1.9721522630525295e-31,
+    "E9_component_reconstruction_relative": 1.6102603843547383e-16,
+    "clamp": 0,
+    "fallback": 0,
+    "negative": {
+      "eta_coherent": 0,
+      "eta_total": 0,
+      "redistributed_power": 0
+    },
+    "nonfinite": {
+      "eta_coherent": 0,
+      "eta_total": 0,
+      "redistributed_power": 0
+    }
+  }
+}

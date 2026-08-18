@@ -1,0 +1,16 @@
+[harness] lines kept=630387 (from 793505, stride=1.00, deposit=all)
+[harness] wrote detjbar_n3200_a1024.csv
+[harness] wrote iterhist_n3200_a1024.csv
+# chi_line multiplier=1  (1=r-similar, 1/r=155.9 restores production blanket)
+# NB=3200 NS=50 NP=66  dlognu=4.333524e-04  r=NB/NB_prod=0.006414  vdop=1.5590e+08 cm/s (ppd=12.0)
+# n_ali(LAG)=1024   production-equivalent (20000*r=128.3)
+# drift budget: D(core ray, inbound)=275 bins   D(max over rays)=611 bins
+# n_ali/D_core=3.729   n_ali/D_max=1.675   (production: 0.467 / 0.210)
+# chi_es[0]=2.9015e-15 adv=4.5744e-14  kappa0=n_ali*chi_tot0/adv=236.227
+# shell  0: chi_es=2.902e-15 <chi_line>=7.935e-14  kappa_es=64.953 kappa_line=1776.302
+# shell 12: chi_es=1.705e-16 <chi_line>=3.561e-15  kappa_es=3.816 kappa_line=79.705
+# shell 24: chi_es=8.514e-18 <chi_line>=1.305e-15  kappa_es=0.191 kappa_line=29.212
+# shell 36: chi_es=4.655e-19 <chi_line>=7.026e-16  kappa_es=0.010 kappa_line=15.727
+# shell 48: chi_es=3.199e-20 <chi_line>=3.113e-16  kappa_es=0.001 kappa_line=6.969
+# REF: ALI iters=15 (tol=1.0e-09) maxrel_last=5.596e-10  8.2 s
+# LAG: iters used=850 / n_ali=1024 (tol=1e-4 EARLY STOP FIRED) maxrel_last=9.927e-05  28.6 s

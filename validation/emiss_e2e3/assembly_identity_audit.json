@@ -1,0 +1,191 @@
+{
+  "schema": "emiss-assembly-identity-e2-v1",
+  "authority": {
+    "path": "/gpfs/kjhan/lumina_runner2/scratch/chieta_capture_parity59_188605/chieta_iter10",
+    "sha256": "94d75988034454f55fb6b130f04521f01c56f875cb22ef3a711850d7382ffa2f",
+    "iteration": 10,
+    "field_generation": 10,
+    "post_damping": true
+  },
+  "replay": {
+    "path": "/home/kjhan/BACKUP/Eunha.A1/Claude/Lumina-sn/validation/emiss_e1/chieta_A_replay",
+    "sha256": "fa13326d50fff3d84d89bed0041a7b85828bd91952fcddb134d9942f38f625e1"
+  },
+  "e2_gate": {
+    "metric": "global relative L1 against authority",
+    "threshold": 1e-10,
+    "chi_total": 0.08226059670973736,
+    "eta_fixed": 0.3517015818466757,
+    "pass": false
+  },
+  "grid_and_bin_boundaries": {
+    "r_edge": {
+      "bitwise_equal": true,
+      "max_absolute": 0.0
+    },
+    "nu": {
+      "bitwise_equal": true,
+      "max_absolute": 0.0
+    },
+    "dnu": {
+      "bitwise_equal": true,
+      "max_absolute": 0.0
+    }
+  },
+  "field_comparison": {
+    "chi_total": {
+      "relative_l1": 0.08226059670973736,
+      "relative_linf_over_authority_peak": 0.07998270805356664,
+      "max_absolute": 1.9439171223015088e-10,
+      "bitwise_equal_cells": 0,
+      "cells": 50000
+    },
+    "chi_coherent": {
+      "relative_l1": 0.067607621886077,
+      "relative_linf_over_authority_peak": 0.11745566314575558,
+      "max_absolute": 2.43280120434292e-13,
+      "bitwise_equal_cells": 0,
+      "cells": 50000
+    },
+    "eta_fixed": {
+      "relative_l1": 0.3517015818466757,
+      "relative_linf_over_authority_peak": 0.6221268894919652,
+      "max_absolute": 1.2548487732047758e-17,
+      "bitwise_equal_cells": 0,
+      "cells": 50000
+    },
+    "eta_coherent": {
+      "relative_l1": 0.12973080159236766,
+      "relative_linf_over_authority_peak": 0.2571827378007933,
+      "max_absolute": 9.41775478389232e-16,
+      "bitwise_equal_cells": 0,
+      "cells": 50000
+    },
+    "eta_total": {
+      "relative_l1": 0.129947583448044,
+      "relative_linf_over_authority_peak": 0.25717919631792413,
+      "max_absolute": 9.417804815300253e-16,
+      "bitwise_equal_cells": 0,
+      "cells": 50000
+    },
+    "J": {
+      "relative_l1": 0.0,
+      "relative_linf_over_authority_peak": 0.0,
+      "max_absolute": 0.0,
+      "bitwise_equal_cells": 50000,
+      "cells": 50000
+    },
+    "chi_noncoherent": {
+      "relative_l1": 0.0822986272292693,
+      "relative_linf_over_authority_peak": 0.07998281093744271,
+      "max_absolute": 1.9439172381766623e-10,
+      "bitwise_equal_cells": 0,
+      "cells": 50000
+    }
+  },
+  "authority_eta_payload_identity": {
+    "bitwise_equal": true,
+    "max_absolute": 0.0
+  },
+  "environment": {
+    "authority_resolved_variable_count": 122,
+    "replay_imported_variable_count": 119,
+    "intentionally_overridden": {
+      "LUMINA_BIN": "offline CPU driver",
+      "OMP_NUM_THREADS": "1",
+      "LUMINA_CMF_SOLVE_GPU": "0"
+    },
+    "physics_gate_values_are_imported_from_authority_stdout": true
+  },
+  "source_hashes": {
+    "src/lumina_cmfgen.c": {
+      "capture_sha256": "0f0e9adb4bd94e23dfd4d71b413f74c0c8f2a394fd39a9f8968623a3319d9772",
+      "current_sha256": "0f0e9adb4bd94e23dfd4d71b413f74c0c8f2a394fd39a9f8968623a3319d9772",
+      "equal": true
+    },
+    "src/lumina_cuda.cu": {
+      "capture_sha256": "0fb494089e8e65c95dbe6217e119205aae234561b4f81091931574ef4bd9ef3c",
+      "current_sha256": "0fb494089e8e65c95dbe6217e119205aae234561b4f81091931574ef4bd9ef3c",
+      "equal": true
+    },
+    "src/lumina_atomic.c": {
+      "capture_sha256": "654936188da3348b64af24c7ceb8bbf1f7773315ff654e294dc0f2a1cf454ada",
+      "current_sha256": "654936188da3348b64af24c7ceb8bbf1f7773315ff654e294dc0f2a1cf454ada",
+      "equal": true
+    },
+    "src/lumina_plasma.c": {
+      "capture_sha256": "142e622c9f024547b4797c33fe59fe59a5c4303d748d147ab551c37dd6619c13",
+      "current_sha256": "37eae2949eb0f2317a42350e577830d8ba1aba170fbaecc8c55205641e6a7cd7",
+      "equal": false
+    },
+    "src/lumina.h": {
+      "capture_sha256": "8f2a05c7bbc932251966ab528d2101ab78ee0fcebc3b57dfe7d58642f9aae802",
+      "current_sha256": "b227f0da1c3d6973e1d5fb4efed89c1c90417847b8e5226eeae3be33d4ee4f76",
+      "equal": false
+    }
+  },
+  "epoch_evidence_stdout_lines": {
+    "[CMFGEN] iter 10:": [
+      33485
+    ],
+    "[CMFGEN] iter 11:": [
+      36005
+    ],
+    "Per-level departure b_k dump -> lumina_levelpop.csv": [
+      37975
+    ],
+    "Pure-CMFGEN plasma state written to lumina_plasma_state.csv": [
+      38074
+    ],
+    "Pure-CMFGEN ion populations written to lumina_ion_pops.csv": [
+      38075
+    ]
+  },
+  "temperature_epoch_skew": {
+    "capture_input": "rounded TEHOLD state printed before [CMFGEN] iter 9; this state feeds iter 10",
+    "replay_input": "post-loop lumina_plasma_state.csv",
+    "relative_l1_final_vs_capture_rounded": 0.013108957394557183,
+    "max_cell_relative": 0.08013660435844448,
+    "max_cell_shell": 11,
+    "samples": {
+      "0": {
+        "capture_rounded_K": 21081.0,
+        "final_csv_K": 21227.639444
+      },
+      "11": {
+        "capture_rounded_K": 10646.0,
+        "final_csv_K": 11499.13429
+      },
+      "25": {
+        "capture_rounded_K": 8319.0,
+        "final_csv_K": 8475.677865
+      },
+      "49": {
+        "capture_rounded_K": 12971.0,
+        "final_csv_K": 13052.111389
+      }
+    },
+    "precision_note": "capture-side values are logged to the nearest kelvin"
+  },
+  "serialized_term_identifiability": {
+    "direct": [
+      "chi_total",
+      "chi_coherent",
+      "eta_fixed",
+      "eta_coherent",
+      "eta_total",
+      "J"
+    ],
+    "derived": [
+      "chi_noncoherent = chi_total - chi_coherent"
+    ],
+    "not_identifiable": [
+      "chi_abs versus chi_line_th inside chi_noncoherent",
+      "pre-EPAY eta_line versus continuum eta",
+      "per-shell EPAY scale/shape inputs",
+      "per-line tau, eps_l, A_ul*n_u contribution"
+    ]
+  },
+  "verdict": "UNRESOLVED",
+  "e3_permitted": false
+}

@@ -1,0 +1,545 @@
+{
+  "E9_driver_metadata": {
+    "bdf_eta_negative": "358662",
+    "clamp": "0",
+    "nonfinite": "0",
+    "sign_uncertain": "0",
+    "solution_negative_excess": "0",
+    "solution_roundoff_enclosure_restart": "1624",
+    "solution_sign_indeterminate_subtruncation": "974903",
+    "solution_subtruncation": "118679",
+    "source_iterations": "1",
+    "source_residual": "0",
+    "transport_residual": "8.1805706575466152e-07"
+  },
+  "bands": [
+    {
+      "E10_J_det_over_CMFGEN": 29.466800058457377,
+      "E10_J_det_over_frozen_J_producer": 3.4886973901772973,
+      "E10_over_E9_J_det": 3.5542631433458896,
+      "E9_J_det_over_CMFGEN": 8.29055105658781,
+      "J_det_ratio_to_preregistered_ratio": 1.0924441300409273,
+      "band": "B0",
+      "direction_matches_preregistration": true,
+      "exact_source_ratio_to_E9": 3.2534964906742943,
+      "fractional_change_from_E9": 2.5542631433458896,
+      "hit_preregistered_plusminus25pct": true,
+      "lambda_hi_A": 1000.0,
+      "lambda_lo_A": 600.0,
+      "minimum_10pct_drop_gate": false,
+      "moved_toward_CMFGEN": false,
+      "preregistered_coarse_ratio": 3.2534964906742943,
+      "remaining_excess_factor": 29.466800058457377
+    },
+    {
+      "E10_J_det_over_CMFGEN": 6.006074827340296,
+      "E10_J_det_over_frozen_J_producer": 1.2174777715844844,
+      "E10_over_E9_J_det": 1.2217046983642434,
+      "E9_J_det_over_CMFGEN": 4.916142857911498,
+      "J_det_ratio_to_preregistered_ratio": 0.9812375728351702,
+      "band": "B1",
+      "direction_matches_preregistration": true,
+      "exact_source_ratio_to_E9": 1.2450651424142598,
+      "fractional_change_from_E9": 0.22170469836424345,
+      "hit_preregistered_plusminus25pct": true,
+      "lambda_hi_A": 1500.0,
+      "lambda_lo_A": 1000.0,
+      "minimum_10pct_drop_gate": false,
+      "moved_toward_CMFGEN": false,
+      "preregistered_coarse_ratio": 1.2450651424142594,
+      "remaining_excess_factor": 6.006074827340296
+    },
+    {
+      "E10_J_det_over_CMFGEN": 1.6135699285712701,
+      "E10_J_det_over_frozen_J_producer": 0.8704650693867574,
+      "E10_over_E9_J_det": 0.8769969757937045,
+      "E9_J_det_over_CMFGEN": 1.8398808355193568,
+      "J_det_ratio_to_preregistered_ratio": 1.3296513418232014,
+      "band": "B2",
+      "direction_matches_preregistration": true,
+      "exact_source_ratio_to_E9": 0.6595691277919346,
+      "fractional_change_from_E9": -0.1230030242062955,
+      "hit_preregistered_plusminus25pct": false,
+      "lambda_hi_A": 2000.0,
+      "lambda_lo_A": 1500.0,
+      "preregistered_coarse_ratio": 0.6595691277919347
+    },
+    {
+      "E10_J_det_over_CMFGEN": 0.5548967416722353,
+      "E10_J_det_over_frozen_J_producer": 2.6234487199495575,
+      "E10_over_E9_J_det": 2.663152402630904,
+      "E9_J_det_over_CMFGEN": 0.2083608662891609,
+      "J_det_ratio_to_preregistered_ratio": 0.8343021735437569,
+      "band": "B3",
+      "direction_matches_preregistration": true,
+      "exact_source_ratio_to_E9": 3.1920717541930603,
+      "fractional_change_from_E9": 1.663152402630904,
+      "hit_preregistered_plusminus25pct": true,
+      "lambda_hi_A": 2500.0,
+      "lambda_lo_A": 2000.0,
+      "preregistered_coarse_ratio": 3.192071754193061
+    },
+    {
+      "E10_J_det_over_CMFGEN": 1.7165956002897913,
+      "E10_J_det_over_frozen_J_producer": 5.181245476519709,
+      "E10_over_E9_J_det": 5.09670937932728,
+      "E9_J_det_over_CMFGEN": 0.33680468563745464,
+      "J_det_ratio_to_preregistered_ratio": 1.4006205135286416,
+      "band": "B4",
+      "direction_matches_preregistration": true,
+      "exact_source_ratio_to_E9": 3.638893854615143,
+      "fractional_change_from_E9": 4.09670937932728,
+      "hit_preregistered_plusminus25pct": false,
+      "lambda_hi_A": 3000.0,
+      "lambda_lo_A": 2500.0,
+      "preregistered_coarse_ratio": 3.6388938546151435
+    },
+    {
+      "E10_J_det_over_CMFGEN": 1.6020071802939237,
+      "E10_J_det_over_frozen_J_producer": 1.711624490838533,
+      "E10_over_E9_J_det": 1.7183605808215403,
+      "E9_J_det_over_CMFGEN": 0.9322881345008575,
+      "band": "BALL",
+      "fractional_change_from_E9": 0.7183605808215403,
+      "lambda_hi_A": 3000.0,
+      "lambda_lo_A": 600.0
+    },
+    {
+      "E10_J_det_over_CMFGEN": 6.509818738332107,
+      "E10_J_det_over_frozen_J_producer": 0.7326878984407303,
+      "E10_over_E9_J_det": 0.940584036829964,
+      "E9_J_det_over_CMFGEN": 6.921038932653002,
+      "J_det_ratio_to_preregistered_ratio": 1.1871178437435634,
+      "band": "OPTICAL",
+      "direction_matches_preregistration": true,
+      "exact_source_ratio_to_E9": 0.7923257507981198,
+      "fractional_change_from_E9": -0.059415963170035946,
+      "hit_preregistered_plusminus25pct": true,
+      "lambda_hi_A": 10000.0,
+      "lambda_lo_A": 3000.0,
+      "preregistered_coarse_ratio": 0.7923257507981198
+    }
+  ],
+  "clamp_added": false,
+  "cmfgen": {
+    "EDDFACTOR_bytes": 142832872,
+    "RVTJ_bytes": 604183,
+    "bin_integral_max_abs_error": 2.220446049250313e-16,
+    "bin_integral_ratio_max": 1.0000000000000002,
+    "bin_integral_ratio_min": 0.9999999999999998,
+    "finish": 1.0,
+    "reader": {
+      "ND": 90,
+      "bad": 0,
+      "finish": 1.0,
+      "fl_roundtrip": 2.220446049250313e-16,
+      "good": 196185,
+      "int_size": 4,
+      "little": true,
+      "nu_max": 1e+18,
+      "nu_min": 3498970000000.0,
+      "nu_roundtrip": 2.220446049250313e-16,
+      "recl": 728,
+      "records": 196199,
+      "unit_size": 1,
+      "word": 8
+    },
+    "run": "/gpfs/kjhan/cmfgen_runs/toy06_19.48d_jnu4",
+    "shell_brackets": [
+      {
+        "status": "resolved",
+        "v0": 4092.3914953,
+        "v1": 4394.1823505,
+        "velocity_kms": 4264.0,
+        "weight": 0.5686338792017842
+      },
+      {
+        "status": "resolved",
+        "v0": 4718.2285839,
+        "v1": 5066.1714044,
+        "velocity_kms": 4992.0,
+        "weight": 0.7868287545251995
+      },
+      {
+        "status": "resolved",
+        "v0": 5439.7730509,
+        "v1": 5840.9257175,
+        "velocity_kms": 5720.0,
+        "weight": 0.6985543720177273
+      },
+      {
+        "status": "resolved",
+        "v0": 6271.661137,
+        "v1": 6663.9769781,
+        "velocity_kms": 6448.0,
+        "weight": 0.44948188302967756
+      },
+      {
+        "status": "resolved",
+        "v0": 7018.7576274,
+        "v1": 7435.1541349,
+        "velocity_kms": 7176.0,
+        "weight": 0.3776265404915767
+      },
+      {
+        "status": "resolved",
+        "v0": 7435.1541349,
+        "v1": 7983.4549335,
+        "velocity_kms": 7904.0,
+        "weight": 0.8550887875726685
+      },
+      {
+        "status": "resolved",
+        "v0": 8572.1898321,
+        "v1": 9132.8822241,
+        "velocity_kms": 8632.0,
+        "weight": 0.10667198048943621
+      },
+      {
+        "status": "resolved",
+        "v0": 9132.8822241,
+        "v1": 9610.0173342,
+        "velocity_kms": 9360.0,
+        "weight": 0.47600306724944197
+      },
+      {
+        "status": "resolved",
+        "v0": 9610.0173342,
+        "v1": 10163.50575,
+        "velocity_kms": 10088.0,
+        "weight": 0.8635820590917592
+      },
+      {
+        "status": "resolved",
+        "v0": 10706.464425,
+        "v1": 11256.119932,
+        "velocity_kms": 10816.0,
+        "weight": 0.19928041037529345
+      },
+      {
+        "status": "resolved",
+        "v0": 11256.119932,
+        "v1": 11814.574274,
+        "velocity_kms": 11544.0,
+        "weight": 0.5154943678457422
+      },
+      {
+        "status": "resolved",
+        "v0": 11814.574274,
+        "v1": 12376.055806,
+        "velocity_kms": 12272.0,
+        "weight": 0.8146763516346601
+      },
+      {
+        "status": "resolved",
+        "v0": 12936.0982,
+        "v1": 13496.047373,
+        "velocity_kms": 13000.0,
+        "weight": 0.11412071502425408
+      },
+      {
+        "status": "resolved",
+        "v0": 13496.047373,
+        "v1": 14056.473143,
+        "velocity_kms": 13728.0,
+        "weight": 0.4138864403041292
+      },
+      {
+        "status": "resolved",
+        "v0": 14056.473143,
+        "v1": 14617.648395,
+        "velocity_kms": 14456.0,
+        "weight": 0.7119466790028726
+      },
+      {
+        "status": "resolved",
+        "v0": 15178.76148,
+        "v1": 15741.635247,
+        "velocity_kms": 15184.0,
+        "weight": 0.00930674035125318
+      },
+      {
+        "status": "resolved",
+        "v0": 15741.635247,
+        "v1": 16306.855147,
+        "velocity_kms": 15912.0,
+        "weight": 0.3014132251889925
+      },
+      {
+        "status": "resolved",
+        "v0": 16306.855147,
+        "v1": 16875.28639,
+        "velocity_kms": 16640.0,
+        "weight": 0.5860776604075566
+      },
+      {
+        "status": "resolved",
+        "v0": 16875.28639,
+        "v1": 17446.816315,
+        "velocity_kms": 17368.0,
+        "weight": 0.8620959086263065
+      },
+      {
+        "status": "resolved",
+        "v0": 18021.470042,
+        "v1": 18600.316808,
+        "velocity_kms": 18096.0,
+        "weight": 0.12875593745651043
+      },
+      {
+        "status": "resolved",
+        "v0": 18600.316808,
+        "v1": 19183.653601,
+        "velocity_kms": 18824.0,
+        "weight": 0.38345462635681815
+      },
+      {
+        "status": "resolved",
+        "v0": 19183.653601,
+        "v1": 19768.655989,
+        "velocity_kms": 19552.0,
+        "weight": 0.6296493938414487
+      },
+      {
+        "status": "resolved",
+        "v0": 19768.655989,
+        "v1": 20356.092088,
+        "velocity_kms": 20280.0,
+        "weight": 0.870467463389578
+      },
+      {
+        "status": "resolved",
+        "v0": 20943.793072,
+        "v1": 21533.881295,
+        "velocity_kms": 21008.0,
+        "weight": 0.10880903142511918
+      },
+      {
+        "status": "resolved",
+        "v0": 21533.881295,
+        "v1": 22127.251375,
+        "velocity_kms": 21736.0,
+        "weight": 0.3406284068114802
+      },
+      {
+        "status": "resolved",
+        "v0": 22127.251375,
+        "v1": 22719.845804,
+        "velocity_kms": 22464.0,
+        "weight": 0.5682615436804921
+      },
+      {
+        "status": "resolved",
+        "v0": 22719.845804,
+        "v1": 23315.177103,
+        "velocity_kms": 23192.0,
+        "weight": 0.793094864646111
+      },
+      {
+        "status": "resolved",
+        "v0": 23909.688047,
+        "v1": 24505.36785,
+        "velocity_kms": 23920.0,
+        "weight": 0.01731123490853084
+      },
+      {
+        "status": "resolved",
+        "v0": 24505.36785,
+        "v1": 25103.084363,
+        "velocity_kms": 24648.0,
+        "weight": 0.2386284248432677
+      },
+      {
+        "status": "resolved",
+        "v0": 25103.084363,
+        "v1": 25702.348976,
+        "velocity_kms": 25376.0,
+        "weight": 0.4554175752740443
+      },
+      {
+        "status": "resolved",
+        "v0": 25702.348976,
+        "v1": 26302.687806,
+        "velocity_kms": 26104.0,
+        "weight": 0.6690405549812569
+      },
+      {
+        "status": "resolved",
+        "v0": 26302.687806,
+        "v1": 26903.747431,
+        "velocity_kms": 26832.0,
+        "weight": 0.8806317576230478
+      },
+      {
+        "status": "resolved",
+        "v0": 27505.364384,
+        "v1": 28107.677855,
+        "velocity_kms": 27560.0,
+        "weight": 0.09070960327234563
+      },
+      {
+        "status": "resolved",
+        "v0": 28107.677855,
+        "v1": 28711.047603,
+        "velocity_kms": 28288.0,
+        "weight": 0.2988584455845126
+      },
+      {
+        "status": "resolved",
+        "v0": 28711.047603,
+        "v1": 29315.936463,
+        "velocity_kms": 29016.0,
+        "weight": 0.504146161660179
+      },
+      {
+        "status": "resolved",
+        "v0": 29315.936463,
+        "v1": 29922.773904,
+        "velocity_kms": 29744.0,
+        "weight": 0.705400669237875
+      },
+      {
+        "status": "resolved",
+        "v0": 29922.773904,
+        "v1": 30531.846237,
+        "velocity_kms": 30472.0,
+        "weight": 0.9017419873511122
+      },
+      {
+        "status": "resolved",
+        "v0": 31143.427304,
+        "v1": 31757.818766,
+        "velocity_kms": 31200.0,
+        "weight": 0.09207923530682025
+      },
+      {
+        "status": "resolved",
+        "v0": 31757.818766,
+        "v1": 32375.398439,
+        "velocity_kms": 31928.0,
+        "weight": 0.27556158571948275
+      },
+      {
+        "status": "resolved",
+        "v0": 32375.398439,
+        "v1": 32996.652494,
+        "velocity_kms": 32656.0,
+        "weight": 0.45166958467578766
+      },
+      {
+        "status": "resolved",
+        "v0": 32996.652494,
+        "v1": 33559.855034,
+        "velocity_kms": 33384.0,
+        "weight": 0.6877588052070919
+      },
+      {
+        "status": "resolved",
+        "v0": 34070.309267,
+        "v1": 34558.425833,
+        "velocity_kms": 34112.0,
+        "weight": 0.08541142813825894
+      },
+      {
+        "status": "resolved",
+        "v0": 34558.425833,
+        "v1": 35025.747429,
+        "velocity_kms": 34840.0,
+        "weight": 0.6025276156935788
+      },
+      {
+        "status": "resolved",
+        "v0": 35497.71049,
+        "v1": 35663.366654,
+        "velocity_kms": 35568.0,
+        "weight": 0.42430965623471967
+      },
+      {
+        "status": "UNRESOLVED-outside-RVTJ-grid",
+        "velocity_kms": 36296.0
+      },
+      {
+        "status": "UNRESOLVED-outside-RVTJ-grid",
+        "velocity_kms": 37024.0
+      },
+      {
+        "status": "UNRESOLVED-outside-RVTJ-grid",
+        "velocity_kms": 37752.0
+      },
+      {
+        "status": "UNRESOLVED-outside-RVTJ-grid",
+        "velocity_kms": 38480.0
+      },
+      {
+        "status": "UNRESOLVED-outside-RVTJ-grid",
+        "velocity_kms": 39208.0
+      },
+      {
+        "status": "UNRESOLVED-outside-RVTJ-grid",
+        "velocity_kms": 39936.0
+      }
+    ],
+    "unresolved_shells_outside_RVTJ_grid": [
+      44,
+      45,
+      46,
+      47,
+      48,
+      49
+    ]
+  },
+  "driver_metadata": {
+    "bdf_eta_negative": "366471",
+    "clamp": "0",
+    "nonfinite": "0",
+    "sign_uncertain": "0",
+    "solution_negative_excess": "0",
+    "solution_roundoff_enclosure_restart": "1624",
+    "solution_sign_indeterminate_subtruncation": "974048",
+    "solution_subtruncation": "123648",
+    "source_iterations": "1",
+    "source_residual": "0",
+    "transport_residual": "8.1805706575466152e-07"
+  },
+  "formal_solve_only": true,
+  "jdet_sha256": "f1fbe2df3a643751c120c716ad844af3b315559eee6edad7414c9041b690764c",
+  "optical_gate": {
+    "J_det_increased": false,
+    "both_pass": false,
+    "source_increased": false
+  },
+  "payload_sha256": "0caac045326e4b556cb82c143b8878487f3d8c4ff2062600368789b84000cad2",
+  "raw_table_minima": {
+    "E10_J_det": 5.4779330357925e-50,
+    "E10_J_det_ascending_frequency_bin": 999,
+    "E10_J_producer": 2.3861473937489197e-47,
+    "E9_J_det": -1.819988328970799e-05,
+    "E9_J_det_ascending_frequency_bin": 213
+  },
+  "raw_table_negative_counts": {
+    "E10_J_det_bins": 0,
+    "E10_J_producer_bins": 0,
+    "E9_J_det_bins": 2
+  },
+  "raw_table_nonfinite_counts": {
+    "E10_J_det_bins": 0,
+    "E10_J_producer_bins": 0,
+    "E9_J_det_bins": 0
+  },
+  "repair_implemented": false,
+  "repeat_count": 3,
+  "repeat_hashes_identical": true,
+  "scattering_reconvergence": false,
+  "schema": "lumina-emiss-e10-stage31-v1",
+  "shape_gate": {
+    "B0_minimum_10pct_drop": false,
+    "B0_toward_CMFGEN": false,
+    "B1_minimum_10pct_drop": false,
+    "B1_toward_CMFGEN": false,
+    "both_pass": false
+  },
+  "shell": 8,
+  "trip_1208_recurred": false,
+  "trip_count": 0,
+  "trip_inference": "driver returned zero and emitted the complete 1000-row table; nonfinite and solution-negative-excess are zero"
+}

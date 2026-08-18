@@ -1,0 +1,9 @@
+Z,stage,ion_label,ND,PRRR_N_SL,OUT_NLEV,model_spec_file
+14,1,Sk2,90,69,125,/gpfs/kjhan/cmfgen_runs/toy06_19p48d_modern/MODEL_SPEC
+14,2,SkIII,90,99,147,/gpfs/kjhan/cmfgen_runs/toy06_19p48d_modern/MODEL_SPEC
+16,1,S2,90,55,322,/gpfs/kjhan/cmfgen_runs/toy06_19p48d_modern/MODEL_SPEC
+16,2,SIII,90,79,256,/gpfs/kjhan/cmfgen_runs/toy06_19p48d_modern/MODEL_SPEC
+26,1,Fe2,90,131,2599,/gpfs/kjhan/cmfgen_runs/toy06_19p48d_modern/MODEL_SPEC
+26,2,FeIII,90,105,1500,/gpfs/kjhan/cmfgen_runs/toy06_19p48d_modern/MODEL_SPEC
+26,3,FeIV,90,63,1000,/gpfs/kjhan/cmfgen_runs/toy06_19p48d_modern/MODEL_SPEC
+27,2,CoIII,90,120,3214,/gpfs/kjhan/cmfgen_runs/toy06_19p48d_modern/MODEL_SPEC

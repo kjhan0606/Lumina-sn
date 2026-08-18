@@ -1,0 +1,79 @@
+# KPR composed-repair run: P1/P2 T_e pathology trace (OFFLINE reconstruction)
+# Source run: logs/coevolve_consume_a10_kx_kpr/  (12 coevolve iters, PKTS=400k, alpha=1.0)
+# All numbers reconstructed from the run's OWN outputs. No GPU/rerun.
+
+## COMMITTED T_e (lumina_plasma_state.csv) vs CMFGEN vs corpses
+shell  W       kpr_Te   CMFGEN   pre-repair(gphall)  ForkB-alone(bsrc N30)
+s0     0.2979  22924    18760    13120               14524
+s1     0.1879  23165    ~17500   13592               14949
+s2     0.1342  23334    16351    13912               15017
+s3     0.1018  31378    ~14000   14109               15015   <-- P2
+s4     0.0803  65273    ~13500   13777               14394   <-- P2 peak
+s5     0.0651  34307    ~13000   13629               14168   <-- P2
+s6     0.0539  18607    -        13xxx               14xxx
+s8     0.0389  10470(T_rad pin) - -                  -
+
+## ITERATION HISTORY (stdout.log [CMFGEN] iter lines + [SIMUL] pins)
+iter  T_e[0]  T_e[25]  T_e[49]  J[mid,500]   pins_hi/lo   bteq_exits    BSRC_thermalized
+0     11462   9434     18793    3.370e-07    0/14         3.3e3         6.9e4
+1     22924   9434     18793    3.642e-07    45/0         3.8e6         7.7e3
+2     22924   13337    37586    3.718e-06    0/6          2.81e9        1.20e9
+3     22924   12032    37586    1.116e-05    12/21        1.25e8        9.8e7
+4     22924   13440    37586    2.213e-05    18/19        1.09e8        1.80e8
+5     22924   16996    37586    3.657e-05    21/18        6.5e7         4.8e8
+6     22924   30801    37586    3.661e-05    25/16        6.1e7         8.8e8
+7     22924   30801    37586    5.824e-05    27/14        4.9e7         5.9e8
+8     22924   30801    37586    9.198e-05    29/12        3.7e7         4.5e8
+9     22924   30801    37586    1.167e-04    28/12        2.8e7         3.4e8
+10    22924   30801    37586    1.720e-04    30/11        2.5e7         3.2e8
+11    22924   30801    37586    2.408e-04    31/10        2.4e7         3.2e8
+# T_e[0],[25],[49] FROZEN (pin_hi HOLD) while J[mid] climbs monotonically 6.6x over
+# iters 5->11 and STILL RISING (+40%/iter). pins_hi 0->31 of 50. == NOT CONVERGED runaway.
+
+## IONIZING-BAND mc_J (raw sum, lambda<912A) kpr vs pre-repair gphall
+shell  gphall        kpr           ratio
+s0     3.117e-05     3.411e-04      10.9
+s1     3.503e-05     2.542e-04       7.3
+s2     3.838e-05     3.967e-04      10.3
+s3     4.930e-05     4.882e-03      99.0    <-- runaway begins (B3 GATED OFF here, W<0.13)
+s4     6.780e-05     3.514e-02     518.3    <-- 65kK shell, field 518x pre-repair
+s5     9.316e-05     1.524e-03      16.4
+s6     8.776e-05     2.827e-05       0.3    <-- flood absorbed -> photosphere over-ionized
+# The blow-up is LARGEST in the mid-shells (s3-s5, 16-518x), NOT the B3-active deep
+# shells (s0-s2, 7-11x). => emergent in the UNGATED shells = flood + self-emission,
+# not a direct knob site.
+
+## B(T_e) SELF-EMISSION (ionizing/EUV band) at committed T_e vs a 13120K gas
+shell  Te     B_EUV(Te)/B_EUV(13k)   B_FUV(Te)/B_FUV(13k)
+s0     22924  6.4e4                  66
+s3     31378  4.0e6                  311
+s4     65273  1.8e9                  3225
+# A 65kK gas radiates ~1.8 BILLION x more EUV than a 13kK gas -> the field spike at
+# s4 is THERMAL self-emission driven by the (runaway) T_e -> feeds its own H_photo.
+
+## OVER-IONIZATION (lumina_ion_pops.csv): coolant burnout + downstream flood
+shell  Te     f(FeIII)  f(FeIV)  f(FeV)    note
+s3     31378  0.000     0.165    0.835     Fe stripping past IV -> line coolant lost
+s4     65273  0.000     0.002    0.998     Fe FULLY stripped to V -> C_line collapses
+s5     34307  0.001     0.774    0.225
+s6     18607  0.004     0.969    0.027     downstream flood
+s8     10470  0.003     0.983    0.014     CMFGEN=0.022; over-ionized at COLD T_e
+# s8 f(FeIV)=0.983 at Te=10470K (T_rad pin) => over-ionization is PHOTO (bright EUV/FUV
+# incident), not thermal. The mid-shell EUV runaway is the ionizing lamp.
+
+## ROOT CAUSE (file:line)
+# simul_r1() plasma.c:5059-5100 is the coevolve T_e balance r(T)=H-C:
+#   HEATING  plasma.c:5065-5066  H += nion * Hex[p], where Hex[p] (Gph loop
+#            plasma.c:5744) uses  J = alpha*mc_J + (1-alpha)*J_det, alpha=1.0
+#            => bf photo-heating reads the (repaired, bright) transported MC field.
+#   COOLING  plasma.c:5070-5079  C_fb = n_e*n+*frozenin_alpha_rr(T)*(chi+kTe)
+#            => analytic thermal recombination at local T_e, FIELD-DECOUPLED.
+# The two halves are NOT a detailed-balance pair (contrast the emit_nu design at
+# plasma.c:4798-4810 which DOES cancel bin-by-bin at J=B(T_e); simul_r1 does not use it).
+# When B1/B2/B3 brighten mc_J in the ionizing band, H_photo scales up but C_fb does
+# not track it -> net heating unbounded -> no cold root -> pin_hi HOLD -> T_e ratchets.
+# B3 (cuda.cu:1865, Planck(T_e) k-packet exit, bteq_exits ~1e9) is the primary field
+# amplifier; B2 fb continuum (plasma.c:1736,2306) + ff sustain the mid-shell self-heat
+# at the runaway T_e; round-2 Gph (W>0.13) is GATED OFF at s3-s5 (EXCLUDED for P2).
+# FB_MULTI does NOT touch radeq C_fb (5077 uses frozenin_alpha_rr regardless) -> the
+# "FB_MULTI cooling-deficit" hypothesis is FALSIFIED.

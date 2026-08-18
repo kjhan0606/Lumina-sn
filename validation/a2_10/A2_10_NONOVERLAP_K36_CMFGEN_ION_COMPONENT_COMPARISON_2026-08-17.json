@@ -1,0 +1,665 @@
+{
+  "cap": 0,
+  "clamp": 0,
+  "cmfgen_component_precision": "Diagnostic only: components are reconstructed from serialized LINEHEAT (5 significant digits) and NETRATE (7 significant digits); the original finite net LINEHEAT remains authoritative.",
+  "common_ion_components": [
+    {
+      "Z": 27,
+      "cmfgen_interpolated": {
+        "component_closure_erg_cm3_s": -1.8545928681668045e-14,
+        "scaled_absorption_erg_cm3_s": 401.8412567621192,
+        "scaled_emission_erg_cm3_s": 401.84229423354503,
+        "signed_rate_erg_cm3_s": 0.0010374714258504277
+      },
+      "ion_label": 4,
+      "lumina": {
+        "component_closure_erg_cm3_s": -1.1368683772161603e-13,
+        "scaled_absorption_erg_cm3_s": 1.2179683252876237,
+        "scaled_emission_erg_cm3_s": 598.1779407019551,
+        "signed_rate_erg_cm3_s": 596.9599723766676
+      },
+      "lumina_to_cmfgen": {
+        "scaled_absorption_ratio": 0.003030968833567612,
+        "scaled_emission_ratio": 1.4885888053244654,
+        "signed_rate_ratio": 575398.9531685967
+      },
+      "normalized_species": "Co IV"
+    },
+    {
+      "Z": 26,
+      "cmfgen_interpolated": {
+        "component_closure_erg_cm3_s": 7.382061541910678e-17,
+        "scaled_absorption_erg_cm3_s": 52.128328606998686,
+        "scaled_emission_erg_cm3_s": 52.128433848227374,
+        "signed_rate_erg_cm3_s": 0.00010524122868808384
+      },
+      "ion_label": 4,
+      "lumina": {
+        "component_closure_erg_cm3_s": 1.4210854715202004e-14,
+        "scaled_absorption_erg_cm3_s": 0.13943481696698898,
+        "scaled_emission_erg_cm3_s": 75.58380587530418,
+        "signed_rate_erg_cm3_s": 75.44437105833718
+      },
+      "lumina_to_cmfgen": {
+        "scaled_absorption_ratio": 0.0026748376687502047,
+        "scaled_emission_ratio": 1.4499535147241798,
+        "signed_rate_ratio": 716870.8689437748
+      },
+      "normalized_species": "Fe IV"
+    },
+    {
+      "Z": 28,
+      "cmfgen_interpolated": {
+        "component_closure_erg_cm3_s": 9.710927808409542e-16,
+        "scaled_absorption_erg_cm3_s": 34.71462192902962,
+        "scaled_emission_erg_cm3_s": 34.714752463138154,
+        "signed_rate_erg_cm3_s": 0.0001305341085346138
+      },
+      "ion_label": 4,
+      "lumina": {
+        "component_closure_erg_cm3_s": 0.0,
+        "scaled_absorption_erg_cm3_s": 0.08754573574682867,
+        "scaled_emission_erg_cm3_s": 47.96447253928376,
+        "signed_rate_erg_cm3_s": 47.87692680353693
+      },
+      "lumina_to_cmfgen": {
+        "scaled_absorption_ratio": 0.0025218691975331517,
+        "scaled_emission_ratio": 1.3816740473726499,
+        "signed_rate_ratio": 366777.13848899025
+      },
+      "normalized_species": "Ni IV"
+    },
+    {
+      "Z": 26,
+      "cmfgen_interpolated": {
+        "component_closure_erg_cm3_s": -5.165545725535625e-17,
+        "scaled_absorption_erg_cm3_s": 1.4417350309081616,
+        "scaled_emission_erg_cm3_s": 1.4417661471592935,
+        "signed_rate_erg_cm3_s": 3.1116251131997926e-05
+      },
+      "ion_label": 3,
+      "lumina": {
+        "component_closure_erg_cm3_s": 5.551115123125783e-17,
+        "scaled_absorption_erg_cm3_s": 0.8762222472548966,
+        "scaled_emission_erg_cm3_s": 0.9773857812842722,
+        "signed_rate_erg_cm3_s": 0.10116353402937556
+      },
+      "lumina_to_cmfgen": {
+        "scaled_absorption_ratio": 0.6077553978160304,
+        "scaled_emission_ratio": 0.6779086769446014,
+        "signed_rate_ratio": 3251.147884114663
+      },
+      "normalized_species": "Fe III"
+    },
+    {
+      "Z": 27,
+      "cmfgen_interpolated": {
+        "component_closure_erg_cm3_s": 1.8757781786171712e-15,
+        "scaled_absorption_erg_cm3_s": 20.297869269082007,
+        "scaled_emission_erg_cm3_s": 20.298134344918257,
+        "signed_rate_erg_cm3_s": 0.0002650758362480304
+      },
+      "ion_label": 3,
+      "lumina": {
+        "component_closure_erg_cm3_s": 6.938893903907228e-18,
+        "scaled_absorption_erg_cm3_s": 0.4482785487967542,
+        "scaled_emission_erg_cm3_s": 0.49078757539659745,
+        "signed_rate_erg_cm3_s": 0.04250902659984323
+      },
+      "lumina_to_cmfgen": {
+        "scaled_absorption_ratio": 0.022085005221684932,
+        "scaled_emission_ratio": 0.024178949998893307,
+        "signed_rate_ratio": 160.3655286031719
+      },
+      "normalized_species": "Co III"
+    },
+    {
+      "Z": 28,
+      "cmfgen_interpolated": {
+        "component_closure_erg_cm3_s": -4.53020325245912e-16,
+        "scaled_absorption_erg_cm3_s": 3.829428051961893,
+        "scaled_emission_erg_cm3_s": 3.8295014261075893,
+        "signed_rate_erg_cm3_s": 7.337414569664529e-05
+      },
+      "ion_label": 3,
+      "lumina": {
+        "component_closure_erg_cm3_s": -6.938893903907228e-18,
+        "scaled_absorption_erg_cm3_s": 0.14180723616021168,
+        "scaled_emission_erg_cm3_s": 0.14411237086209613,
+        "signed_rate_erg_cm3_s": 0.0023051347018844606
+      },
+      "lumina_to_cmfgen": {
+        "scaled_absorption_ratio": 0.03703091799506743,
+        "scaled_emission_ratio": 0.03763214967870528,
+        "signed_rate_ratio": 31.416170914135122
+      },
+      "normalized_species": "Ni III"
+    },
+    {
+      "Z": 27,
+      "cmfgen_interpolated": {
+        "component_closure_erg_cm3_s": -4.48331892003741e-22,
+        "scaled_absorption_erg_cm3_s": 1.2151326545018267e-05,
+        "scaled_emission_erg_cm3_s": 1.2166174044460259e-05,
+        "signed_rate_erg_cm3_s": 1.4847499441992283e-08
+      },
+      "ion_label": 2,
+      "lumina": {
+        "component_closure_erg_cm3_s": 1.0842021724855044e-19,
+        "scaled_absorption_erg_cm3_s": 0.0036291815674196187,
+        "scaled_emission_erg_cm3_s": 0.0037979107023257555,
+        "signed_rate_erg_cm3_s": 0.00016872913490613678
+      },
+      "lumina_to_cmfgen": {
+        "scaled_absorption_ratio": 298.6654629002206,
+        "scaled_emission_ratio": 312.1696836200609,
+        "signed_rate_ratio": 11364.144889538125
+      },
+      "normalized_species": "Co II"
+    },
+    {
+      "Z": 28,
+      "cmfgen_interpolated": {
+        "component_closure_erg_cm3_s": -9.26442286059391e-23,
+        "scaled_absorption_erg_cm3_s": 3.7132429921867784e-06,
+        "scaled_emission_erg_cm3_s": 3.7188398712049402e-06,
+        "signed_rate_erg_cm3_s": 5.596879018161966e-09
+      },
+      "ion_label": 2,
+      "lumina": {
+        "component_closure_erg_cm3_s": -1.2061749168901237e-18,
+        "scaled_absorption_erg_cm3_s": 0.08473247875894699,
+        "scaled_emission_erg_cm3_s": 0.08485310203294807,
+        "signed_rate_erg_cm3_s": 0.00012062327400108717
+      },
+      "lumina_to_cmfgen": {
+        "scaled_absorption_ratio": 22818.996477536446,
+        "scaled_emission_ratio": 22817.08946114285,
+        "signed_rate_ratio": 21551.881612888654
+      },
+      "normalized_species": "Ni II"
+    },
+    {
+      "Z": 26,
+      "cmfgen_interpolated": {
+        "component_closure_erg_cm3_s": 4.5908523996693036e-23,
+        "scaled_absorption_erg_cm3_s": 4.859840182114426e-07,
+        "scaled_emission_erg_cm3_s": 4.866133814360767e-07,
+        "signed_rate_erg_cm3_s": 6.293632246339835e-10
+      },
+      "ion_label": 2,
+      "lumina": {
+        "component_closure_erg_cm3_s": 0.0,
+        "scaled_absorption_erg_cm3_s": 0.001001845401054652,
+        "scaled_emission_erg_cm3_s": 0.0011195125343647944,
+        "signed_rate_erg_cm3_s": 0.00011766713331014234
+      },
+      "lumina_to_cmfgen": {
+        "scaled_absorption_ratio": 2061.4780805791183,
+        "scaled_emission_ratio": 2300.6201166538567,
+        "signed_rate_ratio": 186962.2003709759
+      },
+      "normalized_species": "Fe II"
+    },
+    {
+      "Z": 27,
+      "cmfgen_interpolated": {
+        "component_closure_erg_cm3_s": -7.995991022080595e-19,
+        "scaled_absorption_erg_cm3_s": 0.012528526050397174,
+        "scaled_emission_erg_cm3_s": 0.0125313986927564,
+        "signed_rate_erg_cm3_s": 2.872642359226624e-06
+      },
+      "ion_label": 5,
+      "lumina": {
+        "component_closure_erg_cm3_s": 0.0,
+        "scaled_absorption_erg_cm3_s": 5.9777626186854106e-09,
+        "scaled_emission_erg_cm3_s": 1.3358153945152783e-05,
+        "signed_rate_erg_cm3_s": 1.3352176182534098e-05
+      },
+      "lumina_to_cmfgen": {
+        "scaled_absorption_ratio": 4.771321538255417e-07,
+        "scaled_emission_ratio": 0.0010659746986483062,
+        "signed_rate_ratio": 4.648046819907225
+      },
+      "normalized_species": "Co V"
+    },
+    {
+      "Z": 26,
+      "cmfgen_interpolated": {
+        "component_closure_erg_cm3_s": 2.5972147745184984e-19,
+        "scaled_absorption_erg_cm3_s": 0.0035509347922202178,
+        "scaled_emission_erg_cm3_s": 0.003551697373002021,
+        "signed_rate_erg_cm3_s": 7.625807818031042e-07
+      },
+      "ion_label": 5,
+      "lumina": {
+        "component_closure_erg_cm3_s": 0.0,
+        "scaled_absorption_erg_cm3_s": 6.862911185516874e-10,
+        "scaled_emission_erg_cm3_s": 1.2768898598238865e-06,
+        "signed_rate_erg_cm3_s": 1.2762035687053347e-06
+      },
+      "lumina_to_cmfgen": {
+        "scaled_absorption_ratio": 1.9327054950580624e-07,
+        "scaled_emission_ratio": 0.0003595153882000407,
+        "signed_rate_ratio": 1.6735322986868113
+      },
+      "normalized_species": "Fe V"
+    },
+    {
+      "Z": 28,
+      "cmfgen_interpolated": {
+        "component_closure_erg_cm3_s": 7.782115202898884e-21,
+        "scaled_absorption_erg_cm3_s": 0.0004377452082299315,
+        "scaled_emission_erg_cm3_s": 0.000438178258157547,
+        "signed_rate_erg_cm3_s": 4.3304992761546105e-07
+      },
+      "ion_label": 5,
+      "lumina": {
+        "component_closure_erg_cm3_s": 0.0,
+        "scaled_absorption_erg_cm3_s": 2.9926399496558083e-10,
+        "scaled_emission_erg_cm3_s": 4.059268119814511e-07,
+        "signed_rate_erg_cm3_s": 4.056275479864855e-07
+      },
+      "lumina_to_cmfgen": {
+        "scaled_absorption_ratio": 6.836488197682073e-07,
+        "scaled_emission_ratio": 0.0009263965165416767,
+        "signed_rate_ratio": 0.9366761708517684
+      },
+      "normalized_species": "Ni V"
+    },
+    {
+      "Z": 26,
+      "cmfgen_interpolated": {
+        "component_closure_erg_cm3_s": -6.271444196507044e-29,
+        "scaled_absorption_erg_cm3_s": 4.356956165836305e-13,
+        "scaled_emission_erg_cm3_s": 4.350588271906078e-13,
+        "signed_rate_erg_cm3_s": -6.367893930226093e-16
+      },
+      "ion_label": 6,
+      "lumina": {
+        "component_closure_erg_cm3_s": 0.0,
+        "scaled_absorption_erg_cm3_s": 2.8962243508080095e-24,
+        "scaled_emission_erg_cm3_s": 1.650818094798989e-20,
+        "signed_rate_erg_cm3_s": 1.6505284723639083e-20
+      },
+      "lumina_to_cmfgen": {
+        "scaled_absorption_ratio": 6.647357101083177e-12,
+        "scaled_emission_ratio": 3.7944709809915735e-08,
+        "signed_rate_ratio": -2.5919534628701112e-05
+      },
+      "normalized_species": "Fe VI"
+    },
+    {
+      "Z": 27,
+      "cmfgen_interpolated": {
+        "component_closure_erg_cm3_s": 5.941108692445745e-30,
+        "scaled_absorption_erg_cm3_s": 1.1854089118899082e-13,
+        "scaled_emission_erg_cm3_s": 1.1835233885237584e-13,
+        "signed_rate_erg_cm3_s": -1.8855233661498708e-16
+      },
+      "ion_label": 6,
+      "lumina": {
+        "component_closure_erg_cm3_s": 0.0,
+        "scaled_absorption_erg_cm3_s": 2.2847634201765722e-25,
+        "scaled_emission_erg_cm3_s": 1.353642212279923e-21,
+        "signed_rate_erg_cm3_s": 1.3534137359379053e-21
+      },
+      "lumina_to_cmfgen": {
+        "scaled_absorption_ratio": 1.9274053006181243e-12,
+        "scaled_emission_ratio": 1.143739300300908e-08,
+        "signed_rate_ratio": -7.17792078441063e-06
+      },
+      "normalized_species": "Co VI"
+    },
+    {
+      "Z": 28,
+      "cmfgen_interpolated": {
+        "component_closure_erg_cm3_s": 1.0245947304140095e-31,
+        "scaled_absorption_erg_cm3_s": 1.2682803570408704e-15,
+        "scaled_emission_erg_cm3_s": 1.2671215598506111e-15,
+        "signed_rate_erg_cm3_s": -1.1587971902594124e-18
+      },
+      "ion_label": 6,
+      "lumina": {
+        "component_closure_erg_cm3_s": -5.877471754111438e-39,
+        "scaled_absorption_erg_cm3_s": 4.313041875144138e-27,
+        "scaled_emission_erg_cm3_s": 3.1491056458003724e-23,
+        "signed_rate_erg_cm3_s": 3.1486743416128583e-23
+      },
+      "lumina_to_cmfgen": {
+        "scaled_absorption_ratio": 3.4007006819905747e-12,
+        "scaled_emission_ratio": 2.485243520102081e-08,
+        "signed_rate_ratio": -2.717191902155014e-05
+      },
+      "normalized_species": "Ni VI"
+    },
+    {
+      "Z": 14,
+      "cmfgen_interpolated": {
+        "component_closure_erg_cm3_s": -2.0588640657428945e-50,
+        "scaled_absorption_erg_cm3_s": 6.640728115974458e-35,
+        "scaled_emission_erg_cm3_s": 6.647582704591998e-35,
+        "signed_rate_erg_cm3_s": 6.854588617541773e-38
+      },
+      "ion_label": 2,
+      "lumina": {
+        "component_closure_erg_cm3_s": 0.0,
+        "scaled_absorption_erg_cm3_s": 0.0,
+        "scaled_emission_erg_cm3_s": 0.0,
+        "signed_rate_erg_cm3_s": 0.0
+      },
+      "lumina_to_cmfgen": {
+        "scaled_absorption_ratio": 0.0,
+        "scaled_emission_ratio": 0.0,
+        "signed_rate_ratio": 0.0
+      },
+      "normalized_species": "Si II"
+    },
+    {
+      "Z": 14,
+      "cmfgen_interpolated": {
+        "component_closure_erg_cm3_s": 5.863558261659156e-44,
+        "scaled_absorption_erg_cm3_s": 5.191184605780511e-28,
+        "scaled_emission_erg_cm3_s": 5.19268613793278e-28,
+        "signed_rate_erg_cm3_s": 1.5015321522678641e-31
+      },
+      "ion_label": 3,
+      "lumina": {
+        "component_closure_erg_cm3_s": 0.0,
+        "scaled_absorption_erg_cm3_s": 0.0,
+        "scaled_emission_erg_cm3_s": 0.0,
+        "signed_rate_erg_cm3_s": 0.0
+      },
+      "lumina_to_cmfgen": {
+        "scaled_absorption_ratio": 0.0,
+        "scaled_emission_ratio": 0.0,
+        "signed_rate_ratio": 0.0
+      },
+      "normalized_species": "Si III"
+    },
+    {
+      "Z": 14,
+      "cmfgen_interpolated": {
+        "component_closure_erg_cm3_s": -5.320450009348465e-41,
+        "scaled_absorption_erg_cm3_s": 9.248734359259392e-25,
+        "scaled_emission_erg_cm3_s": 9.248628956429035e-25,
+        "signed_rate_erg_cm3_s": -1.0540283035559778e-29
+      },
+      "ion_label": 4,
+      "lumina": {
+        "component_closure_erg_cm3_s": 0.0,
+        "scaled_absorption_erg_cm3_s": 0.0,
+        "scaled_emission_erg_cm3_s": 0.0,
+        "signed_rate_erg_cm3_s": 0.0
+      },
+      "lumina_to_cmfgen": {
+        "scaled_absorption_ratio": 0.0,
+        "scaled_emission_ratio": 0.0,
+        "signed_rate_ratio": -0.0
+      },
+      "normalized_species": "Si IV"
+    },
+    {
+      "Z": 14,
+      "cmfgen_interpolated": {
+        "component_closure_erg_cm3_s": -5.756687945866878e-64,
+        "scaled_absorption_erg_cm3_s": 7.210011087417105e-48,
+        "scaled_emission_erg_cm3_s": 7.203946694132552e-48,
+        "signed_rate_erg_cm3_s": -6.064393284552376e-51
+      },
+      "ion_label": 5,
+      "lumina": {
+        "component_closure_erg_cm3_s": 0.0,
+        "scaled_absorption_erg_cm3_s": 0.0,
+        "scaled_emission_erg_cm3_s": 0.0,
+        "signed_rate_erg_cm3_s": 0.0
+      },
+      "lumina_to_cmfgen": {
+        "scaled_absorption_ratio": 0.0,
+        "scaled_emission_ratio": 0.0,
+        "signed_rate_ratio": -0.0
+      },
+      "normalized_species": "Si V"
+    },
+    {
+      "Z": 16,
+      "cmfgen_interpolated": {
+        "component_closure_erg_cm3_s": -3.541413240872159e-50,
+        "scaled_absorption_erg_cm3_s": 1.0066105881415505e-33,
+        "scaled_emission_erg_cm3_s": 1.007182631696867e-33,
+        "signed_rate_erg_cm3_s": 5.7204355531659995e-37
+      },
+      "ion_label": 2,
+      "lumina": {
+        "component_closure_erg_cm3_s": 0.0,
+        "scaled_absorption_erg_cm3_s": 0.0,
+        "scaled_emission_erg_cm3_s": 0.0,
+        "signed_rate_erg_cm3_s": 0.0
+      },
+      "lumina_to_cmfgen": {
+        "scaled_absorption_ratio": 0.0,
+        "scaled_emission_ratio": 0.0,
+        "signed_rate_ratio": 0.0
+      },
+      "normalized_species": "S II"
+    },
+    {
+      "Z": 16,
+      "cmfgen_interpolated": {
+        "component_closure_erg_cm3_s": 3.641186478394017e-44,
+        "scaled_absorption_erg_cm3_s": 4.811680660598226e-28,
+        "scaled_emission_erg_cm3_s": 4.812660795574514e-28,
+        "signed_rate_erg_cm3_s": 9.801349762882394e-32
+      },
+      "ion_label": 3,
+      "lumina": {
+        "component_closure_erg_cm3_s": 0.0,
+        "scaled_absorption_erg_cm3_s": 0.0,
+        "scaled_emission_erg_cm3_s": 0.0,
+        "signed_rate_erg_cm3_s": 0.0
+      },
+      "lumina_to_cmfgen": {
+        "scaled_absorption_ratio": 0.0,
+        "scaled_emission_ratio": 0.0,
+        "signed_rate_ratio": 0.0
+      },
+      "normalized_species": "S III"
+    },
+    {
+      "Z": 16,
+      "cmfgen_interpolated": {
+        "component_closure_erg_cm3_s": 3.042218966049178e-42,
+        "scaled_absorption_erg_cm3_s": 1.5400975263265737e-25,
+        "scaled_emission_erg_cm3_s": 1.5399882251923346e-25,
+        "signed_rate_erg_cm3_s": -1.0930113423910529e-29
+      },
+      "ion_label": 4,
+      "lumina": {
+        "component_closure_erg_cm3_s": 0.0,
+        "scaled_absorption_erg_cm3_s": 0.0,
+        "scaled_emission_erg_cm3_s": 0.0,
+        "signed_rate_erg_cm3_s": 0.0
+      },
+      "lumina_to_cmfgen": {
+        "scaled_absorption_ratio": 0.0,
+        "scaled_emission_ratio": 0.0,
+        "signed_rate_ratio": -0.0
+      },
+      "normalized_species": "S IV"
+    },
+    {
+      "Z": 16,
+      "cmfgen_interpolated": {
+        "component_closure_erg_cm3_s": -9.41672568026277e-43,
+        "scaled_absorption_erg_cm3_s": 1.1207847672940474e-26,
+        "scaled_emission_erg_cm3_s": 1.1201933683936333e-26,
+        "signed_rate_erg_cm3_s": -5.913989004139865e-30
+      },
+      "ion_label": 5,
+      "lumina": {
+        "component_closure_erg_cm3_s": 0.0,
+        "scaled_absorption_erg_cm3_s": 0.0,
+        "scaled_emission_erg_cm3_s": 0.0,
+        "signed_rate_erg_cm3_s": 0.0
+      },
+      "lumina_to_cmfgen": {
+        "scaled_absorption_ratio": 0.0,
+        "scaled_emission_ratio": 0.0,
+        "signed_rate_ratio": -0.0
+      },
+      "normalized_species": "S V"
+    },
+    {
+      "Z": 20,
+      "cmfgen_interpolated": {
+        "component_closure_erg_cm3_s": 5.452440008588079e-49,
+        "scaled_absorption_erg_cm3_s": 9.056641430318779e-33,
+        "scaled_emission_erg_cm3_s": 9.151758480859129e-33,
+        "signed_rate_erg_cm3_s": 9.511705054034961e-35
+      },
+      "ion_label": 2,
+      "lumina": {
+        "component_closure_erg_cm3_s": 0.0,
+        "scaled_absorption_erg_cm3_s": 0.0,
+        "scaled_emission_erg_cm3_s": 0.0,
+        "signed_rate_erg_cm3_s": 0.0
+      },
+      "lumina_to_cmfgen": {
+        "scaled_absorption_ratio": 0.0,
+        "scaled_emission_ratio": 0.0,
+        "signed_rate_ratio": 0.0
+      },
+      "normalized_species": "Ca II"
+    },
+    {
+      "Z": 20,
+      "cmfgen_interpolated": {
+        "component_closure_erg_cm3_s": -6.667115349795419e-45,
+        "scaled_absorption_erg_cm3_s": 9.236185454439712e-29,
+        "scaled_emission_erg_cm3_s": 9.238720311698814e-29,
+        "signed_rate_erg_cm3_s": 2.5348572591024684e-32
+      },
+      "ion_label": 3,
+      "lumina": {
+        "component_closure_erg_cm3_s": 0.0,
+        "scaled_absorption_erg_cm3_s": 0.0,
+        "scaled_emission_erg_cm3_s": 0.0,
+        "signed_rate_erg_cm3_s": 0.0
+      },
+      "lumina_to_cmfgen": {
+        "scaled_absorption_ratio": 0.0,
+        "scaled_emission_ratio": 0.0,
+        "signed_rate_ratio": 0.0
+      },
+      "normalized_species": "Ca III"
+    },
+    {
+      "Z": 20,
+      "cmfgen_interpolated": {
+        "component_closure_erg_cm3_s": 1.2436523870882752e-44,
+        "scaled_absorption_erg_cm3_s": 1.7946801631571196e-28,
+        "scaled_emission_erg_cm3_s": 1.793767943625139e-28,
+        "signed_rate_erg_cm3_s": -9.122195319806249e-32
+      },
+      "ion_label": 4,
+      "lumina": {
+        "component_closure_erg_cm3_s": 0.0,
+        "scaled_absorption_erg_cm3_s": 0.0,
+        "scaled_emission_erg_cm3_s": 0.0,
+        "signed_rate_erg_cm3_s": 0.0
+      },
+      "lumina_to_cmfgen": {
+        "scaled_absorption_ratio": 0.0,
+        "scaled_emission_ratio": 0.0,
+        "signed_rate_ratio": -0.0
+      },
+      "normalized_species": "Ca IV"
+    },
+    {
+      "Z": 20,
+      "cmfgen_interpolated": {
+        "component_closure_erg_cm3_s": -4.443471330528275e-50,
+        "scaled_absorption_erg_cm3_s": 8.307231622270756e-34,
+        "scaled_emission_erg_cm3_s": 8.297496970845924e-34,
+        "signed_rate_erg_cm3_s": -9.734651424831504e-37
+      },
+      "ion_label": 5,
+      "lumina": {
+        "component_closure_erg_cm3_s": 0.0,
+        "scaled_absorption_erg_cm3_s": 0.0,
+        "scaled_emission_erg_cm3_s": 0.0,
+        "signed_rate_erg_cm3_s": 0.0
+      },
+      "lumina_to_cmfgen": {
+        "scaled_absorption_ratio": 0.0,
+        "scaled_emission_ratio": 0.0,
+        "signed_rate_ratio": -0.0
+      },
+      "normalized_species": "Ca V"
+    }
+  ],
+  "common_owner_count": 27,
+  "floor": 0,
+  "interpretation": "Emission-ratio structure diagnoses population/material mismatch; absorption additionally contains Jbar. Temperature alone is aligned, so none of these ratios is a reproduction verdict.",
+  "jitter": 0,
+  "mapping": {
+    "cmfgen_depths": [
+      67,
+      68
+    ],
+    "lumina_shell": 0,
+    "same_signed_component_equation": true,
+    "units": "erg cm^-3 s^-1",
+    "velocity_interpolation_fraction": 0.4313661207982156
+  },
+  "parity_claim": false,
+  "physical_values_modified": 0,
+  "repair": 0,
+  "schema": "a210-cmfgen-ion-component-comparison-v1",
+  "sources": {
+    "cmfgen_components": {
+      "path": "/home/kjhan/BACKUP/Eunha.A1/Claude/Lumina-sn/validation/a2_10/A2_10_CMFGEN_LINE_COMPONENTS_ION_OWNERS_2026-08-17.json",
+      "sha256": "aab5d3ea13504b255f700be95268bc22306e3d73e5b254a6b8076bf0457ea66e"
+    },
+    "cmfgen_finite": {
+      "path": "/home/kjhan/BACKUP/Eunha.A1/Claude/Lumina-sn/validation/a2_10/A2_10_CMFGEN_LINEHEAT_FINITE_DEPTHS_2026-08-16.json",
+      "sha256": "03244b15b349ee18dc808860654c0d1716d5d3a73a8c9e949de66d38e0998d45"
+    },
+    "lumina_owner": {
+      "path": "/gpfs/kjhan/lumina/a210_line_owner_a100x2_nonoverlap_sobolev_k36/diag_20260816T194201Z_3ec4239f2d76/a210_line_ion_owner_report_strict.json",
+      "sha256": "460b0dfd19ef727254165386ebefd217b12647150a3aba23b7d87bb450dd08e4"
+    }
+  },
+  "state": {
+    "cmfgen_electron_density_cm3": 5087765219.00506,
+    "cmfgen_temperature_K": 19059.411196903675,
+    "cmfgen_to_lumina_electron_density_ratio": 1.0820268365548662,
+    "lumina_electron_density_cm3": 4702069345.344814,
+    "lumina_temperature_K": 19059.411196903675,
+    "matched_electron_density": false,
+    "matched_ion_and_level_populations": false,
+    "matched_radiation_field_or_Jbar": false,
+    "matched_state": false,
+    "temperature_exact_match": true
+  },
+  "status": "FINITE_COMPONENT_COMPARISON_STATE_UNMATCHED",
+  "totals": {
+    "cmfgen_interpolated": {
+      "scaled_absorption_erg_cm3_s": 514.2697732067045,
+      "scaled_emission_erg_cm3_s": 514.2714201090474,
+      "separately_summed_component_closure_erg_cm3_s": -1.8454422018310268e-14,
+      "signed_rate_erg_cm3_s": 0.0016469023429593025
+    },
+    "lumina": {
+      "component_closure_erg_cm3_s": -1.1368683772161603e-13,
+      "scaled_absorption_erg_cm3_s": 3.0006204229040425,
+      "scaled_emission_erg_cm3_s": 723.4282904103259,
+      "signed_rate_erg_cm3_s": 720.427669987422
+    },
+    "lumina_to_cmfgen": {
+      "scaled_absorption_ratio": 0.005834720567366458,
+      "scaled_emission_ratio": 1.4067052185340734,
+      "signed_rate_ratio": 437444.07375903823
+    }
+  }
+}
