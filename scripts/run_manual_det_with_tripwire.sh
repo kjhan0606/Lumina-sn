@@ -40,11 +40,13 @@ syn101_deadline_epoch() {
   today_0900_epoch
 }
 
-# ★2026-08-18 user 지시 "수동런 정책 컷오프를 취소해" — syn101 수동 실행의
-# 시각 기반 정책 컷오프를 폐지한다.  양보 보호는 컷오프가 아니라 tripwire 가
-# 담당한다(외부 GPU PID·slurm RUNNING·노드 할당 감지 시 우리 프로세스 그룹만 종료).
+# ★2026-08-19 user 지시 "syn101 수동 제출은 금지. 해당 노드는 정상 운영중."
+#   syn101 은 slurm 정상 운영 노드로 복귀했다.  수동 실행을 **전면 거부**한다.
+#   (08-18 의 시각 기반 컷오프는 폐지됐고, 그 자리를 이 전면 금지가 대체한다.)
+#   syn101 에 일이 필요하면 slurm 으로 제출한다.
 enforce_syn101_manual_deadline() {
-  return 0
+  [[ "$node" == "syn101" ]] || return 0
+  die "manual launch denied: syn101 is under normal slurm operation (user 2026-08-19). Submit via slurm."
 }
 
 [[ "$run_root" = /* && "$run_root" != / && "$run_root" != /gpfs ]] ||
