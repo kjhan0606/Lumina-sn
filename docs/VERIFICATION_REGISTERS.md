@@ -139,4 +139,50 @@
 
 **상설 규칙(07-30 추가, parity47 V3)**: levelpop 기반 판정은 **writer 명시 의무**(committed `lumina_levelpop.csv` vs `resolve_raw` vs `resolve_ema`가 준위별 10× 차 실증 — 부호만 writer-robust).
 
+## ★3회차 회전 리뷰 (2026-08-18, 15일 정지 후 재가동)
+
+08-03 이후 회전 리뷰가 멈춘 사이 08-08~08-18 에 새 주장이 쌓였다. 이번 라운드는
+**그 신규분만** 등재한다(기존 A/B/C 표본 재도전은 4회차로 이월).
+
+### 강등 3건 (08-08 폐합 → 부분 폐합)
+| 단 | 강등 사유 | 미실행 게이트 |
+|---|---|---|
+| SH-GAMMA | 사전등록 게이트 미실행 상태로 "폐합" 기재 | NC2·NC4·Γ4 (**08-18 현재도 미회수**) |
+| DET-R6 | "byte-parity" 요구에 필터된 로그 줄 비교로 답함 | R6-4(stdout/stderr 분리)·N6-2·N6-3 (**미회수**) |
+| SH-GRID | "어디서 얼마나 움직였나"에 "표면화 안 됨" 유보로 답함 | B-6 — 단 08-08 이후 **MC-EVT census 가 단을 재개방**시켜 sigma fresh bake·photo-rate 재작업으로 진화(현 상태 `ASSET_COMPLETE_PHOTO_ACCURACY_OPEN`) |
+
+### 신규 C 승격 후보 → **B 등재**(독립 경로 1)
+- **K36 결정론 baseline**: R1 45회 residual 9.6662782724980344e-09 · R2 52회 8.1222406993212508e-09,
+  **08-18 신규 바이너리(S_producer 캡처 추가)에서 자릿수까지 재현** ⟹ 결정론·무변조 독립 경로 2번째 확보.
+  단 회전 리뷰 생존 이력이 없어 A 승격은 보류.
+- **population 음수해 원인 = stage-total lock 이중 권위**: `ION_LOCK=0`·`PER_ION_RESCALE=0`
+  single-total A/B 에서 double/80자리 모두 비음수 finite. 근거=인계서 §3.2.
+
+### ▲정정 1건 (기존 주장 강등)
+- **"Stage-4 선택 IV 1,282선 전부 J 후보"** → **기각**. 근거는 잣대 불일치였다
+  (분자 Jbar=생산@T_e 10020.0 K, 분모 S=시행@19059.411 K; Wien 꼬리 444–1884Å 에서
+  B 비 37.8~4.6e6). 정본 `docs/VERDICT_A210_STAGE4_JO_2026-08-18.md`(Codex 감리 반영본).
+  ⟹ 「잣대부터 감사」 사례 13 등재.
+- 동 판정의 **V2("생산 Jbar 가 폐합을 만족")는 [확정] 아님** — B(T_e) 대용 일치(중앙 0.9992)이며
+  생산자 실제 S 미캡처. DET-SPROD 단(진행 중)이 확정/기각한다.
+
+### 진행 중 (판정 대기)
+- **DET-SPROD**: 생산자 두 가수 직접 캡처. S0 빌드 PASS · S1 음성대조 PASS
+  (`=2` → `INVALID_SPRODUCER_CAPTURE_REQUEST` → R6 BLOCKED → FATAL) ·
+  캡처 활성 상태에서 R1·R2 bit-identical(무변조 실측) · S2/S2b/S3 판정런 진행.
+  판정기 `scripts/a210_sproducer_ledger_check.py`(음성대조 6종 selftest PASS).
+
+### ★미실행 게이트 회수 (2026-08-18, user 지시 "미실행 게이트 회수해")
+
+| 게이트 | 성격 | 상태 |
+|---|---|---|
+| **SH-GRID B-6** 값 이동 장부 | 오프라인 측정 | **회수 완료** — `validation/sh_grid_b6/SH_GRID_B6_LEDGER.md`. T1(단의 실제 변경): 포함 True·손실 0(1e-18)·이동은 **FUV 집중, 최대 2.6e-4**(찬 프로브)·생산 T_e 에서 4.5e-5 ⟹ **현 격자 재빈닝 오차 상한 ≈3e-4**. T2(sigma bake 전후): dlog·상단 경계 **bit-identical**, 이동 ≤1.3e-15 ⟹ **BF 격자를 1000→1234 로 갈아엎어도 canonical 불변** — 안 B 의 "파생하라" 설계가 실증됨. 한계: 해석적 Planck 프로브 기반이며 **선 국소 이동은 미측정**(구 격자 J 덤프 부재) |
+| **SH-GAMMA NC2** · **NC4** | 주입 단위시험 | **회수 완료 PASS** — `GAMMA_PUBLICATION_STALE_EPOCH` / rc=4 `GAMMA_DOUBLE_PUBLISH` + 배열 byte 보존 + 양성 대조(다른 epoch 는 정당 재발행). 증거 `validation/gate_recovery/` |
+| **DET-R6 N6-2** | 주입 단위시험 | **회수 완료 PASS** — 한 글자 근접 오탐도 `QHASH_MISMATCH` 로 거부. 기존 커버는 전혀 다른 해시를 넣는 조잡한 형태였음 |
+| **DET-R6 N6-3** | 주입 단위시험 | **회수 완료 PASS** — `NEGATIVE_OR_NONFINITE_JBAR cell=1 validity=1 value=-1`, `rejected_at=commit`. ★검수가 v1 의 "무관한 실패도 PASS" 구조(08-08 강등 3건과 동급)를 잡아 단계 분류를 넣은 덕에 **의도한 가드가 막았음**이 증명됨 |
+| **SH-GAMMA Γ4** M1/M2 | 런 의존 | **회수 보류 — 사유 있는 이월**. 08-08 `validation/gamma/GAMMA_VERDICT.md:130` 이 "M1/M2 는 A2-10 성공을 요구하는데 MC 전송이 죽어 도달 못 한다" 고 **명시하고** 이월했다 ⟹ 누락이 아니라 의존성 대기. MC 팔이 A2-10 에 도달해야 회수 가능 |
+| **DET-R6 R6-4** MC 바이트-parity | 런 의존 | **회수 보류** — MC 팔 2회 런 필요. 현재 GPU 2쌍이 DET-SPROD 판정런 점유 중 |
+
+**4회차 예정**: 기존 A 표본 재도전 + 런 의존 2건(Γ4·R6-4) 회수.
+
 **관리**: 이 파일이 정본. 강등·승격은 날짜·사유 기록. 1회차(07-29 낮, B/C 적대 재검증)·**2회차(07-29 밤, A×2+C×2 재도전: 강등 0·정정 3·강화 1)** 반영 완료 — 3회차는 나머지 A 표본 + C 신규(K6·parity43) 재도전 예정. 예약: A3 프로브 로그 보관 재주행(withParityY 착지 직후, Y4 리팩터 회귀검증 겸용).
