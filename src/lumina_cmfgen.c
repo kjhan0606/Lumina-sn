@@ -4944,6 +4944,12 @@ int cmfgen_fine_jbar(CMFGENState *csb, const Geometry *geo,
     free(opac->jbar_line_det_continuum_error_upper);
     opac->jbar_line_det_continuum = NULL;
     opac->jbar_line_det_continuum_error_upper = NULL;
+    opac->line_producer_terms_captured = 0;
+    opac->line_producer_terms_n_shells = 0;
+    free(opac->line_producer_continuum_term);
+    free(opac->line_producer_local_emission_term);
+    opac->line_producer_continuum_term = NULL;
+    opac->line_producer_local_emission_term = NULL;
     if (NL <= 0 || !opac->jbar_line_det || !geo || !plasma ||
         (line_operator != CMF_FINE_LINE_OPERATOR_INIT_SHARED_GAUSSIAN &&
          line_operator !=
@@ -4959,6 +4965,16 @@ int cmfgen_fine_jbar(CMFGENState *csb, const Geometry *geo,
                 "value=%s expected=0_or_1\n",
                 getenv("LUMINA_A210_INDEPENDENT_CAPTURE") ?
                     getenv("LUMINA_A210_INDEPENDENT_CAPTURE") : "(unset)");
+        return -1;
+    }
+    int sproducer_capture_requested = 0;
+    if (cmf_optional_binary_env("LUMINA_A210_SPRODUCER_CAPTURE",
+                                &sproducer_capture_requested) != 0) {
+        fprintf(stderr,
+                "[cmf_fine][BLOCKED] reason=INVALID_SPRODUCER_CAPTURE_REQUEST "
+                "value=%s expected=0_or_1\n",
+                getenv("LUMINA_A210_SPRODUCER_CAPTURE") ?
+                    getenv("LUMINA_A210_SPRODUCER_CAPTURE") : "(unset)");
         return -1;
     }
 
@@ -5017,6 +5033,8 @@ int cmfgen_fine_jbar(CMFGENState *csb, const Geometry *geo,
      * saturation rows.  The initialization producer remains byte-for-byte
      * free of the extra diagnostic solve. */
     int independent_capture = independent_capture_requested &&
+        line_operator == CMF_FINE_LINE_OPERATOR_CMFGEN_NONOVERLAP_SOBOLEV;
+    int sproducer_capture = sproducer_capture_requested &&
         line_operator == CMF_FINE_LINE_OPERATOR_CMFGEN_NONOVERLAP_SOBOLEV;
     if (independent_capture && line_eps != 1.0) {
         /* The independent solve is intentionally line-free.  When eps<1 the
@@ -6250,11 +6268,54 @@ int cmfgen_fine_jbar(CMFGENState *csb, const Geometry *geo,
             return -1;
         }
     }
+    unsigned long long sproducer_cells = 0;
+    if (sobolev_operator && sproducer_capture) {
+        if (NS <= 0 || NL <= 0 ||
+            (size_t)NL > SIZE_MAX / (size_t)NS ||
+            (size_t)NL * (size_t)NS >
+                SIZE_MAX / sizeof(*opac->line_producer_continuum_term)) {
+            fprintf(stderr,
+                    "[cmf_fine][BLOCKED] reason=SPRODUCER_CAPTURE_SIZE_"
+                    "OVERFLOW lines=%d shells=%d floor=0 cap=0 clamp=0 "
+                    "jitter=0 repair=0\n", NL, NS);
+            free(sobolev_upper_population_cache);
+            free(fs.nu);free(fs.dnu);free(fs.chi_es);free(fs.chi_abs);
+            free(fs.chi_line);free(fs.chi_tot);free(fs.S_fixed);free(fs.J);
+            free(eta); free(fine_error_upper);
+            return -1;
+        }
+        size_t population_cells = (size_t)NL * (size_t)NS;
+        opac->line_producer_continuum_term = malloc(
+            population_cells * sizeof(*opac->line_producer_continuum_term));
+        opac->line_producer_local_emission_term = malloc(
+            population_cells *
+            sizeof(*opac->line_producer_local_emission_term));
+        if (!opac->line_producer_continuum_term ||
+            !opac->line_producer_local_emission_term) {
+            fprintf(stderr,
+                    "[cmf_fine][BLOCKED] reason=SPRODUCER_CAPTURE_ALLOCATION "
+                    "cells=%zu floor=0 cap=0 clamp=0 jitter=0 repair=0\n",
+                    population_cells);
+            free(opac->line_producer_continuum_term);
+            free(opac->line_producer_local_emission_term);
+            opac->line_producer_continuum_term = NULL;
+            opac->line_producer_local_emission_term = NULL;
+            free(sobolev_upper_population_cache);
+            free(fs.nu);free(fs.dnu);free(fs.chi_es);free(fs.chi_abs);
+            free(fs.chi_line);free(fs.chi_tot);free(fs.S_fixed);free(fs.J);
+            free(eta); free(fine_error_upper);
+            return -1;
+        }
+        for (size_t cell = 0; cell < population_cells; ++cell) {
+            opac->line_producer_continuum_term[cell] = -1.0;
+            opac->line_producer_local_emission_term[cell] = -1.0;
+        }
+    }
     #ifdef _OPENMP
     #pragma omp parallel for schedule(dynamic, 64) reduction(|:profile_failed) \
         reduction(min:profile_error_min,sobolev_beta_min) \
         reduction(max:profile_error_max,sobolev_beta_max) \
-        reduction(+:sobolev_jbar_cells,sobolev_srce_chk_cells)
+        reduction(+:sobolev_jbar_cells,sobolev_srce_chk_cells,sproducer_cells)
     #endif
     for (int l = 0; l < NL; ++l) {
         double nu_l = opac->line_list_nu[l];
@@ -6315,6 +6376,13 @@ int cmfgen_fine_jbar(CMFGENState *csb, const Geometry *geo,
                 opac->jbar_line_det[cell] = radiation.jbar;
                 opac->jbar_line_det_error_upper[cell] =
                     radiation.jbar_absolute_uncertainty;
+                if (sproducer_capture && opac->line_producer_continuum_term) {
+                    opac->line_producer_continuum_term[cell] =
+                        radiation.continuum_term;
+                    opac->line_producer_local_emission_term[cell] =
+                        radiation.local_emission_term;
+                    ++sproducer_cells;
+                }
                 ++sobolev_jbar_cells;
                 sobolev_srce_chk_cells += material.srce_chk_applied;
                 if (radiation.beta < sobolev_beta_min)
@@ -6534,6 +6602,18 @@ int cmfgen_fine_jbar(CMFGENState *csb, const Geometry *geo,
                 continuum_result.exact.componentwise_error_envelope_verified,
                 continuum_result.exact.componentwise_error_refinement_iterations,
                 continuum_seconds);
+    }
+    if (sproducer_capture && opac->line_producer_continuum_term) {
+        opac->line_producer_terms_captured = 1;
+        opac->line_producer_terms_n_shells = NS;
+        fprintf(stderr,
+                "[cmf_fine][SPRODUCER-CAPTURE] status=CAPTURED cells=%llu "
+                "n_shells=%d payload=continuum_term+local_emission_term "
+                "identity=jbar==continuum_term+local_emission_term "
+                "operator=CMFGEN_NONOVERLAP_SOBOLEV "
+                "physical_values_modified=0 publication_authority=NONE "
+                "floor=0 cap=0 clamp=0 jitter=0 repair=0\n",
+                sproducer_cells, NS);
     }
     if (sobolev_operator) {
         srce_chk_cells = (long)sobolev_srce_chk_cells;

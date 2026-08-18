@@ -287,6 +287,15 @@ typedef struct {
     double *jbar_line_det_continuum;             /* [n_lines*n_shells] */
     double *jbar_line_det_continuum_error_upper; /* certified local bound */
     int     jbar_line_det_continuum_captured;
+    /* DET-SPROD read-only producer-ledger capture: the exact two addends of
+     * the published Sobolev Jbar (jbar = continuum_term + local_emission_term)
+     * as the producer computed them, per [line*n_shells]; sentinel -1 where
+     * undefined.  n_shells records the producer stride so the consumer can
+     * fail closed on mismatch.  Never consumed by the NLTE/rate publisher. */
+    double *line_producer_continuum_term;        /* beta*Jcont as produced */
+    double *line_producer_local_emission_term;   /* (1-beta)*S as produced */
+    int     line_producer_terms_captured;
+    int     line_producer_terms_n_shells;
     double  jbar_line_det_vdoppler_cms;  /* producer profile identity; 0 = absent */
     double  jbar_line_det_ndoppler;       /* symmetric support in Doppler widths */
     int     jbar_line_det_operator;       /* 1=sealed init Gaussian, 2=CMFGEN Sobolev */

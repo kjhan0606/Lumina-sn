@@ -2,7 +2,7 @@
  * scripts/derive_env_universe.py 가 기계적으로 도출한다.
  * 손으로 세면 짧아진다 — 2026-08-06~07 에 같은 종류의 목록을 열한 번 세었고 열한 번 다 짧았다.
  *
- * 갈래: literal_getenv 438 · env_arrays 39 · constructed 51 · wrapper_calls 7 · nonsrc_consumers 45  ⟹ 합집합 516
+ * 갈래: literal_getenv 439 · env_arrays 39 · constructed 51 · wrapper_calls 7 · nonsrc_consumers 45  ⟹ 합집합 517
  * 래퍼 스캔이 없었으면 놓쳤을 것: LUMINA_CONFIG_PREC, LUMINA_NLTE_ELEMENT_WIDE_COMMIT, LUMINA_NLTE_ELEMENT_WIDE_DUMP
  * ★src 밖 소비자만 아는 이름(5번 갈래가 없었으면 STRICT 가 오탐했을 것): 13
  *   LUMINA_BIN, LUMINA_MODEL_DIR, LUMINA_REF_DIR, LUMINA_RUN_BIN, LUMINA_RUN_ROOT, LUMINA_SIGMA_BIN, LUMINA_SIGMA_BIN_LEVELS, LUMINA_SIGMA_COIII_PATCH, LUMINA_SPEC_ARG, LUMINA_SRC_REF, LUMINA_STAGE0_CSV, LUMINA_X_OUTER_SCALE_FAC, LUMINA_X_OUTER_SCALE_Z
@@ -13,7 +13,7 @@
 #ifndef LUMINA_ENV_UNIVERSE_H
 #define LUMINA_ENV_UNIVERSE_H
 
-#define LUMINA_ENV_UNIVERSE_COUNT 516
+#define LUMINA_ENV_UNIVERSE_COUNT 517
 
 static const char *const LUMINA_ENV_UNIVERSE[] = {
     "LUMINA_A210_CANCELLATION_CENSUS",
@@ -22,6 +22,7 @@ static const char *const LUMINA_ENV_UNIVERSE[] = {
     "LUMINA_A210_LINE_SATURATION_DIAG",
     "LUMINA_A210_LINE_SATURATION_TARGET_ION",
     "LUMINA_A210_PRECORE_TAU_REFRESH",
+    "LUMINA_A210_SPRODUCER_CAPTURE",
     "LUMINA_A2_02C_CAPTURE_GENERATION",
     "LUMINA_A2_02C_CAPTURE_PATH",
     "LUMINA_A2_02C_SEGMENT_CAPTURE",

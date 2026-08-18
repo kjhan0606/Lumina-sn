@@ -1,0 +1,33 @@
+{
+  "S_producer_over_B_Te": {
+    "max": 0.9999950939599993,
+    "median": 0.9999927651925589,
+    "min": 0.9999902821553698,
+    "q10": 0.999991182379775,
+    "q90": 0.9999943316746762,
+    "rows_within_1pct_of_unity": 1282,
+    "stdev_log10": 5.019482644036509e-07
+  },
+  "beta_producer": {
+    "median": 0.9540512824520877,
+    "q10": 0.33880751314939356,
+    "q90": 0.9999997148817426
+  },
+  "cap": 0,
+  "clamp": 0,
+  "evaluated": 1282,
+  "floor": 0,
+  "input": "/gpfs/kjhan/lumina/a210_sproducer_capture_a100x2_nonoverlap_sobolev_k36/manual_20260818T101259Z_sprod_iv/stderr.log",
+  "jitter": 0,
+  "physical_values_modified": false,
+  "repair": 0,
+  "rows": 1282,
+  "schema": "lumina-a210-sproducer-state-mismatch-v1",
+  "skipped": 0,
+  "tau_consumer": {
+    "median": 16630.190731202354,
+    "q10": 112.36476172654544,
+    "q90": 282811.53203254135
+  },
+  "te_k": 10020.0
+}

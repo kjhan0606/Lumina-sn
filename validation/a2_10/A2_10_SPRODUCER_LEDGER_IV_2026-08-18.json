@@ -1,0 +1,42 @@
+{
+  "S2": {
+    "max_relative_deviation": 0.0,
+    "pass": true,
+    "tolerance": 4e-16,
+    "worst_line": null,
+    "zero_sum_rows": 0,
+    "zero_sum_violations": 0
+  },
+  "S2b": {
+    "max_relative_deviation": 375088.60234580765,
+    "missing_j_cont_rows": 0,
+    "pass": false,
+    "tolerance": 1e-12,
+    "worst_line": "175808",
+    "zero_reference_rows": 0,
+    "zero_reference_violations": 0
+  },
+  "S3": {
+    "evaluated_rows": 1282,
+    "excluded_nonfinite_planck": 0,
+    "excluded_one_minus_beta_zero": 0,
+    "max": 0.9988438904026485,
+    "median": 0.04634338990806287,
+    "min": 4.08516779354973e-09,
+    "q10": 2.880391231116417e-07,
+    "q90": 0.6611888817107479,
+    "te_k": 10020.0
+  },
+  "cap": 0,
+  "clamp": 0,
+  "floor": 0,
+  "input": "/gpfs/kjhan/lumina/a210_sproducer_capture_a100x2_nonoverlap_sobolev_k36/manual_20260818T101259Z_sprod_iv/stderr.log",
+  "jitter": 0,
+  "malformed_rows": 0,
+  "physical_values_modified": false,
+  "producer_terms_undefined_rows": 0,
+  "repair": 0,
+  "row_count": 1282,
+  "schema": "lumina-a210-sproducer-ledger-v1",
+  "verdict": "FAIL"
+}

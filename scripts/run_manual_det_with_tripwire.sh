@@ -40,14 +40,11 @@ syn101_deadline_epoch() {
   today_0900_epoch
 }
 
+# ★2026-08-18 user 지시 "수동런 정책 컷오프를 취소해" — syn101 수동 실행의
+# 시각 기반 정책 컷오프를 폐지한다.  양보 보호는 컷오프가 아니라 tripwire 가
+# 담당한다(외부 GPU PID·slurm RUNNING·노드 할당 감지 시 우리 프로세스 그룹만 종료).
 enforce_syn101_manual_deadline() {
-  [[ "$node" == "syn101" ]] || return 0
-  local deadline_epoch now
-  deadline_epoch="$(syn101_deadline_epoch)"
-  now="$(date +%s)"
-  if (( now >= deadline_epoch )); then
-    die "manual launch denied: syn101 policy cutoff reached at $(date -d "@$deadline_epoch" +%F' '%T) KST"
-  fi
+  return 0
 }
 
 [[ "$run_root" = /* && "$run_root" != / && "$run_root" != /gpfs ]] ||
