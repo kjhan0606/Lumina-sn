@@ -3,21 +3,31 @@
 % MNRAS format
 
 \documentclass[fleqn,usenatbib]{mnras}
-\usepackage{newtxtext,newtxmath}
-\usepackage{graphicx}
 \usepackage{amsmath,amssymb}
+\usepackage{newtxtext,newtxmath}
+\renewcommand{\ttdefault}{cmtt}
+\usepackage{graphicx}
 \usepackage{booktabs}
 \usepackage{multirow}
 \usepackage{xcolor}
+\usepackage{tikz}
 \usepackage{hyperref}
+
+% Mark every generated page, including the title page, as an unpublished draft.
+\AddToHook{shipout/foreground}{%
+  \begin{tikzpicture}[remember picture,overlay]
+    \node[rotate=45,scale=8,text=black!12]
+      at (current page.center) {\sffamily\bfseries DRAFT};
+  \end{tikzpicture}%
+}
 
 % Custom commands
 \newcommand{\lumina}{\textsc{Lumina}}
 \newcommand{\luminaml}{\textsc{Lumina-ML}}
 \newcommand{\tardis}{\textsc{Tardis}}
-\newcommand{\kms}{\,\mathrm{km\,s^{-1}}}
-\newcommand{\ergs}{\,\mathrm{erg\,s^{-1}}}
-\newcommand{\gcm}{\,\mathrm{g\,cm^{-3}}}
+\newcommand{\kms}{\ensuremath{\,\mathrm{km\,s^{-1}}}}
+\newcommand{\ergs}{\ensuremath{\,\mathrm{erg\,s^{-1}}}}
+\newcommand{\gcm}{\ensuremath{\,\mathrm{g\,cm^{-3}}}}
 \newcommand{\SiII}{Si\,\textsc{ii}}
 \newcommand{\CaII}{Ca\,\textsc{ii}}
 \newcommand{\FeII}{Fe\,\textsc{ii}}

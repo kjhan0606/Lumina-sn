@@ -5,6 +5,32 @@
 기준 목록 `docs/LAYER1_REPLAN_2026-08-07.md`("물리가 한 조각씩 서는 순서").
 이 문서는 **그 목록에 대한 진척 보고**다.  각 단은 게이트 통과 시점에 커밋됐다.
 
+## 2026-08-08 후속 구현 갱신
+
+- Fable의 MC-EVT 판정 조건을 실제 flight 덱에 적용한 BF edge census에서
+  `NLTE_NU_MIN` 이하 기본 활성 edge **707개**를 확인했다. 따라서 OOG BF를 0으로
+  선언하는 안은 기각됐고 **SH-GRID는 재개방**됐다.
+- SH-RADEQ 선 방출 생산자를 `chi*line_source_S`에서
+  `n_u A_ul h nu beta_esc/(4 pi dnu)` 직접식으로 교체했다. tau=0 cancellation은
+  `beta=1`의 유한 방출로 자가검사한다.
+- A2-10 schema는 `RE_INTEGRAL`을 유일한 온도 producer로, `EHB_THERMAL`을 독립
+  diagnostic으로 분리했다.
+- 현 단열항은 `ELECTRON_TRANSLATIONAL_ONLY`이므로 fixed/free-T 모두
+  `RADEQ_INCOMPLETE_ADIABATIC`으로 fail-closed한다. 아래 `RADEQ_NO_BRACKET`은
+  이 수리 전 flight의 역사적 실측이며, 새 코드의 다음 예상 정지는 불완전 단열항이다.
+- Fable 중요 통합 재심은 raw τ writer census/양끝 bracket, 공유 NLTE authority,
+  공유 LTE/NLTE population, signed τ 등록, SH-GRID 소비계약을 모두 확인해
+  `IMPLEMENTATION_CLOSURE=ACCEPT`로 판정했다. 동시에
+  `FLIGHT_STATE=BLOCKED_INCOMPLETE_ADIABATIC`을 유지했다.
+- CPU/OpenMP/full CUDA `sm_80` 링크와 A2-07/08/09/10 및 정적·음성대조 gate가
+  통과했다. 로그인 노드에서는 모델 flight를 실행하지 않았다.
+
+근거: `validation/evt/CODEX_BF_EDGE_CENSUS_2026-08-08.md`,
+`docs/FABLE_VERDICT_SH_RADEQ_2026-08-08.md`,
+`docs/FABLE_PREFLIGHT_CLOSURE_SH_RADEQ_2026-08-08.md`,
+`validation/a2_09/SH_RADEQ_FABLE_REVISE_CLOSURE_2026-08-08.md`,
+`docs/ORDER_SH_RADEQ_CMFGEN_TERMS_2026-08-08.md`.
+
 ---
 
 ## 요약

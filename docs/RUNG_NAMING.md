@@ -25,9 +25,9 @@ user 지시: 단 이름에 **소속 접두**를 붙여 "이건 어느 팔인가"
 | **SH-R9** | R9 | 공유(물질) | 미착수 | 배선도 |
 | **SH-R10** | R10 | 세 열(MC·DET·CMFGEN) | 미착수 | 배선도 |
 | **SH-GAMMA** | Γ | 공유 | 폐합 `5450518` | `RUNG_GAMMA_DEPOSITION_OWNER.md` |
-| **SH-GRID** | 격자 단(안 B) | 공유 | 폐합 `2e26c2f` | `RUNG_GRID_CONTAINMENT_CONTRACT.md` |
-| **MC-EVT** | E | **MC 전용** | 발주 중 | `RUNG_EVENT_MEASURE_LANE_AGREEMENT.md` |
-| **SH-RADEQ** | (신규) | 공유 | **신규 전선** | `RADEQ_NO_BRACKET` — 미작성 |
+| **SH-GRID** | 격자 단(안 B) | 공유 | **재개방** — BF 하한 아래 활성 edge 707개 | `validation/evt/CODEX_BF_EDGE_CENSUS_2026-08-08.md` |
+| **MC-EVT** | E | **MC 전용** | **BLOCKED** — OOG=0 기각; SH-GRID·NE2·ME2 대기 | `FABLE_VERDICT_MC_EVT_2026-08-08.md` |
+| **SH-RADEQ** | (신규) | 공유 | **구현 폐합 ACCEPT / flight BLOCKED** — 완전 CMFGEN 단열항·trial transaction 대기 | `FABLE_PREFLIGHT_CLOSURE_SH_RADEQ_2026-08-08.md` |
 
 ## ★인용 정정 (2026-08-08)
 
