@@ -61,12 +61,36 @@ def run_case(case: Case) -> Result:
     combined = proc.stdout + proc.stderr
     case_id = case.case_id
     if case_id == "canonical":
-        ok = all([
-            proc.returncode == 0,
-            proc.stdout.count("[D5][WARN]") == 1,
-            "missing Z: 12,13,21,22,23,24,25" in proc.stdout,
-            "[D6][WARN]" not in proc.stdout,
-        ])
+        # A sealed active-only quarantine deck deliberately removes every
+        # zero/unlinked element from the loader topology.  Its positive control
+        # must therefore load cleanly with no D5 missing-element warning.  The
+        # historical full-topology deck retains its pinned D5 expectation.
+        manifest_path = case.deck / "quarantine/manifest.json"
+        sealed_active_only = False
+        if manifest_path.is_file():
+            try:
+                manifest = json.loads(manifest_path.read_text())
+                sealed_active_only = (
+                    manifest.get("state") == "sealed" and
+                    "active_ions.csv" in manifest.get("active_files", {}) and
+                    (case.deck / "quarantine/source_deck_snapshot").is_dir()
+                )
+            except (OSError, ValueError):
+                sealed_active_only = False
+        if sealed_active_only:
+            ok = all([
+                proc.returncode == 0,
+                "[D5][WARN]" not in proc.stdout,
+                "[D6][WARN]" not in proc.stdout,
+                "[D" not in proc.stderr,
+            ])
+        else:
+            ok = all([
+                proc.returncode == 0,
+                proc.stdout.count("[D5][WARN]") == 1,
+                "missing Z: 12,13,21,22,23,24,25" in proc.stdout,
+                "[D6][WARN]" not in proc.stdout,
+            ])
         return Result(case_id, proc.returncode, proc.stdout, proc.stderr, ok)
 
     marker = f"[{case_id}][{'FATAL' if case_id in FATAL_IDS else 'WARN'}]"

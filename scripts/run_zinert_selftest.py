@@ -13,6 +13,8 @@ from pathlib import Path
 
 from gate_parallel import run_cases, worker_count
 
+REPO_ROOT = Path(__file__).resolve().parent.parent
+
 # canonical-tau 는 **덱에 고정된 바이트-parity 트립와이어**다.  tau 는 선 파장·f 에
 # 의존하므로 덱이 다르면 값도 다르다 — 단일 기대값은 한 덱에서만 유효하다.
 # 등록되지 않은 덱은 **조용히 통과시키지 않고 실패**한다(기준선 없는 덱을 PASS 로
@@ -29,6 +31,12 @@ CANONICAL_TAU_BASELINE = {
     "tardis_reference_toy06_19p48d_jnu4":
         "active_lines=1867183 active_tau_bit_differences=0 "
         "active_tau_fnv64=f32d10df3421058b",
+    # 19apr23 active-only quarantine deck, measured fail-closed on 2026-08-08
+    # after SH-GRID/exact-Hyd promotion.  Same run: inactive_nonzero=0,
+    # active_tau_bit_differences=0, audit_rc=0.
+    "tardis_reference_toy06_19p48d_sivcaiv_active":
+        "active_lines=2588798 active_tau_bit_differences=0 "
+        "active_tau_fnv64=6c53c2f89ad53e47",
 }
 
 
@@ -53,6 +61,13 @@ def run_case(case: Case) -> Result:
     case.scratch.mkdir(parents=True, exist_ok=False)
     env = os.environ.copy()
     env["TMPDIR"] = str(case.scratch)
+    if case.case_id == "canonical-tau":
+        # The case intentionally runs from an isolated scratch cwd.  Bind the
+        # global energy-zero catalog explicitly so this whole-deck loader test
+        # exercises the same immutable reference path as sealed DET flights.
+        env["LUMINA_IONIZATION_REFERENCE_FILE"] = str(
+            REPO_ROOT / "data/atomic/ionization_reference.csv"
+        )
     proc = subprocess.run(
         case.command,
         cwd=case.scratch,

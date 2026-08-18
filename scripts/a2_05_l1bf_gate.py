@@ -2,7 +2,7 @@
 """A2-05 L-1bf gate: canonical-view bf photoionization rate vs CMFGEN *PRRR.
 
 ORACLE_INPUT lane (deterministic, the judgment lane): CMFGEN EDDFACTOR J at the
-nine gated depths -> conservative rebin to the canonical 4000-bin grid ->
+nine gated depths -> conservative rebin to the canonical 3866-bin grid ->
 deterministic commit inside the C fixture -> per-level Gamma through the SAME
 shared entry point production uses (bf_rate_gamma_legacy_grid) -> population
 weighting -> Gamma_ion vs PRRR truth.
@@ -13,9 +13,8 @@ in [0.8, 1.25] at s6-s8; the ion x shell exclusion set is the LIVE snapshot
 self-consistency bandmask (R2), not a hardcoded list.
 
 Also produced (SPEC_A2_05_V2):
-  * migration delta: Gamma_view / Gamma_legacy1000 (the certification's own
-    1000-bin quadrature on the same field, sigma, populations) -- the campaign's
-    first physics number for A2-05.
+  * migration delta: Gamma_view / Gamma_bf_midpoint (a diagnostic quadrature on
+    the same field, current stored sigma, and populations).
   * negative controls (--controls): (a) J -> W*B_nu(14172.549 K) => E_1 FAIL,
     (b) witness (Fe III, Co III) threshold one legacy bin up => E_sym FAIL,
     (c) alpha density round-trip poison => registration FAIL.  Runner exits 0
@@ -30,6 +29,7 @@ Exit codes: 0 gate verdict complete (PASS recorded, controls as expected),
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import math
 import os
@@ -49,15 +49,19 @@ import certify_rate_machine as crm                       # noqa: E402
 from certify_rate_machine import (                       # noqa: E402
     parse_popcob, parse_prrr, read_eddfactor, rvtj_block, parse_osc,
     read_bake_bin, bin_average, H, C_LIGHT, EV, FOURPI, CM2EV,
-    NU_MIN, NU_MAX, NBIN, LABELS, TARGET_V, IONS,
+    LABELS, TARGET_V, IONS,
 )
 from pathlib import Path as _Path                        # noqa: E402
 from oracle_compare_cmfgen import parse_prrr as parse_prrr_full  # noqa: E402
 
-# Canonical grid (radiation_field.h A2-02 authority).
-CANON_N_BINS = 4000
-CANON_NU_MIN = 1.4402928950097124e12
-CANON_NU_MAX = 4.032418413741097e16
+# Current grid authorities (lumina_frequency_grid.h + radiation_field.h).
+BF_N_BINS = 1234
+BF_NU_MIN = 5.8412785919616062e13
+BF_NU_MAX = 4.0362581455823112e16
+CANON_K = 2
+CANON_J_LO = -1398
+CANON_J_HI = 2468
+CANON_N_BINS = CANON_J_HI - CANON_J_LO
 VALID, EXACT_ZERO, UNSAMPLED, OUT_OF_GRID, STALE = 1, 2, 3, 4, 5
 STATE_NAME = {1: 'VALID', 2: 'EXACT_ZERO', 3: 'UNSAMPLED', 4: 'OUT_OF_GRID', 5: 'STALE'}
 
@@ -77,9 +81,28 @@ E1_FAIL_LIMIT = 0.5
 WITNESS = {'Fe III', 'Co III'}
 
 
+def sha256_file(path: str) -> str:
+    digest = hashlib.sha256()
+    with open(path, 'rb') as stream:
+        while block := stream.read(8 * 1024 * 1024):
+            digest.update(block)
+    return digest.hexdigest()
+
+
 def canonical_edges() -> np.ndarray:
-    edges = np.geomspace(CANON_NU_MIN, CANON_NU_MAX, CANON_N_BINS + 1)
-    edges[0], edges[-1] = CANON_NU_MIN, CANON_NU_MAX
+    dlog = math.log(BF_NU_MAX / BF_NU_MIN) / (CANON_K * BF_N_BINS)
+    edges = np.empty(CANON_N_BINS + 1)
+    for b in range(CANON_N_BINS + 1):
+        j = CANON_J_LO + b
+        if 0 <= j <= CANON_K * BF_N_BINS and j % CANON_K == 0:
+            bf = j // CANON_K
+            edges[b] = (BF_NU_MIN if bf == 0 else
+                        BF_NU_MAX if bf == BF_N_BINS else
+                        BF_NU_MIN * math.exp(
+                            bf * math.log(BF_NU_MAX / BF_NU_MIN) /
+                            BF_N_BINS))
+        else:
+            edges[b] = BF_NU_MIN * math.exp(j * dlog)
     return edges
 
 
@@ -161,13 +184,14 @@ def run_fixture(fixture: str, tag: str, out_dir: str, generation: int,
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument('--run', default='/gpfs/kjhan/cmfgen_runs/toy06_19.48d_jnu4')
+    ap.add_argument('--run', default='/gpfs/kjhan/cmfgen_runs/toy06_19p48d_ophys')
     ap.add_argument('--ref', default=os.path.join(
-        ROOT, 'data/tardis_reference_cmfgen_superlev_ionfix_ddc15strat_sivcaiv'))
+        ROOT, 'data/tardis_reference_toy06_19p48d_sivcaiv_active'))
     ap.add_argument('--bin', default=os.path.join(
-        ROOT, 'data/atomic/cmfgen_sigma_bf_superlev_ionfix_ddc15strat_sivcaiv.bin'))
+        ROOT, 'data/tardis_reference_toy06_19p48d_sivcaiv_active/cmfgen_sigma_bf.bin'))
     ap.add_argument('--fixture', default=os.path.join(ROOT, 'l1bf_fixture'))
-    ap.add_argument('--out', default=os.path.join(ROOT, 'validation/a2_05'))
+    ap.add_argument('--out', default=os.path.join(
+        ROOT, 'validation/a2_05/finite_prrr_1234_2026-08-08'))
     ap.add_argument('--controls', action='store_true',
                     help='also run the three pre-registered negative controls')
     a = ap.parse_args()
@@ -204,18 +228,28 @@ def main() -> int:
         f'EXACT_ZERO={int((Srows==EXACT_ZERO).sum())} '
         f'OUT_OF_GRID={int((Srows==OUT_OF_GRID).sum())} ({time.time()-t0:.1f}s)')
 
-    # legacy 1000-bin J for the migration-delta channel (certification formula)
-    dln_leg = math.log(NU_MAX / NU_MIN) / NBIN
-    edges_leg = NU_MIN * np.exp(np.arange(NBIN + 1) * dln_leg)
-    nu_c = NU_MIN * np.exp((np.arange(NBIN) + 0.5) * dln_leg)
-    dnu = np.diff(edges_leg)
-    Wbin = FOURPI / (H * nu_c) * dnu
-    Jbar = np.zeros((NBIN, NG))
-    for q, d in enumerate(GATE):
-        Jbar[:, q] = bin_average(nu, J[:, d], edges_leg)
-
-    # ---- shipped sigma binary + ref rows --------------------------------
+    # ---- current shipped sigma binary + BF-grid diagnostic quadrature -----
     bk = read_bake_bin(a.bin)
+    if (bk['magic'] != 0x434D4644 or bk['ver'] != 1 or not bk['size_ok'] or
+            bk['nbin'] != BF_N_BINS or bk['numin'] != BF_NU_MIN or
+            bk['numax'] != BF_NU_MAX):
+        raise SystemExit('current 1234-bin sigma header contract failed')
+    nfb = int(bk['nbin'])
+    bf_nu_min = float(bk['numin'])
+    bf_nu_max = float(bk['numax'])
+    dln_bf = math.log(bf_nu_max / bf_nu_min) / nfb
+    edges_bf = bf_nu_min * np.exp(np.arange(nfb + 1) * dln_bf)
+    edges_bf[0], edges_bf[-1] = bf_nu_min, bf_nu_max
+    nu_c = bf_nu_min * np.exp((np.arange(nfb) + 0.5) * dln_bf)
+    dnu = np.diff(edges_bf)
+    Wbin = FOURPI / (H * nu_c) * dnu
+    Jbar = np.zeros((nfb, NG))
+    for q, d in enumerate(GATE):
+        Jbar[:, q] = bin_average(nu, J[:, d], edges_bf)
+    say(f'  BF asset: nlev={bk["nlev"]} nbin={nfb} '
+        f'nu=[{bf_nu_min:.17g},{bf_nu_max:.17g}]')
+
+    # ---- reference row identities ---------------------------------------
     ref_Z, ref_i, ref_E, ref_g = [], [], [], []
     import csv as _csv
     with open(os.path.join(a.ref, 'levels.csv')) as f:
@@ -252,12 +286,14 @@ def main() -> int:
         G_truth = PR.sum(axis=0) / np.where(n_ion > 0, n_ion, np.nan)
         ki = order.index(spec['cmf'])
         excluded = set()
+        snapshot_consistency = np.ones(NG)
         if ki + 1 < len(order):
             gnext = allions[order[ki + 1]][0][:, 0]
             with np.errstate(divide='ignore', invalid='ignore'):
                 dir_ = np.where(gnext > 0, DI / gnext, np.nan)
             scale = float(np.nanmedian(dir_[GATE]))
             devi = dir_ / scale
+            snapshot_consistency = devi[GATE]
             for q, d in enumerate(GATE):
                 if np.isfinite(devi[d]) and abs(devi[d] - 1.0) > 0.05:
                     excluded.add(LABELS[q])
@@ -269,10 +305,14 @@ def main() -> int:
             raise SystemExit(f'{spec["lab"]}: ref row identity failed '
                              '(certified 1:1 no longer holds)')
         S_D = np.asarray(bk['sigma'][sel[:NF]], dtype=float)
+        has_D = np.asarray(bk['has'][sel[:NF]], dtype=int) == 1
+        complete_sigma = bool(np.all(has_D))
         ions.append(dict(spec=spec, NF=NF, NS=NS, CI=CI, n_ion=n_ion,
                          nu_th=nu_th, S_D=S_D, G_truth=G_truth,
-                         excluded=excluded))
-        say(f'  [{spec["lab"]}] NF={NF} sigma rows shipped; '
+                         excluded=excluded, complete_sigma=complete_sigma,
+                         missing_sigma_rows=int(np.sum(~has_D)),
+                         snapshot_consistency=snapshot_consistency))
+        say(f'  [{spec["lab"]}] NF={NF} sigma={int(has_D.sum())}/{NF}; '
             f'bandmask excluded shells: {sorted(excluded) or "NONE"}')
 
     all_sigma = np.concatenate([io['S_D'] for io in ions], axis=0)
@@ -299,7 +339,7 @@ def main() -> int:
     # ---- main lane -------------------------------------------------------
     epoch = 19.48 * 86400.0
     fix = run_fixture(a.fixture, 'main', a.out, 1, epoch, Jrows, Srows,
-                      NBIN, NU_MIN, dln_leg, all_sigma, all_nuth)
+                      nfb, bf_nu_min, dln_bf, all_sigma, all_nuth)
     G_view = ion_gamma(fix)
     say(f'  fixture main lane done ({time.time()-t0:.1f}s)')
 
@@ -318,11 +358,20 @@ def main() -> int:
         for q, lb in enumerate(LABELS):
             r = G_view[j][q] / Gt[q] if Gt[q] > 0 else float('nan')
             rl = G_view[j][q] / Gl[q] if Gl[q] > 0 else float('nan')
+            if not io['complete_sigma']:
+                cells.append(f'{lb}=COVLIM({r:.3f})')
+                verdict_rows.append(dict(
+                    ion=lab, shell=lb, ratio_prrr=r, ratio_bf_midpoint=rl,
+                    ok=None, excluded=True, exclusion_reason='SIGMA_COVERAGE',
+                    missing_sigma_rows=io['missing_sigma_rows'],
+                    gamma_view=float(G_view[j][q]), gamma_truth=float(Gt[q])))
+                continue
             if lb in io['excluded']:
                 cells.append(f'{lb}=EXCL({r:.3f})')
                 verdict_rows.append(dict(ion=lab, shell=lb, ratio_prrr=r,
-                                         ratio_legacy=rl, ok=None,
+                                         ratio_bf_midpoint=rl, ok=None,
                                          excluded=True,
+                                         exclusion_reason='SNAPSHOT_STATE',
                                          gamma_view=float(G_view[j][q]),
                                          gamma_truth=float(Gt[q])))
                 continue
@@ -332,7 +381,8 @@ def main() -> int:
             cells.append(f'{lb}={r:.3f}{"" if ok else "!FAIL"}')
             ratios.append(r)
             verdict_rows.append(dict(ion=lab, shell=lb, ratio_prrr=r,
-                                     ratio_legacy=rl, ok=bool(ok),
+                                     ratio_bf_midpoint=rl, ok=bool(ok),
+                                     excluded=False,
                                      gamma_view=float(G_view[j][q]),
                                      gamma_truth=float(Gt[q])))
         delta = [G_view[j][q] / Gl[q] if Gl[q] > 0 else float('nan')
@@ -346,7 +396,7 @@ def main() -> int:
         io['E1_main'] = e1
         # f_cov (gate contract 3 / ORDER 6.3): the active set and the
         # denominator are built from the TRUTH-side contribution -- the
-        # certification's own 1000-bin CMFGEN-field quadrature p*Gamma_lev,
+        # current BF-bin CMFGEN-field quadrature p*Gamma_lev,
         # with no view state anywhere in the construction (a state-filtered
         # denominator made f_cov=1 tautological; 1st re-review finding).
         st_lev = fix['state'][offsets[j]:offsets[j + 1]]
@@ -378,7 +428,7 @@ def main() -> int:
         io['fcov_by_shell'] = fcov_by_shell
         say(f'  {lab:7s} vs PRRR : ' + ' '.join(cells)
             + f'  | E_1={e1:.4f} f_cov(99.9% active,min)={fcov_min:.4f}')
-        say(f'  {lab:7s} view/legacy1000 (migration delta): '
+        say(f'  {lab:7s} view/BF-midpoint (diagnostic delta): '
             + ' '.join(f'{LABELS[q]}={delta[q]:.4f}' for q in range(NG)))
         bs = io['blocked_share']
         if bs.max() > 0:
@@ -400,7 +450,7 @@ def main() -> int:
         Jp = np.tile(PLANCK_W * planck_bnu(PLANCK_T, nu_cc), (NG, 1))
         Sp = np.where(Jp > 0, VALID, EXACT_ZERO).astype(np.int32)
         fa = run_fixture(a.fixture, 'ctl_planck', a.out, 1, epoch, Jp, Sp,
-                         NBIN, NU_MIN, dln_leg, all_sigma, all_nuth)
+                         nfb, bf_nu_min, dln_bf, all_sigma, all_nuth)
         Gp = ion_gamma(fa)
         broke = 0
         e1_poison = {}
@@ -435,9 +485,9 @@ def main() -> int:
         nuth_shift = all_nuth.copy()
         for j, io in enumerate(ions):
             if io['spec']['lab'] in WITNESS:
-                nuth_shift[offsets[j]:offsets[j + 1]] *= math.exp(dln_leg)
+                nuth_shift[offsets[j]:offsets[j + 1]] *= math.exp(dln_bf)
         fb = run_fixture(a.fixture, 'ctl_thresh', a.out, 1, epoch, Jrows, Srows,
-                         NBIN, NU_MIN, dln_leg, all_sigma, nuth_shift)
+                         nfb, bf_nu_min, dln_bf, all_sigma, nuth_shift)
         Gs = ion_gamma(fb)
         esym = {}
         for j, io in enumerate(ions):
@@ -499,10 +549,31 @@ def main() -> int:
             [io['truth_contrib'] for io in ions], axis=0),
         gamma_view=fix['gamma'], state=fix['state'])
 
+    judged_rows = [row for row in verdict_rows if row.get('excluded') is False]
+    finite_truth = [row['gamma_truth'] for row in judged_rows]
+    max_rel_by_ion = {}
+    for label in sorted({row['ion'] for row in judged_rows}):
+        max_rel_by_ion[label] = max(
+            abs(row['ratio_prrr'] - 1.0)
+            for row in judged_rows if row['ion'] == label)
+    input_paths = {
+        a.bin, os.path.join(a.ref, 'levels.csv'), a.fixture,
+        os.path.join(a.run, 'EDDFACTOR'), os.path.join(a.run, 'RVTJ'),
+    }
+    for io in ions:
+        input_paths.add(os.path.join(a.run, io['spec']['pop']))
+        input_paths.add(os.path.join(a.run, f"{io['spec']['cmf']}PRRR"))
+        input_paths.add(os.path.join(a.run, io['spec']['osc']))
+        input_paths.add(os.path.join(a.run, io['spec']['fts']))
+
     ledger = dict(
-        schema='lumina-a2-05-l1bf-gate-v2',
+        schema='lumina-a2-05-l1bf-gate-v3-current-grid',
         lane='ORACLE_INPUT',
+        scope='finite CMFGEN-direct-output reproduction by the production CPU BF rate entry point; not a full solver-solution comparison',
         run=a.run, bin=a.bin,
+        grid=dict(canonical_bins=CANON_N_BINS, bf_bins=nfb,
+                  bf_nu_min_hz=bf_nu_min, bf_nu_max_hz=bf_nu_max,
+                  bf_dlog=dln_bf),
         limits=dict(all=LIMIT_ALL, forming=sorted(FORMING),
                     forming_limit=LIMIT_FORMING),
         bandmask={io['spec']['lab']: sorted(io['excluded']) for io in ions},
@@ -510,15 +581,56 @@ def main() -> int:
                  for io in ions},
         fcov_min={io['spec']['lab']: round(io.get('fcov_min', float('nan')), 5)
                   for io in ions},
+        sigma_coverage={io['spec']['lab']:
+                        dict(covered=io['NF'] - io['missing_sigma_rows'],
+                             total=io['NF'], complete=io['complete_sigma'])
+                        for io in ions},
+        snapshot_consistency={
+            io['spec']['lab']:
+            {LABELS[q]: float(io['snapshot_consistency'][q]) for q in range(NG)}
+            for io in ions},
+        metrics=dict(
+            judged_finite_cells=len(judged_rows),
+            cmfgen_gamma_min_s1=float(min(finite_truth)),
+            cmfgen_gamma_max_s1=float(max(finite_truth)),
+            max_relative_error_by_ion=max_rel_by_ion,
+            all_cmfgen_and_lumina_values_finite_positive=bool(all(
+                math.isfinite(row['gamma_truth']) and row['gamma_truth'] > 0.0 and
+                math.isfinite(row['gamma_view']) and row['gamma_view'] > 0.0
+                for row in judged_rows)),
+        ),
         verdict='PASS' if all_pass else 'FAIL',
         rows=verdict_rows,
         controls=control_results,
+        input_sha256={path: sha256_file(path) for path in sorted(input_paths)},
         elapsed_s=round(time.time() - t0, 1),
     )
     with open(os.path.join(a.out, 'L1BF_GATE_LEDGER.json'), 'w') as f:
         json.dump(ledger, f, indent=2)
     with open(os.path.join(a.out, 'L1BF_GATE_REPORT.txt'), 'w') as f:
         f.write('\n'.join(report) + '\n')
+    md = [
+        '# CMFGEN 직접 출력 finite-value 재현 — 현재 1234-bin grid', '',
+        f'판정: **{ledger["verdict"]}**', '',
+        'CMFGEN `*PRRR`이 직접 출력한 population-weighted 광이온화율 Γ와',
+        '현재 1234-bin 단면 및 생산 CPU rate entry point의 Γ를 비교한다.',
+        '이는 rate-kernel의 외부-oracle 비교이며 전체 solver 해 비교는 아니다.', '',
+        f'- 판정 셀: `{len(judged_rows)}`',
+        f'- CMFGEN Γ 범위: `{min(finite_truth):.9e}`–`{max(finite_truth):.9e} s^-1`',
+        '- PRRR/POP snapshot 불일치 셀과 sigma coverage 불완전 이온은 판정에서 제외', '',
+        '| ion | shell | CMFGEN Γ [s⁻¹] | Lumina Γ [s⁻¹] | Lumina/CMFGEN |',
+        '|---|---:|---:|---:|---:|',
+    ]
+    for row in judged_rows:
+        md.append(f'| {row["ion"]} | {row["shell"]} | '
+                  f'{row["gamma_truth"]:.9e} | {row["gamma_view"]:.9e} | '
+                  f'{row["ratio_prrr"]:.9f} |')
+    md.extend(['',
+        'S II는 322개 중 7개 level의 CMFGEN sigma row가 없어 `COVLIM`으로',
+        '기록하고 정식 판정에서 제외했다. 외곽 snapshot 불일치도 원장에 보존한다.',
+    ])
+    with open(os.path.join(a.out, 'FINITE_VALUE_REPORT.md'), 'w') as f:
+        f.write('\n'.join(md) + '\n')
     say(f'\n[done] {time.time()-t0:.1f}s -> {a.out}/L1BF_GATE_LEDGER.json')
     return 0 if (all_pass and controls_ok) else 1
 

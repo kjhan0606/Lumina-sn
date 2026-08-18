@@ -45,6 +45,7 @@ def run_census_preflight() -> int:
 # 2026-08-07 에 만든 셋을 배터리가 매번 돌리게 해서 "존재하지만 실행 안 됨"을 없앤다.
 PREFLIGHTS = (
     ("A2_01_CENSUS", "scripts/a2_01_census_contract.py", ("check",)),
+    ("SH_GRID_UPPER_CLOSURE", "scripts/verify_sh_grid_upper_closure.py", ()),
     ("SEAL_INTEGRITY", "scripts/verify_seals.py", ()),
     ("LEGACY_KNOB_REGISTRY", "scripts/check_legacy_knob_registry.py", ()),
 )
@@ -174,6 +175,9 @@ def build_specs(build: Path, cc: str) -> tuple[Build, ...]:
                 "src/opacity_publication.c",
                 "src/emissivity_publication.c",
                 "src/radeq_publication.c",
+                "src/cmfgen_adiabatic.c",
+                "src/nlte_population_candidate.c",
+                "src/atomic_internal_energy.c",
                 "src/gpu_radiation_field_contract.c", "src/jnu_seed.c", "src/seed_capability.c",
                 "src/gpu_physics_contract.c",
                 "-lm", "-o", str(build / "zinert_validator"),
@@ -184,7 +188,7 @@ def build_specs(build: Path, cc: str) -> tuple[Build, ...]:
             "Z-tau",
             common_z + (
                 "-DLUMINA_FROZEN_ORACLE", "tests/zinert_tau_fixture.c",
-                "src/lumina_plasma.c", "src/bf_rate_jnu.c", "src/population_contract.c", "src/opacity_publication.c", "src/emissivity_publication.c", "src/radeq_publication.c", "src/gpu_radiation_field_contract.c", "src/jnu_seed.c", "src/seed_capability.c", "src/gpu_physics_contract.c", "-lm", "-o", str(build / "zinert_tau"),
+                "src/lumina_plasma.c", "src/bf_rate_jnu.c", "src/population_contract.c", "src/opacity_publication.c", "src/emissivity_publication.c", "src/radeq_publication.c", "src/cmfgen_adiabatic.c", "src/nlte_population_candidate.c", "src/atomic_internal_energy.c", "src/gpu_radiation_field_contract.c", "src/jnu_seed.c", "src/seed_capability.c", "src/gpu_physics_contract.c", "-lm", "-o", str(build / "zinert_tau"),
             ),
             build / "zinert_tau",
         ),
@@ -196,6 +200,9 @@ def build_specs(build: Path, cc: str) -> tuple[Build, ...]:
                 "src/opacity_publication.c",
                 "src/emissivity_publication.c",
                 "src/radeq_publication.c",
+                "src/cmfgen_adiabatic.c",
+                "src/nlte_population_candidate.c",
+                "src/atomic_internal_energy.c",
                 "src/gpu_radiation_field_contract.c", "src/jnu_seed.c", "src/seed_capability.c",
                 "src/gpu_physics_contract.c",
                 "-lm", "-o", str(build / "zinert_population"),
@@ -208,7 +215,7 @@ def build_specs(build: Path, cc: str) -> tuple[Build, ...]:
                 "-DLUMINA_FROZEN_ORACLE", "tests/zinert_canonical_tau_fixture.c",
                 "src/lumina_plasma.c", "src/lumina_element_wide.c",
                 "src/bf_rate_jnu.c", "src/population_contract.c",
-                "src/lumina_atomic.c", "src/opacity_publication.c", "src/emissivity_publication.c", "src/radeq_publication.c", "src/gpu_radiation_field_contract.c", "src/jnu_seed.c", "src/seed_capability.c", "src/gpu_physics_contract.c", "-lm", "-o",
+                "src/lumina_atomic.c", "src/opacity_publication.c", "src/emissivity_publication.c", "src/radeq_publication.c", "src/cmfgen_adiabatic.c", "src/nlte_population_candidate.c", "src/atomic_internal_energy.c", "src/gpu_radiation_field_contract.c", "src/jnu_seed.c", "src/seed_capability.c", "src/gpu_physics_contract.c", "-lm", "-o",
                 str(build / "zinert_canonical_tau"),
             ),
             build / "zinert_canonical_tau",
@@ -262,7 +269,11 @@ def build_specs(build: Path, cc: str) -> tuple[Build, ...]:
             "Z-a2-10",
             common_z + (
                 "tests/a2_10_radeq_selftest.c", "src/radeq_publication.c",
-                "src/population_contract.c", "-lm", "-o",
+                "src/population_contract.c", "src/cmfgen_adiabatic.c",
+                "src/nlte_population_candidate.c",
+                "src/atomic_internal_energy.c",
+                "src/opacity_publication.c", "src/emissivity_publication.c",
+                "-lm", "-o",
                 str(build / "a2_10_radeq"),
             ),
             build / "a2_10_radeq",

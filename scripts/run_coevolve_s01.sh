@@ -15,43 +15,40 @@ module load cuda/13.0.2 2>/dev/null || true
 export OMP_NUM_THREADS=${OMP_NUM_THREADS:-60}
 export OMP_PLACES=${OMP_PLACES:-cores} OMP_PROC_BIND=${OMP_PROC_BIND:-close}
 export LUMINA_CMF_SOLVE_GPU=1
-# Reference dir. Overridable so an atomic-data A/B can change ONLY the data set
-# (same ${VAR-default} idiom as LUMINA_NLTE_SKIP_Z on line 28 and
-# LUMINA_NLTE_LTE_FLOOR on line 45: substitutes only when UNSET, so every
-# existing launcher stays byte-identical).
+# Reference dir. Overridable so an atomic-data A/B can change only the data set.
 MODEL=${LUMINA_MODEL_DIR-data/tardis_reference_toy06_19p48d}
 
 export CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-0}
 export LUMINA_NLTE=1
-export LUMINA_NLTE_GREY_ITERS=2 SUPER_LEVELS=1 LUMINA_NLTE_GREY_TAU=2
+export LUMINA_NLTE_GREY_ITERS=2 SUPER_LEVELS=1 LUMINA_NLTE_GREY_TAU=0
 export LUMINA_MACROATOM_NEUTRAL_E=1 LUMINA_SUPER_CUTOFF=100
-export LUMINA_GAMMA_DEP=1 LUMINA_NLTE_ASSEMBLE_GPU=1
+export LUMINA_GAMMA_DEP=1 LUMINA_NLTE_ASSEMBLE_GPU=0
 export LUMINA_DEPOSITION_FILE=$MODEL/deposition_cmfgen.csv
 export LUMINA_PURE_CMFGEN=1 LUMINA_PURE_CMFGEN_ITER=${NITER:-12} LUMINA_CMFGEN_ALI_ITER=8
 export LUMINA_BF_OPACITY=1 LUMINA_CMFGEN_SIGMA_BF=$MODEL/cmfgen_sigma_bf.bin
 export LUMINA_DYNAMIC_TRANSPROB=1 LUMINA_NLTE_SKIP_Z=${LUMINA_NLTE_SKIP_Z-14} LUMINA_NLTE_START_ITER=2
-export LUMINA_NLTE_FLOOR_REG=0 LUMINA_NLTE_INV_CEIL=1e4
+export LUMINA_NLTE_FLOOR_REG=0 LUMINA_NLTE_INV_CEIL=0
 export LUMINA_RADEQ_TE=1 LUMINA_RADEQ_COOL_ESCAPE=0
 export LUMINA_RADEQ_COOL_NONNEG=0 LUMINA_RADEQ_COOL_NLTE_ONLY=0
 export LUMINA_RADEQ_LINE_RESPOND=1 LUMINA_RADEQ_DAMP=0.5
 export LUMINA_COUPLED_NEWTON=0 LUMINA_DIP_TRACE=1 LUMINA_CN_DAMP=0.5 LUMINA_COUPLED_NEWTON_SMIN=20 LUMINA_COUPLED_JNU_PHOTOION=${LUMINA_COUPLED_JNU_PHOTOION:-1} LUMINA_FROZENIN=${LUMINA_FROZENIN:-0}
-export LUMINA_NLTE_PER_ION_RESCALE=1 LUMINA_COUPLED_JNU_LSTAR=0
+# Default remains the historical per-ion rescale.  Honor an explicit caller
+# value so a sealed single-total SE flight can remove the duplicate ion-stage
+# authority without editing this reference launcher again.
+export LUMINA_NLTE_PER_ION_RESCALE=${LUMINA_NLTE_PER_ION_RESCALE-1} LUMINA_COUPLED_JNU_LSTAR=0
 export LUMINA_COUPLED_LAMBDA_STAR=1 LUMINA_COUPLED_TDEP=1 LUMINA_RADEQ_LINE_RE=0
 export LUMINA_TE_TRAD_RATIO=1.0 LUMINA_LINE_INTERACTION=macroatom
 export LUMINA_TAU_BY_ION=1 LUMINA_DIFFUSE_INNER_BC=1 LUMINA_ENERGY_BUDGET=1
-# LTE_FLOOR: honour a value set by the caller (same ${VAR-default} idiom as
-# LUMINA_NLTE_SKIP_Z on line 28 — substitutes only when the var is UNSET, so every
-# existing launcher is byte-identical). It was an unconditional =1, which silently
-# voided parity38's floor-off arm: the launcher exported 0, the binary reported 1,
-# and the run would have been an exact duplicate of parity37. Caught by the
-# post-start envcheck against the binary's own RESOLVED CONFIG block; same failure
-# mode as the unconditional unset on line 115 that cost parity34 83 GPU-minutes.
-export LUMINA_NLTE_LTE_FLOOR=${LUMINA_NLTE_LTE_FLOOR-1} LUMINA_NLTE_COLL_FIX=1 LUMINA_NLTE_ION_LOCK=1
-export LUMINA_NLTE_LOCK_START_ITER=0 LUMINA_NLTE_FALLBACK_TE=1
+# Population floors/fallbacks are not production algorithms.  A negative or
+# unsolved population terminates the transaction and leaves the old generation
+# intact.  ION_LOCK remains independently overridable: caller=0 selects the
+# combined element-total row and lets bound-free SE own the stage partition.
+export LUMINA_NLTE_LTE_FLOOR=0 LUMINA_NLTE_COLL_FIX=1 LUMINA_NLTE_ION_LOCK=${LUMINA_NLTE_ION_LOCK-1}
+export LUMINA_NLTE_LOCK_START_ITER=0 LUMINA_NLTE_FALLBACK_TE=0
 export LUMINA_CMFGEN_FROZEN_CONT=1 LUMINA_CMFGEN_FROZEN_ALI=60
 export LUMINA_MAX_INTERACTIONS=50000 LUMINA_MACROATOM_EWEIGHT=1
 export LUMINA_CMFGEN_LINE_EPS_PHYS=1
-export LUMINA_RADEQ_FB_RATE=1 LUMINA_HRESP_CLAMP=1.0 LUMINA_TE_STEP_CLAMP=1
+export LUMINA_RADEQ_FB_RATE=1 LUMINA_HRESP_CLAMP=0 LUMINA_TE_STEP_CLAMP=0
 export LUMINA_BF_RATE_POPS=1 LUMINA_ETLA_ALLOW_HEAT=1 LUMINA_RADEQ_SIMUL=1
 export LUMINA_TRAD_COLOR_FIX=1 LUMINA_J_DAMP=0.5 LUMINA_RADEQ_VR_STD=1
 export LUMINA_INNER_BB_SCALE=1.0 LUMINA_CMF_DEP_SOURCE=1

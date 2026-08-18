@@ -66,7 +66,10 @@ def registry() -> dict[str, tuple[str, str]]:
 def main() -> int:
     reg = registry()
     sites = {
-        "P": block(ROOT / "src/lumina_plasma.c", r"forbidden_population_knobs\[\]"),
+        "P": (
+            block(ROOT / "src/lumina_plasma.c", r"forbidden_population_knobs\[\]")
+            | block(ROOT / "src/lumina_plasma.c", r"nlte_forbidden_numeric_repairs\[\]")
+        ),
         "E": block(ROOT / "src/lumina_element_wide.c", r"ew_guard_config_count\(void\)"),
         "S": block(ROOT / "src/seed_capability.c", r"static const char \*obsolete\[\]"),
         # ★A: A2-17 폐기 스칼라. 첫 작성이 이 사이트를 통째로 놓쳤다 (T3 실패로 발견)

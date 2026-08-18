@@ -41,9 +41,9 @@ CONFIG_YML  = ROOT / "scripts" / "cmfgen_config_lumina.yml"
 OUT_BIN     = ROOT / "data" / "atomic" / "cmfgen_sigma_bf.bin"
 
 # Must match BF grid in src/lumina.h
-BF_NU_MIN     = 1.5e14
-BF_NU_MAX     = 3.0e16
-BF_N_FREQ_BIN = 1000
+BF_NU_MIN     = 5.8412785919616062e13
+BF_NU_MAX     = 4.0362581455823112e16
+BF_N_FREQ_BIN = 1234
 
 C_CGS     = 2.99792458e10
 H_CGS     = 6.62607015e-27
@@ -168,9 +168,7 @@ def main() -> None:
     log(f"carsus  : {n_levels} levels across "
         f"{carsus.groupby(['atomic_number','ion_number']).ngroups} ions")
 
-    log_min = np.log(BF_NU_MIN)
-    log_max = np.log(BF_NU_MAX)
-    d_log_nu = (log_max - log_min) / BF_N_FREQ_BIN
+    d_log_nu = np.log(BF_NU_MAX / BF_NU_MIN) / BF_N_FREQ_BIN
     nu_grid = BF_NU_MIN * np.exp((np.arange(BF_N_FREQ_BIN) + 0.5) * d_log_nu)
 
     sigma_grid = np.zeros((n_levels, BF_N_FREQ_BIN), dtype="f8")

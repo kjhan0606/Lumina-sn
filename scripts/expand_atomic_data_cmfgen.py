@@ -313,9 +313,9 @@ A_PREFACTOR = 8.0 * np.pi**2 * E_CGS**2 / (ME_CGS * C_CGS**3)
 
 # Pre-bake target grid: must match NLTE_NU_{MIN,MAX} / NLTE_N_FREQ_BINS in
 # src/lumina.h.  If those constants change, regenerate the binary.
-BF_NU_MIN     = 1.5e14   # c / 20000 A
-BF_NU_MAX     = 3.0e16   # c / 100 A
-BF_N_FREQ_BIN = 1000
+BF_NU_MIN     = 5.8412785919616062e13  # SH-GRID aligned lower edge
+BF_NU_MAX     = 4.0362581455823112e16  # aligned 74.2748474421 A upper edge
+BF_N_FREQ_BIN = 1234
 OUT_SIGMA_BIN = ROOT / 'data' / 'atomic' / f'cmfgen_sigma_bf{_OUT_SUFFIX}.bin'
 _DATE_RE = re.compile(r'^\d{1,2}[a-z]{3}\d{2}$')
 _MONTHS = {'jan':1,'feb':2,'mar':3,'apr':4,'may':5,'jun':6,
@@ -1483,9 +1483,9 @@ def bake_sigma_bf_grid(ion_data: dict, ion_data_index: dict,
     """
     n_levels = len(levels_rows)
     nb = BF_N_FREQ_BIN
-    log_min = np.log(BF_NU_MIN)
-    log_max = np.log(BF_NU_MAX)
-    d_log_nu = (log_max - log_min) / nb
+    # Match the C runtime exactly.  Subtracting two separately rounded logs
+    # moves this spacing by several ulps when either endpoint changes.
+    d_log_nu = np.log(BF_NU_MAX / BF_NU_MIN) / nb
     # Bin edges + widths for the bin-AVERAGE bake (BAKEFIX 2).  The C loader's
     # bin centres are nu_min*exp((b+0.5)*dlog) (lumina_plasma.c nu_bin[b]); the
     # baked value is the average over [edge_b, edge_{b+1}], not a sample there.

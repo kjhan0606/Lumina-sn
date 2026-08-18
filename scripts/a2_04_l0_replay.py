@@ -26,9 +26,19 @@ from validation.chain_replay_parity59.common import (  # noqa: E402
     read_info,
 )
 
-N_BINS = 4000
-NU_MIN = 1.4402928950097124e12
-NU_MAX = 4.032418413741097e16
+# Mirror src/lumina_frequency_grid.h + src/radiation_field.h.  The former
+# 4000-bin literals predated SH-GRID and made the binary fixture reject the
+# input byte count after the canonical owner moved to 3866 bins.
+NLTE_N_BINS = 1234
+NLTE_NU_MIN = 5.8412785919616062e13
+NLTE_NU_MAX = 4.0362581455823112e16
+REFINEMENT_K = 2
+J_LO = -1398
+J_HI = 2468
+N_BINS = J_HI - J_LO
+DLOG = math.log(NLTE_NU_MAX / NLTE_NU_MIN) / (REFINEMENT_K * NLTE_N_BINS)
+NU_MIN = NLTE_NU_MIN * math.exp(J_LO * DLOG)
+NU_MAX = NLTE_NU_MIN * math.exp(J_HI * DLOG)
 C_A_S = 2.99792458e18
 H_CGS = 6.62607015e-27
 K_CGS = 1.380649e-16
@@ -62,7 +72,22 @@ def sha256(path: Path) -> str:
 
 
 def canonical_edges() -> np.ndarray:
-    edges = np.geomspace(NU_MIN, NU_MAX, N_BINS + 1)
+    edges = np.empty(N_BINS + 1, dtype=np.float64)
+    ratio_log = math.log(NLTE_NU_MAX / NLTE_NU_MIN)
+    for b in range(N_BINS + 1):
+        j = J_LO + b
+        if 0 <= j <= REFINEMENT_K * NLTE_N_BINS and \
+                j % REFINEMENT_K == 0:
+            bf_edge = j // REFINEMENT_K
+            if bf_edge == 0:
+                edges[b] = NLTE_NU_MIN
+            elif bf_edge == NLTE_N_BINS:
+                edges[b] = NLTE_NU_MAX
+            else:
+                edges[b] = NLTE_NU_MIN * math.exp(
+                    bf_edge * ratio_log / NLTE_N_BINS)
+        else:
+            edges[b] = NLTE_NU_MIN * math.exp(j * DLOG)
     edges[0], edges[-1] = NU_MIN, NU_MAX
     return edges
 

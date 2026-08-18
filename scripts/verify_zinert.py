@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import json
 from collections import Counter, defaultdict
 from pathlib import Path
 
@@ -74,13 +75,27 @@ def main() -> int:
 
     active_missing = sum(missing_ion[z] + missing_level[z] for z in active)
     inactive_missing = sum(missing_ion[z] + missing_level[z] for z in inactive)
+    manifest_path = deck / "quarantine/manifest.json"
+    sealed_active_only = False
+    if manifest_path.is_file():
+        try:
+            manifest = json.loads(manifest_path.read_text())
+            sealed_active_only = (
+                manifest.get("state") == "sealed" and
+                "active_ions.csv" in manifest.get("active_files", {}) and
+                (deck / "quarantine/source_deck_snapshot").is_dir()
+            )
+        except (OSError, ValueError):
+            sealed_active_only = False
     print(f"[Z-INERT-ACTIVE-MAP] active_lines={sum(line_count[z] for z in active)} "
           f"missing_ion_or_level={active_missing} verdict="
           f"{'PASS' if active_missing == 0 else 'FAIL'}")
     print(f"[Z-INERT-INACTIVE-MAP] inactive_lines="
           f"{sum(line_count[z] for z in inactive)} "
           f"missing_ion_or_level={inactive_missing}")
-    return 0 if inactive and active_missing == 0 else 1
+    print(f"[Z-INERT-DECK-MODE] mode="
+          f"{'sealed-active-only' if sealed_active_only else 'full-topology'}")
+    return 0 if (inactive or sealed_active_only) and active_missing == 0 else 1
 
 
 if __name__ == "__main__":

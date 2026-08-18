@@ -28,9 +28,11 @@ C_CGS, H_CGS, K_CGS = 2.99792458e10, 6.62607015e-27, 1.380649e-16
 EV_TO_ERG = 1.602176634e-12
 
 # BF grid (must match lumina.h)
-BF_NU_MIN, BF_NU_MAX, BF_N_FREQ_BIN = 1.5e14, 3.0e16, 1000
-log_min, log_max = np.log(BF_NU_MIN), np.log(BF_NU_MAX)
-d_log_nu = (log_max - log_min) / BF_N_FREQ_BIN
+BF_NU_MIN, BF_NU_MAX, BF_N_FREQ_BIN = (
+    5.8412785919616062e13, 4.0362581455823112e16, 1234
+)
+log_min = np.log(BF_NU_MIN)
+d_log_nu = np.log(BF_NU_MAX / BF_NU_MIN) / BF_N_FREQ_BIN
 NU_GRID = BF_NU_MIN * np.exp((np.arange(BF_N_FREQ_BIN) + 0.5) * d_log_nu)
 
 # Iron-peak III ions of interest (carsus ion_number = ion_charge = stage-1)

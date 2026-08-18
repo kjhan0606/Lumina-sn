@@ -470,10 +470,15 @@ def gate_derived_contract(deck: Path, failures: list[str]) -> None:
     if len(header) != 32:
         shape_bad.append("sigma header truncated")
     else:
-        magic, version, sigma_levels, _, _, _ = struct.unpack("<IIiidd", header)
-        if magic != 0x434D4644 or version != 1 or sigma_levels != n_levels:
+        magic, version, sigma_levels, sigma_bins, sigma_min, sigma_max = \
+            struct.unpack("<IIiidd", header)
+        if (magic != 0x434D4644 or version != 1 or sigma_levels != n_levels or
+                sigma_bins != 1234 or sigma_min != 5.8412785919616062e13 or
+                sigma_max != 4.0362581455823112e16):
             shape_bad.append(
-                f"sigma header magic/version/n_levels={magic:#x}/{version}/{sigma_levels}"
+                "sigma header magic/version/n_levels/n_freq/range="
+                f"{magic:#x}/{version}/{sigma_levels}/{sigma_bins}/"
+                f"[{sigma_min:.17g},{sigma_max:.17g}]"
             )
     target_path = guard_active_path(deck, deck / "ma_radrecomb_target.bin")
     with target_path.open("rb") as stream:
