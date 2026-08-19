@@ -102,3 +102,32 @@ L4 런이 커밋 직후 죽지 않고 진행 ⟹ **L6(반복 1 population 의 LT
 
 사전등록·검수·판정·감리=Fable(감리는 독립 컨텍스트) / 코딩=Codex(clean worktree) /
 빌드·실행·대장·커밋=운전석. 런은 slurm, **a100 전용 · `--gres=gpu:2` · `--mem` 명시**.
+
+---
+
+## 부록 A — 발화점 후보의 **사전등록** (P-1 산출 전에 적는다)
+
+P-1 이 답을 가져오면 사후에 "그럴 줄 알았다" 로 각색하기 쉽다. 그래서 계측이 돌기 **전에**
+후보와 근거를 확정해 둔다. **맞히는 것이 목적이 아니라, 빗나감을 기록할 수 있게 하는 것이 목적이다.**
+
+[실측] 여섯 자리를 소스에서 읽어 조건을 분해했다(`src/physics_comparison.c`):
+
+| 자리 | 조건 요지 | 순위 | 근거 |
+|---|---|---|---|
+| **258** | `nb = in->opacity ? in->opacity->n_bins : 0;` → `!nb \|\| !in->n_shells \|\| ...` | **1** | FATAL 은 `R7_MATERIAL_PHASE_COMMITTED ... te_generation=1->2` **직후**다. T_e 세대는 막 커밋됐지만 그 세대의 **불투명도 발행은 아직**일 수 있다 ⟹ `n_bins==0` |
+| **133** | `comparison_hex64()` 를 `atomic_model_sha256` · `geometry_sha256` · **`te_manifest_sha256`** · `grid_manifest_sha256` 에 요구 | **2** | ★이 단이 **`te_manifest_sha256` 슬롯에 프로필 sha256 을 새로 써 넣는다.** 고정레인이 나머지 셋 중 하나를 비워 두면(예: 매니페스트 미실행 — L3 가 부분 PASS 인 바로 그 이유) 여기서 걸린다 |
+| **112** | `te->n_shells != ns` · `te->ledger/shell_status/residual_status` 비어 있음 등 | 3 | 발행체 배열이 미할당이면 걸림 |
+| **99** | `temperature_publication` 자체를 포함한 15개 포인터·범위 검사 | 4 | 발행 자체는 일어났으므로(공시 2줄 실측) 낮음 |
+| **255** | `!directory \|\| !*directory \|\| !in` | 5 | 448 에서 이미 통과한 조건과 겹침 |
+| **448** | geometry/atom/plasma/opacity/nlte 널 + 셸수 정합 7조건 | 6 | 50셸 정합은 상류에서 여러 번 확인됨 |
+
+**[중요] 이 표는 순위일 뿐 판정이 아니다.** 여섯 자리 전부를 계측하는 이유가 이것이다 —
+1순위만 계측했으면 2·3순위였을 때 **0줄**이 나왔을 것이다(감리 R6 의 요지).
+
+**빗나감의 처분**: 실제 발화점이 1·2순위가 아니면 판정문에 그대로 적는다. 순위를 지운다거나
+"사실 그것도 예상 범위였다" 로 쓰지 않는다.
+
+### 부수 관찰 — 이 자리는 `STALE_GENERATION` 이 아니다
+[실측] `comparison_validate` 의 **세대 정합 블록**(`tg/pg/rg/og/eg` 16개 등식)은 실패 시
+`PHYSICS_COMPARISON_STALE_GENERATION` 을 돌려준다. 관측된 상태는 `INVALID_ARGUMENT` 이므로
+**세대 불일치는 원인이 아니다** — 이 배제는 계측 없이 지금 확정할 수 있다.
