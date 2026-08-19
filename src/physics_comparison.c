@@ -349,18 +349,45 @@ PhysicsComparisonStatus physics_comparison_snapshot_write(
     }
     free(j_rebinned);
 
+    const ElectronTemperaturePublication *te = in->temperature_publication;
+    const char *te_reason =
+        a210_temperature_publication_validate(te, in->n_shells);
+
+    if (te_reason) {
+        remove(shell_tmp);
+        remove(spectral_tmp);
+        remove(manifest_tmp);
+        fprintf(stderr,
+                "[PHYSICS_COMPARISON][BLOCKED] reason=%s\n",
+                te_reason);
+        return PHYSICS_COMPARISON_IO_ERROR;
+    }
+
     FILE *manifest = fopen(manifest_tmp, "w");
     if (!manifest) {
         remove(shell_tmp); remove(spectral_tmp);
         return PHYSICS_COMPARISON_IO_ERROR;
     }
-    const ElectronTemperaturePublication *te = in->temperature_publication;
     fprintf(manifest,
         "{\n"
         "  \"schema\": \"LUMINA_PHYSICS_COMPARISON_V1\",\n"
         "  \"transaction_status\": \"COMMITTED\",\n"
         "  \"code\": \"LUMINA\",\n"
         "  \"lane\": \"%s\",\n"
+        "  \"te_lane\": \"%s\",\n",
+        in->lane, a210_te_lane_name(te->te_lane));
+
+    if (a210_te_manifest_has_fixed_fields(te)) {
+        fprintf(manifest,
+        "  \"te_profile_sha256\": \"%s\",\n"
+        "  \"pinned_shells\": %zu,\n"
+        "  \"re_root_required\": %s,\n",
+        te->te_profile_sha256,
+        te->pinned_shells,
+        te->re_root_required ? "true" : "false");
+    }
+
+    fprintf(manifest,
         "  \"iteration\": %d,\n"
         "  \"epoch_s\": %.17g,\n"
         "  \"n_shells\": %zu,\n"
@@ -387,7 +414,7 @@ PhysicsComparisonStatus physics_comparison_snapshot_write(
         "  \"shell_file\": \"physics_%s_iter%04d.shell.csv\",\n"
         "  \"spectral_file\": \"physics_%s_iter%04d.spectral.csv\"\n"
         "}\n",
-        in->lane,in->iteration,in->epoch_s,in->n_shells,nb,
+        in->iteration,in->epoch_s,in->n_shells,nb,
         4.0*M_PI_VAL,te->atomic_model_sha256,te->geometry_sha256,
         te->te_manifest_sha256,in->emissivity->grid_manifest_sha256,
         (unsigned long long)te->radfield_generation,

@@ -7025,6 +7025,8 @@ int lumina_publish_seed_te(PlasmaState *plasma, const char *reason) {
         return -1;
     }
     uint64_t gen = plasma->T_e_generation + 1;   /* == 1 */
+    plasma->te_publication.te_lane = A210_TE_LANE_FREE_T;
+    plasma->te_publication.re_root_required = 1;
     plasma->te_publication.required_te_generation = gen;
     plasma->te_publication.committed_te_generation = gen;
     memcpy(plasma->te_publication.te_manifest_sha256, te_hash, sizeof(te_hash));
@@ -15556,7 +15558,7 @@ static RadeqStatus a210_production_vector_residual(
     return status;
 }
 
-static const char *a210_fixed_te_profile_load(
+const char *a210_fixed_te_profile_load(
         const char *path,size_t n,double **out_profile,char hash[65],
         double *out_min,double *out_max) {
     FILE *fp=NULL;
@@ -15658,21 +15660,22 @@ static const char *a210_fixed_te_advertise(
        !isfinite(te_min)||!isfinite(te_max)||te_min<=0.0||te_max<te_min)
         return "RADEQ_FIXED_T_DISCLOSURE_INCOMPLETE";
     written=snprintf(disclosure,sizeof(disclosure),
-        "lane=FIXED_T te_profile_sha256=%s te_source=%s pinned_shells=%zu "
+        "te_lane=FIXED_T te_profile_sha256=%s te_source=%s pinned_shells=%zu "
         "re_root_required=0\n"
-        "te_min_K=%.17g te_max_K=%.17g\n",
+        "te_min_K=%.17g te_max_K=%.17g publication_authority=NONE\n",
         hash,source,n,te_min,te_max);
     if(written<0||(size_t)written>=sizeof(disclosure))
         return "RADEQ_FIXED_T_DISCLOSURE_INCOMPLETE";
 
     /* The schema check makes deletion of any required field fail closed. */
-    if(strncmp(disclosure,"lane=FIXED_T ",sizeof("lane=FIXED_T ")-1)!=0||
+    if(strncmp(disclosure,"te_lane=FIXED_T ",sizeof("te_lane=FIXED_T ")-1)!=0||
        !strstr(disclosure,"te_profile_sha256=")||
        !strstr(disclosure,"te_source=")||
        !strstr(disclosure,"pinned_shells=")||
        !strstr(disclosure,"re_root_required=0")||
        !strstr(disclosure,"te_min_K=")||
-       !strstr(disclosure,"te_max_K="))
+       !strstr(disclosure,"te_max_K=")||
+       !strstr(disclosure,"publication_authority=NONE"))
         return "RADEQ_FIXED_T_DISCLOSURE_INCOMPLETE";
     if(fwrite(disclosure,1,(size_t)written,stderr)!=(size_t)written)
         return "RADEQ_FIXED_T_DISCLOSURE_WRITE_FAILED";
@@ -15693,14 +15696,14 @@ static const char *a210_fixed_te_residual_diagnostic(
            !isfinite(cooling)||!isfinite(residual))
             return "RADEQ_FIXED_T_RESIDUAL_NONFINITE";
         written=snprintf(record,sizeof(record),
-            "[A2-10][RE-RESIDUAL-AT-PINNED-T] lane=FIXED_T shell=%zu "
+            "[A2-10][RE-RESIDUAL-AT-PINNED-T] te_lane=FIXED_T shell=%zu "
             "T_pinned_K=%.17g heating=%.17g cooling=%.17g residual=%.17g "
             "interpretation=DIAGNOSTIC_ONLY physical_values_modified=0 "
             "clamp=0 floor=0 cap=0 jitter=0 repair=0\n",
             s,pinned[s],heating,cooling,residual);
         if(written<0||(size_t)written>=sizeof(record))
             return "RADEQ_FIXED_T_RESIDUAL_DIAGNOSTIC_FAILED";
-        if(!strstr(record,"lane=FIXED_T")||!strstr(record,"shell=")||
+        if(!strstr(record,"te_lane=FIXED_T")||!strstr(record,"shell=")||
            !strstr(record,"T_pinned_K=")||!strstr(record,"heating=")||
            !strstr(record,"cooling=")||!strstr(record,"residual=")||
            !strstr(record,"interpretation=DIAGNOSTIC_ONLY")||
@@ -15717,10 +15720,26 @@ static const char *a210_fixed_te_residual_diagnostic(
 
 static int a210_fixed_te_reject(A210Counters *ct,const char *reason) {
     if(ct)ct->blocked_schema++;
-    fprintf(stderr,"[A2-10][BLOCKED] reason=%s lane=FIXED_T "
+    fprintf(stderr,"[A2-10][BLOCKED] reason=%s te_lane=FIXED_T "
             "material_update=BLOCKED publication_authority=NONE rc=3\n",
             reason?reason:"RADEQ_FIXED_T_FAILED");
     return 0;
+}
+
+static void a210_record_fixed_te_residuals(
+    A210Counters *g,
+    const ElectronTemperaturePublication *te)
+{
+    size_t s;
+
+    if (!g || !te || !te->ledger)
+        return;
+
+    for (s = 0; s < te->n_shells; ++s) {
+        const double e_balance = te->ledger[s].e_balance;
+
+        g->max_heat_residual = fmax(g->max_heat_residual, e_balance);
+    }
 }
 
 static int a210_production_solve(PlasmaState*plasma,GammaDeposition*gamma,
@@ -15734,7 +15753,14 @@ static int a210_production_solve(PlasmaState*plasma,GammaDeposition*gamma,
     double pinned_te_min=0.0,pinned_te_max=0.0;
     const char *fixed_reason=NULL;
 
-    if(!fixed_lane)fprintf(stderr,"[A2-10][LANE] lane=FREE_T\n");
+    ct->te_lane = fixed_lane
+        ? A210_TE_LANE_FIXED_T
+        : A210_TE_LANE_FREE_T;
+
+    fprintf(stderr,
+            "[A2-10][LANE] te_lane=%s\n",
+            a210_te_lane_name(ct->te_lane));
+
     if(fixed_lane){
         ct->fixed_te_attempts++;
         if(ns<=0)
@@ -15747,6 +15773,16 @@ static int a210_production_solve(PlasmaState*plasma,GammaDeposition*gamma,
             free(pinned_te);
             return a210_fixed_te_reject(ct,fixed_reason);
         }
+        fixed_reason=a210_fixed_te_profile_validate(
+            pinned_te,
+            (size_t)ns,
+            (size_t)ns,
+            A210_PRODUCTION_TE_MIN_K,
+            A210_PRODUCTION_TE_MAX_K);
+        if(fixed_reason){
+            free(pinned_te);
+            return a210_fixed_te_reject(ct,fixed_reason);
+        }
         fixed_reason=a210_fixed_te_advertise(
             fixed_te_source,(size_t)ns,pinned_te_hash,
             pinned_te_min,pinned_te_max);
@@ -15754,6 +15790,13 @@ static int a210_production_solve(PlasmaState*plasma,GammaDeposition*gamma,
             free(pinned_te);
             return a210_fixed_te_reject(ct,fixed_reason);
         }
+
+        fprintf(stderr,
+            "[A2-10][TE_PUBLICATION] "
+            "te_lane=FIXED_T te_profile_sha256=%s "
+            "pinned_shells=%zu re_root_required=false "
+            "reason=%s\n",
+            pinned_te_hash,(size_t)ns,A210_RE_ROOT_REASON);
     }
     if(nlte_reject_numeric_repairs("A2-10-PRODUCTION")!=0){
         ct->blocked_schema++;
@@ -15861,6 +15904,11 @@ static int a210_production_solve(PlasmaState*plasma,GammaDeposition*gamma,
         root.required_te_generation=te_generation;
         root.committed_te_generation=0;
         root.producer_equation=A210_RE_INTEGRAL;
+        root.te_lane=A210_TE_LANE_FIXED_T;
+        memcpy(root.te_profile_sha256,pinned_te_hash,
+               sizeof(root.te_profile_sha256));
+        root.pinned_shells=n;
+        root.re_root_required=0;
         memcpy(root.geometry_sha256,geo,65);
         memcpy(root.T_e,pinned_te,n*sizeof(*root.T_e));
         replay_status=a210_production_bundle_ledger(
@@ -15904,6 +15952,8 @@ static int a210_production_solve(PlasmaState*plasma,GammaDeposition*gamma,
             nlte_population_candidate_free(&replay);
             a210_publication_free(&root);goto cleanup;
         }
+        root.te_lane=A210_TE_LANE_FREE_T;
+        root.re_root_required=1;
     }
     memcpy(root_ne,replay.electron_density,n*sizeof(*root_ne));
     memcpy(root.n_e,replay.electron_density,n*sizeof(*root.n_e));
@@ -15916,8 +15966,16 @@ static int a210_production_solve(PlasmaState*plasma,GammaDeposition*gamma,
         replay.opacity.cpu_emissivity.committed_emissivity_generation;
     memcpy(root.atomic_model_sha256,
            replay.atom.partition_stamp.atomic_model_sha256,65);
+    fixed_reason =
+        a210_temperature_publication_validate(&root, n);
+    if (fixed_reason) {
+        ct->te_context_mismatch++;
+        goto cleanup;
+    }
+    if (fixed_lane)
+        a210_record_fixed_te_residuals(ct, &root);
     commit_status=nlte_population_candidate_commit_bundle(
-            &replay,&root,nlte,atom,plasma,opacity,bf);
+        &replay,&root,nlte,atom,plasma,opacity,bf);
     if(commit_status!=NLTE_CANDIDATE_OK){ct->blocked_schema++;}
     else qualified=1;
     nlte_population_candidate_free(&replay);

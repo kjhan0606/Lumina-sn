@@ -92,6 +92,8 @@ int main(void)
         ledger[s].residual=1.4;
     }
     ElectronTemperaturePublication tep={0};
+    tep.te_lane=A210_TE_LANE_FREE_T;
+    tep.re_root_required=1;
     tep.required_te_generation=tep.committed_te_generation=5;
     tep.radfield_generation=9;tep.population_generation=7;
     tep.opacity_generation=11;tep.emissivity_generation=11;tep.n_shells=NS;
@@ -115,6 +117,8 @@ int main(void)
     snprintf(spectral,sizeof(spectral),"%s/physics_DET_iter0000.spectral.csv",directory);
     CHECK(file_has(manifest,"\"transaction_status\": \"COMMITTED\""),
           "manifest-commit");
+    CHECK(file_has(manifest,"\"te_lane\": \"FREE_T\""),
+          "manifest-te-lane");
     CHECK(file_has(manifest,"\"radiative_integral_factor\": 12.566370614359172"),
           "manifest-four-pi");
     CHECK(file_has(shell,"q_ad_signed_total"),"shell-schema");
@@ -134,6 +138,32 @@ int main(void)
           PHYSICS_COMPARISON_INVALID_VALUE,"sign-negative");
     snprintf(missing,sizeof(missing),"%s/physics_DET_iter0002.manifest.json",directory);
     CHECK(access(missing,F_OK)!=0,"sign-no-manifest");
+
+    /* M5 negative controls: invalid temperature publication metadata must
+     * remove the staged manifest, shell, and spectral files. */
+    ledger[0].adiabatic_signed_total=0.6;
+    tep.te_lane=A210_TE_LANE_UNSET;
+    input.iteration=3;
+    CHECK(physics_comparison_snapshot_write(directory,&input)==
+          PHYSICS_COMPARISON_IO_ERROR,"unset-lane-negative");
+    snprintf(manifest,sizeof(manifest),"%s/physics_DET_iter0003.manifest.json",directory);
+    snprintf(shell,sizeof(shell),"%s/physics_DET_iter0003.shell.csv",directory);
+    snprintf(spectral,sizeof(spectral),"%s/physics_DET_iter0003.spectral.csv",directory);
+    CHECK(access(manifest,F_OK)!=0,"unset-lane-no-manifest");
+    CHECK(access(shell,F_OK)!=0,"unset-lane-no-shell");
+    CHECK(access(spectral,F_OK)!=0,"unset-lane-no-spectral");
+
+    tep.te_lane=A210_TE_LANE_FREE_T;
+    tep.pinned_shells=NS;
+    input.iteration=4;
+    CHECK(physics_comparison_snapshot_write(directory,&input)==
+          PHYSICS_COMPARISON_IO_ERROR,"free-t-fixed-field-leak-negative");
+    snprintf(manifest,sizeof(manifest),"%s/physics_DET_iter0004.manifest.json",directory);
+    snprintf(shell,sizeof(shell),"%s/physics_DET_iter0004.shell.csv",directory);
+    snprintf(spectral,sizeof(spectral),"%s/physics_DET_iter0004.spectral.csv",directory);
+    CHECK(access(manifest,F_OK)!=0,"free-t-fixed-field-leak-no-manifest");
+    CHECK(access(shell,F_OK)!=0,"free-t-fixed-field-leak-no-shell");
+    CHECK(access(spectral,F_OK)!=0,"free-t-fixed-field-leak-no-spectral");
 
     remove(manifest);remove(shell);remove(spectral);rmdir(directory);
     if(failures)return 1;

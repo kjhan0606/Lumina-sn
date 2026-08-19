@@ -1,0 +1,2 @@
+PASS det_stage12 NL1..NL5 production_loader positive=6
+RC=0

@@ -6,6 +6,7 @@
 #include "opacity_publication.h"
 #include "emissivity_publication.h"
 #include "line_net_rate.h"
+#include <math.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -71,6 +72,74 @@ typedef struct {
  const A210LineNetShell *shell;
 } A210LineNetPublication;
 
+typedef enum {
+ A210_TE_LANE_UNSET = 0,
+ A210_TE_LANE_FREE_T,
+ A210_TE_LANE_FIXED_T
+} A210TeLane;
+
+#define A210_RE_ROOT_REASON "RE-RESIDUAL-AT-PINNED-T"
+
+static inline const char *a210_te_lane_name(A210TeLane lane)
+{
+    switch (lane) {
+    case A210_TE_LANE_FREE_T:  return "FREE_T";
+    case A210_TE_LANE_FIXED_T: return "FIXED_T";
+    default:                   return "UNSET";
+    }
+}
+
+static inline int a210_sha256_text_complete(const char *s)
+{
+    size_t i;
+
+    if (!s)
+        return 0;
+
+    for (i = 0; i < 64; ++i) {
+        const unsigned char c = (unsigned char)s[i];
+        if (!((c >= '0' && c <= '9') ||
+              (c >= 'a' && c <= 'f') ||
+              (c >= 'A' && c <= 'F')))
+            return 0;
+    }
+    return s[64] == '\0';
+}
+
+static inline const char *a210_fixed_te_profile_validate(
+    const double *profile,
+    size_t profile_shells,
+    size_t expected_shells,
+    double domain_min_K,
+    double domain_max_K)
+{
+    size_t s;
+
+    if (profile_shells != expected_shells)
+        return "RADEQ_FIXED_T_SHELL_COUNT_MISMATCH";
+
+    if (!profile && expected_shells != 0)
+        return "RADEQ_FIXED_T_NONPHYSICAL_PROFILE";
+
+    for (s = 0; s < profile_shells; ++s) {
+        const double temperature_K = profile[s];
+
+        if (!isfinite(temperature_K) || temperature_K <= 0.0)
+            return "RADEQ_FIXED_T_NONPHYSICAL_PROFILE";
+
+        if (temperature_K < domain_min_K ||
+            temperature_K > domain_max_K)
+            return "RADEQ_FIXED_T_PROFILE_OUT_OF_DOMAIN";
+    }
+
+    return NULL;
+}
+
+/* Production fixed-T profile loader, exposed for its focused selftest. */
+const char *a210_fixed_te_profile_load(
+    const char *path, size_t n, double **out_profile, char hash[65],
+    double *out_min, double *out_max);
+
 typedef struct {
  uint64_t solve_epoch,required_te_generation,committed_te_generation;
  A210EquationKind producer_equation;
@@ -78,9 +147,51 @@ typedef struct {
  uint64_t population_generation,opacity_generation,emissivity_generation;
  char atomic_model_sha256[65],geometry_sha256[65],te_manifest_sha256[65];
  char te_context_sha256[65],term_manifest_sha256[65];
+
+ A210TeLane te_lane;
+ char te_profile_sha256[65];
+ size_t pinned_shells;
+ int re_root_required;
+
  size_t n_shells;double*T_e,*n_e;RadeqStatus*shell_status,*residual_status;
  A210TermLedger*ledger;
 } ElectronTemperaturePublication;
+
+static inline const char *a210_temperature_publication_validate(
+    const ElectronTemperaturePublication *te,
+    size_t expected_shells)
+{
+    if (!te)
+        return "RADEQ_TEMPERATURE_PUBLICATION_MISSING";
+
+    if (te->te_lane == A210_TE_LANE_FIXED_T) {
+        if (!a210_sha256_text_complete(te->te_profile_sha256) ||
+            te->re_root_required != 0)
+            return "RADEQ_FIXED_T_PUBLICATION_INCOMPLETE";
+
+        if (te->pinned_shells != expected_shells)
+            return "RADEQ_FIXED_T_SHELL_COUNT_MISMATCH";
+
+        return NULL;
+    }
+
+    if (te->te_lane == A210_TE_LANE_FREE_T) {
+        if (te->te_profile_sha256[0] != '\0' ||
+            te->pinned_shells != 0 ||
+            te->re_root_required != 1)
+            return "RADEQ_FREE_T_PUBLICATION_LEAK";
+
+        return NULL;
+    }
+
+    return "RADEQ_TEMPERATURE_LANE_MISSING";
+}
+
+static inline int a210_te_manifest_has_fixed_fields(
+    const ElectronTemperaturePublication *te)
+{
+    return te && te->te_lane == A210_TE_LANE_FIXED_T;
+}
 
 typedef struct {
  uint64_t solve_epoch,te_generation_required,te_generation_committed;
@@ -100,6 +211,7 @@ typedef struct {
  uint64_t diagnostic_seed_trials,diagnostic_requested_te_trials;
  uint64_t pin_attempts,floor_attempts,neighbor_attempts,old_te_attempts;
  uint64_t fallback_attempts,partial_publish_attempts,nonfinite_failures;
+ A210TeLane te_lane;
  double max_line_owner_closure,max_heat_residual;
 } A210Counters;
 

@@ -336,7 +336,7 @@ omp:
 	selftest_a2_04_commit selftest_a2_04_replay_commit \
 	selftest_a2_12_contract selftest_a2_12_gpu_lifecycle \
 	selftest_a2_13_15_contract selftest_a2_13_gpu_oracle \
-	selftest_line_net_rate selftest-a2-10-cmfgen-mapped-line
+	selftest_line_net_rate selftest_det_stage12 selftest-a2-10-cmfgen-mapped-line
 
 # A2-05 canonical-view bf rate selftest (analytic closed forms + R6 validity)
 selftest_a2_05_bf_rate: tests/a2_05_bf_rate_selftest.c src/bf_rate_jnu.c src/radiation_field.c src/seed_capability.c $(HEADERS)
@@ -386,6 +386,14 @@ selftest_a2_10_radeq: tests/a2_10_radeq_selftest.c src/radeq_publication.c src/o
 	$(CC) -O2 -Wall -Wextra -std=c11 -Isrc -o $@ \
 		tests/a2_10_radeq_selftest.c src/radeq_publication.c src/opacity_publication.c src/population_contract.c $(LDFLAGS)
 	python3 scripts/run_a2_10_selftest.py --binary ./selftest_a2_10_radeq
+
+selftest_det_stage12: tests/det_stage12_selftest.c src/radeq_publication.h \
+		src/lumina_plasma.c src/population_contract.c
+	$(CC) -O2 -Wall -Wextra -std=gnu11 -D_GNU_SOURCE \
+		-ffunction-sections -fdata-sections -Wl,--gc-sections -Isrc -o $@ \
+		tests/det_stage12_selftest.c src/lumina_plasma.c \
+		src/population_contract.c $(LDFLAGS)
+	./selftest_det_stage12
 
 selftest-a2-10-cancellation-census:
 	python3 tests/a2_10_cancellation_census_selftest.py
