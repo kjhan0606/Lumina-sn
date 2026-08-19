@@ -217,3 +217,28 @@ A2-09 발행체는 0-초기화되므로 필드는 NUL 64개이고, `isxdigit('\0
 job.slurm 은 `die "model exited rc=..."` 로 끝난다. **산출물은 `stderr.log` 의 한 줄**이다.
 
 판정 근거는 부록 B 의 **B1·B2·B3** 이며, 이 표는 런 제출 **전에** 확정됐다.
+
+### 사고 기록 — 판정런 320567 이 **다른 프로젝트 세션에 오인 취소**됐다 (2026-08-20 08:34)
+
+[실측] `sacct -j 320567` = `CANCELLED by 10396`, Elapsed `00:00:00`, 노드 미배정.
+운전석은 `scancel` 을 낸 적이 없다. 추적 결과:
+
+- 취소 주체 = **lagRamses 세션**
+  (`~/.claude/projects/-home-kjhan-BACKUP-lagRamses/b921dc3d-….jsonl` 의
+  `scancel 320567 && echo "cancelled 320567 (p1_physcmp)"`,
+  description=**"Cancel the queued test job"**)
+- 기전: 그 세션이 실험을 접으며 정리하려고 **`squeue -u kjhan`** 을 찍었다.
+  이 명령은 **계정 전체**를 보여준다. 목록에 두 건이 있었고 —
+  `313214 cf4_lg_v8`(08-17부터 JobHeldUser)와 `320567 p1_physcmp`(19분 전 제출) —
+  전자는 "오래됐으니 사용자 것"이라 남기고 **후자를 자기 것으로 단정**했다.
+- 실제 소유는 `sacct -o WorkDir` 한 번이면 갈렸다:
+  `320567 → /gpfs/kjhan/lumina/…`, lagRamses 자기 작업 → `/home/kjhan/BACKUP/stereo-vision` 등.
+
+**손실**: 큐 대기 19분. 런이 시작되지 않았으므로 산출물 손실은 없다.
+
+**교훈(일반)**: **`squeue -u kjhan` 은 세션 범위가 아니라 계정 범위다.** "내 작업 정리"
+류의 일괄 취소는 다른 프로젝트를 친다. 취소는 **작업명 접두사 또는 `WorkDir` 로 소유를
+확증한 뒤에만** 하고, "내가 아는 사용자 작업이 아니면 내 것"이라는 소거법을 쓰지 않는다.
+
+**대응**: 재제출 `320568`, 작업명을 `LUMINA_p1_physcmp` 로 접두, 런 루트에 `OWNER.txt`
+(프로젝트·저장소·단·커밋·DO_NOT_CANCEL) 를 둔다.
