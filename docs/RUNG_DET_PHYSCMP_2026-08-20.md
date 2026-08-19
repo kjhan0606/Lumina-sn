@@ -1,0 +1,85 @@
+# 단 사전등록 — DET-PHYSCMP: DET 레인의 physics_comparison 계약 (2026-08-20)
+
+발단: L4 판정런(`docs/VERDICT_DET_STAGE12_L4_2026-08-20.md`).
+결정론 팔이 **처음으로** T_e 세대를 커밋했고(`te_generation=1->2`), 그 직후
+`PHYSICS_COMPARISON_INVALID_ARGUMENT` 로 런이 죽었다.
+
+## 계약 (하나)
+
+> **인자 가드가 거부할 때 어느 필드가 왜 거부됐는지 말한다.**
+
+수리가 아니다. 지금은 **사유를 모른다** — 그것이 문제다.
+
+## 1. 실측 — 왜 지금까지 안 보였나
+
+`src/physics_comparison.c` `physics_comparison_dump_if_requested`:
+```c
+const char *directory = getenv("LUMINA_PHYSICS_COMPARISON_DIR");
+if (!directory || !*directory) return PHYSICS_COMPARISON_NOT_REQUESTED;
+if (!geometry || !atom || !plasma || !opacity || !nlte ||
+    geometry->n_shells < 2 || plasma->n_shells != geometry->n_shells)
+    return PHYSICS_COMPARISON_INVALID_ARGUMENT;      /* ← 사유를 찍지 않는다 */
+```
+- 조건이 **7개** 인데 반환값은 **하나**다. 로그에 남는 것은 상태명뿐.
+- 호출부(`lumina_cmfgen.c:7519`)는 DET 레인이고, **결정론 팔이 여기까지 온 적이 없다**
+  (그 전에 `RADEQ_NO_BRACKET` 으로 죽었다).
+- MC 레인 참조 런에서도 `PHYSICS-COMPARISON` 출현 **0건**(실측: IV 런 stderr)
+  ⟹ **이 경로는 양 팔 모두에서 사실상 미실행 상태였다.**
+- env 는 설정돼 있었고(`LUMINA_PHYSICS_COMPARISON_DIR=…/work/physics_comparison`)
+  디렉터리도 생성됐다 ⟹ `NOT_REQUESTED` 가 아니라 진짜 인자 거부다.
+
+## 2. 계급 — 같은 실수의 **네 번째**
+
+"거부는 하는데 사유를 안 남긴다" 계열:
+① SH-GAMMA **NC3**(정당한 0 을 무조건 차단) ② MC-EVT **OUT_OF_GRID**
+③ A210-ZERO-OPACITY(`INDEPENDENT_SPROBE_UNDEFINED` 가 어느 행인지 안 찍음)
+④ **여기**.
+③은 아직 열려 있다 — 같은 처방이 두 곳에 필요하다.
+
+## 3. 단계
+
+### P-1 계측 (이 단의 첫 실행) — 판정 로직 불변
+가드를 **조건별로 분리**해 각각 이름 있는 사유를 내고, 위반 필드의 실측값을 찍는다:
+```
+[PHYSICS_COMPARISON][BLOCKED] reason=<NAME> lane=<..> iteration=<..>
+  geometry=<0|1> atom=<0|1> plasma=<0|1> opacity=<0|1> nlte=<0|1>
+  geometry_n_shells=<%d> plasma_n_shells=<%d>
+```
+사유 이름(각각 구별): `..._GEOMETRY_MISSING` / `_ATOM_MISSING` / `_PLASMA_MISSING` /
+`_OPACITY_MISSING` / `_NLTE_MISSING` / `_SHELL_COUNT_TOO_SMALL` / `_SHELL_COUNT_MISMATCH`.
+
+⚠**반환값·차단 시점 불변.** 여전히 `PHYSICS_COMPARISON_INVALID_ARGUMENT` 를 돌려주고
+같은 자리에서 거부한다. **이 단은 측정 단이다.**
+
+### P-2 수리 (P-1 결과를 보고 결정 — 지금 고르지 않는다)
+후보: 호출부가 누락 필드를 채운다 / 가드가 과잉이면 완화(단 **거부→통과 전환은 별도 승인**) /
+DET 레인에서는 이 덤프를 요구하지 않는다.
+
+## 4. 게이트
+
+| # | 조건 |
+|---|---|
+| **P1** | 빌드 CPU+GPU 두 타깃, 에러 0 |
+| **P2** | 재현런에서 `[PHYSICS_COMPARISON][BLOCKED] reason=…` 이 **정확히 한 줄** 나오고 위반 필드가 특정된다 |
+| **P3** | **판정 불변** — 반환 상태와 종료 시점이 L4 런과 동일(`INVALID_ARGUMENT`, 커밋 직후) |
+| **P4** | 음성 대조: 7조건 각각을 단위 시험에서 주입해 **서로 다른 사유**를 낸다 |
+| **P5** | MC 레인 무접촉 — `lumina_main.c:739` 경로의 거동 불변 |
+
+★**P3 가 이 단의 자기 규율이다** — 계측이 판정을 바꾸면 측정 단이 아니다.
+★**P4 가 NC3 다** — 사유가 갈리는지를 주입으로 시연한다.
+
+## 5. 기대 변경집합
+
+- `src/physics_comparison.c` — 가드 분리 + 진단 출력. **반환값 불변.**
+- `tests/physics_comparison_selftest.c` — P4 음성대조 7건 추가.
+- 그 외 파일 변경 없음. 물리식 무접촉. 새 env 노브 없음.
+
+## 6. 이 단이 열면
+
+L4 런이 커밋 직후 죽지 않고 진행 ⟹ **L6(반복 1 population 의 LTE 이탈)** 판정이 가능해진다.
+그것이 DET-STAGE12 의 마지막 미판정 게이트이며, STAGE-1 → STAGE-2 전이의 전제다.
+
+## 7. 판정 절차 (개정13)
+
+사전등록·검수·판정·감리=Fable(감리는 독립 컨텍스트) / 코딩=Codex(clean worktree) /
+빌드·실행·대장·커밋=운전석. 런은 slurm, **a100 전용 · `--gres=gpu:2` · `--mem` 명시**.
