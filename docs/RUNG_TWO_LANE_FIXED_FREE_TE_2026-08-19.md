@@ -46,13 +46,28 @@ te_min_K=<%.17g> te_max_K=<%.17g> publication_authority=<...>
 3. `src/env_universe.h` — `scripts/derive_env_universe.py` 재생성(손편집 금지).
 4. 그 외 파일 변경 없음. **물리식 무접촉. 자유-T 레인 무접촉.**
 
+### ★기대 변경집합 개정 (2026-08-19, 감사 M4)
+
+원 목록은 `lumina_plasma.c` + `env_universe.h` + "그 외 없음" 이었다.
+**직전 감사(1회차)의 필수수정 B1·B4 가 강제**하여 아래 4파일이 추가됐다.
+내용상 정당하나 개정 기재 없이는 형식상 실패이므로 여기 등재한다:
+
+| 파일 | 사유 |
+|---|---|
+| `src/radeq_publication.h` | B1 — `ElectronTemperaturePublication` 에 온도 레인 필드 + 검증기 |
+| `src/radeq_publication.c` | D2 — 카운터에 `te_lane` 기록 |
+| `src/physics_comparison.c` | B1 — manifest 공시 + **표지 없으면 발행 거부** |
+| `Makefile`, `tests/det_stage12_selftest.c`, `tests/physics_comparison_selftest.c` | B4 — 음성대조 NL1~NL5 |
+
+`src/env_universe.h` 는 **신규 env 가 없으므로 불변이 정답**이다(원 목록의 예상과 다름).
+
 ## 게이트
 
 | # | 조건 |
 |---|---|
 | **L1** | 빌드 CPU+GPU 두 타깃, 에러 0 |
 | **L2** | ★**자유-T 레인 byte 불변** — 아래 §L2 정정 참조 |
-| **L3** | 공시 강제 — 고정-T 레인 산출 전 행에 `lane=FIXED_T`·`te_profile_sha256`·`pinned_shells` 가 실린다. 하나라도 빠지면 FAIL |
+| **L3** | 공시 강제 — **manifest(`physics_*.manifest.json`) 및 A2-10 stderr 공시 레코드**에 `te_lane=FIXED_T`·`te_profile_sha256`·`pinned_shells`·`re_root_required`·`publication_authority` 가 실린다. 하나라도 빠지면 **발행 거부**(파일 미생성 + 런 FATAL) <br>★정정(감사 M1·M3): ① 키가 `lane=` 이 아니라 **`te_lane=`**(B2 수정의 귀결 — `lane=` 은 수송 레인 DET/MC 로 이미 점유) ② "산출 전 행" 은 부정확 — `physics_*.shell.csv`/`spectral.csv` **데이터 행에는 레인 표지가 없다**. 판정 대상은 manifest 와 stderr 레코드다 ③ `publication_authority` 는 현재 **거부 줄에만** 있어 수락 경로에 추가해야 한다 |
 | **L4** | 고정-T 레인이 **A2-10 을 통과**하고 물질 갱신이 진행된다(= 반복 1 에 도달). 이것이 이 단이 여는 것 |
 | **L5** | `RE_RESIDUAL_AT_PINNED_T` 가 셸별로 기록된다 — **수리하지 않고 계량만**. 이 수가 곧 "핀 온도에서 복사평형이 얼마나 안 맞는가" 다 |
 | **L6** | 반복 1 의 population 이 **LTE 를 벗어나는가** — `S_producer/B(T_e)` 가 1 에서 이탈하는지 측정. 이탈하면 STAGE-1 의 목적(NLTE population 확보)이 달성된 것 |
@@ -66,8 +81,20 @@ te_min_K=<%.17g> te_max_K=<%.17g> publication_authority=<...>
 자유-T 레인에서는 원리적으로 얻을 수 없다.
 
 ⟹ **정정**: L2 를 `byte_parity_compare.py` **Tier2**(로그, 선언된 정규화)로 수행한다.
-- 정규화 규칙 **단 하나**: `lane=FREE_T ` → `` (신설 토큰 제거).
-  whitelist 는 비운다 — 이 토큰에는 **수치가 없으므로** 은폐 방지 가드가 통과해야 정상이다.
+
+★**규칙 재정정 (2026-08-19 2차, 게이트 실행 전 · 감사 지적 M2)**: 구현이 B2 수정으로
+`lane=` → `te_lane=` 로 개명됐고 신설 레코드가 하나 더 늘어, 원 규칙 하나로는
+(a) `[A2-10][LANE] te_lane=FREE_T` 가 후행 공백 부재로 **매칭되지 않고**
+(b) 카운터 줄에서 부분 매칭돼 `te_max_heat_residual=` 이라는 **오염 잔재**를 남긴다.
+⟹ 규칙 **두 개**로 교체한다:
+
+| # | 규칙 | 대상 |
+|---|---|---|
+| **N1** | `^\[A2-10\]\[LANE\] te_lane=FREE_T$` → **줄 전체 삭제** | 신설 LANE 레코드(기준선에 없음) |
+| **N2** | ` te_lane=(FREE_T\|UNSET)` → `` | `[A2-10][RADEQ]` 카운터 줄 안의 신설 토큰 |
+
+둘 다 **숫자를 포함하지 않으므로** 은폐 방지 가드가 통과해야 정상이다.
+규칙별 census(건드린 줄·바이트)를 보고서에 남긴다.
 - 그 규칙의 census(건드린 줄·바이트 수)를 보고서에 남긴다.
 - 정규화 후 **순서 보존 줄 비교**로 봉인 IV stderr 와 대조. 한 줄이라도 다르면 FAIL.
 - ⚠**가드가 발화하면**(치환 영역에 수치가 있으면) 그 자체로 FAIL — 정규화가 값을 삼킨 것이다.
