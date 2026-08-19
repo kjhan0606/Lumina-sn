@@ -195,3 +195,25 @@ A2-09 발행체는 0-초기화되므로 필드는 NUL 64개이고, `isxdigit('\0
 ### 수리는 이 단이 아니다
 `grid_manifest_sha256` 을 A2-09 가 실제 주파수 격자에서 채우는 일은 **별도 계약**이다
 (계약 하나 = 커밋 하나). 이 단은 **측정**에서 끝난다.
+
+---
+
+## P-1 집행 기록 (운전석)
+
+| 항목 | 값 |
+|---|---|
+| 코딩 | Codex (개정13) — worktree `wt_physcmp` @ `8d933ed` |
+| 검수 | Fable — 조건식 순서 보존 · 반환값 불변 · `int n_shells` 에 `%d` 정합 · 사유 12개 무충돌 |
+| 커밋 | `ccfaab1` |
+| 오프라인 게이트 | `physics_comparison` / `_regrid` / `det_stage12` / `a2_10_radeq` **4/4 PASS** (grammar-debug 실측) |
+| 음성 대조 시연 | 133 사유를 `COMPARISON_HASH_BROKEN` 으로 주입 ⟹ `p4-site-133-reason` **FAIL**, 복구 ⟹ PASS |
+| 빌드 | `lumina` · `cuda` OK, **format 경고 0** |
+| 판정런 | slurm **320567** (a100 · gpu:2 · mem 245760 · cpus 32 · time 08:00:00) |
+| 런 루트 | `/gpfs/kjhan/lumina/det_stage12_fixed_te_a100x2_k36/p1_20260819T231437Z_physcmp_named_reason` |
+| 바이너리 sha256 | `ba6078d649ce4d9ac1a4427174dfe98a3760c1c389fba45cabf0683fde851be6` (L4 는 `48017efc…`) |
+| 봉인 | deck/topion/sigma 원본 그대로, exports·flight_scripts 경로 갱신 후 재봉인 검증 OK |
+
+**이 런은 실패하도록 되어 있다.** 계측은 차단을 바꾸지 않으므로 `model_rc` 는 여전히 비-0 이고
+job.slurm 은 `die "model exited rc=..."` 로 끝난다. **산출물은 `stderr.log` 의 한 줄**이다.
+
+판정 근거는 부록 B 의 **B1·B2·B3** 이며, 이 표는 런 제출 **전에** 확정됐다.
