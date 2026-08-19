@@ -1,5 +1,11 @@
 # DET-SPROD 판정 (IV) — 2026-08-18 [감리 반영 확정본]
 
+> ⚠**2026-08-20 회수 표기**: 이 문서의 CMFGEN 대비 정량 주장(흡수 1/172 · net 4.37e5 ·
+> 방출 1.41× 등)은 `docs/RETRACTION_INELIGIBLE_ORACLE_CITATIONS_2026-08-20.md` 로 **회수**됐다.
+> 근거: 그 CMFGEN 런은 2026-08-04 에 `CMFGEN_PHYSICAL_ORACLE=INELIGIBLE` 판정을 받았고
+> `SNAPSHOT_REPLAY` 조차 cross-file 물리 게이팅을 불허한다. **오라클 무의존 결론은 유효하다.**
+
+
 사전등록 `docs/RUNG_SPRODUCER_CAPTURE_2026-08-18.md`.
 작성=Fable(운전석) → **감리=Fable 독립 컨텍스트**(개정13). 감리 결론 **"수정 — 채택 불가"**.
 본 확정본은 감리의 지적을 전부 반영했고, 감리의 수치·소스 주장 3건은 **운전석이 독립
