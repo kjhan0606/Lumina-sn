@@ -14037,7 +14037,8 @@ static int a210_line_saturation_add(
     if(independent_capture &&
        (!source_defined || !isfinite(source_function))){
         fprintf(stderr,
-            "[A2-10][ZERO-OPACITY-WITNESS] phase=REQUESTED_TE "
+            "[A2-10][LINE-SATURATION-ZERO-OPACITY-WITNESS] "
+            "phase=REQUESTED_TE "
             "shell=%zu line=%d Z=%d ion=%d ion_slot=%d "
             "lower_global=%d upper_global=%d tau_validity=%d "
             "tau_raw=%.17g n_upper=%.17g A_ul=%.17g nu=%.17g "

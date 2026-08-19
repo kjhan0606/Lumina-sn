@@ -2,14 +2,14 @@
  "schema": "lumina-env-universe-v2",
  "note": "손으로 세지 않는다. 다섯 갈래를 기계로 모은다. (4)래퍼 호출부와 (5)src 밖 소비자가 함정이다. 전집 = 어떤 소비자든 읽는 이름. 자기-기본값(NAME=${NAME:-..})은 설정이지 소비가 아니다.",
  "counts": {
-  "literal_getenv": 438,
+  "literal_getenv": 439,
   "env_arrays": 39,
   "constructed": 51,
   "wrapper_calls": 7,
-  "nonsrc_consumers": 45
+  "nonsrc_consumers": 47
  },
- "union_total": 516,
- "lumina_prefixed": 516,
+ "union_total": 517,
+ "lumina_prefixed": 517,
  "non_lumina": [],
  "missed_without_wrapper_scan": [
   "LUMINA_CONFIG_PREC",
@@ -47,7 +47,7 @@
  "per_file_hits": {
   "lumina_plasma.c": 220,
   "lumina_cuda.cu": 149,
-  "lumina_cmfgen.c": 90,
+  "lumina_cmfgen.c": 91,
   "lumina_atomic.c": 68,
   "lumina_element_wide.c": 25,
   "lumina_main.c": 10,
@@ -66,6 +66,7 @@
   "LUMINA_A210_LINE_SATURATION_DIAG",
   "LUMINA_A210_LINE_SATURATION_TARGET_ION",
   "LUMINA_A210_PRECORE_TAU_REFRESH",
+  "LUMINA_A210_SPRODUCER_CAPTURE",
   "LUMINA_A2_02C_CAPTURE_GENERATION",
   "LUMINA_A2_02C_CAPTURE_PATH",
   "LUMINA_A2_02C_SEGMENT_CAPTURE",
