@@ -23,8 +23,11 @@ if (!geometry || !atom || !plasma || !opacity || !nlte ||
 - 조건이 **7개** 인데 반환값은 **하나**다. 로그에 남는 것은 상태명뿐.
 - 호출부(`lumina_cmfgen.c:7519`)는 DET 레인이고, **결정론 팔이 여기까지 온 적이 없다**
   (그 전에 `RADEQ_NO_BRACKET` 으로 죽었다).
-- MC 레인 참조 런에서도 `PHYSICS-COMPARISON` 출현 **0건**(실측: IV 런 stderr)
-  ⟹ **이 경로는 양 팔 모두에서 사실상 미실행 상태였다.**
+- ★**근거 교체 (감리 R6)**: 초안은 "MC 레인 참조 런에서도 0건(실측: IV 런 stderr)" 이라 적었으나
+  **IV 런은 `LUMINA_PURE_CMFGEN=1` 의 DET 전용 런**이다(`lane=MC` 0건) — **DET 런의 침묵을
+  MC 레인의 증거로 인용한 범주 오류**였다. 올바른 근거로 교체한다:
+  [실측] `/gpfs/kjhan/lumina` 전 `stderr.log` 중 `PHYSICS-COMPARISON` 문자열을 가진 파일은
+  **이 L4 런 하나뿐**이다 ⟹ 이 경로는 사실상 전 코퍼스에서 미실행이었다.
 - env 는 설정돼 있었고(`LUMINA_PHYSICS_COMPARISON_DIR=…/work/physics_comparison`)
   디렉터리도 생성됐다 ⟹ `NOT_REQUESTED` 가 아니라 진짜 인자 거부다.
 
@@ -39,14 +42,30 @@ if (!geometry || !atom || !plasma || !opacity || !nlte ||
 ## 3. 단계
 
 ### P-1 계측 (이 단의 첫 실행) — 판정 로직 불변
+
+★**범위 정정 (감리 R6 — 이 정정이 없으면 단이 답을 못 찾는다)**:
+초안은 `dump_if_requested` 의 **7조건만** 계측하려 했다. 그러나 [실측]
+`PHYSICS_COMPARISON_INVALID_ARGUMENT` 는 `src/physics_comparison.c` 의 **여섯 자리**에서
+반환된다 — **99 · 112 · 133**(`comparison_validate`) · **255 · 258**(`snapshot_write` 진입) ·
+**448**(`dump_if_requested` 인자 가드).
+진짜 발화점이 448 이 아니면 **계측 후에도 BLOCKED 줄이 0줄**이고, 게이트 P2("정확히 한 줄")가
+실패하거나 공허한 근거로 오독된다.
+⟹ **여섯 자리 전부**에 사유를 붙인다.
+
 가드를 **조건별로 분리**해 각각 이름 있는 사유를 내고, 위반 필드의 실측값을 찍는다:
 ```
 [PHYSICS_COMPARISON][BLOCKED] reason=<NAME> lane=<..> iteration=<..>
   geometry=<0|1> atom=<0|1> plasma=<0|1> opacity=<0|1> nlte=<0|1>
   geometry_n_shells=<%d> plasma_n_shells=<%d>
 ```
-사유 이름(각각 구별): `..._GEOMETRY_MISSING` / `_ATOM_MISSING` / `_PLASMA_MISSING` /
-`_OPACITY_MISSING` / `_NLTE_MISSING` / `_SHELL_COUNT_TOO_SMALL` / `_SHELL_COUNT_MISMATCH`.
+사유 이름은 **자리마다 구별**되어야 한다. 최소:
+- 448: `_GEOMETRY_MISSING` / `_ATOM_MISSING` / `_PLASMA_MISSING` / `_OPACITY_MISSING` /
+  `_NLTE_MISSING` / `_SHELL_COUNT_TOO_SMALL` / `_SHELL_COUNT_MISMATCH`
+- 255 · 258: `_SNAPSHOT_INPUT_MISSING` / `_SNAPSHOT_BIN_OR_SHELL_INVALID`
+- 99 · 112 · 133: `comparison_validate` 의 각 조건에 대응하는 이름(그 함수를 읽고 정하라)
+
+⚠**어느 자리가 발화하든 정확히 한 줄이 나와야 한다.** 여섯 자리 중 다섯이 조용하면
+계측이 실패한 것이다.
 
 ⚠**반환값·차단 시점 불변.** 여전히 `PHYSICS_COMPARISON_INVALID_ARGUMENT` 를 돌려주고
 같은 자리에서 거부한다. **이 단은 측정 단이다.**
@@ -60,9 +79,9 @@ DET 레인에서는 이 덤프를 요구하지 않는다.
 | # | 조건 |
 |---|---|
 | **P1** | 빌드 CPU+GPU 두 타깃, 에러 0 |
-| **P2** | 재현런에서 `[PHYSICS_COMPARISON][BLOCKED] reason=…` 이 **정확히 한 줄** 나오고 위반 필드가 특정된다 |
+| **P2** | 재현런에서 `[PHYSICS_COMPARISON][BLOCKED] reason=…` 이 **정확히 한 줄** 나오고 위반 필드가 특정된다. ⚠**여섯 반환 자리 전부**가 계측돼 있어야 이 게이트가 유효하다(감리 R6) |
 | **P3** | **판정 불변** — 반환 상태와 종료 시점이 L4 런과 동일(`INVALID_ARGUMENT`, 커밋 직후) |
-| **P4** | 음성 대조: 7조건 각각을 단위 시험에서 주입해 **서로 다른 사유**를 낸다 |
+| **P4** | 음성 대조: **여섯 자리의 모든 조건**을 단위 시험에서 주입해 **서로 다른 사유**를 낸다 |
 | **P5** | MC 레인 무접촉 — `lumina_main.c:739` 경로의 거동 불변 |
 
 ★**P3 가 이 단의 자기 규율이다** — 계측이 판정을 바꾸면 측정 단이 아니다.
