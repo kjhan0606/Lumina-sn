@@ -183,6 +183,56 @@
 | **SH-GAMMA Γ4** M1/M2 | 런 의존 | **회수 보류 — 사유 있는 이월**. 08-08 `validation/gamma/GAMMA_VERDICT.md:130` 이 "M1/M2 는 A2-10 성공을 요구하는데 MC 전송이 죽어 도달 못 한다" 고 **명시하고** 이월했다 ⟹ 누락이 아니라 의존성 대기. MC 팔이 A2-10 에 도달해야 회수 가능 |
 | **DET-R6 R6-4** MC 바이트-parity | 런 의존 | **회수 보류** — MC 팔 2회 런 필요. 현재 GPU 2쌍이 DET-SPROD 판정런 점유 중 |
 
-**4회차 예정**: 기존 A 표본 재도전 + 런 의존 2건(Γ4·R6-4) 회수.
+## ★4회차 회전 리뷰 (2026-08-19~20) — 오라클 계보 정정이 지배
+
+### ▲▲▲강등 — CMFGEN 자체런 기반 정량 결론 전부
+
+`docs/RETRACTION_INELIGIBLE_ORACLE_CITATIONS_2026-08-20.md`.
+프로젝트가 **2026-08-04** 에 `validation/a2_00_oracle/` 매니페스트로 이미 판정해 두었다 —
+`CMFGEN_PHYSICAL_ORACLE=INELIGIBLE` · `NONLINEAR_CONVERGENCE=FAIL`([13800,8980,3460]%) ·
+`SNAPSHOT_REPLAY` 는 *"cross-file physics gating 불허"*.
+그런데 08-17 성분 대조가 `LINEHEAT`/`NETRATE` 를 물리 판정에 썼다
+(CMFGEN 참조 144건, **적격성 인용 0건**).
+
+**회수**: 흡수 1/172 · net 4.37e5 · 방출 1.41× · `oracle_vs_cmfgen` 커버리지 17.01%.
+**정성만 유지**: "CMFGEN 은 양 부호를 갖는다"(수치 인용 금지).
+
+### ▲NaN 함정 (신규 등재)
+
+NaN 종료 CMFGEN 런 **8개**. `MAXCH = 0.0000000000000000` 은 **NaN 의 서명**이며
+"MAXCH ≤ 1%" 형 게이트가 이들을 **완벽 수렴으로 인증**한다(이름이 `_conv` 인 것 포함).
+⟹ 게이트 권고: `MAXCH == 0.0` 을 PASS 로 읽지 않는다. 근거 `ORACLE_NAN_AUDIT_2026-08-19.md`.
+
+### ★C 승격 — 오라클 무의존 결론 (독립 경로: Lumina 내부 항등 + 소스)
+
+| 결론 | 근거 |
+|---|---|
+| 순-흡수 선 **0/1282**, `cancellation_condition=1.0` 정확, `absolute_signed_sum==signed_rate` 17자리 | 봉인 stderr `180b23f1…` 전수 재계산 |
+| `S_producer/B(T_e=10020.0) = 0.999993`, 1282/1282 행이 1±1% | 〃 (생산자 두 가수 캡처에서 역산) |
+| `J_cont ≤ B`(max 1.00000024) · `Jbar ≤ S_p`(max 1.00000011) | 〃 |
+| **`RADEQ_NO_BRACKET` = LTE 시드의 필연적 귀결** | 위 셋의 사슬 + `res_lo −2.578`/`res_hi −1.49e8`. `FINDING_NOBRACKET_LTE_SEED_2026-08-19.md` |
+| 생산자/소비자 상태 불일치 τ≈2.02e5 · S≈1.9e5 · η≈4.7e-11 배 | 〃 |
+
+★이 다섯이 **현 본선의 표적**이며 오라클 붕괴의 영향을 받지 않는다.
+
+### B 등재 — DET-STAGE12(고정-T 레인)
+
+게이트 L1·L3·NL PASS(selftest 3종, `det_stage12 NL1..NL5 production_loader positive=6`),
+L2·L4·L5·L6 은 판정런 대기. 감사 2회전 8건 반영. 부수 관찰 10건은
+`LEDGER_DET_STAGE12_OBSERVATIONS_2026-08-19.md` 에 조용히 기재
+(레인-맹 계약 필드 2개가 최대 부채).
+
+### ▲정정 3건 (운전석 자기 오독)
+
+08-19 하루에 같은 계열로 세 번 틀렸다 — 모두 **클립/센티널 값을 실측으로 읽은** 것:
+① `MAXCH=1e7` 을 발산으로 ② 그 정정에서 다시 수렴도로 ③ 게이트를 여는 MAXCH 대신
+옆 채널(`Maximum % increase`)을 외삽해 "2-3회면 Newton 이 열린다".
+셋째는 Fable 갈림길 평가가 `CORRECTION_SUM`(외곽 51 깊이가 1800 변수 중 1200-1700개
+≥10% 보정 요구)으로 반증했다. **교훈: 클립 가능한 요약값을 잣대로 쓰지 않는다.**
+
+### 5회차 예정
+
+기존 A 표본 재도전 · 런 의존 게이트(Γ4·R6-4·NE2·ME2·E4) · `toy06_19.48d` 계열 146건 인용의
+성격 분류(미완).
 
 **관리**: 이 파일이 정본. 강등·승격은 날짜·사유 기록. 1회차(07-29 낮, B/C 적대 재검증)·**2회차(07-29 밤, A×2+C×2 재도전: 강등 0·정정 3·강화 1)** 반영 완료 — 3회차는 나머지 A 표본 + C 신규(K6·parity43) 재도전 예정. 예약: A3 프로브 로그 보관 재주행(withParityY 착지 직후, Y4 리팩터 회귀검증 겸용).
