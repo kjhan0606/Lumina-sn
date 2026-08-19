@@ -1,3 +1,5 @@
+#define _POSIX_C_SOURCE 200809L
+
 #include "physics_comparison.h"
 
 #include <stdio.h>
@@ -26,6 +28,98 @@ static int file_has(const char *path, const char *needle)
     while(fgets(line,sizeof(line),stream))
         if(strstr(line,needle)){found=1;break;}
     fclose(stream); return found;
+}
+
+static int diagnostic_reason_equals(const char *diagnostic,
+                                    const char *expected)
+{
+    const char prefix[] = "[PHYSICS_COMPARISON][BLOCKED] reason=";
+    const char *start = strstr(diagnostic, prefix);
+    size_t length;
+
+    if (!start)
+        return 0;
+    start += strlen(prefix);
+    length = strcspn(start, " \r\n");
+    return length == strlen(expected) && strncmp(start, expected, length) == 0;
+}
+
+static PhysicsComparisonStatus capture_snapshot_diagnostic(
+        const char *output_directory,
+        const PhysicsComparisonSnapshotInput *input,
+        char *diagnostic, size_t diagnostic_capacity)
+{
+    FILE *capture = tmpfile();
+    int stderr_fd, saved_stderr_fd;
+    PhysicsComparisonStatus status;
+
+    if (!capture || diagnostic_capacity == 0) {
+        if (capture)
+            fclose(capture);
+        if (diagnostic_capacity)
+            diagnostic[0] = '\0';
+        return (PhysicsComparisonStatus)-1;
+    }
+    stderr_fd = fileno(stderr);
+    saved_stderr_fd = dup(stderr_fd);
+    if (saved_stderr_fd < 0 || dup2(fileno(capture), stderr_fd) < 0) {
+        if (saved_stderr_fd >= 0)
+            close(saved_stderr_fd);
+        fclose(capture);
+        diagnostic[0] = '\0';
+        return (PhysicsComparisonStatus)-1;
+    }
+
+    status = physics_comparison_snapshot_write(output_directory, input);
+    fflush(stderr);
+    if (dup2(saved_stderr_fd, stderr_fd) < 0)
+        status = (PhysicsComparisonStatus)-1;
+    close(saved_stderr_fd);
+
+    rewind(capture);
+    diagnostic[fread(diagnostic, 1, diagnostic_capacity - 1, capture)] = '\0';
+    fclose(capture);
+    return status;
+}
+
+static PhysicsComparisonStatus capture_dump_diagnostic(
+        const char *lane, int iteration, const Geometry *geometry,
+        const AtomicData *atom, const PlasmaState *plasma,
+        const OpacityState *opacity, const NLTEConfig *nlte,
+        char *diagnostic, size_t diagnostic_capacity)
+{
+    FILE *capture = tmpfile();
+    int stderr_fd, saved_stderr_fd;
+    PhysicsComparisonStatus status;
+
+    if (!capture || diagnostic_capacity == 0) {
+        if (capture)
+            fclose(capture);
+        if (diagnostic_capacity)
+            diagnostic[0] = '\0';
+        return (PhysicsComparisonStatus)-1;
+    }
+    stderr_fd = fileno(stderr);
+    saved_stderr_fd = dup(stderr_fd);
+    if (saved_stderr_fd < 0 || dup2(fileno(capture), stderr_fd) < 0) {
+        if (saved_stderr_fd >= 0)
+            close(saved_stderr_fd);
+        fclose(capture);
+        diagnostic[0] = '\0';
+        return (PhysicsComparisonStatus)-1;
+    }
+
+    status = physics_comparison_dump_if_requested(
+        lane, iteration, geometry, atom, plasma, opacity, nlte);
+    fflush(stderr);
+    if (dup2(saved_stderr_fd, stderr_fd) < 0)
+        status = (PhysicsComparisonStatus)-1;
+    close(saved_stderr_fd);
+
+    rewind(capture);
+    diagnostic[fread(diagnostic, 1, diagnostic_capacity - 1, capture)] = '\0';
+    fclose(capture);
+    return status;
 }
 
 int main(void)
@@ -164,6 +258,133 @@ int main(void)
     CHECK(access(manifest,F_OK)!=0,"free-t-fixed-field-leak-no-manifest");
     CHECK(access(shell,F_OK)!=0,"free-t-fixed-field-leak-no-shell");
     CHECK(access(spectral,F_OK)!=0,"free-t-fixed-field-leak-no-spectral");
+
+    /* P-4: exercise every INVALID_ARGUMENT guard site.  The assertion checks
+     * the exact reason token captured from stderr; no aggregate OR predicate
+     * can make a wrong reason pass. */
+    {
+        char diagnostic[4096];
+        PhysicsComparisonStatus status;
+        Geometry geometry = {0};
+        AtomicData atom_state = {0};
+        PlasmaState plasma_state = {0};
+        OpacityState opacity_state = {0};
+        NLTEConfig nlte_state = {0};
+
+        input.lane = NULL;
+        status = capture_snapshot_diagnostic(
+            directory, &input, diagnostic, sizeof(diagnostic));
+        CHECK(status == PHYSICS_COMPARISON_INVALID_ARGUMENT,
+              "p4-site-99-status");
+        CHECK(diagnostic_reason_equals(
+                  diagnostic, "COMPARISON_INPUT_INVALID"),
+              "p4-site-99-reason");
+
+        input.lane = "DET";
+        op.frequency_edges = NULL;
+        status = capture_snapshot_diagnostic(
+            directory, &input, diagnostic, sizeof(diagnostic));
+        CHECK(status == PHYSICS_COMPARISON_INVALID_ARGUMENT,
+              "p4-site-112-status");
+        CHECK(diagnostic_reason_equals(
+                  diagnostic, "COMPARISON_PUBLICATION_LAYOUT_INVALID"),
+              "p4-site-112-reason");
+        op.frequency_edges = target_edge;
+
+        em.grid_manifest_sha256[0] = '!';
+        status = capture_snapshot_diagnostic(
+            directory, &input, diagnostic, sizeof(diagnostic));
+        CHECK(status == PHYSICS_COMPARISON_INVALID_ARGUMENT,
+              "p4-site-133-status");
+        CHECK(diagnostic_reason_equals(diagnostic, "COMPARISON_HASH_INVALID"),
+              "p4-site-133-reason");
+        em.grid_manifest_sha256[0] = 'b';
+
+        status = capture_snapshot_diagnostic(
+            NULL, &input, diagnostic, sizeof(diagnostic));
+        CHECK(status == PHYSICS_COMPARISON_INVALID_ARGUMENT,
+              "p4-site-255-status");
+        CHECK(diagnostic_reason_equals(diagnostic, "SNAPSHOT_INPUT_MISSING"),
+              "p4-site-255-reason");
+
+        op.n_bins = 0;
+        status = capture_snapshot_diagnostic(
+            directory, &input, diagnostic, sizeof(diagnostic));
+        CHECK(status == PHYSICS_COMPARISON_INVALID_ARGUMENT,
+              "p4-site-258-status");
+        CHECK(diagnostic_reason_equals(
+                  diagnostic, "SNAPSHOT_BIN_OR_SHELL_INVALID"),
+              "p4-site-258-reason");
+        op.n_bins = NB;
+
+        geometry.n_shells = 2;
+        plasma_state.n_shells = 2;
+        setenv("LUMINA_PHYSICS_COMPARISON_DIR", directory, 1);
+
+        status = capture_dump_diagnostic(
+            "DET", 0, NULL, &atom_state, &plasma_state, &opacity_state,
+            &nlte_state, diagnostic, sizeof(diagnostic));
+        CHECK(status == PHYSICS_COMPARISON_INVALID_ARGUMENT,
+              "p4-dump-geometry-status");
+        CHECK(diagnostic_reason_equals(diagnostic, "DUMP_GEOMETRY_MISSING"),
+              "p4-dump-geometry-reason");
+
+        status = capture_dump_diagnostic(
+            "DET", 0, &geometry, NULL, &plasma_state, &opacity_state,
+            &nlte_state, diagnostic, sizeof(diagnostic));
+        CHECK(status == PHYSICS_COMPARISON_INVALID_ARGUMENT,
+              "p4-dump-atom-status");
+        CHECK(diagnostic_reason_equals(diagnostic, "DUMP_ATOM_MISSING"),
+              "p4-dump-atom-reason");
+
+        status = capture_dump_diagnostic(
+            "DET", 0, &geometry, &atom_state, NULL, &opacity_state,
+            &nlte_state, diagnostic, sizeof(diagnostic));
+        CHECK(status == PHYSICS_COMPARISON_INVALID_ARGUMENT,
+              "p4-dump-plasma-status");
+        CHECK(diagnostic_reason_equals(diagnostic, "DUMP_PLASMA_MISSING"),
+              "p4-dump-plasma-reason");
+
+        status = capture_dump_diagnostic(
+            "DET", 0, &geometry, &atom_state, &plasma_state, NULL,
+            &nlte_state, diagnostic, sizeof(diagnostic));
+        CHECK(status == PHYSICS_COMPARISON_INVALID_ARGUMENT,
+              "p4-dump-opacity-status");
+        CHECK(diagnostic_reason_equals(diagnostic, "DUMP_OPACITY_MISSING"),
+              "p4-dump-opacity-reason");
+
+        status = capture_dump_diagnostic(
+            "DET", 0, &geometry, &atom_state, &plasma_state, &opacity_state,
+            NULL, diagnostic, sizeof(diagnostic));
+        CHECK(status == PHYSICS_COMPARISON_INVALID_ARGUMENT,
+              "p4-dump-nlte-status");
+        CHECK(diagnostic_reason_equals(diagnostic, "DUMP_NLTE_MISSING"),
+              "p4-dump-nlte-reason");
+
+        geometry.n_shells = 1;
+        plasma_state.n_shells = 1;
+        status = capture_dump_diagnostic(
+            "DET", 0, &geometry, &atom_state, &plasma_state, &opacity_state,
+            &nlte_state, diagnostic, sizeof(diagnostic));
+        CHECK(status == PHYSICS_COMPARISON_INVALID_ARGUMENT,
+              "p4-dump-small-shell-status");
+        CHECK(diagnostic_reason_equals(
+                  diagnostic, "DUMP_SHELL_COUNT_TOO_SMALL"),
+              "p4-dump-small-shell-reason");
+
+        geometry.n_shells = 2;
+        plasma_state.n_shells = 3;
+        status = capture_dump_diagnostic(
+            "DET", 0, &geometry, &atom_state, &plasma_state, &opacity_state,
+            &nlte_state, diagnostic, sizeof(diagnostic));
+        CHECK(status == PHYSICS_COMPARISON_INVALID_ARGUMENT,
+              "p4-dump-mismatch-status");
+        CHECK(diagnostic_reason_equals(
+                  diagnostic, "DUMP_SHELL_COUNT_MISMATCH"),
+              "p4-dump-mismatch-reason");
+
+        unsetenv("LUMINA_PHYSICS_COMPARISON_DIR");
+    }
 
     remove(manifest);remove(shell);remove(spectral);rmdir(directory);
     if(failures)return 1;

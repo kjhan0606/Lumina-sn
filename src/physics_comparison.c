@@ -96,7 +96,38 @@ static PhysicsComparisonStatus comparison_validate(
         !in->electron_density_cm3 || !in->atom_density_cm3 ||
         !in->internal_energy_atom_erg || !in->radiation || !in->opacity ||
         !in->emissivity || !in->temperature_publication || !j_rebinned)
+    {
+        fprintf(stderr,
+                "[PHYSICS_COMPARISON][BLOCKED] "
+                "reason=COMPARISON_INPUT_INVALID site=99 "
+                "lane=%s iteration=%d input_present=%d lane_valid=%d "
+                "epoch_s=%.17g n_shells=%zu r_inner_cm=%p r_outer_cm=%p "
+                "v_inner_cm_s=%p v_outer_cm_s=%p temperature_K=%p "
+                "electron_density_cm3=%p atom_density_cm3=%p "
+                "internal_energy_atom_erg=%p radiation=%p opacity=%p "
+                "emissivity=%p temperature_publication=%p j_rebinned=%p "
+                "physical_values_modified=0 clamp=0 floor=0 cap=0 jitter=0 repair=0\n",
+                in && in->lane ? in->lane : "(null)",
+                in ? in->iteration : -1,
+                in != NULL,
+                in ? comparison_lane_ok(in->lane) : 0,
+                in ? in->epoch_s : NAN,
+                in ? in->n_shells : 0,
+                in ? (void *)in->r_inner_cm : NULL,
+                in ? (void *)in->r_outer_cm : NULL,
+                in ? (void *)in->v_inner_cm_s : NULL,
+                in ? (void *)in->v_outer_cm_s : NULL,
+                in ? (void *)in->temperature_K : NULL,
+                in ? (void *)in->electron_density_cm3 : NULL,
+                in ? (void *)in->atom_density_cm3 : NULL,
+                in ? (void *)in->internal_energy_atom_erg : NULL,
+                in ? (void *)in->radiation : NULL,
+                in ? (void *)in->opacity : NULL,
+                in ? (void *)in->emissivity : NULL,
+                in ? (void *)in->temperature_publication : NULL,
+                (void *)j_rebinned);
         return PHYSICS_COMPARISON_INVALID_ARGUMENT;
+    }
 
     const CpuOpacityPublication *op = in->opacity;
     const CpuEmissivityPublication *em = in->emissivity;
@@ -109,7 +140,31 @@ static PhysicsComparisonStatus comparison_validate(
         !em->eta_ff || !em->eta_true_total || !em->cell_status ||
         !em->component_status || !te->ledger || !te->shell_status ||
         !te->residual_status)
+    {
+        fprintf(stderr,
+                "[PHYSICS_COMPARISON][BLOCKED] "
+                "reason=COMPARISON_PUBLICATION_LAYOUT_INVALID site=112 "
+                "lane=%s iteration=%d n_shells=%zu n_bins=%zu "
+                "op_n_shells=%zu em_n_shells=%zu em_n_bins=%zu te_n_shells=%zu "
+                "frequency_edges=%p nu_edge=%p chi_es=%p chi_bb=%p "
+                "chi_bf=%p chi_ff=%p chi_total=%p chi_validity=%p "
+                "eta_bb=%p eta_bf=%p eta_ff=%p eta_true_total=%p "
+                "cell_status=%p component_status=%p ledger=%p shell_status=%p "
+                "residual_status=%p "
+                "physical_values_modified=0 clamp=0 floor=0 cap=0 jitter=0 repair=0\n",
+                in->lane ? in->lane : "(null)", in->iteration, ns, nb,
+                op->n_shells, em->n_shells, em->n_bins, te->n_shells,
+                (void *)op->frequency_edges, (void *)em->nu_edge,
+                (void *)op->chi_es, (void *)op->chi_bb,
+                (void *)op->chi_bf, (void *)op->chi_ff,
+                (void *)op->chi_total, (void *)op->chi_validity,
+                (void *)em->eta_bb, (void *)em->eta_bf,
+                (void *)em->eta_ff, (void *)em->eta_true_total,
+                (void *)em->cell_status, (void *)em->component_status,
+                (void *)te->ledger, (void *)te->shell_status,
+                (void *)te->residual_status);
         return PHYSICS_COMPARISON_INVALID_ARGUMENT;
+    }
 
     uint64_t tg = te->committed_te_generation;
     uint64_t pg = te->population_generation;
@@ -130,7 +185,25 @@ static PhysicsComparisonStatus comparison_validate(
         !comparison_hex64(te->geometry_sha256) ||
         !comparison_hex64(te->te_manifest_sha256) ||
         !comparison_hex64(em->grid_manifest_sha256))
+    {
+        fprintf(stderr,
+                "[PHYSICS_COMPARISON][BLOCKED] "
+                "reason=COMPARISON_HASH_INVALID site=133 "
+                "lane=%s iteration=%d atomic_model_sha256_valid=%d "
+                "geometry_sha256_valid=%d te_manifest_sha256_valid=%d "
+                "grid_manifest_sha256_valid=%d atomic_model_sha256=%.64s "
+                "geometry_sha256=%.64s te_manifest_sha256=%.64s "
+                "grid_manifest_sha256=%.64s "
+                "physical_values_modified=0 clamp=0 floor=0 cap=0 jitter=0 repair=0\n",
+                in->lane ? in->lane : "(null)", in->iteration,
+                comparison_hex64(te->atomic_model_sha256),
+                comparison_hex64(te->geometry_sha256),
+                comparison_hex64(te->te_manifest_sha256),
+                comparison_hex64(em->grid_manifest_sha256),
+                te->atomic_model_sha256, te->geometry_sha256,
+                te->te_manifest_sha256, em->grid_manifest_sha256);
         return PHYSICS_COMPARISON_INVALID_ARGUMENT;
+    }
 
     double *velocity_edges = malloc((ns+1)*sizeof(*velocity_edges));
     if (!velocity_edges) return PHYSICS_COMPARISON_IO_ERROR;
@@ -252,10 +325,32 @@ PhysicsComparisonStatus physics_comparison_snapshot_write(
         const char *directory, const PhysicsComparisonSnapshotInput *in)
 {
     if (!directory || !*directory || !in)
+    {
+        fprintf(stderr,
+                "[PHYSICS_COMPARISON][BLOCKED] "
+                "reason=SNAPSHOT_INPUT_MISSING site=255 "
+                "directory_present=%d input_present=%d lane=%s iteration=%d "
+                "n_bins=%zu n_shells=%zu "
+                "physical_values_modified=0 clamp=0 floor=0 cap=0 jitter=0 repair=0\n",
+                directory && *directory, in != NULL,
+                in && in->lane ? in->lane : "(null)",
+                in ? in->iteration : -1,
+                in && in->opacity ? in->opacity->n_bins : 0,
+                in ? in->n_shells : 0);
         return PHYSICS_COMPARISON_INVALID_ARGUMENT;
+    }
     size_t nb = in->opacity ? in->opacity->n_bins : 0;
     if (!nb || !in->n_shells || in->n_shells > SIZE_MAX/nb)
+    {
+        fprintf(stderr,
+                "[PHYSICS_COMPARISON][BLOCKED] "
+                "reason=SNAPSHOT_BIN_OR_SHELL_INVALID site=258 "
+                "lane=%s iteration=%d n_bins=%zu n_shells=%zu "
+                "physical_values_modified=0 clamp=0 floor=0 cap=0 jitter=0 repair=0\n",
+                in->lane ? in->lane : "(null)", in->iteration, nb,
+                in->n_shells);
         return PHYSICS_COMPARISON_INVALID_ARGUMENT;
+    }
     double *j_rebinned = malloc(in->n_shells*nb*sizeof(*j_rebinned));
     if (!j_rebinned) return PHYSICS_COMPARISON_IO_ERROR;
     PhysicsComparisonStatus status = comparison_validate(in, j_rebinned);
@@ -443,9 +538,82 @@ PhysicsComparisonStatus physics_comparison_dump_if_requested(
 {
     const char *directory = getenv("LUMINA_PHYSICS_COMPARISON_DIR");
     if (!directory || !*directory) return PHYSICS_COMPARISON_NOT_REQUESTED;
-    if (!geometry || !atom || !plasma || !opacity || !nlte ||
-        geometry->n_shells < 2 || plasma->n_shells != geometry->n_shells)
+    if (!geometry) {
+        fprintf(stderr,
+                "[PHYSICS_COMPARISON][BLOCKED] reason=DUMP_GEOMETRY_MISSING "
+                "site=448 lane=%s iteration=%d geometry=0 atom=%d plasma=%d "
+                "opacity=%d nlte=%d geometry_n_shells=%d plasma_n_shells=%d "
+                "physical_values_modified=0 clamp=0 floor=0 cap=0 jitter=0 repair=0\n",
+                lane ? lane : "(null)", iteration, atom != NULL, plasma != NULL,
+                opacity != NULL, nlte != NULL, -1,
+                plasma ? plasma->n_shells : -1);
         return PHYSICS_COMPARISON_INVALID_ARGUMENT;
+    }
+    if (!atom) {
+        fprintf(stderr,
+                "[PHYSICS_COMPARISON][BLOCKED] reason=DUMP_ATOM_MISSING "
+                "site=448 lane=%s iteration=%d geometry=%d atom=0 plasma=%d "
+                "opacity=%d nlte=%d geometry_n_shells=%d plasma_n_shells=%d "
+                "physical_values_modified=0 clamp=0 floor=0 cap=0 jitter=0 repair=0\n",
+                lane ? lane : "(null)", iteration, geometry != NULL, plasma != NULL,
+                opacity != NULL, nlte != NULL, geometry->n_shells,
+                plasma ? plasma->n_shells : -1);
+        return PHYSICS_COMPARISON_INVALID_ARGUMENT;
+    }
+    if (!plasma) {
+        fprintf(stderr,
+                "[PHYSICS_COMPARISON][BLOCKED] reason=DUMP_PLASMA_MISSING "
+                "site=448 lane=%s iteration=%d geometry=%d atom=%d plasma=0 "
+                "opacity=%d nlte=%d geometry_n_shells=%d plasma_n_shells=%d "
+                "physical_values_modified=0 clamp=0 floor=0 cap=0 jitter=0 repair=0\n",
+                lane ? lane : "(null)", iteration, geometry != NULL, atom != NULL,
+                opacity != NULL, nlte != NULL, geometry->n_shells, -1);
+        return PHYSICS_COMPARISON_INVALID_ARGUMENT;
+    }
+    if (!opacity) {
+        fprintf(stderr,
+                "[PHYSICS_COMPARISON][BLOCKED] reason=DUMP_OPACITY_MISSING "
+                "site=448 lane=%s iteration=%d geometry=%d atom=%d plasma=%d "
+                "opacity=0 nlte=%d geometry_n_shells=%d plasma_n_shells=%d "
+                "physical_values_modified=0 clamp=0 floor=0 cap=0 jitter=0 repair=0\n",
+                lane ? lane : "(null)", iteration, geometry != NULL, atom != NULL,
+                plasma != NULL, nlte != NULL, geometry->n_shells,
+                plasma->n_shells);
+        return PHYSICS_COMPARISON_INVALID_ARGUMENT;
+    }
+    if (!nlte) {
+        fprintf(stderr,
+                "[PHYSICS_COMPARISON][BLOCKED] reason=DUMP_NLTE_MISSING "
+                "site=448 lane=%s iteration=%d geometry=%d atom=%d plasma=%d "
+                "opacity=%d nlte=0 geometry_n_shells=%d plasma_n_shells=%d "
+                "physical_values_modified=0 clamp=0 floor=0 cap=0 jitter=0 repair=0\n",
+                lane ? lane : "(null)", iteration, geometry != NULL, atom != NULL,
+                plasma != NULL, opacity != NULL, geometry->n_shells,
+                plasma->n_shells);
+        return PHYSICS_COMPARISON_INVALID_ARGUMENT;
+    }
+    if (geometry->n_shells < 2) {
+        fprintf(stderr,
+                "[PHYSICS_COMPARISON][BLOCKED] reason=DUMP_SHELL_COUNT_TOO_SMALL "
+                "site=448 lane=%s iteration=%d geometry=%d atom=%d plasma=%d "
+                "opacity=%d nlte=%d geometry_n_shells=%d plasma_n_shells=%d "
+                "physical_values_modified=0 clamp=0 floor=0 cap=0 jitter=0 repair=0\n",
+                lane ? lane : "(null)", iteration, geometry != NULL, atom != NULL,
+                plasma != NULL, opacity != NULL, nlte != NULL,
+                geometry->n_shells, plasma->n_shells);
+        return PHYSICS_COMPARISON_INVALID_ARGUMENT;
+    }
+    if (plasma->n_shells != geometry->n_shells) {
+        fprintf(stderr,
+                "[PHYSICS_COMPARISON][BLOCKED] reason=DUMP_SHELL_COUNT_MISMATCH "
+                "site=448 lane=%s iteration=%d geometry=%d atom=%d plasma=%d "
+                "opacity=%d nlte=%d geometry_n_shells=%d plasma_n_shells=%d "
+                "physical_values_modified=0 clamp=0 floor=0 cap=0 jitter=0 repair=0\n",
+                lane ? lane : "(null)", iteration, geometry != NULL, atom != NULL,
+                plasma != NULL, opacity != NULL, nlte != NULL,
+                geometry->n_shells, plasma->n_shells);
+        return PHYSICS_COMPARISON_INVALID_ARGUMENT;
+    }
     size_t ns = (size_t)geometry->n_shells;
     AtomicInternalEnergyCell *energy = calloc(ns,sizeof(*energy));
     double *n_atom = malloc(ns*sizeof(*n_atom));
