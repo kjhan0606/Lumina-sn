@@ -109,7 +109,7 @@ sed "s|$base|$dest|g" "$base/input/resolved_lumina.exports" > "$tmp_env"
 printf '%s\n' \
   "declare -x LUMINA_A210_LINE_SATURATION_DIAG=\"$mode\"" \
   "declare -x LUMINA_A210_LINE_SATURATION_TARGET_ION=\"$target_ion\"" \
-  "declare -x LUMINA_A210_INDEPENDENT_CAPTURE=\"1\"" \
+  "declare -x LUMINA_A210_INDEPENDENT_CAPTURE=\"${LUMINA_A210_INDEPENDENT_CAPTURE:-1}\"" \
   "declare -x LUMINA_A210_SPRODUCER_CAPTURE=\"${LUMINA_A210_SPRODUCER_CAPTURE:-0}\"" \
   >> "$tmp_env"
 LC_ALL=C sort -u "$tmp_env" > "$dest/input/resolved_lumina.exports"
