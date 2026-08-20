@@ -1804,12 +1804,28 @@ GR-7 판정문 §4 표와 **총계 일치**. 폐합 판정 §5 의 결손(`targe
 
 **증거**: `/gpfs/kjhan/lumina/gates/gr9_20260820T225154Z/`
 
-| 게이트 | 결과 |
+★**검수 R2 정정**: 초판 표가 P-번호를 사전등록 §12-3-6 과 다르게 적었다(NC 를 P5 로,
+P2·P5 행 누락). 사전등록이 *"판정문은 이 표와 대조한다"* 고 못박았으므로 번호를 정본에 맞춘다.
+
+| 게이트(§12-3-6) | 결과 |
 |---|---|
-| **P1~P3** | **PASS** — `META_RC=0`. 드리프트 2건이 pin 일치로 green |
-| **P4** ★실질 판정 | **PASS** — 배터리 완주 `GATE_BATTERY_SUMMARY verdict=PASS rc=0`, preflight **30행 전부 rc=0** |
-| **P5** | **PASS** — NC **19/19**(기존 12 + R9a~R9g) |
-| **P6** | 분장 장부(아래) |
+| **P1** | **PASS** — `META_RC=0`, 드리프트 2건이 pin 일치로 green |
+| **P2** pin 실측 기재 | **PASS** — pin 3분할이 grammar-debug 재계산과 정확일치. 로그 `P1_P3.log` |
+| **P3** NC | **PASS** — **19/19**(기존 12 + R9a~R9g) |
+| **P4** ★실질 판정 | **PASS** — 배터리 완주 `verdict=PASS rc=0`, preflight **30행 전부 rc=0**, `BUILD name=Z-a2-12/09/10 rc=0` |
+| **P5** 변경집합 | **PASS** — 커밋 파일 3개(스크립트 2 + 이 문서) |
+| **P6** 분장 장부 | 아래 |
+
+★**검수 R1 해소 — RUN FOOTER 재캡처**: 초판 로그 3종에 HEAD 결속이 없어(유일 provenance 가
+`node=grammar-debug cpu_count=64`) 로그와 코드의 기계적 결속이 빠져 있었다. 재캡처했다:
+`/gpfs/kjhan/lumina/gates/gr9_recapture_20260820T230353Z/checker_with_footer.log`
+```
+git_head=6e300ed6460a82bd0d7d3cee5ee73810f4d98de1
+registry_sha256=aa11e7df…  checker_sha256=d110c55b…
+python=Python 3.13.11  host=grammar-debug
+→ known-drift-observed ×2 · [BUILD-SPEC][PASS] pairs=6 unpaired=7 known_drifts=2 · META_RC=0
+```
+⟹ 이 캠페인의 병력(운전석 계측 오독 4회)이 열어 둔 지점을 닫는다.
 
 ### ★★봉쇄 해소 — 그러나 관측은 유지된다
 
@@ -1849,3 +1865,9 @@ GR-7 판정문 §4 표와 **총계 일치**. 폐합 판정 §5 의 결손(`targe
 | 빌드·게이트·계측 | 운전석 | 운전석 | ✅ |
 | 대장·커밋 | 운전석 | 운전석 | ✅ |
 | 판정 감리 | Fable | **미실시** — 전폐합 선언 시 일괄(§12-5) | ⚠유보 |
+
+★**검수 R3 — 운전석이 장부를 선기입했다.** 커밋 `6e300ed`(08-21 07:56 KST) 시점에
+"코드 검수=Fable ✅" 를 체크했으나 **검수 의견서는 그 뒤에 착지**했다. 검수 실물:
+본 단의 Fable 코드 검수 = **인정**(지적 R1~R6, 코드 결함 0 · R1~R3 은 운전석 집행 몫).
+⟹ **오늘 아침 Codex 의 집행 기록 선기입을 지적하며 만든 장치를 운전석이 똑같이 어겼다.**
+장부는 **완료 후에만** 체크한다 — 이 정정을 규율로 남긴다.
