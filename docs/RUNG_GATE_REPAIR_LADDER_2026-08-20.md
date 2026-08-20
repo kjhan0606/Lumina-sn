@@ -1796,3 +1796,56 @@ GR-7 판정문 §4 표와 **총계 일치**. 폐합 판정 §5 의 결손(`targe
    — 전수 재감사 안 했다.
 7. **`RUNG_NAME` 형식의 실존 비보증**(결정 3 한계) — 형식 통과 ≠ 단 실존. 실존은 절차
    (판정 없는 등재 금지)가 지킨다 — 기계로 닫을 방법을 모른다(§11-7 과 같은 계급).
+
+
+---
+
+## GR-9 집행 기록 (운전석 실측, 2026-08-21) — ★봉쇄 해소
+
+**증거**: `/gpfs/kjhan/lumina/gates/gr9_20260820T225154Z/`
+
+| 게이트 | 결과 |
+|---|---|
+| **P1~P3** | **PASS** — `META_RC=0`. 드리프트 2건이 pin 일치로 green |
+| **P4** ★실질 판정 | **PASS** — 배터리 완주 `GATE_BATTERY_SUMMARY verdict=PASS rc=0`, preflight **30행 전부 rc=0** |
+| **P5** | **PASS** — NC **19/19**(기존 12 + R9a~R9g) |
+| **P6** | 분장 장부(아래) |
+
+### ★★봉쇄 해소 — 그러나 관측은 유지된다
+
+```
+[BUILD-SPEC][KNOWN-DRIFT] known-drift-observed:Z-a2-12 make_target=selftest_a2_12_contract battery_only=src/jnu_seed.c…
+[BUILD-SPEC][KNOWN-DRIFT] known-drift-observed:Z-a2-10 make_target=selftest_a2_10_radeq  battery_only=src/atomic_internal_energy.c…
+[BUILD-SPEC][PASS] pairs=6 unpaired=7 known_drifts=2
+```
+**초록인데 조용하지 않다.** 드리프트가 매 실행마다 인쇄되고 PASS 줄이 `known_drifts=2` 를
+달고 있다 — 초록불이 **자기가 무엇을 안고 있는지 말한다.** 이 캠페인이 온종일 잡은 병
+(*초록불이 인증 범위를 과장한다*)의 정확한 반대다.
+
+### ★GR-0 계약의 재성립 (P4 의 의미)
+
+[실측] `BUILD name=Z-a2-12 rc=0` · `Z-a2-09 rc=0` · `Z-a2-10 rc=0`
+⟹ GR-0 이 세운 계약 **"배터리 Z 행이 다시 돈다"** 가 HEAD 에서 **다시 참**이다.
+폐합 판정이 든 불가 근거 3개 중 첫째가 해소됐다.
+
+### 자기 만료 3채널이 실물로 발화한다 (NC 19/19)
+
+| NC | 사유 | 무엇을 막는가 |
+|---|---|---|
+| R9b | `known-drift-signature-drift` | 드리프트 **내용이 바뀌었는데** 행이 그대로 |
+| R9d | `known-drift-unexpected-resolve` | **수리됐는데** 행이 남아 있음(창고화) |
+| R9f | `known-drift-pair-missing` | **쌍이 사라졌는데** 행이 남아 있음(유령) |
+| ★**R9c** | `build-spec-drift:synthetic-r9` | ★**미등재 드리프트는 여전히 red** — 등록부는 만능 면죄부가 아니다 |
+| ★**R9g** | `validate_known_red_row=None` | ★**SH-UW-1 함정의 직접 회귀 시험**(`RUNG_NAME` 확장 생존) |
+
+### 분장 장부 (결정 8 로 게이트 조건 승격 — P6)
+
+| 단계 | 규약상 담당 | **실제** | |
+|---|---|---|---|
+| 사전등록(개정 4 §12-3) | Fable | Fable | ✅ |
+| 발주 | 운전석 | 운전석(PREREG 첨부, 재서술 0) | ✅ |
+| 코딩 | Codex | Codex | ✅ |
+| 코드 검수 | Fable | Fable | ✅ |
+| 빌드·게이트·계측 | 운전석 | 운전석 | ✅ |
+| 대장·커밋 | 운전석 | 운전석 | ✅ |
+| 판정 감리 | Fable | **미실시** — 전폐합 선언 시 일괄(§12-5) | ⚠유보 |

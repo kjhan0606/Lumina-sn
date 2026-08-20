@@ -1,5 +1,43 @@
 {
-  "schema": "lumina-gate-registry-v2",
+  "schema": "lumina-gate-registry-v3",
+  "known_drifts": [
+    {
+      "build": "Z-a2-12",
+      "make_target": "selftest_a2_12_contract",
+      "battery_only": [
+        "src/jnu_seed.c",
+        "src/seed_capability.c"
+      ],
+      "make_only": [],
+      "shared": [
+        "src/gpu_radiation_field_contract.c",
+        "tests/a2_12_contract_selftest.c"
+      ],
+      "registered": "2026-08-21",
+      "repair_rung": "SH-BS-1",
+      "note": "pre-campaign battery-side drift: 8f99e7f (jnu_seed) and 3e9e317 lineage (seed_capability)"
+    },
+    {
+      "build": "Z-a2-10",
+      "make_target": "selftest_a2_10_radeq",
+      "battery_only": [
+        "src/atomic_internal_energy.c",
+        "src/cmfgen_adiabatic.c",
+        "src/emissivity_publication.c",
+        "src/nlte_population_candidate.c"
+      ],
+      "make_only": [],
+      "shared": [
+        "src/opacity_publication.c",
+        "src/population_contract.c",
+        "src/radeq_publication.c",
+        "tests/a2_10_radeq_selftest.c"
+      ],
+      "registered": "2026-08-21",
+      "repair_rung": "SH-BS-2",
+      "note": "pre-campaign battery-side drift: a00b991"
+    }
+  ],
   "entries": [
     {
       "name": "selftest_cmf_exact_sliding",

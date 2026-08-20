@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Check gate-registry completeness, wiring, known-red pins, and self-NCs."""
+"""Check gate-registry completeness, wiring, known pins, and self-NCs."""
 
 from __future__ import annotations
 
@@ -24,7 +24,8 @@ REGISTRY_PATH = ROOT / "scripts/gate_registry.json"
 MAKEFILE_PATH = ROOT / "Makefile"
 BATTERY_PATH = ROOT / "scripts/run_gate_battery.py"
 FIXTURE_GENERATOR_PATH = ROOT / "scripts/generate_composition_d_fixtures.py"
-SCHEMA = "lumina-gate-registry-v2"
+SCHEMA = "lumina-gate-registry-v3"
+RUNG_NAME = r"[A-Z][A-Z0-9]*(-[A-Z0-9]+)+"
 GATE_SUFFIX = re.compile(r"-(?:check|census|gate)$")
 TOKEN_CHARS = r"A-Za-z0-9_.-"
 MAKE_VARIABLE = re.compile(
@@ -45,6 +46,16 @@ KNOWN_RED_FIELDS = {
     "registered",
     "repair_rung",
 }
+KNOWN_DRIFT_REQUIRED_FIELDS = {
+    "build",
+    "make_target",
+    "battery_only",
+    "make_only",
+    "shared",
+    "registered",
+    "repair_rung",
+}
+KNOWN_DRIFT_FIELDS = KNOWN_DRIFT_REQUIRED_FIELDS | {"note"}
 VALID_CATEGORIES = {
     "battery-core",
     "preflight",
@@ -91,6 +102,16 @@ class BuildRecipePair:
     @property
     def make_only(self) -> tuple[str, ...]:
         return tuple(sorted(self.make_sources - self.battery_sources))
+
+    @property
+    def shared(self) -> tuple[str, ...]:
+        return tuple(sorted(self.battery_sources & self.make_sources))
+
+
+@dataclass(frozen=True)
+class BuildSpecFailure:
+    reason: str
+    pair: BuildRecipePair | None = None
 
 
 def make_logical_lines(text: str) -> list[LogicalLine]:
@@ -450,7 +471,9 @@ def read_registry_text(text: str) -> tuple[dict[str, Any] | None, str | None]:
         return None, "registry-unreadable"
     if not isinstance(value, dict) or value.get("schema") != SCHEMA:
         return None, "registry-unreadable"
-    if not isinstance(value.get("entries"), list):
+    if not isinstance(value.get("entries"), list) or not isinstance(
+        value.get("known_drifts"), list
+    ):
         return None, "registry-unreadable"
     return value, None
 
@@ -497,10 +520,144 @@ def validate_known_red_row(entry: dict[str, Any]) -> str | None:
     except (TypeError, ValueError):
         return f"known-red-row-incomplete:{name}"
     if not isinstance(pin["repair_rung"], str) or not re.fullmatch(
-        r"GR-[1-9][0-9]*", pin["repair_rung"]
+        RUNG_NAME, pin["repair_rung"]
     ):
         return f"known-red-row-incomplete:{name}"
     return None
+
+
+def validate_known_drift_row(row: Any) -> str | None:
+    name = row.get("build", "<unnamed>") if isinstance(row, dict) else "<unnamed>"
+    if (
+        not isinstance(row, dict)
+        or not KNOWN_DRIFT_REQUIRED_FIELDS.issubset(row)
+        or not set(row).issubset(KNOWN_DRIFT_FIELDS)
+    ):
+        return f"known-drift-row-incomplete:{name}"
+    if (
+        not isinstance(row["build"], str)
+        or not row["build"]
+        or not isinstance(row["make_target"], str)
+        or not row["make_target"]
+    ):
+        return f"known-drift-row-incomplete:{name}"
+    partitions: list[list[str]] = []
+    for field in ("battery_only", "make_only", "shared"):
+        values = row[field]
+        if (
+            not isinstance(values, list)
+            or any(not isinstance(value, str) or not value for value in values)
+            or values != sorted(set(values))
+        ):
+            return f"known-drift-row-incomplete:{name}"
+        partitions.append(values)
+    if any(
+        set(partitions[left]).intersection(partitions[right])
+        for left, right in ((0, 1), (0, 2), (1, 2))
+    ):
+        return f"known-drift-row-incomplete:{name}"
+    if not isinstance(row["registered"], str) or not re.fullmatch(
+        r"\d{4}-\d{2}-\d{2}", row["registered"]
+    ):
+        return f"known-drift-row-incomplete:{name}"
+    try:
+        date.fromisoformat(row["registered"])
+    except ValueError:
+        return f"known-drift-row-incomplete:{name}"
+    if not isinstance(row["repair_rung"], str) or not re.fullmatch(
+        RUNG_NAME, row["repair_rung"]
+    ):
+        return f"known-drift-row-incomplete:{name}"
+    if "note" in row and (not isinstance(row["note"], str) or not row["note"]):
+        return f"known-drift-row-incomplete:{name}"
+    return None
+
+
+def validate_known_drift_rows(rows: Any) -> list[str]:
+    if not isinstance(rows, list):
+        return ["registry-unreadable"]
+    errors: list[str] = []
+    seen: set[tuple[str, str]] = set()
+    for row in rows:
+        reason = validate_known_drift_row(row)
+        if reason is not None:
+            errors.append(reason)
+        if not isinstance(row, dict):
+            continue
+        build = row.get("build")
+        make_target = row.get("make_target")
+        if not isinstance(build, str) or not isinstance(make_target, str):
+            continue
+        key = (build, make_target)
+        if key in seen:
+            errors.append(f"duplicate-known-drift:{build}")
+        else:
+            seen.add(key)
+    return errors
+
+
+def evaluate_known_drifts(
+    pairs: Iterable[BuildRecipePair], rows: list[dict[str, Any]]
+) -> tuple[
+    list[BuildSpecFailure],
+    list[tuple[BuildRecipePair, dict[str, Any]]],
+]:
+    """Compare every Build/recipe pair with the exact registered three-way pin."""
+    registered = {(row["build"], row["make_target"]): row for row in rows}
+    actual_pairs: set[tuple[str, str]] = set()
+    failures: list[BuildSpecFailure] = []
+    observed: list[tuple[BuildRecipePair, dict[str, Any]]] = []
+    for pair in pairs:
+        key = (pair.build_name, pair.make_target)
+        actual_pairs.add(key)
+        row = registered.get(key)
+        drifted = pair.battery_sources != pair.make_sources
+        if row is None:
+            if drifted:
+                failures.append(BuildSpecFailure(pair.reason, pair))
+            continue
+        if not drifted:
+            failures.append(
+                BuildSpecFailure(
+                    f"known-drift-unexpected-resolve:{pair.build_name}"
+                )
+            )
+            continue
+        actual_pin = {
+            "battery_only": pair.battery_only,
+            "make_only": pair.make_only,
+            "shared": pair.shared,
+        }
+        expected_pin = {
+            field: tuple(row[field]) for field in ("battery_only", "make_only", "shared")
+        }
+        if actual_pin != expected_pin:
+            failures.append(
+                BuildSpecFailure(
+                    f"known-drift-signature-drift:{pair.build_name}"
+                )
+            )
+        else:
+            observed.append((pair, row))
+    for key, row in registered.items():
+        if key not in actual_pairs:
+            failures.append(
+                BuildSpecFailure(f"known-drift-pair-missing:{row['build']}")
+            )
+    return failures, observed
+
+
+def format_known_drift_observation(
+    pair: BuildRecipePair, row: dict[str, Any]
+) -> str:
+    return (
+        "[GATE-REGISTRY][BUILD-SPEC][KNOWN-DRIFT] "
+        f"reason=known-drift-observed:{pair.build_name} "
+        f"make_target={pair.make_target} "
+        f"battery_only={','.join(pair.battery_only) or '-'} "
+        f"make_only={','.join(pair.make_only) or '-'} "
+        f"repair_rung={row['repair_rung']}"
+    )
 
 
 def validate_unwired_row(entry: dict[str, Any]) -> str | None:
@@ -569,6 +726,7 @@ def validate_registry(
     registry: dict[str, Any], make_text: str, battery_path: Path = BATTERY_PATH
 ) -> list[str]:
     errors: list[str] = []
+    errors.extend(validate_known_drift_rows(registry.get("known_drifts")))
     lines = make_logical_lines(make_text)
     targets = make_targets(lines)
     try:
@@ -801,7 +959,7 @@ def retro_a209_negative_control(make_text: str) -> bool:
 
 
 def run_negative_controls(make_text: str | None = None) -> list[tuple[str, str, bool]]:
-    empty = {"schema": SCHEMA, "entries": []}
+    empty = {"schema": SCHEMA, "known_drifts": [], "entries": []}
     name_a = "synthetic-r1a-gate"
     make_a = f".PHONY: anchor\nanchor:\n\t@:\n{name_a}:\n\t@:\n"
     errors_a = validate_registry(empty, make_a)
@@ -871,7 +1029,7 @@ def run_negative_controls(make_text: str | None = None) -> list[tuple[str, str, 
         "category": "collective",
         "wiring": "Makefile",
     }
-    errors_e = validate_registry({"schema": SCHEMA, "entries": [entry_e]}, make_e)
+    errors_e = validate_registry({**empty, "entries": [entry_e]}, make_e)
     expected_e = f"collective-reference-missing:{name_e}"
 
     name_f = "synthetic-r1f-gate"
@@ -883,7 +1041,7 @@ def run_negative_controls(make_text: str | None = None) -> list[tuple[str, str, 
         "category": "collective",
         "wiring": "Makefile",
     }
-    errors_f = validate_registry({"schema": SCHEMA, "entries": [entry_f]}, make_f)
+    errors_f = validate_registry({**empty, "entries": [entry_f]}, make_f)
     expected_f = f"collective-reference-missing:{name_f}"
 
     name_g = "synthetic-" + "r1g-gate"
@@ -899,7 +1057,7 @@ def run_negative_controls(make_text: str | None = None) -> list[tuple[str, str, 
             "disposition_rung": "GR-7",
         },
     }
-    errors_g = validate_registry({"schema": SCHEMA, "entries": [entry_g]}, make_g)
+    errors_g = validate_registry({**empty, "entries": [entry_g]}, make_g)
     expected_g = f"unwired-now-referenced:{name_g}"
 
     name_h = "synthetic-r1h-gate"
@@ -919,7 +1077,7 @@ def run_negative_controls(make_text: str | None = None) -> list[tuple[str, str, 
             "repair_rung": "GR-1",
         },
     }
-    errors_h = validate_registry({"schema": SCHEMA, "entries": [entry_h]}, make_h)
+    errors_h = validate_registry({**empty, "entries": [entry_h]}, make_h)
     expected_h = f"known-red-recipe-drift:{name_h}"
 
     name_r8a = "synthetic-r8a"
@@ -971,6 +1129,90 @@ def run_negative_controls(make_text: str | None = None) -> list[tuple[str, str, 
         else MAKEFILE_PATH.read_text(encoding="utf-8")
     )
 
+    name_r9 = "synthetic-r9"
+    target_r9 = "synthetic-r9-target"
+    test_r9 = "tests/synthetic_r9.c"
+    shared_r9 = "src/shared_r9.c"
+    battery_only_r9 = "src/battery_only_r9.c"
+    make_r9 = f"{target_r9}:\n\tcc -o $@ {test_r9} {shared_r9}\n"
+    builds_r9 = (
+        BatteryBuild(name_r9, ("cc", test_r9, shared_r9, battery_only_r9)),
+    )
+    pairs_r9, unpaired_r9 = compare_build_specs(builds_r9, make_r9)
+    row_r9 = {
+        "build": name_r9,
+        "make_target": target_r9,
+        "battery_only": [battery_only_r9],
+        "make_only": [],
+        "shared": [shared_r9, test_r9],
+        "registered": "2026-08-21",
+        "repair_rung": "SH-BS-1",
+    }
+
+    failures_r9a, observed_r9a = evaluate_known_drifts(pairs_r9, [row_r9])
+    expected_r9a = f"known-drift-observed:{name_r9}"
+    expected_line_r9a = (
+        "[GATE-REGISTRY][BUILD-SPEC][KNOWN-DRIFT] "
+        f"reason={expected_r9a} make_target={target_r9} "
+        f"battery_only={battery_only_r9} make_only=- repair_rung=SH-BS-1"
+    )
+    observed_lines_r9a = [
+        format_known_drift_observation(pair, row) for pair, row in observed_r9a
+    ]
+
+    row_r9b = {
+        **row_r9,
+        "battery_only": [battery_only_r9, "src/mutated_r9.c"],
+    }
+    failures_r9b, observed_r9b = evaluate_known_drifts(pairs_r9, [row_r9b])
+    row_r9b_shared = {**row_r9, "shared": [test_r9]}
+    failures_r9b_shared, observed_r9b_shared = evaluate_known_drifts(
+        pairs_r9, [row_r9b_shared]
+    )
+    expected_r9b = f"known-drift-signature-drift:{name_r9}"
+
+    failures_r9c, observed_r9c = evaluate_known_drifts(pairs_r9, [])
+    expected_r9c = f"build-spec-drift:{name_r9}"
+
+    resolved_builds_r9 = (BatteryBuild(name_r9, ("cc", test_r9, shared_r9)),)
+    resolved_pairs_r9, resolved_unpaired_r9 = compare_build_specs(
+        resolved_builds_r9, make_r9
+    )
+    failures_r9d, observed_r9d = evaluate_known_drifts(
+        resolved_pairs_r9, [row_r9]
+    )
+    expected_r9d = f"known-drift-unexpected-resolve:{name_r9}"
+
+    row_r9e_missing = {
+        key: value for key, value in row_r9.items() if key != "registered"
+    }
+    row_r9e_bad_rung = {**row_r9, "repair_rung": "sh-bs-1"}
+    actual_r9e_missing = validate_known_drift_row(row_r9e_missing)
+    actual_r9e_bad_rung = validate_known_drift_row(row_r9e_bad_rung)
+    expected_r9e = f"known-drift-row-incomplete:{name_r9}"
+
+    failures_r9f, observed_r9f = evaluate_known_drifts([], [row_r9])
+    expected_r9f = f"known-drift-pair-missing:{name_r9}"
+
+    name_r9g = "synthetic-r9g"
+    entry_r9g = {
+        "name": name_r9g,
+        "kind": "make-target",
+        "commands": [[sys.executable, "-c", "raise SystemExit(1)"]],
+        "category": "known-red",
+        "wiring": "SH-UW-1",
+        "known_red": {
+            "failing_command_index": 0,
+            "rc": 1,
+            "first_fail_line": "[NC-R9g][FAIL] sentinel",
+            "fail_line_count": 1,
+            "registered": "2026-08-21",
+            "repair_rung": "SH-UW-1",
+        },
+    }
+    actual_r9g = validate_known_red_row(entry_r9g)
+    expected_r9g = "validate_known_red_row=None"
+
     return [
         ("NC-R1a", expected_a, errors_a == [expected_a]),
         ("NC-R1b", expected_b, actual_b == expected_b),
@@ -1008,6 +1250,51 @@ def run_negative_controls(make_text: str | None = None) -> list[tuple[str, str, 
             len(pairs_r8c) == 1 and not unpaired_r8c and drifts_r8c == [],
         ),
         ("NC-R8d", expected_r8d, passed_r8d),
+        (
+            "NC-R9a",
+            expected_r9a,
+            len(pairs_r9) == 1
+            and not unpaired_r9
+            and validate_known_drift_row(row_r9) is None
+            and failures_r9a == []
+            and observed_lines_r9a == [expected_line_r9a],
+        ),
+        (
+            "NC-R9b",
+            expected_r9b,
+            [failure.reason for failure in failures_r9b] == [expected_r9b]
+            and observed_r9b == []
+            and [failure.reason for failure in failures_r9b_shared]
+            == [expected_r9b]
+            and observed_r9b_shared == [],
+        ),
+        (
+            "NC-R9c",
+            expected_r9c,
+            [failure.reason for failure in failures_r9c] == [expected_r9c]
+            and observed_r9c == [],
+        ),
+        (
+            "NC-R9d",
+            expected_r9d,
+            len(resolved_pairs_r9) == 1
+            and not resolved_unpaired_r9
+            and [failure.reason for failure in failures_r9d] == [expected_r9d]
+            and observed_r9d == [],
+        ),
+        (
+            "NC-R9e",
+            expected_r9e,
+            actual_r9e_missing == expected_r9e
+            and actual_r9e_bad_rung == expected_r9e,
+        ),
+        (
+            "NC-R9f",
+            expected_r9f,
+            [failure.reason for failure in failures_r9f] == [expected_r9f]
+            and observed_r9f == [],
+        ),
+        ("NC-R9g", expected_r9g, actual_r9g is None),
     ]
 
 
@@ -1049,25 +1336,32 @@ def main() -> int:
             "[GATE-REGISTRY][BUILD-SPEC][SCOPE] "
             f"pairs={len(build_pairs)} unpaired={len(unpaired)}"
         )
-        drifts = [
-            pair
-            for pair in build_pairs
-            if pair.battery_sources != pair.make_sources
-        ]
-        for pair in drifts:
-            battery_only = ",".join(pair.battery_only) or "-"
-            make_only = ",".join(pair.make_only) or "-"
+        build_spec_failures, observed_drifts = evaluate_known_drifts(
+            build_pairs, registry["known_drifts"]
+        )
+        for pair, row in observed_drifts:
+            print(format_known_drift_observation(pair, row))
+        for failure in build_spec_failures:
+            if failure.pair is None:
+                print(
+                    "[GATE-REGISTRY][BUILD-SPEC][FAIL] "
+                    f"reason={failure.reason}"
+                )
+                continue
+            pair = failure.pair
             print(
                 "[GATE-REGISTRY][BUILD-SPEC][FAIL] "
-                f"reason={pair.reason} make_target={pair.make_target} "
-                f"battery_only={battery_only} make_only={make_only}"
+                f"reason={failure.reason} make_target={pair.make_target} "
+                f"battery_only={','.join(pair.battery_only) or '-'} "
+                f"make_only={','.join(pair.make_only) or '-'}"
             )
-        if not drifts:
+        if not build_spec_failures:
             print(
                 "[GATE-REGISTRY][BUILD-SPEC][PASS] "
-                f"pairs={len(build_pairs)} unpaired={len(unpaired)}"
+                f"pairs={len(build_pairs)} unpaired={len(unpaired)} "
+                f"known_drifts={len(registry['known_drifts'])}"
             )
-        build_spec_failed = bool(drifts)
+        build_spec_failed = bool(build_spec_failures)
 
     known_red = [
         entry for entry in registry["entries"] if entry["category"] == "known-red"
