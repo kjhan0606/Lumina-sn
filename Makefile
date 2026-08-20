@@ -534,3 +534,13 @@ lumina_legacy_seed_converter: tools/lumina_legacy_seed_converter.c \
 	$(CC) -O2 -Wall -Wextra -std=gnu11 -D_GNU_SOURCE -Isrc -o $@ \
 		tools/lumina_legacy_seed_converter.c src/jnu_seed.c \
 		src/radiation_field.c src/seed_capability.c $(LDFLAGS)
+
+.PHONY: gate-registry-check selftest-registry-milestone
+
+gate-registry-check:
+	python3 scripts/check_gate_registry.py
+
+selftest-registry-milestone: selftest_a2_17_jnu_seed \
+		selftest_cmf_error_envelope selftest_cmf_exact_sliding \
+		selftest_gate_recovery selftest_grid_roundtrip \
+		selftest_sh_grid_loader selftest_stage32_rung1

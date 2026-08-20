@@ -432,6 +432,40 @@ unwired 행의 **소거**(처분 집행)는 폐합 조건이 아니다 — 상�
 인질 잡히면 캠페인이 무한 확장된다. 단 처분 미기입 행이 하나라도 남으면 폐합 불가
 (은폐 창고 금지 — known-red 와 같은 규율).
 
+### 0-A-8b. GR-1′ 집행 기록 (운전석 실측, 2026-08-20)
+
+**증거**: `/gpfs/kjhan/lumina/gates/gr1p_20260820T093939Z/`
+
+| 게이트 | 결과 |
+|---|---|
+| **P1′** 완전성 | **PASS** — `make_targets=64 registry_entries=86` |
+| **P2′** known-red sweep | **PASS** — `entries=4`, 4행 전부 실행·서명 대조 |
+| **P3′** 음성대조 | **PASS 8/8** — R1a~d(기존) + R1e·f(`collective-reference-missing`) · **R1g(`unwired-now-referenced`)** · R1h(`known-red-recipe-drift`) 전부 정확 사유 |
+| **P4′** 배터리 완주 | **PASS** — `GATE_BATTERY_SUMMARY verdict=PASS rc=0`, preflight **20행 전부 rc=0**. ★GR-0 착지 덕에 원리적으로 가능해진 첫 완주다 |
+| **P5** milestone 집합 | **PASS** rc=0 |
+| **P6** 변경집합 | **PASS** — `run_gate_battery.py`·`Makefile` 이 착지본과 **sha256 동일**(Codex 무접촉), `.gitignore` 정밀 부정 **1행만** |
+
+**픽스처**: sha256 `c4072ff0feaf086774fccd4aac9a9acd2f00bac0f25923d71559840160b4cd3d`,
+3179 B — 발주 전 실측치와 **동일**(무수정 추가). `git check-ignore` 플레인 rc=1(비무시).
+**provenance 미상** — 동일 sha256 0건, 실 census 런(`a210_cancellation_census_mgpu_k10_fixed`
+08-15 · `_k12` 08-15 · `_tau_refresh_k24` 08-16) stderr 에서 첫 줄 문자 일치 **0건**.
+5줄·`evaluated_cells=100` 이라 합성을 시사하나 **단정하지 않는다**.
+⚠파생(대장 후보): 회귀 게이트가 **출처를 증명할 수 없는 픽스처**에 의존한다.
+
+### 검수 지적의 처분
+
+| # | 지적 | 처분 |
+|---|---|---|
+| **R1** | §0-A-5(d) 픽스처가 **worktree 에 없어** 미이행 | ★**운전석 프로비저닝 실수다.** 미추적 파일은 `git worktree add` 로 전파되지 않는데 운전석이 `cp ... 2>/dev/null` 로 오류를 삼켰다. Codex 는 추측 생성을 거부하고 NOTES 에 공개했다 — 옳은 처신. **본 저장소에서 운전석이 원본을 `git add`** 해 이행(sha256 재검 완료) |
+| **R2** | E11 특례 코드(`E11_WIRING` pin `:24-27`, `;` 분리 `:405-408`)가 delta 표 미열거 | 코드 제거 아님 — [실측] 정직 문안은 기존 preflight 배선검사와 충돌해 **코드 무변경으로는 `preflight-wiring-missing` 으로 죽는다.** 해소가 fail-closed 이고 정직화를 기계 강제한다. **사유·좌표를 여기 명기해 사전등록 정합을 회복**한다 |
+| **R3** | 자기 만료의 **source 채널**(scripts/tests 탐색)은 NC 무커버 | 대장 기재. 검수자가 독립 프로브로 채널 생존을 실측했으나 **상설 장치는 없다**. 후속 단에서 저비용 NC 1건 |
+| **R4** | `lexical_mentions` 의 **파일 단위 한계** 기재 거처가 NOTES(미커밋)뿐 | ★여기로 흡수: **허용 목록 파일 *안에* 새 실호출이 생기면 자기 만료 검사가 못 본다.** |
+| **R5** | 발주서의 `check-ignore -v` 기대("무출력") 오류 | [실측] `-v` 는 매칭된 부정 규칙을 출력(rc=0); 실질 판정은 **플레인 rc=1**. 차기 발주서 수정 |
+
+**검수 한계(그대로 기재)**: 검수자는 P4′·P2′·P5 를 검증하지 않았다(로그인 노드 실행 금지) —
+그 셋은 위 표의 운전석 실측이다. `collective` 14 의 wiring 파일 **내부 셸 도달성**은
+계약이 명시적으로 둔 한계 그대로 미증명이다.
+
 ### 0-A-9. 부록 A 스키마 v2 (unwired 확장 — v1 원문은 부록 A 에 보존)
 
 ```json

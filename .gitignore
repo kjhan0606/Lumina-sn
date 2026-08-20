@@ -28,6 +28,7 @@ data/*
 *.ilg
 *.ind
 *.log
+!tests/fixtures/a210_cancellation_census.log
 *.out
 *.run.xml
 *.toc

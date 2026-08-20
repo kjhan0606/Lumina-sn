@@ -48,6 +48,22 @@ PREFLIGHTS = (
     ("SH_GRID_UPPER_CLOSURE", "scripts/verify_sh_grid_upper_closure.py", ()),
     ("SEAL_INTEGRITY", "scripts/verify_seals.py", ()),
     ("LEGACY_KNOB_REGISTRY", "scripts/check_legacy_knob_registry.py", ()),
+    ("GATE_REGISTRY", "scripts/check_gate_registry.py", ()),
+    ("BF_EDGE_CENSUS_SELFTEST", "scripts/census_bf_edges_below_grid.py", ("--selftest",)),
+    ("A2_10_CANCELLATION_CENSUS", "tests/a2_10_cancellation_census_selftest.py", ()),
+    ("A2_10_REFINEMENT_COMPARISON", "tests/a2_10_refinement_comparison_selftest.py", ()),
+    ("A2_10_TARGETED_GATE", "tests/a2_10_targeted_gate_selftest.py", ()),
+    ("A2_10_TARGETED_REFERENCE", "tests/a2_10_targeted_reference_selftest.py", ()),
+    ("A2_10_LINE_ION_OWNER_SUMMARY", "tests/a2_10_line_ion_owner_summary_selftest.py", ()),
+    ("A2_10_LINE_SATURATION_SUMMARY", "tests/a2_10_line_saturation_summary_selftest.py", ()),
+    ("CMFGEN_LINEHEAT_ION_OWNER_SUMMARY", "tests/cmfgen_lineheat_ion_owner_summary_selftest.py", ()),
+    ("CMFGEN_LINE_COMPONENTS_ION_OWNER", "tests/cmfgen_line_components_ion_owner_selftest.py", ()),
+    ("A2_10_CMFGEN_ION_OWNER_COMPARISON", "tests/a2_10_cmfgen_ion_owner_comparison_selftest.py", ()),
+    ("A2_10_CMFGEN_ION_COMPONENT_COMPARISON", "tests/a2_10_cmfgen_ion_component_comparison_selftest.py", ()),
+    ("A2_10_LINE_OWNER_CLOSURE_MONITOR", "tests/a2_10_line_owner_closure_monitor_selftest.py", ()),
+    ("A2_10_LINE_OWNER_COMPONENT_MONITOR", "tests/a2_10_line_owner_component_monitor_selftest.py", ()),
+    ("A2_10_CMFGEN_MAPPED_LINE", "tests/a2_10_cmfgen_mapped_line_comparison_selftest.py", ()),
+    ("EMISS_E11_SEEDED_FIXTURE", "scripts/emiss_e11_seeded_fixture.py", ("--out-dir", "/tmp/emiss_e11_fixture")),
 )
 
 
