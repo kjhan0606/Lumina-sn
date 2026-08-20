@@ -198,3 +198,84 @@ tau-writer-census 는 "허가받지 않은 raw tau writer 가 생기지 않았�
   (`function not found` 를 FAIL 이 아니라 조용한 오탐으로 흘리는 구조가 이 사고의 절반이다).
 - §E 원칙의 재확인: 회수는 "돌렸다"가 아니라 **"주입이 시도됐고, 의도한 가드가, 이름 있는
   사유로 막았다"** 를 셋 다 보여야 한다. 지금 이 넷은 **첫 항목조차 못 보인다.**
+
+---
+
+## H. 판정 — `:19521`·`:19573` tau writer (2026-08-20, 판정자 Fable, user 지시)
+
+증거 패킷: 운전석 계측(`/tmp/claude-10396/tau19521/EVIDENCE.md`). 판정은 독립 Fable.
+
+```
+Q1 두 쓰기 자체            = 정당 (등록부 갱신) + 절차 위반 별도 기재
+Q2 :20779 두 번째 호출     = 정당 (계약 문언과 양립) + 단서 2건
+Q3 NULL 폴백 / EXACT_ZERO  = 정당 (fail-closed / 정직한 exact-zero) + 계측 부채 1건
+Q4 눈먼 기간의 다른 위반   = 이 게이트 측정면 안에서는 배제 / 밖에서는 배제 불가
+```
+
+### H-1. 정당 판정의 근거 (운전석 재확인분)
+
+- [실측] **세대 괄호 보존**: `tau_sobolev_require_refresh`(`:19463`) → 두 쓰기(`:19521`·`:19573`)
+  → `tau_sobolev_mark_computed`(`:19599`). 양 끝 괄호가 추출 후에도 유지된다.
+- [실측] 두 쓰기는 신설이 아니라 이사다 — `f6c2eb6^` 의 구 `:15444`·`:15469`.
+- 판정은 authority 검사가 **강화**됐다고 본다: 구 코드는 술어를 쓰기 지점에 인라인 복사로
+  갖고 있었고, 현 코드는 writer(`:19561`)와 reader(`a209_upper_population_for_tau`)가
+  **문자 그대로 하나의 함수** `nlte_tau_line_shell_authorized_by`(`:8933`)를 호출한다.
+  자매 게이트 docstring 의 *"writer/reader share one NLTE authority predicate"* 는
+  전역 배열의 단일성이 아니라 **술어 함수의 단일성**을 뜻한다 ⟹ 매개변수화가 오히려 계약 이행.
+- `element_inactive` 의 `tau=0` 은 **판별식 통과**: `lumina_zinert_Z_inactive_or_absent` 는
+  존재비가 **전 셸 항등 0** 이거나 덱에 원소 행이 없을 때만 참이므로 **정확해가 이 가드를
+  위반할 수 없다.** validity 도 `A208_VALID` 가 아닌 `A208_EXACT_ZERO` 로 정직하게 표기된다
+  ⟹ zero laundering 아님.
+
+### H-2. ★판정이 새로 찾아낸 것 — **게이트가 구조적으로 못 보는 벌크 writer**
+
+[실측·운전석 재확인] `f6c2eb6` 이 신설:
+```
+src/lumina_plasma.c:21271  memcpy(public_opacity->tau_sobolev, candidate->tau_sobolev, …)
+src/lumina_plasma.c:21379  memcpy(public_opacity->tau_sobolev, candidate->tau_sobolev, …)
+```
+`f6c2eb6^` 에는 **0건**.
+
+게이트의 판별 정규식(`check_tau_writer_generation.py:26-28`)은
+`\bopacity\s*->\s*tau_sobolev\s*\[[^\]]+\]\s*=` 다 — **`memcpy` 도 `public_opacity` 도 못 본다.**
+
+⟹ ★**등록부만 고치면 게이트는 PASS 로 돌아가지만, 등록되지 않은 벌크 tau writer 두 개가
+측정면 밖에 남는다.** 초록불이 실제로 인증하는 범위가 겉보기보다 좁아진다 —
+지금 상태(빨간불)보다 **더 위험한 상태**다. 등록부 갱신과 정규식 확장은 **같은 단**에서
+해야 한다.
+
+이 경로는 세대를 advance/mark 하지 않고 후보의 세대값을 통째로 이식한다(`:21403-21408`).
+SH-RADEQ-5 의 설계된 트랜잭션 커밋으로 읽히나, **"closed writer set" 등록부는 벌크-이식형
+writer 를 상정한 적이 없다.** 별도 판정 필요.
+
+### H-3. 절차 위반 (코드와 별개)
+
+[실측] `docs/ORDER_SH_RADEQ_CMFGEN_TERMS_2026-08-08.md` §3 은 line input ownership 의
+Fable 조건부 허용을 **"raw tau writer 3개 census 충족"** 위에 세웠다. `f6c2eb6` 은 그
+조건 표면을 바꾸면서 해당 게이트를 돌리지 않았고(회귀 목록 부재) 등록부 판정도 받지 않았다.
+**코드는 정당하나 변경 절차는 사다리 규율 위반이다.** 이 판정문이 그 미실시 판정의 소급 수행이다.
+
+### H-4. 판정이 "모른다"고 적은 것
+
+1. **자매 계약은 덮이지 않는다** — `selftest-sh-radeq-source` 19건의 앵커/실위반 분리는
+   **판정되지 않았다.** 그 게이트의 눈먼 기간에 대해서는 아무것도 측정하지 않았다 ⟹ **배제 불가.**
+2. 자매 게이트가 `a00b991` 시점에 한 번이라도 PASS 했는지 **판별 불가** — 열흘치 일괄
+   커밋이라 내부 시계열이 소실됐다.
+3. authority **거부 건수가 계측되지 않는다** — "authority 부재"와 "존재하나 거부"를
+   구별하는 카운터·로그가 그 경로에 없다. 조용한 성능저하는 아니나(값이 정의된 nebular 로
+   남고 validity 로 표시됨) **조용한 분기**이긴 하다. 계측 부채로 기재.
+4. Q1 에 **순수 추출이 아닌 의미 변화 1건**이 섞였다 — clear-loop 이 매핑 검사 **앞**으로
+   옮겨져, 비활성 원소의 **미매핑 선**도 이제 `tau=0/EXACT_ZERO` 를 받는다(구 코드는 안 받음).
+   물리적으로는 정확하나(존재비 0 인 원소의 어떤 선도 tau≡0), **"단순 리네임"이라는 서사는
+   부정확하다.** 운전석의 초기 서술이 그러했다 — 정정한다.
+
+### H-5. 수리 명세 (별도 단 — 여기서 고치지 않는다)
+
+1. 등록부에서 `nlte_update_tau_sobolev` → `nlte_update_tau_sobolev_with_authority` **교체**
+   (추가 아님 — 래퍼를 남기면 `registered writer has no tau writes` 가 지속).
+   ★**동시에** ASSIGN 정규식을 memcpy·별칭(`public_opacity`)까지 보도록 확장(H-2).
+2. 회귀 목록 **영구 편입** + G-4 의 앵커-심볼 존재 메타 게이트.
+3. 신규 판정 3건 발주: 커밋 경로 memcpy writer 의 지위 · 슬랩↔authority 짝의 런타임 결속
+   부재(스탬프 없음) · authority 거부 카운터 부재.
+4. 폐합 자격: 등록부 갱신 후 **음성대조 4건이 여전히 4/4 검출됨을 실행으로 시연**해야 한다
+   (§E 원칙).
