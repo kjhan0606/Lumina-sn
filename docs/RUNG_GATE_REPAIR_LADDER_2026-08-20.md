@@ -12,6 +12,14 @@
 노출)의 처분: P3 표적(upper 스팬)은 유지, 금지-읽기 스캔을 upper·formula 로 확대,
 GR-3 은 **GR-3′ 로 재발주**(착지 구현 보존, delta 만). 전문 = §5-A;
 GR-3 판정문은 §5-A 의 개정판 게이트 표와 대조한다.
+**개정 3(2026-08-21, 저자 Fable, 커밋 `ca53d27`)** — GR-8 의 「HEAD PASS」 기대 철회
+(Z-a2-12 쌍이 이미 어긋나 있음 실측). 전문 = §0-A-7 GR-8 절의 [개정 3] 표지 문단.
+(이 이력 문단에는 미등재였다 [실측 — 개정 4 저자 git log 대조] — 개정 4 가 소급 기재.)
+**개정 4(2026-08-21, 저자 Fable)** — 부분폐합 판정
+(`docs/VERDICT_SH_GATEREPAIR_CLOSURE_2026-08-21.md`)의 전폐합 선행 3건 반영:
+**GR-9**(known-drift 등록부 — 봉쇄의 처분) · **GR-7b**(처분 기입 형상 보완 + 형상 검사 승격)
+· 전폐합 선언 절차 + ★기계 형식 충돌(GR-7 감리 R1)의 해소. 전문 = **§12**.
+판정문은 §12 의 게이트 표들과 대조한다.
 소속: **SH-** — 이 잣대들이 지키는 계약 표면(a208/a209 발행체·tau 슬랩·event-measure)은 두 팔 공유다.
 CMFGEN 발자국 규약: **비적용** — 게이트·회귀 인프라이며 CMFGEN 대응물이 없다.
 
@@ -1459,3 +1467,332 @@ BATTERY_RC=1
 - **R3**(관찰): `CP`(배터리, `cpu_link_sources()` 런타임 도출) ↔ make `lumina`(`$(SOURCES)`
   정적 24목록)도 **같은 계급의 중복 명세**이나 공유 테스트 소스가 없어 **키 밖**이다 —
   정의역 확장은 사전등록 개정 사안. 조용한 대장 기재.
+
+---
+
+## 12. [개정 4] (2026-08-21, 저자 Fable) — 전폐합 선행 3건: GR-9 + GR-7b + 전폐합 선언 절차
+
+상위 지시: 부분폐합 판정 `docs/VERDICT_SH_GATEREPAIR_CLOSURE_2026-08-21.md` §4-3·§5·§8·§9
+(이하 「폐합 판정」). 근거 증거: 운전석 증거 패킷(`/tmp/claude-10396/amend4/EVIDENCE.md`) +
+**이 개정의 독립 재측정**(§12-1 — 개정 저자가 HEAD `687a214` 작업트리에서 직접. 로그인 노드
+규약 내: 빌드·배터리 0회, 정적 python 판독·git 만 — 체커 본체는 돌리지 않고
+`compare_build_specs` 를 직접 import 호출했다. known-red 행 0 이므로 서브프로세스 0).
+
+원문·개정 1~3 은 지우지 않는다. 이 절이 결정하는 것은 폐합 판정 §4-3 이 "요건만 고정하고
+상세를 선점하지 않은" 그 상세다. **판정이 금지한 것(폐합 판정 §4-3 말미)을 그대로 상속한다**:
+`GATE_REGISTRY` preflight 행 제거·순서 이동·조건부 우회 금지, build-spec 비교의 정의역
+축소·예외행 카브아웃 금지, 드리프트를 green 으로 만들기 위한 배터리 Build 명세의 무판정
+수정 금지. GR-9 는 봉쇄를 **정직하게 관측 아래 두는** 장치이지 봉쇄를 없애는 장치가 아니다.
+
+### 12-1. 독립 재측정 — 패킷 확인 + 정정 1건 + 신규 실측 5건
+
+[실측 — 전부 이 개정 저자]
+
+**드리프트 2쌍의 정확 집합** (pin 참고 예상의 근거 — §12-3-6): `load_battery_builds()` +
+`compare_build_specs()` 직접 호출, `pairs=6 unpaired=7`(D·K·CP·Z-validator·Z-tau·
+Z-population·Z-canonical — GR-8 정의역 그대로). 드리프트는 정확히 2쌍, **둘 다
+`make_only=()` — 배터리 과잉 방향**:
+
+| 쌍 | battery_only | make_only | 공유(shared) |
+|---|---|---|---|
+| `Z-a2-12` ↔ `selftest_a2_12_contract` | `src/jnu_seed.c` · `src/seed_capability.c` | (없음) | `src/gpu_radiation_field_contract.c` · `tests/a2_12_contract_selftest.c` |
+| `Z-a2-10` ↔ `selftest_a2_10_radeq` | `src/atomic_internal_energy.c` · `src/cmfgen_adiabatic.c` · `src/emissivity_publication.c` · `src/nlte_population_candidate.c` | (없음) | `src/opacity_publication.c` · `src/population_contract.c` · `src/radeq_publication.c` · `tests/a2_10_radeq_selftest.c` |
+
+**★패킷 좌표 정정**: 패킷 §5 의 "`check_gate_registry.py:250-252`(형식)·`:378`(wiring 일치)"
+는 **오기**다. 실좌표는 `:499-501`(`re.fullmatch(r"GR-[1-9][0-9]*", repair_rung)`) ·
+`:627`(`wiring != repair_rung` → `known-red-wiring-drift`) [실측 — 폐합 판정 §1-8 의
+`:499-500` 과 정합]. 함정의 실체는 패킷 그대로다(`SH-UW-1` fullmatch 실패 ⟹ known-red 등재
+즉시 fail-closed) — 좌표만 틀렸다. 잣대부터 감사.
+
+**신규 실측 1 — 스키마 승격이 필요한 이유의 기계 근거**: `read_registry_text`(`:446-455`)는
+schema 문자열 **정확일치**만 검사하고 최상위의 모르는 키를 거부하지 않는다. schema v2 를
+유지한 채 최상위에 `known_drifts` 를 추가하면 **구판 체커가 그 키를 조용히 무시한다**
+(fail-open 창). v3 승격만이 그 창을 기계로 닫는다(구판 체커 × v3 등록부 =
+`registry-unreadable` fail-closed — §0-A-5(e) 의 v1→v2 선례 그대로).
+
+**신규 실측 2 — 27행 disposition 현황**: 27행 전원 실존, 형상 =
+`{verdict: <판정문 경로>, decided, action, target}`. 집계 = 배선(action="배선") 26
+(target: milestone 23 · run-dependent 2 · preflight 1) + known-red 1(target="SH-UW-1") —
+GR-7 판정문 §4 표와 **총계 일치**. 폐합 판정 §5 의 결손(`target_wiring`·`execution_rung`·
+`preconditions` 부재, 집행 단·배선처가 `target` 한 칸에 뭉개짐) 재확인.
+
+**신규 실측 3 — NC-R1g 픽스처는 disposition 무보유**(`:889-903`) ⟹ GR-7b 가
+"category=unwired 는 disposition 필수" 를 강제하면 이 픽스처의 기대 오류 목록이 깨진다 —
+픽스처 갱신을 변경집합에 **사전 명시**해야 P-변경집합 위반이 안 된다(§12-4-3).
+
+**신규 실측 4 — 단명(rung name)의 실존 문법**: `docs/RUNG_NAMING.md` 정본 표의 실존 형태 =
+`GR-N` · `SH-UW-N` · `SH-R4` · `DET-R6` · `MC-EVT` · `SH-PUB`(무번호) · `GR-2b`(소문자
+접미). 대문자 하이픈 구획이 공통 뼈대다 — §12-2 결정 3 의 형식 확장 정의역 근거.
+
+**신규 실측 5 — 배터리 형상**: `PREFLIGHTS` 30행, `GATE_REGISTRY` 는 9번째 [실측 ast 판독]
+— 폐합 판정 §1-2 와 일치. `main()` 의 BUILD-SPEC 실패는 조기 반환 없이 rc 에 합산된다
+(`:1037-1070`·`:1091`) — KNOWN-RED·NC 는 봉쇄 중에도 인쇄된다.
+
+### 12-2. 여덟 결정 (패킷 §7·§8 의 질문에 대한 답)
+
+| # | 질문 | 결정 | 근거 |
+|---|---|---|---|
+| 1 | GR-9 pin 은 무엇인가 — 차집합? 양쪽 해시? 둘 다? | **3분할 정확 목록**: `battery_only` + `make_only` + `shared`(양쪽 공통 `.c` 집합). 셋의 합집합 분할이므로 양쪽 전체 집합과 정보 동치이고 중복 기재가 없다 | 폐합 판정 §4-3-1 의 차집합 pin 을 문언 그대로 포함하고, **차집합-단독 pin 의 맹점 — 눈먼 기간에 양쪽이 같은 파일을 나란히 얻/잃는 tandem 변경(차집합 불변·실집합 변화) — 을 `shared` 가 닫는다**(자문: 그 가설 아래 차집합 pin 은 green 을 내고 3분할 pin 은 red 를 낸다 — fail-closed 방향 채택, 재발 빈도를 낮게 가정할 근거 없음이 폐합 판정 §4-2(b)의 문언). 해시 대신 목록: 해시는 드리프트의 **내용**을 숨겨 판정문 대조를 불가능하게 한다 |
+| 2 | 자기 만료 | **3채널 red**: pin 불일치 = `known-drift-signature-drift` · 드리프트 소멸 = `known-drift-unexpected-resolve`(행 소거 강제 — 소거 커밋이 수리 단의 회귀 편입 증거, §0 known-red 동형) · **쌍 자체 소멸**(Build 부재/짝 해체) = `known-drift-pair-missing`(이 채널을 빼면 유령 행이 영구 잔류한다) | §0 의 known-red 자기 만료 + `observe_known_red` 의 OSError 처분(실행 불능도 드리프트다) 동형 |
+| 3 | ★기계 형식 충돌(`GR-N` fullmatch vs `SH-UW-1`) | **체커 형식 확장 채택** — 공용 상수 `RUNG_NAME = r"[A-Z][A-Z0-9]*(-[A-Z0-9]+)+"` 를 신설해 `known_red.repair_rung`(`:499-501` 일반화)과 `known_drifts.repair_rung` 양쪽에 적용. **GR 번호 부여는 기각** | 수리 단들(SH-UW-1~4·SH-BS-1·2)은 폐합 판정 §4-3-5·§9-5 가 **캠페인 밖 후속**으로 명시했다 — GR 번호를 주면 캠페인이 폐합하기 위해 캠페인을 늘리는 자기모순. 안전핀의 원의는 "수리 단이 **지명**됨"이지 "GR 이라는 글자"가 아니다. 형식 확장은 검출 표면의 축소가 아니라 **등재 형식**의 교정(금지 조항과 무충돌 — 오히려 pin 은 결정 1 로 강화된다). 한계 정직 기재: 형식 검사는 실존 검사가 아니다 — `GR-99` 도 구판을 통과했다. 실존 보증은 절차(판정 없는 등재 금지, §12-3-4)의 몫 |
+| 4 | 형상 보완(②)의 거처 | **별도 단 GR-7b**(GR-9 뒤) — GR-9 포함 기각. disposition **형상 검사의 승격은 GR-7b 에 포함** | 계약 1개=커밋 1개(드리프트 등록부와 처분 기입은 다른 계약 — a97d0e1 교훈). 순서는 폐합 판정 §9-3 문언 그대로(GR-9 → ②). 검사 승격 포함의 근거: ② 결손의 원인이 정확히 "무검증 필드"였고(폐합 판정 §5 — 기계도 못 잡았다), 검사 없는 보완 기입은 같은 병의 3회째를 예약한다. 기입과 그 기계 강제는 한 계약이다(GR-1 의 등록부+체커가 한 단이었던 것과 동형) |
+| 5 | 전폐합 선언 — 시점·증거·확인자 | 시점 = GR-7b P3(배터리 완주 green) 실측 직후. 증거 = 로그 3종(GR-9 P4 · GR-7b P3 배터리 로그 · 체커 단독 로그) + RUN FOOTER(HEAD 해시·`git status` 요약·argv). 확인 = 운전석 실측 → **fresh Fable 감리 1회(고정질문 3 — §12-5)** → 선언문 단독 커밋 | 폐합 판정 §9-4("승격의 유일한 경로는 실측") + 이 캠페인의 계측 오독 4회 병력(폐합 판정 §7) — 승격 선언을 운전석 단독 판독에 걸지 않는다. 판정·감리 분리 규약(개정13) 준수 |
+| 6 | 채널 2·3·4·5 상설 감시를 이 캠페인 안에서? | **후속 캠페인으로 미룬다** | 폐합 판정 §6-3 이 채널 3·4·5 = 계약 밖 **정당**, 채널 2 = 계약 안 이행 완료로 이미 판정했다. 전폐합 선행은 3건으로 고정됐고, 범위 추가는 폐합을 인질 잡는 방향(§0-A-8 의 무한 확장 금지와 동일 규율). §L 수리 후보 명세가 후속 사전등록의 종자다 |
+| 7 | 드리프트 2건의 정본 판정(어느 링크 목록이 옳은가)의 거처 | **캠페인 밖 후속 단 2개를 여기서 명명·예약**: **SH-BS-1**(`Z-a2-12` 쌍) · **SH-BS-2**(`Z-a2-10` 쌍). 각 단 = 스텝1 판정(fresh Fable — 쌍별 정본 확정) → 스텝2 정합 수리 + GR-9 행 소거(커밋 1). GR-9 행의 `repair_rung` 이 이 이름을 가리킨다 — 미결이 갈 곳이 등록부 행에 기계로 박힌다 | GR-8 분기("수리는 별도 단, 쌍마다 계약이 다르다")·폐합 판정 §8-4·§9-5 그대로. 폐합 판정 §1-9 의 단서(a2_12 selftest 의 jnu_seed/seed_capability 심볼 참조 0건 · a2_10 의 `a210_apply_cmfgen_adiabatic` 정의 = `src/radeq_publication.c:33`)는 **판정 자료로 이관하되 여기서 판정하지 않는다** — [실측] 이 개정도 정본을 모른다 |
+| 8 | §10 분장 장부 0/10 미기입의 구멍 | 남은 집행 전부(GR-9·GR-7b·전폐합 선언)의 **게이트 조건**으로 승격: 집행 기록에 §10 표 복제·기입 실존이 각 단의 마지막 P(P6/P5)다 — 결측 시 그 단 폐합 불가. 감리 고정질문에도 포함(§12-5). 지나간 10단의 소급 재작성은 하지 않는다(기록 원칙 — 폐합 판정 §7 이 위반을 이미 원장에 박았다) | 명목 규정("각 단마다 복제해 채운다")은 어느 게이트도 강제하지 않아 0/10 이 됐다 — 강제 없는 규정이 지켜지지 않는 것이 이 캠페인의 병명 그 자체다. 게이트 조건화가 최소 기계 강제다(체커로 강제하는 것은 문서 파싱 개조라 과잉) |
+
+### 12-3. GR-9 — known-drift 등록부 (신설 단; 전폐합 선행 ①)
+
+**계약 (1줄)**: 배터리 Build↔Makefile recipe 쌍의 검출된 드리프트가 판정된 수리 단 번호와
+서명 pin 으로 등재되어 **봉쇄 대신 관측 아래 놓이고**, 드리프트의 변화·소멸·미등재·무판정
+등재가 각각 이름 있는 red 가 된다.
+
+**12-3-1. 스키마 v3** (v2 원문은 §0-A-9·부록 A 에 보존):
+
+```json
+"schema": "lumina-gate-registry-v3",
+"known_drifts": [
+  {
+    "build": "<Build 이름 — 예: Z-a2-12>",
+    "make_target": "<대응 make 타깃>",
+    "battery_only": ["<정확 정렬 목록>"],
+    "make_only": [],
+    "shared": ["<양쪽 공통 .c 정확 정렬 목록>"],
+    "registered": "YYYY-MM-DD",
+    "repair_rung": "<RUNG_NAME 형식 — 예: SH-BS-1>",
+    "note": "<선택 — 사실 기재: 태생 커밋 등>"
+  }
+]
+```
+
+- `known_drifts` 는 v3 의 **필수 최상위 키**(빈 목록 허용). 결손 = `registry-unreadable`.
+- 행의 키는 닫힌 집합(위 8필드, `note` 만 선택). 필드 결손·타입 위반·형식 위반·미정렬 =
+  `known-drift-row-incomplete:<Build>`. 같은 (build, make_target) 키 중복 =
+  `duplicate-known-drift:<Build>`.
+- `repair_rung` = `RUNG_NAME` fullmatch (결정 3). **`known_red.repair_rung` 도 같은 상수로
+  일반화한다**(`:499-501` — `GR-N` 전용 해제; `wiring == repair_rung` 대조(`:627`)는 불변).
+
+**12-3-2. 검사 의미론** (BUILD-SPEC 단계 — 기존 검출 로직·`build-spec-drift:<Build>` 사유
+문자열 **불변**이 전제다; 검출 후 등록부 대조가 추가될 뿐):
+
+| 관측 | 처분 | 사유 (정확 문자열) |
+|---|---|---|
+| 검출 드리프트가 등재 행과 (build, make_target, 3분할 집합) **전부 정확 일치** | **green** — 단 매판 인쇄 의무: `[GATE-REGISTRY][BUILD-SPEC][KNOWN-DRIFT] reason=known-drift-observed:<Build> make_target=<타깃> battery_only=<목록> make_only=<목록> repair_rung=<단>` | (인쇄 전용 — 폐합 판정 §4-1 근거 2 의 "요약 잣대 강등" 에 대한 답: green 이어도 행별 로그에 드리프트가 항상 보인다) |
+| 검출 드리프트의 쌍은 등재됐으나 집합 불일치 | red | `known-drift-signature-drift:<Build>` |
+| 등재 행의 쌍이 **드리프트하지 않음**(정합 회복) | red — 행 소거 강제 | `known-drift-unexpected-resolve:<Build>` |
+| 등재 행의 쌍 자체가 부재(Build 이름 소멸·make 짝 해체·unpaired 화) | red | `known-drift-pair-missing:<Build>` |
+| **미등재** 드리프트 검출 | red — 현행 그대로 | `build-spec-drift:<Build>` (불변) |
+| 최종 PASS 줄 | `[GATE-REGISTRY][BUILD-SPEC][PASS] pairs=N unpaired=M known_drifts=K` | — |
+
+한계 정직 기재: 사유는 Build 이름 키다 — 한 Build 가 복수 타깃과 짝이 되면(오늘 0건 [실측])
+사유 문자열이 쌍을 구별 못 한다. 행은 `make_target` 을 가지므로 대조는 정확하다.
+
+**12-3-3. 초기 등재 2행**: §12-1 표의 2쌍. `repair_rung` = `SH-BS-1`(Z-a2-12) ·
+`SH-BS-2`(Z-a2-10) (결정 7). `registered` = 집행일 실측. `note` = 태생 사실(폐합 판정
+§1-7: Z-a2-12 배터리 측 = `8f99e7f`(jnu_seed)·`3e9e317` 계열(seed_capability), Z-a2-10 =
+`a00b991` — 둘 다 캠페인 이전 태생). **pin 값은 집행 시 grammar-debug 에서 체커 자신이
+내는 값으로 기입한다** — §12-1 표는 참고 예상이다(로그인 노드 실측; 순수 정적이라 같으리라
+추정하나 [추정], 다르면 실측이 이기고 차이를 집행 기록에 기재 — 부록 A pin 규칙 그대로).
+
+**12-3-4. 은폐 창고 방지 (known-red 안전핀의 동형 전사)**:
+- 수리 단 번호 없는 등재는 원리적으로 불가(`repair_rung` 필수 + 형식 fullmatch).
+- **등재는 판정을 거친 행만**: 이 사전등록이 등재를 승인하는 것은 위 2행뿐이다. 미래의
+  신규 드리프트는 `build-spec-drift` red 로 배터리를 세우고, 등재하려면 **판정 발주(fresh
+  Fable — 수리 단 지명) 후 사전등록 개정 또는 등재 판정문**을 거친다. 운전석 단독 등재 금지.
+- 그 등재 창(검출→판정→등재)이 곧 봉쇄 창이다 — **이 잔여 비용은 설계다**: known-red 와
+  동형이며, 창을 0 으로 만드는 자동 등재는 등록부를 은폐 창고로 만든다(기각). 창의 실제
+  크기는 모른다(§12-8-3).
+- 자기 만료(결정 2)가 "수리됐는데 행이 남는" 상태를 red 로 강제한다.
+
+**12-3-5. 기대 변경집합** (여기 없는 변경은 위반):
+
+| 파일 | 변경 |
+|---|---|
+| `scripts/check_gate_registry.py` | `RUNG_NAME` 공용 상수 + `:499-501` 일반화 · v3 판독(`known_drifts` 필수 키) · 행 정적 검증(결손·중복·형식) · BUILD-SPEC 등록부 대조(§12-3-2 의미론·사유·인쇄 형식) · NC-R9a~g · SCHEMA 문자열 v3 |
+| `scripts/gate_registry.json` | schema v3 · `known_drifts` 2행(§12-3-3; pin 값은 grammar-debug 실측 기입) · **entries 87행 무변경** |
+| 이 문서 | 집행 기록 (§10 장부 복제 포함) |
+| (변경 0) | `scripts/run_gate_battery.py` · `Makefile` · `src/` · `tests/` · 다른 게이트 스크립트 · `.gitignore` |
+
+**12-3-6. 게이트 표 (판정문은 이 표와 대조한다)**:
+
+| # | 조건 | 판정 자료 |
+|---|---|---|
+| **P1** | 체커 단독 HEAD 실행(grammar-debug) rc=0 — `COMPLETENESS PASS make_targets=64 registry_entries=87` 불변 · `BUILD-SPEC PASS pairs=6 unpaired=7 known_drifts=2` · **KNOWN-DRIFT observed 2행이 §12-3-2 인쇄 형식·차집합 문자열 정확** · `KNOWN-RED PASS entries=0` | 실행 로그 |
+| **P2** | 등재 2행의 pin = grammar-debug 실측치(§12-1 참고 예상과의 차이는 실측 우선 + 기재) · `repair_rung` = SH-BS-1/SH-BS-2 정확 | 등록부 diff + 로그 |
+| **P3** | NC **19/19** (기존 12 불변 + 신설 R9a~g — §12-3-7 의 지정 사유·판정식 정확) | NC 출력 |
+| **P4** | 배터리 1회 완주(grammar-debug) `GATE_BATTERY_SUMMARY verdict=PASS rc=0` — preflight 30행 전부 rc=0 · D=19·K=7·Z=12·CP=4 불변. ★**GR-0 계약("배터리 Z 행이 다시 돈다")의 HEAD 재성립 실측 — 봉쇄 해소의 실물** | 배터리 로그 + RUN FOOTER(HEAD 해시·`git status --porcelain \| wc -l`·argv) |
+| **P5** | 변경집합 = §12-3-5 표와 정확 일치 · `src/` 0줄 | `git show --stat` |
+| **P6** | 집행 기록에 §10 분장 장부 복제·기입 실존 (결정 8 — 결측 시 폐합 불가) | 이 문서 diff |
+
+**12-3-7. 음성 대조 (전부 in-memory/합성 — 트리 불변; 폐합 판정 §4-3-4 의 3방향 + 4)**:
+
+| # | 주입 | 기대 (판정식 고정) |
+|---|---|---|
+| **NC-R9a** | 합성 드리프트 쌍 + 정확 pin 행(repair_rung=`SH-BS-1` — **비-GR 형식의 수용 시연 겸**) | red 0 + observed 인쇄 `known-drift-observed:<이름>` 정확 1건 — "pin 일치 green" |
+| **NC-R9b** | 같은 합성 쌍, pin 의 `battery_only` 1항 변조 | `known-drift-signature-drift:<이름>` — "pin 불일치 red" |
+| **NC-R9b′** | 같은 합성 쌍, pin 의 `shared` 1항 변조(차집합 불변) | 동일 사유 — **결정 1 의 tandem 채널이 실제로 닫혔는가의 직접 시연** |
+| **NC-R9c** | 합성 드리프트 쌍, 행 없음 | `build-spec-drift:<이름>` — "미등재 red"(등록부 필터 **통과 후에도** 기존 사유 그대로임의 시연 — R8a 는 등록부 없는 경로였다) |
+| **NC-R9d** | 드리프트 없는 합성 쌍 + 드리프트 행 등재 | `known-drift-unexpected-resolve:<이름>` — 자기 만료 |
+| **NC-R9e** | 행 필드 결손 + `repair_rung` 형식 위반(예: 소문자 `sh-bs-1`) 각 1건 | `known-drift-row-incomplete:<이름>` |
+| **NC-R9f** | 행이 가리키는 Build 이름이 합성 명세에 부재 | `known-drift-pair-missing:<이름>` |
+| **NC-R9g** | 합성 known-red 행(그 외 전 필드 정상)의 `repair_rung="SH-UW-1"` | `validate_known_red_row` 가 **None**(수용) — ★감리 R1 함정(`SH-UW-1` fullmatch 실패)의 직접 회귀 시험. 기존 NC-R1b/c/h 의 `GR-1` 픽스처는 불변 PASS |
+
+(R9a~g 를 7건으로 센다 — R9b′ 는 R9b 의 두 번째 케이스로 한 행에 귀속해도 좋으나 두 판정식
+모두 필수. NC-R8a~d 는 `compare_build_specs` 직접 호출이라 무영향 [실측] — 기대 불변.)
+
+**12-3-8. 기대치와 자문 ("이 관측이 다른 가설 아래서도 같은 값을 내는가")**:
+
+| 기대 | 자문 | 증거력 |
+|---|---|---|
+| P1 BUILD-SPEC PASS + observed 2행 | **PASS 는 낸다** — 대조를 아예 안 하는 체커도 PASS 를 낸다. observed **인쇄**는 못 낸다(인쇄 코드가 실존해야). 그래도 인쇄가 대조와 무관할 가설이 남는다 — NC-R9b/b′/c/d 가 대조의 실존을 시연해야 핵심 증거 | 낮음(단독) / 핵심(NC 결합) |
+| P2 pin 실측 일치 | **낸다** — pin 을 실측에서 베끼므로 당연 일치. 증거력은 일치가 아니라 **이후 매 배터리가 3분할 집합을 재계산·대조한다는 배선** 자체(GR-1 known-red 표의 동형 문언) | 배선 확인용 |
+| P4 배터리 완주 green | **낸다** — GATE_REGISTRY 행을 몰래 빼도 green 이 된다. P5 변경집합(`run_gate_battery.py` 무변경)과 preflight 30행 rc=0 로그가 그 가설을 배제 | 중간(P5 결합 시) |
+| NC 7건 지정 사유 | 못 낸다 — 등록부 대조 미구현이면 R9b/b′/d/f 가 사유를 못 낸다 | 핵심 |
+
+**12-3-9. 철회·분기**:
+
+| 관측 | 처분 |
+|---|---|
+| grammar-debug 실측 pin ≠ §12-1 참고 예상 | 실측이 이긴다 — 차이를 집행 기록에 기재(예상이 틀린 것 자체가 정보: 로그인 노드와의 환경 차 또는 형상 변화) |
+| 착지 전 **제3의 드리프트** 신규 검출 | **중단·보고** — 무판정 등재 금지(§12-3-4). 등재 판정 발주 후 재개 |
+| 배터리 P4 가 preflight 밖(빌드·런)에서 FAIL | 중단 — GR-9 범위 밖 결함이다. 분류·귀속 후 별도 처분(§0-A-8b 의 "행수 변화 = 중단" 과 동형) |
+
+**12-3-10. Codex 계약 추가 조항** (§9 전체에 더해): `GATE_REGISTRY` preflight 행·순서 불변
+· 기존 `build-spec-drift` 검출 로직·사유 문자열·`pairs/unpaired` 정의역 불변(축소 금지) ·
+느슨 매칭(부분 문자열·와일드카드) 금지 — 3분할 집합은 **정렬 목록 정확일치** · entries 87행
+무접촉 · 등재는 사전등록된 2행뿐(추가 필요해 보이면 고치지 말고 보고).
+
+### 12-4. GR-7b — 처분 기입 형상 보완 + 형상 검사 승격 (신설 단; 전폐합 선행 ②)
+
+**계약 (1줄)**: unwired 27행의 처분 기입이 GR-7 판정문 §6 정본 형상으로 실존하고, 그 형상
+위반이 매 배터리마다 이름 있는 사유로 거부된다.
+
+**12-4-1. 정본 형상의 확정** (GR-7 판정문 §6 을 닫힌 집합으로 완성):
+
+```json
+"disposition": {
+  "verdict": "wire" | "known-red",
+  "verdict_doc": "docs/VERDICT_UNWIRED_GATES_2026-08-20.md",
+  "target_category": "preflight" | "milestone" | "run-dependent" | "known-red",
+  "target_wiring": "<배선처 — selftest-registry-milestone / PHYSICS_COMPARISON_REGRID / GPU and NVCC required / SH-UW-1>",
+  "execution_rung": "<RUNG_NAME — SH-UW-1|2|3|4>",
+  "preconditions": "<선택 — forced-rerun(§8-1) / run-step-required(§8-2)>",
+  "decided": "<선택 — YYYY-MM-DD>"
+}
+```
+
+- 필수 5(`verdict`·`verdict_doc`·`target_category`·`target_wiring`·`execution_rung`) +
+  선택 2(`preconditions`·`decided`). 닫힌 집합 — 그 외 키 = 위반. `decided` 는 §6 형상
+  밖이나 이미 기입된 진실(판정일)이라 **선택 필드로 보존을 재가**한다(소거 아님 — 결손의
+  거울상 방지). 현행의 `action`·`target`(뭉갬 필드)·경로가 든 `verdict` 는 정본 필드로
+  **대체**된다 — 구 형상은 git 이력이 보존한다.
+- 정합 제약: `verdict=="known-red"` ⟺ `target_category=="known-red"` ·
+  `verdict_doc` 은 저장소 내 실존 `.md` · `execution_rung` = `RUNG_NAME` fullmatch.
+
+**12-4-2. 행별 값의 사상 규칙** (GR-7 판정문 §4·§5 표의 기계적 사상 — **재판정 없음**;
+명단이 판정문과 다르면 고치지 말고 보고):
+
+| execution_rung | 행 (target_category / target_wiring / preconditions) |
+|---|---|
+| **SH-UW-1** (1행) | `selftest_nlte_assemble` — known-red / `SH-UW-1` / (없음) |
+| **SH-UW-2** (2행) | `selftest_a2_12_gpu_lifecycle` · `selftest_a2_13_gpu_oracle` — run-dependent / `GPU and NVCC required` / (없음) |
+| **SH-UW-3** (15행) | milestone / `selftest-registry-milestone`: `selftest_a2_12_contract` · `selftest_a2_13_15_contract` · `selftest_det_stage12` · `selftest_line_net_rate` · `selftest_atomic_internal_energy` · `selftest_nlte_population_candidate` · `selftest_nlte_candidate_adiabatic` · `selftest_nlte_candidate_tau` · `selftest_a2_10_seed_commit` (이상 9 — 전제 없음) + `selftest_a2_08_signed_opacity` · `selftest_a2_09_emissivity` · `selftest_a2_10_radeq` · `selftest_cmfgen_adiabatic` · `selftest_physics_comparison` (이상 5 — `forced-rerun(§8-1)`) · **예외 1**: `selftest_physics_comparison_regrid` — preflight / `PHYSICS_COMPARISON_REGRID` / (없음) |
+| **SH-UW-4** (9행) | milestone / `selftest-registry-milestone` / `run-step-required(§8-2)`: `selftest_wave32_ew_rc` · `selftest_wave32_ew_io` · `selftest_wave32_within_sl_oom` · `selftest_wave32_boundary_q` · `selftest_wave32_counter_atomic` · `selftest_emiss_ab_insitu` · `selftest_a2_03_producer_parity_fixture` · `selftest_a2_04_replay_commit` · `selftest_a2_16_seed` |
+
+(합계 1+2+15+9=27 · milestone 23 · preflight 1 · run-dependent 2 · known-red 1 — GR-7
+판정문 총계와 §12-1 실측 집계에 동시 일치.)
+
+**12-4-3. 체커 승격** (GR-7 판정문 §7-3 이 후보로 남긴 검사 — 결정 4 로 승격):
+- category=unwired 행은 `disposition` **필수** — 결손 = `disposition-missing:<이름>`.
+- `disposition` 은 어느 범주에서든 실존 시 §12-4-1 형상 검증 — 위반 =
+  `disposition-invalid:<이름>`. (범주 불문 허용의 이유: SH-UW 집행으로 행이 재배속돼도
+  처분 계보가 행에 남는다 — 소거 강제가 아니라 보존 허용.)
+- **NC-R1g 픽스처에 정본 disposition 부가** — 기대 사유 `unwired-now-referenced` 불변
+  (§12-1 신규 실측 3 의 사전 명시).
+- 신설 NC 2: **NC-R7b-a** 합성 unwired 행 disposition 결손 → `disposition-missing` ·
+  **NC-R7b-b** 합성 행 `execution_rung` 형식 위반(소문자) → `disposition-invalid`.
+- 한계 기재: 이 형상은 **GR-7 처분이 완료된 현 27행**의 고정이다. 미래 고아의 등재 형식은
+  그때의 사전등록 몫(`disposition_rung=="GR-7"` 정확 pin [실측 `:524`] 이 이미 그 성격이다).
+
+**12-4-4. 기대 변경집합**: `scripts/gate_registry.json`(27행 disposition 재기입 —
+**disposition 외 필드 무변경**) · `scripts/check_gate_registry.py`(§12-4-3) · 이 문서.
+변경 0: 나머지 전부(`src/` · `tests/` · `Makefile` · `run_gate_battery.py`).
+
+**12-4-5. 게이트 표 (판정문은 이 표와 대조한다)**:
+
+| # | 조건 | 판정 자료 |
+|---|---|---|
+| **P1** | 체커 단독 rc=0 — disposition 검증 **활성** 상태에서 27행 전원 green + BUILD-SPEC known_drifts=2 observed 불변 | 실행 로그 |
+| **P2** | NC **21/21** (기존 19 — R1g 갱신 후 기대 사유 불변 — + R7b-a·b 지정 사유) | NC 출력 |
+| **P3** | 배터리 1회 완주 green — ★**전폐합 요건 ③ 의 실측이 이 관측이다.** RUN FOOTER 동봉 | 배터리 로그 |
+| **P4** | 변경집합 = §12-4-4 · 27행의 disposition 외 필드 무변경 · `src/` 0줄 | `git show --stat` + JSON diff |
+| **P5** | 집행 기록에 §10 분장 장부 복제 실존 | 이 문서 diff |
+
+**12-4-6. 기대치와 자문**:
+
+| 기대 | 자문 | 증거력 |
+|---|---|---|
+| P1 27행 green | **낸다** — 검증을 안 넣어도 green. R7b-a/b + R1g 갱신이 검증의 실존을 시연해야 증거 | 낮음(단독) / 핵심(NC 결합) |
+| 27행 사상이 판정문과 일치 | 사상 규칙이 기계적이라 "낸다" — 그래서 P4 의 **행별 diff 판독**(운전석)과 검수(Fable)가 §12-4-2 명단 대조를 수행한다. 수가 아니라 명단 | 중간 |
+| P3 배터리 green | GR-9 P4 가 이미 green 이므로 "낸다" — 이 관측의 증거력은 green 자체가 아니라 **②까지 실린 최종 형상에서의 green**(전폐합 요건 ③ 의 문언) | 요건 충족용 |
+
+### 12-5. 전폐합 선언 절차 (전폐합 선행 ③ 의 확인 형상 — 결정 5)
+
+1. **시점**: GR-7b P3 실측 직후. 선언문 = `docs/DECLARATION_SH_GATEREPAIR_FULL_CLOSURE_2026-08-XX.md`
+   **단독 커밋**(운전석). 폐합 판정 §6-3 표 동반 인용 의무(§9-4 문언).
+2. **선언문이 주장할 수 있는 것**: "부분폐합 → 전폐합 승격" 하나뿐. **금지 문구**: "27 배선
+   완료"(폐합 판정 §6-2-2), "드리프트 수리 완료"(수리는 SH-BS-1·2 의 몫 — GR-9 는 관측만),
+   "이중 기재 병 종식"(§6-3 표가 반증).
+3. **감리 (fresh Fable, 고정질문 3)** — 선언 커밋 전:
+   - Q1 로그 3종(GR-9 P4·GR-7b P3·체커 단독)이 실존하고 RUN FOOTER 의 HEAD 해시가 선언
+     대상 형상과 일치하는가, 요약이 `verdict=PASS rc=0` 인가.
+   - Q2 BUILD-SPEC 이 드리프트 2건을 `known-drift-observed` 로 **인쇄**했는가 — 봉쇄 해소가
+     은폐가 아니라 관측인가.
+   - Q3 선언문이 2 의 금지 문구를 포함하지 않고, §6-3 표를 인용했으며, 집행 기록들에 §10
+     장부가 실존하는가.
+4. 감리 스탬프 없는 선언 커밋 금지(판정 규약 V0-V5 동형). 감리가 반려하면 반려 사유와 함께
+   집행 기록에 기재하고 해소 후 재발주.
+
+### 12-6. 개정판 순서·폐합 조건 (이 표가 §0-A-8 을 승계하는 정본)
+
+| 단 | 계약 (1줄) | 소속 | 의존 | 커밋 |
+|---|---|---|---|---|
+| **GR-9** ★신설 | 드리프트가 봉쇄 대신 서명 pin 관측 아래 놓인다 (§12-3) | SH | GR-8·폐합 판정 | 1 |
+| **GR-7b** ★신설 | 처분 기입이 정본 형상으로 실존하고 기계로 강제된다 (§12-4) | SH | GR-9 | 1 |
+| (선언) | 부분폐합 → 전폐합 승격 (§12-5) | — | GR-7b P3 | 1 (선언문 단독) |
+
+**순서**: GR-9 → GR-7b → 배터리 green(=GR-7b P3) → 감리 → 전폐합 선언. 트리-변조 상시 1개
+규약 불변 — GR-9 발주 전 가동 중 변조 태스크 0 확인(폐합 판정 §9-2 의 발주 금지 조항 승계).
+**전폐합 조건** = 폐합 판정 §4-3 의 3건의 기계 형상: ① GR-9 폐합(P1~P6) ② GR-7b 폐합
+(P1~P5) ③ GR-7b P3 + §12-5 감리·선언. **캠페인 밖 후속**(불변): SH-BS-1·SH-BS-2(드리프트
+정본 판정+수리+GR-9 행 소거) → SH-UW-1~4 — 폐합 판정 §9-5 순서 그대로.
+
+### 12-7. 분장 장부 (§10 형식 — 실제 열은 집행 후; 결정 8 로 각 단 게이트가 복제를 강제)
+
+| 단계 | 규약상 담당 (개정13/14) | **실제** | 위반 |
+|---|---|---|---|
+| 사전등록 (이 개정 4) | Fable | Fable | — |
+| 발주 (GR-9·GR-7b·선언) | 운전석 | | |
+| 코딩 | Codex (clean worktree) | | |
+| 코드 검수 | Fable | | |
+| 오프라인 게이트·배터리 실행 (grammar-debug) | 운전석 | | |
+| 판정 | (이 두 단에 판정 발주 없음 — 게이트는 기계 판정; SH-BS-1·2 스텝1 이 차기 판정) | | |
+| 감리 (전폐합 선언 전, fresh 컨텍스트) | Fable | | |
+| 감리 반영·대장·커밋 | 운전석 | | |
+
+### 12-8. 이 개정이 모르는 것 (추측으로 메우지 않는다)
+
+1. **드리프트 2건의 정본**(어느 링크 목록이 옳은가) — 모른다. SH-BS-1·2 판정의 몫(결정 7).
+   폐합 판정 §1-9 단서는 판정 자료일 뿐이다.
+2. **grammar-debug 실측 pin 이 §12-1 로그인 노드 산출과 같은가** — [추정] 같다(순수 정적).
+   실측이 정본(§12-3-9).
+3. **미래 드리프트의 빈도** — 모른다. 등재 창(§12-3-4)의 실비용이 이에 걸려 있다. 폐합 판정
+   §4-2(b)("하루에 다섯 채널")가 낮지 않을 가능성을 시사하나 표본이 하루다.
+4. **GR-9 P4 배터리가 preflight 밖에서 green 일지** — [추정] green(GR-6 완주 이후 빌드·런
+   측 무접촉)이나 실측 전이다. 아니면 §12-3-9 분기.
+5. **NC-R1g 갱신과 다른 NC 의 상호작용** — Codex 구현에서 판명(기대 목록 정확일치 판정식이
+   있어 어긋나면 시끄럽게 죽는다).
+6. **milestone 30 체제 wall-time**(GR-7 판정 §7-4 상속) · **개정 3 미등재 외의 이력 결손**
+   — 전수 재감사 안 했다.
+7. **`RUNG_NAME` 형식의 실존 비보증**(결정 3 한계) — 형식 통과 ≠ 단 실존. 실존은 절차
+   (판정 없는 등재 금지)가 지킨다 — 기계로 닫을 방법을 모른다(§11-7 과 같은 계급).
