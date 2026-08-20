@@ -346,6 +346,29 @@ Makefile 이 정확히 그 목록으로 링크에 성공한다(같은 소스 집
 
 **순서**: GR-1′ 에 선행한다(커밋도 선행 — GR-1′ P4′ 의 전제).
 
+**집행 기록 (운전석 실측, 2026-08-20)**
+
+| 항목 | 값 |
+|---|---|
+| 코딩 | Codex — `Build("Z-a2-09")` 에 `"src/population_contract.c"` **1항 추가** |
+| 코드 검수 | Fable — **인정, 지적 없음**. Q1~Q5 전부 [실측] 확인 |
+| **P1** | **PASS** — 배터리가 실제로 쓰는 명령열을 `build_specs()` 에서 **도출해** 단독 실행: `BUILD_RC=0`. 로그 `/gpfs/kjhan/lumina/gates/gr0_20260820T090422Z/P1_z09_build.log` |
+| **P2** | **PASS** — `git diff --numstat` = `1 1 scripts/run_gate_battery.py`, 치환 1행. `tests/`·`src/`·`Makefile` 무접촉 |
+| 커밋 | 아래 |
+
+★P1 은 손으로 재구성한 명령이 아니라 `sys.path` 에 `scripts` 를 넣고 `run_gate_battery`
+를 정상 import 해 `build_specs(tmpdir,"gcc")` 가 내놓은 `Build.command` 를 그대로 돌린 것이다
+— **배터리가 다음에 돌릴 바로 그 명령**이다. Codex 가 NOTES 에 적은 명령열과 토큰 단위 일치.
+
+[실측 함정 기록] 처음에 `importlib.util.spec_from_file_location` 으로 합성 이름 로드를
+시도했더니 `dataclasses._is_type` 이 `sys.modules` 에서 모듈을 못 찾아 깨졌다
+(`AttributeError: 'NoneType' object has no attribute '__dict__'`). 배터리 내부를 프로그램으로
+뜯을 때의 함정 — 정상 import 로 갈 것.
+
+**검수가 남긴 부기**: PREREG 가 worktree 에서 미추적이라 §0-A-6 의 집행 기록 추가분은
+P2 의 `git diff` 로 감사되지 않는다. 이 기록은 **본 저장소에서 운전석이 직접 쓴 것**이며
+같은 커밋에 들어간다.
+
 ### 0-A-7. GR-7 — unwired 27 의 계측·처분 판정 / GR-8 — 중복 빌드 명세 정합 검사 (신설 단 2개)
 
 **GR-7** (계측→판정 — known-red 4 에 대한 §7 의 「미지판」):

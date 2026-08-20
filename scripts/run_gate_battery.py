@@ -260,7 +260,7 @@ def build_specs(build: Path, cc: str) -> tuple[Build, ...]:
             "Z-a2-09",
             common_z + (
                 "tests/a2_09_emissivity_selftest.c",
-                "src/emissivity_publication.c", "-lm", "-o",
+                "src/emissivity_publication.c", "src/population_contract.c", "-lm", "-o",
                 str(build / "a2_09_emissivity"),
             ),
             build / "a2_09_emissivity",
