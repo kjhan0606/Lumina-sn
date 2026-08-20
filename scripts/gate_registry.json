@@ -720,16 +720,8 @@
           "tests/a2_10_line_saturation_per_ion_monitor_selftest.py"
         ]
       ],
-      "category": "known-red",
-      "wiring": "GR-6",
-      "known_red": {
-        "failing_command_index": 3,
-        "rc": 1,
-        "first_fail_line": "positive failed: FAIL A210_CMFGEN_LINE_SATURATION reason=Lumina summary target ion is invalid",
-        "fail_line_count": 1,
-        "registered": "2026-08-20",
-        "repair_rung": "GR-6"
-      }
+      "category": "preflight",
+      "wiring": "A2_10_LINE_SATURATION_SUMMARY,A2_10_LINE_SATURATION_INTERSECTION,A2_10_PHASE_BASELINE_STREAMS,A2_10_CMFGEN_LINE_SATURATION_COMPARISON,A2_10_LINE_SATURATION_PER_ION_COVERAGE,A2_10_LINE_SATURATION_PER_ION_MONITOR"
     },
     {
       "name": "selftest-a2-10-cmfgen-mapped-line",

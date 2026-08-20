@@ -63,6 +63,7 @@ def summary(path: Path, repair: int = 0) -> None:
         "summary": {
             "candidate_rows": 2,
             "selected_rows": 2,
+            "target_ion_zero_based": 3,
             "selection_target_fraction": 0.9,
             "selected_fraction": 0.95,
             "selected_scaled_emission": 95.0,
@@ -141,6 +142,25 @@ def main() -> int:
             "certified_negative_external_continuum_component"
         ]["fraction_of_selected_emission"] != 1.0:
             raise SystemExit("negative external-component witness was not certified")
+
+        missing_target_ion = root / "summary.missing-target-ion.json"
+        missing_target_ion_payload = json.loads(
+            source.read_text(encoding="utf-8")
+        )
+        del missing_target_ion_payload["summary"]["target_ion_zero_based"]
+        missing_target_ion.write_text(
+            json.dumps(missing_target_ion_payload) + "\n", encoding="utf-8"
+        )
+        missing_target_ion_result = run(
+            missing_target_ion, netrate, reference,
+            root / "missing-target-ion.json",
+        )
+        if missing_target_ion_result.returncode != 4 or \
+                missing_target_ion_result.stdout.strip() != (
+                    "FAIL A210_CMFGEN_LINE_SATURATION "
+                    "reason=Lumina summary target ion is invalid"
+                ):
+            raise SystemExit("missing target-ion key was not rejected exactly")
 
         union = root / "summary.union.json"
         union_payload = json.loads(source.read_text(encoding="utf-8"))
@@ -247,7 +267,7 @@ def main() -> int:
 
     print(
         "PASS a2_10_cmfgen_line_saturation_comparison "
-        "combined+union+physical_identity+roundoff_boundary+4_negative"
+        "combined+union+physical_identity+roundoff_boundary+5_negative"
     )
     return 0
 

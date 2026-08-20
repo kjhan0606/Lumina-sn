@@ -373,6 +373,43 @@ Makefile 이 정확히 그 목록으로 링크에 성공한다(같은 소스 집
 P2 의 `git diff` 로 감사되지 않는다. 이 기록은 **본 저장소에서 운전석이 직접 쓴 것**이며
 같은 커밋에 들어간다.
 
+### GR-6 집행 기록 (운전석 실측, 2026-08-20) — ★known-red 0 달성
+
+**증거**: `/gpfs/kjhan/lumina/gates/gr6_20260820T142608Z/`
+
+| 게이트 | 결과 |
+|---|---|
+| **P1** | **PASS** — 6개 스크립트 **전부**, `MAKE_RC=0`. ★**5·6번째가 사상 최초로 도달**했다(앞이 죽어서 한 번도 못 돌던 `per_ion_coverage`·`per_ion_monitor`) |
+| **P2** | **PASS** — 신설 NC: 키 하나만 삭제 → `rc==4 AND stdout 전체 정확일치` 요구(부분문자열·OR 아님) |
+| **P3** | **PASS** — 배터리 완주 `verdict=PASS rc=0`, preflight **30행 전부 rc=0**, ★**known-red 1→0** |
+| **P4** | **PASS** — 변경집합 3파일. 체커·생산자·`per_ion_coverage` 무접촉 |
+
+### ★캠페인 폐합 조건 ① 충족 — known-red 4 → 0
+
+아침에 죽어 있던 넷이 전부 살아났다:
+`event-measure-check`(GR-5) · `selftest-sh-radeq-source`(GR-3′) ·
+`selftest-tau-writer-census`(GR-4) · `selftest-a2-10-line-saturation`(GR-6).
+
+### 픽스처 수리가 "통과용 끼워넣기" 가 아님의 근거 (검수 Q1)
+
+[검수 실측] 체커는 키 존재·범위만 보는 게 아니라 **각 row 에서 `ion != target_ion` 이면
+scope/identity mismatch 로 거부**한다. 픽스처 두 row 의 `"ion": 3` 은 **HEAD 에 이미 있던
+값**이고 이 diff 가 건드리지 않았다 ⟹ **3 이외의 어떤 값도 PASS 불가** — 선택의 여지가 없다.
+의미도 정합: 생산자 `:348` 의 `integer["target_ion"]` 과 체커의 row 스코프 강제가 같은 뜻.
+
+### ★검수 R1 — 5번째의 첫 PASS 는 **사전등록된 부채 위에 서 있다** (대장 기재)
+
+[검수 실측·운전석 재확인] `tests/a2_10_line_saturation_per_ion_coverage_selftest.py` 의
+자체 픽스처는 `target_ion_zero_based` 를 **0건** 갖는다 ⟹ 그 PASS 는
+`check_a210_line_saturation_per_ion_coverage.py:134` 의 **fail-open 기본값 `3` 을 타고** 성립한다.
+
+⟹ 사전등록이 "별개 계약" 으로 미룬 그 부채의 **「픽스처 3파일」에 이 파일이 포함**된다.
+★**이 단의 5번째 게이트가 초록인 것은 부채가 갚아지면 달라질 수 있다** — 지금 기재해 둔다.
+
+### 검수 R2 — 인증 경계
+6스크립트 완주·registry PASS 는 검수 시점에 Codex 자기보고였고, **운전석 배터리 런(P3)이
+폐합의 확정 증거**다. 위 표의 실측이 그것이다.
+
 ### 0-A-7. GR-7 — unwired 27 의 계측·처분 판정 / GR-8 — 중복 빌드 명세 정합 검사 (신설 단 2개)
 
 **GR-7** (계측→판정 — known-red 4 에 대한 §7 의 「미지판」):
