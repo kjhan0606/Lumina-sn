@@ -1082,6 +1082,46 @@ src 불변). 두 번째 명령이 FAIL → 분류 후 같은 단에서 픽스처
 
 ---
 
+### GR-5 집행 기록 (운전석 실측, 2026-08-20)
+
+**증거**: `/gpfs/kjhan/lumina/gates/gr5s3_20260820T140432Z/`. 세 스텝(계측→판정→수리) 전부 완료.
+
+| 게이트 | 결과 |
+|---|---|
+| **P1** | **PASS** — `make event-measure-check` **두 명령 다** 완주, `MAKE_RC=0` |
+| **P2** | **PASS** — NC `injections=4 detected=4`, `missed=` 없음. ★구앵커 아래서 **커밋된 어떤 트리에서도 실행된 적 없던** 검사들이다 |
+| **P3** | **PASS — 짝 성립** (아래) |
+| **P4** | **PASS** — 배터리 완주 `verdict=PASS rc=0`, preflight **25행 전부 rc=0**, **known-red 2→1** |
+| **P5** | **PASS** — 변경집합 3파일, `src/` 0줄 |
+
+### ★P3 — 외부 사본-트리 주입 짝
+```
+impl 스팬에 bf->event_chi_bf[0] 주입 → [E-NE4][FAIL] CPU-A208: direct event-grid indexing bypass
+HEAD 무주입                          → [E-NE4][PASS]
+```
+그리고 **`[E-E2][STATIC][PASS]` 가 처음 보인다** — 판정문이 "STATIC FAIL 즉시 종료 탓에
+NC 와 E-E2 는 커밋된 어떤 트리에서도 실행된 적 없다" 고 적은 그 검사다.
+**빨간불이 나머지 검사를 가리고 있었다.**
+
+### ★메타 게이트가 운전석을 세 번 잡았다 (GR-1′ 의 설계 목적 실증)
+
+집행 중 운전석이 만든 불일치를 **전부 이름 있는 사유로** 잡았다:
+
+| 운전석의 실수 | 게이트가 낸 사유 |
+|---|---|
+| GR-4 를 커밋 안 한 채 GR-5 를 얹음 | `known-red-unexpected-pass:selftest-tau-writer-census` |
+| GR-5 등록부가 GR-4 이전 기반 | `preflight-wiring-missing:selftest-tau-writer-census` |
+| `run_gate_battery.py` 도 같은 문제 | `preflight-command-drift:selftest-tau-writer-census` |
+
+⟹ 재기반 후 `COMPLETENESS PASS 64/87` · `KNOWN-RED entries=1` · NC 8/8.
+**등록부가 "고쳐졌는데 죽었다고 주장하는 상태" 와 "배선 주장이 실물과 어긋난 상태" 를
+둘 다 잡는다.** 이것이 GR-1′ 이 known-red·배선 교차검증을 만든 이유다.
+
+### 검수 지적의 처분
+- **R1**(known-red 2→1 은 GR-4 합성 후에만 성립) — ★검수가 정확히 예견했고 **운전석이
+  재기반으로 해소**했다(GR-4 를 `dc8ac9c` 로 선폐합 후 GR-5 를 그 위에 재기반).
+- **R2**(`UnboundLocalError` 수리는 lib 채택의 필연 부수) — 범위 초과 아님, 기재.
+
 ## 8. GR-6 — `selftest-a2-10-line-saturation` 픽스처 수리
 
 ### 계약

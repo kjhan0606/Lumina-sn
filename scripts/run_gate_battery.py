@@ -44,6 +44,8 @@ def run_census_preflight() -> int:
 # 수동 호출 검증기는 안 돌리면 없는 것과 같다(census C6: 검증기 미실행).
 # 2026-08-07 에 만든 셋을 배터리가 매번 돌리게 해서 "존재하지만 실행 안 됨"을 없앤다.
 PREFLIGHTS = (
+    ("EVENT_MEASURE_ACCESS", "scripts/check_event_measure_access.py", ()),
+    ("EVENT_MEASURE_SPECTRA_SELFTEST", "scripts/compare_event_measure_spectra.py", ("--selftest",)),
     ("A2_01_CENSUS", "scripts/a2_01_census_contract.py", ("check",)),
     ("SH_GRID_UPPER_CLOSURE", "scripts/verify_sh_grid_upper_closure.py", ()),
     ("SEAL_INTEGRITY", "scripts/verify_seals.py", ()),

@@ -4,51 +4,77 @@
 The positive check is not sufficient by itself: a structural gate also has to
 demonstrate that it rejects an injected accessor bypass.  The in-memory
 negative controls below exercise each registered consumer without modifying
-the working tree.
+the working tree.  CPU-A208 is measured at its implementation definition; its
+public wrapper is separately pinned to exact pure delegation.
 """
 
 from pathlib import Path
 import re
 import sys
 
+from gate_source_lib import body, body_raw, inject_at_head
+
 
 ROOT = Path(__file__).resolve().parent.parent / "src"
-
-
-def function_body(text: str, name: str) -> str:
-    match = re.search(r"\b" + re.escape(name) + r"\s*\([^;]*?\)\s*\{", text, re.S)
-    if not match:
-        raise RuntimeError(f"function not found: {name}")
-    start = match.end() - 1
-    depth = 0
-    for pos in range(start, len(text)):
-        if text[pos] == "{":
-            depth += 1
-        elif text[pos] == "}":
-            depth -= 1
-            if depth == 0:
-                return text[start : pos + 1]
-    raise RuntimeError(f"unterminated function: {name}")
+A208_PUBLISH_WRAPPER = """{
+    return a208_publish_cpu_opacity_impl(
+        opacity, bf, atom, plasma, nlte, epoch, a208_counters());
+}"""
+NEGATIVE_CONTROL_CASES = (
+    (
+        "CPU-T03",
+        0,
+        "single_packet_loop",
+        "double ne4_injected = bf->chi_bf[0]; (void)ne4_injected;",
+        "CPU-T03: direct event-grid indexing bypass",
+    ),
+    (
+        "CPU-A208",
+        1,
+        "a208_publish_cpu_opacity_impl",
+        "double ne4_injected = bf->event_chi_bf[0]; (void)ne4_injected;",
+        "CPU-A208: direct event-grid indexing bypass",
+    ),
+    (
+        "GPU-T03",
+        2,
+        "transport_kernel",
+        "double ne4_injected = d_chi_bf[0]; (void)ne4_injected;",
+        "GPU-T03: direct event-grid indexing bypass",
+    ),
+    (
+        "GPU-VPACKET",
+        2,
+        "d_trace_virtual_packet",
+        "double ne4_injected = d_chi_bf[0]; (void)ne4_injected;",
+        "GPU-VPACKET: direct event-grid indexing bypass",
+    ),
+)
 
 
 def inspect_sources(transport: str, plasma: str, cuda: str) -> list[str]:
-    failures = []
+    failures: list[str] = []
 
-    cpu_t03 = function_body(transport, "single_packet_loop")
-    cpu_a208 = function_body(plasma, "a208_publish_cpu_opacity")
-    gpu_t03 = function_body(cuda, "transport_kernel")
-    gpu_vpacket = function_body(cuda, "d_trace_virtual_packet")
+    cpu_t03 = body(transport, "single_packet_loop")
+    cpu_a208 = body(plasma, "a208_publish_cpu_opacity_impl")
+    gpu_t03 = body(cuda, "transport_kernel")
+    gpu_vpacket = body(cuda, "d_trace_virtual_packet")
 
-    for label, body, accessor in (
+    if body_raw(plasma, "a208_publish_cpu_opacity") != A208_PUBLISH_WRAPPER:
+        failures.append(
+            "CPU-A208: a208_publish_cpu_opacity wrapper is not exact pure delegation"
+        )
+
+    for label, consumer_body, accessor in (
         ("CPU-T03", cpu_t03, "bf_event_measure_get"),
         ("CPU-A208", cpu_a208, "bf_event_measure_get"),
         ("GPU-T03", gpu_t03, "d_bf_event_measure_get"),
         ("GPU-VPACKET", gpu_vpacket, "d_bf_event_measure_get"),
     ):
-        if accessor not in body:
+        if accessor not in consumer_body:
             failures.append(f"{label}: missing {accessor}")
 
-    for label, body, required_tokens in (
+    for label, consumer_body, required_tokens in (
         ("CPU-T03", cpu_t03,
          ("event_status != BF_EVENT_MEASURE_OK",
           "pkt->status = PACKET_REABSORBED", "event_measure_t03_blocks")),
@@ -64,10 +90,10 @@ def inspect_sources(transport: str, plasma: str, cuda: str) -> list[str]:
           "d_bf_event_measure_record_block(event_status, 1)", "return")),
     ):
         for token in required_tokens:
-            if token not in body:
+            if token not in consumer_body:
                 failures.append(f"{label}: missing non-OK policy token {token!r}")
 
-    for label, body, pattern in (
+    for label, consumer_body, pattern in (
         ("CPU-T03", cpu_t03, r"\bbf->(?:event_chi_bf|chi_bf)\s*\["),
         # A208 legitimately reads bf->chi_bf to publish the signed net
         # coefficient.  Only direct access to the separate event grid bypasses
@@ -77,7 +103,7 @@ def inspect_sources(transport: str, plasma: str, cuda: str) -> list[str]:
         ("GPU-VPACKET", gpu_vpacket,
          r"\bd_(?:bf_event_chi|chi_bf)\s*\["),
     ):
-        if re.search(pattern, body):
+        if re.search(pattern, consumer_body):
             failures.append(f"{label}: direct event-grid indexing bypass")
 
     forbidden = {
@@ -99,46 +125,40 @@ def inspect_sources(transport: str, plasma: str, cuda: str) -> list[str]:
     return failures
 
 
-def inject_into_function(text: str, name: str, statement: str) -> str:
-    match = re.search(r"\b" + re.escape(name) + r"\s*\([^;]*?\)\s*\{",
-                      text, re.S)
-    if not match:
-        raise RuntimeError(f"function not found for injection: {name}")
-    return text[:match.end()] + "\n    " + statement + text[match.end():]
-
-
 def run_negative_controls(transport: str, plasma: str, cuda: str) -> list[str]:
-    cases = (
-        ("CPU-T03", inject_into_function(
-            transport, "single_packet_loop",
-            "double ne4_injected = bf->chi_bf[0]; (void)ne4_injected;"),
-         plasma, cuda),
-        ("CPU-A208", transport, inject_into_function(
-            plasma, "a208_publish_cpu_opacity",
-            "double ne4_injected = bf->event_chi_bf[0]; (void)ne4_injected;"),
-         cuda),
-        ("GPU-T03", transport, plasma, inject_into_function(
-            cuda, "transport_kernel",
-            "double ne4_injected = d_chi_bf[0]; (void)ne4_injected;")),
-        ("GPU-VPACKET", transport, plasma, inject_into_function(
-            cuda, "d_trace_virtual_packet",
-            "double ne4_injected = d_chi_bf[0]; (void)ne4_injected;")),
-    )
-    missed = []
-    for expected_label, t_src, p_src, c_src in cases:
-        failures = inspect_sources(t_src, p_src, c_src)
-        expected = f"{expected_label}: direct event-grid indexing bypass"
+    sources = (transport, plasma, cuda)
+    missed: list[str] = []
+    for index, (label, source_index, function, statement, expected) in enumerate(
+        NEGATIVE_CONTROL_CASES, start=1
+    ):
+        mutated_sources = list(sources)
+        try:
+            mutated_sources[source_index] = inject_at_head(
+                sources[source_index], function, statement
+            )
+        except RuntimeError:
+            missed.append(f"injection-{index}-not-applied")
+            continue
+        if mutated_sources[source_index] == sources[source_index]:
+            missed.append(f"injection-{index}-not-applied")
+            continue
+        failures = inspect_sources(*mutated_sources)
         if expected not in failures:
-            missed.append(expected_label)
+            missed.append(f"injection-{index}-wrong-reason")
+            continue
+        print(
+            "[E-NE4][NEGATIVE-CONTROL][DETECTED] "
+            f"injection={index} consumer={label} reason={expected}"
+        )
     return missed
 
 
 def inspect_gpu_owner(owner_source: str) -> list[str]:
-    body = function_body(owner_source, "gpu_opacity_production_bind")
+    owner = body(owner_source, "gpu_opacity_production_bind")
     if not re.search(
         r"production_opacity\.view\.bf_event_measure_provenance\s*=\s*"
         r"p->bf_event_measure_provenance",
-        body,
+        owner,
         re.S,
     ):
         return ["canonical GPU opacity owner does not publish event provenance"]

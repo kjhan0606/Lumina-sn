@@ -1,94 +1,692 @@
 {
   "schema": "lumina-gate-registry-v2",
   "entries": [
-    {"name": "selftest_cmf_exact_sliding", "kind": "make-target", "commands": [["make", "selftest_cmf_exact_sliding"]], "category": "milestone", "wiring": "selftest-registry-milestone"},
-    {"name": "selftest_cmf_error_envelope", "kind": "make-target", "commands": [["make", "selftest_cmf_error_envelope"]], "category": "milestone", "wiring": "selftest-registry-milestone"},
-    {"name": "selftest_cmf_exact_multigpu", "kind": "make-target", "commands": [["make", "selftest_cmf_exact_multigpu"]], "category": "collective", "wiring": "scripts/submit_cmf_exact_multigpu_prototype.sh"},
-    {"name": "selftest_cmf_exact_epoch_scan", "kind": "make-target", "commands": [["make", "selftest_cmf_exact_epoch_scan"]], "category": "collective", "wiring": "scripts/submit_cmf_exact_epoch_scan_selftest.sh"},
-    {"name": "selftest_nlte_assemble", "kind": "make-target", "commands": [["make", "selftest_nlte_assemble"]], "category": "unwired", "wiring": "GR-7", "unwired": {"observed": "2026-08-20", "disposition_rung": "GR-7"}},
-    {"name": "selftest_a2_12_contract", "kind": "make-target", "commands": [["make", "selftest_a2_12_contract"]], "category": "unwired", "wiring": "GR-7", "unwired": {"observed": "2026-08-20", "disposition_rung": "GR-7", "note": "battery-shadow Z-a2-12"}},
-    {"name": "selftest_a2_13_15_contract", "kind": "make-target", "commands": [["make", "selftest_a2_13_15_contract"]], "category": "unwired", "wiring": "GR-7", "unwired": {"observed": "2026-08-20", "disposition_rung": "GR-7", "note": "battery-shadow Z-a2-13-15"}},
-    {"name": "selftest_a2_12_gpu_lifecycle", "kind": "make-target", "commands": [["make", "selftest_a2_12_gpu_lifecycle"]], "category": "unwired", "wiring": "GR-7", "unwired": {"observed": "2026-08-20", "disposition_rung": "GR-7"}},
-    {"name": "selftest_a2_13_gpu_oracle", "kind": "make-target", "commands": [["make", "selftest_a2_13_gpu_oracle"]], "category": "unwired", "wiring": "GR-7", "unwired": {"observed": "2026-08-20", "disposition_rung": "GR-7"}},
-    {"name": "selftest_ioniz_saha", "kind": "make-target", "commands": [["make", "selftest_ioniz_saha"]], "category": "collective", "wiring": "scripts/run_ioniz_saha_selftest.sh"},
-    {"name": "selftest_gate_recovery", "kind": "make-target", "commands": [["make", "selftest_gate_recovery"]], "category": "milestone", "wiring": "selftest-registry-milestone"},
-    {"name": "selftest_seed_te_publish", "kind": "make-target", "commands": [["make", "selftest_seed_te_publish"]], "category": "collective", "wiring": "scripts/l1_1_gate_chain.sh"},
+    {
+      "name": "selftest_cmf_exact_sliding",
+      "kind": "make-target",
+      "commands": [
+        [
+          "make",
+          "selftest_cmf_exact_sliding"
+        ]
+      ],
+      "category": "milestone",
+      "wiring": "selftest-registry-milestone"
+    },
+    {
+      "name": "selftest_cmf_error_envelope",
+      "kind": "make-target",
+      "commands": [
+        [
+          "make",
+          "selftest_cmf_error_envelope"
+        ]
+      ],
+      "category": "milestone",
+      "wiring": "selftest-registry-milestone"
+    },
+    {
+      "name": "selftest_cmf_exact_multigpu",
+      "kind": "make-target",
+      "commands": [
+        [
+          "make",
+          "selftest_cmf_exact_multigpu"
+        ]
+      ],
+      "category": "collective",
+      "wiring": "scripts/submit_cmf_exact_multigpu_prototype.sh"
+    },
+    {
+      "name": "selftest_cmf_exact_epoch_scan",
+      "kind": "make-target",
+      "commands": [
+        [
+          "make",
+          "selftest_cmf_exact_epoch_scan"
+        ]
+      ],
+      "category": "collective",
+      "wiring": "scripts/submit_cmf_exact_epoch_scan_selftest.sh"
+    },
+    {
+      "name": "selftest_nlte_assemble",
+      "kind": "make-target",
+      "commands": [
+        [
+          "make",
+          "selftest_nlte_assemble"
+        ]
+      ],
+      "category": "unwired",
+      "wiring": "GR-7",
+      "unwired": {
+        "observed": "2026-08-20",
+        "disposition_rung": "GR-7"
+      }
+    },
+    {
+      "name": "selftest_a2_12_contract",
+      "kind": "make-target",
+      "commands": [
+        [
+          "make",
+          "selftest_a2_12_contract"
+        ]
+      ],
+      "category": "unwired",
+      "wiring": "GR-7",
+      "unwired": {
+        "observed": "2026-08-20",
+        "disposition_rung": "GR-7",
+        "note": "battery-shadow Z-a2-12"
+      }
+    },
+    {
+      "name": "selftest_a2_13_15_contract",
+      "kind": "make-target",
+      "commands": [
+        [
+          "make",
+          "selftest_a2_13_15_contract"
+        ]
+      ],
+      "category": "unwired",
+      "wiring": "GR-7",
+      "unwired": {
+        "observed": "2026-08-20",
+        "disposition_rung": "GR-7",
+        "note": "battery-shadow Z-a2-13-15"
+      }
+    },
+    {
+      "name": "selftest_a2_12_gpu_lifecycle",
+      "kind": "make-target",
+      "commands": [
+        [
+          "make",
+          "selftest_a2_12_gpu_lifecycle"
+        ]
+      ],
+      "category": "unwired",
+      "wiring": "GR-7",
+      "unwired": {
+        "observed": "2026-08-20",
+        "disposition_rung": "GR-7"
+      }
+    },
+    {
+      "name": "selftest_a2_13_gpu_oracle",
+      "kind": "make-target",
+      "commands": [
+        [
+          "make",
+          "selftest_a2_13_gpu_oracle"
+        ]
+      ],
+      "category": "unwired",
+      "wiring": "GR-7",
+      "unwired": {
+        "observed": "2026-08-20",
+        "disposition_rung": "GR-7"
+      }
+    },
+    {
+      "name": "selftest_ioniz_saha",
+      "kind": "make-target",
+      "commands": [
+        [
+          "make",
+          "selftest_ioniz_saha"
+        ]
+      ],
+      "category": "collective",
+      "wiring": "scripts/run_ioniz_saha_selftest.sh"
+    },
+    {
+      "name": "selftest_gate_recovery",
+      "kind": "make-target",
+      "commands": [
+        [
+          "make",
+          "selftest_gate_recovery"
+        ]
+      ],
+      "category": "milestone",
+      "wiring": "selftest-registry-milestone"
+    },
+    {
+      "name": "selftest_seed_te_publish",
+      "kind": "make-target",
+      "commands": [
+        [
+          "make",
+          "selftest_seed_te_publish"
+        ]
+      ],
+      "category": "collective",
+      "wiring": "scripts/l1_1_gate_chain.sh"
+    },
     {
       "name": "event-measure-check",
       "kind": "make-target",
       "commands": [
-        ["python3", "scripts/check_event_measure_access.py"],
-        ["python3", "scripts/compare_event_measure_spectra.py", "--selftest"]
+        [
+          "python3",
+          "scripts/check_event_measure_access.py"
+        ],
+        [
+          "python3",
+          "scripts/compare_event_measure_spectra.py",
+          "--selftest"
+        ]
       ],
-      "category": "known-red",
-      "wiring": "GR-5",
-      "known_red": {
-        "failing_command_index": 0,
-        "rc": 1,
-        "first_fail_line": "[E-NE4][FAIL] CPU-A208: missing bf_event_measure_get",
-        "fail_line_count": 3,
-        "registered": "2026-08-20",
-        "repair_rung": "GR-5"
-      }
+      "category": "preflight",
+      "wiring": "EVENT_MEASURE_ACCESS,EVENT_MEASURE_SPECTRA_SELFTEST"
     },
     {
       "name": "selftest-sh-radeq-source",
       "kind": "make-target",
-      "commands": [["python3", "scripts/check_a209_source_failclosed.py"]],
+      "commands": [
+        [
+          "python3",
+          "scripts/check_a209_source_failclosed.py"
+        ]
+      ],
       "category": "preflight",
       "wiring": "SH_RADEQ_SOURCE"
     },
-    {"name": "selftest_mc_evt_access", "kind": "make-target", "commands": [["make", "selftest_mc_evt_access"]], "category": "run-dependent", "wiring": "GPU and NVCC required"},
-    {"name": "selftest_grid_roundtrip", "kind": "make-target", "commands": [["make", "selftest_grid_roundtrip"]], "category": "milestone", "wiring": "selftest-registry-milestone"},
-    {"name": "selftest_sh_grid_loader", "kind": "make-target", "commands": [["make", "selftest_sh_grid_loader"]], "category": "milestone", "wiring": "selftest-registry-milestone"},
-    {"name": "selftest_bootstrap_window", "kind": "make-target", "commands": [["make", "selftest_bootstrap_window"]], "category": "collective", "wiring": "scripts/l1_1_gate_chain.sh"},
-    {"name": "selftest_wave32_ew_rc", "kind": "make-target", "commands": [["make", "selftest_wave32_ew_rc"]], "category": "unwired", "wiring": "GR-7", "unwired": {"observed": "2026-08-20", "disposition_rung": "GR-7"}},
-    {"name": "selftest_wave32_ew_io", "kind": "make-target", "commands": [["make", "selftest_wave32_ew_io"]], "category": "unwired", "wiring": "GR-7", "unwired": {"observed": "2026-08-20", "disposition_rung": "GR-7"}},
-    {"name": "selftest_cmf_chieta_dump", "kind": "make-target", "commands": [["make", "selftest_cmf_chieta_dump"]], "category": "collective", "wiring": "scripts/cmf_chieta_roundtrip_selftest.py"},
-    {"name": "selftest_cmf_linepop_dump", "kind": "make-target", "commands": [["make", "selftest_cmf_linepop_dump"]], "category": "collective", "wiring": "scripts/cmf_linepop_roundtrip_selftest.py"},
-    {"name": "selftest_stage32_rung1", "kind": "make-target", "commands": [["make", "selftest_stage32_rung1"]], "category": "milestone", "wiring": "selftest-registry-milestone"},
-    {"name": "selftest_emiss_ab_insitu", "kind": "make-target", "commands": [["make", "selftest_emiss_ab_insitu"]], "category": "unwired", "wiring": "GR-7", "unwired": {"observed": "2026-08-20", "disposition_rung": "GR-7"}},
-    {"name": "selftest_emiss_e11_fluor_matrix", "kind": "make-target", "commands": [["python3", "scripts/emiss_e11_seeded_fixture.py", "--out-dir", "/tmp/emiss_e11_fixture"]], "category": "preflight", "wiring": "EMISS_E11_SEEDED_FIXTURE; recipe 2 commands: execution gate wired; py_compile 4 files unwired"},
-    {"name": "selftest_wave32_matrix_debit", "kind": "make-target", "commands": [["make", "selftest_wave32_matrix_debit"]], "category": "collective", "wiring": "tests/test_wave32_seeded_defects.py"},
-    {"name": "selftest_wave32_within_sl_oom", "kind": "make-target", "commands": [["make", "selftest_wave32_within_sl_oom"]], "category": "unwired", "wiring": "GR-7", "unwired": {"observed": "2026-08-20", "disposition_rung": "GR-7"}},
-    {"name": "selftest_wave32_boundary_q", "kind": "make-target", "commands": [["make", "selftest_wave32_boundary_q"]], "category": "unwired", "wiring": "GR-7", "unwired": {"observed": "2026-08-20", "disposition_rung": "GR-7"}},
-    {"name": "selftest_wave32_counter_atomic", "kind": "make-target", "commands": [["make", "selftest_wave32_counter_atomic"]], "category": "unwired", "wiring": "GR-7", "unwired": {"observed": "2026-08-20", "disposition_rung": "GR-7"}},
-    {"name": "selftest_a2_03_radiation_field", "kind": "make-target", "commands": [["make", "selftest_a2_03_radiation_field"]], "category": "collective", "wiring": "scripts/run_a2_07_grammar_debug.sh"},
-    {"name": "selftest_a2_03_producer_parity_fixture", "kind": "make-target", "commands": [["make", "selftest_a2_03_producer_parity_fixture"]], "category": "unwired", "wiring": "GR-7", "unwired": {"observed": "2026-08-20", "disposition_rung": "GR-7"}},
-    {"name": "selftest_a2_04_commit", "kind": "make-target", "commands": [["make", "selftest_a2_04_commit"]], "category": "collective", "wiring": "scripts/run_a2_07_grammar_debug.sh"},
-    {"name": "selftest_a2_04_replay_commit", "kind": "make-target", "commands": [["make", "selftest_a2_04_replay_commit"]], "category": "unwired", "wiring": "GR-7", "unwired": {"observed": "2026-08-20", "disposition_rung": "GR-7"}},
-    {"name": "selftest_a2_05_bf_rate", "kind": "make-target", "commands": [["make", "selftest_a2_05_bf_rate"]], "category": "collective", "wiring": "scripts/run_a2_07_grammar_debug.sh"},
-    {"name": "selftest_a2_06_line_jbar", "kind": "make-target", "commands": [["make", "selftest_a2_06_line_jbar"]], "category": "collective", "wiring": "scripts/run_a2_07_grammar_debug.sh"},
-    {"name": "selftest_a2_06_dual_commit", "kind": "make-target", "commands": [["make", "selftest_a2_06_dual_commit"]], "category": "collective", "wiring": "scripts/run_a2_07_grammar_debug.sh"},
-    {"name": "selftest_a2_08_signed_opacity", "kind": "make-target", "commands": [["make", "selftest_a2_08_signed_opacity"]], "category": "unwired", "wiring": "GR-7", "unwired": {"observed": "2026-08-20", "disposition_rung": "GR-7", "lexical_mentions": ["scripts/a2_08_finalize_artifacts.py"], "note": "battery-shadow Z-a2-08"}},
-    {"name": "selftest_a2_09_emissivity", "kind": "make-target", "commands": [["make", "selftest_a2_09_emissivity"]], "category": "unwired", "wiring": "GR-7", "unwired": {"observed": "2026-08-20", "disposition_rung": "GR-7", "note": "battery-shadow Z-a2-09"}},
-    {"name": "selftest-bf-edge-census", "kind": "make-target", "commands": [["python3", "scripts/census_bf_edges_below_grid.py", "--selftest"]], "category": "preflight", "wiring": "BF_EDGE_CENSUS_SELFTEST"},
+    {
+      "name": "selftest_mc_evt_access",
+      "kind": "make-target",
+      "commands": [
+        [
+          "make",
+          "selftest_mc_evt_access"
+        ]
+      ],
+      "category": "run-dependent",
+      "wiring": "GPU and NVCC required"
+    },
+    {
+      "name": "selftest_grid_roundtrip",
+      "kind": "make-target",
+      "commands": [
+        [
+          "make",
+          "selftest_grid_roundtrip"
+        ]
+      ],
+      "category": "milestone",
+      "wiring": "selftest-registry-milestone"
+    },
+    {
+      "name": "selftest_sh_grid_loader",
+      "kind": "make-target",
+      "commands": [
+        [
+          "make",
+          "selftest_sh_grid_loader"
+        ]
+      ],
+      "category": "milestone",
+      "wiring": "selftest-registry-milestone"
+    },
+    {
+      "name": "selftest_bootstrap_window",
+      "kind": "make-target",
+      "commands": [
+        [
+          "make",
+          "selftest_bootstrap_window"
+        ]
+      ],
+      "category": "collective",
+      "wiring": "scripts/l1_1_gate_chain.sh"
+    },
+    {
+      "name": "selftest_wave32_ew_rc",
+      "kind": "make-target",
+      "commands": [
+        [
+          "make",
+          "selftest_wave32_ew_rc"
+        ]
+      ],
+      "category": "unwired",
+      "wiring": "GR-7",
+      "unwired": {
+        "observed": "2026-08-20",
+        "disposition_rung": "GR-7"
+      }
+    },
+    {
+      "name": "selftest_wave32_ew_io",
+      "kind": "make-target",
+      "commands": [
+        [
+          "make",
+          "selftest_wave32_ew_io"
+        ]
+      ],
+      "category": "unwired",
+      "wiring": "GR-7",
+      "unwired": {
+        "observed": "2026-08-20",
+        "disposition_rung": "GR-7"
+      }
+    },
+    {
+      "name": "selftest_cmf_chieta_dump",
+      "kind": "make-target",
+      "commands": [
+        [
+          "make",
+          "selftest_cmf_chieta_dump"
+        ]
+      ],
+      "category": "collective",
+      "wiring": "scripts/cmf_chieta_roundtrip_selftest.py"
+    },
+    {
+      "name": "selftest_cmf_linepop_dump",
+      "kind": "make-target",
+      "commands": [
+        [
+          "make",
+          "selftest_cmf_linepop_dump"
+        ]
+      ],
+      "category": "collective",
+      "wiring": "scripts/cmf_linepop_roundtrip_selftest.py"
+    },
+    {
+      "name": "selftest_stage32_rung1",
+      "kind": "make-target",
+      "commands": [
+        [
+          "make",
+          "selftest_stage32_rung1"
+        ]
+      ],
+      "category": "milestone",
+      "wiring": "selftest-registry-milestone"
+    },
+    {
+      "name": "selftest_emiss_ab_insitu",
+      "kind": "make-target",
+      "commands": [
+        [
+          "make",
+          "selftest_emiss_ab_insitu"
+        ]
+      ],
+      "category": "unwired",
+      "wiring": "GR-7",
+      "unwired": {
+        "observed": "2026-08-20",
+        "disposition_rung": "GR-7"
+      }
+    },
+    {
+      "name": "selftest_emiss_e11_fluor_matrix",
+      "kind": "make-target",
+      "commands": [
+        [
+          "python3",
+          "scripts/emiss_e11_seeded_fixture.py",
+          "--out-dir",
+          "/tmp/emiss_e11_fixture"
+        ]
+      ],
+      "category": "preflight",
+      "wiring": "EMISS_E11_SEEDED_FIXTURE; recipe 2 commands: execution gate wired; py_compile 4 files unwired"
+    },
+    {
+      "name": "selftest_wave32_matrix_debit",
+      "kind": "make-target",
+      "commands": [
+        [
+          "make",
+          "selftest_wave32_matrix_debit"
+        ]
+      ],
+      "category": "collective",
+      "wiring": "tests/test_wave32_seeded_defects.py"
+    },
+    {
+      "name": "selftest_wave32_within_sl_oom",
+      "kind": "make-target",
+      "commands": [
+        [
+          "make",
+          "selftest_wave32_within_sl_oom"
+        ]
+      ],
+      "category": "unwired",
+      "wiring": "GR-7",
+      "unwired": {
+        "observed": "2026-08-20",
+        "disposition_rung": "GR-7"
+      }
+    },
+    {
+      "name": "selftest_wave32_boundary_q",
+      "kind": "make-target",
+      "commands": [
+        [
+          "make",
+          "selftest_wave32_boundary_q"
+        ]
+      ],
+      "category": "unwired",
+      "wiring": "GR-7",
+      "unwired": {
+        "observed": "2026-08-20",
+        "disposition_rung": "GR-7"
+      }
+    },
+    {
+      "name": "selftest_wave32_counter_atomic",
+      "kind": "make-target",
+      "commands": [
+        [
+          "make",
+          "selftest_wave32_counter_atomic"
+        ]
+      ],
+      "category": "unwired",
+      "wiring": "GR-7",
+      "unwired": {
+        "observed": "2026-08-20",
+        "disposition_rung": "GR-7"
+      }
+    },
+    {
+      "name": "selftest_a2_03_radiation_field",
+      "kind": "make-target",
+      "commands": [
+        [
+          "make",
+          "selftest_a2_03_radiation_field"
+        ]
+      ],
+      "category": "collective",
+      "wiring": "scripts/run_a2_07_grammar_debug.sh"
+    },
+    {
+      "name": "selftest_a2_03_producer_parity_fixture",
+      "kind": "make-target",
+      "commands": [
+        [
+          "make",
+          "selftest_a2_03_producer_parity_fixture"
+        ]
+      ],
+      "category": "unwired",
+      "wiring": "GR-7",
+      "unwired": {
+        "observed": "2026-08-20",
+        "disposition_rung": "GR-7"
+      }
+    },
+    {
+      "name": "selftest_a2_04_commit",
+      "kind": "make-target",
+      "commands": [
+        [
+          "make",
+          "selftest_a2_04_commit"
+        ]
+      ],
+      "category": "collective",
+      "wiring": "scripts/run_a2_07_grammar_debug.sh"
+    },
+    {
+      "name": "selftest_a2_04_replay_commit",
+      "kind": "make-target",
+      "commands": [
+        [
+          "make",
+          "selftest_a2_04_replay_commit"
+        ]
+      ],
+      "category": "unwired",
+      "wiring": "GR-7",
+      "unwired": {
+        "observed": "2026-08-20",
+        "disposition_rung": "GR-7"
+      }
+    },
+    {
+      "name": "selftest_a2_05_bf_rate",
+      "kind": "make-target",
+      "commands": [
+        [
+          "make",
+          "selftest_a2_05_bf_rate"
+        ]
+      ],
+      "category": "collective",
+      "wiring": "scripts/run_a2_07_grammar_debug.sh"
+    },
+    {
+      "name": "selftest_a2_06_line_jbar",
+      "kind": "make-target",
+      "commands": [
+        [
+          "make",
+          "selftest_a2_06_line_jbar"
+        ]
+      ],
+      "category": "collective",
+      "wiring": "scripts/run_a2_07_grammar_debug.sh"
+    },
+    {
+      "name": "selftest_a2_06_dual_commit",
+      "kind": "make-target",
+      "commands": [
+        [
+          "make",
+          "selftest_a2_06_dual_commit"
+        ]
+      ],
+      "category": "collective",
+      "wiring": "scripts/run_a2_07_grammar_debug.sh"
+    },
+    {
+      "name": "selftest_a2_08_signed_opacity",
+      "kind": "make-target",
+      "commands": [
+        [
+          "make",
+          "selftest_a2_08_signed_opacity"
+        ]
+      ],
+      "category": "unwired",
+      "wiring": "GR-7",
+      "unwired": {
+        "observed": "2026-08-20",
+        "disposition_rung": "GR-7",
+        "lexical_mentions": [
+          "scripts/a2_08_finalize_artifacts.py"
+        ],
+        "note": "battery-shadow Z-a2-08"
+      }
+    },
+    {
+      "name": "selftest_a2_09_emissivity",
+      "kind": "make-target",
+      "commands": [
+        [
+          "make",
+          "selftest_a2_09_emissivity"
+        ]
+      ],
+      "category": "unwired",
+      "wiring": "GR-7",
+      "unwired": {
+        "observed": "2026-08-20",
+        "disposition_rung": "GR-7",
+        "note": "battery-shadow Z-a2-09"
+      }
+    },
+    {
+      "name": "selftest-bf-edge-census",
+      "kind": "make-target",
+      "commands": [
+        [
+          "python3",
+          "scripts/census_bf_edges_below_grid.py",
+          "--selftest"
+        ]
+      ],
+      "category": "preflight",
+      "wiring": "BF_EDGE_CENSUS_SELFTEST"
+    },
     {
       "name": "selftest-tau-writer-census",
       "kind": "make-target",
-      "commands": [["python3", "scripts/check_tau_writer_generation.py"]],
+      "commands": [
+        [
+          "python3",
+          "scripts/check_tau_writer_generation.py"
+        ]
+      ],
       "category": "preflight",
       "wiring": "TAU_WRITER_CENSUS"
     },
-    {"name": "bf-edge-census", "kind": "make-target", "commands": [["python3", "scripts/census_bf_edges_below_grid.py", "--ref-dir", "data/tardis_reference_toy06_19p48d_sivcaiv_active"]], "category": "manual-audit", "wiring": "intentional rc=3 deck-census semantics; operator-selected audit"},
-    {"name": "selftest_a2_10_radeq", "kind": "make-target", "commands": [["make", "selftest_a2_10_radeq"]], "category": "unwired", "wiring": "GR-7", "unwired": {"observed": "2026-08-20", "disposition_rung": "GR-7", "note": "battery-shadow Z-a2-10"}},
-    {"name": "selftest_det_stage12", "kind": "make-target", "commands": [["make", "selftest_det_stage12"]], "category": "unwired", "wiring": "GR-7", "unwired": {"observed": "2026-08-20", "disposition_rung": "GR-7"}},
-    {"name": "selftest-a2-10-cancellation-census", "kind": "make-target", "commands": [["python3", "tests/a2_10_cancellation_census_selftest.py"]], "category": "preflight", "wiring": "A2_10_CANCELLATION_CENSUS"},
-    {"name": "selftest-a2-10-refinement-comparison", "kind": "make-target", "commands": [["python3", "tests/a2_10_refinement_comparison_selftest.py"]], "category": "preflight", "wiring": "A2_10_REFINEMENT_COMPARISON"},
-    {"name": "selftest-a2-10-targeted-gate", "kind": "make-target", "commands": [["python3", "tests/a2_10_targeted_gate_selftest.py"]], "category": "preflight", "wiring": "A2_10_TARGETED_GATE"},
-    {"name": "selftest-a2-10-targeted-reference", "kind": "make-target", "commands": [["python3", "tests/a2_10_targeted_reference_selftest.py"]], "category": "preflight", "wiring": "A2_10_TARGETED_REFERENCE"},
+    {
+      "name": "bf-edge-census",
+      "kind": "make-target",
+      "commands": [
+        [
+          "python3",
+          "scripts/census_bf_edges_below_grid.py",
+          "--ref-dir",
+          "data/tardis_reference_toy06_19p48d_sivcaiv_active"
+        ]
+      ],
+      "category": "manual-audit",
+      "wiring": "intentional rc=3 deck-census semantics; operator-selected audit"
+    },
+    {
+      "name": "selftest_a2_10_radeq",
+      "kind": "make-target",
+      "commands": [
+        [
+          "make",
+          "selftest_a2_10_radeq"
+        ]
+      ],
+      "category": "unwired",
+      "wiring": "GR-7",
+      "unwired": {
+        "observed": "2026-08-20",
+        "disposition_rung": "GR-7",
+        "note": "battery-shadow Z-a2-10"
+      }
+    },
+    {
+      "name": "selftest_det_stage12",
+      "kind": "make-target",
+      "commands": [
+        [
+          "make",
+          "selftest_det_stage12"
+        ]
+      ],
+      "category": "unwired",
+      "wiring": "GR-7",
+      "unwired": {
+        "observed": "2026-08-20",
+        "disposition_rung": "GR-7"
+      }
+    },
+    {
+      "name": "selftest-a2-10-cancellation-census",
+      "kind": "make-target",
+      "commands": [
+        [
+          "python3",
+          "tests/a2_10_cancellation_census_selftest.py"
+        ]
+      ],
+      "category": "preflight",
+      "wiring": "A2_10_CANCELLATION_CENSUS"
+    },
+    {
+      "name": "selftest-a2-10-refinement-comparison",
+      "kind": "make-target",
+      "commands": [
+        [
+          "python3",
+          "tests/a2_10_refinement_comparison_selftest.py"
+        ]
+      ],
+      "category": "preflight",
+      "wiring": "A2_10_REFINEMENT_COMPARISON"
+    },
+    {
+      "name": "selftest-a2-10-targeted-gate",
+      "kind": "make-target",
+      "commands": [
+        [
+          "python3",
+          "tests/a2_10_targeted_gate_selftest.py"
+        ]
+      ],
+      "category": "preflight",
+      "wiring": "A2_10_TARGETED_GATE"
+    },
+    {
+      "name": "selftest-a2-10-targeted-reference",
+      "kind": "make-target",
+      "commands": [
+        [
+          "python3",
+          "tests/a2_10_targeted_reference_selftest.py"
+        ]
+      ],
+      "category": "preflight",
+      "wiring": "A2_10_TARGETED_REFERENCE"
+    },
     {
       "name": "selftest-a2-10-line-ion-owners",
       "kind": "make-target",
       "commands": [
-        ["python3", "tests/a2_10_line_ion_owner_summary_selftest.py"],
-        ["python3", "tests/a2_10_line_saturation_summary_selftest.py"],
-        ["python3", "tests/cmfgen_lineheat_ion_owner_summary_selftest.py"],
-        ["python3", "tests/cmfgen_line_components_ion_owner_selftest.py"],
-        ["python3", "tests/a2_10_cmfgen_ion_owner_comparison_selftest.py"],
-        ["python3", "tests/a2_10_cmfgen_ion_component_comparison_selftest.py"],
-        ["python3", "tests/a2_10_line_owner_closure_monitor_selftest.py"],
-        ["python3", "tests/a2_10_line_owner_component_monitor_selftest.py"]
+        [
+          "python3",
+          "tests/a2_10_line_ion_owner_summary_selftest.py"
+        ],
+        [
+          "python3",
+          "tests/a2_10_line_saturation_summary_selftest.py"
+        ],
+        [
+          "python3",
+          "tests/cmfgen_lineheat_ion_owner_summary_selftest.py"
+        ],
+        [
+          "python3",
+          "tests/cmfgen_line_components_ion_owner_selftest.py"
+        ],
+        [
+          "python3",
+          "tests/a2_10_cmfgen_ion_owner_comparison_selftest.py"
+        ],
+        [
+          "python3",
+          "tests/a2_10_cmfgen_ion_component_comparison_selftest.py"
+        ],
+        [
+          "python3",
+          "tests/a2_10_line_owner_closure_monitor_selftest.py"
+        ],
+        [
+          "python3",
+          "tests/a2_10_line_owner_component_monitor_selftest.py"
+        ]
       ],
       "category": "preflight",
       "wiring": "A2_10_LINE_ION_OWNER_SUMMARY,A2_10_LINE_SATURATION_SUMMARY,CMFGEN_LINEHEAT_ION_OWNER_SUMMARY,CMFGEN_LINE_COMPONENTS_ION_OWNER,A2_10_CMFGEN_ION_OWNER_COMPARISON,A2_10_CMFGEN_ION_COMPONENT_COMPARISON,A2_10_LINE_OWNER_CLOSURE_MONITOR,A2_10_LINE_OWNER_COMPONENT_MONITOR"
@@ -97,12 +695,30 @@
       "name": "selftest-a2-10-line-saturation",
       "kind": "make-target",
       "commands": [
-        ["python3", "tests/a2_10_line_saturation_summary_selftest.py"],
-        ["python3", "tests/a2_10_line_saturation_intersection_selftest.py"],
-        ["python3", "tests/a2_10_phase_baseline_streams_selftest.py"],
-        ["python3", "tests/a2_10_cmfgen_line_saturation_comparison_selftest.py"],
-        ["python3", "tests/a2_10_line_saturation_per_ion_coverage_selftest.py"],
-        ["python3", "tests/a2_10_line_saturation_per_ion_monitor_selftest.py"]
+        [
+          "python3",
+          "tests/a2_10_line_saturation_summary_selftest.py"
+        ],
+        [
+          "python3",
+          "tests/a2_10_line_saturation_intersection_selftest.py"
+        ],
+        [
+          "python3",
+          "tests/a2_10_phase_baseline_streams_selftest.py"
+        ],
+        [
+          "python3",
+          "tests/a2_10_cmfgen_line_saturation_comparison_selftest.py"
+        ],
+        [
+          "python3",
+          "tests/a2_10_line_saturation_per_ion_coverage_selftest.py"
+        ],
+        [
+          "python3",
+          "tests/a2_10_line_saturation_per_ion_monitor_selftest.py"
+        ]
       ],
       "category": "known-red",
       "wiring": "GR-6",
@@ -115,45 +731,505 @@
         "repair_rung": "GR-6"
       }
     },
-    {"name": "selftest-a2-10-cmfgen-mapped-line", "kind": "make-target", "commands": [["python3", "tests/a2_10_cmfgen_mapped_line_comparison_selftest.py"]], "category": "preflight", "wiring": "A2_10_CMFGEN_MAPPED_LINE"},
-    {"name": "selftest_line_net_rate", "kind": "make-target", "commands": [["make", "selftest_line_net_rate"]], "category": "unwired", "wiring": "GR-7", "unwired": {"observed": "2026-08-20", "disposition_rung": "GR-7"}},
-    {"name": "selftest_cmfgen_adiabatic", "kind": "make-target", "commands": [["make", "selftest_cmfgen_adiabatic"]], "category": "unwired", "wiring": "GR-7", "unwired": {"observed": "2026-08-20", "disposition_rung": "GR-7"}},
-    {"name": "selftest_atomic_internal_energy", "kind": "make-target", "commands": [["make", "selftest_atomic_internal_energy"]], "category": "unwired", "wiring": "GR-7", "unwired": {"observed": "2026-08-20", "disposition_rung": "GR-7"}},
-    {"name": "selftest_nlte_population_candidate", "kind": "make-target", "commands": [["make", "selftest_nlte_population_candidate"]], "category": "unwired", "wiring": "GR-7", "unwired": {"observed": "2026-08-20", "disposition_rung": "GR-7"}},
-    {"name": "selftest_nlte_candidate_adiabatic", "kind": "make-target", "commands": [["make", "selftest_nlte_candidate_adiabatic"]], "category": "unwired", "wiring": "GR-7", "unwired": {"observed": "2026-08-20", "disposition_rung": "GR-7"}},
-    {"name": "selftest_nlte_candidate_tau", "kind": "make-target", "commands": [["make", "selftest_nlte_candidate_tau"]], "category": "unwired", "wiring": "GR-7", "unwired": {"observed": "2026-08-20", "disposition_rung": "GR-7"}},
-    {"name": "selftest_a2_10_seed_commit", "kind": "make-target", "commands": [["make", "selftest_a2_10_seed_commit"]], "category": "unwired", "wiring": "GR-7", "unwired": {"observed": "2026-08-20", "disposition_rung": "GR-7"}},
-    {"name": "selftest_physics_comparison", "kind": "make-target", "commands": [["make", "selftest_physics_comparison"]], "category": "unwired", "wiring": "GR-7", "unwired": {"observed": "2026-08-20", "disposition_rung": "GR-7"}},
-    {"name": "selftest_physics_comparison_regrid", "kind": "make-target", "commands": [["make", "selftest_physics_comparison_regrid"]], "category": "unwired", "wiring": "GR-7", "unwired": {"observed": "2026-08-20", "disposition_rung": "GR-7"}},
-    {"name": "selftest_a2_07_population", "kind": "make-target", "commands": [["make", "selftest_a2_07_population"]], "category": "collective", "wiring": "scripts/run_a2_07_grammar_debug.sh"},
-    {"name": "selftest_a2_16_seed", "kind": "make-target", "commands": [["make", "selftest_a2_16_seed"]], "category": "unwired", "wiring": "GR-7", "unwired": {"observed": "2026-08-20", "disposition_rung": "GR-7"}},
-    {"name": "selftest_a2_17_jnu_seed", "kind": "make-target", "commands": [["make", "selftest_a2_17_jnu_seed"]], "category": "milestone", "wiring": "selftest-registry-milestone"},
-
-    {"name": "gate-registry-check", "kind": "make-target", "commands": [["python3", "scripts/check_gate_registry.py"]], "category": "preflight", "wiring": "GATE_REGISTRY"},
-    {"name": "selftest-registry-milestone", "kind": "make-target", "commands": [["make", "selftest-registry-milestone"]], "category": "manual-audit", "wiring": "aggregate milestone entrypoint; invoked once per recovery milestone"},
-
-    {"name": "scripts/run_gate_battery.py", "kind": "script", "commands": [["python3", "scripts/run_gate_battery.py"]], "category": "battery-core", "wiring": "D,K,Z,CP"},
-    {"name": "scripts/a2_01_census_contract.py", "kind": "script", "commands": [["python3", "scripts/a2_01_census_contract.py", "check"]], "category": "preflight", "wiring": "A2_01_CENSUS"},
-    {"name": "scripts/verify_sh_grid_upper_closure.py", "kind": "script", "commands": [["python3", "scripts/verify_sh_grid_upper_closure.py"]], "category": "preflight", "wiring": "SH_GRID_UPPER_CLOSURE"},
-    {"name": "scripts/verify_seals.py", "kind": "script", "commands": [["python3", "scripts/verify_seals.py"]], "category": "preflight", "wiring": "SEAL_INTEGRITY"},
-    {"name": "scripts/check_legacy_knob_registry.py", "kind": "script", "commands": [["python3", "scripts/check_legacy_knob_registry.py"]], "category": "preflight", "wiring": "LEGACY_KNOB_REGISTRY"},
-    {"name": "scripts/check_gate_registry.py", "kind": "script", "commands": [["python3", "scripts/check_gate_registry.py"]], "category": "preflight", "wiring": "GATE_REGISTRY"},
-    {"name": "tests/gate_source_lib_selftest.py", "kind": "script", "commands": [["python3", "tests/gate_source_lib_selftest.py"]], "category": "preflight", "wiring": "GATE_SOURCE_LIB_SELFTEST"},
-    {"name": "scripts/census_bf_edges_below_grid.py", "kind": "script", "commands": [["python3", "scripts/census_bf_edges_below_grid.py", "--selftest"]], "category": "preflight", "wiring": "BF_EDGE_CENSUS_SELFTEST"},
-    {"name": "tests/a2_10_cancellation_census_selftest.py", "kind": "script", "commands": [["python3", "tests/a2_10_cancellation_census_selftest.py"]], "category": "preflight", "wiring": "A2_10_CANCELLATION_CENSUS"},
-    {"name": "tests/a2_10_refinement_comparison_selftest.py", "kind": "script", "commands": [["python3", "tests/a2_10_refinement_comparison_selftest.py"]], "category": "preflight", "wiring": "A2_10_REFINEMENT_COMPARISON"},
-    {"name": "tests/a2_10_targeted_gate_selftest.py", "kind": "script", "commands": [["python3", "tests/a2_10_targeted_gate_selftest.py"]], "category": "preflight", "wiring": "A2_10_TARGETED_GATE"},
-    {"name": "tests/a2_10_targeted_reference_selftest.py", "kind": "script", "commands": [["python3", "tests/a2_10_targeted_reference_selftest.py"]], "category": "preflight", "wiring": "A2_10_TARGETED_REFERENCE"},
-    {"name": "tests/a2_10_line_ion_owner_summary_selftest.py", "kind": "script", "commands": [["python3", "tests/a2_10_line_ion_owner_summary_selftest.py"]], "category": "preflight", "wiring": "A2_10_LINE_ION_OWNER_SUMMARY"},
-    {"name": "tests/a2_10_line_saturation_summary_selftest.py", "kind": "script", "commands": [["python3", "tests/a2_10_line_saturation_summary_selftest.py"]], "category": "preflight", "wiring": "A2_10_LINE_SATURATION_SUMMARY"},
-    {"name": "tests/cmfgen_lineheat_ion_owner_summary_selftest.py", "kind": "script", "commands": [["python3", "tests/cmfgen_lineheat_ion_owner_summary_selftest.py"]], "category": "preflight", "wiring": "CMFGEN_LINEHEAT_ION_OWNER_SUMMARY"},
-    {"name": "tests/cmfgen_line_components_ion_owner_selftest.py", "kind": "script", "commands": [["python3", "tests/cmfgen_line_components_ion_owner_selftest.py"]], "category": "preflight", "wiring": "CMFGEN_LINE_COMPONENTS_ION_OWNER"},
-    {"name": "tests/a2_10_cmfgen_ion_owner_comparison_selftest.py", "kind": "script", "commands": [["python3", "tests/a2_10_cmfgen_ion_owner_comparison_selftest.py"]], "category": "preflight", "wiring": "A2_10_CMFGEN_ION_OWNER_COMPARISON"},
-    {"name": "tests/a2_10_cmfgen_ion_component_comparison_selftest.py", "kind": "script", "commands": [["python3", "tests/a2_10_cmfgen_ion_component_comparison_selftest.py"]], "category": "preflight", "wiring": "A2_10_CMFGEN_ION_COMPONENT_COMPARISON"},
-    {"name": "tests/a2_10_line_owner_closure_monitor_selftest.py", "kind": "script", "commands": [["python3", "tests/a2_10_line_owner_closure_monitor_selftest.py"]], "category": "preflight", "wiring": "A2_10_LINE_OWNER_CLOSURE_MONITOR"},
-    {"name": "tests/a2_10_line_owner_component_monitor_selftest.py", "kind": "script", "commands": [["python3", "tests/a2_10_line_owner_component_monitor_selftest.py"]], "category": "preflight", "wiring": "A2_10_LINE_OWNER_COMPONENT_MONITOR"},
-    {"name": "tests/a2_10_cmfgen_mapped_line_comparison_selftest.py", "kind": "script", "commands": [["python3", "tests/a2_10_cmfgen_mapped_line_comparison_selftest.py"]], "category": "preflight", "wiring": "A2_10_CMFGEN_MAPPED_LINE"},
-    {"name": "scripts/emiss_e11_seeded_fixture.py", "kind": "script", "commands": [["python3", "scripts/emiss_e11_seeded_fixture.py", "--out-dir", "/tmp/emiss_e11_fixture"]], "category": "preflight", "wiring": "EMISS_E11_SEEDED_FIXTURE"},
-    {"name": "scripts/a2_07_population_census.py", "kind": "script", "commands": [["python3", "scripts/a2_07_population_census.py"]], "category": "manual-lane", "wiring": "scripts/run_a2_07_grammar_debug.sh,scripts/run_a2_07_lageunha.sh"}
+    {
+      "name": "selftest-a2-10-cmfgen-mapped-line",
+      "kind": "make-target",
+      "commands": [
+        [
+          "python3",
+          "tests/a2_10_cmfgen_mapped_line_comparison_selftest.py"
+        ]
+      ],
+      "category": "preflight",
+      "wiring": "A2_10_CMFGEN_MAPPED_LINE"
+    },
+    {
+      "name": "selftest_line_net_rate",
+      "kind": "make-target",
+      "commands": [
+        [
+          "make",
+          "selftest_line_net_rate"
+        ]
+      ],
+      "category": "unwired",
+      "wiring": "GR-7",
+      "unwired": {
+        "observed": "2026-08-20",
+        "disposition_rung": "GR-7"
+      }
+    },
+    {
+      "name": "selftest_cmfgen_adiabatic",
+      "kind": "make-target",
+      "commands": [
+        [
+          "make",
+          "selftest_cmfgen_adiabatic"
+        ]
+      ],
+      "category": "unwired",
+      "wiring": "GR-7",
+      "unwired": {
+        "observed": "2026-08-20",
+        "disposition_rung": "GR-7"
+      }
+    },
+    {
+      "name": "selftest_atomic_internal_energy",
+      "kind": "make-target",
+      "commands": [
+        [
+          "make",
+          "selftest_atomic_internal_energy"
+        ]
+      ],
+      "category": "unwired",
+      "wiring": "GR-7",
+      "unwired": {
+        "observed": "2026-08-20",
+        "disposition_rung": "GR-7"
+      }
+    },
+    {
+      "name": "selftest_nlte_population_candidate",
+      "kind": "make-target",
+      "commands": [
+        [
+          "make",
+          "selftest_nlte_population_candidate"
+        ]
+      ],
+      "category": "unwired",
+      "wiring": "GR-7",
+      "unwired": {
+        "observed": "2026-08-20",
+        "disposition_rung": "GR-7"
+      }
+    },
+    {
+      "name": "selftest_nlte_candidate_adiabatic",
+      "kind": "make-target",
+      "commands": [
+        [
+          "make",
+          "selftest_nlte_candidate_adiabatic"
+        ]
+      ],
+      "category": "unwired",
+      "wiring": "GR-7",
+      "unwired": {
+        "observed": "2026-08-20",
+        "disposition_rung": "GR-7"
+      }
+    },
+    {
+      "name": "selftest_nlte_candidate_tau",
+      "kind": "make-target",
+      "commands": [
+        [
+          "make",
+          "selftest_nlte_candidate_tau"
+        ]
+      ],
+      "category": "unwired",
+      "wiring": "GR-7",
+      "unwired": {
+        "observed": "2026-08-20",
+        "disposition_rung": "GR-7"
+      }
+    },
+    {
+      "name": "selftest_a2_10_seed_commit",
+      "kind": "make-target",
+      "commands": [
+        [
+          "make",
+          "selftest_a2_10_seed_commit"
+        ]
+      ],
+      "category": "unwired",
+      "wiring": "GR-7",
+      "unwired": {
+        "observed": "2026-08-20",
+        "disposition_rung": "GR-7"
+      }
+    },
+    {
+      "name": "selftest_physics_comparison",
+      "kind": "make-target",
+      "commands": [
+        [
+          "make",
+          "selftest_physics_comparison"
+        ]
+      ],
+      "category": "unwired",
+      "wiring": "GR-7",
+      "unwired": {
+        "observed": "2026-08-20",
+        "disposition_rung": "GR-7"
+      }
+    },
+    {
+      "name": "selftest_physics_comparison_regrid",
+      "kind": "make-target",
+      "commands": [
+        [
+          "make",
+          "selftest_physics_comparison_regrid"
+        ]
+      ],
+      "category": "unwired",
+      "wiring": "GR-7",
+      "unwired": {
+        "observed": "2026-08-20",
+        "disposition_rung": "GR-7"
+      }
+    },
+    {
+      "name": "selftest_a2_07_population",
+      "kind": "make-target",
+      "commands": [
+        [
+          "make",
+          "selftest_a2_07_population"
+        ]
+      ],
+      "category": "collective",
+      "wiring": "scripts/run_a2_07_grammar_debug.sh"
+    },
+    {
+      "name": "selftest_a2_16_seed",
+      "kind": "make-target",
+      "commands": [
+        [
+          "make",
+          "selftest_a2_16_seed"
+        ]
+      ],
+      "category": "unwired",
+      "wiring": "GR-7",
+      "unwired": {
+        "observed": "2026-08-20",
+        "disposition_rung": "GR-7"
+      }
+    },
+    {
+      "name": "selftest_a2_17_jnu_seed",
+      "kind": "make-target",
+      "commands": [
+        [
+          "make",
+          "selftest_a2_17_jnu_seed"
+        ]
+      ],
+      "category": "milestone",
+      "wiring": "selftest-registry-milestone"
+    },
+    {
+      "name": "gate-registry-check",
+      "kind": "make-target",
+      "commands": [
+        [
+          "python3",
+          "scripts/check_gate_registry.py"
+        ]
+      ],
+      "category": "preflight",
+      "wiring": "GATE_REGISTRY"
+    },
+    {
+      "name": "selftest-registry-milestone",
+      "kind": "make-target",
+      "commands": [
+        [
+          "make",
+          "selftest-registry-milestone"
+        ]
+      ],
+      "category": "manual-audit",
+      "wiring": "aggregate milestone entrypoint; invoked once per recovery milestone"
+    },
+    {
+      "name": "scripts/run_gate_battery.py",
+      "kind": "script",
+      "commands": [
+        [
+          "python3",
+          "scripts/run_gate_battery.py"
+        ]
+      ],
+      "category": "battery-core",
+      "wiring": "D,K,Z,CP"
+    },
+    {
+      "name": "scripts/a2_01_census_contract.py",
+      "kind": "script",
+      "commands": [
+        [
+          "python3",
+          "scripts/a2_01_census_contract.py",
+          "check"
+        ]
+      ],
+      "category": "preflight",
+      "wiring": "A2_01_CENSUS"
+    },
+    {
+      "name": "scripts/verify_sh_grid_upper_closure.py",
+      "kind": "script",
+      "commands": [
+        [
+          "python3",
+          "scripts/verify_sh_grid_upper_closure.py"
+        ]
+      ],
+      "category": "preflight",
+      "wiring": "SH_GRID_UPPER_CLOSURE"
+    },
+    {
+      "name": "scripts/verify_seals.py",
+      "kind": "script",
+      "commands": [
+        [
+          "python3",
+          "scripts/verify_seals.py"
+        ]
+      ],
+      "category": "preflight",
+      "wiring": "SEAL_INTEGRITY"
+    },
+    {
+      "name": "scripts/check_legacy_knob_registry.py",
+      "kind": "script",
+      "commands": [
+        [
+          "python3",
+          "scripts/check_legacy_knob_registry.py"
+        ]
+      ],
+      "category": "preflight",
+      "wiring": "LEGACY_KNOB_REGISTRY"
+    },
+    {
+      "name": "scripts/check_gate_registry.py",
+      "kind": "script",
+      "commands": [
+        [
+          "python3",
+          "scripts/check_gate_registry.py"
+        ]
+      ],
+      "category": "preflight",
+      "wiring": "GATE_REGISTRY"
+    },
+    {
+      "name": "tests/gate_source_lib_selftest.py",
+      "kind": "script",
+      "commands": [
+        [
+          "python3",
+          "tests/gate_source_lib_selftest.py"
+        ]
+      ],
+      "category": "preflight",
+      "wiring": "GATE_SOURCE_LIB_SELFTEST"
+    },
+    {
+      "name": "scripts/census_bf_edges_below_grid.py",
+      "kind": "script",
+      "commands": [
+        [
+          "python3",
+          "scripts/census_bf_edges_below_grid.py",
+          "--selftest"
+        ]
+      ],
+      "category": "preflight",
+      "wiring": "BF_EDGE_CENSUS_SELFTEST"
+    },
+    {
+      "name": "tests/a2_10_cancellation_census_selftest.py",
+      "kind": "script",
+      "commands": [
+        [
+          "python3",
+          "tests/a2_10_cancellation_census_selftest.py"
+        ]
+      ],
+      "category": "preflight",
+      "wiring": "A2_10_CANCELLATION_CENSUS"
+    },
+    {
+      "name": "tests/a2_10_refinement_comparison_selftest.py",
+      "kind": "script",
+      "commands": [
+        [
+          "python3",
+          "tests/a2_10_refinement_comparison_selftest.py"
+        ]
+      ],
+      "category": "preflight",
+      "wiring": "A2_10_REFINEMENT_COMPARISON"
+    },
+    {
+      "name": "tests/a2_10_targeted_gate_selftest.py",
+      "kind": "script",
+      "commands": [
+        [
+          "python3",
+          "tests/a2_10_targeted_gate_selftest.py"
+        ]
+      ],
+      "category": "preflight",
+      "wiring": "A2_10_TARGETED_GATE"
+    },
+    {
+      "name": "tests/a2_10_targeted_reference_selftest.py",
+      "kind": "script",
+      "commands": [
+        [
+          "python3",
+          "tests/a2_10_targeted_reference_selftest.py"
+        ]
+      ],
+      "category": "preflight",
+      "wiring": "A2_10_TARGETED_REFERENCE"
+    },
+    {
+      "name": "tests/a2_10_line_ion_owner_summary_selftest.py",
+      "kind": "script",
+      "commands": [
+        [
+          "python3",
+          "tests/a2_10_line_ion_owner_summary_selftest.py"
+        ]
+      ],
+      "category": "preflight",
+      "wiring": "A2_10_LINE_ION_OWNER_SUMMARY"
+    },
+    {
+      "name": "tests/a2_10_line_saturation_summary_selftest.py",
+      "kind": "script",
+      "commands": [
+        [
+          "python3",
+          "tests/a2_10_line_saturation_summary_selftest.py"
+        ]
+      ],
+      "category": "preflight",
+      "wiring": "A2_10_LINE_SATURATION_SUMMARY"
+    },
+    {
+      "name": "tests/cmfgen_lineheat_ion_owner_summary_selftest.py",
+      "kind": "script",
+      "commands": [
+        [
+          "python3",
+          "tests/cmfgen_lineheat_ion_owner_summary_selftest.py"
+        ]
+      ],
+      "category": "preflight",
+      "wiring": "CMFGEN_LINEHEAT_ION_OWNER_SUMMARY"
+    },
+    {
+      "name": "tests/cmfgen_line_components_ion_owner_selftest.py",
+      "kind": "script",
+      "commands": [
+        [
+          "python3",
+          "tests/cmfgen_line_components_ion_owner_selftest.py"
+        ]
+      ],
+      "category": "preflight",
+      "wiring": "CMFGEN_LINE_COMPONENTS_ION_OWNER"
+    },
+    {
+      "name": "tests/a2_10_cmfgen_ion_owner_comparison_selftest.py",
+      "kind": "script",
+      "commands": [
+        [
+          "python3",
+          "tests/a2_10_cmfgen_ion_owner_comparison_selftest.py"
+        ]
+      ],
+      "category": "preflight",
+      "wiring": "A2_10_CMFGEN_ION_OWNER_COMPARISON"
+    },
+    {
+      "name": "tests/a2_10_cmfgen_ion_component_comparison_selftest.py",
+      "kind": "script",
+      "commands": [
+        [
+          "python3",
+          "tests/a2_10_cmfgen_ion_component_comparison_selftest.py"
+        ]
+      ],
+      "category": "preflight",
+      "wiring": "A2_10_CMFGEN_ION_COMPONENT_COMPARISON"
+    },
+    {
+      "name": "tests/a2_10_line_owner_closure_monitor_selftest.py",
+      "kind": "script",
+      "commands": [
+        [
+          "python3",
+          "tests/a2_10_line_owner_closure_monitor_selftest.py"
+        ]
+      ],
+      "category": "preflight",
+      "wiring": "A2_10_LINE_OWNER_CLOSURE_MONITOR"
+    },
+    {
+      "name": "tests/a2_10_line_owner_component_monitor_selftest.py",
+      "kind": "script",
+      "commands": [
+        [
+          "python3",
+          "tests/a2_10_line_owner_component_monitor_selftest.py"
+        ]
+      ],
+      "category": "preflight",
+      "wiring": "A2_10_LINE_OWNER_COMPONENT_MONITOR"
+    },
+    {
+      "name": "tests/a2_10_cmfgen_mapped_line_comparison_selftest.py",
+      "kind": "script",
+      "commands": [
+        [
+          "python3",
+          "tests/a2_10_cmfgen_mapped_line_comparison_selftest.py"
+        ]
+      ],
+      "category": "preflight",
+      "wiring": "A2_10_CMFGEN_MAPPED_LINE"
+    },
+    {
+      "name": "scripts/emiss_e11_seeded_fixture.py",
+      "kind": "script",
+      "commands": [
+        [
+          "python3",
+          "scripts/emiss_e11_seeded_fixture.py",
+          "--out-dir",
+          "/tmp/emiss_e11_fixture"
+        ]
+      ],
+      "category": "preflight",
+      "wiring": "EMISS_E11_SEEDED_FIXTURE"
+    },
+    {
+      "name": "scripts/a2_07_population_census.py",
+      "kind": "script",
+      "commands": [
+        [
+          "python3",
+          "scripts/a2_07_population_census.py"
+        ]
+      ],
+      "category": "manual-lane",
+      "wiring": "scripts/run_a2_07_grammar_debug.sh,scripts/run_a2_07_lageunha.sh"
+    }
   ]
 }
