@@ -69,6 +69,30 @@ VALID_CATEGORIES = {
 }
 UNWIRED_FIELDS = {"observed", "disposition_rung", "lexical_mentions", "note"}
 UNWIRED_REQUIRED_FIELDS = {"observed", "disposition_rung"}
+DISPOSITION_REQUIRED_FIELDS = {
+    "verdict",
+    "verdict_doc",
+    "target_category",
+    "target_wiring",
+    "execution_rung",
+}
+DISPOSITION_FIELDS = DISPOSITION_REQUIRED_FIELDS | {"preconditions", "decided"}
+DISPOSITION_TARGET_CATEGORIES = {
+    "preflight",
+    "milestone",
+    "run-dependent",
+    "known-red",
+}
+DISPOSITION_TARGET_WIRINGS = {
+    "selftest-registry-milestone",
+    "PHYSICS_COMPARISON_REGRID",
+    "GPU and NVCC required",
+    "SH-UW-1",
+}
+DISPOSITION_PRECONDITIONS = {
+    "forced-rerun(§8-1)",
+    "run-step-required(§8-2)",
+}
 
 
 @dataclass(frozen=True)
@@ -706,6 +730,71 @@ def validate_unwired_row(entry: dict[str, Any]) -> str | None:
     return None
 
 
+def validate_disposition_row(entry: dict[str, Any]) -> str | None:
+    name = entry.get("name", "<unnamed>")
+    disposition = entry.get("disposition")
+    if (
+        not isinstance(disposition, dict)
+        or not DISPOSITION_REQUIRED_FIELDS.issubset(disposition)
+        or not set(disposition).issubset(DISPOSITION_FIELDS)
+    ):
+        return f"disposition-invalid:{name}"
+    verdict = disposition["verdict"]
+    target_category = disposition["target_category"]
+    if not isinstance(verdict, str) or verdict not in {"wire", "known-red"}:
+        return f"disposition-invalid:{name}"
+    if (
+        not isinstance(target_category, str)
+        or target_category not in DISPOSITION_TARGET_CATEGORIES
+    ):
+        return f"disposition-invalid:{name}"
+    if (verdict == "known-red") != (target_category == "known-red"):
+        return f"disposition-invalid:{name}"
+    target_wiring = disposition["target_wiring"]
+    if (
+        not isinstance(target_wiring, str)
+        or target_wiring not in DISPOSITION_TARGET_WIRINGS
+    ):
+        return f"disposition-invalid:{name}"
+    execution_rung = disposition["execution_rung"]
+    if not isinstance(execution_rung, str) or not re.fullmatch(
+        RUNG_NAME, execution_rung
+    ):
+        return f"disposition-invalid:{name}"
+    verdict_doc = disposition["verdict_doc"]
+    if not isinstance(verdict_doc, str) or not verdict_doc:
+        return f"disposition-invalid:{name}"
+    verdict_path = ROOT / verdict_doc
+    try:
+        verdict_in_repo = verdict_path.resolve().is_relative_to(ROOT.resolve())
+    except OSError:
+        verdict_in_repo = False
+    if (
+        verdict_path.suffix != ".md"
+        or not verdict_in_repo
+        or not verdict_path.is_file()
+    ):
+        return f"disposition-invalid:{name}"
+    if "preconditions" in disposition:
+        preconditions = disposition["preconditions"]
+        if (
+            not isinstance(preconditions, str)
+            or preconditions not in DISPOSITION_PRECONDITIONS
+        ):
+            return f"disposition-invalid:{name}"
+    if "decided" in disposition:
+        decided = disposition["decided"]
+        if not isinstance(decided, str) or not re.fullmatch(
+            r"\d{4}-\d{2}-\d{2}", decided
+        ):
+            return f"disposition-invalid:{name}"
+        try:
+            date.fromisoformat(decided)
+        except ValueError:
+            return f"disposition-invalid:{name}"
+    return None
+
+
 def source_token_references(target: str) -> list[str]:
     """Find target tokens in the contracted scripts/tests source census."""
     token = re.compile(
@@ -775,6 +864,12 @@ def validate_registry(
         by_name[name] = raw_entry
 
         category = raw_entry["category"]
+        if category == "unwired" and "disposition" not in raw_entry:
+            errors.append(f"disposition-missing:{name}")
+        elif "disposition" in raw_entry:
+            reason = validate_disposition_row(raw_entry)
+            if reason:
+                errors.append(reason)
         if category not in VALID_CATEGORIES:
             errors.append(f"unknown-category:{name}")
             continue
@@ -1056,6 +1151,14 @@ def run_negative_controls(make_text: str | None = None) -> list[tuple[str, str, 
             "observed": "2026-08-20",
             "disposition_rung": "GR-7",
         },
+        "disposition": {
+            "verdict": "wire",
+            "verdict_doc": "docs/VERDICT_UNWIRED_GATES_2026-08-20.md",
+            "target_category": "milestone",
+            "target_wiring": "selftest-registry-milestone",
+            "execution_rung": "SH-UW-3",
+            "decided": "2026-08-20",
+        },
     }
     errors_g = validate_registry({**empty, "entries": [entry_g]}, make_g)
     expected_g = f"unwired-now-referenced:{name_g}"
@@ -1079,6 +1182,50 @@ def run_negative_controls(make_text: str | None = None) -> list[tuple[str, str, 
     }
     errors_h = validate_registry({**empty, "entries": [entry_h]}, make_h)
     expected_h = f"known-red-recipe-drift:{name_h}"
+
+    name_r7ba = "synthetic-" + "r7b-a-gate"
+    make_r7ba = f"{name_r7ba}:\n\t@:\n"
+    entry_r7ba = {
+        "name": name_r7ba,
+        "kind": "make-target",
+        "commands": [["make", name_r7ba]],
+        "category": "unwired",
+        "wiring": "GR-7",
+        "unwired": {
+            "observed": "2026-08-20",
+            "disposition_rung": "GR-7",
+        },
+    }
+    errors_r7ba = validate_registry(
+        {**empty, "entries": [entry_r7ba]}, make_r7ba
+    )
+    expected_r7ba = f"disposition-missing:{name_r7ba}"
+
+    name_r7bb = "synthetic-" + "r7b-b-gate"
+    make_r7bb = f"{name_r7bb}:\n\t@:\n"
+    entry_r7bb = {
+        "name": name_r7bb,
+        "kind": "make-target",
+        "commands": [["make", name_r7bb]],
+        "category": "unwired",
+        "wiring": "GR-7",
+        "unwired": {
+            "observed": "2026-08-20",
+            "disposition_rung": "GR-7",
+        },
+        "disposition": {
+            "verdict": "wire",
+            "verdict_doc": "docs/VERDICT_UNWIRED_GATES_2026-08-20.md",
+            "target_category": "milestone",
+            "target_wiring": "selftest-registry-milestone",
+            "execution_rung": "sh-uw-3",
+            "decided": "2026-08-20",
+        },
+    }
+    errors_r7bb = validate_registry(
+        {**empty, "entries": [entry_r7bb]}, make_r7bb
+    )
+    expected_r7bb = f"disposition-invalid:{name_r7bb}"
 
     name_r8a = "synthetic-r8a"
     test_r8a = "tests/synthetic_r8a.c"
@@ -1226,6 +1373,8 @@ def run_negative_controls(make_text: str | None = None) -> list[tuple[str, str, 
         ("NC-R1f", expected_f, errors_f == [expected_f]),
         ("NC-R1g", expected_g, errors_g == [expected_g]),
         ("NC-R1h", expected_h, errors_h == [expected_h]),
+        ("NC-R7b-a", expected_r7ba, errors_r7ba == [expected_r7ba]),
+        ("NC-R7b-b", expected_r7bb, errors_r7bb == [expected_r7bb]),
         (
             "NC-R8a",
             expected_r8a,

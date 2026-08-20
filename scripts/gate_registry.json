@@ -103,10 +103,12 @@
         "disposition_rung": "GR-7"
       },
       "disposition": {
-        "verdict": "docs/VERDICT_UNWIRED_GATES_2026-08-20.md",
-        "decided": "2026-08-20",
-        "action": "known-red",
-        "target": "SH-UW-1"
+        "verdict": "known-red",
+        "verdict_doc": "docs/VERDICT_UNWIRED_GATES_2026-08-20.md",
+        "target_category": "known-red",
+        "target_wiring": "SH-UW-1",
+        "execution_rung": "SH-UW-1",
+        "decided": "2026-08-20"
       }
     },
     {
@@ -126,10 +128,12 @@
         "note": "battery-shadow Z-a2-12"
       },
       "disposition": {
-        "verdict": "docs/VERDICT_UNWIRED_GATES_2026-08-20.md",
-        "decided": "2026-08-20",
-        "action": "배선",
-        "target": "milestone"
+        "verdict": "wire",
+        "verdict_doc": "docs/VERDICT_UNWIRED_GATES_2026-08-20.md",
+        "target_category": "milestone",
+        "target_wiring": "selftest-registry-milestone",
+        "execution_rung": "SH-UW-3",
+        "decided": "2026-08-20"
       }
     },
     {
@@ -149,10 +153,12 @@
         "note": "battery-shadow Z-a2-13-15"
       },
       "disposition": {
-        "verdict": "docs/VERDICT_UNWIRED_GATES_2026-08-20.md",
-        "decided": "2026-08-20",
-        "action": "배선",
-        "target": "milestone"
+        "verdict": "wire",
+        "verdict_doc": "docs/VERDICT_UNWIRED_GATES_2026-08-20.md",
+        "target_category": "milestone",
+        "target_wiring": "selftest-registry-milestone",
+        "execution_rung": "SH-UW-3",
+        "decided": "2026-08-20"
       }
     },
     {
@@ -171,10 +177,12 @@
         "disposition_rung": "GR-7"
       },
       "disposition": {
-        "verdict": "docs/VERDICT_UNWIRED_GATES_2026-08-20.md",
-        "decided": "2026-08-20",
-        "action": "배선",
-        "target": "run-dependent"
+        "verdict": "wire",
+        "verdict_doc": "docs/VERDICT_UNWIRED_GATES_2026-08-20.md",
+        "target_category": "run-dependent",
+        "target_wiring": "GPU and NVCC required",
+        "execution_rung": "SH-UW-2",
+        "decided": "2026-08-20"
       }
     },
     {
@@ -193,10 +201,12 @@
         "disposition_rung": "GR-7"
       },
       "disposition": {
-        "verdict": "docs/VERDICT_UNWIRED_GATES_2026-08-20.md",
-        "decided": "2026-08-20",
-        "action": "배선",
-        "target": "run-dependent"
+        "verdict": "wire",
+        "verdict_doc": "docs/VERDICT_UNWIRED_GATES_2026-08-20.md",
+        "target_category": "run-dependent",
+        "target_wiring": "GPU and NVCC required",
+        "execution_rung": "SH-UW-2",
+        "decided": "2026-08-20"
       }
     },
     {
@@ -328,10 +338,13 @@
         "disposition_rung": "GR-7"
       },
       "disposition": {
-        "verdict": "docs/VERDICT_UNWIRED_GATES_2026-08-20.md",
-        "decided": "2026-08-20",
-        "action": "배선",
-        "target": "milestone"
+        "verdict": "wire",
+        "verdict_doc": "docs/VERDICT_UNWIRED_GATES_2026-08-20.md",
+        "target_category": "milestone",
+        "target_wiring": "selftest-registry-milestone",
+        "execution_rung": "SH-UW-4",
+        "preconditions": "run-step-required(§8-2)",
+        "decided": "2026-08-20"
       }
     },
     {
@@ -350,10 +363,13 @@
         "disposition_rung": "GR-7"
       },
       "disposition": {
-        "verdict": "docs/VERDICT_UNWIRED_GATES_2026-08-20.md",
-        "decided": "2026-08-20",
-        "action": "배선",
-        "target": "milestone"
+        "verdict": "wire",
+        "verdict_doc": "docs/VERDICT_UNWIRED_GATES_2026-08-20.md",
+        "target_category": "milestone",
+        "target_wiring": "selftest-registry-milestone",
+        "execution_rung": "SH-UW-4",
+        "preconditions": "run-step-required(§8-2)",
+        "decided": "2026-08-20"
       }
     },
     {
@@ -408,10 +424,13 @@
         "disposition_rung": "GR-7"
       },
       "disposition": {
-        "verdict": "docs/VERDICT_UNWIRED_GATES_2026-08-20.md",
-        "decided": "2026-08-20",
-        "action": "배선",
-        "target": "milestone"
+        "verdict": "wire",
+        "verdict_doc": "docs/VERDICT_UNWIRED_GATES_2026-08-20.md",
+        "target_category": "milestone",
+        "target_wiring": "selftest-registry-milestone",
+        "execution_rung": "SH-UW-4",
+        "preconditions": "run-step-required(§8-2)",
+        "decided": "2026-08-20"
       }
     },
     {
@@ -456,10 +475,13 @@
         "disposition_rung": "GR-7"
       },
       "disposition": {
-        "verdict": "docs/VERDICT_UNWIRED_GATES_2026-08-20.md",
-        "decided": "2026-08-20",
-        "action": "배선",
-        "target": "milestone"
+        "verdict": "wire",
+        "verdict_doc": "docs/VERDICT_UNWIRED_GATES_2026-08-20.md",
+        "target_category": "milestone",
+        "target_wiring": "selftest-registry-milestone",
+        "execution_rung": "SH-UW-4",
+        "preconditions": "run-step-required(§8-2)",
+        "decided": "2026-08-20"
       }
     },
     {
@@ -478,10 +500,13 @@
         "disposition_rung": "GR-7"
       },
       "disposition": {
-        "verdict": "docs/VERDICT_UNWIRED_GATES_2026-08-20.md",
-        "decided": "2026-08-20",
-        "action": "배선",
-        "target": "milestone"
+        "verdict": "wire",
+        "verdict_doc": "docs/VERDICT_UNWIRED_GATES_2026-08-20.md",
+        "target_category": "milestone",
+        "target_wiring": "selftest-registry-milestone",
+        "execution_rung": "SH-UW-4",
+        "preconditions": "run-step-required(§8-2)",
+        "decided": "2026-08-20"
       }
     },
     {
@@ -500,10 +525,13 @@
         "disposition_rung": "GR-7"
       },
       "disposition": {
-        "verdict": "docs/VERDICT_UNWIRED_GATES_2026-08-20.md",
-        "decided": "2026-08-20",
-        "action": "배선",
-        "target": "milestone"
+        "verdict": "wire",
+        "verdict_doc": "docs/VERDICT_UNWIRED_GATES_2026-08-20.md",
+        "target_category": "milestone",
+        "target_wiring": "selftest-registry-milestone",
+        "execution_rung": "SH-UW-4",
+        "preconditions": "run-step-required(§8-2)",
+        "decided": "2026-08-20"
       }
     },
     {
@@ -534,10 +562,13 @@
         "disposition_rung": "GR-7"
       },
       "disposition": {
-        "verdict": "docs/VERDICT_UNWIRED_GATES_2026-08-20.md",
-        "decided": "2026-08-20",
-        "action": "배선",
-        "target": "milestone"
+        "verdict": "wire",
+        "verdict_doc": "docs/VERDICT_UNWIRED_GATES_2026-08-20.md",
+        "target_category": "milestone",
+        "target_wiring": "selftest-registry-milestone",
+        "execution_rung": "SH-UW-4",
+        "preconditions": "run-step-required(§8-2)",
+        "decided": "2026-08-20"
       }
     },
     {
@@ -568,10 +599,13 @@
         "disposition_rung": "GR-7"
       },
       "disposition": {
-        "verdict": "docs/VERDICT_UNWIRED_GATES_2026-08-20.md",
-        "decided": "2026-08-20",
-        "action": "배선",
-        "target": "milestone"
+        "verdict": "wire",
+        "verdict_doc": "docs/VERDICT_UNWIRED_GATES_2026-08-20.md",
+        "target_category": "milestone",
+        "target_wiring": "selftest-registry-milestone",
+        "execution_rung": "SH-UW-4",
+        "preconditions": "run-step-required(§8-2)",
+        "decided": "2026-08-20"
       }
     },
     {
@@ -630,10 +664,13 @@
         "note": "battery-shadow Z-a2-08"
       },
       "disposition": {
-        "verdict": "docs/VERDICT_UNWIRED_GATES_2026-08-20.md",
-        "decided": "2026-08-20",
-        "action": "배선",
-        "target": "milestone"
+        "verdict": "wire",
+        "verdict_doc": "docs/VERDICT_UNWIRED_GATES_2026-08-20.md",
+        "target_category": "milestone",
+        "target_wiring": "selftest-registry-milestone",
+        "execution_rung": "SH-UW-3",
+        "preconditions": "forced-rerun(§8-1)",
+        "decided": "2026-08-20"
       }
     },
     {
@@ -653,10 +690,13 @@
         "note": "battery-shadow Z-a2-09"
       },
       "disposition": {
-        "verdict": "docs/VERDICT_UNWIRED_GATES_2026-08-20.md",
-        "decided": "2026-08-20",
-        "action": "배선",
-        "target": "milestone"
+        "verdict": "wire",
+        "verdict_doc": "docs/VERDICT_UNWIRED_GATES_2026-08-20.md",
+        "target_category": "milestone",
+        "target_wiring": "selftest-registry-milestone",
+        "execution_rung": "SH-UW-3",
+        "preconditions": "forced-rerun(§8-1)",
+        "decided": "2026-08-20"
       }
     },
     {
@@ -715,10 +755,13 @@
         "note": "battery-shadow Z-a2-10"
       },
       "disposition": {
-        "verdict": "docs/VERDICT_UNWIRED_GATES_2026-08-20.md",
-        "decided": "2026-08-20",
-        "action": "배선",
-        "target": "milestone"
+        "verdict": "wire",
+        "verdict_doc": "docs/VERDICT_UNWIRED_GATES_2026-08-20.md",
+        "target_category": "milestone",
+        "target_wiring": "selftest-registry-milestone",
+        "execution_rung": "SH-UW-3",
+        "preconditions": "forced-rerun(§8-1)",
+        "decided": "2026-08-20"
       }
     },
     {
@@ -737,10 +780,12 @@
         "disposition_rung": "GR-7"
       },
       "disposition": {
-        "verdict": "docs/VERDICT_UNWIRED_GATES_2026-08-20.md",
-        "decided": "2026-08-20",
-        "action": "배선",
-        "target": "milestone"
+        "verdict": "wire",
+        "verdict_doc": "docs/VERDICT_UNWIRED_GATES_2026-08-20.md",
+        "target_category": "milestone",
+        "target_wiring": "selftest-registry-milestone",
+        "execution_rung": "SH-UW-3",
+        "decided": "2026-08-20"
       }
     },
     {
@@ -891,10 +936,12 @@
         "disposition_rung": "GR-7"
       },
       "disposition": {
-        "verdict": "docs/VERDICT_UNWIRED_GATES_2026-08-20.md",
-        "decided": "2026-08-20",
-        "action": "배선",
-        "target": "milestone"
+        "verdict": "wire",
+        "verdict_doc": "docs/VERDICT_UNWIRED_GATES_2026-08-20.md",
+        "target_category": "milestone",
+        "target_wiring": "selftest-registry-milestone",
+        "execution_rung": "SH-UW-3",
+        "decided": "2026-08-20"
       }
     },
     {
@@ -913,10 +960,13 @@
         "disposition_rung": "GR-7"
       },
       "disposition": {
-        "verdict": "docs/VERDICT_UNWIRED_GATES_2026-08-20.md",
-        "decided": "2026-08-20",
-        "action": "배선",
-        "target": "milestone"
+        "verdict": "wire",
+        "verdict_doc": "docs/VERDICT_UNWIRED_GATES_2026-08-20.md",
+        "target_category": "milestone",
+        "target_wiring": "selftest-registry-milestone",
+        "execution_rung": "SH-UW-3",
+        "preconditions": "forced-rerun(§8-1)",
+        "decided": "2026-08-20"
       }
     },
     {
@@ -935,10 +985,12 @@
         "disposition_rung": "GR-7"
       },
       "disposition": {
-        "verdict": "docs/VERDICT_UNWIRED_GATES_2026-08-20.md",
-        "decided": "2026-08-20",
-        "action": "배선",
-        "target": "milestone"
+        "verdict": "wire",
+        "verdict_doc": "docs/VERDICT_UNWIRED_GATES_2026-08-20.md",
+        "target_category": "milestone",
+        "target_wiring": "selftest-registry-milestone",
+        "execution_rung": "SH-UW-3",
+        "decided": "2026-08-20"
       }
     },
     {
@@ -957,10 +1009,12 @@
         "disposition_rung": "GR-7"
       },
       "disposition": {
-        "verdict": "docs/VERDICT_UNWIRED_GATES_2026-08-20.md",
-        "decided": "2026-08-20",
-        "action": "배선",
-        "target": "milestone"
+        "verdict": "wire",
+        "verdict_doc": "docs/VERDICT_UNWIRED_GATES_2026-08-20.md",
+        "target_category": "milestone",
+        "target_wiring": "selftest-registry-milestone",
+        "execution_rung": "SH-UW-3",
+        "decided": "2026-08-20"
       }
     },
     {
@@ -979,10 +1033,12 @@
         "disposition_rung": "GR-7"
       },
       "disposition": {
-        "verdict": "docs/VERDICT_UNWIRED_GATES_2026-08-20.md",
-        "decided": "2026-08-20",
-        "action": "배선",
-        "target": "milestone"
+        "verdict": "wire",
+        "verdict_doc": "docs/VERDICT_UNWIRED_GATES_2026-08-20.md",
+        "target_category": "milestone",
+        "target_wiring": "selftest-registry-milestone",
+        "execution_rung": "SH-UW-3",
+        "decided": "2026-08-20"
       }
     },
     {
@@ -1001,10 +1057,12 @@
         "disposition_rung": "GR-7"
       },
       "disposition": {
-        "verdict": "docs/VERDICT_UNWIRED_GATES_2026-08-20.md",
-        "decided": "2026-08-20",
-        "action": "배선",
-        "target": "milestone"
+        "verdict": "wire",
+        "verdict_doc": "docs/VERDICT_UNWIRED_GATES_2026-08-20.md",
+        "target_category": "milestone",
+        "target_wiring": "selftest-registry-milestone",
+        "execution_rung": "SH-UW-3",
+        "decided": "2026-08-20"
       }
     },
     {
@@ -1023,10 +1081,12 @@
         "disposition_rung": "GR-7"
       },
       "disposition": {
-        "verdict": "docs/VERDICT_UNWIRED_GATES_2026-08-20.md",
-        "decided": "2026-08-20",
-        "action": "배선",
-        "target": "milestone"
+        "verdict": "wire",
+        "verdict_doc": "docs/VERDICT_UNWIRED_GATES_2026-08-20.md",
+        "target_category": "milestone",
+        "target_wiring": "selftest-registry-milestone",
+        "execution_rung": "SH-UW-3",
+        "decided": "2026-08-20"
       }
     },
     {
@@ -1045,10 +1105,13 @@
         "disposition_rung": "GR-7"
       },
       "disposition": {
-        "verdict": "docs/VERDICT_UNWIRED_GATES_2026-08-20.md",
-        "decided": "2026-08-20",
-        "action": "배선",
-        "target": "milestone"
+        "verdict": "wire",
+        "verdict_doc": "docs/VERDICT_UNWIRED_GATES_2026-08-20.md",
+        "target_category": "milestone",
+        "target_wiring": "selftest-registry-milestone",
+        "execution_rung": "SH-UW-3",
+        "preconditions": "forced-rerun(§8-1)",
+        "decided": "2026-08-20"
       }
     },
     {
@@ -1067,10 +1130,12 @@
         "disposition_rung": "GR-7"
       },
       "disposition": {
-        "verdict": "docs/VERDICT_UNWIRED_GATES_2026-08-20.md",
-        "decided": "2026-08-20",
-        "action": "배선",
-        "target": "preflight"
+        "verdict": "wire",
+        "verdict_doc": "docs/VERDICT_UNWIRED_GATES_2026-08-20.md",
+        "target_category": "preflight",
+        "target_wiring": "PHYSICS_COMPARISON_REGRID",
+        "execution_rung": "SH-UW-3",
+        "decided": "2026-08-20"
       }
     },
     {
@@ -1101,10 +1166,13 @@
         "disposition_rung": "GR-7"
       },
       "disposition": {
-        "verdict": "docs/VERDICT_UNWIRED_GATES_2026-08-20.md",
-        "decided": "2026-08-20",
-        "action": "배선",
-        "target": "milestone"
+        "verdict": "wire",
+        "verdict_doc": "docs/VERDICT_UNWIRED_GATES_2026-08-20.md",
+        "target_category": "milestone",
+        "target_wiring": "selftest-registry-milestone",
+        "execution_rung": "SH-UW-4",
+        "preconditions": "run-step-required(§8-2)",
+        "decided": "2026-08-20"
       }
     },
     {
