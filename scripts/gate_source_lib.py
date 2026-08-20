@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+from functools import lru_cache
 import re
 
 
@@ -12,6 +13,7 @@ def _blank_non_newline(buffer: list[str], start: int, end: int) -> None:
             buffer[index] = " "
 
 
+@lru_cache(maxsize=128)
 def _lexical_view(text: str, *, blank_literals: bool) -> str:
     """Blank comments, and optionally literals, without changing offsets."""
     result = list(text)
@@ -46,6 +48,35 @@ def _lexical_view(text: str, *, blank_literals: bool) -> str:
             continue
         index += 1
     return "".join(result)
+
+
+def lexical_view(text: str, *, blank_literals: bool = False) -> str:
+    """Return an offset-preserving view with comments (and optionally literals) blanked."""
+    return _lexical_view(text, blank_literals=blank_literals)
+
+
+def find_anchored_block(text: str, anchor: str) -> tuple[int, int]:
+    """Return the unique anchor's brace-delimited half-open block span."""
+    structural = _lexical_view(text, blank_literals=True)
+    matches = list(re.finditer(re.escape(anchor), structural))
+    if not matches:
+        raise RuntimeError(f"block anchor not found: {anchor}")
+    if len(matches) > 1:
+        raise RuntimeError(f"ambiguous block anchor: {anchor}")
+
+    opening_brace = structural.find("{", matches[0].start(), matches[0].end())
+    if opening_brace < 0:
+        raise RuntimeError(f"block anchor has no opening brace: {anchor}")
+    depth = 0
+    for position in range(opening_brace, len(structural)):
+        character = structural[position]
+        if character == "{":
+            depth += 1
+        elif character == "}":
+            depth -= 1
+            if depth == 0:
+                return opening_brace, position + 1
+    raise RuntimeError(f"unterminated anchored block: {anchor}")
 
 
 def _definition_spans(text: str, name: str) -> list[tuple[int, int]]:

@@ -1027,6 +1027,30 @@ GR-2 판정=(iii)위반 → 이 단은 두 memcpy 를 known-violation 으로 붉
 
 ---
 
+### GR-4 집행 기록 (운전석 실측, 2026-08-20)
+
+**증거**: `/gpfs/kjhan/lumina/gates/gr4_20260820T120600Z/`
+
+| 게이트 | 결과 |
+|---|---|
+| **P1** | **PASS** — `injections=14 detected=14`(기존 4 + T7 5 + U5 5). ★**U4 문안 정직화 확인**: 하드코딩 `cuda_writers=0` 폐지 → `cuda_assign_writers=0`(census 실측값) + `bulk_tau=4/4 registered: transplant=2, diag_saverestore=2` + **둘째 PASS 줄이 비인증 잔여 6류를 판정문 참조와 함께 명시** |
+| **P3** | **PASS — 이 단의 존재 이유** (아래) |
+| **P4** | **PASS** — 배터리 완주 `GATE_BATTERY_SUMMARY verdict=PASS rc=0`, known-red **3→2** |
+| **P5** | **PASS** — 변경집합 4파일, `src/` 0줄(두 CPU·두 CUDA memcpy 문면 그대로 실존) |
+
+### ★P3 — 「수리 전 green 이던 주입이 red 로 바뀐다」의 실물
+
+등록 함수 **밖**(`lumina_plasma.c:2228`)에 `memcpy(public_opacity->tau_sobolev, x, n);` 손 삽입:
+```
+수리판 게이트 → [FAIL] unregistered bulk tau writer (memcpy) at lumina_plasma.c:2228
+구 게이트     → 같은 변이 트리에서 그 주입 귀속 0건 (무감)
+HEAD 무주입   → [PASS]
+```
+⟹ **초록불의 인증 범위가 실제로 넓어졌다** — §H-2 병의 처방이 실물로 확인된다.
+
+검수(Fable) **인정**. 지적 R1~R6 전부 비저지·대장 기재 계급.
+★검수자가 P3 를 독립 프로브(3중)로 재현했고, **구 게이트가 같은 주입에 무감**함까지 실증했다.
+
 ## 7. GR-5 — `event-measure-check` 수리 (계측 → 판정 → 수리)
 
 유일하게 **판정을 안 받은** 죽은 게이트다(증거 패킷 §6). 그래서 이 단은 세 스텝이다.

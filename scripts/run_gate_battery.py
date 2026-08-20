@@ -52,6 +52,7 @@ PREFLIGHTS = (
     ("GATE_SOURCE_LIB_SELFTEST", "tests/gate_source_lib_selftest.py", ()),
     ("GATE_REGISTRY", "scripts/check_gate_registry.py", ()),
     ("BF_EDGE_CENSUS_SELFTEST", "scripts/census_bf_edges_below_grid.py", ("--selftest",)),
+    ("TAU_WRITER_CENSUS", "scripts/check_tau_writer_generation.py", ()),
     ("A2_10_CANCELLATION_CENSUS", "tests/a2_10_cancellation_census_selftest.py", ()),
     ("A2_10_REFINEMENT_COMPARISON", "tests/a2_10_refinement_comparison_selftest.py", ()),
     ("A2_10_TARGETED_GATE", "tests/a2_10_targeted_gate_selftest.py", ()),

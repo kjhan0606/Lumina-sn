@@ -67,16 +67,8 @@
       "name": "selftest-tau-writer-census",
       "kind": "make-target",
       "commands": [["python3", "scripts/check_tau_writer_generation.py"]],
-      "category": "known-red",
-      "wiring": "GR-4",
-      "known_red": {
-        "failing_command_index": 0,
-        "rc": 1,
-        "first_fail_line": "[TAU-WRITER-CENSUS][FAIL] unregistered raw tau writer at lumina_plasma.c:19521",
-        "fail_line_count": 3,
-        "registered": "2026-08-20",
-        "repair_rung": "GR-4"
-      }
+      "category": "preflight",
+      "wiring": "TAU_WRITER_CENSUS"
     },
     {"name": "bf-edge-census", "kind": "make-target", "commands": [["python3", "scripts/census_bf_edges_below_grid.py", "--ref-dir", "data/tardis_reference_toy06_19p48d_sivcaiv_active"]], "category": "manual-audit", "wiring": "intentional rc=3 deck-census semantics; operator-selected audit"},
     {"name": "selftest_a2_10_radeq", "kind": "make-target", "commands": [["make", "selftest_a2_10_radeq"]], "category": "unwired", "wiring": "GR-7", "unwired": {"observed": "2026-08-20", "disposition_rung": "GR-7", "note": "battery-shadow Z-a2-10"}},
