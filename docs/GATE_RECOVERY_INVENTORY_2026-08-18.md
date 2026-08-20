@@ -584,3 +584,62 @@ GR-8(중복 명세 정합 검사, `build-spec-drift`)이 1을 겨냥하는데, *
 
 §L(스테이징 검사기)과 **같은 뿌리**: 봉인 입력을 통째 복제하는 스테이징이
 **갱신돼야 할 것까지 얼려 버린다.** 수리는 같은 단에서.
+
+---
+
+## M. `selftest_nlte_assemble` 이 링크 목록 누락으로 빌드 불가 — 오늘 **다섯 번째** 같은 계급
+
+발견 경위: GR-7 스텝 1 계측 중 운전석이 `nvcc` 부재 3건을 **한 부류로 묶어** "돌릴 수
+없었다" 로 적었고, **user 가 "grammar-debug 는 CPU 노드임" 을 지적**해 재측정하다 드러났다.
+
+### M-1. 운전석 계측의 오류 (먼저 적는다)
+
+`grammar-debug` 는 **CPU 전용 디버그 노드**라 `nvcc` 부재가 정상이고 **결함이 아니다.**
+그런데 로그인 노드 `syntax` 에는 `nvcc` 가 있고(`/opt/ohpc/pub/cuda/13.0.2/bin/nvcc`,
+CUDA 13.0) **규약상 빌드는 로그인 노드 허용**이다 — **잴 수 있는 것을 안 쟀다.**
+"레인에서 못 돌렸다" 와 "돌릴 수 없다" 를 섞은 것이 오류였다.
+
+### M-2. 재측정 — 셋이 갈린다 [실측, `syntax` 빌드만]
+
+| 타깃 | `BUILD_RC` | 판독 |
+|---|---|---|
+| `selftest_a2_12_gpu_lifecycle` | **0** | 빌드 OK · 실행 미측정(GPU 티어) |
+| `selftest_a2_13_gpu_oracle` | **0** | 동상 |
+| **`selftest_nlte_assemble`** | **2** | ★**링크 에러 — 실결함** |
+
+### M-3. 실결함의 정체 — 변수는 있는데 타깃만 안 쓴다
+
+[실측] 미정의 심볼 8개 이상 — 전부 `src/nlte_population_candidate.c` 정의:
+```
+nlte_population_candidate_begin · _prepare_opacity_view · _prepare_thermodynamics
+nlte_ion_solve_status_name · nlte_population_solve_stage_name
+nlte_population_candidate_status_name · nlte_population_solve_diagnostic_reset …
+```
+`src/lumina_plasma.c` 가 부르는데 **정의가 안 링크된다.**
+
+★[실측] **`Makefile:39` 에 `NLTE_CANDIDATE_SRC = src/nlte_population_candidate.c` 가 이미
+있고 다른 타깃들은 그것을 쓴다.** `selftest_nlte_assemble`(`Makefile:121`)의 링크 목록에만
+**없다.**
+[실측] 그 심볼들은 **`f6c2eb6`(08-18)** 에서 들어왔다 — 오늘 내내 나온 그 커밋이다.
+
+### M-4. ★오늘 다섯 번째 같은 계급
+
+| # | 소스는 바뀌었는데 따라가지 않은 것 | 발견 단 |
+|---|---|---|
+| 1 | 배터리 빌드 명세(`Z-a2-09`) ↔ Makefile 타깃 | GR-0 |
+| 2 | 게이트 앵커 ↔ 리팩터된 함수명 | GR-3′·GR-4·GR-5 |
+| 3 | 스테이징 검사기 ↔ 저장소 정본 | §L |
+| 4 | 런 provenance(`git_head.txt`) ↔ 실제 코드 | §L-2 |
+| **5** | **selftest 링크 목록 ↔ 소스가 얻은 함수** | **이 절** |
+
+전부 *"같은 것을 두 곳에 적어 두고 한쪽만 갱신"* 이다. **1 과 5 는 형태까지 동일**하다 —
+링크 목록에 파일 하나가 빠졌고, 그것이 존재하는 변수로 이미 표현돼 있다.
+
+### M-5. 처분
+
+- **수리는 이 단이 아니다.** GR-7 은 처분 **판정**까지이고, 집행은 캠페인 밖 후속 단이다.
+- 운전석 실측을 판정에 전달했고, **`known-red` 전환 후보**로 제시했다(수리 단 번호 필수).
+  ⚠**환경 부재로 처분하면 실결함을 숨기는 것**임을 명시해 넘겼다.
+- ★**GR-8(중복 명세 정합 검사)의 정의역 재검토 후보**: GR-8 은 배터리 빌드 명세 ↔ Makefile
+  갈라짐을 겨냥하는데, **이 건은 Makefile 타깃 자신의 링크 목록 누락**이라 그 측정면에
+  들어가는지 불명이다 — GR-8 사전등록 시 확인할 것.
