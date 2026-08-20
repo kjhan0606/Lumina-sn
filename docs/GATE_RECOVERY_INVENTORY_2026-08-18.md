@@ -131,3 +131,70 @@ is generation-bracketed at both ends; writer/reader share one NLTE authority pre
 `.PHONY` 에만 있고 어떤 집합 타깃에도 없는 게이트가 **이것 하나뿐인가?**
 `Makefile:333` 행에는 `event-measure-check` · `selftest_mc_evt_access` 도 함께 있다.
 전수 조사 필요 — **회귀 목록의 완전성 감사**(§E 교훈의 일반형).
+
+---
+
+## G. 회귀 목록 **완전성 감사** (2026-08-20, user 지시) — 고아 21개 · 죽은 게이트 4개 · 근원 1개
+
+증거: `/gpfs/kjhan/lumina/gates/sh_a209_idseal_20260820T044201Z/orphan_gate_status.log`
+
+### G-0. ★감사 도구 자신에게 결함이 있었다 (먼저 적는다)
+
+1차 판정은 고아 **14개**였다. 그런데 `.PHONY` 선언이 백슬래시로 **8줄**(Makefile:331-338)에
+걸쳐 있어, 연속행에 이름이 있으면 "참조됨"으로 잘못 분류됐다. 고치니 **21개**다 —
+버그가 **7개를 숨겼고**, 그 중에 **이 감사를 촉발한 `selftest-sh-radeq-source` 자신**이 있었다.
+
+⟹ 잣대의 완전성을 재는 잣대에도 같은 병이 있었다. [[feedback_audit_the_yardstick_first]] 에 기재.
+
+### G-1. 사실
+
+[실측] 저장소에 **집합 `selftest:` 타깃이 없다.** 회귀 목록은 `scripts/run_gate_battery.py`
+하나뿐이다. 게이트 성격의 make 타깃 **62개 중 21개**가 배터리에도·다른 make 규칙에도·
+어떤 `.sh` 에도 없다(`.PHONY` 등재는 실행이 아니다).
+
+GPU 필요분 1개(`selftest_mc_evt_access`)를 뺀 **20개를 전부 돌렸다**:
+
+| 결과 | 수 | 타깃 |
+|---|---|---|
+| PASS | 16 | bf-edge-census · selftest-bf-edge-census · a2-10-{cancellation-census, cmfgen-mapped-line, line-ion-owners, refinement-comparison, targeted-gate, targeted-reference} · a2_17_jnu_seed · cmf_error_envelope · cmf_exact_sliding · emiss_e11_fluor_matrix · gate_recovery · grid_roundtrip · sh_grid_loader · stage32_rung1 |
+| **FAIL** | **4** | 아래 |
+| 미실행 | 1 | selftest_mc_evt_access (GPU) |
+
+### G-2. ★죽은 게이트 4개 — 셋이 **같은 근원**이다
+
+| 게이트 | 증상 | 분류 | 근거 |
+|---|---|---|---|
+| `event-measure-check` | `[E-NE4][FAIL] CPU-A208: missing bf_event_measure_get` | **앵커 노후** | [실측] 접근자는 `a208_publish_cpu_opacity_impl` 안 `:8775` 에서 **실제로 호출된다**. 게이트는 5줄짜리 래퍼 `a208_publish_cpu_opacity`(`:8832`)의 본문을 본다 |
+| `selftest-sh-radeq-source` | `[SH-RADEQ-0][STATIC][FAIL]` 19건 | **앵커 노후** | `a209_publish_cpu_emissivity` 도 impl/래퍼로 분리됨(래퍼 `:9408`) |
+| `selftest-tau-writer-census` | `unregistered raw tau writer at lumina_plasma.c:19521` | **등록부 노후 + 미판정 위반** | [실측] 19521 은 `nlte_update_tau_sobolev_with_authority`(`:19457`) 안의 `opacity->tau_sobolev[at]=0.0`. 등록부 `WRITERS` 는 `compute_tau_sobolev`·`nlte_update_tau_sobolev`·`apply_overlap_corrections` 셋뿐 — `..._with_authority` 가 없다 |
+| `selftest-a2-10-line-saturation` | `positive failed: … Lumina summary target ion is invalid` | **미분류** | 픽스처/자료 문제로 보이나 **확인하지 않았다** |
+
+**공통 근원 [실측]**: 앞의 셋이 앵커로 삼는 함수들은 **`f6c2eb6`(2026-08-18)** 의 일괄 구현에서
+**impl/래퍼로 분리되거나 이름이 바뀌었다**(`_impl` 신설, `..._with_authority` 신설).
+정적 게이트는 **함수 이름에 앵커를 건다.** 그 커밋이 이름을 바꾸는 순간 셋이 동시에 무효가 됐고,
+**셋 다 회귀 목록에 없어서 아무도 몰랐다.**
+
+⚠**아이러니**: 이 게이트들은 정확히 그런 종류의 변경을 잡으라고 만든 것이다.
+tau-writer-census 는 "허가받지 않은 raw tau writer 가 생기지 않았는가"를 묻는데,
+그 커밋이 **바로 그 일을 했고**(새 이름의 writer 신설) 게이트는 같은 커밋에 의해 눈이 멀었다.
+
+### G-3. 아직 답하지 않은 것 (단정하지 않는다)
+
+1. `19521` 의 raw tau 쓰기가 **정당한가.** `element_inactive` 일 때 `tau=0` 은 물리적으로
+   그럴듯하나, 등록부는 **판정을 요구하는 화이트리스트**다. 아무도 판정하지 않았다.
+2. `sh-radeq-source` 의 19건이 **전부** 앵커 문제인가, 아니면 **진짜 계약 위반이 섞였는가.**
+   게이트가 눈먼 08-18 이후 실제로 깨졌을 수 있다.
+3. `a2-10-line-saturation` 의 실패 원인.
+4. `selftest_mc_evt_access`(GPU 미실행)의 상태.
+5. ★**앵커를 함수 이름에 거는 정적 게이트가 이 셋뿐인가?** 같은 리팩터에 눈먼 게이트가
+   더 있을 수 있다 — `function_body(...)` 류 패턴 전수 조사 필요.
+
+### G-4. 처분
+
+- **수리는 별개 계약들**이다. 이 절은 census 이며 아무것도 고치지 않는다.
+- ★**구조적 처방**: 고아를 하나씩 되살리는 것으로는 재발을 막지 못한다.
+  필요한 것은 **집합 타깃(또는 배터리 편입)의 의무화**와,
+  **"게이트가 앵커로 삼는 심볼이 존재하는가"를 검사하는 메타 게이트**다
+  (`function not found` 를 FAIL 이 아니라 조용한 오탐으로 흘리는 구조가 이 사고의 절반이다).
+- §E 원칙의 재확인: 회수는 "돌렸다"가 아니라 **"주입이 시도됐고, 의도한 가드가, 이름 있는
+  사유로 막았다"** 를 셋 다 보여야 한다. 지금 이 넷은 **첫 항목조차 못 보인다.**
