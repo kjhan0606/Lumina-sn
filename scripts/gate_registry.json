@@ -63,6 +63,12 @@
       "unwired": {
         "observed": "2026-08-20",
         "disposition_rung": "GR-7"
+      },
+      "disposition": {
+        "verdict": "docs/VERDICT_UNWIRED_GATES_2026-08-20.md",
+        "decided": "2026-08-20",
+        "action": "known-red",
+        "target": "SH-UW-1"
       }
     },
     {
@@ -80,6 +86,12 @@
         "observed": "2026-08-20",
         "disposition_rung": "GR-7",
         "note": "battery-shadow Z-a2-12"
+      },
+      "disposition": {
+        "verdict": "docs/VERDICT_UNWIRED_GATES_2026-08-20.md",
+        "decided": "2026-08-20",
+        "action": "배선",
+        "target": "milestone"
       }
     },
     {
@@ -97,6 +109,12 @@
         "observed": "2026-08-20",
         "disposition_rung": "GR-7",
         "note": "battery-shadow Z-a2-13-15"
+      },
+      "disposition": {
+        "verdict": "docs/VERDICT_UNWIRED_GATES_2026-08-20.md",
+        "decided": "2026-08-20",
+        "action": "배선",
+        "target": "milestone"
       }
     },
     {
@@ -113,6 +131,12 @@
       "unwired": {
         "observed": "2026-08-20",
         "disposition_rung": "GR-7"
+      },
+      "disposition": {
+        "verdict": "docs/VERDICT_UNWIRED_GATES_2026-08-20.md",
+        "decided": "2026-08-20",
+        "action": "배선",
+        "target": "run-dependent"
       }
     },
     {
@@ -129,6 +153,12 @@
       "unwired": {
         "observed": "2026-08-20",
         "disposition_rung": "GR-7"
+      },
+      "disposition": {
+        "verdict": "docs/VERDICT_UNWIRED_GATES_2026-08-20.md",
+        "decided": "2026-08-20",
+        "action": "배선",
+        "target": "run-dependent"
       }
     },
     {
@@ -258,6 +288,12 @@
       "unwired": {
         "observed": "2026-08-20",
         "disposition_rung": "GR-7"
+      },
+      "disposition": {
+        "verdict": "docs/VERDICT_UNWIRED_GATES_2026-08-20.md",
+        "decided": "2026-08-20",
+        "action": "배선",
+        "target": "milestone"
       }
     },
     {
@@ -274,6 +310,12 @@
       "unwired": {
         "observed": "2026-08-20",
         "disposition_rung": "GR-7"
+      },
+      "disposition": {
+        "verdict": "docs/VERDICT_UNWIRED_GATES_2026-08-20.md",
+        "decided": "2026-08-20",
+        "action": "배선",
+        "target": "milestone"
       }
     },
     {
@@ -326,6 +368,12 @@
       "unwired": {
         "observed": "2026-08-20",
         "disposition_rung": "GR-7"
+      },
+      "disposition": {
+        "verdict": "docs/VERDICT_UNWIRED_GATES_2026-08-20.md",
+        "decided": "2026-08-20",
+        "action": "배선",
+        "target": "milestone"
       }
     },
     {
@@ -368,6 +416,12 @@
       "unwired": {
         "observed": "2026-08-20",
         "disposition_rung": "GR-7"
+      },
+      "disposition": {
+        "verdict": "docs/VERDICT_UNWIRED_GATES_2026-08-20.md",
+        "decided": "2026-08-20",
+        "action": "배선",
+        "target": "milestone"
       }
     },
     {
@@ -384,6 +438,12 @@
       "unwired": {
         "observed": "2026-08-20",
         "disposition_rung": "GR-7"
+      },
+      "disposition": {
+        "verdict": "docs/VERDICT_UNWIRED_GATES_2026-08-20.md",
+        "decided": "2026-08-20",
+        "action": "배선",
+        "target": "milestone"
       }
     },
     {
@@ -400,6 +460,12 @@
       "unwired": {
         "observed": "2026-08-20",
         "disposition_rung": "GR-7"
+      },
+      "disposition": {
+        "verdict": "docs/VERDICT_UNWIRED_GATES_2026-08-20.md",
+        "decided": "2026-08-20",
+        "action": "배선",
+        "target": "milestone"
       }
     },
     {
@@ -428,6 +494,12 @@
       "unwired": {
         "observed": "2026-08-20",
         "disposition_rung": "GR-7"
+      },
+      "disposition": {
+        "verdict": "docs/VERDICT_UNWIRED_GATES_2026-08-20.md",
+        "decided": "2026-08-20",
+        "action": "배선",
+        "target": "milestone"
       }
     },
     {
@@ -456,6 +528,12 @@
       "unwired": {
         "observed": "2026-08-20",
         "disposition_rung": "GR-7"
+      },
+      "disposition": {
+        "verdict": "docs/VERDICT_UNWIRED_GATES_2026-08-20.md",
+        "decided": "2026-08-20",
+        "action": "배선",
+        "target": "milestone"
       }
     },
     {
@@ -512,6 +590,12 @@
           "scripts/a2_08_finalize_artifacts.py"
         ],
         "note": "battery-shadow Z-a2-08"
+      },
+      "disposition": {
+        "verdict": "docs/VERDICT_UNWIRED_GATES_2026-08-20.md",
+        "decided": "2026-08-20",
+        "action": "배선",
+        "target": "milestone"
       }
     },
     {
@@ -529,6 +613,12 @@
         "observed": "2026-08-20",
         "disposition_rung": "GR-7",
         "note": "battery-shadow Z-a2-09"
+      },
+      "disposition": {
+        "verdict": "docs/VERDICT_UNWIRED_GATES_2026-08-20.md",
+        "decided": "2026-08-20",
+        "action": "배선",
+        "target": "milestone"
       }
     },
     {
@@ -585,6 +675,12 @@
         "observed": "2026-08-20",
         "disposition_rung": "GR-7",
         "note": "battery-shadow Z-a2-10"
+      },
+      "disposition": {
+        "verdict": "docs/VERDICT_UNWIRED_GATES_2026-08-20.md",
+        "decided": "2026-08-20",
+        "action": "배선",
+        "target": "milestone"
       }
     },
     {
@@ -601,6 +697,12 @@
       "unwired": {
         "observed": "2026-08-20",
         "disposition_rung": "GR-7"
+      },
+      "disposition": {
+        "verdict": "docs/VERDICT_UNWIRED_GATES_2026-08-20.md",
+        "decided": "2026-08-20",
+        "action": "배선",
+        "target": "milestone"
       }
     },
     {
@@ -749,6 +851,12 @@
       "unwired": {
         "observed": "2026-08-20",
         "disposition_rung": "GR-7"
+      },
+      "disposition": {
+        "verdict": "docs/VERDICT_UNWIRED_GATES_2026-08-20.md",
+        "decided": "2026-08-20",
+        "action": "배선",
+        "target": "milestone"
       }
     },
     {
@@ -765,6 +873,12 @@
       "unwired": {
         "observed": "2026-08-20",
         "disposition_rung": "GR-7"
+      },
+      "disposition": {
+        "verdict": "docs/VERDICT_UNWIRED_GATES_2026-08-20.md",
+        "decided": "2026-08-20",
+        "action": "배선",
+        "target": "milestone"
       }
     },
     {
@@ -781,6 +895,12 @@
       "unwired": {
         "observed": "2026-08-20",
         "disposition_rung": "GR-7"
+      },
+      "disposition": {
+        "verdict": "docs/VERDICT_UNWIRED_GATES_2026-08-20.md",
+        "decided": "2026-08-20",
+        "action": "배선",
+        "target": "milestone"
       }
     },
     {
@@ -797,6 +917,12 @@
       "unwired": {
         "observed": "2026-08-20",
         "disposition_rung": "GR-7"
+      },
+      "disposition": {
+        "verdict": "docs/VERDICT_UNWIRED_GATES_2026-08-20.md",
+        "decided": "2026-08-20",
+        "action": "배선",
+        "target": "milestone"
       }
     },
     {
@@ -813,6 +939,12 @@
       "unwired": {
         "observed": "2026-08-20",
         "disposition_rung": "GR-7"
+      },
+      "disposition": {
+        "verdict": "docs/VERDICT_UNWIRED_GATES_2026-08-20.md",
+        "decided": "2026-08-20",
+        "action": "배선",
+        "target": "milestone"
       }
     },
     {
@@ -829,6 +961,12 @@
       "unwired": {
         "observed": "2026-08-20",
         "disposition_rung": "GR-7"
+      },
+      "disposition": {
+        "verdict": "docs/VERDICT_UNWIRED_GATES_2026-08-20.md",
+        "decided": "2026-08-20",
+        "action": "배선",
+        "target": "milestone"
       }
     },
     {
@@ -845,6 +983,12 @@
       "unwired": {
         "observed": "2026-08-20",
         "disposition_rung": "GR-7"
+      },
+      "disposition": {
+        "verdict": "docs/VERDICT_UNWIRED_GATES_2026-08-20.md",
+        "decided": "2026-08-20",
+        "action": "배선",
+        "target": "milestone"
       }
     },
     {
@@ -861,6 +1005,12 @@
       "unwired": {
         "observed": "2026-08-20",
         "disposition_rung": "GR-7"
+      },
+      "disposition": {
+        "verdict": "docs/VERDICT_UNWIRED_GATES_2026-08-20.md",
+        "decided": "2026-08-20",
+        "action": "배선",
+        "target": "milestone"
       }
     },
     {
@@ -877,6 +1027,12 @@
       "unwired": {
         "observed": "2026-08-20",
         "disposition_rung": "GR-7"
+      },
+      "disposition": {
+        "verdict": "docs/VERDICT_UNWIRED_GATES_2026-08-20.md",
+        "decided": "2026-08-20",
+        "action": "배선",
+        "target": "preflight"
       }
     },
     {
@@ -905,6 +1061,12 @@
       "unwired": {
         "observed": "2026-08-20",
         "disposition_rung": "GR-7"
+      },
+      "disposition": {
+        "verdict": "docs/VERDICT_UNWIRED_GATES_2026-08-20.md",
+        "decided": "2026-08-20",
+        "action": "배선",
+        "target": "milestone"
       }
     },
     {
