@@ -506,3 +506,60 @@ GR-4 로 넘기는 명세 U1~U5: 전-src 벌크 census · 가드 앵커+블록 �
 **경로 무제한 pickaxe 가 문서·대장을 매치**한 것이었다(예: `513ee92` = GR-2 판정문 인용).
 운전석의 정정을 철회한다.
 다만 `a97d0e1` 은 1,369파일 덩어리라 **저작 시점은 모른다**(정황상 07-25 무렵 [추정]).
+
+---
+
+## L. 스테이징된 검사기가 저장소 정본과 갈라졌다 (2026-08-20, 오늘 **세 번째** 같은 계급)
+
+발견 경위: SH-A209-IDSEAL 판정런(job 321104)이 `model_rc=0` 으로 성공했는데
+사후 게이트가 `DET_FLIGHT_FATAL A2-10 targeted log gate failed` 로 죽었다.
+
+### 사실 [실측]
+
+같은 로그에 두 판본을 돌린 결과:
+```
+스테이징 사본(런이 실제로 쓴 것) → A210_TARGETED_GATE_FAIL nonzero numerical repair field cap=64
+저장소 정본                      → A210_TARGETED_GATE_PASS devices=2 refinements=36
+                                    floor=0 cap=0 clamp=0 jitter=0 repair=0
+```
+
+| 항목 | 값 |
+|---|---|
+| 스테이징 사본 | `/gpfs/kjhan/lumina/det_stage12_fixed_te_a100x2_k36/idseal_20260820T044703Z_a209/input/check_a210_targeted_gate.py` sha256 `4b3c3fcc…` |
+| 저장소 정본 | `scripts/check_a210_targeted_gate.py` sha256 `dffd4d0d…` |
+| 차이 | 정본에만 있는 **예외 조항** — `EXACT-MULTIGPU-EPOCH` 출현 정본 2건 / 사본 1건 |
+| 예외의 취지(정본 주석) | *"This record's unqualified `cap` is the exact solver's maximum iteration count. It is **execution metadata, not a cap applied to any physical value**."* |
+| 실제 `cap=64` | `[cmf_fine][EXACT-MULTIGPU-EPOCH] … iterations=45 cap=64 residual=9.67e-09` = `LUMINA_CMF_FINE_ALI=64` |
+| 예외가 정본에 들어온 커밋 | `a00b991`(08-18) |
+
+⟹ **게이트 실패는 오탐이다.** 물리값 캡이 아니라 솔버 반복수이고, 정본 검사기는 그것을 안다.
+
+### 귀속 — 운전석
+
+L4 런의 `input/` 을 통째로 복제해 판정런을 스테이징하면서 **낡은 검사기까지 복제**했다.
+봉인 입력 보존이 취지였으나 **검사기는 봉인 대상이 아니라 갱신 대상**이다.
+
+[실측] `job.slurm` 은 deck·sigma·binary·topion 을 **sha256 으로 봉인 검증**하지만
+**검사기는 `-x`(실행 가능) 만 본다** — 내용 검증이 없다.
+
+### ★오늘 세 번째 같은 계급이다
+
+| # | 갈라진 중복 | 단 |
+|---|---|---|
+| 1 | 배터리 빌드 명세 ↔ Makefile 타깃 | GR-0 |
+| 2 | 게이트 앵커 ↔ 리팩터된 소스 함수명 | GR-3′ |
+| 3 | **스테이징 검사기 ↔ 저장소 정본** | 이 절 |
+
+셋 다 **"같은 것을 두 곳에 적어 두고 한쪽만 갱신"** 이다.
+GR-8(중복 명세 정합 검사, `build-spec-drift`)이 1을 겨냥하는데, **3은 그 측정면 밖**이다 —
+런 스테이징은 저장소가 아니라 `/gpfs` 에서 벌어진다.
+
+### 처분
+
+- **판정런의 실질 결과는 바뀌지 않는다** — `model_rc=0`, B1·B2·B3 적중, 정본 게이트 PASS.
+- ⚠**그러나 `DET_FLIGHT_ACCEPT` 를 받지 못했다는 사실을 지우지 않는다.** 판정문에
+  "낡은 사본으로 실패했고 정본으로 통과했다" 를 그대로 적는다.
+- **수리 후보(별도 단)**: `job.slurm` 이 스테이징된 검사기·판정 스크립트도
+  **sha256 으로 봉인 검증**하게 한다(deck·binary 와 동급). 또는 스테이징이 저장소
+  정본을 매번 새로 복사하고 그 해시를 `RUN_FOOTER` 에 기재한다.
+  ★어느 쪽이든 **"어느 판본이 판정했는가"가 산출물에 남아야** 한다 — 지금은 안 남는다.
