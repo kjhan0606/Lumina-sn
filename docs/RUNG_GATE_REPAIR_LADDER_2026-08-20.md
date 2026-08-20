@@ -2,6 +2,12 @@
 
 저자: Fable(사전등록, 분담 개정14) · 발단: `docs/GATE_RECOVERY_INVENTORY_2026-08-18.md` §F·§G·§H·§I
 + 운전석 증거 패킷(`/tmp/claude-10396/gaterepair/EVIDENCE.md`).
+
+**개정 이력**: 초판 = 커밋 `92f9fa9`. **개정 1(2026-08-20, 저자 Fable)** — GR-1 집행 중
+발견 3건(배터리 Z-a2-09 빌드 사망 · collective 배선 교차검증 공허 · preflight 의 미추적
+픽스처 의존)의 반영. GR-0·GR-7·GR-8 신설, GR-1 재발주(GR-1′), 캠페인 폐합 조건 확장.
+원문은 지우지 않고 보존하며, 대체되는 문안에는 `[개정 1]` 표지를 달아 §0-A 를 가리킨다.
+판정문은 개정판 게이트 표(§0-A)와 대조한다. 전문 = §0-A.
 소속: **SH-** — 이 잣대들이 지키는 계약 표면(a208/a209 발행체·tau 슬랩·event-measure)은 두 팔 공유다.
 CMFGEN 발자국 규약: **비적용** — 게이트·회귀 인프라이며 CMFGEN 대응물이 없다.
 
@@ -58,6 +64,7 @@ CMFGEN 발자국 규약: **비적용** — 게이트·회귀 인프라이며 CMF
 - 메타 게이트는 (첫 FAIL 줄·FAIL 줄 수·등재일·**수리 단 번호**) 없는 known-red 행을
   `known-red-row-incomplete` 로 **거부**한다. 수리 계획 없는 적자 등재는 원리적으로 불가.
 - 캠페인 폐합 조건 = 이 4행이 **전부 소거**된 상태. "known-red 로 정리했으니 폐합"은 없다.
+  **[개정 1]** 폐합 조건이 확장됐다(unwired 처분 기입 + GR-8 편입) — §0-A-8 이 정본.
 - known-red 가 인증하는 것은 **"이 서명으로 죽어 있음"뿐**이다. 게이트의 측정면(계약 준수)은
   무인증 — sh-radeq 첫 FAIL 줄은 래퍼 스캔 산물이라 impl 의 실위반에 무감하다.
   측정면의 창-내 무결은 §I-6 의 판정자 3점 diff 가 이미 별도로 답했다. 이 한계를 안다.
@@ -75,12 +82,360 @@ CMFGEN 발자국 규약: **비적용** — 게이트·회귀 인프라이며 CMF
 | **GR-5** | `event-measure-check` 의 실패 전수가 계측·판정되고, 판정대로 앵커가 실물로 복원된다 | MC | GR-1 | 2 (판정문+수리) |
 | **GR-6** | `selftest-a2-10-line-saturation` 픽스처가 생산자 스키마 v1 을 다시 싣는다 | DET | GR-1 | 1 |
 
+**[개정 1]** 위 표는 GR-0·GR-7·GR-8 신설과 GR-1 재발주로 §0-A-8 의 개정판 표가 대체한다
+(원문 보존 — 초판 발주분의 기록).
+
 **순서**: GR-1 → (GR-2 발주, 트리 무변조라 GR-3 코딩과 병행 가능) → GR-3 → GR-4 → GR-5 → GR-6.
 트리-변조 태스크는 상시 1개(규약). GR-3 을 수리 선두에 두는 근거: 수리 명세가 §I-7 로
 이미 확정돼 있고, 이 게이트가 지키는 계약(선방출 직접형·tau 세대 괄호)이 **진행 중인
 Stage-4 캠페인의 측정면**을 지킨다. GR-6 은 자명하고 독립이라 말미.
 
 **이 캠페인에 넣지 않는 것(§5-5 승격 경로의 답)**: §2-Q5 에 근거와 함께.
+
+---
+
+## 0-A. 개정 1 (2026-08-20, 저자 Fable) — GR-1 집행 중 발견 3건의 반영
+
+근거 증거: 운전석 증거 패킷(`/tmp/claude-10396/gr1_amend/EVIDENCE.md`, 발견 A·B·C) +
+Codex 자기 보고(`/tmp/claude-10396/wt_gr1/NOTES.md` — 특히 :77-81 이 발견 B 의 약점을
+스스로 공개한 자리) + **이 개정의 독립 재측정**(§0-A-1 — 개정 저자가 HEAD 작업트리에서
+전 항목을 직접 다시 쟀고, 한 곳은 증거 패킷을 정정한다).
+
+**무엇을 왜 바꾸는가 (요약)**:
+
+| # | 바꾼 것 | 왜 |
+|---|---|---|
+| 1 | GR-0 신설 — 배터리 Z-a2-09 빌드 재정합 (§0-A-6) | 발견 A. GR-1 기대 변경집합 밖의 선행 결함이라 GR-1 에 실을 수 없고(P6), GR-1 P4 의 전제다 |
+| 2 | GR-1 재발주(GR-1′) — collective 파서 수리 + `unwired` 범주 신설 + 픽스처 커밋 (§0-A-5) | 발견 B·C. 현행 P1 은 27건의 거짓 배선을 매판 인증한다 — 계약문("배선 주장 교차검증") 자체가 미이행이라 폐합 자격이 없다 |
+| 3 | GR-7 신설 — 고아 27개의 계측·처분 판정 (§0-A-7) | unwired 는 정직한 표기일 뿐 처분이 아니다. 처분 단이 강제되지 않는 범주는 은폐 창고가 된다(known-red 안전핀과 동형) |
+| 4 | GR-8 신설 — 중복 빌드 명세 정합 검사 (§0-A-7) | 공통 근원(3중 기재)의 갈라짐을 상설 감시. 근원 제거 자체는 파급 실측 결과 미룬다(§0-A-3) |
+| 5 | 검수 R3=문안 처분 · R4=known-red 한정 채택 (§0-A-4) | — |
+| 6 | 캠페인 폐합 조건 확장 (§0-A-8) | unwired 처분 미기입 행이 남으면 폐합 불가 |
+
+### 0-A-1. 독립 재측정 — 증거 패킷 수치의 재검과 정정 1건
+
+[실측 — 전부 이 개정 저자가 HEAD 작업트리에서 직접 확인]
+
+**발견 A (확인)**: Makefile 의 `selftest_a2_09_emissivity` 규칙(:367-370)은
+`src/population_contract.c` 를 링크하고, 배터리의 `Build("Z-a2-09", ...)` 는
+`tests/a2_09_emissivity_selftest.c`+`src/emissivity_publication.c`+`-lm` 뿐이다.
+셀프테스트 `:24` 가 `population_atomic_model_sha256`(정의 `src/population_contract.c:84`)를
+부른다 — 링크 실패의 재현 조건 성립. Makefile 링크 목록이 정확히 그 1항만 더 가지므로
+수리도 그 1항 추가다(§0-A-6).
+
+**발견 B (확인 + ★정정)**: 수리된 잣대(논리행 접합 · 자기 rule recipe 제외 · `clean` recipe
+제외)로 재측정 — collective 41 전원이 Makefile 무참조. 증거 패킷과 일치. 그러나 패킷이
+고아 26(= 호출자 보유 15)으로 센 그 판별은 **어휘 계수**(grep 토큰 실존)였다. 15개
+"호출자" 의 호출부를 전수 판독한 결과 **14개만 실호출**(make/바이너리 실행 또는 slurm
+제출용 install)이고,
+`selftest_a2_08_signed_opacity` 의 참조 2건(`scripts/a2_08_finalize_artifacts.py:25`·`:77`)은
+**원장 메타데이터 문자열과 수동 명령 문서**다 — 실행이 아니다.
+
+⟹ **진성 고아 27 · 실호출 collective 14.** 오분류 채널 **3호**가 추가로 열려 있었다:
+자기 recipe(1호) · clean 목록(2호)에 이어 **기록 문자열 속 어휘 언급**(3호). 운전석 첫 측정
+4 → 패킷 재측정 26 → 본 개정 27 — 잣대를 잴 때마다 채널이 하나씩 더 나왔다.
+1·2호는 GR-1′ 파서가 기계로 닫고(§0-A-5-a), 3호는 기계로 못 닫는다(셸/문자열 의미론) —
+collective 의 wiring 을 **판독 확인된 실호출 파일**로만 기재하는 규정(§0-A-5-b)으로 닫는다.
+
+⟹ **고아율의 정정**: §G-1 의 "62개 중 21개" 는 과소였다. 21(§G) + 27(본 개정) = **48/62 가
+아무에게도 불리지 않았다** — 이 캠페인의 병의 실제 크기다.
+
+27개의 하위분류 [실측 — recipe 전수 판독]:
+
+| 부류 | 수 | 타깃 |
+|---|---|---|
+| 배터리-그림자 (make 타깃은 고아이나 **같은 테스트 소스**를 배터리가 자체 명세로 매판 빌드·실행) | 5 | `selftest_a2_08_signed_opacity`(Z-a2-08) · `selftest_a2_09_emissivity`(Z-a2-09) · `selftest_a2_10_radeq`(Z-a2-10) · `selftest_a2_12_contract`(Z-a2-12) · `selftest_a2_13_15_contract`(Z-a2-13-15) |
+| CUDA/NVCC 빌드 | 3 | `selftest_nlte_assemble` · `selftest_a2_12_gpu_lifecycle` · `selftest_a2_13_gpu_oracle` |
+| 순수 python | 1 | `selftest_physics_comparison_regrid` |
+| CPU C 빌드 | 18 | `selftest_wave32_{ew_rc, ew_io, within_sl_oom, boundary_q, counter_atomic}` · `selftest_emiss_ab_insitu` · `selftest_a2_03_producer_parity_fixture` · `selftest_a2_04_replay_commit` · `selftest_det_stage12` · `selftest_line_net_rate` · `selftest_cmfgen_adiabatic` · `selftest_atomic_internal_energy` · `selftest_nlte_population_candidate` · `selftest_nlte_candidate_{adiabatic, tau}` · `selftest_a2_10_seed_commit` · `selftest_physics_comparison` · `selftest_a2_16_seed` |
+
+collective 로 남는 14 [실측 — 각 호출부 판독 완료]: `selftest_cmf_exact_multigpu` ·
+`selftest_cmf_exact_epoch_scan` · `selftest_ioniz_saha` · `selftest_seed_te_publish` ·
+`selftest_bootstrap_window` · `selftest_a2_03_radiation_field` · `selftest_a2_04_commit` ·
+`selftest_a2_05_bf_rate` · `selftest_a2_06_line_jbar` · `selftest_a2_06_dual_commit` ·
+`selftest_a2_07_population`(이상 11 — 기존 wiring 정확) ·
+`selftest_cmf_chieta_dump`(→ `scripts/cmf_chieta_roundtrip_selftest.py:72,76` make+실행) ·
+`selftest_cmf_linepop_dump`(→ `scripts/cmf_linepop_roundtrip_selftest.py:39` make, `:24` 실행) ·
+`selftest_wave32_matrix_debit`(→ `tests/test_wave32_seeded_defects.py:16,104` make+실행)
+(이상 3 — wiring 이 "Makefile" 로 잘못 기재돼 있어 재기입 대상).
+
+**배터리-그림자의 한계** [실측+미확인]: make recipe 는 빌드+python driver 실행의 결합이다
+(예: a2_09 recipe 2번째 명령 = `run_a2_09_selftest.py`). 배터리 Z 러너
+(`run_zinert_selftest.py`)가 그 driver 검사를 재현하는지는 **모른다** — GR-7 계측 항목.
+
+**발견 C (확인 + 원인 심화)**: 픽스처가 미추적인 직접 원인은 **`.gitignore:30` 의 `*.log`
+광역 규칙**이다. `tests/fixtures/` 의 유일 파일이고(추적 0건), 소비자는
+`tests/a2_10_cancellation_census_selftest.py:14` 하나 [실측]. 단순 `git add` 로는 안 들어간다 —
+.gitignore 처분이 변경집합에 필요하다(§0-A-5-d). provenance 는 **모른다**(내용 = A2-10
+`LINE-NET-CELL-BLOCKED`/`CANCELLATION-CENSUS` 이벤트 로그 5행 — 전수 판독 가능).
+
+**known-red 4행 (R4 의 전제 실측)**: 등록부의 commands 는 4행 모두 해당 make recipe 와
+정확히 일치하고, recipe 는 전부 **변수 무포함 python3 직호출**이다 — R4 반사 검사(§0-A-4)가
+문자열 비교로 성립하며 HEAD 에서 PASS 할 것이다.
+
+### 0-A-2. 다섯 결정 (증거 패킷 §5 의 질문에 대한 답)
+
+| 질문 | 결정 | 근거 |
+|---|---|---|
+| 1. 발견 A 의 거처 | **GR-0 신설** | GR-1 기대 변경집합 밖(P6 위반이 되므로 GR-1 에 못 싣는다) · 계약이 다르다(등록부 신설 vs 배터리 자체 결함 수리 — 계약 1개=커밋 1개) · GR-1 P4 의 전제이므로 순서상 선행(번호 0) |
+| 2. 발견 B 의 수리 범위 | 파서 수리+NC 는 **GR-1′ 범위 내**(계약문 이행의 수리다) · 신규 고아 27은 **`unwired` 범주**로 배속, **milestone 은 7 유지** · 처분은 **GR-7** | 27개는 상태 미측정이다(§G 의 "20개 전부 돌렸다" 에 미포함). 측정 없는 milestone 배속은 P5 를 측정·배속 혼합 단으로 만들고, known-red 후보가 몇인지 모른 채 P5 비용이 미정이 된다. CUDA 3개는 GR-1 실행 티어(GPU 불요) 사전등록과도 모순 |
+| 3. 발견 C 의 거처 | **GR-1′ 변경집합에 픽스처 무수정 추가 + .gitignore 정밀 부정 1행** — tests/ 접촉 금지의 정밀화 | 금지의 원의는 게이트·픽스처 *수리* 의 단 분리(GR-3~6 의 몫)다. 미추적 자산의 무수정 추가는 수리가 아니라 **GR-1 자신의 배선 주장(preflight 행 실존)의 실체화** — 이 파일 없이는 fresh clone 에서 GR-1 의 계약이 거짓이다. 행 보류(대안)는 오늘 green 인 실게이트를 배터리에서 빼는 회수 캠페인의 역행, 별도 단(대안)은 1파일 추가에 과잉 |
+| 4. R3·R4 | R3 = 등록부 문안 정직화(코드 0) · R4 = known-red 행 한정 채택 · 그 외 범주 반사는 미룸(대장 기재) | §0-A-4 |
+| 5. GR-1 폐합 가부 | ★**폐합 불가 — 개정 후 재발주(GR-1′)** | ① P1 이 현행 파서로 27건 거짓 인증 — "배선 주장 교차검증 0 위반" 이라는 계약 문장 자체가 미이행 ② P4 는 GR-0 착지 전 원리적으로 불가능 ③ 배속표가 바뀐다(collective 41 → 14 + unwired 27). **착지 구현은 보존**하고(전면 재작성 아님) delta 만 재발주한다 |
+
+### 0-A-3. ★공통 근원의 판정 — "배터리가 make 를 호출"은 이 캠페인에서 하지 않는다 (파급 실측)
+
+이 저장소는 "무엇이 무엇을 부르는가/무엇으로 빌드하는가"를 세 곳에 중복 기재한다:
+① Makefile 규칙 ② 배터리의 자체 `Build(...)` 명세 ③ (GR-1 이후) 등록부.
+발견 A = ①②의 갈라짐, 발견 B = ①을 읽어 ③을 검증하는 규칙의 부정확.
+근원 제거 후보 — 배터리가 Makefile 타깃을 호출하게 만들기 — 의 파급을 실측했다:
+
+1. [실측] **산출 위치 충돌** — 배터리는 임시 디렉토리에 산출(`Build.output` = `build/` 하위
+   경로), make recipe 는 저장소 루트에 `-o $@`. 전환하면 작업트리 오염 + 동시 배터리 런
+   충돌, 또는 Makefile 규칙 10+개의 출력 매개변수화 재설계.
+2. [실측] **빌드/실행 결합** — 게이트 recipe 다수가 컴파일+python driver 실행을 한 규칙에
+   결합한다(a2_08 · a2_09 등). 배터리는 `build_all`(13개 빌드 병렬, 실패 시 런 전 중단)과
+   `run_all`(러너 4개가 바이너리 **경로**·scratch·deck 인자를 수취 — Z 러너는 바이너리
+   10개의 경로를 인자로 받는다)을 분리한다. make 타깃 호출로는 이 분리·매개변수화가
+   성립하지 않는다.
+3. [실측] **K·CP 의 링크 목록은 런타임 도출**(`cpu_link_sources()` — src/*.c 에서 main 정의
+   TU 를 제외). 소스 주석이 "3rd recurrence of stale hardcoded lists" 를 기록한, 정적 목록
+   노후가 세 번 재발해 도입한 수리다. make 로 옮기면 이 수리를 되돌리거나 Makefile 에 새
+   도출 기계를 심어야 한다.
+4. [실측] **픽스처 캐시 결합** — `cached_materialize`(`--cache-root`)가 빌드 스레드풀과
+   동주한다(`build_all` 안에서 동시 제출). 전환은 이 결합의 재설계를 요구한다.
+
+⟹ 근원 제거 = **빌드 인프라 재설계 계급**. 이 캠페인(잣대 수리 + "거짓말하지 않기 위한
+최소 확장")의 계약 밖 — **미룬다**(하려면 별도 캠페인 사전등록). 미룸을 안전하게 만드는
+것이 **GR-8** 이다: ①②의 갈라짐(발견 A 의 채널)을 매 배터리마다 기계 검출한다. 발견 A 는
+커밋(`2dc2817`) 후 첫 배터리 완주 시도까지 눈멀어 있었다 — GR-8 상설화로 그 은폐 창이
+0 이 되면, 명세 단일화의 지위는 "재발 방지" 에서 "편의" 로 강등된다. 그때 가서 비용을
+다시 재는 것이 옳다.
+
+### 0-A-4. 검수 권고 R3·R4 의 처분
+
+**R3 (E11 배선이 recipe 절반)** — [실측] `selftest_emiss_e11_fluor_matrix` recipe 는 2명령:
+① `python3 -m py_compile` 4종 ② seeded fixture 실행. preflight 는 ②만 배선했고,
+PREFLIGHTS 행 형식(`(이름, 스크립트 경로, 인자)`)으로는 `-m py_compile` 을 실을 수 없다
+[실측 — `run_preflights()` 의 호출 형식]. **처분 = 등록부 해당 행 wiring 문안의 정직화**:
+"recipe 2명령 중 실행 게이트만 배선(py_compile 4종 미배선)" 을 사실대로 기재(코드 변경 0).
+초록불의 인증 범위를 문안이 과장하지 않게 하는 것이 이 캠페인의 병명이다. 기계 커버리지
+확장은 하지 않는다 — py_compile 은 문법 검사이고, ②의 실행이 핵심 모듈 import 를 이미
+강제하므로 확장의 실익이 형식 개조 비용에 못 미친다.
+
+**R4 (등록부 commands ↔ recipe 반사 무검증)** — **known-red 행에 한정 채택.**
+known-red sweep 은 등록부 행의 commands 를 실행한다 [실측 `observe_known_red`]. Makefile
+recipe 가 바뀌어도 sweep 은 옛 명령을 돌린다 — **서명 감시가 유령을 감시**하게 되는
+구멍이며, 이는 GR-1 계약("서명 고정으로 **관측**")의 일부이므로 GR-1′ 범위다.
+검사: known-red · kind=make-target 행의 commands 가 해당 make 규칙 recipe 의 명령열과
+정확일치(4행 전부 변수 무포함 [실측 §0-A-1] — 문자열 비교 성립), 불일치 =
+`known-red-recipe-drift:<이름>` FAIL. **그 외 범주의 반사는 미룬다**: preflight 는 기존
+`preflight-command-drift` 가 이미 덮고, collective·unwired·milestone 의 commands 는
+실행되지 않는 참고 정보라 트립와이어를 오도하지 않는다 — 단 등록부가 썩는 채널이므로
+**확정 부채로 대장 기재**.
+
+### 0-A-5. GR-1′ — 재발주 명세 (delta; GR-1 착지 구현은 보존)
+
+**(a) 파서 수리.** `make_references()` 의 제외 집합을 정밀 규정한다:
+① 대상 타깃이 LHS 에 포함된 rule 의 정의행+recipe 행 전부
+② `clean` 이 LHS 에 포함된 rule 의 recipe 행 전부
+③ `.PHONY` 논리행(기존) ④ 주석(기존).
+**과도 제외 금지** — 제외는 위 4류에 국한한다. 방향의 비대칭을 기록한다: 제외를 더 넓히면
+실배선 collective 가 `collective-reference-missing` 으로 **시끄럽게** 죽는다(fail-closed
+방향, 자기 고지) — NC 가 필요한 쪽은 조용한 방향(과소 제외)이고 NC-R1e·f 가 그 둘을 닫는다.
+
+**(b) collective 의 재규정.** collective 의 배선 주장은 **실행 호출**이다 — 어휘 언급(원장
+문자열·수동 명령 문서·주석)은 배선이 아니다. 기계 검사는 어휘 토큰 실존에 머무른다
+(한계 유지 — 셸 도달성 미증명, Codex NOTES 공개분). 따라서 **행의 wiring 은 실호출이
+판독으로 확인된 파일만** 가리킨다. 재배속은 §0-A-1 의 명단 **그대로**: collective 14
+(그 중 3행 wiring 재기입) · unwired 27. 명단과 다른 재분류가 필요해 보이면 고치지 말고
+보고한다.
+
+**(c) `unwired` 범주 신설** (스키마 v2 — §0-A-9):
+- 뜻: "이 타깃을 부르는 곳이 없음이 **관측됨**". 인증하는 것은 그 사실뿐 — 게이트 내용의
+  건강(빌드 가부·PASS/FAIL)은 무인증이다. known-red("죽어 있음이 관측됨")와 직교한다.
+- 필수 필드: `observed`(관측일) · `disposition_rung`("GR-7") — 결손 시
+  `unwired-row-incomplete:<이름>` FAIL. **처분 계획 없는 고아 등재는 원리적으로 불가**
+  (known-red 의 수리 단 번호 필수와 동형 안전핀).
+- 선택 필드: `lexical_mentions`(어휘 언급만 있는 파일의 허용 목록 — a2_08 행은
+  `scripts/a2_08_finalize_artifacts.py` 를 기재) · `note`(배터리-그림자 등 사실 기재).
+- **자기 만료 검사**: 메타 게이트가 매번 Makefile(수리된 파서 규칙) + `scripts/`·`tests/`
+  의 `*.sh`·`*.py` 에서 토큰을 재탐색하고, `lexical_mentions` 밖에서 참조가 나타나면
+  `unwired-now-referenced:<이름>` FAIL — 배선이 생기는 순간 행 재배속을 강제한다.
+  한계(기재): 허용 목록 **파일 안**에 새 실호출이 생기면 못 본다(파일 단위 허용).
+
+**(d) 픽스처 커밋.** `tests/fixtures/a210_cancellation_census.log` **무수정 추가** +
+`.gitignore` 에 정밀 부정 1행(`!tests/fixtures/a210_cancellation_census.log` — 광역 `*.log`
+규칙은 불변). provenance 는 커밋 전 운전석이 실측 시도(생성 명령/원 런 특정)하고, 못 찾으면
+"미상" 으로 집행 기록에 기재한다 — 조용히 메우지 않는다. **tests/ 접촉 금지의 정밀화**:
+"tests/ 아래 **기존 파일의 수정** 금지 · 게이트 스크립트 신설 금지 — 이 미추적 픽스처
+1건의 무수정 추가만 허용"(GR-6 의 몫과 무충돌 — 다른 픽스처·다른 게이트).
+
+**(e) Codex 추가 계약 조항** (§9 에 추가 적용): 파서 제외를 위 4류 밖으로 확대 금지 ·
+unwired 필드 정확일치 · 재배속은 §0-A-1 명단 그대로(임의 재분류 금지 — 다르면 보고) ·
+스키마 문자열은 v2 로 (구판 등록부는 `registry-unreadable` 로 fail-closed 되는 것이 옳다).
+
+**기대 변경집합 (delta — GR-1 착지분에 추가; 여기 없는 변경은 위반)**:
+
+| 파일 | 변경 |
+|---|---|
+| `scripts/check_gate_registry.py` | 파서 제외 4류 · unwired 검증(불완전 행 거부 + 자기 만료 검사) · known-red recipe 반사(`known-red-recipe-drift`) · NC-R1e/f/g/h 추가 · 스키마 문자열 v2 |
+| `scripts/gate_registry.json` | schema v2 · 27행 collective→unwired(필드 포함) · 3행 wiring 재기입(§0-A-1) · E11 행 wiring 문안 정직화(§0-A-4) |
+| `.gitignore` | 정밀 부정 1행 |
+| `tests/fixtures/a210_cancellation_census.log` | 신규 추가(무수정) |
+| 이 문서 | 집행 기록 |
+| (변경 0) | `scripts/run_gate_battery.py` · `Makefile` — GR-1 착지분 그대로 |
+
+**게이트 표 (개정판 — 판정문은 이 표와 대조한다)**:
+
+| # | 조건 | 판정 자료 |
+|---|---|---|
+| **P1′** | 완전성 PASS — 재집계 전원 배속(스냅샷 64), 수리된 파서로 배선 교차검증 0 위반, collective 14 전원의 wiring 파일에 토큰 실존, unwired 27 전원 무참조 재확인 | 메타 게이트 출력 |
+| **P2′** | known-red sweep 4행 pin 정확 일치 + recipe 반사 일치 — grammar-debug 실측(샌드박스 pin 과 다르면 실측이 이기고 차이는 집행 기록에 기재) | sweep 출력 |
+| **P3′** | NC-R1a~h **8/8** 정확 사유 | NC 출력 |
+| **P4′** | (**전제: GR-0 착지**) 배터리 1회 완주(grammar-debug) — D=19·K=7·Z=12·CP=4 불변 + 신규 preflight 행 전부 rc=0 | 배터리 로그 |
+| **P5′** | milestone 집합 타깃 완주 — **7개 불변**(이 개정으로 늘지 않음을 명시) | 실행 로그 |
+| **P6′** | 변경집합 = GR-1 착지분 + 위 delta 표와 정확 일치 | `git show --stat` + 명단 diff |
+| **P7** | 픽스처 추적: `git ls-files` 1건 + 로컬 clone(grammar-debug, /gpfs scratch)에서 해당 preflight 1행 단독 rc=0. [추정] clone 비용 소형 — 실측이 크면 ls-files 확인으로 강등하고 사유 기재 | 명령 출력 |
+
+**신설 NC**:
+
+| # | 주입 | 기대 (정확 사유) |
+|---|---|---|
+| **NC-R1e** | 합성 Makefile: 타깃이 자기 recipe 에서만 자기 이름을 참조(`-o`·`./` 실행) — collective 로 등재 | `collective-reference-missing:<이름>` — **발견 B 채널 1호의 재주입** |
+| **NC-R1f** | 합성 Makefile: `clean` 의 `rm -f` 목록에만 이름 실존 — collective 로 등재 | 동일 사유 — **채널 2호의 재주입** |
+| **NC-R1g** | 합성 unwired 행의 타깃을 합성 Makefile 의 다른 rule 에서 실참조 | `unwired-now-referenced:<이름>` |
+| **NC-R1h** | 합성 known-red 행의 commands 를 합성 Makefile recipe 와 불일치시킴 | `known-red-recipe-drift:<이름>` |
+
+**기대치와 자문 ("다른 가설 아래서도 같은 값을 내는가")**:
+
+| 기대 | 자문 | 증거력 |
+|---|---|---|
+| collective 14 · unwired 27 | **낸다** — 과도 제외 파서도 우연히 같은 수를 낼 수 있다. 수가 아니라 **명단**을 §0-A-1 과 diff 로 대조하고(P6′), 제외의 정확 국한은 NC-R1e/f 가 시연해야 증거 | 중간(명단+NC 결합 시) |
+| unwired 27 무참조 재확인 PASS | **낸다** — 아무것도 안 찾는 탐색기도 PASS. NC-R1g 가 탐색기의 생존을 시연해야 의미 | 낮음(NC 결합 시 핵심) |
+| known-red recipe 반사 HEAD PASS | **낸다** — 공허 검사도 PASS [실측: HEAD 4행이 이미 일치]. NC-R1h 와 결합해서만 의미 | 낮음(NC 결합 시 핵심) |
+| clone 에서 픽스처 preflight rc=0 | **못 낸다** — 픽스처 부재 시 그 행이 죽는 것은 이미 관측됐다(Codex 샌드박스 rc=4, NOTES 실측). 죽음/생존의 짝이 성립 | 핵심 |
+
+**NOTES.md 의 처분** (Codex 가 제기한 P6 충돌): `NOTES.md` 는 저장소 밖 워크트리 산출물로
+**커밋하지 않는다**. 요지는 이 문서의 집행 기록에 흡수한다 — P6 위반이 아니다.
+**64 재집계의 승인**: 신설 타깃 2개(`gate-registry-check`·`selftest-registry-milestone`)의
+자기 등재는 §3 철회·분기("재집계 실측을 따른다")의 올바른 적용이다 — 완전성 검사가 자기
+신설 타깃을 예외 처리하지 않은 것은 설계 의도에 부합한다.
+
+### 0-A-6. GR-0 — 배터리 Z-a2-09 빌드 명세 재정합 (신설 단)
+
+**계약**: 배터리의 Z-a2-09 빌드 명세가 Makefile 정본 링크 목록과 재정합되어,
+SH-A209-IDSEAL 이 봉인한 계약의 회귀 감시(배터리 Z 행)가 다시 돈다.
+
+**귀속**: 결함 유발 = `2dc2817`(운전석 커밋 — Makefile 타깃만 갱신, 배터리의 중복 빌드
+명세 미갱신). 잠복 원인 = SH-A209-IDSEAL 사전등록의 P2 회귀 목록("변경파일 선별")이
+**변경파일을 중복 명세로 소비하는 소비자**를 포함하지 않음 — 3층 인수 프로토콜의 선별
+규칙에 대한 교훈으로 대장 기재. 발견 경로 = GR-1 P4(배터리 완주 요구) — 이 캠페인이 세운
+잣대가 첫 완주 시도에서 실물 결함을 잡았다.
+
+**기대 변경집합**: `scripts/run_gate_battery.py` 의 `Build("Z-a2-09", ...)` 소스 목록에
+`"src/population_contract.c"` **1항 추가**. 이 문서(집행 기록). **다른 변경 0.**
+
+**게이트**: P1 = grammar-debug 에서 해당 빌드 명령열 단독 실행 rc=0 ·
+P2 = 변경집합 1항(`git diff`). 배터리 전체 완주는 GR-1′ P4′ 의 몫 — 같은 관측을 두 단에
+중복 귀속하지 않는다.
+
+**기대치와 자문**: "빌드 rc=0" 은 테스트 소스 약화·검사 제거 가설로도 나온다 → P2 diff
+(추가 1항뿐, `tests/` 무접촉)가 그 가설을 배제한다. 이 1항으로 충분하다는 것은 [실측] —
+Makefile 이 정확히 그 목록으로 링크에 성공한다(같은 소스 집합).
+
+**순서**: GR-1′ 에 선행한다(커밋도 선행 — GR-1′ P4′ 의 전제).
+
+### 0-A-7. GR-7 — unwired 27 의 계측·처분 판정 / GR-8 — 중복 빌드 명세 정합 검사 (신설 단 2개)
+
+**GR-7** (계측→판정 — known-red 4 에 대한 §7 의 「미지판」):
+
+- **스텝 1 (계측, 운전석)**: 27개 전원의 1회 실측. CPU C 18 + PY 1 + 그림자 5 는
+  grammar-debug 에서 make 타깃 완주(rc·첫 FAIL 줄 채집). CUDA 3 은 nvcc 실존 시 **빌드만**
+  시도(실행은 GPU 티어 — 시도 여부와 결과를 그대로 기재). 그림자 5 는 추가로 make recipe
+  의 driver 단계 대 배터리 러너 커버리지의 대조표. **grammar-debug 의 nvcc 유무는 모른다**
+  — 이 계측이 첫 실측이다.
+- **스텝 2 (판정, fresh Fable)**: 행별 처분 = ① 배선(범주·배선처 지정) ② known-red 전환
+  (수리 단 번호 필수) ③ 은퇴 — 단 은퇴는 **지키던 계약의 소멸을 판정문이 확정할 때만**
+  (검증불가 고아 금지 원칙: 삭제는 처분의 편의가 아니라 판정의 결론이어야 한다).
+- **산출**: 판정문 `docs/VERDICT_UNWIRED_GATES_2026-08-XX.md` + 등록부 처분 필드 기입 =
+  커밋 1. **처분의 집행(배선·전환·은퇴 커밋들)은 캠페인 밖 후속 단들.**
+- **기대치와 자문**: "27개 중 몇이 죽어 있는가" 의 사전 기대를 **적지 않는다**(§11-8 과
+  같은 규율 — 예상은 판정이 아니다). 유일한 사전등록 기대 = 그림자 5 의 배터리 대응
+  빌드는 rc=0 (Z-a2-09 는 GR-0 이후). 자문: 이 기대는 "배터리가 green" 가설과 동치라
+  독립 증거력이 없다 — 회귀 확인용.
+
+**GR-8** (메타 게이트 확장 — 발견 A 채널의 상설 감시):
+
+- **계약**: 배터리 Build 명세와 Makefile recipe 가 **같은 테스트 소스를 공유하는 쌍
+  전수**에서, `.c` 입력 집합의 불일치가 이름 있는 사유로 매 배터리마다 검출된다.
+- **기전** [실측 근거]: `check_gate_registry.py` 가 `run_gate_battery` 를 import 해
+  `build_specs()` 실물을 얻는다 — 모듈 수준은 상수·함수 정의뿐이고 main 은 가드돼 있어
+  import 부작용 0 [실측], `generate_composition_d_fixtures` 도 동일 [실측]. 각 Build 의
+  `.c` 집합 ↔ 대응 make 게이트 타깃(recipe 가 같은 `tests/*.c` 를 포함)의 `.c` 집합을
+  비교, 불일치 = `build-spec-drift:<Build 이름>` FAIL. 대응 없는 Build(D·K·CP·Z-validator·
+  Z-tau·Z-population·Z-canonical — make 대응물 없음 [실측: `selftest_zinert*` 타깃 부재])는
+  정의역 밖 — 출력에 `pairs=N unpaired=M` 으로 정의역을 명시(인증 범위 과장 금지).
+  import 실패·형상 변화는 기존 `battery-contract-unreadable` 계열로 fail-closed.
+- **NC**: ① 합성 쌍에서 소스 1항 제거 → `build-spec-drift` 정확 사유.
+  ② ★**소급 음성대조**: GR-0 이전 형상(Z-a2-09 에 population_contract.c 부재)을 사본
+  트리에 재현해 검사 실행 → `build-spec-drift:Z-a2-09` 검출 — **발견 A 그 자체의
+  재주입**이다. HEAD PASS 와 짝지어 무조건-FAIL 가설을 배제한다.
+- **기대치와 자문**: HEAD PASS 는 공허 검사 가설로도 나온다(낮음) — NC ①②가 핵심.
+- **기대 변경집합**: `scripts/check_gate_registry.py`(검사+NC) · 이 문서. **등록부
+  무변경** — 대응은 테스트 소스 파일을 키로 도출 가능하므로 새 기재를 창설하지 않는다
+  (기재를 늘리면 그 기재가 네 번째로 썩는다).
+
+### 0-A-8. 개정판 단 분해 · 순서 · 폐합 조건 (이 표가 정본)
+
+| 단 | 계약 (1줄) | 소속 | 의존 | 커밋 |
+|---|---|---|---|---|
+| **GR-0** ★신설 | 배터리 Z-a2-09 빌드 명세가 Makefile 정본과 재정합 | SH | 없음 | 1 |
+| **GR-1′** ★재발주 | (원 계약 유지) + 배선 교차검증이 실호출 판별로 공허하지 않고, 고아 27은 unwired 로 정직 배속되며 처분 단이 강제된다 | SH | GR-0(P4′) | 1 |
+| GR-2 ~ GR-6 | 원문 §4~§8 그대로 | | 의존의 "GR-1" 은 "GR-1′" 로 읽는다 | |
+| **GR-7** ★신설 | unwired 27 전원이 실측되고 행별 처분이 판정된다 | SH | GR-1′ | 1 (판정문+기입) |
+| **GR-8** ★신설 | 중복 빌드 명세의 갈라짐이 매 배터리마다 이름 있는 사유로 검출된다 | SH | GR-1′ | 1 |
+
+**순서**: GR-0 → GR-1′ → (GR-2 병행 가능 · GR-7 스텝 1 계측은 GR-3 이후 무변조 병행 가능)
+→ GR-3 → GR-4 → GR-5 → GR-6 → GR-7(판정·기입) → GR-8. 트리-변조 상시 1개 규약 불변.
+GR-7·GR-8 을 말미에 두는 근거: known-red 4 소거(진행 중 Stage-4 측정면의 보호)가 임계
+경로이고, 둘 다 그 경로를 막지 않는다.
+
+**캠페인 폐합 조건 (개정 — §0 안전핀의 확장)**:
+① known-red 4행 전부 소거(원문 유지) +
+② unwired 27행 **전원에 GR-7 판정의 처분 기입** +
+③ GR-8 정합 검사 편입.
+unwired 행의 **소거**(처분 집행)는 폐합 조건이 아니다 — 상태 미지 27개의 집행에 폐합을
+인질 잡히면 캠페인이 무한 확장된다. 단 처분 미기입 행이 하나라도 남으면 폐합 불가
+(은폐 창고 금지 — known-red 와 같은 규율).
+
+### 0-A-9. 부록 A 스키마 v2 (unwired 확장 — v1 원문은 부록 A 에 보존)
+
+```json
+"schema": "lumina-gate-registry-v2",
+  ... "category" 에 "unwired" 추가 ...
+"unwired": {
+  "observed": "YYYY-MM-DD",
+  "disposition_rung": "GR-7",
+  "lexical_mentions": ["<어휘 언급만 있는 파일 경로>"],
+  "note": "<사실 기재 — 예: battery-shadow Z-a2-09>"
+}
+```
+
+- `unwired` 블록은 category=unwired 에서만 허용·필수(`observed`·`disposition_rung` 필수,
+  `lexical_mentions`·`note` 선택). 결손 = `unwired-row-incomplete:<이름>` FAIL.
+- 처분 기입(GR-7 후)의 필드 형상은 GR-7 판정문이 정본이다 — 여기서 선점하지 않는다.
+
+### 0-A-10. 이 개정이 모르는 것 (추측으로 메우지 않는다)
+
+1. **unwired 27 의 빌드·실행 상태 전부** — GR-7 스텝 1 이 첫 실측.
+2. **grammar-debug 의 nvcc 유무** — 동상.
+3. **픽스처 provenance** — 커밋 전 실측 시도, 미상이면 미상으로 기재(§0-A-5-d).
+4. **배터리 Z 러너가 그림자 5 의 make recipe driver 단계 검사를 재현하는지** — GR-7 계측 항목.
+5. **fresh clone 완결성의 나머지** — `tests/fixtures` 는 이 1건뿐 [실측]이나, 배터리가
+   요구하는 덱(`data/...`)·기타 경로의 추적 여부는 전수 미조사. `.gitignore` 의 `*.log`
+   광역 규칙이 미래 픽스처에 같은 함정을 놓는다 — 일반 처방 미정(열린 질문으로 §11 에 추가).
+6. **P7 로컬 clone 의 비용** — [추정] 소형. 실측이 다르면 강등 조항(P7)대로.
 
 ---
 
@@ -223,6 +578,12 @@ census 로그는 첫 줄만 보존했다. GR-5 1단계가 전수를 실측한다
 ---
 
 ## 3. GR-1 — 게이트 등록부와 회귀 편입 (구조 단)
+
+**[개정 1]** GR-1 은 이대로 폐합 불가로 판정됐다(P1 이 현행 파서로 27건의 거짓 배선을
+인증 — §0-A-2 결정 5). 착지 구현은 보존하고 **재발주 명세(GR-1′) = §0-A-5** 가 정본이다.
+아래 원문은 초판 발주분의 기록으로 보존한다. 특히 "21개 고아의 배속" 문단의 수치는
+§G census 스냅샷 기준이며, 개정 1 의 재측정으로 **진성 고아는 21+27=48/62** 로 정정됐다
+(§0-A-1).
 
 ### 계약
 
@@ -488,6 +849,8 @@ src 불변). 두 번째 명령이 FAIL → 분류 후 같은 단에서 픽스처
 
 ## 9. Codex 가 지켜야 할 계약 (발주서에 이 절 그대로 첨부)
 
+**[개정 1]** GR-1′ 발주에는 §0-A-5-(e) 의 추가 조항이 이 절과 함께 첨부된다.
+
 1. **`src/` 접촉 0줄.** 잣대(scripts/tests/Makefile/등록부)만 고친다. 게이트를 통과시키기
    위해 소스를 고치고 싶어지면 — 그것이 바로 이 캠페인이 금지하는 행위다. 보고하라.
 2. **클램프·floor·cap·새 env 노브 금지.** known-red 등록부는 서명 **정확일치** 고정이다 —
@@ -547,9 +910,24 @@ src 불변). 두 번째 명령이 FAIL → 분류 후 같은 단에서 픽스처
 8. **GR-2 판정의 결과** — 예상을 적지 않는다. §H-2 가 "런타임 가드는 강하나 정적으로는
    무인증"까지 판독했고, 지위 결정은 판정자의 몫이다.
 
+**[개정 1 추가]**
+
+9. **unwired 27 의 상태 전부** — GR-7 스텝 1 이 첫 실측(§0-A-10-1).
+10. **`.gitignore` `*.log` 광역 규칙의 일반 처방** — 미래 픽스처가 같은 함정(발견 C)에
+    빠지는 것을 기계로 막을 방법을 모른다. 이번에는 정밀 부정 1행으로 해당 파일만 연다.
+11. **어휘 언급 채널(오분류 3호)의 기계 폐쇄** — 문자열/문서 속 이름과 실행 호출의 판별은
+    셸 의미론이라 기계로 못 닫는다. collective wiring 의 판독 확인 규정(§0-A-5-b)과
+    unwired 의 `lexical_mentions` 허용 목록으로 우회하되, 허용 목록 파일 안의 새 실호출은
+    못 본다는 한계를 안다.
+12. **fresh clone 완결성의 나머지** — 덱·기타 경로의 추적 여부 전수 미조사(§0-A-10-5).
+
 ---
 
 ## 부록 A — `gate_registry.json` 스키마 (정본)
+
+**[개정 1]** 스키마는 v2 로 확장됐다(`unwired` 범주·블록 신설 — §0-A-9 가 정본).
+아래 v1 원문은 초판의 기록으로 보존한다. pin 실측 기입 규칙(값은 실측, 스키마가
+사전등록)은 v2 에도 그대로 적용된다.
 
 ```json
 {
