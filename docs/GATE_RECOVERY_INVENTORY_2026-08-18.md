@@ -428,9 +428,19 @@ env-gated 진단(withParityP GATE1)의 byte-clean save/restore 다.
 ### J-2. ★파생 실측 B — transplant 계약의 유일한 음성대조가 `unwired` 다
 
 [실측] preflight 의 음성 대조는 **소스에 실존**한다(seed 3건 + bundle 2건, 바이트 보존
-전수 주장). 그런데 그것을 담은 두 타깃이 [실측] 등록부에서 **`unwired`** 다:
-`selftest_nlte_population_candidate` · `selftest_nlte_candidate_adiabatic` ·
-`selftest_nlte_candidate_tau` — 셋 다 `disposition_rung=GR-7`.
+전수 주장). 그런데 그것을 담은 타깃들이 [실측] 등록부에서 **`unwired`** 다.
+
+★**감리 R4 정정 (2026-08-21)**: 초판은 "**두 타깃**" 이라 쓰고 **세 이름**을 나열하는
+자기모순이었고, 그 세 이름은 GR-2 판정문의 지목과도 달랐다.
+[실측] **정본은 GR-2 판정문 §7** 이며 거기 지목된 것은
+`tests/a2_10_seed_commit_selftest.c:214-289`(seed preflight 음성대조 **3건**) ·
+`tests/nlte_candidate_tau_selftest.c:404-533`(bundle 경로) — **둘**이다.
+초판이 나열한 셋에는 **`selftest_a2_10_seed_commit` 이 빠져 있었다.**
+
+⟹ 보호 대상은 **합집합**으로 읽는다: `selftest_nlte_population_candidate` ·
+`selftest_nlte_candidate_adiabatic` · `selftest_nlte_candidate_tau` ·
+**`selftest_a2_10_seed_commit`** — **4행**, 전부 `disposition_rung=GR-7`.
+GR-7 판정은 이 **4행 전부를 배선으로 처분**해 어느 해석 아래서도 위반이 없다.
 
 ⟹ ★**GR-7 이 이들을 「은퇴」로 처분하면 방금 (ii)로 판정된 transplant 계약의 유일한
 음성대조를 지우게 된다.** GR-7 판정에 이 제약을 전달한다 —
@@ -691,7 +701,7 @@ user 지시로 **판정 감리 겹을 처음 붙였다**(오늘까지 감리는 
 | **R1** | ★**`SH-UW-1` 이 체커의 `repair_rung` 형식을 위반한다** — `check_gate_registry.py:250-252` 가 `re.fullmatch(r"GR-[1-9][0-9]*", …)` 를 요구하고 `:378` 이 `wiring == repair_rung` 을 강제한다. [실측·운전석 재확인] `SH-UW-1` 은 **fullmatch 실패** ⟹ known-red 등재 즉시 `known-red-row-incomplete` fail-closed. **판정문 §2-5 는 disposition 채널의 기계 정합만 재고 known-red 채널은 재지 않았다 — 비대칭 검증** | ★**SH-UW-1 착수 전 필수 해소.** 셋 중 택일: 체커 rung 형식 확장(사전등록 필요) / GR-계열 번호 부여 / 판정문이 열어 둔 "즉시 수리 착지 시 known-red 경유 생략" |
 | **R2** | 폐합 조건 ② 가 HEAD 에서 **미충족** — 사전등록은 "판정문 + 등록부 기입 = **커밋 1**" 인데 `83c3f31` 은 판정문+대장 2파일뿐이고 27행에 `disposition` **0건** | ★**해소** — 이 커밋에서 27행 전원 기입. 형상 이탈(판정문 선행 단독 커밋)을 여기 기재 |
 | **R3** | `Z-a2-12` 쌍의 빌드 명세가 **이미 2항 어긋나 있다**(배터리는 `jnu_seed.c`·`seed_capability.c` 를 더 링크) ⟹ **GR-8 의 "HEAD PASS" 기대가 이미 거짓일 수 있다.** GR-0(부족)과 **반대 방향(과잉)** 의 drift | ★**GR-8 착수 전 정보 필수** — 사전등록 시 반영 |
-| **R4** | 대장 §J-2 가 "두 타깃" 이라 쓰고 세 이름 나열, GR-2 §7 의 실제 지목(`a2_10_seed_commit` 포함 2개)과 불일치 | ★**정정 완료**(§J-2) — 보호 대상 = 합집합 4행 |
+| **R4** | 대장 §J-2 가 "두 타깃" 이라 쓰고 세 이름 나열, GR-2 §7 의 실제 지목(`a2_10_seed_commit` 포함 2개)과 불일치 | ★**정정 완료(2026-08-21 재시도)**(§J-2) — 보호 대상 = 합집합 **4행**. ⚠첫 커밋(`6225867`)에서 편집이 **앵커 불일치로 실패**했는데 커밋 메시지는 '정정 완료'라 적었다 — **허위 기재였고 이 커밋에서 바로잡는다** |
 | R5 | 계측 패킷의 "wave32_* 4종" 은 **5종** | 기록 정확성, 무영향 |
 | R6 | 배선 전제(1회 건강 실측)의 강제가 **절차뿐** — `unwired-now-referenced` 는 재배속만 강제하고 전제 실측은 기계가 침묵 | 집행 단 게이트 표에 "1회 실측 로그 경로" 를 판정 자료로 명기하면 닫힌다(체커 개조 불요) |
 
