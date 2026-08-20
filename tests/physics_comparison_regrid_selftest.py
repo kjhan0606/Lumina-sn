@@ -2,8 +2,10 @@
 from __future__ import annotations
 
 import csv
+import hashlib
 import json
 import math
+import struct
 import sys
 import tempfile
 from pathlib import Path
@@ -25,6 +27,14 @@ SHELL_COLUMNS=(
 SPECTRAL_COLUMNS=("shell_id","bin_id","nu_lo_Hz","nu_hi_Hz","J_nu",
     "chi_es_cm1","chi_bb_cm1","chi_bf_cm1","chi_ff_cm1","chi_total_cm1",
     "eta_bb","eta_bf","eta_ff","eta_true_total")
+
+
+def grid_manifest_sha256(edges:list[float])->str:
+    digest=hashlib.sha256()
+    digest.update(b"A2-09:grid-manifest:Hz:bin-edges:IEEE754:v1")
+    digest.update(struct.pack(">Q",len(edges)-1))
+    for edge in edges:digest.update(struct.pack(">d",edge))
+    return digest.hexdigest()
 
 
 def coarse_index(edges:list[float], x:float)->int:
@@ -75,7 +85,8 @@ def write_fixture(root:Path,name:str,shell_edges:list[float],freq_edges:list[flo
         "adiabatic_positive_is_cooling":True,"shell_weight":"SPHERICAL_VOLUME",
         "frequency_regrid":"INTEGRAL_PRESERVING_PIECEWISE_CONSTANT",
         "atomic_model_sha256":"a"*64,"geometry_sha256":"b"*64,
-        "te_manifest_sha256":"c"*64,"grid_manifest_sha256":"d"*64,
+        "te_manifest_sha256":"c"*64,
+        "grid_manifest_sha256":grid_manifest_sha256(freq_edges),
         "radiation_generation":1,"population_generation":1,"te_generation":1,
         "opacity_generation":1,"emissivity_generation":1,
         "shell_file":shell_name,"spectral_file":spectral_name}

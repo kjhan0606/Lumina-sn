@@ -166,7 +166,9 @@ int main(void)
     em.n_shells=NS;em.n_bins=NB;em.nu_edge=target_edge;
     em.eta_bb=ebb;em.eta_bf=ebf;em.eta_ff=eff;em.eta_true_total=et;
     em.cell_status=cell_status;em.component_status=component_status;
-    fill_hash(em.grid_manifest_sha256,'b');
+    CHECK(a209_grid_manifest_sha256(target_edge,NB,
+                                    em.grid_manifest_sha256)==0,
+          "emissivity-grid-hash");
 
     A210TermLedger ledger[NS];memset(ledger,0,sizeof(ledger));
     RadeqStatus shell_status[NS]={RADEQ_OK,RADEQ_OK};
@@ -291,6 +293,7 @@ int main(void)
               "p4-site-112-reason");
         op.frequency_edges = target_edge;
 
+        char saved_grid_hash_digit = em.grid_manifest_sha256[0];
         em.grid_manifest_sha256[0] = '!';
         status = capture_snapshot_diagnostic(
             directory, &input, diagnostic, sizeof(diagnostic));
@@ -298,7 +301,7 @@ int main(void)
               "p4-site-133-status");
         CHECK(diagnostic_reason_equals(diagnostic, "COMPARISON_HASH_INVALID"),
               "p4-site-133-reason");
-        em.grid_manifest_sha256[0] = 'b';
+        em.grid_manifest_sha256[0] = saved_grid_hash_digit;
 
         status = capture_snapshot_diagnostic(
             NULL, &input, diagnostic, sizeof(diagnostic));

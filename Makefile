@@ -364,9 +364,9 @@ selftest_a2_08_signed_opacity: tests/a2_08_signed_opacity_selftest.c src/opacity
 		tests/a2_08_signed_opacity_selftest.c src/opacity_publication.c $(LDFLAGS)
 	python3 scripts/run_a2_08_selftest.py --binary ./selftest_a2_08_signed_opacity
 
-selftest_a2_09_emissivity: tests/a2_09_emissivity_selftest.c src/emissivity_publication.c src/emissivity_publication.h
+selftest_a2_09_emissivity: tests/a2_09_emissivity_selftest.c src/emissivity_publication.c src/emissivity_publication.h src/population_contract.c
 	$(CC) -O2 -Wall -Wextra -std=c11 -Isrc -o $@ \
-		tests/a2_09_emissivity_selftest.c src/emissivity_publication.c $(LDFLAGS)
+		tests/a2_09_emissivity_selftest.c src/emissivity_publication.c src/population_contract.c $(LDFLAGS)
 	python3 scripts/run_a2_09_selftest.py --binary ./selftest_a2_09_emissivity
 
 # MC-EVT prerequisite: prove whether BF thresholds exist below NLTE_NU_MIN.

@@ -49,6 +49,7 @@ typedef struct {
     uint64_t fallback_attempts, planck_attempts, raw_view_attempts, clamp_attempts;
     uint64_t floor_attempts, last_channel_attempts, partial_publish_attempts;
     uint64_t nonfinite_failures;
+    uint64_t identity_seal_failures;
 } A209Counters;
 
 /* Small immutable token view bracketing A2-09's read of the raw Sobolev slab.
@@ -78,6 +79,9 @@ int a209_publication_commit(CpuEmissivityPublication *published,
 int a209_publication_commit_counted(CpuEmissivityPublication *published,
                                     CpuEmissivityPublication *candidate,
                                     A209Counters *counter_sink);
+int a209_grid_manifest_sha256(const double *nu_edge, size_t n_bins,
+                              char out[65]);
+int a209_source_manifest_sha256(unsigned channel_mask, char out[65]);
 int a209_build_reemit_cdf(CpuEmissivityPublication *candidate,
                           unsigned channel_mask);
 int a209_build_reemit_cdf_counted(CpuEmissivityPublication *candidate,

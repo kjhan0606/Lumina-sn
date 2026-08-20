@@ -9100,6 +9100,13 @@ static const char *a209_forensic_phase(
         all_requested?"REQUESTED_TE":NULL;
 }
 
+static int a209_identity_hex64(const char value[65]){
+ if(!value||value[64]!='\0')return 0;
+ for(size_t i=0;i<64;i++)if(!((value[i]>='0'&&value[i]<='9')||
+                              (value[i]>='a'&&value[i]<='f')))return 0;
+ return 1;
+}
+
 static int a209_publish_cpu_emissivity_impl(
  OpacityState *opacity,const BFOpacity *bf,
  const AtomicData *atom,const PlasmaState *plasma,const NLTEConfig *nlte,
@@ -9119,6 +9126,25 @@ static int a209_publish_cpu_emissivity_impl(
  c.population_generation=atom->population_committed_generation;
  c.opacity_generation=opacity->cpu_opacity.generation_committed;
  c.te_generation=plasma->T_e_generation;
+ if(atom->partition_stamp.status!=POP_OK||
+    atom->partition_stamp.computed_population_generation!=
+        c.population_generation||
+    !a209_identity_hex64(atom->partition_stamp.atomic_model_sha256)){
+  fprintf(stderr,
+      "[A2-09][BLOCKED] reason=EMISS_IDENTITY_ATOMIC_STAMP_INVALID "
+      "stamp_status=%s stamp_computed_population_generation=%llu "
+      "population_generation=%llu atomic_model_sha256_valid=%d "
+      "atomic_model_sha256=%.64s\n",
+      population_status_name(atom->partition_stamp.status),
+      (unsigned long long)
+          atom->partition_stamp.computed_population_generation,
+      (unsigned long long)c.population_generation,
+      a209_identity_hex64(atom->partition_stamp.atomic_model_sha256),
+      atom->partition_stamp.atomic_model_sha256);
+  a209_publication_free(&c);return 5;
+ }
+ memcpy(c.atomic_model_sha256,
+        atom->partition_stamp.atomic_model_sha256,65);
  ctr->generation_required=c.required_emissivity_generation;
  ctr->shells_attempted+=ns;ctr->cells_attempted+=n;
  if(!c.radfield_generation){ctr->blocked_stale_rf++;a209_publication_free(&c);return 3;}

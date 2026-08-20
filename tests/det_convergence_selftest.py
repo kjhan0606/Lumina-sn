@@ -4,7 +4,9 @@
 from __future__ import annotations
 
 import csv
+import hashlib
 import json
+import struct
 import subprocess
 import sys
 import tempfile
@@ -34,7 +36,18 @@ SPECTRAL_FIELDS = [
 ]
 
 
+def grid_manifest_sha256(edges: list[float]) -> str:
+    digest = hashlib.sha256()
+    digest.update(b"A2-09:grid-manifest:Hz:bin-edges:IEEE754:v1")
+    digest.update(struct.pack(">Q", len(edges) - 1))
+    for edge in edges:
+        digest.update(struct.pack(">d", edge))
+    return digest.hexdigest()
+
+
 def write_fixture(directory: Path, jump: bool = False) -> None:
+    frequency_edges = [1.0e14 + bin_id * 1.0e13
+                       for bin_id in range(NBIN + 1)]
     for iteration in range(NITER):
         factor = 1.0 + 1.0e-3 * iteration
         if jump and iteration == NITER - 1:
@@ -101,7 +114,7 @@ def write_fixture(directory: Path, jump: bool = False) -> None:
             "n_bins": NBIN,
             "atomic_model_sha256": "a" * 64,
             "geometry_sha256": "b" * 64,
-            "grid_manifest_sha256": "c" * 64,
+            "grid_manifest_sha256": grid_manifest_sha256(frequency_edges),
             "radiation_generation": iteration + 1,
             "population_generation": iteration + 1,
             "te_generation": iteration + 1,

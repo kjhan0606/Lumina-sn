@@ -20,6 +20,34 @@ static void sha_done(A209Sha*s,char out[65]){uint64_t bits=s->bits;unsigned char
 static void *za(size_t n,size_t w){return n?calloc(n,w):NULL;}
 static int good(EmissivityStatus s){return s==EMISS_OK||s==EMISS_EXACT_ZERO;}
 static double kadd(double sum,double x,double*c){double y=x-*c,t=sum+y;*c=(t-sum)-y;return t;}
+static int hex64(const char value[65]){
+ if(!value||value[64]!='\0')return 0;
+ for(size_t i=0;i<64;i++)if(!((value[i]>='0'&&value[i]<='9')||
+                              (value[i]>='a'&&value[i]<='f')))return 0;
+ return 1;
+}
+
+int a209_grid_manifest_sha256(const double *edge,size_t nb,char out[65]){
+ if(out)out[0]='\0';
+ if(!out||!edge||nb<1)return 5;
+ for(size_t b=0;b<nb;b++)
+  if(!isfinite(edge[b])||edge[b]<=0.0||
+     !isfinite(edge[b+1])||edge[b+1]<=edge[b])return 5;
+ A209Sha h;sha_init(&h);
+ const char d[]="A2-09:grid-manifest:Hz:bin-edges:IEEE754:v1";
+ sha_up(&h,d,sizeof(d)-1);sha_u64(&h,(uint64_t)nb);sha_f64(&h,edge[0]);
+ for(size_t b=0;b<nb;b++)sha_f64(&h,edge[b+1]);
+ sha_done(&h,out);return 0;
+}
+
+int a209_source_manifest_sha256(unsigned mask,char out[65]){
+ if(out)out[0]='\0';
+ if(!out||mask==0)return 5;
+ A209Sha h;sha_init(&h);
+ const char d[]="A2-09:source-manifest:eta-true=bb+bf+ff:scattering-separate:comoving:per-sr:v1";
+ sha_up(&h,d,sizeof(d)-1);sha_u64(&h,(uint64_t)mask);sha_done(&h,out);
+ return 0;
+}
 
 EmissivityStatus a209_sobolev_line_eta(double n_upper,double A_ul,double nu,
  double tau,double delta_nu,double*beta_escape,double*eta_nu){
@@ -153,9 +181,32 @@ int a209_publication_commit_counted(CpuEmissivityPublication *pub,
   if(counter_sink)counter_sink->partial_publish_attempts++;
   return 5;
  }
+ if(!hex64(c->atomic_model_sha256)){
+  if(counter_sink)counter_sink->identity_seal_failures++;
+  fprintf(stderr,"[A2-09][BLOCKED] reason=EMISS_IDENTITY_ATOMIC_UNSEALED\n");
+  return 5;
+ }
+ if(a209_grid_manifest_sha256(c->nu_edge,c->n_bins,
+                              c->grid_manifest_sha256)){
+  if(counter_sink)counter_sink->identity_seal_failures++;
+  fprintf(stderr,"[A2-09][BLOCKED] reason=EMISS_IDENTITY_GRID_INVALID\n");
+  return 5;
+ }
+ if(a209_source_manifest_sha256(c->channel_mask,
+                                c->source_manifest_sha256)){
+  if(counter_sink)counter_sink->identity_seal_failures++;
+  fprintf(stderr,"[A2-09][BLOCKED] reason=EMISS_IDENTITY_SOURCE_MASK_EMPTY\n");
+  return 5;
+ }
  c->committed_emissivity_generation=c->required_emissivity_generation;
  CpuEmissivityPublication old=*pub;*pub=*c;memset(c,0,sizeof(*c));
  a209_publication_free(&old);
+ fprintf(stderr,"[A2-09][IDENTITY] generation=%llu n_bins=%zu "
+        "channel_mask=0x%x grid_manifest_sha256=%s "
+        "atomic_model_sha256=%s source_manifest_sha256=%s\n",
+        (unsigned long long)pub->committed_emissivity_generation,pub->n_bins,
+        pub->channel_mask,pub->grid_manifest_sha256,
+        pub->atomic_model_sha256,pub->source_manifest_sha256);
  if(counter_sink)counter_sink->generation_committed=
      pub->committed_emissivity_generation;
  return 0;
@@ -169,4 +220,4 @@ int a209_sample_reemit_frequency(const CpuEmissivityPublication*p,size_t s,uint6
 EmissivityStatus a209_transition_block(const double*w,const double*e,size_t n,double in,double*p,double*err){g_ctr.transition_blocks_attempted++;if(!w||!p||!n){g_ctr.transition_empty++;return EMISS_TRANSITION_EMPTY;}double sum=0,c=0,es=0,ec=0;for(size_t i=0;i<n;i++){if(!isfinite(w[i])||w[i]<0|| (e&&(!isfinite(e[i])||e[i]<0))){g_ctr.transition_nonfinite++;return EMISS_TRANSITION_NONFINITE;}sum=kadd(sum,w[i],&c);}sum+=c;if(!(sum>0)||!isfinite(sum)){g_ctr.transition_empty++;return EMISS_TRANSITION_EMPTY;}double ps=0,pc=0;for(size_t i=0;i<n;i++){p[i]=w[i]/sum;ps=kadd(ps,p[i],&pc);if(e)es=kadd(es,p[i]*e[i],&ec);}ps+=pc;if(fabs(ps-1)>1e-10){g_ctr.transition_norm_fail++;return EMISS_TRANSITION_NOT_NORMALIZED;}double ne=0;if(e){es+=ec;double scale=fmax(fabs(in),DBL_MIN);ne=fabs(es-in)/scale;if(ne>1e-8){g_ctr.energy_closure_fail++;if(err)*err=ne;return EMISS_ENERGY_NOT_CLOSED;}}if(err)*err=ne;g_ctr.transition_blocks_published++;g_ctr.transition_channels+=n;return EMISS_OK;}
 const char*a209_status_name(EmissivityStatus s){static const char*n[]={"INVALID","EMISS_OK","EMISS_EXACT_ZERO","EMISS_STALE_RF","EMISS_STALE_LINE","EMISS_STALE_POP","EMISS_STALE_OPACITY","EMISS_UNSAMPLED","EMISS_OOG","EMISS_MISS","EMISS_PROFILE_MISMATCH","EMISS_QUERY_HASH_MISMATCH","EMISS_INVALID_TE","EMISS_INVALID_NE","EMISS_ATOMIC_MISSING","EMISS_SOURCE_UNDEFINED","EMISS_COMPONENT_INCOMPLETE","EMISS_NEGATIVE_EVENT_UNSUPPORTED","EMISS_TRANSITION_EMPTY","EMISS_TRANSITION_NONFINITE","EMISS_TRANSITION_NOT_NORMALIZED","EMISS_ENERGY_NOT_CLOSED","EMISS_CDF_EMPTY","EMISS_CDF_STALE","EMISS_CDF_INVALID","EMISS_FORBIDDEN_PLANCK","EMISS_PARTIAL_PUBLISH","EMISS_NONFINITE"};return s>=EMISS_OK&&s<=EMISS_NONFINITE?n[s]:n[0];}
 A209Counters*a209_counters(void){return &g_ctr;}void a209_counters_reset(void){memset(&g_ctr,0,sizeof(g_ctr));}
-void a209_counters_print(FILE*f){if(!f)f=stdout;fprintf(f,"[A2-09][EMISSIVITY] generation_required=%llu generation_committed=%llu shells_attempted=%llu shells_published=%llu cells_attempted=%llu cells_published=%llu bb_terms=%llu bf_terms=%llu ff_terms=%llu exact_zero_terms=%llu transition_blocks_attempted=%llu transition_blocks_published=%llu transition_channels=%llu transition_empty=%llu transition_nonfinite=%llu transition_norm_fail=%llu energy_closure_fail=%llu cdf_attempted=%llu cdf_committed=%llu cdf_empty=%llu cdf_stale=%llu cdf_invalid=%llu sampler_calls=%llu sampler_draws=%llu sampler_generation_mismatch=%llu blocked_stale_rf=%llu blocked_stale_line=%llu blocked_stale_pop=%llu blocked_stale_opacity=%llu blocked_unsampled=%llu blocked_oog=%llu blocked_miss=%llu blocked_source=%llu blocked_atomic=%llu fallback_attempts=%llu planck_attempts=%llu raw_view_attempts=%llu clamp_attempts=%llu floor_attempts=%llu last_channel_attempts=%llu partial_publish_attempts=%llu nonfinite_failures=%llu\n",(unsigned long long)g_ctr.generation_required,(unsigned long long)g_ctr.generation_committed,(unsigned long long)g_ctr.shells_attempted,(unsigned long long)g_ctr.shells_published,(unsigned long long)g_ctr.cells_attempted,(unsigned long long)g_ctr.cells_published,(unsigned long long)g_ctr.bb_terms,(unsigned long long)g_ctr.bf_terms,(unsigned long long)g_ctr.ff_terms,(unsigned long long)g_ctr.exact_zero_terms,(unsigned long long)g_ctr.transition_blocks_attempted,(unsigned long long)g_ctr.transition_blocks_published,(unsigned long long)g_ctr.transition_channels,(unsigned long long)g_ctr.transition_empty,(unsigned long long)g_ctr.transition_nonfinite,(unsigned long long)g_ctr.transition_norm_fail,(unsigned long long)g_ctr.energy_closure_fail,(unsigned long long)g_ctr.cdf_attempted,(unsigned long long)g_ctr.cdf_committed,(unsigned long long)g_ctr.cdf_empty,(unsigned long long)g_ctr.cdf_stale,(unsigned long long)g_ctr.cdf_invalid,(unsigned long long)g_ctr.sampler_calls,(unsigned long long)g_ctr.sampler_draws,(unsigned long long)g_ctr.sampler_generation_mismatch,(unsigned long long)g_ctr.blocked_stale_rf,(unsigned long long)g_ctr.blocked_stale_line,(unsigned long long)g_ctr.blocked_stale_pop,(unsigned long long)g_ctr.blocked_stale_opacity,(unsigned long long)g_ctr.blocked_unsampled,(unsigned long long)g_ctr.blocked_oog,(unsigned long long)g_ctr.blocked_miss,(unsigned long long)g_ctr.blocked_source,(unsigned long long)g_ctr.blocked_atomic,(unsigned long long)g_ctr.fallback_attempts,(unsigned long long)g_ctr.planck_attempts,(unsigned long long)g_ctr.raw_view_attempts,(unsigned long long)g_ctr.clamp_attempts,(unsigned long long)g_ctr.floor_attempts,(unsigned long long)g_ctr.last_channel_attempts,(unsigned long long)g_ctr.partial_publish_attempts,(unsigned long long)g_ctr.nonfinite_failures);}
+void a209_counters_print(FILE*f){if(!f)f=stdout;fprintf(f,"[A2-09][EMISSIVITY] generation_required=%llu generation_committed=%llu shells_attempted=%llu shells_published=%llu cells_attempted=%llu cells_published=%llu bb_terms=%llu bf_terms=%llu ff_terms=%llu exact_zero_terms=%llu transition_blocks_attempted=%llu transition_blocks_published=%llu transition_channels=%llu transition_empty=%llu transition_nonfinite=%llu transition_norm_fail=%llu energy_closure_fail=%llu cdf_attempted=%llu cdf_committed=%llu cdf_empty=%llu cdf_stale=%llu cdf_invalid=%llu sampler_calls=%llu sampler_draws=%llu sampler_generation_mismatch=%llu blocked_stale_rf=%llu blocked_stale_line=%llu blocked_stale_pop=%llu blocked_stale_opacity=%llu blocked_unsampled=%llu blocked_oog=%llu blocked_miss=%llu blocked_source=%llu blocked_atomic=%llu fallback_attempts=%llu planck_attempts=%llu raw_view_attempts=%llu clamp_attempts=%llu floor_attempts=%llu last_channel_attempts=%llu partial_publish_attempts=%llu nonfinite_failures=%llu identity_seal_failures=%llu\n",(unsigned long long)g_ctr.generation_required,(unsigned long long)g_ctr.generation_committed,(unsigned long long)g_ctr.shells_attempted,(unsigned long long)g_ctr.shells_published,(unsigned long long)g_ctr.cells_attempted,(unsigned long long)g_ctr.cells_published,(unsigned long long)g_ctr.bb_terms,(unsigned long long)g_ctr.bf_terms,(unsigned long long)g_ctr.ff_terms,(unsigned long long)g_ctr.exact_zero_terms,(unsigned long long)g_ctr.transition_blocks_attempted,(unsigned long long)g_ctr.transition_blocks_published,(unsigned long long)g_ctr.transition_channels,(unsigned long long)g_ctr.transition_empty,(unsigned long long)g_ctr.transition_nonfinite,(unsigned long long)g_ctr.transition_norm_fail,(unsigned long long)g_ctr.energy_closure_fail,(unsigned long long)g_ctr.cdf_attempted,(unsigned long long)g_ctr.cdf_committed,(unsigned long long)g_ctr.cdf_empty,(unsigned long long)g_ctr.cdf_stale,(unsigned long long)g_ctr.cdf_invalid,(unsigned long long)g_ctr.sampler_calls,(unsigned long long)g_ctr.sampler_draws,(unsigned long long)g_ctr.sampler_generation_mismatch,(unsigned long long)g_ctr.blocked_stale_rf,(unsigned long long)g_ctr.blocked_stale_line,(unsigned long long)g_ctr.blocked_stale_pop,(unsigned long long)g_ctr.blocked_stale_opacity,(unsigned long long)g_ctr.blocked_unsampled,(unsigned long long)g_ctr.blocked_oog,(unsigned long long)g_ctr.blocked_miss,(unsigned long long)g_ctr.blocked_source,(unsigned long long)g_ctr.blocked_atomic,(unsigned long long)g_ctr.fallback_attempts,(unsigned long long)g_ctr.planck_attempts,(unsigned long long)g_ctr.raw_view_attempts,(unsigned long long)g_ctr.clamp_attempts,(unsigned long long)g_ctr.floor_attempts,(unsigned long long)g_ctr.last_channel_attempts,(unsigned long long)g_ctr.partial_publish_attempts,(unsigned long long)g_ctr.nonfinite_failures,(unsigned long long)g_ctr.identity_seal_failures);}
