@@ -90,7 +90,9 @@ DET 레인에서는 이 덤프를 요구하지 않는다.
 ## 5. 기대 변경집합
 
 - `src/physics_comparison.c` — 가드 분리 + 진단 출력. **반환값 불변.**
-- `tests/physics_comparison_selftest.c` — P4 음성대조 7건 추가.
+- `tests/physics_comparison_selftest.c` — P4 음성대조 **12건** 추가.
+  (초안 "7건"은 계측 범위를 448 한 자리로 잡았던 시절의 잔재다 — R6 범위 정정 후 갱신하지
+  않아 감리 R5 로 지적됐다. 실제 주입은 여섯 자리 12사유.)
 - 그 외 파일 변경 없음. 물리식 무접촉. 새 env 노브 없음.
 
 ## 6. 이 단이 열면

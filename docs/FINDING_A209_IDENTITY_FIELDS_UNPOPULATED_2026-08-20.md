@@ -29,7 +29,7 @@ source_manifest_sha256
 (`emissivity_publication.c:71`), `lumina_main.c:100` 도 `OpacityState` 전체를 0 으로 민다.
 ⟹ 세 필드는 **결정론적으로 NUL 64개**다. 미정의 쓰레기값이 아니라 확실히 빈 문자열이다.
 
-## 2. 왜 20일 넘게 안 드러났나
+## 2. 왜 안 드러났나 (필드 선언은 08-06)
 
 이 셋 중 **읽는 코드가 있는 것은 `grid_manifest_sha256` 하나**이고, 그 독자는
 `physics_comparison.c` 뿐이다. 그리고 [실측] `/gpfs/kjhan/lumina` 전 코퍼스에서
