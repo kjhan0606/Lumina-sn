@@ -48,6 +48,8 @@ PREFLIGHTS = (
     ("SH_GRID_UPPER_CLOSURE", "scripts/verify_sh_grid_upper_closure.py", ()),
     ("SEAL_INTEGRITY", "scripts/verify_seals.py", ()),
     ("LEGACY_KNOB_REGISTRY", "scripts/check_legacy_knob_registry.py", ()),
+    ("SH_RADEQ_SOURCE", "scripts/check_a209_source_failclosed.py", ()),
+    ("GATE_SOURCE_LIB_SELFTEST", "tests/gate_source_lib_selftest.py", ()),
     ("GATE_REGISTRY", "scripts/check_gate_registry.py", ()),
     ("BF_EDGE_CENSUS_SELFTEST", "scripts/census_bf_edges_below_grid.py", ("--selftest",)),
     ("A2_10_CANCELLATION_CENSUS", "tests/a2_10_cancellation_census_selftest.py", ()),

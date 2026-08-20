@@ -936,6 +936,53 @@ n_upper 를 S 역산으로 만들면 겉은 직접형이되 금지된 몫-소스
 
 ---
 
+### GR-3/GR-3′ 집행 기록 (운전석 실측, 2026-08-20)
+
+**증거**: `/gpfs/kjhan/lumina/gates/gr3_20260820T103404Z/`(GR-3) · `/gpfs/kjhan/lumina/gates/gr3p_20260820T110524Z/`(GR-3′)
+
+| 게이트 | 결과 |
+|---|---|
+| **P1′** | **PASS** — `[STATIC][PASS]` + `injections=10 detected=10` |
+| **P2′** | **PASS** — 주입 1~10 전부 부록 C/C-1a 사유와 **정확 일치**. 9·10 은 신설 사유(`upper-population producer` / `line-eta formula`) |
+| **P3′** | **PASS — 짝 성립** (아래) |
+| **P4** | **PASS** — lib selftest `cases=definition-vs-calls,ambiguous,missing,comments,string,inject-at-head` |
+| **P5′** | **PASS** — 배터리 완주 `verdict=PASS rc=0`, preflight **22행 전부 rc=0**. + 트립와이어 시연(아래) |
+| **P6′** | **PASS** — delta 는 `check_a209_source_failclosed.py` 단일 파일. `src/` 0줄 |
+
+### ★P3′ — 이 재발주의 존재 이유가 실물로 닫혔다
+
+외부 사본-트리 주입(`(void)opacity->line_source_S[0];`) 짝 3건:
+```
+upper 스팬 주입 → [STATIC][FAIL] A2-09 upper-population producer reads forbidden quotient source
+impl  스팬 주입 → [STATIC][FAIL] A2-09 production reads forbidden quotient source
+HEAD  무주입    → [STATIC][PASS]
+```
+아침에 `upper` 주입이 **검출 0** 이던 자리가 자기 이름을 가진 사유로 죽는다.
+그리고 `impl` 검사가 살아 있다 — 확대가 기존 검사를 **대체한 것이 아니라 덧붙였다.**
+
+### ★known-red 트립와이어 실물 발화 (P5 1단계, 검수 R5 가 지적한 운전석 누락)
+
+소거 **전** 등록부 + 수리된 게이트 조합:
+```
+[GATE-REGISTRY][KNOWN-RED][FAIL] reason=known-red-unexpected-pass:selftest-sh-radeq-source
+```
+행 소거 후 `entries=3` green. **게이트가 고쳐졌는데 등록부가 아직 죽었다고 주장하면 red 로
+죽는다** — `known-red` 가 은폐 창고가 되지 않게 하는 장치가 오늘 처음 발화했다.
+
+### 검수 지적의 처분 (전부 대장 기재 계급 — delta 결함 아님)
+
+| # | 지적 | 처분 |
+|---|---|---|
+| GR-3 R1 | census 토큰이 `..._counted(` 라 `이름 공백 (` 형태의 새 호출자를 조용히 통과 | 기재. 1글자 수정이면 닫히나 코딩은 Codex 몫이고 검수가 "낮음" 판정 |
+| GR-3 R2 / GR-3′ R1 | `zip(mutations, EXPECTED_REASONS)` 무-strict + `injections=N` 하드코드 → 미래 편집이 행을 떨어뜨리면 **무음 절단** | 기재. 별도 단 |
+| GR-3 R3 | 신규 검사 3건(래퍼 pin×2·ctr 가드)의 **상설 NC 부재** — 검수 프로브로 일회 실증했으나 장치는 없다 | 기재. 후속 단 후보 |
+| GR-3 R4 | census 정의역이 두 파일뿐 | 한계 기재(사전등록이 고정한 잣대) |
+| GR-3′ R2 | 금지 정규식이 `opacity` 식별자 리터럴에 앵커 — 파라미터명이 바뀌면 스캔 밖 | 기재 |
+| GR-3 R5 | P5 1단계 미시연 | ★**해소** — 위 트립와이어 실측 |
+
+⚠**운전석 정정**: 검수 발주서에 NOTES 의 사각 목록을 "4항"이라 적었으나 실측은 **6항**이며
+§5-A-5 의 6건과 1:1 대응한다(검수 지적). 내 훑어보기가 틀렸다.
+
 ## 6. GR-4 — `selftest-tau-writer-census` 수리 (§H-5 의 조직화, GR-2 판정 조건부)
 
 ### 계약

@@ -35,16 +35,8 @@
       "name": "selftest-sh-radeq-source",
       "kind": "make-target",
       "commands": [["python3", "scripts/check_a209_source_failclosed.py"]],
-      "category": "known-red",
-      "wiring": "GR-3",
-      "known_red": {
-        "failing_command_index": 0,
-        "rc": 1,
-        "first_fail_line": "[SH-RADEQ-0][STATIC][FAIL] missing fail-closed token 'blocked_line_cells'",
-        "fail_line_count": 19,
-        "registered": "2026-08-20",
-        "repair_rung": "GR-3"
-      }
+      "category": "preflight",
+      "wiring": "SH_RADEQ_SOURCE"
     },
     {"name": "selftest_mc_evt_access", "kind": "make-target", "commands": [["make", "selftest_mc_evt_access"]], "category": "run-dependent", "wiring": "GPU and NVCC required"},
     {"name": "selftest_grid_roundtrip", "kind": "make-target", "commands": [["make", "selftest_grid_roundtrip"]], "category": "milestone", "wiring": "selftest-registry-milestone"},
@@ -154,6 +146,7 @@
     {"name": "scripts/verify_seals.py", "kind": "script", "commands": [["python3", "scripts/verify_seals.py"]], "category": "preflight", "wiring": "SEAL_INTEGRITY"},
     {"name": "scripts/check_legacy_knob_registry.py", "kind": "script", "commands": [["python3", "scripts/check_legacy_knob_registry.py"]], "category": "preflight", "wiring": "LEGACY_KNOB_REGISTRY"},
     {"name": "scripts/check_gate_registry.py", "kind": "script", "commands": [["python3", "scripts/check_gate_registry.py"]], "category": "preflight", "wiring": "GATE_REGISTRY"},
+    {"name": "tests/gate_source_lib_selftest.py", "kind": "script", "commands": [["python3", "tests/gate_source_lib_selftest.py"]], "category": "preflight", "wiring": "GATE_SOURCE_LIB_SELFTEST"},
     {"name": "scripts/census_bf_edges_below_grid.py", "kind": "script", "commands": [["python3", "scripts/census_bf_edges_below_grid.py", "--selftest"]], "category": "preflight", "wiring": "BF_EDGE_CENSUS_SELFTEST"},
     {"name": "tests/a2_10_cancellation_census_selftest.py", "kind": "script", "commands": [["python3", "tests/a2_10_cancellation_census_selftest.py"]], "category": "preflight", "wiring": "A2_10_CANCELLATION_CENSUS"},
     {"name": "tests/a2_10_refinement_comparison_selftest.py", "kind": "script", "commands": [["python3", "tests/a2_10_refinement_comparison_selftest.py"]], "category": "preflight", "wiring": "A2_10_REFINEMENT_COMPARISON"},
