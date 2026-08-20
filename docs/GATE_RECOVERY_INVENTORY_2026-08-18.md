@@ -643,3 +643,39 @@ nlte_population_candidate_status_name · nlte_population_solve_diagnostic_reset 
 - ★**GR-8(중복 명세 정합 검사)의 정의역 재검토 후보**: GR-8 은 배터리 빌드 명세 ↔ Makefile
   갈라짐을 겨냥하는데, **이 건은 Makefile 타깃 자신의 링크 목록 누락**이라 그 측정면에
   들어가는지 불명이다 — GR-8 사전등록 시 확인할 것.
+
+### M-6. ★운전석 계측이 관대했다 — `make` 의 `rc=0` 을 게이트 건강의 잣대로 썼다
+
+GR-7 판정이 운전석 패킷을 정정했고, 운전석이 재확인했다.
+
+[실측] `step1_27.log` 에서 **`is up to date` 가 6건**이다:
+`a2_08_signed_opacity` · `a2_09_emissivity` · `a2_10_radeq` · `cmfgen_adiabatic` ·
+`physics_comparison` · `a2_16_seed`.
+⟹ `make` 가 `rc=0` 을 냈지만 **recipe 가 한 줄도 안 돌았다.**
+
+[실측] 실제로 PASS 문구를 낸 것은 **27 중 8건뿐**이다.
+
+⟹ 운전석이 "24 rc=0" 을 성과처럼 보고한 것은 **관대한 판독**이었다.
+**`rc=0` 은 "돌아서 통과했다" 가 아니라 "빌드가 최신이라 안 돌렸다" 일 수 있다.**
+오늘 두 번 데인 순간값 함정과 같은 계열 — **요약 종료코드를 잣대로 썼다.**
+
+[실측] 판정의 두 번째 정정도 확인했다: `run_a2_09_selftest.py` 는 `Makefile` 에 1건,
+`run_gate_battery.py` 에 **0건**이다 ⟹ **배터리 Z 러너는 그림자의 driver 를 재현하지 않는다.**
+POISONS 음성대조 8건이 그 unwired make recipe 로만 돈다 — **은퇴시켰으면 음성대조를
+통째로 잃었다.**
+
+### M-7. GR-7 판정 결과 (정본: `docs/VERDICT_UNWIRED_GATES_2026-08-20.md`)
+
+**배선 26**(preflight 1 · run-dependent 2 · milestone 23) · **known-red 전환 1** · **은퇴 0**.
+
+- known-red 1 = **`selftest_nlte_assemble`**(§M 의 실결함). 수리 단 **SH-UW-1** 지정.
+- **은퇴 0 의 근거**: 27행 전원의 피보호 계약이 HEAD 현역이고, **계약 소멸을 확정한
+  판정문이 0건**이다 — 사전등록의 은퇴 요건("지키던 계약의 소멸을 판정문이 확정할 때만")을
+  충족하는 행이 없다. 가장 강한 은퇴 후보(배터리 ⊋ make 인 `a2_12_contract`·
+  `a2_13_15_contract`)도 **GR-8 이 그 recipe 를 정본 쌍으로 쓰므로** 기각.
+- GR-2 의 transplant 트리오 금지 **상속·준수**(오늘 셋 다 fresh 빌드 + PASS [실측]).
+- CUDA 2건은 **run-dependent 배선** — "빌드 OK · 실행 미측정" 으로 기재, 환경 부재 처분 안 함.
+
+**판정자 신규 실측 3건**(운전석 미측정 항목): ①`is up to date` 6건 ②배터리 Z 가 그림자
+driver 미재현 ③**build-only 9건의 검사 본문은 실행 이력 0** — 배선 처분에
+"recipe 실행 단계 부가 + 1회 건강 실측" 을 전제로 강제(SH-UW-4).
