@@ -8,6 +8,10 @@
 픽스처 의존)의 반영. GR-0·GR-7·GR-8 신설, GR-1 재발주(GR-1′), 캠페인 폐합 조건 확장.
 원문은 지우지 않고 보존하며, 대체되는 문안에는 `[개정 1]` 표지를 달아 §0-A 를 가리킨다.
 판정문은 개정판 게이트 표(§0-A)와 대조한다. 전문 = §0-A.
+**개정 2(2026-08-20, 저자 Fable)** — GR-3 게이트 **P3 실패**(외부 주입이 커버리지 구멍을
+노출)의 처분: P3 표적(upper 스팬)은 유지, 금지-읽기 스캔을 upper·formula 로 확대,
+GR-3 은 **GR-3′ 로 재발주**(착지 구현 보존, delta 만). 전문 = §5-A;
+GR-3 판정문은 §5-A 의 개정판 게이트 표와 대조한다.
 소속: **SH-** — 이 잣대들이 지키는 계약 표면(a208/a209 발행체·tau 슬랩·event-measure)은 두 팔 공유다.
 CMFGEN 발자국 규약: **비적용** — 게이트·회귀 인프라이며 CMFGEN 대응물이 없다.
 
@@ -791,6 +795,145 @@ known-violation 행으로 붉게 남기고 부분폐합으로 보고, 별도 수
 | 앵커 교정 후 STATIC 에 **앵커 밖 실위반**이 나타남(§I-1 은 19건 전부 노후로 확정했지만, 검사 강화·신설 3건이 새 것을 드러낼 수 있다) | **보고·중단** — src 수리 금지(잣대 수리 계약). 실위반은 FINDING 문서로 기재하고 별도 단 발의. 이 단은 게이트가 그 위반을 **이름 있는 사유로 보는 상태**로 부분폐합 가능(known-red 재등재, 사유=실위반) |
 | 주입 7 재표적이 스팬 내 표적을 못 찾음 | `injection-7-not-applied` 로 red 유지 — 조용한 통과 금지(설계 보존). 표적 재선정 후 재발주 |
 
+**[개정 2]** 위 게이트 표의 P3 는 초판 기대 변경집합 (1)~(6)과 모순이었고(어느 항목도
+금지-읽기 스캔을 upper 로 확대하지 않는다), 집행에서 정확히 그 이유로 실패했다.
+이 단은 **GR-3′ 로 재발주**된다 — §5-A 가 정본(다섯 결정·delta 변경집합·개정판 게이트
+표·부록 C-1a). 원문은 초판 발주분의 기록으로 보존한다.
+
+---
+
+## 5-A. 개정 2 (2026-08-20, 저자 Fable) — GR-3 P3 실패의 처분: 스캔 확대 + GR-3′ 재발주
+
+근거 증거: 운전석 증거 패킷(`/tmp/claude-10396/gr3_p3d/EVIDENCE.md`) + **이 개정의 독립
+재측정**(§5-A-1 — 전 항목을 HEAD 작업트리(GR-3 delta 적용분)에서 직접 다시 쟀고,
+패킷을 두 곳 보완한다).
+
+### 5-A-1. 독립 재측정 — 패킷 확인 + 보완 2건 + 신규 실측 4건
+
+[실측 — 전부 이 개정 저자가 직접 확인]
+
+**패킷 확인**: 게이트의 금지-읽기 검사(`check_a209_source_failclosed.py:79-80`)는
+`publish`(= `a209_publish_cpu_emissivity_impl` 본문) 하나만 스캔한다. 같은 주입의
+스팬별 대조 실험(upper 미검출 / impl 검출)의 논리 구조도 재확인 — 검사는 깨지지 않았고
+범위가 좁다.
+
+**보완 1 — 호출부는 2건이 아니라 4건이다**: `a209_upper_population_for_tau` 의 호출은
+`:9008`(공개 접근자 `lumina_line_upper_population_for_tau`) · `:9037`(벌크 fill —
+`lumina_main.c:387`·`lumina_cuda.cu:8006` 의 Q_E formal 생산자가 소비) 외에
+**`:9243`(impl 의 생산 선-루프 — eta 공식에 n_upper 를 실공급하는 자리)** ·
+**`:14915`(`a210_private_line_energy_build` `:14684` — A2-10 line-net 에너지)** 가 있다.
+패킷 §3 의 "eta 공식에 먹일 생산자" 주장의 실제 근거는 `:9243` 이다. upper 에 밀반입이
+생기면 A2-09 방출·Q_E formal·A2-10 line-net **세 소비자가 동시에** 오염된다.
+
+**보완 2 — upper 는 게이트 탄생 이래 한 번도 커버된 적이 없다**: 구판(커밋 `fcaaad2`)의
+금지-읽기 검사는 `function_body(text,"a209_publish_cpu_emissivity")` — 정규식 구조상
+impl(이름 뒤 `_impl`)도 프로토타입(`;` 종결)도 매칭 불가라 **`:9408` 래퍼 3줄 본문**을
+스캔했다(§I-1 의 "래퍼 스캔 산물" 그대로). 즉 P3 의 가정(upper 검출)은 구판·수리판
+어느 판본에서도 성립한 적이 없다.
+
+**신규 실측 1 — upper 에는 opacity 접근 경로 자체가 없다**: `a209_upper_population_for_tau`
+의 시그니처(`:8953-8958`)에 `OpacityState` 가 없고, `lumina_plasma.c` 파일 전역에
+OpacityState 객체·포인터 전역변수가 없다(전역은 `g_ew_tau_authority` 류뿐).
+⟹ P3 의 인공 주입 텍스트는 **컴파일 불가**다. (이는 이 게이트 NC 전반의 성격이기도
+하다 — 주입 3 의 호출 개명 등도 컴파일 불가. 정적 텍스트 게이트의 본질이며 결함이 아니다.)
+
+**신규 실측 2 — bulk·writer 는 line_source_S 를 합법 접촉한다**:
+`compute_tau_sobolev`(`:3219`)가 `:3246-3251` 에서 `opacity->line_source_S[at]=0.0` ·
+`opacity->line_source_validity[at]=A208_EXACT_ZERO` 를 **쓴다**(영점화).
+`nlte_update_tau_sobolev_with_authority`(`:19457`)는 `:19515-19593` 에서 line_source_S 의
+**생산자**다. 금지-읽기 정규식은 토큰 매칭이라 **읽기/쓰기를 구별하지 못한다** ⟹
+이 두 스팬으로의 확대는 HEAD 에서 즉시 false red 를 낸다.
+
+**신규 실측 3 — formula 는 순수 스칼라**: `a209_sobolev_line_eta`
+(`emissivity_publication.c:52`)는 스칼라 인자만 받고, 그 파일 전체에
+`line_source_S`·`OpacityState` 출현 0건.
+
+**신규 실측 4 — 확대 대상 스팬은 이미 추출되고 있다**: 게이트는 `upper`(`:90`)·
+`formula`(`:104`)를 이미 `body(...)` 로 뽑아 다른 검사에 쓰고 있다 — 확대는 기존
+정규식을 두 스팬에 더 적용하는 것뿐, 새 추출 기구가 필요 없다.
+
+**부기 — 계약 문언과의 대조**: impl 내부 주석 `:9185` "No line_source_S read or division
+is permitted here" [실측]. n_upper 는 직접형 `n_u*A_ul*h*nu*beta/(4*pi*dnu)` 의 입력이므로,
+n_upper 를 S 역산으로 만들면 겉은 직접형이되 금지된 몫-소스가 뒷문으로 들어온다 —
+[판정] 계약("never line_source_S")의 의미론적 표면은 n_upper 생산자를 포함한다.
+
+### 5-A-2. 다섯 결정 (패킷 §5 의 질문에 대한 답)
+
+| 질문 | 결정 | 근거 |
+|---|---|---|
+| 1. P3 표적 vs 게이트 범위 | **(c) 둘 다 — 단 "표적이 틀렸다"는 기각.** 표적(upper)은 대표 실위반 자리로서 옳다(§5-A-1 부기 — S 역산 밀반입이 금지 계약의 정확한 우회 경로). 실제 결함은 ① 사전등록의 자기모순 — P3 가 upper 검출을 요구하면서 기대 변경집합 (1)~(6) 어디에도 스캔 확대가 없다 [실측] ② 게이트 범위가 계약 문언·docstring("never line_source_S")보다 좁다. ①은 문언·변경집합 정정으로, ②는 확대로 각각 처분 | P3 는 제 역할을 했다 — §E 계급의 음성 대조가 실패해 구멍을 드러냈다. §H-2 "복원된 초록불이 거짓말하지 않기 위한 최소 확장" 조항의 적용 대상 |
+| 2. 확대 범위 | **upper + formula 까지. bulk·writer 는 확대 금지.** | upper·formula 는 HEAD 무접촉 [실측] — false red 위험 0 + 방출 값사슬의 두 절점. bulk·writer 는 합법 접촉 [실측 §5-A-1] — 정규식이 읽기/쓰기 무구별이라 확대 즉시 false red 이고, 이를 green 으로 만들려면 정규식 약화·예외행이 필요해진다(fail-open 방향 — 금지). 확대 후에도 못 보는 것 = §5-A-5 에 전수 기재 |
+| 3. 거처 | **GR-3 안 — [개정 2] + GR-3′ 재발주**(GR-1→GR-1′ 선례; 착지 구현 보존, delta 만) | upper 커버리지는 GR-3 자신의 사전등록 게이트(P3)가 **이미 건 주장**이다 — 건 주장의 이행은 그 단의 몫. §2-Q2 의 미룸 3건(1'·④·⑤)과 구별: 그것들은 어느 게이트도 안 걸었던 주장 + 새 기구 필요; 이것은 이미 추출 중인 스팬 [실측 §5-A-1-신규4]에 기존 정규식 적용 — "최소 확장" 의 정의역 안 |
+| 4. 폐합 가부 | **지금 폐합 없음 — 부분폐합 커밋도 하지 않는다.** GR-3′ delta 착지 + 개정판 게이트 전 통과 시점에 **커밋 1개로 전폐합** | delta 가 미커밋이므로 "5/6 부분폐합 커밋 후 GR-3b" 는 실패한 사전등록 게이트를 가진 잣대를 원장에 올리는 것 — 불필요한 중간 상태. (a)-only(P3 를 impl 로 줄여 6/6 선언)는 기각: 사전등록 게이트를 구현에 맞춰 줄이는 것은 "초록불이 인증 범위를 과장" 의 거울상(잣대를 통과물에 맞춰 후퇴시키기) |
+| 5. upper 의 현실 경로 | **오늘은 없다 [실측]** — 시그니처에 OpacityState 없음 · 파일 전역 opacity 없음 · 주입 텍스트 비컴파일. 위반의 현실화는 의도적 배관 리팩터(파라미터 추가 등)를 요구한다 | 그 리팩터가 정확히 정적 게이트가 지키라고 있는 미래다(§H-2·§G-2 의 병력: 리팩터 하나가 잣대를 조용히 무력화). 시급도 낮음 ≠ 가치 없음 — 비용 수 줄, false red 위험 0. **(b)의 시급도 = 낮음, 그러나 주장이 이미 걸려 있으므로 지금 이행** |
+
+### 5-A-3. GR-3′ — 재발주 명세 (delta; GR-3 착지 구현은 보존)
+
+**기대 변경집합 (delta — GR-3 착지분에 추가; 여기 없는 변경은 위반)**:
+
+| 파일 | 변경 |
+|---|---|
+| `scripts/check_a209_source_failclosed.py` | (7) 금지-읽기 정규식(기존과 동일 패턴)을 `upper`·`formula` 스팬에 각각 적용 — 사유는 **스팬 지명**: upper → `A2-09 upper-population producer reads forbidden quotient source` · formula → `A2-09 line-eta formula reads forbidden quotient source` (impl 의 기존 사유 문자열 **불변**) (8) NC 주입 9·10 신설(부록 C-1a) — 스팬 내 실앵커 치환으로 in-memory 삽입, 미적용 시 `injection-N-not-applied` 보존, `EXPECTED_REASONS` 10행 (9) docstring 에 인증 스팬 명기: 금지-읽기 = impl·upper·formula 텍스트, 래퍼 2개 = 정확일치 pin |
+| 이 문서 | 집행 기록 |
+| (변경 0) | `scripts/gate_source_lib.py` · `tests/gate_source_lib_selftest.py` · `scripts/run_gate_battery.py` · `scripts/gate_registry.json` · `src/` 전부 · 다른 게이트 2개 — GR-3 착지분 그대로 |
+
+**Codex 추가 계약 조항** (§9 에 추가 적용):
+- **bulk(`compute_tau_sobolev`)·writer(`nlte_update_tau_sobolev_with_authority`) 스팬으로의
+  확대 금지** — [실측 §5-A-1] 합법 접촉이 있어 false red. 이 두 스팬을 green 으로 만들기
+  위한 정규식 약화·예외행 카브아웃 일절 금지.
+- 부록 C-1 의 1~8행 사유 문자열·기존 정확일치 pin 전부 불변.
+- 주입 9·10 의 삽입 앵커가 스팬 내에서 유일하지 않거나 부재하면 고치지 말고 보고.
+
+**게이트 표 (개정판 — GR-3 판정문은 이 표와 대조한다)**:
+
+| # | 조건 | 판정 자료 |
+|---|---|---|
+| **P1′** | HEAD 에서 `[SH-RADEQ-0][STATIC][PASS]` + `[NEGATIVE-CONTROL][PASS] injections=10 detected=10` | 실행 로그(grammar-debug) |
+| **P2′** | 부록 C-1+C-1a 의 **10행** 전부 — 주입별 기대 사유 정확 문자열(1~8행 문자열 불변 확인 포함) | NC 상세 출력 |
+| **P3′** | 외부 사본-트리 주입 짝 2건: ① `a209_upper_population_for_tau` 스팬에 `opacity->line_source_S` 읽기 삽입 → `A2-09 upper-population producer reads forbidden quotient source` 정확 사유 FAIL ② impl 스팬 동일 주입 → `A2-09 production reads forbidden quotient source` FAIL. 각각 HEAD=PASS 와 짝. (②의 08-20 운전석 실측은 구판 기준 — 확대판에서 재실행) | 사본 트리 diff + 게이트 출력 |
+| **P4** | (원문 그대로) lib selftest PASS — lib 무변경이므로 기존 PASS 유효하나 배터리 재완주에 포함돼 재확인된다 | 실행 로그 |
+| **P5′** | 배터리 재완주 1회 green(known-red 3 불변). ★초판 P5 의 트립와이어 시연(소거 전/후 2회, `unexpected-pass` 관측)은 08-20 실측으로 **이행 완료** — 게이트 내부 스캔 범위와 무관한 등록부 기구의 시연이므로 재요구하지 않는다 | 배터리 로그 + 초판 P5 실측 기록 |
+| **P6′** | 변경집합 = GR-3 착지분 + 위 delta 표와 정확 일치. ⚠[실측] 현 작업트리에는 GR-3 밖 변경 3건(`scripts/stage_a210_line_saturation_diagnostic.sh` · `validation/a2_09/A2_09_SELFTEST.json` · `validation/a2_10/A2_10_SELFTEST.json` — Stage-4 캠페인·셀프테스트 산출물)이 동거한다 — **이 커밋에 넣지 않는다**(`git add -A` 금지 규약) | `git show --stat` + 명단 diff |
+
+**기대치와 자문 ("다른 가설 아래서도 같은 값을 내는가")**:
+
+| 기대 | 자문 | 증거력 |
+|---|---|---|
+| 확대 후 HEAD `[STATIC][PASS]` | **낸다** — 확대를 아예 안 넣어도 PASS 다(upper·formula 는 HEAD 무접촉). NC 9·10 + P3′ 이 확대의 실존을 시연해야 증거 | 낮음(단독) |
+| NC 9·10 각각 지정 사유 검출 | 못 낸다 — 확대 미구현이면 `injection-9/10-not-applied` 또는 wrong-reason 으로 시끄럽게 죽는다 | 핵심 |
+| P3′ 외부 주입 FAIL + HEAD PASS 짝 | 못 낸다 — 무조건-PASS 도 무조건-FAIL 도 짝을 못 만든다 | 핵심 |
+
+### 5-A-4. 철회·분기 (초판 §5 표의 확장 — 제3의 경우의 소급 등재)
+
+| 관측 | 처분 |
+|---|---|
+| (초판 ①②) | 그대로 유지 |
+| 확대된 스팬에서 **실위반**(HEAD 의 line_source 접촉)이 나타남 | 초판 ① 과 동일 — 보고·중단, src 수리 금지, FINDING 기재. [실측] HEAD 무접촉이므로 나타나면 delta 적용 오류 우선 의심 |
+| 주입 9·10 의 앵커가 스팬 내 부재/비유일 | `injection-N-not-applied` red 유지 — 조용한 통과 금지. 보고 후 앵커 재선정 |
+
+### 5-A-5. 확대 뒤에도 이 게이트가 못 보는 것 (§I-2 거울상 — 넓힌 만큼 적는다)
+
+1. **이행적 callee 본문** — `population_line_level_number_density` ·
+   `build_lte_level_density_cache` · `nlte_tau_line_authority` 등의 본문은 무스캔.
+   §2-Q2 사각 ④(술어 본문)와 동류 — **미룸 유지**(별도 단 승격 경로).
+2. **upper 의 제4 호출자** `a210_private_line_energy_build`(`:14684`) — A2-10 측정면이라
+   이 게이트 밖. opacity 가 스코프에 있으나 현재 line_source_S 무접촉 [실측].
+3. **방출률 벌크 이식**(`:21273`/`:21381` line_source_S memcpy) — §2-Q2 표 1' 미룸 그대로.
+4. **정규식의 읽기/쓰기 무구별** — 확대 스팬에 미래에 합법 쓰기가 생기면 false red 로
+   **시끄럽게** 죽는다(fail-closed 방향 — 허용; 그때 사전등록으로 처분).
+5. **CUDA 대응물** — 게이트는 CPU 파일 2개만 잰다(기존 한계, 이번 변경 없음).
+6. **비컴파일 주입** — NC·외부 주입 전부 텍스트 수준(NC 1~8 도 동일) — 정적 텍스트
+   게이트의 본질. 컴파일 가능한 실위반 재현은 요구하지 않는다.
+
+### 5-A-6. 이 개정이 모르는 것
+
+1. upper 가 미래 리팩터로 opacity 접근을 얻을 확률 — 오늘 경로 없음은 [실측], 미래는
+   모른다(확대는 그 미지에 대한 저비용 보험이다).
+2. GR-3 착지 구현의 내부 구조가 주입 9·10 의 앵커 선정과 충돌하는지 — Codex 구현에서
+   판명(충돌 시 §5-A-4 분기).
+3. 초판 P3 저자가 upper 를 지목한 것이 의도(대표 실위반)였는지 실수(스팬 혼동)였는지 —
+   문서에 근거가 없어 **모른다**. 처분은 어느 쪽이든 동일하므로 판정에 영향 없음.
+
 ---
 
 ## 6. GR-4 — `selftest-tau-writer-census` 수리 (§H-5 의 조직화, GR-2 판정 조건부)
@@ -1059,6 +1202,16 @@ src 불변). 두 번째 명령이 FAIL → 분류 후 같은 단에서 픽스처
 
 (4·6 은 토큰 부재 사유도 함께 나올 수 있다 — 요구는 **지정 사유의 존재**이지 유일성이
 아니다. 단 지정 사유 부재 시 `injection-N-wrong-reason`.)
+
+### C-1a. [개정 2] 확장 — 주입 9·10 (금지-읽기 스캔의 upper·formula 확대, §5-A)
+
+| 주입 | 기대 사유 |
+|---|---|
+| 9 upper 스팬 내 `opacity->line_source_S` 읽기 삽입(in-memory, 실앵커 치환) | `A2-09 upper-population producer reads forbidden quotient source` |
+| 10 formula 스팬 내 동일 삽입 | `A2-09 line-eta formula reads forbidden quotient source` |
+
+(1~8행 사유 문자열 불변. impl 의 기존 사유 `A2-09 production reads forbidden quotient
+source` 도 불변 — 세 스팬의 사유가 서로 다른 것이 wrong-reason 판별의 전제다.)
 
 ### C-2. `check_tau_writer_generation.py` (수리 후 6건)
 
