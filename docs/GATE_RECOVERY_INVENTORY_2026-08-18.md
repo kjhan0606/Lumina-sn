@@ -444,3 +444,65 @@ env-gated 진단(withParityP GATE1)의 byte-clean save/restore 다.
 **대장 기재로 종결**하고 재개 트리거를 명문화했다 — 둘 다 `src` 0줄 계약과 A2-10 동결에
 이중 저촉이라 지금 집행 불능이다. 부속 발견 1건 추가: **bundle 커밋에는 공적 세대 결속이
 없고 seed 경로에는 있다 — 비대칭**[실측].
+
+---
+
+## K. GR-2b 판정 — CUDA 벌크 tau 복원은 (iv) 「진단 save/restore」 (2026-08-20)
+
+판정문 정본: `docs/VERDICT_CUDA_TAU_RESTORE_2026-08-20.md`.
+
+**판정: (iv) 진단 save/restore(관측자 상태 재생)** — 새 류를 정의했다.
+(i) 기각: census 계약은 "production write" 인데 이 경로는 생산이 아니라 **등록 생산물의
+바이트 재생**. (ii) 기각: preflight·세대 이식·소유권 이전 전부 부재. (iii) 기각: 클램프
+판별식 통과(값 비변조)·기본 OFF·물리 무접촉.
+
+### K-1. ★그러나 무조건이 아니다 — 판정이 찾아낸 화석 주석
+
+[실측·운전석 재확인] `nlte_solve_all_gpu` 는 `src/lumina_cuda.cu:1938` 에서
+**등록 writer `nlte_update_tau_sobolev` 를 실제로 호출한다.**
+그런데 `:10316` 의 주석은 정반대로 말한다:
+> *"The pure-CMFGEN loop's GPU NLTE solve does **NOT** call nlte_update_tau_sobolev…"*
+
+**화석이다.** 그 결과 armed 런에서:
+- **α (무신호 복원)**: 재솔브가 공적 tau/S_l 세대를 전진시킨 뒤, 복원 memcpy 가
+  **세대에 아무 신호 없이 바이트만 되돌린다.**
+- **β (메타 비복원)**: 저장·복원 목록에 **세대 스칼라·`tau_validity` 가 없다** ⟹
+  armed 런은 「바이트 = 수렴 세대, 메타 = 진단 세대」로 잔존한다.
+
+⟹ 붉은 대장행 2건 + 재개 트리거 3종으로 처분(판정문 §7).
+
+### K-2. ★운전석 실측 — 정본 런은 전부 비무장이다 (오염 없음)
+
+[실측] `/gpfs/kjhan/lumina` 전 코퍼스의 `RUN_FOOTER.txt` 중
+`LUMINA_NLTE_FINAL_RESOLVE=1` **0건**. 현행 DET 정본 런 3종
+(`l4_…pin_seed` · `p1_…physcmp_named_reason` · `idseal_…a209`) 전부 비무장.
+무장 러너는 `scripts/launch_parity27~39*` 계열(구 캠페인)뿐이다.
+
+⟹ **결손 α·β 가 정본 산출물을 오염시킨 적은 없다.** 판정문이 "K36 R6 실런의 러너를
+특정 못함(모른다)" 으로 남긴 항목이 이 실측으로 닫힌다.
+
+### K-3. `cuda_writers=0` 의 처분 — 조작이 아니라 **측정면 과장**
+
+[실측] ASSIGN census 실패 분기(`check_tau_writer_generation.py:77-81`)가 리터럴 출력 앞을
+막으므로 **거짓 주장은 아니다**. 그러나 문구가 *모든* writer 에 대한 주장으로 읽힌다.
+GR-4 로 넘기는 명세 U1~U5: 전-src 벌크 census · 가드 앵커+블록 스팬 pin · 복원 문면 pin ·
+**문안 정직화(리터럴 폐지 → 실측 카운트 + 류별 카운트 + 비인증 잔여 참조)** · NC 5건 사유 고정.
+
+[실측] 오늘 기준 전-src 벌크 tau 경로 **정확히 4건** = transplant 2(CPU) + save-restore 2(CUDA).
+
+### K-4. 동류 경로 — tau 밖에도 있다
+
+| 경로 | 잣대 상태 |
+|---|---|
+| pops 복원 2건 | A2-07 census 가 `plasma.c` 만 읽어 **CUDA 사각** |
+| `line_source_S` 복원 2건 | ★**S_l writer census 가 어디에도 없다** — 부재 자체가 발견 |
+| `jbar` 주입 1 + 복원 1 | **무잣대**. `:10166` 은 복원이 아니라 raw 스냅샷의 *일시 게시* 로 구분 표기 |
+| 블록 밖 친척 3건(`:10845`·`:1853`·`plasma:20136`) | 별류로 기재 |
+
+### K-5. 태생 커밋 — 운전석의 정정이 틀렸다
+
+[실측] 경로 한정 pickaxe(`git log -S "memcpy(opacity.tau_sobolev" -- src/lumina_cuda.cu`)는
+**`a97d0e1` 단독**이다. GR-2 판정문의 귀속이 옳았고, 운전석이 본 "다른 커밋들"은
+**경로 무제한 pickaxe 가 문서·대장을 매치**한 것이었다(예: `513ee92` = GR-2 판정문 인용).
+운전석의 정정을 철회한다.
+다만 `a97d0e1` 은 1,369파일 덩어리라 **저작 시점은 모른다**(정황상 07-25 무렵 [추정]).
