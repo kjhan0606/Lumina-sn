@@ -391,3 +391,56 @@ git 에서 복원 불가(§H-4-2 와 같은 계급).
 ### I-8. 운전석 계측의 정확도
 **수치 오류 0건.** 판정자가 §1·§2 의 모든 [실측] 수치를 독립 재현으로 확인했다.
 결손 2건(R1 음성대조 단계 미도달 미명시 · R2 눈먼 기간 과소 서술)만 수정으로 부과됐다.
+
+---
+
+## J. GR-2 판정 착지 + 파생 실측 2건 (2026-08-20)
+
+판정문 정본: `docs/VERDICT_TAU_BULK_TRANSPLANT_2026-08-20.md`.
+
+**판정: (ii) transplant** — `:21271`·`:21379` 의 벌크 이식은 괄호 의무를 지는 writer 가
+아니라 **「preflight 증명 + 세대 계보 이식」이라는 별개 계약**을 지는 류다.
+결정적 근거: 이식되는 슬랩은 후보의 사적 `OpacityState` 위에서 **등록 writer 3종의 정상
+괄호 안에서 생산**되고(`:20767`·`:20779`), 폐합이 생산 직후(`:20784`)와
+preflight(`:21168-21170`)에서 이중 검증되며, 세대는 공적 계보의 연속이다.
+(i)은 재괄호가 first-consumer 장부를 거짓으로 만드는 범주 오류, (iii)은 클램프 판별식
+통과 + 원자성(첫 공적 바이트 이후 무실패 구간)으로 기각.
+
+★**사전등록의 최소 인증선은 불충분**하다고 판정됐다 — "호출 실존 ≠ 가드됨"이고 필드 접촉
+검사는 `=0` 사보타주를 통과시킨다. 대신 검사 7종(T1~T7) 명세가 GR-4 로 넘어간다.
+
+### J-1. ★파생 실측 A — CUDA 에도 벌크 tau writer 가 있고, 초록불 문안이 그것을 가린다
+
+[실측·운전석 재확인] `src/lumina_cuda.cu:10160`·`:10196`:
+```c
+memcpy(opacity.tau_sobolev, tau_save, nline * sizeof(double));
+```
+env-gated 진단(withParityP GATE1)의 byte-clean save/restore 다.
+
+[실측] 게이트의 `CUDA_ASSIGN` 정규식은 `opacity(.|->)tau_sobolev[...] =` 만 본다 —
+**memcpy 는 못 본다**. 그런데 PASS 문안(`check_tau_writer_generation.py:114`)은
+`cuda_writers=0` 을 **하드코딩 리터럴**로 찍는다.
+
+⟹ 그 문구는 *대입* 에 대해서는 참이지만 **모든 writer 에 대한 주장으로 읽힌다.**
+§H-2 가 CPU 쪽에서 확인한 병("초록불이 인증 범위를 과장한다")의 **CUDA 판**이다.
+⟹ **GR-4 의 기대 `cuda_writers=0` 은 그대로 쓸 수 없다.** GR-2b 판정이 선행해야 한다.
+
+### J-2. ★파생 실측 B — transplant 계약의 유일한 음성대조가 `unwired` 다
+
+[실측] preflight 의 음성 대조는 **소스에 실존**한다(seed 3건 + bundle 2건, 바이트 보존
+전수 주장). 그런데 그것을 담은 두 타깃이 [실측] 등록부에서 **`unwired`** 다:
+`selftest_nlte_population_candidate` · `selftest_nlte_candidate_adiabatic` ·
+`selftest_nlte_candidate_tau` — 셋 다 `disposition_rung=GR-7`.
+
+⟹ ★**GR-7 이 이들을 「은퇴」로 처분하면 방금 (ii)로 판정된 transplant 계약의 유일한
+음성대조를 지우게 된다.** GR-7 판정에 이 제약을 전달한다 —
+「은퇴는 지키던 계약의 소멸을 판정문이 확정할 때만」이라는 원칙이 여기서 구체적 금지가 된다.
+
+[실측] 다만 그 음성대조에 **tau-괄호·별칭 조건의 표적 주입은 없다** — 있는 것은
+바이트 보존 계열이다. 즉 transplant 계약의 **일부만** 덮는다.
+
+### J-3. Q3 처분
+§H-5-3 의 ②(슬랩↔authority 런타임 결속 부재)·③(authority 거부 카운터 부재)는
+**대장 기재로 종결**하고 재개 트리거를 명문화했다 — 둘 다 `src` 0줄 계약과 A2-10 동결에
+이중 저촉이라 지금 집행 불능이다. 부속 발견 1건 추가: **bundle 커밋에는 공적 세대 결속이
+없고 seed 경로에는 있다 — 비대칭**[실측].
