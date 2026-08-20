@@ -4,10 +4,15 @@
 from __future__ import annotations
 
 import ast
+import importlib
 import json
+import os
 import re
+import shlex
+import shutil
 import subprocess
 import sys
+import tempfile
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
@@ -18,9 +23,16 @@ ROOT = Path(__file__).resolve().parents[1]
 REGISTRY_PATH = ROOT / "scripts/gate_registry.json"
 MAKEFILE_PATH = ROOT / "Makefile"
 BATTERY_PATH = ROOT / "scripts/run_gate_battery.py"
+FIXTURE_GENERATOR_PATH = ROOT / "scripts/generate_composition_d_fixtures.py"
 SCHEMA = "lumina-gate-registry-v2"
 GATE_SUFFIX = re.compile(r"-(?:check|census|gate)$")
 TOKEN_CHARS = r"A-Za-z0-9_.-"
+MAKE_VARIABLE = re.compile(
+    r"\$\(([A-Za-z_][A-Za-z0-9_]*)\)|\$\{([A-Za-z_][A-Za-z0-9_]*)\}"
+)
+MAKE_ASSIGNMENT = re.compile(
+    r"^([A-Za-z_][A-Za-z0-9_]*)\s*(\?=|\+=|:=|=)\s*(.*)$"
+)
 E11_WIRING = (
     "EMISS_E11_SEEDED_FIXTURE; recipe 2 commands: execution gate wired; "
     "py_compile 4 files unwired"
@@ -53,6 +65,32 @@ class LogicalLine:
     text: str
     first_line: int
     last_line: int
+
+
+@dataclass(frozen=True)
+class BatteryBuild:
+    name: str
+    command: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class BuildRecipePair:
+    build_name: str
+    make_target: str
+    battery_sources: frozenset[str]
+    make_sources: frozenset[str]
+
+    @property
+    def reason(self) -> str:
+        return f"build-spec-drift:{self.build_name}"
+
+    @property
+    def battery_only(self) -> tuple[str, ...]:
+        return tuple(sorted(self.battery_sources - self.make_sources))
+
+    @property
+    def make_only(self) -> tuple[str, ...]:
+        return tuple(sorted(self.make_sources - self.battery_sources))
 
 
 def make_logical_lines(text: str) -> list[LogicalLine]:
@@ -179,6 +217,217 @@ def target_prerequisites(lines: Iterable[LogicalLine], target: str) -> tuple[str
         if target in lhs.split():
             return tuple(rhs.split())
     return ()
+
+
+def expand_make_variables(
+    value: str,
+    variables: dict[str, str],
+    stack: tuple[str, ...] = (),
+) -> str:
+    """Expand the simple Make variables used by source-list recipes.
+
+    Make functions and substitution references are deliberately unsupported:
+    leaving one uninterpreted could hide a C input, so callers reject any such
+    construct instead of silently certifying it.
+    """
+
+    def replace(match: re.Match[str]) -> str:
+        name = match.group(1) or match.group(2)
+        if name in stack:
+            raise ValueError("recursive Make variable")
+        if name not in variables:
+            raise ValueError(f"unknown Make variable: {name}")
+        return expand_make_variables(variables[name], variables, stack + (name,))
+
+    expanded = MAKE_VARIABLE.sub(replace, value)
+    if "$((" in expanded or re.search(r"\$\([^)]*[: ,][^)]*\)", expanded):
+        raise ValueError("unsupported Make expression")
+    if re.search(r"\$\([^)]*\)|\$\{[^}]*\}", expanded):
+        raise ValueError("unsupported Make variable reference")
+    return expanded
+
+
+def make_variable_values(lines: Iterable[LogicalLine]) -> dict[str, str]:
+    variables = {"MAKE": "make"}  # GNU Make's built-in recursive invocation.
+    simple: set[str] = set()
+    for logical in lines:
+        line = logical.text
+        if not line or line[0].isspace() or line.startswith("#"):
+            continue
+        match = MAKE_ASSIGNMENT.fullmatch(line)
+        if match is None:
+            continue
+        name, operator, value = match.groups()
+        if operator == "?=" and name in variables:
+            continue
+        if operator == "+=":
+            addition = (
+                expand_make_variables(value, variables)
+                if name in simple
+                else value
+            )
+            variables[name] = " ".join(
+                part for part in (variables.get(name, ""), addition) if part
+            )
+        elif operator == ":=":
+            variables[name] = expand_make_variables(value, variables)
+            simple.add(name)
+        else:
+            variables[name] = value
+            simple.discard(name)
+    return variables
+
+
+def shell_words(command: str) -> tuple[str, ...]:
+    lexer = shlex.shlex(command, posix=True, punctuation_chars=";&|()")
+    lexer.commenters = "#"
+    lexer.whitespace_split = True
+    return tuple(lexer)
+
+
+def c_source_words(words: Iterable[str]) -> frozenset[str]:
+    sources = frozenset(word for word in words if word.endswith(".c"))
+    if any(any(marker in source for marker in "*?[") for source in sources):
+        raise ValueError("dynamic C source expression")
+    return sources
+
+
+def make_recipe_c_sources(make_text: str) -> dict[str, frozenset[str]]:
+    """Return each Make target's expanded recipe-level ``.c`` input set."""
+    lines = make_logical_lines(make_text)
+    variables = make_variable_values(lines)
+    recipes: dict[str, list[tuple[str, tuple[str, ...]]]] = {}
+    owners: tuple[str, ...] = ()
+    prerequisites: tuple[str, ...] = ()
+    for logical in lines:
+        line = logical.text
+        stripped = line.lstrip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        if line.startswith("\t"):
+            for owner in owners:
+                recipes.setdefault(owner, []).append((stripped, prerequisites))
+            continue
+
+        owners = make_rule_targets(line)
+        prerequisites = ()
+        if not owners:
+            continue
+        rhs = line.split(":", 1)[1]
+        prerequisite_text, separator, inline_recipe = rhs.partition(";")
+        expanded_prerequisites = expand_make_variables(
+            prerequisite_text, variables
+        )
+        prerequisites = tuple(
+            word for word in shell_words(expanded_prerequisites) if word != "|"
+        )
+        if separator and inline_recipe.strip():
+            for owner in owners:
+                recipes.setdefault(owner, []).append(
+                    (inline_recipe.strip(), prerequisites)
+                )
+
+    result: dict[str, frozenset[str]] = {}
+    for target, commands in recipes.items():
+        sources: set[str] = set()
+        for command, command_prerequisites in commands:
+            expanded = expand_make_variables(command, variables)
+            unique_prerequisites = tuple(dict.fromkeys(command_prerequisites))
+            automatic = {
+                "$@": target,
+                "$<": command_prerequisites[0] if command_prerequisites else "",
+                "$^": " ".join(unique_prerequisites),
+                "$+": " ".join(command_prerequisites),
+            }
+            for token, replacement in automatic.items():
+                expanded = expanded.replace(token, replacement)
+            sources.update(c_source_words(shell_words(expanded)))
+        result[target] = frozenset(sources)
+    return result
+
+
+def load_battery_builds(
+    battery_path: Path = BATTERY_PATH,
+) -> tuple[BatteryBuild, ...]:
+    """Import ``run_gate_battery`` normally and read its live Build objects."""
+    battery_path = battery_path.resolve()
+    scripts_dir = battery_path.parent
+    root = scripts_dir.parent
+    module_names = ("run_gate_battery", "generate_composition_d_fixtures")
+    previous_modules = {
+        name: sys.modules.pop(name) for name in module_names if name in sys.modules
+    }
+    old_cwd = Path.cwd()
+    sys.path.insert(0, str(scripts_dir))
+    try:
+        os.chdir(root)
+        module = importlib.import_module("run_gate_battery")
+        if Path(module.__file__).resolve() != battery_path:
+            raise ValueError("wrong battery module imported")
+        raw_builds = module.build_specs(root / ".gate-registry-probe", "cc")
+        if not isinstance(raw_builds, tuple):
+            raise TypeError("build_specs did not return a tuple")
+        builds: list[BatteryBuild] = []
+        names: set[str] = set()
+        for raw in raw_builds:
+            name = getattr(raw, "name", None)
+            command = getattr(raw, "command", None)
+            if (
+                not isinstance(name, str)
+                or not name
+                or name in names
+                or not isinstance(command, tuple)
+                or not command
+                or any(not isinstance(word, str) or not word for word in command)
+            ):
+                raise TypeError("unreadable Build row")
+            names.add(name)
+            builds.append(BatteryBuild(name, command))
+        return tuple(builds)
+    finally:
+        os.chdir(old_cwd)
+        try:
+            sys.path.remove(str(scripts_dir))
+        except ValueError:
+            pass
+        for name in module_names:
+            sys.modules.pop(name, None)
+        sys.modules.update(previous_modules)
+
+
+def compare_build_specs(
+    builds: Iterable[BatteryBuild], make_text: str
+) -> tuple[list[BuildRecipePair], tuple[str, ...]]:
+    """Pair by shared exact ``tests/*.c`` tokens and compare all C inputs."""
+    make_sources = make_recipe_c_sources(make_text)
+    pairs: list[BuildRecipePair] = []
+    unpaired: list[str] = []
+    seen_names: set[str] = set()
+    for build in builds:
+        if build.name in seen_names:
+            raise ValueError("duplicate Build name")
+        seen_names.add(build.name)
+        battery_sources = c_source_words(build.command)
+        battery_tests = frozenset(
+            source for source in battery_sources if source.startswith("tests/")
+        )
+        targets = [
+            target
+            for target, sources in sorted(make_sources.items())
+            if battery_tests.intersection(
+                source for source in sources if source.startswith("tests/")
+            )
+        ]
+        if not targets:
+            unpaired.append(build.name)
+            continue
+        for target in targets:
+            pairs.append(
+                BuildRecipePair(
+                    build.name, target, battery_sources, make_sources[target]
+                )
+            )
+    return pairs, tuple(unpaired)
 
 
 def python_constants(path: Path) -> dict[str, Any]:
@@ -509,7 +758,49 @@ def observe_known_red(entry: dict[str, Any]) -> str | None:
     return None
 
 
-def run_negative_controls() -> list[tuple[str, str, bool]]:
+def retro_a209_negative_control(make_text: str) -> bool:
+    """Replay the pre-GR-0 battery omission in an isolated copy tree."""
+    before = (
+        '                "tests/a2_09_emissivity_selftest.c",\n'
+        '                "src/emissivity_publication.c", '
+        '"src/population_contract.c", "-lm", "-o",'
+    )
+    after = (
+        '                "tests/a2_09_emissivity_selftest.c",\n'
+        '                "src/emissivity_publication.c", "-lm", "-o",'
+    )
+    try:
+        with tempfile.TemporaryDirectory(prefix="gate-registry-gr8-") as raw_tmp:
+            copy_root = Path(raw_tmp)
+            copy_scripts = copy_root / "scripts"
+            copy_scripts.mkdir()
+            copied_battery = copy_scripts / BATTERY_PATH.name
+            shutil.copy2(BATTERY_PATH, copied_battery)
+            shutil.copy2(
+                FIXTURE_GENERATOR_PATH,
+                copy_scripts / FIXTURE_GENERATOR_PATH.name,
+            )
+            text = copied_battery.read_text(encoding="utf-8")
+            if text.count(before) != 1:
+                return False
+            copied_battery.write_text(text.replace(before, after), encoding="utf-8")
+            copied_builds = load_battery_builds(copied_battery)
+            a209 = tuple(build for build in copied_builds if build.name == "Z-a2-09")
+            pairs, unpaired = compare_build_specs(a209, make_text)
+    except Exception:
+        return False
+    drifts = [pair for pair in pairs if pair.battery_sources != pair.make_sources]
+    return (
+        len(a209) == 1
+        and len(pairs) == 1
+        and not unpaired
+        and [pair.reason for pair in drifts] == ["build-spec-drift:Z-a2-09"]
+        and drifts[0].battery_only == ()
+        and drifts[0].make_only == ("src/population_contract.c",)
+    )
+
+
+def run_negative_controls(make_text: str | None = None) -> list[tuple[str, str, bool]]:
     empty = {"schema": SCHEMA, "entries": []}
     name_a = "synthetic-r1a-gate"
     make_a = f".PHONY: anchor\nanchor:\n\t@:\n{name_a}:\n\t@:\n"
@@ -631,6 +922,55 @@ def run_negative_controls() -> list[tuple[str, str, bool]]:
     errors_h = validate_registry({"schema": SCHEMA, "entries": [entry_h]}, make_h)
     expected_h = f"known-red-recipe-drift:{name_h}"
 
+    name_r8a = "synthetic-r8a"
+    test_r8a = "tests/synthetic_r8a.c"
+    make_r8a = f"r8a-target:\n\tcc -o $@ {test_r8a}\n"
+    builds_r8a = (
+        BatteryBuild(name_r8a, ("cc", test_r8a, "src/battery_only.c")),
+    )
+    pairs_r8a, unpaired_r8a = compare_build_specs(builds_r8a, make_r8a)
+    drifts_r8a = [
+        pair.reason
+        for pair in pairs_r8a
+        if pair.battery_sources != pair.make_sources
+    ]
+    expected_r8a = f"build-spec-drift:{name_r8a}"
+
+    name_r8b = "synthetic-r8b"
+    test_r8b = "tests/synthetic_r8b.c"
+    make_r8b = (
+        "R8B_EXTRA = src/recipe_only.c\n"
+        f"r8b-target:\n\tcc -o $@ {test_r8b} $(R8B_EXTRA)\n"
+    )
+    builds_r8b = (BatteryBuild(name_r8b, ("cc", test_r8b)),)
+    pairs_r8b, unpaired_r8b = compare_build_specs(builds_r8b, make_r8b)
+    drifts_r8b = [
+        pair.reason
+        for pair in pairs_r8b
+        if pair.battery_sources != pair.make_sources
+    ]
+    expected_r8b = f"build-spec-drift:{name_r8b}"
+
+    name_r8c = "synthetic-r8c"
+    test_r8c = "tests/synthetic_r8c.c"
+    shared_r8c = "src/shared_r8c.c"
+    make_r8c = f"r8c-target:\n\tcc -o $@ {test_r8c} {shared_r8c}\n"
+    builds_r8c = (BatteryBuild(name_r8c, ("cc", test_r8c, shared_r8c)),)
+    pairs_r8c, unpaired_r8c = compare_build_specs(builds_r8c, make_r8c)
+    drifts_r8c = [
+        pair.reason
+        for pair in pairs_r8c
+        if pair.battery_sources != pair.make_sources
+    ]
+    expected_r8c = f"no-build-spec-drift:{name_r8c}"
+
+    expected_r8d = "build-spec-drift:Z-a2-09"
+    passed_r8d = retro_a209_negative_control(
+        make_text
+        if make_text is not None
+        else MAKEFILE_PATH.read_text(encoding="utf-8")
+    )
+
     return [
         ("NC-R1a", expected_a, errors_a == [expected_a]),
         ("NC-R1b", expected_b, actual_b == expected_b),
@@ -644,6 +984,30 @@ def run_negative_controls() -> list[tuple[str, str, bool]]:
         ("NC-R1f", expected_f, errors_f == [expected_f]),
         ("NC-R1g", expected_g, errors_g == [expected_g]),
         ("NC-R1h", expected_h, errors_h == [expected_h]),
+        (
+            "NC-R8a",
+            expected_r8a,
+            len(pairs_r8a) == 1
+            and not unpaired_r8a
+            and drifts_r8a == [expected_r8a]
+            and pairs_r8a[0].battery_only == ("src/battery_only.c",)
+            and pairs_r8a[0].make_only == (),
+        ),
+        (
+            "NC-R8b",
+            expected_r8b,
+            len(pairs_r8b) == 1
+            and not unpaired_r8b
+            and drifts_r8b == [expected_r8b]
+            and pairs_r8b[0].battery_only == ()
+            and pairs_r8b[0].make_only == ("src/recipe_only.c",),
+        ),
+        (
+            "NC-R8c",
+            expected_r8c,
+            len(pairs_r8c) == 1 and not unpaired_r8c and drifts_r8c == [],
+        ),
+        ("NC-R8d", expected_r8d, passed_r8d),
     ]
 
 
@@ -670,6 +1034,41 @@ def main() -> int:
         f"make_targets={target_count} registry_entries={len(registry['entries'])}"
     )
 
+    build_spec_failed = False
+    try:
+        builds = load_battery_builds()
+        build_pairs, unpaired = compare_build_specs(builds, make_text)
+    except Exception:
+        print(
+            "[GATE-REGISTRY][BUILD-SPEC][FAIL] "
+            "reason=battery-contract-unreadable"
+        )
+        build_spec_failed = True
+    else:
+        print(
+            "[GATE-REGISTRY][BUILD-SPEC][SCOPE] "
+            f"pairs={len(build_pairs)} unpaired={len(unpaired)}"
+        )
+        drifts = [
+            pair
+            for pair in build_pairs
+            if pair.battery_sources != pair.make_sources
+        ]
+        for pair in drifts:
+            battery_only = ",".join(pair.battery_only) or "-"
+            make_only = ",".join(pair.make_only) or "-"
+            print(
+                "[GATE-REGISTRY][BUILD-SPEC][FAIL] "
+                f"reason={pair.reason} make_target={pair.make_target} "
+                f"battery_only={battery_only} make_only={make_only}"
+            )
+        if not drifts:
+            print(
+                "[GATE-REGISTRY][BUILD-SPEC][PASS] "
+                f"pairs={len(build_pairs)} unpaired={len(unpaired)}"
+            )
+        build_spec_failed = bool(drifts)
+
     known_red = [
         entry for entry in registry["entries"] if entry["category"] == "known-red"
     ]
@@ -680,7 +1079,7 @@ def main() -> int:
         return 1
     print(f"[GATE-REGISTRY][KNOWN-RED][PASS] entries={len(known_red)}")
 
-    nc_results = run_negative_controls()
+    nc_results = run_negative_controls(make_text)
     nc_failed = False
     for nc_name, expected, passed in nc_results:
         state = "PASS" if passed else "FAIL"
@@ -689,7 +1088,7 @@ def main() -> int:
             f"name={nc_name} reason={expected}"
         )
         nc_failed = nc_failed or not passed
-    return 1 if nc_failed else 0
+    return 1 if build_spec_failed or nc_failed else 0
 
 
 if __name__ == "__main__":

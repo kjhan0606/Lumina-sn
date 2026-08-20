@@ -1409,3 +1409,53 @@ source` 도 불변 — 세 스팬의 사유가 서로 다른 것이 wrong-reason
 ## 집행 기록 (운전석 실측 — 단별로 §10 분장 장부 복제 포함; 사전 기입 금지)
 
 (GR-1 부터 집행 시 채운다.)
+
+
+---
+
+## GR-8 집행 기록 (운전석 실측, 2026-08-21) — 사다리의 마지막 단
+
+**증거**: `/gpfs/kjhan/lumina/gates/gr8_20260820T160758Z/`
+
+| 기대(개정 3) | 실측 |
+|---|---|
+| **B-8a** — `Z-a2-12` 불일치를 이름 있는 사유로 **검출** | **충족** — `[BUILD-SPEC][FAIL] reason=build-spec-drift:Z-a2-12 make_target=selftest_a2_12_contract battery_only=src/jnu_seed.c,src/seed_capability.c` |
+| **B-8b** — 검출 쌍 **전수 목록** | **충족** — `[BUILD-SPEC][SCOPE] pairs=6 unpaired=7`, drift **2건** |
+| 음성 대조 | **12/12** — 기존 8 + **R8a·R8b**(drift 검출) · **R8c `no-build-spec-drift`**(★역방향 — 일치 쌍을 오탐하면 잡는다) · **R8d `build-spec-drift:Z-a2-09`**(★소급 재주입) |
+| 금기 | `Makefile`·`run_gate_battery.py`·`src/`·타 게이트 **전부 무접촉**, diff 단일 파일 |
+
+### ★예고 없던 두 번째 드리프트 — `Z-a2-10`
+
+사전등록 개정 3 은 `Z-a2-12` 하나만 예고했다. GR-8 이 **하나를 더 찾았다**:
+```
+[BUILD-SPEC][FAIL] reason=build-spec-drift:Z-a2-10 make_target=selftest_a2_10_radeq
+                   battery_only=src/atomic_internal_energy.c, …
+```
+[검수 실측·양쪽 정본 눈판독] 배터리 `.c` **8개** vs make `.c` **4개** — `Z-a2-12` 와 같은
+**과잉 방향**이다. 어느 쪽이 정본인지는 **판정하지 않는다**(분기 그대로, 수리는 별도 단).
+
+### ★★배터리가 preflight 에서 봉쇄된다 (검수 R2 — 명시적으로 인지한다)
+
+[실측] 드리프트 2건이 서 있는 동안:
+```
+PREFLIGHT name=GATE_REGISTRY rc=1
+GATE_BATTERY_SUMMARY verdict=FAIL rc=1 preflight=GATE_REGISTRY
+BATTERY_RC=1
+```
+`run_preflights()` 가 **빌드 전에 중단**시키므로 배터리가 **상시 FAIL** 이다.
+
+★**이것은 §0 의 딜레마가 새 옷을 입고 돌아온 것이다.** GR-1′ 은 죽은 게이트에 대해
+`known-red` **등록부**로 그 딜레마를 풀었다 — *"서명대로 죽으면 green, 드리프트하면 red"*.
+드리프트에는 **같은 장치가 없다.** 개정 3 이 "붉게 등재" 를 정했으나 등록부 스키마에
+드리프트 행이 없어, 충실한 구현의 결과가 **봉쇄**다.
+
+⟹ 이 긴장은 **캠페인 폐합 판정이 다뤄야 한다.** 운전석은 봉쇄를 인지하고 기재한다 —
+숨기거나 게이트를 느슨하게 만들어 통과시키지 않는다.
+
+### 검수 지적
+- **R1**(문안 정정): Make **조건부 지시자**(`ifdef`/`ifeq`)는 fail-closed 가 아니라
+  **조용히 양분기 last-wins 로 오해석**된다. [실측] 현 Makefile 조건부는 플래그만 건드려
+  `.c` 집합 무영향 ⟹ 오늘 판정은 무오염. **문안을 정정하고 코드 수리는 별도 단.**
+- **R3**(관찰): `CP`(배터리, `cpu_link_sources()` 런타임 도출) ↔ make `lumina`(`$(SOURCES)`
+  정적 24목록)도 **같은 계급의 중복 명세**이나 공유 테스트 소스가 없어 **키 밖**이다 —
+  정의역 확장은 사전등록 개정 사안. 조용한 대장 기재.
