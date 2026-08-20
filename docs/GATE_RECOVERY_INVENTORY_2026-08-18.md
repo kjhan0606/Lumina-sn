@@ -86,3 +86,48 @@ N6-3 회수에서 검수가 잡은 결함이 교훈이다. Codex v1 의 판정�
 ⟹ **회수는 "게이트를 돌렸다" 가 아니라 "주입이 시도됐고, 의도한 가드가, 이름 있는
 사유로 막았다" 를 셋 다 보여야 한다.** v2 가 `rejected_at` 단계 분류와 항상 출력되는
 trace 를 넣은 덕에 이번 실행은 그 셋을 모두 보인다.
+
+---
+
+## F. 추가 발견 (2026-08-20) — `selftest-sh-radeq-source`: **아무도 안 돌리는데 19건 실패 중**
+
+발견 경위: SH-A209-IDSEAL 코드 검수(Fable)가 R5 로 지적 → 운전석 실측 확인.
+
+### 사실 [실측]
+
+| 항목 | 값 |
+|---|---|
+| 게이트 | `scripts/check_a209_source_failclosed.py` (make 타깃 `selftest-sh-radeq-source`, `Makefile:168`) |
+| 현재 상태 | **exit 1, `[SH-RADEQ-0][STATIC][FAIL]` 19건** |
+| 회귀 목록 포함 | **없음** — `.PHONY`(`Makefile:333`)에만 이름이 있고, 어떤 집합 타깃에도·`run_gate_battery.py` 에도·어떤 `.sh` 에도 없다 |
+| 최종 수정 | `a00b991`(08-18) |
+| 고장 원인(검수 판독) | `function_body` 정규식이 impl/래퍼 분리 이후 3줄짜리 래퍼(`lumina_plasma.c:9408`)를 잡는다. 분리는 `f6c2eb6`(08-18) |
+| SH-A209-IDSEAL 과의 관계 | **무관.** 그 단의 `lumina_plasma.c` diff 는 `@@ +9103,7` · `@@ +9129,19` 두 곳뿐으로 래퍼 미접촉 [실측 `git diff -U0`] |
+
+### 왜 이것이 §E 원칙의 재발인가
+
+이 게이트가 지키려던 계약은 사소하지 않다 — 스크립트 docstring: *"line emission uses the
+direct `n_u*A_ul*h*nu*beta/(4*pi*dnu)` form, never `line_source_S`; the mutable raw tau slab
+is generation-bracketed at both ends; writer/reader share one NLTE authority predicate…"*.
+즉 **선방출 형식과 tau 세대 괄호를 지키는 정적 잣대**다. 그것이 08-18 이래 무효 상태로
+방치됐고, 무효라는 사실조차 **오늘 코드 검수가 옆길에서 걸려 넘어져** 드러났다.
+
+메모리 [[feedback_audit_the_yardstick_first]] 「회귀 목록에서 빠진 잣대는 조용히 죽는다」
+(08-06, `a2_01_census_contract.py`)와 **같은 계급의 재발**이다. 그때의 교훈 ②
+*"줄번호·정규식 앵커 기반 잣대는 회귀에 **영구 편입** 필수"* 가 이 게이트에는 적용되지
+않았다.
+
+### 처분 — 조용한 대장 기재 (이 단에서 고치지 않는다)
+
+수리는 별개 계약이다. 다음 단이 답해야 할 것:
+1. 정규식 앵커를 impl 함수(`a209_publish_cpu_emissivity_impl`)로 옮길 것인가, 아니면
+   래퍼/impl 양쪽을 이어 붙여 볼 것인가?
+2. 19건이 **전부** 앵커 문제인가, 아니면 그 안에 **진짜 계약 위반**이 섞여 있는가?
+   ⚠이것을 확인하기 전에는 "앵커만 고치면 된다"고 단정하지 않는다 — 게이트가 죽은
+   기간(08-18~) 동안 실제로 계약이 깨졌을 수 있다.
+3. **회귀 목록 영구 편입** — 고친 뒤 집합 타깃/배터리에 넣지 않으면 또 죽는다.
+
+### ★파생 감사 항목 (미실시)
+`.PHONY` 에만 있고 어떤 집합 타깃에도 없는 게이트가 **이것 하나뿐인가?**
+`Makefile:333` 행에는 `event-measure-check` · `selftest_mc_evt_access` 도 함께 있다.
+전수 조사 필요 — **회귀 목록의 완전성 감사**(§E 교훈의 일반형).
