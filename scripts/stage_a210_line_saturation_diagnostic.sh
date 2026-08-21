@@ -111,6 +111,7 @@ printf '%s\n' \
   "declare -x LUMINA_A210_LINE_SATURATION_TARGET_ION=\"$target_ion\"" \
   "declare -x LUMINA_A210_INDEPENDENT_CAPTURE=\"${LUMINA_A210_INDEPENDENT_CAPTURE:-1}\"" \
   "declare -x LUMINA_A210_SPRODUCER_CAPTURE=\"${LUMINA_A210_SPRODUCER_CAPTURE:-0}\"" \
+  ${LUMINA_FIXED_TE_PROFILE:+"declare -x LUMINA_FIXED_TE_PROFILE=\"$LUMINA_FIXED_TE_PROFILE\""} \
   >> "$tmp_env"
 LC_ALL=C sort -u "$tmp_env" > "$dest/input/resolved_lumina.exports"
 rm "$tmp_env"
