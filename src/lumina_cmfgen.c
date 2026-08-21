@@ -4948,8 +4948,14 @@ int cmfgen_fine_jbar(CMFGENState *csb, const Geometry *geo,
     opac->line_producer_terms_n_shells = 0;
     free(opac->line_producer_continuum_term);
     free(opac->line_producer_local_emission_term);
+    free(opac->line_producer_eta);
+    free(opac->line_producer_tau_eff);
+    free(opac->line_producer_provenance);
     opac->line_producer_continuum_term = NULL;
     opac->line_producer_local_emission_term = NULL;
+    opac->line_producer_eta = NULL;
+    opac->line_producer_tau_eff = NULL;
+    opac->line_producer_provenance = NULL;
     if (NL <= 0 || !opac->jbar_line_det || !geo || !plasma ||
         (line_operator != CMF_FINE_LINE_OPERATOR_INIT_SHARED_GAUSSIAN &&
          line_operator !=
@@ -4968,8 +4974,9 @@ int cmfgen_fine_jbar(CMFGENState *csb, const Geometry *geo,
         return -1;
     }
     int sproducer_capture_requested = 0;
-    if (cmf_optional_binary_env("LUMINA_A210_SPRODUCER_CAPTURE",
-                                &sproducer_capture_requested) != 0) {
+    if (a210_sproducer_capture_request_parse(
+            getenv("LUMINA_A210_SPRODUCER_CAPTURE"),
+            &sproducer_capture_requested) != NULL) {
         fprintf(stderr,
                 "[cmf_fine][BLOCKED] reason=INVALID_SPRODUCER_CAPTURE_REQUEST "
                 "value=%s expected=0_or_1\n",
@@ -6290,16 +6297,30 @@ int cmfgen_fine_jbar(CMFGENState *csb, const Geometry *geo,
         opac->line_producer_local_emission_term = malloc(
             population_cells *
             sizeof(*opac->line_producer_local_emission_term));
+        opac->line_producer_eta = malloc(
+            population_cells * sizeof(*opac->line_producer_eta));
+        opac->line_producer_tau_eff = malloc(
+            population_cells * sizeof(*opac->line_producer_tau_eff));
+        opac->line_producer_provenance = malloc(
+            population_cells * sizeof(*opac->line_producer_provenance));
         if (!opac->line_producer_continuum_term ||
-            !opac->line_producer_local_emission_term) {
+            !opac->line_producer_local_emission_term ||
+            !opac->line_producer_eta || !opac->line_producer_tau_eff ||
+            !opac->line_producer_provenance) {
             fprintf(stderr,
                     "[cmf_fine][BLOCKED] reason=SPRODUCER_CAPTURE_ALLOCATION "
                     "cells=%zu floor=0 cap=0 clamp=0 jitter=0 repair=0\n",
                     population_cells);
             free(opac->line_producer_continuum_term);
             free(opac->line_producer_local_emission_term);
+            free(opac->line_producer_eta);
+            free(opac->line_producer_tau_eff);
+            free(opac->line_producer_provenance);
             opac->line_producer_continuum_term = NULL;
             opac->line_producer_local_emission_term = NULL;
+            opac->line_producer_eta = NULL;
+            opac->line_producer_tau_eff = NULL;
+            opac->line_producer_provenance = NULL;
             free(sobolev_upper_population_cache);
             free(fs.nu);free(fs.dnu);free(fs.chi_es);free(fs.chi_abs);
             free(fs.chi_line);free(fs.chi_tot);free(fs.S_fixed);free(fs.J);
@@ -6309,6 +6330,9 @@ int cmfgen_fine_jbar(CMFGENState *csb, const Geometry *geo,
         for (size_t cell = 0; cell < population_cells; ++cell) {
             opac->line_producer_continuum_term[cell] = -1.0;
             opac->line_producer_local_emission_term[cell] = -1.0;
+            opac->line_producer_eta[cell] = -1.0;
+            opac->line_producer_tau_eff[cell] = -1.0;
+            opac->line_producer_provenance[cell] = UINT8_MAX;
         }
     }
     #ifdef _OPENMP
@@ -6381,6 +6405,11 @@ int cmfgen_fine_jbar(CMFGENState *csb, const Geometry *geo,
                         radiation.continuum_term;
                     opac->line_producer_local_emission_term[cell] =
                         radiation.local_emission_term;
+                    opac->line_producer_eta[cell] = material.emission_per_sr;
+                    opac->line_producer_tau_eff[cell] = material.effective_tau;
+                    opac->line_producer_provenance[cell] =
+                        (uint8_t)((material.srce_chk_applied ? 1U : 0U) |
+                                  (material.exact_zero_provenance ? 2U : 0U));
                     ++sproducer_cells;
                 }
                 ++sobolev_jbar_cells;
@@ -6608,7 +6637,8 @@ int cmfgen_fine_jbar(CMFGENState *csb, const Geometry *geo,
         opac->line_producer_terms_n_shells = NS;
         fprintf(stderr,
                 "[cmf_fine][SPRODUCER-CAPTURE] status=CAPTURED cells=%llu "
-                "n_shells=%d payload=continuum_term+local_emission_term "
+                "n_shells=%d payload=continuum_term+local_emission_term+"
+                "eta+tau_eff+provenance "
                 "identity=jbar==continuum_term+local_emission_term "
                 "operator=CMFGEN_NONOVERLAP_SOBOLEV "
                 "physical_values_modified=0 publication_authority=NONE "

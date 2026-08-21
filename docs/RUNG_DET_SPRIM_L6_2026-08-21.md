@@ -529,8 +529,7 @@ Codex 는 3차에서 **코드를 쓰다가 되돌리고** 중단했다(작업트
   },
   "references": [
     {"path": "scripts/check_a210_targeted_gate.py",
-     "flags_existing": ["--expected-devices", "--expected-refinements"],
-     "flags_planned": ["--expected-outer-iterations"]},
+     "flags_existing": ["--expected-devices", "--expected-refinements", "--expected-outer-iterations"]},
     {"path": "tests/a2_10_targeted_gate_selftest.py",
      "flags_existing": []},
     {"path": "scripts/run_det_convergence_2026-08-08.slurm", "flags_existing": []},
@@ -639,3 +638,83 @@ Codex 는 "stager e2e 는 운전석 몫" 이라 **정직하게 신고**했고 �
 프리플라이트 `changeset-consistent` / `branch-partition` / `references-resolved(refs=5)` **전부 PASS**.
 
 ⟹ **집행 불가는 2건**(P2 음성대조·P3 증거)이며 **P5 는 취소**한다.
+
+---
+
+## 18. 수리 회차 착지 · 검수 인정 · 계측 폐합 (2026-08-21)
+
+### 18-1. 수리 4건 (①~④)
+
+| # | 내용 | 실측 |
+|---|---|---|
+| **①** stager 침묵 파괴 수리 | 모든 최종 경로 쓰기를 temp+`mv` 3함수로 통일(`:47-57`·`:59-69`·`:71-80`) | 검수 전수 census: `$input/` 향 `>` **0건**, `>>`·`tee`·`sed -i` **0건**, 맨 `>` 는 mktemp 둘뿐 |
+| **②** base byte-불변 기계 증명 | 사전(`:136-137`)/사후(`:234-238`) manifest digest + `cmp` 이중 대조, 불일치 시 `die` | 되주입 → `STAGE_FATAL base input byte seal mismatch` rc=70 · 제거 → rc=0 |
+| **③** 신규 플래그 음성대조 **상설화** | `tests/a2_10_targeted_gate_selftest.py` 에 4종(i~iv) | `negative_controls=16 extended_controls=4` — 기존 16종 회귀 유지 |
+| **④** 프리플라이트 정합 | §16 선언에서 `--expected-outer-iterations` 를 `flags_planned`→`flags_existing` | 이동 전 문서 → `FAIL reference-flag-already-present` · 이동 후 → PASS |
+
+★**④ 가 선언과 코드의 동시 착지를 기계로 강제한다.** 미패치 저장소에 이동 후 선언을 대면
+즉시 FAIL 이므로 둘을 갈라 커밋할 수 없다 — 개정 3 저자의 "계측 커밋 안에서 이동" 판단이
+실측으로 확인됐다.
+
+### 18-2. 운전석 오프라인 게이트 (전부 PASS)
+
+```
+P1  CPU rc=0 · GPU rc=0 · 신규 error 0
+P2  노브 미설정 stdout·stderr BYTE IDENTICAL (baseline 4db36b4 대조)
+P3  배터리 verdict=PASS rc=0 실패행 0/30 · ★증거=selftest 직접 실행 rc=0
+    (NC-C1~C3 시연 · DET-SPRIM-SENTINEL collision=0) — 개정 3-3 이 재지정한 형식
+P4  DET_STAGE12_L6_SELFTEST_PASS NC-A1..NC-A5=PASS
+P5  기존 16종 + 신규 상설 4종 전부 PASS
+    (ii) rc=4 expected exactly 3 '[cmf_fine][EXACT-MULTIGPU-EPOCH]' lines, found 2
+    (iii) F2+N=2 rc=0 ∧ F2+기본 rc=4 (found 3)   (iv) rc=4 repair=1
+    봉인 앵커 ★정본 입력 $run_root/stdout.log · stderr.log (job.slurm:242-243):
+      구/신 checker 둘 다 A210_TARGETED_GATE_PASS rc=0 · report BYTE IDENTICAL
+      +--expected-outer-iterations 2 → rc=4 건수 불일치
+프리플라이트  changeset-consistent · branch-partition(2e5) · references-resolved(refs=5)
+```
+
+### 18-3. 검수 판정 — **인정 (차단 0)**
+
+합성 base e2e **8케이스**로 확증(⚠실물 봉인 root 무접촉). 되주입 → 검출, 제거 → 통과.
+생성 16파일 전부 **새 inode·links=1**(원 결함 3파일 포함), 비접촉 파일은 links=2 유지.
+Q3 은 되주입 4계급 + 자체 변조 6건, Q5 는 mtime+내용 이중 확증으로 4차 인정분 무훼손.
+
+**비차단 지적 4건 — 그대로 싣는다**:
+
+- **㉮ ②는 인계철선이지 방패가 아니다.** 되주입 런에서 합성 base 는 **검출 전에 이미
+  파괴**됐다(outer 1→2 실측). **실물 보호는 오직 ①이고, ②는 침묵 파괴를 소리나는 중단으로
+  바꿀 뿐이다.** 이 구분을 흐리지 않는다.
+- **㉯ ②가 덮지 못하는 것(실측)**: (a) **권한 변경** — 하드링크 경유 `chmod` 가 rc=0 통과
+  (b) **심링크·디렉토리** — `find -type f` 에 안 걸림 (c) **`$base/input` 밖 전부** —
+  base root 의 `READY`·`stdout.log`·`stderr.log`·RUN_FOOTER 등 **봉인 증거 본체가 범위 밖**
+  (d) 소유자·mtime. 전부 현 stager 가 만들 수 없는 계급이라 수리하지 않고 **한계 기재**.
+- **㉰ ②의 문서적 출처**: 번호 붙은 개정 행에 없다. 출처는 §17-3 의 차단 결함 기록 +
+  수리 발주서다. §4 등재 파일(stager) 내부 의무 확장이라 파일-수준 1:1 은 성립하나,
+  **5차 사고(§4 밖 파일 요구)와 계급이 다름을 여기 명시**해 둔다.
+- **㉱** `check_det_convergence.py` 가 봉인 base 판 하드링크로 남는 것은 §4 신선성 목록
+  (job.slurm·checker·stager·analyzer) 밖이라 **계약 합치**. 해시는 `flight_scripts.sha256`
+  (`:206`)에 기재된다.
+
+### 18-4. 발주 회차 장부 (이 단 통산)
+
+| 회차 | 결과 | 결함의 주인 |
+|---|---|---|
+| 1~3차 | 중단 ×3 | 계약 결함 **5건** — 발주서 1 · 사전등록 3 · 개정+운전석 검수 1 |
+| **4차** | 코드 착지 | 검수 차단 1건(첫 코드측) = stager 침묵 파괴 |
+| 5차 | 중단 | ★**운전석** — 계약 밖 요구를 수리 발주에 섞음 |
+| **6차** | 수리 착지 · **검수 인정** | — |
+
+**트리거 계수 리셋**(발주 실패 1회 → 6차 성공으로 0). 판정런은 **한 번도 소모되지 않았다.**
+
+### 18-5. 분장 장부 (집행 후 기입 — 검수 완료 확인 뒤)
+
+| 단계 | 규약상 담당 | **실제** | 위반 |
+|---|---|---|---|
+| 갈림길 평가·사전등록 | Fable | Fable | — |
+| 사전등록 개정 1·2·3 | Fable | Fable | 개정 1 이 행 1개를 **치환**(§14) |
+| 발주 | 운전석 | 운전석 | ★1차 **좁힘**(§13-1) · 5차 **계약 밖 요구**(§17-4) |
+| 코딩 | Codex | Codex | — (중단 4회는 전부 정당) |
+| 코드 검수 | Fable | Fable — 4차 **수정 필요**, 6차 **인정** | — |
+| 빌드·게이트·계측 | 운전석 | 운전석 | ★잣대 사고 2건(§17-2): 미추적 `data/` · **비교자 무효** |
+| 대장·커밋 | 운전석 | 운전석 | 개정 1 **행 대조 미실시**(§14-2) |
+| 판정·감리 | Fable (각각 fresh) | **판정런 후** | 유보 |

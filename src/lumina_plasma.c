@@ -13892,6 +13892,11 @@ typedef struct {
     double producer_continuum_term;        /* DET-SPROD; -1 = undefined */
     double producer_local_emission_term;   /* DET-SPROD; -1 = undefined */
     int producer_terms_active;
+    double producer_eta;                   /* DET-SPRIM; -1 = undefined */
+    double producer_tau_eff;               /* DET-SPRIM; -1 = undefined */
+    int producer_srce_chk;
+    int producer_exact_zero;
+    int producer_raw_defined;
 } A210LineSaturationRow;
 
 typedef struct {
@@ -13905,6 +13910,45 @@ typedef struct {
     long double total_scaled_emission;
     size_t zero_opacity_emitting_rows;   /* Z-1: tau==0 && n_upper>0 */
 } A210LineSaturationDiagnostic;
+
+static void a210_sproducer_suffix(
+        const A210LineSaturationRow *row,char *text,size_t size){
+    if(!text||size==0)return;
+    text[0]='\0';
+    if(!row||!row->producer_terms_active)return;
+    int terms_defined=row->producer_continuum_term>=0.0&&
+        isfinite(row->producer_continuum_term)&&
+        row->producer_local_emission_term>=0.0&&
+        isfinite(row->producer_local_emission_term);
+    char continuum[64],local[64],eta[64],tau[64],srce[32],zero[32];
+    if(terms_defined){
+        snprintf(continuum,sizeof(continuum),"%.17g",
+                 row->producer_continuum_term);
+        snprintf(local,sizeof(local),"%.17g",
+                 row->producer_local_emission_term);
+    }else{
+        snprintf(continuum,sizeof(continuum),"UNAVAILABLE");
+        snprintf(local,sizeof(local),"UNAVAILABLE");
+    }
+    if(row->producer_raw_defined){
+        snprintf(eta,sizeof(eta),"%.17g",row->producer_eta);
+        snprintf(tau,sizeof(tau),"%.17g",row->producer_tau_eff);
+        snprintf(srce,sizeof(srce),"%d",row->producer_srce_chk);
+        snprintf(zero,sizeof(zero),"%d",row->producer_exact_zero);
+    }else{
+        snprintf(eta,sizeof(eta),"UNAVAILABLE");
+        snprintf(tau,sizeof(tau),"UNAVAILABLE");
+        snprintf(srce,sizeof(srce),"UNAVAILABLE");
+        snprintf(zero,sizeof(zero),"UNAVAILABLE");
+    }
+    snprintf(text,size,
+             " producer_continuum_term=%s producer_local_emission_term=%s"
+             " producer_terms_defined=%d producer_eta=%s"
+             " producer_tau_eff=%s producer_srce_chk=%s"
+             " producer_exact_zero=%s producer_raw_defined=%d",
+             continuum,local,terms_defined,eta,tau,srce,zero,
+             row->producer_raw_defined);
+}
 
 static int a210_line_saturation_target_ion(void) {
     const char *value = getenv("LUMINA_A210_LINE_SATURATION_TARGET_ION");
@@ -13993,7 +14037,9 @@ static int a210_line_saturation_add(
         const LineNetResult *result,double jbar,double jbar_absolute_bound,
         double j_cont,double j_cont_absolute_bound,int independent_capture,
         double producer_continuum_term,double producer_local_emission_term,
-        int producer_terms_active,
+        double producer_eta,double producer_tau_eff,
+        uint8_t producer_provenance,int producer_terms_active,
+        int producer_stride_ok,
         double deck_scale,long double rate_factor){
     if(!diag||!diag->active||shell!=0||
        !a210_line_saturation_target(diag->target_ion,Z,ion))return 0;
@@ -14091,6 +14137,17 @@ static int a210_line_saturation_add(
                                      diag->zero_opacity_emitting_rows);
         return-1;
     }
+    int producer_raw_defined=0,producer_srce_chk=0,producer_exact_zero=0;
+    const char *producer_raw_reason=a210_sproducer_raw_decode(
+        producer_terms_active,producer_stride_ok,producer_eta,producer_tau_eff,
+        producer_provenance,&producer_raw_defined,&producer_srce_chk,
+        &producer_exact_zero);
+    if(producer_raw_reason){
+        a210_line_saturation_blocked(producer_raw_reason,"REQUESTED_TE",
+                                     diag->count,
+                                     diag->zero_opacity_emitting_rows);
+        return-1;
+    }
     if(diag->count==diag->capacity){
         size_t next=diag->capacity?2*diag->capacity:4096;
         if(next<diag->capacity||next>SIZE_MAX/sizeof(*diag->row)){
@@ -14139,6 +14196,11 @@ static int a210_line_saturation_add(
         isfinite(producer_local_emission_term)&&
         producer_local_emission_term>=0.0)?
         producer_local_emission_term:-1.0;
+    row->producer_raw_defined=producer_raw_defined;
+    row->producer_srce_chk=producer_srce_chk;
+    row->producer_exact_zero=producer_exact_zero;
+    row->producer_eta=row->producer_raw_defined?producer_eta:-1.0;
+    row->producer_tau_eff=row->producer_raw_defined?producer_tau_eff:-1.0;
     row->beta=beta;row->one_minus_beta_over_tau=companion;
     row->one_minus_beta=one_minus_beta;
     row->source_function=source_function;
@@ -14294,24 +14356,8 @@ static int a210_line_saturation_log_per_ion_union(
             snprintf(jcont_bound_text,sizeof(jcont_bound_text),"UNAVAILABLE");
             snprintf(sprobe_text,sizeof(sprobe_text),"UNAVAILABLE");
         }
-        char sproducer_suffix[160];
-        if(row->producer_terms_active){
-            if(row->producer_continuum_term>=0.0&&
-               isfinite(row->producer_continuum_term)&&
-               row->producer_local_emission_term>=0.0&&
-               isfinite(row->producer_local_emission_term))
-                snprintf(sproducer_suffix,sizeof(sproducer_suffix),
-                         " producer_continuum_term=%.17g"
-                         " producer_local_emission_term=%.17g"
-                         " producer_terms_defined=1",
-                         row->producer_continuum_term,
-                         row->producer_local_emission_term);
-            else
-                snprintf(sproducer_suffix,sizeof(sproducer_suffix),
-                         " producer_continuum_term=UNAVAILABLE"
-                         " producer_local_emission_term=UNAVAILABLE"
-                         " producer_terms_defined=0");
-        }else sproducer_suffix[0]='\0';
+        char sproducer_suffix[512];
+        a210_sproducer_suffix(row,sproducer_suffix,sizeof(sproducer_suffix));
         if(fprintf(stderr,
             "[A2-10][LINE-SATURATION-ROW] phase=REQUESTED_TE shell=0 "
             "rank=%zu line=%d Z=%d ion=%d ion_label=%d ion_slot=%d "
@@ -14463,24 +14509,8 @@ static int a210_line_saturation_log_complete(
             snprintf(jcont_bound_text,sizeof(jcont_bound_text),"UNAVAILABLE");
             snprintf(sprobe_text,sizeof(sprobe_text),"UNAVAILABLE");
         }
-        char sproducer_suffix[160];
-        if(row->producer_terms_active){
-            if(row->producer_continuum_term>=0.0&&
-               isfinite(row->producer_continuum_term)&&
-               row->producer_local_emission_term>=0.0&&
-               isfinite(row->producer_local_emission_term))
-                snprintf(sproducer_suffix,sizeof(sproducer_suffix),
-                         " producer_continuum_term=%.17g"
-                         " producer_local_emission_term=%.17g"
-                         " producer_terms_defined=1",
-                         row->producer_continuum_term,
-                         row->producer_local_emission_term);
-            else
-                snprintf(sproducer_suffix,sizeof(sproducer_suffix),
-                         " producer_continuum_term=UNAVAILABLE"
-                         " producer_local_emission_term=UNAVAILABLE"
-                         " producer_terms_defined=0");
-        }else sproducer_suffix[0]='\0';
+        char sproducer_suffix[512];
+        a210_sproducer_suffix(row,sproducer_suffix,sizeof(sproducer_suffix));
         if(fprintf(stderr,
             "[A2-10][LINE-SATURATION-ROW] phase=REQUESTED_TE shell=0 "
             "rank=%zu line=%d Z=%d ion=%d ion_label=%d ion_slot=%d "
@@ -15134,9 +15164,15 @@ static RadeqStatus a210_private_line_energy_build(
             int producer_stride_ok = producer_terms_active &&
                 opacity->line_producer_terms_n_shells == (int)ns &&
                 opacity->line_producer_continuum_term &&
-                opacity->line_producer_local_emission_term;
+                opacity->line_producer_local_emission_term &&
+                opacity->line_producer_eta &&
+                opacity->line_producer_tau_eff &&
+                opacity->line_producer_provenance;
             double producer_continuum_term = -1.0;
             double producer_local_emission_term = -1.0;
+            double producer_eta = -1.0;
+            double producer_tau_eff = -1.0;
+            uint8_t producer_provenance = UINT8_MAX;
             if (producer_stride_ok) {
                 size_t sproducer_cell = (size_t)line * ns + (size_t)s;
                 producer_continuum_term =
@@ -15144,6 +15180,11 @@ static RadeqStatus a210_private_line_energy_build(
                 producer_local_emission_term =
                     opacity->line_producer_local_emission_term[
                         sproducer_cell];
+                producer_eta=opacity->line_producer_eta[sproducer_cell];
+                producer_tau_eff=
+                    opacity->line_producer_tau_eff[sproducer_cell];
+                producer_provenance=
+                    opacity->line_producer_provenance[sproducer_cell];
             }
             int saturation_add=a210_line_saturation_add(
                 &saturation_diag,s,line,Z,ion,&authority,atom,tau_validity,
@@ -15151,7 +15192,8 @@ static RadeqStatus a210_private_line_energy_build(
                 jbar_uncertainty,independent_j_cont,
                 independent_j_cont_bound,independent_capture,
                 producer_continuum_term,producer_local_emission_term,
-                producer_terms_active,
+                producer_eta,producer_tau_eff,producer_provenance,
+                producer_terms_active,producer_stride_ok,
                 deck_scale,factor);
             if(saturation_add!=0){
                 status=saturation_add==-2?RADEQ_NONFINITE:RADEQ_TERM_SCHEMA;

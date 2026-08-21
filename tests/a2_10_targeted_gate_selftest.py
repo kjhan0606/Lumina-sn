@@ -68,46 +68,123 @@ PREDICTOR_LINE = (
 )
 
 
+def iteration_block(iteration: int) -> tuple[str, ...]:
+    generation = iteration + 2
+    return (
+        *r6_block(generation),
+        f"[R7][PHASE] event=R7_MATERIAL_PHASE_COMMITTED lane=DET iter={iteration} "
+        f"phase=A2-10 te_generation={iteration + 1}->{iteration + 2}",
+        f"[PHYSICS-COMPARISON] lane=DET iter={iteration} status=COMMITTED "
+        "dir=/tmp/dump",
+    )
+
+
+def relabel_iteration_one(iteration_zero: tuple[str, ...]) -> tuple[str, ...]:
+    """Apply the P5 fixture rule: duplicate iter0, relabel only its identities."""
+    relabeled = []
+    for line in iteration_zero:
+        line = line.replace(
+            "[R6][LINE-IDENTITY] lane=DET generation=2",
+            "[R6][LINE-IDENTITY] lane=DET generation=3",
+        )
+        line = line.replace(
+            "[R6][LINE-COVERAGE] generation=2",
+            "[R6][LINE-COVERAGE] generation=3",
+        )
+        line = line.replace(
+            "lane=DET iter=0 phase=A2-10 te_generation=1->2",
+            "lane=DET iter=1 phase=A2-10 te_generation=2->3",
+        )
+        line = line.replace(
+            "[PHYSICS-COMPARISON] lane=DET iter=0 status=COMMITTED",
+            "[PHYSICS-COMPARISON] lane=DET iter=1 status=COMMITTED",
+        )
+        relabeled.append(line)
+    return tuple(relabeled)
+
+
 def stderr_fixture() -> str:
+    """F1: the in-tree one-outer-iteration normal fixture."""
     return "\n".join((
         *r6_block(1),
         PREDICTOR_LINE,
-        *r6_block(2),
-        "[R7][PHASE] event=R7_MATERIAL_PHASE_COMMITTED lane=DET iter=0 "
-        "phase=A2-10 te_generation=1->2",
-        "[PHYSICS-COMPARISON] lane=DET iter=0 status=COMMITTED dir=/tmp/dump",
+        *iteration_block(0),
         "",
     ))
 
 
-def run(directory: Path, stderr_text: str) -> tuple[int, dict[str, object]]:
+def stderr_fixture_two_iterations() -> str:
+    """F2: F1 plus a duplicated/relabelled second outer-iteration block."""
+    iteration_zero = iteration_block(0)
+    return "\n".join((
+        *r6_block(1),
+        PREDICTOR_LINE,
+        *iteration_zero,
+        *relabel_iteration_one(iteration_zero),
+        "",
+    ))
+
+
+def run(
+    directory: Path,
+    stderr_text: str,
+    expected_outer_iterations: int | None = None,
+) -> tuple[int, dict[str, object], bytes]:
     stdout = directory / "stdout.log"
     stderr = directory / "stderr.log"
     report = directory / "report.json"
     stdout.write_text("targeted gate fixture\n", encoding="utf-8")
     stderr.write_text(stderr_text, encoding="utf-8")
+    command = [
+        sys.executable, str(CHECKER),
+        "--stdout", str(stdout),
+        "--stderr", str(stderr),
+        "--expected-devices", "2",
+        "--expected-refinements", "18",
+        "--report", str(report),
+    ]
+    if expected_outer_iterations is not None:
+        command.extend((
+            "--expected-outer-iterations", str(expected_outer_iterations),
+        ))
     result = subprocess.run(
-        (
-            sys.executable, str(CHECKER),
-            "--stdout", str(stdout),
-            "--stderr", str(stderr),
-            "--expected-devices", "2",
-            "--expected-refinements", "18",
-            "--report", str(report),
-        ),
+        command,
         cwd=ROOT,
         text=True,
         capture_output=True,
         check=False,
     )
-    return result.returncode, json.loads(report.read_text(encoding="utf-8"))
+    report_bytes = report.read_bytes()
+    return result.returncode, json.loads(report_bytes), report_bytes
+
+
+def require_result(
+    name: str,
+    rc: int,
+    report: dict[str, object],
+    expected_rc: int,
+    expected_status: str,
+    expected_error: str | None = None,
+) -> bool:
+    error = str(report.get("error", ""))
+    if (
+        rc != expected_rc
+        or report.get("status") != expected_status
+        or (expected_error is not None and error != expected_error)
+    ):
+        print(
+            f"FAIL A2_10_TARGETED_GATE_SELFTEST case={name} rc={rc} "
+            f"status={report.get('status')} reason={error or 'PASS'}"
+        )
+        return False
+    return True
 
 
 def main() -> int:
     with tempfile.TemporaryDirectory(prefix="a210-targeted-selftest-") as raw:
         directory = Path(raw)
         positive = stderr_fixture()
-        rc, report = run(directory, positive)
+        rc, report, _ = run(directory, positive)
         if rc != 0 or report.get("status") != "PASS":
             print("FAIL A2_10_TARGETED_GATE_SELFTEST positive")
             return 4
@@ -167,13 +244,94 @@ def main() -> int:
             ),
         }
         for name, fixture in negative_controls.items():
-            rc, report = run(directory, fixture)
+            rc, report, _ = run(directory, fixture)
             if rc != 4 or report.get("status") != "FAIL":
                 print(f"FAIL A2_10_TARGETED_GATE_SELFTEST negative={name}")
                 return 4
 
+        # Registered extension (i): the default and explicit N=1 paths must
+        # produce byte-identical reports for F1.
+        default_rc, default_report, default_bytes = run(directory, positive)
+        explicit_rc, explicit_report, explicit_bytes = run(
+            directory, positive, expected_outer_iterations=1
+        )
+        if not require_result("i-default", default_rc, default_report, 0, "PASS"):
+            return 4
+        if not require_result("i-explicit-n1", explicit_rc, explicit_report, 0, "PASS"):
+            return 4
+        if default_bytes != explicit_bytes:
+            print(
+                "FAIL A2_10_TARGETED_GATE_SELFTEST case=i "
+                "reason=report-byte-mismatch"
+            )
+            return 4
+        print(
+            "PASS A2_10_TARGETED_GATE_EXTENDED case=i "
+            "default_rc=0 explicit_n1_rc=0 reason=report-byte-identical"
+        )
+
+        # Registered extension (ii): F1 cannot satisfy N=2.
+        f1_n2_error = (
+            "expected exactly 3 '[cmf_fine][EXACT-MULTIGPU-EPOCH]' lines, found 2"
+        )
+        rc, report, _ = run(directory, positive, expected_outer_iterations=2)
+        if not require_result("ii-f1-n2", rc, report, 4, "FAIL", f1_n2_error):
+            return 4
+        print(
+            f"PASS A2_10_TARGETED_GATE_EXTENDED case=ii rc={rc} "
+            f"reason={report['error']}"
+        )
+
+        # Registered extension (iii): F2 is coupled symmetrically to N=2.
+        two_iterations = stderr_fixture_two_iterations()
+        n2_rc, n2_report, _ = run(
+            directory, two_iterations, expected_outer_iterations=2
+        )
+        default_rc, default_report, _ = run(directory, two_iterations)
+        f2_default_error = (
+            "expected exactly 2 '[cmf_fine][EXACT-MULTIGPU-EPOCH]' lines, found 3"
+        )
+        if not require_result("iii-f2-n2", n2_rc, n2_report, 0, "PASS"):
+            return 4
+        if not require_result(
+            "iii-f2-default", default_rc, default_report, 4, "FAIL",
+            f2_default_error,
+        ):
+            return 4
+        print(
+            "PASS A2_10_TARGETED_GATE_EXTENDED case=iii "
+            f"n2_rc={n2_rc} default_rc={default_rc} "
+            f"reason_n2=PASS reason_default={default_report['error']}"
+        )
+
+        # Registered extension (iv): only the iter1 region is contaminated;
+        # the whole-log repair audit must still reject it.
+        iter1_marker = (
+            "[R7][PHASE] event=R7_MATERIAL_PHASE_COMMITTED lane=DET iter=1 "
+        )
+        contaminated = two_iterations.replace(
+            iter1_marker, iter1_marker + "repair=1 ", 1
+        )
+        if contaminated.count("repair=1") != 1:
+            print(
+                "FAIL A2_10_TARGETED_GATE_SELFTEST case=iv "
+                "reason=iter1-repair-injection-count"
+            )
+            return 4
+        repair_error = "nonzero numerical repair field repair=1"
+        rc, report, _ = run(
+            directory, contaminated, expected_outer_iterations=2
+        )
+        if not require_result("iv-iter1-repair", rc, report, 4, "FAIL", repair_error):
+            return 4
+        print(
+            f"PASS A2_10_TARGETED_GATE_EXTENDED case=iv rc={rc} "
+            f"reason={report['error']}"
+        )
+
     print(
         "PASS A2_10_TARGETED_GATE_SELFTEST positive=1 negative_controls=16 "
+        "extended_controls=4 "
         "floor=0 cap=0 clamp=0 jitter=0 repair=0"
     )
     return 0

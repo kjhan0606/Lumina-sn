@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Fail-closed log judge for the one-iteration A100x2 A2-10 gate."""
+"""Fail-closed log judge for the A100x2 A2-10 structural gate."""
 
 from __future__ import annotations
 
@@ -119,11 +119,15 @@ def judge(args: argparse.Namespace) -> dict[str, Any]:
     if repair_observations == 0:
         raise GateError("no numerical-repair audit fields were observed")
 
-    # A2-INIT (2026-08-16): the init pass publishes R1, commits exactly one
-    # seed-material predictor, and the single ordinary iteration publishes R2
-    # before its R7/A2-10.  Exactly TWO exact/R6 publications are therefore
-    # sealed, with one predictor commit strictly between them.
-    exact_entries = indexed_lines(lines, "[cmf_fine][EXACT-MULTIGPU-EPOCH]", 2)
+    # A2-INIT publishes R1 and one seed-material predictor.  Each requested
+    # outer iteration then publishes one further exact/R6 epoch before its
+    # R7 and physics-comparison commits.  The repair scan above intentionally
+    # remains over the complete log for every iteration.
+    outer_iterations = args.expected_outer_iterations
+    publications = outer_iterations + 1
+    exact_entries = indexed_lines(
+        lines, "[cmf_fine][EXACT-MULTIGPU-EPOCH]", publications
+    )
     for _, _, exact in exact_entries:
         require(
             exact,
@@ -145,7 +149,7 @@ def judge(args: argparse.Namespace) -> dict[str, Any]:
             )
 
     material_entries = indexed_lines(
-        lines, "[cmf_fine][SIGNED-MATERIAL-CENSUS]", 2
+        lines, "[cmf_fine][SIGNED-MATERIAL-CENSUS]", publications
     )
     for _, _, material in material_entries:
         require(
@@ -155,16 +159,14 @@ def judge(args: argparse.Namespace) -> dict[str, Any]:
             clamp="0",
             jitter="0",
         )
-    require(
-        material_entries[0][2],
+    require(material_entries[0][2],
         line_shells=str(args.expected_r1_signed_cells),
         exact_zero_tau=str(args.expected_r1_exact_zero_tau),
         raw_negative="0",
         mild_negative="0",
         srce_chk="0",
     )
-    require(
-        material_entries[1][2],
+    require(material_entries[1][2],
         line_shells=str(args.expected_r2_signed_cells),
         exact_zero_tau=str(args.expected_r2_exact_zero_tau),
         raw_negative=str(args.expected_r2_raw_negative),
@@ -176,16 +178,26 @@ def judge(args: argparse.Namespace) -> dict[str, Any]:
         != args.expected_r2_raw_negative
     ):
         raise GateError("invalid pre-registered R2 negative-opacity partition")
-    for _, _, material in material_entries:
+    for material_index, (_, _, material) in enumerate(material_entries):
         if (
             integer(material, "line_shells")
             + integer(material, "exact_zero_tau")
             != args.expected_valid_cells
         ):
             raise GateError("material census does not cover the complete Q_E slab")
+        if material_index >= 2:
+            raw_negative = integer(material, "raw_negative")
+            mild_negative = integer(material, "mild_negative")
+            srce_chk = integer(material, "srce_chk")
+            if min(raw_negative, mild_negative, srce_chk) < 0:
+                raise GateError("negative signed-material census count")
+            if mild_negative + srce_chk != raw_negative:
+                raise GateError(
+                    "iteration signed-material negative-opacity partition mismatch"
+                )
 
     policy_entries = indexed_lines(
-        lines, "[cmf_fine][SIGNED-MATERIAL-POLICY]", 2
+        lines, "[cmf_fine][SIGNED-MATERIAL-POLICY]", publications
     )
     require(
         policy_entries[0][2],
@@ -209,34 +221,56 @@ def judge(args: argparse.Namespace) -> dict[str, Any]:
         jitter="0",
         repair="0",
     )
+    for material_entry, policy_entry in zip(
+        material_entries[2:], policy_entries[2:]
+    ):
+        material = material_entry[2]
+        policy = policy_entry[2]
+        require(
+            policy,
+            operator="CMFGEN_NONOVERLAP_SOBOLEV",
+            srce_chk_expected=material["srce_chk"],
+            srce_chk_material=material["srce_chk"],
+            raw_preserved="1",
+            floor="0",
+            clamp="0",
+            jitter="0",
+            repair="0",
+        )
 
-    sobolev_index, _, sobolev = indexed_lines(
-        lines, "[cmf_fine][SOBOLEV-LINE-OPERATOR]", 1
-    )[0]
-    require(
-        sobolev,
-        status="PASS",
-        mode="CMFGEN_NONOVERLAP_HOMOLOGY_SIGMA0",
-        continuum_sampling="GAUSSIAN_PROFILE",
-        jbar_cells=str(args.expected_valid_cells),
-        raw_negative=str(args.expected_r2_raw_negative),
-        mild_negative=str(args.expected_r2_mild_negative),
-        srce_chk_expected=str(args.expected_r2_srce_chk),
-        srce_chk_applied=str(args.expected_r2_srce_chk),
-        all_jbar_finite="1",
-        raw_preserved="1",
-        floor="0",
-        cap="0",
-        clamp="0",
-        jitter="0",
-        repair="0",
+    sobolev_entries = indexed_lines(
+        lines, "[cmf_fine][SOBOLEV-LINE-OPERATOR]", outer_iterations
     )
-    beta_min = finite(sobolev, "beta_min")
-    beta_max = finite(sobolev, "beta_max")
-    if beta_min <= 0.0 or beta_max < beta_min:
-        raise GateError(f"invalid Sobolev beta range [{beta_min}, {beta_max}]")
+    for iteration, (_, _, sobolev) in enumerate(sobolev_entries):
+        material = material_entries[iteration + 1][2]
+        require(
+            sobolev,
+            status="PASS",
+            mode="CMFGEN_NONOVERLAP_HOMOLOGY_SIGMA0",
+            continuum_sampling="GAUSSIAN_PROFILE",
+            jbar_cells=str(args.expected_valid_cells),
+            raw_negative=material["raw_negative"],
+            mild_negative=material["mild_negative"],
+            srce_chk_expected=material["srce_chk"],
+            srce_chk_applied=material["srce_chk"],
+            all_jbar_finite="1",
+            raw_preserved="1",
+            floor="0",
+            cap="0",
+            clamp="0",
+            jitter="0",
+            repair="0",
+        )
+        beta_min = finite(sobolev, "beta_min")
+        beta_max = finite(sobolev, "beta_max")
+        if beta_min <= 0.0 or beta_max < beta_min:
+            raise GateError(
+                f"invalid Sobolev beta range [{beta_min}, {beta_max}]"
+            )
 
-    identity_entries = indexed_lines(lines, "[R6][LINE-IDENTITY]", 2)
+    identity_entries = indexed_lines(
+        lines, "[R6][LINE-IDENTITY]", publications
+    )
     for _, _, identity in identity_entries:
         require(
             identity,
@@ -253,11 +287,19 @@ def judge(args: argparse.Namespace) -> dict[str, Any]:
                 raise GateError(f"invalid R6 {key}")
     for key in ("q_set_hash", "e_set_hash", "domain_hash", "profile_hash"):
         before = identity_entries[0][2][key]
-        after = identity_entries[1][2][key]
-        if before != after:
-            raise GateError(f"R1/R2 line identity changed for {key}: {before} != {after}")
+        for publication, (_, _, identity) in enumerate(
+            identity_entries[1:], start=2
+        ):
+            after = identity[key]
+            if before != after:
+                raise GateError(
+                    f"R1/R{publication} line identity changed for {key}: "
+                    f"{before} != {after}"
+                )
 
-    coverage_entries = indexed_lines(lines, "[R6][LINE-COVERAGE]", 2)
+    coverage_entries = indexed_lines(
+        lines, "[R6][LINE-COVERAGE]", publications
+    )
     expected = {
         "q_lines": args.expected_q_lines,
         "e_lines": args.expected_e_lines,
@@ -275,9 +317,11 @@ def judge(args: argparse.Namespace) -> dict[str, Any]:
     coverage_generations = [
         integer(coverage, "generation") for _, _, coverage in coverage_entries
     ]
-    if coverage_generations != [1, 2]:
+    expected_generations = list(range(1, publications + 1))
+    if coverage_generations != expected_generations:
         raise GateError(
-            f"R6 radiation generations {coverage_generations}, expected [1, 2]"
+            f"R6 radiation generations {coverage_generations}, "
+            f"expected {expected_generations}"
         )
 
     predictor_index, predictor_line, predictor = indexed_lines(
@@ -318,30 +362,39 @@ def judge(args: argparse.Namespace) -> dict[str, Any]:
             f"invalid predictor population transition: {population_transition!r}"
         ) from exc
 
-    r7_index, r7_line, r7 = indexed_lines(
-        lines, "[R7][PHASE] event=R7_MATERIAL_PHASE_COMMITTED", 1
-    )[0]
-    if "lane=DET" not in r7_line or "iter=0" not in r7_line or "phase=A2-10" not in r7_line:
-        raise GateError(f"invalid R7 commit line: {r7_line}")
-    if "->" not in r7.get("te_generation", ""):
-        raise GateError("R7 commit lacks a Te generation transition")
-
-    comparison_index, comparison_line, _ = indexed_lines(
-        lines, "[PHYSICS-COMPARISON] lane=DET", 1
-    )[0]
-    if "iter=0" not in comparison_line or "status=COMMITTED" not in comparison_line:
-        raise GateError(f"invalid physics comparison commit: {comparison_line}")
-
-    ordering = (
-        coverage_entries[0][0],
-        predictor_index,
-        material_entries[1][0],
-        exact_entries[1][0],
-        sobolev_index,
-        coverage_entries[1][0],
-        r7_index,
-        comparison_index,
+    r7_entries = indexed_lines(
+        lines, "[R7][PHASE] event=R7_MATERIAL_PHASE_COMMITTED",
+        outer_iterations
     )
+    comparison_entries = indexed_lines(
+        lines, "[PHYSICS-COMPARISON] lane=DET", outer_iterations
+    )
+    for iteration, ((_, r7_line, r7), (_, comparison_line, _)) in enumerate(
+        zip(r7_entries, comparison_entries)
+    ):
+        require(
+            r7,
+            lane="DET",
+            iter=str(iteration),
+            phase="A2-10",
+            te_generation=f"{iteration + 1}->{iteration + 2}",
+        )
+        if "status=COMMITTED" not in comparison_line:
+            raise GateError(f"invalid physics comparison commit: {comparison_line}")
+        comparison = comparison_entries[iteration][2]
+        require(comparison, lane="DET", iter=str(iteration), status="COMMITTED")
+
+    ordering_values = [coverage_entries[0][0], predictor_index]
+    for iteration in range(outer_iterations):
+        ordering_values.extend((
+            material_entries[iteration + 1][0],
+            exact_entries[iteration + 1][0],
+            sobolev_entries[iteration][0],
+            coverage_entries[iteration + 1][0],
+            r7_entries[iteration][0],
+            comparison_entries[iteration][0],
+        ))
+    ordering = tuple(ordering_values)
     if list(ordering) != sorted(ordering) or len(set(ordering)) != len(ordering):
         raise GateError(
             "R1 -> predictor -> R2 -> R7 -> comparison ordering violated: "
@@ -352,13 +405,13 @@ def judge(args: argparse.Namespace) -> dict[str, Any]:
         "schema": "LUMINA_A210_TARGETED_GATE_V3",
         "status": "PASS",
         "mode": "A210_TARGETED_GATE",
-        "expected_outer_iterations": 1,
+        "expected_outer_iterations": outer_iterations,
         "expected_devices": args.expected_devices,
         "expected_refinements": args.expected_refinements,
         "stdout_sha256": sha256(args.stdout),
         "stderr_sha256": sha256(args.stderr),
         "repair_audit_observations": repair_observations,
-        "exact_publications": 2,
+        "exact_publications": publications,
         "exact": [
             {
                 "iterations": integer(exact, "iterations"),
@@ -396,6 +449,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--stderr", type=Path, required=True)
     parser.add_argument("--report", type=Path, required=True)
     parser.add_argument("--expected-devices", type=int, default=2)
+    parser.add_argument("--expected-outer-iterations", type=int, default=1)
     parser.add_argument("--expected-refinements", type=int, required=True)
     parser.add_argument("--expected-q-lines", type=int, default=1_391_131)
     parser.add_argument("--expected-e-lines", type=int, default=2_180_286)
@@ -415,6 +469,8 @@ def main() -> int:
     try:
         if args.expected_devices != 2:
             raise GateError("the sealed targeted gate requires exactly two devices")
+        if not 1 <= args.expected_outer_iterations <= 64:
+            raise GateError("expected outer iterations must be in 1..64")
         if not 1 <= args.expected_refinements <= 64:
             raise GateError("expected refinements must be in 1..64")
         for path in (args.stdout, args.stderr):

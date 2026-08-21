@@ -31,6 +31,8 @@ binary="$input_dir/lumina_cuda"
 checker="$input_dir/check_det_convergence.py"
 census_summarizer="$input_dir/summarize_a210_cancellation_census.py"
 targeted_gate_checker="$input_dir/check_a210_targeted_gate.py"
+l6_stager="$input_dir/stage_det_stage12_l6_probe.sh"
+l6_analyzer="$input_dir/analyze_det_stage12_l6.py"
 resolved_env="$input_dir/resolved_lumina.exports"
 iterations="$(<"$input_dir/outer_iterations.txt")"
 diagnostic_mode="$(<"$input_dir/diagnostic_mode.txt")"
@@ -51,6 +53,10 @@ case "$diagnostic_mode" in
     [[ "$iterations" == 1 ]] || \
       die "A2-10 targeted gate requires exactly one outer iteration"
     ;;
+  A210_L6_PROBE)
+    [[ "$iterations" == 2 ]] || \
+      die "A2-10 L6 probe requires exactly two outer iterations"
+    ;;
   *) die "invalid diagnostic mode: $diagnostic_mode" ;;
 esac
 [[ "$expected_sigma" =~ ^[0-9a-f]{64}$ ]] || die "invalid sigma seal"
@@ -62,6 +68,10 @@ esac
    -d "$model_dir" && \
    -d "$global_atomic_dir" && -f "$resolved_env" ]] || \
   die "incomplete staged inputs"
+if [[ "$diagnostic_mode" == A210_L6_PROBE ]]; then
+  [[ -x "$l6_stager" && -x "$l6_analyzer" ]] || \
+    die "incomplete staged L6 inputs"
+fi
 
 module load cuda/13.0.2 2>/dev/null || module load cuda 2>/dev/null || \
   die "CUDA module unavailable"
@@ -146,13 +156,26 @@ else
   [[ -z "${LUMINA_A210_CANCELLATION_CENSUS:-}" ]] || \
     die "cancellation census contaminated a flight"
 fi
-if [[ "$diagnostic_mode" == A210_TARGETED_GATE ]]; then
+if [[ "$diagnostic_mode" == A210_TARGETED_GATE ||
+      "$diagnostic_mode" == A210_L6_PROBE ]]; then
   [[ "${LUMINA_CMF_FINE_MGPU_DEVICES:-0}" == 2 ]] || \
-    die "A2-10 targeted gate requires the two-device exact owner"
+    die "A2-10 diagnostic requires the two-device exact owner"
   case "$gpu_name" in
     *A100*) ;;
-    *) die "A2-10 targeted gate requires A100 hardware: $gpu_name" ;;
+    *) die "A2-10 diagnostic requires A100 hardware: $gpu_name" ;;
   esac
+fi
+if [[ "$diagnostic_mode" == A210_L6_PROBE ]]; then
+  [[ "${LUMINA_RADEQ_DIAG_TE_K:-}" == 10020 ]] || \
+    die "L6 requested-temperature switch is not 10020 K"
+  [[ "${LUMINA_A210_SPRODUCER_CAPTURE:-0}" == 1 ]] || \
+    die "L6 raw producer capture is not armed"
+  [[ "${LUMINA_A210_INDEPENDENT_CAPTURE:-0}" == 1 ]] || \
+    die "L6 independent continuum capture is not armed"
+  [[ "${LUMINA_A210_LINE_SATURATION_DIAG:-0}" == 2 ]] || \
+    die "L6 line-saturation union diagnostic is not armed"
+  [[ "${LUMINA_A210_LINE_SATURATION_TARGET_ION:-}" == 3 ]] || \
+    die "L6 target ion is not IV"
 fi
 for zero_knob in \
   LUMINA_NLTE_LTE_FLOOR LUMINA_NLTE_FLOOR_MODE LUMINA_NLTE_FLOOR_REG \
@@ -184,6 +207,18 @@ done
   printf 'diagnostic_mode=%s\n' "$diagnostic_mode"
   printf 'envelope_refinements=%s\n' "$expected_refinements"
   printf 'argv=%q %q 1 %q spectrum nlte\n' "$binary" "$model_dir" "$iterations"
+  if [[ "$diagnostic_mode" == A210_L6_PROBE ]]; then
+    printf 'job_slurm_sha256=%s\n' \
+      "$(sha256sum "$input_dir/job.slurm" | cut -d' ' -f1)"
+    printf 'checker_sha256=%s\n' \
+      "$(sha256sum "$targeted_gate_checker" | cut -d' ' -f1)"
+    printf 'stager_sha256=%s\n' \
+      "$(sha256sum "$l6_stager" | cut -d' ' -f1)"
+    printf 'analyzer_sha256=%s\n' \
+      "$(sha256sum "$l6_analyzer" | cut -d' ' -f1)"
+    printf 'git_head=%s\n' "$(<"$input_dir/git_head.txt")"
+    printf 'python3_version=%s\n' "$(python3 --version 2>&1)"
+  fi
   env | grep -E '^(LUMINA_|OMP_|CUDA_VISIBLE_DEVICES=)' | LC_ALL=C sort
 ) > "$run_root/RUN_FOOTER.txt"
 
@@ -258,6 +293,31 @@ if [[ "$diagnostic_mode" == A210_TARGETED_GATE ]]; then
     die "A2-10 targeted comparison snapshot gate failed"
   printf 'A210_TARGETED_GATE_ACCEPT status=PASS job_id=%s run_root=%s\n' \
     "$SLURM_JOB_ID" "$run_root" | tee "$run_root/TARGETED_GATE_VERDICT.txt"
+  exit 0
+fi
+
+if [[ "$diagnostic_mode" == A210_L6_PROBE ]]; then
+  python3 "$targeted_gate_checker" \
+    --stdout "$run_root/stdout.log" \
+    --stderr "$run_root/stderr.log" \
+    --expected-devices 2 \
+    --expected-outer-iterations 2 \
+    --expected-refinements "$expected_refinements" \
+    --report "$run_root/a210_l6_targeted_gate_report.json" \
+    > "$run_root/l6_targeted_gate.stdout" \
+    2> "$run_root/l6_targeted_gate.stderr" || \
+    die "A2-10 L6 targeted log gate failed"
+  python3 "$checker" \
+    --dump-dir "$work_dir/physics_comparison" \
+    --expected-iterations 2 \
+    --tail-transitions 0 \
+    --expected-bins 1234 \
+    --report "$run_root/a210_l6_snapshot_report.json" \
+    > "$run_root/l6_snapshot.stdout" \
+    2> "$run_root/l6_snapshot.stderr" || \
+    die "A2-10 L6 comparison snapshot gate failed"
+  printf 'A210_L6_PROBE_ACCEPT status=PASS job_id=%s run_root=%s\n' \
+    "$SLURM_JOB_ID" "$run_root" | tee "$run_root/L6_PROBE_VERDICT.txt"
   exit 0
 fi
 

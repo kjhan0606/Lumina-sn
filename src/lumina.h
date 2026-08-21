@@ -287,13 +287,18 @@ typedef struct {
     double *jbar_line_det_continuum;             /* [n_lines*n_shells] */
     double *jbar_line_det_continuum_error_upper; /* certified local bound */
     int     jbar_line_det_continuum_captured;
-    /* DET-SPROD read-only producer-ledger capture: the exact two addends of
-     * the published Sobolev Jbar (jbar = continuum_term + local_emission_term)
-     * as the producer computed them, per [line*n_shells]; sentinel -1 where
-     * undefined.  n_shells records the producer stride so the consumer can
-     * fail closed on mismatch.  Never consumed by the NLTE/rate publisher. */
+    /* DET-SPROD/DET-SPRIM read-only producer-ledger capture: the exact two
+     * addends of the published Sobolev Jbar and their raw material inputs,
+     * per [line*n_shells].  Double sentinels are -1 and provenance is 0xff;
+     * valid eta>=0 and effective_tau>=-0.5 cannot collide with them.  The
+     * provenance bits are bit0=srce_chk and bit1=exact_zero.  n_shells records
+     * the common producer stride so the consumer can fail closed on mismatch.
+     * Never consumed by the NLTE/rate publisher. */
     double *line_producer_continuum_term;        /* beta*Jcont as produced */
     double *line_producer_local_emission_term;   /* (1-beta)*S as produced */
+    double *line_producer_eta;                   /* emission_per_sr */
+    double *line_producer_tau_eff;               /* effective Sobolev tau */
+    uint8_t *line_producer_provenance;           /* srce_chk | exact_zero<<1 */
     int     line_producer_terms_captured;
     int     line_producer_terms_n_shells;
     double  jbar_line_det_vdoppler_cms;  /* producer profile identity; 0 = absent */
@@ -939,6 +944,43 @@ void free_estimators(Estimators *est);      /* Phase 2 - Step 6 */
 void free_plasma_state(PlasmaState *ps);    /* Phase 2 - Step 6 */
 void free_spectrum(Spectrum *spec);         /* Phase 2 - Step 6 */
 void rescale_epoch(Geometry *geo, PlasmaState *plasma, double t_new);
+
+/* DET-SPRIM diagnostic contract helpers.  They validate opt-in capture
+ * requests and decode raw producer fields without changing physical values. */
+static inline const char *a210_sproducer_capture_request_parse(
+    const char *text, int *enabled)
+{
+    if (!enabled) return "INVALID_SPRODUCER_CAPTURE_REQUEST";
+    *enabled = 0;
+    if (!text || strcmp(text, "0") == 0) return NULL;
+    if (strcmp(text, "1") == 0) {
+        *enabled = 1;
+        return NULL;
+    }
+    return "INVALID_SPRODUCER_CAPTURE_REQUEST";
+}
+
+static inline const char *a210_sproducer_raw_decode(
+    int capture_active, int stride_ok, double eta, double tau_eff,
+    uint8_t provenance, int *defined, int *srce_chk, int *exact_zero)
+{
+    if (!defined || !srce_chk || !exact_zero)
+        return "INVALID_SPRODUCER_RAW_OUTPUT";
+    *defined = 0;
+    *srce_chk = 0;
+    *exact_zero = 0;
+    if (!capture_active || !stride_ok) return NULL;
+    if (eta == -1.0 && tau_eff == -1.0 && provenance == UINT8_MAX)
+        return NULL;
+    if ((provenance & ~3U) != 0U)
+        return "INVALID_SPRODUCER_PROVENANCE";
+    if (!isfinite(eta) || eta < 0.0 || !isfinite(tau_eff) || tau_eff < -0.5)
+        return "INVALID_SPRODUCER_RAW_FIELDS";
+    *defined = 1;
+    *srce_chk = (provenance & 1U) != 0U;
+    *exact_zero = (provenance & 2U) != 0U;
+    return NULL;
+}
 
 /* Phase 2 - Step 6: Estimator management */
 Estimators *create_estimators(int n_shells, int n_lines); /* Phase 2 - Step 6 */

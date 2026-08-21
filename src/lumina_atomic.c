@@ -1232,6 +1232,9 @@ void free_opacity_state(OpacityState *op) { /* Phase 2 - Step 11 */
     free(op->jbar_line_det_continuum_error_upper);
     free(op->line_producer_continuum_term);
     free(op->line_producer_local_emission_term);
+    free(op->line_producer_eta);
+    free(op->line_producer_tau_eff);
+    free(op->line_producer_provenance);
     free(op->tau_validity);
     free(op->line_source_validity);
     a208_publication_free(&op->cpu_opacity);

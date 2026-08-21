@@ -5,6 +5,7 @@
 #include <unistd.h>
 
 #include "radeq_publication.h"
+#include "lumina.h"
 
 static int expect_ok(const char *name, const char *reason)
 {
@@ -88,6 +89,73 @@ int main(void)
     const double te_max = 140000.0;
     const double physical[2] = {10000.0, 12000.0};
     int positive = 0;
+
+    /* DET-SPRIM NC-C1..C3: every injected failure has a named observation,
+     * followed by the same production validator passing after removal. */
+    {
+        int defined = 0, srce_chk = 0, exact_zero = 0, enabled = 0;
+        const char *reason = a210_sproducer_raw_decode(
+            1, 0, 2.0, 0.25, 0, &defined, &srce_chk, &exact_zero);
+        if (reason || defined) {
+            fprintf(stderr, "FAIL NC-C1: stride mismatch did not fail closed\n");
+            return 1;
+        }
+        printf("NC-C1 inject=STRIDE_MISMATCH status=FAIL "
+               "reason=SPRODUCER_RAW_UNAVAILABLE\n");
+        reason = a210_sproducer_raw_decode(
+            1, 1, 2.0, 0.25, 0, &defined, &srce_chk, &exact_zero);
+        if (reason || !defined) {
+            fprintf(stderr, "FAIL NC-C1: removal did not restore fields\n");
+            return 1;
+        }
+        printf("NC-C1 remove=STRIDE_MATCH status=PASS\n");
+
+        reason = a210_sproducer_capture_request_parse("2", &enabled);
+        if (!reason || strcmp(reason, "INVALID_SPRODUCER_CAPTURE_REQUEST") != 0) {
+            fprintf(stderr, "FAIL NC-C2: capture value 2 was accepted\n");
+            return 1;
+        }
+        printf("NC-C2 inject=SPRODUCER_CAPTURE_2 status=FAIL reason=%s\n",
+               reason);
+        reason = a210_sproducer_capture_request_parse("1", &enabled);
+        if (reason || enabled != 1) {
+            fprintf(stderr, "FAIL NC-C2: capture value 1 was rejected\n");
+            return 1;
+        }
+        printf("NC-C2 remove=SPRODUCER_CAPTURE_1 status=PASS\n");
+
+        reason = a210_sproducer_raw_decode(
+            1, 1, 2.0, 0.25, 4, &defined, &srce_chk, &exact_zero);
+        if (!reason || strcmp(reason, "INVALID_SPRODUCER_PROVENANCE") != 0) {
+            fprintf(stderr, "FAIL NC-C3: provenance bit pollution was accepted\n");
+            return 1;
+        }
+        printf("NC-C3 inject=PROVENANCE_BIT2 status=FAIL reason=%s\n", reason);
+        reason = a210_sproducer_raw_decode(
+            1, 1, 2.0, 0.25, 3, &defined, &srce_chk, &exact_zero);
+        if (reason || !defined || !srce_chk || !exact_zero) {
+            fprintf(stderr, "FAIL NC-C3: valid provenance was rejected\n");
+            return 1;
+        }
+        printf("NC-C3 remove=PROVENANCE_BITS_0_1 status=PASS\n");
+
+        reason = a210_sproducer_raw_decode(
+            1, 1, -1.0, -1.0, UINT8_MAX,
+            &defined, &srce_chk, &exact_zero);
+        if (reason || defined) {
+            fprintf(stderr, "FAIL DET-SPRIM sentinel was not unavailable\n");
+            return 1;
+        }
+        reason = a210_sproducer_raw_decode(
+            1, 1, 0.0, -0.5, 0, &defined, &srce_chk, &exact_zero);
+        if (reason || !defined) {
+            fprintf(stderr, "FAIL DET-SPRIM legitimate boundary hit sentinel\n");
+            return 1;
+        }
+        printf("DET-SPRIM-SENTINEL status=PASS eta_min=0 tau_eff_min=-0.5 "
+               "double_sentinel=-1 provenance_sentinel=255 collision=0\n");
+        ++positive;
+    }
 
     /* NL1: missing publication field; positive control first. */
     {
