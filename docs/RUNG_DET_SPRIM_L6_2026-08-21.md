@@ -139,6 +139,7 @@ iter0(IV 실측 후보 211,887행)에서는 미발화였으나 **iter1 의 NLTE 
 | `src/lumina_plasma.c` | `a210_line_saturation_add` 시그니처·행 구조체·ROW 인쇄 suffix 에 `producer_eta=`·`producer_tau_eff=`·`producer_srce_chk=`·`producer_exact_zero=`·`producer_raw_defined=` 추가(버퍼 확장 포함). 미정의/stride 불일치 시 기존 패턴 그대로 `UNAVAILABLE` fail-closed |
 | ★`src/lumina_atomic.c` (**개정 1 추가**) | ④ **최종 teardown**: `free_opacity_state`(`:1225`)에 신규 3배열 `free` 추가 — 기존 `line_producer_continuum_term`·`local_emission_term` 해제 쌍(`:1233-1234` 계열) 바로 곁. 해제 경로는 저장소 전체에서 **이 둘뿐**(③ 리셋·④ teardown — `line_producer_` 접촉 파일 전수 grep 실측: 본 표의 src 4파일이 전부, `.cu` 0건). ③이 NULL 을 대입하므로 ④와의 관계는 이중해제가 아니라 순수 누수였다 — 이 행이 그 누수를 막는다 |
 | ★`tests/` (해당 selftest 1파일) — **정식 구성원. 발주서가 이 행을 떨어뜨리면 그것이 곧 "사전등록 범위 좁힘" 위반이다** | 신규 필드 회귀 + 음성대조 **NC-C1~C3** (§5 P3 행이 인용하는 그 셋 — 이 행이 빠지면 P3 의 음성대조가 통째로 사라진다) |
+| ★`tests/a2_10_targeted_gate_selftest.py` (**개정 3 추가**) | 확장 플래그의 **상설** 음성대조(기존 16종에 추가; in-tree 픽스처 F1=1반복 정상형·F2=2반복 재라벨형 — P5 픽스처 생성 규칙 공유): **(i)** F1 기본 인자 ↔ 명시 `--expected-outer-iterations 1` → report **byte 동일**(기본 경로 불변) **(ii)** F1 + `N=2` → **건수 불일치** FAIL — 봉인 로그로 이미 실증된 결합 시연(운전석 재측정: `expected exactly 3 … found 2` rc=4)의 **상설화** **(iii)** F2 + `N=2` → PASS ∧ F2 + 기본 인자 → FAIL(대칭 결합) **(iv)** F2 의 **반복 1 구역에만** 비면제 repair 토큰 주입 → FAIL — 개정 2 의 "감시 축소 0" 공시를 상설로 강제. 추가 사유: GR-8/결정 8 — 4차의 일회용 시연 산출은 트리에 남지 않았다(운전석 실측) |
 
 `src/env_universe.h` **불변** — 신규 env 0. `LUMINA_A210_SPRODUCER_CAPTURE=1` 이 5배열 전부를
 게이트하고 `=2` 거부(IV S1(b) 실측)는 유지된다.
@@ -190,8 +191,8 @@ teardown 누수·이중해제를 겨눈 **런타임 게이트는 추가하지 �
 | # | 요구 | 증거 | ★음성대조 |
 |---|---|---|---|
 | **P1** | 빌드 CPU+GPU 두 타깃 에러 0·format 경고 0 | 로그 파일 보존(IDSEAL P1 형식) | (빌드 게이트 자체가 판별기) |
-| **P2** | ★노브 미설정 시 **byte-불변** — 패치 전/후 바이너리로 A2-10 selftest 출력 Tier1 대조 (**DET-SPROD 미결 2 = S1(a) 를 이번에 실행**) | `scripts/byte_parity_compare.py` 보고서 보존 | 캡처 노브 **ON** 으로 같은 대조 → 신규 필드로 **차이 검출**(감도 시연) |
-| **P3** | C selftest: 신규 필드 회귀 | 배터리 로그 | **NC-C1** stride 불일치 주입 → 행 `UNAVAILABLE` fail-closed / **NC-C2** `SPRODUCER_CAPTURE=2` → 거부 유지 / **NC-C3** provenance 비트 오염 주입 → 이름 있는 FAIL. 각각 주입 시 FAIL·제거 시 PASS 를 로그로 시연 |
+| **P2** | ★노브 미설정 시 **byte-불변** — 패치 전/후 바이너리로 A2-10 selftest 출력 Tier1 대조 (**DET-SPROD 미결 2 = S1(a) 를 이번에 실행**) | `scripts/byte_parity_compare.py` 보고서 보존 | ★오프라인 실행 불가로 판명·**철회**(운전석 실측: 캡처 경로가 `CMF_FINE_LINE_OPERATOR_CMFGEN_NONOVERLAP_SOBOLEV` fine solve 를 요구해 CPU selftest 3종 전부 ON/OFF 출력 동일) — **한계로 기재**. 대체 판별(등록): ON 경로 감도는 **봉인 런 간 차동**으로 시연된다 — 판정런 G3(`producer_raw_defined=1` 행 실재, 노브 1) × 봉인 IDSEAL 런(노브 0, 행 0). P2 의 실체(노브 미설정 byte-불변)는 이 철회와 무관하게 유지·충족 |
+| **P3** | C selftest: 신규 필드 회귀 | 해당 selftest **직접 실행** 로그 보존(rc=0·NC-C1~C3 시연·`collision=0` 포함). ★한계 기재: `selftest_det_stage12` 는 게이트 등록부가 `category=unwired`·처분 `SH-UW-3`(캠페인 밖 미착지)로 잡고 있어 **배터리 로그는 원리적으로 불가** — 배터리 편입은 SH-UW-3 의 몫이며 이 단은 배선하지 않는다(§4 목록 밖 변경 금지) | **NC-C1** stride 불일치 주입 → 행 `UNAVAILABLE` fail-closed / **NC-C2** `SPRODUCER_CAPTURE=2` → 거부 유지 / **NC-C3** provenance 비트 오염 주입 → 이름 있는 FAIL. 각각 주입 시 FAIL·제거 시 PASS 를 로그로 시연 |
 | **P4** | 판독기 검증 | `--selftest` 로그 | **NC-A1** 위조 iter1 블록(S=B) → 분기 B 산출 / **NC-A2** τ_eff 1e-9 섭동 픽스처 → G4b FAIL / **NC-A3** iter1 R7 마커 삭제 → 귀속 BLOCKED(침묵 금지) / **NC-A4** χ_eff==0·η>0 행 → INVERSION_BOUNDARY census 로 분류되고 판정은 계속(**"정당한 0"≠"무효" — 4번째 반복 방지**) / **NC-A5** IDSEAL 봉인 stderr(행 0) → `NO_ROWS` fail-closed |
 | **P5** | 런처 신규 모드·**확장 checker** 의 2-반복 거동 확정 | 봉인 로그에서 합성한 2-반복 픽스처(2번째 블록의 `iter`·세대 표지를 명시 규칙으로 재라벨 — 규칙은 픽스처 생성 스크립트에 기재; 단순 병치는 k번째=iter=k 검사에 걸려 불가)에 확장 checker(`--expected-outer-iterations 2`)·snapshot checker 실행 PASS + ★회귀 앵커: 봉인 IDSEAL stderr 에 **기본 인자** → 기존 checker 와 동일 verdict(기본 경로 불변 실증) | repair 토큰 오염 픽스처 → FAIL 시연 / ★매개변수 결합 시연: 봉인 IDSEAL stderr(1반복)에 `--expected-outer-iterations 2` → 건수 불일치 FAIL |
 
@@ -530,6 +531,8 @@ Codex 는 3차에서 **코드를 쓰다가 되돌리고** 중단했다(작업트
     {"path": "scripts/check_a210_targeted_gate.py",
      "flags_existing": ["--expected-devices", "--expected-refinements"],
      "flags_planned": ["--expected-outer-iterations"]},
+    {"path": "tests/a2_10_targeted_gate_selftest.py",
+     "flags_existing": []},
     {"path": "scripts/run_det_convergence_2026-08-08.slurm", "flags_existing": []},
     {"path": "scripts/byte_parity_compare.py", "flags_existing": []},
     {"path": "src/line_net_rate.c", "flags_existing": ["line_net_cmfgen_exponx"]}
@@ -548,3 +551,91 @@ Codex 는 3차에서 **코드를 쓰다가 되돌리고** 중단했다(작업트
 ★**PF-3 의 정직한 한계**: ⑤(2-반복 로그가 checker 를 못 통과)는 **잡지 못한다.** 그것은
 정적 참조 검사가 아니라 **의미 검사**(정확-건수 강제의 함의)이기 때문이다. 이 게이트는
 5건 중 **3건**을 발주 전에 잡는다 — 전부가 아니다. 과대 주장하지 않는다.
+
+---
+
+## 17. 4차 발주 착지 · 검수 · 게이트 실측 · 개정 3 (2026-08-21)
+
+### 17-1. 코드가 나왔다 (4차)
+
+§4 두 표와 **1:1 기계 대조: 초과 0 · 미달 0** (9파일). `src/env_universe.h` 무변경·신규 env 0.
+개정 1 이 명시 항목으로 못박은 둘 실존 — ③ `lumina_cmfgen.c:4951-4960` free+**NULL 대입**,
+④ `lumina_atomic.c:1235-1237` 최종 teardown. 센티널 −1.0 / 0xFF.
+
+**운전석 오프라인 게이트 실측** (Codex 수치 인용 아님):
+
+| 게이트 | 실측 |
+|---|---|
+| **P1** | CPU `rc=0` · **GPU `rc=0`** · 신규 error 0 |
+| **P2 실체** | 노브 미설정 시 stdout·stderr **BYTE IDENTICAL** |
+| **P3** | patched `PASS rc=0` 실패행 0/30 · baseline **동일** |
+| **P4** | `NC-A1..NC-A5=PASS` rc=0 |
+| **P5** | 기존 NC 16종 `PASS` rc=0 |
+
+### 17-2. ★잣대 사고 2건 — 둘 다 운전석
+
+**(a) 미추적 `data/` 누락으로 배터리 오귀속 직전.** 초판 게이트 사본이 `git worktree` 산물이라
+미추적 `data/` 를 못 가져왔고 `SH_GRID_UPPER_CLOSURE` 가 `levels.csv` 부재로 rc=2. **baseline
+통제군이 동일 실패**를 내어 패치 무관이 갈렸다. `data` 링크 후 양쪽 PASS 0/30.
+
+**(b) ★비교자 무효 — 사례 7-8 계급을 그대로 반복했다.** P5 를 봉인 IDSEAL 에 집행하면서
+`slurm-321104.out/.err` 을 썼다. 정본은 `input/job.slurm:242-243` 이 넘기는
+**`$run_root/stdout.log` / `stderr.log`** 다. `slurm-*.err` 은 SLURM 작업 stderr 이고 런처가
+게이트 실패 **후에** 찍은 `DET_FLIGHT_FATAL` 이 첫 줄에 있다.
+
+| 시험 | 잘못된 입력 | **정본 입력** |
+|---|---|---|
+| 구/신 checker | rc=4 FAIL (fatal 단락) | **rc=0 PASS** · report **byte 동일** |
+| `--expected-outer-iterations 2` | rc=4 (같은 fatal 사유 = 공허) | **rc=4** `expected exactly 3 '[cmf_fine][EXACT-MULTIGPU-EPOCH]' lines, found 2` |
+
+⟹ 운전석은 **"P5 음성대조가 사양대로 성립 불가"** 라고 보고했고 **그것이 틀렸다.**
+개정 2-6 의 P5 음성대조는 **정확히 작동**하며, 회귀 앵커도 "약한 앵커" 가 아니라
+**전 검사 경로를 태우는 강한 앵커**다.
+
+★**사전등록 저자의 부기 하나가 이 오류를 잡았다.** 저자는 운전석 실측이 IDSEAL 판정문의
+"정본 checker → PASS rc=0" 과 표면상 충돌함을 지적하고 입력 파일 차이를 **[추정]으로 표기해**
+확정 전 확인을 요구했다. 확인하니 정확히 그것이었다. **잘못된 철회(개정 3-4)가 계약에
+박히기 직전에 멈췄다.** 이후 P5 집행 기록은 **정본 입력 경로를 명시**한다.
+
+### 17-3. 검수 판정 — **수정 필요 (차단 1건)**
+
+Q1~Q5 재측정·자체 주입 **22건**(판독기 14 + checker 8) 통과. 특히:
+- **NC-A4 집중**: χ_eff==0·η>0 → `INVERSION_BOUNDARY`, χ_eff==0·η==0 → `EXACT_ZERO`,
+  **둘 다 G4b 는 거치고** 비율 집합에서만 제외 ⟹ 조용한 탈락도 전체 차단도 없음.
+  **"정당하게 0"≠"무효" 의 4번째 반복이 아님을 확증.**
+- `exponx` 세 갈래 정확 전사 · G4b **역산 0회** · clamp/floor/cap **0건** · §11 준수.
+- **Q2 답: 발주서 좁힘 없음** — §13-3 처분(파일 수를 세지 말고 §4 표를 지목)이 작동했다.
+
+★**차단 결함 (첫 코드측, 통산 6번째)**: `scripts/stage_det_stage12_l6_probe.sh` 가
+`cp -al` 하드링크 후 `outer_iterations.txt`·`diagnostic_mode.txt`·`requested_diag_te_K.txt` 를
+`>` 로 **제자리 truncate** — rm 목록에 없어 **봉인 IDSEAL base 에 그대로 쓴다**. 네 스크립트
+파일만 temp+`mv` 로 새 inode 를 얻는다. `rc=0` 에 `STAGE_OK` 가 찍히는 **침묵 파괴**.
+검수가 합성 base 로 e2e 재현(`1→2` · `A210_TARGETED_GATE→A210_L6_PROBE` · `19059.41…→10020`).
+**실물은 무사**(운전석 확인: `links=1`, 값 원본). 이 단의 §7 비교 기준과 G1 앵커가 판정런
+**전에** 소멸할 뻔했다 — 다시 만들 수 없는 증거다.
+Codex 는 "stager e2e 는 운전석 몫" 이라 **정직하게 신고**했고 결함은 정확히 그 사각에 있었다.
+
+### 17-4. 발주 5차 — 중단. ★운전석이 계약 밖 요구를 섞었다
+
+수리 발주에 ③(신규 플래그 음성대조를 `tests/a2_10_targeted_gate_selftest.py` 에 상설화)을
+넣었는데 그 파일은 §4 표에 없다. Codex 판정: *"§5 P5 의 시연 의무만으로 파일 변경 권한까지
+생기지는 않는다."* **옳다.** 운전석이 판단을 넘기긴 했으나 결과는 **0파일 변경**이고,
+옳은 순서는 **개정 먼저**였다. 트리거 계수 = **발주 실패 1회**(4차 성공으로 리셋된 카운터의 첫 칸).
+
+### 17-5. 개정 3 (저자=Fable) — 적용분
+
+| 쌍 | 처분 |
+|---|---|
+| **3-1**(+3-1a) | §4 에 `tests/a2_10_targeted_gate_selftest.py` 행 추가 — 상설 음성대조 4종(i~iv). 사유는 "공허 회피" 가 아니라 **일회용 시연의 상설화** |
+| **3-2** | P2 음성대조 **철회·한계 기재** + 대체 판별(봉인 런 간 차동) 등록 |
+| **3-3** | P3 증거를 "배터리 로그" → **직접 실행 로그 보존**. 배터리 편입은 `SH-UW-3` 몫 명기 |
+| **3-4** | ★**철회**(적용 안 함) — 근거였던 운전석 실측이 비교자 무효. §5 P5 는 **개정 2-6 판 유지** |
+| **3-5a** | §16 프리플라이트 선언에 새 참조 1항목 |
+
+`flags_planned → flags_existing` 이동은 **계측 커밋 안에서** 한다(모든 커밋 경계에서
+프리플라이트 green 유지). 잊으면 `reference-flag-already-present` 가 기계로 잡는다.
+
+**적용 검증**: 행 단위 diff **삭제 2행 = 3-2·3-3 의 교체 대상 그 자체**(의도 외 소실 0) ·
+프리플라이트 `changeset-consistent` / `branch-partition` / `references-resolved(refs=5)` **전부 PASS**.
+
+⟹ **집행 불가는 2건**(P2 음성대조·P3 증거)이며 **P5 는 취소**한다.
