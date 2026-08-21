@@ -490,3 +490,61 @@ Codex 는 3차에서 **코드를 쓰다가 되돌리고** 중단했다(작업트
 결함이 **얕은 데서 깊은 데로** 이동하고 있다: 파일 범위 → 문서 정합 → 게이트 설계.
 세 번 다 작업트리 clean 이었고 판정런은 한 번도 소모되지 않았다. offline-first 의
 "런 발주 3요건"이 값을 하는 자리다 — 이 다섯 건이 런 뒤에 드러났다면 각각 판정런 1회씩이다.
+
+---
+
+## 16. 기계 프리플라이트 선언 (개정 3, 2026-08-21) — 계약이 스스로를 검사한다
+
+`scripts/check_prereg_preflight.py` 가 이 블록을 읽어 발주 **전에** 계약을 검사한다.
+선언이 없으면 **거부**(fail-closed) — 조용한 건너뛰기 금지.
+
+```prereg-preflight
+{
+  "changeset": {
+    "table_heading": "### src/ — 계측 4파일 + tests/ 1파일",
+    "table_end": "`src/env_universe.h` **불변**",
+    "path_pattern": "src/[a-z_]+\\.[ch]|tests/",
+    "symbol": "line_producer_",
+    "roots": ["src"],
+    "expected_extra": ["tests/"]
+  },
+  "branches": {
+    "regimes": [[0.3, 0.99], [0.999, 1.001], [1.01, 3.0], [10.5, 60.0]],
+    "metrics": {
+      "f_super": "sum(1 for x in v if x>10)/len(v)",
+      "dev": "sum(1 for x in v if abs(x-1)>0.01)/len(v)",
+      "q50": "median(v)",
+      "near": "sum(1 for x in v if abs(x-1)<=1e-3)/len(v)"
+    },
+    "rules": [
+      {"name": "A'", "predicate": "f_super >= 0.10"},
+      {"name": "A",  "predicate": "f_super < 0.10 and dev >= 0.10 and 0.5 <= q50 < 1.0"},
+      {"name": "B",  "predicate": "near >= 0.99"}
+    ],
+    "adversarial_fixtures": [
+      {"name": "codex-counterexample-2026-08-21", "mix": [[0.8, 60], [1.0, 30], [11.0, 10]]}
+    ],
+    "residual": "C"
+  },
+  "references": [
+    {"path": "scripts/check_a210_targeted_gate.py",
+     "flags_existing": ["--expected-devices", "--expected-refinements"],
+     "flags_planned": ["--expected-outer-iterations"]},
+    {"path": "scripts/run_det_convergence_2026-08-08.slurm", "flags_existing": []},
+    {"path": "scripts/byte_parity_compare.py", "flags_existing": []},
+    {"path": "src/line_net_rate.c", "flags_existing": ["line_net_cmfgen_exponx"]}
+  ]
+}
+```
+
+**이 선언이 검사하는 것과 각각이 잡았을 실제 결함**:
+
+| 검사 | 판정식 | 잡았을 결함 |
+|---|---|---|
+| **PF-1** 변경집합 ↔ 심볼 grep | 양방향 차집합 = 공집합 | ②`lumina_atomic.c` 부재 · ③`lumina_plasma.c` 치환 소실 |
+| **PF-2** 분기 분할 | 혼합-가중치 스윕 + 회귀 픽스처에서 동시참 0·공백 0 | ④A·A′ 비배타 |
+| **PF-3** 참조 실존 | 경로 실존 · `flags_existing` 수용 · `flags_planned` **미수용** | (⑤의 절반 — 계획 플래그가 이미 있으면 잡는다) |
+
+★**PF-3 의 정직한 한계**: ⑤(2-반복 로그가 checker 를 못 통과)는 **잡지 못한다.** 그것은
+정적 참조 검사가 아니라 **의미 검사**(정확-건수 강제의 함의)이기 때문이다. 이 게이트는
+5건 중 **3건**을 발주 전에 잡는다 — 전부가 아니다. 과대 주장하지 않는다.
