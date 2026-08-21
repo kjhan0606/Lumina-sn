@@ -1,0 +1,276 @@
+# 단 사전등록 — DET-SPRIM-L6: 생산자 원시 물질 장부 + 반복 1 population 의 LTE 이탈 판정 (2026-08-21)
+
+저자 = Fable (분담 개정14: 사전등록=Fable). 발주서 앞겹 = **이 문서 원문 그대로**(재서술 금지).
+갈림길 평가·후보 기각 사유 포함. HEAD `ba24977`, branch `thenmc-macroatom-fluorescence`.
+
+## 0. 갈림길 판단 (겹 1 — 사전등록 저자 요약)
+
+1. **user 가 지시한 "생산자 실제 S 직접 캡처"는 이미 집행·판정됐다**(DET-SPROD(IV), `34717ec`,
+   판정 `docs/VERDICT_DET_SPROD_IV_2026-08-18.md`) — 참조된 메모리 인덱스가 3일 낡았다.
+2. **이 갈림길이 옳은 질문인가**: 아니다 — 그 지시의 원 의도(NO_BRACKET 귀속)는
+   `docs/FINDING_NOBRACKET_LTE_SEED_2026-08-19.md`(런 0회·오라클 무의존)로 이미 착지했고,
+   표적은 "다음 캡처"가 아니라 **"STAGE-1(고정-T 레인)이 실제로 NLTE population 을 만드는가"**
+   — 즉 DET-STAGE12 **L6** 으로 이동했다. L6 의 전제(DET-PHYSCMP 폐합)는 P-1 PASS +
+   SH-A209-IDSEAL 전폐합으로 충족됐다.
+3. **채택: `DET-SPRIM-L6`** — user 정정(원시량 η·τ_eff 장부)으로 잣대를 먼저 교정하고,
+   그 잣대로 반복 1 의 LTE 이탈을 판정하는 **한 단**. 잣대 교정 없이 L6 를 재시도하면
+   β 역산(증폭 7.6e4)과 χ_eff=0 특이점을 계승한다(잣대부터 감사).
+4. 이 단은 **부수적으로** DET-STAGE12 L4 후반부("반복 1 도달")·IDSEAL B4(반복 간 신원 불변)·
+   DET-SPROD 미결 2(S1(a) byte-불변 실행)를 회수한다.
+
+## 1. 계약 (하나)
+
+> **반복 1 의 생산자 선 물질이 원시량(η, τ_eff, provenance)으로 장부에 적히고,
+> 그로부터 S_prod = η/χ_eff 가 역산·상쇄 없이 유도되어
+> "고정-T 레인의 반복 1 population 이 LTE 를 벗어나는가"(DET-STAGE12 L6)가 판정된다.**
+
+계측(원시 장부)과 계량(L6)은 한 계약이다 — 잣대 없이 판정은 성립하지 않고, 잣대는 이
+판정런에서만 검증된다. 수리 아님·물리값 무접촉·기본 OFF.
+
+## 2. 왜 이 단인가 — 경위와 기각한 후보
+
+### 2-1. 경위
+
+- user 지시 "생산자 실제 S 직접 캡처"는 **이미 집행됐다**: DET-SPROD(IV), 커밋 `34717ec`,
+  판정 `docs/VERDICT_DET_SPROD_IV_2026-08-18.md`. 참조된 인덱스가 3일 낡았다.
+- 그 지시의 원 의도(NO_BRACKET 의 물리 귀속)는 `docs/FINDING_NOBRACKET_LTE_SEED_2026-08-19.md`
+  (런 0회·오라클 무의존)로 착지: NO_BRACKET 은 LTE 시드의 대수적 필연. 표적은
+  "LTE 시드에 RE 근을 요구하는 것이 옳은가"로 이동 → user "두 개 다" → DET-STAGE12 개설.
+- DET-STAGE12 L4 부분 PASS(사상 최초 `te_generation=1->2` 커밋,
+  `docs/VERDICT_DET_STAGE12_L4_2026-08-20.md`).
+  L6("반복 1 population 의 LTE 이탈")은 **미판정** — 커밋 직후 런이 죽었다. 그 죽음의 기전은
+  DET-PHYSCMP P-1 이 특정(`physics_comparison.c:133`, `grid_manifest_sha256` 미기재)했고
+  SH-A209-IDSEAL 이 수리·**전폐합**했다(`docs/VERDICT_A209_IDSEAL_2026-08-20.md`,
+  `[PHYSICS-COMPARISON] lane=DET iter=0 status=COMMITTED`, model rc=0). **⟹ L6 의 전제 충족.**
+- ★**발주 정정 (2026-08-21, user)**: 판정문 §3-2 의 후보명 `DET-BETAPROD`(β 적재)를 운전석
+  발주서가 **검증 없이** 전달했고, user 가 "β 는 독립값이 아니다, S 가 근본"이라 지적했다.
+  운전석 실측 + **본 사전등록 저자의 독립 검증**(§3-2)으로 확인: β 는 `exponx(τ_eff)` 의
+  순수 함수다. 표적을 **원시량 장부**로 정정한다. 이 경위는 분장 장부 대상이다.
+
+### 2-2. 기각한 후보
+
+| 후보 | 기각 사유 |
+|---|---|
+| **DET-BETAPROD** (β 장부) | β=`exponx(τ_eff)` 순수 파생값(`src/line_net_rate.c:137-167` 실측). 파생 스칼라 계측은 증상(역산 잔차)을 겨눈다. 그 목적(S2b 역산 논쟁 종결)은 원시량 캡처의 **따름정리** — 재구성 항등 G4b 가 처음으로 "구성상 참"(DET-SPROD §3-1 한계)을 넘는다 |
+| **S 자체 캡처** | S=η/χ_eff 는 χ_eff=0(inversion 경계)에서 발산. `exponx` 가 τ=0 유한극한을 뺄셈 전에 뽑는 설계(`line_net_rate.c:146-152` 주석)를 되돌리는 잣대다. 원시량이 아래층이다 |
+| **A210-ZERO-OPACITY Z-1 재착지** | 새 단 아님 — 기존 사전등록(`docs/RUNG_A210_ZERO_OPACITY_2026-08-19.md`)의 집행 잔무. 런 사망 원인 실측: `slurm-319967/8.err` = `DET_FLIGHT_FATAL A2-10 targeted gate requires A100 hardware: NVIDIA H200 NVL`(h200 배정, 템플릿 :154 가드) ⟹ a100 재제출 사안. 자유레인 4런 배터리는 전선 이동(고정레인)으로 **이 단 착지 후 재평가** — 이 단이 고정레인 census 를 부수 산출한다(§6 분기 D2) |
+| **L2 (자유레인 byte 불변)** | 위생 게이트. 열린 물리 질문 0. 후순위 유지 |
+
+### 2-3. "이 갈림길이 옳은 질문인가"
+
+"다음 캡처 단이 무엇인가"는 옳은 질문이 아니다. 캠페인의 주된 경로(배선도/물리 검사)에서
+열린 물리 질문은 하나다: **STAGE-1 이 실제로 NLTE population 을 만드는가.** 만들면
+STAGE-2(자유-T) 재시도의 근거가 생기고, 못 만들면 그것이 다음 수리 표적이다. user 정정은
+이 판정의 **잣대**를 정직하게 만든다 — 둘은 한 단이다.
+
+## 3. 기전 오프라인 특정 (전부 이 세션 실측; 추측은 [추정] 표기)
+
+### 3-1. L6 측정이 지금까지 불가능했던 이유 — 두 개의 스위치
+
+1. **phase 게이트**: Stage-4 행 조립은 `diag->active = deterministic && phase=="REQUESTED_TE"`
+   (`src/lumina_plasma.c:13971`)이고, phase 는 `a210_uniform_endpoint_phase`
+   (`:13647-13663`)가 **시행 T 벡터 == `LUMINA_RADEQ_DIAG_TE_K`** 일 때만 `REQUESTED_TE` 를 준다
+   (`a210_requested_diagnostic_te`, `src/radeq_publication.c:21-30`). 고정 레인의 시행 T =
+   핀 프로파일(전셸 10020, `/gpfs/kjhan/lumina/te_profiles/seed_uniform_10020.txt`, 값 "10020"
+   → strtod 정확 10020.0). 그런데 기존 세 런(l4/p1/idseal)은 전부
+   `LUMINA_RADEQ_DIAG_TE_K=19059.411196903675`(IDSEAL RUN_FOOTER 실측) ⟹ phase=NULL ⟹ 행 0.
+   **`LUMINA_RADEQ_DIAG_TE_K=10020` 으로 맞추면 소스 수정 없이 행이 발화한다**
+   (10020 은 LOWER/UPPER/GEOMETRIC_MID 어느 것도 아님 — 기하 중앙 = √(3500·140000)=22135.9).
+2. **반복 수**: DET 레인 반복 수 = `LUMINA_PURE_CMFGEN_ITER`(`src/lumina_cuda.cu:8050-8052`
+   → `cmfgen_run(..., pc_iter)` `:8080-8085`). 루프 구조(`src/lumina_cmfgen.c:7382-7530`):
+   pass0=init(시드 물질 예측자) → pass1=iter0(R6 생산 → R7/A2-10 → 커밋 gen 1→2 → snapshot
+   iter0000) → **pass2=iter1(R6 가 커밋된 gen-2 물질로 재수송 → A2-10 → 커밋 gen 2→3)**.
+   기존 런은 전부 `=1` ⟹ iter1 부재. 런처 템플릿(`scripts/run_det_convergence_2026-08-08.slurm`,
+   IDSEAL input/job.slurm 과 **byte 동일** 실측)의 모드 게이트가 FLIGHT≥4 / TARGETED==1 /
+   CENSUS==1 뿐 ⟹ **outer=2 를 허용하는 신규 모드가 필요하다**(런처=집행 인프라, src 아님).
+
+### 3-2. 발주 정정의 독립 검증 — 원시량이 밑바닥이다 (전부 실측)
+
+- 생산식(`src/line_net_rate.c`, `line_net_sobolev_radiation`): `continuum_term = β·J_cont`,
+  `local_emission_term = η · (c·t/ν) · companion`, `jbar = continuum + local`,
+  `companion=(1−β)/τ` (`exponx`). **S 는 형성되지 않는다.** 대입하면
+  `local = (η/χ_eff)·(1−β) = S·(1−β)` — 항등이되, τ→0 에서 companion→1/2 로 유한
+  (S→∞ 와 (1−β)→0 이 곱에서 상쇄). ⟹ **곱이 물리량이고 S 단독은 특이점을 가진다.**
+- 물질(`line_net_sobolev_material`): `η = n_u·A_ul·hν/4π`, `χ_raw = τ·ν/(c·t)`,
+  `τ_eff=τ`; srce_chk 갈래(τ<−0.5)도 `τ_eff = χ_eff·c·t/ν` 로 **같은 관계** 유지.
+  ⟹ 독립 원시쌍은 **(η, τ_eff)** + provenance(srce_chk, exact_zero). χ_eff 는
+  `τ_eff·ν/(c·t)` 로 정확 유도되므로 별도 적재는 정보 0 (본 문서가 그 대수를 사전등록).
+- 상수: `LINE_NET_H_PLANCK=6.62607015e-27`, `LINE_NET_C_LIGHT=2.99792458e10`
+  (`src/line_net_rate.c:7-8`), `LINE_NET_FOUR_PI`(`src/line_net_rate.h:14`).
+- 기존 캡처(`src/lumina_cmfgen.c:6379-6385`)는 `radiation.continuum_term`·`local_emission_term`
+  만 적는다(할당 `:6288-6301`, 플래그 `:6607`, 구조체 `src/lumina.h:295-298`). 캡처 지점의
+  스코프에 `material.emission_per_sr`·`material.effective_tau`·`material.srce_chk_applied`·
+  `material.exact_zero_provenance` 가 **이미 있다** — 확장은 같은 자리·같은 게이트다.
+- DET-SPROD §3-3 의 방어 불가 사유였던 **증폭 7.6e4** 는 전적으로 β→1 에서
+  `S = local/(1−β)` 역산 탓 — 원시량이면 **허용오차가 아니라 구성으로** 소멸한다.
+
+### 3-3. 반복 1 이 측정하는 것
+
+iter0 의 A2-10 bundle(`a210_production_bundle_ledger`, 고정 레인 분기
+`src/lumina_plasma.c:15928-15966`)이 만든 NLTE 후보가 gen-2 로 커밋되고
+(`nlte_population_candidate_commit_bundle` `:16004`), **iter1 의 R6 생산자가 그 물질을 읽는다**
+(`sobolev_upper_population_cache`, `src/lumina_cmfgen.c:6349`). ⟹ iter1 행의
+η^prod/χ_eff^prod = **커밋된 반복 1 물질의 선 소스**. LTE 시드에서는 S=B(FINDING 사슬 2:
+1282/1282 가 1±1%, median 0.999993)였으므로, **S_prod/B(10020 K) 의 1 이탈 = L6 판정량**이다.
+행은 shell 0 한정(`a210_line_saturation_add` 입구 `shell!=0` 반환) — L6 판정도 shell 0 한정.
+행↔반복 귀속은 마커 브래킷으로 결정적:
+행 블록은 해당 반복의 `[R7][PHASE] event=R7_MATERIAL_PHASE_COMMITTED lane=DET iter=k` 줄보다
+앞에 나온다(A2-10 solve 내부에서 인쇄). 반복당 bundle 1회 ⟹ SUMMARY 1개(`:15327`).
+
+### 3-4. 알려진 위험 (수리하지 않고 분기로 등록)
+
+`INDEPENDENT_SPROBE_UNDEFINED`(χ_eff==0·η>0 행)가 여전히 A2-10 트랜잭션 전체를 죽인다
+(`src/lumina_plasma.c:14089-14093` 실측 — Z-1 계측은 WITNESS 인쇄+census 만 추가, 처분 불변).
+iter0(IV 실측 후보 211,887행)에서는 미발화였으나 **iter1 의 NLTE population 에서는 미지**다.
+이 결함의 수리는 A210-ZERO-OPACITY 의 계약이며 **이 단은 손대지 않는다** — 발화 시 분기 D2.
+
+## 4. 기대 변경집합 (이 목록 밖 변경 = 실패) + V5 권한
+
+### src/ — 계측 4파일 (물리값 경로 무접촉, 기본 OFF)
+
+| 파일 | 변경 |
+|---|---|
+| `src/lumina.h` | OpacityState 에 `line_producer_eta`(double\*)·`line_producer_tau_eff`(double\*)·`line_producer_provenance`(uint8\*: bit0=srce_chk, bit1=exact_zero) 추가. 기존 두 항 배열·stride 필드는 불변 유지 |
+| `src/lumina_cmfgen.c` | 할당/해제/센티널 초기화(`:6288` 블록·`:4951` 계열)와 캡처 대입(`:6379-6385` 블록)을 같은 `sproducer_capture` 게이트 안에서 확장. 센티널: η·τ_eff = −1.0 (정당 범위 η≥0, τ_eff≥−0.5 ⟹ 충돌 없음 — srce_chk 가 τ<−0.5 를 항상 대체함을 §3-2 실측), provenance = 0xFF |
+| `src/lumina_plasma.c` | `a210_line_saturation_add` 시그니처·행 구조체·ROW 인쇄 suffix 에 `producer_eta=`·`producer_tau_eff=`·`producer_srce_chk=`·`producer_exact_zero=`·`producer_raw_defined=` 추가(버퍼 확장 포함). 미정의/stride 불일치 시 기존 패턴 그대로 `UNAVAILABLE` fail-closed |
+| `tests/` (해당 selftest 1파일) | 신규 필드 회귀 + 음성대조 NC-C1~C3 (§5) |
+
+`src/env_universe.h` **불변** — 신규 env 0. `LUMINA_A210_SPRODUCER_CAPTURE=1` 이 5배열 전부를
+게이트하고 `=2` 거부(IV S1(b) 실측)는 유지된다.
+
+**V5 권한 요청**: 이 단은 위 계측 확장을 위해 src 접촉 권한을 요청한다. 근거:
+① user 발주 정정이 원시량 장부를 표적으로 명시 ② 잣대 교정 없는 L6 는 β 역산(증폭 7.6e4)과
+χ_eff=0 특이점을 계승 — 잣대부터 감사 원칙 위반 ③ 물리값 무접촉·기본 OFF·byte-불변 게이트
+P2 로 범위 봉쇄 ④ 전례 = DET-SPROD 캡처 단(같은 자리·같은 패턴·감리 통과).
+**K-final 권한은 요청하지 않는다.**
+
+### scripts/ — 런처·판독기
+
+| 파일 | 변경 |
+|---|---|
+| `scripts/run_det_convergence_2026-08-08.slurm` | 신규 diagnostic_mode **`A210_L6_PROBE`**: outer_iterations **정확히 2** 요구, `LUMINA_CMF_FINE_MGPU_DEVICES==2`·A100 하드웨어 요구(TARGETED 와 동일), 사후게이트 = fatal_scan + `committed_count==2` + targeted 로그 게이트(동일 인자) + snapshot checker `--expected-iterations 2 --tail-transitions 0`(**수렴 주장 없음** — 스냅샷 실재·유효만) + `A210_L6_PROBE_ACCEPT` 토큰 |
+| `scripts/stage_det_stage12_l6_probe.sh` (신설) | IDSEAL 스테이징 클론 + §7 env delta **만** 적용 + 스테이징 신선성 봉인(G1): job.slurm·checker·stager 를 repo HEAD 에서 신선 복사하고 sha256 을 RUN_FOOTER 에 기재, git provenance 신선 캡처, `python3 --version` 기재 (IDSEAL §3(b)·§6 최소 요건 — §L 수리 단이 미착지이므로 이 단이 그 최소치를 집행) |
+| `scripts/analyze_det_stage12_l6.py` (신설) | 판독기: iter 마커 브래킷 → 행 파싱 → 재구성 항등(G4b) → S_prod/B 분포·분기(G5) → census(INVERSION_BOUNDARY·NEGATIVE_CHI·UNAVAILABLE) → 기계 verdict JSON. `--selftest` 에 NC-A1~A5 내장. B_ν·재구성 상수는 §3-2 의 소스 정의값 전사, exponx 는 `line_net_rate.c:137-167` 의 독립 파이썬 전사 |
+
+### 기타
+
+- `docs/RUNG_DET_SPRIM_L6_2026-08-21.md`(본 문서)·`validation/det_stage12/`(산출).
+- **선행 정리(이 단의 변경집합 아님)**: 작업트리의 미커밋 드리프트
+  `scripts/stage_a210_line_saturation_diagnostic.sh`(+`LUMINA_FIXED_TE_PROFILE` 관통 1줄 —
+  DET-STAGE12 스테이징의 지연 착지)를 **스테이징 전에** 별도 커밋 또는 원복(변조 태스크 0 확인).
+- 커밋 규율: 사전등록 커밋(본 문서) → 계측·스크립트 커밋 **1개** → 판정문 커밋.
+
+## 5. 게이트 표 (각 행: 요구 / 증거 / ★음성대조)
+
+### 오프라인 (런 전 — offline-first ②)
+
+| # | 요구 | 증거 | ★음성대조 |
+|---|---|---|---|
+| **P1** | 빌드 CPU+GPU 두 타깃 에러 0·format 경고 0 | 로그 파일 보존(IDSEAL P1 형식) | (빌드 게이트 자체가 판별기) |
+| **P2** | ★노브 미설정 시 **byte-불변** — 패치 전/후 바이너리로 A2-10 selftest 출력 Tier1 대조 (**DET-SPROD 미결 2 = S1(a) 를 이번에 실행**) | `scripts/byte_parity_compare.py` 보고서 보존 | 캡처 노브 **ON** 으로 같은 대조 → 신규 필드로 **차이 검출**(감도 시연) |
+| **P3** | C selftest: 신규 필드 회귀 | 배터리 로그 | **NC-C1** stride 불일치 주입 → 행 `UNAVAILABLE` fail-closed / **NC-C2** `SPRODUCER_CAPTURE=2` → 거부 유지 / **NC-C3** provenance 비트 오염 주입 → 이름 있는 FAIL. 각각 주입 시 FAIL·제거 시 PASS 를 로그로 시연 |
+| **P4** | 판독기 검증 | `--selftest` 로그 | **NC-A1** 위조 iter1 블록(S=B) → 분기 B 산출 / **NC-A2** τ_eff 1e-9 섭동 픽스처 → G4b FAIL / **NC-A3** iter1 R7 마커 삭제 → 귀속 BLOCKED(침묵 금지) / **NC-A4** χ_eff==0·η>0 행 → INVERSION_BOUNDARY census 로 분류되고 판정은 계속(**"정당한 0"≠"무효" — 4번째 반복 방지**) / **NC-A5** IDSEAL 봉인 stderr(행 0) → `NO_ROWS` fail-closed |
+| **P5** | 런처 신규 모드·checker 의 2-반복 거동 확정 | 봉인 로그 2개를 이어 만든 합성 픽스처에 targeted checker·snapshot checker 실행 PASS | repair 토큰 오염 픽스처 → checker FAIL 시연 |
+
+### 판정런 (1회)
+
+| # | 요구 (기계 판정식) | 증거 | ★음성대조 |
+|---|---|---|---|
+| **G1** | 스테이징 신선성: RUN_FOOTER 의 job.slurm/checker/stager sha == repo HEAD blob sha; `input/git_head.txt` == 발주 HEAD; python3 버전 기재 | RUN_FOOTER·input/ | 검증 스크립트를 **IDSEAL 런 루트**에 적용 → FAIL (그 git_head 는 `dd9f7c18` 화석 — IDSEAL §6 실측) |
+| **G2** | `[R7][PHASE] event=R7_MATERIAL_PHASE_COMMITTED lane=DET iter=1 … te_generation=2->3` 정확 1건 + `[PHYSICS-COMPARISON] lane=DET iter=1 status=COMMITTED` 1건 + `physics_DET_iter0001.{manifest.json,shell.csv,spectral.csv}` 실재 (★DET-STAGE12 L4 후반부 최초 충족) | stderr grep + 파일 실재 | 미도달 시 분기 D1/D2 (§6) — PASS 로 위장 불가(마커 부재는 판독기 BLOCKED, NC-A3) |
+| **G3** | iter0·iter1 각 ROW ≥1, `producer_terms_defined=1`·`producer_raw_defined=1`·`independent_fields_defined=1` 인 행 100%, UNAVAILABLE=0 (위반 행 존재 시 미결 기재) | 판독기 census | IDSEAL stderr(DIAG_TE_K 불일치 → 행 0) → `NO_ROWS` (NC-A5) |
+| **G4** | ★잣대 앵커(iter0): χ_eff≠0 행의 S_prod/B(10020 K) 중앙 ∈ [0.999, 1.001] — FINDING 사슬 2 의 고정레인 재확인. **G5 는 G4 통과를 전제**(잣대 먼저) | 판독기 | 앵커 실패 = 잣대/상수 결함 ⟹ L6 판정 금지·미결 기재 |
+| **G4b** | ★재구성 항등(전 행): β_rec=exponx_py(τ_eff^prod), local_rec=η^prod·(c·t/ν)·companion_rec, cont_rec=β_rec·J_cont 에 대해 캡처 두 항·행 Jbar 와 상대편차 ≤1e-12 (Jbar=0 행은 census) — **뺄셈·역산 0 회**, "구성상 참" 한계(§3-1)를 처음 넘는 검증 | 판독기 | NC-A2 |
+| **G5** | **L6 판정(계약 본체)**: iter1 의 χ_eff≠0 행 S_prod/B 분포 → §6 분기 A/A′/B/C 중 하나로 기계 판정 | 판독기 verdict JSON | 분기 정의가 상호 배타·전수(C 가 잔여 전부) + NC-A1 |
+| **G6** | 부수(IDSEAL B4 회수): iter0000 vs iter0001 manifest 의 `grid_manifest_sha256` 동일 ∧ `te_manifest_sha256` 동일 | manifest 판독 | manifest 사본 1바이트 조작 → 검출 시연 |
+| **G7** | 상류 무섭동: `[A2-10][LINE-COEFFICIENT-IDENTITY] phase=INTERIOR` 50줄이 IDSEAL 런과 byte 동일 (L4 §3-1 크로스빌드 방식) | diff | (결정론 자체가 판별기 — 불일치 = 즉시 FAIL) |
+
+## 6. 기대치 사전등록 (빗나가면 그것이 정보다)
+
+런 구성이 낼 수 있는 관측만 등재한다(IDSEAL 감리 R3 위생 — B4 사각 재발 금지).
+
+| # | 기대 | 수치·범위 |
+|---|---|---|
+| **E1** | iter0 행 수 ≈1,282(union 선정 재현), UNAVAILABLE 0, S_prod/B 중앙 1±1e-4 (IV 0.999993 등급, stdev(log10) ~5e-7 등급) | G3·G4 |
+| **E2** | 재구성 항등 전 행 ≤1e-12 | G4b |
+| **E3** | iter1 도달(gen 2→3 커밋) | G2. 실패 시 D1/D2 |
+| **E4** | iter1 분포 — **1순위 [추정]**: 분기 A (2준위: S=(1−ε)J̄+εB, J̄/B∈[0.71,1.0]@shell0 ⟹ 산란지배 선 S/B~0.7-1.0). A′·B 도 실질 확률 있는 대안 — 기대 드라마화 금지, 사전 확률 부여 안 함 | G5 |
+| **E5** | 관측 등록(게이트 하중 0): iter1 의 τ_eff^prod vs 소비자 tau_effective(매칭 세대) — IV 의 2e5× 불일치·소비자 초열 S(1.9e5·B, DET-SPROD §3-5 미화해)가 매칭-T 에서 어떻게 되는지 원시량 수준에서 최초 판독 | 보고서 |
+| **E6** | 자원: 경과 ≈ 2×1:56 + 여유(`--time=10:00:00`) [추정]; 호스트 메모리 +≈1.85GB (2,180,286선×50셸: double 2배열 872MB×2 + uint8 109MB — 기존 4배열 3.5GB 위에) [계산] | — |
+
+**분기 (상호 배타·전수 — 어느 쪽이든 단은 계량으로 착지)**
+
+| 분기 | 판정식 (χ_eff≠0 행) | 함의 |
+|---|---|---|
+| **A** | ≥10% 행이 \|S/B−1\|>0.01 ∧ q50(S/B)∈[0.5,1.0) | STAGE-1 목적(NLTE population) 달성 실증 → 자유-T 재시도 근거 |
+| **A′** | ≥10% 행이 S/B>10 | 초열 이탈 — IV 소비자 초열이 매칭-T 에서 재현 ⟹ 후보 단: candidate solve 감사 |
+| **B** | ≥99% 행이 \|S/B−1\|≤1e-3 | population 공급이 복사장 미반영 ⟹ 후보 단: A2-07 배선 감사 |
+| **C** | 그 외 | 미결 기재 + 분포 전량 보고 |
+| **D1** | iter1 미도달, 이름 있는 차단 | 차단 사유·자리 = 발견(그 사유가 다음 단). 산출물은 보존된다(IDSEAL 전례: 사후게이트 사망 ≠ 증거 소멸) |
+| **D2** | `INDEPENDENT_SPROBE_UNDEFINED` 차단 | WITNESS 행 = **고정레인 zero-opacity census** ⟹ A210-ZERO-OPACITY 수리의 우선순위 증거. 단은 부분 착지(계측 성립·L6 미판정), L6 재시도는 Z-O 수리 후 |
+
+## 7. 판정런 구성 (발주서 뒷겹과의 대조 기준 — 좁힘 검출용)
+
+기준 = IDSEAL RUN_FOOTER(봉인). **resolved env diff 가 아래 5건과 정확히 일치**해야 한다:
+
+| env/구성 | IDSEAL | 이 단 | 사유 |
+|---|---|---|---|
+| `LUMINA_PURE_CMFGEN_ITER` (+`outer_iterations.txt`+argv[3]) | 1 | **2** | §3-1 반복 수 |
+| `diagnostic_mode.txt` | A210_TARGETED_GATE | **A210_L6_PROBE** | 런처 모드 |
+| `LUMINA_RADEQ_DIAG_TE_K` | 19059.411196903675 | **10020** | §3-1 phase 스위치 (핀과 strtod 정확 일치) |
+| `LUMINA_A210_SPRODUCER_CAPTURE` | 0 | **1** | 5배열 캡처 |
+| `LUMINA_A210_INDEPENDENT_CAPTURE` | 0 | **1** | J_cont(재구성 G4b 필요) |
+
+그 외 전부 불변(`LUMINA_FIXED_TE_PROFILE`=seed_uniform_10020, `LINE_SATURATION_DIAG=2`,
+`TARGET_ION=3`, sigma sha `90d04042…` 등). 덱·`/gpfs` 정본 불변.
+제출: **slurm, partition `a100` 한정, `--gres=gpu:2`, `--mem` 명시**, job-name `LUMINA_` 접두,
+OWNER.txt(`DO_NOT_CANCEL`). syn101 수동 제출 금지. grammar 용 `--exclude` 부착 금지(별개 클러스터).
+소형 오프라인(P2~P5)은 grammar-debug(nested ssh) — 로그인 노드 연산 금지.
+
+## 8. 이 단이 모르는 것 (추측으로 메우지 않는다)
+
+1. **iter1 이 실제로 도달하는가** — physics_comparison 의 반복 ≥2 거동은 미시험(B4 사각),
+   SPROBE 차단 위험(§3-4), 그 밖의 미지 가드. 분기 D1/D2 가 받는다.
+2. **분기 A/A′/B 의 사전 확률** — 부여하지 않는다. E4 의 정량은 2준위 [추정]이다.
+3. **iter1 행 수** — union 선정이 population 의존이라 iter0 과 다를 수 있다. 행 매칭은
+   line id 교집합으로만.
+4. **E5 의 정량 기대** — 생산/소비 두 코드 경로(`cmf_fine_line_material` vs
+   `line_net_sobolev_material`)가 다르므로 없음. 관측만.
+5. **targeted checker 의 2-반복 로그 거동** — P5 에서 오프라인 확정. 빗나가면 런처 계열
+   변경으로 개정 기재 후 진행(런 발주 전).
+6. **candidate solve(A2-07) 내부가 어떤 rates 로 도는지** — 이 단은 출력만 계량한다.
+7. **a100 2-반복 wallclock·정확한 RAM 증분** — [추정]/[계산], 실측으로 대체된다.
+
+## 9. 분장 장부 (집행 후 운전석이 "실제"·"위반" 을 채운다 — 규약상 담당만 적는 것 금지)
+
+| 단계 | 규약상 담당 (개정14) | **실제** | 위반 |
+|---|---|---|---|
+| 갈림길 평가·사전등록(본 문서) | Fable | | |
+| 발주(앞겹=본 문서 원문 첨부, 재서술 금지) | 운전석 | | |
+| 코딩(§4 변경집합) | Codex | | |
+| 코드 검수(고정질문에 *"발주서가 사전등록의 범위를 좁혔는가"* 포함) | Fable | | |
+| 빌드·오프라인 게이트 P1~P5·스테이징·제출 | 운전석 | | |
+| 판독기 실행·계측 패킷 | 운전석 | | |
+| 판정(판정문 저작) | Fable (fresh) | | |
+| 판정 감리 | Fable (★판정과 **다른** fresh 컨텍스트·고정질문 4) | | |
+| 감리 반영·대장·커밋 | 운전석 | | |
+
+## 10. 판정 절차
+
+- 판정 = Fable **fresh 컨텍스트**(본 사전등록 + 봉인 산출물 + 운전석 패킷 제공; 판정 하중
+  항목은 판정자가 직접 재실측 — IDSEAL 전례).
+- 감리 = **또 다른 fresh Fable**(자기 채점 금지), 고정질문 4.
+- 폐합 전 감리 필수. 판정문은 §6 분기 중 어느 것이 발화했는지 축자 기재하고,
+  분기 밖 결과는 폐합 금지·미결 기재.
+- 오라클 규율: 이 단의 어떤 게이트·기대치도 CMFGEN 런 수치를 인용하지 않는다
+  (B_ν 는 물리 상수 함수, 앵커는 자체 봉인 로그).
+- clamp/floor/cap 0. 판독기의 census 분류(INVERSION_BOUNDARY·NEGATIVE_CHI)는 물리값을
+  바꾸지 않는 분석 분류이며 전량 보고된다 — 조용한 탈락 금지.
+
+## 11. 이 단이 하지 않는 것
+
+- `INDEPENDENT_SPROBE_UNDEFINED` 차단의 **수리**(A210-ZERO-OPACITY 계약 — 발화 시 D2 로
+  증거만 넘긴다).
+- 자유-T 레인 접촉·L2·핀 온도 선택·수렴 주장(snapshot checker 는 `--tail-transitions 0`).
+- CMFGEN 정량 대조(잣대 미수렴 — 별도 단).
+- S2b 구판(β 역산) 재판정 — G4b 가 원시량으로 대체한다.
