@@ -153,7 +153,8 @@ P2 로 범위 봉쇄 ④ 전례 = DET-SPROD 캡처 단(같은 자리·같은 패
 
 | 파일 | 변경 |
 |---|---|
-| `scripts/run_det_convergence_2026-08-08.slurm` | 신규 diagnostic_mode **`A210_L6_PROBE`**: outer_iterations **정확히 2** 요구, `LUMINA_CMF_FINE_MGPU_DEVICES==2`·A100 하드웨어 요구(TARGETED 와 동일), 사후게이트 = fatal_scan + `committed_count==2` + targeted 로그 게이트(동일 인자) + snapshot checker `--expected-iterations 2 --tail-transitions 0`(**수렴 주장 없음** — 스냅샷 실재·유효만) + `A210_L6_PROBE_ACCEPT` 토큰 |
+| `scripts/run_det_convergence_2026-08-08.slurm` | 신규 diagnostic_mode **`A210_L6_PROBE`**: outer_iterations **정확히 2** 요구, `LUMINA_CMF_FINE_MGPU_DEVICES==2`·A100 하드웨어 요구(TARGETED 와 동일), 사후게이트 = fatal_scan + `committed_count==2` + targeted 로그 게이트(`--expected-outer-iterations 2` — 개정 2 로 확장된 checker, 아래 행) + snapshot checker `--expected-iterations 2 --tail-transitions 0`(**수렴 주장 없음** — 스냅샷 실재·유효만) + `A210_L6_PROBE_ACCEPT` 토큰 |
+| `scripts/check_a210_targeted_gate.py` (**개정 2 추가**) | `--expected-outer-iterations N`(기본 1 — 기본 경로 거동 불변, TARGETED 모드 호출부 무변경) 매개변수화. **감시 축소 0**: repair-토큰 스캔(floor/cap/clamp/jitter/repair)은 **로그 전체**(반복 1 포함)에서 유지. 정확-건수 구조 검사를 N 으로 일반화 — `[R7][PHASE] … COMMITTED` **N건**(k번째가 `iter=k`·`te_generation=k+1->k+2`), `[PHYSICS-COMPARISON] lane=DET` **N건**(k번째 `iter=k`), `[cmf_fine][EXACT-MULTIGPU-EPOCH]` **N+1건**(패스 수=N+1 — `src/lumina_cmfgen.c:7382` 루프 실측; N=1 에서 기존 기대 2 와 합치, 최종 확정은 P5), report 에 `expected_outer_iterations` 실값 기재. 반복 ≥1 구조 검사는 **신규 감시(추가)**다 |
 | `scripts/stage_det_stage12_l6_probe.sh` (신설) | IDSEAL 스테이징 클론 + §7 env delta **만** 적용 + 스테이징 신선성 봉인(G1): job.slurm·checker·stager 를 repo HEAD 에서 신선 복사하고 sha256 을 RUN_FOOTER 에 기재, git provenance 신선 캡처, `python3 --version` 기재 (IDSEAL §3(b)·§6 최소 요건 — §L 수리 단이 미착지이므로 이 단이 그 최소치를 집행) |
 | `scripts/analyze_det_stage12_l6.py` (신설) | 판독기: iter 마커 브래킷 → 행 파싱 → 재구성 항등(G4b) → S_prod/B 분포·분기(G5) → census(INVERSION_BOUNDARY·NEGATIVE_CHI·UNAVAILABLE) → 기계 verdict JSON. `--selftest` 에 NC-A1~A5 내장. B_ν·재구성 상수는 §3-2 의 소스 정의값 전사, exponx 는 `line_net_rate.c:137-167` 의 독립 파이썬 전사 |
 
@@ -192,7 +193,7 @@ teardown 누수·이중해제를 겨눈 **런타임 게이트는 추가하지 �
 | **P2** | ★노브 미설정 시 **byte-불변** — 패치 전/후 바이너리로 A2-10 selftest 출력 Tier1 대조 (**DET-SPROD 미결 2 = S1(a) 를 이번에 실행**) | `scripts/byte_parity_compare.py` 보고서 보존 | 캡처 노브 **ON** 으로 같은 대조 → 신규 필드로 **차이 검출**(감도 시연) |
 | **P3** | C selftest: 신규 필드 회귀 | 배터리 로그 | **NC-C1** stride 불일치 주입 → 행 `UNAVAILABLE` fail-closed / **NC-C2** `SPRODUCER_CAPTURE=2` → 거부 유지 / **NC-C3** provenance 비트 오염 주입 → 이름 있는 FAIL. 각각 주입 시 FAIL·제거 시 PASS 를 로그로 시연 |
 | **P4** | 판독기 검증 | `--selftest` 로그 | **NC-A1** 위조 iter1 블록(S=B) → 분기 B 산출 / **NC-A2** τ_eff 1e-9 섭동 픽스처 → G4b FAIL / **NC-A3** iter1 R7 마커 삭제 → 귀속 BLOCKED(침묵 금지) / **NC-A4** χ_eff==0·η>0 행 → INVERSION_BOUNDARY census 로 분류되고 판정은 계속(**"정당한 0"≠"무효" — 4번째 반복 방지**) / **NC-A5** IDSEAL 봉인 stderr(행 0) → `NO_ROWS` fail-closed |
-| **P5** | 런처 신규 모드·checker 의 2-반복 거동 확정 | 봉인 로그 2개를 이어 만든 합성 픽스처에 targeted checker·snapshot checker 실행 PASS | repair 토큰 오염 픽스처 → checker FAIL 시연 |
+| **P5** | 런처 신규 모드·**확장 checker** 의 2-반복 거동 확정 | 봉인 로그에서 합성한 2-반복 픽스처(2번째 블록의 `iter`·세대 표지를 명시 규칙으로 재라벨 — 규칙은 픽스처 생성 스크립트에 기재; 단순 병치는 k번째=iter=k 검사에 걸려 불가)에 확장 checker(`--expected-outer-iterations 2`)·snapshot checker 실행 PASS + ★회귀 앵커: 봉인 IDSEAL stderr 에 **기본 인자** → 기존 checker 와 동일 verdict(기본 경로 불변 실증) | repair 토큰 오염 픽스처 → FAIL 시연 / ★매개변수 결합 시연: 봉인 IDSEAL stderr(1반복)에 `--expected-outer-iterations 2` → 건수 불일치 FAIL |
 
 ### 판정런 (1회)
 
@@ -222,10 +223,17 @@ teardown 누수·이중해제를 겨눈 **런타임 게이트는 추가하지 �
 
 **분기 (상호 배타·전수 — 어느 쪽이든 단은 계량으로 착지)**
 
+정의: `f_super` := iter1 의 χ_eff≠0 행 중 S/B>10 인 행의 비율.
+평가 순서(이중 안전): D2 → D1 → A′ → A → B → C, 첫 일치가 verdict. 단 아래 판정식은
+순서 없이도 상호배타가 되도록 배제조건을 명문화했다(A↔A′ 는 f_super 10% 문턱으로,
+A↔B·A′↔B 는 산술로 배타: B 는 0.01 초과·S/B>10 행을 ≤1%<10% 로 강제).
+★분기는 라벨이지 필터가 아니다 — 어느 분기가 발화하든 verdict JSON 은 f_super 와
+분포 전량(분위수·census)을 보고한다.
+
 | 분기 | 판정식 (χ_eff≠0 행) | 함의 |
 |---|---|---|
-| **A** | ≥10% 행이 \|S/B−1\|>0.01 ∧ q50(S/B)∈[0.5,1.0) | STAGE-1 목적(NLTE population) 달성 실증 → 자유-T 재시도 근거 |
-| **A′** | ≥10% 행이 S/B>10 | 초열 이탈 — IV 소비자 초열이 매칭-T 에서 재현 ⟹ 후보 단: candidate solve 감사 |
+| **A** | **f_super<10%** ∧ ≥10% 행이 \|S/B−1\|>0.01 ∧ q50(S/B)∈[0.5,1.0) | STAGE-1 목적(NLTE population) 달성 실증 → 자유-T 재시도 근거. f_super>0 이면 그 행들은 census 로 기재(대장 후보)하되 인증은 유지된다 |
+| **A′** | **f_super ≥ 10%** (다른 조건과 무관하게 A 에 우선) | 초열 이탈 — IV 소비자 초열(DET-SPROD §3-5, 1.9e5·B 미화해)이 매칭-T 에서 재현 ⟹ 후보 단: candidate solve 감사. ★우선 사유: 두 자릿수 초열 비율은 실물 다준위 형광일 수도 결함일 수도 있어 **귀속 전에는 A 의 인증(자유-T 재시도 근거)을 발행할 수 없다** — 분포의 나머지가 A 형태여도 그 관측은 verdict 에 병기만 한다 |
 | **B** | ≥99% 행이 \|S/B−1\|≤1e-3 | population 공급이 복사장 미반영 ⟹ 후보 단: A2-07 배선 감사 |
 | **C** | 그 외 | 미결 기재 + 분포 전량 보고 |
 | **D1** | iter1 미도달, 이름 있는 차단 | 차단 사유·자리 = 발견(그 사유가 다음 단). 산출물은 보존된다(IDSEAL 전례: 사후게이트 사망 ≠ 증거 소멸) |
@@ -406,3 +414,79 @@ Codex 는 2차에서도 **한 줄도 쓰지 않고 중단**했다. 신고: *"§4
 원문 첨부)가 설계대로 작동한 결과다 — 발주가 계약을 좁히거나 계약이 스스로 모순되면
 **두 문서의 불일치로 드러난다**. 코더에게 "계약과 어긋나면 멈추고 보고하라"를 준 것이
 이 단에서 세 번 값을 했다.
+
+---
+
+## 15. 발주 3차 — 또 중단 (2026-08-21). 이번엔 **게이트 설계** 결함 2건
+
+Codex 는 3차에서 **코드를 쓰다가 되돌리고** 중단했다(작업트리 clean). 신고 2건 모두 실물이며
+운전석이 기계로 검증했다.
+
+### 15-1. 신고 ④ — G5 분기 A·A′ 가 상호 배타가 아니었다
+
+§6 이 *"분기 (상호 배타·전수)"* 라 선언했으나 판정식이 그렇지 않았다. **운전석 재계산**:
+
+```
+분포 60% at S/B=0.8 · 30% at 1.0 · 10% at 11
+  q50=0.8  이탈행 70%  S/B>10 행 10%
+  A = (70%>=10%) and (0.5<=0.8<1.0) = True     A' = (10%>=10%) = True   ⟹ 동시 참
+```
+
+⟹ 판독기가 **유일한 verdict JSON 을 만들 수 없다**. G5 는 계약 본체(§1)의 판정이므로
+이대로면 단이 착지할 수 없었다. 가상의 분포도 아니다 — DET-SPROD §3-5 의 소비자 초열
+(1.9e5·B)이 미화해로 남아 있어 A 와 A′ 가 섞인 분포가 나올 실질 가능성이 있다.
+
+**개정 2-1~2-3 으로 해소**: `f_super` 정의 신설 + A 에 `f_super<10%` 배제조건 + A′ 우선.
+저자의 우선 근거: *두 자릿수 초열 비율은 실물 다준위 형광일 수도 결함일 수도 있어
+(parity26 전례: J/B 22-59 형광 초열은 실물) **귀속이 인증에 선행**해야 한다* — A 가 발행할
+인증("자유-T 재시도 근거")을 미귀속 관측이 오염하게 두지 않는다.
+
+**운전석 기계 검증**: Codex 반례 → `(A,A′,B)=(False,True,False)`. 무작위 20만 분포에서
+**두 분기 동시 참 0건**.
+
+### 15-2. 신고 ⑤ — 2-반복 로그는 기존 targeted checker 를 통과할 수 없었다
+
+§4 가 신규 모드의 사후게이트로 *"targeted 로그 게이트(**동일 인자**)"* 를 요구했으나
+**성립 불가**였다. `scripts/check_a210_targeted_gate.py` 실측:
+
+```python
+:53   if len(found) != count: raise GateError(...)        # ★정확 N건 강제
+:126  indexed_lines(..., "[cmf_fine][EXACT-MULTIGPU-EPOCH]", 2)
+:321  indexed_lines(..., "[R7][PHASE] event=R7_MATERIAL_PHASE_COMMITTED", 1)  + "iter=0" 고정
+:329  indexed_lines(..., "[PHYSICS-COMPARISON] lane=DET", 1)                  + "iter=0" 고정
+:355  "expected_outer_iterations": 1
+```
+2-반복 런은 세 자리 전부 건수 불일치다. 게다가 G2 는 `iter=1` 커밋을 요구하므로 **계약이
+스스로 "checker 가 거부할 로그"를 요구**하고 있었다.
+
+**개정 2-4~2-6 으로 해소 (선택지 ⓐ)**: checker 를 `--expected-outer-iterations N`(기본 1)로
+매개변수화해 변경집합에 1행 추가. 저자가 ⓑ(iter0-prefix 한정 검사)를 기각한 사유 —
+*이 단의 표적인 **반복 1 을 repair-토큰 감시에서 제외**하는 감시 축소*.
+
+★**감시 변화 공시 (축소 0)**: 제외되는 로그 줄 없음 — repair-토큰 스캔은 로그 전체 유지.
+반복 ≥1 의 구조 검사(k번째 commit = `iter=k` · 세대 `k+1->k+2`)는 **신규 감시(추가)**다.
+
+### 15-3. 개정 형식 — 절 통째 교체를 금지했다
+
+§14 의 사고(개정 1 이 행 하나를 소리 없이 치환) 때문에 이번 개정은 **`OLD:`/`NEW:` 쌍 6개**
+로만 받았다. 운전석이 기계로 적용하고 **행 단위 diff** 로 검증:
+
+```
+삭제된 행 4 = 개정 2-2·2-3·2-4·2-6 의 교체 대상 그 자체  ⟹ 의도 외 소실 0
+§4 src 표: lumina.h · lumina_cmfgen.c · lumina_plasma.c · lumina_atomic.c · tests/  (5행 유지)
+§4 scripts 표: slurm · check_a210_targeted_gate.py · stager · analyzer            (4행)
+```
+
+### 15-4. 누적 — 계약 결함 5건, 전부 구현 착수 전
+
+| 회차 | 결함 | 주인 |
+|---|---|---|
+| 1차 | `tests/` 탈락 (음성대조 소실) | 운전석 발주서 |
+| 1차 | `lumina_atomic.c` 부재 (teardown 누수) | 사전등록 |
+| 2차 | `lumina_plasma.c` 치환 소실 (판독기 미도달) | 개정 1 + **운전석 검수** |
+| 3차 | A·A′ 비배타 (verdict 불능) | 사전등록 |
+| 3차 | targeted checker 2-반복 불가 (계약 자기모순) | 사전등록 |
+
+결함이 **얕은 데서 깊은 데로** 이동하고 있다: 파일 범위 → 문서 정합 → 게이트 설계.
+세 번 다 작업트리 clean 이었고 판정런은 한 번도 소모되지 않았다. offline-first 의
+"런 발주 3요건"이 값을 하는 자리다 — 이 다섯 건이 런 뒤에 드러났다면 각각 판정런 1회씩이다.
