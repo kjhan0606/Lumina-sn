@@ -126,14 +126,18 @@ iter0(IV 실측 후보 211,887행)에서는 미발화였으나 **iter1 의 NLTE 
 
 ## 4. 기대 변경집합 (이 목록 밖 변경 = 실패) + V5 권한
 
-### src/ — 계측 4파일 (물리값 경로 무접촉, 기본 OFF)
+> **개정 1 (2026-08-21, 저자=Fable)**: `src/lumina_atomic.c` 행 누락을 Codex 발주-즉시 신고로
+> 적발, 추가했다(경위는 §13). 발주 1차가 `tests/` 행을 오독으로 탈락시킨 건은
+> 운전석 위반으로 분장 장부에 기재된다 — 아래 표의 **5행 전부가 변경집합의 정식 구성원**이다.
+
+### src/ — 계측 4파일 + tests/ 1파일 (물리값 경로 무접촉, 기본 OFF)
 
 | 파일 | 변경 |
 |---|---|
 | `src/lumina.h` | OpacityState 에 `line_producer_eta`(double\*)·`line_producer_tau_eff`(double\*)·`line_producer_provenance`(uint8\*: bit0=srce_chk, bit1=exact_zero) 추가. 기존 두 항 배열·stride 필드는 불변 유지 |
-| `src/lumina_cmfgen.c` | 할당/해제/센티널 초기화(`:6288` 블록·`:4951` 계열)와 캡처 대입(`:6379-6385` 블록)을 같은 `sproducer_capture` 게이트 안에서 확장. 센티널: η·τ_eff = −1.0 (정당 범위 η≥0, τ_eff≥−0.5 ⟹ 충돌 없음 — srce_chk 가 τ<−0.5 를 항상 대체함을 §3-2 실측), provenance = 0xFF |
-| `src/lumina_plasma.c` | `a210_line_saturation_add` 시그니처·행 구조체·ROW 인쇄 suffix 에 `producer_eta=`·`producer_tau_eff=`·`producer_srce_chk=`·`producer_exact_zero=`·`producer_raw_defined=` 추가(버퍼 확장 포함). 미정의/stride 불일치 시 기존 패턴 그대로 `UNAVAILABLE` fail-closed |
-| `tests/` (해당 selftest 1파일) | 신규 필드 회귀 + 음성대조 NC-C1~C3 (§5) |
+| `src/lumina_cmfgen.c` | 같은 `sproducer_capture` 게이트 안에서 세 의무: ① 할당·센티널 초기화(`:6288` 블록) ② 캡처 대입(`:6379-6385` 블록) ③ **호출당 리셋**(`:4947-4952` 계열 — 기존 2배열과 동일하게 신규 3배열도 **free 후 NULL 대입**; NULL 대입 누락은 ④와 이중해제를 만든다 — 아래 게이트 불추가 판단 참조). 센티널: η·τ_eff = −1.0 (정당 범위 η≥0, τ_eff≥−0.5 ⟹ 충돌 없음 — srce_chk 가 τ<−0.5 를 항상 대체함을 §3-2 실측), provenance = 0xFF |
+| ★`src/lumina_atomic.c` (**개정 1 추가**) | ④ **최종 teardown**: `free_opacity_state`(`:1225`)에 신규 3배열 `free` 추가 — 기존 `line_producer_continuum_term`·`local_emission_term` 해제 쌍(`:1233-1234` 계열) 바로 곁. 해제 경로는 저장소 전체에서 **이 둘뿐**(③ 리셋·④ teardown — `line_producer_` 접촉 파일 전수 grep 실측: 본 표의 src 4파일이 전부, `.cu` 0건). ③이 NULL 을 대입하므로 ④와의 관계는 이중해제가 아니라 순수 누수였다 — 이 행이 그 누수를 막는다 |
+| ★`tests/` (해당 selftest 1파일) — **정식 구성원. 발주서가 이 행을 떨어뜨리면 그것이 곧 "사전등록 범위 좁힘" 위반이다** | 신규 필드 회귀 + 음성대조 **NC-C1~C3** (§5 P3 행이 인용하는 그 셋 — 이 행이 빠지면 P3 의 음성대조가 통째로 사라진다) |
 
 `src/env_universe.h` **불변** — 신규 env 0. `LUMINA_A210_SPRODUCER_CAPTURE=1` 이 5배열 전부를
 게이트하고 `=2` 거부(IV S1(b) 실측)는 유지된다.
@@ -158,7 +162,24 @@ P2 로 범위 봉쇄 ④ 전례 = DET-SPROD 캡처 단(같은 자리·같은 패
 - **선행 정리(이 단의 변경집합 아님)**: 작업트리의 미커밋 드리프트
   `scripts/stage_a210_line_saturation_diagnostic.sh`(+`LUMINA_FIXED_TE_PROFILE` 관통 1줄 —
   DET-STAGE12 스테이징의 지연 착지)를 **스테이징 전에** 별도 커밋 또는 원복(변조 태스크 0 확인).
+  ※운전석 집행 완료: `7057f31`.
 - 커밋 규율: 사전등록 커밋(본 문서) → 계측·스크립트 커밋 **1개** → 판정문 커밋.
+  검수·판정은 **커밋 접촉 파일과 이 절의 표가 1:1 로 일치**함을 확인한다(IDSEAL P7 방식) —
+  ④(atomic 해제)와 ③의 NULL 대입이 diff 에 실존하는지가 그 대조의 명시 항목이다.
+
+### 게이트 불추가 판단 (개정 1 — 이 결손이 드러낸 결함 계급에 대해)
+
+teardown 누수·이중해제를 겨눈 **런타임 게이트는 추가하지 않는다.** 근거:
+
+1. **누수는 어떤 등록 측정도 오염하지 못한다** — 판정런은 일회성 프로세스이고 모든 산출물
+   (stderr·snapshot·RUN_FOOTER)은 teardown **전에** 기록된다. 계약(§1) 위해 = 0. P1~P5 가
+   못 잡는 것은 사실이나, 잡을 가치가 있는 자리는 게이트가 아니라 **검수의 변경집합 1:1
+   대조**다 — 위 "기타" 절이 그 확인을 명시 항목으로 못박았다.
+2. **이중해제는 침묵 결함이 아니다** — ③이 NULL 대입을 빠뜨리면 ④에서 크래시(가시적 FATAL)로
+   나타나며, 산출물은 이미 기록된 뒤다. 침묵 부패 경로가 없다.
+3. **자격 있는 음성대조를 시연할 수 없다** — 이중해제 abort 는 C 표준이 보장하지 않는 glibc
+   거동이고(주입 결함이 FAIL 을 **신뢰성 있게** 시연 못 하면 이 프로젝트 규약상 게이트 자격
+   미달), leak-sanitizer 레인 신설은 빌드 기계 추가 = 이 개정이 금지하는 범위 확장이다.
 
 ## 5. 게이트 표 (각 행: 요구 / 증거 / ★음성대조)
 
