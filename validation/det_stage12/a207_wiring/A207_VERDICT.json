@@ -1,0 +1,526 @@
+{
+  "W5_observation": {
+    "comparison": null,
+    "dataset_census": {
+      "Z26_ion3": "LEVEL_ENERGY_DATASET_NOT_FOUND",
+      "Z27_ion3": "LEVEL_ENERGY_DATASET_NOT_FOUND",
+      "Z28_ion3": "LEVEL_ENERGY_DATASET_NOT_FOUND"
+    },
+    "gate_weight": 0,
+    "path": "/gpfs/kjhan/lumina/det_stage12_fixed_te_a100x2_k36/sprim_l6_20260821T054111Z_probe/input/model/atomic_data_cmfgen.h5",
+    "reasons": [
+      "LEVEL_ENERGY_SCHEMA_UNAVAILABLE"
+    ],
+    "row_failure_census": {
+      "LEVEL_ENERGY_DATASET_NOT_FOUND": 594
+    },
+    "rows_predicted": 0,
+    "rows_total": 594,
+    "rows_unpredicted": 594,
+    "status": "TOOLING_LIMIT"
+  },
+  "access_errors": {},
+  "audit": "DET-A207-WIRING",
+  "branch": "W-A",
+  "branch_reasons": [
+    "ATTRIBUTION_CLOSED"
+  ],
+  "f_mapped": 0.0,
+  "gates": {
+    "W1": {
+      "env_occurrences": {
+        "LUMINA_A210_LINE_SATURATION_TARGET_ION": [
+          "3"
+        ],
+        "LUMINA_NLTE_ELEMENT_WIDE": [],
+        "LUMINA_NLTE_STAGE4": [],
+        "LUMINA_SUPER_LEVELS": []
+      },
+      "mapped_line_fossils": [
+        "[NLTE] Lines mapped to NLTE ions: 1777859 / 2588798"
+      ],
+      "reasons": [],
+      "slot_ions": {
+        "26": [
+          1,
+          2
+        ],
+        "27": [
+          1,
+          2
+        ],
+        "28": [
+          1,
+          2
+        ]
+      },
+      "slot_line_counts": {
+        "26": 2,
+        "27": 2,
+        "28": 2
+      },
+      "status": "PASS",
+      "super_level_lines": [
+        "[NLTE] Super-levels: off (identity) (13015 FL -> 1173 SL across ions)"
+      ]
+    },
+    "W2": {
+      "anchors": {
+        "candidate_tau_rebuild": {
+          "function": "nlte_population_candidate_produce_tau_source",
+          "line": 20809,
+          "line_moved": false,
+          "present": true,
+          "registered_line": 20809
+        },
+        "lte_population_branch": {
+          "function": "a209_upper_population_for_tau",
+          "line": 8973,
+          "line_moved": false,
+          "present": true,
+          "registered_line": 8973
+        },
+        "unmapped_skip": {
+          "function": "nlte_update_tau_sobolev_with_authority",
+          "line": 19568,
+          "line_moved": false,
+          "present": true,
+          "registered_line": 19568
+        }
+      },
+      "base_contains_ion3": false,
+      "base_table": {
+        "ion_array": "NLTE_TARGET_ION",
+        "ion_count": 31,
+        "ion_values": [
+          0,
+          1,
+          2
+        ],
+        "pairs": [
+          [
+            6,
+            1
+          ],
+          [
+            6,
+            2
+          ],
+          [
+            8,
+            0
+          ],
+          [
+            8,
+            1
+          ],
+          [
+            8,
+            2
+          ],
+          [
+            12,
+            1
+          ],
+          [
+            12,
+            2
+          ],
+          [
+            13,
+            1
+          ],
+          [
+            13,
+            2
+          ],
+          [
+            14,
+            1
+          ],
+          [
+            14,
+            2
+          ],
+          [
+            16,
+            1
+          ],
+          [
+            16,
+            2
+          ],
+          [
+            20,
+            1
+          ],
+          [
+            20,
+            2
+          ],
+          [
+            21,
+            1
+          ],
+          [
+            21,
+            2
+          ],
+          [
+            22,
+            1
+          ],
+          [
+            22,
+            2
+          ],
+          [
+            23,
+            1
+          ],
+          [
+            23,
+            2
+          ],
+          [
+            24,
+            1
+          ],
+          [
+            24,
+            2
+          ],
+          [
+            25,
+            1
+          ],
+          [
+            25,
+            2
+          ],
+          [
+            26,
+            1
+          ],
+          [
+            26,
+            2
+          ],
+          [
+            27,
+            1
+          ],
+          [
+            27,
+            2
+          ],
+          [
+            28,
+            1
+          ],
+          [
+            28,
+            2
+          ]
+        ],
+        "parse_errors": [],
+        "z_array": "NLTE_TARGET_Z",
+        "z_count": 31
+      },
+      "blob": "8c2aace:src/lumina_plasma.c",
+      "failure_classifications": [],
+      "missing_anchors": [],
+      "reasons": [],
+      "stage4_contains_ion3": true,
+      "stage4_table": {
+        "ion_array": "NLTE_TARGET_ION4",
+        "ion_count": 38,
+        "ion_values": [
+          0,
+          1,
+          2,
+          3
+        ],
+        "pairs": [
+          [
+            6,
+            1
+          ],
+          [
+            6,
+            2
+          ],
+          [
+            8,
+            0
+          ],
+          [
+            8,
+            1
+          ],
+          [
+            8,
+            2
+          ],
+          [
+            12,
+            1
+          ],
+          [
+            12,
+            2
+          ],
+          [
+            13,
+            1
+          ],
+          [
+            13,
+            2
+          ],
+          [
+            13,
+            3
+          ],
+          [
+            14,
+            1
+          ],
+          [
+            14,
+            2
+          ],
+          [
+            14,
+            3
+          ],
+          [
+            16,
+            1
+          ],
+          [
+            16,
+            2
+          ],
+          [
+            20,
+            1
+          ],
+          [
+            20,
+            2
+          ],
+          [
+            21,
+            1
+          ],
+          [
+            21,
+            2
+          ],
+          [
+            22,
+            1
+          ],
+          [
+            22,
+            2
+          ],
+          [
+            22,
+            3
+          ],
+          [
+            23,
+            1
+          ],
+          [
+            23,
+            2
+          ],
+          [
+            24,
+            1
+          ],
+          [
+            24,
+            2
+          ],
+          [
+            24,
+            3
+          ],
+          [
+            25,
+            1
+          ],
+          [
+            25,
+            2
+          ],
+          [
+            26,
+            1
+          ],
+          [
+            26,
+            2
+          ],
+          [
+            26,
+            3
+          ],
+          [
+            27,
+            1
+          ],
+          [
+            27,
+            2
+          ],
+          [
+            27,
+            3
+          ],
+          [
+            28,
+            1
+          ],
+          [
+            28,
+            2
+          ],
+          [
+            28,
+            3
+          ]
+        ],
+        "parse_errors": [],
+        "z_array": "NLTE_TARGET_Z4",
+        "z_count": 38
+      },
+      "status": "PASS"
+    },
+    "W3": {
+      "bracket_issues": [],
+      "expected_row_count": 594,
+      "failure_classifications": [],
+      "field_census": {
+        "Z": {
+          "valid": 594
+        },
+        "ion": {
+          "valid": 594
+        },
+        "line": {
+          "valid": 594
+        },
+        "producer_raw_defined": {
+          "valid": 594
+        }
+      },
+      "mapping": {
+        "f_mapped": 0.0,
+        "mapped": 0,
+        "mapped_examples": [],
+        "total": 594,
+        "unknown": 0,
+        "unknown_examples": [],
+        "unmapped": 594
+      },
+      "producer_raw_defined": {
+        "1": 594
+      },
+      "r7_markers": [
+        {
+          "iter": "0",
+          "lane": "DET",
+          "log_line": 2106,
+          "phase": "A2-10",
+          "te_generation": "1->2"
+        },
+        {
+          "iter": "1",
+          "lane": "DET",
+          "log_line": 3794,
+          "phase": "A2-10",
+          "te_generation": "2->3"
+        }
+      ],
+      "reasons": [],
+      "row_count": 594,
+      "rows_by_iteration": {
+        "0": 297,
+        "1": 297,
+        "UNATTRIBUTED": 0
+      },
+      "status": "PASS",
+      "target_counterexamples": [],
+      "z_ion_census": {
+        "Z=26,ion=3": 312,
+        "Z=27,ion=3": 40,
+        "Z=28,ion=3": 242
+      }
+    },
+    "W4": {
+      "calculation": "S_over_B=(producer_eta/(producer_tau_eff*nu/(c*time_explosion_s)))/Planck_nu(nu,10020K)",
+      "calculation_census": {
+        "domain_failure_count": 0,
+        "domain_failure_examples": [],
+        "rows_evaluated": 594,
+        "rows_total": 594,
+        "rows_unevaluated": 0
+      },
+      "config_error": null,
+      "constants": {
+        "c_light_cm_s": 29979245800.0,
+        "h_planck_erg_s": 6.62607015e-27,
+        "k_boltzmann_erg_K": 1.380649e-16,
+        "temperature_K": 10020.0,
+        "time_explosion_s": 1683072.0
+      },
+      "field_census": {
+        "nu": {
+          "valid": 594
+        },
+        "producer_eta": {
+          "valid": 594
+        },
+        "producer_tau_eff": {
+          "valid": 594
+        }
+      },
+      "maxima": {
+        "common_mode": 6.661338147750939e-16,
+        "source_ratio_stability": 6.661338147750939e-16,
+        "thermal_source": 9.577718063535912e-06
+      },
+      "pair_census": {
+        "evaluated_pairs": 297,
+        "iter0_unique_lines": 297,
+        "iter1_unique_lines": 297,
+        "missing_in_iter0_count": 0,
+        "missing_in_iter0_examples": [],
+        "missing_in_iter1_count": 0,
+        "missing_in_iter1_examples": [],
+        "paired_lines": 297,
+        "pairing_issues": []
+      },
+      "reasons": [],
+      "relative_stability_formula": "abs((S_over_B_iter1/S_over_B_iter0)-1)",
+      "status": "PASS",
+      "thresholds": {
+        "common_mode": 1e-14,
+        "source_ratio_stability": 1e-12,
+        "thermal_source": 2e-05
+      }
+    }
+  },
+  "oracle_values_used": false,
+  "physical_values_modified": false,
+  "run_root": "/gpfs/kjhan/lumina/det_stage12_fixed_te_a100x2_k36/sprim_l6_20260821T054111Z_probe",
+  "schema": "DET_A207_WIRING_L6_ATTRIBUTION_V1",
+  "sealed_access_mode": "READ_ONLY",
+  "source_blob": "8c2aace:src/lumina_plasma.c",
+  "value_clamping_used": false
+}

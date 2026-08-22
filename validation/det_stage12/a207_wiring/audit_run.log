@@ -1,0 +1,6 @@
+W1 status=PASS reasons=NONE
+W2 status=PASS reasons=NONE
+W3 status=PASS reasons=NONE
+W4 status=PASS reasons=NONE
+W5 status=TOOLING_LIMIT gate_weight=0 predicted=0/594
+DET_A207_WIRING branch=W-A f_mapped=0.0 reasons=ATTRIBUTION_CLOSED
