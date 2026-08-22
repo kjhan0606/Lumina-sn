@@ -106,7 +106,16 @@ J̄/B 이탈 크기는 **미지**다. 신호 부재 시에도 동결 판별(도�
    대상 (Z,ion) 의 **전 준위를 절단 없이** 사상하고(용량 컷 없음), 선 사상 루프(`:16430-16439`)
    도 (Z,ion) 일치 전 선을 사상한다 ⟹ 커버 이온의 어떤 선도 준위-단위 unmapped 가 될 수 없다.
    authority 사슬(`:8903-8951`): mapped ∧ !skip_tau ∧ pair-owned ∧ 세대 정합 → NLTE 소비.
-   봉인 env 에 `LUMINA_NLTE_STAGE4`·`ELEMENT_WIDE`·`SUPER_LEVELS`·SKIP_Z 부재(A207 W1 실측).
+   봉인 env 에 `LUMINA_NLTE_STAGE4`·`ELEMENT_WIDE`·`SUPER_LEVELS` 부재(A207 W1 실측 — W1 의
+   금지 목록은 이 셋뿐이다). ★SKIP_Z 는 부재가 아니다: 봉인 base·L6 양 루트 exports 와 L6
+   RUN_FOOTER 에 `LUMINA_NLTE_SKIP_Z="14"` 실재 [운전석 실측 2026-08-22 · 저자 재확인]. 의미론
+   (저자 소스 실측): 파서 `:8845-8856`(미설정·빈 값=공집합 `:8849`, 구분자 콤마/공백/탭,
+   토큰별 atoi, 0<z<100, 256B 절단), 적용점 `:8922`(`skip_tau`)·`:8945-8951`(`uses_nlte` 가
+   `!skip_tau` 요구) ⟹ SKIP_Z 에 든 Z 는 mapped 여도 NLTE 소비가 꺼져 동결-클래스 공급 경로로
+   회귀한다. 14=Si ∉ {26,27,28} ⟹ 표적 권한과 교집합 공집합. 따라서 요구는 "부재"가 아니라
+   **파스 집합 ∩ {26,27,28} = ∅** 다(PC-1 판정식, ★user 결정 2026-08-22 선택지 2). 별개 마스크
+   `LUMINA_OPACITY_SKIP_Z`(`:3139-3153` 파스·`:3257` tau 0화)는 봉인 양 루트 exports 부재
+   실측(=공집합)이며 PC-1 이 같은 판정식으로 함께 검사한다.
 3. **solve 의 J̄ 소비 (커버 이온)**: production split `:17401-17425` 이
    `nlte_bb_jbar_canonical`(`:583`)만 소비 — A207 §6(a) 폐합 인용.
 4. **판정량의 공급 사슬**: iter k 의 `producer_eta/tau_eff` = R6 fine 이 읽은 **gen-(k+1)
@@ -158,7 +167,7 @@ J̄/B 이탈 크기는 **미지**다. 신호 부재 시에도 동결 판별(도�
 
 | # | 요구 (기계 판정식) | 증거 | ★음성대조 |
 |---|---|---|---|
-| **PC-1 커버리지 사전 증명** | 발주 HEAD blob 파스: (26,1)(27,1)(28,1) ∈ `NLTE_TARGET_Z/ION` ∧ 준위 사상 루프 무절단 문면(`:16413-16429`) 실재 ∧ 봉인 base env 에 STAGE4/EW/SUPER/SKIP_Z 부재 재확인 ∧ **봉인 실물 594행(ion=3) × base 사상 = 0/594 · × ION4 = 594/594**(A207 판별기를 실물로 내장 재실증) | PC verdict JSON | **NC-P1**: 같은 사상 검사를 ion=3 표적으로 실행 → `COVERAGE_ABSENT` 이름 있는 FAIL(0/594) — 도달 불능 표적이 게이트에 걸림을 시연 / **NC-P2**: 테이블 스크래치 사본에서 (26,1) 행 제거 → FAIL |
+| **PC-1 커버리지 사전 증명** | 발주 HEAD blob 파스: (26,1)(27,1)(28,1) ∈ `NLTE_TARGET_Z/ION` ∧ 준위 사상 루프 무절단 문면(`:16413-16429`) 실재 ∧ 봉인 base env 에 STAGE4/EW/SUPER 부재 재확인 ∧ ★SKIP-마스크 판정식(user 결정 선택지 2): 소스 파스 규칙 전사(`:8845-8856`·`:3139-3153` — 미설정·빈 값=공집합, 콤마/공백/탭 구분, 토큰별 atoi, 0<z<100)의 **공용 단일 루틴**으로 `LUMINA_NLTE_SKIP_Z`·`LUMINA_OPACITY_SKIP_Z` 를 각각 파스한 집합 S 에 대해 **S ∩ {26,27,28} = ∅**(봉인 실측 기대: NLTE="14"→{14}·OPACITY 부재→∅, 둘 다 PASS; 위반 시 `SKIPZ_TARGET_OVERLAP` 이름 있는 FAIL) ∧ **봉인 실물 594행(ion=3) × base 사상 = 0/594 · × ION4 = 594/594**(A207 판별기를 실물로 내장 재실증) | PC verdict JSON | **NC-P1**: 같은 사상 검사를 ion=3 표적으로 실행 → `COVERAGE_ABSENT` 이름 있는 FAIL(0/594) — 도달 불능 표적이 게이트에 걸림을 시연 / **NC-P2**: 테이블 스크래치 사본에서 (26,1) 행 제거 → FAIL / **NC-P4**: env 스크래치 사본에 `LUMINA_NLTE_SKIP_Z="14,26"` 주입 → `SKIPZ_TARGET_OVERLAP` FAIL(다중 토큰 파스 동시 시연)·원복 시 PASS — 두 마스크가 공용 단일 루틴을 지나므로(요구 셀에 등록) 이 1건이 신규 판정식의 FAIL 가지를 덮는다 |
 | **PC-2 zero-χ hazard census** | 덱(`line_list.csv`·`levels.csv`, 봉인 read-only) × LTE(10020) 전사 산법으로 Z∈{26,27,28} 별 χ_eff==0∧η>0 후보 행 수: **ion=1 = 0 이 발주 전제**. 앵커 ①: ion=2 ≥ 1 [추정 — S4-III 실측 차단의 재현] ② ion=3 = 0 (L6 census 0 재현). 앵커 ①빗나감(=0) 시: 기전 모델 미검증으로 **이름 있는 발견** 기재하되 ion=1 진행은 유지(차단 전례 0 + D2 안전망). **ion=1 > 0 이면 발주 중단** — 실측을 user 갈림길(Z-O 선행 여부)에 회부 | census 표(행 목록 전량) | **NC-P3**: 합성 축퇴 준위쌍 주입 → hazard 검출·제거 시 0 |
 | **PC-3 스테이징 delta 봉쇄** | `--l6c-target-ion 1` 스테이징의 resolved env diff: vs IDSEAL base = **정확 5**(L6 등록 4 + TARGET_ION 3→1) + diagnostic_mode 파일; vs 봉인 L6 런 = **정확 1**(TARGET_ION) + diagnostic_mode 파일. base byte-seal(기존 ②기계) PASS | stager 로그·diff | 무인자 스테이징 → 기존과 **byte 동일**(기본 경로 불변 실증) / delta 1건 누락 주입 → 기존 seal FAIL(§18-1 ② 재사용) |
 | **PC-4 판독기 검증** | `--selftest` rc=0 | selftest 로그 | **NC-B1** 봉인 L6 stderr(실물 동결 클래스) → **C-F 발화** 시연(주입 결함으로 결함-분기 FAIL 시연 — 음성대조 의무의 본체) / **NC-B2** 비표적 위조행 → R3 census FAIL / **NC-B3** η 1e-9 섭동 → R4b FAIL / **NC-B4** 사상 위조(테이블에서 (26,1) 제거) → f_mapped<1 검출 / **NC-B5** R7 마커 삭제 → BLOCKED(침묵 금지) |
@@ -327,6 +336,7 @@ clamp/floor/cap 0. 판독기의 census 분류(INVERSION_BOUNDARY·NEGATIVE_CHI·
                         "LUMINA_A210_LINE_SATURATION_TARGET_ION",
                         "NLTE_TARGET_ION",
                         "nlte_build_projection",
+                        "LUMINA_NLTE_SKIP_Z",
                         "INDEPENDENT_SPROBE_UNDEFINED"]},
     {"path": "scripts/run_det_convergence_2026-08-08.slurm",
      "flags_existing": ["A210_L6_PROBE"]},
