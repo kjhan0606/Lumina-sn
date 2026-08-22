@@ -33,15 +33,30 @@ def emit(kind, reason, detail=""):
 
 
 def split_order(text: str):
-    """§0 경위 절(면제)과 그 이후(뒷겹, 검사 대상)를 가른다."""
+    """§0 경위 절(면제)과 그 이후(검사 대상)를 가른다."""
     m = re.search(r'^##\s*1\.', text, re.M)
     if not m:
         raise Fail("dispatch-shape-unknown", "'## 1.' 절 경계를 찾지 못했다 (fail-closed)")
     return text[:m.start()], text[m.start():]
 
 
-def dp1_restatement(text: str, contract: str) -> None:
+def strip_contract_pointer(body: str, contract_rel: str) -> str:
+    """계약 문서 자신의 경로는 재서술이 아니다 — 개정14 가 **요구하는** 지목이다.
+
+    오탐 실측(2026-08-22, 게이트 첫 실전): 앞겹이 계약 파일을 지목한 것을
+    DISPATCH-RESTATES-CONTRACT 로 잡았다. 재분장 문서 §5-1 이 "DP-1 의 오탐률 — 값 토큰
+    추출이 정당한 집행 조건까지 잡을 수 있다. 구현 후 실측한다" 고 예고한 그 자리다.
+    면제는 **계약 자신의 경로 하나**로 좁힌다 — 다른 파일 경로는 그대로 잡힌다.
+    """
+    for form in (f"`{contract_rel}`", contract_rel):
+        body = body.replace(form, "<계약>")
+    return body
+
+
+def dp1_restatement(text: str, contract: str, contract_rel: str = "") -> None:
     head, body = split_order(text)
+    if contract_rel:
+        body = strip_contract_pointer(body, contract_rel)
     if any(t.search(head) for _, t in TOKENS) and EXEMPT_MARK not in head:
         raise Fail("exempt-section-unmarked",
                    f"§0 에 계약 값이 있으나 '{EXEMPT_MARK}' 문구가 없다")
@@ -83,7 +98,11 @@ def dp3_contract(contract_path: Path, root: Path) -> None:
 
 def run(order: Path, contract: Path, root: Path) -> int:
     try:
-        dp1_restatement(order.read_text(), contract.read_text())
+        try:
+            crel = contract.resolve().relative_to(root.resolve()).as_posix()
+        except ValueError:
+            crel = contract.name
+        dp1_restatement(order.read_text(), contract.read_text(), crel)
         dp2_frontpage(contract, root)
         dp3_contract(contract, root)
     except Fail as f:
@@ -131,6 +150,11 @@ def selftest() -> int:
          order=GOOD_ORDER.replace("이 절의 값은 요구가 아니다.", ""))
     case("NC-D1d", "dispatch-shape-unknown",
          order=GOOD_ORDER.replace("## 1. 앞겹", "앞겹"))              # fail-closed
+    case("NC-D0b", None,                                              # ★오탐 회귀: 계약 지목은 면제
+         order=GOOD_ORDER.replace("`docs/CONTRACT.md` 를 전문 읽어라.",
+                                  "`docs/CONTRACT.md` 를 전문 읽어라. docs/CONTRACT.md 가 유일 권위다."))
+    case("NC-D1e", "DISPATCH-RESTATES-CONTRACT",                      # 계약 아닌 경로는 여전히 잡힌다
+         order=GOOD_ORDER.replace("§4 표의 행 전부", "`scripts/tool_alpha.py` 의 행 전부"))
     case("NC-D2", "contract-not-committed", commit=False)
     case("NC-D2b", "contract-worktree-drift", mangle="drift")
     case("NC-D3", "contract-preflight-failed", decl=False)   # 선언 블록 없는 계약

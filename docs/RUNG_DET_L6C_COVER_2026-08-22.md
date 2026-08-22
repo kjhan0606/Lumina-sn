@@ -68,7 +68,8 @@ J̄/B 이탈 크기는 **미지**다. 신호 부재 시에도 동결 판별(도�
 ### 2-3. 분기 도달 가능성의 게이트화 (쟁점 2 — L6 §3-8·A207 §8 발견 1 의 처방)
 
 *"측정 행이 피측정 기전의 권한 안에 있는가"* 를 3중으로 게이트화한다:
-① **PC-1(런 전, 오프라인)** — HEAD blob 테이블 사상 사전 증명 + 봉인 실물 594행 NC,
+① **PC-1(런 전, 오프라인)** — HEAD blob 테이블 사상 사전 증명 + ★SKIP-마스크 교집합
+   판정식(`skip_tau` 도 권한 사슬의 일부다 — §3-2) + 봉인 실물 594행 NC,
 ② **R5(런 행 전수)** — f_mapped = 1.0 정확,
 ③ **성공 분기 판정식이 R3 census 를 명시 conjunct 로 포함**(감리 비차단 권고 (a) 축자 반영).
 추가로 **신호 전제**(J̄/B 이탈의 실재)를 라벨 σ 로 분기 해석에 넣는다 — 권한과 신호가 다
@@ -91,16 +92,33 @@ J̄/B 이탈 크기는 **미지**다. 신호 부재 시에도 동결 판별(도�
 단 빌드는 0회다: src 가 `5d711d06` 이래 불변(공집합 diff, 저자 실측)이므로 **봉인 L6 바이너리
 (`input/lumina_cuda`, sha `b9a30a81ebea57f9fa857d192107dd85aeb04ab1308f27b1a68cf45f1a69af99`)를
 그대로 재사용**한다(봉인 원본은 read-only 복사만; PC-5 가 발주 HEAD 에서 재검증).
+실측 표기(개정15 §3-3): ① 표적 필터·suffix 인쇄 `sed -n '14040,14050p;13944,13952p'
+src/lumina_plasma.c` [저자 실행] ② 셸 집계 `sed -n '15290,15375p' src/lumina_plasma.c`
+[저자 실행] ③④ snapshot 파일명·캡처 배열 메모리 상주 = L6 판정 G2·L6 사전등록 §4 폐합 인용;
+diff 공집합 = `git diff --stat 5d711d06..8526d2c -- src tests Makefile` 무출력 [저자 실행];
+바이너리 sha `b9a30a81…` 는 L6 판정 §1 기재 인용 **[미실행]** — 발주 전 운전석 실행:
+`sha256sum $L6/input/lumina_cuda` → `b9a30a81ebea57f9fa857d192107dd85aeb04ab1308f27b1a68cf45f1a69af99`
+일치 확인(대용량 해시라 로그인 노드 비연산 범위 밖 — grammar-debug 에서).
+★**[운전석 실행 2026-08-22]**: grammar-debug 에서 실행 — 실측 `b9a30a81ebea57f9fa857d192107dd85aeb04ab1308f27b1a68cf45f1a69af99` = 기재값 **일치**. 이 문서의 `[미실행]` 주장은 0 이 됐다.
 
 ### 2-6. W5 미결 오프셋 (쟁점 6)
 
 **건드리지 않는다.** `pred−meas = +7.265e-6 ± 3.3e-7` 은 ion IV 행의 LTE-공급 서명 미세구조
 관측이고, 이 단의 iter1 커버 행은 LTE 예측의 시험대가 아니다. 대장 존속(§8-7).
 
-## 3. 기전 오프라인 특정 (전부 저자 실측·HEAD blob; 추측은 [추정] 표기)
+## 3. 기전 오프라인 특정 (근거를 가른다 — 저자 실측·폐합 인용·[미실행]; 추측은 [추정])
+
+★개정15 §3-3 준수: 봉인·실행 상태 주장마다 실측 명령을 병기한다. 표기 3종 — **[저자 실행]** =
+저자가 이 명령을 실제 실행(명령줄이 곧 재현 절차) / **폐합 인용** = 이미 폐합된 판정문·사전등록의
+실측 인용(재실행 의무 없음 — 원장이 근거) / **[미실행]** = 저자가 실행하지 않은 주장 —
+★운전석이 발주 전 전건 실행한다. 소스 명령은 전부 HEAD `8526d2c` 작업트리 기준(전제 실측:
+`git status --short src tests` 무출력 ∧ `git diff --stat HEAD -- src tests` 무출력 [저자 실행]).
+약칭: `$L6` = `/gpfs/kjhan/lumina/det_stage12_fixed_te_a100x2_k36/sprim_l6_20260821T054111Z_probe` ·
+`$IDS` = 같은 부모의 `idseal_20260820T044703Z_a209` (접근은 전부 read-only).
 
 1. **표적 필터**: `a210_line_saturation_target`(`src/lumina_plasma.c:14027-14030`) —
    `ion==target_ion ∧ Z∈{26,27,28}`(Z 하드코딩). env 파서 `:13953-13965`.
+   실측: `sed -n '13953,13965p;14027,14030p' src/lumina_plasma.c` [저자 실행].
 2. **커버리지**: base 31슬롯 `NLTE_TARGET_Z/ION`(`:9791-9798`)에 (26,1)(27,1)(28,1) 실재.
    ★**사상 전수성은 구성상**이다: `nlte_build_projection` 의 준위 사상 루프(`:16413-16429`)는
    대상 (Z,ion) 의 **전 준위를 절단 없이** 사상하고(용량 컷 없음), 선 사상 루프(`:16430-16439`)
@@ -116,8 +134,17 @@ J̄/B 이탈 크기는 **미지**다. 신호 부재 시에도 동결 판별(도�
    **파스 집합 ∩ {26,27,28} = ∅** 다(PC-1 판정식, ★user 결정 2026-08-22 선택지 2). 별개 마스크
    `LUMINA_OPACITY_SKIP_Z`(`:3139-3153` 파스·`:3257` tau 0화)는 봉인 양 루트 exports 부재
    실측(=공집합)이며 PC-1 이 같은 판정식으로 함께 검사한다.
+   실측 명령: 테이블·사상 루프 `sed -n '9780,9815p;16380,16460p' src/lumina_plasma.c` +
+   `grep -n global_to_nlte_level src/lumina_plasma.c` [저자 실행]; SKIP 두 마스크
+   `grep -h SKIP_Z $L6/input/resolved_lumina.exports $IDS/input/resolved_lumina.exports` →
+   `declare -x LUMINA_NLTE_SKIP_Z="14"` 2건뿐(OPACITY 계열 0건) ∧ `grep SKIP_Z
+   $L6/RUN_FOOTER.txt` → `LUMINA_NLTE_SKIP_Z=14` [저자 실행 2026-08-22]; STAGE4/EW/SUPER 부재
+   = A207 W1 폐합 인용 + 저자 재실측 `grep -cE
+   'LUMINA_(NLTE_STAGE4|NLTE_ELEMENT_WIDE|SUPER_LEVELS)=' $L6/RUN_FOOTER.txt` → **0** [저자 실행].
 3. **solve 의 J̄ 소비 (커버 이온)**: production split `:17401-17425` 이
-   `nlte_bb_jbar_canonical`(`:583`)만 소비 — A207 §6(a) 폐합 인용.
+   `nlte_bb_jbar_canonical`(`:583`)만 소비 — A207 §6(a) 폐합 인용 + 저자 재실측:
+   `sed -n '17401,17425p' src/lumina_plasma.c` → "every ordinary path consumes only the
+   checked line view" 주석·`nlte_bb_jbar_canonical` 소비 문면 실재 [저자 실행 2026-08-22].
 4. **판정량의 공급 사슬**: iter k 의 `producer_eta/tau_eff` = R6 fine 이 읽은 **gen-(k+1)
    pre-commit 물질**(iter0=시드, iter1=iter0 solve 커밋분) — L6 사전등록 §3-3 실측 계승.
    ⟹ **d := |S₁/S₀−1| = |(η₁/η₀)/(τ₁/τ₀)−1|** (같은 ν·t 라 정확 항등)가 공급 경로 판별량이다.
@@ -125,6 +152,9 @@ J̄/B 이탈 크기는 **미지**다. 신호 부재 시에도 동결 판별(도�
    한계 1e-14·여유 15×). 반복 선형 solve 산출이 해석적 LTE 값과 전 행 ulp 일치할 수는 사실상
    없다 [추정 강 — solve residual 등급 1e-8 실측 근거]. 문턱 **1e-13** = 실측 동결의 150×,
    [추정] 응답 등급(≥1e-9)의 1/10⁴.
+   근거 구분: 공급-지연 구조(iter0=시드/iter1=커밋분)·6.66e-16·1e-14(여유 15×)·solve residual
+   9.67e-9 는 **폐합 인용**(L6 사전등록 §3-3 / L6 판정 부록 A / A207 §3 W4 / S4-III §1);
+   d 항등은 대수(S=η/χ_eff ∧ χ_eff=τ_eff·ν/(c·t) — L6 사전등록 §3-2 의 소스 정의 인용).
 5. **차단 위험**: `INDEPENDENT_SPROBE_UNDEFINED` 전면 차단(`:14111-14139`, WITNESS 인쇄 후
    트랜잭션 사망)은 미수리 존속. 발화 조건 = χ_eff==0 ∧ 방출>0 ∧ independent_capture. iter0 의
    물질은 LTE-at-10020 [추정: 시드=LTE, FINDING 사슬]이므로 **iter0 위험은 오프라인 재현 가능**
@@ -132,12 +162,19 @@ J̄/B 이탈 크기는 **미지**다. 신호 부재 시에도 동결 판별(도�
    `a208_signed_sobolev`(`:3219-3355`) 전사 산법을 적용하는 census 가 PC-2 다. [추정] 기전 =
    에너지 축퇴 준위쌍(LTE 에서 n_l g_u = n_u g_l 정확 상쇄 — T 무관). iter1(NLTE 산출) 위험은
    오프라인 예측 불능 — 분기 D2.
+   실측: 차단·WITNESS·census 문면 `sed -n '14040,14140p' src/lumina_plasma.c` [저자 실행],
+   LTE 경로 `sed -n '3219,3400p' src/lumina_plasma.c` [저자 실행], 덱 파일 실재
+   `ls $L6/input/model/` → `line_list.csv`·`levels.csv` 확인 [저자 실행]; S4-III 차단
+   (ion=2 51,807 후보·III 발화/IV 무발화)은 폐합 인용.
 6. **선정층**: PER_ION_UNION 90% 목표(`:14294`·`:14312`), Z-1 census 카운터(`:14075`).
+   실측: `grep -n 'target_fraction\*ion_total\|PER_ION_UNION' src/lumina_plasma.c` [저자 실행].
 7. **집행 인프라의 ion=3 핀 2곳(변경 필요 근거)**: 런처 모드 가드
    `scripts/run_det_convergence_2026-08-08.slurm:177`(`TARGET_ION==3` 아니면 die), stager 는
    base 봉인 검증 `scripts/stage_det_stage12_l6_probe.sh:117`(base=3 확인 — **유지**)에 delta
    재작성 기계(`:169-174`·`:212-213`·`:249` resolved_env_delta_count=4)가 TARGET_ION 을 다루지
-   않음.
+   않음. 실측: `grep -n TARGET_ION scripts/run_det_convergence_2026-08-08.slurm
+   scripts/stage_det_stage12_l6_probe.sh` + `sed -n '100,130p;160,260p'
+   scripts/stage_det_stage12_l6_probe.sh` [저자 실행].
 
 ## 4. 기대 변경집합 (이 목록 밖 변경 = 실패) + V5
 
@@ -151,7 +188,7 @@ J̄/B 이탈 크기는 **미지**다. 신호 부재 시에도 동결 판별(도�
 | `scripts/run_det_convergence_2026-08-08.slurm` | 신규 diagnostic_mode **A210_L6C_PROBE**: 기존 A210_L6_PROBE 블록과 동일 요구(outer=2·A100·MGPU 2·CAPTURE 2종·DIAG=2·수렴 주장 없음) 단 ion 가드만 `TARGET_ION==1` + 스테이징 provenance 파일(`l6c_target_ion.txt`) 일치 요구, 사후게이트·수용 토큰은 `A210_L6C_PROBE_ACCEPT`. **기존 A210_L6_PROBE 블록 무변경**(기본 경로 불변) |
 | `scripts/stage_det_stage12_l6_probe.sh` | 선택 인자 `--l6c-target-ion 1`(허용값 1 만·엄격 파서): 재작성 규칙·assert 목록에 `LUMINA_A210_LINE_SATURATION_TARGET_ION="1"` 추가, `resolved_env_delta_count=5`, diagnostic_mode=A210_L6C_PROBE, `input/l6c_target_ion.txt` 기재. **무인자 기본 경로 = 기존과 byte 동일**(base 봉인 검증 `:117` 유지 — base 는 여전히 3). 쓰기는 전부 기존 temp+`mv` 3함수 경유(§18-1 ① 계승) |
 | `scripts/analyze_det_stage12_l6c.py` | 신설 판독기(자립형): R7 마커 브래킷·ROW 파스·재구성 항등(R4b)·iter0 앵커(R4)·행 전수 census+사상(R5, base 테이블은 `git show <발주HEAD>:src/lumina_plasma.c` 파스)·d 분포·ff·σ 라벨·분기(§6)·verdict JSON 전량 보고. `--selftest` 에 NC-B1~B5 내장(전부 스크래치 사본 — 봉인 원본 불접촉) |
-| `scripts/audit_l6c_cover_precondition.py` | 신설 사전 게이트 도구: **PC-1**(테이블 사상 증명 + ★봉인 실물 594행 × base/ION4 사상 NC **내장** — A207 §10-2 보완 후보 반영) + **PC-2**(zero-χ hazard census: 덱 read-only × LTE(10020) 전사 산법, ion∈{1,2,3} 각각; 앵커 2종 §5) + verdict JSON. `--selftest` 에 NC-P1~P3 |
+| `scripts/audit_l6c_cover_precondition.py` | 신설 사전 게이트 도구: **PC-1**(테이블 사상 증명 + ★봉인 실물 594행 × base/ION4 사상 NC **내장** — A207 §10-2 보완 후보 반영) + ★**SKIP-마스크 교집합 판정식**(§5 PC-1 등록분 — 두 마스크 공용 단일 파스·교집합 루틴) + **PC-2**(zero-χ hazard census: 덱 read-only × LTE(10020) 전사 산법, ion∈{1,2,3} 각각; 앵커 2종 §5) + verdict JSON. `--selftest` 에 NC-P1~P4(§5 등록 4종 전부 — P4=SKIP 주입) |
 
 ### 변경집합 끝
 
@@ -282,7 +319,8 @@ clamp/floor/cap 0. 판독기의 census 분류(INVERSION_BOUNDARY·NEGATIVE_CHI·
 ## 11. 판정 절차
 
 - 판정 = Fable **fresh 컨텍스트**(본 사전등록 + 봉인 산출물 경로 + 도구 산출 제공). 판정 하중
-  항목은 판정자가 직접 재실측 — 특히 **f_mapped·d 분포·ff·R7 byte 대조·PC-2 앵커**는 판정자
+  항목은 판정자가 직접 재실측 — 특히 **f_mapped·d 분포·ff·R7 byte 대조·PC-2 앵커·SKIP-마스크
+  교집합(PC-1 — 이 단에서 결함 이력이 있는 판정식)**은 판정자
   자체 경로(도구 import 없이)로 재현할 것(L6·A207 전례).
 - 감리 = **또 다른 fresh Fable**(자기 채점 금지), 고정질문 4. 감리 고정질문에 ① §2-3 의 권한
   게이트 3중화가 실제로 집행됐는지 ② C-F/C-R 함의가 후보/실증 절단을 지켰는지 ③ §8-8 앵커
