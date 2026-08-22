@@ -9,11 +9,116 @@ die() {
   exit 70
 }
 
-[[ $# -eq 3 ]] || \
-  die "usage: $0 IDSEAL_RUN_ROOT NEW_RUN_ROOT ABSOLUTE_BINARY"
+rewrite_resolved_env() {
+  local source_env="$1"
+  local from_root="$2"
+  local to_root="$3"
+  local l6c_enabled="$4"
+  local omitted_delta="${5:-}"
+  local line name replacement
+  rewritten_count=0
+  while IFS= read -r line; do
+    name=""
+    case "$line" in
+      'declare -x LUMINA_PURE_CMFGEN_ITER='*)
+        name=LUMINA_PURE_CMFGEN_ITER
+        replacement='declare -x LUMINA_PURE_CMFGEN_ITER="2"'
+        ;;
+      'declare -x LUMINA_RADEQ_DIAG_TE_K='*)
+        name=LUMINA_RADEQ_DIAG_TE_K
+        replacement='declare -x LUMINA_RADEQ_DIAG_TE_K="10020"'
+        ;;
+      'declare -x LUMINA_A210_SPRODUCER_CAPTURE='*)
+        name=LUMINA_A210_SPRODUCER_CAPTURE
+        replacement='declare -x LUMINA_A210_SPRODUCER_CAPTURE="1"'
+        ;;
+      'declare -x LUMINA_A210_INDEPENDENT_CAPTURE='*)
+        name=LUMINA_A210_INDEPENDENT_CAPTURE
+        replacement='declare -x LUMINA_A210_INDEPENDENT_CAPTURE="1"'
+        ;;
+      'declare -x LUMINA_A210_LINE_SATURATION_TARGET_ION='*)
+        if [[ "$l6c_enabled" == 1 ]]; then
+          name=LUMINA_A210_LINE_SATURATION_TARGET_ION
+          replacement='declare -x LUMINA_A210_LINE_SATURATION_TARGET_ION="1"'
+        fi
+        ;;
+    esac
+    if [[ -n "$name" && "$name" != "$omitted_delta" ]]; then
+      printf '%s\n' "$replacement"
+      rewritten_count=$((rewritten_count + 1))
+    else
+      printf '%s\n' "${line//$from_root/$to_root}"
+    fi
+  done < "$source_env"
+}
+
+stager_selftest() {
+  local scratch fixture default_actual default_reference l6c_actual omitted_actual sealed_env
+  scratch="$(mktemp -d)"
+  fixture="$scratch/base.exports"
+  default_actual="$scratch/default.actual"
+  default_reference="$scratch/default.reference"
+  l6c_actual="$scratch/l6c.actual"
+  omitted_actual="$scratch/omitted.actual"
+  sealed_env=/gpfs/kjhan/lumina/det_stage12_fixed_te_a100x2_k36/idseal_20260820T044703Z_a209/input/resolved_lumina.exports
+  trap 'rm -f -- "$fixture" "$default_actual" "$default_reference" "$l6c_actual" "$omitted_actual"; rmdir -- "$scratch"' EXIT
+  [[ -f "$sealed_env" && ! -L "$sealed_env" ]] || \
+    die "selftest sealed IDSEAL env is unavailable"
+  cp -- "$sealed_env" "$fixture"
+  rewrite_resolved_env "$fixture" \
+    /gpfs/kjhan/lumina/det_stage12_fixed_te_a100x2_k36/idseal_20260820T044703Z_a209 \
+    /scratch/l6-test 0 > "$default_actual"
+  [[ "$rewritten_count" -eq 4 ]] || die "selftest default delta count mismatch"
+  sed \
+    -e 's/LUMINA_PURE_CMFGEN_ITER="1"/LUMINA_PURE_CMFGEN_ITER="2"/' \
+    -e 's/LUMINA_RADEQ_DIAG_TE_K="19059.411196903675"/LUMINA_RADEQ_DIAG_TE_K="10020"/' \
+    -e 's/LUMINA_A210_SPRODUCER_CAPTURE="0"/LUMINA_A210_SPRODUCER_CAPTURE="1"/' \
+    -e 's/LUMINA_A210_INDEPENDENT_CAPTURE="0"/LUMINA_A210_INDEPENDENT_CAPTURE="1"/' \
+    -e 's#/gpfs/kjhan/lumina/det_stage12_fixed_te_a100x2_k36/idseal_20260820T044703Z_a209#/scratch/l6-test#g' \
+    "$fixture" > "$default_reference"
+  cmp -s "$default_actual" "$default_reference" || \
+    die "selftest default byte path drift"
+  printf 'NC-PC3-DEFAULT inject=NONE status=PASS reason=DEFAULT_BYTE_IDENTICAL delta_count=%s\n' \
+    "$rewritten_count"
+  rewrite_resolved_env "$fixture" \
+    /gpfs/kjhan/lumina/det_stage12_fixed_te_a100x2_k36/idseal_20260820T044703Z_a209 \
+    /scratch/l6-test 1 \
+    LUMINA_A210_INDEPENDENT_CAPTURE > "$omitted_actual"
+  if [[ "$rewritten_count" -eq 5 ]]; then
+    die "selftest omitted delta was accepted"
+  fi
+  printf 'NC-PC3 inject=OMIT_INDEPENDENT_CAPTURE status=FAIL reason=resolved_env_delta_count actual=%s expected=5\n' \
+    "$rewritten_count"
+  rewrite_resolved_env "$fixture" \
+    /gpfs/kjhan/lumina/det_stage12_fixed_te_a100x2_k36/idseal_20260820T044703Z_a209 \
+    /scratch/l6-test 1 > "$l6c_actual"
+  [[ "$rewritten_count" -eq 5 ]] || die "selftest L6C delta count mismatch"
+  [[ "$(grep -cFx 'declare -x LUMINA_A210_LINE_SATURATION_TARGET_ION="1"' "$l6c_actual" || true)" -eq 1 ]] || \
+    die "selftest L6C target ion missing"
+  printf 'NC-PC3 remove=RESTORE_DELTA status=PASS reason=resolved_env_delta_count actual=%s expected=5\n' \
+    "$rewritten_count"
+  printf 'DET_STAGE12_L6_STAGER_SELFTEST_PASS mode=A210_L6C_PROBE\n'
+  rm -f -- "$fixture" "$default_actual" "$default_reference" "$l6c_actual" "$omitted_actual"
+  rmdir -- "$scratch"
+  trap - EXIT
+}
+
+if [[ $# -eq 1 && "$1" == --selftest ]]; then
+  stager_selftest
+  exit 0
+fi
+
+[[ $# -eq 3 || $# -eq 5 ]] || \
+  die "usage: $0 IDSEAL_RUN_ROOT NEW_RUN_ROOT ABSOLUTE_BINARY [--l6c-target-ion 1]"
 base="$1"
 dest="$2"
 binary="$3"
+l6c_enabled=0
+if [[ $# -eq 5 ]]; then
+  [[ "$4" == --l6c-target-ion && "$5" == 1 ]] || \
+    die "the only accepted optional selector is --l6c-target-ion 1"
+  l6c_enabled=1
+fi
 repo="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 
 [[ "$base" = /* && -d "$base/input" && -f "$base/READY" ]] || \
@@ -129,6 +234,14 @@ for path in \
   git -C "$repo" cat-file -e "HEAD:$path" 2>/dev/null || \
     die "required path is not committed at HEAD: $path"
 done
+if [[ "$l6c_enabled" == 1 ]]; then
+  for path in \
+    scripts/analyze_det_stage12_l6c.py \
+    scripts/audit_l6c_cover_precondition.py; do
+    git -C "$repo" cat-file -e "HEAD:$path" 2>/dev/null || \
+      die "required L6C path is not committed at HEAD: $path"
+  done
+fi
 
 base_manifest_before="$(mktemp)"
 base_manifest_after="$(mktemp)"
@@ -150,40 +263,37 @@ for spec in \
   atomic_capture_file "$input/$target_name" 0750 \
     git -C "$repo" show "HEAD:$source_path"
 done
+if [[ "$l6c_enabled" == 1 ]]; then
+  for spec in \
+    'scripts/analyze_det_stage12_l6c.py:analyze_det_stage12_l6c.py' \
+    'scripts/audit_l6c_cover_precondition.py:audit_l6c_cover_precondition.py'; do
+    source_path="${spec%%:*}"
+    target_name="${spec#*:}"
+    atomic_capture_file "$input/$target_name" 0750 \
+      git -C "$repo" show "HEAD:$source_path"
+  done
+fi
 
 atomic_text_file "$input/outer_iterations.txt" 0640 2
-atomic_text_file "$input/diagnostic_mode.txt" 0640 A210_L6_PROBE
+if [[ "$l6c_enabled" == 1 ]]; then
+  atomic_text_file "$input/diagnostic_mode.txt" 0640 A210_L6C_PROBE
+  atomic_text_file "$input/l6c_target_ion.txt" 0640 1
+else
+  atomic_text_file "$input/diagnostic_mode.txt" 0640 A210_L6_PROBE
+fi
 if [[ -f "$input/requested_diag_te_K.txt" ]]; then
   atomic_text_file "$input/requested_diag_te_K.txt" 0640 10020
 fi
 
 new_env="$(mktemp)"
 temporary_paths+=("$new_env")
-changed=0
-while IFS= read -r line; do
-  case "$line" in
-    'declare -x LUMINA_PURE_CMFGEN_ITER='*)
-      printf '%s\n' 'declare -x LUMINA_PURE_CMFGEN_ITER="2"'
-      changed=$((changed + 1))
-      ;;
-    'declare -x LUMINA_RADEQ_DIAG_TE_K='*)
-      printf '%s\n' 'declare -x LUMINA_RADEQ_DIAG_TE_K="10020"'
-      changed=$((changed + 1))
-      ;;
-    'declare -x LUMINA_A210_SPRODUCER_CAPTURE='*)
-      printf '%s\n' 'declare -x LUMINA_A210_SPRODUCER_CAPTURE="1"'
-      changed=$((changed + 1))
-      ;;
-    'declare -x LUMINA_A210_INDEPENDENT_CAPTURE='*)
-      printf '%s\n' 'declare -x LUMINA_A210_INDEPENDENT_CAPTURE="1"'
-      changed=$((changed + 1))
-      ;;
-    *)
-      printf '%s\n' "${line//$base/$dest}"
-      ;;
-  esac
-done < "$base_env" > "$new_env"
-[[ "$changed" -eq 4 ]] || die "resolved env did not expose four env deltas"
+rewrite_resolved_env "$base_env" "$base" "$dest" "$l6c_enabled" > "$new_env"
+changed="$rewritten_count"
+if [[ "$l6c_enabled" == 1 ]]; then
+  [[ "$changed" -eq 5 ]] || die "resolved env did not expose five L6C env deltas"
+else
+  [[ "$changed" -eq 4 ]] || die "resolved env did not expose four env deltas"
+fi
 atomic_capture_file "$input/resolved_lumina.exports" 0640 \
   env LC_ALL=C sort -u "$new_env"
 
@@ -198,12 +308,20 @@ binary_sha256="$(sha256sum "$input/lumina_cuda" | cut -d' ' -f1)"
 atomic_text_file "$input/binary.sha256" 0640 "$binary_sha256"
 resolved_sha256="$(sha256sum "$input/resolved_lumina.exports")"
 atomic_text_file "$input/resolved_lumina.sha256" 0640 "$resolved_sha256"
-flight_scripts_sha256="$(sha256sum \
-  "$input/job.slurm" \
-  "$input/check_a210_targeted_gate.py" \
-  "$input/stage_det_stage12_l6_probe.sh" \
-  "$input/analyze_det_stage12_l6.py" \
-  "$input/check_det_convergence.py")"
+flight_script_paths=(
+  "$input/job.slurm"
+  "$input/check_a210_targeted_gate.py"
+  "$input/stage_det_stage12_l6_probe.sh"
+  "$input/analyze_det_stage12_l6.py"
+  "$input/check_det_convergence.py"
+)
+if [[ "$l6c_enabled" == 1 ]]; then
+  flight_script_paths+=(
+    "$input/analyze_det_stage12_l6c.py"
+    "$input/audit_l6c_cover_precondition.py"
+  )
+fi
+flight_scripts_sha256="$(sha256sum "${flight_script_paths[@]}")"
 atomic_text_file "$input/flight_scripts.sha256" 0640 \
   "$flight_scripts_sha256"
 
@@ -215,9 +333,19 @@ for name in \
   [[ "$(grep -cFx "declare -x $name" "$input/resolved_lumina.exports" || true)" -eq 1 ]] || \
     die "staged env delta is missing: $name"
 done
-[[ "$(<"$input/outer_iterations.txt")" == 2 && \
-   "$(<"$input/diagnostic_mode.txt")" == A210_L6_PROBE ]] || \
-  die "staged execution-mode delta is incomplete"
+if [[ "$l6c_enabled" == 1 ]]; then
+  [[ "$(grep -cFx 'declare -x LUMINA_A210_LINE_SATURATION_TARGET_ION="1"' \
+       "$input/resolved_lumina.exports" || true)" -eq 1 ]] || \
+    die "staged L6C target-ion delta is missing"
+  [[ "$(<"$input/outer_iterations.txt")" == 2 && \
+     "$(<"$input/diagnostic_mode.txt")" == A210_L6C_PROBE && \
+     "$(<"$input/l6c_target_ion.txt")" == 1 ]] || \
+    die "staged L6C execution-mode delta is incomplete"
+else
+  [[ "$(<"$input/outer_iterations.txt")" == 2 && \
+     "$(<"$input/diagnostic_mode.txt")" == A210_L6_PROBE ]] || \
+    die "staged execution-mode delta is incomplete"
+fi
 
 for spec in \
   'scripts/run_det_convergence_2026-08-08.slurm:job.slurm' \
@@ -230,6 +358,18 @@ for spec in \
   [[ "$head_sha" == "$staged_sha" ]] || \
     die "HEAD freshness seal mismatch: $target_name"
 done
+if [[ "$l6c_enabled" == 1 ]]; then
+  for spec in \
+    'scripts/analyze_det_stage12_l6c.py:analyze_det_stage12_l6c.py' \
+    'scripts/audit_l6c_cover_precondition.py:audit_l6c_cover_precondition.py'; do
+    source_path="${spec%%:*}"
+    target_name="${spec#*:}"
+    head_sha="$(git -C "$repo" show "HEAD:$source_path" | sha256sum | cut -d' ' -f1)"
+    staged_sha="$(sha256sum "$input/$target_name" | cut -d' ' -f1)"
+    [[ "$head_sha" == "$staged_sha" ]] || \
+      die "HEAD freshness seal mismatch: $target_name"
+  done
+fi
 
 write_base_input_manifest "$base_manifest_after"
 base_input_sha256_after="$(sha256sum "$base_manifest_after" | cut -d' ' -f1)"
@@ -237,19 +377,41 @@ base_input_sha256_after="$(sha256sum "$base_manifest_after" | cut -d' ' -f1)"
   cmp -s "$base_manifest_before" "$base_manifest_after" || \
   die "base input byte seal mismatch before=$base_input_sha256_before after=$base_input_sha256_after"
 
-atomic_text_file "$dest/L6_STAGE_SEAL.txt" 0640 \
-  "schema=DET_STAGE12_L6_STAGE_V1" \
-  "base_run_root=$base" \
-  "base_input_sha256_before=$base_input_sha256_before" \
-  "base_input_sha256_after=$base_input_sha256_after" \
-  "base_input_byte_invariant=1" \
-  "repo_head=$head" \
-  "outer_iterations=2" \
-  "diagnostic_mode=A210_L6_PROBE" \
-  "resolved_env_delta_count=4" \
-  "execution_delta_count=5" \
-  "physical_values_modified=0" \
-  "floor=0" "cap=0" "clamp=0" "jitter=0" "repair=0"
+if [[ "$l6c_enabled" == 1 ]]; then
+  atomic_text_file "$dest/L6_STAGE_SEAL.txt" 0640 \
+    "schema=DET_STAGE12_L6C_STAGE_V1" \
+    "base_run_root=$base" \
+    "base_input_sha256_before=$base_input_sha256_before" \
+    "base_input_sha256_after=$base_input_sha256_after" \
+    "base_input_byte_invariant=1" \
+    "repo_head=$head" \
+    "outer_iterations=2" \
+    "diagnostic_mode=A210_L6C_PROBE" \
+    "l6c_target_ion=1" \
+    "resolved_env_delta_count=5" \
+    "execution_delta_count=6" \
+    "physical_values_modified=0" \
+    "floor=0" "cap=0" "clamp=0" "jitter=0" "repair=0"
+else
+  atomic_text_file "$dest/L6_STAGE_SEAL.txt" 0640 \
+    "schema=DET_STAGE12_L6_STAGE_V1" \
+    "base_run_root=$base" \
+    "base_input_sha256_before=$base_input_sha256_before" \
+    "base_input_sha256_after=$base_input_sha256_after" \
+    "base_input_byte_invariant=1" \
+    "repo_head=$head" \
+    "outer_iterations=2" \
+    "diagnostic_mode=A210_L6_PROBE" \
+    "resolved_env_delta_count=4" \
+    "execution_delta_count=5" \
+    "physical_values_modified=0" \
+    "floor=0" "cap=0" "clamp=0" "jitter=0" "repair=0"
+fi
 atomic_text_file "$dest/READY" 0640 READY
-printf 'DET_STAGE12_L6_STAGE_OK run_root=%s base=%s head=%s iterations=2 mode=A210_L6_PROBE\n' \
-  "$dest" "$base" "$head"
+if [[ "$l6c_enabled" == 1 ]]; then
+  printf 'DET_STAGE12_L6_STAGE_OK run_root=%s base=%s head=%s iterations=2 mode=A210_L6C_PROBE target_ion=1\n' \
+    "$dest" "$base" "$head"
+else
+  printf 'DET_STAGE12_L6_STAGE_OK run_root=%s base=%s head=%s iterations=2 mode=A210_L6_PROBE\n' \
+    "$dest" "$base" "$head"
+fi

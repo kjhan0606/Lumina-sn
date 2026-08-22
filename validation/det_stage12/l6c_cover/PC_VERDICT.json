@@ -1,0 +1,87 @@
+{
+  "blocking_reasons": [],
+  "findings": [
+    "ION2_HAZARD_ANCHOR_ZERO"
+  ],
+  "mode": "A210_L6C_PROBE",
+  "pc1": {
+    "base_table_contains_targets": true,
+    "projection_loops_uncut": true,
+    "sealed_environment": [
+      {
+        "forbidden_present": [],
+        "path": "/gpfs/kjhan/lumina/det_stage12_fixed_te_a100x2_k36/sprim_l6_20260821T054111Z_probe/input/resolved_lumina.exports",
+        "skip_masks": {
+          "LUMINA_NLTE_SKIP_Z": [
+            14
+          ],
+          "LUMINA_OPACITY_SKIP_Z": []
+        }
+      },
+      {
+        "forbidden_present": [],
+        "path": "/gpfs/kjhan/lumina/det_stage12_fixed_te_a100x2_k36/idseal_20260820T044703Z_a209/input/resolved_lumina.exports",
+        "skip_masks": {
+          "LUMINA_NLTE_SKIP_Z": [
+            14
+          ],
+          "LUMINA_OPACITY_SKIP_Z": []
+        }
+      }
+    ],
+    "sealed_mapping_discriminator": {
+      "ION4_mapped": 594,
+      "base_mapped": 0,
+      "rows": 594
+    },
+    "target_pairs": [
+      [
+        26,
+        1
+      ],
+      [
+        27,
+        1
+      ],
+      [
+        28,
+        1
+      ]
+    ]
+  },
+  "pc2": {
+    "candidate_rows": {
+      "1": 1048375,
+      "2": 708767,
+      "3": 215038
+    },
+    "hazard_counts": {
+      "1": 0,
+      "2": 0,
+      "3": 0
+    },
+    "hazard_rows": {
+      "1": [],
+      "2": [],
+      "3": []
+    },
+    "normalization": "unit positive ion density; zero-chi condition is homogeneous",
+    "temperature_K": 10020.0,
+    "time_explosion_s": 1683072.0,
+    "unavailable_count": 0,
+    "unavailable_rows": []
+  },
+  "pc5": {
+    "binary_path": "/gpfs/kjhan/lumina/det_stage12_fixed_te_a100x2_k36/sprim_l6_20260821T054111Z_probe/input/lumina_cuda",
+    "binary_sha256": "b9a30a81ebea57f9fa857d192107dd85aeb04ab1308f27b1a68cf45f1a69af99",
+    "source_identity": {
+      "baseline_revision": "5d711d06",
+      "diff_empty": true,
+      "source_revision": "0fef1693b46ae9ad75d95d389603b3e497bb2d44"
+    }
+  },
+  "physical_values_modified": false,
+  "schema": "DET_L6C_COVER_PRECONDITION_V1",
+  "sealed_roots_written": false,
+  "status": "PASS"
+}
