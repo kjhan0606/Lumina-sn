@@ -377,8 +377,73 @@ PF-2 는 fa 1차원 분할(ZC-Z·ZC-D 는 A207·L6C 전례와 같은 분할 밖 
 | 단계 | 규약상 담당 | 실제 | 위반 |
 |---|---|---|---|
 | 사전등록 개정 1 | Fable | Fable fresh 컨텍스트 (2026-08-26) — 봉인·소스·런 흔적 주장 전건 [저자 실행], 프리플라이트 자체검증 rc=0 | — |
-| 코드 검수 | Fable (별개 컨텍스트) | (기입 대기) | |
-| 발주·집행·런 제출 | 운전석 | (기입 대기) | |
+| 구현 | Codex | Codex `gpt-5.6-terra` xhigh, clean worktree `d949dd7` detached, workspace-write·네트워크 차단. 변경집합 4행 1:1, 초과·미달 0 | — |
+| 코드 검수 | Fable (별개 컨텍스트) | Fable fresh (2026-08-26). **차단 0건 · 지적 6건 전부 비차단.** 질문 0(봉인 접촉 가부)=**YES** — 스테이저 쓰기 프리미티브 전수 조사로 봉인 파괴 경로 0 확인 | — |
+| 발주·집행·런 제출 | 운전석 | 발주 프리플라이트 rc=0 → Codex 발주 → **검수 선행**(개정16 ②) → 봉인 무접촉 게이트 5건 → 커밋 `e500e29` → 봉인 접촉 스테이징 → 봉인 불변 실측 → 제출 `324388` | — |
 | 판정 | Fable (fresh) | (기입 대기) | |
 | 감리-A | Fable (fresh) | (기입 대기) | |
 | 감리-B | Codex (read-only) | (기입 대기) | |
+
+### 10.1 집행 기록 본문 (운전석 기입, 2026-08-26)
+
+**① 발주 프리플라이트 rc** — `scripts/check_dispatch_preflight.py <발주서> docs/RUNG_A210_ZERO_OPACITY_2026-08-19.md --root .` (grammar-debug) → **rc=0**.
+DP-1 `no-restatement` (뒷겹 재서술 0, tokens_checked=5) · DP-2 `frontpage-sealed` · DP-3 `contract-preflight rc=0`.
+사전등록 프리플라이트도 개정 1 적용 시 rc=0 (`changeset-consistent files=4` · `branch-partition trials=200000 rules=2 fixtures=4` · `references-resolved refs=8`).
+
+**② `[미실행]` 주장 실행 결과** — 개정 1 은 봉인·소스·런 흔적 주장을 전건 `[저자 실행]` 으로
+표기했다(개정16 ③). 운전석이 발주 전 재실행한 것: L6 봉인 stderr `:1893`/`:3581` 의
+`zero_opacity_emitting_rows=0` (양 반복 완주) · `sacct -j 319967` FAILED 70:0 @syn104(h200) ·
+런처 `:198` 의 L6C `INDEPENDENT_CAPTURE==1` 강제 · `a210_sproducer_raw_decode` 의 `capture_active` 게이트.
+**전건 재현 — 미실행 잔여 0.**
+
+**③ 발주 중단** — **0회.** (직전 캠페인의 발주 중단 9건 중 4건이 운전석 발주서였다. 개정15
+뒷겹 재서술 금지 적용 후 이번 발주는 중단 없이 통과했다.)
+
+**④ 게이트 실행 결과** — 개정16 ② 에 따라 **검수 답(질문 0)이 오기 전 봉인 접촉 게이트를
+돌리지 않았다.** 봉인 무접촉만 병행:
+
+| 게이트 | 봉인 접촉 | 결과 |
+|---|---|---|
+| CPU 빌드 `lumina` | 무 | PASS — 바이너리 mtime > 소스 mtime **이고 새 심볼이 바이너리에 실존**(무효 재빌드 배제) |
+| CUDA 빌드 `lumina_cuda` | 무 | PASS — 동상 |
+| `selftest_det_stage12` | 무 | PASS — 자체 NC-C1~C3 음성대조 정상, 기존 판정 무변 |
+| 판독기 `--selftest` | 무 | PASS — NC-Z0~Z4 5종 `failed=0` |
+| 스테이저 `--selftest` | 무 (스크래치 전용) | PASS — NC-ZS0·ZS1 |
+| bash 문법 (스테이저·런처) | 무 | OK |
+| **봉인 접촉 스테이징** | **유** | **검수 통과 후 실행.** `A210_ZERO_OPACITY_CENSUS_STAGE_OK env_delta=2 mode=A210_ZO_CENSUS` |
+
+**⑤ ★봉인 불변 실측** — 스테이징 **전·후** 봉인 L6C 런루트(`l6c_20260822T154507Z_cover`,
+119 파일 · 5.1 GiB) 전수 지문을 정렬 비교했다:
+`sha256 차이 0행` · `메타(크기·mtime·**inode**) 차이 0행`.
+inode 까지 동일하므로 하드링크 오염도 0 이다 — 직전 단에서 스테이저가 `cp -al` + 제자리
+truncate 로 봉인 base 를 침묵 파괴할 뻔한 그 계급이 실측으로 배제됐다.
+(지문 정렬은 의도적이다 — 직전 단에서 `seal_before.txt` 를 정렬하지 않아 판정문의 재현
+명령이 실패한 전례가 있다.)
+
+**⑥ 스테이지 산출 독립 검증** (스테이저 자기주장을 믿지 않고 운전석이 재계산):
+경로 정규화 후 exports delta = **정확 2쌍**(`SPRODUCER_CAPTURE 1→0`·`INDEPENDENT_CAPTURE 1→0`) ·
+봉인·사본 **공유 inode 0** · `diagnostic_mode=A210_ZO_CENSUS` · `outer_iterations=2` ·
+`TARGET_ION=1` · `LINE_SATURATION_DIAG=2` · `RADEQ_DIAG_TE_K=10020` ·
+staged `binary.sha256` = repo `lumina_cuda` sha256 · staged `git_head` = repo HEAD = `e500e29`.
+
+**⑦ 런 제출** — §5.5 사양 그대로 **slurm 1회**:
+`sbatch --partition=a100 --gres=gpu:2 --mem=64G --time=08:00:00 --job-name=LUMINA_ZO_CENSUS_II`
+→ **job 324388**. 런루트 `/gpfs/kjhan/lumina/a210_zero_opacity_z1r_a100x2_k36/zo_20260826T050021Z_census_ion1`, `OWNER.txt`(`DO_NOT_CANCEL=1`) 기재.
+제출 스크립트는 자기 위치를 run_root 로 앵커하므로 봉인 root 가 `job.slurm` 인자로 가지 않는다
+(검수 지적 2 준수). h200/h100 폴백 없음 — 개정 1 이 정정한 그대로다(8-19 시도가 h200 배정으로 죽었다).
+
+**⑧ 검수 지적 6건의 처분** (전부 비차단):
+| # | 지적 | 처분 |
+|---|---|---|
+| Q0-1 | dest 가드가 봉인 root **내부의 미존재 하위경로**를 막지 못함 | 운전석이 dest 를 봉인 root 밖 신규 트리로 지정하고 실행 전 대조했다. 기존 봉인 바이트의 덮어쓰기·삭제 경로는 0 으로 전수 확인됨 |
+| Q0-2 | 런처를 봉인 런루트에 직접 재실행하면 3파일을 덮어쓴 뒤 죽음 (기존 결함, 이 패치 소산 아님) | 봉인 root 를 `job.slurm` 인자로 주지 않음. **별건 큐로 이월** — 런처의 "work dir not empty" 검사가 덮어쓰기보다 **뒤**에 있다 |
+| Q1 | 발주서의 "플랑크 자체 계산" 조항이 이 변경집합에서 공회전 | 좁힘 아님. 무처분 |
+| Q2-1 | 판독기가 §8 의 **ZC-D 라벨을 부여하지 않음** (미완주는 이름 있는 FAIL 로 fail-closed 되나 branch=`UNRESOLVED`) | **판정자에게 인계** — FAIL→ZC-D 매핑을 판정문에서 수동 수행할 것 |
+| Q2-2 | 런처 가드 계약 4종 + 2종(`partition==a100`·`DIAG_TE_K==10020`) 초과 | 무해. 전자는 §5.5 강제, 후자는 봉인 exports 실측값 |
+| Q2-3 | 워크트리에 미추적 빌드 산출물 `selftest_det_stage12` | 커밋에서 제외됨 (`git add` 4경로 명시, `git add -A` 미사용) |
+
+**⑨ 검수자가 남긴 불확신 지점 4건** — 판정 시 확인할 것:
+(1) E-Z3 앵커 bit-재현은 GPU 런에서만 판명 — 빗나가면 `ANCHOR_FIELD_MISMATCH`→ZC-Z 조사.
+(2) SUMMARY 인쇄가 소스에 두 변형 존재; DIAG=2 반복당 1줄은 봉인 실측 의존, 코드 전수추적 미실시 — 런처 `grep -c == 2` 가 양방향 fail-closed 로 받는다.
+(3) 판독기 `log_blocks` 의 비-census SUMMARY 처리 — census 런에선 발생 불능.
+(4) 검수자는 CUDA 빌드·GPU 완주를 실행하지 않았다 — **운전석이 CUDA 빌드를 실행해 심볼 실존까지 확인**(위 ④). GPU 완주는 런 324388 이 판정한다.
