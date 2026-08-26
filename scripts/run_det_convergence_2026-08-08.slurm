@@ -36,6 +36,8 @@ l6_analyzer="$input_dir/analyze_det_stage12_l6.py"
 l6c_analyzer="$input_dir/analyze_det_stage12_l6c.py"
 l6c_precondition="$input_dir/audit_l6c_cover_precondition.py"
 census_analyzer="$input_dir/analyze_a210_zero_opacity_census.py"
+z2a_analyzer="$input_dir/analyze_a210_z2a_probe.py"
+z2a_census_stderr_file="$input_dir/z2a_census_stderr.txt"
 resolved_env="$input_dir/resolved_lumina.exports"
 iterations="$(<"$input_dir/outer_iterations.txt")"
 diagnostic_mode="$(<"$input_dir/diagnostic_mode.txt")"
@@ -68,6 +70,10 @@ case "$diagnostic_mode" in
     [[ "$iterations" == 2 ]] || \
       die "A2-10 zero-opacity census requires exactly two outer iterations"
     ;;
+  A210_Z2A_PROBE)
+    [[ "$iterations" == 2 ]] || \
+      die "A2-10 Z2A probe requires exactly two outer iterations"
+    ;;
   *) die "invalid diagnostic mode: $diagnostic_mode" ;;
 esac
 [[ "$expected_sigma" =~ ^[0-9a-f]{64}$ ]] || die "invalid sigma seal"
@@ -91,6 +97,12 @@ if [[ "$diagnostic_mode" == A210_L6C_PROBE ]]; then
 fi
 if [[ "$diagnostic_mode" == A210_ZO_CENSUS ]]; then
   [[ -x "$census_analyzer" ]] || die "incomplete zero-opacity census inputs"
+fi
+if [[ "$diagnostic_mode" == A210_Z2A_PROBE ]]; then
+  [[ -x "$z2a_analyzer" && -f "$z2a_census_stderr_file" && \
+     ! -L "$z2a_census_stderr_file" && -f "$input_dir/z2a_target_ion.txt" && \
+     ! -L "$input_dir/z2a_target_ion.txt" ]] || \
+    die "incomplete Z2A probe inputs"
 fi
 
 module load cuda/13.0.2 2>/dev/null || module load cuda 2>/dev/null || \
@@ -179,7 +191,8 @@ fi
 if [[ "$diagnostic_mode" == A210_TARGETED_GATE ||
       "$diagnostic_mode" == A210_L6_PROBE ||
       "$diagnostic_mode" == A210_L6C_PROBE ||
-      "$diagnostic_mode" == A210_ZO_CENSUS ]]; then
+      "$diagnostic_mode" == A210_ZO_CENSUS ||
+      "$diagnostic_mode" == A210_Z2A_PROBE ]]; then
   [[ "${LUMINA_CMF_FINE_MGPU_DEVICES:-0}" == 2 ]] || \
     die "A2-10 diagnostic requires the two-device exact owner"
   case "$gpu_name" in
@@ -190,6 +203,12 @@ fi
 if [[ "$diagnostic_mode" == A210_ZO_CENSUS ]]; then
   [[ "${SLURM_JOB_PARTITION:-}" == a100 ]] || \
     die "zero-opacity census must be submitted to partition a100"
+fi
+if [[ "$diagnostic_mode" == A210_Z2A_PROBE ]]; then
+  [[ "${SLURM_JOB_PARTITION:-}" == a100 ]] || \
+    die "Z2A probe must be submitted to partition a100"
+fi
+if [[ "$diagnostic_mode" == A210_ZO_CENSUS ]]; then
   [[ "${LUMINA_RADEQ_DIAG_TE_K:-}" == 10020 ]] || \
     die "zero-opacity census requested-temperature switch is not 10020 K"
   [[ "${LUMINA_A210_SPRODUCER_CAPTURE:-UNSET}" == 0 ]] || \
@@ -200,6 +219,25 @@ if [[ "$diagnostic_mode" == A210_ZO_CENSUS ]]; then
     die "zero-opacity census line-saturation union diagnostic is not armed"
   [[ "${LUMINA_A210_LINE_SATURATION_TARGET_ION:-}" == 1 ]] || \
     die "zero-opacity census target ion is not II"
+fi
+if [[ "$diagnostic_mode" == A210_Z2A_PROBE ]]; then
+  z2a_target_ion="$(<"$input_dir/z2a_target_ion.txt")"
+  [[ "$z2a_target_ion" =~ ^[123]$ ]] || \
+    die "Z2A target-ion provenance is outside {1,2,3}: $z2a_target_ion"
+  [[ "${LUMINA_RADEQ_DIAG_TE_K:-}" == 10020 ]] || \
+    die "Z2A requested-temperature switch is not 10020 K"
+  [[ "${LUMINA_A210_SPRODUCER_CAPTURE:-0}" == 1 ]] || \
+    die "Z2A raw producer capture is not armed"
+  [[ "${LUMINA_A210_INDEPENDENT_CAPTURE:-0}" == 1 ]] || \
+    die "Z2A independent continuum capture is not armed"
+  [[ "${LUMINA_A210_LINE_SATURATION_DIAG:-0}" == 2 ]] || \
+    die "Z2A line-saturation union diagnostic is not armed"
+  [[ "${LUMINA_A210_LINE_SATURATION_TARGET_ION:-}" == "$z2a_target_ion" ]] || \
+    die "Z2A target-ion environment/provenance mismatch"
+  z2a_census_stderr="$(<"$z2a_census_stderr_file")"
+  [[ "$z2a_census_stderr" = /* && -f "$z2a_census_stderr" && \
+     ! -L "$z2a_census_stderr" ]] || \
+    die "Z2A census stderr reference is unsafe or unavailable"
 fi
 if [[ "$diagnostic_mode" == A210_L6_PROBE ]]; then
   [[ "${LUMINA_RADEQ_DIAG_TE_K:-}" == 10020 ]] || \
@@ -288,6 +326,15 @@ done
       "$(sha256sum "$input_dir/job.slurm" | cut -d' ' -f1)"
     printf 'analyzer_zo_census_sha256=%s\n' \
       "$(sha256sum "$census_analyzer" | cut -d' ' -f1)"
+    printf 'git_head=%s\n' "$(<"$input_dir/git_head.txt")"
+    printf 'python3_version=%s\n' "$(python3 --version 2>&1)"
+  fi
+  if [[ "$diagnostic_mode" == A210_Z2A_PROBE ]]; then
+    printf 'job_slurm_sha256=%s\n' \
+      "$(sha256sum "$input_dir/job.slurm" | cut -d' ' -f1)"
+    printf 'analyzer_z2a_sha256=%s\n' \
+      "$(sha256sum "$z2a_analyzer" | cut -d' ' -f1)"
+    printf 'census_stderr_reference=%s\n' "$z2a_census_stderr"
     printf 'git_head=%s\n' "$(<"$input_dir/git_head.txt")"
     printf 'python3_version=%s\n' "$(python3 --version 2>&1)"
   fi
@@ -432,6 +479,41 @@ if [[ "$diagnostic_mode" == A210_ZO_CENSUS ]]; then
     die "zero-opacity census analyzer failed"
   printf 'A210_ZO_CENSUS_ACCEPT status=PASS job_id=%s run_root=%s\n' \
     "$SLURM_JOB_ID" "$run_root" | tee "$run_root/ZERO_OPACITY_CENSUS_VERDICT.txt"
+  exit 0
+fi
+
+if [[ "$diagnostic_mode" == A210_Z2A_PROBE ]]; then
+  z2a_complete_summaries="$(grep -c \
+    "\\[A2-10\\]\\[LINE-SATURATION-SUMMARY\\].*phase=REQUESTED_TE.*target_ion=$z2a_target_ion.*complete=1" \
+    "$run_root/stderr.log" || true)"
+  [[ "$z2a_complete_summaries" -eq 2 ]] || \
+    die "Z2A probe lacks two complete requested-Te summaries"
+  [[ "$(grep -c '\[A2-10\]\[LINE-SATURATION-BLOCKED\]' \
+       "$run_root/stderr.log" || true)" -eq 0 ]] || \
+    die "Z2A probe emitted a line-saturation BLOCKED record"
+  [[ "$(grep -c '\[A2-10\]\[LINE-SATURATION-ISOLATED\]' \
+       "$run_root/stderr.log" || true)" -eq 0 ]] || \
+    die "Z2A probe emitted a line-saturation ISOLATED record"
+  if [[ "$z2a_target_ion" == 1 ]]; then
+    python3 "$z2a_analyzer" --mode R-II --run-root "$run_root" \
+      --census-stderr "$z2a_census_stderr" \
+      --report "$run_root/a210_z2a_probe_report.json" \
+      > "$run_root/z2a_probe.stdout" 2> "$run_root/z2a_probe.stderr" || \
+      die "Z2A R-II analyzer failed"
+  elif [[ "$z2a_target_ion" == 2 ]]; then
+    python3 "$z2a_analyzer" --mode R-III --run-root "$run_root" \
+      --report "$run_root/a210_z2a_probe_report.json" \
+      > "$run_root/z2a_probe.stdout" 2> "$run_root/z2a_probe.stderr" || \
+      die "Z2A R-III analyzer failed"
+  else
+    python3 "$z2a_analyzer" --mode R-IV --run-root "$run_root" \
+      --report "$run_root/a210_z2a_probe_report.json" \
+      > "$run_root/z2a_probe.stdout" 2> "$run_root/z2a_probe.stderr" || \
+      die "Z2A R-IV analyzer failed"
+  fi
+  printf 'A210_Z2A_PROBE_ACCEPT status=PASS job_id=%s run_root=%s target_ion=%s\n' \
+    "$SLURM_JOB_ID" "$run_root" "$z2a_target_ion" | \
+    tee "$run_root/Z2A_PROBE_VERDICT.txt"
   exit 0
 fi
 
