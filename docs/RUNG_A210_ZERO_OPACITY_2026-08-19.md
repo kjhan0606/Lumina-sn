@@ -444,6 +444,16 @@ staged `binary.sha256` = repo `lumina_cuda` sha256 · staged `git_head` = repo H
 
 **⑨ 검수자가 남긴 불확신 지점 4건** — 판정 시 확인할 것:
 (1) E-Z3 앵커 bit-재현은 GPU 런에서만 판명 — 빗나가면 `ANCHOR_FIELD_MISMATCH`→ZC-Z 조사.
-(2) SUMMARY 인쇄가 소스에 두 변형 존재; DIAG=2 반복당 1줄은 봉인 실측 의존, 코드 전수추적 미실시 — 런처 `grep -c == 2` 가 양방향 fail-closed 로 받는다.
+(2) **★해소됨 (운전석 코드 전수추적, 2026-08-26, 런 대기 중 실시).** 검수자는 봉인 실측에만
+의존했으나, 추적 결과 **두 SUMMARY 는 상호배타**다:
+호출부는 `:15383` **단 하나**(`a210_line_saturation_log_complete`) → 그 함수 `:14484` 가
+`if(diag->mode==2) return a210_line_saturation_log_per_ion_union(diag);` 로 **조기 반환**하므로
+DIAG=2 에서 `:14572` 는 **도달 불능**이다. 실행되는 `:14452` 는 per-ion 루프가 닫힌 뒤
+함수 스코프에 있어 호출당 정확히 1회. 문면은 `phase=REQUESTED_TE … target_ion=%d …
+complete=1` 순서로 런처 grep 과 일치한다. 같은 함수의 다른 인쇄는 태그가 달라
+(`LINE-SATURATION-UNION-META`·`LINE-SATURATION-UNION-ION-SUMMARY`) 런처의
+`\[A2-10\]\[LINE-SATURATION-SUMMARY\]` 앵커에 걸리지 않는다 — **오탐 0**.
+⟹ 반복 2회 × 1줄 = 2, 런처 `grep -c == 2` 가 옳다. 이 확인이 없었으면 8시간 GPU 를 태우고
+수용 블록에서 죽을 수 있었다.
 (3) 판독기 `log_blocks` 의 비-census SUMMARY 처리 — census 런에선 발생 불능.
 (4) 검수자는 CUDA 빌드·GPU 완주를 실행하지 않았다 — **운전석이 CUDA 빌드를 실행해 심볼 실존까지 확인**(위 ④). GPU 완주는 런 324388 이 판정한다.
