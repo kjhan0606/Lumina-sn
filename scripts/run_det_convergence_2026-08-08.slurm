@@ -35,6 +35,7 @@ l6_stager="$input_dir/stage_det_stage12_l6_probe.sh"
 l6_analyzer="$input_dir/analyze_det_stage12_l6.py"
 l6c_analyzer="$input_dir/analyze_det_stage12_l6c.py"
 l6c_precondition="$input_dir/audit_l6c_cover_precondition.py"
+census_analyzer="$input_dir/analyze_a210_zero_opacity_census.py"
 resolved_env="$input_dir/resolved_lumina.exports"
 iterations="$(<"$input_dir/outer_iterations.txt")"
 diagnostic_mode="$(<"$input_dir/diagnostic_mode.txt")"
@@ -63,6 +64,10 @@ case "$diagnostic_mode" in
     [[ "$iterations" == 2 ]] || \
       die "A2-10 L6C probe requires exactly two outer iterations"
     ;;
+  A210_ZO_CENSUS)
+    [[ "$iterations" == 2 ]] || \
+      die "A2-10 zero-opacity census requires exactly two outer iterations"
+    ;;
   *) die "invalid diagnostic mode: $diagnostic_mode" ;;
 esac
 [[ "$expected_sigma" =~ ^[0-9a-f]{64}$ ]] || die "invalid sigma seal"
@@ -83,6 +88,9 @@ if [[ "$diagnostic_mode" == A210_L6C_PROBE ]]; then
      -f "$input_dir/l6c_target_ion.txt" && \
      ! -L "$input_dir/l6c_target_ion.txt" ]] || \
     die "incomplete staged L6C inputs"
+fi
+if [[ "$diagnostic_mode" == A210_ZO_CENSUS ]]; then
+  [[ -x "$census_analyzer" ]] || die "incomplete zero-opacity census inputs"
 fi
 
 module load cuda/13.0.2 2>/dev/null || module load cuda 2>/dev/null || \
@@ -170,13 +178,28 @@ else
 fi
 if [[ "$diagnostic_mode" == A210_TARGETED_GATE ||
       "$diagnostic_mode" == A210_L6_PROBE ||
-      "$diagnostic_mode" == A210_L6C_PROBE ]]; then
+      "$diagnostic_mode" == A210_L6C_PROBE ||
+      "$diagnostic_mode" == A210_ZO_CENSUS ]]; then
   [[ "${LUMINA_CMF_FINE_MGPU_DEVICES:-0}" == 2 ]] || \
     die "A2-10 diagnostic requires the two-device exact owner"
   case "$gpu_name" in
     *A100*) ;;
     *) die "A2-10 diagnostic requires A100 hardware: $gpu_name" ;;
   esac
+fi
+if [[ "$diagnostic_mode" == A210_ZO_CENSUS ]]; then
+  [[ "${SLURM_JOB_PARTITION:-}" == a100 ]] || \
+    die "zero-opacity census must be submitted to partition a100"
+  [[ "${LUMINA_RADEQ_DIAG_TE_K:-}" == 10020 ]] || \
+    die "zero-opacity census requested-temperature switch is not 10020 K"
+  [[ "${LUMINA_A210_SPRODUCER_CAPTURE:-UNSET}" == 0 ]] || \
+    die "zero-opacity census producer capture is not disabled"
+  [[ "${LUMINA_A210_INDEPENDENT_CAPTURE:-UNSET}" == 0 ]] || \
+    die "zero-opacity census independent capture is not disabled"
+  [[ "${LUMINA_A210_LINE_SATURATION_DIAG:-0}" == 2 ]] || \
+    die "zero-opacity census line-saturation union diagnostic is not armed"
+  [[ "${LUMINA_A210_LINE_SATURATION_TARGET_ION:-}" == 1 ]] || \
+    die "zero-opacity census target ion is not II"
 fi
 if [[ "$diagnostic_mode" == A210_L6_PROBE ]]; then
   [[ "${LUMINA_RADEQ_DIAG_TE_K:-}" == 10020 ]] || \
@@ -257,6 +280,14 @@ done
       "$(sha256sum "$l6c_analyzer" | cut -d' ' -f1)"
     printf 'precondition_sha256=%s\n' \
       "$(sha256sum "$l6c_precondition" | cut -d' ' -f1)"
+    printf 'git_head=%s\n' "$(<"$input_dir/git_head.txt")"
+    printf 'python3_version=%s\n' "$(python3 --version 2>&1)"
+  fi
+  if [[ "$diagnostic_mode" == A210_ZO_CENSUS ]]; then
+    printf 'job_slurm_sha256=%s\n' \
+      "$(sha256sum "$input_dir/job.slurm" | cut -d' ' -f1)"
+    printf 'analyzer_zo_census_sha256=%s\n' \
+      "$(sha256sum "$census_analyzer" | cut -d' ' -f1)"
     printf 'git_head=%s\n' "$(<"$input_dir/git_head.txt")"
     printf 'python3_version=%s\n' "$(python3 --version 2>&1)"
   fi
@@ -384,6 +415,23 @@ if [[ "$diagnostic_mode" == A210_L6C_PROBE ]]; then
     die "A2-10 L6C comparison snapshot gate failed"
   printf 'A210_L6C_PROBE_ACCEPT status=PASS job_id=%s run_root=%s\n' \
     "$SLURM_JOB_ID" "$run_root" | tee "$run_root/L6C_PROBE_VERDICT.txt"
+  exit 0
+fi
+
+if [[ "$diagnostic_mode" == A210_ZO_CENSUS ]]; then
+  complete_summaries="$(grep -c \
+    '\[A2-10\]\[LINE-SATURATION-SUMMARY\].*phase=REQUESTED_TE.*target_ion=1.*complete=1' \
+    "$run_root/stderr.log" || true)"
+  [[ "$complete_summaries" -eq 2 ]] || \
+    die "zero-opacity census lacks two complete requested-Te summaries"
+  python3 "$census_analyzer" \
+    --run-root "$run_root" \
+    --report "$run_root/a210_zero_opacity_census_report.json" \
+    > "$run_root/zero_opacity_census.stdout" \
+    2> "$run_root/zero_opacity_census.stderr" || \
+    die "zero-opacity census analyzer failed"
+  printf 'A210_ZO_CENSUS_ACCEPT status=PASS job_id=%s run_root=%s\n' \
+    "$SLURM_JOB_ID" "$run_root" | tee "$run_root/ZERO_OPACITY_CENSUS_VERDICT.txt"
   exit 0
 fi
 

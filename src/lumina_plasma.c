@@ -14072,7 +14072,21 @@ static int a210_line_saturation_add(
         return-1;
     }
     /* Z-1 계측: 판정 분기보다 앞. 이 카운터는 target ion 범위 안의 census 다. */
-    if(tau==0.0&&n_upper>0.0)diag->zero_opacity_emitting_rows++;
+    if(tau==0.0&&n_upper>0.0){
+        diag->zero_opacity_emitting_rows++;
+        fprintf(stderr,
+            "[A2-10][LINE-SATURATION-ZERO-OPACITY-ROW] "
+            "phase=REQUESTED_TE shell=%zu line=%d Z=%d ion=%d "
+            "lower_global=%d upper_global=%d tau_validity=%d "
+            "tau_raw=%.17g effective_tau=%.17g n_upper=%.17g "
+            "A_ul=%.17g nu=%.17g emission_per_sr=%.17g "
+            "srce_chk=%d exact_zero_provenance=%d source_defined=%d\n",
+            shell,line,Z,ion,authority->lower_global,authority->upper_global,
+            (int)tau_validity,tau,material->effective_tau,n_upper,A_ul,nu,
+            material->emission_per_sr,material->srce_chk_applied,
+            material->exact_zero_provenance,
+            material->effective_integrated_opacity!=0.0);
+    }
     long double scaled_emission=
         (long double)result->emission_per_sr*rate_factor;
     long double scaled_absorption=
