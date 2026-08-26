@@ -457,3 +457,36 @@ complete=1` 순서로 런처 grep 과 일치한다. 같은 함수의 다른 인�
 수용 블록에서 죽을 수 있었다.
 (3) 판독기 `log_blocks` 의 비-census SUMMARY 처리 — census 런에선 발생 불능.
 (4) 검수자는 CUDA 빌드·GPU 완주를 실행하지 않았다 — **운전석이 CUDA 빌드를 실행해 심볼 실존까지 확인**(위 ④). GPU 완주는 런 324388 이 판정한다.
+
+### 10.2 ★두 층 「정확-영 τ」 계량은 비교 불가 — 판독 전 확정 (운전석, 2026-08-26, 코드 실측)
+
+런 `324388` 초반 stderr 에 `cmf_fine` 센서스가 `exact_zero_tau=81,265,890` 을 냈다. 이 단이
+겨누는 `zero_opacity_emitting_rows` 와 **이름도 현상도 닮았으나 같은 것이 아니다.** 판독·판정에서
+섞어 읽는 것을 막기 위해 소스 실측으로 차이를 확정한다. **어느 쪽도 다른 쪽의 분자·분모가 아니다.**
+
+| 축 | `cmf_fine` `exact_zero_tau` | A2-10 `zero_opacity_emitting_rows` |
+|---|---|---|
+| 소스 | `lumina_cmfgen.c:5418` | `lumina_plasma.c:14075` |
+| 판별식 | `tau_validity[cell]==A208_EXACT_ZERO` — **플래그** | `tau==0.0 && n_upper>0.0` — **값 + 발광 요구** |
+| 셸 범위 | **전 셸** (`s∈[0,NS)`) | ★**셸 0 단독** (`shell!=0` 이면 즉시 return 0, `:14045`) |
+| 원소·이온 | **전 원소·전 이온** | ★**Z∈{26,27,28} ∧ ion==target_ion(=1)** (`a210_line_saturation_target`, `:14027-14030`) |
+| 선 범위 | fine 창 `[line_nu_lo,line_nu_hi]` ∧ 약선 미절단(`line_use[l]`) | 진단 후보 행 (provenance 가드 통과) |
+| 위상 | 물질 구성 시점 (`INIT_SHARED_GAUSSIAN`) | `REQUESTED_TE` radeq 위상 |
+| 단위 | 셀 (line×shell) | 진단 행 |
+
+⟹ 스코프가 **셸·이온 두 축에서 동시에** 다르다. A2-10 쪽은 셸 0 의 Fe/Co/Ni ion 1 뿐이므로
+`cmf_fine` 총수의 **극히 일부 부분집합조차 아니다**(판별식이 달라 포함관계도 성립하지 않는다).
+
+★**추가 함정 — `line_shells=` 라벨은 총수가 아니다.** `:5494` 가 그 자리에 인쇄하는 것은
+`signed_cells`(= `A208_VALID ∧ isfinite(tau)`) 이고, 이것은 `exact_zero_tau` 와 **서로소**다.
+총 셀 = `signed_cells + exact_zero_tau` 이며 이 항등식은 코드 자신이 검사한다
+(`lumina_cmfgen.c:6442` — `sobolev_jbar_cells != signed_cells + exact_zero_tau_cells` 이면 실패).
+
+실측 산술 (런 `324388` 초반):
+`signed 27,748,410` + `exact_zero 81,265,890` = **총 109,014,300 셀**, 정확-영 비율 **74.55%**.
+`upper_population_cells=129,439,900` 은 창·약선 필터 **전**이라 차 `20,425,600` 이 필터 제외분이다.
+⟹ 분모를 `line_shells` 로 잡으면 **293%** 라는 헛수가 나온다. 「잣대부터 감사」 계열의 전형이다.
+
+**처분**: 판정문은 두 계량을 **한 문장 안에서 비율로 엮지 않는다.** `cmf_fine` 수치는 배경 관찰로만
+인용하고, §8 분기 판정은 **A2-10 계량 단독**으로 한다. `cmf_fine` 정확-영이 74.55% 라는 사실은
+Z-2 설계 입력으로 **조용히 기재**한다(이 단의 표적이 아니다).
