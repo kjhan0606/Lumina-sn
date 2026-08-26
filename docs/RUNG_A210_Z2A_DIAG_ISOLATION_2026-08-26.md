@@ -1,0 +1,473 @@
+# 단 사전등록 — A210-Z2A-DIAG-ISOLATION (2026-08-26)
+
+저자 = Fable fresh 컨텍스트 (분담 개정14 ① — 기획·계획·사전등록). 선행 단
+A210-ZERO-OPACITY 폐합(분기 **ZC-A**, 커밋 `4b61915`,
+`docs/VERDICT_A210_ZERO_OPACITY_2026-08-26.md`)의 §8 처분 — *"Z-2A 발주 준비(§5 재등록·
+프리플라이트 재실행) + B 병행 검토"* — 를 집행하는 문서다. **Z-2A 의 선택(A=진단 격리)은
+census 무의존으로 기확정**이다(선행 사전등록 `docs/RUNG_A210_ZERO_OPACITY_2026-08-19.md`
+§3 개정 1: "A(진단 격리)는 지금 선택한다"). 이 문서가 정하는 것은 선택이 아니라
+**설계·계약·게이트·기대치**다.
+
+소스 인용 행 번호는 전부 **현 HEAD `4b61915`** 에서 저자가 직접 확인했다
+[저자 실행: `git rev-parse HEAD` → `4b61915911aaf8f2defc21356c4c9afa747bce2a`;
+`git diff --stat e500e29 HEAD -- src/` → 공백 = census 런 바이너리 커밋 이후 src 불변].
+봉인 런루트에는 아무것도 쓰지 않았다(읽기·grep 만).
+
+## 계약 (하나)
+
+> **A2-10 line-saturation 진단 트랜잭션의 실패는 진단만 무효화하고,
+> 물리 트랜잭션을 중단시키지 않는다.**
+
+경계를 명확히 한다:
+
+- **"실패"로 간주되는 것** = 진단 트랜잭션 내부(`a210_line_saturation_init/add/
+  log_complete/log_per_ion_union` 와 그 행 빌더)에서 발원한 모든 비정상 — env 파싱 불량·
+  스키마/프로버넌스 불량·비유한 파생 진단값·메모리 실패·stderr 쓰기 실패·선정 대수 실패.
+  처분 = **진단 무효화 + 사유·건수 보고 + 물리 계속** (§2 Class 2).
+- **"실패"가 아닌 것** = capture 가 켜진 채 χ_eff==0(τ==0) 행에서 S_probe 가 미정의인 상태.
+  census 가 전건 (a) 정당 exact-zero 임을 실측했다(fa=1.0, 221,382/221,382 — 선행 판정
+  §3). 이것은 **정당한 이름 있는 미정의 상태**이며, 행 스키마가 이미 그 표현을 갖고 있다
+  (`source_function=UNDEFINED_CHI_ZERO`·`S_probe=UNAVAILABLE`·
+  `independent_fields_defined=0`). 처분 = 행을 **저장·계수·보고**한다 (§2 Class 1).
+- **그대로 차단이어야 하는 것** = 물리 레인 자신의 가드 전부. 이 단은 그 어느 것도
+  제거·완화하지 않는다: validity 상류 필터(`src/lumina_plasma.c:14944-14948`
+  `RADEQ_STALE_OPACITY`), 물리 합산 비유한 검출(`RADEQ_NONFINITE`), cancellation census
+  fail-closed(`:15078-15079` 계급 — 선행 판정 §5-2 ② 검증분, src 불변 [저자 실행]),
+  `RADEQ_SIGN_MISMATCH` 계열, R7 세대 보존 차단. **물리값·물리 가드 무접촉이 이 계약의
+  전제 조건이다.**
+
+exact-zero 행의 처분은 이 계약의 구현 귀결이다(선행 계약 문언 승계 — 별도 계약이 아니다).
+
+## 1. 기전 특정 (오프라인 — 전 행 번호 HEAD 직독 [저자 실행])
+
+`INDEPENDENT_SPROBE_UNDEFINED` 가 물리를 죽이는 전파 사슬:
+
+1. **발원**: `src/lumina_plasma.c:14125-14126` —
+   `if(independent_capture && (!source_defined || !isfinite(source_function))){` .
+   WITNESS 인쇄 `:14127-14148` → `a210_line_saturation_blocked("INDEPENDENT_SPROBE_UNDEFINED",…)`
+   `:14149-14151` → **`return-1;` `:14152`**. 함수는 `a210_line_saturation_add`(`:14032`).
+   `source_defined = material->effective_integrated_opacity != 0.0` 이고 χ_eff==0 ⟺ tau==0
+   정확(선행 §1-1)이므로 발화 조건 = **capture ON ∧ hazard 행**.
+2. **소비자가 status 를 갈아치운다**: `:15203-15211` 호출 →
+   `:15212-15215` `if(saturation_add!=0){ status=saturation_add==-2?RADEQ_NONFINITE:
+   RADEQ_TERM_SCHEMA; first_bad_line=line; first_bad_shell=s; break; }` —
+   진단의 반환값 하나가 물리 스캔 루프를 끊는다. 함수는
+   `a210_private_line_energy_build`(`:14728`, 반환형 `RadeqStatus`).
+3. **꼬리에서 이름이 바뀌어 출판이 죽는다**: `:15382-15384`(log_complete 경로 우회) →
+   `:15385-15389` `UPSTREAM_LINE_SCAN_INCOMPLETE` 인쇄 → `:15394-15401`
+   `[A2-10][LINE-NET-BLOCKED] status=RADEQ_TERM_SCHEMA …` → publication 미기입 →
+   `:15421` `return status;`.
+4. **번들이 죽고 레인이 죽는다**: 호출자 `a210_production_bundle_ledger`(`:15554`)가
+   `:15597-15599` 에서 그대로 반환 → 고정-T 레인 `:15996-16000`
+   `if(replay_status!=RADEQ_OK…){ a210_fixed_te_reject(ct,"RADEQ_FIXED_T_BUNDLE_BUILD_FAILED");
+   goto cleanup; }`(`:15999`) → R7 물질 갱신 차단·`action=TERMINATE` → `[R7][FATAL]` rc=4 →
+   model rc=1. 하류 사슬의 in-vivo 실측은 봉인 L6C stderr 그대로다(L6C 판정문 §3 —
+   job 322449 사망 사슬 축자 인쇄).
+5. **init 실패도 같은 계급이다**: `:14808-14811` — `a210_line_saturation_init` 가 -1 을
+   반환하면 소비자가 `return RADEQ_TERM_SCHEMA;` 로 **빌드 자체를 중단**한다(발화 실적은
+   없으나 같은 전파 형태).
+
+in-vivo 확증(승계): 차단의 소유자가 진단 트랜잭션임은 **네 실측**으로 폐합돼 있다 —
+S4-III(ion=2 사망) · L6(ion=3 침묵 완주) · L6C(ion=1 사망) · **census 토글 페어**(같은
+봉인 base·같은 이온에서 capture 만 0 으로 → 완주, 선행 판정 §4 Z5). 이 단은 기전 특정에
+런을 쓰지 않는다 — 위 사슬은 전부 소스 직독 + 봉인 실측이다.
+
+## 2. 수리안 — A(진단 격리)의 구현 형식
+
+### 2-1. Class 1 — 정당한 미정의 상태의 탈-실패화 (행을 잃지 않는다)
+
+- **지점**: `:14125-14153` 의 guard + WITNESS 블록 **전체 삭제**. hazard 행은 나머지 행과
+  동일하게 저장 경로로 흐른다 — 행 스키마의 기존 이름 있는 미정의 표현이 그대로 쓰인다
+  (`independent_fields_defined` 계산 `:14202-14204` 불변; 선정 시 인쇄는
+  `source_function=UNDEFINED_CHI_ZERO`·`S_probe=UNAVAILABLE`). **물리값·진단값 어느 쪽도
+  만들어 넣지 않는다.**
+- WITNESS 인쇄의 증거 역할은 Z-1r ROW(`:14075-14089`, capture·선정 무관, 행당 1줄)가 이미
+  전건 대체한다 — WITNESS 를 남기면 capture=1 런에서 hazard 행당 중복 1줄(±22만 줄/반복)이
+  난다. 삭제가 옳다. 두 접두 모두 `[A2-10][LINE-SATURATION-` 네임스페이스 안이라 phase
+  스트림 비교기는 영향 없다 [저자 실행:
+  `scripts/compare_a210_phase_baseline_streams.py` `SATURATION_PREFIX` skip 직독].
+- **건수 보고 (사유를 잃지 않는다)**: 진단 구조체에 `size_t sprobe_undefined_rows` 를
+  신설하고, 행 저장 시 `independent_capture && !source_defined` 이면 증가. 두 SUMMARY
+  변형(레거시·per-ion-union) 말미에 ` sprobe_undefined_rows=%zu` 토큰을 덧붙인다
+  (기존 토큰 뒤 추가 — census 봉인 로그와의 토큰 단위 비교 가능성 유지). capture=0 런에서는
+  정의상 0 이다.
+- **Z-1r ROW 의 필드 세트·서식은 동결한다** — census 기준선(봉인 442,764행)과의 bit-비교
+  가능성이 이 단의 최강 무섭동 검출기다(§4 G4).
+
+### 2-2. Class 2 — 진단 실패의 격리 (무효화하되, 조용히 통과하지 않는다)
+
+- **구조체**: `int invalidated; const char *invalidated_reason;` 신설(정적 문자열만).
+- **helper `a210_line_saturation_fail(diag, reason, phase, rc)`** 신설: 기존
+  `a210_line_saturation_blocked` 인쇄(필드 세트 불변 — 사유·행수·hazard 계수 보존)를
+  수행하고 `diag->invalidated=1; diag->invalidated_reason=reason; diag->active=0;` 후 rc 반환.
+  init/add/log_complete/per_ion_union 의 **모든 실패 지점**(INVALID_ENV_VALUE ·
+  INVALID_TARGET_ION_ENV_VALUE · MISSING_ATOMIC_IDENTITY · INVALID_ROW_PROVENANCE ·
+  NONFINITE_SCALED_COMPONENT · EXPONX_FAILED · NONFINITE_DERIVED_DIAGNOSTIC · sproducer
+  decode 사유들 · ROW_CAPACITY_OVERFLOW · ALLOCATION_FAILED · NONFINITE_TOTAL_EMISSION ·
+  NO_POSITIVE_TARGET_EMISSION · SELECTION_INCOMPLETE · UNEXPECTED_TARGET_IDENTITY ·
+  NONFINITE_ION_TOTAL_EMISSION · PER_ION_SELECTION_INCOMPLETE · UNION_SELECTION_INCOMPLETE ·
+  STDERR_WRITE_FAILED)이 이 helper 를 경유한다. 사유 문자열은 전부 불변.
+- **소비자 4지점의 격리**:
+  1. init 소비자 `:14809-14811`: `return RADEQ_TERM_SCHEMA` **삭제** — 실패 시 비활성
+     진단으로 스캔을 계속한다.
+  2. 루프 소비자 `:15212-15215`: status 쓰기 + break **삭제** — add 의 반환값이 물리로
+     들어가는 유일한 배선을 끊는다(호출은 유지, 반환 무소비).
+  3. 꼬리 `:15382-15384`: `if(status==RADEQ_OK && !saturation_diag.invalidated)
+     (void)a210_line_saturation_log_complete(…);` — log_complete 실패는 fail() 로 자기
+     무효화하며 status 로 승격되지 않는다.
+  4. `UPSTREAM_LINE_SCAN_INCOMPLETE` 분기(`:15385-15389`)는 **불변** — 물리가 자기 사유로
+     실패했을 때 진단이 미완주를 정직 보고하는 자리다(진단 실패가 아니다).
+- **격리의 가시화 (조용한 통과 금지)**: 꼬리에서 `saturation_diag.invalidated` 이면 정확
+  1회 인쇄한다:
+  ```
+  [A2-10][LINE-SATURATION-ISOLATED] reason=<invalidated_reason> phase=<phase>
+      rows_at_invalidation=<count> zero_opacity_emitting_rows=<계수>
+      sprobe_undefined_rows=<계수> physics_transaction=CONTINUED complete=0
+      interpretation=DIAGNOSTIC_ONLY physical_values_modified=0
+      clamp=0 floor=0 cap=0 jitter=0 repair=0
+  ```
+  (한 줄로. 접두는 `[A2-10][LINE-SATURATION-` 네임스페이스 안 — phase 스트림 비교기 중립.)
+  무효화 이후의 계수들은 **절단 부분합**이며 그렇게 읽어야 한다(선행 §3 "부분합 합산 금지"
+  문구 승계 — 무효화가 계측도 함께 멈추는 것이 이 설계의 의도다: 유효성이 죽은 트랜잭션의
+  계수를 계속 키우지 않는다).
+- **이름 충돌 0 확인** [저자 실행: `grep -rn "LINE-SATURATION-ISOLATED" src scripts` → 0건 ·
+  `grep -rn "sprobe_undefined_rows" src scripts` → 0건 · `grep -rn "A210_Z2A" src scripts`
+  → 0건].
+
+### 2-3. ★clamp/floor 금지 판별식 적용
+
+- 이 수리는 **어떤 물리량도 읽어-고쳐 쓰지 않는다.** 제거되는 것은 진단의 status 쓰기 배선
+  하나(위 소비자 4지점)와 진단 내부의 guard 블록 하나다. **신설되는 가드가 없으므로
+  "정확해가 위반 가능한 가드"를 만들 여지 자체가 없다.**
+- **실격 조항 명문**: 진단을 살리기 위해 S_probe 의 정의역을 넓히는 어떤 형태(χ_eff 에
+  ε-floor·max(χ,ε)·조건부 대체값)도 이 단에서 실격이다. τ==0 행의 S_probe 는
+  **UNDEFINED 로 남는 것이 정확한 물리**다(0/0 을 이름으로 부르는 것이지 값으로 메우는
+  것이 아니다).
+- 검수 word-diff 의무(§4 G7): 변경이 §2-1·§2-2 열거 지점 밖의 물리 코드에 무접촉임을
+  확인한다. `physical_values_modified=0` 표지 불변.
+
+### 2-4. 판정 — B(행 건너뛰기) 병행: **기각**
+
+선행 판정 §5-3 이 준 입력(skip 대상 전부 (a)·수 221,382·목록 확보) 위에서 판정한다:
+
+1. **B 가 지키려던 것은 Class 1 이 더 강하게 지킨다.** B 의 내용 = "그 행만 skip + 건너뛴
+   수 보고"(NC3 정신). Class 1 은 행을 **버리지 않고** 저장·계수·보고한다 — 건수 보고
+   (`sprobe_undefined_rows`)는 그대로 담기고, 행의 정보(준위쌍·방출)는 잃지 않는다.
+2. **B 는 census 기준선을 파괴한다.** capture=0 경로는 이미 hazard 행을 저장·계수한다 —
+   봉인 census 의 `candidate_rows=749644`·`total_scaled_emission`(bit 봉인값)이 그 증명이다.
+   B 로 capture=1 팔에서만 행을 빼면 두 팔의 행 집합·선정 총계가 갈라져, 캡처 토글
+   무섭동성(§4 G4 의 기반이자 선행 Z6 의 계보)이 원리적으로 깨진다.
+3. **B 는 물리적으로 정당한 행을 진단 장부에서 지운다.** fa=1.0 — 이 행들은 inversion
+   경계라는, 정확히 이 캠페인이 추적 중인 대상이다.
+
+⟹ **병행하지 않는다.** C(차단 유지)는 선행 사전등록이 전면 정책으로 기각했고, (b) 행이
+스캔 범위 내 0 이므로(fa=1.0) 이름 있는 거부 사유로 재등장할 대상도 현재 없다.
+
+### 2-5. 판정 — coverage 별도 단 개설: **개설하지 않는다**
+
+의무 조건 ZC-B 는 미발동이다(fa=1.0 — 선행 판정 §3). 그 단이 소비할 입력((b) 행 목록)이
+0건이라 **열어도 측정할 것이 없다.** 스캔 범위 밖 coverage(shell≠0·타 이온·창 밖·타 위상)는
+선행 판정 §9 #6 문언 그대로 **의무 없는 미결로 존속**한다 — 이 단의 범위 밖.
+
+### 2-6. 범위 밖 — 같은 계급의 이웃 (조용한 대장 기재)
+
+`a210_line_ion_owner_init/add`(`:13705-13777` 계열, `:14812-14820`·`:15153-15157` 소비자)도
+실패 시 물리 status 를 갈아치운다 — **같은 원리 위반의 네 번째 자리 후보**다(NC3 ·
+OUT_OF_GRID · SPROBE 에 이어). 이 단은 손대지 않는다: 발화 실적 0 · opt-in env 이중 게이트
+(`LUMINA_RADEQ_DIAG` + `LUMINA_A210_LINE_ION_OWNER_SHELLS`) · 봉인 기준선 부재 · 변경집합
+최소 원칙. **대장 기재만 하고 후속 큐에 남긴다** — 수리·확장 제안 없음.
+
+## 3. 오프라인 검증 계획 (런 전)
+
+런 발주 3요건의 앞 둘: ① 기전은 §1 로 오프라인 특정 완료. ② 수리안의 오프라인 검증 =
+§4 의 봉인 무접촉 게이트(G1 빌드·심볼, G2 판독기 selftest, G3 스테이저 selftest)와 검수
+word-diff(G7). ③ 기대치는 §8 에 사전등록. 그 뒤에만 §5.5 판정런.
+
+## 4. 게이트 (★게이트별 음성대조·봉인 접촉 표기)
+
+| # | 내용 | 음성대조 (주입 결함 FAIL 시연 의무) | 봉인 접촉 |
+|---|---|---|---|
+| **G1** 빌드·심볼 | CPU `lumina`·CUDA `lumina_cuda` 재빌드, `LINE-SATURATION-ISOLATED` 와 `sprobe_undefined_rows` 심볼이 두 바이너리에 실존(무효 재빌드 배제) | **NC-G1**: 봉인 census input 바이너리(구판)에 같은 grep → 0건이어야 함 — 검출기가 구판·신판을 실제로 가른다는 시연 | 본체 무 / NC 는 **읽기 전용 유** ⟹ 검수 답 후 실행 |
+| **G2** 판독기 selftest | 신설 판독기 `--selftest` **NC-I0~I6** rc=0 (grammar-debug) | NC-I1 ISOLATED 주입→ZI-X FAIL · NC-I2 ROW 1필드 변조→ZI-B FAIL · NC-I3 SUMMARY 토큰 변조→FAIL · NC-I4 중도절단 오독→ZI-D FAIL · NC-I5 BLOCKED 주입→FAIL · NC-I6 앵커 부재→FAIL (NC-I0 = 성한 픽스처 통과) | 무 |
+| **G3** 스테이저 selftest | `--selftest`(스크래치 전용): 봉인 base 하드링크 0·exports delta 정확성 | NC-S1 하드링크 주입 검출 · NC-S2 delta 초과 주입 검출 | 무 |
+| **G4** 격리 본판정 (R-II) | 완주 ∧ ISOLATED 0 ∧ BLOCKED 0 ∧ SUMMARY 2줄 complete=1 ∧ **ROW 스트림 전행 bit-동일**(봉인 census 대비, 양 반복 각 221,382행) ∧ SUMMARY 토큰 일치 ∧ 선정열 (rank,line) 시퀀스 일치 ∧ 앵커 4필드 bit ∧ sprobe_undefined_rows=zero_opacity_emitting_rows=221,382 | **(in-vivo, 주입 없음)**: 봉인 L6C = 같은 env·같은 base·구판 바이너리 → 사망(322449 실측) ↔ R-II = 동일 조건·신판 바이너리 → 완주 ⟹ 완주의 소유자가 이 변경집합임이 페어로 시연됨 · **(계측)**: G2 의 NC 전종 | **유** (봉인 L6C·census 읽기 + 스테이징) |
+| **G5** III Stage-4 (R-III) | 완주 ∧ SUMMARY 2줄(target_ion=2) ∧ Stage-4 row(LINE-SATURATION-ROW, producer 필드 보유) ≥ 1 ∧ **S2 판정**(기존 DET-SPROD S2 판정기 — Jbar == continuum_term + local_emission_term, tol 4e-16) ∧ ion=2 hazard census 보고 — 선행 게이트 Z3·Z2 제3원의 집행 | **NC-G5**: `producer_terms_defined=0` 행을 섞은 스크래치 로그 → S2 판정기가 UNDECIDABLE 로 fail-closed 함을 시연 | **유** |
+| **G6** IV byte 불변 (R-IV) | 값 파일 Tier1 byte-동일 (봉인 L6 대비: `work/lumina_spectrum.csv`·`lumina_spectrum_comoving.csv`·`lumina_plasma_state.csv`·`physics_DET_iter0000/0001` 각 manifest.json/shell.csv/spectral.csv) ∧ SUMMARY `zero_opacity_emitting_rows=0` — 선행 게이트 Z4 의 집행. ⚠stderr 전체 byte 대조 금지(SUMMARY 토큰 추가로 자동 실패 — 선행 Z4 경고 승계·이번 단이 그 사유를 하나 더 만든다) | **NC-G6**: 스크래치 사본 1바이트 변조 → byte 비교기 FAIL 시연 (비교기에 selftest 부재 실측 [저자 실행: `--help`·소스 grep] ⟹ 주입 시연이 유일한 음성대조) | **유** (읽기 전용) |
+| **G7** 격리 word-diff 검수 | 변경이 §2 열거 지점 밖 물리 코드 무접촉·물리 가드 제거 0·사유 문자열 불변 — 코드 검수(Fable)의 word-diff 전수 | 기계 NC 아님 — 검수 절차임을 정직 기재. 검수 고정질문은 §6 | 무 |
+
+개정16 ② 준수: **검수 질문 0("이 산출물을 봉인·실물에 돌려도 되는가")의 답 전에 봉인 접촉
+게이트(G1-NC·G4·G5·G6)를 돌리지 않는다.** G1 본체·G2·G3 은 병행 가능.
+
+## 5. 기대 변경집합 (PF-1 대상 — 표 밖 파일이 표지 심볼을 얻으면 거부)
+
+표지 심볼 = `A210_Z2A_PROBE` (런처 모드명). `src/lumina_plasma.c` 는 심볼 무보유가
+정당하다(스크립트 모드명을 C 물리 소스에 넣지 않는다 — 선행 단과 같은 처분,
+expected_extra 행). src-편집 태스크는 이 하나뿐이다(발주 전 가동 중 변조 태스크 0 확인은
+운전석 몫).
+
+### 변경집합 — Z-2A (표)
+
+| 파일 | 내용 |
+|---|---|
+| `src/lumina_plasma.c` | §2 격리 본체: Class 1 guard+WITNESS 블록(:14125-14153) 삭제 + `sprobe_undefined_rows` 계수·SUMMARY 2변형 토큰 추가 + Class 2 `invalidated`/`fail()` 도입·소비자 4지점(:14809-14811·:15212-15215·:15382-15384) 배선 절단 + ISOLATED 1회 인쇄. **물리식·물리 가드 무접촉. Z-1r ROW 서식 동결. 사유 문자열 불변.** |
+| `scripts/run_det_convergence_2026-08-08.slurm` | `A210_Z2A_PROBE` 모드 신설: iterations==2 강제 · A100 하드웨어 강제 목록 편입 · `partition==a100` 가드 · env 가드(SPRODUCER_CAPTURE==1 · INDEPENDENT_CAPTURE==1 · DIAG==2 · DIAG_TE_K==10020 · TARGET_ION==`z2a_target_ion.txt` 값 ∈ {1,2,3}) · 수용 블록(model rc=0 + SUMMARY 정확 2줄 complete=1 + `LINE-SATURATION-BLOCKED` 0건 + `LINE-SATURATION-ISOLATED` 0건 + 판독기 rc=0). **기존 모드 무변경.** |
+| `scripts/stage_a210_z2a_probe.sh` | 신설 — 봉인 base 읽기 전용 복사 스테이징(하드링크 금지 — 개정16 ② 전례): ion=1·2 는 봉인 L6C base, ion=3 은 봉인 L6 base. exports 값 delta = ion 1: **정확 0** / ion 2: **정확 1**(TARGET_ION 1→2) / ion 3: **정확 0** (+경로 재배치만). `diagnostic_mode.txt`=표지 심볼 · `z2a_target_ion.txt` 기록. `--selftest` = NC-S1·S2 |
+| `scripts/analyze_a210_z2a_probe.py` | 신설 — R-II: ROW 스트림 bit-대조(봉인 census stderr 인자, 읽기 전용)·SUMMARY 토큰 대조·선정열 (rank,line) 대조·앵커 4필드·ISOLATED/BLOCKED 계수·sprobe 계수 검증. R-III: SUMMARY·Stage-4 row 계수·hazard census 보고·line=262210 존부 관측. §8 분기 라벨을 **분할 밖 포함 전부 명시 부여**(미완주=ZI-D, ISOLATED=ZI-X — census 검수 Q2-1 의 UNRESOLVED 결함 재발 방지). `--selftest` = NC-I0~I6 |
+
+### 변경집합 끝
+
+## 5.5 런 발주 경로 — ★런 횟수: 정확 3회
+
+선행 §5.5 를 승계하고 저자가 재확인했다:
+
+- **a100 한정 (h200/h100 폴백 금지)** [저자 실행: 런처 `:179-189` 직독 — TARGETED/L6/L6C/
+  ZO 4모드에 `*A100*) ;; *) die "A2-10 diagnostic requires A100 hardware"` (`:186-188`);
+  ZO 는 추가로 `:190-192` `partition==a100` 제출 가드]. 8-19 시도가 h200 배정으로 죽은
+  실사고(선행 §5.5)를 승계한다. **Z2A 모드는 §5 대로 하드웨어 강제 목록과 partition 가드에
+  편입된다.** 제출은 `--partition=a100` 명시.
+- `--gres=gpu:2` (two-device exact owner — 런처 `:183-184` 가드) · `--mem=64G`
+  (실측 등급: census 30.7 GiB · L6 35.4 GiB · L6C 35.4 GiB) · `--time=08:00:00`
+  (실측: L6 완주 04:34 · census 02:43 — 백필 자격).
+- job-name = `LUMINA_Z2A_II` / `LUMINA_Z2A_III` / `LUMINA_Z2A_IV` (프로젝트 접두 의무) ·
+  런루트 `/gpfs/kjhan/lumina/a210_z2a_diag_isolation_a100x2_k36/…` · `OWNER.txt`
+  (project·repo·목적·`DO_NOT_CANCEL`) 기재.
+- 봉인 root 를 `job.slurm` 인자로 주지 않는다(제출 스크립트가 자기 위치를 run_root 로
+  앵커 — census 검수 지적 승계).
+- syn101 수동 제출 금지 존속(선행 §5.5 user 지시). S4-III 의 manual 형식은 재현하지
+  않는다 — §8 E-I7 의 스코프 주의 참조.
+
+**런 3회 (전부 고정-T 레인 · iter=2 · capture 2종=1 · DIAG=2 · DIAG_TE_K=10020)**:
+
+| 런 | TARGET_ION | base | 게이트 | 제출 시점 |
+|---|---|---|---|---|
+| **R-II** | 1 | 봉인 L6C (env delta 0) | G4 (격리 본판정) | 첫 제출 |
+| **R-III** | 2 | 봉인 L6C (delta 1: TARGET_ION 1→2) | G5 (Z3 + Z2 제3원) | R-II 런처 수용 PASS 후 |
+| **R-IV** | 3 | 봉인 L6 (env delta 0) | G6 (Z4) | R-II 런처 수용 PASS 후 (R-III 과 병행 가) |
+
+R-II 가 죽으면 R-III/R-IV 를 제출하지 않는다(GPU 낭비 방지 — 격리 자체가 실패한 상태에서
+두 런은 같은 사유로 죽거나 무의미).
+
+## 6. 판정 절차 (분담 개정14·16·17)
+
+- 사전등록(이 문서)=Fable / 코딩=Codex / 검수=Fable(별개 컨텍스트) / 발주·빌드·실행·제출·
+  계측·대장·커밋=운전석 / 판정=Fable fresh / 감리-A=Fable fresh(판정과 다른 컨텍스트·
+  고정질문 4) + 감리-B=Codex read-only(판정문 실측 주장 재현 한정). 폐합 = A·B 둘 다 통과.
+- **장부 단일화(개정16 ①)**: 분장 장부 정본 = **이 문서 §10**. 판정문·감리문은 복제하지
+  않고 지목한다.
+- **검수 선행(개정16 ②)**: 코드 검수 고정질문 —
+  0. **이 산출물을 봉인·실물에 돌려도 되는가** (이 답 전 봉인 접촉 게이트 금지)
+  1. 발주서가 사전등록의 범위를 좁혔는가
+  2. word-diff: 변경이 §2 열거 지점 밖 물리 코드·물리 가드에 접촉하는가 (G7)
+  3. 격리가 조용한 통과를 만들 수 있는가 — 모든 실패 경로가 BLOCKED(사유)+ISOLATED(1회)로
+     가시화되는가, `complete=1` 이 무효화된 진단에서 인쇄될 수 있는가
+  4. Class 1 에서 물리값·진단값 대체가 하나라도 생겼는가 (§2-3 실격 조항)
+- **발주 프리플라이트(개정15)**: 발주 전 `scripts/check_prereg_preflight.py`(§9 블록)·
+  `scripts/check_dispatch_preflight.py` rc=0 (grammar-debug). 발주서 뒷겹은 절 번호로만
+  지목한다.
+
+## 7. 처분 원칙 / ★하지 않는 것
+
+이 단은 **차단 제거 단**이다. 다음을 명시적으로 하지 않는다:
+
+1. **★본선 물리 계약(A2-07 solve 의 J̄ 응답) 측정 — 아니다.** 이 단은 그 측정을 막던
+   차단을 걷는 단이며, 측정 자체는 L6C-형 재발주 단의 몫이다(그 단은 별도 사전등록 +
+   L6C 판정문 §8-3 의 시드 전제 교체 의무). R-II 가 부수 산출하는 ion=1 Stage-4 행들
+   (S_probe·J̄ 정의 행)은 **봉인만 하고 이 단에서 어떤 물리 판정도 내리지 않는다.**
+   선행 판정 §5-2 ③ 문언 그대로: 그 미결은 이 단 뒤에도 미결이다 — 바뀌는 것은 측정이
+   "가능해진다"는 사실뿐이다.
+2. bit-동일 구조적 생산자 귀속 — 별도 단(선행 §9 #5). §11 은 그 단으로의 승계 원장이다.
+3. 스캔 스코프 확장(shell≠0·타 이온·창 밖) — §2-5.
+4. ion_owner 격리 — §2-6 대장 기재만.
+5. census 판독기·Z-1r 계측의 개변 — ROW 서식 동결(§2-1).
+6. 발견의 처분 = 조용한 대장 기재. clamp·대체값으로 증상을 덮지 않는다(§2-3).
+
+## 8. 기대치·분기 사전등록
+
+### 8-1. 기대치
+
+| # | 기대 | 등급·근거 |
+|---|---|---|
+| E-I1 | R-II 완주: model rc=0 ∧ SUMMARY 정확 2줄 complete=1 ∧ sacct COMPLETED | 게이트. 근거 = census 가 같은 스캔을 capture=0 으로 완주(봉인 실측) + §2 가 capture 경로의 유일 차단 지점을 제거 [실행 미검증 — GPU] |
+| E-I2 | R-II `LINE-SATURATION-ISOLATED` 0건 ∧ `LINE-SATURATION-BLOCKED` 0건 | 게이트. 성한 런에서 격리는 **발동하지 않아야 한다** — 격리 발동은 그 자체로 조사 대상(ZI-X) |
+| E-I3 | R-II ROW 스트림 bit-동일: 양 반복 각 221,382행, 총 442,764행 전건 (f_bit=1.0) ∧ 앵커 line=669992 4필드 bit(`tau_validity=2`·`n_upper` hex `0x1.d1534dba20c26p-12`·`A_ul` hex `0x1.0b6516044e436p-1`·`emission_per_sr` hex `0x1.3adcec9caadc0p-52`) | 게이트. 교차빌드 결정론 실적: R1/R2 exact-solve 잔차가 세 바이너리(3fc2cbb·b9a30a8·e500e29)에서 자릿수까지 동일 [저자 실행: census stderr `:12` residual=9.6662782724980344e-09 · `:423` iterations=52 residual=8.1222406993212508e-09 — S4-III 판정문 §1 표와 bit 일치] + 앵커 자체의 교차빌드 재현(선행 E-Z3) |
+| E-I4 | R-II SUMMARY 토큰: `candidate_rows=749644` · `zero_opacity_emitting_rows=221382` · `selected_rows` 1201(iter0)/992(iter1) · `total_scaled_emission` bit-동일(0.544556800593765592605 / 0.633250617162941479828) · **`sprobe_undefined_rows=221382`**(양 반복) · 선정열 (rank,line) 시퀀스 동일 | 게이트. sprobe==hazard 계수의 도출: hazard 행 전건 A_ul>0 [저자 실행: 봉인 census ROW 442,764행 awk — `Aul_nonpos=0 Aul_min=1.093279e-4`] ⟹ η>0 ⟹ 전건 저장 도달. [추정 1건 명기: producer 출판이 hazard 셀에서도 decode 계약(provenance≤3·eta≥0·tau_eff=0)을 지킨다 — capture=1 hazard 셀은 in-vivo 미검증이며 위반 시 ZI-X 가 이름 있게 받는다] |
+| E-I5 | R-III 완주 ∧ SUMMARY 2줄(target_ion=2) ∧ Stage-4 row ≥1 ∧ S2 PASS | 게이트 (S2 UNDECIDABLE/FAIL → ZI-P). Z3 + Z2 제3원(행 수 보고)의 집행 |
+| E-I6 | R-III ion=2 hazard 총수·준위쌍 목록 | 관측(비게이트). 사전값 없음 — 10020 K 물질의 ion=2 hazard 는 미측정. ≥1 [추정: ion=1·2 가 같은 시드-물질 성질을 공유 — 빗나가도 판정 무영향, 기재만] |
+| E-I7 | R-III ROW 에 `line=262210` | **관측·조건부**(비게이트). 있으면 = Z2 제3원의 전 필드 기록이 **10020 K 스코프에서** 충족 — 그렇게 한정 기재한다. 없으면 = hazard 집합의 시행-T 의존 실측이며 «262210 의 S4-III 조건(매칭-T probe) 필드 미기록» 은 **존속 미결**로 남긴다. ⚠S4-III 의 발화는 매칭-T probe 물질(`candidate_rows=51807` 시점)이었다 — 이 단은 그 조건을 재현하지 않으므로(§5.5) 두 스코프를 혼동하지 않는다 |
+| E-I8 | R-IV 값 파일 Tier1 byte-동일(봉인 L6 대비, §4 G6 목록) ∧ `zero_opacity_emitting_rows=0`(양 반복) ∧ `sprobe_undefined_rows=0` | 게이트. hazard 0 인 구성에서 변경집합의 관측 가능 효과는 SUMMARY 신설 토큰 하나여야 한다 |
+| E-I9 | 경과 ≈04:34 등급 · MaxRSS 31-38 GiB 등급 (각 런) | 관측(비게이트) — census/L6/L6C 실측 유추 |
+
+### 8-2. 분기 (판별량 = f_bit ≡ R-II ROW 스트림의 census-대비 bit-일치 행 비율)
+
+| 분기 | 판정식 | 처분 |
+|---|---|---|
+| **ZI-A** | R-II 완주 ∧ ISOLATED 0 ∧ f_bit ≥ 1.0 ∧ E-I4 토큰 전건 일치 | **격리 착지.** R-III·R-IV 진행, G5·G6 판정 후 폐합. 폐합 효과 = L6C-형 재발주(본선 계약 측정 단)의 전제 충족 선언 + 선행 게이트 Z2(3원 완결)·Z3·Z4 의 집행 완료 |
+| **ZI-B** | R-II 완주 ∧ ISOLATED 0 ∧ (f_bit < 1.0 ∨ E-I4 토큰 불일치) | **섭동 조사** — 변경집합 또는 결정론의 결함. 물리 결론 금지·수리 발주 금지·조사 단 개설. 폐합 보류 |
+| ZI-X (분할 밖) | 어느 런이든 `LINE-SATURATION-ISOLATED` ≥ 1 | 격리 기전은 작동했으나 진단이 실제로 실패 — ISOLATED 의 reason 을 이름 있게 귀속(사유·행·계수 기재) 후 재발주. 물리 완주 여부는 별도 기재. 물리 결론 금지 |
+| ZI-D (분할 밖) | 어느 런이든 미완주(어떤 차단이든) | fail-closed — 차단 사유·행 기재, 이름 있는 귀속 후 재발주 (L6C D2 처분 형식 승계) |
+| ZI-P (분할 밖) | R-III S2 FAIL/UNDECIDABLE ∨ R-IV 값 파일 byte 불일치 | 해당 게이트만 미착지로 폐합 보류 — R-II 의 격리 판정과 분리해 조사(교차빌드 결정론 또는 producer 계약의 별건) |
+
+판독기는 분할 밖 분기에도 **라벨을 명시 부여**한다(§5 표 — UNRESOLVED 금지).
+
+### 8-3. 계측 음성대조 (판독기 `--selftest`, 발주 전 grammar-debug rc=0 의무)
+
+NC-I0 성한 픽스처 통과 / NC-I1 ISOLATED 주입→ZI-X / NC-I2 ROW 필드 변조→ZI-B /
+NC-I3 SUMMARY 토큰 변조→FAIL / NC-I4 중도절단→ZI-D / NC-I5 BLOCKED 주입→FAIL /
+NC-I6 앵커 부재→FAIL. (§4 G2 와 동일 목록 — 이중 기재는 의도: 게이트 표가 정본이다.)
+
+## 9. 기계 프리플라이트 선언 (형식 = 선행 §9)
+
+`scripts/check_prereg_preflight.py <이 문서> --root .` 이 발주 전에 검사한다(fail-closed).
+PF-1 은 §5 표와 표지 심볼의 양방향 1:1 을(구현 전은 expected_extra 가 계획 경로를 공급,
+커밋 후에는 grep 실물이 같은 집합 — 5번째 파일이 심볼을 얻으면 거부), PF-2 는 f_bit 1차원
+분할(ZI-X·ZI-D·ZI-P 는 분할 밖 이름 있는 계급 — A207·L6C·ZO 전례 형식)을, PF-3 은 인용
+앵커의 실존을 강제한다. **정직한 한계**: E-I3/I4 의 bit-재현 의미 검사와 §2 의 "물리 경로
+무접촉"은 정적 검사 밖이다 — 각각 판독기 게이트(G2·G4)와 검수 word-diff(G7)가 잡는다.
+신설 심볼의 사전 부재는 저자가 grep 으로 확인했다(§2-2 말미 — flags_planned 를 쓰지 않는
+이유: 커밋 후 재실행 시 이 게이트가 자기 문서에 FAIL 을 내는 형식이라 배제했다).
+
+```prereg-preflight
+{
+  "changeset": {
+    "table_heading": "### 변경집합 — Z-2A (표)",
+    "table_end": "### 변경집합 끝",
+    "path_pattern": "(?:scripts|src)/[a-z0-9_\\-]+\\.(?:py|sh|slurm|c)",
+    "symbol": "A210_Z2A_PROBE",
+    "roots": ["scripts", "src"],
+    "expected_extra": ["src/lumina_plasma.c",
+                       "scripts/run_det_convergence_2026-08-08.slurm",
+                       "scripts/stage_a210_z2a_probe.sh",
+                       "scripts/analyze_a210_z2a_probe.py"]
+  },
+  "branches": {
+    "regimes": [[0.0, 0.1], [0.9, 1.1]],
+    "metrics": {
+      "f_bit": "sum(1 for x in v if x > 0.5)/len(v)"
+    },
+    "rules": [
+      {"name": "ZI-A", "predicate": "f_bit >= 1.0"},
+      {"name": "ZI-B", "predicate": "f_bit < 1.0"}
+    ],
+    "adversarial_fixtures": [
+      {"name": "all-match", "mix": [[1.0, 221382]]},
+      {"name": "single-mismatch", "mix": [[1.0, 221381], [0.0, 1]]},
+      {"name": "all-mismatch", "mix": [[0.0, 442764]]},
+      {"name": "anchor-only", "mix": [[1.0, 1]]}
+    ]
+  },
+  "references": [
+    {"path": "src/lumina_plasma.c",
+     "flags_existing": ["INDEPENDENT_SPROBE_UNDEFINED",
+                        "LINE-SATURATION-ZERO-OPACITY-ROW",
+                        "UPSTREAM_LINE_SCAN_INCOMPLETE",
+                        "zero_opacity_emitting_rows"]},
+    {"path": "src/lumina.h", "flags_existing": ["a210_sproducer_raw_decode"]},
+    {"path": "src/opacity_publication.h", "flags_existing": ["A208_EXACT_ZERO"]},
+    {"path": "scripts/run_det_convergence_2026-08-08.slurm",
+     "flags_existing": ["A210_L6C_PROBE", "A210_ZO_CENSUS",
+                        "requires A100 hardware", "l6c_target_ion.txt"]},
+    {"path": "scripts/compare_a210_phase_baseline_streams.py",
+     "flags_existing": ["SATURATION_PREFIX", "[A2-10][LINE-SATURATION-"]},
+    {"path": "scripts/analyze_a210_zero_opacity_census.py",
+     "flags_existing": ["NC-Z0"]},
+    {"path": "scripts/a210_sproducer_ledger_check.py",
+     "flags_existing": ["producer_terms_defined", "S2b"]},
+    {"path": "scripts/byte_parity_compare.py",
+     "flags_existing": ["--value-file"]},
+    {"path": "docs/VERDICT_A210_ZERO_OPACITY_2026-08-26.md",
+     "flags_existing": ["candidate_rows=749644",
+                        "zero_opacity_emitting_rows=221382", "ZC-A"]},
+    {"path": "docs/VERDICT_DET_L6C_COVER_2026-08-26.md",
+     "flags_existing": ["INDEPENDENT_SPROBE_UNDEFINED", "candidate_rows=66110"]},
+    {"path": "docs/VERDICT_DET_SPROD_S4_III_2026-08-19.md",
+     "flags_existing": ["262210", "candidate_rows=51807"]},
+    {"path": "docs/RUNG_A210_ZERO_OPACITY_2026-08-19.md",
+     "flags_existing": ["A(진단 격리)는 지금 선택한다", "ZC-A"]}
+  ]
+}
+```
+
+### 9-1. 프리플라이트 자체검증·본검사 (저자 실행)
+
+- `python3 scripts/check_prereg_preflight.py --selftest` →
+  `SELFTEST_NC total=9 failed=0` rc=0 (NC-P0 포함 9종) [저자 실행, 2026-08-26].
+- `python3 scripts/check_prereg_preflight.py docs/RUNG_A210_Z2A_DIAG_ISOLATION_2026-08-26.md --root .` →
+  ```
+  [PREREG-PREFLIGHT][PASS] reason=changeset-consistent detail=files=4
+  [PREREG-PREFLIGHT][PASS] reason=branch-partition detail=trials=200000 rules=2 fixtures=4 residual=-
+  [PREREG-PREFLIGHT][PASS] reason=references-resolved detail=refs=12
+  [PREREG-PREFLIGHT][PASS] reason=prereg-preflight detail=RUNG_A210_Z2A_DIAG_ISOLATION_2026-08-26.md
+  ```
+  rc=0 [저자 실행, 2026-08-26 — 아래 §10 첫 행에도 기재].
+
+## 10. 집행 기록 (정본 장부 — 개정16 ①)
+
+이 절이 분장 장부의 **유일 정본**이다. 판정문·감리문은 "장부 = 사전등록 §10" 으로 지목만
+한다. 개정15 필수 4항목(발주 프리플라이트 rc · `[미실행]` 주장 실행 결과 · 분장 장부(검수
+완료 후 기입) · 발주 중단 사유와 주인)을 운전석이 기입한다.
+
+| 단계 | 규약상 담당 | 실제 | 위반 |
+|---|---|---|---|
+| 사전등록 | Fable | Fable fresh 컨텍스트 (2026-08-26) — 소스 행 번호·봉인 실측·이름 충돌·프리플라이트 rc=0 전건 [저자 실행], `[미실행]` 은 GPU 런 계급뿐 | — |
+| 구현 | Codex | | |
+| 코드 검수 | Fable (별개 컨텍스트) | | |
+| 발주·집행·런 제출 | 운전석 | | |
+| 판독·계측·봉인 | 운전석 | | |
+| 판정 | Fable (fresh) | | |
+| 감리-A | Fable (fresh, 판정과 별개) | | |
+| 감리-B | Codex (read-only) | | |
+| 감리 반영·대장·커밋 | 운전석 | | |
+
+## 11. ★승계 기재 (선행 판정 부록 C — 감리-A 후속 권고의 원장)
+
+선행 감리-A 는 **생산자 귀속 단**(선행 판정 §9 #5 — bit-동일 준위쌍의 구조적 생산자)의
+사전등록에 다음 둘을 승계 기재하라고 권고했다. 그 단은 아직 열리지 않았으므로 이 절이
+승계 원장이다 — **이 단(Z-2A)의 판정에는 하중 0** 이며, 귀속 단 개설 시 그 사전등록으로
+이관한다. 행 번호는 저자가 HEAD 에서 재확인했다 [저자 실행 — 아래 각 행].
+
+1. **global→nlte 단사성 (별칭 배제)**: 슬롯 부여는
+   `src/lumina_plasma.c:16431` `int g = nlte->nlte_ion_level_offset[i] + cursor[i]++;` —
+   같은 ion 안에서 커서 단조 증가 ⟹ 서로 다른 global 준위는 서로 다른 nlte 슬롯
+   (`:16434` `global_to_nlte_level[l] = g`). 소비 측은 `:8925-8926` 이 그 맵으로
+   `nlte_lo/up` 을 얻고 `:8927` 이 음수(미매핑)를 fail-closed 로 걸러낸다.
+   in-vivo 보강: 봉인 census 전 442,764 ROW 행에서 `lower_global==upper_global` 0건
+   (선행 판정 부록 A-10b awk — 저자 재확인 생략, 판정문 실측 승계).
+2. **K-FRESH 사슬 (τ 재출판 세대 보증)**: 정의 `:6893-6901`
+   `tau_sobolev_require_refresh`(세대 overflow 시 abort) · `:6903-6911`
+   `tau_sobolev_mark_computed`(불량 생산자 상태 abort) — NLTE 재출판이 진입에서 요구 세대를
+   올리고(`:19519`) 완료에서 기록하며(`:19655`), 커밋 preflight 가 `computed==required` 를
+   fail-closed 로 강제(`:20840-20847` — 불일치 시 `POP_STALE_DERIVED_TEMPERATURE` +
+   `NLTE_CANDIDATE_OPACITY_FAILED` + `active=0`), 번들 preflight 동일 검사(`:21224-21226`
+   return 0).
+
+귀속 단의 입력(선행 판정 §6-4 완비분)도 여기 지목해 둔다: 준위쌍 221,382 목록
+(`/gpfs/kjhan/lumina/zo_artifacts/zo_hazard_pairs_iter0.tsv`, 221,382행 [저자 실행:
+`wc -l`]) · "한 세대 보존·인구는 ~1.4% 이동" 실측 · 전건 등g 관측.
+
+## 12. 저자 실행 원장 (개정15 — 사실 주장의 명령줄 병기)
+
+| 주장 | 명령 [저자 실행, 2026-08-26] | 결과 |
+|---|---|---|
+| HEAD·src 불변 | `git rev-parse HEAD` · `git diff --stat e500e29 HEAD -- src/` | `4b61915…` · 공백 |
+| 차단 지점 행 번호 | `grep -n "INDEPENDENT_SPROBE_UNDEFINED" src/lumina_plasma.c` + `sed -n '14125,14153p'` | 가드 `:14125-14126`·blocked `:14149-14151`·return `:14152` |
+| 소비자·꼬리·번들 행 번호 | `sed -n '15203,15215p;15380,15402p;15996,16000p'` + `grep -n "RADEQ_FIXED_T_BUNDLE_BUILD_FAILED"` | `:15212-15215`·`:15382-15401`·`:15999` |
+| init 소비자 | `sed -n '14806,14812p'` | `:14809-14811` `return RADEQ_TERM_SCHEMA` |
+| Z-1r 계측 위치 | `grep -n "if(tau==0.0&&n_upper>0.0){"` | `:14075` |
+| 선정 가드 | `grep -n "if(!selected\[i\])continue;"` | `:14351` |
+| ion_owner 소비자 | `grep -n "a210_line_ion_owner_add(\|a210_line_ion_owner_init"` + 직독 | `:14813-14820`·`:15153-15157` |
+| 런처 A100·모드 구조 | `grep -n "requires A100\|partition" scripts/run_det_convergence_2026-08-08.slurm` + `sed -n '179,232p'` | `:186-188` die·`:190-192` ZO partition 가드·L6C env 가드 `:216-229`(INDEPENDENT `:221-222`) |
+| phase 비교기 중립 | `sed -n '20,30p;75,82p' scripts/compare_a210_phase_baseline_streams.py` | `SATURATION_PREFIX` skip + `SATURATION_BLOCKED` 는 오류로 승격(격리 후에도 BLOCKED 는 fail-visible) |
+| 봉인 census SUMMARY | `grep -n "LINE-SATURATION-SUMMARY\]" <census>/stderr.log` | `:225081`·`:449539` — candidate 749644·rows 221382·selected 1201/992·총계 §8 E-I4 값 |
+| 봉인 census ROW 수·A_ul | `grep -c ROW` + awk | 442,764행·`Aul_nonpos=0 Aul_min=1.093279e-4` |
+| 교차빌드 잔차 재현 | `grep -n "EXACT-MULTIGPU-EPOCH.*residual=9.6662782724980344e-09\|EXACT-MULTIGPU-EPOCH.*residual=8.1222406993212508e-09" <census>/stderr.log` | 정확히 2행: `:12`(R1 `iterations=45 residual=9.6662782724980344e-09`)·`:423`(R2 `iterations=52 residual=8.1222406993212508e-09`) — S4-III 판정문 §1 값과 bit 일치 (R6 echo `:16`·`:428` 은 EXACT-MULTIGPU-EPOCH 앵커가 배제) |
+| census env | `grep -E "CAPTURE\|SATURATION\|DIAG_TE_K" <census>/input/resolved_lumina.exports` | 캡처 2종=0·DIAG=2·ION=1·TE_K=10020 |
+| L6C env·base | 동일 grep + `ZO_CENSUS_STAGE_SEAL.txt` | 캡처 2종=1·ION=1; `sealed_l6c_base=…l6c_20260822T154507Z_cover` |
+| L6 값 파일 실존 | `ls <L6>/work` | spectrum/comoving/plasma_state csv + physics_comparison |
+| hazard 쌍 목록 | `wc -l /gpfs/kjhan/lumina/zo_artifacts/zo_hazard_pairs_iter0.tsv` | 221,382행 |
+| sprod-III 봉인 실존 | `ls …/manual_20260818T122358Z_sprod_iii` | manual 형식 런루트 실재(재현 안 함 — §5.5) |
+| S2 판정기·byte 비교기 | `head scripts/a210_sproducer_ledger_check.py` · `--help scripts/byte_parity_compare.py` | S2 정의 실재·비교기 selftest 부재(NC-G6 로 대체) |
+| 이름 충돌 0 | `grep -rn "LINE-SATURATION-ISOLATED\|sprobe_undefined_rows\|A210_Z2A" src scripts \| wc -l` | 0·0·0 |
+| 프리플라이트 | §9-1 | selftest 9종 failed=0 · 본검사 rc=0 |
+
+`[미실행]` 잔여 = **GPU 런 3회의 결과 전부**(E-I1~I9) — 저자가 실행할 수 없는 계급.
+그 외 사실 주장에 `[미실행]` 은 없다.
