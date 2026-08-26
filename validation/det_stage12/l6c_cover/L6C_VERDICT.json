@@ -1,0 +1,26 @@
+{
+  "blocking_reasons": [
+    "INDEPENDENT_SPROBE_UNDEFINED"
+  ],
+  "gates": {
+    "R1": {
+      "binary_sha256": "b9a30a81ebea57f9fa857d192107dd85aeb04ab1308f27b1a68cf45f1a69af99",
+      "git_head": "0e899cb3a82ef40ae4ba439ce359feb97b546a83",
+      "staged_sha256": {
+        "analyzer_l6c_sha256": "bc8f1859a671d0653ef159bc11e3b63b3293443c00ebd56fc2a998a948089d49",
+        "checker_sha256": "613c1cbe05d00bec8cd764596f19f45e44607ad431ce507da3f9906e53cee81a",
+        "job_slurm_sha256": "aaafe4fb852a73ada2a92dea897a35158057463aa92da6d474a4b03d01e26cc8",
+        "precondition_sha256": "69a8bf1ef7e8a200e295fca4f5e868ff82586e33226a987e5e0d8639dd2d52d9",
+        "stager_sha256": "732606dee140679a782db7610dbb0e0bead42fbe3dd89113a77a7752060e716d"
+      },
+      "status": "PASS"
+    }
+  },
+  "observed_row_lines": 0,
+  "physical_values_modified": false,
+  "schema": "DET_L6C_COVER_VERDICT_V1",
+  "sealed_l6_stderr_sha256": "19af91841daf58f6cb63a2932332f2092c473e308b60a7b2ae02ce26ac880c3e",
+  "status": "PARTIAL",
+  "stderr_sha256": "433b97773a030f0cb1cd9ded9fb32c1d0e88ca30da6f1f8743ec0918b1bf8e3d",
+  "verdict": "D2"
+}

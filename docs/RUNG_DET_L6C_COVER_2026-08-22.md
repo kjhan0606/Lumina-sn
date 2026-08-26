@@ -392,3 +392,110 @@ clamp/floor/cap 0. 판독기의 census 분류(INVERSION_BOUNDARY·NEGATIVE_CHI·
   ]
 }
 ```
+
+---
+
+## 13. 집행 기록 (운전석, 2026-08-26) — ★분기 D2 발화, 부분 착지
+
+**정본 장부**: 이 절이 분장 장부의 유일 정본이다(개정16 ①). 판정문·감리문은 복제하지 않고
+`"장부 = 사전등록 §13-6"` 으로 지목하고 자기 칸만 기입한다.
+
+### 13-1. 발주 프리플라이트 rc (개정15 필수 항목 ①)
+
+`scripts/check_dispatch_preflight.py <발주서> <이 문서> --root .` → **rc=0**
+(DP-1 no-restatement tokens=5 · DP-2 frontpage-sealed · DP-3 contract-preflight rc=0).
+★게이트 자신의 오탐 1건을 이 단에서 잡았다 — 앞겹이 계약 파일을 **지목**하는 것을
+재서술로 오검출했다. 면제를 계약 자신의 경로 하나로 좁히고 회귀 NC 2종(`NC-D0b`·`NC-D1e`)
+으로 양쪽을 고정했다(`2b548a1`). 재분장 §5-1 이 예고한 자리이며 실측이 첫 실전에서 나왔다.
+
+### 13-2. `[미실행]` 주장 실행 결과 (개정15 필수 항목 ②)
+
+이 문서의 `[미실행]` 은 **1건**이었다 — 봉인 바이너리 sha(대용량 해시라 저자의 로그인 노드
+비연산 범위 밖). 운전석이 grammar-debug 에서 실행: `sha256sum $L6/input/lumina_cuda` →
+`b9a30a81ebea…af99` = 기재값 **일치**. ⟹ `[미실행]` **0건**.
+(저자가 개정 2 에서 실행 가능분 2건을 스스로 실행해 `[저자 실행]` 으로 승격시킨 것이
+개정16 ③ 의 선행 사례다.)
+
+### 13-3. 발주 중단과 그 주인 (개정15 필수 항목 ④)
+
+| 회차 | 결함 | 주인 |
+|---|---|---|
+| 1차 | 사전등록이 봉인 env 의 `SKIP_Z` 를 "부재" 라 주장(실제 `=14`) + A207 W1 오인용 | 사전등록 |
+| 2차 | 뒷겹이 개정 후 NC 목록을 옛 판으로 남겨 `NC-P4` 제외 · 사전등록 §4↔§5 내부 불일치 | **운전석 발주서** + 사전등록 |
+| 3차 | — (착지) | — |
+
+★**2차가 user 트리거를 발동시켰다**(발주 2회 연속 실패) ⟹ 개정15 재분장
+(`docs/LABOR_REDIVISION_2026-08-22.md`, `088f072`+`4688c3a`) + 개정16(`0fef169`).
+
+### 13-4. 게이트 실측
+
+**오프라인 (런 전, 전건 PASS)** — 개정16 ② 순서 준수: 코드 검수 첫 질문
+*"봉인·실물에 돌려도 되는가"* 의 답(**"돌려도 된다 + 운용 조건 2건"**)을 받은 **뒤에** 봉인
+접촉 게이트를 돌렸다. 그 전에는 봉인 무접촉 게이트(문법·기존 경로 불변)만 병행했다.
+
+| 게이트 | 실측 |
+|---|---|
+| **PC-1** | PASS — `target_pairs=[[26,1],[27,1],[28,1]]` · 사상 루프 무절단 · 금지 env 0 · **판별기 `base_mapped=0 / ION4_mapped=594`**(A207 거울) |
+| **PC-2** | PASS(당시) — `hazards {1:0, 2:0, 3:0}` · unavailable=0 · findings=`ION2_HAZARD_ANCHOR_ZERO` ★**본실행이 이 예측을 반증한다**(§13-5) |
+| **PC-3** | PASS — `STAGE_OK` · §7 delta **vs IDSEAL 5건 · vs 봉인 L6 1건**(`TARGET_ION 3→1`) · `READY` |
+| **PC-5** | PASS — binary sha `b9a30a81…` · `diff_empty=true` · `source_revision=0fef1693`(검수 조건 ②) |
+
+**판정런** — `322449` `FAILED` `exit=70:0` `02:37:20` `syn102` `model.rc=1`.
+판독기: `status=PARTIAL verdict=D2 ff=None f_mapped=None` rc=4 — 행이 없으니 **값을
+지어내지 않았다**. R2~R7 전부 **미도달**(차단이 iter=0 에서 났다).
+
+**★봉인 무변조**: 봉인 2루트 256파일 지문을 **4회 대조**(스테이징 전·PC 후·스테이징 후·
+판정런 후) — 전부 동일. `sealed_roots_written=False`. 판독기 `--report` 를 런루트 밖으로
+명시해 검수 조건 ①(기본값이 봉인 안을 가리키는 footgun)을 막았다.
+
+### 13-5. ★분기 D2 — 차단이 곧 산출이다
+
+```
+[A2-10][LINE-SATURATION-BLOCKED] reason=INDEPENDENT_SPROBE_UNDEFINED
+  shell=0 candidate_rows=66110 target_ion=1 complete=0
+  interpretation=DIAGNOSTIC_ONLY zero_opacity_emitting_rows=1
+→ LINE-NET-BLOCKED RADEQ_TERM_SCHEMA line=669992
+→ RADEQ_FIXED_T_BUNDLE_BUILD_FAILED rc=3
+→ R7_MATERIAL_UPDATE_BLOCKED lane=DET iter=0  te_generation 1->1 (세대 보존)
+→ [R7][FATAL] rc=4 → DET_FLIGHT_FATAL model exited rc=1
+```
+
+**★ZERO-OPACITY WITNESS 1행** (Z-O 단의 우선순위 증거):
+```
+Z=26 ion=1 (Fe II)  line=669992  ion_slot=15  lower_global=2771 upper_global=5213
+tau_validity=2  tau_raw=0  effective_tau=0  effective_integrated_opacity=0
+n_upper=4.437688873013011e-4  A_ul=0.5222556  nu=2.234785e15
+emission_per_sr=2.7310010625545125e-16  result_absorption_per_sr=0
+srce_chk=0  exact_zero_provenance=0  source_defined=0  source_function_finite=1
+physical_values_modified=0  clamp/floor/cap/jitter/repair=0
+```
+
+**★PC-2 오프라인 예측의 반증**: 발주 전제였던 `ion=1 hazard = 0` 이 **틀렸다.**
+기전이 다르다 — PC-2 는 [추정] **축퇴 준위쌍**(`n_l·g_u = n_u·g_l` 정확 상쇄)을 모델링했으나,
+실측 증인은 **`tau_raw` 자체가 0** 이면서 `n_upper>0` 이다. `exact_zero_provenance=0` 이므로
+"`n_upper=0 ∧ tau=0`" 경로도 **아니다**. 오프라인 census 가 못 본 기전이며, §8-8 이
+*"PC-2 기전 모델의 완전성 — 앵커 2종으로만 검증"* 으로 **예고한 한계가 실측으로 확인**됐다.
+
+**이 단의 실질 산출**: §6 D2 처분 문언 그대로 — *"PC-2 census 의 반증 + WITNESS 행 =
+Z-O 우선순위 증거."*
+- A210-ZERO-OPACITY 사전등록이 *"수리 전 필수: 그 행이 정말 inversion 경계인지 **실측 확인**
+  (현재는 소스 추론)"* 을 요구했다. **이 증인이 그 실측이다 — 그리고 inversion 경계가
+  아니다**(`tau_raw=0`, 순수 τ=0). Z-2 후보 처분(행 단위 건너뛰기 vs 전체 차단)의 직접 자료.
+- **표적 이온을 바꿔도 같은 결함이 난다**: S4-III 는 `ion=2`, 이번은 `ion=1`. **회피로는
+  지나갈 수 없다** — Z-O 수리가 선행 조건임이 두 이온에서 독립으로 확인됐다.
+
+### 13-6. ★분장 장부 (정본 — 개정16 ①; 검수 완료 확인 후 기입)
+
+| 단계 | 규약상 담당 (개정14) | **실제** | 위반 |
+|---|---|---|---|
+| 표적 결정 | user (2026-08-22) | user — "(ii) 로 가자" | — |
+| 형상·사전등록 | Fable | Fable | — |
+| 사전등록 개정 1·2 | Fable | Fable — 개정 2 에서 신고 1건으로 **잔여 불일치 2곳 추가 적발** | 개정 1 이 §5 만 고치고 §4·§2-3·§11 참조를 남김 |
+| 발주 | 운전석 | 운전석 (3차에 착지) | ★2차 **뒷겹 재서술**(NC-P4 제외) — 트리거 발동 |
+| 코딩 | Codex | Codex (중단 2회 전부 정당) | — |
+| **코드 검수** | Fable | **Fable — 인정(차단 0)**, ★Q0 신설로 **운용 조건 2건** 적발 | — |
+| 오프라인 게이트·스테이징·제출 | 운전석 | 운전석 (봉인 지문 4회) | ★stager 인자 순서 오류 1회 — **fail-closed 로 봉인 무접촉 사망**(무해) |
+| 판독기 실행·계측 패킷 | 운전석 | 운전석 | — |
+| 판정 | Fable (fresh) | | |
+| 판정 감리 | Fable (판정과 **다른** fresh) | | |
+| 감리 반영·대장·커밋 | 운전석 | | |

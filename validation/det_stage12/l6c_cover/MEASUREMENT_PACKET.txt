@@ -1,0 +1,64 @@
+=== DET-L6C-COVER 판정런 계측 패킷 (운전석, 2026-08-26) ===
+=== RUN FOOTER ===
+job_id=322449  state=FAILED  exit=70:0  elapsed=02:37:20  node=syn102  partition=a100
+alloc=cpu=32,gres/gpu=2  model.rc=1
+run_root=/gpfs/kjhan/lumina/det_stage12_fixed_te_a100x2_k36/l6c_20260822T154507Z_cover
+git_head(런)=0e899cb3a82ef40ae4ba439ce359feb97b546a83
+repo_head(현재)=0e899cb3a82ef40ae4ba439ce359feb97b546a83
+binary_sha256=b9a30a81ebea57f9fa857d192107dd85  (봉인 L6 재사용·빌드 0회)
+stderr.log sha256=433b97773a030f0cb1cd9ded9fb32c1d  bytes=302491
+analyzer_report=/gpfs/kjhan/lumina/gates/l6c_20260822T151735Z/L6C_VERDICT.json   analyzer_rc=4
+captured_utc=2026-08-26T02:54:26Z
+
+--- ★분기 D2 발화 (사전등록 §6 등록 분기) ---
+판독기: DET_L6C_COVER_ANALYZER_RESULT status=PARTIAL verdict=D2 ff=None f_mapped=None
+차단:   [A2-10][LINE-SATURATION-BLOCKED] reason=INDEPENDENT_SPROBE_UNDEFINED
+        phase=REQUESTED_TE shell=0 candidate_rows=66110 target_Z=26,27,28 target_ion=1
+        complete=0 interpretation=DIAGNOSTIC_ONLY zero_opacity_emitting_rows=1
+        physical_values_modified=0 clamp=0 floor=0 cap=0 jitter=0 repair=0
+연쇄:   LINE-NET-BLOCKED status=RADEQ_TERM_SCHEMA line=669992
+        -> [A2-10][BLOCKED] RADEQ_FIXED_T_BUNDLE_BUILD_FAILED rc=3
+        -> R7_MATERIAL_UPDATE_BLOCKED lane=DET iter=0 te_generation 1->1 (세대 보존)
+        -> [R7][FATAL] lane=DET iter=0 rc=4 -> DET_FLIGHT_FATAL model exited rc=1
+★차단은 iter=0 에서 났다 — iter=1 은 시작하지 못했다. R2~R7 전부 미도달.
+
+--- ★★ZERO-OPACITY WITNESS (Z-O 단의 우선순위 증거) ---
+총 1행. Z=26 ion=1 (Fe II), line=669992, ion_slot=15
+  lower_global=2771  upper_global=5213  tau_validity=2
+  tau_raw=0  raw_integrated_opacity=0  effective_integrated_opacity=0  effective_tau=0
+  n_upper=4.437688873013011e-4  A_ul=0.52225560000000004  nu=2.234785e15
+  emission_per_sr=2.7310010625545125e-16  result_absorption_per_sr=0
+  srce_chk=0  exact_zero_provenance=0  source_defined=0  source_function_finite=1
+  physical_values_modified=0  clamp/floor/cap/jitter/repair=0
+
+--- ★PC-2 오프라인 예측의 반증 ---
+PC-2 예측: hazard_counts = {ion1: 0, ion2: 0, ion3: 0}
+실측:      ion=1 에서 zero_opacity_emitting_rows=1  ⟹ 예측 0 이 반증됐다.
+기전 차이: PC-2 는 [추정] 축퇴 준위쌍(n_l·g_u = n_u·g_l 정확 상쇄)을 모델링했으나,
+  실측 증인은 tau_raw 자체가 0 이면서 n_upper>0 이다(exact_zero_provenance=0 이므로
+  "n_upper=0 ∧ tau=0" 경로도 아니다). 오프라인 census 가 못 본 기전.
+  ⟹ 사전등록 §8-8 이 "PC-2 기전 모델의 완전성 — 앵커 2종으로만 검증" 으로 예고한 한계가
+  실측으로 확인됐다.
+
+--- 오프라인 게이트 (런 전, 전건 PASS) ---
+PC-1 PASS: target_pairs=[[26,1],[27,1],[28,1]] · 사상 루프 무절단 · 금지 env 0
+           판별기 base_mapped=0 / ION4_mapped=594 (A207 거울)
+PC-2 PASS(당시): hazards 전부 0 · unavailable=0   ← ★본실행이 이를 반증
+PC-3 PASS: STAGE_OK · §7 delta vs IDSEAL 5건 · vs 봉인 L6 1건 · READY 생성
+PC-5 PASS: binary sha b9a30a81… · diff_empty=true · source_revision=0fef1693
+프리플라이트: 사전등록 3검사 PASS · 발주 3검사 PASS(rc=0)
+
+--- 봉인 무변조 ---
+봉인 2루트(sprim_l6_…probe · idseal_…a209) 256파일 지문:
+  스테이징 전 · PC 실행 후 · 스테이징 후 · 판정런 후 — 4회 대조 전부 동일 ✅
+PC verdict: sealed_roots_written=False
+판독기 실행 시 --report 를 런루트 밖으로 명시(검수 조건 ①) — 봉인 오염 0
+
+--- 기대치 대조 (§6) ---
+E1 행 실재 >=30      -> 행 0 (차단)          ★미달성 — D2 경로
+E2 f_mapped=1.0      -> None (미도달)
+E3 iter0 앵커        -> 미도달
+E4 1순위 추정 C-R    -> ★D2 발화 (분기 체계 내 착지 — D2 는 등록된 분기)
+E5 관측              -> zero_opacity census 만 산출(1행)
+E6 경과 ~4h34m 등급  -> 02:37:20 (차단으로 조기 종료)
+E7 R7 byte 동일      -> 미도달
