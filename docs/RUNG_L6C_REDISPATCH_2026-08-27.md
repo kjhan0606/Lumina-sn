@@ -12,6 +12,9 @@ HEAD `d02146c` [저자 실행: `git rev-parse HEAD`], branch `thenmc-macroatom-f
 
 - R-II(job `324557`)는 이 문서 저작 시점에 **PENDING — 산출이 존재하지 않는다**
   [저자 실행: `sacct -j 324557 -X` → `LUMINA_Z2A_II PENDING 00:00:00`].
+  ★개정 3~5 시점(2026-08-27) 재실측: `FAILED 04:34:36 70:0` [저자 실행 — §14]. 착지·완주의
+  판정식은 §7 PR-0 개정판이 정의한다. 저자의 R-II 무열람은 개정 저작 중에도 유지됐다 —
+  R-II 완주 마커의 실측 주장은 운전석 인계 인용이다(§16 개정 3).
 - 저자는 R-II 런루트(`/gpfs/kjhan/lumina/a210_z2a_diag_isolation_a100x2_k36/rii_*`)를
   **일절 열지 않았다**(입력 포함). R-II 의 형상 주장은 전부 Z-2A 사전등록 집행 기록
   (`docs/RUNG_A210_Z2A_DIAG_ISOLATION_2026-08-26.md` §10.1 ⑦: env delta 0·캡처 2종=1·
@@ -296,7 +299,7 @@ hazard 로 갔다). hazard·동결 잔여·NEG 셋 다 같은 생산자(H-FLAT)�
 
 | 파일 | 변경 |
 |---|---|
-| `scripts/analyze_l6c_redispatch.py` | 신설 판독기(자립형, 표지 심볼 `A210_L6C_REDISPATCH`). 입력: 봉인 R-II 런루트·봉인 census 런루트·덱(read-only)·`--report`(봉인 밖 의무)·`--expected-head`. 기능: §7 RD-1~RD-7 전량(행 재고·계급 census(덱 조인 재계산)·캡처 정의성·재구성 항등·권한 사상·앵커 거울·capture-d 분포·ff·σ·분기 라벨)+E-5 관측 전량 보고·verdict JSON. §9 분기 라벨을 **분할 밖 포함 전부 명시 부여**(UNRESOLVED 금지 — Z-2A 판독기 전례 계승). `--selftest` = NC-R0~R12(전부 합성/스크래치 픽스처 — 봉인 불접촉; R10 = PR-0 판정문-부재 · R11·R12 = 실패-보고 봉인-내부 쓰기 가드 — §16 개정 2) |
+| `scripts/analyze_l6c_redispatch.py` | 신설 판독기(자립형, 표지 심볼 `A210_L6C_REDISPATCH`). 입력: 봉인 R-II 런루트·봉인 census 런루트·덱(read-only)·`--report`(봉인 밖 의무)·`--expected-head`. 기능: §7 RD-1~RD-7 전량(행 재고·계급 census(덱 조인 재계산)·캡처 정의성·재구성 항등·권한 사상·앵커 거울·capture-d 분포·ff·σ·분기 라벨)+E-5 관측 전량 보고·verdict JSON. §9 분기 라벨을 **분할 밖 포함 전부 명시 부여**(UNRESOLVED 금지 — Z-2A 판독기 전례 계승). ★개정 3~5 구현(수정 발주 — 같은 파일, PF-1 집합 불변): PR-0 신판정식(§7 — sacct 종단+완주 마커 / 판정문 등록 라인+장부 셀 해시) · `ANCHOR_BITS` 반복별 등록값(«RD-6 반복별 앵커 등록값» 표)과 `anchor_ok` 반복 인덱스 적용 · `--census-selfcheck` 모드(PR-3). `--selftest` = NC-R0~R16(전부 합성/스크래치 픽스처 — 봉인 불접촉; R10 = PR-0 판정문-부재(+등록 라인 부재 확장) · R11·R12 = 실패-보고 봉인-내부 쓰기 가드 — §16 개정 2 · R13 = 반복-구별 앵커 · R14 = sacct 비종단 · R15 = 완주 마커 결손 · R16 = 장부 앵커 — §16 개정 3~5. PR-3 의 봉인 census read-only 접촉은 `--selftest` 밖의 게이트 실행이다) |
 
 ### 변경집합 끝
 
@@ -315,16 +318,41 @@ hazard 로 갔다). hazard·동결 잔여·NEG 셋 다 같은 생산자(H-FLAT)�
 
 | # | 요구 (기계 판정식) | ★음성대조 | 봉인 접촉 |
 |---|---|---|---|
-| **PR-0 판독 전제** | ① R-II 착지(sacct COMPLETED) ② **Z-2A 판정이 R-II 를 ZI-A 로 선언하고 그 판정이 감리 A·B 를 통과**(G4 = E-I3/E-I4 PASS 문면 실재 — 판독기가 판정문 텍스트에서 `ZI-A`·`E-I3`·`E-I4` PASS 앵커를 확인, 부재 시 rc≠0) | **NC-R10**(판정문-부재 합성 픽스처): Z-2A 판정문이 없는 스크래치 문서 집합 위에서 게이트가 이름 있는 FAIL(`Z2A_VERDICT_ABSENT`) — **판독 전** 시연 의무. 게이트는 신설 판독기 안에 살므로(발주 산물) "발주 전" 시연은 성립 불능이었고, 합성 픽스처는 Z-2A 판정문이 판독기 완성 전에 착지해도 시연 창을 보존한다(검수 지적 B — 두 처방 모두 채택) | 무 (repo 문서·sacct 만) |
-| **PR-1 판독기 selftest** | `--selftest` rc=0, NC-R0~R12 전종 발화·복원 | NC 목록 자체(아래) | 무 (스크래치) |
+| **PR-0 판독 전제** (개정 3·4) | ① **R-II 착지 = 모델 완주 조작화** — (i) `sacct -j 324557 -X -n -P -o JobIDRaw,State,ExitCode` 레코드 정확 1건 ∧ State **종단**(∉ {PENDING,RUNNING,REQUEUED,RESIZING,SUSPENDED}; COMPLETED 를 요구하지 않는다 — 사전 실측 `FAILED 70:0` [저자 실행]; State·ExitCode 원문을 verdict JSON 에 기록) (ii) **모델 완주 마커 5건 전건·정확 계수**(R-II 최초 봉인 접촉, read-only·마커 한정 — ROW 스트림·값 필드 무접촉): `model.rc` 실재 ∧ 내용 정확 `0` · `[A2-10][LINE-SATURATION-SUMMARY]` 정확 2건 ∧ 각 행 `complete=1` · `event=R7_MATERIAL_PHASE_COMMITTED lane=DET iter=1 … te_generation=2->3` 정확 1건 · `[PHYSICS-COMPARISON] lane=DET iter=1 status=COMMITTED` 정확 1건 · `RUN_FOOTER.txt` 실재 ∧ 첫 행 `schema=LUMINA_DET_FLIGHT_V1` [마커 서식 전건 = 봉인 census 실측, §14 — R-II 에서의 성립은 운전석 인계 인용] — 어느 하나 부재·중복·불일치 → `RII_NOT_TERMINAL`/`RII_MODEL_INCOMPLETE` rc≠0. «정말 죽은 런» 차단 술어 = (ii) 그 자체(모델 사망은 마커 conjunction 을 필연 위반) + (i) 종단성(쓰기 미정지 런 열람 차단). ★§9-2 X-P 의 «R-II 미착지» 는 이 조작화를 지시한다(분기 판정식 문면 불변) ② **Z-2A ZI-A + 감리 두 겹 앵커** — (a) 판정문 등록 라인 실재 (b) 장부 감리 셀 해시 일치 (등록값·판정식 = 아래 «PR-0 등록 앵커») ★순서: ②·①-(i) 는 봉인 무접촉 — 선행; ①-(ii) 는 ②∧①-(i) PASS 후에만(봉인 개봉 순서 보존) | **NC-R10**(판정문-부재 합성 픽스처): Z-2A 판정문이 없는 스크래치 문서 집합 위에서 게이트가 이름 있는 FAIL(`Z2A_VERDICT_ABSENT`) — **판독 전** 시연 의무. 게이트는 신설 판독기 안에 살므로(발주 산물) "발주 전" 시연은 성립 불능이었고, 합성 픽스처는 Z-2A 판정문이 판독기 완성 전에 착지해도 시연 창을 보존한다(검수 지적 B — 두 처방 모두 채택). ★확장(개정 4): 판정문 실재하나 등록 라인 부재 픽스처 → `Z2A_VERDICT_NOT_ZI_A_AUDITED` FAIL / **NC-R14**(개정 3): sacct 비종단(`RUNNING`) 픽스처 → `RII_NOT_TERMINAL` FAIL, `FAILED`+마커 전건 픽스처 → PASS / **NC-R15**(개정 3): 완주 마커 결손 픽스처(`model.rc`≠0·SUMMARY 1건·R7 iter=1 0건·FOOTER 부재 각 주입) → `RII_MODEL_INCOMPLETE` FAIL — 죽은 런 차단 시연 / **NC-R16**(개정 4): 장부 감리 행 부재·셀 1바이트 변조·행 중복 픽스처 → 이름 있는 FAIL | ①-(ii) 만 유 (R-II read-only·마커 한정; 그 외 무 — repo 문서·sacct) |
+| **PR-1 판독기 selftest** | `--selftest` rc=0, NC-R0~R16 전종 발화·복원 (개정 3~5 로 NC-R13~R16 신설) | NC 목록 자체(아래) | 무 (스크래치) |
 | **PR-2 프리플라이트** | `check_prereg_preflight.py <본 문서> --root .` rc=0 · 발주 시 `check_dispatch_preflight.py` rc=0 | 게이트 자신의 `--selftest`(NC 9종/8종) | 무 |
+| **PR-3 census 자기입력 양성대조** (개정 5 의무) | 판독기 `--census-selfcheck`: 봉인 census 스트림 파스만으로 ① 양 반복 앵커 행(`line=669992`) = «RD-6 반복별 앵커 등록값» 표와 bit 일치 ② SUMMARY 정확 2건·각 `complete=1` → rc=0. **F1b 판독(RD-1~7) 전 rc=0 의무** — 반복별 등록값의 오류를 R-II 무접촉으로 선검출한다. 근거: Z-2A 오탐은 «봉인 census 자기입력 FAIL»(판별력 0)로 실증됐다 — 성한 봉인 실물이 앵커 검사를 통과함을 판독 전에 시연해야 같은 상태의 재발이 막힌다 | **NC-R13**(반복-구별 합성 픽스처): 성한 픽스처가 iter0/iter1 에 **서로 다른** 등록값을 실어 PASS ∧ iter1 앵커 행에 iter0 값 주입 → `ANCHOR_FIELD_MISMATCH` FAIL — Z-2A selftest 의 «양 반복 동일 행 재사용» 맹점(원리적 검출 불능)을 제거하는 검사 | 유 (census read-only · **R-II 무접촉** · 검수 Q0 답 후) |
 
-★**PR-0 문면 매칭 — 판정 라인에 대한 형식 요구 (개정 2 명시; 게이트 판정식 무변경)**: PR-0 의
-앵커 확인은 **문면(리터럴) 매칭**이다(1차 검수 잔여 지적 — 수리 델타 밖 무변경 구간). 따라서
-**Z-2A 판정문(과 그 감리 기재)은 `ZI-A`·`E-I3 PASS`·`E-I4 PASS`·`감리 A·B 통과` 앵커를 문면
-그대로 실어야 한다** — 싣지 않으면 **성한 판정문이 X-P 로 오차단**된다(fail-closed 방향의
-오류라 봉인 위험은 없으나 F1b 를 헛되이 소멸시킨다). 이것은 이 단 게이트의 변경이 아니라
-Z-2A 판정 라인(Fable fresh 저작·운전석 기재)에 대한 요구다.
+★**PR-0 등록 앵커 (개정 4 — 감리-A fail-open 지적의 해소; 전 실측 [저자 실행, §14])**:
+개정 2 의 «판정문 문면 리터럴 요구»는 폐기한다 — Z-2A 판정문이 그 요구의 감리 리터럴을
+**의도적으로 본문에 싣지 않았고**(판정문 §10 fail-open 경고·§13 말미 — 판정문 스스로 «장부에서
+찾으라»고 지시), 자유 산문 스캔은 조건문·부정문 오충족의 원리적 벡터다. 현 상태 실측:
+판정문은 `ZI-A`(20건)·`E-I3 PASS`(4건)·`E-I4 PASS`(4건)를 보유하나 `감리 A·B 통과` **0건** ⟹
+현 판독기 `check_pr0` 는 `AUDIT_A_B_PASS` 결손으로 `Z2A_VERDICT_NOT_ZI_A_AUDITED` — **성한
+판정문의 오차단이 실재**한다(오차단 지점은 감리 앵커 한 곳; 분기·게이트 앵커는 판정문이
+매칭용으로 공급 중이다). 신 판정식:
+
+- **(②-a) 분기·게이트 앵커 — 판정문의 등록 라인(명시 토큰)**: `docs/` 의 `*VERDICT*`∧`*Z2A*`
+  `.md` 후보(현 실측 정확 1건; `.rev1` 은 확장자로 배제)가 아래 **등록 라인**을 행 그대로 실재
+  — 판정문 §10 «후속 문면 앵커 (COVER-R PR-0 매칭용)» 이 공급한 문장이다
+  [저자 실행: `VERDICT_A210_Z2A_DIAG_ISOLATION_2026-08-27.md:379` 실재]:
+  `이 판정문의 분기·게이트 문면: **ZI-A** · **E-I3 PASS** · **E-I4 PASS**.`
+  후보 0건 → `Z2A_VERDICT_ABSENT` · 라인 부재 → `Z2A_VERDICT_NOT_ZI_A_AUDITED` · 보유 후보
+  ≥2 → `Z2A_VERDICT_AMBIGUOUS`(전부 rc≠0). 오충족 소거 근거: 매칭 단위가 산문 스캔이 아니라
+  **문장 전체의 등록 리터럴**이다 — ZI-A 를 부정·기각하는 판정문은 이 문장(그 자체가 분기
+  선언)을 실을 수 없다.
+- **(②-b) 감리 앵커 — 출처를 판정문에서 장부로 이전**(개정16 ① 정본 = 집행 기록):
+  `docs/RUNG_A210_Z2A_DIAG_ISOLATION_2026-08-26.md` 에서 `| 감리-A `·`| 감리-B ` 로 시작하는
+  행 **파일 전역 각 정확 1건**(현 실측: `:423`·`:424` — §10 장부), 각 행을 `|` 로 분할한
+  **넷째 토큰(«실제» 셀, strip 후 UTF-8)** 의 sha256 이 등록값과 일치:
+  감리-A = `87b83d2d78b09c3cda0c90209357df470540988a4a44daaaa341cf759db2f97d`
+  (문면에 `**범위 한정 재감리 통과**` 포함) · 감리-B =
+  `5101bc3e0e774dfec26a9f31013bbd2f087ba30b275ddef333f36a288ed71fb2`
+  (문면에 `재판정 통과` 포함). 행 부재/중복 → `Z2A_LEDGER_AUDIT_ROW_ABSENT`/`_AMBIGUOUS` ·
+  셀 불일치 → `Z2A_LEDGER_AUDIT_CELL_MISMATCH`(전부 rc≠0 — 장부 부재·미기입·모호 fail-closed).
+  **셀-해시 등화는 부분 문자열 스캔을 0 으로 만들므로** 조건문·부정문 오충족이 원리적으로
+  불가하다. 대가(정직 기재): 그 두 셀의 여하한 후속 편집은 fail-closed 로 떨어진다 — 그 경우
+  처분은 본 사전등록의 재개정(개정15 형식)이지 판독기 수정·해시 갱신 임의 집행이 아니다.
 
 ### 판독 (봉인 read-only — ★검수 Q0 답 + PR-0 통과 후에만)
 
@@ -335,11 +363,37 @@ Z-2A 판정 라인(Fable fresh 저작·운전석 기재)에 대한 요구다.
 | **RD-3 캡처 정의성** | 비-hazard 선정 행: producer 필드 100% defined·finite. hazard 행: 이름 있는 계급으로 전량 계수(탈락 0) | **NC-R4b**: hazard 행 1건을 픽스처에서 무단 삭제 → 재고 불일치 FAIL | 유 |
 | **RD-4 재구성 항등** (R4b 계승) | 전 FPC 행: β_rec=exponx(τ_eff^prod) 재구성으로 캡처 두 항·Jbar 상대편차 ≤1e-12 · 뺄셈·역산 0회 | **NC-R5**: η 1e-9 섭동 → FAIL | 유 |
 | **RD-5 권한 사상** (R5 계승) | f_mapped = 1.0 정확(양 반복 전 행, 발주 HEAD blob 테이블) | **NC-R6**: 테이블 사본에서 (26,1) 제거 → f_mapped<1 검출 | 유 |
-| **RD-6 결정론 앵커 거울** | 앵커 행 `line=669992` 4필드 bit(Z-2A E-I3 값) ∧ SUMMARY 토큰(E-I4 값: candidate_rows=749644·hazard 221382·sprobe_undefined_rows=221382) | **NC-R7**: 앵커 1필드 변조 → FAIL | 유 |
+| **RD-6 결정론 앵커 거울** (개정 5) | 앵커 행 `line=669992` 4필드 bit — ★**반복별 등록값**(아래 «RD-6 반복별 앵커 등록값» 표: iter0 = Z-2A E-I3 값, iter1 = 봉인 census 실측)을 run·census **양쪽·양 반복에 반복 인덱스로** 적용. iter0 상수의 전 반복 적용(현 판독기 `ANCHOR_BITS:48-53`×`anchor_ok:419`×`:658`)이 이 개정이 수리하는 결함이다 ∧ SUMMARY 토큰(E-I4 값: candidate_rows=749644·hazard 221382·sprobe_undefined_rows=221382) | **NC-R7**: 앵커 1필드 변조 → FAIL / **NC-R13**: iter1 앵커에 iter0 값 주입 → FAIL(성한 반복-구별 픽스처는 PASS) | 유 |
 | **RD-7 판정 (계약 본체)** | 매치 FPC 행 capture-d 분포 → ff → §9 분기 (판정식이 RD-1~RD-6 PASS 를 명시 conjunct 로 포함 — L6C 감리 권고 (a) 계승) | **NC-R1** 동결 픽스처 → C-F / **NC-R2** 응답 픽스처 → C-R / **NC-R3** 프록시-착지 픽스처(§5-5 조성) → C-M + **C-M-S 라벨** / **NC-R8** 비표적 행 주입 → W-V (NC-R0 = 성한 픽스처 통과) | 유 |
 
+★**RD-6 반복별 앵커 등록값 (개정 5 신설 — 전 값 [저자 실행], 봉인 census read-only)**:
+
+| iter | tau_validity | n_upper | A_ul | emission_per_sr |
+|---|---|---|---|---|
+| 0 | `2` | `0x1.d1534dba20c26p-12` | `0x1.0b6516044e436p-1` | `0x1.3adcec9caadc0p-52` |
+| 1 | `2` | `0x1.daa141c1395e6p-12` | `0x1.0b6516044e436p-1` | `0x1.4128acfd24836p-52` |
+
+- **출처·검증**: 봉인 census `stderr.log:1242`(iter0)·`:226118`(iter1) 의 `line=669992` 행
+  십진 인쇄값을 `float.hex()` 왕복으로 bit 확증 [저자 실행 — §14]. iter0 4필드 = 현
+  `ANCHOR_BITS`(= Z-2A E-I3 등록값)와 동일. iter1 `n_upper` = BITLOCK
+  `RUNG_BIT_LOCKSTEP_PRODUCER_2026-08-26.md:184` Fe 행 iter1 hex 와 일치(반복 간 인구 이동
+  +2.0e-2 — 폐합 실측). `A_ul`·`tau_validity=2` 는 반복 불변 실측.
+- **스코프 판정 — iter0 한정이 아니라 반복별 등록을 택한 근거**: ① 이 단의 계약량 자체가
+  iter0→iter1 응답이다 — 응답 축의 **양끝을 절대 등록값으로 고정**하는 쪽이 판별 방향이고,
+  iter0 한정은 iter1 끝의 절대 판별을 버린다(판별력을 잃지 않는 쪽). ② 등록 대조는 절대
+  앵커(사전등록 시점 고정)라 RD-1 의 상대 대조(run≡census bit)와 **독립 축**이다 — census
+  재생성·변조 계급의 사고를 별도로 잡는다. ③ Z-O 판독기의 iter0 한정
+  (`analyze_a210_zero_opacity_census.py:215-218` `public_blocks[0]` [저자 실행])이 E-Z3 를
+  통과시킨 것은 Z-O 의 계약량이 iter0 census 여서 스코프가 iter0 였기 때문 — 계승하는 것은
+  «앵커 스코프 = 계약량의 반복 스코프» 원리이지 iter0 상수가 아니다. ④ 등록값의 정당성은
+  E-I3/E-I4(R-II↔census ROW 스트림 bit-동일)가 못박는다 — census-실측 iter1 값은 R-II 에
+  대한 bit-급 예측이다(§4-6 논리 그대로); R-II iter1 앵커가 등록값과 다르면 그것은 결정론
+  파탄(X-D, Z-2A 반송급)이지 등록 오류가 아니고, 등록 오류였다면 PR-3 이 판독 전에 잡는다.
+
 clamp/floor/cap 0. 계급 분류는 물리값을 바꾸지 않는 분석 분류 — 전량 보고. 음성대조는 전부
-스크래치 사본, 봉인 쓰기 접촉 0. 판독기 `--report` 기본값은 봉인 밖(검수 조건 전례).
+스크래치 사본, 봉인 쓰기 접촉 0 — 단 **PR-3 은 예외적으로 봉인 census read-only 접촉**을
+갖는 양성대조다(개정 5; R-II 무접촉·쓰기 0 불변). 판독기 `--report` 기본값은 봉인
+밖(검수 조건 전례).
 
 ## 8. 런 발주 경로 — ★GPU 런 0회
 
@@ -347,8 +401,11 @@ clamp/floor/cap 0. 계급 분류는 물리값을 바꾸지 않는 분석 분류 
   R-II 는 봉인 L6C 와 env delta 0 이라 판정런과 형상이 같고, Z-2A 사전등록 §7-1 이 그
   데이터의 물리 판정을 이 단 몫으로 예약했다. 새 런이 필요해지는 유일한 경우 = X-P(§9)이며
   그때는 **F1 로 회귀하되 별도 사전등록·별도 발주**다(이 문서는 런을 발주하지 않는다).
-- Codex 발주 **1회**(판독기 1파일 코딩). 발주 전: 본 문서 커밋 + 프리플라이트 2종 rc=0
-  (grammar-debug). 발주서 앞겹 = 본 문서 원문 그대로, 뒷겹은 절 번호 지목만(개정15).
+- Codex 발주 = 판독기 **1파일 한정**. 초판 코딩과 검수-차단 수리 발주는 집행 완료(§16 개정 2
+  경위); ★**개정 3~5 구현 재발주 1회**를 추가한다(PR-0 신판정식·반복별 앵커·`--census-selfcheck`·
+  NC-R13~R16 — GPU 런 0회·스테이징 0회·빌드 0회 불변). 발주 전: 본 개정 커밋 + 프리플라이트
+  2종 rc=0 (grammar-debug). 발주서 앞겹 = 본 문서 원문 그대로, 뒷겹은 절 번호 지목만(개정15).
+  수정 산출물은 재검수(Q0 선행) 대상이다(개정16 ②).
 - 오프라인 실행 전부 grammar-debug(nested ssh, stdin 파이프 — `/tmp` 노드-로컬). 로그인
   노드 연산 금지. 판독 실행 = 운전석, 판정 = Fable fresh 재측정.
 
@@ -400,8 +457,8 @@ ff 분할(문턱 불변): 평가 순서 X-P → X-D → W-V → C-F → C-R → 
 - 사전등록(본 문서)=Fable / 코딩=Codex / 검수=Fable 별개 컨텍스트 / 집행·판독 실행·대장·
   커밋=운전석 / 판정=Fable fresh / 감리-A=Fable fresh(판정과 다른 컨텍스트·고정질문 4) +
   감리-B=Codex read-only(판정문 실측 주장 재현 한정). 폐합 = A·B 둘 다 통과.
-- **검수 고정질문**: 0. 이 산출물을 봉인·실물에 돌려도 되는가(★이 답 전 봉인 접촉 게이트
-  RD-1~7 금지 — PR-1·PR-2 는 병행 가) 1. 발주서가 사전등록의 범위를 좁혔는가 2. 판독기가
+- **검수 고정질문**: 0. 이 산출물을 봉인·실물에 돌려도 되는가(★이 답 전 봉인 접촉 게이트 —
+  PR-0 ①-(ii)·PR-3·RD-1~7 — 금지; PR-1·PR-2 는 병행 가) 1. 발주서가 사전등록의 범위를 좁혔는가 2. 판독기가
   행을 조용히 탈락시킬 수 있는가(hazard·NEG 전량 보고 검증) 3. 계급 분류가 물리값·판별량을
   변형하는가(§5-3 위반 검사) 4. 분할 밖 상태에 UNRESOLVED 가 남을 수 있는가.
 - 판정 하중 항목(계급 census·d 분포·ff·앵커·f_mapped)은 판정자가 **도구 import 없이 자체
@@ -462,7 +519,12 @@ PF-1 은 §6 표와 표지 심볼의 양방향 1:1 을, PF-2 는 ff 1차원 분�
     {"path": "docs/VERDICT_DET_L6C_COVER_2026-08-26.md",
      "flags_existing": ["INDEPENDENT_SPROBE_UNDEFINED"]},
     {"path": "docs/RUNG_A210_Z2A_DIAG_ISOLATION_2026-08-26.md",
-     "flags_existing": ["ZI-A", "E-I3"]},
+     "flags_existing": ["ZI-A", "E-I3",
+                        "범위 한정 재감리 통과", "재판정 통과"]},
+    {"path": "docs/VERDICT_A210_Z2A_DIAG_ISOLATION_2026-08-27.md",
+     "flags_existing": ["E-I3 PASS", "E-I4 PASS"]},
+    {"path": "docs/RUNG_BIT_LOCKSTEP_PRODUCER_2026-08-26.md",
+     "flags_existing": ["0x1.daa141c1395e6p-12"]},
     {"path": "docs/RUNG_DET_L6C_COVER_2026-08-22.md", "flags_existing": ["C-M"]},
     {"path": "docs/DESIGN_SEED_PREMISE_REPLACEMENT_2026-08-26.md",
      "flags_existing": ["F1b"]}
@@ -482,6 +544,13 @@ rules=2 fixtures=5 residual=C-M · references-resolved refs=11].
 ★**개정 2(§16, 재검수 지적 반영) 후 본검사 재실행(grammar-debug) → 동일 PASS 4건·rc=0**
 [저자 실행, 2026-08-27 — changeset-consistent files=1 · branch-partition trials=200000
 rules=2 fixtures=5 residual=C-M · references-resolved refs=11].
+
+★**개정 3~5(§16, Z-2A 폐합 인계 3건 반영) 후 본검사 재실행(grammar-debug) → PASS 4건·rc=0**
+[저자 실행, 2026-08-27 — changeset-consistent files=1 · branch-partition trials=200000
+rules=2 fixtures=5 residual=C-M(**PF-2 분할 겹침·공백 0 유지** — `branches` 블록 무접촉) ·
+references-resolved **refs=13**(판정문·BITLOCK 참조 신설 + 장부 문면 flags 반영)]. 행 단위
+diff(`.rev2` 대비): 삭제 17행 전건이 §16 개정 3~5 의 OLD 쌍과 1:1 — **의도 외 소실 0**
+[저자 실행].
 
 ## 13. 집행 기록 (★정본 장부 — 개정16 ①; 판정문·감리문은 "장부 = 사전등록 §13" 으로 지목만)
 
@@ -528,6 +597,13 @@ rules=2 fixtures=5 residual=C-M · references-resolved refs=11].
 | ROW 서식 (census) | `grep -m1 "\[LINE-SATURATION-ROW\]" census/stderr.log` | `lower_level=`·`upper_level=`·`tau_validity=`·`chi_effective=` 필드 실재 (§5-1 의 전제) |
 | ★계급 census (§5-5 전량) | grammar-debug 스트리밍 파스 2회 — 선정 ROW 전행 파스(SUMMARY 경계 분할)·덱 `levels.csv` (Z,ion,level)→g 조인·계급 분류(K=100)·d=\|(η₁/η₀)/(τ₁/τ₀)−1\|·FPC/NEG 분리·B_ν(10020K, CODATA cgs) | §5-5 표 전 수치. 핵심 재현: FPC=885(설계 885 일치)·ff=0.1073(설계 0.107 일치)·동결 95 ≡ BL∩FPC·NEG 46 전건 BL·hazard 인쇄 154 전건 (lumped,lumped)·등g |
 | 프리플라이트 | §12 명령 2건 | rc=0 · selftest 9종 failed=0 |
+| ★R-II 종료 상태 (개정 3) | `sacct -j 324557 -o JobID,JobName%24,State,Elapsed,ExitCode -X` [저자 실행, 2026-08-27] | `LUMINA_Z2A_II FAILED 04:34:36 70:0` — «sacct COMPLETED» 는 이 job 으로 영구 불충족 |
+| ★완주 마커 서식 5종 (개정 3 — 봉인 census read-only; R-II 무접촉) | census `model.rc` cat · `grep -c "\[LINE-SATURATION-SUMMARY\]"` · SUMMARY 행 `complete=` 토큰 · `grep -n R7_MATERIAL_PHASE_COMMITTED` · `grep -n "PHYSICS-COMPARISON"` · `head RUN_FOOTER.txt` | `model.rc`=`0` · SUMMARY 정확 2건, 양쪽 `complete=1`(`:225081`/`:449539`) · `[R7][PHASE] event=R7_MATERIAL_PHASE_COMMITTED lane=DET iter=1 phase=A2-10 r=3 o=5 e=5 te_generation=2->3`(`:449752`, iter=1 정확 1건) · `[PHYSICS-COMPARISON] lane=DET iter=1 status=COMMITTED`(`:449753`) · `RUN_FOOTER.txt` 첫 행 `schema=LUMINA_DET_FLIGHT_V1` — ⚠R-II 자신에서의 마커 성립은 운전석 인계 인용(저자 무열람 규율) |
+| ★판정문 앵커 실측 (개정 4) | `grep -Fc` 4종 + 현 판독기 정규식 3종 python 평가 + `ls docs \| grep -i VERDICT \| grep -i Z2A` | `ZI-A` 20건·`E-I3 PASS` 4건·`E-I4 PASS` 4건·`감리 A·B 통과` **0건** · 정규식: ZI-A문맥 ok·E-I3/E-I4 PASS ok·감리(joint/separate) **전부 불충족** ⟹ `Z2A_VERDICT_NOT_ZI_A_AUDITED` 오차단 실증 · 후보 `.md` 정확 1건(`.rev1` 확장자 배제) · 등록 라인 `:379` 실재 |
+| ★장부 감리 셀 (개정 4) | `grep -n "^\| 감리-A \|^\| 감리-B "` + python split(`\|`)[3].strip() sha256 | 행 파일 전역 각 정확 1건(`:423`/`:424`) · 감리-A 셀 `87b83d2d…f97d` · 감리-B 셀 `5101bc3e…71b2`(§7 등록값 전문) |
+| ★census 앵커 양 반복 (개정 5) | `grep -n "line=669992" census/stderr.log` + 십진→`float.hex()` 왕복 | 정확 2건(`:1242` iter0 · `:226118` iter1) · iter0 = 현 `ANCHOR_BITS` 4필드 bit 동일 · iter1 `n_upper`=`0x1.daa141c1395e6p-12`·`emission_per_sr`=`0x1.4128acfd24836p-52` · `A_ul`·`tau_validity=2` 반복 불변 — «RD-6 반복별 앵커 등록값» 표 전 셀의 출처 |
+| ★결함 좌표 재확인 (개정 5) | `grep -n "ANCHOR_BITS\|def anchor_ok\|for iteration in range\|for block in (actual, reference)" scripts/analyze_l6c_redispatch.py` · `sed -n '215,218p' scripts/analyze_a210_zero_opacity_census.py` | `ANCHOR_BITS:48`(iter0 상수)·`anchor_ok:419`·반복 루프 `:635`·양 블록 적용 `:658` — 발주자 인계 좌표와 일치 · Z-O `public_blocks[0]`(iter0 한정) `:216` 확인. 파이썬이라 전처리 死블록 검사 비해당 |
+| BITLOCK iter1 hex 인용 행 (개정 5) | `grep -n "0x1.daa141c1395e6p-12" docs/RUNG_BIT_LOCKSTEP_PRODUCER_2026-08-26.md` | `:184` Fe 행 — 발주자 인계 인용 행 번호 일치 |
 
 Z-2A 집행 기록 인용분(재실행 불요·문서 계급): R-II env delta 0 vs 봉인 L6C · 캡처 2종=1 ·
 TARGET_ION=1 · 바이너리 `39d452e4…` = `RUNG_A210_Z2A_DIAG_ISOLATION_2026-08-26.md` §10.1 ⑦.
@@ -561,7 +637,16 @@ TARGET_ION=1 · 바이너리 `39d452e4…` = `RUNG_A210_Z2A_DIAG_ISOLATION_2026-
    삽입되면 타 실패 사유가 봉인-내부 report 와 공존할 수 있다. NC-R11/R12 가 회귀망이 되지만
    **불변식 자체는 코드 주석으로 명시돼 있지 않다** — 이 단은 판독기 재수정을 발주하지
    않으므로(최소 개정) 한계로 기재하고, 장래 판독기 수정 발주 시 검수 고정질문이 이 불변식
-   유지를 확인할 것을 승계한다.
+   유지를 확인할 것을 승계한다. ★개정 3~5 가 그 «장래 수정 발주»를 실제로 연다(§8) —
+   재검수는 이 불변식 유지를 고정질문으로 확인해야 한다.
+9. **★계약 §5.5↔§8-2 갈림(Z-2A 판정 §11 폐합 후 큐 — «완주»의 정의 고정)**: 존속 — 해소는
+   **Z-2A 사전등록 저자 몫**이며 이 단은 대신 해소하지 않는다. 정합 확인(개정 3): 이 단의
+   착지 조작화(§7 PR-0 ①)는 **«판독 개시 자격»의 술어**이고, Z-2A §8-2 ZI-A 판정식의 «완주»
+   를 판정문이 적용한 방식(모델 완주 — E-I1 문면 FAIL 병기하의 ZI-A)과 **정합**한다. §5.5
+   «런처 수용 PASS 후»가 지배하는 것은 **R-III/IV 제출 자격**으로, 이 단이 수행하지 않는
+   행위다(§10 — R-III/IV 산출 무접촉 존속) ⟹ **현재 모순 없음**. 단, Z-2A 저자가 갈림을
+   «sacct COMPLETED 만이 완주» 방향으로 해소하면 이 단 ① 과 충돌하게 되므로, 그 경우 본
+   사전등록의 재개정 의무를 승계 기재한다.
 
 ## 16. 개정 이력
 
@@ -615,3 +700,96 @@ diff 로 의도 외 소실 0 확인.
 X-P 오차단) 위와 같이 §7 에 형식 요구로 명시했고, 나머지 셋은 잔여 지적으로 존속한다.
 
 개정 후 프리플라이트 재실행 rc=0 (§12 말미 갱신).
+
+**개정 3 (2026-08-27, 저자 = Fable) — PR-0 ① 착지 조작화: sacct COMPLETED → 모델 완주** —
+Z-2A 폐합(`4fc84fc`, ZI-A·감리 두 겹 통과)의 인계 개정 첫째, user 승인. 계약·전제 교체·
+판별식·문턱(ff ≤0.10/≥0.99·동결 1e-13)·분모·분기·경계는 **일절 불변** — 개정 범위는 PR-0
+판정식뿐이다. 개정 전 판본 보존: `docs/RUNG_L6C_REDISPATCH_2026-08-27.md.rev2`
+(sha256 `c96428d8b0d735ae4edd132af104e9bef770b511a1102e5866bf874ef495eaa4` — Z-2A 감리-A 의
+「개정 전 판본 미보존」 지적의 차기 규약 후보를 이 단부터 선행 적용; 개정 3~5 는 이 한 판본
+위에 일괄 적용·행 단위 diff 일괄 검증).
+
+**근거 실측**: job `324557` = `FAILED 04:34:36 70:0` [저자 실행 — §14]. sacct 상태는 불변이라
+구 ① («sacct COMPLETED»)은 **이 런으로 영구 불충족** — F1b 가 데이터 무결과 무관한 이유로
+봉쇄된다(Z-2A 판정 §7 «후속 단 함의»가 사전 발굴한 그 함정). 죽은 것은 런처 수용 블록(exit
+70)이고 그 사인은 이 단 개정 5 가 수리하는 판독기 오탐과 같은 계급(앵커 iter0 상수의 전 반복
+적용 — Z-2A 장부 §10 판독 행)이다 — **수용 하니스의 exit 상태를 착지의 조작화로 쓰는 것은,
+결함이 실증된 판독기를 착지 판정자로 신임하는 것**이다.
+
+**조작화 선택 = 후보 B 의 강화형(후보 C)**: sacct 를 버리지 않되(종단성 = 쓰기 정지 보증)
+COMPLETED 요구를 «종단 상태»로 바꾸고, 착지의 하중은 **모델 완주 마커 5건 전건·정확
+계수**(①-(ii))가 진다. 후보 A(마커 단독)를 취하지 않은 근거: 마커 전건이어도 job 이 비종단
+이면 런루트에 쓰는 주체가 남아 있을 수 있다 — 종단성 검사는 sacct 가 유일하게 공급하는
+fail-closed 값이다. fail-closed 술어: 모델 사망 런은 마커 conjunction(모두 정확 계수)을
+필연 위반하고(NC-R15 시연), 비종단 런은 (i) 가 차단한다(NC-R14 시연). §9-2 X-P 의 «R-II
+미착지»는 이 조작화를 지시한다 — 분기 판정식 문면은 불변. §5.5↔§8-2 갈림과의 정합은 §15 #9
+(모순 없음 — 이 단의 정의는 판독 개시 자격이지 R-III/IV 제출 자격이 아니다; 갈림 해소는
+Z-2A 저자 몫으로 존속).
+
+| 자리 | OLD → NEW (요지) |
+|---|---|
+| §7 PR-0 행 ① | «R-II 착지(sacct COMPLETED)» → «(i) sacct 종단 상태(COMPLETED 불요·상태 원문 기록) ∧ (ii) 모델 완주 마커 5건 전건·정확 계수(model.rc=0 · SUMMARY 2건 complete=1 · R7 iter=1 커밋 1건 · PHYSICS-COMPARISON iter=1 COMMITTED 1건 · RUN_FOOTER schema 행)» — 마커 서식은 봉인 census 실측 [저자 실행], R-II 성립 주장은 운전석 인계 인용 |
+| §7 PR-0 행 봉인 접촉 열 | «무» → «①-(ii) 만 유(R-II read-only·마커 한정 — ROW·값 필드 무접촉; ②∧①-(i) PASS 후에만)» |
+| §7 PR-0 행 음성대조 열 | NC-R14(비종단 → FAIL)·NC-R15(마커 결손 → FAIL — 죽은 런 차단 시연) 신설 |
+| 서두 F1b 시간 규율 | PENDING 실측에 FAILED 재실측·무열람 유지 문구 추가 |
+
+**개정 4 (2026-08-27, 저자 = Fable) — PR-0 ② 감리 앵커: 판정문 리터럴 스캔 → 판정문 등록
+라인 + 장부 셀 해시** — 인계 개정 둘째(감리-A 의 fail-open 지적). 계약·문턱·분기 불변.
+
+**근거 실측 (발주자 인계 서술의 정정 포함 — 정확 기재 의무)**: 인계문은 «판정문이 그 리터럴을
+제거했다(grep -F 0건)»라 했으나 실측은 **부분만 그렇다**: `ZI-A` 20건·`E-I3 PASS` 4건·
+`E-I4 PASS` 4건은 **실재**(판정문 §10 이 COVER-R 매칭용으로 의도 공급, `:379`)하고 **0건인
+것은 `감리 A·B 통과` 하나**다 [저자 실행 — §14]. 현 판독기 정규식 평가 실측: 분기·게이트
+앵커 3종 충족·감리 앵커(joint/separate) 불충족 ⟹ `Z2A_VERDICT_NOT_ZI_A_AUDITED` — **오차단은
+실재하되 그 지점은 감리 앵커 한 곳**이다. 이는 개정의 방향(장부 이전)을 바꾸지 않고 오히려
+정밀하게 한다: 판정문이 스스로 싣기를 거부한 것(감리 문구 — fail-open 벡터라서)만 장부로
+옮기고, 판정문이 스스로 공급하는 것(분기·게이트 등록 라인)은 명시 토큰 매칭으로 좁힌다.
+fail-open 소거: (a) 등록 라인은 문장 전체 리터럴 — 부정·기각 판정문이 실을 수 없는 형태
+(b) 장부 셀은 **전문 해시 등화** — 부분 문자열 스캔 자체가 없어 조건문·부정문 오충족이
+원리적으로 불가. fail-closed: 후보 0건/≥2·라인 부재·장부 행 부재/중복·셀 불일치 전부 이름
+있는 rc≠0(NC-R10 확장·NC-R16 시연). 장부 셀 실측 등록값(감리-A `:423`·감리-B `:424`, «실제»
+셀 sha256)은 §7 (②-b) 에 전문 기재 [저자 실행].
+
+| 자리 | OLD → NEW (요지) |
+|---|---|
+| §7 PR-0 행 ② | «판정문 텍스트에서 ZI-A·E-I3·E-I4 PASS 앵커 확인» → «(a) 판정문 등록 라인(명시 토큰) (b) 장부 감리 셀 해시» |
+| §7 ★PR-0 문면 매칭 문단(개정 2 신설) | 폐기·«PR-0 등록 앵커» 블록으로 교체 — 구 문단의 «Z-2A 판정문은 감리 A·B 통과 리터럴을 실어야 한다» 요구는 판정문의 fail-open 경고(§10·§13)와 정면 충돌했으므로 요구 자체를 철회 |
+| §7 PR-0 행 음성대조 열 | NC-R10 확장(등록 라인 부재 픽스처)·NC-R16(장부 앵커) 신설 |
+
+**개정 5 (2026-08-27, 저자 = Fable) — RD-6 앵커 검사의 반복 스코프: iter0 상수 → 반복별
+등록값 + census 자기입력 양성대조(PR-3)** — 인계 개정 셋째(운전석 발견 — 이 단 판독기가
+Z-2A 오탐과 동일 결함 보유). 계약 본체·판별량·문턱 불변 — 변경은 계측(앵커 검사)과 그
+음성대조뿐.
+
+**근거 실측**: 현 판독기 `ANCHOR_BITS:48-53` = iter0 값 고정, `anchor_ok:419` 가 `:635` 반복
+루프 안 `:658` 에서 run·census 양 블록에 호출 ⟹ iter0 상수의 전 반복 적용 [저자 실행 — 좌표
+전건 재확인, §14]. 봉인 census 실측: `line=669992` 는 정확 2건(`:1242`/`:226118`)이고 iter1
+4필드는 iter0 과 **정당하게 다르다**(`n_upper` +2.0e-2 — BITLOCK `:184` Fe 행 hex 와 bit
+일치; `A_ul`·`tau_validity` 반복 불변) ⟹ 현 판독기로 F1b 를 실행하면 R-II 무결과 무관하게
+`ANCHOR_FIELD_MISMATCH` — Z-2A 와 정확히 같은 사망이 예약돼 있었다. **스코프 판정 = 반복별
+기대값 등록**(iter0 한정 아님 — 근거 4건은 §7 «RD-6 반복별 앵커 등록값» 블록: 계약량이
+iter0→iter1 응답이라 양끝 절대 고정이 판별 방향 · 등록 대조는 RD-1 상대 대조와 독립 축 ·
+Z-O 의 iter0 한정은 계약량 스코프의 귀결이지 상수의 전례가 아님 · E-I3/E-I4 가 census-실측
+iter1 값을 R-II bit-급 예측으로 승격). **음성대조 신설 의무 이행**: Z-2A selftest 가 이
+결함을 원리적으로 못 잡은 원인(픽스처가 양 반복에 동일 행 재사용)을 NC-R13(반복-구별
+픽스처 — 성한 픽스처의 PASS 자체가 구 결함의 검출이다)과 PR-3(봉인 census 자기입력 양성대조
+— 등록값 자체의 오류를 R-II 무접촉으로 선검출; «성한 봉인 실물이 앵커를 통과해야 한다»)
+두 겹으로 막는다.
+
+| 자리 | OLD → NEW (요지) |
+|---|---|
+| §7 RD-6 행 | «4필드 bit(Z-2A E-I3 값)» → «반복별 등록값 표를 run·census 양쪽·양 반복에 반복 인덱스로 적용» + NC-R13 병기 |
+| §7 판독 표 직후 | «RD-6 반복별 앵커 등록값» 블록 신설(값 표 + 출처·검증 + 스코프 판정 근거 4건) |
+| §7 전제 표 | PR-3 행 신설(census 자기입력 양성대조 — F1b 판독 전 rc=0 의무·census read-only·R-II 무접촉·Q0 답 후) |
+| §6 변경집합 표 | 판독기 행에 개정 3~5 구현 범위 명시(수정 발주 — 같은 1파일, **PF-1 집합 불변**)·NC 로스터 R0~R12 → R0~R16 |
+| §7 PR-1 행 | selftest 로스터 R0~R12 → R0~R16 |
+| §8 | 개정 3~5 구현 재발주 1회 추가(GPU 런 0회 불변)·재검수(Q0 선행) 명시 |
+| §11 | Q0 의 봉인 접촉 게이트 열거에 PR-0 ①-(ii)·PR-3 추가 |
+| §12 references | 판정문·BITLOCK 참조 2건 신설 + Z-2A 사전등록 flags 에 장부 문면 2건 추가(PF-3 앵커 실존 강제 — 기계 선언만, 계약 무변경) |
+| §14·§15 | 저자 실행 원장 8행 추가 · §15 #8 갱신·#9 신설(갈림 정합) |
+
+세 개정 공통: 절 통째 교체 0 — 전건 OLD/NEW 쌍 적용, `.rev2` 대비 **행 단위 diff 로 의도 외
+소실 0 확인**(아래 §12 말미 재실행 기재와 함께 [저자 실행]). ★PF-2 분기 분할은 무접촉
+(`branches` 블록 불변 — 겹침·공백 0 재확인은 프리플라이트 재실행이 수행).
+
+개정 3~5 후 프리플라이트 재실행 rc=0 (§12 말미 갱신).
