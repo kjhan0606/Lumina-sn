@@ -32,6 +32,7 @@ SUMMARY_PREFIX = b"[A2-10][LINE-SATURATION-SUMMARY]"
 BLOCKED_PREFIX = b"[A2-10][LINE-SATURATION-BLOCKED]"
 ISOLATED_PREFIX = b"[A2-10][LINE-SATURATION-ISOLATED]"
 R7_PREFIX = b"[R7][PHASE] event=R7_MATERIAL_PHASE_COMMITTED"
+PHYSICS_COMPARISON_PREFIX = b"[PHYSICS-COMPARISON]"
 TARGET_Z = frozenset({26, 27, 28})
 TARGET_ION = 1
 SUPER_CUTOFF = 100
@@ -45,12 +46,31 @@ FROZEN_TOLERANCE = 1.0e-13
 FF_RESPONSE_MAX = 0.10
 FF_FROZEN_MIN = 0.99
 ANCHOR_LINE = 669_992
-ANCHOR_BITS = {
-    "tau_validity": "2",
-    "n_upper": "0x1.d1534dba20c26p-12",
-    "A_ul": "0x1.0b6516044e436p-1",
-    "emission_per_sr": "0x1.3adcec9caadc0p-52",
+ANCHOR_BITS_BY_ITERATION = (
+    {
+        "tau_validity": "2",
+        "n_upper": "0x1.d1534dba20c26p-12",
+        "A_ul": "0x1.0b6516044e436p-1",
+        "emission_per_sr": "0x1.3adcec9caadc0p-52",
+    },
+    {
+        "tau_validity": "2",
+        "n_upper": "0x1.daa141c1395e6p-12",
+        "A_ul": "0x1.0b6516044e436p-1",
+        "emission_per_sr": "0x1.4128acfd24836p-52",
+    },
+)
+REGISTERED_VERDICT_LINE = (
+    "이 판정문의 분기·게이트 문면: **ZI-A** · **E-I3 PASS** · **E-I4 PASS**."
+)
+Z2A_LEDGER_NAME = "RUNG_A210_Z2A_DIAG_ISOLATION_2026-08-26.md"
+Z2A_LEDGER_AUDIT_SHA256 = {
+    "감리-A": "87b83d2d78b09c3cda0c90209357df470540988a4a44daaaa341cf759db2f97d",
+    "감리-B": "5101bc3e0e774dfec26a9f31013bbd2f087ba30b275ddef333f36a288ed71fb2",
 }
+NONTERMINAL_SACCT_STATES = frozenset({
+    "PENDING", "RUNNING", "REQUEUED", "RESIZING", "SUSPENDED",
+})
 
 
 class ReaderError(RuntimeError):
@@ -416,11 +436,13 @@ def time_explosion(deck: Path) -> float:
     return value
 
 
-def anchor_ok(block: Block) -> tuple[bool, str]:
+def anchor_ok(block: Block, iteration: int) -> tuple[bool, str]:
     if len(block.anchors) != 1:
         return False, "ANCHOR_MISSING" if not block.anchors else "ANCHOR_AMBIGUOUS"
+    if iteration not in range(len(ANCHOR_BITS_BY_ITERATION)):
+        return False, "ANCHOR_ITERATION_INVALID"
     row = block.anchors[0]
-    for name, expected in ANCHOR_BITS.items():
+    for name, expected in ANCHOR_BITS_BY_ITERATION[iteration].items():
         raw = row.get(name)
         if raw is None:
             return False, "ANCHOR_FIELD_MISSING"
@@ -656,7 +678,7 @@ def analyze(
         if shared_actual != shared_reference:
             add_reason(rd6_reasons, "SUMMARY_BIT_MISMATCH")
         for block in (actual, reference):
-            ok, anchor_reason = anchor_ok(block)
+            ok, anchor_reason = anchor_ok(block, iteration)
             if not ok:
                 add_reason(rd6_reasons, anchor_reason)
     if run.r7_iter1_total != 1 or run.r7_iter1_good != 1:
@@ -937,7 +959,7 @@ def analyze(
             "status": "PASS" if not rd6_reasons else "FAIL",
             "reasons": rd6_reasons,
             "anchor_line": ANCHOR_LINE,
-            "anchor_bits": ANCHOR_BITS,
+            "anchor_bits_by_iteration": ANCHOR_BITS_BY_ITERATION,
         },
     }
     for gate in gates.values():
@@ -1066,46 +1088,49 @@ def verdict_candidates(docs: Path) -> list[Path]:
                   "Z2A" in path.name.upper())
 
 
-def verdict_has_pr0_anchors(text: str) -> tuple[bool, list[str]]:
-    missing: list[str] = []
-    zi_a_lines = [line for line in text.splitlines() if "ZI-A" in line]
-    if not any(re.search(r"(R-II|분기|판정|착지)", line) for line in zi_a_lines):
-        missing.append("ZI-A")
-    for name in ("E-I3", "E-I4"):
-        lines = [line for line in text.splitlines() if name in line]
-        if not any(re.search(r"\bPASS\b", line) for line in lines):
-            missing.append(f"{name}_PASS")
-    audit_joint = re.search(r"감리\s*A[·ㆍ・/]B\s*통과", text)
-    audit_separate = (
-        re.search(r"감리[- ]?A[^\n]{0,120}\bPASS\b", text) and
-        re.search(r"감리[- ]?B[^\n]{0,120}\bPASS\b", text)
-    )
-    if not (audit_joint or audit_separate):
-        missing.append("AUDIT_A_B_PASS")
-    return not missing, missing
+def ledger_audit_cells(docs: Path) -> dict[str, dict[str, str]]:
+    path = docs / Z2A_LEDGER_NAME
+    try:
+        regular_file(path, "Z2A_LEDGER_AUDIT_ROW_ABSENT")
+        rows: dict[str, list[str]] = {name: [] for name in Z2A_LEDGER_AUDIT_SHA256}
+        with path.open("r", encoding="utf-8", errors="strict") as stream:
+            for line in stream:
+                for name in rows:
+                    if line.startswith(f"| {name} "):
+                        rows[name].append(line.rstrip("\r\n"))
+    except (OSError, UnicodeError) as exc:
+        raise ReaderError("Z2A_LEDGER_AUDIT_ROW_ABSENT", str(exc)) from exc
+    result: dict[str, dict[str, str]] = {}
+    for name, matches in rows.items():
+        if not matches:
+            raise ReaderError("Z2A_LEDGER_AUDIT_ROW_ABSENT", name)
+        if len(matches) != 1:
+            raise ReaderError("Z2A_LEDGER_AUDIT_ROW_AMBIGUOUS", f"{name}:count={len(matches)}")
+        tokens = matches[0].split("|")
+        if len(tokens) <= 3:
+            raise ReaderError("Z2A_LEDGER_AUDIT_CELL_MISMATCH", f"{name}:cell_absent")
+        cell = tokens[3].strip()
+        digest = hashlib.sha256(cell.encode("utf-8")).hexdigest()
+        if digest != Z2A_LEDGER_AUDIT_SHA256[name]:
+            raise ReaderError("Z2A_LEDGER_AUDIT_CELL_MISMATCH", f"{name}:sha256={digest}")
+        result[name] = {"sha256": digest, "source": str(path)}
+    return result
 
 
-def check_pr0(docs: Path, sacct_text: str | None = None) -> dict[str, Any]:
+def check_pr0_unsealed(docs: Path, sacct_text: str | None = None) -> dict[str, Any]:
     candidates = verdict_candidates(docs)
     if not candidates:
         raise ReaderError("Z2A_VERDICT_ABSENT", str(docs))
-    passing: list[Path] = []
-    failures: dict[str, list[str]] = {}
-    for path in candidates:
-        try:
-            text = path.read_text(encoding="utf-8", errors="strict")
-        except (OSError, UnicodeError) as exc:
-            failures[str(path)] = [f"READ:{type(exc).__name__}"]
-            continue
-        ok, missing = verdict_has_pr0_anchors(text)
-        if ok:
-            passing.append(path)
-        else:
-            failures[str(path)] = missing
-    if not passing:
-        raise ReaderError("Z2A_VERDICT_NOT_ZI_A_AUDITED", json.dumps(failures, sort_keys=True))
-    if len(passing) != 1:
-        raise ReaderError("Z2A_VERDICT_AMBIGUOUS", ",".join(map(str, passing)))
+    if len(candidates) != 1:
+        raise ReaderError("Z2A_VERDICT_AMBIGUOUS", ",".join(map(str, candidates)))
+    verdict = candidates[0]
+    try:
+        text = verdict.read_text(encoding="utf-8", errors="strict")
+    except (OSError, UnicodeError) as exc:
+        raise ReaderError("Z2A_VERDICT_NOT_ZI_A_AUDITED", str(exc)) from exc
+    if REGISTERED_VERDICT_LINE not in text.splitlines():
+        raise ReaderError("Z2A_VERDICT_NOT_ZI_A_AUDITED", "registered_line_absent")
+    audit_cells = ledger_audit_cells(docs)
     if sacct_text is None:
         result = subprocess.run(
             ["sacct", "-j", RII_JOB_ID, "-X", "-n", "-P", "-o", "JobIDRaw,State,ExitCode"],
@@ -1114,22 +1139,154 @@ def check_pr0(docs: Path, sacct_text: str | None = None) -> dict[str, Any]:
         if result.returncode != 0:
             raise ReaderError("SACCT_UNAVAILABLE", result.stderr.strip())
         sacct_text = result.stdout
-    completed = False
-    records: list[str] = []
+    records: list[tuple[str, str, str]] = []
     for line in sacct_text.splitlines():
         tokens = line.strip().split("|")
         if not tokens or tokens[0] != RII_JOB_ID:
             continue
-        records.append(line.strip())
-        if len(tokens) >= 2 and tokens[1] == "COMPLETED":
-            completed = True
-    if not completed:
-        raise ReaderError("RII_NOT_COMPLETED", ";".join(records) or "record_absent")
+        if len(tokens) != 3 or not tokens[1] or not tokens[2]:
+            raise ReaderError("RII_NOT_TERMINAL", f"malformed={line.strip()}")
+        records.append((tokens[0], tokens[1], tokens[2]))
+    if len(records) != 1:
+        raise ReaderError("RII_NOT_TERMINAL", f"record_count={len(records)}")
+    _job_id, state, exit_code = records[0]
+    if state in NONTERMINAL_SACCT_STATES:
+        raise ReaderError("RII_NOT_TERMINAL", f"state={state},exit_code={exit_code}")
     return {
-        "status": "PASS", "z2a_verdict": str(passing[0]),
-        "required_anchors": ["ZI-A", "E-I3 PASS", "E-I4 PASS", "audit A/B PASS"],
-        "sacct_job": RII_JOB_ID, "sacct_records": records,
-        "sealed_inputs_opened": False,
+        "status": "PASS", "z2a_verdict": str(verdict),
+        "registered_verdict_line": REGISTERED_VERDICT_LINE,
+        "ledger_audit_cells": audit_cells,
+        "sacct_job": RII_JOB_ID, "sacct_state": state,
+        "sacct_exit_code": exit_code,
+        "sacct_records": ["|".join(records[0])],
+        "sealed_marker_inputs_opened": False,
+        "sealed_value_inputs_opened": False,
+    }
+
+
+def check_completion_markers(run_root: Path) -> dict[str, Any]:
+    marker_status: dict[str, Any] = {}
+    try:
+        rc_path = run_root / "model.rc"
+        regular_file(rc_path, "MODEL_RC_MISSING")
+        rc_bytes = rc_path.read_bytes()
+        marker_status["model_rc_exact_zero"] = rc_bytes in (b"0", b"0\n", b"0\r\n")
+
+        stderr_path = run_root / "stderr.log"
+        regular_file(stderr_path, "LOG_MISSING_OR_UNSAFE")
+        summaries: list[dict[str, str]] = []
+        r7_iter1: list[dict[str, str]] = []
+        physics_iter1: list[dict[str, str]] = []
+        with stderr_path.open("rb") as stream:
+            for log_line, with_newline in enumerate(stream, 1):
+                raw = with_newline.rstrip(b"\r\n")
+                if raw.startswith(SUMMARY_PREFIX):
+                    summaries.append(parse_fields(raw, log_line))
+                elif raw.startswith(R7_PREFIX):
+                    values = parse_fields(raw, log_line)
+                    if values.get("iter") == "1":
+                        r7_iter1.append(values)
+                elif raw.startswith(PHYSICS_COMPARISON_PREFIX):
+                    values = parse_fields(raw, log_line)
+                    if values.get("iter") == "1":
+                        physics_iter1.append(values)
+        marker_status["summary_count"] = len(summaries)
+        marker_status["summary_complete_count"] = sum(
+            summary.get("complete") == "1" for summary in summaries
+        )
+        marker_status["r7_iter1_count"] = len(r7_iter1)
+        marker_status["r7_iter1_exact_count"] = sum(
+            row.get("lane") == "DET" and row.get("te_generation") == "2->3"
+            for row in r7_iter1
+        )
+        marker_status["physics_iter1_count"] = len(physics_iter1)
+        marker_status["physics_iter1_committed_count"] = sum(
+            row.get("lane") == "DET" and row.get("status") == "COMMITTED"
+            for row in physics_iter1
+        )
+
+        footer_path = run_root / "RUN_FOOTER.txt"
+        regular_file(footer_path, "RUN_FOOTER_MISSING")
+        with footer_path.open("rb") as stream:
+            marker_status["footer_schema"] = stream.readline().rstrip(b"\r\n") == (
+                b"schema=LUMINA_DET_FLIGHT_V1"
+            )
+    except (ReaderError, OSError, UnicodeError) as exc:
+        reason = exc.reason if isinstance(exc, ReaderError) else type(exc).__name__
+        detail = exc.detail if isinstance(exc, ReaderError) else str(exc)
+        marker_status["read_failure"] = {"reason": reason, "detail": detail}
+        raise ReaderError("RII_MODEL_INCOMPLETE", json.dumps(marker_status, sort_keys=True)) from exc
+
+    complete = (
+        marker_status["model_rc_exact_zero"] and
+        marker_status["summary_count"] == 2 and
+        marker_status["summary_complete_count"] == 2 and
+        marker_status["r7_iter1_count"] == 1 and
+        marker_status["r7_iter1_exact_count"] == 1 and
+        marker_status["physics_iter1_count"] == 1 and
+        marker_status["physics_iter1_committed_count"] == 1 and
+        marker_status["footer_schema"]
+    )
+    if not complete:
+        raise ReaderError("RII_MODEL_INCOMPLETE", json.dumps(marker_status, sort_keys=True))
+    return marker_status
+
+
+def check_pr0(docs: Path, run_root: Path,
+              sacct_text: str | None = None) -> dict[str, Any]:
+    # Contractual order: repository anchors and terminal sacct state must pass
+    # before the first, marker-limited opening of the sealed R-II root.
+    result = check_pr0_unsealed(docs, sacct_text)
+    markers = check_completion_markers(run_root)
+    return {
+        **result,
+        "completion_markers": markers,
+        "sealed_marker_inputs_opened": True,
+        "sealed_value_inputs_opened": False,
+    }
+
+
+def census_selfcheck(census_log: Path) -> dict[str, Any]:
+    regular_file(census_log, "LOG_MISSING_OR_UNSAFE")
+    blocks: list[Block] = []
+    anchors: list[dict[str, str]] = []
+    anchor_token = f" line={ANCHOR_LINE} ".encode("ascii")
+    try:
+        with census_log.open("rb") as stream:
+            for log_line, with_newline in enumerate(stream, 1):
+                raw = with_newline.rstrip(b"\r\n")
+                if raw.startswith(ZERO_PREFIX):
+                    if anchor_token in raw:
+                        values = parse_fields(raw, log_line)
+                        anchors.append(values)
+                elif raw.startswith(SUMMARY_PREFIX):
+                    blocks.append(Block(summary=parse_fields(raw, log_line), anchors=anchors))
+                    anchors = []
+    except (OSError, UnicodeError) as exc:
+        raise ReaderError("LOG_READ_FAILED", f"{census_log}:{exc}") from exc
+    if anchors:
+        raise ReaderError("ANCHOR_AMBIGUOUS", "anchor_after_final_summary")
+    if len(blocks) != 2:
+        raise ReaderError("SUMMARY_COUNT_MISMATCH", f"count={len(blocks)}")
+    summaries: list[dict[str, str]] = []
+    for iteration, block in enumerate(blocks):
+        if block.summary.get("complete") != "1":
+            raise ReaderError("SUMMARY_TOKEN_MISMATCH", f"iter={iteration},complete")
+        ok, reason = anchor_ok(block, iteration)
+        if not ok:
+            raise ReaderError(reason, f"iter={iteration}")
+        summaries.append({
+            "iteration": str(iteration),
+            "complete": block.summary["complete"],
+            "anchor_log_line": block.anchors[0]["_log_line"],
+        })
+    return {
+        "status": "PASS", "mode": "CENSUS_SELFCHECK",
+        "summary_count": len(blocks), "summaries": summaries,
+        "anchor_line": ANCHOR_LINE,
+        "anchor_bits_by_iteration": ANCHOR_BITS_BY_ITERATION,
+        "sealed_census_opened_read_only": True,
+        "sealed_rii_opened": False,
     }
 
 
@@ -1180,12 +1337,72 @@ def synthetic_source() -> str:
     )
 
 
-def synthetic_zero(anchor_value: str = "0.0004437688873013011") -> str:
+SYNTHETIC_AUDIT_CELLS = {
+    "감리-A": (
+        "1차 **통과**(차단 0·지적 3) — 판정식 양 항 독립 실측"
+        "(ROW 442,764행·선정열 2,193쌍 `cmp`). **범위 한정 재감리 통과** — 새 논증 반례 수색 "
+        "+ ★**저자가 자기 논증을 저평가했음을 발견**(`e500e29` 는 실런 실적 보유)"
+    ),
+    "감리-B": (
+        "1차 **차단 1**(#14 — 「바이너리 delta = Z2A 변경집합뿐」이 "
+        "provenance 와 불일치. **핵심 논증의 전제**를 침) → **재판정 통과**. 재현 21항목 중 "
+        "18 재현·2 불일치·1 재현불능(환경 제약)"
+    ),
+}
+
+
+def write_pr0_documents(docs: Path, *, verdict_line: bool = True,
+                        audit_a: str | None = SYNTHETIC_AUDIT_CELLS["감리-A"],
+                        audit_b: str | None = SYNTHETIC_AUDIT_CELLS["감리-B"],
+                        duplicate_a: bool = False) -> None:
+    docs.mkdir(parents=True, exist_ok=True)
+    verdict_text = REGISTERED_VERDICT_LINE if verdict_line else "ZI-A E-I3 PASS E-I4 PASS"
+    (docs / "VERDICT_A210_Z2A_FIXTURE.md").write_text(
+        verdict_text + "\n", encoding="utf-8",
+    )
+    rows = ["| 단계 | 규약상 담당 | 실제 | 위반 |\n"]
+    if audit_a is not None:
+        rows.append(f"| 감리-A | fixture | {audit_a} | — |\n")
+        if duplicate_a:
+            rows.append(f"| 감리-A | fixture duplicate | {audit_a} | — |\n")
+    if audit_b is not None:
+        rows.append(f"| 감리-B | fixture | {audit_b} | — |\n")
+    (docs / Z2A_LEDGER_NAME).write_text("".join(rows), encoding="utf-8")
+
+
+def write_completion_fixture(run: Path, *, rc: str = "0", summary_count: int = 2,
+                             include_r7: bool = True, include_physics: bool = True,
+                             include_footer: bool = True) -> None:
+    run.mkdir(parents=True, exist_ok=True)
+    (run / "model.rc").write_text(rc + "\n", encoding="ascii")
+    lines = [
+        f"{SUMMARY_PREFIX.decode()} complete=1 fixture={iteration}"
+        for iteration in range(summary_count)
+    ]
+    if include_r7:
+        lines.append(
+            f"{R7_PREFIX.decode()} lane=DET iter=1 phase=A2-10 te_generation=2->3"
+        )
+    if include_physics:
+        lines.append("[PHYSICS-COMPARISON] lane=DET iter=1 status=COMMITTED")
+    (run / "stderr.log").write_text("\n".join(lines) + "\n", encoding="utf-8")
+    if include_footer:
+        (run / "RUN_FOOTER.txt").write_text(
+            "schema=LUMINA_DET_FLIGHT_V1\n", encoding="ascii",
+        )
+
+
+def synthetic_zero(iteration: int, *, anchor_iteration: int | None = None) -> str:
+    registered_iteration = iteration if anchor_iteration is None else anchor_iteration
+    expected = ANCHOR_BITS_BY_ITERATION[registered_iteration]
+    n_upper = repr(float.fromhex(expected["n_upper"]))
+    a_ul = repr(float.fromhex(expected["A_ul"]))
+    emission = repr(float.fromhex(expected["emission_per_sr"]))
     return (
         f"{ZERO_PREFIX.decode()} phase=REQUESTED_TE shell=0 line={ANCHOR_LINE} "
         "Z=26 ion=1 lower_global=1 upper_global=2 tau_validity=2 tau_raw=0 "
-        f"effective_tau=0 n_upper={anchor_value} A_ul=0.52225560000000004 "
-        "nu=5e14 emission_per_sr=2.7310010625545125e-16 srce_chk=0 "
+        f"effective_tau=0 n_upper={n_upper} A_ul={a_ul} "
+        f"nu=5e14 emission_per_sr={emission} srce_chk=0 "
         "exact_zero_provenance=1 source_defined=0"
     )
 
@@ -1247,8 +1464,7 @@ def fixture_spec(composition: tuple[int, int, int] = (0, 3, 0),
 
 
 def write_fixture(root: Path, spec: list[tuple[int, int, int, int, float, bool]],
-                  *, anchor_value: str = "0.0004437688873013011",
-                  blocked: bool = False, remove_r7: bool = False,
+                  *, blocked: bool = False, remove_r7: bool = False,
                   non_target: bool = False) -> tuple[Path, Path, Path, Expected]:
     run = root / "run"
     census = root / "census"
@@ -1289,8 +1505,8 @@ def write_fixture(root: Path, spec: list[tuple[int, int, int, int, float, bool]]
     if blocked:
         run_lines.append(f"{BLOCKED_PREFIX.decode()} reason=FIXTURE_BLOCKED")
     for iteration in (0, 1):
-        run_lines.append(synthetic_zero(anchor_value))
-        census_lines.append(synthetic_zero())
+        run_lines.append(synthetic_zero(iteration))
+        census_lines.append(synthetic_zero(iteration))
         for rank, (line, z, lower, upper, response_i, is_hazard) in enumerate(spec, 1):
             row = synthetic_row(line, rank, z, lower, upper, response_i,
                                 iteration, time_s, is_hazard)
@@ -1373,6 +1589,14 @@ def selftest() -> int:
              "--run-root", str(run), "--census-root", str(census),
              "--deck", str(deck), "--report", str(report),
              "--expected-head", "SYNTHETIC", "--repo-root", str(repo)],
+            capture_output=True, text=True,
+        )
+
+    def census_selfcheck_cli(census: Path, report: Path) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            [sys.executable, str(Path(__file__).resolve()),
+             "--census-selfcheck", "--census-root", str(census),
+             "--report", str(report)],
             capture_output=True, text=True,
         )
 
@@ -1474,8 +1698,9 @@ def selftest() -> int:
     with tempfile.TemporaryDirectory(prefix="l6cr-r7-") as directory:
         clean, paths = run_fixture(Path(directory), clean_spec.copy())
         run, census, deck, expected = paths
-        mutate_first(run / "stderr.log", "A_ul=0.52225560000000004",
-                     "A_ul=0.52225560000000015")
+        anchor_a = float.fromhex(ANCHOR_BITS_BY_ITERATION[0]["A_ul"])
+        mutate_first(run / "stderr.log", f"A_ul={repr(anchor_a)}",
+                     f"A_ul={repr(math.nextafter(anchor_a, math.inf))}")
         injected = analyze(run / "stderr.log", census / "stderr.log", deck,
                            synthetic_source(), expected)
         expect("NC-R7", injected, "X-D", "ANCHOR_FIELD_MISMATCH")
@@ -1501,10 +1726,12 @@ def selftest() -> int:
         print(control("NC-R9", "remove=RESTORE_DECK", clean))
 
     with tempfile.TemporaryDirectory(prefix="l6cr-r10-") as directory:
-        docs = Path(directory) / "docs"
+        root = Path(directory)
+        docs = root / "docs"
+        run = root / "run"
         docs.mkdir()
         try:
-            check_pr0(docs, f"{RII_JOB_ID}|COMPLETED|0:0\n")
+            check_pr0(docs, run, f"{RII_JOB_ID}|FAILED|70:0\n")
         except ReaderError as exc:
             if exc.reason != "Z2A_VERDICT_ABSENT":
                 failures += 1
@@ -1512,14 +1739,25 @@ def selftest() -> int:
                   f"reason={exc.reason} branch=X-P sealed_access=0")
         else:
             failures += 1
-        verdict = docs / "VERDICT_A210_Z2A_FIXTURE.md"
-        verdict.write_text(
-            "R-II branch ZI-A\n| E-I3 | PASS |\n| E-I4 | PASS |\n감리 A·B 통과\n",
-            encoding="utf-8",
-        )
-        restored = check_pr0(docs, f"{RII_JOB_ID}|COMPLETED|0:0\n")
-        print("NC-R10 remove=RESTORE_Z2A_VERDICT status=PASS reason=PASS "
-              f"branch=PR-0 sealed_access={int(restored['sealed_inputs_opened'])}")
+        write_pr0_documents(docs)
+        write_completion_fixture(run)
+        restored_absent = check_pr0(docs, run, f"{RII_JOB_ID}|FAILED|70:0\n")
+        print("NC-R10 remove=RESTORE_Z2A_VERDICT_AFTER_ABSENT status=PASS reason=PASS "
+              f"branch=PR-0 marker_access={int(restored_absent['sealed_marker_inputs_opened'])}")
+        write_pr0_documents(docs, verdict_line=False)
+        try:
+            check_pr0(docs, run, f"{RII_JOB_ID}|FAILED|70:0\n")
+        except ReaderError as exc:
+            if exc.reason != "Z2A_VERDICT_NOT_ZI_A_AUDITED":
+                failures += 1
+            print("NC-R10 inject=REGISTERED_VERDICT_LINE_ABSENT status=FAIL "
+                  f"reason={exc.reason} branch=X-P sealed_access=0")
+        else:
+            failures += 1
+        write_pr0_documents(docs)
+        restored = check_pr0(docs, run, f"{RII_JOB_ID}|FAILED|70:0\n")
+        print("NC-R10 remove=RESTORE_REGISTERED_VERDICT_LINE status=PASS reason=PASS "
+              f"branch=PR-0 marker_access={int(restored['sealed_marker_inputs_opened'])}")
 
     with tempfile.TemporaryDirectory(prefix="l6cr-r11-") as directory:
         root = Path(directory)
@@ -1565,8 +1803,126 @@ def selftest() -> int:
         print("NC-R12 remove=REPORT_OUTSIDE_INPUTS status=PASS reason=PASS "
               "branch=PR-0 sealed_access=0")
 
+    with tempfile.TemporaryDirectory(prefix="l6cr-r13-") as directory:
+        root = Path(directory)
+        _report, paths = run_fixture(root, clean_spec.copy())
+        census, census_log = paths[1], paths[1] / "stderr.log"
+        selfcheck_report = root / "census-selfcheck.json"
+        positive = census_selfcheck_cli(census, selfcheck_report)
+        positive_payload = json.loads(selfcheck_report.read_text(encoding="utf-8"))
+        positive_ok = positive.returncode == 0 and positive_payload.get("status") == "PASS"
+        if not positive_ok:
+            failures += 1
+        positive_reason = "PASS" if positive_ok else ",".join(
+            positive_payload.get("blocking_reasons", ["CENSUS_SELFCHECK_FAILED"])
+        )
+        print("NC-R13 positive=DISTINCT_ITERATION_ANCHORS "
+              f"status={positive_payload.get('status', 'FAIL')} reason={positive_reason} "
+              f"branch=PR-3 rii_access={int(positive_payload.get('sealed_rii_opened', False))}")
+        good_iter1 = synthetic_zero(1)
+        bad_iter1 = synthetic_zero(1, anchor_iteration=0)
+        original_census = census_log.read_text(encoding="utf-8")
+        mutate_first(census_log, good_iter1, bad_iter1)
+        injected = census_selfcheck_cli(census, selfcheck_report)
+        injected_payload = json.loads(selfcheck_report.read_text(encoding="utf-8"))
+        injected_reasons = injected_payload.get("blocking_reasons", [])
+        injected_reason = injected_reasons[0] if injected_reasons else "ABSENT"
+        if (injected.returncode != 4 or injected_payload.get("status") != "FAIL" or
+                injected_reason != "ANCHOR_FIELD_MISMATCH"):
+            failures += 1
+        print("NC-R13 inject=ITER1_WITH_ITER0_ANCHOR "
+              f"status={injected_payload.get('status', 'FAIL')} "
+              f"reason={injected_reason} branch={injected_payload.get('branch', 'X-D')} "
+              f"rii_access={int(injected_payload.get('sealed_rii_opened', False))}")
+        census_log.write_text(original_census, encoding="utf-8")
+        restored = census_selfcheck_cli(census, selfcheck_report)
+        restored_payload = json.loads(selfcheck_report.read_text(encoding="utf-8"))
+        restored_ok = restored.returncode == 0 and restored_payload.get("status") == "PASS"
+        if not restored_ok:
+            failures += 1
+        restored_reason = "PASS" if restored_ok else ",".join(
+            restored_payload.get("blocking_reasons", ["CENSUS_SELFCHECK_FAILED"])
+        )
+        print("NC-R13 remove=RESTORE_ITER1_ANCHOR "
+              f"status={restored_payload.get('status', 'FAIL')} reason={restored_reason} "
+              f"branch=PR-3 rii_access={int(restored_payload.get('sealed_rii_opened', False))}")
+
+    with tempfile.TemporaryDirectory(prefix="l6cr-r14-") as directory:
+        root = Path(directory)
+        docs, run = root / "docs", root / "run"
+        write_pr0_documents(docs)
+        try:
+            check_pr0(docs, run, f"{RII_JOB_ID}|RUNNING|0:0\n")
+        except ReaderError as exc:
+            if exc.reason != "RII_NOT_TERMINAL":
+                failures += 1
+            print("NC-R14 inject=SACCT_RUNNING status=FAIL "
+                  f"reason={exc.reason} branch=X-P sealed_access=0")
+        else:
+            failures += 1
+        write_completion_fixture(run)
+        restored = check_pr0(docs, run, f"{RII_JOB_ID}|FAILED|70:0\n")
+        print("NC-R14 remove=SACCT_FAILED_WITH_COMPLETE_MARKERS status=PASS "
+              f"reason=PASS branch=PR-0 state={restored['sacct_state']} "
+              f"exit_code={restored['sacct_exit_code']}")
+
+    marker_injections = (
+        ("MODEL_RC_NONZERO", {"rc": "70"}),
+        ("SUMMARY_ONE", {"summary_count": 1}),
+        ("R7_ITER1_ABSENT", {"include_r7": False}),
+        ("FOOTER_ABSENT", {"include_footer": False}),
+    )
+    for injection, fixture_kwargs in marker_injections:
+        with tempfile.TemporaryDirectory(prefix="l6cr-r15-") as directory:
+            root = Path(directory)
+            docs, run = root / "docs", root / "run"
+            write_pr0_documents(docs)
+            write_completion_fixture(run, **fixture_kwargs)
+            try:
+                check_pr0(docs, run, f"{RII_JOB_ID}|FAILED|70:0\n")
+            except ReaderError as exc:
+                if exc.reason != "RII_MODEL_INCOMPLETE":
+                    failures += 1
+                print(f"NC-R15 inject={injection} status=FAIL reason={exc.reason} "
+                      "branch=X-P marker_only_access=1")
+            else:
+                failures += 1
+            write_completion_fixture(run)
+            check_pr0(docs, run, f"{RII_JOB_ID}|FAILED|70:0\n")
+            print(f"NC-R15 remove=RESTORE_{injection} status=PASS reason=PASS "
+                  "branch=PR-0")
+
+    ledger_injections = (
+        ("LEDGER_A_ROW_ABSENT", {"audit_a": None},
+         "Z2A_LEDGER_AUDIT_ROW_ABSENT"),
+        ("LEDGER_A_CELL_ONE_BYTE", {
+            "audit_a": SYNTHETIC_AUDIT_CELLS["감리-A"] + "x",
+        }, "Z2A_LEDGER_AUDIT_CELL_MISMATCH"),
+        ("LEDGER_A_ROW_DUPLICATE", {"duplicate_a": True},
+         "Z2A_LEDGER_AUDIT_ROW_AMBIGUOUS"),
+    )
+    for injection, document_kwargs, expected_reason in ledger_injections:
+        with tempfile.TemporaryDirectory(prefix="l6cr-r16-") as directory:
+            root = Path(directory)
+            docs, run = root / "docs", root / "run"
+            write_pr0_documents(docs, **document_kwargs)
+            try:
+                check_pr0(docs, run, f"{RII_JOB_ID}|FAILED|70:0\n")
+            except ReaderError as exc:
+                if exc.reason != expected_reason:
+                    failures += 1
+                print(f"NC-R16 inject={injection} status=FAIL reason={exc.reason} "
+                      "branch=X-P sealed_access=0")
+            else:
+                failures += 1
+            write_pr0_documents(docs)
+            write_completion_fixture(run)
+            check_pr0(docs, run, f"{RII_JOB_ID}|FAILED|70:0\n")
+            print(f"NC-R16 remove=RESTORE_{injection} status=PASS reason=PASS "
+                  "branch=PR-0")
+
     print(f"A210_L6C_REDISPATCH_SELFTEST {'PASS' if failures == 0 else 'FAIL'} "
-          f"controls=NC-R0,NC-R1,NC-R2,NC-R3,NC-R4,NC-R4b,NC-R5,NC-R6,NC-R7,NC-R8,NC-R9,NC-R10,NC-R11,NC-R12 "
+          f"controls=NC-R0,NC-R1,NC-R2,NC-R3,NC-R4,NC-R4b,NC-R5,NC-R6,NC-R7,NC-R8,NC-R9,NC-R10,NC-R11,NC-R12,NC-R13,NC-R14,NC-R15,NC-R16 "
           f"failed={failures} synthetic_fixtures=1 sealed_access=0")
     return 0 if failures == 0 else 1
 
@@ -1574,6 +1930,7 @@ def selftest() -> int:
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--selftest", action="store_true")
+    parser.add_argument("--census-selfcheck", action="store_true")
     parser.add_argument("--run-root", type=Path)
     parser.add_argument("--census-root", type=Path)
     parser.add_argument("--deck", type=Path)
@@ -1598,6 +1955,10 @@ def failure_report(reason: str, detail: str, branch: str,
 
 def main() -> int:
     args = parse_args()
+    if args.selftest and args.census_selfcheck:
+        print("A210_L6C_REDISPATCH_FAIL branch=X-P reason=MODE_AMBIGUOUS",
+              file=sys.stderr)
+        return 4
     if args.selftest:
         try:
             return selftest()
@@ -1607,6 +1968,34 @@ def main() -> int:
             print(f"A210_L6C_REDISPATCH_SELFTEST FAIL reason={reason} detail={detail}",
                   file=sys.stderr)
             return 4
+    if args.census_selfcheck:
+        if args.census_root is None or args.report is None:
+            print("A210_L6C_REDISPATCH_CENSUS_SELFCHECK_FAIL branch=X-D "
+                  "reason=ARGUMENT_REQUIRED detail=census-root,report", file=sys.stderr)
+            return 4
+        try:
+            report_outside_inputs(args.report, (args.census_root,))
+            result = census_selfcheck(args.census_root / "stderr.log")
+            payload = {"schema": SCHEMA, "mode": A210_L6C_REDISPATCH, **result}
+            atomic_write_json(args.report, payload)
+        except (ReaderError, OSError, UnicodeError) as exc:
+            reason = exc.reason if isinstance(exc, ReaderError) else type(exc).__name__
+            detail = exc.detail if isinstance(exc, ReaderError) else str(exc)
+            if reason != "REPORT_INSIDE_SEALED_INPUT":
+                payload = failure_report(reason, detail, "X-D")
+                payload["census_selfcheck"] = True
+                payload["sealed_rii_opened"] = False
+                try:
+                    atomic_write_json(args.report, payload)
+                except (ReaderError, OSError):
+                    pass
+            print("A210_L6C_REDISPATCH_CENSUS_SELFCHECK_FAIL branch=X-D "
+                  f"reason={reason}" + (f" detail={detail}" if detail else ""),
+                  file=sys.stderr)
+            return 4
+        print("A210_L6C_REDISPATCH_CENSUS_SELFCHECK_RESULT status=PASS "
+              f"anchor_line={ANCHOR_LINE} report={args.report} rii_access=0")
+        return 0
     required = {
         "run-root": args.run_root, "census-root": args.census_root,
         "deck": args.deck, "report": args.report,
@@ -1625,7 +2014,7 @@ def main() -> int:
         report_outside_inputs(args.report, (args.run_root, args.census_root, args.deck))
         # Source blob/head and repository documents are unsealed preflight inputs.
         source = source_at_head(args.repo_root, args.expected_head)
-        pr0 = check_pr0(args.repo_root / "docs")
+        pr0 = check_pr0(args.repo_root / "docs", args.run_root)
     except (ReaderError, OSError, UnicodeError) as exc:
         reason = exc.reason if isinstance(exc, ReaderError) else type(exc).__name__
         detail = exc.detail if isinstance(exc, ReaderError) else str(exc)
@@ -1643,17 +2032,14 @@ def main() -> int:
         return 4
 
     try:
-        # This is the first production point at which sealed inputs may open.
-        rc = model_rc(args.run_root)
+        # PR-3 opens only the census stream and must pass before RD-1..RD-7.
+        pr3 = census_selfcheck(args.census_root / "stderr.log")
         report = analyze(
             args.run_root / "stderr.log", args.census_root / "stderr.log",
             args.deck, source, REGISTERED,
         )
-        if rc != 0:
-            report["status"] = "FAIL"
-            report["branch"] = "X-D"
-            add_reason(report["blocking_reasons"], "MODEL_NOT_COMPLETE")
-        report["PR-0"] = {**pr0, "sealed_inputs_opened": True}
+        report["PR-0"] = {**pr0, "sealed_value_inputs_opened": True}
+        report["PR-3"] = pr3
         report["expected_head"] = args.expected_head
         report["inputs"] = {
             "run_root": str(args.run_root), "census_root": str(args.census_root),
@@ -1664,7 +2050,7 @@ def main() -> int:
         reason = exc.reason if isinstance(exc, ReaderError) else type(exc).__name__
         detail = exc.detail if isinstance(exc, ReaderError) else str(exc)
         payload = failure_report(reason, detail, "X-D",
-                                 {**pr0, "sealed_inputs_opened": True})
+                                 {**pr0, "sealed_census_or_value_inputs_opened": True})
         atomic_write_json(args.report, payload)
         print(f"A210_L6C_REDISPATCH_FAIL branch=X-D reason={reason}" +
               (f" detail={detail}" if detail else ""), file=sys.stderr)
