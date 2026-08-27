@@ -468,6 +468,9 @@ docs/RUNG_L6C_REDISPATCH_2026-08-27.md --root .` → **PASS 4건·rc=0** [저자
 2026-08-27 — changeset-consistent files=1 · branch-partition trials=200000 rules=2
 fixtures=5 residual=C-M · references-resolved refs=11 · prereg-preflight].
 `--selftest` → `SELFTEST_NC total=9 failed=0` rc=0 [저자 실행].
+★**개정 1(§16, 검수 반영) 후 본검사 재실행(grammar-debug) → 동일 PASS 4건·rc=0**
+[저자 실행, 2026-08-27 — changeset-consistent files=1 · branch-partition trials=200000
+rules=2 fixtures=5 residual=C-M · references-resolved refs=11].
 
 ## 13. 집행 기록 (★정본 장부 — 개정16 ①; 판정문·감리문은 "장부 = 사전등록 §13" 으로 지목만)
 
