@@ -1,0 +1,383 @@
+# 판정문 — DET-INSTRUMENT-REPAIR: 판독 증거의 판별력·귀속 수리 — 분기 **IR-X (집행 미완 — 정지·보고)** (2026-08-28)
+
+- **단**: DET-INSTRUMENT-REPAIR. 계약 정본 = `docs/RUNG_INSTRUMENT_REPAIR_2026-08-28.md`
+  (커밋 `ddf6701`; 판정 시점 HEAD 와 diff 0 [V2] — 이하 «계약»).
+- **구현**: 커밋 `d597258` — 변경집합 정확 2파일 `scripts/analyze_a210_z2a_probe.py`(+199/−16)
+  · `scripts/analyze_l6c_redispatch.py`(+151/−21), 합계 +350/−37 [V2, `--numstat`].
+  GPU 런 0회(계약 §9).
+- **판정자**: Fable fresh (분담 개정14 ③) — 사전등록·구현·검수·감리 무관여 컨텍스트.
+- **장부 = 계약 §12 (집행 기록)** — 본 문서는 장부를 복제하지 않고 지목한다(개정16 ①).
+  판정자는 §12 분장 장부의 **③ 판정 행만** 기입했다.
+- ★**본 문서는 폐합 선언이 아니다.** 폐합 여부·감리 상태의 정본은 **장부(계약 §12)** 다 —
+  판정문 문면에서 찾지 마라. (근거: 판정문 문면 리터럴 매칭이 fail-open 벡터로 등재됨 —
+  `docs/VERIFICATION_REGISTERS.md:365-367`.)
+- **표기**: `[V#]` = 판정자 실행 명령(부록 A, 전건 2026-08-28 실행) · `[판독]` = 운전석 판독
+  실측(`/tmp/claude-10396/INSTR_READOUT.md`, 78행 — ⚠노드-로컬 /tmp, syntax 로그인) ·
+  `[계약 C#]` = 계약 §14 저자 명령 원장. 소스 행 번호는 전건 판정자 직독 확인 [V12];
+  본 문서는 C 소스를 인용하지 않으므로 전처리 死블록 규정(`lumina_plasma.c:1324-1693` ·
+  `lumina_cuda.cu:1083-2063`)은 해당 없음(계약 §2 동일 판정).
+- **개정 시**: 본 판본을 `.rev1` 로 보존 후 개정한다(판본 보존 규약).
+
+---
+
+## 0. 세 줄 요약
+
+> ① **집행된 게이트는 전건 계약 기대치와 일치**했고, 게이트 산출물 3본을 판정자가 같은 봉인
+> 입력으로 재실행해 **byte-동일 재현**했다 [V5·V6]. ② 그러나 계약 §5 가 등록한 게이트 9행 중
+> **3행(G-A4·G-B2·G-B3)이 미집행**이고 G-0 후반부(발주 프리플라이트 rc)가 장부에 미기재라,
+> 상위 분할 «게이트 전건 충족 → IR-A» 는 성립하지 않고 어떤 IR-F 판정식도 발화하지 않았다
+> ⟹ **분기 = IR-X** (계약 §6 «분할 밖 관측» — 라벨 명시 부여 후 정지·보고). ③ 결함 A 는
+> **봉인 실물에서 판별력 회복이 시연**됐고(판정 불변 — Z-2A ZI-A 그대로), 결함 B 는 삼중
+> provenance·argv 검증이 **합성 채널(selftest)에서 작동함까지** 시연됐다 — **라이브 양·음
+> 대조(G-B2/G-B3)는 미시연**이며, 정본 증거의 취득은 계약이 판정한 대로 **규율로만** 된다(§6).
+
+---
+
+## 1. 입력 식별 (전건 판정자 실측)
+
+| 항목 | 실측 |
+|---|---|
+| 계약 | `docs/RUNG_INSTRUMENT_REPAIR_2026-08-28.md` — `ddf6701` 수록, `git diff ddf6701..HEAD` 공(변경 0) [V2] |
+| 구현 | `d597258` — `git show --stat`: 정확 2파일, +350/−37 (계약 §4 변경집합과 1:1) [V2] |
+| byte-사슬 | 검수 패치 `INSTR_PATCH.diff` ≡ `git show d597258` patch (cmp 무차) · `/gpfs/kjhan/lumina/zo_artifacts/probe_repaired.py` ≡ `probe_committed.py` ≡ HEAD `scripts/analyze_a210_z2a_probe.py` (cmp 무차 ×2) · worktree clean [V2·V3] ⟹ 검수·집행·커밋이 전부 같은 바이트 |
+| 봉인 R-II | `/gpfs/kjhan/lumina/a210_z2a_diag_isolation_a100x2_k36/rii_20260826T134337Z_ion1` (`<RII>`) — 등록 경로 = Z-2A 판정문 `:417` |
+| 봉인 census | `/gpfs/kjhan/lumina/a210_zero_opacity_z1r_a100x2_k36/zo_20260826T050021Z_census_ion1` (`<ZO>`) — 등록 경로 = Z-2A 판정문 `:418` |
+| 봉인 무결 | 운전석 전수: `RII_RUN_SEAL.sha` 135/135 OK · `ZO_RUN_SEAL.sha` 136/136 OK [판독:60]. 판정자 spot: .sha 행수 135·136 [V7] · 양 봉인 `stderr.log` sha256 = 지문 일치 [V7] · 앵커 4행 자면 = 계약 §2-A 십진값 그대로 [V8] · 지문 파일 mtime 2026-08-27 17:32(전 게이트 이전)·모드 r--r----- [V7] |
+| 게이트 산출물 | `/gpfs/kjhan/lumina/zo_artifacts/{za_selfcheck,selfinput_after,ga5_retro}.json` (mtime 11:57 / 11:56 / 14:52) [V9] — ⚠계약 등록 거처 `validation/instrument_repair/` 아님(§8-1) |
+| 판독 실측 | `/tmp/claude-10396/INSTR_READOUT.md` (운전석, 15:02) — 인용 수치 전건 판정자 대조 |
+
+주: `za_selfcheck`·`selfinput_after`(11:56-57)는 커밋(14:46:48)보다 앞서나, 그 시점 실행본
+`probe_repaired.py` 가 커밋본과 byte-동일이므로 [V3] 세 산출물 전부 같은 판독기 바이트에
+귀속된다. 입력 귀속(어느 stderr 를 넣었는가)은 산출 JSON 에 경로가 없어 문면으로는 열려
+있으나, 판정자가 등록 입력으로 재실행한 산출과 **3본 전건 byte-동일**이라 잠긴다 [V5·V6].
+
+---
+
+## 2. 게이트별 판정 (계약 §5 표와 1:1 — 판독기 라벨 무의존, 판정식 재적용)
+
+| 게이트 | 계약 판정식 (요지) | 실측 | 판정 |
+|---|---|---|---|
+| **G-0** | 사전등록 프리플라이트 rc=0(§12 기재) **+** 발주 시 `check_dispatch_preflight` rc=0 | 전반부: rc=0 [계약 C9, §12 문면 — 저자 실행, grammar-debug]. 후반부: **장부 §12 항목 1 공란**(ddf6701 이후 계약 diff 0 [V2])·발주 자료(`codex_instr_order.md`·`CODEX_INSTR_REPORT.md`)에도 rc 기록 부재 [V10] | **부분 — 후반부 미기재. 통과로 세지 않음** |
+| **G-A1** z2a selftest | NC-I0~I8 전건 — 성한 반복-구별 픽스처 PASS ∧ 주입 이름 있는 FAIL ∧ 복원 PASS | `PASS controls=NC-I0..I8 failed=0` rc=0 [판독:12 + 판정자 재현 V4]. NC-I7: `inject=ITER1_WITH_ITER0_ANCHOR → FAIL ANCHOR_FIELD_MISMATCH` / 복원 PASS [V4] | **PASS** |
+| **G-A2** census 자기입력 양성대조 (PR-Z1) | `--census-selfcheck <ZO>/stderr.log` → rc=0 — «봉인 census 자신을 넣으면 PASS 해야 한다» | rc=0 · `status=PASS anchor_line=669992 input_access=READ_ONLY streaming=1` [판독:29 + 판정자 재현 V5, 산출 byte-동일] | **실측 충족 — 단 PASS 자격 미완**: 계약이 등록한 이 게이트의 음성대조 = **G-A4 가 미집행**(음성 대조 의무 — 게이트는 주입 결함으로 FAIL 을 시연해야 PASS 자격). NC-I8 inject 팔이 같은 검사의 변조→FAIL 을 **합성 픽스처**에서 시연했으나 [V4], 계약은 **실물 사본 팔(G-A4)** 을 별도 등록했다. G-A4 집행 후 확정 |
+| **G-A3** 결함 명령 쌍대 (PR-Z2) | 원 결함 시연 명령 그대로(`--mode R-II --stderr <ZO> --census-stderr <ZO>`) → blocking **정확** `['SPROBE_COUNTER_MISSING']`·앵커 계열 0건·f_bit=1.0 | `status=FAIL branch=ZI-B blocking=['SPROBE_COUNTER_MISSING'] f_bit=1.0` rc=4 — 앵커 계열 0건 [`selfinput_after.json` + 판정자 재현 V6, byte-동일]. 대조군(수리 전 동일명령 `['SPROBE_COUNTER_MISSING','ANCHOR_FIELD_MISMATCH']`) = [계약 C3]·Z-2A 판정문 §3-(b) 실재 | **PASS**. 주: 판독 문서는 이 실측을 게이트명 없이 «부수 실측»으로 기재[판독:49-56] — 판정자가 계약 판정식 대조 + byte-동일 재현으로 G-A3 에 귀속했다 |
+| **G-A4** 변조 사본 음성대조 | census 스크래치 사본 iter1 앵커 `n_upper` 1자리 변조 → `--census-selfcheck` 이름 있는 FAIL(`ANCHOR_FIELD_MISMATCH`) | 산출물·판독·구현 보고 어디에도 집행 기록 없음 [V9·V10] | **미집행** |
+| **G-A5** 소급 재판독 (PR-Z3) | `--stderr <RII> --census-stderr <ZO>` → status=PASS · branch=ZI-A · f_bit=1.0 · blocking=[] (4항) | 4항 전건 일치 [`ga5_retro.json` + 판정자 재현 V6, byte-동일]. 대조군(수리 전 기준선 `FAIL ZI-B ['ANCHOR_FIELD_MISMATCH'] f_bit=1.0`) = [계약 C4] + 봉인 M14 `<RII>/a210_z2a_probe_report.json` 판정자 직독 [V8] | **PASS — 지위는 §5** («계측 검증 관측, 판정 불변») |
+| **G-B1** l6c selftest | NC-R0~R18 전건 (기존 R0~R16 존속 + 신설 R17·R18) | `PASS controls=NC-R0..R18 failed=0 synthetic_fixtures=1 sealed_access=0` rc=0 [판독:13 + 판정자 재현 V4]. NC-R17 2팔(`JOB_NAME`/`CLUSTER` 오기 → `SACCT_PROVENANCE_MISMATCH`)·NC-R18 4팔(실해 레코드 원문 → `SACCT_PROVENANCE_MISMATCH` / argv 완전 등치 PASS / 정본 5열 PASS / `EMPTY_RC0` → `RII_NOT_TERMINAL`) 전건 발화 [V4] | **PASS** |
+| **G-B2** 라이브 양성대조 (syntax) | 수리된 `check_pr0_unsealed` 를 syntax 에서 → PASS ∧ 레코드 정확 `324557\|LUMINA_Z2A_II\|FAILED\|70:0\|syntax` | 집행 기록 없음 [V9·V10]. 기저 정본 레코드의 실재만 판정자가 syntax 에서 직접 확인(등록 문자열과 일자일자 일치 [V1]) — 이는 게이트 집행이 아니다 | **미집행** |
+| **G-B3** ★라이브 교차-클러스터 음성대조 (grammar-debug) | 같은 호출을 grammar-debug 에서 → 이름 있는 FAIL 의무(1차 기대 `RII_NOT_TERMINAL` record_count=0; 허용 집합 §6) · PASS 는 즉시 IR-F2 | 집행 기록 없음 [V9·V10] | **미집행** — ★결함 B 라이브 음성대조의 **유일 팔**이 비어 있다(§6-4) |
+
+**부기 (게이트 표 밖 실측)**: PF-1 표지 `A210_INSTRUMENT_REPAIR` — `grep -rln … scripts src`
+정확 2파일 [판독:15 + 판정자 재현 V4]. `py_compile` 2파일 OK [판독:14]. 사전등록
+프리플라이트의 **판정 시점 재실행은 하지 않았다** — 계약 §11 이 `flags_planned` 를 발주-전
+시점 술어로 등록했고(구현 착지 후 재실행은 정의상 FAIL — 시점 술어의 만료), 판정 대상은
+발주 전 rc=0 기록이다 [계약 §11 문면].
+
+---
+
+## 3. 기대치·분기 판정 (계약 §6 — 판정식 재적용으로 분기 확정)
+
+**세부 기대치 대조**:
+
+- G-B2 기대 레코드(등급 1): 등록 문자열 `324557|LUMINA_Z2A_II|FAILED|70:0|syntax` 는 판정자
+  syntax 직접 조회와 **일자일자 일치** [V1] — 기대의 근거는 성립(단 게이트 자체는 미집행, §2).
+- G-A2·G-A3·G-A5 기대(등급 1)의 등록 근거(«수리 전 실측에서 앵커 사유를 제외한 모든 검사가
+  이미 통과» — 계약 §6)는 수리 전 실측 [계약 C3·C4]·봉인 M14 [V8] 로 성립 재확인.
+- G-B3 허용 FAIL 집합(등급 2)은 미집행이라 대조 불능 — 판정 유보(집행 후).
+
+**상위 분할 적용** (판독기 라벨이 아니라 계약 판정식으로):
+
+| 라벨 | 판정식 | 대조 | 발화 |
+|---|---|---|---|
+| IR-A | G-0~G-B3 **전건** 충족 | §2: 미집행 3(G-A4·G-B2·G-B3)·G-0 후반부 미기재·G-A2 자격 미완 | **불성립** |
+| IR-F1 | G-A5 산출이 PASS·ZI-A·f_bit=1.0·blocking=[] 과 다름 | 4항 전건 일치 [V6] | 미발화 |
+| IR-F2 | G-B3 이 PASS | G-B3 미집행 — PASS 관측 자체가 없음 | 미발화 |
+| IR-F3 | 그 밖의 G-* FAIL | 집행된 게이트 중 FAIL 0 (§2) | 미발화 |
+| IR-F4 | 환경 차단 (sacct 불능·봉인 접근 불능·grammar-debug 불통) | syntax sacct 가용 [V1]·봉인 접근 가용 [V5-V8] — 차단 관측 0 | 미발화 |
+
+⟹ 현 상태는 «게이트 전건 충족»이 아니고(→ IR-A 아님) 어떤 IR-F 판정식에도 들지 않는다
+(FAIL 이 없으므로 F3 도 아님). 계약 §6 의 정의 그대로 **«위 어느 판정식에도 들지 않는 산출»**
+이다 ⟹ **분기 = IR-X — 라벨 명시 부여 후 정지·보고 (침묵 금지)**. UNRESOLVED 금지 준수:
+본 판정은 IR-X 를 명시 부여한다.
+
+**관측의 내용**: 집행된 게이트 전건(G-0 전반·G-A1·G-A2 실측·G-A3·G-A5·G-B1)이 IR-A 방향과
+정합하고 반대 증거는 0 건이다 — 증거는 **부분적**일 뿐 부정적이지 않다. **처분**: 잔여 집행
+(G-A4·G-B2·G-B3 — 운전석; G-B3 은 grammar-debug 의도된 오노드, G-B2 는 syntax — 계약 §10)
++ G-0 후반부 rc·장부 기입 후 **분기 재판정**(본 문서 `.rev1` 또는 후속 판정문).
+
+---
+
+## 4. 결함 A (앵커 반복 스코프 — 판별력 0) — 무엇이 확정됐고 무엇이 아닌가
+
+**확정 (전건 실측)**:
+
+1. **원 결함 문면의 부정이 봉인 실물에서 성립한다.** 결함의 등재 문면 = «봉인 census 자신을
+   넣어도 FAIL»(대장 `VERIFICATION_REGISTERS.md:360-362`). 수리 후: census 자기입력 rc=0 PASS
+   (G-A2 [V5]) · R-II 모드 자기입력에서 `ANCHOR_FIELD_MISMATCH` **소멸**, 잔여 = 계약 `:149`
+   가 예견한 구성적 잔여 정확 1건(`SPROBE_COUNTER_MISSING` — census 는 토큰 이전 산출물)
+   (G-A3 [V6]).
+2. **수리 실체가 계약 §3-A 문면과 1:1 이다** [V12]: `ANCHOR_BITS_BY_ITERATION`(`:31` — iter0
+   값 불변·iter1 신설, 등록 hex 4값 = 봉인 십진값의 변환과 전건 일치 [V8]) ·
+   `anchor_matches(raw_rows, iteration)`(`:198`, 범위 밖 `ANCHOR_ITERATION_INVALID` `:207`) ·
+   호출부 `:303` 이 루프 반복 인덱스를 전달 · R-III/R-IV 경로 무접촉(diff 에 해당 함수 hunk 0
+   [V12]).
+3. **재발 차단이 상설 게이트가 됐다.** 원 selftest 맹점(픽스처가 양 반복에 동일 행 재사용 —
+   대장 `:364`)이 `synthetic_zero_row(iteration)` 로 제거됐고, NC-I7/I8 이 원 결함 계급
+   (반복 무구별 등록값)을 잡는다. **판정자 역주입 재현**: iter1 등록 hex 2값을 iter0 값으로
+   회귀시킨 스크래치 사본에서 selftest 가 `FAIL failed=12` rc=1 [V11] — 검수 실측
+   [판독:65-66]과 동수. 역주입 상태에서 NC-I8 inject 팔이 `status=PASS`(변조 census 통과)로
+   반전됨을 관측 [V11] — 이 게이트가 정확히 원 결함 계급을 밟고 서 있다.
+4. G-A5 소급 재판독이 등록 기대치 4항과 일치 [V6] — 지위는 §5.
+
+**확정하지 않는 것**:
+
+- **G-A4 미집행** ⟹ 실물 사본 변조 팔이 미시연 — G-A2 의 PASS 자격이 완성되지 않았다(§2).
+- 이 수리는 **판독기(계측)의 판별력 복원**이다. **Z-2A 의 어떤 판정도 움직이지 않는다**
+  (ZI-A 불변 — §5). **E-I1 문면 FAIL·R-III/R-IV 제출 불가**(Z-2A 판정문 §5·§7)의 해소가
+  아니다 — 그 해소는 GPU 런이 필요한 별도 단이고 이 수리는 그 전제를 회복할 뿐이다(계약 §7
+  말미·§13). 관측: 별건 판정런 `325913 LUMINA_Z2A_III RUNNING` · `325914 LUMINA_Z2A_IV
+  PENDING` [V1] — 본 단 밖, 본 판정문은 판정하지 않는다.
+- z2a 의 «어떤 오류든 ZI-B» 확장은 계약 §8-5 대로 **미수리 존속** — 앵커 오탐 제거로 그
+  확장의 실해 경로(오탐→ZI-B)만 소멸했다.
+
+---
+
+## 5. G-A5 의 지위 — «계측 검증 관측, 판정 불변» (계약 `:283`·`:291` 등록 그대로)
+
+- G-A5 가 확인한 것은 **«등록 기대치 4항과 일치했다» 까지**다. 본 판정문은 이를 «수리가
+  검증됐다» 로 확대하지 않는다 — 수리의 시연 범위는 §4 확정 목록의 각 항이 개별적으로
+  말하는 것까지다.
+- **Z-2A 의 ZI-A 판정은 불변이다.** 그 판정은 판정자가 계약 §8-2 판정식 문면을 오탐 무관
+  1차 실측으로 채워 내린 것이고 폐합됐다(감리 최종 상태 = 그 단 장부·판정문 스탬프 — 재판정
+  금지). G-A5 는 그 판정과의 **일치 확인**이다 — 계측이 판정을 따라잡은 것이지 판정이 움직인
+  것이 아니다.
+- 불일치였다면 IR-F1(수리안 결함 — Z-2A 재판정 아님)이었다 — 발화하지 않았다(§3).
+
+---
+
+## 6. 결함 B (sacct 교차-클러스터 provenance) — 기계로 막힌 것 / 규율로만 되는 것
+
+계약 §3-B 의 경계 판정을 실측에 대조해 **문장 단위로** 가른다. **이 문서 어디에도 «게이트가
+전부를 덮는다»는 진술은 없다** — 게이트가 있다는 착각은 원 결함보다 위험하다.
+
+**[기계 — 시연됨 (합성 채널·selftest 상설)]**
+
+1. **오귀속 레코드의 수용 차단**: 삼중 검증(JobID·JobName·Cluster,
+   `analyze_l6c_redispatch.py:1160-1162`) 불일치 → `SACCT_PROVENANCE_MISMATCH`(원문 레코드
+   보존). 시연: NC-R17 2팔(텍스트 주입 — 검사 로직) + NC-R18(a)(**실물 subprocess 채널**의
+   PATH-shim 이 역사적 실해 레코드 원문 `324557|UPP_QE68_SCF|COMPLETED|0:0|grammar` 를 방출)
+   → 전건 이름 있는 FAIL [V4]. 실해 레코드(`UPP_QE68_SCF`)가 이제 기계로 거부된다.
+2. **명령 표류 차단**: NC-R18(d)가 shim 이 수신한 argv 를 `expected_argv`(`:2014`) 와 **완전
+   목록 등치**로 대조 — `-M syntax`·5열 `-o` 의 실재가 selftest 마다 기계 검증된다 [V4].
+3. **오노드 집행의 «침묵 통과 → 이름 있는 FAIL» 전환 장치**: `-M syntax` 핀(`:1139`) +
+   레코드 0건 → `RII_NOT_TERMINAL`(`:1158`, fail-closed 기존 유지 — `SACCT_UNAVAILABLE`
+   `:1144`·비종단 `:1164` 도 존속). 낙하 경로는 NC-R18(c) `EMPTY_RC0 → RII_NOT_TERMINAL` 로
+   shim 채널에서 시연 [V4]. 근거 실측(교차 조회 **양방향** 빈 출력·rc=0)은 [계약 C6, 저자
+   실행].
+
+**[기계 — 장치는 실재하나 라이브 미시연]**
+
+4. 3 의 **실물 시연 = G-B3**(grammar-debug 실기, 역사적 실해 채널 그 자체)는 **미집행**이다
+   (§2). shim 은 진짜 sacct 이 아니므로 «실행 노드의 실제 slurmdbd 귀속» 잔여는 selftest 가
+   **원리적으로 못 덮는다**(계약 §3-B 원리 판정 — 이 계급의 음성대조는 텍스트 주입 단독으로
+   원리적 불가, selftest 단독 완결 불가). 그 잔여를 덮는 **유일한 등록 팔이 G-B3** 이고,
+   그것이 아직 비어 있다.
+5. **G-B2**(syntax 라이브 양성)도 미집행 — 수리된 판독기가 정본 채널에서 PASS 에 실제로
+   도달함은 아직 시연되지 않았다. 판정자의 syntax 직접 조회 [V1] 는 기저 레코드의 실재
+   확인이지 게이트 집행이 아니다.
+
+**[규율로만 — 게이트가 못 덮는다 (계약 명시 한계, 본 판정문도 넘지 않는다)]**
+
+6. **정본 증거의 취득(PASS 도달)은 기계가 보장하지 못한다.** sacct 는 클러스터 귀속 상태이고
+   교차 조회는 양방향 불능이므로 [계약 C6], PASS 는 syn slurmdbd 귀속 노드(실측 성립: syntax
+   로그인 [V1])에서 집행해야만 가능하다. 기계는 오집행을 **가시화**(이름 있는 FAIL)할 뿐
+   취득을 **대체하지 못한다**. 이 절반은 계약 §10 집행 조건(규율)이다 — 수리 후 달라진 것은
+   «규율 위반이 침묵 오귀속이 아니라 이름 있는 FAIL 로 나타난다»는 것까지다.
+7. G-B3 자체도 **상설 selftest 가 아니라 환경 의존 집행 게이트**다(계약 §3-B 한계 기재
+   그대로) — 집행돼도 이 성격은 바뀌지 않는다.
+
+---
+
+## 7. 검수 지적 3건의 처분 (계약 §8-7·§8-8 — 이 단의 수리 권한은 §3 의 두 결함뿐)
+
+계약이 이 단에 준 수리 범위 = §3-A 1~4 · §3-B 1~7, 변경집합 = 2파일의 그 항목들(§4), 그리고
+§8-7 «발견의 처분 = 조용한 대장 기재 — **이 단의 범위를 늘리지 않는다**» · §8-8 «두 파일 밖
+수리 금지·등록 상수 밖 값 변경 금지». ⟹ **세 건 모두 지금 수리는 계약 밖**이다. 처분은
+전건 **조용한 대장 기재**(기재 행위는 운전석 몫 — 아래는 기재 후보 문면)이며, 수리는 별도 단
+후보로 존속한다.
+
+| # | 지적 (검수 실측 [판독:70-73]) | 판정자 확인 | 처분 |
+|---|---|---|---|
+| ① | `report_outside_census` 가 `realpath(census.parent)` 를 써서 **심링크 이중 오조작** 시 실패 report 가 봉인 안에 쓰인다(검수 합성 실증) | 코드 실재 `analyze_a210_z2a_probe.py:433-443`(realpath `:434-435`) [V12]. **자매 판독기 계승 잔여**(같은 계급이 `analyze_l6c_redispatch.py` 에도 있음 — 검수 판정)이고, 이 단의 등록 게이트 명령은 전건 명시 `--report` 봉인 밖이라 그 경로를 지나지 않는다 [V5·V6 — 판정자 재현도 동일 형식] | 대장 기재 + **차기 판독기 수리 단 후보**(자매와 함께 한 계약으로) — 지금 수리 금지(§8-7·8) |
+| ② | z2a R-II 모드 **기본 report 경로 무가드** — `--report` 생략 시 `run_root` 안에 기본 기록(`:675`) | **기존치** 확인: 봉인 안 `a210_z2a_probe_report.json`(M14)이 원 런처 시절 그 경로의 산출 [V8]. Codex 보고 §4 가 «봉인 재판독 시 보고서 외부 지정 규율이 계속 필요»를 명시 재진술 [V10] — Codex 자진 개시 | 대장 기재 + 규율 명기(봉인 재판독은 **항상** 명시 `--report` 봉인 밖 — 이 단 게이트는 전건 준수) — 지금 수리 금지 |
+| ③ | CENSUS-SELFCHECK 실패 report 가 **`ZI-B` 라벨 재사용**(`:656`) — `mode` 필드로 구별되나 하류 오독 소지 | 실재 확인 [V12]. PASS 쪽도 `ZI-A` 재사용임을 판정자 추가 관측(`za_selfcheck.json` `branch=ZI-A`·`mode=CENSUS-SELFCHECK` [V5]) — Z-2A 분기 라벨의 타 모드 차용은 양방향이다. 하류는 `branch` 전에 `mode` 를 읽어야 한다 | 대장 기재 — 라벨·분기 의미론 정리는 §8-5 의 «ZI-B 확장»과 같은 계열의 **별도 단 후보** |
+
+---
+
+## 8. 집행 이탈 관측 (조용한 기재 — 게이트 판정 산입은 §2·§3 에서 이미 했다)
+
+1. **산출물 거처 이탈**: 계약 §4·§5·§10 이 등록한 `validation/instrument_repair/` 가 repo 에
+   **미신설** [V2] — 실거처는 `/gpfs/kjhan/lumina/zo_artifacts/` [V9]. 실질 요건(봉인 밖·
+   /gpfs·비-/tmp)은 충족하나 등록 경로와 다르다. Codex 의 합성 검증 로그는 노드-로컬 /tmp
+   worktree(`/tmp/claude-10396/wt_instr/validation/instrument_repair/`)에 있다 [V10] — 구현
+   검증 산출(게이트 산출 아님)이나 계약 §5 의 /tmp 금지 취지에 비추어 영속 거처 이관 필요.
+2. **G-A1·G-B1 산출 미보존**: selftest 산출이 파일로 남지 않았다(판독 문서 문면뿐) — 판정자
+   재현 [V4] 로 보강됐으나 등록 거처 부재와 같은 뿌리.
+3. **장부 미기입**: 계약 §12 필수 4항목 중 1(발주 프리플라이트 rc)·3(분장 장부 — ①·③ 외
+   전 행)·4(발주 중단 유무) 공란 [V2]. 개정15 «집행 기록 필수 4항목»은 폐합 전 채워져야
+   한다(운전석 몫).
+4. **판독 문서 거처**: `INSTR_READOUT.md` 가 노드-로컬 /tmp — 영속 거처로 사본 이관 필요
+   (운전석 몫; 본 판정문이 핵심 수치를 전건 인용·재검증했으므로 증거 사슬은 본 문서로도
+   보존된다).
+
+---
+
+## 9. 하지 않은 것 (계약 §8 전수 준수)
+
+- **타 단 재판정 0**: Z-2A ZI-A·E-I1 문면 FAIL·L6C-R C-M-S·F1b·L6 분기 B·A207·Z-O·BITLOCK
+  전부 불변 — 본 문서는 인용만 했다.
+- `src/` 접촉 0(별건 판정런 2건 진행 중 [V1] — 이중 금지 준수) · **봉인 쓰기 0**(전 접근
+  read-only [V5-V8]; 변조 실험은 스크래치의 판독기 사본에만 [V11] — census 사본 변조(G-A4
+  집행)는 하지 않았다: 게이트 집행은 운전석 몫) · 물리량·판정식·분기 의미론 접촉 0 · 오라클
+  (CMFGEN 자체런) 정량 인용 0 · clamp/floor/cap/jitter/repair 0.
+- 수리·튜닝 제안 0 — §7 은 처분(대장 기재)과 별도 단 후보 지목까지다.
+- 감리 대행·감리 상태 진술 0 — 감리 상태는 장부(계약 §12)에서 읽어라(§0 머리).
+
+---
+
+## 10. 남은 미결과 다음 표적
+
+| # | 항목 | 주인 |
+|---|---|---|
+| 1 | **이 단 잔여 집행**: G-A4(스크래치 사본 변조 — /gpfs, /tmp 금지) · G-B2(syntax) · G-B3(grammar-debug — 허용 FAIL 집합은 계약 §6) + G-0 후반부 rc 기재 + §12 장부 기입 → **분기 재판정**(IR-X 해소) | 운전석 (집행·기입) → 판정자 (재판정) |
+| 2 | 감리 A·B — 상태·착수는 장부(계약 §12)가 정본 | user 승인 → 운전석 발주 |
+| 3 | E-I1 해소·R-III/R-IV 수용 실물 — 별건 진행 관측(`325913`/`325914` [V1]) | 그 단 (GPU — 이 단 밖) |
+| 4 | 신규 대장 기재 후보 3건(§7 표) + 기존 존속: F-2(σ 스코프)·F-3(proxy≢capture)·Z-2A 대장 2번(fail-open 벡터)·잣대 함정(`sacct FAILED 만 보면 오독`, 대장 `:371`) | 운전석 (대장 기재) |
+| 5 | z2a «어떤 오류든 ZI-B» 확장 + 라벨 의미론(§7-③) 정리 | 별도 단 후보 (계약 §8-5) |
+| 6 | 반상태 처분 (DET-SUPERLEVEL-B 사전등록 `c518c18` — 별건) | user 결정 대기 |
+
+---
+
+## 한 줄 결론
+
+**분기 = IR-X(계약 §6 분할 밖 관측 — 집행 미완, 정지·보고)** · **확정된 것** = 집행된 게이트
+전건(G-0 전반·G-A1·G-A2 실측·G-A3·G-A5·G-B1)의 계약 기대치 일치 — 산출물 3본 판정자
+byte-동일 재현, 결함 A 는 봉인 실물에서 판별력 회복 시연(봉인 census 자기입력 PASS·오탐 사유
+소멸·역주입 시 selftest 사망, Z-2A ZI-A 판정 불변), 결함 B 는 삼중 provenance·argv 검증의
+합성 채널 작동과 «취득은 규율» 경계의 문면 준수 · **미결** = G-A4·G-B2·G-B3 미집행(특히 결함
+B 라이브 음·양 대조 부재)·G-0 후반부 rc 미기재·장부 §12 미기입, 그리고 **감리 A·B 미실시로
+개정17 폐합 조건 미충족**(정본 = 장부, 계약 §12) — 본 판정문은 폐합을 선언하지 않는다.
+
+---
+
+## 부록 A — 판정자 재현 명령 원장 (전건 2026-08-28 실행 — syntax 로그인, 판독·조회 비연산 계급)
+
+경로 축약: `REPO=/home/kjhan/BACKUP/Eunha.A1/Claude/Lumina-sn` ·
+`ZO=/gpfs/kjhan/lumina/a210_zero_opacity_z1r_a100x2_k36/zo_20260826T050021Z_census_ion1` ·
+`RII=/gpfs/kjhan/lumina/a210_z2a_diag_isolation_a100x2_k36/rii_20260826T134337Z_ion1` ·
+`ART=/gpfs/kjhan/lumina/zo_artifacts` · `SCR=<봉인 밖 스크래치>` (판정자는 세션 스크래치 사용;
+감리-B 는 임의의 봉인 밖 쓰기 가능 경로로 대체 — ⚠`/tmp` 는 노드-로컬).
+
+⚠**sacct 클러스터 귀속 경고 (감리-B 필독)**: V1 은 **syntax 에서만 정본**이다. grammar 계열
+노드에서 같은 명령은 무관 레코드(`UPP_QE68_SCF`) 또는 `-M syntax` 시 빈 출력 rc=0 을 낸다 —
+**그것이 결함 B 그 자체다.** 재현 전 `scontrol show config | grep ClusterName` 으로 노드
+귀속을 확인하라. Codex 샌드박스는 Slurm DB 소켓 접근 불가 전례(Z-2A 판정문 §12-1 NOTE) —
+그 경우 V1 은 재현 불능으로 보고하는 것이 옳다.
+
+```bash
+# V1 — 클러스터 귀속·정본 레코드·별건 판정런 (syntax)
+hostname                                            # -> syntax
+scontrol show config | grep ClusterName             # -> ClusterName = syntax
+sacct -j 324557 -X -n -P -o JobIDRaw,JobName,State,ExitCode,Cluster
+#  -> 324557|LUMINA_Z2A_II|FAILED|70:0|syntax   (rc=0)
+sacct -j 325913,325914 -X -n -P -o JobIDRaw,JobName,State,ExitCode
+#  -> 325913|LUMINA_Z2A_III|RUNNING|0:0 · 325914|LUMINA_Z2A_IV|PENDING|0:0 (관측 시점)
+
+# V2 — 커밋·변경집합·문서 불변·worktree clean
+cd $REPO
+git show --stat --oneline ddf6701 | head -8         # -> RUNG_INSTRUMENT_REPAIR ... 465행 수록
+git show --stat --oneline d597258 | head -6         # -> 정확 2파일, 350 insertions(+), 37 deletions(-)
+git diff ddf6701..HEAD -- docs/RUNG_INSTRUMENT_REPAIR_2026-08-28.md   # -> 공출력 (diff 0)
+git status --porcelain scripts/analyze_a210_z2a_probe.py scripts/analyze_l6c_redispatch.py \
+  docs/RUNG_INSTRUMENT_REPAIR_2026-08-28.md         # -> 공출력 (clean)
+
+# V3 — byte-사슬 (검수 패치 ≡ 커밋 ≡ 집행본 ≡ HEAD)
+git show d597258 --format= --patch > $SCR/commit_patch.diff
+cmp /tmp/claude-10396/INSTR_PATCH.diff $SCR/commit_patch.diff          # -> 무차 (byte-same)
+cmp $ART/probe_committed.py $ART/probe_repaired.py                     # -> 무차
+cmp $ART/probe_committed.py scripts/analyze_a210_z2a_probe.py          # -> 무차
+
+# V4 — G-A1·G-B1 재현 + PF-1
+python3 -B scripts/analyze_a210_z2a_probe.py --selftest   # 말미: ... PASS controls=NC-I0,...,NC-I8 failed=0 ; rc=0
+python3 -B scripts/analyze_l6c_redispatch.py --selftest   # 말미: ... PASS controls=NC-R0,...,NC-R18 failed=0 synthetic_fixtures=1 sealed_access=0 ; rc=0
+#  NC-R17/R18 발화 행 (실측 문면):
+#   NC-R17 inject=JOB_NAME_MISMATCH status=FAIL reason=SACCT_PROVENANCE_MISMATCH branch=X-P sealed_access=0
+#   NC-R17 inject=CLUSTER_MISMATCH  status=FAIL reason=SACCT_PROVENANCE_MISMATCH branch=X-P sealed_access=0
+#   NC-R18 channel=PATH_SHIM inject=HISTORICAL_WRONG_RECORD status=FAIL reason=SACCT_PROVENANCE_MISMATCH branch=X-P sealed_access=0
+#   NC-R18 channel=PATH_SHIM measure=ARGV status=PASS ... cluster_arg=-M,syntax fields=JobIDRaw,JobName,State,ExitCode,Cluster
+#   NC-R18 channel=PATH_SHIM remove=RESTORE_CANONICAL_RECORD status=PASS ... record=324557|LUMINA_Z2A_II|FAILED|70:0|syntax
+#   NC-R18 channel=PATH_SHIM inject=EMPTY_RC0 status=FAIL reason=RII_NOT_TERMINAL branch=X-P sealed_access=0
+grep -rln A210_INSTRUMENT_REPAIR scripts src        # -> 정확 2파일 (scripts/의 두 판독기)
+
+# V5 — G-A2 재현 (봉인 read-only, report 봉인 밖)
+python3 -B scripts/analyze_a210_z2a_probe.py --census-selfcheck $ZO/stderr.log \
+  --report $SCR/za_selfcheck_repro.json
+#  -> A210_Z2A_PROBE_CENSUS_SELFCHECK_RESULT status=PASS anchor_line=669992 input_access=READ_ONLY streaming=1 ; rc=0
+diff $SCR/za_selfcheck_repro.json $ART/za_selfcheck.json               # -> 무차 (byte-동일)
+
+# V6 — G-A3·G-A5 재현 (봉인 read-only)
+python3 -B scripts/analyze_a210_z2a_probe.py --mode R-II \
+  --stderr $ZO/stderr.log --census-stderr $ZO/stderr.log --report $SCR/selfinput_repro.json
+#  -> status=FAIL branch=ZI-B ; rc=4 ; JSON: blocking=['SPROBE_COUNTER_MISSING'] f_bit=1.0
+diff $SCR/selfinput_repro.json $ART/selfinput_after.json               # -> 무차
+python3 -B scripts/analyze_a210_z2a_probe.py --mode R-II \
+  --stderr $RII/stderr.log --census-stderr $ZO/stderr.log --report $SCR/ga5_repro.json
+#  -> status=PASS branch=ZI-A ; rc=0 ; JSON: f_bit=1.0 blocking=[]
+diff $SCR/ga5_repro.json $ART/ga5_retro.json                           # -> 무차
+
+# V7 — 봉인 지문 spot
+wc -l $RII/RII_RUN_SEAL.sha $ZO/ZO_RUN_SEAL.sha     # -> 135 · 136
+grep stderr.log $RII/RII_RUN_SEAL.sha ; (cd $RII && sha256sum stderr.log)   # -> 31b4a23a... 양쪽 일치
+grep stderr.log $ZO/ZO_RUN_SEAL.sha  ; (cd $ZO  && sha256sum stderr.log)    # -> 5b3fbb20... 양쪽 일치
+ls -la $RII/RII_RUN_SEAL.*                          # -> mtime 2026-08-27 17:32 · r--r-----
+
+# V8 — 앵커 4행·hex·M14 (전건 read-only)
+sed -n '1242p;226118p' $ZO/stderr.log ; sed -n '1244p;226122p' $RII/stderr.log
+#  -> iter0: n_upper=0.0004437688873013011 emission_per_sr=2.7310010625545125e-16
+#     iter1: n_upper=0.00045264235457262295 emission_per_sr=2.7856093265405119e-16
+#     (census·R-II 쌍 bit-동일 · A_ul=0.52225560000000004 · tau_validity=2)
+python3 -c "print(float.hex(0.0004437688873013011), float.hex(2.7310010625545125e-16),
+float.hex(0.00045264235457262295), float.hex(2.7856093265405119e-16), float.hex(0.52225560000000004))"
+#  -> 0x1.d1534dba20c26p-12 0x1.3adcec9caadc0p-52 0x1.daa141c1395e6p-12 0x1.4128acfd24836p-52 0x1.0b6516044e436p-1
+python3 -c "import json; d=json.load(open('$RII/a210_z2a_probe_report.json'));
+print(d['status'], d['branch'], d['blocking_reasons'], d.get('f_bit'))"
+#  -> FAIL ZI-B ['ANCHOR_FIELD_MISMATCH'] 1.0   (M14 — 수리 전 봉인 기준선)
+
+# V9 — 게이트 산출물 소재·미집행 게이트 산출 부재
+ls -la $ART/            # -> za_selfcheck.json(11:57) selfinput_after.json(11:56) ga5_retro.json(14:52)
+                        #    probe_repaired.py(11:56) probe_committed.py(14:52) — G-A4/G-B2/G-B3 산출 0건
+ls $REPO/validation/instrument_repair/ 2>&1        # -> No such file or directory
+
+# V10 — 발주·구현 보고 문면
+sed -n '86,102p' /tmp/claude-10396/CODEX_INSTR_REPORT.md
+#  -> "live G-B2/G-B3 및 봉인 G-A2~A5를 실행하지 않은 현재 결과로는 IR-A를 주장하지 않습니다" 등
+grep -c "check_dispatch_preflight" /tmp/claude-10396/codex_instr_order.md \
+  /tmp/claude-10396/CODEX_INSTR_REPORT.md /tmp/claude-10396/INSTR_READOUT.md   # -> 0 · 0 · 0 (rc 기록 부재)
+
+# V11 — 역주입 (판정자 음성대조 — 스크래치의 판독기 사본만 변조)
+cp scripts/analyze_a210_z2a_probe.py $SCR/probe_reverted.py
+sed -i 's/0x1.daa141c1395e6p-12/0x1.d1534dba20c26p-12/; s/0x1.4128acfd24836p-52/0x1.3adcec9caadc0p-52/' \
+  $SCR/probe_reverted.py
+python3 -B $SCR/probe_reverted.py --selftest        # -> ... FAIL ... failed=12 ; rc=1
+#  (관측: 역주입 상태에서 NC-I8 inject 팔이 status=PASS 로 반전 — 변조 census 가 통과한다)
+
+# V12 — 소스 인용 행 실확인 (HEAD = d597258)
+grep -n "ANCHOR_BITS_BY_ITERATION = (\|def anchor_matches\|ANCHOR_ITERATION_INVALID\|def census_selfcheck\|def report_outside_census\|A210_INSTRUMENT_REPAIR = True" \
+  scripts/analyze_a210_z2a_probe.py                 # -> :23 :31 :198 :207 :392 :433 :446
+grep -n "anchor_matches(raw_rows, iteration)" scripts/analyze_a210_z2a_probe.py   # -> :303 :475
+grep -n "RII_JOB_NAME\|RII_CLUSTER = \|SACCT_PROVENANCE_MISMATCH\|sacct.*-M" scripts/analyze_l6c_redispatch.py | head
+#  -> :40 :41 :1139 :1160 :1162 (등)
+```
+
+*(V5·V6 의 판독기 실행은 판독(비연산) — 로그인 노드 허용 범위, Z-2A 판정자·계약 C3/C4 선례와
+동일 명령. 봉인 접근은 전건 read-only 였고 V7 지문 spot 이 사후 무결을 확인한다.)*
