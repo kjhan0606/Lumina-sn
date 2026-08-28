@@ -452,6 +452,45 @@ C-R 급 「실증」 라벨을 쓰지 않았고 「물리가 옳다」·「CMFGE
 live `sacct` 만 제외한 **우회 경로**로 `PR-3=PASS`·본체 `PASS C-M-S`·`RD-1~7` 전건 PASS 를 확인했다.
 ⟹ 재현 불능의 정직한 기재와 우회 재현의 병행이 **대리 실행을 수용하는 옳은 형식**이다.
 
+### ★A210-Z2A R-III/R-IV 폐합 (2026-08-29) — 분기 `ZI-O-G6-DECLARED-PATH-ABSENT`
+
+**등급 A (경로 ≥2)**
+- **R-IV 값 파일 byte 불변**: 봉인 L6 대비 **9/9 byte-동일**(등록 3쌍 + 실물 6쌍
+  `work/physics_comparison/physics_DET_iterNNNN.{manifest.json,shell.csv,spectral.csv}`).
+  경로 = 운전석 독립 대조 + 감리-B 독립 재현.
+- **G5 S2 항등**: `Jbar == continuum + local_emission`, `max_relative_deviation=0.0`(tol 4e-16),
+  `producer_terms_undefined_rows=0`. NC-G5 음성대조 시연(`UNDECIDABLE_PRODUCER_TERMS_MISSING`).
+  ⚠**캐비앳 존속**: 이 항등은 **구성상 참일 수 있어 물리 검증이 아니다.**
+- **두 런의 전역 상태 결정론**: 4.5시간 GPU 런 2개가 `LINE-ION-OWNER-SUMMARY` 8행
+  **전행 byte-동일**(T_e·n_e·rate 21자릿수).
+
+**등급 B (검증 대상 — 관측만)**
+- 반복 0→1 물질 응답: T_e 고정(10,020 K)·n_e +0.196% 인데 signed rate **−8.83~−10.54%**,
+  셸 바깥으로 **단조 증가**. 잡음 바닥 `signed_grouping_delta ≤ 2.03e-16`.
+  ⚠**J̄ 구동 귀속 아님** — A2-10 은 `interpretation=DIAGNOSTIC_ONLY`. d-proxy 분리가 남았다.
+- ion III vs IV: 방출 비 **2.7e-9**(53.2 대 1.44e-7) · ion IV 선택 **불변**(297=156+20+121) ·
+  hazard/sprobe 가 **ion III 전용**(182,244/반복 대 0).
+- ⚠**「297 = DET-A207-WIRING 의 297」은 미확인** — 동일 집합인지 확인되지 않았다. 인용 금지.
+
+**미착지 / 결함**
+- **G6·E-I8 미착지 — 계약 결함**: 등록 9경로 중 6개가 **경로 형태만 다른 실물**로 존재.
+  판정자가 경로 대체를 거부(계약 재작성이므로). 라벨은 「등록 경로 부재」이지 실물 부재가 아니다.
+- **S2b FAIL** 존속(`missing_j_cont_rows=389`, tol 1e-12) — 계약 밖, DET-BETAPROD 미구현.
+
+**★절차 기록 (운전석 이탈 4건 — 전건 감리 검출)**
+1. **제출 자격 이탈**: 개정 2가 **결과 확인 뒤 골대 이동**(축자 `OLD:`/`NEW:` 없이 ~90행 신설)
+   으로 무효 판정 ⟹ user 지시로 철회, 구 조건 「R-II 런처 수용 PASS 후」 복귀 ⟹ **미충족**.
+   ★**산출물은 유효**하며 물리는 손상되지 않았다.
+2. **1차 판정 발주서의 정본 역지정**(폐기본 `.rev1` 을 정본으로) ⟹ 판정 폐기·재발주.
+3. **이온 대조축 설계 오류** — 전역 잣대가 `TARGET_ION` 을 소비하지 않는다.
+4. **NC-R14/R15 제출 전 기재 누락**(사후 집행 rc=0).
+⟹ 이 넷이 **개정18 ⑤ + 운전석 게이트 3종**(`check_doc_canonical`·`check_driver_hygiene`·
+`check_gate_roster`)을 낳았다. 셋 다 음성대조 내장.
+
+**감리**: 감리-B 통과(«폐합 차단» 0) · 감리-A 차단 2 → 철회·(d) 정정 → **확인 감리 통과**.
+
+---
+
 ### 9회차 예정
 
 기존 A 표본 재도전 · 런 의존 게이트(Γ4·R6-4·NE2·ME2·E4) · `toy06_19.48d` 계열 146건 인용의
