@@ -37,6 +37,9 @@ TARGET_Z = frozenset({26, 27, 28})
 TARGET_ION = 1
 SUPER_CUTOFF = 100
 RII_JOB_ID = "324557"
+RII_JOB_NAME = "LUMINA_Z2A_II"
+RII_CLUSTER = "syntax"
+A210_INSTRUMENT_REPAIR = True
 TEMPERATURE_K = 10020.0
 H_PLANCK = 6.62607015e-27
 C_LIGHT = 2.99792458e10
@@ -1133,32 +1136,40 @@ def check_pr0_unsealed(docs: Path, sacct_text: str | None = None) -> dict[str, A
     audit_cells = ledger_audit_cells(docs)
     if sacct_text is None:
         result = subprocess.run(
-            ["sacct", "-j", RII_JOB_ID, "-X", "-n", "-P", "-o", "JobIDRaw,State,ExitCode"],
+            ["sacct", "-M", RII_CLUSTER, "-j", RII_JOB_ID, "-X", "-n", "-P",
+             "-o", "JobIDRaw,JobName,State,ExitCode,Cluster"],
             capture_output=True, text=True,
         )
         if result.returncode != 0:
             raise ReaderError("SACCT_UNAVAILABLE", result.stderr.strip())
         sacct_text = result.stdout
-    records: list[tuple[str, str, str]] = []
+    records: list[tuple[str, str, str, str, str]] = []
+    record_texts: list[str] = []
     for line in sacct_text.splitlines():
-        tokens = line.strip().split("|")
-        if not tokens or tokens[0] != RII_JOB_ID:
+        record_text = line.strip()
+        tokens = record_text.split("|")
+        if not record_text:
             continue
-        if len(tokens) != 3 or not tokens[1] or not tokens[2]:
-            raise ReaderError("RII_NOT_TERMINAL", f"malformed={line.strip()}")
-        records.append((tokens[0], tokens[1], tokens[2]))
+        if len(tokens) != 5 or any(not token for token in tokens):
+            raise ReaderError("RII_NOT_TERMINAL", f"malformed={record_text}")
+        records.append((tokens[0], tokens[1], tokens[2], tokens[3], tokens[4]))
+        record_texts.append(record_text)
     if len(records) != 1:
         raise ReaderError("RII_NOT_TERMINAL", f"record_count={len(records)}")
-    _job_id, state, exit_code = records[0]
+    job_id, job_name, state, exit_code, cluster = records[0]
+    if (job_id != RII_JOB_ID or job_name != RII_JOB_NAME or
+            cluster != RII_CLUSTER):
+        raise ReaderError("SACCT_PROVENANCE_MISMATCH", "record=" + record_texts[0])
     if state in NONTERMINAL_SACCT_STATES:
         raise ReaderError("RII_NOT_TERMINAL", f"state={state},exit_code={exit_code}")
     return {
         "status": "PASS", "z2a_verdict": str(verdict),
         "registered_verdict_line": REGISTERED_VERDICT_LINE,
         "ledger_audit_cells": audit_cells,
-        "sacct_job": RII_JOB_ID, "sacct_state": state,
+        "sacct_job": RII_JOB_ID, "sacct_job_name": job_name,
+        "sacct_cluster": cluster, "sacct_state": state,
         "sacct_exit_code": exit_code,
-        "sacct_records": ["|".join(records[0])],
+        "sacct_records": [record_texts[0]],
         "sealed_marker_inputs_opened": False,
         "sealed_value_inputs_opened": False,
     }
@@ -1569,6 +1580,12 @@ def run_fixture(root: Path, spec: list[tuple[int, int, int, int, float, bool]],
 
 def selftest() -> int:
     failures = 0
+    terminal_sacct = (
+        f"{RII_JOB_ID}|{RII_JOB_NAME}|FAILED|70:0|{RII_CLUSTER}\n"
+    )
+    running_sacct = (
+        f"{RII_JOB_ID}|{RII_JOB_NAME}|RUNNING|0:0|{RII_CLUSTER}\n"
+    )
 
     def measured(spec: list[tuple[int, int, int, int, float, bool]],
                  **kwargs: Any) -> dict[str, Any]:
@@ -1731,7 +1748,7 @@ def selftest() -> int:
         run = root / "run"
         docs.mkdir()
         try:
-            check_pr0(docs, run, f"{RII_JOB_ID}|FAILED|70:0\n")
+            check_pr0(docs, run, terminal_sacct)
         except ReaderError as exc:
             if exc.reason != "Z2A_VERDICT_ABSENT":
                 failures += 1
@@ -1741,12 +1758,12 @@ def selftest() -> int:
             failures += 1
         write_pr0_documents(docs)
         write_completion_fixture(run)
-        restored_absent = check_pr0(docs, run, f"{RII_JOB_ID}|FAILED|70:0\n")
+        restored_absent = check_pr0(docs, run, terminal_sacct)
         print("NC-R10 remove=RESTORE_Z2A_VERDICT_AFTER_ABSENT status=PASS reason=PASS "
               f"branch=PR-0 marker_access={int(restored_absent['sealed_marker_inputs_opened'])}")
         write_pr0_documents(docs, verdict_line=False)
         try:
-            check_pr0(docs, run, f"{RII_JOB_ID}|FAILED|70:0\n")
+            check_pr0(docs, run, terminal_sacct)
         except ReaderError as exc:
             if exc.reason != "Z2A_VERDICT_NOT_ZI_A_AUDITED":
                 failures += 1
@@ -1755,7 +1772,7 @@ def selftest() -> int:
         else:
             failures += 1
         write_pr0_documents(docs)
-        restored = check_pr0(docs, run, f"{RII_JOB_ID}|FAILED|70:0\n")
+        restored = check_pr0(docs, run, terminal_sacct)
         print("NC-R10 remove=RESTORE_REGISTERED_VERDICT_LINE status=PASS reason=PASS "
               f"branch=PR-0 marker_access={int(restored['sealed_marker_inputs_opened'])}")
 
@@ -1852,7 +1869,7 @@ def selftest() -> int:
         docs, run = root / "docs", root / "run"
         write_pr0_documents(docs)
         try:
-            check_pr0(docs, run, f"{RII_JOB_ID}|RUNNING|0:0\n")
+            check_pr0(docs, run, running_sacct)
         except ReaderError as exc:
             if exc.reason != "RII_NOT_TERMINAL":
                 failures += 1
@@ -1861,7 +1878,7 @@ def selftest() -> int:
         else:
             failures += 1
         write_completion_fixture(run)
-        restored = check_pr0(docs, run, f"{RII_JOB_ID}|FAILED|70:0\n")
+        restored = check_pr0(docs, run, terminal_sacct)
         print("NC-R14 remove=SACCT_FAILED_WITH_COMPLETE_MARKERS status=PASS "
               f"reason=PASS branch=PR-0 state={restored['sacct_state']} "
               f"exit_code={restored['sacct_exit_code']}")
@@ -1879,7 +1896,7 @@ def selftest() -> int:
             write_pr0_documents(docs)
             write_completion_fixture(run, **fixture_kwargs)
             try:
-                check_pr0(docs, run, f"{RII_JOB_ID}|FAILED|70:0\n")
+                check_pr0(docs, run, terminal_sacct)
             except ReaderError as exc:
                 if exc.reason != "RII_MODEL_INCOMPLETE":
                     failures += 1
@@ -1888,7 +1905,7 @@ def selftest() -> int:
             else:
                 failures += 1
             write_completion_fixture(run)
-            check_pr0(docs, run, f"{RII_JOB_ID}|FAILED|70:0\n")
+            check_pr0(docs, run, terminal_sacct)
             print(f"NC-R15 remove=RESTORE_{injection} status=PASS reason=PASS "
                   "branch=PR-0")
 
@@ -1907,7 +1924,7 @@ def selftest() -> int:
             docs, run = root / "docs", root / "run"
             write_pr0_documents(docs, **document_kwargs)
             try:
-                check_pr0(docs, run, f"{RII_JOB_ID}|FAILED|70:0\n")
+                check_pr0(docs, run, terminal_sacct)
             except ReaderError as exc:
                 if exc.reason != expected_reason:
                     failures += 1
@@ -1917,12 +1934,125 @@ def selftest() -> int:
                 failures += 1
             write_pr0_documents(docs)
             write_completion_fixture(run)
-            check_pr0(docs, run, f"{RII_JOB_ID}|FAILED|70:0\n")
+            check_pr0(docs, run, terminal_sacct)
             print(f"NC-R16 remove=RESTORE_{injection} status=PASS reason=PASS "
                   "branch=PR-0")
 
+    with tempfile.TemporaryDirectory(prefix="l6cr-r17-") as directory:
+        docs = Path(directory) / "docs"
+        write_pr0_documents(docs)
+        provenance_injections = (
+            ("JOB_NAME", f"{RII_JOB_ID}|UPP_QE68_SCF|COMPLETED|0:0|{RII_CLUSTER}\n"),
+            ("CLUSTER", f"{RII_JOB_ID}|{RII_JOB_NAME}|FAILED|70:0|grammar\n"),
+        )
+        for injection, sacct_text in provenance_injections:
+            try:
+                check_pr0_unsealed(docs, sacct_text)
+            except ReaderError as exc:
+                if exc.reason != "SACCT_PROVENANCE_MISMATCH":
+                    failures += 1
+                print(f"NC-R17 inject={injection}_MISMATCH status=FAIL "
+                      f"reason={exc.reason} branch=X-P sealed_access=0")
+            else:
+                failures += 1
+            restored = check_pr0_unsealed(docs, terminal_sacct)
+            restored_ok = restored["sacct_records"] == [terminal_sacct.strip()]
+            if not restored_ok:
+                failures += 1
+            print(f"NC-R17 remove=RESTORE_{injection} "
+                  f"status={'PASS' if restored_ok else 'FAIL'} "
+                  f"reason={'PASS' if restored_ok else 'SACCT_RECORD_MISMATCH'} "
+                  f"branch=PR-0 record={restored['sacct_records'][0]} sealed_access=0")
+
+    scratch_parent = os.environ.get("TMPDIR")
+    with tempfile.TemporaryDirectory(prefix="l6cr-r18-", dir=scratch_parent) as directory:
+        root = Path(directory)
+        docs = root / "docs"
+        shim_dir = root / "shim"
+        shim_dir.mkdir()
+        write_pr0_documents(docs)
+        argv_path = root / "sacct-argv.json"
+        shim = shim_dir / "sacct"
+        shim.write_text(
+            "#!/usr/bin/env python3\n"
+            "import json\n"
+            "import os\n"
+            "import pathlib\n"
+            "import sys\n"
+            "pathlib.Path(os.environ['A210_FAKE_SACCT_ARGV']).write_text(\n"
+            "    json.dumps(sys.argv[1:]), encoding='utf-8')\n"
+            "sys.stdout.write(os.environ.get('A210_FAKE_SACCT_OUTPUT', ''))\n"
+            "sys.stderr.write(os.environ.get('A210_FAKE_SACCT_STDERR', ''))\n"
+            "raise SystemExit(int(os.environ.get('A210_FAKE_SACCT_RC', '0')))\n",
+            encoding="utf-8",
+        )
+        shim.chmod(0o700)
+        environment_keys = (
+            "PATH", "A210_FAKE_SACCT_ARGV", "A210_FAKE_SACCT_OUTPUT",
+            "A210_FAKE_SACCT_STDERR", "A210_FAKE_SACCT_RC",
+        )
+        saved_environment = {name: os.environ.get(name) for name in environment_keys}
+        try:
+            os.environ["PATH"] = str(shim_dir) + os.pathsep + os.environ.get("PATH", "")
+            os.environ["A210_FAKE_SACCT_ARGV"] = str(argv_path)
+            os.environ["A210_FAKE_SACCT_STDERR"] = ""
+            os.environ["A210_FAKE_SACCT_RC"] = "0"
+            os.environ["A210_FAKE_SACCT_OUTPUT"] = (
+                f"{RII_JOB_ID}|UPP_QE68_SCF|COMPLETED|0:0|grammar\n"
+            )
+            try:
+                check_pr0_unsealed(docs)
+            except ReaderError as exc:
+                if exc.reason != "SACCT_PROVENANCE_MISMATCH":
+                    failures += 1
+                print("NC-R18 channel=PATH_SHIM inject=HISTORICAL_WRONG_RECORD "
+                      f"status=FAIL reason={exc.reason} branch=X-P sealed_access=0")
+            else:
+                failures += 1
+
+            expected_argv = [
+                "-M", RII_CLUSTER, "-j", RII_JOB_ID, "-X", "-n", "-P",
+                "-o", "JobIDRaw,JobName,State,ExitCode,Cluster",
+            ]
+            measured_argv = json.loads(argv_path.read_text(encoding="utf-8"))
+            argv_ok = measured_argv == expected_argv
+            if not argv_ok:
+                failures += 1
+            print("NC-R18 channel=PATH_SHIM measure=ARGV "
+                  f"status={'PASS' if argv_ok else 'FAIL'} "
+                  f"reason={'PASS' if argv_ok else 'SACCT_COMMAND_MISMATCH'} "
+                  "cluster_arg=-M,syntax fields=JobIDRaw,JobName,State,ExitCode,Cluster")
+
+            os.environ["A210_FAKE_SACCT_OUTPUT"] = terminal_sacct
+            positive = check_pr0_unsealed(docs)
+            positive_ok = positive["sacct_records"] == [terminal_sacct.strip()]
+            if not positive_ok:
+                failures += 1
+            print("NC-R18 channel=PATH_SHIM remove=RESTORE_CANONICAL_RECORD "
+                  f"status={'PASS' if positive_ok else 'FAIL'} "
+                  f"reason={'PASS' if positive_ok else 'SACCT_RECORD_MISMATCH'} branch=PR-0 "
+                  f"record={positive['sacct_records'][0]} sealed_access=0")
+
+            os.environ["A210_FAKE_SACCT_OUTPUT"] = ""
+            try:
+                check_pr0_unsealed(docs)
+            except ReaderError as exc:
+                if exc.reason != "RII_NOT_TERMINAL":
+                    failures += 1
+                print("NC-R18 channel=PATH_SHIM inject=EMPTY_RC0 "
+                      f"status=FAIL reason={exc.reason} branch=X-P sealed_access=0")
+            else:
+                failures += 1
+        finally:
+            for name, value in saved_environment.items():
+                if value is None:
+                    os.environ.pop(name, None)
+                else:
+                    os.environ[name] = value
+
     print(f"A210_L6C_REDISPATCH_SELFTEST {'PASS' if failures == 0 else 'FAIL'} "
-          f"controls=NC-R0,NC-R1,NC-R2,NC-R3,NC-R4,NC-R4b,NC-R5,NC-R6,NC-R7,NC-R8,NC-R9,NC-R10,NC-R11,NC-R12,NC-R13,NC-R14,NC-R15,NC-R16 "
+          "controls=NC-R0,NC-R1,NC-R2,NC-R3,NC-R4,NC-R4b,NC-R5,NC-R6,NC-R7,"
+          "NC-R8,NC-R9,NC-R10,NC-R11,NC-R12,NC-R13,NC-R14,NC-R15,NC-R16,NC-R17,NC-R18 "
           f"failed={failures} synthetic_fixtures=1 sealed_access=0")
     return 0 if failures == 0 else 1
 
