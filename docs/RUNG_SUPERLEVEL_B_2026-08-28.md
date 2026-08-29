@@ -93,7 +93,7 @@ exactly for both bb and bf."* — f 는 **반복마다 현재 T_e 로 재계산*
 | exports | 89행, `LUMINA_SUPER_CUTOFF="100"` 단독(`LUMINA_SUPER_LEVELS` 부재) | 동일 |
 | exports 상호 diff | **비경로 실질 차 = capture 2노브뿐**: `LUMINA_A210_INDEPENDENT_CAPTURE` 0↔1 · `LUMINA_A210_SPRODUCER_CAPTURE` 0↔1 (+ 런루트 경로 6키: `LUMINA_CMFGEN_SIGMA_BF`·`LUMINA_DEPOSITION_FILE`·`LUMINA_IONIZATION_REFERENCE_FILE`·`LUMINA_MODEL_DIR`·`LUMINA_PHYSICS_COMPARISON_DIR`·`LUMINA_TOPION_LEVELS_FILE`) | ← |
 | binary sha256 | `0e2fc7b4…e7df` | `39d452e4…aa42` (상이 — Z-2A 계측 사이 빌드) |
-| 덱 sha256 (RUN_SEAL 등재) | levels.csv `b3645052…9f67` · line_list.csv `cbd81c4f…54b5` | **동일 값** |
+| 덱 sha256 (RUN_SEAL 등재) | levels.csv `b3645052…daf67` · line_list.csv `cbd81c4f…54b5` | **동일 값** |
 | argv | `<run>/input/lumina_cuda <run>/input/model 1 2 spectrum nlte` | 동일 형 |
 | SUMMARY 수치 | R-II 와 **문자열 동일**(diff 는 R-II 의 신설 필드 `sprobe_undefined_rows` 유무 1건뿐 — 바이너리 세대 차) [저자 실행: 양 stderr SUMMARY 추출 diff] | ← |
 
@@ -277,7 +277,7 @@ base-input 불변·구성 delta를 기록하지만 런 전체 내용 checksum을
 
 | 통제 축 | 값 | 강제 장치 |
 |---|---|---|
-| 덱 | 봉인과 동일 — levels.csv `b3645052…9f67`·line_list.csv `cbd81c4f…54b5` (RII/ZO RUN_SEAL 등재값 동일 [저자 실행]) | G-1 sha 대조 |
+| 덱 | 봉인과 동일 — levels.csv `b3645052…daf67`·line_list.csv `cbd81c4f…54b5` (RII/ZO RUN_SEAL 등재값 동일 [저자 실행]) | G-1 sha 대조 |
 | 바이너리 | **봉인 R-II 사본 그대로** `39d452e4…aa42` — **재빌드 0**(현 트리 상태와 무관해짐) | G-1 sha 대조 + RUN_FOOTER |
 | argv (시드 포함) | `<run>/input/lumina_cuda <run>/input/model 1 2 spectrum nlte` (봉인 두 런과 동형) | RUN_FOOTER 대조 |
 | 반복수 | 2 (outer_iterations=2) | RUN_FOOTER |
@@ -528,6 +528,37 @@ manifest로 승격하지 않았고, 그 역사적 내용 무결은 미검증 한
 ---
 
 ## §14. 집행 기록 (★장부 정본 — 판정문·감리문은 이 절을 지목만 한다)
+
+### 정정 1 — §7-1 등록 digest 오기 (2026-08-29, ★**운전석 정정** — user 지시)
+
+**경위**: 검수 통과·G-RC 통과 후 **B-1 스테이징(=G-1)** 이 fail-closed 로 죽었다:
+`SUPERLEVEL_B_STAGE_FATAL reason=REGISTERED_LEVELS_DIGEST_MISMATCH`.
+
+**실측 대조** [운전석 실행]:
+
+| 파일 | 계약 등록 (구) | 봉인 실측 | 판정 |
+|---|---|---|---|
+| `input/lumina_cuda` | `39d452e4*aa42` | `39d452e4dec7…c5aa42` | OK |
+| **`input/model/levels.csv`** | `b3645052*9f67` | `b3645052d00d…**0daf67**` | ★**불일치** |
+| `input/model/line_list.csv` | `cbd81c4f*54b5` | `cbd81c4f9b3b…5554b5` | OK |
+
+★**봉인 전체에서 `9f67` 로 끝나는 digest 는 0건** — 타 파일 혼동이 아니라 **접미 전사 오류**다.
+봉인은 무죄(`RII_RUN_SEAL` 135행 `non_ok=0`, 실물 = 등재값). 구현도 무죄 — 계약 축약을
+glob `b3645052*9f67` 로 충실히 옮겼고 **fail-closed 로 옳게 죽었다.**
+
+**정정** (축자): `OLD: b3645052…9f67` → `NEW: b3645052…daf67` (§7-1·§7-2 2곳).
+검증: diff **+2/−2 · 2헝크 · 순삭 0** · §11 분기 표 **byte-동일** ·
+`check_gate_referents` rc=0 · `check_prereg_preflight` rc=0. 런 0회·결과 미관측 ⟹ 골대 이동 아님.
+
+★**역할 이탈 기재**: 계약(사전등록) 저자는 개정14 ① 상 운전석이 아니다. **user 가
+「운전석에서 정정으로 하자」고 지시**해 운전석이 직접 고쳤다. 규범 창설이 아니라 **사실
+오류의 실측 정정**이며 판정식 무접촉이지만, **계약의 사실 주장을 운전석이 바꾼 것**은 사실이다.
+
+★**신설 게이트가 못 잡는 계급**: `check_gate_referents` 는 참조 대상의 **실존·계수**를 보지
+계약에 적힌 **해시값의 진위**를 보지 않는다. 이 계급을 막으려면 「계약이 인용한 digest 를
+봉인 manifest 와 대조」하는 검사가 필요하다 — 대장 후보.
+
+---
 
 ### 발주 2차 — **중단** (2026-08-29) · ★**트리거 발동 (2회 연속)**
 
