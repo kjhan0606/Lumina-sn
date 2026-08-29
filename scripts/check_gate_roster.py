@@ -15,7 +15,7 @@ rc=0 전건 대응 · rc=1 누락/불일치 · rc=2 사용법
 """
 import re, sys, json, pathlib, tempfile
 
-GATE_RE = re.compile(r'^\|\s*\**\s*(G-?[A-Z]?\d+[a-z]?)\b')
+GATE_RE = re.compile(r'^\|\s*\**\s*(G-[A-Z0-9]+[a-z]?)\b')   # ★숫자 없는 게이트(G-RC·G-S)도 잡는다
 
 def roster(md_text):
     ids = []
