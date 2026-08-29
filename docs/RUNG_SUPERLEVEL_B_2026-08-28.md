@@ -250,7 +250,24 @@ K36 R1/R2 residual·DET-SPROD S2·L6/A207 수치 앵커·parity 마이크로픽�
 
 기존 봉인 4곳은 read-only 로만 연다 — **다시 만들 수 없는 반상태 시대의 증거**다. 새 런은
 새 런루트(`/gpfs/kjhan/lumina/superlevel_b_a100x2_k36/`)에 봉인한다. 하드링크 금지·복사 후
-sha 대조(§8·§9 G-1). 판독 전후 봉인 지문 `sha256sum -c` non-OK 0 을 게이트로 둔다(G-7).
+sha 대조(§8·§9 G-1).
+
+G-7의 **런 전체 checksum 검증 사정거리**는 다음 두 봉인으로 한정한다. 정본성 판별은 manifest
+파일만 존재하면 된다는 뜻이 아니라 표의 조건을 전건 만족해야 한다는 뜻이다.
+
+| 봉인 | 봉인 root · checksum manifest 상대경로 | manifest 정본성 판별 기준 |
+|---|---|---|
+| census | `/gpfs/kjhan/lumina/a210_zero_opacity_z1r_a100x2_k36/zo_20260826T050021Z_census_ion1` · `ZO_RUN_SEAL.sha` | root의 정규파일·정확 136행 ∧ 동반 `ZO_RUN_SEAL.txt`의 `schema=A210_ZO_CENSUS_RUN_SEAL_V1`·`run_root=<왼쪽 절대경로>`·`DO_NOT_MUTATE=1` 정확 일치 ∧ root에서 `sha256sum -c ZO_RUN_SEAL.sha` OK 정확 136·non-OK 0 |
+| R-II | `/gpfs/kjhan/lumina/a210_z2a_diag_isolation_a100x2_k36/rii_20260826T134337Z_ion1` · `RII_RUN_SEAL.sha` | root의 정규파일·정확 135행 ∧ 동반 `RII_RUN_SEAL.txt`의 `schema=A210_Z2A_RII_RUN_SEAL_V1`·`run_root=<왼쪽 절대경로>`·`DO_NOT_MUTATE=1` 정확 일치 ∧ root에서 `sha256sum -c RII_RUN_SEAL.sha` OK 정확 135·non-OK 0 |
+
+**사정거리 밖의 명시적 한계**: L6 root는
+`/gpfs/kjhan/lumina/det_stage12_fixed_te_a100x2_k36/sprim_l6_20260821T054111Z_probe`, L6C root는
+`/gpfs/kjhan/lumina/det_stage12_fixed_te_a100x2_k36/l6c_20260822T154507Z_cover`로 확정한다. 두
+root에는 런 전체 `.sha` manifest가 없고 각각 `L6_STAGE_SEAL.txt`만 있다. 그 문서는 스테이징 당시
+base-input 불변·구성 delta를 기록하지만 런 전체 내용 checksum을 열거하지 않으므로 G-7의
+`sha256sum -c` 피연산자로 승격하지 않는다. 따라서 G-7은 L6·L6C의 역사적 내용 무결을 주장하지
+않으며, 이 둘의 read-only 의무만 유지한다. 봉인 안 manifest 신규 생성·교체로 이 한계를 덮는
+것은 금지한다.
 
 ---
 
@@ -336,13 +353,13 @@ sha 대조(§8·§9 G-1). 판독 전후 봉인 지문 `sha256sum -c` non-OK 0 �
 | **G-0 프리플라이트** | 본 문서 `check_prereg_preflight` rc=0(§14 기재) + 발주 시 `check_dispatch_preflight` rc=0 | 게이트 자신의 `--selftest`(NC-P0·NC-D0 포함, 기존) | 무 |
 | **G-S 판독기 selftest** | `--selftest` 전건 — 성한 합성 픽스처 PASS ∧ 주입 전건 이름 있는 FAIL ∧ 복원 PASS. NC 최소 집합: **NC-S1** 배너 위조(`off (identity)` 주입→FAIL) · **NC-S2** SUMMARY 절단/`complete=1` 결손 · **NC-S3** zero-행 1행 주입(승격 픽스처에 hazard 행 삽입→E-4 FAIL 검출) · **NC-S4** env 델타 초과 키 주입(G-2 FAIL) · **NC-S5** 계급 이동표 오귀속 주입 · **NC-S0** 성한 픽스처 PASS | 이 게이트 자신 | 무 (합성) |
 | **G-RC ★전항 보정(판독기 자격)** | 봉인 R-II·census 를 넣어 F1b 등록값 **bit-재현**: ff=95/885 · BL 95·EXP 284·MIX 506·NEG 46 · EXP 최소 d `2.928690524872657e-6` · zero-행 221,382×2 · 앵커 4필드×2(`tau_validity` 정수 문자열 + `n_upper`·`A_ul`·`emission_per_sr`의 `float.hex()`) — 전건 일치해야 판독기가 후항 측정 자격 획득 (잣대부터 감사) | 변조 사본(스크래치, /gpfs) 1바이트 훼손 → 이름 있는 FAIL | **유** — R-II·census read-only |
-| **G-1 스테이징 무결성** | 실복사·복사본 sha256 = §7-1 등록값 · 하드링크 불변량(공유 inode 0) · 봉인 지문 사전 `sha256sum -c` non-OK 0 | 스테이저 selftest 의 하드링크 주입 팔(전례 계승: `stage_a210_z2a_probe.sh` 의 주입-검출-복원 3단) | **유** — 봉인 read-only 복사원 |
+| **G-1 스테이징 무결성** | 실복사·복사본 sha256 = §7-1 등록값 · 하드링크 불변량(공유 inode 0) · §6-3의 census·R-II RUN_SEAL manifest 사전 검사 전건 PASS | 스테이저 selftest 의 하드링크 주입 팔(전례 계승: `stage_a210_z2a_probe.sh` 의 주입-검출-복원 3단) | **유** — 봉인 read-only 복사원 |
 | **G-2 구성 계약** | 새 런 exports 실측 diff(대 봉인 R-II) = 등록 키 집합 **정확**(B-2: `LUMINA_SUPER_LEVELS` + 경로 6키 / B-1: + capture 2키. 초과·누락 0) + `verdict_gate.py --intended-diff` rc=0 | NC-S4 + verdict_gate 자체의 초과-키 FAIL 경로 | 무 (exports 파일만) |
 | **G-3 배너·모드 계약** | 각 런 stdout: `[NLTE] Super-levels: ACTIVE (13015 FL -> 1173 SL across ions)` 정확 1행 ∧ `off (identity)` 0건 ∧ `[ARTIS super-cutoff] K=100: 21919 levels lumped` 존재 ∧ `[A2-07] within-super-level blocked` 0건 | **실물 음성대조 공짜**: 봉인 R-II stdout 을 넣으면 FAIL(`off (identity)` 실재 [저자 실행 :236]) | 유(대조군만) — read-only |
 | **G-4 완주** | 각 런: `model.rc=0` · RUN_FOOTER `schema=LUMINA_DET_FLIGHT_V1` · SUMMARY 정확 2건 각 `complete=1` · R7 `te_generation` iter0/1 각 1건 · `[PHYSICS-COMPARISON] … COMMITTED` (봉인 R-II 마커 전례 거울) | NC-S2 | 무 |
 | **G-5 hazard 후항 판독** | B-1·B-2 zero-스트림(`[A2-10][LINE-SATURATION-ZERO-OPACITY-ROW]`)·SUMMARY 카운터 계수 → §11 E-4 분기표 적용. 잔여 >0 이면 **행 단위 귀속**: 해당 (Z,ion,l,u) 의 덱 g·E 재검(등E-bit 이면 §4 모순 = SLB-R)·비등E-bit 이면 셸 T_e 에서 exp 쌍 재계산으로 bit-충돌 확증(확증 실패 = SLB-R) | NC-S3 | 무 (새 런만) |
 | **G-6 F1b-형 후항 + 이동표** | B-2 를 G-RC 자격 판독기로 재측정 — 계급 census·d-분포·ff·§7-2 ①이 정의한 **BL∩FPC 95행 이동표 + 별도 NEG 46행 추적표**와 BL·NEG 잔여를 산출 → §11 E-5 분기표 | NC-S5 | 무 (전항은 G-RC 에서 이미) |
-| **G-7 결정론 미러 + 봉인 사후** | B-1 ≡ B-2: SUMMARY 전 필드 문자열 동일(양 반복) ∧ §7-2 ③의 등록 산출물 9파일별 SHA-256 동일(원바이트·무정규화·같은 상대경로끼리) · 종료 시 봉인 4곳 `sha256sum -c` non-OK 0 | 미러: B-1/B-2 가 서로의 음성대조(불일치 = SLB-F-D) · 봉인: G-RC 의 변조-사본 팔이 검사기 유효성을 담보 | **유** — 봉인 지문 재검(read-only) |
+| **G-7 결정론 미러 + 봉인 사후** | B-1 ≡ B-2: SUMMARY 전 필드 문자열 동일(양 반복) ∧ §7-2 ③의 등록 산출물 9파일별 SHA-256 동일(원바이트·무정규화·같은 상대경로끼리) · 종료 시 §6-3의 checksum 검증 가능 양 봉인(census·R-II) RUN_SEAL manifest 사후 검사 전건 PASS | 미러: B-1/B-2 가 서로의 음성대조(불일치 = SLB-F-D) · 봉인: G-RC 의 변조-사본 팔이 검사기 유효성을 담보 · L6/L6C는 §6-3의 명시적 미검증 한계 | **유** — census·R-II 봉인 지문 재검(read-only) |
 
 ---
 
@@ -377,14 +394,14 @@ sha 대조(§8·§9 G-1). 판독 전후 봉인 지문 `sha256sum -c` non-OK 0 �
 
 | # | 기대치 | 등급 |
 |---|---|---|
-| E-1 | 스테이징·구성: G-1·G-2 전건 (sha 3종 일치·env 델타 키 집합 정확) | 1 |
+| E-1 | 스테이징·구성: G-1·G-2 전건 (§7-1 통제표가 열거한 sha 3종(levels.csv·line_list.csv·바이너리) 일치 · env 델타 키 집합 정확) | 1 |
 | E-2 | 배너: `ACTIVE (13015 FL -> 1173 SL across ions)` 정확 1행/런 · `off (identity)` 0건 · `[ARTIS super-cutoff] K=100: 21919 levels lumped` 불변 · `[A2-07] within-super-level blocked` 0건 · FL/SL 차원 **불변**(레이아웃은 super_mode 무관 — §2-1 ②·§4 산술 재현) | 1 |
 | E-3 | 완주: G-4 전건 (R7 iter0/1 위상 커밋 포함 — 봉인 R-II 전례) | 1 |
 | E-4 | ★**hazard 소멸(본체)**: `zero_opacity_emitting_rows` 221,382 → **0** · `sprobe_undefined_rows` 221,382 → **0** (양 런·양 반복) · zero-스트림 행수 0 | 구조 계급 소멸 = 1 (§4 대수+덱 전수) · **정확-0 착지 = 2** (우연 충돌 잔여 [추정] — SLB-P) |
 | E-5 | F1b 후항: **BL-frozen 95 → 0**(BL 잔여의 정확한 뜻은 §7-2 ①; 동결 계급 소멸 — T_e 세대 갱신(봉인 실증 2→3)이 f 를 반복 간 상이하게 만들고 S 의 f-의존이 조립·재분배 양쪽에 실재) · **별도 NEG 46 → 0**(§4 강화 2 의 단조 대수) · ff 0.10734463276836158 → **0.0** · EXP/MIX 재분포는 관측 등록(값 예측 불가 [추정]) | BL·ff = 2 (셸별 T_e bit-동결 잔여 가능 [추정]) · NEG 구조 = 1·정확-0 = 2 |
 | E-6 | 결정론 미러: B-1 ≡ B-2 (SUMMARY 전 필드 문자열·산출물 sha — §7-2 ③) | 2 (새 구성의 결정론은 재확립 대상 그 자체) |
 | E-7 | 새 앵커 bake 산출 4종(§6-2) 등록 — 관측, pass/fail 아님 | — |
-| E-8 | 봉인 4곳 사후 무변조 (G-7) | 1 |
+| E-8 | checksum 검증 가능 양 봉인(census·R-II) 사후 무변조 (G-7·§6-3). L6·L6C의 런 전체 내용 무결은 manifest 부재로 미검증이며 주장하지 않음 | 1 |
 
 **상위 분할** (PF-2 기계 스윕 대상 — 하위 라벨은 산문 분기):
 
@@ -496,6 +513,17 @@ sha 대조(§8·§9 G-1). 판독 전후 봉인 지문 `sha256sum -c` non-OK 0 �
 `BL∩FPC`로, NEG 46행을 서로소 별도 모집단으로 갈라 G-6의 표·잔여 피연산자를 정의했다.
 §11의 수치 기대·상위/하위 분기 판정식과 §13 preflight 분기 규칙은 바꾸지 않았다. 이 개정은
 관측 후 통과를 위한 기준 조정이 아니라 런 전 정의 폐합이다.
+
+### 개정 2 — G-7 봉인 사정거리·E-1 지목 폐합 (2026-08-29, Codex 한시 승계)
+
+발주 2차 중단 뒤 **GPU 런 0회·결과 미관측** 상태에서 남은 정의 공백 2건만 보완했다. ① G-7의
+런 전체 checksum 검증은 실존 RUN_SEAL manifest와 정본성 판별 기준을 갖춘 census·R-II 2곳으로
+좁혔다. L6·L6C의 절대 root는 확정했으나 두 곳의 `L6_STAGE_SEAL.txt`를 런 전체 checksum
+manifest로 승격하지 않았고, 그 역사적 내용 무결은 미검증 한계로 명시했다. 봉인 내부 파일은
+생성·교체하지 않았다. ② E-1의 sha 3종을 §7-1 통제표와 그 열거값
+(levels.csv·line_list.csv·바이너리)에 직접 지목했다. §11의 SLB-* 판정식과 §13 preflight 분기
+규칙은 바꾸지 않았고, 구현 초안 2파일·`src/`·봉인·GPU 런에는 접촉하지 않았다. 관측값을 본 뒤
+통과하도록 기준을 맞출 자리도 사용하지 않았다.
 
 ---
 
