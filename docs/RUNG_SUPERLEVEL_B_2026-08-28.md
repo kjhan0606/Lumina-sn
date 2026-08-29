@@ -237,10 +237,14 @@ K36 R1/R2 residual·DET-SPROD S2·L6/A207 수치 앵커·parity 마이크로픽�
 - 판독·판정·감리 1사이클(설계 §6-3 정량과 일치 — 봉인 실측 02:42:56/04:34:36, sacct 재확인
   [저자 실행]).
 - **새 앵커 재-bake 절차** (값은 사전 예측 불가 — 관측 등록, pass/fail 아님): ① B-2 capture
-  스트림의 최저 line-id FPC 행 iter0/1 4필드 hex ② SUMMARY 전 필드 문자열(양 런×양 반복)
-  ③ B-1/B-2 산출물 sha256 목록 ④ 새 zero-스트림 행수(예측 0 — E-4). 등재처: 본 단 판정문 +
-  대장. 기존 앵커 행 `line=669992` 는 zero-스트림 소속이라 **승격 구성에서 스트림째 소멸이
-  예측**되므로(§11 E-4) 같은 행 재사용을 요구하지 않는다.
+  스트림에서 **양 반복에 모두 존재하고 양쪽 `chi_effective>0` 인 FPC 교집합의 수치상 최저
+  `line` 정확 1개**를 고른 뒤, 같은 행의 iter0/1 네 필드 `tau_validity`·`n_upper`·`A_ul`·
+  `emission_per_sr`를 등록한다. 표현 기준은 `tau_validity`의 정규 십진 정수 문자열 1종 + 나머지
+  세 필드를 십진 입력에서 파싱한 binary64의 Python `float.hex()` 3종이다 ② SUMMARY 전 필드
+  문자열(양 런×양 반복) ③ §7-2 ③의 B-1/B-2 등록 산출물 9파일별 sha256 목록 ④ 새
+  zero-스트림 행수(예측 0 — E-4). 등재처: 본 단 판정문 + 대장. 기존 앵커 행 `line=669992` 는
+  zero-스트림 소속이라 **승격 구성에서 스트림째 소멸이 예측**되므로(§11 E-4) 같은 행 재사용을
+  요구하지 않는다.
 
 ### 6-3. ★봉인은 그대로 둔다
 
@@ -267,19 +271,36 @@ sha 대조(§8·§9 G-1). 판독 전후 봉인 지문 `sha256sum -c` non-OK 0 �
 ### 7-2. 차동 3축
 
 1. **主차동 — B-2 vs 봉인 R-II (F1b 前항)**: 같은 판독 산법(신규 판독기가 먼저 봉인 R-II 에서
-   F1b 등록값을 bit-재현해 자격을 얻는다 — G-RC)으로 B-2 를 재측정. **행-수준 이동표**: F1b 가
-   line-id 집합으로 등록한 BL∩FPC 95행(NEG 46 포함)의 행선지를 행 단위로 추적한다(계급 census
-   8셀: matched_FPC {BL·EXP·MIX} × matched_NEG, d-분포 5분위 — 前항 정본
-   `/gpfs/kjhan/lumina/zo_artifacts/f1b_result.json` [저자 실행 직독: BL 95·EXP 284·MIX 506·
-   NEG(BL) 46·ff 0.10734463276836158·EXP 최소 d 2.928690524872657e-6]).
+   F1b 등록값을 bit-재현해 자격을 얻는다 — G-RC)으로 B-2 를 재측정. **95행 행-수준 이동표의
+   모집단**은 前항 정본 `/gpfs/kjhan/lumina/zo_artifacts/f1b_result.json`의 `matched_rows` 중
+   `chi_axis=="FPC" && class=="BL"` 인 **서로 다른 line-id 정확 95개**다. 각 행에 前항
+   axis/class/d/frozen과 B-2 후항의 존재 여부·axis/class/d/frozen을 기록한다. `chi_axis=="NEG"`
+   인 46행(전항에서는 전부 class=BL)은 이 95행과 **서로소인 별도 모집단**이며 95행 표에 넣지
+   않고 별도 line-id 추적표와 census로 기록한다. census는 곱집합 8셀이 아니라 독립 축
+   `matched_FPC`의 class별 3셀(BL 95·EXP 284·MIX 506)과 `matched_NEG`의 class별 셀(전항 BL
+   46)이고, `d_distribution_by_class`의 5수치(min·q10·median·q90·max)는 FPC 축만을 분모로
+   한다. G-6·E-5의 **BL 잔여**는 B-2의 matched_FPC 중 `class=="BL" && d<=1e-13` 인 행 수,
+   **NEG 잔여**는 B-2의 matched_NEG 전 행 수로 정의한다. ff는 B-2 matched_FPC의 유한 d 행 중
+   `d<=1e-13`인 비율이다 [저자 실행 직독: 전항 BL-frozen 95·EXP 284·MIX 506·NEG 46·ff
+   0.10734463276836158·EXP 최소 d 2.928690524872657e-6].
 2. **hazard 차동 — B-1·B-2 vs 봉인 census**: SUMMARY `zero_opacity_emitting_rows`·
    `sprobe_undefined_rows`(전항 221,382·양 반복 [저자 실행: f1b RD-1 직독 + 봉인 SUMMARY
    추출]) 대 후항(예측 0 — E-4). 주석: 봉인 census 바이너리는 `0e2fc7b4…` 로 R-II 와 다르나
    두 봉인의 SUMMARY 수치·zero-스트림이 동일함이 실증되어(§2-4·F1b A-5) 차동 유효.
 3. **결정론 미러 — B-1 ≡ B-2**: 미러 잣대는 **SUMMARY 전 필드 문자열**(같은 바이너리이므로
-   필드 집합까지 동일해야 한다 — 봉인 쌍에서 값 동일이 실증된 잣대 [저자 실행 §2-4]) + 산출물
-   sha 목록. ★전항의 미러 잣대였던 zero-스트림은 승격 구성에서 **비어버리는 것이 본 단의 1차
-   예측**이므로, 미러 기질을 SUMMARY·산출물로 **지금 재선언**한다(잣대 공백의 사전 봉쇄).
+   필드 집합까지 동일해야 한다 — 봉인 쌍에서 값 동일이 실증된 잣대 [저자 실행 §2-4]) + 다음
+   **등록 산출물 9파일**이다: `work/lumina_plasma_state.csv`·`work/lumina_spectrum.csv`·
+   `work/lumina_spectrum_comoving.csv`·`work/physics_comparison/physics_DET_iter0000.manifest.json`·
+   `work/physics_comparison/physics_DET_iter0000.shell.csv`·
+   `work/physics_comparison/physics_DET_iter0000.spectral.csv`·
+   `work/physics_comparison/physics_DET_iter0001.manifest.json`·
+   `work/physics_comparison/physics_DET_iter0001.shell.csv`·
+   `work/physics_comparison/physics_DET_iter0001.spectral.csv`. sha 기준은 각 상대경로의 정규파일
+   **전체 원바이트를 무정규화로 읽은 SHA-256**(소문자 64자리 hex)이며, B-1/B-2 양쪽에 9파일이
+   모두 정확히 존재하고 같은 상대경로끼리 digest가 일치해야 한다(누락·비정규파일·digest 불일치
+   어느 하나도 G-7 FAIL). ★전항의 미러 잣대였던 zero-스트림은 승격 구성에서 **비어버리는 것이
+   본 단의 1차 예측**이므로, 미러 기질을 SUMMARY·이 9파일로 **지금 재선언**한다(잣대 공백의
+   사전 봉쇄).
 
 ---
 
@@ -314,14 +335,14 @@ sha 대조(§8·§9 G-1). 판독 전후 봉인 지문 `sha256sum -c` non-OK 0 �
 |---|---|---|---|
 | **G-0 프리플라이트** | 본 문서 `check_prereg_preflight` rc=0(§14 기재) + 발주 시 `check_dispatch_preflight` rc=0 | 게이트 자신의 `--selftest`(NC-P0·NC-D0 포함, 기존) | 무 |
 | **G-S 판독기 selftest** | `--selftest` 전건 — 성한 합성 픽스처 PASS ∧ 주입 전건 이름 있는 FAIL ∧ 복원 PASS. NC 최소 집합: **NC-S1** 배너 위조(`off (identity)` 주입→FAIL) · **NC-S2** SUMMARY 절단/`complete=1` 결손 · **NC-S3** zero-행 1행 주입(승격 픽스처에 hazard 행 삽입→E-4 FAIL 검출) · **NC-S4** env 델타 초과 키 주입(G-2 FAIL) · **NC-S5** 계급 이동표 오귀속 주입 · **NC-S0** 성한 픽스처 PASS | 이 게이트 자신 | 무 (합성) |
-| **G-RC ★전항 보정(판독기 자격)** | 봉인 R-II·census 를 넣어 F1b 등록값 **bit-재현**: ff=95/885 · BL 95·EXP 284·MIX 506·NEG 46 · EXP 최소 d `2.928690524872657e-6` · zero-행 221,382×2 · 앵커 4필드×2 hex — 전건 일치해야 판독기가 후항 측정 자격 획득 (잣대부터 감사) | 변조 사본(스크래치, /gpfs) 1바이트 훼손 → 이름 있는 FAIL | **유** — R-II·census read-only |
+| **G-RC ★전항 보정(판독기 자격)** | 봉인 R-II·census 를 넣어 F1b 등록값 **bit-재현**: ff=95/885 · BL 95·EXP 284·MIX 506·NEG 46 · EXP 최소 d `2.928690524872657e-6` · zero-행 221,382×2 · 앵커 4필드×2(`tau_validity` 정수 문자열 + `n_upper`·`A_ul`·`emission_per_sr`의 `float.hex()`) — 전건 일치해야 판독기가 후항 측정 자격 획득 (잣대부터 감사) | 변조 사본(스크래치, /gpfs) 1바이트 훼손 → 이름 있는 FAIL | **유** — R-II·census read-only |
 | **G-1 스테이징 무결성** | 실복사·복사본 sha256 = §7-1 등록값 · 하드링크 불변량(공유 inode 0) · 봉인 지문 사전 `sha256sum -c` non-OK 0 | 스테이저 selftest 의 하드링크 주입 팔(전례 계승: `stage_a210_z2a_probe.sh` 의 주입-검출-복원 3단) | **유** — 봉인 read-only 복사원 |
 | **G-2 구성 계약** | 새 런 exports 실측 diff(대 봉인 R-II) = 등록 키 집합 **정확**(B-2: `LUMINA_SUPER_LEVELS` + 경로 6키 / B-1: + capture 2키. 초과·누락 0) + `verdict_gate.py --intended-diff` rc=0 | NC-S4 + verdict_gate 자체의 초과-키 FAIL 경로 | 무 (exports 파일만) |
 | **G-3 배너·모드 계약** | 각 런 stdout: `[NLTE] Super-levels: ACTIVE (13015 FL -> 1173 SL across ions)` 정확 1행 ∧ `off (identity)` 0건 ∧ `[ARTIS super-cutoff] K=100: 21919 levels lumped` 존재 ∧ `[A2-07] within-super-level blocked` 0건 | **실물 음성대조 공짜**: 봉인 R-II stdout 을 넣으면 FAIL(`off (identity)` 실재 [저자 실행 :236]) | 유(대조군만) — read-only |
 | **G-4 완주** | 각 런: `model.rc=0` · RUN_FOOTER `schema=LUMINA_DET_FLIGHT_V1` · SUMMARY 정확 2건 각 `complete=1` · R7 `te_generation` iter0/1 각 1건 · `[PHYSICS-COMPARISON] … COMMITTED` (봉인 R-II 마커 전례 거울) | NC-S2 | 무 |
 | **G-5 hazard 후항 판독** | B-1·B-2 zero-스트림(`[A2-10][LINE-SATURATION-ZERO-OPACITY-ROW]`)·SUMMARY 카운터 계수 → §11 E-4 분기표 적용. 잔여 >0 이면 **행 단위 귀속**: 해당 (Z,ion,l,u) 의 덱 g·E 재검(등E-bit 이면 §4 모순 = SLB-R)·비등E-bit 이면 셸 T_e 에서 exp 쌍 재계산으로 bit-충돌 확증(확증 실패 = SLB-R) | NC-S3 | 무 (새 런만) |
-| **G-6 F1b-형 후항 + 이동표** | B-2 를 G-RC 자격 판독기로 재측정 — 계급 census·d-분포·ff·**95행 행-수준 이동표**(§7-2) → §11 E-5 분기표 | NC-S5 | 무 (전항은 G-RC 에서 이미) |
-| **G-7 결정론 미러 + 봉인 사후** | B-1 ≡ B-2: SUMMARY 전 필드 문자열 동일(양 반복) ∧ 등록 산출물 sha 동일 · 종료 시 봉인 4곳 `sha256sum -c` non-OK 0 | 미러: B-1/B-2 가 서로의 음성대조(불일치 = SLB-F-D) · 봉인: G-RC 의 변조-사본 팔이 검사기 유효성을 담보 | **유** — 봉인 지문 재검(read-only) |
+| **G-6 F1b-형 후항 + 이동표** | B-2 를 G-RC 자격 판독기로 재측정 — 계급 census·d-분포·ff·§7-2 ①이 정의한 **BL∩FPC 95행 이동표 + 별도 NEG 46행 추적표**와 BL·NEG 잔여를 산출 → §11 E-5 분기표 | NC-S5 | 무 (전항은 G-RC 에서 이미) |
+| **G-7 결정론 미러 + 봉인 사후** | B-1 ≡ B-2: SUMMARY 전 필드 문자열 동일(양 반복) ∧ §7-2 ③의 등록 산출물 9파일별 SHA-256 동일(원바이트·무정규화·같은 상대경로끼리) · 종료 시 봉인 4곳 `sha256sum -c` non-OK 0 | 미러: B-1/B-2 가 서로의 음성대조(불일치 = SLB-F-D) · 봉인: G-RC 의 변조-사본 팔이 검사기 유효성을 담보 | **유** — 봉인 지문 재검(read-only) |
 
 ---
 
@@ -356,11 +377,11 @@ sha 대조(§8·§9 G-1). 판독 전후 봉인 지문 `sha256sum -c` non-OK 0 �
 
 | # | 기대치 | 등급 |
 |---|---|---|
-| E-1 | 스테이징·구성: G-1·G-2 전건 (sha 4종 일치·env 델타 키 집합 정확) | 1 |
+| E-1 | 스테이징·구성: G-1·G-2 전건 (sha 3종 일치·env 델타 키 집합 정확) | 1 |
 | E-2 | 배너: `ACTIVE (13015 FL -> 1173 SL across ions)` 정확 1행/런 · `off (identity)` 0건 · `[ARTIS super-cutoff] K=100: 21919 levels lumped` 불변 · `[A2-07] within-super-level blocked` 0건 · FL/SL 차원 **불변**(레이아웃은 super_mode 무관 — §2-1 ②·§4 산술 재현) | 1 |
 | E-3 | 완주: G-4 전건 (R7 iter0/1 위상 커밋 포함 — 봉인 R-II 전례) | 1 |
 | E-4 | ★**hazard 소멸(본체)**: `zero_opacity_emitting_rows` 221,382 → **0** · `sprobe_undefined_rows` 221,382 → **0** (양 런·양 반복) · zero-스트림 행수 0 | 구조 계급 소멸 = 1 (§4 대수+덱 전수) · **정확-0 착지 = 2** (우연 충돌 잔여 [추정] — SLB-P) |
-| E-5 | F1b 후항: **BL 95 → 0**(동결 계급 소멸 — T_e 세대 갱신(봉인 실증 2→3)이 f 를 반복 간 상이하게 만들고 S 의 f-의존이 조립·재분배 양쪽에 실재) · **NEG 46 → 0**(§4 강화 2 의 단조 대수) · ff 0.10734463276836158 → **0.0** · EXP/MIX 재분포는 관측 등록(값 예측 불가 [추정]) | BL·ff = 2 (셸별 T_e bit-동결 잔여 가능 [추정]) · NEG 구조 = 1·정확-0 = 2 |
+| E-5 | F1b 후항: **BL-frozen 95 → 0**(BL 잔여의 정확한 뜻은 §7-2 ①; 동결 계급 소멸 — T_e 세대 갱신(봉인 실증 2→3)이 f 를 반복 간 상이하게 만들고 S 의 f-의존이 조립·재분배 양쪽에 실재) · **별도 NEG 46 → 0**(§4 강화 2 의 단조 대수) · ff 0.10734463276836158 → **0.0** · EXP/MIX 재분포는 관측 등록(값 예측 불가 [추정]) | BL·ff = 2 (셸별 T_e bit-동결 잔여 가능 [추정]) · NEG 구조 = 1·정확-0 = 2 |
 | E-6 | 결정론 미러: B-1 ≡ B-2 (SUMMARY 전 필드 문자열·산출물 sha — §7-2 ③) | 2 (새 구성의 결정론은 재확립 대상 그 자체) |
 | E-7 | 새 앵커 bake 산출 4종(§6-2) 등록 — 관측, pass/fail 아님 | — |
 | E-8 | 봉인 4곳 사후 무변조 (G-7) | 1 |
@@ -465,9 +486,46 @@ sha 대조(§8·§9 G-1). 판독 전후 봉인 지문 `sha256sum -c` non-OK 0 �
 }
 ```
 
+### 개정 1 — 정의 공백 4건 보완 (2026-08-29, Codex 한시 승계)
+
+발주 1차 중단 뒤 **GPU 런 0회·구현 산출 0·결과 미관측** 상태에서 §14의 네 계약 결함만
+보완했다. ① §6-2 새 앵커의 선정 규칙·4필드 이름·필드별 표현 기준을 선행 판독기 두 본의
+역사적 계약에서 명시했다 ② §7-2 ③/G-7의 미러 대상을 값 산출물 9파일로 열거하고 SHA-256을
+원바이트·무정규화·동일 상대경로 비교로 고정했다 ③ E-1의 `sha 4종`을 §7-1의 덱 2 + 바이너리
+1에 맞춰 `sha 3종`으로 정정했다 ④ F1b 정본 JSON의 독립 축을 따라 95행 모집단을
+`BL∩FPC`로, NEG 46행을 서로소 별도 모집단으로 갈라 G-6의 표·잔여 피연산자를 정의했다.
+§11의 수치 기대·상위/하위 분기 판정식과 §13 preflight 분기 규칙은 바꾸지 않았다. 이 개정은
+관측 후 통과를 위한 기준 조정이 아니라 런 전 정의 폐합이다.
+
 ---
 
 ## §14. 집행 기록 (★장부 정본 — 판정문·감리문은 이 절을 지목만 한다)
+
+### 발주 1차 — **중단** (2026-08-29)
+
+| 항목 | 값 |
+|---|---|
+| 발주 프리플라이트 rc | **0** (`no-restatement` tokens=5 · `frontpage-sealed` · `contract-preflight rc=0`) |
+| 사전등록 프리플라이트 rc | **0** (4항 전건) |
+| 운전석 게이트 | `check_driver_hygiene` rc=0 · `check_doc_canonical` rc=0 |
+| 가동 중 변조 태스크 | 0 (★`pgrep -f` 자기매칭·타 사용자 프로세스를 걸러 확인) |
+| **중단 사유** | **계약 결함 4건 — 정의 부재/축 혼동** |
+| **중단 주인** | **사전등록**(운전석 발주서 아님 — 뒷겹은 계약 값을 재서술하지 않았고 프리플라이트가 확인) |
+
+**Codex 가 지목하고 운전석이 독립 확인한 4건**:
+1. §6-2 「최저 line-id FPC 행 iter0/1 **4필드** hex」 — 그 4필드가 문서에 **열거되지 않음**.
+   신규 판독기는 §8 이 「도구 import 0」으로 못박아 승계도 불가.
+2. G-7 「**등록 산출물 sha** 동일」 — 비교 대상 산출물 목록·sha 기준 **부재**.
+3. E-1 「**sha 4종** 일치」 대 §7-1 통제표 — 표의 sha 통제는 덱 2 + 바이너리 1 = **3종**.
+4. §7-2 「**BL∩FPC 95행(NEG 46 포함)**」 — 축 혼동. `f1b_result.json` 실측상
+   `d_distribution_by_class` 는 **BL/EXP/MIX**(BL=95)이고 **FPC/NEG 는 별개 축**이다
+   [운전석 실행: JSON 직독].
+
+★**프리플라이트가 못 잡은 계급**: 대장 등재 한계 「정적 참조가 아닌 **의미 검사**는 못 잡는다」
+그대로다. 4건 모두 참조는 성하고 **뜻이 비어 있다**.
+★**구현 산출 0 · `src/` 0 · 봉인 0 · GPU 런 0.** worktree clean 복귀 확인.
+★**이 시점 개정은 골대 이동이 아니다** — 런 0회, 결과 미관측 상태의 정의 보완이다
+(Z-2A 사고는 결과를 본 뒤의 개정이었다).
 
 **필수 4항목**:
 
@@ -486,7 +544,7 @@ residual=SLB-X` · `references-resolved refs=10`) [저자 실행, grammar-debug,
 
 | 단계 | 규약상 담당 | 실제 | 위반 |
 |---|---|---|---|
-| ① 사전등록 | Fable (개정14 ①) | Fable — 본 문서 (2026-08-28) | 없음 |
+| ① 사전등록 | Fable (개정14 ①) | Fable — 초안 (2026-08-28) · Codex — 개정 1 정의 보완(2026-08-29, 한시 승계) | 없음 |
 | 발주서 작성·발주 행위 | 운전석 (앞겹=본 문서 그대로 첨부·뒷겹 재서술 금지 — 개정15) | | |
 | 발주 프리플라이트 집행 | 운전석 (grammar-debug) | | |
 | 구현 (신규 2파일) | Codex | | |
