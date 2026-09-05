@@ -90,6 +90,7 @@ DA-A 라도 「Saha 분배가 옳다」·「스펙트럼이 CMFGEN 에 가까워
 - GPU 가용(제출 시점 사전 확인): a100 2노드 16 GPU 전점유, h200 8 GPU 전점유 ⟹ 대기열 제출.
 - 스테이징(09-05 18:07 KST, grammar-debug, worktree `/gpfs/kjhan/lumina/dproxy_audits/worktree_364ee72_dualauth` = `364ee72` + 331050 보존 패치 `a642a2dd…` ⟹ 소스 identity 4/4 base 동일): `SUPERLEVEL_B_STAGE_OK mode=DPROXY-PROV-K42-RESCALE env_delta=12 shared_hardlinks=0`, 봉인 census 136/135 PASS. run root `/gpfs/kjhan/lumina/superlevel_b_a100x2_k36/slb_20260905T090712Z_dproxy_provenance_k42_ion1_rescale`. G-0 사전 확인 = RESCALE 0→1 한 쌍뿐 ✔, G-1 sha 목록 `cmp` 동일·registry·binary ✔.
 - user 제안(lageunha RTX 5000 Ada 1장·32 GB·sm_89): fatbin 은 sm_80/86/90 SASS 라 구동은 가능하나 GPU 2장·G-2 bit-동일 계약과 80 GB 요건에 부적격 ⟹ 미사용(2런 설계는 별건).
+- 제출(18:09 KST): Slurm **332463** `LUMINA_DPXRESC`, partition a100, GPU 2·CPU 32·64 GiB·08:00:00, 제출 직후 `PENDING(Priority)`. OWNER.txt `DO_NOT_CANCEL=1`.
 
 ```prereg-preflight
 {
