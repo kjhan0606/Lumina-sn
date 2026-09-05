@@ -39,7 +39,8 @@ user 지시(09-05): 「1번(수리 방향 사전등록, CMFGEN 소스 대조부�
 **환경**: `DPROXY-PROV-K42` 모드의 exports 에서 **기존 행 `declare -x LUMINA_NLTE_PER_ION_RESCALE="0"` 의 값을 `"1"` 로 치환**(추가 아님). 전집 등록 [저자 실행] `grep -c LUMINA_NLTE_PER_ION_RESCALE src/env_universe.h` = 1 ✔; base 키 실존 [저자 실행, 개정 1] `grep -c '^declare -x LUMINA_NLTE_PER_ION_RESCALE="0"' <331050>/input/resolved_lumina.exports` = 1 ✔ (검수 F-1).
 
 ### 4-1. 기대치 (arm 대 base)
-- **E-1 (분기 결정)**: 바닥 준위 S-역산 `Δlog n(iter0→1)` — base Fe II +3.62%, Co II +0.49%, Ni II +4.09%. arm 에서는 NLTE Σ 가 Saha 에 핀되므로 **|Δlog n_ground| ≤ 0.3%** (Saha 상한 0.2% + 여유). 세 이온 전부.
+- **E-1 (작동 확인 — 개정 2 에서 「분기 결정」에서 강등)**: 바닥 준위 S-역산 `Δlog n(iter0→1)` — base Fe II +3.62%, Co II +0.49%, Ni II +4.09%. arm 은 Σ_II 를 Saha 총량에 **구성상** 핀하므로(`cuda.cu:1806`) |Δlog n_ground| ≤ 0.3% 는 예측이 아니라 코드 귀결이다. 이 항목이 확인하는 것은 스위치의 in-vivo 작동뿐이며, (0.3%, 1%] 는 이온 내 재배분 관측 구간(DA-R), > 1% 는 미지 기전(DA-N)이다.
+- **E-4 (계측, 개정 2 신설 — 기대치 없음)**: iter-0 publication 의 같은 (line, 하준위) 에서 `n_l(arm)/n_l(base)` (S-역산, 338 짝의 84 하준위 + 상준위 `n_upper` 비). 시드 solve 의 입력(LTE pop·epoch-1 J·T_e·Saha n_e)이 두 런에서 동일하므로 행렬해는 bit-동일이고 post-solve 스케일만 다르다 ⟹ 이 비 = **`n_II^Saha / n_II^NLTE`(shell 0, 이온별)** 의 직접 측정. 이온별 상이값 수(같은 이온 안 준위 간 산포 ≤ 1e-9 이면 단일 비) 와 값을 보고.
 - **E-2 (작동 대조, 음성대조 내장)**: generation 1 exact epoch(LTE 시드, population commit 전) 는 base 와 **bit-동일**(`iterations=45 residual=9.6662782724980344e-09`); generation 2 epoch 는 base(`53, 7.8976358675842993e-09`)와 **달라야** 한다. 둘 다 같으면 스위치가 안 걸린 것 ⟹ 무효.
 - **E-3 (계측)**: formal 스펙트럼 `work/lumina_spectrum.csv`(1234 bin, 열 `wavelength_angstrom,flux`) arm/base `Δlog F = ln(F_arm/F_base)` 의 대역별(광자 에너지 `[0,2) [2,4) [4,6) [6,12) [12,∞)` eV, 5대역) 중앙·최대·최소, 비양수 flux 는 제외 계수, 파장 격자는 bit-동일이어야 함 — **기대치 없음, 측정 보고**. `Δlog n_upper`(338 짝, iter 1) arm 대 base 도 보고.
 
@@ -51,15 +52,16 @@ user 지시(09-05): 「1번(수리 방향 사전등록, CMFGEN 소스 대조부�
 | G-2 gen-1 bit-동일 | `grep -m1 'EXACT-MULTIGPU-EPOCH' /gpfs/kjhan/lumina/superlevel_b_h200x2_k36/slb_20260903T080407Z_dproxy_provenance_k42_ion1_h200/stderr.log` 와 `grep -m1 'EXACT-MULTIGPU-EPOCH' <NEW_RUN_ROOT>/stderr.log` 의 `iterations`·`residual` 토큰 문자열 동일 | base 대 arm `stderr.log` |
 | G-3 gen-2 상이 | 위 두 파일의 2회차 `EXACT-MULTIGPU-EPOCH` 행 `residual` 토큰이 서로 다름 | base 대 arm `stderr.log` |
 | G-4 완주 | model rc=0, publication 2, 338 registry 짝 전건, provenance OK 685/685 계급 | `readout_dproxy_sl_331050.py` |
-| G-5 역산 정합 | 같은 하준위 공유 선 간 `Δlog n_l` 산포 ≤ 1e-9 | `probe_lower_any.py` |
+| G-5 역산 정합 | 같은 하준위 공유 선 간 `Δlog n_l` 산포 ≤ **1e-8** (개정 2: base 331050 자기값 최대 1.21e-9, R-II 최대도 같은 계급 — 잣대를 base 에 먼저 적용해 문턱을 그 위로 둠) | `probe_lower_any.py` |
 ### 게이트 명부 끝
 
 ### 4-3. 분기 — `### 분기 (표)`
 | 분기 | 조건 | 뜻 |
 |---|---|---|
-| **DA-A** | G-0~G-5 전건 통과, E-1 세 이온 만족 | 공통모드 = NLTE 재분배 **확증**(경로 2: S-역산 + 스위치 응답 ⟹ 등급 A 후보). E-3 이 이중 권위의 스펙트럼 발자국 크기 |
-| **DA-N** | 게이트 통과, E-1 불만족(어느 이온이든 \|Δlog n_ground\| > 1%) | §9 귀속 **틀림** — 공통모드는 NLTE 재분배가 아니다. REWORK, 스펙트럼 수치 해석 금지 |
-| **DA-X** | 게이트 하나라도 실패 | 무효, 사유 이름으로 정지 |
+| **DA-A** | G-0~G-5 전건 통과, 세 이온 모두 \|Δlog n_ground\| ≤ 0.3% | 스위치 작동 확인(구성상 참). 물리 정보는 E-3·E-4 가 준다 |
+| **DA-R** (개정 2 신설) | 게이트 통과, 어느 이온이든 0.3% < \|Δlog n_ground\| ≤ 1% | **이온 내 재배분 구간** — Saha 핀 아래에서 바닥 대 여기 준위의 상대 이동(base 실측 0.2–0.4% 계급). 관측이지 §9 반증 아님. E-3·E-4 는 그대로 판독 |
+| **DA-N** | 게이트 통과, 어느 이온이든 \|Δlog n_ground\| > 1% | 단계 총량이 핀됐는데도 바닥이 움직임 = **미지 기전**. 스위치 실효(G-3) 재검 후 REWORK. §9 의 S-역산 실측은 이 런으로 반증되지 않는다 |
+| **DA-X** | 게이트 하나라도 실패 | 무효, 사유 이름으로 정지. **가드 사망(iter 0/1 `UNRESOLVED_CANCELLATION`/`RADEQ_SIGN_MISMATCH`)이면 DA-X/GUARD**: 회수 산출 판독 규칙 = G-2·G-3 은 그대로 판정, iter-0 publication 이 완주했으면 E-4 를 보고(등급 B), E-1·E-3 은 미측정으로 기재 |
 ### 분기 끝
 
 ### 변경집합 — DUAL_AUTHORITY_CONTRAST (표)
@@ -71,7 +73,7 @@ user 지시(09-05): 「1번(수리 방향 사전등록, CMFGEN 소스 대조부�
 ### 변경집합 끝
 
 ## 5. 주장 상한
-DA-A 라도 「Saha 분배가 옳다」·「스펙트럼이 CMFGEN 에 가까워졌다」를 뜻하지 않는다. 수리 방향(D-A/C/D)은 별도 결정. 반복 2회(0→1)의 차분·shell 0·Fe/Co/Ni II 에 한정.
+DA-A 라도 「Saha 분배가 옳다」·「스펙트럼이 CMFGEN 에 가까워졌다」를 뜻하지 않는다. E-3 이 재는 것은 두 분배의 **불일치 크기**이지 오차 크기가 아니다(D-D 고정점은 제3의 상태). §3 의 「D-A 는 감도가 낮다」는 배선 추론이지 측정이 아니다. **E-3 → 다음 행동 규칙(개정 2)**: 어느 대역이든 |Δlog F| 중앙 ≥ 1% 이면 수리 방향(D-C/D-D) 사전등록을 L6C 11이온 재감사보다 앞세운다; 전 대역 < 1% 이면 F4(수렴: 외부 반복 ≥ 3 에서 반복당 이동의 감쇠) 를 먼저 묻는다. 어느 쪽이든 결정은 user. 수리 방향(D-A/C/D)은 별도 결정. 반복 2회(0→1)의 차분·shell 0·Fe/Co/Ni II 에 한정.
 
 ## 6. 분장 장부 (집행 기록 — 정본)
 | 단계 | 규약상 | **실제** | 위반 |
@@ -105,18 +107,21 @@ DA-A 라도 「Saha 분배가 옳다」·「스펙트럼이 CMFGEN 에 가까워
                        "scripts/dproxy_readout/probe_lower_any.py"]
   },
   "branches": {
-    "regimes": [[0.0, 0.45], [0.9, 1.1], [10.5, 60.0]],
+    "regimes": [[0.0, 0.45], [0.9, 1.1], [2.0, 3.0], [10.5, 60.0]],
     "metrics": {
       "g_fail": "sum(1 for x in v if x < 0.5)",
+      "redist": "sum(1 for x in v if 2.0 <= x <= 3.0)",
       "moved": "sum(1 for x in v if x > 10.0)"
     },
     "rules": [
       {"name": "DA-X", "predicate": "g_fail > 0"},
-      {"name": "DA-A", "predicate": "g_fail == 0 and moved == 0"},
-      {"name": "DA-N", "predicate": "g_fail == 0 and moved > 0"}
+      {"name": "DA-N", "predicate": "g_fail == 0 and moved > 0"},
+      {"name": "DA-R", "predicate": "g_fail == 0 and moved == 0 and redist > 0"},
+      {"name": "DA-A", "predicate": "g_fail == 0 and moved == 0 and redist == 0"}
     ],
     "adversarial_fixtures": [
       {"name": "gates-pass-ground-pinned", "mix": [[1.0, 9]]},
+      {"name": "gates-pass-redistribution", "mix": [[1.0, 8], [2.5, 1]]},
       {"name": "gates-pass-ground-moves", "mix": [[1.0, 8], [42.0, 1]]},
       {"name": "gate-fail", "mix": [[1.0, 7], [0.3, 1], [42.0, 1]]}
     ],
@@ -143,3 +148,12 @@ DA-A 라도 「Saha 분배가 옳다」·「스펙트럼이 CMFGEN 에 가까워
 - G-0: OLD 「정확히 1행」 → NEW 「같은 키 값 변경 2행」.
 - 변경집합 stager 행: OLD 「더함」 → NEW 「치환·base 키 정상·arm 자기 기술 구별·픽스처 보강」.
 행 단위 diff 로 의도 외 소실 0 확인 [저자 실행].
+
+
+## 개정 2 (2026-09-05, 갈림길 평가 반영 — `docs/EVAL_FORK_DUAL_AUTH_2026-09-05.md`, 런 미착지, OLD/NEW 5쌍)
+- E-1: OLD 「분기 결정」 → NEW 「작동 확인(구성상 참)」; E-4 신설(iter-0 교차런 비 = Saha/NLTE 단계 비, 기대치 없음).
+- G-5: OLD ≤1e-9 → NEW ≤1e-8 (base 자기값 1.21e-9 위).
+- 분기표: DA-R (0.3%,1%] 신설; DA-N 을 「§9 반증」에서 분리; DA-X/GUARD 회수 판독 규칙.
+- §5: E-3 은 불일치 크기; D-A 감도는 가정; E-3 → 다음 행동 규칙.
+- 선언 블록: regime·metric·rule·fixture 에 DA-R 추가.
+행 단위 diff 로 의도 외 소실 0 확인 [저자 실행]. 처분(user 위임): **런 유지**, 취소 없음.
