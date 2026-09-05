@@ -565,3 +565,8 @@ Codex 검수 3회 + 판정 2회가 통과시킨 것을 **Fable 감리 1회가 �
 - **등급 C**: 공통모드 = NLTE 행렬이 정한 이온 II 단계 총량의 이동. 한 런에 이온 II 밀도가 둘 공존(Saha 대 NLTE, writeback 꺼짐) — 이중권위 계급.
 - **등급 C**: 관측 338선의 외부 구동 0 (전부 ≥4 eV, shell 0 bin J 변화 <1e-4; `rho(Δlog J̄,Δlog S)=+0.99` 로 J̄ 는 S 의 그림자). 전 선목록 펌프 구동 `Δlog P_u` 중앙 1e-6.
 - **등급 B**: 구동자는 <4 eV bin J(최대 +7.8%, IR 0.5~0.75 eV; `Δlog χ_bb` 와 +0.77) 가 bb 율로 준위 분포를 바꾸고 준위별 Γ_l 차이로 단계 분배가 따라가는 여기–이온화 결합 반복. UV 핀은 shell 0 만.
+
+### 09-05 후속 3 — 이온 단계 밀도 이중 권위 배선 감사 (런 0회) — `docs/AUDIT_DUAL_ION_DENSITY_WIRING_2026-09-05.md`
+- **등급 C (배선 사실)**: 한 런에 이온 II/III 밀도 둘 — Saha `ion_number_density`(n_e·쌍 총량·η_bf 재결합 항·비사상 선·Γ_phot) 대 NLTE Σ준위(사상 선 τ·S·η, χ_bf 준위 항, ROW, CMF 방출). `ION_LOCK=0`·`PER_ION_RESCALE=0`·`OPACITY_IONSTAGE` 꺼짐 ⟹ 합쳐질 기제 없음. 어긋남 = Fe II +3.6%/반복(승격)·+12.5%(반상태).
+- **등급 B**: 전하 보존이 권위를 가로지름(n_e 는 Saha, 수송은 NLTE); bf 한 과정 안 χ/η 권위 혼합; CMFGEN(단일 행렬·단일 n_e)과의 구조적 차이 ⟹ 재현 목표의 귀속 후보.
+- 대장 후보(조용히): bf `n_ion<1e-30` skip · radeq_simul `mixed>nel2` cap(비활성) · writeback `1e-300` floor ×2(비활성).
