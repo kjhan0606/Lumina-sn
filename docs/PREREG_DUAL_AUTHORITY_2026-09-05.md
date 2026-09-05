@@ -79,6 +79,7 @@ DA-A 라도 「Saha 분배가 옳다」·「스펙트럼이 CMFGEN 에 가까워
 | 사전등록 | Fable | Fable(운전석) | 개정18 ① 은 판정에 한함 |
 | 코딩(모드·스크립트) | Codex | gpt-5.6-sol (발주 예정) | |
 | 코드 검수 | Fable | Fable fresh 1회차: SAFE_TO_STAGE NO, 차단 3(F-1 중복 키·F-2 base 회귀·F-3 자기 기술) — `docs/REVIEW_DUAL_AUTH_ORDER4_2026-09-05.md` | 상류 원인 = 사전등록 저자(운전석)의 「1행 더함」 오전제 |
+| 코드 검수 2회차 | Fable | Fable fresh(다른 컨텍스트): SAFE_TO_STAGE **YES**, 차단 0, 기재 4 — `docs/REVIEW_DUAL_AUTH_ORDER5_2026-09-05.md` | — |
 | 발주·제출·계측 | 운전석 | 운전석 | |
 | 판정 | Fable fresh | (기입 예정) | 운전석 금지 |
 | 감리 A/B | Fable fresh / Codex | (기입 예정) | |
@@ -87,6 +88,8 @@ DA-A 라도 「Saha 분배가 옳다」·「스펙트럼이 CMFGEN 에 가까워
 - 프리플라이트 rc: `check_prereg_preflight` 0 · `check_gate_referents` 0 (1차 FAIL `OPERAND_VAGUE` G-0/G-1 → 피연산자 경로 명시 후 0) · `check_doc_canonical` 0 · `check_dispatch_preflight` 0 (1차 FAIL: 사전등록 원문을 발주서에 붙여 넣어 `DISPATCH-RESTATES-CONTRACT` → 앞겹 = 경로 지목으로 재작성 후 0).
 - `[미실행]` 없음(전건 [저자 실행]). 발주 중단 없음. 발주 4 = `/gpfs/kjhan/lumina/dproxy_audits/readout_331050_fable/order4/ORDER4_DUAL_AUTHORITY_CHANGESET.md`, 계약 HEAD `d1e39d7`.
 - GPU 가용(제출 시점 사전 확인): a100 2노드 16 GPU 전점유, h200 8 GPU 전점유 ⟹ 대기열 제출.
+- 스테이징(09-05 18:07 KST, grammar-debug, worktree `/gpfs/kjhan/lumina/dproxy_audits/worktree_364ee72_dualauth` = `364ee72` + 331050 보존 패치 `a642a2dd…` ⟹ 소스 identity 4/4 base 동일): `SUPERLEVEL_B_STAGE_OK mode=DPROXY-PROV-K42-RESCALE env_delta=12 shared_hardlinks=0`, 봉인 census 136/135 PASS. run root `/gpfs/kjhan/lumina/superlevel_b_a100x2_k36/slb_20260905T090712Z_dproxy_provenance_k42_ion1_rescale`. G-0 사전 확인 = RESCALE 0→1 한 쌍뿐 ✔, G-1 sha 목록 `cmp` 동일·registry·binary ✔.
+- user 제안(lageunha RTX 5000 Ada 1장·32 GB·sm_89): fatbin 은 sm_80/86/90 SASS 라 구동은 가능하나 GPU 2장·G-2 bit-동일 계약과 80 GB 요건에 부적격 ⟹ 미사용(2런 설계는 별건).
 
 ```prereg-preflight
 {
