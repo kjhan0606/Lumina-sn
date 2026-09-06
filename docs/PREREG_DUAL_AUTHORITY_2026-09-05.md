@@ -84,7 +84,10 @@ DA-A 라도 「Saha 분배가 옳다」·「스펙트럼이 CMFGEN 에 가까워
 | 코드 검수 2회차 | Fable | Fable fresh(다른 컨텍스트): SAFE_TO_STAGE **YES**, 차단 0, 기재 4 — `docs/REVIEW_DUAL_AUTH_ORDER5_2026-09-05.md` | — |
 | 발주·제출·계측 | 운전석 | 운전석 | |
 | 판정 | Fable fresh | Fable fresh 1회차: **DA-X(문면, G-4 337/338)** / 의도 DA-R — `docs/VERDICT_DUAL_AUTH_2_2026-09-06.md` | 운전석 이탈 5(차단 1 = 사전등록 G-4) |
-| 감리 A/B | Fable fresh / Codex | (기입 예정) | |
+| 판정 2회차 | Fable fresh | Fable fresh(새 컨텍스트): **DA-R**, 개정 3 = 정당한 정정 — `docs/VERDICT_DUAL_AUTH_2_R2_2026-09-06.md` | — |
+| 감리-A (물리·대수·골대) | Fable fresh | Fable fresh(판정과 다른 컨텍스트): **통과, 차단 0, 기재 6** — `docs/AUDIT_A_DUAL_AUTH_2_2026-09-06.md` | — |
+| 감리-B (재현) | Codex read-only | gpt-5.6-sol read-only: **통과, 차단 0, 기재 5** — `docs/AUDIT_B_DUAL_AUTH_2_2026-09-06.md` | — |
+| 폐합 | 운전석 | 09-06 18:5x KST, 두 겹 «폐합 차단» 0 ⟹ **폐합, 분기 DA-R** | — |
 
 집행 기록:
 - 프리플라이트 rc: `check_prereg_preflight` 0 · `check_gate_referents` 0 (1차 FAIL `OPERAND_VAGUE` G-0/G-1 → 피연산자 경로 명시 후 0) · `check_doc_canonical` 0 · `check_dispatch_preflight` 0 (1차 FAIL: 사전등록 원문을 발주서에 붙여 넣어 `DISPATCH-RESTATES-CONTRACT` → 앞겹 = 경로 지목으로 재작성 후 0).
@@ -165,3 +168,7 @@ DA-A 라도 「Saha 분배가 옳다」·「스펙트럼이 CMFGEN 에 가까워
 - E-4: OLD 「행렬해 bit-동일 ⟹ 직접 측정·단일 비」 → NEW 「근사 측정, 정밀도 = 준위 간 산포 보고」.
 - E-1: OLD 「≤0.3% 는 코드 귀결」 → NEW 「Saha 총량 이동 + 재배분, 분해 불가」.
 집행 기록 시계열 역순(착지 행이 제출 행 앞) 은 기재로 남긴다. 행 단위 diff 로 의도 외 소실 0 확인 [저자 실행]. 다음 = 재판정(Fable fresh, 새 컨텍스트) → 감리 A(Fable fresh)·B(Codex read-only).
+
+
+## 폐합 (2026-09-06)
+**분기 DA-R.** 판정 2회차(Fable fresh) + 감리-A(Fable fresh, 통과) + 감리-B(Codex read-only, 통과), 계열 분리 충족. 정정 회차 = 개정 3 한 번(1회차 판정 반영, 전건). «기재로 족함» 누적 = 판정 4 + 감리-A 6 + 감리-B 5 — 대장에 관측으로 기재, 문서 재개정 없음. 다음 행동(§5 규칙): [4,6) eV 중앙 +1.372% ≥ 1% ⟹ D-C/D-D 사전등록을 L6C 재감사보다 앞세운다 — 결정은 user.
