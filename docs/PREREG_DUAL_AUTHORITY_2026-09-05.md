@@ -39,8 +39,8 @@ user 지시(09-05): 「1번(수리 방향 사전등록, CMFGEN 소스 대조부�
 **환경**: `DPROXY-PROV-K42` 모드의 exports 에서 **기존 행 `declare -x LUMINA_NLTE_PER_ION_RESCALE="0"` 의 값을 `"1"` 로 치환**(추가 아님). 전집 등록 [저자 실행] `grep -c LUMINA_NLTE_PER_ION_RESCALE src/env_universe.h` = 1 ✔; base 키 실존 [저자 실행, 개정 1] `grep -c '^declare -x LUMINA_NLTE_PER_ION_RESCALE="0"' <331050>/input/resolved_lumina.exports` = 1 ✔ (검수 F-1).
 
 ### 4-1. 기대치 (arm 대 base)
-- **E-1 (작동 확인 — 개정 2 에서 「분기 결정」에서 강등)**: 바닥 준위 S-역산 `Δlog n(iter0→1)` — base Fe II +3.62%, Co II +0.49%, Ni II +4.09%. arm 은 Σ_II 를 Saha 총량에 **구성상** 핀하므로(`cuda.cu:1806`) |Δlog n_ground| ≤ 0.3% 는 예측이 아니라 코드 귀결이다. 이 항목이 확인하는 것은 스위치의 in-vivo 작동뿐이며, (0.3%, 1%] 는 이온 내 재배분 관측 구간(DA-R), > 1% 는 미지 기전(DA-N)이다.
-- **E-4 (계측, 개정 2 신설 — 기대치 없음)**: iter-0 publication 의 같은 (line, 하준위) 에서 `n_l(arm)/n_l(base)` (S-역산, 338 짝의 84 하준위 + 상준위 `n_upper` 비). 시드 solve 의 입력(LTE pop·epoch-1 J·T_e·Saha n_e)이 두 런에서 동일하므로 행렬해는 bit-동일이고 post-solve 스케일만 다르다 ⟹ 이 비 = **`n_II^Saha / n_II^NLTE`(shell 0, 이온별)** 의 직접 측정. 이온별 상이값 수(같은 이온 안 준위 간 산포 ≤ 1e-9 이면 단일 비) 와 값을 보고.
+- **E-1 (작동 확인 — 개정 2 에서 「분기 결정」에서 강등)**: 바닥 준위 S-역산 `Δlog n(iter0→1)` — base Fe II +3.62%, Co II +0.49%, Ni II +4.09%. arm 은 Σ_II 를 Saha 총량에 핀하므로(`cuda.cu:1806`) 바닥 이동 = Saha 단계 총량의 반복 이동(≲0.2%, §8-2) + 이온 내 재배분이다 — 「≤0.3% 는 코드 귀결」은 과대 진술이며(개정 3), 반복별 Saha 단계 총량이 발행되지 않아 두 성분은 이 런으로 분해되지 않는다. 이 항목이 확인하는 것은 스위치의 in-vivo 작동뿐이며, (0.3%, 1%] 는 이온 내 재배분 관측 구간(DA-R), > 1% 는 미지 기전(DA-N)이다.
+- **E-4 (계측, 개정 2 신설 — 기대치 없음; 개정 3 정정)**: iter-0 publication 의 같은 (line, 하준위) 에서 `n_l(arm)/n_l(base)` (S-역산, registry 338 짝의 84 하준위 + 상준위 `n_upper` 비). 시드 solve 의 입력이 두 런에서 같더라도 반복 안 τ_Sobolev 갱신·n_e 재평가로 행렬해가 bit-동일이라는 보장은 **없다**(판정 실측: Fe 상대 산포 7e-3, n_e 2e-8 상이). 따라서 이 비는 `n_II^Saha/n_II^NLTE`(shell 0) 의 **근사 측정**이며, 정밀도 = 같은 이온 안 준위 간 산포(보고 필수). 「단일 비」 주장은 산포 ≤ 1e-9 일 때만.
 - **E-2 (작동 대조, 음성대조 내장)**: generation 1 exact epoch(LTE 시드, population commit 전) 는 base 와 **bit-동일**(`iterations=45 residual=9.6662782724980344e-09`); generation 2 epoch 는 base(`53, 7.8976358675842993e-09`)와 **달라야** 한다. 둘 다 같으면 스위치가 안 걸린 것 ⟹ 무효.
 - **E-3 (계측)**: formal 스펙트럼 `work/lumina_spectrum.csv`(1234 bin, 열 `wavelength_angstrom,flux`) arm/base `Δlog F = ln(F_arm/F_base)` 의 대역별(광자 에너지 `[0,2) [2,4) [4,6) [6,12) [12,∞)` eV, 5대역) 중앙·최대·최소, 비양수 flux 는 제외 계수, 파장 격자는 bit-동일이어야 함 — **기대치 없음, 측정 보고**. `Δlog n_upper`(338 짝, iter 1) arm 대 base 도 보고.
 
@@ -51,7 +51,7 @@ user 지시(09-05): 「1번(수리 방향 사전등록, CMFGEN 소스 대조부�
 | G-1 봉인 입력 | `cmp /gpfs/kjhan/lumina/superlevel_b_h200x2_k36/slb_20260903T080407Z_dproxy_provenance_k42_ion1_h200/input/resolved_lumina.sha256 <NEW_RUN_ROOT>/input/resolved_lumina.sha256` 동일, `sha256sum <NEW_RUN_ROOT>/input/dproxy_candidate_registry.json` = `c96f74f0a78088bbc7cb3f7ad851060da6ee492d2d09476c26a57bc247ef1923`, `<NEW_RUN_ROOT>/RUN_FOOTER.txt` 의 `binary_sha256` = `a4990a592e422d737d2236ba111fdd60141c110c0c23204fc22c7054691dc27a` | base `input/` 대 arm `input/`·`RUN_FOOTER.txt` |
 | G-2 gen-1 bit-동일 | `grep -m1 'EXACT-MULTIGPU-EPOCH' /gpfs/kjhan/lumina/superlevel_b_h200x2_k36/slb_20260903T080407Z_dproxy_provenance_k42_ion1_h200/stderr.log` 와 `grep -m1 'EXACT-MULTIGPU-EPOCH' <NEW_RUN_ROOT>/stderr.log` 의 `iterations`·`residual` 토큰 문자열 동일 | base 대 arm `stderr.log` |
 | G-3 gen-2 상이 | 위 두 파일의 2회차 `EXACT-MULTIGPU-EPOCH` 행 `residual` 토큰이 서로 다름 | base 대 arm `stderr.log` |
-| G-4 완주 | model rc=0, publication 2, 338 registry 짝 전건, provenance OK 685/685 계급 | `readout_dproxy_sl_331050.py` |
+| G-4 완주 | model rc=0, publication 2, provenance OK 전건, **iter-0 publication 에 registry 338 전건 존재**(E-4 의 입력), 두 publication 공통 짝 ≥ 330 (A2-10 상위 90% 선택은 상태 의존이라 arm 에서 소수 선이 빠질 수 있음 — base 자신도 pub 0→1 에서 9선 탈락) · 부재 선은 선 id·SL·사유와 함께 계수 | `readout_dproxy_sl_331050.py` |
 | G-5 역산 정합 | 같은 하준위 공유 선 간 `Δlog n_l` 산포 ≤ **1e-8** (개정 2: base 331050 자기값 최대 1.21e-9, R-II 최대도 같은 계급 — 잣대를 base 에 먼저 적용해 문턱을 그 위로 둠) | `probe_lower_any.py` |
 ### 게이트 명부 끝
 
@@ -83,7 +83,7 @@ DA-A 라도 「Saha 분배가 옳다」·「스펙트럼이 CMFGEN 에 가까워
 | 코드 검수 | Fable | Fable fresh 1회차: SAFE_TO_STAGE NO, 차단 3(F-1 중복 키·F-2 base 회귀·F-3 자기 기술) — `docs/REVIEW_DUAL_AUTH_ORDER4_2026-09-05.md` | 상류 원인 = 사전등록 저자(운전석)의 「1행 더함」 오전제 |
 | 코드 검수 2회차 | Fable | Fable fresh(다른 컨텍스트): SAFE_TO_STAGE **YES**, 차단 0, 기재 4 — `docs/REVIEW_DUAL_AUTH_ORDER5_2026-09-05.md` | — |
 | 발주·제출·계측 | 운전석 | 운전석 | |
-| 판정 | Fable fresh | (기입 예정) | 운전석 금지 |
+| 판정 | Fable fresh | Fable fresh 1회차: **DA-X(문면, G-4 337/338)** / 의도 DA-R — `docs/VERDICT_DUAL_AUTH_2_2026-09-06.md` | 운전석 이탈 5(차단 1 = 사전등록 G-4) |
 | 감리 A/B | Fable fresh / Codex | (기입 예정) | |
 
 집행 기록:
@@ -158,3 +158,10 @@ DA-A 라도 「Saha 분배가 옳다」·「스펙트럼이 CMFGEN 에 가까워
 - §5: E-3 은 불일치 크기; D-A 감도는 가정; E-3 → 다음 행동 규칙.
 - 선언 블록: regime·metric·rule·fixture 에 DA-R 추가.
 행 단위 diff 로 의도 외 소실 0 확인 [저자 실행]. 처분(user 위임): **런 유지**, 취소 없음.
+
+
+## 개정 3 (2026-09-06, 판정 1회차 반영 — OLD/NEW 3쌍, 증거 무접촉)
+- G-4: OLD 「338 registry 짝 전건」 → NEW 「iter-0 pub 에 338 전건 + 두 pub 공통 ≥330, 부재 선 계수」(상태 의존 선택 인정; 판정 지적 「이름을 측정 대신」).
+- E-4: OLD 「행렬해 bit-동일 ⟹ 직접 측정·단일 비」 → NEW 「근사 측정, 정밀도 = 준위 간 산포 보고」.
+- E-1: OLD 「≤0.3% 는 코드 귀결」 → NEW 「Saha 총량 이동 + 재배분, 분해 불가」.
+집행 기록 시계열 역순(착지 행이 제출 행 앞) 은 기재로 남긴다. 행 단위 diff 로 의도 외 소실 0 확인 [저자 실행]. 다음 = 재판정(Fable fresh, 새 컨텍스트) → 감리 A(Fable fresh)·B(Codex read-only).
