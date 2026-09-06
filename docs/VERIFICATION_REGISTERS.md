@@ -590,3 +590,6 @@ Codex 검수 3회 + 판정 2회가 통과시킨 것을 **Fable 감리 1회가 �
 **«기재로 족함» 15건**(판정 4·감리-A 6·감리-B 5): E-4 가중 평균 항등 미기재 · E-3 문면 338→337 · §8-2 Γ_phot「<1e-4」 bin 수준 미재현(최대 3.8e-3, 배선 추론) · pub-0 J_ν 1069/1234 bin 상이 · §5 규칙 ln 전용 · 330 문턱 원리 · G-0 「8쌍」 오기(7) · sacct 샌드박스 불가 · selftest 미재실행 등.
 
 **§5 규칙 발동**: [4,6) eV 중앙 ≥1% ⟹ **D-C/D-D 사전등록을 L6C 재감사보다 앞세움**(`docs/DESIGN_DC_DD_CMFGEN_CONTRAST_2026-09-05.md`), 결정 user. GPU 소모 = 이 단 1런(2h59m).
+
+### 09-06 [정정] DET-DUAL-AUTH-2 G-1 의 `resolved_lumina.sha256 cmp` 는 공허했다
+astra 사전감사(D-C-1, `docs/ASTRA_PREAUDIT_DC1_R1_2026-09-06.md`)가 발견: 그 파일은 스테이징 **전** exports 해시(`stage_a210_z2a_probe.sh:252`)로 재작성 뒤 exports 와 불일치(`29a91bf4` 대 `cc3155e6`), base·arm 이 같은 stale 파일을 복사해 `cmp` 가 항상 참. G-1 의 실효 부분은 registry·binary sha 였다 ⟹ 게이트 판정치 불변(«기재로 족함»), 잣대 결함으로 기재. 판정 2회·감리 2겹이 못 잡음.
