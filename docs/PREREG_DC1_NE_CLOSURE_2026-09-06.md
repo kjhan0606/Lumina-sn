@@ -71,7 +71,7 @@ NC-A/B 어느 쪽도 「전하 보존이 옳게 닫혔다」를 뜻하지 않는
 | 사전등록 | Fable | Fable(운전석) | — |
 | 코딩 | **운전자**(개정19) | 발주 6(gpt-5.6-sol, 개정19 전 발주분)의 착지분을 운전자가 검토·인수해 직접 고침 | |
 | 사전감사 1(계약) | **astra** | `gpt-6-astra` read-only: **차단 4·기재 4** — `docs/ASTRA_PREAUDIT_DC1_R1_2026-09-06.md` → 개정 1 | 상류 원인 = 저자(삽입 지점·E-2 대수·G-C 피연산자·G-E 계수) |
-| 사전감사 2(코드 검수) | **astra** | 1회차: **차단 3**(Q0 stager 봉인 내부 목적지 허용·Q6 selftest `residual=` 파서·E-1b seed 전제) 기재 5 — `docs/ASTRA_CODE_REVIEW_DC1_R1_2026-09-06.md` → 운전자 수정 + 개정 2 → 2회차(기입 예정) | Q0 결함은 선재(stager), 나머지 둘은 운전자 |
+| 사전감사 2(코드 검수) | **astra** | 1회차: **차단 3**(Q0 stager 봉인 내부 목적지 허용·Q6 selftest `residual=` 파서·E-1b seed 전제) 기재 5 — `docs/ASTRA_CODE_REVIEW_DC1_R1_2026-09-06.md` → 운전자 수정 + 개정 2 → 2회차 **통과, SAFE_TO_STAGE YES**, 기재 5 — `docs/ASTRA_CODE_REVIEW_DC1_R2_2026-09-06.md` | Q0 결함은 선재(stager), 나머지 둘은 운전자 |
 | 발주·빌드·스테이징·제출 | 운전석 | 운전석 | |
 | 판정 | Fable fresh | (기입 예정) | 운전석 금지 |
 | 마감감사 | **astra** | (기입 예정) | |
