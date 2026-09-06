@@ -78,7 +78,9 @@ NC-A/B 어느 쪽도 「전하 보존이 옳게 닫혔다」를 뜻하지 않는
 집행 기록:
 - 빌드(09-06 21:24 KST, 로그인 노드, worktree): `lumina_cuda` sha256 `ca721b07cb4fef632b1a0a0b2d3c7b11cdaac0e95f74e6cc56b131a7c5449059`, fatbin sm_80/86/90, 폐합 심볼 4건 실재(base `a4990a59` 0건). C selftest 양성 3·음성 7, strict-env·stager selftest PASS.
 - OFF 스테이징(21:56 KST, grammar-debug): `/gpfs/kjhan/lumina/superlevel_b_a100x2_k36/slb_20260906T125629Z_dc1_ne_closure_off`, `SUPERLEVEL_B_STAGE_OK mode=DC1-OFF env_delta=11 shared_hardlinks=0`, seal census 136·R-II 135 PASS, identity 5파일(git_head 364ee72), G-C digest 4종 ✔, exports 에 closure 키 0·base 대비 경로 외 차이 0.
-- OFF 제출: Slurm **333303** `LUMINA_DC1OFF` a100, `PENDING(Resources)`. ON 은 G-A 통과 뒤.
+- OFF 제출: Slurm **333303** `LUMINA_DC1OFF` a100. 착지 09-07 08:38 KST: `FAILED 70`(예상된 post-model seal 오판), model.rc=0, 02:58:54 @ syn102.
+- **G-A PASS** [운전석 실행, grammar-debug]: exact epoch 3행 base 와 문자열 동일(`45/9.6662782724980344e-09 · 53/7.8976358675842993e-09 · 53/8.5618986192583131e-09`), readout 338/338 짝 `n_upper_0,n_upper_1,Jbar_0,Jbar_1` 문자열 동일(`out_dc1off/`), ROW 685, NE-CLOSURE 행 0, 가드 0 ⟹ 새 바이너리 `ca721b07` 의 OFF 물리 = base.
+- ON 스테이징(08:40 KST): `/gpfs/kjhan/lumina/superlevel_b_a100x2_k36/slb_20260906T234024Z_dc1_ne_closure_on`, `SUPERLEVEL_B_STAGE_OK mode=DC1-ON env_delta=12`, G-B 사전 = `> LUMINA_NLTE_NE_CLOSURE="1"` 1행만, G-C digest 동일. ON 제출: Slurm **333531** `LUMINA_DC1ON` a100.
 - 프리플라이트 rc: `check_prereg_preflight` 0(1차 FAIL `changeset-extra-file` — 표 안 스크립트 경로 리터럴 제거 후 0) · `check_gate_referents` 0 · `check_doc_canonical` 0 · `check_dispatch_preflight` 0.
 - 발주 6 = `/gpfs/kjhan/lumina/dproxy_audits/dc1/ORDER_DC1_CHANGESET.md`, 계약 HEAD `34a113e`, 작업 디렉토리 = worktree(§2). worktree 에 Makefile strict-env 타깃·`tests/env_universe_strict_selftest.py`·`scripts/derive_env_universe.py` 를 메인 트리에서 복사(identity 밖). `[미실행]` 없음. 발주 중단 없음.
 
