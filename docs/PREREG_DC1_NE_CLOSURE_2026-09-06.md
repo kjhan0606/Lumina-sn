@@ -70,7 +70,9 @@ NC-A/B 어느 쪽도 「전하 보존이 옳게 닫혔다」를 뜻하지 않는
 | 발주·빌드·스테이징·제출 | 운전석 | 운전석 | |
 | 판정 | Fable fresh | (기입 예정) | 운전석 금지 |
 | 감리 A/B | Fable fresh / Codex read-only | (기입 예정) | |
-집행 기록: 프리플라이트 rc (기입 예정) · `[미실행]` 없음 · 발주 중단 (없음).
+집행 기록:
+- 프리플라이트 rc: `check_prereg_preflight` 0(1차 FAIL `changeset-extra-file` — 표 안 스크립트 경로 리터럴 제거 후 0) · `check_gate_referents` 0 · `check_doc_canonical` 0 · `check_dispatch_preflight` 0.
+- 발주 6 = `/gpfs/kjhan/lumina/dproxy_audits/dc1/ORDER_DC1_CHANGESET.md`, 계약 HEAD `34a113e`, 작업 디렉토리 = worktree(§2). worktree 에 Makefile strict-env 타깃·`tests/env_universe_strict_selftest.py`·`scripts/derive_env_universe.py` 를 메인 트리에서 복사(identity 밖). `[미실행]` 없음. 발주 중단 없음.
 
 ```prereg-preflight
 {
