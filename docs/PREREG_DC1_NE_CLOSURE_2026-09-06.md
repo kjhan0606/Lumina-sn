@@ -73,7 +73,7 @@ NC-A/B 어느 쪽도 「전하 보존이 옳게 닫혔다」를 뜻하지 않는
 | 사전감사 1(계약) | **astra** | `gpt-6-astra` read-only: **차단 4·기재 4** — `docs/ASTRA_PREAUDIT_DC1_R1_2026-09-06.md` → 개정 1 | 상류 원인 = 저자(삽입 지점·E-2 대수·G-C 피연산자·G-E 계수) |
 | 사전감사 2(코드 검수) | **astra** | 1회차: **차단 3**(Q0 stager 봉인 내부 목적지 허용·Q6 selftest `residual=` 파서·E-1b seed 전제) 기재 5 — `docs/ASTRA_CODE_REVIEW_DC1_R1_2026-09-06.md` → 운전자 수정 + 개정 2 → 2회차 **통과, SAFE_TO_STAGE YES**, 기재 5 — `docs/ASTRA_CODE_REVIEW_DC1_R2_2026-09-06.md` | Q0 결함은 선재(stager), 나머지 둘은 운전자 |
 | 발주·빌드·스테이징·제출 | 운전석 | 운전석 | |
-| 판정 | Fable fresh | (기입 예정) | 운전석 금지 |
+| 판정 | Fable fresh | Fable fresh: **NC-B**(문면; 초과는 Saha 잔차 항, 재분배 항은 NC-A 계급), 차단 0·기재 7 — `docs/VERDICT_DC1_NECLOSE_2026-09-08.md` | — |
 | 마감감사 | **astra** | (기입 예정) | |
 집행 기록:
 - 빌드(09-06 21:24 KST, 로그인 노드, worktree): `lumina_cuda` sha256 `ca721b07cb4fef632b1a0a0b2d3c7b11cdaac0e95f74e6cc56b131a7c5449059`, fatbin sm_80/86/90, 폐합 심볼 4건 실재(base `a4990a59` 0건). C selftest 양성 3·음성 7, strict-env·stager selftest PASS.
