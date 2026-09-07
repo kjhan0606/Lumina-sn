@@ -81,6 +81,7 @@ NC-A/B 어느 쪽도 「전하 보존이 옳게 닫혔다」를 뜻하지 않는
 - OFF 제출: Slurm **333303** `LUMINA_DC1OFF` a100. 착지 09-07 08:38 KST: `FAILED 70`(예상된 post-model seal 오판), model.rc=0, 02:58:54 @ syn102.
 - **G-A PASS** [운전석 실행, grammar-debug]: exact epoch 3행 base 와 문자열 동일(`45/9.6662782724980344e-09 · 53/7.8976358675842993e-09 · 53/8.5618986192583131e-09`), readout 338/338 짝 `n_upper_0,n_upper_1,Jbar_0,Jbar_1` 문자열 동일(`out_dc1off/`), ROW 685, NE-CLOSURE 행 0, 가드 0 ⟹ 새 바이너리 `ca721b07` 의 OFF 물리 = base.
 - ON 스테이징(08:40 KST): `/gpfs/kjhan/lumina/superlevel_b_a100x2_k36/slb_20260906T234024Z_dc1_ne_closure_on`, `SUPERLEVEL_B_STAGE_OK mode=DC1-ON env_delta=12`, G-B 사전 = `> LUMINA_NLTE_NE_CLOSURE="1"` 1행만, G-C digest 동일. ON 제출: Slurm **333531** `LUMINA_DC1ON` a100.
+- ON 착지(09-07 23:38 KST): `FAILED 70`(seal 오판), model.rc 0, 02:58:58 @ syn102. 판독 = `docs/READOUT_DC1_333303_333531_2026-09-07.md` — G-B~G-F ✔; 폐합 150행 분해: Saha 잔차 항이 지배(SEED shell 0 +0.78%, 최대 2.3%; R7 gen 3 바깥 셸 44–49 1.0–1.5e-3), 재분배 항 shell 0 ≤4.9e-6(E-2b ✔); E-4 ON/OFF 전 준위 ×1.0037(iter 0); E-5 전 대역 중앙 <0.3%. 판정·마감감사 = user 승인 대기(09-07 지시).
 - 프리플라이트 rc: `check_prereg_preflight` 0(1차 FAIL `changeset-extra-file` — 표 안 스크립트 경로 리터럴 제거 후 0) · `check_gate_referents` 0 · `check_doc_canonical` 0 · `check_dispatch_preflight` 0.
 - 발주 6 = `/gpfs/kjhan/lumina/dproxy_audits/dc1/ORDER_DC1_CHANGESET.md`, 계약 HEAD `34a113e`, 작업 디렉토리 = worktree(§2). worktree 에 Makefile strict-env 타깃·`tests/env_universe_strict_selftest.py`·`scripts/derive_env_universe.py` 를 메인 트리에서 복사(identity 밖). `[미실행]` 없음. 발주 중단 없음.
 
