@@ -36,7 +36,7 @@ OFF 가 G-A 를 통과하면 ON 대 OFF 가 단일 변수 대조다(base 331050 
 |---|---|---|
 | G-A OFF bit-동일 | `grep -o 'EXACT-MULTIGPU-EPOCH\] status=[A-Z]* devices=[0-9/]* iterations=[0-9]* cap=[0-9]* residual=[0-9.e+-]*' <OFF_ROOT>/stderr.log` 3행이 `/gpfs/kjhan/lumina/superlevel_b_h200x2_k36/slb_20260903T080407Z_dproxy_provenance_k42_ion1_h200/stderr.log` 의 3행과 문자열 동일 **그리고** `scripts/dproxy_readout/readout_dproxy_sl_331050.py --run-root <OFF_ROOT> --out-dir <OUT>` 의 `pairs.csv` 가 base `out_331050/pairs.csv` 와 `n_upper_0,n_upper_1,Jbar_0,Jbar_1` 열에서 338/338 문자열 동일(base 자기대조 참 — astra 사전감사 재현) | OFF 대 base |
 | G-B env 단일 차이 | `diff <(sort <OFF_ROOT>/input/resolved_lumina.exports) <(sort <ON_ROOT>/input/resolved_lumina.exports)` 에서 런루트 경로 치환 행 제외 = `> declare -x LUMINA_NLTE_NE_CLOSURE="1"` 1행 (OFF 에는 키 부재) | OFF 대 ON |
-| G-C 봉인 입력 | OFF·ON 의 `SUPERLEVEL_B_STAGE_SEAL.txt` 에서 `registered_levels_sha256 = b3645052d00dbd535de4f9b3687eda3da02f3dd0584ccef4079c8f9e700daf67`, `registered_line_list_sha256 = cbd81c4f9b3bd85d723b3b1eee6367735e8f52145920412aaf68388b465554b5`, `candidate_registry_sha256 = c96f74f0a78088bbc7cb3f7ad851060da6ee492d2d09476c26a57bc247ef1923`, `registered_binary_sha256` = 새 바이너리 사전 등록값(두 런 동일); 스테이징 stdout 의 `SUPERLEVEL_B_RUN_SEAL_PASS` 2행(census entries=136·R-II entries=135, non_ok=0). (`resolved_lumina.sha256` 은 스테이징 전 exports 해시라 봉인 검증이 아님 — astra 사전감사 Q4) | stage seal |
+| G-C 봉인 입력 | OFF·ON 의 `SUPERLEVEL_B_STAGE_SEAL.txt` 에서 `registered_levels_sha256 = b3645052d00dbd535de4f9b3687eda3da02f3dd0584ccef4079c8f9e700daf67`, `registered_line_list_sha256 = cbd81c4f9b3bd85d723b3b1eee6367735e8f52145920412aaf68388b465554b5`, `candidate_registry_sha256 = c96f74f0a78088bbc7cb3f7ad851060da6ee492d2d09476c26a57bc247ef1923`, `registered_binary_sha256` = 새 바이너리 사전 등록값(두 런 동일), `sealed_input_shared_hardlinks=0`; **스테이징 시점 봉인 검증의 증거 = 런루트에 기록된 `SUPERLEVEL_B_STAGE_SEAL.txt` 의 존재 자체**(stager 는 `verify_run_seal` 2회(census 136·R-II 135) 를 통과해야만 seal 을 쓰고 `STAGE_OK` 를 낸다 — fail-closed, `stage_superlevel_b.sh:3475–3478` 순서) **+ 판정 시점 `sha256sum -c RII_RUN_SEAL.sha`·`ZO_RUN_SEAL.sha` 재검 135/136 OK**. 스테이징 stdout 의 `RUN_SEAL_PASS` 2행 원문은 보존됐으면 병기(OFF 는 운전석 세션 기록에 있음, ON 은 미보존 — 집행 이탈로 기재). (`resolved_lumina.sha256` 은 봉인 검증이 아님 — astra 사전감사 Q4) | stage seal + 사후 재검 |
 | G-D 완주 | 두 런 model rc=0, publication 2, provenance OK 전건, iter-0 pub ⊇ registry 338, 두 pub 공통 ≥330 | readout |
 | G-E 폐합 기록 | ON 의 `[A2-07][NE-CLOSURE]` 행 수 = 50 셸 × 공개 commit 3(seed 1→2 + R7 iter 0 + iter 1) = **150**, `[A2-07][NE-CLOSURE][FATAL]` 0행(FATAL 이 있는 commit 의 선행 셸 행은 거부된 commit 의 흔적이므로 계수·판독에서 제외), OFF 에는 0행, 전 행 ` residual=` ≤ 1e-12(`dlog_saha_residual=` 와 구별해 파싱), `dlog_total = dlog_saha_residual + dlog_resplit` 을 1e-12 안에서 만족 | ON `stderr.log` |
 | G-F 역산 정합 | 두 런 `probe_lower_any.py` 산포 ≤ 1e-8 | S-역산 |
@@ -74,7 +74,8 @@ NC-A/B 어느 쪽도 「전하 보존이 옳게 닫혔다」를 뜻하지 않는
 | 사전감사 2(코드 검수) | **astra** | 1회차: **차단 3**(Q0 stager 봉인 내부 목적지 허용·Q6 selftest `residual=` 파서·E-1b seed 전제) 기재 5 — `docs/ASTRA_CODE_REVIEW_DC1_R1_2026-09-06.md` → 운전자 수정 + 개정 2 → 2회차 **통과, SAFE_TO_STAGE YES**, 기재 5 — `docs/ASTRA_CODE_REVIEW_DC1_R2_2026-09-06.md` | Q0 결함은 선재(stager), 나머지 둘은 운전자 |
 | 발주·빌드·스테이징·제출 | 운전석 | 운전석 | |
 | 판정 | Fable fresh | Fable fresh: **NC-B**(문면; 초과는 Saha 잔차 항, 재분배 항은 NC-A 계급), 차단 0·기재 7 — `docs/VERDICT_DC1_NECLOSE_2026-09-08.md` | — |
-| 마감감사 | **astra** | (기입 예정) | |
+| 마감감사 1회차 | **astra** | `gpt-6-astra`: **차단 4**(①판정의 ±0.025 상한 도출이 장부 잔차와 다른 양 ②「Saha 지배 C」 제2 경로 부적격 ③「다음 계약 상한」·「≤0.3%」 §5 밖 ④G-C 스테이징 stdout 미보존을 사후 재검으로 대체) 기재 4 — `docs/ASTRA_CLOSING_DC1_R1_2026-09-08.md` | ④ = 운전석 집행 이탈(ON 스테이징 stdout `tail -1` 만 기록) |
+| 재판정·마감감사 2회차 | Fable fresh / astra | (기입 예정) | |
 집행 기록:
 - 빌드(09-06 21:24 KST, 로그인 노드, worktree): `lumina_cuda` sha256 `ca721b07cb4fef632b1a0a0b2d3c7b11cdaac0e95f74e6cc56b131a7c5449059`, fatbin sm_80/86/90, 폐합 심볼 4건 실재(base `a4990a59` 0건). C selftest 양성 3·음성 7, strict-env·stager selftest PASS.
 - OFF 스테이징(21:56 KST, grammar-debug): `/gpfs/kjhan/lumina/superlevel_b_a100x2_k36/slb_20260906T125629Z_dc1_ne_closure_off`, `SUPERLEVEL_B_STAGE_OK mode=DC1-OFF env_delta=11 shared_hardlinks=0`, seal census 136·R-II 135 PASS, identity 5파일(git_head 364ee72), G-C digest 4종 ✔, exports 에 closure 키 0·base 대비 경로 외 차이 0.
@@ -154,4 +155,10 @@ NC-A/B 어느 쪽도 「전하 보존이 옳게 닫혔다」를 뜻하지 않는
 - G-E: 거부 commit 흔적 행 제외, `residual=` 파싱 규약.
 - §1 같은 반복 안 소비 기재(χ_es·χ_ff 즉시 반영, CPU χ/η·bf 는 폐합 전 값 — 두 n_e 시대 공존, 측정 대상).
 - 변경집합: 헤더 프로토타입 행, stager 봉인 내부 목적지 거부 + identity 목록. 선언 블록 expected_extra 에 헤더.
+행 단위 diff 로 의도 외 소실 0 확인 [저자 실행].
+
+
+## 개정 3 (2026-09-08, 마감감사 1회차 ④ 반영 — OLD/NEW 1쌍, 증거 무접촉)
+- G-C: OLD 「스테이징 stdout 의 RUN_SEAL_PASS 2행」 → NEW 「`SUPERLEVEL_B_STAGE_SEAL.txt` 존재(fail-closed 순서) + `sealed_input_shared_hardlinks=0` + 판정 시점 봉인 재검 + stdout 원문은 보존 시 병기」. 근거: stager 가 seal 검증을 통과해야만 seal 파일과 `STAGE_OK` 를 쓴다(`:3475–3478`) — 의도(스테이징 시점 봉인 무결)는 seal 파일이 담고, OLD 문면은 운전석이 보존하지 않은 로그를 요구했다. **운전석 집행 이탈(ON 스테이징 stdout 미보존)은 그대로 기재**하며 개정으로 지우지 않는다.
+- ①②③(판정 문면)은 재판정에서 정정: ±0.025 상한 도출 삭제 또는 장부 잔차 `ln(F(m)/m)` 기준으로 재도출, 「Saha 지배」 등급 B(경로 1), 「다음 계약 상한」 주장 삭제, 스펙트럼은 중앙·최대 병기.
 행 단위 diff 로 의도 외 소실 0 확인 [저자 실행].
