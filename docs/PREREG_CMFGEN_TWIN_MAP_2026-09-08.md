@@ -1032,3 +1032,49 @@ Fe·Co·Ni 각 12개**이기 때문이다. ⟹ **IGE 세 원소는 50 셸 중 12
 코드 검수 3회차의 **미해소 «폐합 차단» 과 실행 금지는 그대로 남는다.** 감사는 그 주입을 재현하지도
 해소 판정하지도 않았다. 다음은 **sol 4회차** — 개정된 계약(정의·축소) + 3회차 잔여 차단 + 위 SKIP_Z 오독.
 
+
+## 집행 기록 9 — sol 4회차: 개정 이행 + 3회차 잔여 반영 + **축소 실현** (2026-09-09)
+
+**운전자 재현**: `CMFGEN_TWIN_MAP_SELFTEST_PASS positive=5 negative=40` rc 0 ·
+`CMFGEN_TWIN_MAP_STAGER_SELFTEST_PASS positive=6 negative=15` rc 0 · 행수 실측 일치.
+sol 보고의 종단 시험: `CMFGEN_TWIN_MAP_E2E_PASS prepare_rc=0 analyze_rc=0 rows=74 branch=TM-D`
+(직전 회차 26행 → 74행). ⚠**종단 시험은 sol 자기 보고**이며 운전자는 selftest 두 건과 행수만 재현했다.
+
+### 축소가 코드에서 실현됐다 (처음)
+
+| | 이전 | 이후 | 증감 |
+|---|---:|---:|---:|
+| 판독기 | 1,722 | **1,606** | **−116** |
+| 스테이저 | 379 | **455** | +76 |
+| 합계 | 2,101 | **2,061** | **−40** |
+
+지운 것: BASE 분율 처리 · 분율 ratio/dex 산술 · `prepare` 의 selftest 재호출 · **결손 병렬 판정기** ·
+별도 selftest/manifest/gates JSON · 독립 게이트 3개(summary·잔여 게이트로 통합).
+**스테이저 증가의 사유(sol 제시)**: 임시파일 inode 재검사·배타 게시·링크 포함 manifest·EVID 저장
+집계를 **모든 생산 쓰기에 적용**한 결과 — 즉 3회차 차단 둘(쓰기 보호·저장 집계)을 **한 곳이 아니라
+전면에 적용**한 대가다. 이 설명의 타당성은 코드 검수가 판정한다.
+⚠selftest 양성이 8→5 로 준 것은 **게이트 3개 통합**의 귀결이고, 음성이 52→40 인 것은 삭제된 경로의
+음성이 함께 사라진 것이다. **검사 의무가 줄었는지는 코드 검수가 판정한다** — 개정 1 이 「이름만
+줄이고 병렬 경로를 그대로 두는 것은 이행이 아니다」라고 했듯, 그 역(**경로를 지워 검사도 사라짐**)도
+검사 대상이다.
+
+### 3회차 «폐합 차단» 전건 — 검수 사례 + sol 자선 별례 둘 다 FAIL 시연
+
+`CONTRADICTORY_INTERVAL`/`ALWAYS_UNRESOLVED` → 집계·가설 불일치(실제 분석 `TM-X`) ·
+`EMPTY_T_EVIDENCE`/`PARTIAL_PUBLIC_T_EVIDENCE` → `TE_PUBLICATION_MISMATCH` ·
+`TEMPORARY_LINK_SWAP`/`TEMPORARY_HARDLINK_SWAP` → `OUTPUT_TEMPORARY_REPLACED` ·
+`NI_REFERENCE_MISSING`/`FE_REFERENCE_MISSING` → 각각 **다른 원소 Saha 판독 가능 셀 30개 보존** ·
+`EVID_TOTAL_OVER_CAP`/`COMBINED_TOTAL_OVER_CAP` → `STORAGE_CAP_EXCEEDED`·`TM-X` ·
+`REFERENCE_DERIVED_PRODUCTION_SET`/`UNREGISTERED_PRODUCTION_STAGE` → `STAGE_LABEL_MISMATCH` ·
+`BASE_STAGE_CELL_PROMOTED`/`BASE_STAGE_FILE_PROMOTED` → `BASE_FRACTION_NOT_A_PREREQUISITE`.
+
+### ★사전감사가 잡은 오독의 잔재 — 제거 확인
+
+sol 이 실물을 판독해 **전 대상 원소에서 `P^N={1,2}`** 임을 확인하고, `SKIP_Z=14` 로 Si 를 제외하던
+잘못된 배제를 없앴다. 「잘못된 지적 → 그대로 반영 → 잘못된 구현」 사슬이 끊어졌다(구현 기준;
+검수 확인은 다음 회차).
+
+### 다음 = 코드 검수 4회차 — **트립와이어 회차**
+
+이 회차에도 «폐합 차단» 이 나오면 **운전자는 정지하고 user 에게 보고**한다(계약에 명문화된 조항).
+
