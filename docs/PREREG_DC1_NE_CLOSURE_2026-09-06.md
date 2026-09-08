@@ -76,7 +76,8 @@ NC-A/B 어느 쪽도 「전하 보존이 옳게 닫혔다」를 뜻하지 않는
 | 판정 | Fable fresh | Fable fresh: **NC-B**(문면; 초과는 Saha 잔차 항, 재분배 항은 NC-A 계급), 차단 0·기재 7 — `docs/VERDICT_DC1_NECLOSE_2026-09-08.md` | — |
 | 마감감사 1회차 | **astra** | `gpt-6-astra`: **차단 4**(①판정의 ±0.025 상한 도출이 장부 잔차와 다른 양 ②「Saha 지배 C」 제2 경로 부적격 ③「다음 계약 상한」·「≤0.3%」 §5 밖 ④G-C 스테이징 stdout 미보존을 사후 재검으로 대체) 기재 4 — `docs/ASTRA_CLOSING_DC1_R1_2026-09-08.md` | ④ = 운전석 집행 이탈(ON 스테이징 stdout `tail -1` 만 기록) |
 | 재판정 | Fable fresh | Fable fresh(1회차와 다른 컨텍스트): **NC-B**, 차단 4 전건 처리(±0.025 철회·등급 B 강등·상한 주장 삭제·G-C 개정 3 적용), 개정 3 = 정당한 정정, 차단 0·기재 9 — `docs/VERDICT_DC1_NECLOSE_R2_2026-09-08.md` | ★신규 실측: gen4 33/50 셸에서 `\|resplit\|>\|saha\|` — 「재분배 항 불활성」은 1e-3 문턱 기준으로만 참 |
-| 마감감사 2회차 | astra | (기입 예정) | |
+| 마감감사 2회차 | astra | `gpt-6-astra`: **통과, 차단 0**, 기재 다수 — `docs/ASTRA_CLOSING_DC1_R2_2026-09-08.md`. ★자기 저작(1회차 감사문) 재검사임을 표기 | 계약 §G-C 인용 행번호 `:3475–3478` 이 낡음(실제 `:3494/3496→:3637→:3697`) |
+| 폐합 | 운전석 | 09-08, 판정 2회차 + 마감감사 2회차 «폐합 차단» 0 ⟹ **폐합, 분기 NC-B** | — |
 집행 기록:
 - 빌드(09-06 21:24 KST, 로그인 노드, worktree): `lumina_cuda` sha256 `ca721b07cb4fef632b1a0a0b2d3c7b11cdaac0e95f74e6cc56b131a7c5449059`, fatbin sm_80/86/90, 폐합 심볼 4건 실재(base `a4990a59` 0건). C selftest 양성 3·음성 7, strict-env·stager selftest PASS.
 - OFF 스테이징(21:56 KST, grammar-debug): `/gpfs/kjhan/lumina/superlevel_b_a100x2_k36/slb_20260906T125629Z_dc1_ne_closure_off`, `SUPERLEVEL_B_STAGE_OK mode=DC1-OFF env_delta=11 shared_hardlinks=0`, seal census 136·R-II 135 PASS, identity 5파일(git_head 364ee72), G-C digest 4종 ✔, exports 에 closure 키 0·base 대비 경로 외 차이 0.
@@ -163,3 +164,9 @@ NC-A/B 어느 쪽도 「전하 보존이 옳게 닫혔다」를 뜻하지 않는
 - G-C: OLD 「스테이징 stdout 의 RUN_SEAL_PASS 2행」 → NEW 「`SUPERLEVEL_B_STAGE_SEAL.txt` 존재(fail-closed 순서) + `sealed_input_shared_hardlinks=0` + 판정 시점 봉인 재검 + stdout 원문은 보존 시 병기」. 근거: stager 가 seal 검증을 통과해야만 seal 파일과 `STAGE_OK` 를 쓴다(`:3475–3478`) — 의도(스테이징 시점 봉인 무결)는 seal 파일이 담고, OLD 문면은 운전석이 보존하지 않은 로그를 요구했다. **운전석 집행 이탈(ON 스테이징 stdout 미보존)은 그대로 기재**하며 개정으로 지우지 않는다.
 - ①②③(판정 문면)은 재판정에서 정정: ±0.025 상한 도출 삭제 또는 장부 잔차 `ln(F(m)/m)` 기준으로 재도출, 「Saha 지배」 등급 B(경로 1), 「다음 계약 상한」 주장 삭제, 스펙트럼은 중앙·최대 병기.
 행 단위 diff 로 의도 외 소실 0 확인 [저자 실행].
+
+
+## 폐합 (2026-09-08)
+**분기 NC-B.** 판정 2회차(Fable fresh) + 마감감사 2회차(astra) 모두 «폐합 차단» 0. 정정 회차 = 개정 1(사전감사)·개정 2(코드 검수)·개정 3(마감감사) 셋, 모두 증거 무접촉. 개정18 ③의 상한(3회차부터 «폐합 차단»만) 안에서 종료.
+**남긴 기재**: ① 계약 G-C 인용 행번호 `:3475–3478` 이 낡음(실제 `verify_run_seal` `:3494/3496` → seal `:3637` → `STAGE_OK` `:3697`) ② G-C 의 시간적 동일성은 mtime·mode·digest 정합에 기반한 **추론**(동시대 stdout 미보존) ③ 「초과 55셸 전량 Saha」는 **문턱 초과 귀속**에만 유효 — 그 55셸에서도 재분배 성분은 비영 ④ ±0.025 는 `−1<F′≤0` 가정 하 선형근사이며 엄밀 상한 아님(철회 상태 유지) ⑤ 마감감사 2회차는 **자기 저작 지적의 재검사**(개정20·21 의 계열 분리 소멸).
+**다음 행동(계약 §1 이 예고한 후속)**: Saha 층 n_e 반복의 **5% 수렴 문턱** 계약 후보를 대장에 기재. 기대치는 이 런으로 정할 수 없다(`F′` 미측정). 착수 여부 = user 결정.
