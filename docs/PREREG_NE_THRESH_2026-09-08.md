@@ -101,8 +101,8 @@ NT-A는 **이 원자모형과 봉인된 실행 범위에서 정지 문턱의 수
 | 단계 | 규약상 담당 — 본 발주·개정21 | 실제 | 위반·독립성 |
 |---|---|---|---|
 | 사전등록 기안 | astra | **astra, 본 응답 저자** | 조회·identity 확인만 완료 |
-| 코딩·직접 selftest | **운전석**(개정22) | 미집행 | 구현자 = 운전석 |
-| 코드 검수 | **astra**(개정22) | 미집행 | 구현자와 **다른 계열** ⟹ 이 축의 자기 검수는 소멸 |
+| 코딩·직접 selftest | **운전석**(개정22) → **sol**(개정23, 09-08 user) | **집행: 계측 C·selftest = 운전석**(개정22 기간분) · **잔여 변경집합·지적 반영 = sol** | 구현자 = 운전석(반영분은 sol) |
+| 코드 검수 | **astra**(개정22) | **집행 1회차 — `CODE_REVIEW: 차단 5` · `SAFE_FOR_RACQ: NO`** | 구현자(운전석)와 **다른 계열** ⟹ 이 축의 자기 검수는 소멸 |
 | 판정·마감감사 | astra | 미집행; 이후 본 계약의 판정·마감감사도 astra 담당 | 자기 계획 판정·감사이며 독립 모델 감사로 표기 금지 |
 | 파일화·프리플라이트·빌드·staging·제출·판독·커밋 | 운전석 | 미집행 | 원문 로그와 재현 명령 보존 |
 | 실측 주장 전건 재현·불일치 장부 | 운전석 | 미집행 | 동일 source/binary/input/evidence 해시와 결정적 출력으로 reproduced/not-reproduced/blocked 기록 |
@@ -186,3 +186,101 @@ NT-A는 **이 원자모형과 봉인된 실행 범위에서 정지 문턱의 수
 ## 개정 5 (2026-09-08, 자료획득런 등록 — astra 기안, OLD/NEW 8쌍, user 09-08 「1번」 선택)
 `phi_neb` 자격 표적을 얻기 위해 **R-ACQ 자료획득런 1회**를 정식 등록했다. 계측 전용 키 **`LUMINA_SAHA_NE_TRACE`**(문턱 불변, 기록·종단 탐침만), 세 런의 키 조합 고정(R-ACQ = TRACE=1 / OFF = 둘 다 미설정 / ON = THRESH=τ*), **G-ACQ 물리 동일성**(epochs 3행·338짝 4열·closure 150행·spectrum 을 base 와 byte-동일; 새 계측 행은 비교에서 제외하되 원문 보존)과 **탐침 복원 증거**(필드 목록 byte 비교를 `probe_restore.csv` 에, 출력 동일성만으로 복원 인정 금지)를 게이트로 두었다. R-ACQ 에는 분기 라벨을 주지 않으며, τ* 는 그 산출로 정해 **ON 전에 봉인**하므로 순환이 아니다. GPU 예산 3런·48 GPU-hour.
 행 단위 diff 로 의도 외 소실 0 확인 [저자 실행]. 기안 NEW **축자 복사**.
+
+
+## 집행 기록 — 사전감사 rev5 · 코드 검수 1회차 (2026-09-08, 운전석 기재)
+
+| 항목 | 결과 | 산출물 |
+|---|---|---|
+| 발주 프리플라이트 (개정5 기안) | rc 0 | `<EVID>/preflight_rev5.log` |
+| 사전감사 rev5 (astra, R-ACQ 범위 계약) | **통과 · 폐합 차단 0** · «기재로 족함» 5 | `/gpfs/kjhan/lumina/ne_thresh/preaudit5/ASTRA_PREAUDIT_REV5.md` |
+| **계측 코드 검수 1회차** (astra, 구현자=운전석) | **차단 5 · `SAFE_FOR_RACQ: NO`** | `/gpfs/kjhan/lumina/ne_thresh/codereview/ASTRA_CODE_REVIEW.md` |
+| 수정 발주 (sol, 개정23) — 문서 정본 / 발주 프리플라이트 | rc 0 / rc 0 | `/gpfs/kjhan/lumina/ne_thresh/fix_sol/ORDER.md` |
+
+**차단 5 요지** (전문은 검수 문서): ① 빈 `THRESH` 문자열을 OFF 로 허용(§1 키 규약 위반)하고 selftest 가 이를 정답으로 고정 ② 탐침 상태 누출 — 이온 열·`n_e`·bootstrap 카운터만 복원하고 NLTE 카운터·오류 장부·BF 차단 카운터·`g_rates_fix_n_emptyU`·TLS 작업 배열·정적 캐시는 미복원 ③ 계약이 요구한 **명시 필드 목록·전후 byte 비교·`probe_restore.csv`** 미구현 ④ selftest 실효성 — 이온 열·bootstrap 복원을 제거해도 검출 못 하고 G-ACQ 음성대조·생산 반복기 실패 전파 검사 부재 ⑤ 경로·상태 식별 결손 — `r1_use` 를 bootstrap 으로 유도했으나 코드상 양립 가능하므로 유도 불성립.
+
+**운전석 이탈 (지우지 않고 기재)**: 위 다섯은 **운전석이 개정22 기간에 저작한 코드**의 결함이다. ②③⑤ 는 계약이 이미 명문으로 요구한 것을 구현이 따라가지 못한 것이고, ①④ 는 **selftest 가 잘못된 동작을 정답으로 고정**해 자기 코드를 통과시킨 형태다 — 저자 자신의 음성대조는 저자의 오해를 그대로 물려받는다는 «감리 두 겹» 근거의 재확인이다. 개정23(코딩=sol)이 이 축의 분리를 복원하므로 반영은 sol 이 맡는다.
+
+**Q3 확인**: 궤적 기록이 추가 F 평가·추가 수치 FP 산술을 만들지 않는다는 계약 요건은 **YES** 로 확인됐다(기존 `x`·`F(x)`·`m` 값의 `%.17g` 출력).
+
+## 집행 기록 — sol 잔여 변경집합 착지 · rev5 감사 증거 배치 (2026-09-08, 운전석 기재)
+
+**sol 코딩(개정23) 1차 착지** — 계약 변경집합 중 남아 있던 두 행:
+
+| 산출 | selftest 실제 출력 |
+|---|---|
+| `scripts/saha_ne_thresh_replay.py` (신설) | `SAHA_NE_THRESH_REPLAY_SELFTEST_PASS checks=16 negative=7` |
+| `scripts/stage_superlevel_b.sh` R-ACQ 모드 | 신규 양성 3·음성 6; 기존 전건 `SUPERLEVEL_B_STAGER_SELFTEST_PASS`·`B1_CAPTURE0_LANDING_REPLAY_SELFTEST_PASS` 유지 |
+
+`bash -n` PASS · Python AST PASS · `git diff --check` PASS · `.pyc` 0.
+**오프라인 판독 실제 실행 = rc 3 `INPUT_PENDING`** (`phi_neb_targets.csv`·`oracle_validation.csv`·`gain.csv`·`sweep.csv`·`oracle.csv` 결손) — 개정 4·5 가 예고한 상태 그대로이며, R-ACQ 착지 전에는 이것이 **정상 상태**다. 자료를 만들어 메우지 않았다.
+
+★**독립 수렴 (기재)**: 이 발주는 C 계측을 「고치지 말고 보고만 하라」로 묶었는데, sol 이 자발적으로 **빈 `THRESH` 오허용 · `theta_hash`/`r1_use` 누락 · 전 상태 `probe_restore` 증거 미생성** 셋을 보고했다. astra 코드 검수의 «폐합 차단» ①③⑤ 와 **같은 셋**이다. 서로 다른 두 계열이 저자(운전석)의 selftest 가 통과시킨 결함에 독립적으로 도달했다.
+
+**rev5 감사 증거 배치**: 계약 §3 이 R-ACQ 착수 선행조건으로 지목한 `<EVID>/design_audit_rev5.md` 를 `/gpfs/kjhan/lumina/ne_thresh/preaudit5/ASTRA_PREAUDIT_REV5.md` 에서 **byte-동일 복사**(`cmp` 일치·sha256 단일)로 배치했다. 원본은 보존한다. 문면은 손대지 않았다.
+
+**남은 R-ACQ 착수 차단**: ① 코드 검수 «폐합 차단» 5 (sol 반영 발주 진행 중) ② 제품 `lumina_cuda` 미빌드.
+
+## 집행 기록 — Q-GOAL 사전감사 (2026-09-08, 운전석 기재) ★**GPU 발주 정지**
+
+user 상설 지시(09-08, `CLAUDE.md` Q-GOAL 절)에 따라 이 단에 **소급 적용**했다. 이 단은 rev1~rev5
+사전감사를 받았으나 최종목적 부합은 한 번도 묻지 않았고, GPU 3런·48 GPU-hour 지출 직전이었다.
+
+| | 결과 |
+|---|---|
+| 발주 | `/gpfs/kjhan/lumina/ne_thresh/qgoal/ORDER.md` (astra `gpt-6-astra`, read-only, 인용 5문서 정본 게이트 rc 0) |
+| 산출 | `/gpfs/kjhan/lumina/ne_thresh/qgoal/ASTRA_QGOAL.md` |
+| 판정 | **`Q_GOAL: 부분부합` · `BLOCKING: 1`** |
+
+**«폐합 차단» 1 (항목 ①)**: 이 단이 줄인다고 **입증할 수 있는 CMFGEN 오차의 양·위치·크기가 없다.**
+표적은 Lumina **내부** 전하중성 잔차(실측: SEED shell 40 `ln(q_saha/n_e)=-0.023254`, R7 gen3 shell 49
+`+0.00150246`)이며 CMFGEN 대비 `n_e(v)`·이온 분율·스펙트럼 오차가 아니다. 현행 잔차가 CMFGEN 대조를
+**막는다는 증거**도, 줄였을 때 오차가 개선될 **방향**도 계약에 없다. ⟹ 오프라인 조사(2 CPU-hour)는
+실측 잔차에 비추어 합리적이나 **GPU 3런의 지출을 최종목적 기여로 정당화할 근거가 부족**하다.
+
+**«기재로 족함» 셋**: ② 「물리 측정 0」은 부정확하다(E-3 성분 분해·E-4 population/스펙트럼 ON/OFF 차이는
+새 응답 측정) — 다만 기준 exports 가 `LUMINA_PURE_CMFGEN=1`·2반복·균일 10020 K 고정이라 **CMFGEN 재현
+정확도 검증은 아니다**. ③ 더 가까운 대안이 **열려 있다** — 쌍둥이 T_e 레인의 `f_q(v)`·`n_e(v)` 어긋남
+지도(공개 StaNdaRT `phys`·이온분율 로컬 실재), 또는 D-C-2·D-D(대장의 `[4,6) eV` **1.37%** 근거로 우선
+규칙 이미 발동). ④ 건너뛰면 잃는 것은 **수치 정지 오차를 분리하는 능력**이나, CMFGEN 경로나 D-C-2/D-D
+가 막힌다는 증명은 없다 — **필수 관문이 아니다**.
+
+**운전석 처분**: Q-GOAL 절이 정한 대로 **빌드·스테이징·제출을 정지**하고 user 에게 보고한다.
+표적 유지/교체는 user 결정이며 운전석이 「그래도 필요하다」로 넘기지 않는다.
+
+## 집행 기록 — sol 코드 검수 지적 반영 (2026-09-08)
+
+| 지적 | 처분 |
+|---|---|
+| ① 빈 `THRESH` 오허용 | 반영 — 거부로 수정, selftest 기대도 정정 |
+| ② 탐침 상태 누출 | 반영 — 이온·`n_e`·bootstrap·NLTE/BF 카운터·TLS·정적 캐시 복원 |
+| ③ 복원 증거 부재 | 반영 — **명시 44 필드** 전후 byte hash·`probe_restore.csv` 생성·키 대조 |
+| ④ selftest 실효성 | 반영 — 실제 반복기 100회·비유한·종단 실패 전파, OFF byte 동일성, 누출/변조/행 결손 |
+| ⑤ 경로·상태 식별 | 반영 — **실제 분기점**에서 `r1_use`·path·epoch·θ hash 직접 기록(대리 유도 폐기) |
+| ⑥⑦ «기재로 족함» | 미변경(계급대로) |
+
+`SAHA_NE_THRESH_SELFTEST_PASS positive=15 negative=17` · `SAHA_NE_THRESH_REPLAY_SELFTEST_PASS checks=21 negative=10`.
+**음성대조 7종**이 각각 수리 지점을 되돌려 FAIL 을 시연했다(rc 1, `count=1/3/2/2/6/3/1`) — 검수가
+「제거해도 검출 못 한다」고 지목한 이온 열·bootstrap 복원이 이제 검출된다. `git diff --check` PASS.
+**단 astra 재검수는 미집행**이며, 위 PASS 는 sol 자기 보고다.
+
+## 처분 — 표적 교체로 **주차**(폐합 아님) (2026-09-08, user 결정)
+
+Q-GOAL 차단 보고에 대해 **user 가 「1번으로 갑니다」** 로 답했다 = 대안 ③ 의 첫째,
+**쌍둥이 T_e 레인 CMFGEN 어긋남 지도**로 표적 교체.
+
+**이 단의 상태 = 주차(parked)**. 분기를 붙이지 않는다 — 판정런이 0회이므로 분기 라벨은
+성립하지 않는다. **폐합으로 읽지 마라.**
+
+| 자산 | 상태 |
+|---|---|
+| 계약(개정 1~5·정정) | 보존. 재개 시 Q-GOAL ① 의 결손(어느 CMFGEN 칸을 줄이는가)을 먼저 메워야 한다 |
+| 계측 C·selftest (운전자 저작 → sol 반영) | 보존, **worktree 미커밋**. astra 재검수 **미집행** |
+| 판독기 `scripts/saha_ne_thresh_replay.py` (sol) | 보존, 미커밋 |
+| stager R-ACQ 모드 (sol) | 보존, 미커밋 |
+| 증거 루트 `<EVID>` | 보존 |
+| GPU 3런·48 GPU-hour | **미집행 — 지출 0** |
+
+★**Q-GOAL 이 막은 것의 크기**: 이 단은 계약 5회 개정·사전감사 5회·코드 검수 1회를 통과했고
+**다음 동작이 GPU 제출이었다**. 계약 축의 감사는 전부 통과였다 — 막은 것은 계약 밖에 둔 잣대뿐이다.
+

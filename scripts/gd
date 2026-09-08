@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+# grammar-debug 실행 래퍼 — 중첩 ssh 는 $HOME 에 착지한다(운전자 재발 오류 3회).
+# 이 스크립트만 쓰면 저장소 루트 cd 가 구조적으로 보장된다.
+set -euo pipefail
+REPO=/home/kjhan/BACKUP/Eunha.A1/Claude/Lumina-sn
+[ $# -ge 1 ] || { echo "usage: scripts/gd <command...>" >&2; exit 2; }
+exec ssh grammar "ssh grammar-debug 'cd $REPO && $*'"
