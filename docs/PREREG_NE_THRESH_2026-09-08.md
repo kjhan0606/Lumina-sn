@@ -60,7 +60,7 @@
 | G-A OFF 증분 | `<EVID>/baseline/epochs.txt` 대 `<EVID>/off/epochs.txt`의 epoch 3행 문자열 동일; 두 디렉터리 `pairs.csv`의 338짝 키와 n_upper_0·n_upper_1·Jbar_0·Jbar_1 문자열 동일; `closure.txt`의 150행 문자열 동일; `spectrum.csv`의 파장·flux 문자열 동일. 각각 `<BASE>`·`<OFF>`에서 동일 봉인 판독기로 추출; `<OFF>/stderr.log` 새 문턱 계측 0행 | ON 발주 금지 |
 | G-B 단일 변수·봉인 | `<OFF>/input/resolved_lumina.exports` 대 `<ON>/input/resolved_lumina.exports`는 `<EVID>/path_map.json`에 열거한 경로 치환 후 새 키 τ* 추가만 허용; 양팔 `input/binary.sha256` 동일; 양팔 `SUPERLEVEL_B_STAGE_SEAL.txt`의 입력 digest는 `<BASE>/SUPERLEVEL_B_STAGE_SEAL.txt`와 동일 | 무효 |
 | G-C staging 증거 | `<EVID>/staging/OFF.stdout.log`·`ON.stdout.log` 원문과 종료코드 보존; §2 기준 seal의 sealed_base 아래 `RII_RUN_SEAL.sha`, sealed_census 아래 `ZO_RUN_SEAL.sha`를 해당 루트에서 `sha256sum -c`하여 staging 전·완료 후 전건 OK; 양팔 seal shared_hardlinks=0 | 무효 |
-| G-D 완주·커버리지 | 양팔 `model.rc`=0; `<EVID>/off/readout.json`·`on/readout.json` 오류 0·publication 2·registry 338 포함·provenance 전건 OK; `<EVID>/on/solve_index.csv`와 `solve.csv` 호출/셸 키 완전 일치; `<EVID>/on/closure.csv`는 SEED·R7 두 commit 각각 shell 0–49 완비 | 무효 |
+| G-D 완주·커버리지 | 양팔 `model.rc`=0; `<EVID>/off/readout.json`·`on/readout.json` 오류 0·publication 2·registry 338 포함·provenance 전건 OK; `<EVID>/on/solve_index.csv`와 `solve.csv` 호출/셸 키 완전 일치; `<EVID>/on/closure.csv`는 **공개 commit 3개(SEED gen2 · R7 gen3 · R7 gen4) 각각 shell 0–49 완비 = 150행** | 무효 |
 | G-E 계측 진실성 | `<EVID>/on/solve.csv`의 원수치로 E-1 재계산; `<EVID>/on/replay.csv`가 같은 θ에서 F(m)를 재현; `<EVID>/on/oracle.csv`로 E-2 독립 계산; 누락·비유한·epoch 혼합 0. E-2 수치 초과 자체는 이 게이트 실패로 숨기지 않고 NT-R로 판정 | 증거 결함이면 무효 |
 
 ### 게이트 명부 끝
@@ -145,3 +145,10 @@ NT-A는 **이 원자모형과 봉인된 실행 범위에서 정지 문턱의 수
   ]
 }
 ```
+
+## 개정 1 (2026-09-08, astra 사전감사 1회차 반영 — 기재 4, 차단 0)
+- G-D 문면 「SEED·R7 두 commit」 → **공개 commit 3개(SEED gen2·R7 gen3·R7 gen4) 150행**(직전 단 실측).
+- 감사가 남긴 기재 셋은 계약 문면 변경 없이 여기 기록한다: ① 이 감사는 **자기 계획 자기 감사**이므로 독립 감사 PASS 로 읽지 않는다(개정21 계열 분리 소멸) ② `<EVID>` 는 현재 `identity.json`·`preflight.log`·`design_audit.md` 만 있고 state manifest·치환표·판독기 검증은 미완 — 계약이 `INPUT_PENDING` 으로 이미 처리 ③ **비용 상한(오프라인 2 CPU-hour)은 중단 기준이지 완료 가능성의 측정이 아니다** — 생산 F 가 준위별 BF 적분(24,542준위·1234빈)을 반복하므로 O-1/O-2 의 실제 소요는 미시연. 초과 시 중단 보고.
+- ★감사가 확인한 대수(계약 §1 의 할선 항등식): `m−x = xδ/2`, `F(m) = x(1+δ) + sxδ/2` ⟹ `F(m)/m = 1 + δ(1+s)/(2+δ)`. 기존 로그 잔차(`compute_electron_density` 의 출력)는 `|δ|/(2+δ)` 로 **F(m) 재평가 잔차와 다른 양**이다.
+- ★감사가 지목한 격리 위험(구현 시 대상): 후보 배열 복사만으로는 **BF 카운터·bootstrap 전역**이 격리되지 않는다 — O-1 의 「복원 또는 격리 프로세스」는 이 둘을 포함해야 한다.
+행 단위 diff 로 의도 외 소실 0 확인 [저자 실행].
