@@ -75,7 +75,8 @@ NC-A/B 어느 쪽도 「전하 보존이 옳게 닫혔다」를 뜻하지 않는
 | 발주·빌드·스테이징·제출 | 운전석 | 운전석 | |
 | 판정 | Fable fresh | Fable fresh: **NC-B**(문면; 초과는 Saha 잔차 항, 재분배 항은 NC-A 계급), 차단 0·기재 7 — `docs/VERDICT_DC1_NECLOSE_2026-09-08.md` | — |
 | 마감감사 1회차 | **astra** | `gpt-6-astra`: **차단 4**(①판정의 ±0.025 상한 도출이 장부 잔차와 다른 양 ②「Saha 지배 C」 제2 경로 부적격 ③「다음 계약 상한」·「≤0.3%」 §5 밖 ④G-C 스테이징 stdout 미보존을 사후 재검으로 대체) 기재 4 — `docs/ASTRA_CLOSING_DC1_R1_2026-09-08.md` | ④ = 운전석 집행 이탈(ON 스테이징 stdout `tail -1` 만 기록) |
-| 재판정·마감감사 2회차 | Fable fresh / astra | (기입 예정) | |
+| 재판정 | Fable fresh | Fable fresh(1회차와 다른 컨텍스트): **NC-B**, 차단 4 전건 처리(±0.025 철회·등급 B 강등·상한 주장 삭제·G-C 개정 3 적용), 개정 3 = 정당한 정정, 차단 0·기재 9 — `docs/VERDICT_DC1_NECLOSE_R2_2026-09-08.md` | ★신규 실측: gen4 33/50 셸에서 `\|resplit\|>\|saha\|` — 「재분배 항 불활성」은 1e-3 문턱 기준으로만 참 |
+| 마감감사 2회차 | astra | (기입 예정) | |
 집행 기록:
 - 빌드(09-06 21:24 KST, 로그인 노드, worktree): `lumina_cuda` sha256 `ca721b07cb4fef632b1a0a0b2d3c7b11cdaac0e95f74e6cc56b131a7c5449059`, fatbin sm_80/86/90, 폐합 심볼 4건 실재(base `a4990a59` 0건). C selftest 양성 3·음성 7, strict-env·stager selftest PASS.
 - OFF 스테이징(21:56 KST, grammar-debug): `/gpfs/kjhan/lumina/superlevel_b_a100x2_k36/slb_20260906T125629Z_dc1_ne_closure_off`, `SUPERLEVEL_B_STAGE_OK mode=DC1-OFF env_delta=11 shared_hardlinks=0`, seal census 136·R-II 135 PASS, identity 5파일(git_head 364ee72), G-C digest 4종 ✔, exports 에 closure 키 0·base 대비 경로 외 차이 0.
