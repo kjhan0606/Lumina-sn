@@ -32,12 +32,12 @@
 
 **O-1 기전 특정·F′ 측정:** O-0 원본은 변경하지 않는다. 입력 14/14 보존과 생산 F의 CPU 호출 경로 부재를 구분한다. O-2의 독립 고정밀 사다리를 먼저 검증하여 오프라인 F로 사용한다. 봉인 장부의 SEED gen2·R7 gen3·R7 gen4 각각 shell 0–49, 총 150쌍을 같은 θ에서 재현하고, 전건 `abs(F_oracle(m)−F_record(m))/abs(F_record(m))≤1e-10`을 요구한다. 입력·장부·구현 해시, 상태 대응, 원수치·오차를 `<EVID>/offline/oracle_validation.csv`에 보존한다. 표적 맞춤 계수는 금지한다. 결손은 INPUT_PENDING, 불일치는 REWORK이며 통과 전 O-1/O-2 계산을 진행하지 않는다. 통과 후 θ를 고정하고 n_e만 바꾼다. 매 평가 전 배열·캐시·카운터·bootstrap 상태를 복원하거나 격리 프로세스를 사용한다. 평가 순서를 뒤집어 F가 동일한지도 확인한다.
 각 상태의 기존 마지막 x·채택점 m·독립 근 n*에서 수행한다. x가 직접 보존되지 않았으면 봉인된 초기값·θ·생산 연산 순서·0.05 문턱·100회 한도로 기존 반복을 재생하고, 채택점 m도 상대오차 1e-10 이내로 재현해야 x를 사용한다. 초기값·상태 대응 결손은 INPUT_PENDING, 재현 불일치는 REWORK다. 검증된 세 점 각각에서 `n±=n·exp(±h)`, `D_h=[F(n+)−F(n−)]/(n+−n−)`를 계산한다. `h={1e-2,1e-3,1e-4,1e-5,1e-6}` 전부와 좌·우 차분을 `<EVID>/offline/gain.csv`에 보존한다.
-인접 h 두 쌍 이상에서 차분 간 차이가 `1e-4·max(1,abs(D_h))` 이내인 구간을 요구한다. 불안정·분기 전환은 `GAIN_UNRESOLVED`; F′의 부호나 `−1<F′≤0`을 가정하지 않는다. `(1+F′)/2`는 국소 감쇠 이득 측정치로만 보고하고, O-3 전에는 검증된 오프라인 F의 반복 궤적으로 위 할선 항등식을 확인하고, R-1에서는 ON 생산 궤적으로 교차검증한다. 동일 호출·셸·θ의 연속점에서 `x_(k+1)=m_k`를 확인한 뒤 `s_k=(F(x_(k+1))−F(x_k))/(x_(k+1)−x_k)`를 오프라인 계산한다. 동일점은 할선을 정의하지 않고 §1의 δ=0 조건과 부동소수점 정체를 구분한다. 할선을 점 미분으로 대체하지 않으며 기존 h·좌우 차분·안정성 기준은 유지한다.
+인접 h 두 쌍 이상에서 차분 간 차이가 `1e-4·max(1,abs(D_h))` 이내인 구간을 요구한다. 불안정·분기 전환은 `GAIN_UNRESOLVED`; F′의 부호나 `−1<F′≤0`을 가정하지 않는다. `(1+F′)/2`는 국소 감쇠 이득 측정치로만 보고한다. O-3 전에는 검증된 오프라인 F의 반복 궤적으로 할선 항등식을 확인한다. **R-1 뒤에는 G-E에 따라 ON 전 반복점·종단점의 생산/독립 F 값과 동일 구간 할선을 비교한다.** 할선 일치를 점 미분 일치나 미관측점의 보증으로 해석하지 않는다. 동일 호출·셸·θ의 연속점에서 `x_(k+1)=m_k`를 확인한 뒤 `s_k=(F(x_(k+1))−F(x_k))/(x_(k+1)−x_k)`를 오프라인 계산한다. 동일점은 할선을 정의하지 않고 §1의 δ=0 조건과 부동소수점 정체를 구분한다. 할선을 점 미분으로 대체하지 않으며 기존 h·좌우 차분·안정성 기준은 유지한다.
 
 **O-2 수리안 검증:** O-1의 150쌍 검증을 통과한 오프라인 F로 같은 고정 상태에서 `τ∈{5e-3,5e-4,5e-5,5e-6,5e-7,5e-8}`를 전부 재생한다. τ 재생은 생산 double 연산 순서·감쇠·정지 판정을 재현하고, 독립 근은 별도 고정밀 계산 경로로 구한다. 150쌍 일치는 표본 검증이며 미분·전역 동일성·bootstrap 및 다른 θ의 검증을 대신하지 않는다. 해당 상태의 의존성·분기 대응이 입증되지 않으면 제외하지 않고 INPUT_PENDING으로 중단한다. 별도 고정밀 구현이 동일 율·정규화 사다리로 F를 계산하고, 부호가 확인된 구간에서 전하중성 근 n*를 구한다. 구간은 수치 근 찾기용이며 물리적 cap이 아니다. 근 미확보·비유일성 미해결은 실패다.
 수치 분해능 잣대 `ε=1e-6`은 기존 분류 문턱 `1e-3`보다 세 자릿수 작게 택한 **설계 기준이며 예측·물리 정확도 보증이 아니다**. 전 재생 상태에서 `abs(r_m)≤ε`, `abs(ln(m/n*))≤ε`, 100회 이내 성공을 만족하는 **가장 느슨한 τ를 τ***로 택한다. 후보가 없으면 해법·한도를 바꾸지 않고 `REWORK`다.
 
-**O-3 기대치 봉인:** `<EVID>/offline/expectations.json`에 τ*·상태별 F′ 안정 구간·잔차·근 차이·반복 수·최대값의 셸/시점·입력/도구 해시를 기록하고 계약 개정으로 커밋한다. F′와 실제 궤적을 측정하기 전에는 τ*나 잔차 감소 배수를 확정하지 않는다. 자료 부족이면 `INPUT_PENDING`; 기대치 봉인·**개정 2 사전감사** PASS 전 GPU 런은 발주하지 않는다. 기존 사전감사·preflight·O-0 증거는 원본 보존하고, 개정 2 감사와 preflight는 별도 파일(`<EVID>/design_audit_rev2.md`·`<EVID>/preflight_rev2.log`)로 기록하여 G-0에서 함께 요구한다. 기존 PASS를 변경된 실행 경로의 PASS로 승계하지 않는다.
+**O-3 기대치 봉인:** `<EVID>/offline/expectations.json`에 τ*·상태별 F′ 안정 구간·잔차·근 차이·반복 수·최대값의 셸/시점·입력/도구 해시를 기록하고 계약 개정으로 커밋한다. F′와 실제 궤적을 측정하기 전에는 τ*나 잔차 감소 배수를 확정하지 않는다. **사전 봉인 대상** = O-0~O-2 상태·오프라인 F′·재생 궤적·τ*·기대치·구현 해시와 **G-E 비교 규칙·허용오차**이며 ON 자료를 요구하지 않는다. ON 의 새 θ·생산 궤적·종단 탐침·독립 계산과 비교 결과는 **사후 검증 대상**으로 별도 보존하고 사전 봉인을 갱신하지 않는다. 자료 부족이면 `INPUT_PENDING`; 기대치 봉인·**개정 3 사전감사** PASS 전 GPU 런은 발주하지 않는다. 기존 증거(1회차 감사·preflight·O-0·개정 2 감사)는 원본 보존하고 `<EVID>/design_audit_rev2.md`·`preflight_rev2.log`·**`design_audit_rev3.md`·`preflight_rev3.log`** 의 PASS 를 G-0 의 추가 필수조건으로 요구한다. 개정 2 감사의 **차단 기록은 보존**하며 이전 PASS 를 승계하지 않는다.
 
 **R-0 OFF:** 새 바이너리·새 키 미설정, 기준은 **333531의 폐합 ON 상태**다. G-A 통과 후에만 R-1을 연다. 새 키 `0`의 동등성은 별도 프로세스 오프라인 배터리로 검증한다.
 **R-1 ON:** OFF와 같은 바이너리·물리 exports에서 새 키 `τ*`만 추가한다. K42·ion1·T_e 핀·2반복·50셸을 계승한다. ON의 모든 n_e solve에 호출 ID·셸·θ identity·x·F(x)·m·F(m)·반복 수·상태를 기록하고, 공개 commit 장부와 연결한다. ON에만 매 반복의 호출 ID·셸·θ identity·반복 번호·기존 x·F(x)·m을 round-trip 가능한 17자리로 기록하여 `<EVID>/on/trajectory.csv`로 추출한다. **궤적 기록을 위한 추가 F 평가·수치 부동소수 연산은 0**이며, 할선·잔차 계산은 판독기가 수행한다. OFF 미설정·0에서는 기록 경로에 진입하지 않는다. 마지막 채택점은 다음 반복이 없으므로 F(m)를 낡은 F(x)나 연속점 할선으로 대신하지 않는다. 동일 θ의 기존 후보 재평가가 있으면 연결하고, 없는 solve는 GPU 실행 중 확보한 사설 상태에서 생산 F(m)를 평가한다. 배열·캐시·**BF 카운터·bootstrap 전역**을 포함한 격리를 검증하며 production 상태를 바꾸지 않는다. 이는 궤적 기록의 추가 평가 0과 별개인 기존 탐침 의무다.
@@ -56,12 +56,12 @@
 |---|---|---|
 | G-0 사전 준비 | `<EVID>/identity.json`이 §2 원본과 일치; `<EVID>/offline/state_manifest.json` 의존성 결손 0; `<EVID>/preflight.log`·`<EVID>/design_audit.md`에 PASS | 미집행/PENDING |
 | G-1 오프라인 | `<EVID>/offline/gain.csv` 미해결 0; `<EVID>/offline/sweep.csv`와 `<EVID>/offline/oracle.csv`로 O-2 충족; `<EVID>/offline/expectations.json`이 선택 규칙·해시와 일치 | REWORK 또는 INPUT_PENDING |
-| G-2 음성대조·격리 | `<EVID>/selftest/results.json`에서 성한 fixture PASS; 낡은 F(x)를 F(m)로 오기·전하종 누락·θ 변경·탐침 상태 누출·NaN·100회 실패 은폐·OFF 오진입·장부 결손 주입 각각 지정 실패; `<EVID>/selftest/off_bytes.json`에서 기존/미설정/0 출력 배열 byte-동일 | 코드 REWORK |
+| G-2 음성대조·격리 | `<EVID>/selftest/results.json`에서 성한 fixture PASS; 낡은 F(x)를 F(m)로 오기·전하종 누락·θ 변경·탐침 상태 누출·NaN·100회 실패 은폐·OFF 오진입·장부 결손 주입 각각 지정 실패; **기존 150점과 생산 항등식을 유지한 채 ON 중간점 Q 만 변조한 fixture**·할선만 허용오차를 초과한 fixture·재생 반복 수 불일치는 NT-X, G 전건 정상인 E-2 초과는 NT-R; 값 오차 `1e-10`·할선 오차 `1e-4·max(1,abs(s_P))`·E-2 `1e-6` 각각 **경계 동일값은 통과하고 바로 위 표현 가능값은 지정 실패**; `<EVID>/selftest/off_bytes.json`에서 기존/미설정/0 출력 배열 byte-동일 | 코드 REWORK |
 | G-A OFF 증분 | `<EVID>/baseline/epochs.txt` 대 `<EVID>/off/epochs.txt`의 epoch 3행 문자열 동일; 두 디렉터리 `pairs.csv`의 338짝 키와 n_upper_0·n_upper_1·Jbar_0·Jbar_1 문자열 동일; `closure.txt`의 150행 문자열 동일; `spectrum.csv`의 파장·flux 문자열 동일. 각각 `<BASE>`·`<OFF>`에서 동일 봉인 판독기로 추출; `<OFF>/stderr.log` 새 문턱 계측 0행 | ON 발주 금지 |
 | G-B 단일 변수·봉인 | `<OFF>/input/resolved_lumina.exports` 대 `<ON>/input/resolved_lumina.exports`는 `<EVID>/path_map.json`에 열거한 경로 치환 후 새 키 τ* 추가만 허용; 양팔 `input/binary.sha256` 동일; 양팔 `SUPERLEVEL_B_STAGE_SEAL.txt`의 입력 digest는 `<BASE>/SUPERLEVEL_B_STAGE_SEAL.txt`와 동일 | 무효 |
 | G-C staging 증거 | `<EVID>/staging/OFF.stdout.log`·`ON.stdout.log` 원문과 종료코드 보존; §2 기준 seal의 sealed_base 아래 `RII_RUN_SEAL.sha`, sealed_census 아래 `ZO_RUN_SEAL.sha`를 해당 루트에서 `sha256sum -c`하여 staging 전·완료 후 전건 OK; 양팔 seal shared_hardlinks=0 | 무효 |
 | G-D 완주·커버리지 | 양팔 `model.rc`=0; `<EVID>/off/readout.json`·`on/readout.json` 오류 0·publication 2·registry 338 포함·provenance 전건 OK; `<EVID>/on/solve_index.csv`와 `solve.csv` 호출/셸 키 완전 일치; `<EVID>/on/closure.csv`는 **공개 commit 3개(SEED gen2 · R7 gen3 · R7 gen4) 각각 shell 0–49 완비 = 150행** | 무효 |
-| G-E 계측 진실성 | `<EVID>/on/solve.csv`의 원수치로 E-1 재계산; `<EVID>/on/trajectory.csv`는 solve_index와 호출·셸·반복 수가 일치하고 반복 번호 결손·중복 0이며, 동일 θ의 연속점 할선 항등식과 종단 F(m)를 검증; `<EVID>/on/replay.csv`가 같은 θ에서 F(m)를 재현; `<EVID>/on/oracle.csv`로 E-2 독립 계산; 누락·비유한·epoch 혼합 0. E-2 수치 초과 자체는 이 게이트 실패로 숨기지 않고 NT-R로 판정 | 증거 결함이면 무효 |
+| G-E 계측 진실성 | `solve.csv` 로 E-1 재계산; `trajectory.csv` 는 solve_index 의 전 호출·셸·반복을 결손·중복 0 으로 포함하고 동일 θ 의 연속점·할선 항등식을 충족한다. **생산값 P** = 모든 반복점의 17자리 `F(x_k)` 및 격리 검증된 종단 `F(m)`, **독립값 Q** = 사전 봉인한 오프라인 구현을 정확히 같은 θ·n_e 에 평가한 값. 전건 `abs(Q−P)/abs(P) ≤ 1e-10` 을 요구하며 `P≤0`·누락·비유한·θ/epoch 혼합은 실패. 서로 다른 연속점과 마지막 `x→m` 구간 각각에서 `s_P=(P_b−P_a)/(b−a)`·`s_Q=(Q_b−Q_a)/(b−a)` 를 계산하고 전건 `abs(s_Q−s_P) ≤ 1e-4·max(1,abs(s_P))` 를 요구한다; 동일점은 할선을 생략하되 δ=0 과 부동소수점 정체를 구분한다. 같은 θ·초기값·봉인 τ* 로 **독립 double 재생**하여 생산과 반복 수·성공/실패 상태가 같고 전 `x_k`·`m` 의 상대오차 ≤1e-10 이어야 한다. 원수치·점/구간 키·오차·전건 판정을 `<EVID>/on/replay.csv` 에 보존한다. E-2 는 생산 종단값의 `abs(ln(P(m)/m))` 와 `<EVID>/on/oracle.csv` 의 독립 근에 대한 `abs(ln(m/n*))` 로 계산한다. | 비교·재생·증거 조건 하나라도 실패/미확보면 **NT-X**; G 전건 PASS 에서만 E-2 최대값 하나라도 >1e-6 이면 **NT-R**, 둘 다 ≤1e-6 이면 **NT-A**; 사후 τ 조정·자동 재런 금지 |
 
 ### 게이트 명부 끝
 
@@ -85,7 +85,7 @@
 | `src/env_universe.h` | 전집 생성기로 새 키 등록 |
 | `validation/instrumentation_debt/ENV_UNIVERSE.json` | 같은 전집 재생성 산출 |
 | `tests/saha_ne_thresh_selftest.c` | 신설: OFF 별도 프로세스 byte 배터리·합성 F의 알려진 미분/근·실패 전파·탐침 격리 검사 |
-| `scripts/saha_ne_thresh_replay.py` | 신설: 상태 검증·**150쌍 oracle 자격 검증**·생산 double 반복 재현·F′ 차분 분석·독립 고정밀 사다리/근·τ 선택·**ON 궤적/종단점 판독**·분기 변환 및 음성대조 |
+| `scripts/saha_ne_thresh_replay.py` | 신설: 상태 검증·150쌍 oracle 자격 검증·생산 double 반복 재현·F′ 차분 분석·독립 고정밀 사다리/근·τ 선택·**ON 전 반복점/종단점 생산·독립 F 및 구간 할선 비교**·전 궤적 재생 대조·생산 종단 잔차 산출·G-E 전건 증거·분기 변환 및 G-2 음성대조 |
 | `scripts/stage_superlevel_b.sh` | 새 OFF/ON 모드·바이너리/계약 identity·새 키 단일 차이·staging stdout 원문 보존; 봉인 내부 목적지 거부 유지 |
 
 ### 변경집합 끝
@@ -160,4 +160,11 @@ NT-A는 **이 원자모형과 봉인된 실행 범위에서 정지 문턱의 수
 **선택한 경로**: 하네스를 새로 만들지 않고 **O-2 의 독립 고정밀 사다리를 150쌍으로 먼저 자격 검증**(≤1e-10)한 뒤 그것을 오프라인 F 로 쓴다. F′ 는 그 F 로 오프라인 측정하고, **ON 생산 궤적의 할선**으로 교차검증한다. 궤적 기록은 이미 계산되는 값의 기록이므로 **추가 F 평가 0**이며 OFF 는 진입하지 않는다(G-A 「OFF 새 계측 0행」 유지).
 **승계 금지**: 기존 사전감사·preflight PASS 를 개정 2 의 실행 경로에 승계하지 않는다 — `design_audit_rev2.md`·`preflight_rev2.log` 를 G-0 에서 함께 요구한다.
 **운전석 정정 1건**: 기안 #10 이 코드 검수를 운전석으로 적었으나 **개정22 는 코드 검수 = astra** 다. 코딩·직접 selftest = 운전석, 코드 검수 = astra 로 적용했다(자기 코드 자기 검수 소멸).
+행 단위 diff 로 의도 외 소실 0 확인 [저자 실행].
+
+
+## 개정 3 (2026-09-08, 개정 2 사전감사 «폐합 차단» 1 해소 — astra 기안, OLD/NEW 5쌍)
+**차단 내용**: 「ON 생산 궤적으로 교차검증」이라 적었으나 계약이 지정한 검사(G-E 궤적 항등식)는 **생산 값끼리** 구성되므로 독립 사다리가 틀려도 성립한다 ⟹ 표본 밖에서 잘못된 오프라인 F′·τ* 가 통과할 여지.
+**해소**: G-E 가 **생산 P 대 독립 Q 를 모든 반복점·종단점에서** `≤1e-10`, **구간 할선**을 `≤1e-4·max(1,|s_P|)`, **독립 double 재생**의 반복 수·상태·궤적 일치까지 요구하고, 실패 처분(NT-X)과 기대 불일치(NT-R)를 분리한다. 사전 봉인 대상(O-0~O-2·τ*·비교 규칙)과 사후 검증 대상(ON 자료)을 나눠 순환을 없앴다. G-2 음성대조에 「생산 항등식은 유지한 채 Q 만 변조」 반례와 경계 동일값·바로 위 값 검사를 넣었다.
+**승인 범위**: 개정 3 사전감사(`<EVID>/design_audit_rev3.md`)·preflight(`preflight_rev3.log`) PASS 가 G-0 의 추가 필수조건. 개정 2 감사의 **차단 기록 보존**, 이전 PASS 승계 금지.
 행 단위 diff 로 의도 외 소실 0 확인 [저자 실행].
