@@ -1290,3 +1290,56 @@ Q-LEAN 도 「설계상 축소는 실질적이나 **개정 2 구현 후 감소�
 최상위 `PASS`/`READY` 를 비교 자격의 대용으로 소비하는 부분 · `Δf` 와 `100Δf` 의 중복 계산.
 ⚠**실제 산술·거부 통제·쓰기 보호를 함수째 삭제할 근거는 없다.**
 
+
+## 집행 기록 13 — 개정 2 구현: **자동 인증 경로 제거** (2026-09-09, 운전자 기재)
+
+**운전자 재현**: `CMFGEN_TWIN_MAP_SELFTEST_PASS observations=15` rc 0 ·
+`CMFGEN_TWIN_MAP_STAGER_SELFTEST_PASS positive=7 negative=16` rc 0 · 행수 실측 일치 ·
+★**금지 함수 잔존 검색 직접 실행 = 0건**(`decide_branch`·`gate_result`·`require_evidence_keys`).
+sol 보고의 종단 시험 `CMFGEN_TWIN_MAP_E2E_OBSERVED prepare_rc=0 analyze_rc=0 rows=74
+negative_observations=11` 은 운전자도 재현했다.
+
+| | 이전 | 이후 | |
+|---|---:|---:|---|
+| 판독기 | 1,606 | **1,515** | −91 |
+| 스테이저 | 455 | **507** | +52 |
+| 합계 | 2,061 | **2,022** | −39 |
+
+diff 는 **삭제 581행 · 추가 542행** — 순감은 작지만 **교체량이 크다**. 구조가 바뀐 것이지 다듬은 것이 아니다.
+
+### 삭제된 것 (자동 인증의 뼈대)
+
+facts 재포장 · `require_evidence_keys` · `gate_check`/`gate_result` · 인증 전용 `fixture` ·
+**facts 사전만 바꾸던 `NEGATIVES`** · `classify_hypothesis` · `decide_branch` ·
+자동 gate/TM/E-NE 결과와 그 회귀시험. sol 의 AST 검사 `AUTO_AUTH_FUNCTIONS_REMAINING=[]`,
+다섯 게이트 이름 참조 0건. **운전자가 독립 grep 으로 0건 재확인.**
+
+### 실행 선행조건 2건 — 실증됐다 (등급과 무관하다던 그것)
+
+| 4회차 실측 결함 | 이번 실증 |
+|---|---|
+| 거부 **전에** 보호 대상 권한이 0440→0640 으로 바뀜 | `TEMPORARY_SWAP_REJECTED protected_mode_before=0440 **protected_mode_after=0440** protected_content=unchanged`; directory-fd·배타 게시 `observation=accepted` |
+| 상한 검사 **후** 산출물 생성 | `POST_CHECK_OUTPUT observation=**not_created** evidence_before=17179869183 planned=2 cap=17179869184`; 기존 결과도 `STORAGE_REJECTED_BEFORE_OUTPUT` |
+
+### 음성대조가 **실제 소비 경로**로 옮겨졌다
+
+이전 세대 · Saha 연결 불일치 · 헤더/열수 모순 · 0분모의 양수·NaN population · 공개 T 불일치가
+**셀 상태·사유로 보존**된다(더 이상 facts 사전을 건드리는 시험이 아니다).
+identity: source·RUN 바이너리 교체 → `pending`. 집계: BASE 중앙값 변조 →
+**원 `base_map.csv` 에서 재계산되어 `BASE_EXPECTATION_AGGREGATE_MISMATCH`**(4회차 F7 의 기전 제거).
+참조: 미선정 행 추가에도 **74행 유지**(4회차 F2 의 거짓 거부 해소), 헤더 모순은 **해당 원소에만 국소화**.
+
+### 종단 시험의 기대값이 바뀌었다
+
+이전: 「분기가 `TM-D` 이고 전 게이트 PASS 면 성공」 ⟹ **생산 경로가 새도 통과했다.**
+이후: **원값 · 74셀 피복 · 실패 보존 · 자동 판정 필드 부재**. 실제 출력 `rows=74
+negative_observations=11` — **음성 관측이 산출에 남는다**는 것이 새 기대값의 핵심이다.
+
+### 독립 재현의 경계
+
+`reference`/`model`/raw RUN 출력만 공유하고 **생산 파서·산술·집계 함수는 공유하지 않는다**.
+직접 `csv`/`Decimal` 계산 = `INDEPENDENT_DIRECT_ARITHMETIC`. 개정 2 가 보증 기제를 게이트에서
+운전자 재현으로 옮긴 그 조건이다.
+
+⚠**아직 아무것도 인증되지 않았다.** 코드 검수는 미집행이며, 이것은 **관측 등급 구조의 첫 구현**이다.
+
