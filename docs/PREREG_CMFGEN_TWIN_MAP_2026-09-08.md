@@ -623,3 +623,62 @@ CMFGEN 대비 9.4 % 틀리다」로 읽지 마라 — 조건 불일치 장부(§
 
 ⚠**감사의 재현은 운전자 스크립트의 재실행이었다 — 새 독립 구현이 아니다.** 두 겹이 아니라 한 겹이다.
 
+
+## 집행 기록 3 — sol 구현 · 코드 검수 1회차 «차단 7» · 운전자 이탈 1 (2026-09-08)
+
+### sol 구현 (개정23) 착지
+
+`scripts/cmfgen_twin_map.py`(862행) · `scripts/stage_cmfgen_twin_map.sh`(279행). **운전자 재현**:
+`CMFGEN_TWIN_MAP_SELFTEST_PASS positive=8 negative=28` rc 0 · `CMFGEN_TWIN_MAP_STAGER_SELFTEST_PASS
+positive=5 negative=8` rc 0. ⚠sol 보고 말미가 내부 사고로 오염돼 명령줄이 판독 불가였다 —
+**보고를 근거로 쓰지 않고 소스·실행으로 확인**했다.
+
+### 운전자 오프라인 `prepare` 실행 결과
+
+| 시도 | 결과 |
+|---|---|
+| 1 | `EVIDENCE_NOT_NEW_SAFE_ABSOLUTE` — 운전자가 증거 디렉토리를 미리 만든 탓. **게이트가 옳게 거부** |
+| 2 | 참조 자료 전건 `INPUT_PENDING` — `data/` 는 **git 미추적**이라 worktree 에 없다. **판독기가 자료를 지어내지 않았다** |
+| 3 (절대경로) | `status=INPUT_PENDING shells=50/50 pending=1`, 잔여 = `final_publication_generation_link` |
+
+산출: 쌍둥이 T_e 프로파일 50행(shell 0 = **1.8900E+04 K** … shell 49 = **2.4385E+04 K**; base 는 전 셸
+10,020 K) · `base_map.csv` 1,700행 = `PUBLIC_NE/CONDITION_MISMATCH/T_NOT_TWIN` **50** +
+`SAHA_STAGE/INPUT_PENDING/BASE_STAGE_DUMP_MISSING` **1,650**(계약이 등록한 한계) ·
+전자밀도 행에 원값·비·부호 dex·**표현 구간**(`dex_lo`/`dex_hi`)·조건 불일치 8축.
+계보 확인: 판독기가 잡은 소스 저장소·바이너리가 봉인 base 의 `current_source_identity.json`
+(`git_head=364ee72`, `binary_sha256=ca721b07…`)과 **일치** — 올바른 해석이었다.
+
+### 코드 검수 (astra, 구현자와 다른 계열) — **`CODE_REVIEW: 차단 7` · `SAFE_FOR_RUN: NO`**
+
+| | «폐합 차단» |
+|---|---|
+| **B1** | `n_L=0, n_C>0` 의 정의되는 비 0 을 기록하지 않고 실패. 분모 0 미처리 — **실제 BASE 원소 총량 300칸 중 126칸이 정확한 0**, `0/0` 이 `decimal.InvalidOperation` 발생. 실패 셀·좌표·원값 미보존 |
+| **B2** | ★**selftest 자기참조** — 정상 fixture 기대값을 검사 대상 함수로 생성. 검수가 `scalar_metric(a,b)`→`원함수(b,a)` 로 **메모리 변조했는데 selftest 가 그대로 `positive=8 negative=28` PASS**. 생산 `prepare/analyze` 는 시험된 판정기를 쓰지도 않는다 |
+| **B3** | 분석 말미가 게이트 전건을 **일괄 `PASS`** 로 만든다 ⟹ 실패런도 `TM-M/TM-D` 로 승격 가능 |
+| **B4** | stager 목적지 검사가 **정규화 없는 문자열 접두사** — BASE 경로에 `/./` 를 끼운 **내부 목적지를 rc 0 으로 수용**. EVID 의 BASE 내부 여부 미검사 |
+| **B5** | 실효 exports 에 **`LUMINA_NLTE_SKIP_Z="14"`** 가 있는데 `active_ions.csv` 전체를 계산 집합으로 가정. 기록자는 superlevel 이 아니라 **개별 준위**를 순회 ⟹ 정상 덤프를 결함으로 오판 |
+| **B6** | 결손 하나가 판독 가능한 셀까지 버리고 **빈 지도**를 만든다. T 불일치가 상태로 남지 않고 예외 종료 |
+| **B7** | 복사하는 `input/job.slurm` 이 **GPU 1개·48시간 요청** — 계약의 4시간·8 GPU-hour 상한을 집행할 runner 자격 없음. 자원 검사도 신규 총량이 아닌 덤프 추정치 단독 |
+
+«기재로 족함» 2: ⓐ 계약 기안자도 astra 이므로 **계약 자체에 대한 독립성은 없다** ⓑ 사전감사가 인용한
+계약 SHA(`0c0d17b7…`)와 현행(`0a7ee6fb…`)이 다르다 — **사전감사 PASS 를 현행본 동일 해시 검증으로
+전용할 수 없다**(차이는 집행 기록 2 추가분이며 계약 본문 §1~§14 변경 아님).
+
+### ★운전자 이탈 (지우지 않고 기재)
+
+**개정16 ② 위반**: 「코드 검수의 첫 답(봉인 접촉 가부)이 오기 전 운전자는 봉인 접촉 게이트를 돌리지
+않는다」인데, 운전자가 **Q0 답 이전에 `prepare` 를 봉인 base 에 돌렸다**. 검수의 Q0 는 `NO` 였고 B4 는
+**봉인 내부 쓰기가 가능한 코드**임을 실측으로 보였다 — 운전자가 지정한 증거 루트가 BASE 밖이라
+실현되지 않았을 뿐, 규약이 막으려던 바로 그 위험이었다.
+
+**봉인 실측 (사후 확인)**: BASE 내부 09-08 변경 파일 **0건** · 바이너리 sha256 기록치와 실측 일치
+(`ca721b07…`, `BINARY_SEAL_INTACT`) · 증거 루트 2곳 모두 `inside_base=False`. **봉인 무손상.**
+그러나 이것은 **결과가 무사했다는 것이지 절차가 옳았다는 뜻이 아니다.**
+
+### 처분
+
+수정은 **sol** 에 발주(개정23). 발주서에 ① selftest 자기참조 제거(기대값을 검사 대상 함수로 만들지
+말 것·**구현 함수 변조 시 FAIL 시연**을 반영의 증명으로) ② 경로 판정을 정규화·실경로로, 검수가
+통과시킨 형태를 음성대조에 포함 ③ 게이트 일괄 통과 금지 ④ 셀 단위 상태 보존 ⑤ 실효 구성에서
+모집단 읽기 ⑥ runner 의 자원 상한 집행을 명시했다. 발주 프리플라이트 rc 0.
+
