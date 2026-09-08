@@ -1388,3 +1388,42 @@ Saha 생산 집합·NLTE 준위 키·원소 존재 셸 수·BASE 중앙값과 �
 근거: 구조 계급은 이번에 소멸했음이 Q1·Q6·Q3 로 실측됐다. 그것이 되살아나면 강등이 실패한 것이고,
 국소 결함이 다시 대량이면 개별 수리로 수렴하지 않는다는 뜻이다.
 
+
+## 집행 기록 15 — 5회차 «폐합 차단» 6건 반영 (2026-09-09, 운전자 기재)
+
+**운전자 재현**: `CMFGEN_TWIN_MAP_SELFTEST_PASS observations=20` rc 0 ·
+`CMFGEN_TWIN_MAP_STAGER_SELFTEST_PASS positive=8 negative=20` rc 0 ·
+`CMFGEN_TWIN_MAP_E2E_OBSERVED prepare_rc=0 analyze_rc=0 rows=74 **negative_observations=14**` ·
+행수 실측 일치 · **`AMU_G = 1.660539066e-24` 소스 규약 일치 직접 확인**.
+
+★**`negative_observations` 11 → 14.** 실패가 **더 많이 드러나는 것**이 이번 수리의 성공 지표다.
+
+| 지적 | 반영 |
+|---|---|
+| ① 모순 세대를 사유 없이 최종 공개로 기록 | `CONTRADICTORY_GENERATIONS` 로 보존하고 관련 셀을 `INPUT_PENDING` 으로 **강등**. 실제 산출: `final=2 ne=1 visibility=CONTRADICTORY_GENERATIONS` |
+| ② 런 뒤 확인을 선행조건으로 재강제 | 그 한 항목만 유예하고 **실제 선행조건 결손은 계속 거부** |
+| ③ 비교 밖 음수 생산값 소실 | 좌표·원값·배제 사유를 summary 에 남기고 **부분합 `N_Z_dump` 는 폐기**. 실제 산출: `shell=0 Z=20 stage=3 raw=-0.125 disposition=EXCLUDED_FROM_N_Z_DUMP_BECAUSE_INVALID` |
+| ④ 분모 질량 단위 규약 불일치 | `AMU_G=1.660539066e-24` 로 **봉인 소스 규약에 일치**. 출처 = `SRC/src/lumina.h:38` 의 `AMU`, 실제 분모식 `SRC/src/lumina_plasma.c:2808` |
+| ⑤ 조상 경로 교체가 보호 경계 우회 | 절대경로의 **모든 조상을 `O_NOFOLLOW` directory-fd 로 순회**한 뒤 쓴다 |
+| ⑥ 저장 교체 중 동시 점유 누락 | **「현재 점유 + 임시 산출」 최고점 사전검사 + 쓰기 후 실측 검사** 추가 |
+
+**보호 시연**: 검수형 `ANCESTOR_PATH_SWAP_REJECTED` · sol 자선 새 형태 `NESTED_ANCESTOR_LINK_REJECTED` —
+두 보호물 모두 **내용 보존·모드 `0440`**.
+**저장 시연**: 검수형 `current=17179868160 temporary=29152 peak=17179897312 cap=17179869184` 거부 ·
+새 합산형 `estimate=1 input=2 evidence=17179869179 temporary=3` 거부.
+
+★**같은 계급 점검(발주가 요구한 것)**: 물리 상수 사용은 **AMU 뿐**이며 양수 분모 **174/174칸이 새
+규약과 일치**. 속도 `cm/s→km/s` 의 `1e5` 도 `lumina.h:206`·`lumina_cmfgen.c:6153` 과 일치 확인.
+**자동 판정 부활 점검**: `decide_branch`/`gate_result`/`classify_hypothesis`/`TM-*` 잔존 **0건**.
+
+### ⚠행수는 늘었다
+
+| | 이전 | 이후 | |
+|---|---:|---:|---|
+| 판독기 | 1,515 | 1,620 | +105 |
+| 스테이저 | 507 | 614 | +107 |
+| 합계 | 2,022 | **2,234** | **+212** |
+
+증가분은 조상 경로 fd 순회 · 저장 최고점·사후 검사 · 실패 기록으로, **검수가 요구한 것**이다.
+그러나 Q-LEAN 의 압력은 유효하다 — 다음 검수가 이 증가가 **정당한지** 판정한다.
+
