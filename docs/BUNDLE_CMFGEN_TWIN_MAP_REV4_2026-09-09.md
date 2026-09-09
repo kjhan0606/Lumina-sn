@@ -80,3 +80,93 @@ L4: `zbar_lumina`의 오해 소지 alias를 제거하고 기존 검증/집계를
 `Σn_q/N_prod-Σf_C`가 남는다. E-Z는 비교 분모를 유지하므로 새 분율 분모 변경과 독립이다.
 전제 identity와 기존 실패 재현은 개정 3 검수문에 고정했다. 이 대수 검토는 실행 시험 PASS가 아니다.
 **전체 설계 PASS. 구현·직접 시험·코드 검수는 후속 실측 대상으로 남긴다.**
+
+## 실행 결과 — 운전자 검수·재현
+
+2026-09-09 후속 기록. **개정 4 코드 검수 PASS, 직접 재현 reproduced.**
+이는 아래 수정 범위의 판정이며 전체 물리 묶음 완료나 Opus5 종료감사 PASS가 아니다.
+sol 세션 `01a084e4-1477-78f0-a758-118c1ce8758f`는 정상 종료(rc=0)했다.
+두 파일을 메인 저장소에 통합했고 worktree와 SHA256이 일치한다:
+
+- `scripts/cmfgen_twin_map.py`: `e3a3ed669517cd00d611667d0933600a5109dbbd02b745259dc6012f5f19d991`
+- `scripts/stage_cmfgen_twin_map.sh`: `695d97616929feb6a665d83cef7ea80d90b3d47f541043a13fdaf9e38c0a9fcf`
+
+증거 루트는 `/gpfs/kjhan/lumina/cmfgen_map/impl_rev4`다.
+운전자 재실행은 판독기 35항목, stager 정상 11/음성 25항목 모두 PASS(rc=0).
+`operator_check.py`/`operator_check.log`에서 실제 봉인 원자량의 생산 정규화 fixture를
+소비하고, NaN·±Inf·음수 NLTE를 각각 주입해 74행과 실패 원값 보존을 확인했다.
+Co 생산 합만 교란하면 참조 합 1에서도 닫힘 잔차 약 −0.1, 구간 [−0.1015,−0.0985],
+`consistent=false`였다. 사설 fixture 시험이지 실물 population 관측은 아니다.
+독립 CSV/Decimal 산술로 실제 BASE 50셸의 두 분모와 전자비를 대조했다.
+E-Z 피연산자는 수정 전후 동일: `M_Z=0.09707606789147242887578369581`,
+구간 `[0.09705830200254234539301766190,0.09709383375411056999909993023]`.
+이는 BASE 진단값이며 twin의 개선량이 아니다.
+
+### 실제 프로파일 소비와 참조 열 정의
+
+새 준비 경로 `/gpfs/kjhan/lumina/cmfgen_map/evid_rev4_20260909`에 실제 참조 50셸
+prepare를 완료했다. 봉인 소스 `worktree_364ee72_dualauth`의 실제
+`a210_fixed_te_profile_load`와 생산 온도범위 validator를 CPU 단독으로 링크했다.
+기존 `det_stage12_selftest` 통과에 이어, 일회성 `loader_profile_repro.c`로 새 프로파일을
+읽어 **50/50 입력·출력 binary64 일치**, 온도 범위 **8849.2–24385 K**를 확인했다.
+생산 C/CUDA·원자량표·실물 바이너리는 변경하지 않았다. GPU 런타임 소비 증거는 아직 없다.
+
+| 증거 | SHA256 |
+|---|---|
+| `inputs/fixed_te_profile.txt` (새 준비 경로) | `f6db3543f4b1a122ce4b5f39ce48678d806903bd3bbff12c397feda75cc29da4` |
+| `loader_profile_repro.c` | `fa8f77796747c68e1fac55254dd51a5503929b80155ada0c8b5379926d28862c` |
+| `loader_profile_repro` (CPU 재현용) | `e3712f0e6343869bf1d6781fec6972c972f3f4b921a32c8aa6d66b75f401b391` |
+| `loader_profile.csv` | `721a9a05935a763ce353c187b42f4d307b7b348cd19618172e4b2304d5f39201` |
+| `loader_profile.log` | `d15b6a9ae1a6f6a69bbb5385dfa1ee128e696ad8793c586f732bd95e0dca234a` |
+| `operator_check.py` | `b809d4669023839f7cc2320d4852aee414702e2caec2eb3dedd430d4d51d6aad` |
+| `operator_check.log` | `17a551ab8ce115a121b19f22c308b9995197ae52cd8e6e57ade6991d7b2e79b5` |
+
+참조 열은 [Blondin et al. 2022, §4.2.2 항목 4 및 Table A.2](https://doi.org/10.1051/0004-6361/202244134)
+에 따라 **INDIVIDUAL**로 등록했다. 파일 규격은 중성부터 각 전하 단계까지의 분율을 정의하고,
+toy06 원자모형 표의 말단은 Si/S/Ca V(q4), Fe/Co/Ni VI(q5)다. 실제 여섯 파일의
+NSTAGES=5/6과 일치한다. 이는 문서화된 출력 의미를 적용한 것이며 참조 모형의 높은 전리 단계
+절단 오차가 없다는 증명은 아니다. 행 합=1만으로 누적통이라던 과거 단정은 채택하지 않는다.
+[원문 PDF](https://pureadmin.qub.ac.uk/ws/portalfiles/portal/407673446/aa44134_22_1_.pdf)는
+`impl_rev4/standart_2022.pdf`에 보존했고 SHA256은
+`96916f6e173e40f490c62905ba86df09213ea49512fd1caf6dc1da6e39e7559b`다
+(PDF 13–14쪽 파일 규격, 22쪽 Table A.2).
+
+원래 prepare의 `expectations.json`은 `impl_rev4/expectations.before_qualification.json`에
+보존했다. 새 준비 경로의 expectations에 위 소비·문헌 근거를 연결하여 미결 8항목 중
+CPU loader 1건과 최고통 6건만 해소했다. final publication 미결은 유지한다.
+`qualification_check.log`(rc=0)에서 이 세 필드군 외 변경 없음을 대조했다.
+적용 후 expectations SHA256은 `1416e8d30b08fdc7a6de56af1c4ba490a58ba2083d172251d5e5ea71b036db2b`,
+보존한 적용 전 파일은 `521a1d00bda77f513f98db9ce7ce29fefdd6f0d5d4f3931aa2d6c4bd0e081a13`이다.
+writer 계약의 최종 NLTE 경로·세대, 자원 카드의 미확정 항목, A100-only runner는 남아 있다.
+**실물 staging/Slurm 제출 0회, GPU 사용 0.** 기존 봉인 RUN은 수정하지 않았다.
+다음 실물 진행에는 **H200/H100 실행 스크립트 수정**이 필요하다. 이는 이번 수정묶음의
+명시적 제외 범위이므로 별도 범위 승인을 받아야 한다. 가드 삭제나 임의 pending 해제는 하지 않는다.
+
+### 재현 명령 보충
+
+아래는 grammar-debug에서 실행한다. `S`는 봉인 소스, `R`은 위 증거 루트,
+`E`는 새 준비 경로다. 새 재현 바이너리를 만들 때 기존 증거 파일은 덮어쓰지 않는다.
+
+```bash
+S=/gpfs/kjhan/lumina/dproxy_audits/worktree_364ee72_dualauth
+R=/gpfs/kjhan/lumina/cmfgen_map/impl_rev4
+E=/gpfs/kjhan/lumina/cmfgen_map/evid_rev4_20260909
+python3 -B "$R/operator_check.py"
+"$R/loader_profile_repro" "$E/inputs/fixed_te_profile.txt"
+# CPU 재현 바이너리의 원래 빌드식; 아래 출력은 별도 임시 경로로 지정한다.
+T=$(mktemp -d /gpfs/kjhan/lumina/cmfgen_map/loader_repro.XXXXXX)
+gcc -O2 -Wall -Wextra -std=gnu11 -D_GNU_SOURCE -ffunction-sections -fdata-sections \
+  -Wl,--gc-sections -I"$S/src" -o "$T/loader" "$R/loader_profile_repro.c" \
+  "$S/src/lumina_plasma.c" "$S/src/population_contract.c" -lm
+"$T/loader" "$E/inputs/fixed_te_profile.txt"
+python3 -B - <<'PY'
+from pathlib import Path
+import csv
+e=Path('/gpfs/kjhan/lumina/cmfgen_map/evid_rev4_20260909')
+r=Path('/gpfs/kjhan/lumina/cmfgen_map/impl_rev4')
+expected={int(a):float(b) for a,b in (s.split() for s in (e/'inputs/fixed_te_profile.txt').read_text().splitlines())}
+actual={int(x['shell_id']):float(x['temperature_K']) for x in csv.DictReader((r/'loader_profile.csv').open())}
+assert len(expected)==len(actual)==50 and expected==actual
+print('PROFILE_ROUNDTRIP_PASS shells=50 exact_binary64_match=50')
+PY
+```
