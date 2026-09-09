@@ -69,3 +69,47 @@ Q-LEAN: 기존 원로그/footer/manifest를 소비하고 과거 진단 모드·�
 한 구현·한 검수로 제출까지 연결하며 획득런·하드웨어별 복수런·상주 모니터·일반 인증기는
 추가하지 않는다. **APPROPRIATE**. 물리 기준과 비용 상한을 보존하므로 **DESIGN PASS**.
 구현·자원 수용·제출 자격 PASS는 아직 아니다.
+
+## 실행 전 발견 — writer 경로 미연결, GPU 제출 보류
+
+runner 발주 세션 `01a08504-d8bf-7f71-9c79-a09ab80879ab`, 증거 루트
+`/gpfs/kjhan/lumina/cmfgen_map/impl_runner_20260909`. 문서 봉인 `ba2df38`, dispatch preflight rc=0.
+
+운전자가 봉인 소스의 실제 DET 호출을 추적했다. `src/lumina_cuda.cu:8077` 부근의
+`det_transactional_requested` 분기는 `cmfgen_run()` 뒤 plasma CSV만 쓰고 **8110에서 return**한다.
+Saha 최종 writer **10280**과 per-iter writer **8648**은 그 아래의 우회된 legacy 경로다.
+`src/lumina_cmfgen.c:7525`의 seed predictor 및 **7538**의 R7/A210은 private candidate로 풀고,
+`src/nlte_population_candidate.c:278`은 explicit effect policy=1, allowed=0을 설정한다.
+`src/lumina_plasma.c:20916`의 NLTE dump는 DIAGNOSTIC_FILES 허용 시에만 실행되며,
+같은 파일 **21193**의 candidate solve는 일반 덤프를 계속 억제한다.
+**일반 dump 스위치를 켜는 runner 변경만으로 최종 Saha/NLTE 파일을 얻을 수 없다.**
+이는 GPU 재현 결과가 아니라 exact source control-flow 확인이다. 기존 prepare의 writer token
+존재 확인은 실행 경로 도달성 확인이 아니었다. 최종 연결을 단순 런 후 미결로만 둔 판단을 정정한다.
+기존 `tests/nlte_population_candidate_selftest.c:160–169`를 봉인 소스에 링크한 CPU 시험도
+rc=0으로 재현했다. 이 시험은 실제 candidate begin 후 일반 DIAGNOSTIC_FILES 효과가 꺼져 있음을
+검사한다. 로그 `candidate_effects.log` SHA256
+`64cf888e9488a2ced8a0c072fa72a03c3e03865bf1a35ac03edddba7370371f8`.
+이 시험은 private 효과 정책의 executable 재현이며, 전체 GPU 호출 경로의 실행 재현은 아니다.
+추가 참조 source SHA256: `lumina_cmfgen.c`
+`12b83b14c0ba06793127fa5d4744b9a17cc400d34bea98d768dd084114fedd6e`,
+`nlte_population_candidate.c` `539c3da5787d546a0d7daf5c9724d9e68e75c6d961814d4b1fbd23a385d0ddf9`.
+CPU 재현은 grammar-debug에서 아래처럼 실행했다(기존 출력은 재실행 시 별도 임시 경로 사용):
+
+```bash
+S=/gpfs/kjhan/lumina/dproxy_audits/worktree_364ee72_dualauth
+T=$(mktemp -d /gpfs/kjhan/lumina/cmfgen_map/candidate_repro.XXXXXX)
+gcc -O2 -Wall -Wextra -std=c11 -I"$S/src" -o "$T/candidate" \
+  "$S/tests/nlte_population_candidate_selftest.c" "$S/src/nlte_population_candidate.c" \
+  "$S/src/population_contract.c" "$S/src/opacity_publication.c" "$S/src/emissivity_publication.c" \
+  "$S/src/atomic_internal_energy.c" "$S/src/cmfgen_adiabatic.c" -lm
+"$T/candidate"
+```
+
+새 바이너리/C/CUDA 변경은 현재 승인 범위 밖이다. runner 구현은 보존·검수하되 GPU 제출은
+보류하고, 물리 계산식은 그대로 두는 최종 공개 writer 추가와 새 바이너리 검증에 대해 사용자에게
+별도 범위 승인을 요청했다. BASE 재빌드·덮어쓰기·추가 획득런은 하지 않는다.
+
+한편 바이너리 `cuobjdump --list-elf`에서 33개 ELF 중 sm90 code image를 확인했다
+(`binary_cuda_images_verified.txt`). 기존 A100 job333531은 02:58:58, CPU32/mem64G,
+MaxRSS32213028K였다(`base_sacct.txt`). model rc=0이지만 옛 후처리 때문에 Slurm FAILED였으며,
+이 실행시간/메모리는 새 T 완주 보장이 아니다. 이 두 근거만으로 writer 부재를 면제하지 않는다.
