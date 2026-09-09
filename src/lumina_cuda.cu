@@ -18,6 +18,7 @@ extern "C" {             /* Phase 6 - Step 1 */
 #include "bf_event_measure_access.h" /* MC-EVT shared CPU/GPU classifier */
 #include "line_jbar.h"   /* transactional DET frozen Q_g */
 #include "lumina_cmfgen.h"  /* pure-CMFGEN parallel radiation path */
+#include "cmfgen_final_writer.h" /* final committed DET snapshot */
 #include "gpu_radiation_field.h"
 #include "gpu_opacity_kernels.h"
 #include "gpu_emissivity_kernels.h"
@@ -8088,21 +8089,11 @@ int main(int argc, char *argv[]) {
                             det_rc);
                     return EXIT_FAILURE;
                 }
-                FILE *pf = fopen("lumina_plasma_state.csv", "w");
-                if (!pf) {
+                if (cmfgen_final_writer(".", &plasma, &atom_data, &nlte,
+                                        geo.n_shells) != 0) {
                     fprintf(stderr,
-                            "[DET-TRANSACTIONAL][FATAL] plasma-state output "
-                            "open failed\n");
-                    return EXIT_FAILURE;
-                }
-                fprintf(pf, "shell_id,T_e,n_e\n");
-                for (int s = 0; s < geo.n_shells; ++s)
-                    fprintf(pf, "%d,%.6f,%.6e\n", s, plasma.T_e[s],
-                            plasma.n_electron[s]);
-                if (fclose(pf) != 0) {
-                    fprintf(stderr,
-                            "[DET-TRANSACTIONAL][FATAL] plasma-state output "
-                            "close failed\n");
+                            "[DET-TRANSACTIONAL][FATAL] final publication "
+                            "writer failed\n");
                     return EXIT_FAILURE;
                 }
                 printf("[DET-TRANSACTIONAL] status=COMPLETE\n");

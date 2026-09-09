@@ -39,7 +39,7 @@ REAL_REFERENCE = Path("/home/kjhan/BACKUP/Eunha.A1/Claude/Lumina-sn/data/standar
 # Sealed source convention: SRC/src/lumina.h defines AMU, consumed by
 # SRC/src/lumina_plasma.c when constructing the production element total.
 AMU_G = Decimal("1.660539066e-24")
-PUBLICATION_FIELDS = frozenset(("T", "ne", "Saha", "NLTE"))
+FINAL_MANIFEST_REL = "work/cmfgen_final_publication.json"
 
 
 class Failure(RuntimeError):
@@ -586,16 +586,102 @@ def base_identity(base: Path, reference_hashes: dict[str, str]) -> tuple[dict[st
     }, pending
 
 
+def run_build_identity(path_text: str | None) -> tuple[dict[str, Any] | None, list[str]]:
+    if not path_text:
+        return None, ["run_build_identity"]
+    path = Path(path_text)
+    safe_regular(path, "RUN_BUILD_IDENTITY_UNSAFE")
+    record = json.loads(path.read_text(encoding="utf-8"))
+    if record.get("schema") != "CMFGEN_TWIN_RUN_BUILD_V1": fail("RUN_BUILD_IDENTITY_SCHEMA")
+    root = Path(record.get("source_root", ""))
+    binary = Path(record.get("binary", {}).get("path", ""))
+    if not root.is_absolute() or not root.is_dir() or root.is_symlink(): fail("RUN_SOURCE_ROOT_UNSAFE")
+    safe_regular(binary, "RUN_BINARY_UNSAFE")
+    if sha256(binary) != record.get("binary", {}).get("sha256"): fail("RUN_BINARY_IDENTITY_MISMATCH")
+    members = record.get("source_files")
+    if not isinstance(members, list) or not members: fail("RUN_SOURCE_IDENTITY_EMPTY")
+    for member in members:
+        source = root / member.get("path", "")
+        if not source.is_file() or source.is_symlink() or sha256(source) != member.get("sha256"):
+            fail("RUN_SOURCE_IDENTITY_MISMATCH", member.get("path", ""))
+    return {**record, "identity_path": str(path), "identity_sha256": sha256(path)}, []
+
+
+def seal_build(args: argparse.Namespace) -> int:
+    root = require_real_path(args.source_root)
+    binary = Path(args.binary)
+    before_path = Path(args.source_before)
+    output = Path(args.output)
+    safe_regular(binary, "RUN_BINARY_UNSAFE")
+    safe_regular(before_path, "SOURCE_BEFORE_UNSAFE")
+    if output.exists() or output.is_symlink(): fail("RUN_BUILD_IDENTITY_OUTPUT_EXISTS", str(output))
+    before = json.loads(before_path.read_text(encoding="utf-8"))
+    paths = {item["path"] for item in before.get("source_files", [])}
+    paths.update({
+        "scripts/cmfgen_twin_map.py", "scripts/run_cmfgen_twin_map.sh",
+        "scripts/stage_cmfgen_twin_map.sh", "src/cmfgen_final_writer.c",
+        "src/cmfgen_final_writer.h", "tests/cmfgen_final_writer_selftest.c",
+        "tests/cmfgen_writer_consumer_selftest.py",
+    })
+    members = []
+    for rel in sorted(paths):
+        path = root / rel
+        safe_regular(path, "RUN_SOURCE_MEMBER_UNSAFE")
+        members.append({"path": rel, "bytes": path.stat().st_size, "sha256": sha256(path)})
+    record = {
+        "schema": "CMFGEN_TWIN_RUN_BUILD_V1", "source_root": str(root),
+        "source_before": {"path": str(before_path.resolve()), "sha256": sha256(before_path)},
+        "source_files": members,
+        "binary": {"path": str(binary.resolve()), "bytes": binary.stat().st_size, "sha256": sha256(binary)},
+        "build_command": args.build_command,
+    }
+    json_write(output, record)
+    print(f"CMFGEN_TWIN_RUN_BUILD_IDENTITY files={len(members)} binary_sha256={record['binary']['sha256']} output={output}")
+    return 0
+
+
+def bind_build(args: argparse.Namespace) -> int:
+    evidence = require_real_path(args.evidence)
+    identity_path = evidence / "inputs/identity.json"
+    writer_path = evidence / "offline/writer_contract.json"
+    expectations_path = evidence / "offline/expectations.json"
+    for path in (identity_path, writer_path, expectations_path): safe_regular(path)
+    build, pending = run_build_identity(args.run_build_identity)
+    if pending or build is None: fail("RUN_BUILD_IDENTITY_MISSING")
+    identity = json.loads(identity_path.read_text(encoding="utf-8"))
+    identity["run_build"] = build
+    writer, writer_pending = source_writer_contract(identity)
+    if set(writer_pending) != {"actual_final_publication_manifest"}:
+        fail("FINAL_WRITER_SOURCE_NOT_QUALIFIED", ",".join(writer_pending))
+    expectations = json.loads(expectations_path.read_text(encoding="utf-8"))
+    stale_prefixes = ("writer_source:", "writer_token:")
+    stale_exact = {"final_publication_generation_link", "run_build_identity"}
+    remaining = [item for item in expectations.get("pending", [])
+                 if item not in stale_exact and not item.startswith(stale_prefixes)]
+    remaining.append("actual_final_publication_manifest")
+    json_write(identity_path, identity)
+    json_write(writer_path, writer)
+    expectations["pending"] = sorted(set(remaining))
+    expectations["identity_sha256"] = sha256(identity_path)
+    expectations["writer_contract_sha256"] = sha256(writer_path)
+    json_write(expectations_path, expectations)
+    print(f"CMFGEN_TWIN_BIND_BUILD binary_sha256={build['binary']['sha256']} pending={len(expectations['pending'])} evidence={evidence}")
+    return 0
+
+
 def source_writer_contract(identity: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
     pending: list[str] = []
-    repo = Path(identity["source_identity"].get("repository", ""))
+    run_build = identity.get("run_build")
+    repo = Path(run_build.get("source_root", "")) if isinstance(run_build, dict) else Path(identity["source_identity"].get("repository", ""))
     cuda = repo / "src/lumina_cuda.cu"
     plasma = repo / "src/lumina_plasma.c"
     observations = {}
+    final_writer = repo / "src/cmfgen_final_writer.c"
     for name, path, needles in (
-        ("plasma_state", cuda, ["lumina_plasma_state.csv", "plasma.n_electron"]),
-        ("saha_stage", cuda, ["lumina_ion_pops.csv", "ion_number_density"]),
-        ("nlte_level", plasma, ["nlte_levels_iter%03d.csv", "population_required_generation"]),
+        ("plasma_state", final_writer, ["lumina_plasma_state.csv", "PUBLIC_NE_TE"]),
+        ("saha_stage", final_writer, ["lumina_ion_pops.csv", "SAHA_STAGE"]),
+        ("nlte_level", final_writer, ["nlte_levels_final.csv", "NLTE_LEVEL"]),
+        ("det_callsite", cuda, ["cmfgen_final_writer", "cmfgen_run"]),
     ):
         if not path.is_file() or path.is_symlink():
             observations[name] = {"status": "INPUT_PENDING", "reason": "SOURCE_MISSING"}
@@ -606,15 +692,14 @@ def source_writer_contract(identity: dict[str, Any]) -> tuple[dict[str, Any], li
         observations[name] = {"path": str(path), "sha256": sha256(path), "tokens": found}
         if any(count == 0 for count in found.values()):
             pending.append(f"writer_token:{name}")
-    # The available writers have unlike naming/generation contracts.  Source
-    # presence alone cannot certify that their final files share one epoch.
-    pending.append("final_publication_generation_link")
+    pending.append("actual_final_publication_manifest")
     return {
         "schema": SCHEMA,
         "observations": observations,
-        "authority": {"lumina_ion_pops.csv": "SAHA_STAGE", "nlte_levels_iterNNN.csv": "NLTE_LEVEL_SUM", "lumina_plasma_state.csv": "PUBLIC_NE_TE"},
-        "finding": "writer existence verified where available; common final publication generation is not encoded",
-        "qualification_required": ["final_nlte_relative_path", "final_population_generation", "public_T_ne_Saha_NLTE_same_generation_evidence"],
+        "manifest_relative_path": FINAL_MANIFEST_REL,
+        "authority": {"lumina_ion_pops.csv": "SAHA_STAGE", "nlte_levels_final.csv": "NLTE_LEVEL", "lumina_plasma_state.csv": "PUBLIC_NE_TE"},
+        "finding": "final generations and paths are consumed from the completed run manifest",
+        "qualification_required": ["complete", "population_generation", "required_population_generation", "te_generation", "partition_te_generation", "te_manifest_sha256", "files"],
         "pending": sorted(set(pending)),
     }, sorted(set(pending))
 
@@ -942,6 +1027,9 @@ def prepare(args: argparse.Namespace) -> int:
         ions[element] = rows
     identity, identity_pending = base_identity(base, hashes)
     pending.extend(identity_pending)
+    build_identity, build_pending = run_build_identity(getattr(args, "run_build_identity", None))
+    identity["run_build"] = build_identity
+    pending.extend(build_pending)
     writer, writer_pending = source_writer_contract(identity)
     pending.extend(writer_pending)
     pending.append("actual_fixed_te_loader_cpu_consumption")
@@ -1003,7 +1091,7 @@ def prepare(args: argparse.Namespace) -> int:
         "base_self_comparison": paired_ez_structure(base_rows, base_rows, len(shells)),
         "reference_top_bin_semantics": top_semantics,
         "mass_convention": inventory["mass_convention"],
-        "required_outputs": ["lumina_plasma_state.csv", "lumina_ion_pops.csv", "nlte_levels_iterNNN.csv"],
+        "required_outputs": ["cmfgen_final_publication.json", "lumina_plasma_state.csv", "lumina_ion_pops.csv", "nlte_levels_final.csv"],
         "registered_outer_iterations": 2,
         "saha_production_stages": {str(z): sorted(stages) for z, stages in production_saha_stages(base).items()},
         "nlte_production_ions": {str(z): sorted(ion for zz, ion in effective_nlte_levels(base) if zz == z) for z in TARGET_ELEMENTS.values()},
@@ -1050,12 +1138,7 @@ def _fraction_fields(numerator_token: str, denominator: Decimal, reference_token
 
 
 def writer_generation_record(writer: dict[str, Any]) -> dict[str, Any] | None:
-    generations = writer.get("generations")
-    if (
-        writer.get("public_T_ne_Saha_NLTE_same_generation_evidence") is not True
-        or not isinstance(generations, dict)
-        or set(generations) != PUBLICATION_FIELDS
-    ):
+    if writer.get("complete") is not True or writer.get("schema") != "CMFGEN_FINAL_PUBLICATION_V1":
         return None
     def exact_integer(value: Any) -> int:
         if isinstance(value, bool) or isinstance(value, float) or not isinstance(value, (int, str)):
@@ -1065,18 +1148,23 @@ def writer_generation_record(writer: dict[str, Any]) -> dict[str, Any] | None:
             raise ValueError
         return parsed
     try:
-        final = exact_integer(writer["final_population_generation"])
-        parsed = {key: exact_integer(value) for key, value in generations.items()}
+        population = exact_integer(writer["population_generation"])
+        required = exact_integer(writer["required_population_generation"])
+        te = exact_integer(writer["te_generation"])
+        partition_te = exact_integer(writer["partition_te_generation"])
     except (KeyError, TypeError, ValueError):
         return None
-    if any(value != final for value in parsed.values()):
+    if population <= 0 or te <= 0 or population != required or te != partition_te:
         return {
-            "final_generation": final,
-            "generations": parsed,
+            "final_generation": population,
+            "te_generation": te,
             "visibility": "CONTRADICTORY_GENERATIONS",
             "reason": "PUBLICATION_GENERATION_CONTRADICTION",
         }
-    return {"final_generation": final, "generations": parsed, "visibility": "PUBLIC_FINAL", "reason": ""}
+    manifest_hash = writer.get("te_manifest_sha256")
+    if not isinstance(manifest_hash, str) or re.fullmatch(r"[0-9a-f]{64}", manifest_hash) is None:
+        return {"final_generation": population, "te_generation": te, "visibility": "CONTRADICTORY_GENERATIONS", "reason": "TE_MANIFEST_IDENTITY_INVALID"}
+    return {"final_generation": population, "te_generation": te, "te_manifest_sha256": manifest_hash, "visibility": "PUBLIC_FINAL", "reason": ""}
 
 
 def _same_number(actual: Any, expected: Decimal | float) -> bool:
@@ -1234,13 +1322,13 @@ def analyze(args: argparse.Namespace) -> int:
         fail("EXPECTATIONS_PATH_MISMATCH")
     expectations = json.loads(contract.read_text(encoding="utf-8"))
     identity = json.loads(identity_path.read_text(encoding="utf-8"))
-    writer = json.loads(writer_path.read_text(encoding="utf-8"))
+    writer_contract = json.loads(writer_path.read_text(encoding="utf-8"))
     resource = json.loads(resource_path.read_text(encoding="utf-8"))
     base = require_real_path(identity["base"])
     validate_output_parents(evidence, base)
     run = require_real_path(args.run, base=base, must_exist=run_arg.exists())
     pending = list(expectations.get("pending", []))
-    pending.extend(writer.get("pending", []))
+    pending.extend(item for item in writer_contract.get("pending", []) if item != "actual_final_publication_manifest")
     if expectations.get("identity_sha256") != sha256(identity_path): fail("SEALED_IDENTITY_CHANGED")
     if expectations.get("anchors_sha256") != sha256(anchors_path): fail("SEALED_ANCHORS_CHANGED")
     if expectations.get("fixed_te_profile_sha256") != sha256(profile_path): fail("SEALED_TE_PROFILE_CHANGED")
@@ -1249,12 +1337,41 @@ def analyze(args: argparse.Namespace) -> int:
     if not run_exists: pending.append("run_root_missing")
 
     files: list[dict[str, Any]] = []
-    required = ["work/lumina_plasma_state.csv", "work/lumina_ion_pops.csv"]
-    final_nlte_rel = writer.get("final_nlte_relative_path")
-    if not final_nlte_rel:
-        pending.append("writer_contract:final_nlte_relative_path")
+    manifest_rel = writer_contract.get("manifest_relative_path", FINAL_MANIFEST_REL)
+    manifest_path = run / manifest_rel
+    writer: dict[str, Any] = {}
+    manifest_json_valid = False
+    if manifest_path.is_file() and not manifest_path.is_symlink():
+        try:
+            writer = json.loads(manifest_path.read_text(encoding="utf-8"))
+            manifest_json_valid = isinstance(writer, dict)
+        except json.JSONDecodeError: pending.append("FINAL_PUBLICATION_MANIFEST_INVALID_JSON")
     else:
-        required.append(final_nlte_rel)
+        pending.append(f"run_output:{manifest_rel}")
+    required = [manifest_rel]
+    authority_expected = {"plasma": "PUBLIC_NE_TE", "saha": "SAHA_STAGE", "nlte": "NLTE_LEVEL"}
+    resolved_paths: dict[str, str] = {}
+    file_records = writer.get("files") if isinstance(writer, dict) else None
+    manifest_records_valid = True
+    if isinstance(file_records, dict) and set(file_records) == set(authority_expected):
+        for key, authority in authority_expected.items():
+            record = file_records.get(key)
+            rel = record.get("path") if isinstance(record, dict) else None
+            rows = record.get("rows") if isinstance(record, dict) else None
+            if (not isinstance(rel, str) or not rel or Path(rel).name != rel or
+                record.get("authority") != authority or isinstance(rows, bool) or
+                not isinstance(rows, int) or rows < 0):
+                pending.append(f"FINAL_PUBLICATION_FILE_RECORD_INVALID:{key}")
+                manifest_records_valid = False
+                continue
+            resolved_paths[key] = f"work/{rel}"
+            required.append(f"work/{rel}")
+    else:
+        manifest_records_valid = False
+        pending.append("FINAL_PUBLICATION_FILE_RECORDS_MISSING")
+    plasma_rel = resolved_paths.get("plasma", "work/lumina_plasma_state.csv")
+    pop_rel = resolved_paths.get("saha", "work/lumina_ion_pops.csv")
+    final_nlte_rel = resolved_paths.get("nlte", "work/nlte_levels_final.csv")
     for rel in required:
         path = run / rel
         if path.is_file() and not path.is_symlink():
@@ -1320,7 +1437,7 @@ def analyze(args: argparse.Namespace) -> int:
     wanted_profile = [f"{item['shell_id']} {item['row'].tokens[1]}" for item in anchors]
 
     plasma: dict[int, dict[str, str]] = {}
-    plasma_path = run / "work/lumina_plasma_state.csv"
+    plasma_path = run / plasma_rel
     if plasma_path.is_file() and not plasma_path.is_symlink():
         for row in read_csv_strict(plasma_path, {"shell_id", "T_e", "n_e"}):
             shell = int(row["shell_id"])
@@ -1328,7 +1445,7 @@ def analyze(args: argparse.Namespace) -> int:
             plasma[shell] = row
 
     pops: dict[tuple[int, int, int], str] = {}
-    pop_path = run / "work/lumina_ion_pops.csv"
+    pop_path = run / pop_rel
     if pop_path.is_file() and not pop_path.is_symlink():
         for row in read_csv_strict(pop_path, {"shell_id", "Z", "stage", "n_ion"}):
             key = (int(row["shell_id"]), int(row["Z"]), int(row["stage"]))
@@ -1385,13 +1502,29 @@ def analyze(args: argparse.Namespace) -> int:
             lo, hi = dump_intervals[key]
             if not (lo <= value <= hi): denominator_mismatch.add(key)
 
-    nlte_path = run / final_nlte_rel if final_nlte_rel else run / "work/INPUT_PENDING"
+    nlte_path = run / final_nlte_rel
     nlte_rows = read_csv_strict(nlte_path, {"Z", "ion", "shell", "level_idx", "global_idx", "n_pop", "T_e", "n_ion_total", "population_generation"}) if nlte_path.is_file() and not nlte_path.is_symlink() else []
+    observed_counts = {"plasma": len(plasma), "saha": len(pops), "nlte": len(nlte_rows)}
+    if isinstance(file_records, dict):
+        for key, count in observed_counts.items():
+            record = file_records.get(key)
+            if not isinstance(record, dict) or record.get("rows") != count:
+                pending.append(f"FINAL_PUBLICATION_ROW_COUNT_MISMATCH:{key}")
     generation_record = writer_generation_record(writer)
     generation_known = generation_record is not None and generation_record["visibility"] == "PUBLIC_FINAL"
     final_generation = generation_record["final_generation"] if generation_known else None
     if generation_record is not None and not generation_known:
         pending.append(generation_record["reason"])
+    manifest_files_valid = all(
+        (run / rel).is_file() and not (run / rel).is_symlink() for rel in required
+    )
+    manifest_rows_valid = isinstance(file_records, dict) and all(
+        isinstance(file_records.get(key), dict) and file_records[key].get("rows") == count
+        for key, count in observed_counts.items()
+    )
+    if (manifest_json_valid and manifest_records_valid and manifest_files_valid and
+            manifest_rows_valid and generation_known):
+        pending = [item for item in pending if item != "actual_final_publication_manifest"]
     nlte_values: dict[tuple[int, int, int], list[str]] = {}
     nlte_ion_totals: dict[tuple[int, int, int], list[str]] = {}
     nlte_cell_failures: dict[tuple[int, int, int], list[str]] = {}
@@ -1679,12 +1812,23 @@ def analyze(args: argparse.Namespace) -> int:
         pending.append("REFERENCE_IDENTITY_MISMATCH")
     run_binary = run / "input/lumina_cuda"
     actual_run_binary = sha256(run_binary) if run_binary.is_file() and not run_binary.is_symlink() else None
-    if actual_run_binary != identity.get("base_binary", {}).get("sha256") or footer.get("binary_sha256") != actual_run_binary:
+    expected_run_binary = ((identity.get("run_build") or {}).get("binary", {}).get("sha256")
+                           or identity.get("base_binary", {}).get("sha256"))
+    if not expected_run_binary or actual_run_binary != expected_run_binary or footer.get("binary_sha256") != actual_run_binary:
         pending.append("RUN_BINARY_IDENTITY_MISMATCH")
+    if (stage_identity.get("run_binary_sha256") not in (None, actual_run_binary) or
+        stage_identity.get("base_binary_sha256") not in (None, identity.get("base_binary", {}).get("sha256"))):
+        pending.append("STAGE_BINARY_IDENTITY_MISMATCH")
     for member in identity.get("source_identity", {}).get("source_files", []):
         source = Path(identity["source_identity"].get("repository", "")) / member.get("path", "")
         if not source.is_file() or source.is_symlink() or sha256(source) != member.get("sha256"):
             pending.append(f"SOURCE_IDENTITY_MISMATCH:{member.get('path', '')}")
+    run_build = identity.get("run_build") or {}
+    run_source_root = Path(run_build.get("source_root", ""))
+    for member in run_build.get("source_files", []):
+        source = run_source_root / member.get("path", "")
+        if not source.is_file() or source.is_symlink() or sha256(source) != member.get("sha256"):
+            pending.append(f"RUN_SOURCE_IDENTITY_MISMATCH:{member.get('path', '')}")
     exports_exact = False
     try:
         exports_exact = exports_delta_is_registered(base, run)
@@ -1759,7 +1903,7 @@ def analyze(args: argparse.Namespace) -> int:
             },
         },
         "extrema": extrema,
-        "identity_observations": {"registered_reference_hashes": identity.get("reference_files"), "observed_reference_hashes": current_hashes, "registered_binary_sha256": identity.get("base_binary", {}).get("sha256"), "run_binary_sha256": actual_run_binary, "stage_exports_sha256": stage_identity.get("effective_exports_sha256"), "run_exports_sha256": sha256(run / "input/resolved_lumina.exports") if (run / "input/resolved_lumina.exports").is_file() else None},
+        "identity_observations": {"registered_reference_hashes": identity.get("reference_files"), "observed_reference_hashes": current_hashes, "base_binary_sha256": identity.get("base_binary", {}).get("sha256"), "registered_run_binary_sha256": expected_run_binary, "run_binary_sha256": actual_run_binary, "stage_exports_sha256": stage_identity.get("effective_exports_sha256"), "run_exports_sha256": sha256(run / "input/resolved_lumina.exports") if (run / "input/resolved_lumina.exports").is_file() else None},
         "execution_observations": execution,
         "independent_reproduction": {"shared_inputs": ["reference files", "geometry", "run raw outputs", "sealed identity records"], "shared_implementation": [], "production_parser_arithmetic_aggregation_reused": False, "required_method": "driver-authored direct csv/decimal/hashlib commands recorded with stdout, stderr, rc and hashes"},
     }
@@ -1826,11 +1970,12 @@ def _private_fixture(root: Path) -> tuple[Path, Path, Path, Path, Path]:
     binary = base / "input/lumina_cuda"; text_write(binary, "private fixture binary\n")
     BASE_BINARY_SHA256 = sha256(binary)
     cuda = repo / "src/lumina_cuda.cu"; plasma_source = repo / "src/lumina_plasma.c"
-    text_write(cuda, "lumina_plasma_state.csv plasma.n_electron lumina_ion_pops.csv ion_number_density\n")
+    text_write(cuda, "cmfgen_run cmfgen_final_writer\n")
+    text_write(repo / "src/cmfgen_final_writer.c", "lumina_plasma_state.csv PUBLIC_NE_TE lumina_ion_pops.csv SAHA_STAGE nlte_levels_final.csv NLTE_LEVEL\n")
     target_z = ",".join(str(z) for z in TARGET_ELEMENTS.values() for _ in (1, 2))
     target_ion = ",".join(str(ion) for _z in TARGET_ELEMENTS.values() for ion in (1, 2))
     text_write(plasma_source, f"static const int NLTE_TARGET_Z[] = {{{target_z}}};\nstatic const int NLTE_TARGET_ION[] = {{{target_ion}}};\nnlte_levels_iter%03d.csv population_required_generation\n")
-    source_files = [{"path": "src/lumina_cuda.cu", "sha256": sha256(cuda)}, {"path": "src/lumina_plasma.c", "sha256": sha256(plasma_source)}]
+    source_files = [{"path": "src/lumina_cuda.cu", "sha256": sha256(cuda)}, {"path": "src/lumina_plasma.c", "sha256": sha256(plasma_source)}, {"path": "src/cmfgen_final_writer.c", "sha256": sha256(repo / "src/cmfgen_final_writer.c")}]
     json_write(base / "input/current_source_identity.json", {"binary_sha256": BASE_BINARY_SHA256, "repository": str(repo), "source_files": source_files})
     text_write(base / "RUN_FOOTER.txt", f"binary_sha256={BASE_BINARY_SHA256}\n")
     text_write(base / "input/resolved_lumina.exports", f'declare -x LUMINA_MODEL_DIR="{base}/input/model"\ndeclare -x LUMINA_FIXED_TE_PROFILE="/old/profile"\ndeclare -x LUMINA_RADEQ_DIAG_TE_K="10020"\n')
@@ -1875,7 +2020,7 @@ def _private_fixture(root: Path) -> tuple[Path, Path, Path, Path, Path]:
         text_write(reference / f"ionfrac_{element}_toy06_cmfgen.txt", f"#NSTAGES: 3\n#TIME: 1.0\n#NVEL: 4\n#vel_mid[km/s] {element}0 {element}1 {element}2\n{values}\n")
     prepare(argparse.Namespace(base=str(base), reference_dir=str(reference), evidence=str(evidence)))
     writer_path = evidence / "offline/writer_contract.json"
-    writer = json.loads(writer_path.read_text(encoding="utf-8")); writer.update(pending=[], final_nlte_relative_path="work/nlte_levels_iter002.csv", final_population_generation=2, public_T_ne_Saha_NLTE_same_generation_evidence=True, generations={key: 2 for key in PUBLICATION_FIELDS}); json_write(writer_path, writer)
+    writer = json.loads(writer_path.read_text(encoding="utf-8")); writer.update(pending=[]); json_write(writer_path, writer)
     resource_path = evidence / "offline/resource_card.json"
     resource = json.loads(resource_path.read_text(encoding="utf-8")); resource["pending"] = []; json_write(resource_path, resource)
     expectations_path = evidence / "offline/expectations.json"
@@ -1899,7 +2044,18 @@ def _private_fixture(root: Path) -> tuple[Path, Path, Path, Path, Path]:
          "n_ion_total": str(stage_populations[row["atomic_number"]][row["ion_number"]]), "population_generation": 2}
         for shell in range(2) for global_idx, row in enumerate(level_fixture)
     ]
-    _fixture_csv(run / "work/nlte_levels_iter002.csv", ["Z", "ion", "shell", "level_idx", "global_idx", "n_pop", "T_e", "n_ion_total", "population_generation"], nlte)
+    _fixture_csv(run / "work/nlte_levels_final.csv", ["Z", "ion", "shell", "level_idx", "global_idx", "n_pop", "T_e", "n_ion_total", "population_generation"], nlte)
+    json_write(run / "work/cmfgen_final_publication.json", {
+        "schema": "CMFGEN_FINAL_PUBLICATION_V1", "complete": True,
+        "population_generation": 2, "required_population_generation": 2,
+        "te_generation": 9, "partition_te_generation": 9,
+        "te_manifest_sha256": "a" * 64,
+        "files": {
+            "plasma": {"path": "lumina_plasma_state.csv", "authority": "PUBLIC_NE_TE", "rows": 2},
+            "saha": {"path": "lumina_ion_pops.csv", "authority": "SAHA_STAGE", "rows": len(pops)},
+            "nlte": {"path": "nlte_levels_final.csv", "authority": "NLTE_LEVEL", "rows": len(nlte)},
+        },
+    })
     text_write(run / "STAGE_IDENTITY.txt", f"effective_exports_sha256={sha256(run / 'input/resolved_lumina.exports')}\n")
     text_write(run / "RUN_FOOTER.txt", f"outer_iterations=2\nbinary_sha256={BASE_BINARY_SHA256}\nterminal_state=SUCCESS\nregistered_runs=1\nelapsed_seconds=100\nallocated_gpus=2\nallocated_cpus=32\nfixed_te_loader_consumed=1\n")
     text_write(evidence / "inputs/base_before.sha256", _tree_manifest(base))
@@ -1918,8 +2074,13 @@ def _production_path_selftest(emit: bool) -> dict[str, Any]:
     try:
         with tempfile.TemporaryDirectory(prefix="cmfgen-twin-e2e.") as raw:
             base, reference, evidence, run, expectations = _private_fixture(Path(raw))
+            deferred = json.loads(expectations.read_text(encoding="utf-8"))
+            deferred["pending"] = ["actual_final_publication_manifest"]
+            json_write(expectations, deferred)
             analyze(argparse.Namespace(contract=str(expectations), run=str(run), evidence=str(evidence)))
             rows, summary = _read_results(evidence)
+            if "actual_final_publication_manifest" in summary["pending"]:
+                fail("COMPLETE_FINAL_PUBLICATION_PENDING_NOT_DISCHARGED")
             if len(rows) != 74 or any(key in summary for key in ("gates", "branch", "hypothesis", "status")):
                 fail("PRODUCTION_PATH_OBSERVATION_SHAPE")
             anchors = read_csv_strict(evidence / "inputs/anchors.csv", set(ANCHOR_FIELDS))
@@ -1953,24 +2114,32 @@ def _production_path_selftest(emit: bool) -> dict[str, Any]:
                 fail("MASS_WEIGHTED_PAIRED_OR_STRATIFIED_OUTPUT_MISSING")
             observations.append("REV4_TWO_DENOMINATORS_AND_74_CELLS midpoint=0.6,1.4 top_delta=0.300 n_atom_model=2.0 R_SN=1")
 
-            writer_path = evidence / "offline/writer_contract.json"
+            writer_path = run / "work/cmfgen_final_publication.json"
             original_writer = writer_path.read_text(encoding="utf-8")
-            original_expectations = expectations.read_text(encoding="utf-8")
+            writer_path.unlink()
+            analyze(argparse.Namespace(contract=str(expectations), run=str(run), evidence=str(evidence)))
+            _, missing_manifest_summary = _read_results(evidence)
+            if "actual_final_publication_manifest" not in missing_manifest_summary["pending"]:
+                fail("MISSING_FINAL_PUBLICATION_PENDING_DISCHARGED")
+            text_write(writer_path, "{malformed\n")
+            analyze(argparse.Namespace(contract=str(expectations), run=str(run), evidence=str(evidence)))
+            _, malformed_manifest_summary = _read_results(evidence)
+            if "actual_final_publication_manifest" not in malformed_manifest_summary["pending"]:
+                fail("MALFORMED_FINAL_PUBLICATION_PENDING_DISCHARGED")
+            observations.append("FINAL_PUBLICATION_DEFERRED_PENDING complete=discharged missing=retained malformed=retained")
+            text_write(writer_path, original_writer)
             writer_data = json.loads(original_writer)
-            writer_data["generations"]["ne"] = 1
+            writer_data["partition_te_generation"] = 1
             json_write(writer_path, writer_data)
-            expectation_data = json.loads(original_expectations)
-            expectation_data["writer_contract_sha256"] = sha256(writer_path)
-            json_write(expectations, expectation_data)
             analyze(argparse.Namespace(contract=str(expectations), run=str(run), evidence=str(evidence)))
             generation_rows, generation_summary = _read_results(evidence)
             generation_record = generation_summary["outputs"]["publication_generation_record"]
-            if generation_record.get("visibility") != "CONTRADICTORY_GENERATIONS" or generation_record.get("generations", {}).get("ne") != 1:
+            if generation_record.get("visibility") != "CONTRADICTORY_GENERATIONS" or generation_record.get("te_generation") != 9:
                 fail("CONTRADICTORY_GENERATION_RECORD_NOT_PRESERVED")
             if not all("PUBLICATION_GENERATION_UNKNOWN" in row["reason"] for row in generation_rows if row["status"] != "NOT_SOLVED"):
                 fail("CONTRADICTORY_GENERATION_CELL_NOT_DOWNGRADED")
-            observations.append("CONTRADICTORY_GENERATION_PRESERVED final=2 ne=1 visibility=CONTRADICTORY_GENERATIONS")
-            text_write(writer_path, original_writer); text_write(expectations, original_expectations)
+            observations.append("CONTRADICTORY_GENERATION_PRESERVED population=2 te=9 partition_te=1 visibility=CONTRADICTORY_GENERATIONS")
+            text_write(writer_path, original_writer)
 
             pop_path = run / "work/lumina_ion_pops.csv"
             original_population_dump = pop_path.read_text(encoding="utf-8")
@@ -2007,7 +2176,7 @@ def _production_path_selftest(emit: bool) -> dict[str, Any]:
             observations.append("OUTSIDE_COMPARISON_FAILURE_PRESERVED shell=0 Z=20 stage=3 raw=-0.125 disposition=EXCLUDED_FROM_N_Z_DUMP_BECAUSE_INVALID")
             text_write(pop_path, original_population_dump)
 
-            nlte_path = run / "work/nlte_levels_iter002.csv"; original_nlte = nlte_path.read_text(encoding="utf-8")
+            nlte_path = run / "work/nlte_levels_final.csv"; original_nlte = nlte_path.read_text(encoding="utf-8")
             for invalid_token in ("NaN", "Infinity", "-Infinity", "-0.010"):
                 _replace_text(nlte_path, ",0.01,10000.000000,0.02,2\n", f",{invalid_token},10000.000000,0.02,2\n")
                 analyze(argparse.Namespace(contract=str(expectations), run=str(run), evidence=str(evidence)))
@@ -2257,7 +2426,11 @@ def _real_input_prepare_selftest(emit: bool) -> str:
         anchors = read_csv_strict(evidence / "inputs/anchors.csv", set(ANCHOR_FIELDS))
         base_rows = read_csv_strict(evidence / "offline/base_map.csv", set(MAP_FIELDS))
         expectations = json.loads((evidence / "offline/expectations.json").read_text(encoding="utf-8"))
-        expected_pending = {"final_publication_generation_link", "actual_fixed_te_loader_cpu_consumption"} | {f"top_bin_semantics:{element}" for element in TARGET_ELEMENTS}
+        expected_pending = {
+            "actual_final_publication_manifest", "actual_fixed_te_loader_cpu_consumption",
+            "run_build_identity", "writer_source:plasma_state", "writer_source:saha_stage",
+            "writer_source:nlte_level", "writer_token:det_callsite",
+        } | {f"top_bin_semantics:{element}" for element in TARGET_ELEMENTS}
         if len(anchors) != 50 or len(base_rows) != 50 or set(expectations["pending"]) != expected_pending:
             fail("SELFTEST_REAL_INPUT_SHAPE_OR_PENDING_MISMATCH")
         for row in anchors:
@@ -2288,8 +2461,14 @@ def parser() -> argparse.ArgumentParser:
     sub = ap.add_subparsers(dest="command")
     prep = sub.add_parser("prepare")
     prep.add_argument("--base", required=True); prep.add_argument("--reference-dir", required=True); prep.add_argument("--evidence", required=True)
+    prep.add_argument("--run-build-identity", help="CMFGEN_TWIN_RUN_BUILD_V1 JSON for the separately built run binary/source")
     ana = sub.add_parser("analyze")
     ana.add_argument("--contract", required=True); ana.add_argument("--run", required=True); ana.add_argument("--evidence", required=True)
+    seal = sub.add_parser("seal-build")
+    seal.add_argument("--source-root", required=True); seal.add_argument("--source-before", required=True)
+    seal.add_argument("--binary", required=True); seal.add_argument("--build-command", required=True); seal.add_argument("--output", required=True)
+    bind = sub.add_parser("bind-build")
+    bind.add_argument("--evidence", required=True); bind.add_argument("--run-build-identity", required=True)
     return ap
 
 
@@ -2300,6 +2479,8 @@ def main() -> int:
         run_selftest(True); return 0
     if args.command == "prepare": return prepare(args)
     if args.command == "analyze": return analyze(args)
+    if args.command == "seal-build": return seal_build(args)
+    if args.command == "bind-build": return bind_build(args)
     ap.error("choose --selftest, prepare, or analyze")
     return 2
 

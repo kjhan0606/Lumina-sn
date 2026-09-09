@@ -33,8 +33,18 @@
   exclusions, inputs and sealed baselines, planned changes, execution owner,
   measurable acceptance criteria, expected evidence, resource/cost envelope,
   rollback or preservation rule, and reproducibility commands.
-- Every planning or contract design audit must explicitly ask both Q-GOAL and
-  Q-LEAN. Q-GOAL must conclude `PASS`, and Q-LEAN must conclude
+- Every stage or bundle planning/design audit, including contract amendments,
+  must open with these questions, in this order, before detailed criteria,
+  instrumentation, gate, implementation, or resource review:
+  1. **Q-GOAL:** Does this stage's objective directly serve the project's final
+     objective? State the connection and what would be lost by omitting it.
+  2. **Q-LEAN:** Are unnecessary measurements or excessive gates being added?
+     Identify what can be removed or combined and who actually consumes each
+     retained measurement or gate.
+  Resolve these questions first. If the objective is misaligned or the design
+  is unnecessarily heavy, reduce or revise the plan before detailed review;
+  do not merely append favorable labels at the end. Q-GOAL must conclude
+  `PASS`, and Q-LEAN must conclude
   `APPROPRIATE`, before execution may start. If either conclusion is absent or
   negative, the operator revises and re-audits the design; do not obtain a
   favorable label by weakening or omitting the question.
@@ -44,10 +54,12 @@
 
 ## Audit sequence
 
-1. **Operator design audit:** Before a new bundle starts, Codex as operator audits the
-   operator-authored bundle design, physical assumptions, exclusions, acceptance
-   criteria, evidence plan, and resource envelope. The operator must explicitly
-   answer Q-GOAL and Q-LEAN in every planning or contract audit. Execution
+1. **Operator design audit:** Before a new bundle starts, Codex as operator first
+   asks and answers Q-GOAL, then Q-LEAN. Only after resolving these opening
+   questions does it review the operator-authored bundle design, physical
+   assumptions, exclusions, acceptance criteria, evidence plan, and resource
+   envelope. This order also applies to every stage planning and contract
+   amendment audit. Execution
    starts only after Q-GOAL=`PASS`, Q-LEAN=`APPROPRIATE`, and an overall design
    PASS.
 2. **Implementation and code review:** GPT-5.6-sol implements and runs directly

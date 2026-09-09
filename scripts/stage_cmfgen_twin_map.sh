@@ -300,7 +300,7 @@ observation_prerequisites() {
 import json, sys
 expectations = json.load(open(sys.argv[1], encoding="utf-8"))
 writer = json.load(open(sys.argv[2], encoding="utf-8"))
-deferred = {"final_publication_generation_link"}
+deferred = {"actual_final_publication_manifest", "final_publication_generation_link"}
 if set(expectations.get("pending", [])) - deferred or set(writer.get("pending", [])) - deferred:
     raise SystemExit(1)
 if expectations.get("schema") != "CMFGEN_TWIN_MAP_REV4_V1":
@@ -321,8 +321,7 @@ if (
     }
 ):
     raise SystemExit(1)
-required = (writer.get("final_nlte_relative_path"), writer.get("final_population_generation"))
-if not isinstance(required[0], str) or not required[0] or isinstance(required[1], bool) or not isinstance(required[1], int):
+if writer.get("manifest_relative_path") != "work/cmfgen_final_publication.json":
     raise SystemExit(1)
 PY
 }
@@ -347,6 +346,14 @@ try:
 except (KeyError, TypeError, ValueError, json.JSONDecodeError):
     raise SystemExit(1)
 PY
+}
+
+binary_sm90_check() {
+  local binary="$1" listing
+  command -v cuobjdump >/dev/null || return 1
+  listing="$(cuobjdump --list-elf "$binary" 2>/dev/null)" || return 1
+  grep -Eq '(^|[^[:alnum:]_])sm_90([^[:alnum:]_]|$)' <<< "$listing" || return 1
+  printf 'CMFGEN_TWIN_MAP_BINARY_COMPATIBILITY binary_sha256=%s target=sm_90\n' "$(sha256sum "$binary" | awk '{print $1}')"
 }
 
 rewrite_job_resources() {
@@ -387,11 +394,13 @@ PY
 }
 
 stage_transaction() {
-  python3 -B - "$1" "$2" "$3" "$STORAGE_CAP_BYTES" <<'PY'
+  local run_binary="${5:-$1/input/lumina_cuda}" run_build_identity="${6:-}"
+  python3 -B - "$1" "$2" "$3" "$4" "$STORAGE_CAP_BYTES" "$run_binary" "$run_build_identity" <<'PY'
 import hashlib, json, os, re, stat, sys
 
-base, evidence, run = sys.argv[1:4]
-cap = int(sys.argv[4])
+base, evidence, run, runner = sys.argv[1:5]
+cap = int(sys.argv[5])
+run_binary, run_build_identity = sys.argv[6:8]
 
 def directory_fd(path):
     fd = os.open("/", os.O_RDONLY | os.O_DIRECTORY)
@@ -538,13 +547,47 @@ try:
     evidence_files, _evidence_dirs = scan_tree(evidence_fd)
     profile = read_file(evidence_fd, "inputs/fixed_te_profile.txt")
     exports = transform_exports(read_file(input_fd, "resolved_lumina.exports"))
-    job = transform_job(read_file(input_fd, "job.slurm"))
-    overrides = {"fixed_te_profile.txt": profile, "resolved_lumina.exports": exports, "job.slurm": job}
+    with open(runner, "rb") as stream:
+        job = stream.read()
+    binary_path = os.path.realpath(run_binary)
+    if binary_path != run_binary or not os.path.isfile(binary_path) or os.path.islink(run_binary):
+        raise RuntimeError("run binary unsafe")
+    with open(binary_path, "rb") as stream: binary = stream.read()
+    binary_hash = hashlib.sha256(binary).hexdigest()
+    if run_build_identity:
+        identity_path = os.path.realpath(run_build_identity)
+        if identity_path != run_build_identity or not os.path.isfile(identity_path) or os.path.islink(run_build_identity):
+            raise RuntimeError("run build identity unsafe")
+        with open(identity_path, "rb") as stream: build_identity = stream.read()
+        record = json.loads(build_identity)
+        if (record.get("schema") != "CMFGEN_TWIN_RUN_BUILD_V1" or
+            record.get("binary", {}).get("path") != run_binary or
+            record.get("binary", {}).get("sha256") != binary_hash):
+            raise RuntimeError("run build identity mismatch")
+    else:
+        build_identity = json.dumps({"schema":"CMFGEN_TWIN_RUN_BUILD_V1_SELFTEST", "binary":{"path":run_binary,"sha256":binary_hash}}, sort_keys=True).encode() + b"\n"
+    text = job.decode()
+    required_directives = {
+        "partition": "h200,h100", "nodes": "1", "ntasks": "1", "gres": "gpu:2",
+        "cpus-per-task": "32", "mem": "64G", "time": "04:00:00", "no-requeue": None,
+    }
+    for key, value in required_directives.items():
+        expected = f"#SBATCH --{key}" + (f"={value}" if value is not None else "")
+        if text.splitlines().count(expected) != 1:
+            raise RuntimeError(f"dedicated runner directive mismatch: {key}")
+    if "#SBATCH --exclude=grammar" in text or "CUDA_VISIBLE_DEVICES=0,1" in text:
+        raise RuntimeError("dedicated runner contains forbidden node or GPU mask override")
+    overrides = {"fixed_te_profile.txt": profile, "resolved_lumina.exports": exports,
+                 "job.slurm": job, "lumina_cuda": binary,
+                 "binary.sha256": (binary_hash + "\n").encode(),
+                 "run_build_identity.json": build_identity}
     staged_files = dict(input_files)
     for rel, data in overrides.items():
-        staged_files[rel] = (len(data), 0o640, (-1, -1), hashlib.sha256(data).hexdigest())
+        mode = 0o750 if rel == "lumina_cuda" else 0o640
+        staged_files[rel] = (len(data), mode, (-1, -1), hashlib.sha256(data).hexdigest())
     input_manifest = manifest(staged_files)
-    stage_identity = ("\n".join(("schema=CMFGEN_TWIN_MAP_STAGE_V1", f"base={base}", f"evidence={evidence}", f"run={run}", "registered_runs=1", "outer_iterations=2", f"effective_exports_sha256={hashlib.sha256(exports).hexdigest()}", "state=STAGED_NOT_RUN")) + "\n").encode()
+    base_binary_hash = input_files["lumina_cuda"][3]
+    stage_identity = ("\n".join(("schema=CMFGEN_TWIN_MAP_STAGE_V2", f"base={base}", f"evidence={evidence}", f"run={run}", "registered_runs=1", "outer_iterations=2", f"base_binary_sha256={base_binary_hash}", f"run_binary_sha256={binary_hash}", f"run_build_identity_sha256={hashlib.sha256(build_identity).hexdigest()}", f"effective_exports_sha256={hashlib.sha256(exports).hexdigest()}", f"runner_sha256={hashlib.sha256(job).hexdigest()}", f"fixed_te_profile_file_sha256={hashlib.sha256(profile).hexdigest()}", "state=STAGED_NOT_RUN")) + "\n").encode()
     card = json.loads(read_file(evidence_fd, "offline/resource_card.json"))
     estimate = card.get("dump_upper_bound_formula_bytes")
     future_fields = card.get("future_storage_upper_bounds_bytes")
@@ -629,8 +672,10 @@ PY
 
 stager_selftest() {
   local scratch base evidence dest before after exports staged bad free input_bytes job staged_job valid_expectations
+  local runner_template
   local positive=0 negative=0
   scratch="$(mktemp -d /tmp/cmfgen-twin-stage-selftest.XXXXXX)"
+  runner_template="$(dirname "$(realpath -e -- "$0")")/run_cmfgen_twin_map.sh"
   base="$scratch/base"; evidence="$scratch/evidence"; dest="$scratch/run"
   before="$scratch/before.sha256"; after="$scratch/after.sha256"
   exports="$base/input/resolved_lumina.exports"; staged="$scratch/staged.exports"; bad="$scratch/bad.exports"
@@ -754,7 +799,7 @@ stager_selftest() {
 
   valid_expectations='{"schema":"CMFGEN_TWIN_MAP_REV4_V1","shell_count":2,"pending":["final_publication_generation_link"],"base_e_z":{"cell_count":2,"M_Z_interval":["0","1"]},"base_self_comparison":{"paired_sign_counts":{"improved":0,"worsened":0,"representation_unresolved":2}},"reference_top_bin_semantics":{"ca":{"value":"CUMULATIVE","source":"fixture"},"co":{"value":"CUMULATIVE","source":"fixture"},"fe":{"value":"CUMULATIVE","source":"fixture"},"ni":{"value":"CUMULATIVE","source":"fixture"},"si":{"value":"CUMULATIVE","source":"fixture"},"s":{"value":"CUMULATIVE","source":"fixture"}},"mass_convention":{"production":"sealed_model_atom_masses.csv","comparison":{"Fe":"56","Co":"56","Ni":"56","other":"sealed_model_atom_masses.csv"}}}'
   printf '%s\n' "$valid_expectations" > "$scratch/deferred-expectations.json"
-  printf '{"pending":["final_publication_generation_link"],"final_nlte_relative_path":"work/nlte.csv","final_population_generation":2}\n' > "$scratch/deferred-writer.json"
+  printf '{"pending":["actual_final_publication_manifest"],"manifest_relative_path":"work/cmfgen_final_publication.json"}\n' > "$scratch/deferred-writer.json"
   observation_prerequisites "$scratch/deferred-expectations.json" "$scratch/deferred-writer.json" || die "SELFTEST_DEFERRED_PUBLICATION_LINK_REJECTED"
   printf 'STAGER_SELFTEST control=RUN_AFTER_PUBLICATION_LINK observation=deferred_not_prerequisite\n'; positive=$((positive + 1))
   printf '%s\n' "${valid_expectations/\"final_publication_generation_link\"/\"source_identity\"}" > "$scratch/deferred-expectations.json"
@@ -769,40 +814,51 @@ stager_selftest() {
   rewrite_job_resources "$job" "$staged_job"
   grep -qx '#SBATCH --partition=h200,h100' "$staged_job" && grep -qx '#SBATCH --gres=gpu:2' "$staged_job" && grep -qx '#SBATCH --cpus-per-task=32' "$staged_job" && grep -qx '#SBATCH --time=04:00:00' "$staged_job" || die "SELFTEST_RUNNER_LIMITS_NOT_ENFORCED"
   printf 'STAGER_SELFTEST control=runner_limits observation=enforced\n'; positive=$((positive + 1))
+  mkdir "$scratch/tool-bin"
+  printf '#!/usr/bin/env bash\nprintf "ELF file: fixture.sm_90.cubin\\n"\n' > "$scratch/tool-bin/cuobjdump"; chmod +x "$scratch/tool-bin/cuobjdump"
+  PATH="$scratch/tool-bin:$PATH" binary_sm90_check "$base/input/data" >/dev/null || die "SELFTEST_SM90_BINARY_REJECTED"
+  printf 'STAGER_SELFTEST control=binary_sm90_compatibility observation=accepted\n'; positive=$((positive + 1))
+  printf '#!/usr/bin/env bash\nprintf "ELF file: fixture.sm_80.cubin\\n"\n' > "$scratch/tool-bin/cuobjdump"
+  if PATH="$scratch/tool-bin:$PATH" binary_sm90_check "$base/input/data" >/dev/null; then die "SELFTEST_ACCEPTED_SM80_ONLY_BINARY"; fi
+  printf 'STAGER_SELFTEST inject=SM80_ONLY_BINARY observation=rejected reason=SM90_COMPATIBILITY_MISSING\n'; negative=$((negative + 1))
 
   local tx_base="$scratch/tx-base" tx_evidence="$scratch/tx-evidence" tx_run="$scratch/tx-run"
   mkdir -p "$tx_base/input" "$tx_evidence"/{inputs,offline,run,result}
   printf 'payload\n' > "$tx_base/input/data"
+  printf '#!/usr/bin/env bash\nexit 0\n' > "$tx_base/input/lumina_cuda"; chmod +x "$tx_base/input/lumina_cuda"
+  sha256sum "$tx_base/input/lumina_cuda" | awk '{print $1}' > "$tx_base/input/binary.sha256"
   printf '%s\n' "declare -x LUMINA_MODEL_DIR=\"$tx_base/input/model\"" 'declare -x LUMINA_RADEQ_DIAG_TE_K="10020"' > "$tx_base/input/resolved_lumina.exports"
   printf '%s\n' '#!/usr/bin/env bash' '#SBATCH --partition=a100' '#SBATCH --gres=gpu:1' '#SBATCH --cpus-per-task=64' '#SBATCH --time=2-00:00:00' > "$tx_base/input/job.slurm"
   printf '0 18900\n' > "$tx_evidence/inputs/fixed_te_profile.txt"
   printf '{"pending":[],"dump_upper_bound_formula_bytes":0,"future_storage_upper_bounds_bytes":{"run_logs":0,"result_and_summary":0,"reproduction_and_audit":0}}\n' > "$tx_evidence/offline/resource_card.json"
-  stage_transaction "$tx_base" "$tx_evidence" "$tx_run" || die "SELFTEST_NORMAL_STAGE_REJECTED"
+  stage_transaction "$tx_base" "$tx_evidence" "$tx_run" "$runner_template" || die "SELFTEST_NORMAL_STAGE_REJECTED"
   [[ -f "$tx_run/input/fixed_te_profile.txt" && "$(cat "$tx_run/input/fixed_te_profile.txt")" == '0 18900' ]] || die "SELFTEST_NORMAL_NEW_PROFILE_MISSING"
+  [[ -x "$tx_run/input/lumina_cuda" ]] || die "SELFTEST_STAGED_BINARY_NOT_EXECUTABLE"
+  "$tx_run/input/lumina_cuda" || die "SELFTEST_STAGED_BINARY_EXECUTION_FAILED"
   printf 'STAGER_SELFTEST control=NORMAL_STAGING_NEW_PROFILE observation=accepted destination_was_absent=1\n'; positive=$((positive + 1))
 
   local cap_evidence="$scratch/cap-evidence" cap_run="$scratch/cap-run"
   mkdir -p "$cap_evidence"/{inputs,offline,run,result}
   printf '0 18900\n' > "$cap_evidence/inputs/fixed_te_profile.txt"
   printf '{"pending":[],"dump_upper_bound_formula_bytes":17179869184,"future_storage_upper_bounds_bytes":{"run_logs":0,"result_and_summary":0,"reproduction_and_audit":0}}\n' > "$cap_evidence/offline/resource_card.json"
-  if stage_transaction "$tx_base" "$cap_evidence" "$cap_run" >/dev/null 2>&1; then die "SELFTEST_ACCEPTED_PREWRITE_RESERVATION_EXCESS"; fi
+  if stage_transaction "$tx_base" "$cap_evidence" "$cap_run" "$runner_template" >/dev/null 2>&1; then die "SELFTEST_ACCEPTED_PREWRITE_RESERVATION_EXCESS"; fi
   [[ ! -e "$cap_run" ]] || die "SELFTEST_PREWRITE_RESERVATION_CREATED_RUN"
   printf 'STAGER_SELFTEST inject=REVIEW_MANIFEST_BEFORE_RESOURCE_CHECK observation=rejected first_write=none run_entry=absent\n'; negative=$((negative + 1))
   local future_evidence="$scratch/future-evidence" future_run="$scratch/future-run"
   mkdir -p "$future_evidence"/{inputs,offline,run,result}
   printf '0 18900\n' > "$future_evidence/inputs/fixed_te_profile.txt"
   printf '{"pending":[],"dump_upper_bound_formula_bytes":0,"future_storage_upper_bounds_bytes":{"run_logs":0,"result_and_summary":0,"reproduction_and_audit":17179869184}}\n' > "$future_evidence/offline/resource_card.json"
-  if stage_transaction "$tx_base" "$future_evidence" "$future_run" >/dev/null 2>&1; then die "SELFTEST_ACCEPTED_FUTURE_AUDIT_RESERVATION_EXCESS"; fi
+  if stage_transaction "$tx_base" "$future_evidence" "$future_run" "$runner_template" >/dev/null 2>&1; then die "SELFTEST_ACCEPTED_FUTURE_AUDIT_RESERVATION_EXCESS"; fi
   [[ ! -e "$future_run" ]] || die "SELFTEST_FUTURE_AUDIT_RESERVATION_CREATED_RUN"
   printf 'STAGER_SELFTEST inject=FUTURE_REPRODUCTION_AUDIT_RESERVATION observation=rejected first_write=none run_entry=absent\n'; negative=$((negative + 1))
 
   local protected_parent="$scratch/protected-stage-parent" swapped_parent="$scratch/swapped-stage-parent"
   mkdir "$protected_parent"; ln -s "$protected_parent" "$swapped_parent"
-  if stage_transaction "$tx_base" "$cap_evidence" "$swapped_parent/new-run" >/dev/null 2>&1; then die "SELFTEST_ACCEPTED_STAGE_PARENT_SWAP"; fi
+  if stage_transaction "$tx_base" "$cap_evidence" "$swapped_parent/new-run" "$runner_template" >/dev/null 2>&1; then die "SELFTEST_ACCEPTED_STAGE_PARENT_SWAP"; fi
   [[ ! -e "$protected_parent/new-run" ]] || die "SELFTEST_STAGE_PARENT_SWAP_CREATED_ENTRY"
   printf 'STAGER_SELFTEST inject=RUN_PARENT_SYMLINK_SWAP observation=rejected first_write=none protected_entries=unchanged\n'; negative=$((negative + 1))
   mkdir "$scratch/nested-stage-parent"; ln -s "$protected_parent" "$scratch/nested-stage-parent/one"
-  if stage_transaction "$tx_base" "$cap_evidence" "$scratch/nested-stage-parent/one/new-run" >/dev/null 2>&1; then die "SELFTEST_ACCEPTED_NESTED_STAGE_PARENT_LINK"; fi
+  if stage_transaction "$tx_base" "$cap_evidence" "$scratch/nested-stage-parent/one/new-run" "$runner_template" >/dev/null 2>&1; then die "SELFTEST_ACCEPTED_NESTED_STAGE_PARENT_LINK"; fi
   [[ ! -e "$protected_parent/new-run" ]] || die "SELFTEST_NESTED_STAGE_PARENT_LINK_CREATED_ENTRY"
   printf 'STAGER_SELFTEST inject=NESTED_RUN_PARENT_LINK observation=rejected first_write=none protected_entries=unchanged\n'; negative=$((negative + 1))
 
@@ -811,20 +867,42 @@ stager_selftest() {
   trap - EXIT
 }
 
+render_artifacts() {
+  local base="$1" evidence="$2" run="$3" output="$4" runner_template staged_exports
+  runner_template="$(dirname "$(realpath -e -- "$0")")/run_cmfgen_twin_map.sh"
+  require_safe_base "$base" || die "BASE_NOT_SAFE_OR_SEALED"
+  canonical_no_symlink "$evidence" existing && [[ -d "$evidence" ]] || die "EVIDENCE_ROOT_UNSAFE"
+  require_new_root "$run" "$base" "$evidence" || die "RUN_NOT_NEW_INDEPENDENT_ROOT"
+  canonical_no_symlink "$output" new || die "RENDER_OUTPUT_NOT_NEW_SAFE"
+  [[ -f "$evidence/inputs/fixed_te_profile.txt" && ! -L "$evidence/inputs/fixed_te_profile.txt" ]] || die "FIXED_TE_PROFILE_UNSAFE"
+  [[ -f "$runner_template" && ! -L "$runner_template" ]] || die "DEDICATED_RUNNER_UNSAFE"
+  mkdir -- "$output"
+  staged_exports="$output/resolved_lumina.exports"
+  rewrite_exports "$base/input/resolved_lumina.exports" "$base" "$run" "$staged_exports"
+  cp -- "$runner_template" "$output/job.slurm"
+  cp -- "$evidence/inputs/fixed_te_profile.txt" "$output/fixed_te_profile.txt"
+  verify_export_delta "$base/input/resolved_lumina.exports" "$staged_exports" "$base" "$run" || die "RENDERED_EXPORT_DELTA_INVALID"
+  printf 'CMFGEN_TWIN_MAP_RENDER_COMPLETE job=%s exports=%s profile=%s run=%s\n' \
+    "$output/job.slurm" "$staged_exports" "$output/fixed_te_profile.txt" "$run"
+}
+
 if [[ $# -eq 1 && "$1" == --selftest ]]; then
   stager_selftest
   exit 0
 fi
+if [[ $# -eq 5 && "$1" == --render ]]; then
+  render_artifacts "$2" "$3" "$4" "$5"
+  exit 0
+fi
 
-[[ $# -eq 3 ]] || die "USAGE expected='BASE EVID RUN'"
-base="$1"; evidence="$2"; run="$3"
-[[ "$base" = /* && "$evidence" = /* && "$run" = /* ]] || die "PATHS_MUST_BE_ABSOLUTE"
+[[ $# -eq 5 ]] || die "USAGE expected='BASE EVID RUN RUN_BINARY RUN_BUILD_IDENTITY_JSON'"
+base="$1"; evidence="$2"; run="$3"; run_binary="$4"; run_build_identity="$5"
+[[ "$base" = /* && "$evidence" = /* && "$run" = /* && "$run_binary" = /* && "$run_build_identity" = /* ]] || die "PATHS_MUST_BE_ABSOLUTE"
 require_safe_base "$base" || die "BASE_NOT_SAFE_OR_SEALED"
 require_new_root "$run" "$base" "$evidence" || die "RUN_NOT_NEW_INDEPENDENT_ROOT"
 require_evidence_root "$evidence" "$base" "$run" || die "EVIDENCE_NOT_SAFE_INDEPENDENT_ROOT"
 for path in \
   "$base/input/lumina_cuda" \
-  "$base/input/job.slurm" \
   "$base/input/resolved_lumina.exports" \
   "$evidence/inputs/identity.json" \
   "$evidence/inputs/fixed_te_profile.txt" \
@@ -833,13 +911,30 @@ for path in \
   "$evidence/offline/resource_card.json"; do
   [[ -f "$path" && ! -L "$path" ]] || die "REQUIRED_INPUT_UNSAFE path=$path"
 done
+[[ -f "$run_binary" && ! -L "$run_binary" && -x "$run_binary" ]] || die "RUN_BINARY_UNSAFE"
+[[ -f "$run_build_identity" && ! -L "$run_build_identity" ]] || die "RUN_BUILD_IDENTITY_UNSAFE"
+python3 -B - "$evidence/inputs/identity.json" "$run_build_identity" "$run_binary" <<'PY' || die "REGISTERED_RUN_BUILD_IDENTITY_MISMATCH"
+import hashlib, json, sys
+def digest(path):
+    h = hashlib.sha256()
+    with open(path, "rb") as stream:
+        for block in iter(lambda: stream.read(1024 * 1024), b""): h.update(block)
+    return h.hexdigest()
+registered = json.load(open(sys.argv[1], encoding="utf-8")).get("run_build")
+provided = json.load(open(sys.argv[2], encoding="utf-8"))
+if not isinstance(registered, dict) or registered.get("identity_sha256") != digest(sys.argv[2]): raise SystemExit(1)
+if provided.get("binary", {}).get("path") != sys.argv[3] or provided.get("binary", {}).get("sha256") != digest(sys.argv[3]): raise SystemExit(1)
+PY
 observation_prerequisites "$evidence/offline/expectations.json" "$evidence/offline/writer_contract.json" || die "INPUT_PENDING_OBSERVATIONS"
 actual_binary="$(sha256sum "$base/input/lumina_cuda" | awk '{print $1}')"
 [[ "$actual_binary" == "$EXPECTED_BINARY_SHA256" ]] || die "BINARY_IDENTITY_MISMATCH"
+binary_sm90_check "$base/input/lumina_cuda" || die "INPUT_PENDING_BINARY_SM90_COMPATIBILITY"
 registered_binary="$(json_field "$evidence/inputs/identity.json" base_binary.sha256)"
 [[ "$registered_binary" == "$actual_binary" ]] || die "STALE_IDENTITY"
 registered_exports="$(json_field "$evidence/inputs/identity.json" effective_exports.sha256)"
 actual_exports="$(sha256sum "$base/input/resolved_lumina.exports" | awk '{print $1}')"
 [[ "$registered_exports" == "$actual_exports" ]] || die "STALE_EXPORTS_HASH"
 
-stage_transaction "$base" "$evidence" "$run" || die "STAGE_TRANSACTION_FAILED"
+runner_template="$(dirname "$(realpath -e -- "$0")")/run_cmfgen_twin_map.sh"
+[[ -f "$runner_template" && ! -L "$runner_template" ]] || die "DEDICATED_RUNNER_UNSAFE"
+stage_transaction "$base" "$evidence" "$run" "$runner_template" "$run_binary" "$run_build_identity" || die "STAGE_TRANSACTION_FAILED"

@@ -1,5 +1,15 @@
 # CMFGEN twin — 최종 공개 출력 연결
 
+## 실행 이행 검토의 첫 질문 — 2026-09-09 「다음 묶음 단계 진행」
+
+1. **Q-GOAL — PASS:** 목표는 실제 최종 Saha/NLTE 분율과 공개 전자밀도를 얻어 CMFGEN과
+   비교하는 것이다. 출력 연결·빌드·등록 판정런을 생략하면 목표 관측을 얻을 수 없다.
+2. **Q-LEAN — APPROPRIATE:** 기존 묶음을 검수→빌드→단일 판정런→판독으로 마무리한다.
+   새 획득런·상주 계측·단계별 감사는 추가하지 않는다. 원출력은 기존 mapper가 직접 소비한다.
+
+두 질문을 먼저 판단했으며 기존 수용기준·봉인 BASE·8 GPUh/128 할당 CPUh·16 GiB 상한을
+그대로 유지한다. **DESIGN PASS**이며 아래 역사적 구현 미결의 면제나 물리 PASS는 아니다.
+
 2026-09-09 사용자 「승인」: 봉인 BASE 보존, 계산식 변경 없이 최종 Saha/NLTE 출력 추가와 새 바이너리 검증.
 기존 twin 묶음의 미완성 출력 연결을 마무리하는 변경이다. 새 물리 질문이나 GPU 런을 추가하지 않는다.
 운전자 사전감사 **Q-GOAL=PASS · Q-LEAN=APPROPRIATE · DESIGN=PASS**. 구현/검수/실행 PASS 아님.
@@ -84,3 +94,53 @@ generation 대신 최종 한 snapshot을 사용한다. **APPROPRIATE**. **DESIGN
 
 이 문서는 이전의 생산 C/CUDA·새 바이너리 변경 제외 및 BASE/RUN 동일 binary 요구를
 **이번 I/O 변경의 명시적 계보 연결에 한해** 대체한다. 물리 산식·BASE 보존·비용 상한은 대체하지 않는다.
+
+## 구현 착지 후 운전자 검수 — 수정 중
+
+sol 세션 `01a08514-a3a8-7982-a549-be109ab4b13f`는 정상 종료했다.
+`impl_final_writer_20260909/SOL_REPORT.md`에 writer/consumer/runner/stager/mapper 직접 시험을 기록했다.
+이 구현의 검수에서 다음 두 회귀가 확인되어 아직 빌드·실물 staging을 하지 않았다.
+
+- stager가 새 `lumina_cuda`를 0640으로 만들어 runner의 실행 가능 조건을 충족하지 못한다.
+- CUDA 호출부에서 기존 무조건 plasma 출력을 대체했으나 writer는 덤프 비활성화 시 아무것도 쓰지 않는다.
+  비활성 실행의 기존 plasma 출력 보존이라는 수용기준에 어긋난다.
+
+동일 구현 소유자 sol의 수정 작업 `01a08531-2872-7472-b463-41313b834a41`에 두 회귀와 직접
+회귀시험을 맡겼다. 함께 실제 정상 producer→mapper 정규화, public T와 staged profile의 직접
+대조, 모델 프로세스의 파일 크기 상한을 마무리한다. 별도 모델 감사나 GPU 런을 추가하지 않는다.
+기존 CPU 불변 시험을 전체 GPU 수치 동등성으로 해석하지 않는다.
+
+### 수정본 재현 및 CPU 빌드 이행
+
+수정 sol은 정상 종료했다(`CORRECTION_REPORT.md`). 운전자도 grammar-debug에서 writer,
+정상 producer→mapper, stager, mapper를 재실행하여 rc=0을 얻었다(`operator_cpu.log`,
+wall 2.199s/user 1.374s/system 0.773s). 원소스 174개가 출발 해시와 그대로 일치하며,
+기존 파일의 변경은 Makefile 빌드 연결과 CUDA의 DET 반환 직전 I/O 연결뿐이다.
+생산 소스 검수는 CPU 빌드를 허용한다. 빌드 입력은 `source_final.sha256`에 고정했다.
+
+runner의 public T 비교에는 실제 프로파일의 `1.8900E+04`와 writer의 `18900`을 다른
+문자열로 오인하는 문제가 남아 sol이 **runner만** 수정 중이다. 수치 허용오차 없이 유한한
+양의 binary64 값으로 비교하고 실제 표기 차이를 정상 시험에 넣는다. 이 수정은 봉인한
+생산 빌드 소스를 바꾸지 않으며, GPU 제출 전에 직접 재현한다.
+
+### 빌드 완료 및 실행 자원 수용
+
+CPU 빌드 `syntax:337600`은 syn08에서 COMPLETED/rc=0, 72초였다. 실제 AllocTRES는
+cpu=1,mem=8G,node=1이며 GPU 할당은 없다. compiler time은 wall71.719/user62.460/system6.746초다.
+새 binary는 `impl_final_writer_20260909/build/lumina_cuda`, SHA256
+`ca47ff50237f281dac0beb515da6d8b9c1d50e882e5b10ce6dab3a573a902b4b`다.
+11개 sm90 cubin 중 10개는 원본과 byte 동일하다. 나머지 `lumina_cuda.21.sm_90.cubin`은
+익명 namespace 이름의 `730445bf`→`8ef46168` 78곳을 제외하면 파일 전체가 같다.
+따라서 GPU 명령·상수의 동일성을 확인했다(`gpu_code_comparison.log`). 전체 GPU 수치 동등성
+또는 물리 PASS 주장은 아니다.
+
+CPU writer/consumer를 강제 재컴파일한 추가 재현도 rc=0이었다. wall0.544314/user0.359048/
+system0.161599초, peak RSS36864KiB다. 자원 카드는 이 실측과 기존 동일 반복의 333531 실적,
+Slurm 시간·메모리 제한, 모델의 1GiB/파일 제한 및 stager의 쓰기 전후 총량 검사를 근거로 수용했다.
+새 T의 runtime/peak memory는 여전히 **미측정**이며 4h 완주를 보증하지 않는다.
+로그/기타 런 출력 4GiB, 분석 1GiB, 빌드·재현·감사 2GiB를 예약하고 population dump 공식
+368324400 bytes와 전체 신규 16GiB 상한을 유지한다. 이전 resource card/identity/expectations는
+`evid_rev4_before_final_writer_20260909`에 보존했다.
+
+등록 RUN은 `/gpfs/kjhan/lumina/cmfgen_map/run_twin_hopper_20260909` 하나다.
+실효 입력은 이 RUN의 `input` 아래 독립 복사하며 원 BASE는 수정하지 않는다.
