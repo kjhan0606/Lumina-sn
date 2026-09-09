@@ -144,3 +144,32 @@ Slurm 시간·메모리 제한, 모델의 1GiB/파일 제한 및 stager의 쓰�
 
 등록 RUN은 `/gpfs/kjhan/lumina/cmfgen_map/run_twin_hopper_20260909` 하나다.
 실효 입력은 이 RUN의 `input` 아래 독립 복사하며 원 BASE는 수정하지 않는다.
+
+### 코드 검수 PASS · staging 완료 · 판정런 제출
+
+runner 정상3/음성12, mapper36항목을 운전자가 grammar-debug에서 독립 재현했다
+(`operator_runner_final.log`, `operator_mapper_final.log`). 실제 T 표기의 binary64 동일성,
+잘못된 T/hash/중복 셸 거부, 실제 manifest를 읽은 뒤에만 해당 미결 해제를 확인했다.
+수정본 코드 검수 **PASS**, 재현 **reproduced**. 메인 통합 커밋 `85900a6`이며 기존 다른
+dirty 변경은 보존했다. 이는 전체 묶음의 물리 판정 또는 종료감사 PASS가 아니다.
+
+`stage.log`: input5393516355 bytes, 실제 stage5393688738 bytes, 예상 최대13278230482 bytes
+(상한17179869184), BASE 무변경. staging wall20.467/user15.006/system4.696초.
+실행 바이너리는 0750, 실제 프로파일과 등록 프로파일의 bytes는 일치한다.
+
+**2026-09-09 17:28:58 KST `syntax:337602` 제출**, 등록 판정런 한 번이다.
+17:29 Slurm 상태 PENDING/Priority, 예상 시작09-10 13:26:26 KST이며 배정/시작 보장은 아니다.
+요청은 GPU2,CPU32,mem64G,4h,h200/h100,node 미고정,no-requeue로 확인했다.
+입력 정본은 `/gpfs/kjhan/lumina/cmfgen_map/run_twin_hopper_20260909/input`이며
+실효 온도 파일은 그 안의 `fixed_te_profile.txt`, 실효 환경은 `resolved_lumina.exports`다.
+현재 물리 결과는 없고 실행 대기 중이다. 추가 획득런·재제출은 승인 범위에 포함되지 않는다.
+
+```bash
+squeue -M syntax -j 337602
+sacct -M syntax -j 337602 --format=JobID,State,ExitCode,Elapsed,AllocTRES,MaxRSS -P
+# 종단 및 원출력 확인 후 grammar-debug에서 기존 판독기로 분석:
+python3 -B /gpfs/kjhan/lumina/cmfgen_map/writer_worktree_20260909/scripts/cmfgen_twin_map.py analyze \
+  --contract /gpfs/kjhan/lumina/cmfgen_map/evid_rev4_20260909/offline/expectations.json \
+  --evidence /gpfs/kjhan/lumina/cmfgen_map/evid_rev4_20260909 \
+  --run /gpfs/kjhan/lumina/cmfgen_map/run_twin_hopper_20260909
+```
