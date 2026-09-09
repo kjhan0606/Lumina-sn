@@ -1,6 +1,12 @@
 # 사전등록 기안 — CMFGEN 어긋남 지도: 쌍둥이 T_e 레인
 **단 식별자: DET-CMFGEN-TWIN-MAP · 2026-09-08**
 
+**2026-09-09 최종 공개 writer 추가 승인:** 사용자 「승인」에 따른 최신 변경집합/수용기준은
+`docs/BUNDLE_CMFGEN_TWIN_MAP_FINAL_WRITER_2026-09-09.md`다. Q-GOAL=PASS·Q-LEAN=APPROPRIATE·
+DESIGN=PASS. I/O만 바꾼 새 실행용 소스·바이너리를 별도 봉인하며 BASE는 보존한다.
+아래의 생산 코드 변경 제외·BASE/RUN 동일 binary 요구와 단일 세대 번호 해석보다 이 제한적
+변경집합이 우선한다. 수치 산식·표본·물리 입력·GPU1회/2장/4h 상한은 그대로다.
+
 **2026-09-09 실행 범위 추가 승인:** 사용자 「그렇게 해요」에 따라 현행 runner 변경집합은
 `docs/BUNDLE_CMFGEN_TWIN_MAP_RUNNER_2026-09-09.md`다. 운전자 Q-GOAL=PASS·Q-LEAN=APPROPRIATE·
 DESIGN=PASS. 이 변경집합은 아래 §10 및 개정 4의 새 runner 제외 조항에 한하여 우선한다.
