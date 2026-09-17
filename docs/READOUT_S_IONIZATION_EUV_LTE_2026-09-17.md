@@ -83,3 +83,33 @@ J 가 B(T_e) 면 이온화는 J 의 크기가 아니라 **T_e 가** 정하기 �
 
 CMFGEN 이 옳다는 것(잣대일 뿐) · 외곽 과잉의 원인 · 소스 행 단위 귀속 · 스펙트럼 영향의 크기.
 **S 0.395 는 증상이고 병소는 EUV 장의 LTE 성**이라는 것이 이 판독의 상한이다.
+
+---
+
+## 부록 A (같은 날 후속, 런 0회) — 채움의 확정과 두 강등
+
+### A-1. EUV J 는 **Planck 채움**이다 — iter0 과 iter1 이 같은 빈-중심 상수를 갖는다
+`physics_DET_iter0000` 의 seed J 는 전 셸 균일 **B_ν(T_inner=10,020 K)**(532/370/300/150 Å 의 bin-center 비 = 0.988/1.085/1.004/0.925).
+iter1 의 J/B(T_e) 는 셸 12–36 에서 **정확히 같은 상수**(0.98/1.07/1.0/0.93). ⟹ iter1 의 EUV J 는 **같은 Planck 평가 루틴이 T 만
+T_inner → 국소 T_e 로 바꿔 채운 값**이다. 수송·확산 어느 쪽도 아니다. 셸 12–36 의 **150–532 Å 전 EUV** 가 그렇다.
+CMFGEN J 표 대비 Lumina EUV = **10⁻⁴–10⁻²**(셸 20–36). 실제 장은 **sh≥40 에서만** 나타난다(J/B 1.4e3–1.6e5, CMFGEN 대비 10⁴–10¹⁰ — 별개 「외곽 EUV 과잉」).
+
+### A-2. 강등 1 — §3 「S_bf/B ≫ 1」은 근거로 쓰지 않는다
+`physics_DET` 의 manifest 에 population generation 키가 없어 `opacity`(χ) 와 `emissivity`(η) 가 **같은 세대**인지 알 수 없다.
+세대가 다르면 η/χ 는 무의미하다(계약이 「동일 공개 세대 연결 미시연」으로 둔 구멍). ⟹ **관측으로만 남기고 결론에서 뺀다.**
+
+### A-3. 강등 2 — 외곽 28–36 의 III→IV 과이온화는 **공개 장으로 설명되지 않는다**
+그 셸의 J 는 전 EUV 에서 ≤ B(T_e) 이므로 세부균형상 LTE 를 넘을 수 없는데, 이온 분율은 LTE 비의 **~3,600배**(S IV sh30: 0.805 대 LTE 0.001).
+⟹ 이온화 solve 가 **공개 J 가 아닌 다른 장/경로**를 먹었다는 뜻이다. 후보(미판별): 세대 지연(material phase 가 이전 세대 장 소비) ·
+`LUMINA_CMF_BF_MILNE=2` 의 재결합 온도 · 성운형 Saha 의 (W, T_rad) 적합 · `g_photoion_mc_J` 는 DET 레인에서 **미장착**(로그에 `armed` 0건).
+**중간 셸(황 0.395)의 기전과 외곽의 기전은 다르다.**
+
+### A-4. 이 런의 구조(로그 실측)
+DET 레인 · 2 외부반복 · iter0 물질 = `BOOTSTRAP_LTE_SAHA`(seed-T_e LTE/Saha, 루프 진입 전) · iter1 `R7_MATERIAL_PHASE_COMMITTED
+phase=A2-10 te_generation=2→3`, `population_generation=4` · 장 commit = `lumina_cmfgen.c:3781`(provenance `CMFGEN_REPLAY`,
+producer `PURE_CMFGEN_COMOVING_CONSERVATIVE_REBIN`) · Γ_phot = `nlte_bf_gamma_canonical` → `bf_rate_gamma_legacy_grid(&nlte->radfield_view)`.
+CMF 조립에 **`S=B_ν(T_e)` 열화 폴백**(`CMF_LP_F_SL_FALLBACK`, `lumina_cmfgen.c:610/915/1867`)과 **`η_dep=κ·B_ν(T_e)` 주입**(:1799)이 존재 — 채움의 소스 후보이나 **행 단위 귀속은 미완**.
+
+### A-5. 반증 계약의 전제 (다음 메시지에서 확인)
+7월 `LUMINA_GPH_JTABLE` 이 A-2 이관 후에도 `radfield_view` 경로에 꽂혀 있는가. 아니면 치환 시험은 **view 에 주입하는 배선 1개**가 선행한다.
+
