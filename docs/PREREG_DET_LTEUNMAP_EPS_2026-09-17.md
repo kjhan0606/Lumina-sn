@@ -178,3 +178,12 @@ GPU **1 런**, 파티션 h200→h100→a100(343204 실적 a100, 73.5 GB, 약 3.3
 - **구현 2차(Opus 4.8, 385k 토큰)**: `lumina_cmfgen.c` +439/−24 · `lumina_plasma.c` +61 · `env_universe.h` +2/−1 · selftest 322 행. `diff -rq` 4 파일만. selftest 전 항목 PASS(fine 11 + 조립기 5).
 - **운전자 코드 간단 감사**: Q0 봉인 무접촉(원본 `source.sha256` 전건 OK, 봉인 런 미접촉) · 게이트 OFF = legacy `eps_phys` 경로 문자 그대로(`if(!emiss_b && (eps_phys||gate_active))`, OFF 이면 표도 미빌드) · mapped `el=1.0` = base 실효값(표 미빌드 → 1.0 → cap 1.0) · unmapped 원값(floor/cap 미적용) · `el<0` → `g_asm_unmapped_eps_fault` → 드라이버 `[CMFGEN][BLOCKED] UNMAPPED_EPS_ASSEMBLE_FAILCLOSED` return −1(solve/commit 전) · fine 경로 `-2` → `eps_fail` → BLOCKED · census formatter 생산·테스트 공유 · selftest 훅은 `#ifdef` 전용. 기재: `lumina_line_used_nlte_fill_for_tau` 가 `build_lte_level_density_cache` 를 한 번 더 만든다(비용만, 결과 무관); 조립기 게이트 ON + `eps_phys=0` 조합은 이 런 밖. selftest 운전자 재실행 rc=0. **차단 없음 → 빌드 진행.**
 - **빌드**: `$N/build_cpu.slurm`(CPU, `make -j1 cuda`, 소스 해시 전후 검증) — `check_driver_hygiene` PASS — Slurm **374550** 제출.
+
+## 집행 기록 4 — 빌드 완료 · 스테이징 · 판정런 제출 (2026-09-17)
+
+- **빌드 374550**(CPU, syntax 클러스터): rc=0, 소스 해시 전후 183/183 OK, `lumina_cuda` 4,800,480 B, sha256 `97d83fcd…678a3a`, sm_80/86/90 이미지.
+- **seal-build**: `run_build_identity.json`(183 파일) — `CMFGEN_TWIN_RUN_BUILD_V1`.
+- **스테이징** `/gpfs/kjhan/lumina/cmfgen_map/lteunmap_eps_20260917/run`: 343204 `input/` 복사(5.1 GB, 봉인 원본 읽기만) + 새 바이너리 + exports 경로 치환(7 참조) + `LUMINA_CMF_FINE_UNMAPPED_EPS="1"` 1 키 + `STAGE_IDENTITY.txt` 재생성(h200x1) + 동결 러너(작업명 `LUMINA_lteunmap_eps`, `--time=05:00:00`) + `OWNER.txt`. **G-ID 사전점검**(`identity_precheck.json`): 소스 차이 = 변경집합 4 파일뿐, exports 차이 = 게이트 1 키뿐. 덱 해시 OK, work 비어 있음.
+- **운전자 이탈 2건(기재)**: 스테이징 스크립트 초판이 `grep -vc | grep -q` 파이프(rc-after-pipe)와 `sacct -M` 미핀으로 위생 게이트에 걸림 → 수정 후 PASS. grammar-debug 에서의 `sbatch` 는 다른 클러스터라 gres 거부 → syntax 로그인 노드에서 제출.
+- **판정런 제출**: Slurm **374570** (syntax, h200, gres gpu:1, `sacct -M syntax` 로 소유 확인, WorkDir = repo). 상태 PENDING(Priority).
+- **판정 도구**: `repro_claude_20260917/judge_lteunmap.py <run_root>` — base 런 자기검사 완료(G-EPS 미충족·E-1~4 미충족·LU-X).
