@@ -208,3 +208,9 @@ GPU **1 런**, 파티션 h200→h100→a100(343204 실적 a100, 73.5 GB, 약 3.3
 - **구현(Opus 4.8)**: fine 경로 게이트 소스를 별도 env `LUMINA_CMF_FINE_UNMAPPED_EPS_FINE`(기본 0) 로 교체(`lumina_cmfgen.c` 91·5544 행), env 등록(COUNT 521), selftest +3 항목(커밋 게이트 단독 → fine 불변). `lumina_cmfgen.c` 총 +456/−24.
 - **운전자 감사**: `diff -rq` 4 파일만 · selftest 재실행 21 PASS/0 FAIL · fine 경로 전 신규 코드가 fine env 뒤 · 조립기 게이트 불변 — 차단 없음. 운전자 이탈 기재: 감사 명령의 `gd` 인용 안 `grep 'FAIL|RESULT'` 의 `|` 가 파이프로 해석돼 배경 명령이 깨짐 → 중지 후 재실행(중복 빌드 제출 방지 가드 확인).
 - **재동결** `source.sha256`/`source_before.json` 183 파일(16:02). **빌드2 374637** 제출(CPU). 이후 = `restage_run2.sh h100-a100x2` → 제출.
+
+## 집행 기록 9 — 빌드2 완료 · 재스테이징 · 판정런 2 제출 (2026-09-17 16:0x)
+
+- **빌드2 374637** rc 0, 소스 해시 183/183 전후 OK, 바이너리 sha256 `d5a2765b…65bf4`. `seal-build` → `run_build_identity.json`.
+- **재스테이징** `run2`(프로필 h100-a100x2): 입력 = 343204 계보 복사, exports = 게이트 1 키(+프로필 종속 `MGPU_DEVICES=2`), `LUMINA_CMF_FINE_UNMAPPED_EPS_FINE` **미설정**(fine 경로 원본 그대로). G-ID 사전점검 OK(소스 4 파일), 덱 해시 OK.
+- **판정런 2 = Slurm 374640** (syntax, h100,a100, gpu:2, 5 h 상한). 374587 은 FAILED 로 보존(증거: fine INIT 미수렴 로그).
