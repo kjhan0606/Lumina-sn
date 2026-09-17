@@ -152,3 +152,19 @@ GPU **1 런**, 파티션 h200→h100→a100(338745 실적 a100 3h18m) — `--tim
 **처분**: 이 계약은 실행하지 않는다(사전감사 결과와 무관). 후속 = **율 장부 계약**(오프라인): S II→III 의 Γ(실제 σ_bf 표)·
 α_RR·α_DR 을 Lumina 가 실제로 쓰는 값으로 재구성하고, CMFGEN 의 f_II 를 내려면 α/Γ 가 몇 배여야 하는지 산출.
 
+## 집행 기록 2 — 사전감사 (Opus 4.8 fresh, `model` 생략 → 자기보고 `Opus 4.8 / claude-opus-4-8`) (2026-09-17)
+
+**결과**: `Q_GOAL: 부분부합` · `Q_LEAN: 적정` · **`PRE_AUDIT: 통과 불가` · `BLOCKING: 2`**. 기안자(운전자)와 **분리된 fresh 컨텍스트**.
+
+| | 내용 |
+|---|---|
+| **BLOCKING-1** | 분기 의미가 세부균형과 어긋남 — CMFGEN 표 J 가 B(T_e) 보다 크므로 치환은 f_II 를 **base 이하로** 내린다 ⟹ **JS-B 가 구조적으로 강제**되고 JS-A 는 도달 불가. 「잣대를 base 에 먼저 적용」이 **크기만 보고 부호를 안 봤다.** 장이 진짜 원인이어도 정합성 없는 더 강한 장을 넣으면 거짓 음성. 올바른 조작화 = 「committed field 에 이온화가 **반응**하는가(양방향 유의 변화) 대 무반응(bypass)」 |
+| **BLOCKING-2** | 계약 문면 「**EUV** J」 대 장치 「표값>0 인 빈 **전 대역**(2 µm–100 Å) 치환」 불일치 — EUV/FUV/광학 bf 의 분리 귀속 불가, 다른 이온 bf 변화로 `n_e` 되먹임 |
+
+**독립 확증(소스 직독)**: overlay → `radiation_field_commit` → `:3797 radiation_field_read_view`("the only replay-lane view refresh point") → `radfield_view` → `nlte_bf_gamma_canonical` — **치환은 소비 경로에 도달한다**; `LUMINA_GPH_JTABLE` 은 `radeq_simul_all` 의 static local — **죽은 노브 확인**; 신규 env 실재 부재·입력 파일 실재·`INPUT_PENDING` 부정직 없음·봉인/자원 적정.
+**«기재로 족함»**: `cs` 가 `const CMFGENState*` 이므로 overlay 는 가변 복사본으로(캐스팅 변조 금지) · `cmfgen_write_jnu` 의 `nlte->J_nu` memcpy 는 미치환으로 남음(DET 무해, 단일 소비자 명시) · 주입 표는 대장이 「이온화 오라클 부적격」으로 기록한 자체런 J — 「CMFGEN 쪽으로」 문면은 과대 · 음성대조는 장치만 검증하고 분기 오조작화는 못 잡음.
+**Q-GOAL ③ 대안**: 판독 §7·A-4 의 **채움 소스(`CMF_LP_F_SL_FALLBACK`·`η_dep=κB`) 비-LTE 시험**이 최종목적에 더 직접적.
+**감사 자기 한계**: 「로드된 CLAUDE.md 에 개정25 본문이 없다」 — 운전자 확인 결과 파일에는 실재(하네스가 서브에이전트에 주입하는 CLAUDE.md 가 **세션 시작 시점 판**이라 개정25 이전 본). 담당표 재현 불가는 그 때문이며 판정 원칙은 로드된 규약으로 충족.
+
+**운전자 처분**: 집행 기록 1(런 전 반증)과 **독립 수렴** — 계약 유지 불가. 실행하지 않는다. BLOCKING-1 의 「응답 대 무응답」 재조작화는 **런이 필요**하고 정보량이 낮아(판독 §5 가 이미 열적 장을 확립) 채택하지 않는다. 후속 = 오프라인 「함의 J 장부」 또는 채움 소스 비-LTE 시험 — **user 결정**.
+
