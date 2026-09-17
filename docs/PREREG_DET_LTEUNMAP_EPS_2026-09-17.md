@@ -20,15 +20,19 @@ L1 물리량 = 창 빈 J/B·σ-가중 Γ/Γ(B)·셸별 단계 분율(기존 판�
 - 이온비 = σ-가중 J(재적분 0.5–3 % 재현; `Γ(B)/α=Φ` 0.1 %). 초과의 45–85 % 는 창 빈(557.7 Ca V·696.7/922.5 S V …), 방출력 96–99 % 가 셸 41–49(T_e 12–24 kK, twin 핀).
 - 방출 코드: `cmf_fine_line_material` parity 분기(`src/lumina_cmfgen.c`, `cmf_fine_line_material`, 4498–4540 행) η₀ = n_upper·A_ul·hν/4π(`line_net_sobolev_material`, `src/line_net_rate.c` 106 행); n_upper = `upper_population_cache` ← `lumina_line_upper_population_fill_for_tau`(`src/lumina_plasma.c` 9019 행) ← `a209_upper_population_for_tau` 의 `lte_level_density`(**`used_nlte==0`** 인 선) ⟹ S_l = B(T_e) 정확히(실측 η/χ = 1.02 B; χ_bb 는 Saha+Boltzmann+Sobolev 로 3자리 재현).
 - parity 분기는 `line_eps`/`radeq_line_eps_phys` 를 **보지 않는다**(legacy 분기만 `emit = line_eps<1 ? line_eps·B : source`). 런의 `LUMINA_CMFGEN_LINE_EPS_PHYS=1` 은 bin 조립기용이다.
+- ★**RADEQ 표는 343204 에서 한 번도 빌드되지 않았다**(stdout `[RADEQ] collisional line-cooling table` 인쇄 0 — T_e 고정 프로필이라 `radeq_simul_all` 미진입; 빌더 `build_radeq_line_table` 은 그 안과 `#ifdef LUMINA_FROZEN_ORACLE` 래퍼에만 있다). parity 패스는 **iter 0 조립에서 이미 돈다**(343204 stderr 20 행 `CMFGEN_NONOVERLAP_SOBOLEV`, `[R7][PHASE] iter=0` 이전). ⟹ ε 소비 전에 표를 **명시적으로 빌드**해야 한다. 표의 선 선택 술어(이온 pop 실재·두 준위 실재·dE>0)는 S V·Ca V 선을 포함한다(동결 트리 `lumina_plasma.c` 11087–11103 행 직독).
 - NLTE 표적 31 슬롯 = 15 원소 × ion II·III(런 배너 `Z=.. ion=1/2`); 램프 이온 S V·Ca V 는 어떤 승격 표에도 없다.
 - **미확정(이 계약 밖)**: ① 연속체 `S_fixed=(χ_abs·B+η)/χ_tot`(`:5686`) 의 LTE 채움 · 퇴화-파괴 채널(DR·비열적) · CMF 선숲 흡수의 정량(정적 예측기의 sh≤24 과대).
 
 ## 3. 수리안 — 변경집합
 
 원칙: **parity 분기에서 `used_nlte==0` 인 선에 한해** ε_phys 적용. NLTE 사상 선·연속체·이온화 solve·율·원자자료·T_e 는 건드리지 않는다. env 부재 ⟹ **byte-동일**(음성대조 자격). ε 를 얻지 못한 unmapped 선(τ>1e-12) 이 하나라도 있으면 **fail-closed**(무음 열화 금지).
+★**소스 기준 = 동결 트리** `/gpfs/kjhan/lumina/cmfgen_map/lteunmap_eps_20260917/source`(343204 빌드 소스 `consistent_ionization_state_20260911/source` 의 검증된 복사본, 182 파일 해시 일치) — repo HEAD 가 아니다(HEAD 는 22 파일이 다르다). 변경집합 밖 파일은 byte 불변.
+- **표 빌드 보장**: `lumina_plasma.c` 에 `#ifdef` 없는 공개 래퍼 `radeq_line_table_ensure(nlte, atom, opacity)`(내부 `build_radeq_line_table`, 멱등)를 두고, `cmf_fine` 은 게이트 ON 이면 parity 패스의 ε 소비 **전에** 이를 호출한다. 표가 빌드되지 않은 채 ε 소비에 들어가면 **시작 시 BLOCKED**(무음 진행 금지).
+- **반환 의미**: `radeq_line_eps_phys` 의 `-1`(표 미빌드·미지 선)은 docstring 의 「legacy 열적 폴백」을 따르지 **않고** fail-closed 로 처리한다. `denom≤0 → 1.0` 반환은 `A_ul=0`(η₀=0 이라 무해) 또는 `C_ul=0 ∧ β_esc=0` 에서만 생기며, 후자를 만나면 census 에 계수하고 fail-closed 한다.
 
 - 분류: 채움 루틴이 이미 계산하는 `used_nlte`(`a209_upper_population_for_tau` 출력)를 (선,셸) 바이트 배열로 **함께 내보내** `cmf_fine` 이 그것을 읽는다 — 재유도 금지(같은 술어).
-- 적용: unmapped 선에서 `eps = radeq_line_eps_phys(line, n_e[s], T_e[s], τ)`; `η₀ ← η₀·eps`; 불투명도는 총량 보존 — 열적 `eps·χ₀` 는 `chi_line`, 산란 `(1−eps)·χ₀` 는 `chi_es`(기존 ALI 산란 알베도 경로) 로 적립. 프로파일 가중 p 는 둘 다 같은 식.
+- 적용: unmapped 선에서 `eps = radeq_line_eps_phys(line, n_e[s], T_e[s], τ)`; `η₀ ← η₀·eps`; 불투명도는 총량 보존 — 열적 `eps·χ₀` 는 `chi_line`, 산란 `(1−eps)·χ₀` 는 `chi_es`(기존 ALI 산란 알베도 경로) 로 적립. 프로파일 가중 p 는 둘 다 같은 식. ★per-line 접힘은 **누적단**(선 프로파일을 `chi_line`/`eta` 에 더하는 자리, 동결 트리 `lumina_cmfgen.c` 5611·5654 행 근방)에서 하고, 전역 스칼라 `line_eps` 조립단(5682 행 근방)은 건드리지 않는다 — `cmf_fine_line_material` 은 ε(또는 산란분 χ)을 **호출부로 반환**하도록 시그니처를 늘린다.
 - census: 셸당 stderr 1 행 `[cmf_fine][UNMAPPED-EPS] shell=<s> n_unmapped=<n> n_mapped=<m> eps_min=<..> eps_median=<..> eps_max=<..> thermal_emit_fraction=<Σε η₀/Σ η₀>` — G-EPS 가 소비.
 
 ### 변경집합 — CMF_FINE_UNMAPPED_EPS (표)
@@ -36,9 +40,9 @@ L1 물리량 = 창 빈 J/B·σ-가중 Γ/Γ(B)·셸별 단계 분율(기존 판�
 | 경로 | 담당 | 내용 |
 |---|---|---|
 | `src/lumina_cmfgen.c` | Opus 4.8 | parity 분기 ε 적용(unmapped 만)·chi_es 적립·fail-closed·census 행; env `LUMINA_CMF_FINE_UNMAPPED_EPS`(기본 0 = byte-동일) |
-| `src/lumina_plasma.c` | Opus 4.8 | `lumina_line_upper_population_fill_for_tau` 가 `used_nlte` (선,셸) 바이트 배열을 함께 발행 |
+| `src/lumina_plasma.c` | Opus 4.8 | `lumina_line_upper_population_fill_for_tau` 가 `used_nlte` (선,셸) 바이트 배열을 함께 발행(함수포인터 typedef·등록·호출부 동반); `radeq_line_table_ensure()` 공개 래퍼(`#ifdef` 없음, 멱등) |
 | `src/env_universe.h` | Opus 4.8 | `LUMINA_CMF_FINE_UNMAPPED_EPS` 등록(strict env 수용) |
-| `tests/cmf_fine_unmapped_eps_selftest.c` | Opus 4.8 | CPU selftest: env 부재 (χ₀,η₀,chi_es) byte-동일 · unmapped 선 η₀ = ε·χ₀·B(1e-12) 및 chi_es += (1−ε)χ₀ · mapped 선 불변 · ε 부재 → rc≠0 · census 행 형식 |
+| `tests/cmf_fine_unmapped_eps_selftest.c` | Opus 4.8 | CPU selftest: env 부재 (χ₀,η₀,chi_es) byte-동일 · unmapped 선 η₀ = ε·χ₀·B(1e-12) 및 chi_es += (1−ε)χ₀ · mapped 선 불변 · ε 부재(−1) → rc≠0 · 표 미빌드 → rc≠0 · census 행 형식 |
 
 ### 변경집합 끝
 
@@ -48,7 +52,7 @@ L1 물리량 = 창 빈 J/B·σ-가중 Γ/Γ(B)·셸별 단계 분율(기존 판�
 |---|---|---|
 | G-ID | 343204 계보(`/gpfs/kjhan/lumina/cmfgen_map/consistent_ionization_state_20260911/retry_20260912/physical_run/{RUN_FOOTER.txt,input_manifest.sha256}`) 대비 차이가 exports 에서는 `LUMINA_CMF_FINE_UNMAPPED_EPS` 키 하나, source 에서는 §3 변경집합 표의 행 전부(`src/lumina_cmfgen.c`·`src/lumina_plasma.c`·`src/env_universe.h`·`tests/cmf_fine_unmapped_eps_selftest.c`)뿐임을 `identity.json` 으로 확인 | 이전 계보의 exports 해시를 identity 에 주입 ⟹ FAIL |
 | G-RUN | 2 외부반복 완주, stderr `[cmf_fine][EXACT-MULTIGPU-EPOCH] status=OK` ≥ 2, `work/physics_comparison/physics_DET_iter0001.spectral.csv`·`work/lumina_ion_pops.csv`·`work/nlte_levels_final.csv` 실재 | 반복수 변조·덤프 결손 주입 |
-| G-EPS | stderr `[cmf_fine][UNMAPPED-EPS]` 행이 셸 50개 전부 있고, 셸 41–49 에서 `thermal_emit_fraction ≤ 1e-2` 이며 `n_unmapped > 0` | census 를 ε=1 로 위조한 로그 ⟹ FAIL(thermal_emit_fraction=1); 행 결손 ⟹ FAIL |
+| G-EPS | stderr `[cmf_fine][UNMAPPED-EPS]` 행이 셸 50개 전부 있고, 셸 41–49 에서 `thermal_emit_fraction ≤ 1e-2` 이며 `n_unmapped > 0` | census 를 ε=1 로 위조한 로그 ⟹ FAIL(thermal_emit_fraction=1); 행 결손 ⟹ FAIL; selftest 에서 표 미빌드 주입(ensure 미호출) ⟹ 시작 시 BLOCKED 시연 |
 
 ### 게이트 명부 끝
 
@@ -140,3 +144,22 @@ GPU **1 런**, 파티션 h200→h100→a100(343204 실적 a100, 73.5 GB, 약 3.3
   ]
 }
 ```
+
+---
+
+## 집행 기록 1 — 사전감사 (Opus 4.8 fresh, `model` 생략 → 자기보고 `Opus 4.8 / claude-opus-4-8`) (2026-09-17)
+
+**결과**: `Q_GOAL: 부합` · `Q_LEAN: 적정` · **`PRE_AUDIT: 통과 불가` · `BLOCKING: 1`** (171k 토큰, 20 tool use). 기안자(운전자)와 분리된 fresh 컨텍스트.
+
+| | 내용 | 처분 |
+|---|---|---|
+| **«폐합 차단» 1 (C6)** | `radeq_line_eps_phys` 가 읽는 `radeq_lines` 는 `radeq_simul_all` 안에서만 lazy 빌드 — parity 패스가 iter 0 조립에서 돌면 표 부재 → 전 선 −1 → fail-closed → **런이 물리 없이 LU-X**. (b) 커버리지 미검증. (c) docstring(−1 → 열적 폴백)과 계약(−1 → fail-closed) 충돌; `denom≤0 → 1.0`. | **운전자 오프라인 확인**: 343204 stdout 에 `[RADEQ]` 표 인쇄 **0**(T_e 고정 → 표 미빌드), parity 패스는 stderr 20 행(iter 0 이전) — 지적 실재. 술어 직독(11087–11103 행): S V·Ca V 포함 — (b) 해소. **개정 1**(OLD/NEW 6쌍): `radeq_line_table_ensure()` 공개 래퍼 + 게이트 ON 시 ε 소비 전 호출·표 부재 시 시작 BLOCKED·−1 fail-closed·`denom≤0` 처리·selftest 항목 추가 |
+| «기재로 족함» G1 | material 시그니처 확장·누적단(5611/5654) per-line 접힘 명시 필요 | 개정 1 에 반영 |
+| G2 | `used_nlte` 는 (선,셸) 배열 — typedef·등록·호출부(5353) 동반 수정 | 개정 1 에 반영 |
+| G3 | E-6 은 이온 분율만 잰다(내핵 스펙트럼 미검) — §8 상한과 정합 | 기재 |
+| G4 | E-5 예측치(0.8/1.3/8.4)는 오염 구간 예측기 값 — 기대치로 읽지 말 것 | 기재(E-5 분기 불참 유지) |
+| G5 | 「557.7 = Ca V 100 %」는 외곽(sh44–48) 한정, IGE 조성 0 에 의존 | 판정문에 기재 |
+
+**독립 확증(감사자 소스 직독)**: parity 분기(4508–4534)는 ε·clamp 미참조 · n_upper ← `lte_level_density`(`!use_nlte`) · χ_line 재현 3자리 · 내핵 창 빈 불투명(J/B=1.00)이라 열화 길이 논증으로 E-6 정합 · ε 도달치 1e−5–1e−7 ≪ 1e−2.
+**감사 자기 한계**: parity ε-소비 최초 반복 번호는 소스만으로 미확정(운전자가 로그로 iter 0 확정) · 표 술어 전문·`line_net_sobolev_material` 본문 미독 · ALI 의 내핵 J→B 회복은 정적 논증.
+**운전자 처분**: 개정 1 적용 후 게이트 재통과 시 구현 발주(Opus 4.8 fresh, 동결 트리 복사본). 재감사는 개정이 «폐합 차단» 항목의 해소에 한정되므로 발주하지 않는다(정정 회차 규칙: 1회차 전건 반영).
