@@ -41,7 +41,7 @@ L1 물리량 = 창 빈 J/B·σ-가중 Γ/Γ(B)·셸별 단계 분율(기존 판�
 
 | 경로 | 담당 | 내용 |
 |---|---|---|
-| `src/lumina_cmfgen.c` | Opus 4.8 | parity 분기 ε 적용(unmapped 만)·chi_es 적립·fail-closed·census 행; env `LUMINA_CMF_FINE_UNMAPPED_EPS`(기본 0 = byte-동일); **개정 2: bin 조립기 선 루프(커밋 경로)에 표 보장·unmapped 원값 ε·mapped `el=1` 유지·fail-closed·조립기 census** |
+| `src/lumina_cmfgen.c` | Opus 4.8 | **개정 4: fine INIT 패스(parity 분기)에는 ε 를 적용하지 않는다** — 374587 실측: (1−ε)χ 산란 접힘으로 fine 필드 알베도 1−4×10⁻¹² → exact 고정점 128회 미수렴(residual 0.076, base 45회 수렴) → R6 BLOCKED. fine 경로 코드는 게이트와 분리해 **기본 비활성**(별도 env `LUMINA_CMF_FINE_UNMAPPED_EPS_FINE`, 미설정 = 원본 deposit 그대로)로 두고, census 도 조립기 것만 소비; env `LUMINA_CMF_FINE_UNMAPPED_EPS`(기본 0 = byte-동일)는 **bin 조립기 선 루프(커밋 경로)** 의 표 보장·unmapped 원값 ε·mapped `el=1` 유지·fail-closed·조립기 census 만 켠다 |
 | `src/lumina_plasma.c` | Opus 4.8 | `lumina_line_upper_population_fill_for_tau` 가 `used_nlte` (선,셸) 바이트 배열을 함께 발행(함수포인터 typedef·등록·호출부 동반); `radeq_line_table_ensure()` 공개 래퍼(`#ifdef` 없음, 멱등) |
 | `src/env_universe.h` | Opus 4.8 | `LUMINA_CMF_FINE_UNMAPPED_EPS` 등록(strict env 수용) |
 | `tests/cmf_fine_unmapped_eps_selftest.c` | Opus 4.8 | CPU selftest: env 부재 (χ₀,η₀,chi_es) byte-동일 · unmapped 선 η₀ = ε·χ₀·B(1e-12) 및 chi_es += (1−ε)χ₀ · mapped 선 불변 · ε 부재(−1) → rc≠0 · 표 미빌드 → rc≠0 · census 행 형식 |
@@ -54,7 +54,7 @@ L1 물리량 = 창 빈 J/B·σ-가중 Γ/Γ(B)·셸별 단계 분율(기존 판�
 |---|---|---|
 | G-ID | 343204 계보(`/gpfs/kjhan/lumina/cmfgen_map/consistent_ionization_state_20260911/retry_20260912/physical_run/{RUN_FOOTER.txt,input_manifest.sha256}`) 대비 차이가 exports 에서는 `LUMINA_CMF_FINE_UNMAPPED_EPS` 키 하나(★개정 3: 러너 GPU 프로필에 종속된 `LUMINA_CMF_FINE_MGPU_DEVICES` 는 물리 키가 아니므로 프로필 `h100-a100x2` 루트에서는 값 2 로 달라도 허용 — 동결 스테이저의 `sealed_mgpu_devices` 프로필 기제와 동일), source 에서는 §3 변경집합 표의 행 전부(`src/lumina_cmfgen.c`·`src/lumina_plasma.c`·`src/env_universe.h`·`tests/cmf_fine_unmapped_eps_selftest.c`)뿐임을 `identity.json` 으로 확인 | 이전 계보의 exports 해시를 identity 에 주입 ⟹ FAIL |
 | G-RUN | 2 외부반복 완주, stderr `[cmf_fine][EXACT-MULTIGPU-EPOCH] status=OK` ≥ 2, `work/physics_comparison/physics_DET_iter0001.spectral.csv`·`work/lumina_ion_pops.csv`·`work/nlte_levels_final.csv` 실재 | 반복수 변조·덤프 결손 주입 |
-| G-EPS | stderr **`[cmfgen_assemble][UNMAPPED-EPS]` 마지막 패스** 행이 셸 50개 전부 있고, 셸 41–49 에서 `thermal_emit_fraction ≤ 1e-2` 이며 `n_unmapped > 0` (`[cmf_fine]` 행은 보조) | census 를 ε=1 로 위조한 로그 ⟹ FAIL(thermal_emit_fraction=1); 행 결손 ⟹ FAIL; selftest 에서 표 미빌드 주입(ensure 미호출) ⟹ 시작 시 BLOCKED 시연 |
+| G-EPS | stderr **`[cmfgen_assemble][UNMAPPED-EPS]` 마지막 패스** 행이 셸 50개 전부 있고, 셸 41–49 에서 `thermal_emit_fraction ≤ 1e-2` 이며 `n_unmapped > 0` (개정 4: `[cmf_fine]` 행은 없어야 정상 — fine 몫 비활성) | census 를 ε=1 로 위조한 로그 ⟹ FAIL(thermal_emit_fraction=1); 행 결손 ⟹ FAIL; selftest 에서 표 미빌드 주입(ensure 미호출) ⟹ 시작 시 BLOCKED 시연 |
 
 ### 게이트 명부 끝
 
@@ -195,3 +195,10 @@ GPU **1 런**, 파티션 h200→h100→a100(343204 실적 a100, 73.5 GB, 약 3.3
 ## 집행 기록 6 — 판정런 착수 (2026-09-17 15:15)
 
 - **374587**(`run_h100a100`, 프로필 h100-a100x2) 이 15:15 RUNNING — syn08, `gpu_identity.csv`: NVIDIA H100 NVL ×2(95,830 MiB). **374570**(`run`, h200x1)은 PENDING 상태에서 운전자가 소유 확인(`sacct -M syntax -o JobName,WorkDir`: `LUMINA_lteunmap_eps` @ repo) 후 job id 로 취소 — 시작 전이라 GPU 지출 0. ⟹ 판정런 = 374587 단 1회.
+
+## 집행 기록 7 — 판정런 374587 FAILED · 개정 4 (2026-09-17 15:50)
+
+- **실측**: 374587 이 36분 만에 `MODEL_FAILED`(rc 1). 조립기 pass 1 census 50/50(게이트 작동, 셸 44 thermal_emit_fraction 3.4e-6)까지는 정상. 사망 지점 = fine **INIT 패스** exact 솔버 `[cmf_fine][EXACT-MULTIGPU-EPOCH] status=NOT_CONVERGED iterations=128 residual=0.0764 (tol 1e-8) scattering_ratio_bound=0.999999999996`(base 343204: 45회 수렴, bound 0.99999997683) → `[R6][BLOCKED] DETERMINISTIC_LINE_JBAR_PRODUCER iter=-1` → 커밋 0회. 원인 = 변경집합의 fine 경로 몫(unmapped 선의 (1−ε)χ 를 fine `chi_es` 로 접음 → 알베도 1−4e-12 → 고정점 반복 수렴 불가). 이 몫은 커밋 필드와 무관(INIT 선 J̄ 초기화)한데 런을 죽였다.
+- **개정 4**(OLD/NEW 2쌍): fine 경로 ε 적용을 게이트에서 분리해 기본 비활성(별도 env, 미설정 = 원본 deposit) — 판정런은 조립기(커밋 경로) 몫만 켠다. 기재: 「구성상 무관한 경로에까지 같은 규칙을 넣은 것」이 운전자 기안 오류(개정 2 에서 「같은 물리 문장」이라며 유지).
+- ⚠**bin 솔버 수렴 캐비앳**: `cmfgen_solve_J` 는 패스당 ALI 8회 고정(수렴 판정·진단 출력 없음, base 도 동일). 게이트 ON 이면 unmapped 선 빈의 알베도가 ≈1 이 되어 8회 ALI 가 커밋 필드를 미수렴으로 남길 수 있다. 판정런은 base 와 **같은 솔버·같은 반복수**로 돌리고(A/B 동등), 판정문에서 창 빈 J 의 패스 간 변화(pass 1→3 의 physics_DET iter0/iter1 J 차)로 수렴 여부를 사후 판독한다 — 미수렴이면 그렇게 기재하고 E-1 판정을 「관측 등급」으로 강등.
+- GPU 지출: 374587 36분(2×H100) — 물리 산출 0. 후속 = 개정 4 구현(Opus 4.8) → selftest → 운전자 감사 → 재빌드 → 재스테이징 → 재제출.
