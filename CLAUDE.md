@@ -46,11 +46,11 @@ user 원문: 「지금 운전자가 바뀌었어. 이전에는 codex 였지만, 
 ⚠**Codex 시기(09-10~17) 산출은 AGENTS.md 체제의 것**으로 표기한다 — 그 체제는 운전자(Codex)가 스스로
 PASS/BLOCKED/REWORK 를 판정했고 Fable 감사는 도구 없는 CLI 였다. 그 판정들을 개정25 의 판정으로 승계하지 않는다.
 
-### 가용 실측
-- `Agent(model:"opus")` 실측(2026-09-17, 도구 없는 1줄 질의): **`Opus 5 (1M context) / claude-opus-5[1m]`** — ★**Opus 4.8 이 아니다.**
-  Agent 도구의 `model` 선택지는 `sonnet/opus/haiku/fable` 뿐이라 4.8 을 직접 지정할 수 없다.
-  ⟹ user 결정 대기: (a) Opus 5 를 구현·종료감사 담당으로 수용 (b) 서브에이전트 기본 모델을 설정에서 4.8 로 고정
-  (Agent 는 「구성된 기본 서브에이전트 모델」을 따른다 — 그 경우 `model` 을 생략해 발주). **결정 전 구현 발주 금지.**
+### 가용 실측 (2026-09-17)
+- `Agent(model:"opus")` → **`Opus 5 (1M) / claude-opus-5[1m]`** — 4.8 이 아니었다. Agent 의 `model` 선택지가 `sonnet/opus/haiku/fable` 뿐이라 4.8 을 직접 지정할 수 없다.
+- ⟹ **프로젝트 설정 `.claude/settings.json` 에 `env.CLAUDE_CODE_SUBAGENT_MODEL = "claude-opus-4-8"`** 를 넣었다(user 선택 (b)).
+- `Agent()` **`model` 생략** 호출 실측 → **`Opus 4.8 / claude-opus-4-8`** ✔ (재시작 불요).
+- ★**발주 규칙**: 구현·종료감사는 **`model` 을 생략**해 발주한다. `model:"opus"` 를 쓰면 Opus 5 로 간다. 매 발주의 첫 줄에 모델 ID 자기보고를 요구해 **반환값으로 확인**한다.
 
 ## ★★★배분 개정24 **발효** (user 2026-09-08 지시 · **2026-09-09 Fable 가용 실측 완료 · user 승인**) — 계획·계약 기안·코드 검수 = Fable
 
