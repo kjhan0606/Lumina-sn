@@ -1,5 +1,8 @@
 # 판독 — 황 0.395 의 정체: 「S 문제」가 아니라 「EUV 장 = B_ν(T_e)」 (2026-09-17, 런 0회)
 
+> ⚠ **정정 (같은 날 후속, `READOUT_IMPLIED_J_LEDGER_2026-09-17.md` §1-1)**: §2 의 「LTE Saha(T_e) 1 % 일치」는 f_III 포화 자리의 착시다 — 비(比)로는 sh12 2.6×·sh20 48×·sh32 3.8e3× LTE 위. §3·부록 A-1 의 「EUV J = B(T_e) 채움」은 **불투명 빈에서만** 참이며, σ-가중 Γ 를 지배하는 창 빈(557.7/696.7/922.5 Å …)은 J/B = 10³–10⁶ 이다. 원인은 외곽 고온층의 S V·Ca V LTE 선 방출(S_l = B(T_e) 폴백)이 EUV 창으로 안쪽을 비추는 것으로 특정됐다. 이 문서의 §1(지표 착시)·§4·A-2·A-3 은 유지.
+
+
 저자 = 운전자. **판독이지 판정이 아니다.** 전건 `[저자 실행]`, grammar-debug, 생산 코드 미사용(csv+Decimal/float 직접).
 도구 = `/gpfs/kjhan/lumina/cmfgen_map/repro_claude_20260917/readout_{S,thresh,lte,J,Jcmf,tau}.py` (`READOUT_TOOLS.sha256`), 출력 `*.stdout`.
 입력 = 09-14 비교의 baseline 지도(`consistent_ionization_state_20260911/retry_20260912/physical_evidence/result/divergence_map.csv`) ·
