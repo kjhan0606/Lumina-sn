@@ -214,3 +214,10 @@ GPU **1 런**, 파티션 h200→h100→a100(343204 실적 a100, 73.5 GB, 약 3.3
 - **빌드2 374637** rc 0, 소스 해시 183/183 전후 OK, 바이너리 sha256 `d5a2765b…65bf4`. `seal-build` → `run_build_identity.json`.
 - **재스테이징** `run2`(프로필 h100-a100x2): 입력 = 343204 계보 복사, exports = 게이트 1 키(+프로필 종속 `MGPU_DEVICES=2`), `LUMINA_CMF_FINE_UNMAPPED_EPS_FINE` **미설정**(fine 경로 원본 그대로). G-ID 사전점검 OK(소스 4 파일), 덱 해시 OK.
 - **판정런 2 = Slurm 374640** (syntax, h100,a100, gpu:2, 5 h 상한). 374587 은 FAILED 로 보존(증거: fine INIT 미수렴 로그).
+
+## 집행 기록 10 — 판정런 2(374640) FAILED · 정지·보고 (2026-09-17 20:35)
+
+- **경과**: syn08 H100×2, 4h23m. 조립기 census pass 1·2·3 각 50/50(외곽 41–49 최대 thermal_emit_fraction 4.3e-7 / 1.2e-7 — G-EPS 방향 충족). fine exact 솔버: INIT 48회 OK → iter 0 **121회** OK → iter 1 **128회 미수렴**(residual 3.8e-3) → `[R6][BLOCKED] DETERMINISTIC_LINE_JBAR_PRODUCER iter=1` → iter 1 커밋·`physics_DET_iter0001`·`lumina_ion_pops.csv`(ITER=1 덤프) **없음**. 살아남은 산출 = iter0000(시드 필드, base 와 동일)뿐 ⟹ **E-1~E-6 판정 불가**.
+- **원인(소스 직독)**: `scattering_ratio_bound` 가 base 1−2×10⁻⁸ → 이 런 **1−3×10⁻¹¹**(세 패스 모두). fine 솔버의 「연속체」 `fs.chi_abs/fs.chi_es` 는 **bin 조립기 배열을 보간**(`lumina_cmfgen.c` ~5203 행)하는데, 조립기는 unmapped 선의 (1−ε)χ 를 `chi_es` 로 접으므로(2167 행) fine 필드에도 알베도≈1 산란 선숲이 들어간다 — 개정 4 가 막은 fine deposit 과 **다른 두 번째 유입로**. fine exact 솔버는 고정점 반복(cap 128)이라 알베도 1−10⁻¹¹ 에서 수렴 불가. iter 0 의 121회는 이미 경고였다.
+- **처분**: 판정런 2회 연속 미착지(1차 36 min, 2차 4h23m×2 GPU) — 같은 부류(솔버 수렴)의 실패. 운전자는 **정지하고 user 에게 보고**한다. 다음 rung 후보는 계약 개정(user 결정): ① 조립기가 unmapped 산란 몫을 별도 배열에 두고 fine 보간은 base 와 같은 구성(선 산란 미포함)을 쓰게 함 + bin 솔버(ALI 8회 고정) 수렴 진단 1행 추가 — 커밋 필드에만 ε 물리, fine 은 base 동형 ② fine exact 솔버에 ALI/가속 도입(대형) ③ 계약 보류.
+- **기재**: 물리적으로 ε~10⁻⁹ 의 선숲은 거의 보존 산란 매질이며(CMFGEN 은 전 이온 NLTE+ALI 로 처리), 현 fine 고정점 솔버는 그 영역을 풀 수 없다 — 이 한계는 램프 계약과 무관하게 「NLTE 밖 이온을 산란 취급」하는 어떤 수리에도 걸린다.
