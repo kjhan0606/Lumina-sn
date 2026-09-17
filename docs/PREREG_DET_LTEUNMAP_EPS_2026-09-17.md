@@ -238,3 +238,9 @@ GPU **1 런**, 파티션 h200→h100→a100(343204 실적 a100, 73.5 GB, 약 3.3
 - **빌드3 375671** rc 0, 해시 183/183, 바이너리 `4e385989…c7ea8`. `seal-build` → `run3/input/run_build_identity.json`.
 - **run3**(프로필 h100-a100x2): 343204 계보 입력, exports = 게이트 1 키(+`MGPU_DEVICES=2`), fine env 미설정. G-ID 사전점검 OK(소스 4 파일), 덱 해시 OK.
 - **판정런 3 = Slurm 375676** (syntax, h100,a100, gpu:2, 5 h). 개정 6 에 따라 이 런의 E-1·E-2 는 «관측 등급». run2 는 FAILED 로 보존(fine 알베도 1−3e-11 증거).
+
+## 집행 기록 14 — 판정런 3(375676) TIMEOUT · run4 재제출(8 h) (2026-09-18 02:53)
+
+- **실측**: 375676 (syn08, H100×2) 5h00m 에 TIMEOUT. fine exact 솔버 세 패스 **45/53/65회 — base 343204 와 동일**(개정 5 가 두 번째 유입로를 닫았음을 실증). 조립기 census pass 1·2·3 50/50(외곽 thermal_emit_fraction 10⁻⁷급), CONV pass 1/2/3 max_rel 0.59/0.36/0.30, p99 0.38/0.11/0.055(ALI 8회 고정 — 개정 6 대로 관측 등급 근거). iter 0 커밋·iter0000 덤프까지 정상; iter 1 은 fine 수렴 후 A2-10(T_e 발행 완료, R7 커밋 전)에서 시간 소진 → iter0001·이온 분율 덤프 없음 ⟹ 판정 불가.
+- **원인**: 실행 시간. 우리 런은 CPU 단계(A2-10/NLTE, 패스당 ~50 min)가 base(총 3h18m, syn101 a100×1)보다 ~2× 느리다(노드 부하 또는 게이트의 부수 CPU 비용 — 미확정, 기재). `scontrol update TimeLimit` 은 권한 거부.
+- **처분**: 계약·바이너리·exports 불변으로 **run4**(입력 = run3 입력 복사, 프로필 h100-a100x2) 를 `--time=08:00:00` 으로 재제출. GPU 누적 지출: 374587 36 min·374640 4h23m·375676 5h00m(각 ×2 GPU).
