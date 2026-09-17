@@ -41,10 +41,10 @@ L1 물리량 = 창 빈 J/B·σ-가중 Γ/Γ(B)·셸별 단계 분율(기존 판�
 
 | 경로 | 담당 | 내용 |
 |---|---|---|
-| `src/lumina_cmfgen.c` | Opus 4.8 | **개정 4: fine INIT 패스(parity 분기)에는 ε 를 적용하지 않는다** — 374587 실측: (1−ε)χ 산란 접힘으로 fine 필드 알베도 1−4×10⁻¹² → exact 고정점 128회 미수렴(residual 0.076, base 45회 수렴) → R6 BLOCKED. fine 경로 코드는 게이트와 분리해 **기본 비활성**(별도 env `LUMINA_CMF_FINE_UNMAPPED_EPS_FINE`, 미설정 = 원본 deposit 그대로)로 두고, census 도 조립기 것만 소비; env `LUMINA_CMF_FINE_UNMAPPED_EPS`(기본 0 = byte-동일)는 **bin 조립기 선 루프(커밋 경로)** 의 표 보장·unmapped 원값 ε·mapped `el=1` 유지·fail-closed·조립기 census 만 켠다 |
+| `src/lumina_cmfgen.c` | Opus 4.8 | **개정 5 (user 결정 1번)**: ① 조립기는 unmapped 선의 산란 몫 `w·(1−el)` 을 별도 배열 `chi_line_sc_unmapped[셸,빈]`(할당·해제 동반)에 누적하고 `chi_es` 합성은 그대로(bin 솔버 = 커밋 필드는 접힘을 본다) ② fine 솔버의 연속체 보간(`fs.chi_es = interp(csb->chi_es)`, ~5427 행)은 게이트 ON 이면 `csb->chi_es − csb->chi_line_sc_unmapped` 를 보간 — fine 연속체가 base 와 같은 구성(선 산란 미포함)이 되어 알베도 상한이 base 급으로 복귀 ③ bin 솔버 `cmfgen_solve_J` 마지막 ALI 반복의 셀별 상대 변화를 패스당 stderr 1 행 `[cmfgen_solve_J][CONV] pass=<p> n_ali=<n> max_rel=<..> p99_rel=<..> cells=<..>` 로 발행(게이트 무관, 기존 `rel` 계산 재사용; 판정에서 E-1 등급 결정에 소비) ④ 게이트 OFF ⟹ 배열은 0 이고 보간 결과 byte-동일. **개정 4: fine INIT 패스(parity 분기)에는 ε 를 적용하지 않는다** — 374587 실측: (1−ε)χ 산란 접힘으로 fine 필드 알베도 1−4×10⁻¹² → exact 고정점 128회 미수렴(residual 0.076, base 45회 수렴) → R6 BLOCKED. fine 경로 코드는 게이트와 분리해 **기본 비활성**(별도 env `LUMINA_CMF_FINE_UNMAPPED_EPS_FINE`, 미설정 = 원본 deposit 그대로)로 두고, census 도 조립기 것만 소비; env `LUMINA_CMF_FINE_UNMAPPED_EPS`(기본 0 = byte-동일)는 **bin 조립기 선 루프(커밋 경로)** 의 표 보장·unmapped 원값 ε·mapped `el=1` 유지·fail-closed·조립기 census 만 켠다 |
 | `src/lumina_plasma.c` | Opus 4.8 | `lumina_line_upper_population_fill_for_tau` 가 `used_nlte` (선,셸) 바이트 배열을 함께 발행(함수포인터 typedef·등록·호출부 동반); `radeq_line_table_ensure()` 공개 래퍼(`#ifdef` 없음, 멱등) |
 | `src/env_universe.h` | Opus 4.8 | `LUMINA_CMF_FINE_UNMAPPED_EPS` 등록(strict env 수용) |
-| `tests/cmf_fine_unmapped_eps_selftest.c` | Opus 4.8 | CPU selftest: env 부재 (χ₀,η₀,chi_es) byte-동일 · unmapped 선 η₀ = ε·χ₀·B(1e-12) 및 chi_es += (1−ε)χ₀ · mapped 선 불변 · ε 부재(−1) → rc≠0 · 표 미빌드 → rc≠0 · census 행 형식 |
+| `tests/cmf_fine_unmapped_eps_selftest.c` | Opus 4.8 | CPU selftest: env 부재 (χ₀,η₀,chi_es) byte-동일 · unmapped 선 η₀ = ε·χ₀·B(1e-12) 및 chi_es += (1−ε)χ₀ · mapped 선 불변 · ε 부재(−1) → rc≠0 · 표 미빌드 → rc≠0 · census 행 형식 · **개정 5: `chi_line_sc_unmapped` 누적 = Σw(1−el)(unmapped 만) · fine 보간 입력 `chi_es − chi_line_sc_unmapped` = 게이트 OFF 의 `chi_es`(base 구성) · CONV 행 형식** |
 
 ### 변경집합 끝
 
@@ -83,7 +83,7 @@ L1 물리량 = 창 빈 J/B·σ-가중 Γ/Γ(B)·셸별 단계 분율(기존 판�
 
 ### 분기 끝
 
-E-5·E-6 은 분기에 참여하지 않는다(기재·정정용). 문턱 근거: base 와 예측 사이 **두 자릿수 이상** 벌어진 곳(정적 예측기의 자릿수 불확실성 ≤ 1 자릿수 — 판독 A §2 검증 표).
+E-5·E-6 은 분기에 참여하지 않는다(기재·정정용). **개정 5**: 마지막 패스의 `[cmfgen_solve_J][CONV] max_rel` 이 0.1 을 넘으면 커밋 필드를 미수렴으로 보고 E-1·E-2 판정을 «관측 등급»으로 강등한다(분기는 유지하되 판정문에 등급을 명시). base 에는 이 진단이 없으므로 base 값은 「미측정」으로 기재한다. 문턱 근거: base 와 예측 사이 **두 자릿수 이상** 벌어진 곳(정적 예측기의 자릿수 불확실성 ≤ 1 자릿수 — 판독 A §2 검증 표).
 
 ## 6. 자원 · 실행
 
@@ -221,3 +221,7 @@ GPU **1 런**, 파티션 h200→h100→a100(343204 실적 a100, 73.5 GB, 약 3.3
 - **원인(소스 직독)**: `scattering_ratio_bound` 가 base 1−2×10⁻⁸ → 이 런 **1−3×10⁻¹¹**(세 패스 모두). fine 솔버의 「연속체」 `fs.chi_abs/fs.chi_es` 는 **bin 조립기 배열을 보간**(`lumina_cmfgen.c` ~5203 행)하는데, 조립기는 unmapped 선의 (1−ε)χ 를 `chi_es` 로 접으므로(2167 행) fine 필드에도 알베도≈1 산란 선숲이 들어간다 — 개정 4 가 막은 fine deposit 과 **다른 두 번째 유입로**. fine exact 솔버는 고정점 반복(cap 128)이라 알베도 1−10⁻¹¹ 에서 수렴 불가. iter 0 의 121회는 이미 경고였다.
 - **처분**: 판정런 2회 연속 미착지(1차 36 min, 2차 4h23m×2 GPU) — 같은 부류(솔버 수렴)의 실패. 운전자는 **정지하고 user 에게 보고**한다. 다음 rung 후보는 계약 개정(user 결정): ① 조립기가 unmapped 산란 몫을 별도 배열에 두고 fine 보간은 base 와 같은 구성(선 산란 미포함)을 쓰게 함 + bin 솔버(ALI 8회 고정) 수렴 진단 1행 추가 — 커밋 필드에만 ε 물리, fine 은 base 동형 ② fine exact 솔버에 ALI/가속 도입(대형) ③ 계약 보류.
 - **기재**: 물리적으로 ε~10⁻⁹ 의 선숲은 거의 보존 산란 매질이며(CMFGEN 은 전 이온 NLTE+ALI 로 처리), 현 fine 고정점 솔버는 그 영역을 풀 수 없다 — 이 한계는 램프 계약과 무관하게 「NLTE 밖 이온을 산란 취급」하는 어떤 수리에도 걸린다.
+
+## 집행 기록 11 — 개정 5 (user 결정 「1번으로 진행해」, 2026-09-17 20:5x)
+
+개정 5 = ① 조립기의 unmapped 산란 몫을 별도 배열로 분리 ② fine 연속체 보간에서 그 몫을 제외(base 구성 복원) ③ bin 솔버 패스별 수렴 진단 1 행 ④ 게이트 OFF byte-동일. OLD/NEW 3쌍. 후속 = 구현(Opus 4.8, 발주서 4) ‖ 개정 5 한정 사전감사(Opus 4.8 fresh) → 운전자 감사 → 빌드3 → run3 스테이징(h100-a100x2) → 제출.
