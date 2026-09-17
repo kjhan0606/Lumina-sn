@@ -232,3 +232,9 @@ GPU **1 런**, 파티션 h200→h100→a100(343204 실적 a100, 73.5 GB, 약 3.3
 - **운전자 감사**: 배열 크기 NS×NB·호출마다 memset·게이트 OFF 해제 · 보간 인덱스 `ia=s·n_bins+b` 정합 · `chi_es − sc = chi_e`(mapped 몫 0) · CONV 버퍼만 정렬 — 차단 없음. selftest 26 PASS/0 FAIL. 재동결 183 파일. **빌드3 375671** 제출.
 - **사전감사(개정 5, Opus 4.8 fresh, 176k 토큰)**: `RE_AUDIT_REV5: 통과 불가 · BLOCKING 1(R4)`. R1 유입로 귀속 참(run2 fine bound 1−3e-11; fine census 0행으로 개정 4 비활성 확인) · R2 `chi_es − sc = chi_e` 대수 성립, fine 필드는 base 와 구조 동일(차이 = 이온화 상태) · R3 E-1~E-4 미오염, fine 필드는 램프-무결 아님(mapped 선 J̄ 2차 잔여 — 판정문 기재) · R5 구성상 참 없음·OFF byte-동일 · R6 세 번째 수렴 유입로 없음(전수표). **R4(a)** 「rel 재사용」 불가(non-tri 분기에 rel 없음) → 구현자가 이미 non-tri rel 을 신설해 해소. **R4(b)** 문턱 0.1 = 수렴 확증은 원리적 오류 → **개정 6**(OLD/NEW 1쌍): CONV 는 하한, 이 런의 E-1·E-2 는 «관측 등급» 기본, 분기 라벨 (관측). «기재로 족함»: `(chi_e+Δ)−Δ` 상쇄로 fine chi_es 는 base 와 bit-동일이 아니라 허용오차 동일(알베도↓ 방향, 무해).
 - 잔여: 빌드3 완료 → run3 스테이징(h100-a100x2) → 제출.
+
+## 집행 기록 13 — 빌드3 완료 · run3 스테이징 · 판정런 3 제출 (2026-09-17 21:3x)
+
+- **빌드3 375671** rc 0, 해시 183/183, 바이너리 `4e385989…c7ea8`. `seal-build` → `run3/input/run_build_identity.json`.
+- **run3**(프로필 h100-a100x2): 343204 계보 입력, exports = 게이트 1 키(+`MGPU_DEVICES=2`), fine env 미설정. G-ID 사전점검 OK(소스 4 파일), 덱 해시 OK.
+- **판정런 3 = Slurm 375676** (syntax, h100,a100, gpu:2, 5 h). 개정 6 에 따라 이 런의 E-1·E-2 는 «관측 등급». run2 는 FAILED 로 보존(fine 알베도 1−3e-11 증거).
