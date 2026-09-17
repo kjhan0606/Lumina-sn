@@ -52,7 +52,7 @@ L1 물리량 = 창 빈 J/B·σ-가중 Γ/Γ(B)·셸별 단계 분율(기존 판�
 
 | ID | 조건 | 음성대조 |
 |---|---|---|
-| G-ID | 343204 계보(`/gpfs/kjhan/lumina/cmfgen_map/consistent_ionization_state_20260911/retry_20260912/physical_run/{RUN_FOOTER.txt,input_manifest.sha256}`) 대비 차이가 exports 에서는 `LUMINA_CMF_FINE_UNMAPPED_EPS` 키 하나, source 에서는 §3 변경집합 표의 행 전부(`src/lumina_cmfgen.c`·`src/lumina_plasma.c`·`src/env_universe.h`·`tests/cmf_fine_unmapped_eps_selftest.c`)뿐임을 `identity.json` 으로 확인 | 이전 계보의 exports 해시를 identity 에 주입 ⟹ FAIL |
+| G-ID | 343204 계보(`/gpfs/kjhan/lumina/cmfgen_map/consistent_ionization_state_20260911/retry_20260912/physical_run/{RUN_FOOTER.txt,input_manifest.sha256}`) 대비 차이가 exports 에서는 `LUMINA_CMF_FINE_UNMAPPED_EPS` 키 하나(★개정 3: 러너 GPU 프로필에 종속된 `LUMINA_CMF_FINE_MGPU_DEVICES` 는 물리 키가 아니므로 프로필 `h100-a100x2` 루트에서는 값 2 로 달라도 허용 — 동결 스테이저의 `sealed_mgpu_devices` 프로필 기제와 동일), source 에서는 §3 변경집합 표의 행 전부(`src/lumina_cmfgen.c`·`src/lumina_plasma.c`·`src/env_universe.h`·`tests/cmf_fine_unmapped_eps_selftest.c`)뿐임을 `identity.json` 으로 확인 | 이전 계보의 exports 해시를 identity 에 주입 ⟹ FAIL |
 | G-RUN | 2 외부반복 완주, stderr `[cmf_fine][EXACT-MULTIGPU-EPOCH] status=OK` ≥ 2, `work/physics_comparison/physics_DET_iter0001.spectral.csv`·`work/lumina_ion_pops.csv`·`work/nlte_levels_final.csv` 실재 | 반복수 변조·덤프 결손 주입 |
 | G-EPS | stderr **`[cmfgen_assemble][UNMAPPED-EPS]` 마지막 패스** 행이 셸 50개 전부 있고, 셸 41–49 에서 `thermal_emit_fraction ≤ 1e-2` 이며 `n_unmapped > 0` (`[cmf_fine]` 행은 보조) | census 를 ε=1 로 위조한 로그 ⟹ FAIL(thermal_emit_fraction=1); 행 결손 ⟹ FAIL; selftest 에서 표 미빌드 주입(ensure 미호출) ⟹ 시작 시 BLOCKED 시연 |
 
@@ -187,3 +187,7 @@ GPU **1 런**, 파티션 h200→h100→a100(343204 실적 a100, 73.5 GB, 약 3.3
 - **운전자 이탈 2건(기재)**: 스테이징 스크립트 초판이 `grep -vc | grep -q` 파이프(rc-after-pipe)와 `sacct -M` 미핀으로 위생 게이트에 걸림 → 수정 후 PASS. grammar-debug 에서의 `sbatch` 는 다른 클러스터라 gres 거부 → syntax 로그인 노드에서 제출.
 - **판정런 제출**: Slurm **374570** (syntax, h200, gres gpu:1, `sacct -M syntax` 로 소유 확인, WorkDir = repo). 상태 PENDING(Priority).
 - **판정 도구**: `repro_claude_20260917/judge_lteunmap.py <run_root>` — base 런 자기검사 완료(G-EPS 미충족·E-1~4 미충족·LU-X).
+
+## 집행 기록 5 — 개정 3(프로필 종속 키) · 병행 스테이징 (2026-09-17 15:10)
+
+374570 이 h200 대기(앞 4건, Slurm 예상 시작 09-18 04:18)인데 a100 에 2 GPU 여유가 있어, 규약(빈 파티션 즉시·멀티파티션)대로 **같은 입력·같은 바이너리**로 둘째 런 루트 `…/lteunmap_eps_20260917/run_h100a100`(프로필 `h100-a100x2`, `MGPU_DEVICES=2`)을 스테이징해 h100,a100 에 병행 제출한다. **판정런은 1회**: 먼저 RUNNING 이 되는 쪽만 남기고 다른 쪽은 시작 전에 취소(`sacct -M syntax -o WorkDir` 로 소유 확인 후 job id 로 `scancel`). 개정 3 = G-ID 의 프로필 종속 키 허용(OLD/NEW 1쌍). 기재: 두 프로필의 fine 솔버 장치 수(1 대 2)가 물리 산출을 바꾸지 않는다는 것은 09-05 플랫폼 bit-일치(685/685)의 간접 근거뿐이며, 이 판정은 base 와의 물리 비교(E-1~6)에 의존하므로 bit-동일을 요구하지 않는다.
