@@ -92,7 +92,7 @@ GPU **1 런**, 프로필 h200x1 우선(대기 길면 h100-a100x2 헤지, 먼저 
 | 기안 | 운전자 → **Fable fresh**(개정25-b, user 09-18) | 원안·개정 1 = 운전자(개정25-b 전) · 이후 개정 = Fable fresh | |
 | ~~사전감사~~ (개정25-c 로 폐지, user 09-18) | ~~Opus 4.8 fresh~~ | 폐지 **전** 이 계약은 이미 통과: 1회차 차단 2(집행 기록 5) → 2회차 통과·차단 0(집행 기록 9) | 남은 개정은 사전감사 없이 진행 |
 | 구현 + selftest | Opus 4.8 fresh | Opus 4.8 fresh(`claude-opus-4-8` 자기보고) — 집행 기록 2 | `model` 생략 |
-| 코드 간단 감사 | 운전자 → **Fable fresh**(개정25-a, user 09-18) | 1회차 구현 = 운전자(집행 기록 3, 개정25-a 전) · 개정 1 구현 = Fable fresh(예정) | 사전감사(Opus 4.8 fresh)와 병행 |
+| 코드 간단 감사 | 운전자 → **Fable fresh**(개정25-a) | 1회차 = 운전자(집행 기록 3) · 개정 1 = **Fable fresh 통과·차단 0**(집행 기록 11) | |
 | 빌드·스테이징·제출·판독·판정 | 운전자 | 빌드 제출(집행 기록 4) · 이후 미집행 | |
 | 종료감사 | Opus 4.8 fresh | 미집행 | 생략하지 않음 |
 
@@ -176,3 +176,10 @@ E-3(수렴 10 회 충분성은 추정 — 축퇴가 클수록 수축비가 1 에
    - (d) E-1b 「불투명 분율」 라벨은 표현 부정확(양 자체는 유효) — 문면 개정은 기안자(개정25-b Fable) 몫으로 남기고 판정문에서 D 의 대수 정의를 병기한다. E-1c 는 pref 1.0 에서 여유 가드 — 기재.
    다음: 개정 1 구현 착지 → 코드 간단 감사(Fable fresh, 개정25-a) → 빌드 5 → 스테이징 → 제출.
 10. **분장 변경(user 09-18 「사전 감사는 없앰.」)**: 개정25-c 로 계약 사전감사 폐지. 이 계약은 폐지 전 사전감사 2회를 이미 통과했으므로 소급 없음. ⚠Q-GOAL·Q-LEAN 은 사전감사 발주서 전용 고정질문이라 폐지로 고아가 됐다(재배치는 user 결정) — 이 계약은 사전감사 1·2회차에서 이미 물었다.
+11. **개정 1 구현(Opus 4.8, `claude-opus-4-8`)·집행 점검(운전자)·코드 간단 감사(Fable fresh, `claude-fable-5-1`)**:
+   - 구현: `lumina.h`(+`eta_milne_ok`)·`env_universe.h`(+`LUMINA_ION_CHANNEL_DUMP`, COUNT 523)·`lumina_plasma.c`(ff 합산 전 `eta_milne_ok` 스캔·`frozenin_alpha_dr` DR-only·채널 덤프·arm 은 커밋 패스만)·`lumina_cmfgen.c`(shell fail-closed 를 `csrc_any_eta`→`eta_milne_ok`)·selftest. selftest2 20/20·직전 30/30 PASS.
+   - 운전자 집행 점검: `diff -rq` 6 파일(두 계약 합집합)·env COUNT 523=배열 523(중복 0)·재동결 184 파일 불일치 0.
+   - **Fable 코드 감사: Q0 봉인접촉 가 · CODE_AUDIT 통과 · BLOCKING 0.** 게이트 OFF byte-동일(부동소수 경로 불변·`eta_milne_ok` 스캔은 출력 무접촉·배열 수명 정합·candidate publish 이중 free 없음)·fail-closed 정합·DR 분리 정직(`frozenin_alpha_dr` = `frozenin_alpha_rr` 의 DR 항 동일 경로)·채널 항등 구성상 참·arm 커밋 패스만·COUNT 정합 확인.
+   - «기재로 족함»(폐합 차단 아님): **F-1** `eta_milne_ok` 가 「Milne 부분」이 아니라 「ff 전 bf 부분(Milne 또는 열폴백 S_l=B)」 — BF_MILNE=2 에서 폴백은 `Cinv_l` 무효 시에만이라 드물고 G-SRC 밴드가 이중 방어. 문면 정정은 기안자(Fable) 몫으로 다음 개정에 이관. **F-2** `gen` 이 커밋 표시 없는 사설 카운터 — run5 로그·제어흐름상 최대 gen=커밋 replay 확인(G-RUN iter=9·G-CHAN 150행이 교차 검증). **F-3** 채널 덤프 `%.9e` 인쇄가 판독기 항등 `1e-9` 재검산에 헛 FAIL(최대 수십 %) — **판독기 허용오차 1e-9→1e-6 으로 수정**(음성대조 재확인: 정상 PASS·열바꿔치기 FAIL·7e-10 섭동 PASS; 도구 해시 갱신). **F-4** `candidate_bf_free` 가 `eta_milne_ok` 미해제(200 B/후보, 무시 가능) → CLASSIC_DEBT §10. **F-5** selftest 「ff-only」 항목이 앞 항목과 같은 호출·CSV 왕복 없음 — 빌드 명령줄 기재(아래). **F-6** 셸 0 rate 미포함 gen 경계는 판독기 >150 FAIL 로 무음 아님.
+   - 빌드(F-5 명령줄): CPU 빌드 slurm **379210 COMPLETED 1m11s**(cuda_build4, binary sha 8ceafa36, `source_after` 불일치 0, `make -j1 cuda NVCC=/opt/ohpc/pub/cuda/13.0.2/bin/nvcc`). ⚠379038 은 개정 1 **전** 트리를 빌드해 COMPLETED(내 scancel 이 완료와 경합) — stale 바이너리(6d71be16) 제거 후 재빌드.
+   다음: 스테이징(러너 ITER=10 4곳 편집·해시) → 제출.

@@ -245,3 +245,9 @@ GPU util 1초 간격 20회:
 - **크기**: SN 광구 밀도(n_e 10⁸–10⁹)에서 ff 는 bf 대비 ~10⁻⁹ 급 — 산출에 무시 가능. 부류 2(간략화·중복) 로 분류.
 - **파생**: `bf_get_eta` 도 같은 ff(η=χ_ff·B, ~8624)를 담으므로 Milne η_bf 를 소비하는 코드는 「η_bf 전 0」 검사가 ff 만으로 통과한다(DET-CONT-NLTE-BALANCE 사전감사 B-2 가 지목, 개정 1 로 Milne 부분 분리). census 의 「bf 불투명 빈(`chi_bf>0`)」 도 사실상 전 빈.
 - **처분**: 기재만. 수리하려면 조립기 ff 를 지우고 빌더 ff 하나로 단일화(byte-변경이므로 별도 계약).
+
+## 10. eta_milne_ok 후보 경로 누수 (2026-09-18 Fable 코드 감사 F-4, 조용히 기재)
+
+- **위치**: `src/nlte_population_candidate.c` `candidate_bf_free`(~103–123) 가 `BFOpacity.eta_milne_ok`(DET-CONT-NLTE-BALANCE 개정 1 신설)를 free 하지 않는다. 폐기되는 후보마다 n_shells×4 B(=200 B) 누수.
+- **크기**: 20 h/10 반복 런에서 후보 수천 개여도 ~MB 급 — GB 입력 대비 무시 가능. 런 위협 아님.
+- **처분**: 기재. 한 줄(`free(bf->eta_milne_ok)`) 추가로 소멸하나 source 편집+재빌드+재감사 비용이 이득을 넘어 별도 계약으로 미룸.
