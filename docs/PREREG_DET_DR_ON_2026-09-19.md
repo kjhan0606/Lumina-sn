@@ -145,4 +145,8 @@ L1 물리량 = 셸별 S II/III 비 r(`lumina_ion_pops.csv`)와 채널 율 `ne_al
 
 ## 9. 집행 기록
 
-1. (운전자 기입) 경량 사전감사 결과 · 게이트 4종 rc · `[미실행]` 주장 실행 결과 · ITER/헤지/재현런 결정(§6 ①②③) · 스테이징 해시 · job id.
+1. **게이트 4종(발주 전)**: prereg-preflight rc=0(`changeset-consistent files=0`·branch-partition·references-resolved refs=6)·gate_referents rc=0(changeset_exempt=0)·doc_canonical rc=0. 커밋 591cf25.
+2. **경량 사전감사(Opus 4.8 fresh, `claude-opus-4-8`, 개정25-d, Q-GOAL·Q-LEAN 전용)**: **Q_GOAL 부합 · Q_LEAN 적정 · 통과 · BLOCKING 0.** 감사자가 DR=0 근거를 두 독립 산출물(base run5 exports `DR_BOOST_*=0`·CONT run1 덤프 `ne_alpha_dr=0`)에서 재현. 「오프라인 2.4× 있는데 런 필요?」에 대한 답: 오프라인이 못 주는 (a) γ_phot 되먹임 하 in-vivo 이동 (b) 수렴값(다음 단 base) (c) 배선 in-vivo 시연 때문에 정당(E-1 밴드가 되먹임 이탈을 검출하게 설계). «기재로 족함»: G-DR(c) gamma_nt==0 ↔ G-ID NT-부재 층 중복(삭제 강제 아님). 감사 자기 한계로 「G-DR stage 정합」을 운전자 확인 항목으로 넘김.
+3. **운전자 gate 정합 확인(사전감사 넘긴 항목)**: 채널 덤프 Z=16 은 **stage=1(S II→III 균형) 50 셸**만 기록(gate `stc==1`), 판정기 G-CHAN 은 `{(Z,1,s)}` 를 기대·E-1 은 ion_pops 의 n(III)/n(II) 를 읽음 ⟹ **stage 정합 확인**(사전감사의 「stage=2 지목」 우려는 오독, 계약 문면은 stage 미지정). 
+4. **운전자 결정(§6 ①②③)**: ① **ITER=2**(run5 와 반복수 동일 A/B·1-step 예측 최적합·≈5 h — 이 단은 필요·불충분 확인이지 수렴값 획득 아님; 수렴값은 다음 단이 필요 시). ② **헤지 없음**(h200x1 단독). ③ **DR-off 재현런 안 함**(Q-LEAN — gate-OFF byte-동일 오프라인 주장은 selftest+Fable 코드감사로 뒷받침; 바이너리 캐비앗은 판정문에 기재). ITER=2 라 러너 ITER 검사·outer_iterations 편집 불요(run5 와 동일).
+5. (운전자 기입) 스테이징 해시 · job id · 판독 · 판정 · 종료감사.
