@@ -90,7 +90,7 @@ GPU **1 런**, 프로필 h200x1 우선(대기 길면 h100-a100x2 헤지, 먼저 
 | 단계 | 규약 | 실제 | 비고 |
 |---|---|---|---|
 | 기안 | 운전자 → **Fable fresh**(개정25-b, user 09-18) | 원안·개정 1 = 운전자(개정25-b 전) · 이후 개정 = Fable fresh | |
-| 사전감사(Q-GOAL·Q-LEAN·물리) | (미배정) → 운전자 발주 | 미집행 → Opus 4.8 fresh 발주 | GPU 20 h 단 |
+| 사전감사(Q-GOAL·Q-LEAN·물리) | Opus 4.8 fresh | 1회차 통과 불가·차단 2(집행 기록 5) → 2회차 **통과·차단 0**(집행 기록 9) | GPU 20 h 단 |
 | 구현 + selftest | Opus 4.8 fresh | Opus 4.8 fresh(`claude-opus-4-8` 자기보고) — 집행 기록 2 | `model` 생략 |
 | 코드 간단 감사 | 운전자 → **Fable fresh**(개정25-a, user 09-18) | 1회차 구현 = 운전자(집행 기록 3, 개정25-a 전) · 개정 1 구현 = Fable fresh(예정) | 사전감사(Opus 4.8 fresh)와 병행 |
 | 빌드·스테이징·제출·판독·판정 | 운전자 | 빌드 제출(집행 기록 4) · 이후 미집행 | |
@@ -169,3 +169,9 @@ E-3(수렴 10 회 충분성은 추정 — 축퇴가 클수록 수축비가 1 에
 6. **판정 도구·스테이징 개정 1 반영(운전자)**: `repro_claude_20260917/judge_contnlte.py` — G-SRC 밴드(0.1–10·min>0)·G-CHAN(최대 gen 150 행·14 열·항등)·E-1a/b/c·분기 CB-C′ (해시 `READOUT_TOOLS.sha256` 추가행). 음성대조 합성 픽스처: 건강 ⟹ G-SRC/G-CHAN PASS · census 0.01 위조 ⟹ G-SRC FAIL · 1.0 위조 ⟹ FAIL · 채널 열 바꿔치기 ⟹ G-CHAN FAIL(항등) · 행 1 결손 ⟹ FAIL(149). base 376251 자기검사: G_SRC/G_CHAN/E1a/E1b/E2/E3 FAIL · E1c/E4/E5 PASS ⟹ CB-X(잣대를 base 에 먼저 적용 — base 는 E-1a 를 넘지 못한다; base r_S sh12/16/20 = 57.0/17.7/8.79). `cont_nlte_20260918/stage_run1.sh` 에 `LUMINA_ION_CHANNEL_DUMP` 키 추가(exports delta 기대 8 행). ff 이중 계상은 `docs/CLASSIC_DEBT_CENSUS.md` §9 에 기재. 구현(Opus 4.8)·사전감사 2회차(Opus 4.8 fresh) 진행 중.
 7. **분장 변경(user 09-18 「코드 간단 감사는 fable에게 맡겨」)**: 개정25-a 로 코드 간단 감사 = Fable fresh. 1회차 구현 감사(집행 기록 3)는 운전자 저작으로 남기고, 개정 1 구현 착지분부터 Fable 이 맡는다.
 8. **분장 변경(user 09-18 「그리고 단계 계획도 fable이」)**: 개정25-b 로 단계 계획·사전등록 기안(개정 포함) = Fable fresh. 원안·개정 1 은 운전자 기안으로 남기고, 사전감사 2회차를 반영하는 개정부터 Fable 이 기안한다.
+9. **사전감사 2회차(Opus 4.8 fresh, `claude-opus-4-8` 자기보고, 146k 토큰)**: **PRE_AUDIT 통과 · BLOCKING 0.** B-2 해소(ff 합산 전 `eta_milne_ok` 가 순-ff 폴백을 잡음, G-SRC 밴드가 미변화·ff 붕괴·램프를 3방향으로 가름) · B-1 해소(D = [Γ_phot 이온화 분율]×[총재결합/RR] 이 항등 1 이 아닌 실제 판별식, G-CHAN 항등은 배선 음성대조로 올바르게 표기) · C1 정정 대수 독립 재계산 전건 일치(S ×1.676, Si ×1.35–1.37, Ca f_II→0) · 「구성상 참」 예측 등록 0 · R1-6 pref 는 «기재로 족함»(pref 1.0 은 E-1a 를 어렵게 함; 코드 주석상 0.05 는 고-x_e 내부 값이라 표적 셸에 부적절 쪽). «기재로 족함» 처분(운전자 사실 확인분):
+   - (a) **요율 정정 게이트(`LUMINA_RATES_FIX`)가 lineage exports 에 없다**(376251 OFF). 감사자는 「DR 이중 계상 부재는 U_II 경로 ON 전제」라 했으나 [저자 실행 grep] 결과 U_II 분배함수 정정은 `frozenin_alpha_rr` 에서 **무조건**(분배합 `u≥1` 이면 `U_ion=u`; `lumina_plasma.c` ~6428–6443) 적용되고, 게이트가 바꾸는 것은 F2(상위 이온 준위 0 개일 때의 대체값)·F3(x>700, T ≲ 수백 K 에서만 차이) 뿐 ⟹ S/Si/Ca II→III 의 표적 조건(T_e ~10⁴ K, III 준위 존재)에서 **DR 이중 계상 없음**. 게이트 OFF 유지(exports 변경 없음).
+   - (b) 5-파일 트리 기준 게이트 재실행: 개정 1 적용 후 `check_prereg_preflight` rc=0(changeset files=5)·`check_gate_referents` rc=0·`check_doc_canonical` rc=0·`check_dispatch_preflight` rc=0 — 집행 기록 5 직후 실행분(커밋 f2a5e9b 이전 게이트 로그).
+   - (c) CB-A 대 CB-C′ 경계: preflight 1-D 분할은 이 경계를 못 본다 — 판정기 `judge_contnlte.py` 가 셸별 D·f_II 를 직접 계산해 E-1b∧E-1c 로 분기하므로 regime 수동 인코딩에 의존하지 않는다(집행 기록 6).
+   - (d) E-1b 「불투명 분율」 라벨은 표현 부정확(양 자체는 유효) — 문면 개정은 기안자(개정25-b Fable) 몫으로 남기고 판정문에서 D 의 대수 정의를 병기한다. E-1c 는 pref 1.0 에서 여유 가드 — 기재.
+   다음: 개정 1 구현 착지 → 코드 간단 감사(Fable fresh, 개정25-a) → 빌드 5 → 스테이징 → 제출.
