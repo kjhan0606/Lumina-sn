@@ -30,8 +30,8 @@
 ## 3. 왜 판독 C(퇴화 극한)가 이걸 못 봤나
 판독 C 는 **J→S_bf 섭동 극한**에서 광이온화-RR 항등 상쇄를 가정하고 r_deg=(C_ion+Γ_nt)/(n_e α_DR+C_rec) 를 얻었다. 실제 소스는 **섭동이 아니라 초열 폭주**라 상쇄가 성립하지 않았다 — γ_phot 가 상쇄되기는커녕 인구 역전으로 폭발했다. **오프라인 대수(퇴화 극한)가 비선형 불안정을 예측하지 못한 사례**([[feedback_offline_first_no_tweak_run_loop]] 의 한계: 오프라인은 안정 극한만 준다). 또한 판독 C 의 α_DR/α_RR=1.5 전제는 채널 덤프에서 확인 불가였다(§4).
 
-## 4. 부차 발견 — 채널 덤프 DR 몫 = 0 (검증 필요, 결과에 무영향)
-채널 덤프의 `ne_alpha_dr` 이 전 셸 **정확히 0**. DR_TABLE 에 S `{16,2,...}` 는 실재하므로, (a) `frozenin_alpha_dr`(덤프 분리용, Opus 4.8 신설)의 lookup/eval 버그로 DR 이 `ne_alpha_rr` 에 접혀 분리 실패, 또는 (b) 런에서 DR 채널이 실제로 불활성. 어느 쪽이든 **r=231 은 `frozenin_alpha_rr`(DR 활성 시 DR 포함) 전체를 분모로 쓴 실제 비**라 결과 불변 — 초열 γ_phot 가 총재결합을 100–230× 압도. **판독 C 의 「DR 이 균형을 준다」 전제는 실측으로 미실현.** DR 분리 정직성은 Fable 코드감사 3절이 정적으로 통과시켰으나 런이 0 을 냈다 ⟹ 정적 검사의 한계.
+## 4. 부차 발견 — DR 이 **부스트 노브로 조용히 꺼져 있었다** (규명 완료, 캠페인 전반 영향)
+채널 덤프 `ne_alpha_dr` 이 전 셸 정확히 0. **근인 규명(2026-09-18 정찰)**: DR_TABLE 에 S `{16,2}`(S III→II, Badnell) 실재하고 `dr_lookup(16,2)` 는 비-NULL 반환하나, `dr_alpha_eval = Σ… · T^-1.5 · dr_boost_factor(source)` 이고 `dr_boost_factor` 는 `LUMINA_DR_BOOST_<SOURCE>` env 를 곱한다(`lumina_plasma.c` ~10562). 이 런과 **계보 run5 둘 다** exports 가 `LUMINA_DR_BOOST_{BADNELL,NORAD,MAZZOTTA,AUTOSTRUCT}="0"` ⟹ 전 소스 부스트 0 ⟹ DR 정확히 0. `run_coevolve_s01.reference.sh` 기본값이 0 이라 이를 상속한 모든 런에서 DR=0. ⟹ **`LUMINA_FROZENIN_DR=1` 은 경로만 켜고 부스트가 결과를 0 으로 만든다 — DR 은 S/Si/Ca 재결합에 조용히 전혀 기여하지 않았다**(run5 는 `FROZENIN_DR=0` 이라 경로 자체도 off). r=231 은 `frozenin_alpha_rr`(부스트 0 이라 RR-only) 를 분모로 쓴 실제 비. **판독 C 의 α_DR/α_RR=1.5 전제는 어느 런에서도 실현된 적이 없다** — DR-on 이 재결합을 얼마나 올리는지는 미측정. ⚠캠페인 전반: 중간 셸 황 과이온화(f_II 낮음)는 부분적으로 이 **저재결합**(DR off) 탓일 수 있다 — DR-on 이 방향을 바꾸는지는 별도 확인 대상. Fable 코드감사 3절이 「frozenin_alpha_dr 는 frozenin_alpha_rr 의 DR 항과 같은 경로」로 통과시킨 것은 옳았다(둘 다 같은 부스트로 0). 초열 폭주에는 DR-on(재결합 ~2.5×)도 자릿수 부족(γ_phot 100–230×)이라 결과 불변.
 
 ## 5. 어긋남 지도 관점
 - **표적 칸(중간 셸 9–24 황 LTE)은 줄지 않았다** — 오히려 과이온화로 **악화**. 소스 교체는 이 칸의 올바른 수리가 아니다.
