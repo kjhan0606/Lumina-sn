@@ -238,3 +238,10 @@ GPU util 1초 간격 20회:
   [[feedback_audit_the_yardstick_first]]: "X 가 병목"은 가설이고 분모 실측이 선행).
 - 최적화 전 **바이트-parity 기준선**을 잡을 것: 이 구간은 판정런의 산출에 직결되므로
   병렬화가 결과를 바꾸면 안 된다([[feedback_tiered_acceptance_cost]] 의 마이크로픽스처).
+
+## 9. ff 불투명도 이중 계상 (2026-09-18 DET-CONT-NLTE-BALANCE 코드 감사 중 발견, 조용히 기재 — 수리 대상 아님)
+
+- **위치**: `src/lumina_plasma.c` bf 빌더 ff 패스(`bf->chi_bf[...] += chi_ff_c`, Z²·n_ion 가중; ~8622) 와 `src/lumina_cmfgen.c` `cmfgen_assemble_impl` 의 Kramers ff(`chi_ff = 3.692e8 n_e² …`, n_i≈n_e·Z²≈1; ~2420–2428). 조립기는 `bf_get_chi`(ff 포함) 위에 자기 ff 를 **다시** 더한다 ⟹ `chi_a = chi_bf(+ff_plasma) + ff_asm`.
+- **크기**: SN 광구 밀도(n_e 10⁸–10⁹)에서 ff 는 bf 대비 ~10⁻⁹ 급 — 산출에 무시 가능. 부류 2(간략화·중복) 로 분류.
+- **파생**: `bf_get_eta` 도 같은 ff(η=χ_ff·B, ~8624)를 담으므로 Milne η_bf 를 소비하는 코드는 「η_bf 전 0」 검사가 ff 만으로 통과한다(DET-CONT-NLTE-BALANCE 사전감사 B-2 가 지목, 개정 1 로 Milne 부분 분리). census 의 「bf 불투명 빈(`chi_bf>0`)」 도 사실상 전 빈.
+- **처분**: 기재만. 수리하려면 조립기 ff 를 지우고 빌더 ff 하나로 단일화(byte-변경이므로 별도 계약).
