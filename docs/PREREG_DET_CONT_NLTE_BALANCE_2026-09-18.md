@@ -92,7 +92,7 @@ GPU **1 런**, 프로필 h200x1 우선(대기 길면 h100-a100x2 헤지, 먼저 
 | 기안 | 운전자 | 운전자(본 문서) | 자기 기안 |
 | 사전감사(Q-GOAL·Q-LEAN·물리) | (미배정) → 운전자 발주 | 미집행 → Opus 4.8 fresh 발주 | GPU 20 h 단 |
 | 구현 + selftest | Opus 4.8 fresh | Opus 4.8 fresh(`claude-opus-4-8` 자기보고) — 집행 기록 2 | `model` 생략 |
-| 코드 간단 감사 | 운전자 | 운전자 — 집행 기록 3 | 사전감사(Opus 4.8 fresh)와 병행 |
+| 코드 간단 감사 | 운전자 → **Fable fresh**(개정25-a, user 09-18) | 1회차 구현 = 운전자(집행 기록 3, 개정25-a 전) · 개정 1 구현 = Fable fresh(예정) | 사전감사(Opus 4.8 fresh)와 병행 |
 | 빌드·스테이징·제출·판독·판정 | 운전자 | 빌드 제출(집행 기록 4) · 이후 미집행 | |
 | 종료감사 | Opus 4.8 fresh | 미집행 | 생략하지 않음 |
 
@@ -167,3 +167,4 @@ E-3(수렴 10 회 충분성은 추정 — 축퇴가 클수록 수축비가 1 에
 4. **동결·빌드**: `source.sha256` 184 파일(base 182 + selftest 2) 재동결, `source_before.json` 184 항목 재생성, `sha256sum -c` 전건 OK. CPU 빌드 `build4_cpu.slurm` 제출 **job 379038**(`LUMINA_contnlte_build4`, → `cuda_build4/`). 사전감사(Opus 4.8 fresh) 결과 대기 중 — 스테이징·제출은 그 뒤.
 5. **사전감사 1회차(Opus 4.8 fresh, `claude-opus-4-8` 자기보고, 216k 토큰·27 tool)**: Q-GOAL 부분부합 · Q-LEAN 비대(결손 방향, 추가 후보 1) · **통과 불가 · «폐합 차단» 2**(B-1 채널 귀속 계측 부재+E-1 상한 부재+pref 물리 상한 / B-2 fail-closed·G-SRC 의 ff-붕괴 무감) · «기재로 족함» C1(판독 C 대수)·C3·C4·C7·절차·E-5. 정지 조건(Q-GOAL «폐합 차단»·L4 삭제 차단) 아님 ⟹ **개정 1** 로 반영(위 표 R1-1~8; 본문 치환은 python 으로 OLD/NEW 쌍 15 건, 행 단위 diff 로 의도 외 소실 0 확인). 빌드 379038 은 트리가 바뀌므로 취소(소유 확인 후). 다음: 게이트 재실행 → 개정 1 구현 발주(Opus 4.8) ∥ 사전감사 2회차(Opus 4.8 fresh, 개정 1 한정) → 코드 간단 감사 → 빌드 5.
 6. **판정 도구·스테이징 개정 1 반영(운전자)**: `repro_claude_20260917/judge_contnlte.py` — G-SRC 밴드(0.1–10·min>0)·G-CHAN(최대 gen 150 행·14 열·항등)·E-1a/b/c·분기 CB-C′ (해시 `READOUT_TOOLS.sha256` 추가행). 음성대조 합성 픽스처: 건강 ⟹ G-SRC/G-CHAN PASS · census 0.01 위조 ⟹ G-SRC FAIL · 1.0 위조 ⟹ FAIL · 채널 열 바꿔치기 ⟹ G-CHAN FAIL(항등) · 행 1 결손 ⟹ FAIL(149). base 376251 자기검사: G_SRC/G_CHAN/E1a/E1b/E2/E3 FAIL · E1c/E4/E5 PASS ⟹ CB-X(잣대를 base 에 먼저 적용 — base 는 E-1a 를 넘지 못한다; base r_S sh12/16/20 = 57.0/17.7/8.79). `cont_nlte_20260918/stage_run1.sh` 에 `LUMINA_ION_CHANNEL_DUMP` 키 추가(exports delta 기대 8 행). ff 이중 계상은 `docs/CLASSIC_DEBT_CENSUS.md` §9 에 기재. 구현(Opus 4.8)·사전감사 2회차(Opus 4.8 fresh) 진행 중.
+7. **분장 변경(user 09-18 「코드 간단 감사는 fable에게 맡겨」)**: 개정25-a 로 코드 간단 감사 = Fable fresh. 1회차 구현 감사(집행 기록 3)는 운전자 저작으로 남기고, 개정 1 구현 착지분부터 Fable 이 맡는다.
