@@ -1,6 +1,6 @@
 # 사전등록 — DET-LTEUNMAP-EPS: NLTE 밖 이온 선의 LTE 열적 방출 폐기(두준위 ε_phys 소스) (2026-09-17)
 
-저자 = 운전자(Claude, 개정25). 상태 = **기안 / AUDIT_PENDING**. 실행 승인이 아니다.
+저자 = 운전자(Claude, 개정25). 상태 = **CLOSED — 분기 LU-A(관측 등급), 2026-09-18** (판정문 `docs/VERDICT_DET_LTEUNMAP_EPS_2026-09-18.md`, 종료감사 통과·차단 0). 아래 본문은 기안 당시 문면 + 개정 1–6 + 집행 기록.
 근거 판독 = `docs/READOUT_IMPLIED_J_LEDGER_2026-09-17.md` + `docs/READOUT_LAMP_PREDICTION_2026-09-17.md`. 상위 = `docs/CLOSEOUT_CODEX_PERIOD_2026-09-17.md`.
 
 ## 1. 계약 — 물리 계약 1개
@@ -252,3 +252,8 @@ GPU **1 런**, 파티션 h200→h100→a100(343204 실적 a100, 73.5 GB, 약 3.3
 ## 집행 기록 16 — 판정런 4(376251) COMPLETED · 판정 LU-A(관측) (2026-09-18 09:05)
 
 - 376251 (syn104 H200×1, 5h01m, SUCCESS). fine 세 패스 45/53/65(base 동일). G-ID·G-RUN·G-EPS 충족. E-1~E-6 전건 충족 → **분기 LU-A, 등급 관측**(CONV 마지막 패스 max_rel 0.30 > 0.1 → 미수렴 의심 기재). 판정문 = `docs/VERDICT_DET_LTEUNMAP_EPS_2026-09-18.md`. 판정 도구 `judge_lteunmap.py` 는 G-EPS 파서를 조립기 census(최대 pass)로 정정 후 재계산(운전자 이탈 기재). 다음 = 종료감사(Opus 4.8 fresh) → 폐합.
+
+## 집행 기록 17 — 종료감사 통과 · 폐합 (2026-09-18)
+
+- **종료감사(Opus 4.8 fresh)**: `CLOSEOUT_AUDIT: 통과 · BLOCKING: 0`. 게이트·기대치 독립 재현 전건 일치, 분기 LU-A 성립, 골대 이동 없음, «기재로 족함» 3건 → 판정문 반영.
+- **폐합**: 계약 하나 = 이 커밋 하나. 상태 CLOSED, 분기 **LU-A(관측 등급)**. 판정런 376251 산출·도구 해시(`READOUT_TOOLS.sha256`) 보존. 실패 런 374587·374640·375676 루트는 증거로 보존. 미커밋 소스(동결 트리 복사본의 변경집합 4 파일)는 `/gpfs/kjhan/lumina/cmfgen_map/lteunmap_eps_20260917/source/` 에 있으며 repo `src/` 로의 이식은 별도 결정(repo HEAD 와 동결 트리가 22 파일 다름 — 집행 기록 3 참조).
