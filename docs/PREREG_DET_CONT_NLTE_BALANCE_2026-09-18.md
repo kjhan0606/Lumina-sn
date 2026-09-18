@@ -26,16 +26,19 @@ L1 물리량 = 셸별 이온 분율(반복별 `physics_DET_iter000k.ion.csv`·�
 
 ## 3. 수리안 — 변경집합
 
-원칙: 게이트 env `LUMINA_CMF_CONT_NLTE_SOURCE`(기본 0 = byte-동일). ON 이면 `cmfgen_assemble_impl` 의 연속체 소스를 `S_fixed = (η_bf(s,ν) + chi_ff·B + eta_ln)/chi_t` 로 바꾼다(`η_bf = bf_get_eta(bf,s,ν)`; ff 는 열적 유지; `chi_a`·`chi_t`·`eta_ln`·EPAY·`kappa_dep` 항은 불변). **fail-closed**: 게이트 ON 인데 `bf==NULL`·`bf->eta_bf==NULL`·`LUMINA_CMF_BF_MILNE<1` 이거나 η_bf 가 전 빈 0 인 셸이 있으면 조립 실패(무음 B 폴백 금지). census: 패스·셸당 stderr 1 행 `[cmfgen_assemble][CONT-SRC] pass=<p> shell=<s> n_bf_bins=<n> S_bf_over_B_mean=<Σ η_bf dν / Σ chi_bf B dν> S_bf_over_B_min=<..> max=<..>`(bf 불투명 빈 기준). fine 경로는 건드리지 않는다(연속체 보간은 `chi_abs/chi_es` 만 받으므로 무영향). 소스 기준 = **동결 트리 복사본**(`/gpfs/kjhan/lumina/cmfgen_map/lteunmap_eps_20260917/source`, DET-LTEUNMAP-EPS 변경집합 포함 상태) — 그 위에 아래 파일만.
-설정(코드 변경 아님, exports 키): `LUMINA_FROZENIN_DR=1`, `LUMINA_ION_NT=1`, `LUMINA_NT_FULL=1`, `LUMINA_PURE_CMFGEN_ITER=10`, 게이트 `LUMINA_CMF_CONT_NLTE_SOURCE=1`; 기존 `LUMINA_CMF_FINE_UNMAPPED_EPS=1` 유지.
+원칙: 게이트 env `LUMINA_CMF_CONT_NLTE_SOURCE`(기본 0 = byte-동일). ON 이면 `cmfgen_assemble_impl` 의 연속체 소스를 `S_fixed = (η_bf(s,ν) + chi_ff·B + eta_ln)/chi_t` 로 바꾼다(`η_bf = bf_get_eta(bf,s,ν)`; ff 는 열적 유지; `chi_a`·`chi_t`·`eta_ln`·EPAY·`kappa_dep` 항은 불변). **fail-closed**: 게이트 ON 인데 `bf==NULL`·`bf->eta_bf==NULL`·`LUMINA_CMF_BF_MILNE<1` 이거나 **Milne(bf) 부분** η_bf 가 전 빈 0 인 셸(bf 빌더가 셸별로 기록하는 `bf->eta_milne_ok[s]`: bf 불투명 빈이 있는데 ff 를 더하기 **전** η_bf,milne>0 인 빈이 하나도 없으면 0)이 있으면 조립 실패(무음 B·순-ff 열적 폴백 금지). ⚠`bf_get_eta`/`bf_get_chi` 는 빌더 ff(`chi_ff_c`·`chi_ff_c·B`)를 포함하므로 「η_bf 전 0」 검사는 ff 만으로도 항상 통과한다 — 그래서 Milne 부분을 따로 본다(사전감사 B-2). census: 패스·셸당 stderr 1 행 `[cmfgen_assemble][CONT-SRC] pass=<p> shell=<s> n_bf_bins=<n> S_bf_over_B_mean=<Σ η_bf dν / Σ chi_bf B dν> S_bf_over_B_min=<..> max=<..>`(bf 불투명 빈 기준). fine 경로는 건드리지 않는다(연속체 보간은 `chi_abs/chi_es` 만 받으므로 무영향).
+**채널 분해 덤프**(사전감사 B-1·Q-LEAN L1 — 착지를 귀속할 계측): env `LUMINA_ION_CHANNEL_DUMP`(기본 0 = 파일 없음·byte-동일). ON 이면 `parity_rate_se_ratio_checked` 가 (Z∈{16,14,20}, stage 1→2) 쌍에 대해 작업 디렉토리 `lumina_ion_channels.csv` 에 행을 append 한다 — 열 `gen,shell,Z,stage,T_e,n_e,x_e,gamma_phot,gamma_nt,c_ion,ne_alpha_rr,ne_alpha_dr,c_rec,r`(`gen` = 셸 0 호출마다 +1 하는 파일-static 세대 번호; `x_e = n_e/n_atom`; `ne_alpha_rr`·`ne_alpha_dr` 는 `frozenin_alpha_rr` 안의 RR 과 DR(`dr_lookup`) 몫을 갈라 n_e 를 곱한 값; `r` 은 함수가 돌려주는 비 그대로). 판정은 최대 `gen` 의 150 행만 쓴다. 이 덤프의 항등 `r = (gamma_phot+gamma_nt+c_ion)/(ne_alpha_rr+ne_alpha_dr+c_rec)` 는 **구성상 참**이라 예측이 아니고 열 배선의 음성대조다. 소스 기준 = **동결 트리 복사본**(`/gpfs/kjhan/lumina/cmfgen_map/lteunmap_eps_20260917/source`, DET-LTEUNMAP-EPS 변경집합 포함 상태) — 그 위에 아래 파일만.
+설정(코드 변경 아님, exports 키): `LUMINA_FROZENIN_DR=1`, `LUMINA_ION_NT=1`, `LUMINA_NT_FULL=1`, `LUMINA_PURE_CMFGEN_ITER=10`, 게이트 `LUMINA_CMF_CONT_NLTE_SOURCE=1`, `LUMINA_ION_CHANNEL_DUMP=1`; 기존 `LUMINA_CMF_FINE_UNMAPPED_EPS=1` 유지.
 
 ### 변경집합 — CMF_CONT_NLTE_SOURCE (표)
 
 | 경로 | 담당 | 내용 |
 |---|---|---|
 | `src/lumina_cmfgen.c` | Opus 4.8 | `cmfgen_assemble_impl` 연속체 소스 교체(게이트 ON 만)·fail-closed·census 행; 게이트 OFF byte-동일 |
-| `src/env_universe.h` | Opus 4.8 | `LUMINA_CMF_CONT_NLTE_SOURCE` 등록 |
-| `tests/cmf_cont_nlte_source_selftest.c` | Opus 4.8 | CPU selftest: 게이트 OFF S_fixed byte-동일 · ON 이면 S_fixed = (η_bf+χ_ff B+η_ln)/χ_t(1e-12) · LTE 극한(η_bf = χ_bf B) 에서 OFF 와 동일 · η_bf 부재/전 0 → rc≠0 · census 형식 |
+| `src/env_universe.h` | Opus 4.8 | `LUMINA_CMF_CONT_NLTE_SOURCE`·`LUMINA_ION_CHANNEL_DUMP` 등록 |
+| `src/lumina_plasma.c` | Opus 4.8 | bf 빌더: ff 합산 **전** 셸별 `eta_milne_ok` 기록; `parity_rate_se_ratio_checked`: 채널 분해 덤프(게이트 ON 만, RR/DR 분리) |
+| `src/lumina.h` | Opus 4.8 | `BFOpacity` 에 `eta_milne_ok`(셸별 int) 추가 |
+| `tests/cmf_cont_nlte_source_selftest.c` | Opus 4.8 | CPU selftest: 게이트 OFF S_fixed byte-동일 · ON 이면 S_fixed = (η_bf+χ_ff B+η_ln)/χ_t(1e-12) · LTE 극한(η_bf = χ_bf B) 에서 OFF 와 동일 · η_bf 부재/Milne 부분 전 0(`eta_milne_ok=0`) → rc≠0 · ff 만 있는 셸은 fault(순-ff 폴백 검출) · census 형식 · 채널 덤프 행 항등(열 바꿔치기 ⟹ FAIL) |
 
 ### 변경집합 끝
 
@@ -43,9 +46,10 @@ L1 물리량 = 셸별 이온 분율(반복별 `physics_DET_iter000k.ion.csv`·�
 
 | ID | 조건 | 음성대조 |
 |---|---|---|
-| G-ID | 376251 계보(`/gpfs/kjhan/lumina/cmfgen_map/lteunmap_eps_20260917/run5_h200/{RUN_FOOTER.txt,input/resolved_lumina.exports,input/binary.sha256}`) 대비 exports 차이가 정확히 5 키(`LUMINA_CMF_CONT_NLTE_SOURCE`·`LUMINA_FROZENIN_DR`·`LUMINA_ION_NT`·`LUMINA_NT_FULL`·`LUMINA_PURE_CMFGEN_ITER`; 프로필 종속 `LUMINA_CMF_FINE_MGPU_DEVICES` 허용), 소스 차이 = §3 변경집합 표의 3 파일(`src/lumina_cmfgen.c`·`src/env_universe.h`·`tests/cmf_cont_nlte_source_selftest.c`), 러너 편집 = ITER/덤프 검사·`--time`·`outer_iterations` 4 곳뿐(해시 기재) | 다른 키 주입 ⟹ FAIL |
+| G-ID | 376251 계보(`/gpfs/kjhan/lumina/cmfgen_map/lteunmap_eps_20260917/run5_h200/{RUN_FOOTER.txt,input/resolved_lumina.exports,input/binary.sha256}`) 대비 exports 차이가 정확히 6 키(`LUMINA_CMF_CONT_NLTE_SOURCE`·`LUMINA_ION_CHANNEL_DUMP`·`LUMINA_FROZENIN_DR`·`LUMINA_ION_NT`·`LUMINA_NT_FULL`·`LUMINA_PURE_CMFGEN_ITER`; 프로필 종속 `LUMINA_CMF_FINE_MGPU_DEVICES` 허용), 소스 차이 = §3 변경집합 표의 5 파일(`src/lumina_cmfgen.c`·`src/env_universe.h`·`src/lumina_plasma.c`·`src/lumina.h`·`tests/cmf_cont_nlte_source_selftest.c`; 기준 = 376251 의 `input/run_build_identity.json` 소스 해시 — 편집된 동결 트리가 아니라), 러너 편집 = ITER/덤프 검사·`--time`·`outer_iterations` 4 곳뿐(해시 기재) | 다른 키 주입 ⟹ FAIL |
 | G-RUN | 외부반복 10 완주(`[R7][PHASE] event=R7_MATERIAL_PHASE_COMMITTED … iter=9`), `work/physics_comparison/physics_DET_iter0009.ion.csv`·`work/lumina_ion_pops.csv`·`work/cmfgen_final_publication.json` 실재, `[cmf_fine][EXACT-MULTIGPU-EPOCH] status=OK` ≥ 11 | 반복수 변조·덤프 결손 |
-| G-SRC | stderr `[cmfgen_assemble][CONT-SRC]` 행이 매 패스마다 셸 0–49 전부 있고, 마지막 패스 셸 12·16·20 의 `S_bf_over_B_mean` 이 **1 이 아님**(\|log10\| > 0.05 — 소스가 실제로 NLTE 로 바뀌었음; base 376251 은 이 행이 없고 S_bf/B 는 판독 `opaque_source_check_run5` 의 0.8–1.7) | census 를 1.0 으로 위조 ⟹ FAIL; 행 결손 ⟹ FAIL |
+| G-SRC | stderr `[cmfgen_assemble][CONT-SRC]` 행이 매 패스마다 셸 0–49 전부 있고, 마지막 패스 셸 12·16·20 의 `S_bf_over_B_mean` 이 **1 이 아니고**(\|log10\| > 0.05 — 소스가 실제로 NLTE 로 바뀌었음) **물리 밴드 안**(0.1 ≤ mean ≤ 10, `S_bf_over_B_min` > 0 — 순-ff 붕괴 소스(mean ≪ 0.1)나 재점화 램프를 「바뀜」으로 오통과시키지 않음; base 376251 은 이 행이 없고 S_bf/B 는 판독 `opaque_source_check_run5` 의 0.8–1.7) | census 를 1.0 으로 위조 ⟹ FAIL; 0.01 로 위조(ff 붕괴) ⟹ FAIL; 행 결손 ⟹ FAIL |
+| G-CHAN | `work/lumina_ion_channels.csv` 실재, 최대 `gen` 에 (Z 16·14·20)×셸 0–49 = 150 행, 14 열 헤더 일치, 전 행 항등 \|r·(ne_alpha_rr+ne_alpha_dr+c_rec) − (gamma_phot+gamma_nt+c_ion)\| ≤ 1e-9·max(둘) | 열 두 개 바꿔치기 ⟹ FAIL; 행 결손(쌍이 rate 가지에서 안 풀림) ⟹ FAIL |
 
 ### 게이트 명부 끝
 
@@ -53,8 +57,10 @@ L1 물리량 = 셸별 이온 분율(반복별 `physics_DET_iter000k.ion.csv`·�
 
 | ID | 양 | base(376251) | 예측 | **기대** |
 |---|---|---|---|---|
-| E-1 S 중간 | S f_II 셸 12·16·20 (`lumina_ion_pops.csv`) | .017 / .053 / .102 | deg(1.0) .75/.66/.55; CMFGEN .85/.80/.71 | **셋 다 ≥ 0.50** |
-| E-2 Si 중간 | Si f_II 셸 12·20 | 0.000 / 0.000 | CMFGEN .014/.13; deg(1.0) .83/.65(과재결합 상한) | **둘 다 ≥ 0.01 그리고 ≤ 0.50**(하한 = 광이온화 회복, 상한 = FUV 열화 없음) |
+| E-1a S 중간 이탈 | S II→III 비 r 셸 12·16·20 (`lumina_ion_pops.csv`; f_II 환산 병기) | r 70 / 21 / 9.1 (f_II .017/.053/.102) | deg(1.0, C1 정정) r .57/.85/1.37 (f .64/.54/.42); CMFGEN r .18/.25/.40 (f .85/.80/.71) | **셋 다 r ≤ base/10^0.5**(≤ 22 / 6.6 / 2.9 — LTE 에서 반 자릿수 이상 이탈) |
+| E-1b 갇힘 측정 | D = gamma_phot / (r · ne_alpha_rr) 셸 12·16·20 (`lumina_ion_channels.csv` 최대 gen) | (base 는 덤프 없음; LTE 극한 J=B 라 D ≫ 1 상당) | 갇힌 연속체 ⟹ 광이온화≈RR ⟹ D ≈ 불투명 분율 0.65–0.94 | **셋 다 0.3 ≤ D ≤ 3** |
+| E-1c 과재결합 상한 | S f_II 셸 12·16·20 | .017/.053/.102 | pref 0.05 물리값이면 deg .97/.96/.94(CMFGEN 을 넘음) | **셋 다 ≤ 0.95** |
+| E-2 Si 중간 | Si f_II 셸 12·20 | 0.000 / 0.000 | CMFGEN .014/.13; deg(1.0, C1 정정) .78/.58(과재결합 상한 — 758 Å 빈이 갇히면 여기로) | **둘 다 ≥ 0.01 그리고 ≤ 0.50**(하한 = 광이온화 회복, 상한 = FUV 열화 없음) |
 | E-3 수렴 | S II→III 비 r(sh12) 의 반복별 `physics_DET_iter000k.ion.csv` 궤적: \|log10 r₉ − log10 r₈\| | (2회 런: 미측) | 기하 수렴비 0.4 ⟹ 9 회에 잔차 < 0.1 dex | **< 0.10 dex** |
 | E-4 외곽 유지 | S f_III 셸 28·32·36 | .998/.994/.902 | 램프 소등 유지 | **셋 다 ≥ 0.70** |
 | E-5 대조 | 셸 0–8 IGE IV 분율 \|Δ\| | 0.98 | LTE 극한 S_bf→B 라 소폭 | **\|Δ\| < 0.05** (기재용) |
@@ -64,14 +70,15 @@ L1 물리량 = 셸별 이온 분율(반복별 `physics_DET_iter000k.ion.csv`·�
 | 분기 | 조건 | 의미 |
 |---|---|---|
 | CB-X | G-ID/G-RUN/G-SRC 미충족 | 미시연 |
-| CB-A | 게이트 전건 **and** E-1 **and** E-2 **and** E-3 **and** E-4 | **갇힌 연속체 균형 확정** — 중간 셸 S 가 CMFGEN 쪽으로, Si 광이온화 회복 |
-| CB-B | 게이트 전건 **and** E-1 **and** E-3 **and not** E-2 | S 는 옮겼으나 Si 가 과재결합(FUV 열숲) 또는 미회복 ⟹ 다음 rung = mapped 선 ε/NLTE 소스 |
-| CB-C | 게이트 전건 **and** E-3 **and not** E-1 | 수렴했는데 S 가 안 옮김 ⟹ 채널 부족(NT 강도·창 탈출) — 판정자가 명명 |
+| CB-A | 게이트 전건 **and** E-1a·b·c **and** E-2 **and** E-3 **and** E-4 | **갇힌 연속체 균형 — 관측 등급**(pref 1.0 단일 런; 정격 승격은 pref 브래킷 동반런 후) — 중간 셸 S 가 LTE 를 벗어나 채널 균형에 착지, Si 광이온화 회복 |
+| CB-B | 게이트 전건 **and** E-1a·b·c **and** E-3 **and not** E-2 | S 는 옮겼으나 Si 가 과재결합(FUV 열숲) 또는 미회복 ⟹ 다음 rung = mapped 선 ε/NLTE 소스 |
+| CB-C | 게이트 전건 **and** E-3 **and not** E-1a | 수렴했는데 S 가 안 옮김 ⟹ 채널 부족(NT 강도·창 탈출) — 판정자가 명명 |
+| CB-C′ | 게이트 전건 **and** E-3 **and** E-1a **and not**(E-1b **and** E-1c) | 옮겼으나 갇힘 아님(D 밖) 또는 과재결합(f_II > .95) — 판정자가 채널 덤프로 귀속·명명 |
 | CB-M | 그 외(특히 E-3 미수렴) | 판정자가 명명, 재분기 금지 |
 
 ### 분기 끝
 
-문턱 근거: E-1 0.50 은 base(.02–.10)와 CMFGEN(.71–.85) 사이 **두 자릿수 위**의 중간; E-2 상한 0.50 은 퇴화 극한 과재결합(.65–.83)을 실패로 읽는 선; E-3 0.1 dex 는 수렴비 0.4 의 9 회 잔차(0.4⁹ ≈ 3e-4 dex·초기 2 dex ≈ 0.03 dex)의 3 배 여유.
+문턱 근거: E-1a 0.5 dex 는 C1 정정 후 deg(1.0) 예측(sh20 이 base 아래 0.8 dex 뿐)에 0.3 dex 여유를 둔 값(구 「f_II ≥ 0.50」은 α_RR 을 분모에 남긴 틀린 대수 위의 문턱이라 폐기); E-1b [0.3, 3] 은 불투명 분율 0.65–0.94 의 ±0.5 dex; E-1c 0.95 는 CMFGEN 최대 .85 위이며 pref 0.05 퇴화 예측(.94–.97)을 실패로 읽는 선; E-2 상한 0.50 은 퇴화 극한 과재결합(.65–.83)을 실패로 읽는 선; E-3 0.1 dex 는 수렴비 0.4 의 9 회 잔차(0.4⁹ ≈ 3e-4 dex·초기 2 dex ≈ 0.03 dex)의 3 배 여유.
 
 ## 6. 자원 · 실행
 
@@ -84,9 +91,9 @@ GPU **1 런**, 프로필 h200x1 우선(대기 길면 h100-a100x2 헤지, 먼저 
 |---|---|---|---|
 | 기안 | 운전자 | 운전자(본 문서) | 자기 기안 |
 | 사전감사(Q-GOAL·Q-LEAN·물리) | (미배정) → 운전자 발주 | 미집행 → Opus 4.8 fresh 발주 | GPU 20 h 단 |
-| 구현 + selftest | Opus 4.8 fresh | 미집행 | `model` 생략 |
-| 코드 간단 감사 | 운전자 | 미집행 | |
-| 빌드·스테이징·제출·판독·판정 | 운전자 | 미집행 | |
+| 구현 + selftest | Opus 4.8 fresh | Opus 4.8 fresh(`claude-opus-4-8` 자기보고) — 집행 기록 2 | `model` 생략 |
+| 코드 간단 감사 | 운전자 | 운전자 — 집행 기록 3 | 사전감사(Opus 4.8 fresh)와 병행 |
+| 빌드·스테이징·제출·판독·판정 | 운전자 | 빌드 제출(집행 기록 4) · 이후 미집행 | |
 | 종료감사 | Opus 4.8 fresh | 미집행 | 생략하지 않음 |
 
 ## 8. 주장 상한
@@ -100,7 +107,7 @@ GPU **1 런**, 프로필 h200x1 우선(대기 길면 h100-a100x2 헤지, 먼저 
     "path_pattern": "(?:src|tests)/[A-Za-z0-9_/.]+\\.(?:c|h)",
     "symbol": "CMF_CONT_NLTE_SOURCE",
     "roots": ["src", "tests"],
-    "expected_extra": ["src/lumina_cmfgen.c", "src/env_universe.h", "tests/cmf_cont_nlte_source_selftest.c"]
+    "expected_extra": ["src/lumina_cmfgen.c", "src/env_universe.h", "src/lumina_plasma.c", "src/lumina.h", "tests/cmf_cont_nlte_source_selftest.c"]
   },
   "branches": {
     "regimes": [[0.0, 0.0], [1.0, 1.0], [2.0, 2.0], [3.0, 3.0], [4.0, 4.0]],
@@ -110,6 +117,7 @@ GPU **1 런**, 프로필 h200x1 우선(대기 길면 h100-a100x2 헤지, 먼저 
       {"name": "CB-A", "predicate": "count > 0 and gate_fail == 0 and si_fail == 0 and s_stuck == 0 and other == 0"},
       {"name": "CB-B", "predicate": "count > 0 and gate_fail == 0 and si_fail > 0 and s_stuck == 0 and other == 0"},
       {"name": "CB-C", "predicate": "count > 0 and gate_fail == 0 and s_stuck > 0 and other == 0"},
+      {"name": "CB-C'", "predicate": "count > 0 and gate_fail == 0 and s_stuck > 0 and other == 0 and False"},
       {"name": "CB-M", "predicate": "count > 0 and gate_fail == 0 and other > 0"}
     ],
     "adversarial_fixtures": [
@@ -128,8 +136,33 @@ GPU **1 런**, 프로필 h200x1 우선(대기 길면 h100-a100x2 헤지, 먼저 
     {"path": "docs/VERDICT_DET_LTEUNMAP_EPS_2026-09-18.md"},
     {"path": "CLAUDE.md"},
     {"path": "src/lumina_cmfgen.c", "flags_existing": ["cmfgen_assemble_impl", "bf_get_eta", "S_fixed", "LUMINA_CMF_EPAY"]},
-    {"path": "src/lumina_plasma.c", "flags_existing": ["bf_get_eta", "LUMINA_CMF_BF_MILNE", "LUMINA_FROZENIN_DR", "LUMINA_ION_NT", "LUMINA_NT_FULL", "dr_lookup", "gamma_deposition_compute_nonthermal"]},
+    {"path": "src/lumina_plasma.c", "flags_existing": ["bf_get_eta", "LUMINA_CMF_BF_MILNE", "LUMINA_FROZENIN_DR", "LUMINA_ION_NT", "LUMINA_NT_FULL", "dr_lookup", "gamma_deposition_compute_nonthermal", "parity_rate_se_ratio_checked", "frozenin_alpha_rr", "chi_ff_c"]},
+    {"path": "src/lumina.h", "flags_existing": ["BFOpacity", "bf_get_eta"]},
     {"path": "src/env_universe.h", "flags_existing": ["LUMINA_FROZENIN_DR", "LUMINA_ION_NT", "LUMINA_NT_FULL"]}
   ]
 }
 ```
+
+## 개정 1 (2026-09-18, 사전감사 1회차 Opus 4.8 fresh 「통과 불가·차단 2」 반영) — OLD/NEW 전건은 §9 집행 기록 5 에 지목한 대로 본문에 적용
+
+| # | 출처 | 요지 |
+|---|---|---|
+| R1-1 | B-2 | fail-closed 를 **Milne 부분**으로(`bf->eta_milne_ok[s]`, ff 합산 전 기록) — `bf_get_eta` 가 ff 를 포함해 「전 0」 검사는 무력했다 |
+| R1-2 | B-2 | G-SRC 에 **물리 밴드** 0.1 ≤ mean ≤ 10·min > 0 추가(순-ff 붕괴·재점화 램프 오통과 차단), 음성대조 「0.01 위조 ⟹ FAIL」 추가 |
+| R1-3 | B-1·Q-LEAN L1 | **채널 분해 덤프** `lumina_ion_channels.csv`(env `LUMINA_ION_CHANNEL_DUMP`, Z 16·14·20 stage 1→2, 14 열, RR/DR 분리) + 게이트 G-CHAN(항등 = 배선 음성대조) — 착지가 「기전 재현」인지 「NT 노브 착지」인지 귀속 가능 |
+| R1-4 | C1 | 판독 C 대수 정정: 광이온화–RR 이 항등 상쇄되면 α_RR 은 **소거**되어 r_deg = (C_ion+Γ_nt)/(n_e α_DR + C_rec). S 는 판독표 ×1.67, Si ×1.37, Ca(α_DR≈0) 는 r→C/C_rec ≫ 1(f_II→0, CMFGEN 0 과 정합). deg(1.0) S f_II .64/.54/.42(sh12/16/20) — 구 E-1 「≥ 0.50」 은 틀린 대수 위의 문턱이라 폐기 |
+| R1-5 | B-1 | E-1 을 셋으로: **E-1a** LTE 이탈(r ≤ base/10^0.5) · **E-1b** 갇힘 측정 D = Γ_phot/(r n_e α_RR) ∈ [0.3, 3] · **E-1c** 과재결합 상한 f_II ≤ 0.95. CB-A 는 **관측 등급**(pref 1.0 단일 런)으로 강등, CB-C′ 신설 |
+| R1-6 | B-1 pref | **pref 는 1.0 유지**(user 09-18 「권고안대로」 결정) — 사전감사 지적 「x_e≈2 에서 Xu&McCray η_ion→0 이라 물리 pref ≤ 0.05, 1.0 은 물리 상한 초과」 는 **기재**하고, 채널 덤프의 Γ_nt 몫으로 착지 귀속을 남긴다. pref 0.05 동반런(브래킷) 은 user 결정 항목(+20 GPU-h). 방향: pref 1.0 은 E-1a 를 **더 어렵게** 한다(f_II 를 .97→.64 로 끌어내림) — 통과용 과대구동 아님 |
+| R1-7 | C3 | DR ON 시 RR α 는 U_II-정정본(`lumina_plasma.c` ~6572 주석: 「구 2.8× α 가 DR 대행이었음을 U_II 정정이 드러냄」) ⟹ DR 이중 계상 없음 [저자 실행 grep]. DR 역과정(자동이온화) 미구현은 비대칭으로 기재 |
+| R1-8 | 절차 | 사전감사보다 구현이 선행했음을 기재(개정16 ② 순서 위반 아님 — 봉인 접촉 게이트는 아직 안 돌렸다); G-ID 소스 기준을 376251 `run_build_identity.json` 으로 명시 |
+
+E-3(수렴 10 회 충분성은 추정 — 축퇴가 클수록 수축비가 1 에 접근, C4)·C7(4 노브 동시 변경, 대조 런 없음 — user 결정 「한 계약」 유지; 채널 덤프가 부분 보전)·E-5(음성대조로서 정당)은 «기재로 족함» 으로 여기 남긴다.
+
+## 9. 집행 기록
+
+1. **게이트(발주 전)**: `check_prereg_preflight` rc=0 · `check_gate_referents` rc=0(「셸 50 개」·행 범위 표기 정정 후) · `check_doc_canonical` rc=0 · `check_dispatch_preflight` rc=0(발주서의 재서술 경로·건수를 절 지목으로 교체 후). 커밋 4d4b86c.
+2. **구현(Opus 4.8 fresh, `claude-opus-4-8` 자기보고)**: 동결 트리 `…/lteunmap_eps_20260917/source` 위 3 파일 — `src/lumina_cmfgen.c`(+145: 분자·전제·셸 fail-closed 술어·census 서식 헬퍼 4, 게이트 판독, `bf_get_eta` 소비, `S_fixed` 교체, 드라이버 차단 `g_asm_cont_src_fault`), `src/env_universe.h`(+1 키, COUNT 522), `tests/cmf_cont_nlte_source_selftest.c`(신규). 보고: 게이트 OFF byte-동일(분자 헬퍼가 OFF 에서 원식과 같은 연산 순서), EPAY·`kappa_dep`·fine 경로 불변.
+3. **코드 간단 감사(운전자, Q0 = 봉인 접촉 가부)**: `diff -rq` 대 343204 base = 5 파일(두 계약 합) ✔. 분자 OFF 식 `(chi_bf+chi_ff)*B+eta_ln` 은 base `chi_a*B+eta_ln`(`chi_a=chi_bf+chi_ff`)과 동일 연산 ✔. ON 식 = 계약 §3 ✔. 전제 fail-closed(bf/eta_bf 부재·`BF_MILNE<1`)·셸 fail-closed(bf 빈 있고 η_bf 전 0) → `[cmfgen_assemble][BLOCKED]` + 드라이버 `cmfgen_run` rc −1 ✔. census 1 행/셸/패스, mean = Σ η dν / Σ χ_bf B dν ✔. `bf_get_eta` 는 EPAY≥2 에서 이미 `chi*B` 와 같은 단위로 쌍을 이룸 ✔. selftest2 12 PASS(LTE 극한 등식·OFF byte 등식·fail-closed 5·census 서식) · 기존 selftest 26 PASS 유지(grammar-debug 재실행). **봉인 접촉 가 — 진행.**
+   ⚠**조용한 기재(base 부채, 이 계약 밖)**: (a) `bf_get_chi` 가 돌려주는 `bf->chi_bf` 격자는 plasma 빌더에서 **ff(Z²·n_ion) 를 이미 합산**하고(`lumina_plasma.c` ~8623), 조립기는 그 위에 **Kramers n_e² ff 를 다시 더한다**(`lumina_cmfgen.c` ~2426) — base 부터 있던 ff 불투명도 이중 계상(량은 bf 대비 10⁻⁹ 급으로 무시 가능하나 부채). 본 계약의 ON 식은 `bf_get_eta` 가 같은 ff(η=χ_ff·B, ~8624)를 담고 있어 **OFF 와 항별 대응이 유지**되며 새 이중 계상은 없다. (b) 같은 이유로 census 의 「bf 불투명 빈(`chi_bf>0`)」은 ff 때문에 사실상 전 빈이 잡힌다 — ff-only 빈의 비는 정확히 1 이라 mean 을 1 쪽으로 희석하지만 가중치(χ·B)가 bf 대비 무시 가능. `n_bf_bins` 는 「bf+ff>0 빈 수」로 읽을 것. CLASSIC_DEBT 대장 기재 대상.
+4. **동결·빌드**: `source.sha256` 184 파일(base 182 + selftest 2) 재동결, `source_before.json` 184 항목 재생성, `sha256sum -c` 전건 OK. CPU 빌드 `build4_cpu.slurm` 제출 **job 379038**(`LUMINA_contnlte_build4`, → `cuda_build4/`). 사전감사(Opus 4.8 fresh) 결과 대기 중 — 스테이징·제출은 그 뒤.
+5. **사전감사 1회차(Opus 4.8 fresh, `claude-opus-4-8` 자기보고, 216k 토큰·27 tool)**: Q-GOAL 부분부합 · Q-LEAN 비대(결손 방향, 추가 후보 1) · **통과 불가 · «폐합 차단» 2**(B-1 채널 귀속 계측 부재+E-1 상한 부재+pref 물리 상한 / B-2 fail-closed·G-SRC 의 ff-붕괴 무감) · «기재로 족함» C1(판독 C 대수)·C3·C4·C7·절차·E-5. 정지 조건(Q-GOAL «폐합 차단»·L4 삭제 차단) 아님 ⟹ **개정 1** 로 반영(위 표 R1-1~8; 본문 치환은 python 으로 OLD/NEW 쌍 15 건, 행 단위 diff 로 의도 외 소실 0 확인). 빌드 379038 은 트리가 바뀌므로 취소(소유 확인 후). 다음: 게이트 재실행 → 개정 1 구현 발주(Opus 4.8) ∥ 사전감사 2회차(Opus 4.8 fresh, 개정 1 한정) → 코드 간단 감사 → 빌드 5.
