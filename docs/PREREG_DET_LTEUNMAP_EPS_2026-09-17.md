@@ -248,3 +248,7 @@ GPU **1 런**, 파티션 h200→h100→a100(343204 실적 a100, 73.5 GB, 약 3.3
 ## 집행 기록 15 — run4/run5 헤지 · 판정런 4 = 376251 착수 (2026-09-18 04:04)
 
 - run4(376041, h100-a100x2, 8 h) 가 Priority 대기(예상 13:56)라 h200x1 헤지 루트 `run5_h200`(376251, `MGPU_DEVICES=1`, 8 h) 를 병행 제출. **376251 이 04:04 syn104(H200 NVL 143,771 MiB) 에서 RUNNING** → 376041 은 소유 확인(`LUMINA_lteunmap_eps_r4` @ repo, PENDING) 후 취소(GPU 지출 0). ⟹ 판정런 = 376251 단 1회(같은 바이너리 `4e385989…`, 프로필 종속 키만 다름 — 개정 3).
+
+## 집행 기록 16 — 판정런 4(376251) COMPLETED · 판정 LU-A(관측) (2026-09-18 09:05)
+
+- 376251 (syn104 H200×1, 5h01m, SUCCESS). fine 세 패스 45/53/65(base 동일). G-ID·G-RUN·G-EPS 충족. E-1~E-6 전건 충족 → **분기 LU-A, 등급 관측**(CONV 마지막 패스 max_rel 0.30 > 0.1 → 미수렴 의심 기재). 판정문 = `docs/VERDICT_DET_LTEUNMAP_EPS_2026-09-18.md`. 판정 도구 `judge_lteunmap.py` 는 G-EPS 파서를 조립기 census(최대 pass)로 정정 후 재계산(운전자 이탈 기재). 다음 = 종료감사(Opus 4.8 fresh) → 폐합.
