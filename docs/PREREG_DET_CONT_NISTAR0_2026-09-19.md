@@ -145,6 +145,9 @@ L1 물리량 = 셸별 최상위 빈의 인자 분해(n_l·n_next·U_next·n_e·T
 }
 ```
 
-## 9. 집행 기록
+## 9. 집행 기록 (CLOSED-OFFLINE)
 
-1. (운전자 기입) 게이트 4종 rc · 경량 사전감사 · DR-ON 폐합 확인 · 구현 · 코드 감사 · 빌드 · 실행 · 판독 · 판정 · 종료감사.
+1. **게이트 4종**: prereg-preflight rc=0(files=3·refs=8)·gate_referents rc=0·doc_canonical rc=0. 커밋 17d3cd1.
+2. **경량 사전감사(Opus 4.8 fresh, `claude-opus-4-8`)**: Q_GOAL 부분부합·**Q_LEAN 비대·통과 불가·BLOCKING 1**. §0 항등 코드 재현 확증(census 선회 정당). **L4 «폐합 차단»: census 런이 오프라인 정적 조회 대비 과provision** — U_next(T_e)·엣지는 정적 원자데이터+기존 T_e 로 런 없이 귀속 가능. 발주 정지·오프라인 우선 권고.
+3. **운전자 오프라인 귀속(런 0회, 정본 `docs/READOUT_NISTAR0_OFFLINE_2026-09-19.md`)**: (i) n_l 붕괴 floor 배제 (ii) 텍스트북 U(T_e) I·II·III 정상 (iii) **Si V(χ 166.8 eV) 깊은 엣지 Saha e^{χ/kT}=9.5e94 ⟹ n_l*/n_next=2.42e79 = census 셸20 max 1.60e79 일치**. ⟹ 1e79 = 과이온화가 밀어올린 고이온의 정확한 Saha 물리(버그 아님), 근인 = decoupled solve(완전 선형화 부재).
+   ⟹ **DET-CONT-NISTAR-0 종결: 구현·census 런 없이 오프라인 귀속.** 게이트 G-ID/G-RUN/G-ALG/G-ATTR·selftest·판정런 전부 미집행(불요). 상태 CLOSED-OFFLINE. 다음 표적(완전 선형화 대 국소 처방 대 pivot)은 user 결정.
