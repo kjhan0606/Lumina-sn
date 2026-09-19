@@ -153,9 +153,9 @@ env `LUMINA_POP_DJDN`(기본 0 = 항 미적용·census 파일 없음·**byte-동
 
 ## 9. 집행 기록
 
-1. (운전자 기입) 게이트 4종 rc · 커밋.
-2. (운전자 기입) 경량 사전감사(Opus 4.8 fresh) 산출 — §0 두 정정에 대한 독립 판정 포함.
-3. (운전자 기입) DR-on 385315 폐합 확인 · §6 결정 ①–⑤.
+1. **게이트 4종(발주 전)**: prereg-preflight rc=0(`changeset-consistent files=3`·branch-partition trials=200000 rules=4 fixtures=6 residual=MVP-X·references-resolved refs=9)·gate_referents rc=0(changeset_exempt=3)·doc_canonical rc=0(계약 + 인용 문서 5). 커밋 38e7601. (dispatch-preflight 는 구현 발주서 작성 시.)
+2. **경량 사전감사(Opus 4.8 fresh, `claude-opus-4-8`, 개정25-d, Q-GOAL·Q-LEAN 전용)**: **PREAUDIT 통과 · BLOCKING 0.** 감사자가 저장소 grep 으로 §0 정정을 독립 재도출 — `radeq_simul_all` 호출 0(§0a 확증)·`g_lre_lambda_star` 소비자 0(§0c 확증·G-CPL 의 「a≡0 무음 no-op」이 실재 실패 모드임을 뒷받침)·`parity_rate_se_ratio_checked` 라이브 호출 실재. **Q-GOAL 부합**(진단·크기측정 단 — 직접 칸 축소 아님, 판정문 명시 요구)·**Q-LEAN 통과**(census 13열 전건 소비·군살 0·게이트 4 무중복·2 걸음). 기재 3: (a) Q-GOAL 진단 성격 명시 (b) L3 JDUMP-on 짧은 덤프로 오프라인 단일셀 프로브 가능하나 라이브 다중셸 궤적은 못 재현이라 라이브 런 정당 (c) L4 `LUMINA_POP_MAXCH` 축척 구현 «기재로 족함»(판정런 off·미소비) — 구현 범위 결정을 운전자에게 위임(발주 정지 아님).
+3. **DR-on 폐합 확인 · §6 결정(운전자)**: DR-on 385315 폐합 확인(커밋 4442dfd, 종료감사 통과) ⟹ src-편집 가동 태스크 0, 구현 발주 가능. **①ITER=4**(판정 세대 k=2,3 2개·~10h·`--time=14:00:00`; 진단 단이라 MVP-A/B 판별에 충분). **②MAXCH 판정런 off**(L4 + 감쇠 판별 정리; 축척 구현은 off-기본 **유지** = user 승인 b737446 「감쇠는 B 뉴턴-스텝 보정 상한으로 흡수」= MAX_CHNG 강건층, 판정런 inert ⟹ 사전감사 L4 «기재로 족함» 옵션② 채택). **③뉴턴 자리 = 쌍별 스칼라 폐형 근 권장**(라이브 경로 고정점 루프 없음), 구현자 결정, 제약 = x_lag 세대 커밋값·a 는 저장 λ*·σ_row 만·off byte-동일. **④헤지 yes**(먼저 시작하는 쪽). **⑤NT 키 부재**(DR-on base 그대로). ①④는 스테이징 시 확정.
 4. (운전자 기입) 구현 · selftest · Fable 코드 감사(봉인 접촉 가부) · 빌드 해시.
 5. (운전자 기입) 스테이징 · 제출 · 판독 · 판정 · 종료감사.
 
