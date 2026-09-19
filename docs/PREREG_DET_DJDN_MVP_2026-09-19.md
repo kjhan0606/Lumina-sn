@@ -41,7 +41,7 @@ env `LUMINA_POP_DJDN`(기본 0 = 항 미적용·census 파일 없음·**byte-동
 |---|---|---|
 | `src/env_universe.h` | Opus 4.8 | `LUMINA_POP_DJDN`·`LUMINA_POP_MAXCH` 등록 |
 | `src/lumina_plasma.c` | Opus 4.8 | `parity_rate_se_ratio_checked`: a(§2 대수, 저장 λ*·σ_row·Φ_l·χ_t 만)·쌍별 뉴턴 근·root 표기·census 행; `compute_ion_populations_shell`: x_lag = 세대 커밋값 확보(덮어쓰기 전); 커밋/후보 조립: MAXCH 스텝 축척(env 미설정 시 미적용); OFF 두 노브 byte-동일 |
-| `tests/pop_djdn_selftest.c` | Opus 4.8 | CPU selftest(§4 G-CPL 오프라인 부): OFF r bit-동일 · ON ΔN=0 ⟹ r bit-동일(고정점 불변) · a = 독립 재계산(1e-12 rel) · 빈 격자 정합(λ* 인덱스 = J 인덱스) · **음성대조 1**: λ* 전 빈 0 ⟹ ON == OFF bit-동일(항이 λ* 밖 무언가를 읽으면 FAIL) · **음성대조 2**: a 를 1e-6 교란 ⟹ census 항등(G-CPL) FAIL 시연 · g ≥ 1 픽스처 ⟹ `root=0` 표기·r = OFF 값(클램프·무음 폴백 검출) · MAXCH: 축척 인자 = min(1, MAXCH/‖ΔN/N‖_∞)·미설정 시 인자 1 bit-동일 |
+| `tests/pop_djdn_selftest.c` | Opus 4.8 | CPU selftest(§4 G-CPL 오프라인 부): OFF r bit-동일(게이트 미진입 ⟹ 원 r 그대로) · ON·ΔN=0(x_lag = x_map)·a>0 ⟹ x* = x_map, rel ≤ 1e-12(고정점 불변 — **bit-동일 아님**: x* = (num − a·x_lag)/(den − a) 는 num/den 과 다른 FP 연산열이라 반올림 차가 남는다; 픽스처 g ≤ 0.9 — (den − a) 상쇄가 반올림을 1/(1−g) 배 키우므로) · ON·a≡0(λ* 미전달) ⟹ x* = num/den 이 FP 정확 ⟹ r 이 OFF 와 bit-동일(음성대조 1 이 이 assert 를 담당, 이중 기재 아님) · a = 독립 재계산(1e-12 rel) · 빈 격자 정합(λ* 인덱스 = J 인덱스) · **음성대조 1**: λ* 전 빈 0 ⟹ ON == OFF bit-동일(항이 λ* 밖 무언가를 읽으면 FAIL) · **음성대조 2**: a 를 1e-6 교란 ⟹ census 항등(G-CPL) FAIL 시연 · g ≥ 1 픽스처 ⟹ `root=0` 표기·r = OFF 값(클램프·무음 폴백 검출) · MAXCH: 축척 인자 = min(1, MAXCH/‖ΔN/N‖_∞)·미설정 시 인자 1 bit-동일 |
 
 ### 변경집합 끝
 
