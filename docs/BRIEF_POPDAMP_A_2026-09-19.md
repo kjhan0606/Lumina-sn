@@ -19,3 +19,6 @@ CONT 초열 폭주(`READOUT_CONT_NLTE_SUPERTHERMAL_2026-09-18`)는 lagged solve 
 경량 사전감사(Q-GOAL·Q-LEAN) → 게이트 → **DR-on 폐합 후** Opus 4.8 구현 → Fable 코드 감사 → 빌드 → 확인 런 → 판정 → 종료감사. src 편집 1개 규칙 준수.
 ## 상한
 A 가 폭주를 잡는가(오프라인은 불가 예측)까지. B 설계·tensor-core 는 별건. 확인 런 1회로 판별 in-vivo 확정.
+
+## ★폐기 (user 2026-09-19 「A 를 할 필요가 있을까? B 로 바로 가야겠는데?」)
+DET-POPDAMP-A 별도 단·확인 런 **취소**. 근거: 오프라인 판별의 under-relaxation 정리(감쇠는 M_r(r)>r 를 못 되돌림)가 강건해 in-vivo 재확인 불요. 감쇠(under-relaxation)는 폐기가 아니라 **B(완전 선형화)의 뉴턴-스텝 보정 상한으로 흡수**(CMFGEN 도 둘을 함께 씀). Fable A 계약 기안 중단(TaskStop). 표적 = B 직행.
