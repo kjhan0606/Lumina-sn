@@ -8,7 +8,8 @@
 ## 1. 게이트 (판정치)
 - **G-RUN 통과**: `terminal_state=SUCCESS`·model_rc=0·outer_iterations=6. TE_PUBLICATION FIXED_T = 6 = ITER, postcheck `-ne 6` 통과(**DJDN-MVP 의 `-ne 2` 스테이징 버그 수리 확인**). census 25,051행·physics iter 0–5·ion_channels 실재.
 - **G-CPL 통과**: census 16열(+epoch/c_newton/damp) 헤더 정합, root=1∧damp>0 전 행 항등 `|c_newton − c'|·|x_star − x_map·exp(damp·c_newton)|·damp=min(1,C_max/|c|)` 위반 **0**(허용오차 §4 개정본 1e-6 = CSV 재계산 그레인; 원 1e-9 는 |c'|=104 에서 CSV 반올림 2e-8 rel 보다 빡빡한 오기재였음 — grok 개정, 68ca3aa). epoch 구조: epoch 경계 x_lag^{k+1}=x_star^{k} 전건 bit-일치·최대 epoch=ITER+1=7·판정 셸 epoch≥2 전 행 root=1·a>0. damp==0 측도-0 행 0.
-- **G-DRV 통과**: (ii) 판정 셸 epoch 2–7 전 행 root=1(**대각 항이 구동 epoch 에 적용됨** — DJDN-MVP 는 전부 root=0 이었음) · (iii) 대조군과 분리: sh24 epoch4 **0.301**·epoch5 **0.404**·sh28 epoch4 **0.446** dex(>0.05) — 항 적용이 궤적을 대조군(항 OFF)과 갈랐다.
+- **G-DRV 통과**: (ii) 판정 셸 epoch 2–7 전 행 root=1(**대각 항이 구동 epoch 에 적용됨**) · (iii) 대조군과 분리: sh24 epoch4 **0.301**·epoch5 **0.404**·sh28 epoch4 **0.446** dex(>0.05; sh28 epoch5 는 0.003 비분리이나 게이트 OR 라 무해) — 항 적용이 궤적을 대조군과 갈랐다.
+  ⚠**종료감사 정정(«기재»)**: DJDN-MVP 대조군은 「전부 root=0」이 아니었다 — g<1 셀(sh12 ep3-5·sh28 ep1,2,3,5)에서 구 뉴턴 root=1 을 적용했고, root=0 폴백은 **g≥1 구동 셀**(sh16/20/24·핵심 sh24 ep4/5·sh28 ep4)에서였다. **헤드라인 폭주 셸 sh24(g=8.19≥1)는 MVP 에서 실제 폴백이었고 이 런에서 처음 적용**되므로 「미시험 해소」의 핵심 셀은 성립(오차 방향 보수적 — 대조군이 진술보다 덜-OFF인데도 분리 달성).
 
 ## 2. 물리 결론 (어긋남 지도) — 대각은 적용됐으나 착지 실패, s−g 가 비국소 채널을 지목
 판정량 x^{(k)} = 판정 셸 epoch k 커밋값(x_star), Δ_k = log10 x^{(k)}−log10 x^{(k−1)}, K=7. 마지막 두 epoch(6·7).
@@ -26,7 +27,7 @@
 - ⟹ **DJDN-MVP §0(b)·경량 사전감사·독립 방향 평가가 예상한 「대각 불충분」이 이번엔 미시험이 아니라 측정으로 확정**됐다. 다음 = 완전 Path B(셸간 tri_*·`coupled_newton_solve_all`·tensor core 야코비안 조립).
 
 ## 3. 주장 상한
-「폴백 없는 감쇠 log-뉴턴으로 대각 ∂J/∂N 항을 구동 국면에 실제 적용했을 때(root=1 전건, 대조군과 0.3–0.45 dex 분리) 판정 셸 다섯이 유한 고정점에 착지하지 않았다(DRV-D); s−g 는 폭주 셸에서 κ=1.78>1(발산)·부호 반대로, 대각 스칼라 선형화가 맵 감도를 재현 못 함을 보인다」까지. **s−g 의 국소(∂J/∂χ)/비국소(셸간) 분할은 말하지 않는다**(§8 — s 는 총미분 시컨트). CMFGEN 도달·Si/Ca·스펙트럼·자유-T_e·N×N 해 정합은 말하지 않음. twin-T_e 핀 조건부. f_II 여전히 CMFGEN 미달. 「DJDN 토글 단독」은 OFF 런 없음 — selftest byte-동일 + 코드 감사의 오프라인 주장 조건부(대조군은 sh12 준-OFF).
+「폴백 없는 감쇠 log-뉴턴으로 대각 ∂J/∂N 항을 구동 국면에 실제 적용했을 때(root=1 전건, 대조군과 0.3–0.45 dex 분리) 판정 셸 다섯이 유한 고정점에 착지하지 않았다(DRV-D); s−g 는 폭주 셸에서 κ=1.78>1(발산)·부호 반대로, 대각 스칼라 선형화가 맵 감도를 재현 못 함을 보인다」까지. **s−g 의 국소(∂J/∂χ)/비국소(셸간) 분할은 말하지 않는다**(§8 — s 는 총미분 시컨트). CMFGEN 도달·Si/Ca·스펙트럼·자유-T_e·N×N 해 정합은 말하지 않음. twin-T_e 핀 조건부. f_II 여전히 CMFGEN 미달. 「DJDN 토글 단독」은 OFF 런 없음 — selftest byte-동일 + 코드 감사의 오프라인 주장 조건부(대조군은 순수 OFF 아님: sh12·sh28 의 g<1 셀에 구 뉴턴 root=1 적용, 준-OFF는 g≥1 폴백 셀뿐).
 
 ## 4. 운전자 이탈 (개정25 기재)
 - ① **재봉인 스크립트 pipefail 버그**: `set -euo pipefail` + `diff|grep`(diff rc=1)가 mv 전 중단 → source.sha256 미갱신 → build6 1차 3파일 불일치 FAIL(3s). 수리 후 verify -c 0 OK·build6 재제출 388386 rc=0. 물리 무관(빌드 프리플라이트가 잡음).
