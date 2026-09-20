@@ -174,8 +174,8 @@ x^{(k)} = 판정 셸 epoch k 마지막 행 x_star(= epoch k+1 x_lag), k = 1 … 
 1. **게이트 4종(발주 전)**: prereg-preflight rc=0(`changeset-consistent files=3`·branch-partition rules=5 fixtures=7 residual=DRV-X·references-resolved refs=8)·gate_referents rc=0(changeset_exempt=3)·doc_canonical rc=0(계약+인용5). 커밋 94a11e0. (dispatch-preflight 는 구현 발주 시.)
 2. **경량 사전감사(Opus 4.8 fresh, `claude-opus-4-8`, 개정25-d): PREAUDIT 통과·BLOCKING 0.** 감사자가 대조군 census 로 §2 κ 표 재현. **Q-GOAL ③ 핵심 해소**: 런은 오프라인 표로 대체 불가(대조군 구동 epoch 항 OFF·오프라인 리플레이는 M(x_lag) 새점 재평가 불가·κ 외삽 비강건) ⟹ 런이 실측 착지+적용국면 s−g 를 더함(계측 위한 계측 아님). Q-GOAL 부합·Q-LEAN 통과(신규 계측 전건 소비·게이트 신규 종 0·G-DRV(ii) 경미중복은 (i)(iii)가 지탱·죽은 MAXCH 기재처분 정당·sh28/5셸 정당). L4 차단 후보 0. 경미 관측(폐합 조건 아님): G-DRV(ii)↔G-CPL root=1 행집합 중복(축약 가능·비용 무관).
 3. **§6 결정(운전자·user)**: ①C_max=**1.0**(기본, 특이 국면만) ②**ITER=6**(user 2026-09-20 선택 — 판정 epoch 6·7=iter 4·5, 구동 발달 후 착지 판별 여유; `--time=20:00:00`) ③프로필·헤지=직전 단 동일(먼저 시작하는 쪽·멀티파티션·cpus 16, G-ID 기재) ④NT 부재·MAXCH 미설정. DR-on 385315·DJDN-MVP 387175 폐합 확인 ⟹ src-편집 가동 0, 구현 발주 가능.
-4. 구현(Opus 4.8) + selftest: (미집행)
-5. Fable 코드 간단 감사(봉인 접촉 가부 첫 항목): (미집행)
+4. **구현(Opus 4.8, `claude-opus-4-8`) + selftest**: `pop_djdn_newton_root`(den−a≤0 폴백)→`pop_djdn_log_newton`(§2: c=lnρ·g/(ρ−g)·c_d=sign min(|c|,C_max)·x_star=x_map·exp(c_d))·g=a/den·census 16열(epoch/c_newton/damp)·epoch=radeq_set_line_re_source ++·env LUMINA_POP_DJDN_CMAX(COUNT 526)·폴백 삭제·OFF byte-동일·클램프 없음. selftest 30/30 PASS + 주입 FAIL 2종. 3파일·잡편집 0.
+5. **Fable 코드 간단 감사(`claude-fable-5-1`, 개정25-a): CODE_AUDIT 통과·SEAL_CONTACT 가·BLOCKING 1(계약 문면, 코드 0).** log-뉴턴 대수 FD 독립 검증(F'=1−g/ρ·Δu 6자리 일치)·폴백 삭제 확인(구 함수 참조 0)·OFF byte-동일 구조·클램프 부재(보정 c만 상한)·epoch 카운터 pass당 1회(cmfgen_run 이 레거시 루프 우회, 호출 2곳 중 생산은 7999)·g=a/den 정합·selftest §3 전건 커버 미좁힘. **«폐합 차단» 1 = §4 G-CPL 「최대 epoch 행수 150」 오류**(실제 gen×150·마지막 epoch ~22gen→3300행; 문면대로면 G-CPL FAIL→DRV-X) — 코드 무관, **제출 전 사전등록 OLD/NEW 개정 필수**(①행수 ②damp==0 측도-0 행 c'=∞ 예외). «기재»: c 독립재계산=전사검사(대수 독립은 §2 FD 가 세움, 판정문 표기)·MVP g=a/(n_eα) 와 인자차(미소)·overflow c_newton 덮음(미도달). ⟹ 빌드·재봉인 진행 가·제출 전 계약 개정.
 6. 재봉인·빌드·스테이징(러너 ITER 상수 셋 grep 출력 기재)·제출: (미집행)
 7. 착지·판독·판정(운전자): (미집행)
 8. 종료감사(Opus 4.8 fresh): (미집행)
