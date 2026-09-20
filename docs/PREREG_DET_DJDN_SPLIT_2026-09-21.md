@@ -195,7 +195,7 @@ sh24 코드: 게이트 미충족 ⟹ 0. 게이트 충족 시 |s−g|≤1 이면 
 
 ## 9. 집행 기록
 
-1. **게이트 4종(발주 전)**: 미집행(이 문서는 기안).
-2. **경량 사전감사(Opus 4.8 fresh, 개정25-d)**: 미집행.
+1. **게이트 4종(발주 전)**: prereg-preflight rc=0(`changeset-consistent files=4`·branch-partition rules=5 fixtures=7 residual=SPLIT-X·references-resolved refs=9)·gate_referents rc=0(exempt=4)·doc_canonical rc=0. 커밋 26f979f.
+2. **경량 사전감사(Opus 4.8 fresh, `claude-opus-4-8`, 개정25-d): PREAUDIT 통과·BLOCKING 0.** Q-GOAL 부합(measure-before-build 옳음 — B/C 직행은 형태 미지 Q-GOAL④ 위반; grok A 선택 타당)·**오프라인 불가 실측 확증**(대조군 388393 work/ 에 J장·JDUMP·λ*·tri_* 덤프·체크포인트 전무·census 스칼라 궤적만 → 반사실 맵 재평가 재런 필수). Q-LEAN 통과(hold census 16열 전건 소비·생산 census 무접촉·4게이트 실재 비중복[G-DRV 드롭]·2걸음 최소·4파일 삭제/통합 후보 0). 비차단 기재 3: ①**칸 미이동·3단째 진단(MVP→DRIVE→SPLIT)임을 판정문·user 보고에 명시** ②**ITER=6 권고**(ITER=4 는 G-SPLT |s−g|>1 창 위험) ③s_hold 단일점 분할 잔여 위험(상한 문제).
 3. **§6 결정(운전자·user)**: 미집행 — ①ITER 4 또는 6.
 4. **구현 + selftest / 코드 간단 감사 / 재봉인·빌드·스테이징·제출 / 판독·판정 / 종료감사**: 미집행.
