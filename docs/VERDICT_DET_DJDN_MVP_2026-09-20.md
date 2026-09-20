@@ -7,7 +7,7 @@
 G-RUN·G-DRV 미충족 ⟹ 형식 MVP-X. **그러나 이 MVP-X 는 「대각 커플링이 불충분함을 보였다」가 아니다** — 아래 §3 이 보이듯 **대각 항은 구동(폭주) 국면에서 한 번도 적용되지 않았다**. 시험 조건(구동 실재 ∧ 항 적용)의 교집합이 0이라, 이 런은 계약 질문(대각 충분?)을 **판정하지 못했다(미시험)**. ⚠**「g≥1·root=0 이 대각 불충분을 보였다」는 문장은 쓰지 않는다**(운전자 원 프레임의 오독 — §4 참조).
 
 ## 1. 게이트 (판정치)
-- **G-CPL 통과**: census `lumina_pop_djdn.csv` 18,450행(123 gen×150), 13열 정합. root=1 행 15,428개 전부 항등 `|γ_eff−γ_lag−a·(x*−x_lag)| ≤ 1e-9·max`(위반 0, 최대 잔차 9.0e-10). Z16 셸 12/16/20/24 a>0. ⟹ **대각 항 대수는 in-vivo 정확**(selftest a 독립 재계산 + 양 코드 감사 + 이 항등이 함께 세움).
+- **G-CPL 통과**: census `lumina_pop_djdn.csv` 18,450행(123 gen×150), 13열 정합. root=1 행 15,428개 전부 항등 `|γ_eff−γ_lag−a·(x*−x_lag)| ≤ 1e-9·max`(위반 0, 최대 **정규화** 잔차 9.0e-10 = res/max|γ|; 절대 잔차 9.4e-6·max|γ|≈7.4e4 — 종료감사 «기재»). Z16 셸 12/16/20/24 a>0. ⟹ **대각 항 대수는 in-vivo 정확**(selftest a 독립 재계산 + 양 코드 감사 + 이 항등이 함께 세움).
 - **G-RUN 미충족 = 운전자 스테이징 버그(계측 artifact, 물리 아님)**: `terminal_state=POSTCHECK_FAILED_FIXED_TE_EVIDENCE`. 원인 = 러너 `job.slurm:186` postcheck 가 `[A2-10][TE_PUBLICATION] te_lane=FIXED_T` 를 **정확히 2개**(`-ne 2`, ITER=2 기준 하드코딩) 요구하는데 ITER=4 라 **4개**(sha 전부 fb9d56e4 일치) 나옴. 운전자가 ITER guard(:116)·outer_iterations(:132)는 4로 고쳤으나 postcheck 를 놓침. **런 무결성 확인**: model_rc=0·outer_iterations=4·TE발행 4=ITER·다른 postcheck(fatal marker·DET terminal·final publication·public TE profile) 전부 통과 ⟹ `-ne 4` 였으면 SUCCESS. SUCCESS 재라벨은 골대 이동이라 형식 MVP-X 는 유지하되, **물리 실패로 읽지 않는다**.
 - **G-DRV 미충족 = 계약 referent 결함 + 안의 부분-null**: judge 의 `gen≤3` 판정은 census gen 이 **바깥 반복이 아니라 씨앗-완화 하위패스**(§2)라 「LTE 씨앗 대 첫 맵」을 잰 것이지 CONT 구동이 아니다. 계약 §4 G-DRV 의 referent `gen` 이 하위패스 카운터라 문면대로 판정 불가(gate_referents 는 열 존재만 봐서 못 잡는 계급). epoch 로 재판독: **sh24 는 폭주 실재**(x_map 60.8→118.6→338.3, epoch3-5), **sh20 은 구동 부재**(전 epoch x_map/x_lag 0.71–0.81 단조 재결합).
 
