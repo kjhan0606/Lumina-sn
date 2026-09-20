@@ -168,3 +168,14 @@ x^{(k)} = 판정 셸 epoch k 마지막 행 x_star(= epoch k+1 x_lag), k = 1 … 
   ]
 }
 ```
+
+## 9. 집행 기록
+
+1. **게이트 4종(발주 전)**: prereg-preflight rc=0(`changeset-consistent files=3`·branch-partition rules=5 fixtures=7 residual=DRV-X·references-resolved refs=8)·gate_referents rc=0(changeset_exempt=3)·doc_canonical rc=0(계약+인용5). 커밋 94a11e0. (dispatch-preflight 는 구현 발주 시.)
+2. **경량 사전감사(Opus 4.8 fresh, `claude-opus-4-8`, 개정25-d): PREAUDIT 통과·BLOCKING 0.** 감사자가 대조군 census 로 §2 κ 표 재현. **Q-GOAL ③ 핵심 해소**: 런은 오프라인 표로 대체 불가(대조군 구동 epoch 항 OFF·오프라인 리플레이는 M(x_lag) 새점 재평가 불가·κ 외삽 비강건) ⟹ 런이 실측 착지+적용국면 s−g 를 더함(계측 위한 계측 아님). Q-GOAL 부합·Q-LEAN 통과(신규 계측 전건 소비·게이트 신규 종 0·G-DRV(ii) 경미중복은 (i)(iii)가 지탱·죽은 MAXCH 기재처분 정당·sh28/5셸 정당). L4 차단 후보 0. 경미 관측(폐합 조건 아님): G-DRV(ii)↔G-CPL root=1 행집합 중복(축약 가능·비용 무관).
+3. §6 결정(운전자·user): C_max · ITER · 프로필: (미집행)
+4. 구현(Opus 4.8) + selftest: (미집행)
+5. Fable 코드 간단 감사(봉인 접촉 가부 첫 항목): (미집행)
+6. 재봉인·빌드·스테이징(러너 ITER 상수 셋 grep 출력 기재)·제출: (미집행)
+7. 착지·판독·판정(운전자): (미집행)
+8. 종료감사(Opus 4.8 fresh): (미집행)
