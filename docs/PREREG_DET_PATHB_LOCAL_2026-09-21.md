@@ -273,7 +273,13 @@ x^{(k)} = 판정 셸 epoch k 마지막 행 x_star, k = 1 … K, K = ITER+1. Δ_k
    - ⟹ **구현 재발주(Opus 4.8) → 재감사.** 봉인 접촉 게이트 미개방.
    - **구현 재발주(Opus 4.8, 2026-09-21)**: 수리 완료 — #10 = 생산 `formal_djdchi_fs_S` 직접 호출 fixture(P1 FD 대 생산 formal_solve_bin·P2 memcmp cs.J·λ* 불변, replica `formal_djdchi_ray_test` 대체)·#7 = `dsrc=clamped?0.0:...`(ex=1 유지·τ<0 도함수=0). **selftest 73/73 PASS**(두 수리 teeth: 생산 core-reset 파괴→P1 FAIL·클램프 zeroing 제거→1b·P3 FAIL, 복원). 운전자 확인: fix 는 lumina_cmfgen.c(18:02)·selftest(17:59)만 접촉·헤더 09-05 무접촉·files=5 유지.
    - **astra 재감사(2026-09-21, `gpt-6-astra`)**: **#7·#10 닫힘·회귀 없음 ⟹ 봉인 접촉 가부 = «가».** #7(C:2999-3005 dsrc=0·ex=1·P3 생산 도함수=0∧생산 forward FD=0)·#10(C:8573-8584 wrapper 생산 함수 호출·T:669-707 P1 생산 walker FD·P2 실제 cs.J·λ* memcmp). fs_seg_eval 은 도함수 walker+hook 만(forward/ALI/Tlo-Tup 무전파). ⚠astra 캐비앳: 73/73 재실행·byte-diff 미수행(운전자 mtime·심볼 부재로 files=5 독립 확인). ⟹ **봉인 접촉 게이트 개방.**
-7. **재봉인·빌드·스테이징·제출**: 미집행.
+7. **재봉인·빌드·스테이징·제출(운전자, 2026-09-21, syntax)**: **완료·제출 job 390839.**
+   - **재봉인**: `source.sha256` 185파일 재생성·**델타 정확히 5**(변경집합)·`sha256sum -c` rc=0·backup=`source.sha256.pre_local`. ⚠DRIVE reseal pipefail 버그 회피(비-OK 가드 + delta `|| true` + mv 항상 실행).
+   - **빌드**: `cuda_build7`(syntax nvcc CUDA 13.0.2, build6 명령 그대로) rc=0·**binary `7fcf0e632e3b4629...`**(DRIVE `7d42780...`와 다름 ✔ G-ID).
+   - **스테이징**: 새 루트 `/gpfs/kjhan/lumina/cmfgen_map/pathb_local_20260921/run1`·388393 계보(cp -a input)·경로참조 7 재작성(0 old/7 new)·**exports 델타 정규화 후 정확히 +LUMINA_POP_DJDN_CHI="1"**(COUPLED_NEWTON=0 등 388393 상속)·바이너리 교체+binary.sha256·job-name=LUMINA_pathblocal·**ITER triple 전부 6**(388393 상속, 편집 불요)·partition h100,h200,a100·gres gpu:2·cpus16·GPU_PROFILE h100-a100x2·`--time=20:00:00`·STAGE_IDENTITY/OWNER(DO_NOT_CANCEL)·deck OK·`check_driver_hygiene` PASS.
+   - **dispatch-preflight**: N/A — 구현이 Agent(Opus 4.8)라 Codex 발주서 없음(개정25). 제출 방어선 = 러너 fail-closed 게이트(partition·GPU kind/mem·binary sha·ITER==6·deck·catalog·exports source)가 job 시작 시 실행.
+   - **제출**: `sbatch job.slurm <run_root>` → **job 390839** PENDING(Priority), 18:20 KST. 멀티파티션(h200=sjjlee 예약이면 h100/a100 착지).
+   - ⚠**G-ID 계약 문면 «기재»**: LOCAL G-ID 부재 목록에 `LUMINA_COUPLED_NEWTON` 이 있으나 388393 은 `COUPLED_NEWTON="0"`(off·상속). 「부재」는 「미enable(=0/off)」로 읽는다 — 델타는 오직 +CHI. 판정기 G-ID 는 델타(=+CHI)로 집행(리터럴 key-absent 아님).
 8. **착지·판독·판정**: 미집행.
 9. **종료감사(Opus 4.8 fresh)**: 미집행.
 
