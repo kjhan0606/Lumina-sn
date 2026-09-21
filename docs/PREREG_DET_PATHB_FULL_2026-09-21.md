@@ -1,6 +1,6 @@
 # 사전등록 — DET-PATHB-FULL: CMFGEN 식 완전 ∂J/∂N 선형화(결합 뉴턴)를 라이브 생산 루프에 적용하면 CONT 폭주 셸이 유한 고정점에 착지하는가 (2026-09-21)
 
-기안 = **Fable 대행**(`grok-4.6`, user 2026-09-20 Fable 토큰 소진 이후 계약 기안 대행). 상태 = **기안 / 기계 게이트 → grok 물리·대수 사전감사(짓기 전, fresh) → Opus 4.8 경량 사전감사(Q-GOAL·Q-LEAN) 대기**. 실행 승인이 아니다.
+기안 = **Fable 대행**(`grok-4.6`, user 2026-09-20 Fable 토큰 소진 이후 계약 기안 대행). 상태 = **★구현 발주 정지 — grok 물리·대수 사전감사(개정25-e) «폐합 차단» 7건**(§9 집행 기록 2). 6건은 재기안 수리 가능·1건(⑩ 「형태-확실」 반증)은 방향 결정 사안(user 보고). 실행 승인이 아니다.
 근거 = `docs/VERDICT_DET_DJDN_DRIVE_2026-09-21.md`(직전 판정 정본: DRV-D, 대각 단독 불충분 **측정**·s−g 가 Path B 크기) · `docs/PREREG_DET_DJDN_DRIVE_2026-09-20.md`(직전 폐합 계약, 구조 계승) · `docs/PREREG_DET_DJDN_SPLIT_2026-09-21.md`(**폐기** — 국소/비국소 판별; 재평가가 mini-Path-B 를 요구해 「값싼 판별」전제 붕괴) · `docs/DESIGN_PATHB_LINEARIZATION_2026-09-19.md`(Path B 아키텍처 정찰: `do_var_cont.f` 발자국·tri_*·`coupled_newton_solve_all` 스텁·tensor core·이중 권위) · user 2026-09-21 「완전 선형화(Path B full) 직행」(CMFGEN 식은 형태-확실 ⟹ Q-GOAL④ 「크기·형태 미지로 짓는 것」에 해당하지 않음). **base = DRIVE 판정런 388393 폐합본**(`/gpfs/kjhan/lumina/cmfgen_map/djdn_drive_20260920/run_h100a100`, log-뉴턴 대각 항 ON, ITER=6, binary `7d42780346bf5d2c...`). **대조군 = 같은 388393**(대각 스칼라 선형화·착지 0/5). 소스 기준 = 동결 트리 `/gpfs/kjhan/lumina/cmfgen_map/lteunmap_eps_20260917/source`(DRIVE 변경집합 + SPLIT-substrate OFF-게이트 포함, manifest 185 파일·repo 미이식).
 
 ## 0. 기안자 검사 — 직전 결함 정정 (운전자·사전감사 필독)
@@ -220,7 +220,17 @@ x^{(k)} = 판정 셸 epoch k 마지막 행 x_star, k = 1 … K, K = ITER+1. Δ_k
    - `check_gate_referents`: PASS `changeset_exempt=4`.
    - `check_doc_canonical`(인용 4문서): 전건 `single` PASS.
    - dispatch-preflight 는 발주서 작성 후(스테이징 단계) 집행.
-2. **grok 물리·대수 사전감사(짓기 전, fresh)**: 미집행.
+2. **grok 물리·대수 사전감사(짓기 전, fresh — 개정25-e 첫 적용, 2026-09-21)**: **«폐합 차단» 7건 ⟹ 구현 발주 정지·재기안**. (grok 이 기안자 = 자기 계약 자기 감사, 한계 기재; 그럼에도 기계 게이트 4종이 통과시킨 물리·배선 결함을 잡음 — 개정25-e 근거 실증.)
+   - ①**«차단» ∂J/∂χ|_S 생산자 부재**(§2 dJ 체인): `pathb_jac_assemble` 은 dχ 만 조립, ∂J/∂χ 아님 — 이름만 있고 이산화 없음(09-05 E-1 동어반복 계급). `Λ_off(tri)` 도 최근접 이웃뿐(`lumina_cmfgen.c:2945-2955`), 전각 BA 변분 아님. 빠진 항·중복 항(dS 안의 dχ 와 겹침)·오전제 동시.
+   - ②**«차단» 이중 권위 미해소**: `compute_ion_populations_shell` 이 여전히 단계 소유(`:3378-3379`), 계약은 쓰기 순서(`ion_number_density` vs 준위 vs η_bf) 미지정 — 슬로건.
+   - ④**«차단» tri 저장이 J 를 바꿈**(③ 재발): `formal_solve_bin` 포인터가 살면 접선항이 **대각 L\*** 에 더해져(`:2945-2951`) J 가 388393 과 달라짐 — 「대각 ALI 유지」는 코드로 거짓. §0(d) 금지가 이 우회로 재발.
+   - ⑥**«차단» 뉴턴 호출 슬롯이 죽음**(③ 인구판): `cmfgen_run` 에 `coupled_newton_solve_all` 호출 0건. commit_jnu 직후 = r7/A2-10 인구 커밋 **앞** ⟹ A2-10 사다리가 덮어씀(DJDN-MVP 죽은 `radeq_simul_all` 배정과 같은 계급). 뉴턴은 A2-10 인구 커밋 슬롯에 들어가야.
+   - ⑦**«차단» pathb_jac.cu 미링크**(① 계급): Makefile `lumina_cuda` 링크 목록에 없음(`:65-79`)·Makefile 이 변경집합에도 없음 ⟹ 라이브 빌드가 안 타는 파일에 조립 커널.
+   - ⑧**«차단» 음성대조 구멍**: 「대각 log-뉴턴 그대로 커밋」이 G-LND 를 통과할 수 있음(분리·jac 비트 둘 다 위조 가능) — 직전 3계약 배선오류 구멍과 동일.
+   - ⑩**«차단» 「형태-확실」 반증**: binned Λ·최근접 tri 절단·미지정 ∂J/∂χ·TF32·LTE/NLTE 혼재 ⟹ 결과 형태·크기 미지. SPLIT 이 폐기한 분할 자유도가 이 단에 **숨은 채** 남음. Q-GOAL④ 실재. ★**user 「형태-확실」 전제와 감사 결론이 충돌 — 방향 결정 사안(user 보고).**
+   - «기재»: ③ 대각 스킵 대수 정확·⑤ 시그니처 불변 OK·⑨ 리미터 항등 등 구성상 참(G-JAC 판정치 문면 과대)·⑪ 묶음.
+   - grok 최소 재기안 표적 6: (i) ∂J/∂χ 생산자·이산화 또는 항 삭제 (ii) 이중권위 쓰기 순서 (iii) tri 저장을 L\*/J 와 분리 (iv) 뉴턴을 A2-10 인구 커밋 슬롯에 (v) pathb_jac.cu 링크 정합(Makefile 변경집합) (vi) 대각 잔존·cs.J 우회가 실제 FAIL 하는 음성대조.
+   - **처분: 정지. ①②④⑥⑦⑧ 은 재기안 수리 가능(계약-공작·배선). ⑩ 은 방향 결정(user).**
 3. **경량 사전감사(Opus 4.8 fresh, Q-GOAL·Q-LEAN)**: 미집행.
 4. **§6 결정(운전자·user)**: 미집행 — ①ITER ∈ {8,10} ②프로필·헤지 ③NT/JDUMP/LAMBDA_TRI/MAXCH/FDHOLD 부재 ④C_max=1.0 유지.
 5. **구현(Opus 4.8) + selftest**: 미집행.
