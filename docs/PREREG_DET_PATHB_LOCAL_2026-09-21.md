@@ -259,7 +259,11 @@ x^{(k)} = 판정 셸 epoch k 마지막 행 x_star, k = 1 … K, K = ITER+1. Δ_k
    - `check_gate_referents`: PASS `changeset_exempt=5`.
    - `check_doc_canonical`(인용 4문서): 전건 `single` PASS.
    - dispatch-preflight 는 발주서 작성 후(스테이징) 집행.
-2. **grok 물리·대수 사전감사(짓기 전, fresh)**: 미집행. (기안자가 자기 FULL 계약을 감다해 7건으로 폐기한 이력은 `docs/PREREG_DET_PATHB_FULL_2026-09-21.md` §9.2 — 이 재기안이 그 7건을 §0 에서 없앤 것으로 주장한다. 독립 fresh 감사가 재판정한다. astra 교차감리는 초안 framing 5건을 잡아 이 개정에 반영됐다 — 짓기 전 물리·대수 사전감사의 대체가 아니다.)
+2. **grok 물리·대수 사전감사(짓기 전, fresh — 개정25-e, 2026-09-21)**: **«폐합 차단» 0건 — 통과**. (grok 이 기안자 = 자기 계약 자기 감사, 한계 기재; 앞선 astra 교차감리가 독립 렌즈로 보완.) 검증: ① δI 재귀 = 실제 `formal_solve_bin` 세그먼트(`lumina_cmfgen.c:2912-2944`)의 고정-S χ 편미분과 일치(ψ'=ex/1−τ·핵 dI=0·접선 귀환·Tlo 무관) — **a_ds+a_dchi=(∂J/∂η)dη+(∂J/∂χ|_η)dχ 라 이중가산 아님**(astra 「둘 다 필요」확인, `-S/χ` 치환 금지가 지킴). ③ a_dchi 차원·부호(dχ/dx=−Xc·geom<0, `:2690-2700` 형제 미분)·den 정합·a_local→`pop_djdn_log_newton` 대수 정확. ④ 별도 버퍼로 I/Jacc/Lacc·ALI·`formal_solve_bin` 본체 무변경 가능. ⑤ 뉴턴이 a_local 소비·CHI OFF byte-동일. ⑥ 부호 필터 우회 확인. ⑩⑪ 판별 프레임 무유출·단일 물리 계약.
+   - **★구현 지침 (grok «기재» 2건 — 구현·코드감사에 반영, 블로커 아님)**:
+     (a) **NC1 오라벨 정정**: §3 selftest (8)/§4 G-ASM 음성대조 1 「대각-only(a_dchi=0) ⟹ G-ASM **항등** FAIL」은 틀림 — a_dchi=0 이면 합 항등 `a_ds+0=a_local` 은 **참**이다. **NC1 의 실제 FAIL 신호 = sh24 max|a_dchi|>0**(항이 실제로 모임). 구현자는 합 항등을 깨는 테스트를 짜지 말 것. 이 정정을 selftest·판정기에 적용.
+     (b) **⑧-폐쇄는 G-ASM 단독이 아니라 G-ASM+G-LND 5중 사슬**: (i) G-LND `c'=lnρ·g/(ρ−g)`↔`c_newton` 1e-6(census `g`=a_local/den 이면 newton(a_ds) 는 여기서 깨짐) (ii) epoch k+1 `x_lag`=epoch k `x_star`(%.9e; census 만 a_local 위조·커밋 r 은 a_ds 면 사슬 깨짐) (iii) 대조군 분리 0.05 dex (iv) sh24 max|a_dchi|>0 (v) selftest NC4. §0⑧ 이 이 사슬을 G-ASM 에 몰아 적은 것은 과대 귀속(구멍 재개방 아님) — 판정기·코드감사는 다섯을 함께 본다.
+     (c) 잔여 구현 감사 항목(grok): `formal_djdchi_fs_S` 필드를 `CMFGENState` 에 달면 표 밖 파일 ⟹ 파일정적/plasma 복사로 `files=5` 유지 · CHI 게이트는 챔피언(LINERES 부재) 경로 안 · selftest 훅이 생산 `formal_djdchi_fs_S` 를 실제로 링크(build.sh:16 이미 `lumina_cmfgen.c` 링크) · 복제 공식만 검사하면 생산 함수 표류 ⟹ 코드감사 첫 항목.
 3. **경량 사전감사(Opus 4.8 fresh, Q-GOAL·Q-LEAN)**: 미집행.
 4. **§6 결정(운전자·user)**: 미집행 — ①ITER(6 대 8–10 트레이드오프, 못 박지 않음) ②프로필·헤지 ③NT/JDUMP/LAMBDA_TRI/MAXCH/FDHOLD/COUPLED_NEWTON 부재 ④C_max=1.0 유지. user 2026-09-21: 수정된 LOCAL 진행·도함수=고정-S ∂J_fs/∂χ.
 5. **구현(Opus 4.8) + selftest**: 미집행.
