@@ -278,7 +278,7 @@ x^{(k)} = 판정 셸 epoch k 마지막 행 x_star, k = 1 … K, K = ITER+1. Δ_k
    - **빌드**: `cuda_build7`(syntax nvcc CUDA 13.0.2, build6 명령 그대로) rc=0·**binary `7fcf0e632e3b4629...`**(DRIVE `7d42780...`와 다름 ✔ G-ID).
    - **스테이징**: 새 루트 `/gpfs/kjhan/lumina/cmfgen_map/pathb_local_20260921/run1`·388393 계보(cp -a input)·경로참조 7 재작성(0 old/7 new)·**exports 델타 정규화 후 정확히 +LUMINA_POP_DJDN_CHI="1"**(COUPLED_NEWTON=0 등 388393 상속)·바이너리 교체+binary.sha256·job-name=LUMINA_pathblocal·**ITER triple 전부 6**(388393 상속, 편집 불요)·partition h100,h200,a100·gres gpu:2·cpus16·GPU_PROFILE h100-a100x2·`--time=20:00:00`·STAGE_IDENTITY/OWNER(DO_NOT_CANCEL)·deck OK·`check_driver_hygiene` PASS.
    - **dispatch-preflight**: N/A — 구현이 Agent(Opus 4.8)라 Codex 발주서 없음(개정25). 제출 방어선 = 러너 fail-closed 게이트(partition·GPU kind/mem·binary sha·ITER==6·deck·catalog·exports source)가 job 시작 시 실행.
-   - **제출**: `sbatch job.slurm <run_root>` → **job 390839** PENDING(Priority), 18:20 KST. 멀티파티션(h200=sjjlee 예약이면 h100/a100 착지).
+   - **제출**: `sbatch job.slurm <run_root>` → job 390839 PENDING(18:20). ⚠**user 2026-09-21 「h100/a100 으로·h200 당분간 사용금지」** ⟹ 390839 취소(소유 확증 WorkDir=run1·PENDING 무낭비)·partition `h100,h200,a100`→**`h100,a100`**·STAGE_IDENTITY runner_sha·runner_edits 갱신·driver_hygiene PASS·**재제출 job 390846** PENDING(18:31). (러너 expected_partition 은 h100,a100,h200 유지=상위집합, SBATCH 에서 h200 제외라 착지 불가.)
    - ⚠**G-ID 계약 문면 «기재»**: LOCAL G-ID 부재 목록에 `LUMINA_COUPLED_NEWTON` 이 있으나 388393 은 `COUPLED_NEWTON="0"`(off·상속). 「부재」는 「미enable(=0/off)」로 읽는다 — 델타는 오직 +CHI. 판정기 G-ID 는 델타(=+CHI)로 집행(리터럴 key-absent 아님).
 8. **착지·판독·판정**: 미집행.
 9. **종료감사(Opus 4.8 fresh)**: 미집행.
