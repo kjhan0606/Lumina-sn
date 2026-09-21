@@ -1,6 +1,6 @@
 # 사전등록 — DET-PATHB-FULL: CMFGEN 식 완전 ∂J/∂N 선형화(결합 뉴턴)를 라이브 생산 루프에 적용하면 CONT 폭주 셸이 유한 고정점에 착지하는가 (2026-09-21)
 
-기안 = **Fable 대행**(`grok-4.6`, user 2026-09-20 Fable 토큰 소진 이후 계약 기안 대행). 상태 = **★구현 발주 정지 — grok 물리·대수 사전감사(개정25-e) «폐합 차단» 7건**(§9 집행 기록 2). 6건은 재기안 수리 가능·1건(⑩ 「형태-확실」 반증)은 방향 결정 사안(user 보고). 실행 승인이 아니다.
+기안 = **Fable 대행**(`grok-4.6`, user 2026-09-20 Fable 토큰 소진 이후 계약 기안 대행). 상태 = **★폐기(2026-09-21, user 결정 B — 접지된 단일 채널 단으로 대체)**. 근거 = grok 물리·대수 사전감사(개정25-e) «폐합 차단» 7건(§9 집행 기록 2), 특히 ⑩ 「형태-확실」반증 ⟹ user 가 완전 Path B 직행을 접고 **접지된 작은 단 먼저**(단일 ∂J/∂χ|_S 채널·뉴턴 A2-10 슬롯·tri/N×N/이중권위 이 단 밖)를 택함. 후속 = DET-PATHB-LOCAL(grok 재기안). 이 문서는 **완전 직행이 왜 안 되는가의 기록**으로 보존(판별런 미발주). 실행 승인이 아니었다.
 근거 = `docs/VERDICT_DET_DJDN_DRIVE_2026-09-21.md`(직전 판정 정본: DRV-D, 대각 단독 불충분 **측정**·s−g 가 Path B 크기) · `docs/PREREG_DET_DJDN_DRIVE_2026-09-20.md`(직전 폐합 계약, 구조 계승) · `docs/PREREG_DET_DJDN_SPLIT_2026-09-21.md`(**폐기** — 국소/비국소 판별; 재평가가 mini-Path-B 를 요구해 「값싼 판별」전제 붕괴) · `docs/DESIGN_PATHB_LINEARIZATION_2026-09-19.md`(Path B 아키텍처 정찰: `do_var_cont.f` 발자국·tri_*·`coupled_newton_solve_all` 스텁·tensor core·이중 권위) · user 2026-09-21 「완전 선형화(Path B full) 직행」(CMFGEN 식은 형태-확실 ⟹ Q-GOAL④ 「크기·형태 미지로 짓는 것」에 해당하지 않음). **base = DRIVE 판정런 388393 폐합본**(`/gpfs/kjhan/lumina/cmfgen_map/djdn_drive_20260920/run_h100a100`, log-뉴턴 대각 항 ON, ITER=6, binary `7d42780346bf5d2c...`). **대조군 = 같은 388393**(대각 스칼라 선형화·착지 0/5). 소스 기준 = 동결 트리 `/gpfs/kjhan/lumina/cmfgen_map/lteunmap_eps_20260917/source`(DRIVE 변경집합 + SPLIT-substrate OFF-게이트 포함, manifest 185 파일·repo 미이식).
 
 ## 0. 기안자 검사 — 직전 결함 정정 (운전자·사전감사 필독)
