@@ -75,7 +75,7 @@ hold 파일 헤더(순서 고정, 16 열):
 |---|---|---|
 | `src/env_universe.h` | Opus 4.8 | `LUMINA_POP_DJDN_FDHOLD` 등록 |
 | `src/lumina_plasma.c` | Opus 4.8 | 황 비 → ion 밀도 재분배(N_tot 고정); epoch 별 x_lag 스태시; hold census 기록; 생산 log-뉴턴·16 열 census 무접촉; OFF byte-동일 |
-| `src/lumina_cuda.cu` | Opus 4.8 | 최대 epoch 의 생산 assemble+`cmfgen_solve_J`+ion **직후·커밋 전** §2 절차 오케스트레이션(기존 `cmfgen_assemble`·`cmfgen_solve_J`·`compute_ion_populations` 재진입, 새 커널 0); 스냅샷 memcpy; Te 이분·`coupled_newton_solve_all` 호출 추가 금지 |
+| `src/lumina_cmfgen.c` | Opus 4.8 | `cmfgen_run` 루프(`lumina_cmfgen.c:8038-8148`)에서 최대 epoch 의 생산 assemble+`cmfgen_solve_J`+ion **직후·커밋 전** §2 절차 오케스트레이션(기존 `CMFGenState cs` 버퍼·`cmfgen_assemble`·`cmfgen_solve_J`·`compute_ion_populations` 재진입, 새 커널 0); 스냅샷 memcpy; Te 이분·`coupled_newton_solve_all` 호출 추가 금지 [grok 개정 2026-09-21: cuda.cu 죽은 경로→cmfgen_run live 루프] |
 | `tests/pop_djdn_selftest.c` | Opus 4.8 | 기존 30 케이스 유지 + **합성 맵** M = g·Δx_s + b·Δx_{s±1} 픽스처에서 s_hold → g, s_nl → b (1e-12 rel) · **null 픽스처** Δx=0 ⟹ x_map_hold == x_map bit-동일 · **OFF** FDHOLD 미설정 ⟹ hold 파일 없음·생산 경로 byte-동일 · **음성대조 1**: 이웃 Δx 를 대상 셸에 섞는 구현 ⟹ s_hold 가 g 를 못 맞춤 FAIL 시연 · **음성대조 2**: restore 생략 ⟹ restore_ok=0 FAIL 시연 · 헤더 16 열 일치 |
 
 ### 변경집합 끝
@@ -156,7 +156,7 @@ sh24 코드: 게이트 미충족 ⟹ 0. 게이트 충족 시 |s−g|≤1 이면 
     "path_pattern": "(?:src|tests)/[A-Za-z0-9_/.]+\\.(?:c|h|cu)",
     "symbol": "LUMINA_POP_DJDN_FDHOLD",
     "roots": ["src", "tests"],
-    "expected_extra": ["src/env_universe.h", "src/lumina_plasma.c", "src/lumina_cuda.cu", "tests/pop_djdn_selftest.c"]
+    "expected_extra": ["src/env_universe.h", "src/lumina_plasma.c", "src/lumina_cmfgen.c", "tests/pop_djdn_selftest.c"]
   },
   "branches": {
     "regimes": [[0.0, 0.0], [1.0, 1.0], [2.0, 2.0], [3.0, 3.0], [4.0, 4.0]],
@@ -186,9 +186,8 @@ sh24 코드: 게이트 미충족 ⟹ 0. 게이트 충족 시 |s−g|≤1 이면 
     {"path": "docs/PREREG_DET_DJDN_MVP_2026-09-19.md"},
     {"path": "CLAUDE.md"},
     {"path": "src/lumina_plasma.c", "flags_existing": ["parity_rate_se_ratio_checked", "compute_ion_populations_shell", "radeq_set_line_re_source", "g_lre_lambda_star", "radeq_set_tri_response", "coupled_newton_solve_all", "nlte_population_candidate_commit_bundle"], "flags_planned": ["LUMINA_POP_DJDN_FDHOLD"]},
-    {"path": "src/lumina_cuda.cu", "flags_existing": ["cmfgen_assemble", "cmfgen_solve_J", "radeq_set_line_re_source", "coupled_newton_solve_all"], "flags_planned": ["LUMINA_POP_DJDN_FDHOLD"]},
     {"path": "src/env_universe.h", "flags_existing": ["LUMINA_SIMUL_ION_DAMP", "LUMINA_CMFGEN_JDUMP", "LUMINA_CMFGEN_LAMBDA_TRI"], "flags_planned": ["LUMINA_POP_DJDN_FDHOLD"]},
-    {"path": "src/lumina_cmfgen.c", "flags_existing": ["cmfgen_solve_J", "cmfgen_assemble", "lambda_star", "tri_lo", "LUMINA_CMFGEN_JDUMP"]}
+    {"path": "src/lumina_cmfgen.c", "flags_existing": ["cmfgen_solve_J", "cmfgen_assemble", "lambda_star", "tri_lo", "LUMINA_CMFGEN_JDUMP"], "flags_planned": ["LUMINA_POP_DJDN_FDHOLD"]}
   ]
 }
 ```
@@ -199,4 +198,5 @@ sh24 코드: 게이트 미충족 ⟹ 0. 게이트 충족 시 |s−g|≤1 이면 
 2. **경량 사전감사(Opus 4.8 fresh, `claude-opus-4-8`, 개정25-d): PREAUDIT 통과·BLOCKING 0.** Q-GOAL 부합(measure-before-build 옳음 — B/C 직행은 형태 미지 Q-GOAL④ 위반; grok A 선택 타당)·**오프라인 불가 실측 확증**(대조군 388393 work/ 에 J장·JDUMP·λ*·tri_* 덤프·체크포인트 전무·census 스칼라 궤적만 → 반사실 맵 재평가 재런 필수). Q-LEAN 통과(hold census 16열 전건 소비·생산 census 무접촉·4게이트 실재 비중복[G-DRV 드롭]·2걸음 최소·4파일 삭제/통합 후보 0). 비차단 기재 3: ①**칸 미이동·3단째 진단(MVP→DRIVE→SPLIT)임을 판정문·user 보고에 명시** ②**ITER=6 권고**(ITER=4 는 G-SPLT |s−g|>1 창 위험) ③s_hold 단일점 분할 잔여 위험(상한 문제).
 3. **§6 결정(운전자·user)**: **ITER=6**(사전감사 권고·G-SPLT |s−g|>1 창이 epoch7 실측이라 ITER=4 는 위험) · 프로필·헤지=직전 동일(멀티파티션·cpus16) · **NT 부재**(비열 OFF 유지). ⚠**전략 재검토(user 2026-09-21 「승인」)**: 3단째 진단 우려에 ①(솔버/Path B)·②(EUV 펌프)·비열 세 축 오프라인 종합 — **② 는 표적 칸 못 움직임**(중간 셸 +0.01–0.02, 외곽 셸만; LAMP·JSUBST 오프라인 이중 기각) · **비열 기각**(CMFGEN toy06 VADAT `F [TRT_NON_TE]` = 비열 OFF → 발자국 규약상 Lumina pref=0; 퇴화 장부 「CMFGEN NT 포함 pref≈0.5」전제 폐기) · **①(SPLIT→Path B)가 표적 칸 지배분(~+0.7 f_II)의 확정 선**. 지름길 없음 확인 ⟹ SPLIT 진행 승인.
 4. **구현 1회차(Opus 4.8, `claude-opus-4-8`) — 3/4 파일 완료 + §3 배선 오류 «폐합 차단»**: plasma-side 서브스트레이트(재분배 N_tot 보존·hold census 16열 별도 파일·s/s_hold/s_nl 몫·restore·오케스트레이터 훅)·env(FDHOLD, COUNT 527)·selftest(46/46 PASS + 주입 FAIL 2종: 이웃 혼입⟹s_hold≠g·restore 생략⟹restore_ok=0) 완료. 생산 경로 무접촉·OFF byte-동일·새 커널 0·클램프 부재. **«폐합 차단» = §3 이 오케스트레이션(최대 epoch 재평가)을 `lumina_cuda.cu` 에 배정했으나 그 경로가 판정런(DET_TRANSACTIONAL=1)에서 죽은 코드**(cuda.cu:8073 cmfgen_run 후 return, 레거시 루프 바이패스). 실제 생산 루프=`cmfgen_run`(lumina_cmfgen.c:7921·8038-8148), 재평가 필요 `CMFGenState cs` 는 거기만 존재(plasma.c cs 미참조). DJDN-MVP §0(a)와 같은 계급의 계약 referent 오류(기계 게이트 미포착). ⟹ 오케스트레이션 파일 cuda.cu→cmfgen.c 로 **§3 개정(grok)** 후 재발주. plasma 서브스트레이트 재사용.
-5. (운전자 기입) §3 개정 · 구현 2회차 · 코드 간단 감사 / 재봉인·빌드·스테이징·제출 / 판독·판정 / 종료감사.
+5. **§3 개정(grok, Fable 대행)**: 오케스트레이션 파일 `src/lumina_cuda.cu`(죽은 경로)→`src/lumina_cmfgen.c`(`cmfgen_run` live 루프 8038-8148, cs 버퍼 존재). 3곳(§3 표 행·prereg-preflight expected_extra·references) OLD/NEW. 파일 4개 유지·게이트 재통과(prereg-preflight files=4·refs=8·referents·canonical rc=0). ⚠grok 출력 끝 hallucination 루프(「개정 완료」반복) 있었으나 첫 clean 버전만 적용. 모델 ID grok-4.6 자기보고.
+6. (운전자 기입) 구현 2회차(cmfgen.c 오케스트레이션·plasma 서브스트레이트 재사용) · 코드 간단 감사(grok) / 재봉인·빌드·스테이징·제출 / 판독·판정 / 종료감사.
