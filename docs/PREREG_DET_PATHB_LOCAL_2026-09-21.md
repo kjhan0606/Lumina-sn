@@ -1,6 +1,6 @@
 # 사전등록 — DET-PATHB-LOCAL: DRIVE 이득에 고정-S `∂J_fs/∂χ` 한 항을 더해 A2-10 뉴턴에 넣으면, 그 기여와 CONT 폭주 셸 착지가 이 창에서 어떻게 바뀌는가 (2026-09-21)
 
-기안 = **Fable 대행**(`grok-4.6`, user 2026-09-20 Fable 토큰 소진 이후 계약 기안 대행). 상태 = **기안 / 운전자 기계 게이트 4종 대기**. 실행 승인이 아니다. 개정 = **astra 교차감리 5건 반영**(user 2026-09-21 「수정된 LOCAL 진행·도함수=고정-S ∂J_fs/∂χ」).
+기안 = **Fable 대행**(`grok-4.6`, user 2026-09-20 Fable 토큰 소진 이후 계약 기안 대행). 상태 = **코드 감사 통과·봉인 접촉 가(astra 재감사 2026-09-21) — 재봉인·빌드·스테이징·판정런 대기(ITER=6)**. 두 사전감사·코드 감사(astra 대행) 전건 통과. 실행 승인이 아니다. 개정 = **astra 교차감리 5건 반영**(user 2026-09-21 「수정된 LOCAL 진행·도함수=고정-S ∂J_fs/∂χ」).
 근거 = `docs/PREREG_DET_PATHB_FULL_2026-09-21.md`(**폐기** — grok 물리·대수 사전감사 «폐합 차단» 7건, 특히 ⑩ 「형태-확실」반증; user 2026-09-21 결정 B 「접지된 작은 단 먼저」) · astra 교차감리(`gpt-6-astra`, Codex 계열, 재현 렌즈, 2026-09-21; FULL 정지 지지·「국소 실패⇒비국소」기각·도함수를 고정-S `∂J_fs/∂χ` 로 못박음) · `docs/VERDICT_DET_DJDN_DRIVE_2026-09-21.md`(직전 판정 정본: DRV-D, 대각 단독 불충분 **측정**·s−g; §3/§30 국소/비국소 분할 미주장) · `docs/PREREG_DET_DJDN_DRIVE_2026-09-20.md`(형식·이득·log-뉴턴 구조) · `docs/DESIGN_PATHB_LINEARIZATION_2026-09-19.md`(근인 배선·`do_var_cont.f` 발자국). **base = 대조군 = DRIVE 판정런 388393**(`/gpfs/kjhan/lumina/cmfgen_map/djdn_drive_20260920/run_h100a100`, log-뉴턴 대각 항 ON, ITER=6, 16 열 census, binary `7d42780346bf5d2c...`). 채널 OFF = 그 런의 대각만. 소스 기준 = 동결 트리 `/gpfs/kjhan/lumina/cmfgen_map/lteunmap_eps_20260917/source`(DRIVE 변경집합 + SPLIT-substrate OFF-게이트 포함, manifest 185 파일·repo 미이식). 최종목적 = MC 수송으로 CMFGEN 수준 SN Ia 스펙트럼 재현.
 
 ## 0. 기안자 검사 — 직전 결함 정정 (자기 «폐합 차단» 7건을 이 단이 없애는 방식)
@@ -271,6 +271,8 @@ x^{(k)} = 판정 셸 epoch k 마지막 행 x_star, k = 1 … K, K = ITER+1. Δ_k
    - **#10 «수리 요»(생산 함수 미검증)**: selftest `T:522,540,557,705` 가 **test-replica `formal_djdchi_ray_test`(C:8563-8589)** 를 부르고 **생산 `formal_djdchi_fs_S` 는 실행 안 함**(공유는 세그먼트 primitive 뿐). ⟹ 생산 핵 재설정·광선 가중·인덱싱이 표류해도 통과. 구현자 「생산 함수 실제 호출」주장 반증. grok 사전감사 record 2(c) 「복제 표류」경고가 실현. **수리**: selftest 를 생산 `formal_djdchi_fs_S` 직접 호출 fixture 로 연결 + 생산 버퍼(cs.J/Jacc/Lacc/λ*) 불변 실측 테스트 추가.
    - **#7 (도함수-클램프 정합)**: `C:2991 if(dtau<0)dtau=0` 은 **생산 형식해의 기하 τ-가드 충실 복제**(금지 클램프 아님 — 감사 조건 「무클램프」가 과광). 그러나 τ 클램프 영역에서 세그먼트 소스-도함수 `dsrc=(S−I_in)ds·δχ` 가 **비영**인데 생산 I_out 은 그 영역에서 χ-무관(τ=0)이라 ∂I_out/∂χ 소스항은 **0** 이어야 함 ⟹ τ<0 코너(χ<0/부호 불투명도 발화 시)에서 도함수 불일치. **수리**: 클램프 유지, 단 dtau 클램프 시 dsrc=0(τ 가 χ-무관); τ<0 fixture 로 도함수=0 검증.
    - ⟹ **구현 재발주(Opus 4.8) → 재감사.** 봉인 접촉 게이트 미개방.
+   - **구현 재발주(Opus 4.8, 2026-09-21)**: 수리 완료 — #10 = 생산 `formal_djdchi_fs_S` 직접 호출 fixture(P1 FD 대 생산 formal_solve_bin·P2 memcmp cs.J·λ* 불변, replica `formal_djdchi_ray_test` 대체)·#7 = `dsrc=clamped?0.0:...`(ex=1 유지·τ<0 도함수=0). **selftest 73/73 PASS**(두 수리 teeth: 생산 core-reset 파괴→P1 FAIL·클램프 zeroing 제거→1b·P3 FAIL, 복원). 운전자 확인: fix 는 lumina_cmfgen.c(18:02)·selftest(17:59)만 접촉·헤더 09-05 무접촉·files=5 유지.
+   - **astra 재감사(2026-09-21, `gpt-6-astra`)**: **#7·#10 닫힘·회귀 없음 ⟹ 봉인 접촉 가부 = «가».** #7(C:2999-3005 dsrc=0·ex=1·P3 생산 도함수=0∧생산 forward FD=0)·#10(C:8573-8584 wrapper 생산 함수 호출·T:669-707 P1 생산 walker FD·P2 실제 cs.J·λ* memcmp). fs_seg_eval 은 도함수 walker+hook 만(forward/ALI/Tlo-Tup 무전파). ⚠astra 캐비앳: 73/73 재실행·byte-diff 미수행(운전자 mtime·심볼 부재로 files=5 독립 확인). ⟹ **봉인 접촉 게이트 개방.**
 7. **재봉인·빌드·스테이징·제출**: 미집행.
 8. **착지·판독·판정**: 미집행.
 9. **종료감사(Opus 4.8 fresh)**: 미집행.
