@@ -282,7 +282,7 @@ x^{(k)} = 판정 셸 epoch k 마지막 행 x_star, k = 1 … K, K = ITER+1. Δ_k
    - ⚠**390846 FAILED(00:00:01, syn102) = `RUN_BUILD_IDENTITY_MISMATCH`**: 스테이징 시 바이너리 교체하며 `input/binary.sha256`·STAGE_IDENTITY `run_binary_sha256` 는 갱신했으나 **`input/run_build_identity.json` 의 `binary.sha256` 미갱신**(388393 DRIVE 값 `7d42780...` 잔존). 러너 line 94 게이트가 record.binary.sha256==actual==STAGE 셋 일치를 요구. **운전자 스테이징 교훈**: 바이너리 교체 = 3곳 동기(`binary.sha256`·STAGE `run_binary_sha256`·`run_build_identity.json` binary.{sha256,path,bytes}). **수리**: run_build_identity.json 을 build7 + 재봉인 source.sha256(185파일)로 재생성.
    - **재제출 run2 = job 391837**(21:55 KST, h100,a100). run1 은 `RUN_ATTEMPTED`(390846) 로 소진 ⟹ 새 루트 run2. 게이트 8종 사전확인 전건 OK(run_build_identity 셋 일치·binary==actual·exports 델타=+CHI·ITER triple 3·partition h100,a100·RUN_ATTEMPTED 무·driver_hygiene PASS·deck OK). ⟹ 착지 감시.
    - ⚠**G-ID 계약 문면 «기재»**: LOCAL G-ID 부재 목록에 `LUMINA_COUPLED_NEWTON` 이 있으나 388393 은 `COUPLED_NEWTON="0"`(off·상속). 「부재」는 「미enable(=0/off)」로 읽는다 — 델타는 오직 +CHI. 판정기 G-ID 는 델타(=+CHI)로 집행(리터럴 key-absent 아님).
-8. **착지·판독·판정**: 미집행.
+8. **착지·판독·판정(운전자, 2026-09-22)**: **완주 SUCCESS(391837, ~11.5h, a100 syn102, model_rc=0) → 분기 LOCAL-D.** 판정문 정본 = `docs/VERDICT_DET_PATHB_LOCAL_2026-09-22.md`. 판독기 `judge_local.py`(judge_drive.py 계보 + chi 8열·G-ASM·LOCAL 분기·κ_diag/κ_loc·NC1 실신호)·산출 `judge_output.json`. **게이트 전건 PASS**(G-RUN·G-ASM[sh24 max|a_dchi|=2.7e-3>0·합항등 0·census↔chi 0]·G-LND[분리 sh28 ep5=0.554·limiter 0위반]). **착지 0/5**. ★핵심 측정: 국소 ∂J/∂χ 채널 폭주 셸 sh24 집중(a_dchi 1.05e-3>a_ds 7.8e-4·이득 8.18→19.21)·**κ 1.775→1.305 감소(발산 완화)이나 >1** ⟹ 국소 채널 옳은 방향 기여하나 단독 불충분. 주장 상한 준수(「비국소 필요」로 확장 안 함·astra 정정).
 9. **종료감사(Opus 4.8 fresh)**: 미집행.
 
 ```prereg-preflight
