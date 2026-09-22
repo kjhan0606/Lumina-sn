@@ -28,6 +28,8 @@
 
 5. **연산자 형태를 발명하지 않는다.** tri 절단, N×N 결합, `coupled_newton_solve_all`, 새 Λ 연산자, 준위 권위 통합을 넣지 않는다. 결과 부호만 미지이며, 사용 연산자는 기존 `cmfgen_solve_J`로 고정한다.
 
+6. **astra 코드감사 #6 수리는 selftest의 생산 함수 직접 호출을 요구했다.** 이에 `cmfgen_xshell_production_selftest` 테스트 진입점 선언, `selftest_a2_10_radeq` selftest 빌드 타깃, `scripts/run_a2_10_selftest.py` 러너를 변경집합에 포함하여 5파일에서 8파일로 확장한다. 이 셋은 selftest 빌드 전용이다. 판정런 생산 GPU 바이너리 `lumina_cuda`는 `cuda_build7`의 직접 `nvcc` 명령으로 빌드되어 `Makefile`을 소비하지 않으므로 생산 nvcc 바이너리에 접촉하지 않는다. 이 확장은 user가 2026-09-22 승인했다.
+
 ## §1. 물리 계약 1개
 
 **계약 질문:**  
@@ -213,15 +215,20 @@ q_{\rm out} =
 | `src/lumina_plasma.c` | Γ 변환 계측 | 기존 `parity_gamma_phot_checked`/`nlte_bf_gamma_canonical` 계산을 재사용하는 explicit-field adapter; 생산 호출의 산술·정책 불변 |
 | `src/lumina_cmfgen.c` | 라이브 오케스트레이션 | `cmfgen_run`에서 epoch 6·7 상태 캡처, `NULL6`·`XSHELL` shadow solve, 요약·증거 writer; 생산 `cs`·commit 경로 무접촉 |
 | `tests/a2_10_radeq_selftest.c` | 직접시험·음성대조 | 상태 선택, 동일 초기장, sh24 freeze, canonical Γ 변환, fault-injection teeth |
+| `Makefile` | selftest 빌드 | `selftest_a2_10_radeq` 새 타깃만 추가; 생산 nvcc 빌드·기존 타깃 무변경 |
+| `src/lumina_cmfgen.h` | 테스트 API | `cmfgen_xshell_production_selftest` 테스트 진입점 선언만; **CMFGENState 필드 추가 금지 유지** |
+| `scripts/run_a2_10_selftest.py` | selftest 러너 | 신규, selftest 바이너리 실행·baseline+negative 검증 |
 
 ### 변경집합 끝
 
-`expected_extra`는 위 5파일과 정확히 같다.
+`expected_extra`는 위 8파일과 정확히 같다.
 
 변경 금지:
 
 - `src/lumina_cuda.cu`.
-- Makefile 및 새 `.cu`.
+- 새 `.cu`.
+- `Makefile`: 생산 nvcc 빌드 명령·기존 타깃 무변경(`selftest_a2_10_radeq` selftest 타깃만 추가 허용).
+- `src/lumina_cmfgen.h`: `CMFGENState` 필드·생산 시그니처 무변경(`cmfgen_xshell_production_selftest` 테스트 진입점 선언만 허용).
 - `formal_solve_bin` 전달식.
 - 대각 ALI 갱신식.
 - `cmfgen_commit_jnu`.
@@ -253,7 +260,7 @@ full J CSV, 셸별 49개 파일, 스펙트럼 사본은 만들지 않는다.
 - `LUMINA_CMFGEN_LAMBDA_TRI`, JDUMP, FROZEN_CHIETA, NT, FDHOLD 비활성.
 - `LUMINA_COUPLED_NEWTON=0`.
 - exports 델타 = `+LUMINA_XSHELL_RESPONSE=1` 하나.
-- binary·source manifest·runner의 세 신원 일치.
+- binary·source manifest·runner의 세 신원 일치; `source.sha256`의 `non-OK=changeset` 집합은 §3 변경집합 8파일과 정확히 일치.
 - runner는 live `cmfgen_run`을 실행하며 `lumina_cuda.cu` 레거시 루프를 계측점으로 사용하지 않음.
 
 ### G-RUN — 정상 생산 완주
@@ -480,7 +487,7 @@ XSHELL-A라면 “그 실측 셸외 방향이 음의 투영부호를 제공했�
   "changeset": {
     "table_heading": "### 변경집합 — DET-PATHB-XSHELL (표)",
     "table_end": "### 변경집합 끝",
-    "path_pattern": "(?:src|tests)/[A-Za-z0-9_/.]+\\.(?:c|h)",
+    "path_pattern": "(?:(?:src|tests)/[A-Za-z0-9_/.]+\\.(?:c|h)|Makefile|scripts/[A-Za-z0-9_/.]+\\.py)",
     "symbol": "LUMINA_XSHELL_RESPONSE",
     "roots": ["src", "tests"],
     "expected_extra": [
@@ -488,7 +495,10 @@ XSHELL-A라면 “그 실측 셸외 방향이 음의 투영부호를 제공했�
       "src/lumina.h",
       "src/lumina_cmfgen.c",
       "src/lumina_plasma.c",
-      "tests/a2_10_radeq_selftest.c"
+      "tests/a2_10_radeq_selftest.c",
+      "Makefile",
+      "src/lumina_cmfgen.h",
+      "scripts/run_a2_10_selftest.py"
     ]
   },
   "branches": {
@@ -536,6 +546,15 @@ XSHELL-A라면 “그 실측 셸외 방향이 음의 투영부호를 제공했�
     },
     {
       "path": "CLAUDE.md"
+    },
+    {
+      "path": "Makefile"
+    },
+    {
+      "path": "src/lumina_cmfgen.h"
+    },
+    {
+      "path": "scripts/run_a2_10_selftest.py"
     },
     {
       "path": "src/lumina_cmfgen.c",
