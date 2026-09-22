@@ -1,6 +1,6 @@
 # 사전등록 — DET-PATHB-LOCAL: DRIVE 이득에 고정-S `∂J_fs/∂χ` 한 항을 더해 A2-10 뉴턴에 넣으면, 그 기여와 CONT 폭주 셸 착지가 이 창에서 어떻게 바뀌는가 (2026-09-21)
 
-기안 = **Fable 대행**(`grok-4.6`, user 2026-09-20 Fable 토큰 소진 이후 계약 기안 대행). 상태 = **코드 감사 통과·봉인 접촉 가(astra 재감사 2026-09-21) — 재봉인·빌드·스테이징·판정런 대기(ITER=6)**. 두 사전감사·코드 감사(astra 대행) 전건 통과. 실행 승인이 아니다. 개정 = **astra 교차감리 5건 반영**(user 2026-09-21 「수정된 LOCAL 진행·도함수=고정-S ∂J_fs/∂χ」).
+기안 = **Fable 대행**(`grok-4.6`, user 2026-09-20 Fable 토큰 소진 이후 계약 기안 대행). 상태 = **★폐합(2026-09-22, LOCAL-D) — 판정런 391837 SUCCESS·판정 운전자·종료감사 astra(개정25-g) «폐합 차단»1 정정 후 폐합**. 두 사전감사·코드 감사(astra 대행) 전건 통과. 실행 승인이 아니다. 개정 = **astra 교차감리 5건 반영**(user 2026-09-21 「수정된 LOCAL 진행·도함수=고정-S ∂J_fs/∂χ」).
 근거 = `docs/PREREG_DET_PATHB_FULL_2026-09-21.md`(**폐기** — grok 물리·대수 사전감사 «폐합 차단» 7건, 특히 ⑩ 「형태-확실」반증; user 2026-09-21 결정 B 「접지된 작은 단 먼저」) · astra 교차감리(`gpt-6-astra`, Codex 계열, 재현 렌즈, 2026-09-21; FULL 정지 지지·「국소 실패⇒비국소」기각·도함수를 고정-S `∂J_fs/∂χ` 로 못박음) · `docs/VERDICT_DET_DJDN_DRIVE_2026-09-21.md`(직전 판정 정본: DRV-D, 대각 단독 불충분 **측정**·s−g; §3/§30 국소/비국소 분할 미주장) · `docs/PREREG_DET_DJDN_DRIVE_2026-09-20.md`(형식·이득·log-뉴턴 구조) · `docs/DESIGN_PATHB_LINEARIZATION_2026-09-19.md`(근인 배선·`do_var_cont.f` 발자국). **base = 대조군 = DRIVE 판정런 388393**(`/gpfs/kjhan/lumina/cmfgen_map/djdn_drive_20260920/run_h100a100`, log-뉴턴 대각 항 ON, ITER=6, 16 열 census, binary `7d42780346bf5d2c...`). 채널 OFF = 그 런의 대각만. 소스 기준 = 동결 트리 `/gpfs/kjhan/lumina/cmfgen_map/lteunmap_eps_20260917/source`(DRIVE 변경집합 + SPLIT-substrate OFF-게이트 포함, manifest 185 파일·repo 미이식). 최종목적 = MC 수송으로 CMFGEN 수준 SN Ia 스펙트럼 재현.
 
 ## 0. 기안자 검사 — 직전 결함 정정 (자기 «폐합 차단» 7건을 이 단이 없애는 방식)
@@ -283,7 +283,7 @@ x^{(k)} = 판정 셸 epoch k 마지막 행 x_star, k = 1 … K, K = ITER+1. Δ_k
    - **재제출 run2 = job 391837**(21:55 KST, h100,a100). run1 은 `RUN_ATTEMPTED`(390846) 로 소진 ⟹ 새 루트 run2. 게이트 8종 사전확인 전건 OK(run_build_identity 셋 일치·binary==actual·exports 델타=+CHI·ITER triple 3·partition h100,a100·RUN_ATTEMPTED 무·driver_hygiene PASS·deck OK). ⟹ 착지 감시.
    - ⚠**G-ID 계약 문면 «기재»**: LOCAL G-ID 부재 목록에 `LUMINA_COUPLED_NEWTON` 이 있으나 388393 은 `COUPLED_NEWTON="0"`(off·상속). 「부재」는 「미enable(=0/off)」로 읽는다 — 델타는 오직 +CHI. 판정기 G-ID 는 델타(=+CHI)로 집행(리터럴 key-absent 아님).
 8. **착지·판독·판정(운전자, 2026-09-22)**: **완주 SUCCESS(391837, ~11.5h, a100 syn102, model_rc=0) → 분기 LOCAL-D.** 판정문 정본 = `docs/VERDICT_DET_PATHB_LOCAL_2026-09-22.md`. 판독기 `judge_local.py`(judge_drive.py 계보 + chi 8열·G-ASM·LOCAL 분기·κ_diag/κ_loc·NC1 실신호)·산출 `judge_output.json`. **게이트 전건 PASS**(G-RUN·G-ASM[sh24 max|a_dchi|=2.7e-3>0·합항등 0·census↔chi 0]·G-LND[분리 sh28 ep5=0.554·limiter 0위반]). **착지 0/5**. ★핵심 측정: 국소 ∂J/∂χ 채널 폭주 셸 sh24 집중(a_dchi 1.05e-3>a_ds 7.8e-4·이득 8.18→19.21)·**κ 1.775→1.305 감소(발산 완화)이나 >1** ⟹ 국소 채널 옳은 방향 기여하나 단독 불충분. 주장 상한 준수(「비국소 필요」로 확장 안 함·astra 정정).
-9. **종료감사(Opus 4.8 fresh)**: 미집행.
+9. **종료감사(2026-09-22)**: **= astra**(개정25-g, `gpt-6-astra` — 20:00 후·판정런 착지 후, Opus 4.8 아님). 판정문 대상·독립. **재현 전건 일치**(판독기 재실행 완전 일치·게이트 PASS·분기 LOCAL-D·장부·binary sha·raw 소비 21행 문자열 일치). **«폐합 차단» 1 = 판정문 주장 상한 과대**(κ 1.775→1.305 를 「발산 완화·옳은 방향」으로 읽음): κ 감소는 g 증가의 대수적 산물이고 실제 |s−g| 12.735→23.769 **증가** ⟹ 증거 아님. ⟹ **판정문 §3/§4/§5 astra 처방 문면 정정**(동일-상태 진단량·|s−g| 증가 명시). 정정 후 폐합 자격(1회차 전건 반영). ⟹ **폐합.**
 
 ```prereg-preflight
 {
