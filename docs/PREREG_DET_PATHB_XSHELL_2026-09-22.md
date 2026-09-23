@@ -284,6 +284,11 @@ full J CSV, 셸별 49개 파일, 스펙트럼 사본은 만들지 않는다.
 - `XSHELL`의 모든 `s≠24` 튜플은 `C7` 해당 셸과 bit-동일.
 - `NULL6`과 `XSHELL`의 `J_init`, 경계, `T_inner`, ALI 반복수 해시 동일.
 - 새 clamp·floor·보간 적용 건수 0.
+- epoch 6·7 물질 상태(sh24 `T_e`, `n_e`, S II partition function)가 R7 물질 커밋 직후 각각 정확히 한 번 캡처됨(`xshell_capture_material`, epoch 당 `material_count==1`; 0회 또는 2회 이상이면 FAIL).
+- 캡처된 epoch 6 `T_e`, `n_e`, partition 이 모두 유한이고 partition `>0`.
+- 관측 `parity_gamma_phot_observed`(epoch 6·7, sh24, S II)가 둘 다 성공.
+- 관측 epoch 6 `T_e`·`n_e` 와 캡처 epoch 6 `T_e`·`n_e` 가 각각 §4 표준 상대오차 `≤1e-6`(`XSHELL_REL_TOL`) 이내. 이 두 항은 산술 허용오차 비교이며 bit-동일을 요구하지 않는다(§4 규정: 배열·해시만 bit-동일).
+- 위 항 중 하나라도 실패하면 stderr 에 `[XSHELL][G-CAP-DETAIL]` 한 줄(각 conjunct 값·관측/캡처 원시값·허용오차)을 남긴다.
 
 ### G-NULL — 유한 ALI 초기장 음성대조
 
@@ -481,6 +486,15 @@ XSHELL-A라면 “그 실측 셸외 방향이 음의 투영부호를 제공했�
     - 종료감사 모델 ID:
     - 재현 상태:
     - 최종 처분:
+
+11. **개정 1 — §G-CAP 캡처↔관측 열역학 conjunct 사후 등록**
+    - 기안: Fable fresh(`claude-fable-5-1`, 개정25-k), 2026-09-23, read-only 본문 반환.
+    - 성격: **이미 가동 중인 코드의 문서화**다. 추가된 conjunct 는 첫 빌드부터 `g_cap` 논리곱에 있었고 계약 본문에만 없었다. 게이트 판정식·분기 표·측정식(`ΔΓ_out`, `R_out`, `q_out`, `εΓ`)·허용오차(§4 `1e-6`)는 바꾸지 않는다.
+    - run1(job 397672) 실패 경위: 바로 이 conjunct(`cap_obsne`, epoch 6 `n_e`)에서 G-CAP FAIL → XSHELL-X. 원인 = 물질 캡처가 관측(`parity_gamma_phot_observed`)보다 material iteration 한 단계 앞선 상태를 읽음(관측 대 캡처 상대차 4.46e-5).
+    - 수리 요지: ① 캡처 호출을 R7 물질 커밋 직후(stamp 검사 뒤)로 정렬해 관측과 같은 공개 상태를 읽게 함 ② 비교를 원래의 byte-동일 memcmp 에서 1e-9 를 거쳐 §4 표준 상대오차 1e-6(`XSHELL_REL_TOL`)으로 정착. 수리 전 4.46e-5 는 1e-6 에서도 FAIL 이므로 허용오차 변경이 run1 실패를 통과로 바꾸는 것은 아니다.
+    - 감사 이력: Fable 코드감사 → Fable 재감사 → astra 재감사 통과.
+    - **적용 시점: 재런 job 398939 가동 후**의 사후 개정이다. 재런 결과를 보고 쓴 것이 아니라 가동 중 문서화이나, 판정문은 이 순서를 그대로 기재한다.
+    - 프리플라이트(`check_prereg_preflight`·`check_gate_referents`·`check_doc_canonical`): 운전자 집행, 미집행.
 
 ```prereg-preflight
 {
