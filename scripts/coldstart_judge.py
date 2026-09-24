@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""DET-COLDSTART judge — docs/PREREG_DET_COLDSTART_2026-09-24.md (rev 7).
+"""DET-COLDSTART-NT judge — docs/PREREG_DET_COLDSTART_NT_2026-09-24.md (rev 4), inheriting
+docs/PREREG_DET_COLDSTART_2026-09-24.md (rev 8) for every section the NT contract does not change.
 
 Modes (all fail-closed; exit 0 = the requested comparison PASSED):
   referents   : public toy06 19.480 d + geometry + base ion.csv iter3-5 -> coldstart_referents.csv, J rule
@@ -10,6 +11,7 @@ Modes (all fail-closed; exit 0 = the requested comparison PASSED):
   full        : G-ID, G-INJ, G-COLD, G-RUN (+PIN-FAIL), r table, map, branch, source table -> coldstart_result.json
   fixture     : build NC inputs (nc-inj copy dir, nc-hot synthetic ion.csv, nc-b ground x3 levels file)
   selftest-rules : the prereg-preflight branch rules against the registered adversarial fixtures
+  nt-only     : NT witness + sweep coverage + RESCALE-FALLBACK only (NC-NT)
 """
 import argparse, csv, glob, hashlib, json, math, os, re, shutil, struct, sys
 import numpy as np
@@ -20,7 +22,18 @@ J_CANDIDATES = list(range(9, 31))
 N_PIN = 2
 N_ITER = 6
 CHANGESET_C = ['src/lumina_plasma.c', 'src/lumina.h', 'src/env_universe.h', 'tests/a2_10_radeq_selftest.c']
-EXPORT_DELTA = {'LUMINA_INIT_IONFRAC_DIR', 'LUMINA_INIT_IONFRAC_PIN_ITERS'}
+CONTRACT, CONTRACT_REV = 'docs/PREREG_DET_COLDSTART_NT_2026-09-24.md', 4
+# NT §4 G-ID: exports delta vs 398939 = 4 added keys + 1 changed key, nothing else
+EXPORT_DELTA = {'LUMINA_INIT_IONFRAC_DIR', 'LUMINA_INIT_IONFRAC_PIN_ITERS', 'LUMINA_ION_NT', 'LUMINA_NT_FULL'}
+EXPORT_CHANGED = {'LUMINA_XSHELL_RESPONSE': '0'}
+EXPORT_REQUIRED = {'LUMINA_INIT_IONFRAC_PIN_ITERS': '2', 'LUMINA_ION_NT': '1', 'LUMINA_NT_FULL': '1',
+                   'LUMINA_XSHELL_RESPONSE': '0', 'LUMINA_ION_CHANNEL_DUMP': '1', 'LUMINA_POP_DJDN': '1',
+                   'LUMINA_POP_DJDN_CHI': '1'}
+EXPORT_ABSENT = ('LUMINA_FROZENIN', 'LUMINA_RADEQ_SIMUL')
+DEPOSITION_SHA256 = '847e80d17e8b1b583957a7a3eefb8f396ab697a13c0dde185f7a18cf7f344791'
+# NT §0-3: R_nt = pref * heating / (W_ION_EV * EV_TO_ERG), pref = 1.0 under LUMINA_NT_FULL (lumina_plasma.c:23771-23796)
+W_ION_EV = 35.0
+NT_PREF = 1.0
 # §5 referent (x_pub, x_hot, gap dex), author values — regenerated and compared at 3 significant figures
 REFERENT = {10: (.241, 15.4, 1.80), 11: (.181, 20.1, 2.05), 12: (.186, 5.27, 1.45), 13: (.197, 3.74, 1.28),
             14: (.210, 3.00, 1.15), 15: (.233, 2.50, 1.03), 19: (.349, 18.9, 1.73), 20: (.392, 24.8, 1.80),
@@ -292,8 +305,13 @@ def g_inj_b(djdn, refs):
 
 # ---------------------------------------------------------------- G-COLD
 def g_cold(ion0, ion1, refs):
+    return g_cold_files({0: ion0, 1: ion1}, refs)
+
+
+def g_cold_files(paths, refs):
+    """Same criterion as the inherited G-COLD; NT §4 (2) only narrows which iterations are required."""
     problems, table = [], {}
-    for k, path, gen in ((0, ion0, 3), (1, ion1, 4)):
+    for k, path, gen in ((k, paths[k], k + 3) for k in sorted(paths)):
         ion = read_ion(path)
         for s in J_REGISTERED:
             c, xp = ion[s], refs[s]['x_pub']
@@ -520,6 +538,92 @@ FATAL_R7 = re.compile(r'^\[R7\]\[FATAL\] lane=DET iter=(\d+) ')
 BLOCKED = re.compile(r'^\[(A2-INIT\]\[SEED|A2-10\]\[TRIAL)-BUNDLE-BLOCKED\].*\bsolve_stage=(\S+)')
 
 
+NE_CLOSURE = re.compile(r'^\[A2-07\]\[NE-CLOSURE\] commit=(\S+) generation=(\d+) iterations=(\d+)\b')
+FALLBACK = re.compile(r'^\[COLDSTART\]\[RESCALE-FALLBACK\]')
+
+
+def r_nt(deposition):
+    if sha256(deposition) != DEPOSITION_SHA256:
+        raise Fail(f'DEPOSITION_SHA {deposition}')
+    out = {}
+    for r in csv.DictReader(open(deposition)):
+        out[int(r['shell_id'])] = NT_PREF * float(r['heating_rate']) / (W_ION_EV * EV)
+    if sorted(out) != list(range(50)):
+        raise Fail(f'DEPOSITION_SHELLS {len(out)}')
+    return out
+
+
+def gen_sets(path, keys_problem, label):
+    """Z16 stage-1 sweep numbers per shell; a repeated (gen, shell) key is a problem."""
+    sets, seen = {}, set()
+    for r in csv.DictReader(open(path)):
+        if r['Z'] == '16' and r['stage'] == '1':
+            key = (int(r['gen']), int(r['shell']))
+            if key in seen:
+                keys_problem.append(f'{label} DUPLICATE_KEY gen={key[0]} shell={key[1]}')
+            seen.add(key)
+            sets.setdefault(key[1], set()).add(key[0])
+    return sets
+
+
+def nt_witness(channels, djdn, djdn_chi, deposition, lines, G, success):
+    """NT §4 G-RUN: NT identity on every recorded J-shell row, triple gen-set equality, Sigma lower bound,
+    no RESCALE-FALLBACK. Common to SUCCESS and failure paths; any problem sends the run to X."""
+    problems, info = [], {}
+    rnt = r_nt(deposition)
+    rows_per_shell, worst = {}, 0.0
+    for r in csv.DictReader(open(channels)):
+        if r['Z'] != '16' or r['stage'] != '1':
+            continue
+        s = int(r['shell'])
+        if s not in J_REGISTERED:
+            continue
+        rows_per_shell[s] = rows_per_shell.get(s, 0) + 1
+        g, ne, xe = float(r['gamma_nt']), float(r['n_e']), float(r['x_e'])
+        if not (g > 0 and ne > 0 and xe > 0):
+            problems.append(f'NT_ABSENT gen={r["gen"]} sh{s} gamma_nt={r["gamma_nt"]}')
+            continue
+        e = rel(g * ne / xe, rnt[s])
+        worst = max(worst, e)
+        if e > 1e-6:
+            problems.append(f'NT_IDENTITY gen={r["gen"]} sh{s} gamma_nt*n_e/x_e={g * ne / xe:.9g} R_nt={rnt[s]:.9g}')
+    for s in J_REGISTERED:
+        if rows_per_shell.get(s, 0) < 1:
+            problems.append(f'NT_NO_ROWS sh{s}')
+    info['nt_rows'] = sum(rows_per_shell.values())
+    info['nt_worst_rel'] = worst
+    ch = gen_sets(channels, problems, 'CHANNELS')
+    ref = ch.get(0)
+    if sorted(ch) != list(range(50)) or ref is None:
+        problems.append(f'CHANNELS_SHELLS {sorted(ch)[:5]}.. n={len(ch)}')
+        gmax = 0
+    else:
+        gmax = max(ref)
+        if ref != set(range(1, gmax + 1)):
+            problems.append(f'CHANNELS_GEN_NOT_CONTIGUOUS sh0 n={len(ref)} max={gmax}')
+        bad = [s for s in range(50) if ch[s] != ref]
+        if bad:
+            problems.append(f'CHANNELS_GEN_SETS_DIFFER shells={bad[:10]}')
+    for label, path in (('DJDN', djdn), ('DJDN_CHI', djdn_chi)):
+        other = gen_sets(path, problems, label)
+        bad = [s for s in range(50) if other.get(s) != ch.get(s)]
+        if bad:
+            problems.append(f'{label}_GEN_SETS_DIFFER_FROM_CHANNELS shells={bad[:10]}')
+    closures = [(int(m.group(2)), int(m.group(3))) for m in (NE_CLOSURE.match(l) for l in lines) if m]
+    gens = sorted(g for g, _ in closures)
+    sigma = sum(n for _, n in closures)
+    if gens != sorted(G):
+        problems.append(f'NE_CLOSURE_GENERATIONS {gens} != G {sorted(G)}')
+    need = sigma if success else sigma + 1
+    if gmax < need:
+        problems.append(f'SWEEP_BELOW_SIGMA G_max={gmax} < {need} (Sigma={sigma}, {"success" if success else "failure"} path)')
+    info.update({'G_max': gmax, 'sigma': sigma, 'G_max_minus_sigma': gmax - sigma})
+    nfb = sum(1 for l in lines if FALLBACK.match(l))
+    if nfb:
+        problems.append(f'RESCALE_FALLBACK lines={nfb}')
+    return problems, info
+
+
 def read_footer(path):
     out = {}
     for line in open(path):
@@ -545,7 +649,7 @@ def levels_file_check(path, gen, n_expect):
     return rows, bad
 
 
-def g_run(run_dir, work_dir, ion_dir, stderr_path, deck):
+def g_run(run_dir, work_dir, ion_dir, stderr_path, deck, deposition=None):
     problems = []
     footer = read_footer(os.path.join(run_dir, 'RUN_FOOTER.txt')) if os.path.isfile(os.path.join(run_dir, 'RUN_FOOTER.txt')) else {}
     lines = open(stderr_path, errors='replace').read().splitlines()
@@ -565,6 +669,17 @@ def g_run(run_dir, work_dir, ion_dir, stderr_path, deck):
         G, path = {2} | {i + 3 for i in range(k)}, 'R7_FATAL'
     else:
         return {'code': 'FAIL', 'problems': [f'TERMINAL_PATH footer={footer.get("terminal_state")} seed={len(seed_fatal)} r7={len(r7_fatal)}'], 'G': None}
+    # NT §4 G-RUN NT witness + coverage + FALLBACK: applied before any PIN-FAIL return (B5 order)
+    nt = {}
+    if deposition is not None:
+        try:
+            nt_problems, nt = nt_witness(os.path.join(work_dir, 'lumina_ion_channels.csv'),
+                                         os.path.join(work_dir, 'lumina_pop_djdn.csv'),
+                                         os.path.join(work_dir, 'lumina_pop_djdn_chi.csv'),
+                                         deposition, lines, G, success)
+        except (Fail, OSError, KeyError, ValueError) as e:
+            nt_problems = [f'NT_WITNESS {type(e).__name__}: {e}']
+        problems += nt_problems
     n_expect = (deck.n_levels[1] + deck.n_levels[2]) * 50
     files = {int(m.group(1)): p for p in glob.glob(os.path.join(work_dir, 'coldstart_levels_gen*.csv'))
              for m in [re.search(r'gen(\d+)\.csv$', p)] if m}
@@ -597,6 +712,7 @@ def g_run(run_dir, work_dir, ion_dir, stderr_path, deck):
         arm_bad = [f'line{i + 1}' for i, m in arms
                    if int(m.group(3)) != N_PIN or (m.group(2) == '1') != (int(m.group(1)) < int(m.group(3)))]
         return {'code': 'PASS' if not problems else 'FAIL', 'path': path, 'G': sorted(G), 'problems': problems, 'footer': footer,
+                'nt_witness': nt,
                 'arm_tags': {'n': len(arms), 'n_armed': sum(1 for _, m in arms if m.group(2) == '1'), 'inconsistent': arm_bad[:20]}}
     # MODEL_FAILED: PIN-FAIL identification (§4 (1)(2)(3)) — only if the G equality holds
     pin = []
@@ -612,7 +728,8 @@ def g_run(run_dir, work_dir, ion_dir, stderr_path, deck):
         if not stages or stages[-1] not in ('PAIR_SOLVE', 'CE_NONCONVERGED'):
             pin.append(f'SOLVE_STAGE {stages[-1:] or None}')
     code = 'PIN-FAIL' if not problems and not pin else 'FAIL'
-    return {'code': code, 'path': path, 'k': k, 'G': sorted(G), 'problems': problems + pin, 'footer': footer}
+    return {'code': code, 'path': path, 'k': k, 'G': sorted(G), 'problems': problems + pin, 'footer': footer,
+            'nt_witness': nt}
 
 
 # ---------------------------------------------------------------- G-ID
@@ -695,13 +812,21 @@ def g_id(a):
     norm = lambda v: v.replace(os.path.abspath(a.base), '<ROOT>').replace(os.path.abspath(a.run), '<ROOT>')
     added, removed = set(er) - set(eb), set(eb) - set(er)
     changed = {k for k in set(eb) & set(er) if norm(eb[k]) != norm(er[k])}
-    if added != EXPORT_DELTA or removed or changed:
+    if added != EXPORT_DELTA or removed or changed != set(EXPORT_CHANGED):
         problems.append(f'EXPORTS added={sorted(added)} removed={sorted(removed)} changed={sorted(changed)}')
-    if er.get('LUMINA_INIT_IONFRAC_PIN_ITERS') != str(N_PIN):
-        problems.append(f"PIN_ITERS={er.get('LUMINA_INIT_IONFRAC_PIN_ITERS')}")
-    for key, want in (('LUMINA_PURE_CMFGEN_ITER', str(N_ITER)), ('LUMINA_XSHELL_RESPONSE', '1')):
+    for key, want in list(EXPORT_REQUIRED.items()) + [('LUMINA_PURE_CMFGEN_ITER', str(N_ITER))]:
         if er.get(key) != want:
             problems.append(f'{key}={er.get(key)} want {want}')
+    for key in EXPORT_ABSENT:
+        if key in er:
+            problems.append(f'{key} present')
+    dep = er.get('LUMINA_DEPOSITION_FILE', '')
+    try:
+        info['deposition_sha256'] = sha256(dep)
+        if info['deposition_sha256'] != DEPOSITION_SHA256 or not os.path.abspath(dep).startswith(os.path.abspath(a.run)):
+            problems.append(f'DEPOSITION {dep} sha={info["deposition_sha256"][:12]}')
+    except OSError as e:
+        problems.append(f'DEPOSITION {e}')
     for key in ('LUMINA_NLTE_ION_LOCK', 'LUMINA_NLTE_LOCK_START_ITER', 'LUMINA_NLTE_PER_ION_RESCALE'):
         if er.get(key, '0') != eb.get(key, '0') or er.get(key, '0') not in ('0', ''):
             problems.append(f'{key}={er.get(key)}')
@@ -715,26 +840,45 @@ def g_id(a):
             problems.append(f'PUBLIC_COPY {name} {e}')
     rbi = a.run_build_identity or os.path.join(a.run, 'input/run_build_identity.json')
     bbi = a.base_build_identity or os.path.join(a.base, 'input/run_build_identity.json')
+    manifest_binary = None
     try:
         rb, bb = source_members(rbi), source_members(bbi)
+        manifest_binary = json.load(open(rbi)).get('binary', {}).get('sha256')
         diff = sorted(p for p in set(rb) | set(bb) if rb.get(p) != bb.get(p))
-        allowed = {p for p in diff if p in CHANGESET_C}
-        if set(diff) - allowed:
-            problems.append(f'SOURCE_DIFF_OUTSIDE_CHANGESET {sorted(set(diff) - allowed)}')
-        for p in sorted(allowed):
-            if rb.get(p) != sha256(os.path.join(a.frozen_tree, p)):
-                problems.append(f'SOURCE_NOT_TREE {p}')
+        # NT §4 B4: the diff must be exactly the changeset files (a subset or an empty diff fails)
+        if set(diff) != set(CHANGESET_C):
+            problems.append(f'SOURCE_DIFF {diff} != changeset {CHANGESET_C}')
+        # chain (a) approved = (b) build record = (c) manifest = (d) tree, for the changeset files
+        approved = dict(kv.split('=', 1) for kv in (a.approved_sha or '').split(',') if '=' in kv)
+        build_rec = read_manifest(os.path.join(a.run, 'input/source_sha_at_build.txt'))
+        if set(approved) != set(CHANGESET_C):
+            problems.append(f'APPROVED_SHA keys {sorted(approved)} != {CHANGESET_C}')
+        for p in CHANGESET_C:
+            vals = {'approved': approved.get(p), 'build': build_rec.get(p), 'manifest': rb.get(p),
+                    'tree': sha256(os.path.join(a.frozen_tree, p))}
+            if len(set(vals.values())) != 1 or None in vals.values():
+                problems.append(f'SOURCE_CHAIN {p} ' + ' '.join(f'{k}={(v or "-")[:12]}' for k, v in vals.items()))
+        # every manifest entry must come from the build record (copied, not re-hashed at staging)
+        miss = sorted(p for p in rb if build_rec.get(p) != rb[p])
+        if miss or set(build_rec) != set(rb):
+            problems.append(f'MANIFEST_NOT_BUILD_RECORD differ={miss[:5]} n_build={len(build_rec)} n_manifest={len(rb)}')
         info['source_diff'] = diff
-        info['build_identity'] = {'run': rbi, 'base': bbi, 'n_source_files': len(rb)}
+        info['build_identity'] = {'run': rbi, 'base': bbi, 'n_source_files': len(rb), 'n_build_record': len(build_rec)}
     except (Fail, OSError, KeyError, ValueError, TypeError) as e:
         problems.append(f'BUILD_IDENTITY {type(e).__name__}: {e}')
     footer = read_footer(os.path.join(a.run, 'RUN_FOOTER.txt')) if os.path.isfile(os.path.join(a.run, 'RUN_FOOTER.txt')) else {}
     info['binary_sha256'] = footer.get('binary_sha256')
     binp = os.path.join(a.run, 'input/lumina_cuda')
-    if os.path.isfile(binp):
-        info['binary_sha256_file'] = sha256(binp)
-        if footer.get('binary_sha256') and footer['binary_sha256'] != info['binary_sha256_file']:
-            problems.append('BINARY_SHA_FOOTER_MISMATCH')
+    # chain (e): build binary.sha256 copy = manifest binary = footer = executable
+    try:
+        build_bin = open(os.path.join(a.run, 'input/binary.sha256')).read().split()[0]
+    except (OSError, IndexError):
+        build_bin = None
+    chain = {'build': build_bin, 'manifest': manifest_binary, 'footer': footer.get('binary_sha256'),
+             'file': sha256(binp) if os.path.isfile(binp) else None}
+    info['binary_chain'] = chain
+    if len(set(chain.values())) != 1 or None in chain.values():
+        problems.append('BINARY_CHAIN ' + ' '.join(f'{k}={(v or "-")[:12]}' for k, v in chain.items()))
     if not info['binary_sha256']:
         problems.append('BINARY_SHA_NOT_RECORDED')
     if any('h200' in v.lower() for v in footer.values()):
@@ -809,32 +953,56 @@ def fixture(a):
 
 # ---------------------------------------------------------------- full
 def full(a):
-    res = {'contract': 'docs/PREREG_DET_COLDSTART_2026-09-24.md', 'rev': 7, 'inputs': {}}
+    res = {'contract': CONTRACT, 'rev': CONTRACT_REV, 'inputs': {}}
     refs = read_referents(a.referents)
     res['inputs']['referents_sha256'] = sha256(a.referents)
+    res['inputs']['deposition'] = {'path': a.deposition, 'sha256': sha256(a.deposition)}
     deck = Deck(os.path.join(a.run, 'input/model'))
     gates = {}
     gates['G-ID'] = g_id(a)
-    gates['G-RUN'] = g_run(a.run, a.work, a.ion_dir, a.stderr, deck)
+    gates['G-RUN'] = g_run(a.run, a.work, a.ion_dir, a.stderr, deck, a.deposition)
     pin_fail = gates['G-RUN']['code'] == 'PIN-FAIL'
     applied = os.path.join(a.work, 'lumina_init_ionfrac_applied.csv')
     djdn = os.path.join(a.work, 'lumina_pop_djdn.csv')
-    for name, fn in (('G-INJ(a)', lambda: g_inj_a(applied, a.public_dir, a.geometry)),
-                     ('G-INJ(b)', lambda: g_inj_b(djdn, refs)),
-                     ('G-COLD', lambda: g_cold(ion_path(a.ion_dir, 0), ion_path(a.ion_dir, 1), refs))):
+    # NT §4 (2) path table: which injection gates are required (missing = X), evaluated, or not applicable
+    path, k = gates['G-RUN'].get('path'), gates['G-RUN'].get('k')
+    if not pin_fail:
+        plan = {'G-INJ(a)': 'required', 'G-INJ(b)': 'required', 'G-COLD': 'required'}
+        cold_paths = {0: ion_path(a.ion_dir, 0), 1: ion_path(a.ion_dir, 1)} if gates['G-RUN']['code'] == 'PASS' else None
+    elif path == 'SEED_FATAL':
+        has_e2 = os.path.isfile(djdn) and any(int(r['epoch']) == 2 for r in csv.DictReader(open(djdn)))
+        plan = {'G-INJ(a)': 'if_present' if os.path.isfile(applied) else 'not_applicable',
+                'G-INJ(b)': 'if_present' if has_e2 else 'not_applicable', 'G-COLD': 'not_applicable'}
+        cold_paths = None
+    elif k == 0:
+        plan = {'G-INJ(a)': 'required', 'G-INJ(b)': 'required', 'G-COLD': 'not_applicable'}
+        cold_paths = None
+    else:
+        plan = {'G-INJ(a)': 'required', 'G-INJ(b)': 'required', 'G-COLD': 'required'}
+        cold_paths = {i: os.path.join(a.ion_dir, f'physics_DET_iter{i:04d}.ion.csv') for i in range(min(k, N_PIN))}
+    fns = {'G-INJ(a)': lambda: g_inj_a(applied, a.public_dir, a.geometry),
+           'G-INJ(b)': lambda: g_inj_b(djdn, refs),
+           'G-COLD': lambda: g_cold_files(cold_paths, refs) if cold_paths else g_cold(ion_path(a.ion_dir, 0), ion_path(a.ion_dir, 1), refs)}
+    for name, how in plan.items():
+        if how == 'not_applicable':
+            gates[name] = {'pass': None, 'status': 'NOT_EVALUATED', 'problems': []}
+            continue
         try:
-            gates[name] = fn()
-        except (Fail, OSError, KeyError, ValueError) as e:
-            gates[name] = {'pass': False, 'problems': [f'{type(e).__name__}: {e}']}
+            gates[name] = fns[name]() | {'status': 'EVALUATED'}
+        except (Fail, OSError, KeyError, ValueError, StopIteration) as e:
+            gates[name] = {'pass': False, 'status': 'MISSING_OR_ERROR', 'problems': [f'{type(e).__name__}: {e}']}
+    res['injection_plan'] = plan
     for f in (applied, djdn):
         if os.path.isfile(f):
             res['inputs'][os.path.basename(f)] = sha256(f)
     id_fail = not gates['G-ID']['pass']
+    inj_fail = any(gates[g]['pass'] is False for g in ('G-INJ(a)', 'G-INJ(b)', 'G-COLD'))
     if pin_fail:
-        gate_fail = id_fail
+        gate_fail = id_fail or inj_fail
     else:
-        gate_fail = id_fail or gates['G-RUN']['code'] != 'PASS' or not all(
-            gates[g]['pass'] for g in ('G-INJ(a)', 'G-INJ(b)', 'G-COLD'))
+        gate_fail = id_fail or gates['G-RUN']['code'] != 'PASS' or inj_fail
+    res['pin_fail_label'] = None if not pin_fail else (
+        'INJECTION_UNVERIFIED' if path == 'SEED_FATAL' else 'VERIFIED_COLD_WITHIN_TABLE')
     cls, rt = {}, {}
     if not pin_fail and gates['G-RUN']['code'] == 'PASS':
         rt = r_table(a.ion_dir, refs)
@@ -843,6 +1011,12 @@ def full(a):
     res['r_table'] = rt
     res['shell_map'] = cls
     res['branch'] = branch(gate_fail, pin_fail, cls)
+    # NT §5 DRIFT sub-reading (position statement only, not a branch)
+    if res['branch'] == 'DRIFT':
+        pos = {s: [math.log10(rt[s][kk]['x'] / refs[s]['x_pub']) for kk in (3, 4, 5)] for s in rt}
+        res['cold_above'] = all(rt[s][kk]['r'] <= 1 / 3 and 0 <= pos[s][i] <= 1.0
+                                for s in rt for i, kk in enumerate((3, 4, 5)))
+        res['cold_above_log10_x_over_xpub'] = pos
     # §5 source witness = interpretation layer, not a gate: a Fail is recorded per cell and never stops the verdict
     src = {}
     for g in range(2, 9):
@@ -865,7 +1039,9 @@ def full(a):
                                    else 'HOT_SOURCE' if v['rho'] > 1 else 'EQUAL') for s, v in src[4].items()}
     with open(a.out, 'x') as f:
         json.dump(res, f, indent=1, default=float)
-    return {'branch': res['branch'], 'gates': {k: (v.get('code') or ('PASS' if v.get('pass') else 'FAIL')) for k, v in gates.items()}}
+    return {'branch': res['branch'], 'cold_above': res.get('cold_above'), 'pin_fail_label': res['pin_fail_label'],
+            'gates': {k: (v.get('code') or ('NOT_EVALUATED' if v.get('pass') is None else 'PASS' if v['pass'] else 'FAIL'))
+                      for k, v in gates.items()}}
 
 
 def main():
@@ -889,8 +1065,12 @@ def main():
     q.add_argument('--sealed', nargs='*', default=[], help='extra run-relative sealed inputs beyond deck/sigma/topion/fixed_te')
     q.add_argument('--run-build-identity', help='default <run>/input/run_build_identity.json')
     q.add_argument('--base-build-identity', help='default <base>/input/run_build_identity.json')
+    q.add_argument('--approved-sha', required=True, help='path=sha,... for the 4 changeset files (code-audit record)')
+    q.add_argument('--deposition', required=True, help='sealed deposition file used for R_nt (run input copy)')
+    q = sub.add_parser('nt-only')
+    q.add_argument('channels'); q.add_argument('djdn'); q.add_argument('djdn_chi'); q.add_argument('deposition'); q.add_argument('stderr')
     argv = sys.argv[1:]
-    if argv and argv[0] in ('--classify-only', '--b-only'):
+    if argv and argv[0] in ('--classify-only', '--b-only', '--nt-only'):
         argv[0] = argv[0][2:]
     a = p.parse_args(argv)
     try:
@@ -925,6 +1105,21 @@ def main():
             r = fixture(a) | {'pass': True}
         elif a.mode == 'selftest-rules':
             r = selftest_rules()
+        elif a.mode == 'nt-only':
+            lines = open(a.stderr, errors='replace').read().splitlines()
+            seed = any(FATAL_SEED.match(l) for l in lines)
+            r7 = [int(FATAL_R7.match(l).group(1)) for l in lines if FATAL_R7.match(l)]
+            if seed and not r7:
+                G, success = set(), False
+            elif r7 and not seed and len(r7) == 1:
+                G, success = {2} | {i + 3 for i in range(r7[0])}, False
+            elif not seed and not r7:
+                G, success = set(range(2, 9)), True
+            else:
+                raise Fail(f'TERMINAL_PATH seed={seed} r7={r7}')
+            problems, info = nt_witness(a.channels, a.djdn, a.djdn_chi, a.deposition, lines, G, success)
+            r = {'pass': not problems, 'path': 'SUCCESS' if success else 'FAILURE', 'G': sorted(G),
+                 'problems': problems[:20], 'n_problems': len(problems), 'info': info}
         elif a.mode == 'full':
             r = full(a)
             r['pass'] = True
