@@ -1,4 +1,4 @@
-# READOUT — 2단계: λ<2000 Å 장의 원천 — 두꺼운 선 소스 함수의 Λ-정체 (2026-09-25, 런 0회)
+# READOUT — 2단계: λ<2000 Å 장의 원천 — 두꺼운 선 소스 함수의 Λ-정체 (2026-09-25, 런 0회) · 확증 불가(1회차) — 후속 판독 필요
 
 - 선행: `docs/READOUT_CAUSE1_SII_IONIZATION_CHANNEL_2026-09-25.md`(확증: S II 과이온화의 직접 율 기여 = 명시 들뜬 준위 × λ<2000 Å 장). user 순서 「1→2→3, 원인이 밝혀지면 확증 후 다음」.
 - 판독자: 운전자. 입력(읽기 전용): run2 `/gpfs/kjhan/lumina/cmfgen_map/coldstart_20260924/run2`, 398939 `/gpfs/kjhan/lumina/cmfgen_map/pathb_xshell_20260922/run2`, 동결 트리 `/gpfs/kjhan/lumina/cmfgen_map/lteunmap_eps_20260917/source/src`. 스크립트·산출 `/gpfs/kjhan/lumina/cmfgen_map/coldstart_20260924/cause2/`(source_bands · source_bands_iters · fuv_lines_beta · lambda_stall — .py/.txt).
@@ -37,3 +37,10 @@ run2 준위 증인(S II·III 전 준위, 커밋 gen 2–8), S II/III FUV 선 2,0
 - **말하는 것**: sh15·24 의 λ<2000 Å 장을 채우는 FUV 선 중 두꺼운 선(불투명도의 39–54 %)은 소스 함수가 반복 사이에 고정된다(Λ-정체) — 코드의 bb 율이 β/ALI 없이 자기 방출 포함 J̄ 를 쓰기 때문과 정합. 고정값이 B_ν(T_e) 의 2–3 배(초열적)라 FUV 장을 열적 이상으로 떠받치고, 1단계에서 확증한 들뜬 준위 이온화 채널의 장이 된다. 이 고정은 S 의 이온 상태 변화에 반응하지 않는다 ⟹ 차가운 출발이 한 반복에 버려지는 기전의 장 쪽 원천 후보.
 - **말하지 않는 것**: gen 2 → 3 의 1 → 2–3 점프 기전(첫 J 해가 무엇을 가져왔는가) · 고정값이 초열적인 이유(재결합 폭포·선 겹침·초기 장) · IGE 셸(sh ≤ 15 의 Fe/Co/Ni)·IV+ unmapped 선의 몫 · CMFGEN 의 실제 선 소스 · ALI 를 넣으면 어디로 수렴하는가(시험 필요) · Si II·III 선의 반복 궤적(준위 증인은 S 만).
 - 다음(확증 후): 3단계 전에 이 원천을 제거·검증하는 수리안 — bb 율의 ALI/Sobolev 순 복사 괄호(net radiative bracket)·선형화 — 을 사전등록으로 설계(CMFGEN 발자국: 선형화·ALI).
+
+## 6. 확증 감사 1회차 (2026-09-25)
+
+- astra(`cause2/audit_astra_out.txt`) «확증 차단» 2 / grok(`cause2/audit_grok_out.json`) «확증 차단» 1 — 둘 다 「원천(Λ-정체) 확증 불가」.
+- **선 것**: 생산 선 J̄ = β·J_cont + (1−β)·S_old(line_net_rate.c:298, CMFGEN_NONOVERLAP_SOBOLEV) — 자기항 포함, ALI 전처리 없음 ⟹ 두꺼운 선의 Λ-반복 구조 확인(astra). 동일 선 집합 추적: sh15 지속 두꺼운 42 선 평균 변화 ~0.58 %, sh24 지속 14 선 3.19 → 3.18(astra 재계산). 충돌·LTE·superlevel 대안 배제(C_ul/A_ul ≤ 2.7e-6; 끌개 S/B → 1 과 불일치; 두꺼운 선 양 끝 준위 < 100). 수렴 반복 수 ~1/β = 10²–10³(grok).
+- **철회·정정**: (1) §4 「두꺼운 선 1 % 고정·해제에 무반응」은 반복마다 τ 로 계급을 다시 나눈 평균이다(w 43 → 16 = 선 43 → 16 개 구성 변화) — 동일 선 추적에서 sh24 S III 967.805 Å(line 454883) 는 gen 4 → 5 에 S/B 3.41 → 2.35(−31 %) ⟹ 「일부 전이의 지속성」으로 좁힘. (2) §5 「고정값이 FUV 장을 열적 이상으로 떠받쳐 1단계 채널의 장이 된다」 철회 — 해당 대역 J/B 는 0.25–0.78(< 1); 두꺼운 핵 광자는 β 만 탈출; 공개 η 는 이미 n_u A β 형(emissivity_publication.c:52); sh24 최대 기여 대역 <912 Å(bf 흡수 100 %)는 이번 900–2000 Å 선 분석 밖; radiation gen 3 대 population gen 4 의 세대 불일치.
+- **남은 요구(확증 조건)**: 동일 세대·동일 선 집합의 **탈출 방출**이 들뜬 준위 광이온화 대역의 J 에 얼마만큼 들어가는지의 연결(선 기여 × σ_l(ν) 대역 가중), <912 Å 포함.
