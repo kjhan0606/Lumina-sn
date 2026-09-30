@@ -13,13 +13,15 @@
 - **자체시험 뒤 판정런은 한 번이다.** C1 입력·설정에 신규 env 한 키만 더한다. 효과 문턱은 사전에 고정하고 방향은 등록하지 않는다.
 - **선 응답의 대조자료 공백이 있다.** C1에는 요청 셸·이온의 J_c·J̄·a_l 원장이 없다. 새 런에서는 직접 기록할 수 있지만, C1 대비 변화까지 기존 자료로 완성할 수는 없다. 아래 결정 항목을 숨기거나 bin J로 대체하지 않는다.
 
-### 운전자가 user에게 확인할 결정
+### user 확정 결정 (2026-09-30)
 
 **D-LINE — 선 응답의 비교 범위.**
 
-제안하는 최소 집행안은 C1 대비 인구·bin 창 J/B·방출 스펙트럼 변화와 함께, **W5 런 내부의 같은 선에 대한 반복별 J_c·J̄·a_l 변화**를 기록한다. C1 대비 선 응답은 `BASE_LINE_FIELD_UNAVAILABLE`로 남긴다.
+user 결정(2026-09-30)에 따라 D-LINE은 **최소안으로 확정**한다. C1 대비 인구·bin 창 J/B·방출 스펙트럼 변화와 함께, **W5 런 내부의 같은 선에 대한 반복별 J_c·J̄·a_l 변화**를 기록한다. C1 대비 선 응답은 `BASE_LINE_FIELD_UNAVAILABLE`로 남기며, 이 공백은 확정된 최소안의 미충족 요구나 판정런 보류 사유가 아니다.
 
-user가 **C1 대비 J_c·J̄·a_l 변화도 필수**라고 결정하면, 정확한 C1 생산자 물질·장 복원 또는 추가 대조 계산의 범위·자원을 별도로 정해야 한다. 이는 현재의 판정런 한 번에 조용히 포함하지 않는다. 이 선택 전에는 선 판정량 요구를 충족했다고 표시하지 않으며, **판정런 제출은 보류**한다. 코드 설계·오프라인 자체시험 준비는 이 결정과 독립적으로 구체화할 수 있다.
+D-LINE 결정 전의 **판정런 제출 보류는 해제**한다. §4의 기존 게이트와 자체시험 후 판정런 1회라는 순서는 유지한다.
+
+**W5-NONE 시 조건부 후속: OFF 리플레이 INIT+iter0 고정-물질 선 대조(user 결정).** 필요성이 결과에서 확인되면 별도 user 결정으로 범위·자원·계측 방법을 확정한다. Fable의 약 3시간 추정은 C1과 같은 GPU 두 장을 사용하는 경과시간의 자릿수 추정이며, GPU 시간 합계로는 약 6 GPU·h다. 이번 판정런 자원에 포함하거나 자동 집행하지 않는다. 후속 대조에서는 ON/OFF가 같은 물질을 소비했음을 확인하고, 일반 Sobolev 경로에서 β·L_l이 같은 경우에만 §2.5의 고정-물질 응답식을 적용한다. INIT는 Gaussian 경로로 별도 비교한다. MGPU 결과는 byte 동일성이 아니라 오차상한·허용오차로 비교하며, 현재 OFF 무출력 계약을 바꿀 계측도 후속 범위에 명시한다.
 
 그 밖에 W5 단일 변경, `FINE_BF_OPAC` 제외, FIXED_TE 유지, h200 금지는 이미 주어진 결정이므로 재승인을 요구하지 않는다.
 
@@ -125,7 +127,7 @@ I(\chi^{ff}B)\ne I(\chi^{ff})B(\nu_f)
 
 신규 gate가 ON일 때만 bin 조립기의 기존 지역 변수로 \(E_b\)를 저장한다. `S_fixed*chi_tot`에서 선·침적 항을 빼서 역산하지 않는다.
 
-아래는 구현해야 할 대입식이다. `w5_cont_eta`는 bin 셀별 임시 배열이고, `w5_cont_on`은 §2.4의 gate다.
+아래는 구현해야 할 대입식이다. `w5_cont_eta`는 해당 `CMFGENState`의 `w5_cont_eta` 필드를 가리키는 지역 별칭이며, bin 저장에서는 `cs->w5_cont_eta`, fine 소비에서는 같은 상태의 `csb->w5_cont_eta`다. `w5_cont_on`은 §2.4의 gate다.
 
 ```c
 /* bin 조립기: 기존 소비 변수와 같은 호출·물질·주파수 */
@@ -194,12 +196,12 @@ S_{cont,f}=E_f/C_f
 
 ### 2.3 수명·호환 범위·초기 경로
 
-임시 원장은 파일 정적 소유 구조로 두어 헤더·공개 ABI 변경을 피한다. 기록에는 소유 `CMFGENState` 포인터, NS/NB, 격자 값, 조립 호출 순번과 유효 상태를 둔다.
+bin 방출률 원장은 `CMFGENState`의 `double *w5_cont_eta` 필드 하나로 둔다. 같은 상태가 소유하는 `chi_abs`·`S_fixed`와 수명을 결합하므로 파일 정적 소유 포인터·별도 격자 사본·조립 순번·유효 플래그를 중복 관리하지 않는다. 이 안을 택하는 근거는 생산 호출에서 bin 조립과 fine 소비 사이 물질 갱신이 없고, 분모와 분자가 같은 상태에 속하게 되기 때문이다. `lumina_cmfgen.h`를 변경집합에 추가하고, 구조체를 참조하는 CPU·CUDA translation unit을 모두 재빌드한다.
 
-- 매 조립 진입에서 무효화하고 해당 조립이 성공한 뒤 유효화한다.
-- 같은 `csb`의 fine 호출에서만 소비한다. bin 조립과 fine 사이 물질 갱신이 없는 기존 호출 순서를 유지한다.
-- 크기·격자·소유 호출 불일치, 할당 실패, 비유한 방출률은 기존 실패 반환 사슬로 종료한다.
-- 모든 정상·오류 종료에서 해제한다. 이전 호출 원장의 재사용이나 B로의 폴백은 없다.
+- 필드는 상태 초기화 시 NULL이다. ON 조립 진입에서 이전 원장을 해제·NULL화하고 현재 `n_shells*n_bins` 크기로 할당하여 전 셀을 채운다. 실패 시 해제·NULL화하고 기존 실패 반환 사슬로 종료한다.
+- 성공한 조립 뒤 같은 `csb`의 fine 호출에서만 소비한다. bin 조립과 fine 사이 물질 갱신이 없는 기존 호출 순서를 유지한다.
+- fine 소비 전에는 원장 포인터 존재와 상태의 NS/NB·cells 정합을 확인한다. 별도 격자 값·호출 순번 신원 검사는 만들지 않는다. 할당 실패·비유한 방출률·크기 오류는 기존 실패 반환 사슬로 종료한다.
+- 상태의 정상·오류 정리 경로에서 `S_fixed`와 함께 해제한다. 이전 조립 원장 재사용이나 B 폴백은 없다. 파일 정적 원장 교차 사용을 겨냥한 NC-STALE은 삭제하며, 실제 저장→보간 시험과 상태 초기화·정리의 직접 확인은 G-SELF 안에 유지한다.
 - ON은 C1의 `CONT_NLTE_SOURCE=1`, `BF_MILNE=2`, `FINE_BF_OPAC=0/미설정`, EPAY=0 소비 경로를 대상으로 한다. 방출 재가중이나 다른 opacity 정제가 개입하는 조합은 지원한 것으로 가장하지 않는다.
 - INIT Gaussian과 일반 Sobolev 모두 연속 항을 교체한다. INIT의 선 η는 그대로 더한다. 일반 Sobolev의 선 η 적재가 비활성이라는 기존 경로도 유지한다.
 - INIT의 Gaussian 프로파일 평균을 Sobolev \(J_c\)·\(\beta\)·\(a_l\)로 표시하지 않는다.
@@ -222,9 +224,11 @@ Planck는 현재 `cm_planck`의 `expm1`/대수적으로 동등한 Wien 표현을
 
 ### 2.5 최소 선 계측
 
-기존 SPRODUCER 전체 배열을 활성화하면 env 델타와 메모리가 늘어나므로 사용하지 않는다. 이미 계산되는 `line_value[s]`, `material`, `radiation`에서 선택한 행만 기록한다.
+기존 SPRODUCER 전체 배열을 활성화하면 env 델타와 메모리가 늘어나므로 사용하지 않는다. C 기록기는 Z∈{14,16,20}·ion∈{1,2}·shell∈{10,15,19,24,30}인 mapped 선을 전량 기록하며, C1 인구·상위 네 개 선·선 선택 manifest를 런타임 입력으로 받지 않는다. 기존 fine 지원 범위 안에서는 이미 계산되는 `line_value[s]`, `material`, `radiation`을 기록한다. 지원 범위 밖 mapped 선은 신원과 `OUTSIDE_FINE_SUPPORT` 상태만 기록하고 복사량을 만들지 않는다. 이 기록을 위해 fine 지원 범위나 계산 경로를 넓히지 않는다.
 
-선 집합은 **런 전에 C1로 고정**한다.
+Z·ion의 소스는 `S/lumina.h:436–437`의 `AtomicData.line_atomic_number`·`line_ion_number`이며, ion은 0=중성, 1=II, 2=III다. `S/lumina_atomic.c:1331–1345`가 C1 봉인 `C/input/model/line_list.csv`의 `atomic_number`·`ion_number` 열을 읽는다. `OpacityState.line_list_nu`도 같은 파일의 행 순서를 사용한다(`:1064–1065`). mapped 여부는 `S/lumina_plasma.c:18118–18126`의 `nlte_line_map`에 따른 이온 대응이며, 양 끝 준위 존재·양의 f_lu 조건은 아래 판독기 표본 선택에 적용한다.
+
+판독기가 사용할 표본 선 집합은 다음 규칙으로 **런 전에 C1만 사용해 고정**하고 manifest로 보존한다. manifest는 판독기 전용 referent이며 C 실행 파일에 전달하지 않는다.
 
 - 셸: 10, 15, 19, 24, 30.
 - 이온: S II/III, Si II/III, Ca II/III.
@@ -234,7 +238,53 @@ Planck는 현재 `cm_planck`의 `expm1`/대수적으로 동등한 Wien 표현을
 
 이 선택은 흡수 강도의 표본 선정 지표이며, 광이온화 기여도나 전체 선 집합의 대표성 보증이 아니다.
 
-신설 `w5_lines.csv`에는 호출·연산자·복사 생산 세대·물질 세대·shell·line_id·Z·ion·ν·J_c·J_c 오차상한·β·국소항 L_l·J̄·J̄ 오차상한·τ_eff·SRCE_CHK 상태를 기록한다. \(a_l\)은 판독기에서 계산한다. INIT에서는 Sobolev 전용 열을 NOT_APPLICABLE로 둔다.
+[개정 1 저자 실행: 봉인 CSV read-only 집계] C1 전체 선은 2,588,798개다. C1 로그의 NLTE 대상 목록과 생산 매핑 코드를 확인한 뒤 집계한 6이온 선 수는 다음과 같다. 별도 과거 fine 덤프의 선 수를 C1 선 수로 사용하지 않는다.
+
+| Z·ion | mapped 전량 | 기존 fine 지원 100–20000 Å 안 |
+|---|---:|---:|
+| 14·1 (Si II) | 1,840 | 1,169 |
+| 14·2 (Si III) | 1,639 | 1,418 |
+| 16·1 (S II) | 8,506 | 6,767 |
+| 16·2 (S III) | 4,534 | 3,953 |
+| 20·1 (Ca II) | 701 | 443 |
+| 20·2 (Ca III) | 3,497 | 2,877 |
+| 합계 | 20,717 | 16,627 |
+
+지원 범위 안 16,627개는 모두 양 끝 준위가 존재하고 f_lu>0임도 확인했다. INIT+iter0–5의 7패스·5셸 기준 전량 원장은 725,095행이며, 그중 지원 범위 안은 581,945행이다. 구현 전 저장 예산은 행당 512 B를 가정한 약 0.37 GB(354 MiB)다. 이는 파일 크기 실측이나 행 절단 상한이 아니며, 실제 크기는 출력 형식·패스 수와 함께 집행 기록에 남긴다.
+
+집계 재현 명령(파일 조회·판독만; 출력 파일 없음):
+
+```bash
+timeout 60s python3 -B - <<'PY'
+import csv
+from collections import Counter
+from pathlib import Path
+p=Path('/gpfs/kjhan/lumina/cmfgen_map/fixall_20260928/runC1/input/model')
+levels=set()
+with (p/'levels.csv').open() as f:
+    for r in csv.DictReader(f):
+        levels.add(tuple(int(r[k]) for k in ('atomic_number','ion_number','level_number')))
+total=Counter(); supported=Counter(); eligible=Counter(); n=0
+with (p/'line_list.csv').open() as f:
+    for r in csv.DictReader(f):
+        n+=1
+        z,q=int(r['atomic_number']),int(r['ion_number'])
+        if z not in (14,16,20) or q not in (1,2): continue
+        key=(z,q); total[key]+=1
+        wave=2.99792458e18/float(r['nu'])
+        if not 100 <= wave <= 20000: continue
+        supported[key]+=1
+        if all((z,q,int(r[k])) in levels for k in ('level_number_lower','level_number_upper')) and float(r['f_lu'])>0:
+            eligible[key]+=1
+print('all_lines',n)
+print('Z ion mapped_by_ion in_100_20000 eligible_endpoints_positive_f')
+for k in sorted(total): print(*k,total[k],supported[k],eligible[k])
+print('sums',sum(total.values()),sum(supported.values()),sum(eligible.values()))
+print('five_shells_seven_passes_rows',35*sum(supported.values()))
+PY
+```
+
+신설 `w5_lines.csv`에는 호출·연산자·복사 생산 세대·물질 세대·shell·line_id·Z·ion·ν·J_c·J_c 오차상한·β·국소항 L_l·J̄·J̄ 오차상한·τ_eff·SRCE_CHK 상태와 계측 상태를 기록한다. \(a_l\)은 판독기에서 계산한다. INIT에서는 Sobolev 전용 열을 NOT_APPLICABLE로 둔다. 기존 fine 지원 범위 밖은 `OUTSIDE_FINE_SUPPORT`로 구별하며, 미계측 복사량을 0이나 bin J로 채우지 않는다.
 
 일반 반복에서
 
@@ -262,7 +312,8 @@ a_l=\frac{\beta_lJ_{c,l}}{\bar J_l}.
 
 | 경로 | 분류 | 허용 변경 |
 |---|---|---|
-| `/gpfs/kjhan/lumina/cmfgen_map/lteunmap_eps_20260917/source/src/lumina_cmfgen.c` | 생산·직접 계측 | §2의 gate, bin 방출률 원장, 동일 보간, fine 연속 분자 분기, 수명·오류 처리, 선택 선 기록, 자체시험용 컴파일 조건부 진입점 |
+| `/gpfs/kjhan/lumina/cmfgen_map/lteunmap_eps_20260917/source/src/lumina_cmfgen.c` | 생산·직접 계측 | §2의 gate, 상태 소유 bin 방출률 원장, 동일 보간, fine 연속 분자 분기, 수명·오류 처리, 이온·셸 필터 mapped 선 전량 기록, 자체시험용 컴파일 조건부 진입점 |
+| `/gpfs/kjhan/lumina/cmfgen_map/lteunmap_eps_20260917/source/src/lumina_cmfgen.h` | 상태 필드 | `CMFGENState`에 `double *w5_cont_eta` 추가 |
 | `/gpfs/kjhan/lumina/cmfgen_map/lteunmap_eps_20260917/source/src/env_universe.h` | 등록 | 신규 키와 COUNT 갱신 |
 | `/gpfs/kjhan/lumina/cmfgen_map/lteunmap_eps_20260917/source/tests/w5_cont_source_selftest.c` | **신설** CPU 자체시험 | §4의 실제 생산 함수·조립 경로 시험과 결함 주입 |
 | `/home/kjhan/BACKUP/Eunha.A1/Claude/Lumina-sn/scripts/run_w5_cont_selftest.py` | **신설** 시험 실행기 | 동결 전·변경 후 소스의 CPU 시험 빌드, OFF 비교, NC 실행·rc 수집. 명시적 독립 출력 루트 필수 |
@@ -270,7 +321,7 @@ a_l=\frac{\beta_lJ_{c,l}}{\bar J_l}.
 
 ### 변경집합 끝
 
-`lumina_plasma.c`, bf 생산자, `line_net_rate.c`, CUDA 커널, 공개 헤더, 원자자료와 기존 진단 산출은 변경하지 않는다. 신규 소스 심볼은 `w5_cont_` 접두사를 사용한다.
+`lumina_plasma.c`, bf 생산자, `line_net_rate.c`, CUDA 커널, 변경집합에 명시한 두 헤더 이외의 공개 헤더, 원자자료와 기존 진단 산출은 변경하지 않는다. 신규 소스 심볼은 `w5_cont_` 접두사를 사용한다.
 
 기존 도구는 다음 범위로 재사용한다.
 
@@ -287,7 +338,7 @@ a_l=\frac{\beta_lJ_{c,l}}{\bar J_l}.
 | 산출 | 소비 목적 |
 |---|---|
 | `impl/`의 변경 전 파일 사본·패치·시험 명령·로그·배열 비교 결과 | 변경 범위와 OFF 동일성 |
-| `referents/`의 C1 판독 표·공개 분율·선 선택 manifest | 고정 대조·선 집합 |
+| `referents/`의 C1 판독 표·공개 분율·선 선택 manifest | 고정 대조·판독기 표본 선 집합; C 런타임 입력으로 사용하지 않음 |
 | `build/`의 소스 manifest·명령·환경·바이너리 해시 | 소스–실행 신원 |
 | `run1/input`, `run1/work`, stdout/stderr·footer | 판정런 증거 |
 | `run1/work/w5_lines.csv` | 직접 생산한 선 응답 |
@@ -339,12 +390,14 @@ C1 runner의 파일을 원본 위치에서 수정하지 않는다. 신규 사본
 2. fine χ_abs가 기존 bin 상태 보간과 같은가.
 3. bf Milne, builder ff, 별도 열적 ff를 분리한 fixture의 합이 실제 bin 소비 연속량을 재현하는가.
 4. fine 연속 \(E_f/C_f\)와 동일 주파수로 옮긴 bin 소비 연속 \(E_{\rm ref}/C_{\rm ref}\)가 **모든 유효 시험점에서 상대 \(10^{-3}\) 이내**인가.
-5. bf-only, ff-only, bf+ff, 비LTE, LTE fixture와 정확한 zero 성분을 모두 처리하는가.
+5. fixture는 세 종류로 묶는다: ① 이웃 값이 다른 비LTE bf+ff 혼합 표본, ② LTE 표본, ③ exact-zero 표본. ①에서 Milne bf·builder ff·extra ff를 구별하여 NC-INTERP·NC-FF·NC-THERMAL을 시연하고, 독립 bf-only·ff-only fixture는 삭제한다. ②의 ON≡OFF 항등 검사는 소비점에서 η=χB가 성립하도록 구성한 일치 격자점에서 수행한다. 일반 보간점에서는 등록된 E_ref·C_ref와 비교한다. ③은 아래의 정확한 zero·미정의 비율 처리를 확인한다.
 6. INIT와 일반 경로에서 연속 항만 바뀌고 선 η·산란·χ·warm start가 보존되는가.
 
 상대오차는 양의 reference에 대해 \(|q-q_{\rm ref}|/|q_{\rm ref}|\)다. reference가 정확히 0이면 결과도 정확히 0이어야 한다. \(C=E=0\)인 연속 성분에는 비율을 정의하지 않고 exact-zero 상태를 비교한다. \(C=0,E>0\)인 성분은 η·χ를 각각 비교하고 source ratio를 UNDEFINED로 기록한다. 임의 작은 수를 분모에 넣지 않는다.
 
 **이 \(10^{-3}\) 기준은 연속 성분의 소비 일관성에만 적용한다.** 선·산란을 포함한 총소스나 bin/fine J의 일치를 요구하지 않는다.
+
+R-5의 fixture 5→3 축소는 수용한다. 다만 Fable의 「LTE이면 ON≡OFF」를 임의 보간점에 적용하는 해석은 수용하지 않는다. 원시 LTE 관계 η_j=χ_j B_j만으로는 두 번의 보간 뒤 I(χB)=I(χ)B(ν_f)가 보장되지 않기 때문이다. 이 제한은 §2.1의 소비 보간 계약을 보존하기 위한 것이며, fixture 종류를 다시 늘리지 않는다.
 
 ### G-SELF: OFF byte 동일성
 
@@ -361,11 +414,11 @@ C1 runner의 파일을 원본 위치에서 수정하지 않는다. 신규 사본
 | NC | 주입 | 검출해야 할 실패 |
 |---|---|---|
 | NC-INTERP | fine에서 원시 `bf_get_eta(ν_f)`를 직접 쓰도록 잘못 연결 | 이중 보간 reference와 불일치 |
-| NC-FF | 열적 extra-ff를 누락하거나 중복 가산 | ff-only와 혼합 fixture의 성분 불일치 |
+| NC-FF | 열적 extra-ff를 누락하거나 중복 가산 | 비LTE bf+ff 혼합 fixture의 성분 불일치 |
 | NC-THERMAL | ON에서도 χ_abs·B 사용 | 비LTE 연속 소스 불일치 |
 | NC-OFF | OFF 분자의 비영 표본을 실제 representable 값으로 변경 | byte 비교 실패 |
-| NC-STALE | 다른 조립 호출·격자의 원장을 제공 | 원장 정체성 실패 |
-| NC-READOUT | 판정용 행 누락·NaN과 문턱 직전/정확 경계/양방향 이동 입력 | X/NONE/MOVE의 등록된 분류 |
+
+| NC-READOUT | 판정용 행 누락·NaN과 문턱 직전/정확 경계/양방향 이동 입력; 같은 하네스의 작은 선 목록에서 빈 묶음·동률·부적격 선·상위 네 개 선택을 검사 | X/NONE/MOVE의 등록된 분류와 C1만으로 고정한 선 선택 규칙의 준수 |
 
 결함을 넣은 실행은 rc≠0과 해당 사유를 보여야 한다. 하네스의 “NC 통과”는 **결함이 성공적으로 거부됐음**을 뜻한다. 성한 입력의 통과도 함께 확인한다.
 
@@ -394,13 +447,13 @@ x^{levels}_{Z,s,k}
 
 공개 \(x_{\rm pub}\)는 toy06 19.480 d의 II·III **분율을 각각** 셸 중심 속도로 보간한 뒤 비를 만든다. 비 자체를 보간하거나 파일 행번호를 shell_id로 간주하지 않는다. 원자료 속도 범위 밖은 외삽하지 않고 미정의로 남긴다.
 
-W2의 세 번째 권위인 사다리 r은 `lumina_ion_channels.csv`에서 따로 보고한다. 채널 gen을 논리 반복으로 고정 상수 매핑하지 않고 해당 런의 물질 sweep 기록과 결합한다. r을 stage나 준위합으로 대체하지 않는다.
+W2의 세 번째 권위인 사다리 r은 기존 `traj.py` 판독 산출에 값이 있으면 원래 gen 표기와 함께 선택적 「기재」열로만 싣고, 없으면 생략한다. 별도 물질 sweep 결합이나 논리 반복 매핑을 새로 요구하지 않는다. r의 유무는 게이트·분기에 사용하지 않으며, r·stage·준위합은 계속 별도 권위로 구별한다.
 
 필수 인구 표:
 
 - 각 권위의 \(x\), \(x/x_{\rm pub}\), \(\log_{10}(x/x_{\rm pub})\).
 - 같은 k에서 W5와 C1의 차이.
-- stage·준위합 간 차이와 사다리 r.
+- stage·준위합 간 차이. 사다리 r은 위 규칙에 따른 선택적 기재이며 필수 표 요건이 아니다.
 - k=3→4, 4→5의 각 궤적 변화.
 
 ### 5.2 효과 크기와 분기 통계
@@ -425,16 +478,18 @@ M=\max_{Z,A}m_{Z,A}.
 
 원소·권위별 \(m\)과 각 셸의 부호를 모두 보고한다. Si/Ca만 움직였으면 황의 이동으로 부르지 않는다. 서로 다른 권위를 합쳐 한 개선량으로 만들지 않는다.
 
+stage 권위의 단계 Γ는 LTE 준위 가중이며, W5가 바꾸는 fine 선 J̄의 NLTE 준위 응답을 직접 가중하는 양이 아니다. 이 경로에 대한 stage 응답은 물질·전하 폐합 등을 통한 2차 응답이므로, **levels만 움직이고 stage는 움직이지 않는 결과도 정상 응답일 수 있다.** 두 권위의 일치를 추가 게이트로 만들거나, 결과를 본 뒤 권위를 교체하지 않는다. 기존 M의 정의와 0.30 dex 문턱은 유지한다.
+
 ### 5.3 선·복사장·스펙트럼·수렴 판독
 
-**선:** §2.5의 고정 집합에 대해 실제 J_c·J̄·β·L_l·a_l와 인구 세대를 보고한다. D-LINE의 최소안이 선택되면 일반 반복 k=0→5와 k=3→5의 변화를 기록하며, 이를 C1 대비 W5 인과 효과로 부르지 않는다. C1 선 대조 열은 명시적으로 unavailable이다.
+**선:** §2.5의 전량 원장에서 판독기 고정 표본을 선택하여 실제 J_c·J̄·β·L_l·a_l와 인구 세대를 보고한다. D-LINE은 최소안으로 확정됐으므로 일반 반복 k=0→5와 k=3→5의 변화를 기록한다. 이는 W5 런 내부 궤적이며 C1 대비 W5 인과 효과가 아니다. C1 선 대조 열은 `BASE_LINE_FIELD_UNAVAILABLE`이다. INIT Gaussian은 일반 Sobolev 궤적과 구별한다. W5-NONE 시 OFF 리플레이 INIT+iter0 고정-물질 대조는 §0의 별도 user 결정에 따른 조건부 후속이다.
 
 **창 J/B:** 각 대상 셸·반복에서 다음 파장창을 사용한다.
 
 - 저장 격자의 청색 끝부터 531 Å.
 - 531–760 Å, 760–912 Å.
 - 912–1500 Å, 1500–2000 Å.
-- 기존 비교창 500–620 Å.
+
 
 창별 값은
 
@@ -455,7 +510,7 @@ bin 중심·창 경계와 겹치는 폭을 명시하고, C1과 W5에 같은 규�
 | 분기 | 판정식 | 허용 해석 | 다음 걸음 |
 |---|---|---|---|
 | **W5-MOVE — 움직임 있음** | G-ID·G-SELF·G-RUN 통과, \(M\ge0.30\) | 등록된 원소·인구 권위에서 어느 방향이든 문턱 이상 응답 | 원소·권위·셸·공개 gap·수렴 상태를 보고하고, W5를 후속 기준선 후보로 둘지 user 결정. 원천비·선 응답·인구 변화를 분리해 설명 |
-| **W5-NONE — 움직임 없음** | 게이트 통과, \(M<0.30\) | 이 조건·반복창에서 등록 크기의 응답 없음 | W5 무관함을 기각 결론으로 만들지 않는다. 기존 자료로 남은 W2/W3/W4/H1–H4 후보를 정리하고 다음 단일 표적을 user에게 제안 |
+| **W5-NONE — 움직임 없음** | 게이트 통과, \(M<0.30\) | 이 조건·반복창에서 등록 크기의 응답 없음 | W5 무관함을 기각 결론으로 만들지 않는다. 기존 자료로 남은 W2/W3/W4/H1–H4 후보를 정리한다. 조건부 후속은 OFF 리플레이 INIT+iter0 고정-물질 선 대조이며, 필요성·자원을 보고해 별도 user 결정에 따른다 |
 | **W5-X — 수치 실패·미시연** | 필수 게이트 실패 또는 판정 입력 불완전 | 효과 크기 판정 불가 | 구현·신원·실행·자료 공백을 구분하고 증거 보존. 판정런을 이미 사용했으면 재실행은 별도 user 결정 |
 
 준위·분모가 정확히 0인 경우를 작은 양수로 바꾸지 않는다. 그로 인해 등록 로그 통계를 정의할 수 없으면 X로 두고 원값을 보고한다.
@@ -464,7 +519,7 @@ bin 중심·창 경계와 겹치는 폭을 명시하고, C1과 W5에 같은 규�
 
 ## §6. 주장 상한
 
-- W5는 **확인된 연속 원천 처방 차이이자 결함 후보**다. 주원인, 원인별 dex 몫, 개선 방향은 미확정이다.
+- W5는 **확인된 연속 원천 처방 차이이자 결함 후보**다. 주원인, 원인별 dex 몫, 개선 방향은 미확정이다. 참고로 기존 bin 중심 bf 소비 원천비의 531–912 Å 대역 중앙값은 sh10에서 약 0.37–0.51, sh19–24에서 약 16–58이었다(D/astra_audit_r4.md). 이는 셸별 부호가 다를 수 있다는 사전 정보이며, bf+ff fine 총소스비·J̄비·인구 변화의 부호 등록이 아니다. W5-MOVE를 개선으로 읽지 않는다.
 - H1–H4를 유지한다. 원천비·연속장비·선 J̄비·인구비는 서로 다른 양이다.
 - 소비 연속 성분 자체시험이 통과해도 선 처리·격자·총소스·두 솔버의 J가 동등하다는 뜻이 아니다.
 - W2의 사다리 r·damping된 stage 배열·준위합은 별도 권위다. 단계 Γ의 LTE 준위 가중을 실제 NLTE 인구 가중으로 바꿔 해석하지 않는다.
@@ -489,7 +544,7 @@ bin 중심·창 경계와 겹치는 폭을 명시하고, C1과 W5에 같은 규�
 
 **자기답: APPROPRIATE. 독립 감사 판정은 아니다.**
 
-새 물리 키는 하나이며, 소스 편집은 하나의 태스크다. bin 크기 임시 배열과 선택 선 기록만 추가한다. 전체 fine J 덤프·전체 SPRODUCER 배열·새 광이온화 적분·OFF GPU 재런·fine opacity 정제는 포함하지 않는다.
+새 물리 키는 하나이며, 소스 편집은 하나의 태스크다. `CMFGENState` 소유 bin 크기 원장과 6이온·5셸 mapped 선 원장을 추가하고 표본 선택은 판독기로 한정한다. 전체 fine J 덤프·전체 SPRODUCER 배열·새 광이온화 적분·fine opacity 정제는 포함하지 않는다. 이번 판정런은 1회이며, OFF GPU 리플레이는 W5-NONE 뒤 별도 user 결정이 필요한 조건부 후속이다.
 
 각 증거의 소비자는 명확하다.
 
@@ -498,25 +553,27 @@ bin 중심·창 경계와 겹치는 폭을 명시하고, C1과 W5에 같은 규�
 | 연속 성분 자체시험·NC | η·χ 보간과 실제 ON/OFF 경로 |
 | 신원·exports·FIXED_TE | C1 단일 변경 비교 |
 | 인구 표 | MOVE/NONE |
-| 선택 선 기록 | 응답 전달의 제한된 해석 |
+| 이온·셸 필터 선 원장과 판독기 고정 표본 | 응답 전달의 제한된 해석; manifest 런타임 입력 없음 |
 | 창 J/B·UV 분율·L | 장·스펙트럼 동반 변화 |
 | 외곽 궤적·기존 solve 상태 | 유한 반복 응답의 한계 |
-| D-LINE 결정 | 충족하지 못한 대조 요구의 처리 |
+| D-LINE 최소안 확정 | W5 내부 선 궤적과 C1 선 대조 unavailable의 구별 |
 
-새 계측을 지우면 사용자의 선 응답 요구를 측정할 수 없다. 반대로 C1에 없는 선 대조를 만들기 위한 추가 solve를 조용히 넣으면 한 번의 판정런·최소 변경 계약을 벗어난다. 그 경계만 user 결정으로 남긴다.
+새 계측은 user가 확정한 W5 내부 선 응답을 측정한다. C1에 없는 선 대조를 만들기 위한 추가 solve는 이번 판정런에 포함하지 않는다. W5-NONE 뒤 고정-물질 대조의 필요성이 남으면 §0의 조건부 후속으로 제안하고 별도 user 결정에 따른다.
 
 ### 집행 기록
 
 | 단계 | 담당·상태 | 기록할 내용 |
 |---|---|---|
 | 기안 | astra, read-only 본문 제출 | 모델 ID, 저자 실행/미실행, 증거 경로·해시 |
-| 요구 범위 확정 | 운전자, 미집행 | D-LINE의 user 선택과 근거 |
+| 요구 범위 확정 | user 결정 완료(2026-09-30), 운전자 기록 | D-LINE 최소안: W5 내부 반복별 J_c·J̄·a_l, C1 선 대조 unavailable. 결정 전 제출 보류 해제. W5-NONE 시 OFF INIT+iter0 고정-물질 대조는 별도 user 결정 |
 | 파일화·기계 검사 | 운전자, 미집행 | prereg·referents·canonical·dispatch의 명령·rc |
 | 구현·직접시험 | 운전자가 현행 배분으로 발주, 미집행 | 실제 구현자, src 변조 단일 태스크, 패치·OFF·NC |
 | 코드 검토·빌드·스테이징 | 운전자 집행, 미집행 | 실제 담당자, 봉인 접촉 가부, 신원·runner·입력 확인 |
 | 판정런 | 운전자, 미집행 | job·노드·GPU·자원·시작/종료·rc |
 | 판독·판정 | 운전자, 미집행 | 게이트·분기·미충족 요구·주장 상한 |
 | 종료 처리 | 현행 배분에 따라 운전자 기록 | 감사 시행 여부·실제 저자·재현 상태·보존 위치 |
+
+**개정 1(2026-09-30, astra 기안·read-only):** Fable 사전감사 전문(`/gpfs/kjhan/lumina/cmfgen_map/w5_20260930/preaudit_fable.md`, 발주 가·«폐합 차단» 0건)을 읽고 R-1·R-2·R-3·R-4·R-6·R-7을 수용했다. 선 선택 manifest의 C 런타임 결합을 삭제하고 6이온·5셸 mapped 선 전량 기록과 판독기 표본 선택으로 분리했으며, C1 봉인 CSV에서 mapped 20,717개·fine 지원 내 16,627개를 직접 집계했다. 원장은 `CMFGENState.w5_cont_eta`로 소유시키고 헤더를 변경집합·선언에 추가하며 NC-STALE을 삭제했다. 사다리 r의 sweep 결합과 중복 500–620 Å 창을 삭제했다. R-5는 fixture 3종 축소를 수용하되 LTE ON≡OFF의 임의 보간점 일반화는 소비 보간식과 모순되어 부분 수용했다. D-LINE은 user 결정에 따라 최소안으로 확정하고 결정 전 제출 보류를 해제했으며, W5-NONE 시 OFF 리플레이 INIT+iter0 고정-물질 선 대조는 별도 user 결정에 따른 조건부 후속으로 남겼다. stage의 LTE 준위 가중 Γ는 2차 응답이므로 levels만 움직이는 결과도 정상일 수 있음을 사전 기재했다. R-8은 잣대 복구 기한 2026-10-02를 W5 발주·판독이 잠식하지 않도록 운전자가 일정에 반영하는 것으로 처리한다. 대상 원문이 d418322와 같음을 확인했으며 이번 작업에서는 파일 수정·구현·기계 프리플라이트·시험·GPU 실행을 하지 않았다.
 
 프리플라이트는 파일화 후 P를 root로 실행한다. 선언 블록의 변경집합은 **절대경로**로 동결 소스와 저장소를 구분한다.
 
@@ -554,6 +611,7 @@ rc≠0이면 기안 재발주 대상으로 기록한다. 운전자가 의미·�
     ],
     "expected_extra": [
       "/gpfs/kjhan/lumina/cmfgen_map/lteunmap_eps_20260917/source/src/lumina_cmfgen.c",
+      "/gpfs/kjhan/lumina/cmfgen_map/lteunmap_eps_20260917/source/src/lumina_cmfgen.h",
       "/gpfs/kjhan/lumina/cmfgen_map/lteunmap_eps_20260917/source/src/env_universe.h",
       "/gpfs/kjhan/lumina/cmfgen_map/lteunmap_eps_20260917/source/tests/w5_cont_source_selftest.c",
       "/home/kjhan/BACKUP/Eunha.A1/Claude/Lumina-sn/scripts/run_w5_cont_selftest.py",
@@ -596,6 +654,31 @@ rc≠0이면 기안 재발주 대상으로 기록한다. 운전자가 의미·�
   },
   "references": [
     {"path": "CLAUDE.md"},
+    {
+      "path": "/gpfs/kjhan/lumina/cmfgen_map/w5_20260930/preaudit_fable.md"
+    },
+    {
+      "path": "/gpfs/kjhan/lumina/cmfgen_map/lteunmap_eps_20260917/source/src/lumina_cmfgen.h",
+      "flags_existing": ["CMFGENState", "S_fixed"],
+      "flags_planned": ["w5_cont_eta"]
+    },
+    {
+      "path": "/gpfs/kjhan/lumina/cmfgen_map/lteunmap_eps_20260917/source/src/lumina.h",
+      "flags_existing": ["line_atomic_number", "line_ion_number"]
+    },
+    {
+      "path": "/gpfs/kjhan/lumina/cmfgen_map/lteunmap_eps_20260917/source/src/lumina_atomic.c",
+      "flags_existing": ["load_atomic_data", "line_list.csv"]
+    },
+    {
+      "path": "/gpfs/kjhan/lumina/cmfgen_map/fixall_20260928/runC1/input/model/line_list.csv"
+    },
+    {
+      "path": "/gpfs/kjhan/lumina/cmfgen_map/fixall_20260928/runC1/input/model/levels.csv"
+    },
+    {
+      "path": "/gpfs/kjhan/lumina/cmfgen_map/fixall_20260928/runC1/stdout.log"
+    },
     {"path": "docs/PREREG_DET_BB_ALI_2026-09-25.md"},
     {"path": "scripts/check_prereg_preflight.py"},
     {"path": "scripts/check_gate_referents.py"},
