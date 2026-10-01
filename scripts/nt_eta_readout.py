@@ -111,6 +111,30 @@ def footer(run):
     return dict(ln.rstrip("\n").split("=", 1) for ln in open(p, errors="replace") if "=" in ln)
 
 
+def manifest_bad(listing, base):
+    bad = 0
+    for ln in open(listing):
+        if not ln.strip():
+            continue
+        h, p = ln.split(None, 1)
+        if sha(Path(base) / p.strip().lstrip("*")) != h:
+            bad += 1
+    return bad
+
+
+def content_reasons(root, nm):
+    why = []
+    if sha(root / "input/model/cmfgen_sigma_bf.bin") != (root / "input/sigma.sha256").read_text().strip():
+        why.append(f"SIGMA_CONTENT:{nm}")
+    n = manifest_bad(root / "input/deck.sha256", root / "input/model")
+    if n:
+        why.append(f"DECK_CONTENT:{nm}:{n}")
+    n = manifest_bad(root / "input/topion.sha256", root / "input/global_atomic")
+    if n:
+        why.append(f"TOPION_CONTENT:{nm}:{n}")
+    return why
+
+
 def bins_reason(bins):
     return [] if set(bins.values()) == {W5_BIN} else ["BINARY_MISMATCH"]
 
@@ -131,11 +155,14 @@ def fixed_te_reason(ft, nm):
 def gid(rroot, eroot, post_run):
     R, E = Path(rroot), Path(eroot)
     why, ev = [], {}
-    bins = {"build": (Path(W5_BUILD) / "binary.sha256").read_text().split()[0]}
+    bins = {"build_record": (Path(W5_BUILD) / "binary.sha256").read_text().split()[0],
+            "build_file": sha(Path(W5_BUILD) / "lumina_cuda")}
     for nm, root in (("R", R), ("E", E)):
         bins[f"{nm}_file"] = sha(root / "input/lumina_cuda")
         bins[f"{nm}_record"] = (root / "input/binary.sha256").read_text().strip()
         bins[f"{nm}_rbi"] = json.load(open(root / "input/run_build_identity.json"))["binary"]["sha256"]
+        st = dict(ln.rstrip("\n").split("=", 1) for ln in open(root / "STAGE_IDENTITY.txt") if "=" in ln)
+        bins[f"{nm}_stage"] = st.get("run_binary_sha256", "").strip()
     ev["binary"] = bins
     why += bins_reason(bins)
     srcs = {nm: (root / "input/source_sha_at_build.txt").read_text() for nm, root in (("R", R), ("E", E))}
@@ -152,15 +179,7 @@ def gid(rroot, eroot, post_run):
     for f in ("deck.sha256", "topion.sha256", "sigma.sha256", "fixed_te_profile.txt", "run_build_identity.json"):
         if sha(R / "input" / f) != sha(E / "input" / f):
             why.append(f"INPUT_MISMATCH:{f}")
-    if sha(E / "input/model/cmfgen_sigma_bf.bin") != (E / "input/sigma.sha256").read_text().strip():
-        why.append("SIGMA_CONTENT")
-    deck_bad = 0
-    for ln in open(E / "input/deck.sha256"):
-        h, p = ln.split(None, 1)
-        if sha(E / "input/model" / p.strip().lstrip("*")) != h:
-            deck_bad += 1
-    if deck_bad:
-        why.append(f"DECK_CONTENT:{deck_bad}")
+    why += content_reasons(R, "R") + content_reasons(E, "E")
     dr, dupr = read_exports(R / "input/resolved_lumina.exports")
     de, dupe = read_exports(E / "input/resolved_lumina.exports")
     if dupr or dupe:
@@ -200,12 +219,61 @@ def load_final_stages(run):
     return out, dup
 
 
-def grun(run):
-    W = Path(run) / "work"
+def footer_reasons(ft, slurm_state):
     why = []
-    ft = footer(run)
     if ft.get("terminal_state") != "SUCCESS":
         why.append("FOOTER_NOT_SUCCESS")
+    if ft.get("model_rc") != "0":
+        why.append(f"MODEL_RC:{ft.get('model_rc')}")
+    if ft.get("allocated_gpus") != "2" or ft.get("gpu_kind") not in ("H100", "A100"):
+        why.append("GPU_IDENTITY")
+    if ft.get("outer_iterations") != "6":
+        why.append(f"OUTER_ITERATIONS:{ft.get('outer_iterations')}")
+    if ft.get("fixed_te_loader_consumed") != "1":
+        why.append("FIXED_TE_NOT_CONSUMED")
+    if slurm_state is None or "COMPLETED" not in slurm_state.split():
+        why.append(f"SLURM_STATE:{slurm_state}")
+    if slurm_state is not None and "RESTARTS=0" not in slurm_state.split():
+        why.append("SLURM_RESTARTS")
+    return why
+
+
+def te_reasons(run, profile_T):
+    """Published T_e (k5 shell.csv) equals the fixed profile; manifests carry one te manifest hash."""
+    why, hashes = [], set()
+    W = Path(run) / "work"
+    for k in range(6):
+        mp = W / f"physics_comparison/physics_DET_iter{k:04d}.manifest.json"
+        if mp.exists():
+            hashes.add(json.load(open(mp)).get("te_manifest_sha256"))
+    fp = W / "cmfgen_final_publication.json"
+    if fp.exists():
+        hashes.add(json.load(open(fp)).get("te_manifest_sha256"))
+    if len(hashes) != 1 or None in hashes:
+        why.append("TE_MANIFEST_HASHES")
+    P = W / "physics_comparison/physics_DET_iter0005.shell.csv"
+    if P.exists():
+        for r in csv.DictReader(open(P)):
+            s = int(r["shell_id"])
+            if s not in profile_T or fnum(r["T_e_K"]) != profile_T[s]:
+                why.append("TE_PUBLISHED_NE_PROFILE")
+                break
+    return why, sorted(h for h in hashes if h)
+
+
+def grun(run, slurm_state=None):
+    W = Path(run) / "work"
+    ft = footer(run)
+    why = footer_reasons(ft, slurm_state)
+    prof = {}
+    for ln in open(Path(run) / "input/fixed_te_profile.txt"):
+        a = ln.split()
+        if len(a) == 2:
+            prof[int(a[0])] = float(a[1])
+    tw, _ = te_reasons(run, prof)
+    why += tw
+    if (W / "physics_comparison/physics_DET_iter0006.manifest.json").exists():
+        why.append("EXTRA_ITERATION_K6")
     for k in range(6):
         mp = W / f"physics_comparison/physics_DET_iter{k:04d}.manifest.json"
         if not mp.exists():
@@ -396,18 +464,33 @@ def a_band(run, shell=24):
 def load_sigma(path):
     with open(path, "rb") as f:
         _, _, nlev, nfb = struct.unpack("<IIii", f.read(16))
-        struct.unpack("<dd", f.read(16))
+        numin, numax = struct.unpack("<dd", f.read(16))
         has = f.read(nlev)
         f.read((-(32 + nlev)) % 8)
         import array
         sig = array.array("d")
         sig.frombytes(f.read(nlev * nfb * 8))
-    return has, sig, nfb
+    return has, sig, nfb, numin, numax
+
+
+GRID_RTOL = 1e-12   # float re-evaluation of log-uniform edges, recorded in the result
+
+
+def grid_reason(rows, numin, numax, nfb):
+    """Spectral bins must be the sigma table's log-uniform grid (same count and edges)."""
+    if len(rows) != nfb:
+        return f"GRID_COUNT:{len(rows)}!={nfb}"
+    dl = (math.log(numax) - math.log(numin)) / nfb
+    for b, (lo, hi, _) in enumerate(rows):
+        elo, ehi = math.exp(math.log(numin) + b * dl), math.exp(math.log(numin) + (b + 1) * dl)
+        if abs(lo - elo) > GRID_RTOL * elo or abs(hi - ehi) > GRID_RTOL * ehi:
+            return f"GRID_EDGE:bin{b}"
+    return None
 
 
 def d_band(run):
     """S II / Si II, sh10 & sh24, k5: share of photoionisation Γ in [912,1500) Å (LTE & NLTE weights)."""
-    has, sig, nfb = load_sigma(Path(run) / "input/model/cmfgen_sigma_bf.bin")
+    has, sig, nfb, numin, numax = load_sigma(Path(run) / "input/model/cmfgen_sigma_bf.bin")
     P = Path(run) / "work/physics_comparison/physics_DET_iter0005"
     Ts = {int(r["shell_id"]): fnum(r["T_e_K"]) for r in csv.DictReader(open(f"{P}.shell.csv"))}
     spec = {}
@@ -423,8 +506,9 @@ def d_band(run):
     out = {}
     for s in (10, 24):
         rows = spec[s]
-        if len(rows) != nfb:
-            return {"status": f"GRID_MISMATCH:{len(rows)}!={nfb}"}
+        g = grid_reason(rows, numin, numax, nfb)
+        if g:
+            return {"status": g}
         T = Ts[s]
         for Z in (16, 14):
             chi = CHI[(Z, 1)]
@@ -448,7 +532,9 @@ def d_band(run):
                         lam = C_CGS / nu * 1e8
                         if 912.0 <= lam < 1500.0:
                             gd += wi / sw * gam
-                res[lab] = {"gamma_D": gd, "gamma_all": ga, "share_D": gd / ga if ga > 0 else None}
+                if not (ga > 0.0 and math.isfinite(ga) and math.isfinite(gd)):
+                    return {"status": f"GAMMA_UNDEFINED:Z{Z}/sh{s}/{lab}"}
+                res[lab] = {"gamma_D": gd, "gamma_all": ga, "share_D": gd / ga}
             out[f"Z{Z}/sh{s}"] = res
     return {"status": "OK", "cells": out, "note": "k5 radiation gen7 x final gen8 weights (post-processing)"}
 
@@ -501,7 +587,12 @@ def cmd_readout(a):
     reasons, gate = [], {}
     why_id, ev = gid(a.ref, a.test, post_run=True)
     gate["G-ID"] = why_id
-    gate["G-RUN"] = {"R": grun(a.ref), "E": grun(a.test)}
+    st = json.load(open(a.slurm_states)) if a.slurm_states else {}
+    gate["G-RUN"] = {"R": grun(a.ref, st.get("R")), "E": grun(a.test, st.get("E"))}
+    gsel = json.load(open(a.selftest)) if a.selftest else []
+    gate["G-READOUT"] = "PASS" if gsel and all(c.get("pass") for c in gsel) else "FAIL"
+    if gate["G-READOUT"] != "PASS":
+        reasons.append("G-READOUT:SELFTEST_NOT_PASSED")
     reasons += [f"G-ID:{w}" for w in why_id]
     reasons += [f"G-RUN:{k}:{w}" for k, v in gate["G-RUN"].items() for w in v]
     fr, dr = load_final_stages(a.ref)
@@ -510,7 +601,12 @@ def cmd_readout(a):
         reasons.append("FINAL_STAGE_DUPLICATE")
     t34, w34 = y34_table(fr, fe)
     reasons += w34
-    pub_gap34(a.ref, t34)
+    try:
+        pub_gap34(a.ref, t34)
+        pub_status = "OK"
+    except Exception as exc:          # report-only column; never gates the branch
+        pub_status = f"UNAVAILABLE:{type(exc).__name__}"
+
     iters = {}
     for nm, run in (("R", a.ref), ("E", a.test)):
         iters[nm] = {}
@@ -555,6 +651,14 @@ def cmd_readout(a):
             full = "NT-X"
             reasons.append(f"AUX_UNDEFINED:{nm}")
     aux["switch_witness_R1"] = switch_witness(a.ref, a.test)
+    aux["public_IV_III_gap_column"] = pub_status
+    ab = aux["A_band_JB_sh24"]
+    if ab["R"].get("log10_R") is not None and ab["E"].get("log10_R") is not None:
+        ab["delta_log10"] = ab["E"]["log10_R"] - ab["R"]["log10_R"]
+    dbg = aux["D_band_gamma"]
+    if dbg["R"].get("status") == "OK" and dbg["E"].get("status") == "OK":
+        dbg["share_diff_E_minus_R"] = {c: {w: dbg["E"]["cells"][c][w]["share_D"] - dbg["R"]["cells"][c][w]["share_D"]
+                                           for w in ("LTE", "NLTE")} for c in dbg["R"]["cells"]}
     x_reason = None
     if full == "NT-X":
         x_reason = "DATA_OR_GATE" if reasons else "PRIMARY_NOT_MET"
@@ -575,10 +679,27 @@ def cmd_readout(a):
     (out / "auxiliary.json").write_text(json.dumps(aux, indent=1, default=str))
     (out / "result.json").write_text(json.dumps(res, indent=1, default=str))
     me = Path(__file__).resolve()
+    consumed = []
+    for root in (a.ref, a.test):
+        W = Path(root) / "work"
+        for rel in ["lumina_ion_pops.csv", "lumina_spectrum.csv", "nlte_levels_final.csv",
+                    "cmfgen_final_publication.json", "lumina_ion_channels.csv"] + \
+                   [f"physics_comparison/physics_DET_iter{k:04d}.{x}" for k in range(6)
+                    for x in ("manifest.json", "ion.csv")] + \
+                   ["physics_comparison/physics_DET_iter0005.spectral.csv",
+                    "physics_comparison/physics_DET_iter0005.shell.csv"]:
+            q = W / rel
+            consumed.append({"path": str(q), "sha256": sha(q) if q.exists() else None})
+        for rel in ("RUN_FOOTER.txt", "stderr.log", "input/model/cmfgen_sigma_bf.bin", "input/fixed_te_profile.txt"):
+            q = Path(root) / rel
+            consumed.append({"path": str(q), "sha256": sha(q) if q.exists() else None})
+    gate_files = [x for x in (a.selftest, a.slurm_states) if x]
     (out / "evidence_manifest.json").write_text(json.dumps(
         {"readout": {"path": str(me), "sha256": sha(me)},
          "w5_helper": {"path": str(me.parent / "w5_cont_readout.py"), "sha256": sha(me.parent / "w5_cont_readout.py")},
-         "ref": a.ref, "test": a.test}, indent=1))
+         "consumed": consumed,
+         "gate_evidence": [{"path": x, "sha256": sha(x)} for x in gate_files],
+         "grid_rtol": GRID_RTOL}, indent=1))
     print(json.dumps({k: res[k] for k in ("branch", "statistic_branch", "nt_x_cause",
                                           "sulfur_shells_delta34_le_-0.5", "sulfur_aggregate", "reasons")},
                      default=str))
@@ -690,6 +811,65 @@ def cmd_selftest(a):
     de4 = dict(de)
     de4["LUMINA_MODEL_DIR"] = "/other/input/x"
     case("exports: path not a prefix transplant", "EXPORTS_PATH:LUMINA_MODEL_DIR" in exports_delta(dr, de4, rr, ee), True)
+    # sol Q4: injected faults on the real gate / loader / aux paths
+    yr = {3: 0.0, 4: 0.0, 5: 0.0}
+    ye = {3: 0.0, 4: -2.0, 5: 0.0}
+    c = y23_cell(yr, ye)
+    case("log mean -1.0 (arithmetic ratio mean would give -0.297)", round(c["delta23"], 12), -1.0)
+    case("D uses k3/k5 only (k4 excursion ignored)", c["D"], 0.0)
+    tmp = out / "nc_tmp"
+    (tmp / "work/physics_comparison").mkdir(parents=True)
+    (tmp / "input").mkdir()
+    with open(tmp / "work/physics_comparison/physics_DET_iter0004.ion.csv", "w") as fh:
+        fh.write("population_generation,shell_id,Z16_stage_q1_cm3\n7,10,1\n7,10,1\n")
+    case("duplicate ion row counted", load_ion_iter(tmp, 4)[1], 1)
+    (tmp / "input/fixed_te_profile.txt").write_text("10 1.0000E+04\n")
+    gr = grun(tmp, "COMPLETED RESTARTS=0")
+    case("missing manifests/files/footer -> G-RUN reasons",
+         all(any(w.startswith(p) for w in gr) for p in ("FOOTER_NOT_SUCCESS", "MANIFEST_MISSING:k0",
+                                                        "FINAL_PUBLICATION_MISSING", "EXACT_SOLVE_OK:0",
+                                                        "FILE_MISSING:lumina_spectrum.csv")), True)
+    good = {"terminal_state": "SUCCESS", "model_rc": "0", "allocated_gpus": "2", "gpu_kind": "H100",
+            "outer_iterations": "6", "fixed_te_loader_consumed": "1"}
+    case("footer good", footer_reasons(good, "COMPLETED RESTARTS=0"), [])
+    case("model_rc!=0 detected", footer_reasons(dict(good, model_rc="1"), "COMPLETED RESTARTS=0"), ["MODEL_RC:1"])
+    case("slurm FAILED detected", footer_reasons(good, "FAILED RESTARTS=0"), ["SLURM_STATE:FAILED RESTARTS=0"])
+    case("restart detected", footer_reasons(good, "COMPLETED RESTARTS=1"), ["SLURM_RESTARTS"])
+    case("H200 rejected", footer_reasons(dict(good, gpu_kind="H200"), "COMPLETED RESTARTS=0"), ["GPU_IDENTITY"])
+    case("iterations != 6 rejected", footer_reasons(dict(good, outer_iterations="15"), "COMPLETED RESTARTS=0"),
+         ["OUTER_ITERATIONS:15"])
+    with open(tmp / "work/physics_comparison/physics_DET_iter0005.shell.csv", "w") as fh:
+        fh.write("shell_id,T_e_K\n10,10001\n")
+    case("published T_e != fixed profile detected", "TE_PUBLISHED_NE_PROFILE" in te_reasons(tmp, {10: 1.0e4})[0], True)
+    ln_, lx_ = 1.0e14, 1.0e16
+    dl = (math.log(lx_) - math.log(ln_)) / 4
+    grid = [(math.exp(math.log(ln_) + b * dl), math.exp(math.log(ln_) + (b + 1) * dl), 1.0) for b in range(4)]
+    case("sigma grid matches", grid_reason(grid, ln_, lx_, 4), None)
+    case("sigma grid count mismatch", grid_reason(grid[:3], ln_, lx_, 4), "GRID_COUNT:3!=4")
+    bad = list(grid)
+    bad[2] = (bad[2][0] * (1 + 1e-6), bad[2][1], 1.0)
+    case("sigma grid edge shift detected", grid_reason(bad, ln_, lx_, 4), "GRID_EDGE:bin2")
+    for nm, scale in (("R", 1.0), ("E", 10.0 ** -0.7)):
+        d = tmp / f"fuv_{nm}/work"
+        d.mkdir(parents=True)
+        with open(d / "lumina_spectrum.csv", "w") as fh:
+            fh.write("wavelength_angstrom,flux\n")
+            for lam in (800.0, 1000.0, 1400.0, 1600.0, 3900.0, 6100.0):
+                fh.write(f"{lam},{(scale if lam < 2000 else 1.0)}\n")
+    fr_, fe_ = fuv(tmp / "fuv_R"), fuv(tmp / "fuv_E")
+    dfuv = math.log10(fe_["F"]) - math.log10(fr_["F"])
+    case("FUV -0.7 injected is reported and branch with c stays NT-IV-ONLY",
+         (round(dfuv, 12), branch(True, "c")), (-0.7, "NT-IV-ONLY"))
+    (tmp / "cr/input/model").mkdir(parents=True)
+    (tmp / "cr/input/global_atomic").mkdir(parents=True)
+    (tmp / "cr/input/model/cmfgen_sigma_bf.bin").write_bytes(b"x")
+    (tmp / "cr/input/sigma.sha256").write_text("0" * 64)
+    (tmp / "cr/input/model/a.csv").write_text("a")
+    (tmp / "cr/input/deck.sha256").write_text("0" * 64 + "  a.csv\n")
+    (tmp / "cr/input/global_atomic/t.csv").write_text("t")
+    (tmp / "cr/input/topion.sha256").write_text("0" * 64 + "  t.csv\n")
+    case("sigma/deck/topion content tampering detected", content_reasons(tmp / "cr", "R"),
+         ["SIGMA_CONTENT:R", "DECK_CONTENT:R:1", "TOPION_CONTENT:R:1"])
     case("binary mismatch detected", bins_reason({"a": W5_BIN, "b": "0" * 64}), ["BINARY_MISMATCH"])
     case("approved source mismatch detected",
          approved_reasons({"src/x.c": "aa"}, "src/x.c=bb"), ["APPROVED_MISMATCH:src/x.c"])
@@ -722,6 +902,10 @@ def main():
         p.add_argument("--ref", required=True)
         p.add_argument("--test", required=True)
         p.add_argument("--out", required=True)
+        if nm == "readout":
+            p.add_argument("--selftest", required=True, help="readout_selftest.json (G-READOUT)")
+            p.add_argument("--slurm-states", required=True,
+                           help='JSON {"R": "COMPLETED RESTARTS=0", "E": "..."} recorded by the driver from sacct')
     p = sp.add_parser("selftest")
     p.add_argument("--ref")
     p.add_argument("--out", required=True)
