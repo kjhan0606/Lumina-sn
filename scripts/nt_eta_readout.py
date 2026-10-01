@@ -488,6 +488,40 @@ def grid_reason(rows, numin, numax, nfb):
     return None
 
 
+def level_weights(L, T, lab):
+    """LTE: g exp(-E/kT) normalised within the ion; NLTE: final level populations normalised."""
+    w = [g * math.exp(-E * EV / (K_CGS * T)) for _, E, g, _ in L] if lab == "LTE" else [n for *_, n in L]
+    sw = sum(w)
+    return [x / sw for x in w]
+
+
+def in_band_D(nu):
+    lam = C_CGS / nu * 1e8
+    return 912.0 <= lam < 1500.0
+
+
+def gamma_band(L, rows, has, sig, nfb, chi, T, lab):
+    """(Γ_D, Γ_all) with bin-centre classification and the given level weights."""
+    gd = ga = 0.0
+    for (gi, E, g, n), wi in zip(L, level_weights(L, T, lab)):
+        if not has[gi]:
+            continue
+        nu_th = (chi - E) * EV / H_CGS
+        for b, (lo, hi, J) in enumerate(rows):
+            nu = math.sqrt(lo * hi)
+            if nu < nu_th:
+                continue
+            gam = 4.0 * math.pi * sig[gi * nfb + b] * J / (H_CGS * nu) * (hi - lo)
+            ga += wi * gam
+            if in_band_D(nu):
+                gd += wi * gam
+    return gd, ga
+
+
+def sulfur_outcomes(t23):
+    return [r["outcome"] for r in t23 if r["Z"] == 16 and r.get("outcome") in ("a", "b", "c", "d")]
+
+
 def d_band(run):
     """S II / Si II, sh10 & sh24, k5: share of photoionisation Γ in [912,1500) Å (LTE & NLTE weights)."""
     has, sig, nfb, numin, numax = load_sigma(Path(run) / "input/model/cmfgen_sigma_bf.bin")
@@ -513,25 +547,9 @@ def d_band(run):
         for Z in (16, 14):
             chi = CHI[(Z, 1)]
             L = lev[(Z, s)]
-            wl = [g * math.exp(-E * EV / (K_CGS * T)) for _, E, g, _ in L]
-            wn = [n for *_, n in L]
-            slw, snw = sum(wl), sum(wn)
             res = {}
-            for lab, w, sw in (("LTE", wl, slw), ("NLTE", wn, snw)):
-                gd = ga = 0.0
-                for (gi, E, g, n), wi in zip(L, w):
-                    if not has[gi]:
-                        continue
-                    nu_th = (chi - E) * EV / H_CGS
-                    for b, (lo, hi, J) in enumerate(rows):
-                        nu = math.sqrt(lo * hi)
-                        if nu < nu_th:
-                            continue
-                        gam = 4.0 * math.pi * sig[gi * nfb + b] * J / (H_CGS * nu) * (hi - lo)
-                        ga += wi / sw * gam
-                        lam = C_CGS / nu * 1e8
-                        if 912.0 <= lam < 1500.0:
-                            gd += wi / sw * gam
+            for lab in ("LTE", "NLTE"):
+                gd, ga = gamma_band(L, rows, has, sig, nfb, chi, T, lab)
                 if not (ga > 0.0 and math.isfinite(ga) and math.isfinite(gd)):
                     return {"status": f"GAMMA_UNDEFINED:Z{Z}/sh{s}/{lab}"}
                 res[lab] = {"gamma_D": gd, "gamma_all": ga, "share_D": gd / ga}
@@ -615,7 +633,7 @@ def cmd_readout(a):
             if dup:
                 reasons.append(f"ION_DUPLICATE:{nm}:k{k}")
             iters[nm][k] = rows
-    t23, outcomes_S = [], []
+    t23 = []
     for Z in ELEMS:
         for A in AUTHS:
             for s in SHELLS:
@@ -629,9 +647,8 @@ def cmd_readout(a):
                     row.update({f"y{k}_R": yr[k] for k in (3, 4, 5)})
                     row.update({f"y{k}_E": ye[k] for k in (3, 4, 5)})
                     row.update(y23_cell(yr, ye))
-                    if Z == 16:
-                        outcomes_S.append(row["outcome"])
                 t23.append(row)
+    outcomes_S = sulfur_outcomes(t23)
     n_pass = sum(1 for r in t34 if r["Z"] == 16 and "delta34" in r and r["delta34"] <= THR34)
     i34 = n_pass >= 3
     agg, agg_why, counts = aggregate(outcomes_S) if len(outcomes_S) == 10 else ("d", "S_CELLS_INCOMPLETE", {})
@@ -870,6 +887,50 @@ def cmd_selftest(a):
     (tmp / "cr/input/topion.sha256").write_text("0" * 64 + "  t.csv\n")
     case("sigma/deck/topion content tampering detected", content_reasons(tmp / "cr", "R"),
          ["SIGMA_CONTENT:R", "DECK_CONTENT:R:1", "TOPION_CONTENT:R:1"])
+    # closeout C1: Γ band boundary, level weights, all sulfur count distributions, Si/Ca non-interference
+    lam_c = [911.9, 912.0, 1499.9, 1500.0]
+    rows_t = []
+    for lam in lam_c:
+        nu = C_CGS / (lam * 1e-8)
+        rows_t.append((nu * (1 - 1e-6), nu * (1 + 1e-6), 1.0))
+    case("D band: bin centres 912.0 and 1499.9 in, 911.9 and 1500.0 out",
+         [in_band_D(math.sqrt(lo * hi)) for lo, hi, _ in rows_t], [False, True, True, False])
+    Lt = [(0, 0.0, 2.0, 3.0), (1, 1.0, 4.0, 1.0)]
+    T_t = 1.0e4
+    e1 = 4.0 * math.exp(-1.0 * EV / (K_CGS * T_t))
+    case("LTE weights g·exp(-E/kT) normalised", [round(x, 12) for x in level_weights(Lt, T_t, "LTE")],
+         [round(2.0 / (2.0 + e1), 12), round(e1 / (2.0 + e1), 12)])
+    case("NLTE weights = populations normalised", level_weights(Lt, T_t, "NLTE"), [0.75, 0.25])
+    has_t = [1, 0]
+    nfb_t = len(rows_t)
+    sig_t = [1e-18] * nfb_t + [5e-18] * nfb_t
+    gd, ga = gamma_band(Lt, rows_t, has_t, sig_t, nfb_t, 1.0, T_t, "NLTE")
+    exp_all = sum(4.0 * math.pi * 1e-18 * 1.0 / (H_CGS * math.sqrt(lo * hi)) * (hi - lo) for lo, hi, _ in rows_t) * 0.75
+    exp_d = sum(4.0 * math.pi * 1e-18 * 1.0 / (H_CGS * math.sqrt(lo * hi)) * (hi - lo)
+                for lo, hi, _ in rows_t if in_band_D(math.sqrt(lo * hi))) * 0.75
+    case("Γ: has=0 level skipped, NLTE weight 0.75, D = 2 of 4 bins",
+         (math.isclose(ga, exp_all, rel_tol=1e-12), math.isclose(gd, exp_d, rel_tol=1e-12)), (True, True))
+    gdl, _ = gamma_band(Lt, rows_t, has_t, sig_t, nfb_t, 1.0, T_t, "LTE")
+    case("Γ: LTE and NLTE weights give different D rates", gdl != gd, True)
+    from itertools import product
+    bad = 0
+    n_dist = 0
+    for na in range(11):
+        for nb in range(11 - na):
+            for nc in range(11 - na - nb):
+                nd = 10 - na - nb - nc
+                n_dist += 1
+                cells = ["a"] * na + ["b"] * nb + ["c"] * nc + ["d"] * nd
+                got = aggregate(cells)[0]
+                cnt = {"a": na, "b": nb, "c": nc, "d": nd}
+                top = max(cnt.values())
+                modes = [k for k in "abcd" if cnt[k] == top]
+                want = modes[0] if len(modes) == 1 else "d"
+                bad += got != want
+    case("all 286 sulfur count distributions: unique mode or tie -> d", (n_dist, bad), (286, 0))
+    t_mix = [{"Z": 16, "outcome": "a"}] * 4 + [{"Z": 16, "outcome": "c"}] * 6 + \
+            [{"Z": 14, "outcome": "a"}] * 10 + [{"Z": 20, "outcome": "a"}] * 10
+    case("Si/Ca cells never enter the sulfur aggregate", aggregate(sulfur_outcomes(t_mix))[0], "c")
     case("binary mismatch detected", bins_reason({"a": W5_BIN, "b": "0" * 64}), ["BINARY_MISMATCH"])
     case("approved source mismatch detected",
          approved_reasons({"src/x.c": "aa"}, "src/x.c=bb"), ["APPROVED_MISMATCH:src/x.c"])

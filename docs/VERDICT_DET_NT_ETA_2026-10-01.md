@@ -1,6 +1,6 @@
 # 판정 — DET-NT-ETA (2026-10-01)
 
-판정자 = 운전자(Claude, Opus 5.5; 개정25-r). 계약 = `docs/PREREG_DET_NT_ETA_2026-10-01.md`(HEAD 4f54195). 판독기 = `scripts/nt_eta_readout.py`(동결 sha f8c9300b…, 커밋 75d0bee; gpt-6-sol 코드 감사 차단 6 → 운전자 수리, 재감사 없음). 판독 산출 = `/gpfs/kjhan/lumina/cmfgen_map/nteta_20261001/readout/`(result.json·population34.csv·population23.csv·auxiliary.json·evidence_manifest.json). 기준 R = W5 run1(job 409099), 시험 E = `nteta_20261001/run1`(job 409603). 종료감사 = astra(예정).
+판정자 = 운전자(Claude, Opus 5.5; 개정25-r). 계약 = `docs/PREREG_DET_NT_ETA_2026-10-01.md`(HEAD 4f54195). 판독기 = `scripts/nt_eta_readout.py`(최초 동결 f8c9300b…·75d0bee → 종료감사 C1 로 NC 보충·Γ/황 수집 순수 함수화, 판정 계산 불변 확인 후 재동결 — 아래 §4; gpt-6-sol 코드 감사 차단 6 → 운전자 수리, 재감사 없음). 판독 산출 = `/gpfs/kjhan/lumina/cmfgen_map/nteta_20261001/readout_fix2/`(최초 `readout/` 와 population34/23·D 대역 결과 동일)(result.json·population34.csv·population23.csv·auxiliary.json·evidence_manifest.json). 기준 R = W5 run1(job 409099), 시험 E = `nteta_20261001/run1`(job 409603). 종료감사 = astra(예정).
 
 ## 1. 분기
 
@@ -42,23 +42,23 @@ Si·Ca 20 셀은 전부 (c): |δ₂₃| ≤ 0.20, sh24–30 은 +0.10…+0.20(�
 ## 4. 게이트 증거
 - G-ID: 바이너리 7800484f… = 빌드 기록 = 빌드 실물 = R/E 입력 실물·기록·run_build_identity·STAGE_IDENTITY; 소스 기록 R=E=빌드, 동결 트리 실물 일치, APPROVED 일치; σ·deck·topion 실물 R·E 일치; exports 차이 = `LUMINA_NT_FULL` "1"→"0" 하나(경로 7키 접두 이식), MUST_KEEP 6키 유지; FIXED_TE 양쪽 소비.
 - G-RUN: R·E 모두 Slurm COMPLETED·재시작 0(`evidence/slurm_states.json`), footer SUCCESS·model_rc 0·H100×2·반복 6, manifest k0–k5 COMMITTED·세대(k+2/k+3)·FIXED_T, 발행 T_e = 고정 프로필, te manifest 단일, 최종 발행 gen8 complete, exact solve 7회 OK, 필수 파일 존재. 409603 경과 11:07:58.
-- G-READOUT: `reader_selftest_fix1` 64/64.
+- G-READOUT: 최초 `reader_selftest_fix1` 64/64 는 계약 §4.3 의 Γ 대역 경계·가중 결함 주입과 황 10셀 가능 분포 전수·Si/Ca 비간섭(실 경로) 시험이 빠져 있었다(astra 종료감사 «폐합 차단» C1). 보충 후 `reader_selftest_fix2` **71/71**(대역 경계 912.0·1499.9 포함/911.9·1500.0 제외, LTE/NLTE 가중, has=0 건너뜀, 286 분포 전수 불일치 0, Si·Ca 비간섭) 로 재판독 → 분기 동일.
 - 스위치 소비 증인(보고 전용, 사전감사 R-1): heating 해시 R=E, nonthermal 해시 R≠E, 채널 덤프 γ_nt(S II) 비 E/R = 0.0500000000(50 셸 전부).
 
 ## 5. 보조량 (§5.4, 판정 근거 아님)
 - FUV: F = L(912–1500)/L(4000–6000) W5 0.0746 → 0.0681, Δlog₁₀ = **−0.040**. 공개 포락 대비 초과(TARDIS 0.85 dex 등)는 거의 그대로다.
 - A 대역 J/B(sh24, 청색 끝–531 Å): Δlog₁₀ = **−1.58**.
-- D 대역(912–1500 Å) Γ 몫 차이(E−R): S sh10 LTE +0.05/NLTE +0.08, S sh24 +0.18/+0.13, Si sh10 −0.02/+0.02, Si sh24 +0.06/+0.09 — NT 를 낮추자 S II 광이온화에서 D 대역 몫이 커졌다(Γ 총량 변화와 분리 미측정).
+- D 대역(912–1500 Å) Γ 몫 차이(E−R): S sh10 LTE +0.05/NLTE +0.08, S sh24 +0.18/+0.13, Si sh10 −0.02/+0.02, Si sh24 +0.06/+0.09. 몫 증가는 주로 전체 Γ 감소 때문이다(S sh24 전체 Γ ×0.093 LTE·×0.107 NLTE, D Γ ×1.03 LTE·×0.25 NLTE). gen7 복사장 × gen8 가중의 후처리이며 솔버 동세대 소비율 복원이 아니다.
 
 ## 6. 읽기와 주장 상한
-1. **IV/III**: NT 율 1/20 로 S·Si·Ca IV/III 가 1.1–1.3 dex 내려가 공개 간극 +0.8…+1.1 dex 가 −0.4…0 dex 로 바뀌었다(공개값 약간 아래로 넘음). 갈림길 평가의 고정 장 감도(−0.73…−1.35)와 같은 자릿수다. ETA=0.05 는 SF 분율이 아니라 감도 시험값이며, 공개값 아래로 넘은 것이 SF 실제 분율이 0.05 보다 크다는 뜻인지는 이 런이 가르지 않는다.
-2. **II/III**: 황은 외곽 sh19–30 에서 −0.4…−0.8 dex(공개 방향) 움직였으나 공개 간극은 단계 기준 여전히 +1.0…+2.2 dex(log x_pub: sh10 −0.62, sh15 −0.63, sh19 −0.46, sh24 −0.13, sh30 +0.16 기준 — `coldstart_referents.csv`). sh10 단계는 반대 방향(+0.31, b). Si·Ca II/III 는 응답 없음.
-3. **FUV**: 방출 FUV 분율은 −0.04 dex 로 거의 변하지 않았다. 반면 중간 셸 EUV(A 대역) J/B 는 −1.58 dex. 「IV 사슬이 FUV 를 급식한다」 가설은 이 런에서 **FUV 쪽으로는 지지되지 않는다** — EUV 장은 크게 바뀌었으나 FUV 초과는 NT 와 거의 무관하다. 매개 경로 미분리(계약 §5.3).
+1. **IV/III**: NT 율 1/20 로 S·Si·Ca IV/III 가 1.1–1.3 dex 내려가 공개 간극 +0.8…+1.1 dex 가 −0.41…+0.01 dex 로 바뀌었다(**15칸 중 14칸은 공개값 아래, Ca sh30 은 +0.012 위**). 갈림길 평가의 고정 장 감도(−0.73…−1.35)와 같은 자릿수다. ETA=0.05 는 SF 분율이 아니라 감도 시험값이며, 공개값 아래로 넘은 것이 SF 실제 분율이 0.05 보다 크다는 뜻인지는 이 런이 가르지 않는다.
+2. **II/III**: 황 검출 (a) 는 **단계 sh24·30, 준위합 sh19·24·30**(−0.37…−0.84); 단계 sh19 는 −0.15 로 (d), sh10 단계는 반대 방향(+0.31, b). 공개 간극(E 단계 평균)은 sh10/15/19/24/30 = +1.38/+1.01/+1.48/+1.30/+2.16 dex — 잣대 `coldstart_referents.csv`(공개 분율을 로그 속도·로그 분율로 보간, 공개 I+II 를 Lumina II 에 대응; 셸 중심 속도 R/E 와 일치). Si·Ca II/III 는 등록 크기 응답 미검출(δ −0.05…+0.20).
+3. **FUV**: 방출 FUV 분율 −0.040 dex(TARDIS 20 d 대비 초과 +0.845→+0.806 dex), 중간 셸 EUV(A 대역) J/B −1.58 dex. **이번 감도 시험에서 FUV 초과의 큰 해소는 확인되지 않았다**; FUV 감소 방향은 나타났고 검출 문턱은 등록하지 않았으므로 NT 무관·사슬 배제는 판정하지 않는다. 방출 분율은 내부 FUV 장이나 급식 경로의 직접 측정이 아니다. 매개 경로 미분리(계약 §5.3).
 4. 6 반복 유한 응답; 황 단계 sh19 D=0.505 처럼 표류가 큰 셀이 있다.
 
 ## 7. 다음 (user 결정 대상)
 - NT 처방을 생산 기준선에 반영할지(ETA 0.05 상수 대 Spencer–Fano 형 계약).
-- 남은 간극의 주 자리는 **II/III(특히 황 안쪽 sh10–19, 단계 +1.0…+1.5 dex)과 FUV 방출**이며 둘 다 NT 와 거의 무관하게 남았다 — 갈림길 평가의 N2(FUV 장)·W2(권위)·H1 이 다음 후보.
+- 남은 간극의 자리는 **황 II/III(단계 +1.0…+2.2 dex, sh30 최대)과 FUV 방출 초과**다. N2(FUV 장)·W2(권위)·H1 은 후속 후보로 둘 수 있으나 NT 를 배제한 선택이 아니다. ETA=0.05 의 생산 채택은 이 결과로 검증되지 않았으며 SF 형 처방·반복별 q3 관측은 별도 후속 결정.
 
 ## 8. 분장 장부 (이 단 실제)
 
@@ -70,4 +70,4 @@ Si·Ca 20 셀은 전부 (c): |δ₂₃| ≤ 0.20, sh24–30 은 +0.10…+0.20(�
 | 구현(판독기) | 운전자(25-w) | 운전자 | ⚠운전자가 구현·판정 겸함 |
 | 코드 감사 | gpt-6-sol(25-v) | gpt-6-sol(헤더 확인) Q0 가·차단 6 → 운전자 수리, 재감사 없음(25-q) | 기재 |
 | 스테이징·제출·판독·판정 | 운전자 | 운전자 | 없음 |
-| 종료감사 | astra | 발주 예정 | — |
+| 종료감사 | astra | astra 1회 — 통계분기 NT-SUPPORT 원자료 재현(δ₃₄ 최대차 4.4e-16, 30셀 분류 불일치 0), «폐합 차단» C1(G-READOUT NC 누락) → 운전자 NC 보충(71/71)·재판독 분기 동일, 기재 5 반영(`nteta_20261001/astra_closeout_r1.md`); ⚠astra 는 계약 기안자(자기 계약 감사); Slurm 직접 재현은 감사 샌드박스에서 불가 | 기재 |
