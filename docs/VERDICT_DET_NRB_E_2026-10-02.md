@@ -1,6 +1,6 @@
 # 판정 — DET-NRB-E (2026-10-02)
 
-판정자 = 운전자(Claude, Opus 5.5; 개정25-r). 계약 = `docs/PREREG_DET_NRB_E_2026-10-02.md`(HEAD 84ed869). 판독기 = `scripts/nrb_e_readout.py`(00ccde5, sha256 d4fdd837…, 판정런 종료 전 동결 `nrb2_20261002/JUDGE_FROZEN.txt`; gpt-6-sol 코드 감사 «폐합 차단» 9 → 운전자 수리, 재감사 없음; selftest `reader_selftest_fix1` 71/71). 판독 산출 = `/gpfs/kjhan/lumina/cmfgen_map/nrb2_20261002/readout/`(result.json·source_shells.csv·line_trajectory.csv·population23.csv·auxiliary.json·evidence_manifest.json). 기준 E = `nteta_20261001/run1`(job 409603), 시험 R = `nrb2_20261002/run1`(job 410042, 경과 11:36:36). Slurm 상태 = `nrb2_20261002/evidence/slurm_states.json`(양쪽 COMPLETED·RESTARTS=0·TIMELIMIT=1-06:00:00·REQMEM=64G). 종료감사 = astra(예정).
+판정자 = 운전자(Claude, Opus 5.5; 개정25-r). 계약 = `docs/PREREG_DET_NRB_E_2026-10-02.md`(HEAD 84ed869). 판독기 = `scripts/nrb_e_readout.py` — 최초 동결 00ccde5(sha256 d4fdd837…, 판정런 종료 전 `nrb2_20261002/JUDGE_FROZEN.txt`; gpt-6-sol 코드 감사 «폐합 차단» 9 → 운전자 수리, 재감사 없음; selftest 71/71) → astra 종료감사 C1(§4.3 결손·신원 NC 누락, G-READOUT 필수 목록 미검사)로 운전자 수리, sha256 5b5a68f9…, selftest `reader_selftest_fix2` **91/91**(아래 §6). 판독 산출 = `/gpfs/kjhan/lumina/cmfgen_map/nrb2_20261002/readout_fix2/`(source_shells·line_trajectory·population23 은 최초 `readout/` 와 바이트 동일, auxiliary·result 는 내용 동일·키 순서만 다름). 기준 E = `nteta_20261001/run1`(job 409603), 시험 R = `nrb2_20261002/run1`(job 410042, 경과 11:36:36). Slurm 상태 = `nrb2_20261002/evidence/slurm_states.json`(양쪽 COMPLETED·RESTARTS=0·TIMELIMIT=1-06:00:00·REQMEM=64G). 종료감사 = astra 1회(`nrb2_20261002/astra_closeout_r1.md`, «폐합 차단» 1 → 반영).
 
 ## 1. 분기
 
@@ -21,7 +21,7 @@
 | 24 | 16 | −1.84 | −1.45 | −2.22 | −2.36 | **−2.80** | 하강 |
 | 30 | 7 | −2.04 | −1.59 | −2.34 | −2.64 | **−3.01** | 하강 |
 
-call 4 의 일시 완화 뒤 call 5–7 에서 하강이 계속 깊어진다. **6 반복 창 안에서 수렴하지 않았다.**
+call 4 의 일시 완화 뒤 call 5–7 에서 하강이 계속 깊어진다. **6 반복 창 안에서 안정화가 관측되지 않았다**(call 6→7 에도 0.28–0.44 dex 추가 하강). 장기 발산을 뜻하지 않는다.
 
 ## 3. ③ III/II (k3–5, δ₃ = ȳ_R − ȳ_E, D = max(d_E,d_R), T = max(0.30, 3D))
 
@@ -38,7 +38,7 @@ S stage sh24 는 δ₃ = −1.28 이지만 D = 0.515(T = 1.54)라 (d). 표류가
 
 ### 3.1 공개 CMFGEN 간극 (보고 전용)
 
-log(III/II)_Lumina − log(III/II)_pub, 공개 toy06 19.480 d, 셸 중심 속도에서 로그 속도·로그 분율 보간, 공개 I+II 를 Lumina II 에 대응. 황은 잣대 `coldstart_referents.csv` 와 E 열이 일치한다(NT-ETA 판정 §6-2 와 같은 값). Si·Ca 는 같은 규칙으로 `data/standart_data1/toy06/ionfrac_{si,ca}_toy06_cmfgen.txt` 에서 운전자가 계산했다.
+log(III/II)_Lumina − log(III/II)_pub. Lumina 쪽은 k4·k5 로그 평균(ȳ, §3 과 같은 값). 공개 toy06 19.480 d, 셸 중심 속도에서 로그 속도·로그 분율 보간, 공개 I+II 를 Lumina II 에 대응. 황은 잣대 `coldstart_referents.csv` 와 E 열이 일치한다(NT-ETA 판정 §6-2 와 같은 값). Si·Ca 는 같은 규칙으로 `data/standart_data1/toy06/ionfrac_{si,ca}_toy06_cmfgen.txt` 에서 운전자가 계산했다.
 
 | 원소 | 권위 | E → R  (sh10 / 15 / 19 / 24 / 30) |
 |---|---|---|
@@ -54,46 +54,36 @@ log(III/II)_Lumina − log(III/II)_pub, 공개 toy06 19.480 d, 셸 중심 속도
 | 대역 | E log₁₀ Q | R log₁₀ Q | Δ₂ |
 |---|---|---|---|
 | D [912,1500) Å, sh15–24 | −0.30 … +0.05 | −2.30 … −1.91 | −1.99 … −1.74 |
-| B [531,760) Å, sh19–24 | +0.31 … +0.75 | −3.76 … −3.43 | −4.18 … −4.02 |
+| B [531,760) Å, sh19–24 | +0.31 … +0.75 | −3.76 … −3.43 | −4.19 … −4.00 |
 
 ## 5. ④ FUV 색비와 보조 광도 (판정 근거는 Δ₄a·Δ₄b 뿐)
 
 - F_a = L(1200–1500)/L(4000–6000): E 0.0504 → R 0.0301, **Δ₄a = −0.223**(불변 범주).
 - F_b = L(1500–2000)/L(4000–6000): E 0.1295 → R 0.1470, **Δ₄b = +0.055**(불변 범주).
-- 보조(운전자 계산, 판정 근거 아님): 최종 방출 스펙트럼 ∫L_λ dλ 은 E 3.60e42 → R 2.85e42 erg/s(**−0.10 dex**). 대역별 2500–4000 Å −0.27 dex, 4000–6000 Å −0.14, 6000–10⁴ Å −0.03, >10⁴ Å −0.005. FIXED_TE 결정론 선로라 에너지 수지를 강제하지 않는다. 공개 CMFGEN 대비 L(2500–4000)/L(4000–6000) 은 공개 0.775 · E 0.690 · R 0.510 으로 **R 이 공개에서 더 멀어졌다**. 이 선로의 절대 광도는 공개와 같은 척도가 아니다(4000–6000 Å: 공개 5.64e42, E 1.04e42).
+- 보조(운전자 계산, 판정 근거 아님): 최종 방출 스펙트럼 ∫L_λ dλ(출력 파장 범위 74.47–51187.3 Å 전체)은 E 3.60e42 → R 2.85e42 erg/s(**−0.10 dex**). 대역별 2500–4000 Å −0.27 dex, 4000–6000 Å −0.14, 6000–10⁴ Å −0.03, >10⁴ Å −0.005. FIXED_TE 결정론 선로라 에너지 수지를 강제하지 않는다. 공개 CMFGEN 대비 L(2500–4000)/L(4000–6000) 은 공개 0.775 · E 0.700 · R 0.514(경계 보간 사다리꼴, ④ 와 같은 적분식)로 **R 이 공개에서 더 멀어졌다**. 이 선로의 절대 광도는 공개와 같은 척도가 아니다(4000–6000 Å: 공개 5.64e42, E 1.04e42).
 
 ## 6. 게이트 증거
 
 - **G-ID**: 바이너리 7800484f… = 빌드 기록 = 빌드 실물 = E·R 입력 실물·기록·run_build_identity·STAGE_IDENTITY·footer. exports 차이는 `LUMINA_BB_NRB` 부재→"1", `LUMINA_A210_SPRODUCER_CAPTURE` "0"→"1" 두 키뿐이다. MUST_KEEP(`LUMINA_NLTE_SKIP_Z=""`, `LUMINA_XSHELL_RESPONSE=0`, `LUMINA_NT_FULL=0`)도 유지됐다. runner sha R 6db94795….
 - **G-RUN**: E·R 모두 Slurm COMPLETED·RESTARTS=0, 자원 상한이 계약값과 일치한다. footer `terminal_state=SUCCESS`·model_rc 0. NRB 무장·포획 증인은 엄격 태그로 확인했고, 원장 SOBOLEV 행의 세대가 call 과 일치한다.
-- **G-READOUT**: selftest 요약의 readout_sha256 = 동결 판독기 sha(d4fdd837…), 71/71, failures 0.
+- **G-READOUT**: 최초 판독의 selftest 71/71 은 계약 §4.3 의 결손(파일·셀 부재·비유한·비양수 인구 → R5·X), exports 키 중복, FIXED_TE 불일치, manifest 세대 변경 시험을 갖지 않았고, 결손 파일에서 판독기가 예외로 중단했으며 G-READOUT 이 필수 시험 목록을 검사하지 않았다(astra 종료감사 «폐합 차단» C1). 수리: 통계 계산을 `statistics()` 로 분리해 모든 읽기 실패를 결손 사유로 등록(R5·X), 게이트 읽기 실패는 X, `REQUIRED_CASES`(90건) 미포함 요약을 `MISSING_REQUIRED` 로 거부. 추가 NC 20건(결손 파일 3·헤더 손상·인구 nan/inf/0/−1·원장 부재 선·R 루트 부재·E 대 E 종단 정상 대조 R0·exports 키 중복·manifest 세대·FIXED_TE 두 항·G-RUN 읽기 실패·finalize 3·필수 목록 거부·목록 포괄). `reader_selftest_fix2` 91/91, readout_sha256 = 5b5a68f9…. 옛 selftest(fix1)를 새 판독기에 주면 `G-READOUT:NOT_THIS_READOUT` 로 X 가 됨을 확인했다. 재판독 분기·통계 동일. GPU 재실행 없음.
 - 선 집합 파일 sha fcc110c9…. E 원장 w5_lines.csv sha 08eaece3… 은 preflight 와 같다.
 
 ## 7. 읽기와 주장 상한
 
-1. **이온화**: 기존 NRB 구현(Sobolev 순율 괄호)을 켜자 E 대비 S·Si·Ca III/II 가 30셀 중 29셀에서 검출 문턱 이상으로 내려갔다(단계 −0.4…−1.8, 준위합 −1.6…−3.8 dex). 황의 공개 간극은 단계 +1.0…+2.2 → −0.34…+0.72 dex, 준위합 +1.6…+2.7 → −0.11…+0.64 dex 로 줄었다. 셸 sh10–24 는 |간극| ≤ 0.50 dex 이고, 남는 자리는 **sh30(+0.6…+0.7)**이다. Si·Ca 는 단계 배열 기준으로 외곽(sh24–30)에 +1.0…+2.4 dex 가 남는다. 준위합 기준은 공개값 아래로 −1.6 dex 까지 넘는다. 단계 배열과 준위합의 권위 차이는 Si 에서 최대 2 dex(기존 이중 권위 문제)이며, 어느 쪽이 공개 대응인지는 이 런이 가르지 않는다.
+1. **이온화**: 기존 NRB 구현(Sobolev 순율 괄호)을 켜자 E 대비 S·Si·Ca III/II 가 30셀 중 29셀에서 검출 문턱 이상으로 내려갔다(단계 −0.4…−1.8, 준위합 −1.6…−3.8 dex). 황의 공개 간극은 단계 +1.0…+2.2 → −0.34…+0.72 dex, 준위합 +1.6…+2.7 → −0.11…+0.64 dex 로 줄었다. 셸 sh10–24 는 |간극| 약 0.50 dex 이하(최대 단계 sh10 +0.505)이고, 남는 자리는 **sh30(+0.6…+0.7)**이다. Si·Ca 는 단계 배열 기준으로 외곽(sh24–30)에 +1.0…+2.4 dex 가 남는다. 준위합 기준은 공개값 아래로 −1.6 dex 까지 넘는다. 단계 배열과 준위합의 권위 차이는 R 의 Si 에서 최대 약 2.36 dex(sh24; 기존 이중 권위 문제)이며, 어느 쪽이 공개 대응인지는 이 런이 가르지 않는다.
 2. **기전**: 두꺼운 D 선의 S_l 이 call 7 에서 E 대비 −1.7…−3.0 dex, D 대역 J/B 는 −1.7…−2.0 dex 내려갔다. 이는 「E 에서 두꺼운 선 S_l 이 시드 B(T_inner) 근처에 묶여 있었다」는 진단과 같은 방향이다. 다만 J_c 에 선 되먹임이 남아 있으므로 특정 선의 독점적 인과나 원인별 기여율로 읽지 않는다(계약 §6).
-3. **FUV**: F_a −0.22 dex 는 등록 문턱(0.30) 미만이고 F_b 는 불변이다. **FUV 초과 해소는 이 런으로 결론 낼 수 없다.** 같은 런에서 NUV–청색 방출(2500–4000 Å)이 −0.27 dex 줄었고 총 방출은 −0.10 dex 줄었다. NUV/광학 색비가 공개에서 멀어졌다. 이는 보조 관측이며, 판정 범위 밖의 새 어긋남 후보로 기재한다.
-4. **수렴**: Δ₁ 은 call 7 에서도 단조 심화 중이다. S stage sh19·24·30 의 반복 표류는 D ≈ 0.5 다. 결과는 **6 반복 창의 유한 응답**이며, 수렴값·주원인 확정·공개 재현을 뜻하지 않는다.
+3. **FUV**: F_a −0.22 dex 는 등록 문턱(0.30) 미만이고 F_b 는 불변이다. **FUV 초과 해소는 이 런으로 결론 낼 수 없다.** 같은 런에서 NUV–청색 방출(2500–4000 Å)이 −0.27 dex 줄었고 총 방출(74.47–51187.3 Å)은 −0.10 dex 줄었다. 이 변화량은 **현 FIXED_TE·6 반복 구성의 관측값**이며 다른 구성에서 유지된다는 뜻이 아니다. NUV/광학 색비가 공개에서 멀어졌다. 이는 보조 관측이며, 판정 범위 밖의 새 어긋남 후보로 기재한다.
+4. **수렴**: Δ₁ 은 call 7 에서도 더 내려가는 중이다(이 창에서 안정화 미관측; 장기 발산 주장 아님). S stage sh19·24·30 의 반복 표류는 D ≈ 0.5 다. 결과는 **6 반복 창의 유한 응답**이며, 수렴값·주원인 확정·공개 재현을 뜻하지 않는다.
 5. 어느 결과도 NT·W2 의 인과적 배제가 아니다. 외곽 W2(sh≥40)는 두 번째 표적으로 남는다.
 
 ## 8. 다음 (user 결정 대상)
 
-- NRB(+SPRODUCER_CAPTURE)를 생산 기준선에 반영할지 정한다. 반영하면 FIXED_TE 결정론 선로에서 방출 광도가 −0.10 dex 줄고 NUV 색이 공개에서 멀어지는 것을 함께 떠안는다.
+- NRB(+SPRODUCER_CAPTURE)를 생산 기준선에 반영할지 정한다. 현 FIXED_TE·6 반복 구성에서는 방출 광도 −0.10 dex·NUV 색 공개 이탈이 함께 관측됐다(다른 구성에서의 크기는 미측정).
 - 미수렴(Δ₁ 심화 진행)을 반복 연장으로 볼지, 그대로 둘지 정한다.
-- FUV(F_a)·NUV 방출 감소의 기전 진단: Fable 진단 → astra 감사 루프(개정25-t)로 보낼지 정한다.
+- FUV(F_a)·NUV 방출 감소의 기전 진단 — user 결정(10-02, 「3」): Fable 진단 → astra 감사 루프 `diag3_20261002/` 진행 중, 결정 권고 포함.
 - 외곽 W2(sh≥40) 두 번째 표적.
 
-## 9. 분장 장부 (이 단 실제)
+## 9. 분장 장부
 
-| 단계 | 규약상 담당 | 실제 | 위반 |
-|---|---|---|---|
-| 진단 루프 | Fable ↔ astra(25-t) | Fable r1–r4 ↔ astra r1–r4, 최종 차단 0(`diag2_20261002/`) | 없음 |
-| 재개 결정 | user | user「재개」(10-02) | 없음 |
-| 기안 | astra | astra(84ed869) | 없음 |
-| 사전감사(Q-GOAL·Q-LEAN) | Fable | Fable fresh(`claude-fable-5-1`), 차단 0·K-1/K-2 반영 권고; ⚠Fable 이 로그인 노드에서 파일 집계를 돌린 이탈을 자기 기재 | 기재 |
-| 구현(판독기) | 운전자(25-w) | 운전자 | ⚠운전자가 구현·판정 겸함 |
-| 코드 감사 | gpt-6-sol(25-v) | gpt-6-sol(stderr `model: gpt-6-sol` 확인) Q0 가·«폐합 차단» 9 → 운전자 수리, NC 52→71, 재감사 없음 | 기재 |
-| 스테이징·제출·판독·판정 | 운전자 | 운전자(410042) | 없음 |
-| 보조량(§3.1 Si·Ca 공개 간극, §5 대역 광도) | — | 운전자 계산, 동결 판독기 밖 | 기재(판정 근거 아님) |
-| 종료감사 | astra | 예정 | — |
+정본 = 계약 §7 집행 기록(`docs/PREREG_DET_NRB_E_2026-10-02.md`). 이 판정문은 장부를 복제하지 않는다.

@@ -573,13 +573,13 @@ GPU 한 번과 판독기 하나로 묶는다. 생산 소스·새 계측·별도 
 | 재개 결정 | user, 2026-10-02 확정 | 09-25 종료 방향 재심·재개 |
 | 진단 루프 | Fable ↔ astra, 종료 | 정본·감사 r1–r4, 최종 차단 0 |
 | 기안 | astra, 이번 read-only 본문 | 모델 ID·저자 실행/미실행 |
-| 파일화·기계 검사 | 운전자, 미집행 | 문서 해시·명령·rc |
-| 계약 사전감사 | 현행 분장에 따라 운전자 발주, 미집행 | 실제 담당·산출·판정 |
-| 판독기 구현·직접 NC | 운전자, 25-w, 미집행 | 변경 파일·동결 해시·정상 대조·NC |
-| 코드 검사·봉인 접촉 처리 | 현행 분장에 따라 운전자 기록, 미집행 | 실제 검사자·허용 범위·해소 증거 |
-| 스테이징·제출 | 운전자, 미집행 | G-ID·고정 L·runner·job·자원 |
-| 판독·판정 | 운전자, 미집행 | 게이트·유효성·R0–R5·전 셸/셀 표 |
-| 종료 처리 | 현행 분장에 따라 운전자 기록 | 실제 감사·재현 상태·미해결 사항 |
+| 파일화·기계 검사 | 운전자, 집행 | prereg_preflight·gate_referents·doc_canonical rc=0, 커밋 84ed869 |
+| 계약 사전감사 | Fable fresh(개정25-r, Q-GOAL·Q-LEAN), 집행 | `nrb2_20261002/preaudit_fable.md` — `claude-fable-5-1`, «폐합 차단» 0, K-1·K-2 반영(00ccde5); ⚠Fable 이 로그인 노드에서 파일 집계를 돌린 이탈 자기 기재 |
+| 판독기 구현·직접 NC | 운전자(25-w), 집행 | 00ccde5 동결 d4fdd837…(`JUDGE_FROZEN.txt`, 판정런 종료 전), NC 71/71; 종료감사 C1 수리 후 5b5a68f9…, `reader_selftest_fix2` 91/91 |
+| 코드 검사·봉인 접촉 처리 | gpt-6-sol(개정25-v), 집행 | `sol_audit_r1.md`(stderr `model: gpt-6-sol`) Q0 가·«폐합 차단» 9 → 운전자 수리, 재감사 없음 |
+| 스테이징·제출 | 운전자, 집행 | G-ID 사전 PASS(`evidence/gid_pre`), 고정 L 171선(`evidence/preflight/lines_E_call7.csv`), job 410042(h100·a100, 1-06:00:00, 64G), runner sha 6db94795… |
+| 판독·판정 | 운전자, 집행 | `readout/`(최초) → `readout_fix2/`(C1 수리 후, 분기·통계 동일) · R2 VALID · `docs/VERDICT_DET_NRB_E_2026-10-02.md` |
+| 종료 처리 | astra 종료감사 1회, 집행 | `astra_closeout_r1.md`(실행 헤더 `model: gpt-6-astra`; 1차 발주는 stdin 대기로 산출 0 → PID 지목 종료·재발주): R2 원자료 재현, «폐합 차단» 1(G-READOUT §4.3 NC 누락·결손 예외) → 운전자 수리·재판독 분기 동일, 기재 3 반영. ⚠astra 는 이 계약의 기안자(자기 계약 감사); Slurm 은 보존 기록 기준 확인 |
 
 운전자의 판독기 구현·판정 겸임을 남긴다. 선행 진단 루프 종료를 새 계약 감사나 실행 검증으로 재명명하지 않는다.
 

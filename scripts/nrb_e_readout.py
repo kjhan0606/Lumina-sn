@@ -41,6 +41,108 @@ J_BANDS = {"D": (912.0, 1500.0), "B": (531.0, 760.0)}
 # §4.2 (pre-audit K-1): explicit failure markers; [DPROXY][SL-POP-COMPLETE] status=BLOCKED is a normal diagnostic
 FORBIDDEN = ("[cmf_fine][BLOCKED]", "[R6][BLOCKED]", "[R6][FATAL]", "[R7][FATAL]", "[RADIATION-FIELD][FATAL]",
              "[cmfgen_assemble][BLOCKED]", "[A2-INIT][FATAL]", "[CMFGEN][FATAL]")
+# closeout C1: unreadable / absent / malformed input is a registered missing (R5 + X), never an exception
+REQUIRED_CASES = (   # closeout C1: G-READOUT requires every case of the frozen §4.3 battery (run with --base E)
+    "-0.30 -> down",
+    "+0.30 -> up",
+    "just inside -0.30 -> flat",
+    "just inside +0.30 -> flat",
+    "NaN -> MISSING",
+    "① all 21 distributions",
+    "① (2,2,1) -> mixed",
+    "① 3/5 -> down",
+    "① missing -> MISSING",
+    "D=0.15 delta=-0.60 -> a",
+    "3D==0.30 below threshold -> c",
+    "delta=+T -> b",
+    "sign R - E: R lower -> negative delta3",
+    "E-side drift enters D",
+    "log mean of k4,k5 (-1.0), k3/k5 drift only",
+    "③ all 286 sulfur distributions",
+    "③ (4,3,2,1) -> a",
+    "stage 2: each of 36 combinations gives its expected branch",
+    "stage 2: 36 combinations R0/R1/R2/R3/R4 = 24/1/2/6/3",
+    "④b opposite to ④a always -> R5 first",
+    "counterexample: all down, a, 4a -0.4, 4b +0.4 -> R5",
+    "same with 4b -0.1 -> R1",
+    "several R5 reasons -> one branch",
+    "missing -> R5",
+    "symmetric per-line diffs (+2,-2,0) -> median 0",
+    "asymmetric: per-line diffs (+2,-2,-2) median -2 (difference of medians would be -1)",
+    "missing fixed key -> undefined + reason",
+    "beta==1 -> undefined source",
+    "beta>1 with L<0 -> positive S defined",
+    "negative S -> undefined",
+    "duplicate fixed key reported",
+    "wrong radiation generation -> undefined",
+    "wrong operator -> undefined",
+    "q2/q1 overflow handled in log space",
+    "q2/q1 underflow handled in log space",
+    "selection: tau 1e3 inclusive, D edges",
+    "linear L_lambda integral 1200-1500",
+    "unsupported FUV band",
+    "J=B -> log10 J/B = 0 in D band",
+    "J/B partial support -> undefined",
+    "J/B duplicated bin -> undefined",
+    "J/B gap -> undefined",
+    "J/B NaN -> undefined",
+    "exports: exactly the two registered keys",
+    "exports: extra diff",
+    "exports: NRB missing",
+    "exports: empty string != absent",
+    "exports: MUST_KEEP violated",
+    "binary mismatch",
+    "approved mismatch",
+    "NRB witness good",
+    "NRB tag deleted",
+    "NRB tag duplicated",
+    "NRB armed=0 in Sobolev",
+    "capture count 5",
+    "NRB FATAL",
+    "malformed CAPTURED lines rejected",
+    "INIT captured=1 rejected",
+    "baseline E with captured=1 tag rejected",
+    "baseline E: OFF accepted",
+    "baseline E with armed NRB rejected",
+    "publication: required gen != 8 and missing referenced file",
+    "identity linkage: stage/footer hashes and H200 rejected",
+    "G-READOUT rejects a summary not produced by this readout",
+    "G-READOUT rejects a failed case",
+    "forbidden tag list excludes the normal DPROXY BLOCKED diagnostic",
+    "footer good",
+    "not completed",
+    "E vs E: Δ₁ = 0 for all shells, no missing",
+    "lines file: wrong E hash, duplicate key, not the selection",
+    "E vs E: ③ cells only c/d, branch R0",
+    "exports: duplicated key -> EXPORTS_DUPLICATE_KEY",
+    "manifest: generation changed k2, k4 absent",
+    "FIXED_TE: two te manifest hashes and published T_e != profile",
+    "G-RUN on an unreadable run -> registered reason, no exception",
+    "finalize: gate failure only -> X, statistic branch kept",
+    "finalize: missing -> R5 + X",
+    "finalize: clean -> VALID",
+    "G-READOUT rejects a passing summary lacking required cases",
+    "E vs E end-to-end statistics: no missing, Δ₄ = 0, branch R0",
+    "absent spectrum file -> R5 + X",
+    "absent ion k4 file -> R5 + X",
+    "absent spectral k5 file -> R5 + X",
+    "malformed spectrum header -> R5 + X",
+    "ion population nan -> cell missing, R5 + X",
+    "ion population inf -> cell missing, R5 + X",
+    "ion population 0 -> cell missing, R5 + X",
+    "ion population -1 -> cell missing, R5 + X",
+    "fixed line absent from ledger -> S undefined, R5 + X",
+    "absent R run root -> R5 + X, no exception",
+)
+READ_ERRORS = (OSError, ValueError, KeyError, TypeError, IndexError, ZeroDivisionError, csv.Error)
+
+
+def guarded(missing, tag, fn, *args):
+    try:
+        return fn(*args)
+    except READ_ERRORS as e:
+        missing.append(f"{tag}:{type(e).__name__}")
+        return None
 
 
 # ------------------------------------------------------------------ categories / branch
@@ -292,6 +394,13 @@ def exports_delta2(dE, dR, eroot, rroot):
     return why
 
 
+def exports_reasons(pE, pR, eroot, rroot):
+    dE, dupE = read_exports(pE)
+    dR, dupR = read_exports(pR)
+    why = ["EXPORTS_DUPLICATE_KEY"] if dupE or dupR else []
+    return why + exports_delta2(dE, dR, eroot, rroot)
+
+
 def gid(eroot, rroot, post_run):
     E, R = Path(eroot), Path(rroot)
     why, ev = [], {}
@@ -322,11 +431,7 @@ def gid(eroot, rroot, post_run):
         if sha(E / "input" / f) != sha(R / "input" / f):
             why.append(f"INPUT_MISMATCH:{f}")
     why += content_reasons(E, "E") + content_reasons(R, "R")
-    dE, dupE = read_exports(E / "input/resolved_lumina.exports")
-    dR, dupR = read_exports(R / "input/resolved_lumina.exports")
-    if dupE or dupR:
-        why.append("EXPORTS_DUPLICATE_KEY")
-    why += exports_delta2(dE, dR, str(E), str(R))
+    why += exports_reasons(E / "input/resolved_lumina.exports", R / "input/resolved_lumina.exports", str(E), str(R))
     ev["runner_sha_R"] = sha(R / "job.slurm")
     for nm, root in (("E", E), ("R", R)):
         why += linkage_reasons(root, nm, post_run)
@@ -391,15 +496,8 @@ def nrb_witness(lines_of_log, armed_expected):
     return why
 
 
-def grun(run, slurm_state, armed_expected):
-    W = Path(run) / "work"
-    why = footer_reasons(footer(run), slurm_state)
-    prof = {}
-    for ln in open(Path(run) / "input/fixed_te_profile.txt"):
-        a = ln.split()
-        if len(a) == 2:
-            prof[int(a[0])] = float(a[1])
-    why += te_reasons(run, prof)[0]
+def manifest_reasons(W):
+    why = []
     for k in range(6):
         mp = W / f"physics_comparison/physics_DET_iter{k:04d}.manifest.json"
         if not mp.exists():
@@ -409,6 +507,19 @@ def grun(run, slurm_state, armed_expected):
         if m.get("transaction_status") != "COMMITTED" or m.get("radiation_generation") != k + 2 \
                 or m.get("population_generation") != k + 3 or m.get("te_lane") != "FIXED_T":
             why.append(f"MANIFEST_STATE:k{k}")
+    return why
+
+
+def grun(run, slurm_state, armed_expected):
+    W = Path(run) / "work"
+    why = footer_reasons(footer(run), slurm_state)
+    prof = {}
+    for ln in open(Path(run) / "input/fixed_te_profile.txt"):
+        a = ln.split()
+        if len(a) == 2:
+            prof[int(a[0])] = float(a[1])
+    why += te_reasons(run, prof)[0]
+    why += manifest_reasons(W)
     why += publication_reasons(W)
     log = list(open(Path(run) / "stderr.log", errors="replace")) if (Path(run) / "stderr.log").exists() else []
     ok = sum(1 for ln in log if ln.startswith("[cmf_fine][EXACT-MULTIGPU-EPOCH]") and " status=OK " in ln + " ")
@@ -499,6 +610,8 @@ def readout_gate(path):
     cases = d.get("cases", [])
     if not cases or d.get("n_cases") != len(cases) or any(not c.get("pass") for c in cases):
         return "NOT_ALL_PASSED"
+    if not set(REQUIRED_CASES) <= {c.get("case") for c in cases}:
+        return "MISSING_REQUIRED"
     return "PASS"
 
 
@@ -511,28 +624,13 @@ def cmd_gid(a):
     return 0 if not why else 1
 
 
-def cmd_readout(a):
-    out = Path(a.out)
-    out.mkdir(parents=True, exist_ok=False)
-    invalid = []
-    why_id, ev = gid(a.base, a.test, post_run=True)
-    invalid += [f"G-ID:{w}" for w in why_id]
-    st = json.load(open(a.slurm_states))
-    for nm in ("E", "R"):
-        toks = (st.get(nm) or "").split()
-        if not {"TIMELIMIT=1-06:00:00", "REQMEM=64G"} <= set(toks):
-            invalid.append(f"SLURM_RESOURCES:{nm}")
-    gr = {"E": grun(a.base, st.get("E"), False), "R": grun(a.test, st.get("R"), True)}
-    invalid += [f"G-RUN:{k}:{w}" for k, v in gr.items() for w in v]
-    g_read = readout_gate(a.selftest)
-    if g_read != "PASS":
-        invalid.append(f"G-READOUT:{g_read}")
-    lines, lw = verify_lines_file(a.lines, a.base)
-    invalid += lw
-    keys = set(lines)
-    ledE, dupE = read_ledger(a.base, keys)
-    ledR, dupR = read_ledger(a.test, keys)
+def statistics(base, test, lines):
+    """§5 statistics from raw files; any unreadable/absent/malformed input -> registered missing (R5)."""
     missing = []
+    keys = set(lines)
+    ledE = guarded(missing, "LEDGER_FILE:E", read_ledger, base, keys) or ({}, 0)
+    ledR = guarded(missing, "LEDGER_FILE:R", read_ledger, test, keys) or ({}, 0)
+    (ledE, dupE), (ledR, dupR) = ledE, ledR
     if dupE or dupR:
         missing.append("LEDGER_DUPLICATE")
     d1, w1, traj = delta1(ledE, ledR, lines)
@@ -540,14 +638,15 @@ def cmd_readout(a):
     cats1 = {s: category(d1[s][7]) for s in SHELLS}
     agg1 = shell_aggregate([cats1[s] for s in SHELLS])
     iters = {}
-    for nm, run in (("E", a.base), ("R", a.test)):
+    for nm, run in (("E", base), ("R", test)):
         iters[nm] = {}
         for k in (3, 4, 5):
             if not (Path(run) / f"work/physics_comparison/physics_DET_iter{k:04d}.ion.csv").exists():
                 missing.append(f"ION_FILE_MISSING:{nm}:k{k}")
                 iters[nm][k] = {}
                 continue
-            rows, dup = load_ion_iter(run, k)
+            got = guarded(missing, f"ION_FILE:{nm}:k{k}", load_ion_iter, run, k)
+            rows, dup = got if got is not None else ({}, 0)
             if dup:
                 missing.append(f"ION_DUPLICATE:{nm}:k{k}")
             iters[nm][k] = rows
@@ -555,7 +654,8 @@ def cmd_readout(a):
     for Z in ELEMS:
         for A in AUTHS:
             for s in SHELLS:
-                yE, yR = y_series(iters["E"], Z, A, s), y_series(iters["R"], Z, A, s)
+                yE = guarded(missing, f"ION_ROW:E:{Z}/{A}/sh{s}", y_series, iters["E"], Z, A, s)
+                yR = guarded(missing, f"ION_ROW:R:{Z}/{A}/sh{s}", y_series, iters["R"], Z, A, s)
                 row = {"Z": Z, "authority": A, "shell": s}
                 if yE is None or yR is None:
                     row["outcome"] = "MISSING"
@@ -566,7 +666,8 @@ def cmd_readout(a):
                     row.update(cell(yE, yR))
                 cells.append(row)
     agg3 = sulfur_mode([c["outcome"] for c in cells if c["Z"] == 16])
-    fE, fR = fuv(a.base), fuv(a.test)
+    fE = guarded(missing, "FUV_FILE:E", fuv, base) or {"status": "FILE_ERROR"}
+    fR = guarded(missing, "FUV_FILE:R", fuv, test) or {"status": "FILE_ERROR"}
     d4 = {}
     for nm in ("a", "b"):
         d4[nm] = (math.log10(fR[f"F{nm}"]) - math.log10(fE[f"F{nm}"])) \
@@ -574,19 +675,53 @@ def cmd_readout(a):
         if d4[nm] is None:
             missing.append(f"FUV_{nm}")
     c4a, c4b = category(d4["a"]), category(d4["b"])
-    jE, jR = jb_table(a.base), jb_table(a.test)
+    jE = guarded(missing, "JB_FILE:E", jb_table, base) or {}
+    jR = guarded(missing, "JB_FILE:R", jb_table, test) or {}
     d2 = {k: (jR[k]["log10_ratio"] - jE[k]["log10_ratio"]) if isinstance(jE.get(k), dict) and isinstance(jR.get(k), dict)
-          else None for k in jE if k != "radiation_generation"}
+          else None for k in set(jE) | set(jR) if k != "radiation_generation"}
     if jE.get("radiation_generation") != 7 or jR.get("radiation_generation") != 7:
         missing.append("JB_GENERATION")
-    if any(v is None for v in d2.values()):
+    if not d2 or any(v is None for v in d2.values()):
         missing.append("JB_UNDEFINED")
     if any(m.startswith(("S_UNDEFINED", "L_EMPTY", "LEDGER")) for m in missing):
         agg1 = "MISSING"
     br, r5 = branch(agg1, agg3, c4a, c4b)
+    return {"missing": missing, "d1": d1, "traj": traj, "cats1": cats1, "agg1": agg1, "cells": cells,
+            "agg3": agg3, "fE": fE, "fR": fR, "d4": d4, "c4a": c4a, "c4b": c4b, "jE": jE, "jR": jR, "d2": d2,
+            "branch": br, "r5": r5}
+
+
+def finalize(br, r5, missing, invalid):
+    """§4.4: required-data missing -> R5 + X; gate failure -> X (statistic branch kept, judged branch None)."""
     if missing and br != "R5":
         br, r5 = "R5", r5 + ["MISSING"]
-    validity = "X" if (invalid or missing) else "VALID"
+    return br, r5, ("X" if (invalid or missing) else "VALID")
+
+
+def cmd_readout(a):
+    out = Path(a.out)
+    out.mkdir(parents=True, exist_ok=False)
+    invalid = []
+    why_id, ev = guarded(invalid, "G-ID:READ", gid, a.base, a.test, True) or ([], {})
+    invalid += [f"G-ID:{w}" for w in why_id]
+    st = guarded(invalid, "SLURM_STATES:READ", lambda p: json.load(open(p)), a.slurm_states) or {}
+    for nm in ("E", "R"):
+        toks = (st.get(nm) or "").split()
+        if not {"TIMELIMIT=1-06:00:00", "REQMEM=64G"} <= set(toks):
+            invalid.append(f"SLURM_RESOURCES:{nm}")
+    for nm, run, armed in (("E", a.base, False), ("R", a.test, True)):
+        invalid += [f"G-RUN:{nm}:{w}" for w in guarded(invalid, f"G-RUN:{nm}:READ", grun, run, st.get(nm), armed) or []]
+    g_read = readout_gate(a.selftest)
+    if g_read != "PASS":
+        invalid.append(f"G-READOUT:{g_read}")
+    vl = guarded(invalid, "LINES_FILE", verify_lines_file, a.lines, a.base)
+    lines, lw = vl if vl is not None else ([], [])
+    invalid += lw
+    st_ = statistics(a.base, a.test, lines)
+    missing = st_["missing"]
+    d1, traj, cats1, agg1, cells, agg3 = (st_[k] for k in ("d1", "traj", "cats1", "agg1", "cells", "agg3"))
+    fE, fR, d4, c4a, c4b, jE, jR, d2 = (st_[k] for k in ("fE", "fR", "d4", "c4a", "c4b", "jE", "jR", "d2"))
+    br, r5, validity = finalize(st_["branch"], st_["r5"], missing, invalid)
     res = {"schema": "NRB_E_READOUT_V1", "base_E": a.base, "test_R": a.test,
            "branch": br if not invalid else None, "statistic_branch": br, "R5_reasons": r5,
            "validity": validity, "invalid_reasons": invalid, "missing": missing,
@@ -872,6 +1007,111 @@ def cmd_selftest(a):
         case("E vs E: ③ cells only c/d, branch R0",
              (all(o in "cd" for o in outs), branch(cats, sulfur_mode(outs) if sulfur_mode(outs) != "mixed" else "c",
                                                     category(d4a), category(d4a))[0]), (True, "R0"))
+    # closeout C1: §4.3 identity/FIXED_TE/missing-data NCs and the G-READOUT required list
+    ex = tmp / "exports"
+    ex.mkdir()
+    (ex / "E").write_text('declare -x A="1"\ndeclare -x LUMINA_BB_NRB="1"\ndeclare -x LUMINA_BB_NRB="1"\n')
+    (ex / "R").write_text('declare -x A="1"\n')
+    case("exports: duplicated key -> EXPORTS_DUPLICATE_KEY",
+         "EXPORTS_DUPLICATE_KEY" in exports_reasons(ex / "E", ex / "R", "/e", "/r"), True)
+    mf = tmp / "mf"
+    (mf / "work/physics_comparison").mkdir(parents=True)
+    for k in range(6):
+        if k == 4:
+            continue
+        (mf / f"work/physics_comparison/physics_DET_iter{k:04d}.manifest.json").write_text(json.dumps(
+            {"transaction_status": "COMMITTED", "radiation_generation": k + 2 + (k == 2), "population_generation": k + 3,
+             "te_lane": "FIXED_T", "te_manifest_sha256": "h0" if k else "h1"}))
+    case("manifest: generation changed k2, k4 absent", manifest_reasons(mf / "work"),
+         ["MANIFEST_STATE:k2", "MANIFEST_MISSING:k4"])
+    (mf / "work/physics_comparison/physics_DET_iter0005.shell.csv").write_text("shell_id,T_e_K\n0,10000\n1,9000\n")
+    case("FIXED_TE: two te manifest hashes and published T_e != profile",
+         te_reasons(mf, {0: 10000.0, 1: 9500.0})[0], ["TE_MANIFEST_HASHES", "TE_PUBLISHED_NE_PROFILE"])
+    lst = []
+    case("G-RUN on an unreadable run -> registered reason, no exception",
+         (guarded(lst, "G-RUN:R:READ", grun, tmp / "absent_run", "COMPLETED RESTARTS=0", True), lst),
+         (None, ["G-RUN:R:READ:FileNotFoundError"]))
+    case("finalize: gate failure only -> X, statistic branch kept", finalize("R2", [], [], ["G-ID:X"]), ("R2", [], "X"))
+    case("finalize: missing -> R5 + X", finalize("R2", [], ["FUV_a"], []), ("R5", ["MISSING"], "X"))
+    case("finalize: clean -> VALID", finalize("R2", [], [], []), ("R2", [], "VALID"))
+    (tmp / "summary_three.json").write_text(json.dumps({"readout_sha256": sha(Path(__file__).resolve()), "n_cases": 1,
+                                                       "cases": [{"case": "-0.30 -> down", "pass": True}]}))
+    case("G-READOUT rejects a passing summary lacking required cases", readout_gate(tmp / "summary_three.json"),
+         "MISSING_REQUIRED")
+    if a.base:
+        cp = tmp / "copies"
+        B = Path(a.base) / "work"
+        rel = ["lumina_spectrum.csv"] + [f"physics_comparison/physics_DET_iter{k:04d}.ion.csv" for k in (3, 4, 5)] + \
+              [f"physics_comparison/physics_DET_iter0005.{x}" for x in ("manifest.json", "shell.csv", "spectral.csv")]
+        keys_sel = set(sel)
+        small = cp / "w5_lines_selected.csv"
+        cp.mkdir()
+        with open(B / "w5_lines.csv") as fi, open(small, "w") as fo:
+            hdr = fi.readline()
+            fo.write(hdr)
+            cols = hdr.rstrip("\n").split(",")
+            i_s, i_l = cols.index("shell"), cols.index("line_id")
+            for ln in fi:
+                f_ = ln.split(",")
+                if (int(f_[i_s]), int(f_[i_l])) in keys_sel:
+                    fo.write(ln)
+
+        def mk(name, drop=(), edit=None):
+            r = cp / name
+            (r / "work/physics_comparison").mkdir(parents=True)
+            (r / "work/w5_lines.csv").symlink_to(small)
+            for x in rel:
+                if x not in drop:
+                    (r / "work" / x).symlink_to(B / x)
+            if edit:
+                x, fn = edit
+                (r / "work" / x).unlink()
+                (r / "work" / x).write_text(fn((B / x).read_text()))
+            return str(r)
+
+        Ec = mk("E")
+
+        def stat_case(name, R_, want_missing_prefix):
+            st_ = statistics(Ec, R_, sel)
+            br, _, val = finalize(st_["branch"], st_["r5"], st_["missing"], [])
+            case(name, (br, val, any(m.startswith(want_missing_prefix) for m in st_["missing"])), ("R5", "X", True))
+
+        st0 = statistics(Ec, mk("E2"), sel)
+        case("E vs E end-to-end statistics: no missing, Δ₄ = 0, branch R0",
+             (st0["missing"], st0["d4"], finalize(st0["branch"], st0["r5"], st0["missing"], [])[0]),
+             ([], {"a": 0.0, "b": 0.0}, "R0"))
+        stat_case("absent spectrum file -> R5 + X", mk("noSpec", drop=["lumina_spectrum.csv"]), "FUV_FILE:R")
+        stat_case("absent ion k4 file -> R5 + X", mk("noIon4", drop=["physics_comparison/physics_DET_iter0004.ion.csv"]),
+                  "ION_FILE_MISSING:R:k4")
+        stat_case("absent spectral k5 file -> R5 + X",
+                  mk("noSpectral", drop=["physics_comparison/physics_DET_iter0005.spectral.csv"]), "JB_FILE:R")
+        stat_case("malformed spectrum header -> R5 + X",
+                  mk("badSpec", edit=("lumina_spectrum.csv", lambda t: "x,y\n" + t.split("\n", 1)[1])), "FUV_FILE:R")
+
+        def poison(val):
+            def f(t):
+                ls = t.split("\n")
+                h = ls[0].split(",")
+                i_sh, i_q = h.index("shell_id"), h.index("Z16_stage_q1_cm3")
+                for j in range(1, len(ls)):
+                    c = ls[j].split(",")
+                    if len(c) == len(h) and c[i_sh] == "10":
+                        c[i_q] = val
+                        ls[j] = ",".join(c)
+                return "\n".join(ls)
+            return f
+        for v in ("nan", "inf", "0", "-1"):
+            stat_case(f"ion population {v} -> cell missing, R5 + X",
+                      mk(f"pop_{v}", edit=("physics_comparison/physics_DET_iter0005.ion.csv", poison(v))),
+                      "CELL:16/stage/sh10")
+        os_ = statistics(Ec, mk("E3"), sel + [(10, 10 ** 9)])
+        case("fixed line absent from ledger -> S undefined, R5 + X",
+             (finalize(os_["branch"], os_["r5"], os_["missing"], [])[0::2], os_["agg1"]), (("R5", "X"), "MISSING"))
+        os2 = statistics(Ec, str(cp / "absent_run"), sel)
+        case("absent R run root -> R5 + X, no exception",
+             finalize(os2["branch"], os2["r5"], os2["missing"], [])[0::2], ("R5", "X"))
+    names = {r["case"] for r in res}
+    case("battery covers every G-READOUT required case", sorted(set(REQUIRED_CASES) - names), [])
     nfail = sum(1 for r in res if not r["pass"])
     (out / "readout_selftest.json").write_text(json.dumps(
         {"readout_sha256": sha(Path(__file__).resolve()), "n_cases": len(res), "failures": nfail, "cases": res}, indent=1))
