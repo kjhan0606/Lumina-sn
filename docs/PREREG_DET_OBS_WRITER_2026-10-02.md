@@ -19,12 +19,13 @@
 - 반복 연장은 보류한다.
 - 기존 DET-NRB-E의 R2 판정과 기존 ④·원자료·저작 이력을 보존한다.
 
-- user 결정(2026-10-02, 원문 「R'1런을 먼저 돌려요.」): **選택지 (ii), R′ 1런 → 같은 view의 W_R′ 판독·보고 → user의 E′ 실행 여부 결정**으로 확정한다. 단계 1 통과 자료, CPU 행진 비용 추정, 메모리 예상량의 제출 전 제시는 유지한다. E′ 실행 전에는 Δ_N·Δ_L과 §5의 두 상태 FUV 분기를 판정하지 않으며, R′ 단독 보고를 단계 2 전체 완료로 표시하지 않는다.
+- user 결정(2026-10-02, 원문 「R'1런을 먼저 돌려요.」): **선택지 (ii), R′ 1런 → 같은 view의 W_R′ 판독·보고 → user의 E′ 실행 여부 결정**으로 확정한다. 단계 1 통과 자료, CPU 행진 비용 추정, 메모리 예상량의 제출 전 제시는 유지한다. E′ 실행 전에는 Δ_N·Δ_L과 §5의 두 상태 FUV 분기를 판정하지 않으며, R′ 단독 보고를 단계 2 전체 완료로 표시하지 않는다.
+- user 결정(2026-10-04): χ_e 대조 허용오차를 개정하고, 운전자의 오프라인 구현·검증과 `gpt-6-sol`의 변경 코드 감사·차단 사항 해소 뒤 R′ run2를 한 번 실행한다. 이하 현재 승인 대상인 “R′ 1런”은 run2다. run1의 X와 미정의 W_R′는 보존하며 새 기준으로 소급 성공 처리하지 않는다. 기존 제출 조건과 런당 비용 상한을 유지한다. E′는 run2의 판독·보고 뒤에도 별도 user 승인 전까지 보류한다.
 
 별도 user 결정이 필요한 항목은 다음과 같다.
 
 - R′의 같은 view 작성기 효과와 적격성·비용 보고를 받은 뒤 E′ 실행 여부.
-- 실패·시간 초과 뒤 재제출, 추가 런, 반복 연장, 자원 상한 확대.
+- 이번에 승인된 R′ run2 이외의 실패·시간 초과 뒤 재제출, 추가 런, 반복 연장, 자원 상한 확대.
 - NRB 생산 승격, 새 작성기의 기본값 승격, 물리 계약·관측량·판정 문턱 변경.
 
 단계 1 내부의 구현·수리·직접시험·코드 감사 사이에 별도 user 승인 단계를 만들지 않는다. diag4 결과를 이 계약의 숨은 착수 조건이나 판정 문턱으로 추가하지 않는다.
@@ -41,12 +42,12 @@ R  = /gpfs/kjhan/lumina/cmfgen_map/nrb2_20261002/run1
 
 N  = /gpfs/kjhan/lumina/cmfgen_map/obs_writer_20261002
 T1 = /gpfs/kjhan/lumina/cmfgen_map/obs_writer_20261002/source
-B1 = /gpfs/kjhan/lumina/cmfgen_map/obs_writer_20261002/cuda_build1
+B1 = /gpfs/kjhan/lumina/cmfgen_map/obs_writer_20261002/cuda_build2
 EP = /gpfs/kjhan/lumina/cmfgen_map/obs_writer_20261002/Eprime/run1
-RP = /gpfs/kjhan/lumina/cmfgen_map/obs_writer_20261002/Rprime/run1
+RP = /gpfs/kjhan/lumina/cmfgen_map/obs_writer_20261002/Rprime/run2
 ```
 
-N 아래 경로는 **신설 예정**이다. 스테이징 시 충돌하면 덮어쓰지 않고 경로만 집행 기록과 기계 선언에 일관되게 갱신한다.
+개정 4는 `N/cuda_build2`, `N/Rprime/run2`, `N/stage1/rev4`, `N/evidence/rev4`, `N/Rprime/readout2`를 신설한다. 충돌하면 덮어쓰지 않고 중단한다. `N/cuda_build1`, `N/Rprime/run1`, `N/Rprime/readout1` 및 기존 시험·감사·처분·제출 기록을 보존한다. T1·판독기 수정 전에 run1의 변경 파일 원문·등록 patch·기준선 신원·판독기와 의존 파일·빌드 기록을 `N/evidence/rev4/baseline_run1/`에 보존하여 run1 소스를 복원할 수 있게 한다. 해시만 남기고 원문을 잃는 보존은 인정하지 않는다. run2는 §2.4대로 R의 봉인 초기 입력에서 시작하며 run1의 최종 상태를 재시작 입력으로 쓰지 않는다.
 
 T0와 P의 `src/`를 같은 소스 트리로 간주하지 않는다. 생산 변경은 **T0의 검증된 소스 사본 T1**에 적용하며 T0는 보존한다. B1은 변경 소스·헤더를 반영하여 새로 빌드한다. B0의 바이너리 해시를 새 바이너리에 요구하지 않는다.
 
@@ -221,9 +222,25 @@ L은 기존 `g_sob_taumin=10⁻⁶`을 유지하고 N은 코어스의 `τ>10⁻�
 
 순수 전자 산란의 수송 계수는 해당 pass의 조립기가 실제 사용한 국소 `chi_e`를 조립 지점에서 직접 포착한다. 별도 물리식이나 다음 세대의 상태로 재계산하지 않는다. 같은 조립 pass의 `cs->chi_es`와 `g_chi_line_sc_unmapped`도 확보하여 차감값과 직접 포착값을 대조한다.
 
-각 셸·빈에서 A=`cs->chi_es`, S=`g_chi_line_sc_unmapped`, E=직접 포착 `chi_e`라 할 때 `|A−S−E| / max(A+S, 1e-300) ≤ 1e-12`를 요구한다. 유한성·세대·지원 범위 조건은 별도로 유지하며, 불일치 시 `FAILED(CHI_E_RECONCILE)`로 실패한다. 최대 편차는 manifest의 `chi_e_subtraction_max_dev`에 기록한다. 분모의 작은 수는 편차 계산의 영 분모 방지용이며 수송 계수를 바꾸는 floor가 아니다.
+각 셸·빈에서 A=`cs->chi_es`, S=`g_chi_line_sc_unmapped`, E=직접 포착 `chi_e`로 둔다. mode 1은 L=Σw와 H=Σ(w·el)을 각각 부동소수 누적한 뒤 A=fl(E+fl(L−H))를 만든다. S는 미매핑 선의 fl(w·fl(1−el))을 별도로 누적한다. A+S에 고정 상수 1e-12를 곱한 옛 상한은 L·H의 누적 반올림을 제한하지 못하므로 다음 절대오차 상한으로 대체한다.
 
-큰 미매핑 선 산란 계수에서는 차감값의 상대오차가 순수 전자 산란보다 커질 수 있으므로, 차감은 원천 연결 검증에 사용하고 수송에는 직접 포착값을 사용한다. 이 허용오차는 A+S 척도의 일치 조건이며 E 자체에 대한 상대정확도 1e-12를 뜻하지 않는다. 원본 배열의 수명·세대를 확인하고 원본을 차감 갱신하지 않는다.
+fl은 이진64 최근접·짝수 반올림이며 점진적 언더플로를 포함한다. u=2^-53, a=2^-1074, ρ(x)=u·|x|/(1−u)+a로 둔다. ρ(x)는 유한한 기본 연산의 반올림 결과 x에 대한 절대 반올림 오차 상한이다. 실제 생산 연산 순서를 보존하며 이 전제를 깨는 재결합·flush-to-zero를 허용하지 않는다.
+
+mode 1에서 n은 해당 셸·빈의 실제 소비 선 수, m은 그중 미매핑 선 수다. 같은 pass의 유한한 w≥0, 0≤el≤1, 매핑 el=1 및 0≤m≤n을 전제로 한다. 조건 밖의 값을 clipping하지 않는다. L·H·S는 실제 누적 결과이며 D=fl(L−H), U=fl(A−S), r=fl(U−E)로 둔다.
+
+B0 = n·ρ(L) + 2n·ρ(H) + m·L·ρ(1) + 2m·ρ(S)
+     + ρ(D) + ρ(A) + ρ(U)
+B  = B0 + u·B0 + a
+
+mode 2는 열 선 계수 H=L 복사와 S=0의 연결을 확인한 뒤 B0=ρ(A)+ρ(U), B=B0+u·B0+a를 사용한다. mode 1의 독립 누적 오차를 mode 2에 부여하지 않는다.
+
+n·m은 기존 선 누적 루프에서 실제 선택 술어를 통과한 항만 같은 순회 중 계수한다. L·H는 χ_es 조립의 실제 `chi_ln`·`chi_ln_th`에서, A·S·E는 기존 `det_obs_capture_cell` 지점에서 같은 pass의 값으로 포착한다. D는 포착한 L·H의 같은 뺄셈으로 얻는다. 다음 pass나 physics CSV에서 역산하지 않는다. 추가 보존은 셸×빈 값·계수에 한정하며 선×셸 double 사본이나 별도 전수 순회를 만들지 않는다. 조립기의 기존 누적식·순서·수송 계수는 바꾸지 않는다.
+
+상한 계산은 정수 변환과 중간 연산까지 바깥쪽 반올림하여 수학적 B 이상인 유한한 B_up을 만든다. 생산 계산의 반올림 모드를 변경하지 않는다. 최종 기준은 `|r|≤B_up`이며 위반 시 `FAILED(CHI_E_RECONCILE)`다. 피연산자·상한의 비유한값, 포착 결손, 세대·지원 범위 위반은 별도로 실패하며 무한 상한으로 통과시키지 않는다.
+
+`chi_e_subtraction_max_dev`는 옛 A+S 척도의 비교용 진단으로 유지하되 1e-12 판정에는 사용하지 않는다. manifest에는 상한식 판본과 최대 `|r|/B_up`, 해당 셀의 셸·빈·mode·n·m·L·H·A·S·E·r·B_up을 기록한다. 실패 시에도 같은 최소 증거를 상태 파일 또는 stderr에 남긴다. run1 편차에 맞춘 경험적 배수는 추가하지 않는다.
+
+총 선 불투명도와 열 몫의 누적·상쇄 때문에 차감값의 오차가 순수 전자 산란보다 커질 수 있으므로, 차감은 원천 연결 검증에 사용하고 수송에는 직접 포착값을 사용한다. 새 상한은 조립·대조 연산의 반올림 한계이며 E 자체의 상대정확도 보증이 아니다. 원본 배열의 수명·세대를 확인하고 원본을 차감 갱신하지 않는다.
 
 per-line ε는 동일한 매핑 권위·ne·Te·τ로 `cmf_assemble_unmapped_el`을 재평가할 수 있으므로 보존을 위한 선×셸 double 사본을 요구하지 않는다. 재평가의 오류 상태는 작성기 context에 격리하거나 복구한다.
 
@@ -315,9 +332,9 @@ E′와 R′ 사이에는 선행 E/R의 차이를 유지한다.
 | `N/stage1/` | fixture·결함 주입·OFF 바이트 대조·복구·비용 추정 |
 | `N/evidence/` | 프리플라이트·코드 감사 처분·user 승인·제출·회계 기록 |
 | RP、별도 승인 시 EP | 해당 런의 봉인 입력 사본·exports·runner·기존 출력·새 출력·footer |
-| `N/readout/rprime/observables.csv` | R′의 등록 대역 광도·색비·W_R′. 지원되는 signed·영 τ 추가 성분의 차이는 별도 보고 |
-| `N/readout/rprime/result.json` | R′ 게이트·유효성·사유, E′ 미실행과 두 상태 응답·FUV 분기 보류 |
-| `N/readout/rprime/evidence_manifest.json` | R′ 판독에 실제 소비한 파일·판독기·의존 파일 신원 |
+| `N/Rprime/readout2/observables.csv` | run2의 등록 대역 광도·색비·W_R′. 지원되는 signed·영 τ 추가 성분의 차이는 별도 보고 |
+| `N/Rprime/readout2/result.json` | run2 게이트·유효성·사유, E′ 미실행과 두 상태 응답·FUV 분기 보류 |
+| `N/Rprime/readout2/evidence_manifest.json` | run2 판독에 실제 소비한 파일·판독기·의존 파일 신원 |
 | `N/readout/paired/` | 별도 승인된 E′ 실행 뒤 두 상태 관측량·대수 확인·FUV 분기·증거 신원. R′ 단독 보고는 보존 |
 
 최종 판정문은 `docs/VERDICT_DET_OBS_WRITER_2026-10-02.md`로 신설한다.
@@ -352,7 +369,7 @@ B1은 W5 `cuda_build1`의 실제 빌드 명령·컴파일러·모듈 기록을 �
 
 H200은 금지한다. 선행 runner의 H100/A100 80 GB급·동종 GPU 두 장 검사를 유지한다. 모듈은 runner 안에서 `module purge` 후 선행 빌드와 일치하게 로드한다.
 
-R의 Slurm 실측 경과는 **11:36:36**이며 모델 footer의 41,788초와 구분한다. R′ 1런의 선례 기반 계산 시간은 약 11.6시간, GPU 비용은 약 **23.2 GPU·시간에 새 CPU 작성기 실행 중의 GPU 할당 시간이 더해지는 값**이다. 현재 승인 상한은 **R′ 1런, 경과 30시간, 60 GPU·시간**이다. E′는 별도 승인 시 같은 자원과 경과 30시간·60 GPU·시간 상한을 적용한다. 두 런 합계 120 GPU·시간은 E′까지 승인된 경우의 상한이며 현재 승인 지출이 아니다.
+R의 Slurm 실측 경과는 **11:36:36**이며 모델 footer의 41,788초와 구분한다. R′ 1런의 선례 기반 계산 시간은 약 11.6시간, GPU 비용은 약 **23.2 GPU·시간에 새 CPU 작성기 실행 중의 GPU 할당 시간이 더해지는 값**이다. 이번 추가 승인 상한은 **R′ run2 한 번, 경과 30시간, 60 GPU·시간**이다. 자원 사양과 `2T_R+T_add≤30`시간 조건을 유지한다. run1의 실제 지출은 별도 누적 비용으로 보존하며 지우거나 run2 비용으로 재명명하지 않는다. E′는 별도 승인 시 같은 자원과 경과 30시간·60 GPU·시간 상한을 적용한다. run2와 E′의 합계 120 GPU·시간은 E′까지 승인된 경우의 추가 지출 상한이며 현재 승인 지출이 아니다. run2 실패·시간 초과 뒤 자동 재제출은 허용하지 않는다.
 
 새 행진 시간은 단계 1에서 다음 방식으로 추정하여 R′ 제출 전 보고에 싣고, 이후 E′ 승인 자료에도 사용한다. R′ 선행 결정은 시간·메모리 적합성 확인을 면제하지 않는다. L-1의 E 크기 격자 실측 1회로의 대체는 이번 개정에서 채택하지 않는다. 완전한 역사적 소비 view가 없어 그 실측은 합성 입력에 의존하며, 기존 ④의 파일 시각 간격에서 얻은 약 4.4분 상한은 새 원천 연결·추가 성분 처리의 상한을 보증하지 않는다. 아래 비용 추정을 유지하되 새 GPU 비용 측정 런은 추가하지 않는다.
 
@@ -381,7 +398,7 @@ R의 Slurm 실측 경과는 **11:36:36**이며 모델 footer의 41,788초와 구
 
 제출 전에는 다음을 확인한다.
 
-- B0의 build source manifest와 T0 실물, T1의 기준 사본·등록 patch·변경집합을 연결한다. 판독기의 `changeset_reasons`와 `lineage_reasons`는 B0 `source_sha_at_build.txt`에 등재된 T0 파일, T0 기준 manifest에 대한 T1의 변경 범위, `N/evidence/T1_changeset.sha256`의 등록 집합·T1 해시, `N/evidence/det_obs_writer.patch.sha256`에 대한 patch 해시 및 patch 대상 파일 집합을 검사한다.
+- B0의 build source manifest와 T0 실물, T1의 기준 사본·등록 patch·변경집합을 연결한다. 판독기의 `changeset_reasons`와 `lineage_reasons`는 B0 `source_sha_at_build.txt`에 등재된 T0 파일, T0 기준 manifest에 대한 T1의 변경 범위, `N/evidence/rev4/T1_changeset.sha256`의 등록 집합·T1 해시, `N/evidence/rev4/det_obs_writer.patch.sha256`에 대한 `N/evidence/rev4/det_obs_writer.patch`의 해시 및 대상 파일 집합을 검사한다. 새 patch는 T0에서 run2용 T1을 재구성하는 전체 등록 변경이며 run1의 patch·해시를 덮어쓰지 않는다.
 - 등록 patch가 T0에서 등록된 T1 변경 파일을 산출한다는 연결도 유지한다. patch 해시·대상 파일명과 T1 해시를 각각 확인한 것만으로 이 연결이 증명되지는 않는다. 정확한 기준 파일과 patch 내용으로 적용 결과를 재구성하여 T1과 대조하거나 동등한 내용 검증을 수행하고, 그 불일치를 G-ID 실패로 연결한다. 원본 T0·T1에는 적용하지 않는다.
 - B1의 바이너리·소스·빌드 명령·모듈을 봉인하고 현재 제출 대상의 입력 실물 및 runner 기록에 연결한다. 먼저 RP를 검사하며, EP는 별도 승인 후 E′ 제출 전에 검사한다.
 - R→RP의 초기 입력·온도·침적·원자자료는 내용이 같아야 한다. E→EP도 E′ 제출 전에 같은 조건을 요구한다. exports 차이는 §2.4와 일치해야 한다. R′ 제출·단독 판독에 미실행 EP의 실물·출력·footer를 요구하지 않는다.
@@ -428,11 +445,17 @@ R′가 사용하는 mode 1은 실제 `cmfgen_assemble`의 미매핑-ε 게이�
 - 양쪽의 기존 `lumina_spectrum.csv`, `lumina_spectrum_comoving.csv`, 기존 작성기에 전달되는 상태 배열.
 - T1의 ON 호출 전후 기존 파일과 상태, 이어서 호출한 기존 작성기의 출력.
 
-비교 파일은 `N/stage1/base/`, `N/stage1/off_unset/`, `N/stage1/off_zero/`, `N/stage1/on_restore/`로 격리하고 정확한 파일 목록·해시·`cmp` 결과를 기록한다.
+개정 4 비교 파일은 `N/stage1/rev4/base/`, `N/stage1/rev4/off_unset/`, `N/stage1/rev4/off_zero/`, `N/stage1/rev4/on_restore/`로 격리하고 정확한 파일 목록·해시·`cmp` 결과를 기록한다. 기존 비교 산출은 보존한다.
 
 이 시험은 **동일 CPU fixture에서 기본 경로의 바이트 보존**을 증명한다. 과거 GPU 전체 런을 다시 실행하지 않고 역사적 ④와 새 GPU 런의 바이트 동일성을 증명했다고 쓰지 않는다. 기존 작성기 계산식의 무변경과 OFF 제어 흐름은 patch·코드 감사로 함께 확인한다.
 
-코드 감사의 차단 사항은 수리와 해당 직접시험으로 해소한다. 운전자의 구현 자체시험을 독립 코드 감사로 표시하지 않는다.
+χ_e 대조의 회귀 시험을 셋째 묶음에 추가한다. 시험 전용 판정식으로 대체하지 않고 실제 작성기가 사용하는 대조 함수를 호출한다. mode 1 생산 조립기 시험에서는 n·m·L·H의 같은 pass 포착도 독립 기대값과 대조한다.
+
+정확한 반례 fixture는 한 셸·빈에서 n=2, m=1, E=2^-10으로 고정한다. 소비 순서대로 첫 선은 미매핑 w=2^-40, el=1/2, 둘째 선은 매핑 w=2^13, el=1이다. 생산과 같은 이진64 연산 순서로 누적하면 L=H=2^13, S=2^-41, A=2^-10, r=−2^-41이다. 옛 편차는 2^-31/(1+2^-31)>1e-12이므로 실패해야 한다. 새 상한은 `7·2^-40≤B_up<8·2^-40`이고 `|r|≤B_up`이므로 통과해야 한다. 이 dyadic 입력·독립 기대값을 고정하며 관측 run1 편차에 맞춰 바꾸지 않는다. 합성 누적 fixture의 실제 대조 함수 시험과 생산 조립기의 포착 연결 시험을 구분해 기록한다.
+
+결함 17의 `U *= 1+1e-9`는 유지한다. mode 2 정상 대조 A=E=1, S=0에서 r=0으로 통과하고, 주입 뒤에는 `|r|>9e-10`, `B_up<1e-15`로 `FAILED(CHI_E_RECONCILE)`여야 한다. 기존 결함 17 경로에서도 실패 상태·성공 manifest 부재·후속 기존 작성기 호출 지속을 다시 확인한다. mode 1의 큰 상한 사례에서 같은 상대 변조가 항상 검출된다고 주장하지 않는다.
+
+운전자는 grammar-debug에서 이 시험과 영향받은 생산 연결·OFF 보존·판독 시험을 수행하고 정확한 소스·명령·결과를 남긴다. 그 변경 코드와 증거를 `gpt-6-sol`이 감사한 뒤 차단 사항을 해소해야 run2를 제출할 수 있다. 코드 감사의 차단 사항은 수리와 해당 직접시험으로 해소한다. 운전자의 구현 자체시험을 독립 코드 감사로 표시하지 않는다.
 
 ### 4.3 G-READOUT
 
@@ -440,7 +463,7 @@ R′가 사용하는 mode 1은 실제 `cmfgen_assemble`의 미매핑-ε 게이�
 
 동결 import 의존 파일은 `nrb_e_readout.py`, `nt_eta_readout.py`, `w5_cont_readout.py`이며 `FROZEN_DEPS`의 등록 해시와 대조한다. 기준 소스·등록 T1·patch·동결 의존 파일의 불일치를 `lineage_reasons`에서 G-ID 실패로 연결하고, 해당 실패 검출을 G-READOUT 필수 사례에 포함한다. §4.1의 patch 적용 결과 연결도 검사하며, 서로 무관한 patch와 T1을 각각 해시 등록했을 때 통과하는 구현으로 대체하지 않는다.
 
-단계 1 증거 파일명은 판독기의 `STAGE1_EVIDENCE`를 따른다. N 기준 상대 경로는 `selftest=stage1/st_final/cases.json`, `nc=stage1/nc_final.log`, `off=stage1/off_final.log`, `audit=evidence/code_audit_closure.txt`, `cost=evidence/stage2_cost_estimate.json`, `user_rprime=USER_DECISION_L5.txt`다. 판독기 자체의 시험 요약은 별도로 `stage1/readout_st2/readout_selftest.json`을 사용한다. 이전 시험 산출이나 처분표의 대기 표기를 최종 증거 대신 소비하지 않는다. 파일 존재만으로 감사 처분 완료나 §3.3의 자원 적합성을 판정하지 않는다.
+개정 4의 `STAGE1_EVIDENCE`는 N 기준 `selftest=stage1/rev4/st_final/cases.json`, `nc=stage1/rev4/nc_final.log`, `off=stage1/rev4/off_final.log`, `audit=evidence/rev4/code_audit_closure.txt`, `cost=evidence/rev4/stage2_cost_estimate.json`, `user_rprime=evidence/rev4/USER_DECISION_2026-10-04.txt`로 연결한다. 판독기 자체 시험은 `stage1/rev4/readout_st2/readout_selftest.json`, 새 sol 감사문은 `evidence/rev4/sol_audit.md`에 보존하고 폐합 기록에서 연결한다. 비용 기록에는 새 포착 버퍼·검사 비용을 포함한 §3.3 상한 재확인을 남긴다. 판독기의 B1·PATCH·PATCH_SHA·CHANGESET_SHA 및 증거 경로도 개정 4의 실제 산출에 맞춘다. 옛 시험·감사나 2026-10-02 승인만으로 run2의 조건을 충족한 것으로 처리하지 않는다. 파일 존재만으로 감사 처분 완료나 자원 적합성을 판정하지 않는다.
 
 새 `REQUIRED_CASES`에는 다음 실패·경계 범주를 빠짐없이 명시한다.
 
@@ -627,11 +650,14 @@ H2의 근사 재현 및 ±0.2 dex, 공개 물질량의 0.3 dex 일치를 정확�
 | 직접시험 | 운전자, 구현자 | `N/stage1/st_final/cases.json`: 39/39, failures=0. `nc_final.log`: 결함 13종 `NC_ALL=PASS`. `off_final.log`: 30/30 바이트 동일. `readout_st2/readout_selftest.json`: 43/43, 필수 42. 기존 기록 판독이며 기안자가 재실행한 결과가 아님 |
 | 코드 감사 | `gpt-6-sol`, 25-v | `N/sol_audit_r1.md`: Q0 봉인 접촉 가, 폐합 차단 6. 운전자 처분은 `N/evidence/sol_audit_r1_disposition.md`, 폐합 기록은 `N/evidence/code_audit_closure.txt`. 수리 후 sol 재감사 없음. 운전자 폐합 기록을 sol의 수리 승인으로 표시하지 않음 |
 | G-IMPL 검증 범위 | 운전자, 구현자 | mode 1 생산 소비 경로 시험은 매핑 마스크만 wrap으로 공급. 후속 기존 작성기 호출 지속 시험은 최종 코드·cases.json 기준 결함 11·13·12·15·16·17의 6종이며 처분표의 “7종”과 다름. 실패 주입 시 R7·footer·model_rc 종단 실행은 미검증이며 §4.2의 대체 범위로 기재 |
-| B1 빌드 | 운전자 | `B1/build.rc=0`. `compiler.txt`: CUDA 13.0.88, GCC 13.2.0. `binary.sha256` 기록은 `44a155f78c20274776768c3e5972e57a5391ce37f470f2941d3a7f8fc56bf0e0`. 빌드 성공 기록과 제출용 소스·바이너리 계보 검증을 구분 |
+| run1 빌드 | 운전자 | `N/cuda_build1/build.rc=0`. `compiler.txt`: CUDA 13.0.88, GCC 13.2.0. `binary.sha256` 기록은 `44a155f78c20274776768c3e5972e57a5391ce37f470f2941d3a7f8fc56bf0e0`. run1 이력으로 보존하며 새 B1=`N/cuda_build2`의 빌드 성공·계보 검증으로 승계하지 않음 |
 | 단계 2 비용 제시 | 운전자 | `N/evidence/stage2_cost_estimate.json`: 32셸·1234빈·256광선·단일 스레드, 합성 선 수 10³·10⁴·10⁵ 실측. 실제 최종 pass 소비 수 19,712,245로 환산하여 N 0.8–1.2시간, L 상한 0.073시간, 2배 여유 포함 T_add=2.6시간, 2T_R+T_add≈25.8시간을 제시. 50셸 생산 기하로의 환산은 추정이다. 메모리는 마스크 129,439,900 B와 셸×빈 배열로 기재되어 있으며 §3.3의 전체 비용·64G 여유 입증을 면제하지 않음 |
 | 단계 1 판정 | 운전자, 구현자 겸임 | 운전자 폐합 기록은 6/6 수리를 보고한다. 개정 3 기안은 그 기록을 독립 감사 PASS로 승계하지 않는다. 현행 `lineage_reasons`에는 patch 적용 결과와 T1의 내용 연결 검사가 없어 §4.1 요구를 유지하고 구현 수리를 요구한다. 개정 적용·필요 수리·기존 제출 조건 확인 뒤 단계 1 판정은 운전자가 기록 |
 | 단계 2 순서·R′ 1런 승인 | user | **선택지 (ii) 확정**, 2026-10-02 「R'1런을 먼저 돌려요.」。단계 1 통과와 등록 제출 조건은 유지 |
-| R′ 스테이징·GPU 1런·같은 view의 W_R′ 판독·보고 | 운전자 | 미실행 |
+| R′ run1 실행·판독 | 운전자, 구현자·판정자 겸임 | job 411170, 생산 `model_rc=0`, footer SUCCESS. 작성기는 `FAILED(CHI_E_RECONCILE dev=1.929e-11)`. `N/Rprime/readout1/result.json`의 결과 X, W_R′ 미정의. 원인 검토에서 L·H 누적 반올림을 제한하지 못하는 계약 척도 결함을 확인했으나, 미보존 포착 배열의 실패 셀을 재현한 것은 아님. 운전자 판독은 `N/evidence/RPRIME_RUN1_OUTCOME.md`로 보존 |
+| χ_e 기준의 귀속 | 운전자 제안·astra 계약화 | `(A+S)×1e-12` 기준은 운전자 처분 `N/evidence/sol_audit_r1_disposition.md`의 Q2-2에서 제안되어 astra 개정 3으로 계약화됨. sol 원 감사는 원천 연결 미검증을 지적했으며 이 수치 기준을 제안·승인한 것으로 표시하지 않음 |
+| 개정 4·run2 결정 | user, 2026-10-04 | 허용오차 개정 → 운전자 오프라인 검증 → `gpt-6-sol` 코드 감사·차단 사항 해소 → R′ run2 한 번. 기존 런당 비용 상한과 E′ 보류 유지 |
+| R′ run2 준비·실행·판독 | 운전자, 구현자·판정자 겸임 | 미실행. 새 B1·RP와 개정 4 증거로 기존 제출 조건을 충족한 뒤 실행. run1 기록을 보존하고 같은 view의 W_R′를 새 판독 경로에 보고 |
 | E′ 실행 여부 | user | R′ 판독·보고 뒤 별도 결정, 현재 미승인 |
 | E′ 스테이징·GPU 1런·두 상태 판독·판정 | 운전자 | 별도 승인 전 미실행. Δ_N·Δ_L·두 상태 FUV 분기 보류 |
 | 종료감사 | 현행 배분에 따라 별도 기록 | 미실행 |
@@ -642,7 +668,7 @@ H2의 근사 재현 및 ±0.2 dex, 공개 물질량의 0.3 dex 일치를 정확�
 
 개정 1은 099242b에 `/gpfs/kjhan/lumina/cmfgen_map/obs_writer_20261002/astra_rev1.md`의 27쌍을 적용한 판본이며, 의도 외 소실 0 확인은 이번 발주에서 제공된 집행 이력으로 보존한다. 개정 2는 user의 R′ 선행 1런 결정만 반영하는 astra의 read-only 기안이다. 개정 1의 사전감사 이력을 개정 2의 감사나 구현 완료 판정으로 승계하지 않는다.
 
-운전자는 개정 2 적용 직전 판본을 보존하고, 각 OLD가 그 판본에 정확히 한 번 존재하는지 확인한 뒤 해당 NEW로 치환한다. 적용 전후 행 단위 diff에서 이번 쌍 이외의 소실이 0인지 확인한다. 원문 불일치가 있으면 절 전체 교체로 우회하지 않는다. 이 read-only 개정 발주에서는 파일 수정·시험·프리플라이트·계산을 수행하지 않았다.
+운전자는 개정 4 적용 직전 판본(HEAD 6c9f5a3, 개정 1·2·3 적용)을 보존하고, 각 OLD가 그 판본에 정확히 한 번 존재하는지 확인한 뒤 해당 NEW로 치환한다. 적용 전후 행 단위 diff에서 이번 쌍 이외의 소실이 0인지 확인한다. 원문 불일치가 있으면 절 전체 교체로 우회하지 않는다. 이번 기안은 코드·기록의 read-only 판독과 상한 도출이며 파일 수정·시험·프리플라이트·계산 실행이나 run2 성공 판정이 아니다.
 
 ### 운전자 프리플라이트·재현
 
@@ -671,19 +697,19 @@ timeout 5m python3 -B scripts/check_doc_canonical.py \
 ```bash
 python3 -B scripts/det_obs_readout.py selftest \
   --baseline-source "$T0" --source "$T1" \
-  --out "$N/stage1"
+  --out "$N/stage1/rev4"
 
 python3 -B scripts/det_obs_readout.py preflight \
   --mode rprime \
   --base-r "$R" --rprime "$RP" \
   --source "$T1" --build "$B1" \
-  --stage1 "$N/stage1" --evidence "$N/evidence" \
-  --out "$N/evidence/preflight_rprime"
+  --stage1 "$N/stage1/rev4" --evidence "$N/evidence/rev4" \
+  --out "$N/evidence/rev4/preflight_rprime"
 
 python3 -B scripts/det_obs_readout.py readout \
   --mode rprime --rprime "$RP" \
-  --stage1 "$N/stage1" --evidence "$N/evidence" \
-  --out "$N/readout/rprime"
+  --stage1 "$N/stage1/rev4" --evidence "$N/evidence/rev4" \
+  --out "$N/Rprime/readout2"
 ```
 
 현재 제출 대상은 R′ 한 번뿐이다. 단계 1 통과·등록 제출 조건 충족 뒤 아래 첫 명령만 실행한다. 두 번째 E′ 명령은 R′의 같은 view W_R′ 판독·보고 뒤 user가 별도 승인하고 E′ 제출 전 조건도 충족한 경우에만 한 번 실행한다. 두 명령을 연속 제출하는 스크립트로 사용하지 않는다.
