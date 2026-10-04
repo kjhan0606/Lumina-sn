@@ -21,6 +21,7 @@ import shutil
 import subprocess
 import tempfile
 import json
+import re
 import math
 import sys
 from pathlib import Path
@@ -33,7 +34,7 @@ from nrb_e_readout import (sha, fnum, read_exports, footer, footer_reasons,     
 N_ROOT = Path("/gpfs/kjhan/lumina/cmfgen_map/obs_writer_20261002")
 T0 = Path("/gpfs/kjhan/lumina/cmfgen_map/lteunmap_eps_20260917/source")
 T1 = N_ROOT / "source"
-B1 = N_ROOT / "cuda_build1"
+B1 = N_ROOT / "cuda_build2"   # prereg rev 4 (run1 used cuda_build1)
 CHANGESET = ("src/lumina_cmfgen.c", "src/lumina_cmfgen.h", "src/env_universe.h",
              "tests/det_obs_writer_selftest.c")
 PATH_KEYS = ("LUMINA_MODEL_DIR", "LUMINA_CMFGEN_SIGMA_BF", "LUMINA_DEPOSITION_FILE",
@@ -48,18 +49,37 @@ SPEC = {"N": "work/lumina_spectrum_det_obs.csv", "L": "work/lumina_spectrum_det_
 LEGACY4 = "work/lumina_spectrum.csv"
 INPUT_SAME = ("deck.sha256", "topion.sha256", "sigma.sha256", "fixed_te_profile.txt")
 B0_SOURCES = Path("/gpfs/kjhan/lumina/cmfgen_map/w5_20260930/cuda_build1/source_sha_at_build.txt")
-PATCH = N_ROOT / "evidence/det_obs_writer.patch"
-PATCH_SHA = N_ROOT / "evidence/det_obs_writer.patch.sha256"
-CHANGESET_SHA = N_ROOT / "evidence/T1_changeset.sha256"
+PATCH = N_ROOT / "evidence/rev4/det_obs_writer.patch"
+PATCH_SHA = N_ROOT / "evidence/rev4/det_obs_writer.patch.sha256"
+CHANGESET_SHA = N_ROOT / "evidence/rev4/T1_changeset.sha256"
 FROZEN_DEPS = {"nrb_e_readout.py": "5b5a68f9475aa3c1b035d621b7a807566df8f5ecee5c6eb3bac9162da544c258",
                "nt_eta_readout.py": "a4ae3f3ae31f5b28910204bbfe1bbf5ef99292b9b06c1c53a866be08ed20ce3f",
                "w5_cont_readout.py": "7008f709e4ca49a24823e4f88f452c42448247d8cb5940c1c1670c4e31a7f3cd"}
-STAGE1_EVIDENCE = {"selftest": N_ROOT / "stage1/st_final/cases.json",
-                   "nc": N_ROOT / "stage1/nc_final.log",
-                   "off": N_ROOT / "stage1/off_final.log",
-                   "audit": N_ROOT / "evidence/code_audit_closure.txt",
-                   "cost": N_ROOT / "evidence/stage2_cost_estimate.json",
-                   "user_rprime": N_ROOT / "USER_DECISION_L5.txt"}
+STAGE1_EVIDENCE = {"selftest": N_ROOT / "stage1/rev4/st_final/cases.json",
+                   "nc": N_ROOT / "stage1/rev4/nc_final.log",
+                   "off": N_ROOT / "stage1/rev4/off_final.log",
+                   "audit": N_ROOT / "evidence/rev5/code_audit_closure.txt",
+                   "cost": N_ROOT / "evidence/rev5/stage2_cost_estimate.json",
+                   "user_rprime": N_ROOT / "evidence/rev4/USER_DECISION_2026-10-04.txt",
+                   "user_h200": N_ROOT / "evidence/rev4/USER_DECISION_H200_2026-10-05.txt"}
+AUDITS = (N_ROOT / "evidence/rev4/sol_audit.md", N_ROOT / "evidence/rev4/sol_audit_r2.md",
+          N_ROOT / "evidence/rev5/sol_audit.md")
+# prereg rev 5 (§3, §3.3, §4.4): run2 executes the registered h200x2 profile
+RUNNER_TESTED = N_ROOT / "evidence/rev5/runner_tested.txt"
+RUNNER_TESTED_EP = N_ROOT / "evidence/rev5/runner_tested_ep.txt"
+READOUT_SELFTEST = N_ROOT / "evidence/rev5/readout_st/readout_selftest.json"
+R_RUNNER = Path("/gpfs/kjhan/lumina/cmfgen_map/nrb2_20261002/run1/job.slurm")
+RP_JOB_NAME = "LUMINA_detobs_Rp2"
+EP_JOB_NAME = "LUMINA_detobs_Ep1"
+H200X2 = {"partition": "h200", "gpu_kind": "H200", "gpu_profile": "h200x2",
+          "allocated_gpus": "2", "allocated_cpus": "16"}
+H200_MIN_MIB = 140000
+RUNNER_SBATCH = ("#SBATCH --partition=h200", "#SBATCH --nodes=1", "#SBATCH --ntasks=1",
+                 "#SBATCH --gres=gpu:H200:2", "#SBATCH --cpus-per-task=16", "#SBATCH --mem=64G",
+                 "#SBATCH --time=30:00:00", "#SBATCH --no-requeue")
+
+COST_LIMIT_H = 30.0
+USER_DECISION_DATE = "2026-10-04"
 
 
 def fnv1a(path):
@@ -239,7 +259,12 @@ def grun(run, slurm_state, armed_expected):
     """G-RUN for one executed run (prereg §4.4); every unreadable piece is a reason."""
     why = []
     W = Path(run) / "work"
-    why += footer_reasons(footer(run), slurm_state)
+    why += footer_core_reasons(footer(run), slurm_state)
+    why += resource_reasons(run, slurm_state)
+    ft = footer(run)
+    ex = Path(run) / "input/resolved_lumina.exports"
+    if not ex.exists() or ft.get("effective_exports_sha256") != sha(ex):
+        why.append("FOOTER_EXPORTS_HASH")
     why += guarded(why, "MANIFESTS", manifest_reasons, W) or []
     why += guarded(why, "PUBLICATION", publication_reasons, W) or []
     log = list(open(Path(run) / "stderr.log", errors="replace")) if (Path(run) / "stderr.log").exists() else []
@@ -284,8 +309,9 @@ def exports_reasons(p_base, p_run, base_root, run_root):
     return why
 
 
-def changeset_reasons(t0_manifest, t1_root):
-    """T1 differs from T0 only in the registered changeset files (+ new test file)."""
+def changeset_reasons(t0_manifest, t1_root, t0_root):
+    """T1 differs from T0 only in the registered changeset files (+ new test file);
+    every T1 file outside the manifest must be the same file in T0 or registered."""
     why = []
     base = {}
     for ln in open(t0_manifest):
@@ -300,10 +326,110 @@ def changeset_reasons(t0_manifest, t1_root):
     for p in CHANGESET:
         if p not in base and not (Path(t1_root) / p).exists():
             why.append(f"T1_CHANGESET_ABSENT:{p}")
+    for q in sorted(Path(t1_root).rglob("*")):
+        if not q.is_file():
+            continue
+        p = q.relative_to(t1_root).as_posix()
+        if p in base or p in CHANGESET:
+            continue
+        o = Path(t0_root) / p
+        if not o.is_file() or sha(o) != sha(q):
+            why.append(f"T1_UNREGISTERED_ADD:{p}")
     return why
 
 
-def stage1_reasons(ev=STAGE1_EVIDENCE):
+def audit_blocking_count(path):
+    """the audit's own verdict line '«폐합 차단» N건' (None if absent/unreadable)."""
+    try:
+        m = re.search(r"«폐합 차단»\s*(\d+)\s*건", open(path, encoding="utf-8").read())
+    except OSError:
+        return None
+    return int(m.group(1)) if m else None
+
+
+def audit_closure_reasons(path, audits=AUDITS):
+    """closure: 'audit=<path> sha256=<hex> blocking=<n> resolved=<n>' per registered
+    audit; per blocking item k = 1..n one line 'item=<audit path>#<k> status=resolved
+    finding_line=<L> evidence=<path> evidence_sha256=<hex>' where line L of the audit
+    carries «폐합 차단» (distinct L and distinct evidence per item, evidence hash
+    matches); and 'blocking_open=0'.  n is read from the audit's own verdict line."""
+    why, seen, items, opened = [], {}, {}, None
+    try:
+        for ln in open(path):
+            ln = ln.strip()
+            if ln.startswith("audit="):
+                kv = dict(x.split("=", 1) for x in ln.split())
+                seen[kv["audit"]] = kv
+            elif ln.startswith("item="):
+                kv = dict(x.split("=", 1) for x in ln.split())
+                items[kv["item"]] = kv
+            elif ln.startswith("blocking_open="):
+                opened = ln.split("=", 1)[1]
+    except (OSError, ValueError, KeyError):
+        return ["AUDIT_CLOSURE_UNREADABLE"]
+    for a in audits:
+        nm = Path(a).name
+        kv = seen.get(str(a))
+        if kv is None:
+            why.append(f"AUDIT_NOT_CLOSED:{nm}")
+            continue
+        if not Path(a).exists() or sha(a) != kv.get("sha256"):
+            why.append(f"AUDIT_DIGEST:{nm}")
+        n = audit_blocking_count(a) if Path(a).exists() else None
+        if n is None:
+            why.append(f"AUDIT_VERDICT_UNPARSEABLE:{nm}")
+            continue
+        if kv.get("blocking") != str(n) or kv.get("resolved") != str(n):
+            why.append(f"AUDIT_UNRESOLVED:{nm}")
+        lines = open(a, encoding="utf-8").read().split("\n")
+        used_l, used_e = set(), set()
+        for k in range(1, n + 1):
+            it = items.get(f"{a}#{k}")
+            ok = it is not None and it.get("status") == "resolved"
+            if ok:
+                L, evp = it.get("finding_line", ""), it.get("evidence", "")
+                ok = (L.isdigit() and 1 <= int(L) <= len(lines) and "«폐합 차단»" in lines[int(L) - 1]
+                      and L not in used_l and evp not in used_e and Path(evp).is_file()
+                      and sha(evp) == it.get("evidence_sha256"))
+                used_l.add(L)
+                used_e.add(evp)
+            if not ok:
+                why.append(f"AUDIT_ITEM_UNRESOLVED:{nm}:{k}")
+    if opened != "0":
+        why.append("AUDIT_BLOCKING_OPEN")
+    return why
+
+
+def cost_reasons(path):
+    """prereg §3.3: 2 T_R + T_add <= 30 h and a positive memory margin."""
+    try:
+        d = json.load(open(path))
+        tr = float(d["T_R_hours_conservative"])
+        ta = float(d["T_add_hours_with_2x_margin"])
+        tr_meas = max(float(d["T_R_hours"]), float(d["run1_measured"]["elapsed_hours"]))
+        rss_gb = float(d["run1_measured"]["MaxRSS_K"]) / 1048576.0
+        add_gb = float(d["memory_added_rev4"]["bytes"]) / 1073741824.0
+        ta_basis = 2.0 * (float(d["N_hours_range"][1]) + float(d["L_hours_upper"]))
+        m = float(d["margin_GB_vs_64G_rev5"])
+    except (OSError, ValueError, KeyError, TypeError, IndexError):
+        return ["COST_UNREADABLE"]
+    why = []
+    if not all(math.isfinite(x) for x in (tr, ta, tr_meas, rss_gb, add_gb, ta_basis, m)):
+        return ["COST_NONFINITE"]
+    if tr < 0.0 or ta < 0.0 or rss_gb <= 0.0 or add_gb < 0.0:
+        why.append("COST_NEGATIVE")
+    if ta < ta_basis:
+        why.append("COST_T_ADD_BELOW_BASIS")
+    if tr < tr_meas:
+        why.append("COST_T_R_BELOW_MEASURED")
+    if not (2.0 * tr + ta <= COST_LIMIT_H):
+        why.append("COST_OVER_LIMIT")
+    if abs(m - (64.0 - rss_gb - add_gb)) > 0.1 or not (m > 0.0):
+        why.append("COST_MEMORY_MARGIN")
+    return why
+
+
+def stage1_reasons(ev=STAGE1_EVIDENCE, audits=AUDITS):
     why = []
     for k, p in ev.items():
         if not Path(p).exists():
@@ -319,6 +445,210 @@ def stage1_reasons(ev=STAGE1_EVIDENCE):
         why.append("STAGE1_NC_NOT_PASS")
     if Path(ev["off"]).exists() and "OFF_BYTES=IDENTICAL" not in open(ev["off"]).read():
         why.append("STAGE1_OFF_NOT_IDENTICAL")
+    if Path(ev["audit"]).exists():
+        why += [f"STAGE1_{x}" for x in audit_closure_reasons(ev["audit"], audits)]
+    if Path(ev["cost"]).exists():
+        why += [f"STAGE1_{x}" for x in cost_reasons(ev["cost"])]
+    if Path(ev["user_rprime"]).exists() and USER_DECISION_DATE not in open(ev["user_rprime"]).read():
+        why.append("STAGE1_USER_DECISION_NOT_RECORDED")
+    if Path(ev["user_h200"]).exists() and "h200x2" not in open(ev["user_h200"]).read():
+        why.append("STAGE1_USER_H200_NOT_RECORDED")
+    return why
+
+
+# ------------------------------------------------------------------ rev 5: runner / resources
+RUNNER_CASES = """  run_case h200x1_ok h200 0 6 GPU-a h200 h200x1 1 pass
+  run_case h200x2_ok h200 0 6 GPU-a,GPU-b h200 h200x2 2 pass
+  run_case h100x2_ok good 0 6 GPU-a,GPU-b h100 h100-a100x2 2 pass
+  run_case a100x2_ok a100 0 6 GPU-a,GPU-b a100 h100-a100x2 2 pass
+  run_case h200x2_one_gpu h200 0 6 GPU-a h200 h200x2 2 fail VISIBLE_GPU_MASK_INVALID
+  run_case h200x2_wrong_kind good 0 6 GPU-a,GPU-b h200 h200x2 2 fail GPU_KIND_PROFILE_MISMATCH
+  run_case h200x2_low_memory h200_lowmem 0 6 GPU-a,GPU-b h200 h200x2 2 fail GPU_MEMORY_BELOW_PROFILE_MINIMUM
+  run_case h200x2_wrong_partition h200 0 6 GPU-a,GPU-b h100 h200x2 2 fail PARTITION_NOT_QUALIFIED
+  run_case h200x2_duplicate_uuid h200dup 0 6 GPU-a,GPU-b h200 h200x2 2 fail DUPLICATE_GPU_UUID
+  CASE_CPUS=32 run_case h200x2_wrong_cpus h200 0 6 GPU-a,GPU-b h200 h200x2 2 fail ALLOCATION_SHAPE_MISMATCH
+  run_case h200x2_mgpu_one h200 0 6 GPU-a,GPU-b h200 h200x2 1 fail GPU_OWNER_COUNT_MISMATCH
+  run_case a100_on_h100_reject a100 0 6 GPU-a,GPU-b h100 h100-a100x2 2 fail GPU_PARTITION_MISMATCH
+  run_case h100_low_memory lowmem 0 6 GPU-a,GPU-b h100 h100-a100x2 2 fail GPU_MEMORY_BELOW_PROFILE_MINIMUM
+  run_case h200_low_memory h200_lowmem 0 6 GPU-a h200 h200x1 1 fail GPU_MEMORY_BELOW_PROFILE_MINIMUM
+  run_case a100_40gb_low_memory a100_lowmem 0 6 GPU-a,GPU-b a100 h100-a100x2 2 fail GPU_MEMORY_BELOW_PROFILE_MINIMUM
+  run_case duplicate_uuid duplicate 0 6 GPU-a,GPU-b h100 h100-a100x2 2 fail DUPLICATE_GPU_UUID
+  run_case mixed_kind mixed 0 6 GPU-a,GPU-b h100 h100-a100x2 2 fail GPU_KIND_PROFILE_MISMATCH
+  run_case h200_two_gpus h200 0 6 GPU-a,GPU-b h200 h200x1 1 fail VISIBLE_GPU_MASK_INVALID
+  run_case h100_one_gpu good 0 6 GPU-a h100 h100-a100x2 2 fail VISIBLE_GPU_MASK_INVALID
+  run_case wrong_partition good 0 6 GPU-a,GPU-b h200 h100-a100x2 2 fail PARTITION_NOT_QUALIFIED
+  run_case exports_count_mismatch h200 0 6 GPU-a h200 h200x1 2 fail GPU_OWNER_COUNT_MISMATCH
+  run_case model_failure good 9 6 GPU-a,GPU-b h100 h100-a100x2 2 fail MODEL_EXIT_NONZERO
+  run_case missing_consumption good 0 5 GPU-a,GPU-b h100 h100-a100x2 2 fail FIXED_TE_CONSUMPTION_EVIDENCE_MISSING
+  run_case public_t_mismatch good 0 6 GPU-a,GPU-b h100 h100-a100x2 2 fail PUBLIC_TE_PROFILE_MISMATCH
+  run_case duplicate_profile_shell good 0 6 GPU-a,GPU-b h100 h100-a100x2 2 fail PUBLIC_TE_PROFILE_MISMATCH
+  run_case manifest_hash_mismatch good 0 6 GPU-a,GPU-b h100 h100-a100x2 2 fail FIXED_TE_CONSUMPTION_EVIDENCE_MISSING
+"""
+
+
+def runner_rev5(base_text, job_name=RP_JOB_NAME):
+    """The registered run2/E' runner = R runner + exactly the prereg §3 rev 5 edits:
+    (1) job name (2) SBATCH partition/gres (3) GPU_PROFILE (4) h200x2 case
+    (5) runner_selftest repair + cases.  Single source: the staged runner is produced
+    by this function and the readout regenerates it to compare whole files.
+    Returns None when an anchor is not found exactly once."""
+    t = base_text
+    jn = re.findall(r"(?m)^#SBATCH --job-name=.*\n", t)
+    if len(jn) != 1:
+        return None
+    sel_a = t.find("  run_case h200x1_ok ")
+    sel_b = t.find('  set +e\n  PATH="$tmp/h100x2_ok/bin:$PATH"')
+    if sel_a < 0 or sel_b < sel_a:
+        return None
+    t = t[:sel_a] + RUNNER_CASES + t[sel_b:]
+    edits = (
+        (jn[0], f"#SBATCH --job-name={job_name}\n"),
+        ("#SBATCH --partition=h100,a100\n", "#SBATCH --partition=h200\n"),
+        ("#SBATCH --gres=gpu:2\n", "#SBATCH --gres=gpu:H200:2\n"),
+        ("readonly GPU_PROFILE=h100-a100x2\n", "readonly GPU_PROFILE=h200x2\n"),
+        ("    h200x1) expected_partition=h200; expected_gpu_count=1; expected_min_memory=140000; "
+         "expected_kinds=H200 ;;\n",
+         "    h200x1) expected_partition=h200; expected_gpu_count=1; expected_min_memory=140000; "
+         "expected_kinds=H200 ;;\n    h200x2) expected_partition=h200; expected_gpu_count=2; "
+         "expected_min_memory=140000; expected_kinds=H200 ;;\n"),
+        ("""'declare -x LUMINA_PURE_CMFGEN_ITER="2"'""", """'declare -x LUMINA_PURE_CMFGEN_ITER="6"'"""),
+        ('h200:GPU-b) echo "NVIDIA H200, 143771, GPU-bbbb, 555.1, 9.0";;',
+         'h200:GPU-b) echo "NVIDIA H200, 143771, GPU-bbbb, 555.1, 9.0";; '
+         'h200dup:*) echo "NVIDIA H200, 143771, GPU-aaaa, 555.1, 9.0";;'),
+        ('mgpu_devices="$8" expect="$9" root\n', 'mgpu_devices="$8" expect="$9" want="${10:-}" root\n'),
+        ("""    if [[ "$profile" == h100-a100x2 ]]; then
+      sed -i 's/^#SBATCH --partition=h200$/#SBATCH --partition=h100,a100/; s/^#SBATCH --gres=gpu:1$/#SBATCH --gres=gpu:2/; s/^readonly GPU_PROFILE=h200x1$/readonly GPU_PROFILE=h100-a100x2/' "$root/test_runner.sh"
+    fi
+""", """    [[ "$(grep -c '^readonly GPU_PROFILE=' "$root/test_runner.sh")" -eq 1 ]] || die "SELFTEST_PROFILE_LINE_NOT_UNIQUE"
+    sed -i "s/^readonly GPU_PROFILE=.*\\$/readonly GPU_PROFILE=$profile/" "$root/test_runner.sh"
+    [[ "$(grep -c "^readonly GPU_PROFILE=$profile\\$" "$root/test_runner.sh")" -eq 1 ]] || die "SELFTEST_PROFILE_NOT_SET case=$name"
+"""),
+        ('SLURM_JOB_PARTITION="$partition" SLURM_NNODES=1 SLURM_NTASKS=1 SLURM_CPUS_PER_TASK=32 SLURM_RESTART_COUNT=0 \\',
+         'SLURM_JOB_PARTITION="$partition" SLURM_NNODES=1 SLURM_NTASKS=1 SLURM_CPUS_PER_TASK="${CASE_CPUS:-16}" SLURM_RESTART_COUNT=0 \\'),
+        ("""      [[ "$rc" -ne 0 ]] || die "SELFTEST_NEGATIVE_ACCEPTED case=$name"
+""", """      [[ "$rc" -ne 0 ]] || die "SELFTEST_NEGATIVE_ACCEPTED case=$name"
+      [[ -n "$want" ]] && grep -q "CMFGEN_TWIN_MAP_RUN_FAIL reason=$want" "$root/test.log" || \\
+        { sed -n '1,40p' "$root/test.log" >&2; die "SELFTEST_NEGATIVE_WRONG_REASON case=$name want=$want"; }
+"""),
+        ("""SLURM_JOB_PARTITION=h100 SLURM_NNODES=1 SLURM_NTASKS=1 SLURM_CPUS_PER_TASK=32 SLURM_RESTART_COUNT=0 \\
+    bash "$tmp/h100x2_ok/test_runner.sh" "$tmp/h100x2_ok" >/dev/null 2>&1
+  rc=$?; set -e; [[ "$rc" -ne 0 ]] || die "SELFTEST_RERUN_ACCEPTED";""",
+         """SLURM_JOB_PARTITION=h100 SLURM_NNODES=1 SLURM_NTASKS=1 SLURM_CPUS_PER_TASK=16 SLURM_RESTART_COUNT=0 \\
+    bash "$tmp/h100x2_ok/test_runner.sh" "$tmp/h100x2_ok" > "$tmp/rerun.log" 2>&1
+  rc=$?; set -e; [[ "$rc" -ne 0 ]] || die "SELFTEST_RERUN_ACCEPTED"
+  grep -q "CMFGEN_TWIN_MAP_RUN_FAIL reason=RUN_ALREADY_ATTEMPTED" "$tmp/rerun.log" || die "SELFTEST_RERUN_WRONG_REASON";"""))
+    for o, n in edits:
+        if t.count(o) != 1:
+            return None
+        t = t.replace(o, n)
+    return t
+
+
+def submit_expected(run_root):
+    return f"cd {run_root} && sbatch --exclude=syn102 job.slurm {run_root}\n"
+
+
+def runner_reasons(base_runner, run_runner, tested=RUNNER_TESTED, submit=None, job_name=RP_JOB_NAME,
+                   run_root=None):
+    """whole runner == runner_rev5(R runner); tested identity; SBATCH resources;
+    submit command exactly submit_expected(run_root)."""
+    why = []
+    try:
+        bt, rt = Path(base_runner).read_text(), Path(run_runner).read_text()
+    except OSError:
+        return ["RUNNER_UNREADABLE"]
+    exp = runner_rev5(bt, job_name)
+    if exp is None or rt != exp:
+        why.append("RUNNER_UNREGISTERED_DIFF")
+    lines = set(rt.splitlines())
+    for ln in RUNNER_SBATCH:
+        if ln not in lines:
+            why.append(f"RUNNER_RESOURCE:{ln.split()[1]}")
+    try:
+        kv = dict(x.split("=", 1) for x in Path(tested).read_text().split())
+    except (OSError, ValueError):
+        kv = {}
+    if kv.get("runner_sha256") != sha(run_runner):
+        why.append("RUNNER_NOT_TESTED")
+    log = Path(tested).parent / "runner_selftest.log"
+    if not log.exists() or kv.get("selftest_log_sha256") != sha(log) or \
+            "CMFGEN_TWIN_MAP_RUNNER_SELFTEST_PASS" not in log.read_text():
+        why.append("RUNNER_SELFTEST_NOT_PASS")
+    if submit is not None:
+        try:
+            cmd = Path(submit).read_text()
+        except OSError:
+            cmd = None
+        if cmd is None:
+            why.append("SUBMIT_COMMAND_MISSING")
+        elif run_root is None or cmd != submit_expected(run_root):
+            why.append("SUBMIT_COMMAND_NOT_REGISTERED")
+    return why
+
+
+def footer_core_reasons(ft, slurm_state):
+    """frozen nt_eta footer_reasons minus its H100/A100-only GPU line, which the
+    registered h200x2 check (resource_reasons) replaces (prereg §4.3 rev 5)."""
+    why = []
+    if ft.get("terminal_state") != "SUCCESS":
+        why.append("FOOTER_NOT_SUCCESS")
+    if ft.get("model_rc") != "0":
+        why.append(f"MODEL_RC:{ft.get('model_rc')}")
+    if ft.get("outer_iterations") != "6":
+        why.append(f"OUTER_ITERATIONS:{ft.get('outer_iterations')}")
+    if ft.get("fixed_te_loader_consumed") != "1":
+        why.append("FIXED_TE_NOT_CONSUMED")
+    if slurm_state is None or "COMPLETED" not in slurm_state.split():
+        why.append(f"SLURM_STATE:{slurm_state}")
+    if slurm_state is not None and "RESTARTS=0" not in slurm_state.split():
+        why.append("SLURM_RESTARTS")
+    return why
+
+
+def resource_reasons(run, slurm_state):
+    """footer (partition, gpu_kind, gpu_profile, allocated_gpus, allocated_cpus) ==
+    registered h200x2; Slurm allocation and gpu_identity.csv agree (prereg §4.4)."""
+    why = []
+    ft = footer(run)
+    for k, v in H200X2.items():
+        if ft.get(k) != v:
+            why.append(f"FOOTER_RESOURCE:{k}")
+    toks = (slurm_state or "").split()
+    if "PARTITION=h200" not in toks:
+        why.append("SLURM_PARTITION")
+    alloc = next((t[len("ALLOC="):] for t in toks if t.startswith("ALLOC=")), "")
+    parts = set(alloc.split(","))
+    if "cpu=16" not in parts or "gres/gpu=2" not in parts:
+        why.append("SLURM_ALLOCATION")
+    try:
+        rows = list(csv.DictReader(open(Path(run) / "gpu_identity.csv")))
+    except OSError:
+        rows = []
+    uu = [r.get("uuid", "").strip() for r in rows]
+    if len(rows) != 2 or len(set(uu)) != 2 or not all(u.startswith("GPU-") for u in uu):
+        why.append("GPU_IDENTITY_COUNT_UUID")
+    for r in rows:
+        mem = r.get("memory_total_mib", "").strip()
+        if "H200" not in r.get("name", "") or not mem.isdigit() or int(mem) < H200_MIN_MIB:
+            why.append("GPU_IDENTITY_KIND_MEMORY")
+            break
+    if rows and ft.get("cuda_visible_devices") != ",".join(r.get("cuda_visible_token", "") for r in rows):
+        why.append("GPU_IDENTITY_FOOTER_MASK")
+    return why
+
+
+def module_env_norm(path):
+    """module list + ldd resolution with the per-process load addresses removed."""
+    return [re.sub(r"\s*\(0x[0-9a-f]+\)", "", ln.rstrip()) for ln in open(path)]
+
+
+def paired_resource_reasons(rp, ep):
+    """E' must match R' run2: footer resources, binary and module environment."""
+    a, b = footer(rp), footer(ep)
+    why = [f"PAIRED_RESOURCE:{k}" for k in list(H200X2) + ["binary_sha256"] if a.get(k) != b.get(k)]
+    ma, mb = Path(rp) / "module_env.txt", Path(ep) / "module_env.txt"
+    if not (ma.exists() and mb.exists()) or module_env_norm(ma) != module_env_norm(mb):
+        why.append("PAIRED_RESOURCE:module_env")
     return why
 
 
@@ -369,7 +699,7 @@ def lineage_reasons(t0=T0, b0_sources=B0_SOURCES, t1=T1, patch=PATCH, patch_sha=
     return why
 
 
-def gid(base, run, post_run, b1=B1):
+def gid(base, run, post_run, b1=B1, job_name=RP_JOB_NAME):
     why, ev = [], {}
     base, run = Path(base), Path(run)
     rec = (b1 / "binary.sha256").read_text().split()[0]
@@ -388,14 +718,17 @@ def gid(base, run, post_run, b1=B1):
     bad = [p for p, h in built.items() if sha(T1 / p) != h]
     if bad:
         why.append(f"SOURCE_TREE_MISMATCH:{len(bad)}")
-    why += changeset_reasons(N_ROOT / "T0_manifest.sha256", T1)
+    why += changeset_reasons(N_ROOT / "T0_manifest.sha256", T1, T0)
     why += lineage_reasons()
     for f in INPUT_SAME:
         if sha(base / "input" / f) != sha(run / "input" / f):
             why.append(f"INPUT_MISMATCH:{f}")
     why += exports_reasons(base / "input/resolved_lumina.exports", run / "input/resolved_lumina.exports",
                            str(base), str(run))
-    why += linkage_reasons(run, "RP", post_run)
+    why += linkage_reasons(run, "RP", False)
+    why += runner_reasons(base / "job.slurm", run / "job.slurm",
+                          tested=RUNNER_TESTED if job_name == RP_JOB_NAME else RUNNER_TESTED_EP,
+                          submit=run / "SUBMIT_COMMAND.txt", job_name=job_name, run_root=str(run))
     why += stage1_reasons()
     return why, ev
 
@@ -443,6 +776,23 @@ REQUIRED_CASES = (   # frozen battery: contract §4.3 categories (G-READOUT requ
     "branch: up + flat -> O-UP",
     "branch: invalid first -> X",
     "stage1 evidence absent -> reasons",
+    "stage1 audit closure: closed accepted; digest, unresolved, open rejected",
+    "stage1 cost: 2T_R+T_add over 30 h rejected",
+    "stage1 audit closure: self-declared zero, missing item, absent evidence, empty audit rejected",
+    "stage1 cost: negative time, T_R below measured, unfounded memory margin rejected",
+    "stage1 user decision without the dated record rejected",
+    "changeset: unregistered added file rejected",
+    "h200x2: healthy footer, Slurm allocation and gpu identity accepted",
+    "h200x2: each footer resource field missing or wrong -> reason",
+    "h200x2: Slurm allocation or gpu identity disagreeing -> reason",
+    "runner: allowed h200x2 diff accepted, unregistered diff rejected",
+    "runner: untested runner hash or failed selftest rejected",
+    "runner: submit command overriding resources rejected",
+    "paired: E'/R' resource mismatch -> reason",
+    "stage1 user h200 decision without h200x2 rejected",
+    "stage1 audit closure: item identity (shared evidence, non-blocking line, reused line, evidence hash) rejected",
+    "stage1 cost: T_add below the bench basis or margin ignoring added buffers rejected",
+    "paired: module environment compared without load addresses",
     "G-READOUT rejects another readout's summary",
     "G-READOUT rejects a passing summary lacking required cases",
 )
@@ -521,12 +871,13 @@ def cmd_readout(a):
         if not a.eprime or not a.ebase:
             raise SystemExit("paired mode requires --eprime and --ebase")
         why_e = []
-        gide = guarded(why_e, "G-ID:READ", gid, a.ebase, a.eprime, True)
+        gide = guarded(why_e, "G-ID:READ", gid, a.ebase, a.eprime, True, B1, EP_JOB_NAME)
         if gide:
             why_e += [f"G-ID:{x}" for x in gide[0]]
         why_e += [f"G-RUN:{x}" for x in (guarded(why_e, "G-RUN:READ", grun, a.eprime, st.get("EP"), False) or [])]
         obs_e, w2 = run_observable(a.eprime, Path(a.eprime) / LEGACY4)
         why_e += w2
+        why_e += guarded(why_e, "PAIRED_RESOURCE:READ", paired_resource_reasons, a.run, a.eprime) or []
     res = evaluate(a.mode, obs_r, why_r, obs_e, why_e)
     res.update({"schema": "DET_OBS_READOUT_V1", "readout_sha256": sha(Path(__file__).resolve()),
                 "G-READOUT": g_read,
@@ -582,13 +933,16 @@ def cmd_preflight(a):
     out = Path(a.out)
     out.mkdir(parents=True, exist_ok=False)
     why = []
+    g_read = readout_gate(a.selftest)
+    if g_read != "PASS":
+        why.append(f"G-READOUT:{g_read}")
     r = guarded(why, "G-ID:READ", gid, a.base, a.run, False)
     if r:
         why += r[0]
     if a.eprime or a.ebase:
         if not (a.eprime and a.ebase):
             raise SystemExit("paired preflight requires both --eprime and --ebase")
-        re_ = guarded(why, "G-ID:EP:READ", gid, a.ebase, a.eprime, False)
+        re_ = guarded(why, "G-ID:EP:READ", gid, a.ebase, a.eprime, False, B1, EP_JOB_NAME)
         if re_:
             why += [f"EP:{x}" for x in re_[0]]
     (out / "preflight.json").write_text(json.dumps({"reasons": why, "evidence": r[1] if r else None}, indent=1))
@@ -750,12 +1104,19 @@ def cmd_selftest(a):
         (cs / rel).write_text("x")
     (cs / "src/lumina_cmfgen.c").write_text("a")
     (cs / "src/other.c").write_text("b")
-    man = cs / "man.sha256"
+    man = tmp / "cs_man.sha256"
     man.write_text(f"{sha(cs / 'src/lumina_cmfgen.c')}  src/lumina_cmfgen.c\n{sha(cs / 'src/other.c')}  src/other.c\n")
+    t0f = tmp / "cs_t0"
+    (t0f / "src").mkdir(parents=True)
+    (t0f / "src/lumina_cmfgen.c").write_text("a")
+    (t0f / "src/other.c").write_text("b")
     (cs / "src/lumina_cmfgen.c").write_text("changed")
-    case("changeset: registered file change accepted", changeset_reasons(man, cs), [])
+    case("changeset: registered file change accepted", changeset_reasons(man, cs, t0f), [])
+    (cs / "src/added.c").write_text("new")
+    case("changeset: unregistered added file rejected", changeset_reasons(man, cs, t0f), ["T1_UNREGISTERED_ADD:src/added.c"])
+    (cs / "src/added.c").unlink()
     (cs / "src/other.c").write_text("changed")
-    case("changeset: unregistered file change rejected", changeset_reasons(man, cs), ["T1_UNREGISTERED_CHANGE:src/other.c"])
+    case("changeset: unregistered file change rejected", changeset_reasons(man, cs, t0f), ["T1_UNREGISTERED_CHANGE:src/other.c"])
     # lineage: B0 manifest vs T0, registered changeset, patch digest/file set, frozen deps
     lg = tmp / "lineage"
     for sub in ("t0/src", "t1/src", "t1/tests", "deps"):
@@ -826,6 +1187,175 @@ def cmd_selftest(a):
     # stage-1 evidence gate
     ev1 = {k: tmp / f"ev_{k}" for k in STAGE1_EVIDENCE}
     case("stage1 evidence absent -> reasons", len(stage1_reasons(ev1)), len(STAGE1_EVIDENCE))
+    au = tmp / "audit_a.md"
+    au.write_text("총평: Q0 불가 · «폐합 차단» 2건.\n- «폐합 차단» first finding\n- «폐합 차단» second finding\n"
+                  "- «기재로 족함» note\n")
+    clo = tmp / "closure.txt"
+    e1, e2 = tmp / "fix_evidence_1.txt", tmp / "fix_evidence_2.txt"
+    e1.write_text("fix one")
+    e2.write_text("fix two")
+    it1 = f"item={au}#1 status=resolved finding_line=2 evidence={e1} evidence_sha256={sha(e1)}\n"
+    it2 = f"item={au}#2 status=resolved finding_line=3 evidence={e2} evidence_sha256={sha(e2)}\n"
+    good = f"audit={au} sha256={sha(au)} blocking=2 resolved=2\n" + it1 + it2 + "blocking_open=0\n"
+    res_c = []
+    def clo_case(text, audits=(au,)):
+        clo.write_text(text)
+        return audit_closure_reasons(clo, audits)
+    res_c.append(clo_case(good) == [])
+    res_c.append(clo_case(good.replace(sha(au), "0" * 64)) == ["AUDIT_DIGEST:audit_a.md"])
+    res_c.append(clo_case(good.replace("resolved=2", "resolved=1")) == ["AUDIT_UNRESOLVED:audit_a.md"])
+    res_c.append(clo_case(good.replace("blocking_open=0", "blocking_open=1")) == ["AUDIT_BLOCKING_OPEN"])
+    res_c.append(clo_case("anything\n") == ["AUDIT_NOT_CLOSED:audit_a.md", "AUDIT_BLOCKING_OPEN"])
+    case("stage1 audit closure: closed accepted; digest, unresolved, open rejected", res_c[:5], [True] * 5)
+    res_c.append(clo_case(good.replace("blocking=2 resolved=2", "blocking=0 resolved=0")) == ["AUDIT_UNRESOLVED:audit_a.md"])
+    res_c.append(clo_case(good.replace(it2, "")) == ["AUDIT_ITEM_UNRESOLVED:audit_a.md:2"])
+    res_c.append(clo_case(good.replace(f"evidence={e2}", f"evidence={tmp}/absent")) == ["AUDIT_ITEM_UNRESOLVED:audit_a.md:2"])
+    empty = tmp / "audit_empty.md"
+    empty.write_text("")
+    res_c.append(clo_case(f"audit={empty} sha256={sha(empty)} blocking=0 resolved=0\nblocking_open=0\n", (empty,))
+                 == ["AUDIT_VERDICT_UNPARSEABLE:audit_empty.md"])
+    case("stage1 audit closure: self-declared zero, missing item, absent evidence, empty audit rejected",
+         res_c[5:], [True] * 4)
+    idres = [clo_case(good.replace(f"evidence={e2} evidence_sha256={sha(e2)}", f"evidence={e1} evidence_sha256={sha(e1)}"))
+             == ["AUDIT_ITEM_UNRESOLVED:audit_a.md:2"],
+             clo_case(good.replace("finding_line=3", "finding_line=4")) == ["AUDIT_ITEM_UNRESOLVED:audit_a.md:2"],
+             clo_case(good.replace("finding_line=3", "finding_line=2")) == ["AUDIT_ITEM_UNRESOLVED:audit_a.md:2"],
+             clo_case(good.replace(f"evidence_sha256={sha(e2)}", "evidence_sha256=" + "0" * 64))
+             == ["AUDIT_ITEM_UNRESOLVED:audit_a.md:2"]]
+    case("stage1 audit closure: item identity (shared evidence, non-blocking line, reused line, evidence hash) rejected",
+         idres, [True] * 4)
+    co = tmp / "cost.json"
+    rss_k, add_b = 32483132, 1480800
+    base_c = {"T_R_hours": 11.61, "T_R_hours_conservative": 12.91, "T_add_hours_with_2x_margin": 2.6,
+              "N_hours_range": [0.8, 1.2], "L_hours_upper": 0.073, "memory_added_rev4": {"bytes": add_b},
+              "run1_measured": {"elapsed_hours": 12.91, "MaxRSS_K": rss_k},
+              "margin_GB_vs_64G_rev5": 64.0 - rss_k / 1048576.0 - add_b / 1073741824.0}
+    def cost_case(**kw):
+        co.write_text(json.dumps(dict(base_c, **kw)))
+        return cost_reasons(co)
+    ok_c = cost_case()
+    case("stage1 cost: 2T_R+T_add over 30 h rejected", [ok_c, cost_case(T_R_hours_conservative=14.0)],
+         [[], ["COST_OVER_LIMIT"]])
+    case("stage1 cost: negative time, T_R below measured, unfounded memory margin rejected",
+         [cost_case(T_add_hours_with_2x_margin=-5.0), cost_case(T_R_hours_conservative=13.0, T_R_hours=13.5),
+          cost_case(margin_GB_vs_64G_rev5=33.0 + 0.5)],
+         [["COST_NEGATIVE", "COST_T_ADD_BELOW_BASIS"], ["COST_T_R_BELOW_MEASURED"], ["COST_MEMORY_MARGIN"]])
+    case("stage1 cost: T_add below the bench basis or margin ignoring added buffers rejected",
+         [cost_case(T_add_hours_with_2x_margin=2.0),
+          cost_case(memory_added_rev4={"bytes": 4 * 1073741824})],
+         [["COST_T_ADD_BELOW_BASIS"], ["COST_MEMORY_MARGIN"]])
+    ev2 = {k: tmp / f"ev2_{k}" for k in STAGE1_EVIDENCE}
+    ev2["user_rprime"].write_text("some other decision")
+    case("stage1 user decision without the dated record rejected",
+         "STAGE1_USER_DECISION_NOT_RECORDED" in stage1_reasons(ev2), True)
+    # rev 5: h200x2 resources
+    hr = tmp / "h200run"
+    hr.mkdir(parents=True)
+    (hr / "input").mkdir()
+    (hr / "input/resolved_lumina.exports").write_text("declare -x A=\"1\"\n")
+    gf = {"terminal_state": "SUCCESS", "model_rc": "0", "outer_iterations": "6", "fixed_te_loader_consumed": "1",
+          "partition": "h200", "gpu_kind": "H200", "gpu_profile": "h200x2", "allocated_gpus": "2",
+          "allocated_cpus": "16", "cuda_visible_devices": "0,1",
+          "effective_exports_sha256": sha(hr / "input/resolved_lumina.exports")}
+    def wfoot(d, f):
+        (d / "RUN_FOOTER.txt").write_text("".join(f"{k}={v}\n" for k, v in f.items()))
+    def wgpu(d, rows):
+        (d / "gpu_identity.csv").write_text("visible_ordinal,cuda_visible_token,name,memory_total_mib,uuid,"
+                                            "driver_version,compute_capability\n" + "".join(rows))
+    good_rows = ["0,0,NVIDIA H200 NVL,143771,GPU-aaaa,555.1,9.0\n", "1,1,NVIDIA H200 NVL,143771,GPU-bbbb,555.1,9.0\n"]
+    sl = "COMPLETED RESTARTS=0 PARTITION=h200 ALLOC=billing=40,cpu=16,gres/gpu=2,mem=64G,node=1"
+    wfoot(hr, gf); wgpu(hr, good_rows)
+    case("h200x2: healthy footer, Slurm allocation and gpu identity accepted",
+         (footer_core_reasons(footer(hr), sl), resource_reasons(hr, sl)), ([], []))
+    fres = []
+    for k in H200X2:
+        for bad in (None, "x"):
+            f2 = dict(gf)
+            if bad is None:
+                f2.pop(k)
+            else:
+                f2[k] = bad
+            wfoot(hr, f2)
+            fres.append(f"FOOTER_RESOURCE:{k}" in resource_reasons(hr, sl))
+    wfoot(hr, gf)
+    case("h200x2: each footer resource field missing or wrong -> reason", fres, [True] * 10)
+    sres = [resource_reasons(hr, sl.replace("PARTITION=h200", "PARTITION=h100")),
+            resource_reasons(hr, sl.replace("cpu=16", "cpu=32"))]
+    wgpu(hr, good_rows[:1]); sres.append(resource_reasons(hr, sl))
+    wgpu(hr, [good_rows[0], good_rows[0].replace("0,0,", "1,1,")]); sres.append(resource_reasons(hr, sl))
+    wgpu(hr, [good_rows[0], good_rows[1].replace("NVIDIA H200 NVL", "NVIDIA H100 80GB HBM3")]); sres.append(resource_reasons(hr, sl))
+    wgpu(hr, [good_rows[0], good_rows[1].replace("143771", "139999")]); sres.append(resource_reasons(hr, sl))
+    wgpu(hr, good_rows); wfoot(hr, dict(gf, cuda_visible_devices="2,3")); sres.append(resource_reasons(hr, sl))
+    wfoot(hr, gf)
+    case("h200x2: Slurm allocation or gpu identity disagreeing -> reason", sres,
+         [["SLURM_PARTITION"], ["SLURM_ALLOCATION"], ["GPU_IDENTITY_COUNT_UUID", "GPU_IDENTITY_FOOTER_MASK"],
+          ["GPU_IDENTITY_COUNT_UUID"], ["GPU_IDENTITY_KIND_MEMORY"], ["GPU_IDENTITY_KIND_MEMORY"],
+          ["GPU_IDENTITY_FOOTER_MASK"]])
+    # runner: whole file == runner_rev5(R runner); tested identity; submit command
+    rb = tmp / "runner"
+    rb.mkdir()
+    base_rn = R_RUNNER.read_text()
+    good_full = runner_rev5(base_rn)
+    (rb / "RP.slurm").write_text(good_full)
+    (rb / "runner_selftest.log").write_text("CMFGEN_TWIN_MAP_RUNNER_SELFTEST_PASS positive=5 negative=23\n")
+    (rb / "tested.txt").write_text(f"runner_sha256={sha(rb / 'RP.slurm')} selftest_log_sha256={sha(rb / 'runner_selftest.log')}\n")
+    runroot = "/gpfs/x/RP"
+    (rb / "submit.txt").write_text(submit_expected(runroot))
+    def rr(name, submit="submit.txt"):
+        return runner_reasons(R_RUNNER, rb / name, rb / "tested.txt", rb / submit, run_root=runroot)
+    ok_r = rr("RP.slurm")
+    (rb / "RPbad.slurm").write_text(good_full.replace("#SBATCH --mem=64G", "#SBATCH --mem=128G"))
+    bad_r = rr("RPbad.slurm")
+    (rb / "RPin.slurm").write_text(good_full.replace("  run_case h200x2_ok ", "}\nrun_model() { :; }\nx() {\n  run_case h200x2_ok ", 1))
+    in_r = rr("RPin.slurm")
+    case("runner: allowed h200x2 diff accepted, unregistered diff rejected",
+         (ok_r, "RUNNER_UNREGISTERED_DIFF" in bad_r, "RUNNER_RESOURCE:--mem=64G" in bad_r,
+          "RUNNER_UNREGISTERED_DIFF" in in_r), ([], True, True, True))
+    (rb / "RP2.slurm").write_text(good_full)
+    (rb / "tested2.txt").write_text("runner_sha256=" + "0" * 64 + f" selftest_log_sha256={sha(rb / 'runner_selftest.log')}\n")
+    un_r = runner_reasons(R_RUNNER, rb / "RP2.slurm", rb / "tested2.txt", rb / "submit.txt", run_root=runroot)
+    (rb / "runner_selftest.log").write_text("SELFTEST_POSITIVE_FAILED\n")
+    fl_r = rr("RP.slurm")
+    case("runner: untested runner hash or failed selftest rejected",
+         ("RUNNER_NOT_TESTED" in un_r, "RUNNER_SELFTEST_NOT_PASS" in fl_r), (True, True))
+    subs = []
+    for i, text in enumerate((submit_expected(runroot).replace("sbatch ", "sbatch --partition=h100 "),
+                              submit_expected(runroot).replace("sbatch ", "sbatch --time=48:00:00 "),
+                              submit_expected(runroot).replace("job.slurm", "other.slurm"),
+                              submit_expected("/gpfs/x/OTHER"),
+                              submit_expected(runroot).replace("--exclude=syn102", "--exclude=syn101"))):
+        (rb / f"sub{i}.txt").write_text(text)
+        subs.append("SUBMIT_COMMAND_NOT_REGISTERED" in runner_reasons(R_RUNNER, rb / "RP.slurm", rb / "tested.txt",
+                                                                       rb / f"sub{i}.txt", run_root=runroot))
+    case("runner: submit command overriding resources rejected", subs, [True] * 5)
+    # paired resources
+    ep = tmp / "h200ep"
+    ep.mkdir()
+    (hr / "module_env.txt").write_text("gnu13/13.2.0\ncuda/13.0.2\n")
+    (ep / "module_env.txt").write_text("gnu13/13.2.0\ncuda/13.0.2\n")
+    wfoot(ep, gf)
+    p_ok = paired_resource_reasons(hr, ep)
+    wfoot(ep, dict(gf, partition="h100", gpu_kind="H100", gpu_profile="h100-a100x2"))
+    (ep / "module_env.txt").write_text("gnu13/13.2.0\ncuda/12.8.1\n")
+    (hr / "module_env.txt").write_text("gnu13/13.2.0\n\tlibm.so.6 => /lib64/libm.so.6 (0x00007f1a2b3c4000)\n")
+    (ep / "module_env.txt").write_text("gnu13/13.2.0\n\tlibm.so.6 => /lib64/libm.so.6 (0x00007fffaaaa0000)\n")
+    wfoot(ep, gf)
+    m_ok = paired_resource_reasons(hr, ep)
+    (ep / "module_env.txt").write_text("gnu13/13.2.0\n\tlibm.so.6 => /opt/other/libm.so.6 (0x00007fffaaaa0000)\n")
+    case("paired: module environment compared without load addresses", (m_ok, paired_resource_reasons(hr, ep)),
+         ([], ["PAIRED_RESOURCE:module_env"]))
+    (hr / "module_env.txt").write_text("gnu13/13.2.0\ncuda/13.0.2\n")
+    (ep / "module_env.txt").write_text("gnu13/13.2.0\ncuda/13.0.2\n")
+    wfoot(ep, gf)
+    p_ok = paired_resource_reasons(hr, ep)
+    wfoot(ep, dict(gf, partition="h100", gpu_kind="H100", gpu_profile="h100-a100x2"))
+    (ep / "module_env.txt").write_text("gnu13/13.2.0\ncuda/12.8.1\n")
+    case("paired: E'/R' resource mismatch -> reason", (p_ok, sorted(paired_resource_reasons(hr, ep))),
+         ([], sorted(["PAIRED_RESOURCE:partition", "PAIRED_RESOURCE:gpu_kind", "PAIRED_RESOURCE:gpu_profile",
+                      "PAIRED_RESOURCE:module_env"])))
+    ev3 = {k: tmp / f"ev3_{k}" for k in STAGE1_EVIDENCE}
+    ev3["user_h200"].write_text("user chose h100,a100")
+    case("stage1 user h200 decision without h200x2 rejected", "STAGE1_USER_H200_NOT_RECORDED" in stage1_reasons(ev3), True)
     # G-READOUT
     (tmp / "sum_other.json").write_text(json.dumps({"readout_sha256": "0" * 64, "n_cases": 1, "cases": [{"case": "x", "pass": True}]}))
     case("G-READOUT rejects another readout's summary", readout_gate(tmp / "sum_other.json"), "NOT_THIS_READOUT")
@@ -846,7 +1376,7 @@ def main():
     sp = ap.add_subparsers(dest="cmd", required=True)
     p = sp.add_parser("selftest"); p.add_argument("--out", required=True)
     p = sp.add_parser("preflight")
-    for k in ("--run", "--base", "--out"):
+    for k in ("--run", "--base", "--selftest", "--out"):
         p.add_argument(k, required=True)
     p.add_argument("--eprime"); p.add_argument("--ebase")
     p = sp.add_parser("readout")
