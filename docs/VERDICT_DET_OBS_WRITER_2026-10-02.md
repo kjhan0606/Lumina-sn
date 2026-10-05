@@ -72,6 +72,29 @@ NUV/OPT 색: N 0.415, L 0.496. (참고로 NRB-E 판정의 공개 잣대 값은 0
 | 판정 | 운전자 | 운전자 | 겸직(기재) |
 | 종료감사 | astra | astra 1회(`N/astra_closeout.md`): 폐합 불가·차단 2(B1 run1 귀인 단정, B2 폐합 근거 판본 연결) → OLD/NEW 반영·판본 연결 보완 | 기안자가 자기 계약 판정을 감사(이해관계 기재) |
 
-## 7. 이후
+## 7. 두 상태 판정 (E′ 실행 후, 2026-10-06)
 
-user 가 E′ 를 승인했다(2026-10-05 「돌려요.」, `N/evidence/rev5/USER_APPROVAL_EPRIME.txt`). E′ = job 413614 `LUMINA_detobs_Ep1`(h200x2, 짝 G-ID `N/evidence/rev5/gid_pre_ep1` PASS). 두 상태 판정은 E′ 완료 뒤 별도 판정문 갱신으로 한다.
+E′ = job 413614 `LUMINA_detobs_Ep1`, h200 syn104, H200 NVL ×2(run2 와 같은 UUID 쌍), CPU 16, 64G, COMPLETED 0:0, 09:58:46, RESTARTS 0, MaxRSS 32.5 GB. footer `h200/H200/h200x2/2/16`, `model_rc=0`, SUCCESS. 작성기 SUCCESS(mode 1, 소비 선 20,323,129), χ_e 상한 PASS `max_ratio=0.918`(shell 28·bin 1033, n=m=1; 옛 척도 진단값 2.23e-11 — 옛 기준이었다면 E′ 도 실패).
+
+판독 `N/readout_paired/result.json`(mode `paired`): **validity VALID, 사유 0, 분기 O-DOWN.** 대수 확인 잔차 ≤ 2.2e-16.
+
+| 대역 | Δ_N = log(C_N^R′/C_N^E′) | Δ_L = log(C_L^R′/C_L^E′) | W_E′ | W_R′ |
+|---|---|---|---|---|
+| FUV0 | −2.544 | −0.491 | +0.980 | −1.073 |
+| FUVa | **−1.682** (down) | −0.218 | +0.849 | −0.614 |
+| FUVb | **−1.255** (down) | +0.049 | +1.214 | −0.090 |
+| NUV | −0.502 | −0.145 | +0.280 | −0.077 |
+
+**판정 문장**: 주 분기(새 작성기의 FUVa·FUVb 응답)는 **O-DOWN** 이다. NRB 상태(R′)는 비-NRB 상태(E′)보다 OPT 대비 FUVa·FUVb 색을 새 작성기 기준 −1.68·−1.25 dex 낮춘다. 기존 작성기로는 같은 상태 쌍의 응답이 −0.22·+0.05 dex 로 등록 문턱 아래였다(NRB-E 판정의 F_a −0.22 와 같은 범주). 두 작성기의 차이는 같은 상태 쌍에서 W_E′ 와 W_R′ 의 부호가 반대인 데서 나온다: E′ 에서는 새 작성기가 FUV 를 더 밝게(+0.85…+1.21 dex), R′ 에서는 더 어둡게(−0.09…−1.07 dex) 낸다.
+
+공개 CMFGEN 19.48 d 대비(보고 전용, 2500 Å 이상만; `N/figs/paired_vs_cmfgen.png`): 8 대역(2500–10000 Å, OPT 정규화) RMS 차이는 E′ N 0.282 · E′ L 0.304 · R′ N 0.357 · R′ L 0.399 dex. NUV/OPT 는 공개 0.775 에 대해 E′ N 1.319 · E′ L 0.692 · R′ L 0.496 · R′ N 0.415. E′ N 은 3000–6000 Å 에서 공개와 ±0.05 dex 안이지만 2500–3000 Å 이 +0.61 dex 과잉이고, FUVb/OPT = 2.08 로 FUV 가 광학보다 밝다(공개 FUV 스펙트럼이 없어 대조 불가).
+
+한계:
+- FUVa·FUVb 에는 공개 CMFGEN 스펙트럼이 없다. O-DOWN 은 NRB-E 의 열린 FUV 질문(F_a 불변)에 대한 답이지 CMFGEN 어긋남 칸의 종결이 아니다(계약 §5).
+- Δ_N 의 크기는 E′ 의 큰 새-작성기 FUV(W_E′ +0.85…+1.21)에 크게 의존한다. 그 FUV 의 원천(매핑 S_l·Milne·미매핑 산란 중 어느 쪽)은 분해하지 않았다.
+- 두 런 모두 H200 이다. E/R 원본(H100/A100)과의 ④ 비교에는 하드웨어 차이가 섞인다.
+- 6 반복 FIXED_TE 창의 유한 응답이다.
+
+## 8. 이후
+
+user 가 E′ 를 승인했다(2026-10-05 「돌려요.」, `N/evidence/rev5/USER_APPROVAL_EPRIME.txt`). E′ = job 413614 `LUMINA_detobs_Ep1`(h200x2, 짝 G-ID `N/evidence/rev5/gid_pre_ep1` PASS). 두 상태 판정은 §7.
