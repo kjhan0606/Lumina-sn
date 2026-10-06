@@ -641,17 +641,17 @@ CLI가 달라지면 운전자가 실제 명령과 차이를 집행 기록에 남
 |---|---|---|
 | user 승인 | user | 2026-10-07 「승인」, §0 경로 |
 | 본문 기안 | 기안자 | 본 문서; read-only; 실제 모델 식별 상태는 첫 줄 |
-| 정본 파일화·기준선 연결 | 운전자 | 미집행 |
-| 기계 프리플라이트 | 운전자 | 미집행 |
-| Q-GOAL·Q-LEAN 사전감사 | Fable 또는 기록된 대행 | 미집행 |
-| 오프라인 구현·빌드 신원 | 운전자 | 미집행 |
-| G-JOIN·G-DECOMP 직접시험·음성대조 | 운전자 | 미집행 |
-| E′·R′ 수송 계수와 묶음 분해 | 운전자 | 미집행 |
-| 짝 요인 분해·구간·분기 | 운전자 | 미집행 |
-| Slurm 상태·CPU 예약 비용·메모리 | 운전자 | 미집행 |
-| 목표 달성 판정 | 운전자 | 미집행 |
+| 정본 파일화·기준선 연결 | 운전자 | e578af1(기안 + 개정 1); 기준선 = DET-OBS-CAPTURE bf92ecf, `readout_b1/` |
+| 기계 프리플라이트 | 운전자 | lageunha: prereg·gate_referents·doc_canonical PASS; 사전감사 발주서 dispatch PASS |
+| Q-GOAL·Q-LEAN 사전감사 | Fable 또는 기록된 대행 | Fable 429(`/gpfs/kjhan/lumina/cmfgen_map/obs_linedecomp_20261007/evidence/fable_preaudit_failed.txt`) → gpt-6.1-sol 대행 `/gpfs/kjhan/lumina/cmfgen_map/obs_linedecomp_20261007/preaudit_sol.md`: 부합·적정·차단 0 |
+| 오프라인 구현·빌드 신원 | 운전자 | `/gpfs/kjhan/lumina/cmfgen_map/obs_linedecomp_20261007/tools/`, 빌드 `/gpfs/kjhan/lumina/cmfgen_map/obs_linedecomp_20261007/build/f2/`(도구 240b6fb6…, 경고 0) |
+| G-JOIN·G-DECOMP 직접시험·음성대조 | 운전자 | C 6/6, 판독기 15/15 (`/gpfs/kjhan/lumina/cmfgen_map/obs_linedecomp_20261007/results/f2/selftest/`) |
+| E′·R′ 수송 계수와 묶음 분해 | 운전자 | `/gpfs/kjhan/lumina/cmfgen_map/obs_linedecomp_20261007/results/f2/{E,R}` VALID, 폐합 1·2 통과 |
+| 짝 요인 분해·구간·분기 | 운전자 | `/gpfs/kjhan/lumina/cmfgen_map/obs_linedecomp_20261007/results/f2/paired` VALID, 폐합 3·4 통과 |
+| Slurm 상태·CPU 예약 비용·메모리 | 운전자 | a10 job 415012·415066·415067·415069, 누적 21:47, 약 5.8 core·h, MaxRSS 4.3 GB |
+| 목표 달성 판정 | 운전자 | PASS `docs/VERDICT_DET_OBS_LINEDECOMP_2026-10-07.md`; 구현자 겸임 |
 | 종료감사 | astra | 미집행; 자기 계약 감사임을 명시 |
-| 이탈·미해결·후속 후보 | 실제 담당 | 미집행 |
+| 이탈·미해결·후속 후보 | 실제 담당 | 판정문 §4(7건)·§6 |
 
 대행이나 실측 모델 ID 차이는 숨기지 않는다. 다른 모델의 산출을 astra 또는 Fable의 실제 수행으로 재명명하지 않는다.
 
