@@ -125,6 +125,19 @@ def printed(tok):
 
 
 # ------------------------------------------------------------ production relations
+def g8_quantities(n_l, n_u, g_l, g_u, f_lu, lam_cm, t_exp):
+    """q, S, d, tau of the stored (printed) generation-8 populations as intervals:
+    the exact production relations evaluated on the population intervals with the
+    production constants a, K, A (same floats)."""
+    a = g_l / g_u
+    K = C_SOB * f_lu * lam_cm * t_exp
+    nu = C / lam_cm
+    A = 2.0 * H * nu * nu * nu / (C * C)
+    Y = I.x(a) * n_u
+    d = n_l - Y
+    return {"q": Y.div(n_l), "d": d, "tau": I.x(K) * d, "S": (I.x(A) * Y).div(d) if d.lo > 0 else None}
+
+
 def prod_tau_S(n_l, n_u, g_l, g_u, f_lu, lam_cm, t_exp):
     """generation-8 style evaluation in the production operation order (floats)."""
     a = g_l / g_u
@@ -138,10 +151,17 @@ def prod_tau_S(n_l, n_u, g_l, g_u, f_lu, lam_cm, t_exp):
 
 def recover(tau, S, g_l, g_u, f_lu, lam_cm, t_exp):
     """invert the captured (tau, S_used) for d, a*n_u, n_l, n_u, q and n_u/n_l.
-    Rounding accounting (each production operation relative <= u):
-      tau = fl(K d) with K = fl(fl(fl(C f) lam) t)      -> d = tau/K (1 +- 2u)  [K computed here identically]
-      S = fl(fl(fl(A a) n_u)/d), A, a computed here identically -> a n_u = S d / A (1 +- 4u)
-      d = fl(n_l - fl(a n_u))                            -> n_l = d (1 +- u) + a n_u (1 +- u)"""
+    Target = the stored production populations n_l, n_u (floats).  Production
+    (T2 lumina_plasma.c 21428-21450, opacity_publication.c), every operation
+    rounded with relative error <= u:
+      a = g_l/g_u, K = fl(fl(fl(C f) lam) t), A = fl(...2 h nu^3 / c^2) are
+        recomputed here with the identical operation order -> same floats;
+      d_f = fl(n_l - fl(a n_u))           => n_l = d_f/(1+e4) + a n_u (1+e5)
+      tau = fl(K d_f)                      => d_f = tau/K / (1+e0)
+      S = fl(fl(fl(A a) n_u) / d_f)        => a n_u = S d_f / A / ((1+e1)(1+e2)(1+e3))
+    so d_f in tau/K (1 +- 2u) (one more u for evaluating tau/K here), a n_u in
+    (S/A)(1 +- 2u) d_f (1 +- 4u), n_l in d_f (1 +- u) + a n_u (1 +- u); q = a n_u / n_l
+    and n_u = a n_u / a follow by outward interval division."""
     a = g_l / g_u
     K = C_SOB * f_lu * lam_cm * t_exp
     nu = C / lam_cm
@@ -152,7 +172,7 @@ def recover(tau, S, g_l, g_u, f_lu, lam_cm, t_exp):
     Y = (d * I.rel(S / A, 2)) * I.rel(1.0, 4)          # a n_u
     n_l = (d * I.rel(1.0, 1)) + (Y * I.rel(1.0, 1))
     n_u = Y.div(I.x(a))
-    q = I.rel(S, 0).div(I.rel(A, 0) + I.rel(S, 0))      # S/(A+S) from the consumed S, A computed here
+    q = Y.div(n_l)
     ratio = n_u.div(n_l)
     return {"d": d, "a_nu": Y, "n_l": n_l, "n_u": n_u, "q": q, "nu_over_nl": ratio, "A": A, "K": K, "a": a}
 
@@ -227,19 +247,23 @@ def public_block(path, time="19.480"):
     return head, rows
 
 
-def interp(vs, xs_tok, v):
-    """linear interpolation in velocity between the two bracketing rows (printed
-    tokens -> intervals); None outside support."""
+def interp(vs_tok, xs_tok, v):
+    """linear interpolation in velocity between the two bracketing rows.  Both the
+    velocity and the quantity tokens are printed values, so the bracket velocities
+    are intervals; w = (v - v0)/(v1 - v0) decreases in v0 and in v1, which bounds w.
+    None outside support (the bracket is chosen on the printed central values)."""
+    vs = np.array([float(x) for x in vs_tok])
     if not (vs[0] <= v <= vs[-1]):
         return None, None
     k = int(np.searchsorted(vs, v))
     if vs[k] == v:
-        return printed(xs_tok[k]), {"v0": vs[k], "v1": vs[k], "w1": 0.0}
-    v0, v1 = vs[k - 1], vs[k]
-    w = (v - v0) / (v1 - v0)
+        k = max(k, 1)
+    v0, v1 = printed(vs_tok[k - 1]), printed(vs_tok[k])
+    if not (v1.lo > v0.hi):
+        return None, None
+    w = I(dn((v - v0.hi) / (v1.hi - v0.hi)), (v - v0.mid) / (v1.mid - v0.mid), up((v - v0.lo) / (v1.lo - v0.lo)))
     x0, x1 = printed(xs_tok[k - 1]), printed(xs_tok[k])
-    wI = I(dn(w), w, up(w))
-    return x0 + (x1 - x0) * wI, {"v0": v0, "v1": v1, "w1": w}
+    return x0 + (x1 - x0) * w, {"v0": vs_tok[k - 1], "v1": vs_tok[k], "x0": xs_tok[k - 1], "x1": xs_tok[k], "w1": w.j()}
 
 
 # ------------------------------------------------------------ branches
@@ -300,8 +324,16 @@ def analyze_state(run, tag):
         why.append(f"{tag}:LINK_SOURCE_ORACLE_SET")
     recs = capture_records(cap, [t["row"] for t in TARGETS], set(READ_SHELLS))
     g8 = nlte_g8(run, READ_SHELLS)
-    # generation-8 level table vs atomic levels (index, g, energy)
-    for _, r in g8[g8.level_idx.isin([0, 2, 4, 5])].drop_duplicates("level_idx").iterrows():
+    # generation-8 level table vs atomic levels: every shell holds every Si III level
+    # exactly once, and index, g and energy agree with levels.csv
+    want = sorted(int(x) for x in lv.index)
+    for s in READ_SHELLS:
+        got = sorted(int(x) for x in g8[g8.shell == s].level_idx)
+        if got != want:
+            why.append(f"{tag}:LINK_G8_LEVEL_SET:shell{s}")
+    for _, r in g8.drop_duplicates("level_idx").iterrows():
+        if int(r.level_idx) not in lv.index:
+            continue
         a = lv.loc[int(r.level_idx)]
         if int(a.g) != int(r.g) or abs(float(a.energy_eV) - float(r.E_eV)) > 1e-9 * max(1.0, float(r.E_eV)):
             why.append(f"{tag}:LINK_G8_LEVEL_MAP:{int(r.level_idx)}")
@@ -316,7 +348,9 @@ def analyze_state(run, tag):
     geo = pd.read_csv(Path(run) / "input/model/geometry.csv").set_index("shell_id")
     Te7 = np.fromfile(cap / "Te.f64", "<f8"); ne7 = np.fromfile(cap / "ne.f64", "<f8")
     ps = pd.read_csv(Path(run) / "work/lumina_plasma_state.csv", dtype={"n_e": str}).set_index("shell_id")
-    st = {"g7": {}, "g8": {}, "ions": {}, "geo": {}, "t_exp": t_exp}
+    st = {"g7": {}, "g8": {}, "ions": {}, "geo": {}, "t_exp": t_exp, "why": why}
+    if any("LINK_G8_LEVEL_SET" in x for x in why):
+        return st, why
     for t in TARGETS:
         r = rows_df.loc[t["row"]]
         g_l, g_u = float(lv.loc[t["lo"], "g"]), float(lv.loc[t["up"], "g"])
@@ -333,9 +367,8 @@ def analyze_state(run, tag):
                                             if rv else {"status": "NOT_RECOVERABLE", "tau": rec["tau"], "S": rec["S"]})
             sub = g8[g8.shell == s].set_index("level_idx")
             n_l8, n_u8 = printed(sub.loc[t["lo"], "n_pop"]), printed(sub.loc[t["up"], "n_pop"])
-            tau8, S8, d8, A8, a8 = prod_tau_S(n_l8.mid, n_u8.mid, g_l, g_u, f_lu, lam, t_exp)
-            st["g8"][(t["name"], s)] = {"n_l": n_l8, "n_u": n_u8, "tau_mid": tau8, "S_mid": S8,
-                                        "q": I.x(a8) * n_u8.div(n_l8) if n_l8.lo > 0 else None, "g_l": g_l, "g_u": g_u}
+            q8 = g8_quantities(n_l8, n_u8, g_l, g_u, f_lu, lam, t_exp)
+            st["g8"][(t["name"], s)] = {"n_l": n_l8, "n_u": n_u8, **q8, "g_l": g_l, "g_u": g_u}
     for s in READ_SHELLS:
         sub = g8[g8.shell == s]
         Nn = ifsum(printed(x) for x in sub.n_pop)
@@ -354,12 +387,18 @@ def cmd_analyze(a):
     out = Path(a.out)
     out.mkdir(parents=True, exist_ok=False)
     why = []
-    stj = json.load(open(Path(a.selftest) / "selftest.json"))
-    if stj.get("readout_sha256") != sha(Path(__file__).resolve()) or stj.get("failures") != 0:
-        why.append("G-PHYS:SELFTEST_NOT_THIS_READOUT_OR_FAILED")
+    if getattr(a, "require_selftest", True):
+        stj = json.load(open(Path(a.selftest) / "selftest.json"))
+        if stj.get("readout_sha256") != sha(Path(__file__).resolve()) or stj.get("failures") != 0:
+            why.append("G-PHYS:SELFTEST_NOT_THIS_READOUT_OR_FAILED")
     E, wE = analyze_state(a.e_run, "E")
     R, wR = analyze_state(a.r_run, "R")
     why += wE + wR
+    if wE or wR:                         # G-LINK failure: no science output from mislinked inputs
+        (out / "result.json").write_text(json.dumps({"schema": "DET_SIIII_POP_RESULT_V1", "validity": "X",
+                                                     "reasons": why}, indent=1))
+        print(json.dumps({"validity": "X", "reasons": why}))
+        return 0
     for f in ("input/model/geometry.csv", "input/model/line_list.csv", "input/model/levels.csv",
               "input/model/density.csv", "input/model/abundances.csv"):
         if sha(Path(a.e_run) / f) != sha(Path(a.r_run) / f):
@@ -414,20 +453,29 @@ def cmd_analyze(a):
             row = {"line": t["name"], "shell": s, "main": s in t["shells"], "generation": 8, "authority": "NLTE_LEVEL",
                    "E_n_l": e8["n_l"].j(), "E_n_u": e8["n_u"].j(), "R_n_l": r8["n_l"].j(), "R_n_u": r8["n_u"].j(),
                    "E_p_l": pe_l.j(), "R_p_l": pr_l.j(), "E_q": e8["q"].j() if e8["q"] else None,
-                   "R_q": r8["q"].j() if r8["q"] else None, "E_S_mid": e8["S_mid"], "R_S_mid": r8["S_mid"],
-                   "E_tau_mid": e8["tau_mid"], "R_tau_mid": r8["tau_mid"],
+                   "R_q": r8["q"].j() if r8["q"] else None,
                    "dn_l": dnl.j(), "dn_l_ion_total_term": t1.j(), "dn_l_occupation_term": t2.j(),
                    "dn_l_closure_ok": bool((t1 + t2).lo <= dnl.hi and dnl.lo <= (t1 + t2).hi),
                    "dn_l_branch": term_branch(t1, t2), "dd_ion_total_term": u1.j(), "dd_occupation_term": u2.j(),
                    "dd_branch": term_branch(u1, u2)}
-            # generation 7 vs 8 for the same transition (S, tau middle values vs g7 consumed)
+            # generation 7 (consumed / recovered) vs generation 8 (stored) for q, S, d, tau
             for X, tag in ((E, "E"), (R, "R")):
                 g7 = X["g7"][(t["name"], s)]
-                if g7["status"] == "RECOVERED" and X["g8"][(t["name"], s)]["q"] is not None:
-                    q8 = X["g8"][(t["name"], s)]["q"]
-                    row[f"{tag}_generation_q"] = ("GENERATION_DIFFERENCE_RESOLVED"
-                                                  if (g7["q"].lo > q8.hi or q8.lo > g7["q"].hi)
-                                                  else "GENERATION_DIFFERENCE_UNRESOLVED")
+                g8q = X["g8"][(t["name"], s)]
+                if g7["status"] != "RECOVERED":
+                    continue
+                g7iv = {"q": g7["q"], "d": g7["d"], "S": I.x(g7["S"]), "tau": I.x(g7["tau"])}
+                for k in ("q", "S", "d", "tau"):
+                    b8 = g8q.get(k)
+                    if b8 is None:
+                        row[f"{tag}_generation_{k}"] = "NOT_COMPARABLE"
+                        continue
+                    row[f"{tag}_g8_{k}"] = b8.j()
+                    row[f"{tag}_generation_{k}"] = ("GENERATION_DIFFERENCE_RESOLVED"
+                                                    if (g7iv[k].lo > b8.hi or b8.lo > g7iv[k].hi)
+                                                    else "GENERATION_DIFFERENCE_UNRESOLVED")
+                    rr = b8.div(g7iv[k]) if g7iv[k].lo > 0 else None
+                    row[f"{tag}_g8_over_g7_{k}"] = rr.j() if rr else None
             if not row["dn_l_closure_ok"]:
                 why.append(f"G-PHYS:G8_DECOMP_CLOSURE:{t['name']}:{s}")
             if s in t["shells"]:
@@ -445,7 +493,7 @@ def cmd_analyze(a):
     # public CMFGEN comparison (generation 8 NLTE fraction)
     hI, rI_ = public_block(a.public_ion)
     hP, rP = public_block(a.public_phys)
-    vI = np.array([float(x[0]) for x in rI_]); vP = np.array([float(x[0]) for x in rP])
+    vI = [x[0] for x in rI_]; vP = [x[0] for x in rP]
     i_si2 = hI.index("si2"); i_T = hP.index("temp[K]"); i_ne = hP.index("ne[/cm^3]")
     cmp_rows, close = [], {}
     for t in TARGETS:
@@ -453,9 +501,9 @@ def cmd_analyze(a):
         for s in t["shells"]:
             v = E["geo"][s]
             xc, wv = interp(vI, [x[i_si2] for x in rI_], v)
-            Tc, _ = interp(vP, [x[i_T] for x in rP], v)
-            nc, _ = interp(vP, [x[i_ne] for x in rP], v)
-            row = {"set": t["name"], "shell": s, "v_kms": v, "interp": wv,
+            Tc, wT = interp(vP, [x[i_T] for x in rP], v)
+            nc, wn = interp(vP, [x[i_ne] for x in rP], v)
+            row = {"set": t["name"], "shell": s, "v_kms": v, "interp": wv, "interp_T": wT, "interp_ne": wn,
                    "x_cmfgen": xc.j() if xc else "OUTSIDE_PUBLIC_VELOCITY_SUPPORT",
                    "T_cmfgen": Tc.j() if Tc else None, "ne_cmfgen": nc.j() if nc else None}
             for X, tag, acc in ((E, "E", eE), (R, "R", eR)):
@@ -469,9 +517,13 @@ def cmd_analyze(a):
                     acc.append(e)
                     row[f"e_{tag}"] = e.j()
                 if Tc:
-                    rT = I.x(o["Te8"]).div(Tc); row[f"Te8_over_cmfgen_{tag}"] = rT.j() if rT else None
+                    for g_, val in (("7", I.x(o["Te7"])), ("8", I.x(o["Te8"]))):
+                        rT = val.div(Tc); row[f"Te{g_}_over_cmfgen_{tag}"] = rT.j() if rT else None
+                        row[f"Te{g_}_minus_cmfgen_{tag}"] = (val - Tc).j()
                 if nc:
-                    rn = o["ne8"].div(nc); row[f"ne8_over_cmfgen_{tag}"] = rn.j() if rn else None
+                    for g_, val in (("7", I.x(o["ne7"])), ("8", o["ne8"])):
+                        rn = val.div(nc); row[f"ne{g_}_over_cmfgen_{tag}"] = rn.j() if rn else None
+                        row[f"ne{g_}_minus_cmfgen_{tag}"] = (val - nc).j()
             cmp_rows.append(row)
         if ok and len(eE) == len(t["shells"]):
             n = float(len(eE))
@@ -528,6 +580,83 @@ def cmd_analyze(a):
 
 
 # ------------------------------------------------------------ selftest
+def make_fixture(root, pops7, pops8, stage_tot, vel_kms, line_rows=None, cap_gen=7, drop_g8=None,
+                 dup_g8=None, drop_cap=None, deck_ok=True):
+    """small run directory with the production layout: 3 shells, lines 0 (0->2) and
+    1 (4->5) of Si III, six Si III levels.  pops7/pops8: {shell: [n_0..n_5]}."""
+    root = Path(root)
+    (root / "input/model").mkdir(parents=True)
+    (root / "work/det_obs_capture").mkdir(parents=True)
+    g = [1, 1, 3, 5, 3, 5]
+    E = [0.0, 6.5370284255, 6.5529715536, 6.5854219379, 10.2763571337, 15.152669295]
+    with open(root / "input/model/levels.csv", "w") as f:
+        f.write("atomic_number,ion_number,level_number,energy_eV,g,metastable,super_level,configuration\n")
+        for i in range(6):
+            f.write(f"14,2,{i},{E[i]:.10f},{g[i]},0,0,x\n")
+    rows = line_rows or [(14, 2, 0, 2, 2.3e-05, 1.892030164e-05), (14, 2, 4, 5, 0.045, 2.542581244e-05)]
+    with open(root / "input/model/line_list.csv", "w") as f:
+        f.write("atomic_number,ion_number,level_number_lower,level_number_upper,line_id,wavelength,f_ul,f_lu,nu,B_lu,B_ul,A_ul,wavelength_cm\n")
+        for k, (z, ion, lo, upv, fl, lam) in enumerate(rows):
+            f.write(f"{z},{ion},{lo},{upv},{k},{lam * 1e8!r},0,{fl!r},{C / lam!r},0,0,0,{lam!r}\n")
+    dsha = sha(root / "input/model/line_list.csv") if deck_ok else "0" * 64
+    (root / "input/deck.sha256").write_text(f"{dsha}  line_list.csv\n")
+    (root / "input/resolved_lumina.exports").write_text('declare -x LUMINA_NLTE_SKIP_Z=""\n')
+    NS = 3
+    (root / "input/model/density.csv").write_text("shell_id,rho\n" + "".join(f"{s_},1e-13\n" for s_ in range(NS)))
+    (root / "input/model/abundances.csv").write_text("atomic_number,0,1,2\n14,0.1,0.1,0.1\n")
+    (root / "input/model/atom_masses.csv").write_text("atomic_number,mass_amu\n14,28.0855\n")
+    with open(root / "input/model/geometry.csv", "w") as f:
+        f.write("shell_id,r_inner,r_outer,v_inner,v_outer\n")
+        for s_ in range(NS):
+            v = vel_kms[s_] * 1e5
+            f.write(f"{s_},1e15,2e15,{v - 1e7!r},{v + 1e7!r}\n")
+    t_exp = 1683072.0
+    (root / "work/det_obs_capture/meta.txt").write_text(f"NS={NS}\ntime_explosion={t_exp.hex()}\n")
+    (root / "work/det_obs_capture/manifest.json").write_text(json.dumps(
+        {"generations": {"material": cap_gen, "nlte_population_committed": cap_gen}}))
+    np.full(NS, 9000.0).tofile(root / "work/det_obs_capture/Te.f64")
+    np.full(NS, 1e9).tofile(root / "work/det_obs_capture/ne.f64")
+    recs = []
+    for k, (z, ion, lo, upv, fl, lam) in enumerate(rows):
+        for s_ in range(NS):
+            if drop_cap == (k, s_):
+                continue
+            tau, S, *_ = prod_tau_S(pops7[s_][lo], pops7[s_][upv], g[lo], g[upv], fl, lam, t_exp)
+            recs.append((k, s_, tau, S, 0.0, 1))
+    np.array(recs, dtype=REC).tofile(root / "work/det_obs_capture/lines.bin")
+    with open(root / "work/nlte_levels_final.csv", "w") as f:
+        f.write("Z,ion,shell,level_idx,global_idx,E_eV,g,n_pop,T_e,n_ion_total,population_generation\n")
+        for s_ in range(NS):
+            for i in range(6):
+                if drop_g8 == (s_, i):
+                    continue
+                for _ in range(2 if dup_g8 == (s_, i) else 1):
+                    f.write(f"14,2,{s_},{i},{100 + i},{E[i]!r},{g[i]},{pops8[s_][i]:.6e},9000,{stage_tot[s_]:.6e},8\n")
+    with open(root / "work/lumina_ion_pops.csv", "w") as f:
+        f.write("shell_id,Z,stage,n_ion\n")
+        for s_ in range(NS):
+            f.write(f"{s_},14,2,{stage_tot[s_]:.6e}\n")
+    with open(root / "work/lumina_plasma_state.csv", "w") as f:
+        f.write("shell_id,T_e,n_e\n")
+        for s_ in range(NS):
+            f.write(f"{s_},9000,{1e9:.6e}\n")
+    return root
+
+
+def make_public(root, vels, si2, temp, ne):
+    root = Path(root); root.mkdir(parents=True, exist_ok=True)
+    hdr = "#NTIMES:  1\n#NSTAGES:  5\n#TIMES[d]:  19.480\n#\n#TIME:    19.480\n#NVEL: %d\n" % len(vels)
+    with open(root / "ion.txt", "w") as f:
+        f.write(hdr + "#vel_mid[km/s]           si0           si1           si2           si3           si4\n")
+        for v, x in zip(vels, si2):
+            f.write(f"    {v:.6E}   1.0000E-099   1.0000E-01   {x:.4E}   1.0000E-02   1.0000E-099\n")
+    with open(root / "phys.txt", "w") as f:
+        f.write(hdr + "#vel_mid[km/s]       temp[K]        rho[gcc]     ne[/cm^3]   natom[/cm^3]\n")
+        for v, T, n in zip(vels, temp, ne):
+            f.write(f"    {v:.6E}    {T:.4E}    1.0000E-13    {n:.4E}    1.0000E+09\n")
+    return root
+
+
 REQUIRED = (
     "recovery: known populations are enclosed",
     "recovery: small d (near-inversion) is enclosed",
@@ -541,6 +670,15 @@ REQUIRED = (
     "comparison: zero denominator, outside support, missing main shell",
     "comparison: same state is unresolved and E/R swap swaps the branch",
     "printed tokens: half-unit intervals",
+    "analysis path: clean fixture is VALID and encloses the generation-7 population truth",
+    "analysis path: NLTE total is the level sum, not the stage array",
+    "analysis path: wrong line row is rejected",
+    "analysis path: unsealed line list is rejected",
+    "analysis path: capture declared generation 8 is rejected",
+    "analysis path: missing or duplicated generation-8 level is rejected",
+    "analysis path: missing main-shell capture record is NOT_COMPARABLE",
+    "analysis path: main shell outside public velocity support is NOT_COMPARABLE",
+    "analysis path: closeness branch follows the fixture distances",
 )
 
 
@@ -617,6 +755,81 @@ def cmd_selftest(a):
           closer_code(I(0.2, 0.21, 0.22), I(0.1, 0.11, 0.12), True)[1]), ("UNRESOLVED", "E_CLOSER", "R_CLOSER"))
     p = printed("1.188790e+07")
     case("printed tokens: half-unit intervals", (p.lo < 1.188790e7 < p.hi, abs((p.hi - p.lo) - 10.0) < 1e-6), (True, True))
+    # ---- fixture runs through the real analysis path ----
+    global TARGETS, READ_SHELLS
+    saved = (TARGETS, READ_SHELLS)
+    TARGETS = ({"name": "SiIII_1892", "row": 0, "lo": 0, "up": 2, "shells": [1, 2]},
+               {"name": "SiIII_2542", "row": 1, "lo": 4, "up": 5, "shells": [0, 1]})
+    READ_SHELLS = [0, 1, 2]
+    try:
+        fx = out / "fx"
+        p7E = {s_: [1.0e7, 5e3, 2e4, 3e4, 240.0 + 10 * s_, 0.8 + 0.1 * s_] for s_ in range(3)}
+        p7R = {s_: [8.0e6, 5e1, 1e2, 2e2, 2.0 + s_, 1e-4 * (1 + s_)] for s_ in range(3)}
+        p8E = {s_: [v * 1.01 for v in p7E[s_]] for s_ in range(3)}
+        p8R = {s_: [v * 0.99 for v in p7R[s_]] for s_ in range(3)}
+        totE = [math.fsum(p8E[s_]) * 1.5 for s_ in range(3)]          # stage array deliberately != level sum
+        totR = [math.fsum(p8R[s_]) * 2.0 for s_ in range(3)]
+        vel = [18000.0, 20000.0, 22000.0]
+        NSi = (0.1 * 1e-13) / (28.0855 * AMU)
+        xE = [math.fsum(p8E[s_]) / NSi for s_ in range(3)]
+        xR = [math.fsum(p8R[s_]) / NSi for s_ in range(3)]
+        pub = make_public(fx / "pub", [15000.0, 19000.0, 21000.0, 25000.0],
+                          [xE[0] * 0.98, xE[1] * 0.97, xE[2] * 0.99, xE[2] * 0.99], [9000.0] * 4, [1e9] * 4)
+        prior = fx / "prior"; prior.mkdir(parents=True); (prior / "result.json").write_text("{}")
+
+        def run(tag, e_kw=None, r_kw=None, pub_dir=pub):
+            e = make_fixture(fx / tag / "E", p7E, p8E, totE, vel, **(e_kw or {}))
+            r = make_fixture(fx / tag / "R", p7R, p8R, totR, vel, **(r_kw or {}))
+            ns = argparse.Namespace(e_run=str(e), r_run=str(r), production_source=str(a.production_source),
+                                    prior_paired=str(prior), public_ion=str(pub_dir / "ion.txt"),
+                                    public_phys=str(pub_dir / "phys.txt"), selftest="", out=str(fx / tag / "out"),
+                                    require_selftest=False)
+            cmd_analyze(ns)
+            return json.load(open(fx / tag / "out/result.json")), fx / tag / "out"
+        r0, o0 = run("clean")
+        enclosed = True
+        for row in csv.DictReader(open(o0 / "levels_g7.csv")):
+            if row.get("E_status") != "RECOVERED":
+                continue
+            t = next(t_ for t_ in TARGETS if t_["name"] == row["line"])
+            s_ = int(row["shell"])
+            for st_, pp in (("E", p7E), ("R", p7R)):
+                for key, lev in (("n_l", t["lo"]), ("n_u", t["up"])):
+                    iv = json.loads(row[f"{st_}_{key}"])
+                    enclosed &= iv["lo"] <= pp[s_][lev] <= iv["hi"]
+        case("analysis path: clean fixture is VALID and encloses the generation-7 population truth",
+             (r0.get("validity"), enclosed), ("VALID", True))
+        nl_ok = True
+        for row in csv.DictReader(open(o0 / "ions_g8.csv")):
+            s_ = int(row["shell"]); pp = p8E if row["state"] == "E" else p8R
+            iv = json.loads(row["N_III_NLTE"])
+            nl_ok &= iv["lo"] <= math.fsum(float(f"{v:.6e}") for v in pp[s_]) <= iv["hi"]
+            st_tot = json.loads(row["N_III_stage"])
+            nl_ok &= not (st_tot["lo"] <= iv["hi"] and iv["lo"] <= st_tot["hi"])
+        case("analysis path: NLTE total is the level sum, not the stage array", nl_ok, True)
+        rb, _ = run("badrow", e_kw={"line_rows": [(14, 2, 0, 2, 2.3e-05, 1.892030164e-05), (14, 1, 4, 5, 0.045, 2.542581244e-05)]})
+        case("analysis path: wrong line row is rejected", any("LINK_LINE_ROW" in x for x in rb["reasons"]), True)
+        rs, _ = run("unsealed", r_kw={"deck_ok": False})
+        case("analysis path: unsealed line list is rejected", any("LINK_LINE_LIST_NOT_SEALED" in x for x in rs["reasons"]), True)
+        rg, _ = run("gen8", e_kw={"cap_gen": 8})
+        case("analysis path: capture declared generation 8 is rejected", any("LINK_CAPTURE_GENERATION" in x for x in rg["reasons"]), True)
+        rm_, _ = run("misslev", e_kw={"drop_g8": (1, 3)})
+        rd_, _ = run("duplev", r_kw={"dup_g8": (0, 5)})
+        case("analysis path: missing or duplicated generation-8 level is rejected",
+             (any("LINK_G8_LEVEL_SET" in x for x in rm_["reasons"]), any("LINK_G8_LEVEL_SET" in x for x in rd_["reasons"])),
+             (True, True))
+        rc_, _ = run("misscap", e_kw={"drop_cap": (0, 1)})
+        case("analysis path: missing main-shell capture record is NOT_COMPARABLE",
+             rc_.get("g7_q_branch_main_shells", {}).get("SiIII_1892", {}).get("1"), "NOT_COMPARABLE")
+        pub_narrow = make_public(fx / "pub_narrow", [15000.0, 19000.0, 21000.0], [0.5] * 3, [9000.0] * 3, [1e9] * 3)
+        rv_, _ = run("outside", pub_dir=pub_narrow)
+        case("analysis path: main shell outside public velocity support is NOT_COMPARABLE",
+             rv_.get("cmfgen_closeness", {}).get("SiIII_1892", {}).get("branch"), "NOT_COMPARABLE")
+        case("analysis path: closeness branch follows the fixture distances",
+             (r0["cmfgen_closeness"]["SiIII_1892"]["branch"], r0["cmfgen_closeness"]["SiIII_2542"]["branch"]),
+             ("E_CLOSER", "E_CLOSER"))
+    finally:
+        TARGETS, READ_SHELLS = saved
     names = {r_["case"] for r_ in res}
     case("battery covers every required case", sorted(set(REQUIRED) - names), [])
     nf = sum(1 for r_ in res if not r_["pass"])
@@ -629,7 +842,7 @@ def cmd_selftest(a):
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sp = ap.add_subparsers(dest="cmd", required=True)
-    p = sp.add_parser("selftest"); p.add_argument("--out", required=True)
+    p = sp.add_parser("selftest"); p.add_argument("--out", required=True); p.add_argument("--production-source", required=True)
     p = sp.add_parser("analyze")
     for k in ("--e-run", "--r-run", "--production-source", "--prior-paired", "--public-ion", "--public-phys",
               "--selftest", "--out"):
