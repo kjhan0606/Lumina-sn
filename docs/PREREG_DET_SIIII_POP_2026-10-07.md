@@ -625,18 +625,18 @@ CLI 표현의 차이는 집행 기록으로 남길 수 있다. 물리량·세대
 |---|---|---|
 | user 결정 | user | 2026-10-07 「둘을 묶어서 진행」, §0 승인문 |
 | 본문 기안 | astra | `gpt-6-astra`, read-only, 본 문서 |
-| 정본 파일화·기준선 연결 | 운전자 | 미집행 |
-| 기계 프리플라이트 | 운전자 | 미집행 |
-| Q-GOAL·Q-LEAN 사전감사 | Fable 또는 기록된 대행 | 미집행 |
+| 정본 파일화·기준선 연결 | 운전자 | ecc8553(기안 + 개정 1·2); 기준선 DET-OBS-LINEDECOMP feafa21 |
+| 기계 프리플라이트 | 운전자 | lageunha: prereg·gate_referents·doc_canonical PASS(개정 2 후); 사전감사 발주서 dispatch PASS |
+| Q-GOAL·Q-LEAN 사전감사 | Fable 또는 기록된 대행 | Fable 429(`/gpfs/kjhan/lumina/cmfgen_map/siiii_pop_20261007/evidence/fable_preaudit_failed.txt`) → gpt-6.1-sol 대행 `/gpfs/kjhan/lumina/cmfgen_map/siiii_pop_20261007/preaudit_sol.md`: 부합·적정·차단 0 (발주서 §0 경로 오기 1건, 기재) |
 | CPU 전용 실행 환경 확인 | 운전자 | 확인됨: a10에서 GPU 요청 없이 선행 CPU 작업 완료, §9.1 |
-| 오프라인 구현·도구 신원 | 운전자 | 미집행 |
-| G-LINK·G-PHYS·음성대조 | 운전자 | 미집행 |
-| 세대 7 복원·세대 8 분해 | 운전자 | 미집행 |
-| 공개 CMFGEN 대조 | 운전자 | 미집행 |
-| 실행 비용·보존·재현 기록 | 운전자 | 미집행 |
-| 목표 달성·미달 판정 | 운전자 | 미집행 |
+| 오프라인 구현·도구 신원 | 운전자 | `scripts/det_siiii_pop_readout.py`, 러너 `/gpfs/kjhan/lumina/cmfgen_map/siiii_pop_20261007/tools/run_siiii_pop.slurm`; 판독기 SHA `/gpfs/kjhan/lumina/cmfgen_map/siiii_pop_20261007/results/a1/readout.sha256` |
+| G-LINK·G-PHYS·음성대조 | 운전자 | selftest 13/13, 분석 VALID·사유 없음 (`/gpfs/kjhan/lumina/cmfgen_map/siiii_pop_20261007/results/a1/`) |
+| 세대 7 복원·세대 8 분해 | 운전자 | `/gpfs/kjhan/lumina/cmfgen_map/siiii_pop_20261007/results/a1/analysis/levels_g7.csv`·`levels_g8.csv`·`ions_g8.csv` |
+| 공개 CMFGEN 대조 | 운전자 | `/gpfs/kjhan/lumina/cmfgen_map/siiii_pop_20261007/results/a1/analysis/cmfgen_compare.csv`; 두 집합 E_CLOSER |
+| 실행 비용·보존·재현 기록 | 운전자 | a10 job 415089, 13 s, 4 CPU·16 GB; manifest.json |
+| 목표 달성·미달 판정 | 운전자 | PASS_LIMITED `docs/VERDICT_DET_SIIII_POP_2026-10-07.md`; 구현자 겸임 |
 | 종료감사 | astra | 미집행 |
-| 이탈·미해결·후속 후보 | 실제 담당 | 미집행 |
+| 이탈·미해결·후속 후보 | 실제 담당 | 판정문 §4(5건)·§6 |
 
 ## §12. 기계 선언
 
