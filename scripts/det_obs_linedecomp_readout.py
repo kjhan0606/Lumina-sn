@@ -266,6 +266,8 @@ def classify_levels(groups):
         if s["lo"] > 0.5:
             return 0, "MAJORITY", k, sh
     best = max(groups, key=lambda k: groups[k].mid)
+    if any(s["lo"] <= 0.5 < s["hi"] for s in sh.values()):     # majority boundary not resolved
+        return 2, "UNRESOLVED", best, sh
     if all(groups[best].lo > groups[j].hi for j in groups if j != best):
         return 1, "MIXED_LARGEST", best, sh
     return 2, "UNRESOLVED", best, sh
@@ -470,7 +472,8 @@ def build_paired(E, R, band):
          "F_plus": mask(ft["LE"], plus), "F_minus": mask(-ft["LR"], minus)}
     cls = {"common": common, "plus": plus, "minus": minus,
            "plus_reclassified": plus & cR & ~mR, "minus_reclassified": minus & cE & ~mE}
-    return U_ // NS, U_ % NS, LE, LR, F, cls, zero
+    reach = (HE.hi > 0.0) | (HR.hi > 0.0)
+    return U_ // NS, U_ % NS, LE, LR, F, cls, reach
 
 
 def diff_branch(dL):
@@ -481,35 +484,67 @@ def diff_branch(dL):
            up(math.fsum(max(v.hi, 0.0) for v in dL.values())))
     M = Iv(dn(math.fsum(max(-v.hi, 0.0) for v in dL.values())), math.fsum(max(-v.mid, 0.0) for v in dL.values()),
            up(math.fsum(max(-v.lo, 0.0) for v in dL.values())))
-    if tot.lo > 0.0:
-        side = {k: Iv(max(v.lo, 0.0), max(v.mid, 0.0), max(v.hi, 0.0)) for k, v in dL.items()}
-        sign = "POSITIVE"
-    elif tot.hi < 0.0:
-        side = {k: Iv(max(-v.hi, 0.0), max(-v.mid, 0.0), max(-v.lo, 0.0)) for k, v in dL.items()}
-        sign = "NEGATIVE"
+    sides = side_branches(dL)
+    sign = "POSITIVE" if tot.lo > 0.0 else "NEGATIVE" if tot.hi < 0.0 else "UNDETERMINED"
+    main = sides["positive"] if sign == "POSITIVE" else sides["negative"] if sign == "NEGATIVE" else None
+    out = {"total": iv_json(tot), "P": iv_json(P), "M": iv_json(M), "sign": sign,
+           "positive_side": sides["positive"], "negative_side": sides["negative"]}
+    if main is None:
+        out.update({"code": 2, "branch": "UNRESOLVED", "lead": None, "reason": "net difference not separated from 0"})
     else:
-        return {"total": iv_json(tot), "P": iv_json(P), "M": iv_json(M), "sign": "UNDETERMINED",
-                "code": 2, "branch": "UNRESOLVED", "lead": None}
-    code, br, lead, sh = classify_levels({k: v for k, v in side.items() if v.hi > 0.0})
-    return {"total": iv_json(tot), "P": iv_json(P), "M": iv_json(M), "sign": sign, "code": code,
-            "branch": br, "lead": lead, "shares": sh}
+        out.update({"code": main["code"], "branch": main["branch"], "lead": main["lead_key"]})
+    return out
+
+
+def side_branches(vals):
+    """§6.2 / §6.3: classify the positive parts against P and the negative parts against M
+    separately; each side reports its own code, lead and shares, or why it is undefined."""
+    pos = {k: Iv(max(v.lo, 0.0), max(v.mid, 0.0), max(v.hi, 0.0)) for k, v in vals.items()}
+    neg = {k: Iv(max(-v.hi, 0.0), max(-v.mid, 0.0), max(-v.lo, 0.0)) for k, v in vals.items()}
+    res = {}
+    for name, side in (("positive", pos), ("negative", neg)):
+        side = {k: v for k, v in side.items() if v.hi > 0.0}
+        if not side:
+            res[name] = {"code": 2, "branch": "UNRESOLVED", "lead_key": None, "reason": "no contribution on this side"}
+            continue
+        code, br, lead, sh = classify_levels(side)
+        tot_lo = dn(math.fsum(v.lo for v in side.values()))
+        res[name] = {"code": code, "branch": br, "lead_key": lead,
+                     "reason": "side total not separated from 0" if not tot_lo > 0.0 else None,
+                     "shares": {str(k): v for k, v in sh.items()}}
+    return res
 
 
 def factor_branch(fac):
-    """§6.3 on the five factor sums of one group (or band): positive / negative parts and
-    the dominant factor of the side matching the sign of their total."""
+    """§6.3 on the five factor sums of one group (or band): the positive and the negative
+    factor parts are classified separately; the lead of the side matching the sign of
+    the total is the summary lead."""
     tot = Iv(dn(math.fsum(v.lo for v in fac.values())), math.fsum(v.mid for v in fac.values()),
              up(math.fsum(v.hi for v in fac.values())))
-    pos = {k: Iv(max(v.lo, 0.0), max(v.mid, 0.0), max(v.hi, 0.0)) for k, v in fac.items()}
-    neg = {k: Iv(max(-v.hi, 0.0), max(-v.mid, 0.0), max(-v.lo, 0.0)) for k, v in fac.items()}
-    P = math.fsum(v.mid for v in pos.values())
-    M = math.fsum(v.mid for v in neg.values())
-    side = pos if tot.lo > 0.0 else neg if tot.hi < 0.0 else None
-    if side is None:
-        return {"code": 2, "branch": "UNRESOLVED", "lead": None, "P_mid": P, "M_mid": M}
-    code, br, lead, sh = classify_levels({k: v for k, v in side.items() if v.hi > 0.0})
-    return {"code": code, "branch": br, "lead": lead, "P_mid": P, "M_mid": M,
-            "opposite_over_same": (M / P if tot.lo > 0.0 else P / M) if (P and M) else 0.0, "shares": sh}
+    P = math.fsum(max(v.mid, 0.0) for v in fac.values())
+    M = math.fsum(max(-v.mid, 0.0) for v in fac.values())
+    sides = side_branches(fac)
+    main = sides["positive"] if tot.lo > 0.0 else sides["negative"] if tot.hi < 0.0 else None
+    return {"code": 2 if main is None else main["code"], "branch": "UNRESOLVED" if main is None else main["branch"],
+            "lead": None if main is None else main["lead_key"], "P_mid": P, "M_mid": M,
+            "opposite_over_same": (M / P if tot.lo > 0.0 else P / M) if (P and M) else 0.0,
+            "positive_side": sides["positive"], "negative_side": sides["negative"]}
+
+
+def named_sides(d, level):
+    """replace integer group keys in a side_branches result by readable names."""
+    out = {}
+    for side in ("positive_side", "negative_side"):
+        s = d.get(side)
+        if s is None:
+            continue
+        s = dict(s)
+        lk = s.pop("lead_key", None)
+        s["lead"] = None if lk is None else (lk if isinstance(lk, str) else keyname(level, lk))
+        if "shares" in s:
+            s["shares"] = {(k if not k.lstrip("-").isdigit() else keyname(level, int(k))): v for k, v in s["shares"].items()}
+        out[side] = s
+    return out
 
 
 def cmd_paired(a):
@@ -542,7 +577,7 @@ def cmd_paired(a):
     tables = {}
     if not why:
         for b, (bname, _, _) in enumerate(BANDS):
-            line, shell, LE, LR, F, cls, _ = build_paired(E, R, b)
+            line, shell, LE, LR, F, cls, reach = build_paired(E, R, b)
             z = df["atomic_number"].to_numpy()[line]
             ion = df["ion_number"].to_numpy()[line]
             keys = level_keys(z, ion, shell)
@@ -561,6 +596,11 @@ def cmd_paired(a):
             for level in ("ion_shell", "ion", "shell"):
                 gE, gR = group_sums(keys[level], LE), group_sums(keys[level], LR)
                 gF = {f: group_sums(keys[level], F[f]) for f in FACTORS}
+                cnt = {}
+                for cname, cm in cls.items():
+                    sel = cm & reach
+                    u_, c_ = np.unique(keys[level][sel], return_counts=True)
+                    cnt[cname] = dict(zip(u_.tolist(), c_.tolist()))
                 dL, rows, c3 = {}, {}, True
                 for k in gE:
                     d = gE[k] - gR[k]
@@ -571,26 +611,58 @@ def cmd_paired(a):
                     c3 = c3 and ok
                     dL[k] = d
                     rows[k] = {"L_E": gE[k], "L_R": gR[k], "dL": d, "factors": {f: gF[f][k] for f in FACTORS},
-                               "closure_ok": ok}
+                               "closure_ok": ok, "counts": {c: cnt[c].get(k, 0) for c in cnt}}
                 if not c3:
                     why.append(f"G-DECOMP:CLOSURE_FACTORS:{bname}:{level}")
                 br = diff_branch(dL)
                 lead = br.get("lead")
                 band_fac = {f: isum(F[f]) for f in FACTORS}
-                lv = {"difference": {**{k: v for k, v in br.items() if k != "shares"},
-                                     "lead": None if lead is None else keyname(level, lead)},
+                fbb = factor_branch(band_fac)
+                lv = {"difference": {**{k: v for k, v in br.items() if k not in ("positive_side", "negative_side")},
+                                     "lead": None if lead is None else keyname(level, lead), **named_sides(br, level)},
                       "factors_band": {f: iv_json(v) for f, v in band_fac.items()},
-                      "factor_branch_band": factor_branch(band_fac)}
+                      "factor_branch_band": {**{k: v for k, v in fbb.items() if k not in ("positive_side", "negative_side")},
+                                             **named_sides(fbb, "factor")}}
                 eb = classify_levels(gE)
                 lv["E_output"] = {"code": eb[0], "branch": eb[1], "lead": None if eb[2] is None else keyname(level, eb[2])}
                 if lead is not None:
-                    lv["factor_branch_lead"] = factor_branch(rows[lead]["factors"])
+                    fbl = factor_branch(rows[lead]["factors"])
+                    lv["factor_branch_lead"] = {**{k: v for k, v in fbl.items() if k not in ("positive_side", "negative_side")},
+                                                **named_sides(fbl, "factor")}
+                nside = br["negative_side"]
+                if nside.get("lead_key") is not None:
+                    fbn = factor_branch(rows[nside["lead_key"]]["factors"])
+                    lv["factor_branch_negative_lead"] = {**{k: v for k, v in fbn.items() if k not in ("positive_side", "negative_side")},
+                                                         **named_sides(fbn, "factor")}
                 band["levels"][level] = lv
                 tables[(bname, level)] = rows
+            # optional transition summary (§6.4): line-level sums of the stored pair contributions
+            gEl, gRl = group_sums(line.astype(np.int64), LE), group_sums(line.astype(np.int64), LR)
+            dl = {k: gEl[k] - gRl[k] for k in gEl}
+            Pl = Iv(dn(math.fsum(max(v.lo, 0.0) for v in dl.values())), math.fsum(max(v.mid, 0.0) for v in dl.values()),
+                    up(math.fsum(max(v.hi, 0.0) for v in dl.values())))
+            top = sorted(dl, key=lambda k: -dl[k].mid)[:11]
+            tt = []
+            for i, k in enumerate(top[:10]):
+                x = df.iloc[int(k)]
+                v = dl[k]
+                tt.append({"row": int(k), "csv_line_id": int(x["line_id"]), "Z": int(x["atomic_number"]),
+                           "ion_number": int(x["ion_number"]), "lower": int(x["level_number_lower"]),
+                           "upper": int(x["level_number_upper"]), "wavelength_A": float(x["wavelength"]),
+                           "dL": iv_json(v), "L_E": iv_json(gEl[k]), "L_R": iv_json(gRl[k]),
+                           "share_of_line_P": {"lo": dn(max(v.lo, 0.0) / Pl.hi), "hi": up(max(v.hi, 0.0) / Pl.lo)},
+                           "share_of_net_mapped_dL": {"lo": dn(v.lo / dtot.hi), "hi": up(v.hi / dtot.lo)},
+                           "separated_from_next": bool(i + 1 < len(top) and v.lo > dl[top[i + 1]].hi)})
+            band["top_transitions"] = {"selection": "top 10 lines by central E'-R' difference of the line-summed pair "
+                                                    "contributions (no new transport)",
+                                       "P_line": iv_json(Pl), "net_mapped_dL": iv_json(dtot), "lines": tt}
             res["bands"][bname] = band
     res["validity"] = "VALID" if not why else "X"
     res["reasons"] = why
     (out / "result.json").write_text(json.dumps(res, indent=1, default=str))
+    if tables:
+        (out / "top_transitions.json").write_text(json.dumps(
+            {bn: v["top_transitions"] for bn, v in res["bands"].items()}, indent=1, default=str))
     for level, fname in (("ion_shell", "ion_shell.csv"), ("ion", "ions.csv"), ("shell", "shells.csv")):
         if not tables:
             break
@@ -601,6 +673,7 @@ def cmd_paired(a):
                 for q in ("L_E", "L_R", "dL", *FACTORS):
                     head += [f"{bname}_{q}_lo", f"{bname}_{q}_mid", f"{bname}_{q}_hi"]
                 head.append(f"{bname}_closure_ok")
+                head += [f"{bname}_n_{c}" for c in ("common", "plus", "minus", "plus_reclassified", "minus_reclassified")]
             w.writerow(head)
             names = sorted({k for bname, _, _ in BANDS for k in tables[(bname, level)]})
             for k in names:
@@ -611,6 +684,7 @@ def cmd_paired(a):
                         v = None if r is None else (r["factors"][q] if q in FACTORS else r[q])
                         row += ["0", "0", "0"] if v is None else [repr(float(v.lo)), repr(float(v.mid)), repr(float(v.hi))]
                     row.append("" if r is None else int(r["closure_ok"]))
+                    row += [0] * 5 if r is None else [r["counts"][c] for c in ("common", "plus", "minus", "plus_reclassified", "minus_reclassified")]
                 w.writerow(row)
     man = {"schema": "DET_OBS_LINEDECOMP_MANIFEST_V1", "command": sys.argv,
            "inputs": {"E_manifest": sha(Path(a.e) / "manifest.json"), "R_manifest": sha(Path(a.r) / "manifest.json"),
@@ -619,7 +693,9 @@ def cmd_paired(a):
            "outputs": {p.name: sha(p) for p in sorted(out.iterdir()) if p.is_file()}}
     (out / "manifest.json").write_text(json.dumps(man, indent=1))
     summ = {bn: {lv: {"diff": v["levels"][lv]["difference"]["branch"], "lead": v["levels"][lv]["difference"]["lead"],
-                      "factor_lead": v["levels"][lv].get("factor_branch_lead", {}).get("lead")}
+                      "factor_lead": v["levels"][lv].get("factor_branch_lead", {}).get("lead"),
+                      "neg_branch": v["levels"][lv]["difference"].get("negative_side", {}).get("branch"),
+                      "neg_lead": v["levels"][lv]["difference"].get("negative_side", {}).get("lead")}
                  for lv in v["levels"]} for bn, v in res["bands"].items()}
     print(json.dumps({"validity": res["validity"], "reasons": why, "summary": summ}))
     return 0
@@ -641,6 +717,8 @@ REQUIRED_CASES = (
     "factors: swapping E and R flips every difference",
     "branch: interval widths decide (a narrow-mid majority with wide intervals is unresolved)",
     "branch: majority / mixed largest",
+    "branch: unresolved majority boundary is not mixed-largest",
+    "difference: positive and negative sides are classified separately",
 )
 
 
@@ -790,6 +868,13 @@ def cmd_selftest(a):
          (classify_levels({1: Iv(0.7, 0.7, 0.7), 2: Iv(0.3, 0.3, 0.3)})[1],
           classify_levels({1: Iv(0.4, 0.4, 0.4), 2: Iv(0.3, 0.3, 0.3), 3: Iv(0.3, 0.3, 0.3)})[1]),
          ("MAJORITY", "MIXED_LARGEST"))
+    case("branch: unresolved majority boundary is not mixed-largest",
+         classify_levels({1: Iv(0.49, 0.50, 0.51), 2: Iv(0.29, 0.30, 0.31), 3: Iv(0.19, 0.20, 0.21)})[1], "UNRESOLVED")
+    db = diff_branch({1: Iv(5.0, 5.0, 5.0), 2: Iv(1.0, 1.0, 1.0), 3: Iv(-0.9, -0.9, -0.9), 4: Iv(-0.1, -0.1, -0.1)})
+    case("difference: positive and negative sides are classified separately",
+         (db["sign"], db["positive_side"]["branch"], db["positive_side"]["lead_key"],
+          db["negative_side"]["branch"], db["negative_side"]["lead_key"]),
+         ("POSITIVE", "MAJORITY", 1, "MAJORITY", 3))
     names = {r["case"] for r in res}
     case("battery covers every required case", sorted(set(REQUIRED_CASES) - names), [])
     nfail = sum(1 for r in res if not r["pass"])
