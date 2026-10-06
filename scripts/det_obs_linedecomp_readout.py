@@ -133,6 +133,15 @@ def group_sums(keys, iv):
     return out
 
 
+def iv_ratio(num, den):
+    """enclosure of num/den for scalar intervals; defined only when the denominator
+    lower bound is positive (prereg §6.1), otherwise the reason is returned."""
+    if not den.lo > 0.0:
+        return {"undefined": "denominator lower bound not positive"}
+    c = [num.lo / den.lo, num.lo / den.hi, num.hi / den.lo, num.hi / den.hi]
+    return {"lo": dn(min(c)), "mid": (num.mid / den.mid) if den.mid else None, "hi": up(max(c))}
+
+
 def overlap(a, b):
     return bool(a.lo <= b.hi and b.lo <= a.hi)
 
@@ -650,8 +659,8 @@ def cmd_paired(a):
                            "ion_number": int(x["ion_number"]), "lower": int(x["level_number_lower"]),
                            "upper": int(x["level_number_upper"]), "wavelength_A": float(x["wavelength"]),
                            "dL": iv_json(v), "L_E": iv_json(gEl[k]), "L_R": iv_json(gRl[k]),
-                           "share_of_line_P": {"lo": dn(max(v.lo, 0.0) / Pl.hi), "hi": up(max(v.hi, 0.0) / Pl.lo)},
-                           "share_of_net_mapped_dL": {"lo": dn(v.lo / dtot.hi), "hi": up(v.hi / dtot.lo)},
+                           "share_of_line_P": iv_ratio(Iv(max(v.lo, 0.0), max(v.mid, 0.0), max(v.hi, 0.0)), Pl),
+                           "share_of_net_mapped_dL": iv_ratio(v, dtot),
                            "separated_from_next": bool(i + 1 < len(top) and v.lo > dl[top[i + 1]].hi)})
             band["top_transitions"] = {"selection": "top 10 lines by central E'-R' difference of the line-summed pair "
                                                     "contributions (no new transport)",
@@ -719,6 +728,7 @@ REQUIRED_CASES = (
     "branch: majority / mixed largest",
     "branch: unresolved majority boundary is not mixed-largest",
     "difference: positive and negative sides are classified separately",
+    "ratio: undefined for a non-positive denominator, ordered for signed numerators",
 )
 
 
@@ -875,6 +885,12 @@ def cmd_selftest(a):
          (db["sign"], db["positive_side"]["branch"], db["positive_side"]["lead_key"],
           db["negative_side"]["branch"], db["negative_side"]["lead_key"]),
          ("POSITIVE", "MAJORITY", 1, "MAJORITY", 3))
+    r0 = iv_ratio(Iv(1.0, 1.0, 1.0), Iv(-1.0, 0.5, 2.0))
+    r1 = iv_ratio(Iv(-3.0, -2.0, -1.0), Iv(-6.0, -5.0, -4.0))
+    r2 = iv_ratio(Iv(-3.0, -2.0, -1.0), Iv(4.0, 5.0, 6.0))
+    case("ratio: undefined for a non-positive denominator, ordered for signed numerators",
+         ("undefined" in r0, "undefined" in r1, r2.get("lo", 1) <= -0.75 and r2.get("hi", -1) >= -1.0 / 6.0 and r2["lo"] <= r2["hi"]),
+         (True, True, True))
     names = {r["case"] for r in res}
     case("battery covers every required case", sorted(set(REQUIRED_CASES) - names), [])
     nfail = sum(1 for r in res if not r["pass"])
