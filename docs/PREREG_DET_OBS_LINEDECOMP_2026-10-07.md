@@ -650,7 +650,7 @@ CLI가 달라지면 운전자가 실제 명령과 차이를 집행 기록에 남
 | 짝 요인 분해·구간·분기 | 운전자 | 정본 `/gpfs/kjhan/lumina/cmfgen_map/obs_linedecomp_20261007/results/f3/paired_b3` VALID, 폐합 3·4 통과, 양·음 쪽 분류 |
 | Slurm 상태·CPU 예약 비용·메모리 | 운전자 | a10 job 415012·415066·415067·415069·415075·415080, 누적 32:07, 약 8.57 core·h, MaxRSS 4.3 GB(f2) |
 | 목표 달성 판정 | 운전자 | PASS `docs/VERDICT_DET_OBS_LINEDECOMP_2026-10-07.md`; 구현자 겸임 |
-| 종료감사 | astra | 1회차 `/gpfs/kjhan/lumina/cmfgen_map/obs_linedecomp_20261007/astra_closeout.md`: 폐합 불가·차단 2(B1 과반 경계, B2 음의 쪽 분류) → 판독기 수리·f3 재판독; 2회차 `/gpfs/kjhan/lumina/cmfgen_map/obs_linedecomp_20261007/astra_closeout2.md`: B1·B2 해소, 신규 차단 B3 → 수리·`paired_b3`; 3회차 대기 |
+| 종료감사 | astra | 1회차 `/gpfs/kjhan/lumina/cmfgen_map/obs_linedecomp_20261007/astra_closeout.md`: 폐합 불가·차단 2(B1 과반 경계, B2 음의 쪽 분류) → 판독기 수리·f3 재판독; 2회차 `/gpfs/kjhan/lumina/cmfgen_map/obs_linedecomp_20261007/astra_closeout2.md`: B1·B2 해소, 신규 차단 B3 → 수리·`paired_b3`; 3회차 `/gpfs/kjhan/lumina/cmfgen_map/obs_linedecomp_20261007/astra_closeout3.md`: 폐합 가·차단 0 |
 | 이탈·미해결·후속 후보 | 실제 담당 | 판정문 §4(9건)·§6 |
 
 대행이나 실측 모델 ID 차이는 숨기지 않는다. 다른 모델의 산출을 astra 또는 Fable의 실제 수행으로 재명명하지 않는다.
