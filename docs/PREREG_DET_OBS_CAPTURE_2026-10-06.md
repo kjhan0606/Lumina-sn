@@ -559,19 +559,19 @@ python3 -B scripts/det_obs_capture_readout.py paired \
 |---|---|---|
 | user 실행 결정 | user | 2026-10-06 「진행」, §0 경로 |
 | 본문 기안 | astra | 본 문서; read-only 기안 |
-| 정본 파일화·기준선 봉인 | 운전자 | 미집행 |
-| 기계 프리플라이트 | 운전자 | 미집행 |
-| Q-GOAL·Q-LEAN 사전감사 | Fable 또는 기록된 대행 | 미집행 |
-| T2 구현·직접시험·음성대조 | 운전자 | 미집행 |
-| 코드 감사·차단 처분 | gpt-6-sol / 운전자 | 미집행 |
-| B2 빌드·러너·총 저장 예약 | 운전자 | 미집행 |
-| E′ 캡처 런·Slurm 비용 | 운전자 | 미집행 |
-| R′ 캡처 런·Slurm 비용 | 운전자 | 미집행 |
-| 기존 N/L 무변경·capture 검증 | 운전자 | 미집행 |
-| scalar/vector 폐합·짝 판독 | 운전자 | 미집행 |
-| 목표 달성 판정 | 운전자 | 미집행; 구현자 겸임 명시 |
+| 정본 파일화·기준선 봉인 | 운전자 | 3e3edc1; T1 스냅샷 `/gpfs/kjhan/lumina/cmfgen_map/obs_capture_20261006/T1_snapshot_for_T2.sha256` |
+| 기계 프리플라이트 | 운전자 | 계약 커밋 시 집행(3e3edc1); 감사 발주서 `check_dispatch_preflight` rc=0(lageunha) |
+| Q-GOAL·Q-LEAN 사전감사 | Fable 또는 기록된 대행 | gpt-6.1-sol 대행(Fable 429, user 지정 25-y) `/gpfs/kjhan/lumina/cmfgen_map/obs_capture_20261006/preaudit_sol.md`: 부합, 차단 0 |
+| T2 구현·직접시험·음성대조 | 운전자 | 최종 `/gpfs/kjhan/lumina/cmfgen_map/obs_capture_20261006/stage1_fix2r/`: C 31/31, writer 49/49(T1=T2), OFF 바이트 동일, 판독기 33/33 (a10 slurm, user 10-06 지시) |
+| 코드 감사·차단 처분 | gpt-6-sol / 운전자 | 1회차 차단 8 → 전건 수리; 2회차 차단 4 → 2 수리·2 «기재로 족함»(실재 불가, user 질의); 이후 user 해제(25-z). `/gpfs/kjhan/lumina/cmfgen_map/obs_capture_20261006/evidence/sol_audit_r1_disposition.md` |
+| B2 빌드·러너·총 저장 예약 | 운전자 | B2 `8ef03fb3…`, patch `65e8b386…`; 러너 selftest ec1·rc1 PASS; `/gpfs/kjhan/lumina/cmfgen_map/obs_capture_20261006/evidence/resource_plan.json`; preflight G-ID PASS `/gpfs/kjhan/lumina/cmfgen_map/obs_capture_20261006/evidence/preflight_submit1` |
+| E′ 캡처 런·Slurm 비용 | 운전자 | job 414453 h200x2, 10:02:57, 20.10 GPU·h, COMPLETED |
+| R′ 캡처 런·Slurm 비용 | 운전자 | job 414454 h200x2, 10:31:52, 21.06 GPU·h, COMPLETED |
+| 기존 N/L 무변경·capture 검증 | 운전자 | EC·RC N/L 바이트 = E0·R0; 캡처 COMMITTED·검증 통과 `/gpfs/kjhan/lumina/cmfgen_map/obs_capture_20261006/readout/{E,R}` |
+| scalar/vector 폐합·짝 판독 | 운전자 | scalar 바이트 동일, 폐합 실패 0; 짝 VALID `/gpfs/kjhan/lumina/cmfgen_map/obs_capture_20261006/readout/paired` |
+| 목표 달성 판정 | 운전자 | PASS `docs/VERDICT_DET_OBS_CAPTURE_2026-10-07.md`; 구현자 겸임 |
 | 종료감사 | astra | 미집행; 계약 기안자 이해관계 명시 |
-| 이탈·미해결·후속 결정 | 실제 담당 | 발생 시 기록 |
+| 이탈·미해결·후속 결정 | 실제 담당 | 판정문 §4 (8건) |
 
 ## §11. 기계 선언
 
