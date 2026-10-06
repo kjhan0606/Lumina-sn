@@ -563,14 +563,14 @@ python3 -B scripts/det_obs_capture_readout.py paired \
 | 기계 프리플라이트 | 운전자 | 계약 커밋 시 집행(3e3edc1); 감사 발주서 `check_dispatch_preflight` rc=0(lageunha) |
 | Q-GOAL·Q-LEAN 사전감사 | Fable 또는 기록된 대행 | gpt-6.1-sol 대행(Fable 429, user 지정 25-y) `/gpfs/kjhan/lumina/cmfgen_map/obs_capture_20261006/preaudit_sol.md`: 부합, 차단 0 |
 | T2 구현·직접시험·음성대조 | 운전자 | 최종 `/gpfs/kjhan/lumina/cmfgen_map/obs_capture_20261006/stage1_fix2r/`: C 31/31, writer 49/49(T1=T2), OFF 바이트 동일, 판독기 33/33 (a10 slurm, user 10-06 지시) |
-| 코드 감사·차단 처분 | gpt-6-sol / 운전자 | 1회차 차단 8 → 전건 수리; 2회차 차단 4 → 2 수리·2 «기재로 족함»(실재 불가, user 질의); 이후 user 해제(25-z). `/gpfs/kjhan/lumina/cmfgen_map/obs_capture_20261006/evidence/sol_audit_r1_disposition.md` |
+| 코드 감사·차단 처분 | gpt-6-sol / 운전자 | 1회차 차단 8 → 수리·후속 처분(#1 비대체는 최종 처분이 제한적 운용 조건·잔여 위험 기재); 2회차 차단 4 → 2 수리·2 «기재로 족함»(실재 불가, user 질의); 이후 user 해제(25-z). `/gpfs/kjhan/lumina/cmfgen_map/obs_capture_20261006/evidence/sol_audit_r1_disposition.md` |
 | B2 빌드·러너·총 저장 예약 | 운전자 | B2 `8ef03fb3…`, patch `65e8b386…`; 러너 selftest ec1·rc1 PASS; `/gpfs/kjhan/lumina/cmfgen_map/obs_capture_20261006/evidence/resource_plan.json`; preflight G-ID PASS `/gpfs/kjhan/lumina/cmfgen_map/obs_capture_20261006/evidence/preflight_submit1` |
 | E′ 캡처 런·Slurm 비용 | 운전자 | job 414453 h200x2, 10:02:57, 20.10 GPU·h, COMPLETED |
 | R′ 캡처 런·Slurm 비용 | 운전자 | job 414454 h200x2, 10:31:52, 21.06 GPU·h, COMPLETED |
 | 기존 N/L 무변경·capture 검증 | 운전자 | EC·RC N/L 바이트 = E0·R0; 캡처 COMMITTED·검증 통과 `/gpfs/kjhan/lumina/cmfgen_map/obs_capture_20261006/readout/{E,R}` |
 | scalar/vector 폐합·짝 판독 | 운전자 | scalar 바이트 동일, 폐합 실패 0; 짝 VALID `/gpfs/kjhan/lumina/cmfgen_map/obs_capture_20261006/readout/paired` |
 | 목표 달성 판정 | 운전자 | PASS `docs/VERDICT_DET_OBS_CAPTURE_2026-10-07.md`; 구현자 겸임 |
-| 종료감사 | astra | 1회차 `/gpfs/kjhan/lumina/cmfgen_map/obs_capture_20261006/astra_closeout.md`: 폐합 불가·차단 1(B1 분기 구간 수송 상한 미전파) → 판독기 수리·재판독 `readout_b1/`; 2회차 대기 |
+| 종료감사 | astra | 1회차 `/gpfs/kjhan/lumina/cmfgen_map/obs_capture_20261006/astra_closeout.md`: 폐합 불가·차단 1(B1 분기 구간 수송 상한 미전파) → 판독기 수리·재판독 `readout_b1/`; 2회차 `/gpfs/kjhan/lumina/cmfgen_map/obs_capture_20261006/astra_closeout2.md`: 폐합 가·차단 0 |
 | 이탈·미해결·후속 결정 | 실제 담당 | 판정문 §4 (8건) |
 
 ## §11. 기계 선언
