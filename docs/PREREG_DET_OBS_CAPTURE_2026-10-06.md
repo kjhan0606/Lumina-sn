@@ -570,7 +570,7 @@ python3 -B scripts/det_obs_capture_readout.py paired \
 | 기존 N/L 무변경·capture 검증 | 운전자 | EC·RC N/L 바이트 = E0·R0; 캡처 COMMITTED·검증 통과 `/gpfs/kjhan/lumina/cmfgen_map/obs_capture_20261006/readout/{E,R}` |
 | scalar/vector 폐합·짝 판독 | 운전자 | scalar 바이트 동일, 폐합 실패 0; 짝 VALID `/gpfs/kjhan/lumina/cmfgen_map/obs_capture_20261006/readout/paired` |
 | 목표 달성 판정 | 운전자 | PASS `docs/VERDICT_DET_OBS_CAPTURE_2026-10-07.md`; 구현자 겸임 |
-| 종료감사 | astra | 미집행; 계약 기안자 이해관계 명시 |
+| 종료감사 | astra | 1회차 `/gpfs/kjhan/lumina/cmfgen_map/obs_capture_20261006/astra_closeout.md`: 폐합 불가·차단 1(B1 분기 구간 수송 상한 미전파) → 판독기 수리·재판독 `readout_b1/`; 2회차 대기 |
 | 이탈·미해결·후속 결정 | 실제 담당 | 판정문 §4 (8건) |
 
 ## §11. 기계 선언

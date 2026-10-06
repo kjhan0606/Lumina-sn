@@ -167,16 +167,24 @@ def component_bands(data, ranges):
             out[name] = {"status": st}
             continue
         ref, _ = band_integral(sc_pts, lo, hi)
+        # The replay's pointwise bound E is a non-negative sum that contains every
+        # lane's own rounding terms (source interpolation, source rounding, the
+        # per-step updates) and multiplies by |exp(-tau)| like each lane's own
+        # error recursion, so it bounds each single lane's deviation from its
+        # exact-arithmetic value with the shared computed coefficients.  A lane's
+        # band error is therefore its band-integration rounding plus the band
+        # integral of E (prereg 6.3 -> 7 interval propagation).
+        pointwise = band_of_bound([(l, r[9]) for l, r in zip(lam, data)], lo, hi)
         lanes = {}
         for j, ln in enumerate(LANES):
             v, e, _ = band_with_bound([(l, r[2 + j]) for l, r in zip(lam, data)], lo, hi)
-            lanes[ln] = {"L": v, "err": e}
+            lanes[ln] = {"L": v, "err_integration": e,
+                         "err": add_up(e, pointwise) if pointwise is not None and e is not None else math.inf}
         s, srnd = 0.0, 0.0
         for ln in LANES:
             s = s + lanes[ln]["L"]
             srnd = add_up(srnd, rho(s))
-        pointwise = band_of_bound([(l, r[9]) for l, r in zip(lam, data)], lo, hi)
-        lim = add_up(pointwise, es, srnd, *[lanes[ln]["err"] for ln in LANES])
+        lim = add_up(pointwise, es, srnd, *[lanes[ln]["err_integration"] for ln in LANES])
         d = abs(s - vs)
         fin = all(math.isfinite(x) for x in (pointwise, es, srnd, lim, d, s, vs)) and \
             all(math.isfinite(lanes[ln]["L"]) and math.isfinite(lanes[ln]["err"]) for ln in LANES)
@@ -777,6 +785,7 @@ REQUIRED_CASES = (
     "colour: Q sum closes to the colour difference",
     "colour: a lane offset breaks the Q closure",
     "replay is not run on a rejected capture",
+    "lane interval includes the integrated transport bound",
 )
 
 
@@ -919,6 +928,10 @@ def cmd_selftest(a):
     off["lanes"][big]["L"] = off["lanes"][big]["L"] * 1.01
     ct2 = colour_terms(off, bR["FIRST"], bE["TOTAL"], bR["TOTAL"])
     case("colour: a lane offset breaks the Q closure", bool(ct2) and ct2["Q_closure_ok"], False)
+    case("lane interval includes the integrated transport bound",
+         all(v["lanes"][k]["err"] >= v["lanes"][k]["err_integration"] + band_of_bound(
+             [(r_[0], r_[9]) for r_ in data], *rng[nm]) * (1 - 1e-12)
+             for nm, v in bands.items() for k in LANES), True)
     case("replay is not run on a rejected capture",
          (replay_allowed(["G-CAP:CAPTURE_FILE_IDENTITY:J.f64"]), replay_allowed(["G-RUN:X"]), replay_allowed([])),
          (False, False, True))
