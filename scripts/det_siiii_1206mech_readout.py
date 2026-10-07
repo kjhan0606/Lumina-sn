@@ -105,11 +105,18 @@ def det_1206mech_meta(run):
         out["why"].append("LINK_INNER_BB_SCALE_META_VS_EXPORT")
     man = json.load(open(Path(run) / "work/det_obs_capture/manifest.json"))
     gens = man.get("generations", {})
-    if gens.get("material") != 7 or gens.get("nlte_population_committed") != 7 or gens.get("radiation", 7) != 7:
-        out["why"].append("LINK_CAPTURE_GENERATION")
-    if man.get("transaction", "COMMITTED") != "COMMITTED":
+    for fld in ("material", "nlte_population_committed", "radiation"):
+        if fld not in gens:
+            out["why"].append(f"LINK_CAPTURE_AUTHORITY_MISSING:generations.{fld}")
+        elif gens[fld] != 7:
+            out["why"].append(f"LINK_CAPTURE_GENERATION:{fld}")
+    if "transaction" not in man:
+        out["why"].append("LINK_CAPTURE_AUTHORITY_MISSING:transaction")
+    elif man["transaction"] != "COMMITTED":
         out["why"].append("LINK_CAPTURE_NOT_COMMITTED")
-    if man.get("census", {}).get("mapped_B_fallback", 0) != 0:
+    if "mapped_B_fallback" not in man.get("census", {}):
+        out["why"].append("LINK_CAPTURE_AUTHORITY_MISSING:census.mapped_B_fallback")
+    elif man["census"]["mapped_B_fallback"] != 0:
         out["why"].append("LINK_CAPTURE_SOURCE_FALLBACK")
     if str(out["material_generation"]) != "7" or str(out["rad_generation"]) != "7":
         out["why"].append("LINK_CAPTURE_META_GENERATION")
@@ -438,7 +445,9 @@ def det_1206mech_census(hE, hR, grid, T_inner, b_inner, target_key):
         for tag, hh in (("E", hE), ("R", hR)):
             hs = det_1206mech_history(hh, line, s, tag)
             HH[tag] = hs
-            bad = bool(hs["why"])                      # mislinked rows: the key is inadmissible, not a science status
+            # mislinked rows make the key inadmissible; plain absence of a call keeps the history
+            # statuses (a confirmed counterexample on the available calls is preserved)
+            bad = any(not w.endswith("W5_CALL_MISSING") for w in hs["why"])
             J1 = hs["J"][1]
             dseed = det_1206mech_absdev(J1, Bm) if (J1 is not None and Bm is not None) else None
             out[f"{tag}_seed_dev_mid"] = None if dseed is None else dseed.mid
@@ -457,7 +466,8 @@ def det_1206mech_census(hE, hR, grid, T_inner, b_inner, target_key):
         JE, JR = HH["E"]["J"][1], HH["R"]["J"][1]
         der = det_1206mech_absdev(JE, JR) if (JE is not None and JR is not None) else None
         out["ER_seed_dev_mid"] = None if der is None else der.mid
-        out["ER_seed"] = "INADMISSIBLE" if (HH["E"]["why"] or HH["R"]["why"]) else det_1206mech_status(der, CRIT_SEED)
+        badER = any(not w.endswith("W5_CALL_MISSING") for w in HH["E"]["why"] + HH["R"]["why"])
+        out["ER_seed"] = "INADMISSIBLE" if badER else det_1206mech_status(der, CRIT_SEED)
         out["E_seed_and_retained"] = ("INADMISSIBLE" if "INADMISSIBLE" in (out["E_seed"], out["ER_seed"], out["E_retention"])
                                       else det_1206mech_all(out["E_seed"], out["ER_seed"], out["E_retention"]))
         rows.append(out)
@@ -628,6 +638,10 @@ def det_1206mech_analyze(e_run, r_run, out, target=TARGET, fault=None):
                                   "rho_mid": None if p is None or p.get("rho") is None else p["rho"].mid,
                                   "rho_hi": None if p is None or p.get("rho") is None else p["rho"].hi,
                                   "q0_mid": None if p is None or "q0" not in p else p["q0"].mid,
+                                  "q0_lo": None if p is None or "q0" not in p else p["q0"].lo,
+                                  "q0_hi": None if p is None or "q0" not in p else p["q0"].hi,
+                                  "F0_pred_lo": None if p is None or "F0" not in p else p["F0"].lo,
+                                  "F0_pred_hi": None if p is None or "F0" not in p else p["F0"].hi,
                                   "delta_hat0_mid": None if p is None or "delta_hat0" not in p else p["delta_hat0"].mid,
                                   "rho0_mid": None if p is None or p.get("rho0") is None else p["rho0"].mid,
                                   "pred_status": None if p is None else p["status"],
@@ -737,7 +751,7 @@ def det_1206mech_fx_atom(k):
 def det_1206mech_make_fixture(root, w5, pops, nrb, T_inner=10020.0, b_inner=1.0, Te=9000.0, cap_drop=None,
                               meta_scale=None, w5_contra=None, srce=0, init_rad=1, jc_err_rel=1e-9, bul_scale=1.0,
                               cap_unmapped=None, cap_gen=7, gen8_garbage=False, init_op="INIT_SHARED_GAUSSIAN",
-                              swap_shells=None, w5_outside=()):
+                              swap_shells=None, w5_outside=(), cap_fallback=0, w5_nu_scale=1.0, manifest_drop=None):
     """small run: w5 = {(line, shell): {call: (op, rad, mat, J_c, tau_eff, L_l, Jbar, Jbar_err)}} written
     verbatim except that the target line's call-7 tau_eff is set to the captured tau of that shell
     (the production cross-link); pops = {shell: (n0, n4)} -> capture tau, S of the target line."""
@@ -765,9 +779,11 @@ def det_1206mech_make_fixture(root, w5, pops, nrb, T_inner=10020.0, b_inner=1.0,
     (root / "work/det_obs_capture/meta.txt").write_text(
         f"NS=50\ntime_explosion={t_exp.hex()}\nT_inner={T_inner.hex()}\ninner_bb_scale={float(bi).hex()}\n"
         f"material_generation=7\nrad_generation=7\n")
-    (root / "work/det_obs_capture/manifest.json").write_text(json.dumps(
-        {"generations": {"material": cap_gen, "nlte_population_committed": cap_gen, "radiation": 7},
-         "transaction": "COMMITTED", "census": {"mapped_B_fallback": 0}}))
+    man = {"generations": {"material": cap_gen, "nlte_population_committed": cap_gen, "radiation": 7},
+           "transaction": "COMMITTED", "census": {"mapped_B_fallback": cap_fallback}}
+    if manifest_drop:
+        del man[manifest_drop]
+    (root / "work/det_obs_capture/manifest.json").write_text(json.dumps(man))
     np.full(50, Te).tofile(root / "work/det_obs_capture/Te.f64")
     at = det_1206mech_fx_atom(FX["row"])
     recs, cap_tau = [], {}
@@ -784,7 +800,7 @@ def det_1206mech_make_fixture(root, w5, pops, nrb, T_inner=10020.0, b_inner=1.0,
     with open(root / "work/w5_lines.csv", "w") as f:
         f.write("call,operator,rad_generation,material_generation,shell,line_id,Z,ion,nu_hz,J_c,J_c_err_upper,beta,L_l,Jbar,Jbar_err_upper,tau_eff,srce_chk,status\n")
         for (line, s), calls in sorted(w5.items()):
-            nu = det_1206mech_fx_atom(line)["nu"]
+            nu = det_1206mech_fx_atom(line)["nu"] * (w5_nu_scale if line == FX["row"] else 1.0)
             s_out = s
             if swap_shells and line == FX["row"] and s in swap_shells:
                 s_out = swap_shells[1] if s == swap_shells[0] else swap_shells[0]
@@ -908,6 +924,9 @@ SELFTEST_REQUIRED = (
     "map: a predicted change not separated from 0 is UNRESOLVED (code 4)",
     "capture: inverted n4/n0 and T_exc intervals enclose the exact truth; seed-following success and failure; temperature discrimination",
     "capture: missing / unmapped record -> NOT_IDENTIFIABLE; generation-8 file is never read; capture generation 8 is inadmissible",
+    "authority: source fallback > 0, a missing authority field and a frequency mismatch are inadmissible",
+    "map: the beta-only idealisation intervals enclose their exact truth (kappa=1, Delta B=0)",
+    "census: a confirmed counterexample with a missing call stays REFUTED in the census; plain absence is NOT_IDENTIFIABLE",
     "codes: all six codes are produced through the real analyze path; universal vs subset census claims",
     "codes: R' retained -> R refuted (code 3); R' departure criterion survives on the clean fixture",
 )
@@ -1132,6 +1151,31 @@ def cmd_selftest(a):
     r19, _ = run("rstay", wR=wRn)
     case(SELFTEST_REQUIRED[14], (r19["cells"]["19"]["R"], r19["cells"]["19"]["code"], r19["cells"]["24"]["R"], rr["cells"]["19"]["R"]),
          ("REFUTED", 3, "SURVIVES", "SURVIVES"), inj="R' retained at shell 19", rc=r19["validity"])
+    # 15 authority
+    r20, _ = run("fallback", ekw={"cap_fallback": 1})
+    r21, _ = run("noauth", rkw={"manifest_drop": "transaction"})
+    r22, _ = run("nufreq", ekw={"w5_nu_scale": 1.0 + 1e-6})
+    case(SELFTEST_REQUIRED[15], (r20["validity"], any("SOURCE_FALLBACK" in x for x in r20["reasons"]),
+                                 r21["validity"], any("AUTHORITY_MISSING:transaction" in x for x in r21["reasons"]),
+                                 r22["validity"], any("W5_IDENTITY" in x for x in r22["reasons"])),
+         ("X", True, "X", True, "X", True), inj="mapped_B_fallback=1 / manifest without transaction / W5 nu_hz scaled 1+1e-6")
+    # 16 beta-only idealisation truth
+    ok0 = True
+    for c in range(2, 8):
+        p = hrow(o, "E", 19, c)
+        J, b1, jc = _fr(hrow(o, "E", 19, c - 1).Jbar), _fr(p.beta), _fr(p.J_c)
+        F0t, q0t = b1 * jc + (1 - b1) * J, 1 - b1
+        ok0 &= Fraction(p.F0_pred_lo) <= F0t <= Fraction(p.F0_pred_hi) and Fraction(p.q0_lo) <= q0t <= Fraction(p.q0_hi)
+    case(SELFTEST_REQUIRED[16], bool(ok0), True)
+    # 17 census preservation of counterexamples
+    cx = pd.read_csv(T / "excmiss" / "out" / "census.csv", float_precision="round_trip")
+    cm = pd.read_csv(T / "miss" / "out" / "census.csv", float_precision="round_trip")
+    kx = cx[(cx.line == FX["row"]) & (cx.shell == 19)].iloc[0]
+    km = cm[(cm.line == FX["row"]) & (cm.shell == 24)].iloc[0]
+    case(SELFTEST_REQUIRED[17], (kx.E_retention, kx.E_seed_and_retained, r7["census"]["H_UV"]["subset_count_bounds"],
+                                 km.E_seed, km.E_retention, km.E_seed_and_retained, r5["census"]["H_UV"]["subset_count_bounds"]),
+         ("REFUTED", "REFUTED", [4, 4], "SURVIVES", "NOT_IDENTIFIABLE", "NOT_IDENTIFIABLE", [4, 5]),
+         inj="excursion + call 6 missing (shell 19) / call 5 missing only (shell 24)")
     names = [r["case"] for r in res]
     missing = [n for n in SELFTEST_REQUIRED if n not in names]
     fails = sum(1 for r in res if not r["pass"]) + len(missing)
