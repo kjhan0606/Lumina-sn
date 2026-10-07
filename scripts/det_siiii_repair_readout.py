@@ -57,7 +57,7 @@ SEED_SRC_RE = re.compile(r"Generation-zero material-temperature seed.*?"
                          r"for \(int i = 0; i < geo->n_shells; i\+\+\)\s*(?:/\*.*?\*/\s*)?\{\s*(?:/\*.*?\*/\s*)?"
                          r"opacity->t_electrons\[i\]\s*=\s*config->T_inner;", re.S)
 WARM_RE = re.compile(r"fs\.J\[idx\]\s*=\s*Bnu;")
-FAULTS = ("warmstart_as_material", "claim_origin", "beta_cancel_with_coll", "n4_absolute", "drop_kappa", "beta_only")
+FAULTS = ("warmstart_as_material", "claim_origin", "beta_cancel_with_coll", "omit_n0_ratio", "drop_kappa", "beta_only")
 
 status = MECH.det_1206mech_status
 allst = MECH.det_1206mech_all
@@ -72,6 +72,13 @@ def det_siiii_repair_log10(a):
         return None
     lo, mid, hi = math.log10(a.lo), math.log10(a.mid), math.log10(a.hi)
     return I(dn(lo - 4 * U * abs(lo)), mid, up(hi + 4 * U * abs(hi)))
+
+
+def det_siiii_repair_direction(l):
+    """sign of a predicted log change: UP / DOWN, or ZERO_NOT_SEPARATED when the interval holds 0."""
+    if l is None:
+        return "NOT_IDENTIFIABLE"
+    return "UP" if l.lo > 0.0 else "DOWN" if l.hi < 0.0 else "ZERO_NOT_SEPARATED"
 
 
 def det_siiii_repair_cols(row, key, v):
@@ -371,25 +378,59 @@ def det_siiii_repair_spec(path):
     return sorted(out)
 
 
+def det_siiii_repair_band_err(pts, lo, hi):
+    """bound of the floating error of NTE.band_integral over [lo, hi]: every overlapping segment adds
+    a term (b-a)(fa+fb)/2 with fa, fb within 2u(|f0|+|f1|) of exact and <= 8 more roundings, the sum
+    adds <= n u of the running total: (n + 16) u sum (b-a) max(|f0|,|f1|)."""
+    n, s = 0, 0.0
+    for (l0, f0), (l1, f1) in zip(pts[:-1], pts[1:]):
+        a, b = max(l0, lo), min(l1, hi)
+        if b <= a:
+            continue
+        n += 1
+        s += (b - a) * max(abs(f0), abs(f1))
+    return (n + 16) * U * s * (1.0 + 1e-9)
+
+
 def det_siiii_repair_bands(pts):
+    """band luminosities as intervals (value from NTE.band_integral, the cmp_pub_paired.py integral)."""
     if pts is None:
         return None
     out = {}
     for b in BANDS8 + [NUV, OPT]:
         v, st = NTE.band_integral(pts, float(b[0]), float(b[1]))
-        out[b] = v if st == "OK" else None
+        if st != "OK" or not (v > 0.0):
+            out[b] = None
+            continue
+        e = det_siiii_repair_band_err(pts, float(b[0]), float(b[1]))
+        out[b] = I(dn(v - e), v, up(v + e))
     return out
 
 
+def det_siiii_repair_le(x, t):
+    """registered criterion x <= t on intervals."""
+    if x is None or t is None:
+        return "NOT_IDENTIFIABLE"
+    return "SURVIVES" if x.hi <= t.lo else "REFUTED" if x.lo > t.hi else "UNRESOLVED"
+
+
+def det_siiii_repair_lt(x, t):
+    """registered criterion x < t on intervals."""
+    if x is None or t is None:
+        return "NOT_IDENTIFIABLE"
+    return "SURVIVES" if x.hi < t.lo else "REFUTED" if x.lo >= t.hi else "UNRESOLVED"
+
+
 def det_siiii_repair_spectrum_table(specs):
-    """cmp_pub_paired.py definitions: C_b = L_b/L_OPT, d_b = log10(C_b/C_b^pub), R8 = rms of the 8 bands."""
+    """cmp_pub_paired.py definitions: C_b = L_b/L_OPT, d_b = log10(C_b/C_b^pub), R8 = rms of the 8 bands;
+    every quantity carries its floating-error interval so a boundary crossing stays UNRESOLVED."""
     B = {nm: det_siiii_repair_bands(p) for nm, p in specs.items()}
     pub = B.get("public")
     if pub is None or pub[OPT] is None:
         return [], {"status": "PUBLIC_NOT_AVAILABLE"}
     rows, summ = [], {}
     for nm, b in B.items():
-        if b is None or b[OPT] is None or not (b[OPT] > 0):
+        if b is None or b[OPT] is None:
             summ[nm] = {"status": "NOT_IDENTIFIABLE"}
             continue
         d = {}
@@ -398,42 +439,58 @@ def det_siiii_repair_spectrum_table(specs):
                 d[band] = None
                 rows.append({"spectrum": nm, "band": f"{band[0]}-{band[1]}", "status": "UNSUPPORTED"})
                 continue
-            c, cp = b[band] / b[OPT], pub[band] / pub[OPT]
-            d[band] = math.log10(c / cp)
-            rows.append({"spectrum": nm, "band": f"{band[0]}-{band[1]}", "status": "OK", "L_band": b[band],
-                         "L_band_public": pub[band], "L_band_over_public": b[band] / pub[band], "L_OPT": b[OPT],
-                         "L_OPT_public": pub[OPT], "colour": c, "colour_public": cp, "d_dex": d[band]})
-        r8 = math.sqrt(sum(d[x] ** 2 for x in BANDS8) / 8) if all(d[x] is not None for x in BANDS8) else None
-        summ[nm] = {"status": "OK", "R8": r8, "NUV_over_OPT": None if b[NUV] is None else b[NUV] / b[OPT],
-                    "d_NUV": d[NUV], "d_UV2500": d[UV2500], "d_keep4": {f"{x[0]}-{x[1]}": d[x] for x in KEEP4},
-                    "L_OPT": b[OPT], "L_OPT_over_public": b[OPT] / pub[OPT],
-                    "d_8bands": {f"{x[0]}-{x[1]}": d[x] for x in BANDS8}}
+            c, cp = b[band].div(b[OPT]), pub[band].div(pub[OPT])
+            d[band] = det_siiii_repair_log10(c.div(cp))
+            row = {"spectrum": nm, "band": f"{band[0]}-{band[1]}", "status": "OK", "L_band": b[band].mid,
+                   "L_band_public": pub[band].mid, "L_band_over_public": b[band].mid / pub[band].mid,
+                   "L_OPT": b[OPT].mid, "L_OPT_public": pub[OPT].mid, "colour": c.mid, "colour_public": cp.mid}
+            det_siiii_repair_cols(row, "d_dex", d[band])
+            rows.append(row)
+        r8 = None
+        if all(d[x] is not None for x in BANDS8):
+            sq = I.x(0.0)
+            for x in BANDS8:
+                sq = sq + d[x].abs() * d[x].abs()
+            # a sum of squares is >= 0 exactly; a negative lower end is only the outward rounding of 0
+            lo8 = max(sq.lo, 0.0) / 8.0
+            r8 = I(max(0.0, dn(math.sqrt(lo8))), math.sqrt(sq.mid / 8.0), up(math.sqrt(sq.hi / 8.0)))
+        summ[nm] = {"status": "OK", "R8": ivj(r8), "NUV_over_OPT": None if b[NUV] is None else b[NUV].mid / b[OPT].mid,
+                    "d_NUV": ivj(d[NUV]), "d_UV2500": ivj(d[UV2500]),
+                    "d_keep4": {f"{x[0]}-{x[1]}": ivj(d[x]) for x in KEEP4},
+                    "L_OPT": b[OPT].mid, "L_OPT_over_public": b[OPT].mid / pub[OPT].mid,
+                    "d_8bands": {f"{x[0]}-{x[1]}": ivj(d[x]) for x in BANDS8}}
     return rows, summ
 
 
 def det_siiii_repair_targets(summ):
+    """registered secondary expectations (prereg 5.6) from E'N, applied as interval criteria to every
+    stored spectrum: status SURVIVES / REFUTED / UNRESOLVED / NOT_IDENTIFIABLE."""
+    def iv(x):
+        return None if x is None else I(x["lo"], x["mid"], x["hi"])
     eN = summ.get("EprimeN", {})
-    if eN.get("d_NUV") is None or eN.get("d_UV2500") is None or eN.get("R8") is None:
+    if eN.get("status") != "OK" or None in (eN.get("d_NUV"), eN.get("d_UV2500"), eN.get("R8")):
         return None
-    t = {"abs_d_NUV_max": 0.5 * abs(eN["d_NUV"]), "abs_d_UV2500_max": 0.5 * abs(eN["d_UV2500"]),
-         "abs_d_keep4_max": 0.05, "R8_below": eN["R8"]}
+    tN, tU, tR = iv(eN["d_NUV"]).abs().half(), iv(eN["d_UV2500"]).abs().half(), iv(eN["R8"])
+    t = {"abs_d_NUV_max": tN.j(), "abs_d_UV2500_max": tU.j(), "abs_d_keep4_max": 0.05, "R8_below": tR.j()}
     for nm, s_ in summ.items():
         if not isinstance(s_, dict) or s_.get("status") != "OK":
             continue
-        vals = [s_["d_NUV"], s_["d_UV2500"], s_["R8"]] + list(s_["d_keep4"].values())
-        if any(v is None for v in vals):
-            s_["meets_secondary_targets"] = None
-            continue
-        s_["meets_secondary_targets"] = bool(abs(s_["d_NUV"]) <= t["abs_d_NUV_max"] and
-                                             abs(s_["d_UV2500"]) <= t["abs_d_UV2500_max"] and
-                                             all(abs(v) <= 0.05 for v in s_["d_keep4"].values()) and
-                                             s_["R8"] < t["R8_below"])
+        dN, dU, r8 = iv(s_["d_NUV"]), iv(s_["d_UV2500"]), iv(s_["R8"])
+        st = {"NUV": det_siiii_repair_le(None if dN is None else dN.abs(), tN),
+              "UV2500": det_siiii_repair_le(None if dU is None else dU.abs(), tU),
+              "R8": det_siiii_repair_lt(r8, tR)}
+        for k_, v in s_["d_keep4"].items():
+            st[k_] = det_siiii_repair_le(None if v is None else iv(v).abs(), I.x(0.05))
+        s_["target_status"] = st
+        s_["meets_secondary_targets"] = allst(*st.values())
     return t
 
 
 # ------------------------------------------------------------------ analyze
 def det_siiii_repair_analyze(e_run, r_run, prior_mech, writer_root, public_spectrum, src, out, target=TARGET,
-                             fault=None):
+                             fault=None, n0_ratio=1.0):
+    """n0_ratio is the registered conditional assumption n0'/n0 = 1 (prereg 5.2); other values and `target`
+    are selftest-only function arguments, not CLI options."""
     out = Path(out)
     out.mkdir(parents=True, exist_ok=False)
     why = []
@@ -571,9 +628,9 @@ def det_siiii_repair_analyze(e_run, r_run, prior_mech, writer_root, public_spect
         row["A_radiative_only_dev_mid"] = None if dArad is None else dArad.mid
         row["A_radiative_only_applicability"] = status(dArad, CRIT)
         lA = det_siiii_repair_log10(rR.div(rE)) if (rR is not None and rE is not None) else None
-        row["A_log10_r7_over_E_mid"] = None if lA is None else lA.mid
+        det_siiii_repair_cols(row, "A_log10_r7_over_E", lA)
         tA = MECH.det_1206mech_Texc(a1206, rR) if rR is not None else None
-        row["A_Texc_mid"] = None if tA is None else tA.mid
+        det_siiii_repair_cols(row, "A_Texc", tA)
         JR1 = MECH.det_1206mech_jiv(rowsR[1]) if 1 in rowsR else None
         JR7 = MECH.det_1206mech_jiv(rowsR[7]) if 7 in rowsR else None
         row["A_R_endpoint_J7_over_J1_mid"] = (JR7.div(JR1).mid if (JR1 is not None and JR7 is not None) else None)
@@ -605,13 +662,15 @@ def det_siiii_repair_analyze(e_run, r_run, prior_mech, writer_root, public_spect
             row[f"{key}_coll_dev_J6_mid"] = None if dC7 is None else dC7.mid
             row[f"{key}_radiative_only_applicability"] = st_coll
             l1 = det_siiii_repair_log10(J1c.div(J1E)) if (J1c is not None and J1E is not None) else None
-            row[f"{key}_log10_seed_over_existing_mid"] = None if l1 is None else l1.mid
+            det_siiii_repair_cols(row, f"{key}_log10_seed_over_existing", l1)
+            row[f"{key}_seed_direction"] = det_siiii_repair_direction(l1)
             lr = det_siiii_repair_log10(r7.div(rE)) if (r7 is not None and rE is not None) else None
             det_siiii_repair_cols(row, f"{key}_log10_r7_over_E", lr)
+            row[f"{key}_r7_direction"] = det_siiii_repair_direction(lr)
             lb = det_siiii_repair_log10(r7R.div(r7)) if (r7 is not None and r7R is not None) else None
-            row[f"{key}_log10_Rbg_over_Ebg_mid"] = None if lb is None else lb.mid
+            det_siiii_repair_cols(row, f"{key}_log10_Rbg_over_Ebg", lb)
             t = MECH.det_1206mech_Texc(a1206, r7) if r7 is not None else None
-            row[f"{key}_Texc_mid"] = None if t is None else t.mid
+            det_siiii_repair_cols(row, f"{key}_Texc", t)
         dJ1 = (res_c["B-W"]["J1"] - res_c["B-T"]["J1"]) if (BW1 is not None and BT1 is not None) else None
         dJ7 = ((res_c["B-W"]["Js"][7] - res_c["B-T"]["Js"][7]) if (res_c["B-W"]["Js"] and res_c["B-T"]["Js"]) else None)
         MWT = dJ7.abs().div(dJ1.abs()) if (dJ7 is not None and dJ1 is not None and dJ1.abs().lo > 0.0) else None
@@ -670,6 +729,7 @@ def det_siiii_repair_analyze(e_run, r_run, prior_mech, writer_root, public_spect
               "initial_source_status": st, "why": ";".join(kwhy), "srce_chk_calls": ";".join(ksrce),
               "BT_r_off_ratio_mid": None if rr is None else rr.mid, "BT_M7_mid": None if Mk is None else Mk.mid}
         det_siiii_repair_cols(er, "BT_seed_shift_log10", shift)
+        er["BT_seed_direction"] = det_siiii_repair_direction(shift)
         ext_rows.append(er)
     ext = pd.DataFrame(ext_rows)
 
@@ -677,7 +737,8 @@ def det_siiii_repair_analyze(e_run, r_run, prior_mech, writer_root, public_spect
         n = int(len(sub))
         if n == 0:
             return {"n": 0}
-        d = {"n": n, "initial_source": {k_: int(v) for k_, v in sub.initial_source_status.value_counts().items()}}
+        d = {"n": n, "initial_source": {k_: int(v) for k_, v in sub.initial_source_status.value_counts().items()},
+             "BT_seed_direction": {k_: int(v) for k_, v in sub.BT_seed_direction.value_counts().items()}}
         sh = sub.BT_seed_shift_log10_mid.dropna()
         mk = sub.BT_M7_mid.dropna()
         d.update({"BT_seed_shift_log10_median": float(sh.median()) if len(sh) else None,
@@ -736,16 +797,27 @@ def det_siiii_repair_analyze(e_run, r_run, prior_mech, writer_root, public_spect
                 rBT = MECH.det_1206mech_r_off(BTs, a1206)
                 row["BT_ratio_source"] = "SEED_RATIO_ONLY_NO_W5_HISTORY"
             if rBT is not None:
-                alpha4 = rBT.div(c12E["r"])                            # n0' = n0: conditional assumption
-                if fault == "n4_absolute":
-                    alpha4 = rBT
+                # alpha4 = (n0'/n0) * (n4/n0)'/(n4/n0); n0'/n0 is a conditional assumption, never an observation
+                alpha4 = I.x(n0_ratio) * rBT.div(c12E["r"])
+                if fault == "omit_n0_ratio":
+                    alpha4 = rBT.div(c12E["r"])
                 det_siiii_repair_cols(row, "BT_alpha4", alpha4)
-                row["BT_alpha4_assumption"] = "n0 fixed (conditional, not an observation)"
-                tau = I.x(recE["tau"])
+                row["BT_n0_ratio_assumed"] = n0_ratio
+                row["BT_alpha4_assumption"] = "n0'/n0 fixed by assumption (conditional, not an observation)"
+                tau, q = I.x(recE["tau"]), vE["q"]
                 for mode in ("P1", "P2"):
-                    p, fl = det_siiii_repair_P(alpha4, vE["q"], tau, mode)
+                    p, fl = det_siiii_repair_P(alpha4, q, tau, mode)
                     det_siiii_repair_cols(row, f"{mode}_Q_ratio", p)
                     row[f"{mode}_flag"] = fl
+                    a5 = alpha4 if mode == "P1" else I.x(1.0)
+                    num = alpha4 - a5 * q                                   # tau'/tau = (a4 - a5 q)/(1 - q)
+                    one_q = I.x(1.0) - q
+                    det_siiii_repair_cols(row, f"{mode}_alpha5", a5)
+                    det_siiii_repair_cols(row, f"{mode}_tau_ratio", num.div(one_q) if one_q.lo > 0.0 else None)
+                    det_siiii_repair_cols(row, f"{mode}_S_ratio",
+                                          (a5 * one_q).div(num) if (num.lo > 0.0 and one_q.lo > 0.0) else None)
+                    det_siiii_repair_cols(row, f"{mode}_n4", alpha4 * vE["n_l"])
+                    det_siiii_repair_cols(row, f"{mode}_n5", a5 * vE["n_u"])
         resp.append(row)
     # ---- public comparison (prereg 5.5)
     N = Path(writer_root)
@@ -791,7 +863,10 @@ def det_siiii_repair_analyze(e_run, r_run, prior_mech, writer_root, public_spect
                     "quantity": "published W5 call-1 Jbar of Si III 1206.50 A (row 600693) at shells 10,15,19,24,30",
                     "criterion": "|Jbar_1 / B_profile(T_pin,s) - 1| <= 1e-3 at every shell",
                     "B_profile_T_pin": {str(r["shell"]): [r["BT_J1_lo"], r["BT_J1_mid"], r["BT_J1_hi"]] for r in cand_rows},
-                    "log10_seed_over_existing": {str(r["shell"]): r["BT_log10_seed_over_existing_mid"] for r in cand_rows},
+                    "log10_seed_over_existing": {str(r["shell"]): [r["BT_log10_seed_over_existing_lo"],
+                                                                   r["BT_log10_seed_over_existing_mid"],
+                                                                   r["BT_log10_seed_over_existing_hi"]] for r in cand_rows},
+                    "seed_direction": {str(r["shell"]): r["BT_seed_direction"] for r in cand_rows},
                     "extension_seed_shift_by_shell_median_log10": {
                         s_: v.get("BT_seed_shift_log10_median") for s_, v in ext_agg.get("by_shell", {}).items()},
                     "note": "shell 10 moves up (reverse direction); seed-memory removal is not a success condition"},
@@ -987,7 +1062,7 @@ def det_siiii_repair_make_shared(root, census_keys, spectra, public_time="1.9480
         f.write(f"#NTIMES:  2\n#NWAVE: {len(spectra['public'])}\n#TIMES[d]: 1.77100e+01 {public_time}\n"
                 "#wavelength[Ang] flux_t0 flux_t1\n")
         for lam, fl in spectra["public"]:
-            f.write(f"{lam:.5e} {fl * 0.5:.5e} {fl:.5e}\n")
+            f.write(f"{lam!r} {fl * 0.5!r} {fl!r}\n")          # full precision: ratios to writer spectra exact
     return root
 
 
@@ -1005,6 +1080,23 @@ def det_siiii_repair_rout(x, down, digits=70):
     return Fraction(math.floor(v) if down else math.ceil(v)) / sc
 
 
+def det_siiii_repair_truth_ln(x):
+    """ln of a positive rational at 80 digits, bracketed by 1e-70 relative plus 1e-70 absolute."""
+    from decimal import Decimal, localcontext
+    with localcontext() as c:
+        c.prec = 80
+        v = Fraction((Decimal(x.numerator) / Decimal(x.denominator)).ln())
+    e = Fraction(1, 10 ** 70)
+    return FI(v - abs(v) * e - e, v + abs(v) * e + e)
+
+
+def det_siiii_repair_truth_log10(r):
+    """exact enclosure of log10 over a positive rational interval r (FI)."""
+    L10 = det_siiii_repair_truth_ln(Fraction(10))
+    a, b = det_siiii_repair_truth_ln(r.lo).div(L10), det_siiii_repair_truth_ln(r.hi).div(L10)
+    return FI(min(a.lo, b.lo), max(a.hi, b.hi))
+
+
 def det_siiii_repair_truth_Sboot(at, T):
     nu, lam, f, A = _fr(at["nu"]), _fr(at["lam_cm"]), _fr(at["f_lu"]), _fr(at["A_ul"])
     a = _fr(at["g_l"]) / _fr(at["g_u"])
@@ -1017,14 +1109,42 @@ def det_siiii_repair_truth_Sboot(at, T):
 
 def det_siiii_repair_truth_map(J1, rows, at):
     """exact iteration of F_k from the rational interval J1 (F increasing in J while A + dB J > 0),
-    endpoints rounded outward to 70 digits after each step."""
+    endpoints rounded outward to 70 digits after each step; returns {1..7: FI}."""
     lo, hi = det_siiii_repair_rout(J1.lo, True), det_siiii_repair_rout(J1.hi, False)
+    out = {1: FI(lo, hi)}
     for k in range(1, 7):
         r1 = rows[k + 1]
         b, jc = float(r1["beta"]), float(r1["J_c"])
         lo = det_siiii_repair_rout(MECH.det_1206mech_truth_F(lo, b, jc, at)[0], True)
         hi = det_siiii_repair_rout(MECH.det_1206mech_truth_F(hi, b, jc, at)[0], False)
-    return FI(lo, hi)
+        out[k + 1] = FI(lo, hi)
+    return out
+
+
+def det_siiii_repair_truth_roff(J, at):
+    """exact r_off = B_lu J/(A + B_ul J) over a rational interval (increasing in J)."""
+    Bl, Bu, A = _fr(at["B_lu"]), _fr(at["B_ul"]), _fr(at["A_ul"])
+    return FI(Bl * J.lo / (A + Bu * J.lo), Bl * J.hi / (A + Bu * J.hi))
+
+
+def det_siiii_repair_truth_Texc(at, r):
+    """exact T_exc over a rational ratio interval (increasing in r)."""
+    return FI(MECH.det_1206mech_truth_Texc(at, r.lo).lo, MECH.det_1206mech_truth_Texc(at, r.hi).hi)
+
+
+def det_siiii_repair_truth_P(alpha, q, tau, mode):
+    """exact Q'/Q: P1 (1-e^{-alpha tau})/(1-e^{-tau}) increasing in alpha; P2 ((1-q)/(alpha-q))
+    (1-e^{-tau (alpha-q)/(1-q)})/(1-e^{-tau}) decreasing in alpha (q, tau exact rationals)."""
+    def em(x):
+        e = _dexp(-x)
+        return FI(1 - e.hi, 1 - e.lo)
+    den = em(tau)
+    if mode == "P1":
+        return FI(em(alpha.lo * tau).div(den).lo, em(alpha.hi * tau).div(den).hi)
+
+    def g(a):
+        return (FI((1 - q) / (a - q)) * em(tau * (a - q) / (1 - q))).div(den)
+    return FI(g(alpha.hi).lo, g(alpha.lo).hi)
 
 
 SELFTEST_REQUIRED = (
@@ -1036,13 +1156,17 @@ SELFTEST_REQUIRED = (
     "init: atomic data off the Planck relation refute I-S; stored S_boot encloses the exact truth on the clean fixture",
     "init: a warm-start-only source change leaves I-T surviving; counting it as a material change is detected",
     "algebra: B-T seed and iterated J7 enclose the exact truth with kappa != 1 and Delta B != 0; drop-kappa and beta-only break it",
+    "algebra: stored log10 (seed, B-T and A level ratios) and T_exc intervals enclose 80-digit exact references; drop-kappa breaks them",
     "algebra: off model keeps the seed difference (M7_WT ~ 1); armed ratio ignores the R' seed; equal seeds -> unseparated denominator",
     "algebra: beta does not cancel with collisions (exact r_A+C enclosed); cancelling beta is detected",
     "algebra: q >= 1 leaves the D iteration count undefined instead of filling it",
-    "2542: recovered n4/n5 enclose the truth; P1 lowers and P2 raises the local injection when alpha4 < 1",
-    "2542: n4/n0 ratio used as an absolute n4 multiplier is detected; alpha4 below q45 is a SIGN_CHANGE, not truncated",
-    "spectrum: OPT-only change moves the colours; partial band gain with a worse R8 fails the targets; out-of-range band is unsupported",
-    "spectrum: public time 19.48 d missing -> PUBLIC_NOT_AVAILABLE (no nearest time); capture vs writer identity recorded",
+    "algebra: a zero predicted seed change is ZERO_NOT_SEPARATED, not a direction (clean fixture DOWN)",
+    "2542: recovered n4/n5, alpha4 and the P1/P2 injection ratios enclose exact references; P1 lowers and P2 raises at alpha4 < 1",
+    "2542: n0'/n0 is carried explicitly (0.5 halves alpha4) and omitting it is detected; alpha4 below q45 records the sign, not truncated",
+    "spectrum (analyze path): OPT-only change moves colours with the absolute UV unchanged; band gain with worse R8 fails; "
+    "out-of-range band unsupported",
+    "spectrum (analyze path): a residual exactly at the half-target is UNRESOLVED; public 19.48 d missing -> PUBLIC_NOT_AVAILABLE; "
+    "capture vs writer identity recorded",
     "extension: a refuted key and a missing key are kept; universal REFUTED with subset bounds",
     "codes: 0, 1, 3, 4 and 5 through the real analyze path, never 2; expectations FUTURE_TEST and seed delivery unverified",
 )
@@ -1112,16 +1236,17 @@ def cmd_selftest(a):
 
     def spec(fn):
         return [(l_, fn(l_)) for l_ in lam_grid]
-    pub = spec(lambda l_: 1e38 * (l_ / 5000.0) ** -1.0)
-    sE = spec(lambda l_: 1e38 * (l_ / 5000.0) ** -1.0 * (1.6 if l_ < 3000 else 1.3 if l_ < 4000 else 1.0))
-    sR = spec(lambda l_: 1e38 * (l_ / 5000.0) ** -1.0 * (0.5 if l_ < 4000 else 1.0))
+    base_f = lambda l_: 1e38 * (l_ / 5000.0) ** -1.0                     # noqa: E731
+    pub = spec(base_f)
+    sE = spec(lambda l_: base_f(l_) * (1.6 if l_ < 3000 else 1.3 if l_ < 4000 else 1.0))
+    sR = spec(lambda l_: base_f(l_) * (0.5 if l_ < 4000 else 1.0))
     keys = [(3, s, 14, 2, "(0,1e-6]", "SURVIVES") for s in shells]
 
     def run(name, wE=None, wR=None, pE=None, pR=None, q45=0.02, ekw=None, rkw=None, fault=None, ck=None,
-            pub_time="1.94800e+01", src_kw=None, target=None, bkw=None):
+            pub_time="1.94800e+01", src_kw=None, target=None, bkw=None, sp=None, n0_ratio=1.0):
         base = T / name
         src = det_siiii_repair_make_source(base / "T2", **(src_kw or {}))
-        sh = det_siiii_repair_make_shared(base / "shared", ck or keys, {"public": pub, "E": sE, "R": sR}, pub_time)
+        sh = det_siiii_repair_make_shared(base / "shared", ck or keys, sp or {"public": pub, "E": sE, "R": sR}, pub_time)
         pE_, pR_ = pE or popsE, pR or popsR
         e = det_siiii_repair_make_fixture(base / "E", wE or mkw5E(), pE_, p5(pE_, q45), False, src,
                                           **{**(bkw or {}), **(ekw or {})})
@@ -1129,7 +1254,7 @@ def cmd_selftest(a):
                                           **{**(bkw or {}), **(rkw or {})})
         tg = dict(target) if target else dict(FXT, n_fixed=len([k for k in (ck or keys) if k[5] == "SURVIVES"]))
         rr = det_siiii_repair_analyze(e, r, sh / "prior", sh / "writer", sh / "public.txt", src, base / "out",
-                                      target=tg, fault=fault)
+                                      target=tg, fault=fault, n0_ratio=n0_ratio)
         return rr, base / "out", e, r
 
     def csvr(o, f):
@@ -1137,6 +1262,9 @@ def cmd_selftest(a):
 
     def anyr(rr, s):
         return any(s in x for x in rr.get("reasons", []))
+
+    def encc(df, s, col, t):
+        return enc(df.loc[s, f"{col}_lo"], df.loc[s, f"{col}_hi"], t)
 
     # 0 clean
     rr, o, eC, rC = run("clean")
@@ -1163,6 +1291,7 @@ def cmd_selftest(a):
                                 r_dup["validity"], anyr(r_dup, "CONTRADICTORY")),
          ("X", True, "X", True, "X", True, "X", True, "X", True),
          inj="INIT material_generation=1 / call 4 labelled 5 / shells 19,24 swapped / nu x(1+1e-12) / duplicate call 3")
+    # 2 authority, source, row, count
     r_auth, *_ = run("auth", ekw={"manifest_drop": "transaction"}, rkw={"cap_fallback": 2})
     base = T / "srcmis"
     src_a = det_siiii_repair_make_source(base / "T2a")
@@ -1209,18 +1338,32 @@ def cmd_selftest(a):
     r_db, o_db, e_db, _ = run("dB", wE=w2E, bkw={"bul_scale": 1.01})
     c_db = csvr(o_db, "candidate_1206.csv").set_index("shell")
     hE_db, _ = det_siiii_repair_w5_load(e_db, {(3, 19)})
-    tB = MECH.det_1206mech_truth_profile(grid, at2["nu"], 8000.0 + 50.0 * 19, 1.0)
-    tJ7 = det_siiii_repair_truth_map(tB, hE_db[(3, 19)], at2)
+    T19 = 8000.0 + 50.0 * 19
+    tB = MECH.det_1206mech_truth_profile(grid, at2["nu"], T19, 1.0)
+    tJ_db = det_siiii_repair_truth_map(tB, hE_db[(3, 19)], at2)
     r_dk, o_dk, *_ = run("dropk", wE=w2E, bkw={"bul_scale": 1.01}, fault="drop_kappa")
     r_bo, o_bo, *_ = run("betaonly", wE=w2E, bkw={"bul_scale": 1.01}, fault="beta_only")
     c_dk = csvr(o_dk, "candidate_1206.csv").set_index("shell")
     c_bo = csvr(o_bo, "candidate_1206.csv").set_index("shell")
-    case(SELFTEST_REQUIRED[7], (r_db["validity"], enc(c_db.loc[19, "BT_J1_lo"], c_db.loc[19, "BT_J1_hi"], tB),
-                                enc(c_db.loc[19, "BT_J7_Ebg_lo"], c_db.loc[19, "BT_J7_Ebg_hi"], tJ7),
-                                enc(c_dk.loc[19, "BT_J7_Ebg_lo"], c_dk.loc[19, "BT_J7_Ebg_hi"], tJ7),
-                                enc(c_bo.loc[19, "BT_J7_Ebg_lo"], c_bo.loc[19, "BT_J7_Ebg_hi"], tJ7)),
+    case(SELFTEST_REQUIRED[7], (r_db["validity"], encc(c_db, 19, "BT_J1", tB), encc(c_db, 19, "BT_J7_Ebg", tJ_db[7]),
+                                encc(c_dk, 19, "BT_J7_Ebg", tJ_db[7]), encc(c_bo, 19, "BT_J7_Ebg", tJ_db[7])),
          ("VALID", True, True, False, False), inj="B_ul x 1.01; drop_kappa / beta_only faults")
-    # 8 memory difference, armed seed independence, unseparated denominator
+    # 8 log10 and T_exc against independent 80-digit references (dB fixture)
+    rE_t = Fraction(popsE[19][1]) / Fraction(popsE[19][0])
+    rR_t = Fraction(popsR[19][1]) / Fraction(popsR[19][0])
+    r7_t = det_siiii_repair_truth_roff(tJ_db[6], at2)
+    t_seed = det_siiii_repair_truth_log10(FI(tB.lo / Fraction(J1), tB.hi / Fraction(J1)))
+    t_r7 = det_siiii_repair_truth_log10(FI(r7_t.lo / rE_t, r7_t.hi / rE_t))
+    t_A = det_siiii_repair_truth_log10(FI(rR_t / rE_t))
+    t_Tx = det_siiii_repair_truth_Texc(at2, r7_t)
+    t_TA = det_siiii_repair_truth_Texc(at2, FI(rR_t))
+    case(SELFTEST_REQUIRED[8], (encc(c_db, 19, "BT_log10_seed_over_existing", t_seed), encc(c_db, 19, "BT_log10_r7_over_E", t_r7),
+                                encc(c_db, 19, "A_log10_r7_over_E", t_A), encc(c_db, 19, "BT_Texc", t_Tx),
+                                encc(c_db, 19, "A_Texc", t_TA), encc(c_dk, 19, "BT_log10_r7_over_E", t_r7),
+                                encc(c_dk, 19, "BT_Texc", t_Tx)),
+         (True, True, True, True, True, False, False), inj="drop_kappa fault",
+         reason="truths: exact iterated map, exact r_off, captured n4/n0 of the fixture floats, ln at 80 digits")
+    # 9 memory difference, armed seed independence, unseparated denominator
     MWT = I(cand.loc[19, "M7_WT_lo"], cand.loc[19, "M7_WT_mid"], cand.loc[19, "M7_WT_hi"])
     r_rs, o_rs, *_ = run("rseed", wR=mkw5R(J1R=J1 * 0.5))
     c_rs = csvr(o_rs, "candidate_1206.csv").set_index("shell")
@@ -1237,11 +1380,11 @@ def cmd_selftest(a):
     prof[19] = 0.5 * (lo_T + hi_T)
     r_eq, o_eq, *_ = run("wtsame", bkw={"te_prof": prof})
     c_eq = csvr(o_eq, "candidate_1206.csv").set_index("shell")
-    case(SELFTEST_REQUIRED[8], (MWT.lo >= 1 - 1e-3 and MWT.hi <= 1.0 + 1e-3,
+    case(SELFTEST_REQUIRED[9], (MWT.lo >= 1 - 1e-3 and MWT.hi <= 1.0 + 1e-3,
                                 c_rs.loc[19, "A_r_A_coll_call6_mid"] == cand.loc[19, "A_r_A_coll_call6_mid"],
                                 c_eq.loc[19, "M7_WT_status"]), (True, True, "UNSEPARATED_DENOMINATOR"),
          inj="R' call-1 seed x0.5 / T_pin(19) solved so that B(T_pin) = W B(T_inner)")
-    # 9 beta with collisions
+    # 10 beta with collisions
     hR0, _ = det_siiii_repair_w5_load(rC, {(3, 19)})
     r6 = hR0[(3, 19)][6]
     bR, jcR = _fr(float(r6["beta"])), _fr(float(r6["J_c"]))
@@ -1250,71 +1393,114 @@ def cmd_selftest(a):
            for cu, cd in ((Cu.lo, Cd.hi), (Cu.hi, Cd.lo))]
     r_bc, o_bc, *_ = run("betacancel", fault="beta_cancel_with_coll")
     c_bc = csvr(o_bc, "candidate_1206.csv").set_index("shell")
-    case(SELFTEST_REQUIRED[9], (Fraction(cand.loc[19, "A_r_A_coll_call6_lo"]) <= min(tAC) and
-                                max(tAC) <= Fraction(cand.loc[19, "A_r_A_coll_call6_hi"]),
-                                Fraction(c_bc.loc[19, "A_r_A_coll_call6_lo"]) <= min(tAC) and
-                                max(tAC) <= Fraction(c_bc.loc[19, "A_r_A_coll_call6_hi"])),
+    case(SELFTEST_REQUIRED[10], (Fraction(cand.loc[19, "A_r_A_coll_call6_lo"]) <= min(tAC) and
+                                 max(tAC) <= Fraction(cand.loc[19, "A_r_A_coll_call6_hi"]),
+                                 Fraction(c_bc.loc[19, "A_r_A_coll_call6_lo"]) <= min(tAC) and
+                                 max(tAC) <= Fraction(c_bc.loc[19, "A_r_A_coll_call6_hi"])),
          (True, False), inj="beta_cancel_with_coll fault")
-    # 10 q >= 1
+    # 11 q >= 1
     at_h = dict(at, B_ul=at["B_ul"] * 0.5)
     B30 = MECH.det_1206mech_profile_mean(grid, at["nu"], 30000.0, 1.0)[0].mid
     r_q, *_ = run("qge1", wE=mkw5E(h=hist(B30, tau, Jc, atom=at_h)), bkw={"bul_scale": 0.5, "T_inner": 30000.0})
     Dq = r_q.get("D_local_q_required_iterations") or {}
     Dc = rr["D_local_q_required_iterations"]
-    case(SELFTEST_REQUIRED[10], (r_q["validity"], (Dq.get("local_q_at_existing_call1") or {}).get("lo", 0) > 1.0,
+    case(SELFTEST_REQUIRED[11], (r_q["validity"], (Dq.get("local_q_at_existing_call1") or {}).get("lo", 0) > 1.0,
                                  Dq.get("required_iterations_to_1e-3"), Dq.get("flag"), Dc["flag"]),
          ("VALID", True, None, "UNDEFINED_Q_NOT_IN_(0,1)", "OK"), inj="T_inner 30000 K, B_ul x 0.5 -> q > 1")
-    # 11 2542 truths and P1/P2
+    # 12 zero predicted change
+    prof0 = {s: 8000.0 + 50.0 * s for s in range(50)}
+    prof0[19] = Tin
+    r_z, o_z, *_ = run("zero", bkw={"te_prof": prof0})
+    c_z = csvr(o_z, "candidate_1206.csv").set_index("shell")
+    ex_z = json.loads((o_z / "expectations.json").read_text())
+    case(SELFTEST_REQUIRED[12], (c_z.loc[19, "BT_seed_direction"], bool(c_z.loc[19, "BT_log10_seed_over_existing_lo"] <= 0.0
+                                                                        <= c_z.loc[19, "BT_log10_seed_over_existing_hi"]),
+                                 ex_z["B-T"]["primary_expectation"]["seed_direction"]["19"], cand.loc[19, "BT_seed_direction"]),
+         ("ZERO_NOT_SEPARATED", True, "ZERO_NOT_SEPARATED", "DOWN"), inj="T_pin(19) = T_inner")
+    # 13 2542 exact references on the clean fixture
     resp = csvr(o, "response_2542.csv").set_index("shell")
     x = resp.loc[19]
+    hE_c, _ = det_siiii_repair_w5_load(eC, {(3, 19)})
+    tBc = MECH.det_1206mech_truth_profile(grid, at["nu"], T19, 1.0)
+    tJc = det_siiii_repair_truth_map(tBc, hE_c[(3, 19)], at)
+    r7c = det_siiii_repair_truth_roff(tJc[6], at)
+    t_alpha = FI(r7c.lo / rE_t, r7c.hi / rE_t)
     n4t, n5t = p5(popsE)[19]
-    case(SELFTEST_REQUIRED[11], (Fraction(x.E_n4_lo) <= Fraction(n4t) <= Fraction(x.E_n4_hi),
-                                 Fraction(x.E_n5_lo) <= Fraction(n5t) <= Fraction(x.E_n5_hi),
-                                 x.E_status, float(x.BT_alpha4_hi) < 1.0, float(x.P1_Q_ratio_hi) < 1.0,
-                                 float(x.P2_Q_ratio_lo) > 1.0), (True, True, "OK", True, True, True),
-         reason=f"2542 tau {x.E_tau45}")
-    # 12 n4 absolute fault; sign change
-    r_na, o_na, *_ = run("n4abs", fault="n4_absolute")
-    a_na = float(csvr(o_na, "response_2542.csv").set_index("shell").loc[19, "BT_alpha4_mid"])
+    q_t = Fraction(3, 5) * Fraction(n5t) / Fraction(n4t)
+    tau_t = Fraction(float(x.E_tau45))
+    tP1 = det_siiii_repair_truth_P(t_alpha, q_t, tau_t, "P1")
+    tP2 = det_siiii_repair_truth_P(t_alpha, q_t, tau_t, "P2")
+    case(SELFTEST_REQUIRED[13], (Fraction(x.E_n4_lo) <= Fraction(n4t) <= Fraction(x.E_n4_hi),
+                                 Fraction(x.E_n5_lo) <= Fraction(n5t) <= Fraction(x.E_n5_hi), x.E_status,
+                                 encc(resp, 19, "BT_alpha4", t_alpha), encc(resp, 19, "P1_Q_ratio", tP1),
+                                 encc(resp, 19, "P2_Q_ratio", tP2), float(x.P1_Q_ratio_hi) < 1.0, float(x.P2_Q_ratio_lo) > 1.0),
+         (True, True, "OK", True, True, True, True, True), reason=f"2542 tau {x.E_tau45}; q45 = 3/5 n5/n4 exact")
+    # 14 n0'/n0 explicit; sign change
+    r_n0, o_n0, *_ = run("n0half", n0_ratio=0.5)
+    r_no, o_no, *_ = run("n0omit", n0_ratio=0.5, fault="omit_n0_ratio")
+    t_half = FI(t_alpha.lo / 2, t_alpha.hi / 2)
+    x_n0 = csvr(o_n0, "response_2542.csv").set_index("shell")
+    x_no = csvr(o_no, "response_2542.csv").set_index("shell")
     r_sg, o_sg, *_ = run("sign", q45=0.9, bkw={"te_prof": {s: 6000.0 for s in range(50)}})
     x_sg = csvr(o_sg, "response_2542.csv").set_index("shell").loc[19]
-    case(SELFTEST_REQUIRED[12], (a_na != float(x.BT_alpha4_mid), x_sg.P2_flag, bool(pd.isna(x_sg.P2_Q_ratio_mid)), x_sg.P1_flag),
-         (True, "SIGN_CHANGE", True, "OK"), inj="n4_absolute fault / q45 = 0.9 with T_pin 6000 K")
-    # 13 spectrum
-    sOPT = spec(lambda l_: 1e38 * (l_ / 5000.0) ** -1.0 * (2.0 if 4000 <= l_ <= 6000 else 1.0))
-    rows_, _ = det_siiii_repair_spectrum_table({"public": pub, "X": sOPT})
-    moved = all(abs(r["d_dex"]) > 0.1 for r in rows_ if r["spectrum"] == "X" and r["band"] in ("2500-3000", "8000-10000"))
-    sP = spec(lambda l_: 1e38 * (l_ / 5000.0) ** -1.0 * (1.1 if l_ < 3000 else 3.0 if l_ > 7000 else 1.0))
+    case(SELFTEST_REQUIRED[14], (encc(x_n0, 19, "BT_alpha4", t_half), float(x_n0.loc[19, "BT_n0_ratio_assumed"]),
+                                 encc(x_no, 19, "BT_alpha4", t_half), x_sg.P2_flag, bool(pd.isna(x_sg.P2_Q_ratio_mid)),
+                                 bool(float(x_sg.P2_tau_ratio_hi) < 0.0), bool(pd.isna(x_sg.P2_S_ratio_mid)), x_sg.P1_flag),
+         (True, 0.5, False, "SIGN_CHANGE", True, True, True, "OK"),
+         inj="n0'/n0 = 0.5 / omit_n0_ratio fault / q45 = 0.9 with T_pin 6000 K")
+    # 15 spectrum through analyze: OPT-only, band gain with worse R8, out of range
+    sOPT = spec(lambda l_: base_f(l_) * (2.0 if 4000 <= l_ <= 6000 else 1.0))
+    sP = spec(lambda l_: base_f(l_) * (1.1 if l_ < 3000 else 3.0 if l_ > 7000 else 1.0))
     sOut = [(l_, f_) for l_, f_ in pub if l_ >= 2600.0]
-    _, summ2 = det_siiii_repair_spectrum_table({"public": pub, "EprimeN": sE, "Y": sP, "Z": sOut})
-    det_siiii_repair_targets(summ2)
-    case(SELFTEST_REQUIRED[13], (moved, abs(summ2["Y"]["d_UV2500"]) <= 0.5 * abs(summ2["EprimeN"]["d_UV2500"]),
-                                 summ2["Y"]["meets_secondary_targets"], summ2["Z"]["d_UV2500"], summ2["Z"]["R8"],
-                                 rr["spectrum_summary"]["EprimeN"]["meets_secondary_targets"]),
-         (True, True, False, None, None, False))
-    # 14 public time
+    r_so, o_so, *_ = run("specopt", sp={"public": pub, "E": sE, "R": sOPT})
+    r_sp, *_ = run("specgain", sp={"public": pub, "E": sE, "R": sP})
+    r_sx, o_sx, *_ = run("specout", sp={"public": pub, "E": sE, "R": sOut})
+    so = csvr(o_so, "spectrum_reference.csv")
+    so = so[so.spectrum == "RprimeN"].set_index("band")
+    moved = all(abs(float(so.loc[b, "d_dex_mid"]) + math.log10(2.0)) < 1e-9 for b in
+                ("2500-3000", "3000-3500", "7000-8000", "8000-10000"))
+    sx = csvr(o_sx, "spectrum_reference.csv")
+    sx = sx[sx.spectrum == "RprimeN"].set_index("band")
+    sR8 = r_sp["spectrum_summary"]["RprimeN"]["R8"]
+    eR8 = r_sp["spectrum_summary"]["EprimeN"]["R8"]
+    case(SELFTEST_REQUIRED[15], (moved, abs(float(so.loc["2500-3000", "L_band_over_public"]) - 1.0) < 1e-12,
+                                 round(r_so["spectrum_summary"]["RprimeN"]["L_OPT_over_public"], 9),
+                                 r_sp["spectrum_summary"]["RprimeN"]["target_status"]["UV2500"], sR8["lo"] > eR8["hi"],
+                                 r_sp["spectrum_summary"]["RprimeN"]["target_status"]["R8"],
+                                 r_sp["spectrum_summary"]["RprimeN"]["meets_secondary_targets"],
+                                 sx.loc["2500-3000", "status"], r_sx["spectrum_summary"]["RprimeN"]["d_UV2500"],
+                                 r_sx["spectrum_summary"]["RprimeN"]["meets_secondary_targets"]),
+         (True, True, 2.0, "SURVIVES", True, "REFUTED", "REFUTED", "UNSUPPORTED", None, "NOT_IDENTIFIABLE"),
+         inj="writer R'N spectra: OPT x2 / UV x1.1 + red x3 / starts at 2600 A")
+    # 16 boundary, public time, identity
+    sE4 = spec(lambda l_: base_f(l_) * (4.0 if 2500 <= l_ <= 3000 else 1.0))
+    sY2 = spec(lambda l_: base_f(l_) * (2.0 if 2500 <= l_ <= 3000 else 1.0))
+    r_bd, *_ = run("specbound", sp={"public": pub, "E": sE4, "R": sY2})
     r_pt, *_ = run("pubtime", pub_time="1.94900e+01")
-    case(SELFTEST_REQUIRED[14], (r_pt["validity"], r_pt["spectrum_summary"].get("status"),
+    case(SELFTEST_REQUIRED[16], (r_bd["spectrum_summary"]["RprimeN"]["target_status"]["UV2500"],
+                                 r_bd["spectrum_summary"]["RprimeN"]["meets_secondary_targets"] != "SURVIVES",
+                                 r_pt["validity"], r_pt["spectrum_summary"].get("status"),
                                  rr["spectrum_identity"]["capture_E_vs_EprimeN"]["byte_identical"]),
-         ("VALID", "PUBLIC_NOT_AVAILABLE", False), inj="public times 17.71, 19.49 d")
-    # 15 extension
+         ("UNRESOLVED", True, "VALID", "PUBLIC_NOT_AVAILABLE", False),
+         inj="E'N UV2500 x4 and R'N x2 (|d| = half-target up to rounding) / public times 17.71, 19.49 d")
+    # 17 extension
     ck = keys + [(0, 30, 14, 2, "(1e-4,1e-2]", "SURVIVES"), (0, 24, 14, 2, "(1e-4,1e-2]", "SURVIVES")]
     r_ex, o_ex, *_ = run("ext", wE=mkw5E(drop=[(0, 24)]), ck=ck)
     e_ex = csvr(o_ex, "extension.csv").set_index(["line", "shell"])
-    case(SELFTEST_REQUIRED[15], (len(e_ex), e_ex.loc[(0, 30), "initial_source_status"], e_ex.loc[(0, 24), "initial_source_status"],
+    case(SELFTEST_REQUIRED[17], (len(e_ex), e_ex.loc[(0, 30), "initial_source_status"], e_ex.loc[(0, 24), "initial_source_status"],
                                  r_ex["extension"]["all"]["universal_initial_source"], r_ex["extension"]["all"]["subset_count_bounds"]),
          (7, "REFUTED", "NOT_IDENTIFIABLE", "REFUTED", [5, 6]), inj="key (0,30) seed 0.2 B(1206); key (0,24) W5 history removed")
-    # 16 codes
+    # 18 codes
     pE3 = {s: (v[0], v[1] * 1.01) for s, v in popsE.items()}
     r_c3, *_ = run("code3", pE=pE3)
     r_c4, *_ = run("code4", wE=mkw5E(h=hist(J1, tau, Jc, Jerr=J1 * 2e-3)))
     got = sorted({r_["main_codes"]["B-T"] for r_ in (rr, r_sf, r_c3, r_c4, r_nb)})
     allc = set()
-    for r_ in (rr, r_sf, r_c3, r_c4, r_nb, r_pl, r_w, r_db, r_rs, r_eq, r_q):
+    for r_ in (rr, r_sf, r_c3, r_c4, r_nb, r_pl, r_w, r_db, r_rs, r_eq, r_q, r_z):
         if r_.get("validity") == "VALID":
             allc |= {v[k] for v in r_["codes"].values() for k in ("A", "B-T")}
     ex0 = json.loads((o / "expectations.json").read_text())
-    case(SELFTEST_REQUIRED[16], (got, 2 in allc, ex0["B-T"]["primary_expectation"]["status"],
+    case(SELFTEST_REQUIRED[18], (got, 2 in allc, ex0["B-T"]["primary_expectation"]["status"],
                                  ex0["B-T"]["secondary_spectral_expectation"]["status"],
                                  ex0["B-T"]["readiness"]["seed_delivery_verified"], ex0["B-T"]["readiness"]["future_run_authorized"]),
          ([0, 1, 3, 4, 5], False, "FUTURE_TEST", "FUTURE_TEST", False, False),
@@ -1322,13 +1508,14 @@ def cmd_selftest(a):
     names = [r["case"] for r in res]
     missing = [n for n in SELFTEST_REQUIRED if n not in names]
     fails = sum(1 for r in res if not r["pass"]) + len(missing)
-    summary = {"schema": "DET_SIIII_REPAIR_SELFTEST_V1", "readout_sha256": sha(Path(__file__).resolve()),
+    summary = {"schema": "DET_SIIII_REPAIR_SELFTEST_V2", "readout_sha256": sha(Path(__file__).resolve()),
                "dependencies": {str(Path(d).resolve()): sha(Path(d)) for d in (POP.__file__, RATES.__file__, MECH.__file__,
                                                                                NTE.__file__)},
                "production_source_arg": str(a.production_source), "cases": res, "missing_required": missing,
                "n_cases": len(res), "failures": fails,
-               "truth": "exact rational arithmetic on the fixture doubles; exp at 60 digits bracketed 1e-58; "
-                        "iterated map endpoints rounded outward to 70 digits; interval containment"}
+               "scope_note": "missing_required checks only that every listed case ran; coverage of prereg 8.2 is the case list",
+               "truth": "exact rational arithmetic on the fixture doubles; exp at 60 digits bracketed 1e-58; ln at 80 digits "
+                        "bracketed 1e-70; iterated map endpoints rounded outward to 70 digits; interval containment"}
     (out / "selftest.json").write_text(json.dumps(summary, indent=1))
     print(f"selftest: {len(res) - sum(1 for r in res if not r['pass'])}/{len(res)} pass, missing {len(missing)}, failures {fails}")
     return 0 if fails == 0 else 1
