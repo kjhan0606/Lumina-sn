@@ -2,7 +2,7 @@
 
 판정자 = 운전자(Claude, Opus 5.5) — 구현자·판정자 겸임(계약 §11). 계약 = `docs/PREREG_DET_SIIII_RATES_2026-10-07.md`(개정 3, HEAD 537cc0d). 판독기 = `scripts/det_siiii_rates_readout.py`(sha256 58722696…, 종료감사 1회차 B1·B2 수리판), 의존 = `scripts/det_siiii_pop_readout.py`(63cbea71…, 수정 없음). 정본 산출 = `/gpfs/kjhan/lumina/cmfgen_map/siiii_rates_20261007/results/b2/`(a10 job 415188). 수리 전 산출 `results/t3/`(job 415181)는 보존한다. 두 산출의 예산·분해 mid 값은 비트 단위로 같고 분기도 같다.
 
-## 처분: **PASS_LIMITED**
+## 처분: **PASS_LIMITED** — 폐합 (astra 종료감사 2회차 폐합 가·«폐합 차단» 0)
 
 미달 항목은 **생산 해 폐합**이다. §5.3에서 결과 판독 전에 `PRODUCTION_SOLUTION_NOT_TESTABLE`로 확정했다. 사유: 세대 7 캡처가 최종 R7보다 앞서며, 후보 n_e 폐합·CE 계수·CE 감쇠 이력이 저장되지 않는다. 그 밖의 필수 산출(전체 율 예산, 산술 폐합, 세대 7 잔차, 밀도 차이 귀속)은 **율 예산 주요 셸 셋에서 모두 완료**했다.
 
@@ -80,7 +80,7 @@
 - **정상**: 인구 역산 포함; E′ off·R′ armed 예산 I·D·R이 정확 정답 포함; 평형 셸 R∋0 / 비평형 셸 R∌0; bb domain 밖 선은 A만; super-level Boltzmann 구간 검사; **여섯 분해 항과 Δn_u가 각각 정확 정답 포함**(두 셀); E=R → Δn_u=0 → UNRESOLVED; E/R 자료 교환 → Δn_u 정확 반전 + 폐합.
 - **연결·결손**: J̄ 행 제거 → 6; W5 세대 6 → 6; W5 이온 오류·모순 중복·캡처 세대 8·TOPSTAGE_IV 켬 → 런 거부 X; 상대 준위 캡처 제거(세대 8 완비) → 6, 세대 8 대입 없음; 이온 원장 존재 + J̄ 제거 → 6; super-level 구성원 Boltzmann 이탈 → 6.
 - **율·폐합**: β 누락·유도방출 누락·충돌 방향 교환 → 독립 정답 불일치 검출; 선 중복 계수 → 6; 잔차항 제거 → 산술 폐합 FAIL → 6; 비평형을 평형 선언 → 검출.
-- **판정 경계(실제 분석 경로)**: 분해·폐합 검사 뒤 분기 판정 직전에 항을 주입하여 `budget.csv`·`result.json`까지 확인한다. 등호 → MIXED(비지배); 구간 겹침 → 5; 상한 없는 항 → 6; 분리된 단일 항 지배 + CANCELLING. 자연 경로에서도 확인한다: 펌핑이 지배하고 L_l=0이며 J_c 오차 100 %인 가상 런 → 5.
+- **판정 경계(실제 분석 경로)**: 분해·폐합 검사 뒤 분기 판정 직전에 항을 주입하여 `budget.csv`·`result.json`까지 확인한다. 이 네 주입 시험의 합·폐합 필드는 주입 전 값이며, 주입 항의 산술 폐합 증거로 사용하지 않는다. 등호 → MIXED(비지배); 구간 겹침 → 5; 상한 없는 항 → 6; 분리된 단일 항 지배 + CANCELLING. 자연 경로에서도 확인한다: 펌핑이 지배하고 L_l=0이며 J_c 오차 100 %인 가상 런 → 5.
 - **출력 구분**: J̄=0인 활성 선의 계산된 0 율(status OK, mid 0), coverage의 STRUCTURAL_ZERO 열, 결손(MISSING_LINE_FIELD)이 서로 구별된다.
 - 분석 산출에 `checks.json`(G-LINK·G-RATE 집계)을 추가했다(계약 §7). selftest 결과는 `--selftest`의 `selftest.json`으로 연결된다(sha는 manifest에 기록).
 
@@ -93,7 +93,7 @@
 | 누적 | 경과 약 9 min 26 s, CPU 예약 약 0.63 core·h, GPU 0 (상한 60 min·4 core·h·0 GPU 안) |
 | 산출 크기 | results 18 MiB (상한 256 MiB) |
 | 신원 | `results/b2/identity.sha256`(판독기·의존·계약·HEAD), `analysis/manifest.json`(입력 sha·T2 소스 6파일 sha·argv·환경·job) |
-| 실패 런 | t1(가상 런 인구 반전으로 역산 거부 → 시험 KeyError), t2(교환 시험 설계 오류 1건), b1(등호 경계 시험·넓은 J 시험 설계 오류 2건) 보존·덮어쓰기 없음 |
+| 실패 런 | t1(가상 런 인구 반전으로 역산 거부 → 시험 KeyError), t2(교환 시험 설계 오류 1건), b1(등호 판정 구현의 반올림 문제 1건·넓은 J 가상 런 설계 오류 1건) 보존·덮어쓰기 없음 |
 
 ## 7. 분장 장부
 
@@ -104,7 +104,7 @@
 | 발주 전 권고 검사 1·2 | 운전자 | 운전자 (lageunha·T2 조회) | 없음 |
 | 구현·직접시험·게이트·실행·판독·판정 | 운전자 | 운전자 | 겸임(규약상 명시) |
 | 코드 감사 | 해제(개정25-z) | 없음 | — |
-| 종료감사 | astra | 1회차 `gpt-6-astra`(stderr 헤더) — 폐합 불가, «폐합 차단» 2(B1·B2), 수리 후 2회차 | — |
+| 종료감사 | astra | 1회차 `gpt-6-astra` — 폐합 불가, «폐합 차단» 2(B1·B2) → 수리(c8ab40d) → 2회차 `gpt-6-astra` — **폐합 가, «폐합 차단» 0**, PASS_LIMITED 타당; «기재로 족함» 2건 반영 (`/gpfs/kjhan/lumina/cmfgen_map/siiii_rates_20261007/astra_closeout.md`, `astra_closeout2.md`) | — |
 
 ## 8. 이탈·한계 (기재)
 
