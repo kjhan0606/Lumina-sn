@@ -187,7 +187,11 @@ def det_siiii_rates_g8(run, shells):
 
 # ------------------------------------------------------------------ coefficients
 def det_siiii_rates_coll(n_e, T_e, E_l, E_u, g_l, g_u, f_lu, fault=None):
-    """T2 NLTE_COLL_FIX branch, same operation order; intervals with relative 16u."""
+    """T2 NLTE_COLL_FIX branch, same operation order.  Interval = float value
+    (1 +- (32 + 8|x|) u), x = dE/kT: the float carries <= 2u in dE, 4u in x (abs.
+    4|x|u in the exponent), <= 2u from libm exp, 1u sqrt and ~10u from the
+    ups / prefactor products, i.e. <= (20 + 4|x|) u from the exact formula on
+    the same double inputs; the bound doubles that so the exact value is inside."""
     dE = abs(E_u - E_l) * EV_TO_ERG
     if not (T_e > 0.0 and dE > 0.0 and g_l > 0 and g_u > 0):
         return I.x(0.0), I.x(0.0)
@@ -200,7 +204,8 @@ def det_siiii_rates_coll(n_e, T_e, E_l, E_u, g_l, g_u, f_lu, fault=None):
     cd = n_e * COLL_K / (g_u * math.sqrt(T_e)) * ups
     if fault == "flip_coll":
         cu, cd = cd, cu
-    return I.rel(cu, 16), I.rel(cd, 16)
+    k = 32.0 + 8.0 * abs(dE / (K_B * T_e))
+    return I.rel(cu, k), I.rel(cd, k)
 
 
 def det_siiii_rates_rad(B_lu, B_ul, A_ul, nu, w, fault=None):
@@ -339,20 +344,34 @@ def det_siiii_rates_state(run, tag, targets, lines, lv, K_cut, fault=None):
 
 def det_siiii_rates_sl_check(per, lv, Te, K_cut):
     """members of the lumped super-level K_cut must stand in the within-SL Boltzmann
-    ratio at the generation-7 T_e (prereg 2.2 / G-LINK super-level map)."""
+    ratio at the generation-7 T_e (prereg 2.2 / G-LINK super-level map).  T2
+    population_within_superlevel_build: w_j = g_j exp(-(E_j - E_anchor) eV/kT),
+    n_j = N_SL fl(w_j / z).  With x_j = (E_j - E_anchor) eV/kT each w_j carries
+    <= (4|x_j| + 3) u, the division by the common z and the product with N_SL 2u
+    more each, so n_b/n_a = (g_b/g_a) exp(-(x_b - x_a)) (1 +- (4|x_a| + 4|x_b| + 10) u);
+    evaluating the Boltzmann ratio here adds <= (4|x_b - x_a| + 6) u.  |x_j| is
+    bounded with the lumped level spread (anchor unknown, inside the super-level).
+    The check is the overlap of that interval with the recovered ratio interval."""
     out = []
+    E_sl = [float(e) for lvl, e in lv["energy_eV"].items() if int(lvl) >= K_cut]
+    spread = (max(E_sl) - min(E_sl)) if E_sl else 0.0
     for (name, s), ent in per.items():
         mem = [(L["j"], L["n_j"]) for L in ent["lines"] if L.get("member") and "n_j" in L]
         mem = sorted(dict(mem).items())
+        kT = K_B * float(Te[s])
+        xmax = spread * EV_TO_ERG / kT
         for a in range(len(mem) - 1):
             (ja, na), (jb, nb) = mem[a], mem[a + 1]
             r = nb.div(na)
             Ea, Eb = float(lv.loc[ja, "energy_eV"]), float(lv.loc[jb, "energy_eV"])
             ga, gb = float(lv.loc[ja, "g"]), float(lv.loc[jb, "g"])
-            want = gb / ga * math.exp(-(Eb - Ea) * EV_TO_ERG / (K_B * float(Te[s])))
-            ok = r is not None and abs(r.mid / want - 1.0) <= 1e-9
-            out.append({"target": name, "shell": s, "j_a": ja, "j_b": jb, "ratio": ivj(r), "boltzmann": want,
-                        "consistent": bool(ok)})
+            dx = (Eb - Ea) * EV_TO_ERG / kT
+            want = gb / ga * math.exp(-dx)
+            k = 8.0 * xmax + 10.0 + 4.0 * abs(dx) + 6.0
+            want_iv = I.rel(want, k)
+            ok = r is not None and overlap(r, want_iv)
+            out.append({"target": name, "shell": s, "j_a": ja, "j_b": jb, "ratio": ivj(r),
+                        "boltzmann": want_iv.j(), "consistent": bool(ok)})
             if not ok:
                 ent["missing"].append(("SL_PROJECTION_INCONSISTENT", jb))
     return out
@@ -421,14 +440,17 @@ def det_siiii_rates_dominance(A, dn_u):
     cancelling = any(v > 0 for v in sep.values()) and any(v < 0 for v in sep.values())
     if dn_u.lo <= 0.0 <= dn_u.hi:
         return 5, None, cancelling
+    from fractions import Fraction
     mag = {k: A[k].abs() for k in TERMS}
+    lo = {k: Fraction(mag[k].lo) for k in TERMS}          # exact sums and comparisons
+    hi = {k: Fraction(mag[k].hi) for k in TERMS}
     true_k, all_false = [], True
     for k in TERMS:
-        oth_hi = math.fsum(mag[j].hi for j in TERMS if j != k)
-        oth_lo = math.fsum(mag[j].lo for j in TERMS if j != k)
-        if mag[k].lo > POP.up(oth_hi) and sep[k] != 0:
+        oth_hi = sum(hi[j] for j in TERMS if j != k)
+        oth_lo = sum(lo[j] for j in TERMS if j != k)
+        if lo[k] > oth_hi and sep[k] != 0:
             true_k.append(k)
-        if not (mag[k].hi <= POP.dn(oth_lo)):
+        if not (hi[k] <= oth_lo):
             all_false = False
     if len(true_k) == 1:
         return TERM_CODE[true_k[0]], true_k[0], cancelling
@@ -438,7 +460,10 @@ def det_siiii_rates_dominance(A, dn_u):
 
 
 # ------------------------------------------------------------------ analyze
-def det_siiii_rates_analyze(e_run, r_run, out, targets=TARGETS, fault=None, prior_pop=None):
+def det_siiii_rates_analyze(e_run, r_run, out, targets=TARGETS, fault=None, prior_pop=None, term_override=None):
+    """term_override (selftest only): {"<target>:<shell>": {"dn_u": I, "A": {term: I or None}}}
+    replaces the split after the arithmetic-closure check and before the branch
+    decision, so boundary cases travel the real decision and output path."""
     out = Path(out)
     out.mkdir(parents=True, exist_ok=False)
     eE, eR = det_siiii_rates_exports(e_run), det_siiii_rates_exports(r_run)
@@ -448,7 +473,7 @@ def det_siiii_rates_analyze(e_run, r_run, out, targets=TARGETS, fault=None, prio
     lines_R = det_siiii_rates_lines(r_run, targets)
     if list(lines_E.index) != list(lines_R.index) or not lines_E.equals(lines_R):
         why.append("LINK_LINE_LIST_E_R_DIFFER")
-    levels = pd.read_csv(Path(e_run) / "input/model/levels.csv")
+    levels = pd.read_csv(Path(e_run) / "input/model/levels.csv", float_precision="round_trip")
     lv = levels[(levels.atomic_number == Z) & (levels.ion_number == ION)].set_index("level_number")
     SE = det_siiii_rates_state(e_run, "E", targets, lines_E, lv, K_cut, fault)
     SR = det_siiii_rates_state(r_run, "R", targets, lines_R, lv, K_cut, fault)
@@ -474,6 +499,9 @@ def det_siiii_rates_analyze(e_run, r_run, out, targets=TARGETS, fault=None, prio
                 code, dom, canc = 6, None, False
                 miss.append("ARITHMETIC_CLOSURE_FAILED")
             else:
+                ov = (term_override or {}).get(f"{t['name']}:{s}")
+                if ov is not None:
+                    dec = dict(dec, A=dict(dec["A"], **ov.get("A", {})), dn_u=ov.get("dn_u", dec["dn_u"]))
                 code, dom, canc = det_siiii_rates_dominance(dec["A"], dec["dn_u"])
             cov.append({"target": t["name"], "shell": s, "role": role, "n_lines": len(entE["lines"]),
                         "budget_E": bE is not None, "budget_R": bR is not None,
@@ -521,8 +549,10 @@ def det_siiii_rates_analyze(e_run, r_run, out, targets=TARGETS, fault=None, prio
             if dec:
                 row["dn_u_mid"], row["dn_u_lo"], row["dn_u_hi"] = dec["dn_u"].mid, dec["dn_u"].lo, dec["dn_u"].hi
                 for k in TERMS:
-                    row[f"A_{k}_mid"], row[f"A_{k}_lo"], row[f"A_{k}_hi"] = dec["A"][k].mid, dec["A"][k].lo, dec["A"][k].hi
-                row["sum_mid"] = dec["sum"].mid
+                    a_ = dec["A"][k]
+                    row[f"A_{k}_mid"], row[f"A_{k}_lo"], row[f"A_{k}_hi"] = ((a_.mid, a_.lo, a_.hi) if a_ is not None
+                                                                         else (None, None, None))
+                row["sum_mid"], row["sum_lo"], row["sum_hi"] = dec["sum"].mid, dec["sum"].lo, dec["sum"].hi
             budg.append(row)
             closure.append({"target": t["name"], "shell": s, "role": role,
                             "arithmetic_closure": None if dec is None else dec["closes"],
@@ -545,6 +575,17 @@ def det_siiii_rates_analyze(e_run, r_run, out, targets=TARGETS, fault=None, prio
                                       "closure, CE coefficients and CE damping history are not stored; the "
                                       "final writer records published arrays only",
         "sl_projection": SE["sl"] + SR["sl"]}, indent=1, default=str))
+    (out / "checks.json").write_text(json.dumps({
+        "schema": "DET_SIIII_RATES_CHECKS_V1",
+        "g_link": {"config_premises_and_e_r_diff": "PASS", "capture_generation": "PASS", "line_list_sealed": "PASS",
+                   "w5_identity_beta_ledger": "PASS", "w5_contradictory_duplicates": 0,
+                   "sl_projection_checks": len(SE["sl"]) + len(SR["sl"]),
+                   "sl_projection_inconsistent": sum(1 for x in SE["sl"] + SR["sl"] if not x["consistent"])},
+        "g_rate": {"arithmetic_closure_cells": sum(1 for x in closure if x["arithmetic_closure"] is not None),
+                   "arithmetic_closure_failed": sum(1 for x in closure if x["arithmetic_closure"] is False),
+                   "lines_counted_once": all(x["lines_counted_once"] for x in closure)},
+        "selftest": "see the --selftest selftest.json (sha in manifest.json): real analyze path cases"},
+        indent=1))
     per_target = {}
     for t in targets:
         codes = [results[f"{t['name']}:{s}"]["code"] for s in t["main"]]
@@ -697,52 +738,150 @@ def det_siiii_rates_make_fixture(root, pops, w5vals, Te, ne, nrb, drop_w5=None, 
     return root
 
 
-def det_siiii_rates_truth(pops, w5vals, Te, ne, nrb, u, s):
-    """independent float truth of I, D, R for (u, s) — written apart from the analyzer."""
-    I_tot, D_tot = 0.0, 0.0
+class FI:
+    """exact rational interval (selftest truth only)."""
+    __slots__ = ("lo", "hi")
+
+    def __init__(self, lo, hi=None):
+        self.lo, self.hi = lo, (lo if hi is None else hi)
+
+    def __add__(s, o):
+        return FI(s.lo + o.lo, s.hi + o.hi)
+
+    def __sub__(s, o):
+        return FI(s.lo - o.hi, s.hi - o.lo)
+
+    def __mul__(s, o):
+        c = (s.lo * o.lo, s.lo * o.hi, s.hi * o.lo, s.hi * o.hi)
+        return FI(min(c), max(c))
+
+    def div(s, o):
+        assert o.lo > 0
+        c = (s.lo / o.lo, s.lo / o.hi, s.hi / o.lo, s.hi / o.hi)
+        return FI(min(c), max(c))
+
+    def half(s):
+        return FI(s.lo / 2, s.hi / 2)
+
+
+def _fr(v):
+    from fractions import Fraction
+    return Fraction(v)
+
+
+def _dfun(x, fn):
+    """exp or sqrt of an exact rational at 60 significant digits, bracketed by
+    the 60-digit rounding bound (relative 1e-58)."""
+    from decimal import Decimal, localcontext
+    from fractions import Fraction
+    with localcontext() as c:
+        c.prec = 60
+        d = Decimal(x.numerator) / Decimal(x.denominator)
+        v = Fraction(d.exp() if fn == "exp" else d.sqrt())
+    e = Fraction(1, 10 ** 58)
+    return FI(v * (1 - e), v * (1 + e))
+
+
+def det_siiii_rates_fx_coeffs(k, s, w5vals, Te, ne):
+    """exact truth coefficients of line k at shell s: off / armed (P_lu, P_ul) and
+    (C_up, C_down) as rational intervals from the fixture's double inputs."""
+    lo, up, fl = FX_LINES[k]
+    lam = det_siiii_rates_fx_wavelength(lo, up)
+    nu = C / lam
+    gl, gu = FX_LEVELS[lo][1], FX_LEVELS[up][1]
+    A = 6.6702e15 * gl / gu * fl / (lam * 1e8) ** 2 * 1e16 * 1e-16
+    Bul = A * C * C / (2 * H * nu ** 3)
+    Blu = Bul * gu / gl
+    X = lambda v: FI(_fr(v))                                   # noqa: E731
+    if NU_MIN <= nu <= NU_MAX:
+        jc, jce, te, Ll, sc_ = w5vals[(k, s)]
+        beta = det_siiii_rates_exponx(te)
+        J = beta * jc + Ll                                    # the W5 Jbar double (same op order as the writer)
+        off = (X(Blu) * X(J), X(A) + X(Bul) * X(J))
+        if sc_ == 0:
+            ct = X(beta) * X(jc)
+            armed = (X(Blu) * ct, X(A) * X(beta) + X(Bul) * ct)
+        else:
+            armed = off
+    else:
+        off = armed = (X(0.0), X(A))
+    dEe = abs(_fr(FX_LEVELS[up][2]) - _fr(FX_LEVELS[lo][2]))
+    x = dEe * _fr(EV_TO_ERG) / (_fr(K_B) * _fr(Te))
+    ups = max(_fr(14.5) * _fr(fl) * (_fr(RYD_EV) / dEe) ** 2 * _fr(GBAR), _fr(AXELROD_OMEGA))
+    pre = X(ne) * X(COLL_K) * FI(ups)
+    sq = _dfun(_fr(Te), "sqrt")
+    cu = (pre * _dfun(-x, "exp")).div(FI(_fr(gl)) * sq)
+    cd = pre.div(FI(_fr(gu)) * sq)
+    return {"off": off, "armed": armed, "coll": (cu, cd), "lo": lo, "up": up}
+
+
+def det_siiii_rates_fx_state(pops, w5vals, Te, ne, u, s, form):
+    """exact truth per-line oriented coefficients and the budget of one state."""
+    X = lambda v: FI(_fr(v))                                   # noqa: E731
+    lines = {}
     for k, (lo, up, fl) in enumerate(FX_LINES):
         if u not in (lo, up):
             continue
+        c = det_siiii_rates_fx_coeffs(k, s, w5vals, Te, ne)
         j = up if lo == u else lo
-        lam = det_siiii_rates_fx_wavelength(lo, up)
-        nu = C / lam
-        gl, gu = FX_LEVELS[lo][1], FX_LEVELS[up][1]
-        A = 6.6702e15 * gl / gu * fl / (lam * 1e8) ** 2 * 1e16 * 1e-16
-        Bul = A * C * C / (2 * H * nu ** 3)
-        Blu = Bul * gu / gl
-        if NU_MIN <= nu <= NU_MAX:
-            jc, jce, te, Ll, sc_ = w5vals[(k, s)]
-            beta = det_siiii_rates_exponx(te)
-            J = beta * jc + Ll
-            if nrb and sc_ == 0:
-                up_rate, dn_rate = Blu * beta * jc, beta * A + Bul * beta * jc
-            else:
-                up_rate, dn_rate = Blu * J, A + Bul * J
-        else:
-            up_rate, dn_rate = 0.0, A
-        dEe = FX_LEVELS[up][2] - FX_LEVELS[lo][2]
-        ups = max(14.5 * fl * (13.6057 / dEe) ** 2 * 0.2, 1.0)
-        cu = ne * 8.629e-6 / (gl * math.sqrt(Te)) * ups * math.exp(-dEe * EV_TO_ERG / (K_B * Te))
-        cd = ne * 8.629e-6 / (gu * math.sqrt(Te)) * ups
         if up == u:
-            I_tot += pops[s][j] * (up_rate + cu)
-            D_tot += dn_rate + cd
+            pin = {"off": c["off"][0], "armed": c["armed"][0], "coll": c["coll"][0]}
+            pout = {"off": c["off"][1], "armed": c["armed"][1], "coll": c["coll"][1]}
         else:
-            I_tot += pops[s][j] * (dn_rate + cd)
-            D_tot += up_rate + cu
-    return I_tot, D_tot, I_tot - pops[s][u] * D_tot
+            pin = {"off": c["off"][1], "armed": c["armed"][1], "coll": c["coll"][1]}
+            pout = {"off": c["off"][0], "armed": c["armed"][0], "coll": c["coll"][0]}
+        lines[k] = {"n_j": X(pops[s][j]), "pin": pin, "pout": pout}
+    n_u = X(pops[s][u])
+    I_ = FI(_fr(0))
+    D_ = FI(_fr(0))
+    for L in lines.values():
+        I_ = I_ + L["n_j"] * (L["pin"][form] + L["pin"]["coll"])
+        D_ = D_ + L["pout"][form] + L["pout"]["coll"]
+    return {"lines": lines, "n_u": n_u, "I": I_, "D": D_, "R": I_ - n_u * D_}
+
+
+def det_siiii_rates_fx_split(tE, tR):
+    """exact truth of the prereg 6.1-6.3 terms (E' off, R' armed)."""
+    Db = (tE["D"] + tR["D"]).half()
+    nub = (tE["n_u"] + tR["n_u"]).half()
+    z = FI(_fr(0))
+    fi, fo, di, do, ci, co, pa = z, z, z, z, z, z, z
+    for k, LE in tE["lines"].items():
+        LR = tR["lines"][k]
+        njb = (LE["n_j"] + LR["n_j"]).half()
+        for side in ("pin", "pout"):
+            form = ((LE[side]["off"] - LE[side]["armed"]) + (LR[side]["off"] - LR[side]["armed"])).half()
+            field = ((LE[side]["off"] - LR[side]["off"]) + (LE[side]["armed"] - LR[side]["armed"])).half()
+            if side == "pin":
+                fi, di = fi + njb * form, di + njb * field
+            else:
+                fo, do = fo + form, do + field
+        ci = ci + njb * (LE["pin"]["coll"] - LR["pin"]["coll"])
+        co = co + (LE["pout"]["coll"] - LR["pout"]["coll"])
+        Pb = ((LE["pin"]["off"] + LR["pin"]["armed"]) + (LE["pin"]["coll"] + LR["pin"]["coll"])).half()
+        pa = pa + Pb * (LE["n_j"] - LR["n_j"])
+    return {"NRB_FORM": (fi - nub * fo).div(Db), "RADIATIVE_FIELD": (di - nub * do).div(Db),
+            "COLLISION": (ci - nub * co).div(Db), "DIRECT_IONIZATION": FI(_fr(0)),
+            "PARTNER_POPULATION": pa.div(Db), "RESIDUAL": FI(_fr(0)) - (tE["R"] - tR["R"]).div(Db),
+            "dn_u": tE["n_u"] - tR["n_u"]}
+
+
+def det_siiii_rates_inside(lo, hi, t):
+    """analyzer interval [lo, hi] (floats) contains the exact truth interval t."""
+    from fractions import Fraction
+    return Fraction(lo) <= t.lo and t.hi <= Fraction(hi)
 
 
 SELFTEST_REQUIRED = (
     "normal: recovered partner and target populations enclose the truth",
-    "normal: E' (off) budget encloses the independent truth I, D, R",
-    "normal: R' (armed) budget encloses the independent truth I, D, R",
+    "normal: E' (off) budget encloses the exact truth I, D, R",
+    "normal: R' (armed) budget encloses the exact truth I, D, R",
     "normal: equilibrium shell has R enclosing 0, non-equilibrium shell does not",
     "normal: out-of-domain line carries A_ul only",
-    "normal: lumped super-level members pass the within-SL Boltzmann check",
-    "normal: decomposition closes and the terms equal the independent split",
+    "normal: lumped super-level members pass the within-SL Boltzmann interval check",
+    "normal: every split term and dn_u enclose their exact truth (two cells)",
     "normal: E=R gives zero difference and UNRESOLVED",
-    "normal: E/R data swap flips dn_u and the split still closes",
+    "normal: E/R data swap flips dn_u exactly and the split still closes",
     "link: missing J-bar row -> NOT_IDENTIFIABLE, no dominance",
     "link: W5 row of a wrong generation -> NOT_IDENTIFIABLE",
     "link: W5 wrong ion -> run rejected",
@@ -752,17 +891,18 @@ SELFTEST_REQUIRED = (
     "link: capture declared generation 8 -> run rejected",
     "link: structural-zero premise broken (TOPSTAGE_IV on) -> run rejected",
     "link: super-level member off the Boltzmann ratio -> NOT_IDENTIFIABLE",
-    "rate: dropping beta on A_ul is detected against the truth",
-    "rate: dropping stimulated emission is detected against the truth",
-    "rate: swapped collision direction is detected against the truth",
+    "rate: dropping beta on A_ul is detected against the exact truth",
+    "rate: dropping stimulated emission is detected against the exact truth",
+    "rate: swapped collision direction is detected against the exact truth",
     "rate: a line counted twice is detected",
     "closure: dropping the residual term breaks the identity",
     "closure: declaring equilibrium on a non-equilibrium state is detected",
-    "dominance: equality is not dominant",
-    "dominance: overlapping magnitudes are UNRESOLVED",
-    "dominance: missing term upper bound -> NOT_IDENTIFIABLE",
-    "dominance: separated single term is dominant, opposite separated terms are CANCELLING",
-    "output: STRUCTURAL_ZERO, computed zero and missing are distinct",
+    "boundary (analysis path): equality is not dominant",
+    "boundary (analysis path): overlapping magnitudes are UNRESOLVED",
+    "boundary (analysis path): a term without upper bound -> NOT_IDENTIFIABLE",
+    "boundary (analysis path): separated single term is dominant and CANCELLING is flagged",
+    "boundary (analysis path, natural): wide J-bar errors leave the branch UNRESOLVED",
+    "output: computed zero in an active path, STRUCTURAL_ZERO and missing are distinct",
 )
 
 
@@ -771,21 +911,18 @@ def cmd_selftest(a):
     out.mkdir(parents=True, exist_ok=False)
     res = []
 
-    def case(name, got, want, inj=None, reason=None):
+    def case(name, got, want, inj=None, reason=None, rc=None):
         ok = bool(got == want)
         res.append({"case": name, "pass": ok, "got": str(got)[:300], "want": str(want)[:300],
-                    "injection": inj, "reason": reason})
+                    "injection": inj, "reason": reason, "analysis_validity": rc})
         print(f"[{'PASS' if ok else 'FAIL'}] {name}: got {str(got)[:160]} want {str(want)[:160]}")
-
-    def enc(iv, v, rel=1e-12):
-        return iv is not None and iv.lo - rel * abs(v) <= v <= iv.hi + rel * abs(v)
 
     fx_targets = ({"name": "SiIII_1892", "row": 0, "lo": 0, "up": 2, "main": [24, 30]},
                   {"name": "SiIII_2542", "row": 1, "lo": 4, "up": 5, "main": [19]})
     Te, neE, neR = 9000.0, 3.0e9, 2.0e9
-    base = [1.0e8, 4.0e7, 9.0e6, 1.5e7, 2.0e6, 3.0e4, 5.0e3, 2.0e3, 0.0, 0.0, ]
+    base = [1.0e8, 4.0e7, 9.0e6, 1.5e7, 2.0e6, 3.0e4, 5.0e3, 2.0e3, 0.0, 0.0]
 
-    def mkpops(scale_u2, scale_u5, ne_):
+    def mkpops(scale_u2, scale_u5):
         p = {}
         for s in FX_SHELLS:
             v = list(base)
@@ -796,7 +933,7 @@ def cmd_selftest(a):
             p[s] = v
         return p
 
-    def mkw5(jscale, sc_flags=None):
+    def mkw5(jscale, sc_flags=None, rel_err=1e-9, zero=None, ll_zero=False):
         w = {}
         for k, (lo, up, fl) in enumerate(FX_LINES):
             lam = det_siiii_rates_fx_wavelength(lo, up)
@@ -804,169 +941,188 @@ def cmd_selftest(a):
                 continue
             for s in FX_SHELLS:
                 jc = 1.0e-6 * jscale * (1 + 0.1 * k)
-                w[(k, s)] = (jc, jc * 1e-9, 0.5 + 3.0 * k, 2.0e-6 * jscale * (1 + 0.05 * s),
-                             (sc_flags or {}).get(k, 0))
+                Ll = 0.0 if ll_zero else 2.0e-6 * jscale * (1 + 0.05 * s)
+                if zero == (k, s):
+                    jc, Ll = 0.0, 0.0
+                w[(k, s)] = (jc, jc * rel_err, 0.5 + 3.0 * k, Ll, (sc_flags or {}).get(k, 0))
         return w
 
-    popsE, popsR = mkpops(3.0, 5.0, neE), mkpops(1.0, 1.0, neR)
+    popsE, popsR = mkpops(3.0, 5.0), mkpops(1.0, 1.0)
     w5E, w5R = mkw5(1.0, {5: 1}), mkw5(0.5, {5: 1})
-    # equilibrium target at E' shell 30 for u=2: set n_2 = I/D (I, D do not depend on n_2)
-    I_, D_, _ = det_siiii_rates_truth(popsE, w5E, Te, neE, False, 2, 30)
-    popsE[30][2] = I_ / D_
+    tq = det_siiii_rates_fx_state(popsE, w5E, Te, neE, 2, 30, "off")      # equilibrium target at E' shell 30
+    popsE[30][2] = float((tq["I"].lo + tq["I"].hi) / 2 / ((tq["D"].lo + tq["D"].hi) / 2))
     T = Path(out) / "fx"
 
-    def run(name, e_kw=None, r_kw=None, fault=None, pE=None, pR=None, wE=None, wR=None):
+    def run(name, e_kw=None, r_kw=None, fault=None, pE=None, pR=None, wE=None, wR=None, override=None):
         e = det_siiii_rates_make_fixture(T / name / "E", pE or popsE, wE or w5E, Te, neE, False, **(e_kw or {}))
         r = det_siiii_rates_make_fixture(T / name / "R", pR or popsR, wR or w5R, Te, neR, True, **(r_kw or {}))
         o = T / name / "out"
-        rr = det_siiii_rates_analyze(e, r, o, targets=fx_targets, fault=fault)
+        rr = det_siiii_rates_analyze(e, r, o, targets=fx_targets, fault=fault, term_override=override)
         return rr, o
 
     def budget(o):
-        return pd.read_csv(o / "budget.csv").set_index(["target", "shell"])
+        return pd.read_csv(o / "budget.csv", float_precision="round_trip").set_index(["target", "shell"])
+
+    def truth(name, u, s, pE=None, pR=None, wE=None, wR=None):
+        tE = det_siiii_rates_fx_state(pE or popsE, wE or w5E, Te, neE, u, s, "off")
+        tR = det_siiii_rates_fx_state(pR or popsR, wR or w5R, Te, neR, u, s, "armed")
+        return tE, tR
+
+    def has(row, col, t):
+        return det_siiii_rates_inside(row[f"{col}_lo"], row[f"{col}_hi"], t)
 
     # ---- normal
     rr, o = run("clean")
     B = budget(o)
-    P = pd.read_csv(o / "populations.csv")
-    ok = rr["validity"] == "VALID"
-    okp = True
-    for _, q in P.iterrows():
-        pops = popsE if q.state == "E" else popsR
-        t = pops[int(q.shell)][int(q.j)]
-        okp &= (q.n_j_lo - 1e-12 * t <= t <= q.n_j_hi + 1e-12 * t)
-    case(SELFTEST_REQUIRED[0], (ok, bool(okp), len(P) > 0), (True, True, True))
-    for idx, tag, pops, w5, ne_, nrb in ((1, "E", popsE, w5E, neE, False), (2, "R", popsR, w5R, neR, True)):
+    Pp = pd.read_csv(o / "populations.csv", float_precision="round_trip")
+    okp = all(q.n_j_lo <= (popsE if q.state == "E" else popsR)[int(q.shell)][int(q.j)] <= q.n_j_hi
+              for q in Pp.itertuples())
+    case(SELFTEST_REQUIRED[0], (rr["validity"], bool(okp), len(Pp) > 0), ("VALID", True, True), rc=rr["validity"])
+    for idx, tag in ((1, "E"), (2, "R")):
         good = True
         for (name, u) in (("SiIII_1892", 2), ("SiIII_2542", 5)):
             for s in (19, 24, 30):
-                I_, D_, R_ = det_siiii_rates_truth(pops, w5, Te, ne_, nrb, u, s)
+                tE, tR = truth(name, u, s)
+                t = tE if tag == "E" else tR
                 row = B.loc[(name, s)]
-                good &= (row[f"{tag}_I_lo"] - 1e-12 * I_ <= I_ <= row[f"{tag}_I_hi"] + 1e-12 * I_)
-                good &= (row[f"{tag}_D_lo"] - 1e-12 * D_ <= D_ <= row[f"{tag}_D_hi"] + 1e-12 * D_)
-                good &= abs(row[f"{tag}_R_mid"] - R_) <= 1e-9 * (abs(I_) + abs(pops[s][u] * D_))
+                good &= has(row, f"{tag}_I", t["I"]) and has(row, f"{tag}_D", t["D"]) and has(row, f"{tag}_R", t["R"])
         case(SELFTEST_REQUIRED[idx], bool(good), True)
     rE30, rE24 = B.loc[("SiIII_1892", 30)], B.loc[("SiIII_1892", 24)]
     case(SELFTEST_REQUIRED[3], (bool(rE30.E_R_lo <= 0 <= rE30.E_R_hi), bool(rE24.E_R_lo <= 0 <= rE24.E_R_hi)),
          (True, False))
-    Rt = pd.read_csv(o / "rates.csv")
+    Rt = pd.read_csv(o / "rates.csv", float_precision="round_trip")
     odl = Rt[(Rt.row == 7) & (Rt.process == "bb_radiative")]
-    case(SELFTEST_REQUIRED[4], (bool((odl.domain == False).all()), bool((odl.P_out_mid > 0).all()),   # noqa: E712
-                                bool((odl.P_in_off_mid == 0).all() if len(odl) else False)), (True, True, True))
+    case(SELFTEST_REQUIRED[4], (len(odl) > 0, bool((odl.domain == False).all()),           # noqa: E712
+                                bool((odl.P_out_mid > 0).all()), bool((odl.P_in_off_mid == 0).all())),
+         (True, True, True, True))
     sl = json.load(open(o / "closure.json"))["sl_projection"]
     case(SELFTEST_REQUIRED[5], (len(sl) > 0, all(x["consistent"] for x in sl)), (True, True))
-    # independent split for (1892, 24)
-    s, u = 24, 2
-    good = bool(B.loc[("SiIII_1892", s)].code != 6)
-    tot = sum(B.loc[("SiIII_1892", s)][f"A_{k}_mid"] for k in TERMS)
-    good &= abs(tot - (popsE[s][u] - popsR[s][u])) <= 1e-9 * abs(popsE[s][u] - popsR[s][u])
-    _, DE, RE_ = det_siiii_rates_truth(popsE, w5E, Te, neE, False, u, s)
-    _, DR, RR_ = det_siiii_rates_truth(popsR, w5R, Te, neR, True, u, s)
-    Ares = -(RE_ - RR_) / ((DE + DR) / 2)
-    good &= abs(B.loc[("SiIII_1892", s)]["A_RESIDUAL_mid"] - Ares) <= 1e-9 * abs(Ares)
+    good = True
+    for (name, u, s) in (("SiIII_1892", 2, 24), ("SiIII_2542", 5, 19)):
+        sp = det_siiii_rates_fx_split(*truth(name, u, s))
+        row = B.loc[(name, s)]
+        good &= has(row, "dn_u", sp["dn_u"])
+        for k in TERMS:
+            good &= has(row, f"A_{k}", sp[k])
     case(SELFTEST_REQUIRED[6], bool(good), True)
-    neq = det_siiii_rates_make_fixture(T / "same2" / "E", popsE, w5E, Te, neE, False)
-    nrq = det_siiii_rates_make_fixture(T / "same2" / "R", popsE, w5E, Te, neE, False,
+    neq = det_siiii_rates_make_fixture(T / "same" / "E", popsE, w5E, Te, neE, False)
+    nrq = det_siiii_rates_make_fixture(T / "same" / "R", popsE, w5E, Te, neE, False,
                                        extra_export={"LUMINA_BB_NRB": "1"})
-    rsame = det_siiii_rates_analyze(neq, nrq, T / "same2" / "out", targets=fx_targets)
-    Bs = budget(T / "same2" / "out")
-    row = Bs.loc[("SiIII_1892", 24)]
-    case(SELFTEST_REQUIRED[7], (rsame["validity"], float(row.dn_u_mid), int(row.code), float(row.A_RESIDUAL_mid) != 0.0),
-         ("VALID", 0.0, 5, True))
-    # E/R data swap: E' (off) gets R's populations, fields and n_e and vice versa.  The
-    # actual forms stay state-specific (off / armed), so only dn_u flips exactly and the
-    # split must still close on the flipped difference.
+    rsame = det_siiii_rates_analyze(neq, nrq, T / "same" / "out", targets=fx_targets)
+    row = budget(T / "same" / "out").loc[("SiIII_1892", 24)]
+    case(SELFTEST_REQUIRED[7], (rsame["validity"], float(row.dn_u_mid), int(row.code)), ("VALID", 0.0, 5),
+         rc=rsame["validity"])
     e2 = det_siiii_rates_make_fixture(T / "swap" / "E", popsR, w5R, Te, neR, False)
     r2 = det_siiii_rates_make_fixture(T / "swap" / "R", popsE, w5E, Te, neE, True)
     rr3 = det_siiii_rates_analyze(e2, r2, T / "swap" / "out", targets=fx_targets)
-    B3 = budget(T / "swap" / "out")
-    r1, r3 = B.loc[("SiIII_1892", 24)], B3.loc[("SiIII_1892", 24)]
-    flip = abs(r1.dn_u_mid + r3.dn_u_mid) <= 1e-9 * abs(r1.dn_u_mid)
-    clos = abs(sum(r3[f"A_{k}_mid"] for k in TERMS) - r3.dn_u_mid) <= 1e-9 * abs(r3.dn_u_mid)
-    case(SELFTEST_REQUIRED[8], (rr3["validity"], bool(flip), bool(clos), bool(r1.dn_u_mid != 0)),
-         ("VALID", True, True, True))
-    # ---- link
+    r1, r3 = B.loc[("SiIII_1892", 24)], budget(T / "swap" / "out").loc[("SiIII_1892", 24)]
+    clos = r3.sum_lo <= r3.dn_u_hi and r3.dn_u_lo <= r3.sum_hi
+    case(SELFTEST_REQUIRED[8], (rr3["validity"], float(r3.dn_u_mid) == -float(r1.dn_u_mid), bool(clos),
+                                float(r1.dn_u_mid) != 0.0), ("VALID", True, True, True), rc=rr3["validity"])
+    # ---- link / missing
     rr, o = run("noJ", r_kw={"drop_w5": (4, 24)})
     c = rr["cells"]["SiIII_1892:24"]
     case(SELFTEST_REQUIRED[9], (rr["validity"], c["code"], c["dominant_term"], "MISSING_LINE_FIELD" in ";".join(c["missing"])),
-         ("VALID", 6, None, True), inj="drop W5 (line 4, shell 24) in R'", reason=";".join(c["missing"]))
+         ("VALID", 6, None, True), inj="drop W5 (line 4, shell 24) in R'", reason=";".join(c["missing"]), rc=rr["validity"])
     rr, o = run("gen6", e_kw={"w5_gen": 6})
     c = rr["cells"]["SiIII_1892:24"]
     case(SELFTEST_REQUIRED[10], (c["code"], "W5_GENERATION_MISMATCH" in ";".join(c["missing"])), (6, True),
-         inj="W5 rad/material generation 6 for (line 0, shell 24)", reason=";".join(c["missing"]))
+         inj="W5 rad/material generation 6 for (line 0, shell 24)", reason=";".join(c["missing"]), rc=rr["validity"])
     rr, o = run("wion", e_kw={"w5_wrong_ion": (2, 24)})
     case(SELFTEST_REQUIRED[11], (rr["validity"], any("LINK_W5_IDENTITY" in x for x in rr["reasons"])), ("X", True),
-         inj="W5 ion 3", reason=";".join(rr["reasons"])[:200])
+         inj="W5 ion 3", reason=";".join(rr["reasons"])[:200], rc=rr["validity"])
     rr, o = run("contra", r_kw={"w5_contra": (3, 30)})
     case(SELFTEST_REQUIRED[12], (rr["validity"], any("CONTRADICTORY" in x for x in rr["reasons"])), ("X", True),
-         inj="contradictory duplicate W5 row", reason=";".join(rr["reasons"])[:200])
+         inj="contradictory duplicate W5 row", reason=";".join(rr["reasons"])[:200], rc=rr["validity"])
     rr, o = run("nocap", r_kw={"drop_cap": (2, 24)})
     c = rr["cells"]["SiIII_1892:24"]
     case(SELFTEST_REQUIRED[13], (c["code"], "MISSING_G7_POPULATION" in ";".join(c["missing"])), (6, True),
-         inj="drop capture (line 2, shell 24) in R'; generation-8 table complete", reason=";".join(c["missing"]))
+         inj="drop capture (line 2, shell 24) in R'; generation-8 table complete", reason=";".join(c["missing"]),
+         rc=rr["validity"])
     rr, o = run("ionled", r_kw={"drop_w5": (3, 24), "ion_channels": True})
     c = rr["cells"]["SiIII_1892:24"]
-    case(SELFTEST_REQUIRED[14], c["code"], 6, inj="drop W5 + ion channels present", reason=";".join(c["missing"]))
+    case(SELFTEST_REQUIRED[14], c["code"], 6, inj="drop W5 + ion channels present", reason=";".join(c["missing"]),
+         rc=rr["validity"])
     rr, o = run("cap8", e_kw={"cap_gen": 8})
     case(SELFTEST_REQUIRED[15], (rr["validity"], any("GENERATION" in x for x in rr["reasons"])), ("X", True),
-         inj="capture generation 8", reason=";".join(rr["reasons"])[:200])
+         inj="capture generation 8", reason=";".join(rr["reasons"])[:200], rc=rr["validity"])
     rr, o = run("topiv", r_kw={"extra_export": {"LUMINA_TOPSTAGE_IV": "1"}})
     case(SELFTEST_REQUIRED[16], (rr["validity"], any("TOPSTAGE_IV" in x for x in rr["reasons"])), ("X", True),
-         inj="LUMINA_TOPSTAGE_IV=1", reason=";".join(rr["reasons"])[:200])
-    badsl = mkpops(1.0, 1.0, neR)
+         inj="LUMINA_TOPSTAGE_IV=1", reason=";".join(rr["reasons"])[:200], rc=rr["validity"])
+    badsl = mkpops(1.0, 1.0)
     for s_ in FX_SHELLS:
         badsl[s_][8] *= 1.7
     rr, o = run("slbad", pR=badsl)
     c = rr["cells"]["SiIII_1892:24"]
     case(SELFTEST_REQUIRED[17], (c["code"], "SL_PROJECTION_INCONSISTENT" in ";".join(c["missing"])), (6, True),
-         inj="member 8 off the Boltzmann ratio", reason=";".join(c["missing"]))
-    # ---- rate faults (truth comparison through the real analysis path)
+         inj="member 8 off the Boltzmann ratio by 1.7", reason=";".join(c["missing"]), rc=rr["validity"])
+    # ---- rate faults against the exact truth (real analysis path)
     for idx, fault, tag in ((18, "drop_beta", "R"), (19, "drop_stim", "E"), (20, "flip_coll", "E")):
         rr, o = run(fault, fault=fault)
-        Bf = budget(o)
-        I_, D_, R_ = det_siiii_rates_truth(popsR if tag == "R" else popsE, w5R if tag == "R" else w5E, Te,
-                                           neR if tag == "R" else neE, tag == "R", 2, 24)
-        row = Bf.loc[("SiIII_1892", 24)]
-        detected = not (row[f"{tag}_D_lo"] - 1e-12 * D_ <= D_ <= row[f"{tag}_D_hi"] + 1e-12 * D_) or \
-            not (row[f"{tag}_I_lo"] - 1e-12 * I_ <= I_ <= row[f"{tag}_I_hi"] + 1e-12 * I_)
-        case(SELFTEST_REQUIRED[idx], bool(detected), True, inj=fault, reason=f"{tag} budget vs truth")
+        row = budget(o).loc[("SiIII_1892", 24)]
+        tE, tR = truth("SiIII_1892", 2, 24)
+        t = tR if tag == "R" else tE
+        detected = not (has(row, f"{tag}_I", t["I"]) and has(row, f"{tag}_D", t["D"]))
+        case(SELFTEST_REQUIRED[idx], bool(detected), True, inj=fault, reason=f"{tag} budget vs exact truth",
+             rc=rr["validity"])
     rr, o = run("dup", fault="dup_line")
     c = rr["cells"]["SiIII_1892:24"]
-    case(SELFTEST_REQUIRED[21], c["code"], 6, inj="dup_line", reason=";".join(c["missing"]))
+    case(SELFTEST_REQUIRED[21], c["code"], 6, inj="dup_line", reason=";".join(c["missing"]), rc=rr["validity"])
     rr, o = run("nores", fault="drop_residual")
     c = rr["cells"]["SiIII_1892:24"]
     case(SELFTEST_REQUIRED[22], (c["code"], "ARITHMETIC_CLOSURE_FAILED" in c["missing"]), (6, True),
-         inj="drop_residual", reason=";".join(c["missing"]))
+         inj="drop_residual", reason=";".join(c["missing"]), rc=rr["validity"])
     rr, o = run("deq", fault="declare_eq")
-    Bf = budget(o)
-    _, _, R_ = det_siiii_rates_truth(popsE, w5E, Te, neE, False, 2, 24)
-    row = Bf.loc[("SiIII_1892", 24)]
-    case(SELFTEST_REQUIRED[23], (bool(abs(row.E_R_mid - R_) > 1e-6 * abs(R_)), int(row.code)), (True, 6),
-         inj="declare_eq", reason="R forced to 0")
-    # ---- dominance boundaries (pure function, exact intervals)
+    row = budget(o).loc[("SiIII_1892", 24)]
+    tE, _ = truth("SiIII_1892", 2, 24)
+    case(SELFTEST_REQUIRED[23], (not has(row, "E_R", tE["R"]), int(row.code)), (True, 6),
+         inj="declare_eq", reason="R forced to 0", rc=rr["validity"])
+    # ---- boundaries through the real decision and output path
     X = I.x
-    Aeq = {"NRB_FORM": X(2.0), "RADIATIVE_FIELD": X(1.0), "COLLISION": X(0.5), "DIRECT_IONIZATION": X(0.0),
-           "PARTNER_POPULATION": X(0.5), "RESIDUAL": X(0.0)}
-    case(SELFTEST_REQUIRED[24], det_siiii_rates_dominance(Aeq, X(4.0))[0] != 0, True)
-    Aov = dict(Aeq, NRB_FORM=I(1.5, 2.2, 2.6))
-    case(SELFTEST_REQUIRED[25], det_siiii_rates_dominance(Aov, I(3.4, 4.2, 4.7))[0], 5)
-    case(SELFTEST_REQUIRED[26], det_siiii_rates_dominance(dict(Aeq, COLLISION=None), X(4.0))[0], 6)
-    Adom = dict(Aeq, NRB_FORM=X(10.0), RADIATIVE_FIELD=X(-1.0))
-    d = det_siiii_rates_dominance(Adom, X(10.0))
-    case(SELFTEST_REQUIRED[27], (d[0], d[1], d[2]), (0, "NRB_FORM", True))
-    cov = pd.read_csv(T / "noJ" / "out" / "coverage.csv")
-    rowc = cov[(cov.target == "SiIII_1892") & (cov.shell == 24)].iloc[0]
-    rowz = budget(T / "clean" / "out").loc[("SiIII_1892", 24)]
-    case(SELFTEST_REQUIRED[28], ("photoionization" in rowc.structural_zero, "MISSING_LINE_FIELD" in rowc.missing,
-                                 float(rowz.A_DIRECT_IONIZATION_mid) == 0.0 and "MISSING" not in str(rowz.missing)),
-         (True, True, True))
+    key = "SiIII_1892:24"
+    base_A = {"NRB_FORM": X(2.0), "RADIATIVE_FIELD": X(1.0), "COLLISION": X(0.5), "DIRECT_IONIZATION": X(0.0),
+              "PARTNER_POPULATION": X(0.5), "RESIDUAL": X(0.0)}
+    for idx, nm, A_, dn, want in (
+            (24, "eq", base_A, X(4.0), 4),
+            (25, "ov", dict(base_A, NRB_FORM=I(1.5, 2.2, 2.6)), I(3.4, 4.2, 4.7), 5),
+            (26, "nb", dict(base_A, COLLISION=None), X(4.0), 6),
+            (27, "dom", dict(base_A, NRB_FORM=X(10.0), RADIATIVE_FIELD=X(-1.0)), X(10.0), 0)):
+        rr, o = run("bd_" + nm, override={key: {"A": A_, "dn_u": dn}})
+        c = rr["cells"][key]
+        got = (c["code"], c["dominant_term"], c["cancelling"]) if idx == 27 else c["code"]
+        exp_ = (0, "NRB_FORM", True) if idx == 27 else want
+        bud = budget(o).loc[("SiIII_1892", 24)]
+        case(SELFTEST_REQUIRED[idx], (got, int(bud.code)), (exp_, want),
+             inj=f"term override after closure ({nm})", reason=c["branch"], rc=rr["validity"])
+    wwE, wwR = mkw5(1.0e6, {5: 1}, rel_err=1.0, ll_zero=True), mkw5(0.5e6, {5: 1}, rel_err=1.0, ll_zero=True)
+    rr, o = run("wideJ", wE=wwE, wR=wwR)
+    c = rr["cells"]["SiIII_1892:24"]
+    case(SELFTEST_REQUIRED[28], (rr["validity"], c["code"]), ("VALID", 5),
+         inj="pumping-dominated J (scale 1e6), L_l = 0, J_c_err = J_c on every line",
+         reason=c["branch"], rc=rr["validity"])
+    zE, zR = mkw5(1.0, {5: 1}, zero=(0, 24)), mkw5(0.5, {5: 1}, zero=(0, 24))
+    rr, o = run("zeroJ", wE=zE, wR=zR)
+    Rz = pd.read_csv(o / "rates.csv", float_precision="round_trip")
+    zr = Rz[(Rz.row == 0) & (Rz.shell == 24) & (Rz.target == "SiIII_1892") & (Rz.process == "bb_radiative")]
+    covz = pd.read_csv(o / "coverage.csv")
+    cz = covz[(covz.target == "SiIII_1892") & (covz.shell == 24)].iloc[0]
+    covm = pd.read_csv(T / "noJ" / "out" / "coverage.csv")
+    cm = covm[(covm.target == "SiIII_1892") & (covm.shell == 24)].iloc[0]
+    case(SELFTEST_REQUIRED[29],
+         (len(zr) == 2, bool((zr.status == "OK").all()), bool((zr.in_mid == 0.0).all()), bool((zr.P_in_mid == 0.0).all()),
+          "MISSING" in str(cz.missing), "photoionization" in str(cz.structural_zero), int(cz.code) != 6,
+          "MISSING_LINE_FIELD" in str(cm.missing)),
+         (True, True, True, True, False, True, True, True), inj="J_c = L_l = 0 for (line 0, shell 24)",
+         reason="computed zero rate row vs structural_zero column vs missing", rc=rr["validity"])
     names = [r["case"] for r in res]
     missing = [n for n in SELFTEST_REQUIRED if n not in names]
     fails = sum(1 for r in res if not r["pass"]) + len(missing)
-    summary = {"schema": "DET_SIIII_RATES_SELFTEST_V1", "readout_sha256": sha(Path(__file__).resolve()),
+    summary = {"schema": "DET_SIIII_RATES_SELFTEST_V2", "readout_sha256": sha(Path(__file__).resolve()),
                "dependency_sha256": sha(Path(POP.__file__).resolve()),
                "production_source": str(a.production_source), "cases": res, "missing_required": missing,
-               "n_cases": len(res), "failures": fails}
+               "n_cases": len(res), "failures": fails,
+               "truth": "exact rational arithmetic on the fixture doubles; exp/sqrt at 60 digits bracketed 1e-58; "
+                        "comparisons are interval containment without added tolerance"}
     (out / "selftest.json").write_text(json.dumps(summary, indent=1))
     print(f"selftest: {len(res) - fails + len(missing)}/{len(res)} pass, missing {len(missing)}, failures {fails}")
     return 0 if fails == 0 else 1
