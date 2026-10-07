@@ -677,6 +677,23 @@ def det_siiii_btseed_log_hashes(run):
     return {"owner": owner, "seed": seed, "fixed_lane": lane, "n_bt_lines": so.count("[BT-SEED]")}
 
 
+def det_siiii_btseed_ne_by_generation(run):
+    """electron density of each stored population generation: work/physics_comparison/physics_DET_iter*.manifest.json
+    names the population_generation of its shell.csv (n_e_cm3 by shell_id).  Generations without a dump are absent
+    (never filled from another generation, prereg 5.3); a duplicated generation is ambiguous -> None."""
+    out = {}
+    for m in sorted((Path(run) / "work/physics_comparison").glob("physics_DET_iter*.manifest.json")):
+        g = json.loads(m.read_text()).get("population_generation")
+        sh = m.with_name(m.name.replace(".manifest.json", ".shell.csv"))
+        if isinstance(g, bool) or not isinstance(g, int) or not sh.exists():
+            continue
+        if g in out:
+            return None
+        rows = sorted(pd.read_csv(sh, float_precision="round_trip").itertuples(), key=lambda r: int(r.shell_id))
+        out[g] = np.array([float(r.n_e_cm3) for r in rows], "<f8")
+    return out
+
+
 def det_siiii_btseed_hash_chain(hX, hE, h_seed, h_fixed, seed_path, ns):
     """prereg 2.4/4.2: owner and bootstrap seed logs once each with H_seed, the dedicated path, all shells and generation 1;
     the six later FIXED_T publications (X and E) with H_fixed; the two roles never exchanged."""
@@ -762,6 +779,11 @@ def det_siiii_btseed_link(x, e, a0, t3, target):
             ft.get("h_fixed") != stage.get("h_fixed") or \
             ft.get("seed_profile_file_sha256") != stage.get("seed_profile_file_sha256"):
         why.append("LINK_RUN_FOOTER")
+    for tag, run in (("X", x), ("E", e)):
+        ng = det_siiii_btseed_ne_by_generation(run)
+        cne = Path(run) / "work/det_obs_capture/ne.f64"
+        if ng is None or (7 in ng and (not cne.exists() or ng[7].tobytes() != cne.read_bytes())):
+            why.append(f"{tag}:LINK_NE_DUMP_GENERATION")
     tX, tE = Path(x) / "work/det_obs_capture/Te.f64", Path(e) / "work/det_obs_capture/Te.f64"
     if not tX.exists() or not tE.exists() or tX.read_bytes() != tE.read_bytes():
         why.append("LINK_FIXED_T_GENERATION_TE_DIFFER")
@@ -814,6 +836,7 @@ def det_siiii_btseed_analyze(x, e, a0, t3, public, out, target=TARGET, fault=Non
     B_in, _ = MECH.det_1206mech_profile_mean(grid, a1206["nu"], mE["T_inner"], mE["b_inner"])
     cap = {t: {nm: np.fromfile(Path(r) / f"work/det_obs_capture/{nm}.f64", "<f8") for nm in ("Te", "ne")}
            for t, r in (("X", x), ("E", e))}
+    neX, neE = det_siiii_btseed_ne_by_generation(x), det_siiii_btseed_ne_by_generation(e)
     seed_rows, codes = [], {"seed_delivery": {}, "registered_material7_match": {}, "reduced_model_applicability": {}}
     for s in target["shells"]:
         rX, rE = hX.get((target["r1206"], s), {}), hE.get((target["r1206"], s), {})
@@ -837,11 +860,19 @@ def det_siiii_btseed_analyze(x, e, a0, t3, public, out, target=TARGET, fault=Non
         cols(row, "log10_J1_X_over_E", sh)
         row["shift_direction"] = REP.det_siiii_repair_direction(sh)
         for c in range(2, 8):
+            cols(row, f"J{c}_X", MECH.det_1206mech_jiv(rX[c]) if c in rX else None)
+            cols(row, f"J{c}_E", MECH.det_1206mech_jiv(rE[c]) if c in rE else None)
             if c in rX and c in rE:
                 row[f"call{c}_beta_X_over_E"] = float(rX[c]["beta"]) / float(rE[c]["beta"])
                 row[f"call{c}_Jc_X_over_E"] = float(rX[c]["J_c"]) / float(rE[c]["J_c"])
-        J7X = MECH.det_1206mech_jiv(rX[7]) if 7 in rX else None
-        cols(row, "J7_X", J7X)
+            # n_e of the material generation the call consumed (W5 material_generation == c, checked by key_check)
+            gx = int(rX[c]["material_generation"]) if c in rX else None
+            ge = int(rE[c]["material_generation"]) if c in rE else None
+            if gx is not None and gx == ge and gx in neX and ge in neE:
+                row[f"call{c}_ne_X"], row[f"call{c}_ne_E"] = float(neX[gx][s]), float(neE[ge][s])
+                row[f"call{c}_ne_X_over_E"] = float(neX[gx][s]) / float(neE[ge][s])
+            else:
+                row[f"call{c}_ne_X_over_E"] = f"NOT_STORED:material_generation={gx}"
         # registered generation-7 match and the run's own reduced-model applicability
         capX, wX = MECH.det_1206mech_capture_ratio(x, target["r1206"], s, a1206, mX["t_exp"])
         capE, wE = MECH.det_1206mech_capture_ratio(e, target["r1206"], s, a1206, mE["t_exp"])
@@ -955,8 +986,11 @@ def det_siiii_btseed_analyze(x, e, a0, t3, public, out, target=TARGET, fault=Non
         D = absdev(J1x, Bk) if (J1x is not None and Bk is not None) else None
         sh = log10i(J1x.div(J1e)) if (J1x is not None and J1e is not None) else None
         r = {"line": line, "shell": s, "Z": int(k.Z), "ion": int(k.ion), "T_pin": float(k.T_pin),
-             "seed_vs_registered_status": status(D, CRIT)}
-        cols(r, "D_seed", D)
+             "generation_zero_source": "T_INNER_E_SEED" if s in SEED_TINNER_SHELLS else "T_PIN",
+             "available": J1x is not None and J1e is not None and Bk is not None}
+        cols(r, "J1_X", J1x)
+        cols(r, "J1_E", J1e)
+        cols(r, "D_seed_vs_registered_B_T_pin", D)
         cols(r, "log10_J1_X_over_E", sh)
         ext_rows.append(r)
     extd = pd.DataFrame(ext_rows)
@@ -964,8 +998,14 @@ def det_siiii_btseed_analyze(x, e, a0, t3, public, out, target=TARGET, fault=Non
     if len(extd):
         def agg(g):
             sh = g.log10_J1_X_over_E_mid.dropna()
-            return {"n": int(len(g)), "status": {k_: int(v) for k_, v in g.seed_vs_registered_status.value_counts().items()},
-                    "shift_median": float(sh.median()) if len(sh) else None}
+            dd = g.D_seed_vs_registered_B_T_pin_mid.dropna()
+            return {"n": int(len(g)), "available": int(g.available.sum()), "missing": int((~g.available).sum()),
+                    "generation_zero_source": {k_: int(v) for k_, v in g.generation_zero_source.value_counts().items()},
+                    "shift_median": float(sh.median()) if len(sh) else None,
+                    "shift_min": float(g.log10_J1_X_over_E_lo.min()) if len(sh) else None,
+                    "shift_max": float(g.log10_J1_X_over_E_hi.max()) if len(sh) else None,
+                    "D_seed_min": float(g.D_seed_vs_registered_B_T_pin_lo.min()) if len(dd) else None,
+                    "D_seed_max": float(g.D_seed_vs_registered_B_T_pin_hi.max()) if len(dd) else None}
         ext_agg = {"all": agg(extd), "by_ion": {f"{a_}_{b_}": agg(g) for (a_, b_), g in extd.groupby(["Z", "ion"])},
                    "by_shell": {str(s_): agg(g) for s_, g in extd.groupby("shell")}}
     pd.DataFrame(seed_rows).to_csv(out / "seed_1206.csv", index=False)
@@ -1109,6 +1149,7 @@ FXT = {"r1206": 3, "lo": 0, "up": 4, "r2542": 1, "u5": 5, "shells": [10, 15, 19,
        "spatial_2542": [17, 18, 19, 20, 21, 22], "main": 19, "expectations_sha256": None}
 FX_HASH = "ab" * 32          # H_fixed of the fixtures
 FX_SEED = "cd" * 32          # H_seed of the fixtures (differs from H_fixed, as registered)
+FX_NE_SCALE = {False: 1.0, True: 1.004}
 
 
 def det_siiii_btseed_fx_hist(J1, tau, Jc, atom, Jerr=0.0, drift=None):
@@ -1162,6 +1203,16 @@ def det_siiii_btseed_fx_run(root, src, w5, pops, q45, bt, spectrum, extra_lines=
         f.write("wavelength_angstrom,flux\n")
         for lam, fl in spectrum:
             f.write(f"{lam!r},{fl!r}\n")
+    # per-iteration physics dumps: iteration k holds population generation k+3; generation 7 = the capture n_e
+    pc = run / "work/physics_comparison"
+    pc.mkdir(exist_ok=True)
+    ne7 = np.fromfile(run / "work/det_obs_capture/ne.f64", "<f8")
+    for k in range(6):
+        g = k + 3
+        ne = ne7 if g == 7 else ne7 * (FX_NE_SCALE[bt] + 0.01 * (g - 7))
+        (pc / f"physics_DET_iter{k:04d}.manifest.json").write_text(json.dumps({"iteration": k, "population_generation": g}))
+        with open(pc / f"physics_DET_iter{k:04d}.shell.csv", "w") as f:
+            f.write("shell_id,n_e_cm3\n" + "".join(f"{i},{float(v)!r}\n" for i, v in enumerate(ne)))
     return run
 
 
@@ -1324,6 +1375,25 @@ def det_siiii_btseed_readout_tests(base):
          (r0["validity"], {n: (r["validity"], any(w.startswith(want_reason[n]) for w in r.get("reasons", [])))
                            for n, r in hres.items()}),
          ("VALID", {n: ("X", True) for n in want_reason}))
+    sd = pd.read_csv(o0 / "seed_1206.csv", float_precision="round_trip").set_index("shell")
+    exd = pd.read_csv(o0 / "extension.csv", float_precision="round_trip")
+    ne7 = 3.0e9
+    want_ne = {c: (ne7 * (FX_NE_SCALE[True] + 0.01 * (c - 7))) / (ne7 * (FX_NE_SCALE[False] + 0.01 * (c - 7)))
+               for c in range(3, 7)}
+
+    def ne_dump_wrong(x, e, a0):
+        p = x / "work/physics_comparison/physics_DET_iter0004.shell.csv"
+        p.write_text(p.read_text().replace("19,", "19,1", 1))
+    rne, *_ = det_siiii_btseed_fx_case(base, "ne_dump_gen7", mutate=ne_dump_wrong)
+    case("history: J-bar of calls 1-7 (X and E') with intervals; n_e of the consumed material generation for calls 3-7 "
+         "from the generation-labelled dumps, call 2 NOT_STORED; extension records J1 and the generation-zero source "
+         "without a success status; a generation-7 dump that differs from the capture is inadmissible (X)",
+         (all(f"J{c}_{t}_{b}" in sd.columns for c in range(1, 8) for t in ("X", "E") for b in ("lo", "mid", "hi")),
+          {c: sd.loc[19, f"call{c}_ne_X_over_E"] == want_ne[c] for c in range(3, 7)},
+          float(sd.loc[19, "call7_ne_X_over_E"]), str(sd.loc[19, "call2_ne_X_over_E"]).startswith("NOT_STORED"),
+          "seed_vs_registered_status" in exd.columns, set(exd.generation_zero_source), bool(exd.available.all()),
+          "J1_X_mid" in exd.columns, rne["validity"], any("LINK_NE_DUMP_GENERATION" in w for w in rne.get("reasons", []))),
+         (True, {c: True for c in range(3, 7)}, 1.0, True, False, {"T_PIN"}, True, True, "X", True))
     ri1, *_ = det_siiii_btseed_fx_case(base, "id_profile", mutate=other_profile)
     ri2, *_ = det_siiii_btseed_fx_case(base, "id_binary", mutate=other_binary)
     ri3, *_ = det_siiii_btseed_fx_case(base, "id_expect", mutate=other_expect)
