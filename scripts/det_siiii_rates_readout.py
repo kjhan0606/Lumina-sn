@@ -48,6 +48,8 @@ NU_MIN, NU_MAX = 1.49896229e14, 2.99792458e16           # T2 src/line_jbar.h bb 
 Z, ION = 14, 2
 TARGETS = ({"name": "SiIII_1892", "row": 908565, "lo": 0, "up": 2, "main": [24, 30]},
            {"name": "SiIII_2542", "row": 1097363, "lo": 4, "up": 5, "main": [19]})
+LEVEL_TARGETS = ({"name": "SiIII_lvl4", "row": None, "lo": None, "up": 4, "main": [19], "return_to": 5},)
+TARGET_SETS = {"lines": TARGETS, "upstream": LEVEL_TARGETS, "level4": LEVEL_TARGETS}
 READ_SHELLS = list(range(17, 31))
 W5_CALL, W5_OP, GEN = 7, "CMFGEN_NONOVERLAP_SOBOLEV", 7
 ALLOWED_DIFF = {"LUMINA_BB_NRB", "LUMINA_A210_SPRODUCER_CAPTURE"}
@@ -252,6 +254,8 @@ def det_siiii_rates_state(run, tag, targets, lines, lv, K_cut, fault=None):
     for k in contra:
         why.append(f"{tag}:LINK_W5_CONTRADICTORY_DUPLICATE:{k[5]}:{k[4]}")
     for t in targets:
+        if t.get("row") is None:                      # level target: no representative line
+            continue
         r = lines.loc[t["row"]] if t["row"] in lines.index else None
         if r is None or (int(r.level_number_lower), int(r.level_number_upper)) != (t["lo"], t["up"]):
             why.append(f"{tag}:LINK_TARGET_ROW:{t['name']}")
@@ -326,8 +330,8 @@ def det_siiii_rates_state(run, tag, targets, lines, lv, K_cut, fault=None):
             if nu_:
                 lo_ = max(x.lo for _, x in nu_)
                 hi_ = min(x.hi for _, x in nu_)
-                tgt = [x for rw, x in nu_ if rw == t["row"]]
-                mid = tgt[0].mid if tgt else nu_[0][1].mid
+                tgt = [x for rw, x in nu_ if rw == t.get("row")]
+                mid = tgt[0].mid if tgt else (lo_ + hi_) / 2.0   # level target: deterministic midpoint
                 if lo_ <= hi_:
                     ent["n_u"] = I(lo_, min(max(mid, lo_), hi_), hi_)
                 else:
@@ -403,7 +407,7 @@ def det_siiii_rates_decompose(eE, eR, bE, bR, fault=None):
     Db = (bE["D"] + bR["D"]).half()
     nub = (bE["n_u"] + bR["n_u"]).half()
     dn_u = bE["n_u"] - bR["n_u"]
-    f_in, f_out, d_in, d_out, c_in, c_out, part = [], [], [], [], [], [], []
+    f_in, f_out, d_in, d_out, c_in, c_out, part, B = [], [], [], [], [], [], [], {}
     for LE in eE["lines"]:
         LR = by_row_R[LE["row"]]
         njb = (LE["n_j"] + LR["n_j"]).half()
@@ -419,6 +423,8 @@ def det_siiii_rates_decompose(eE, eR, bE, bR, fault=None):
         c_out.append(LE["pout"]["coll"] - LR["pout"]["coll"])
         Pbar = ((LE["pin"]["off"] + LR["pin"]["armed"]) + (LE["pin"]["coll"] + LR["pin"]["coll"])).half()
         part.append(Pbar * dnj)
+        B[LE["row"]] = {"j": LE["j"], "u_is_upper": LE["u_is_upper"], "B": (Pbar * dnj).div(Db),
+                        "n_j_E": LE["n_j"], "n_j_R": LR["n_j"], "P_bar": Pbar}
     A = {"NRB_FORM": (ifsum(f_in) - nub * ifsum(f_out)).div(Db),
          "RADIATIVE_FIELD": (ifsum(d_in) - nub * ifsum(d_out)).div(Db),
          "COLLISION": (ifsum(c_in) - nub * ifsum(c_out)).div(Db),
@@ -427,7 +433,7 @@ def det_siiii_rates_decompose(eE, eR, bE, bR, fault=None):
          "RESIDUAL": I.x(0.0) if fault == "drop_residual" else neg((bE["R"] - bR["R"]).div(Db) or I.x(math.nan))}
     total = ifsum(A.values())
     closes = overlap(total, dn_u)
-    return {"A": A, "dn_u": dn_u, "D_bar": Db, "n_u_bar": nub, "sum": total, "closes": bool(closes)}
+    return {"A": A, "dn_u": dn_u, "D_bar": Db, "n_u_bar": nub, "sum": total, "closes": bool(closes), "B": B}
 
 
 def det_siiii_rates_dominance(A, dn_u):
@@ -460,7 +466,8 @@ def det_siiii_rates_dominance(A, dn_u):
 
 
 # ------------------------------------------------------------------ analyze
-def det_siiii_rates_analyze(e_run, r_run, out, targets=TARGETS, fault=None, prior_pop=None, term_override=None):
+def det_siiii_rates_analyze(e_run, r_run, out, targets=TARGETS, fault=None, prior_pop=None, term_override=None,
+                            prior_ref=None):
     """term_override (selftest only): {"<target>:<shell>": {"dn_u": I, "A": {term: I or None}}}
     replaces the split after the arithmetic-closure check and before the branch
     decision, so boundary cases travel the real decision and output path."""
@@ -482,8 +489,10 @@ def det_siiii_rates_analyze(e_run, r_run, out, targets=TARGETS, fault=None, prio
         res = {"schema": "DET_SIIII_RATES_RESULT_V1", "validity": "X", "reasons": why}
         (out / "result.json").write_text(json.dumps(res, indent=1))
         return res
-    g8E, g8R = det_siiii_rates_g8(e_run, READ_SHELLS), det_siiii_rates_g8(r_run, READ_SHELLS)
-    cov, pops, rates, budg, closure, results = [], [], [], [], [], {}
+    level_set = any(t.get("row") is None for t in targets)
+    g8E, g8R = ({}, {}) if level_set else (det_siiii_rates_g8(e_run, READ_SHELLS), det_siiii_rates_g8(r_run, READ_SHELLS))
+    cov, pops, rates, budg, closure, results, chain = [], [], [], [], [], {}, []
+    tset = {t["up"] for t in targets}
     for t in targets:
         for s in READ_SHELLS:
             key = (t["name"], s)
@@ -513,11 +522,16 @@ def det_siiii_rates_analyze(e_run, r_run, out, targets=TARGETS, fault=None, prio
                             "lo": L["lo"], "up": L["up"], "lambda_A": L["lambda_A"], "member": L["member"],
                             "status": L["status"]}
                     if "n_j" in L:
-                        tok = g8.get((s, L["j"]))
-                        p8 = printed(tok) if tok is not None else None
-                        pops.append({**base, "n_j_lo": L["n_j"].lo, "n_j_mid": L["n_j"].mid, "n_j_hi": L["n_j"].hi,
-                                     "source": "G7_DIRECT", "n_j_g8": None if p8 is None else p8.mid,
-                                     "g7_over_g8_mid": None if p8 is None else L["n_j"].mid / p8.mid})
+                        prow = {**base, "n_j_lo": L["n_j"].lo, "n_j_mid": L["n_j"].mid, "n_j_hi": L["n_j"].hi,
+                                "source": "G7_DIRECT", "n_u_line_lo": L["n_u"].lo, "n_u_line_hi": L["n_u"].hi,
+                                "n_u_common_lo": None if ent["n_u"] is None else ent["n_u"].lo,
+                                "n_u_common_hi": None if ent["n_u"] is None else ent["n_u"].hi}
+                        if level_set is False:              # line targets keep the generation-8 auxiliary columns
+                            tok = g8.get((s, L["j"]))
+                            p8 = printed(tok) if tok is not None else None
+                            prow.update({"n_j_g8": None if p8 is None else p8.mid,
+                                         "g7_over_g8_mid": None if p8 is None else L["n_j"].mid / p8.mid})
+                        pops.append(prow)
                     if L["status"] != "OK":
                         rates.append(base)
                         continue
@@ -554,27 +568,49 @@ def det_siiii_rates_analyze(e_run, r_run, out, targets=TARGETS, fault=None, prio
                                                                          else (None, None, None))
                 row["sum_mid"], row["sum_lo"], row["sum_hi"] = dec["sum"].mid, dec["sum"].lo, dec["sum"].hi
             budg.append(row)
+            chain_ok = None
+            if dec is not None and t.get("row") is None:          # prereg 6.4: one-step chain per partner
+                Bsum = ifsum(x["B"] for x in dec["B"].values())
+                chain_ok = overlap(Bsum, dec["A"]["PARTNER_POPULATION"])
+                for rw, x in sorted(dec["B"].items()):
+                    j = x["j"]
+                    nature = ("RETURN_TO_LEVEL_%d" % j if j == t.get("return_to") else
+                              "IN_TARGET_SET" if j in tset else "OUTSIDE_TARGET_SET")
+                    chain.append({"target": t["name"], "level": t["up"], "shell": s, "role": role, "row": rw, "j": j,
+                                  "lambda_A": float(lines_E.loc[rw, "wavelength"]), "u_is_upper": x["u_is_upper"],
+                                  "E_j_minus_E_u_eV": float(lv.loc[j, "energy_eV"]) - float(lv.loc[t["up"], "energy_eV"]),
+                                  "B_lo": x["B"].lo, "B_mid": x["B"].mid, "B_hi": x["B"].hi,
+                                  "sign": (x["B"].lo > 0) - (x["B"].hi < 0),
+                                  "n_j_E_mid": x["n_j_E"].mid, "n_j_R_mid": x["n_j_R"].mid,
+                                  "P_bar_mid": x["P_bar"].mid, "link_nature": nature,
+                                  "A_partner_mid": dec["A"]["PARTNER_POPULATION"].mid, "dn_u_mid": dec["dn_u"].mid,
+                                  "prior_link": ((prior_ref or "") if s in t["main"] else "NO_PRIOR_MAIN_SHELL_LINK")})
             closure.append({"target": t["name"], "shell": s, "role": role,
+                            "chain_sum_closes": chain_ok,
                             "arithmetic_closure": None if dec is None else dec["closes"],
                             "eps_E": ivj(bE["eps"]) if bE else None, "eps_R": ivj(bR["eps"]) if bR else None,
                             "R_E": ivj(bE["R"]) if bE else None, "R_R": ivj(bR["R"]) if bR else None,
                             "lines_counted_once": len({L["row"] for L in entE["lines"]}) == len(entE["lines"])})
-            if not closure[-1]["lines_counted_once"]:
+            if not closure[-1]["lines_counted_once"] or chain_ok is False:
                 cov[-1]["code"] = row["code"] = 6
                 row["branch"] = CODE_NAME[6]
+                if chain_ok is False:
+                    miss.append("CHAIN_SUM_MISMATCH")
             results[f"{t['name']}:{s}"] = {"role": role, "code": row["code"], "branch": row["branch"],
                                            "dominant_term": dom, "cancelling": canc, "missing": miss}
     pd.DataFrame(cov).to_csv(out / "coverage.csv", index=False)
     pd.DataFrame(pops).to_csv(out / "populations.csv", index=False)
     pd.DataFrame(rates).to_csv(out / "rates.csv", index=False)
     pd.DataFrame(budg).to_csv(out / "budget.csv", index=False)
-    (out / "closure.json").write_text(json.dumps({
-        "schema": "DET_SIIII_RATES_CLOSURE_V1", "cells": closure,
-        "production_solution": "PRODUCTION_SOLUTION_NOT_TESTABLE",
-        "production_solution_reason": "prereg 5.3: generation-7 capture precedes the final R7; candidate n_e "
-                                      "closure, CE coefficients and CE damping history are not stored; the "
-                                      "final writer records published arrays only",
-        "sl_projection": SE["sl"] + SR["sl"]}, indent=1, default=str))
+    if any(t.get("row") is None for t in targets):
+        pd.DataFrame(chain).to_csv(out / "chain.csv", index=False)
+    clo = {"schema": "DET_SIIII_RATES_CLOSURE_V1", "cells": closure, "sl_projection": SE["sl"] + SR["sl"]}
+    if not level_set:
+        clo.update({"production_solution": "PRODUCTION_SOLUTION_NOT_TESTABLE",
+                    "production_solution_reason": "prereg 5.3: generation-7 capture precedes the final R7; candidate "
+                                                  "n_e closure, CE coefficients and CE damping history are not "
+                                                  "stored; the final writer records published arrays only"})
+    (out / "closure.json").write_text(json.dumps(clo, indent=1, default=str))
     (out / "checks.json").write_text(json.dumps({
         "schema": "DET_SIIII_RATES_CHECKS_V1",
         "g_link": {"config_premises_and_e_r_diff": "PASS", "capture_generation": "PASS", "line_list_sealed": "PASS",
@@ -592,6 +628,7 @@ def det_siiii_rates_analyze(e_run, r_run, out, targets=TARGETS, fault=None, prio
         per_target[t["name"]] = {"main_shells": t["main"], "codes": codes,
                                  "common": codes[0] if len(set(codes)) == 1 else None}
     res = {"schema": "DET_SIIII_RATES_RESULT_V1", "validity": "VALID", "reasons": [],
+           "target_set": [{"name": t["name"], "level": t["up"], "row": t.get("row"), "main": t["main"]} for t in targets],
            "cells": results, "per_target": per_target, "fault": fault,
            "structural_zero_direct": list(STRUCTURAL_ZERO),
            "claim_ceiling": "generation-7 production-definition rates and the algebraic split of the "
@@ -612,12 +649,22 @@ def cmd_analyze(a):
         (out / "result.json").write_text(json.dumps({"validity": "X", "reasons": why}, indent=1))
         print(json.dumps({"validity": "X", "reasons": why}))
         return 2
-    res = det_siiii_rates_analyze(a.e_run, a.r_run, out, prior_pop=a.prior_pop)
+    targets = TARGET_SETS[a.target_set]
+    prior_ref = None
+    if a.prior_rates:
+        pr = Path(a.prior_rates)
+        prior_ref = ("prior=%s; " % pr + "; ".join("%s sha256=%s" % (f, sha(pr / f)) for f in
+                     ("budget.csv", "rates.csv", "populations.csv", "result.json", "manifest.json")) +
+                     "; key=target:SiIII_2542,shell:19,partner_level:4,row:1097363")
+    res = det_siiii_rates_analyze(a.e_run, a.r_run, out, targets=targets, prior_pop=a.prior_pop,
+                                  prior_ref=prior_ref)
     src = Path(a.production_source)
     T2_FILES = ("src/lumina_plasma.c", "src/line_net_rate.c", "src/lumina_atomic.c", "src/lumina.h",
                 "src/line_jbar.h", "src/lumina_cmfgen.c")
     man = {"schema": "DET_SIIII_RATES_MANIFEST_V1",
-           "prereg": "docs/PREREG_DET_SIIII_RATES_2026-10-07.md",
+           "prereg": ("docs/PREREG_DET_SIIII_RATES_2026-10-07.md" if a.target_set == "lines"
+                      else "docs/PREREG_DET_SIIII_UPSTREAM_2026-10-07.md"),
+           "target_set": a.target_set, "prior_rates": prior_ref,
            "readout": {"path": str(Path(__file__).resolve()), "sha256": sha(Path(__file__).resolve())},
            "dependency": {"path": str(Path(POP.__file__).resolve()), "sha256": sha(Path(POP.__file__).resolve())},
            "selftest": {"path": str(Path(a.selftest) / "selftest.json"),
@@ -903,6 +950,10 @@ SELFTEST_REQUIRED = (
     "boundary (analysis path): separated single term is dominant and CANCELLING is flagged",
     "boundary (analysis path, natural): wide J-bar errors leave the branch UNRESOLVED",
     "output: computed zero in an active path, STRUCTURAL_ZERO and missing are distinct",
+    "level target: level-2 budget and split by level target equal the line-target ones (target lower and upper roles)",
+    "level target: chain per-partner terms sum to the partner-population term; link natures labelled",
+    "level target: chain sum mismatch is detected -> NOT_IDENTIFIABLE",
+    "level target: a level with no consumed line -> MISSING_G7_POPULATION, no budget",
 )
 
 
@@ -1114,6 +1165,51 @@ def cmd_selftest(a):
           "MISSING_LINE_FIELD" in str(cm.missing)),
          (True, True, True, True, False, True, True, True), inj="J_c = L_l = 0 for (line 0, shell 24)",
          reason="computed zero rate row vs structural_zero column vs missing", rc=rr["validity"])
+    # ---- level targets (real analysis path; fixture level 2 is upper in 0->2, 1->2 and lower in 2->5,6,7,8)
+    lt = ({"name": "lvl2", "row": None, "lo": None, "up": 2, "main": [24, 30], "return_to": 5},)
+    ce, cr = T / "clean" / "E", T / "clean" / "R"
+    rl = det_siiii_rates_analyze(ce, cr, T / "lvl" / "out", targets=lt, prior_ref="fixture-prior")
+    Bl = budget(T / "lvl" / "out").loc[("lvl2", 24)]
+    Bq = B.loc[("SiIII_1892", 24)]
+    # the interval ends are the same numbers; only the representative mid of n_u (line mid vs
+    # intersection midpoint) may differ, so compare every _lo/_hi column and the code
+    same_cols = [c for c in Bl.index if (c.endswith("_lo") or c.endswith("_hi")) and c in Bq.index]
+    eq = len(same_cols) > 20 and all((Bl[c] == Bq[c]) or (pd.isna(Bl[c]) and pd.isna(Bq[c])) for c in same_cols)
+    eq &= all(Bl[c[:-4] + "_lo"] <= Bl[c] <= Bl[c[:-4] + "_hi"] for c in Bl.index
+              if c.endswith("_mid") and (c[:-4] + "_lo") in Bl.index and pd.notna(Bl[c]))
+    Rl = pd.read_csv(T / "lvl" / "out" / "rates.csv", float_precision="round_trip")
+    roles = set(Rl[(Rl.target == "lvl2") & (Rl.shell == 24)].apply(lambda q: q.up == 2, axis=1))
+    tE2, tR2 = truth("SiIII_1892", 2, 24)
+    sp2 = det_siiii_rates_fx_split(tE2, tR2)
+    exact = all(has(Bl, f"{tg}_{k}", t_[k]) for tg, t_ in (("E", tE2), ("R", tR2)) for k in ("I", "D", "R"))
+    exact &= has(Bl, "dn_u", sp2["dn_u"]) and all(has(Bl, f"A_{k}", sp2[k]) for k in TERMS)
+    case(SELFTEST_REQUIRED[30], (rl["validity"], bool(eq), bool(exact), roles == {True, False}, int(Bl.code)),
+         ("VALID", True, True, True, int(Bq.code)), rc=rl["validity"])
+    ch = pd.read_csv(T / "lvl" / "out" / "chain.csv", float_precision="round_trip")
+    c24 = ch[(ch.shell == 24)]
+    bs = math.fsum(c24.B_mid)
+    cl = json.load(open(T / "lvl" / "out" / "closure.json"))["cells"]
+    cs = [x["chain_sum_closes"] for x in cl if x["shell"] in (19, 24, 30)]
+    nat = set(c24.link_nature)
+    case(SELFTEST_REQUIRED[31], (abs(bs - float(Bl.A_PARTNER_POPULATION_mid)) <= 1e-9 * abs(bs), all(cs),
+                                 nat == {"RETURN_TO_LEVEL_5", "OUTSIDE_TARGET_SET"},
+                                 bool((c24[c24.j == 5].link_nature == "RETURN_TO_LEVEL_5").all()),
+                                 bool((c24.prior_link == "fixture-prior").all())),
+         (True, True, True, True, True), rc=rl["validity"])
+    rm = det_siiii_rates_analyze(ce, cr, T / "lvlmm" / "out", targets=lt,
+                                 term_override={"lvl2:24": {"A": {"PARTNER_POPULATION": X(1.0e30)}}})
+    cm = rm["cells"]["lvl2:24"]
+    case(SELFTEST_REQUIRED[32], (cm["code"], "CHAIN_SUM_MISMATCH" in cm["missing"]), (6, True),
+         inj="partner term overridden after the split; chain partner sum no longer matches", rc=rm["validity"])
+    en = det_siiii_rates_make_fixture(T / "lvlnone" / "E", popsE, w5E, Te, neE, False, drop_cap=(5, 24))
+    rn_ = det_siiii_rates_make_fixture(T / "lvlnone" / "R", popsR, w5R, Te, neR, True, drop_cap=(5, 24))
+    rn = det_siiii_rates_analyze(en, rn_, T / "lvlnone" / "out",
+                                 targets=({"name": "lvl3", "row": None, "lo": None, "up": 3, "main": [24]},))
+    cn, cn30 = rn["cells"]["lvl3:24"], rn["cells"]["lvl3:30"]
+    case(SELFTEST_REQUIRED[33], (cn["code"], "E:MISSING_G7_POPULATION:3" in cn["missing"],
+                                 "R:MISSING_G7_POPULATION:3" in cn["missing"], cn30["code"] != 6),
+         (6, True, True, True), inj="capture of the only line to level 3 (3->5) dropped at shell 24 in E' and R'",
+         rc=rn["validity"])
     names = [r["case"] for r in res]
     missing = [n for n in SELFTEST_REQUIRED if n not in names]
     fails = sum(1 for r in res if not r["pass"]) + len(missing)
@@ -1135,8 +1231,11 @@ def main():
     s.add_argument("--production-source", required=True)
     s.add_argument("--out", required=True)
     s = sp.add_parser("analyze")
-    for k in ("--e-run", "--r-run", "--production-source", "--prior-pop", "--selftest", "--out"):
+    for k in ("--e-run", "--r-run", "--production-source", "--selftest", "--out"):
         s.add_argument(k, required=True)
+    s.add_argument("--target-set", default="lines", choices=sorted(TARGET_SETS))
+    s.add_argument("--prior-pop", default=None)      # CLI compatibility only; never a population source
+    s.add_argument("--prior-rates", default=None)    # prior level-2/5 attribution: cited by path + sha in chain.csv
     a = p.parse_args()
     sys.exit(cmd_selftest(a) if a.cmd == "selftest" else cmd_analyze(a))
 
