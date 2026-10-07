@@ -14,7 +14,7 @@
 
 1. 소비 캡처에서 필요한 세대 7 준위 인구를 확장 복원한다.
 2. 생산 율 방정식에 실제 존재하는 복사·충돌·이온화·재결합·비열적 경로를 확인하고, 계산 가능한 계수와 체적당 율을 산출한다.
-3. 오프라인 산술 폐합, 세대 7 상태의 평형 잔차, 생산 해 재현을 구분하여 검사한다.
+3. 오프라인 산술 폐합과 세대 7 상태의 평형 잔차를 검사하고, 생산 해 재현은 §5.3의 사전 확정된 불가 사유로 구분하여 기록한다.
 4. 밀도 차이를 율 계수 변화·공급 준위 인구 변화·비평형 잔차로 구분하고, 결손 때문에 식별되지 않는 부분을 명시한다.
 
 산출은 NRB 반복법, 다른 율 경로, 또는 기록 결손 중 무엇을 후속 조사해야 하는지 결정하는 데 소비한다. 이 단을 생략하면 큰 준위밀도 비를 특정 과정의 인과적 기여율로 오인할 수 있다.
@@ -60,7 +60,7 @@ T2의 `cmfgen_run`은 최종 R6 복사장 발행과 관측 캡처를 먼저 수�
 - 지정된 세대·상태에서 생산 코드가 사용하는 과정별 율.
 - 같은 상태에서 NRB 적용 형태를 바꿨을 때의 대수적 계수 차이.
 - 완전한 예산에 대한 밀도 차이의 조건부 대수적 귀속.
-- 기록된 입력과 출력 사이의 생산 방정식 재현 여부.
+- 기록된 입력과 출력의 호출 순서에 근거한 생산 해 재현 불가 사유.
 
 다음은 판정하지 않는다.
 
@@ -118,7 +118,7 @@ D = /gpfs/kjhan/lumina/cmfgen_map/siiii_rates_20261007
 | `input/model/line_list.csv`, `levels.csv` | 전이·준위·Einstein 계수·통계중량·에너지·입력 묶음 |
 | 같은 model 디렉터리의 원자·충돌·광이온화 자료 | 실제 활성 율 분기에 필요한 자료만 사용 |
 | `input/deck.sha256`, `input/resolved_lumina.exports`, `input/run_build_identity.json` | 봉인·설정·생산 판본 |
-| `work/nlte_levels_final.csv`, `work/cmfgen_final_publication.json`, `work/lumina_plasma_state.csv` | 세대 8 보조 비교 또는 적격한 후속 해 재현 |
+| `work/nlte_levels_final.csv`, `work/cmfgen_final_publication.json`, `work/lumina_plasma_state.csv` | 새 상대 준위의 세대 차이 보고와 최종 출력 시점 확인 |
 | `work/lumina_ion_channels.csv` | 이온 사다리의 채널 계수; 준위별 율로 대체하지 않음 |
 | `work/physics_comparison/physics_DET_iter*.ion.csv` | 시점이 확인된 이온 경계·정규화 보조 자료 |
 
@@ -175,9 +175,9 @@ T2의 다음 경로를 따른다.
 
 ### 2.3 직접 항과 간접 경로
 
-T2의 기본 Si NLTE 쌍은 Si II·III이며, `nlte_assemble_rate_matrix_impl`의 기본 bound-free 경로는 하위 이온 준위와 상위 이온 바닥 준위를 연결한다. DR과 기본 비열적 이온화도 지정된 바닥 준위 경로를 사용한다.
+양쪽 exports와 T2 기본값을 확인했다. `LUMINA_NLTE_STAGE4`·`LUMINA_NLTE_ELEMENT_WIDE`·`LUMINA_TOPSTAGE_IV`·`LUMINA_TIMEDEP_ION`·`LUMINA_ARTIS_PARITY`·`LUMINA_NLTE_COLL_ION`은 양쪽 모두 미설정이며 해당 경로는 비활성이다. Si의 실제 NLTE 쌍은 Si II·III 하나이고 Si III는 최상위 NLTE 이온이다. Si III·IV 쌍과 Si III 여기 준위의 TOPSTAGE_IV 광이온화·Milne 경로는 없다. 양쪽의 `LUMINA_SUPER_CUTOFF="100"`에서 준위 2(3s3p ³P₁)·5(3p² ¹D₂)는 바닥 준위 0과 구별되는 개별 solve 준위다. 근거는 `/gpfs/kjhan/lumina/cmfgen_map/siiii_rates_20261007/evidence/production_paths_grep_2026-10-07.txt`다.
 
-양쪽 exports와 기본값을 확인하여 해당 구성이 맞으면, **Si III 여기 준위 2·5에 직접 걸리는 광이온화·재결합·비열적 항은 구조적으로 없을 수 있다.** 이때는 다음을 구별한다.
+**Si III 준위 2·5의 직접 과정은 Si III bound-bound 복사와 bound-bound 충돌 여기·탈여기뿐이다.** 직접 광이온화·복사 재결합·충돌 이온화·삼체 재결합·DR·비열적 이온화·전하교환은 양쪽 모두 `STRUCTURAL_ZERO`다. `/gpfs/kjhan/lumina/cmfgen_map/siiii_rates_20261007/evidence/partner_capture_coverage_2026-10-07.txt`에 따르면 E′·R′ 각각에서 준위 2의 주요 셸 24·30은 연결선 31/31, 준위 5의 주요 셸 19는 17/17이 `lines.bin`에 소비·mapped로 있으며 연결선 결손은 0이다. 이는 상대 준위 복원에 필요한 소비선의 존재를 확인한 것이며, τ·S 역산 적격성·수치 구간·J_c 적격성의 통과를 대신하지 않는다. 다음 구분은 유지한다.
 
 - `STRUCTURAL_ZERO`: 활성 생산 방정식에 그 직접 경로가 없음.
 - `EXACT_ZERO`: 경로는 있으나 입력·생산 정의에 의해 율이 정확히 0.
@@ -185,7 +185,7 @@ T2의 기본 Si NLTE 쌍은 Si II·III이며, `nlte_assemble_rate_matrix_impl`�
 
 직접 항의 구조적 0은 이온화·재결합·비열적 과정의 **간접 영향이 없다는 뜻이 아니다.** 이들은 Si III 바닥 인구, 다른 준위, 전자밀도, 쌍 정규화에 영향을 줄 수 있다.
 
-생산 소스에 있는 Ca–Si 전하교환도 실제 연결 여부를 확인한다. 활성 경로를 예산에서 누락하지 않되, 표적과 무관한 반응 전수조사는 하지 않는다.
+Ca–Si 전하교환은 Si 쌍에서 Si III 바닥→Si II 바닥과 Si II 각 solve 준위→Si III 바닥으로 연결된다. DR은 Si III 바닥→Si II 바닥, 기본 비열적 이온화는 Si II 바닥→Si III 바닥이다. 따라서 이들의 준위 2·5 직접 항은 없으며, 위 간접 경로 문언은 그대로 적용한다. 표적과 무관한 반응 전수조사는 하지 않는다.
 
 ## §3. 세대 7 인구 복원과 자료 결손
 
@@ -207,7 +207,7 @@ n_u=\frac{g_u}{g_l}d\frac{S}{A_\nu}.
 
 권위는 T2의 `nlte_update_tau_sobolev_with_authority`, `a208_signed_sobolev_counted`, `a208_line_source_counted`, `det_obs_capture_pair`다.
 
-복원 대상은 표적 율의 상대 준위와, 조건부 생산 해 재현에 필요한 Si 준위로 제한한다. 동일 캡처에서 Si III 소비·매핑 선을 한 번 선택 판독하여 재사용한다.
+복원 대상은 표적 율의 상대 준위로 제한한다. 동일 캡처에서 Si III 소비·매핑 선을 한 번 선택 판독하여 재사용한다.
 
 ### 3.2 적격성
 
@@ -235,9 +235,7 @@ n_u=\frac{g_u}{g_l}d\frac{S}{A_\nu}.
 
 세대 8은 다음 용도만 허용한다.
 
-1. 같은 준위의 세대 차이 보고.
-2. §5의 시점 연결이 입증된 후속 생산 해 재현.
-3. 세대 7 결손을 대신하지 않는 별도 보조 계산. 이 경우 사용 인구·복사장·전자 상태 세대를 모두 표기하고 `G8_AUXILIARY` 또는 `MIXED_GENERATION_AUXILIARY`로 표시한다.
+1. 이번 단에서 새로 복원하는 상대 준위의 세대 차이 보고. 선행 POP에서 판정한 준위 0·2·4·5의 비교는 승계한다.
 
 복원 가능한 일부 준위에서 세대 차이가 작다는 이유로 결손 준위의 차이도 작다고 가정하지 않는다. 세대 8 대입 결과는 세대 7 주 판정과 지배 과정 분기에 사용하지 않는다.
 
@@ -311,9 +309,7 @@ J̄·J_c 사용 우선순위:
 
 ### 4.3 충돌 여기·탈여기
 
-권위는 T2 `nlte_assemble_rate_matrix_impl`의 활성 충돌 분기다. `LUMINA_NLTE_COLL_FIX`, `LUMINA_OMEGA_CMFGEN`, parity, 실제 collision table 적용 여부를 확인한다.
-
-`NLTE_COLL_FIX` 분기가 실제로 활성일 때:
+권위는 T2 `nlte_assemble_rate_matrix_impl`의 활성 충돌 분기다. 양쪽 exports에서 `LUMINA_NLTE_COLL_FIX="1"`이며 `LUMINA_OMEGA_CMFGEN`과 `LUMINA_ARTIS_PARITY`는 미설정으로 비활성이다. 따라서 표적 Si III 선에는 T2 `lumina_plasma.c:19290–19302`의 `NLTE_COLL_FIX` 식을 적용한다.
 
 \[
 C_{lu}
@@ -333,7 +329,9 @@ C_{ul}
 \right].
 \]
 
-상수와 활성화 조건은 T2 값 그대로 사용한다. 충돌 자료 파일이 존재한다는 이유만으로 생산이 사용하지 않은 표를 새로 적용하지 않는다.
+상수와 활성화 조건은 T2 값 그대로 사용한다. `AXELROD_OMEGA=1.0`이다(`lumina_plasma.c:11786`). 활성 `NLTE_COLL_FIX` 분기는 f_lu의 문턱으로 나누지 않고 모든 해당 선에 `Υ=max(Υ_vR,1)`을 적용한다(`:19290–19302`). 따라서 사전감사 L4-6의 “f_lu≤1e-10이면 Ω=1”은 활성 분기의 정확한 조건이 아니다. f_lu 문턱 분기는 parity 처리 또는 `NLTE_COLL_FIX`가 꺼진 legacy 처리에 있으며(`:19276–19289`, `:19303–19312`), 현재 분기에서 Υ=1이 되는 조건은 Υ_vR≤1이다. 이 활성 충돌강도 하한은 생산 정의로 재구성하고 범위 밖 물리 검토 대상으로 기재하되 이번 단에서 수리하지 않는다.
+
+별도의 `C_down≥coll_floor·A_ul` 바닥은 양쪽 `LUMINA_NLTE_COLL_FLOOR="0"` 때문에 `coll_floor>0.0` 게이트가 비활성이다(`lumina_plasma.c:18897–18901`, `:19322–19329`; 설정 증거는 `D/evidence/production_paths_grep_2026-10-07.txt`). 활성 충돌강도 하한과 이 비활성 율 바닥을 혼동하지 않는다. 충돌 자료 파일이 존재한다는 이유만으로 생산이 사용하지 않은 표를 새로 적용하지 않는다.
 
 전용 충돌표·metastable 경로가 활성이라면 생산의 중복 억제와 보간 규칙까지 따른다. 동일 준위쌍에 여러 생산 항이 있으면 생산 조립 방식대로 합산하고, 임의의 중복 제거를 하지 않는다.
 
@@ -341,18 +339,18 @@ C_{ul}
 
 | 과정 | 생산 권위 | 처리 |
 |---|---|---|
-| 준위 광이온화 | `nlte_assemble_rate_matrix_impl`, `nlte_bf_gamma_canonical` | 실제 threshold·단면·canonical field 적분 |
-| 복사 재결합 | 같은 assembler의 `I_rec`, `n_star_ratio`, spin 분기 | 자발·유도 Milne 항과 실제 상위 이온 연결 |
-| 충돌 이온화·삼체 재결합 | 같은 assembler의 `nlte_bf_collisional_enabled` 분기 | 활성 여부와 실제 source·destination 보존 |
-| DR | 같은 assembler의 `dr_lookup`, `dr_alpha_eval` 사용부 | 생산의 바닥 준위 routing 보존 |
-| 비열적 이온화 | 같은 assembler의 `gamma_dep->nonthermal_ioniz_rate` 사용부 | 생산의 원자당 계수와 기본 ground-to-ground routing 보존 |
-| 전하교환 | 같은 assembler의 `CE_REACTIONS`, `nlte_get_ion_density` 사용부 | 필요한 상대 이온 인구의 권위·시점 확인 |
+| 준위 광이온화 | `nlte_assemble_rate_matrix_impl`, `nlte_bf_gamma_canonical` | 준위 2·5 직접 항은 `STRUCTURAL_ZERO`; Si III·IV 쌍 부재·TOPSTAGE_IV 비활성 기록 |
+| 복사 재결합 | 같은 assembler의 `I_rec`, `n_star_ratio`, spin 분기 | 준위 2·5 직접 항은 `STRUCTURAL_ZERO`; Si II·III 기본 경로의 상위 이온 연결은 Si III 바닥 |
+| 충돌 이온화·삼체 재결합 | 같은 assembler의 `nlte_bf_collisional_enabled` 분기 | 준위 2·5 직접 항은 `STRUCTURAL_ZERO`; 해당 게이트 비활성 기록 |
+| DR | 같은 assembler의 `dr_lookup`, `dr_alpha_eval` 사용부 | 준위 2·5 직접 항은 `STRUCTURAL_ZERO`; Si III 바닥→Si II 바닥 routing 기록 |
+| 비열적 이온화 | 같은 assembler의 `gamma_dep->nonthermal_ioniz_rate` 사용부 | 준위 2·5 직접 항은 `STRUCTURAL_ZERO`; Si II 바닥→Si III 바닥 routing 기록 |
+| 전하교환 | 같은 assembler의 `CE_REACTIONS`, `nlte_get_ion_density` 사용부 | 준위 2·5 직접 항은 `STRUCTURAL_ZERO`; Ca–Si 반응의 Si III 바닥↔Si II routing 기록 |
 
-생산의 복사 재결합은 일반적으로 단순한 `photoionization × LTE ratio`가 아니다. 실제 Milne 적분의 자발항을 보존한다. coarse J를 쓰는 적분과 canonical view를 쓰는 적분도 임의로 통일하지 않는다.
+위 여섯 과정은 표적의 직접 항에 대해 설정·routing 근거와 `STRUCTURAL_ZERO`만 기록한다. 근거는 `/gpfs/kjhan/lumina/cmfgen_map/siiii_rates_20261007/evidence/production_paths_grep_2026-10-07.txt`다. 이 구조적 0을 산출하기 위한 광이온화·Milne 적분기나 DR·비열적·전하교환 율 계산기는 구현하지 않는다. 실제 계산할 직접 예산은 §4.2의 bound-bound 복사와 §4.3의 bound-bound 충돌이다.
 
 `lumina_ion_channels.csv`는 `parity_rate_se_ratio_checked`의 이온 사다리 계수다. 그 `gamma_phot`, `gamma_nt`, `ne_alpha_rr`, `ne_alpha_dr` 등을 준위 2·5에 인구 비례로 배분하지 않는다. 이온 단위 기록은 간접 경로의 보조 증거로만 연결한다.
 
-직접 경로가 구조적으로 없으면 그 사실을 결과표에 기록한다. 간접 경로의 인과적 기여를 계산할 자료가 없으면 `INDIRECT_PATH_NOT_IDENTIFIED`로 남긴다.
+위 직접 경로의 구조적 0을 결과표에 기록한다. 간접 경로의 인과적 기여를 계산할 자료가 없으면 `INDIRECT_PATH_NOT_IDENTIFIED`로 남긴다.
 
 ## §5. 폐합의 정의
 
@@ -384,18 +382,7 @@ C_{ul}
 
 ### 5.3 생산 방정식과 같은 해의 재현
 
-생산 해 재현은 다음 조건을 모두 만족할 때만 시도한다.
-
-1. 비교 대상 생산 solve의 입력 복사장, \(T_e,n_e\), 경계 인구, 정규화와 투영이 식별된다.
-2. 필요한 모든 활성 계수가 저장값 또는 정확한 생산식으로 재구성된다.
-3. 비교할 저장 인구가 그 solve의 출력임이 호출 순서·세대 기록으로 확인된다.
-4. 오프라인 해를 비교 대상의 표적 인구로 맞추거나 역으로 보정하지 않는다.
-
-최소 범위는 표적에 필요한 Si solve 계다. 생산이 사용하는 이온쌍·정규화·경계조건을 유지한다. 이를 위해 전 원소 전자밀도 반복을 새로 구현하지 않는다. 필요한 경계 상태가 없으면 `PRODUCTION_SOLUTION_NOT_TESTABLE`이다.
-
-세대 7 view를 고정하여 새로 푼 해는 `FROZEN_G7_SOLUTION`이다. 이것은 세대 7 저장 인구와 같아야 하는 해가 아니다.
-
-세대 8 출력과 비교하려면, 최종 R7이 소비한 rad 7 외에 **그 solve에서 사용한 전자밀도·경계 인구·정규화**까지 일치해야 한다. `Te`가 같거나 `population_generation=8`이라는 사실만으로 적격 판정을 하지 않는다.
+[저자 실행·결과 판독 전 확정] 등록 입력과 Si solve만 재구성하는 범위에서는 `PRODUCTION_SOLUTION_NOT_TESTABLE`이다. 전제 1은 전체로 충족되지 않는다. 세대 7 캡처는 최종 R7 이전이며(T2 `lumina_cmfgen.c:6497–6507`, `:11800–11802`, `:11846–11848`), R7은 `compute_radiative_equilibrium_te`를 호출한다(`lumina_plasma.c:11154–11155`). FIXED_TE에서도 후보 물질 상태를 새로 구성하고 커밋한다(`:17646–17664`, `:17729–17730`). 양쪽의 `LUMINA_NLTE_NE_CLOSURE="1"` 경로는 후보 전자밀도마다 이온화를 준비한 뒤 NLTE core를 푼다(`:23066–23097`, `:23133–23183`). Si 쌍의 CE 계수는 그 순간의 Ca 준위합을 읽고(`:11754–11774`, `:20400–20418`), 전체 쌍의 순차 solve 뒤에는 CE 반복의 감쇠가 적용된다(`:22062–22064`, `:22141–22144`, `:22261–22268`). 저장된 최종 전자밀도·stage 정규화만으로 이 내부 경계 인구와 감쇠 전 상태를 식별할 수 없다. 전제 3은 최종 R7 트랜잭션 출력이라는 의미에서는 성립한다. `cmfgen_run` 성공 직후 최종 writer가 호출된다(`lumina_cuda.cu:8093–8105`). 그러나 저장 인구를 특정한 단일 Si 선형 solve의 직접 출력으로 연결하는 조건은 충족되지 않는다. 최종 writer는 최종 공개 배열을 기록하며 내부 CE 경계·감쇠 이력을 저장하지 않는다(`cmfgen_final_writer.c:96–134`). 세대 7 저장 인구 역시 후속 rad 7 solve의 출력이 아니다. 따라서 생산 해·동결 세대 7 해를 새로 풀지 않고 이 사유만 기록한다.
 
 ### 5.4 수치 수용 기준
 
@@ -407,23 +394,7 @@ C_{ul}
 - 상쇄가 있는 순율에는 절대오차를 사용한다.
 - 결손은 수치 오차 상한에 숨기지 않는다.
 
-생산 solver 기준은 T2 `population_contract.h`의 다음 상수를 사용한다.
-
-```text
-POP_GENERATOR_RESIDUAL_LIMIT = 1.0e-12
-POP_DENSE_BACKWARD_ERROR_LIMIT = 1.0e-12
-```
-
-각 기준은 `population_generator_stationary_gth`와 `population_dense_solve_equilibrated`의 **해당 잔차 정의**에만 적용한다. 이를 곧바로 인구의 상대 전방오차 허용치로 사용하지 않는다.
-
-생산 해 재현은 다음을 함께 요구한다.
-
-- 완전한 입력·경계·출력 시점 연결.
-- 해당 생산 잔차 기준 통과.
-- 독립적으로 저장된 인구와의 차이가 입력 저장오차·계수 오차·검증된 해 오차 범위 안임.
-- 정규화와 표적 외의 solve 성분에서도 모순이 없음.
-
-단지 넓은 구간이 겹친다는 이유로 같은 해라고 단정하지 않는다. 해의 민감도 때문에 차이를 가릴 수 없으면 `SOLUTION_AGREEMENT_UNRESOLVED`다. 완전한 동일 입력에서 설명되지 않는 차이가 남으면 `SOLUTION_MISMATCH`다.
+위 오차 처리는 인구 복원·율 예산·산술 폐합·밀도 차이 분해에 적용한다. 생산 해 비교용 solver·해 오차 검증·`SOLUTION_*` 판정은 구현하지 않는다.
 
 ## §6. 밀도 차이 귀속과 과학 분기
 
@@ -581,7 +552,7 @@ P_{\rm off}(E)-P_{\rm on}(R)
 | `populations.csv` | 직접 복원·투영 유도 인구와 구간, 세대 8 보조 비교의 구분 |
 | `rates.csv` | 전이별 과정·계수·인구·유입·유출·순율·구간·생산 분기·자료 권위 |
 | `budget.csv` | 표적·셸·상태별 과정 합, 잔차, 완전성, 밀도 차이 분해와 분기 |
-| `closure.json` | 산술 폐합·세대 7 잔차·생산 해 재현을 구분한 결과와 사유 |
+| `closure.json` | 산술 폐합·세대 7 잔차 결과와 §5.3의 생산 해 재현 불가 사유 한 건 |
 | `checks.json` | 실제 분석 경로를 거친 정상·음성대조 결과 |
 | `result.json` | 주요 셸별 결론, 목표 달성 범위, 결손과 주장 상한 |
 | `manifest.json` | 계약·입력·도구·환경·명령·작업·산출 신원 |
@@ -593,7 +564,7 @@ P_{\rm off}(E)-P_{\rm on}(R)
 
 | 게이트 | 막는 실제 실패 | 통과 조건 |
 |---|---|---|
-| G-LINK | 선·준위·셸·세대 오결합, 잘못된 super-level 대응, 이온 원장의 준위율 대체, 결손의 0 처리 | §1–§4의 입력 권위·생산 분기·coverage가 실제 분석에 적용됨 |
+| G-LINK | 이번에 확장하는 상대 준위·율 연결과 W5의 선·셸·operator·세대 결합 오류, 잘못된 super-level 대응, 이온 원장의 준위율 대체, 결손의 0 처리 | §1.2의 선행 검증을 승계하고 새 연결에 §1–§4의 입력 권위·생산 분기·coverage가 실제 적용됨; 선행 캡처·봉인·행 대응 검증을 중복 시험하지 않음 |
 | G-RATE | 잘못된 NRB·충돌 계수, 유입·유출 부호·중복 오류, 거짓 평형 폐합, 잔차 생략, 과도한 지배 판정 | §4–§6의 독립 작은 정답·항등식·결손·분기가 실제 분석 출력과 일치 |
 
 생산 레이아웃을 갖춘 작은 가상 런을 만들고 **실제 `analyze` 경로**를 호출한다. 시험 전용 검사식에 참·거짓을 직접 넣는 방식만으로 통과시키지 않는다.
@@ -607,7 +578,7 @@ P_{\rm off}(E)-P_{\rm on}(R)
    - E=R에서 차이 0, E/R 교환에서 부호 반전을 확인한다.
 
 2. **연결·결손 음성대조**
-   - 선 행 또는 준위 연결 오류, rad/material 세대 오류를 주입한다.
+   - 새 상대 준위·율 연결 또는 W5 결합에 선 행·준위·rad/material 세대 오류를 주입한다.
    - 필요한 J̄ 한 항과 상대 준위 인구를 제거한다.
    - 분석기가 이를 오류 또는 `NOT_IDENTIFIABLE`로 처리하고 총예산·지배 PASS를 내지 않는지 확인한다.
    - 세대 8 대입과 이온 단위 계수의 준위율 대체를 거부한다.
@@ -703,6 +674,10 @@ CLI의 표현 차이는 집행 기록에 남길 수 있다. 물리식·세대·�
 
 ## §10. 완료 기준과 처분
 
+판정문 첫 문단에는 공개 CMFGEN 대조가 가능한 UV2500 쪽 율 예산 주요 셸이 2542.58 Å의 셸 19 하나이고, 공개 직접 기준이 없는 FUVb 쪽은 1892.03 Å의 셸 24·30이라는 비대칭을 명시한다. 본 단은 상태를 바꾸지 않는 진단이므로 스펙트럼 잔차 감소량은 0이다.
+
+판정문의 다음 후보에는 R′의 Si III NLTE 준위합과 stage 배열의 이중 권위 문제를 보존한다. 이는 비교 상태의 정합성에 관한 후속 후보이며, 이번 율 경로 표적을 교체하거나 해당 문제를 수리하는 승인은 아니다.
+
 ### 10.1 필수 완료 내용
 
 운전자 판정과 astra 종료감사는 다음을 함께 확인한다.
@@ -730,7 +705,7 @@ CLI의 표현 차이는 집행 기록에 남길 수 있다. 물리식·세대·�
 - **`BLOCKED`**  
   실행 환경·자원·핵심 입력·생산 권위 때문에 가능한 것으로 등록한 최소 산출도 완료하지 못한다.
 
-설명되지 않는 `SOLUTION_MISMATCH`는 생산 오류로 즉시 판정하지 않는다. 오프라인 구현 오류와 입력·시점 불일치를 먼저 구분한다. 생산 수리가 필요하다는 결론이 나와도 이 단에서 수리하지 않는다.
+§5.3에서 생산 해 재현 불가를 사전 확정했으므로 생산 해 폐합의 미달을 보존한다. 나머지 필수 산출이 완료되어도 기존 완료 기준에 따른 처분 상한은 `PASS_LIMITED`이며, 생산 해 재현 조건을 삭제했다는 이유로 `PASS` 기준을 완화하지 않는다. 이 제한만으로 완전한 세대 7 예산에 대한 §6의 대수적 귀속까지 불가로 처리하지 않는다. 생산 수리가 필요하다는 결론이 나와도 이 단에서 수리하지 않는다.
 
 유효한 수치 미분리와 자료 결손을 같은 분기로 합치지 않는다. 결손 목록을 정확히 만들었다는 이유만으로 완전한 목표 달성을 선언하지 않는다.
 
@@ -747,13 +722,22 @@ CLI의 표현 차이는 집행 기록에 남길 수 있다. 물리식·세대·�
 
 미집행 항목을 예상 결과로 채우지 않는다.
 
+개정 2는 HEAD `532a9dd`의 개정 1 반영본을 대상으로 하며 판독기 미구현·본 분석 실행 0회인 상태에서 기안했다.
+
+- 권고 1의 §6 강등과 L3의 계수 산출 1차·밀도 귀속 2차 전환은 미반영: 주요 셸의 상대 준위 소비선 결손이 0이므로 결손을 전제로 주 산출을 낮출 근거가 없고, 기존 적격성 조건 아래 율 예산·밀도 차이 귀속을 유지한다.
+- 권고 5의 결손 코드 통합은 미반영: 인구·선장 결손, NRB 형태 미식별, 간접 경로 미식별, 생산 해 재현 불가는 영향을 주는 산출과 후속 판단이 달라 기존 사유 구분을 유지한다.
+- 권고 5의 G-LINK 범위 한정은 반영한다. dispatch 내부 prereg 호출로 별도 prereg 원로그를 대체하는 제안은 미반영: 현행 `scripts/check_dispatch_preflight.py`의 87–96행은 내부 stdout·stderr를 포획하고 성공 시 rc 요약만 내므로 원로그 보존 조건을 충족하지 않으며, 이를 고치는 세 번째 파일은 변경집합 밖이다.
+
 | 집행 항목 | 담당 | 상태·증거 |
 |---|---|---|
 | 사용자 결정 | 사용자 | §0 결정문 |
 | 본문 기안 | astra | `gpt-6-astra`, read-only, 본문 |
 | 정본 파일화·기준선 연결 | 운전자 | 미집행 |
 | 기계 프리플라이트 | 운전자 | 미집행; 명령·문서 해시·stdout·stderr·rc 보존 |
-| 사전감사 | Fable 또는 기록된 대행 | 미집행; Q-GOAL·Q-LEAN을 이 순서로 기록 |
+| 사전감사 | Fable fresh (`claude-fable-5-1`) | 개정 1·HEAD `532a9dd` 대상; Q-GOAL 부합·Q-LEAN 과잉 경향·폐합 차단 0·기재로 족함 9; `/gpfs/kjhan/lumina/cmfgen_map/siiii_rates_20261007/fable_preaudit.md` |
+| 발주 전 상대 준위 소비 커버리지 | 운전자, lageunha 실측 | E′·R′ 각각 준위 2·셸 24·30의 31/31선, 준위 5·셸 19의 17/17선 소비·mapped, 결손 0; `/gpfs/kjhan/lumina/cmfgen_map/siiii_rates_20261007/evidence/partner_capture_coverage_2026-10-07.txt` |
+| 발주 전 생산 경로 확인 | 운전자, T2 소스·exports 조회 | Si II·III 단일 쌍, 준위 2·5 개별 solve, 직접 과정은 bound-bound 복사·충돌, 다른 직접 항은 구조적 0, coll_floor 게이트 비활성; `/gpfs/kjhan/lumina/cmfgen_map/siiii_rates_20261007/evidence/production_paths_grep_2026-10-07.txt` |
+| 생산 해 재현 가부·충돌 분기 확인 | astra (`gpt-6-astra`), read-only | [저자 실행] T2 호출 순서·후보 solve·CE 감쇠·최종 writer와 충돌 분기를 직접 판독; §5.3의 재현 불가 및 §4.3의 활성 Υ 하한·비활성 율 바닥 확정 |
 | 실행 환경 규칙 확인 | 운전자 | `/etc/slurm/job_submit.lua`의 a10 GPU 요청 검사 제외 확인; §9.1의 CPU 전용 Slurm 경로 등록, 제출 미집행 |
 | 입력 연결·도구 구현·신원 고정 | 운전자 | 미집행 |
 | G-LINK·G-RATE·음성대조 | 운전자 | 미집행 |
@@ -941,6 +925,6 @@ CLI의 표현 차이는 집행 기록에 남길 수 있다. 물리식·세대·�
 
 - 공유 문맥 전문, 프로젝트 정체성, 선행 계약·판정·종료감사, T2의 관련 생산 함수, E′ exports와 입력 헤더·캡처 manifest를 읽었다. 파일 수정·수치 분석·시험·제출은 하지 않았다.
 - 생산 소스는 세대 7 캡처 뒤에 물질 갱신을 수행한다. 같은 세대 번호만으로 평형해·전자 상태의 동일성을 가정하지 않았다.
-- 표적의 직접 bound-free·비열적 항과 간접 이온화 영향을 구분했다. 최종 활성 분기 확인은 양쪽 런의 설정·기본값 연결에 남아 있다.
+- 개정 2에서 양쪽 설정·T2 생산 경로와 상대 준위 소비선 커버리지를 확인했다. 준위 2·5의 직접 과정은 bound-bound 복사·충돌이며 다른 직접 항은 구조적 0이다. 간접 이온화 영향의 기존 처리와 인구 역산·선장 적격성 검사는 유지한다. 생산 해 재현은 §5.3의 호출 순서·내부 경계 및 감쇠 이력 제한으로 불가 판정했다.
 - 개정 1은 본 단의 율·밀도 결과 판독 전에 W5 자료 가용성 증거로 율 예산 주요 셸을 1892.03 Å의 24·30, 2542.58 Å의 19로 등록했다. 두 런의 기록 셸에는 표적 준위에 연결된 모든 선의 J̄가 있지만, 상대 준위 인구·J_c·경계 상태 등의 적격성은 별도 확인 대상이다. 선행 주요 셸의 나머지는 J̄ 결손과 `NOT_IDENTIFIABLE`을 보존하며 세대 8이나 coarse J로 메우지 않는다.
 - 비용은 지출 상한이다. a10의 CPU 전용 작업 허용을 제출 필터에서 확인하여 §9.1의 환경 충돌·`ENVIRONMENT_BLOCKED` 기재를 정정했다. 기존 비용 상한은 유지한다.
