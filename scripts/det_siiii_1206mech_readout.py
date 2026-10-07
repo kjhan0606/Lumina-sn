@@ -924,12 +924,12 @@ SELFTEST_REQUIRED = (
     "map: a predicted change not separated from 0 is UNRESOLVED (code 4)",
     "capture: inverted n4/n0 and T_exc intervals enclose the exact truth; seed-following success and failure; temperature discrimination",
     "capture: missing / unmapped record -> NOT_IDENTIFIABLE; generation-8 file is never read; capture generation 8 is inadmissible",
+    "codes: all six codes are produced through the real analyze path; universal vs subset census claims",
+    "codes: R' retained -> R refuted (code 3); R' departure criterion survives on the clean fixture",
     "authority: source fallback > 0, a missing authority field and a frequency mismatch are inadmissible",
     "map: the beta-only idealisation intervals enclose their exact truth (kappa=1, Delta B=0)",
     "census: a confirmed counterexample with a missing call stays REFUTED in the census; plain absence is NOT_IDENTIFIABLE",
-    "codes: all six codes are produced through the real analyze path; universal vs subset census claims",
-    "codes: R' retained -> R refuted (code 3); R' departure criterion survives on the clean fixture",
-)
+)   # order = call order in cmd_selftest (indices 13-17 were misaligned in the t7 run; see the verdict's correspondence table)
 
 
 def cmd_selftest(a):

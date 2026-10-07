@@ -2,7 +2,7 @@
 
 판정자 = 운전자(Claude, Fable 5.1) — 구현자·판정자 겸임(계약 §11). 계약 = `docs/PREREG_DET_SIIII_1206_MECH_2026-10-07.md`(e111740, 개정 없음). 판독기 = `scripts/det_siiii_1206mech_readout.py`(sha256 b44ca53c…, 종료감사 1·2회차 수리판; 의존 `det_siiii_pop_readout.py` 63cbea71…, `det_siiii_rates_readout.py` 2fb17ef8…, 둘 다 수정 없음). 정본 산출 = `/gpfs/kjhan/lumina/cmfgen_map/siiii_1206mech_20261007/results/t7/`(a10 job 415540, 러너 측정 23.8 s·Slurm 경과 25 s). 수리 전 산출 `results/t3/`·`t6/`는 보존하며, 세 산출의 셸별 코드와 history·excitation·census 공통 열은 전부 동일하다.
 
-## 처분: **PASS_LIMITED** — 주요 셸 19 코드 **0 `MECHANISM_SURVIVES`**(다섯 셸 전부 0) [종료감사 1회차 REWORK(6) → 수리 → 2회차 REWORK(B2·B3·B4 잔존) → 수리 → 3회차 대기]
+## 처분: **PASS_LIMITED** — 주요 셸 19 코드 **0 `MECHANISM_SURVIVES`**(다섯 셸 전부 0) — 폐합 (astra 종료감사 3회차 폐합 가·«폐합 차단» 0; 1회차 6 → 2회차 3 → 3회차 0)
 
 첫 문단 필수 기재(§10.1): 스펙트럼 잔차 감소 0. 공개 CMFGEN 잣대는 UV2500 스펙트럼 비교에 있으며 이번 준위비·반복식의 공개 정답은 없다. 생산 해 폐합 미달(§5.3)을 승계한다. **이 계약은 발주 전 실측(1206 Å 이력·센서스 요약)에 노출된 상태에서 등록됐다** — 기존 실측의 재현을 독립 자료에 대한 예측 성공으로 표시하지 않는다. 주요 셸 19에서 S·H·M·X·R 다섯 구성 예측이 모두 생존했고 확정 반증은 없다. 미해소 항목은 §9에 적는다. 처분 상한 PASS_LIMITED(§10.2).
 
@@ -15,7 +15,7 @@ Fable 사전감사는 생략했다(운전자가 Fable 5.1이라 독립 렌즈 �
 | S 씨앗 동일성 | SURVIVES — J̄₁/𝓑 − 1 = −7.63e-6 (E′=R′, d_ER = 0) | 전부 SURVIVES (7.63–7.67e-6) |
 | H E′ 씨앗 유지 | SURVIVES — D_seed = 4.32e-5 (최대 이탈 call 7; δ_k = −7.19e-6 … −7.22e-6) | 4.28e-5 … 5.00e-5 |
 | M 국소 방출·조건부 사상 | SURVIVES — f_local = 1.000(전 call); q = 0.9999929, 1−q = 7.1e-6; ρ ≤ 0.0057 | ρ_max 0.0033–0.0057 |
-| M₀ β만의 이상화 | **REFUTED** — δ̂₀ = −7.0e-8 대 관측 −7.1e-6, ρ₀ ≈ 100 | REFUTED (ρ₀ 6–1100) |
+| M₀ β만의 이상화 | **REFUTED** — δ̂₀ = −7.0e-8 대 관측 −7.19e-6 … −7.22e-6, ρ₀ ≈ 100 | REFUTED (ρ₀ 6–1100) |
 | X 준위비 씨앗 추종 | SURVIVES — \|r₇/r_seed − 1\| = 3.60e-5 (r₇ < r_seed); **T_exc(E′) = 10019.96 K ≈ T_inner(10020.0 K)**, T_e7 = 8913 K | SURVIVES; \|·\| 3.56–4.17e-5, T_exc 10019.96 K 전 셸, 판별 T_INNER |
 | R R′ 대조 | SURVIVES — 공통 씨앗, call 2–7 armed(srce_chk 0), J̄₇/J̄₁ = 0.0112 | 1.050·0.116·0.0032·0.0013 (전부 이탈 > 1e-2) |
 
@@ -48,7 +48,7 @@ E′의 n_4/n_0 는 다섯 셸 모두 r_seed = r_off(J̄₁)에 |r₇/r_seed −
 
 ## 5. 직접시험 (§8)
 
-`results/t7/selftest/selftest.json`: **18/18 PASS**, 누락 0(종료감사 1·2회차 B4 수리판). 전부 가상 런에서 실제 `det_1206mech_analyze`를 호출해 **저장 산출(history/excitation/census/result)**을 검사한다. 대수 정답은 유리수 정확 연산, exp·ln은 60자리 상·하한, 비교는 덧붙인 허용폭 없는 구간 포함. 내용: INIT 정상 입력(NOT_APPLICABLE 칸); call 교환·모순 중복·R′ 첫 call 비INIT·셸 교환(W5 call-7 τ_eff ≠ 캡처 τ) → 입력 부적격 X; 중간 call 결손 → 그 셸만 5; 중간 이탈 후 복귀 → 유지 반증(최대 이탈 call), call 결손이 있어도 확정 반례 보존; call 2 두께 고정 집합·제외 사유 계수·오연결 키 INADMISSIBLE; 저장 프로파일 평균 구간이 정확 정답을 포함, 평탄 가중치 결함은 포함 실패; inner_bb_scale·격자 파라미터 불일치 검출; 비흑체 유지 씨앗 → 1; **저장 F·q 구간이 정확 정답 포함(ΔB ≠ 0·κ ≠ 1 가상 원자)**·β만 이상화 구별; β 생략·κ=1 강제·관측 L 대입(F = βJ_c + L_obs) 결함은 정확 정답 포함 실패; 0과 겹치는 예측 변화 → UNRESOLVED(4); 저장 n₄/n₀·T_exc 구간이 정확 정답 포함·씨앗 추종 성공/실패·온도 판별 불가; 캡처 결손·mapped=0 → 5, 깨진 세대 8 파일 존재 시 무영향(읽지 않음), 캡처 manifest 세대 8 → X; 여섯 코드 전부 실제 경로·전칭/부분집합; R′ 유지 → R 반증(3); **(2회차 추가)** source fallback(mapped_B_fallback=1)·권위 필드 결손(transaction 없음)·주파수 불일치(W5 ν_hz 1+1e-6) → X; β만 이상화 F₀·q₀ 저장 구간이 정확 정답(κ=1·ΔB=0) 포함; 센서스에서 결손+확정 반례는 REFUTED·부분집합 [4,4] 보존, 단순 결손은 NOT_IDENTIFIABLE·[4,5]. 「세대 8 대입 거부」는 깨진 파일 무영향으로 대신했다(판독기에 세대 8 읽기 경로 자체가 없다). §8.2 묶음 대 시험의 대응은 종료감사 3회차가 판정한다 — 18/18은 자체 선언 사례의 통과이지 계약 충족의 증명이 아니다.
+`results/t7/selftest/selftest.json`: **18/18 PASS**, 누락 0(종료감사 1·2회차 B4 수리판). 전부 가상 런에서 실제 `det_1206mech_analyze`를 호출해 **저장 산출(history/excitation/census/result)**을 검사한다. 대수 정답은 유리수 정확 연산, exp·ln은 60자리 상·하한, 비교는 덧붙인 허용폭 없는 구간 포함. 내용: INIT 정상 입력(NOT_APPLICABLE 칸); call 교환·모순 중복·R′ 첫 call 비INIT·셸 교환(W5 call-7 τ_eff ≠ 캡처 τ) → 입력 부적격 X; 중간 call 결손 → 그 셸만 5; 중간 이탈 후 복귀 → 유지 반증(최대 이탈 call), call 결손이 있어도 확정 반례 보존; call 2 두께 고정 집합·제외 사유 계수·오연결 키 INADMISSIBLE; 저장 프로파일 평균 구간이 정확 정답을 포함, 평탄 가중치 결함은 포함 실패; inner_bb_scale·격자 파라미터 불일치 검출; 비흑체 유지 씨앗 → 1; **저장 F·q 구간이 정확 정답 포함(ΔB ≠ 0·κ ≠ 1 가상 원자)**·β만 이상화 구별; β 생략·κ=1 강제·관측 L 대입(F = βJ_c + L_obs) 결함은 정확 정답 포함 실패; 0과 겹치는 예측 변화 → UNRESOLVED(4); 저장 n₄/n₀·T_exc 구간이 정확 정답 포함·씨앗 추종 성공/실패·온도 판별 불가; 캡처 결손·mapped=0 → 5, 깨진 세대 8 파일 존재 시 무영향(읽지 않음), 캡처 manifest 세대 8 → X; 여섯 코드 전부 실제 경로·전칭/부분집합; R′ 유지 → R 반증(3); **(2회차 추가)** source fallback(mapped_B_fallback=1)·권위 필드 결손(transaction 없음)·주파수 불일치(W5 ν_hz 1+1e-6) → X; β만 이상화 F₀·q₀ 저장 구간이 정확 정답(κ=1·ΔB=0) 포함; 센서스에서 결손+확정 반례는 REFUTED·부분집합 [4,4] 보존, 단순 결손은 NOT_IDENTIFIABLE·[4,5]. 「세대 8 대입 거부」는 깨진 파일 무영향으로 대신했다(판독기에 세대 8 읽기 경로 자체가 없다). §8.2 묶음 대 시험의 대응은 종료감사 3회차가 확인했다(폐합 가). ⚠ **t7 `selftest.json`의 사례 이름 13–17은 검사 내용과 어긋나 있다**(새 이름 셋을 기존 두 항목 앞에 끼워 넣은 채 호출부는 15–17로 기록): 저장 이름 → 실제 내용 = 「authority…」→ 여섯 코드·전칭/부분집합, 「map: beta-only…」→ R′ 대조, 「census: counterexample…」→ 권위·주파수, 「codes: all six…」→ β만 이상화 정답, 「codes: R′ retained…」→ 센서스 반례 보존. 다섯 검사와 비교 조건은 전부 실행됐고, 판독기의 이름 순서는 폐합 커밋에서 호출 순서에 맞게 고쳤다(t7 원본은 보존).
 
 ## 6. 집행·비용·보존
 
@@ -57,7 +57,7 @@ E′의 n_4/n_0 는 다섯 셸 모두 r_seed = r_off(J̄₁)에 |r₇/r_seed −
 | 기계 게이트 | prereg·gate-referents·doc-canonical rc=0 `evidence/preflight_prereg_draft_*`; dispatch preflight는 종료감사 발주서에 집행 |
 | 작업 | a10 CPU 전용 `--exclude=syn102` 4 CPU·16 GiB: 415420 FAILED(4 s), 415421 FAILED(5 s), 415422 COMPLETED(26 s, t3), 415498 FAILED(3 s), 415500 FAILED(2 s), 415501 COMPLETED(26 s, t6), 415540 COMPLETED(25 s, t7 정본; user 승인 비용 확대) — `evidence/JOBS.txt` |
 | 누적 | **slurm 경과 91 s — 상한 60 s 초과(이탈 8; 66 s 시점에 user 승인으로 +25 s 확대)**, CPU 0.10 core·h(상한 0.067 초과), **산출 24 MiB(상한 22 MiB 초과, 실패 런 보존 때문)**, GPU 0. 발주 전 lageunha 실측(W5 이력·센서스·Planck 비교)과 판독 조회는 계약 이전·이후의 수동 실행으로 상한 산정에 넣지 않았다(§9.2는 수동 실행도 합산을 요구 — 미계측, 이탈 8) |
-| 신원 | `results/t6/identity.sha256`(실행 당시 HEAD 72cd748이 기록돼 있으나 실행 판독기 sha가 수리 커밋의 파일과 일치 — 미커밋 수리 소스로 실행 후 커밋), `analysis/manifest.json`(입력·T2 소스 6파일 sha·argv·환경·job). 시간: 러너 측정 25.4 s, Slurm 경과 26 s |
+| 신원 | 정본 t7: `results/t7/identity.sha256`(실행 당시 HEAD 975329f; 실행 판독기 sha b44ca53c… = 수리 커밋 ac60d69 의 파일 — 미커밋 수리 소스로 실행 후 커밋), `analysis/manifest.json`(입력·T2 소스 6파일 sha·argv·환경·job); 시간 러너 측정 23.816 s·Slurm 경과 25 s. 이전 실행 t6: HEAD 72cd748 기록, 판독기 7f27a255…, 러너 25.4 s·Slurm 26 s |
 | 실패 런 | t1·t2(수리 전 시험 설계), t4(셸 교환 사례가 VALID로 통과한 시험 실패 + ΔB 사례의 R′ 원자 불일치 X), t5(tiny 사례의 call-7 τ 교차 연결 오버라이드로 M 반증) 보존 |
 
 ## 7. 분장 장부
@@ -68,7 +68,7 @@ E′의 n_4/n_0 는 다섯 셸 모두 r_seed = r_off(J̄₁)에 |r₇/r_seed −
 | 사전감사 Q-GOAL·Q-LEAN | Fable fresh | **생략(개정 25-aa, user 지시)** — 발주했던 에이전트는 산출 전 중단 | 없음(user 결정) |
 | 구현·직접시험·게이트·실행·판독·판정 | 운전자 | 운전자 | 겸임(명시) |
 | 코드 감사 | 해제 | 없음 | — |
-| 종료감사 | astra | 1회차 `gpt-6-astra` — «폐합 차단» 6(B1–B6) → 수리 → 2회차 `gpt-6-astra` — B1·B5·B6 해소, «폐합 차단» 3(B2 권위 결손 보충·B3 센서스 반례 소실·B4 시험 누락) → 수리(user 승인 재실행) → 3회차 대기 | — |
+| 종료감사 | astra | 1회차 `gpt-6-astra` — «폐합 차단» 6(B1–B6) → 수리 → 2회차 `gpt-6-astra` — B1·B5·B6 해소, «폐합 차단» 3(B2 권위 결손 보충·B3 센서스 반례 소실·B4 시험 누락) → 수리(user 승인 재실행) → 3회차 `gpt-6-astra` — **폐합 가, «폐합 차단» 0**, «기재로 족함» 3 반영(`astra_closeout.md`·`astra_closeout2.md`·`astra_closeout3.md`) | — |
 
 ## 8. 이탈·한계 (기재)
 
