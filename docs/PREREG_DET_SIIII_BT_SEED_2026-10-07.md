@@ -1,8 +1,8 @@
 # 사전등록 — DET-SIIII-BT-SEED: 세대 0 물질 온도 변경·오프라인 검증·판정런 1회
 
-2026-10-07 · astra 기안·개정 1 · read-only  
-운전자 파일화 대상: `docs/PREREG_DET_SIIII_BT_SEED_2026-10-07.md` — 원안 ca7a4f7의 개정  
-상태: **원안 기계 게이트·Fable 경량 사전감사 완료(§11), 개정 1 기계 게이트는 재검사 전. 생산 변경·직접시험·빌드·판정런 미집행.**
+2026-10-07 · astra 기안·개정 2 · read-only  
+운전자 파일화 대상: `docs/PREREG_DET_SIIII_BT_SEED_2026-10-07.md` — HEAD 1ee456aea1f235943465fcb5609f282475887d47의 개정 1을 대상으로 한 개정  
+상태: **개정 1 기계 게이트 완료. 구현·t1 오프라인 시험·보조 진단 집행, 전 셸 B-T는 bootstrap 가드에서 중단. 사용자 결정에 따른 부분 B-T 개정 2이며, 개정 2 기계 게이트·수정 구현·오프라인 검증·생산 빌드·판정런은 미집행(§11).**
 
 ## §0. Q-GOAL·Q-LEAN 자기답과 과학 질문
 
@@ -10,7 +10,7 @@
 
 최종목적은 Monte-Carlo 수송으로 CMFGEN 수준의 SN Ia 스펙트럼을 재현하는 것이다. 직전 단은 Si III 1206.50 Å의 초기 씨앗과 후속 유지 기전을 특정하고, 초기 물질 온도를 봉인된 FIXED_T 프로파일로 바꾸는 후보 B-T의 조건부 기대치를 등록했다. 그러나 그 생산 개입이 실제 초기 물질에 도달하는지와, 첫 수송 뒤 발행되는 J̄가 등록 씨앗으로 이동하는지는 미검증이었다.
 
-이번 목표는 **B-T의 세대 0 물질 온도 개입을 구현하고 오프라인에서 검증한 뒤, E′를 기준으로 한 번의 판정런에서 씨앗 전달과 등록된 후속 기대의 결과를 측정하는 것**이다. 직접 겨냥하는 공개 비교의 어긋남은 E′N의 NUV/OPT 및 2500–3000 Å 과잉이다. 초기 씨앗 변경이 이 어긋남을 줄인다고 선취하지 않는다.
+이번 목표는 **부분 B-T의 세대 0 물질 온도 개입을 구현하고 오프라인에서 검증한 뒤, E′를 기준으로 한 번의 판정런에서 씨앗 전달과 등록된 후속 기대의 결과를 측정하는 것**이다. 직접 겨냥하는 공개 비교의 어긋남은 E′N의 NUV/OPT 및 2500–3000 Å 과잉이다. 초기 씨앗 변경이 이 어긋남을 줄인다고 선취하지 않는다.
 
 이 단은 S II/III 과이온화 칸을 직접 겨냥하지 않는다.
 
@@ -27,7 +27,7 @@
 
 ### Q-LEAN — 불필요한 계측·게이트를 추가하는가?
 
-후보는 B-T 하나이며 GPU 판정런은 한 번이다. 기존 E′와 R′를 다시 실행하지 않는다. 생산 변경은 초기 온도 소유자와 그 bootstrap 발행 신원에 한정한다. 기존 프로파일 로더·검증기·물질 계산·수송·W5·최종 캡처·스펙트럼 작성기를 재사용한다.
+후보는 부분 B-T 하나이며 GPU 판정런은 한 번이다. 기존 E′와 R′를 다시 실행하지 않는다. 생산 변경은 초기 온도 소유자와 그 bootstrap 발행 신원에 한정한다. 기존 프로파일 로더·검증기·물질 계산·수송·W5·최종 캡처·스펙트럼 작성기를 재사용하며, 기존 판독기 안에서 세대 0 전용 프로파일을 생성·봉인한다. A2-07 가드와 물리식은 바꾸지 않는다.
 
 오프라인 검증은 생산 함수를 연결한 작은 CPU 시험, OFF 대조, 결함 주입, 생산 빌드와 실행 신원 확인으로 묶는다. 전체 INIT 수송을 별도의 GPU 예비 런으로 추가하지 않는다. 판정런의 call 1이 실제 씨앗 전달 시험이다.
 
@@ -48,7 +48,7 @@
 
 `/gpfs/kjhan/lumina/cmfgen_map/siiii_btseed_20261007/evidence/USER_DECISION_2026-10-07.txt`
 
-사용자의 「승인함.」과 그 파일의 운전자 해석을 이번 발주의 명시적 범위와 함께 적용한다. 승인 범위는 **B-T 생산 변경·그 오프라인 검증·판정런 1회**다. 등록된 내부 작업 사이에 실행 승인을 반복 요청하지 않는다. 같은 결정 파일의 마지막 항 「축소 수용 (Recommended)」에 따라 Fable 사전감사의 L4-1 교체, L4-2–6 정리와 «기재로 족함» 항목을 개정 1에 반영한다. 과학 기대의 통과 기준은 유지한다.
+사용자의 「승인함.」과 그 파일의 운전자 해석을 이번 발주의 명시적 범위와 함께 적용한다. 승인 범위는 **부분 B-T 생산 변경·그 오프라인 검증·판정런 1회**다. 등록된 내부 작업 사이에 실행 승인을 반복 요청하지 않는다. 같은 결정 파일의 「축소 수용 (Recommended)」은 개정 1의 근거로 보존한다. 마지막 항 「부분 B-T (Recommended)」에 따라 개정 2는 세대 0에 셸 0–44의 봉인 FIXED_T 값과 셸 45–49의 E′ T_inner를 사용하는 전용 프로파일을 등록한다. 기대치 파일과 과학 기대의 통과 기준은 유지한다.
 
 - 기안·계약 개정·종료감사: astra.
 - 경량 사전감사: Fable fresh, Q-GOAL·Q-LEAN 전용 1회.
@@ -56,13 +56,13 @@
 - 코드 감사: 해제.
 - 범위·비용 확대, 추가 판정런, 후속 과학 결정: 사용자.
 
-Fable 사전감사는 원안의 기계 프리플라이트 뒤, 구현·빌드 전에 1회 받았다. 결과와 사용자의 축소 수용 결정은 §11에 기록하며, 본 개정은 그 결정의 반영이다. 직전 단의 감사나 기안자 자기답을 이번 감사로 대신하지 않으며, 원안 감사 결과를 개정안의 재감사 통과로 기록하지 않는다. 호출 실패를 통과로 기록하거나 담당자를 조용히 바꾸지 않는다.
+Fable 사전감사는 원안의 기계 프리플라이트 뒤, 구현·빌드 전에 1회 받았다. 결과와 사용자의 축소 수용·부분 B-T 결정은 §11에 기록한다. 개정 2는 t1·보조 진단 뒤의 사용자 결정을 반영하며, 원안 감사 결과를 개정안의 재감사 통과로 기록하지 않는다. 직전 단의 감사나 기안자 자기답을 이번 감사로 대신하지 않는다. 호출 실패를 통과로 기록하거나 담당자를 조용히 바꾸지 않는다.
 
 운전자는 구현자와 판정자를 겸한다. astra는 계약 저자가 종료감사를 수행한다. 이 이해관계를 기록한다.
 
 ### 사전 노출·주장 상한
 
-기안자는 직전 계약·판정·기대치·사전감사, 봉인 소스와 E′ 실행 기록에 노출됐다. 기존 결과의 재인용은 새 예측 성공이 아니다.
+기안자는 직전 계약·판정·기대치·사전감사, 봉인 소스와 E′ 실행 기록에 노출됐다. 개정 2에서는 개정 1 구현·t1 실패·보조 진단·사용자 결정에도 노출됐다. 부분 B-T의 셸 집합은 이 진단 뒤 고정한 설계이며 사전 예측 성공이 아니다. 기존 결과의 재인용도 새 예측 성공이 아니다.
 
 이번 단은 다음을 선취하지 않는다.
 
@@ -172,7 +172,7 @@ T2·E·R·A0·기존 판독기·원자 자료·공개 자료는 보존한다. T3
 
 ### 2.1 후보·표적
 
-후보는 **B-T 하나**다.
+후보는 **부분 B-T 하나**다. 이후 본문의 B-T와 기대치 파일의 B-T 키는 이 후보의 등록 기대를 가리키며, 전 셸 B-T의 t1 기록은 역사로 구별한다.
 
 | 용도 | 전이·데이터 행 | 셸 |
 |---|---|---|
@@ -182,11 +182,13 @@ T2·E·R·A0·기존 판독기·원자 자료·공개 자료는 보존한다. T3
 
 행 번호는 헤더를 제외한 0-based 데이터 행이다. W5의 line_id가 이 행 권위와 연결되는지 원자 정보로 확인한다.
 
-세대 0 온도 변경은 주 셸만이 아니라 **프로파일의 모든 셸**에 적용한다. 이번 입력은 50셸이다. 일반 로더는 실제 기하의 셸 수를 소비하며 50을 생산 코드에 하드코딩하지 않는다.
+세대 0 전용 배열을 T_seed라 하고, 셸 ID는 0-based로 고정한다. 이번 50셸 입력에서 **셸 0–44는 T_seed[s]=T_pin[s], 셸 45–49는 T_seed[s]=E의 유효 T_inner=10020 K**다. T_pin은 E/input/fixed_te_profile.txt의 봉인 값이다. 두 표적 전이의 등록 셸은 모두 0–44 안에 있으므로 기대치 파일과 §5의 통과 기준은 바꾸지 않는다. 온도 출처의 집합은 이 계약으로 고정하며 실행 중 가드 결과에 따른 셸별 자동 선택·재시도·대체를 하지 않는다. 일반 생산 로더는 실제 기하의 셸 수를 소비하며 50이나 경계 셸 45를 하드코딩하지 않는다.
+
+집합의 등록 근거는 B/results/guard_diag1/guard_diag.json, 도구 B/tools/diag_guard_shells.py와 §0의 사용자 결정이다. 진단은 t1의 같은 harness_T3로 고온 셸 부분집합과 셸 42–49를 검사했다. 셸 44의 최대 reservoir fraction은 1.966e-4이고, 단일 셸 45·46·47·48·49의 실패 fraction은 각각 0.007378·0.1839·0.8534·0.9932·0.9983이다. 가드는 준위 없는 최상위 이온의 분배함수에 1을 대입하는 근사의 유효 영역 검사이며 x30 상계의 한계 1e-2를 유지한다. 진단 도구·JSON·사용 바이너리·입력·로그의 신원을 offline.json에 연결한다. 이 진단을 부분 B-T 전체 배열의 통과로 대신하지 않고 §3에서 새 배열의 생산 bootstrap 통과를 확인한다.
 
 ### 2.2 분기와 온도 소유자
 
-새 생산 노브는 **`LUMINA_BT_SEED` 하나**다.
+기존 생산 노브 LUMINA_BT_SEED를 유지하고, 세대 0 전용 파일 경로를 받는 **LUMINA_BT_SEED_PROFILE 하나만 추가**한다. 아래 표는 LUMINA_BT_SEED의 분기다.
 
 | 설정 | 동작 |
 |---|---|
@@ -194,21 +196,25 @@ T2·E·R·A0·기존 판독기·원자 자료·공개 자료는 보존한다. T3
 | 정확히 `"1"` | 아래 B-T 경로 |
 | 빈 문자열·그 밖의 값 | 명시적 설정 오류로 종료 |
 
-ON은 비어 있지 않은 `LUMINA_FIXED_TE_PROFILE`을 요구한다. 또한 이번 개입의 적용 영역을 결정론적 생산 경로로 제한하여 `LUMINA_PURE_CMFGEN=1`, `LUMINA_DET_TRANSACTIONAL=1`을 요구한다. 이 조건을 만족하지 않으면 기존 온도로 되돌아가지 않고 종료한다.
+ON은 비어 있지 않은 LUMINA_BT_SEED_PROFILE과 LUMINA_FIXED_TE_PROFILE을 모두 요구한다. 전자는 이번 X에서 X/input/bt_seed_profile.txt의 절대 경로, 후자는 X/input/fixed_te_profile.txt의 기존 경로다. 전용 노브의 미설정·빈 값·상대 경로·읽기 실패는 거부하고, FIXED_T 파일을 대신 읽지 않는다. OFF에서는 전용 노브가 미설정이어야 하며 설정되어 있으면 빈 값도 오류로 거부한다. 이번 개입의 적용 영역을 결정론적 생산 경로로 제한하여 LUMINA_PURE_CMFGEN=1, LUMINA_DET_TRANSACTIONAL=1을 요구한다. 조건 불충족은 기존 온도로 되돌아가지 않고 종료한다. 두 B-T 노브 모두 env 전집과 STRICT 검사에 등록한다.
 
 온도 소유자는 lumina_atomic.c의 **세대 0 opacity.t_electrons 생성 지점**이다.
 
 1. 기존 경계 온도 해석을 완료한 뒤 해당 지점에서 B-T 분기를 판별한다.
 2. ON이면 기존 a210_fixed_te_profile_load와 a210_fixed_te_profile_validate를 사용한다.
 3. 전 셸이 검증된 후에만 배열을 소유자에게 넘긴다.
-4. `opacity.t_electrons[s] = T_pin[s]`이 되며, 이후 기존 CUDA 초기화의 복사 경로가 plasma.T_e에 전달한다.
+4. `opacity.t_electrons[s] = T_seed[s]`가 되며, 이후 기존 CUDA 초기화의 복사 경로가 plasma.T_e에 전달한다.
 5. OFF에서는 기존 할당·T_inner 대입 경로를 유지한다.
 
-프로파일 경로는 기존 FIXED_T 노브 하나로 공유한다. 초기화 전용 프로파일, 온도 배율, 셸 선택 노브를 추가하지 않는다.
+세대 0 소유자와 seed 발행만 LUMINA_BT_SEED_PROFILE을 소비한다. 후속 FIXED_T 레인은 LUMINA_FIXED_TE_PROFILE을 그대로 소비한다. 온도 배율·셸 선택·가드 완화 노브는 추가하지 않는다.
+
+전용 파일 B/input/bt_seed_profile.txt는 §7의 판독기 selftest가 §2.1의 고정 규칙으로 생성한다. E의 프로파일·기하·덱·유효 exports에서 T_pin·셸 ID·T_inner의 신원을 먼저 확인하고, 셸 ID 오름차순으로 `셸ID 온도`를 한 행씩 기록한다. 온도는 binary64로 읽은 값을 왕복 보존하는 17자리 유효숫자로 출력한다. 기존 생산 로더로 다시 읽어 50셸의 셸별 값이 T_seed 정의와 정확히 일치하는지 확인한 뒤 시험한다.
+
+파일 바이트 SHA-256과 생산 로더의 정본 온도 배열 해시 H_seed, 원본 FIXED_T 파일 바이트 SHA-256과 정본 해시 H_fixed, E의 유효 T_inner·셸 출처 집합·생성 규칙·입력 및 생성기 신원을 offline.json에 봉인한다. 봉인은 새 출력 경로·명시적 파일 목록·내용 해시·덮어쓰기 거부로 구현한다. 기존 전용 파일이 있으면 동일 바이트와 입력 신원을 확인해 재사용하고, 다르면 종료한다. stage는 이 봉인 파일을 X/input/bt_seed_profile.txt에 바이트 그대로 복사하며 다시 생성하거나 값을 바꾸지 않는다. 시험에서 쓰는 균일·결함 프로파일은 별도 시험 사본이다.
 
 ### 2.3 프로파일 거부와 원자적 적용
 
-ON에서 다음은 발행 전에 거부한다.
+ON의 세대 0 전용 프로파일에서 다음은 발행 전에 거부한다. 후속 FIXED_T 프로파일의 기존 검증은 유지하며, 두 파일의 등록 출처·내용·역할 연결은 §4.2에서 확인한다.
 
 - 프로파일 미지정·빈 경로·열기 또는 읽기 실패.
 - 행 형식 오류, 중복 셸, 누락 셸, 범위 밖 셸 ID.
@@ -219,22 +225,22 @@ ON에서 다음은 발행 전에 거부한다.
 
 기존 지원 영역은 3500–140000 K다. 이 검사는 지원 영역 판별이며 값을 경계로 바꾸는 연산이 아니다. 온도·인구·τ·방출에 clamp·floor·cap·jitter·fallback을 추가하지 않는다.
 
-실패한 부분 프로파일을 채워 쓰거나 T_inner로 보충하지 않는다. 실패 시 세대 발행과 물질 커밋이 진행되지 않아야 한다.
+실패한 부분 프로파일을 채워 쓰거나 T_inner로 보충하지 않는다. §2.1의 셸 45–49에 미리 봉인한 T_inner는 명시적 입력값이며 누락 보충이나 실패 후 fallback이 아니다. 입력 거부 시 세대 발행과 물질 커밋이 진행되지 않아야 한다.
 
 ### 2.4 Bootstrap 발행과 FIXED_T의 관계
 
 세대 0 배열 변경만으로 발행 신원이 정합하다고 간주하지 않는다. lumina_publish_seed_te의 ON 경로에서 다음을 수행한다.
 
-- 같은 프로파일을 기존 로더로 읽어 검증한다.
-- 실제 plasma.T_e와 셸별 binary64 값 및 정본 온도 해시가 일치하는지 확인한다.
+- LUMINA_BT_SEED_PROFILE의 전용 파일을 기존 로더로 다시 읽어 검증한다.
+- 실제 plasma.T_e와 셸별 binary64 값 및 정본 해시 H_seed가 일치하는지 확인한다.
 - 일치 확인 뒤 기존의 세대 0→1 발행을 수행한다.
-- ON의 발행 메타데이터는 `te_lane=FIXED_T`, `re_root_required=0`, 실제 `pinned_shells`, 정본 `te_profile_sha256`을 기록한다.
-- 기존 `te_manifest_sha256`은 실제 발행 배열에서 계산하며 프로파일 해시와 일치해야 한다.
-- 출처가 FIXED_T 프로파일인 **bootstrap LTE/Saha seed 발행**임을 완전한 해시와 함께 기록한다.
+- ON의 발행 메타데이터는 `te_lane=FIXED_T`, `re_root_required=0`, `pinned_shells=n_shells`를 기록한다. 이번 값은 50이다. 이 수는 전용 배열에 고정된 전체 셸 수이며 T_pin 출처 셸 수 45가 아니다.
+- `te_profile_sha256=H_seed`와 실제 발행 배열의 `te_manifest_sha256=H_seed`를 기록한다. 기존 a210_temperature_publication_validate가 요구하는 전체 셸 수와 완전한 해시를 만족시킨다. 새 레인·자료구조·검증기 변경은 없다.
+- 소유자 및 seed 로그의 출처는 `source=BT_SEED_PROFILE`로 구분하고, 전용 경로·전체 셸 수·완전한 H_seed와 bootstrap LTE/Saha seed 발행 세대 1을 기록한다. T_pin 출처 45셸·T_inner 출처 5셸은 봉인 입력 신원에 별도로 기록한다.
 
 이 발행은 열평형 근 찾기나 후속 FIXED_T 물질 거래의 실행 결과가 아니다. 새 열평형 잔차·가짜 ledger·새 세대 증가를 만들지 않는다. OFF의 기존 발행 메타데이터와 로그는 보존한다.
 
-후속 a210_production_solve의 FIXED_T 로더·풀이·잔차 진단·발행 순서는 바꾸지 않는다. 초기 발행과 후속 고정 온도 발행들이 같은 봉인 프로파일을 소비했는지 런 기록에서 확인한다. 파일 바이트 해시와 정본 온도 배열 해시는 서로 다른 신원으로 기록한다.
+후속 a210_production_solve의 FIXED_T 로더·풀이·잔차 진단·발행 순서는 바꾸지 않는다. 후속 물질 세대 ≥1은 E와 바이트가 같은 기존 FIXED_T 파일과 H_fixed를 소비한다. 이번 부분 B-T의 H_seed와 H_fixed는 서로 다르며, seed 로그끼리는 H_seed, 후속 FIXED_T 로그·최종 온도는 H_fixed로 연결한다. 초기·후속 해시가 같아야 한다는 기존 판독·러너 조건을 이 연결로 교체한다. 파일 바이트 해시와 정본 온도 배열 해시는 별도 신원이다.
 
 ### 2.5 물질 일관성과 불변 범위
 
@@ -296,23 +302,24 @@ ON에서 다음은 발행 전에 거부한다.
 온도 외의 원자 입력·기하·밀도·계산 순서를 고정한 작은 하네스와 생산 형식 프로파일로 다음을 확인한다.
 
 1. **소유자와 분기**
-   - 실제 초기화 함수가 OFF에서 T_inner, ON에서 프로파일 값을 반환한다.
-   - 봉인 프로파일의 50셸 전부를 읽어 값과 셸 대응을 확인한다.
+   - 실제 초기화 함수가 OFF에서 T_inner, ON에서 전용 프로파일의 T_seed를 반환한다.
+   - §2.1·§2.2의 봉인 전용 프로파일 50셸 전부를 읽어 값·셸 출처·해시를 확인한다. 온도가 달라야 하는 집합과 T_inner와 같아야 하는 집합을 고정 규칙에서 독립적으로 구성한다.
    - 서로 다른 온도의 작은 프로파일로 셸 교환을 검출한다.
    - 실제 생산 호출 지점이 시험한 함수에 연결됐는지 변경 소스로 확인한다.
 
 2. **발행 — 기존 시험 확장**
    - T2의 tests/seed_te_publish_selftest.c를 T3에 복사한 기존 시험에서 실제 lumina_publish_seed_te를 호출한다.
-   - 기존 OFF 정상·거부 시험을 보존하고 ON의 배열·정본 해시·프로파일 신원·레인·세대 일치를 추가한다.
+   - 기존 OFF 정상·거부 시험을 보존하고 ON의 전용 배열·H_seed·프로파일 신원·FIXED_T 레인·전체 고정 셸 수·세대 일치와 기존 a210_temperature_publication_validate 통과를 확인한다. H_seed≠H_fixed인 정상 사례를 포함하고, pinned_shells를 45로 쓰거나 seed 해시를 H_fixed로 바꾸는 결함을 검출한다.
    - ON 중복 발행과 프로파일 불일치의 거부 및 거부 시 추가 세대 발행·물질 커밋 없음을 확인한다.
    - OFF 발행은 기준판과 같다.
 
 3. **물질·τ·방출 — 생산 경로 바이트 동일성 대조**
    - 같은 하네스에서 실제 bootstrap 창·물질 계산·solver 소유 τ·LTE 상위 인구·INIT가 사용하는 line_net_sobolev_material을 연결한다.
    - T2 OFF(T_inner=T_u)와 T3 ON(전 셸이 T_u인 균일 프로파일)을 대조한다. 지원 영역 안의 같은 T_u에서 분배함수·전자밀도·이온 인구·준위 인구·τ·국소 선 방출은 바이트가 같아야 한다.
-   - T3 ON(봉인된 실제 프로파일)과 T2 OFF(E의 T_inner)를 같은 나머지 입력으로 대조한다. T_pin[s] ≠ T_inner인 모든 셸에서 위 물질 결과 묶음이 OFF와 달라야 한다. 온도 배열이나 발행 메타데이터의 차이만으로 이 조건을 충족하지 않는다.
+   - T3 ON(봉인된 부분 B-T 전용 프로파일)과 T2 OFF(E의 T_inner)를 같은 나머지 입력으로 대조한다. T_seed[s] ≠ T_inner인 모든 셸에서 위 물질 결과 묶음이 OFF와 달라야 한다. T_seed[s] = T_inner인 모든 셸에서는 같은 물질 결과가 OFF와 바이트까지 같아야 한다. 이번 입력에서는 각각 셸 0–44와 45–49다. 온도 배열이나 발행 메타데이터의 차이만으로 물질 차이 조건을 충족하지 않는다.
+   - 온도 출처와 무관하게 전용 프로파일 전체의 생산 bootstrap·solver 소유 τ 준비가 rc=0이어야 한다. 기존 A2-07 가드의 FATAL 부재, reservoir 진단, 물질·τ 산출과 실제 종료 코드를 함께 보존한다. 가드 통과 전에 끝난 실행을 물질 시험 통과로 기록하지 않는다.
 
-온도 복사·배열 신원과 균일 프로파일의 물질 대조는 정확한 바이트 일치를 요구한다. 비교 대상은 위 물리 배열·스칼라이며 발행 레인 등 메타데이터는 별도로 검사한다. 실제 프로파일 대조는 온도가 다른 셸마다 물질 결과의 비동일성을 요구한다. 기존 생산 전자밀도 수용 기준 \(10^{-8}\)은 유지하며, 변경하지 않는 물리식에 새 독립 고정밀 참조나 상대편차 \(10^{-10}\) 기준을 추가하지 않는다. 정확한 영은 별도로 검사하고 임의의 작은 분모를 넣지 않는다.
+온도 복사·배열 신원과 균일 프로파일의 물질 대조는 정확한 바이트 일치를 요구한다. 비교 대상은 위 물리 배열·스칼라이며 발행 레인 등 메타데이터는 별도로 검사한다. 실제 프로파일 대조는 §3.2의 온도 차이 집합에서는 물질 결과의 비동일성, 온도 동일 집합에서는 바이트 동일성을 요구한다. 대조 전에 실제 상위 준위 권위·반환 상태와 산출 유효성을 확인한다. EMISS_OK 또는 유효한 EMISS_EXACT_ZERO만 인정하며, 오류 상태·NaN끼리의 바이트 일치는 물질 동일성 증거가 아니다. 시험 하네스에서 필요한 생산 초기화·권위 연결을 갖추고 이 적격성을 통과해야 대조한다. 기존 생산 전자밀도 수용 기준 \(10^{-8}\)은 유지하며, 변경하지 않는 물리식에 새 독립 고정밀 참조나 상대편차 \(10^{-10}\) 기준을 추가하지 않는다. 정확한 영은 별도로 검사하고 임의의 작은 분모를 넣지 않는다.
 
 원자 입력과 생산 물리식은 두 판본에서 같게 유지한다. 실제 표적의 \(\mathcal B\) 비교는 직전 등록값을 사용한다.
 
@@ -332,15 +339,18 @@ T2와 T3의 OFF 경로를 같은 시험 입력·컴파일 조건에서 비교한
 | 결함 | 검출해야 할 실패 |
 |---|---|
 | ON인데 T_inner 배열을 그대로 반환 | 온도 소유자 불일치 |
-| 온도만 바꾸고 기존 인구·분배함수·τ를 남김 | §3.2 실제 프로파일 대조에서 물질이 T2 OFF와 같아 비동일성 조건 실패 |
+| 온도만 바꾸고 기존 인구·분배함수·τ를 남김 | §3.2의 온도 차이 집합에서 물질이 T2 OFF와 같아 비동일성 조건 실패 |
+| T_inner로 봉인한 셸의 온도·물질 변경 또는 출처 집합 교환 | §2.1 전용 배열 정의 또는 §3.2의 온도 동일 집합에서 OFF 바이트 동일성 실패 |
 | 발행 직전 한 셸의 온도 또는 프로파일 변경 | 프로파일·발행 배열 불일치 |
 | 잘못된 노브 값, 거부 뒤 발행 진행 | 노브 값 거부, 거부 시 세대 발행·물질 커밋 없음 |
 | fs.J 변경만을 물질 개입으로 표시 | 생산 소유자 검증 실패 |
-| 새 노브를 전집에서 누락 | STRICT 등록 검사 실패 |
+| LUMINA_BT_SEED 또는 LUMINA_BT_SEED_PROFILE을 전집에서 누락 | STRICT 등록 검사 실패 |
+| 전용 노브 미설정·빈 값·상대 경로·읽기 실패 또는 OFF에서 전용 노브 설정 | §2.2 설정 거부와 거부 뒤 발행·물질 커밋 없음 |
+| seed의 pinned_shells를 45로 쓰거나 H_seed를 H_fixed로 대체 | §2.4 발행 검증기 또는 실제 배열·해시 대조 실패 |
 
-§3.2의 실제 프로파일 대조에서 온도만 바꾸고 기존 인구·분배함수·τ를 남긴 결함은 T_pin[s] ≠ T_inner인 셸의 물질 결과가 T2 OFF와 같아지므로 검출한다.
+§3.2의 실제 프로파일 대조에서 온도만 바꾸고 기존 인구·분배함수·τ를 남긴 결함은 T_seed[s] ≠ T_inner인 셸의 물질 결과가 T2 OFF와 같아지므로 검출한다. T_seed[s] = T_inner인 셸의 동일성은 정상 조건이며 낡은 물질의 증거로 처리하지 않는다.
 
-로더 내부의 중복·누락·초과 셸, 지원 영역 밖·비양수·비유한 값과 형식 오류는 T2의 tests/det_stage12_selftest.c를 수정 없이 T3 생산 로더에 연결해 재실행하는 것으로 대신한다. 해당 파일의 NL2-loader-missing-shell·NL2-loader-duplicate-shell·NL2-loader-excess-shell·NL2-loader-out-of-domain 및 NL3-loader-negative·NL3-loader-zero·NL3-loader-nan·NL3-loader-inf·NL3-loader-parse 사례를 사용하고 소스·연결 대상·명령·결과 신원을 offline.json에 기록한다. 새 입력 거부 결함 주입은 노브 값 거부와 거부가 세대 발행·물질 커밋으로 이어지지 않는 연결 확인에 한정한다.
+로더 내부의 중복·누락·초과 셸, 지원 영역 밖·비양수·비유한 값과 형식 오류는 T2의 tests/det_stage12_selftest.c를 수정 없이 T3 생산 로더에 연결해 재실행하는 것으로 대신한다. 해당 파일의 NL2-loader-missing-shell·NL2-loader-duplicate-shell·NL2-loader-excess-shell·NL2-loader-out-of-domain 및 NL3-loader-negative·NL3-loader-zero·NL3-loader-nan·NL3-loader-inf·NL3-loader-parse 사례를 사용하고 소스·연결 대상·명령·결과 신원을 offline.json에 기록한다. 로더 시험은 등록 사례가 있는 원본 소스의 신원, 실제 연결 대상, 정상 종료와 요약 출력을 함께 확인하며 사례별 이름이 stdout에 모두 출력된다고 가정하지 않는다. 새 입력 거부 결함 주입은 §2.2의 노브 조건과 거부가 세대 발행·물질 커밋으로 이어지지 않는 연결 확인에 한정한다.
 
 결함 주입은 시험 사본이나 시험 어댑터에서만 한다. 생산 결함 노브는 추가하지 않는다. 시험은 실제 오류 사유와 비영 종료를 확인해야 하며, 기대 상태를 직접 출력하는 방식은 인정하지 않는다.
 
@@ -369,7 +379,7 @@ T3는 T2 기준판에 §7의 변경만 적용한다. E의 B2 빌드 절차와 �
 | 항목 | X의 설정 |
 |---|---|
 | 생산 바이너리 | T2＋§7 변경집합으로 새로 빌드한 B3 |
-| 물리 개입 | `LUMINA_BT_SEED=1` |
+| 물리 개입 | `LUMINA_BT_SEED=1`, LUMINA_BT_SEED_PROFILE=X/input/bt_seed_profile.txt의 절대 경로 |
 | 후속 온도 | E의 fixed_te_profile과 같은 바이트 |
 | NRB | E와 같은 OFF |
 | 바깥 반복 | 6 |
@@ -382,7 +392,7 @@ T3는 T2 기준판에 §7의 변경만 적용한다. E의 B2 빌드 절차와 �
 
 명령행의 `2`를 결정론적 바깥 반복 수로 오독하지 않는다. 실제 여섯 반복은 E의 유효 exports와 실행 경로를 승계한다.
 
-허용 exports 차이는 새 노브와 런 경로 이식뿐이다. GPU 프로파일 변경은 자원 설정으로 별도 기록한다. NRB·프로파일·반복 수·허용오차·W5 선택을 함께 바꾸지 않는다.
+허용 exports 차이는 LUMINA_BT_SEED=1, LUMINA_BT_SEED_PROFILE의 전용 입력 경로 추가와 기존 런 경로 이식뿐이다. GPU 프로파일 변경은 자원 설정으로 별도 기록한다. NRB·후속 FIXED_T 프로파일·반복 수·허용오차·W5 선택을 함께 바꾸지 않는다.
 
 ### 4.2 소스·입력·런 신원
 
@@ -401,9 +411,13 @@ T2 기준판과 빌드 manifest
 
 기존 186경로 빌드 목록을 기준 목록으로 보존하되, 새 시험·생성물과 실제 컴파일 의존 목록을 별도로 명시한다. 새 파일을 포함한 목록을 억지로 186개로 맞추지 않는다.
 
-T3의 env 전집은 기존 생성기를 실행하여 생성한다. 생성기가 소비한 파일 목록을 기록하고, 기존 이름의 임의 삭제·추가 없이 새 생산 노브가 등록됐는지 확인한다.
+T3의 env 전집은 기존 생성기를 실행하여 생성한다. 생성기가 소비한 파일 목록을 기록하고, T2 전집 대비 추가 이름이 LUMINA_BT_SEED·LUMINA_BT_SEED_PROFILE뿐이며 기존 이름 삭제가 없는지 확인한다. 개정 1 전집 대비 추가는 LUMINA_BT_SEED_PROFILE뿐이다.
 
-X에는 OWNER.txt, STAGE_IDENTITY.txt, SUBMIT_COMMAND.txt, 바이너리·덱·원자 자료·프로파일 신원, 실행 명령과 유효 exports를 둔다. T3와 B3를 E의 기존 신원으로 표시하지 않는다.
+X에는 OWNER.txt, STAGE_IDENTITY.txt, SUBMIT_COMMAND.txt, 바이너리·덱·원자 자료·전용 seed 및 후속 FIXED_T 프로파일 신원, 실행 명령과 유효 exports를 둔다. T3와 B3를 E의 기존 신원으로 표시하지 않는다.
+
+stage는 개정 2 오프라인 통과 기록과 시험·빌드 소스의 일치, §2.2 전용 파일의 생성 규칙·셸별 값·파일 해시·H_seed, 후속 파일의 E 대비 바이트 일치·H_fixed, 노브의 역할별 경로를 확인한다. t1의 개정 1 결과를 새 구현의 통과 증거로 재사용하지 않는다. STAGE_IDENTITY.txt에 두 프로파일의 파일 해시와 정본 해시, 셸 출처·T_inner, 봉인 offline.json 및 러너 신원을 남긴다.
+
+GPU 러너는 모델 진입 전에 staged 입력·exports·바이너리·러너와 이 봉인 기록을 대조한다. 실행 뒤 소유자 로그와 bootstrap seed 발행 로그는 각각 한 번의 H_seed·전용 출처·전체 셸 수·세대 신원으로, 기존 여섯 후속 FIXED_T 발행 로그와 최종 온도는 H_fixed로 확인한다. A2-07을 포함한 FATAL을 성공 처리하지 않는다. RUN_FOOTER.txt와 analyze도 H_seed와 H_fixed를 역할별로 구분하며, 입력 파일·봉인 기록·로그의 해시 교환·누락·불일치를 거부한다.
 
 ### 4.3 필요한 런 산출과 소비 세대
 
@@ -615,7 +629,7 @@ E 캡처 런과 E′N의 스펙트럼 연결은 직전 판정의 동일성 기�
 
 ### 5.5 122건과 기대치 개정
 
-직전 extension의 고정 122키에서 call-1 J̄, E′ 대비 이동, 등록 B-T 씨앗과의 편차를 요약한다. 이온별·셸별 결과와 결손을 보존하며 성공 사례만 다시 고르지 않는다.
+직전 extension의 고정 122키에서 call-1 J̄, E′ 대비 이동, 등록 B-T 씨앗과의 편차를 요약한다. 이온별·셸별 결과와 결손을 보존하며 성공 사례만 다시 고르지 않는다. 각 키에는 §2.1의 세대 0 온도 출처를 함께 기록한다. 셸 45–49에 속하는 키가 있으면 등록 B-T 씨앗과의 편차를 그대로 보존하되, 실제 투입 씨앗은 E′의 T_inner임을 명시한다. 새 기대치나 별도 성공 기준은 만들지 않는다.
 
 extension.csv의 소비자는 운전자와 사용자이며, 프로젝트 순서 2인 EUV 원천·황 전선 검토에서 초기 씨앗 변경의 영향 범위와 결손을 파악하는 입력으로 사용한다. 이 후속 검토의 실행을 이번 계약으로 승인하지 않는다.
 
@@ -681,27 +695,27 @@ extension.csv의 소비자는 운전자와 사용자이며, 프로젝트 순서 
 
 | 경로 | 함수·항목 | 허용 변경 |
 |---|---|---|
-| `/gpfs/kjhan/lumina/cmfgen_map/siiii_btseed_20261007/source/src/lumina_atomic.c` | 세대 0 초기화, det_siiii_btseed_* | 엄격한 노브 분기, 기존 프로파일 로더·검증 호출, 전 셸 온도 소유권, 출처 기록 |
-| `/gpfs/kjhan/lumina/cmfgen_map/siiii_btseed_20261007/source/src/lumina_plasma.c` | lumina_publish_seed_te의 ON 경로 | 실제 배열·프로파일 일치 확인, bootstrap 발행 메타데이터·완전한 신원 기록 |
-| `/gpfs/kjhan/lumina/cmfgen_map/siiii_btseed_20261007/source/src/env_universe.h` | 생성물 | 기존 생성기에 의한 LUMINA_BT_SEED 등록 |
+| `/gpfs/kjhan/lumina/cmfgen_map/siiii_btseed_20261007/source/src/lumina_atomic.c` | 세대 0 초기화, det_siiii_btseed_* | 전용 seed 경로의 엄격한 분기·기존 로더·전 셸 T_seed 소유권·출처 기록 |
+| `/gpfs/kjhan/lumina/cmfgen_map/siiii_btseed_20261007/source/src/lumina_plasma.c` | lumina_publish_seed_te의 ON 경로 | 실제 배열·전용 프로파일 일치, H_seed·전체 고정 셸 수·bootstrap 신원 기록 |
+| `/gpfs/kjhan/lumina/cmfgen_map/siiii_btseed_20261007/source/src/env_universe.h` | 생성물 | 기존 생성기에 의한 LUMINA_BT_SEED·LUMINA_BT_SEED_PROFILE 등록 |
 | `/gpfs/kjhan/lumina/cmfgen_map/siiii_btseed_20261007/source/validation/instrumentation_debt/ENV_UNIVERSE.json` | 생성물 | 같은 생성 실행의 전집·소비 근거 기록 |
-| `/gpfs/kjhan/lumina/cmfgen_map/siiii_btseed_20261007/source/tests/det_siiii_btseed_selftest.c` | CPU 시험 — 신설 | 실제 초기화·생산 물질 경로의 균일 프로파일 동일성·실제 프로파일 비동일성 대조, OFF 대조·축소된 결함 주입 |
-| `/gpfs/kjhan/lumina/cmfgen_map/siiii_btseed_20261007/source/tests/seed_te_publish_selftest.c` | 기존 발행 시험 확장 | T2 시험 보존, ON 배열·해시·발행 신원 일치·중복 발행 및 불일치 거부 검사 |
-| `scripts/det_siiii_btseed_readout.py` | 판독기 — 신설 | 입력 연결·시험 검증·스테이징·등록 기대 판독·과학 코드·비용 장부 |
-| `/gpfs/kjhan/lumina/cmfgen_map/siiii_btseed_20261007/tools/run_siiii_btseed_offline.slurm` | CPU 러너 — 신설 | 생성·생산 경로 대조·기존 발행 시험 확장·T2 로더 시험 재실행·B2 절차를 승계한 빌드·게이트·판독의 명령·시간·종료 기록 |
-| `/gpfs/kjhan/lumina/cmfgen_map/siiii_btseed_20261007/tools/run_siiii_btseed_gpu.slurm` | GPU 러너 — 신설 | E 러너를 기반으로 X 한 번 실행, 신원·자원·시도 수·완료 확인 |
+| `/gpfs/kjhan/lumina/cmfgen_map/siiii_btseed_20261007/source/tests/det_siiii_btseed_selftest.c` | CPU 시험 — 신설 | 생산 상위 준위 권위 연결·유효 물질 대조·부분 B-T의 차이·동일 집합 검사·bootstrap 가드 확인·OFF 및 결함 주입 |
+| `/gpfs/kjhan/lumina/cmfgen_map/siiii_btseed_20261007/source/tests/seed_te_publish_selftest.c` | 기존 발행 시험 확장 | T2 시험 보존, 전용 ON 배열·H_seed·전체 고정 셸 수·기존 발행 검증기·중복 및 불일치 거부 |
+| `scripts/det_siiii_btseed_readout.py` | 판독기 — 신설 | 전용 프로파일 생성·봉인·두 프로파일의 입력 연결·시험 검증·스테이징·등록 기대 판독·과학 코드·비용 장부 |
+| `/gpfs/kjhan/lumina/cmfgen_map/siiii_btseed_20261007/tools/run_siiii_btseed_offline.slurm` | CPU 러너 — 신설 | 전용 프로파일 및 전집 생성·부분 B-T 오프라인 검증·기존 시험·B2 절차 빌드·두 프로파일의 stage 연결·명령·시간·종료 기록 |
+| `/gpfs/kjhan/lumina/cmfgen_map/siiii_btseed_20261007/tools/run_siiii_btseed_gpu.slurm` | GPU 러너 — 신설 | E 러너 기반 X 한 번 실행, 진입 전 두 프로파일·노브 신원과 진입 후 H_seed·H_fixed 로그·자원·시도 수·완료 확인 |
 
 ### 변경집합 끝
 
 기존 derive_env_universe.py, 생산 헤더의 자료구조, 수송 소스, 기존 판독기와 기계 게이트는 변경하지 않는다. 이 집합으로 구현할 수 없으면 필요한 변경을 사전 개정으로 넘긴다. T2의 tests/det_stage12_selftest.c는 수정 없이 재사용하므로 변경집합이 아니라 §12의 참조로 등록한다.
 
-X의 job.slurm은 등록 GPU 러너의 실행용 사본이다. 빌드 manifest·patch·입력 사본·로그·계약·판정·감사문은 집행 산출이다. 새 생산 기능이나 별도 판독 구현을 이 이름으로 표 밖에 추가하지 않는다.
+X의 job.slurm은 등록 GPU 러너의 실행용 사본이다. B/input/bt_seed_profile.txt와 그 X/input 사본은 §2.2의 생성·봉인 규칙에 따른 입력 산출이다. 빌드 manifest·patch·입력 사본·로그·계약·판정·감사문은 집행 산출이다. 보조 진단 도구는 기존 증거의 참조이며 수정·재실행할 새 구현이 아니다. 새 생산 기능이나 별도 판독 구현을 이 이름으로 표 밖에 추가하지 않는다.
 
 기존 판독기의 필요한 순수 함수만 재사용할 수 있다. 실제 import 경로·함수·파일 신원을 기록하며, 기존 analyze 전체를 호출하여 이번 범위나 새 소스 신원 검사를 우회하지 않는다.
 
 | 필수 판독 산출 | 내용 |
 |---|---|
-| offline.json | 실제 생산 함수 시험, OFF 대조, 주입 결함·기대/실제 사유·rc, 빌드 준비 상태 |
+| offline.json | 전용 프로파일 생성·봉인 신원, 등록 진단·입력 연결, 생산 함수·가드 통과, 차이·동일 집합의 물질 대조, OFF 대조, 주입 결함·기대/실제 사유·rc, 빌드 준비 상태 |
 | seed_1206.csv | 다섯 셸 call 1–7, 등록 씨앗, 편차·오차 구간·이동 방향·세대 7 비교 |
 | response_2542.csv | E′·X의 같은 세대 인구·α·τ·S·Q, 등록 P1·P2와 비교 |
 | spectrum.csv | 절대 대역 광도·OPT 정규화·로그 잔차·R8·2차 기대 |
@@ -719,8 +733,8 @@ X의 job.slurm은 등록 GPU 러너의 실행용 사본이다. 빌드 manifest·
 
 | 게이트 | 방지할 실패 | 통과 조건 |
 |---|---|---|
-| G-LINK | 기준판·프로파일·행·셸·세대·실행 신원 혼동 | 제출 전 §1의 기전 경로·기대치 신원, T2＋§7 변경집합과 실제 빌드 소스 일치, 시험한 초기화·발행 구현과 생산 빌드 일치, §4 실행 설정·§9 비용 고정; 런 후 §1·§4의 입력과 실제 출력 연결 및 후속 FIXED_T 물질 세대 ≥1의 E′·X T_e 정확 일치 확인(§2.4의 bootstrap seed T_e 발행 세대 1과 구별) |
-| G-INTERVENTION | 온도만 바뀌거나 발행·물질이 낡은 상태 | §2·§3의 전 셸 적용·입력 거부·온도와 발행·물질 연결, 생산 경로 대조·OFF 바이트 일치·주입 결함 검출 통과 |
+| G-LINK | 기준판·프로파일·행·셸·세대·실행 신원 혼동 | 제출 전 §1의 기전 경로·기대치 신원, T2＋§7 변경집합과 실제 빌드 소스 일치, 시험한 초기화·발행 구현과 생산 빌드 일치, §4.2의 전용 seed·후속 FIXED_T 파일 및 역할별 해시·노브·stage·GPU 러너 신원, §4 실행 설정·§9 누적 비용 고정; 런 후 §1·§4의 입력과 실제 출력 및 H_seed·H_fixed의 역할별 로그 연결 및 후속 FIXED_T 물질 세대 ≥1의 E′·X T_e 정확 일치 확인(§2.4의 bootstrap seed T_e 발행 세대 1과 구별) |
+| G-INTERVENTION | 온도만 바뀌거나 발행·물질이 낡은 상태 | §2·§3의 전용 배열 전 셸 일치·입력 거부·발행 메타데이터·유효 물질 연결, 부분 B-T 전체 bootstrap 가드 통과·온도 차이 집합의 물질 비동일성·온도 동일 집합과 OFF의 바이트 일치·주입 결함 검출 통과 |
 | G-READOUT | 기대치 교체·오차 누락·세대 대체·반증 은폐 | §5·§6의 실제 판독 경로 시험 통과 |
 
 과학 기대가 반증된 것은 게이트 실패가 아니다. 게이트가 반증을 정확히 기록하지 못한 경우가 실패다.
@@ -732,7 +746,8 @@ X의 job.slurm은 등록 GPU 러너의 실행용 사본이다. 빌드 manifest·
 - 씨앗 전달에서 다섯 셸 전부 기준 안, 한 셸만 기준 밖, 경계 중첩, 필수 행 결손.
 - Jbar_err_upper를 제거하면 잘못 생존하는 경계 사례.
 - call 1을 call 2로, 물질 7을 세대 8로, 셸·선 행을 서로 바꾼 입력.
-- 같은 이름의 다른 프로파일·바이너리·기대치 파일.
+- 같은 이름의 다른 전용 seed 또는 후속 FIXED_T 프로파일·바이너리·기대치 파일.
+- H_seed≠H_fixed인 정상 stage·GPU 러너·analyze 연결과 두 해시 교환·누락, 전용 프로파일 경로·봉인 내용 불일치, pinned_shells=45의 결함. 정상 사례는 역할별 해시 차이 때문에 거부하지 않고 결함은 적격성 실패로 검출한다.
 - 1차 생존과 공개 비교 반증이 함께 존재하는 사례.
 - 등록 세대 7 값과 새 배경 재계산값이 달라, 기대치 대체 결함을 검출하는 사례.
 - \(n_0^X/n_0^E\ne1\)인 2542 Å 사례와 그 인자를 생략하는 결함.
@@ -793,6 +808,8 @@ E의 실측은 H200 두 장으로 10:02:57, 약 20.10 GPU·h다. 이번 상한�
 | CPU 전용 예약량 | **8 core·h 이하** |
 | 새 입력 사본·빌드·런·판독·실패 기록 합계 | 64 GiB |
 
+CPU 전용 경과 상한 7200초·예약량 상한 8 core·h와 아래 배분을 유지한다. 개정 2에서 누적 비용을 초기화하지 않는다. B/evidence/COST_LEDGER.txt의 현재 기록은 probe1 64초·t1 158초·guard_diag1 452초로 Slurm 합계 674초, 기록된 보조 실행 합계 101.429초, 총 775.429초다. 모두 4 CPU로 보수적으로 환산해도 약 0.862 core·h이며 경과 잔여는 6424.571초다. t1 158초는 시험 예산, probe1·guard_diag1·보조 실행의 617.429초는 생성·스테이징·신원 확인·기계 게이트·보조 실행 예산에 차감한다. 같은 작업 안의 판독·러너 시험과 병렬 하네스 경과를 다시 더하지 않는다. 이후 집행은 실제 자원·경과 장부를 갱신하며 남은 배분 안에서 수행한다.
+
 CPU 전용 경과 예산은 다음과 같이 배분한다.
 
 | 용도 | 예산 |
@@ -820,11 +837,12 @@ python3 -B "$P/scripts/det_siiii_btseed_readout.py" selftest \
   --production-source "$T3" \
   --baseline-source "$T2" \
   --profile "$E/input/fixed_te_profile.txt" \
+  --seed-profile "$B/input/bt_seed_profile.txt" \
   --expectations "$A0/expectations.json" \
   --out "$B/results/$RUN_ID/selftest"
 ```
 
-CPU 러너는 위 시험, env 생성, B2와 같은 nvcc 절차의 생산 빌드 및 제출 전 연결 검사를 수행한다. 실제 빌드 명령 전체를 B3에 보존하며 새 출력 디렉토리를 사용한다.
+CPU 러너는 위 selftest의 전용 프로파일 생성·봉인과 시험, env 생성, B2와 같은 nvcc 절차의 생산 빌드 및 §4.2의 제출 전 연결 검사를 수행한다. --profile은 기존 후속 FIXED_T 입력, --seed-profile은 생성·검증할 전용 입력이다. stage의 --seed-profile은 같은 봉인 파일의 확인·복사에만 사용한다. 실제 빌드 명령 전체를 B3에 보존하며 새 출력 디렉토리를 사용한다.
 
 ```bash
 python3 -B "$P/scripts/det_siiii_btseed_readout.py" stage \
@@ -832,6 +850,7 @@ python3 -B "$P/scripts/det_siiii_btseed_readout.py" stage \
   --production-source "$T3" \
   --build "$B3" \
   --offline "$B/results/$OFFLINE_ID" \
+  --seed-profile "$B/input/bt_seed_profile.txt" \
   --expectations "$A0/expectations.json" \
   --gpu-profile h200x2 \
   --run "$X"
@@ -878,7 +897,7 @@ python3 -B "$P/scripts/check_dispatch_preflight.py" "$ORDER" --root "$P"
 
 판정문은 다음을 처음에 명시한다.
 
-- 실제 생산 변경과 실행 횟수.
+- 실제 생산 변경과 실행 횟수. 후보는 부분 B-T이며, 세대 0의 셸 0–44는 봉인 FIXED_T, 바깥 셸 45–49는 E′의 T_inner 씨앗 그대로임을 판정문 첫 문단에 적는다. 후속 FIXED_T 레인은 E′와 같으며, 바깥 셸의 최종 물질·복사 결과까지 E′와 같다는 뜻으로 확대하지 않는다.
 - 오프라인 요건 ②의 검증 범위.
 - 1차 기대는 「개입 전달 검증(구성상 거의 확정)」으로 표기하고, 다섯 셸의 실측 D_seed를 E′의 J̄₁ 대 𝓑(T_inner) 상대편차 잣대 7.6e-6과 나란히 기록한다. §5.1의 통과 기준은 바꾸지 않는다.
 - 등록 세대 7 기대와 축약 모형 적용성의 구별.
@@ -938,21 +957,33 @@ python3 -B "$P/scripts/check_dispatch_preflight.py" "$ORDER" --root "$P"
 | 현재 lumina_atomic.c와 T2 대조 | 차이 없음 확인 |
 | E 실행 설정·빌드 절차·W5·캡처 신원·로그 순서 | 관련 기록 직접 판독 |
 | 원안 파일화·커밋 | 운전자 집행, ca7a4f7 |
-| 생산 변경·수치 계산 | 미집행 |
+| 개정 1 생산 변경·수치 계산 | T3의 생산 파일·전집·시험과 러너·판독기 구현, probe1·t1·보조 진단 집행; 개정 2의 수정·검증은 미집행 |
 | 원안 기계 게이트 | prereg·referents·canonical 각각 rc=0; B/evidence/preflight_prereg_draft_20261007T192719의 해당 로그 직접 판독 |
 | 이번 계약 Fable 사전감사 | claude-fable-5-1 fresh, 1회 완료; Q-GOAL 부합(조건부), Q-LEAN 대체로 적정, «폐합 차단» 1(L4-1), «기재로 족함» 9; B/fable_preaudit.md, 발주서 B/FABLE_PREAUDIT_BRIEF.md |
-| 사전감사 뒤 사용자 결정 | B/evidence/USER_DECISION_2026-10-07.txt 마지막 항 「축소 수용 (Recommended)」; L4-1 교체·L4-2–6·기재 항목 반영 승인 |
+| 사전감사 뒤 사용자 결정 | B/evidence/USER_DECISION_2026-10-07.txt의 「축소 수용 (Recommended)」; L4-1 교체·L4-2–6·기재 항목 반영 승인 |
 | 개정 1 기안 | gpt-6-astra, 구현·빌드·판정런 전 OLD/NEW 작성; 발행·로더 시험과 기존 판독 함수 소스 직접 확인 |
-| 개정 1 기계 게이트 | 미집행; 운전자 파일화 뒤 prereg·referents·canonical 각각 rc=0 확인 필요 |
-| 직접시험·빌드·제출·판정·종료감사 | 미집행 |
+| 개정 1 기계 게이트 | B/evidence/preflight_prereg_rev1_20261007T195232의 prereg·referents·canonical 로그 각각 rc=0 직접 판독 |
+| t1 오프라인 시험 | a10 job 415730, 158초; B/results/t1/selftest/offline.json의 G_INTERVENTION=FAIL. 전 셸 T_pin의 T3_on_real은 seed 발행 뒤 bootstrap A2-07 FATAL로 rc=7; 셸 49의 S stage 5 fraction=0.9983. B/results/t1/selftest/offline_work/runs/T3_on_real_cwd의 stderr.log·stdout.log 확인 |
+| t1의 별도 시험 상태 | B/results/t1/selftest/selftest.json의 G_READOUT=PASS, B/results/t1/gpu_runner_selftest.log의 자체 시험 통과. OFF·균일 배열의 바이트 일치와 발행 메타데이터 검사 통과는 부분 증거이며 유효 물질 검증 완료가 아님; 상위 인구 권위·로더 판독 오류는 아래 기안 메모 참조 |
+| 보조 진단 | a10 job 415732, 452초; B/results/guard_diag1/guard_diag.json과 B/tools/diag_guard_shells.py 직접 판독. 실패 단일 셸 45–49, 통과 단일 셸 42–44 및 고온 셸 부분집합 0–12·33–41; §2.1의 집합 선택 근거로 등록 |
+| 진단 뒤 사용자 결정 | B/evidence/USER_DECISION_2026-10-07.txt 마지막 항 「부분 B-T (Recommended)」; 봉인 전용 프로파일·오프라인 검증 뒤 판정런 1회 |
+| 개정 2 기안 | gpt-6-astra, HEAD 1ee456aea1f235943465fcb5609f282475887d47 기준 OLD/NEW; t1·진단·결정·비용 및 관련 구현 직접 판독 |
+| 개정 2 기계 게이트·직접시험 | 미집행; 운전자 파일화 뒤 prereg·referents·canonical 각각 rc=0과 수정 구현의 §3·§8 검증 필요 |
+| 생산 빌드·판정런 제출·판정·종료감사 | 미집행; 판정런 진입 0회, 승인된 1회는 오프라인 통과 뒤에만 집행 |
 
-기안자는 파일 수정·수치 분석·시험·게이트·빌드·제출을 수행하지 않았다. 미래 항목을 예상 PASS로 채우지 않는다.
+기안자는 파일 수정·수치 분석·시험·게이트·빌드·제출을 수행하지 않았다. 위 집행 결과는 기존 파일 직접 판독이며 독립 재실행이 아니다. 미래 항목을 예상 PASS로 채우지 않는다.
 
 기안 메모 — extension.csv 유지: 프로젝트 순서 2의 EUV 원천·황 전선 검토가 고정 122키의 초기 씨앗 이동·결손을 소비하므로 §5.5에 소비자를 명기했다.
 
 기안 메모 — 오류 정정: §1.4의 「오프라인 수송 예보다」를 「오프라인 수송 예보가 아니다」로 고쳐 직전 계약의 설계 목표·예보 구분과 일치시켰다.
 
 기안 메모 — 상태 정정: 머리말의 「신설」·미집행 표기와 §0·§11의 시제를 원안 파일화·기계 게이트·Fable 사전감사 및 사용자 결정 기록에 맞췄으며, 원안의 rc=0을 개정 1 검사 결과로 승계하지 않았다.
+
+기안 메모 — 개정 2 상태 정정: 개정 1 기계 게이트·구현·t1·보조 진단의 실제 집행을 반영하고, 두 사용자 결정의 순서를 구별했다. 개정 1 통과 기록을 개정 2 통과로 승계하지 않는다.
+
+기안 메모 — 시험 적격성 오류: t1의 T2_off 상위 인구 상태 배열은 EMISS_ATOMIC_MISSING(14)이므로 OFF·균일 바이트 일치만으로 준위 인구·방출 검증을 완료할 수 없다. §3.2와 기존 시험 변경집합에 생산 권위 연결·유효 상태 확인을 명시했다.
+
+기안 메모 — 로더 판독 오류: t1의 stage12_T3는 rc=0과 production_loader PASS 요약을 남겼으나 offline.json은 사례별 출력 탐색 때문에 실패로 기록했다. §3.3에서 원본 사례·연결 신원·실제 요약 확인으로 바로잡고 재시험하도록 했다.
 
 ## §12. 기계 선언
 
@@ -1034,6 +1065,67 @@ python3 -B "$P/scripts/check_dispatch_preflight.py" "$ORDER" --root "$P"
       "path": "/gpfs/kjhan/lumina/cmfgen_map/siiii_btseed_20261007/evidence/USER_DECISION_2026-10-07.txt"
     },
     {
+      "path": "/gpfs/kjhan/lumina/cmfgen_map/siiii_btseed_20261007/results/guard_diag1/guard_diag.json",
+      "flags_existing": [
+        "failing_single_shells",
+        "passing_single_shells",
+        "max_reservoir_fraction"
+      ]
+    },
+    {
+      "path": "/gpfs/kjhan/lumina/cmfgen_map/siiii_btseed_20261007/tools/diag_guard_shells.py",
+      "flags_existing": [
+        "HARNESS",
+        "shells_at_T_pin"
+      ]
+    },
+    {
+      "path": "/gpfs/kjhan/lumina/cmfgen_map/siiii_btseed_20261007/results/t1/selftest/offline.json",
+      "flags_existing": [
+        "G_INTERVENTION",
+        "T3_on_real"
+      ]
+    },
+    {
+      "path": "/gpfs/kjhan/lumina/cmfgen_map/siiii_btseed_20261007/results/t1/selftest/selftest.json",
+      "flags_existing": [
+        "G_READOUT"
+      ]
+    },
+    {
+      "path": "/gpfs/kjhan/lumina/cmfgen_map/siiii_btseed_20261007/results/t1/selftest/offline_work/runs/T3_on_real_cwd/stderr.log",
+      "flags_existing": [
+        "level-less top stage is populated",
+        "POP_INVALID_PARTITION"
+      ]
+    },
+    {
+      "path": "/gpfs/kjhan/lumina/cmfgen_map/siiii_btseed_20261007/results/t1/selftest/offline_work/runs/T3_on_real_cwd/stdout.log",
+      "flags_existing": [
+        "bootstrap T_e published",
+        "level-less reservoir"
+      ]
+    },
+    {
+      "path": "/gpfs/kjhan/lumina/cmfgen_map/siiii_btseed_20261007/results/t1/selftest/offline_work/runs/stage12_T3_cwd/stdout.log",
+      "flags_existing": [
+        "PASS det_stage12 NL1..NL5 production_loader"
+      ]
+    },
+    {
+      "path": "/gpfs/kjhan/lumina/cmfgen_map/siiii_btseed_20261007/results/t1/gpu_runner_selftest.log",
+      "flags_existing": [
+        "CMFGEN_TWIN_MAP_RUNNER_SELFTEST_PASS"
+      ]
+    },
+    {
+      "path": "/gpfs/kjhan/lumina/cmfgen_map/siiii_btseed_20261007/evidence/COST_LEDGER.txt",
+      "flags_existing": [
+        "415730",
+        "415732"
+      ]
+    },
+    {
       "path": "/gpfs/kjhan/lumina/cmfgen_map/siiii_btseed_20261007/fable_preaudit.md"
     },
     {
@@ -1096,6 +1188,8 @@ python3 -B "$P/scripts/check_dispatch_preflight.py" "$ORDER" --root "$P"
       "path": "/gpfs/kjhan/lumina/cmfgen_map/obs_capture_20261006/source/src/radeq_publication.h",
       "flags_existing": [
         "a210_fixed_te_profile_validate",
+        "a210_temperature_publication_validate",
+        "A210_TE_LANE_FIXED_T",
         "A210_PRODUCTION_TE_MIN_K",
         "A210_PRODUCTION_TE_MAX_K"
       ]
