@@ -752,6 +752,8 @@ def det_seedmem_scope_model(runs, sample, deck, csob, lib, fault=None):
                     q = meas.div(pred)
                     d = None if q is None else q - I.x(1.0)
                 st = det_seedmem_scope_le(None if d is None else d.abs(), CRIT, fault)
+                if fault == "status_flip_all" and st != "X":
+                    st = "UNRESOLVED"                 # injected: every stored state replaced
                 if det_seedmem_scope_is_link(why):
                     st = "X"
                 REP.det_siiii_repair_cols(rec, "S_meas", meas)
@@ -1409,10 +1411,8 @@ def det_seedmem_scope_validate(md, cr, br, sample, runs, sets_model, set_states)
         if r.status == "X":
             continue
         exp = det_seedmem_scope_status_check(float(lo_), float(hi_))
-        if exp != r.status:
+        if exp != r.status:                 # every finding is kept: scope propagation needs all of them
             why.append(f"STATUS_RECOMPUTE:{r.run}:{r.line}:{r.shell}:{r.call}:{r.status}!={exp}")
-            if len(why) > 50:
-                break
     for tag, sets in sets_model.items():
         for st, rec in sets.items():
             if det_seedmem_scope_universal_check(set_states[tag][st]) != rec["state"]:
@@ -1648,6 +1648,7 @@ def det_seedmem_scope_analyze(census, runs_paths, src, out, lib, target=TARGET, 
     validity, reasons = "VALID", []
     if vwhy or any(n_x.values()):
         validity = "X"
+        # only the stored message list is capped; propagation below consumes every finding
         reasons = vwhy[:200] + [f"X_ROWS:{k}={v}" for k, v in n_x.items() if v]
     counter_rec = det_seedmem_scope_set_code(list(counter.get("R", {}).values()))
     mlevel = {tag: {"code": "X" if ((br.run == tag) & (br.status == "X")).any() else 5,
@@ -1703,7 +1704,7 @@ def det_seedmem_scope_analyze(census, runs_paths, src, out, lib, target=TARGET, 
            "codes": codes, "collision_authority": coll, "solve_unit_authority": sl,
            "rate_forms": {t: rd["form"] for t, rd in runs.items()},
            "counts": {"keys": len(sample["keys"]), "model_rows": len(md), "cross_rows": len(cr),
-                      "budget_rows": len(br), "x_rows": n_x},
+                      "budget_rows": len(br), "x_rows": n_x, "validator_findings": len(vwhy)},
            "timing_s": timing,
            "claim_ceiling": "offline readout of stored states; no production change, no physical correctness, no "
                             "public agreement, no causal pathway apportionment, no run authorisation"}
@@ -2354,6 +2355,17 @@ def det_seedmem_scope_selftest_cases(base, lib, src):
                          rq3["codes"]["H-MODEL_sets"]["R"]["SIII"].get("provisional_code")),
          ("VALID", {"UNRESOLVED"}, 4, True, True, True, [("X", False)], 0),
          fault="drop_intervals|widen_crit|mix_codes", results=[rq0, rq1, rq2, rq3])
+    rq4, oq4 = run("status_flip_all", fault="status_flip_all")
+    dq4 = nxt(oq4)["decisions"]
+    case("numerics (propagation beyond the message cap): every stored state replaced gives more than 50 findings "
+         "before the later scopes; the later scopes (R' counterexample, every X-run set) are still X and the final "
+         "decision table carries no model decision", "11 numerics",
+         (rq4["counts"]["validator_findings"] > 50, len(rq4["reasons"]) <= 200,
+          rq4["codes"]["H-COUNTEREXAMPLE"]["R_two_level_nrb_applicability"],
+          sorted({v for t_ in ("E", "R", "X") for v in rq4["codes"]["H-MODEL"][t_].values()}),
+          sorted({d_["code"] for d_ in dq4 if "two-level NRB source model" in d_["result"] or
+                  d_["result"].startswith("1206 control")})),
+         (True, True, "X", ["X"], ["X"]), fault="status_flip_all", results=[rq4])
     case("numerics (helpers): an interval straddling 1e-3 is UNRESOLVED; X precedes every science state; a refutation "
          "survives a missing cell", "11 numerics",
          (det_seedmem_scope_le(I(0.9e-3, 1.0e-3, 1.1e-3), CRIT),
