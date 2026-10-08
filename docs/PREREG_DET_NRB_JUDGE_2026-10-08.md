@@ -1,0 +1,1292 @@
+# 사전등록 — DET-NRB-JUDGE: 봉인 NRB 형태의 12회 반복·P1/P2 판정·공개 CMFGEN 비교
+
+2026-10-08 · astra 기안 · read-only  
+운전자 파일화 대상: `docs/PREREG_DET_NRB_JUDGE_2026-10-08.md` — 신설  
+상태: **기안. 이번 계약의 기계 게이트·Fable 사전감사·구현·직접시험·GPU 판정런·판독·종료감사는 미집행.**
+
+## §0. Q-GOAL·Q-LEAN 자기답과 과학 질문
+
+### Q-GOAL — 최종목적에 직접 기여하는가?
+
+최종목적은 Monte-Carlo 수송으로 CMFGEN 수준의 SN Ia 스펙트럼을 재현하는 것이다. 이번 단은 그 복원 과정의 결정론적 비교 레인에서, **off 형태의 지연 자기항을 율 계수에서 제거하는 NRB 형태를 유지하며 반복 범위를 늘렸을 때, 등록한 상태 변화 측도와 공개 CMFGEN 비교가 어떻게 달라지는지** 판정한다.
+
+직전 DET-SEEDMEM-SCOPE는 다음을 구별했다.
+
+- 고정된 연속체항과 광학깊이에서 생산 NRB 율은 국소 방출항 교환에 불변이다.
+- 이 성질은 전체 결합계의 씨앗 기억 제거를 뜻하지 않는다.
+- 1206 Å의 조건부 2준위 원천 모형은 기존 R′ 표본에서 생존했지만, 다른 Si III·S III 선으로 일반화되지 않는다.
+- 저장 R′의 6회 반복에서는 이온합·전자밀도·J̄·준위 측도가 모두 등록된 작은 변화 조건에 도달하지 않았다.
+
+이번 과학 질문은 다음과 같다.
+
+1. **P1(a), 율 적용:** 실제 런의 등록 범위에서 NRB 분기가 적용됐으며, 재구성된 율 계수에 국소 자기항이 명시적으로 들어가지 않는가?
+2. **P1(b), 원천 합치:** Si III 1206.50 Å의 원천은 이전 복사 세대와 현재 물질 세대로 구성한 조건부 NRB 모형에 상대편차 \(10^{-3}\) 이내로 합치하는가?
+3. **P2, 작은 변화:** 이온합·전자밀도·J̄·준위 인구가 최종 관측 상태에서 각각 두 연속 작은 변화를 보이는가?
+4. **최종 물리량:** 같은 관측 상태의 S II/III·Si II/III 이온 분율과 UV·광학 스펙트럼이 등록한 공개 CMFGEN 비교 기준을 만족하는가?
+
+이 단을 생략하면 NRB의 국소 율 성질, 유한 반복 상태의 변화, 공개 비교를 연결하지 못한다. 반대로 P1이나 P2만으로 공개 비교 성공을 대신해서도 안 된다.
+
+**기안자 자기답: PASS.**
+
+### Q-LEAN — 불필요한 계측·게이트를 추가하는가?
+
+생산 소스·바이너리·물리 자료는 변경하지 않는다. 기존 R′의 입력과 장부를 재사용하고, 새 생산 실행은 하나다. 새 다준위 저장, bf 율 저장, SE 행 잔차 저장, 충돌표 활성화, 상수 정합 수리는 넣지 않는다.
+
+| 유지하는 측정·검사 | 소비하는 결정 |
+|---|---|
+| 바이너리·입력·exports·런·세대 신원 | 한 물리 개입과 등록 반복 수의 적격성 |
+| NRB 활성화 표지와 고정 표본의 율 재구성 | P1(a): 분기 적용과 자기항의 명시적 제거 |
+| 1206 원천 잔차 | P1(b): 기존 범위 유지와 후속 call 적용성 |
+| 이온합·전자밀도·J̄·준위 변화 | 축별 P2 및 `NOT_CONVERGED` 처분 |
+| 최종 관측 세대와 마지막 추가 물질 세대의 구별 | 스펙트럼과 다른 물질 상태를 결합하는 오류 방지 |
+| S II/III·Si II/III 분율과 III/II 비 | 절대 이온 분율 비교와 이온화 균형의 해석 |
+| 절대 대역 광도·OPT 정규화 색·여덟 대역 RMS | 공개 비교와 정규화 분모 효과의 구별 |
+| 실제 판독 경로의 정상·음성 대조 | 잘못된 성공 코드·결정표의 거부 |
+| 비용·원본 보존 장부 | 승인된 실행 범위와 폐합 가능 여부 |
+
+직전 단의 다른 선 원천 모형 조사와 다준위 수지는 반복하지 않는다. 고정 510키는 P1(a)와 P2가 함께 소비한다. 기존 공개 비교 함수와 검증된 생산 순수 함수를 재사용한다.
+
+사용자 결정 파일의 별도 COLL_FIX 대 CMFGEN Ω 오프라인 비교는 후속 단의 순서 선정에 쓰는 별도 작업이다. 이번 판정런의 선행 조건·변경집합·성공 기준에 편입하지 않는다.
+
+**기안자 자기답: APPROPRIATE.**
+
+### 승인 근거·분장
+
+승인 근거는 다음 파일이다.
+
+`/gpfs/kjhan/lumina/cmfgen_map/nrb_judge_20261008/evidence/USER_DECISION_2026-10-08.txt`
+
+사용자는 운전자의 NRB 판정런 권고에 「그렇게 합시다.」와 「승인합니다.」라고 답했다. 승인된 반복 상한은 **12회**, GPU 비용 표현은 **약 40 GPU·h**다. 승인 당시 추정과 승인 뒤 기록된 R′ 실측 환산은 §9에서 구별한다.
+
+| 업무 | 담당 |
+|---|---|
+| 기안·계약 개정·종료감사 | astra |
+| 경량 사전감사 | Fable fresh, Q-GOAL·Q-LEAN 전용 1회 |
+| 판독기·러너 구현, 직접시험, 게이트, 실행, 판독, 판정 | 운전자 |
+| 코드 감사 | 해제 |
+| 추가 GPU 실행·반복 연장·비용 또는 물리 범위 확대 | 사용자 |
+
+이번 단은 GPU 판정런이므로 개정25-ab의 사전감사 생략 대상이 아니다. 운전자가 파일화·기계 프리플라이트 뒤 Fable fresh 사전감사를 받는다. 기안자 자기답이나 직전 단의 감사 결과로 대신하지 않는다.
+
+운전자는 구현자와 판정자를 겸한다. astra는 계약 저자로서 종료감사를 맡는다. 이 이해관계는 폐합 기록에도 남긴다.
+
+### 사전 노출·주장 상한
+
+기안자는 기존 E′·R′·BT-SEED와 diag6·SEEDMEM-SCOPE 결과에 노출됐다. 기존 결과의 재인용과 새 12회 런의 기대를 구별한다.
+
+이번 단은 다음을 선취하지 않는다.
+
+- NRB의 기본값 전환·생산 승격·물리적 정답.
+- 공개 CMFGEN 전체 해 또는 전체 스펙트럼과의 일치.
+- 복사장 전체·모든 준위·모든 셸의 수렴.
+- 단일 씨앗 실험으로부터의 씨앗 독립성.
+- 공개 비교 변화의 특정 선·충돌·bf·연속체 경로 귀속.
+- 12회 NRB와 6회 off의 차이를 동일 반복 수에서의 순수 NRB 효과로 해석하는 것.
+
+## §1. 경로·기준선·승계 사실
+
+### 1.1 경로
+
+```text
+P = /home/kjhan/BACKUP/Eunha.A1/Claude/Lumina-sn
+C = /gpfs/kjhan/lumina/cmfgen_map/obs_capture_20261006
+T = C/source
+E = C/Eprime/run1
+R = C/Rprime/run1
+
+S = /gpfs/kjhan/lumina/cmfgen_map/seedmem_scope_20261008
+A = S/results/r4/analysis/analysis
+D = /gpfs/kjhan/lumina/cmfgen_map/diag6_seedmem_20261008
+F = /gpfs/kjhan/lumina/cmfgen_map/siiii_repair_20261007/results/t5/analysis
+
+B = /gpfs/kjhan/lumina/cmfgen_map/nrb_judge_20261008
+N = B/NRB/run1
+
+새 판독기 = P/scripts/det_nrb_judge_readout.py
+새 CPU 러너 = B/tools/run_nrb_judge_offline.slurm
+새 GPU 러너 = B/tools/run_nrb_judge_gpu.slurm
+새 CPU 결과 = B/results/<실행 식별자>
+새 집행 증거 = B/evidence/<집행 식별자>
+
+공개 스펙트럼 = P/data/standart_data1/toy06/spectra_toy06_cmfgen.txt
+공개 Si 분율 = P/data/standart_data1/toy06/ionfrac_si_toy06_cmfgen.txt
+공개 S 분율 = P/data/standart_data1/toy06/ionfrac_s_toy06_cmfgen.txt
+```
+
+B는 승인문 때문에 이미 존재한다. 새 실행·시험·판독 대상은 기존 산출을 덮어쓰지 않는 별도 경로에 만든다.
+
+### 1.2 기준선의 역할
+
+| 기준선 | 역할 |
+|---|---|
+| E′ | off 형태의 기존 6회 상태와 공개 비교 기준 |
+| R′ | 같은 씨앗·NRB 형태의 기존 6회 상태, 새 런의 바이너리·입력·exports 기준 |
+| SEEDMEM-SCOPE r4 | P1 분리, 1206 범위, 고정 표본, P2 정의, 적격성 전파의 정본 |
+| BT-SEED | 공개 스펙트럼 비교 방법과 기존 기준 |
+| diag6 현행 진단·설계 감사 | 기전의 사정거리와 후속 설계 조건 |
+
+새 런은 R′의 중단 지점에서 이어가지 않는다. **R′와 같은 세대 0 씨앗에서 시작하는 12회 cold start**다. 재시작·warm start 기능을 추가하지 않는다.
+
+R′의 STAGE_IDENTITY.txt와 RUN_FOOTER.txt에 기록된 바이너리 SHA-256은 다음과 같다.
+
+```text
+8ef03fb37b3e0de986f9c9ba15f0b7bbf8f98800d62ab18fb666ec518914f5d8
+```
+
+이는 기존 기록을 읽은 값이다. 실행할 사본의 실제 해시와 기록의 일치는 운전자가 §3에서 검사한다.
+
+### 1.3 승계할 과학 사실
+
+SEEDMEM-SCOPE 정본 결과는 다음과 같다.
+
+- R′ 1206 대조: W5 다섯 셸·call 3–7의 25쌍이 모두 \(10^{-3}\) 비교선 안이며, 최대 중앙값 상대편차는 약 \(3.216\times10^{-4}\)다.
+- 다른 Si III의 적격 반례는 387/405, S III는 2104/2120이다. 해당 축약 모형의 실패를 NRB 구현 실패로 바꾸지 않는다.
+- 고정 배경의 NRB 율은 국소항 교환 2550/2550에서 비트 동일했다.
+- R′의 기존 P2는 네 축 모두 작은 변화 조건 미달이다.
+- 전체 다준위 수지와 씨앗 기억 경로의 기여량은 식별되지 않았다.
+
+기존 최대 잔차와 분위수로 이번 비교선을 다시 정하지 않는다.
+
+### 1.4 기안자가 확인한 생산 경로
+
+- lumina_main.c 약 397행은 `LUMINA_PURE_CMFGEN_ITER`를 외부 반복 수로 전달한다.
+- lumina_plasma.c 약 18684행은 INIT와 정상 Sobolev 연산자를 구별하여 NRB를 활성화한다.
+- lumina_plasma.c 약 19202행은 생산 행렬 조립에서 `line_net_bracket_rates`를 호출한다.
+- line_net_rate.c 약 441행은 생산 NRB 율과 장부 일관성 검사를 정의한다.
+- lumina_cmfgen.c 약 11653행은 INIT를 별도 pass로 수행하고 등록된 정상 반복을 수행한다.
+- lumina_cmfgen.c 약 11800행은 마지막 복사 commit 뒤, 마지막 물질 갱신 전에 관측자계 작성기를 호출한다.
+- physics_comparison.c 약 435행은 원소 총량·단계 배열·NLTE 이온합을 서로 다른 열로 저장한다.
+
+## §2. 생산 개입의 정의와 고정 범위
+
+### 2.1 물리 변경 단위
+
+E′에 대한 물리 개입은 **off 율 형태에서 기존 NRB 율 형태로의 전환 하나**다. 반복 수 증가는 이 형태를 관찰할 계산 범위의 변경이다.
+
+E′와 R′의 실제 exports 차이는 숨기지 않는다.
+
+| 항목 | E′ | R′ 및 새 N |
+|---|---|---|
+| `LUMINA_BB_NRB` | 미설정 | `"1"` |
+| `LUMINA_A210_SPRODUCER_CAPTURE` | `"0"` | `"1"` |
+| 생산 바이너리 | 같은 봉인 바이너리 | 같은 봉인 바이너리 |
+| 외부 반복 수 | 6 | R′ 6, N 12 |
+
+생산자 장부 활성화는 NRB가 소비할 연속체항·국소항·광학깊이·출처를 저장하는 기존 지원 경로다. 독립된 물리식 변경으로 세지 않지만, exports 차이에서 지우지 않는다. 해당 배열이 기존 생산값을 기록하며 새로운 물리 보정을 적용하지 않는 연결을 확인한다.
+
+새 N은 **R′의 바이너리와 exports를 기준**으로 한다. R′ 대비 허용하는 계산 설정 차이는 `LUMINA_PURE_CMFGEN_ITER="6"`에서 `"12"`로의 변경뿐이다.
+
+### 2.2 허용하는 경로 이식
+
+다음 exports의 R′ 경로를 N의 대응 경로로 이식할 수 있다.
+
+- `LUMINA_MODEL_DIR`
+- `LUMINA_CMFGEN_SIGMA_BF`
+- `LUMINA_DEPOSITION_FILE`
+- `LUMINA_FIXED_TE_PROFILE`
+- `LUMINA_IONIZATION_REFERENCE_FILE`
+- `LUMINA_TOPION_LEVELS_FILE`
+- `LUMINA_PHYSICS_COMPARISON_DIR`
+
+입력 파일은 내용이 동일해야 한다. 출력 디렉터리는 새 경로여야 한다. 문자열 전체에서 R′ 접두를 무차별 치환하지 않고 위 키별 대응만 허용한다.
+
+작업명·로그 경로·실행 식별자·등록된 GPU 프로파일은 집행 메타데이터로 기록한다. 그 밖의 exports 추가·삭제·값 변경은 거부한다. 미설정·빈 문자열·`"0"`을 같은 값으로 취급하지 않는다.
+
+### 2.3 불변 범위
+
+다음은 R′와 동일하게 유지한다.
+
+- 세대 0의 `T_inner` bootstrap 씨앗과 후속 FIXED_T 프로파일.
+- 원자 덱·단면적·침적·전리 기준·상위 이온 자료.
+- 충돌 자료 소비 분기와 `LUMINA_NLTE_COLL_FIX`.
+- 실제 super-level 설정과 cutoff.
+- 수송·내부 반복·허용오차·감쇠·격자·선 선택·MGPU 수.
+- W5·관측자계 작성기·최종 캡처·기존 물질 덤프.
+- 기존 clamp/floor 비활성 설정.
+
+생산 소스 수정·생산 재빌드·새 생산 env·새 저장 기능·상수 수리·충돌표 활성화는 금지한다. 결과를 안정화하기 위한 clamp/floor도 추가하지 않는다.
+
+### 2.4 고정 표본
+
+W5 셸은 다음과 같다.
+
+\[
+\mathcal W=\{10,15,19,24,30\}.
+\]
+
+P1(a)와 P2의 J̄·준위 표본은 A의 sample.json에 기록된 **510 선·셸 키**를 그대로 승계한다.
+
+- Si III: 86키.
+- S III: 424키.
+- 1206 대조: line 600693의 다섯 셸.
+- 고정 하·상준위의 고유 집합: 328 준위·셸 항목.
+
+새 N의 광학깊이·잔차·인구·성공 여부로 표본을 다시 선택하지 않는다. 결손·적용 불가·반례도 등록 분모에 남긴다.
+
+이 집합은 기존 census의 선택을 승계한 표본이다. 전체 Si·S 선 모집단이나 전체 복사장을 대표한다고 주장하지 않는다.
+
+## §3. 판정런 전 오프라인 검증
+
+### 3.1 offline-first 요건
+
+| 요건 | 이번 계약의 근거·완료 조건 |
+|---|---|
+| ① 기전의 오프라인 특정 | diag6와 SEEDMEM-SCOPE의 지연 자기항 구조·생산 NRB 국소 불변성 |
+| ② 수리안의 오프라인 검증 | 기존 생산 NRB 함수·장부 연결을 승계하고, 새 러너의 단일 변경 및 새 판독 경로를 직접시험 |
+| ③ 기대치 사전등록 | §5의 명제·대상·비교선·반증·식별 불가 항목을 GPU 실행 전에 고정 |
+
+기존 NRB 함수의 검증과 새 12회 결합 궤적의 검증을 구별한다. 오프라인 결과는 P2 달성이나 공개 비교 성공을 보장하지 않는다.
+
+### 3.2 입력·실행 연결
+
+운전자는 CPU Slurm에서 다음을 확인하고 manifest에 기록한다.
+
+1. R′의 STAGE_IDENTITY.txt·run_build_identity.json·실행 바이너리 연결.
+2. N 바이너리와 R′ 바이너리의 내용 동일성.
+3. 덱·전역 원자 자료·FIXED_T 프로파일·관련 입력의 명시적 목록과 내용 동일성.
+4. §2의 키별 경로 대응을 적용한 exports 비교에서 반복 수 외 차이가 없음.
+5. 상속된 `LUMINA_*` 환경을 제거한 뒤 실제 적용한 exports가 등록 사본과 일치함.
+6. 러너가 12회·두 GPU·등록 시간 상한·재시작 금지를 실제로 강제함.
+7. 기존 결과 경로·기존 실행 시도 표지가 있는 경로를 거부함.
+
+N의 입력 내용 해시와 원본 R′의 해시를 역할별로 보존한다. 물리 내용을 비교할 때 경로 차이를 허용하더라도, 원래 exports와 이식 exports 자체의 해시는 각각 남긴다.
+
+### 3.3 생산 함수와 판독기 연결
+
+봉인된 line_net_rate.c와 opacity_publication.c를 **수정 없이** CPU 공유 라이브러리로 연결할 수 있다. 라이브러리는 새 시험 결과 경로에 생성하며 생산 바이너리를 대체하지 않는다.
+
+기존 판독기의 다음 기능을 필요한 범위에서 재사용한다.
+
+- 생산 NRB 율·EXPONX·물질 및 복사 장부 관계.
+- W5 오차 구간과 준위 인구 역산.
+- 원천 모형·충돌식·원자계수 처리.
+- 공개 스펙트럼 파싱·대역 적분·구간 비교.
+
+기존 판독기의 세대 7 고정 검사를 통과시키기 위해 새 세대 13을 7로 표시하지 않는다. 새 판독기가 등록 세대를 직접 검사한다. 기존 모듈의 전역 상수를 임시 변경하여 전체 analyze를 호출하는 방식도 사용하지 않는다.
+
+실제 import 함수·파일 경로·파일 해시·생산 라이브러리 소스 및 빌드 명령을 manifest에 기록한다.
+
+### 3.4 기존 자료에 대한 제한된 회귀 대조
+
+새 판독기로 기존 R′의 등록 범위를 판독하여 다음을 확인한다.
+
+- P1(b)의 기존 25쌍 결과와 오차 구간이 정본 결과에 부합함.
+- 기존 P2 측도·표본 수·세대별 값이 정본 stationarity.csv와 부합함.
+- 기존 E′·R′ 공개 스펙트럼 값이 승계 판독 방법과 부합함.
+- 이온 III/II 비가 diag6의 수정된 NLTE 열 정의와 부합함.
+
+이 회귀 대조는 기존 결과에 대한 구현 확인이다. 새로운 과학 예측 성공으로 세지 않는다. 과거 다른 선의 원천 모형·다준위 수지 전체를 재판독하지 않는다.
+
+## §4. 판정런 1회의 설계
+
+### 4.1 실행 설정
+
+| 항목 | 등록값 |
+|---|---|
+| 실행 | N 한 번 |
+| 시작 | R′와 같은 cold start |
+| 생산 바이너리 | §1의 봉인 바이너리 |
+| NRB | R′와 같은 활성 상태 |
+| 외부 반복 | 12회 |
+| 조기 과학 종료 | 없음 |
+| 중단 | 생산 실패 또는 등록 자원 상한 |
+| 재시작·자동 재제출 | 금지 |
+| GPU | h200 두 장 우선, 모델 시작 전 h100 두 장으로 대체 가능 |
+
+중간에 P2가 작아지거나 공개 비교에 유리한 상태가 관측돼도 그 시점을 최종 상태로 선택하지 않는다. 정상 실행은 12회를 마친다.
+
+### 4.2 call·물질·복사 세대
+
+봉인 소스의 제어 흐름에 따른 기대 연결은 다음과 같다. 실제 manifest·로그·행의 세대가 이를 확인해야 한다.
+
+| 대상 | 등록 연결 |
+|---|---|
+| INIT | call 1, 복사 세대 1, W5 물질 표지 0 |
+| 정상 복사 call | 2–13 |
+| 정상 물질 덤프 | population 3–14 |
+| 덤프 관계 | population \(g\)는 radiation \(g-1\)을 소비 |
+| 최종 관측자계 스펙트럼·캡처 | material 13, radiation 13, iter 11 |
+| 최종 관측 물질의 덤프 | iter0010, population 13, radiation 12 |
+| 마지막 후속 물질 덤프·최종 인구 출력 | iter0011, population 14, radiation 13 |
+
+최종 캡처의 τ·opacity·emissivity 카운터는 별도로 검사한다. 서로 다른 카운터를 숫자 13 하나로 맞추지 않는다.
+
+세대 14 인구를 세대 13 스펙트럼의 물질 상태로 사용하지 않는다. 최종 nlte_levels_final.csv의 존재만으로 세대 13 준위 권위를 대체하지 않는다.
+
+### 4.3 필요한 저장 산출
+
+기존 생산 기능이 내는 다음 산출을 보존한다.
+
+- STAGE_IDENTITY.txt, OWNER.txt, job.slurm, SUBMIT_COMMAND.txt.
+- 실제 exports·바이너리 및 빌드 신원·입력 목록.
+- stdout·stderr·RUN_FOOTER.txt·Slurm 회계 기록.
+- W5 장부.
+- 정상 반복의 physics-comparison manifest·shell·ion 자료.
+- 최종 관측자계 스펙트럼과 작성기 상태.
+- 최종 관측 캡처의 meta·manifest·필요 payload.
+- 마지막 물질 publication 신원.
+
+스펙트럼 작성기나 캡처 실패는 모델 rc=0으로 덮지 않는다. 필수 산출 결손은 해당 질문의 미완으로 남긴다.
+
+### 4.4 실패 후 규칙
+
+생산 모델에 진입한 뒤에는 실패 원인과 무관하게 승인된 실행 1회를 사용한 것으로 센다. 자동 재시작·재제출·남은 반복의 이어 돌리기는 없다.
+
+모델 진입 전 staging·제출 오류는 기록을 보존하고 등록 범위에서 수리할 수 있다. GPU가 할당됐다면 그 경과도 비용에 포함한다. 동시 또는 중복 제출은 금지한다.
+
+판독기 결함은 원시 산출을 보존한 채 CPU에서 수리·재판독한다. 생산 소스 변경이나 추가 GPU 실행이 필요하면 별도 사용자 결정으로 넘긴다.
+
+## §5. 기대치·판독·반증
+
+### 5.1 P1(a) — 실제 NRB 적용과 율의 자기항 제거
+
+검사 범위는 고정 510키의 정상 복사 call 2–13이다. 해당 장부는 뒤의 물질 세대 3–14에서 소비된다. INIT는 NRB 적용 명제에서 제외하고 `armed=0`인 정상 초기화로 기록한다.
+
+장부 기호는 다음과 같다.
+
+\[
+c=\beta J_c,\qquad L=L_\ell,\qquad \bar J=c+L.
+\]
+
+NRB의 등록 율은
+
+\[
+R_{\rm absorb}=B_{lu}c,\qquad
+R_{\rm stim}=B_{ul}c,\qquad
+R_{\rm spont}=A_{ul}\beta
+\]
+
+다. \(L\)과 \(\bar J\)는 장부 일관성 검사에 읽히지만, 적격 NRB 율 계수의 크기에 국소 자기항으로 들어가지 않는다.
+
+실제 적용의 근거는 다음을 함께 요구한다.
+
+- 봉인 바이너리와 생산 호출 경로의 연결.
+- 실제 적용 exports의 NRB·생산자 장부 활성화.
+- 정상 반복 iter 0–11의 `operator=2`, `armed=1`, `captured=1`, `n_shells=50`, `skip_z=none` 표지.
+- W5의 선·셸·연산자·세대·장부 적격성.
+- 수정하지 않은 생산 함수의 반환 분기와 재구성 율.
+- 최종 세대의 캡처·매핑 권위 연결.
+
+각 키·call에서 \(c,\tau,B_{lu},B_{ul},A_{ul}\)을 고정하고 \(L\)과 그에 맞춘 \(\bar J=c+L\)만 바꿔 생산 함수를 다시 호출한다. 실제로 다른 유한 입력이 들어갔음을 저장하고, NRB 율의 비트 동일성을 검사한다. 양쪽 율과 함수 반환값도 저장한다.
+
+분기 처리는 다음과 같다.
+
+| 결과 | P1(a) 해석 |
+|---|---|
+| 등록 범위가 NRB 분기로 연결되고 율이 불변 | 명시적 자기항 제거 기대 생존 |
+| 적격한 생산 경로가 `BASE_SRCE_CHK` 등으로 돌아감 | 해당 셀의 NRB 적용 전칭 명제 반증; 정상 예외 분기인지 구별 |
+| 잘못된 장부·세대·바이너리 연결 | 적격성 `X` |
+| 필요한 실행 증거가 없음 | 5 |
+| 생산 함수가 적격 입력에서 국소항에 따라 율을 바꿈 | 국소 불변성 반증, 함수 연결과 구현 원인 조사 |
+
+예외 분기를 분모에서 빼고 전건 적용 성공이라고 보고하지 않는다.
+
+**등록 기대:** 봉인된 기존 NRB 경로가 정상 활성화되고 적격 NRB 셀의 율은 국소항 교환에 불변이다. 근거는 생산식과 직전 2550/2550 국소 함수 시험이다.
+
+이 검사는 **봉인 실행 경로·활성화 증거·저장 장부의 재구성**이다. 실제 행렬의 모든 셀에 쓰인 율 바이트를 별도로 저장한 직접 추적이라고 표현하지 않는다.
+
+### 5.2 P1(b) — 1206 원천 합치
+
+대상은 **Si III 1206.50 Å, line 600693, W5 다섯 셸**뿐이다.
+
+검사 범위를 둘로 나눈다.
+
+| 명제 | 범위 | 의미 |
+|---|---|---|
+| `P1b_core` | call 3–7, 25쌍 | 직전 결정표가 유지한 범위 |
+| `P1b_extension` | call 8–13, 30쌍 | 이번 계약에서 처음 등록하는 후속 call 검사 |
+
+두 범위의 결과를 별도 기록한다. 후속 범위의 성공으로 기존 범위의 반례를 지우거나, 기존 범위의 성공을 후속 범위의 검증으로 승계하지 않는다.
+
+현재 call을 \(k\)라 하면
+
+\[
+x_k=
+\frac{\beta_{k-1}B_{lu}J_{c,k-1}+C_{lu}(n_e(k),T_e(k))}
+{\beta_{k-1}A_{ul}
++\beta_{k-1}B_{ul}J_{c,k-1}
++C_{ul}(n_e(k),T_e(k))},
+\]
+
+\[
+S_{\rm pred}(k)=
+\frac{A_{ul}}{B_{lu}}
+\frac{x_k}{1-(g_l/g_u)x_k},
+\]
+
+\[
+S_{\rm meas}(k)=
+\frac{L_\ell(k)}{(1-\beta_k)r_\ell},
+\qquad
+d_k=\frac{S_{\rm meas}(k)}{S_{\rm pred}(k)}-1.
+\]
+
+\(r_\ell\)은 봉인 덱·생산 상수에서 얻는 Einstein 계수와 Sobolev 계수의 비다. 1로 바꾸지 않는다. 충돌항은 실제 R′의 COLL_FIX 분기를 승계한다.
+
+등록 조건은 각 범위에서
+
+\[
+|d_k|\le10^{-3}
+\]
+
+이다. 예측에는 이전 call의 복사 입력을, 측정 원천 복원에는 현재 call의 장부를 쓴다.
+
+**등록 기대:**
+
+- `P1b_core`는 생존을 기대한다. 기존 R′의 25쌍과 동일한 형태·씨앗·입력을 사용한다는 근거다.
+- `P1b_extension`도 같은 비교선으로 시험하되, 기존 자료가 후속 call의 오차를 보장하지 않는다는 점을 명시한다.
+
+확정 초과는 **1206 축약 원천 모형의 해당 범위 적용성 반증**이다. P1(a)가 생존했다면 이를 NRB 자기항 제거 실패로 바꾸지 않는다. 다른 Si III·S III 선의 원천 합치로 일반화하지 않는다.
+
+### 5.3 P2 — 네 측도의 작은 변화
+
+측도와 표본은 직전 단을 승계한다.
+
+| 축 | 수량 | 권위 |
+|---|---:|---|
+| 이온합 | 20 | Si II·Si III·S II·S III의 NLTE 준위합 × W5 |
+| \(n_e\) | 5 | 같은 물질 세대의 shell 덤프 |
+| \(\bar J\) | 510 | 고정 W5 키와 저장 오차 상한 |
+| 준위 인구 | 328 | 고정 하·상준위 집합의 같은 세대 W5 역산 |
+
+양의 양 \(q\)에 대해
+
+\[
+m_q(g)=\left|\log_{10}\frac{q(g)}{q(g-1)}\right|,
+\qquad
+M_a(g)=\max_{q\in\mathcal Q_a}m_q(g).
+\]
+
+작은 변화 조건은 직전 판독기와 같은 **엄격 부등식**
+
+\[
+M_a(g)<0.0043\ {\rm dex}
+\]
+
+다.
+
+승계와 변경을 다음처럼 고정한다.
+
+- 이온합·전자밀도는 \(g=4,\ldots,14\)의 변화를 기록한다.
+- J̄·준위는 \(g=4,\ldots,13\)의 변화를 기록한다.
+- 공통 범위의 두 연속 변화 창은 \((4,5),\ldots,(12,13)\)이다.
+- 과거 어느 창에서 작았는지를 기록하지만, **이번 종단 P2는 마지막 공통 창 \((12,13)\)**으로 판정한다.
+- 각 축은 \(M_a(12)\)와 \(M_a(13)\)이 모두 기준 안이어야 생존한다.
+- 네 축이 같은 종단 창에서 모두 생존해야 `P2_SMALL_CHANGE`다.
+
+이는 직전 단의 “등록 범위 중 두 연속 작은 변화가 존재하는가”에서 **최종 관측 상태의 두 연속 작은 변화**로 판정 대상을 바꾸는 사전 변경이다. 일시적으로 작아진 과거 창을 최종 상태의 성질로 쓰지 않기 위한 것이다.
+
+세대 14의 이온합·전자밀도 변화는 마지막 후속 물질 갱신의 별도 관측으로 기록한다. 이를 세대 13의 J̄·준위와 섞어 새 공통 창을 만들지 않는다. 세대 14가 크게 움직이면 “마지막 물질 갱신까지 작은 변화가 유지됐다”고 주장하지 않는다.
+
+결손·영 처리는 다음과 같다.
+
+- 존재비 문턱으로 셀을 제거하지 않는다.
+- 양 끝이 증명된 정확한 영이면 구조적 영으로 별도 계수한다.
+- 한쪽만 정확한 영이고 다른 쪽이 양수로 분리되면 작은 변화 조건의 반례다.
+- 부호나 양수성이 오차 구간에서 분리되지 않으면 미분리 또는 식별 불가로 남긴다.
+- 복원되지 않는 준위를 다른 선·다른 세대의 부적격 인구로 채우지 않는다.
+- 같은 준위의 적격한 복원 구간끼리 모순되면 관련 범위를 `X`로 처리한다.
+- 매 세대의 측정·구조적 영·결손 합이 등록 수량과 일치해야 한다.
+
+**등록 기대:** 12회 이내의 P2 달성은 시험할 가설이며, 성공 시점의 오프라인 예측은 없다. 기존 R′는 네 축 모두 큰 변화가 남았으므로 12회면 충분하다고 선취하지 않는다.
+
+12회 정상 실행 뒤 종단 P2를 입증하지 못하면 `NOT_CONVERGED`로 처분한다. 각 축의 1·4·5는 그대로 구별한다. 이 처분은 생산 실행 실패나 특정 물리 기전의 반증과 동의어가 아니다.
+
+### 5.4 공개 S II/III·Si II/III 이온 분율
+
+공개 자료는 toy06의 **19.480 d 블록**으로 고정한다. 다른 시각의 최근접 블록으로 대체하지 않는다.
+
+대상은 W5 다섯 셸과 Si·S의 II·III 분율이다. 주 비교 물질은 스펙트럼과 같은 **세대 13**이다.
+
+\[
+f_{Z,q}(13)=
+\frac{n^{\rm NLTE}_{Z,q}(13)}
+{n^{\rm element}_{Z}(13)},
+\qquad q=1,2.
+\]
+
+분자는 `Z14_nlte_q1_cm3`, `Z14_nlte_q2_cm3`, `Z16_nlte_q1_cm3`, `Z16_nlte_q2_cm3`를 사용한다. 분모는 같은 행의 `Z14_element_total_cm3`, `Z16_element_total_cm3`다.
+
+단계 배열의 q1·q2를 NLTE 합 대신 사용하지 않는다. II와 III만 더한 값으로 분모를 재정규화하지 않는다.
+
+공개 분율의 대응은 헤더의 `si0…si4`, `s0…s4`를 I…V로 읽는 기존 명명 가정에 따른다. 따라서 II·III는 각각 `si1,si2`, `s1,s2`다. 이 열 의미의 외부 정의는 이번 기안에서 독립 확인하지 않았으며, **공개 이온 비교는 이 대응 가정에 조건부**다.
+
+공간 대응은 diag6의 수정된 이온화 표와 같은 최근접 공개 `vel_mid`를 사용한다.
+
+| Lumina 셸 | Lumina \(v_{\rm mid}\), km/s | 공개 \(v_{\rm mid}\), km/s |
+|---:|---:|---:|
+| 10 | 11544 | 11534.59 |
+| 15 | 15184 | 15320.31 |
+| 19 | 18096 | 18264.10 |
+| 24 | 21736 | 21629.71 |
+| 30 | 26104 | 25881.39 |
+
+이 대응을 제출 전에 고정하며 새 결과를 보고 최근접·보간 방식을 바꾸지 않는다.
+
+주 비교량은
+
+\[
+d^f_{Z,q,s}
+=\log_{10}\frac{f^N_{Z,q,s}(13)}{f^{\rm public}_{Z,q,s}}
+\]
+
+다. **각 원소의 II·III × 다섯 셸 전부에서 \(|d^f|\le0.3\) dex**를 등록 목표로 둔다. Si와 S의 결과를 따로 판정한다.
+
+0.3 dex는 이번 비교의 설계 기준이다. 공개 자료의 오차나 물리적 정확도 보장이 아니다. diag6의 III/II 비에 대한 가설이 분율 각각의 기준을 검증한 것으로 읽지 않는다.
+
+다음도 같은 표에 기록한다.
+
+\[
+\ell_{Z,s}=\log_{10}(n_{\rm III}/n_{\rm II}),
+\qquad
+\Delta\ell_{Z,s}=\ell^N_{Z,s}-\ell^{\rm public}_{Z,s}.
+\]
+
+분율과 비를 함께 두는 이유는 II·III의 상대 배분과 원소 총량 대비 분율을 구별하기 위해서다. 비의 개선으로 분율 반례를 상쇄하지 않는다.
+
+기존 E′·R′ 세대 7과 새 N 세대 13의 분율·잔차를 나란히 기록한다. 이 비교는 반복 범위가 다른 상태 비교다.
+
+**등록 기대와 반증:** 공개 분율의 등록 범위 접근을 시험한다. 기존 R′가 일부 셸에서 공개 III/II 값을 지나 계속 이동했으므로 단조 접근을 예측하지 않는다. 적격한 분율 반례 하나면 해당 원소의 전칭 기대는 반증이다. 반대 결과를 충돌·bf·연속체 중 특정 원인의 확정으로 연결하지 않는다.
+
+### 5.5 공개 UV·광학 스펙트럼
+
+BT-SEED의 비교 방법을 그대로 승계한다.
+
+- 공개 시각: 19.48 d.
+- NUV: 2500–4000 Å.
+- OPT: 4000–6000 Å.
+- UV2500: 2500–3000 Å.
+- 여덟 대역: 2500–3000, 3000–3500, 3500–4000, 4000–5000, 5000–6000, 6000–7000, 7000–8000, 8000–10000 Å.
+- 경계 선형 보간·사다리꼴 적분.
+- 중복 파장·범위 밖 외삽·시각 대체 금지.
+
+\[
+C_b^N=\frac{L_b^N}{L_{\rm OPT}^N},
+\qquad
+d_b^N=\log_{10}\frac{C_b^N}{C_b^{\rm public}},
+\qquad
+R_8^N=\sqrt{\frac18\sum_b(d_b^N)^2}.
+\]
+
+판정 기준은 F의 expectations.json에 있는 `B-T.secondary_spectral_expectation.targets`의 **기존 구간값**을 그대로 사용한다.
+
+| 항목 | 기준 중앙값 |
+|---|---:|
+| \(|d_{\rm NUV}^N|\) | ≤ 0.11551623544341516 |
+| \(|d_{\rm UV2500}^N|\) | ≤ 0.3065384957773474 |
+| 3000–3500·3500–4000·4000–5000·5000–6000 Å 각각의 \(|d_b^N|\) | ≤ 0.05 dex |
+| \(R_8^N\) | < 0.2818388065975096 |
+
+이 파일에서 **스펙트럼 목표만 승계**한다. B-T 씨앗·물질 기대는 가져오지 않는다. 기존 E′나 새 N의 재측정값으로 임계값을 다시 생성하지 않는다.
+
+모든 조건이 생존해야 등록 스펙트럼 목표가 생존한다. 조건별 코드도 보존한다. 절대 대역 광도·공개 대비 절대 광도·OPT 변화·색 잔차를 함께 기록한다.
+
+**등록 기대의 지위:** 위 조건은 NRB 장기 반복 상태에 적용할 고정 목표다. 기존 R′의 NUV/OPT 약 0.4150, \(R_8\) 약 0.3569와 기존 P2 미달은 목표 달성을 보장하지 않는다. BT-SEED에서 일부 대역 개선과 다른 대역 악화가 함께 나타났으므로, 선택한 대역의 개선만으로 전체 성공을 선언하지 않는다.
+
+확정 위반은 해당 공개 비교 기대의 반증이다. NRB 구현 실패·물리적 오답·특정 원인으로 자동 귀속하지 않는다.
+
+공개 스펙트럼이 지원하지 않는 2500 Å 미만의 직접 비교는 이번 명제에 포함하지 않는다.
+
+### 5.6 등록 단계에서 닫는 식별 불가 질문
+
+다음은 이번 런의 성공·실패로 닫을 수 없으며 등록 코드 5로 유지한다.
+
+| 질문 | 식별 불가 이유 |
+|---|---|
+| 두 씨앗의 NRB 종단 해 동일성 | 단일 씨앗 런 |
+| 동일 12회 off 대비 순수 NRB 효과 | 동일 반복 수의 off 대조 없음 |
+| 전체 다준위 SE 수지 폐합 | 필요한 bf 율·SE 잔차·완전한 소비 상태 저장 없음 |
+| 기억의 직접·간접 경로별 인과 기여 | 국소 재구성과 단일 궤적으로 분리 불가 |
+| INIT의 NRB Sobolev 분해 | INIT는 별도 연산자 |
+| 세대 2 충돌 응답의 완전 재구성 | 대응 물질 덤프 권위 없음 |
+| 실제 행렬 전체의 셀별 율 바이트 추적 | 기존 저장 장부는 완전한 행렬 추적이 아님 |
+| 전체 복사장·모든 준위·W5 밖 정상성 | 등록 표본 밖 |
+| 공개 이온 열 의미의 독립 검증 | 명명 가정과 별도인 외부 정의 확인 없음 |
+
+이 한계를 해소하기 위한 새 생산 저장이나 추가 런은 이번 계약에 넣지 않는다.
+
+### 5.7 기대치 변경 금지
+
+계약·표본·공개 시각·공간 대응·세대·비교선·기대치 파일을 GPU 실행 전에 봉인한다.
+
+변경이 필요하면 astra가 OLD/NEW·이유·영향받는 명제·이미 노출된 증거를 명시한 개정안을 작성한다. 결과 노출 뒤 바꾼 기준은 이 런의 사전 예측으로 세지 않는다. 원안 결과와 사후 분석을 함께 보존한다.
+
+## §6. 수치 기준·과학 코드·실행 분기
+
+### 6.1 수치 처리
+
+- W5의 저장 오차 상한과 역산·exp·log·적분의 수치 구간을 전파한다.
+- 중앙값만으로 경계 통과를 선언하지 않는다.
+- 공개 분율의 표시 정밀도와 파싱·산술 오차를 구별해 기록한다.
+- 스펙트럼 비교의 수치 구간은 저장 표본과 등록 적분의 계산 오차이며, 공개 물리 모형의 불확실성이 아니다.
+- 영 분모·양수성 미분리·특이점·비유한 입력을 임의의 정상값으로 채우지 않는다.
+- 정확한 영과 결손을 구별한다.
+- 모형 오차를 수치 오차 허용폭에 흡수하지 않는다.
+- 물리량에 clamp/floor를 적용하지 않는다.
+
+역산은 수정하지 않은 생산 함수로 장부를 전방 재구성하여 검사한다. 이 왕복 검사는 구현 일관성 검사다. 독립 인구 권위나 SE 성립의 증명으로 세지 않는다. 최종 세대의 적격 캡처 대조는 별도로 수행한다.
+
+### 6.2 과학 코드
+
+결과 스키마는 `DET_NRB_JUDGE_RESULT_V1`이다.
+
+| 코드 | 명칭 | 조건 |
+|---:|---|---|
+| 0 | `SURVIVES` | 등록 조건을 유효 구간 전체가 만족 |
+| 1 | `REFUTED` | 등록 조건 위반이 유효 구간으로 분리 |
+| 4 | `UNRESOLVED` | 유효 구간이 판정 경계와 겹침 |
+| 5 | `NOT_IDENTIFIABLE` | 필요한 입력·권위·정의가 부족 |
+| X | 적격성 실패 | 잘못된 연결·구현·결과 구조·검증 불일치 |
+
+미실행은 `FUTURE_TEST`로 기록하며 과학 코드를 부여하지 않는다.
+
+각 명제는 별도 코드로 저장한다.
+
+- P1(a)의 실행 적용과 국소 율 불변성.
+- P1(b)의 기존 범위와 후속 범위.
+- P2 네 축의 종단 창.
+- Si 분율·S 분율.
+- 공개 스펙트럼 조건별·전체 결과.
+
+전칭 집계는 먼저 적격성을 판정한다. 해당 범위에 X가 있으면 최종 범위 코드는 X다. 적격한 반례는 별도 보존한다.
+
+X가 없는 전칭 범위는 반례가 있으면 1, 반례 없이 결손이 있으면 5, 결손 없이 경계 미분리가 있으면 4, 전부 만족하면 0이다.
+
+검증 오류의 상세 출력 개수를 제한하더라도 **오류의 전체 영향 범위 수집과 X 전파는 제한하지 않는다.** 최종 result.json과 decision.json까지 같은 처분을 적용한다.
+
+### 6.3 실행·과학 분기
+
+| 조건 | 처리 |
+|---|---|
+| 제출 전 입력·시험·사전감사 미충족 | GPU 실행 없이 해당 범위 수리·보고 |
+| 등록 선행 조건 충족 | 승인된 생산 실행 1회 |
+| P1(b) 반증 | 원천 모형 적용성 반증 보존, P2·공개 비교 계속 판독 |
+| P2 종단 네 축 생존 | `P2_SMALL_CHANGE`, 표본·세대 제한 명시 |
+| 12회 완료, P2 미입증 | `NOT_CONVERGED`, 축별 1·4·5 구별 |
+| P2에 X | P2 판정 부적격; 작은 변화 미달로 대신하지 않음 |
+| 공개 비교 반증 | 해당 등록 목표 반증, 원인 미귀속 |
+| 생산·시간 상한으로 필수 산출 미완 | `INCOMPLETE`, 적격 부분 결과 보존 |
+| 판독 결함 | 원시 자료 보존·CPU 수리 |
+| 추가 생산 실행 필요 | 사용자 후속 결정 |
+
+## §7. 최소 변경집합·출력
+
+### 변경집합 — DET-NRB-JUDGE (표)
+
+새 구현 심볼의 접두사는 `det_nrb_judge_`로 한다.
+
+| 경로 | 항목 | 허용 변경 |
+|---|---|---|
+| `scripts/det_nrb_judge_readout.py` | 판독기·내장 직접시험 — 신설 | 입력 연결, staging, 세대 확장, P1/P2, 공개 비교, 검증기, 정상·음성 대조, 비용·신원 출력 |
+| `/gpfs/kjhan/lumina/cmfgen_map/nrb_judge_20261008/tools/run_nrb_judge_offline.slurm` | CPU 러너 — 신설 | 직접시험·기계 게이트·staging·판독·재현의 명령과 자원·rc 기록 |
+| `/gpfs/kjhan/lumina/cmfgen_map/nrb_judge_20261008/tools/run_nrb_judge_gpu.slurm` | GPU 러너 — 신설 | R′ 러너의 기존 검사 유지, 12회·등록 자원·단일 실행·최종 세대 연결 |
+
+### 변경집합 끝
+
+직접시험은 새 판독기와 러너 안에 둔다. 별도 판정용 집계 스크립트를 표 밖에 만들지 않는다.
+
+생산 소스·기존 판독기·기계 게이트는 수정하지 않는다. 기존 코드의 순수 함수 import는 허용하되 실제 의존 신원을 기록한다.
+
+N의 job.slurm은 등록 GPU 러너의 실행용 사본이다. 입력 사본·CPU 시험 라이브러리·가상 입력·manifest·로그·계약·판정·감사문은 집행 산출이다. 그 이름으로 별도 생산 기능이나 판독 구현을 추가하지 않는다.
+
+| 필수 산출 | 내용 |
+|---|---|
+| offline.json | 선행 요건, 입력·exports 연결, 회귀 대조, 제출 가능 여부 |
+| selftest.json | 정상·결함 주입, 실제 경로, 기대/실제 사유, rc, 최종 코드·결정 검증 |
+| sample.json | 승계 510키·328 준위·셸 집합·원본 신원 |
+| p1_rates.csv | call·소비 물질 세대·분기·장부 입력·생산 율·교환 율·상태 |
+| p1_source_1206.csv | 기존/후속 범위, 예측·측정 원천·잔차 구간·상태 |
+| stationarity.csv | 축별·세대별 최대 변화 구간, 반례 키, 결손·구조적 영·등록 분모 |
+| ion_fraction.csv | 세대·권위·분율·공개 대응·III/II 비·잔차·코드 |
+| spectrum.csv | 절대 광도·정규화 색·대역 잔차·R8·조건별 결과 |
+| result.json | 명제별 최종 코드, 적격성, P2 처분, 식별 불가·미완 항목 |
+| decision.json | 적격 결과만 소비하는 후속 결정표, X 범위의 무결정 |
+| manifest.json | 계약·도구·의존·입력·실행·출력 신원, 명령·환경·비용 |
+
+기존 과학 산출을 덮어쓰지 않는다. 정정 결과는 새 식별자에 생성하고 이전 판정과 차이를 기록한다.
+
+## §8. 게이트·직접시험
+
+### 8.1 내부 게이트
+
+| 게이트 | 방지할 실패 | 통과 조건 |
+|---|---|---|
+| G-LINK | 물리 변경 확대·입력 혼동·세대 혼합·중복 실행 | §1–§4의 입력·설정·실행·세대·비용 연결을 충족하고 증거 보존 |
+| G-READOUT | 오차 누락·결손 은폐·사후 기준 변경·잘못된 최종 결정 | §5–§6의 실제 판독 경로와 §8.2 직접시험 충족 |
+
+실행 전 검사와 실행 후 산출 검사를 구별한다. 아직 없는 실행 후 결과를 제출 전 PASS로 채우지 않는다.
+
+과학 기대의 반증은 게이트 실패가 아니다. 반증을 잘못 생존으로 기록한 경우가 판독 게이트 실패다.
+
+### 8.2 직접시험
+
+작은 생산 형식 가상 파일을 만들어 **실제 analyze 및 저장 결과 검증 경로**를 통과시킨다. 결함 주입 전후의 입력 또는 중간값이 실제로 달라졌음을 확인한다.
+
+| 시험 묶음 | 정상 대조 | 주입 결함과 요구되는 거부 |
+|---|---|---|
+| 단일 변경·러너 | R′ 입력, 반복 12, 허용 경로 이식 | NRB OFF, capture OFF, 반복 6·13, 추가 env, 입력·바이너리 변조 → G-LINK 실패 |
+| 실행 횟수·자원 | 최초 시도·등록 프로파일 | 재진입, restart, GPU 수·종류·시간 상한 불일치 → 모델 진입 전 거부 |
+| 세대 연결 | INIT와 정상 call, 관측 13·후속 물질 14 구별 | 현재 복사로 이전 복사 대체, 물질 한 세대 이동, 캡처 7 고정, 최종 14를 관측 13으로 사용 → X |
+| P1(a) | 정상 NRB 율과 유효한 국소항 교환 | β·유도방출 누락, off 율 사용, 잘못된 provenance, 장부 불일치 → 등록 검사에서 거부 |
+| P1(b) | 안·밖·경계·결손 사례 | \(r_\ell\) 생략, 준위 교환, 현재 β 사용, 비교선 확대 → X |
+| 복원·독립 권위 | 생산 전방 대조·독립 고정밀 역산·최종 캡처 대조 | mapped 비트·캡처 세대·S·원자계수 변조 → 관련 범위 X |
+| P2 종단 창 | 네 축 모두 마지막 두 변화가 작음 | 한 변화만 작음, 과거 창만 작음, 축별 다른 창 조합을 성공으로 출력 → 검증 실패 |
+| P2 분모·영·결손 | 구조적 영, 영 교차, 반례 없는 결손, 결손과 반례 공존 | 문턱 이탈·큰 변화·영 교차 셀 삭제, 결손 0 채움 → 수량·상태 검사 실패 |
+| P2 최종 코드 | 저장 행에서 독립 재계산한 축별 코드 | 세대별 값은 두고 최종 축 코드를 0으로 바꿈 → X가 최종 결정까지 전파 |
+| 공개 이온 | NLTE q1/q2·원소 총량·고정 시각·속도 대응 | SAHA 열 대체, q0/q1 혼동, II+III 재정규화, 시각·공간 대응 변경 → X |
+| 공개 스펙트럼 | 승계 적분·정규화·기대치 구간 | 새 결과로 임계값 재생성, OPT 변화 은폐, 일부 대역만 골라 전체 성공 → X |
+| 코드·결정 전파 | 0·1·4·5·X의 올바른 처리 | 결손을 성공으로, 4·5를 반증으로, X를 유효 결정으로 바꿈 → 최종 결과·결정 거부 |
+| 대량 오류 전파 | 여러 명제·범위의 정상 자료 | 앞 범위에서 51건 이상 오류, 뒤 범위에도 오류 주입 → 뒤 범위와 decision.json까지 X |
+| 보존 | 새 결과 경로 | 기존 결과 경로 지정 → 원본 변경 전 거부 |
+
+각 사례는 주입 위치·실제 변화·기대 실패·실제 실패 사유·실제 CLI rc·저장 결과를 기록한다. helper 반환값에서 만든 rc를 실제 프로세스 종료코드로 표시하지 않는다.
+
+정상적인 과학 반례는 적격 코드 1로 완료돼야 한다. 결손 정상 대조는 코드 5가 될 수 있다. 이 둘을 무조건 비영 rc로 만드는 것이 음성 대조의 목적은 아니다. **잘못된 판정 구현을 주입했을 때 등록 검증기가 거부하는 것**을 시연한다.
+
+SEEDMEM-SCOPE B3·B4의 교훈을 다음처럼 적용한다.
+
+- 발견 목록의 앞부분만으로 X 전파 범위를 정하지 않는다.
+- 개별 셀뿐 아니라 집합·축·최종 결정 코드를 재검산한다.
+- 반례 없는 결손과 반례가 공존하는 결손을 각각 시험한다.
+- 단순 플래그 변경이나 수치 변화 관찰을 거부 시연으로 세지 않는다.
+
+기존 exp·log·역산·스펙트럼 함수의 검증된 시험은 정확한 의존 신원과 시험 산출을 연결해 승계할 수 있다. 새 세대·표본·최종 집계 연결은 이번 실제 경로에서 시험한다.
+
+### 8.3 기계 프리플라이트
+
+기존 도구를 수정 없이 사용한다.
+
+- `scripts/check_prereg_preflight.py`
+- `scripts/check_gate_referents.py`
+- `scripts/check_doc_canonical.py`
+- `scripts/check_dispatch_preflight.py`
+- `scripts/check_driver_hygiene.py`
+- `scripts/check_gate_roster.py`
+
+계약·발주·러너의 실제 신원과 명령·stdout·stderr·rc를 보존한다. 같은 문서 신원에 대한 중복 검사는 합칠 수 있다.
+
+기계 게이트는 물리식·기대치의 타당성이나 Fable 사전감사를 대신하지 않는다.
+
+## §9. 환경·비용·재현 명령
+
+### 9.1 실행 환경
+
+GPU 생산 런은 Slurm job-per-run으로 수행한다.
+
+- h200 두 장 우선, 모델 시작 전 h100 두 장으로 대체 가능.
+- h100은 장당 80 GB급 메모리를 확인한다.
+- a40·a100은 이번 생산 런에 사용하지 않는다.
+- 작업명은 `LUMINA_` 접두.
+- 기본 제외는 `--exclude=syn102,syn03`.
+- 명시적 CPU·메모리·GPU·시간 요청, `--no-requeue`.
+- module purge·load와 실제 버전 기록.
+- 런 루트에 OWNER.txt.
+- 상주 러너·interactive 할당 금지.
+
+오프라인 시험·staging·게이트·판독은 a10 CPU Slurm에서 수행한다. GPU 예약은 0이며 해당 배분을 명시한다. 로그인 노드는 파일 조회·소스 판독에만 사용한다.
+
+원본 보존은 명시적 파일 목록·별도 사본·내용 해시·덮어쓰기 거부로 구현한다. 파일시스템 고유 기능에 의존하지 않는다.
+
+### 9.2 GPU 비용과 반복 상한
+
+승인 당시 추정과 사후 실측을 구별한다.
+
+| 근거 | 반복당 벽시계 | 반복당 GPU·h | 12회 환산 |
+|---|---:|---:|---:|
+| 승인 당시 운전자 추정 | 약 1.5 h | 약 3 | 약 36 GPU·h, 권고 상한 표현은 약 40 |
+| 승인 뒤 기록된 R′ 실측 환산 | \(37902/6\)초 = 1.754722… h | 3.509444… | 21.056666… h·42.113333… GPU·h |
+
+R′ RUN_FOOTER.txt의 37902초는 모델 실행 경과다. Slurm 전체 할당 경과와 동일하다고 가정하지 않는다.
+
+이번 기안은 사용자 결정 파일의 실측 환산을 다음과 같이 정확한 집행 상한으로 고정한다.
+
+| 항목 | 상한 |
+|---|---:|
+| 생산 모델 진입 | 1회 |
+| 외부 반복 | 12회 |
+| GPU 수 | 2 |
+| 이번 단의 누적 GPU 할당 경과 | **75804초 = 21:03:24** |
+| GPU 예약량 | **42.113333… GPU·h** |
+| GPU 작업 CPU·메모리 | 16 CPU·64 GiB |
+| GPU 재실행·재시작 | 0회 |
+
+운전자는 제출 전에 **“승인 당시 약 40, R′ 실측 환산에 따른 등록 상한 약 42.11 GPU·h”**를 사용자에게 보고한다. 이를 정확히 40이라고 기록하거나 더 큰 여유 예산으로 확대하지 않는다.
+
+이 상한은 완주시간 보장이 아니다. h100 대체 시에도 상한은 늘어나지 않는다. 모델 진입 전 GPU 할당 비용이 발생했다면 그만큼 남은 실행 시간을 줄인다.
+
+상한 때문에 12회를 마치지 못하면 `INCOMPLETE`다. 12회를 마쳤지만 P2를 입증하지 못한 `NOT_CONVERGED`와 구별한다.
+
+### 9.3 오프라인 비용·감사 수리 여유
+
+사용자 결정 파일에는 CPU 비용의 숫자 상한이 없다. 아래는 **이번 기안의 오프라인 배정**이며 사용자 원문 승인값으로 표시하지 않는다. 직전 SEEDMEM-SCOPE의 3000초 상한과 회차별 약 85–90초의 공식 판독 실적을 근거로, 세대 확장·staging·감사 수리를 포함한다.
+
+| 항목 | 상한 |
+|---|---:|
+| CPU 전용 동시 계산 | 1작업 |
+| 작업당 CPU·메모리 | 4 CPU·16 GiB |
+| 초회 직접시험·회귀·판독 배정 | 600초 |
+| 수리·재현 배정 | 600초 × 3 |
+| staging·기계 게이트·신원·보조 확인 | 누적 600초 |
+| CPU 전용 누적 실행 경과 | **3000초** |
+| CPU 전용 예약량 | **\(10/3\) core·h 이하** |
+| 새 입력 사본·런·시험·판독·실패 기록 합계 | **64 GiB 이하** |
+
+생산 빌드 예산은 없다. CPU 공유 라이브러리 빌드는 시험 배정에 포함한다.
+
+실패·개발 직접시험·감사 수리·독립 재현도 합산한다. 같은 작업의 Slurm 경과와 러너 경과는 이중 계산하지 않고 큰 값을 비용으로 사용한다. GPU 작업의 호스트 CPU 예약은 CPU 전용 비용과 별도 기록한다.
+
+W5·덱은 필요한 키를 모아 파일별로 읽는다. 선마다 전체 파일을 반복 판독하지 않는다. 용량은 명시적 입력·출력 목록으로 집계하고, 제출 전 quota와 예상 저장량을 확인한다.
+
+감사 수리 여유를 제출 전 부수 계산으로 소진하지 않는다. 상한 확대가 필요하면 실제 비용·남은 일·필요량을 보고하며 새 승인을 추정하지 않는다.
+
+### 9.4 계획 CLI와 재현
+
+다음은 구현할 인터페이스다. 명령은 CPU Slurm 안에서 실행하며 실제 argv·작업 ID·신원·rc를 기록한다.
+
+```bash
+python3 -B "$P/scripts/det_nrb_judge_readout.py" selftest \
+  --production-source "$T/src" \
+  --out "$B/results/$TEST_ID/selftest"
+```
+
+```bash
+python3 -B "$P/scripts/det_nrb_judge_readout.py" preflight \
+  --prereg "$P/docs/PREREG_DET_NRB_JUDGE_2026-10-08.md" \
+  --baseline-run "$E" \
+  --reference-run "$R" \
+  --prior-analysis "$A" \
+  --spectral-expectations "$F/expectations.json" \
+  --production-source "$T/src" \
+  --selftest "$B/results/$TEST_ID/selftest" \
+  --out "$B/results/$PRE_ID/preflight"
+```
+
+```bash
+python3 -B "$P/scripts/det_nrb_judge_readout.py" stage \
+  --reference-run "$R" \
+  --preflight "$B/results/$PRE_ID/preflight" \
+  --gpu-profile h200x2 \
+  --run "$N"
+```
+
+stage는 제출하지 않는다. 등록 입력·러너·실행 신원을 만든다. h100 대체는 모델 시작 전에 프로파일·러너·제출 기록을 함께 맞춘다.
+
+```bash
+sbatch --exclude=syn102,syn03 \
+  --output="$N/slurm-%j.out" \
+  --error="$N/slurm-%j.err" \
+  "$N/job.slurm" "$N"
+```
+
+```bash
+python3 -B "$P/scripts/det_nrb_judge_readout.py" analyze \
+  --prereg "$P/docs/PREREG_DET_NRB_JUDGE_2026-10-08.md" \
+  --run "$N" \
+  --baseline-run "$E" \
+  --reference-run "$R" \
+  --prior-analysis "$A" \
+  --spectral-expectations "$F/expectations.json" \
+  --production-source "$T/src" \
+  --public-spectrum "$P/data/standart_data1/toy06/spectra_toy06_cmfgen.txt" \
+  --public-si "$P/data/standart_data1/toy06/ionfrac_si_toy06_cmfgen.txt" \
+  --public-s "$P/data/standart_data1/toy06/ionfrac_s_toy06_cmfgen.txt" \
+  --selftest "$B/results/$TEST_ID/selftest" \
+  --out "$B/results/$READOUT_ID/analysis"
+```
+
+후보·반복·셀·세대·임계값을 결과에 맞춰 고르는 CLI는 만들지 않는다.
+
+기계 게이트의 기본 명령은 다음과 같다.
+
+```bash
+python3 -B "$P/scripts/check_prereg_preflight.py" \
+  "$P/docs/PREREG_DET_NRB_JUDGE_2026-10-08.md" --root "$P"
+
+python3 -B "$P/scripts/check_gate_referents.py" \
+  "$P/docs/PREREG_DET_NRB_JUDGE_2026-10-08.md" --root "$P"
+
+python3 -B "$P/scripts/check_doc_canonical.py" \
+  "$P/docs/PREREG_DET_NRB_JUDGE_2026-10-08.md"
+
+python3 -B "$P/scripts/check_dispatch_preflight.py" "$ORDER" --root "$P"
+```
+
+재현은 같은 봉인 입력·도구 신원으로 새 결과 경로에 수행한다. 실행 시간 등 비과학 메타데이터를 제외한 비교 항목을 미리 명시하고, 불일치를 숨기지 않는다.
+
+## §10. 처분·완료 조건·후속 결정
+
+### 10.1 필수 완료 내용
+
+판정문 첫 부분은 다음을 명시한다.
+
+- R′와 같은 단일 씨앗·봉인 바이너리의 cold start이며 실제 반복 수가 얼마였는지.
+- E′ 대비 NRB와 필수 생산자 장부 활성화, R′ 대비 반복 수 변경.
+- P1(a)의 증거 형태와 직접 행렬 추적의 한계.
+- P1(b)의 기존 범위·후속 범위 결과.
+- P2 네 축과 종단 창, 세대 14의 별도 상태.
+- 공개 이온 분율·스펙트럼 결과와 이온 열 대응 가정.
+- 실제 GPU·CPU 비용·미완·결손·반증·이탈.
+- 생산 승격·물리적 정답·씨앗 독립성을 판정하지 않았다는 점.
+
+전체 시험 완료에는 적격한 선행 검증, 등록 실행, 필수 판독, 비용·보존 장부, 운전자 판정, astra 종료감사가 필요하다.
+
+과학 기대의 생존은 완료 조건이 아니다. 등록 시험을 적격하게 수행했다면 반증 또는 `NOT_CONVERGED`도 유효한 시험 결과다.
+
+### 10.2 집행 처분
+
+| 처분 | 기준 |
+|---|---|
+| `PASS_LIMITED` | 등록 실행·필수 판독·장부·감사가 완료되고 주장 상한을 지킴 |
+| `REWORK` | 구현·연결·직접시험·코드·결정·주장의 계약 위반 |
+| `INCOMPLETE` | 필수 실행 또는 산출이 미완 |
+
+전체 처분의 상한은 `PASS_LIMITED`다. 과학 코드와 P2 처분은 별도로 병기한다.
+
+예를 들어 `PASS_LIMITED / P2=NOT_CONVERGED / public_spectrum=REFUTED`는 가능한 결과다. 반면 시간 중단으로 최종 스펙트럼이 없다면 필수 목적 미완을 명시하며 전체 완료로 닫지 않는다.
+
+### 10.3 후속 결정표
+
+| 결과 | 후속 결정의 범위 |
+|---|---|
+| P1(a) 연결 실패 | 실행·장부·분기 연결을 오프라인에서 조사 |
+| P1(a) 생존, P1(b) 반증 | 자기항 제거와 축약 원천 모형 실패를 구별 |
+| P2 미달 | 12회까지의 변화 궤적 보고; 반복 연장은 사용자 결정 |
+| P2 생존, 공개 비교 반증 | 등록 표본의 작은 변화가 공개 비교 성공을 보장하지 않음을 보고 |
+| 공개 비교 생존, P2 미달 | 유한 반복 상태의 비교 결과로 제한 |
+| P2·공개 비교 모두 생존 | 단일 씨앗·고정 온도·등록 표본·대역의 결과로 제한 |
+| X | 해당 범위에 합격·확장·물리 원인 결정을 만들지 않음 |
+
+어느 결과도 충돌표 활성화·상수 수리·추가 저장·다른 씨앗·추가 GPU 런을 자동 승인하지 않는다.
+
+## §11. 집행 기록·분장
+
+| 항목 | 담당 | 기안 시 상태 |
+|---|---|---|
+| 공유 문맥·작업 장소·프로젝트 확인 | astra | 직접 확인 |
+| 사용자 결정·기준 계약·판정·결정표·요약 | astra | 관련 본문 직접 판독 |
+| 종료감사 B3·B4와 최종 수리 근거 | astra | 감사문·현행 판독 경로 직접 대조 |
+| 반복 노브·NRB 함수·세대 연결·이온 열 | astra | 관련 소스 직접 판독 |
+| E′·R′ exports 차이 | astra | 직접 diff 확인 |
+| 공개 자료 헤더·시각·diag6 이온 대응 | astra | 직접 판독; 열 의미의 외부 독립 확인은 하지 않음 |
+| 기안·파일화 | astra·운전자 | 본문 기안, 파일화 미집행 |
+| 기계 프리플라이트 | 운전자 | 미집행 |
+| Fable fresh 사전감사 | Fable | 미집행 |
+| 구현·직접시험·staging | 운전자 | 미집행 |
+| GPU 실행·판독·판정 | 운전자 | 미집행 |
+| 종료감사 | astra | 미집행 |
+| 실행 주장 재현 | 운전자 | 미집행 |
+
+저자 실행은 파일 조회·행 추출·텍스트 대조에 한정했다. 대표 확인 명령은 다음과 같다.
+
+```bash
+cat /home/kjhan/.codex/SHARED_CONTEXT.md
+pwd
+
+cat /gpfs/kjhan/lumina/cmfgen_map/nrb_judge_20261008/evidence/USER_DECISION_2026-10-08.txt
+
+diff -u \
+  /gpfs/kjhan/lumina/cmfgen_map/obs_capture_20261006/Eprime/run1/input/resolved_lumina.exports \
+  /gpfs/kjhan/lumina/cmfgen_map/obs_capture_20261006/Rprime/run1/input/resolved_lumina.exports
+
+sed -n '380,415p' \
+  /gpfs/kjhan/lumina/cmfgen_map/obs_capture_20261006/source/src/lumina_main.c
+
+sed -n '19150,19255p' \
+  /gpfs/kjhan/lumina/cmfgen_map/obs_capture_20261006/source/src/lumina_plasma.c
+
+sed -n '11641,11870p' \
+  /gpfs/kjhan/lumina/cmfgen_map/obs_capture_20261006/source/src/lumina_cmfgen.c
+```
+
+파일 수정·빌드·수치 분석·직접시험·기계 게이트·Slurm 제출은 수행하지 않았다. 기존 저장 수치의 인용을 이번 독립 실행 재현으로 표시하지 않는다.
+
+운전자는 집행 후 이 절에 실제 명령·rc·작업 ID·비용·신원·이탈·재현 상태를 추가한다. 종료감사 1·2회차는 전건 반영하고, 3회차부터는 «폐합 차단»을 반영하며 나머지는 관측으로 남긴다. 이 규칙이 필수 과학 산출의 결손이나 잘못된 판정을 면제하지 않는다.
+
+## §12. 기계 선언
+
+선언은 변경집합·참조 실체·명제 코드의 분할을 검사한다. 물리식·세대 정렬·오차 구간·기대치·적격성 전파는 직접시험과 종료감사 대상이다.
+
+`v`는 과학 명제 하나의 코드다. 유효 코드는 0·1·4·5이며, 결손·복수 코드·그 밖의 값은 X다. 집행 처분과 P2의 `NOT_CONVERGED`를 이 코드에 섞지 않는다.
+
+참조는 실재 파일만 지정한다. 디렉터리와 미래 산출은 참조 목록에 넣지 않는다.
+
+```prereg-preflight
+{
+  "changeset": {
+    "table_heading": "### 변경집합 — DET-NRB-JUDGE (표)",
+    "table_end": "### 변경집합 끝",
+    "path_pattern": "(?:scripts/det_nrb_judge_readout\\.py|/gpfs/kjhan/lumina/cmfgen_map/nrb_judge_20261008/tools/run_nrb_judge_(?:offline|gpu)\\.slurm)",
+    "symbol": "det_nrb_judge_",
+    "roots": [
+      "scripts/det_nrb_judge_readout.py",
+      "/gpfs/kjhan/lumina/cmfgen_map/nrb_judge_20261008/tools/run_nrb_judge_offline.slurm",
+      "/gpfs/kjhan/lumina/cmfgen_map/nrb_judge_20261008/tools/run_nrb_judge_gpu.slurm"
+    ],
+    "expected_extra": [
+      "scripts/det_nrb_judge_readout.py",
+      "/gpfs/kjhan/lumina/cmfgen_map/nrb_judge_20261008/tools/run_nrb_judge_offline.slurm",
+      "/gpfs/kjhan/lumina/cmfgen_map/nrb_judge_20261008/tools/run_nrb_judge_gpu.slurm"
+    ]
+  },
+  "branches": {
+    "regimes": [
+      [0.0, 0.0],
+      [1.0, 1.0],
+      [2.0, 2.0],
+      [3.0, 3.0],
+      [4.0, 4.0],
+      [5.0, 5.0],
+      [9.0, 9.0]
+    ],
+    "metrics": {
+      "valid": "len(v) == 1 and all(x in (0,1,4,5) for x in v)",
+      "c0": "sum(1 for x in v if x == 0)",
+      "c1": "sum(1 for x in v if x == 1)",
+      "c4": "sum(1 for x in v if x == 4)",
+      "c5": "sum(1 for x in v if x == 5)"
+    },
+    "rules": [
+      {"name": "X", "predicate": "not valid"},
+      {"name": "SURVIVES", "predicate": "valid and c0 == 1"},
+      {"name": "REFUTED", "predicate": "valid and c1 == 1"},
+      {"name": "UNRESOLVED", "predicate": "valid and c4 == 1"},
+      {"name": "NOT_IDENTIFIABLE", "predicate": "valid and c5 == 1"}
+    ],
+    "adversarial_fixtures": [
+      {"name": "survives", "mix": [[0,1]]},
+      {"name": "refuted", "mix": [[1,1]]},
+      {"name": "unresolved", "mix": [[4,1]]},
+      {"name": "not-identifiable", "mix": [[5,1]]},
+      {"name": "invalid-two", "mix": [[2,1]]},
+      {"name": "invalid-three", "mix": [[3,1]]},
+      {"name": "invalid-nine", "mix": [[9,1]]},
+      {"name": "missing-code", "mix": []},
+      {"name": "multiple-codes", "mix": [[0,1],[1,1]]}
+    ]
+  },
+  "references": [
+    {
+      "path": "/home/kjhan/BACKUP/Eunha.A1/Claude/Lumina-sn/CLAUDE.md"
+    },
+    {
+      "path": "/gpfs/kjhan/lumina/cmfgen_map/nrb_judge_20261008/evidence/USER_DECISION_2026-10-08.txt",
+      "flags_existing": ["12 outer iterations", "37902", "cold start"]
+    },
+    {
+      "path": "docs/PREREG_DET_SIIII_BT_SEED_2026-10-07.md"
+    },
+    {
+      "path": "docs/VERDICT_DET_SIIII_BT_SEED_2026-10-08.md"
+    },
+    {
+      "path": "docs/PREREG_DET_SEEDMEM_SCOPE_2026-10-08.md"
+    },
+    {
+      "path": "docs/VERDICT_DET_SEEDMEM_SCOPE_2026-10-08.md"
+    },
+    {
+      "path": "docs/PREREG_DET_OBS_CAPTURE_2026-10-06.md"
+    },
+    {
+      "path": "/gpfs/kjhan/lumina/cmfgen_map/seedmem_scope_20261008/results/r4/analysis/analysis/next_contract.json",
+      "flags_existing": ["DET_SEEDMEM_SCOPE_NEXT_V2", "VALID", "1e-3"]
+    },
+    {
+      "path": "/gpfs/kjhan/lumina/cmfgen_map/seedmem_scope_20261008/results/r4/analysis/analysis/summary.json",
+      "flags_existing": ["control_1206", "nrb_invariant"]
+    },
+    {
+      "path": "/gpfs/kjhan/lumina/cmfgen_map/seedmem_scope_20261008/results/r4/analysis/analysis/sample.json",
+      "flags_existing": ["DET_SEEDMEM_SCOPE_SAMPLE_V2", "n_keys"]
+    },
+    {
+      "path": "/gpfs/kjhan/lumina/cmfgen_map/seedmem_scope_20261008/results/r4/analysis/analysis/stationarity.csv"
+    },
+    {
+      "path": "/gpfs/kjhan/lumina/cmfgen_map/seedmem_scope_20261008/results/r4/analysis/manifest.json"
+    },
+    {
+      "path": "/gpfs/kjhan/lumina/cmfgen_map/seedmem_scope_20261008/results/r4/selftest/selftest.json"
+    },
+    {
+      "path": "/gpfs/kjhan/lumina/cmfgen_map/seedmem_scope_20261008/evidence/COST_LEDGER.txt"
+    },
+    {
+      "path": "/gpfs/kjhan/lumina/cmfgen_map/seedmem_scope_20261008/astra_closeout.md"
+    },
+    {
+      "path": "/gpfs/kjhan/lumina/cmfgen_map/seedmem_scope_20261008/astra_closeout2.md"
+    },
+    {
+      "path": "/gpfs/kjhan/lumina/cmfgen_map/seedmem_scope_20261008/astra_closeout3.md"
+    },
+    {
+      "path": "/gpfs/kjhan/lumina/cmfgen_map/seedmem_scope_20261008/astra_closeout4.md"
+    },
+    {
+      "path": "/gpfs/kjhan/lumina/cmfgen_map/diag6_seedmem_20261008/DIAGNOSIS.md"
+    },
+    {
+      "path": "/gpfs/kjhan/lumina/cmfgen_map/diag6_seedmem_20261008/DRIVER_DESIGN_AUDIT_r4.md"
+    },
+    {
+      "path": "/gpfs/kjhan/lumina/cmfgen_map/diag6_seedmem_20261008/r2_ionization.py",
+      "flags_existing": ["Z14", "Z16", "19.480"]
+    },
+    {
+      "path": "/gpfs/kjhan/lumina/cmfgen_map/diag6_seedmem_20261008/r2_ionization.csv"
+    },
+    {
+      "path": "/gpfs/kjhan/lumina/cmfgen_map/diag6_seedmem_20261008/r3_audit_repro.py"
+    },
+    {
+      "path": "/gpfs/kjhan/lumina/cmfgen_map/obs_capture_20261006/Rprime/run1/STAGE_IDENTITY.txt",
+      "flags_existing": ["outer_iterations=6", "run_binary_sha256"]
+    },
+    {
+      "path": "/gpfs/kjhan/lumina/cmfgen_map/obs_capture_20261006/Rprime/run1/RUN_FOOTER.txt",
+      "flags_existing": ["elapsed_seconds=37902", "allocated_gpus=2"]
+    },
+    {
+      "path": "/gpfs/kjhan/lumina/cmfgen_map/obs_capture_20261006/Rprime/run1/job.slurm"
+    },
+    {
+      "path": "/gpfs/kjhan/lumina/cmfgen_map/obs_capture_20261006/Rprime/run1/SUBMIT_COMMAND.txt"
+    },
+    {
+      "path": "/gpfs/kjhan/lumina/cmfgen_map/obs_capture_20261006/Rprime/run1/input/resolved_lumina.exports",
+      "flags_existing": [
+        "LUMINA_BB_NRB",
+        "LUMINA_A210_SPRODUCER_CAPTURE",
+        "LUMINA_PURE_CMFGEN_ITER",
+        "LUMINA_FIXED_TE_PROFILE"
+      ]
+    },
+    {
+      "path": "/gpfs/kjhan/lumina/cmfgen_map/obs_capture_20261006/Rprime/run1/input/run_build_identity.json"
+    },
+    {
+      "path": "/gpfs/kjhan/lumina/cmfgen_map/obs_capture_20261006/Eprime/run1/STAGE_IDENTITY.txt"
+    },
+    {
+      "path": "/gpfs/kjhan/lumina/cmfgen_map/obs_capture_20261006/Eprime/run1/input/resolved_lumina.exports"
+    },
+    {
+      "path": "/gpfs/kjhan/lumina/cmfgen_map/obs_capture_20261006/Rprime/run1/work/physics_comparison/physics_DET_iter0004.manifest.json",
+      "flags_existing": ["population_generation", "radiation_generation", "COMMITTED"]
+    },
+    {
+      "path": "/gpfs/kjhan/lumina/cmfgen_map/obs_capture_20261006/Rprime/run1/work/det_obs_capture/meta.txt",
+      "flags_existing": ["material_generation=7", "rad_generation=7"]
+    },
+    {
+      "path": "/gpfs/kjhan/lumina/cmfgen_map/obs_capture_20261006/source/src/lumina_main.c",
+      "flags_existing": ["LUMINA_PURE_CMFGEN_ITER"]
+    },
+    {
+      "path": "/gpfs/kjhan/lumina/cmfgen_map/obs_capture_20261006/source/src/lumina_plasma.c",
+      "flags_existing": ["bb_nrb_arm", "line_net_bracket_rates"]
+    },
+    {
+      "path": "/gpfs/kjhan/lumina/cmfgen_map/obs_capture_20261006/source/src/lumina_cmfgen.c",
+      "flags_existing": [
+        "LUMINA_A210_SPRODUCER_CAPTURE",
+        "det_obs_final_pass_hook",
+        "physics_comparison_dump_if_requested"
+      ]
+    },
+    {
+      "path": "/gpfs/kjhan/lumina/cmfgen_map/obs_capture_20261006/source/src/physics_comparison.c",
+      "flags_existing": ["comparison_write_ion_totals", "element_total_cm3", "nlte_q1_cm3"]
+    },
+    {
+      "path": "/gpfs/kjhan/lumina/cmfgen_map/obs_capture_20261006/source/src/line_net_rate.c",
+      "flags_existing": ["line_net_bracket_rates", "line_net_cmfgen_exponx"]
+    },
+    {
+      "path": "/gpfs/kjhan/lumina/cmfgen_map/obs_capture_20261006/source/src/line_net_rate.h"
+    },
+    {
+      "path": "/gpfs/kjhan/lumina/cmfgen_map/obs_capture_20261006/source/src/opacity_publication.c"
+    },
+    {
+      "path": "/gpfs/kjhan/lumina/cmfgen_map/obs_capture_20261006/source/src/opacity_publication.h"
+    },
+    {
+      "path": "scripts/det_seedmem_scope_readout.py",
+      "flags_existing": [
+        "det_seedmem_scope_rates",
+        "det_seedmem_scope_invert",
+        "det_seedmem_scope_p2_validate",
+        "det_seedmem_scope_propagate"
+      ]
+    },
+    {
+      "path": "scripts/det_siiii_btseed_readout.py"
+    },
+    {
+      "path": "scripts/det_siiii_pop_readout.py",
+      "flags_existing": ["recover", "capture_records"]
+    },
+    {
+      "path": "scripts/det_siiii_rates_readout.py",
+      "flags_existing": ["det_siiii_rates_coll"]
+    },
+    {
+      "path": "scripts/det_siiii_1206mech_readout.py",
+      "flags_existing": ["det_1206mech_check_row"]
+    },
+    {
+      "path": "scripts/det_siiii_repair_readout.py",
+      "flags_existing": [
+        "det_siiii_repair_public",
+        "det_siiii_repair_spec",
+        "det_siiii_repair_spectrum_table",
+        "det_siiii_repair_le",
+        "det_siiii_repair_lt"
+      ]
+    },
+    {
+      "path": "/gpfs/kjhan/lumina/cmfgen_map/siiii_repair_20261007/results/t5/analysis/expectations.json",
+      "flags_existing": [
+        "secondary_spectral_expectation",
+        "abs_d_NUV_max",
+        "abs_d_UV2500_max",
+        "R8_below"
+      ]
+    },
+    {
+      "path": "/gpfs/kjhan/lumina/cmfgen_map/siiii_repair_20261007/results/t5/analysis/result.json"
+    },
+    {
+      "path": "data/standart_data1/toy06/spectra_toy06_cmfgen.txt"
+    },
+    {
+      "path": "data/standart_data1/toy06/ionfrac_si_toy06_cmfgen.txt",
+      "flags_existing": ["si0", "si1", "si2", "19.480"]
+    },
+    {
+      "path": "data/standart_data1/toy06/ionfrac_s_toy06_cmfgen.txt",
+      "flags_existing": ["s0", "s1", "s2", "19.480"]
+    },
+    {
+      "path": "scripts/check_prereg_preflight.py"
+    },
+    {
+      "path": "scripts/check_gate_referents.py"
+    },
+    {
+      "path": "scripts/check_doc_canonical.py"
+    },
+    {
+      "path": "scripts/check_dispatch_preflight.py"
+    },
+    {
+      "path": "scripts/check_driver_hygiene.py"
+    },
+    {
+      "path": "scripts/check_gate_roster.py"
+    }
+  ]
+}
+```
