@@ -869,10 +869,10 @@ sbatch \
 | 실행 | 운전자 | r1 416510 · r2 416547 · r3 416618(정본), dev1–dev4, 모두 a10 CPU, GPU 0 |
 | 러너 위생·게이트 roster | 운전자 | hygiene 416509 rc 0; roster r1 416512·r2 416582·r3 rc 0(`O/evidence/gate_roster_r*.out`) |
 | 판정 | 운전자(구현·판정 겸임) | `docs/VERDICT_DET_COLL_OMEGA_OFFLINE_2026-10-08.md`, PASS_LIMITED 상한·`NEXT_CANDIDATE` |
-| 종료감사 | astra(계약 저자 이해관계) | 1회차 REWORK «폐합 차단» 3(`O/astra_closeout.md`) → 수리 5b70687; 2회차 REWORK «폐합 차단» 2(`O/astra_closeout2.md`) → 2회차 수리; 3회차 대기 |
+| 종료감사 | astra(계약 저자 이해관계) | 1회차 REWORK «폐합 차단» 3(`O/astra_closeout.md`) → 수리 5b70687; 2회차 REWORK «폐합 차단» 2(`O/astra_closeout2.md`) → 2회차 수리 d5b8491; **3회차 폐합 가 «폐합 차단» 0**(`O/astra_closeout3.md`, 관측 2 기재) |
 | 실행 주장 재현 | 운전자 | 수리판마다 새 식별자에서 selftest+analyze 재실행; r1·r2·r3 의 주·연결 집계·결정 동일, 과학 산출 4 파일 sha 동일(r2–r3) |
 | 이탈 | — | 노드 제외 syn03 추가(syn102 에 더해); 실자료 dev 판독(dev2·dev3·dev4)이 정본 전에 있었다; 판독기 밖 표 집계 `O/evidence/readout_r1_tables.txt`; 개발 래퍼 `O/tools/dev_wrap.sh`; r2 게이트 작업 416582 의 Slurm FAILED 는 끝의 요약 명령 오류(게이트 rc 0) |
-| 비용·용량 | 운전자 | r3 까지 298 s / 1500 s, 0.139 / 0.833 core·h, GPU 0; 용량 178 MiB / 192 MiB(추가 실행 한 벌 ≈ 31 MiB 이면 초과 → 실행 전 user 보고) |
+| 비용·용량 | 운전자 | 최종 346 s / 1500 s, 548 core-s = 0.152 / 0.833 core·h, GPU 0; 용량 178 MiB / 192 MiB |
 
 ## §12. 기계 선언
 
