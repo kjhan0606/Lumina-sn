@@ -663,7 +663,10 @@ def det_coll_omega_offline_python(levels, lines, tables, units, entries, fault=N
                 ga, gb = rows[L[(Z, q, a)]][4], rows[L[(Z, q, b)]][4]
                 dE = (rows[L[(Z, q, b)]][3] - rows[L[(Z, q, a)]][3]) * EV_TO_ERG
                 if not dE > 0.0:
-                    tab_out[k] = {"skip": "DE_NOT_POSITIVE"}
+                    # closeout round 2: production skips it, but a non-positive gap of a tabulated pair is an
+                    # inadmissible level order (the pair cannot read it as "no change")
+                    tab_out[k] = {"skip": "INVALID_INPUT_ENERGY_ORDER", "lo": a, "hi": b,
+                                  "invalid": "INVALID_INPUT_ENERGY_ORDER"}
                     continue
                 inv = 1.0 / math.sqrt(Te)
                 cu = ne * COL_CONST * inv / ga * om * math.exp((1.0 if fault == "exp_sign" else -1.0) * dE / (K_B * Te))
@@ -860,8 +863,8 @@ def det_coll_omega_offline_pairs(plan, by_pair, tab_pairs, lines, levels, entrie
         n_tab = 0
         for t in tab_pairs.get((Z, a, b), []):
             v = tab_py.get((e["entry"], Z, TARGET["ion"], t), {})
-            if v.get("invalid") or v.get("skip") == "INVALID_INPUT_TABLE_VALUE":
-                invalid.append(f"table{t}:INVALID_INPUT_TABLE_VALUE")
+            if v.get("invalid") or str(v.get("skip") or "").startswith("INVALID_INPUT"):
+                invalid.append(f"table{t}:{v.get('invalid') or v.get('skip')}")
             if "up" in v:
                 om_tab_u += v["up"]
                 om_tab_d += v["down"]
@@ -900,8 +903,9 @@ def det_coll_omega_offline_pair_status(cls, db, invalid):
     failed detailed balance -> X; an underflow-degraded ratio -> UNRESOLVED (prereg 5.2, 6.2)."""
     if db == "FAIL" or invalid:
         return "X", cls["tag"]
-    if db == "UNDERFLOW" and cls["tag"] in ("TWO_SIDED", "RATIO_RELATION_FAIL"):
-        return "UNRESOLVED", "DB_UNDERFLOW"
+    if db == "UNDERFLOW" and (cls["status"] in ("SURVIVES", "REFUTED") or cls["tag"] == "RATIO_RELATION_FAIL"):
+        # closeout round 2: the ratio of an underflowed channel is not defined -> 4, also for a one-sided zero
+        return "UNRESOLVED", f"DB_UNDERFLOW:{cls['tag']}"
     return cls["status"], cls["tag"]
 
 
@@ -1184,6 +1188,11 @@ def det_coll_omega_offline_analyze(census, prior_sample, prior_result, r_run, sr
     got = {s: sum(1 for r in rows if r["set"] == "connected" and r["shell"] == s) for s in plan_check}
     if got != plan_check:
         vwhy.append("CONNECTED_DENOMINATOR")
+    for r in rows:
+        if r.get("detailed_balance") == "UNDERFLOW" and r["status"] in ("SURVIVES", "REFUTED"):
+            vwhy.append(f"UNDERFLOW_STATE:{r['set']}:{r['Z']}:{r.get('lo')}:{r.get('hi')}:{r['shell']}")
+        if r["status"] != "X" and r.get("invalid_input"):
+            vwhy.append(f"INVALID_NOT_X:{r['set']}:{r['Z']}:{r.get('lo')}:{r.get('hi')}:{r['shell']}")
     chk, dec2 = det_coll_omega_offline_decide_check(rows)
     if dec2 != decision:
         vwhy.append(f"DECISION_RECOMPUTE:{decision}!={dec2}")
@@ -1241,9 +1250,10 @@ def det_coll_omega_offline_analyze(census, prior_sample, prior_result, r_run, sr
                 "N": len(sub), "by_status": pd.Series([r["status"] for r in sub]).value_counts().to_dict() if sub else {},
                 "by_composition": pd.Series([r.get("omega_composition") for r in sub]).value_counts().to_dict()
                 if sub else {},
-                "d_quantiles": det_coll_omega_offline_quantiles([r.get("d") for r in sub]),
-                "one_side_zero": sum(1 for r in sub if r.get("tag") == "ONE_SIDE_ZERO"),
-                "no_change": sum(1 for r in sub if r.get("tag") == "NO_CHANGE"),
+                "d_quantiles": det_coll_omega_offline_quantiles([r.get("d") for r in sub if r["status"] != "X"]),
+                "x_rows_excluded_from_quantiles": sum(1 for r in sub if r["status"] == "X"),
+                "one_side_zero": sum(1 for r in sub if r.get("tag") == "ONE_SIDE_ZERO" and r["status"] != "X"),
+                "no_change": sum(1 for r in sub if r.get("tag") == "NO_CHANGE" and r["status"] != "X"),
                 "unique_pairs": len({(r.get("lo"), r.get("hi"), r["shell"]) for r in sub}),
                 "db_fail": sum(1 for r in sub if r.get("detailed_balance") == "FAIL"),
                 "db_underflow": sum(1 for r in sub if r.get("detailed_balance") == "UNDERFLOW"),
@@ -1685,6 +1695,7 @@ def det_coll_omega_offline_selftest_cases(base, src):
 
     def underflow(b, r):
         set_state(r, 4, 15, 100.0)
+        set_state(r, 4, 10, 50.0)                       # the line-less Si III 2-3 table pair (3.7 eV) underflows
     rb2 = [run(n, mutate=m) for n, m in (("nan_value", nan_value), ("nan_grid", nan_grid),
                                           ("energy_order", energy_order), ("underflow", underflow))]
     t_nan = pd.read_csv(rb2[0][1] / "rates.csv")
@@ -1692,22 +1703,33 @@ def det_coll_omega_offline_selftest_cases(base, src):
     p_nan = t_nan[(t_nan.kind == "PAIR") & (t_nan.Z == 14) & (t_nan.lo == 0) & (t_nan.hi == 1)]
     t_eo = pd.read_csv(rb2[2][1] / "rates.csv")
     p_eo = t_eo[(t_eo.kind == "PAIR") & (t_eo.set == "sample") & (t_eo.line == 2)]
+    p_eo12 = t_eo[(t_eo.kind == "PAIR") & (t_eo.Z == 14) & (t_eo.lo == 1) & (t_eo.hi == 2)]
+    p_nan14 = t_nan[(t_nan.kind == "PAIR") & (t_nan.set == "sample") & (t_nan.Z == 14)]
+    q_nan = ((rb2[0][0].get("distributions") or {}).get("sample:14") or {}).get("d_quantiles") or {}
+    n_adm = int(((p_nan14.status != "X") & p_nan14.d.notna()).sum())
     t_uf = pd.read_csv(rb2[3][1] / "rates.csv")
     p_uf = t_uf[t_uf.kind == "PAIR"]
-    uf = p_uf[p_uf.tag.isin(["LU_UNDEFINED_UNDERFLOW", "DB_UNDERFLOW"])]
+    uf = p_uf[p_uf.tag.astype(str).str.startswith(("LU_UNDEFINED_UNDERFLOW", "DB_UNDERFLOW"))]
+    uf_os = p_uf[(p_uf.Z == 14) & (p_uf.lo == 2) & (p_uf.hi == 3) & (p_uf.shell == 10)]
     two = p_uf[p_uf.tag == "TWO_SIDED"]
     listing = {(x["Z"], x["ion0"]): x for x in rb2[0][0].get("loader", [])}
-    case("admissibility (closeout B2): a non-finite collision strength is recorded and every consumer is tagged "
-         "INVALID_INPUT (pair X, never a weak-line fallback) while the sealed C still agrees; a non-finite temperature "
-         "grid fails the loader with its cause; a reversed level order is refused before the reused COLL_FIX call "
-         "(pair X); an upward rate lost to underflow leaves the pair UNRESOLVED (no 0/1 from the downward ratio alone) "
-         "and the run VALID", "B2 admissibility",
+    case("admissibility (closeout B2, round 2): a non-finite collision strength is recorded and every consumer is "
+         "tagged INVALID_INPUT (pair X, never a weak-line fallback) while the sealed C still agrees, and the X pairs stay "
+         "in the fixed denominator but leave the d quantiles; a non-finite temperature grid fails the loader with its "
+         "cause; a reversed level order is checked and tagged before the reused COLL_FIX call (diagnostic values still "
+         "computed) and reaches the line pair and the line-less table pair 1-2 (both X, not NO_CHANGE); an upward rate "
+         "lost to underflow leaves the pair UNRESOLVED, also on a line-less one-sided-zero table pair, and the run "
+         "VALID", "B2 admissibility",
          (has(rb2[0][0], "X_ROWS"), listing.get((14, 2), {}).get("nonfinite_records"),
           set(l_nan.invalid.dropna()), set(p_nan.status), rb2[0][0]["cref"]["mismatches"],
           has(rb2[1][0], "TABLE_TGRID_NONFINITE"),
           has(rb2[2][0], "X_ROWS"), set(p_eo.status), any("INVALID_INPUT_ENERGY_ORDER" in str(x) for x in p_eo.invalid_input),
-          rb2[3][0]["validity"], len(uf) > 0, set(uf.status), bool(two.R_lu.notna().all())),
-         (True, [0], {"INVALID_INPUT_TABLE_VALUE"}, {"X"}, 0, True, True, {"X"}, True, "VALID", True, {"UNRESOLVED"}, True),
+          set(p_eo12.status), all("INVALID_INPUT_ENERGY_ORDER" in str(x) for x in p_eo12.invalid_input),
+          q_nan.get("n") == n_adm and n_adm < int(p_nan14.d.notna().sum()),
+          rb2[3][0]["validity"], len(uf) > 0, set(uf.status), bool(two.R_lu.notna().all()),
+          set(uf_os.status), [str(x) for x in uf_os.tag]),
+         (True, [0], {"INVALID_INPUT_TABLE_VALUE"}, {"X"}, 0, True, True, {"X"}, True, {"X"}, True, True, "VALID", True,
+          {"UNRESOLVED"}, True, {"UNRESOLVED"}, ["DB_UNDERFLOW:ONE_SIDE_ZERO"]),
          fault="nan_value|nan_grid|energy_order|underflow", results=[x[0] for x in rb2])
     # B3: interpolation at a grid point and below the grid, against the sealed C
     def grid_points(b, r):

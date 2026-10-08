@@ -3,12 +3,12 @@
 판정자는 운전자(Claude, Opus 5.5)이며, 판독기 구현자와 판정자를 겸한다(계약 §11).
 
 - **계약:** `docs/PREREG_DET_COLL_OMEGA_OFFLINE_2026-10-08.md` — 기안 c760a77, astra `gpt-6-astra`.
-- **판독기:** `scripts/det_coll_omega_offline_readout.py`(신설 28496fa sha256 54eebb52…; **종료감사 1회차 수리판 = 이 판정문의 커밋, sha256 f3df85cc…**).
+- **판독기:** `scripts/det_coll_omega_offline_readout.py`(신설 28496fa sha256 54eebb52… → 종료감사 1회차 수리 5b70687 sha256 f3df85cc… → **2회차 수리 = 이 판정문의 커밋, sha256 6a6b2cfb…**).
   - import 하는 기존 판독기 셋은 수정하지 않았다: `det_seedmem_scope_readout.py`(표본·solve 단위), `det_siiii_rates_readout.py`(COLL_FIX 식·exports), `det_siiii_pop_readout.py`(sha).
 - **러너:** `/gpfs/kjhan/lumina/cmfgen_map/coll_omega_20261008/tools/run_det_coll_omega_offline.slurm`(신설).
-- **정본 산출:** `/gpfs/kjhan/lumina/cmfgen_map/coll_omega_20261008/results/r2/`(수리판; a10 job 416547, Slurm 35 s: selftest 19.6 s·analyze 14.6 s).
+- **정본 산출:** `/gpfs/kjhan/lumina/cmfgen_map/coll_omega_20261008/results/r3/`(2회차 수리판; a10 job 416618, Slurm 36 s: selftest 19.6 s·analyze 14.6 s).
   - 과학 산출은 `analysis/analysis/`, 신원은 `analysis/manifest.json` 에 있다.
-  - 초판 정본 `results/r1/`(job 416510, 판독기 54eebb52)은 보존한다. r1→r2 차이는 §12 에 적는다. 주 표본·연결 집합의 집계(N·B·U·분위수·결정)는 r1 과 r2 가 같다.
+  - 이전 정본 `results/r1/`(416510, 54eebb52)·`results/r2/`(416547, f3df85cc)는 보존한다. 차이는 §12·§13 에 적는다. 주 표본·연결 집합의 집계(N·B·U·분위수·결정)는 r1·r2·r3 가 같다.
 - **입력(봉인, 수정 없음):** R′ `obs_capture_20261006/Rprime/run1` 의 덱·충돌표·물질 덤프(세대 7·3), 봉인 소스 `obs_capture_20261006/source/src`.
 
 ## 처분: **PASS_LIMITED** (상한) — astra 종료감사 대기
@@ -141,9 +141,11 @@
 
 **적격성·수치 상태의 구별(종료감사 1회차 «폐합 차단» B2 수리)**
 - 이진 표의 비유한 온도격자는 로더 실패(`TABLE_TGRID_NONFINITE`), 비유한 충돌강도 레코드는 기록 후 소비자마다 `INVALID_INPUT_TABLE_VALUE` 표지(쌍 X; 봉인 C 로더도 거부하지 않으므로 C 대조는 유지).
-- 재사용하는 `det_siiii_rates_coll` 호출 전에 입력 적격성(유한·양의 상태·통계중량·준위 순서·f)을 검사하고, 부적격이면 그 선을 `INVALID_INPUT_*` 로 표지해 과학 계수에서 뺀다(쌍 X). 생산 fallback 이 비양의 에너지차·온도·중량으로 OMEGA_SET 에 닿은 경우는 `INVALID_INPUT_FALLBACK` 으로 약한 선 근사(`SET`)와 구별한다.
-- 상세평형 상태를 OK/FAIL/UNDERFLOW/NOT_APPLICABLE 로 나눴다. e^{-x} 가 underflow 하여 상향 율이 0 또는 subnormal 이면 비가 정의되지 않으므로 그 쌍은 하향 비만으로 0/1 을 받지 않고 4(UNRESOLVED) 로 남긴다. R_lu 와 R_ul 의 관계(§5.1)도 검사해 어긋나면 X.
-- **실자료(r2):** 부적격 입력 0, underflow 0, 상세평형 실패 0. 수리는 소스 경로의 결함을 닫은 것이며 r1 의 집계를 바꾸지 않았다.
+- 재사용하는 `det_siiii_rates_coll` 을 부르기 **전에** 입력 적격성(유한·양의 상태·통계중량·준위 순서·f)을 검사해 표지한다. 표지된 선도 C 대조를 위해 진단값은 그대로 계산하지만, 그 선을 소비하는 쌍은 X 이며 과학 계수에 들어가지 않는다. 생산 fallback 이 비양의 에너지차·온도·중량으로 OMEGA_SET 에 닿은 경우는 `INVALID_INPUT_FALLBACK` 으로 약한 선 근사(`SET`)와 구별한다.
+- (2회차) 표 순회에서 에너지차가 양이 아닌 표 레코드도 생산은 건너뛰지만 판독기는 `INVALID_INPUT_ENERGY_ORDER` 로 표지해, 선 없는 표 쌍이 「변화 없음」으로 소비되지 않고 X 가 된다.
+- 상세평형 상태를 OK/FAIL/UNDERFLOW/NOT_APPLICABLE 로 나눴다. e^{-x} 가 underflow 하여 상향 율이 0 또는 subnormal 이면 비가 정의되지 않으므로, 그 쌍은 하향 비만으로 0/1 을 받지 않고 4(UNRESOLVED)로 남긴다. (2회차) 선 없는 표 쌍의 한쪽 영(`ONE_SIDE_ZERO`)과 underflow 가 겹치는 경우도 4다. R_lu 와 R_ul 의 관계(§5.1)를 검사해 어긋나면 X.
+- (2회차) X 쌍은 고정 분모와 X 계수에 남지만 d 분위수·한쪽 영·변화 없음 집계에서는 빠진다(`x_rows_excluded_from_quantiles`). 검증기는 UNDERFLOW 인데 0/1 인 쌍과 부적격 표지인데 X 가 아닌 쌍을 찾아 X 로 막는다.
+- **실자료(r3):** 부적격 입력 0, underflow 0, 상세평형 실패 0, 분위수에서 뺀 X 쌍 0. 수리는 소스 경로의 결함을 닫은 것이며 r1 의 집계를 바꾸지 않았다.
 
 **직접시험(`selftest.json`, 21 사례, 실패 0) — 주입 결함과 이를 거부한 검사**
 
@@ -169,10 +171,10 @@
 | 발췌 무결성 | 발췌 변조 | 원문 불일치 |
 | 보존 | 기존 경로 | 쓰기 전 거부 |
 | B1 세대 3 | 세대·준위 번호만으로 표 선택(다른 원소 합산) | `COUNTER_G3_RECOMPUTE` |
-| B2 적격성 | 비유한 충돌강도, 비유한 온도격자, 준위 순서 역전, underflow 상태 | INVALID_INPUT 표지·쌍 X, 로더 실패, 호출 전 거부, UNRESOLVED(4) |
+| B2 적격성 | 비유한 충돌강도, 비유한 온도격자, 준위 순서 역전, underflow 상태 | INVALID_INPUT 표지·쌍 X·분위수 제외, 로더 실패, 호출 전 검사·표지(진단값은 계산)·선 쌍과 선 없는 표 쌍 1–2 모두 X, 한쪽 영 표 쌍을 포함해 UNRESOLVED(4) |
 | B3 보간 | 격자점 정확값(1.5, 3.4)·격자 하단 밖(끝값·BELOW) | C 대조 0 불일치, 구간·끝값 저장 |
 | B3 상세평형 | 지수 부호 오류 | 상세평형 FAIL |
-| B3 고정밀 | 두 처방의 상·하향 율 절대 정규화(60자리) | 상대차 < 10⁻¹³·10⁻¹⁴ |
+| B3 고정밀 | 두 처방의 상·하향 율 절대 정규화(60자리) — `hp_tests()` 의 율 함수 직접 대조(analyze 경로 아님) | 상대차 < 10⁻¹³·10⁻¹⁴ |
 | B3 두 배 경계 | Υ_표 = Υ_FIX/2 | 코드 4 |
 | B3 20 % 경계 | f_lo 정확히 0.20 → ≥ 는 NEXT_CANDIDATE, > 주입 | 결정 재유도 |
 | B3 solve | 같은 단위 쌍을 유효 연결 분모에 계상 | 분모 재계산 |
@@ -182,13 +184,14 @@
 **게이트와 신원**
 - 계약 게이트: prereg·referents·canonical rc 0(`evidence/preflight_prereg_draft_20261008T143051/`).
 - 러너 위생: rc 0(`evidence/hygiene_r1.out`).
-- G-LINK·G-READOUT: PASS(`evidence/GATE_RECORD_r2.json`). roster rc 0(`evidence/gate_roster_r2.out`). 초판 r1 기록은 `GATE_RECORD_r1.json`·`gate_roster_r1.out`.
-- 신원: `r2/identity.sha256`, `r2/analysis/manifest.json`(입력·19개 표 bin·출력 sha).
+- G-LINK·G-READOUT: PASS(`evidence/GATE_RECORD_r3.json`). roster rc 0(`evidence/gate_roster_r3.out`). 이전 기록은 `GATE_RECORD_r1.json`·`GATE_RECORD_r2.json` 과 각 roster 출력.
+- 신원: `r3/identity.sha256`, `r3/analysis/manifest.json`(입력·19개 표 bin·출력 sha).
 
 ## 9. 비용·보존·이탈 (본문 8)
 
-- **비용(`evidence/COST_LEDGER.txt`):** Slurm 합산 **186 s** / 1500 s(초판 집계 103 s 는 집계 416513·종료감사 발주 게이트 416515 를 빠뜨렸고 초안 게이트의 소수 자리를 버렸다 — «기재로 족함» 정정). CPU 예약 0.079 / 0.833 core·h. GPU 0. 용량 약 70 MiB / 192 MiB.
-- **보존:** 새 RUN_ID 경로만 썼다(dev1·dev2·r1·dev3·r2). dev3 와 r2 의 과학 산출 5 파일은 sha256 이 같다. r1 은 그대로 보존한다.
+- **비용(`evidence/COST_LEDGER.txt`):** 규칙 = 작업마다 sacct 의 Slurm 경과, 1초 미만은 1초, core-s = 경과 × 할당 CPU. r3 까지 **298 s / 1500 s, 500 core-s = 0.139 / 0.833 core·h**, GPU 0. r3 게이트·3회차 발주 게이트는 장부에 이어 적는다. (1회차 수리판의 186 s·0.079/0.086 core·h 는 근거가 분해되지 않은 반올림과 서로 다른 합산이 섞인 값이라 폐기하고 이전 장부를 `COST_LEDGER_before_closeout2.txt` 로 보존 — 2회차 «기재로 족함» N1.)
+- **용량:** COLL 단 디렉터리 합계 **178 MiB / 192 MiB**(du). 실행 한 벌(selftest + analyze)이 약 31 MiB 이므로 **추가 수리 런 한 번이면 상한을 넘는다** — 그때는 실행 전에 user 에게 보고한다.
+- **보존:** 새 RUN_ID 경로만 썼다(dev1·dev2·r1·dev3·r2·dev4·r3). dev3–r2, dev4–r3, r2–r3 는 과학 산출 4 파일(rates·uncovered·sample·next_contract)의 sha256 이 같고, `result.json` 은 실행 시간·C 빌드 경로 등 집행 metadata(r3 는 `x_rows_excluded_from_quantiles` 필드 추가)만 다르며 과학 결과 필드는 같다. (1회차 수리판의 「5 파일 동일」은 틀렸다 — N3.)
 
 **이탈·한계**
 1. 실자료 개발 analyze(dev2)를 공식 r1 전에 한 번 돌렸다. 판독기는 그 뒤 바뀌지 않았다(같은 sha).
@@ -196,11 +199,12 @@
 3. `tools/dev_wrap.sh` 는 변경집합 밖의 개발 호출 래퍼다.
 4. 판정문 표의 구성·부호 집계는 r1 의 `rates.csv` 를 a10 에서 단순 집계했다(`evidence/readout_r1_tables.txt`). 새 계산은 없으나 판독기 산출 밖의 집계다. r2 의 PAIR 행은 r1 과 같은 상태·d 를 가지므로 표를 다시 집계하지 않았다(집계 열의 의미는 그대로).
 5. 표본 쌍 분포의 한쪽 영 규칙(§5.3)은 선 없는 표 전이를 반례로 센다. 그 반례는 「COLL_FIX 가 그 쌍에 충돌을 주지 않는다」는 뜻이며 스펙트럼 효과가 아니다.
-6. 종료감사 1회차 수리로 판독기가 바뀌었다(54eebb52 → f3df85cc). 수리판의 직접시험·실자료 판독을 새 식별자 r2 에서 다시 돌렸고 r1 은 보존했다.
+6. 종료감사 1·2회차 수리로 판독기가 바뀌었다(54eebb52 → f3df85cc → 6a6b2cfb). 수리판마다 직접시험·실자료 판독을 새 식별자(r2, r3)에서 다시 돌렸고 이전 정본은 보존했다.
+7. r2 게이트 작업 416582 는 Slurm 상태가 FAILED 다 — 끝의 요약용 `tail -2`(여러 파일)가 문법 오류였다. 게이트 셋은 각자 출력 파일에 rc=0 을 남겼다.
 
 ## 10. 분장 장부
 
-정본 장부 = 계약 `docs/PREREG_DET_COLL_OMEGA_OFFLINE_2026-10-08.md` **§11 집행 기록**(개정16 ①: 한 곳에만 둔다). 이 판정문은 지목만 하며, 판정 단계의 칸은 「운전자(r1 416510 / r2 416547, 이 문서), 구현·판정 겸임」이다. 운전자 모델은 Opus 5.5 이며, 종료감사 1회차 수리의 일부 편집은 user 의 UI 전환으로 Fable 5.1 구동 중에 이뤄졌다(분장은 모델과 무관).
+정본 장부 = 계약 `docs/PREREG_DET_COLL_OMEGA_OFFLINE_2026-10-08.md` **§11 집행 기록**(개정16 ①: 한 곳에만 둔다). 이 판정문은 지목만 하며, 판정 단계의 칸은 「운전자(r1 416510 / r2 416547 / r3 416618, 이 문서), 구현·판정 겸임」이다. 운전자 모델은 Opus 5.5 이며, 종료감사 1회차 수리의 일부 편집은 user 의 UI 전환으로 Fable 5.1 구동 중에 이뤄졌다(분장은 모델과 무관).
 
 ## 12. 종료감사 1회차(astra, `coll_omega_20261008/astra_closeout.md`) 반영
 
@@ -208,7 +212,7 @@
 |---|---|---|
 | B1 세대 3 의 원소 간 합산(46.63) | 폐합 차단 | 세대·Z·ion·준위쌍 선택 + 독립 재계산 검사; 값 38.89604202017004 로 정정; 직접시험 「B1 generation 3」 |
 | B2 부적격 입력·underflow 를 정상값과 구별하지 않음 | 폐합 차단 | 로더 비유한 검사·호출 전 적격성·`INVALID_INPUT_FALLBACK`·상세평형 UNDERFLOW→4·R_lu/R_ul 관계; 직접시험 「B2 admissibility」 |
-| B3 §8.2 미시연 6항 | 폐합 차단 | 격자점·하단 밖 보간, 지수 부호, 절대 정규화 고정밀, 두 배 경계 4, 20 % 경계 ≥/>, 같은 단위 쌍의 분모 계상 — 전부 실제 analyze 경로에서 시연 |
+| B3 §8.2 미시연 6항 | 폐합 차단 | 격자점·하단 밖 보간, 지수 부호, 두 배 경계 4, 20 % 경계 ≥/>, 같은 단위 쌍의 분모 계상은 실제 analyze 경로에서, 절대 정규화 고정밀은 `hp_tests()` 의 율 함수 직접 대조로 시연(2회차 N4 정정) |
 | 「율 계산 전 분모 고정」 문장 | 기재로 족함 | 문장 정정 + 수리판은 실제로 율 평가 전에 plan·분모·매핑을 `sample.json` 에 저장하고 보간 구간·끝값을 `rates.csv` 에 남김 |
 | 「표 수록 쌍 우세」·「하한에서 크게」 | 기재로 족함 | 키 수 구성으로 한정, 하한 기여 미분해 명시(§7·`next_contract.json`) |
 | 비용 누락·장부 이중 유지 | 기재로 족함 | 누계 186 s 로 갱신(416513·416515 포함), 장부는 계약 §11 단일 |
@@ -223,3 +227,18 @@ r1→r2 산출 차이: `sample.json`(V2, plan·분모·매핑 추가), `rates.cs
 - 전역 OMEGA 스위치가 다른 이온·RADEQ 에 주는 영향.
 - 물리 변경 하나와 측정량.
 - GPU 비용.
+
+## 13. 종료감사 2회차(astra, `coll_omega_20261008/astra_closeout2.md`) 반영
+
+1회차 B1·B3·기재 2건은 닫힘으로 확인됐다. 남은 지적:
+
+| 지적 | 계급 | 처리 |
+|---|---|---|
+| R2-B1 `UNDERFLOW` 가 `ONE_SIDE_ZERO` 와 겹치면 코드 1 | 폐합 차단 | 쌍 상태 결합에서 UNDERFLOW 인 모든 0/1 을 4 로(`DB_UNDERFLOW:<원래 태그>`); 검증기 `UNDERFLOW_STATE`; 직접시험에 50 K 셸의 선 없는 Si III 2–3 표 쌍(3.7 eV) 추가 → UNRESOLVED |
+| R2-B2 표 전이 부적격 표지 미전파·X 쌍 d 의 분위수 포함 | 폐합 차단 | 비양의 에너지차 표 레코드를 `INVALID_INPUT_ENERGY_ORDER` 로 표지해 쌍 X; X 쌍은 분모·X 계수에 남기고 분위수·한쪽 영·변화 없음 집계에서 제외; 검증기 `INVALID_NOT_X`; `energy_order`(선 없는 1–2 표 쌍 X)·`nan_value`(분위수 n = 적격 쌍 수) 시험 확장 |
+| N1 비용 누계 불일치 | 기재로 족함 | sacct 규칙으로 장부 재작성(§9) |
+| N2 계약 §11 에 실제 집행 기록 없음 | 기재로 족함 | 기안 기록은 그대로 두고 §11 에 「집행 기록(운전자 추가)」 연결 |
+| N3 「5 파일 SHA 동일」 | 기재로 족함 | 4 파일 동일 + result.json metadata 차이로 정정(§9) |
+| N4 직접시험 설명의 범위 과장 | 기재로 족함 | 「호출 전 검사·표지(진단값 계산)」, 고정밀은 직접 함수 대조로 정정(§8·§12) |
+
+r2→r3 산출 차이: `result.json` 의 분포에 `x_rows_excluded_from_quantiles` 추가뿐. 과학 산출 4 파일 sha256 동일, 주 표본·연결 집합의 모든 집계·결정 동일.
