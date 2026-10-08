@@ -3,23 +3,25 @@
 판정자는 운전자(Claude, Opus 5.5)이며, 구현자와 판정자를 겸한다(계약 §11).
 
 - **계약:** `docs/PREREG_DET_SEEDMEM_SCOPE_2026-10-08.md` — 기안 2920eaa, 개정 1 87e3321. 둘 다 astra `gpt-6-astra` 가 썼다.
-- **판독기:** `scripts/det_seedmem_scope_readout.py` — 신설 753079f(aeaf18f0…) → 1회차 수리판 bfc58ea(c7055cad…) → 2회차 수리판 b0820bd(db62ef94…).
+- **판독기:** `scripts/det_seedmem_scope_readout.py` — 신설 753079f(aeaf18f0…) → 1회차 수리판 bfc58ea(c7055cad…) → 2회차 수리판 b0820bd(db62ef94…) → 3회차 수리판 a53130c(3131bd84…).
   - import 하는 기존 판독기 넷은 수정하지 않았다: `det_siiii_pop_readout.py` 63cbea71…, `det_siiii_rates_readout.py` 2fb17ef8…, `det_siiii_1206mech_readout.py` ab4c1be7…, `det_siiii_repair_readout.py` 7e7797aa…
   - 수리 전 판본은 `evidence/det_seedmem_scope_readout.r1_753079f.py` 에 보존했다.
 - **러너:** `/gpfs/kjhan/lumina/cmfgen_map/seedmem_scope_20261008/tools/run_det_seedmem_scope.slurm` — 신설 635aba44… → 수리판 bbf1e5c0…. 바뀐 것은 신원 기록 목록뿐이다.
-- **정본 산출:** `/gpfs/kjhan/lumina/cmfgen_map/seedmem_scope_20261008/results/r3/`.
-  - a10 job 416415, Slurm 89 s(selftest 9.5 s, analyze 75.7 s). 런 시작 HEAD 는 b0820bd 다.
+- **정본 산출:** `/gpfs/kjhan/lumina/cmfgen_map/seedmem_scope_20261008/results/r4/`.
+  - a10 job 416427, Slurm 90 s(selftest 9.4 s, analyze 79.2 s). 런 시작 HEAD 는 a53130c 다.
   - 과학 산출은 `analysis/analysis/`, 신원은 `analysis/manifest.json` 에 있다.
-  - 이전 산출 `results/r1/`(job 416256)과 `results/r2/`(job 416386)도 보존했다. 차이는 §11 에 있다.
+  - 이전 산출 `results/r1/`(job 416256), `results/r2/`(416386), `results/r3/`(416415)도 보존했다. 차이는 §11 에 있다.
 - **입력(모두 봉인, 수정 없음):**
   - E′ `obs_capture_20261006/Eprime/run1`(off)
   - R′ `obs_capture_20261006/Rprime/run1`(NRB)
   - X `siiii_btseed_20261007/BT/run1`(off, 셸 0–44 T_pin)
   - 봉인 소스 `obs_capture_20261006/source/src`: line_net_rate.c 94a0bac9…, opacity_publication.c d4447c7a…
 
-## 처분: **PASS_LIMITED** (상한) — astra 종료감사 3회차 대기
+## 처분: **PASS_LIMITED** (상한) — astra 종료감사 4회차 대기
 
-astra 종료감사는 1회차 REWORK(«폐합 차단» 5), 2회차 REWORK(«폐합 차단» 3: B2·B3·B4 잔여)였다. 두 회차의 지적은 «기재로 족함» 까지 전건 반영했다(§9 수리 표). 3회차부터는 «폐합 차단» 만 반영한다.
+astra 종료감사 경과는 다음과 같다.
+- 1회차 REWORK(«폐합 차단» 5), 2회차 REWORK(«폐합 차단» 3: B2·B3·B4 잔여). 두 회차는 «기재로 족함» 까지 전건 반영했다.
+- 3회차 REWORK(«폐합 차단» 1: B3 잔여 — 검증기 발견 상한이 X 전파를 자름). 3회차부터 규약대로 «폐합 차단» 만 반영했다(§9 수리 표).
 
 ### 첫 문단 필수 기재 (§10.1)
 
@@ -43,7 +45,7 @@ astra 종료감사는 1회차 REWORK(«폐합 차단» 5), 2회차 REWORK(«폐�
 - 코드 감사는 해제 상태다(25-z).
 - 독립 검사는 astra 종료감사뿐이다. astra 는 이 계약의 저자이며, 그 이해관계는 계약 §0 에 기재돼 있다.
 
-## 1. 명제별 결론 (`result.json`, r3)
+## 1. 명제별 결론 (`result.json`, r4)
 
 | 명제 | E′(off) | R′(NRB) | X(off) | 비고 |
 |---|---|---|---|---|
@@ -244,7 +246,7 @@ R′ 의 잔차는 부호가 섞이고 크기는 5–23 % 다. diag6 기록과 �
 
 - **세대 7 수지의 최소 저장량:** 소비 세대의 준위별 bf 율, solve 단위별 SE 행 잔차, full-level → solve-unit 사상과 단위 내 분율, W5 장부로 역산할 수 없는 연결 전이(τ ≤ 0, SRCE_CHK, fine support 밖)의 인구.
 - **코드 구분(수리 B3):** 결정표는 1(반증)·4(미분리)·5(식별 불가)·X(부적격)를 각기 다른 문구로 다룬다. 반증으로 읽는 것은 1뿐이다.
-- **X 차단(2회차 수리):** 검증기가 재현하지 못한 범위는 최종 코드가 X 가 되고, 원래 코드는 `provisional_code` 로만 남는다. 결정표는 X 범위에 결정을 내지 않는다(확장·합격 제안 없음). 표 머리에 `validity`·`provisional` 이 붙는다. r3 는 VALID 이고 차단 범위가 없다.
+- **X 차단(2회차 수리):** 검증기가 재현하지 못한 범위는 최종 코드가 X 가 되고, 원래 코드는 `provisional_code` 로만 남는다. 결정표는 X 범위에 결정을 내지 않는다(확장·합격 제안 없음). 표 머리에 `validity`·`provisional` 이 붙는다. 3회차 수리로 발견 전체가 전파된다. r4 는 VALID 이고 차단 범위가 없다.
 - **불변:** 10⁻³ 와 0.0043 dex 를 잔차 최대·분위로 다시 정하지 않는다. call 8 이후, W5 밖, 장 수렴, 두 씨앗의 수렴해는 이번 증거 밖이다.
 - **승인 아님:** NRB 런, 생산 변경, 충돌 자료 변경, 상수 수리, 반복 연장은 이 표에서 나오지 않는다.
 
@@ -266,11 +268,12 @@ R′ 의 잔차는 부호가 섞이고 크기는 5–23 % 다. diag6 기록과 �
 | **2회차** B2 잔여: 역산의 독립 고정밀 대조 없음 | 폐합 차단 | 저장 장부(τ·L·생산 EXPONX 동반값)를 decimal 60자리로 독립 역산한 n_l·n_u 가 판독기 구간 안에 있는지 단언. tau 의 고정밀 오차를 상계로 단언. 기존 왕복 시험은 따로 유지 |
 | 2회차 B3 잔여: 부적격에서 결정 생성 | 폐합 차단 | 검증기 발견을 범위별 최종 X 로 전파. 결정표는 X 범위 무결정. 수지 결정 코드는 H-MULTILEVEL 을 따름. mix_codes·drop_failed_cell·drop_connected·P2 실패 사례의 **최종 결정표**까지 단언 |
 | 2회차 B4 잔여: 유입합 부호·합, 반례 없는 P2 결손, P2 최종 코드 | 폐합 차단 | 연결 전이 유입합(상·하준위)의 고정 진실 대조(E′ off·R′ NRB, A 단독 선 포함 4건). 반례 없는 결손 → 5, 반례 보존 대조. P2 최종 축 코드 재검산 |
+| **3회차** B3 잔여: 검증기가 발견 51건째에서 행 검사를 멈춰, 뒤쪽 범위에 X 가 전파되지 않을 수 있음 | 폐합 차단 | 발견 전체를 범위 전파에 넘기고, 저장 메시지 목록만 200건으로 제한(`counts.validator_findings` 에 전체 수). 직접시험: 모든 상태를 바꾼 주입(발견 120건, R′ 반례는 60번째·X 런은 80번째부터) — 뒤쪽 범위·필수 반례·최종 결정표가 X. 옛 중단 로직이면 실패하는 음성 대조다 |
 | 2회차 «기재로 족함» | 기재로 족함 | §2 전방 검사 서술·사정거리, §4 SL 해석 문장, §5 중앙값/구간 구분과 상한 문장 철회, §11 재현 기록(9파일·수지 구간), 비용 갱신, 스키마 대응·용량 범위(이탈 8), rc 의미 |
 
-### 직접시험 (`results/r3/selftest/selftest.json`)
+### 직접시험 (`results/r4/selftest/selftest.json`)
 
-19 사례, 실패 0. 묶음 0–13 은 §8.2 의 12 묶음에 정상 대조와 solve 단위 묶음을 더한 것이다.
+20 사례, 실패 0. 묶음 0–13 은 §8.2 의 12 묶음에 정상 대조와 solve 단위 묶음을 더한 것이다.
 - 사례별 `analyze_rc_equivalent` 는 그 validity 에 대해 cmd_analyze 가 돌려줄 rc(0 VALID, 2 X)다. 시험 분석은 함수 호출이며, 별도 프로세스의 종료코드를 실측한 것이 아니다.
 
 **주입 결함과 그것을 거부한 등록 검사**
@@ -307,6 +310,7 @@ R′ 의 잔차는 부호가 섞이고 크기는 5–23 % 다. diag6 기록과 �
 | 수치 | J̄ 구간 경계 | UNRESOLVED·집합 코드 4 저장 |
 | 수치 | 구간 버림, 비교선 확대 | STATUS_RECOMPUTE |
 | 수치 | 5 를 0 으로 혼합 | SET_CODE_RECOMPUTE, 최종 결정표 S III 결정 X(확장 제안 없음, provisional 0 보존) |
+| 수치 | 모든 상태 교체(발견 > 50) | STATUS_RECOMPUTE 전건 전파 — 뒤쪽 범위(R′ 반례·X 런 집합)와 최종 결정표 X |
 | 보존 | 기존 경로 | 쓰기 전 거부 |
 | solve 단위 | 덱 열 사용 | SL_AUTHORITY_NOT_REGISTERED |
 | solve 단위 | stdout 미확인 cutoff | SL_CUTOFF_NOT_CONFIRMED |
@@ -322,25 +326,25 @@ R′ 의 잔차는 부호가 섞이고 크기는 5–23 % 다. diag6 기록과 �
 | 게이트 | rc | 근거 |
 |---|---:|---|
 | check_prereg_preflight / gate_referents / doc_canonical (개정 1) | 0 / 0 / 0 | `evidence/preflight_prereg_rev1_20261008T114522/` |
-| check_driver_hygiene (러너 bbf1e5c0, r2·r3 공통) | 0 | `evidence/hygiene_r2.out` (a10) |
-| G-LINK · G-READOUT (§8.1) | PASS | `evidence/GATE_RECORD_r3.json` |
-| check_gate_roster | 0 (2 = 2) | `evidence/gate_roster_r3.out` (a10) |
-| 종료감사 1·2회차 발주 dispatch / canonical | 0 / 0 | `evidence/preflight_closeout_20261008T122546/`·`evidence/preflight_closeout2_*/` |
+| check_driver_hygiene (러너 bbf1e5c0, r2–r4 공통) | 0 | `evidence/hygiene_r2.out` (a10) |
+| G-LINK · G-READOUT (§8.1) | PASS | `evidence/GATE_RECORD_r4.json` |
+| check_gate_roster | 0 (2 = 2) | `evidence/gate_roster_r4.out` (a10) |
+| 종료감사 1·2·3회차 발주 dispatch / canonical | 0 / 0 | `evidence/preflight_closeout_20261008T122546/`·`evidence/preflight_closeout2_*/`·`evidence/preflight_closeout3_*/` |
 
 - 기안 단계 prereg preflight 는 rc 1 이었고, 개정 1 로 해소했다.
 - roster 의 2 = 2 는 기록 완결성만 확인한다. 실질 근거는 위 직접시험과 analyze 검증기다.
 
 ### 신원
-- `r3/identity.sha256`: 판독기 db62ef94…, 계약 9e97bf8b…, 러너 bbf1e5c0…, census 9f7ff97e…, line_net_rate.c/h 94a0bac9…/1bfa318c…, opacity_publication.c/h d4447c7a…/3d7e6fa4…, lumina_atomic.c cfe80899…, HEAD b0820bd.
+- `r4/identity.sha256`: 판독기 3131bd84…, 계약 9e97bf8b…, 러너 bbf1e5c0…, census 9f7ff97e…, line_net_rate.c/h 94a0bac9…/1bfa318c…, opacity_publication.c/h d4447c7a…/3d7e6fa4…, lumina_atomic.c cfe80899…, HEAD a53130c.
 - manifest 에는 입력 104 개(stdout·캡처 포함)와 출력 sha, argv, host, job 이 있다.
 
 ### 비용 (`evidence/COST_LEDGER.txt`)
-- Slurm·수동 합산 722.4 s / 3000 s. CPU 예약 0.787 / 3.33 core·h. GPU 0. 실행 배분은 4회 중 3회(r1, r2, r3)를 썼다.
-- 수리 단계는 전부 a10 Slurm 에서 했다. 1회차 수리는 개발 99 s·대조·게이트 5 s·r2 86 s, 2회차 수리는 개발 10 s·r3 89 s·대조·게이트 2 s 였다.
+- Slurm·수동 합산 828.1 s / 3000 s. CPU 예약 0.900 / 3.33 core·h. GPU 0. 실행 배분 4회(r1–r4)를 모두 썼다.
+- 수리 단계는 전부 a10 Slurm 에서 했다. 1회차 수리는 개발 99 s·대조·게이트 5 s·r2 86 s, 2회차 수리는 개발 10 s·r3 89 s·대조·게이트 2 s, 3회차 수리는 개발 10 s·r4 90 s·게이트·대조 1 s 였다.
 - 용량: 단 루트 전체(results·evidence·tools·발주서·감사문·로그)는 137 MiB(`du -sk`, 2026-10-08 13:3x)로, 상한 256 MiB 안이다.
 
 ### 보존
-- 결과 경로는 새 RUN_ID 마다 따로 만들었다(r1, r2, r3, dev1–dev11).
+- 결과 경로는 새 RUN_ID 마다 따로 만들었다(r1–r4, dev1–dev12).
 - 수리 전 판독기는 사본을 보존했다.
 
 ### 이탈·한계 (기재)
@@ -380,23 +384,26 @@ R′ 의 잔차는 부호가 섞이고 크기는 5–23 % 다. diag6 기록과 �
 | 경량 사전감사 | 생략(25-ab) | 생략, Fable 미호출 | 없음(user 결정, 독립 감사 통과 아님) |
 | 판독기·러너 구현, 직접시험 | 운전자 | 운전자 (Opus 5.5) | 없음 |
 | 코드 감사 | 해제(25-z) | 없음 | 없음 |
-| 실행 | 운전자 | 운전자 (r1 416256, r2 416386, r3 416415) | 이탈 2(개발 실행 장소) |
+| 실행 | 운전자 | 운전자 (r1 416256, r2 416386, r3 416415, r4 416427) | 이탈 2(개발 실행 장소) |
 | 판정 | 운전자 | 운전자 (이 문서) | 없음 — 구현·판정 겸임 명시 |
 | 종료감사 1회차 | astra | astra (헤더 `gpt-6-astra`) — REWORK, «폐합 차단» 5 | 없음 |
 | 1회차 수리 | 운전자 | 운전자 (bfc58ea, r2) | 없음 |
 | 종료감사 2회차 | astra | astra `gpt-6-astra` — REWORK, «폐합 차단» 3 | 없음 |
 | 2회차 수리 | 운전자 | 운전자 (b0820bd, r3) | 없음 |
-| 종료감사 3회차 | astra | **대기** | — |
+| 종료감사 3회차 | astra | astra (헤더 `gpt-6-astra`) — REWORK, «폐합 차단» 1 | 없음 |
+| 3회차 수리 | 운전자 | 운전자 (a53130c, r4) | 없음 |
+| 종료감사 4회차 | astra | **대기** | — |
 
 ## 11. 종료감사·재현 상태 (본문 9)
 
-- 종료감사 1·2회차는 완료(둘 다 REWORK)됐고, 두 발주의 dispatch 는 rc 0 이었다. 3회차는 이 수리판에 대해 발주한다.
+- 종료감사 1·2·3회차는 완료(모두 REWORK)됐고, 세 발주의 dispatch 는 rc 0 이었다. 4회차는 이 수리판에 대해 발주한다.
 - **운전자 재현**
   - dev10(판독기 c7055cad, job 416378)과 r2: 과학 산출 10 파일 중 **9 파일**의 sha256 이 같고, result.json 은 `timing_s` 만 다르다.
   - r2 대비 r3(판독기 db62ef94): model·cross_substitution·capture_check·stationarity·sample·identifiability 는 **바이트 동일**이다. pathways 는 공유 열이 전부 같고 구간 상계 열 하나가 추가됐다. summary·next_contract·result 는 새 필드(구간 보장 개수, validity·provisional, X 차단 레코드) 때문에 다르다.
   - r1 대비 r2: 모형 상태·S_meas 구간·S_pred 중앙값·d 중앙값은 7650행 전부 같다. 교차 대입·캡처 대조·P2 중앙값과 상태, 수지 순유량 **중앙값과 잔차비**도 같다.
   - r1 대비 r2 에서 바뀐 것은 다음과 같다. R′ S_pred 구간 경계(2411행, β 구간 반영), **R′ 수지 510행 전부의 순유량 구간 경계**(같은 원인), solve 단위 표지와 closure_reason(B1), P2 M 구간 경계 11행(J̄ 오차 전파).
-  - 판정문의 수치는 r3 의 `result.json`·`summary.json`·`next_contract.json`·`stationarity.csv`·`pathways.csv` 에서 왔다. 열 비교 기록은 `results/cmp_r1_r2_r3.log` 에 있다.
+  - r3 대비 r4(판독기 3131bd84): 과학 산출 9 파일(model·cross_substitution·capture_check·stationarity·sample·identifiability·pathways·summary·next_contract)이 **바이트 동일**하다. result.json 은 `timing_s` 와 새 `counts.validator_findings`(0)만 다르다(`evidence/gate_roster_r4.out`).
+  - 판정문의 수치는 r3·r4 공통 산출에서 왔다. 열 비교 기록은 `results/cmp_r1_r2_r3.log` 에 있다.
 
 ## 12. 다음 걸음 (§10.3 — user 결정)
 
