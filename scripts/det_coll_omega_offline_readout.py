@@ -392,6 +392,8 @@ def det_coll_omega_offline_bin(path, nlev_ion, fault=None):
         return None, "TABLE_TGRID_SHORT"
     tg = list(struct.unpack(f"<{ntp}d", b[pos:pos + 8 * ntp]))
     pos += 8 * ntp
+    if not all(math.isfinite(x) for x in tg):
+        return None, "TABLE_TGRID_NONFINITE"          # prereg 3.2: recorded with its cause, never repaired
     lo, hi, om = [], [], []
     rec = 8 + 8 * ntp
     nlev = nlev_ion(Z, ion0)
@@ -408,8 +410,11 @@ def det_coll_omega_offline_bin(path, nlev_ion, fault=None):
         lo.append(il)
         hi.append(ih)
         om.append(o)
+    # non-finite collision strengths are kept as read (the production loader does not reject them); every consumer
+    # of such a record is tagged INVALID_INPUT and cannot enter a science count (prereg 3.2, 4.2)
+    nonfinite = [t for t, o in enumerate(om) if not all(math.isfinite(x) for x in o)]
     return {"Z": Z, "ion0": ion0, "n_trans": ntr, "n_temp": ntp, "tgrid": tg, "lo": lo, "hi": hi, "omega": om,
-            "path": str(path), "sha256": hashlib.sha256(b).hexdigest()}, None
+            "nonfinite": set(nonfinite), "path": str(path), "sha256": hashlib.sha256(b).hexdigest()}, None
 
 
 def det_coll_omega_offline_manifest(model_dir, counts, fault=None):
@@ -444,6 +449,7 @@ def det_coll_omega_offline_manifest(model_dir, counts, fault=None):
                     ident += 1
             seen[k] = t
         listing[-1]["identical_duplicates"], listing[-1]["contradictory_duplicates"] = ident, contra
+        listing[-1]["nonfinite_records"] = sorted(tab["nonfinite"])
         if contra:
             why.append(f"TABLE_CONTRADICTORY_DUPLICATE:{Z}:{ion0}:{contra}")
             continue
@@ -521,7 +527,9 @@ def det_coll_omega_offline_interp(tab, t, T_e, fault=None):
         ups = math.exp(math.log(om[ti]) + lf * (math.log(om[ti + 1]) - math.log(om[ti])))
     else:
         ups = om[ti] + frac * (om[ti + 1] - om[ti])
-    return (ups if ups > 0.0 else -1.0), {"ti": ti, "frac": frac, "end_clamped": frac in (0.0, 1.0)}
+    rng = ("BELOW" if T_e < tg[0] else "ABOVE" if T_e > tg[-1] else "GRID_POINT" if T_e in tg else "INSIDE")
+    return (ups if ups > 0.0 else -1.0), {"ti": ti, "frac": frac, "end_clamped": frac in (0.0, 1.0), "range": rng,
+                                          "T_lo": tg[ti], "T_hi": tg[ti + 1], "U_lo": om[ti], "U_hi": om[ti + 1]}
 
 
 def det_coll_omega_offline_fallback(f_lu, g_lo, dE, T_e, ion0, fault=None):
@@ -534,12 +542,39 @@ def det_coll_omega_offline_fallback(f_lu, g_lo, dE, T_e, ion0, fault=None):
     return OMCM_VR_PREF * det_coll_omega_offline_gbar(dE / (K_B * T_e), ion0 + 1) * f_lu * g / flp, 2
 
 
+def det_coll_omega_offline_fallback_kind(f_lu, g_lo, dE, T_e):
+    """prereg 4.2: the reason the sealed fallback returned its value.  OMEGA_SET is a weak-line approximation only for
+    an otherwise valid transition with f_lu <= 1e-5; a fallback reached through a non-positive energy gap, temperature
+    or weight (or a non-finite input) is INVALID_INPUT_FALLBACK and never a science value."""
+    if not all(math.isfinite(x) for x in (f_lu, g_lo, dE, T_e)) or not (dE > 0.0 and T_e > 0.0 and g_lo > 0.0):
+        return "INVALID_INPUT_FALLBACK"
+    return "VR" if f_lu > OMCM_FMIN else "SET"
+
+
+def det_coll_omega_offline_line_input_check(n_e, T_e, E_l, E_u, g_l, g_u, f_lu):
+    """prereg 4.1: admissibility checked before the reused det_siiii_rates_coll is called (its 0 on a bad input is not
+    a physical zero).  Returns the reason or None."""
+    if not all(math.isfinite(x) for x in (n_e, T_e, E_l, E_u, g_l, g_u, f_lu)):
+        return "INVALID_INPUT_NONFINITE"
+    if not (n_e > 0.0 and T_e > 0.0):
+        return "INVALID_INPUT_STATE"
+    if not (g_l > 0 and g_u > 0):
+        return "INVALID_INPUT_WEIGHT"
+    if not E_u > E_l:
+        return "INVALID_INPUT_ENERGY_ORDER"
+    if f_lu < 0.0:
+        return "INVALID_INPUT_OSCILLATOR_STRENGTH"
+    return None
+
+
 def det_coll_omega_offline_rates_from_ups(T_e, n_e, dE, g_lo, g_up, ups, fault=None):
     """artis_col_rates real-collision-strength branch (coll_str >= 0)."""
     if not (T_e > 0.0 and n_e > 0.0 and dE > 0.0 and g_lo > 0 and g_up > 0):
         return 0.0, 0.0
     s = math.sqrt(T_e)
     u = dE / (K_B * T_e)
+    if fault == "exp_sign":
+        u = -u                                          # injected: exponent sign error
     cd = n_e * COL_CONST * ups / g_up / s
     cu = n_e * COL_CONST * ups * math.exp(-u) / g_lo / s
     if fault == "swap_g":
@@ -569,16 +604,24 @@ def det_coll_omega_offline_python(levels, lines, tables, units, entries, fault=N
                 continue
             E_l, g_l = rows[lo_g][3], rows[lo_g][4]
             E_u, g_u = rows[up_g][3], rows[up_g][4]
+            # admissibility before the reused function (prereg 4.1); the production values are still evaluated so the
+            # sealed-C comparison stays exact, but a tagged line never enters a science count
+            invalid = det_coll_omega_offline_line_input_check(ne, Te, E_l, E_u, g_l, g_u, ln["f_lu"])
             fx_u, fx_d = RATES.det_siiii_rates_coll(ne, Te, E_l, E_u, g_l, g_u, ln["f_lu"])
             dE = abs(E_u - E_l) * EV_TO_ERG
             t = dm.get(((Z, q), min(ln["lo"], ln["up"]), max(ln["lo"], ln["up"])))
-            ups, tier, info = -1.0, 3, None
+            ups, tier, info, kind = -1.0, 3, None, None
             if t is not None:
                 ups, info = det_coll_omega_offline_interp(tables[(Z, q)], t, Te, fault)
                 if ups > 0.0:
                     tier = 1
+                if t in tables[(Z, q)]["nonfinite"] and invalid is None:
+                    invalid = "INVALID_INPUT_TABLE_VALUE"
             if tier != 1:
                 ups, tier = det_coll_omega_offline_fallback(ln["f_lu"], g_l, dE, Te, q, fault)
+                kind = det_coll_omega_offline_fallback_kind(ln["f_lu"], g_l, dE, Te)
+                if kind == "INVALID_INPUT_FALLBACK" and invalid is None:
+                    invalid = kind
             om_u = om_d = 0.0
             if tier != 1 or fault == "table_per_line":
                 if Te > 0.0 and dE > 0.0 and g_l > 0 and g_u > 0:
@@ -586,8 +629,15 @@ def det_coll_omega_offline_python(levels, lines, tables, units, entries, fault=N
             if fault == "suppress_ion_fallback" and (Z, q) in tables:
                 om_u = om_d = 0.0
             line_out[(e["entry"], li)] = {"fix_up": fx_u.mid, "fix_down": fx_d.mid, "om_up": om_u, "om_down": om_d,
-                                          "tier": tier, "ups": ups, "table_t": t,
-                                          "end_clamped": None if info is None else info["end_clamped"]}
+                                          "tier": tier, "ups": ups, "table_t": t, "fallback_kind": kind,
+                                          "invalid": invalid,
+                                          "end_clamped": None if info is None else info["end_clamped"],
+                                          "interp_range": None if info is None else info["range"],
+                                          "interp_ti": None if info is None else info["ti"],
+                                          "interp_T_lo": None if info is None else info["T_lo"],
+                                          "interp_T_hi": None if info is None else info["T_hi"],
+                                          "interp_U_lo": None if info is None else info["U_lo"],
+                                          "interp_U_hi": None if info is None else info["U_hi"]}
         if fault == "omit_table_pass":
             continue
         for (Z, q), tab in tables.items():
@@ -604,9 +654,11 @@ def det_coll_omega_offline_python(levels, lines, tables, units, entries, fault=N
                 if u[a] == u[b] and fault != "same_unit_counted":
                     tab_out[k] = {"skip": "SAME_SOLVE_UNIT"}
                     continue
-                om, _ = det_coll_omega_offline_interp(tab, t, Te, fault)
+                om, info = det_coll_omega_offline_interp(tab, t, Te, fault)
                 if not om > 0.0:
-                    tab_out[k] = {"skip": "OMEGA_NOT_POSITIVE"}
+                    # a non-finite record also fails the production positivity test; it is tagged, not a weak table
+                    tab_out[k] = {"skip": "INVALID_INPUT_TABLE_VALUE" if t in tab["nonfinite"] else "OMEGA_NOT_POSITIVE",
+                                  "lo": a, "hi": b}
                     continue
                 ga, gb = rows[L[(Z, q, a)]][4], rows[L[(Z, q, b)]][4]
                 dE = (rows[L[(Z, q, b)]][3] - rows[L[(Z, q, a)]][3]) * EV_TO_ERG
@@ -614,11 +666,14 @@ def det_coll_omega_offline_python(levels, lines, tables, units, entries, fault=N
                     tab_out[k] = {"skip": "DE_NOT_POSITIVE"}
                     continue
                 inv = 1.0 / math.sqrt(Te)
-                cu = ne * COL_CONST * inv / ga * om * math.exp(-dE / (K_B * Te))
+                cu = ne * COL_CONST * inv / ga * om * math.exp((1.0 if fault == "exp_sign" else -1.0) * dE / (K_B * Te))
                 cd = ne * COL_CONST * inv / gb * om
                 if fault == "common_factor":
                     cu, cd = 1.7 * cu, 1.7 * cd
-                tab_out[k] = {"up": cu, "down": cd, "omega": om, "lo": a, "hi": b}
+                tab_out[k] = {"up": cu, "down": cd, "omega": om, "lo": a, "hi": b, "interp_range": info["range"],
+                              "interp_ti": info["ti"], "interp_T_lo": info["T_lo"], "interp_T_hi": info["T_hi"],
+                              "interp_U_lo": info["U_lo"], "interp_U_hi": info["U_hi"],
+                              "invalid": "INVALID_INPUT_TABLE_VALUE" if t in tab["nonfinite"] else None}
     return line_out, tab_out
 
 
@@ -706,9 +761,24 @@ def det_coll_omega_offline_db(cu, cd, g_lo, g_up, dE, T_e):
     return (cu / cd) / ((g_up / g_lo) * math.exp(-dE / (K_B * T_e))) - 1.0
 
 
-def det_coll_omega_offline_pairs(sample, lines, tables, units, levels, entries, line_py, tab_py, fault=None):
-    """sample pairs and one-step connected pairs per shell (denominators fixed before any rate is read)."""
-    L, rows = levels["idx"], levels["rows"]
+def det_coll_omega_offline_db_state(cu, cd, g_lo, g_up, dE, T_e):
+    """prereg 5.2 / 6.2: detailed-balance state of one rate pair.  Both zero = an unapplied channel (kept apart);
+    a positive downward rate whose e^-x factor or upward rate is zero or subnormal = floating underflow (ratio
+    undefined, 4);
+    an upward rate without a downward one is inconsistent (FAIL); otherwise OK / FAIL against 1e-12."""
+    if cu == 0.0 and cd == 0.0:
+        return "NOT_APPLICABLE", None
+    if cd > 0.0 and (cu < sys.float_info.min or math.exp(-dE / (K_B * T_e)) < sys.float_info.min):
+        return "UNDERFLOW", None                        # e^-x lost to (gradual) underflow: ratio not defined
+    if not (cu > 0.0 and cd > 0.0):
+        return "FAIL", None
+    eps = det_coll_omega_offline_db(cu, cd, g_lo, g_up, dE, T_e)
+    return ("OK" if abs(eps) <= CRIT_DB else "FAIL"), eps
+
+
+def det_coll_omega_offline_plan(sample, lines, tables, units, fault=None):
+    """prereg 2.2 / 5.3: sample pairs and one-step connected pairs per shell with their solve-unit separation, built
+    from the deck, the tables and the mapping only (stored before any rate is evaluated)."""
     by_pair = {}
     for li, ln in enumerate(lines):
         by_pair.setdefault((ln["Z"], min(ln["lo"], ln["up"]), max(ln["lo"], ln["up"])), []).append(li)
@@ -738,10 +808,18 @@ def det_coll_omega_offline_pairs(sample, lines, tables, units, levels, entries, 
         for pr in sorted(conn):
             u = units.get((pr[0], TARGET["ion"]), {})
             same = pr[1] in u and pr[2] in u and u[pr[1]] == u[pr[2]]
+            if fault == "same_unit_as_connected":
+                same = False                            # injected: a same-unit pair counted as a valid connection
             plan.append({"set": "connected_same_unit" if same else "connected", "Z": pr[0], "line": None, "shell": s,
                          "pair": pr, "line_less": pr not in by_pair})
     if fault == "drop_connected_pair":
         plan = [p for p in plan if p["set"] != "connected"][:] + [p for p in plan if p["set"] == "connected"][1:]
+    return plan, by_pair, tab_pairs
+
+
+def det_coll_omega_offline_pairs(plan, by_pair, tab_pairs, lines, levels, entries, line_py, tab_py, fault=None):
+    """pair rates of the fixed plan: COLL_FIX and OMEGA (line + table) sums, detailed-balance states, admissibility."""
+    L, rows = levels["idx"], levels["rows"]
     ent = {e["shell"]: e for e in entries if e["gen"] == MAIN_GEN}
     out = []
     for p in plan:
@@ -761,65 +839,91 @@ def det_coll_omega_offline_pairs(sample, lines, tables, units, levels, entries, 
         g_lo, g_up = rows[la][4], rows[lb][4]
         dE = abs(rows[lb][3] - rows[la][3]) * EV_TO_ERG
         fix_u = fix_d = om_line_u = om_line_d = om_tab_u = om_tab_d = 0.0
-        tiers, lns = [], by_pair.get((Z, a, b), [])
-        db_bad = []
+        tiers, kinds, lns = [], [], by_pair.get((Z, a, b), [])
+        dbs, invalid = [], []
         for li in lns:
             v = line_py.get((e["entry"], li), {})
             if "missing" in v or not v:
                 rec["missing"] = "LINE_RATE_ABSENT"
                 continue
+            if v.get("invalid"):
+                invalid.append(f"line{lines[li]['line_id']}:{v['invalid']}")
             fix_u += v["fix_up"]
             fix_d += v["fix_down"]
             om_line_u += v["om_up"]
             om_line_d += v["om_down"]
             tiers.append(v["tier"])
+            if v.get("fallback_kind"):
+                kinds.append(v["fallback_kind"])
             for cu, cd in ((v["fix_up"], v["fix_down"]), (v["om_up"], v["om_down"])):
-                eps = det_coll_omega_offline_db(cu, cd, g_lo, g_up, dE, e["T_e"])
-                if eps is not None and abs(eps) > CRIT_DB:
-                    db_bad.append(eps)
+                dbs.append(det_coll_omega_offline_db_state(cu, cd, g_lo, g_up, dE, e["T_e"]))
         n_tab = 0
         for t in tab_pairs.get((Z, a, b), []):
             v = tab_py.get((e["entry"], Z, TARGET["ion"], t), {})
+            if v.get("invalid") or v.get("skip") == "INVALID_INPUT_TABLE_VALUE":
+                invalid.append(f"table{t}:INVALID_INPUT_TABLE_VALUE")
             if "up" in v:
                 om_tab_u += v["up"]
                 om_tab_d += v["down"]
                 n_tab += 1
-                eps = det_coll_omega_offline_db(v["up"], v["down"], g_lo, g_up, dE, e["T_e"])
-                if eps is not None and abs(eps) > CRIT_DB:
-                    db_bad.append(eps)
+                dbs.append(det_coll_omega_offline_db_state(v["up"], v["down"], g_lo, g_up, dE, e["T_e"]))
         om_u, om_d = om_line_u + om_tab_u, om_line_d + om_tab_d
         if fault == "denominator_floor":
             om_d = om_d if om_d > 0 else 1e-300
         for cu, cd in ((fix_u, fix_d), (om_u, om_d)):
-            eps = det_coll_omega_offline_db(cu, cd, g_lo, g_up, dE, e["T_e"])
-            if eps is not None and abs(eps) > CRIT_DB:
-                db_bad.append(eps)
+            dbs.append(det_coll_omega_offline_db_state(cu, cd, g_lo, g_up, dE, e["T_e"]))
+        db_states = {st for st, _ in dbs}
+        db = ("FAIL" if "FAIL" in db_states else "UNDERFLOW" if "UNDERFLOW" in db_states else
+              "OK" if "OK" in db_states else "NOT_APPLICABLE")
         comp = ("TABLE" if n_tab and not any(x in (2, 3) for x in tiers) else
                 "VR" if 2 in tiers and not n_tab and 3 not in tiers else
                 "SET" if 3 in tiers and not n_tab and 2 not in tiers else
                 "NONE" if not n_tab and not tiers else "MIXED")
         rec.update({"n_lines": len(lns), "line_ids": ";".join(str(lines[i]["line_id"]) for i in lns),
-                    "tiers": ";".join(str(x) for x in tiers), "n_table_records": n_tab, "omega_composition": comp,
+                    "tiers": ";".join(str(x) for x in tiers), "fallback_kinds": ";".join(kinds),
+                    "n_table_records": n_tab, "omega_composition": comp,
                     "C_fix_up": fix_u, "C_fix_down": fix_d, "C_omega_line_up": om_line_u,
                     "C_omega_line_down": om_line_d, "C_omega_table_up": om_tab_u, "C_omega_table_down": om_tab_d,
                     "C_omega_up": om_u, "C_omega_down": om_d, "T_e": e["T_e"], "n_e": e["n_e"],
-                    "detailed_balance": "FAIL" if db_bad else "OK", "db_worst": max((abs(x) for x in db_bad), default=0.0)})
-        rec.update(det_coll_omega_offline_classify(fix_d, om_d, fix_u, om_u))
-        if db_bad:
-            rec["status"] = "X"
+                    "detailed_balance": db,
+                    "db_worst": max((abs(x) for st, x in dbs if x is not None and st == "FAIL"), default=0.0),
+                    "invalid_input": ";".join(invalid) or None})
+        cls = det_coll_omega_offline_classify(fix_d, om_d, fix_u, om_u)
+        rec.update(cls)
+        rec["status"], rec["tag"] = det_coll_omega_offline_pair_status(cls, db, invalid)
         out.append(rec)
     return out
 
 
+def det_coll_omega_offline_pair_status(cls, db, invalid):
+    """pair state from its classification, its detailed-balance state and its admissibility: inadmissible input or a
+    failed detailed balance -> X; an underflow-degraded ratio -> UNRESOLVED (prereg 5.2, 6.2)."""
+    if db == "FAIL" or invalid:
+        return "X", cls["tag"]
+    if db == "UNDERFLOW" and cls["tag"] in ("TWO_SIDED", "RATIO_RELATION_FAIL"):
+        return "UNRESOLVED", "DB_UNDERFLOW"
+    return cls["status"], cls["tag"]
+
+
 def det_coll_omega_offline_classify(fix_d, om_d, fix_u, om_u):
-    """H-SMALL on one pair: 1/2 <= R_ul <= 2 (prereg 5.3), boundary band 1e-10 in log10."""
+    """H-SMALL on one pair: 1/2 <= R_ul <= 2 (prereg 5.3), boundary band 1e-10 in log10.  R_lu is computed and its
+    relation to R_ul checked (prereg 5.1, not counted twice); an R_lu left undefined by an exact-zero upward rate
+    (floating underflow of e^-x) keeps the pair UNRESOLVED (prereg 5.2, 6.2)."""
     if fix_d == 0.0 and om_d == 0.0:
-        return {"R_ul": None, "R_lu": None, "d": None, "status": "SURVIVES", "tag": "NO_CHANGE"}
+        if fix_u == 0.0 and om_u == 0.0:
+            return {"R_ul": None, "R_lu": None, "d": None, "status": "SURVIVES", "tag": "NO_CHANGE"}
+        return {"R_ul": None, "R_lu": None, "d": None, "status": "X", "tag": "UP_WITHOUT_DOWN"}
     if fix_d == 0.0 or om_d == 0.0:
+        if (fix_u if fix_d == 0.0 else om_u) != 0.0:
+            return {"R_ul": None, "R_lu": None, "d": None, "status": "X", "tag": "ZERO_SIDE_INCONSISTENT"}
         return {"R_ul": None, "R_lu": None, "d": None, "status": "REFUTED", "tag": "ONE_SIDE_ZERO"}
     r = fix_d / om_d
-    rl = (fix_u / om_u) if (fix_u > 0 and om_u > 0) else None
     d = math.log10(r)
+    if not (fix_u >= sys.float_info.min and om_u >= sys.float_info.min):
+        return {"R_ul": r, "R_lu": None, "d": d, "status": "UNRESOLVED", "tag": "LU_UNDEFINED_UNDERFLOW"}
+    rl = fix_u / om_u
+    if abs(rl / r - 1.0) > CRIT_DB:
+        return {"R_ul": r, "R_lu": rl, "d": d, "status": "X", "tag": "RATIO_RELATION_FAIL"}
     lim = math.log10(TWO)
     if abs(abs(d) - lim) <= BOUND_EPS:
         st = "UNRESOLVED"
@@ -856,7 +960,8 @@ def det_coll_omega_offline_decide(rows, fault=None):
     conn = [ions[f"connected:{Z}"] for Z in TARGET["Z"]]
     if any(v["X"] for v in main + conn):
         dec = "X"
-    elif any(v["f_lo"] is not None and v["f_lo"] >= thr for v in main):
+    elif any(v["f_lo"] is not None and (v["f_lo"] > thr if fault == "threshold_strict" else v["f_lo"] >= thr)
+             for v in main):                            # threshold_strict: injected > instead of the registered >=
         dec = "NEXT_CANDIDATE"
     elif all(v["f_hi"] is not None and v["f_hi"] < thr for v in main) and \
             any(v["f_lo"] is not None and v["f_lo"] >= thr for v in conn):
@@ -972,7 +1077,29 @@ def det_coll_omega_offline_analyze(census, prior_sample, prior_result, r_run, sr
         res = base | {"validity": "X", "reasons": sorted(set(why))[:200]}
         (out / "result.json").write_text(json.dumps(res, indent=1, default=str))
         return res
-    # 4 Python evaluation and the sealed-C reference
+    # 4 fixed plan (prereg 2.2, 5.3): pair list, connected denominators and solve-unit mapping built from the deck,
+    # the tables and the mapping alone, stored before any rate is evaluated
+    plan, by_pair, tab_pairs = det_coll_omega_offline_plan(sample, lines, tables, units, fault)
+    plan_check = det_coll_omega_offline_plan_count(sample, lines, tables, units)
+    smp = {"schema": "DET_COLL_OMEGA_OFFLINE_SAMPLE_V2", "authority": str(census), "authority_sha256": POP.sha(census),
+           "prior_sample_sha256": POP.sha(prior_sample) if ps else None, "n_keys": len(sample["keys"]),
+           "keys": sample["keys"], "counts": sample["counts"], "entries": entries,
+           "written_before_rates": True,
+           "plan": [{k: v for k, v in pp.items()} for pp in plan],
+           "connected_denominators_plan": {s_: sum(1 for pp in plan if pp["set"] == "connected" and pp["shell"] == s_)
+                                           for s_ in plan_check},
+           "connected_denominators_recomputed": plan_check,
+           "same_unit_pairs": {s_: sum(1 for pp in plan if pp["set"] == "connected_same_unit" and pp["shell"] == s_)
+                               for s_ in plan_check},
+           "level_to_solve_unit": {f"{Z}_{target['ion']}": {str(l): u for l, u in sorted(units[(Z, target["ion"])].items())}
+                                   for Z in target["Z"]},
+           "solve_units": {k: v for k, v in sl.items() if k not in ("unit", "size")},
+           "states": {"main": {k: dmain.get(k) for k in ("manifest", "population_generation", "radiation_generation",
+                                                         "te_generation")},
+                      "counter": {k: dctr.get(k) for k in ("manifest", "population_generation", "radiation_generation",
+                                                           "te_generation")}}}
+    (out / "sample.json").write_text(json.dumps(smp, indent=1, default=str))
+    # 5 Python evaluation and the sealed-C reference
     line_py, tab_py = det_coll_omega_offline_python(levels, lines, tables, units, entries, fault)
     cref = det_coll_omega_offline_build_cref(src, out / "cref", fault)
     units_list = []
@@ -992,8 +1119,8 @@ def det_coll_omega_offline_analyze(census, prior_sample, prior_result, r_run, sr
             cref["why"].append(f"CREF_RUN_RC:{cfix['rc']}:{comg['rc']}")
         else:
             cmp_bad = det_coll_omega_offline_compare(line_py, tab_py, cfix, comg)
-    # 5 pair assembly, classification, decision
-    rows = det_coll_omega_offline_pairs(sample, lines, tables, units, levels, entries, line_py, tab_py, fault)
+    # 6 pair assembly, classification, decision
+    rows = det_coll_omega_offline_pairs(plan, by_pair, tab_pairs, lines, levels, entries, line_py, tab_py, fault)
     if cmp_bad:
         for r in rows:
             r["status"] = "X" if r["status"] != "NOT_IDENTIFIABLE" else r["status"]
@@ -1007,7 +1134,35 @@ def det_coll_omega_offline_analyze(census, prior_sample, prior_result, r_run, sr
     vwhy = list(cref["why"]) + [f"CREF_MISMATCH:{a}" for a, _ in cmp_bad[:50]]
     if cmp_bad:
         vwhy.append(f"CREF_MISMATCH_TOTAL:{len(cmp_bad)}")
+    ctr_entry = next((e for e in entries if e["gen"] == COUNTER_GEN), None)
+    counter_g3 = None
+    if ctr_entry is not None:
+        lid = target["counter"][0]
+        li = next((i for i, l in enumerate(lines) if l["line_id"] == lid), None)
+        if li is not None:
+            v = line_py.get((ctr_entry["entry"], li), {})
+            lz, lq = lines[li]["Z"], lines[li]["ion"]
+            # closeout B1: the table contribution is selected by generation, element, ion and level pair
+            t_add = [(k, w) for k, w in tab_py.items() if k[0] == ctr_entry["entry"] and "up" in w and
+                     (fault == "g3_any_element" or (k[1], k[2]) == (lz, lq)) and
+                     (w["lo"], w["hi"]) in ((lines[li]["lo"], lines[li]["up"]), (lines[li]["up"], lines[li]["lo"]))]
+            counter_g3 = {"generation": COUNTER_GEN, "T_e": ctr_entry["T_e"], "n_e": ctr_entry["n_e"], "Z": lz, "ion": lq,
+                          "C_fix_down": v.get("fix_down"), "C_omega_line_down": v.get("om_down"), "tier": v.get("tier"),
+                          "table_records": [[k[1], k[2], k[3]] for k, _ in t_add],
+                          "C_omega_table_down": sum(w["down"] for _, w in t_add),
+                          "note": "comparison only: outside every denominator; does not lift or extend the prior "
+                                  "two-level exclusion (prereg 1.3, 2.3)"}
     # validators: fixed denominators, recomputation of each stored state and of the decision
+    # validator (closeout B1): the generation-3 table contribution recomputed from the counter line's own table
+    if counter_g3 is not None:
+        tz = tables.get((counter_g3["Z"], counter_g3["ion"]))
+        pr_ = {(lines[li]["lo"], lines[li]["up"]), (lines[li]["up"], lines[li]["lo"])}
+        own = [t for t in range(tz["n_trans"]) if (tz["lo"][t], tz["hi"][t]) in pr_] if tz else []
+        ref = sum(tab_py[(ctr_entry["entry"], counter_g3["Z"], counter_g3["ion"], t)]["down"] for t in own
+                  if "up" in tab_py.get((ctr_entry["entry"], counter_g3["Z"], counter_g3["ion"], t), {}))
+        if ref != counter_g3["C_omega_table_down"]:
+            vwhy.append("COUNTER_G3_RECOMPUTE")
+        counter_g3["C_omega_down"] = (counter_g3["C_omega_line_down"] or 0.0) + counter_g3["C_omega_table_down"]
     n_sample = sum(1 for r in rows if r["set"] == "sample")
     if n_sample != len(sample["keys"]):
         vwhy.append(f"SAMPLE_ROW_ACCOUNTING:{n_sample}/{len(sample['keys'])}")
@@ -1021,10 +1176,11 @@ def det_coll_omega_offline_analyze(census, prior_sample, prior_result, r_run, sr
                     vwhy.append(f"PAIR_SUM_RECOMPUTE:{r['set']}:{r['Z']}:{r.get('lo')}:{r.get('hi')}:{r['shell']}")
         if r["status"] in ("X", "NOT_IDENTIFIABLE") or r.get("C_fix_down") is None:
             continue
-        exp = det_coll_omega_offline_classify(r["C_fix_down"], r["C_omega_down"], r["C_fix_up"], r["C_omega_up"])["status"]
+        exp = det_coll_omega_offline_pair_status(
+            det_coll_omega_offline_classify(r["C_fix_down"], r["C_omega_down"], r["C_fix_up"], r["C_omega_up"]),
+            r.get("detailed_balance"), r.get("invalid_input"))[0]
         if exp != r["status"]:
             vwhy.append(f"STATUS_RECOMPUTE:{r['set']}:{r['Z']}:{r.get('lo')}:{r.get('hi')}:{r['shell']}")
-    plan_check = det_coll_omega_offline_plan_count(sample, lines, tables, units)
     got = {s: sum(1 for r in rows if r["set"] == "connected" and r["shell"] == s) for s in plan_check}
     if got != plan_check:
         vwhy.append("CONNECTED_DENOMINATOR")
@@ -1037,14 +1193,17 @@ def det_coll_omega_offline_analyze(census, prior_sample, prior_result, r_run, sr
     if validity == "X":
         decision = "X"
     timing["compute_s"] = time.time() - t0 - timing["inputs_s"]
-    # 6 outputs
+    # 7 outputs
     rate_rows = []
     for (ent, li), v in sorted(line_py.items()):
         e, ln = entries[ent], lines[li]
         rr = {"kind": "LINE", "entry": ent, "shell": e["shell"], "gen": e["gen"], "line_id": ln["line_id"], "Z": ln["Z"],
               "lo": ln["lo"], "up": ln["up"], "f_lu": ln["f_lu"]} | {k: v.get(k) for k in
                                                                        ("fix_up", "fix_down", "om_up", "om_down", "tier",
-                                                                        "ups", "table_t", "end_clamped", "missing")}
+                                                                        "ups", "table_t", "fallback_kind", "invalid",
+                                                                        "end_clamped", "interp_range", "interp_ti",
+                                                                        "interp_T_lo", "interp_T_hi", "interp_U_lo",
+                                                                        "interp_U_hi", "missing")}
         if cfix and comg:
             cf, co = cfix["lines"].get((ent, li)), comg["lines"].get((ent, li))
             if cf and co:
@@ -1055,7 +1214,8 @@ def det_coll_omega_offline_analyze(census, prior_sample, prior_result, r_run, sr
         e = entries[ent]
         rr = {"kind": "TABLE", "entry": ent, "shell": e["shell"], "gen": e["gen"], "Z": Z, "t": t,
               "lo": tables[(Z, q)]["lo"][t], "up": tables[(Z, q)]["hi"][t], "om_up": v.get("up"),
-              "om_down": v.get("down"), "ups": v.get("omega"), "skip": v.get("skip")}
+              "om_down": v.get("down"), "ups": v.get("omega"), "skip": v.get("skip"), "invalid": v.get("invalid")} | \
+            {k: v.get(k) for k in ("interp_range", "interp_ti", "interp_T_lo", "interp_T_hi", "interp_U_lo", "interp_U_hi")}
         if comg and (ent, Z, q, t) in comg["table"]:
             c = comg["table"][(ent, Z, q, t)]
             rr.update({"c_om_up": c[0], "c_om_down": c[1]})
@@ -1065,21 +1225,14 @@ def det_coll_omega_offline_analyze(census, prior_sample, prior_result, r_run, sr
     pd.DataFrame(rate_rows).to_csv(out / "rates.csv", index=False)
     unc = [{"entry": r["entry"], "shell": r["shell"], "gen": r["gen"], "line_id": r["line_id"], "Z": r["Z"],
             "lo": r["lo"], "up": r["up"], "tier": r["tier"], "ups": r["ups"],
-            "reason": ("NOT_IN_TABLE" if r["table_t"] is None else "TABLE_UPSILON_NOT_POSITIVE")}
+            "fallback_kind": r.get("fallback_kind"),
+            "reason": (r["invalid"] if r.get("invalid") else
+                       "NOT_IN_TABLE" if r["table_t"] is None else "TABLE_UPSILON_NOT_POSITIVE")}
            for r in rate_rows if r["kind"] == "LINE" and r.get("tier") in (2, 3)]
     unc += [{"entry": r["entry"], "shell": r["shell"], "gen": r["gen"], "Z": r["Z"], "lo": r["lo"], "up": r["up"],
              "table_t": r["t"], "reason": f"TABLE_NOT_APPLIED:{r['skip']}"} for r in rate_rows
             if r["kind"] == "TABLE" and r.get("skip")]
     pd.DataFrame(unc).to_csv(out / "uncovered.csv", index=False)
-    smp = {"schema": "DET_COLL_OMEGA_OFFLINE_SAMPLE_V1", "authority": str(census), "authority_sha256": POP.sha(census),
-           "prior_sample_sha256": POP.sha(prior_sample) if ps else None, "n_keys": len(sample["keys"]),
-           "keys": sample["keys"], "counts": sample["counts"], "entries": entries,
-           "connected_denominators": plan_check, "solve_units": {k: v for k, v in sl.items() if k not in ("unit", "size")},
-           "states": {"main": {k: dmain.get(k) for k in ("manifest", "population_generation", "radiation_generation",
-                                                         "te_generation")},
-                      "counter": {k: dctr.get(k) for k in ("manifest", "population_generation", "radiation_generation",
-                                                           "te_generation")}}}
-    (out / "sample.json").write_text(json.dumps(smp, indent=1, default=str))
     dist = {}
     for set_name in ("sample", "connected", "connected_same_unit"):
         for Z in target["Z"]:
@@ -1092,26 +1245,14 @@ def det_coll_omega_offline_analyze(census, prior_sample, prior_result, r_run, sr
                 "one_side_zero": sum(1 for r in sub if r.get("tag") == "ONE_SIDE_ZERO"),
                 "no_change": sum(1 for r in sub if r.get("tag") == "NO_CHANGE"),
                 "unique_pairs": len({(r.get("lo"), r.get("hi"), r["shell"]) for r in sub}),
-                "db_fail": sum(1 for r in sub if r.get("detailed_balance") == "FAIL")}
+                "db_fail": sum(1 for r in sub if r.get("detailed_balance") == "FAIL"),
+                "db_underflow": sum(1 for r in sub if r.get("detailed_balance") == "UNDERFLOW"),
+                "invalid_input": sum(1 for r in sub if r.get("invalid_input"))}
     named = {}
     for lid in (target["control"], target["counter"][0]):
         named[str(lid)] = [{k: r.get(k) for k in ("shell", "lo", "hi", "C_fix_down", "C_omega_down", "R_ul", "d", "status",
                                                   "omega_composition", "tiers")}
                            for r in rows if r["set"] == "sample" and r["line"] == lid]
-    ctr_entry = next((e for e in entries if e["gen"] == COUNTER_GEN), None)
-    counter_g3 = None
-    if ctr_entry is not None:
-        lid = target["counter"][0]
-        li = next((i for i, l in enumerate(lines) if l["line_id"] == lid), None)
-        if li is not None:
-            v = line_py.get((ctr_entry["entry"], li), {})
-            t_add = [(k, w) for k, w in tab_py.items() if k[0] == ctr_entry["entry"] and "up" in w and
-                     (w["lo"], w["hi"]) in ((lines[li]["lo"], lines[li]["up"]), (lines[li]["up"], lines[li]["lo"]))]
-            counter_g3 = {"generation": COUNTER_GEN, "T_e": ctr_entry["T_e"], "n_e": ctr_entry["n_e"],
-                          "C_fix_down": v.get("fix_down"), "C_omega_line_down": v.get("om_down"), "tier": v.get("tier"),
-                          "C_omega_table_down": sum(w["down"] for _, w in t_add),
-                          "note": "comparison only: outside every denominator; does not lift or extend the prior "
-                                  "two-level exclusion (prereg 1.3, 2.3)"}
     res = base | {"validity": validity, "reasons": vwhy[:200], "n_reasons": len(vwhy),
                   "H_SMALL": {k: v["code"] for k, v in ions.items()}, "ions": ions, "decision": decision,
                   "distributions": dist, "named_lines": named, "counter_generation3": counter_g3,
@@ -1158,10 +1299,11 @@ def det_coll_omega_offline_next(rows, ions, decision, rate_rows, validity):
     dup = [r for r in rows if r.get("n_lines", 0) > 1 and r.get("n_table_records", 0) >= 1]
     unc = pd.Series([f"tier{r['tier']}" for r in rate_rows if r["kind"] == "LINE" and r.get("tier") in (2, 3)]
                     ).value_counts().to_dict()
-    scope = ("collision prescription change: table + uncovered approximation + added connections + duplicate "
-             "suppression" if comp.get("VR", 0) + comp.get("SET", 0) + comp.get("MIXED", 0) > comp.get("TABLE", 0)
-             else "collision prescription change dominated by tabulated pairs (still includes the uncovered "
-                  "approximation and the col_data additions)")
+    n_ref = sum(comp.values())
+    share = ", ".join(f"{k} {v}/{n_ref}" for k, v in sorted(comp.items())) if n_ref else "none"
+    # closeout round 1: the composition is a count of refuted keys, not an effect attribution
+    scope = ("collision prescription change covering tabulated pairs, the uncovered approximation, added connections "
+             f"and duplicate suppression; refuted-key composition {share} (a key count, not an effect attribution)")
     text = {"NEXT_CANDIDATE": "after the NRB stationary-state check, propose the collision prescription change as the "
                               "preferred next physics rung",
             "CONNECTED_ONLY": "connected pathways change strongly but the target-transition evidence is weak: propose a "
@@ -1328,6 +1470,32 @@ def det_coll_omega_offline_hp_tests():
     ref = ctx.multiply(ctx.divide(Dm(5.0), Dm(3.0)), ctx.exp(ctx.divide(Dm(-2.0e-11), ctx.multiply(Dm(K_B), Dm(1.0e4)))))
     out.append({"test": "detailed_balance_known", "pass": abs(eps) <= CRIT_DB and
                 abs(Dm(cu / cd) - ref) / ref < Dm("1e-14"), "eps": eps})
+    # closeout B3: absolute normalisation of known upward and downward rates, both prescriptions, against the 60-digit
+    # evaluation of the registered formulas (prereg 4.1, 4.2) on the same double inputs
+    for T, ne, El, Eu, gl, gu, f, ups in ((1.0e4, 1.0e9, 0.0, 6.5, 1, 3, 0.5, 0.7),
+                                         (2.5e4, 3.0e8, 6.5, 12.0, 3, 5, 2.0e-3, 2.2),
+                                         (6.0e3, 1.0e10, 10.3, 12.0, 3, 5, 0.2, 0.05)):
+        dE = abs(Eu - El) * EV_TO_ERG
+        x = ctx.divide(Dm(dE), ctx.multiply(Dm(K_B), Dm(T)))
+        sq = ctx.sqrt(Dm(T))
+        cd_ref = ctx.divide(ctx.multiply(ctx.multiply(Dm(ne), Dm(COL_CONST)), Dm(ups)), ctx.multiply(Dm(gu), sq))
+        cu_ref = ctx.divide(ctx.multiply(ctx.multiply(ctx.multiply(Dm(ne), Dm(COL_CONST)), Dm(ups)), ctx.exp(-x)),
+                            ctx.multiply(Dm(gl), sq))
+        cu, cd = det_coll_omega_offline_rates_from_ups(T, ne, dE, gl, gu, ups)
+        e_u, e_d = abs(Dm(cu) - cu_ref) / cu_ref, abs(Dm(cd) - cd_ref) / cd_ref
+        out.append({"test": f"omega_rates_absolute_T{T:g}", "pass": bool(e_u < Dm("1e-14") and e_d < Dm("1e-14")),
+                    "rel_up": float(e_u), "rel_down": float(e_d)})
+        dEe = ctx.divide(Dm(dE), Dm(EV_TO_ERG))
+        u_vr = ctx.multiply(ctx.multiply(ctx.multiply(Dm("14.5"), Dm(f)), ctx.power(ctx.divide(Dm(RATES.RYD_EV), dEe), 2)),
+                            Dm(RATES.GBAR))
+        u_fx = max(u_vr, Dm(RATES.AXELROD_OMEGA))
+        fd_ref = ctx.divide(ctx.multiply(ctx.multiply(Dm(ne), Dm(RATES.COLL_K)), u_fx), ctx.multiply(Dm(gu), sq))
+        fu_ref = ctx.divide(ctx.multiply(ctx.multiply(ctx.multiply(Dm(ne), Dm(RATES.COLL_K)), u_fx), ctx.exp(-x)),
+                            ctx.multiply(Dm(gl), sq))
+        fu, fd = RATES.det_siiii_rates_coll(ne, T, El, Eu, gl, gu, f)
+        e_u, e_d = abs(Dm(fu.mid) - fu_ref) / fu_ref, abs(Dm(fd.mid) - fd_ref) / fd_ref
+        out.append({"test": f"coll_fix_rates_absolute_T{T:g}", "pass": bool(e_u < Dm("1e-13") and e_d < Dm("1e-13")),
+                    "rel_up": float(e_u), "rel_down": float(e_d)})
     return out
 
 
@@ -1342,9 +1510,9 @@ def det_coll_omega_offline_selftest_cases(base, src):
                               "reasons": [str(x)[:160] for x in (r.get("reasons") or [])[:6]]} for r in results]})
         print(f"[{'PASS' if ok else 'FAIL'}] ({bundle}) {name}: got {str(got)[:220]} want {str(want)[:220]}", flush=True)
 
-    def run(name, fault=None, mutate=None):
+    def run(name, fault=None, mutate=None, target=FX_TARGET):
         census, ps, pr, rr = det_coll_omega_offline_fx(Path(base) / name / "in", mutate)
-        r = det_coll_omega_offline_analyze(census, ps, pr, rr, src, Path(base) / name / "out", FX_TARGET, fault)
+        r = det_coll_omega_offline_analyze(census, ps, pr, rr, src, Path(base) / name / "out", target, fault)
         return r, Path(base) / name / "out"
 
     def has(r, token):
@@ -1357,8 +1525,9 @@ def det_coll_omega_offline_selftest_cases(base, src):
     case("clean: valid; the sealed C reference agrees with Python on every line / table rate; tiers 1, 2, 3 all occur; "
          "detailed balance holds; the sample row count equals the census keys",
          "0 clean", (r0["validity"], r0["cref"]["mismatches"], sorted(set(lines.tier.dropna().astype(int))),
-                     set(pairs.detailed_balance.dropna()), int((pairs.set == "sample").sum())),
+                     set(pairs.detailed_balance.dropna()) - {"NOT_APPLICABLE"}, int((pairs.set == "sample").sum())),
          ("VALID", 0, [1, 2, 3], {"OK"}, len(FX_SAMPLE)), results=[r0])
+    res[-1]["note"] = "detailed-balance states other than NOT_APPLICABLE (both rates of a channel exactly zero)"
     tab = rt[rt.kind == "TABLE"]
     case("clean: same-solve-unit table pair skipped, zero-Upsilon pair skipped and falls back to the line formula, "
          "line-less table pairs added to connected pairs, both lines of a duplicated pair summed with one table record",
@@ -1434,7 +1603,7 @@ def det_coll_omega_offline_selftest_cases(base, src):
     case("detailed balance: exchanged statistical weights fail detailed balance; a common wrong factor on both rates "
          "keeps detailed balance but fails the C comparison", "7 detailed balance",
          (has(r7a, "X_ROWS") and has(r7a, "CREF_MISMATCH"),
-          set(p7b[p7b.kind == "PAIR"].detailed_balance.dropna()), has(r7b, "CREF_MISMATCH")),
+          set(p7b[p7b.kind == "PAIR"].detailed_balance.dropna()) - {"NOT_APPLICABLE"}, has(r7b, "CREF_MISMATCH")),
          (True, {"OK"}, True), fault="swap_g|common_factor", results=[r7a, r7b])
     # 8 zero / missing / decision
     ms = pairs[(pairs.set == "sample") & (pairs.line == 10)]
@@ -1453,9 +1622,165 @@ def det_coll_omega_offline_selftest_cases(base, src):
     r9, _ = run("cref_tamper", fault="cref_tamper")
     case("sealed excerpts: a modified excerpt is not verbatim and is refused", "C excerpts",
          has(r9, "EXCERPT_NOT_VERBATIM"), True, fault="cref_tamper", results=[r9])
+    # ---- closeout round-1 supplements (B1 generation-3 element routing, B2 admissibility, B3 undemonstrated rows)
+    nlev = {(Z, q): sum(1 for t in FX_LEVELS if t[:2] == (Z, q)) for Z, q in FX_TABLES}
+
+    def put_table(r, Z, q, tg, recs):
+        det_coll_omega_offline_write_bin(r / f"input/model/ige_col_{Z}_{q}_cmfgen.bin", Z, q, nlev[(Z, q)], tg, recs)
+        mp = r / "input/model/coldata_cmfgen_manifest.csv"
+        out_ = []
+        for ln in mp.read_text().split("\n"):
+            f = ln.split(",")
+            if len(f) > 9 and f[1] == str(Z) and f[2] == str(q):
+                f[7], f[8], f[9] = str(len(recs)), str(len(tg)), str(len(recs))
+            out_.append(",".join(f))
+        mp.write_text("\n".join(out_))
+
+    def set_state(r, k, shell, T):
+        sp = r / f"work/physics_comparison/physics_DET_iter{k:04d}.shell.csv"
+        rows_ = sp.read_text().split("\n")
+        for i, ln in enumerate(rows_):
+            f = ln.split(",")
+            if f and f[0] == str(shell):
+                f[1] = repr(T)
+                rows_[i] = ",".join(f)
+        sp.write_text("\n".join(rows_))
+
+    def ups_fix(f, El, Eu):
+        dE = abs(Eu - El) * EV_TO_ERG
+        ry = RATES.RYD_EV / (dE / EV_TO_ERG)
+        v = 14.5 * f * ry * ry * RATES.GBAR
+        return v if v > RATES.AXELROD_OMEGA else RATES.AXELROD_OMEGA
+    # B1: generation-3 table contribution routed by element and ion
+    def g3_tables(b, r):
+        tg, recs = FX_TABLES[(14, 2)]
+        put_table(r, 14, 2, tg, list(recs) + [((0, 2), [0.4, 0.5, 0.6])])
+        tg, recs = FX_TABLES[(16, 2)]
+        put_table(r, 16, 2, tg, list(recs) + [((0, 2), [7.0, 7.0, 7.0, 7.0])])
+    rb1, ob1 = run("g3_element", mutate=g3_tables)
+    rb1f, _ = run("g3_any_element", fault="g3_any_element", mutate=g3_tables)
+    tb1 = pd.read_csv(ob1 / "rates.csv")
+    tb1 = tb1[(tb1.kind == "TABLE") & (tb1.gen == 3) & (tb1.lo == 0) & (tb1.up == 2)]
+    g3 = rb1.get("counter_generation3") or {}
+    case("generation 3 (closeout B1): the counter line's table contribution is its own element's record only "
+         "(Si III 0-2, not the S III 0-2 record of the same levels); selecting by generation and level pair alone "
+         "is refused by the recomputation", "B1 generation 3",
+         (rb1["validity"], g3.get("table_records"), g3.get("C_omega_table_down") == float(tb1[tb1.Z == 14].om_down.sum()),
+          bool((tb1.Z == 16).any()), has(rb1f, "COUNTER_G3_RECOMPUTE")),
+         ("VALID", [[14, 2, len(FX_TABLES[(14, 2)][1])]], True, True, True), fault="g3_any_element",
+         results=[rb1, rb1f])
+    # B2: admissibility before use; non-finite table values; non-finite temperature grid; underflow
+    def nan_value(b, r):
+        tg, recs = FX_TABLES[(14, 2)]
+        recs = [((0, 1), [1.0, float("nan"), 2.0])] + list(recs[1:])
+        put_table(r, 14, 2, tg, recs)
+
+    def nan_grid(b, r):
+        tg, recs = FX_TABLES[(16, 2)]
+        put_table(r, 16, 2, [5000.0, float("nan"), 10000.0, 20000.0], recs)
+
+    def energy_order(b, r):
+        lp = r / "input/model/levels.csv"
+        lp.write_text(lp.read_text().replace("14,2,2,6.6,5,0,2,c2", "14,2,2,-1.0,5,0,2,c2"))
+
+    def underflow(b, r):
+        set_state(r, 4, 15, 100.0)
+    rb2 = [run(n, mutate=m) for n, m in (("nan_value", nan_value), ("nan_grid", nan_grid),
+                                          ("energy_order", energy_order), ("underflow", underflow))]
+    t_nan = pd.read_csv(rb2[0][1] / "rates.csv")
+    l_nan = t_nan[(t_nan.kind == "LINE") & (t_nan.line_id == 1)]
+    p_nan = t_nan[(t_nan.kind == "PAIR") & (t_nan.Z == 14) & (t_nan.lo == 0) & (t_nan.hi == 1)]
+    t_eo = pd.read_csv(rb2[2][1] / "rates.csv")
+    p_eo = t_eo[(t_eo.kind == "PAIR") & (t_eo.set == "sample") & (t_eo.line == 2)]
+    t_uf = pd.read_csv(rb2[3][1] / "rates.csv")
+    p_uf = t_uf[t_uf.kind == "PAIR"]
+    uf = p_uf[p_uf.tag.isin(["LU_UNDEFINED_UNDERFLOW", "DB_UNDERFLOW"])]
+    two = p_uf[p_uf.tag == "TWO_SIDED"]
+    listing = {(x["Z"], x["ion0"]): x for x in rb2[0][0].get("loader", [])}
+    case("admissibility (closeout B2): a non-finite collision strength is recorded and every consumer is tagged "
+         "INVALID_INPUT (pair X, never a weak-line fallback) while the sealed C still agrees; a non-finite temperature "
+         "grid fails the loader with its cause; a reversed level order is refused before the reused COLL_FIX call "
+         "(pair X); an upward rate lost to underflow leaves the pair UNRESOLVED (no 0/1 from the downward ratio alone) "
+         "and the run VALID", "B2 admissibility",
+         (has(rb2[0][0], "X_ROWS"), listing.get((14, 2), {}).get("nonfinite_records"),
+          set(l_nan.invalid.dropna()), set(p_nan.status), rb2[0][0]["cref"]["mismatches"],
+          has(rb2[1][0], "TABLE_TGRID_NONFINITE"),
+          has(rb2[2][0], "X_ROWS"), set(p_eo.status), any("INVALID_INPUT_ENERGY_ORDER" in str(x) for x in p_eo.invalid_input),
+          rb2[3][0]["validity"], len(uf) > 0, set(uf.status), bool(two.R_lu.notna().all())),
+         (True, [0], {"INVALID_INPUT_TABLE_VALUE"}, {"X"}, 0, True, True, {"X"}, True, "VALID", True, {"UNRESOLVED"}, True),
+         fault="nan_value|nan_grid|energy_order|underflow", results=[x[0] for x in rb2])
+    # B3: interpolation at a grid point and below the grid, against the sealed C
+    def grid_points(b, r):
+        set_state(r, 4, 10, 10000.0)
+        set_state(r, 4, 15, 4000.0)
+    rb3, ob3 = run("grid_points", mutate=grid_points)
+    t3 = pd.read_csv(ob3 / "rates.csv")
+    l3 = t3[(t3.kind == "LINE") & (t3.gen == 7)]
+    g10 = l3[(l3.line_id == 1) & (l3.shell == 10)].iloc[0]
+    b15 = l3[(l3.line_id == 1) & (l3.shell == 15)].iloc[0]
+    s10 = l3[(l3.line_id == 11) & (l3.shell == 10)].iloc[0]
+    case("interpolation (closeout B3): at a grid temperature the stored value is the grid value (Si III 0-1 1.5, "
+         "S III 0-1 3.4); below the grid the sealed end value is used (1.0) and marked BELOW; both agree with the "
+         "sealed C", "3 interpolation",
+         (rb3["validity"], rb3["cref"]["mismatches"], g10.interp_range, float(g10.ups), s10.interp_range,
+          abs(float(s10.ups) - 3.4) <= 4 * math.ulp(3.4), b15.interp_range, float(b15.ups)),
+         ("VALID", 0, "GRID_POINT", 1.5, "GRID_POINT", True, "BELOW", 1.0), results=[rb3])
+    # B3: exponent sign error -> detailed balance FAIL
+    rb4, ob4 = run("exp_sign", fault="exp_sign")
+    t4 = pd.read_csv(ob4 / "rates.csv")
+    case("detailed balance (closeout B3): an exponent sign error fails detailed balance (rows X)", "7 detailed balance",
+         (has(rb4, "X_ROWS"), "FAIL" in set(t4[t4.kind == "PAIR"].detailed_balance.dropna())), (True, True),
+         fault="exp_sign", results=[rb4])
+    # B3: two-fold boundary -> 4
+    a01 = ups_fix(0.5, 0.0, 6.5)
+
+    def two_fold(b, r):
+        tg, recs = FX_TABLES[(14, 2)]
+        put_table(r, 14, 2, tg, [((0, 1), [a01 / 2.0] * len(tg))] + list(recs[1:]))
+    rb5, ob5 = run("two_fold", mutate=two_fold)
+    t5 = pd.read_csv(ob5 / "rates.csv")
+    p5 = t5[(t5.kind == "PAIR") & (t5.set == "sample") & (t5.line == 1)]
+    case("two-fold boundary (closeout B3): Upsilon_table = Upsilon_FIX / 2 puts log10 R_ul within 1e-10 of log10 2 -> "
+         "code 4 (UNRESOLVED), not 0 or 1", "8 decision",
+         (rb5["validity"], set(p5.status), bool((p5.d.abs() - math.log10(TWO)).abs().max() <= BOUND_EPS)),
+         ("VALID", {"UNRESOLVED"}, True), results=[rb5])
+    # B3: exact 20% boundary; >= registered, > refused
+    keys20 = ((1, 10), (1, 15), (2, 10), (7, 15), (8, 10), (12, 15))
+
+    def at20(b, r):
+        tg, recs = FX_TABLES[(14, 2)]
+        new = []
+        for (lo_, hi_), om in recs:
+            if (lo_, hi_) == (0, 1):
+                om = [a01] * len(tg)
+            elif (lo_, hi_) == (5, 6):
+                om = [ups_fix(0.05, 12.2, 15.0)] * len(tg)
+            elif (lo_, hi_) == (3, 4):
+                om = [ups_fix(0.2, 10.3, 12.0) + ups_fix(0.1, 10.3, 12.0)] * len(tg)
+            new.append(((lo_, hi_), om))
+        put_table(r, 14, 2, tg, new)
+        rows_ = [{"line_id": l, "shell": s_, "Z": FX_LINES[l][0], "ion": 2, "beta2_E": 1e-6, "L2": 1, "D2": 1}
+                 for l, s_ in keys20]
+        rows_.append({"line_id": 0, "shell": 10, "Z": 14, "ion": 1, "beta2_E": 1e-6, "L2": 0, "D2": 0})
+        pd.DataFrame(rows_).to_csv(b / "census.csv", index=False)
+        (b / "prior_sample.json").write_text(json.dumps({"keys": sorted((FX_LINES[l][0], l, s_) for l, s_ in keys20)}))
+    t20 = FX_TARGET | {"counts": {14: 5, 16: 1}}
+    rb6, ob6 = run("at20", mutate=at20, target=t20)
+    rb6f, _ = run("at20_strict", fault="threshold_strict", mutate=at20, target=t20)
+    case("20% boundary (closeout B3): Si III 1 refuted of 5 gives f_lo = 0.20 exactly -> NEXT_CANDIDATE (>=); the "
+         "strict > reading is refused by the decision recomputation", "8 decision",
+         (rb6["validity"], (rb6.get("ions") or {}).get("sample:14", {}).get("f_lo"), rb6.get("decision"),
+          has(rb6f, "DECISION_RECOMPUTE")), ("VALID", 0.2, "NEXT_CANDIDATE", True), fault="threshold_strict",
+         results=[rb6, rb6f])
+    # B3: a same-unit pair counted in the connected denominator
+    rb7, _ = run("same_unit_as_connected", fault="same_unit_as_connected")
+    case("solve units (closeout B3): a same-solve-unit pair counted as a valid connection changes the connected "
+         "denominator and is refused", "6 solve units", has(rb7, "CONNECTED_DENOMINATOR"), True,
+         fault="same_unit_as_connected", results=[rb7])
     hp = det_coll_omega_offline_hp_tests()
     case("high-precision references (decimal 60 digits): e^x E1(x) port within its published accuracy, f boundary, "
-         "branch continuity at x = 1, detailed balance of the rate form", "7 detailed balance",
+         "branch continuity at x = 1, detailed balance of the rate form, absolute upward and downward rates of both "
+         "prescriptions (closeout B3)", "7 detailed balance",
          [t["test"] for t in hp if not t["pass"]], [])
     res[-1]["hp_tests"] = hp
     # 9 preservation
