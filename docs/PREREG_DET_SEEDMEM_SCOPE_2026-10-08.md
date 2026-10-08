@@ -2,7 +2,7 @@
 
 2026-10-08 · astra 기안 · 읽기 전용  
 운전자 파일화 대상(신설): `docs/PREREG_DET_SEEDMEM_SCOPE_2026-10-08.md`  
-상태: **기안. 기계 게이트·경량 사전감사·구현·직접시험·수치 판독·판정·종료감사는 미집행.**
+상태: **기안. 기계 게이트·구현·직접시험·수치 판독·판정·종료감사는 미집행.** 경량 사전감사는 사용자 결정 개정25-ab에 따라 이번 단에서 생략한다.
 
 이번 단은 **기존 저장 자료만 사용하는 오프라인 조사**다. 생산 소스 변경, 생산 바이너리 실행, GPU 예약·실행은 없다.
 
@@ -61,12 +61,12 @@
 사용자가 선택한 것은 「오프라인 조사 추가」다. 이번 범위는 GPU 없는 저장 자료 조사이며, 생산 변경 또는 후속 판정런의 승인을 포함하지 않는다.
 
 - 기안·개정·종료감사: astra.
-- 경량 사전감사: Fable fresh, Q-GOAL·Q-LEAN 전용 1회.
+- 경량 사전감사: 사용자 결정 개정25-ab(2026-10-08)에 따라 GPU 0·생산 변경 0인 이번 오프라인 단에서는 Fable fresh의 Q-GOAL·Q-LEAN 사전감사를 생략한다(기록: `/gpfs/kjhan/lumina/cmfgen_map/seedmem_scope_20261008/evidence/PREAUDIT_SKIP_25ab.txt`).
 - 판독기 구현·직접시험·게이트·실행·판독·판정: 운전자(Opus 5.5).
 - 코드 감사: 해제.
 - 범위·비용 확대, 생산 변경, 후속 판정런: 사용자 결정.
 
-기안자의 자기답은 독립 사전감사가 아니다. 운전자는 구현자와 판정자를 겸하며, astra는 계약 저자로서 종료감사를 수행한다. 이 이해관계를 기록한다.
+남는 Q-LEAN 방어선은 기안자 자기답·운전자 기계 게이트·astra 종료감사이며, 자기답은 독립 검사가 아니고 기계 게이트는 의미·과학식의 정확성을 보장하지 않으며 종료감사는 계약 저자의 사후 검사이므로 사전감사 생략을 독립 감사 통과로 해석하지 않는다. 운전자는 구현자와 판정자를 겸하며, astra는 계약 저자로서 종료감사를 수행한다. 이 이해관계를 기록한다.
 
 ### 사전 노출·주장 상한
 
@@ -700,7 +700,7 @@ X가 있는 범위에는 적격한 최종 집합 판정을 부여하지 않는�
 
 같은 문서 신원에 대한 dispatch 내부 prereg 검사는 중복 실행하지 않는다. 계약·발주·러너의 신원과 실제 argv·stdout·stderr·rc를 보존한다.
 
-기계 프리플라이트 뒤, 구현 발주 전에 Fable fresh의 Q-GOAL·Q-LEAN 사전감사를 1회 받는다. 기계 검사는 과학식과 독립 사전감사를 대신하지 않는다.
+사용자 결정 개정25-ab(2026-10-08)에 따라 GPU 판정런 또는 생산 소스 변경이 있는 단에만 Fable fresh의 Q-GOAL·Q-LEAN 경량 사전감사를 적용하며, GPU 0·생산 변경 0인 이번 오프라인 단에서는 생략한다. 기계 검사는 과학식과 독립 사전감사를 대신하지 않는다.
 
 ## §9. 환경·비용·재현 명령
 
@@ -865,7 +865,7 @@ sbatch \
 | 업무 | 담당 | 규칙 |
 |---|---|---|
 | 기안·개정 | astra | 모델 ID와 사전 노출 기록 |
-| 경량 사전감사 | Fable fresh | Q-GOAL·Q-LEAN 1회. 미실시를 통과로 기록하지 않음 |
+| 경량 사전감사 | 생략(Fable fresh 미호출) | 사용자 결정 개정25-ab: GPU 0·생산 변경 0인 오프라인 단. 독립 감사 통과가 아님 |
 | 구현·직접시험·게이트·실행·판독·판정 | 운전자(Opus 5.5) | 구현·판정 겸임 명시 |
 | 코드 감사 | 해제 | 정례 감사 추가 없음 |
 | 종료감사 | astra | 계약 저자라는 이해관계 명시 |
@@ -882,7 +882,7 @@ sbatch \
 | 선행 계약·관련 판정·판독기·생산 관계 판독 | 완료 |
 | 새 표본 추출·해시 계산·수치 분석 | 미실행 |
 | 파일화·기계 게이트 | 운전자 집행 전 |
-| Fable fresh 경량 사전감사 | 미실행 |
+| Fable fresh 경량 사전감사 | 사용자 결정 개정25-ab에 따라 생략(독립 감사 통과 아님) |
 | 구현·직접시험·CPU 실행 | 미실행 |
 | 운전자 판정·astra 종료감사 | 미실행 |
 | 생산 변경·GPU 런 | 이번 대상 밖 |
@@ -1050,13 +1050,13 @@ sbatch \
       "path": "/gpfs/kjhan/lumina/cmfgen_map/obs_capture_20261006/source/src/lumina.h"
     },
     {
-      "path": "/gpfs/kjhan/lumina/cmfgen_map/obs_capture_20261006/Eprime/run1"
+      "path": "/gpfs/kjhan/lumina/cmfgen_map/obs_capture_20261006/Eprime/run1/STAGE_IDENTITY.txt"
     },
     {
-      "path": "/gpfs/kjhan/lumina/cmfgen_map/obs_capture_20261006/Rprime/run1"
+      "path": "/gpfs/kjhan/lumina/cmfgen_map/obs_capture_20261006/Rprime/run1/STAGE_IDENTITY.txt"
     },
     {
-      "path": "/gpfs/kjhan/lumina/cmfgen_map/siiii_btseed_20261007/BT/run1"
+      "path": "/gpfs/kjhan/lumina/cmfgen_map/siiii_btseed_20261007/BT/run1/STAGE_IDENTITY.txt"
     },
     {
       "path": "scripts/check_prereg_preflight.py"
