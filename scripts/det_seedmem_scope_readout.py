@@ -976,6 +976,9 @@ def det_seedmem_scope_budget(runs, sample, deck, conn, csob, lib, fault=None, ca
                 tot = Ft + Fup
                 if Ft.lo > 0 or Ft.hi < 0:
                     rec["partial_upper_residual_ratio"] = abs(tot.mid) / abs(Ft.mid)
+                    # bound from the stored intervals (not the middle values): max |sum| / min |F_target|
+                    rec["partial_upper_residual_ratio_interval_hi"] = up(max(abs(tot.lo), abs(tot.hi)) /
+                                                                         min(abs(Ft.lo), abs(Ft.hi)))
                     rec["other_opposes_target"] = int((Ft.mid > 0) != (Fup.mid > 0) and Fup.mid != 0.0)
             rec["status"] = "NOT_IDENTIFIABLE"
             if not count_ok or dup or link:
@@ -1137,6 +1140,19 @@ def det_seedmem_scope_p2_validate(rows, codes, expected):
         rep = codes.get(tag, {}).get(axis, {})
         if list(rep.get("pairs", {}).values()) != pair_st:
             why.append(f"P2_PAIR_RECOMPUTE:{tag}:{axis}")
+        # final axis state: an existence claim over the fixed pairs (prereg 5.3)
+        if "SURVIVES" in pair_st:
+            fin = "SURVIVES"
+        elif set(pair_st) == {"REFUTED"}:
+            fin = "REFUTED"
+        elif "UNRESOLVED" in pair_st:
+            fin = "UNRESOLVED"
+        elif "NOT_IDENTIFIABLE" in pair_st:
+            fin = "NOT_IDENTIFIABLE"
+        else:
+            fin = "X"
+        if rep.get("state") != fin or rep.get("code") != CODE.get(fin):
+            why.append(f"P2_CODE_RECOMPUTE:{tag}:{axis}")
     return why
 
 
@@ -1272,20 +1288,25 @@ UNDECIDED = {4: "UNRESOLVED (interval meets the comparison line)", 5: "NOT_IDENT
              "X": "INADMISSIBLE (link / implementation failure)"}
 
 
-def det_seedmem_scope_next(sets_model, cross_code, budget_rows, p2codes, coll, sl):
+def det_seedmem_scope_next(sets_model, cross_code, budget_rows, p2codes, coll, sl, mlevel, validity):
     """prereg 5.4 decision table (consumption rules; not a run authorisation).  Codes 1 (refuted), 4 (unresolved),
-    5 (not identifiable) and X (inadmissible) lead to different entries; only 1 is read as a refutation."""
+    5 (not identifiable) and X (inadmissible) lead to different entries; only 1 is read as a refutation, and an X
+    scope yields no decision at all (no extension, no pass)."""
     R = sets_model.get("R", {})
     dec = []
+    xmsg = "INADMISSIBLE scope (a registered check could not reproduce it): no decision; report before any use"
     ctrl = R.get("control_1206", {}).get("code")
     dec.append({"result": "1206 control (R' NRB, line 600693, W5 shells, calls 3-7)", "code": ctrl,
                 "evidence": "model.csv rows run=R line=600693; result.json codes.H-MODEL.R.control_1206",
-                "next": "keep P1 source-match range (line 600693, W5 shells, calls 3-7) and the 1e-3 comparison line"
-                if ctrl == 0 else f"P1 source-match control not reproduced (code {ctrl}): report before any P1 "
-                                  "registration"})
+                "next": xmsg if ctrl == "X" else
+                ("keep P1 source-match range (line 600693, W5 shells, calls 3-7) and the 1e-3 comparison line"
+                 if ctrl == 0 else f"P1 source-match control not reproduced (code {ctrl}): report before any P1 "
+                                   "registration")})
     for st in ("SiIII_other", "SIII"):
         c = R.get(st, {}).get("code")
-        if c == 1:
+        if c == "X":
+            nxt = xmsg
+        elif c == 1:
             nxt = f"do not generalise the source-match universal condition to the fixed {st} set"
         elif c == 0:
             nxt = f"offer the whole fixed {st} set as a conditional extension candidate (no pass-only subset)"
@@ -1298,7 +1319,9 @@ def det_seedmem_scope_next(sets_model, cross_code, budget_rows, p2codes, coll, s
                                 f"{not coll['R']['matrix_consumes_col_data']}) — model failure is conditional on that "
                                 f"branch",
                     "next": nxt})
-    if cross_code == 0:
+    if cross_code == "X":
+        dec.append({"result": "NRB rate invariance", "code": "X", "evidence": "cross_substitution.csv", "next": xmsg})
+    elif cross_code == 0:
         dec.append({"result": "production NRB rates invariant under exchange of L at fixed c, tau", "code": 0,
                     "evidence": "cross_substitution.csv nrb_rates_invariant_under_L and the per-combination "
                                 "production rates",
@@ -1316,18 +1339,22 @@ def det_seedmem_scope_next(sets_model, cross_code, budget_rows, p2codes, coll, s
     br = pd.DataFrame(budget_rows)
     miss = sorted({m.split(":", 1)[1] for v in br.missing.dropna() for m in str(v).split(";") if ":" in m}) \
         if len(br) else []
-    dec.append({"result": "generation-7 bound-bound budgets", "code": 5,
+    mcode = "X" if any(v.get("code") == "X" for v in mlevel.values()) else 5
+    dec.append({"result": "generation-7 bound-bound budgets", "code": mcode,
                 "evidence": f"pathways.csv: complete bound-bound sets {int(br.complete_bb.sum()) if len(br) else 0}/"
                             f"{len(br)} (run x key); unrecovered connected transitions by reason {miss}; solve units: "
                             f"cutoff K={sl['R']['cutoff']}, active={sl['R']['active']}",
-                "next": "closure not identifiable; minimal storage needed at the consumed generation: per-level bf "
+                "next": xmsg if mcode == "X" else "closure not identifiable; minimal storage needed at the consumed "
+                        "generation: per-level bf "
                         "rates, the SE row residual per solve unit, the full-level -> solve-unit map with the "
                         "within-unit fractions, and the populations of connected transitions the W5 ledger cannot "
                         "invert (non-positive tau, SRCE_CHK, outside the fine support)"})
     for tag, ax in p2codes.items():
         ion_ne = [ax.get("ion", {}).get("code"), ax.get("ne", {}).get("code")]
         rad_lv = [ax.get("jbar", {}).get("code"), ax.get("level", {}).get("code")]
-        if any(c == 1 for c in ion_ne):
+        if any(c == "X" for c in ion_ne + rad_lv):
+            nxt = xmsg + " (P2 axes " + ", ".join(k for k, v in ax.items() if v.get("code") == "X") + ")"
+        elif any(c == 1 for c in ion_ne):
             nxt = "P2 stationarity not reached on ion sums / n_e (refuted); no substitution by other measures"
         elif any(c in (4, 5, "X") for c in ion_ne):
             nxt = "P2 on ion sums / n_e undecided (" + ", ".join(str(UNDECIDED.get(c)) for c in ion_ne if c != 0) + \
@@ -1340,7 +1367,8 @@ def det_seedmem_scope_next(sets_model, cross_code, budget_rows, p2codes, coll, s
             nxt = "ion sums / n_e small; radiation or level measures undecided: register them separately in the next P2"
         dec.append({"result": f"P2 measures, run {tag}", "codes": ax, "evidence": "stationarity.csv",
                     "next": nxt})
-    return {"schema": "DET_SEEDMEM_SCOPE_NEXT_V2", "decisions": dec,
+    return {"schema": "DET_SEEDMEM_SCOPE_NEXT_V2", "validity": validity,
+            "provisional": validity != "VALID", "decisions": dec,
             "unchanged": ["1e-3 and 0.0043 dex are not re-derived from residual maxima or quantiles",
                           "call 8+, W5-outside shells, field convergence and two-seed converged solutions are outside "
                           "this evidence"],
@@ -1451,10 +1479,12 @@ def det_seedmem_scope_summary(md, cr, br, cap_rows, sample, conn, runs, sets_of)
                         "abs_delta_e_model_over_abs_delta_S_meas_quantiles": det_seedmem_scope_q(
                             (dm.delta_e_model_off.abs() / dm.delta_S_meas.abs()).tolist())}
     b = br.copy()
-    for c_ in ("partial_upper_residual_ratio", "other_opposes_target", "F_target_sign", "a_only_lines", "missing"):
+    for c_ in ("partial_upper_residual_ratio", "partial_upper_residual_ratio_interval_hi", "other_opposes_target",
+               "F_target_sign", "a_only_lines", "missing"):
         if c_ not in b.columns:
             b[c_] = np.nan
-    b["partial_upper_residual_ratio"] = pd.to_numeric(b["partial_upper_residual_ratio"], errors="coerce")
+    for c_ in ("partial_upper_residual_ratio", "partial_upper_residual_ratio_interval_hi"):
+        b[c_] = pd.to_numeric(b[c_], errors="coerce")
     b["upper_unit"] = np.where(b.sl_up == 1, "explicit", "lumped")
     pw = {}
     for tag, sub in b.groupby("run"):
@@ -1468,8 +1498,11 @@ def det_seedmem_scope_summary(md, cr, br, cap_rows, sample, conn, runs, sets_of)
                    "a_only_incorporations": int(sub.n_a_only_outside_domain.sum()),
                    "a_only_distinct_lines": len(aol),
                    "upper_bb_residual_ratio_by_upper_unit": {
-                       k: {"quantiles": det_seedmem_scope_q(g.partial_upper_residual_ratio),
-                           "le_1e-3_bb_only_not_closure": f"{int((g.partial_upper_residual_ratio <= CRIT).sum())}/{len(g)}"}
+                       k: {"quantiles_of_middle_values": det_seedmem_scope_q(g.partial_upper_residual_ratio),
+                           "middle_value_le_1e-3_bb_only_not_closure":
+                               f"{int((g.partial_upper_residual_ratio <= CRIT).sum())}/{len(g)}",
+                           "interval_guaranteed_le_1e-3": f"{int((g.partial_upper_residual_ratio_interval_hi <= CRIT).sum())}/{len(g)}",
+                           "interval_upper_bound_max": float(g.partial_upper_residual_ratio_interval_hi.max())}
                        for k, g in cb.groupby("upper_unit")}}
     out["pathways"] = pw
     cp = pd.DataFrame(cap_rows)
@@ -1480,6 +1513,49 @@ def det_seedmem_scope_summary(md, cr, br, cap_rows, sample, conn, runs, sets_of)
     k0 = md[(md.run == "R") & (md.call == MODEL_CALLS[0])]
     out["sample_keys_by_unit_class"] = {f"{st}:{uc}": int(len(g)) for (st, uc), g in k0.groupby(["set", "unit_class"])}
     return out
+
+
+def det_seedmem_scope_block(rec, why):
+    """a scope whose code a registered check could not reproduce becomes X; the code it would have had is kept as
+    provisional (never consumed by the decision table)."""
+    if rec.get("code") != "X":
+        rec["provisional_code"] = rec.get("code")
+    rec["code"], rec["state"] = "X", "X"
+    rec.setdefault("blocked_by", []).append(why)
+
+
+def det_seedmem_scope_propagate(vwhy, sets_model, counter_rec, cross_rec, mlevel, p2codes, sample, counter_key):
+    """prereg 6.3: route every validator finding to the scope it invalidates (model sets, the counterexample, the
+    cross-substitution proposition, the generation-7 budgets, a P2 axis); unaffected scopes keep their codes."""
+    line_z = {l: z for z, l, _ in sample["keys"]}
+    sets_of = {k: st for st, ks in sample["sets"].items() for k in ks}
+    for w in vwhy:
+        f = w.split(":")
+        kind = f[0]
+        if kind == "MODEL_ROW_ACCOUNTING":
+            for tag in sets_model:
+                for st in sets_model[tag]:
+                    det_seedmem_scope_block(sets_model[tag][st], w)
+            det_seedmem_scope_block(counter_rec, w)
+        elif kind == "STATUS_RECOMPUTE" and len(f) >= 5:
+            tag, line, shell = f[1], int(f[2]), int(f[3])
+            st = sets_of.get((line_z.get(line), line, shell))
+            if tag in sets_model and st in sets_model[tag]:
+                det_seedmem_scope_block(sets_model[tag][st], w)
+            if tag == "R" and (line, shell) == counter_key:
+                det_seedmem_scope_block(counter_rec, w)
+        elif kind == "SET_CODE_RECOMPUTE" and len(f) >= 3:
+            if f[1] in sets_model and f[2] in sets_model[f[1]]:
+                det_seedmem_scope_block(sets_model[f[1]][f[2]], w)
+        elif kind == "CROSS_ROW_ACCOUNTING":
+            det_seedmem_scope_block(cross_rec, w)
+        elif kind == "BUDGET_ROW_ACCOUNTING":
+            for tag in mlevel:
+                det_seedmem_scope_block(mlevel[tag], w)
+        elif kind.startswith("P2_") and len(f) >= 3:
+            if f[1] in p2codes and f[2] in p2codes[f[1]]:
+                det_seedmem_scope_block(p2codes[f[1]][f[2]], w)
+    return sets_model, counter_rec, cross_rec, mlevel, p2codes
 
 
 def det_seedmem_scope_analyze(census, runs_paths, src, out, lib, target=TARGET, fault=None, prereg=None):
@@ -1574,6 +1650,14 @@ def det_seedmem_scope_analyze(census, runs_paths, src, out, lib, target=TARGET, 
         validity = "X"
         reasons = vwhy[:200] + [f"X_ROWS:{k}={v}" for k, v in n_x.items() if v]
     counter_rec = det_seedmem_scope_set_code(list(counter.get("R", {}).values()))
+    mlevel = {tag: {"code": "X" if ((br.run == tag) & (br.status == "X")).any() else 5,
+                    "reason": "closure not identifiable: bf / line-free channels and the SE row residual per solve unit "
+                              "are not stored",
+                    "complete_bb_targets": int(br[(br.run == tag)].complete_bb.sum()) if len(br) else 0,
+                    "targets": int((br.run == tag).sum()) if len(br) else 0} for tag in runs}
+    sets_model, counter_rec, cross_rec, mlevel, p2codes = det_seedmem_scope_propagate(
+        vwhy, sets_model, counter_rec, cross_rec, mlevel, p2codes, sample, target["counter"])
+    cross_code = cross_rec["code"]
     codes = {
         "H-MODEL": {tag: {st: rec["code"] for st, rec in v.items()} for tag, v in sets_model.items()},
         "H-MODEL_sets": sets_model,
@@ -1581,22 +1665,19 @@ def det_seedmem_scope_analyze(census, runs_paths, src, out, lib, target=TARGET, 
                              "R_two_level_nrb_applicability": counter_rec["code"], "R_record": counter_rec,
                              "per_call": counter},
         "H-LOCAL": cross_code,
-        "H-MULTILEVEL": {tag: {"code": "X" if ((br.run == tag) & (br.status == "X")).any() else 5,
-                               "reason": "closure not identifiable: bf / line-free channels and the SE row residual per "
-                                         "solve unit are not stored",
-                               "complete_bb_targets": int(br[(br.run == tag)].complete_bb.sum()) if len(br) else 0,
-                               "targets": int((br.run == tag).sum()) if len(br) else 0} for tag in runs},
+        "H-LOCAL_record": cross_rec,
+        "H-MULTILEVEL": mlevel,
         "H-P2": p2codes,
         "registered_not_identifiable": {q: 5 for q in REGISTERED_5},
     }
     if validity == "X":
-        codes["note"] = "validity X: no final set judgement is read from these codes; eligible counterexamples are " \
-                        "kept in H-MODEL_sets.eligible_refuted_cells"
+        codes["note"] = "validity X: scopes a check could not reproduce are X (provisional_code kept, never consumed); " \
+                        "the remaining codes are provisional until validity is restored"
     cl, cs = target["counter"]
     codes["H-COUNTEREXAMPLE"]["call3_detail_R"] = det_seedmem_scope_counter_detail(runs["R"], deck, cl, cs, lib)
     coll = {tag: rd["coll"] for tag, rd in runs.items()}
     sl = {tag: {k: v for k, v in rd["sl"].items() if k not in ("unit", "size")} for tag, rd in runs.items()}
-    nxt = det_seedmem_scope_next(sets_model, cross_code, budget_rows, p2codes, coll, sl)
+    nxt = det_seedmem_scope_next(sets_model, cross_code, budget_rows, p2codes, coll, sl, mlevel, validity)
     summ = det_seedmem_scope_summary(md, cr, br, cap_rows, sample, conn, runs, sets_of) if len(md) and len(br) else {}
     sample_json = {"schema": "DET_SEEDMEM_SCOPE_SAMPLE_V2", "authority": str(census), "authority_sha256": sha(census),
                    "selection": {"Z": list(target["Z"]), "ion": target["ion"], "shells": list(target["shells"]),
@@ -1843,12 +1924,35 @@ def det_seedmem_scope_hp_tests(lib, csob):
                "beta": beta, "srce_chk": 0.0}
         a = {"A_ul": A, "f_lu": f, "nu": nu, "lam_cm": lam, "g_l": gl, "g_u": gu, "B_lu": 1.0}
         inv, why = det_seedmem_scope_invert(row, a, t_exp, csob, lib)
-        tau_hp = ctx.multiply(ctx.multiply(ctx.multiply(ctx.multiply(Dm(csob), Dm(f)), Dm(lam)), Dm(t_exp)),
-                              ctx.subtract(Dm(n_l), ctx.multiply(ctx.divide(Dm(gl), Dm(gu)), Dm(n_u))))
+        # (i) production tau of the double populations against the 60-digit value; bound: 4 products + the rounded
+        # a n_u inside the difference, amplified by a n_u / |n_l - a n_u|
+        dhp = ctx.subtract(Dm(n_l), ctx.multiply(ctx.divide(Dm(gl), Dm(gu)), Dm(n_u)))
+        K_hp = ctx.multiply(ctx.multiply(ctx.multiply(Dm(csob), Dm(f)), Dm(lam)), Dm(t_exp))
+        tau_hp = ctx.multiply(K_hp, dhp)
         tau_rel = float(abs(ctx.divide(ctx.subtract(Dm(tau), tau_hp), tau_hp))) if tau_hp != 0 else None
-        ok = (inv is not None and inv["n_u"].lo <= n_u <= inv["n_u"].hi and inv["n_l"].lo <= n_l <= inv["n_l"].hi)
-        out.append({"test": f"inversion_{name}", "tau": tau, "pass": bool(ok or (tau <= 0 and why == "INVERSION_DOMAIN")),
-                    "why": why, "tau_rel_err_vs_hp": tau_rel})
+        amp = float(abs(ctx.divide(ctx.multiply(ctx.divide(Dm(gl), Dm(gu)), Dm(n_u)), dhp))) if dhp != 0 else math.inf
+        tau_ok = tau_rel is not None and tau_rel <= (6.0 + 2.0 * amp) * U
+        # (ii) independent 60-digit inversion of the stored ledger (tau, L and production's EXPONX companion) with the
+        # production double constants, compared with the readout's interval inversion
+        ok_hp = False
+        nu_hp = nl_hp = None
+        if inv is not None:
+            rcq, bq, q = lib.exponx(tau)
+            scale = ctx.divide(ctx.multiply(Dm(C_LIGHT), Dm(t_exp)), Dm(nu))
+            nu_hp = ctx.multiply(ctx.divide(Dm(L), ctx.multiply(scale, Dm(q))),
+                                 ctx.divide(Dm(FOUR_PI), ctx.multiply(ctx.multiply(Dm(A), Dm(H_PLANCK)), Dm(nu))))
+            nl_hp = ctx.add(ctx.divide(Dm(tau), K_hp), ctx.multiply(ctx.divide(Dm(gl), Dm(gu)), nu_hp))
+            ok_hp = (Dm(inv["n_u"].lo) <= nu_hp <= Dm(inv["n_u"].hi)) and (Dm(inv["n_l"].lo) <= nl_hp <= Dm(inv["n_l"].hi))
+        # (iii) round trip: the intervals contain the double populations that generated the ledger
+        ok_rt = (inv is not None and inv["n_u"].lo <= n_u <= inv["n_u"].hi and inv["n_l"].lo <= n_l <= inv["n_l"].hi)
+        out.append({"test": f"inversion_{name}", "tau": tau, "why": why,
+                    "pass": bool(inv is not None and tau_ok and ok_hp and ok_rt),
+                    "tau_rel_err_vs_hp": tau_rel, "tau_bound": (6.0 + 2.0 * amp) * U,
+                    "hp_inverse_in_interval": bool(ok_hp), "round_trip_in_interval": bool(ok_rt),
+                    "n_u_hp": None if nu_hp is None else f"{nu_hp:.25E}",
+                    "n_l_hp": None if nl_hp is None else f"{nl_hp:.25E}",
+                    "n_u_interval": None if inv is None else [inv["n_u"].lo, inv["n_u"].hi],
+                    "n_l_interval": None if inv is None else [inv["n_l"].lo, inv["n_l"].hi]})
     for ta in (1e-9, 5e-4, 9.99e-4, 1.5e-3, 0.37, 7.0, 39.9, 40.0, 1.0e4):
         rc, b, c = lib.exponx(ta)
         T = Dm(ta)
@@ -1891,7 +1995,8 @@ def det_seedmem_scope_selftest_cases(base, lib, src):
         ok = got == want
         rec = {"case": name, "bundle": bundle, "fault": fault, "pass": bool(ok), "got": str(got)[:600],
                "want": str(want)[:600],
-               "runs": [{"validity": r.get("validity"), "rc": 0 if r.get("validity") == "VALID" else 2,
+               "runs": [{"validity": r.get("validity"),
+                         "analyze_rc_equivalent": 0 if r.get("validity") == "VALID" else 2,
                          "reasons": [str(x)[:160] for x in (r.get("reasons") or [])[:6]]} for r in results]}
         res.append(rec)
         print(f"[{'PASS' if ok else 'FAIL'}] ({bundle}) {name}: got {str(got)[:220]} want {str(want)[:220]}", flush=True)
@@ -1903,6 +2008,12 @@ def det_seedmem_scope_selftest_cases(base, lib, src):
 
     def has(r, token):
         return r.get("validity") == "X" and any(token in str(w) for w in (r.get("reasons") or []))
+
+    def nxt(o):
+        return json.loads((o / "next_contract.json").read_text())
+
+    def dec(o, prefix):
+        return [d_ for d_ in nxt(o)["decisions"] if d_["result"].startswith(prefix)]
 
     def xrows(o, fname, token):
         p_ = o / fname
@@ -1955,11 +2066,14 @@ def det_seedmem_scope_selftest_cases(base, lib, src):
     # 1 sample fixing
     rs1, _ = run("drop_counter", fault="drop_counter")
     rs2, _ = run("add_shell", fault="add_shell")
-    rs3, _ = run("drop_failed_cell", fault="drop_failed_cell")
+    rs3, os3 = run("drop_failed_cell", fault="drop_failed_cell")
     case("sample: counterexample deletion, a non-W5 shell and dropping refuted cells after the fact are "
-         "inadmissible (G-LINK)", "1 sample",
-         (has(rs1, "COUNTER"), has(rs2, "SHELL") or has(rs2, "COUNT"), has(rs3, "MODEL_ROW_ACCOUNTING")),
-         (True, True, True), fault="drop_counter|add_shell|drop_failed_cell", results=[rs1, rs2, rs3])
+         "inadmissible (G-LINK); the final decision table then carries no model decision",
+         "1 sample",
+         (has(rs1, "COUNTER"), has(rs2, "SHELL") or has(rs2, "COUNT"), has(rs3, "MODEL_ROW_ACCOUNTING"),
+          sorted({d_["code"] for d_ in dec(os3, "1206 control") + dec(os3, "SiIII_other two") + dec(os3, "SIII two")}),
+          nxt(os3)["provisional"]),
+         (True, True, True, ["X"], True), fault="drop_counter|add_shell|drop_failed_cell", results=[rs1, rs2, rs3])
     # 2 generation linking
     rg1, og1 = run("beta_current", fault="beta_current")
     rg2, og2 = run("material_plus1", fault="material_plus1")
@@ -2096,18 +2210,66 @@ def det_seedmem_scope_selftest_cases(base, lib, src):
     t1, t2 = nl_t * (a0["B_lu"] * jb6 + Cu_.mid), nu_t * (a0["B_ul"] * jb6 + a0["A_ul"] + Cd_.mid)
     F_true = t1 - t2
     slack = 64 * math.ulp(max(abs(t1), abs(t2)))
-    rb1, _ = run("drop_connected", fault="drop_connected")
+    flow_ok = []
+    for tag_ in ("E", "R"):
+        rdir = Path(base) / f"clean/in/{tag_}"
+        tr_ = json.loads((rdir / "fixture_truth.json").read_text())
+        at_ = fxdeck["at"]
+        sh7 = pd.read_csv(rdir / "work/physics_comparison/physics_DET_iter0004.shell.csv").set_index("shell_id")
+        hist_ = REP.det_siiii_repair_w5_load(rdir, {(l_, 10) for l_ in at_})[0]
+        for tl in (0, 1):
+            t_ = at_[tl]
+            others = [l_ for l_, b_ in at_.items() if l_ != tl and b_["Z"] == t_["Z"] and
+                      {b_["lo"], b_["up"]} & {t_["lo"], t_["up"]}]
+            up_true, lo_true, mag = 0.0, 0.0, 0.0
+            for l_ in others:
+                b_ = at_[l_]
+                n_lo, n_up = tr_[f"{b_['Z']}:{b_['lo']}:10:7"], tr_[f"{b_['Z']}:{b_['up']}:10:7"]
+                cu_, cd_ = RATES.det_siiii_rates_coll(float(sh7.loc[10, "n_e_cm3"]), float(sh7.loc[10, "T_e_K"]),
+                                                      b_["E_l"], b_["E_u"], b_["g_l"], b_["g_u"], b_["f_lu"])
+                if not (RATES.NU_MIN <= b_["nu"] <= RATES.NU_MAX):
+                    Ra_, Rs_, Rp_ = 0.0, 0.0, b_["A_ul"]
+                else:
+                    w_ = hist_[(l_, 10)][6]
+                    if tag_ == "R":
+                        _, _, Ra_, Rs_, Rp_ = lib.bracket(float(w_["beta"]) * float(w_["J_c"]), float(w_["L_l"]),
+                                                          float(w_["tau_eff"]), float(w_["Jbar"]), 0,
+                                                          b_["B_lu"], b_["B_ul"], b_["A_ul"])
+                    else:
+                        Ra_, Rs_, Rp_ = b_["B_lu"] * float(w_["Jbar"]), b_["B_ul"] * float(w_["Jbar"]), b_["A_ul"]
+                p1, p2_ = n_lo * (Ra_ + cu_.mid), n_up * (Rs_ + Rp_ + cd_.mid)
+                F_ = p1 - p2_
+                mag += abs(p1) + abs(p2_)
+                if b_["up"] == t_["up"]:
+                    up_true += F_
+                if b_["lo"] == t_["up"]:
+                    up_true -= F_
+                if b_["up"] == t_["lo"]:
+                    lo_true += F_
+                if b_["lo"] == t_["lo"]:
+                    lo_true -= F_
+            rw_ = pb[(pb.run == tag_) & (pb.line == tl) & (pb.shell == 10)].iloc[0]
+            sl_ = 64 * math.ulp(mag)
+            flow_ok.append((tag_, tl, len(others),
+                            bool(rw_.F_other_into_upper_lo - sl_ <= up_true <= rw_.F_other_into_upper_hi + sl_),
+                            bool(rw_.F_other_into_lower_lo - sl_ <= lo_true <= rw_.F_other_into_lower_hi + sl_)))
+    rb1, ob1 = run("drop_connected", fault="drop_connected")
     rb2, _ = run("double_count", fault="double_count")
     rb3, _ = run("partial_as_complete", fault="partial_as_complete", mutate=lambda r, t: w5_edit(
         r, lambda f_: f_[0] == "7" and f_[4] == "10" and f_[5] == "2", lambda f_: None))
-    case("budget: complete bound-bound sets (out-of-domain A-only lines from recovered levels) counted; the target net "
-         "flow from recovered populations matches the fixture truth; closure stays 5 (bf absent); a dropped, a "
-         "double-counted connected transition or a partial sum labelled complete is inadmissible", "8 budget",
+    case("budget: complete bound-bound sets (out-of-domain A-only lines from recovered levels) counted; the target "
+         "net flow and the direction-signed inflow sums of the connected transitions into the upper and the lower "
+         "level match the fixture truth (off and NRB, with an A-only line); closure stays 5 (bf absent); a dropped, a "
+         "double-counted connected transition or a partial sum labelled complete is inadmissible and the budget "
+         "decision becomes X", "8 budget",
          (int(pb.complete_bb.sum()) == len(pb), int(pb.n_a_only_outside_domain.sum()) > 0, set(pb.closed),
           r0["codes"]["H-MULTILEVEL"]["R"]["code"], bool(row.F_target_lo - slack <= F_true <= row.F_target_hi + slack),
-          rb1["validity"], rb2["validity"], has(rb3, "X_ROWS")),
-         (True, True, {0}, 5, True, "X", "X", True), fault="drop_connected|double_count|partial_as_complete",
-         results=[rb1, rb2, rb3])
+          [f_[3:] for f_ in flow_ok], min(f_[2] for f_ in flow_ok) >= 2,
+          rb1["validity"], rb2["validity"], has(rb3, "X_ROWS"),
+          [d_["code"] for d_ in dec(ob1, "generation-7 bound-bound budgets")]),
+         (True, True, {0}, 5, True, [(True, True)] * 4, True, "X", "X", True, ["X"]),
+         fault="drop_connected|double_count|partial_as_complete", results=[rb1, rb2, rb3])
+    res[-1]["flow_truth"] = [list(f_) for f_ in flow_ok]
     # 9 collision consumption
     def omega_branch(r, t):
         p_ = r / "input/resolved_lumina.exports"
@@ -2132,7 +2294,7 @@ def det_seedmem_scope_selftest_cases(base, lib, src):
     ion_one = {(Z, q): {g: (1.0e6 * (1.0 if g in (5, 6) else (1.3 if g == 7 else 1.0 + 0.2 * abs(5 - g))))
                         for g in POP_GENS} for Z, q in ION_QTY}
     rp1, _ = run("p2_single", ion_series=ion_one)
-    rp1f, _ = run("p2_single_fault", ion_series=ion_one, fault="single_change")
+    rp1f, op1f = run("p2_single_fault", ion_series=ion_one, fault="single_change")
     ion_zero = {(Z, q): {g: (0.0 if (Z, q) == (14, 1) and g == 5 else 1.0e6) for g in POP_GENS} for Z, q in ION_QTY}
     rp2, _ = run("p2_zero", ion_series=ion_zero)
     rp2f, _ = run("p2_zero_fault", ion_series=ion_zero, fault="drop_zero_cross")
@@ -2140,6 +2302,12 @@ def det_seedmem_scope_selftest_cases(base, lib, src):
     ion_struct = {(Z, q): {g: (0.0 if (Z, q) == (14, 1) else 1.0e6) for g in POP_GENS} for Z, q in ION_QTY}
     rp4, op4 = run("p2_structural_zero", ion_series=ion_struct)
     st4 = pd.read_csv(op4 / "stationarity.csv")
+    ion_nan = {(Z, q): {g: (math.nan if (Z, q) == (14, 1) and g in (5, 6, 7) else 1.0e6) for g in POP_GENS}
+               for Z, q in ION_QTY}
+    rp5, _ = run("p2_missing", ion_series=ion_nan)
+    ion_nan_ref = {(Z, q): {g: (math.nan if (Z, q) == (14, 1) and g in (5, 6, 7) else
+                                (2.0e6 if (Z, q) == (16, 1) and g >= 5 else 1.0e6)) for g in POP_GENS} for Z, q in ION_QTY}
+    rp6, _ = run("p2_missing_with_refutation", ion_series=ion_nan_ref)
     case("P2: clean ion sums small from 5->6; one small change alone is not two; a zero crossing refutes; exact zeros "
          "at both ends are structural (counted, not missing); accepting one change, deleting a zero crossing or a "
          "large cell is inadmissible", "10 P2",
@@ -2150,6 +2318,16 @@ def det_seedmem_scope_selftest_cases(base, lib, src):
           rp4["codes"]["H-P2"]["E"]["ion"]["state"]),
          ("SURVIVES", "REFUTED", True, "REFUTED", True, True, "VALID", len(FX_SHELLS), "SURVIVES"),
          fault="single_change|drop_zero_cross|drop_large", results=[rp1f, rp2f, rp3f, rp4])
+    case("P2: a required missing value with no counterexample gives 5 (VALID); with a counterexample in two pairs the "
+         "refuted pair states are kept while the axis stays 5; the axis a check could not reproduce is X in the "
+         "final decision table", "10 P2",
+         (rp5["validity"], rp5["codes"]["H-P2"]["E"]["ion"]["code"], rp5["codes"]["H-P2"]["E"]["ion"]["pairs"],
+          rp6["validity"], rp6["codes"]["H-P2"]["E"]["ion"]["code"], rp6["codes"]["H-P2"]["E"]["ion"]["pairs"],
+          rp1f["codes"]["H-P2"]["E"]["ion"]["code"],
+          [d_["next"][:12] for d_ in dec(op1f, "P2 measures, run E")]),
+         ("VALID", 5, {"4,5": "NOT_IDENTIFIABLE", "5,6": "NOT_IDENTIFIABLE", "6,7": "NOT_IDENTIFIABLE"},
+          "VALID", 5, {"4,5": "REFUTED", "5,6": "REFUTED", "6,7": "NOT_IDENTIFIABLE"}, "X", ["INADMISSIBLE"]),
+         results=[rp5, rp6, rp1f])
     # 11 numerics and codes (analyze-level)
     def wide_jc(r, t):
         if t != "E":
@@ -2165,15 +2343,17 @@ def det_seedmem_scope_selftest_cases(base, lib, src):
     mq = pd.read_csv(oq0 / "model.csv")
     rq1, _ = run("boundary_drop_intervals", mutate=wide_jc, fault="drop_intervals")
     rq2, _ = run("widen_crit", fault="widen_crit")
-    rq3, _ = run("mix_codes", fault="mix_codes", mutate=lambda r, t: w5_edit(
+    rq3, oq3 = run("mix_codes", fault="mix_codes", mutate=lambda r, t: w5_edit(
         r, lambda f_: f_[0] == "5" and f_[4] == "15" and f_[5] == "4", lambda f_: None))
     case("numerics (analyze): a W5 J-bar bound straddling 1e-3 stores UNRESOLVED and gives set code 4; dropping the "
          "interval, widening the line or mixing 5 into 0 are inadmissible by recomputation",
          "11 numerics", (rq0["validity"], set(mq[(mq.run == "E") & (mq.line == 4) & (mq.shell == 10) &
                                                 (mq.call == 5)].status), rq0["codes"]["H-MODEL"]["E"]["SIII"],
-                         has(rq1, "STATUS_RECOMPUTE"), has(rq2, "STATUS_RECOMPUTE"), has(rq3, "SET_CODE_RECOMPUTE")),
-         ("VALID", {"UNRESOLVED"}, 4, True, True, True), fault="drop_intervals|widen_crit|mix_codes",
-         results=[rq0, rq1, rq2, rq3])
+                         has(rq1, "STATUS_RECOMPUTE"), has(rq2, "STATUS_RECOMPUTE"), has(rq3, "SET_CODE_RECOMPUTE"),
+                         [(d_["code"], "extension candidate" in d_["next"]) for d_ in dec(oq3, "SIII two")],
+                         rq3["codes"]["H-MODEL_sets"]["R"]["SIII"].get("provisional_code")),
+         ("VALID", {"UNRESOLVED"}, 4, True, True, True, [("X", False)], 0),
+         fault="drop_intervals|widen_crit|mix_codes", results=[rq0, rq1, rq2, rq3])
     case("numerics (helpers): an interval straddling 1e-3 is UNRESOLVED; X precedes every science state; a refutation "
          "survives a missing cell", "11 numerics",
          (det_seedmem_scope_le(I(0.9e-3, 1.0e-3, 1.1e-3), CRIT),
@@ -2209,10 +2389,14 @@ def cmd_selftest(a):
     summary = {"schema": "DET_SEEDMEM_SCOPE_SELFTEST_V2", "readout_sha256": sha(Path(__file__).resolve()),
                "lib": librec, "cases": tests, "failures": fails, "elapsed_s": time.time() - t0,
                "bundles_covered": sorted({t["bundle"] for t in tests}),
-               "not_demonstrated": ["P2 NOT_IDENTIFIABLE states from a removed W5 row are produced (drop_row) but not "
-                                    "asserted on their own",
-                                    "a production-side W5 ledger that is self-consistent but carries a wrong generation "
-                                    "label beyond the dump / capture / row labels checked here"],
+               "rc_meaning": "analyze_rc_equivalent = the rc cmd_analyze returns for that validity (0 VALID, 2 X); the "
+                             "fixture analyses are function calls, not separate processes",
+               "not_demonstrated": ["a production-side W5 ledger that is self-consistent but carries a wrong generation "
+                                    "label beyond the dump / capture / row labels checked here",
+                                    "errors shared by the forward-ledger and source-population checks and the "
+                                    "inversion (same wrong input or coefficient on both sides): these checks prove "
+                                    "implementation consistency, not population authority, SE validity or model "
+                                    "applicability"],
                "dependencies": {str(Path(m.__file__).resolve()): sha(Path(m.__file__)) for m in (POP, RATES, MECH, REP)}}
     (out / "selftest.json").write_text(json.dumps(summary, indent=1, default=str))
     print(json.dumps({"failures": fails, "cases": len(tests), "elapsed_s": summary["elapsed_s"]}))
