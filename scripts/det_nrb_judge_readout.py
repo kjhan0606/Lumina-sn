@@ -113,6 +113,31 @@ def det_nrb_judge_small(M, missing):
     return "UNRESOLVED"
 
 
+def det_nrb_judge_sub(a, b, side):
+    """a - b rounded outward only when the subtraction is inexact (TwoSum error term); an exact difference (e.g. of
+    two exact zeros) stays exact so END_EQUAL is reachable (prereg 5.3)."""
+    s_ = a - b
+    if not math.isfinite(s_):
+        return s_
+    bb = s_ - a
+    err = (a - (s_ - bb)) + (-b - bb)
+    if err == 0.0:
+        return s_
+    return dn(s_) if side < 0 else up(s_)
+
+
+def det_nrb_judge_end_code(a_lo, a_hi, b_lo, b_hi):
+    """END_* from the stored endpoint intervals [a_lo, a_hi] (start) and [b_lo, b_hi] (end)."""
+    lo, hi = det_nrb_judge_sub(b_lo, a_hi, -1), det_nrb_judge_sub(b_hi, a_lo, +1)
+    if hi < 0.0:
+        return "END_LOWER", lo, hi
+    if lo > 0.0:
+        return "END_HIGHER", lo, hi
+    if lo == 0.0 and hi == 0.0:
+        return "END_EQUAL", lo, hi
+    return "END_UNRESOLVED", lo, hi
+
+
 def det_nrb_judge_log10i(a):
     """log10 of a positive interval (outward)."""
     if a is None or not a.lo > 0.0:
@@ -188,6 +213,9 @@ def det_nrb_judge_run(run, tag, keys, src_text, deck, outer, fault=None, cuda_te
             why.append(f"{tag}:LINK_CAPTURE_GENERATION:{fld}:{gens.get(fld)}!={g_obs}")
     if gens.get("iter") != G["iter_last"]:
         why.append(f"{tag}:LINK_CAPTURE_ITER:{gens.get('iter')}!={G['iter_last']}")
+    # prereg 4.2: the tau / opacity / emissivity counters are checked on their own, never folded into one number
+    if gens.get("tau_required") is None or gens.get("tau_required") != gens.get("tau_computed"):
+        why.append(f"{tag}:LINK_CAPTURE_TAU_COUNTERS:{gens.get('tau_required')}!={gens.get('tau_computed')}")
     if man.get("transaction") != "COMMITTED":
         why.append(f"{tag}:LINK_CAPTURE_NOT_COMMITTED")
     if (man.get("census") or {}).get("mapped_B_fallback") != 0:
@@ -253,10 +281,50 @@ def det_nrb_judge_run(run, tag, keys, src_text, deck, outer, fault=None, cuda_te
             why.append(f"{tag}:FOOTER_ITERATIONS:{foot.get('outer_iterations')}!={outer}")
     else:
         why.append(f"{tag}:RUN_FOOTER_MISSING")
+    counters = {"capture_tau_required": gens.get("tau_required"), "capture_tau_computed": gens.get("tau_computed"),
+                "capture_material": gens.get("material"), "capture_radiation": gens.get("radiation")}
+    for m in sorted((run / "work/physics_comparison").glob("physics_DET_iter*.manifest.json")):
+        js = json.loads(m.read_text())
+        if js.get("population_generation") == G["g_obs"]:
+            counters["obs_dump_opacity_generation"] = js.get("opacity_generation")
+            counters["obs_dump_emissivity_generation"] = js.get("emissivity_generation")
+            counters["obs_dump_radiation_generation"] = js.get("radiation_generation")
     return {"run": str(run), "tag": tag, "outer": outer, "G": G, "t_exp": t_exp, "exports": ex, "nrb": nrb,
+            "counters": counters,
             "form": "NRB" if nrb else "OFF", "hist": hist, "dumps": dumps, "sl": sl, "coll": coll, "markers": mk,
             "capture_manifest": man, "obs_status": obs, "footer": foot, "binary_link": binary_link,
             "n_shells": n_shells, "why": why}
+
+
+def det_nrb_judge_input_identity(n_run):
+    """prereg 2.2 / 3.2 (3): every staged input of N has the content the preflight recorded for the R' input
+    (reference_inputs.json next to the preflight offline.json the stage identity names), the file set is the same,
+    and the effective exports are the ones the stage identity recorded."""
+    n_run = Path(n_run)
+    ident = det_nrb_judge_kv(n_run / "STAGE_IDENTITY.txt")
+    out = {"why": [], "checked": 0}
+    pre = ident.get("preflight")
+    ref_p = Path(pre).parent / "reference_inputs.json" if pre else None
+    if ref_p is None or not ref_p.exists():
+        out["why"].append("INPUT_IDENTITY_REFERENCE_ABSENT")
+        return out
+    ref = json.loads(ref_p.read_text())
+    out["reference"] = {"path": str(ref_p), "sha256": sha(ref_p)}
+    have = {str(q.relative_to(n_run / "input")) for d in STAGED_DIRS for q in (n_run / "input" / d).rglob("*") if q.is_file()}
+    have |= {f for f in STAGED_FILES if (n_run / "input" / f).is_file()}
+    if have != set(ref):
+        out["why"].append(f"INPUT_SET_DIFFERS:{sorted(have ^ set(ref))[:5]}")
+    for rel, v in sorted(ref.items()):
+        q = n_run / "input" / rel
+        out["checked"] += 1
+        if v is None or not q.is_file() or sha(q) != v["sha256"]:
+            out["why"].append(f"INPUT_IDENTITY:{rel}")
+    ex = n_run / "input/resolved_lumina.exports"
+    if not ex.exists() or sha(ex) != ident.get("effective_exports_sha256"):
+        out["why"].append("INPUT_IDENTITY:resolved_lumina.exports_vs_stage_identity")
+    out["stage_runner_sha256"] = ident.get("runner_sha256")
+    out["job_slurm_sha256"] = sha(n_run / "job.slurm") if (n_run / "job.slurm").exists() else None
+    return out
 
 
 def det_nrb_judge_row(rd, line, shell, call):
@@ -537,17 +605,22 @@ def det_nrb_judge_series(rd, keys, deck, csob, lib, cap_status, fault=None):
             rec_pop.setdefault((Z, a["lo"], s, g), []).append(inv["n_l"])
             rec_pop.setdefault((Z, a["up"], s, g), []).append(inv["n_u"])
         series["jbar"][(line, s)] = ser
+    contradictions = []
     for Z, lev, s in levels:
         ser = {}
         for g in G["rad_gens"]:
             v = rec_pop.get((Z, lev, s, g))
-            if not v or not all(SEED.det_seedmem_scope_overlap(x, y) for x in v for y in v):
+            if not v:
                 ser[g] = None
+            elif not all(SEED.det_seedmem_scope_overlap(x, y) for x in v for y in v):
+                # prereg 5.3: admissible recoveries of one level that contradict each other make the range X
+                ser[g] = None
+                contradictions.append((Z, lev, s, g, len(v)))
             else:
                 ser[g] = I(max(x.lo for x in v), v[0].mid, min(x.hi for x in v))
         series["level"][(Z, lev, s)] = ser
     expected = {"ion": len(ION_QTY) * len(shells), "ne": len(shells), "jbar": len(keys), "level": len(levels)}
-    return series, expected, levels
+    return series, expected, levels, contradictions
 
 
 def det_nrb_judge_change(va, vb, fault=None):
@@ -579,7 +652,7 @@ def det_nrb_judge_p2(rd, keys, deck, csob, lib, cap_status, fault=None):
     """prereg 5.3: adjacent-generation maximum changes of four axes; the terminal window (outer, g_obs) decides;
     the trajectory descriptor M(4), M(g_obs), D = M(g_obs) - M(4) is recorded for every axis."""
     G = rd["G"]
-    series, expected, levels = det_nrb_judge_series(rd, keys, deck, csob, lib, cap_status, fault)
+    series, expected, levels, contradictions = det_nrb_judge_series(rd, keys, deck, csob, lib, cap_status, fault)
     rows, codes, per_axis = [], {}, {}
     for axis, qs in series.items():
         gens = G["matter_gens"] if axis in ("ion", "ne") else G["rad_gens"]
@@ -608,7 +681,9 @@ def det_nrb_judge_p2(rd, keys, deck, csob, lib, cap_status, fault=None):
                          "terminal_window": int(g in G["terminal"]), "last_material_update": int(g == G["g_last"])})
         per_axis[axis] = per_g
         codes[axis] = det_nrb_judge_axis_code(per_g, G, fault)
-    return rows, codes, expected
+        if FT(fault, "p2_code_zero") and axis == "ion":
+            codes[axis]["code"], codes[axis]["state"] = 0, "SURVIVES"     # injected: final axis code replaced
+    return rows, codes, expected, contradictions
 
 
 def det_nrb_judge_axis_code(per_g, G, fault=None):
@@ -621,9 +696,14 @@ def det_nrb_judge_axis_code(per_g, G, fault=None):
     else:
         term = "SURVIVES" if list(st.values()) == ["SURVIVES", "SURVIVES"] else \
             SEED.det_seedmem_scope_universal_check(list(st.values()))
-    past = {}
+    past, after = {}, {}
     gens = sorted(per_g)
     for g1, g2 in zip(gens[:-1], gens[1:]):
+        if g2 > t1:
+            s1 = det_nrb_judge_small(per_g[g1]["M"], per_g[g1]["missing"])
+            s2 = det_nrb_judge_small(per_g[g2]["M"], per_g[g2]["missing"])
+            after[f"{g1},{g2}"] = [s1, s2]                # touches the last material update: recorded apart
+            continue
         s1 = det_nrb_judge_small(per_g[g1]["M"], per_g[g1]["missing"])
         s2 = det_nrb_judge_small(per_g[g2]["M"], per_g[g2]["missing"])
         past[f"{g1},{g2}"] = "SURVIVES" if (s1, s2) == ("SURVIVES", "SURVIVES") else \
@@ -634,6 +714,7 @@ def det_nrb_judge_axis_code(per_g, G, fault=None):
     last = per_g.get(G["g_last"])
     return {"code": "X" if term == "X" else CODE[term], "state": term, "terminal_window": f"{t0},{t1}",
             "terminal_states": {str(g): v for g, v in st.items()}, "past_windows": past,
+            "windows_with_last_material_update": after,
             "any_past_window_small": any(v == "SURVIVES" for k, v in past.items() if k != f"{t0},{t1}"),
             "descriptor": desc,
             "last_material_update": None if last is None else {"generation": G["g_last"], "M": last["M"].j(),
@@ -658,16 +739,9 @@ def det_nrb_judge_descriptor(per_g, G):
     if bad:
         out.update({"D": None, "code": "END_UNAVAILABLE", "reason": ";".join(bad)})
         return out
-    D = I(dn(b["M"].lo - a["M"].hi), b["M"].mid - a["M"].mid, up(b["M"].hi - a["M"].lo))
-    out["D"] = D.j()
-    if D.hi < 0.0:
-        out["code"] = "END_LOWER"
-    elif D.lo > 0.0:
-        out["code"] = "END_HIGHER"
-    elif D.lo == 0.0 and D.hi == 0.0:
-        out["code"] = "END_EQUAL"
-    else:
-        out["code"] = "END_UNRESOLVED"
+    code_, lo, hi = det_nrb_judge_end_code(a["M"].lo, a["M"].hi, b["M"].lo, b["M"].hi)
+    out["D"] = {"lo": lo, "mid": b["M"].mid - a["M"].mid, "hi": hi}
+    out["code"] = code_
     return out
 
 
@@ -710,9 +784,7 @@ def det_nrb_judge_p2_validate(rows, codes, expected, G):
                 not all(math.isfinite(float(x)) for x in (a.M_lo, a.M_mid, a.M_hi, b.M_lo, b.M_mid, b.M_hi)):
             dcode = "END_UNAVAILABLE"
         else:
-            lo, hi = dn(b.M_lo - a.M_hi), up(b.M_hi - a.M_lo)
-            dcode = "END_LOWER" if hi < 0 else "END_HIGHER" if lo > 0 else "END_EQUAL" if (lo == 0 and hi == 0) \
-                else "END_UNRESOLVED"
+            dcode = det_nrb_judge_end_code(float(a.M_lo), float(a.M_hi), float(b.M_lo), float(b.M_hi))[0]
         if (rep.get("descriptor") or {}).get("code") != dcode:
             why.append(f"P2_DESCRIPTOR_RECOMPUTE:{axis}")
     return why
@@ -1007,6 +1079,8 @@ def det_nrb_judge_propagate(vwhy, scopes):
             if kind == "P1B_ROW_ACCOUNTING":
                 SEED.det_seedmem_scope_block(scopes["P1B_CORE"], w)
                 SEED.det_seedmem_scope_block(scopes["P1B_EXT"], w)
+            elif kind == "P1B_X_ROWS":
+                SEED.det_seedmem_scope_block(scopes["P1B_CORE" if f[1] == "core" else "P1B_EXT"], w)
             else:
                 k = int(f[2]) if len(f) > 2 and f[2].isdigit() else None
                 tgt = "P1B_CORE" if (k is not None and k <= 7) else "P1B_EXT"
@@ -1039,9 +1113,13 @@ def det_nrb_judge_decision(scopes, p2_disposition, descriptors, validity, incomp
     rows = []
     if incomplete:
         rows.append({"condition": "INCOMPLETE", "follow_up": "required run or output missing: no completion"})
+    for k, v in scopes.items():
+        if v.get("code") == "X":
+            rows.append({"condition": f"{k} X", "follow_up": "no pass, extension or physical-cause decision on this scope "
+                                                              "(prereg 10.3)", "blocked_by": v.get("blocked_by", [])[:5]})
     p1a, p1b_c, p1b_e = code("P1A"), code("P1B_CORE"), code("P1B_EXT")
     if p1a == "X":
-        rows.append({"condition": "P1(a) X", "follow_up": "no decision on this scope"})
+        pass                                          # recorded above with the other X scopes
     elif p1a != 0:
         rows.append({"condition": "P1(a) link failure", "follow_up": "investigate run / ledger / branch linkage offline"})
     elif p1b_c == 1 or p1b_e == 1:
@@ -1053,12 +1131,14 @@ def det_nrb_judge_decision(scopes, p2_disposition, descriptors, validity, incomp
     pub_x = any(c == "X" for c in pub_codes)
     if p2x:
         rows.append({"condition": "P2 X", "follow_up": "P2 inadmissible: not reported as a small-change shortfall"})
+    elif p1a == "X" or validity == "X":
+        pass
     elif p2_disposition == "NOT_CONVERGED":
         rows.append({"condition": "P2 not met", "follow_up": "report the stationarity.csv trajectory and the registered "
                      "endpoint descriptors / axis codes; iteration extension is a user decision",
                      "descriptors": descriptors})
-    if pub_x:
-        rows.append({"condition": "public comparison X", "follow_up": "no decision on that scope"})
+    if pub_x or validity == "X":
+        pass
     elif p2_disposition == "P2_SMALL_CHANGE" and pub_refuted:
         rows.append({"condition": "P2 survives, public comparison refuted",
                      "follow_up": "small change of the registered sample does not guarantee public agreement"})
@@ -1151,6 +1231,11 @@ def det_nrb_judge_analyze(n_run, e_run, r_run, prior_analysis, prior_selftest, e
     ex_why = det_nrb_judge_exports_check(Path(r_run) / "input/resolved_lumina.exports",
                                          Path(n_run) / "input/resolved_lumina.exports", r_run, n_run, outer)
     why += [f"N:EXPORTS:{w}" for w in ex_why["why"]]
+    if Path(n_run).resolve() != Path(r_run).resolve():
+        in_id = det_nrb_judge_input_identity(n_run)
+    else:                                            # preflight regression: the reference read as N (prereg 3.4)
+        in_id = {"why": [], "not_applicable": "reference run read as N (preflight regression); it is the identity source"}
+    why += [f"N:{w}" for w in in_id["why"]]
     incomplete = any(w.startswith(("N:RUN_NOT_SUCCESS", "N:RUN_FOOTER_MISSING", "N:LINK_CAPTURE_FILE_MISSING",
                                    "N:DUMP_GENERATIONS")) for w in N["why"])
     timing = {"inputs_s": time.time() - t0}
@@ -1168,12 +1253,13 @@ def det_nrb_judge_analyze(n_run, e_run, r_run, prior_analysis, prior_selftest, e
     p1b_rows, p1b_states = det_nrb_judge_p1b(N, deck, csob, lib, target["control"], fault)
     # level authority and P2
     cap_rows, cap_why, cap_status = det_nrb_judge_capture_check(N, keys, deck, csob, lib, fault)
-    p2_rows, p2_codes, p2_expected = det_nrb_judge_p2(N, keys, deck, csob, lib, cap_status, fault)
+    p2_rows, p2_codes, p2_expected, p2_contra = det_nrb_judge_p2(N, keys, deck, csob, lib, cap_status, fault)
     if FT(fault, "mixed_windows"):
         for ax, c in p2_codes.items():
             if c["any_past_window_small"]:
                 c["code"], c["state"] = 0, "SURVIVES"
-    p2_why = det_nrb_judge_p2_validate(p2_rows, p2_codes, p2_expected, G) + [w for w in cap_why]
+    p2_why = det_nrb_judge_p2_validate(p2_rows, p2_codes, p2_expected, G) + [w for w in cap_why] + \
+        [f"P2_LEVEL_CONTRADICTION:level:{Z}:{lev}:{s}:{g}:{n}" for Z, lev, s, g, n in p2_contra]
     # public ions (N generation g_obs; E', R' generation 7 alongside)
     pub_blocks = {Z: det_nrb_judge_public_block(public[Z], target["public_time"], fault) for Z in target["Z"]}
     ion_rows, ion_states = [], {}
@@ -1207,9 +1293,15 @@ def det_nrb_judge_analyze(n_run, e_run, r_run, prior_analysis, prior_selftest, e
     vwhy = det_nrb_judge_validate(p1a_rows, recall_rows, p1b_rows, keys, G, outer) + p2_why + ion_why + spec_why
     if FT(fault, "status_flip_all"):
         pass                                        # the flipped states are caught by P1A_STATUS_RECOMPUTE above
+    # closeout B1: the fixed 60-cell recall keeps its denominator (missing and X cells included); a failed
+    # inheritance adds NOT_IDENTIFIABLE but never hides an X or a counterexample of the recall
+    local_states = [r["status"] for r in recall_rows] or ["NOT_IDENTIFIABLE"]
+    if FT(fault, "recall_recalled_only"):
+        local_states = [r["status"] for r in recall_rows if r.get("recalled")] or ["NOT_IDENTIFIABLE"]
+    if not inherit["inherited"]:
+        local_states = local_states + ["NOT_IDENTIFIABLE"]
     scopes = {"P1A": SEED.det_seedmem_scope_set_code(p1a_states),
-              "P1A_LOCAL": SEED.det_seedmem_scope_set_code([r["status"] for r in recall_rows if r.get("recalled")] or
-                                                           ["NOT_IDENTIFIABLE"]),
+              "P1A_LOCAL": SEED.det_seedmem_scope_set_code(local_states),
               "P1B_CORE": SEED.det_seedmem_scope_set_code(p1b_states["core"]),
               "P1B_EXT": SEED.det_seedmem_scope_set_code(p1b_states["extension"] or ["NOT_IDENTIFIABLE"]),
               "SPECTRUM": {"code": "X" if spec_overall == "X" else CODE[spec_overall], "state": spec_overall,
@@ -1218,12 +1310,21 @@ def det_nrb_judge_analyze(n_run, e_run, r_run, prior_analysis, prior_selftest, e
         scopes[f"P2:{ax}"] = c
     for Z in target["Z"]:
         scopes[f"IONS:{Z}"] = SEED.det_seedmem_scope_set_code(ion_states.get(Z, []))
-    if not inherit["inherited"]:
-        scopes["P1A_LOCAL"] = {"code": 5, "state": "NOT_IDENTIFIABLE", "reason": "H-LOCAL not inherited: " +
-                               ";".join(inherit["why"]), "recall": scopes["P1A_LOCAL"]}
+    scopes["P1A_LOCAL"]["inheritance"] = "INHERITED" if inherit["inherited"] else "NOT_INHERITED:" + ";".join(inherit["why"])
     n_x = {"p1a": p1a_states.count("X"), "recall": sum(1 for r in recall_rows if r["status"] == "X"),
-           "p1b": sum(1 for v in p1b_states.values() for s in v if s == "X"),
-           "ions": sum(1 for v in ion_states.values() for s in v if s == "X")}
+           "p1b_core": p1b_states["core"].count("X"), "p1b_extension": p1b_states["extension"].count("X"),
+           "ions_14": ion_states.get(14, []).count("X"), "ions_16": ion_states.get(16, []).count("X")}
+    # closeout B3: an X row makes its scope X and the run inadmissible (prereg 6.2), routed to that scope only
+    for k_, nm in (("p1a", "P1A_X_ROWS"), ("recall", "P1A_RECALL_X_ROWS"), ("p1b_core", "P1B_X_ROWS:core"),
+                   ("p1b_extension", "P1B_X_ROWS:extension"), ("ions_14", "ION_X_ROWS:14"), ("ions_16", "ION_X_ROWS:16")):
+        if n_x[k_]:
+            vwhy.append(f"{nm}:{n_x[k_]}")
+    exp_local = SEED.det_seedmem_scope_universal_check([r["status"] for r in recall_rows] +
+                                                       ([] if inherit["inherited"] else ["NOT_IDENTIFIABLE"]))
+    if scopes["P1A_LOCAL"]["state"] != exp_local:
+        vwhy.append(f"P1A_RECALL_SET_RECOMPUTE:{scopes['P1A_LOCAL']['state']}!={exp_local}")
+    if scopes["P1A"]["state"] != SEED.det_seedmem_scope_universal_check(p1a_states):
+        vwhy.append("P1A_SET_RECOMPUTE")
     validity = "VALID" if not vwhy else "X"
     reasons = vwhy[:50]                              # stored messages only; propagation below consumes every finding
     scopes = det_nrb_judge_propagate(vwhy, scopes)
@@ -1267,12 +1368,77 @@ def det_nrb_judge_analyze(n_run, e_run, r_run, prior_analysis, prior_selftest, e
            "bytes_vs_reference": byte_cmp, "collision_authority": N["coll"],
            "solve_unit_authority": {k: v for k, v in N["sl"].items() if k not in ("unit", "size")},
            "registered_not_identifiable": {q: 5 for q in REGISTERED_5}, "registered_not_identifiable_reasons": REGISTERED_5,
-           "sample": sample_rec, "exports_check": ex_why, "x_counts": n_x, "timing_s": timing,
+           "sample": sample_rec, "exports_check": ex_why, "input_identity": in_id, "x_counts": n_x, "timing_s": timing,
+           "lib_build": lib_rec, "run_counters": N["counters"],
            "claim_ceiling": "finite-iteration state of the deterministic lane (MC transport bypassed); no production "
                             "promotion, no physical correctness, no seed independence, no cause attribution"}
     (out / "result.json").write_text(json.dumps(res, indent=1, default=str))
-    (out / "decision.json").write_text(json.dumps(decision, indent=1, default=str))
+    if FT(fault, "decision_descriptor_flip"):
+        d_ = json.loads(json.dumps(decision, default=str))
+        for row in d_["rows"]:
+            for ax, dsc in (row.get("descriptors") or {}).items():
+                dsc["code"] = "END_HIGHER" if dsc.get("code") != "END_HIGHER" else "END_LOWER"
+        (out / "decision.json").write_text(json.dumps(d_, indent=1, default=str))
+    else:
+        (out / "decision.json").write_text(json.dumps(decision, indent=1, default=str))
+    # stored-output check (closeout B3): the written files are read back and the axis states, descriptors and the
+    # decision recomputed from stationarity.csv; a disagreement makes the run X (files rewritten with the finding)
+    sw = det_nrb_judge_stored_check(out, G)
+    if sw:
+        res["validity"], res["reasons"] = "X", (res.get("reasons") or []) + sw[:20]
+        res["n_reasons"] = res.get("n_reasons", 0) + len(sw)
+        for k in res["codes"]:
+            if k.startswith("P2:"):
+                SEED.det_seedmem_scope_block(res["codes"][k], sw[0])
+        res["P2_disposition"] = "INADMISSIBLE"
+        decision = det_nrb_judge_decision(res["codes"], "INADMISSIBLE", descriptors, "X", incomplete)
+        (out / "result.json").write_text(json.dumps(res, indent=1, default=str))
+        (out / "decision.json").write_text(json.dumps(decision, indent=1, default=str))
     return res
+
+
+def det_nrb_judge_stored_check(out, G):
+    """re-read result.json, decision.json and stationarity.csv; recompute every axis' terminal state and descriptor
+    from the stored rows; the decision must carry the same validity, P2 disposition and descriptors."""
+    out = Path(out)
+    why = []
+    res = json.loads((out / "result.json").read_text())
+    dec = json.loads((out / "decision.json").read_text())
+    st = pd.read_csv(out / "stationarity.csv")
+    t0, t1 = G["terminal"]
+    for ax in ("ion", "ne", "jbar", "level"):
+        sub = {int(r.generation): r for r in st[st.axis == ax].itertuples()}
+
+        def small(r):
+            if r is None:
+                return "NOT_IDENTIFIABLE"
+            if r.M_lo >= P2_CRIT:
+                return "REFUTED"
+            if int(r.missing):
+                return "NOT_IDENTIFIABLE"
+            return "SURVIVES" if r.M_hi < P2_CRIT else "UNRESOLVED"
+        one = [small(sub.get(t0)), small(sub.get(t1))]
+        fin = "SURVIVES" if one == ["SURVIVES", "SURVIVES"] else SEED.det_seedmem_scope_universal_check(one)
+        rc = (res.get("codes") or {}).get(f"P2:{ax}", {})
+        if rc.get("code") != "X" and rc.get("state") != fin:
+            why.append(f"P2_STORED_STATE:{ax}")
+        a, b = sub.get(G["start"]), sub.get(G["g_obs"])
+        if a is None or b is None or int(a.missing) or int(b.missing) or \
+                not all(math.isfinite(float(x)) for x in (a.M_lo, a.M_mid, a.M_hi, b.M_lo, b.M_mid, b.M_hi)):
+            dcode = "END_UNAVAILABLE"
+        else:
+            dcode = det_nrb_judge_end_code(float(a.M_lo), float(a.M_hi), float(b.M_lo), float(b.M_hi))[0]
+        if ((res.get("P2_descriptors") or {}).get(ax) or {}).get("code") != dcode:
+            why.append(f"P2_STORED_DESCRIPTOR:result:{ax}")
+        for row in dec.get("rows", []):
+            dd = (row.get("descriptors") or {}).get(ax)
+            if dd is not None and dd.get("code") != dcode:
+                why.append(f"P2_STORED_DESCRIPTOR:decision:{ax}")
+    if dec.get("validity") != res.get("validity"):
+        why.append("STORED_DECISION_VALIDITY")
+    if dec.get("p2_disposition") not in (res.get("P2_disposition"), "INADMISSIBLE"):
+        why.append("STORED_DECISION_P2_DISPOSITION")
+    return why
 
 
 # ------------------------------------------------------------------ exports / staging (prereg 2.2, 3.2)
@@ -1524,6 +1690,20 @@ def det_nrb_judge_regress(e_run, r_run, prior_analysis, prior_selftest, expectat
     return rec
 
 
+def det_nrb_judge_input_listing(R):
+    """explicit input list of a reference run: the staged files and every file under the staged directories."""
+    R = Path(R)
+    inputs = {}
+    for f in STAGED_FILES:
+        p = R / "input" / f
+        inputs[f] = {"sha256": sha(p), "bytes": p.stat().st_size} if p.is_file() and not p.is_symlink() else None
+    for d in STAGED_DIRS:
+        for p in sorted((R / "input" / d).rglob("*")):
+            if p.is_file():
+                inputs[str(p.relative_to(R / "input"))] = {"sha256": sha(p), "bytes": p.stat().st_size}
+    return inputs
+
+
 def det_nrb_judge_preflight(a, out):
     out = Path(out)
     out.mkdir(parents=True, exist_ok=False)
@@ -1546,14 +1726,7 @@ def det_nrb_judge_preflight(a, out):
     if chain["outer_iterations_R"] != "6" or chain["footer_iterations_R"] != "6" or chain["terminal_state_R"] != "SUCCESS":
         rec["why"].append("REFERENCE_RUN_NOT_6_SUCCESS")
     # 3 explicit input list with hashes
-    inputs = {}
-    for f in STAGED_FILES:
-        p = R / "input" / f
-        inputs[f] = {"sha256": sha(p), "bytes": p.stat().st_size} if p.is_file() and not p.is_symlink() else None
-    for d in STAGED_DIRS:
-        for p in sorted((R / "input" / d).rglob("*")):
-            if p.is_file():
-                inputs[str(p.relative_to(R / "input"))] = {"sha256": sha(p), "bytes": p.stat().st_size}
+    inputs = det_nrb_judge_input_listing(R)
     rec["checks"]["reference_inputs"] = {"n_files": len(inputs), "missing": [k for k, v in inputs.items() if v is None],
                                          "total_bytes": sum(v["bytes"] for v in inputs.values() if v)}
     (out / "reference_inputs.json").write_text(json.dumps(inputs, indent=1))
@@ -1607,22 +1780,33 @@ def det_nrb_judge_preflight(a, out):
 
 
 # ------------------------------------------------------------------ fixtures (direct tests, prereg 8.2)
-FX_SHELLS, FX_NS, FX_OUTER, FX_R = SEED.FX_SHELLS, SEED.FX_NS, 9, 0.3
+FX_SHELLS, FX_NS, FX_OUTER, FX_R = SEED.FX_SHELLS, SEED.FX_NS, OUTER, 0.3
 FX_TEXP = SEED.FX_TEXP
 FX_TARGET = {"Z": (14, 16), "ion": 2, "control": 0, "counts": {14: 6, 16: 2}, "n_keys": 8, "n_levels": 12,
              "shells": FX_SHELLS, "outer": FX_OUTER, "public_time": "19.480",
              "vmid_lumina": {10: 1000.0, 15: 1500.0}, "vmid_public": {10: 1001.0, 15: 1499.0}}
+SANDBOX = "SELFTEST_SANDBOX.json"
 
 
-def det_nrb_judge_fx_run(root, tag, outer, lib, csob, conv=FX_R, ion_series=None, mutate=None, nrb=True,
-                         pub_factor=None, spec_scale=1.0, binary_text="binary\n"):
-    """one fixture run of `outer` iterations: W5 calls 1..outer+1 from populations and J_c approaching a limit as
-    (1 + conv^g), dumps for populations 3..outer+2, the observer capture at generation outer+1, the final publication,
-    spectrum, footer and identity files."""
-    run = Path(root) / tag
-    G = det_nrb_judge_gens(outer)
+def det_nrb_judge_target_json(t):
+    return {k: ({str(a): b for a, b in v.items()} if isinstance(v, dict) else list(v) if isinstance(v, tuple) else v)
+            for k, v in t.items()}
+
+
+def det_nrb_judge_target_from_json(j):
+    t = dict(j)
+    t["Z"], t["shells"] = tuple(t["Z"]), tuple(t["shells"])
+    for k in ("counts", "vmid_lumina", "vmid_public"):
+        t[k] = {int(a): b for a, b in t[k].items()}
+    return t
+
+
+def det_nrb_judge_fx_inputs(run, outer, nrb=True, binary_text="binary\n"):
+    """fixture run inputs (deck, atomic files, profile, binary, identities) and resolved exports of `outer` iterations
+    with the seven path keys under the run root."""
+    run = Path(run)
     (run / "input").mkdir(parents=True)
-    lv = SEED.det_seedmem_scope_fx_deck(run / "input/model")
+    SEED.det_seedmem_scope_fx_deck(run / "input/model")
     (run / "input/global_atomic").mkdir()
     (run / "input/global_atomic/topion_levels.csv").write_text("x\n")
     (run / "input/global_atomic/ionization_reference.csv").write_text("x\n")
@@ -1637,10 +1821,6 @@ def det_nrb_judge_fx_run(root, tag, outer, lib, csob, conv=FX_R, ion_series=None
     (run / "input/binary.sha256").write_text(bsha + "\n")
     (run / "input/run_build_identity.json").write_text(json.dumps({"schema": "CMFGEN_TWIN_RUN_BUILD_V1_SELFTEST",
                                                                    "binary": {"sha256": bsha}}))
-    (run / "work/physics_comparison").mkdir(parents=True)
-    (run / "work/det_obs_capture").mkdir(parents=True)
-    deck = SEED.det_seedmem_scope_deck(run / "input/model", (14, 16), 2)
-    at = deck["at"]
     ex = ['declare -x LUMINA_ENV_STRICT="1"', 'declare -x LUMINA_PURE_CMFGEN="1"', 'declare -x LUMINA_DET_TRANSACTIONAL="1"',
           f'declare -x {ITER_KEY}="{outer}"', 'declare -x LUMINA_NLTE_COLL_FIX="1"', 'declare -x LUMINA_NLTE_COLL_FLOOR="0"',
           'declare -x LUMINA_SUPER_LEVELS="1"', f'declare -x LUMINA_SUPER_CUTOFF="{SEED.FX_CUTOFF}"',
@@ -1652,17 +1832,33 @@ def det_nrb_judge_fx_run(root, tag, outer, lib, csob, conv=FX_R, ion_series=None
           f'declare -x LUMINA_IONIZATION_REFERENCE_FILE="{run}/input/global_atomic/ionization_reference.csv"',
           f'declare -x LUMINA_TOPION_LEVELS_FILE="{run}/input/global_atomic/topion_levels.csv"',
           f'declare -x LUMINA_PHYSICS_COMPARISON_DIR="{run}/work/physics_comparison"']
-    if nrb:
-        ex += ['declare -x LUMINA_BB_NRB="1"', 'declare -x LUMINA_A210_SPRODUCER_CAPTURE="1"']
-    else:
-        ex += ['declare -x LUMINA_A210_SPRODUCER_CAPTURE="0"']
+    ex += ['declare -x LUMINA_BB_NRB="1"', 'declare -x LUMINA_A210_SPRODUCER_CAPTURE="1"'] if nrb else \
+        ['declare -x LUMINA_A210_SPRODUCER_CAPTURE="0"']
     (run / "input/resolved_lumina.exports").write_text("\n".join(sorted(ex)) + "\n")
-    lumped = sum(1 for t in lv if t[2] >= SEED.FX_CUTOFF)
+    (run / "STAGE_IDENTITY.txt").write_text(f"schema=NRB_JUDGE_STAGE_V1\nrun={run}\nouter_iterations={outer}\n"
+                                            f"run_binary_sha256={bsha}\n")
+    return run
+
+
+def det_nrb_judge_fx_outputs(run, outer, lib, csob, conv=FX_R, ion_series=None, ne_factor=None, spec_scale=1.0):
+    """fixture run outputs as the production would leave them after `outer` iterations: W5 calls 1..outer+1 from
+    populations that obey the two-level model for lines 0, 1, 4 (others set directly), dumps for populations
+    3..outer+2, the observer capture at generation outer+1, status, publication, spectrum, logs and footer."""
+    run = Path(run)
+    G = det_nrb_judge_gens(outer)
+    ex = RATES.det_siiii_rates_exports(run)
+    nrb = ex.get("LUMINA_BB_NRB") == "1"
+    (run / "work/physics_comparison").mkdir(parents=True, exist_ok=True)
+    (run / "work/det_obs_capture").mkdir(parents=True, exist_ok=True)
+    deck = SEED.det_seedmem_scope_deck(run / "input/model", (14, 16), 2)
+    at = deck["at"]
+    lv = pd.read_csv(run / "input/model/levels.csv")
+    lumped = int((lv.level_number >= SEED.FX_CUTOFF).sum())
     (run / "stdout.log").write_text(
         f"  Levels: {len(lv)} loaded (super_level column present, super-levels active)\n"
         f"  [ARTIS super-cutoff] K={SEED.FX_CUTOFF}: {lumped} levels lumped -> per-ion explicit + 1 super-level\n"
-        f"    Z=14 ion=2: {sum(1 for t in lv if t[:2] == (14, 2))} levels\n"
-        f"    Z=16 ion=2: {sum(1 for t in lv if t[:2] == (16, 2))} levels\n"
+        f"    Z=14 ion=2: {int(((lv.atomic_number == 14) & (lv.ion_number == 2)).sum())} levels\n"
+        f"    Z=16 ion=2: {int(((lv.atomic_number == 16) & (lv.ion_number == 2)).sum())} levels\n"
         f"  [NLTE] Super-levels: ACTIVE ({len(lv)} FL -> {len(lv) - 1} SL across ions)\n"
         f"[CMFGEN] pure deterministic radiation driver: {FX_NS} shells, 1234 bins, 58 rays, {outer} outer iters, 24 ALI/iter, "
         f"t_exp=1.6831e+06 s\n[DET-TRANSACTIONAL] status=COMPLETE\n")
@@ -1671,8 +1867,9 @@ def det_nrb_judge_fx_run(root, tag, outer, lib, csob, conv=FX_R, ion_series=None
         se += [f"[BB-NRB] iter={i} operator=2 armed=1 captured=1 n_shells={FX_NS} skip_z=none" for i in range(outer)]
     (run / "stderr.log").write_text("\n".join(se) + "\n")
     f = lambda g: 1.0 + conv ** g                                                       # noqa: E731
+    nf = ne_factor or (lambda g: 5.0e13 * f(g))
     Te = np.array([1.0e5 + 100.0 * s for s in range(FX_NS)])
-    ne = {g: np.array([5.0e13 * f(g) * (1.0 + 0.001 * s) for s in range(FX_NS)]) for g in range(2, G["g_last"] + 1)}
+    ne = {g: np.array([nf(g) * (1.0 + 0.001 * s) for s in range(FX_NS)]) for g in range(2, G["g_last"] + 1)}
     if ion_series is None:
         ion_series = {(Z, q): {g: 1.0e6 * (1 + Z / 100 + q) * f(g) for g in G["pops"]} for Z, q in ION_QTY}
     pops, rows = {}, {}
@@ -1738,6 +1935,7 @@ def det_nrb_judge_fx_run(root, tag, outer, lib, csob, conv=FX_R, ion_series=None
         (run / f"work/physics_comparison/physics_DET_iter{k:04d}.manifest.json").write_text(json.dumps(
             {"schema": "LUMINA_PHYSICS_COMPARISON_V1", "transaction_status": "COMMITTED", "te_lane": "FIXED_T",
              "iteration": k, "population_generation": g, "radiation_generation": g - 1, "te_generation": g - 1,
+             "opacity_generation": 2 * g - 3, "emissivity_generation": 2 * g - 3,
              "shell_file": f"physics_DET_iter{k:04d}.shell.csv", "ion_file": f"physics_DET_iter{k:04d}.ion.csv"}))
         with open(run / f"work/physics_comparison/physics_DET_iter{k:04d}.shell.csv", "w") as fh:
             fh.write("shell_id,T_e_K,n_e_cm3\n" + "".join(f"{s},{float(Te[s])!r},{float(ne[g][s])!r}\n" for s in range(FX_NS)))
@@ -1749,8 +1947,7 @@ def det_nrb_judge_fx_run(root, tag, outer, lib, csob, conv=FX_R, ion_series=None
                 vals = []
                 for Z in (14, 16):
                     q1, q2 = ion_series[(Z, 1)][g], ion_series[(Z, 2)][g]
-                    tot = 4.0e6 * (1 + Z / 100)
-                    vals += [tot, 0.9 * q1, 1.1 * q2, q1, q2]
+                    vals += [4.0e6 * (1 + Z / 100), 0.9 * q1, 1.1 * q2, q1, q2]
                 fh.write(f"{g},{s}," + ",".join(f"{float(v)!r}" for v in vals) + "\n")
     capd = run / "work/det_obs_capture"
     recs = []
@@ -1767,7 +1964,8 @@ def det_nrb_judge_fx_run(root, tag, outer, lib, csob, conv=FX_R, ion_series=None
     (capd / "meta.txt").write_text(f"time_explosion={FX_TEXP.hex()}\nT_inner={(10020.0).hex()}\ninner_bb_scale={(1.0).hex()}\n"
                                    f"material_generation={g_obs}\nrad_generation={g_obs}\niter={G['iter_last']}\n")
     (capd / "manifest.json").write_text(json.dumps({"generations": {"material": g_obs, "nlte_population_committed": g_obs,
-                                                                   "radiation": g_obs, "iter": G["iter_last"]},
+                                                                   "radiation": g_obs, "iter": G["iter_last"],
+                                                                   "tau_required": 2 * g_obs, "tau_computed": 2 * g_obs},
                                                    "transaction": "COMMITTED",
                                                    "census": {"mapped_B_fallback": 0, "consumed": len(recs), "mapped": len(recs)},
                                                    "files": {"lines.bin": {"sha256": sha(capd / "lines.bin")}}}))
@@ -1780,27 +1978,25 @@ def det_nrb_judge_fx_run(root, tag, outer, lib, csob, conv=FX_R, ion_series=None
     flux = spec_scale * 1.0e40 * (lam / 5000.0) ** -2.5 * np.exp(-((lam - 4500.0) / 6000.0) ** 2)
     with open(run / "work/lumina_spectrum_det_obs.csv", "w") as fh:
         fh.write("wavelength_angstrom,flux\n" + "".join(f"{float(x)!r},{float(y)!r}\n" for x, y in zip(lam, flux)))
+    bsha = sha(run / "input/lumina_cuda")
     (run / "RUN_FOOTER.txt").write_text(f"schema=NRB_JUDGE_RUN_V1\njob_id=1\nouter_iterations={outer}\nbinary_sha256={bsha}\n"
                                         f"elapsed_seconds=10\nmodel_rc=0\nterminal_state=SUCCESS\n")
-    (run / "STAGE_IDENTITY.txt").write_text(f"schema=NRB_JUDGE_STAGE_V1\nrun={run}\nouter_iterations={outer}\n"
-                                            f"run_binary_sha256={bsha}\n")
     (run / "fixture_truth.json").write_text(json.dumps({f"{k[0]}:{k[1]}:{k[2]}:{k[3]}": v for k, v in pops.items()}))
-    if mutate:
-        mutate(run)
-    return run, ion_series
+    return run
 
 
 def det_nrb_judge_fx_public(base, run_N, target, pub_factor=None, spec_scale=1.0):
     """public fixtures: ion-fraction files whose 19.480 block carries the N generation-g_obs fractions (times a
-    per-cell factor), a spectrum file with the N spectrum (times a scale) at 19.48 d, an expectations file."""
+    per-cell factor) and a 17.710 decoy block, a spectrum file with the N spectrum at 19.48 d, an expectations file."""
     base = Path(base)
     G = det_nrb_judge_gens(target["outer"])
     dump, _ = det_nrb_judge_ion_dump(run_N, G["g_obs"], target["shells"])
     files = {}
-    for Z, nm, cols in ((14, "si", "si"), (16, "s", "s")):
+    for Z, nm in ((14, "si"), (16, "s")):
         lines = ["#NTIMES:     2", "#NSTAGES:     5", "#TIMES[d]:    17.710   19.480", "#"]
         for t in ("17.710", "19.480"):
-            lines += [f"#TIME:    {t}", "#NVEL: 4", f"#vel_mid[km/s]           {cols}0           {cols}1           {cols}2           {cols}3           {cols}4"]
+            lines += [f"#TIME:    {t}", "#NVEL: 4", f"#vel_mid[km/s]           {nm}0           {nm}1           {nm}2           "
+                      f"{nm}3           {nm}4"]
             vrows = [(target["vmid_public"][s], s) for s in target["shells"]] + [(1200.0, None), (1700.0, None)]
             for v, s in sorted(vrows):
                 if s is None:
@@ -1809,10 +2005,8 @@ def det_nrb_judge_fx_public(base, run_N, target, pub_factor=None, spec_scale=1.0
                     r = dump["rows"][s]
                     f1 = r[f"Z{Z}_nlte_q1_cm3"] / r[f"Z{Z}_element_total_cm3"]
                     f2 = r[f"Z{Z}_nlte_q2_cm3"] / r[f"Z{Z}_element_total_cm3"]
-                    k = 1.0 if (pub_factor is None or t != "19.480") else pub_factor.get((Z, s), 1.0)
-                    if t != "19.480":
-                        k = 3.0
-                    fr = [1e-99, f1 * k, f2 * k, 1e-3, 1e-99]
+                    k = 3.0 if t != "19.480" else (pub_factor or {}).get((Z, s), 1.0)
+                    fr = [1e-99, max(f1 * k, 1e-30), max(f2 * k, 1e-30), 1e-3, 1e-99]
                 lines.append(f"    {v:.6E}   " + "   ".join(f"{x:.4E}" for x in fr))
         p = base / f"ionfrac_{nm}_fx.txt"
         p.write_text("\n".join(lines) + "\n")
@@ -1828,20 +2022,22 @@ def det_nrb_judge_fx_public(base, run_N, target, pub_factor=None, spec_scale=1.0
         "abs_d_UV2500_max": {"lo": 0.3065, "mid": 0.3065384957773474, "hi": 0.3066},
         "abs_d_keep4_max": 0.05, "R8_below": {"lo": 0.2818, "mid": 0.2818388065975096, "hi": 0.2819}}}}}
     (base / "expectations.json").write_text(json.dumps(exp))
-    (base / "result.json").write_text(json.dumps({"spectrum_summary": {}}))
     files["expectations"] = str(base / "expectations.json")
     return files
 
 
-def det_nrb_judge_fx_prior(base, run_R, lib_rec, keys):
-    """fixture 'prior analysis' (A) and 'prior selftest' with the inheritance identity of this library build."""
+def det_nrb_judge_fx_prior(base, lib_rec, keys, bad_source=False):
+    """fixture 'prior analysis' (A) and 'prior selftest' carrying the inheritance identity of this library build."""
     A = Path(base) / "prior/analysis"
     A.mkdir(parents=True)
     (A / "sample.json").write_text(json.dumps({"schema": "DET_SEEDMEM_SCOPE_SAMPLE_V2", "n_keys": len(keys),
                                                "keys": [list(k) for k in keys]}))
     (A / "result.json").write_text(json.dumps({"validity": "VALID", "codes": {"H-LOCAL_record": {
         "code": 0, "state": "SURVIVES", "cells": 2550, "eligible_refuted_cells": 0, "x_cells": 0}}}))
-    (A.parent / "manifest.json").write_text(json.dumps({"lib": {"sources_sha256": lib_rec["sources_sha256"]}}))
+    src_sha = dict(lib_rec["sources_sha256"])
+    if bad_source:
+        src_sha["line_net_rate.c"] = "0" * 64
+    (A.parent / "manifest.json").write_text(json.dumps({"lib": {"sources_sha256": src_sha}}))
     st = Path(base) / "prior/selftest"
     st.mkdir(parents=True)
     (st / "selftest.json").write_text(json.dumps({"readout_sha256": "fixture", "failures": 0, "cases": [
@@ -1849,21 +2045,57 @@ def det_nrb_judge_fx_prior(base, run_R, lib_rec, keys):
     return str(A), str(st)
 
 
-def det_nrb_judge_fx(base, lib, lib_rec, csob, outer=FX_OUTER, mutate_N=None, conv=FX_R, ion_series=None, pub_factor=None,
-                     spec_scale=1.0, nrb=True, spec_mutate=None):
-    """the full fixture set: N (outer), R (6) and E (6, off) runs, public files, prior analysis / selftest."""
+def det_nrb_judge_cli(args):
+    """the readout as a separate process (the real CLI and its exit status)."""
+    p = subprocess.run([sys.executable, "-B", str(Path(__file__).resolve())] + [str(x) for x in args],
+                       capture_output=True, text=True)
+    return p.returncode, p.stdout[-3000:], p.stderr[-3000:]
+
+
+def det_nrb_judge_fx(base, lib, csob, lib_rec, runner, conv=FX_R, ion_series=None, ne_factor=None, pub_factor=None,
+                     spec_scale=1.0, mutate_N=None, mutate_R=None, prior_bad_source=False, profile="h200x2"):
+    """the full fixture set: R (6 iterations, NRB) and E (6, off) runs, N staged from R by the stage CLI and given the
+    outputs of the registered 12 iterations, the stage's preflight record, public files, prior analysis / selftest."""
     base = Path(base)
     base.mkdir(parents=True)
-    runs = {}
-    runs["N"], ion_N = det_nrb_judge_fx_run(base, "N", outer, lib, csob, conv, ion_series, mutate_N, nrb, spec_scale=spec_scale)
-    runs["R"], _ = det_nrb_judge_fx_run(base, "R", 6, lib, csob, conv, None, None, True, binary_text="binary\n")
-    runs["E"], _ = det_nrb_judge_fx_run(base, "E", 6, lib, csob, conv, None, None, False, binary_text="binary\n")
+    R = det_nrb_judge_fx_inputs(base / "R", 6, True)
+    det_nrb_judge_fx_outputs(R, 6, lib, csob, conv)
+    E = det_nrb_judge_fx_inputs(base / "E", 6, False)
+    det_nrb_judge_fx_outputs(E, 6, lib, csob, conv)
+    pre = base / "pre"
+    pre.mkdir()
+    (pre / "offline.json").write_text(json.dumps({"schema": "DET_NRB_JUDGE_OFFLINE_V1", "submit_allowed": True,
+                                                  "fixture": True}))
+    (pre / "reference_inputs.json").write_text(json.dumps(det_nrb_judge_input_listing(R)))
+    N = base / "N"
+    rc, so, se = det_nrb_judge_cli(["stage", "--reference-run", R, "--preflight", pre, "--gpu-profile", profile,
+                                    "--runner", runner, "--run", N])
+    if rc != 0:
+        raise RuntimeError(f"FIXTURE_STAGE_FAILED rc={rc} {se[-500:]}")
+    det_nrb_judge_fx_outputs(N, FX_OUTER, lib, csob, conv, ion_series, ne_factor, spec_scale)
     keys = sorted((16 if line == 4 else 14, line, s) for line in (0, 1, 3, 4) for s in FX_SHELLS)
-    public = det_nrb_judge_fx_public(base, runs["N"], FX_TARGET, pub_factor, spec_scale)
-    if spec_mutate:
-        spec_mutate(runs["N"])                      # after the public file: the N spectrum alone moves
-    A, st = det_nrb_judge_fx_prior(base, runs["R"], lib_rec, keys)
-    return runs, public, A, st, keys
+    # the public files come from the unedited N; an edit applied afterwards is a difference from the public run
+    public = det_nrb_judge_fx_public(base, N, FX_TARGET, pub_factor, spec_scale)
+    if mutate_R:
+        mutate_R(R)
+    if mutate_N:
+        mutate_N(N)
+    A, st = det_nrb_judge_fx_prior(base, lib_rec, keys, prior_bad_source)
+    return {"N": N, "R": R, "E": E, "pre": pre, "public": public, "A": A, "st": st, "keys": keys}
+
+
+def det_nrb_judge_w5_edit(run, fn):
+    """rewrite the fixture W5 ledger row by row; fn(fields) returns the new field list or None to drop the row."""
+    p = Path(run) / "work/w5_lines.csv"
+    lines = p.read_text().split("\n")
+    out = [lines[0]]
+    for ln in lines[1:]:
+        if not ln:
+            continue
+        f = fn(ln.split(","))
+        if f is not None:
+            out.append(",".join(f))
+    p.write_text("\n".join(out) + "\n")
 
 
 def det_nrb_judge_selftest_cases(base, src, runner, prior_selftest):
@@ -1872,264 +2104,397 @@ def det_nrb_judge_selftest_cases(base, src, runner, prior_selftest):
     lib_rec = SEED.det_seedmem_scope_build_lib(src, base / "lib")
     lib = SEED.det_seedmem_scope_Lib(lib_rec["lib"])
     csob = SEED.det_seedmem_scope_csob(src)
+    G = det_nrb_judge_gens(FX_OUTER)
 
-    def case(name, bundle, got, want, fault=None, results=(), kind="NEW"):
+    def case(name, bundle, got, want, fault=None, runs=(), kind="NEW"):
         ok = got == want
-        res.append({"case": name, "bundle": bundle, "kind": kind, "fault": fault, "pass": bool(ok), "got": str(got)[:700],
-                    "want": str(want)[:700],
-                    "runs": [{"validity": r.get("validity"), "analyze_rc_equivalent": 0 if r.get("validity") == "VALID" else 2,
-                              "reasons": [str(x)[:160] for x in (r.get("reasons") or [])[:6]]} for r in results]})
-        print(f"[{'PASS' if ok else 'FAIL'}] ({bundle}) {name}: got {str(got)[:240]} want {str(want)[:240]}", flush=True)
+        res.append({"case": name, "bundle": bundle, "kind": kind, "fault": fault, "pass": bool(ok), "got": str(got)[:900],
+                    "want": str(want)[:900],
+                    "runs": [{"case_dir": r_.get("dir"), "cli_rc": r_.get("rc"), "validity": r_.get("validity"),
+                              "injection": r_.get("injection"), "reasons": [str(x)[:160] for x in (r_.get("reasons") or [])[:6]]}
+                             for r_ in runs]})
+        print(f"[{'PASS' if ok else 'FAIL'}] ({bundle}) {name}: got {str(got)[:260]} want {str(want)[:260]}", flush=True)
 
-    def run(name, fault=None, mutate_N=None, target=None, **kw):
-        runs, public, A, st, keys = det_nrb_judge_fx(base / name / "in", lib, lib_rec, csob, mutate_N=mutate_N, **kw)
-        tgt = target or FX_TARGET
-        r = det_nrb_judge_analyze(runs["N"], runs["E"], runs["R"], A, st, public["expectations"], src, public,
-                                  base / name / "out", base / name / "lib", tgt, fault)
-        return r, base / name / "out", runs, public, A, st
+    def analyze(name, fault=None, target=FX_TARGET, injection=None, **fxkw):
+        """build the fixtures, write the selftest sandbox (fault and fixture target), run the analyze CLI."""
+        d = base / name
+        fx = det_nrb_judge_fx(d / "in", lib, csob, lib_rec, runner, **fxkw)
+        (d / SANDBOX).write_text(json.dumps({"schema": "DET_NRB_JUDGE_SELFTEST_SANDBOX_V1", "fault": fault,
+                                             "target": det_nrb_judge_target_json(target)}))
+        pub = fx["public"]
+        rc, so, se = det_nrb_judge_cli(
+            ["analyze", "--prereg", P / PREREG, "--run", fx["N"], "--baseline-run", fx["E"], "--reference-run", fx["R"],
+             "--prior-analysis", fx["A"], "--prior-selftest", fx["st"], "--spectral-expectations", pub["expectations"],
+             "--production-source", src, "--public-spectrum", pub["spectrum"], "--public-si", pub[14], "--public-s", pub[16],
+             "--selftest", d / "no_selftest", "--out", d / "out"])
+        rp = d / "out/analysis/result.json"
+        r = json.loads(rp.read_text()) if rp.exists() else {"validity": "NO_RESULT", "stderr": se[-800:]}
+        r.update({"rc": rc, "dir": str(d), "injection": injection or fault, "_out": d / "out/analysis", "_fx": fx})
+        return r
 
     def has(r, token):
         return r.get("validity") == "X" and any(token in str(w) for w in (r.get("reasons") or []))
 
-    G = det_nrb_judge_gens(FX_OUTER)
-    # ---- clean
-    r0, o0, runs0, pub0, A0, st0 = run("clean")
-    p1a = pd.read_csv(o0 / "p1_rates.csv")
-    p1b = pd.read_csv(o0 / "p1_source_1206.csv")
-    st_ = pd.read_csv(o0 / "stationarity.csv")
-    ions = pd.read_csv(o0 / "ion_fraction.csv")
-    c = r0.get("codes", {})
-    case("clean (outer 9): VALID; P1(a) 0 over 8 keys x calls 2-10 (every cell NRB_BRACKET); H-LOCAL inherited and the "
-         "18-cell recall invariant; P1(b) control survives in core 3-7 and extension 8-10; P2 four axes small in the "
-         "terminal window (9,10) -> P2_SMALL_CHANGE; public ions and spectrum survive", "0 clean",
-         (r0["validity"], c.get("P1A", {}).get("code"), int((p1a[p1a.kind != "RECALL"].branch == "NRB_BRACKET").sum()),
-          c.get("P1A_LOCAL", {}).get("code"), r0.get("P1A_H_LOCAL_inheritance", {}).get("inherited"),
-          c.get("P1B_CORE", {}).get("code"), c.get("P1B_EXT", {}).get("code"), r0.get("P2_disposition"),
-          [c[f"P2:{ax}"]["code"] for ax in ("ion", "ne", "jbar", "level")], c.get("IONS:14", {}).get("code"),
-          c.get("IONS:16", {}).get("code"), c.get("SPECTRUM", {}).get("code")),
-         ("VALID", 0, 8 * len(G["calls"]), 0, True, 0, 0, "P2_SMALL_CHANGE", [0, 0, 0, 0], 0, 0, 0), results=[r0])
-    case("clean: generation linkage — INIT call 1 excluded, 8 x 9 = 72 ordinary cells consuming material 3-11, P1(b) rows "
-         "3-10 with material = call, the observed material 10 (iter0007) and the last update 11 kept apart in P2",
-         "3 generation linkage",
+    def code(r, k):
+        return ((r.get("codes") or {}).get(k) or {}).get("code")
+
+    def dec(r):
+        p_ = r["_out"] / "decision.json"
+        return json.loads(p_.read_text()) if p_.exists() else {}
+
+    def csv(r, nm):
+        return pd.read_csv(r["_out"] / nm)
+
+    # ---- 0 clean (registered 12 iterations: observation 13, last update 14)
+    r0 = analyze("clean")
+    p1a = csv(r0, "p1_rates.csv")
+    p1b = csv(r0, "p1_source_1206.csv")
+    st0 = csv(r0, "stationarity.csv")
+    io0 = csv(r0, "ion_fraction.csv")
+    case("clean (12 iterations): CLI rc 0, VALID; P1(a) 0 on 8 keys x calls 2-13 (96 cells NRB_BRACKET); fixed recall 24 "
+         "cells invariant and H-LOCAL inherited; P1(b) core 3-7 and extension 8-13 survive; P2 four axes small in the "
+         "terminal window (12,13) -> P2_SMALL_CHANGE; public ions and spectrum survive", "0 clean",
+         (r0["rc"], r0.get("validity"), code(r0, "P1A"), int((p1a[p1a.kind != "RECALL"].branch == "NRB_BRACKET").sum()),
+          code(r0, "P1A_LOCAL"), (r0.get("P1A_recall") or {}).get("cells"), code(r0, "P1B_CORE"), code(r0, "P1B_EXT"),
+          r0.get("P2_disposition"), [code(r0, f"P2:{ax}") for ax in ("ion", "ne", "jbar", "level")], code(r0, "IONS:14"),
+          code(r0, "IONS:16"), code(r0, "SPECTRUM")),
+         (0, "VALID", 0, 96, 0, 24, 0, 0, "P2_SMALL_CHANGE", [0, 0, 0, 0], 0, 0, 0), runs=[r0])
+    bts = (r0.get("bytes_vs_reference") or {}).get("summary", {})
+    case("generation linkage (clean, 12 iterations): INIT call 1 excluded, ordinary calls 2-13 consuming material 3-14, "
+         "P1(b) rows 3-13 with material = call, ion / n_e changes 4-14 and J-bar / level 4-13, terminal window (12,13), "
+         "last material update 14 kept apart, ion fractions read at generation 13 from iter0010, the capture counters "
+         "(tau 26 = 26) recorded, and the generation 3-7 dumps byte-identical to the reference", "3 generation linkage",
          (sorted(set(p1a[p1a.kind != "RECALL"].call.astype(int))), sorted(set(p1b.call.astype(int))),
-          bool((p1b.material_generation == p1b.call).all()), G["g_obs"], G["g_last"],
-          sorted(set(st_[st_.axis == "ion"].generation.astype(int))), sorted(set(st_[st_.axis == "jbar"].generation.astype(int))),
-          r0["P2_last_material_update"]["ion"]["generation"], int(ions[(ions.run == "N") & (ions.ion != "III/II")].generation.iloc[0])),
-         (G["calls"], G["p1b_core"] + G["p1b_ext"], True, 10, 11, list(range(4, 12)), list(range(4, 11)), 11, 10),
-         results=[r0])
-    # ---- 1 single change and runner
-    ref = runs0["R"]
-    ref_lines = det_nrb_judge_exports_lines(ref / "input/resolved_lumina.exports")
-    exp_chk = {}
-    for fl in (None, "nrb_off", "capture_off", "iter6", "iter13", "extra_env"):
-        d = base / f"exports_{fl}"
-        d.mkdir(parents=True)
-        text, _ = det_nrb_judge_exports_map(ref_lines, ref, d, FX_OUTER, fl)
-        (d / "new.exports").write_text(text)
-        exp_chk[fl] = det_nrb_judge_exports_check(ref / "input/resolved_lumina.exports", d / "new.exports", ref, d, FX_OUTER)["why"]
-    case("single change: the re-rooted exports differ from R' in the iteration key only; NRB off, capture off, 6 or 13 "
-         "iterations and an extra env key are refused (G-LINK)", "1 single change",
-         (exp_chk[None], bool(exp_chk["nrb_off"]), bool(exp_chk["capture_off"]), bool(exp_chk["iter6"]),
-          bool(exp_chk["iter13"]), bool(exp_chk["extra_env"])), ([], True, True, True, True, True),
-         fault="nrb_off|capture_off|iter6|iter13|extra_env")
-    pre_dir = base / "pre_fx"
-    pre_dir.mkdir()
-    (pre_dir / "offline.json").write_text(json.dumps({"submit_allowed": True}))
-    n_new = base / "stage_fx/NRB/run1"
-    ident = det_nrb_judge_stage(ref, n_new, runner, "h200x2", pre_dir, FX_OUTER)
-    chk = det_nrb_judge_exports_check(ref / "input/resolved_lumina.exports", n_new / "input/resolved_lumina.exports", ref,
-                                      n_new, FX_OUTER)
-    try:
-        det_nrb_judge_stage(ref, n_new, runner, "h200x2", pre_dir, FX_OUTER)
-        again = "WROTE"
-    except FileExistsError:
-        again = "REFUSED"
-    def tamper(r):
-        (r / "input/lumina_cuda").write_text("tampered\n")
-    runs_t, pub_t, A_t, st_t, _ = det_nrb_judge_fx(base / "tamper/in", lib, lib_rec, csob, mutate_N=tamper)
-    r_t = det_nrb_judge_analyze(runs_t["N"], runs_t["E"], runs_t["R"], A_t, st_t, pub_t["expectations"], src, pub_t,
-                                base / "tamper/out", base / "tamper/lib", FX_TARGET)
-    case("single change / runner: stage copies the reference inputs (sha verified, no links), writes the iteration-12 "
-         "exports, STAGE_IDENTITY with the binary and runner identity, and refuses an existing run root; a modified "
-         "binary breaks the identity chain (X)", "1 single change",
-         (ident["outer_iterations"], chk["why"], ident["run_binary_sha256"] == sha(ref / "input/lumina_cuda"),
-          (n_new / "job.slurm").exists() and "readonly GPU_PROFILE=h200x2" in (n_new / "job.slurm").read_text(),
-          (n_new / "OWNER.txt").exists() and (n_new / "SUBMIT_COMMAND.txt").exists(), again,
-          sorted(os.listdir(n_new / "input")) == sorted(list(STAGED_FILES) + list(STAGED_DIRS) +
-                                                        ["resolved_lumina.exports", "resolved_lumina.sha256"]),
-          has(r_t, "LINK_BINARY_IDENTITY")),
-         (FX_OUTER, [], True, True, True, "REFUSED", True, True), fault="binary tamper", results=[r_t])
-    # ---- 2 run count and resources: the runner's own selftest (bash, real rc)
+          bool((p1b.material_generation == p1b.call).all()), sorted(set(st0[st0.axis == "ion"].generation.astype(int))),
+          sorted(set(st0[st0.axis == "jbar"].generation.astype(int))), (r0.get("codes") or {}).get("P2:ion", {}).get("terminal_window"),
+          ((r0.get("P2_last_material_update") or {}).get("ion") or {}).get("generation"),
+          sorted(set(io0[(io0.run == "N") & (io0.ion != "III/II")].generation.astype(int))),
+          (r0.get("run_counters") or {}).get("capture_tau_required"), bts.get("identical")),
+         (G["calls"], G["p1b_core"] + G["p1b_ext"], True, list(range(4, 15)), list(range(4, 14)), "12,13", 14, [13], 26, 10),
+         runs=[r0])
+    # ---- 1 single change and inputs (analyze CLI on staged N with mutated inputs)
+    def ex_edit(key, val, add=False):
+        def m(N):
+            p_ = N / "input/resolved_lumina.exports"
+            t = [ln for ln in p_.read_text().split("\n") if ln]
+            if add:
+                t.append(f'declare -x {key}="{val}"')
+            else:
+                t = [f'declare -x {key}="{val}"' if ln.startswith(f"declare -x {key}=") else ln for ln in t]
+            p_.write_text("\n".join(t) + "\n")
+        return m
+    r1 = {nm: analyze(f"ex_{nm}", injection=nm, mutate_N=m) for nm, m in (
+        ("nrb_off", ex_edit("LUMINA_BB_NRB", "0")), ("capture_off", ex_edit("LUMINA_A210_SPRODUCER_CAPTURE", "0")),
+        ("iter6", ex_edit(ITER_KEY, "6")), ("iter13", ex_edit(ITER_KEY, "13")),
+        ("extra_env", ex_edit("LUMINA_NRB_EXTRA", "1", add=True)))}
+    case("single change (analyze CLI): N exports with NRB off, producer capture off, 6 or 13 iterations, or an extra env "
+         "key are refused (G-LINK, rc 2) before any science code", "1 single change",
+         {k: (v["rc"], has(v, "N:EXPORTS")) for k, v in r1.items()},
+         {k: (2, True) for k in r1}, fault="exports mutations", runs=list(r1.values()))
+
+    def wr(rel, data):
+        def m(N):
+            (N / rel).write_text(data) if isinstance(data, str) else (N / rel).write_bytes(data)
+        return m
+    r1b = {"fixed_te_profile": analyze("in_profile", injection="fixed_te_profile.txt edited",
+                                       mutate_N=lambda N: (N / "input/fixed_te_profile.txt").write_text(
+                                           (N / "input/fixed_te_profile.txt").read_text().replace("1.000000E+05", "1.000001E+05"))),
+           "global_atomic": analyze("in_catalog", injection="global_atomic/topion_levels.csv edited",
+                                    mutate_N=wr("input/global_atomic/topion_levels.csv", "y\n")),
+           "binary": analyze("in_binary", injection="lumina_cuda edited", mutate_N=wr("input/lumina_cuda", "tampered\n"))}
+    case("input identity (analyze CLI): an edited FIXED_T profile, an edited global atomic file (non-binary inputs) and an "
+         "edited binary differ from the reference contents recorded at preflight and are refused (rc 2)", "1 single change",
+         {k: (v["rc"], has(v, "INPUT_IDENTITY")) for k, v in r1b.items()} | {"binary_chain": has(r1b["binary"], "LINK_BINARY_IDENTITY")},
+         {k: (2, True) for k in r1b} | {"binary_chain": True}, fault="input edits", runs=list(r1b.values()))
+    # stage CLI behaviour
+    fx_s = r0["_fx"]
+    n2 = base / "stage_cli/NRB/run1"
+    rcA, soA, seA = det_nrb_judge_cli(["stage", "--reference-run", fx_s["R"], "--preflight", fx_s["pre"], "--gpu-profile",
+                                       "h100x2", "--runner", runner, "--run", n2])
+    rcB, soB, seB = det_nrb_judge_cli(["stage", "--reference-run", fx_s["R"], "--preflight", fx_s["pre"], "--gpu-profile",
+                                       "h200x2", "--runner", runner, "--run", n2])
+    bad_pre = base / "stage_cli/pre_bad"
+    bad_pre.mkdir(parents=True)
+    (bad_pre / "offline.json").write_text(json.dumps({"submit_allowed": False}))
+    rcC, soC, seC = det_nrb_judge_cli(["stage", "--reference-run", fx_s["R"], "--preflight", bad_pre, "--gpu-profile",
+                                       "h200x2", "--runner", runner, "--run", base / "stage_cli/NRB/run2"])
+    rcD, soD, seD = det_nrb_judge_cli(["stage", "--reference-run", fx_s["R"], "--preflight", fx_s["pre"], "--gpu-profile",
+                                       "a100x2", "--runner", runner, "--run", base / "stage_cli/NRB/run3"])
+    js = (n2 / "job.slurm").read_text() if (n2 / "job.slurm").exists() else ""
+    case("stage (CLI): copies the reference inputs with sha verification, writes the iteration-12 exports and the identity "
+         "files; h100x2 rewrites profile, partition and gres together; an existing run root, a preflight without "
+         "submit_allowed and the a100 profile are refused (non-zero rc, nothing written for the refused roots)",
+         "1 single change",
+         (rcA, "readonly GPU_PROFILE=h100x2" in js, "#SBATCH --partition=h100" in js, "#SBATCH --gres=gpu:H100:2" in js,
+          (n2 / "OWNER.txt").exists() and (n2 / "SUBMIT_COMMAND.txt").exists() and (n2 / "STAGE_FILES.json").exists(),
+          rcB != 0 and "RUN_EXISTS" in seB, rcC != 0 and "PREFLIGHT_NOT_PASSED" in seC and not (base / "stage_cli/NRB/run2").exists(),
+          rcD != 0 and "GPU_PROFILE_INVALID" in seD and not (base / "stage_cli/NRB/run3").exists()),
+         (0, True, True, True, True, True, True, True))
+    # ---- 2 run count and resources: the GPU runner's own selftest (bash, real rc)
     rs = det_nrb_judge_runner_selftest(runner, base)
     want_cases = {"rerun_reject", "h200x2_one_gpu", "a100_profile_reject", "time_limit_over_ceiling", "iterations_6",
-                  "iterations_13", "nrb_off", "requeued_reject", "h100x2_low_memory"}
-    got_cases = {c["case"] for c in rs["cases"] if c["expected"] == "fail" and c["rc"] != 0}
-    case("run count / resources: the GPU runner selftest (separate bash process, real rc) rejects re-entry, GPU count / kind / "
-         "memory, the a100 profile, a time limit over the ceiling, requeue, 6 / 13 iterations and NRB off before the "
-         "model; constants registered (12 iterations, 75804 s); profiles h200x2 / h100x2 only", "2 run count",
-         (rs["rc"], want_cases <= got_cases, rs["constants_registered"], rs["profiles_in_runner"], rs["positive"] >= 3),
-         (0, True, True, ["h100x2", "h200x2"], True))
-    res[-1]["runner_selftest"] = {k: v for k, v in rs.items() if k != "cases"} | {"n_cases": len(rs["cases"])}
-    # ---- 3 generation linkage faults
-    r3 = {}
-    for fl in ("beta_current", "material_plus1", "capture_fixed7", "last_as_observed"):
-        r3[fl], *_ = run(f"gen_{fl}", fault=fl)
-    case("generation linkage: the current call's radiation for the prediction (X), material shifted by one (X), the "
-         "capture pinned to generation 7 (X), the last population 11 used as the observed 10 (X)", "3 generation linkage",
-         (has(r3["beta_current"], "P1B") or r3["beta_current"]["codes"]["P1B_CORE"]["code"] == "X",
-          has(r3["material_plus1"], "P1B") or r3["material_plus1"]["codes"]["P1B_CORE"]["code"] == "X",
-          has(r3["capture_fixed7"], "LINK_CAPTURE"), has(r3["last_as_observed"], "LINK_NE_DUMP_OBS_NOT_CAPTURE") or
-          has(r3["last_as_observed"], "DUMP_GENERATION_FILLED")),
-         (True, True, True, True), fault="beta_current|material_plus1|capture_fixed7|last_as_observed",
-         results=list(r3.values()))
-    # ---- 4 P2 terminal window
-    def series_past_only():
-        # small changes at generations 5-6 only, large again at the end
-        out = {}
-        for Z, q in ION_QTY:
-            b = 1.0e6 * (1 + Z / 100 + q)
-            out[(Z, q)] = {g: b * (1.0 + (0.0 if g in (5, 6, 4) else 0.05 * ((g % 2) + 1))) for g in G["pops"]}
-        return out
-    r4a, o4a, *_ = run("p2_past_only", ion_series=series_past_only())
-    c4a = r4a["codes"]["P2:ion"]
-    def series_one_small():
-        out = {}
-        for Z, q in ION_QTY:
-            b = 1.0e6 * (1 + Z / 100 + q)
-            out[(Z, q)] = {g: b * (1.0 + (0.1 if (g % 2 and g <= 9) or g == 10 else 0.0)) * (1.2 if g == 11 else 1.0)
-                           for g in G["pops"]}
-        return out
-    r4b, o4b, *_ = run("p2_single", fault="single_change", ion_series=series_one_small())
-    r4c, o4c, *_ = run("p2_past", fault="past_window", ion_series=series_past_only())
-    r4d, o4d, *_ = run("p2_mixed", fault="mixed_windows", ion_series=series_past_only())
-    def series_end_higher():
-        out = {}
-        for Z, q in ION_QTY:
-            b = 1.0e6 * (1 + Z / 100 + q)
-            out[(Z, q)] = {g: b * (1.0 + 0.2 * (g - 3) * ((g % 2))) for g in G["pops"]}
-        return out
-    r4e, o4e, *_ = run("p2_end_higher", ion_series=series_end_higher())
-    def series_unavailable():
-        out = {}
-        for Z, q in ION_QTY:
-            b = 1.0e6 * (1 + Z / 100 + q)
-            out[(Z, q)] = {g: (b if not (Z == 14 and q == 1 and g == 10) else 0.0) for g in G["pops"]}
-        return out
-    r4f, o4f, *_ = run("p2_zero_cross", ion_series=series_unavailable())
-    case("P2 terminal window: the ion axis small only in the past windows (4,5),(5,6) is NOT_CONVERGED with the past "
-         "window recorded; accepting one small terminal change, a past window, or mixed windows is refused by the "
-         "recomputation (X on the axis, decision INADMISSIBLE); an ion series rising at the end gives END_HIGHER; a zero "
-         "crossing at generation 10 refutes the ion axis (infinite M kept) and the run stays VALID", "4 P2 terminal window",
-         (r4a["validity"], c4a["state"], c4a["any_past_window_small"], r4a["P2_disposition"],
-          has(r4b, "P2_CODE_RECOMPUTE"), r4b["P2_disposition"], has(r4c, "P2_CODE_RECOMPUTE"),
-          has(r4d, "P2_CODE_RECOMPUTE"), r4e["codes"]["P2:ion"]["descriptor"]["code"], r4e["codes"]["P2:ion"]["state"],
-          r4f["codes"]["P2:ion"]["state"], r4f["validity"]),
-         ("VALID", "REFUTED", True, "NOT_CONVERGED", True, "INADMISSIBLE", True, True, "END_HIGHER", "REFUTED",
-          "REFUTED", "VALID"), fault="single_change|past_window|mixed_windows", results=[r4a, r4b, r4c, r4d, r4e, r4f])
-    case("P2 descriptor: clean axes converge (END_LOWER on every axis); ion/n_e generation 11 (last material update) is "
-         "recorded apart from the terminal window; n_quantities + missing + structural zero = registered count on every "
-         "row", "4 P2 terminal window",
-         ([r0["codes"][f"P2:{ax}"]["descriptor"]["code"] for ax in ("ion", "ne", "jbar", "level")],
-          r0["P2_last_material_update"]["ne"]["generation"], r0["codes"]["P2:ion"]["terminal_window"],
-          bool(((st_.n_quantities + st_.missing + st_.structural_zero) == st_.registered_quantities).all()),
-          sorted(set(st_.registered_quantities))),
-         (["END_LOWER"] * 4, 11, "9,10", True, [2, 8, 12]), results=[r0])
-    def drop_row(r):
-        p = r / "work/w5_lines.csv"
-        lines = p.read_text().split("\n")
-        keep = [ln for ln in lines if not ln.startswith(f"{G['g_obs']},CMFGEN_NONOVERLAP_SOBOLEV,{G['g_obs']},{G['g_obs']},10,1,")]
-        p.write_text("\n".join(keep))
-    r4g, o4g, *_ = run("p2_missing", mutate_N=drop_row)
-    st4g = pd.read_csv(o4g / "stationarity.csv")
-    jb = st4g[(st4g.axis == "jbar") & (st4g.generation == G["g_obs"])].iloc[0]
-    r4h, o4h, *_ = run("p2_drop_large", fault="drop_large")
-    r4i, o4i, *_ = run("p2_drop_zero", fault="drop_zero_cross", ion_series=series_unavailable())
-    case("P2 denominators: a removed terminal W5 row is a missing quantity (counted, axis NOT_IDENTIFIABLE at the terminal "
-         "window, descriptor END_UNAVAILABLE, run VALID); deleting large cells or a zero crossing fails the quantity "
-         "accounting (X)", "4 P2 terminal window",
-         (r4g["validity"], int(jb.missing), r4g["codes"]["P2:jbar"]["state"], r4g["codes"]["P2:jbar"]["descriptor"]["code"],
-          has(r4h, "P2_QUANTITY_ACCOUNTING"), has(r4i, "P2_QUANTITY_ACCOUNTING")),
-         ("VALID", 1, "NOT_IDENTIFIABLE", "END_UNAVAILABLE", True, True), fault="drop_large|drop_zero_cross",
-         results=[r4g, r4h, r4i])
+                  "iterations_13", "nrb_off", "requeued_reject", "h100x2_low_memory", "armed_markers_11",
+                  "capture_generation_7", "last_population_as_observed"}
+    got_cases = {c_["case"] for c_ in rs["cases"] if c_["expected"] == "fail" and c_["rc"] != 0}
+    case("run count / resources (GPU runner bash selftest, real rc): re-entry, GPU count / kind / memory, the a100 profile, "
+         "a time limit over the ceiling, requeue, 6 / 13 iterations and NRB off are refused before the model; 11 armed "
+         "markers, a capture at generation 7 and the last population reported as observed fail the post-checks; "
+         "constants registered (12 iterations, 75804 s); profiles h200x2 / h100x2 only", "2 run count",
+         (rs["rc"], sorted(want_cases - got_cases), rs["constants_registered"], rs["profiles_in_runner"], rs["positive"] >= 3),
+         (0, [], True, ["h100x2", "h200x2"], True))
+    res[-1]["runner_selftest"] = {k: v for k, v in rs.items() if k != "cases"} | {"cases": rs["cases"]}
+    # ---- 3 generation linkage faults (implementation faults through the sandbox; data faults through edited files)
+    r3 = {fl: analyze(f"gen_{fl}", fault=fl) for fl in ("beta_current", "material_plus1", "capture_fixed7", "last_as_observed")}
+
+    def relabel(N):
+        m_ = N / "work/physics_comparison/physics_DET_iter0010.manifest.json"
+        j_ = json.loads(m_.read_text())
+        j_["population_generation"] = 15
+        m_.write_text(json.dumps(j_))
+
+    def meta12(N):
+        m_ = N / "work/det_obs_capture/meta.txt"
+        m_.write_text(m_.read_text().replace("material_generation=13", "material_generation=12"))
+    r3["dump_relabel"] = analyze("gen_dump_relabel", injection="iter0010 manifest relabelled 15", mutate_N=relabel)
+    r3["capture_meta_12"] = analyze("gen_capture_meta_12", injection="capture meta material 12", mutate_N=meta12)
+    d3 = {k: [row["condition"] for row in dec(v).get("rows", [])] for k, v in r3.items()}
+    case("generation linkage faults (analyze CLI, 12 iterations): the current call's radiation for the prediction and "
+         "material shifted by one make P1(b) rows X -> scope X, run X (rc 2) and an X row in decision.json; the capture "
+         "pinned to generation 7, the last population 14 used as the observed 13, a relabelled observation dump and a "
+         "capture meta generation 12 are refused at the link (rc 2)", "3 generation linkage",
+         (r3["beta_current"]["rc"], code(r3["beta_current"], "P1B_CORE"), "P1B_CORE X" in d3["beta_current"],
+          r3["material_plus1"]["rc"], code(r3["material_plus1"], "P1B_CORE"), "P1B_CORE X" in d3["material_plus1"],
+          (r3["capture_fixed7"]["rc"], has(r3["capture_fixed7"], "LINK_CAPTURE")),
+          (r3["last_as_observed"]["rc"], has(r3["last_as_observed"], "LINK_NE_DUMP_OBS_NOT_CAPTURE") or
+           has(r3["last_as_observed"], "DUMP_GENERATION_FILLED")),
+          (r3["dump_relabel"]["rc"], has(r3["dump_relabel"], "DUMP_GENERATIONS") or has(r3["dump_relabel"], "LINK_NE_DUMP")),
+          (r3["capture_meta_12"]["rc"], has(r3["capture_meta_12"], "LINK_CAPTURE_META_GENERATION"))),
+         (2, "X", True, 2, "X", True, (2, True), (2, True), (2, True), (2, True)),
+         fault="beta_current|material_plus1|capture_fixed7|last_as_observed|dump_relabel|capture_meta_12", runs=list(r3.values()))
+    # ---- 4 P2 terminal window, descriptors, denominators, final code
+    def ser(fn):
+        return {(Z, q): {g: 1.0e6 * (1 + Z / 100 + q) * fn(g, Z, q) for g in G["pops"]} for Z, q in ION_QTY}
+    past_only = ser(lambda g, Z, q: 1.0 if g in (4, 5, 6) else 1.0 + 0.05 * ((g % 2) + 1))
+    one_small = ser(lambda g, Z, q: 1.0 if g <= 12 else 1.2)
+    r4 = {"past_only": analyze("p2_past_only", ion_series=past_only),
+          "single_change": analyze("p2_single", fault="single_change", ion_series=one_small),
+          "past_window": analyze("p2_past", fault="past_window", ion_series=past_only),
+          "mixed_windows": analyze("p2_mixed", fault="mixed_windows", ion_series=past_only),
+          "p2_code_zero": analyze("p2_code_zero", fault="p2_code_zero", ion_series=past_only),
+          "descriptor_flip": analyze("p2_desc_flip", fault="decision_descriptor_flip", ion_series=past_only)}
+    c4 = (r4["past_only"].get("codes") or {}).get("P2:ion", {})
+    case("P2 terminal window (analyze CLI): the ion axis small only in the past windows is NOT_CONVERGED (rc 0, VALID) with "
+         "the past window recorded and the decision row carrying the descriptors; accepting one small terminal change, a "
+         "past window, mixed windows or an axis code replaced by 0 is refused by the recomputation, and a descriptor "
+         "changed in the stored decision.json is refused by the stored-output check (X, rc 2, P2 INADMISSIBLE)",
+         "4 P2 terminal window",
+         (r4["past_only"]["rc"], c4.get("state"), c4.get("any_past_window_small"), r4["past_only"].get("P2_disposition"),
+          any("descriptors" in row for row in dec(r4["past_only"]).get("rows", [])),
+          {k: (v["rc"], has(v, "P2_CODE_RECOMPUTE") or has(v, "P2_STORED"), dec(v).get("p2_disposition"))
+           for k, v in r4.items() if k != "past_only"}),
+         (0, "REFUTED", True, "NOT_CONVERGED", True,
+          {k: (2, True, "INADMISSIBLE") for k in r4 if k != "past_only"}),
+         fault="single_change|past_window|mixed_windows|p2_code_zero|decision_descriptor_flip", runs=list(r4.values()))
+    end_higher = ser(lambda g, Z, q: 1.0 + 0.2 * (g - 3) * (g % 2))
+    end_equal = ser(lambda g, Z, q: 0.0 if g in (3, 4, 12, 13) else 1.0 + 0.1 * g)
+    r4d = {"END_HIGHER": analyze("p2_end_higher", ion_series=end_higher),
+           "END_EQUAL": analyze("p2_end_equal", ion_series=end_equal),
+           "END_UNRESOLVED": analyze("p2_end_unresolved", ne_factor=lambda g: 5.0e10 * 2.0 ** g)}
+    st_eq = csv(r4d["END_EQUAL"], "stationarity.csv")
+    case("P2 descriptors (analyze CLI): clean axes END_LOWER; an ion series rising at the end END_HIGHER; exact structural "
+         "zeros at generations 4 and 13 (M = 0 at both ends, 8 structural zeros counted) END_EQUAL; an n_e series with a "
+         "constant factor 2 (identical end intervals) END_UNRESOLVED; the descriptors stored in result.json and "
+         "decision.json agree with the recomputation from stationarity.csv", "4 P2 terminal window",
+         ([((r0.get("P2_descriptors") or {}).get(ax) or {}).get("code") for ax in ("ion", "ne", "jbar", "level")],
+          ((r4d["END_HIGHER"].get("P2_descriptors") or {}).get("ion") or {}).get("code"),
+          ((r4d["END_EQUAL"].get("P2_descriptors") or {}).get("ion") or {}).get("code"),
+          int(st_eq[(st_eq.axis == "ion") & (st_eq.generation == 4)].structural_zero.iloc[0]),
+          ((r4d["END_UNRESOLVED"].get("P2_descriptors") or {}).get("ne") or {}).get("code"),
+          [v.get("validity") for v in r4d.values()]),
+         (["END_LOWER"] * 4, "END_HIGHER", "END_EQUAL", 8, "END_UNRESOLVED", ["VALID"] * 3), runs=list(r4d.values()))
+
+    def drop_term(line, shell):
+        def m(N):
+            det_nrb_judge_w5_edit(N, lambda f: None if (f[0] == str(G["g_obs"]) and f[4] == str(shell) and f[5] == str(line))
+                                  else f)
+        return m
+
+    def drop_and_bump(N):
+        drop_term(1, 10)(N)
+
+        def bump(f):
+            if f[0] == str(G["outer"]) and f[5] == "4" and f[4] == "10":
+                L = float(f[12]) * 1.2
+                f[12], f[13] = repr(L), repr(float(f[11]) * float(f[9]) + L)
+            return f
+        det_nrb_judge_w5_edit(N, bump)
+    zero_cross = ser(lambda g, Z, q: 0.0 if (Z == 14 and q == 1 and g == 13) else 1.0)
+    r4m = {"missing": analyze("p2_missing", injection="terminal W5 row of line 1 / shell 10 removed", mutate_N=drop_term(1, 10)),
+           "missing_with_counter": analyze("p2_missing_counter", injection="row removed + line 4 / shell 10 L x1.2 at call 12",
+                                           mutate_N=drop_and_bump),
+           "zero_cross": analyze("p2_zero_cross", ion_series=zero_cross),
+           "drop_large": analyze("p2_drop_large", fault="drop_large", ion_series=past_only),
+           "drop_zero_cross": analyze("p2_drop_zero", fault="drop_zero_cross", ion_series=zero_cross)}
+    stm = csv(r4m["missing"], "stationarity.csv")
+    jm = stm[(stm.axis == "jbar") & (stm.generation == G["g_obs"])].iloc[0]
+    case("P2 denominators (analyze CLI): a removed terminal W5 row is a counted missing quantity (J-bar NOT_IDENTIFIABLE at "
+         "the terminal window, code 5, descriptor END_UNAVAILABLE, run VALID); with a counterexample in the other "
+         "terminal generation the axis is REFUTED (code 1); a zero crossing refutes (infinite M kept, descriptor "
+         "END_UNAVAILABLE as a non-finite endpoint, VALID); deleting large cells "
+         "or a zero crossing breaks the quantity accounting (X, rc 2)", "4 P2 terminal window",
+         (r4m["missing"]["rc"], int(jm.missing), code(r4m["missing"], "P2:jbar"),
+          ((r4m["missing"].get("P2_descriptors") or {}).get("jbar") or {}).get("code"),
+          code(r4m["missing_with_counter"], "P2:jbar"), code(r4m["zero_cross"], "P2:ion"), r4m["zero_cross"].get("validity"),
+          ((r4m["zero_cross"].get("P2_descriptors") or {}).get("ion") or {}).get("code"),
+          (r4m["drop_large"]["rc"], has(r4m["drop_large"], "P2_QUANTITY_ACCOUNTING")),
+          (r4m["drop_zero_cross"]["rc"], has(r4m["drop_zero_cross"], "P2_QUANTITY_ACCOUNTING"))),
+         (0, 1, 5, "END_UNAVAILABLE", 1, 1, "VALID", "END_UNAVAILABLE", (2, True), (2, True)), fault="drop_large|drop_zero_cross",
+         runs=list(r4m.values()))
+
+    def contradict(N):
+        def m(f):
+            if f[0] == "5" and f[5] == "3":
+                L = float(f[12]) * 2.0
+                f[12], f[13] = repr(L), repr(float(f[11]) * float(f[9]) + L)
+            return f
+        det_nrb_judge_w5_edit(N, m)
+    r4c = analyze("p2_level_contradiction", injection="line 3 L doubled at call 5 (level 4 recovered twice, disjoint)",
+                  mutate_N=contradict)
+    case("level authority (closeout B2, analyze CLI): two admissible recoveries of Si III level 4 at generation 5 that do "
+         "not overlap make the level axis X with the key and generation recorded (not a missing value), the run X "
+         "(rc 2) and the P2 decision INADMISSIBLE", "4 P2 terminal window",
+         (r4c["rc"], has(r4c, "P2_LEVEL_CONTRADICTION:level:14:4"), code(r4c, "P2:level"), code(r4c, "P2:jbar"),
+          dec(r4c).get("p2_disposition")), (2, True, "X", 0, "INADMISSIBLE"), runs=[r4c])
     # ---- 5 public ions
-    r5 = {}
-    for fl in ("saha_column", "q_shift", "renormalize", "time_shift", "space_shift"):
-        r5[fl], *_ = run(f"ion_{fl}", fault=fl)
-    r5x, o5x, *_ = run("ion_refuted", pub_factor={(14, 10): 3.0})
-    i5 = pd.read_csv(o5x / "ion_fraction.csv")
+    r5 = {fl: analyze(f"ion_{fl}", fault=fl) for fl in ("saha_column", "q_shift", "renormalize", "time_shift", "space_shift")}
+    r5x = analyze("ion_refuted", pub_factor={(14, 10): 3.0})
+    i5 = csv(r5x, "ion_fraction.csv")
     i5 = i5[(i5.run == "N") & (i5.Z == 14) & (i5.shell == 10) & (i5.ion != "III/II")]
-    case("public ions: NLTE q1 / q2 over the element total at generation 10, the fixed 19.480 block and the registered "
-         "vel_mid; the SAHA stage column, a q0/q1 shift, II+III renormalisation, another time block and a moved spatial "
-         "match are refused (X); a public value 3x off refutes that element (code 1, VALID)", "5 public ions",
-         (has(r5["saha_column"], "ION_COLUMN_RECOMPUTE"), has(r5["q_shift"], "ION_PUBLIC_TOKEN_RECOMPUTE"),
-          has(r5["renormalize"], "ION_COLUMN_RECOMPUTE"), has(r5["time_shift"], "ION_PUBLIC_TOKEN_RECOMPUTE"),
-          has(r5["space_shift"], "ION_VMID_RECOMPUTE") or r5["space_shift"]["codes"]["IONS:14"]["code"] == "X",
-          r5x["validity"], r5x["codes"]["IONS:14"]["code"], r5x["codes"]["IONS:16"]["code"], set(i5.status)),
-         (True, True, True, True, True, "VALID", 1, 0, {"REFUTED"}),
-         fault="saha_column|q_shift|renormalize|time_shift|space_shift", results=list(r5.values()) + [r5x])
-    # ---- spectrum (inherited functions; new target linkage)
+    case("public ions (analyze CLI): NLTE q1 / q2 over the element total at generation 13, the 19.480 block and the "
+         "registered vel_mid; the SAHA stage column, a q0/q1 shift, II+III renormalisation, the 17.710 block and a moved "
+         "spatial match are refused (X, rc 2); a public value 3x off refutes that element (code 1, VALID, rc 0)",
+         "5 public ions",
+         ({k: (v["rc"], v.get("validity")) for k, v in r5.items()}, has(r5["saha_column"], "ION_COLUMN_RECOMPUTE"),
+          has(r5["q_shift"], "ION_PUBLIC_TOKEN_RECOMPUTE"), has(r5["renormalize"], "ION_COLUMN_RECOMPUTE"),
+          has(r5["time_shift"], "ION_PUBLIC_TOKEN_RECOMPUTE"), code(r5["space_shift"], "IONS:14"),
+          r5x["rc"], code(r5x, "IONS:14"), code(r5x, "IONS:16"), set(i5.status)),
+         ({k: (2, "X") for k in r5}, True, True, True, True, "X", 0, 1, 0, {"REFUTED"}),
+         fault="saha_column|q_shift|renormalize|time_shift|space_shift", runs=list(r5.values()) + [r5x])
+    # ---- 6 public spectrum
     def scale_band(lo, hi, k):
-        def f_(r):
-            p = r / "work/lumina_spectrum_det_obs.csv"
-            rows = p.read_text().split("\n")
-            out = [rows[0]]
-            for ln in rows[1:]:
-                if not ln:
-                    continue
-                x, y = ln.split(",")
-                out.append(f"{x},{float(y) * (k if lo <= float(x) < hi else 1.0)!r}")
-            p.write_text("\n".join(out) + "\n")
+        def f_(N):
+            p_ = N / "work/lumina_spectrum_det_obs.csv"
+            rows_ = p_.read_text().split("\n")
+            out_ = [rows_[0]]
+            for ln in rows_[1:]:
+                if ln:
+                    x, y = ln.split(",")
+                    out_.append(f"{x},{float(y) * (k if lo <= float(x) < hi else 1.0)!r}")
+            p_.write_text("\n".join(out_) + "\n")
         return f_
-    r6a, o6a, *_ = run("spec_retarget", fault="retarget")
-    r6b, o6b, *_ = run("spec_subset", fault="subset_bands", spec_mutate=scale_band(5000.0, 6000.0, 1.5))
-    r6c, o6c, *_ = run("spec_hide", fault="hide_opt")
-    r6e, o6e, *_ = run("spec_tilt", spec_mutate=scale_band(0.0, 3000.0, 3.0))
-    case("public spectrum: thresholds regenerated from N, a band subset declared as the whole, the OPT change hidden -> X; "
-         "a 3x UV2500 excess refutes the registered targets (code 1, VALID) with the absolute OPT recorded",
-         "6 public spectrum", (has(r6a, "SPECTRUM_CONDITION_RECOMPUTE"), has(r6b, "SPECTRUM_OVERALL_RECOMPUTE"),
-                               has(r6c, "SPECTRUM_OPT_CHANGE_NOT_RECORDED"), r6e["validity"], r6e["codes"]["SPECTRUM"]["code"],
-                               r6e["codes"]["SPECTRUM"]["conditions"].get("UV2500"), r6e["spectrum"]["summary"]["N"].get("L_OPT") is not None),
-         (True, True, True, "VALID", 1, 1, True), fault="retarget|subset_bands|hide_opt|tilt", results=[r6a, r6b, r6c, r6e])
-    # ---- codes / decision propagation (mass errors)
-    r7, o7, *_ = run("flip_all", fault="status_flip_all+retarget")
-    d7 = json.loads((o7 / "decision.json").read_text())
-    r7b, o7b, *_ = run("move_c", fault="move_c_with_L")
-    r7c, o7c, *_ = run("drop_counter", fault="drop_counter")
+    r6 = {"retarget": analyze("spec_retarget", fault="retarget"),
+          "subset_bands": analyze("spec_subset", fault="subset_bands", mutate_N=scale_band(5000.0, 6000.0, 1.5)),
+          "hide_opt": analyze("spec_hide", fault="hide_opt")}
+    # the public file is written from the unmutated N spectrum; the N spectrum alone is tilted below 3000 A
+    r6t = analyze("spec_tilt", mutate_N=scale_band(0.0, 3000.0, 3.0))
+    case("public spectrum (analyze CLI): thresholds regenerated from N, a band subset declared as the whole and the OPT "
+         "change hidden are refused (X, rc 2); a 3x excess below 3000 A refutes the registered targets (code 1, VALID, "
+         "rc 0) with the absolute OPT recorded", "6 public spectrum",
+         ((r6["retarget"]["rc"], has(r6["retarget"], "SPECTRUM_CONDITION_RECOMPUTE")),
+          (r6["subset_bands"]["rc"], has(r6["subset_bands"], "SPECTRUM_OVERALL_RECOMPUTE")),
+          (r6["hide_opt"]["rc"], has(r6["hide_opt"], "SPECTRUM_OPT_CHANGE_NOT_RECORDED")), r6t["rc"], code(r6t, "SPECTRUM"),
+          ((r6t.get("codes") or {}).get("SPECTRUM") or {}).get("conditions", {}).get("UV2500"),
+          ((r6t.get("spectrum") or {}).get("summary") or {}).get("N", {}).get("L_OPT") is not None),
+         ((2, True), (2, True), (2, True), 0, 1, 1, True), fault="retarget|subset_bands|hide_opt", runs=list(r6.values()) + [r6t])
+    # ---- 7 P1(a) recall and propagation
+    def drop_ctrl(N):
+        det_nrb_judge_w5_edit(N, lambda f: None if (f[0] == "7" and f[4] == "10" and f[5] == "0") else f)
+    r7a = analyze("recall_missing", injection="control line 0 / shell 10 / call 7 row removed", mutate_N=drop_ctrl)
+    r7b = analyze("recall_recalled_only", fault="recall_recalled_only", mutate_N=drop_ctrl)
+    r7c = analyze("recall_x_inherit_fail", fault="move_c_with_L", prior_bad_source=True)
+    r7d = analyze("inherit_fail_only", prior_bad_source=True)
+    case("P1(a) local (closeout B1, analyze CLI): a missing cell of the fixed recall keeps the denominator 24 and gives "
+         "P1A_LOCAL 5 (not 0); counting recalled cells only is refused by the set recomputation (X, rc 2); with a failed "
+         "inheritance an X recall stays X (not 5), and a failed inheritance alone gives 5", "7 propagation",
+         (code(r7a, "P1A_LOCAL"), (r7a.get("P1A_recall") or {}).get("cells"), r7a.get("validity"),
+          (r7b["rc"], has(r7b, "P1A_RECALL_SET_RECOMPUTE")), code(r7c, "P1A_LOCAL"), code(r7d, "P1A_LOCAL"), r7d.get("validity")),
+         (5, 24, "VALID", (2, True), "X", 5, "VALID"), fault="recall_recalled_only|move_c_with_L+inheritance",
+         runs=[r7a, r7b, r7c, r7d])
+    r7 = analyze("flip_all", fault="status_flip_all+retarget")
+    d7 = dec(r7)
     spec_msgs = [w for w in r7.get("reasons", []) if w.startswith("SPECTRUM")]
-    case("codes / decision propagation (mass errors): every P1(a) state flipped (72 findings, the stored message list "
-         "capped at 50) together with regenerated spectral thresholds in the same run; the P1(a) scope and the later "
-         "SPECTRUM scope are both X although the spectrum finding lies beyond the stored cap, unaffected scopes keep "
-         "their codes, decision.json carries validity X; moving c with L in the recall is refused; a shortened sample "
-         "is refused before any science code", "7 propagation",
-         (r7["n_reasons"] > 50, len(r7["reasons"]), spec_msgs, r7["codes"]["P1A"]["code"], r7["codes"]["SPECTRUM"]["code"],
-          r7["codes"]["P1B_CORE"]["code"], d7["validity"], has(r7b, "P1A_RECALL_BACKGROUND_MOVED"),
-          r7b["codes"]["P1A_LOCAL"]["code"], has(r7c, "SAMPLE_NOT_REGISTERED")),
-         (True, 50, [], "X", "X", 0, "X", True, "X", True), fault="status_flip_all+retarget|move_c_with_L|drop_counter",
-         results=[r7, r7b, r7c])
-    # ---- preservation
-    try:
-        det_nrb_judge_analyze(runs0["N"], runs0["E"], runs0["R"], A0, st0, pub0["expectations"], src, pub0, o0,
-                              base / "clean/lib2", FX_TARGET)
-        pres = "WROTE"
-    except FileExistsError:
-        pres = "REFUSED_BEFORE_WRITING"
-    case("preservation: an existing result path is refused before writing", "8 preservation", pres,
-         "REFUSED_BEFORE_WRITING", kind="INHERITED_RERUN")
-    # ---- inheritance record
+    r7e = analyze("drop_counter", fault="drop_counter")
+    case("codes / decision propagation (mass errors, analyze CLI): every P1(a) state flipped (96 findings, stored list "
+         "capped at 50) with regenerated spectral thresholds in the same run: P1(a) and SPECTRUM both X although the "
+         "spectrum finding lies beyond the cap, P1(b) keeps its code, decision.json validity X with both X rows, rc 2; a "
+         "shortened sample is refused before any science code", "7 propagation",
+         (r7["rc"], r7.get("n_reasons", 0) > 50, len(r7.get("reasons", [])), spec_msgs, code(r7, "P1A"), code(r7, "SPECTRUM"),
+          code(r7, "P1B_CORE"), d7.get("validity"), sorted(row["condition"] for row in d7.get("rows", []) if row["condition"].endswith(" X")),
+          (r7e["rc"], has(r7e, "SAMPLE_NOT_REGISTERED"))),
+         (2, True, 50, [], "X", "X", 0, "X", ["P1A X", "SPECTRUM X"], (2, True)),
+         fault="status_flip_all+retarget|drop_counter", runs=[r7, r7e])
+    # ---- 8 byte comparison and capture authority
+    def r_byte(R):
+        p_ = R / "work/physics_comparison/physics_DET_iter0002.ion.csv"
+        p_.write_text(p_.read_text() + " ")
+
+    def r_gen(R):
+        m_ = R / "work/physics_comparison/physics_DET_iter0001.manifest.json"
+        j_ = json.loads(m_.read_text())
+        j_["population_generation"] = 99
+        m_.write_text(json.dumps(j_))
+    r8a = analyze("bytes_diff", injection="reference iter0002.ion.csv one byte appended", mutate_R=r_byte)
+    r8b = analyze("bytes_gen", injection="reference iter0001 manifest generation 99", mutate_R=r_gen)
+    sa, sb = (r8a.get("bytes_vs_reference") or {}).get("summary", {}), (r8b.get("bytes_vs_reference") or {}).get("summary", {})
+    keep = lambda r_: {k: code(r_, k) for k in (r_.get("codes") or {})}                 # noqa: E731
+    case("byte comparison (prereg 3.4, analyze CLI): clean 10/10 identical; one appended byte in the reference generation-5 "
+         "ion dump is DIFFERENT (1) and a reference manifest whose population generation is not 4 makes that iteration "
+         "NOT_COMPARABLE (2 files) — both runs stay VALID with every science code equal to the clean run (the comparison "
+         "is consumed as an observation only)", "8 bytes",
+         (bts.get("identical"), (sa.get("identical"), sa.get("different")), (sb.get("identical"), sb.get("not_comparable")),
+          r8a.get("validity"), r8b.get("validity"), keep(r8a) == keep(r0), keep(r8b) == keep(r0)),
+         (10, (9, 1), (8, 2), "VALID", "VALID", True, True), runs=[r8a, r8b])
+
+    def cap_edit(N):
+        capd = N / "work/det_obs_capture"
+        m = np.fromfile(capd / "lines.bin", dtype=POP.REC)
+        i_ = int(np.nonzero((m["l"] == 1) & (m["s"] == 10))[0][0])
+        m["S"][i_] = m["S"][i_] * 1.5
+        m.tofile(capd / "lines.bin")
+        j_ = json.loads((capd / "manifest.json").read_text())
+        j_["files"]["lines.bin"]["sha256"] = sha(capd / "lines.bin")
+        (capd / "manifest.json").write_text(json.dumps(j_))
+    r8c = analyze("capture_authority", injection="capture S of line 1 / shell 10 x1.5 (manifest sha updated)", mutate_N=cap_edit)
+    case("independent authority (analyze CLI): a generation-13 capture source that disagrees with the W5 inversion of "
+         "the same line is refused (POP_AUTHORITY_MISMATCH, X, rc 2)", "5 authority",
+         (r8c["rc"], has(r8c, "POP_AUTHORITY_MISMATCH")), (2, True), runs=[r8c])
+    # ---- 9 preservation (real CLI)
+    rcP, soP, seP = det_nrb_judge_cli(["analyze", "--prereg", P / PREREG, "--run", fx_s["N"], "--baseline-run", fx_s["E"],
+                                       "--reference-run", fx_s["R"], "--prior-analysis", fx_s["A"], "--prior-selftest",
+                                       fx_s["st"], "--spectral-expectations", fx_s["public"]["expectations"],
+                                       "--production-source", src, "--public-spectrum", fx_s["public"]["spectrum"],
+                                       "--public-si", fx_s["public"][14], "--public-s", fx_s["public"][16],
+                                       "--selftest", base / "clean/no_selftest", "--out", base / "clean/out"])
+    case("preservation (analyze CLI): an existing result path is refused before writing (rc 3, OUT_EXISTS)", "9 preservation",
+         (rcP, "OUT_EXISTS" in soP + seP), (3, True))
+    # ---- inherited pure functions
     inh = det_nrb_judge_inherited_bundles(prior_selftest)
-    case("inherited bundles: the SEEDMEM-SCOPE r4 selftest (readout sha equal to the imported module, failures 0) carries "
-         "the P1(a), P1(b), inversion / authority, P2 denominators, P2 final code, spectrum, propagation and preservation "
-         "cases this readout reuses by function identity", "9 inheritance",
+    case("inherited pure functions: the SEEDMEM-SCOPE r4 selftest (readout sha equal to the imported module, failures 0) "
+         "carries the cases of the unmodified functions this readout calls (inversion / forward ledger / source identity, "
+         "the NRB rate reconstruction, the local-exchange premise, the collision authority, solve units, interval helpers); "
+         "the new P2, propagation, decision and stored-output code is tested directly above", "10 inheritance",
          (inh["dependency_sha_matches"], inh["failures"], sorted(inh["bundles"]) == sorted(inh["required"])),
          (True, 0, True), kind="INHERITED")
     res[-1]["inherited"] = inh
     return res
 
 
-INHERITED_BUNDLES = {"4 inversion": "P1(b) / recovery", "5 authority": "independent authority", "6 NRB link": "P1(a)",
-                     "7 cross": "P1(a) local invariance", "10 P2": "P2 denominators / final code",
-                     "11 numerics": "codes / propagation", "12 preservation": "preservation",
-                     "3 missing": "P2 missing / zero"}
+INHERITED_BUNDLES = {"4 inversion": "det_seedmem_scope_invert / _forward / _identity / _meas / _source2 / _coll / _r",
+                     "6 NRB link": "det_seedmem_scope_rates / _row_check / _is_link (P1(a) rate reconstruction)",
+                     "7 cross": "H-LOCAL premise (local-term exchange of the production bracket)",
+                     "9 collisions": "det_seedmem_scope_coll_authority",
+                     "11 numerics": "det_seedmem_scope_le / _universal_check / _set_code / _m / _overlap",
+                     "13 solve units": "det_seedmem_scope_sl"}
 
 
 def det_nrb_judge_inherited_bundles(prior_selftest):
@@ -2140,10 +2505,11 @@ def det_nrb_judge_inherited_bundles(prior_selftest):
     bundles = sorted({c.get("bundle") for c in cases if c.get("bundle") in INHERITED_BUNDLES})
     return {"path": str(p), "sha256": sha(p), "prior_readout_sha256": st.get("readout_sha256"), "seed_module_sha256": seed_sha,
             "dependency_sha_matches": st.get("readout_sha256") == seed_sha, "failures": st.get("failures"),
-            "bundles": bundles, "required": sorted(INHERITED_BUNDLES),
+            "bundles": bundles, "required": sorted(INHERITED_BUNDLES), "functions": INHERITED_BUNDLES,
             "cases": [{"bundle": c.get("bundle"), "case": c.get("case")[:160], "pass": c.get("pass"), "fault": c.get("fault")}
                       for c in cases if c.get("bundle") in INHERITED_BUNDLES],
-            "spectrum_functions": "REP.det_siiii_repair_spectrum_table / _le / _lt (sha in manifest imports)"}
+            "not_inherited": "P2 per-generation measures, terminal window, descriptors, ions, spectrum linkage, validators, "
+                             "propagation, decision and stored-output check are new code and are tested directly"}
 
 
 # ------------------------------------------------------------------ CLI
@@ -2189,8 +2555,10 @@ def cmd_selftest(a):
                "failures": fails, "elapsed_s": time.time() - t0,
                "bundles_new": sorted({t["bundle"] for t in tests if t.get("kind") == "NEW"}),
                "bundles_inherited": sorted(INHERITED_BUNDLES),
-               "rc_meaning": "analyze_rc_equivalent = the rc cmd_analyze returns for that validity (0 VALID, 2 X); the fixture "
-                             "analyses are function calls; the runner selftest is a separate bash process with its real rc",
+               "rc_meaning": "cli_rc = the exit status of a separate readout process (analyze / stage CLI: 0 VALID or "
+                             "staged, 2 inadmissible, 3 existing result path, 1 refused stage); the runner selftest is a "
+                             "separate bash process; selftest faults and the fixture target reach the analyze CLI only "
+                             "through a SELFTEST_SANDBOX.json next to --out (absent in every registered analysis)",
                "runner_sha256": sha(Path(a.runner)),
                "dependencies": {str(Path(m.__file__).resolve()): sha(Path(m.__file__)) for m in (POP, RATES, MECH, REP, SEED)}}
     (out / "selftest.json").write_text(json.dumps(summary, indent=1, default=str))
@@ -2215,22 +2583,40 @@ def cmd_stage(a):
 
 def cmd_analyze(a):
     out = Path(a.out)
-    sj = json.loads((Path(a.selftest) / "selftest.json").read_text())
-    if sj.get("readout_sha256") != sha(Path(__file__).resolve()) or sj.get("failures") != 0:
-        out.mkdir(parents=True, exist_ok=False)
-        (out / "result.json").write_text(json.dumps({"validity": "X", "reasons": ["SELFTEST_NOT_THIS_READOUT_OR_FAILED"]}))
+    if out.exists():
+        print(f"OUT_EXISTS {out}")
+        return 3
+    # selftest sandbox (prereg 8.2): a fault and a fixture target are read only from a SELFTEST_SANDBOX.json placed
+    # next to --out by the selftest; a registered analysis has no such file and uses the registered target
+    sbx_p = out.parent / SANDBOX
+    sandbox = json.loads(sbx_p.read_text()) if sbx_p.exists() else None
+    if sandbox is not None and sandbox.get("schema") != "DET_NRB_JUDGE_SELFTEST_SANDBOX_V1":
+        print("SANDBOX_SCHEMA")
         return 2
+    target = det_nrb_judge_target_from_json(sandbox["target"]) if sandbox else TARGET
+    fault = sandbox.get("fault") if sandbox else None
+    if sandbox is None:
+        sj = json.loads((Path(a.selftest) / "selftest.json").read_text())
+        if sj.get("readout_sha256") != sha(Path(__file__).resolve()) or sj.get("failures") != 0:
+            out.mkdir(parents=True, exist_ok=False)
+            (out / "result.json").write_text(json.dumps({"validity": "X", "reasons": ["SELFTEST_NOT_THIS_READOUT_OR_FAILED"]}))
+            return 2
     t0 = time.time()
     out.mkdir(parents=True, exist_ok=False)
     public = {"spectrum": a.public_spectrum, 14: a.public_si, 16: a.public_s}
     res = det_nrb_judge_analyze(a.run, a.baseline_run, a.reference_run, a.prior_analysis, a.prior_selftest,
-                                a.spectral_expectations, a.production_source, public, out / "analysis", out / "lib")
+                                a.spectral_expectations, a.production_source, public, out / "analysis", out / "lib",
+                                target, fault)
     inputs = {}
     for tag, rp in (("N", a.run), ("E", a.baseline_run), ("R", a.reference_run)):
-        for rel in ("STAGE_IDENTITY.txt", "RUN_FOOTER.txt", "input/run_build_identity.json", "input/resolved_lumina.exports",
-                    "input/binary.sha256", "input/deck.sha256", "input/fixed_te_profile.txt", "work/det_obs_capture/manifest.json",
-                    "work/det_obs_capture/meta.txt", "work/det_obs_status.json", "work/cmfgen_final_publication.json",
-                    "work/lumina_spectrum_det_obs.csv", "stdout.log", "stderr.log"):
+        rels = ["STAGE_IDENTITY.txt", "RUN_FOOTER.txt", "input/run_build_identity.json", "input/resolved_lumina.exports",
+                "input/binary.sha256", "input/deck.sha256", "input/fixed_te_profile.txt", "work/det_obs_capture/manifest.json",
+                "work/det_obs_capture/meta.txt", "work/det_obs_status.json", "work/cmfgen_final_publication.json",
+                "work/lumina_spectrum_det_obs.csv", "stdout.log", "stderr.log"]
+        if tag == "N":                              # closeout B4: the ledgers and capture the readout consumed
+            rels += ["work/w5_lines.csv", "work/det_obs_capture/lines.bin", "work/det_obs_capture/ne.f64",
+                     "STAGE_FILES.json", "job.slurm", "SUBMIT_COMMAND.txt"]
+        for rel in rels:
             p = Path(rp) / rel
             if p.exists():
                 inputs[f"{tag}:{rel}"] = {"sha256": sha(p), "bytes": p.stat().st_size}
@@ -2246,9 +2632,11 @@ def cmd_analyze(a):
         p = Path(p)
         if p.exists():
             inputs[k] = {"path": str(p), "sha256": sha(p), "bytes": p.stat().st_size}
-    man = det_nrb_judge_manifest(a, out, {"kind": "analyze", "inputs": inputs,
+    man = det_nrb_judge_manifest(a, out, {"kind": "analyze", "inputs": inputs, "sandbox": sandbox,
+                                          "lib_build": res.get("lib_build"), "input_identity": res.get("input_identity"),
                                           "selftest": {"path": str(Path(a.selftest) / "selftest.json"),
-                                                       "sha256": sha(Path(a.selftest) / "selftest.json")},
+                                                       "sha256": sha(Path(a.selftest) / "selftest.json")
+                                                       if (Path(a.selftest) / "selftest.json").exists() else None},
                                           "sample": res.get("sample"), "H_LOCAL_inheritance": res.get("P1A_H_LOCAL_inheritance"),
                                           "bytes_vs_reference": res.get("bytes_vs_reference"),
                                           "elapsed_s": time.time() - t0})

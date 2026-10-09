@@ -1031,18 +1031,18 @@ sed -n '11641,11870p' \
 | 기안·개정 1 | astra `gpt-6-astra` | e16167c · 852a655(OLD/NEW 20쌍, 적용·행 단위 손실 0 확인 a10 416516·416517) |
 | 기계 프리플라이트 | 운전자 | 기안·개정 1 모두 prereg·referents·canonical rc 0(`B/evidence/preflight_prereg_rev1_20261008T145304/`) |
 | Fable fresh 경량 사전감사 | Fable `claude-fable-5-1` | Q-GOAL 부합·Q-LEAN 적정·«폐합 차단» 0(`B/fable_preaudit.md`) |
-| 구현·직접시험 | 운전자(Opus 5.5) | 판독기 c8d6bd4(4890cb81), GPU 러너 da43edb8, CPU 러너; selftest t1 a10 416598 14/14, GPU 러너 자체 시험 30 사례 |
+| 구현·직접시험 | 운전자(Opus 5.5) | 판독기 c8d6bd4(4890cb81) → 종료감사 1회차 수리(df6620e1), GPU 러너 da43edb8, CPU 러너; selftest t1 a10 416598 14/14 → t3 417466 19/19(실제 CLI rc), GPU 러너 자체 시험 30 사례 |
 | 러너 위생 | 운전자 | rc 0 둘(`B/evidence/hygiene_runners/`) |
-| preflight·회귀 | 운전자 | p1 a10 416599 submit_allowed; R′ 회귀 비트 일치(P1(b) 25·P2 18·스펙트럼·III/II 10) |
+| preflight·회귀 | 운전자 | p1 a10 416599 submit_allowed; R′ 회귀 비트 일치(P1(b) 25·P2 18·스펙트럼·III/II 10); 수리판 p3 417467 동일 결과(p2 417464 는 회귀 입력 신원 오류로 rc 2) |
 | staging | 운전자 | s1 a10 416603 → `B/NRB/run1`(65 파일 sha 검증, exports 차이 ITER 6→12) |
 | 제출 전 비용 보고 | 운전자 | 「승인 당시 약 40, R′ 실측 환산에 따른 등록 상한 약 42.11 GPU·h」 2026-10-08 |
-| GPU 판정런 | 운전자 | 416608 취소(Slurm 이 21:03:24 를 21:04:00 으로 올림, 대기 중, 비용 0) → 416610 `--time=21:03:00` h200x2, 10-08 16:46:53–10-09 11:39:42, SUCCESS, 37.49 GPU·h |
-| 판독 | 운전자 | a1 a10 417453 VALID(`B/results/a1/`) |
+| GPU 판정런 | 운전자 | 416608 취소(Slurm 이 21:03:24 를 21:04:00 으로 올림, 대기 중, 비용 0) → 416610 `--time=21:03:00` h200x2, 10-08 16:46:53–10-09 11:31:37(sacct), SUCCESS, 37.49 GPU·h |
+| 판독 | 운전자 | a1 a10 417453 VALID → 수리판 a3 417468 VALID(`B/results/a3/`, 과학 산출 a1 과 sha 동일) |
 | 판정 | 운전자(구현·판정 겸임) | `docs/VERDICT_DET_NRB_JUDGE_2026-10-08.md` PASS_LIMITED·P2 NOT_CONVERGED |
-| 게이트 roster | 운전자 | `B/evidence/GATE_RECORD_a1.json`·`B/evidence/gate_roster_a1.out` |
-| 종료감사 | astra(계약 저자 이해관계) | 1회차 대기 |
+| 게이트 roster | 운전자 | `B/evidence/GATE_RECORD_a1.json`·`gate_roster_a1.out` → `GATE_RECORD_a3.json`·`gate_roster_a3.out` |
+| 종료감사 | astra(계약 저자 이해관계) | 1회차 REWORK «폐합 차단» 4(`B/astra_closeout.md`) → 판독기·시험·증거 수리, 재판독 a3; 2회차 대기 |
 | 실행 주장 재현 | 운전자 | R′ 대비 세대 3–7 물질 덤프 10 파일 바이트 동일, P1(b) 핵심 25쌍 R′ 기록과 비트 동일 |
-| 비용 | 운전자 | GPU 37.49 / 42.113 GPU·h, 모델 진입 1/1; CPU 전용 318 s / 3000 s(게이트 별도 누적); 용량 6.24 / 64 GiB |
+| 비용 | 운전자 | GPU 37.49 / 42.113 GPU·h, 모델 진입 1/1; CPU 전용 894 s / 3000 s(a3 까지, 게이트 별도 누적); 용량 6.25 / 64 GiB |
 
 운전자는 집행 후 이 절에 실제 명령·rc·작업 ID·비용·신원·이탈·재현 상태를 추가한다. 종료감사 1·2회차는 전건 반영하고, 3회차부터는 «폐합 차단»을 반영하며 나머지는 관측으로 남긴다. 이 규칙이 필수 과학 산출의 결손이나 잘못된 판정을 면제하지 않는다.
 
