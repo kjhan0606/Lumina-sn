@@ -1420,10 +1420,65 @@ def det_nrb_judge_write(out, res, decision, fault=None):
         for k, v in r_["codes"].items():
             if k.startswith("P2:") and v.get("state") == "NOT_IDENTIFIABLE":
                 v["code"], v["state"] = 0, "SURVIVES"
+    if FT(fault, "stored_ions_flip"):
+        r_["codes"]["IONS:14"]["code"], r_["codes"]["IONS:14"]["state"] = 0, "SURVIVES"
+    if FT(fault, "stored_spectrum_flip"):
+        r_["codes"]["SPECTRUM"]["code"], r_["codes"]["SPECTRUM"]["state"] = 0, "SURVIVES"
+    if FT(fault, "stored_p1b_flip"):
+        r_["codes"]["P1B_CORE"]["code"], r_["codes"]["P1B_CORE"]["state"] = 1, "REFUTED"
+    if FT(fault, "stored_scope_delete"):
+        r_["codes"].pop("P1A_LOCAL", None)
+        r_["codes"].pop("IONS:16", None)
     if FT(fault, "stored_X_as_valid"):
         r_["validity"] = d_["validity"] = "VALID"
     (Path(out) / "result.json").write_text(json.dumps(r_, indent=1, default=str))
     (Path(out) / "decision.json").write_text(json.dumps(d_, indent=1, default=str))
+
+
+REQUIRED_SCOPES = ("P1A", "P1A_LOCAL", "P1B_CORE", "P1B_EXT", "SPECTRUM", "P2:ion", "P2:ne", "P2:jbar", "P2:level",
+                   "IONS:14", "IONS:16")
+
+
+def det_nrb_judge_stored_final_codes(out, res, codes):
+    """closeout round 3: the final codes outside P2 recomputed from the stored rows and conditions (prereg 6.2 universal
+    aggregation): P1(a) from p1_rates.csv, the fixed recall with the stored inheritance state, P1(b) core / extension
+    from p1_source_1206.csv, the public ions from ion_fraction.csv, the spectrum from the stored summary and targets."""
+    out = Path(out)
+    why = []
+    uc = SEED.det_seedmem_scope_universal_check
+    pr = pd.read_csv(out / "p1_rates.csv", float_precision="round_trip")
+    kind = pr["kind"] if "kind" in pr.columns else pd.Series([None] * len(pr))
+    cells = pr[kind.fillna("") != "RECALL"]
+    recall = pr[kind.fillna("") == "RECALL"]
+    inherited = ((res.get("P1A_H_LOCAL_inheritance") or {}).get("inherited") is True)
+    sb = pd.read_csv(out / "p1_source_1206.csv", float_precision="round_trip")
+    io = pd.read_csv(out / "ion_fraction.csv", float_precision="round_trip")
+    ion_rows = io[(io.run == "N") & (io.ion.astype(str) != "III/II")]
+    exp = {"P1A": uc(list(cells.status)) if len(cells) else "NOT_IDENTIFIABLE",
+           "P1A_LOCAL": uc(list(recall.status) + ([] if inherited else ["NOT_IDENTIFIABLE"])) if len(recall) else "NOT_IDENTIFIABLE",
+           "P1B_CORE": uc(list(sb[sb.range == "core"].status)) if (sb.range == "core").any() else "NOT_IDENTIFIABLE",
+           "P1B_EXT": uc(list(sb[sb.range == "extension"].status)) if (sb.range == "extension").any() else "NOT_IDENTIFIABLE"}
+    for Z in (14, 16):
+        st_ = list(ion_rows[ion_rows.Z == Z].status)
+        exp[f"IONS:{Z}"] = uc(st_) if st_ else "NOT_IDENTIFIABLE"
+    spec = res.get("spectrum") or {}
+    # a scope already X keeps its X (blocked by an earlier finding); only admissible stored codes are recomputed
+    if spec.get("targets") and (codes.get("SPECTRUM") or {}).get("code") != "X":
+        sw_ = det_nrb_judge_spectrum_validate(spec.get("summary") or {}, spec.get("conditions") or {}, spec.get("overall"),
+                                              spec["targets"])
+        why += [f"STORED_{w}" for w in sw_]
+        exp["SPECTRUM"] = spec.get("overall")
+        sc = (codes.get("SPECTRUM") or {}).get("conditions") or {}
+        if sc != {k: CODE.get(v, "X") for k, v in (spec.get("conditions") or {}).items()} and \
+                (codes.get("SPECTRUM") or {}).get("code") != "X":
+            why.append("STORED_SPECTRUM_CONDITION_CODES")
+    for k, e in exp.items():
+        v = codes.get(k)
+        if v is None or v.get("code") == "X":
+            continue
+        if v.get("state") != e:
+            why.append(f"STORED_FINAL_CODE:{k}:{v.get('state')}!={e}")
+    return why
 
 
 def det_nrb_judge_stored_check(out, G):
@@ -1437,10 +1492,14 @@ def det_nrb_judge_stored_check(out, G):
     dec = json.loads((out / "decision.json").read_text())
     st = pd.read_csv(out / "stationarity.csv", float_precision="round_trip")
     codes = res.get("codes") or {}
+    for k in REQUIRED_SCOPES:                             # closeout round 3: every registered proposition present
+        if k not in codes:
+            why.append(f"STORED_SCOPE_ABSENT:{k}")
     for k, v in codes.items():
         c_, s_ = v.get("code"), v.get("state")
         if not ((c_ == "X" and s_ == "X") or (s_ in CODE and c_ == CODE[s_])):
             why.append(f"STORED_CODE_STATE:{k}:{c_}:{s_}")
+    why += det_nrb_judge_stored_final_codes(out, res, codes)
     if any(v.get("code") == "X" for v in codes.values()) and res.get("validity") != "X":
         why.append("STORED_VALIDITY_WITH_X_SCOPE")
     t0, t1 = G["terminal"]
@@ -2583,12 +2642,20 @@ def det_nrb_judge_selftest_cases(base, src, runner, prior_selftest):
               "stored_decision_inadmissible": analyze("st_dec_inadm", fault="stored_decision_inadmissible", ion_series=past_only),
               "stored_4_as_1": analyze("st_4_as_1", fault="stored_4_as_1", ne_adjust=ne_cross),
               "stored_5_as_0": analyze("st_5_as_0", fault="stored_5_as_0", mutate_N=drop_term(1, 10)),
-              "stored_X_as_valid": analyze("st_X_as_valid", fault="beta_current+stored_X_as_valid")}
+              "stored_X_as_valid": analyze("st_X_as_valid", fault="beta_current+stored_X_as_valid"),
+              "stored_ions_flip": analyze("st_ions_flip", fault="stored_ions_flip", pub_factor={(14, 10): 3.0}),
+              "stored_spectrum_flip": analyze("st_spec_flip", fault="stored_spectrum_flip",
+                                              mutate_N=scale_band(0.0, 3000.0, 3.0)),
+              "stored_p1b_flip": analyze("st_p1b_flip", fault="stored_p1b_flip"),
+              "stored_scope_delete": analyze("st_scope_delete", fault="stored_scope_delete")}
     case("stored-output check (closeout R2, analyze CLI): with a defective writer simulated after validation — an axis code "
          "1 -> 0 with the state kept, descriptor D replaced, decision rows deleted, the P2 disposition changed in both "
          "files, the decision disposition alone set to INADMISSIBLE, an UNRESOLVED (4) axis written as REFUTED (1), a "
-         "NOT_IDENTIFIABLE (5) axis written as SURVIVES (0), and an X scope written into a VALID run — every stored "
-         "file set is read back, recomputed and refused (X, rc 2); the unedited n_e straddle gives code 4 (VALID)",
+         "NOT_IDENTIFIABLE (5) axis written as SURVIVES (0), an X scope written into a VALID run, and (closeout round 3) "
+         "a refuted public-ion code written as SURVIVES, a refuted spectrum code written as SURVIVES, a surviving P1(b) "
+         "core written as REFUTED and two registered propositions deleted — every stored file set is read back, "
+         "recomputed from its stored rows / conditions and refused (X, rc 2); the unedited n_e straddle gives code 4 "
+         "(VALID)",
          "4 P2 terminal window",
          ((r_u["rc"], r_u.get("validity"), code(r_u, "P2:ne")),
           {k: (v["rc"], v.get("validity"), bool(v.get("stored_check"))) for k, v in stored.items()}),
