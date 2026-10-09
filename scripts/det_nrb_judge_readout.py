@@ -1108,8 +1108,9 @@ def det_nrb_judge_propagate(vwhy, scopes):
 
 
 def det_nrb_judge_decision(scopes, p2_disposition, descriptors, validity, incomplete):
-    """prereg 10.3 follow-up table consuming admissible results only; X scopes carry no decision."""
-    code = lambda k: scopes[k]["code"]                                                   # noqa: E731
+    """prereg 10.3 follow-up table consuming admissible results only; X scopes carry no decision, and while the run
+    is X no science follow-up is produced at all (closeout round 4)."""
+    code = lambda k: (scopes.get(k) or {"code": "X"})["code"]                          # noqa: E731
     rows = []
     if incomplete:
         rows.append({"condition": "INCOMPLETE", "follow_up": "required run or output missing: no completion"})
@@ -1117,6 +1118,14 @@ def det_nrb_judge_decision(scopes, p2_disposition, descriptors, validity, incomp
         if v.get("code") == "X":
             rows.append({"condition": f"{k} X", "follow_up": "no pass, extension or physical-cause decision on this scope "
                                                               "(prereg 10.3)", "blocked_by": v.get("blocked_by", [])[:5]})
+    if validity == "X":
+        rows.append({"condition": "run inadmissible", "follow_up": "no science follow-up while validity is X "
+                                                                     "(prereg 6.2, 10.3)"})
+        return {"schema": "DET_NRB_JUDGE_DECISION_V1", "validity": validity,
+                "p2_disposition": "INADMISSIBLE" if any(code(k) == "X" for k in scopes if k.startswith("P2:"))
+                else p2_disposition, "rows": rows,
+                "not_authorised": "no collision-table activation, constant repair, extra storage, other seed or extra GPU "
+                                  "run follows automatically (prereg 10.3)"}
     p1a, p1b_c, p1b_e = code("P1A"), code("P1B_CORE"), code("P1B_EXT")
     if p1a == "X":
         pass                                          # recorded above with the other X scopes
@@ -1382,13 +1391,47 @@ def det_nrb_judge_analyze(n_run, e_run, r_run, prior_analysis, prior_selftest, e
         res["validity"], res["reasons"] = "X", (res.get("reasons") or []) + sw[:20]
         res["n_reasons"] = res.get("n_reasons", 0) + len(sw)
         res["stored_check"] = sw
-        for k in res["codes"]:
-            if k.startswith("P2:"):
-                SEED.det_seedmem_scope_block(res["codes"][k], sw[0])
-        res["P2_disposition"] = "INADMISSIBLE"
-        decision = det_nrb_judge_decision(res["codes"], "INADMISSIBLE", res.get("P2_descriptors"), "X", res.get("incomplete"))
+        det_nrb_judge_stored_block(res, sw)
+        decision = det_nrb_judge_decision(res["codes"], res["P2_disposition"], res.get("P2_descriptors"), "X",
+                                          res.get("incomplete"))
         (out / "result.json").write_text(json.dumps(res, indent=1, default=str))
         (out / "decision.json").write_text(json.dumps(decision, indent=1, default=str))
+    return res
+
+
+def det_nrb_judge_stored_block(res, sw):
+    """closeout round 4: every stored-check finding makes the proposition it concerns X (an absent registered
+    proposition is inserted as X); a finding without a proposition (validity, decision table) leaves the run X only."""
+    codes = res.setdefault("codes", {})
+    for k in REQUIRED_SCOPES:
+        if k not in codes:
+            codes[k] = {"code": "X", "state": "X", "blocked_by": [f"STORED_SCOPE_ABSENT:{k}"]}
+    for w in sw:
+        f = w.split(":")
+        kind = f[0]
+        tgt = []
+        if kind in ("STORED_CODE_STATE", "STORED_FINAL_CODE") and len(f) > 1:
+            tgt = [f[1] + (":" + f[2] if f[1] in ("P2", "IONS") and len(f) > 2 else "")]
+        elif kind.startswith("STORED_SPECTRUM"):
+            tgt = ["SPECTRUM"]
+        elif kind in ("P2_STORED_STATE", "P2_STORED_TERMINAL") and len(f) > 1:
+            tgt = [f"P2:{f[1]}"]
+        elif kind in ("P2_STORED_DESCRIPTOR", "P2_STORED_DESCRIPTOR_ABSENT") and len(f) > 2:
+            tgt = [f"P2:{f[2]}"]
+        elif kind == "STORED_P2_DISPOSITION":
+            tgt = [k for k in codes if k.startswith("P2:")]
+        for k in tgt:
+            if k in codes and codes[k].get("code") != "X":
+                SEED.det_seedmem_scope_block(codes[k], w)
+    states = {k: v.get("state") for k, v in codes.items() if k.startswith("P2:")}
+    if any(s_ == "X" for s_ in states.values()):
+        res["P2_disposition"] = "INADMISSIBLE"
+    elif states and all(s_ == "SURVIVES" for s_ in states.values()):
+        res["P2_disposition"] = "P2_SMALL_CHANGE"
+    else:
+        res["P2_disposition"] = "NOT_CONVERGED"
+    if res.get("incomplete"):
+        res["P2_disposition"] = "INCOMPLETE"
     return res
 
 
@@ -1429,6 +1472,14 @@ def det_nrb_judge_write(out, res, decision, fault=None):
     if FT(fault, "stored_scope_delete"):
         r_["codes"].pop("P1A_LOCAL", None)
         r_["codes"].pop("IONS:16", None)
+    if FT(fault, "stored_spec_targets_delete"):
+        r_["spectrum"].pop("targets", None)
+        r_["codes"]["SPECTRUM"]["code"], r_["codes"]["SPECTRUM"]["state"] = 0, "SURVIVES"
+    if FT(fault, "stored_spectrum_section_delete"):
+        r_.pop("spectrum", None)
+    if FT(fault, "stored_required_delete"):
+        for k in ("P1A", "P1B_CORE", "P1B_EXT", "SPECTRUM"):
+            r_["codes"].pop(k, None)
     if FT(fault, "stored_X_as_valid"):
         r_["validity"] = d_["validity"] = "VALID"
     (Path(out) / "result.json").write_text(json.dumps(r_, indent=1, default=str))
@@ -1462,8 +1513,14 @@ def det_nrb_judge_stored_final_codes(out, res, codes):
         st_ = list(ion_rows[ion_rows.Z == Z].status)
         exp[f"IONS:{Z}"] = uc(st_) if st_ else "NOT_IDENTIFIABLE"
     spec = res.get("spectrum") or {}
-    # a scope already X keeps its X (blocked by an earlier finding); only admissible stored codes are recomputed
-    if spec.get("targets") and (codes.get("SPECTRUM") or {}).get("code") != "X":
+    # a scope already X keeps its X (blocked by an earlier finding); only admissible stored codes are recomputed, and an
+    # admissible spectrum code needs its stored evidence (summary, conditions, overall, targets) — closeout round 4
+    sp_code = (codes.get("SPECTRUM") or {}).get("code")
+    if sp_code is not None and sp_code != "X":
+        absent = [k for k in ("summary", "conditions", "overall", "targets") if not spec.get(k)]
+        if absent:
+            why.append(f"STORED_SPECTRUM_EVIDENCE_ABSENT:{','.join(absent)}")
+    if spec.get("targets") and spec.get("summary") and sp_code is not None and sp_code != "X":
         sw_ = det_nrb_judge_spectrum_validate(spec.get("summary") or {}, spec.get("conditions") or {}, spec.get("overall"),
                                               spec["targets"])
         why += [f"STORED_{w}" for w in sw_]
@@ -1534,6 +1591,11 @@ def det_nrb_judge_stored_check(out, G):
         else:
             code_, lo, hi = det_nrb_judge_end_code(float(a.M_lo), float(a.M_hi), float(b.M_lo), float(b.M_hi))
             exp["code"], exp["D"] = code_, {"lo": lo, "mid": float(b.M_mid) - float(a.M_mid), "hi": hi}
+        dec_descs = [(row.get("descriptors") or {}).get(ax) for row in dec.get("rows", []) if row.get("descriptors")]
+        for d_dec in dec_descs:                        # the decision's copy of a P2 descriptor belongs to that axis
+            if d_dec is not None and any(d_dec.get(f_) != exp[f_] for f_ in ("start_generation", "end_generation",
+                                                                            "M_start", "M_end", "code", "D")):
+                why.append(f"P2_STORED_DESCRIPTOR:decision:{ax}:fields")
         for where, d_ in (("result", (res.get("P2_descriptors") or {}).get(ax)),
                           ("code", (rc.get("descriptor") if rc.get("code") != "X" or "descriptor" in rc else None))):
             if d_ is None:
@@ -1552,7 +1614,10 @@ def det_nrb_judge_stored_check(out, G):
         disp = "INCOMPLETE"
     if res.get("P2_disposition") != disp:
         why.append(f"STORED_P2_DISPOSITION:{res.get('P2_disposition')}!={disp}")
-    exp_dec = det_nrb_judge_decision(codes, disp, res.get("P2_descriptors"), res.get("validity"), res.get("incomplete"))
+    codes_x = dict(codes)
+    for k in REQUIRED_SCOPES:
+        codes_x.setdefault(k, {"code": "X", "state": "X"})
+    exp_dec = det_nrb_judge_decision(codes_x, disp, res.get("P2_descriptors"), res.get("validity"), res.get("incomplete"))
     exp_dec = json.loads(json.dumps(exp_dec, default=str))
     if exp_dec != dec:
         diff = [k for k in set(exp_dec) | set(dec) if exp_dec.get(k) != dec.get(k)]
@@ -2647,19 +2712,35 @@ def det_nrb_judge_selftest_cases(base, src, runner, prior_selftest):
               "stored_spectrum_flip": analyze("st_spec_flip", fault="stored_spectrum_flip",
                                               mutate_N=scale_band(0.0, 3000.0, 3.0)),
               "stored_p1b_flip": analyze("st_p1b_flip", fault="stored_p1b_flip"),
-              "stored_scope_delete": analyze("st_scope_delete", fault="stored_scope_delete")}
+              "stored_scope_delete": analyze("st_scope_delete", fault="stored_scope_delete"),
+              "stored_spec_targets_delete": analyze("st_spec_targets_delete", fault="stored_spec_targets_delete",
+                                                    mutate_N=scale_band(0.0, 3000.0, 3.0)),
+              "stored_spectrum_section_delete": analyze("st_spec_section_delete", fault="stored_spectrum_section_delete"),
+              "stored_required_delete": analyze("st_required_delete", fault="stored_required_delete")}
+    scope_of = {"stored_ions_flip": ["IONS:14"], "stored_spectrum_flip": ["SPECTRUM"], "stored_p1b_flip": ["P1B_CORE"],
+                "stored_scope_delete": ["P1A_LOCAL", "IONS:16"], "stored_spec_targets_delete": ["SPECTRUM"],
+                "stored_spectrum_section_delete": ["SPECTRUM"],
+                "stored_required_delete": ["P1A", "P1B_CORE", "P1B_EXT", "SPECTRUM"]}
+
+    def no_science_rows(v):
+        return all(r_["condition"].endswith(" X") or r_["condition"] in ("run inadmissible", "INCOMPLETE")
+                   for r_ in dec(v).get("rows", []))
     case("stored-output check (closeout R2, analyze CLI): with a defective writer simulated after validation — an axis code "
          "1 -> 0 with the state kept, descriptor D replaced, decision rows deleted, the P2 disposition changed in both "
          "files, the decision disposition alone set to INADMISSIBLE, an UNRESOLVED (4) axis written as REFUTED (1), a "
          "NOT_IDENTIFIABLE (5) axis written as SURVIVES (0), an X scope written into a VALID run, and (closeout round 3) "
          "a refuted public-ion code written as SURVIVES, a refuted spectrum code written as SURVIVES, a surviving P1(b) "
-         "core written as REFUTED and two registered propositions deleted — every stored file set is read back, "
-         "recomputed from its stored rows / conditions and refused (X, rc 2); the unedited n_e straddle gives code 4 "
-         "(VALID)",
+         "core written as REFUTED and two registered propositions deleted, and (closeout round 4) the stored spectrum "
+         "targets deleted with a SURVIVES code, the spectrum section deleted, four registered propositions deleted — "
+         "every stored file set is read back, recomputed from its stored rows / conditions and refused (X, rc 2), the "
+         "proposition concerned is X in the rewritten result and decision.json carries X rows only (no science "
+         "follow-up); the unedited n_e straddle gives code 4 (VALID)",
          "4 P2 terminal window",
          ((r_u["rc"], r_u.get("validity"), code(r_u, "P2:ne")),
-          {k: (v["rc"], v.get("validity"), bool(v.get("stored_check"))) for k, v in stored.items()}),
-         ((0, "VALID", 4), {k: (2, "X", True) for k in stored}), fault="|".join(stored), runs=[r_u] + list(stored.values()))
+          {k: (v["rc"], v.get("validity"), bool(v.get("stored_check")), no_science_rows(v),
+               [code(v, sc) for sc in scope_of.get(k, [])]) for k, v in stored.items()}),
+         ((0, "VALID", 4), {k: (2, "X", True, True, ["X"] * len(scope_of.get(k, []))) for k in stored}),
+         fault="|".join(stored), runs=[r_u] + list(stored.values()))
     # ---- 9 preservation (real CLI)
     rcP, soP, seP = det_nrb_judge_cli(["analyze", "--prereg", P / PREREG, "--run", fx_s["N"], "--baseline-run", fx_s["E"],
                                        "--reference-run", fx_s["R"], "--prior-analysis", fx_s["A"], "--prior-selftest",
