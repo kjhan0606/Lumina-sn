@@ -4,18 +4,18 @@
 
 - **계약:** `docs/PREREG_DET_NRB_JUDGE_2026-10-08.md` — 기안 e16167c, 개정 1 852a655(astra `gpt-6-astra`).
 - **경량 사전감사:** Fable fresh `claude-fable-5-1` 1회(`nrb_judge_20261008/fable_preaudit.md`). Q-GOAL 부합, Q-LEAN 적정, «폐합 차단» 0. «기재로 족함» 9건은 개정 1 에 반영했다(L4 후보 6 = 준위 축은 user 승인 범위라 비용·소비점 사실만 기재).
-- **판독기:** `scripts/det_nrb_judge_readout.py`(신설 c8d6bd4 sha256 4890cb81… → 종료감사 1회차 수리 60840c7 sha256 df6620e1… → 2회차 수리 bdd46bc sha256 b7e423c7… → 3회차 수리 30c54db sha256 eb690897… → **4회차 수리 = 이 판정문의 커밋, sha256 4ae18f01…**).
+- **판독기:** `scripts/det_nrb_judge_readout.py`(신설 c8d6bd4 sha256 4890cb81… → 종료감사 1회차 수리 60840c7 sha256 df6620e1… → 2회차 수리 bdd46bc sha256 b7e423c7… → 3회차 수리 30c54db sha256 eb690897… → 4회차 수리 0ff1e43 sha256 4ae18f01… → **5회차 수리 = 이 판정문의 커밋, sha256 cec3dade…**).
   - import 하는 기존 판독기 다섯은 수정하지 않았다: `det_seedmem_scope_readout.py`(sha 3131bd84 = SEEDMEM r4 selftest 의 판독기), `det_siiii_repair_readout.py`, `det_siiii_pop_readout.py`, `det_siiii_rates_readout.py`, `det_siiii_1206mech_readout.py`.
 - **러너:** `/gpfs/kjhan/lumina/cmfgen_map/nrb_judge_20261008/tools/run_nrb_judge_gpu.slurm`(sha256 da43edb8…, 자체 selftest 30 사례), `…/tools/run_nrb_judge_offline.slurm`.
 - **런:** `/gpfs/kjhan/lumina/cmfgen_map/nrb_judge_20261008/NRB/run1`, h200 job 416610.
   - 2026-10-08 16:46:53 시작, syn104 H200 NVL ×2.
   - 10-09 11:31:37 종료(sacct End; 원문 `evidence/sacct_gpu_416610.txt`), Slurm 18:44:44 = 67,484 s(모델 67,474 s), `terminal_state=SUCCESS`.
-- **판독 정본:** `/gpfs/kjhan/lumina/cmfgen_map/nrb_judge_20261008/results/a7/`(4회차 수리판, a10 job 417540, Slurm 40 s).
+- **판독 정본:** `/gpfs/kjhan/lumina/cmfgen_map/nrb_judge_20261008/results/a8/`(5회차 수리판, a10 job 417547, Slurm 40 s).
   - 과학 산출은 `analysis/analysis/`(result·decision·p1_rates·p1_source_1206·stationarity·capture_check·ion_fraction·spectrum), 신원은 `analysis/manifest.json` 에 있다.
-  - 이전 판독 `results/a1/`(417453, 4890cb81)·`a3`·`a4`·`a6` 는 보존한다. a1·a3·a4·a6·a7 의 과학 산출 7 파일(위 CSV 6 개와 decision.json)은 sha256 이 같다. `result.json` 은 신원·빌드·카운터 필드 추가와 창 (13,14) 분리 때문에 다르며 최종 코드·기술자는 같다.
-- **선행:** 직접시험 t7(417538), preflight p7(417539, R′ 회귀), stage s1(416603). 이전 판본의 t1·t3·t4·t6·p1·p3·p4·p6 은 보존한다.
+  - 이전 판독 `results/a1/`(417453, 4890cb81)·`a3`·`a4`·`a6`·`a7` 는 보존한다. a1·a3·a4·a6·a7·a8 의 과학 산출 7 파일(위 CSV 6 개와 decision.json)은 sha256 이 같다. `result.json` 은 신원·빌드·카운터 필드 추가와 창 (13,14) 분리 때문에 다르며 최종 코드·기술자는 같다.
+- **선행:** 직접시험 t8(417545), preflight p8(417546, R′ 회귀), stage s1(416603). 이전 판본의 t1·t3·t4·t6·t7·p1·p3·p4·p6·p7 은 보존한다.
 
-## 처분: **PASS_LIMITED** (상한) — 종료감사 1·2·3·4회차 REWORK(«폐합 차단» 4·2·1·2) 수리 후 재판정, astra 5회차 대기
+## 처분: **PASS_LIMITED** (상한) — 종료감사 1·2·3·4·5회차 REWORK(«폐합 차단» 4·2·1·2·1) 수리 후 재판정, astra 6회차 대기
 
 `PASS_LIMITED / P2 = NOT_CONVERGED / P1(a) = 0 · P1(b) 핵심 0 · 확장 0 / 공개 S 분율 = 0 · Si 분율 = 1 / 공개 스펙트럼 = 1`
 
@@ -40,7 +40,7 @@
   - Si II/III 분율: 9/10 이 밖이라 **반증**.
   - UV·광학 스펙트럼: R₈ = 0.363 등으로 **반증**.
   - 공개 이온 비교는 열 이름 `si0…si4`·`s0…s4` 를 I…V 로 읽는 **명명 가정에 조건부**다.
-- **비용:** GPU 2장 × 67,484 s = **37.49 GPU·h**(등록 상한 42.11, 승인 표현 약 40). 모델 진입 1회, 재실행 0. CPU 전용 2060 s / 3000 s(종료감사 1–4회차 수리 포함, a7 까지).
+- **비용:** GPU 2장 × 67,484 s = **37.49 GPU·h**(등록 상한 42.11, 승인 표현 약 40). 모델 진입 1회, 재실행 0. CPU 전용 2332 s / 3000 s(종료감사 1–5회차 수리 포함, a8 까지).
 - **이탈:** 첫 제출(416608)의 `--time=21:03:24` 를 Slurm 이 분 단위로 올려 21:04:00 으로 저장했다(§8).
 - **판정하지 않은 것:** 생산 승격·NRB 기본값 전환, 물리적 정답, 씨앗 독립성, 수렴, 공개 비교 변화의 원인.
 
@@ -176,7 +176,7 @@
 
 ## 7. 직접시험·게이트·신원 (본문 5)
 
-- **직접시험(t7, 실패 0; 판독기 4ae18f01):** 시험 레코드 21 개 = **새로 실행한 시험 20 개 + 승계 확인 1 개**다. 새 시험의 분석·stage 는 판독기 CLI 의 **별도 프로세스**로 실행했고, 실제 종료 코드와 거부 사유를 레코드의 `runs` 에 보존했다(GPU 러너 시험은 bash 프로세스, 승계 확인은 기존 selftest 신원 대조).
+- **직접시험(t8, 실패 0; 판독기 cec3dade):** 시험 레코드 21 개 = **새로 실행한 시험 20 개 + 승계 확인 1 개**다. 새 시험의 분석·stage 는 판독기 CLI 의 **별도 프로세스**로 실행했고, 실제 종료 코드와 거부 사유를 레코드의 `runs` 에 보존했다(GPU 러너 시험은 bash 프로세스, 승계 확인은 기존 selftest 신원 대조).
   - 픽스처는 **등록 반복 수 12회**다(관측 13·후속 14). N 은 실제 `stage` CLI 로 픽스처 R′ 에서 만든 뒤 12회 산출을 얹었다.
   - 시험용 결함과 소표본 대상(8키)은 **시험 전용 하위 명령 `selftest-analyze`** 만 읽는다. 이 명령은 `--out` 옆의 `SELFTEST_SANDBOX.json` 과, 런·이전 판독·공개 자료·기대치 입력과 `--out` 이 모두 그 샌드박스 디렉터리 안에 있을 것을 요구한다. **정본 `analyze` 는 샌드박스 파일이 옆에 있으면 거부**하고(rc 2), 등록 대상과 이 판독기의 selftest 통과를 강제한다(2회차 R1). 정본 a4 의 manifest 는 `kind: analyze`, `sandbox: null` 이다.
   - 신규 묶음:
@@ -189,22 +189,23 @@
   - 2회차 보완: 샌드박스 경계(정본 analyze + 샌드박스 → 거부, 샌드박스 밖 입력 → 거부, 샌드박스 없음 → 거부, 모두 rc 2·쓰기 없음); **저장 산출 재검**(검증 뒤의 결함 있는 쓰기를 모사 — 축 코드 1→0, 기술자 D 교체, 결정 행 삭제, 두 파일의 P2 처분 변경, 결정 처분만 INADMISSIBLE, UNRESOLVED(4)→REFUTED(1), NOT_IDENTIFIABLE(5)→SURVIVES(0), X 범위가 있는 run 을 VALID 로 — 8 종 전부 X·rc 2), n_e 변화가 0.0043 dex 를 걸치는 픽스처의 코드 4.
   - 3회차 보완: 저장 재검이 P2 밖의 최종 코드도 저장 행·조건에서 다시 계산한다(P1(a)·고정 재호출·P1(b) 두 범위·공개 이온·스펙트럼). 등록 명제 11 개가 모두 있어야 한다. 쓰기 결함 4 종(공개 이온 반증→생존, 스펙트럼 반증→생존, P1(b) 생존→반증, 명제 2 개 삭제)을 더해 12 종 전부 X·rc 2.
   - 4회차 보완: 저장 재검 발견은 그 명제를 X 로 만들고(빠진 등록 명제는 X 로 삽입), validity 가 X 인 run 의 decision.json 에는 X 행과 「run inadmissible」만 남아 과학 후속 판단이 없다. 적격 스펙트럼 코드는 저장 근거(summary·conditions·overall·targets)가 모두 있어야 한다. 쓰기 결함 3 종(스펙트럼 기준 삭제 + 생존 코드, 스펙트럼 절 삭제, 등록 명제 4 개 삭제)을 더해 15 종 전부 X·rc 2이며, 매 사례에서 해당 명제 X 와 결정표의 X 행만을 확인했다.
+  - 5회차 보완: 저장 근거의 존재는 형(型)으로 본다. 식별 불가 스펙트럼의 빈 조건 집합 `{}` 은 저장된 값이며 그 사유는 요약의 상태(`summary.N.status`)에 남는다. 생산 검증기도 같은 구조를 요구한다(요약이 OK 가 아니면 overall NOT_IDENTIFIABLE·조건 없음·사유 존재). N 스펙트럼의 OPT 적분이 0 인 정상 대조가 코드 5·VALID·rc 0·저장 재검 발견 0 이고, 같은 런에서 조건 집합을 지운 쓰기 결함은 X·rc 2 다(저장 변조 16 종 전부 X·rc 2).
   - **승계는 수정하지 않은 순수 함수에 한정**했다: SEEDMEM r4 selftest(판독기 sha 일치, 실패 0)의 역산·전방 장부·원천 항등, NRB 율 재구성, 국소항 교환 전제, 충돌 권위, solve 단위, 구간 보조 함수 묶음. 새 P2·전파·결정·저장 산출 재검 코드는 위에서 직접 시험했다.
 - **GPU 러너 자체 시험(30 사례):**
   - 정상: h200x2, h100x2, 상한 이하 시간.
   - 거부: a100, GPU 수·종류·메모리, 재진입, requeue, 시간 상한 초과·무제한, 6·13회, NRB off, 표지 11개, 캡처 세대 7, 관측 13 대신 14.
 - **preflight p3(수리판):** R′ 신원 사슬, 입력 65 파일 해시, 덱·카탈로그 검증, 러너 상수. R′ 회귀가 기존 정본과 **비트 일치**했다: P1(b) 25쌍(SEEDMEM model.csv), P2 18행(stationarity.csv), E′/R′ 스펙트럼(repair t5), III/II 10행(diag6). 회귀에서는 R′ 자신이 신원 기준이라 입력 신원 검사를 적용하지 않았다(기록함).
-- **판독 a7 의 추가 검사:** N 입력 65 파일이 preflight 가 기록한 R′ 내용과 sha 동일, exports 가 stage 신원과 동일, 캡처 τ 카운터 required = computed = 26(관측 덤프의 opacity·emissivity 세대 23 은 기록만). 저장 산출 재검은 발견 0 이다. 재검 대상은 등록 명제 11 개의 존재, 모든 범위의 코드–상태 정합, X 범위가 있으면 validity X, P1·공개 이온·스펙트럼의 최종 코드(저장 행·조건에서 전칭 집계), 네 축의 종단 상태, 기술자의 세대·M 끝점·D 구간·코드, P2 처분, 결정표 전체다.
+- **판독 a8 의 추가 검사:** N 입력 65 파일이 preflight 가 기록한 R′ 내용과 sha 동일, exports 가 stage 신원과 동일, 캡처 τ 카운터 required = computed = 26(관측 덤프의 opacity·emissivity 세대 23 은 기록만). 저장 산출 재검은 발견 0 이다. 재검 대상은 등록 명제 11 개의 존재, 모든 범위의 코드–상태 정합, X 범위가 있으면 validity X, P1·공개 이온·스펙트럼의 최종 코드(저장 행·조건에서 전칭 집계), 네 축의 종단 상태, 기술자의 세대·M 끝점·D 구간·코드, P2 처분, 결정표 전체다.
 - **기계 게이트:**
   - 계약: prereg·referents·canonical rc 0(`evidence/preflight_prereg_rev1_20261008T145304/`).
   - 러너 위생: 둘 다 rc 0(`evidence/hygiene_runners/`).
-  - G-LINK·G-READOUT: PASS(`evidence/GATE_RECORD_a7.json`), roster `evidence/gate_roster_a7.out`. 이전 기록은 `GATE_RECORD_a1.json`·`a3`·`a4`·`a6`.
-- **신원:** `results/a7/identity.sha256`, `results/a7/analysis/manifest.json`(N 의 `work/w5_lines.csv`·캡처 `lines.bin`·`ne.f64`·`STAGE_FILES.json`·`job.slurm` 포함 입력 sha, CPU 라이브러리 빌드 명령·rc·소스·`.so` sha, 승계 근거, 바이트 비교), `NRB/run1/STAGE_IDENTITY.txt`·`STAGE_FILES.json`·`RUN_FOOTER.txt`.
+  - G-LINK·G-READOUT: PASS(`evidence/GATE_RECORD_a8.json`), roster `evidence/gate_roster_a8.out`. 이전 기록은 `GATE_RECORD_a1.json`·`a3`·`a4`·`a6`·`a7`.
+- **신원:** `results/a8/identity.sha256`, `results/a8/analysis/manifest.json`(N 의 `work/w5_lines.csv`·캡처 `lines.bin`·`ne.f64`·`STAGE_FILES.json`·`job.slurm` 포함 입력 sha, CPU 라이브러리 빌드 명령·rc·소스·`.so` sha, 승계 근거, 바이트 비교), `NRB/run1/STAGE_IDENTITY.txt`·`STAGE_FILES.json`·`RUN_FOOTER.txt`.
 
 ## 8. 비용·보존·이탈 (본문 6)
 
 - **GPU:** 416610 이 2 × 67,484 s = **37.49 GPU·h** 다(상한 42.113, 할당 경과 67,484 s / 75,804 s). 모델 진입 1/1, 재실행 0. 호스트 예약 16 CPU × 67,484 s 는 CPU 전용 비용과 따로 기록했다.
-- **CPU 전용(종료감사 1–4회차 수리 포함, a7 까지):** Slurm 경과 2060 s / 3000 s, 2.049 / 3.333 core·h(`evidence/COST_LEDGER.txt`). 남은 940 s 는 수리 한 회차(약 360 s)와 게이트를 감당한다. 이후 게이트는 장부에 이어 적는다.
+- **CPU 전용(종료감사 1–5회차 수리 포함, a8 까지):** Slurm 경과 2332 s / 3000 s, 2.313 / 3.333 core·h(`evidence/COST_LEDGER.txt`). 남은 668 s 는 수리 한 회차(약 280 s)와 게이트를 감당한다. 이후 게이트는 장부에 이어 적는다.
 - **용량:** 6.24 GiB / 64 GiB(입력 사본 5.02 + work 1.16 + results 0.05).
 - **보존:** 새 경로만 썼다. R′·E′·SEEDMEM·repair 산출은 읽기만 했다.
 
@@ -223,6 +224,7 @@
 9. 종료감사 2회차 수리 과정: 개발 selftest dev7(20/21, 기술자 변조 사례의 사유 문자열 확인만 실패 — 거부 자체는 됐다), 정본 t4·p4·a4.
 11. 종료감사 3회차 수리 과정: 정본 t5(417516)가 20/21 로 실패했다(이미 X 인 SPECTRUM 범위를 새 저장 재검이 다시 판정해 P2 까지 X 를 번지게 함). 의존 작업 p5·a5(417517·417518)는 실행 전 취소했다(비용 0). 수리 뒤 t6·p6·a6.
 12. 종료감사 4회차 수리 과정: 개발 selftest dev8(20/21 — 결정표 기술자 변조가 run 만 X 로 만들고 P2 축을 막지 않음, 축으로 보내도록 수정), 정본 t7·p7·a7.
+13. 종료감사 5회차 수리 과정: 개발 selftest 없이 정본 t8·p8·a8(셋 다 rc 0).
 10. a3 게이트 스크립트를 sed 로 만들 때 한 줄의 첫 치환만 일어나 rc 줄이 a1 게이트 출력에 덧붙었다. a1 파일의 덧붙은 마지막 줄을 지워 원래 내용으로 되돌렸고 a3 파일에 rc 를 적었다(JOBS.txt 기재).
 
 ## 9. 등록 식별 불가(코드 5로 유지, §5.6)
@@ -288,3 +290,11 @@ astra 는 과학 수치·주장 한정이 대체로 맞다고 확인했고, 차�
 | R4-1 스펙트럼 저장 근거가 빠지면 재검을 건너뜀 | 폐합 차단 | 적격 스펙트럼 코드는 summary·conditions·overall·targets 가 모두 있어야 하며, 없으면 `STORED_SPECTRUM_EVIDENCE_ABSENT` → SPECTRUM X; 기준 삭제 + 생존 코드, 절 삭제 시연 |
 | R4-2 저장 재검 발견을 P2 에만 전파, 틀린 코드로 후속 판단 생성, 필수 명제 삭제 시 KeyError | 폐합 차단 | 발견을 그 명제로 보내 X(빠진 명제는 X 삽입), validity X 인 run 의 결정표는 X 행과 「run inadmissible」만, 결정표의 기술자 사본 불일치는 해당 P2 축으로; 15 종 시험에서 해당 명제 X·과학 후속 판단 없음 확인 |
 | a1 대비 불변 범위·재계산 범위·문면 표류 | 기재로 족함(관측) | 관측으로만 기재. 저장 재검은 P1·이온의 저장 행 상태를 재집계하고 스펙트럼의 저장 요약·조건·기준을 소비한다. 원시 물리 계산의 독립 재실행이 아니다. |
+
+## 16. 종료감사 5회차(astra, `nrb_judge_20261008/astra_closeout5.md`) 반영
+
+| 지적 | 계급 | 처리 |
+|---|---|---|
+| R4-1·R4-2 | (4회차 폐합 차단) | 닫힘 확인(저장 변조 15 종 rc 2·validity X·과학 후속 판단 없음) |
+| R5-1 정상적인 스펙트럼 식별 불가(빈 조건 집합)를 저장 근거 삭제로 오판해 코드 5 → X | 폐합 차단 | 저장 근거 존재를 형으로 판정(빈 조건 집합 허용), 생산 검증기에 식별 불가 구조(overall NOT_IDENTIFIABLE·조건 없음·사유 존재) 요구; OPT 적분 0 정상 대조 코드 5·VALID·rc 0, 같은 런의 조건 집합 삭제 X·rc 2(t8) |
+| 정본·시험 경계, 재계산 범위, a1 대비 불변, 검증 기록 | 기재로 족함(관측) | 관측으로만 기재(3회차 이후 규칙). a8 의 과학 산출 7 파일도 a1 과 sha 동일, result.json 차이는 `lib_build`·`timing_s` 뿐이다. |

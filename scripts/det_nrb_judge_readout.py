@@ -956,7 +956,14 @@ def det_nrb_judge_spectrum_validate(summ, conds, overall, targets):
     why = []
     sN = summ.get("N", {})
     if sN.get("status") != "OK":
-        return why if overall == "NOT_IDENTIFIABLE" else ["SPECTRUM_OVERALL_RECOMPUTE"]
+        # closeout round 5: a not-identifiable spectrum keeps its reason (the summary status) and an empty condition set
+        if overall != "NOT_IDENTIFIABLE":
+            why.append("SPECTRUM_OVERALL_RECOMPUTE")
+        if conds:
+            why.append("SPECTRUM_CONDITIONS_WITHOUT_SUMMARY")
+        if sN.get("status") is None and summ.get("status") is None:
+            why.append("SPECTRUM_NOT_IDENTIFIABLE_REASON_ABSENT")
+        return why
     iv = lambda v: None if v is None else I(v["lo"], v["mid"], v["hi"])                     # noqa: E731
     tv = lambda v: I.x(float(v)) if not isinstance(v, dict) else I(v["lo"], v["mid"], v["hi"])  # noqa: E731
     exp = {"NUV": REP.det_siiii_repair_le(iv(sN["d_NUV"]).abs() if sN.get("d_NUV") else None, tv(targets["abs_d_NUV_max"])),
@@ -1477,6 +1484,8 @@ def det_nrb_judge_write(out, res, decision, fault=None):
         r_["codes"]["SPECTRUM"]["code"], r_["codes"]["SPECTRUM"]["state"] = 0, "SURVIVES"
     if FT(fault, "stored_spectrum_section_delete"):
         r_.pop("spectrum", None)
+    if FT(fault, "stored_spec_conditions_delete"):
+        r_["spectrum"].pop("conditions", None)
     if FT(fault, "stored_required_delete"):
         for k in ("P1A", "P1B_CORE", "P1B_EXT", "SPECTRUM"):
             r_["codes"].pop(k, None)
@@ -1517,7 +1526,9 @@ def det_nrb_judge_stored_final_codes(out, res, codes):
     # admissible spectrum code needs its stored evidence (summary, conditions, overall, targets) — closeout round 4
     sp_code = (codes.get("SPECTRUM") or {}).get("code")
     if sp_code is not None and sp_code != "X":
-        absent = [k for k in ("summary", "conditions", "overall", "targets") if not spec.get(k)]
+        # closeout round 5: presence is by type; the empty condition set of a not-identifiable spectrum is a stored value
+        need = {"summary": dict, "conditions": dict, "overall": str, "targets": dict}
+        absent = [k for k, t in need.items() if not isinstance(spec.get(k), t) or (k != "conditions" and not spec.get(k))]
         if absent:
             why.append(f"STORED_SPECTRUM_EVIDENCE_ABSENT:{','.join(absent)}")
     if spec.get("targets") and spec.get("summary") and sp_code is not None and sp_code != "X":
@@ -2592,15 +2603,26 @@ def det_nrb_judge_selftest_cases(base, src, runner, prior_selftest):
           "hide_opt": analyze("spec_hide", fault="hide_opt")}
     # the public file is written from the unmutated N spectrum; the N spectrum alone is tilted below 3000 A
     r6t = analyze("spec_tilt", mutate_N=scale_band(0.0, 3000.0, 3.0))
+    # closeout round 5: the N spectrum zero over the OPT band (normalisation impossible) is the regular code 5
+    r6n = analyze("spec_opt_zero", injection="N spectrum zero over 3900-6100 A", mutate_N=scale_band(3900.0, 6100.0, 0.0))
+    r6n_sp = r6n.get("spectrum") or {}
     case("public spectrum (analyze CLI): thresholds regenerated from N, a band subset declared as the whole and the OPT "
          "change hidden are refused (X, rc 2); a 3x excess below 3000 A refutes the registered targets (code 1, VALID, "
-         "rc 0) with the absolute OPT recorded", "6 public spectrum",
+         "rc 0) with the absolute OPT recorded; (closeout round 5) an N spectrum with zero OPT integral is the regular "
+         "not-identifiable code 5 (VALID, rc 0, the reason kept in the summary, an empty condition set, the stored-output "
+         "check clean)", "6 public spectrum",
          ((r6["retarget"]["rc"], has(r6["retarget"], "SPECTRUM_CONDITION_RECOMPUTE")),
           (r6["subset_bands"]["rc"], has(r6["subset_bands"], "SPECTRUM_OVERALL_RECOMPUTE")),
           (r6["hide_opt"]["rc"], has(r6["hide_opt"], "SPECTRUM_OPT_CHANGE_NOT_RECORDED")), r6t["rc"], code(r6t, "SPECTRUM"),
           ((r6t.get("codes") or {}).get("SPECTRUM") or {}).get("conditions", {}).get("UV2500"),
-          ((r6t.get("spectrum") or {}).get("summary") or {}).get("N", {}).get("L_OPT") is not None),
-         ((2, True), (2, True), (2, True), 0, 1, 1, True), fault="retarget|subset_bands|hide_opt", runs=list(r6.values()) + [r6t])
+          ((r6t.get("spectrum") or {}).get("summary") or {}).get("N", {}).get("L_OPT") is not None,
+          (r6n["rc"], r6n.get("validity"), code(r6n, "SPECTRUM"), ((r6n.get("codes") or {}).get("SPECTRUM") or {}).get("state"),
+           ((r6n.get("codes") or {}).get("SPECTRUM") or {}).get("conditions"), r6n_sp.get("conditions"),
+           ((r6n_sp.get("summary") or {}).get("N") or {}).get("status"), r6n.get("stored_check"),
+           [w for w in (r6n.get("reasons") or []) if "SPECTRUM" in str(w)])),
+         ((2, True), (2, True), (2, True), 0, 1, 1, True,
+          (0, "VALID", 5, "NOT_IDENTIFIABLE", {}, {}, "NOT_IDENTIFIABLE", None, [])),
+         fault="retarget|subset_bands|hide_opt", runs=list(r6.values()) + [r6t, r6n])
     # ---- 7 P1(a) recall and propagation
     def drop_ctrl(N):
         det_nrb_judge_w5_edit(N, lambda f: None if (f[0] == "7" and f[4] == "10" and f[5] == "0") else f)
@@ -2716,10 +2738,12 @@ def det_nrb_judge_selftest_cases(base, src, runner, prior_selftest):
               "stored_spec_targets_delete": analyze("st_spec_targets_delete", fault="stored_spec_targets_delete",
                                                     mutate_N=scale_band(0.0, 3000.0, 3.0)),
               "stored_spectrum_section_delete": analyze("st_spec_section_delete", fault="stored_spectrum_section_delete"),
+              "stored_spec_conditions_delete": analyze("st_spec_conditions_delete", fault="stored_spec_conditions_delete",
+                                                       mutate_N=scale_band(3900.0, 6100.0, 0.0)),
               "stored_required_delete": analyze("st_required_delete", fault="stored_required_delete")}
     scope_of = {"stored_ions_flip": ["IONS:14"], "stored_spectrum_flip": ["SPECTRUM"], "stored_p1b_flip": ["P1B_CORE"],
                 "stored_scope_delete": ["P1A_LOCAL", "IONS:16"], "stored_spec_targets_delete": ["SPECTRUM"],
-                "stored_spectrum_section_delete": ["SPECTRUM"],
+                "stored_spectrum_section_delete": ["SPECTRUM"], "stored_spec_conditions_delete": ["SPECTRUM"],
                 "stored_required_delete": ["P1A", "P1B_CORE", "P1B_EXT", "SPECTRUM"]}
 
     def no_science_rows(v):
@@ -2731,7 +2755,8 @@ def det_nrb_judge_selftest_cases(base, src, runner, prior_selftest):
          "NOT_IDENTIFIABLE (5) axis written as SURVIVES (0), an X scope written into a VALID run, and (closeout round 3) "
          "a refuted public-ion code written as SURVIVES, a refuted spectrum code written as SURVIVES, a surviving P1(b) "
          "core written as REFUTED and two registered propositions deleted, and (closeout round 4) the stored spectrum "
-         "targets deleted with a SURVIVES code, the spectrum section deleted, four registered propositions deleted — "
+         "targets deleted with a SURVIVES code, the spectrum section deleted, four registered propositions deleted, and "
+         "(closeout round 5) the condition set of a not-identifiable spectrum deleted — "
          "every stored file set is read back, recomputed from its stored rows / conditions and refused (X, rc 2), the "
          "proposition concerned is X in the rewritten result and decision.json carries X rows only (no science "
          "follow-up); the unedited n_e straddle gives code 4 (VALID)",
