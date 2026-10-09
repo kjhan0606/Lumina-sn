@@ -1372,40 +1372,79 @@ def det_nrb_judge_analyze(n_run, e_run, r_run, prior_analysis, prior_selftest, e
            "lib_build": lib_rec, "run_counters": N["counters"],
            "claim_ceiling": "finite-iteration state of the deterministic lane (MC transport bypassed); no production "
                             "promotion, no physical correctness, no seed independence, no cause attribution"}
-    (out / "result.json").write_text(json.dumps(res, indent=1, default=str))
-    if FT(fault, "decision_descriptor_flip"):
-        d_ = json.loads(json.dumps(decision, default=str))
-        for row in d_["rows"]:
-            for ax, dsc in (row.get("descriptors") or {}).items():
-                dsc["code"] = "END_HIGHER" if dsc.get("code") != "END_HIGHER" else "END_LOWER"
-        (out / "decision.json").write_text(json.dumps(d_, indent=1, default=str))
-    else:
-        (out / "decision.json").write_text(json.dumps(decision, indent=1, default=str))
-    # stored-output check (closeout B3): the written files are read back and the axis states, descriptors and the
-    # decision recomputed from stationarity.csv; a disagreement makes the run X (files rewritten with the finding)
+    det_nrb_judge_write(out, res, decision, fault)
+    # stored-output check (closeouts 1-2): the written files are read back; every scope's code / state, the validity,
+    # each P2 axis state and descriptor (generations, M, D, code) recomputed from stationarity.csv, the P2 disposition
+    # and the whole decision table recomputed from the stored result; a disagreement makes the run X (files rewritten)
     sw = det_nrb_judge_stored_check(out, G)
     if sw:
+        res = json.loads((out / "result.json").read_text())
         res["validity"], res["reasons"] = "X", (res.get("reasons") or []) + sw[:20]
         res["n_reasons"] = res.get("n_reasons", 0) + len(sw)
+        res["stored_check"] = sw
         for k in res["codes"]:
             if k.startswith("P2:"):
                 SEED.det_seedmem_scope_block(res["codes"][k], sw[0])
         res["P2_disposition"] = "INADMISSIBLE"
-        decision = det_nrb_judge_decision(res["codes"], "INADMISSIBLE", descriptors, "X", incomplete)
+        decision = det_nrb_judge_decision(res["codes"], "INADMISSIBLE", res.get("P2_descriptors"), "X", res.get("incomplete"))
         (out / "result.json").write_text(json.dumps(res, indent=1, default=str))
         (out / "decision.json").write_text(json.dumps(decision, indent=1, default=str))
     return res
 
 
+def det_nrb_judge_write(out, res, decision, fault=None):
+    """write result.json / decision.json; selftest-only write faults simulate a defective writer after the in-memory
+    validation (the stored-output check must reject each)."""
+    r_ = json.loads(json.dumps(res, default=str))
+    d_ = json.loads(json.dumps(decision, default=str))
+    if FT(fault, "decision_descriptor_flip"):
+        for row in d_["rows"]:
+            for dsc in (row.get("descriptors") or {}).values():
+                dsc["code"] = "END_HIGHER" if dsc.get("code") != "END_HIGHER" else "END_LOWER"
+    if FT(fault, "stored_code_flip"):
+        r_["codes"]["P2:ion"]["code"] = 0                 # code replaced, state kept
+    if FT(fault, "stored_D_alter"):
+        r_["P2_descriptors"]["ion"]["D"] = {"lo": 999.0, "mid": 999.0, "hi": 999.0}
+        r_["codes"]["P2:ion"]["descriptor"]["D"] = {"lo": 999.0, "mid": 999.0, "hi": 999.0}
+    if FT(fault, "stored_rows_delete"):
+        d_["rows"] = []
+    if FT(fault, "stored_disposition_both"):
+        r_["P2_disposition"] = d_["p2_disposition"] = "P2_SMALL_CHANGE"
+    if FT(fault, "stored_decision_inadmissible"):
+        d_["p2_disposition"] = "INADMISSIBLE"
+    if FT(fault, "stored_4_as_1"):
+        for k, v in r_["codes"].items():
+            if k.startswith("P2:") and v.get("state") == "UNRESOLVED":
+                v["code"], v["state"] = 1, "REFUTED"
+    if FT(fault, "stored_5_as_0"):
+        for k, v in r_["codes"].items():
+            if k.startswith("P2:") and v.get("state") == "NOT_IDENTIFIABLE":
+                v["code"], v["state"] = 0, "SURVIVES"
+    if FT(fault, "stored_X_as_valid"):
+        r_["validity"] = d_["validity"] = "VALID"
+    (Path(out) / "result.json").write_text(json.dumps(r_, indent=1, default=str))
+    (Path(out) / "decision.json").write_text(json.dumps(d_, indent=1, default=str))
+
+
 def det_nrb_judge_stored_check(out, G):
-    """re-read result.json, decision.json and stationarity.csv; recompute every axis' terminal state and descriptor
-    from the stored rows; the decision must carry the same validity, P2 disposition and descriptors."""
+    """stored-output check (independent of the code path): read result.json, decision.json and stationarity.csv
+    (round-trip floats) and recompute (1) every scope's code from its state, (2) validity X whenever a scope is X,
+    (3) each P2 axis' terminal states and state, (4) each descriptor's generations, M endpoints, D interval and code,
+    (5) the P2 disposition, (6) the whole decision table from the stored codes."""
     out = Path(out)
     why = []
     res = json.loads((out / "result.json").read_text())
     dec = json.loads((out / "decision.json").read_text())
-    st = pd.read_csv(out / "stationarity.csv")
+    st = pd.read_csv(out / "stationarity.csv", float_precision="round_trip")
+    codes = res.get("codes") or {}
+    for k, v in codes.items():
+        c_, s_ = v.get("code"), v.get("state")
+        if not ((c_ == "X" and s_ == "X") or (s_ in CODE and c_ == CODE[s_])):
+            why.append(f"STORED_CODE_STATE:{k}:{c_}:{s_}")
+    if any(v.get("code") == "X" for v in codes.values()) and res.get("validity") != "X":
+        why.append("STORED_VALIDITY_WITH_X_SCOPE")
     t0, t1 = G["terminal"]
+    states = {}
     for ax in ("ion", "ne", "jbar", "level"):
         sub = {int(r.generation): r for r in st[st.axis == ax].itertuples()}
 
@@ -1419,25 +1458,46 @@ def det_nrb_judge_stored_check(out, G):
             return "SURVIVES" if r.M_hi < P2_CRIT else "UNRESOLVED"
         one = [small(sub.get(t0)), small(sub.get(t1))]
         fin = "SURVIVES" if one == ["SURVIVES", "SURVIVES"] else SEED.det_seedmem_scope_universal_check(one)
-        rc = (res.get("codes") or {}).get(f"P2:{ax}", {})
-        if rc.get("code") != "X" and rc.get("state") != fin:
-            why.append(f"P2_STORED_STATE:{ax}")
+        rc = codes.get(f"P2:{ax}", {})
+        states[ax] = rc.get("state")
+        if rc.get("code") != "X":
+            if rc.get("state") != fin:
+                why.append(f"P2_STORED_STATE:{ax}:{rc.get('state')}!={fin}")
+            if list((rc.get("terminal_states") or {}).values()) != one:
+                why.append(f"P2_STORED_TERMINAL:{ax}")
         a, b = sub.get(G["start"]), sub.get(G["g_obs"])
+        exp = {"start_generation": G["start"], "end_generation": G["g_obs"],
+               "M_start": None if a is None else {"lo": float(a.M_lo), "mid": float(a.M_mid), "hi": float(a.M_hi)},
+               "M_end": None if b is None else {"lo": float(b.M_lo), "mid": float(b.M_mid), "hi": float(b.M_hi)}}
         if a is None or b is None or int(a.missing) or int(b.missing) or \
                 not all(math.isfinite(float(x)) for x in (a.M_lo, a.M_mid, a.M_hi, b.M_lo, b.M_mid, b.M_hi)):
-            dcode = "END_UNAVAILABLE"
+            exp["code"], exp["D"] = "END_UNAVAILABLE", None
         else:
-            dcode = det_nrb_judge_end_code(float(a.M_lo), float(a.M_hi), float(b.M_lo), float(b.M_hi))[0]
-        if ((res.get("P2_descriptors") or {}).get(ax) or {}).get("code") != dcode:
-            why.append(f"P2_STORED_DESCRIPTOR:result:{ax}")
-        for row in dec.get("rows", []):
-            dd = (row.get("descriptors") or {}).get(ax)
-            if dd is not None and dd.get("code") != dcode:
-                why.append(f"P2_STORED_DESCRIPTOR:decision:{ax}")
-    if dec.get("validity") != res.get("validity"):
-        why.append("STORED_DECISION_VALIDITY")
-    if dec.get("p2_disposition") not in (res.get("P2_disposition"), "INADMISSIBLE"):
-        why.append("STORED_DECISION_P2_DISPOSITION")
+            code_, lo, hi = det_nrb_judge_end_code(float(a.M_lo), float(a.M_hi), float(b.M_lo), float(b.M_hi))
+            exp["code"], exp["D"] = code_, {"lo": lo, "mid": float(b.M_mid) - float(a.M_mid), "hi": hi}
+        for where, d_ in (("result", (res.get("P2_descriptors") or {}).get(ax)),
+                          ("code", (rc.get("descriptor") if rc.get("code") != "X" or "descriptor" in rc else None))):
+            if d_ is None:
+                why.append(f"P2_STORED_DESCRIPTOR_ABSENT:{where}:{ax}")
+                continue
+            for f_ in ("start_generation", "end_generation", "M_start", "M_end", "code", "D"):
+                if d_.get(f_) != exp[f_]:
+                    why.append(f"P2_STORED_DESCRIPTOR:{where}:{ax}:{f_}")
+    if any(s_ == "X" for s_ in states.values()):
+        disp = "INADMISSIBLE"
+    elif all(s_ == "SURVIVES" for s_ in states.values()):
+        disp = "P2_SMALL_CHANGE"
+    else:
+        disp = "NOT_CONVERGED"
+    if res.get("incomplete"):
+        disp = "INCOMPLETE"
+    if res.get("P2_disposition") != disp:
+        why.append(f"STORED_P2_DISPOSITION:{res.get('P2_disposition')}!={disp}")
+    exp_dec = det_nrb_judge_decision(codes, disp, res.get("P2_descriptors"), res.get("validity"), res.get("incomplete"))
+    exp_dec = json.loads(json.dumps(exp_dec, default=str))
+    if exp_dec != dec:
+        diff = [k for k in set(exp_dec) | set(dec) if exp_dec.get(k) != dec.get(k)]
+        why.append(f"STORED_DECISION_RECOMPUTE:{','.join(sorted(diff))}")
     return why
 
 
@@ -1840,7 +1900,8 @@ def det_nrb_judge_fx_inputs(run, outer, nrb=True, binary_text="binary\n"):
     return run
 
 
-def det_nrb_judge_fx_outputs(run, outer, lib, csob, conv=FX_R, ion_series=None, ne_factor=None, spec_scale=1.0):
+def det_nrb_judge_fx_outputs(run, outer, lib, csob, conv=FX_R, ion_series=None, ne_factor=None, spec_scale=1.0,
+                             ne_adjust=None):
     """fixture run outputs as the production would leave them after `outer` iterations: W5 calls 1..outer+1 from
     populations that obey the two-level model for lines 0, 1, 4 (others set directly), dumps for populations
     3..outer+2, the observer capture at generation outer+1, status, publication, spectrum, logs and footer."""
@@ -1870,6 +1931,8 @@ def det_nrb_judge_fx_outputs(run, outer, lib, csob, conv=FX_R, ion_series=None, 
     nf = ne_factor or (lambda g: 5.0e13 * f(g))
     Te = np.array([1.0e5 + 100.0 * s for s in range(FX_NS)])
     ne = {g: np.array([nf(g) * (1.0 + 0.001 * s) for s in range(FX_NS)]) for g in range(2, G["g_last"] + 1)}
+    if ne_adjust:
+        ne_adjust(ne)
     if ion_series is None:
         ion_series = {(Z, q): {g: 1.0e6 * (1 + Z / 100 + q) * f(g) for g in G["pops"]} for Z, q in ION_QTY}
     pops, rows = {}, {}
@@ -2053,7 +2116,7 @@ def det_nrb_judge_cli(args):
 
 
 def det_nrb_judge_fx(base, lib, csob, lib_rec, runner, conv=FX_R, ion_series=None, ne_factor=None, pub_factor=None,
-                     spec_scale=1.0, mutate_N=None, mutate_R=None, prior_bad_source=False, profile="h200x2"):
+                     spec_scale=1.0, mutate_N=None, mutate_R=None, prior_bad_source=False, profile="h200x2", ne_adjust=None):
     """the full fixture set: R (6 iterations, NRB) and E (6, off) runs, N staged from R by the stage CLI and given the
     outputs of the registered 12 iterations, the stage's preflight record, public files, prior analysis / selftest."""
     base = Path(base)
@@ -2072,7 +2135,7 @@ def det_nrb_judge_fx(base, lib, csob, lib_rec, runner, conv=FX_R, ion_series=Non
                                     "--runner", runner, "--run", N])
     if rc != 0:
         raise RuntimeError(f"FIXTURE_STAGE_FAILED rc={rc} {se[-500:]}")
-    det_nrb_judge_fx_outputs(N, FX_OUTER, lib, csob, conv, ion_series, ne_factor, spec_scale)
+    det_nrb_judge_fx_outputs(N, FX_OUTER, lib, csob, conv, ion_series, ne_factor, spec_scale, ne_adjust)
     keys = sorted((16 if line == 4 else 14, line, s) for line in (0, 1, 3, 4) for s in FX_SHELLS)
     # the public files come from the unedited N; an edit applied afterwards is a difference from the public run
     public = det_nrb_judge_fx_public(base, N, FX_TARGET, pub_factor, spec_scale)
@@ -2123,7 +2186,7 @@ def det_nrb_judge_selftest_cases(base, src, runner, prior_selftest):
                                              "target": det_nrb_judge_target_json(target)}))
         pub = fx["public"]
         rc, so, se = det_nrb_judge_cli(
-            ["analyze", "--prereg", P / PREREG, "--run", fx["N"], "--baseline-run", fx["E"], "--reference-run", fx["R"],
+            ["selftest-analyze", "--prereg", P / PREREG, "--run", fx["N"], "--baseline-run", fx["E"], "--reference-run", fx["R"],
              "--prior-analysis", fx["A"], "--prior-selftest", fx["st"], "--spectral-expectations", pub["expectations"],
              "--production-source", src, "--public-spectrum", pub["spectrum"], "--public-si", pub[14], "--public-s", pub[16],
              "--selftest", d / "no_selftest", "--out", d / "out"])
@@ -2221,15 +2284,22 @@ def det_nrb_judge_selftest_cases(base, src, runner, prior_selftest):
     rcD, soD, seD = det_nrb_judge_cli(["stage", "--reference-run", fx_s["R"], "--preflight", fx_s["pre"], "--gpu-profile",
                                        "a100x2", "--runner", runner, "--run", base / "stage_cli/NRB/run3"])
     js = (n2 / "job.slurm").read_text() if (n2 / "job.slurm").exists() else ""
+    last = lambda t: (t.strip().split("\n") or [""])[-1][-200:]                     # noqa: E731
+    stage_runs = [{"dir": str(n2), "rc": rcA, "injection": "h100x2", "validity": "STAGED", "reasons": [last(soA)]},
+                  {"dir": str(n2), "rc": rcB, "injection": "existing run root", "validity": "REFUSED", "reasons": [last(seB)]},
+                  {"dir": str(base / "stage_cli/NRB/run2"), "rc": rcC, "injection": "preflight submit_allowed false",
+                   "validity": "REFUSED", "reasons": [last(seC)]},
+                  {"dir": str(base / "stage_cli/NRB/run3"), "rc": rcD, "injection": "a100x2 profile", "validity": "REFUSED",
+                   "reasons": [last(seD)]}]
     case("stage (CLI): copies the reference inputs with sha verification, writes the iteration-12 exports and the identity "
          "files; h100x2 rewrites profile, partition and gres together; an existing run root, a preflight without "
-         "submit_allowed and the a100 profile are refused (non-zero rc, nothing written for the refused roots)",
-         "1 single change",
+         "submit_allowed and the a100 profile are refused (real rc and the refusal line kept, nothing written for the "
+         "refused roots)", "1 single change",
          (rcA, "readonly GPU_PROFILE=h100x2" in js, "#SBATCH --partition=h100" in js, "#SBATCH --gres=gpu:H100:2" in js,
           (n2 / "OWNER.txt").exists() and (n2 / "SUBMIT_COMMAND.txt").exists() and (n2 / "STAGE_FILES.json").exists(),
-          rcB != 0 and "RUN_EXISTS" in seB, rcC != 0 and "PREFLIGHT_NOT_PASSED" in seC and not (base / "stage_cli/NRB/run2").exists(),
-          rcD != 0 and "GPU_PROFILE_INVALID" in seD and not (base / "stage_cli/NRB/run3").exists()),
-         (0, True, True, True, True, True, True, True))
+          (rcB, "RUN_EXISTS" in seB), (rcC, "PREFLIGHT_NOT_PASSED" in seC, (base / "stage_cli/NRB/run2").exists()),
+          (rcD, "GPU_PROFILE_INVALID" in seD, (base / "stage_cli/NRB/run3").exists())),
+         (0, True, True, True, True, (1, True), (1, True, False), (1, True, False)), runs=stage_runs)
     # ---- 2 run count and resources: the GPU runner's own selftest (bash, real rc)
     rs = det_nrb_judge_runner_selftest(runner, base)
     want_cases = {"rerun_reject", "h200x2_one_gpu", "a100_profile_reject", "time_limit_over_ceiling", "iterations_6",
@@ -2290,7 +2360,8 @@ def det_nrb_judge_selftest_cases(base, src, runner, prior_selftest):
          "4 P2 terminal window",
          (r4["past_only"]["rc"], c4.get("state"), c4.get("any_past_window_small"), r4["past_only"].get("P2_disposition"),
           any("descriptors" in row for row in dec(r4["past_only"]).get("rows", [])),
-          {k: (v["rc"], has(v, "P2_CODE_RECOMPUTE") or has(v, "P2_STORED"), dec(v).get("p2_disposition"))
+          {k: (v["rc"], has(v, "P2_CODE_RECOMPUTE") or has(v, "P2_STORED") or has(v, "STORED_DECISION"),
+               dec(v).get("p2_disposition"))
            for k, v in r4.items() if k != "past_only"}),
          (0, "REFUTED", True, "NOT_CONVERGED", True,
           {k: (2, True, "INADMISSIBLE") for k in r4 if k != "past_only"}),
@@ -2468,6 +2539,60 @@ def det_nrb_judge_selftest_cases(base, src, runner, prior_selftest):
     case("independent authority (analyze CLI): a generation-13 capture source that disagrees with the W5 inversion of "
          "the same line is refused (POP_AUTHORITY_MISMATCH, X, rc 2)", "5 authority",
          (r8c["rc"], has(r8c, "POP_AUTHORITY_MISMATCH")), (2, True), runs=[r8c])
+    # ---- closeout round 2: sandbox boundary (R1) and stored-output check (R2)
+    sb = base / "sandbox_boundary"
+    sb.mkdir()
+    (sb / SANDBOX).write_text(json.dumps({"schema": "DET_NRB_JUDGE_SELFTEST_SANDBOX_V1", "fault": None,
+                                          "target": det_nrb_judge_target_json(FX_TARGET)}))
+    pubs = fx_s["public"]
+    common = ["--prereg", P / PREREG, "--baseline-run", fx_s["E"], "--reference-run", fx_s["R"], "--prior-analysis",
+              fx_s["A"], "--prior-selftest", fx_s["st"], "--spectral-expectations", pubs["expectations"],
+              "--production-source", src, "--public-spectrum", pubs["spectrum"], "--public-si", pubs[14], "--public-s",
+              pubs[16], "--selftest", base / "t_none"]
+    rcR1, soR1, seR1 = det_nrb_judge_cli(["analyze", "--run", fx_s["N"], "--out", sb / "out_registered"] + common)
+    rcR2, soR2, seR2 = det_nrb_judge_cli(["selftest-analyze", "--run", fx_s["N"], "--out", sb / "out_outside"] + common)
+    nb = base / "no_sandbox"
+    nb.mkdir()
+    rcR3, soR3, seR3 = det_nrb_judge_cli(["selftest-analyze", "--run", fx_s["N"], "--out", nb / "out"] + common)
+    case("sandbox boundary (closeout R1, CLI): the registered analyze refuses a SELFTEST_SANDBOX.json next to --out "
+         "(rc 2, nothing written); selftest-analyze refuses inputs outside the sandbox directory and a missing sandbox "
+         "(rc 2) — a fault or a fixture target cannot reach a registered result", "1 single change",
+         ((rcR1, "SANDBOX_REFUSED" in soR1, (sb / "out_registered").exists()),
+          (rcR2, "SANDBOX_PATH_OUTSIDE" in soR2, (sb / "out_outside").exists()),
+          (rcR3, "SANDBOX_ABSENT" in soR3, (nb / "out").exists())),
+         ((2, True, False), (2, True, False), (2, True, False)), fault="sandbox next to registered analyze|outside paths|absent",
+         runs=[{"dir": str(sb), "rc": rcR1, "injection": "registered analyze + sandbox", "reasons": [last(soR1)]},
+               {"dir": str(sb), "rc": rcR2, "injection": "inputs outside the sandbox", "reasons": [last(soR2)]},
+               {"dir": str(nb), "rc": rcR3, "injection": "no sandbox", "reasons": [last(soR3)]}])
+
+    def ne_cross(ne):
+        for g in (G["g_obs"], G["g_last"]):
+            for s_ in range(FX_NS):
+                v = float(ne[G["outer"]][s_]) * 10.0 ** P2_CRIT
+                for _ in range(200):
+                    m = SEED.det_seedmem_scope_m(float(ne[G["outer"]][s_]), v)
+                    if m.lo < P2_CRIT <= m.hi:
+                        break
+                    v = dn(v) if m.lo >= P2_CRIT else up(v)
+                ne[g][s_] = v
+    r_u = analyze("p2_ne_unresolved", injection="n_e change 12->13 straddling 0.0043 dex", ne_adjust=ne_cross)
+    stored = {"stored_code_flip": analyze("st_code_flip", fault="stored_code_flip", ion_series=past_only),
+              "stored_D_alter": analyze("st_D_alter", fault="stored_D_alter", ion_series=past_only),
+              "stored_rows_delete": analyze("st_rows_delete", fault="stored_rows_delete", ion_series=past_only),
+              "stored_disposition_both": analyze("st_disp_both", fault="stored_disposition_both", ion_series=past_only),
+              "stored_decision_inadmissible": analyze("st_dec_inadm", fault="stored_decision_inadmissible", ion_series=past_only),
+              "stored_4_as_1": analyze("st_4_as_1", fault="stored_4_as_1", ne_adjust=ne_cross),
+              "stored_5_as_0": analyze("st_5_as_0", fault="stored_5_as_0", mutate_N=drop_term(1, 10)),
+              "stored_X_as_valid": analyze("st_X_as_valid", fault="beta_current+stored_X_as_valid")}
+    case("stored-output check (closeout R2, analyze CLI): with a defective writer simulated after validation — an axis code "
+         "1 -> 0 with the state kept, descriptor D replaced, decision rows deleted, the P2 disposition changed in both "
+         "files, the decision disposition alone set to INADMISSIBLE, an UNRESOLVED (4) axis written as REFUTED (1), a "
+         "NOT_IDENTIFIABLE (5) axis written as SURVIVES (0), and an X scope written into a VALID run — every stored "
+         "file set is read back, recomputed and refused (X, rc 2); the unedited n_e straddle gives code 4 (VALID)",
+         "4 P2 terminal window",
+         ((r_u["rc"], r_u.get("validity"), code(r_u, "P2:ne")),
+          {k: (v["rc"], v.get("validity"), bool(v.get("stored_check"))) for k, v in stored.items()}),
+         ((0, "VALID", 4), {k: (2, "X", True) for k in stored}), fault="|".join(stored), runs=[r_u] + list(stored.values()))
     # ---- 9 preservation (real CLI)
     rcP, soP, seP = det_nrb_judge_cli(["analyze", "--prereg", P / PREREG, "--run", fx_s["N"], "--baseline-run", fx_s["E"],
                                        "--reference-run", fx_s["R"], "--prior-analysis", fx_s["A"], "--prior-selftest",
@@ -2554,6 +2679,8 @@ def cmd_selftest(a):
     summary = {"schema": "DET_NRB_JUDGE_SELFTEST_V1", "readout_sha256": sha(Path(__file__).resolve()), "cases": tests,
                "failures": fails, "elapsed_s": time.time() - t0,
                "bundles_new": sorted({t["bundle"] for t in tests if t.get("kind") == "NEW"}),
+               "records": {"new_cli_records": sum(1 for t in tests if t.get("kind") == "NEW"),
+                           "inherited_identity_records": sum(1 for t in tests if t.get("kind") == "INHERITED")},
                "bundles_inherited": sorted(INHERITED_BUNDLES),
                "rc_meaning": "cli_rc = the exit status of a separate readout process (analyze / stage CLI: 0 VALID or "
                              "staged, 2 inadmissible, 3 existing result path, 1 refused stage); the runner selftest is a "
@@ -2581,26 +2708,55 @@ def cmd_stage(a):
     return 0
 
 
+SANDBOX_PATH_ARGS = ("run", "baseline_run", "reference_run", "prior_analysis", "prior_selftest", "spectral_expectations",
+                     "public_spectrum", "public_si", "public_s")
+
+
 def cmd_analyze(a):
+    """registered analysis: the registered target, no fault, the selftest of this readout required; a selftest
+    sandbox file next to --out is refused (closeout round 2, R1)."""
     out = Path(a.out)
     if out.exists():
         print(f"OUT_EXISTS {out}")
         return 3
-    # selftest sandbox (prereg 8.2): a fault and a fixture target are read only from a SELFTEST_SANDBOX.json placed
-    # next to --out by the selftest; a registered analysis has no such file and uses the registered target
-    sbx_p = out.parent / SANDBOX
-    sandbox = json.loads(sbx_p.read_text()) if sbx_p.exists() else None
-    if sandbox is not None and sandbox.get("schema") != "DET_NRB_JUDGE_SELFTEST_SANDBOX_V1":
+    if (out.parent / SANDBOX).exists():
+        print(f"SANDBOX_REFUSED {out.parent / SANDBOX}")
+        return 2
+    sj_p = Path(a.selftest) / "selftest.json"
+    sj = json.loads(sj_p.read_text()) if sj_p.exists() else {}
+    if sj.get("readout_sha256") != sha(Path(__file__).resolve()) or sj.get("failures") != 0:
+        print("SELFTEST_NOT_THIS_READOUT_OR_FAILED")
+        return 2
+    return det_nrb_judge_cli_analyze(a, out, TARGET, None, None)
+
+
+def cmd_selftest_analyze(a):
+    """selftest-only analysis (prereg 8.2 direct tests): requires the SELFTEST_SANDBOX.json next to --out and every
+    run / prior / public / expectations input and --out inside that sandbox directory; reads the fixture target and the
+    fault from it.  The registered `analyze` refuses such a sandbox, so a fault or a fixture target cannot reach a
+    registered result."""
+    out = Path(a.out)
+    if out.exists():
+        print(f"OUT_EXISTS {out}")
+        return 3
+    root = out.parent.resolve()
+    sbx_p = root / SANDBOX
+    if not sbx_p.exists():
+        print("SANDBOX_ABSENT")
+        return 2
+    sandbox = json.loads(sbx_p.read_text())
+    if sandbox.get("schema") != "DET_NRB_JUDGE_SELFTEST_SANDBOX_V1":
         print("SANDBOX_SCHEMA")
         return 2
-    target = det_nrb_judge_target_from_json(sandbox["target"]) if sandbox else TARGET
-    fault = sandbox.get("fault") if sandbox else None
-    if sandbox is None:
-        sj = json.loads((Path(a.selftest) / "selftest.json").read_text())
-        if sj.get("readout_sha256") != sha(Path(__file__).resolve()) or sj.get("failures") != 0:
-            out.mkdir(parents=True, exist_ok=False)
-            (out / "result.json").write_text(json.dumps({"validity": "X", "reasons": ["SELFTEST_NOT_THIS_READOUT_OR_FAILED"]}))
-            return 2
+    outside = [k for k in SANDBOX_PATH_ARGS if root not in Path(getattr(a, k)).resolve().parents]
+    if outside:
+        print(f"SANDBOX_PATH_OUTSIDE {outside}")
+        return 2
+    return det_nrb_judge_cli_analyze(a, out, det_nrb_judge_target_from_json(sandbox["target"]), sandbox.get("fault"),
+                                     sandbox)
+
+
+def det_nrb_judge_cli_analyze(a, out, target, fault, sandbox):
     t0 = time.time()
     out.mkdir(parents=True, exist_ok=False)
     public = {"spectrum": a.public_spectrum, 14: a.public_si, 16: a.public_s}
@@ -2632,7 +2788,8 @@ def cmd_analyze(a):
         p = Path(p)
         if p.exists():
             inputs[k] = {"path": str(p), "sha256": sha(p), "bytes": p.stat().st_size}
-    man = det_nrb_judge_manifest(a, out, {"kind": "analyze", "inputs": inputs, "sandbox": sandbox,
+    man = det_nrb_judge_manifest(a, out, {"kind": "selftest-analyze" if sandbox else "analyze", "inputs": inputs,
+                                          "sandbox": sandbox,
                                           "lib_build": res.get("lib_build"), "input_identity": res.get("input_identity"),
                                           "selftest": {"path": str(Path(a.selftest) / "selftest.json"),
                                                        "sha256": sha(Path(a.selftest) / "selftest.json")
@@ -2662,13 +2819,15 @@ def main():
     s = sp.add_parser("stage")
     for k in ("--reference-run", "--preflight", "--gpu-profile", "--runner", "--run"):
         s.add_argument(k, required=True)
-    s = sp.add_parser("analyze")
-    for k in ("--prereg", "--run", "--baseline-run", "--reference-run", "--prior-analysis", "--prior-selftest",
-              "--spectral-expectations", "--production-source", "--public-spectrum", "--public-si", "--public-s",
-              "--selftest", "--out"):
-        s.add_argument(k, required=True)
+    for nm in ("analyze", "selftest-analyze"):
+        s = sp.add_parser(nm)
+        for k in ("--prereg", "--run", "--baseline-run", "--reference-run", "--prior-analysis", "--prior-selftest",
+                  "--spectral-expectations", "--production-source", "--public-spectrum", "--public-si", "--public-s",
+                  "--selftest", "--out"):
+            s.add_argument(k, required=True)
     a = p.parse_args()
-    sys.exit({"selftest": cmd_selftest, "preflight": cmd_preflight, "stage": cmd_stage, "analyze": cmd_analyze}[a.cmd](a))
+    sys.exit({"selftest": cmd_selftest, "preflight": cmd_preflight, "stage": cmd_stage, "analyze": cmd_analyze,
+              "selftest-analyze": cmd_selftest_analyze}[a.cmd](a))
 
 
 if __name__ == "__main__":

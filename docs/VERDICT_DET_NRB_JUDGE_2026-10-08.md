@@ -4,18 +4,18 @@
 
 - **계약:** `docs/PREREG_DET_NRB_JUDGE_2026-10-08.md` — 기안 e16167c, 개정 1 852a655(astra `gpt-6-astra`).
 - **경량 사전감사:** Fable fresh `claude-fable-5-1` 1회(`nrb_judge_20261008/fable_preaudit.md`). Q-GOAL 부합, Q-LEAN 적정, «폐합 차단» 0. «기재로 족함» 9건은 개정 1 에 반영했다(L4 후보 6 = 준위 축은 user 승인 범위라 비용·소비점 사실만 기재).
-- **판독기:** `scripts/det_nrb_judge_readout.py`(신설 c8d6bd4 sha256 4890cb81… → **종료감사 1회차 수리 = 이 판정문의 커밋, sha256 df6620e1…**).
+- **판독기:** `scripts/det_nrb_judge_readout.py`(신설 c8d6bd4 sha256 4890cb81… → 종료감사 1회차 수리 60840c7 sha256 df6620e1… → **2회차 수리 = 이 판정문의 커밋, sha256 b7e423c7…**).
   - import 하는 기존 판독기 다섯은 수정하지 않았다: `det_seedmem_scope_readout.py`(sha 3131bd84 = SEEDMEM r4 selftest 의 판독기), `det_siiii_repair_readout.py`, `det_siiii_pop_readout.py`, `det_siiii_rates_readout.py`, `det_siiii_1206mech_readout.py`.
 - **러너:** `/gpfs/kjhan/lumina/cmfgen_map/nrb_judge_20261008/tools/run_nrb_judge_gpu.slurm`(sha256 da43edb8…, 자체 selftest 30 사례), `…/tools/run_nrb_judge_offline.slurm`.
 - **런:** `/gpfs/kjhan/lumina/cmfgen_map/nrb_judge_20261008/NRB/run1`, h200 job 416610.
   - 2026-10-08 16:46:53 시작, syn104 H200 NVL ×2.
   - 10-09 11:31:37 종료(sacct End; 원문 `evidence/sacct_gpu_416610.txt`), Slurm 18:44:44 = 67,484 s(모델 67,474 s), `terminal_state=SUCCESS`.
-- **판독 정본:** `/gpfs/kjhan/lumina/cmfgen_map/nrb_judge_20261008/results/a3/`(수리판, a10 job 417468, Slurm 40 s).
+- **판독 정본:** `/gpfs/kjhan/lumina/cmfgen_map/nrb_judge_20261008/results/a4/`(2회차 수리판, a10 job 417498, Slurm 41 s).
   - 과학 산출은 `analysis/analysis/`(result·decision·p1_rates·p1_source_1206·stationarity·capture_check·ion_fraction·spectrum), 신원은 `analysis/manifest.json` 에 있다.
-  - 초판 판독 `results/a1/`(417453, 판독기 4890cb81)은 보존한다. a1 과 a3 의 과학 산출 7 파일(위 CSV 6 개와 decision.json)은 sha256 이 같다.
-- **선행:** 직접시험 t3(417466, 수리판), preflight p3(417467, 수리판 R′ 회귀), stage s1(416603). 초판의 t1·p1 은 보존한다.
+  - 이전 판독 `results/a1/`(417453, 4890cb81)·`results/a3/`(417468, df6620e1)은 보존한다. a1·a3·a4 의 과학 산출 7 파일(위 CSV 6 개와 decision.json)은 sha256 이 같다.
+- **선행:** 직접시험 t4(417496), preflight p4(417497, R′ 회귀), stage s1(416603). 이전 판본의 t1·t3·p1·p3 는 보존한다.
 
-## 처분: **PASS_LIMITED** (상한) — 종료감사 1회차 REWORK(«폐합 차단» 4) 수리 후 재판정, astra 2회차 대기
+## 처분: **PASS_LIMITED** (상한) — 종료감사 1회차 REWORK(«폐합 차단» 4)·2회차 REWORK(«폐합 차단» 2) 수리 후 재판정, astra 3회차 대기
 
 `PASS_LIMITED / P2 = NOT_CONVERGED / P1(a) = 0 · P1(b) 핵심 0 · 확장 0 / 공개 S 분율 = 0 · Si 분율 = 1 / 공개 스펙트럼 = 1`
 
@@ -40,7 +40,7 @@
   - Si II/III 분율: 9/10 이 밖이라 **반증**.
   - UV·광학 스펙트럼: R₈ = 0.363 등으로 **반증**.
   - 공개 이온 비교는 열 이름 `si0…si4`·`s0…s4` 를 I…V 로 읽는 **명명 가정에 조건부**다.
-- **비용:** GPU 2장 × 67,484 s = **37.49 GPU·h**(등록 상한 42.11, 승인 표현 약 40). 모델 진입 1회, 재실행 0. CPU 전용 894 s / 3000 s(종료감사 수리 포함).
+- **비용:** GPU 2장 × 67,484 s = **37.49 GPU·h**(등록 상한 42.11, 승인 표현 약 40). 모델 진입 1회, 재실행 0. CPU 전용 1268 s / 3000 s(종료감사 1·2회차 수리 포함, a4 까지).
 - **이탈:** 첫 제출(416608)의 `--time=21:03:24` 를 Slurm 이 분 단위로 올려 21:04:00 으로 저장했다(§8).
 - **판정하지 않은 것:** 생산 승격·NRB 기본값 전환, 물리적 정답, 씨앗 독립성, 수렴, 공개 비교 변화의 원인.
 
@@ -176,9 +176,9 @@
 
 ## 7. 직접시험·게이트·신원 (본문 5)
 
-- **직접시험(t3, 19 사례, 실패 0; 판독기 df6620e1):** 모든 사례를 판독기 CLI 의 **별도 프로세스**로 실행하고 실제 종료 코드를 기록했다(analyze·stage; GPU 러너 시험은 bash 프로세스).
+- **직접시험(t4, 실패 0; 판독기 b7e423c7):** 시험 레코드 21 개 = **새로 실행한 시험 20 개 + 승계 확인 1 개**다. 새 시험의 분석·stage 는 판독기 CLI 의 **별도 프로세스**로 실행했고, 실제 종료 코드와 거부 사유를 레코드의 `runs` 에 보존했다(GPU 러너 시험은 bash 프로세스, 승계 확인은 기존 selftest 신원 대조).
   - 픽스처는 **등록 반복 수 12회**다(관측 13·후속 14). N 은 실제 `stage` CLI 로 픽스처 R′ 에서 만든 뒤 12회 산출을 얹었다.
-  - 시험용 결함과 소표본 대상(8키)은 `--out` 옆의 `SELFTEST_SANDBOX.json` 으로만 analyze 에 들어간다. 정본 판독(a3)에는 이 파일이 없다(`manifest.json` 의 `sandbox: null`).
+  - 시험용 결함과 소표본 대상(8키)은 **시험 전용 하위 명령 `selftest-analyze`** 만 읽는다. 이 명령은 `--out` 옆의 `SELFTEST_SANDBOX.json` 과, 런·이전 판독·공개 자료·기대치 입력과 `--out` 이 모두 그 샌드박스 디렉터리 안에 있을 것을 요구한다. **정본 `analyze` 는 샌드박스 파일이 옆에 있으면 거부**하고(rc 2), 등록 대상과 이 판독기의 selftest 통과를 강제한다(2회차 R1). 정본 a4 의 manifest 는 `kind: analyze`, `sandbox: null` 이다.
   - 신규 묶음:
     - 단일 변경: NRB off·capture off·6·13회·추가 env 거부. 입력 신원: 비바이너리(FIXED_T 프로파일·전역 원자 파일)와 바이너리 변조 거부. stage: h100x2 행 교체, 기존 루트·preflight 미통과·a100 거부.
     - 실행 횟수·자원: GPU 러너 30 사례.
@@ -186,22 +186,23 @@
     - P2: 과거 창만 작음 → NOT_CONVERGED; 한 변화만·과거 창·축별 다른 창·축 코드 0 치환·저장된 decision.json 기술자 변조 → X; 기술자 END_LOWER·END_HIGHER·END_EQUAL(양 끝 정확한 0)·END_UNRESOLVED(같은 끝 구간)·END_UNAVAILABLE(결손·비유한 끝점); 결손 5·결손+반례 1·영 교차 1·큰 셀·영 교차 삭제 X; 준위 복원 모순 → 준위 축 X.
     - 공개 이온: SAHA 열·q 이동·II+III 재정규화·17.710 블록·공간 대응 이동 X, 3배 공개값 → 코드 1.
   - 보완 사례: 공개 스펙트럼(임계 재생성·대역 부분집합·OPT 은폐 X, UV 3배 → 1), P1(a) 고정 재호출(결손 → 5, 재호출 셀만 집계 X, 승계 실패 + 재호출 X → X, 승계 실패만 → 5), 대량 오류 전파(96 건 + 뒤 범위 동시, 저장 메시지 50 상한 너머 X 전파), 바이트 비교(1 바이트 → DIFFERENT, 세대 불일치 → NOT_COMPARABLE, 과학 코드 불변), 독립 캡처 권위 불일치 X, 보존(rc 3).
+  - 2회차 보완: 샌드박스 경계(정본 analyze + 샌드박스 → 거부, 샌드박스 밖 입력 → 거부, 샌드박스 없음 → 거부, 모두 rc 2·쓰기 없음); **저장 산출 재검**(검증 뒤의 결함 있는 쓰기를 모사 — 축 코드 1→0, 기술자 D 교체, 결정 행 삭제, 두 파일의 P2 처분 변경, 결정 처분만 INADMISSIBLE, UNRESOLVED(4)→REFUTED(1), NOT_IDENTIFIABLE(5)→SURVIVES(0), X 범위가 있는 run 을 VALID 로 — 8 종 전부 X·rc 2), n_e 변화가 0.0043 dex 를 걸치는 픽스처의 코드 4.
   - **승계는 수정하지 않은 순수 함수에 한정**했다: SEEDMEM r4 selftest(판독기 sha 일치, 실패 0)의 역산·전방 장부·원천 항등, NRB 율 재구성, 국소항 교환 전제, 충돌 권위, solve 단위, 구간 보조 함수 묶음. 새 P2·전파·결정·저장 산출 재검 코드는 위에서 직접 시험했다.
 - **GPU 러너 자체 시험(30 사례):**
   - 정상: h200x2, h100x2, 상한 이하 시간.
   - 거부: a100, GPU 수·종류·메모리, 재진입, requeue, 시간 상한 초과·무제한, 6·13회, NRB off, 표지 11개, 캡처 세대 7, 관측 13 대신 14.
 - **preflight p3(수리판):** R′ 신원 사슬, 입력 65 파일 해시, 덱·카탈로그 검증, 러너 상수. R′ 회귀가 기존 정본과 **비트 일치**했다: P1(b) 25쌍(SEEDMEM model.csv), P2 18행(stationarity.csv), E′/R′ 스펙트럼(repair t5), III/II 10행(diag6). 회귀에서는 R′ 자신이 신원 기준이라 입력 신원 검사를 적용하지 않았다(기록함).
-- **판독 a3 의 추가 검사:** N 입력 65 파일이 preflight 가 기록한 R′ 내용과 sha 동일, exports 가 stage 신원과 동일, 캡처 τ 카운터 required = computed = 26(관측 덤프의 opacity·emissivity 세대 23 은 기록만), 저장 산출 재검(결정·기술자를 stationarity.csv 에서 다시 계산) 발견 0.
+- **판독 a4 의 추가 검사:** N 입력 65 파일이 preflight 가 기록한 R′ 내용과 sha 동일, exports 가 stage 신원과 동일, 캡처 τ 카운터 required = computed = 26(관측 덤프의 opacity·emissivity 세대 23 은 기록만). 저장 산출 재검은 발견 0 이다. 재검 대상은 모든 범위의 코드–상태 정합, X 범위가 있으면 validity X, 네 축의 종단 상태, 기술자의 세대·M 끝점·D 구간·코드, P2 처분, 결정표 전체로, 모두 stationarity.csv 와 저장 result 에서 다시 계산한다.
 - **기계 게이트:**
   - 계약: prereg·referents·canonical rc 0(`evidence/preflight_prereg_rev1_20261008T145304/`).
   - 러너 위생: 둘 다 rc 0(`evidence/hygiene_runners/`).
-  - G-LINK·G-READOUT: PASS(`evidence/GATE_RECORD_a3.json`), roster `evidence/gate_roster_a3.out`. 초판 기록은 `GATE_RECORD_a1.json`.
-- **신원:** `results/a3/identity.sha256`, `results/a3/analysis/manifest.json`(N 의 `work/w5_lines.csv`·캡처 `lines.bin`·`ne.f64`·`STAGE_FILES.json`·`job.slurm` 포함 입력 sha, CPU 라이브러리 빌드 명령·rc·소스·`.so` sha, 승계 근거, 바이트 비교), `NRB/run1/STAGE_IDENTITY.txt`·`STAGE_FILES.json`·`RUN_FOOTER.txt`.
+  - G-LINK·G-READOUT: PASS(`evidence/GATE_RECORD_a4.json`), roster `evidence/gate_roster_a4.out`. 이전 기록은 `GATE_RECORD_a1.json`·`GATE_RECORD_a3.json`.
+- **신원:** `results/a4/identity.sha256`, `results/a4/analysis/manifest.json`(N 의 `work/w5_lines.csv`·캡처 `lines.bin`·`ne.f64`·`STAGE_FILES.json`·`job.slurm` 포함 입력 sha, CPU 라이브러리 빌드 명령·rc·소스·`.so` sha, 승계 근거, 바이트 비교), `NRB/run1/STAGE_IDENTITY.txt`·`STAGE_FILES.json`·`RUN_FOOTER.txt`.
 
 ## 8. 비용·보존·이탈 (본문 6)
 
 - **GPU:** 416610 이 2 × 67,484 s = **37.49 GPU·h** 다(상한 42.113, 할당 경과 67,484 s / 75,804 s). 모델 진입 1/1, 재실행 0. 호스트 예약 16 CPU × 67,484 s 는 CPU 전용 비용과 따로 기록했다.
-- **CPU 전용(종료감사 1회차 수리 포함, a3 까지):** Slurm 경과 894 s / 3000 s, 0.868 / 3.333 core·h(`evidence/COST_LEDGER.txt`). 이후 게이트는 장부에 이어 적는다.
+- **CPU 전용(종료감사 1·2회차 수리 포함, a4 까지):** Slurm 경과 1268 s / 3000 s, 1.247 / 3.333 core·h(`evidence/COST_LEDGER.txt`). 이후 게이트는 장부에 이어 적는다.
 - **용량:** 6.24 GiB / 64 GiB(입력 사본 5.02 + work 1.16 + results 0.05).
 - **보존:** 새 경로만 썼다. R′·E′·SEEDMEM·repair 산출은 읽기만 했다.
 
@@ -214,9 +215,11 @@
 3. 개발 selftest dev1–dev4(dev1·dev2 는 픽스처 오류로 충돌, 각 3 s)가 정본 t1 보다 먼저 있었다.
 4. preflight 회귀는 R′ 를 N 자리에 둔 6회 판독이다. 그 안의 P1(b) 확장 범위는 비어 있어 코드 5 였다(회귀 비교 대상 아님).
 5. 직접시험 픽스처는 등록 수량(510키·328 준위)과 다른 작은 표본(8키·12 준위 항목)이다. 수리판은 이 대상과 시험 결함을 `SELFTEST_SANDBOX.json` 으로만 analyze CLI 에 넘기고 실제 프로세스 종료 코드를 기록한다(초판 t1 은 함수 호출과 등가 rc 였다).
-6. 종료 시각: 초판은 감시 루프가 큐 이탈을 발견한 11:39:42 를 종료로 적었다. sacct End 는 11:31:37 이고(차이 485 s = 감시 간격), 비용은 처음부터 ElapsedRaw 67,484 s 로 계산했다.
+6. 종료 시각: 초판은 감시 루프가 큐 이탈을 발견한 11:39:42 를 종료로 적었다. sacct End 는 11:31:37 이다. 차이 485 s 는 600 s 감시 주기 안에서 생긴 발견 지연이다. 비용은 처음부터 ElapsedRaw 67,484 s 로 계산했다.
 7. 공개 이온 열 의미의 외부 독립 확인은 없다(등록 식별 불가 항목).
 8. 종료감사 1회차 수리 과정: 개발 selftest dev5(17/19)·dev6, 정본 t2 는 t3 로 대체; preflight p2 는 회귀에서 R′ 에 입력 신원 기록이 없어 rc 2, 의존 작업 a2(417465)는 실행 전 취소(비용 0).
+9. 종료감사 2회차 수리 과정: 개발 selftest dev7(20/21, 기술자 변조 사례의 사유 문자열 확인만 실패 — 거부 자체는 됐다), 정본 t4·p4·a4.
+10. a3 게이트 스크립트를 sed 로 만들 때 한 줄의 첫 치환만 일어나 rc 줄이 a1 게이트 출력에 덧붙었다. a1 파일의 덧붙은 마지막 줄을 지워 원래 내용으로 되돌렸고 a3 파일에 rc 를 적었다(JOBS.txt 기재).
 
 ## 9. 등록 식별 불가(코드 5로 유지, §5.6)
 
@@ -250,3 +253,15 @@ astra 는 과학 수치·주장 한정이 대체로 맞다고 확인했고, 차�
 | 주장 한정 유지 | 기재로 족함 | 유지(S 생존 ≠ 과이온화 해소·수렴값) |
 | CPU 비용 스냅샷 | 기재로 족함 | 기준 시점 명시(a3 까지 894 s) |
 | GPU 시각 485 s 차이 | 기재로 족함 | sacct 원문 보존, 종료 11:31:37 로 정정(§8 이탈 6) |
+
+## 13. 종료감사 2회차(astra, `nrb_judge_20261008/astra_closeout2.md`) 반영
+
+1회차 B1·B2·B4 와 기재 항목은 닫혔다고 확인됐다. B3 의 남은 부분은 R2 로 통합됐다. 재판독 a4 의 과학 산출은 a1 과 sha 동일하다.
+
+| 지적 | 계급 | 처리 |
+|---|---|---|
+| R1 정본 analyze 가 샌드박스 파일로 대상·결함을 바꾸고 selftest 검사를 건너뜀 | 폐합 차단 | 정본 `analyze` 는 샌드박스를 거부하고 등록 대상·selftest 통과를 강제; 시험은 경로 격리를 확인하는 `selftest-analyze` 로만; 경계 시험 3 종 |
+| R2 저장 재검이 코드 1→0·기술자 수치·결정 행 삭제·처분 변경을 통과 | 폐합 차단 | 저장 재검을 코드–상태 정합·X 범위 validity·종단 상태·기술자 전 필드·P2 처분·결정표 전체 재계산으로 확장; 변조 8 종(4·5 오판, X→VALID 포함) 거부 시연 |
+| C1 「19 사례 모두 CLI」·stage 거부의 Boolean 만 저장 | 기재로 족함 | 새 시험 20 + 승계 확인 1 로 구별; stage 음성 대조의 실제 rc·거부 줄을 `runs` 에 보존 |
+| C2 「485 s = 감시 간격」 | 기재로 족함 | 「600 s 감시 주기 안의 485 s 발견 지연」으로 정정(§8 이탈 6) |
+| C3 417473 비용 누락 | 기재로 족함 | 장부에 추가(4 s), a4 까지 1268 s |
