@@ -8,13 +8,13 @@
 
 **Q-GOAL — 최종목적에 직접 기여하는가? 자기답: PASS.**
 
-최종목적은 CMFGEN과 비교 가능한 SN Ia 이온화 상태와 스펙트럼을 재현하는 것이다. 이번 단은 봉인 R′와 같은 바이너리·입력·6회 반복에서 충돌 처방만 바꾸어, **공개 CMFGEN 대비 S II/III·Si II/III 분율과 UV·광학 스펙트럼의 어긋남이 어떻게 움직이는지** 표 하나로 답한다. 이를 생략하면 충돌율 차이가 관측 가능한 비교량에 미치는 영향을 알 수 없다. 결정론적 pure-CMFGEN 레인의 결과이며 최종 MC 수송의 재현 성공은 아니다.
+최종목적은 CMFGEN과 비교 가능한 SN Ia 이온화 상태와 스펙트럼을 재현하는 것이다. 이번 단은 기준선 N과 같은 바이너리·입력·12회 반복에서 충돌 처방만 바꾸어, **공개 CMFGEN 대비 S II/III·Si II/III 분율과 UV·광학 스펙트럼의 어긋남이 어떻게 움직이는지** 표 하나로 답한다. 이를 생략하면 충돌율 차이가 관측 가능한 비교량에 미치는 영향을 알 수 없다. 결정론적 pure-CMFGEN 레인의 결과이며 최종 MC 수송의 재현 성공은 아니다.
 
 **Q-LEAN — 각 측정은 어디에 소비되는가? 자기답: APPROPRIATE.**
 
 | 유지하는 측정·검사 | 소비하는 표의 칸·결정 |
 |---|---|
-| NLTE 이온합·원소 총량·등록 셸 대응 | 분율 20행의 CMFGEN·R′·새 런 칸과 종별 개선 셸 수 |
+| NLTE 이온합·원소 총량·등록 셸 대응 | 분율 20행의 CMFGEN·N·새 런 칸과 종별 개선 셸 수 |
 | 여덟 대역 적분과 OPT 적분 | 색 잔차 8행, R₈, L_OPT/공개 및 이동 방향 |
 | 입력·환경·반복·관측 세대 신원 | 세 열이 같은 조건의 비교인지 확인 |
 | 기존 Ω 활성화 로그 한 줄 | 새 런 열을 처방 교체 결과로 해석할 자격 |
@@ -22,9 +22,9 @@
 
 새 충돌율 전수 재계산, NRB 원천 재검증, 수렴 측도, 준위 역산, 저장 산출 재검 장치, 쓰기 결함 모사, 결정표 재계산은 추가하지 않는다. 직접시험은 §8의 음성 대조로 한정한다.
 
-사용자 결정 근거는 `/gpfs/kjhan/lumina/cmfgen_map/coll_presc_20261009/evidence/USER_DECISION_2026-10-09.txt`다. 충돌 처방 선택과 이번 발주의 6회 비교 지시를 적용한다. 선행 문서의 「NRB 정상 상태 확인 뒤」를 추가 실행 조건으로 유지하지 않는다.
+사용자 결정 근거는 `/gpfs/kjhan/lumina/cmfgen_map/coll_presc_20261009/evidence/USER_DECISION_2026-10-09.txt`의 addendum이다. 충돌 처방 선택과 「12회, N 대비 (추천)」 결정을 적용한다. 선행 문서의 「NRB 정상 상태 확인 뒤」를 추가 실행 조건으로 유지하지 않는다.
 
-기준선은 **R′ 6회**, 새 런도 **6회**다. R′는 이미 NRB가 켜져 있다. N 12회를 기준으로 삼으면 반복 수까지 달라지므로 채택하지 않는다. §9의 26 GPU·h는 기안 상한이며 사용자 원문의 숫자 승인으로 표시하지 않는다.
+기준선은 **N 12회**, 새 런 O도 **12회**이며 양쪽 **관측 물질 세대 13**을 비교한다. N은 NRB가 켜져 있다. R′는 바이너리·입력 계보로만 사용한다. §9의 42 GPU·h는 N 실측에 근거한 개정 상한이며 사용자 원문의 정확한 숫자 승인으로 표시하지 않는다.
 
 C2의 황 분율 변화 ≤0.01 dex는 다른 구성에서 Ω와 충돌 이온화를 함께 바꾼 관측이다. 작은 응답도 가능하다는 참고로만 사용하며, 이번 효과의 부호·크기·상한이나 무효과 기대치로 이전하지 않는다.
 
@@ -32,15 +32,16 @@ C2의 황 분율 변화 ≤0.01 dex는 다른 구성에서 Ω와 충돌 이온�
 
 | 식별자 | 고정 대상 |
 |---|---|
-| R′ | `/gpfs/kjhan/lumina/cmfgen_map/obs_capture_20261006/Rprime/run1` |
+| N — 비교 기준선 | `/gpfs/kjhan/lumina/cmfgen_map/nrb_judge_20261008/NRB/run1` |
+| R′ — 바이너리·입력 계보 | `/gpfs/kjhan/lumina/cmfgen_map/obs_capture_20261006/Rprime/run1` |
 | 봉인 소스 | `/gpfs/kjhan/lumina/cmfgen_map/obs_capture_20261006/source/src` |
 | 작업 기반 B | `/gpfs/kjhan/lumina/cmfgen_map/coll_presc_20261009` |
 | 새 런 O | `/gpfs/kjhan/lumina/cmfgen_map/coll_presc_20261009/OMEGA/run1` — 신설 |
 | 공개 자료 | `data/standart_data1/toy06` |
 
-R′의 STAGE_IDENTITY.txt에 기록된 바이너리 SHA-256은 `8ef03fb37b3e0de986f9c9ba15f0b7bbf8f98800d62ab18fb666ec518914f5d8`이다. 바이너리·빌드 신원·원자 자료·덱·기하·온도 프로파일은 그대로 사용하며 재빌드하지 않는다.
+N과 그 계보 R′의 STAGE_IDENTITY.txt에 기록된 바이너리 SHA-256은 `8ef03fb37b3e0de986f9c9ba15f0b7bbf8f98800d62ab18fb666ec518914f5d8`이다. 바이너리·빌드 신원·원자 자료·덱·기하·온도 프로파일은 그대로 사용하며 재빌드하지 않는다. NRB 판정에 기록된 N 입력 65개는 R′와 SHA-256이 같고, exports는 §2의 경로 키 7개 재설정과 반복 수 6→12만 다르다.
 
-COLL-OMEGA 판정은 저장 R′ 세대 7에서 하향 충돌율 비가 2배 밖인 키를 Si III 74/86, S III 311/424로 확인했다. 이 사실과 봉인 C의 선별·표 순회 재현 결과를 승계한다. 새 런의 이온화·스펙트럼 결과를 승계하는 것은 아니다.
+COLL-OMEGA 판정은 선행 오프라인 저장 표본에서 하향 충돌율 비가 2배 밖인 키를 Si III 74/86, S III 311/424로 확인했다. 그 표본은 이번 N·O의 관측 물질 세대 13 비교와 구분한다. 이 사실과 봉인 C의 선별·표 순회 재현 결과를 승계한다. 새 런의 이온화·스펙트럼 결과를 승계하는 것은 아니다.
 
 공개 파일은 spectra_toy06_cmfgen.txt, ionfrac_si_toy06_cmfgen.txt, ionfrac_s_toy06_cmfgen.txt이며 시각은 **19.480 d**로 고정한다.
 
@@ -48,7 +49,7 @@ COLL-OMEGA 판정은 저장 R′ 세대 7에서 하향 충돌율 비가 2배 밖
 
 봉인 lumina_plasma.c 약 19264행에서 Ω 분기가 COLL_FIX 분기보다 먼저 선택된다. 따라서 **COLL_FIX를 끄지 않고 Ω 변수 하나만 추가**한다. 이는 선행 오프라인 C 대조의 Ω 설정과도 같다.
 
-| 환경변수 | R′ | O |
+| 환경변수 | N | O |
 |---|---|---|
 | `LUMINA_OMEGA_CMFGEN` | 미설정, 유효값 0 | `1` |
 | `LUMINA_NLTE_COLL_FIX` | `1` | `1` 유지 |
@@ -56,13 +57,13 @@ COLL-OMEGA 판정은 저장 R′ 세대 7에서 하향 충돌율 비가 2배 밖
 | `LUMINA_ARTIS_PARITY` | 미설정, 유효값 0 | 미설정 유지 |
 | `LUMINA_OMEGA_CMFGEN_SET` | 미설정, 기본값 0.1 | 미설정 유지 |
 | `LUMINA_NLTE_ASSEMBLE_GPU` | `0` | `0` 유지 |
-| `LUMINA_BB_NRB`, `LUMINA_PURE_CMFGEN_ITER` | `1`, `6` | 그대로 |
+| `LUMINA_BB_NRB`, `LUMINA_PURE_CMFGEN_ITER` | `1`, `12` | 그대로 |
 
 허용하는 비물리적 경로 이식은 NRB의 PATH_KEYS와 같은 다음 키뿐이다.
 
 `LUMINA_MODEL_DIR`, `LUMINA_CMFGEN_SIGMA_BF`, `LUMINA_DEPOSITION_FILE`, `LUMINA_FIXED_TE_PROFILE`, `LUMINA_IONIZATION_REFERENCE_FILE`, `LUMINA_TOPION_LEVELS_FILE`, `LUMINA_PHYSICS_COMPARISON_DIR`.
 
-각 값에서 R′ 런 루트 접두만 O로 바꾸며 상대 경로는 유지한다. 이를 역변환한 뒤 환경변수의 추가·삭제·값 차이는 **Ω 하나뿐**이어야 한다. 미설정을 임의로 명시적 0으로 바꾸지 않는다. 실행 전 상속된 `LUMINA_*`를 제거하고 등록 exports만 읽는다.
+각 값에서 N 런 루트 접두만 O로 바꾸며 상대 경로는 유지한다. O의 경로 키를 N 루트로 역변환한 뒤 **N의 input/resolved_lumina.exports 대비** 환경변수의 추가·삭제·값 차이는 **Ω 하나뿐**이어야 한다. 미설정을 임의로 명시적 0으로 바꾸지 않는다. 실행 전 상속된 `LUMINA_*`를 제거하고 등록 exports만 읽는다.
 
 개입은 **봉인 구현의 전역 CMFGEN Ω 3단 처방**이다. 표 수록 쌍, 미수록 vR·OMEGA_SET 근사, 선 없는 표 연결 추가, 중복 억제를 함께 포함한다. 다른 이온과 복사평형 준비 경로에 미치는 같은 스위치의 효과도 포함한다. Si·S 표만의 효과로 귀속하지 않는다.
 
@@ -72,28 +73,28 @@ COLL-OMEGA 판정은 저장 R′ 세대 7에서 하향 충돌율 비가 2배 밖
 
 운전자는 기존 NRB 판독기를 import하여 입력 복사·경로 이식·공개 비교 함수를 재사용한다. 선행 COLL-OMEGA의 C 대조를 다시 실행하지 않는다.
 
-- `det_nrb_judge_stage(..., outer=6, prereg=이번 계약)`를 준비 함수로 호출한다.
-- 새 래퍼는 O의 exports에 Ω만 추가한 뒤 §2의 차이를 검사한다.
-- O의 신원·exports 해시·OWNER.txt·제출 명령·자원 상한을 이번 계약 값으로 확정한다. NRB의 12회·시간 상한·작업 목적을 남기지 않는다.
-- 바이너리와 입력 사본의 내용 신원은 R′와 일치해야 한다. 출력 디렉터리는 비어 있어야 한다.
-- GPU 실행 전에 §5 표의 CMFGEN·R′ 칸을 기존 공개 비교 함수로 채워 시각·셸·분모·대역 대응을 확인한다.
+- `det_nrb_judge_stage(..., outer=12, prereg=이번 계약)`를 준비 함수로 호출한다. N과 같은 방식으로 R′ 바이너리·입력 계보에서 O를 만들어도 된다.
+- 새 래퍼는 O의 exports에 Ω만 추가한 뒤 경로 키를 역변환하여 **N의 input/resolved_lumina.exports 대비** §2의 단일 변경을 검사한다. stage의 계보 exports를 비교 기준으로 삼지 않는다.
+- O의 신원·exports 해시·OWNER.txt·제출 명령·반복 12회·자원 상한을 이번 계약 값으로 확정한다. NRB의 시간 상한·작업 목적은 승계하지 않는다.
+- 바이너리와 입력 사본의 내용 신원은 N 및 그 계보 R′와 일치해야 한다. 출력 디렉터리는 비어 있어야 한다.
+- GPU 실행 전에 §5 표의 CMFGEN·N 칸을 기존 공개 비교 함수로 채워 시각·셸·분모·대역 대응을 확인한다.
 
-기존 판독기의 전체 `analyze`·회귀·저장 재검을 호출하지 않는다. NRB의 COLL_FIX 전용 율 재구성이나 12회 판정을 Ω 런에 적용하지 않는다.
+기존 판독기의 전체 `analyze`·회귀·저장 재검을 호출하지 않는다. NRB의 COLL_FIX 전용 율 재구성이나 기존 NRB 과학 판정을 Ω 런에 적용하지 않는다.
 
 ## §4. 판정런 1회의 설계
 
-생산 모델 진입은 **한 번**, 외부 반복은 **6회**다. R′와 같은 초기 입력에서 시작하며 R′·N의 종단 상태를 재시작 입력으로 사용하지 않는다.
+생산 모델 진입은 **한 번**, 외부 반복은 **12회**다. N과 같은 초기 입력에서 시작하며 계보 R′·기준선 N의 종단 상태를 재시작 입력으로 사용하지 않는다.
 
-실행 인자는 등록 바이너리에 `MODEL_DIR 1 2 spectrum nlte`다. 온도 고정, 씨앗, NRB, 복사 격자, 내부 반복, 감쇠, 저장 설정은 R′ 그대로다.
+실행 인자는 등록 바이너리에 `MODEL_DIR 1 2 spectrum nlte`다. 온도 고정, 씨앗, NRB, 복사 격자, 내부 반복, 감쇠, 저장 설정은 N 그대로다.
 
-주 비교는 양쪽 모두 **관측 물질 세대 7**이다.
+주 비교는 양쪽 모두 **관측 물질 세대 13**이다.
 
-- 이온 분율: physics_DET_iter0004.ion.csv와 대응 manifest의 population_generation=7.
-- 해당 물질 덤프의 radiation_generation=6은 정상적인 세대 관계다.
-- 스펙트럼: lumina_spectrum_det_obs.csv와 관측 캡처의 material_generation=7, rad_generation=7.
-- 마지막 추가 물질 갱신인 세대 8을 관측 스펙트럼과 결합하지 않는다.
+- 이온 분율: physics_DET_iter0010.ion.csv와 대응 manifest의 population_generation=13.
+- 해당 물질 덤프의 radiation_generation=12는 정상적인 세대 관계다.
+- 스펙트럼: lumina_spectrum_det_obs.csv와 관측 캡처 manifest의 generations.material=13, generations.radiation=13, generations.iter=11.
+- 마지막 추가 물질 갱신인 세대 14를 관측 스펙트럼과 결합하지 않는다.
 
-**Ω 적용 증거는 O의 stdout.log에 있는 기존 `[OMEGA-CMFGEN] ON:` 한 줄**로 정한다. 표 수·전체 선 수·세 tier 계수를 읽어 표 수와 각 tier 계수가 양수이고 tier 합이 전체 선 수와 같으며 OMEGA_SET=0.1인지 확인한다. R′에는 이 활성화 줄이 없어야 한다.
+**Ω 적용 증거는 O의 stdout.log에 있는 기존 `[OMEGA-CMFGEN] ON:` 한 줄**로 정한다. 표 수·전체 선 수·세 tier 계수를 읽어 표 수와 각 tier 계수가 양수이고 tier 합이 전체 선 수와 같으며 OMEGA_SET=0.1인지 확인한다. N에는 이 활성화 줄이 없어야 한다.
 
 이 표지는 봉인 lumina_plasma.c 약 1097행에서 실제 Ω 준비·tier 순회 뒤 출력된다. 봉인 바이너리 신원, Ω 우선 분기, CPU 조립 유지 및 정상 완료와 결합해 적용을 확인한다. 10400 K 준비 계수이며 실제 모든 행렬 셀의 율을 추적한 증거로 확대하지 않는다.
 
@@ -125,27 +126,27 @@ C_b=L_b/L_{\rm OPT},\quad d_b=\log_{10}(C_b/C_b^{\rm public}),\quad
 R_8=\sqrt{\tfrac18\sum_b d_b^2},\quad A_{\rm OPT}=L_{\rm OPT}/L_{\rm OPT}^{\rm public}.
 \]
 
-**주 산출은 아래 형식의 CMFGEN 어긋남 표 하나**다. 항목 식별 열 뒤의 자료 열은 CMFGEN·R′·O로 고정한다. 분율 20행·색 8행·요약 2행을 빠짐없이 낸다.
+**주 산출은 아래 형식의 CMFGEN 어긋남 표 하나**다. 항목 식별 열 뒤의 자료 열은 CMFGEN·N·O로 고정한다. 분율 20행·색 8행·요약 2행을 빠짐없이 낸다.
 
-| 항목 | CMFGEN | R′, 6회·세대 7 | O, 6회·세대 7 |
+| 항목 | CMFGEN | N, 12회·세대 13 | O, 12회·세대 13 |
 |---|---|---|---|
-| S II·S III·Si II·Si III 각각 × 등록 다섯 셸 | 공개 분율 | 분율, \(d^f\) | 분율, \(d^f\), R′ 대비 이동 |
-| 여덟 대역 각각 | \(C_b^{public}\), d=0 | \(C_b,d_b\) | \(C_b,d_b\), R′ 대비 이동 |
-| R₈ | 0 | R₈ | R₈, R′ 대비 차이 |
-| L_OPT/공개 | 1 | \(A_{\rm OPT}\) | \(A_{\rm OPT}\), R′ 대비 이동 |
+| S II·S III·Si II·Si III 각각 × 등록 다섯 셸 | 공개 분율 | 분율, \(d^f\) | 분율, \(d^f\), N 대비 이동 |
+| 여덟 대역 각각 | \(C_b^{public}\), d=0 | \(C_b,d_b\) | \(C_b,d_b\), N 대비 이동 |
+| R₈ | 0 | R₈ | R₈, N 대비 차이 |
+| L_OPT/공개 | 1 | \(A_{\rm OPT}\) | \(A_{\rm OPT}\), N 대비 이동 |
 
 OPT 행에는 세 열의 L_OPT 절대값도 병기한다. 기계 표에는 기존 함수가 반환한 대역 광도와 수치 구간을 함께 보존하여 색 정규화의 분모 효과를 확인할 수 있게 한다. 추가 과학 표나 III/II 판정은 만들지 않는다.
 
 ## §6. 수치 기준·과학 코드·실행 분기
 
-각 이온·셸과 색 대역의 질문은 **\(|d_O|<|d_{R′}|\)인가**다. R₈는 직접 크기를 비교한다. OPT는 \(|\log_{10}A_{\rm OPT}|\)가 작아졌는지로 공개값 접근을 표시한다.
+각 이온·셸과 색 대역의 질문은 **\(|d_O|<|d_N|\)인가**다. R₈는 직접 크기를 비교한다. OPT는 \(|\log_{10}A_{\rm OPT}|\)가 작아졌는지로 공개값 접근을 표시한다.
 
 기존 함수의 표시 정밀도·부동소수 오차 구간을 사용한다. 이는 관측 오차나 물리 모형 오차가 아니다. 중앙값 차이도 표에 남기되, 구간이 겹치면 확정 개선으로 세지 않는다.
 
 | 코드 | 의미 |
 |---|---|
-| 0 | 새 오차 구간의 상한 < R′ 오차 구간의 하한: 개선 |
-| 1 | 새 오차 구간의 하한 > R′ 오차 구간의 상한: 악화; 또는 비교 원량이 정확히 같음: 동일 |
+| 0 | 새 오차 구간의 상한 < N 오차 구간의 하한: 개선 |
+| 1 | 새 오차 구간의 하한 > N 오차 구간의 상한: 악화; 또는 비교 원량이 정확히 같음: 동일 |
 | 4 | 비교는 정의되지만 개선·악화·정확한 동일을 분리하지 못함 |
 | 5 | 결손·영 분모·비유한값·비양의 로그 인수 등으로 비교 미정의 |
 | X | 환경·신원·세대·셸 대응이 계약과 달라 비교 부적격 |
@@ -161,7 +162,7 @@ OPT 행에는 세 열의 L_OPT 절대값도 병기한다. 기계 표에는 기�
 | 파일 | 허용 변경 |
 |---|---|
 | `scripts/det_coll_presc_readout.py` | 신설: 환경 차이 검사·Ω 증거·어긋남 표와 얇은 실행 연결 |
-| `/gpfs/kjhan/lumina/cmfgen_map/coll_presc_20261009/tools/run_det_coll_presc_gpu.slurm` | 신설: NRB 러너 형태 승계, 반복·환경·자원·작업 신원만 이번 계약에 맞춤 |
+| `/gpfs/kjhan/lumina/cmfgen_map/coll_presc_20261009/tools/run_det_coll_presc_gpu.slurm` | 신설: NRB 러너 형태 승계, 반복·환경·자원·작업 신원만 이번 계약에 맞춤; 승계 selftest 블록(이번 반복·시간 상수와 Ω off·COLL_ION 추가 거부 사례 포함)은 「승계 확인」으로만 기록하고 등록 게이트·직접시험 수에 넣지 않는다. |
 | `/gpfs/kjhan/lumina/cmfgen_map/coll_presc_20261009/tools/run_det_coll_presc_offline.slurm` | 신설: 준비·판독을 a10 CPU 작업으로 연결 |
 
 ### 변경집합 끝
@@ -180,15 +181,15 @@ OPT 행에는 세 열의 L_OPT 절대값도 병기한다. 기계 표에는 기�
 |---|---|
 | G-DOC | 기존 계약·참조·정본·발주·러너 위생 검사를 적용한다. 다른 계약·없는 참조·잘못된 러너로 집행하는 실패를 막는다. |
 | G-LINK | §1–3의 입력 신원·정확한 환경 차이·빈 새 런을 확인한다. Ω 외 물리 변경, 잘못된 입력, 기존 런 재사용을 막는다. |
-| G-RUN | §4·9의 반복·정상 완료·관측 세대·할당·비용을 확인한다. 미완료 상태나 세대 8을 6회 관측 결과로 보고하는 실패를 막는다. |
-| G-OMEGA | §4의 활성화 줄을 확인한다. exports만 켜고 적용되지 않은 런을 처방 효과로 해석하는 실패를 막는다. |
+| G-RUN | §4·9의 반복·정상 완료·관측 세대·할당·비용을 확인한다. 미완료 상태나 세대 14를 12회 관측 결과로 보고하는 실패를 막는다. |
+| G-OMEGA | §4의 활성화 줄을 확인한다. G-RUN과 별도로 유지한다. exports만 켜고 적용되지 않은 런을 처방 효과로 해석하는 실패를 막는다. |
 | G-TABLE | §5의 행 키·세대·공개 시각·vel_mid·분모·전체 대역을 확인한다. 다른 셸·이온 열을 결합하거나 불리한 행을 누락하는 실패를 막는다. |
 
 새 직접시험은 정상 소형 입력을 바탕으로 다음 음성 대조만 수행하고 실제 종료 코드와 거부 사유를 기록한다.
 
 1. 허용 Ω 변경에 `LUMINA_NLTE_COLL_ION=1`을 추가하면 환경 차이 검사에서 거부한다.
 2. Ω 활성화 줄을 제거하면 적용 증거 검사에서 거부한다.
-3. 표 조립 입력의 셸–공개 vel_mid 대응을 바꾸면 셸 대응 검사에서 거부한다.
+3. 표 조립 입력의 셸–공개 vel_mid 대응을 바꾸면 셸 대응 검사에서 거부한다. 승계 함수의 vel_mid 거부와 달리 새 조립 검사는 반환된 표 행의 런×종×셸 키 전수·중복, 물질 세대 13과 §5의 등록 공개 vel_mid를 대조한다.
 
 승계 함수의 시험을 복제하지 않는다. 쓰기 결함·저장 재검·결정 재계산 시험을 추가하지 않는다.
 
@@ -198,27 +199,27 @@ OPT 행에는 세 열의 L_OPT 절대값도 병기한다. 기계 표에는 기�
 
 | 항목 | 등록 상한·규칙 |
 |---|---|
-| GPU 실행 | Slurm job-per-run, 모델 진입 1회, 외부 반복 6회 |
+| GPU 실행 | Slurm job-per-run, 모델 진입 1회, 외부 반복 12회 |
 | GPU 배분 | h200 ×2 우선, 실행 전 h100 ×2 대체 가능; a40·a100 제외 |
 | GPU 작업 CPU·메모리 | 16 CPU·64 GiB |
-| 누적 GPU 할당 경과 | **46,800 s = 13:00:00** |
-| 누적 GPU 비용 | **26 GPU·h** |
+| 누적 GPU 할당 경과 | **75,600 s = 21:00:00** |
+| 누적 GPU 비용 | **42 GPU·h** |
 | 재실행·재시작·requeue | **0회** |
 | 오프라인 | a10, 작업당 2 CPU·8 GiB·GPU 0, 동시 1작업 |
 | 오프라인 누적 상한 | **600 s·1/3 core·h**, 시험·stage·게이트·판독·감사 재현 포함 |
 
-R′ 실측은 모델 경과 37,902 s, 21.0567 GPU·h다. 등록 상한은 약 23.5% 여유를 둔다. Slurm 전체 할당 경과로 비용을 계산하며 h100에서도 상한을 늘리지 않는다. 대기시간은 별도 보고하고 할당 경과에 합산하지 않는다.
+N 실측은 Slurm 할당 경과 67,484 s × GPU 2장 = 37.4911 GPU·h이며, RUN_FOOTER.txt의 모델 경과는 67,474 s다. 비용 근거는 `/gpfs/kjhan/lumina/cmfgen_map/nrb_judge_20261008/evidence/sacct_gpu_416610.txt`다. 등록 상한 75,600 s·42 GPU·h는 이 실측보다 약 12.0% 여유를 둔 값이다. 누계는 이번 O의 할당에 적용하며 N의 기존 비용은 포함하지 않는다. Slurm 전체 할당 경과로 비용을 계산하며 h100에서도 상한을 늘리지 않는다. 대기시간은 별도 보고하고 할당 경과에 합산하지 않는다.
 
-작업명은 `LUMINA_` 접두, 제외 노드는 `--exclude=syn102,syn03`, 런 루트에는 OWNER.txt를 둔다. module purge·load와 실제 버전을 기록한다. GPU 모듈은 R′의 gnu13/13.2.0·cuda/13.0.2를 승계한다.
+작업명은 `LUMINA_` 접두, 제외 노드는 `--exclude=syn102,syn03`, 런 루트에는 OWNER.txt를 둔다. module purge·load와 실제 버전을 기록한다. GPU 모듈은 N의 gnu13/13.2.0·cuda/13.0.2를 승계한다.
 
-Slurm 시간은 **정수 분**으로 제출하고 실제 저장된 TimeLimit을 확인한다. 할당 전 대기 작업의 취소·대체 제출만 허용하며 동시 대기 사본을 두지 않는다. 할당 후 실패하면 원인을 보고하고 추가 GPU 제출은 하지 않는다.
+이번 O의 Slurm 시간은 **21:00:00(정수 1,260분)**으로 제출하고 실제 저장된 TimeLimit이 **75,600 s 이하**인지 확인한다. 할당 전 대기 작업의 취소·대체 제출만 허용하며 동시 대기 사본을 두지 않는다. 할당 후 실패하면 원인을 보고하고 추가 GPU 제출은 하지 않는다.
 
 다음은 구현할 러너의 재현 인터페이스이며 기안 단계에서 실행하지 않았다. prepare는 h200x2 또는 h100x2를 받아 §3을 완료한다. 각 작업 완료와 게이트 통과 후 다음 명령을 실행한다.
 
 ```bash
 COLL_BASE=/gpfs/kjhan/lumina/cmfgen_map/coll_presc_20261009
 sbatch --exclude=syn102,syn03 --time=00:05:00 "$COLL_BASE/tools/run_det_coll_presc_offline.slurm" prepare p1 h200x2
-sbatch --exclude=syn102,syn03 --time=13:00:00 "$COLL_BASE/OMEGA/run1/job.slurm" "$COLL_BASE/OMEGA/run1"
+sbatch --exclude=syn102,syn03 --time=21:00:00 "$COLL_BASE/OMEGA/run1/job.slurm" "$COLL_BASE/OMEGA/run1"
 sbatch --exclude=syn102,syn03 --time=00:03:00 "$COLL_BASE/tools/run_det_coll_presc_offline.slurm" analyze a1
 ```
 
@@ -226,16 +227,16 @@ sbatch --exclude=syn102,syn03 --time=00:03:00 "$COLL_BASE/tools/run_det_coll_pre
 
 ## §10. 처분·완료 조건·후속 결정
 
-완료 보고의 첫 산출은 §5의 표다. 판정 문장은 그 표에서 다음 순서로 작성한다.
+완료 보고의 첫 산출은 §5의 표다. 기준선 열(N)은 기존 자료의 같은 파이프라인 재산출이고 새 정보는 O 열과 이동 열이다. 판정 문장은 그 표에서 다음 순서로 작성한다.
 
 1. S II·S III·Si II·Si III 각각에서 공개값에 가까워진 셸 수와 악화·동일·미분리·미정의 수.
-2. R₈의 R′→O 값과 변화 방향, 여덟 대역 중 개선·악화한 대역.
+2. R₈의 N→O 값과 변화 방향, 여덟 대역 중 개선·악화한 대역.
 3. L_OPT/공개의 변화와 공개 절대 광도 접근 여부.
 4. 혼합 결과 또는 변화 미분리라면 그 사실과 해당 행을 명시.
 
 적격 실행과 표가 갖춰지면 개선 여부와 무관하게 **PASS_LIMITED**로 결과 보고를 완료할 수 있다. 이는 처방의 우월성 판정이 아니다. 실행 미완료는 `INCOMPLETE`, 비교 신원 오류는 `INADMISSIBLE`로 보고하며 유효하지 않은 열에서 효과 결론을 내리지 않는다.
 
-**6회는 비수렴 상태 비교다.** 생산 승격·기본값 변경·물리적 정답·수렴·씨앗 독립성·특정 이온 또는 경로의 인과 기여를 선취하지 않는다. 추가 반복·씨앗·GPU 실행과 물리 변경은 이 결과를 본 뒤 사용자가 결정한다.
+**12회·세대 13의 유한 반복 상태 비교다.** 기준선 N은 선행 NRB 판정에서 `NOT_CONVERGED`였으며 O의 수렴 여부는 이번 단에서 판정하지 않는다. 생산 승격·기본값 변경·물리적 정답·수렴·씨앗 독립성·특정 이온 또는 경로의 인과 기여를 선취하지 않는다. 추가 반복·씨앗·GPU 실행과 물리 변경은 이 결과를 본 뒤 사용자가 결정한다.
 
 ## §11. 집행 기록·분장
 
@@ -306,12 +307,15 @@ GPU 판정런이므로 Fable 사전감사를 생략하지 않는다. 기안자 �
     {"path":"scripts/det_coll_omega_offline_readout.py"},
     {"path":"scripts/det_nrb_judge_readout.py","flags_existing":["det_nrb_judge_ions","det_nrb_judge_spectrum","det_nrb_judge_stage"]},
     {"path":"scripts/det_siiii_repair_readout.py","flags_existing":["det_siiii_repair_spectrum_table"]},
-    {"path":"/gpfs/kjhan/lumina/cmfgen_map/obs_capture_20261006/Rprime/run1/STAGE_IDENTITY.txt","flags_existing":["outer_iterations=6","run_binary_sha256"]},
-    {"path":"/gpfs/kjhan/lumina/cmfgen_map/obs_capture_20261006/Rprime/run1/RUN_FOOTER.txt","flags_existing":["elapsed_seconds=37902","allocated_gpus=2"]},
+    {"path":"/gpfs/kjhan/lumina/cmfgen_map/obs_capture_20261006/Rprime/run1/STAGE_IDENTITY.txt","flags_existing":["run_binary_sha256"]},
     {"path":"/gpfs/kjhan/lumina/cmfgen_map/obs_capture_20261006/Rprime/run1/input/resolved_lumina.exports"},
-    {"path":"/gpfs/kjhan/lumina/cmfgen_map/obs_capture_20261006/Rprime/run1/work/physics_comparison/physics_DET_iter0004.manifest.json"},
-    {"path":"/gpfs/kjhan/lumina/cmfgen_map/obs_capture_20261006/Rprime/run1/work/det_obs_capture/meta.txt"},
-    {"path":"/gpfs/kjhan/lumina/cmfgen_map/nrb_judge_20261008/NRB/run1/STAGE_IDENTITY.txt"},
+    {"path":"/gpfs/kjhan/lumina/cmfgen_map/nrb_judge_20261008/NRB/run1/STAGE_IDENTITY.txt","flags_existing":["outer_iterations=12","run_binary_sha256"]},
+    {"path":"/gpfs/kjhan/lumina/cmfgen_map/nrb_judge_20261008/NRB/run1/RUN_FOOTER.txt","flags_existing":["outer_iterations=12","elapsed_seconds=67474","allocated_gpus=2","terminal_state=SUCCESS"]},
+    {"path":"/gpfs/kjhan/lumina/cmfgen_map/nrb_judge_20261008/NRB/run1/input/resolved_lumina.exports"},
+    {"path":"/gpfs/kjhan/lumina/cmfgen_map/nrb_judge_20261008/NRB/run1/work/physics_comparison/physics_DET_iter0010.manifest.json"},
+    {"path":"/gpfs/kjhan/lumina/cmfgen_map/nrb_judge_20261008/NRB/run1/work/det_obs_capture/manifest.json"},
+    {"path":"/gpfs/kjhan/lumina/cmfgen_map/nrb_judge_20261008/NRB/run1/stdout.log"},
+    {"path":"/gpfs/kjhan/lumina/cmfgen_map/nrb_judge_20261008/evidence/sacct_gpu_416610.txt"},
     {"path":"/gpfs/kjhan/lumina/cmfgen_map/nrb_judge_20261008/tools/run_nrb_judge_gpu.slurm"},
     {"path":"/gpfs/kjhan/lumina/cmfgen_map/nrb_judge_20261008/tools/run_nrb_judge_offline.slurm"},
     {"path":"/gpfs/kjhan/lumina/cmfgen_map/obs_capture_20261006/source/src/lumina_plasma.c","flags_existing":["LUMINA_OMEGA_CMFGEN","LUMINA_NLTE_COLL_FIX","LUMINA_NLTE_COLL_ION","[OMEGA-CMFGEN] ON:"]},
