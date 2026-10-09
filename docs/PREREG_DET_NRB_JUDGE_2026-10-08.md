@@ -1038,11 +1038,11 @@ sed -n '11641,11870p' \
 | 제출 전 비용 보고 | 운전자 | 「승인 당시 약 40, R′ 실측 환산에 따른 등록 상한 약 42.11 GPU·h」 2026-10-08 |
 | GPU 판정런 | 운전자 | 416608 취소(Slurm 이 21:03:24 를 21:04:00 으로 올림, 대기 중, 비용 0) → 416610 `--time=21:03:00` h200x2, 10-08 16:46:53–10-09 11:31:37(sacct), SUCCESS, 37.49 GPU·h |
 | 판독 | 운전자 | a1 a10 417453 VALID → a3 417468 → a4 417498 → a6 417532 → a7 417540 → 정본 a8 417547 VALID(`B/results/a8/`, 과학 산출 7 파일 a1 과 sha 동일) |
-| 판정 | 운전자(구현·판정 겸임) | `docs/VERDICT_DET_NRB_JUDGE_2026-10-08.md` PASS_LIMITED·P2 NOT_CONVERGED |
+| 판정 | 운전자(구현·판정 겸임) | `docs/VERDICT_DET_NRB_JUDGE_2026-10-08.md` PASS_LIMITED·P2 NOT_CONVERGED, 폐합(종료감사 6회차) |
 | 게이트 roster | 운전자 | `B/evidence/GATE_RECORD_a1.json` → `a3` → `a4` → `a6` → `a7` → `GATE_RECORD_a8.json`·`gate_roster_a8.out` |
-| 종료감사 | astra(계약 저자 이해관계) | 1회차 REWORK «폐합 차단» 4(`B/astra_closeout.md`) → 수리·재판독 a3; 2회차 REWORK «폐합 차단» 2(`B/astra_closeout2.md`) → 수리·재판독 a4; 3회차 REWORK «폐합 차단» 1(`B/astra_closeout3.md`) → 수리·재판독 a6; 4회차 REWORK «폐합 차단» 2(`B/astra_closeout4.md`) → 수리·재판독 a7; 5회차 REWORK «폐합 차단» 1(`B/astra_closeout5.md`) → 수리·재판독 a8; 6회차 대기 |
+| 종료감사 | astra(계약 저자 이해관계) | 1회차 REWORK «폐합 차단» 4(`B/astra_closeout.md`) → 수리·재판독 a3; 2회차 REWORK «폐합 차단» 2(`B/astra_closeout2.md`) → 수리·재판독 a4; 3회차 REWORK «폐합 차단» 1(`B/astra_closeout3.md`) → 수리·재판독 a6; 4회차 REWORK «폐합 차단» 2(`B/astra_closeout4.md`) → 수리·재판독 a7; 5회차 REWORK «폐합 차단» 1(`B/astra_closeout5.md`) → 수리·재판독 a8; 6회차 **폐합 가 «폐합 차단» 0**(`B/astra_closeout6.md`, 관측 O6-1 기재) → **폐합** |
 | 실행 주장 재현 | 운전자 | R′ 대비 세대 3–7 물질 덤프 10 파일 바이트 동일, P1(b) 핵심 25쌍 R′ 기록과 비트 동일 |
-| 비용 | 운전자 | GPU 37.49 / 42.113 GPU·h, 모델 진입 1/1; CPU 전용 2332 s / 3000 s(a8 까지, 이후 게이트는 장부에 누적); 용량 6.25 / 64 GiB |
+| 비용 | 운전자 | GPU 37.49 / 42.113 GPU·h, 모델 진입 1/1; CPU 전용 2422 s / 3000 s(최종, 문서 게이트 417552 포함); 용량 6.25 / 64 GiB |
 
 운전자는 집행 후 이 절에 실제 명령·rc·작업 ID·비용·신원·이탈·재현 상태를 추가한다. 종료감사 1·2회차는 전건 반영하고, 3회차부터는 «폐합 차단»을 반영하며 나머지는 관측으로 남긴다. 이 규칙이 필수 과학 산출의 결손이나 잘못된 판정을 면제하지 않는다.
 

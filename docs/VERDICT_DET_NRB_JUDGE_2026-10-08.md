@@ -4,7 +4,7 @@
 
 - **계약:** `docs/PREREG_DET_NRB_JUDGE_2026-10-08.md` — 기안 e16167c, 개정 1 852a655(astra `gpt-6-astra`).
 - **경량 사전감사:** Fable fresh `claude-fable-5-1` 1회(`nrb_judge_20261008/fable_preaudit.md`). Q-GOAL 부합, Q-LEAN 적정, «폐합 차단» 0. «기재로 족함» 9건은 개정 1 에 반영했다(L4 후보 6 = 준위 축은 user 승인 범위라 비용·소비점 사실만 기재).
-- **판독기:** `scripts/det_nrb_judge_readout.py`(신설 c8d6bd4 sha256 4890cb81… → 종료감사 1회차 수리 60840c7 sha256 df6620e1… → 2회차 수리 bdd46bc sha256 b7e423c7… → 3회차 수리 30c54db sha256 eb690897… → 4회차 수리 0ff1e43 sha256 4ae18f01… → **5회차 수리 = 이 판정문의 커밋, sha256 cec3dade…**).
+- **판독기:** `scripts/det_nrb_judge_readout.py`(신설 c8d6bd4 sha256 4890cb81… → 종료감사 1회차 수리 60840c7 sha256 df6620e1… → 2회차 수리 bdd46bc sha256 b7e423c7… → 3회차 수리 30c54db sha256 eb690897… → 4회차 수리 0ff1e43 sha256 4ae18f01… → **5회차 수리 b89f6a7 sha256 cec3dade…(최종)**).
   - import 하는 기존 판독기 다섯은 수정하지 않았다: `det_seedmem_scope_readout.py`(sha 3131bd84 = SEEDMEM r4 selftest 의 판독기), `det_siiii_repair_readout.py`, `det_siiii_pop_readout.py`, `det_siiii_rates_readout.py`, `det_siiii_1206mech_readout.py`.
 - **러너:** `/gpfs/kjhan/lumina/cmfgen_map/nrb_judge_20261008/tools/run_nrb_judge_gpu.slurm`(sha256 da43edb8…, 자체 selftest 30 사례), `…/tools/run_nrb_judge_offline.slurm`.
 - **런:** `/gpfs/kjhan/lumina/cmfgen_map/nrb_judge_20261008/NRB/run1`, h200 job 416610.
@@ -15,7 +15,7 @@
   - 이전 판독 `results/a1/`(417453, 4890cb81)·`a3`·`a4`·`a6`·`a7` 는 보존한다. a1·a3·a4·a6·a7·a8 의 과학 산출 7 파일(위 CSV 6 개와 decision.json)은 sha256 이 같다. `result.json` 은 신원·빌드·카운터 필드 추가와 창 (13,14) 분리 때문에 다르며 최종 코드·기술자는 같다.
 - **선행:** 직접시험 t8(417545), preflight p8(417546, R′ 회귀), stage s1(416603). 이전 판본의 t1·t3·t4·t6·t7·p1·p3·p4·p6·p7 은 보존한다.
 
-## 처분: **PASS_LIMITED** (상한) — 종료감사 1·2·3·4·5회차 REWORK(«폐합 차단» 4·2·1·2·1) 수리 후 재판정, astra 6회차 대기
+## 처분: **PASS_LIMITED** (상한) — **폐합**(종료감사 6회차 «폐합 차단» 0; 1–5회차 REWORK «폐합 차단» 4·2·1·2·1 수리 후)
 
 `PASS_LIMITED / P2 = NOT_CONVERGED / P1(a) = 0 · P1(b) 핵심 0 · 확장 0 / 공개 S 분율 = 0 · Si 분율 = 1 / 공개 스펙트럼 = 1`
 
@@ -40,7 +40,7 @@
   - Si II/III 분율: 9/10 이 밖이라 **반증**.
   - UV·광학 스펙트럼: R₈ = 0.363 등으로 **반증**.
   - 공개 이온 비교는 열 이름 `si0…si4`·`s0…s4` 를 I…V 로 읽는 **명명 가정에 조건부**다.
-- **비용:** GPU 2장 × 67,484 s = **37.49 GPU·h**(등록 상한 42.11, 승인 표현 약 40). 모델 진입 1회, 재실행 0. CPU 전용 2332 s / 3000 s(종료감사 1–5회차 수리 포함, a8 까지).
+- **비용:** GPU 2장 × 67,484 s = **37.49 GPU·h**(등록 상한 42.11, 승인 표현 약 40). 모델 진입 1회, 재실행 0. CPU 전용 2422 s / 3000 s(종료감사 1–6회차·최종 문서 게이트 포함).
 - **이탈:** 첫 제출(416608)의 `--time=21:03:24` 를 Slurm 이 분 단위로 올려 21:04:00 으로 저장했다(§8).
 - **판정하지 않은 것:** 생산 승격·NRB 기본값 전환, 물리적 정답, 씨앗 독립성, 수렴, 공개 비교 변화의 원인.
 
@@ -298,3 +298,16 @@ astra 는 과학 수치·주장 한정이 대체로 맞다고 확인했고, 차�
 | R4-1·R4-2 | (4회차 폐합 차단) | 닫힘 확인(저장 변조 15 종 rc 2·validity X·과학 후속 판단 없음) |
 | R5-1 정상적인 스펙트럼 식별 불가(빈 조건 집합)를 저장 근거 삭제로 오판해 코드 5 → X | 폐합 차단 | 저장 근거 존재를 형으로 판정(빈 조건 집합 허용), 생산 검증기에 식별 불가 구조(overall NOT_IDENTIFIABLE·조건 없음·사유 존재) 요구; OPT 적분 0 정상 대조 코드 5·VALID·rc 0, 같은 런의 조건 집합 삭제 X·rc 2(t8) |
 | 정본·시험 경계, 재계산 범위, a1 대비 불변, 검증 기록 | 기재로 족함(관측) | 관측으로만 기재(3회차 이후 규칙). a8 의 과학 산출 7 파일도 a1 과 sha 동일, result.json 차이는 `lib_build`·`timing_s` 뿐이다. |
+
+## 17. 종료감사 6회차(astra, `nrb_judge_20261008/astra_closeout6.md`) — 폐합
+
+astra 총평은 「폐합 가 · «폐합 차단» 0」이다. 대상은 HEAD b89f6a7, 판독기 sha256 cec3dade… 이다.
+
+| 지적 | 계급 | 처리 |
+|---|---|---|
+| R5-1 | (5회차 폐합 차단) | 닫힘 확인(`spec_opt_zero` 코드 5·VALID·rc 0, `st_spec_conditions_delete` X·rc 2, 저장 변조 16 종 전부 rc 2) |
+| O6-1 §16 「result.json 차이는 `lib_build`·`timing_s` 뿐」은 a7→a8 비교에만 맞다. a1→a8 에는 `codes` 내부 기록·`input_identity`·`run_counters`·`x_counts` 차이도 있다. | 기재로 족함(관측) | 관측으로 기재한다. 7 파일 바이트 동일과 최종 과학 판정 불변은 성립한다. |
+
+**최종 비용:** GPU 37.49 / 42.113 GPU·h(모델 진입 1/1), CPU 전용 2422 s / 3000 s, 2.338 / 3.333 core·h(`evidence/COST_LEDGER.txt`).
+
+**남는 한계(기재, 폐합 조건 아님):** 운전자가 구현·판정을 겸했다. 독립 검사는 Fable 경량 사전감사 1회와 astra 종료감사 6회(계약 기안자 이해관계 표기)였다.
