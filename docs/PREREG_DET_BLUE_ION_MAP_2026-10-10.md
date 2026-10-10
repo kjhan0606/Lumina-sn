@@ -258,6 +258,21 @@ sbatch --partition=a10 --ntasks=1 --cpus-per-task=1 \
 
 운전자는 실제 모델 ID·코드 신원·작업 ID·시험·게이트·비용·이탈·판정·종료감사 결과를 이 절에 이어 기록한다.
 
+### 집행 기록 (운전자 추가 — 정본 장부, 개정16 ①; 위 기안 기록은 그대로 둔다)
+
+증거 접두 `B=/gpfs/kjhan/lumina/cmfgen_map/blue_ion_map_20261010`. 작업 번호·경과는 `B/JOBS.txt`·`B/evidence/COST_LEDGER.txt`.
+
+| 항목 | 담당(실제) | 상태·증거 |
+|---|---|---|
+| 기안 | astra `gpt-6-astra` | d1b98c3(기계 게이트 prereg·referents·canonical rc 0, a10 418350) |
+| 경량 사전감사 | — | 생략(개정25-ab: GPU 0·생산 변경 0) |
+| 구현·직접시험 | 운전자(Opus 5.5) | 판독기 `scripts/det_blue_ion_map_readout.py`, 러너(위생 rc 0, 418352); a1 418353 실패(픽스처 KeyError) → a2 418354 직접시험 4/4 |
+| 판독 | 운전자 | a2 a10 418354 VALID, 309행(`B/results/a2/`) |
+| 판정 | 운전자(구현·판정 겸임) | `docs/VERDICT_DET_BLUE_ION_MAP_2026-10-10.md` PASS_LIMITED |
+| 게이트 roster | 운전자 | `B/evidence/GATE_RECORD_a2.json` |
+| 종료감사 | astra(계약 저자 이해관계) | 대기 |
+| 비용 | 운전자 | CPU 49 s / 600 s(a2 까지, 이후 게이트는 장부에 누적), GPU 0 |
+
 ## §12. 기계 선언
 
 직전 계약의 changeset·branches·references 형식을 따른다. 분기 코드는 이동·개선 코드가 아니라 §6의 **공개값 대비 부호 분류**다. 참조에는 실재 파일만 넣는다.
