@@ -76,18 +76,18 @@ O의 입력·원자 자료·고정 온도·씨앗·물리 exports를 유지한�
 
 다음 두 증거를 함께 사용한다.
 
-1. §8의 음성 대조에서 동일 소형 입력의 trace 꺼짐/켜짐 사이 물리 배열·상태 전이를 바이트 단위로 대조한다. 기록 동작 외 변화는 실패다.
+1. §8의 음성 대조는 생산 계측이 사용하는 `det_si_trace.h`의 실제 기록·대상 필터·완료 판별 함수에 고정 합성 배열과 소비 키를 넣는 CPU 모듈 시험이다. trace 꺼짐/켜짐의 입력 배열·소비 키를 호출 전후 바이트 단위로 대조하고, 대상 필터와 완료 판별의 반환값을 확인한다. 생산 pair 조립·solve의 소형 재현으로 간주하지 않는다. 생산 경로의 비개입은 이 시험에 더하여 계측 패치가 기존 율·인구·행렬·분기 조건·합산 순서·난수 상태를 변경하지 않는다는 정적 확인, O와 같은 실제 컴파일 명령·버전, 증거 2의 G-EQUIV로 뒷받침한다. O 처방의 `nvcc -O2`·호스트 gcc 13.2에는 `-march`·`-ffast-math`·`-mfma`가 없고, `LUMINA_NLTE_ASSEMBLE_GPU=0`의 조립·solve·사다리는 CPU 경로다. 이 빌드 조건에서 호스트 FMA 축약이 도입되지 않는 점은 정적 근거에 포함하되, 그것만으로 모든 생산 산술의 바이트 일치를 증명했다고 주장하지 않는다.
 2. T의 기존 물질13 덤프를 O의 `physics_DET_iter0010` 자료와 대조한다. Si 셸10의 stage·NLTE 이온합, 원소 총량, T_e, n_e, 같은 셸의 저장 CE 상대 이온합과 binned J를 비교한다.
 
 저장 상태의 수치 동등성은 각 필드에 대해 \(|a-b|\le10^{-8}\max(|a|,|b|)\)로 등록한다. 양쪽 0은 같음, 한쪽만 0은 불일치다. 저장 표기 정밀도가 더 거칠면 그 반올림 구간도 함께 제시하고 그 한계를 넘는 동등성을 주장하지 않는다.
 
-이 검사는 **저장 가능한 상태의 동등성**이다. O에 없던 내부 소비 인구·행렬의 완전 일치를 소급 증명하지 않는다. 입력 계보·음성 대조·저장 상태 재현을 합쳐 O 동등 재취득의 근거로 사용한다.
+이 검사는 **저장 가능한 상태의 동등성**이다. O에 없던 내부 소비 인구·행렬의 완전 일치를 소급 증명하지 않는다. 입력 계보·모듈 음성 대조·생산 패치와 빌드 조건의 정적 근거·저장 상태 재현을 합쳐 O 동등 재취득의 근거로 사용한다.
 
 불일치하면 최종 분기는 **판정 불가 — O 상태 재현 실패**다. T의 표는 실제 취득 상태의 조건부 결과로 남기되 O의 1.78 dex 귀속으로 승격하지 않는다. 허용오차 확대·목표 세대 교체·추가 GPU 실행은 하지 않는다.
 
 ## §4. 최소 소비 trace
 
-레코드 키는 런, 출력 예정 물질 세대, 입력 복사 세대, 후보 식별자, n_e 반복, CE 반복, 호출 순번, Si 셸·이온쌍, 처리 단계다. 후보 폐기와 최종 채택을 구별한다. 동일 물질 태그만으로 내부 시점을 결합하지 않는다.
+레코드 키는 런, 출력 예정 물질 세대, 입력 복사 세대, 후보 식별자, n_e 반복, CE 반복, 호출 순번, Si 셸·이온쌍, 처리 단계다. 파일 안에서 불변인 키 값은 파일 헤더에 한 번 기록하고 각 레코드가 이를 상속한다. 변하는 키는 레코드에 기록하여 전체 소비 키를 복원할 수 있게 한다. 후보 폐기와 최종 채택을 구별한다. 동일 물질 태그만으로 내부 시점을 결합하지 않는다.
 
 세대·호출 순번별 레코드를 새 파일에 기록하고 덮어쓰지 않는다. 일반 MATDUMP의 세대 없는 출력은 사용하지 않는다. 전용 파일시스템 기능이나 파일 교체의 특수 의미에 의존하지 않는다.
 
@@ -152,7 +152,7 @@ stage와 pair의 n_e·J·CE 소비 조건이 다르면 이 항등식의 정식�
 
 ## §6. 주 산출 — 표 하나·기대치
 
-기계 원본은 `si10_trace_table.csv`, 표시본은 같은 행의 `si10_trace_table.md`다. 각 수치 행에는 소비 키·단위·정의 여부·원량·정규화량·증거 레코드를 둔다.
+기계 원본은 `si10_trace_table.csv`, 표시본은 같은 행의 `si10_trace_table.md`다. Markdown은 CSV에 쓰는 동일 계산 결과를 표시 형식으로만 변환하며, 별도 과학 재계산·재검증 경로를 두지 않는다. 각 수치 행에는 소비 키·단위·정의 여부·원량·정규화량·증거 레코드를 둔다.
 
 | 행 묶음 | SE·NLTE 칸 | stage 칸 | 공개·대응·판정 칸 |
 |---|---|---|---|
@@ -182,6 +182,7 @@ stage와 pair의 n_e·J·CE 소비 조건이 다르면 이 항등식의 정식�
 | `/gpfs/kjhan/lumina/cmfgen_map/trace13_20261010/source/src/lumina_cmfgen.c` | 포착 창·기존 덤프 뒤 완료 및 정리 연결 |
 | `/gpfs/kjhan/lumina/cmfgen_map/trace13_20261010/source/src/lumina_cuda.cu` | 제한 실행 완료를 호출자에 전달하여 후속 계산 중단 |
 | `/gpfs/kjhan/lumina/cmfgen_map/trace13_20261010/source/src/det_si_trace.h` | 기본 꺼짐 trace 공통 선언·기록 보조 구현 |
+| `/gpfs/kjhan/lumina/cmfgen_map/trace13_20261010/source/src/env_universe.h` | `LUMINA_ENV_UNIVERSE`에 `LUMINA_SI_TRACE`·`LUMINA_SI_TRACE_DIR`를 기존 정렬에 맞춰 각 1회 추가하고 `LUMINA_ENV_UNIVERSE_COUNT`를 536에서 538로 갱신하는 최소 패치만 허용 |
 | `scripts/det_si_trace_readout.py` | trace 판독·잔차·제한 고정해·주 표·기존 공개 함수 연결 |
 | `/gpfs/kjhan/lumina/cmfgen_map/trace13_20261010/tools/det_si_trace_negative.c` | §8의 소형 음성 대조 |
 | `/gpfs/kjhan/lumina/cmfgen_map/trace13_20261010/tools/run_det_si_trace_gpu.slurm` | O 러너 승계·계측 완료와 비용 기록 |
@@ -189,11 +190,11 @@ stage와 pair의 n_e·J·CE 소비 조건이 다르면 이 항등식의 정식�
 
 ### 변경집합 끝
 
-새 식별자는 `det_si_trace_` 접두를 사용한다. 새 환경 키는 `LUMINA_SI_TRACE`와 `LUMINA_SI_TRACE_DIR` 두 개이며, 대상은 물질13·Si·셸10으로 고정한다. 기존 엄격 환경 검사와 연결되는 등록은 같은 변경 파일 안에서 처리하고 검사를 끄지 않는다.
+새 식별자는 `det_si_trace_` 접두를 사용한다. 새 환경 키는 `LUMINA_SI_TRACE`와 `LUMINA_SI_TRACE_DIR` 두 개이며, 대상은 물질13·Si·셸10으로 고정한다. 기존 엄격 환경 검사와 연결되는 등록은 변경집합에 추가한 작업 사본의 `src/env_universe.h`에서 처리하며 `LUMINA_ENV_STRICT=1`을 유지한다. 생성 파일의 수동 편집 금지에 대한 이번 계약의 예외는 표에 등록한 두 키 추가와 개수 갱신뿐이다. 기존 항목·검사 로직·생성 스크립트는 변경하지 않으며, 생성 스크립트 재실행에서 생기는 다른 차이는 채택하지 않는다.
 
 추가 생산 파일 변경이 필요하면 조용히 범위를 넓히지 않고 계약을 개정한다. clamp/floor·물리율·solver·감쇠·종료 허용오차·원자 자료 수정은 금지한다. 기존 문제를 발견해도 이번 패치로 수리하지 않는다.
 
-보조 산출은 trace 원자료, `STAGE_IDENTITY.txt`, `RUN_FOOTER.txt`, `OWNER.txt`, 입력·빌드 신원, `evidence.json`, 제출·비용 기록이다. 실패 자료를 보존하고 기존 출력 위치를 재사용하지 않는다. 별도 결정 재계산 파일은 만들지 않는다.
+보조 산출은 trace 원자료, `STAGE_IDENTITY.txt`, `RUN_FOOTER.txt`, `OWNER.txt`, 입력·빌드 신원, `evidence.json`, 제출·비용 기록이다. 공통 신원 필드는 입력·빌드 신원 기록을, 실제 실행 비용 필드는 `RUN_FOOTER.txt`를 각각 단일 정본으로 삼고 다른 파일은 해당 경로·필드를 참조한다. 기존 인터페이스가 반복 필드를 요구하면 정본에서 옮겨 적고 별도로 산출하지 않는다. 실패 자료를 보존하고 기존 출력 위치를 재사용하지 않는다. 별도 결정 재계산 파일은 만들지 않는다.
 
 ## §8. 게이트·음성 대조·귀속 분기
 
@@ -205,7 +206,9 @@ stage와 pair의 n_e·J·CE 소비 조건이 다르면 이 항등식의 정식�
 | G-TABLE | 행·단위·부호·공개 대응·채널 합과 실제 물리행의 대응으로 다른 양의 비교와 누락 채널 귀속을 막는다. |
 | G-RUN | 목표 완료·정상 정리·할당·비용으로 미완료 trace나 상한 초과 실행을 완료로 보고하는 실패를 막는다. |
 
-새 코드 직접시험은 음성 대조로 한정한다. 소형 입력에서 trace 활성화·비대상 세대·비대상 셸이 물리 배열과 제어 흐름을 바꾸지 않는지 검사하고, 대상 완료 전에는 중단하지 않아야 한다. 시험용 물리 배열 변경과 잘못된 소비 키를 각각 주입하여 해당 검사가 거부함을 시연한다. 파일 쓰기 실패 모사·저장 표 재독해·결정 재계산 배터리는 추가하지 않는다.
+게이트 이름과 판정 책임은 유지하되 공통 검사는 한 결과를 공유한다. 입력·빌드 신원 확인은 G-SCOPE와 G-EQUIV가 공유하고, 필수 항·소비 키 확인은 G-TRACE 결과를 G-TABLE이 참조한다. G-TABLE은 수치·단위·부호·채널 합 대응을 검사한다. 종결 레코드 확인은 G-TRACE와 G-RUN이 공유한다.
+
+새 코드 직접시험은 음성 대조로 한정한다. 소형 입력은 `tools/det_si_trace_negative.c` 안의 고정 합성 율·인구·행렬 배열과 소비 키, commit·기존 덤프·trace 종결의 완료 상태 값이다. 생산 계측이 사용하는 `det_si_trace.h`의 실제 기록·대상 필터·완료 판별 함수를 직접 호출하며 시험용 복제 구현을 만들지 않는다. trace 꺼짐/켜짐, 대상/비대상 세대·셸에 대해 입력 배열·키의 호출 전후 바이트 불변성과 기록 유무·필터 반환값을 검사한다. 완료 판별은 §2의 조건을 그대로 사용하며, 조건이 하나라도 미충족이면 중단 요청이 없고 모두 충족된 trace 모드에서만 중단 요청이 나오는지 확인한다. 이는 기록 모듈의 시험이며 생산 pair 조립·solve나 호출자 전체 제어 흐름의 실행 검증은 아니다. 생산 호출부가 이 판별 결과를 §2의 중단·정리 경로에 연결하는지는 정적으로 확인하고, 실제 제한 실행의 완료는 G-RUN으로 확인한다. 시험용 물리 배열 변경과 잘못된 소비 키를 각각 주입하여 해당 검사가 거부함을 시연한다. 새 생산 소형 입력·pair 조립·solve 하네스는 만들지 않으며, 이 시험은 §9의 기존 오프라인 누적 상한 안에서 수행한다. 파일 쓰기 실패 모사·저장 표 재독해·결정 재계산 배터리는 추가하지 않는다.
 
 최종 과학 분기는 다음 네 개뿐이다.
 
@@ -268,9 +271,10 @@ prepare는 빌드·음성 대조·입력 신원·빈 런 준비를 수행한다.
   "changeset": {
     "table_heading": "### 변경집합 — DET-SI-CONSUMPTION-TRACE (표)",
     "table_end": "### 변경집합 끝",
-    "path_pattern": "(?:scripts/det_si_trace_readout\\.py|/gpfs/kjhan/lumina/cmfgen_map/trace13_20261010/(?:source/src/(?:lumina_plasma\\.c|lumina_cmfgen\\.c|lumina_cuda\\.cu|det_si_trace\\.h)|tools/(?:det_si_trace_negative\\.c|run_det_si_trace_(?:offline|gpu)\\.slurm)))",
+    "path_pattern": "(?:scripts/det_si_trace_readout\\.py|/gpfs/kjhan/lumina/cmfgen_map/trace13_20261010/(?:source/src/(?:lumina_plasma\\.c|lumina_cmfgen\\.c|lumina_cuda\\.cu|det_si_trace\\.h|env_universe\\.h)|tools/(?:det_si_trace_negative\\.c|run_det_si_trace_(?:offline|gpu)\\.slurm)))",
     "symbol": "det_si_trace_",
     "roots": [
+      "/gpfs/kjhan/lumina/cmfgen_map/trace13_20261010/source/src/env_universe.h",
       "/gpfs/kjhan/lumina/cmfgen_map/trace13_20261010/source/src/lumina_plasma.c",
       "/gpfs/kjhan/lumina/cmfgen_map/trace13_20261010/source/src/lumina_cmfgen.c",
       "/gpfs/kjhan/lumina/cmfgen_map/trace13_20261010/source/src/lumina_cuda.cu",
@@ -281,6 +285,7 @@ prepare는 빌드·음성 대조·입력 신원·빈 런 준비를 수행한다.
       "/gpfs/kjhan/lumina/cmfgen_map/trace13_20261010/tools/run_det_si_trace_offline.slurm"
     ],
     "expected_extra": [
+      "/gpfs/kjhan/lumina/cmfgen_map/trace13_20261010/source/src/env_universe.h",
       "/gpfs/kjhan/lumina/cmfgen_map/trace13_20261010/source/src/lumina_plasma.c",
       "/gpfs/kjhan/lumina/cmfgen_map/trace13_20261010/source/src/lumina_cmfgen.c",
       "/gpfs/kjhan/lumina/cmfgen_map/trace13_20261010/source/src/lumina_cuda.cu",
