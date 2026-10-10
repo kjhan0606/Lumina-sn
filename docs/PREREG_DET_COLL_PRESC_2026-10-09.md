@@ -251,6 +251,25 @@ GPU 판정런이므로 Fable 사전감사를 생략하지 않는다. 기안자 �
 
 기안자는 공유 맥락·현재 작업 디렉터리·분장·지정 계약과 판정문·봉인 소스·R′/N 신원·재사용 함수를 읽었다. 파일 변경·계산·기계 게이트 실행은 하지 않았다. 운전자는 이 절에 실제 모델 ID, 파일 신원, 작업 ID, 게이트 결과, 비용, 이탈과 종료감사 결과를 이어 기록한다.
 
+### 집행 기록 (운전자 추가 — 정본 장부, 개정16 ①; 위 기안 기록은 그대로 둔다)
+
+증거 접두 `B=/gpfs/kjhan/lumina/cmfgen_map/coll_presc_20261009`. 작업 번호·경과는 `B/JOBS.txt`·`B/evidence/COST_LEDGER.txt`.
+
+| 항목 | 담당(실제) | 상태·증거 |
+|---|---|---|
+| 기안·개정 1 | astra `gpt-6-astra` | ef4c0f1 · 0ab3428(OLD/NEW 31쌍, 행 단위 의도 외 소실 0) |
+| 기계 프리플라이트 | 운전자 | 기안·개정 1 모두 prereg·referents·canonical rc 0(a10 417556·417586), 개정 발주 프리플라이트 rc 0(417583) |
+| Fable fresh 경량 사전감사 | Fable `claude-fable-5-1` | Q-GOAL 부합·Q-LEAN 적정·«폐합 차단» 0·«기재로 족함» 5(`B/fable_preaudit.md`) |
+| user 결정(G-1) | user | 「12회, N 대비 (추천)」(`B/evidence/USER_DECISION_2026-10-09.txt` addendum) |
+| 구현·직접시험 | 운전자(Opus 5.5) | 판독기 cbce1e0, 러너 둘(위생 rc 0, 417587); dev1 417557 실패(픽스처 TypeError) → prepare p1 417588 직접시험 4/4 |
+| staging | 운전자 | p1 → `B/OMEGA/run1`(입력 65 파일, N 대비 exports 차이 = Ω 한 줄) |
+| GPU 판정런 | 운전자 | 417590 h200x2 `--time=21:00:00`(저장 21:00:00), 10-09 15:29:19–10-10 10:15:43, SUCCESS, 37.55 GPU·h |
+| 판독 | 운전자 | a1 a10 418282 VALID(`B/results/a1/`), 게이트 발견 0 |
+| 판정 | 운전자(구현·판정 겸임) | `docs/VERDICT_DET_COLL_PRESC_2026-10-09.md` PASS_LIMITED |
+| 게이트 roster | 운전자 | `B/evidence/GATE_RECORD_a1.json` |
+| 종료감사 | astra(계약 저자 이해관계) | 대기 |
+| 비용 | 운전자 | GPU 37.55 / 42 GPU·h, 모델 진입 1/1; CPU 전용 147 s / 600 s(a1 까지, 이후 게이트는 장부에 누적) |
+
 ## §12. 기계 선언
 
 직전 계약의 changeset·branches·references 형식을 사용한다. 분기 코드는 §6의 이동 판정이며 기존 NRB 명제 코드를 승계하지 않는다. 참조 목록에는 실재 파일만 넣는다.
