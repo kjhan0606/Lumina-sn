@@ -268,9 +268,9 @@ sbatch --partition=a10 --ntasks=1 --cpus-per-task=1 \
 | 경량 사전감사 | — | 생략(개정25-ab: GPU 0·생산 변경 0) |
 | 구현·직접시험 | 운전자(Opus 5.5) | 판독기 `scripts/det_blue_ion_map_readout.py`, 러너(위생 rc 0, 418352); a1 418353 실패(픽스처 KeyError) → a2 418354 직접시험 4/4 |
 | 판독 | 운전자 | a2 a10 418354 VALID, 309행(`B/results/a2/`) |
-| 판정 | 운전자(구현·판정 겸임) | `docs/VERDICT_DET_BLUE_ION_MAP_2026-10-10.md` PASS_LIMITED |
+| 판정 | 운전자(구현·판정 겸임) | `docs/VERDICT_DET_BLUE_ION_MAP_2026-10-10.md` PASS_LIMITED, 폐합(종료감사 1회차) |
 | 게이트 roster | 운전자 | `B/evidence/GATE_RECORD_a2.json` |
-| 종료감사 | astra(계약 저자 이해관계) | 대기 |
+| 종료감사 | astra(계약 저자 이해관계) | 1회차 **폐합 가 «폐합 차단» 0**(`B/astra_closeout.md`), «기재로 족함» 4(문구) 판정문 §9 반영 → **폐합** |
 | 비용 | 운전자 | CPU 49 s / 600 s(a2 까지, 이후 게이트는 장부에 누적), GPU 0 |
 
 ## §12. 기계 선언
