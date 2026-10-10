@@ -273,10 +273,10 @@ Q-GOAL·Q-LEAN 자기답은 독립 감사가 아니다. 계약 저자의 종료�
 | 구현·직접시험 | 운전자(Opus 5.5) | 판독기 `scripts/det_ionrate_bound_readout.py`, 러너(위생 rc 0, 418367); a1 418368 VALID 였으나 Fe NORAD 총계수 이중 계상 발견으로 무효 → 수리 → a2 418370 직접시험 5/5 → 종료감사 1회차 수리 a3 418373(핵 = III 바닥 LS 항, Ni 공명) 직접시험 5/5 |
 | 판독 | 운전자 | a2 a10 418370 → 정본 a3 418373 VALID, 1400행(`B/results/a3/`) |
 | 진단 탐침 | 운전자 | 418369 장부 대응 탐침(계약 밖, 판정문 §4 관측) |
-| 판정 | 운전자(구현·판정 겸임) | `docs/VERDICT_DET_IONRATE_BOUND_2026-10-10.md` PASS_LIMITED |
+| 판정 | 운전자(구현·판정 겸임) | `docs/VERDICT_DET_IONRATE_BOUND_2026-10-10.md` PASS_LIMITED, 폐합(종료감사 2회차) |
 | 게이트 roster | 운전자 | `B/evidence/GATE_RECORD_a2.json` → `GATE_RECORD_a3.json` |
-| 종료감사 | astra(계약 저자 이해관계, 25-ac) | 1회차 REWORK «폐합 차단» 2(`B/astra_closeout.md`) → 수리·재판독 a3; 2회차 대기 |
-| 비용 | 운전자 | CPU 83 s / 600 s(a2 까지, 이후 게이트는 장부에 누적), GPU 0 |
+| 종료감사 | astra(계약 저자 이해관계, 25-ac) | 1회차 REWORK «폐합 차단» 2(`B/astra_closeout.md`) → 수리·재판독 a3; 2회차 **폐합 가 «폐합 차단» 0**(`B/astra_closeout2.md`), 기재 1 반영 → **폐합** |
+| 비용 | 운전자 | CPU 누적은 `B/evidence/COST_LEDGER.txt`(최종 합계 기재), GPU 0 |
 
 ## §12. 기계 선언
 

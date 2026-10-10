@@ -7,7 +7,7 @@
 - **판독 정본:** `/gpfs/kjhan/lumina/cmfgen_map/ionrate_20261010/results/a3/analysis/`(a10 job 418373, 종료감사 1회차 수리판) — `cmfgen_comparison.csv`(1400행)·`.md`·`evidence.json`. 이전 a2(418370)·무효 a1(418368)은 보존한다.
 - **입력:** 기준 O(`coll_presc_20261009/OMEGA/run1`)의 세대 13 덤프(복사 12·iter 10)와 셸 상태, 전리 채널 장부, 덱 원자 자료(`levels.csv`·`ionization_energies.csv`·`cmfgen_sigma_bf.bin`), `src/lumina_plasma.c` 의 DR_TABLE, 공개 toy06 19.480 d 의 Si·Fe·Co·Ni 분율과 물리 자료.
 
-## 처분: **PASS_LIMITED** (조건부 비교 단에 한해) — 종료감사 1회차 REWORK(«폐합 차단» 2: 철족 Milne 핵·가중치 대응, Ni RR/DR 분리) 수리 후 재판정(a3), 2회차 대기
+## 처분: **PASS_LIMITED** (조건부 비교 단에 한해) — **폐합**(종료감사 2회차 폐합 가 «폐합 차단» 0; 1회차 REWORK «폐합 차단» 2 수리 후 a3)
 
 `PASS_LIMITED / III/II: Fe·Co·Ni 12셸 전부 공개보다 낮음(−0.13…−3.13 dex), Si 셸 4–33 낮음·34–49 높음 / 공통 원자 재결합 상태 치환 = n_e 비(−0.15…+0.28 dex, T 동일) / 조건부 필요 총 전리율 Co 만 / O 전리 채널·d_U 미식별`
 
@@ -88,8 +88,8 @@ U_req^C* = x^C (R_M^C* + R_D^C*) — 공통 처방·정상 인접단계 평형�
 
 ## 6. 게이트·직접시험·신원
 
-- 게이트(roster `evidence/GATE_RECORD_a3.json`): G-DOC(계약 게이트 rc 0, 418364; 러너 위생 rc 0, 418367), G-INPUT·G-PHYS·G-TABLE(판독 a3 발견 0), G-COST(a10 만, GPU 0).
-- 직접시험 5/5(a3): 세대 14·장부 gen 을 세대로 사용 거부, III↔IV·이웃 속도 물리 행 거부, 계수를 율로·n_e 이중 곱 거부, **Fe NORAD 총계수를 순수 DR 로 넣어 Milne 와 합산 거부**·공명 Milne 를 순수로 바꿔 합산 거부·**단일 J 바닥준위 가중치를 핵 항 가중치 대신 쓰면 거부**, CMFGEN 광이온화 칸에 필요량 기입·누락 O 채널 0 기입 거부.
+- 게이트(roster `evidence/GATE_RECORD_a3.json`): G-DOC(계약 게이트 rc 0, 418364; 러너 위생 rc 0, 418367), G-INPUT·G-PHYS·G-TABLE(판독 a3 발견 0), G-COST(a10 만, GPU 0, 누적은 `evidence/COST_LEDGER.txt`).
+- 직접시험 5/5(a3): 세대 14·장부 gen 을 세대로 사용 거부, III↔IV·이웃 속도 물리 행 거부, 계수를 율로·n_e 이중 곱 거부, **Fe NORAD 총계수를 순수 DR 로 넣어 Milne 와 합산 거부**·공명 Milne 를 순수로 바꿔 합산 거부·Co 의 핵 가중치 메타데이터를 단일 J 값 10으로 바꾸면 PHOT 항 가중치 28과의 불일치를 거부한다(실제 Milne 분모를 바꾼 재계산 시험은 아니다; 공명 재분류 음성대조는 Si 를 사용하며, Ni 수리는 소스와 a3 의 합산 제외 산출로 확인했다), CMFGEN 광이온화 칸에 필요량 기입·누락 O 채널 0 기입 거부.
 - 신원: `results/a3/identity.sha256`, `evidence.json`(입력 15개·재사용 모듈 sha, PHOT 경로 파일 sha·최종 상태 헤더, 핵 항 준위·가중치 두 출처, 단면적 격자 일치).
 
 ## 7. 비용·이탈
@@ -126,4 +126,14 @@ astra 총평은 「폐합 불가 · «폐합 차단» 2」였다(대상 HEAD d4d
 | 철족 범위 −0.14 → −0.15, 1e-12 기준의 출처 | 기재로 족함 | §2·§4 문구 교체 |
 
 1회차는 전건 반영한다(개정18 ③). 판독 정본은 a3 다.
+
+## 12. 종료감사 2회차(astra, `ionrate_20261010/astra_closeout2.md`) — 폐합
+
+astra 총평은 「폐합 가 · «폐합 차단» 0」이다(대상 HEAD 35aacd8, a3). 1회차 차단 둘의 해소(핵 항 준위·가중치 = PHOT, a3/a2 Milne 계수비 9/25·10/28·9/21, Ni 필요 총율 제거)와 1400행·대응·등급·Co 12행 값을 확인했다. 감사자는 계약 기안자이며 그 이해관계를 표기했다(개정25-ac).
+
+| 지적 | 계급 | 처리 |
+|---|---|---|
+| 단일 J 음성대조의 시험 범위를 넓게 서술(메타데이터 불일치 검출이지 분모 재계산 시험이 아님; 공명 대조는 Si) | 기재로 족함 | §6 문구를 astra NEW 로 교체 |
+
+2회차도 전건 반영한다(개정18 ③). 비용 누적은 판정 시점 이후 게이트·감사 재현을 포함해 장부에 있다(2회차 감사 시점 196 s / 600 s).
 
