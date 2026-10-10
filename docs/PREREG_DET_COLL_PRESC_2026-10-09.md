@@ -265,9 +265,9 @@ GPU 판정런이므로 Fable 사전감사를 생략하지 않는다. 기안자 �
 | staging | 운전자 | p1 → `B/OMEGA/run1`(입력 65 파일, N 대비 exports 차이 = Ω 한 줄) |
 | GPU 판정런 | 운전자 | 417590 h200x2 `--time=21:00:00`(저장 21:00:00), 10-09 15:29:19–10-10 10:15:43, SUCCESS, 37.55 GPU·h |
 | 판독 | 운전자 | a1 a10 418282 VALID(`B/results/a1/`), 게이트 발견 0 |
-| 판정 | 운전자(구현·판정 겸임) | `docs/VERDICT_DET_COLL_PRESC_2026-10-09.md` PASS_LIMITED |
+| 판정 | 운전자(구현·판정 겸임) | `docs/VERDICT_DET_COLL_PRESC_2026-10-09.md` PASS_LIMITED, 폐합(종료감사 1회차) |
 | 게이트 roster | 운전자 | `B/evidence/GATE_RECORD_a1.json` |
-| 종료감사 | astra(계약 저자 이해관계) | 대기 |
+| 종료감사 | astra(계약 저자 이해관계) | 1회차 **폐합 가 «폐합 차단» 0**(`B/astra_closeout.md`), «기재로 족함» 2(문구) 판정문 §8 에 반영 → **폐합** |
 | 비용 | 운전자 | GPU 37.55 / 42 GPU·h, 모델 진입 1/1; CPU 전용 147 s / 600 s(a1 까지, 이후 게이트는 장부에 누적) |
 
 ## §12. 기계 선언
