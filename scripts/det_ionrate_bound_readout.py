@@ -57,13 +57,15 @@ NS = 50
 G_POP, G_RAD, ITER = 13, 12, 10
 ROWS = ("ION_RATIO", "PHOTOIONIZATION", "NONTHERMAL_IONIZATION", "COLLISIONAL_IONIZATION",
         "RADIATIVE_RECOMBINATION", "DIELECTRONIC_RECOMBINATION", "TOTAL_IONIZATION_REQUIRED")
-# PHOT route identity (driver evidence, prereg 4): the deck's CMFGEN links use only route A of each II ion, whose
-# final state is the III ground term (excitation 0.0).  Si II A is Nahar unsmoothed (resonances); Fe/Co/Ni II A are
-# "very crude" fits.  Recorded in evidence.json with the file paths and header lines.
+# PHOT route identity (driver evidence, prereg 4; closeout round 1): the deck's CMFGEN links use only route A of each
+# II ion; its final state is the III ground LS TERM (excitation 0.0, "Split J levels" False, statistical weight of the
+# term in the header).  The Milne core is that term: weight = sum of g over the deck's III levels of the ground term,
+# required to equal the PHOT header weight.  Si II A (Nahar unsmoothed) and Ni II A (Nahar & Bautista 2001, smoothing
+# 0) carry autoionising resonances; Fe/Co II A are "very crude" fits.
 PHOT_A = {14: ("/gpfs/kjhan/cmfgen_21jun23/atomic/SIL/II/19apr23/phot_data_A", "MILNE_WITH_RESONANCES"),
           26: ("/gpfs/kjhan/cmfgen_21jun23/atomic/FE/II/19apr23/phot_data_A", "MILNE"),
           27: ("/gpfs/kjhan/cmfgen_runs/toy06_19p48d_modern/atomic_local/COB/II/19apr23/phot_data_A", "MILNE"),
-          28: ("/gpfs/kjhan/cmfgen_21jun23/atomic/NICK/II/19apr23/phot_data_A", "MILNE")}
+          28: ("/gpfs/kjhan/cmfgen_21jun23/atomic/NICK/II/19apr23/phot_data_A", "MILNE_WITH_RESONANCES")}
 LINKS = Path("/gpfs/kjhan/cmfgen_runs/toy06_19p48d_ophys/atomic_links.txt")
 C_LIGHT, H, K_B, M_E, EV = 2.99792458e10, 6.62607015e-27, 1.380649e-16, 9.1093837015e-28, 1.602176634e-12
 LABEL = {0: "BELOW_REFERENCE", 1: "ABOVE_REFERENCE", 4: "UNRESOLVED", 5: "NOT_IDENTIFIABLE"}
@@ -97,20 +99,44 @@ def det_ionrate_bound_sigma(path, n_levels_expected):
     return has, sig, float(nu_min), float(nu_max), int(n_freq)
 
 
+def det_ionrate_bound_phot_header(path):
+    """final state, statistical weight of the final state and the Split-J flag from a CMFGEN PHOT header."""
+    out = {}
+    for ln in open(path, errors="replace"):
+        if "!Final state in ion" in ln and "final" not in out:
+            out["final"] = ln.split("!")[0].strip()
+        elif "!Statistical weight of ion" in ln and "weight" not in out:
+            out["weight"] = float(ln.split("!")[0].strip().replace("D", "E"))
+        elif "!Split J levels" in ln and "split_j" not in out:
+            out["split_j"] = ln.split("!")[0].strip().upper() == "TRUE"
+        if len(out) == 3:
+            break
+    return out
+
+
 class det_ionrate_bound_milne:
     """spontaneous Milne RR coefficient (cm^3 s^-1) to the III ground core over the stored sigma grid (prereg 4):
     sigma piecewise constant per bin, nu^2 exp(-(h nu - chi)/kT) integrated analytically above each threshold;
     vectorised over levels x bins and memoised by temperature."""
 
-    def __init__(self, Z, levels, ioniz, has, sig, edges):
+    def __init__(self, Z, levels, ioniz, has, sig, edges, phot_path=None):
         lv = levels.reset_index(drop=True)
         self.info, self.ok = {}, False
-        g3 = lv[(lv.atomic_number == Z) & (lv.ion_number == 2) & (lv.level_number == 0)].g
+        iii = lv[(lv.atomic_number == Z) & (lv.ion_number == 2)]
         ie = ioniz[(ioniz.atomic_number == Z) & (ioniz.ion_number == 1)].ionization_energy_eV
-        if len(g3) != 1 or len(ie) != 1:
+        g0 = iii[iii.level_number == 0]
+        if len(g0) != 1 or len(ie) != 1:
             self.info["why"] = "III_GROUND_OR_IE_ABSENT"
             return
-        self.g3, self.ie = float(g3.iloc[0]), float(ie.iloc[0])
+        term = str(g0.configuration.iloc[0]).split("[")[0]
+        core = iii[iii.configuration.astype(str).str.split("[").str[0] == term]
+        self.g3, self.ie = float(core.g.sum()), float(ie.iloc[0])
+        hdr = det_ionrate_bound_phot_header(phot_path) if phot_path else {}
+        self.info = {"core_term": term, "core_levels": [int(x) for x in core.level_number], "g_core_deck": self.g3,
+                     "g_core_phot": hdr.get("weight"), "split_j": hdr.get("split_j"), "final_state": hdr.get("final")}
+        if hdr.get("split_j") is not False or hdr.get("weight") != self.g3:
+            self.info["why"] = "CORE_TERM_WEIGHT_NOT_MATCHED"
+            return
         idx = [i for i in lv.index[(lv.atomic_number == Z) & (lv.ion_number == 1)] if has[i]]
         chi = np.array([(self.ie - float(lv.loc[i, "energy_eV"])) * EV for i in idx])
         keep = chi > 0.0
@@ -122,7 +148,7 @@ class det_ionrate_bound_milne:
         self.hi = np.array([e[1] for e in edges])
         self.memo = {}
         self.ok = len(self.idx) > 0
-        self.info = {"levels_used": int(len(self.idx)), "g_III_ground": self.g3, "ionization_energy_eV": self.ie}
+        self.info.update({"levels_used": int(len(self.idx)), "ionization_energy_eV": self.ie})
 
     def __call__(self, T):
         if T in self.memo:
@@ -309,6 +335,10 @@ def NRBcols(r, d):
 def det_ionrate_bound_validate(rows, ion, shell, phys, coeff):
     """G-TABLE / G-PHYS on the assembled rows (before writing)."""
     why = []
+    for Z in ZS:
+        c = coeff.get((Z, "RR")) or {}
+        if c.get("fn") is not None and c.get("g_core_deck") != c.get("g_core_phot"):
+            why.append(f"G-PHYS:CORE_WEIGHT:{Z}:{c.get('g_core_deck')}:{c.get('g_core_phot')}")
     keys = [(r["Z"], r["shell"], r["row"]) for r in rows]
     if len(keys) != 1400 or len(set(keys)) != 1400:
         why.append(f"G-TABLE:ROWS:{len(keys)}:{len(set(keys))}")
@@ -355,10 +385,11 @@ def det_ionrate_bound_inputs(man, ch_info):
 def det_ionrate_bound_coeffs(levels, ioniz, has, sig, edges, drt):
     out, ev = {}, {}
     for Z in ZS:
-        mil = det_ionrate_bound_milne(Z, levels, ioniz, has, sig, edges)
+        mil = det_ionrate_bound_milne(Z, levels, ioniz, has, sig, edges, phot_path=PHOT_A[Z][0])
         a0 = mil(10000.0) if mil.ok else None
-        out[(Z, "RR")] = {"id": f"MILNE:{SYM[Z]}2:route_A", "fn": mil if (mil.ok and a0 and a0 > 0.0) else None,
-                          "flag": PHOT_A[Z][1]}
+        out[(Z, "RR")] = {"id": f"MILNE:{SYM[Z]}2:route_A:{mil.info.get('core_term')}",
+                          "fn": mil if (mil.ok and a0 and a0 > 0.0) else None, "flag": PHOT_A[Z][1],
+                          "g_core_deck": mil.info.get("g_core_deck"), "g_core_phot": mil.info.get("g_core_phot")}
         ev[f"RR:{Z}"] = dict(mil.info, alpha_10kK=a0, phot_file=PHOT_A[Z][0], flag=PHOT_A[Z][1])
         c = drt.get((Z, 2))
         if c is None:
@@ -414,9 +445,14 @@ def det_ionrate_bound_selftest(ctx):
     coeff_tot = dict(coeff)
     coeff_tot[(26, "DR")] = dict(coeff[(26, "DR")], flag="DR_SOURCE_NORAD", pure_dr=True)
     forced_tot = det_ionrate_bound_rows(ion, shell, pub, phys, coeff_tot, chan)
-    case("4 RR+DR total (Fe NORAD) entered as pure DR / resonant Milne relabelled pure, summed with Milne, refused",
+    coeff_j = dict(coeff)
+    coeff_j[(27, "RR")] = dict(coeff[(27, "RR")], g_core_deck=10.0)          # single-J ground level weight
+    case("4 RR+DR total (Fe NORAD) entered as pure DR / resonant Milne relabelled pure, summed with Milne / single-J "
+         "core weight in place of the PHOT term weight, refused",
          (any("RR_DR_DOUBLE:26" in w for w in det_ionrate_bound_validate(forced_tot, ion, shell, phys, coeff)),
-          any("RR_DR_DOUBLE:14" in w for w in det_ionrate_bound_validate(forced, ion, shell, phys, coeff))), (True, True))
+          any("RR_DR_DOUBLE:14" in w for w in det_ionrate_bound_validate(forced, ion, shell, phys, coeff)),
+          any("CORE_WEIGHT:27" in w for w in det_ionrate_bound_validate(good, ion, shell, phys, coeff_j))),
+         (True, True, True))
     # 5 required total placed in the unidentifiable CMFGEN photoionisation cell / missing O channel entered as 0
     filled = [dict(r, ref_value=1.0, code=0) if r["row"] == "PHOTOIONIZATION" else r for r in good]
     zero = [dict(r, O_value=0.0) if (r["row"] == "NONTHERMAL_IONIZATION" and r["grade"] == "NOT_IDENTIFIABLE") else r
