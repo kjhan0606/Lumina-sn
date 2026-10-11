@@ -274,12 +274,12 @@ prepare는 빌드·음성 대조·입력 신원·빈 런 준비를 수행한다.
 | 경량 사전감사(Q-GOAL·Q-LEAN) | astra(기안자 이해관계 명시, 비독립) | Q-GOAL 부합·Q-LEAN 적정·«폐합 차단» 0·«기재로 족함» 통합 권고(`B/astra_preaudit.md`) → 개정 1 에 반영 |
 | 구현 | 운전자(Opus 5.5) · 코드 감사 없음(25-z) | `B/source/src/det_si_trace.h`(신규), lumina_plasma.c 35 블록·155 행 삽입, lumina_cmfgen.c 2·19, lumina_cuda.cu 2·8, env_universe.h 두 키·개수; 판독기 45b64ac; 러너 둘; 음성 대조 `B/tools/det_si_trace_negative.c` |
 | prepare | 운전자 | a10 418476: G-SCOPE 통과(182 동일·삽입 전용·trace 표지), O 처방 빌드 rc 0(binary d52649ec…), 음성 대조 33/33, 러너 문법·위생 통과, 스테이징 `B/TRACE/run1`(67 파일) |
-| GPU 런 T | 운전자 | 418480 h100(H100 NVL ×2) `--time=1260`, 10-10 19:00:01–10-11 14:29, 70,145 s = 38.97 GPU·h, TRACE_TARGET_COMPLETE·stop_iteration 10, 진입 1·재제출 0 |
+| GPU 런 T | 운전자 | 418480 h100(H100 NVL ×2) `--time=1260`, 10-10 19:00:01–10-11 14:29, 모델 경과 70,145 s(footer)·Slurm 할당 70,151 s ≈ 38.973 GPU·h, TRACE_TARGET_COMPLETE·stop_iteration 10, 진입 1·재제출 0 |
 | 판독 | 운전자 | analyze a10 419275(3 s) `B/results/analyze/analysis/`: G-RUN·G-TRACE·G-TABLE(36/36 비트)·G-EQUIV(15/15, 덤프 바이트 동일) 지적 0, 분기 0 FORMULATION(0.005/0.01/0.02 dex 모두 0) |
 | 운전자 탐침(계약 밖) | 운전자 | a10 419276 `B/probe/si10_levels.csv`: 준위별 광전리 계수 SE = 사다리(125/125), 차이는 적용 인구 |
-| 판정 | 운전자(구현·판정 겸임) | `docs/VERDICT_DET_SI_CONSUMPTION_TRACE_2026-10-11.md` — FORMULATION, 종료감사 대기 |
-| 종료감사 | astra(계약 저자 이해관계) | (미집행) |
-| 비용 | 운전자 | GPU 38.97 / 42 GPU·h, 모델 진입 1/1; 오프라인 a10 12 작업 270 s · 0.17 core·h / 1,800 s · 1 core·h |
+| 판정 | 운전자(구현·판정 겸임) | `docs/VERDICT_DET_SI_CONSUMPTION_TRACE_2026-10-11.md` — FORMULATION(5c9330a), 종료감사 반영본으로 폐합 |
+| 종료감사 | astra(계약 저자 이해관계; 자기보고 「GPT-6, 세부 ID 확인 불가」) | 1회차 **폐합 가 «폐합 차단» 0**(`B/astra_closeout.md`), «기재로 족함» 4 판정문 §3·§5·§7·§8 에 반영 → **폐합**; 독립 재계산은 재현 BLOCKED |
+| 비용 | 운전자 | GPU 38.973 / 42 GPU·h(Slurm 할당), 모델 진입 1/1; 오프라인 a10 12 작업 270 s · 0.17 core·h / 1,800 s · 1 core·h(이후 게이트·감사 발주 게이트 작업 수 초 추가) |
 
 **이탈(기재):**
 1. 개발 빌드 418472 를 4 CPU·16 GiB 로 돌렸다(§9 오프라인 2 CPU·8 GiB). 경과 78 s(0.087 core·h), 오프라인 누적 상한 안.
