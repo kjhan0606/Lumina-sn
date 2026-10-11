@@ -203,11 +203,13 @@ def lnp_super_average(levels):
 
 
 def lnp_trace(cfg, why):
-    """populations of material 12 (call 1 PRE_FL) and material 13 (adopted call FINAL_FL) with their links."""
+    """populations of material 12 (call 1 PRE_FL) and material 13 (the adopted call's commit, kind=level, equal level
+    by level to the adopted CE pass 'after'; prereg 6, revision 1) with their links.  FINAL_FL is recorded only."""
     tr = cfg["T"] / "si_trace"
     calls = TR.read_trace(tr / "si10_calls.csv")
-    call, w = EB.det_si_exc_adopt(TR.read_trace(tr / "si10_ne.csv"), calls, TR.read_trace(tr / "si10_cevec.csv"),
-                                  TR.read_trace(tr / "si10_commit.csv"), cfg["adopted"])
+    cevec = TR.read_trace(tr / "si10_cevec.csv")
+    commit_rows = TR.read_trace(tr / "si10_commit.csv")
+    call, w = EB.det_si_exc_adopt(TR.read_trace(tr / "si10_ne.csv"), calls, cevec, commit_rows, cfg["adopted"])
     if call is None:
         why += [f"TRACE_ADOPTION:{x}" for x in w]
         return None
@@ -215,6 +217,10 @@ def lnp_trace(cfg, why):
     pcall = LI.det_si_line_input_production_call(calls)
     if pcall is None:
         why.append("TRACE_PRODUCTION_CALL")
+        return None
+    a10 = cfg["states"]["A10"]
+    if int(call["rad_generation"]) != a10["radiation"] or int(pcall["core_generation"]) != a10["material"]:
+        why.append(f"TRACE_GENERATIONS:{call['rad_generation']}:{pcall['core_generation']}")
         return None
     vec = {}
     for r in TR.read_trace(tr / "si10_vec.csv"):
@@ -225,26 +231,42 @@ def lnp_trace(cfg, why):
     smA = sorted((r for r in sm if r["call"] == cid), key=lambda r: int(r["i_fl"]))
     N = int(call["N_fl"])
     key = ("fl_index", "level_num", "upper_ion", "g")
-    if len(sm1) != N or [tuple(r[k] for k in key) for r in sm1] != [tuple(r[k] for k in key) for r in smA]:
+    if len(sm1) != N or [int(r["i_fl"]) for r in sm1] != list(range(N)) or \
+            [tuple(r[k] for k in key) for r in sm1] != [tuple(r[k] for k in key) for r in smA]:
         why.append("TRACE_LEVEL_MAP_CALL1_VS_ADOPTED")
         return None
     pre = [vec.get(("1", "PRE_FL"), {}).get(i) for i in range(N)]
-    fin = [vec.get((cid, "FINAL_FL"), {}).get(i) for i in range(N)]
-    if any(v is None or not math.isfinite(v) for v in pre + fin):
-        why.append("TRACE_POPULATION_VECTORS")
+    if any(v is None or not math.isfinite(v) for v in pre):
+        why.append("TRACE_PRE_FL_VECTOR")
         return None
-    commit = [float(r["value"]) for r in sorted((r for r in TR.read_trace(tr / "si10_commit.csv")
-                                                 if r["kind"] == "level"), key=lambda r: int(r["i"]))]
-    if commit != fin:
-        why.append("TRACE_FINAL_FL_VS_COMMIT")
+    lev = [r for r in commit_rows if r["kind"] == "level"]
+    if sorted(int(r["i"]) for r in lev) != list(range(N)):
+        why.append("TRACE_COMMIT_INDEX")
+        return None
+    keys = {k: str(cfg["adopted"][k]) for k in ("bundle", "ne_iter", "ce_pass")}
+    ce = [r for r in cevec if all(r[k] == v for k, v in keys.items())]
+    if sorted(int(r["i_fl"]) for r in ce) != list(range(N)):
+        why.append("TRACE_CE_AFTER_INDEX")
+        return None
+    commit = {int(r["i"]): float(r["value"]) for r in lev}
+    after = {int(r["i_fl"]): float(r["after"]) for r in ce}
+    if any(commit[i] != after[i] for i in range(N)) or not all(math.isfinite(commit[i]) for i in range(N)):
+        why.append("TRACE_COMMIT_VS_CE_AFTER")
+        return None
+    mat13 = [commit[i] for i in range(N)]
+    final_fl = [vec.get((cid, "FINAL_FL"), {}).get(i) for i in range(N)]
     lmap = EB.det_si_exc_level_map(sm1, {x for _, _, lo, up in cfg["lines"] for x in (lo, up)})
     if lmap is None:
         why.append("TRACE_LEVEL_MAP")
         return None
     upper = [r["upper_ion"] == "1" for r in sm1]
-    sums = {"pre": (sum(v for v, u in zip(pre, upper) if not u), sum(v for v, u in zip(pre, upper) if u)),
-            "fin": (sum(v for v, u in zip(fin, upper) if not u), sum(v for v, u in zip(fin, upper) if u))}
-    return {"call": call, "pcall": pcall, "pre": pre, "fin": fin, "lmap": lmap, "sums": sums,
+
+    def sums(v):
+        if any(x is None for x in v):
+            return None
+        return (sum(x for x, u in zip(v, upper) if not u), sum(x for x, u in zip(v, upper) if u))
+    return {"call": call, "pcall": pcall, "pre": pre, "mat13": mat13, "final_fl": final_fl, "lmap": lmap,
+            "sums": {"pre": sums(pre), "mat13": sums(mat13), "final_fl": sums(final_fl)},
             "g": {int(r["level_num"]): int(r["g"]) for r in sm1 if r["upper_ion"] == "0"}}
 
 
@@ -268,7 +290,7 @@ def lnp_atomic(path, line_ids):
 
 # ------------------------------------------------------------------ the six-line decomposition
 def lnp_line(lid, lo, up, atom, levels, sup, tr, w5row, cfg, V, n_atom, J_b, t):
-    """one registered line of A10 at the registered shell: material m = adopted FINAL_FL (13), producer p = call-1
+    """one registered line of A10 at the registered shell: material m = adopted commit (13), producer p = call-1
     PRE_FL (12) and the W5 call of radiation 12; F0 .. F4 as registered (prereg 6)."""
     row = {"row_kind": "제한 선", "state": "A10", "shell": cfg["shell"], "scope": "제한 선 (등록 6선 중 하나)",
            "line_id": lid, "lower_level": lo, "upper_level": up}
@@ -308,7 +330,7 @@ def lnp_line(lid, lo, up, atom, levels, sup, tr, w5row, cfg, V, n_atom, J_b, t):
         row.update(status="미산출", reason=";".join(why))
         return row
     il, iu = tr["lmap"][lo], tr["lmap"][up]
-    nl_m, nu_m, nl_p, nu_p = tr["fin"][il], tr["fin"][iu], tr["pre"][il], tr["pre"][iu]
+    nl_m, nu_m, nl_p, nu_p = tr["mat13"][il], tr["mat13"][iu], tr["pre"][il], tr["pre"][iu]
     tau_m = LI.det_si_line_input_tau(f_lu, lam, t, nl_m, nu_m, g_l, g_u)[0]
     tau_p = LI.det_si_line_input_tau(f_lu, lam, t, nl_p, nu_p, g_l, g_u)[0]
     e_m, taueff_m, srce_m = LI.det_si_line_input_material(nu_m, A, nu, tau_m, t)
@@ -488,12 +510,14 @@ def lnp_pipeline(cfg):
         ion9 = lnp_ion_row(pc / "physics_DET_iter0009.ion.csv", sh)
         ion10 = lnp_ion_row(pc / "physics_DET_iter0010.ion.csv", sh)
         if tr is not None:
-            for tag, ion, key in (("PRE_FL_VS_MATERIAL12", ion9, "pre"), ("FINAL_FL_VS_MATERIAL13", ion10, "fin")):
-                if ion is None:
+            m13 = cfg["states"]["A10"]["material"]
+            for tag, ion, key, gen in (("PRE_FL_VS_MATERIAL12", ion9, "pre", m13 - 1),
+                                       ("COMMIT_VS_MATERIAL13", ion10, "mat13", m13)):
+                if ion is None or int(ion["population_generation"]) != gen:
                     why_lines.append(f"{tag}:ION_ROW")
                     continue
                 ref = (float(ion["Z14_nlte_q1_cm3"]), float(ion["Z14_nlte_q2_cm3"]))
-                if not all(LI.det_si_line_input_match(a, b)[0] for a, b in zip(tr["sums"][key], ref)):
+                if any(LEC.lec_separated(a, b, abs(a) + abs(b)) is not False for a, b in zip(tr["sums"][key], ref)):
                     why_lines.append(tag)
     if common.get("A10"):
         why_lines.append("A10_COMMON_DEFECT")
@@ -660,6 +684,8 @@ def lnp_write_toy(root, mutate=None, record=None):
     g = {n: gg for n, _, gg, _ in levels}
     # line 13 (0 -> 3, g 2 / 2): equal populations of material 13 give tau = 0 exactly
     fin[0] = fin[3] = 3.3e2
+    # the adopted call's internal FINAL_FL differs level by level from the commit (= the published material 13)
+    final_fl = [v * (1.0 + 0.01 * (i + 1)) for i, v in enumerate(fin)]
     trf = {"si10_ne.csv": [{"bundle": "1", "ne_iter": "1", "accepted": "1"}],
            "si10_calls.csv": [{"call": "1", "bundle": "1", "ne_iter": "1", "ce_pass": "0", "n_e": "1e9", "T_e": "8000",
                                "N_fl": "5", "n_lo_super": "4", "rad_generation": "12", "core_generation": "13"},
@@ -671,7 +697,8 @@ def lnp_write_toy(root, mutate=None, record=None):
            "si10_commit.csv": [{"kind": "level", "i": str(i), "value": repr(fin[i])} for i in range(5)] +
                               [{"kind": "n_e", "i": "", "value": "1.1e9"}, {"kind": "T_e", "i": "", "value": "8000"}],
            "si10_vec.csv": [{"call": "1", "phase": "PRE_FL", "i": str(i), "value": repr(pre[i])} for i in range(5)] +
-                           [{"call": "2", "phase": "FINAL_FL", "i": str(i), "value": repr(fin[i])} for i in range(5)],
+                           [{"call": "2", "phase": "FINAL_FL", "i": str(i), "value": repr(final_fl[i])}
+                            for i in range(5)],
            "si10_slmap.csv": [{"call": c, "i_fl": str(i), "fl_index": str(i), "global_level": str(i),
                                "level_num": str(i if i < 4 else 0), "upper_ion": "0" if i < 4 else "1",
                                "E_eV": "0", "g": str(g[i] if i < 4 else 1), "sl_local": str(i)}
@@ -721,7 +748,7 @@ def lnp_write_toy(root, mutate=None, record=None):
         f.write(",".join(head) + "\n")
         for r in w5:
             f.write(",".join(str(r[k]) for k in head) + "\n")
-    record.update(pre=pre, fin=fin, g=g, levels=levels)
+    record.update(pre=pre, fin=fin, final_fl=final_fl, g=g, levels=levels)
     return {"O": O, "T": T, "shell": 1, "ns": 2, "nb": 3, "lines": TOY_LINES, "w5_shells": (0, 1),
             "adopted": {"bundle": 1, "ne_iter": 1, "ce_pass": 1, "call": 2}, "states": REAL["states"]}
 
@@ -852,8 +879,13 @@ def cmd_selftest():
         expect(not lvariant(with_w5(lambda r: dict(r, Jbar=repr(float(r["beta"]) * float(r["Jbar"]))))),
                "inject beta applied twice to Jbar: fails")
         expect(not lvariant(lambda lid, lo, up, atom, levels, sup, tr, w5row, cfg_, V, n_atom, J_b, t: orig_line(
-            lid, lo, up, atom, levels, sup, dict(tr, fin=tr["pre"]), w5row, cfg_, V, n_atom, J_b, t)),
+            lid, lo, up, atom, levels, sup, dict(tr, mat13=tr["pre"]), w5row, cfg_, V, n_atom, J_b, t)),
                "inject the old material (12) as the ledger material of F2 (and the line): fails")
+        expect(not lvariant(lambda lid, lo, up, atom, levels, sup, tr, w5row, cfg_, V, n_atom, J_b, t: orig_line(
+            lid, lo, up, atom, levels, sup, dict(tr, mat13=tr["final_fl"]), w5row, cfg_, V, n_atom, J_b, t)) and
+               rec["final_fl"] != rec["fin"],
+               "inject the adopted FINAL_FL (differing from the commit in the clean toy) as the ledger material: "
+               "fails against the hand values from the commit")
         expect(not lvariant(lambda lid, lo, up, atom, levels, sup, tr, w5row, cfg_, V, n_atom, J_b, t: orig_line(
             lid, lo, up, atom, levels, sup, tr, w5row, cfg_, V, n_atom, J_b * 1.1 if J_b else J_b, t)),
                "inject the radiation-13 bin J (another generation) into F4: fails")
@@ -924,10 +956,33 @@ def cmd_selftest():
                "shell rows kept")
         pa, _, _ = run("ion13", lambda k, o: [dict(r, Z14_nlte_q1_cm3="1.5") if r["shell_id"] == "1" else r
                                               for r in o] if k == ("ion", 10) else o)
-        expect("FINAL_FL_VS_MATERIAL13" in pa["why_lines"] and all(r["status"] == "미산출" for r in pa["line_rows"])
+        expect("COMMIT_VS_MATERIAL13" in pa["why_lines"] and not lnp_produced(pa) and
+               all(r["status"] == "미산출" for r in pa["line_rows"])
                and lnp_rows_kept(pa),
-               "inject a material-13 ion sum that the adopted FINAL_FL does not reproduce (O-T link): registered "
-               "lines stopped, O-only L and Q kept")
+               "inject a material-13 ion sum that the commit (= CE after) does not reproduce (public link only): "
+               "registered lines stopped, O-only L and Q kept, not produced")
+
+        def commit_mut(fn):
+            return lambda k, o: fn(o) if k == ("trace", "si10_commit.csv") else o
+
+        def swap01(o):
+            v = {r["i"]: r["value"] for r in o if r["kind"] == "level"}
+            return [dict(r, value=v["1"] if r["i"] == "0" else v["0"]) if r["kind"] == "level" and r["i"] in ("0", "1")
+                    else r for r in o]
+        cases = {"redistribution (ion sums preserved)": swap01,
+                 "duplicated commit row": lambda o: o + [r for r in o if r["kind"] == "level" and r["i"] == "0"],
+                 "missing commit row": lambda o: [r for r in o if not (r["kind"] == "level" and r["i"] == "4")],
+                 "commit index mislink": lambda o: [dict(r, i="5") if r["kind"] == "level" and r["i"] == "4" else r
+                                                    for r in o]}
+        ok = []
+        for i, (name, fn) in enumerate(cases.items()):
+            pa, _, _ = run(f"commit{i}", commit_mut(fn))
+            ok.append(any(w.startswith("TRACE_") for w in pa["why_lines"]) and
+                      all(r["status"] == "미산출" for r in pa["line_rows"]) and lnp_rows_kept(pa) and
+                      not lnp_produced(pa))
+        expect(all(ok) and len(ok) == 4, "inject a commit that differs from the adopted CE after level by level "
+               "(incl. an ion-sum-preserving redistribution), a duplicated / missing commit row and a commit index "
+               "mislink: registered lines stopped, O-only L and Q kept, not produced (each)")
         pa, _, _ = run("time", lambda k, o: {"time_explosion_s": TOY_T * 1.001} if k == ("config", 0) else o)
         expect("TIME_EXPLOSION" in pa["why_lines"], "inject another explosion time: refused")
         pa, _, _ = run("man", lambda k, o: {kk: v for kk, v in o.items() if kk != "opacity_units"}
@@ -1159,7 +1214,9 @@ def cmd_analyze(out, selftest_log=None):
                              for c, v in p["w5"]["check"].items()},
                 "w5_generations": p["w5"]["generations"],
                 "trace": ({"adopted_call": tr["call"]["call"], "production_call": tr["pcall"]["call"],
-                           "ion_sums": tr["sums"]} if tr else None),
+                           "ion_sums": tr["sums"],
+                           "material13_source": "si10_commit.csv kind=level (= adopted CE after, level by level)"}
+                          if tr else None),
                 "line_input_findings": p["why_lines"], "common_defects": p["common"],
                 "undefined": [{"row": r.get("row_kind"), "state": r.get("state"), "shell": r.get("shell"),
                                "line_id": r.get("line_id"), "reason": r.get("reason")} for r in table
