@@ -50,7 +50,12 @@ GEN = {"A10": {"population_generation": 13, "radiation_generation": 12, "te_gene
                "opacity_generation": 25, "emissivity_generation": 25}}
 DEF = {"frame": "SHELL_COMOVING", "frequency_coordinate": "HZ",
        "frequency_regrid": "INTEGRAL_PRESERVING_PIECEWISE_CONSTANT", "opacity_units": "CM^-1",
-       "emissivity_units": "ERG_S^-1_CM^-3_HZ^-1_SR^-1", "eta_is_per_sr": True}
+       "emissivity_units": "ERG_S^-1_CM^-3_HZ^-1_SR^-1", "volume_rate_units": "ERG_S^-1_CM^-3",
+       "eta_is_per_sr": True}
+MANDATORY = {"D": ("L", "bb_Q", "line_diff", "line_separated", "bf_identity_separated", "ff_identity_separated",
+                   "Q_rad"),
+             "P": ("bb_left_Q", "bb_right_Q", "bb_diff", "bb_separated", "cont_left_Q", "cont_right_Q", "cont_diff",
+                   "cont_separated")}
 LEDGER = ("q_ad_heating", "photo_heat", "line_abs_heat", "ff_abs_heat", "compton_heat", "gamma_heat",
           "nonthermal_heat", "q_ad_cooling", "recomb_cool", "line_emit_cool", "coll_line_cool", "ff_emit_cool",
           "compton_cool", "sum_heating", "sum_cooling", "residual")
@@ -134,40 +139,70 @@ def lec_integrate(V, dnu, chi, eta, J, bad):
                 out.append({"value": None, "reason": "PRODUCT_LOST_TO_ZERO"})
                 continue
             sa, sabs, se = float(np.sum(pa)), float(np.sum(np.abs(pa))), float(np.sum(pe))
-        vals = {"A": FOUR_PI * V[s] * sa, "E": FOUR_PI * V[s] * se, "S": FOUR_PI * V[s] * (sabs + se),
-                "sum_chiJdnu": sa, "sum_abs_chiJdnu": sabs, "sum_etadnu": se}
-        vals["Q"] = vals["A"] - vals["E"]
-        if not all(math.isfinite(v) for v in vals.values()) or (sabs > 0 and vals["S"] == 0.0):
+            vals = {"A": FOUR_PI * V[s] * sa, "E": FOUR_PI * V[s] * se, "S": FOUR_PI * V[s] * (sabs + se),
+                    "sum_chiJdnu": sa, "sum_abs_chiJdnu": sabs, "sum_etadnu": se}
+            vals["Q"] = vals["A"] - vals["E"]
+        lost = any(raw != 0.0 and w4 == 0.0 for raw, w4 in ((sa, vals["A"]), (se, vals["E"]), (sabs + se, vals["S"])))
+        if lost or not all(math.isfinite(v) for v in vals.values()):
             out.append({"value": None, "reason": "DERIVED_NONFINITE_OR_LOST"})
             continue
         out.append({"value": vals, "reason": None})
     return out
 
 
+def lec_derived(f, *deps, scaling=False):
+    """one derived value: None when a dependency is missing or not finite, when the result is not finite, or (for a
+    product or quotient, scaling=True) when a result of non-zero factors is lost to zero."""
+    if any(v is None or isinstance(v, bool) or not math.isfinite(v) for v in deps):
+        return None
+    with np.errstate(over="ignore", invalid="ignore", divide="ignore", under="ignore"):
+        try:
+            r = float(f(*deps))
+        except (OverflowError, ZeroDivisionError):
+            return None
+    if not math.isfinite(r) or (scaling and r == 0.0 and all(v != 0.0 for v in deps)):
+        return None
+    return r
+
+
+def lec_row_valid(row):
+    """a relation row counts as produced only with every mandatory value present and every float finite."""
+    keys = MANDATORY["D" if row.get("relation") in ("D10", "D11") else "P"]
+    if any(row.get(k) is None for k in keys):
+        return False
+    return all(math.isfinite(v) for v in row.values() if isinstance(v, float))
+
+
 def lec_separated(a, b, scale):
     """prereg 7: |a - b| <= 1e-10 S is unresolved; S = 0 accepts only an exact zero difference.  None if any input
     is not finite (no comparison is made on non-finite values)."""
-    if not all(math.isfinite(v) for v in (a, b, scale)):
+    if any(v is None for v in (a, b, scale)) or not all(math.isfinite(v) for v in (a, b, scale)):
         return None
-    d = a - b
-    return bool(d != 0.0) if scale == 0.0 else bool(abs(d) > TOL * scale)
+    with np.errstate(over="ignore", invalid="ignore"):
+        d, eps = a - b, TOL * scale
+    if not (math.isfinite(d) and math.isfinite(eps)):
+        return None
+    return bool(d != 0.0) if scale == 0.0 else bool(abs(d) > eps)
 
 
 def lec_sign(Q, scale):
     """sign of one state's Q against that state's own pre-cancellation scale."""
-    if not (math.isfinite(Q) and math.isfinite(scale)):
+    if Q is None or scale is None or not (math.isfinite(Q) and math.isfinite(scale)):
         return None
     eps = TOL * scale
     return "순흡수" if Q > eps else "순방출" if Q < -eps else "부호 미분리"
 
 
 def lec_global(values):
-    """sum, positive sum, negative sum and absolute sum over shells; None when any shell is missing or not finite."""
-    if any(v is None or not math.isfinite(v) for v in values):
+    """sum, positive sum, negative sum and absolute sum over shells; None when any shell is missing or not finite,
+    or when a sum of finite shells is not finite (overflow)."""
+    if any(v is None or isinstance(v, bool) or not math.isfinite(v) for v in values):
         return None
-    pos = sum(v for v in values if v > 0)
-    neg = sum(v for v in values if v < 0)
-    return {"sum": pos + neg, "positive": pos, "negative": neg, "abs": pos - neg}
+    with np.errstate(over="ignore", invalid="ignore"):
+        pos = float(sum(v for v in values if v > 0))
+        neg = float(sum(v for v in values if v < 0))
+        g = {"sum": pos + neg, "positive": pos, "negative": neg, "abs": pos - neg}
+    return g if all(math.isfinite(v) for v in g.values()) else None
 
 
 # ------------------------------------------------------------------ readers (paths are arguments for the selftest)
@@ -316,6 +351,11 @@ def lec_dump_q(d, J=None, bad_J=None):
             for x, (c, e) in COMP.items()}
 
 
+def lec_x13(A10, A11):
+    """X13: the A10 opacity and emission coefficients with the A11 J (and its undefined-bin mask)."""
+    return lec_dump_q(A10, J=A11["arr"]["J_nu"], bad_J=A11["bad"]["J"])
+
+
 def lec_capture_q(c):
     a, bJ = c["arr"], c["bad"]["J"]
     zero = np.zeros_like(a["eta_dep"])
@@ -326,31 +366,38 @@ def lec_capture_q(c):
 
 
 def lec_cont(q):
-    """Q_cont = Q_bf + Q_ff per shell (None if either is missing); unweighted sums are added as well."""
+    """Q_cont = Q_bf + Q_ff per shell (None if either is missing or a sum is not finite); unweighted sums are added
+    as well."""
     out = []
     for a, b in zip(q["bf"], q["ff"]):
         if a["value"] is None or b["value"] is None:
             out.append({"value": None, "reason": a["reason"] or b["reason"]})
+            continue
+        v = {k: lec_derived(lambda x, y: x + y, a["value"][k], b["value"][k]) for k in a["value"]}
+        if any(x is None for x in v.values()):
+            out.append({"value": None, "reason": "CONT_SUM_NONFINITE"})
         else:
-            out.append({"value": {k: a["value"][k] + b["value"][k] for k in a["value"]}, "reason": None})
+            out.append({"value": v, "reason": None})
     return out
 
 
 # ------------------------------------------------------------------ relations
 def lec_ledger_row(d, s):
-    """V times every registered ledger term, H, C, R, L and R/(H+C) for one shell (None if any term is missing)."""
-    V = d["V"][s]
-    t = {k: V * float(d["ledger"][k][s]) for k in LEDGER}
-    if not math.isfinite(V) or not all(math.isfinite(v) for v in t.values()):
-        return None
-    t["L"] = t["line_abs_heat"] - t["line_emit_cool"]
-    t["BF_ledger"] = t["photo_heat"] - t["recomb_cool"]
-    t["FF_ledger"] = t["ff_abs_heat"] - t["ff_emit_cool"]
-    hc = t["sum_heating"] + t["sum_cooling"]
-    t["R_over_HC"] = t["residual"] / hc if hc else None
-    t["line_scale"] = abs(t["line_abs_heat"]) + abs(t["line_emit_cool"])
-    t["bf_scale"] = abs(t["photo_heat"]) + abs(t["recomb_cool"])
-    t["ff_scale"] = abs(t["ff_abs_heat"]) + abs(t["ff_emit_cool"])
+    """V times each registered ledger term and the derived L, BF, FF ledgers, scales and R/(H+C) for one shell.
+    Each term and each derived value is kept or set to None by its own dependencies (prereg 7): one undefined term
+    does not remove the independent ones."""
+    V = float(d["V"][s])
+    mul, sub = (lambda a, b: a * b), (lambda a, b: a - b)
+    absadd, add, div = (lambda a, b: abs(a) + abs(b)), (lambda a, b: a + b), (lambda a, b: a / b)
+    t = {k: lec_derived(mul, V, float(d["ledger"][k][s]), scaling=True) for k in LEDGER}
+    t["L"] = lec_derived(sub, t["line_abs_heat"], t["line_emit_cool"])
+    t["BF_ledger"] = lec_derived(sub, t["photo_heat"], t["recomb_cool"])
+    t["FF_ledger"] = lec_derived(sub, t["ff_abs_heat"], t["ff_emit_cool"])
+    t["R_over_HC"] = lec_derived(div, t["residual"], lec_derived(add, t["sum_heating"], t["sum_cooling"]),
+                                 scaling=True)
+    t["line_scale"] = lec_derived(absadd, t["line_abs_heat"], t["line_emit_cool"])
+    t["bf_scale"] = lec_derived(absadd, t["photo_heat"], t["recomb_cool"])
+    t["ff_scale"] = lec_derived(absadd, t["ff_abs_heat"], t["ff_emit_cool"])
     return t
 
 
@@ -370,9 +417,8 @@ def lec_d_rows(d, q, rel, support):
                "identity_conditions": "§5 선 대응 조건: 미확인(선 평균장·세대·deck_scale·β·선 집합·S 분할 미저장)",
                "ledger_raw_line_A": None, "ledger_raw_line_E": None, "observed_ray_exchange": None}
         lec_geom(row, d, s)
-        reasons = [] if t else ["LEDGER"]
-        if t:
-            row.update({k: t[k] for k in LEDGER + ("L", "R_over_HC")})
+        row.update({k: t[k] for k in LEDGER + ("L", "R_over_HC")})
+        reasons = [f"LEDGER:{k}" for k in LEDGER + ("L", "R_over_HC") if t[k] is None]
         for x in ("bb", "bf", "ff"):
             v = q[x][s]["value"]
             if v is None:
@@ -380,28 +426,30 @@ def lec_d_rows(d, q, rel, support):
                 continue
             row.update({f"{x}_{k}": v[k] for k in ("A", "E", "Q", "S")})
             row[f"{x}_sign"] = lec_sign(v["Q"], v["S"])
-        ls = bs = fs = None
-        if t and q["bb"][s]["value"]:
-            v = q["bb"][s]["value"]
-            sc = t["line_scale"] + v["S"]
-            ls = lec_separated(t["L"], v["Q"], sc)
-            row.update(line_diff=t["L"] - v["Q"], line_diff_over_delta=(t["L"] - v["Q"]) / DELTA,
-                       line_tolerance=TOL * sc, line_separated=ls)
-        if t and q["bf"][s]["value"]:
-            v = q["bf"][s]["value"]
-            sc = t["bf_scale"] + v["S"]
-            bs = lec_separated(t["BF_ledger"], v["Q"], sc)
-            row.update(bf_identity_diff=t["BF_ledger"] - v["Q"], bf_tolerance=TOL * sc, bf_identity_separated=bs)
-        if t and q["ff"][s]["value"]:
-            v = q["ff"][s]["value"]
-            sc = t["ff_scale"] + v["S"]
-            fs = lec_separated(t["FF_ledger"], v["Q"], sc)
-            row.update(ff_identity_diff=t["FF_ledger"] - v["Q"], ff_tolerance=TOL * sc, ff_identity_separated=fs)
-        if all(q[x][s]["value"] for x in ("bb", "bf", "ff")):
-            Qr = sum(q[x][s]["value"]["Q"] for x in ("bb", "bf", "ff"))
-            row.update(Q_rad=Qr, Q_rad_sign=lec_sign(Qr, sum(q[x][s]["value"]["S"] for x in ("bb", "bf", "ff"))))
+        sub, add = (lambda a, b: a - b), (lambda a, b: a + b)
+        res = {}
+        for x, left, scale, name in (("bb", "L", "line_scale", "line"), ("bf", "BF_ledger", "bf_scale", "bf_identity"),
+                                     ("ff", "FF_ledger", "ff_scale", "ff_identity")):
+            v = q[x][s]["value"] or {}
+            sc = lec_derived(add, t[scale], v.get("S"))
+            diff = lec_derived(sub, t[left], v.get("Q"))
+            sp = lec_separated(t[left], v.get("Q"), sc)
+            res[x] = sp
+            row[f"{name}_separated"] = sp
+            if sp is not None:
+                row.update({f"{name}_diff": diff, f"{name}_tolerance": lec_derived(lambda a: TOL * a, sc)})
+            if x == "bb" and diff is not None:
+                row["line_diff_over_delta"] = lec_derived(lambda a: a / DELTA, diff, scaling=True)
+        Qs = [(q[x][s]["value"] or {}).get("Q") for x in ("bb", "bf", "ff")]
+        Ss = [(q[x][s]["value"] or {}).get("S") for x in ("bb", "bf", "ff")]
+        Qr = lec_derived(lambda a, b, c: a + b + c, *Qs)
+        if Qr is not None:
+            row.update(Q_rad=Qr, Q_rad_sign=lec_sign(Qr, lec_derived(lambda a, b, c: a + b + c, *Ss)))
+        ls, bs, fs = res["bb"], res["bf"], res["ff"]
         if None in (ls, bs, fs):
             reasons.append("COMPARISON_NOT_FORMED")
+        if not reasons and not lec_row_valid(row):
+            reasons.append("NONFINITE_OR_MISSING_MANDATORY")
         row["status"] = "산출" if not reasons else "부분"
         row["reason"] = ";".join(reasons)
         if ls is not None:
@@ -430,14 +478,19 @@ def lec_pair_rows(rel, left, right, lq, rq, support, conditions, extra=None):
                     row.update({f"{x}_{side}_{k}": v[k] for k in ("A", "E", "Q", "S")})
                     row[f"{x}_{side}_sign"] = lec_sign(v["Q"], v["S"])
             if a is not None and b is not None:
-                sc = a["S"] + b["S"]
+                sc = lec_derived(lambda u, v: u + v, a["S"], b["S"])
                 sp = lec_separated(a["Q"], b["Q"], sc)
-                row.update({f"{x}_diff": a["Q"] - b["Q"], f"{x}_diff_over_delta": (a["Q"] - b["Q"]) / DELTA,
-                            f"{x}_tolerance": TOL * sc, f"{x}_separated": sp})
+                row[f"{x}_separated"] = sp
                 if sp is None:
                     reasons.append(f"{x}:COMPARISON_NOT_FORMED")
+                else:
+                    diff = lec_derived(lambda u, v: u - v, a["Q"], b["Q"])
+                    row.update({f"{x}_diff": diff, f"{x}_tolerance": lec_derived(lambda u: TOL * u, sc),
+                                f"{x}_diff_over_delta": lec_derived(lambda u: u / DELTA, diff, scaling=True)})
         if extra is not None:
             row.update(extra(s))
+        if not reasons and not lec_row_valid(row):
+            reasons.append("NONFINITE_OR_MISSING_MANDATORY")
         row["status"] = "산출" if not reasons else "부분"
         row["reason"] = ";".join(reasons)
         rows.append(row)
@@ -454,9 +507,14 @@ def lec_summary(rows, rel, keys):
         if g is None:
             missing.append(k)
             continue
+        sd = lec_derived(lambda u: u / DELTA, g["sum"], scaling=True)
+        ad = lec_derived(lambda u: u / DELTA, g["abs"], scaling=True)
+        if sd is None or ad is None:
+            missing.append(k)
+            continue
         out.update({f"{k}_{m}": v for m, v in g.items()})
-        out[f"{k}_sum_over_delta"] = g["sum"] / DELTA
-        out[f"{k}_abs_over_delta"] = g["abs"] / DELTA
+        out[f"{k}_sum_over_delta"] = sd
+        out[f"{k}_abs_over_delta"] = ad
     out["status"] = "산출" if not missing else "부분" if len(missing) < len(keys) else "미산출"
     out["reason"] = ("not formed (incomplete or non-finite shells): " + ",".join(missing)) if missing else ""
     return out
@@ -497,7 +555,7 @@ def lec_pipeline(pc, cap, cells, bridge, ns=NS, nb=NB):
     stopc = bool(common["C13"])
     q10 = None if stop10 else lec_dump_q(A10)
     q11 = None if stop11 else lec_dump_q(A11)
-    qx = None if stopx else lec_dump_q(A10, J=A11["arr"]["J_nu"], bad_J=A11["bad"]["J"])
+    qx = None if stopx else lec_x13(A10, A11)
     qc = None if stopc else lec_capture_q(C)
     sup = f"[{A10['edges'][0]:.10e}, {A10['edges'][-1]:.10e}] Hz"
 
@@ -568,9 +626,10 @@ def lec_toy():
     return V, dnu, chi, eta, J, [(40 * math.pi, 36 * math.pi), (72 * math.pi, 12 * math.pi)]
 
 
-def lec_write_toy(root, ns=2, nb=3, mutate=None):
+def lec_write_toy(root, ns=2, nb=3, mutate=None, record=None):
     """toy dumps (iter 10 / 11) and a toy capture whose BF / FF ledger satisfy the identities and whose line ledger
-    equals the transport net; mutate(kind, obj) may inject a defect into one written object."""
+    equals the transport net; the A11 coefficients differ from A10 so that the X13 connection is observable;
+    mutate(kind, obj) may inject a defect into one written object; record (a dict) receives the written arrays."""
     mutate = mutate or (lambda kind, obj: obj)
     pc, cap = root / "pc", root / "cap"
     pc.mkdir()
@@ -586,11 +645,15 @@ def lec_write_toy(root, ns=2, nb=3, mutate=None):
         for s in range(ns):
             for b in range(nb):
                 J = 1e-6 * (1 + s + b) * (1.1 if it == 11 else 1.0)
+                kc, ke = (1.2, 1.3) if it == 11 else (1.0, 1.0)
                 spec.append({"shell_id": s, "bin_id": b, "nu_lo_Hz": repr(edges[b]), "nu_hi_Hz": repr(edges[b + 1]),
-                             "J_nu": repr(J), "chi_es_cm1": "1e-15", "chi_bb_cm1": repr(2e-16 * (b + 1)),
-                             "eta_bb": repr(3e-22 * (s + 1)), "chi_bf_cm1": repr(1e-17), "eta_bf": repr(1e-23),
-                             "chi_ff_cm1": repr(5e-18), "eta_ff": repr(2e-24)})
+                             "J_nu": repr(J), "chi_es_cm1": "1e-15", "chi_bb_cm1": repr(2e-16 * (b + 1) * kc),
+                             "eta_bb": repr(3e-22 * (s + 1) * ke), "chi_bf_cm1": repr(1e-17 * kc),
+                             "eta_bf": repr(1e-23 * ke), "chi_ff_cm1": repr(5e-18 * kc), "eta_ff": repr(2e-24 * ke)})
         spec = mutate(("spectral", it), spec)
+        if record is not None:
+            record[it] = spec
+            record.update(edges=edges, ri=ri, ro=ro)
         shells = []
         for s in range(ns):
             w = [edges[b + 1] - edges[b] for b in range(nb)]
@@ -699,17 +762,82 @@ def cmd_selftest():
     expect(lec_global([1.0, None]) is None and lec_global([1.0, float("nan")]) is None and
            lec_global([1.0, -2.0]) == {"sum": -1.0, "positive": 1.0, "negative": -2.0, "abs": 3.0},
            "inject a partial or non-finite shell set into a global sum: refused (complete set positive control)")
+    expect(lec_global([1e308, 1e308]) is None and lec_global([1e308, -1e308]) is None and
+           lec_summary([{"x": 1e308}, {"x": 1e308}], "T", ["x"])["status"] == "미산출",
+           "inject finite shells whose global sum or absolute sum overflows: global value not formed")
+    big = {"value": {k: 1e308 for k in ("A", "E", "Q", "S", "sum_chiJdnu", "sum_abs_chiJdnu", "sum_etadnu")},
+           "reason": None}
+    expect(lec_cont({"bf": [big], "ff": [big]})[0]["value"] is None, "inject finite BF and FF integrals whose "
+           "continuum sum overflows: continuum undefined")
+    eonly = lec_integrate(np.array([1e-300]), np.array([1.0]), np.zeros((1, 1)), np.array([[1e-30]]),
+                          np.ones((1, 1)), None)
+    expect(eonly[0]["value"] is None and "LOST" in eonly[0]["reason"], "inject an emission-only shell whose "
+           "volume-weighted emission is lost to 0 (absorption exactly 0): undefined")
+    dl = {"V": np.array([1e300]), "ledger": {k: np.array([1e10 if k == "gamma_heat" else 1.0]) for k in LEDGER}}
+    tl = lec_ledger_row(dl, 0)
+    expect(tl["gamma_heat"] is None and tl["L"] == 0.0 and tl["BF_ledger"] == 0.0 and tl["R_over_HC"] is not None,
+           "inject one volume-weighted ledger term that overflows: only that term undefined, independent ledger "
+           "values kept")
+    expect(lec_separated(1e308, -1e308, 1.0) is None and lec_derived(lambda a: a / DELTA, 1e-320, scaling=True) is None,
+           "inject a comparison difference that overflows and a quotient lost to 0: no comparison, undefined")
+    vrow = {"relation": "D10", **{k: 1.0 for k in MANDATORY["D"]}, "line_separated": False,
+            "bf_identity_separated": False, "ff_identity_separated": False}
+    expect(lec_row_valid(vrow) and not lec_row_valid({**vrow, "bb_E": float("inf")}) and
+           not lec_row_valid({**vrow, "Q_rad": None}), "row validity requires finite floats and every mandatory "
+           "value (positive control; injected inf / missing value refused)")
     expect(lec_branch(True, [False, True]) == 0 and lec_branch(True, [False, False]) == 1 and
            lec_branch(False, [True]) == 2 and lec_branch(True, [None, True]) == 2, "branch fixtures (positive control)")
 
     # ---- reader-path injections on toy files (job-local temporary directory)
     tmp = Path(tempfile.mkdtemp(dir=os.environ.get("TMPDIR") or None))
     try:
-        def run(name, mutate=None):
+        def run(name, mutate=None, record=None):
             root = tmp / name
             root.mkdir()
-            return lec_pipeline(*lec_write_toy(root, mutate=mutate), ns=2, nb=3)
-        p = run("clean")
+            return lec_pipeline(*lec_write_toy(root, mutate=mutate, record=record), ns=2, nb=3)
+        rec = {}
+        p = run("clean", record=rec)
+        # X13 expected from the written files by hand: A10 coefficients with the A11 J
+        x13 = {}
+        for s in range(2):
+            Vs = 4.0 * math.pi / 3.0 * (rec["ro"][s] ** 3 - rec["ri"][s] ** 3)
+            r10 = [r for r in rec[10] if r["shell_id"] == s]
+            r11 = {r["bin_id"]: r for r in rec[11] if r["shell_id"] == s}
+            for x, (c, e) in COMP.items():
+                A = sum(float(r[c]) * float(r11[r["bin_id"]]["J_nu"]) * (rec["edges"][r["bin_id"] + 1] -
+                                                                       rec["edges"][r["bin_id"]]) for r in r10)
+                E = sum(float(r[e]) * (rec["edges"][r["bin_id"] + 1] - rec["edges"][r["bin_id"]]) for r in r10)
+                x13[(s, x)] = (4.0 * math.pi * Vs * A, 4.0 * math.pi * Vs * E)
+
+        def x13_ok(pp):
+            rows = {r["shell"]: r for r in pp["rows"] if r["relation"] == "J13"}
+            ok = True
+            for s in range(2):
+                A, E = x13[(s, "bb")]
+                Ac = x13[(s, "bf")][0] + x13[(s, "ff")][0]
+                Ec = x13[(s, "bf")][1] + x13[(s, "ff")][1]
+                r = rows.get(s, {})
+                ok &= all(v is not None and close(v, w) for v, w in
+                          ((r.get("bb_right_A"), A), (r.get("bb_right_E"), E), (r.get("cont_right_A"), Ac),
+                           (r.get("cont_right_E"), Ec)))
+            return ok
+        expect(x13_ok(p), "X13 through the reader path equals the hand value of the A10 coefficients with the A11 J "
+               "(positive control; A11 coefficients differ from A10)")
+        orig = globals()["lec_x13"]
+        wrong = {"A11 coefficients": lambda a10, a11: lec_dump_q(a11),
+                 "A11 emission": lambda a10, a11: lec_dump_q(
+                     dict(a10, arr=dict(a10["arr"], eta_bb=a11["arr"]["eta_bb"], eta_bf=a11["arr"]["eta_bf"],
+                                        eta_ff=a11["arr"]["eta_ff"])), J=a11["arr"]["J_nu"], bad_J=a11["bad"]["J"]),
+                 "A10 J": lambda a10, a11: lec_dump_q(a10)}
+        caught = []
+        try:
+            for i, (name, fn) in enumerate(wrong.items()):
+                globals()["lec_x13"] = fn
+                caught.append(not x13_ok(run(f"x13wrong{i}")))
+        finally:
+            globals()["lec_x13"] = orig
+        expect(all(caught) and len(caught) == 3, "inject a wrong X13 connection into the pipeline (A11 coefficients / "
+               "A11 emission coefficients / A10 J): the hand-value check fails for each")
         expect(not any(p["common"].values()) and all(r["status"] == "산출" for r in p["rows"]) and
                all(s["status"] == "산출" for s in p["summaries"]) and p["sep"] == [False] * 4 and
                p["ident"] == [False] * 4, "toy files through the reader path: every row and global row produced, "
@@ -774,6 +902,22 @@ def cmd_selftest():
                "inject an undefined A11 J value: X13 of that shell undefined, A10 side kept")
         expect(all("line_abs_heat" not in r for r in p["rows"] if r["relation"] in ("J13", "O13")),
                "X13 / C13 rows carry no copied ledger columns")
+        p = run("ledger", lambda kind, obj: [dict(r, gamma_heat="bad") if r["shell_id"] == 1 else r for r in obj]
+                if kind == ("shell", 10) else obj)
+        l1 = [r for r in p["rows"] if r["relation"] == "D10" and r["shell"] == 1][0]
+        g10 = p["summaries"][0]
+        expect(not p["common"]["A10"] and l1["gamma_heat"] is None and l1["L"] is not None and
+               l1["line_separated"] is False and l1["bf_identity_separated"] is False and
+               l1["ff_identity_separated"] is False and l1["R_over_HC"] is not None and l1["status"] == "부분" and
+               "LEDGER:gamma_heat" in l1["reason"] and g10.get("L_sum") is not None,
+               "inject one unparsable ledger term (gamma_heat): only that term undefined; L, BF / FF ledgers, the "
+               "three comparisons, R/(H+C) and the L global sum kept")
+        p = run("vru", lambda kind, obj: {k: v for k, v in obj.items() if k != "volume_rate_units"}
+                if kind == ("manifest", 10) else obj)
+        expect(any("MISSING:volume_rate_units" in w for w in p["common"]["A10"]) and
+               all(r["status"] == "미산출" for r in p["rows"] if r["relation"] in ("D10", "J13", "O13")) and
+               any(r["status"] == "산출" for r in p["rows"] if r["relation"] == "D11"),
+               "inject a missing ledger volume_rate_units into the A10 manifest: D10, J13, O13 stopped, D11 kept")
     finally:
         shutil.rmtree(tmp)
     fails = sum(1 for r in results if not r[0])
@@ -814,7 +958,8 @@ def cmd_analyze(out, selftest_log=None):
         st = json.loads(lines[-1]) if lines else None
         if not st or st.get("failures") != 0:
             gates["G-CALC"].append("SELFTEST_NOT_PASSED")
-    produced = all(r.get("status") == "산출" for r in rows) and all(s["status"] == "산출" for s in summaries)
+    produced = all(r.get("status") == "산출" and lec_row_valid(r) for r in rows) and all(
+        s["status"] == "산출" and all(math.isfinite(v) for v in s.values() if isinstance(v, float)) for s in summaries)
     all_gates = [f for v in gates.values() for f in v]
     code = lec_branch(produced and not all_gates, p["sep"])
     label = {0: "PROJECTED_GAP", 1: "NO_RESOLVED_PROJECTED_GAP", 2: "INDETERMINATE"}[code]
