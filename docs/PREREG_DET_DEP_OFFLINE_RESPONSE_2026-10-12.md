@@ -298,6 +298,26 @@ python3 -B tools/det_dep_offline.py run --out run1
 
 집행 기록은 이 절에 둔다. 운전자는 기계 검사, 코드·실행 신원, 음성 대조, 기준 대조, 계산·재생, 비용, 주 표 판정, astra 종료감사와 이탈 처분을 기록한다.
 
+### 집행 기록 (운전자 추가 — 정본 장부, 개정16 ①; 위 기안 기록은 그대로 둔다)
+
+증거 접두 `B=/gpfs/kjhan/lumina/cmfgen_map/depsrc_20261012`, `F=B/offline`. 작업 번호·경과는 `B/JOBS.txt`·`F/evidence/sacct_offline_jobs.txt`, 게이트 집행은 `F/evidence/GATE_RECORD.json`.
+
+| 항목 | 담당(실제) | 상태·증거 |
+|---|---|---|
+| user 결정 | user | 「침적 소비·직접 원천 대조 시험」(`B/evidence/USER_DECISION_2026-10-12.txt`) → 「오프라인 선행(GPU 0) → 필요 시 GPU」(`B/evidence/USER_DECISION_2026-10-12_offline_first.txt`) |
+| 기안 | astra(gpt-6-astra) | 7ad42af; 기안 게이트 prereg·referents·canonical rc 0(a10 419982) |
+| 사전감사 | — | 생략(25-ab: GPU 0·생산 변경 0) |
+| 구현 | 운전자(Opus 5.5) · 코드 감사 없음(25-z) | `F/tools/det_dep_offline.py`(0172af3f…), `det_dep_offline_capture.c`(dab17c03…), `run_det_dep_offline.slurm`(952d86dc…); 봉인 소스 무수정 링크, diag10 `segment`·`formal_once` 재사용 |
+| 구현 게이트 | 운전자 | a10 420013: prereg·referents·canonical·위생 rc 0(`B/evidence/gates_off1.summary`) |
+| 빌드·직접시험 | 운전자 | a10 420014: 빌드 rc 0(봉인 함수용 `-DLUMINA_DET_OBS_SELFTEST`·재생용 생산 정의, `F/build/`), 직접시험 34/36 — 연산자 결함 2종이 기준 대조 2 로 거부됐으나 시험 기대가 「check3」 만으로 좁아 실패 표기 → 기대 정정; a10 420017 `F/tests/run2` **36/36**(기존 빌드 신원 확인 재사용) |
+| 계산 run1 | 운전자 | a10 420018 `F/run1/`(2855 s, rc 0, 처리 완료, 입력 불변): 기준 대조 1 바이트 동일·2 3.9126e-4·3 최대 8.80e-3/가중 3.84e-5·4 ≤ 4.77e-5; A·B 해 1234/1234 수렴·확인; 결함 0; 소비 — 명목·직접 레인 50/50 일치, 전달·eta_c 가산은 셸 0 만 정의(셸 1–49 직접 가산 소실 미정의); 비교 집합 전부 정의; 자동 분기 code 1 |
+| 판독 탐침 | 운전자 | a10 420038(`F/probe/probe_loss_cells.py`, `F/probe/loss_cells_420038.json`): 소실 248 구간·8725 셀, 74.47–275.64 Å, η_dep/η_c ≤ 1.04e-16, 소실 합 2.6e21 erg/s |
+| 판정 | 운전자(구현·판정 겸임) | `docs/VERDICT_DET_DEP_OFFLINE_RESPONSE_2026-10-12.md` — **분기 3 INDETERMINATE**(§8 분기 1 의 「소비 유효」 미성립; 자동 code 1 은 판정 장치의 전제 검사 누락) |
+| 종료감사 | astra | (예정) |
+| 비용 | 운전자 | GPU 0; a10 5 작업 할당 벽시계 합 2954 s / 5400 s, 11699 core·s / 21600, 작업당 최대 2855 s / 3600; 신규 저장 1.35 GB / 8 GiB |
+
+**이탈(기재):** ① 자동 분기 함수가 §8 분기 1 의 전제 「소비 유효」를 검사하지 않음 — 판정자가 §8 을 주 표에 적용(재실행은 남은 상한 밖). ② 첫 직접시험 34/36(시험 기대 과협소) → 정정·새 경로 재현 36/36. ③ 첫 직접시험 뒤 러너 수정(빌드 재사용·출력 경로 인자). ④ 주 표 소비 행 `baseline_dev` 표기 결함(`np.float64(…)`). ⑤ 판독 탐침 1건(판정 재계산 아님).
+
 ## §12. 기계 선언
 
 참조는 실재 파일만 지정한다. 분기 예시는 기존 사전등록 문면 검사의 입력이며 별도 결정표 재계산 장치를 요구하지 않는다.
