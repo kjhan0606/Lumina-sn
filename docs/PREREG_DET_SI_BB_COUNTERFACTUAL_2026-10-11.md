@@ -301,9 +301,10 @@ python3 -B scripts/det_si_bb_counterfactual.py analyze \
 | 구현 | 운전자(Opus 5.5) · 코드 감사 없음(25-z) | ba32203 — `det_si_exc_build_fl` 의 선택적 `bb_radiative_override` 훅, 새 판독기, 러너 `B/tools/run_det_si_bb_counterfactual_offline.slurm` |
 | 직접시험(§9) | 운전자 | a10 419351 **21/21**(양성 대조 5·무개입 불변 1·결함 주입 거부 15), 러너 위생 rc 0 |
 | 등록 계산 run1 | 운전자 | a10 419352(3 s) `B/results/run1/`: G-INPUT·G-RATE·G-SOLVE·G-TABLE·G-RUN 지적 0; F0 = 직전 값(0 dex); census 등록값 일치; **분기 1 NO_RESOLVED_APPROACH** — F7 −0.0310 dex·F8 −0.8365 dex, 둘 다 이격 |
-| 판정 | 운전자(구현·판정 겸임) | `docs/VERDICT_DET_SI_BB_COUNTERFACTUAL_2026-10-11.md` — 종료감사 대기 |
-| 종료감사 | astra | 대기 |
-| 비용 | 운전자 | GPU 0; 오프라인 a10 4 작업 할당 34 s · 0.010 core·h / 900 s · 0.5 core·h(기안 게이트 2 작업 31 s 포함); 신규 저장 219 KiB / 100 MiB |
+| 판정 | 운전자(구현·판정 겸임) | `docs/VERDICT_DET_SI_BB_COUNTERFACTUAL_2026-10-11.md` — NO_RESOLVED_APPROACH(03e6a0c), 1회차 «기재로 족함» 3 반영, **폐합** |
+| 종료감사 | astra(계약 저자 이해관계; 자기보고 「GPT-6 계열, 세부 ID 확인 불가」) | 1회차 **폐합 가 «폐합 차단» 0**·«기재로 족함» 3(`B/astra_closeout.md`) → 판정문 §2·§4 반영(판정문 §7) → **폐합**; 독립 재계산은 재현 BLOCKED |
+| 기계 게이트(판정·감사 발주) | 운전자 | 판정 roster·prereg preflight·referents·canonical rc 0(a10 419355; 같은 작업의 발주 게이트 rc 1 = 계약 작업트리 미커밋, 커밋 뒤 419357 rc 0), 폐합본 4종 rc 0(419359) |
+| 비용 | 운전자 | GPU 0; 오프라인 a10 7 작업 할당 96 s · 0.028 core·h / 900 s · 0.5 core·h(기안 게이트 2 작업 31 s·판정/감사/폐합 게이트 3 작업 62 s 포함); 신규 저장 219 KiB / 100 MiB |
 
 **이탈(기재):**
 1. §10 의 필수 요청은 그대로 썼다. 표시본 `.md` 는 같은 메모리 행을 행 종류별 소표로 나눴다(§6 허용).
