@@ -262,6 +262,32 @@ prepare는 빌드·음성 대조·입력 신원·빈 런 준비를 수행한다.
 
 결론은 **Si 셸10·등록 물질13·등록 소비 조건**에 한정한다. 철족 전체·청색 절대 플럭스·전체 수렴·물리적 정답·채택할 권위·생산 승격을 선취하지 않는다. 공개에 가까운 비라는 이유만으로 해당 권위를 정답으로 선택하지 않는다.
 
+
+### 집행 기록 (운전자 추가 — 정본 장부, 개정16 ①; 위 기안 기록은 그대로 둔다)
+
+증거 접두 `B=/gpfs/kjhan/lumina/cmfgen_map/trace13_20261010`. 작업 번호·경과는 `B/JOBS.txt`·`B/evidence/sacct_offline_jobs.txt`·`B/TRACE/sacct_418480.txt`.
+
+| 항목 | 담당(실제) | 상태·증거 |
+|---|---|---|
+| 기안·개정 1 | astra `gpt-6-astra` | 6420c82 · 580918e(OLD/NEW 11쌍, 행 단위 −8/+13 의도 외 소실 0) |
+| 기계 게이트 | 운전자 | 기안 prereg·referents·canonical rc 0(a10 418440), 개정 발주 dispatch·canonical rc 0(418448), 개정 후 rc 0(418449) |
+| 경량 사전감사(Q-GOAL·Q-LEAN) | astra(기안자 이해관계 명시, 비독립) | Q-GOAL 부합·Q-LEAN 적정·«폐합 차단» 0·«기재로 족함» 통합 권고(`B/astra_preaudit.md`) → 개정 1 에 반영 |
+| 구현 | 운전자(Opus 5.5) · 코드 감사 없음(25-z) | `B/source/src/det_si_trace.h`(신규), lumina_plasma.c 35 블록·155 행 삽입, lumina_cmfgen.c 2·19, lumina_cuda.cu 2·8, env_universe.h 두 키·개수; 판독기 45b64ac; 러너 둘; 음성 대조 `B/tools/det_si_trace_negative.c` |
+| prepare | 운전자 | a10 418476: G-SCOPE 통과(182 동일·삽입 전용·trace 표지), O 처방 빌드 rc 0(binary d52649ec…), 음성 대조 33/33, 러너 문법·위생 통과, 스테이징 `B/TRACE/run1`(67 파일) |
+| GPU 런 T | 운전자 | 418480 h100(H100 NVL ×2) `--time=1260`, 10-10 19:00:01–10-11 14:29, 70,145 s = 38.97 GPU·h, TRACE_TARGET_COMPLETE·stop_iteration 10, 진입 1·재제출 0 |
+| 판독 | 운전자 | analyze a10 419275(3 s) `B/results/analyze/analysis/`: G-RUN·G-TRACE·G-TABLE(36/36 비트)·G-EQUIV(15/15, 덤프 바이트 동일) 지적 0, 분기 0 FORMULATION(0.005/0.01/0.02 dex 모두 0) |
+| 운전자 탐침(계약 밖) | 운전자 | a10 419276 `B/probe/si10_levels.csv`: 준위별 광전리 계수 SE = 사다리(125/125), 차이는 적용 인구 |
+| 판정 | 운전자(구현·판정 겸임) | `docs/VERDICT_DET_SI_CONSUMPTION_TRACE_2026-10-11.md` — FORMULATION, 종료감사 대기 |
+| 종료감사 | astra(계약 저자 이해관계) | (미집행) |
+| 비용 | 운전자 | GPU 38.97 / 42 GPU·h, 모델 진입 1/1; 오프라인 a10 12 작업 270 s · 0.17 core·h / 1,800 s · 1 core·h |
+
+**이탈(기재):**
+1. 개발 빌드 418472 를 4 CPU·16 GiB 로 돌렸다(§9 오프라인 2 CPU·8 GiB). 경과 78 s(0.087 core·h), 오프라인 누적 상한 안.
+2. §10 의 `--gres=gpu:h200:2`·`gpu:h100:2` 소문자 표기는 Slurm 이 거부했다(`sbatch --test-only`: Requested node configuration is not available). 클러스터 형식 이름 `H100`/`H200` 대문자로 제출했다(O 와 같은 표기).
+3. h200(syn104)은 GPU 7/8 할당·예약으로 시작 예상 10-12 19:01 이었다 ⟹ §9 의 할당 전 h100 ×2 대체를 썼다. 배정 GPU 는 H100 NVL(95,830 MiB) — O 는 H200. G-EQUIV 는 비트 일치로 통과했다.
+4. prepare 뒤 오프라인 러너 analyze 에 재실행 식별자 인자를 추가했다(결과 디렉터리 비덮어쓰기 유지, 이번에는 사용하지 않음). GPU 러너는 무변경.
+5. 개발 중 G-SCOPE 의 등록부 정렬 검사를 고쳤다 — 기존 목록에 원래 어긋난 쌍(`LUMINA_X_OUTER_SCALE_Z`·`LUMINA_XSHELL_RESPONSE`)이 있어 전체 정렬 요구가 오판이었다; 새 두 키의 이웃 순서만 본다.
+
 ## §12. 기계 선언
 
 직전 계약의 changeset·branches·references 형식을 따른다. 분기 fixture는 기존 사전등록 검사 입력이며 새 결정 재계산 장치가 아니다. 참조는 기존 실재 파일만 지정한다.
