@@ -488,14 +488,16 @@ JCDEF_SOURCE = {   # driver's reading of the sealed sources (prereg 3-4); data f
     "direct_line": "excluded: both fine line-deposition loops require !sobolev_operator (lumina_cmfgen.c about 8804 "
                    "and 8883); the unmapped-eps fine folding also requires it (about 8598); fs.chi_line stays zero, "
                    "so chi_tot = chi_es + chi_abs (about 9044-9047) and the line emissivity eta is not deposited",
-    "upstream": "excluded for mapped lines: fine chi_es/chi_abs are interpolated from the bin state (about "
-                "8385-8399); the bin chi_es carries the line scattering share (chi_ln - chi_ln_th) (about 2962) "
-                "with the per-line eps_phys branch (LUMINA_CMFGEN_LINE_EPS_PHYS=1; LINE_EPS and LINE_EPS_UV unset), "
-                "but under the active DET-LTEUNMAP-EPS gate mapped lines take eps = 1 (fully thermal, no scattering "
-                "share; about 2512-2532 and the helper at about 163) and the unmapped share accumulated in "
-                "g_chi_line_sc_unmapped (about 2530) is subtracted in the fine interpolation (about 8394); bin "
-                "chi_abs = bf + ff only and the fine continuum emissivity w5_cont_eta = bf (Milne) + ff with the "
-                "line term passed as 0 (about 2980-2987)",
+    "upstream": "mapped lines (the six lines included): no share — fine chi_es/chi_abs are interpolated from the "
+                "bin state (about 8385-8399); the bin chi_es carries the line scattering share (chi_ln - chi_ln_th) "
+                "(about 2962) with the per-line eps_phys branch (LUMINA_CMFGEN_LINE_EPS_PHYS=1; LINE_EPS and "
+                "LINE_EPS_UV unset), and under the active DET-LTEUNMAP-EPS gate mapped lines take eps = 1 (fully "
+                "thermal, no scattering share; about 2512-2532 and the helper at about 163); bin chi_abs = bf + ff "
+                "only and the fine continuum emissivity w5_cont_eta = bf (Milne) + ff with the line term passed as 0 "
+                "(about 2980-2987). Unmapped (other) lines: conditional — their share accumulated in "
+                "g_chi_line_sc_unmapped (about 2530) is subtracted only when that side array exists with the matching "
+                "size (fine_sub_sc, about 8384-8397); its allocation (about 2463) does not fail the run, and no "
+                "record of production call 12 confirms fine_sub_sc = 1",
     "incident": "J_c = Gaussian profile mean of fs.J within +-4 Doppler widths (line_jbar_gaussian_discrete_shells, "
                 "lumina_cmfgen.c about 9780) passed as continuum_j to line_net_sobolev_radiation (about 9810): "
                 "c = beta J_c, l = eta (c t / nu)(1 - beta)/tau, Jbar = c + l (line_net_rate.c)",
@@ -666,8 +668,11 @@ def cmd_jcdef(run, baseline, out):
             gates["G-MAP"].append(f"COARSE_J_NOT_PREVIOUS:{lid}")
         row.update(call=b["call"], op=b["op"], nu=nu, production="call 12 / radiation 12 / material 12",
                    consumption="trace call 36", lumina_operator="CMFGEN_NONOVERLAP_SOBOLEV",
-                   self_line_direct="excluded", upstream_residual="none (mapped eps = 1; unmapped share subtracted)",
-                   other_lines="excluded from the incident field", cmfgen_incident="continuum AV (COMP_OPAC + "
+                   self_line_direct="excluded",
+                   upstream_residual="self (mapped) line: none (eps = 1, independent of the subtraction); "
+                                     "unmapped share: subtraction conditional on fine_sub_sc, unrecorded for call 12",
+                   other_lines="mapped lines excluded; unmapped scattering share excluded only if the subtraction "
+                               "ran (unconfirmed)", cmfgen_incident="continuum AV (COMP_OPAC + "
                    "COMP_J_BLANK, no line opacity)", cmfgen_same=JCDEF_SOURCE["same"],
                    cmfgen_different=JCDEF_SOURCE["different"], public_execution="not established",
                    J_c=J_c, J_coarse=J_coarse, dex_previous=float(b["dex_J_c_vs_coarse"]),
@@ -677,18 +682,25 @@ def cmd_jcdef(run, baseline, out):
             row.update({k: comp[k] for k in ("chi_es", "chi_bb", "chi_bf", "chi_ff", "chi_total", "chi_cont",
                                              "q_bb")})
         row.update(delta_def="not identified (no matched field pair; no new transfer)",
-                   magnitude="직접 중복 기전 배제",
-                   relation_previous="the coarse J_nu is the binned field with line opacity and emission "
-                                     "(q_bb shown); J_c is the line-free continuum by construction; the dex "
-                                     "difference is not attributed",
-                   double_counting="refuted: no self-line inflow into J_c on the consumed branch",
-                   conclusion="자기 선 유입 배제; CMFGEN Sobolev 경로와 입사장·국소 선 항 분리 대응(남은 차이 기재)")
+                   magnitude="미식별", direct_mechanism="직접 중복 기전 배제",
+                   relation_previous="q_bb is a component ratio of the comparison bin; it does not attribute the "
+                                     "previous J_c vs coarse J_nu difference, and that dex difference alone does "
+                                     "not show self-line double counting",
+                   comparison_context="comparison dump: population 13 / radiation 12 / opacity 23 (manifest) vs J_c "
+                                      "production material 12 / radiation 12; J_nu is an integral-preserving "
+                                      "piecewise-constant regrid and the opacity components come from the opacity "
+                                      "view; not a matched field pair",
+                   double_counting="reserved: direct deposition excluded and the mapped self-line upstream share is "
+                                   "zero, but the prereg 6 refutation is not completed on recorded evidence "
+                                   "(unmapped-share subtraction unconfirmed for call 12)",
+                   conclusion="직접 선 침적 배제; 비대응 선 상류 산란 차감 미확정 — 정의 판별 목표 미달")
         rows.append(row)
     for r in rows:
         if r.get("magnitude") and r["magnitude"] not in ("식별", "미식별", "직접 중복 기전 배제"):
             gates["G-CLAIM"].append(f"MAGNITUDE_LABEL:{r['aux']}")
     all_gates = [f for v in gates.values() for f in v]
-    complete = all(r.get("self_line_direct") == "excluded" for r in rows) and len(rows) == 6
+    complete = (all(r.get("self_line_direct") == "excluded" for r in rows) and len(rows) == 6 and
+                not any("unconfirmed" in r.get("other_lines", "") for r in rows))
     code = 2 if (all_gates or not complete) else 1
     label = {0: "DEFINITION_DIFFERENCE", 1: "INCIDENT_SEPARATION_CONFIRMED", 2: "INDETERMINATE"}[code]
     fields = list(dict.fromkeys(k for r in rows for k in r))
@@ -709,10 +721,11 @@ def cmd_jcdef(run, baseline, out):
         f.write("Gates: " + (";".join(all_gates) or "all pass") + "\n\n")
         cols = ["group", "aux", "lower_level_num", "upper_level_num", "call", "op", "nu", "J_c", "J_coarse",
                 "dex_previous", "chi_es", "chi_bb", "chi_bf", "chi_ff", "chi_total", "q_bb", "self_line_direct",
-                "upstream_residual", "magnitude", "conclusion"]
+                "upstream_residual", "magnitude", "direct_mechanism", "conclusion"]
         f.write("| " + " | ".join(cols) + " |\n|" + "---|" * len(cols) + "\n")
         for r in rows:
             f.write("| " + " | ".join(fmt(r.get(c)) for c in cols) + " |\n")
+        f.write("\nComparison context: " + (rows[0].get("comparison_context", "") if rows else "") + "\n")
         f.write("\n## Source determinations (common to the six rows)\n\n")
         for k, v in JCDEF_SOURCE.items():
             f.write(f"- **{k}:** {v}\n")
