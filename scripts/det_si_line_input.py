@@ -764,7 +764,8 @@ JCCF_R0, JCCF_FINAL_FL = 3.5597568125822305, 3.563683
 JCCF_PUBLIC = {"si_II": 0.0092499, "si_III": 0.97769}
 JCCF_GENERATIONS = {"radiation_generation": 12, "population_generation": 13, "opacity_generation": 23,
                     "emissivity_generation": 23}
-JCCF_GRID_KIND = {"frequency_coordinate": "HZ", "frequency_regrid": "INTEGRAL_PRESERVING_PIECEWISE_CONSTANT"}
+JCCF_GRID_KIND = {"frequency_coordinate": "HZ", "frequency_regrid": "INTEGRAL_PRESERVING_PIECEWISE_CONSTANT",
+                  "frame": "SHELL_COMOVING"}
 JCCF_RTOL, JCCF_REF_DEX, JCCF_DEX = 1e-12, 0.001, 0.01
 JCCF_VDOP, JCCF_NDOPPLER = 1.0e6, 4.0                # LUMINA_CMF_FINE_VDOP (checked in the run settings), +-4 widths
 JCCF_ION = {"Si II": "1", "Si III": "2"}
@@ -823,6 +824,8 @@ def det_si_jccf_link(r, x, ion, up, lo, atom_rows, ledger_rows, bins):
     if c == 0.0:
         return None, "C_ZERO"
     J_c = c / beta
+    if not (math.isfinite(J_c) and J_c > 0.0):
+        return None, "J_C_REPRESENTATION"
     try:
         led_jc, led_beta = float(L[9]), float(L[11])
     except ValueError:
@@ -836,17 +839,66 @@ def det_si_jccf_link(r, x, ion, up, lo, atom_rows, ledger_rows, bins):
     if not (math.isfinite(Jco) and Jco >= 0.0):
         return None, "COARSE_FIELD"
     q = Jco / J_c
-    ra, rs = q * x[0], q * x[1]
-    if not (math.isfinite(J_c) and J_c > 0.0 and all(math.isfinite(v) for v in (q, ra, rs))):
+    c_new, ra, rs = beta * Jco, q * x[0], q * x[1]
+    if not all(math.isfinite(v) for v in (q, c_new, ra, rs)):
         return None, "NONFINITE_SUBSTITUTION"
-    if q > 0.0 and ((x[0] != 0.0 and ra == 0.0) or (x[1] != 0.0 and rs == 0.0)):
+    # only an exact coarse zero is a valid zero substitution; a positive field lost to zero is a representation failure
+    if Jco > 0.0 and (q == 0.0 or c_new == 0.0 or (x[0] != 0.0 and ra == 0.0) or (x[1] != 0.0 and rs == 0.0)):
         return None, "REPRESENTATION"
     w = JCCF_NDOPPLER * JCCF_VDOP / C_LIGHT
     lo_b, hi_b = float(b["nu_lo_Hz"]), float(b["nu_hi_Hz"])
     return {"call": r["call"], "op": r["op"], "aux": int(r["aux"]), "ion": ion, "nu": nu, "bin_id": int(b["bin_id"]),
             "bin_nu_lo": lo_b, "bin_nu_hi": hi_b, "tau_eff": x[12], "beta": beta, "c": c, "J_c": J_c,
-            "J_coarse": Jco, "q": q, "c_new": beta * Jco, "r_a": x[0], "r_s": x[1], "r_p": x[2], "r_a_new": ra,
+            "J_coarse": Jco, "q": q, "c_new": c_new, "r_a": x[0], "r_s": x[1], "r_p": x[2], "r_a_new": ra,
             "r_s_new": rs, "profile_crosses_bin": nu * (1.0 - w) < lo_b or nu * (1.0 + w) > hi_b}, None
+
+
+def det_si_jccf_statements(m8, n_lo, info, atom, ledger, bins, grid_why):
+    """every mode-8 statement -> substitution record or undefined reason: a duplicate identity, the recorded
+    statement conditions, a grid finding (all statements), then the per-statement linkage."""
+    seen, recs, undefined = {}, {}, {}
+    for r, _ in m8:
+        seen[(r["call"], r["op"])] = seen.get((r["call"], r["op"]), 0) + 1
+    for r, x in m8:
+        k = (r["call"], r["op"])
+        cond = CF.det_si_bb_check(r, x)
+        if seen[k] > 1:
+            undefined[k] = "DUPLICATE_STATEMENT"
+        elif cond:
+            undefined[k] = f"STATEMENT_CONDITIONS:{cond}"
+        elif grid_why:
+            undefined[k] = "GRID"
+        else:
+            ion, lid = CF.det_si_bb_ion(r, n_lo), int(r["aux"])
+            e, reason = det_si_jccf_link(r, x, ion, info.get(int(r["lev_a"])), info.get(int(r["lev_b"])),
+                                         atom.get((JCCF_ION.get(ion), lid), []), ledger.get(lid, []), bins)
+            if e is None:
+                undefined[k] = reason
+            else:
+                recs[k] = e
+    return recs, undefined
+
+
+def det_si_jccf_scope(state, m8, assign, rep_keys, rep_why, undefined, counts=JCCF_GROUP_COUNTS):
+    """registered targets of one range, their undefined statements, and the range-level reasons that also stop the
+    range (membership not resolved, registered counts, the representative six)."""
+    if state == "F0":
+        return set(), {}, []
+    keys = [(r["call"], r["op"]) for r, _ in m8]
+    if state == "C-ALL":
+        tg = set(keys)
+        rng = [] if len(keys) == sum(counts.values()) else [f"REGISTERED_COUNT:{len(keys)}"]
+        return tg, {k: undefined.get(k, "MEMBERSHIP") for k in tg if k in undefined or k not in assign}, rng
+    if state == "C-REP6":
+        tg = set(rep_keys)
+        return tg, {k: undefined[k] for k in tg if k in undefined}, [f"REP6:{w}" for w in rep_why]
+    g = state[2:]
+    tg = {k for k, v in assign.items() if v == g}
+    rng = [] if len(tg) == counts[g] else [f"REGISTERED_COUNT:{len(tg)}"]
+    missing = len({k for k in keys if k not in assign})
+    if missing:
+        rng.append(f"MEMBERSHIP_UNRESOLVED:{missing}")
+    return tg, {k: undefined[k] for k in tg if k in undefined}, rng
 
 
 def det_si_jccf_rep6(m8, assign, info):
@@ -865,16 +917,6 @@ def det_si_jccf_rep6(m8, assign, info):
             continue
         keys.append(k)
     return keys, why
-
-
-def det_si_jccf_targets(assign, state, rep_keys):
-    if state == "F0":
-        return set()
-    if state == "C-ALL":
-        return set(assign)
-    if state == "C-REP6":
-        return set(rep_keys)
-    return {k for k, g in assign.items() if g == state[2:]}
 
 
 def det_si_jccf_callback(recs, targets):
@@ -931,12 +973,13 @@ def det_si_jccf_branch(valid_all, G_all):
 
 
 def det_si_jccf_claim_check(rows):
-    """a state row with undefined statements carries no ratio; labels stay in the registered vocabulary."""
+    """a state row with undefined statements or a range-level reason carries no ratio; labels stay in the registered
+    vocabulary."""
     bad = []
     for r in rows:
         if r.get("kind") != "state":
             continue
-        if r.get("undefined") and r.get("III_II") is not None:
+        if (r.get("undefined") or r.get("range_reasons")) and r.get("III_II") is not None:
             bad.append(f"PARTIAL_AS_FULL:{r['state']}")
         c = r.get("cls")
         p = c.split("; ") if isinstance(c, str) else []
@@ -985,24 +1028,26 @@ def cmd_jccf_negative():
         return det_si_jccf_link(r, x, CF.det_si_bb_ion(r, n_lo), up or info[int(r["lev_a"])],
                                 lo or info[int(r["lev_b"])], t["atom"][r["op"]] if atom is None else atom,
                                 t["ledger"][r["op"]] if ledger is None else ledger, bins if bins_ is None else bins_)
-    recs = {}
-    for r, x in stmts:
-        e, w = link(r, x)
-        if e is not None:
-            recs[(r["call"], r["op"])] = e
+    atom_map = {(v[0]["ion_number"], int(v[0]["line_id"])): v for v in t["atom"].values()}
+    led_map = {int(v[0][5]): v for v in t["ledger"].values()}
+    toy_counts = {"G1": 1, "G2": 1, "G3": 1, "G4": 1}
+
+    def statements(m8, grid_why=()):
+        return det_si_jccf_statements(m8, n_lo, info, atom_map, led_map, bins, list(grid_why))
+    recs, undef = statements(stmts)
     want = {"1": (0, 3.0), "2": (1, 0.0), "3": (2, 0.2), "4": (3, 5.0)}
-    expect(not why and len(recs) == 4 and all(recs[("1", k)]["bin_id"] == b and
-                                              det_si_jccf_close(recs[("1", k)]["q"], q) for k, (b, q) in want.items()),
+    expect(not why and not undef and len(recs) == 4 and all(
+        recs[("1", k)]["bin_id"] == b and det_si_jccf_close(recs[("1", k)]["q"], q) for k, (b, q) in want.items()),
            "toy linkage, bins and q (positive control; interior edge -> higher bin, last edge included, exact coarse "
            "zero accepted as q = 0)")
     assign, wa = GR.det_si_bb_groups_assign(stmts, info, n_lo)
     A0, u0, ch0, _ = CF.det_si_bb_build(ops, sm, N, gh)
     ok = not wa and not u0
     for s in ("C-ALL", "C-G1", "C-G2", "C-G3", "C-G4"):
-        tg = det_si_jccf_targets(assign, s, [])
+        tg, und_s, rng = det_si_jccf_scope(s, stmts, assign, [], [], undef, toy_counts)
         cb = det_si_jccf_callback(recs, tg)
         A, u, ch, _ = CF.det_si_bb_build(ops, sm, N, gh, cb)
-        ok = ok and not u and not det_si_jccf_check(cb, stmts, tg, recs) and \
+        ok = ok and tg and not und_s and not rng and not u and not det_si_jccf_check(cb, stmts, tg, recs) and \
             not CF.det_si_bb_invariance(ch0, ch, set(GR.MODE8)) and CF.det_si_bb_solve(A, 10.0)[0] is not None
     expect(ok, "toy per-state operators valid, prescription and invariance hold (positive control)")
 
@@ -1069,8 +1114,41 @@ def cmd_jccf_negative():
            "field: undefined")
     expect(link(r1, x1, bins_=[dict(b, J_nu="-1e-6") for b in bins])[1] == "COARSE_FIELD", "inject a negative coarse "
            "field: undefined")
+    tiny = [dict(b, J_nu="5e-324") for b in bins]
+    x10 = x1[:10] + [x1[9] * 10.0] + x1[11:]
+    L10 = L1[:9] + [repr(x10[10] / x10[9])] + L1[10:]
+    expect(link(r1, x10, ledger=[L10], bins_=tiny)[1] == "REPRESENTATION", "inject a positive coarse field whose ratio "
+           "q underflows to 0: undefined (not a valid zero substitution)")
+    expect(link(r1, x1, bins_=tiny)[1] == "REPRESENTATION", "inject a positive coarse field whose c' = beta J_coarse "
+           "underflows to 0: undefined")
+    expect(link(r1, x1[:9] + [3.0, 5e-324] + x1[11:])[1] == "J_C_REPRESENTATION",
+           "inject c / beta lost to 0: undefined before the division (no exception)")
+    # 3b. linkage failures stop the registered range (prereg 5), not only the global gate
+    frame = det_si_jccf_grid(t["spec"], 10, dict(t["manifest"], frame="OBSERVER"), 12)[1]
+    expect(any("GRID_KIND:frame" in w for w in frame), "inject another frame of the comparison grid: refused")
+    rg, ug = statements(stmts, ["OVERLAP:0"])
+    expect(not rg and set(ug.values()) == {"GRID"} and len(ug) == 4, "inject a grid finding: every statement undefined")
+    rd, ud = statements(stmts + stmts[:1])
+    tgd, und_d, _ = det_si_jccf_scope("C-ALL", stmts + stmts[:1], assign, [], [], ud, toy_counts)
+    expect(ud.get(("1", "1")) == "DUPLICATE_STATEMENT" and ("1", "1") in und_d, "inject a duplicate statement "
+           "identity: undefined, C-ALL not produced")
+    xb = x1[:7] + [2.0 * x1[7]] + x1[8:]
+    rc, uc = statements([(r1, xb)] + stmts[1:])
+    expect(str(uc.get(("1", "1"))).startswith("STATEMENT_CONDITIONS"), "inject a statement violating the recorded "
+           "bracket (Jbar != c + l): undefined")
+    part = {k: v for k, v in assign.items() if k != ("1", "3")}
+    tga, und_a, _ = det_si_jccf_scope("C-ALL", stmts, part, [], [], undef, toy_counts)
+    _, und_g, rng_g = det_si_jccf_scope("C-G1", stmts, part, [], [], undef, toy_counts)
+    expect(und_a.get(("1", "3")) == "MEMBERSHIP" and not und_g and any("MEMBERSHIP_UNRESOLVED" in w for w in rng_g),
+           "inject an unassigned statement: C-ALL undefined and every group range stopped")
+    expect(bool(det_si_jccf_scope("C-REP6", stmts, assign, [("1", "1")], ["REP6_ROWS:760321:0"], undef)[2]),
+           "inject an unresolved representative line: C-REP6 stopped (not computed on the rest)")
+    expect(any("REGISTERED_COUNT" in w for w in det_si_jccf_scope("C-G1", stmts, assign, [], [], undef,
+                                                                     dict(toy_counts, G1=2))[2]),
+           "inject a group count other than the registered one: range stopped")
     # 4. spontaneous change, beta twice, one pump rate, non-target change, accumulated group
-    tg1, tg2 = det_si_jccf_targets(assign, "C-G1", []), det_si_jccf_targets(assign, "C-G2", [])
+    tg1 = det_si_jccf_scope("C-G1", stmts, assign, [], [], undef, toy_counts)[0]
+    tg2 = det_si_jccf_scope("C-G2", stmts, assign, [], [], undef, toy_counts)[0]
     good = det_si_jccf_callback(recs, tg1)
 
     def bad(f, tg=tg1):
@@ -1094,9 +1172,11 @@ def cmd_jccf_negative():
     expect([det_si_jccf_branch(True, 0.02), det_si_jccf_branch(True, 0.01), det_si_jccf_branch(False, 0.5),
             det_si_jccf_branch(True, float("nan"))] == [0, 1, 2, 2], "branch fixtures (positive control)")
     rows = [{"kind": "state", "state": "C-ALL", "undefined": 1, "III_II": 3.0, "cls": "미산출"},
-            {"kind": "state", "state": "C-G1", "undefined": 0, "III_II": 3.0, "cls": "effect resolved"}]
-    expect(det_si_jccf_claim_check(rows) == ["PARTIAL_AS_FULL:C-ALL", "LABEL:C-G1"],
-           "inject a partial substitution shown as a full ratio and an unregistered label: refused")
+            {"kind": "state", "state": "C-G1", "undefined": 0, "III_II": 3.0, "cls": "effect resolved"},
+            {"kind": "state", "state": "C-REP6", "undefined": 0, "range_reasons": "REP6:x", "III_II": 3.0,
+             "cls": "미산출"}]
+    expect(det_si_jccf_claim_check(rows) == ["PARTIAL_AS_FULL:C-ALL", "LABEL:C-G1", "PARTIAL_AS_FULL:C-REP6"],
+           "inject a partial substitution or a stopped range shown as a full ratio and an unregistered label: refused")
     fails = sum(1 for r in results if not r[0])
     print(json.dumps({"schema": "DET_JC_COARSE_CF_NEGATIVE_V1", "checks": len(results), "failures": fails}))
     return 0 if fails == 0 else 2
@@ -1169,16 +1249,9 @@ def cmd_jccf(run, out):
                 atom.setdefault((a["ion_number"], int(a["line_id"])), []).append(a)
     with open(run / "work/w5_lines.csv") as f:
         ledger = det_si_line_input_ledger(f, aux_ids)
-    recs, undefined = {}, {}
-    for r, x in m8:
-        k, ion, lid = (r["call"], r["op"]), CF.det_si_bb_ion(r, n_lo), int(r["aux"])
-        e, reason = det_si_jccf_link(r, x, ion, info.get(int(r["lev_a"])), info.get(int(r["lev_b"])),
-                                     atom.get((JCCF_ION.get(ion), lid), []), ledger.get(lid, []), bins)
-        if e is None:
-            undefined[k] = reason
-        else:
-            e["group"] = assign.get(k)
-            recs[k] = e
+    recs, undefined = det_si_jccf_statements(m8, n_lo, info, atom, ledger, bins, why_g)
+    for k, e in recs.items():
+        e["group"] = assign.get(k)
     t_shell = TR.dump_row(run, stop_iter, "shell", SHELL)[0]
     vel = (float(t_shell["v_inner_cm_s"]) + float(t_shell["v_outer_cm_s"])) / 2e5
     pub, pub_vel, pub_ii, pub_iii = EB.det_si_exc_public(vel)
@@ -1191,15 +1264,14 @@ def cmd_jccf(run, out):
     A0, und, ch0, maps = CF.det_si_bb_build(ops, sm, N, gh)
     states = {}
     for s in JCCF_STATES:
-        tg = det_si_jccf_targets(assign, s, rep_keys)
-        st = {"targets": tg, "undefined": {k: undefined[k] for k in tg if k in undefined}, "A": None, "ch": None,
-              "x": None, "why": []}
+        tg, und_s, rng = det_si_jccf_scope(s, m8, assign, rep_keys, why_r, undefined)
+        st = {"targets": tg, "undefined": und_s, "range": rng, "A": None, "ch": None, "x": None, "why": []}
         if s == "F0":
             st["A"], st["ch"] = A0, ch0
         elif not tg:
             st["why"] = ["NO_TARGETS"]
-        elif st["undefined"]:
-            st["why"] = ["UNDEFINED_SUBSTITUTION"]
+        elif und_s or rng:
+            st["why"] = (["UNDEFINED_SUBSTITUTION"] if und_s else []) + rng
         else:
             cb = det_si_jccf_callback(recs, tg)
             bad = det_si_jccf_check(cb, stmts, tg, recs)
@@ -1256,7 +1328,7 @@ def cmd_jccf(run, out):
         row = {"kind": "state", "state": s, "scope": JCCF_SCOPE[s], "planned": len(tg),
                "definable": len(tg) - len(und_s), "substituted": len(tg) if (st["A"] is not None and s != "F0") else 0,
                "undefined": len(und_s), "undefined_reasons": json.dumps(dict(sorted(reasons.items()))) if und_s else "",
-               "eta_max": eta_max.get(s)}
+               "range_reasons": ";".join(st["range"]), "eta_max": eta_max.get(s)}
         if s in R:
             d = TR.dex(R[s], pub)
             row.update(III_II=R[s], delta_F0=TR.dex(R[s], R["F0"]) if "F0" in R else None, d_pub=d,
@@ -1309,7 +1381,7 @@ def cmd_jccf(run, out):
         f.write("Gates: " + (";".join(all_gates) or "all pass") + "\n\n")
         cols = ["state", "scope", "planned", "definable", "substituted", "undefined", "III_II", "delta_F0", "d_pub",
                 "position", "G", "q_min", "q_median", "q_max", "n_q_eq0", "n_q_0_1", "n_q_eq1", "n_q_gt1",
-                "profile_crossing", "cls", "undefined_reasons", "reason"]
+                "profile_crossing", "cls", "undefined_reasons", "range_reasons", "reason"]
         f.write("| " + " | ".join(cols) + " |\n|" + "---|" * len(cols) + "\n")
         for r in rows:
             f.write("| " + " | ".join(fmt(r.get(c)) for c in cols) + " |\n")
