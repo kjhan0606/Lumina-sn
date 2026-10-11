@@ -273,6 +273,26 @@ sed -n '45,165p' scripts/det_si_bb_counterfactual.py
 
 운전자는 이 절에 기계 프리플라이트 반환값, 구현 판본, 직접시험, 등록 계산, 누적 비용, 판정·종료감사, 중단 사유와 실제 담당을 추가한다. 실행 전 항목은 미집행으로 남긴다. 분장·집행 장부를 다른 문서에 복제하지 않는다.
 
+### 집행 기록 (운전자 추가 — 정본 장부, 개정16 ①; 위 기안 기록은 그대로 둔다)
+
+증거 접두 `B=/gpfs/kjhan/lumina/cmfgen_map/jccf_20261011`. 작업 번호·경과는 `B/JOBS.txt`·`B/evidence/sacct_offline_jobs.txt`, 게이트 집행은 `B/evidence/GATE_RECORD.json`.
+
+| 항목 | 담당(실제) | 상태·증거 |
+|---|---|---|
+| user 결정 | user | 「J_c→거친 Jν 반사실」(`B/evidence/USER_DECISION_2026-10-11.txt`) |
+| 기안·개정 1 | astra(자기보고 「gpt-6-astra」·「GPT-6」) | 0b194a5 · 6d844de(OLD/NEW 1쌍, §1 일본어 문단 정리, 행 단위 1행 치환·의도 외 소실 0) |
+| 기계 게이트(기안·개정) | 운전자 | 기안 브리프 canonical rc 0(a10 419445), 기안 prereg·referents·canonical rc 0(419452), 개정 브리프 dispatch·canonical rc 0(419456), 개정 후 prereg·referents·canonical rc 0(419457) |
+| 자료 조건 확인 | 운전자 | 개정 1 발주 전 awk 집계 2건(풀이 없음): 호출 36 모드 8 진술 2587, c=0·c<0·β≤0·r_a=0 각 0, 셸10 비교 격자 1234 구간 5.84×10¹³–4.04×10¹⁶ Hz·J_nu=0 구간 0(a10 419450); 2587 선 모두 생산 원장 행 1개·status OK(a10 419454) — `B/evidence/precheck_*.out` |
+| 구현 | 운전자(Opus 5.5) · 코드 감사 없음(25-z) | e65bc93 — `scripts/det_si_line_input.py` 에 `jccf`·`jccf-negative` 추가(기존 부명령·재사용 판독기 무수정), 러너 `B/tools/run_det_jc_coarse_cf_offline.slurm` |
+| 직접시험(§9) | 운전자 | a10 419462 **36/36**, 러너 위생 rc 0 |
+| 등록 계산 run1 | 운전자 | a10 419463(8 s) `B/results/run1/`: G-INPUT·G-RATE·G-SOLVE·G-CLAIM·G-RUN 지적 0, 미정의 0; **분기 0 RESOLVED_APPROACH** — C-ALL III/II 3.5598→3.7222(Δ +0.0194 dex, G +0.0194), C-G1 +0.0300(접근)·C-G2 −0.0174(이격)·C-G3 +0.0072·C-G4 +0.000004·C-REP6 +0.0025(뒤 셋 미분리) |
+| 판정 | 운전자(구현·판정 겸임) | `docs/VERDICT_DET_JC_COARSE_CF_2026-10-11.md` |
+| 종료감사 | astra(계약 저자 이해관계) | 대기 |
+| 기계 게이트(판정·감사 발주) | 운전자 | 판정 roster(5/5)·prereg preflight·referents·canonical rc 0(a10 419465) |
+| 비용 | 운전자 | GPU 0; 오프라인 a10 8 작업 할당 75 s · 0.023 core·h / 900 s · 0.5 core·h(게이트 4 작업 64 s·자료 확인 2 작업 2 s 포함, run1 까지); 신규 저장 1.7 MiB / 50 MiB |
+
+**이탈(기재):** ① 개정 1 발주 전 운전자가 자료 조건을 awk 로 두 번 집계했다(계약 밖 작업, 풀이 없음, 비용 누계 포함). ② 비용 집계 중 운전자가 로그인 노드에서 의미 없는 `python3 -c 1` 을 한 번 실행했다(연산 없음, 규약 위반으로 기재).
+
 ## §12. 기계 선언
 
 참조에는 기존 실재 파일만 둔다. 예정 러너는 변경집합에만 둔다. 분기 fixture는 기존 프리플라이트의 문면 검사에만 사용하며 과학 결정표를 재계산하지 않는다.
