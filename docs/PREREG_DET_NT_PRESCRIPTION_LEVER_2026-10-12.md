@@ -303,15 +303,16 @@ python3 -B tools/det_nt_prescription_lever.py run --out run1
 | user 결정 | user | 「NT 처방 자체의 CMFGEN 대응 비교 (GPU 0)」(`B/evidence/USER_DECISION_2026-10-12.txt`), DET-NT-POP-OFFLINE-BOUND 폐합 후 |
 | 기안 | astra(자기보고 「GPT-6」, 세부 ID 미확인) | 906cc67; 기안 브리프 게이트 위생·정본 rc 0(a10 420163), 기안 게이트 prereg·referents·canonical rc 0(420167) |
 | 사전감사 | — | 생략(25-ab: GPU 0·생산 변경 0) |
-| 구현 | 운전자(Opus 5.5) · 코드 감사 없음(25-z) | `F/tools/det_nt_prescription_lever.py`(e5418df0…), `run_det_nt_prescription_lever.slurm`(2c59745b…); 재사용 모듈 무수정 |
+| 구현 | 운전자(Opus 5.5) · 코드 감사 없음(25-z) | `F/tools/det_nt_prescription_lever.py`(1회차 e5418df0… → 종료감사 1회차 수리 후 08f65873…), `run_det_nt_prescription_lever.slurm`(2c59745b…, 불변); 재사용 모듈 무수정 |
 | 구현 게이트 | 운전자 | a10 420171: prereg·referents·canonical·위생 rc 0(`B/evidence/gates_i1.summary`) |
-| 직접시험 | 운전자 | a10 420172 `F/tests/run1` **43/43** |
+| 직접시험 | 운전자 | a10 420172 `F/tests/run1` **43/43**(1회차 코드) · 수리 후 a10 420181 `F/tests/run2` 56/56(d026447e…, 사유 문구 수정 전) · a10 420182 `F/tests/run3` **56/56**(08f65873…) |
 | 계산 run1 | 운전자 | a10 420173 `F/run1/`(4 s, rc 0, 입력 불변): 결함 0, 공통 검사·Si 대조 통과, 공개 블록 오류 0; A 36 행 전부 조건부 계산 유효; η₂* 상단 0.01 이하 28 행(Fe 12·Co 7·Ni 9), 최소 1.0e-6(Fe 셸11), 최대 0.041(Co 셸3); M(0) 0.96–1.00; η₀* 4.5e-10–1.27e-4 |
-| 판정 | 운전자(구현·판정 겸임) | `docs/VERDICT_DET_NT_PRESCRIPTION_LEVER_2026-10-12.md` — **분기 1 PRESCRIPTION_REVIEW_CANDIDATE**(분기 함수가 전제 전건을 등록 순서로 검사, 판정과 일치) |
-| 종료감사 | astra | (예정) |
-| 비용 | 운전자 | GPU 0; a10 5 작업 할당 벽시계 합 96 s / 1200 s, 96 core·s / 1200; 신규 저장 0.3 MB / 64 MiB(판정 시점 소계) |
+| 계산 run2 | 운전자 | a10 420183 `F/run2/`(5 s, rc 0, 입력 불변, 코드 08f65873…): 결함 0, 공통·Si 통과, 공개 블록 오류 0, 150 행 status_public DEFINED; 주 표 sha256 f793a12b… = run1 과 `cmp` 바이트 동일; 분기 1 |
+| 판정 | 운전자(구현·판정 겸임) | `docs/VERDICT_DET_NT_PRESCRIPTION_LEVER_2026-10-12.md` — 1회차(4c62db7, run1) 분기 1 → 종료감사 1회차 구현 결함 3건으로 분기 0 OFFLINE_REWORK·폐합 보류 → 수리 후 2회차(run2) **분기 1 PRESCRIPTION_REVIEW_CANDIDATE**(분기 함수가 행별 전제까지 직접 검사) |
+| 종료감사 | astra(자기보고 「GPT-6」) | 1회차(HEAD 4c62db7): 폐합 불가 · «폐합 차단» 3 + «기재로 족함» 2 (`B/astra_closeout.md`) → 전건 반영; 2회차 (예정) |
+| 비용 | 운전자 | GPU 0; a10 9 작업(420163·420167·420171·420172·420173·420174·420181·420182·420183) 할당 벽시계 합 153 s / 1200 s, 153 core·s / 1200; 신규 저장 0.6 MB / 64 MiB(판정 2회차 시점 소계; 이후 게이트 작업은 `F/evidence/sacct_offline_jobs.txt`) |
 
-**이탈(기재):** ① 공개 블록 판독에 `det_blue_ion_map_readout`(열 이름)과 `det_siiii_pop_readout`(토큰·보간)을 함께 쓰고 열 이름 일치를 검사했다.
+**이탈(기재):** ① 공개 블록 판독에 `det_blue_ion_map_readout`(열 이름)과 `det_siiii_pop_readout`(토큰·보간)을 함께 쓰고 열 이름 일치를 검사했다. ② 직접시험 run2(420181)는 56/56 이었으나 형식 결함 블록의 사유 문구가 비어 `%r` 로 고친 뒤 run3(420182)로 다시 돌렸다. ③ 종료감사 1회차 발주서가 그 시점(HEAD 4c62db7)에 없던 직접시험 run2 경로를 인용했다(감사 판단: 귀속 오류 아님).
 
 ## §12. 기계 선언과 참조
 
