@@ -430,13 +430,15 @@ def dump_row(run_dir, iteration, kind, shell):
     return [r for r in rows if int(r[key]) == shell]
 
 
-def det_si_exc_build_fl(ops, sm, N, gh, coldata_override=None, extra=()):
+def det_si_exc_build_fl(ops, sm, N, gh, coldata_override=None, extra=(), bb_radiative_override=None):
     """FL operator of one recorded pair call, statements in op order (DET-SI-CONSUMPTION-TRACE prereg 4;
     DET-SI-EXCITATION-BUDGET prereg 5).  Returns (A_fl, bb_level, fl_undefined, channels, maps):
     A_fl is the total operator accumulated exactly as before; channels maps a channel name to the FL matrix of
     its own statements (off-diagonal = rate j -> i per particle in j, diagonal = -outflow).
     coldata_override(r, x) -> (C_up, C_down) or None replaces one COLDATA/METACOLL/FEIII statement;
-    extra = [(dst_fl, src_fl, rate, channel), ...] statements appended after the recorded ones."""
+    extra = [(dst_fl, src_fl, rate, channel), ...] statements appended after the recorded ones;
+    bb_radiative_override(r, x) -> (R_absorb, R_stim, R_spont) or None replaces the radiative triple of one BB
+    statement after its recorded split is checked, collisions kept (DET-SI-BB-COUNTERFACTUAL prereg 5)."""
     import numpy as np
     sm = sorted(sm, key=lambda r: int(r["i_fl"]))
     N_fl = len(sm)
@@ -470,9 +472,15 @@ def det_si_exc_build_fl(ops, sm, N, gh, coldata_override=None, extra=()):
             tu, td = x[0] + x[3], x[1] + x[2] + x[4]
             if tu * x[5] != float(r["v1"]) or td * x[6] != float(r["v2"]):
                 fl_undefined.append(f"BB_RATE_SPLIT:op{r['op']}")
+            ra, rs, rp = x[0], x[1], x[2]
+            if bb_radiative_override is not None:
+                rep = bb_radiative_override(r, x)
+                if rep is not None:
+                    ra, rs, rp = rep
+                    tu, td = ra + x[3], rs + rp + x[4]
             for M in (A_fl, bb_level):
                 M[up, lo] += tu; M[lo, lo] -= tu; M[lo, up] += td; M[up, up] -= td
-            put(ch("BB radiative upward"), up, lo, x[0]); put(ch("BB radiative downward"), lo, up, x[1] + x[2])
+            put(ch("BB radiative upward"), up, lo, ra); put(ch("BB radiative downward"), lo, up, rs + rp)
             put(ch("BB collisional (line)"), up, lo, x[3]); put(ch("BB collisional (line)"), lo, up, x[4])
         elif s in (2, 3, 4):
             hi = lvl.get((int(r["dst"]), int(r["lev_a"])))
