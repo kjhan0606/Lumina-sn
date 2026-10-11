@@ -1131,7 +1131,8 @@ def cmd_jccf_negative():
     rd, ud = statements(stmts + stmts[:1])
     tgd, und_d, _ = det_si_jccf_scope("C-ALL", stmts + stmts[:1], assign, [], [], ud, toy_counts)
     expect(ud.get(("1", "1")) == "DUPLICATE_STATEMENT" and ("1", "1") in und_d, "inject a duplicate statement "
-           "identity: undefined, C-ALL not produced")
+           "identity: 중복 신원이 C-ALL 미정의 집합에 포함됨을 확인. 정상해·분포 미산출은 호출부 정적 대조로 확인했으며, "
+           "해당 실패 경로의 독립 실행은 재현 BLOCKED.")
     xb = x1[:7] + [2.0 * x1[7]] + x1[8:]
     rc, uc = statements([(r1, xb)] + stmts[1:])
     expect(str(uc.get(("1", "1"))).startswith("STATEMENT_CONDITIONS"), "inject a statement violating the recorded "
@@ -1140,12 +1141,15 @@ def cmd_jccf_negative():
     tga, und_a, _ = det_si_jccf_scope("C-ALL", stmts, part, [], [], undef, toy_counts)
     _, und_g, rng_g = det_si_jccf_scope("C-G1", stmts, part, [], [], undef, toy_counts)
     expect(und_a.get(("1", "3")) == "MEMBERSHIP" and not und_g and any("MEMBERSHIP_UNRESOLVED" in w for w in rng_g),
-           "inject an unassigned statement: C-ALL undefined and every group range stopped")
+           "inject an unassigned statement: in the C-ALL undefined set, and the C-G1 range carries "
+           "MEMBERSHIP_UNRESOLVED (non-production checked by static reading of the caller)")
     expect(bool(det_si_jccf_scope("C-REP6", stmts, assign, [("1", "1")], ["REP6_ROWS:760321:0"], undef)[2]),
-           "inject an unresolved representative line: C-REP6 stopped (not computed on the rest)")
+           "inject an unresolved representative line: the C-REP6 range carries a range-level reason "
+           "(non-production checked by static reading of the caller)")
     expect(any("REGISTERED_COUNT" in w for w in det_si_jccf_scope("C-G1", stmts, assign, [], [], undef,
                                                                      dict(toy_counts, G1=2))[2]),
-           "inject a group count other than the registered one: range stopped")
+           "inject a group count other than the registered one: the range carries REGISTERED_COUNT "
+           "(non-production checked by static reading of the caller)")
     # 4. spontaneous change, beta twice, one pump rate, non-target change, accumulated group
     tg1 = det_si_jccf_scope("C-G1", stmts, assign, [], [], undef, toy_counts)[0]
     tg2 = det_si_jccf_scope("C-G2", stmts, assign, [], [], undef, toy_counts)[0]
