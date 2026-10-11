@@ -430,6 +430,101 @@ def dump_row(run_dir, iteration, kind, shell):
     return [r for r in rows if int(r[key]) == shell]
 
 
+def det_si_exc_build_fl(ops, sm, N, gh, coldata_override=None, extra=()):
+    """FL operator of one recorded pair call, statements in op order (DET-SI-CONSUMPTION-TRACE prereg 4;
+    DET-SI-EXCITATION-BUDGET prereg 5).  Returns (A_fl, bb_level, fl_undefined, channels, maps):
+    A_fl is the total operator accumulated exactly as before; channels maps a channel name to the FL matrix of
+    its own statements (off-diagonal = rate j -> i per particle in j, diagonal = -outflow).
+    coldata_override(r, x) -> (C_up, C_down) or None replaces one COLDATA/METACOLL/FEIII statement;
+    extra = [(dst_fl, src_fl, rate, channel), ...] statements appended after the recorded ones."""
+    import numpy as np
+    sm = sorted(sm, key=lambda r: int(r["i_fl"]))
+    N_fl = len(sm)
+    sl_of = np.array([int(r["sl_local"]) for r in sm])
+    frac = np.array([float(r["within_sl_frac"]) for r in sm])
+    fl_index = np.array([int(r["fl_index"]) for r in sm])
+    fl_of_global = {int(g): i for i, g in enumerate(fl_index)}
+    members = {k: np.where(sl_of == k)[0] for k in range(N)}
+    lvl = {(int(r["sl_local"]), int(r["level_num"])): int(r["i_fl"]) for r in sm}
+    fl_undefined = []
+    channels = {}
+
+    def ch(name):
+        return channels.setdefault(name, np.zeros((N_fl, N_fl)))
+
+    def put(M, dst, src, rate):
+        M[dst, src] += rate
+        M[src, src] -= rate
+
+    def single(k):
+        m = members[k]
+        return int(m[0]) if len(m) == 1 and frac[m[0]] == 1.0 else None
+    gh_fl = single(gh)
+    A_fl = np.zeros((N_fl, N_fl))
+    bb_level = np.zeros((N_fl, N_fl))
+    for r in sorted(ops, key=lambda r: int(r["op"])):
+        s = int(r["site"])
+        x = [num(r[f"x{k}"]) for k in range(1, 15)]
+        if s == 1:
+            up, lo = fl_of_global[int(r["lev_a"])], fl_of_global[int(r["lev_b"])]
+            tu, td = x[0] + x[3], x[1] + x[2] + x[4]
+            if tu * x[5] != float(r["v1"]) or td * x[6] != float(r["v2"]):
+                fl_undefined.append(f"BB_RATE_SPLIT:op{r['op']}")
+            for M in (A_fl, bb_level):
+                M[up, lo] += tu; M[lo, lo] -= tu; M[lo, up] += td; M[up, up] -= td
+            put(ch("BB radiative upward"), up, lo, x[0]); put(ch("BB radiative downward"), lo, up, x[1] + x[2])
+            put(ch("BB collisional (line)"), up, lo, x[3]); put(ch("BB collisional (line)"), lo, up, x[4])
+        elif s in (2, 3, 4):
+            hi = lvl.get((int(r["dst"]), int(r["lev_a"])))
+            lo = lvl.get((int(r["src"]), int(r["lev_b"])))
+            if hi is None or lo is None:
+                fl_undefined.append(f"COLL_LEVEL_MAP:op{r['op']}")
+                continue
+            cu, cd = x[0], x[1]
+            if coldata_override is not None:
+                rep = coldata_override(r, x)
+                if rep is not None:
+                    cu, cd = rep
+            for M in (A_fl, bb_level):
+                M[hi, lo] += cu; M[lo, lo] -= cu; M[lo, hi] += cd; M[hi, hi] -= cd
+            put(ch("collisional (tabulated)"), hi, lo, cu); put(ch("collisional (tabulated)"), lo, hi, cd)
+        elif s in BF_LIKE:
+            lev = fl_of_global[int(r["lev_b"])]
+            if gh_fl is None:
+                fl_undefined.append("UPPER_GROUND_SL_NOT_SINGLE")
+                continue
+            ion_rate, rec_rate = x[0], x[2]
+            A_fl[gh_fl, lev] += ion_rate; A_fl[lev, lev] -= ion_rate
+            A_fl[lev, gh_fl] += rec_rate; A_fl[gh_fl, gh_fl] -= rec_rate
+            name = "BF" if s == 5 else "collisional ionization (recorded)"
+            put(ch(f"{name} ionization"), gh_fl, lev, ion_rate)
+            put(ch(f"{name} recombination"), lev, gh_fl, rec_rate)
+        elif s in TWO:
+            d, c, v = int(r["dst"]), int(r["src"]), float(r["v1"])
+            if len(members[c]) == 1 and frac[members[c][0]] == 1.0:
+                srcs = [int(members[c][0])]
+            elif s == 9:
+                srcs = [int(i) for i in members[c]]          # per-particle CE rate applies to every member
+            else:
+                fl_undefined.append(f"SL_ONLY_TERM:{SITE[s]}")
+                continue
+            dfl = single(d)
+            if dfl is None:
+                fl_undefined.append(f"SL_ONLY_TARGET:{SITE[s]}")
+                continue
+            for c_fl in srcs:
+                A_fl[dfl, c_fl] += v; A_fl[c_fl, c_fl] -= v
+                put(ch(SITE[s]), dfl, c_fl, v)
+        else:
+            fl_undefined.append(f"SL_ONLY_TERM:{SITE[s]}")
+    for dst, src, rate, name in extra:
+        A_fl[dst, src] += rate; A_fl[src, src] -= rate
+        put(ch(name), dst, src, rate)
+    maps = {"members": members, "fl_of_global": fl_of_global, "sl_of": sl_of, "frac": frac,
+            "fl_index": fl_index, "gh_fl": gh_fl, "g0_fl": single(0), "lvl": lvl}
+    return A_fl, bb_level, fl_undefined, channels, maps
+
+
 def cmd_analyze(run, out):
     import csv
     import math
@@ -618,60 +713,8 @@ def cmd_analyze(run, out):
     eta_phys_commit = backward(g_a, x_commit_sl) if commit_ok else np.full(N, np.nan)
 
     # FL operator from the recorded per-FL rates (prereg 4: built only from production terms)
-    fl_of_global = {int(g): i for i, g in enumerate(fl_index)}
-    members = {k: np.where(sl_of == k)[0] for k in range(N)}
-    lvl = {(int(r["sl_local"]), int(r["level_num"])): int(r["i_fl"]) for r in sm}
-    fl_undefined = []
-
-    def single(k):
-        m = members[k]
-        return int(m[0]) if len(m) == 1 and frac[m[0]] == 1.0 else None
-    gh_fl, g0_fl = single(gh), single(0)
-    A_fl = np.zeros((N_fl, N_fl))
-    bb_level = np.zeros((N_fl, N_fl))
-    for r in sorted(ops_by_call.get(cid, []), key=lambda r: int(r["op"])):
-        s = int(r["site"])
-        x = [num(r[f"x{k}"]) for k in range(1, 15)]
-        if s == 1:
-            up, lo = fl_of_global[int(r["lev_a"])], fl_of_global[int(r["lev_b"])]
-            tu, td = x[0] + x[3], x[1] + x[2] + x[4]
-            if tu * x[5] != float(r["v1"]) or td * x[6] != float(r["v2"]):
-                fl_undefined.append(f"BB_RATE_SPLIT:op{r['op']}")
-            for M in (A_fl, bb_level):
-                M[up, lo] += tu; M[lo, lo] -= tu; M[lo, up] += td; M[up, up] -= td
-        elif s in (2, 3, 4):
-            hi = lvl.get((int(r["dst"]), int(r["lev_a"])))
-            lo = lvl.get((int(r["src"]), int(r["lev_b"])))
-            if hi is None or lo is None:
-                fl_undefined.append(f"COLL_LEVEL_MAP:op{r['op']}")
-                continue
-            for M in (A_fl, bb_level):
-                M[hi, lo] += x[0]; M[lo, lo] -= x[0]; M[lo, hi] += x[1]; M[hi, hi] -= x[1]
-        elif s in BF_LIKE:
-            lev = fl_of_global[int(r["lev_b"])]
-            if gh_fl is None:
-                fl_undefined.append("UPPER_GROUND_SL_NOT_SINGLE")
-                continue
-            ion_rate, rec_rate = x[0], x[2]
-            A_fl[gh_fl, lev] += ion_rate; A_fl[lev, lev] -= ion_rate
-            A_fl[lev, gh_fl] += rec_rate; A_fl[gh_fl, gh_fl] -= rec_rate
-        elif s in TWO:
-            d, c, v = int(r["dst"]), int(r["src"]), float(r["v1"])
-            if len(members[c]) == 1 and frac[members[c][0]] == 1.0:
-                srcs = [int(members[c][0])]
-            elif s == 9:
-                srcs = [int(i) for i in members[c]]          # per-particle CE rate applies to every member
-            else:
-                fl_undefined.append(f"SL_ONLY_TERM:{SITE[s]}")
-                continue
-            dfl = single(d)
-            if dfl is None:
-                fl_undefined.append(f"SL_ONLY_TARGET:{SITE[s]}")
-                continue
-            for c_fl in srcs:
-                A_fl[dfl, c_fl] += v; A_fl[c_fl, c_fl] -= v
-        else:
-            fl_undefined.append(f"SL_ONLY_TERM:{SITE[s]}")
+    A_fl, bb_level, fl_undefined, _, fl_maps = det_si_exc_build_fl(ops_by_call.get(cid, []), sm, N, gh)
+    members, fl_of_global = fl_maps["members"], fl_maps["fl_of_global"]
 
     # fixed SL and FL steady states (prereg 5): generator and FL operator held fixed
     x_L, why_L = gth(g_a)
