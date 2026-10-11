@@ -292,6 +292,25 @@ python3 -B scripts/det_si_bf_sensitivity.py analyze \
 
 운전자는 구현 판본, 직접시험, 등록 실행, 비용, 판정, 종료감사와 이탈을 이 절에 기록한다. 현재 이 항목들은 미집행이다.
 
+### 집행 기록 (운전자 추가 — 정본 장부, 개정16 ①; 위 기안 기록은 그대로 둔다)
+
+증거 접두 `B=/gpfs/kjhan/lumina/cmfgen_map/bfsens_20261011`. 작업 번호·경과는 `B/JOBS.txt`·`B/evidence/sacct_offline_jobs.txt`, 게이트 집행은 `B/evidence/GATE_RECORD.json`.
+
+| 항목 | 담당(실제) | 상태·증거 |
+|---|---|---|
+| user 결정 | user | 「들뜬 준위 광전리 감도」(`B/evidence/USER_DECISION_2026-10-11.txt`) |
+| 기안·개정 1 | astra(자기보고 「gpt-6-astra」·「GPT-6-astra」) | 1d7fff7 · 7cb1959(OLD/NEW 3쌍, §6 열 표의 한자·전각 쉼표 정리·파일화 지시 문단 삭제, 행 단위 6행 치환·1행 삭제·의도 외 소실 0) |
+| 기계 게이트(기안·개정) | 운전자 | 기안 브리프 canonical rc 0(a10 419533), 기안 prereg·referents·canonical rc 0(419535), 개정 브리프 dispatch·canonical rc 0(419536), 개정 후 prereg·referents·canonical rc 0(419537) |
+| 구현 | 운전자(Opus 5.5) · 코드 감사 없음(25-z) | 3ff6a3b — `scripts/det_si_bf_sensitivity.py`(공통 판독기 무수정), 러너 `B/tools/run_det_si_bf_sensitivity_offline.slurm` |
+| 직접시험(§9) | 운전자 | a10 419539 **32/32**, 러너 위생 rc 0 |
+| 등록 계산 run1 | 운전자 | a10 419541(4 s) `B/results/run1/`: G-INPUT·G-RATE·G-SOLVE·G-CLAIM·G-RUN 지적 0, 미정의 0·범위 정지 0, H 98 준위; **분기 0 RESOLVED_APPROACH** — A-10 III/II 3.560→14.77(Δ +0.618, G +0.618), A-0.1 −0.857, M-10 +0.451·M-0.1 −0.319, H-10 +0.068·H-0.1 −0.009(미분리); Γ_S/Γ_S,0 = q·C_S 6/6 |
+| 판정 | 운전자(구현·판정 겸임) | `docs/VERDICT_DET_SI_BF_SENS_2026-10-11.md` |
+| 종료감사 | astra(계약 저자 이해관계) | 대기 |
+| 기계 게이트(판정·감사 발주) | 운전자 | 판정 roster(5/5)·prereg preflight·referents·canonical rc 0(a10 419543) |
+| 비용 | 운전자 | GPU 0; 오프라인 a10 6 작업 할당 69 s · 0.021 core·h / 900 s · 0.5 core·h(게이트 4 작업 64 s 포함, run1 까지); 신규 저장 76 KiB / 50 MiB |
+
+**이탈(기재):** 없음.
+
 ## §12. 기계 선언
 
 참조에는 기존 실재 파일만 둔다. 예정 파일은 변경집합에만 둔다. 분기 예시는 기존 프리플라이트의 문면 검사에만 쓰며 과학 결정표를 재계산하지 않는다.
