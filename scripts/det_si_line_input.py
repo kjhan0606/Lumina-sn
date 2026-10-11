@@ -479,16 +479,282 @@ def cmd_analyze(run, baseline, out):
     return 0
 
 
+# ------------------------------------------------------------------ DET-JC-DEFINITION (jcdef, jcdef-negative)
+JCDEF_PREREG = "docs/PREREG_DET_JC_DEFINITION_2026-10-11.md"
+JCDEF_SOURCE = {   # driver's reading of the sealed sources (prereg 3-4); data for the table, not a string-match verdict
+    "operator": "production call 12 uses CMFGEN_NONOVERLAP_SOBOLEV (lumina_cmfgen.c about 11770: init_pass -> "
+                "INIT_SHARED_GAUSSIAN, else CMFGEN_NONOVERLAP_SOBOLEV); sobolev_operator = line_net_parity && that "
+                "operator (about 8535)",
+    "direct_line": "excluded: both fine line-deposition loops require !sobolev_operator (lumina_cmfgen.c about 8804 "
+                   "and 8883); the unmapped-eps fine folding also requires it (about 8598); fs.chi_line stays zero, "
+                   "so chi_tot = chi_es + chi_abs (about 9044-9047) and the line emissivity eta is not deposited",
+    "upstream": "excluded for mapped lines: fine chi_es/chi_abs are interpolated from the bin state (about "
+                "8385-8399); the bin chi_es carries the line scattering share (chi_ln - chi_ln_th) (about 2962) "
+                "with the per-line eps_phys branch (LUMINA_CMFGEN_LINE_EPS_PHYS=1; LINE_EPS and LINE_EPS_UV unset), "
+                "but under the active DET-LTEUNMAP-EPS gate mapped lines take eps = 1 (fully thermal, no scattering "
+                "share; about 2512-2532 and the helper at about 163) and the unmapped share accumulated in "
+                "g_chi_line_sc_unmapped (about 2530) is subtracted in the fine interpolation (about 8394); bin "
+                "chi_abs = bf + ff only and the fine continuum emissivity w5_cont_eta = bf (Milne) + ff with the "
+                "line term passed as 0 (about 2980-2987)",
+    "incident": "J_c = Gaussian profile mean of fs.J within +-4 Doppler widths (line_jbar_gaussian_discrete_shells, "
+                "lumina_cmfgen.c about 9780) passed as continuum_j to line_net_sobolev_radiation (about 9810): "
+                "c = beta J_c, l = eta (c t / nu)(1 - beta)/tau, Jbar = c + l (line_net_rate.c)",
+    "cmfgen": "SOBJBAR_SIM (Sobolev path: cmfgen_sub.f SECTION='LINE' about 3504 -> SUB_SOB_LINE_V3 about 3638 -> "
+              "sobjbar_sim.f): CHI and SOURCE = ZETA + RJ*THETA come from COMP_OPAC at the line frequency, which "
+              "adds bound-free, free-free, two-photon, X-ray, scattering and optional additional opacity but no "
+              "line opacity (comp_opac.f), and RJ from COMP_J_BLANK on that opacity; the per-ray AV is weighted "
+              "by EXPONX(GAM) and integrated over angle, with the simultaneous lines' CHIL/ETAL entering the "
+              "Sobolev optical depth and local term (cmfgen_sub.f about 3535)",
+    "same": "the incident field excludes the line itself and other lines; the local line term is added separately",
+    "different": "CMFGEN integrates beta*AV per ray with an angle-dependent Sobolev optical depth; Lumina uses a "
+                 "scalar beta times an angle-averaged J_c; Lumina's J_c is a Gaussian mean over +-4 Doppler widths "
+                 "of the fine field; CMFGEN sums NUM_SIM_LINES simultaneous lines, Lumina uses one line; the "
+                 "continuum transfer methods differ",
+    "public_execution": "not established: the inputs do not show that the public toy06 model treated these lines "
+                        "with SOBJBAR_SIM (its blanketed comoving-frame lines use a different path)"}
+
+
+def det_si_jcdef_bin(rows, nu):
+    """the comparison bin [nu_lo, nu_hi) holding nu, the last upper edge included; None outside or ambiguous."""
+    hit = [r for r in rows if float(r["nu_lo_Hz"]) <= nu < float(r["nu_hi_Hz"])]
+    if not hit and rows:
+        last = max(rows, key=lambda r: float(r["nu_hi_Hz"]))
+        if nu == float(last["nu_hi_Hz"]):
+            hit = [last]
+    return hit[0] if len(hit) == 1 else None
+
+
+def det_si_jcdef_components(r):
+    """chi_cont = es + bf + ff and q_bb = chi_bb/chi_total, with the component sum checked against chi_total."""
+    try:
+        es, bb, bf, ff, tot = (float(r[k]) for k in ("chi_es_cm1", "chi_bb_cm1", "chi_bf_cm1", "chi_ff_cm1",
+                                                      "chi_total_cm1"))
+    except (KeyError, ValueError):
+        return None, "COMPONENT_MISSING"
+    if not all(math.isfinite(v) for v in (es, bb, bf, ff, tot)):
+        return None, "COMPONENT_NONFINITE"
+    ok, _, rel = det_si_line_input_match(es + bb + bf + ff, tot)
+    if not ok:
+        return None, f"COMPONENT_SUM:{rel}"
+    if not (tot > 0.0):
+        return None, "TOTAL_NOT_POSITIVE"
+    return {"chi_es": es, "chi_bb": bb, "chi_bf": bf, "chi_ff": ff, "chi_total": tot, "chi_cont": es + bf + ff,
+            "q_bb": bb / tot}, None
+
+
+def det_si_jcdef_link(base_rows, run_rows):
+    """one baseline row per registered line, matched on (aux, call, op); returns (rows, findings)."""
+    want = {lid: (grp, lo, up) for grp, lid, lo, up in LINES}
+    out, why = {}, []
+    for r in base_rows:
+        lid = int(r["aux"])
+        if lid not in want:
+            why.append(f"UNREGISTERED_LINE:{lid}")
+            continue
+        if lid in out:
+            why.append(f"DUPLICATE_LINE:{lid}")
+            continue
+        if (r["group"], int(r["lower_level_num"]), int(r["upper_level_num"])) != want[lid]:
+            why.append(f"IDENTITY:{lid}")
+            continue
+        out[lid] = r
+    why += [f"MISSING_LINE:{lid}" for lid in want if lid not in out]
+    for lid, r in out.items():
+        if (r.get("call"), r.get("op")) not in run_rows.get(lid, set()):
+            why.append(f"STATEMENT_NOT_IN_RUN:{lid}")
+    return out, why
+
+
+def cmd_jcdef_negative():
+    results = []
+
+    def expect(ok, what):
+        results.append((bool(ok), what))
+        print(f"[NEG] {'PASS' if ok else 'FAIL'} {what}")
+    base = [{"aux": str(lid), "group": g, "lower_level_num": str(lo), "upper_level_num": str(up), "call": "36",
+             "op": str(100 + k)} for k, (g, lid, lo, up) in enumerate(LINES)]
+    runs = {int(b["aux"]): {("36", b["op"])} for b in base}
+    rows, why = det_si_jcdef_link(base, runs)
+    expect(len(rows) == 6 and not why, "six registered rows link (positive control)")
+    expect(any("DUPLICATE" in w for w in det_si_jcdef_link(base + base[:1], runs)[1]), "inject a duplicate row: refused")
+    expect(any("UNREGISTERED" in w for w in det_si_jcdef_link(base + [dict(base[0], aux="5")], runs)[1]),
+           "inject another line: refused")
+    expect(any("STATEMENT_NOT_IN_RUN" in w for w in det_si_jcdef_link(base, {k: {("35", "1")} for k in runs})[1]),
+           "inject a statement of another call (other shell/state): refused")
+    spec = [{"nu_lo_Hz": "1.0e15", "nu_hi_Hz": "1.1e15", "J_nu": "1", "chi_es_cm1": "1", "chi_bb_cm1": "2",
+             "chi_bf_cm1": "3", "chi_ff_cm1": "4", "chi_total_cm1": "10"},
+            {"nu_lo_Hz": "1.1e15", "nu_hi_Hz": "1.2e15", "J_nu": "2", "chi_es_cm1": "1", "chi_bb_cm1": "1",
+             "chi_bf_cm1": "1", "chi_ff_cm1": "1", "chi_total_cm1": "4"}]
+    expect(det_si_jcdef_bin(spec, 1.05e15) is spec[0] and det_si_jcdef_bin(spec, 1.1e15) is spec[1] and
+           det_si_jcdef_bin(spec, 1.2e15) is spec[1], "bin selection [lo, hi) with the last edge (positive control)")
+    expect(det_si_jcdef_bin(spec, 1.05e15 / 1e15) is None, "inject a frequency in PHz instead of Hz: no bin")
+    expect(det_si_jcdef_bin(spec, 1.3e15) is None, "inject a frequency outside the grid: no bin")
+    c, w = det_si_jcdef_components(spec[0])
+    expect(c is not None and c["q_bb"] == 0.2 and c["chi_cont"] == 8.0, "component ratio (positive control)")
+    expect(det_si_jcdef_components(dict(spec[0], chi_bb_cm1="nan"))[0] is None, "inject a non-finite component: "
+           "refused")
+    expect(det_si_jcdef_components(dict(spec[0], chi_total_cm1="11"))[0] is None, "inject a wrong component sum: "
+           "refused")
+    expect(det_si_jcdef_components({"chi_es_cm1": "0", "chi_bb_cm1": "0", "chi_bf_cm1": "0", "chi_ff_cm1": "0",
+                                    "chi_total_cm1": "0"})[0] is None, "inject a zero denominator: refused")
+    fails = sum(1 for r in results if not r[0])
+    print(json.dumps({"schema": "DET_JC_DEFINITION_NEGATIVE_V1", "checks": len(results), "failures": fails}))
+    return 0 if fails == 0 else 2
+
+
+def cmd_jcdef(run, baseline, out):
+    run, baseline = Path(run), Path(baseline)
+    out = TR.new_dir(out)
+    gates = {k: [] for k in ("G-PATH", "G-MAP", "G-CLAIM", "G-RUN")}
+    part, cvd = os.environ.get("SLURM_JOB_PARTITION"), os.environ.get("CUDA_VISIBLE_DEVICES", "")
+    if part != "a10" or cvd not in ("", "NoDevFiles"):
+        gates["G-RUN"].append(f"NOT_A10_CPU:{part}:{cvd}")
+    # ---- G-PATH: the consumed production branch (settings, operator and gate statistics of call 12)
+    exports = (run / "input/resolved_lumina.exports").read_text()
+    settings = {k: (f'{k}="{v}"' in exports) for k, v in (("LUMINA_CMF_LINERES_JBAR", "2"),
+                                                          ("LUMINA_CMF_FINE_UNMAPPED_EPS", "1"),
+                                                          ("LUMINA_CMF_FINE_CONT_NLTE_SOURCE", "1"),
+                                                          ("LUMINA_CMF_FINE_VDOP", "1000000"),
+                                                          ("LUMINA_CMFGEN_LINE_EPS_PHYS", "1"))}
+    for k in ("LUMINA_CMF_FINE_UNMAPPED_EPS_FINE", "LUMINA_CMF_CONTONLY", "LUMINA_CMF_FINE_BF_OPAC",
+              "LUMINA_CMFGEN_LINE_EPS=", "LUMINA_CMFGEN_LINE_EPS_UV"):
+        settings[f"{k} absent"] = k not in exports
+    if not all(settings.values()):
+        gates["G-PATH"].append("SETTINGS:" + ",".join(k for k, v in settings.items() if not v))
+    op_line = asm_line = None
+    with open(run / "stderr.log", errors="replace") as f:
+        for ln in f:
+            if ln.startswith("[cmf_fine][W5-CONT] call=12 operator="):
+                op_line = ln.strip()
+            elif ln.startswith(f"[cmfgen_assemble][UNMAPPED-EPS] pass=12 shell={SHELL} "):
+                asm_line = ln.strip()
+    if not (op_line and "operator=CMFGEN_NONOVERLAP_SOBOLEV rad_generation=12 material_generation=12 "
+                        "assemble_pass=12" in op_line):
+        gates["G-PATH"].append("PRODUCTION_OPERATOR")
+    n_mapped = None
+    if asm_line:
+        kv = dict(t.split("=", 1) for t in asm_line.split()[1:] if "=" in t)
+        n_mapped = int(kv.get("n_mapped", "-1"))
+    if not (n_mapped and n_mapped > 0):
+        gates["G-PATH"].append("MAPPED_GATE_STATISTICS")
+    # ---- G-MAP: six lines, bins, components
+    base_rows = TR.read_trace(baseline / "si10_line_input_table.csv")
+    run_rows = {}
+    for r in TR.read_trace(run / "si_trace/si10_ops.csv"):
+        if r["call"] == str(ADOPTED["call"]) and r["site"] == "1" and CF.det_si_bb_mode(r) == 8:
+            run_rows.setdefault(int(r["aux"]), set()).add((r["call"], r["op"]))
+    linked, why = det_si_jcdef_link(base_rows, run_rows)
+    if why:
+        gates["G-MAP"].append("LINK:" + ";".join(why[:6]))
+    spec = [r for r in TR.read_trace(run / "work/physics_comparison/physics_DET_iter0010.spectral.csv")
+            if int(r["shell_id"]) == SHELL]
+    rows = []
+    for grp, lid, lo, up in LINES:
+        b = linked.get(lid)
+        row = {"group": grp, "aux": lid, "lower_level_num": lo, "upper_level_num": up}
+        if b is None:
+            row.update(conclusion="미확정", reason="row not linked")
+            rows.append(row)
+            continue
+        nu = float(b["nu"])
+        bins = det_si_jcdef_bin(spec, nu)
+        comp, cwhy = det_si_jcdef_components(bins) if bins is not None else (None, "NO_BIN")
+        if comp is None:
+            gates["G-MAP"].append(f"BIN:{lid}:{cwhy}")
+        J_c, J_coarse = float(b["J_c_ledger"]), float(b["J_coarse_bin"])
+        if bins is not None and not det_si_line_input_match(float(bins["J_nu"]), J_coarse)[0]:
+            gates["G-MAP"].append(f"COARSE_J_NOT_PREVIOUS:{lid}")
+        row.update(call=b["call"], op=b["op"], nu=nu, production="call 12 / radiation 12 / material 12",
+                   consumption="trace call 36", lumina_operator="CMFGEN_NONOVERLAP_SOBOLEV",
+                   self_line_direct="excluded", upstream_residual="none (mapped eps = 1; unmapped share subtracted)",
+                   other_lines="excluded from the incident field", cmfgen_incident="continuum AV (COMP_OPAC + "
+                   "COMP_J_BLANK, no line opacity)", cmfgen_same=JCDEF_SOURCE["same"],
+                   cmfgen_different=JCDEF_SOURCE["different"], public_execution="not established",
+                   J_c=J_c, J_coarse=J_coarse, dex_previous=float(b["dex_J_c_vs_coarse"]),
+                   bin_nu_lo=float(bins["nu_lo_Hz"]) if bins else None,
+                   bin_nu_hi=float(bins["nu_hi_Hz"]) if bins else None)
+        if comp:
+            row.update({k: comp[k] for k in ("chi_es", "chi_bb", "chi_bf", "chi_ff", "chi_total", "chi_cont",
+                                             "q_bb")})
+        row.update(delta_def="not identified (no matched field pair; no new transfer)",
+                   magnitude="직접 중복 기전 배제",
+                   relation_previous="the coarse J_nu is the binned field with line opacity and emission "
+                                     "(q_bb shown); J_c is the line-free continuum by construction; the dex "
+                                     "difference is not attributed",
+                   double_counting="refuted: no self-line inflow into J_c on the consumed branch",
+                   conclusion="자기 선 유입 배제; CMFGEN Sobolev 경로와 입사장·국소 선 항 분리 대응(남은 차이 기재)")
+        rows.append(row)
+    for r in rows:
+        if r.get("magnitude") and r["magnitude"] not in ("식별", "미식별", "직접 중복 기전 배제"):
+            gates["G-CLAIM"].append(f"MAGNITUDE_LABEL:{r['aux']}")
+    all_gates = [f for v in gates.values() for f in v]
+    complete = all(r.get("self_line_direct") == "excluded" for r in rows) and len(rows) == 6
+    code = 2 if (all_gates or not complete) else 1
+    label = {0: "DEFINITION_DIFFERENCE", 1: "INCIDENT_SEPARATION_CONFIRMED", 2: "INDETERMINATE"}[code]
+    fields = list(dict.fromkeys(k for r in rows for k in r))
+    with open(out / "jc_definition_table.csv", "x", newline="") as f:
+        wr = csv.DictWriter(f, fieldnames=fields)
+        wr.writeheader()
+        wr.writerows(rows)
+
+    def fmt(v):
+        if v is None:
+            return ""
+        if isinstance(v, float):
+            return f"{v:.6g}" if math.isfinite(v) else "nan"
+        return str(v).replace("|", "/")
+    with open(out / "jc_definition_table.md", "x") as f:
+        f.write(f"# J_c definition, Si shell 10 representative lines (branch {code} {label})\n\n")
+        f.write("Context (quoted, not recomputed): " + json.dumps(CONTEXT) + "\n\n")
+        f.write("Gates: " + (";".join(all_gates) or "all pass") + "\n\n")
+        cols = ["group", "aux", "lower_level_num", "upper_level_num", "call", "op", "nu", "J_c", "J_coarse",
+                "dex_previous", "chi_es", "chi_bb", "chi_bf", "chi_ff", "chi_total", "q_bb", "self_line_direct",
+                "upstream_residual", "magnitude", "conclusion"]
+        f.write("| " + " | ".join(cols) + " |\n|" + "---|" * len(cols) + "\n")
+        for r in rows:
+            f.write("| " + " | ".join(fmt(r.get(c)) for c in cols) + " |\n")
+        f.write("\n## Source determinations (common to the six rows)\n\n")
+        for k, v in JCDEF_SOURCE.items():
+            f.write(f"- **{k}:** {v}\n")
+    S = Path("/gpfs/kjhan/lumina/cmfgen_map/obs_capture_20261006/source/src")
+    C = Path("/gpfs/kjhan/cmfgen_src/cur_cmf")
+    used = [run / "input/resolved_lumina.exports", run / "stderr.log", run / "si_trace/si10_ops.csv",
+            run / "work/physics_comparison/physics_DET_iter0010.spectral.csv", baseline / "si10_line_input_table.csv",
+            S / "lumina_cmfgen.c", S / "line_jbar.c", S / "line_net_rate.c", C / "new_main/cmfgen_sub.f",
+            C / "new_main/mod_subs/comp_opac.f", C / "new_main/mod_subs/comp_j_blank.f",
+            C / "new_main/mod_subs/sub_sob_line_v3.f", C / "subs/sobjbar_sim.f"]
+    evidence = {"schema": "DET_JC_DEFINITION_V1", "prereg": JCDEF_PREREG, "argv": sys.argv, "branch": code,
+                "label": label, "gates": gates, "settings": settings, "production_operator_line": op_line,
+                "assemble_gate_line": asm_line, "n_mapped_shell10_pass12": n_mapped, "source": JCDEF_SOURCE,
+                "context": CONTEXT,
+                "inputs": {str(p): {"bytes": p.stat().st_size, "sha256": TR.sha(p)} for p in used},
+                "code": {str(Path(__file__).resolve()): TR.sha(Path(__file__))}}
+    (out / "evidence.json").write_text(json.dumps(evidence, indent=1, default=str, ensure_ascii=False) + "\n")
+    print(f"BRANCH {code} {label} q_bb=" + json.dumps({str(r["aux"]): r.get("q_bb") for r in rows}))
+    if all_gates:
+        print("GATE FINDINGS: " + "; ".join(all_gates))
+        return 2
+    return 0
+
+
 def main():
     ap = argparse.ArgumentParser()
     sp = ap.add_subparsers(dest="cmd", required=True)
     sp.add_parser("negative")
-    s = sp.add_parser("analyze")
-    s.add_argument("--run", required=True)
-    s.add_argument("--baseline", required=True)
-    s.add_argument("--out", required=True)
+    sp.add_parser("jcdef-negative")
+    for name in ("analyze", "jcdef"):
+        s = sp.add_parser(name)
+        s.add_argument("--run", required=True)
+        s.add_argument("--baseline", required=True)
+        s.add_argument("--out", required=True)
     a = ap.parse_args()
-    return cmd_negative() if a.cmd == "negative" else cmd_analyze(a.run, a.baseline, a.out)
+    if a.cmd == "negative":
+        return cmd_negative()
+    if a.cmd == "jcdef-negative":
+        return cmd_jcdef_negative()
+    if a.cmd == "jcdef":
+        return cmd_jcdef(a.run, a.baseline, a.out)
+    return cmd_analyze(a.run, a.baseline, a.out)
 
 
 if __name__ == "__main__":
