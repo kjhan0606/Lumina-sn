@@ -34,7 +34,7 @@
 | G | `/gpfs/kjhan/lumina/cmfgen_map/bbgrp_20261011/results/run1` |
 | L | `/gpfs/kjhan/lumina/cmfgen_map/lineinp_20261011/results/run1` |
 
-主入力はTの採択記録、原子入力、生産原帳、比較CSVとmanifestである。採択条件は既存判読器の束1・電子密度反復18・CEパス1・呼出36、Siシェル10を継承する。
+주 입력은 T의 채택 기록, 원자 입력, 생산 원장, 비교 CSV와 manifest다. 채택 조건은 기존 판독기의 묶음1·전자밀도 반복18·CE 패스1·호출36, Si 셸10을 계승한다.
 
 직전 `DET-JC-DEFINITION`의 분기 2·정의 판별 목표 미달·Δ_def 미식별을 그대로 보존한다. 이번 대입 결과로 그 판정을 덮어쓰지 않는다.
 
