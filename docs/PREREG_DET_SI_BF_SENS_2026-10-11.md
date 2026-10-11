@@ -303,13 +303,14 @@ python3 -B scripts/det_si_bf_sensitivity.py analyze \
 | 기계 게이트(기안·개정) | 운전자 | 기안 브리프 canonical rc 0(a10 419533), 기안 prereg·referents·canonical rc 0(419535), 개정 브리프 dispatch·canonical rc 0(419536), 개정 후 prereg·referents·canonical rc 0(419537) |
 | 구현 | 운전자(Opus 5.5) · 코드 감사 없음(25-z) | 3ff6a3b — `scripts/det_si_bf_sensitivity.py`(공통 판독기 무수정), 러너 `B/tools/run_det_si_bf_sensitivity_offline.slurm` |
 | 직접시험(§9) | 운전자 | a10 419539 **32/32**, 러너 위생 rc 0 |
-| 등록 계산 run1 | 운전자 | a10 419541(4 s) `B/results/run1/`: G-INPUT·G-RATE·G-SOLVE·G-CLAIM·G-RUN 지적 0, 미정의 0·범위 정지 0, H 98 준위; **분기 0 RESOLVED_APPROACH** — A-10 III/II 3.560→14.77(Δ +0.618, G +0.618), A-0.1 −0.857, M-10 +0.451·M-0.1 −0.319, H-10 +0.068·H-0.1 −0.009(미분리); Γ_S/Γ_S,0 = q·C_S 6/6 |
-| 판정 | 운전자(구현·판정 겸임) | `docs/VERDICT_DET_SI_BF_SENS_2026-10-11.md` |
-| 종료감사 | astra(계약 저자 이해관계) | 대기 |
-| 기계 게이트(판정·감사 발주) | 운전자 | 판정 roster(5/5)·prereg preflight·referents·canonical rc 0(a10 419543) |
-| 비용 | 운전자 | GPU 0; 오프라인 a10 6 작업 할당 69 s · 0.021 core·h / 900 s · 0.5 core·h(게이트 4 작업 64 s 포함, run1 까지); 신규 저장 76 KiB / 50 MiB |
+| 등록 계산 run1 | 운전자 | a10 419541(4 s) `B/results/run1/`: G-INPUT·G-RATE·G-SOLVE·G-CLAIM·G-RUN 지적 0, 미정의 0·범위 정지 0, H 98 준위; **분기 0 RESOLVED_APPROACH** — A-10 III/II 3.560→14.77(Δ +0.618, G +0.618), A-0.1 −0.857, M-10 +0.451·M-0.1 −0.319, H-10 +0.068·H-0.1 −0.009(미분리); Γ_S/Γ_S,0 = q·C_S 6/6 — 종료감사 1회차 «폐합 차단» 3 으로 대체, 보존 |
+| 종료감사 반영 run2 | 운전자 | 판독기 수정 72cd4a4(`bf_states`: 공통 BF 결함이면 F0 포함 전 상태 정지; 기록 곱 소실 미정의; 증거에 상태별 x1′·v1′·FL 인구·이온 합·FL 준위 표), 음성 대조 a10 419550 **34/34**, a10 419551(4 s) `B/results/run2/`: 판독기 게이트 지적 0, 공통 결함 0·미정의 0; **분기 0 RESOLVED_APPROACH** — 표 run1 과 바이트 동일 |
+| 판정 | 운전자(구현·판정 겸임) | `docs/VERDICT_DET_SI_BF_SENS_2026-10-11.md` — 1차 b5557c8(run1) → 종료감사 1회차 반영(run2, 분기 0 유지) |
+| 종료감사 | astra(계약 저자 이해관계; 자기보고 「GPT-6 기반 Codex」, 실행 헤더 gpt-6-astra) | 1회차 **폐합 불가 «폐합 차단» 3**·«기재로 족함» 1(`B/astra_closeout.md`) → 반영(판정문 §8, run2; 반영 확인은 2회차 대상); 2회차 대기; 독립 재계산은 재현 BLOCKED |
+| 기계 게이트(판정·감사 발주) | 운전자 | 판정 roster(5/5)·prereg preflight·referents·canonical rc 0(a10 419543), 1회차 감사 발주 dispatch·canonical rc 0(419544) |
+| 비용 | 운전자 | GPU 0; 오프라인 a10 10 작업 할당 108 s · 0.033 core·h / 900 s · 0.5 core·h(게이트 6 작업 98 s 포함, 종료감사 1회차 반영 재실행까지); 신규 저장 277 KiB / 50 MiB |
 
-**이탈(기재):** 없음.
+**이탈(기재):** 종료감사 1회차 지적에 따라 판독기를 고쳐 run2 를 새 경로로 산출했다(run1 보존).
 
 ## §12. 기계 선언
 
