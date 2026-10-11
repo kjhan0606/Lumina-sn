@@ -53,9 +53,9 @@ DEF = {"frame": "SHELL_COMOVING", "frequency_coordinate": "HZ",
        "emissivity_units": "ERG_S^-1_CM^-3_HZ^-1_SR^-1", "volume_rate_units": "ERG_S^-1_CM^-3",
        "eta_is_per_sr": True}
 MANDATORY = {"D": ("L", "bb_Q", "line_diff", "line_separated", "bf_identity_separated", "ff_identity_separated",
-                   "Q_rad"),
+                   "Q_rad", "line_diff_over_delta"),
              "P": ("bb_left_Q", "bb_right_Q", "bb_diff", "bb_separated", "cont_left_Q", "cont_right_Q", "cont_diff",
-                   "cont_separated")}
+                   "cont_separated", "bb_diff_over_delta", "cont_diff_over_delta")}
 LEDGER = ("q_ad_heating", "photo_heat", "line_abs_heat", "ff_abs_heat", "compton_heat", "gamma_heat",
           "nonthermal_heat", "q_ad_cooling", "recomb_cool", "line_emit_cool", "coll_line_cool", "ff_emit_cool",
           "compton_cool", "sum_heating", "sum_cooling", "residual")
@@ -165,12 +165,26 @@ def lec_derived(f, *deps, scaling=False):
     return r
 
 
-def lec_row_valid(row):
-    """a relation row counts as produced only with every mandatory value present and every float finite."""
+def lec_row_undefined(row):
+    """keys of a relation row that are undefined: a missing mandatory value, or any None other than a structural
+    null (registered absence, not a failed derivation), or a non-finite float."""
     keys = MANDATORY["D" if row.get("relation") in ("D10", "D11") else "P"]
-    if any(row.get(k) is None for k in keys):
-        return False
-    return all(math.isfinite(v) for v in row.values() if isinstance(v, float))
+    bad = [k for k in keys if row.get(k) is None]
+    bad += [k for k, v in row.items() if v is None and k not in STRUCTURAL and k not in bad]
+    bad += [k for k, v in row.items() if isinstance(v, float) and not math.isfinite(v)]
+    return bad
+
+
+def lec_row_valid(row):
+    """a relation row counts as produced only with every mandatory value present, no undefined derived value and
+    every float finite."""
+    return not lec_row_undefined(row)
+
+
+def lec_produced(rows, summaries):
+    """every mandatory calculation valid: all relation rows and global rows produced with defined, finite values."""
+    return all(r.get("status") == "산출" and lec_row_valid(r) for r in rows) and all(
+        s["status"] == "산출" and all(math.isfinite(v) for v in s.values() if isinstance(v, float)) for s in summaries)
 
 
 def lec_separated(a, b, scale):
@@ -448,8 +462,9 @@ def lec_d_rows(d, q, rel, support):
         ls, bs, fs = res["bb"], res["bf"], res["ff"]
         if None in (ls, bs, fs):
             reasons.append("COMPARISON_NOT_FORMED")
-        if not reasons and not lec_row_valid(row):
-            reasons.append("NONFINITE_OR_MISSING_MANDATORY")
+        und = lec_row_undefined(row)
+        if und:
+            reasons.append("UNDEFINED:" + ",".join(und))
         row["status"] = "산출" if not reasons else "부분"
         row["reason"] = ";".join(reasons)
         if ls is not None:
@@ -489,8 +504,9 @@ def lec_pair_rows(rel, left, right, lq, rq, support, conditions, extra=None):
                                 f"{x}_diff_over_delta": lec_derived(lambda u: u / DELTA, diff, scaling=True)})
         if extra is not None:
             row.update(extra(s))
-        if not reasons and not lec_row_valid(row):
-            reasons.append("NONFINITE_OR_MISSING_MANDATORY")
+        und = lec_row_undefined(row)
+        if und:
+            reasons.append("UNDEFINED:" + ",".join(und))
         row["status"] = "산출" if not reasons else "부분"
         row["reason"] = ";".join(reasons)
         rows.append(row)
@@ -499,24 +515,25 @@ def lec_pair_rows(rel, left, right, lq, rq, support, conditions, extra=None):
 
 def lec_summary(rows, rel, keys):
     """one global row per relation: each listed per-shell key is summed independently; a key with any shell
-    missing or not finite is not formed, the other keys are kept."""
+    missing or not finite is not formed, the other keys are kept.  A Delta ratio that is undefined is marked by
+    itself; the valid raw sums of that key are kept."""
     out = {"relation": rel, "shell": "전역"}
-    missing = []
+    missing, ratios = [], []
     for k in keys:
         g = lec_global([r.get(k) for r in rows])
         if g is None:
             missing.append(k)
             continue
-        sd = lec_derived(lambda u: u / DELTA, g["sum"], scaling=True)
-        ad = lec_derived(lambda u: u / DELTA, g["abs"], scaling=True)
-        if sd is None or ad is None:
-            missing.append(k)
-            continue
         out.update({f"{k}_{m}": v for m, v in g.items()})
-        out[f"{k}_sum_over_delta"] = sd
-        out[f"{k}_abs_over_delta"] = ad
-    out["status"] = "산출" if not missing else "부분" if len(missing) < len(keys) else "미산출"
-    out["reason"] = ("not formed (incomplete or non-finite shells): " + ",".join(missing)) if missing else ""
+        for m in ("sum", "abs"):
+            rd = lec_derived(lambda u: u / DELTA, g[m], scaling=True)
+            if rd is None:
+                ratios.append(f"{k}_{m}_over_delta")
+            else:
+                out[f"{k}_{m}_over_delta"] = rd
+    out["status"] = "산출" if not (missing or ratios) else "부분" if len(missing) < len(keys) else "미산출"
+    out["reason"] = ";".join(([("not formed (incomplete or non-finite shells): " + ",".join(missing))] if missing
+                              else []) + ([("Delta ratio undefined: " + ",".join(ratios))] if ratios else []))
     return out
 
 
@@ -785,6 +802,30 @@ def cmd_selftest():
     expect(lec_row_valid(vrow) and not lec_row_valid({**vrow, "bb_E": float("inf")}) and
            not lec_row_valid({**vrow, "Q_rad": None}), "row validity requires finite floats and every mandatory "
            "value (positive control; injected inf / missing value refused)")
+    # one shell whose difference / Delta is lost to 0 while the global ratio stays defined: the relation row, the
+    # final produced test and the branch must all see it
+    led = {k: np.zeros(2) for k in LEDGER}
+    led["line_abs_heat"][:] = (3e-300, 5.0)
+    led["sum_heating"][:], led["sum_cooling"][:] = 1.0, 1.0
+    dd = {"tag": "T", "hist": "toy", "V": np.ones(2), "ri": np.ones(2), "ro": np.ones(2), "vi": np.ones(2),
+          "vo": np.ones(2), "ledger": led}
+    zq = {"value": {"A": 0.0, "E": 0.0, "Q": 0.0, "S": 0.0}, "reason": None}
+    qq = {"bb": [{"value": {"A": 2e-300, "E": 0.0, "Q": 2e-300, "S": 2e-300}, "reason": None},
+                 {"value": {"A": 2.0, "E": 0.0, "Q": 2.0, "S": 2.0}, "reason": None}],
+          "bf": [zq, zq], "ff": [zq, zq]}
+    drows, dsep, _ = lec_d_rows(dd, qq, "D10", "toy")
+    dsum = [lec_summary(drows, "D10", ["L", "bb_Q", "line_diff"])]
+    expect(drows[0]["line_separated"] is True and drows[0]["status"] == "부분" and
+           "line_diff_over_delta" in drows[0]["reason"] and drows[1]["status"] == "산출" and
+           dsum[0]["status"] == "산출" and not lec_produced(drows, dsum) and
+           lec_branch(lec_produced(drows, dsum), dsep) == 2 and
+           lec_produced(drows[1:], [lec_summary(drows[1:], "D10", ["L", "bb_Q", "line_diff"])]),
+           "inject one shell whose difference / Delta is lost to 0 with a defined global ratio: that relation row "
+           "partial, final produced false, branch 2 (the other shell alone is produced: positive control)")
+    rs = lec_summary([{"x": 1e-300}], "T", ["x"])
+    expect(rs.get("x_sum") == 1e-300 and rs.get("x_abs") == 1e-300 and "x_sum_over_delta" not in rs and
+           rs["status"] == "부분" and "Delta ratio undefined" in rs["reason"],
+           "inject a global Delta ratio lost to 0: the valid raw global sums kept, only the ratio marked undefined")
     expect(lec_branch(True, [False, True]) == 0 and lec_branch(True, [False, False]) == 1 and
            lec_branch(False, [True]) == 2 and lec_branch(True, [None, True]) == 2, "branch fixtures (positive control)")
 
@@ -958,8 +999,7 @@ def cmd_analyze(out, selftest_log=None):
         st = json.loads(lines[-1]) if lines else None
         if not st or st.get("failures") != 0:
             gates["G-CALC"].append("SELFTEST_NOT_PASSED")
-    produced = all(r.get("status") == "산출" and lec_row_valid(r) for r in rows) and all(
-        s["status"] == "산출" and all(math.isfinite(v) for v in s.values() if isinstance(v, float)) for s in summaries)
+    produced = lec_produced(rows, summaries)
     all_gates = [f for v in gates.values() for f in v]
     code = lec_branch(produced and not all_gates, p["sep"])
     label = {0: "PROJECTED_GAP", 1: "NO_RESOLVED_PROJECTED_GAP", 2: "INDETERMINATE"}[code]
