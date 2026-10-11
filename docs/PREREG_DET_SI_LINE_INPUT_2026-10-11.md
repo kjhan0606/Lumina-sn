@@ -300,6 +300,25 @@ python3 -B scripts/det_si_line_input.py analyze \
 
 저자 조회 명령의 범위는 `cat`·`head`·`sed -n`·명시 파일의 `rg -n`이었다. 예: `sed -n '9770,9850p' "$S/lumina_cmfgen.c"`, `sed -n '348,400p' "$H/det_si_trace.h"`, `head -3 "$T/work/w5_lines.csv"`이며 기호는 §1을 따른다. 수치 일치 판정은 아직 수행하지 않았다.
 
+### 집행 기록 (운전자 추가 — 정본 장부, 개정16 ①; 위 기안 기록은 그대로 둔다)
+
+증거 접두 `B=/gpfs/kjhan/lumina/cmfgen_map/lineinp_20261011`. 작업 번호·경과는 `B/JOBS.txt`·`B/evidence/sacct_offline_jobs.txt`, 게이트 집행은 `B/evidence/GATE_RECORD.json`.
+
+| 항목 | 담당(실제) | 상태·증거 |
+|---|---|---|
+| user 결정 | user | 「대표선 입력 정합 점검」(`B/evidence/USER_DECISION_2026-10-11.txt`) |
+| 기안 | astra(자기보고 「gpt-6-astra」) | 1609e79(개정 없음) |
+| 기계 게이트(기안) | 운전자 | 기안 브리프 canonical(a10 419374), 기안 prereg·referents·canonical rc 0(419377) |
+| 구현 | 운전자(Opus 5.5) · 코드 감사 없음(25-z) | a90ae08 — `scripts/det_si_line_input.py`(기존 판독기 무수정), 러너 `B/tools/run_det_si_line_input_offline.slurm` |
+| 직접시험(§9) | 운전자 | a10 419380 실패(시험 장치 결함: 지지 구간 밖 주입값이 작아 변조가 10⁻¹⁰ 허용오차를 벗어나지 못함 — 게이트 결과 아님) → 밖 지점 J 를 크게 고침 → 419382 **17/17**(양성 대조 2·결함 주입 거부 15) |
+| `[미실행]` 항목 집행 | 운전자 | 수치 재계산·입력 해시는 run1 에서, 프리플라이트·러너 위생·게이트 rc 는 위 작업에서, 비용은 sacct 로 집행 |
+| 등록 계산 run1 | 운전자 | a10 419383(4 s) `B/results/run1/`: G-IDENTITY·G-CALC·G-TABLE·G-RUN 지적 0; 생산 인구 = 호출1 PRE_FL(CE old 와 동일, 물질12 NLTE 이온합과 상대차 ≤2.4×10⁻¹⁶); 대표선 6/6 생산식 재계산·전달 대조·복사 3율 상대차 0; **분기 2 INDETERMINATE** — J_c 완전 재계산 미확보(생산 미세 연속장 원배열 미보존) |
+| 판정 | 운전자(구현·판정 겸임) | `docs/VERDICT_DET_SI_LINE_INPUT_2026-10-11.md` — 종료감사 대기 |
+| 종료감사 | astra | 대기 |
+| 비용 | 운전자 | GPU 0; 오프라인 a10 5 작업 할당 36 s · 0.010 core·h / 900 s · 0.25 core·h(기안 게이트 2 작업 30 s 포함); 신규 저장 63 KiB / 30 MiB |
+
+**이탈(기재):** 없음. 표시본 `.md` 는 같은 메모리 행을 선별 소표로 나눴다.
+
 ## §12. 기계 선언
 
 참조에는 실재 파일만 지정한다. 예정 신규 파일은 변경집합에만 둔다. 분기 fixture는 기존 프리플라이트용이며 새 결정 재계산 장치가 아니다.
