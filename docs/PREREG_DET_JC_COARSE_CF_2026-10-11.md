@@ -285,13 +285,14 @@ sed -n '45,165p' scripts/det_si_bb_counterfactual.py
 | 자료 조건 확인 | 운전자 | 개정 1 발주 전 awk 집계 2건(풀이 없음): 호출 36 모드 8 진술 2587, c=0·c<0·β≤0·r_a=0 각 0, 셸10 비교 격자 1234 구간 5.84×10¹³–4.04×10¹⁶ Hz·J_nu=0 구간 0(a10 419450); 2587 선 모두 생산 원장 행 1개·status OK(a10 419454) — `B/evidence/precheck_*.out` |
 | 구현 | 운전자(Opus 5.5) · 코드 감사 없음(25-z) | e65bc93 — `scripts/det_si_line_input.py` 에 `jccf`·`jccf-negative` 추가(기존 부명령·재사용 판독기 무수정), 러너 `B/tools/run_det_jc_coarse_cf_offline.slurm` |
 | 직접시험(§9) | 운전자 | a10 419462 **36/36**, 러너 위생 rc 0 |
-| 등록 계산 run1 | 운전자 | a10 419463(8 s) `B/results/run1/`: G-INPUT·G-RATE·G-SOLVE·G-CLAIM·G-RUN 지적 0, 미정의 0; **분기 0 RESOLVED_APPROACH** — C-ALL III/II 3.5598→3.7222(Δ +0.0194 dex, G +0.0194), C-G1 +0.0300(접근)·C-G2 −0.0174(이격)·C-G3 +0.0072·C-G4 +0.000004·C-REP6 +0.0025(뒤 셋 미분리) |
-| 판정 | 운전자(구현·판정 겸임) | `docs/VERDICT_DET_JC_COARSE_CF_2026-10-11.md` |
-| 종료감사 | astra(계약 저자 이해관계) | 대기 |
-| 기계 게이트(판정·감사 발주) | 운전자 | 판정 roster(5/5)·prereg preflight·referents·canonical rc 0(a10 419465) |
-| 비용 | 운전자 | GPU 0; 오프라인 a10 8 작업 할당 75 s · 0.023 core·h / 900 s · 0.5 core·h(게이트 4 작업 64 s·자료 확인 2 작업 2 s 포함, run1 까지); 신규 저장 1.7 MiB / 50 MiB |
+| 등록 계산 run1 | 운전자 | a10 419463(8 s) `B/results/run1/`: G-INPUT·G-RATE·G-SOLVE·G-CLAIM·G-RUN 지적 0, 미정의 0; **분기 0 RESOLVED_APPROACH** — C-ALL III/II 3.5598→3.7222(Δ +0.0194 dex, G +0.0194), C-G1 +0.0300(접근)·C-G2 −0.0174(이격)·C-G3 +0.0072·C-G4 +0.000004·C-REP6 +0.0025(뒤 셋 미분리) — 종료감사 1회차 «폐합 차단» 2(미정의 처리 구현 결함)로 대체, 보존 |
+| 종료감사 반영 run2 | 운전자 | 판독기 수정 ee237f8(표현 실패 미정의, 진술 단위 중복·브래킷 조건·격자 지적 미정의, 범위 단위 미배정·등록 건수·대표선 해석 정지, manifest frame 검사), 음성 대조 a10 419471 **46/46**, a10 419472(8 s) `B/results/run2/`: 판독기 게이트 지적 0, 미정의 0·범위 정지 0; **분기 0 RESOLVED_APPROACH** — 수치·분류 run1 과 같음 |
+| 판정 | 운전자(구현·판정 겸임) | `docs/VERDICT_DET_JC_COARSE_CF_2026-10-11.md` — 1차 a5535fd(run1) → 종료감사 1회차 반영(run2, 분기 0 유지) |
+| 종료감사 | astra(계약 저자 이해관계; 자기보고 「GPT-6」, 실행 헤더 gpt-6-astra) | 1회차 **폐합 불가 «폐합 차단» 2**·«기재로 족함» 2(`B/astra_closeout.md`) → 반영(판정문 §8, run2; 반영 확인은 2회차 대상); 2회차 대기; 독립 재계산은 재현 BLOCKED |
+| 기계 게이트(판정·감사 발주) | 운전자 | 판정 roster(5/5)·prereg preflight·referents·canonical rc 0(a10 419465), 1회차 감사 발주 dispatch·canonical rc 0(419466) |
+| 비용 | 운전자 | GPU 0; 오프라인 a10 12 작업 할당 118 s · 0.038 core·h / 900 s · 0.5 core·h(게이트 6 작업 98 s·자료 확인 2 작업 2 s 포함, 종료감사 1회차 반영 재실행까지); 신규 저장 3.3 MiB / 50 MiB |
 
-**이탈(기재):** ① 개정 1 발주 전 운전자가 자료 조건을 awk 로 두 번 집계했다(계약 밖 작업, 풀이 없음, 비용 누계 포함). ② 비용 집계 중 운전자가 로그인 노드에서 의미 없는 `python3 -c 1` 을 한 번 실행했다(연산 없음, 규약 위반으로 기재).
+**이탈(기재):** ① 개정 1 발주 전 운전자가 자료 조건을 awk 로 두 번 집계했다(계약 밖 작업, 풀이 없음, 비용 누계 포함). ② 비용 집계 중 운전자가 로그인 노드에서 의미 없는 `python3 -c 1` 을 한 번 실행했다(연산 없음, 규약 위반으로 기재). ③ 종료감사 1회차 지적에 따라 판독기를 고쳐 run2 를 새 경로로 산출했다(run1 보존).
 
 ## §12. 기계 선언
 
