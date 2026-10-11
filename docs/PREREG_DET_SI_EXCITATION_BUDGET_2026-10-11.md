@@ -303,9 +303,10 @@ python scripts/det_si_excitation_budget.py analyze \
 | 구현 | 운전자(Opus 5.5) · 코드 감사 없음(25-z) | 16a05f7 — `det_si_exc_build_fl` 추출(누적 문장 불변, 채널·대체 훅·추가 항 반환), 새 판독기, 러너 `B/tools/run_det_si_excitation_offline.slurm` |
 | 직접시험(§9) | 운전자 | a10 419325 실패(시험 장치 결함: 장난감 기록을 `repr(np.float64)` 로 써서 문자열 `np.float64(…)` 가 됨 — 게이트 결과 아님) → 고침 → 419326 **24/24**(양성 대조 7·무개입 불변 2·결함 주입 거부 15), 러너 위생 rc 0 |
 | 등록 계산 run1 | 운전자 | a10 419327(3 s) `B/results/run1/`: G-INPUT·G-RATE·G-SOLVE·G-TABLE·G-RUN 지적 0; F0 = 저장 R_F(차 1.9×10⁻¹⁶ dex); C1 107/125 준위(18 준위 CMFGEN 단면적 행 없음 → §3 상 미정의), C2 406/406; **분기 2 INDETERMINATE**(C1 미완), 개입별 F1·F2 모두 거리 변화 미분리 |
-| 판정 | 운전자(구현·판정 겸임) | `docs/VERDICT_DET_SI_EXCITATION_BUDGET_2026-10-11.md` — INDETERMINATE(7ae155a), 1회차 반영본 |
-| 종료감사 | astra(계약 저자 이해관계; 자기보고 「GPT-6 계열, 세부 ID 확인 불가」) | 1회차 **폐합 불가 «폐합 차단» 2·«기재로 족함» 1**(`B/astra_closeout.md`) → 판정문 §2·§3·§4·§7·§9 전건 반영(판정문 §10); 2회차 대기; 독립 재계산은 재현 BLOCKED |
-| 비용 | 운전자 | GPU 0; 오프라인 a10 7 작업 할당 76 s · 0.0225 core·h / 900 s · 0.5 core·h(기안 게이트 4 작업 71 s 포함); 신규 저장 191 KiB / 100 MiB |
+| 판정 | 운전자(구현·판정 겸임) | `docs/VERDICT_DET_SI_EXCITATION_BUDGET_2026-10-11.md` — INDETERMINATE(7ae155a), 1회차 반영 44da3e8, **폐합** |
+| 종료감사 | astra(계약 저자 이해관계; 자기보고 「GPT-6 계열, 세부 ID 확인 불가」) | 1회차 **폐합 불가 «폐합 차단» 2·«기재로 족함» 1**(`B/astra_closeout.md`) → 판정문 §2·§3·§4·§7·§9 전건 반영(판정문 §10) → 2회차 **폐합 가 «폐합 차단» 0·새 지적 0**(`B/astra_closeout_r2.md`) → **폐합**; 독립 재계산은 재현 BLOCKED |
+| 기계 게이트(판정·감사 발주) | 운전자 | 판정 roster·prereg preflight·referents·canonical rc 0(a10 419334), 1회차 감사 발주 dispatch·canonical rc 0(419335), 2회차 발주·반영본 5종 rc 0(419338), 폐합본 4종 rc 0(419341) |
+| 비용 | 운전자 | GPU 0; 오프라인 a10 11 작업 할당 181 s · 0.052 core·h / 900 s · 0.5 core·h(기안 게이트 4 작업 71 s·판정/감사/폐합 게이트 4 작업 105 s 포함); 신규 저장 191 KiB / 100 MiB |
 
 **이탈(기재):**
 1. §10 등록 인터페이스의 `python` 은 러너에서 `python3 -B` 로 실행했다(운전자 위생 H4). 인자·출력 경로는 등록 그대로다.
