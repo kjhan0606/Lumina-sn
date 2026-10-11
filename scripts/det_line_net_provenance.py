@@ -45,6 +45,10 @@ DELTA = LEC.DELTA
 BB_NU = (1.49896229e14, 2.99792458e16)            # line_jbar.h BB domain
 SCL_LN_FAC, DENSITY_LIMIT = 0.5, 1.0e30           # lumina_plasma.c call of line_net_cmfgen_scl_ln
 SOBOLEV_OP = "CMFGEN_NONOVERLAP_SOBOLEV"
+JBAR_P_DEPENDENT = ("F0", "F0_S", "F1", "F1_S", "F0_minus_F1", "F0_minus_F1_separated", "F0_minus_F1_over_delta",
+                    "F1_minus_F2", "F1_minus_F2_separated", "F1_minus_F2_over_delta", "F0_minus_F4",
+                    "F0_minus_F4_over_delta", "telescoping_separated", "F0_field_error_upper",
+                    "F0_field_error_upper_over_abs_F0")
 W5_ALLOWED_EXCLUSION = ("OUTSIDE_FINE_SUPPORT",)   # rows outside the fine-field support (contract 6: W5 support)
 REAL = {"O": Path("/gpfs/kjhan/lumina/cmfgen_map/coll_presc_20261009/OMEGA/run1"),
         "T": Path("/gpfs/kjhan/lumina/cmfgen_map/trace13_20261010/TRACE/run1"),
@@ -163,36 +167,44 @@ def lnp_scan_w5(path, cfg, rad_gens):
         if r["status"] != "OK":
             fail(f"STATUS:{r['status']}")
             continue
-        why = []
-        J_c, beta, l, Jbar, tau, sJc, sJbar = (LEC.lec_num(r[k], why, k) for k in (
-            "J_c", "beta", "L_l", "Jbar", "tau_eff", "J_c_err_upper", "Jbar_err_upper"))
-        e = LI.det_si_line_input_exponx(tau) if not why else None
-        if why or e is None:
-            fail("UNDEFINED_VALUE")
-            continue
-        if sJc < 0 or sJbar < 0:
-            fail("NEGATIVE_ERROR_UPPER")
-            continue
-        c1 = D(lambda b, j: b * j, beta, J_c)
-        sc = D(lambda x, y: abs(x) + abs(y), c1, l)
-        rj = D(lambda a, b, s: abs(a - b) / s if s > 0 else (0.0 if a == b else float("inf")),
-               Jbar, D(lambda x, y: x + y, c1, l), sc)
-        rb = D(lambda a, b: abs(a - b) / abs(a) if a != 0 else (0.0 if b == 0 else float("inf")), beta, e[0])
-        re_ = D(lambda s, j: s / j if j > 0 else (0.0 if s == 0 else float("inf")), sJbar, Jbar)
-        if rj is None or rb is None or re_ is None:
-            fail("RESIDUAL_UNDEFINED")
-            continue
-        for x in (c, bs):
-            x["max_jbar_residual"] = max(x["max_jbar_residual"], rj)
-            x["max_beta_residual"] = max(x["max_beta_residual"], rb)
-        c["max_jbar_err_upper_rel"] = max(c["max_jbar_err_upper_rel"], re_)
-        if rj > TOL or rb > TOL:
-            fail("RELATION_RESIDUAL")
+        reason, rj, rb, re_ = lnp_w5_relation(r)
+        if rj is not None and rb is not None:
+            for x in (c, bs):
+                x["max_jbar_residual"] = max(x["max_jbar_residual"], rj)
+                x["max_beta_residual"] = max(x["max_beta_residual"], rb)
+        if re_ is not None:
+            c["max_jbar_err_upper_rel"] = max(c["max_jbar_err_upper_rel"], re_)
+        if reason:
+            fail(reason)
             continue
         for x in (c, bs):
             x["used"] += 1
     return {"sha256": sha, "bytes": nbytes, "check": check, "line_rows": line_rows,
             "generations": {k: sorted(v) for k, v in gens.items()}, "notes": notes}
+
+
+def lnp_w5_relation(r):
+    """the stored W5 relations of one Sobolev row: Jbar = beta J_c + l and beta = beta_N(tau_eff) within 1e-10, with
+    valid non-negative error upper bounds.  Returns (failure reason or None, Jbar residual, beta residual, error ratio)."""
+    why = []
+    J_c, beta, l, Jbar, tau, sJc, sJbar = (LEC.lec_num(r[k], why, k) for k in (
+        "J_c", "beta", "L_l", "Jbar", "tau_eff", "J_c_err_upper", "Jbar_err_upper"))
+    e = LI.det_si_line_input_exponx(tau) if not why else None
+    if why or e is None:
+        return "UNDEFINED_VALUE", None, None, None
+    if sJc < 0 or sJbar < 0:
+        return "NEGATIVE_ERROR_UPPER", None, None, None
+    c1 = D(lambda b, j: b * j, beta, J_c)
+    sc = D(lambda x, y: abs(x) + abs(y), c1, l)
+    rj = D(lambda a, b, s: abs(a - b) / s if s > 0 else (0.0 if a == b else float("inf")),
+           Jbar, D(lambda x, y: x + y, c1, l), sc)
+    rb = D(lambda a, b: abs(a - b) / abs(a) if a != 0 else (0.0 if b == 0 else float("inf")), beta, e[0])
+    re_ = D(lambda s, j: s / j if j > 0 else (0.0 if s == 0 else float("inf")), sJbar, Jbar)
+    if rj is None or rb is None or re_ is None:
+        return "RESIDUAL_UNDEFINED", rj, rb, re_
+    if rj > TOL or rb > TOL:
+        return "RELATION_RESIDUAL", rj, rb, re_
+    return None, rj, rb, re_
 
 
 def lnp_registration(log_path, gens):
@@ -423,6 +435,23 @@ def lnp_line(lid, lo, up, atom, levels, sup, tr, w5row, cfg, V, n_atom, J_b, t):
             und.append(f"PRODUCER_LINK:{k}")
     if row.get("F0_field_error_upper") is None:
         und.append("F0_field_error_upper")
+    jbar_bad = [x for x in und if x.startswith("PRODUCER_LINK")]
+    w5_reason = lnp_w5_relation(w)[0]
+    if w5_reason:
+        jbar_bad.append(f"W5_RELATION:{w5_reason}")
+        und.append(f"W5_RELATION:{w5_reason}")
+    if jbar_bad:
+        # J̄^p of this row is not established: every value that consumes it is undefined (F2, F3, F4 and their
+        # differences do not consume J̄^p and stay)
+        for k in JBAR_P_DEPENDENT:
+            row[k] = None
+        row["Jbar_p_invalid"] = ";".join(jbar_bad)
+    if w5_reason:
+        # the row's J_c, beta, l and Jbar are mutually inconsistent: everything built from the row (F0 .. F3 and their
+        # differences, Jbar*) is undefined; F4 (bin J, material 13) does not consume the row and stays
+        for k in list(row):
+            if k.startswith(("F0", "F1", "F2", "F3")) or k in ("telescoping_separated", "Jbar_star"):
+                row[k] = None
     row["status"] = "산출" if not und else "부분"
     row["reason"] = ("UNDEFINED:" + ",".join(und)) if und else ""
     return row
@@ -595,7 +624,7 @@ def lnp_pipeline(cfg):
                  for grp, lid, _, _ in cfg["lines"]]
     # ---- D_rest on the A10 registered shell row
     srow = [r for r in rows if r["state"] == "A10" and r["shell"] == sh][0]
-    tot = LEC.lec_global([r.get("F0_minus_F4") for r in lrows])
+    tot = LEC.lec_global([r.get("F0_minus_F4") if r.get("status") == "산출" else None for r in lrows])
     srow["six_line_F0_minus_F4_sum"] = tot["sum"] if tot else None
     srow["D_rest"] = lnp_d_rest(srow.get("L_minus_Q"), tot["sum"] if tot else None)
     srow["D_rest_label"] = "미귀속 잔여(부분집합의 장부·전달 구성원 연결 미확인)"
@@ -765,7 +794,7 @@ def lnp_write_toy(root, mutate=None, record=None):
             "J_c", "J_c_err_upper", "beta", "L_l", "Jbar", "Jbar_err_upper", "tau_eff", "srce_chk", "status"]
     w5 = []
     for _, lid, lo, up in TOY_LINES:
-        a = lnp_toy_atomic(lid, lo, up)
+        a = {r["line_id"]: r for r in atoms}.get(str(lid)) or lnp_toy_atomic(lid, lo, up)   # the written (mutated) row
         for call, pops in (("12", pre), ("13", fin)):
             for s in range(2):
                 tau = LI.det_si_line_input_tau(float(a["f_lu"]), float(a["wavelength_cm"]), TOY_T, pops[lo], pops[up],
@@ -1083,6 +1112,17 @@ def cmd_selftest():
                not lnp_produced(pa) and all(r["status"] == "산출" for r in pa["line_rows"]),
                "inject a finite W5 relation mismatch in a checked non-registered row: a check failure, not produced "
                "(branch 2), registered lines kept")
+        pa, _, _ = run("w5relreg", lambda k, o: [dict(r, Jbar=repr(float(r["Jbar"]) * (1 + 1e-6))) if (
+            r["call"], r["line_id"], r["shell"]) == ("12", "11", "1") else r for r in o] if k == ("w5", 0) else o)
+        Lr = lines(pa)
+        expect(pa["w5"]["check"]["12"]["failed"].get("RELATION_RESIDUAL") == 1 and Lr[11]["status"] == "부분" and
+               "W5_RELATION" in Lr[11]["reason"] and all(Lr[11].get(k) is None for k in ("F0", "F1", "F2", "F3")) and
+               Lr[11]["F4"] is not None and Lr[12]["status"] == "산출" and Lr[13]["status"] == "산출" and
+               shells(pa)[1]["D_rest"] is None and shells(pa)[1]["six_line_F0_minus_F4_sum"] is None and
+               lnp_rows_kept(pa) and not lnp_produced(pa),
+               "inject a finite Jbar mismatch into the W5 row of a registered line at the registered shell: that line's "
+               "row-derived values undefined (F4 kept), other lines kept, six-line sum and D_rest undefined, dump L "
+               "and Q kept, not produced")
         pa, _, _ = run("w5undef", w5_row("12", "11", "0", beta="nan"))
         expect(pa["w5"]["check"]["12"]["failed"].get("UNDEFINED_VALUE") == 1 and not lnp_produced(pa),
                "inject an undefined value into a checked W5 row: a check failure, not an exclusion; not produced")
@@ -1111,9 +1151,12 @@ def cmd_selftest():
         pa, _, _ = run("producer", producer)
         Lp = lines(pa)
         expect(not pa["why_lines"] and "PRODUCER_LINK" in Lp[11]["reason"] and "PRODUCER_LINK" in Lp[12]["reason"] and
-               Lp[11]["status"] == "부분" and Lp[13]["status"] == "산출" and not lnp_produced(pa),
+               Lp[11]["status"] == "부분" and Lp[11]["F0"] is None and Lp[11]["F1_minus_F2"] is None and
+               Lp[11]["F4"] is not None and Lp[11]["F2"] is not None and Lp[13]["status"] == "산출" and
+               shells(pa)[1]["D_rest"] is None and lnp_rows_kept(pa) and not lnp_produced(pa),
                "inject a material-12 population that no longer reproduces the W5 producer values (public link kept): "
-               "the dependent lines partial (PRODUCER_LINK), the independent line kept, not produced")
+               "the J̄^p-dependent values of the dependent lines undefined (F2, F4 kept), the independent line kept, "
+               "six-line sum and D_rest undefined, not produced")
         expect(all(close(L[lid]["F0_field_error_upper"], hand[lid]["err"]) for lid in hand),
                "field error upper bound 4 pi V d |k| sigma_Jbar of each line equals the hand value (positive control)")
         # ---- common frame / grid definitions
