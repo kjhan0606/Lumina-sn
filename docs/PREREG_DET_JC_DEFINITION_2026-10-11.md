@@ -294,6 +294,25 @@ python3 -B scripts/det_si_line_input.py jcdef \
 
 기안자는 문서·설정·소스·로그·기존 CSV만 조회했다. 파일 작성·신규 계산·직접시험·제출·게이트·판정은 하지 않았다. 운전자는 집행 항목·실제 담당·작업 번호·누적 비용·판정·종료감사 상태를 추가한다.
 
+### 집행 기록 (운전자 추가 — 정본 장부, 개정16 ①; 위 기안 기록은 그대로 둔다)
+
+증거 접두 `B=/gpfs/kjhan/lumina/cmfgen_map/jcdef_20261011`. 작업 번호·경과는 `B/JOBS.txt`·`B/evidence/sacct_offline_jobs.txt`, 게이트 집행은 `B/evidence/GATE_RECORD.json`.
+
+| 항목 | 담당(실제) | 상태·증거 |
+|---|---|---|
+| user 결정 | user | 「J_c 정의 점검 — 소스·오프라인」(`B/evidence/USER_DECISION_2026-10-11.txt`) |
+| 기안·개정 1 | astra(자기보고 「gpt-6-astra」·「GPT-6-astra」) | a1c4ed7 · ada2109(OLD/NEW 2쌍, 비한국어 잔재 2곳 정리, 행 단위 2행 치환·의도 외 소실 0) |
+| 기계 게이트(기안·개정) | 운전자 | 기안 브리프 canonical(a10 419391), 기안 prereg·referents·canonical rc 0(419395), 개정 브리프 1차 dispatch rc 1(뒷겹에 계약 커밋 해시 재서술 — 발주서 결함, 고침; 419397) → 2차 rc 0(419398), 개정 후 rc 0(419400) |
+| 소스 확정(§3–§4) | 운전자(판독) | 생산 분기·미세장 직접/상류 선 유입·연속 방출·CMFGEN `COMP_OPAC`·`COMP_J_BLANK`·`SOBJBAR_SIM` 정의를 봉인·CMFGEN 소스에서 읽고 `B/results/run1/evidence.json` 의 `source` 에 기록(문자열 검색 판정 장치 없음) |
+| 구현 | 운전자(Opus 5.5) · 코드 감사 없음(25-z) | 3a8e5c2 — `scripts/det_si_line_input.py` 에 `jcdef`·`jcdef-negative` 추가(기존 명령 무변경), 러너 `B/tools/run_det_jc_definition_offline.slurm` |
+| 직접시험(§9) | 운전자 | a10 419404 **11/11**(양성 대조 3·결함 주입 거부 8), 러너 위생 rc 0 |
+| 등록 계산 run1 | 운전자 | a10 419406(2 s) `B/results/run1/`: G-PATH·G-MAP·G-CLAIM·G-RUN 지적 0; **분기 1 INCIDENT_SEPARATION_CONFIRMED** — 6/6 자기 선 유입 배제·크기 「직접 중복 기전 배제」, 비교 구간 q_bb 0.62–0.98 |
+| 판정 | 운전자(구현·판정 겸임) | `docs/VERDICT_DET_JC_DEFINITION_2026-10-11.md` — 종료감사 대기 |
+| 종료감사 | astra | 대기 |
+| 비용 | 운전자 | GPU 0; 오프라인 a10 7 작업 할당 67 s · 0.019 core·h / 600 s · 1/6 core·h(기안·개정 게이트 5 작업 65 s 포함); 신규 저장 59 KiB / 10 MiB |
+
+**이탈(기재):** 없음. 개정 브리프의 1차 발주 게이트 거부는 발주서 결함이며 계약 문면 변경이 아니다.
+
 ## §12. 기계 선언
 
 참조에는 실재 파일만 둔다. 예정 파일은 변경집합에만 둔다. 아래 fixture는 기존 프리플라이트용이며 새 과학 결정 장치를 요구하지 않는다.
