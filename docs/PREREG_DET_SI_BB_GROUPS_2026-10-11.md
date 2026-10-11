@@ -289,6 +289,24 @@ python3 -B scripts/det_si_bb_groups.py analyze \
 | 종료감사 | astra | 미집행; 계약 저자 이해관계 명시 |
 | 비용·이탈 | 운전자 | 최종 누계·미실행 항목 결과·중단 사유와 담당 기록 |
 
+### 집행 기록 (운전자 추가 — 정본 장부, 개정16 ①; 위 기안 기록은 그대로 둔다)
+
+증거 접두 `B=/gpfs/kjhan/lumina/cmfgen_map/bbgrp_20261011`. 작업 번호·경과는 `B/JOBS.txt`·`B/evidence/sacct_offline_jobs.txt`, 게이트 집행은 `B/evidence/GATE_RECORD.json`.
+
+| 항목 | 담당(실제) | 상태·증거 |
+|---|---|---|
+| 기안 | astra(자기보고 「gpt-6-astra」) | ade71e9(개정 없음) |
+| 기계 게이트(기안) | 운전자 | 기안 브리프 canonical(a10 419360), 기안 prereg·referents·canonical rc 0(419364) |
+| 구현 | 운전자(Opus 5.5) · 코드 감사 없음(25-z) | 615d35e — `scripts/det_si_bb_groups.py`(기존 판독기 3개 무수정), 러너 `B/tools/run_det_si_bb_groups_offline.slurm` |
+| 직접시험(§9) | 운전자 | a10 419366 **16/16**(양성 대조 4·결함 주입 거부 12), 러너 위생 rc 0 |
+| `[미실행]` 항목 집행 | 운전자 | 입력 해시·채택 재생·묶음 건수·정상해·주 표는 run1 에서, 직접시험·기계 검사는 위 작업에서, 비용 실측은 sacct 로 집행 |
+| 등록 계산 run1 | 운전자 | a10 419367(5 s) `B/results/run1/`: G-INPUT·G-RATE·G-SOLVE·G-TABLE·G-RUN 지적 0; 묶음 G1 62·G2 151·G3 956·G4 1418; F0·F8 = 기준(0 dex); **분기 0 GROUP_EFFECT_RESOLVED** — Δ G1 −0.804·G2 +0.103·G3 +0.032·G4 −0.001 dex, 비가산 잔차 −0.167 dex |
+| 판정 | 운전자(구현·판정 겸임) | `docs/VERDICT_DET_SI_BB_GROUPS_2026-10-11.md` — 종료감사 대기 |
+| 종료감사 | astra | 대기 |
+| 비용 | 운전자 | GPU 0; 오프라인 a10 4 작업 할당 37 s · 0.012 core·h / 900 s · 0.5 core·h(기안 게이트 2 작업 31 s 포함); 신규 저장 2.0 MiB / 100 MiB |
+
+**이탈(기재):** 없음. 표시본 `.md` 는 같은 메모리 행을 행 종류별 소표로 나눴다(§6 허용).
+
 ## §12. 기계 선언
 
 참조는 실재 파일만 지정한다. 예정 신규 파일은 변경집합에만 둔다. 분기 선언은 기존 프리플라이트의 분류 형식 검사이며 과학 판정을 재계산하는 장치가 아니다.
