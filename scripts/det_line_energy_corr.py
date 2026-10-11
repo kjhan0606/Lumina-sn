@@ -588,7 +588,7 @@ def cmd_analyze(out):
                               "C13": {k: C["meta"].get(k) for k in ("material_generation", "rad_generation",
                                                                     "tau_required_generation", "iter")}},
                 "checks": {"A10_A11_geometry_equal": same_geom, "A10_A11_grid_equal": same_grid,
-                           "capture_geometry_equal": cap_geom, "capture_support_ends_equal": list(cap_support),
+                           "capture_geometry_equal": cap_geom, "capture_support_ends_equal": [bool(x) for x in cap_support],
                            "capture_dnu_over_dump_dnu": [float(np.min(C["dnu"] / A10["dnu"])),
                                                          float(np.max(C["dnu"] / A10["dnu"]))],
                            "capture_J_equals_A11_J": bool(np.array_equal(C["arr"]["J"], A11["arr"]["J_nu"]))},
