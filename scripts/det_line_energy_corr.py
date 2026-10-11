@@ -714,6 +714,11 @@ def cmd_selftest():
                all(s["status"] == "산출" for s in p["summaries"]) and p["sep"] == [False] * 4 and
                p["ident"] == [False] * 4, "toy files through the reader path: every row and global row produced, "
                "identities and line ledger unresolved (positive control)")
+        r0 = [r for r in p["rows"] if r["relation"] == "D10" and r["shell"] == 0][0]
+        expect(r0["line_separated"] is False and lec_separated(r0["line_abs_heat"], r0["bb_A"], r0["bb_S"]) and
+               lec_separated(r0["line_emit_cool"], r0["bb_E"], r0["bb_S"]),
+               "inject the sign-split line heat / cool read as the total absorption A / emission E: separated "
+               "(the registered net comparison of the same reader row is unresolved)")
 
         def drop_key(key):
             return lambda kind, obj: ({k: v for k, v in obj.items() if k != key}
