@@ -752,23 +752,625 @@ def cmd_jcdef(run, baseline, out):
     return 0
 
 
+# ------------------------------------------------------------------ DET-JC-COARSE-CF (jccf, jccf-negative)
+JCCF_PREREG = "docs/PREREG_DET_JC_COARSE_CF_2026-10-11.md"
+JCCF_STATES = ("F0", "C-ALL", "C-G1", "C-G2", "C-G3", "C-G4", "C-REP6")
+JCCF_SCOPE = {"F0": "no substitution (reference steady state)", "C-ALL": "all Si mode-8 statements of the adopted call",
+              "C-G1": GR.RULES["G1"], "C-G2": GR.RULES["G2"], "C-G3": GR.RULES["G3"], "C-G4": GR.RULES["G4"],
+              "C-REP6": "the six registered representative lines jointly (G1 760321, 632403, 757019; "
+                        "G2 1676767, 1353542, 1679119)"}
+JCCF_GROUP_COUNTS = {"G1": 62, "G2": 151, "G3": 956, "G4": 1418}
+JCCF_R0, JCCF_FINAL_FL = 3.5597568125822305, 3.563683
+JCCF_PUBLIC = {"si_II": 0.0092499, "si_III": 0.97769}
+JCCF_GENERATIONS = {"radiation_generation": 12, "population_generation": 13, "opacity_generation": 23,
+                    "emissivity_generation": 23}
+JCCF_GRID_KIND = {"frequency_coordinate": "HZ", "frequency_regrid": "INTEGRAL_PRESERVING_PIECEWISE_CONSTANT"}
+JCCF_RTOL, JCCF_REF_DEX, JCCF_DEX = 1e-12, 0.001, 0.01
+JCCF_VDOP, JCCF_NDOPPLER = 1.0e6, 4.0                # LUMINA_CMF_FINE_VDOP (checked in the run settings), +-4 widths
+JCCF_ION = {"Si II": "1", "Si III": "2"}
+JCCF_EFF = ("이동 분리", "이동 미분리")
+JCCF_DIST = ("공개 접근", "이격", "공개 거리 변화 미분리")
+JCCF_NOTE = ("the stored coarse bin J_nu (integral-preserving piecewise-constant regrid in Hz; may contain the line "
+             "forest; not line-subtracted) replaces J_c in c = beta J_c of the mode-8 bracket with beta, A, tau_eff, l "
+             "and every other rate fixed; the coarse field is not the CMFGEN SOBJBAR_SIM incident field, and the "
+             "result is a conditional sensitivity of the fixed rate system, not a repair or a production promotion")
+
+
+def det_si_jccf_close(a, b):
+    """prereg 6: relative difference within 1e-12, exact zeros only equal to exact zeros."""
+    if not (math.isfinite(a) and math.isfinite(b)):
+        return False
+    M = max(abs(a), abs(b))
+    return abs(a - b) / M <= JCCF_RTOL if M > 0 else (a == 0.0 and b == 0.0)
+
+
+def det_si_jccf_grid(rows, shell, manifest, rad_generation):
+    """the shell's comparison bins with the registered generations and a well-formed Hz grid; (bins, findings)."""
+    why = [f"GENERATION:{k}={manifest.get(k)}" for k, v in JCCF_GENERATIONS.items() if manifest.get(k) != v]
+    if rad_generation != JCCF_GENERATIONS["radiation_generation"]:
+        why.append(f"ADOPTED_RAD_GENERATION:{rad_generation}")
+    why += [f"GRID_KIND:{k}" for k, v in JCCF_GRID_KIND.items() if manifest.get(k) != v]
+    bins = sorted((r for r in rows if int(r["shell_id"]) == shell), key=lambda r: float(r["nu_lo_Hz"]))
+    if len(bins) != manifest.get("n_bins"):
+        why.append(f"BIN_COUNT:{len(bins)}")
+    why += [f"INVERTED:{r['bin_id']}" for r in bins if not float(r["nu_lo_Hz"]) < float(r["nu_hi_Hz"])]
+    why += [f"OVERLAP:{a['bin_id']}" for a, b in zip(bins, bins[1:]) if float(b["nu_lo_Hz"]) < float(a["nu_hi_Hz"])]
+    return bins, why
+
+
+def det_si_jccf_link(r, x, ion, up, lo, atom_rows, ledger_rows, bins):
+    """one mode-8 statement -> (substitution record, None), or (None, reason) when the substitution is undefined
+    (prereg 5): line / ion / levels / production ledger linkage, the centre bin [nu_lo, nu_hi) of the atomic
+    frequency, J_c = c / beta, q = J_coarse / J_c, (q r_a, q r_s, r_p)."""
+    if ion not in JCCF_ION or up is None or lo is None:
+        return None, "ION_OR_LEVEL"
+    if len(atom_rows) != 1:
+        return None, f"ATOMIC_ROWS:{len(atom_rows)}"
+    a = atom_rows[0]
+    if (a["atomic_number"], a["ion_number"], a["line_id"]) != ("14", JCCF_ION[ion], r["aux"]) or \
+            (int(a["level_number_lower"]), int(a["level_number_upper"])) != (lo["level_num"], up["level_num"]):
+        return None, "LINE_IDENTITY"
+    if len(ledger_rows) != 1:
+        return None, f"LEDGER_ROWS:{len(ledger_rows)}"
+    L, nu = ledger_rows[0], float(a["nu"])
+    if L[5] != r["aux"] or L[6:8] != ["14", JCCF_ION[ion]] or L[17] != "OK" or float(L[8]) != nu:
+        return None, "LEDGER_IDENTITY"
+    beta, c = x[9], x[10]
+    if not (math.isfinite(beta) and beta > 0.0):
+        return None, "BETA"
+    if not (math.isfinite(c) and c >= 0.0):
+        return None, "C_NEGATIVE_OR_NONFINITE"
+    if c == 0.0:
+        return None, "C_ZERO"
+    J_c = c / beta
+    try:
+        led_jc, led_beta = float(L[9]), float(L[11])
+    except ValueError:
+        return None, "LEDGER_VALUES"
+    if not (det_si_jccf_close(led_jc, J_c) and det_si_jccf_close(led_beta, beta)):
+        return None, "LEDGER_VS_RECORD"
+    b = det_si_jcdef_bin(bins, nu)
+    if b is None:
+        return None, "NO_BIN"
+    Jco = float(b["J_nu"])
+    if not (math.isfinite(Jco) and Jco >= 0.0):
+        return None, "COARSE_FIELD"
+    q = Jco / J_c
+    ra, rs = q * x[0], q * x[1]
+    if not (math.isfinite(J_c) and J_c > 0.0 and all(math.isfinite(v) for v in (q, ra, rs))):
+        return None, "NONFINITE_SUBSTITUTION"
+    if q > 0.0 and ((x[0] != 0.0 and ra == 0.0) or (x[1] != 0.0 and rs == 0.0)):
+        return None, "REPRESENTATION"
+    w = JCCF_NDOPPLER * JCCF_VDOP / C_LIGHT
+    lo_b, hi_b = float(b["nu_lo_Hz"]), float(b["nu_hi_Hz"])
+    return {"call": r["call"], "op": r["op"], "aux": int(r["aux"]), "ion": ion, "nu": nu, "bin_id": int(b["bin_id"]),
+            "bin_nu_lo": lo_b, "bin_nu_hi": hi_b, "tau_eff": x[12], "beta": beta, "c": c, "J_c": J_c,
+            "J_coarse": Jco, "q": q, "c_new": beta * Jco, "r_a": x[0], "r_s": x[1], "r_p": x[2], "r_a_new": ra,
+            "r_s_new": rs, "profile_crosses_bin": nu * (1.0 - w) < lo_b or nu * (1.0 + w) > hi_b}, None
+
+
+def det_si_jccf_rep6(m8, assign, info):
+    """the six registered representative statements by line, group and level numbers; (keys, findings)."""
+    keys, why = [], []
+    for grp, lid, lo_ln, up_ln in LINES:
+        hit = [r for r, _ in m8 if int(r["aux"]) == lid]
+        if len(hit) != 1:
+            why.append(f"REP6_ROWS:{lid}:{len(hit)}")
+            continue
+        r = hit[0]
+        k = (r["call"], r["op"])
+        up, lo = info.get(int(r["lev_a"])), info.get(int(r["lev_b"]))
+        if assign.get(k) != grp or up is None or lo is None or (lo["level_num"], up["level_num"]) != (lo_ln, up_ln):
+            why.append(f"REP6_IDENTITY:{lid}")
+            continue
+        keys.append(k)
+    return keys, why
+
+
+def det_si_jccf_targets(assign, state, rep_keys):
+    if state == "F0":
+        return set()
+    if state == "C-ALL":
+        return set(assign)
+    if state == "C-REP6":
+        return set(rep_keys)
+    return {k for k, g in assign.items() if g == state[2:]}
+
+
+def det_si_jccf_callback(recs, targets):
+    """the registered substitution on the target statements only; every state starts from F0."""
+    def cb(r, x):
+        k = (r["call"], r["op"])
+        return (recs[k]["r_a_new"], recs[k]["r_s_new"], x[2]) if k in targets else None
+    return cb
+
+
+def det_si_jccf_check(fn, stmts, targets, recs):
+    """outputs only: target statements carry (q r_a, q r_s, r_p) with q = J_coarse / (c / beta) taken from the
+    record, every other statement is unchanged (None); returns the offending ops."""
+    bad = []
+    for r, x in stmts:
+        k, out = (r["call"], r["op"]), fn(r, x)
+        if k not in targets:
+            if out is not None:
+                bad.append(r["op"])
+            continue
+        e = recs.get(k)
+        if out is None or e is None:
+            bad.append(r["op"])
+            continue
+        q = e["J_coarse"] / (x[10] / x[9])
+        if not (out[2] == x[2] and det_si_jccf_close(out[0], q * x[0]) and det_si_jccf_close(out[1], q * x[1])):
+            bad.append(r["op"])
+    return bad
+
+
+def det_si_jccf_qstats(qs):
+    """equal weight per statement; the median of an even sample is the mean of the two middle values."""
+    if not qs:
+        return {}
+    s, n = sorted(qs), len(qs)
+    med = s[n // 2] if n % 2 else 0.5 * (s[n // 2 - 1] + s[n // 2])
+    return {"q_min": s[0], "q_median": med, "q_max": s[-1], "n_q_eq0": sum(1 for v in s if v == 0.0),
+            "n_q_0_1": sum(1 for v in s if 0.0 < v < 1.0), "n_q_eq1": sum(1 for v in s if v == 1.0),
+            "n_q_gt1": sum(1 for v in s if v > 1.0)}
+
+
+def det_si_jccf_classify(delta, G):
+    """prereg 7: boundary values belong to the unresolved class."""
+    eff = JCCF_EFF[0] if abs(delta) > JCCF_DEX else JCCF_EFF[1]
+    dist = JCCF_DIST[0] if G > JCCF_DEX else JCCF_DIST[1] if G < -JCCF_DEX else JCCF_DIST[2]
+    return f"{eff}; {dist}"
+
+
+def det_si_jccf_branch(valid_all, G_all):
+    """0 RESOLVED_APPROACH / 1 NO_RESOLVED_APPROACH need every registered state valid; otherwise 2 INDETERMINATE."""
+    if not valid_all or G_all is None or not math.isfinite(G_all):
+        return 2
+    return 0 if G_all > JCCF_DEX else 1
+
+
+def det_si_jccf_claim_check(rows):
+    """a state row with undefined statements carries no ratio; labels stay in the registered vocabulary."""
+    bad = []
+    for r in rows:
+        if r.get("kind") != "state":
+            continue
+        if r.get("undefined") and r.get("III_II") is not None:
+            bad.append(f"PARTIAL_AS_FULL:{r['state']}")
+        c = r.get("cls")
+        p = c.split("; ") if isinstance(c, str) else []
+        if not (c in ("기준", "미산출") or (len(p) == 2 and p[0] in JCCF_EFF and p[1] in JCCF_DIST)):
+            bad.append(f"LABEL:{r['state']}")
+    return bad
+
+
+def det_si_jccf_toy():
+    """the DET-SI-BB-GROUPS toy (one mode-8 statement per group) with line ids, atomic rows, ledger rows and a
+    four-bin coarse grid: statement 2 sits on the interior edge 2e15 (higher bin, J_nu exactly 0) and statement 4
+    on the last upper edge 3e15."""
+    t = GR.det_si_bb_groups_toy()
+    info = GR.det_si_bb_groups_fl_info(t["sm"])
+    nus = {"1": 1.5e15, "2": 2.0e15, "3": 2.6e15, "4": 3.0e15}
+    ops = [dict(r, aux=str(10 + int(r["op"]))) if r["site"] == "1" else dict(r, aux="0") for r in t["ops"]]
+    stmts = [(r, [TR.num(r[f"x{k}"]) for k in range(1, 15)]) for r in ops if r["site"] == "1"]
+    atom, ledger = {}, {}
+    for r, x in stmts:
+        ion = CF.det_si_bb_ion(r, t["n_lo"])
+        up, lo = info[int(r["lev_a"])], info[int(r["lev_b"])]
+        a = {"atomic_number": "14", "ion_number": JCCF_ION[ion], "level_number_lower": str(lo["level_num"]),
+             "level_number_upper": str(up["level_num"]), "line_id": r["aux"], "nu": repr(nus[r["op"]])}
+        atom[r["op"]] = [a]
+        ledger[r["op"]] = [["12", "CMFGEN_NONOVERLAP_SOBOLEV", "12", "12", "10", r["aux"], "14", JCCF_ION[ion],
+                            repr(nus[r["op"]]), repr(x[10] / x[9]), "0", repr(x[9]), "0", "0", "0", repr(x[12]), "0",
+                            "OK"]]
+    spec = [{"shell_id": "10", "bin_id": str(i), "nu_lo_Hz": repr(a), "nu_hi_Hz": repr(b), "J_nu": repr(j)}
+            for i, (a, b, j) in enumerate(((1.0e15, 2.0e15, 3e-5), (2.0e15, 2.4e15, 0.0), (2.4e15, 2.8e15, 2e-6),
+                                           (2.8e15, 3.0e15, 5e-6)))]
+    manifest = dict(JCCF_GENERATIONS, **JCCF_GRID_KIND, n_bins=4)
+    return dict(t, ops=ops, stmts=stmts, info=info, atom=atom, ledger=ledger, spec=spec, manifest=manifest)
+
+
+def cmd_jccf_negative():
+    results = []
+
+    def expect(ok, what):
+        results.append((bool(ok), what))
+        print(f"[NEG] {'PASS' if ok else 'FAIL'} {what}")
+    t = det_si_jccf_toy()
+    N, gh, n_lo, sm, ops, stmts, info = t["N"], t["gh"], t["n_lo"], t["sm"], t["ops"], t["stmts"], t["info"]
+    bins, why = det_si_jccf_grid(t["spec"], 10, t["manifest"], 12)
+
+    def link(r, x, atom=None, ledger=None, bins_=None, up=None, lo=None):
+        return det_si_jccf_link(r, x, CF.det_si_bb_ion(r, n_lo), up or info[int(r["lev_a"])],
+                                lo or info[int(r["lev_b"])], t["atom"][r["op"]] if atom is None else atom,
+                                t["ledger"][r["op"]] if ledger is None else ledger, bins if bins_ is None else bins_)
+    recs = {}
+    for r, x in stmts:
+        e, w = link(r, x)
+        if e is not None:
+            recs[(r["call"], r["op"])] = e
+    want = {"1": (0, 3.0), "2": (1, 0.0), "3": (2, 0.2), "4": (3, 5.0)}
+    expect(not why and len(recs) == 4 and all(recs[("1", k)]["bin_id"] == b and
+                                              det_si_jccf_close(recs[("1", k)]["q"], q) for k, (b, q) in want.items()),
+           "toy linkage, bins and q (positive control; interior edge -> higher bin, last edge included, exact coarse "
+           "zero accepted as q = 0)")
+    assign, wa = GR.det_si_bb_groups_assign(stmts, info, n_lo)
+    A0, u0, ch0, _ = CF.det_si_bb_build(ops, sm, N, gh)
+    ok = not wa and not u0
+    for s in ("C-ALL", "C-G1", "C-G2", "C-G3", "C-G4"):
+        tg = det_si_jccf_targets(assign, s, [])
+        cb = det_si_jccf_callback(recs, tg)
+        A, u, ch, _ = CF.det_si_bb_build(ops, sm, N, gh, cb)
+        ok = ok and not u and not det_si_jccf_check(cb, stmts, tg, recs) and \
+            not CF.det_si_bb_invariance(ch0, ch, set(GR.MODE8)) and CF.det_si_bb_solve(A, 10.0)[0] is not None
+    expect(ok, "toy per-state operators valid, prescription and invariance hold (positive control)")
+
+    # 1. another shell / radiation generation, overlap and inversion of the grid
+    expect(any("GENERATION:radiation" in w for w in det_si_jccf_grid(t["spec"], 10, dict(t["manifest"],
+           radiation_generation=11), 12)[1]), "inject a comparison dump of another radiation generation: refused")
+    expect(any("ADOPTED_RAD" in w for w in det_si_jccf_grid(t["spec"], 10, t["manifest"], 13)[1]),
+           "inject an adopted call of another radiation generation: refused")
+    other = [dict(b, shell_id="9") for b in t["spec"]]
+    expect(any("BIN_COUNT" in w for w in det_si_jccf_grid(other, 10, t["manifest"], 12)[1]),
+           "inject another shell's bins: refused")
+    ov = [dict(b, nu_hi_Hz="2.1e15") if b["bin_id"] == "0" else b for b in t["spec"]]
+    expect(any("OVERLAP" in w for w in det_si_jccf_grid(ov, 10, t["manifest"], 12)[1]), "inject overlapping bins: "
+           "refused")
+    inv = [dict(b, nu_lo_Hz="2.9e15", nu_hi_Hz="2.8e15") if b["bin_id"] == "3" else b for b in t["spec"]]
+    expect(any("INVERTED" in w for w in det_si_jccf_grid(inv, 10, t["manifest"], 12)[1]), "inject an inverted bin: "
+           "refused")
+    r1, x1 = stmts[0]
+    ovb = det_si_jccf_grid(ov, 10, t["manifest"], 12)[0]
+    expect(link(stmts[1][0], stmts[1][1], bins_=ovb)[1] == "NO_BIN", "overlapping bins at a line centre: no bin "
+           "(ambiguous)")
+    # 2. line, level, duplicate and missing linkage
+    a1 = t["atom"]["1"][0]
+    expect(link(r1, x1, atom=[dict(a1, line_id="99")])[1] == "LINE_IDENTITY", "inject another line's atomic row: "
+           "refused")
+    expect(link(r1, x1, atom=[dict(a1, level_number_lower=a1["level_number_upper"],
+                                   level_number_upper=a1["level_number_lower"])])[1] == "LINE_IDENTITY",
+           "inject swapped lower/upper level numbers: refused")
+    expect(link(r1, x1, up=info[3])[1] == "LINE_IDENTITY", "inject another upper level: refused")
+    expect(link(r1, x1, atom=[a1, a1])[1] == "ATOMIC_ROWS:2", "inject a duplicate atomic row: refused")
+    expect(link(r1, x1, ledger=[])[1] == "LEDGER_ROWS:0", "inject a missing ledger row: refused")
+    L1 = t["ledger"]["1"][0]
+    expect(link(r1, x1, ledger=[L1, L1])[1] == "LEDGER_ROWS:2", "inject a duplicate ledger row: refused")
+    expect(link(r1, x1, ledger=[L1[:7] + ["2"] + L1[8:]])[1] == "LEDGER_IDENTITY", "inject a ledger row of the other "
+           "ion: refused")
+    expect(link(r1, x1, ledger=[L1[:9] + [repr(2.0 * float(L1[9]))] + L1[10:]])[1] == "LEDGER_VS_RECORD",
+           "inject a ledger J_c that is not the record's c / beta: refused")
+    expect(link(r1, x1, atom=[dict(a1, nu=repr(1.5))])[1] == "LEDGER_IDENTITY", "inject a frequency in PHz instead "
+           "of Hz (ledger mismatch): refused")
+    out_atom = [dict(a1, nu=repr(4.0e15))]
+    out_led = [L1[:8] + [repr(4.0e15)] + L1[9:]]
+    expect(link(r1, x1, atom=out_atom, ledger=out_led)[1] == "NO_BIN", "inject a frequency outside the grid: no bin")
+    keys6 = []
+    m6, inf6, as6 = [], {}, {}
+    for i, (grp, lid, lo_ln, up_ln) in enumerate(LINES):
+        r = {"call": "36", "op": str(i), "aux": str(lid), "lev_a": str(2 * i + 1), "lev_b": str(2 * i)}
+        m6.append((r, None))
+        inf6[2 * i], inf6[2 * i + 1] = {"level_num": lo_ln}, {"level_num": up_ln}
+        as6[("36", str(i))] = grp
+        keys6.append(("36", str(i)))
+    k6, w6 = det_si_jccf_rep6(m6, as6, inf6)
+    expect(k6 == keys6 and not w6, "six representative statements resolve (positive control)")
+    expect(any("REP6_ROWS" in w for w in det_si_jccf_rep6(m6 + [(dict(m6[0][0], op="99"), None)], as6, inf6)[1]),
+           "inject a duplicate representative statement: refused")
+    expect(any("REP6_ROWS" in w for w in det_si_jccf_rep6(m6[1:], as6, inf6)[1]), "inject a missing representative "
+           "statement: refused")
+    expect(any("REP6_IDENTITY" in w for w in det_si_jccf_rep6(m6, {**as6, ("36", "0"): "G3"}, inf6)[1]),
+           "inject a representative statement in another group: refused")
+    # 3. c = 0, beta <= 0, non-finite or negative field
+    expect(link(r1, x1[:10] + [0.0] + x1[11:])[1] == "C_ZERO", "inject c = 0: undefined (no ratio substitution)")
+    expect(link(r1, x1[:9] + [0.0] + x1[10:])[1] == "BETA", "inject beta = 0: undefined")
+    expect(link(r1, x1[:9] + [-0.5] + x1[10:])[1] == "BETA", "inject beta < 0: undefined")
+    expect(link(r1, x1, bins_=[dict(b, J_nu="nan") for b in bins])[1] == "COARSE_FIELD", "inject a non-finite coarse "
+           "field: undefined")
+    expect(link(r1, x1, bins_=[dict(b, J_nu="-1e-6") for b in bins])[1] == "COARSE_FIELD", "inject a negative coarse "
+           "field: undefined")
+    # 4. spontaneous change, beta twice, one pump rate, non-target change, accumulated group
+    tg1, tg2 = det_si_jccf_targets(assign, "C-G1", []), det_si_jccf_targets(assign, "C-G2", [])
+    good = det_si_jccf_callback(recs, tg1)
+
+    def bad(f, tg=tg1):
+        return lambda r, x: f(r, x) if (r["call"], r["op"]) in tg else None
+    expect(bool(det_si_jccf_check(bad(lambda r, x: (good(r, x)[0], good(r, x)[1], x[2] / x[9])), stmts, tg1, recs)),
+           "inject a changed spontaneous rate: refused")
+    expect(bool(det_si_jccf_check(bad(lambda r, x: tuple(v / x[9] for v in good(r, x)[:2]) + (x[2],)), stmts, tg1,
+                                  recs)), "inject beta applied twice: refused")
+    expect(bool(det_si_jccf_check(bad(lambda r, x: (good(r, x)[0], x[1], x[2])), stmts, tg1, recs)),
+           "inject only the absorption rate substituted: refused")
+    expect(bool(det_si_jccf_check(lambda r, x: (good(r, x) if (r["call"], r["op"]) in tg1 else (x[0], x[1], x[2])),
+                                  stmts, tg1, recs)), "inject a change on non-target statements: refused")
+    expect(bool(det_si_jccf_check(det_si_jccf_callback(recs, tg1 | tg2), stmts, tg2, recs)),
+           "inject C-G2 carrying C-G1 (accumulated state): refused")
+    # 5. distribution, classes, branch, claim
+    st = det_si_jccf_qstats([4.0, 1.0, 0.0, 2.0])
+    expect(st["q_median"] == 1.5 and st["n_q_eq0"] == 1 and st["n_q_eq1"] == 1 and st["n_q_gt1"] == 2,
+           "even-sample median and counts (positive control)")
+    expect(det_si_jccf_classify(0.01, 0.01) == "이동 미분리; 공개 거리 변화 미분리" and
+           det_si_jccf_classify(-0.02, -0.02) == "이동 분리; 이격", "boundary values unresolved (positive control)")
+    expect([det_si_jccf_branch(True, 0.02), det_si_jccf_branch(True, 0.01), det_si_jccf_branch(False, 0.5),
+            det_si_jccf_branch(True, float("nan"))] == [0, 1, 2, 2], "branch fixtures (positive control)")
+    rows = [{"kind": "state", "state": "C-ALL", "undefined": 1, "III_II": 3.0, "cls": "미산출"},
+            {"kind": "state", "state": "C-G1", "undefined": 0, "III_II": 3.0, "cls": "effect resolved"}]
+    expect(det_si_jccf_claim_check(rows) == ["PARTIAL_AS_FULL:C-ALL", "LABEL:C-G1"],
+           "inject a partial substitution shown as a full ratio and an unregistered label: refused")
+    fails = sum(1 for r in results if not r[0])
+    print(json.dumps({"schema": "DET_JC_COARSE_CF_NEGATIVE_V1", "checks": len(results), "failures": fails}))
+    return 0 if fails == 0 else 2
+
+
+def cmd_jccf(run, out):
+    run = Path(run)
+    tr, pc = run / "si_trace", run / "work/physics_comparison"
+    out = TR.new_dir(out)
+    gates = {k: [] for k in ("G-INPUT", "G-RATE", "G-SOLVE", "G-CLAIM", "G-RUN")}
+    part, cvd = os.environ.get("SLURM_JOB_PARTITION"), os.environ.get("CUDA_VISIBLE_DEVICES", "")
+    if part != "a10" or cvd not in ("", "NoDevFiles"):
+        gates["G-RUN"].append(f"NOT_A10_CPU:{part}:{cvd}")
+    footer = dict(ln.split("=", 1) for ln in (run / "RUN_FOOTER.txt").read_text().splitlines() if "=" in ln)
+    stop_iter = int(footer.get("stop_iteration", "-1"))
+    if footer.get("terminal_state") != "TRACE_TARGET_COMPLETE" or stop_iter < 0:
+        gates["G-INPUT"].append("TRACE_RUN_NOT_COMPLETE")
+
+    # ---- G-INPUT: adoption, statements, membership, generations, line / ledger / bin linkage, public row
+    call, why = EB.det_si_exc_adopt(TR.read_trace(tr / "si10_ne.csv"), TR.read_trace(tr / "si10_calls.csv"),
+                                    TR.read_trace(tr / "si10_cevec.csv"), TR.read_trace(tr / "si10_commit.csv"),
+                                    ADOPTED)
+    if call is None:
+        return TR.refuse(why)
+    cid = call["call"]
+    N, N_fl, n_lo, gh = int(call["N"]), int(call["N_fl"]), int(call["n_lo_super"]), int(call["ground_hi"])
+    ops = [r for r in TR.read_trace(tr / "si10_ops.csv") if r["call"] == cid]
+    g_a, g_b, _ = TR.read_matrix(tr / f"si10_mat_{int(cid):06d}_gen.bin")
+    r_a, r_b = TR.replay(ops, N)
+    if not (np.array_equal(r_a, g_a) and np.array_equal(r_b, g_b)):
+        gates["G-INPUT"].append("REPLAY_NOT_GENERATOR")
+    sm = sorted((r for r in TR.read_trace(tr / "si10_slmap.csv") if r["call"] == cid), key=lambda r: int(r["i_fl"]))
+    if len(sm) != N_fl:
+        return TR.refuse(["LEVEL_MAP"])
+    total = float(next(r for r in TR.read_trace(tr / "si10_final.csv") if r["call"] == cid)["n_total"])
+    upper = np.array([r["upper_ion"] == "1" for r in sm])
+    info = GR.det_si_bb_groups_fl_info(sm)
+    stmts = [(r, [TR.num(r[f"x{k}"]) for k in range(1, 15)]) for r in ops if r["site"] == "1"]
+    m8 = [(r, x) for r, x in stmts if CF.det_si_bb_mode(r) == 8]
+    bad_stmt = [f"{CF.det_si_bb_check(r, x)}:op{r['op']}" for r, x in m8 if CF.det_si_bb_check(r, x)]
+    if bad_stmt:
+        gates["G-INPUT"].append(f"STATEMENT_CONDITIONS:{len(bad_stmt)}:" + ";".join(bad_stmt[:5]))
+    assign, why_a = GR.det_si_bb_groups_assign(stmts, info, n_lo)
+    why_a += GR.det_si_bb_groups_partition(assign, [(r["call"], r["op"]) for r, _ in m8])
+    if why_a:
+        gates["G-INPUT"].append(f"MEMBERSHIP:{len(why_a)}:" + ";".join(why_a[:5]))
+    count = {g: sum(1 for v in assign.values() if v == g) for g in GR.GROUPS}
+    if count != JCCF_GROUP_COUNTS:
+        gates["G-INPUT"].append(f"REGISTERED_COUNTS:{count}")
+    rep_keys, why_r = det_si_jccf_rep6(m8, assign, info)
+    if why_r:
+        gates["G-INPUT"].append("REP6:" + ";".join(why_r))
+    manifest = json.loads((pc / "physics_DET_iter0010.manifest.json").read_text())
+    bins, why_g = det_si_jccf_grid(TR.read_trace(pc / "physics_DET_iter0010.spectral.csv"), SHELL, manifest,
+                                   int(call["rad_generation"]))
+    if why_g:
+        gates["G-INPUT"].append("GRID:" + ";".join(why_g[:5]))
+    exports = (run / "input/resolved_lumina.exports").read_text()
+    if f'LUMINA_CMF_FINE_VDOP="{int(JCCF_VDOP)}"' not in exports:
+        gates["G-INPUT"].append("SETTINGS_VDOP")
+    aux_ids = {int(r["aux"]) for r, _ in m8}
+    atom = {}
+    with open(run / "input/model/line_list.csv") as f:
+        head = f.readline().rstrip("\n").split(",")
+        for ln in f:
+            if not (ln.startswith("14,1,") or ln.startswith("14,2,")):
+                continue
+            a = dict(zip(head, ln.rstrip("\n").split(",")))
+            if int(a["line_id"]) in aux_ids:
+                atom.setdefault((a["ion_number"], int(a["line_id"])), []).append(a)
+    with open(run / "work/w5_lines.csv") as f:
+        ledger = det_si_line_input_ledger(f, aux_ids)
+    recs, undefined = {}, {}
+    for r, x in m8:
+        k, ion, lid = (r["call"], r["op"]), CF.det_si_bb_ion(r, n_lo), int(r["aux"])
+        e, reason = det_si_jccf_link(r, x, ion, info.get(int(r["lev_a"])), info.get(int(r["lev_b"])),
+                                     atom.get((JCCF_ION.get(ion), lid), []), ledger.get(lid, []), bins)
+        if e is None:
+            undefined[k] = reason
+        else:
+            e["group"] = assign.get(k)
+            recs[k] = e
+    t_shell = TR.dump_row(run, stop_iter, "shell", SHELL)[0]
+    vel = (float(t_shell["v_inner_cm_s"]) + float(t_shell["v_outer_cm_s"])) / 2e5
+    pub, pub_vel, pub_ii, pub_iii = EB.det_si_exc_public(vel)
+    if not (math.isclose(vel, TR.REGISTERED_VEL["lumina_vel_mid_kms"]) and
+            math.isclose(pub_vel, TR.REGISTERED_VEL["public_vel_mid_kms"]) and pub == pub_iii / pub_ii and
+            (pub_ii, pub_iii) == (JCCF_PUBLIC["si_II"], JCCF_PUBLIC["si_III"])):
+        gates["G-INPUT"].append(f"PUBLIC_CORRESPONDENCE:{vel}->{pub_vel}:{pub_ii}:{pub_iii}")
+
+    # ---- operators and G-RATE (every state built from F0 independently)
+    A0, und, ch0, maps = CF.det_si_bb_build(ops, sm, N, gh)
+    states = {}
+    for s in JCCF_STATES:
+        tg = det_si_jccf_targets(assign, s, rep_keys)
+        st = {"targets": tg, "undefined": {k: undefined[k] for k in tg if k in undefined}, "A": None, "ch": None,
+              "x": None, "why": []}
+        if s == "F0":
+            st["A"], st["ch"] = A0, ch0
+        elif not tg:
+            st["why"] = ["NO_TARGETS"]
+        elif st["undefined"]:
+            st["why"] = ["UNDEFINED_SUBSTITUTION"]
+        else:
+            cb = det_si_jccf_callback(recs, tg)
+            bad = det_si_jccf_check(cb, stmts, tg, recs)
+            if bad:
+                gates["G-RATE"].append(f"PRESCRIPTION:{s}:{len(bad)}")
+            A, ug, chs, _ = CF.det_si_bb_build(ops, sm, N, gh, cb)
+            und = und + ug
+            st["A"], st["ch"] = A, chs
+        states[s] = st
+    if und or maps["gh_fl"] is None:
+        return TR.refuse(gates["G-INPUT"] + ["FL_OPERATOR_UNDEFINED:" + ",".join(sorted(set(und)))])
+    for s, st in states.items():
+        if st["A"] is None:
+            continue
+        if not CF.det_si_bb_channel_sum_ok(st["A"], st["ch"]):
+            gates["G-RATE"].append(f"CHANNEL_SUM:{s}")
+        if EB.det_si_exc_conservation(st["A"]):
+            gates["G-RATE"].append(f"CONSERVATION:{s}")
+        if s != "F0":
+            inv = CF.det_si_bb_invariance(ch0, st["ch"], set(GR.MODE8))
+            if inv:
+                gates["G-RATE"].append(f"INVARIANCE:{s}:" + ",".join(inv))
+
+    # ---- G-SOLVE
+    R, eta_max = {}, {}
+    for s, st in states.items():
+        if st["A"] is None:
+            continue
+        x, why_s, eta_max[s] = CF.det_si_bb_solve(st["A"], total)
+        if x is not None:
+            ratio = TR.ratio(x, upper)
+            if math.isfinite(ratio) and ratio > 0.0:
+                st["x"], R[s] = x, ratio
+            else:
+                why_s = why_s + ["RATIO_UNDEFINED"]
+        st["why"] = why_s
+        if why_s:
+            gates["G-SOLVE"].append(f"{s}:" + ",".join(why_s))
+    ref_dev = TR.dex(R.get("F0", float("nan")), JCCF_R0)
+    if not (abs(ref_dev) <= JCCF_REF_DEX):
+        gates["G-SOLVE"].append(f"F0_REFERENCE:{R.get('F0')}")
+
+    # ---- the table
+    d0 = TR.dex(R["F0"], pub) if "F0" in R else float("nan")
+    rows = [{"kind": "public", "state": "CMFGEN toy06 19.480 d", "scope": "public Si II / Si III ion fractions",
+             "III_II": pub, "si_II": pub_ii, "si_III": pub_iii, "vel_kms": pub_vel}]
+    G = {}
+    for s in JCCF_STATES:
+        st = states[s]
+        tg, und_s = st["targets"], st["undefined"]
+        reasons = {}
+        for v in und_s.values():
+            reasons[v] = reasons.get(v, 0) + 1
+        row = {"kind": "state", "state": s, "scope": JCCF_SCOPE[s], "planned": len(tg),
+               "definable": len(tg) - len(und_s), "substituted": len(tg) if (st["A"] is not None and s != "F0") else 0,
+               "undefined": len(und_s), "undefined_reasons": json.dumps(dict(sorted(reasons.items()))) if und_s else "",
+               "eta_max": eta_max.get(s)}
+        if s in R:
+            d = TR.dex(R[s], pub)
+            row.update(III_II=R[s], delta_F0=TR.dex(R[s], R["F0"]) if "F0" in R else None, d_pub=d,
+                       position="위" if d > JCCF_DEX else "아래" if d < -JCCF_DEX else "일치(보고 분해능 이내)")
+            if s == "F0":
+                row.update(cls="기준", reference_dex=ref_dev)
+            elif "F0" in R:
+                G[s] = abs(d0) - abs(d)
+                row.update(G=G[s], cls=det_si_jccf_classify(row["delta_F0"], G[s]),
+                           **det_si_jccf_qstats([recs[k]["q"] for k in tg]),
+                           profile_crossing=sum(1 for k in tg if recs[k]["profile_crosses_bin"]))
+            else:
+                row.update(cls="미산출")
+        else:
+            row.update(cls="미산출", reason=";".join(st["why"]))
+        rows.append(row)
+    gates["G-CLAIM"] += det_si_jccf_claim_check(rows)
+    sub = [r for r in rows if r["kind"] == "state" and r["state"] != "F0"]
+    produced = all(r["state"] in R for r in sub)
+    small = produced and all(r["cls"].startswith(JCCF_EFF[1]) for r in sub)
+    offset = produced and sub[0]["cls"].startswith(JCCF_EFF[1]) and any(r["cls"].startswith(JCCF_EFF[0])
+                                                                        for r in sub[1:])
+    summary = ("모든 대입 상태가 이동 미분리 — 이 저장장 대입 처방의 영향이 작다(다른 입사장 처방·자기일관 효과의 부재를 "
+               "뜻하지 않음)" if small else
+               "C-ALL 이동 미분리이나 일부 범위 이동 분리 — 상쇄 가능성; 입사장 축 전체가 작다고 결론내리지 않음" if offset
+               else "영향이 작다고 보고하지 않음(이동 분리 또는 미산출 범위 있음)")
+    all_gates = [f for v in gates.values() for f in v]
+    valid_all = not all_gates and all(s in R for s in JCCF_STATES)
+    code = det_si_jccf_branch(valid_all, G.get("C-ALL"))
+    label = {0: "RESOLVED_APPROACH", 1: "NO_RESOLVED_APPROACH", 2: "INDETERMINATE"}[code]
+    fields = list(dict.fromkeys(k for r in rows for k in r))
+    with open(out / "jc_coarse_cf_table.csv", "x", newline="") as f:
+        wr = csv.DictWriter(f, fieldnames=fields)
+        wr.writeheader()
+        wr.writerows(rows)
+
+    def fmt(v):
+        if v is None:
+            return ""
+        if isinstance(v, float):
+            return f"{v:.6g}" if math.isfinite(v) else "nan"
+        return str(v).replace("|", "/")
+    context = {"F0_R0": JCCF_R0, "public_si_II": pub_ii, "public_si_III": pub_iii, "public_III_II": pub,
+               "FINAL_FL_III_II_context_only": JCCF_FINAL_FL, "time_d": 19.48,
+               "vel_kms": f"Lumina {vel:.0f} <-> public {pub_vel}"}
+    with open(out / "jc_coarse_cf_table.md", "x") as f:
+        f.write(f"# J_c -> coarse bin J_nu substitution, Si shell 10 mode-8 bracket (branch {code} {label})\n\n")
+        f.write("Context (quoted): " + json.dumps(context, ensure_ascii=False) + "\n\n")
+        f.write("Scope: " + JCCF_NOTE + "\n\n")
+        f.write("Gates: " + (";".join(all_gates) or "all pass") + "\n\n")
+        cols = ["state", "scope", "planned", "definable", "substituted", "undefined", "III_II", "delta_F0", "d_pub",
+                "position", "G", "q_min", "q_median", "q_max", "n_q_eq0", "n_q_0_1", "n_q_eq1", "n_q_gt1",
+                "profile_crossing", "cls", "undefined_reasons", "reason"]
+        f.write("| " + " | ".join(cols) + " |\n|" + "---|" * len(cols) + "\n")
+        for r in rows:
+            f.write("| " + " | ".join(fmt(r.get(c)) for c in cols) + " |\n")
+        f.write(f"\nSummary: {summary}\n\nNotes: delta_F0 = log10(R/R_F0); d_pub = log10(R/R_pub); G = |d_F0| - |d|; "
+                "classes at 0.01 dex (reporting resolution, boundary unresolved); position 위/아래 beyond 0.01 dex; q = "
+                "J_coarse / J_c per statement with equal weight, n_q_0_1 counts 0 < q < 1; profile_crossing counts "
+                "+-4 Doppler widths (v_D 1e6 cm/s) leaving the centre bin (display only, centre-bin value used).\n")
+    used = [tr / n for n in ("si10_calls.csv", "si10_ne.csv", "si10_commit.csv", "si10_cevec.csv", "si10_ops.csv",
+                             "si10_slmap.csv", "si10_final.csv", f"si10_mat_{int(cid):06d}_gen.bin")]
+    used += [run / "RUN_FOOTER.txt", run / "input/model/line_list.csv", run / "input/resolved_lumina.exports",
+             run / "work/w5_lines.csv", pc / "physics_DET_iter0010.manifest.json",
+             pc / "physics_DET_iter0010.spectral.csv", pc / f"physics_DET_iter{stop_iter:04d}.shell.csv",
+             TR.PUBLIC_SI, TR.DIAG8_PUBLIC]
+    evidence = {"schema": "DET_JC_COARSE_CF_V1", "prereg": JCCF_PREREG, "argv": sys.argv,
+                "slurm_job_id": os.environ.get("SLURM_JOB_ID"), "branch": code, "label": label, "gates": gates,
+                "summary": summary, "note": JCCF_NOTE, "context": context,
+                "run_identity": {k: footer.get(k) for k in ("job_id", "binary_sha256", "effective_exports_sha256",
+                                                            "terminal_state", "stop_iteration")},
+                "adopted": {k: int(call[k]) for k in ("bundle", "ne_iter", "ce_pass", "call", "rad_generation")},
+                "manifest": {k: manifest.get(k) for k in list(JCCF_GENERATIONS) + list(JCCF_GRID_KIND) + ["n_bins"]},
+                "group_counts": count, "rep6": [list(k) for k in rep_keys], "ratios": R, "eta_max": eta_max,
+                "reference_dex": ref_dev, "solve": {s: st["why"] for s, st in states.items()},
+                "undefined": {f"{k[0]}:{k[1]}": v for k, v in sorted(undefined.items())},
+                "statements": [dict(e, key=f"{k[0]}:{k[1]}") for k, e in sorted(recs.items(),
+                                                                                  key=lambda kv: int(kv[0][1]))],
+                "inputs": {str(p): {"bytes": p.stat().st_size, "sha256": TR.sha(p)} for p in used},
+                "code": {str(Path(p).resolve()): TR.sha(Path(p))
+                         for p in (__file__, TR.__file__, EB.__file__, CF.__file__, GR.__file__)}}
+    (out / "evidence.json").write_text(json.dumps(evidence, indent=1, default=str, ensure_ascii=False) + "\n")
+    print(f"BRANCH {code} {label} R={json.dumps(R)} G={json.dumps(G)}")
+    if all_gates:
+        print("GATE FINDINGS: " + "; ".join(all_gates))
+        return 2
+    return 0
+
+
 def main():
     ap = argparse.ArgumentParser()
     sp = ap.add_subparsers(dest="cmd", required=True)
     sp.add_parser("negative")
     sp.add_parser("jcdef-negative")
+    sp.add_parser("jccf-negative")
     for name in ("analyze", "jcdef"):
         s = sp.add_parser(name)
         s.add_argument("--run", required=True)
         s.add_argument("--baseline", required=True)
         s.add_argument("--out", required=True)
+    s = sp.add_parser("jccf")
+    s.add_argument("--run", required=True)
+    s.add_argument("--out", required=True)
     a = ap.parse_args()
     if a.cmd == "negative":
         return cmd_negative()
     if a.cmd == "jcdef-negative":
         return cmd_jcdef_negative()
+    if a.cmd == "jccf-negative":
+        return cmd_jccf_negative()
     if a.cmd == "jcdef":
         return cmd_jcdef(a.run, a.baseline, a.out)
+    if a.cmd == "jccf":
+        return cmd_jccf(a.run, a.out)
     return cmd_analyze(a.run, a.baseline, a.out)
 
 
