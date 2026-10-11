@@ -294,6 +294,25 @@ python3 -B tools/det_nt_prescription_lever.py run --out run1
 
 생산 승격·물리적 정답·수리·새 T·자기일관 효과·광도 회복률을 주장하지 않는다. 처방 차이를 결손 원인으로 단정하지 않는다.
 
+### 집행 기록 (운전자 추가 — 정본 장부, 개정16 ①; 위 기안 기록은 그대로 둔다)
+
+증거 접두 `B=/gpfs/kjhan/lumina/cmfgen_map/ntpresc_20261012`, `F=B/offline`. 작업 번호·경과는 `B/JOBS.txt`·`F/evidence/sacct_offline_jobs.txt`, 게이트 집행은 `F/evidence/GATE_RECORD.json`.
+
+| 항목 | 담당(실제) | 상태·증거 |
+|---|---|---|
+| user 결정 | user | 「NT 처방 자체의 CMFGEN 대응 비교 (GPU 0)」(`B/evidence/USER_DECISION_2026-10-12.txt`), DET-NT-POP-OFFLINE-BOUND 폐합 후 |
+| 기안 | astra(자기보고 「GPT-6」, 세부 ID 미확인) | 906cc67; 기안 브리프 게이트 위생·정본 rc 0(a10 420163), 기안 게이트 prereg·referents·canonical rc 0(420167) |
+| 사전감사 | — | 생략(25-ab: GPU 0·생산 변경 0) |
+| 구현 | 운전자(Opus 5.5) · 코드 감사 없음(25-z) | `F/tools/det_nt_prescription_lever.py`(e5418df0…), `run_det_nt_prescription_lever.slurm`(2c59745b…); 재사용 모듈 무수정 |
+| 구현 게이트 | 운전자 | a10 420171: prereg·referents·canonical·위생 rc 0(`B/evidence/gates_i1.summary`) |
+| 직접시험 | 운전자 | a10 420172 `F/tests/run1` **43/43** |
+| 계산 run1 | 운전자 | a10 420173 `F/run1/`(4 s, rc 0, 입력 불변): 결함 0, 공통 검사·Si 대조 통과, 공개 블록 오류 0; A 36 행 전부 조건부 계산 유효; η₂* 상단 0.01 이하 28 행(Fe 12·Co 7·Ni 9), 최소 1.0e-6(Fe 셸11), 최대 0.041(Co 셸3); M(0) 0.96–1.00; η₀* 4.5e-10–1.27e-4 |
+| 판정 | 운전자(구현·판정 겸임) | `docs/VERDICT_DET_NT_PRESCRIPTION_LEVER_2026-10-12.md` — **분기 1 PRESCRIPTION_REVIEW_CANDIDATE**(분기 함수가 전제 전건을 등록 순서로 검사, 판정과 일치) |
+| 종료감사 | astra | (예정) |
+| 비용 | 운전자 | GPU 0; a10 5 작업 할당 벽시계 합 96 s / 1200 s, 96 core·s / 1200; 신규 저장 0.3 MB / 64 MiB(판정 시점 소계) |
+
+**이탈(기재):** ① 공개 블록 판독에 `det_blue_ion_map_readout`(열 이름)과 `det_siiii_pop_readout`(토큰·보간)을 함께 쓰고 열 이름 일치를 검사했다.
+
 ## §12. 기계 선언과 참조
 
 아래 분기 예시는 기존 문면 검사의 입력이다. 과학 분기 함수의 전제 검사를 대신하지 않는다. 참조는 실재 파일만 지정한다.
