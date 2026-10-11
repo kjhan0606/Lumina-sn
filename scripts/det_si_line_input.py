@@ -507,7 +507,9 @@ JCDEF_SOURCE = {   # driver's reading of the sealed sources (prereg 3-4); data f
               "line opacity (comp_opac.f), and RJ from COMP_J_BLANK on that opacity; the per-ray AV is weighted "
               "by EXPONX(GAM) and integrated over angle, with the simultaneous lines' CHIL/ETAL entering the "
               "Sobolev optical depth and local term (cmfgen_sub.f about 3535)",
-    "same": "the incident field excludes the line itself and other lines; the local line term is added separately",
+    "same": "확인된 공통점은 대표선 자신의 직접 침적·상류 산란 몫을 제외하고 국소 선 항을 별도로 더한다는 것이다. "
+            "Lumina의 비대응 선 산란 몫 차감은 호출12에서 미확정이므로, 다른 선까지 모두 제외된다는 공통점은 "
+            "확정하지 않는다.",
     "different": "CMFGEN integrates beta*AV per ray with an angle-dependent Sobolev optical depth; Lumina uses a "
                  "scalar beta times an angle-averaged J_c; Lumina's J_c is a Gaussian mean over +-4 Doppler widths "
                  "of the fine field; CMFGEN sums NUM_SIM_LINES simultaneous lines, Lumina uses one line; the "
