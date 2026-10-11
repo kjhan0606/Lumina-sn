@@ -332,6 +332,29 @@ run1은 개정 전 계약에 따른 등록 계산의 분기 2 기록으로 보�
 
 기안자는 공유 맥락 전체를 읽고 현재 디렉터리와 프로젝트 신원을 확인했다. 관련 소스·manifest·선별 원장 행·로그·선행 표를 조회했으며 파일 변경·수치 계산·해시 재산출·직접시험·제출은 하지 않았다.
 
+### 집행 기록 (운전자 추가 — 정본 장부, 개정16 ①; 위 기안 기록은 그대로 둔다)
+
+증거 접두 `B=/gpfs/kjhan/lumina/cmfgen_map/linenet_20261011`. 작업 번호·경과는 `B/JOBS.txt`·`B/evidence/sacct_offline_jobs.txt`, 게이트 집행은 `B/evidence/GATE_RECORD.json`.
+
+| 항목 | 담당(실제) | 상태·증거 |
+|---|---|---|
+| user 결정 | user | 「선 순율 L 의 정의·세대 추적」(`B/evidence/USER_DECISION_2026-10-11.txt`), DET-LINE-ENERGY-CORR 폐합 후 |
+| 기안 | astra(자기보고 「gpt-6-astra」) | 3b3bdc8 |
+| 사전감사 | — | 생략(25-ab: GPU 0·생산 변경 0) |
+| 기계 게이트(기안) | 운전자 | 기안 브리프 canonical·위생 rc 0(a10 419744), 기안 prereg·referents·canonical rc 0(419746) |
+| 구현 | 운전자(Opus 5.5) · 코드 감사 없음(25-z) | ff3f517 — `scripts/det_line_net_provenance.py`; 러너 `B/tools/run_det_line_net_provenance_offline.slurm` |
+| 직접시험(§9) | 운전자 | 커밋 전 개발 작업 419757·419758·419759·419762(실패, 결과 아님)·419763·419765; 커밋본 40/40(run1 작업) |
+| 등록 계산 run1 | 운전자 | a10 419766 `B/results/run1/`: **분기 2 INDETERMINATE** — 채택 FINAL_FL 공개 물질13 연결 실패(`TRACE_FINAL_FL_VS_COMMIT`·`FINAL_FL_VS_MATERIAL13`), 등록 6선 미산출; 전체 셸·W5·전역 행 산출 |
+| 탐침 | 운전자 | a10 419767(`B/tools/probe_commit_link.py`): commit(= 채택 CE after) 이온 합 상대차 ~1e-16, FINAL_FL 3.5e-6·9.9e-7, 272 준위 모두 commit ≠ FINAL_FL |
+| 개정 1 | astra | `B/astra_rev1.md` 쌍 1·2 + `B/astra_rev1b.md` 쌍 3(rev1 쌍 3 은 한국어 아닌 줄로 끝나 미적용) → e5374b4; 행 diff OLD 1행만 소실; 개정 게이트 prereg·referents·canonical rc 0(419777), 개정 브리프 게이트 rc 0(419768·419773) |
+| 개정 반영 구현 | 운전자 | e827252(물질13 = commit, 준위별 CE after·인덱스·세대 연결, FINAL_FL 기록만); 직접시험 42/42(419776) |
+| 등록 계산 run2 | 운전자 | a10 419778 `B/results/run2/`(12 s): 게이트 지적 0, 미정의 0; **분기 0 RESOLVED_SCOPED_DIFFERENCE** — 물질 이력 조건 불충족(13/12·14/13), G1 3선 F0/F4 1.2e4–1.1e5·F1−F2 몫 99.97 %, 6선 Σ(F0−F4) −21.9Δ, 셸10 L−Q +31.2Δ, D_rest +53.0Δ; 판독 탐침 419780 |
+| 판정 | 운전자(구현·판정 겸임) | `docs/VERDICT_DET_LINE_NET_PROVENANCE_2026-10-11.md` |
+| 종료감사 | astra(계약 저자 이해관계) | 대기 |
+| 비용 | 운전자 | GPU 0; 오프라인 a10 16 작업 할당 93 s · 93 core·s / 600 s · 600 core·s(run2 판독 탐침까지); 신규 저장 결과 545 KiB + 로그 / 30 MiB |
+
+**이탈(기재):** ① run1 분기 2 후 개정 1(물질13 출처 정정) — run1 기록 보존, 개정 후 새 경로 run2. ② 개정 1 쌍 3 미적용·보완 발주. ③ 커밋 전 직접시험 작업 4건 실패(시험·판독기 결함 수정).
+
 ## §12. 기계 선언
 
 참조는 기존 실재 파일만 가리킨다. 분기 예시는 기존 프리플라이트 문면 검사에만 사용한다.
