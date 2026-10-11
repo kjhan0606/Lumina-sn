@@ -91,6 +91,9 @@ def bf_check(r, x, m, gh):
         return "NEGATIVE_OR_WEIGHT"
     if not (nstar > 0.0 and nu > 0.0):
         return "NSTAR_OR_THRESHOLD"
+    # a product of positive factors lost to 0 is a representation failure, not an exact zero
+    if (R_bf > 0.0 and R_bf * f_lev == 0.0) or (I_rec > 0.0 and nstar * I_rec == 0.0):
+        return "REPRESENTATION"
     if not close(f_lev, TR.num(m["within_sl_frac"])):
         return "WEIGHT_VS_LEVEL_MAP"
     if not (close(v1, R_bf * f_lev) and close(v2, R_rec) and close(R_rec, nstar * I_rec)):
@@ -169,6 +172,20 @@ def bf_run_state(ops, sm, N, gh, total, links, undefined, targets, q, stop, solv
     x, why, eta = solve(A, total)
     return {"produced": x is not None, "undefined": {}, "why": list(why), "ops": ops1, "A": A, "ch": ch, "x": x,
             "eta_max": eta}
+
+
+def bf_states(ops, sm, N, gh, total, call, rng, why_r, solve=CF.det_si_bb_solve):
+    """the seven registered states from the recorded statements, starting at the BF linkage (prereg 5): a common
+    BF defect (any undefined Si II BF statement or a BF statement outside the Si II levels) leaves the F0 operator
+    undefined and stops every state, F0 included; an uncertain membership stops the six interventions."""
+    links, undefined, why_l = bf_link(ops, sm, gh, call)
+    common = ["COMMON_BF_UNDEFINED"] if (undefined or why_l) else []
+    stop = common + (["MEMBERSHIP_UNCERTAIN"] if why_r else [])
+    st = {"F0": bf_run_state(ops, sm, N, gh, total, links, {}, set(), 1.0, common, solve)}
+    for s in STATES[1:]:
+        rname, q = PLAN[s]
+        st[s] = bf_run_state(ops, sm, N, gh, total, links, undefined, rng[rname], q, stop, solve)
+    return st, links, undefined, why_l
 
 
 def bf_prescription_check(ops, ops1, links, targets, q):
@@ -416,6 +433,24 @@ def cmd_negative():
     expect(not r_u["produced"] and not r_s["produced"] and "x" not in r_u and "x" not in r_s and "A" not in r_u
            and len(calls) == 1 and r_ok["produced"], "inject an undefined target / an uncertain membership: the state "
            "function neither assembles nor solves nor returns numbers (the defined state solves once)")
+    calls.clear()
+    good_st = bf_states(ops, sm, N, gh, total, "1", rng, [], solve=spy)[0]
+    n_good = len(calls)
+    calls.clear()
+    bf0 = [r for r in ops if r["site"] == "5"][0]                     # ground level 0: never a target
+    bad_ops = [dict(r, dst="6") if r is bf0 else r for r in ops]
+    bad_st, _, bad_und, _ = bf_states(bad_ops, sm, N, gh, total, "1", rng, [], solve=spy)
+    expect(all(v["produced"] for v in good_st.values()) and n_good == 7 and bad_und.get(0) == "IDENTITY" and
+           not calls and not any(v["produced"] or "x" in v or "A" in v for v in bad_st.values()),
+           "inject a ground-level BF direction defect at the linkage (non-target): every state, F0 included, "
+           "neither assembles nor solves nor returns numbers")
+    r_g, x_g = links[5]                                               # FL 5, weight 0.4
+    lost = bf_check(dict(r_g, v1="0.0"), [5e-324] + x_g[1:], sm[5], gh)
+    lost_rec = bf_check(dict(r_g, v2="0.0"), x_g[:2] + [0.0, 1e-200, 1e-200] + x_g[5:], sm[5], gh)
+    exact = bf_check(dict(r_g, v2="0.0"), x_g[:2] + [0.0, 0.0] + x_g[4:], sm[5], gh)
+    expect(lost == "REPRESENTATION" and lost_rec == "REPRESENTATION" and exact is None,
+           "inject recorded products of positive factors lost to 0 (R_bf f_lev, n* I_rec): undefined; an exact zero "
+           "I_rec stays valid")
     # 6. summaries: P against the rate-weighted C
     x0 = np.array([8.0, 1.0, 0.5, 0.01, 0.001, 0.001, 0.4, 0.088])
     xs = np.array([8.0, 1.0, 0.25, 0.02, 0.001, 0.001, 0.6, 0.128])
@@ -480,7 +515,8 @@ def cmd_analyze(run, out):
     rng, why_r = bf_ranges(sm)
     if why_r:
         gates["G-INPUT"].append("MEMBERSHIP:" + ";".join(why_r))
-    links, undefined, why_l = bf_link(ops, sm, gh, cid)
+    # ---- states from the BF linkage on (a common BF defect stops every state, F0 included)
+    st, links, undefined, why_l = bf_states(ops, sm, N, gh, total, cid, rng, why_r)
     if why_l or undefined:
         gates["G-INPUT"].append(f"BF_STATEMENTS:{len(why_l)}:{len(undefined)}:" +
                                 ";".join(why_l[:3] + [f"fl{i}:{w}" for i, w in list(undefined.items())[:3]]))
@@ -492,15 +528,10 @@ def cmd_analyze(run, out):
             (pub_ii, pub_iii) == (PUBLIC["si_II"], PUBLIC["si_III"])):
         gates["G-INPUT"].append(f"PUBLIC_CORRESPONDENCE:{vel}->{pub_vel}:{pub_ii}:{pub_iii}")
 
-    # ---- states (each from the recorded statements), G-RATE, G-SOLVE
-    stop = ["MEMBERSHIP_UNCERTAIN"] if why_r else []
-    st = {"F0": bf_run_state(ops, sm, N, gh, total, links, {}, set(), 1.0, [])}
-    if "ch" not in st["F0"]:
-        return TR.refuse(gates["G-INPUT"] + st["F0"]["why"])
+    # ---- G-RATE, G-SOLVE (each state assembled from the recorded statements)
     for s in STATES[1:]:
         rname, q = PLAN[s]
-        st[s] = bf_run_state(ops, sm, N, gh, total, links, undefined, rng[rname], q, stop)
-        if "ch" in st[s]:
+        if "ch" in st[s] and "ch" in st["F0"]:
             bad = bf_prescription_check(ops, st[s]["ops"], links, rng[rname], q)
             if bad:
                 gates["G-RATE"].append(f"PRESCRIPTION:{s}:{len(bad)}")
@@ -621,6 +652,19 @@ def cmd_analyze(run, out):
                              "si10_slmap.csv", "si10_final.csv", f"si10_mat_{int(cid):06d}_gen.bin")]
     used += [run / "RUN_FOOTER.txt", pc / f"physics_DET_iter{stop_iter:04d}.shell.csv", TR.PUBLIC_SI, TR.DIAG8_PUBLIC]
     fl_row = {int(r["i_fl"]): r for r in sm}
+    state_ev = {}
+    for s, res in st.items():
+        rname, q = PLAN[s]
+        tg = sorted(rng[rname]) if rname else []
+        e = {"produced": res["produced"], "why": res["why"], "eta_max": res.get("eta_max"), "q": q, "targets": tg}
+        if "ops" in res:
+            by_op = {r["op"]: r for r in res["ops"]}
+            e["substituted"] = [{"i_fl": i, "op": links[i][0]["op"], "x1": TR.num(by_op[links[i][0]["op"]]["x1"]),
+                                 "v1": TR.num(by_op[links[i][0]["op"]]["v1"])} for i in tg]
+        if res.get("x") is not None:
+            e["populations"] = [float(v) for v in res["x"]]
+            e["N_II"], e["N_III"] = float(res["x"][~upper].sum()), float(res["x"][upper].sum())
+        state_ev[s] = e
     evidence = {"schema": "DET_SI_BF_SENS_V1", "prereg": PREREG, "argv": sys.argv,
                 "slurm_job_id": os.environ.get("SLURM_JOB_ID"), "branch": code, "label": label, "gates": gates,
                 "summary": summary, "note": NOTE, "context": context,
@@ -628,9 +672,10 @@ def cmd_analyze(run, out):
                                                        "core_generation")},
                 "ranges": {k: sorted(v) for k, v in rng.items()}, "membership_findings": why_r,
                 "bf_findings": why_l, "undefined": {str(i): w for i, w in undefined.items()},
-                "ratios": R, "reference_dex": ref_dev,
-                "solve": {s: {"produced": res["produced"], "why": res["why"], "eta_max": res.get("eta_max")}
-                          for s, res in st.items()},
+                "ratios": R, "reference_dex": ref_dev, "states": state_ev,
+                "fl_levels": [{"i_fl": int(r["i_fl"]), "level_num": int(r["level_num"]), "upper_ion": r["upper_ion"],
+                               "E_eV": TR.num(r["E_eV"]), "sl_local": int(r["sl_local"]),
+                               "within_sl_frac": TR.num(r["within_sl_frac"])} for r in sm],
                 "statements": [{"i_fl": i, "level_num": int(fl_row[i]["level_num"]), "E_eV": TR.num(fl_row[i]["E_eV"]),
                                 "op": r["op"], "R_bf": x[0], "f_lev": x[1], "R_rec": x[2], "I_rec": x[3],
                                 "n_star_ratio": x[4], "nu_thresh": x[5],
