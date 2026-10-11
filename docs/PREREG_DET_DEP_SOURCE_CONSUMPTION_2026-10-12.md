@@ -309,6 +309,7 @@ sed -n '11546,12090p' /gpfs/kjhan/lumina/cmfgen_map/obs_capture_20261006/source/
 | 기안 | astra(자기보고 「gpt-6-astra」) | 1cad42a; 기안 브리프 게이트 위생·정본 rc 0, 기안 게이트 prereg·referents·canonical rc 0(a10 419941) |
 | 경량 사전감사(Q-GOAL·Q-LEAN) | astra(자기보고 「GPT-6」, 계약 기안자 이해관계 기재) | **Q-GOAL 부합 · Q-LEAN 적정 · «폐합 차단» 0 · «기재로 족함» 3**(`B/astra_preaudit.md`); 수정 요구 OLD/NEW 4쌍 적용(최종목적 문면에 MC 수송 복원·중간 시험 한정, 이력 비열적 처방 척도 제외, 값별 dependencies 반복 저장 제거, 게이트 공통 검사 재사용 원칙 — 넷째 쌍은 OLD 문면이 없어 운전자가 §9 게이트 표 바로 뒤에 배치) |
 | **보류** | user | 2026-10-12 「오프라인 선행(GPU 0) → 필요 시 GPU」(`B/evidence/USER_DECISION_2026-10-12_offline_first.txt`). 구현·빌드·GPU 제출 0. 이 계약은 오프라인 선행 단의 결과에 따라 재개(개정 필요) 또는 폐기한다 |
+| **폐기** | user | 2026-10-12 「GPU 계약 폐기, 청색 결손 원인으로 전환」(`B/evidence/USER_DECISION_2026-10-12_drop_gpu.txt`), 오프라인 선행 단 DET-DEP-OFFLINE-RESPONSE 폐합(f837cdc, 분기 3) 후. 구현·빌드·GPU 제출 0 으로 종결 |
 
 
 ## §12. 기계 선언
