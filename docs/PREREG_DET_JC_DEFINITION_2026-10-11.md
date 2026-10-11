@@ -307,13 +307,14 @@ python3 -B scripts/det_si_line_input.py jcdef \
 | 구현 | 운전자(Opus 5.5) · 코드 감사 없음(25-z) | 3a8e5c2 — `scripts/det_si_line_input.py` 에 `jcdef`·`jcdef-negative` 추가(기존 명령 무변경), 러너 `B/tools/run_det_jc_definition_offline.slurm` |
 | 직접시험(§9) | 운전자 | a10 419404 **11/11**(양성 대조 3·결함 주입 거부 8), 러너 위생 rc 0 |
 | 등록 계산 run1 | 운전자 | a10 419406(2 s) `B/results/run1/`: 분기 1 INCIDENT_SEPARATION_CONFIRMED — 종료감사 1회차 «폐합 차단» 1(비대응 몫 차감 미확정을 확정으로 기록)로 대체, 보존 |
-| 종료감사 반영 run2 | 운전자 | 판독기 수정 218511b(조건부 표기·분기 조건·비교 맥락), 음성 대조 재확인 a10 419421 11/11, a10 419423(2 s) `B/results/run2/`: G-PATH·G-MAP·G-CLAIM·G-RUN 지적 0; **분기 2 INDETERMINATE** — 직접 침적 배제·대응(자기) 선 상류 몫 0 확정, 비대응 몫 차감(fine_sub_sc) 호출 12 미확정, 크기 미식별, 비교 구간 q_bb 0.62–0.98(원인 귀속 없음) |
-| 판정 | 운전자(구현·판정 겸임) | `docs/VERDICT_DET_JC_DEFINITION_2026-10-11.md` — 1차 INCIDENT_SEPARATION_CONFIRMED(ec023c1) → 종료감사 1회차 반영 INDETERMINATE(정의 판별 목표 미달) |
-| 종료감사 | astra(계약 저자 이해관계; 자기보고 「gpt-6-astra」) | 1회차 **폐합 불가 «폐합 차단» 2**·«기재로 족함» 1(`B/astra_closeout.md`) → 전건 반영(판정문 §9); 2회차 대기; 독립 재계산은 재현 BLOCKED |
-| 기계 게이트(판정·감사 발주) | 운전자 | 1차 판정 roster·prereg preflight·referents·canonical rc 0(a10 419408), 1회차 감사 발주 dispatch·canonical rc 0(419411) |
-| 비용 | 운전자 | GPU 0; 오프라인 a10 11 작업 할당 102 s · 0.028 core·h / 600 s · 1/6 core·h(게이트 7 작업 98 s 포함, 종료감사 반영 재실행까지); 신규 저장 115 KiB / 10 MiB |
+| 종료감사 반영 run2 | 운전자 | 판독기 수정 218511b(조건부 표기·분기 조건·비교 맥락), 음성 대조 재확인 a10 419421 11/11, a10 419423(2 s) `B/results/run2/`: G-PATH·G-MAP·G-RUN 지적 0, G-CLAIM 은 종료감사 2회차에서 보류 — run2의 공통 정의 문구에 다른 선 제외 확정이 잔존하여 G-CLAIM 승인 보류. 1회차 지적 1은 부분 반영이며, 분기2·정의 판별 목표 미달·크기 미식별은 유지한다; **분기 2 INDETERMINATE** — 직접 침적 배제·대응(자기) 선 상류 몫 0 확정, 비대응 몫 차감(fine_sub_sc) 호출 12 미확정, 크기 미식별, 비교 구간 q_bb 0.62–0.98(원인 귀속 없음) |
+| 종료감사 반영 run3 | 운전자 | 판독기 수정 047d4af(CMFGEN 공통점 문구를 astra NEW 문장으로 — 대표선 자신의 몫으로 한정, 다른 선 제외 확정 삭제), 음성 대조 재확인 a10 419430 11/11, a10 419431(2 s) `B/results/run3/`: run2 와 공통점 문구만 다름(csv 는 `cmfgen_same` 열만, evidence 는 `source.same`·출력 경로·판독기 해시만); G-PATH·G-MAP·G-CLAIM·G-RUN 지적 0; **분기 2 INDETERMINATE** 유지 |
+| 판정 | 운전자(구현·판정 겸임) | `docs/VERDICT_DET_JC_DEFINITION_2026-10-11.md` — 1차 INCIDENT_SEPARATION_CONFIRMED(ec023c1) → 종료감사 1회차 반영 INDETERMINATE(정의 판별 목표 미달) → 2회차 반영(run3, 분기 2 유지) |
+| 종료감사 | astra(계약 저자 이해관계; 자기보고 「gpt-6-astra」·「GPT-6」) | 1회차 **폐합 불가 «폐합 차단» 2**·«기재로 족함» 1(`B/astra_closeout.md`) → 반영, 지적 1 은 부분 반영(판정문 §9); 2회차 **폐합 불가 «폐합 차단» 1**(`B/astra_closeout_r2.md` — run2 공통 정의 문구에 다른 선 제외 확정 잔존) → 전건 반영(판정문 §10, run3); 3회차 대기; 독립 재계산은 재현 BLOCKED |
+| 기계 게이트(판정·감사 발주) | 운전자 | 1차 판정 roster·prereg preflight·referents·canonical rc 0(a10 419408), 1회차 감사 발주 dispatch·canonical rc 0(419411), 1회차 반영 roster·prereg preflight·referents·canonical rc 0(419425), 2회차 감사 발주 dispatch·canonical rc 0(419427) |
+| 비용 | 운전자 | GPU 0; 오프라인 a10 15 작업 할당 139 s · 0.039 core·h / 600 s · 1/6 core·h(게이트 9 작업 132 s 포함, 종료감사 2회차 반영 재실행까지); 신규 저장 172 KiB / 10 MiB |
 
-**이탈(기재):** 종료감사 1회차 지적에 따라 판독기 문구·분기 조건을 고쳐 run2 를 새 경로로 산출했다(run1 보존). 개정 브리프의 1차 발주 게이트 거부는 발주서 결함이며 계약 문면 변경이 아니다.
+**이탈(기재):** 종료감사 1회차 지적에 따라 판독기 문구·분기 조건을 고쳐 run2 를 새 경로로 산출했다(run1 보존). 2회차 지적에 따라 CMFGEN 공통점 문구를 고쳐 run3 을 새 경로로 산출했다(run2 보존). 개정 브리프의 1차 발주 게이트 거부는 발주서 결함이며 계약 문면 변경이 아니다.
 
 ## §12. 기계 선언
 
