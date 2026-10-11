@@ -318,6 +318,26 @@ python3 -B scripts/det_line_energy_corr.py analyze --out /gpfs/kjhan/lumina/cmfg
 
 기안자는 공유 지침 전체와 현행 프로젝트 규약을 읽고 현재 디렉터리와 Lumina-sn 프로젝트 신원을 확인했다. 관련 계약·진단·감사·원 수치표·봉인 소스를 조회했다. 파일 작성·수치 계산·해시 재산출·시험·제출은 하지 않았다. 이후 구현·집행·판정·감사·이탈은 운전자 기록으로 구분한다.
 
+### 집행 기록 (운전자 추가 — 정본 장부, 개정16 ①; 위 기안 기록은 그대로 둔다)
+
+증거 접두 `B=/gpfs/kjhan/lumina/cmfgen_map/energyx_20261011`. 작업 번호·경과는 `B/JOBS.txt`·`B/evidence/sacct_offline_jobs.txt`, 게이트 집행은 `B/evidence/GATE_RECORD.json`.
+
+| 항목 | 담당(실제) | 상태·증거 |
+|---|---|---|
+| user 결정 | user | 「열 장부–전달 에너지 교환 대응」(`B/evidence/USER_DECISION_2026-10-11.txt`), diag9 폐합 후 |
+| 기안 | astra(자기보고 「gpt-6-astra」) | cf520f4 — 개정 없음 |
+| 사전감사 | — | 생략(25-ab: GPU 0·생산 변경 0) |
+| 기계 게이트(기안) | 운전자 | 기안 브리프 canonical rc 0(a10 419681), 기안 prereg·referents·canonical rc 0(419695) |
+| 구현 | 운전자(Opus 5.5) · 코드 감사 없음(25-z) | 0460001 — `scripts/det_line_energy_corr.py`(diag9 `r1_common.py` 입출력 무수정 재사용), 직렬화 수정 3b5ed08; 러너 `B/tools/run_det_line_energy_corr_offline.slurm` |
+| 직접시험(§9) | 운전자 | a10 419696 **20/20**, 러너 위생 rc 0 |
+| 등록 계산 | 운전자 | run1 a10 419697 **실패**(증거 작성의 numpy bool 직렬화; 표 2 파일만 작성, 보존·결과 아님) → run2 a10 419698(3 s) `B/results/run2/`: G-INPUT·G-CALC·G-RUN 지적 0, 미정의 0; **분기 0 PROJECTED_GAP** — D10·D11 선 차 50/50 셸 분리, BF·FF 항등 실패 0, 전달 Q_bb 50셸 순방출(합 −644.5Δ), 장부 L 합 +247.8Δ(A10)·−647.6Δ(A11), 부호 반대 셸 26·24, J13 bb −0.030Δ, O13 bb +0.0014Δ |
+| 판정 | 운전자(구현·판정 겸임) | `docs/VERDICT_DET_LINE_ENERGY_CORR_2026-10-11.md` |
+| 종료감사 | astra(계약 저자 이해관계) | 대기 |
+| 기계 게이트(판정·감사 발주) | 운전자 | 판정 roster(3/3)·prereg preflight·referents·canonical rc 0(a10 419702) |
+| 비용 | 운전자 | GPU 0; 오프라인 a10 5 작업 할당 36 s · 36 core·s / 600 s · 600 core·s(게이트 2 작업 29 s 포함, run2 까지); 신규 저장 416 KiB / 50 MiB |
+
+**이탈(기재):** ① run1 실패 → 직렬화 수정 뒤 run2 를 새 경로로 산출(run1 보존). ② 구현 중 운전자가 로그인 노드에서 빈 표준 입력의 `python3` 를 한 번 실행했다(연산 없음, 규약 위반으로 기재).
+
 ## §12. 기계 선언
 
 참조에는 기존 실재 파일만 둔다. 분기 예시는 기존 프리플라이트의 문면 검사에만 사용한다.
