@@ -45,6 +45,7 @@ DELTA = LEC.DELTA
 BB_NU = (1.49896229e14, 2.99792458e16)            # line_jbar.h BB domain
 SCL_LN_FAC, DENSITY_LIMIT = 0.5, 1.0e30           # lumina_plasma.c call of line_net_cmfgen_scl_ln
 SOBOLEV_OP = "CMFGEN_NONOVERLAP_SOBOLEV"
+W5_ALLOWED_EXCLUSION = ("OUTSIDE_FINE_SUPPORT",)   # rows outside the fine-field support (contract 6: W5 support)
 REAL = {"O": Path("/gpfs/kjhan/lumina/cmfgen_map/coll_presc_20261009/OMEGA/run1"),
         "T": Path("/gpfs/kjhan/lumina/cmfgen_map/trace13_20261010/TRACE/run1"),
         "shell": 10, "ns": LEC.NS, "nb": LEC.NB, "lines": LI.LINES, "w5_shells": (10, 15, 19, 24, 30),
@@ -141,38 +142,55 @@ def lnp_scan_w5(path, cfg, rad_gens):
         gens.setdefault(r["call"], set()).add((r["rad_generation"], r["material_generation"]))
         if r["rad_generation"] not in rad_gens:
             continue
-        c = check.setdefault(r["call"], {"used": 0, "excluded": Counter(), "max_jbar_residual": 0.0,
-                                         "max_beta_residual": 0.0, "by_shell": {}})
-        bs = c["by_shell"].setdefault(r["shell"], {"used": 0, "excluded": Counter(), "max_jbar_residual": 0.0,
-                                                   "max_beta_residual": 0.0})
+        c = check.setdefault(r["call"], {"used": 0, "excluded": Counter(), "failed": Counter(), "failed_examples": [],
+                                         "max_jbar_residual": 0.0, "max_beta_residual": 0.0,
+                                         "max_jbar_err_upper_rel": 0.0, "by_shell": {}})
+        bs = c["by_shell"].setdefault(r["shell"], {"used": 0, "excluded": Counter(), "failed": Counter(),
+                                                   "max_jbar_residual": 0.0, "max_beta_residual": 0.0})
+
+        def fail(reason):
+            c["failed"][reason] += 1
+            bs["failed"][reason] += 1
+            if len(c["failed_examples"]) < 5:
+                c["failed_examples"].append({"shell": r["shell"], "line_id": r["line_id"], "reason": reason})
         if r["shell"] not in w5_shells:
-            c["excluded"]["OUTSIDE_SUPPORT"] += 1
-            bs["excluded"]["OUTSIDE_SUPPORT"] += 1
+            fail("OUTSIDE_STORED_SHELLS")
             continue
-        if r["status"] != "OK":
+        if r["status"] in W5_ALLOWED_EXCLUSION:
             c["excluded"][r["status"]] += 1
             bs["excluded"][r["status"]] += 1
             continue
+        if r["status"] != "OK":
+            fail(f"STATUS:{r['status']}")
+            continue
         why = []
-        J_c, beta, l, Jbar, tau = (LEC.lec_num(r[k], why, k) for k in ("J_c", "beta", "L_l", "Jbar", "tau_eff"))
+        J_c, beta, l, Jbar, tau, sJc, sJbar = (LEC.lec_num(r[k], why, k) for k in (
+            "J_c", "beta", "L_l", "Jbar", "tau_eff", "J_c_err_upper", "Jbar_err_upper"))
         e = LI.det_si_line_input_exponx(tau) if not why else None
         if why or e is None:
-            c["excluded"]["UNDEFINED_VALUE"] += 1
-            bs["excluded"]["UNDEFINED_VALUE"] += 1
+            fail("UNDEFINED_VALUE")
+            continue
+        if sJc < 0 or sJbar < 0:
+            fail("NEGATIVE_ERROR_UPPER")
             continue
         c1 = D(lambda b, j: b * j, beta, J_c)
         sc = D(lambda x, y: abs(x) + abs(y), c1, l)
         rj = D(lambda a, b, s: abs(a - b) / s if s > 0 else (0.0 if a == b else float("inf")),
                Jbar, D(lambda x, y: x + y, c1, l), sc)
         rb = D(lambda a, b: abs(a - b) / abs(a) if a != 0 else (0.0 if b == 0 else float("inf")), beta, e[0])
-        if rj is None or rb is None:
-            c["excluded"]["RESIDUAL_UNDEFINED"] += 1
-            bs["excluded"]["RESIDUAL_UNDEFINED"] += 1
+        re_ = D(lambda s, j: s / j if j > 0 else (0.0 if s == 0 else float("inf")), sJbar, Jbar)
+        if rj is None or rb is None or re_ is None:
+            fail("RESIDUAL_UNDEFINED")
+            continue
+        for x in (c, bs):
+            x["max_jbar_residual"] = max(x["max_jbar_residual"], rj)
+            x["max_beta_residual"] = max(x["max_beta_residual"], rb)
+        c["max_jbar_err_upper_rel"] = max(c["max_jbar_err_upper_rel"], re_)
+        if rj > TOL or rb > TOL:
+            fail("RELATION_RESIDUAL")
             continue
         for x in (c, bs):
             x["used"] += 1
-            x["max_jbar_residual"] = max(x["max_jbar_residual"], rj)
-            x["max_beta_residual"] = max(x["max_beta_residual"], rb)
     return {"sha256": sha, "bytes": nbytes, "check": check, "line_rows": line_rows,
             "generations": {k: sorted(v) for k, v in gens.items()}, "notes": notes}
 
@@ -319,6 +337,9 @@ def lnp_line(lid, lo, up, atom, levels, sup, tr, w5row, cfg, V, n_atom, J_b, t):
         why.append("W5_FREQUENCY")
     J_c, beta_p, l_p, Jbar_p, taueff_p = (LEC.lec_num(w[k], vals, k)
                                           for k in ("J_c", "beta", "L_l", "Jbar", "tau_eff"))
+    sJc, sJbar = (LEC.lec_num(w[k], vals, k) for k in ("J_c_err_upper", "Jbar_err_upper"))
+    if not vals and (sJc < 0 or sJbar < 0):
+        why.append("W5_NEGATIVE_ERROR_UPPER")
     g_l, g_u = int(levels[lo]["g"]), int(levels[up]["g"])
     if (g_l, g_u) != (tr["g"].get(lo), tr["g"].get(up)):
         why.append("STATISTICAL_WEIGHTS")
@@ -385,6 +406,10 @@ def lnp_line(lid, lo, up, atom, levels, sup, tr, w5row, cfg, V, n_atom, J_b, t):
     pscale = D(lambda *x: sum(abs(v) for v in x), *parts)
     row.update(F0_minus_F4=tot, F0_minus_F4_over_delta=D(lambda x: x / DELTA, tot, scaling=True),
                telescoping_separated=LEC.lec_separated(psum, tot, pscale))
+    row["J_c_err_upper_W5"], row["Jbar_err_upper_W5"] = sJc, sJbar
+    row["F0_field_error_upper"] = D(lambda a, b, c_, s: a * abs(b) * abs(c_) * s, fpv, d, k_eff, sJbar)
+    row["F0_field_error_upper_over_abs_F0"] = D(lambda e_, f_: e_ / abs(f_) if f_ != 0 else float("inf"),
+                                                row["F0_field_error_upper"], row["F0"])
     row["attribution"] = ("F0-F1 가중 d · F1-F2 국소항·beta 의 물질 이력(12→13) · F2-F3 소광 처방·beta 표현 · F3-F4 장 표현"
                           "(J_c 대 거친 구간 J) — 고정 J_c^p 에서의 등록 순서 산술 분해")
     und = [k for k in ("F0", "F1", "F2", "F3", "F4", "F0_minus_F4", "F0_minus_F4_over_delta", "d", "Jbar_star")
@@ -393,6 +418,11 @@ def lnp_line(lid, lo, up, atom, levels, sup, tr, w5row, cfg, V, n_atom, J_b, t):
     und += [k for k, v in row.items() if isinstance(v, float) and not math.isfinite(v)]
     if row["telescoping_separated"] is not False:
         und.append("TELESCOPING")
+    for k in ("producer_check_tau_eff_rel", "producer_check_l_rel", "producer_check_beta_rel"):
+        if row.get(k) is None or row[k] > TOL:
+            und.append(f"PRODUCER_LINK:{k}")
+    if row.get("F0_field_error_upper") is None:
+        und.append("F0_field_error_upper")
     row["status"] = "산출" if not und else "부분"
     row["reason"] = ("UNDEFINED:" + ",".join(und)) if und else ""
     return row
@@ -468,6 +498,8 @@ def lnp_pipeline(cfg):
         prod[st] = {"calls": calls, "material": int(next(iter(mats))) if len(calls) == 1 and len(mats) == 1 else None}
         if prod[st]["material"] is None:
             common.setdefault("W5", []).append(f"{st}:W5_PRODUCER_LINK:{calls}:{sorted(mats)}")
+    w5_fail = {cc: dict(w5["check"][cc]["failed"]) for st in cfg["states"] for cc in prod[st]["calls"]
+               if w5["check"].get(cc, {}).get("failed")}
     for st, info in cfg["states"].items():
         g = str(info["radiation"])
         ident, cov = reg[g].get("identity", []), reg[g].get("coverage", [])
@@ -492,6 +524,7 @@ def lnp_pipeline(cfg):
                  w5_rows_used=bs["used"] if bs else None,
                  w5_excluded=json.dumps(dict(bs["excluded"])) if bs else None,
                  w5_max_jbar_residual=bs["max_jbar_residual"] if bs else None,
+                 w5_failed=json.dumps(dict(bs["failed"])) if bs else None,
                  w5_max_beta_residual=bs["max_beta_residual"] if bs else None,
                  attributed_terms=None, attributed_terms_reason="전체 셸 선별 항 미저장 — 제한 선(A10 셸10)만 분해",
                  unattributed_residual=r.get("L_minus_Q"))
@@ -579,13 +612,20 @@ def lnp_pipeline(cfg):
                  w5_scope="W5 = Z 14·16·20, ion 1·2 매핑 선과 저장 5셸만 — 전체 에너지 집합 아님",
                  w5_rows_used=c.get("used"), w5_excluded=json.dumps(dict(c.get("excluded", {}))),
                  w5_max_jbar_residual=c.get("max_jbar_residual"), w5_max_beta_residual=c.get("max_beta_residual"),
+                 w5_failed=json.dumps(dict(c.get("failed", {}))),
+                 w5_failed_examples=json.dumps(c.get("failed_examples", [])),
+                 w5_max_jbar_err_upper_rel=c.get("max_jbar_err_upper_rel"),
                  **{k: v for k, v in cond[st].items() if k != "registration"},
                  registration=json.dumps(cond[st]["registration"], ensure_ascii=False))
+        if c.get("failed"):
+            g["status"] = "부분"
+            g["reason"] = (g.get("reason", "") + ";W5_CHECK_FAILED").strip(";")
         if not c.get("used"):
             g["status"] = "부분"
             g["reason"] = (g.get("reason", "") + ";W5_CHECK_EMPTY").strip(";")
         grows.append(g)
     return {"rows": rows, "line_rows": lrows, "global_rows": grows, "common": common, "why_lines": why_lines,
+            "w5_failures": w5_fail,
             "w5": w5, "reg": reg, "prod": prod, "cond": cond, "trace": tr, "atomic": (asha, abytes),
             "dumps": dumps}
 
@@ -605,7 +645,7 @@ def lnp_d_rest(l_minus_q, six_line_sum):
 def lnp_produced(p):
     """every mandatory part valid: 100 shell rows, the registered lines, D_rest and both global rows."""
     ok = all(r.get("status") == "산출" for r in p["rows"] + p["line_rows"] + p["global_rows"])
-    return ok and not any(p["common"].values()) and not p["why_lines"]
+    return ok and not any(p["common"].values()) and not p["why_lines"] and not p["w5_failures"]
 
 
 def lnp_branch(produced, conditions_unmet, separated):
@@ -735,8 +775,9 @@ def lnp_write_toy(root, mutate=None, record=None):
                 rad = LI.det_si_line_input_radiation(e, te, J_c, TOY_NU[lid], TOY_T)
                 w5.append({"call": call, "operator": SOBOLEV_OP, "rad_generation": call, "material_generation": call,
                            "shell": str(s), "line_id": str(lid), "Z": "14", "ion": "1", "nu_hz": a["nu"],
-                           "J_c": repr(J_c), "J_c_err_upper": "0", "beta": repr(rad["beta"]), "L_l": repr(rad["l"]),
-                           "Jbar": repr(rad["Jbar"]), "Jbar_err_upper": "0", "tau_eff": repr(te),
+                           "J_c": repr(J_c), "J_c_err_upper": repr(1e-3 * J_c), "beta": repr(rad["beta"]),
+                           "L_l": repr(rad["l"]),
+                           "Jbar": repr(rad["Jbar"]), "Jbar_err_upper": repr(1e-3 * rad["Jbar"]), "tau_eff": repr(te),
                            "srce_chk": str(sc), "status": "OK"})
         w5.append({"call": "1", "operator": "INIT_SHARED_GAUSSIAN", "rad_generation": "1", "material_generation": "0",
                    "shell": "1", "line_id": str(lid), "Z": "14", "ion": "1", "nu_hz": a["nu"],
@@ -793,7 +834,8 @@ def lnp_toy_hand(rec, cfg, p):
         b = [i for i in range(len(edges) - 1) if edges[i] <= nu < edges[i + 1]][0]
         out[lid] = {"F0": FOUR_PI * V * d * (keff * Jbar_p - em), "F1": FOUR_PI * V * (keff * Jbar_p - em),
                     "F2": FOUR_PI * V * (keff * Jstar - em), "F3": FOUR_PI * V * bT * (kraw * J_c - em),
-                    "F4": FOUR_PI * V * bT * (kraw * Jb[b] - em), "tau_m": tm, "d": d}
+                    "F4": FOUR_PI * V * bT * (kraw * Jb[b] - em), "tau_m": tm, "d": d,
+                    "err": FOUR_PI * V * d * abs(keff) * 1e-3 * Jbar_p}
     return out
 
 
@@ -946,8 +988,10 @@ def cmd_selftest():
                "inject a not-applicable W5 value: undefined, not zero")
         pa, _, _ = run("w5out", lambda k, o: o + [dict(o[0], shell="7")] if k == ("w5", 0) else o)
         c12 = pa["w5"]["check"]["12"]
-        expect(c12["excluded"].get("OUTSIDE_SUPPORT") == 1 and "7" not in [str(s) for s in (0, 1)],
-               "inject a W5 row outside the stored support: excluded from the check, not counted as used")
+        expect(c12["failed"].get("OUTSIDE_STORED_SHELLS") == 1 and not lnp_produced(pa) and
+               all(r["status"] == "산출" for r in pa["line_rows"]),
+               "inject a W5 row outside the stored shells: a check failure (not an allowed exclusion), not produced; "
+               "the registered lines kept")
         pa, _, _ = run("lev", lambda k, o: [dict(r, level_num="9") if (r["call"], r["i_fl"]) == ("1", "2") else r
                                             for r in o] if k == ("trace", "si10_slmap.csv") else o)
         expect(all(r["status"] == "미산출" for r in pa["line_rows"]) and
@@ -1029,6 +1073,49 @@ def cmd_selftest():
         expect(pa["common"].get("A11") and all(r["status"] == "미산출" for r in pa["rows"] if r["state"] == "A11") and
                all(r["status"] == "산출" for r in pa["rows"] if r["state"] == "A10"),
                "inject one missing shell of the A11 spectral table: A11 stopped (coverage), A10 kept")
+        # ---- W5 relation check and producer link propagate to validity (closeout round 1)
+        def w5_row(call, lid, shell, **kw):
+            return lambda k, o: [dict(r, **kw) if (r["call"], r["line_id"], r["shell"]) == (call, lid, shell) else r
+                                 for r in o] if k == ("w5", 0) else o
+        pa, _, _ = run("w5rel", lambda k, o: [dict(r, Jbar=repr(float(r["Jbar"]) * (1 + 1e-6))) if (
+            r["call"], r["line_id"], r["shell"]) == ("12", "11", "0") else r for r in o] if k == ("w5", 0) else o)
+        expect(pa["w5"]["check"]["12"]["failed"].get("RELATION_RESIDUAL") == 1 and pa["w5_failures"] and
+               not lnp_produced(pa) and all(r["status"] == "산출" for r in pa["line_rows"]),
+               "inject a finite W5 relation mismatch in a checked non-registered row: a check failure, not produced "
+               "(branch 2), registered lines kept")
+        pa, _, _ = run("w5undef", w5_row("12", "11", "0", beta="nan"))
+        expect(pa["w5"]["check"]["12"]["failed"].get("UNDEFINED_VALUE") == 1 and not lnp_produced(pa),
+               "inject an undefined value into a checked W5 row: a check failure, not an exclusion; not produced")
+        pa, _, _ = run("w5status", w5_row("12", "11", "0", status="BROKEN"))
+        expect(pa["w5"]["check"]["12"]["failed"].get("STATUS:BROKEN") == 1 and not lnp_produced(pa),
+               "inject an unknown W5 status: a check failure; not produced")
+        pa, _, _ = run("w5err", w5_row("12", "11", "0", Jbar_err_upper="-1e-20"))
+        expect(pa["w5"]["check"]["12"]["failed"].get("NEGATIVE_ERROR_UPPER") == 1 and not lnp_produced(pa),
+               "inject a negative W5 error upper bound: a check failure; not produced")
+        pa, _, _ = run("w5fine", lambda k, o: o + [dict(r, status="OUTSIDE_FINE_SUPPORT", J_c="NOT_APPLICABLE",
+                                                         beta="NOT_APPLICABLE", line_id="99")
+                                                    for r in o if (r["call"], r["line_id"], r["shell"]) ==
+                                                    ("12", "11", "0")] if k == ("w5", 0) else o)
+        expect(pa["w5"]["check"]["12"]["excluded"].get("OUTSIDE_FINE_SUPPORT") == 1 and not pa["w5_failures"] and
+               lnp_produced(pa), "a W5 row outside the fine-field support is an allowed exclusion (positive control)")
+        pre2 = list(TOY_POP["pre"])
+        pre2[2] *= 1.5
+
+        def producer(k, o):
+            if k == ("trace", "si10_vec.csv"):
+                return [dict(r, value=repr(pre2[2])) if (r["call"], r["phase"], r["i"]) == ("1", "PRE_FL", "2") else r
+                        for r in o]
+            if k == ("ion", 9):
+                return [dict(r, Z14_nlte_q1_cm3=repr(sum(pre2[:4]))) if r["shell_id"] == "1" else r for r in o]
+            return o
+        pa, _, _ = run("producer", producer)
+        Lp = lines(pa)
+        expect(not pa["why_lines"] and "PRODUCER_LINK" in Lp[11]["reason"] and "PRODUCER_LINK" in Lp[12]["reason"] and
+               Lp[11]["status"] == "부분" and Lp[13]["status"] == "산출" and not lnp_produced(pa),
+               "inject a material-12 population that no longer reproduces the W5 producer values (public link kept): "
+               "the dependent lines partial (PRODUCER_LINK), the independent line kept, not produced")
+        expect(all(close(L[lid]["F0_field_error_upper"], hand[lid]["err"]) for lid in hand),
+               "field error upper bound 4 pi V d |k| sigma_Jbar of each line equals the hand value (positive control)")
         # ---- common frame / grid definitions
         pa, _, _ = run("frame", lambda k, o: dict(o, frame="LAB") if k == ("manifest", 11) else o)
         expect(pa["common"].get("A11") and all(r["status"] == "미산출" for r in pa["rows"] if r["state"] == "A11") and
@@ -1140,14 +1227,16 @@ def cmd_analyze(out, selftest_log=None):
     after = {str(q): TR.sha(q) for q in small}
     if after != before:
         gates["G-INPUT"].append("INPUT_CHANGED_DURING_RUN")
+    for cc, fl in p["w5_failures"].items():
+        gates["G-CALC"].append(f"W5_CHECK_FAILED:{cc}:{json.dumps(fl)}")
     if any(r.get("telescoping_separated") for r in p["line_rows"]):
         gates["G-CALC"].append("TELESCOPING_IDENTITY")
-    st = None
+    st_sum = None
     if selftest_log:
         ls = [ln for ln in Path(selftest_log).read_text().splitlines() if ln.startswith("{")] \
             if Path(selftest_log).is_file() else []
-        st = json.loads(ls[-1]) if ls else None
-        if not st or st.get("failures") != 0:
+        st_sum = json.loads(ls[-1]) if ls else None
+        if not st_sum or st_sum.get("failures") != 0:
             gates["G-CALC"].append("SELFTEST_NOT_PASSED")
     produced = lnp_produced(p)
     unmet = any(str(c["cond_material_history"]).startswith("불충족") for c in p["cond"].values())
@@ -1204,10 +1293,13 @@ def cmd_analyze(out, selftest_log=None):
                 "slurm_job_id": os.environ.get("SLURM_JOB_ID"), "branch": code, "label": label, "gates": gates,
                 "produced": produced, "conditions": p["cond"], "producer": p["prod"],
                 "registration": p["reg"], "source_reading": SOURCE,
-                "w5_check": {c: {"used": v["used"], "excluded": dict(v["excluded"]),
+                "w5_check": {c: {"used": v["used"], "excluded": dict(v["excluded"]), "failed": dict(v["failed"]),
+                                 "failed_examples": v["failed_examples"],
+                                 "max_jbar_err_upper_rel": v["max_jbar_err_upper_rel"],
                                  "max_jbar_residual": v["max_jbar_residual"],
                                  "max_beta_residual": v["max_beta_residual"],
                                  "by_shell": {s: {"used": b["used"], "excluded": dict(b["excluded"]),
+                                                  "failed": dict(b["failed"]),
                                                   "max_jbar_residual": b["max_jbar_residual"],
                                                   "max_beta_residual": b["max_beta_residual"]}
                                               for s, b in v["by_shell"].items()}}
@@ -1224,9 +1316,14 @@ def cmd_analyze(out, selftest_log=None):
                 "structural_nulls": {"raw_line_e_k_d": "선별 e·k·d 배열·선별 총흡수·총방출 미저장",
                                      "fine_field": "미세장 원배열 미저장 (J_c 재계산 없음)",
                                      "observed_ray_exchange": "관측 광선 교환 미저장"},
-                "selftest": {"log": selftest_log, "summary": st},
+                "selftest": {"log": selftest_log, "summary": st_sum},
                 "inputs": dict({q: {"bytes": Path(q).stat().st_size, "sha256": h} for q, h in before.items()}, **big),
                 "inputs_unchanged": after == before,
+                "inputs_unchanged_scope": (
+                    "before/after SHA-256 of the small inputs listed in inputs (dumps, ion files, "
+                    "log, config, levels, trace files); w5_lines.csv and line_list.csv are "
+                    "hashed once during their single sequential read (no before/after "
+                    "comparison)"),
                 "code": {str(Path(m.__file__).resolve()): TR.sha(Path(m.__file__))
                          for m in (sys.modules[__name__], LEC, LI, TR, EB)}}
     (out / "evidence.json").write_text(json.dumps(evidence, indent=1, default=str, ensure_ascii=False) + "\n")
