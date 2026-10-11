@@ -300,8 +300,11 @@ python3 -B tools/det_nt_pop_bound.py run --out run1
 | 판정 게이트·종료감사 발주 게이트 | 운전자 | a10 420149: roster·prereg·referents·canonical·위생·발주 프리플라이트 rc 0(`B/evidence/gates_v1.summary`) |
 | 종료감사 1회차 | astra(자기보고 「GPT-6」, 세부 ID 미확인; 계약 기안자 이해관계) | 판정 bdbfeb6 대상: **폐합 불가 · «폐합 차단» 2**(q=0 덮어쓰기로 0/0 미정의 복구; 국소 결함 전역 예외로 주 표 소실) · «기재로 족함» 2(전력 서술, Si 서술); 실행 재현 BLOCKED(`B/astra_closeout.md`) |
 | 1회차 반영 | 운전자 | 전건 반영: 판독기 92b5a41f…(덮어쓰기 삭제, 국소 결함 → 성분 미정의·결함 기록·표 보존), 직접시험 4종 추가 → a10 420158 `F/tests/run3` **42/42**; **run2 a10 420159** `F/run2/`(4 s): 분기 1, 결함 0, 주 표 run1 과 바이트 동일; 판정문 서술 2건 정정 |
-| 종료감사 2회차 | astra | (예정) |
-| 비용 | 운전자 | GPU 0; a10 9 작업 할당 벽시계 합 130 s / 1200 s, 130 core·s / 1200; 신규 저장 0.2 MB / 64 MiB(1회차 반영 시점 소계) |
+| 판정 게이트(2회차) | 운전자 | a10 420160: roster·prereg·referents·canonical·위생·발주 프리플라이트 rc 0(`B/evidence/gates_v2.summary`) |
+| 종료감사 2회차 | astra(자기보고 「GPT-6」, 세부 ID 미확인) | 판정 56923b5 대상: **폐합 가 · «폐합 차단» 0 · «기재로 족함» 1**(게이트 기록 cmd 접두); 1회차 4 건 해소; 실행 재현 BLOCKED(`B/astra_closeout_r2.md`) |
+| 2회차 반영 | 운전자 | 게이트 기록 G-BOUND·G-DECIDE cmd 접두 run1 → run2 정정 |
+| **폐합** | 운전자 | 2026-10-12, **분기 1 POPULATION_TRACE_NEEDED**, 정본 run2; 후속 계측(인구 가중 기록)의 여부·형태는 user 결정; 폐합 게이트 a10 420161: roster·prereg·referents·canonical·위생 rc 0(`B/evidence/gates_c.summary`) |
+| 비용(최종) | 운전자 | GPU 0; a10 11 작업 할당 벽시계 합 208 s / 1200 s, 208 core·s / 1200, 작업당 최대 41 s / 600; 신규 저장 0.2 MB / 64 MiB(작업별 값 `F/evidence/sacct_offline_jobs.txt`) |
 
 **이탈(기재):** ① 첫 직접시험 37/38(시험 입력 약함) → 정정·새 경로 재현 38/38. ④ 종료감사 1회차 «폐합 차단» 2(미정의 전파 구현 결함) → 수정·직접시험 42/42·run2(주 표 run1 과 동일). ② 「가산 소실」은 구간 합이 모든 항을 경계에 보존하는 방식으로 처리(판정문 §4 ②). ③ run1 로그의 numpy 넘침 경고 1행은 직접시험의 의도된 넘침 주입에서 나온 것.
 
