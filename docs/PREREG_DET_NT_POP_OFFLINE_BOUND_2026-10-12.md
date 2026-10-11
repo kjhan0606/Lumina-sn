@@ -283,6 +283,25 @@ python3 -B tools/det_nt_pop_bound.py run --out run1
 
 집행 기록의 정본은 이 절이다. 운전자는 기계 검사 결과, 미실행 항목의 실행 결과, 구현·직접시험·실행 신원, 비용, 분기·이탈, astra 종료감사와 재현 상태를 추가한다.
 
+### 집행 기록 (운전자 추가 — 정본 장부, 개정16 ①; 위 기안 기록은 그대로 둔다)
+
+증거 접두 `B=/gpfs/kjhan/lumina/cmfgen_map/ntcons_20261012`, `F=B/offline`. 작업 번호·경과는 `B/JOBS.txt`·`F/evidence/sacct_offline_jobs.txt`, 게이트 집행은 `F/evidence/GATE_RECORD.json`.
+
+| 항목 | 담당(실제) | 상태·증거 |
+|---|---|---|
+| user 결정 | user | 「계약화, 오프라인 선행 부분부터」(`B/evidence/USER_DECISION_2026-10-12.txt`), diag11 폐합 후 |
+| 기안 | astra(gpt-6-astra) | fd13eac; 기안 브리프 게이트 위생·정본 rc 0(a10 420131), 기안 게이트 prereg·referents·canonical rc 0(420140) |
+| 사전감사 | — | 생략(25-ab: GPU 0·생산 변경 0) |
+| 구현 | 운전자(Opus 5.5) · 코드 감사 없음(25-z) | `F/tools/det_nt_pop_bound.py`(4b7be707…), `run_det_nt_pop_bound.slurm`(5540fbea…); 재사용 모듈 무수정 |
+| 구현 게이트 | 운전자 | a10 420142: prereg·referents·canonical·위생 rc 0(`B/evidence/gates_i1.summary`) |
+| 직접시험 | 운전자 | 420146 37/38(가산 소실 시험의 합성 입력이 약함 — 판독기 구간 합은 정확값 포함) → 입력 확대 후 420147 `F/tests/run2` **38/38** |
+| 계산 run1 | 운전자 | a10 420148 `F/run1/`(4 s, rc 0, 입력 불변): 결함 0, 공통 검사 통과, Si 기준 대조 γ_ph 상대 6.5e-14·γ_NT 0·문턱 일치·SL 0 단독; A 36 행 전부 offline_bound_valid·B 정의; B 최대 0.0377(Fe 셸9), B_lo ≥ 0.01 은 16 행(Fe 6–11·Co 7–11·Ni 6–10); P_max/D 최대 1.27e-4 |
+| 판정 | 운전자(구현·판정 겸임) | `docs/VERDICT_DET_NT_POP_OFFLINE_BOUND_2026-10-12.md` — **분기 1 POPULATION_TRACE_NEEDED**(분기 함수가 표의 전제 전건 검사, 판정과 일치) |
+| 종료감사 | astra | (예정) |
+| 비용 | 운전자 | GPU 0; a10 6 작업 할당 벽시계 합 84 s / 1200 s, 84 core·s / 1200; 신규 저장 0.2 MB / 64 MiB(판정 시점 소계) |
+
+**이탈(기재):** ① 첫 직접시험 37/38(시험 입력 약함) → 정정·새 경로 재현 38/38. ② 「가산 소실」은 구간 합이 모든 항을 경계에 보존하는 방식으로 처리(판정문 §4 ②). ③ run1 로그의 numpy 넘침 경고 1행은 직접시험의 의도된 넘침 주입에서 나온 것.
+
 ## §12. 기계 선언
 
 참조는 실재 파일만 지정한다. 아래 분기 예시는 기존 문면 검사의 입력이며 별도 결정표 재계산 장치를 요구하지 않는다.
