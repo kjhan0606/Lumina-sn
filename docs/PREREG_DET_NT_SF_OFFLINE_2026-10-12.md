@@ -314,17 +314,17 @@ python3 -B tools/det_nt_sf.py finish --out run1
 | 기안·개정 | astra(자기보고 「GPT-6」·「gpt-6-astra」) | 기안 0dbbbee(브리프 게이트 위생·정본 rc 0 a10 420210, 기안 게이트 prereg·referents·canonical rc 0 a10 420216); 개정 1 금지 문자 2 쌍; 개정 2 f6d5b40 23 쌍(게이트 rc 0 a10 420224) |
 | 사전감사 | — | 생략(25-ab: GPU 0·생산 변경 0) |
 | 개발 시험 | 운전자 | grammar debug 1173763(컴파일 실패 0 s)·1173764(300 s)·1173792(77 s), 합성 인구 — 개정 2 의 근거, 등록 산출 아님(`F/dev_probe1/`·`F/dev_probe2/`) |
-| 구현 | 운전자(Opus 5.5) · 코드 감사 없음(25-z) | `F/tools/det_nt_sf.py`(71ff376e…), `det_nt_sf_driver.f90`(eca24c95…), `run_det_nt_sf.slurm`(3029095c…), `run_det_nt_sf_cmf.slurm`(d6bbcd24…); 재사용 판독기 무수정 |
+| 구현 | 운전자(Opus 5.5) · 코드 감사 없음(25-z) | `F/tools/det_nt_sf.py`(1회차 71ff376e… → 종료감사 1회차 수리 후 df814ca8…), `det_nt_sf_driver.f90`(eca24c95…), `run_det_nt_sf.slurm`(3029095c… → ff142e72…, finish 출력 위치 TAG), `run_det_nt_sf_cmf.slurm`(d6bbcd24…); 재사용 판독기 무수정 |
 | 구현 게이트 | 운전자 | a10 420245: prereg·referents·canonical·위생 rc 0(`B/evidence/gates_i1.summary`) |
-| 직접시험 | 운전자 | a10 420241 `F/tests/run1` 36/37(시험 합성값 자릿수·영 분모 경로 → 수정, η₀*=0 비 예외 방지) · a10 420244 `F/tests/run2` **38/38** |
+| 직접시험 | 운전자 | a10 420241 `F/tests/run1` 36/37(시험 합성값 자릿수·영 분모 경로 → 수정, η₀*=0 비 예외 방지) · a10 420244 `F/tests/run2` 38/38 · 수리 후 a10 420316 `F/tests/run3` **39/39** |
 | prepare | 운전자 | a10 420246 `F/run1/`: 호출 193(해석 1 + 192), 셸 국소 문제 0, 입력 신원 오류 0 |
 | 호출 | 운전자 | grammar debug 사슬 30 작업(1173833–1173858·1173923–1173927): 193/193 rc 0, 최대 59 s; 호출기 빌드는 작업마다 `F/run1/build_<job>/` |
-| finish | 운전자 | a10 420297 `F/run1/`: 결함 0, 직접시험 38/38, 호출 193 COMPLETE, 해석 대조 통과; 분류 사이 20·η₀* 걸침 16·η₂* 이상 0; 생성·소비 전리 연결 24 행 실패; 분기 4 |
-| 판정 | 운전자(구현·판정 겸임) | `docs/VERDICT_DET_NT_SF_OFFLINE_2026-10-12.md` — **분기 4 INDETERMINATE, 분할 확보 목표 일부 달성** |
-| 종료감사 | astra | (예정) |
-| 비용 | 운전자 | GPU 0; a10 8 작업 할당 합 157 s / 1200 s, 157 core·s / 1200; grammar 33 작업(개발 시험 포함) 할당 합 5083 s / 10800 s, 22.6 core·h / 48; 신규 저장 109 MB / 1 GiB(판정 시점 소계) |
+| finish | 운전자 | 1회차 a10 420297 `F/run1/`: 결함 0, 직접시험 38/38, 호출 193 COMPLETE, 해석 대조 통과; 분류 사이 20·η₀* 걸침 16·η₂* 이상 0; 생성·소비 전리 연결 24 행 실패; 분기 4(수리 전 기록) · 2회차 a10 420318 `F/run1/finish_r2/`: 같은 호출 산출 재판독, 결함 0, 직접시험 39/39, 해석 대조 COMPLETE·과학 호출 192 UNIDENTIFIED(Co IV·V 전리 자료 부재), 36 행 SF 미정의; 분기 4 |
+| 판정 | 운전자(구현·판정 겸임) | `docs/VERDICT_DET_NT_SF_OFFLINE_2026-10-12.md` — 1회차(65e5493) 분기 4·일부 달성 → 종료감사 1회차 구현 결함 1건으로 분기 0 OFFLINE_REWORK → 수리 후 2회차 **분기 4 INDETERMINATE, 분할 확보 목표 미달** |
+| 종료감사 | astra(자기보고 「gpt-6-astra」) | 1회차(HEAD 65e5493): 폐합 불가 · «폐합 차단» 1 + «기재로 족함» 1 (`B/astra_closeout.md`) → 전건 반영; 2회차 (예정) |
+| 비용 | 운전자 | GPU 0; a10 11 작업 할당 합 215 s / 1200 s, 215 core·s / 1200; grammar 33 작업(개발 시험 포함) 할당 합 5083 s / 10800 s, 22.6 core·h / 48; 신규 저장 109 MB / 1 GiB(판정 2회차 시점 소계) |
 
-**이탈(기재):** ① 개발 시험의 첫 작업은 모듈 이름 충돌로 컴파일에 실패했고 `ONLY` 목록으로 고쳐 다시 돌렸다. ② grammar 사슬은 남은 호출이 없으면 곧 끝나는 작업까지 30 개를 걸었다. ③ 러너 장부는 러너가 잰 시간이며 비용은 sacct 할당 경과시간으로 보고한다. ④ finish 내부 직접시험의 prepare 경로 시험이 `F/run1/selftest_in_finish/` 에 산출을 남긴다.
+**이탈(기재):** ① 개발 시험의 첫 작업은 모듈 이름 충돌로 컴파일에 실패했고 `ONLY` 목록으로 고쳐 다시 돌렸다. ② grammar 사슬은 남은 호출이 없으면 곧 끝나는 작업까지 30 개를 걸었다. ③ 러너 장부는 러너가 잰 시간이며 비용은 sacct 할당 경과시간으로 보고한다. ④ finish 내부 직접시험의 prepare 경로 시험이 `F/run1/selftest_in_finish/` 에 산출을 남긴다. ⑤ 종료감사 1회차 수리 후 finish 를 `--tag r2` 로 다시 돌려 `F/run1/finish_r2/` 에 썼다(새 grammar 계산 없음, 1회차 finish 산출 보존).
 
 ## §12. 기계 선언과 참조
 
