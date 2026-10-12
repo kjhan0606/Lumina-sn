@@ -1,0 +1,374 @@
+# 사전등록 - DET-NT-SF-OFFLINE: 저장 상태에 조건부인 CMFGEN 비열적 에너지 분할
+
+2026-10-12 · astra 읽기 전용 기안  
+상태: 원 소스·저장 자료 형식·선행 정의·문헌 조회 완료. 구현·빌드·계산·직접시험·게이트는 미집행.
+
+## §0. Q-GOAL·Q-LEAN 자기답
+
+**Q-GOAL: PASS.** 최종목적은 공개 CMFGEN과 비교 가능한 SN Ia 광도와 스펙트럼이다. 이번 단은 O의 저장 상태에 조건부인 Spencer-Fano 분할을 구하여, 철족 II 직접 전리의 규모가 직전 단의 현행 처방 몫과 두 배 민감도 문턱에 비해 어느 쪽인지 판단한다. 이를 생략하면 작은 필요 몫만으로 생산 처방 검토의 우선순위를 정하게 된다.
+
+**Q-LEAN: APPROPRIATE.** 주 산출은 표 하나다. 기존 판독·침적 연결·광전리 적분·조건부 규모 계산을 재사용하고, 새 구현은 CMFGEN 입력 연결·독립 호출·채널 합산·분기에 한정한다. 전체 CMFGEN 대기 계산, 새 인구해와 온도해, GPU 계측은 하지 않는다. 저장 산출 재검, 쓰기 결함 모사, 별도 결정표 재계산 장치는 만들지 않는다.
+
+## §1. 권한·위치·보존
+
+기안·개정·모든 감사는 astra, 구현·직접시험·게이트·실행·판정은 운전자다. GPU 0·생산 변경 0이므로 경량 사전감사는 생략한다(25-ab). 코드 감사는 없다(25-z). 종료감사는 astra이며 기안자와 같다는 이해관계를 명시한다.
+
+| 약칭 | 위치 |
+|---|---|
+| P | `/home/kjhan/BACKUP/Eunha.A1/Claude/Lumina-sn` |
+| F | `/gpfs/kjhan/lumina/cmfgen_map/ntsf_20261012/offline` |
+| O | `/gpfs/kjhan/lumina/cmfgen_map/coll_presc_20261009/OMEGA/run1` |
+| L | `/gpfs/kjhan/lumina/cmfgen_map/ntpresc_20261012/offline` |
+| N | `/gpfs/kjhan/lumina/cmfgen_map/ntcons_20261012/offline` |
+| C | `/gpfs/kjhan/cmfgen_src/cur_cmf` |
+| A | `/gpfs/kjhan/cmfgen_21jun23/atomic` |
+| U | `/home/kjhan/BACKUP/Eunha.A1/Claude/Lumina-sn/data/standart_data1/toy06` |
+
+사용자 결정의 선택지 설명은 과학 계약으로 승계하지 않는다. 신규 코드·입력 연결표·빌드·시험·계산 산출은 F 아래에만 둔다. 생산 소스·런·원자료·CMFGEN 원 소스·재사용 모듈은 수정하지 않는다. 소비한 파일만 경로·크기·SHA-256으로 식별한다. 전체 트리 복사·해시, 하드링크, 파일시스템 고유 기능은 사용하지 않는다. 실행마다 새 출력 위치를 사용하며 실패 산출도 보존한다.
+
+## §2. 과학 질문과 재현 상한
+
+> O의 셸 0-11에서 저장된 전자밀도·원소 총량·II 및 III 인구를 고정하고, 누락된 입력을 명시한 대체 상태에서 CMFGEN의 Spencer-Fano 루틴은 침적 에너지를 직접 II 전리·여기·전자 가열에 얼마나 배분하는가? 직접 II 전리 사건률을 직전 단과 같은 정의로 환산하면 \(\eta_0^*\), \(\eta_2^*\)와 어떤 관계인가?
+
+표적은 Fe·Co·Ni II이며 36행을 유지한다. 전자 열화 계산에는 표적 이외의 경쟁 원소·이온도 포함한다.
+
+**정확한 공개 CMFGEN 실행이나 O의 완전한 준위 상태는 재현할 수 없다.** 저장 ion 표는 원소 총량과 II·III 총량을 제공하지만 모든 이온 단계와 준위별 인구를 제공하지 않는다. 로컬 CMFGEN 소스·원자자료가 공개 실행과 같은 판본이라는 증거도 없다.
+
+| 입력 | 저장 자료와 이번 처리 |
+|---|---|
+| epoch·셸·T·전자밀도·원소 총량·II·III | O의 지정 세대를 사용 |
+| 침적 \(q\), 부피 \(V\), 바닥 광전리 \(\gamma_g\), 문턱 \(\chi_Z\) | 선행 판독 기능과 동일 정의로 복원 |
+| 나머지 이온 단계 | §5의 잔여 인구 대체를 사용. 실제 단계 분포로 부르지 않음 |
+| CMFGEN 준위 인구 | §5의 바닥 집중 또는 고정 T의 Boltzmann 분배 |
+| 전자 충돌 전리·여기 자료 | A의 자료와 C의 해당 판독·계산 루틴. 광전리 단면적으로 대체하지 않음 |
+| 주입 스펙트럼·전자 에너지 격자 | §5에 고정한 조건부 선택 |
+| 공개 실행의 생략 기준·배율·원자 판본 | 미식별. 이번 선택과 구별 |
+| 공개 SF 분율·실제 인구 소비·자기일관 응답 | 지정 공개 파일로 확인 불가 |
+
+누락된 경쟁 채널을 조용히 제거한 결과를 완전한 분할로 보고하지 않는다. 아래 대체 상태들의 최솟값과 최댓값은 **선택한 상태 사이의 범위**이며 실제 O 상태를 포함하는 엄밀한 상하한이 아니다.
+
+## §3. 대조량의 정의·단위·세대
+
+O의 `physics_DET_iter0010` 자료를 사용한다. 권위는 `COMMITTED`, `FIXED_T`, 물질13·복사12·T12, epoch 1683072 s다. 침적 generation 1은 발행 신원과 epoch로 연결하며 인구 세대와 번호를 맞추지 않는다. 최종 인구14와 복사13은 대입하지 않는다.
+
+\(q\)는 erg s\(^{-1}\) cm\(^{-3}\), \(V\)는 cm\(^3\), 밀도는 cm\(^{-3}\), 계수는 s\(^{-1}\)다. \(D=Vq\)는 erg s\(^{-1}\)다.
+
+\[
+\gamma_0=\frac{0.05q}{35\,{\rm eV}\,n_{\rm atom}},\qquad
+\eta_0^*=\frac{N_{\rm II}\chi_Z\gamma_0}{q},\qquad
+\eta_2^*=\frac{N_{\rm II}\chi_Z(\gamma_g+2\gamma_0)}q.
+\]
+
+여기서 \(\chi_Z\)는 선행 단의 바닥 II에서 바닥 III로의 에너지이며 erg로 변환한다. \(N_{\rm II}\)는 NLTE 합이다. 저장 J의 적분은 선행 단의 `STORED_REPRESENTATION_CONDITIONAL`이다.
+
+CMFGEN의 정규화된 \(Y(E)={\tt YE}\)에 대해, 전리 경로 \(r\)의 사건률은
+
+\[
+R_r=\frac{q}{\epsilon_{\rm eV}}
+       \left[\sum_kY_k\sigma_{rk}\Delta E_k\right]
+       \sum_{i\in r}n_i b_{ri},
+\]
+
+로 합산한다. \(\epsilon_{\rm eV}\)는 erg/eV, \(b_{ri}\)는 원 소스의 경로 가중이다. \(R_r\)는 cm\(^{-3}\) s\(^{-1}\)다. `YE` 반환값에 `E_INIT`를 다시 나누거나 속도를 추가로 곱하지 않는다.
+
+직접 한 전자 II에서 III로의 경로만 합하여
+
+\[
+R_{Z,1}=\sum_{r\in Z{\rm II},\,{\tt ONE\_ELEC}}R_r,\quad
+\gamma_{{\rm SF},Z}=R_{Z,1}/N_{\rm II},\quad
+\boxed{\eta_{{\rm SF},Z}^*=\chi_ZR_{Z,1}/q}.
+\]
+
+**\(\eta_{\rm SF}^*\)가 \(\eta_0^*,\eta_2^*\)와 같은 정의의 대조량이다.** 실제 경로 에너지로 계산한
+
+\[
+f_{Z,1}=\frac{\sum_rR_r\Delta E_r}{q}
+\]
+
+와 구별한다. 다중 전자 경로는 별도로 합산하며 직접 II에서 III로의 사건률에 넣지 않는다. 바닥 환산량 \(\eta_{\rm SF}^*\)는 에너지 보존 합에 넣지 않는다.
+
+여기는 철족 II의 \(f_{{\rm exc},Z{\rm II}}\)와 전체 \(f_{\rm exc}\), 전리는 전체 \(f_{\rm ion}\), 가열은 전체 \(f_{\rm heat}\)를 기록한다. 전자 가열을 원소별로 임의 분배하지 않는다. 총 물질 공급은 \(D\)이며 전리·여기 전력을 여기에 다시 가산하지 않는다.
+
+## §4. 원 소스·문헌·공개 확인 범위
+
+아래 파일은 C의 `new_main/subs/non_therm`에 있다. 행 번호는 기안 조회 판본 기준이다.
+
+| 대응 | 원 소스 근거 |
+|---|---|
+| 주입 정규화·경쟁 인구·쿨롱 손실 | `electron_non_therm_spec.f90` 약 235·302·339행 |
+| 전리·여기 행렬과 열화 해 | 같은 파일 약 355·405·528행 |
+| 가열 및 낮은 에너지 경계 보정 | 같은 파일 약 543행 |
+| 전리·여기 진단과 반환 정규화 | 같은 파일 약 555·589·664행 |
+| 직접·다중 전자 사건률과 경로 가중 | `se_ba_non_therm_v3.f90` 약 115-156행 |
+| 소비 측 여기 범위와 계수 | 같은 파일 약 202-240행. 하준위는 처음 20개까지 |
+| 전리 경로·준위 이름 연결 | `read_arnaud_ion_data.f90` 약 40-180행 |
+| 전리 단면적·자료 배율 | `arnaud_cross_v3.f90` 약 22-80행 |
+| 여기 단면적과 인구 인자 | `bethe_approx_v5.f90` 약 64-111행 |
+| 쿨롱 손실 | `get_lelec.f90` 약 35-64행 |
+
+분포 생성 측 `FRAC_*`와 소비 측 합산은 같은 양이라고 가정하지 않는다. 생략 범위, 여기 묶음, 경로 에너지, 상수 차이를 구별하여 두 합과 차이를 표에 남긴다. 특히 소비 측 가열 잔액 \(1-f_{\rm ion,SE}-f_{\rm exc,SE}\)만으로 보존 검사를 통과시키지 않는다.
+
+StaNdaRT 3.2절은 공개 계산의 비국소 침적, Spencer-Fano 처리, 시간의존 인구·에너지식을 설명한다. 이는 처리의 문헌 근거이며 로컬 판본의 동일성 증거가 아니다. [Blondin et al. 2022](https://arxiv.org/html/2209.11671v2#S3.SS2)
+
+Li et al.은 CMFGEN의 전자 열화 해법과 주입 에너지·격자 민감도를 제시한다. 그 논문의 다른 초신성 상태에서 얻은 수치 분율을 O의 정답으로 사용하지 않는다. [Li et al. 2012](https://academic.oup.com/mnras/article/426/2/1671/976064)
+
+U의 침적·물리량·철족 이온 분율은 공개 거시 상태와 별도 해의 II/III 비교에만 쓰인다. SF 채널 분율의 검증 자료가 아니다. 이번 단은 공개 표를 다시 보간하지 않고 선행 단의 확인 범위만 인용한다. 비열적 처리와 붕괴 가열이 꺼진 자체 CMFGEN 런도 분할 검증에 사용하지 않는다.
+
+## §5. 입력 대체·호출·계산 범위
+
+### 입력 연결
+
+먼저 O에서 비영 원소 총량을 가진 모든 경쟁 원소를 식별한다. 기록된 원소 총량의 합이 저장 \(n_{\rm atom}\)과 대칭 상대차 \(10^{-8}\) 이내인지 확인한다. 불일치하면 남는 조성을 철족으로 채우지 않고 해당 셸 분할을 미식별로 둔다.
+
+원소마다 \(N_{\rm rest}=N_Z-N_{\rm II}-N_{\rm III}\)를 계산한다. 음수는 잘못된 입력이며 0으로 바꾸지 않는다. 아래 네 대체 상태를 모두 사용한다.
+
+| 상태 | 잔여 인구 | 각 이온 내부 준위 인구 |
+|---|---|---|
+| G4 | 전량 IV | 가장 낮은 준위에 집중 |
+| G5 | 전량 V | 가장 낮은 준위에 집중 |
+| B4 | 전량 IV | 저장 T의 Boltzmann 분배 |
+| B5 | 전량 V | 저장 T의 Boltzmann 분배 |
+
+II·III 총량은 네 상태에서 불변이다. Boltzmann 분배는 선택한 원자모형의 결합 준위 집합 안에서 총량을 보존하며 Saha 계산이나 새 T 계산이 아니다. \(n_e\)도 O의 값으로 고정한다.
+
+이 대체는 실제 잔여 인구가 IV·V에만 있다는 가정이며 I 또는 더 높은 단계의 가능성을 포괄하지 않는다. 각 상태의 이온 전하 합과 저장 \(n_e\)의 차이를 기록한다. 차이를 없애려고 인구나 \(n_e\)를 조정하지 않는다. 따라서 결과는 O의 일부 저장량을 고정한 조건부 평가이며 전하까지 자기일관인 O 재현이 아니다.
+
+원자 연결은 A의 원소별 II-V와 전리 목적 단계 VI까지 필요한 준위·진동자 세기·전리 경로·여기 자료를 대상으로 한다. 전리 자료의 기준은 `arnaud_rothenflug_23jun15`다. 준위와 전이 자료는 같은 배포 묶음의 이름·에너지·통계 가중치가 연결되는 조합을 사용한다. 여러 조합이 가능하면 계산 전에 선택 이유와 정확한 파일 목록을 입력 연결표에 고정한다. 결과를 보고 판본을 바꾸지 않는다. 연결 불가·필수 자료 부재는 미식별이며 유사 원소 대체는 하지 않는다.
+
+### 원 소스 무수정 호출
+
+새 Fortran 호출기가 원래 CMFGEN 모듈의 필요한 배열을 초기화하여, **셸·상태·격자별 별도 프로세스에서 `ND=1`로 `ELECTRON_NON_THERM_SPEC`를 호출**한다. 이로써 깊이별 가변 작업 배열의 공유와 `SAVE` 상태 재사용을 피한다.
+
+사용하는 루틴과 의존 파일만 무수정 사본으로 F에서 빌드한다. 전체 `cmfgen_dev.exe`는 실행하지 않는다. 원래 모듈 대신 축약 모듈을 만들거나 물리 루틴을 스텁으로 바꾸지 않는다. 빌드·연결이 성립하지 않으면 Python으로 SF 해법을 새로 이식하지 않고 그 호출을 미완료로 기록한다.
+
+전리 사건률은 §3의 원 소스 소비식을 새 호출기에서 합산한다. 여기는 원래 `TOTAL_BETHE_RATE_V3`와 `TOTAL_BETHE_RATE_V4`를 사용하여 생성 측과 소비 측 범위를 구별한다. 전체 통계평형 행렬을 요구하는 `SE_BA_NON_THERM_V3` 자체는 호출하지 않는다. 따라서 결과를 실제 생산 인구식 소비 기록으로 부르지 않는다.
+
+### 고정 계산 선택
+
+- 주입은 `INJECT_DIRAC`, \(E_{\min}=1\) eV, \(E_{\max}=1000,2000\) eV다.
+- 각 주입 에너지에서 선형 격자 \(NKT=2001,4001\)을 사용한다.
+- 전리·여기는 모두 켠다. `NT_OMIT_ION_SCALE=0`, `NT_OMIT_LEV_SCALE=0`, 원자자료의 전리·여기 배율은 1이다.
+- 정상 상태에서는 셸 12개, 대체 상태 네 개, 주입 에너지 두 개, 격자 두 개로 최대 192회 호출한다. 부족한 입력이 있는 셸은 호출하지 않는다.
+- 원 소스의 음의 단면적 0 대체 경로를 사용하지 않도록 해당 식을 호출 전에 검사한다. 음의 값이 발생하면 해당 상태는 미정의다. 추가 clamp·floor·보존합 재정규화는 없다.
+
+이 선택은 공개 계산 설정의 복원이 아니다. 격자와 주입 에너지에 따른 변화가 §9의 비교 경계를 넘으면 분기는 미결정이다. 네 인구 대체의 범위 밖에서 결론이 바뀔 가능성은 수치상 안정해도 남는다.
+
+## §6. 정확성 대조와 수용 기준
+
+독립 대조는 에너지 보존과 순수 쿨롱 손실 해다. 원 소스와 같은 식을 두 번 구현한 일치만으로 정확성을 선언하지 않는다.
+
+1. **해석 대조:** 비탄성 인구가 없는 작은 기준 입력에서 단일 에너지 주입의 해는 주입 아래 \(y(E)L(E)=1\), 반환 후 \(Y(E)L(E)=1/E_{\rm init}\)이다. 새 정규화 연결의 허용 상대차는 \(10^{-10}\)이다. 낮은 에너지 경계 보정을 포함한 가열 몫은 1에 접근해야 한다.
+2. **에너지 보존:** 각 과학 계산에서 생성 측 \(f_{\rm heat}+f_{\rm ion}+f_{\rm exc}\)와 1의 절대차는 0.01 이하다. 음의 분율·비유한 값은 불허한다. 합을 1로 맞추어 수정하지 않는다.
+3. **격자 안정성:** 두 격자의 비교 대상은 \(\eta_{\rm SF}^*\), 직접 전리·여기·가열 분율이다. 차이는 각각 \(0.05|x_{\rm fine}|+10^{-8}\) 이하다. 경계 분류에는 두 격자의 최솟값에서 차이의 절댓값을 빼고 최댓값에 더한 수치 여유를 사용한다. 이는 엄밀한 오차구간이 아니다.
+4. **생성·소비 연결:** 전체 전리와 여기의 생성·소비 분율 차이는 각각 0.01 이하다. 초과하면 두 값은 보존하되 소비 대응의 수용 실패로 표시한다.
+
+위 기준은 원자자료·인구 대체의 물리 정확도 허용차가 아니다. 등록된 수치 설정으로 기준을 만족하지 못해도 격자 확대나 원 소스 수리를 자동으로 추가하지 않는다.
+
+## §7. 주 표와 재사용
+
+주 산출은 `nt_sf_partition.csv` 하나이며 키는 원소·셸이다. 항상 Fe·Co·Ni와 셸 0-11의 36행을 유지한다. 상태별 값은 같은 행의 명시적 열로 둔다.
+
+| 열군 | 내용 |
+|---|---|
+| 신원·입력 | 원소·셸·세대·epoch·\(q,V,T,n_e,N_Z,N_{\rm II},N_{\rm III},N_{\rm rest}\) |
+| 선행 잣대 | \(\chi_Z,\gamma_0,\gamma_g,\eta_0^*,\eta_2^*\)와 산술 구간 |
+| 조건부 SF | 상태·주입·격자별 \(\gamma_{\rm SF},\eta_{\rm SF}^*,f_{Z,1},f_{{\rm exc},Z{\rm II}}\), 다중 전자 분율 |
+| 전체 에너지 | 생성·소비별 전리·여기, 생성 측 가열,소비 측 가열 잔액, 보존 잔차 |
+| 근사·수용 | 원자 연결 상태·누락 채널·전하 차이·격자 차이·주입 차이·수치 여유·정의 상태 |
+| 판단 | \(\eta_{\rm SF}^*/\eta_0^*,\eta_{\rm SF}^*/\eta_2^*\), 행 분류·전체 분기·필요 후속 증거 |
+
+전체 셸 분율은 세 원소 행에 반복되더라도 합산하지 않는다.
+
+N의 `det_nt_pop_bound.py`에서 입력 판독·침적 연결·상수·세대·바닥 문턱·광전리 적분·구간 산술을 재사용한다. L의 `det_nt_prescription_lever.py`에서 \(\eta_0^*,\eta_2^*\) 계산과 행 신원 기능을 재사용한다. 기존 `run`, `write`, `selftest`, `decide`와 고정 출력 위치는 호출하지 않는다. 선행 표를 재계산하여 대조하는 장치는 만들지 않는다.
+
+보조 산출은 `evidence.json`, 호출 입력·원래 SF 진단, 빌드·실행·직접시험 로그다. 입력 연결표와 코드·입력·바이너리 신원, 수용 기준, 분기 전제, 비용은 주 표를 설명하는 이 증거에만 둔다. 별도 과학 요약표는 만들지 않는다.
+
+## §8. 미정의 전파와 닫힌 직접시험 목록
+
+자료 부재는 `UNIDENTIFIED`, 수치 계산 불능은 `UNDEFINED`, 계약·연결·구현 오류는 `DEFECT`다. \(q=0\), II 부재, 0 포함 분모에서는 해당 비와 평균 계수를 0으로 대체하지 않는다.
+
+**보존 대상은 다음 목록으로 닫는다.**
+
+- 등록된 36행의 키와 이미 확인된 입력 신원.
+- 선행 잣대와 SF 성분 중 실패 성분에 의존하지 않는 값.
+- 정상 셸·정상 원소의 독립 결과.
+- 부재·실패 이유와 의존 범위.
+- 완료된 호출의 원래 출력과 종료 상태.
+
+한 표적 원소의 사건률 합산만 실패하면 해당 성분만 미정의다. 경쟁 이온 자료 부재는 전자분포 전체에 영향을 주므로 해당 셸의 모든 SF 성분으로 전파한다. J 결함은 \(\gamma_g,\eta_2^*\)에만 전파하며 SF 해를 무효로 만들지 않는다. 공통 세대·단위·입력 신원 결함은 의존 계산을 멈추고 표 골격을 남긴다.
+
+입력 열기·신원 수집 전에 골격을 만들고, 아래 등록된 부재·판독 실패는 정상 오류 반환으로 모은다. 쓰기 실패·프로세스 강제 종료 때 새 파일 생성까지 보증하지 않는다. 이미 생성된 산출을 지우지 않는 것이 그 경우의 보존 범위다.
+
+**직접시험은 아래 새 코드 음성 대조로 닫는다.** 작은 정상 입력은 결함 주입의 기준으로만 사용하며 실제 O·공개 파일의 가용에 의존하지 않는다.
+
+| 시험 | 주입과 확인할 결과 |
+|---|---|
+| NC-INPUT | 공통 manifest 부재·세대 오기·단위 오기, 원소 키 오결합을 각각 주입. 의존량 중단과 36행 골격 보존 |
+| NC-LOCAL | 한 셸 J 결함, 한 원소의 사건률 연결 결함, 한 경쟁 이온 자료 부재를 각각 주입. 위 의존 범위와 독립 성분 보존 |
+| NC-SOURCE | `E_INIT` 중복 나눗셈, eV 변환 오류, 다중 전자의 직접 전리 합산을 각각 주입. 해석 대조·채널 검사 실패 |
+| NC-NUMERIC | 음의 단면적·비유한 값·0 분모·비영 곱의 0 소실을 각각 주입. 대체값 없이 미정의 |
+| NC-ENERGY | 채널 하나 누락, 가열 경계 보정 누락, 보존합 재정규화를 각각 주입. §6 검사 실패 |
+| NC-CALL | 호출기의 비영 종료와 정상 종료지만 필요한 반환 성분 부재를 각각 주입. 해당 호출 미완료와 완료 결과 보존 |
+| NC-BRANCH | §9의 전제를 하나씩 제거하고, 키 누락·중복, 경계 걸침을 각각 주입. 원래 허용 분기 차단 |
+
+실제 입력 어댑터·계산 연결·메모리 행 생성·분기 함수 경로에서 시험한다. 저장 표 변조, 상위 실행을 다시 감싼 재귀 시험, 쓰기 결함 모사는 하지 않는다. 이 목록 밖의 실패 경로 시연을 자동 폐합 조건으로 추가하지 않는다. 새로 발견한 실제 물리·분기 오류는 별도 근거로 기록한다.
+
+## §9. 기대치·게이트·후속 분기
+
+기대는 선행 잣대의 정의가 유지되고, 대체 인구·주입 선택에 조건부인 분할을 얻는 것이다. \(\eta_{\rm SF}^*/\eta_0^*\), \(\eta_{\rm SF}^*/\eta_2^*\), 여기·가열의 크기와 최종 분기는 예측 불가다. 보존합이 1에 접근한다는 기대만 독립 물리 법칙에 근거한다.
+
+| 게이트 | 막는 실재 실패 |
+|---|---|
+| G-PLAN | 변경집합·참조·분장과 다른 구현 착수. 기존 문면 검사 재사용 |
+| G-INPUT | 다른 세대·단위·원자 키 결합과 경쟁 성분의 조용한 누락 |
+| G-SF | 주입 정규화 오류·에너지 누락·격자 미해상·생성 및 소비 혼동 |
+| G-DECIDE | 불완전한 행·상태·전제로 후속 분기를 확정 |
+| G-RUN | 로그인 계산·GPU 사용·비용 초과·실패 호출의 성공 처리 |
+
+활성 집합은 등록 행 중 \(N_Z,N_{\rm II},N_{\rm III},q>0\)인 행이다. 멤버십 자체가 미확인이면 완전하지 않다.
+
+공통 전제 C는 다음 목록 전부다.
+
+- 등록 키가 정확히 36개이며 중복·누락이 없다.
+- 입력 신원·세대·단위·NLTE 권위가 맞다.
+- 활성 집합이 확인되었고 비어 있지 않다.
+- 활성 행의 선행 잣대가 정의된다.
+- 경쟁 조성·원자 연결이 완전하고 모든 등록 상태·주입·격자 계산이 있다.
+- §6 수용 기준과 §8 직접시험이 통과한다.
+- 근사 등급과 전하 불일치가 표시되어 실제 O 또는 공개 실행 재현으로 잘못 표기되지 않는다.
+
+각 행의 비교 범위는 모든 등록 대체 상태와 주입 선택을 포함하고 §6의 수치 여유를 붙인다. 물리 불확실성의 확률구간으로 부르지 않는다.
+
+다음 순서로 하나의 전체 분기를 정한다.
+
+| 코드 | 전제와 조건 | 후속 선택 근거 |
+|---|---|---|
+| 0 `OFFLINE_REWORK` | 확인된 계약·입력 연결·구현·직접시험 결함이 있음 | 해당 결함 수정. GPU로 넘기지 않음 |
+| 4 `INDETERMINATE` | 결함은 없으나 C 미충족, 필요한 비교가 미정의, 또는 아래 분기 경계를 걸침 | 부족한 인구·원자자료·수치 해상도를 특정. CPU 자료 보완과 생산 계측을 구별 |
+| 1 `PRESCRIPTION_REVIEW_CANDIDATE` | C 성립. 동일한 활성 행 하나 이상에서 모든 선택의 \(\eta_{\rm SF}^*\) 하단이 \(\eta_2^*\) 상단 이상 | 등록 대체에서 직접 전리 규모가 두 배 문턱에 도달. 생산 처방 변경의 검토 후보 |
+| 3 `OTHER_TARGET_CONDITIONAL` | C 성립. 모든 활성 행에서 \(\eta_{\rm SF}^*\) 상단이 \(\eta_0^*\) 하단 이하 | 이 조건부 직접 전리 경로의 우선순위를 낮추고 다른 표적 검토 |
+| 2 `CONSUMPTION_TRACE_CANDIDATE` | C 성립. 분기1·3이 아니며 모든 행의 \(\eta_0^*,\eta_2^*\) 상대 분류가 경계 걸침 없이 결정됨 | 규모 차이는 있으나 등록 범위에서 두 배 문턱에 확실히 도달하지 않음. 실제 준위 인구·NT 소비 계측 검토 |
+
+분기 함수가 결과 코드나 요약 불리언만 받지 않고 C의 각 전제, 행별 정의 상태, 키와 비교 범위를 직접 검사한다.
+
+분기1-3은 등록된 대체 상태에 조건부인 우선순위다. 인구 대체 밖의 가능성을 배제하지 않는다. GPU 계측은 누락된 전자 충돌 원자자료나 공개 실행 판본을 공급하지 못한다. 처방 검토·GPU 실행·다른 표적의 실제 착수는 이 단이 승인하지 않는다.
+
+## §10. 변경집합·실행·비용
+
+### 변경집합 - DET-NT-SF-OFFLINE (표)
+
+| 파일 | 허용 변경 |
+|---|---|
+| `/gpfs/kjhan/lumina/cmfgen_map/ntsf_20261012/offline/tools/det_nt_sf.py` | 재사용 연결·입력 준비·표·음성 대조·분기 |
+| `/gpfs/kjhan/lumina/cmfgen_map/ntsf_20261012/offline/tools/det_nt_sf_driver.f90` | 원 모듈 초기화·SF 호출·채널합산 |
+| `/gpfs/kjhan/lumina/cmfgen_map/ntsf_20261012/offline/tools/run_det_nt_sf.slurm` | a10 준비·판독·기존 게이트·비용 제한 |
+| `/gpfs/kjhan/lumina/cmfgen_map/ntsf_20261012/offline/tools/run_det_nt_sf_cmf.slurm` | grammar의 선택 소스 빌드·호출·종료 전달 |
+
+### 변경집합 끝
+
+새 심볼 접두는 `det_nt_sf_`다. 빌드된 물리 의존 사본은 무수정이며 수정 권한을 갖는 변경집합에 포함하지 않는다.
+
+| 작업 | 자원·상한 |
+|---|---|
+| Python·게이트·해시·판독 | a10 CPU Slurm, 1 CPU, 메모리 8 GiB, 작업당 10분, 누적 할당 벽시계 20분, CPU 1/3 core·h |
+| CMFGEN 선택 소스 빌드·호출 | grammar CPU Slurm, 16 CPU, 메모리 16 GiB, `OMP_NUM_THREADS=16`, 작업당 15분, 누적 할당 벽시계 30분, CPU 8 core·h |
+| 전체 신규 저장 | 빌드·무수정 사본·입력·로그·실패 결과 포함 1 GiB |
+| GPU·생산 변경 | GPU 0, 생산 변경 0 |
+
+a10은 `--gres=gpu:0 --exclude=syn102,syn03`, grammar는 `--gres=gpu:0 --exclude=grammar072,grammar078,grammar080`을 사용한다. 모든 작업명은 `LUMINA_` 접두, 메모리·`--time` 명시, `--no-requeue`다. 작업 안에서 `module purge` 후 사용할 모듈을 명시한다. Python 수치 라이브러리 스레드는 1, 빌드는 `make -j1` 또는 동등한 순차 명령이다.
+
+상한은 실패·수정·감사 재현까지 포함한다. 먼저 닿는 상한에서 남은 계산을 중단하며 자동 확대·재제출은 없다. CMFGEN 본체 재빌드와 전체 대기 런은 허용하지 않는다.
+
+F에서 사용할 인터페이스는 다음과 같다. 실제 연산은 위 Slurm 작업 안에서만 수행한다.
+
+```bash
+python3 -B tools/det_nt_sf.py prepare --out run1
+python3 -B tools/det_nt_sf.py selftest --out tests/run1
+bash tools/run_det_nt_sf_cmf.slurm run1
+python3 -B tools/det_nt_sf.py finish --out run1
+```
+
+`prepare`가 입력 연결표·예정 호출 목록·36행 골격을 먼저 남긴다. `finish`는 호출 산출을 처음 판독하여 주 표와 분기를 작성한다. 이미 완성된 표의 재검 도구가 아니다. 재현은 같은 입력·코드·명령의 새 출력 위치에서 잔여 상한 안으로 수행한다.
+
+## §11. 완료·판정·집행 기록
+
+목표 달성은 조건부 SF 분할과 같은 정의의 \(\eta_{\rm SF}^*,\eta_0^*,\eta_2^*\) 대조가 수용 기준을 만족하여 주 표에 연결된 상태다. 전리 사건률만 구하고 여기·가열을 누락한 상태는 목표 달성이 아니다.
+
+분기4로 끝나면 **분할 확보 목표 미달 또는 일부 달성**을 명시한다. 부족한 입력과 후속 선택을 특정했다는 이유로 원래 목표를 달성했다고 바꾸지 않는다. 분기0은 결함 수정 전 완료가 아니다.
+
+운전자 집행 장부는 이 절에만 추가한다. 기계 게이트 종료 코드, 미집행 항목의 실행 결과, 실제 담당, 입력·소스·바이너리 신원, 작업 번호·비용, 이탈·중단 이유, 판정과 astra 종료감사를 기록한다. 감사는 문면 검사와 실행 재현을 구별한다.
+
+기안자의 조회는 지정 파일에 대한 `cat`, `head`, `sed`, `rg`, 단일 디렉터리 `ls`와 문헌 조회로 수행했다. 빌드 가능성·192회 계산의 완주·수용 기준 통과는 미실행이며 보증하지 않는다.
+
+생산 승격·물리적 정답·수리·새 T 계산·자기일관 효과·광도 회복률을 주장하지 않는다. 처방 차이를 결손 원인으로 단정하지 않는다.
+
+## §12. 기계 선언과 참조
+
+분기 예시는 기존 문면 검사의 입력이며 §9의 실제 전제 검사를 대신하지 않는다.
+
+```prereg-preflight
+{
+  "changeset": {
+    "table_heading": "### 변경집합 - DET-NT-SF-OFFLINE (표)",
+    "table_end": "### 변경집합 끝",
+    "path_pattern": "/gpfs/kjhan/lumina/cmfgen_map/ntsf_20261012/offline/tools/(?:det_nt_sf\\.py|det_nt_sf_driver\\.f90|run_det_nt_sf\\.slurm|run_det_nt_sf_cmf\\.slurm)",
+    "symbol": "det_nt_sf_",
+    "roots": [
+      "/gpfs/kjhan/lumina/cmfgen_map/ntsf_20261012/offline/tools/det_nt_sf.py",
+      "/gpfs/kjhan/lumina/cmfgen_map/ntsf_20261012/offline/tools/det_nt_sf_driver.f90",
+      "/gpfs/kjhan/lumina/cmfgen_map/ntsf_20261012/offline/tools/run_det_nt_sf.slurm",
+      "/gpfs/kjhan/lumina/cmfgen_map/ntsf_20261012/offline/tools/run_det_nt_sf_cmf.slurm"
+    ],
+    "expected_extra": [
+      "/gpfs/kjhan/lumina/cmfgen_map/ntsf_20261012/offline/tools/det_nt_sf.py",
+      "/gpfs/kjhan/lumina/cmfgen_map/ntsf_20261012/offline/tools/det_nt_sf_driver.f90",
+      "/gpfs/kjhan/lumina/cmfgen_map/ntsf_20261012/offline/tools/run_det_nt_sf.slurm",
+      "/gpfs/kjhan/lumina/cmfgen_map/ntsf_20261012/offline/tools/run_det_nt_sf_cmf.slurm"
+    ]
+  },
+  "branches": {
+    "regimes": [[0,0],[1,1],[2,2],[3,3],[4,4],[9,9]],
+    "metrics": {
+      "valid": "len(v) == 1 and all(x in (0,1,2,3,4) for x in v)",
+      "c0": "sum(1 for x in v if x == 0)",
+      "c1": "sum(1 for x in v if x == 1)",
+      "c2": "sum(1 for x in v if x == 2)",
+      "c3": "sum(1 for x in v if x == 3)"
+    },
+    "rules": [
+      {"name":"OFFLINE_REWORK","predicate":"valid and c0 == 1"},
+      {"name":"PRESCRIPTION_REVIEW_CANDIDATE","predicate":"valid and c1 == 1"},
+      {"name":"CONSUMPTION_TRACE_CANDIDATE","predicate":"valid and c2 == 1"},
+      {"name":"OTHER_TARGET_CONDITIONAL","predicate":"valid and c3 == 1"},
+      {"name":"INDETERMINATE","predicate":"not valid or (c0 == 0 and c1 == 0 and c2 == 0 and c3 == 0)"}
+    ],
+    "adversarial_fixtures": [
+      {"name":"오프라인결함","mix":[[0,1]]},
+      {"name":"처방검토","mix":[[1,1]]},
+      {"name":"소비계측","mix":[[2,1]]},
+      {"name":"다른표적","mix":[[3,1]]},
+      {"name":"미결정","mix":[[4,1]]},
+      {"name":"잘못된값","mix":[[9,1]]},
+      {"name":"누락","mix":[]},
+      {"name":"중복","mix":[[1,1],[2,1]]}
+    ]
+  },
+  "references": [
+    {"path":"docs/PREREG_DET_NT_PRESCRIPTION_LEVER_2026-10-12.md"},
+    {"path":"docs/VERDICT_DET_NT_PRESCRIPTION_LEVER_2026-10-12.md"},
+    {"path":"docs/PREREG_DET_NT_POP_OFFLINE_BOUND_2026-10-12.md"},
+    {"path":"docs/CMFGEN_BUILD_RUN_GUIDE.md"},
+    {"path":"/gpfs/kjhan/lumina/cmfgen_map/ntsf_20261012/evidence/USER_DECISION_2026-10-12.txt"},
+    {"path":"/gpfs/kjhan/lumina/cmfgen_map/ntpresc_20261012/offline/tools/det_nt_prescription_lever.py"},
+    {"path":"/gpfs/kjhan/lumina/cmfgen_map/ntcons_20261012/offline/tools/det_nt_pop_bound.py"},
+    {"path":"/gpfs/kjhan/lumina/cmfgen_map/coll_presc_20261009/OMEGA/run1/work/physics_comparison/physics_DET_iter0010.manifest.json"},
+    {"path":"/gpfs/kjhan/cmfgen_src/cur_cmf/new_main/subs/non_therm/electron_non_therm_spec.f90"},
+    {"path":"/gpfs/kjhan/cmfgen_src/cur_cmf/new_main/subs/non_therm/se_ba_non_therm_v3.f90"},
+    {"path":"/gpfs/kjhan/cmfgen_src/cur_cmf/new_main/subs/non_therm/read_arnaud_ion_data.f90"},
+    {"path":"/gpfs/kjhan/cmfgen_src/cur_cmf/new_main/subs/non_therm/arnaud_cross_v3.f90"},
+    {"path":"/gpfs/kjhan/cmfgen_src/cur_cmf/new_main/subs/non_therm/bethe_approx_v5.f90"},
+    {"path":"/gpfs/kjhan/cmfgen_src/cur_cmf/new_main/subs/non_therm/get_lelec.f90"},
+    {"path":"/gpfs/kjhan/cmfgen_21jun23/atomic/misc/arnaud_rothenflug_23jun15"}
+  ]
+}
+```
