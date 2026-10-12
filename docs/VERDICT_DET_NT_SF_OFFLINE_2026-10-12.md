@@ -7,7 +7,7 @@
 - **정본 산출:** `/gpfs/kjhan/lumina/cmfgen_map/ntsf_20261012/offline/run1/finish_r2/` — `nt_sf_partition.csv`(주 표, 36 행, sha256 159ac8c3…), `evidence.json`. 호출 산출 193 개(`run1/calls/`, 해석 대조 1 + 셸 12 × 상태 4 × 주입 2 × 격자 2)와 prepare 산출(`run1/prepare_evidence.json`·`prepare_state.json`)은 1회차와 같다. 1회차 finish 산출(`run1/nt_sf_partition.csv`·`run1/evidence.json`)은 수리 전 기록으로 보존한다.
 - **입력:** O `physics_DET_iter0010.*`(물질13·복사12·T12)와 덱·침적 발행, 직전 단 판독기의 γ₀·γ_g·η₀*·η₂*, CMFGEN 원자자료(toy06 자체 런의 `atomic_links.txt`·`MODEL_SPEC`·`VADAT` 의 선택: 이온 27 개, GF_CUT 3e-3·GF_LEV_CUT 9·AT_CUT 10·MIN_TRANS 10, INC_XRAYS=F), Arnaud–Rothenflug 전리 자료(`arnaud_rothenflug_23jun15`).
 
-## 처분: **분기 4 INDETERMINATE — 분할 확보 목표 미달** (판정 함수가 분기 표의 전제를 등록 순서 0·4·1·3·2 로 직접 검사; 자동 분기와 판정 일치)
+## 처분: **분기 4 INDETERMINATE — 분할 확보 목표 미달 · 폐합** (판정 함수가 분기 표의 전제를 등록 순서 0·4·1·3·2 로 직접 검사; 자동 분기와 판정 일치; 종료감사 2회차 «폐합 차단» 0)
 
 `INDETERMINATE / 결함 0·직접시험 39/39 이나, 등록 전리 자료 arnaud_rothenflug_23jun15 에 Co IV·V·VI 의 전리 항목이 없고 등록 대체 상태(G4·G5·B4·B5)는 모든 셸에서 Co 잔여 인구를 IV 또는 V 에 두므로, 과학 호출 192 개가 모두 경쟁 전리 자료 부재로 미식별이며 36 행 전부 SF 비교가 정의되지 않는다 / 등록 조건을 충족한 η_SF* 와 η₀*·η₂* 의 대조는 0 행이다 / 부족한 것은 Co IV 이상의 전자 충돌 전리 자료(로컬 CMFGEN 배포본 23jun15·26nov12 모두 없음)이며, 그 밖에 공개 실행의 SF 설정·원자자료 판본, O 의 실제 이온·준위 인구, 생성·소비 회계 차이의 처리 근거가 남는다`
 
@@ -63,7 +63,7 @@ Co 잔여 인구는 셸 0 에서 Co IV 1.2e9 cm⁻³(G4) 처럼 Co 에서 가장
 | 항목 | 상한 | 실측 |
 |---|---|---|
 | GPU·생산 변경 | 0 | 0 |
-| a10 (python·게이트) | 작업당 10 분, 누적 20 분, 1/3 core·h | 11 작업, 할당 합 215 s, 215 core·s(`offline/evidence/sacct_a10_jobs.txt`; 판정 2회차 시점 소계, 이후 게이트 작업은 계약 §11 장부) |
+| a10 (python·게이트) | 작업당 10 분, 누적 20 분, 1/3 core·h | 12 작업, 할당 합 266 s, 266 core·s(`offline/evidence/sacct_a10_jobs.txt`; 폐합 시점 최종) |
 | grammar (호출기 빌드·호출) | 작업당 7 분, 누적 180 분, 48 core·h | 33 작업(개발 시험 3 + 사슬 30), 할당 합 5083 s, 22.6 core·h(`offline/evidence/sacct_grammar_jobs.txt`) |
 | 신규 저장 | 1 GiB | 109 MB |
 
@@ -83,4 +83,4 @@ Co 잔여 인구는 셸 0 에서 Co IV 1.2e9 cm⁻³(G4) 처럼 Co 에서 가장
 | 회차 | 발주 HEAD | 결과 | 반영 |
 |---|---|---|---|
 | 1 | 65e5493 | 폐합 불가 · «폐합 차단» 1(Co IV·V 경쟁 전리 자료 부재의 검출·전파 결함 → 분기 0) + «기재로 족함» 1(전사 일치와 실행 재현의 구별) — `/gpfs/kjhan/lumina/cmfgen_map/ntsf_20261012/astra_closeout.md` | 전건 반영(1회차): 감사의 NEW 3 건 — 처분(분기 0 기록 후 수리·재판정, 목표 미달), 입력 검사·미정의 전파(구현·음성 대조), G-INPUT 실패와 진단 산출 한정. 새 grammar 계산 없이 같은 호출 산출을 다시 판독 |
-| 2 | (예정) | | |
+| 2 | 5afc64d | **폐합 가 · «폐합 차단» 0** — 1회차 지적 1(검출·전파 결함) 해소, 지적 2(전사와 재현 구별) 반영; 새 지적 없음; SF 계산·직접시험·finish·해시의 독립 재현은 「재현 BLOCKED」 — `/gpfs/kjhan/lumina/cmfgen_map/ntsf_20261012/astra_closeout_r2.md` | 폐합 |
