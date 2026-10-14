@@ -101,8 +101,8 @@ static int producer_test(void) {
     REQUIRE(cs.common_obs_ready && cs.common_obs_lnu);
     double observer_before[9];memcpy(observer_before,cs.common_obs_lnu,sizeof observer_before);
     for(int f=0;f<9;++f)REQUIRE(isfinite(observer_before[f]) && observer_before[f]>0);
-    REQUIRE(cmfgen_write_common_observer(&cs,"common_observer.csv","common_observer.json",4,3,2)==0);
-    REQUIRE(cmfgen_write_common_observer(&cs,"common_observer.csv","common_observer.json",4,3,2)!=0);
+    REQUIRE(cmfgen_write_common_observer(&cs,"common_observer.csv","common_observer.json",4,3,2,1)==0);
+    REQUIRE(cmfgen_write_common_observer(&cs,"common_observer.csv","common_observer.json",4,3,2,1)!=0);
     REQUIRE(!op.line_producer_terms_captured);
     double maxdiff=0;
     /* 독립적인 전체 교집합 적분. 생산 two-pointer 구현을 재사용하지 않는다. */
@@ -165,7 +165,7 @@ static int producer_test(void) {
     REQUIRE(cs.common_obs_ready && cs.common_obs_n>6900);
     REQUIRE(fabs(2.99792458e18/cs.common_obs_nu[0]/25500-1)<2e-15);
     REQUIRE(fabs(2.99792458e18/cs.common_obs_nu[cs.common_obs_n-1]/2500-1)<2e-15);
-    REQUIRE(cmfgen_write_common_observer(&cs,"common_default.csv","common_default.json",5,3,3)==0);
+    REQUIRE(cmfgen_write_common_observer(&cs,"common_default.csv","common_default.json",5,3,3,2)==0);
     FILE *written=fopen("common_default.csv","r");REQUIRE(written);
     char header[80];double wave=0,flux=0;
     REQUIRE(fgets(header,sizeof header,written));

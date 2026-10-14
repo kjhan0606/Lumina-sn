@@ -120,7 +120,7 @@ typedef struct {
 
 int cmfgen_write_common_observer(const CMFGENState *cs, const char *csv_path,
     const char *meta_path, uint64_t rad_generation, uint64_t material_generation,
-    int iter);
+    int iter, int material_iteration);
 
 /* E4 in-situ emissivity A/B audit.  The B lane keeps the production opacity,
  * continuum, binning and EPAY machinery, replacing only the pre-EPAY line

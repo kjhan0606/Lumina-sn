@@ -20,6 +20,15 @@ build_src=/home/kjhan/BACKUP/Eunha.A1/Claude/Lumina-sn-common-20261015
 build_out=/gpfs/kjhan/lumina/cmfgen_map/trace13_20261010/results/common-build-${SLURM_JOB_ID}
 mkdir "$build_out"
 cd "$build_src"
+build_variant=${1:-ada}
+case "$build_variant" in
+ ada) build_arch=(-arch=sm_89); build_managed=1 ;;
+ cluster) build_arch=(-gencode arch=compute_80,code=sm_80
+     -gencode arch=compute_86,code=sm_86 -gencode arch=compute_89,code=sm_89
+     -gencode arch=compute_90,code=sm_90); build_managed=0 ;;
+ *) exit 2 ;;
+esac
+printf 'variant=%s managed=%s\n' "$build_variant" "$build_managed" > "$build_out/variant.txt"
 git rev-parse HEAD > "$build_out/commit.txt"
 git diff --exit-code -- src
 git diff --cached --exit-code -- src
@@ -38,8 +47,8 @@ build_units=(
  src/cmf_error_envelope.c src/seed_capability.c src/lumina_element_wide.c
  src/lumina_cmfgen.c src/cmfgen_final_writer.c src/a210_coupled_newton.c
 )
-nvcc -O2 -arch=sm_89 -std=c++14 -Xcompiler -fopenmp \
- -DLUMINA_HAS_CUDA_BF_GEMM -DLUMINA_CMF_EXACT_MANAGED_MEMORY=1 \
+nvcc -O2 "${build_arch[@]}" -std=c++14 -Xcompiler -fopenmp \
+ -DLUMINA_HAS_CUDA_BF_GEMM -DLUMINA_CMF_EXACT_MANAGED_MEMORY="$build_managed" \
  -o "$build_out/lumina_cuda" "${build_units[@]}" -lm -lcublas -Xcompiler -fopenmp \
  > "$build_out/build.log" 2> "$build_out/build.stderr"
 sha256sum -c "$build_out/source.sha256" > "$build_out/verify.log"

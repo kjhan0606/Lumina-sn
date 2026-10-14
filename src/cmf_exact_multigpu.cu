@@ -817,7 +817,7 @@ __global__ void positive_segment_kernel(
     const double *src_cell = source_cell + (size_t)s * (size_t)nb;
     const double *upstream = nullptr;
     bool upstream_zero = false;
-    if (after_center) upstream = (outward?out:in)+segment_slot*(size_t)nb;
+    if (after_center) upstream = (outward?out:in)+(size_t)lr*nb;
     else if (!outward && segment==0) upstream_zero=true;
     else if (outward && segment==n-1 && core[lr]) upstream=inner;
     else upstream=face+(size_t)lr*nb;
@@ -829,7 +829,7 @@ __global__ void positive_segment_kernel(
         back = front + max_window;
     }
     double *destination = after_center ? face+(size_t)lr*nb
-        : (outward?out:in)+segment_slot*(size_t)nb;
+        : (outward?out:in)+(size_t)lr*nb;
     if (!positive_segment_values(
             nb, beta[2U*segment_slot+(outward!=after_center)], dt, tr, src, src_cell,
             upstream, upstream_zero,
@@ -920,7 +920,7 @@ __global__ void positive_epoch_replay_segment_kernel(
     const double *src_cell = source_cell + (size_t)s * (size_t)nb;
     const double *upstream = nullptr;
     bool upstream_zero = false;
-    if (after_center) upstream = (outward?out:in)+segment_slot*(size_t)nb;
+    if (after_center) upstream = (outward?out:in)+(size_t)lr*nb;
     else if (!outward && segment==0) upstream_zero=true;
     else if (outward && segment==n-1 && core[lr]) upstream=inner;
     else upstream=face+(size_t)lr*nb;
@@ -933,7 +933,7 @@ __global__ void positive_epoch_replay_segment_kernel(
         return;
     }
     double *target = after_center ? face+(size_t)lr*nb
-        : (outward?out:in)+segment_slot*(size_t)nb;
+        : (outward?out:in)+(size_t)lr*nb;
     if (ray_beta <= 0.5) {
         double intensity = 0.0;
         if (!upstream_zero) {
@@ -1127,12 +1127,12 @@ __global__ void positive_epoch_large_segment_kernel(
 
     const double *upstream = nullptr;
     bool upstream_zero = false;
-    if (after_center) upstream = (outward?out:in)+segment_slot*(size_t)nb;
+    if (after_center) upstream = (outward?out:in)+(size_t)lr*nb;
     else if (!outward && segment==0) upstream_zero=true;
     else if (outward && segment==n-1 && core[lr]) upstream=inner;
     else upstream=face+(size_t)lr*nb;
     double *target = after_center ? face+(size_t)lr*nb
-        : (outward?out:in)+segment_slot*(size_t)nb;
+        : (outward?out:in)+(size_t)lr*nb;
     for (int offset = (int)threadIdx.x;
          offset < epoch_outputs; offset += (int)blockDim.x) {
         int b = boundary_bin - offset;
@@ -1175,67 +1175,57 @@ __global__ void segment_kernel(
     const double *src = source + (size_t)s * (size_t)nb;
     const double *upstream = nullptr;
     bool upstream_zero = false;
-    if (after_center) upstream = (outward?out:in)+segment_slot*(size_t)nb;
+    if (after_center) upstream = (outward?out:in)+(size_t)lr*nb;
     else if (!outward && segment==0) upstream_zero=true;
     else if (outward && segment==n-1 && core[lr]) upstream=inner;
     else upstream=face+(size_t)lr*nb;
     double value = direct_segment_value(
         b, nb, beta[2U*segment_slot+(outward!=after_center)], dt, src, upstream, upstream_zero);
     double *target = after_center ? face+(size_t)lr*nb
-        : (outward?out:in)+segment_slot*(size_t)nb;
+        : (outward?out:in)+(size_t)lr*nb;
     target[b] = value;
 }
 
 __global__ void partial_j_kernel(
-    int ns, int nb, int nr, int ray_begin, int ray_end,
-    const int *rn, const int *segment_offset,
-    const double *angle_weight,
-    const double *in, const double *out, double *partial)
+    int ns, int nb, int segment, int ray_begin, int ray_end,
+    const int *rn, const double *angle_weight,
+    const double *center, double *partial, bool outward)
 {
-    size_t tid = (size_t)blockIdx.x * blockDim.x + threadIdx.x;
-    size_t cells = (size_t)ns * (size_t)nb;
-    if (tid >= cells) return;
-    int s = (int)(tid / (size_t)nb);
-    int b = (int)(tid - (size_t)s * (size_t)nb);
-    int segment = ns - 1 - s;
+    int b = blockIdx.x * blockDim.x + threadIdx.x;
+    if (b >= nb) return;
+    int s = ns - 1 - segment;
+    size_t tid = (size_t)s*nb+b;
     double sum = 0.0;
     for (int ray = ray_end - 1; ray >= ray_begin; --ray) {
         int lr = ray - ray_begin;
         if (segment >= rn[lr]) continue;
         double weight=angle_weight[(size_t)ray*ns+s];
         if (weight==0.0) continue;
-        size_t at = ((size_t)segment_offset[lr] + (size_t)segment) *
-                    (size_t)nb + (size_t)b;
-        double current_j = 0.5 * (out[at] + in[at]);
-        sum += weight*current_j;
+        size_t at = (size_t)lr*nb+b;
+        sum += weight*(0.5*center[at]);
     }
-    partial[tid] = sum;
+    partial[tid] = outward ? partial[tid]+sum : sum;
 }
 
 __global__ void partial_j_bound_kernel(
-    int ns, int nb, int nr, int ray_begin, int ray_end,
-    const int *rn, const int *segment_offset,
-    const double *angle_weight,
-    const double *in, const double *out, double *partial,
-    int *failure, int rounding)
+    int ns, int nb, int segment, int ray_begin, int ray_end,
+    const int *rn, const double *angle_weight,
+    const double *center, double *partial, bool outward, int *failure, int rounding)
 {
-    size_t tid = (size_t)blockIdx.x * blockDim.x + threadIdx.x;
-    size_t cells = (size_t)ns * (size_t)nb;
-    if (tid >= cells) return;
-    int s = (int)(tid / (size_t)nb);
-    int b = (int)(tid - (size_t)s * (size_t)nb);
-    int segment = ns - 1 - s;
+    int b = blockIdx.x * blockDim.x + threadIdx.x;
+    if (b >= nb) return;
+    int s = ns - 1 - segment;
+    size_t tid = (size_t)s*nb+b;
     double sum = 0.0;
     for (int ray = ray_end - 1; ray >= ray_begin; --ray) {
         int lr = ray - ray_begin;
         if (segment >= rn[lr]) continue;
         double weight=angle_weight[(size_t)ray*ns+s];
         if (weight==0.0) continue;
-        size_t at = ((size_t)segment_offset[lr] + (size_t)segment) *
-                    (size_t)nb + (size_t)b;
+        size_t at = (size_t)lr*nb+b;
         double current_j;
-        if (!positive_two_product_sum_device(
-                0.5, out[at], 0.5, in[at], rounding, &current_j)) {
+        if (!positive_multiply_bound_device(
+                0.5, center[at], rounding, &current_j)) {
             record_positive_failure(failure, 21, s, b, 0, rounding);
             return;
         }
@@ -1254,7 +1244,29 @@ __global__ void partial_j_bound_kernel(
         }
         sum = next_sum;
     }
-    partial[tid] = sum;
+    if(outward) {
+        double total;
+        if(!positive_add_bound_device(partial[tid],sum,rounding,&total)) {
+            record_positive_failure(failure,26,s,b,1,rounding);return;
+        }
+        partial[tid]=total;
+    } else partial[tid]=sum;
+}
+
+/* 중심 강도는 이 셸의 각도 적분 직후 재사용한다. 이전 셸의 중심 강도는
+ * 전파에 쓰이지 않으며 반구간 경계 강도 face만 다음 구간에 전달된다. */
+static int reduce_current_centers(DeviceShard &s,const HostGeometry &g,
+        int segment,bool outward,bool positive,int rounding) {
+    const int threads=256,blocks=(g.nb+threads-1)/threads;
+    const double *center=outward?s.out:s.in;
+    if(positive)
+        partial_j_bound_kernel<<<blocks,threads>>>(g.ns,g.nb,segment,
+            s.ray_begin,s.ray_end,s.rn,s.angle_weight,center,s.partial,
+            outward,s.failure,rounding);
+    else
+        partial_j_kernel<<<blocks,threads>>>(g.ns,g.nb,segment,
+            s.ray_begin,s.ray_end,s.rn,s.angle_weight,center,s.partial,outward);
+    return cudaGetLastError()==cudaSuccess?0:1;
 }
 
 /* 0=success, 1=CUDA/runtime failure, 2=invalid positive recurrence. */
@@ -1348,6 +1360,7 @@ static int launch_sweep(DeviceShard *shards, int ndev,
                         const CMFMultiGPUEpochSchedule *epoch_schedule = nullptr)
 {
     constexpr int threads = 256;
+    (void)cells;
     if (positive_sliding) {
         for (int d = 0; d < ndev; ++d) {
             DeviceShard &s = shards[d];
@@ -1377,6 +1390,8 @@ static int launch_sweep(DeviceShard *shards, int ndev,
             }
             if (!positive_sliding && cudaGetLastError() != cudaSuccess)
                 return 1;
+            if(half==0 && reduce_current_centers(s,g,segment,false,
+                                                positive_sliding,rounding))return 1;
         }
       }
     }
@@ -1400,6 +1415,8 @@ static int launch_sweep(DeviceShard *shards, int ndev,
             }
             if (!positive_sliding && cudaGetLastError() != cudaSuccess)
                 return 1;
+            if(half==0 && reduce_current_centers(s,g,segment,true,
+                                                positive_sliding,rounding))return 1;
         }
       }
     }
@@ -1423,24 +1440,6 @@ static int launch_sweep(DeviceShard *shards, int ndev,
                 return 2;
             }
         }
-    }
-    for (int d = 0; d < ndev; ++d) {
-        DeviceShard &s = shards[d];
-        if (cudaSetDevice(s.device) != cudaSuccess) return 1;
-        int blocks = (int)((cells + threads - 1U) / threads);
-        if (positive_sliding) {
-            partial_j_bound_kernel<<<blocks, threads>>>(
-                g.ns, g.nb, g.nr, s.ray_begin, s.ray_end,
-                s.rn, s.segment_offset, s.angle_weight,
-                s.in, s.out, s.partial,
-                s.failure, rounding);
-        } else {
-            partial_j_kernel<<<blocks, threads>>>(
-                g.ns, g.nb, g.nr, s.ray_begin, s.ray_end,
-                s.rn, s.segment_offset, s.angle_weight,
-                s.in, s.out, s.partial);
-        }
-        if (cudaGetLastError() != cudaSuccess) return 1;
     }
     if (positive_sliding) {
         for (int d = 0; d < ndev; ++d) {
@@ -1763,7 +1762,7 @@ static CMFMultiGPUStatus solve_impl(
                 geometry, &s, &compact_shell, &compact_beta)) goto cleanup;
         size_t local_slots = compact_shell.size();
         size_t segment_cells;
-        if (!checked_mul(local_slots, (size_t)n_bins, &segment_cells))
+        if (!checked_mul((size_t)s.local_rays, (size_t)n_bins, &segment_cells))
             goto cleanup;
         if (device_allocate(&s.rn, (size_t)s.local_rays, &s) != cudaSuccess ||
             device_allocate(&s.segment_offset,
@@ -2219,7 +2218,7 @@ static CMFMultiGPUStatus apply_positive_bounds_impl(
             goto bounds_cleanup;
         size_t local_slots = compact_shell.size();
         size_t segment_cells;
-        if (!checked_mul(local_slots, (size_t)n_bins, &segment_cells))
+        if (!checked_mul((size_t)s.local_rays, (size_t)n_bins, &segment_cells))
             goto bounds_cleanup;
         if (device_allocate(&s.rn, (size_t)s.local_rays, &s) != cudaSuccess ||
             device_allocate(&s.segment_offset,
@@ -2390,60 +2389,11 @@ static CMFMultiGPUStatus apply_positive_bounds_impl(
                             local.failure_nearest = prior;
                             local.failure_upper = current;
                         }
-                        int shell = (int)(idx / (size_t)n_bins);
-                        int bin = (int)(idx % (size_t)n_bins);
-                        int segment = n_shells - 1 - shell;
-                        double host_sum = 0.0;
-                        double device_geometry_sum = 0.0;
-                        double max_intensity = -1.0;
-                        if (cudaSetDevice(s.device) == cudaSuccess) {
-                            double device_rmid = NAN;
-                            (void)cudaMemcpy(
-                                &device_rmid, s.rmid + shell,
-                                sizeof(double), cudaMemcpyDeviceToHost);
-                            local.failure_device_rmid = device_rmid;
-                            for (int ray = s.ray_end - 1;
-                                 ray >= s.ray_begin; --ray) {
-                                int lr = ray - s.ray_begin;
-                                if (segment >= geometry.rn[(size_t)ray])
-                                    continue;
-                                ++local.failure_active_ray_count;
-                                size_t at =
-                                    ((size_t)s.host_segment_offset[
-                                         (size_t)lr] +
-                                     (size_t)segment) * (size_t)n_bins +
-                                    (size_t)bin;
-                                double ray_in = NAN;
-                                double ray_out = NAN;
-                                if (cudaMemcpy(&ray_in, s.in + at,
-                                               sizeof(double),
-                                               cudaMemcpyDeviceToHost) !=
-                                        cudaSuccess ||
-                                    cudaMemcpy(&ray_out, s.out + at,
-                                               sizeof(double),
-                                               cudaMemcpyDeviceToHost) !=
-                                        cudaSuccess)
-                                    break;
-                                double intensity = 0.5 * (ray_in + ray_out);
-                                if (intensity > 0.0)
-                                    ++local.failure_positive_intensity_count;
-                                if (intensity > max_intensity) {
-                                    max_intensity = intensity;
-                                    local.failure_global_ray_index = ray;
-                                    local.failure_ray_in = ray_in;
-                                    local.failure_ray_out = ray_out;
-                                }
-                                size_t weight_at=(size_t)ray*n_shells+shell;
-                                double device_weight=NAN;
-                                (void)cudaMemcpy(&device_weight,s.angle_weight+weight_at,
-                                    sizeof(double),cudaMemcpyDeviceToHost);
-                                host_sum += geometry.angle_weight[weight_at]*intensity;
-                                device_geometry_sum += device_weight*intensity;
-                            }
-                        }
-                        local.failure_host_recomputed_partial = host_sum;
-                        local.failure_device_geometry_partial =
-                            device_geometry_sum;
+                        /* 과거 셸의 중심 강도는 이미 재사용됐다. 보존하지 않은
+                         * 값으로 실패를 재계산하는 척하거나 버퍼 밖을 읽지 않는다.
+                         * 실패 셀의 실제 lower/nearest/upper는 위에 기록했다. */
+                        local.failure_host_recomputed_partial = NAN;
+                        local.failure_device_geometry_partial = NAN;
                         status = CMF_MGPU_NONFINITE;
                         goto bounds_cleanup;
                     }
@@ -2762,7 +2712,7 @@ struct PersistentBoundContext {
             }
             size_t local_slots = compact_shell.size();
             size_t segment_cells;
-            if (!checked_mul(local_slots, (size_t)nb, &segment_cells)) {
+            if (!checked_mul((size_t)shard.local_rays, (size_t)nb, &segment_cells)) {
                 allocation_report.status = CMF_MGPU_ALLOCATION_FAILED;
                 return allocation_report.status;
             }

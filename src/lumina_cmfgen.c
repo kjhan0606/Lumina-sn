@@ -8175,7 +8175,7 @@ static int cmfgen_common_observer_snapshot(CMFGENState *out,
 
 int cmfgen_write_common_observer(const CMFGENState *cs, const char *csv_path,
         const char *meta_path, uint64_t rad_generation, uint64_t material_generation,
-        int iter) {
+        int iter, int material_iteration) {
     if(!cs || !csv_path || !meta_path || !strcmp(csv_path,meta_path) ||
        !cs->common_obs_ready || cs->common_obs_n<1 ||
        !cs->common_obs_nu || !cs->common_obs_lnu)return -1;
@@ -8195,23 +8195,23 @@ int cmfgen_write_common_observer(const CMFGENState *cs, const char *csv_path,
     }
     if(fclose(csv)!=0)failed=1;
     /* JSON은 완전한 CSV를 닫은 뒤에만 작성한다. 실패한 부분 파일은 보존하며
-     * 이후 실행이 덮어쓰지 않는다. 마지막 R7 이후 상태/수렴을 주장하지 않는다. */
+     * 이후 실행이 덮어쓰지 않는다. 같은 물질 상태와 비선형 수렴은 별개다. */
     if(!failed && fprintf(meta,
        "{\n  \"schema\":\"common_observer_v1\",\n"
        "  \"method\":\"observer_formal_lorentz_common_gaussian\",\n"
        "  \"units\":\"erg/s/angstrom\",\n"
-       "  \"snapshot\":\"R6_before_R7\",\n"
+       "  \"snapshot\":\"R6_material_frozen\",\n"
        "  \"outer_convergence_verified\":false,\n"
        "  \"scattering\":\"coherent_isotropic_same_fine_J\",\n"
        "  \"bolometric\":false,\n"
        "  \"radiation_generation\":%llu,\n  \"material_generation\":%llu,\n"
-       "  \"iteration\":%d,\n  \"fine_bins\":%d,\n"
+       "  \"iteration\":%d,\n  \"material_iteration\":%d,\n  \"fine_bins\":%d,\n"
        "  \"fine_nu_min_edge\":%.17g,\n  \"fine_dlognu\":%.17g,\n"
        "  \"observer_bins\":%d,\n  \"core_rays\":32,\n  \"outer_rays\":64,\n"
        "  \"wavelength_min_angstrom\":%.17g,\n"
        "  \"wavelength_max_angstrom\":%.17g\n}\n",
        (unsigned long long)rad_generation,(unsigned long long)material_generation,
-       iter,cs->common_obs_fine_bins,cs->common_obs_fine_min,cs->common_obs_fine_dlog,
+       iter,material_iteration,cs->common_obs_fine_bins,cs->common_obs_fine_min,cs->common_obs_fine_dlog,
        cs->common_obs_n,CM_C*1e8/cs->common_obs_nu[cs->common_obs_n-1],
        CM_C*1e8/cs->common_obs_nu[0])<0)failed=1;
     if(fclose(meta)!=0)failed=1;
@@ -11833,8 +11833,11 @@ int cmfgen_run(Geometry *geo, OpacityState *opac, BFOpacity *bf,
      * counter (owner contract: previous+1), not iter+1: the init pass owns
      * generation 1 and logical iteration k owns generation k+2. */
     uint64_t rad_generation = 0;
-    for (int pass = 0; pass < (n_iter > 0 ? n_iter + 1 : 0); ++pass) {
+    /* 공통장 모드는 마지막 R7의 물질로 R6를 한 번 더 수행한다.
+     * 이 마지막 pass는 물질을 다시 갱신하지 않으며 수렴 판정도 대신하지 않는다. */
+    for (int pass = 0; pass < (n_iter > 0 ? n_iter + 1 + common_field : 0); ++pass) {
         const int init_pass = (pass == 0);
+        const int final_material_pass = common_field && pass == n_iter + 1;
         const int iter = pass - 1;
         if (nlte) nlte->current_iter = init_pass ? 0 : iter;
 
@@ -11955,7 +11958,7 @@ int cmfgen_run(Geometry *geo, OpacityState *opac, BFOpacity *bf,
             ? CMF_FINE_LINE_OPERATOR_INIT_SHARED_GAUSSIAN
             : CMF_FINE_LINE_OPERATOR_CMFGEN_NONOVERLAP_SOBOLEV;
         w5_cont_rad_generation = rad_generation + 1U;   /* w5_lines.csv label */
-        cs.common_obs_requested=common_field && !init_pass && iter==n_iter-1;
+        cs.common_obs_requested=final_material_pass;
         if (cmfgen_fine_jbar(&cs, geo, opac, T_inner, plasma,
                              line_operator) != 0) {
             fprintf(stderr,
@@ -11991,7 +11994,7 @@ int cmfgen_run(Geometry *geo, OpacityState *opac, BFOpacity *bf,
          * det_obs_status.json and never changes model_rc or the run flow. */
         if(cs.common_obs_requested && cmfgen_write_common_observer(&cs,
                 "lumina_spectrum_common_obs.csv","lumina_spectrum_common_obs.json",
-                rad_generation,nlte?nlte->population_committed_generation:0,iter)!=0) {
+                rad_generation,nlte?nlte->population_committed_generation:0,iter,n_iter-1)!=0) {
             fprintf(stderr,"[COMMON-OBS][FATAL] output failed iter=%d\n",iter);
             CMFGEN_RUN_DONE(-1);
         }
@@ -12005,6 +12008,15 @@ int cmfgen_run(Geometry *geo, OpacityState *opac, BFOpacity *bf,
                     "downstream_r7=NOT_RUN a2_10=NOT_RUN spectra=NOT_WRITTEN\n",
                     iter, (unsigned long long)rad_generation);
             CMFGEN_RUN_DONE(0);
+        }
+
+        if(final_material_pass) {
+            fprintf(stderr,"[COMMON-OBS] final_material_iteration=%d "
+                "population_generation=%llu radiation_generation=%llu "
+                "additional_R7=0 outer_convergence=UNVERIFIED\n",n_iter-1,
+                (unsigned long long)(nlte?nlte->population_committed_generation:0),
+                (unsigned long long)rad_generation);
+            continue;
         }
 
         /* R7 phase: commit/view -> gamma publication -> A2-08/A2-09/A2-10.
@@ -12189,7 +12201,7 @@ int cmfgen_run(Geometry *geo, OpacityState *opac, BFOpacity *bf,
             CMFGEN_RUN_DONE(-1);
         }
         fprintf(stderr,"[COMMON-OBS] spectrum=lumina_spectrum_common_obs.csv "
-            "snapshot=R6_before_R7 outer_convergence=UNVERIFIED "
+            "snapshot=R6_after_final_R7 outer_convergence=UNVERIFIED "
             "legacy_sobolev_output=DISABLED\n");
     } else if (obs_frame) {
         cmfgen_write_spectrum_obs(&cs, geo, T_inner, opac, plasma->T_e,
