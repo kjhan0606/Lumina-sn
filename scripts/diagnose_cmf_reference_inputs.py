@@ -49,6 +49,63 @@ def physical_profile_at_epoch(path, day=DAY):
     return data
 
 
+def integrate_time_weighted_linear(seconds, power):
+    """구간별 선형 power를 가정한 integral(t*power dt), 단위 erg*s."""
+    seconds, power = np.asarray(seconds), np.asarray(power)
+    assert seconds.ndim == power.ndim == 1 and len(seconds) == len(power) >= 2
+    assert np.isfinite(seconds).all() and np.isfinite(power).all()
+    assert seconds[0] > 0 and np.all(np.diff(seconds) > 0)
+    dt = np.diff(seconds)
+    # 각 구간의 두 끝값에 곱할 가중치. t*power는 선형이 아닌 이차함수다.
+    return float(np.sum(dt/6 * ((2*seconds[:-1]+seconds[1:])*power[:-1]
+                              +(seconds[:-1]+2*seconds[1:])*power[1:])))
+
+
+def radiation_history_budget(bol):
+    """전체 방출물의 근사 에너지식. 초기 E는 미지수이며 생산에 주입하지 않는다."""
+    assert bol.ndim == 2 and bol.shape[1] == 3 and np.isfinite(bol).all()
+    assert np.all(bol > 0) and np.all(np.diff(bol[:, 0]) > 0)
+    hit = np.flatnonzero(np.abs(bol[:, 0]-DAY) < 1e-8)
+    assert len(hit) == 1 and hit[0] > 0
+    history = bol[:hit[0]+1]
+    t, luminosity, deposited = history[:, 0]*86400, history[:, 1], history[:, 2]
+    increment = integrate_time_weighted_linear(t, deposited-luminosity)
+    alternate = float(np.trapezoid(t*(deposited-luminosity), t))
+    present = t[-1]
+    net_release = float(luminosity[-1]-deposited[-1])
+    # 미지 E(t0)>=0, 위 근사식과 보간이 성립할 때의 조건부 하한이다.
+    # 공개 표만으로 CMFGEN의 실제 radiation-storage 적분을 측정했다고 하지 않는다.
+    energy_min = max(0.0, increment/present)
+    analytic_t = np.array([1.0, 1.3, 2.6, 4.0])*86400
+    for constant, slope in ((3.0, 0.0), (0.0, 2.0), (-4.0, 3.0)):
+        power = constant+slope*analytic_t
+        exact = (constant*(analytic_t[-1]**2-analytic_t[0]**2)/2
+                 +slope*(analytic_t[-1]**3-analytic_t[0]**3)/3)
+        assert math.isclose(integrate_time_weighted_linear(analytic_t, power),
+                            exact, rel_tol=1e-14)
+    return dict(
+        equation="dE/dt = Q-L-E/t; whole ejecta, radiation dominated, nonrelativistic homologous expansion",
+        reference="https://arxiv.org/abs/1301.6766",
+        start_day=float(history[0, 0]), end_day=float(history[-1, 0]), samples=len(history),
+        initial_energy="unknown nonnegative E(t0); not assumed zero",
+        initial_energy_coefficient_in_E_at_target=float(t[0]/present),
+        known_contribution_to_E_erg=increment/present,
+        time_weighted_integral_erg_s=increment,
+        weighted_table_trapezoid_erg_s=alternate,
+        quadrature_difference_relative=abs(increment-alternate)/max(abs(increment), abs(alternate)),
+        conditional_E_lower_erg=energy_min,
+        conditional_expansion_loss_lower_erg_s=energy_min/present,
+        public_L_minus_Q_erg_s=net_release,
+        public_L_minus_Q_over_L=net_release/float(luminosity[-1]),
+        conditional_energy_release_lower_erg_s=energy_min/present+net_release,
+        conditional_energy_release_lower_over_L=(energy_min/present+net_release)/float(luminosity[-1]),
+        analytic_integral_tests="PASS: constant and affine power on nonuniform times",
+        warning="Conditional whole-ejecta inference under the stated approximations, not a rigorous "
+                "CMFGEN energy measurement or error bound. Sparse-time interpolation, frame/relativistic "
+                "effects and gas/internal energy are not controlled by the quadrature comparison. "
+                "No local radiation spectrum, truncated-domain storage or production correction is inferred.")
+
+
 def main():
     assert os.environ.get("SLURM_JOB_ID"), "Slurm 안에서 계산한다"
     config = json.loads((MODEL/"config.json").read_text())
@@ -109,6 +166,7 @@ def main():
         blackbody_T_inner_K=config["T_inner_K"],
         boundary_domain_comparison=boundary,
         deposition_reconstruction=comparison,
+        public_radiation_history_budget=radiation_history_budget(bol),
         warning="L_inner is outward, not net; input sum is not predicted emergent luminosity or proof of a time-storage term")
     paths = [MODEL/n for n in ("config.json","geometry.csv","deposition_cmfgen.csv")]
     paths += [PUBLIC/n for n in ("spectra_toy06_cmfgen.txt","lbol_edep_toy06_cmfgen.txt","edep_toy06_cmfgen.txt","phys_toy06_cmfgen.txt")]
