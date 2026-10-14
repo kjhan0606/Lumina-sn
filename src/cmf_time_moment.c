@@ -41,7 +41,7 @@ CMFTimeMomentStatus cmf_time_moment_step(const CMFTimeMomentInput *p,
         double ct=p->chi_total[i], cs=p->chi_scattering[i], eta=p->eta_fixed[i];
         double f=p->eddington[i], j=p->old_J[i];
         if (!isfinite(ct) || !isfinite(cs) || !isfinite(eta) || !isfinite(j) ||
-            !isfinite(f) || !(ct>=cs && cs>=0) || !(eta>=0) || !(j>=0) ||
+            !isfinite(f) || !(cs>=0) || !(eta>=0) || !(j>=0) ||
             !(f>0 && f<=1)) return CMF_TIME_INVALID;
     }
     for (size_t i=0;i<faces;i++) if (!isfinite(p->old_H[i])) return CMF_TIME_INVALID;
@@ -79,6 +79,8 @@ CMFTimeMomentStatus cmf_time_moment_step(const CMFTimeMomentInput *p,
             double dr=mid[face]-mid[face-1];
             double w=(re[face]-mid[face-1])/dr;
             double extinction=(1-w)*p->chi_total[il]+w*p->chi_total[ir]+inverse_cdt+drift;
+            if(!isfinite(extinction)){status=CMF_TIME_NONFINITE;goto cleanup;}
+            if(!(extinction>0)){status=CMF_TIME_STEP_TOO_LARGE;goto cleanup;}
             double logq=half_log_q(mid[face-1],mid[face],p->eddington[il],p->eddington[ir]);
             a[face]=p->eddington[il]*exp(-logq)/(extinction*dr);
             b[face]=p->eddington[ir]*exp(logq)/(extinction*dr);
@@ -91,6 +93,8 @@ CMFTimeMomentStatus cmf_time_moment_step(const CMFTimeMomentInput *p,
             double extinction=p->chi_total[il]+inverse_cdt+drift;
             double logq=half_log_q(mid[ns-1],re[ns],f,p->outer_f[k]);
             double denominator=extinction*dr+p->outer_f[k]*exp(logq)/p->outer_h[k];
+            if(!isfinite(denominator)){status=CMF_TIME_NONFINITE;goto cleanup;}
+            if(!(denominator>0)){status=CMF_TIME_STEP_TOO_LARGE;goto cleanup;}
             a[ns]=f*exp(-logq)/denominator;
             constant[ns]=dr*(memory*p->old_H[ih]+(k+1<nb ? drift*hout[ih+1] : 0))/denominator;
         }
@@ -108,9 +112,10 @@ CMFTimeMomentStatus cmf_time_moment_step(const CMFTimeMomentInput *p,
                 diagonal[s]-=factor*upper[s-1];
                 rhs[s]-=factor*rhs[s-1];
             }
-            if (!(diagonal[s]>0) || !isfinite(diagonal[s]) || !isfinite(rhs[s])) {
+            if (!isfinite(diagonal[s]) || !isfinite(rhs[s])) {
                 status=CMF_TIME_NONFINITE;goto cleanup;
             }
+            if(!(diagonal[s]>0)){status=CMF_TIME_STEP_TOO_LARGE;goto cleanup;}
         }
         for (int is=p->n_shells-1;is>=0;is--) {
             size_t s=(size_t)is, i=s*nb+k;

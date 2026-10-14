@@ -11,8 +11,8 @@ extern "C" {
  * Every spectral value is a bin average, ascending in frequency. Same velocity
  * and comoving-frequency grids at both epochs. No implicit remap or LTE seed.
  * Coherent isotropic scattering cancels in the zeroth moment only.
- * This implementation requires passive material, chi_total>=chi_scattering.
- * Signed absorption/masers require a separate extension, not a clamp.
+ * Signed absorption is retained. An inadmissible implicit time step is
+ * reported separately; the caller must retry a smaller physical dt, not clamp.
  */
 typedef struct {
     int n_shells, n_bins;
@@ -31,7 +31,7 @@ typedef struct {
 
 typedef enum {
     CMF_TIME_OK=0, CMF_TIME_INVALID=1, CMF_TIME_ALLOCATION=2,
-    CMF_TIME_NONFINITE=3, CMF_TIME_NEGATIVE=4
+    CMF_TIME_NONFINITE=3, CMF_TIME_NEGATIVE=4, CMF_TIME_STEP_TOO_LARGE=5
 } CMFTimeMomentStatus;
 
 /* Backward Euler in r^3 J/r^3 H, finite-volume radial divergence and an upwind

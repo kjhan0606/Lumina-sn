@@ -15,6 +15,7 @@ typedef struct {
     const double *chi, *es, *source, *J; /* [ns*nf], source=eta_fixed/chi */
     int nobs, ncore, nouter, substeps;
     const double *nu_obs;
+    int source_is_emissivity; /* 1: source=eta_fixed, 0: 예전 eta/chi 입력 */
 } CMFObserverInput;
 
 /* Lnu [erg/s/Hz]. 실패하면 caller의 Lnu는 바꾸지 않는다. */

@@ -6,20 +6,40 @@
 #include <math.h>
 #include <float.h>
 
-/* 음의 물질 소광은 곧 음의 광도가 아니다. eta=chi*S>=0이며 팽창을
- * 포함한 감쇠가 양수인 범위를 지원한다. 이 API는 chi=0,eta>0 또는
- * chi+3/(ct)<=0인 일반 증폭 셀의 표현/해법을 제공하지 않는다. */
+/* 음의 물질 소광은 곧 음의 광도가 아니다. 유한한 signed 감쇠와
+ * eta>=0를 사용한다. 영소광 방출에는 emissivity API를 사용한다. */
 static inline int cmf_exact_extinction_valid(double ct, double ce, double a)
 {
     double effective = ct + 3.0*a;
     return fabs(ct)<=DBL_MAX && ce>=0 && ce<=DBL_MAX &&
-           a>0 && a<=DBL_MAX && effective>0 && effective<=DBL_MAX;
+           a>0 && a<=DBL_MAX && fabs(effective)<=DBL_MAX;
 }
+
+static inline double cmf_exact_source_scale(double ct,double a,double drift)
+{ return fmax(drift,fabs(ct+3*a)); }
+
+/* source=eta/(a_drift*max(1,|dt_bin|)). 모든 구간 방출 가중은 양수다.
+ * 작은 tau는 expm1로, 큰 양의 dt는 예전 source 크기로 계산해 유지한다. */
+#ifdef __CUDACC__
+#define CMF_COEF_HD __host__ __device__
+#else
+#define CMF_COEF_HD
+#endif
+static CMF_COEF_HD inline double cmf_exact_emission_weight(double depth,double length)
+{
+    if(length==0)return 0;
+    if(fabs(depth)>=1)return depth>0?-expm1(-depth*length):expm1(-depth*length);
+    double tau=depth*length;
+    return tau==0?length:length*(-expm1(-tau)/tau);
+}
+#undef CMF_COEF_HD
 static inline int cmf_exact_material_source_valid(double ct, double sf)
 {
     return fabs(ct)<=DBL_MAX && fabs(sf)<=DBL_MAX &&
            (ct<0 ? sf<=0 : sf>=0);
 }
+static inline int cmf_exact_fixed_valid(double ct,double fixed,int emissivity)
+{ return emissivity ? fixed>=0 && fixed<=DBL_MAX : cmf_exact_material_source_valid(ct,fixed); }
 
 #ifdef __cplusplus
 extern "C" {
@@ -51,9 +71,9 @@ typedef struct {
     double tolerance;
     double final_max_relative_change;
     double final_max_absolute_change;
-    /* Conservative infinity-norm qualification.  The formal lambda operator
-     * has row sum <=1, so max(chi_es/(chi_tot+3/(ct))) bounds the fixed-
-     * point iteration norm.  A finite error bound is published only below 1. */
+    /* 양의 유효 소광일 때 지역 계수비로 구한 보수적 상계.
+     * 증폭/영감쇠에서는 이 값은 무한대일 수 있으며 아래 실제 연산자
+     * 상계를 사용한다. 지역비와 산란 연산자 노름을 혼동하지 않는다. */
     double max_scattering_ratio;
     /* 실제 양의 산란 연산자의 ||K||_infinity 상계. 지역 계수비와 구별. */
     double scattering_operator_norm_upper;
@@ -130,6 +150,19 @@ CMFExactStatus cmf_exact_formal_moments(
     double T_inner, double inner_boundary_scale,
     const double *chi_tot, const double *chi_es,
     const double *S_fixed, const double *input_J, CMFFormalMoments *moments);
+
+/* 생산용 방출률 직접 입력. chi=0,eta>0 및 signed 유효 소광도 표현한다.
+ * error_upper가 NULL이면 성분별 상계 없이 지정 mode의 형식해를 푼다.
+ * 실패시 J/error_upper를 변경하지 않는다. */
+CMFExactStatus cmf_exact_emissivity_solve(
+    int ns,int nb,double dlog,const double *nu,const double *ri,const double *ro,
+    double time,double temperature,double boundary_scale,const double *chi,
+    const double *scatter,const double *eta,double *J,double *error_upper,
+    size_t refinements,int iterations,double tolerance,CMFExactMode mode,CMFExactReport *report);
+CMFExactStatus cmf_exact_formal_moments_emissivity(
+    int ns,int nb,double dlog,const double *nu,const double *ri,const double *ro,
+    double time,double temperature,double boundary_scale,const double *chi,
+    const double *scatter,const double *eta,const double *J,CMFFormalMoments *moments);
 
 #ifdef __cplusplus
 }

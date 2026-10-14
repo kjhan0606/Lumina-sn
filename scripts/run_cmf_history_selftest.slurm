@@ -38,6 +38,8 @@ cp --parents "${history_files[@]}" "$history_out/source/"
 cd "$history_out/source"
 sha256sum "${history_files[@]}" > "$history_out/source.sha256"
 history_objects=()
+gcc -std=gnu11 -D_GNU_SOURCE -DLUMINA_HAS_CUDA_BF_GEMM -Isrc -fsyntax-only src/lumina_cmfgen.c \
+ > "$history_out/cuda-dispatch-build.log" 2>&1
 for history_unit in "${history_units[@]}"; do
  gcc -O2 -std=gnu11 -D_GNU_SOURCE -DLUMINA_TIME_PAIR_SELFTEST -fopenmp -ffunction-sections -fdata-sections -Isrc \
   -c "src/$history_unit.c" -o "$history_out/objects/$history_unit.o" >> "$history_out/build.log" 2>&1

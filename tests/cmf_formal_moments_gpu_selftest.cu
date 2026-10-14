@@ -114,7 +114,7 @@ static void run_case(int kind)
         CHECK(cmf_exact_multigpu_formal_moments_epoch(ns,nb,dlog,nu.data(),ri.data(),ro.data(),time,
             10000,1,ct.data(),ce.data(),sf.data(),input.data(),&gpu.m,&schedule,1,nullptr)!=CMF_MGPU_OK);
         CHECK(std::memcmp(saved.data(),gpu.data.data(),saved.size()*sizeof(double))==0);
-        sf[0]=-sf[0];ct[0]=-4/(2.99792458e10*time);
+        sf[0]=-sf[0];ct[0]=NAN;
         CHECK(cmf_exact_multigpu_formal_moments_epoch(ns,nb,dlog,nu.data(),ri.data(),ro.data(),time,
             10000,1,ct.data(),ce.data(),sf.data(),input.data(),&gpu.m,&schedule,1,nullptr)!=CMF_MGPU_OK);
         CHECK(std::memcmp(saved.data(),gpu.data.data(),saved.size()*sizeof(double))==0);

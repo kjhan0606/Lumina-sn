@@ -54,6 +54,8 @@ typedef struct {
                                   = chi_line (FULL) in transfer-only eps_uv
                                   mode (cooling-only closure), else chi_line_th */
     double *S_fixed;           /* (chi_abs*B + chi_line_th*S_line)/chi_tot */
+    const double *fixed_emissivity; /* 정밀장만: 별도 소유 eta 배열의 빌린 뷰.
+                                    * chi=0의 방출도 보존하며 S_fixed보다 우선. */
     double *J;                 /* mean intensity (output) erg/s/cm^2/Hz/sr*/
     double *eta_total_audit;   /* authoritative total emissivity snapshot for
                                   R7 decomposition audit; populated immediately

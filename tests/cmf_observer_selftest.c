@@ -20,7 +20,8 @@ static double reference_segment(const CMFObserverInput *in, int s, double p,
         if(b<0 || b>=in->nf)return NAN;
         size_t k=(size_t)s*in->nf+b;
         double opacity=q*in->chi[k];
-        double emission=(in->chi[k]*in->source[k]+in->es[k]*in->J[k])/(q*q);
+        double fixed=in->source_is_emissivity?in->source[k]:in->chi[k]*in->source[k];
+        double emission=(fixed+in->es[k]*in->J[k])/(q*q);
         double e=exp(-opacity*dz);
         I=opacity?I*e+emission/opacity*(-expm1(-opacity*dz)):I+emission*dz;
     }
@@ -152,6 +153,29 @@ int main(int argc,char **argv) {
     memcpy(save,L,sizeof L);src[0]=-src[0];
     CHECK(cmf_observer_cpu(&in,L)!=0);CHECK(memcmp(save,L,sizeof L)==0);
     src[0]=-src[0];
+    /* 같은 증폭 재료를 eta 직접 입력으로 표현해 비교한다. */
+    in.source_is_emissivity=1;
+    for(int i=0;i<NS*NF;++i)src[i]=6e-20;
+    CHECK(cmf_observer_cpu(&in,L)==0);
+    for(int f=0;f<NO;++f)CHECK(fabs(L[f]/save[f]-1)<1e-12);
+    /* 영소광+유한 방출: source=eta/chi를 만들 수 없는 실제 경우. */
+    for(int i=0;i<NS*NF;++i){chi[i]=0;es[i]=0;src[i]=6e-20;}
+    CHECK(cmf_observer_cpu(&in,L)==0);integ=0;
+    for(int j=0;j<200000;++j){
+        double u=(j+0.5)/200000,p=ri[0]*sqrt(1-u*u);
+        double ds=sqrt(ro[NS-1]*ro[NS-1]-p*p)-ri[0]*u;
+        double I=obs_bb(nu[0],in.T_inner)*in.inner_scale+6e-20*ds;
+        integ+=ri[0]*ri[0]*u*I/200000;
+        u=(j+0.5)*umax/200000;
+        integ+=ro[NS-1]*ro[NS-1]*u*(6e-20*2*ro[NS-1]*u)*umax/200000;
+    }
+    err=fabs(L[0]/(8*pi*pi*integ)-1);
+    printf("zero_extinction_emission_absolute_relative=%.17g\n",err);CHECK(err<1e-10);
+#ifdef OBSERVER_TEST_GPU
+    CHECK(cmf_observer_gpu(&in,save)==0);
+    for(int f=0;f<NO;++f)CHECK(fabs(L[f]/save[f]-1)<1e-12);
+#endif
+    in.source_is_emissivity=0;
     /* 팽창 연속장과 주파수 가변 Gaussian 선. 같은 J의 산란 방출을 포함. */
     in.t_exp=2e14/(0.12*2.99792458e10);
     for(int s=0;s<NS;++s)for(int b=0;b<NF;++b) {

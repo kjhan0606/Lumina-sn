@@ -7850,7 +7850,7 @@ static int cmf_fine_exact_owner_solve(
     const double *chi_tot, const double *chi_es,
     const double *S_fixed, double *J, double *error_upper,
     size_t envelope_refinements, int iteration_cap, double tolerance,
-    CMFFineOwnerResult *result)
+    CMFFineOwnerResult *result,int emissivity)
 {
     if (!result) return -1;
     memset(result, 0, sizeof(*result));
@@ -7877,7 +7877,8 @@ static int cmf_fine_exact_owner_solve(
     }
     result->multigpu_requested = requested_devices;
     if (requested_devices == 0) {
-        CMFExactStatus status = cmf_exact_characteristic_solve_with_envelope(
+        CMFExactStatus status = (emissivity?cmf_exact_emissivity_solve:
+            cmf_exact_characteristic_solve_with_envelope)(
             n_shells, n_bins, dlognu, nu, r_inner, r_outer,
             time_explosion, T_inner, inner_boundary_scale,
             chi_tot, chi_es, S_fixed, J, error_upper,
@@ -7888,7 +7889,11 @@ static int cmf_fine_exact_owner_solve(
 #ifdef LUMINA_HAS_CUDA_BF_GEMM
     const CMFMultiGPUEpochSchedule schedule = {128, 64, 32};
     CMFMultiGPUReport report;
-    CMFMultiGPUStatus status =
+    CMFMultiGPUStatus status = emissivity ?
+        cmf_exact_multigpu_emissivity_solve_epoch(
+            n_shells,n_bins,dlognu,nu,r_inner,r_outer,time_explosion,T_inner,
+            inner_boundary_scale,chi_tot,chi_es,S_fixed,J,error_upper,
+            envelope_refinements,&schedule,requested_devices,iteration_cap,tolerance,&report) :
         cmf_exact_multigpu_positive_solve_envelope_epoch_partitioned(
             n_shells, n_bins, dlognu, nu, r_inner, r_outer,
             time_explosion, T_inner, inner_boundary_scale,
@@ -8017,7 +8022,7 @@ int cmf_exact_owner_selftest(void)
     int gpu_rc = cmf_fine_exact_owner_solve(
         NS, NB, dlognu, nu, r_inner, r_outer, time_explosion,
         10000.0, 1.0, chi_tot, chi_es, fixed, gpu_J, gpu_error,
-        8U, 120, 1.0e-13, &gpu_result);
+        8U, 120, 1.0e-13, &gpu_result,0);
     if (cpu_status != CMF_EXACT_OK || gpu_rc != 0 ||
         gpu_result.multigpu_requested <= 0 ||
         gpu_result.devices_used != gpu_result.multigpu_requested ||
@@ -8095,7 +8100,7 @@ int cmf_exact_owner_selftest(void)
         NS, NB, dlognu, nu, r_inner, r_outer, time_explosion,
         10000.0, 1.0, bad_chi, chi_es, fixed,
         rejected_J, rejected_error, 8U, 120, 1.0e-13,
-        &rejected_result);
+        &rejected_result,0);
     if (rejected_rc == 0 ||
         rejected_result.multigpu_status != CMF_MGPU_NONFINITE ||
         memcmp(rejected_J, rejected_J_before, sizeof(rejected_J)) != 0 ||
@@ -8129,7 +8134,7 @@ int cmf_exact_owner_selftest(void)
         NS, NB, dlognu, nu, r_inner, r_outer, time_explosion,
         10000.0, 1.0, chi_tot, chi_es, fixed,
         rejected_J, rejected_error, 8U, 120, 1.0e-13,
-        &invalid_result);
+        &invalid_result,0);
     setenv("LUMINA_CMF_FINE_MGPU_DEVICES", saved_copy, 1);
     if (invalid_rc == 0 ||
         invalid_result.config_status !=
@@ -8179,6 +8184,7 @@ static int cmfgen_common_observer_snapshot(CMFGENState *out,
     in.t_exp=geo->time_explosion;in.T_inner=T_inner;in.inner_scale=cmf_inner_bb_scale();
     in.ri=geo->r_inner;in.ro=geo->r_outer;
     in.chi=fine->chi_tot;in.es=fine->chi_es;in.source=fine->S_fixed;in.J=fine->J;
+    if(fine->fixed_emissivity){in.source=fine->fixed_emissivity;in.source_is_emissivity=1;}
     in.nobs=out->common_obs_n;in.nu_obs=out->common_obs_nu;
     in.ncore=32;in.nouter=64;in.substeps=1;
     double start=cmf_wall_seconds();
@@ -9242,12 +9248,12 @@ int cmfgen_fine_jbar(CMFGENState *csb, const Geometry *geo,
                 numerator = w5_cont_selftest_off_inject(idx, (size_t)(NS / 2) * NF +
                                                    (size_t)(NF / 2), numerator);
 #endif
-            if (isfinite(ct) && isfinite(numerator) && ct != 0.0 &&
-                numerator >= 0.0)
-                fs.S_fixed[idx] = numerator / ct;
-            else if (ct == 0.0 && numerator == 0.0)
-                fs.S_fixed[idx] = 0.0; /* algebraic exact-zero provenance */
-            else {
+            if (isfinite(ct) && isfinite(numerator) && numerator>=0) {
+                /* eta 배열의 선 방출은 이제 합계 방출로 전환한다.
+                 * chi=0일 때 S는 정의하지 않으며 모든 실제 소비부는 eta를 쓴다. */
+                fs.S_fixed[idx]=ct!=0?numerator/ct:(numerator==0?0:NAN);
+                eta[idx]=numerator;
+            } else {
                 fs.S_fixed[idx] = NAN;
                 if (idx < first_assembly_invalid)
                     first_assembly_invalid = idx;
@@ -9282,6 +9288,7 @@ int cmfgen_fine_jbar(CMFGENState *csb, const Geometry *geo,
         return -1;
     }
 
+    fs.fixed_emissivity=eta;
     if (diag && sobolev_operator) {
         fprintf(stderr,
                 "[cmf_fine][LINE-OPERATOR] mode=CMFGEN_NONOVERLAP_SOBOLEV "
@@ -9413,10 +9420,10 @@ int cmfgen_fine_jbar(CMFGENState *csb, const Geometry *geo,
         }
         memcpy(ab_cpu_J, fs.J, fine_cells * sizeof(*ab_cpu_J));
         double ab_cpu_start = cmf_wall_seconds();
-        ab_cpu_status = cmf_exact_characteristic_solve_with_envelope(
+        ab_cpu_status = cmf_exact_emissivity_solve(
             NS, NF, dlognu, fs.nu, geo->r_inner, geo->r_outer,
             geo->time_explosion, T_inner, cmf_inner_bb_scale(),
-            fs.chi_tot, fs.chi_es, fs.S_fixed,
+            fs.chi_tot, fs.chi_es, eta,
             ab_cpu_J, ab_cpu_error_upper, envelope_refinements,
             n_ali, solve_tol, CMF_EXACT_MODE_POSITIVE_SLIDING,
             &ab_cpu_report);
@@ -9444,8 +9451,8 @@ int cmfgen_fine_jbar(CMFGENState *csb, const Geometry *geo,
     int owner_rc = cmf_fine_exact_owner_solve(
         NS, NF, dlognu, fs.nu, geo->r_inner, geo->r_outer,
         geo->time_explosion, T_inner, cmf_inner_bb_scale(),
-        fs.chi_tot, fs.chi_es, fs.S_fixed, fs.J, fine_error_upper,
-        envelope_refinements, n_ali, solve_tol, &owner_result);
+        fs.chi_tot, fs.chi_es, eta, fs.J, fine_error_upper,
+        envelope_refinements, n_ali, solve_tol, &owner_result,1);
     double owner_seconds = cmf_wall_seconds() - owner_start;
     CMFExactReport exact_report = owner_result.exact;
     if (owner_result.config_status ==
@@ -10196,7 +10203,7 @@ int cmfgen_fine_jbar(CMFGENState *csb, const Geometry *geo,
             NS, NF, dlognu, fs.nu, geo->r_inner, geo->r_outer,
             geo->time_explosion, T_inner, cmf_inner_bb_scale(),
             fs.chi_tot, fs.chi_es, fs.S_fixed, fs.J, fine_error_upper,
-            envelope_refinements, n_ali, solve_tol, &continuum_result);
+            envelope_refinements, n_ali, solve_tol, &continuum_result,0);
         double continuum_seconds = cmf_wall_seconds() - continuum_start;
         if (continuum_rc != 0) {
             fprintf(stderr,

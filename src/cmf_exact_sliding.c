@@ -36,6 +36,7 @@ typedef struct {
     double *ds_inner;
     double *angle_weight;
     int *rcore;
+    int *full_bin; /* 실제 광로가 한 주파수 셀 전체를 통과할 때만 cache 필요 */
     int *shell_off;
     int *shell_k;
     int *shell_seg;
@@ -91,7 +92,7 @@ static void exact_problem_free(ExactProblem *p)
     if (!p) return;
     free(p->rmid); free(p->p); free(p->rn); free(p->rsh);
     free(p->ds_outer); free(p->ds_inner); free(p->angle_weight);
-    free(p->rcore); free(p->shell_off); free(p->shell_k);
+    free(p->rcore); free(p->full_bin); free(p->shell_off); free(p->shell_k);
     free(p->shell_seg); free(p->shell_mu);
     memset(p, 0, sizeof(*p));
 }
@@ -133,8 +134,9 @@ static CMFExactStatus exact_problem_build(
     p->ds_inner = (double *)malloc(p->segment_slots * sizeof(double));
     p->angle_weight = (double *)malloc((size_t)p->nr * ns * sizeof(double));
     p->rcore = (int *)calloc((size_t)p->nr, sizeof(int));
+    p->full_bin = (int *)calloc((size_t)ns,sizeof(int));
     if (!p->rmid || !p->p || !p->rn || !p->rsh || !p->ds_outer ||
-        !p->ds_inner || !p->angle_weight || !p->rcore) {
+        !p->ds_inner || !p->angle_weight || !p->rcore || !p->full_bin) {
         exact_problem_free(p);
         return CMF_EXACT_ALLOCATION_FAILED;
     }
@@ -151,6 +153,8 @@ static CMFExactStatus exact_problem_build(
             p->rsh[base + (size_t)n] = s;
             cmf_cell_half_lengths(r_inner[s], r_outer[s], impact,
                 &p->ds_outer[base+n], &p->ds_inner[base+n]);
+            if(p->a_drift*p->ds_outer[base+n]>=1.5 ||
+               p->a_drift*p->ds_inner[base+n]>=1.5)p->full_bin[s]=1;
             ++n;
         }
         p->rn[k] = n;
@@ -442,15 +446,15 @@ static int exact_segment_positive_sliding(
         int top = clip_bin(b + qtop, nb);
         double transmission = exp(-psi * dt1[top]);
         intensity = intensity * transmission +
-                    (1.0 - transmission) * source[top];
+                    cmf_exact_emission_weight(dt1[top],psi) * source[top];
         PositiveTransform aggregate;
         if (positive_window_aggregate(&window, &aggregate) != 0) {
             positive_window_free(&window);
             return -2;
         }
         intensity = intensity * aggregate.transmission + aggregate.emission;
-        double half = sqrt(t1[b]);
-        output[b] = intensity * half + (1.0 - half) * source[b];
+        double half = exp(-0.5*dt1[b]);
+        output[b] = intensity * half + cmf_exact_emission_weight(dt1[b],0.5) * source[b];
         if (!(output[b] >= 0.0) || !isfinite(output[b])) {
             positive_window_free(&window);
             return -2;
@@ -506,7 +510,7 @@ static int exact_segment_positive_bound(
             double dt = dt1[b] * beta;
             double transmission = exp(-dt);
             if (positive_two_product_sum_bound(
-                    transmission, intensity, 1.0 - transmission, source[b],
+                    transmission, intensity, cmf_exact_emission_weight(dt1[b],beta), source[b],
                     rounding, &output[b]) != 0) return -1;
         }
         return 0;
@@ -542,7 +546,7 @@ static int exact_segment_positive_bound(
         int top = clip_bin(b + qtop, nb);
         double transmission = exp(-psi * dt1[top]);
         if (positive_two_product_sum_bound(
-                transmission, intensity, 1.0 - transmission, source[top],
+                transmission, intensity, cmf_exact_emission_weight(dt1[top],psi), source[top],
                 rounding, &intensity) != 0) {
             positive_window_free(&window);
             return -1;
@@ -555,9 +559,9 @@ static int exact_segment_positive_bound(
             positive_window_free(&window);
             return -1;
         }
-        double half = sqrt(t1[b]);
+        double half = exp(-0.5*dt1[b]);
         if (positive_two_product_sum_bound(
-                half, intensity, 1.0 - half, source[b], rounding,
+                half, intensity, cmf_exact_emission_weight(dt1[b],0.5), source[b], rounding,
                 &output[b]) != 0) {
             positive_window_free(&window);
             return -1;
@@ -595,7 +599,7 @@ static int exact_segment(int nb, const double *dt1, const double *t1,
             }
             double dt = dt1[b] * beta, transmission = exp(-dt);
             output[b] = intensity * transmission +
-                        (1.0 - transmission) * source[b];
+                        cmf_exact_emission_weight(dt1[b],beta) * source[b];
         }
         return 0;
     }
@@ -621,7 +625,7 @@ static int exact_segment(int nb, const double *dt1, const double *t1,
                     int mm = clip_bin(m, nb);
                     double transmission = exp(-dt1[mm] * length);
                     intensity = intensity * transmission +
-                                (1.0 - transmission) * source[mm];
+                                cmf_exact_emission_weight(dt1[mm],length) * source[mm];
                 }
                 if (lower <= (double)b + 1.0e-12) break;
                 cursor = lower;
@@ -654,10 +658,10 @@ static int exact_segment(int nb, const double *dt1, const double *t1,
         int top = clip_bin(b + qtop, nb);
         double transmission = exp(-psi * dt1[top]);
         intensity = intensity * transmission +
-                    (1.0 - transmission) * source[top];
+                    cmf_exact_emission_weight(dt1[top],psi) * source[top];
         intensity = intensity * exp(-window_tau) + window_source;
-        double half = sqrt(t1[b]);
-        output[b] = intensity * half + (1.0 - half) * source[b];
+        double half = exp(-0.5*dt1[b]);
+        output[b] = intensity * half + cmf_exact_emission_weight(dt1[b],0.5) * source[b];
         if (b == 0) break;
         if (qtop < 2) continue;
         int outgoing = clip_bin(b + qtop - 1, nb);
@@ -911,12 +915,12 @@ static int exact_formal_sweep_bound(
     return failed ? -1 : 0;
 }
 
-CMFExactStatus cmf_exact_formal_moments(
+static CMFExactStatus exact_formal_moments_impl(
     int n_shells, int n_bins, double dlognu, const double *nu,
     const double *r_inner, const double *r_outer, double time_explosion,
     double T_inner, double inner_boundary_scale,
     const double *chi_tot, const double *chi_es,
-    const double *S_fixed, const double *input_J, CMFFormalMoments *moments)
+    const double *S_fixed, const double *input_J, CMFFormalMoments *moments,int emissivity)
 {
     if (!input_J || !moments || !moments->J || !moments->H || !moments->K ||
         !moments->outer_J || !moments->outer_H || !moments->outer_K ||
@@ -951,14 +955,15 @@ CMFExactStatus cmf_exact_formal_moments(
     for(size_t i=0;i<cells;i++){
         double ct=chi_tot[i],ce=chi_es[i],sf=S_fixed[i],value=input_J[i];
         if(!cmf_exact_extinction_valid(ct,ce,p.a_lam) ||
-           !cmf_exact_material_source_valid(ct,sf) || !(value>=0) ||
+           !cmf_exact_fixed_valid(ct,sf,emissivity) || !(value>=0) ||
            !isfinite(ct) || !isfinite(ce) || !isfinite(sf) || !isfinite(value)){
             status=CMF_EXACT_INVALID_INPUT;goto moment_cleanup;
         }
         double extinction=ct+3*p.a_lam;
-        dt1[i]=extinction/p.a_drift;t1[i]=exp(-dt1[i]);
-        source[i]=(ct/extinction)*sf+(ce/extinction)*value;
-        source_cell[i]=(1-t1[i])*source[i];
+        dt1[i]=extinction/p.a_drift;t1[i]=p.full_bin[i/n_bins]?exp(-dt1[i]):1;
+        double scale=cmf_exact_source_scale(ct,p.a_lam,p.a_drift);
+        source[i]=((emissivity?1:ct)/scale)*sf+(ce/scale)*value;
+        source_cell[i]=(p.full_bin[i/n_bins]?cmf_exact_emission_weight(dt1[i],1):0)*source[i];
         if(!isfinite(dt1[i]) || !isfinite(source[i])){
             status=CMF_EXACT_NONFINITE;goto moment_cleanup;
         }
@@ -1069,12 +1074,12 @@ CMFExactStatus cmf_exact_characteristic_apply_positive_bounds(
         /* I_nu along dln(nu)/ds=-a: dI/ds=eta-(chi+3a)I.
          * S_fixed is eta_fixed/chi, not eta_fixed/(chi+3a). */
         double depth = (ct + p.a_lam * 3.0) / p.a_drift;
-        if (!(depth >= 0.0) || !isfinite(depth)) {
+        if (!isfinite(depth)) {
             invalid = 1;
             break;
         }
         dt1[idx] = depth;
-        t1[idx] = exp(-depth);
+        t1[idx] = p.full_bin[idx/n_bins]?exp(-depth):1;
     }
     for (int b = 0; b < n_bins; ++b)
         inner[b] = inner_boundary_scale * exact_planck(nu[b], T_inner);
@@ -1082,12 +1087,12 @@ CMFExactStatus cmf_exact_characteristic_apply_positive_bounds(
         PositiveRounding rounding = pass < 0 ? POSITIVE_ROUND_LOWER
             : (pass > 0 ? POSITIVE_ROUND_UPPER : POSITIVE_ROUND_NEAREST);
         for (size_t idx = 0; idx < cells; ++idx) {
-            double extinction = chi_tot[idx] + 3.0 * p.a_lam;
+            double extinction = cmf_exact_source_scale(chi_tot[idx],p.a_lam,p.a_drift);
             double fixed_weight = chi_tot[idx] / extinction;
             double ratio = chi_es[idx] / extinction;
             if (rounding == POSITIVE_ROUND_NEAREST) {
                 source[idx] = fixed_weight * S_fixed[idx] + ratio * input_J[idx];
-                source_cell[idx] = (1.0 - t1[idx]) * source[idx];
+                source_cell[idx] = (p.full_bin[idx/n_bins]?cmf_exact_emission_weight(dt1[idx],1):0) * source[idx];
             } else {
                 double scattering, fixed;
                 if (positive_multiply_bound(fabs(fixed_weight), fabs(S_fixed[idx]), rounding,
@@ -1096,7 +1101,7 @@ CMFExactStatus cmf_exact_characteristic_apply_positive_bounds(
                                             &scattering) != 0 ||
                     positive_add_bound(fixed, scattering, rounding,
                                        &source[idx]) != 0 ||
-                    positive_multiply_bound(1.0 - t1[idx], source[idx],
+                    positive_multiply_bound(p.full_bin[idx/n_bins]?cmf_exact_emission_weight(dt1[idx],1):0, source[idx],
                                             rounding,
                                             &source_cell[idx]) != 0) {
                     invalid = 1;
@@ -1155,13 +1160,14 @@ static int exact_fill_scattering_source_upper(
         return -1;
     for (size_t idx = 0; idx < n; ++idx) {
         double ratio = operator_context->chi_es[idx] /
-            (operator_context->chi_tot[idx] +
-             3.0 * operator_context->problem->a_lam);
+            cmf_exact_source_scale(operator_context->chi_tot[idx],
+                operator_context->problem->a_lam,operator_context->problem->a_drift);
         if (positive_multiply_bound(
                 ratio, input[idx], POSITIVE_ROUND_UPPER,
                 &operator_context->source[idx]) != 0 ||
             positive_multiply_bound(
-                1.0 - operator_context->t1[idx],
+                operator_context->problem->full_bin[idx/operator_context->problem->nb]?
+                    cmf_exact_emission_weight(operator_context->dt1[idx],1):0,
                 operator_context->source[idx], POSITIVE_ROUND_UPPER,
                 &operator_context->source_cell[idx]) != 0) return -1;
     }
@@ -1208,7 +1214,7 @@ static int exact_componentwise_error_envelope(
     double *source, double *source_cell, double *in, double *out,
     double *work, double *componentwise_error_upper,
     double max_scattering_ratio, size_t refinement_iterations,
-    CMFExactReport *report)
+    CMFExactReport *report,int emissivity)
 {
     /* First enclose F(J) with the same positive formal object.  The lower
      * result is temporarily stored in componentwise_error_upper; work stores
@@ -1218,8 +1224,8 @@ static int exact_componentwise_error_envelope(
                                   ? POSITIVE_ROUND_LOWER
                                   : POSITIVE_ROUND_UPPER;
         for (size_t idx = 0; idx < cells; ++idx) {
-            double extinction = chi_tot[idx] + 3.0 * p->a_lam;
-            double fixed_weight = chi_tot[idx] / extinction;
+            double extinction = cmf_exact_source_scale(chi_tot[idx],p->a_lam,p->a_drift);
+            double fixed_weight = (emissivity?1:chi_tot[idx]) / extinction;
             double ratio = chi_es[idx] / extinction;
             double scattering, fixed;
             if (positive_multiply_bound(fabs(fixed_weight), fabs(S_fixed[idx]), rounding,
@@ -1228,7 +1234,7 @@ static int exact_componentwise_error_envelope(
                                         &scattering) != 0 ||
                 positive_add_bound(fixed, scattering, rounding,
                                    &source[idx]) != 0 ||
-                positive_multiply_bound(1.0 - t1[idx], source[idx], rounding,
+                positive_multiply_bound(p->full_bin[idx/p->nb]?cmf_exact_emission_weight(dt1[idx],1):0, source[idx], rounding,
                                         &source_cell[idx]) != 0)
                 return -1;
         }
@@ -1335,7 +1341,7 @@ static CMFExactStatus cmf_exact_characteristic_solve_impl(
     const double *S_fixed, double *J, double *componentwise_error_upper,
     size_t envelope_refinement_iterations,
     int iteration_cap, double tolerance, CMFExactMode mode,
-    CMFExactReport *report)
+    CMFExactReport *report,int emissivity)
 {
     CMFExactReport local;
     memset(&local, 0, sizeof(local));
@@ -1414,19 +1420,20 @@ static CMFExactStatus cmf_exact_characteristic_solve_impl(
         double ct = chi_tot[idx], ce = chi_es[idx], sf = S_fixed[idx], j = J[idx];
         /* 판단 대상은 signed 물질 chi가 아니라 실제 chi+3a와 방출률이다. */
         if (!cmf_exact_extinction_valid(ct,ce,p.a_lam) ||
-            !cmf_exact_material_source_valid(ct,sf) ||
+            !cmf_exact_fixed_valid(ct,sf,emissivity) ||
             !(j >= 0.0) || !isfinite(ct) || !isfinite(ce) ||
             !isfinite(sf) || !isfinite(j)) {
             invalid = 1;
             dt1[idx] = t1[idx] = 0.0;
         } else {
-            double ratio = ce / (ct + 3.0 * p.a_lam);
+            double effective=ct+3*p.a_lam;
+            double ratio = effective>0?ce/effective:INFINITY;
             if (ratio > max_scattering_ratio)
                 max_scattering_ratio = ratio;
             double depth = (ct + p.a_lam * 3.0) / p.a_drift;
-            if (!(depth >= 0.0) || !isfinite(depth)) invalid = 1;
+            if (!isfinite(depth)) invalid = 1;
             dt1[idx] = depth;
-            t1[idx] = exp(-depth);
+            t1[idx] = p.full_bin[idx/n_bins]?exp(-depth):1;
         }
     }
     if (invalid) {
@@ -1454,11 +1461,11 @@ static CMFExactStatus cmf_exact_characteristic_solve_impl(
 #pragma omp parallel for schedule(static)
 #endif
         for (size_t idx = 0; idx < cells; ++idx) {
-            double extinction = chi_tot[idx] + 3.0 * p.a_lam;
-            double fixed_weight = chi_tot[idx] / extinction;
+            double extinction = cmf_exact_source_scale(chi_tot[idx],p.a_lam,p.a_drift);
+            double fixed_weight = (emissivity?1:chi_tot[idx]) / extinction;
             double ratio = chi_es[idx] / extinction;
             source[idx] = fixed_weight * S_fixed[idx] + ratio * J[idx];
-            source_cell[idx] = (1.0 - t1[idx]) * source[idx];
+            source_cell[idx] = (p.full_bin[idx/n_bins]?cmf_exact_emission_weight(dt1[idx],1):0) * source[idx];
         }
 
         uint64_t negative_count = 0;
@@ -1516,7 +1523,7 @@ static CMFExactStatus cmf_exact_characteristic_solve_impl(
             &p, cells, dt1, t1, chi_tot, chi_es, S_fixed, inner, J,
             source, source_cell, in, out, Jnew, componentwise_error_upper,
             max_scattering_ratio, envelope_refinement_iterations,
-            &local) != 0) {
+            &local,emissivity) != 0) {
         status = CMF_EXACT_ERROR_ENVELOPE_FAILED;
     }
 
@@ -1541,7 +1548,7 @@ CMFExactStatus cmf_exact_characteristic_solve(
     return cmf_exact_characteristic_solve_impl(
         n_shells, n_bins, dlognu, nu, r_inner, r_outer, time_explosion,
         T_inner, inner_boundary_scale, chi_tot, chi_es, S_fixed, J,
-        NULL, 0, iteration_cap, tolerance, mode, report);
+        NULL, 0, iteration_cap, tolerance, mode, report,0);
 }
 
 CMFExactStatus cmf_exact_characteristic_solve_with_envelope(
@@ -1559,5 +1566,50 @@ CMFExactStatus cmf_exact_characteristic_solve_with_envelope(
         n_shells, n_bins, dlognu, nu, r_inner, r_outer, time_explosion,
         T_inner, inner_boundary_scale, chi_tot, chi_es, S_fixed, J,
         componentwise_error_upper, envelope_refinement_iterations,
-        iteration_cap, tolerance, mode, report);
+        iteration_cap, tolerance, mode, report,0);
+}
+
+CMFExactStatus cmf_exact_emissivity_solve(
+    int ns,int nb,double dlog,const double *nu,const double *ri,const double *ro,
+    double time,double temperature,double boundary_scale,const double *chi,
+    const double *scatter,const double *eta,double *J,double *error_upper,
+    size_t refinements,int iterations,double tolerance,CMFExactMode mode,CMFExactReport *report)
+{
+    size_t cells;
+    if(report){memset(report,0,sizeof(*report));report->status=CMF_EXACT_INVALID_INPUT;}
+    if(!J || ns<=0 || nb<2 || checked_mul_size((size_t)ns,(size_t)nb,&cells) ||
+       cells>SIZE_MAX/sizeof(double))return CMF_EXACT_INVALID_INPUT;
+    double *trial=malloc(cells*sizeof(double));
+    double *bound=error_upper?malloc(cells*sizeof(double)):NULL;
+    if(!trial || (error_upper&&!bound)){
+        if(report)report->status=CMF_EXACT_ALLOCATION_FAILED;
+        free(trial);free(bound);return CMF_EXACT_ALLOCATION_FAILED;
+    }
+    memcpy(trial,J,cells*sizeof(double));
+    CMFExactStatus status=cmf_exact_characteristic_solve_impl(ns,nb,dlog,nu,ri,ro,time,
+        temperature,boundary_scale,chi,scatter,eta,trial,bound,refinements,
+        iterations,tolerance,mode,report,1);
+    if(status==CMF_EXACT_OK){
+        memcpy(J,trial,cells*sizeof(double));
+        if(bound)memcpy(error_upper,bound,cells*sizeof(double));
+    }
+    free(trial);free(bound);return status;
+}
+
+CMFExactStatus cmf_exact_formal_moments(
+    int ns,int nb,double dlog,const double *nu,const double *ri,const double *ro,
+    double time,double temperature,double boundary_scale,const double *chi,
+    const double *scatter,const double *source,const double *J,CMFFormalMoments *moments)
+{
+    return exact_formal_moments_impl(ns,nb,dlog,nu,ri,ro,time,temperature,
+        boundary_scale,chi,scatter,source,J,moments,0);
+}
+
+CMFExactStatus cmf_exact_formal_moments_emissivity(
+    int ns,int nb,double dlog,const double *nu,const double *ri,const double *ro,
+    double time,double temperature,double boundary_scale,const double *chi,
+    const double *scatter,const double *eta,const double *J,CMFFormalMoments *moments)
+{
+    return exact_formal_moments_impl(ns,nb,dlog,nu,ri,ro,time,temperature,
+        boundary_scale,chi,scatter,eta,J,moments,1);
 }

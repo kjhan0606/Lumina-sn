@@ -55,7 +55,8 @@ static OBS_HD double obs_leg(const CMFObserverInput *in, int shell,
         for (int j=0;j<in->substeps;++j) {
             const double q=obs_q(p,z0+(j+0.5)*ds,ict);
             const double tau=q*in->chi[k]*ds;
-            const double eta=(in->chi[k]*in->source[k]+in->es[k]*in->J[k])/(q*q);
+            const double fixed=in->source_is_emissivity?in->source[k]:in->chi[k]*in->source[k];
+            const double eta=(fixed+in->es[k]*in->J[k])/(q*q);
             const double phi=tau==0?1:-expm1(-tau)/tau;
             I=I*exp(-tau)+eta*ds*phi;
         }

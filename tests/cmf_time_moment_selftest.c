@@ -120,10 +120,10 @@ static void test_open_and_memory(void)
     CHECK(cmf_time_moment_step(&a.p,a.jn,a.hn)==CMF_TIME_INVALID);
     a.p.time_old=1e5;a.f[0]=0;
     CHECK(cmf_time_moment_step(&a.p,a.jn,a.hn)==CMF_TIME_INVALID);
-    a.f[0]=1.0/3;a.ct[0]=0;
+    a.f[0]=1.0/3;a.cs[0]=-1;
     CHECK(cmf_time_moment_step(&a.p,a.jn,a.hn)==CMF_TIME_INVALID);
     CHECK(memcmp(savedJ,a.jn,8*nb*sizeof(double))==0&&memcmp(savedH,a.hn,9*nb*sizeof(double))==0);
-    a.ct[0]=2e-12;
+    a.cs[0]=1e-12;
     CHECK(cmf_time_moment_step(&a.p,a.jo,a.ho)==CMF_TIME_OK);
     CHECK(memcmp(savedJ,a.jo,8*nb*sizeof(double))==0&&memcmp(savedH,a.ho,9*nb*sizeof(double))==0);
     free(savedJ);free(savedH);destroy(&a);
@@ -132,6 +132,29 @@ static void test_open_and_memory(void)
 static double volume_monomial(double lo,double hi,int power)
 {
     return 3.0/(power+3)*(pow(hi,power+3)-pow(lo,power+3))/(hi*hi*hi-lo*lo*lo);
+}
+
+static double signed_gain(int steps)
+{
+    Fixture a;init(&a,1,1);a.nu[0]=1e14;a.nu[1]=2e14;
+    a.ct[0]=-1e-14;a.cs[0]=1e-15;a.jo[0]=1;
+    const double t0=1e5,t1=1.01e5;
+    for(int k=0;k<steps;k++){
+        a.p.time_old=t0+(t1-t0)*k/steps;a.p.time_new=t0+(t1-t0)*(k+1)/steps;
+        a.r[1]=1e13*a.p.time_new/t0;
+        CHECK(cmf_time_moment_step(&a.p,a.jn,a.hn)==CMF_TIME_OK);balance(&a);
+        a.jo[0]=a.jn[0];a.ho[0]=a.hn[0];a.ho[1]=a.hn[1];
+    }
+    /* 연속 단일 bin의 해: 부피 희석3/t와 청색 무입사 주파수 손실2/t,
+     * 순 흡수 chi-chi_es<0에 의한 선형 증폭. 반사 경계는 이 시험만 쓴다. */
+    double exact=pow(t0/t1,5)*exp(-C_LIGHT*(a.ct[0]-a.cs[0])*(t1-t0));
+    double error=fabs(a.jn[0]/exact-1);
+    printf("SIGNED_TIME steps=%d J=%.17g analytic=%.17g relative=%.9g\n",steps,a.jn[0],exact,error);
+    double savedJ=a.jn[0],savedH[2]={a.hn[0],a.hn[1]};
+    a.p.time_old=t0;a.p.time_new=t0+1e4;
+    CHECK(cmf_time_moment_step(&a.p,a.jn,a.hn)==CMF_TIME_STEP_TOO_LARGE);
+    CHECK(a.jn[0]==savedJ && memcmp(a.hn,savedH,sizeof savedH)==0);
+    destroy(&a);return error;
 }
 
 /* Manufactured spherical solution, not a second implementation of the
@@ -226,6 +249,8 @@ int main(void)
     printf("HOMOLOGOUS time_errors=%.9g,%.9g,%.9g shape_coarse=%.9g shape_fine=%.9g\n",
            e10,e20,e40,coarse,fine);
     test_open_and_memory();
+    double g10=signed_gain(10),g20=signed_gain(20),g40=signed_gain(40);
+    CHECK(g20<.55*g10 && g40<.55*g20);
     double s20=manufactured_spatial(20),s40=manufactured_spatial(40),s80=manufactured_spatial(80);
     CHECK(s40<.55*s20&&s80<.55*s40);
     test_actual_formal_closure(1e-10);test_actual_formal_closure(1e-13);

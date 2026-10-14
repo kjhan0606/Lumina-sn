@@ -27,6 +27,7 @@ moment_files=(src/cmf_exact_multigpu.cu src/cmf_exact_multigpu.h src/cmf_exact_s
  tests/cmf_exact_sliding_selftest.c
  src/cmf_observer.c src/cmf_observer.cu src/cmf_observer.h src/cmf_observer_ray.h
  tests/cmf_observer_selftest.c
+ tests/cmf_emissivity_selftest.cu
  scripts/run_cmf_formal_moments_gpu_selftest.slurm)
 mkdir "$moment_out/source"
 cp --parents "${moment_files[@]}" "$moment_out/source/"
@@ -38,6 +39,11 @@ gcc -O2 -std=c11 -Isrc -c src/cmf_error_envelope.c -o "$moment_out/envelope.o" >
 nvcc -O2 -arch=sm_86 -std=c++14 -Isrc -c src/cmf_exact_multigpu.cu \
  -o "$moment_out/multigpu.o" > "$moment_out/cuda-build.log" 2>&1
 moment_objects=("$moment_out/multigpu.o" "$moment_out/sliding.o" "$moment_out/envelope.o")
+nvcc -O2 -arch=sm_86 -std=c++14 -Isrc tests/cmf_emissivity_selftest.cu \
+ "${moment_objects[@]}" -lm -o "$moment_out/emissivity" > "$moment_out/emissivity-build.log" 2>&1
+"$moment_out/emissivity" > "$moment_out/emissivity.log" 2> "$moment_out/emissivity.err"
+compute-sanitizer --tool memcheck --error-exitcode=79 "$moment_out/emissivity" > "$moment_out/emissivity-memcheck.log" 2>&1
+compute-sanitizer --tool racecheck --error-exitcode=79 "$moment_out/emissivity" > "$moment_out/emissivity-racecheck.log" 2>&1
 nvcc -O2 -arch=sm_86 -std=c++14 -Isrc tests/cmf_formal_moments_gpu_selftest.cu \
  "${moment_objects[@]}" -lm -o "$moment_out/moments" > "$moment_out/test-build.log" 2>&1
 "$moment_out/moments" > "$moment_out/test.log" 2> "$moment_out/test.err"

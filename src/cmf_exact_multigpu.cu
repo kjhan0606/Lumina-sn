@@ -43,6 +43,7 @@ struct HostGeometry {
     std::vector<double> beta;
     std::vector<double> angle_weight;
     std::vector<int> core;
+    std::vector<int> full_bin;
 };
 
 /* The layout mirrors the CPU PositiveWindowNode, but is kept private so the
@@ -151,6 +152,7 @@ static bool build_geometry(HostGeometry *g, int ns, int nb, double dlognu,
     g->beta.assign(2U*slots, 0.0);
     g->angle_weight.resize((size_t)g->nr*ns);
     g->core.assign((size_t)g->nr, 0);
+    g->full_bin.assign((size_t)ns,0);
     if (!cmf_cell_grid_valid(ns,r_inner,r_outer)) return false;
     for (int s = 0; s < ns; ++s) {
         g->rmid[(size_t)s] = 0.5 * (r_inner[s] + r_outer[s]);
@@ -169,6 +171,7 @@ static bool build_geometry(HostGeometry *g, int ns, int nb, double dlognu,
             g->shell[at]=s;
             g->beta[2*at]=g->a_drift*outer;
             g->beta[2*at+1]=g->a_drift*inner;
+            if(g->beta[2*at]>=1.5 || g->beta[2*at+1]>=1.5)g->full_bin[s]=1;
             if (!(g->beta[2*at]>=0) || !(g->beta[2*at+1]>=0) ||
                 !std::isfinite(g->beta[2*at]) || !std::isfinite(g->beta[2*at+1]))return false;
         }
@@ -480,7 +483,7 @@ __device__ double direct_segment_value(
     if (beta <= 0.5) {
         double transmission = exp(-dt1[b] * beta);
         return intensity * transmission +
-               (1.0 - transmission) * source[b];
+               cmf_exact_emission_weight(dt1[b],beta) * source[b];
     }
     double x = (double)b + beta;
     int m = (int)floor(x + 0.5);
@@ -492,7 +495,7 @@ __device__ double direct_segment_value(
             int mm = clip_bin(m, nb);
             double transmission = exp(-dt1[mm] * length);
             intensity = intensity * transmission +
-                        (1.0 - transmission) * source[mm];
+                        cmf_exact_emission_weight(dt1[mm],length) * source[mm];
         }
         if (lower <= (double)b + 1.0e-12) break;
         cursor = lower;
@@ -735,7 +738,7 @@ __device__ bool positive_segment_values(
             double transmission = exp(-dt1[b] * beta);
             double value;
             if (!positive_two_product_sum_device(
-                    transmission, intensity, 1.0 - transmission, source[b],
+                    transmission, intensity, cmf_exact_emission_weight(dt1[b],beta), source[b],
                     rounding, &value)) return false;
             output[b] = value;
         }
@@ -775,7 +778,7 @@ __device__ bool positive_segment_values(
         int top = clip_bin(b + qtop, nb);
         double transmission = exp(-psi * dt1[top]);
         if (!positive_two_product_sum_device(
-                transmission, intensity, 1.0 - transmission, source[top],
+                transmission, intensity, cmf_exact_emission_weight(dt1[top],psi), source[top],
                 rounding, &intensity)) return false;
         double aggregate_transmission;
         double aggregate_emission;
@@ -785,10 +788,10 @@ __device__ bool positive_segment_values(
         if (!positive_two_product_sum_device(
                 aggregate_transmission, intensity, 1.0,
                 aggregate_emission, rounding, &intensity)) return false;
-        double half = sqrt(t1[b]);
+        double half = exp(-0.5*dt1[b]);
         double value;
         if (!positive_two_product_sum_device(
-                half, intensity, 1.0 - half, source[b], rounding,
+                half, intensity, cmf_exact_emission_weight(dt1[b],0.5), source[b], rounding,
                 &value)) return false;
         output[b] = value;
         if (b == 0 || window_count == 0) continue;
@@ -892,14 +895,14 @@ __device__ bool positive_epoch_pointwise(
     int top = clip_bin(b + qtop, nb);
     double transmission = exp(-psi * dt1[top]);
     if (!positive_two_product_sum_device(
-            transmission, intensity, 1.0 - transmission, source[top],
+            transmission, intensity, cmf_exact_emission_weight(dt1[top],psi), source[top],
             rounding, &intensity) ||
         !positive_two_product_sum_device(
             aggregate.transmission, intensity, 1.0,
             aggregate.emission, rounding, &intensity)) return false;
-    double half = sqrt(t1[b]);
+    double half = exp(-0.5*dt1[b]);
     return positive_two_product_sum_device(
-        half, intensity, 1.0 - half, source[b], rounding, output);
+        half, intensity, cmf_exact_emission_weight(dt1[b],0.5), source[b], rounding, output);
 }
 
 __global__ void positive_epoch_replay_segment_kernel(
@@ -956,7 +959,7 @@ __global__ void positive_epoch_replay_segment_kernel(
         }
         double transmission = exp(-dt[b] * ray_beta);
         if (!positive_two_product_sum_device(
-                transmission, intensity, 1.0 - transmission, src[b],
+                transmission, intensity, cmf_exact_emission_weight(dt[b],ray_beta), src[b],
                 rounding, &target[b]))
             record_positive_failure(
                 failure, 32, segment, lr, outward ? 1 : 0, rounding);
@@ -1700,7 +1703,7 @@ static CMFMultiGPUStatus solve_impl(
     int requested_devices, int iteration_cap, double tolerance,
     CMFMultiGPUReport *report, bool positive_sliding,
     CMFMultiGPUPartitionMode partition_mode,
-    const CMFMultiGPUEpochSchedule *epoch_schedule)
+    const CMFMultiGPUEpochSchedule *epoch_schedule,bool emissivity=false)
 {
     const double total_start = monotonic_seconds();
     CMFMultiGPUReport local{};
@@ -1803,7 +1806,7 @@ static CMFMultiGPUStatus solve_impl(
         double ct = chi_tot[idx], ce = chi_es[idx];
         double sf = S_fixed[idx], j = J[idx];
         if (!cmf_exact_extinction_valid(ct,ce,geometry.a_lam) ||
-            !cmf_exact_material_source_valid(ct,sf) || !(j >= 0.0) ||
+            !cmf_exact_fixed_valid(ct,sf,emissivity) || !(j >= 0.0) ||
             !std::isfinite(ct) || !std::isfinite(ce) ||
             !std::isfinite(sf) || !std::isfinite(j)) {
             local.status = CMF_MGPU_NONFINITE;
@@ -1811,18 +1814,19 @@ static CMFMultiGPUStatus solve_impl(
             return local.status;
         }
         /* I_nu characteristic: eta-(chi+3a)I; material S=eta/chi. */
-        double ratio = ce / (ct + 3.0 * geometry.a_lam);
+        double effective=ct+3*geometry.a_lam;
+        double ratio = effective>0?ce/effective:INFINITY;
         if (ratio > max_ratio) max_ratio = ratio;
         double depth = (ct + geometry.a_lam * 3.0) / geometry.a_drift;
-        if (!(depth >= 0.0) || !std::isfinite(depth)) {
+        if (!std::isfinite(depth)) {
             local.status = CMF_MGPU_NONFINITE;
             if (report) *report = local;
             return local.status;
         }
         dt1[idx] = depth;
         if (positive_sliding) {
-            t1[idx] = std::exp(-depth);
-            if (!(t1[idx] >= 0.0) || !(t1[idx] <= 1.0) ||
+            t1[idx] = geometry.full_bin[idx/n_bins]?std::exp(-depth):1;
+            if (!(t1[idx] >= 0.0) ||
                 !std::isfinite(t1[idx])) {
                 local.status = CMF_MGPU_NONFINITE;
                 if (report) *report = local;
@@ -1976,8 +1980,8 @@ static CMFMultiGPUStatus solve_impl(
     for (int iteration = 0; iteration < iteration_cap; ++iteration) {
         double phase_start = monotonic_seconds();
         for (size_t idx = 0; idx < cells; ++idx) {
-            double extinction = chi_tot[idx] + 3.0 * geometry.a_lam;
-            double fixed_weight = chi_tot[idx] / extinction;
+            double extinction = cmf_exact_source_scale(chi_tot[idx],geometry.a_lam,geometry.a_drift);
+            double fixed_weight = (emissivity?1:chi_tot[idx]) / extinction;
             double ratio = chi_es[idx] / extinction;
             source[idx] = fixed_weight * S_fixed[idx] + ratio * jwork[idx];
             if (!(source[idx] >= 0.0) || !std::isfinite(source[idx])) {
@@ -1987,7 +1991,7 @@ static CMFMultiGPUStatus solve_impl(
                 goto cleanup;
             }
             if (positive_sliding) {
-                source_cell[idx] = (1.0 - t1[idx]) * source[idx];
+                source_cell[idx] = (geometry.full_bin[idx/n_bins]?cmf_exact_emission_weight(dt1[idx],1):0) * source[idx];
                 if (!(source_cell[idx] >= 0.0) ||
                     !std::isfinite(source_cell[idx])) {
                     local.failure_phase = 1;
@@ -2271,14 +2275,14 @@ static CMFMultiGPUStatus apply_positive_bounds_impl(
             return local.status;
         }
         double depth = (ct + geometry.a_lam * 3.0) / geometry.a_drift;
-        if (!(depth >= 0.0) || !std::isfinite(depth)) {
+        if (!std::isfinite(depth)) {
             local.status = CMF_MGPU_NONFINITE;
             if (report) *report = local;
             return local.status;
         }
         dt1[idx] = depth;
-        t1[idx] = std::exp(-depth);
-        if (!(t1[idx] >= 0.0) || !(t1[idx] <= 1.0) ||
+        t1[idx] = geometry.full_bin[idx/n_bins]?std::exp(-depth):1;
+        if (!(t1[idx] >= 0.0) ||
             !std::isfinite(t1[idx])) {
             local.status = CMF_MGPU_NONFINITE;
             if (report) *report = local;
@@ -2424,12 +2428,12 @@ static CMFMultiGPUStatus apply_positive_bounds_impl(
     local.deterministic_host_reduction = 1;
     for (int rounding = -1; rounding <= 1; ++rounding) {
         for (size_t idx = 0; idx < cells; ++idx) {
-            double extinction = chi_tot[idx] + 3.0 * geometry.a_lam;
+            double extinction = cmf_exact_source_scale(chi_tot[idx],geometry.a_lam,geometry.a_drift);
             double fixed_weight = chi_tot[idx] / extinction;
             double ratio = chi_es[idx] / extinction;
             if (rounding == 0) {
                 source[idx] = fixed_weight * S_fixed[idx] + ratio * input_J[idx];
-                source_cell[idx] = (1.0 - t1[idx]) * source[idx];
+                source_cell[idx] = (geometry.full_bin[idx/n_bins]?cmf_exact_emission_weight(dt1[idx],1):0) * source[idx];
             } else {
                 double scattering, fixed;
                 if (!host_positive_multiply_bound(
@@ -2439,7 +2443,7 @@ static CMFMultiGPUStatus apply_positive_bounds_impl(
                     !host_positive_add_bound(
                         fixed, scattering, rounding, &source[idx]) ||
                     !host_positive_multiply_bound(
-                        1.0 - t1[idx], source[idx], rounding,
+                        geometry.full_bin[idx/n_bins]?cmf_exact_emission_weight(dt1[idx],1):0, source[idx], rounding,
                         &source_cell[idx])) {
                     local.failure_phase = 1;
                     local.failure_iteration = rounding;
@@ -2623,6 +2627,7 @@ cmf_exact_multigpu_apply_positive_bounds_epoch(
 namespace {
 
 struct PersistentBoundContext {
+    bool emissivity=false;
     int n_shells = 0;
     int n_bins = 0;
     int requested_devices = 0;
@@ -2759,13 +2764,13 @@ struct PersistentBoundContext {
             }
             double depth = (ct[idx] + geometry.a_lam * 3.0) /
                            geometry.a_drift;
-            if (!(depth >= 0.0) || !std::isfinite(depth)) {
+            if (!std::isfinite(depth)) {
                 allocation_report.status = CMF_MGPU_NONFINITE;
                 return allocation_report.status;
             }
             dt1[idx] = depth;
-            t1[idx] = std::exp(-depth);
-            if (!(t1[idx] >= 0.0) || !(t1[idx] <= 1.0) ||
+            t1[idx] = geometry.full_bin[idx/nb]?std::exp(-depth):1;
+            if (!(t1[idx] >= 0.0) ||
                 !std::isfinite(t1[idx])) {
                 allocation_report.status = CMF_MGPU_NONFINITE;
                 return allocation_report.status;
@@ -2966,15 +2971,15 @@ struct PersistentBoundContext {
             return CMF_MGPU_INVALID_INPUT;
         double phase_start = monotonic_seconds();
         for (size_t idx = 0; idx < cells; ++idx) {
-            if (!cmf_exact_material_source_valid(chi_tot[idx],fixed[idx]) || !(input[idx] >= 0.0) ||
+            if (!cmf_exact_fixed_valid(chi_tot[idx],fixed[idx],emissivity) || !(input[idx] >= 0.0) ||
                 !std::isfinite(fixed[idx]) || !std::isfinite(input[idx]))
                 return CMF_MGPU_NONFINITE;
-            double extinction = chi_tot[idx] + 3.0 * geometry.a_lam;
-            double fixed_weight = chi_tot[idx] / extinction;
+            double extinction = cmf_exact_source_scale(chi_tot[idx],geometry.a_lam,geometry.a_drift);
+            double fixed_weight = (emissivity?1:chi_tot[idx]) / extinction;
             double ratio = chi_es[idx] / extinction;
             if (rounding == 0) {
                 source[idx] = fixed_weight * fixed[idx] + ratio * input[idx];
-                source_cell[idx] = (1.0 - t1[idx]) * source[idx];
+                source_cell[idx] = (geometry.full_bin[idx/n_bins]?cmf_exact_emission_weight(dt1[idx],1):0) * source[idx];
             } else {
                 double scattering, material;
                 if (!host_positive_multiply_bound(
@@ -2984,7 +2989,7 @@ struct PersistentBoundContext {
                     !host_positive_add_bound(
                         material, scattering, rounding, &source[idx]) ||
                     !host_positive_multiply_bound(
-                        1.0 - t1[idx], source[idx], rounding,
+                        geometry.full_bin[idx/n_bins]?cmf_exact_emission_weight(dt1[idx],1):0, source[idx], rounding,
                         &source_cell[idx]))
                     return CMF_MGPU_NONFINITE;
             }
@@ -3167,16 +3172,17 @@ static int multigpu_apply_scattering_upper(
 
 }  // namespace
 
-extern "C" CMFMultiGPUStatus cmf_exact_multigpu_formal_moments_epoch(
+static CMFMultiGPUStatus formal_moments_epoch_impl(
     int n_shells,int n_bins,double dlognu,const double *nu,
     const double *r_inner,const double *r_outer,double time_explosion,
     double T_inner,double inner_boundary_scale,
     const double *chi_tot,const double *chi_es,
     const double *S_fixed,const double *input_J,CMFFormalMoments *moments,
     const CMFMultiGPUEpochSchedule *schedule,int requested_devices,
-    CMFMultiGPUReport *report)
+    CMFMultiGPUReport *report,bool emissivity)
 {
     PersistentBoundContext context;
+    context.emissivity=emissivity;
     CMFMultiGPUStatus status=CMF_MGPU_INVALID_INPUT;
     if(report){*report=CMFMultiGPUReport{};report->status=status;}
     if(!moments || !moments->J || !moments->H || !moments->K ||
@@ -3203,7 +3209,7 @@ static CMFMultiGPUStatus positive_solve_envelope_impl(
     size_t refinement_iterations, CMFMultiGPUPartitionMode partition_mode,
     int requested_devices, int iteration_cap, double tolerance,
     CMFMultiGPUReport *report,
-    const CMFMultiGPUEpochSchedule *epoch_schedule)
+    const CMFMultiGPUEpochSchedule *epoch_schedule,bool emissivity=false)
 {
     const double total_start = monotonic_seconds();
     CMFMultiGPUReport local{};
@@ -3274,7 +3280,7 @@ static CMFMultiGPUStatus positive_solve_envelope_impl(
         n_shells, n_bins, dlognu, nu, r_inner, r_outer, time_explosion,
         T_inner, inner_boundary_scale, chi_tot, chi_es, S_fixed,
         j_work.data(), requested_devices, iteration_cap, tolerance,
-        &solve_report, true, partition_mode, epoch_schedule);
+        &solve_report, true, partition_mode, epoch_schedule,emissivity);
     local = solve_report;
     local.componentwise_residual_upper_max = INFINITY;
     local.componentwise_error_upper_min = INFINITY;
@@ -3285,6 +3291,7 @@ static CMFMultiGPUStatus positive_solve_envelope_impl(
     }
 
     PersistentBoundContext persistent;
+    persistent.emissivity=emissivity;
     double phase_start = monotonic_seconds();
     status = persistent.initialize(
         n_shells, n_bins, dlognu, nu, r_inner, r_outer, time_explosion,
@@ -3336,8 +3343,8 @@ static CMFMultiGPUStatus positive_solve_envelope_impl(
         }
         residual[idx] = std::max(lower_distance, upper_distance);
         if (residual[idx] > max_residual) max_residual = residual[idx];
-        double ratio = chi_es[idx] /
-            (chi_tot[idx] + 3.0 * persistent.geometry.a_lam);
+        double effective=chi_tot[idx]+3*persistent.geometry.a_lam;
+        double ratio = effective>0?chi_es[idx]/effective:INFINITY;
         if (ratio > max_scattering_ratio) max_scattering_ratio = ratio;
     }
     local.envelope_residual_seconds = monotonic_seconds() - phase_start;
@@ -3523,4 +3530,36 @@ cmf_exact_multigpu_positive_solve_envelope_epoch_partitioned(
         T_inner, inner_boundary_scale, chi_tot, chi_es, S_fixed, J,
         error_upper, refinement_iterations, partition_mode,
         requested_devices, iteration_cap, tolerance, report, schedule);
+}
+
+extern "C" CMFMultiGPUStatus cmf_exact_multigpu_emissivity_solve_epoch(
+    int ns,int nb,double dlog,const double *nu,const double *ri,const double *ro,
+    double time,double temperature,double boundary_scale,const double *chi,
+    const double *scatter,const double *eta,double *J,double *error_upper,
+    size_t refinements,const CMFMultiGPUEpochSchedule *schedule,int devices,
+    int iterations,double tolerance,CMFMultiGPUReport *report)
+{
+    return positive_solve_envelope_impl(ns,nb,dlog,nu,ri,ro,time,temperature,
+        boundary_scale,chi,scatter,eta,J,error_upper,refinements,
+        CMF_MGPU_PARTITION_WEIGHTED_SEGMENTS,devices,iterations,tolerance,report,schedule,true);
+}
+
+extern "C" CMFMultiGPUStatus cmf_exact_multigpu_formal_moments_epoch(
+    int ns,int nb,double dlog,const double *nu,const double *ri,const double *ro,
+    double time,double temperature,double boundary_scale,const double *chi,
+    const double *scatter,const double *source,const double *J,CMFFormalMoments *moments,
+    const CMFMultiGPUEpochSchedule *schedule,int devices,CMFMultiGPUReport *report)
+{
+    return formal_moments_epoch_impl(ns,nb,dlog,nu,ri,ro,time,temperature,boundary_scale,
+        chi,scatter,source,J,moments,schedule,devices,report,false);
+}
+
+extern "C" CMFMultiGPUStatus cmf_exact_multigpu_formal_moments_emissivity_epoch(
+    int ns,int nb,double dlog,const double *nu,const double *ri,const double *ro,
+    double time,double temperature,double boundary_scale,const double *chi,
+    const double *scatter,const double *eta,const double *J,CMFFormalMoments *moments,
+    const CMFMultiGPUEpochSchedule *schedule,int devices,CMFMultiGPUReport *report)
+{
+    return formal_moments_epoch_impl(ns,nb,dlog,nu,ri,ro,time,temperature,boundary_scale,
+        chi,scatter,eta,J,moments,schedule,devices,report,true);
 }

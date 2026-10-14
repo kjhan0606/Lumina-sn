@@ -262,6 +262,18 @@ CMFMultiGPUStatus cmf_exact_multigpu_formal_moments_epoch(
     const CMFMultiGPUEpochSchedule *schedule, int requested_devices,
     CMFMultiGPUReport *report);
 
+CMFMultiGPUStatus cmf_exact_multigpu_emissivity_solve_epoch(
+    int ns,int nb,double dlog,const double *nu,const double *ri,const double *ro,
+    double time,double temperature,double boundary_scale,const double *chi,
+    const double *scatter,const double *eta,double *J,double *error_upper,
+    size_t refinements,const CMFMultiGPUEpochSchedule *schedule,int devices,
+    int iterations,double tolerance,CMFMultiGPUReport *report);
+CMFMultiGPUStatus cmf_exact_multigpu_formal_moments_emissivity_epoch(
+    int ns,int nb,double dlog,const double *nu,const double *ri,const double *ro,
+    double time,double temperature,double boundary_scale,const double *chi,
+    const double *scatter,const double *eta,const double *J,CMFFormalMoments *moments,
+    const CMFMultiGPUEpochSchedule *schedule,int devices,CMFMultiGPUReport *report);
+
 #ifdef __cplusplus
 }
 #endif
