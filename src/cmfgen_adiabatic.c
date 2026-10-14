@@ -172,13 +172,16 @@ CmfgenAdiabaticStatus cmfgen_material_time_work(
         }
         long double nnew=(long double)current->n_atom_cm3[s]+current->n_electron_cm3[s];
         long double nold=(long double)previous->n_atom_cm3[s]+previous->n_electron_cm3[s];
+        /* EVAL_TEMP_DDT_V2: 과거는 붕괴 처방 적용 후 원자당 상태다.
+         * 밀도비로 원자수를 추측하지 않고 현재 원자수로 차분을 환산한다. */
+        long double atom_scale=(long double)current->n_atom_cm3[s]/previous->n_atom_cm3[s];
         CmfgenMaterialTimeWork *cell=&trial[s];
         cell->thermal_time=1.5L*CMFGEN_AD_K_BOLTZMANN*
-            (nnew*current->temperature_K[s]-q*nold*previous->temperature_K[s])/dt;
-        cell->atomic_time=((long double)current->n_atom_cm3[s]*current->internal_energy_atom_erg[s]
-            -q*previous->n_atom_cm3[s]*previous->internal_energy_atom_erg[s])/dt;
+            (nnew*current->temperature_K[s]-atom_scale*nold*previous->temperature_K[s])/dt;
+        cell->atomic_time=(long double)current->n_atom_cm3[s]*
+            (current->internal_energy_atom_erg[s]-previous->internal_energy_atom_erg[s])/dt;
         cell->expansion=3.0L*nnew*CMFGEN_AD_K_BOLTZMANN*
-            current->temperature_K[s]/current->epoch_s;
+            current->temperature_K[s]*log1pl(dt/previous->epoch_s)/dt;
         cell->signed_total=four_term_sum(cell->thermal_time,cell->atomic_time,cell->expansion,0);
         if(!isfinite(cell->thermal_time) || !isfinite(cell->atomic_time) ||
            !isfinite(cell->expansion) || !isfinite(cell->signed_total)){

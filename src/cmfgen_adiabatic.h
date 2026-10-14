@@ -63,13 +63,15 @@ typedef struct {
 } CmfgenMaterialEnergyState;
 
 typedef struct {
-    double thermal_time;   /* rho_new * delta(e_thermal)/dt */
-    double atomic_time;    /* rho_new * delta(e_excitation+ionization)/dt */
-    double expansion;      /* 3 P_new/t_new, not an extra spatial advection */
+    double thermal_time;   /* 1.5 k n_atom_new delta[(1+ne/natom)T]/dt */
+    double atomic_time;    /* n_atom_new delta(E_excitation+ionization per atom)/dt */
+    double expansion;      /* P_new log(V_new/V_old)/dt; 동형팽창 V비=(t_new/t_old)^3 */
     double signed_total, cooling, heating; /* erg s^-1 cm^-3 */
 } CmfgenMaterialTimeWork;
 
-/* Hillier/Dessart2012 Eq27-30, implicit material side. Requires homologous
+/* CMFGEN EVAL_TEMP_DDT_V2의 이산식(Hillier/Dessart2012 Eq27-30의 물질 쪽).
+ * previous에는 필요한 원소 붕괴 처방이 이미 적용되어 있어야 한다.
+ * Requires homologous
  * density evolution and identical mass-shell ordering. Output is transactional.
  * This replaces (does not add to) steady advective work in a time evolution. */
 CmfgenAdiabaticStatus cmfgen_material_time_work(

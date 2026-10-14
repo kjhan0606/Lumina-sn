@@ -15,8 +15,8 @@ static double expansion(int steps)
     double r,n,e,T,u=u0;CmfgenMaterialEnergyState now={1,0,&r,&T,&n,&e,&u};
     for(int step=1;step<=steps;++step){
         now.epoch_s=1e5*(1+(double)step/steps);
-        double q=pow(old.epoch_s/now.epoch_s,3),dt=now.epoch_s-old.epoch_s;
-        r=r0*q;n=n0*q;e=e0*q;T=T0/(1+2*dt/now.epoch_s);
+        double q=pow(old.epoch_s/now.epoch_s,3);
+        r=r0*q;n=n0*q;e=e0*q;T=T0/(1+2*log(now.epoch_s/old.epoch_s));
         CmfgenMaterialTimeWork work;
         CHECK(cmfgen_material_time_work(&now,&old,&work)==CMFGEN_ADIABATIC_OK);
         CHECK(fabs(work.signed_total)/(fabs(work.thermal_time)+work.expansion)<3e-12);
@@ -45,9 +45,9 @@ int main(void)
     for(int s=0;s<2;++s){
         CHECK(near(work[s].thermal_time,1.5*n[s]*KB*T[s]/dt));
         CHECK(near(work[s].atomic_time,n[s]*chi/dt));
-        CHECK(near(work[s].expansion,3*(n[s]+e[s])*KB*T[s]/now.epoch_s));
+        CHECK(near(work[s].expansion,3*(n[s]+e[s])*KB*T[s]*log(now.epoch_s/old.epoch_s)/dt));
         CHECK(near(work[s].signed_total,1.5*n[s]*KB*T[s]/dt+n[s]*chi/dt+
-            3*(n[s]+e[s])*KB*T[s]/now.epoch_s));
+            3*(n[s]+e[s])*KB*T[s]*log(now.epoch_s/old.epoch_s)/dt));
         CHECK(work[s].cooling==work[s].signed_total&&work[s].heating==0);
     }
     printf("MATERIAL_IONIZATION thermal=%.17g atomic=%.17g expansion=%.17g total=%.17g\n",

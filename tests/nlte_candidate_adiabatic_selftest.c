@@ -90,7 +90,7 @@ static int time_root_check(void)
     if(rc)return fail("existing temperature root rejected time work");
     for(int s=0;s<2;s++){
         double C=1.5*(n[s]+ne[s])*K_BOLTZMANN;
-        double expected=(fixture.deposition[s]+C*T0[s]/dt)/(C/dt+2*C/t);
+        double expected=(fixture.deposition[s]+C*T0[s]/dt)/(C/dt*(1+2*log(t/fixture.old.epoch_s)));
         if(fabs(T[s]/expected-1)>1e-8 || publication.ledger[s].adiabatic_model!=A210_MATERIAL_TIME_HISTORY ||
            publication.committed_te_generation!=0)return fail("time root disagrees with analytic gas energy");
         printf("[MATERIAL-HISTORY] root_shell=%d T=%.17g analytic_T=%.17g e_balance=%.17g\n",

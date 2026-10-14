@@ -180,6 +180,7 @@ static PopulationStatus physical_history_solve_impl(
        h->n_ions!=(size_t)atom->n_ion_pops||!h->level_density||!h->level_global||
        !h->energy.density_g_cm3||!h->ion_Z||!h->ion_stage||
        !isfinite(epoch_s)||!(epoch_s>h->energy.epoch_s)||
+       (h->decay_epoch_s!=0&&h->decay_epoch_s!=epoch_s)||
        !(h->energy.epoch_s>0)||!isfinite(h->energy.epoch_s))return POP_ATOMIC_MISSING;
     if(memcmp(h->level_global,nlte->nlte_to_global_level,h->n_levels*sizeof(int))||
        memcmp(h->ion_Z,atom->ion_pop_Z,h->n_ions*sizeof(int))||
@@ -270,6 +271,93 @@ static PopulationAtomicView candidate_atomic_view(const AtomicData *atom)
     view.topion_E_cm = atom->topion_E_cm;
     view.topion_g = atom->topion_g;
     return view;
+}
+
+NLTEPopulationCandidateStatus nlte_physical_history_decay_projection(
+    NLTEPhysicalHistory *out,const NLTEPhysicalHistory *old,const NLTEConfig *n,
+    const AtomicData *a,double epoch,const double *after)
+{
+    if(!out||!old||out==old||!n||!a||!after||old->decay_epoch_s!=0||
+       !(old->energy.epoch_s>0)||!isfinite(epoch)||!(epoch>old->energy.epoch_s)||
+       old->energy.n_shells==0||old->energy.n_shells>INT32_MAX||
+       a->n_elements<=0||a->n_ion_pops<=0||n->n_nlte_levels_total<=0||
+       old->n_ions!=(size_t)a->n_ion_pops||old->n_levels!=(size_t)n->n_nlte_levels_total||
+       !old->ion_density||!old->level_density||!old->ion_Z||!old->ion_stage||!old->level_global||
+       !old->energy.density_g_cm3||!old->energy.temperature_K||
+       !a->ion_pop_Z||!a->ion_pop_stage||!a->element_Z||!a->elem_ion_offset||!a->level_Z||
+       !n->nlte_to_global_level||!n->global_to_nlte_level||
+       memcmp(old->ion_Z,a->ion_pop_Z,old->n_ions*sizeof(int))||
+       memcmp(old->ion_stage,a->ion_pop_stage,old->n_ions*sizeof(int))||
+       memcmp(old->level_global,n->nlte_to_global_level,old->n_levels*sizeof(int)))
+        return NLTE_CANDIDATE_INVALID_ARGUMENT;
+    size_t ns=old->energy.n_shells,ni=old->n_ions,nl=old->n_levels,ne=a->n_elements;
+    if(ni>SIZE_MAX/ns/sizeof(double)||nl>SIZE_MAX/ns/sizeof(double)||
+       ne>SIZE_MAX/ns/sizeof(double))return NLTE_CANDIDATE_INVALID_LAYOUT;
+    double *ions=copy_values(old->ion_density,ni*ns),*levels=copy_values(old->level_density,nl*ns);
+    double *ratio=malloc(ne*ns*sizeof(double)),*partition=malloc(ni*ns*sizeof(double));
+    double *electron=calloc(ns,sizeof(double));
+    NLTEPopulationCandidateStatus status=NLTE_CANDIDATE_ALLOCATION_FAILED;
+    if(!ions||!levels||!ratio||!partition||!electron)goto decay_done;
+    status=NLTE_CANDIDATE_INVALID_LAYOUT;
+    if(a->elem_ion_offset[0]!=0||a->elem_ion_offset[ne]!=(int)ni)goto decay_done;
+    for(size_t e=0;e<ne;e++){
+        int lo=a->elem_ion_offset[e],hi=a->elem_ion_offset[e+1];
+        if(lo<0||hi<=lo||hi>(int)ni||a->element_Z[e]<=0)goto decay_done;
+        for(size_t k=0;k<e;k++)if(a->element_Z[k]==a->element_Z[e])goto decay_done;
+        for(int ip=lo;ip<hi;ip++)if(a->ion_pop_Z[ip]!=a->element_Z[e]||
+            a->ion_pop_stage[ip]<0)goto decay_done;
+        for(size_t s=0;s<ns;s++){
+            double sum=0,target=after[e*ns+s];
+            if(!(target>=0)||!isfinite(target))goto decay_done;
+            for(int ip=lo;ip<hi;ip++){
+                double pop=ions[(size_t)ip*ns+s];
+                if(!(pop>=0)||!isfinite(pop))goto decay_done;
+                sum+=pop;
+            }
+            if(!isfinite(sum)||(sum==0&&target!=0))goto decay_done;
+            ratio[e*ns+s]=sum>0?target/sum:1;
+            if(!isfinite(ratio[e*ns+s]))goto decay_done;
+        }
+    }
+    for(size_t s=0;s<ns;s++){
+        long double before=0,after_sum=0;
+        for(size_t i=0;i<ni;i++)before+=ions[i*ns+s];
+        for(size_t e=0;e<ne;e++)after_sum+=after[e*ns+s];
+        if(!(before>0)||fabsl(after_sum/before-1)>1e-12L)goto decay_done;
+    }
+    for(size_t e=0;e<ne;e++)for(int ip=a->elem_ion_offset[e];ip<a->elem_ion_offset[e+1];ip++)
+        for(size_t s=0;s<ns;s++){
+            ions[(size_t)ip*ns+s]*=ratio[e*ns+s];
+            electron[s]+=a->ion_pop_stage[ip]*ions[(size_t)ip*ns+s];
+        }
+    for(size_t fl=0;fl<nl;fl++){
+        int gl=old->level_global[fl];size_t e=0;
+        if(gl<0||gl>=a->n_levels||n->global_to_nlte_level[gl]!=(int)fl)goto decay_done;
+        while(e<ne&&a->element_Z[e]!=a->level_Z[gl])e++;
+        if(e==ne)goto decay_done;
+        for(size_t s=0;s<ns;s++){
+            if(!(levels[fl*ns+s]>=0)||!isfinite(levels[fl*ns+s]))goto decay_done;
+            levels[fl*ns+s]*=ratio[e*ns+s];
+        }
+    }
+    {
+        /* 현재 T/인구/partition을 참조하지 않는 별도의 과거 물질 view. */
+        AtomicData av=*a;NLTEConfig nv=*n;PlasmaState pv={0};
+        av.ion_number_density=ions;av.partition_functions=partition;
+        av.population_committed_generation=old->population_generation;
+        nv.nlte_level_populations=levels;nv.population_committed_generation=old->population_generation;
+        pv.n_shells=(int)ns;pv.T_e=(double*)old->energy.temperature_K;
+        pv.rho=(double*)old->energy.density_g_cm3;pv.n_electron=electron;
+        pv.T_e_generation=old->temperature_generation;
+        PopulationAtomicView view=candidate_atomic_view(&av);
+        status=NLTE_CANDIDATE_THERMODYNAMIC_FAILED;
+        if(population_partition_build(&view,pv.T_e,ns,old->population_generation,
+            old->temperature_generation,partition,&av.partition_stamp)!=POP_OK)goto decay_done;
+        status=nlte_physical_history_capture(out,&nv,&av,&pv,old->energy.epoch_s);
+        if(status==NLTE_CANDIDATE_OK)out->decay_epoch_s=epoch;
+    }
+decay_done:
+    free(ions);free(levels);free(ratio);free(partition);free(electron);return status;
 }
 
 void nlte_population_candidate_free(NLTEPopulationCandidate *candidate)
@@ -623,7 +711,9 @@ NLTEPopulationCandidateStatus nlte_population_candidate_prepare_adiabatic(
     if(history){
         CmfgenMaterialEnergyState current={n,epoch_s,candidate->plasma.rho,
             candidate->trial_te,n_atom,candidate->electron_density,energy_atom};
-        adiabatic_status=cmfgen_material_time_work(&current,&history->energy,time_work);
+        adiabatic_status=(history->decay_epoch_s!=0&&history->decay_epoch_s!=epoch_s)
+            ? CMFGEN_ADIABATIC_INVALID_ARGUMENT
+            : cmfgen_material_time_work(&current,&history->energy,time_work);
         for(size_t s=0;s<n && adiabatic_status==CMFGEN_ADIABATIC_OK;++s)
             if(!isfinite(radius_cm[s]) || radius_cm[s]<=0 ||
                !isfinite(velocity_cm_s[s]) || velocity_cm_s[s]<=0 ||

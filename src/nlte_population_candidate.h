@@ -29,12 +29,21 @@ typedef struct NLTEPhysicalHistory {
     uint64_t population_generation, temperature_generation;
     double *storage, *ion_density, *level_density;
     int *level_global, *ion_Z, *ion_stage;
+    double decay_epoch_s; /* 0=실제 과거; >0=해당 새 시점 전용 붕괴 투영 */
 } NLTEPhysicalHistory;
 
 NLTEPopulationCandidateStatus nlte_physical_history_capture(
     NLTEPhysicalHistory *history,const NLTEConfig *nlte,const AtomicData *atom,
     const PlasmaState *plasma,double epoch_s);
 void nlte_physical_history_free(NLTEPhysicalHistory *history);
+/* DO_LEV_POP_DECAYS 처방. after[e*ns+s]는 팽창 전 과거 부피에서의 붕괴 후
+ * 원소 핵수밀도다. 원소별 과거 인구 비율을 유지하며 전자수/내부에너지를
+ * 재계산한다. 원래 과거와 실패시 out 보존. 투영을 다시 투영하지 않는다.
+ * 핵수 보존 및 원소별 유한 비율을 요구하며, 원래0인 새 원소의 준위분포는
+ * 임의 생성하지 않는다. 실제 isotope 계산/현재 조성 반영은 호출자 책임. */
+NLTEPopulationCandidateStatus nlte_physical_history_decay_projection(
+    NLTEPhysicalHistory *out,const NLTEPhysicalHistory *previous,
+    const NLTEConfig*,const AtomicData*,double new_epoch_s,const double *after);
 /* 고정된 과거 full-level 인구를 현재 super-level 맵으로 합산하여 실제
  * raw 전이율의 시간단계를 푼다. 동일 원자/이온 맵과 동형팽창 셸을 요구한다. */
 PopulationStatus nlte_physical_history_solve_levels(

@@ -83,6 +83,7 @@ CMFTimeEpochStatus cmfgen_solve_time_epoch(CMFGENState *cs,Geometry *g,OpacitySt
     if(&next->material==oldm||&next->radiation==oldr||oldr->n_shells!=(int)ns||oldr->n_bins<=0||
        oldm->energy.n_shells!=ns||oldm->n_ions!=ni||oldm->n_levels!=nl||
        oldm->energy.epoch_s!=oldr->epoch_s||trial->epoch_s!=g->time_explosion||
+       (oldm->decay_epoch_s!=0&&oldm->decay_epoch_s!=trial->epoch_s)||
        !(oldr->epoch_s>0)||!(trial->epoch_s>oldr->epoch_s)||
        !oldm->energy.density_g_cm3||!oldm->level_global||!oldm->ion_Z||!oldm->ion_stage||
        memcmp(oldm->level_global,n->nlte_to_global_level,nl*sizeof(int))||
