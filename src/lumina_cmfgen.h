@@ -109,7 +109,18 @@ typedef struct {
     struct DetObsCapture *det_obs_cap; /* DET-OBS-WRITER final-pass capture
                                  (NULL unless LUMINA_DET_OBS_WRITER=1);
                                  freed by cmfgen_free. */
+    /* 공통 정밀 재료/J에서 계산한 R6 관측자계 snapshot. 배열은 이 state 소유.
+     * n=0이면 비교 대역2500–25500Å/최대100km/s로 생성한다.
+     * 시험에서는 미리 지정한 nu 배열을 사용할 수 있다. */
+    int common_obs_requested, common_obs_ready, common_obs_n;
+    double *common_obs_nu, *common_obs_lnu;
+    int common_obs_fine_bins;
+    double common_obs_fine_min, common_obs_fine_dlog;
 } CMFGENState;
+
+int cmfgen_write_common_observer(const CMFGENState *cs, const char *csv_path,
+    const char *meta_path, uint64_t rad_generation, uint64_t material_generation,
+    int iter);
 
 /* E4 in-situ emissivity A/B audit.  The B lane keeps the production opacity,
  * continuum, binning and EPAY machinery, replacing only the pre-EPAY line

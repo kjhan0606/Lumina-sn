@@ -27,6 +27,7 @@ git ls-files -z -- src | xargs -0 sha256sum > "$build_out/source.sha256"
 build_units=(
  src/lumina_cuda.cu src/lumina_bf_gemm.cu src/lumina_nlte_gemm.cu
  src/lumina_nlte_assemble.cu src/lumina_cmf_solve.cu src/cmf_exact_multigpu.cu
+ src/cmf_observer.c src/cmf_observer.cu
  src/gpu_radiation_field.cu src/gpu_radiation_field_contract.c
  src/gpu_physics_contract.c src/gpu_physics_kernels.cu src/gpu_opacity_kernels.cu
  src/gpu_emissivity_kernels.cu src/lumina_atomic.c src/lumina_plasma.c

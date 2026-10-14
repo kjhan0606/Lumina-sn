@@ -79,6 +79,9 @@ static int producer_test(void) {
     AtomicData atom={0}; atom.n_lines=NL;atom.line_A_ul=A;atom.line_atomic_number=Z;atom.line_ion_number=q;
     NLTEConfig nlte={0};nlte.line_eset=&dummy_eset;nlte.nlte_line_map=mapped;
     CMFGENState cs={0}; REQUIRE(cmfgen_init(&cs,&geo)==0);
+    cs.common_obs_requested=1;cs.common_obs_n=9;
+    cs.common_obs_nu=malloc(9*sizeof(double));REQUIRE(cs.common_obs_nu);
+    for(int f=0;f<9;++f)cs.common_obs_nu[f]=2.99792458e18/(1220.0-4*f);
     for(int s=0;s<NS;++s) for(int b=0;b<cs.n_bins;++b) {
         size_t i=(size_t)s*cs.n_bins+b;
         cs.chi_abs[i]=2e-14;cs.chi_es[i]=1e-15;cs.chi_tot[i]=2.1e-14;
@@ -95,6 +98,11 @@ static int producer_test(void) {
                 CMF_FINE_LINE_OPERATOR_COMMON_GAUSSIAN)==0);
     REQUIRE(op.jbar_line_det_operator==CMF_FINE_LINE_OPERATOR_COMMON_GAUSSIAN);
     REQUIRE(op.n_fine>0 && op.jnu_fine && op.nu_fine);
+    REQUIRE(cs.common_obs_ready && cs.common_obs_lnu);
+    double observer_before[9];memcpy(observer_before,cs.common_obs_lnu,sizeof observer_before);
+    for(int f=0;f<9;++f)REQUIRE(isfinite(observer_before[f]) && observer_before[f]>0);
+    REQUIRE(cmfgen_write_common_observer(&cs,"common_observer.csv","common_observer.json",4,3,2)==0);
+    REQUIRE(cmfgen_write_common_observer(&cs,"common_observer.csv","common_observer.json",4,3,2)!=0);
     REQUIRE(!op.line_producer_terms_captured);
     double maxdiff=0;
     /* 독립적인 전체 교집합 적분. 생산 two-pointer 구현을 재사용하지 않는다. */
@@ -132,6 +140,14 @@ static int producer_test(void) {
     REQUIRE(cmfgen_fine_jbar(&cs,&geo,&op,12000,&plasma,
                 CMF_FINE_LINE_OPERATOR_COMMON_GAUSSIAN)==0);
     double bb_change=fabs(jbar[NS+1]/old_jbar-1), bf_change=0;
+    double obs_change=0;
+    REQUIRE(cs.common_obs_ready);
+    for(int f=0;f<9;++f) {
+        double change=fabs(cs.common_obs_lnu[f]/observer_before[f]-1);
+        if(change>obs_change)obs_change=change;
+    }
+    REQUIRE(obs_change>1e-3);
+    printf("observer_actual_fine_producer neighbor_removal_max_relative=%.17g writer_no_overwrite=1\n",obs_change);
     for(int b=0;b<cs.n_bins;++b) {
         double lambda=2.99792458e18/cs.nu[b];
         if(lambda<1100 || lambda>1400)continue;
@@ -147,6 +163,7 @@ static int producer_test(void) {
     for(int i=0;i<NS*cs.n_bins;++i)cs.J[i]=1e-99;
     REQUIRE(cmfgen_fine_jbar(&cs,&geo,&op,12000,&plasma,
                 CMF_FINE_LINE_OPERATOR_INIT_SHARED_GAUSSIAN)==0);
+    REQUIRE(!cs.common_obs_ready);
     for(int i=0;i<NS*cs.n_bins;++i)REQUIRE(cs.J[i]==1e-99);
     REQUIRE(cmfgen_fine_jbar(&cs,&geo,&op,12000,&plasma,
                 CMF_FINE_LINE_OPERATOR_CMFGEN_NONOVERLAP_SOBOLEV)==0);

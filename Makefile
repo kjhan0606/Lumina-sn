@@ -17,6 +17,7 @@ SOURCES = src/lumina_main.c src/lumina_transport.c src/a2_02c_segment_capture.c 
 #   T3 잡 226529 진단 중 발각: env_universe.h 를 483→496 으로 재생성했는데
 #   `make` 가 "up to date" 라 했고 바이너리는 옛 전집을 유지했다.
 #   목록은 `python3 scripts/check_makefile_headers.py` 가 기계로 대조한다.
+SOURCES += src/cmf_observer.c
 HEADERS = src/lumina.h src/a2_02c_segment_capture.h src/radiation_field.h src/bf_rate_jnu.h \
           src/lumina_frequency_grid.h \
           src/line_jbar.h src/seed_capability.h src/jnu_seed.h src/population_contract.h \
@@ -25,6 +26,7 @@ HEADERS = src/lumina.h src/a2_02c_segment_capture.h src/radiation_field.h src/bf
           src/a210_coupled_newton.h \
           src/cmfgen_adiabatic.h \
           src/cmf_exact_sliding.h src/cmf_cell_geometry.h \
+          src/cmf_observer.h src/cmf_observer_ray.h \
           src/cmf_exact_multigpu.h \
           src/cmf_error_envelope.h \
           src/nlte_population_candidate.h \
@@ -68,6 +70,7 @@ CUDA_NLTE_GEMM  = src/lumina_nlte_gemm.cu
 CUDA_NLTE_ASM   = src/lumina_nlte_assemble.cu
 CUDA_CMF_SOLVE  = src/lumina_cmf_solve.cu
 CUDA_CMF_EXACT  = src/cmf_exact_multigpu.cu
+CUDA_CMF_OBSERVER = src/cmf_observer.c src/cmf_observer.cu
 CUDA_RF_MIRROR  = src/gpu_radiation_field.cu
 GPU_RF_CONTRACT = src/gpu_radiation_field_contract.c
 GPU_PHYSICS_CONTRACT = src/gpu_physics_contract.c
@@ -76,8 +79,8 @@ GPU_OPACITY_KERNELS = src/gpu_opacity_kernels.cu
 GPU_EMISSIVITY_KERNELS = src/gpu_emissivity_kernels.cu
 
 cuda: lumina_cuda
-lumina_cuda: $(CUDA_SRC) $(CUDA_BF_GEMM) $(CUDA_NLTE_GEMM) $(CUDA_NLTE_ASM) $(CUDA_CMF_SOLVE) $(CUDA_CMF_EXACT) $(CUDA_RF_MIRROR) $(GPU_RF_CONTRACT) $(GPU_PHYSICS_CONTRACT) $(GPU_PHYSICS_KERNELS) $(GPU_OPACITY_KERNELS) $(GPU_EMISSIVITY_KERNELS) src/lumina_atomic.c src/lumina_plasma.c $(POPULATION_SRC) $(ATOMIC_INTERNAL_SRC) $(A2_PUBLICATION_SRC) $(NLTE_CANDIDATE_SRC) src/physics_comparison.c src/bf_rate_jnu.c src/radiation_field.c src/line_jbar.c src/cmf_exact_sliding.c src/cmf_error_envelope.c src/seed_capability.c src/lumina_element_wide.c src/lumina_cmfgen.c src/cmfgen_final_writer.c $(HEADERS)
-	$(NVCC) $(NVFLAGS) -o $(LUMINA_CUDA_OUTPUT) $(CUDA_SRC) $(CUDA_BF_GEMM) $(CUDA_NLTE_GEMM) $(CUDA_NLTE_ASM) $(CUDA_CMF_SOLVE) $(CUDA_CMF_EXACT) $(CUDA_RF_MIRROR) $(GPU_RF_CONTRACT) $(GPU_PHYSICS_CONTRACT) $(GPU_PHYSICS_KERNELS) $(GPU_OPACITY_KERNELS) $(GPU_EMISSIVITY_KERNELS) src/lumina_atomic.c src/lumina_plasma.c $(POPULATION_SRC) $(ATOMIC_INTERNAL_SRC) $(A2_PUBLICATION_SRC) $(NLTE_CANDIDATE_SRC) src/physics_comparison.c src/bf_rate_jnu.c src/radiation_field.c src/line_jbar.c src/cmf_exact_sliding.c src/cmf_error_envelope.c src/seed_capability.c src/lumina_element_wide.c src/lumina_cmfgen.c src/cmfgen_final_writer.c $(NVLDFLAGS)
+lumina_cuda: $(CUDA_SRC) $(CUDA_BF_GEMM) $(CUDA_NLTE_GEMM) $(CUDA_NLTE_ASM) $(CUDA_CMF_SOLVE) $(CUDA_CMF_EXACT) $(CUDA_CMF_OBSERVER) $(CUDA_RF_MIRROR) $(GPU_RF_CONTRACT) $(GPU_PHYSICS_CONTRACT) $(GPU_PHYSICS_KERNELS) $(GPU_OPACITY_KERNELS) $(GPU_EMISSIVITY_KERNELS) src/lumina_atomic.c src/lumina_plasma.c $(POPULATION_SRC) $(ATOMIC_INTERNAL_SRC) $(A2_PUBLICATION_SRC) $(NLTE_CANDIDATE_SRC) src/physics_comparison.c src/bf_rate_jnu.c src/radiation_field.c src/line_jbar.c src/cmf_exact_sliding.c src/cmf_error_envelope.c src/seed_capability.c src/lumina_element_wide.c src/lumina_cmfgen.c src/cmfgen_final_writer.c $(HEADERS)
+	$(NVCC) $(NVFLAGS) -o $(LUMINA_CUDA_OUTPUT) $(CUDA_SRC) $(CUDA_BF_GEMM) $(CUDA_NLTE_GEMM) $(CUDA_NLTE_ASM) $(CUDA_CMF_SOLVE) $(CUDA_CMF_EXACT) $(CUDA_CMF_OBSERVER) $(CUDA_RF_MIRROR) $(GPU_RF_CONTRACT) $(GPU_PHYSICS_CONTRACT) $(GPU_PHYSICS_KERNELS) $(GPU_OPACITY_KERNELS) $(GPU_EMISSIVITY_KERNELS) src/lumina_atomic.c src/lumina_plasma.c $(POPULATION_SRC) $(ATOMIC_INTERNAL_SRC) $(A2_PUBLICATION_SRC) $(NLTE_CANDIDATE_SRC) src/physics_comparison.c src/bf_rate_jnu.c src/radiation_field.c src/line_jbar.c src/cmf_exact_sliding.c src/cmf_error_envelope.c src/seed_capability.c src/lumina_element_wide.c src/lumina_cmfgen.c src/cmfgen_final_writer.c $(NVLDFLAGS)
 
 selftest_cmfgen_final_writer: tests/cmfgen_final_writer_selftest.c src/cmfgen_final_writer.c src/cmfgen_final_writer.h
 	$(CC) -O2 -Wall -Wextra -Werror -std=c11 -Isrc -o $@ tests/cmfgen_final_writer_selftest.c src/cmfgen_final_writer.c -lm

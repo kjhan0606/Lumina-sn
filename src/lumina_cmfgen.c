@@ -11,6 +11,7 @@
 #include "line_net_rate.h"
 #include "cmf_exact_sliding.h"
 #include "cmf_cell_geometry.h"
+#include "cmf_observer.h"
 #ifdef LUMINA_HAS_CUDA_BF_GEMM
 #include "cmf_exact_multigpu.h"
 #endif
@@ -2163,6 +2164,7 @@ void cmfgen_free(CMFGENState *cs)
     free(cs->lambda_star); free(cs->t_color);
     free(cs->tri_lo); free(cs->tri_up); free(cs->tri_r);
     free(cs->p_ray);
+    free(cs->common_obs_nu); free(cs->common_obs_lnu);
     memset(cs, 0, sizeof(*cs));
 }
 
@@ -8133,11 +8135,95 @@ int cmf_exact_owner_selftest(void)
 #endif
 }
 
+static int cmfgen_common_observer_snapshot(CMFGENState *out,
+        const CMFGENState *fine, const Geometry *geo, double T_inner) {
+    out->common_obs_ready=0;
+    if(out->common_obs_n==0) {
+        const double span=log(25500.0/2500.0);
+        int n=1+(int)ceil(span/(1e7/CM_C));
+        double *nu=(double*)malloc((size_t)n*sizeof(double));
+        if(!nu)return -1;
+        for(int f=0;f<n;++f)nu[f]=(CM_C*1e8/25500.0)*exp(span*f/(n-1));
+        free(out->common_obs_nu);out->common_obs_nu=nu;out->common_obs_n=n;
+    }
+    if(out->common_obs_n<1 || !out->common_obs_nu)return -1;
+    double *result=(double*)malloc((size_t)out->common_obs_n*sizeof(double));
+    if(!result)return -1;
+    CMFObserverInput in;memset(&in,0,sizeof(in));
+    in.ns=fine->n_shells;in.nf=fine->n_bins;
+    in.nu_min=fine->nu_min;in.dlognu=fine->d_log_nu;
+    in.t_exp=geo->time_explosion;in.T_inner=T_inner;in.inner_scale=cmf_inner_bb_scale();
+    in.ri=geo->r_inner;in.ro=geo->r_outer;
+    in.chi=fine->chi_tot;in.es=fine->chi_es;in.source=fine->S_fixed;in.J=fine->J;
+    in.nobs=out->common_obs_n;in.nu_obs=out->common_obs_nu;
+    in.ncore=32;in.nouter=64;in.substeps=1;
+    double start=cmf_wall_seconds();
+#ifdef LUMINA_HAS_CUDA_BF_GEMM
+    int rc=cmf_observer_gpu(&in,result);
+#else
+    int rc=cmf_observer_cpu(&in,result);
+#endif
+    if(rc){free(result);return -1;}
+    free(out->common_obs_lnu);out->common_obs_lnu=result;
+    out->common_obs_fine_bins=in.nf;out->common_obs_fine_min=in.nu_min;
+    out->common_obs_fine_dlog=in.dlognu;out->common_obs_ready=1;
+    fprintf(stderr,"[COMMON-OBS] fine_bins=%d observer_bins=%d rays=96 "
+        "seconds=%.6f material=COMMON_GAUSSIAN scattering=COHERENT_SAME_J\n",
+        in.nf,in.nobs,cmf_wall_seconds()-start);
+    return 0;
+}
+
+int cmfgen_write_common_observer(const CMFGENState *cs, const char *csv_path,
+        const char *meta_path, uint64_t rad_generation, uint64_t material_generation,
+        int iter) {
+    if(!cs || !csv_path || !meta_path || !strcmp(csv_path,meta_path) ||
+       !cs->common_obs_ready || cs->common_obs_n<1 ||
+       !cs->common_obs_nu || !cs->common_obs_lnu)return -1;
+    for(int f=0;f<cs->common_obs_n;++f)
+        if(!isfinite(cs->common_obs_nu[f]) || cs->common_obs_nu[f]<=0 ||
+           !isfinite(cs->common_obs_lnu[f]) || cs->common_obs_lnu[f]<0 ||
+           (f && cs->common_obs_nu[f]<=cs->common_obs_nu[f-1]))return -1;
+    FILE *csv=fopen(csv_path,"wx");
+    if(!csv)return -1;
+    FILE *meta=fopen(meta_path,"wx");
+    if(!meta){fclose(csv);return -1;}
+    int failed=fprintf(csv,"wavelength_angstrom,flux\n")<0;
+    for(int f=cs->common_obs_n-1;f>=0;--f) {
+        double wave=CM_C/cs->common_obs_nu[f];
+        double Llam=cs->common_obs_lnu[f]*CM_C/wave/wave*1e-8;
+        if(!isfinite(Llam) || fprintf(csv,"%.17g,%.17g\n",wave*1e8,Llam)<0)failed=1;
+    }
+    if(fclose(csv)!=0)failed=1;
+    /* JSON은 완전한 CSV를 닫은 뒤에만 작성한다. 실패한 부분 파일은 보존하며
+     * 이후 실행이 덮어쓰지 않는다. 마지막 R7 이후 상태/수렴을 주장하지 않는다. */
+    if(!failed && fprintf(meta,
+       "{\n  \"schema\":\"common_observer_v1\",\n"
+       "  \"method\":\"observer_formal_lorentz_common_gaussian\",\n"
+       "  \"units\":\"erg/s/angstrom\",\n"
+       "  \"snapshot\":\"R6_before_R7\",\n"
+       "  \"outer_convergence_verified\":false,\n"
+       "  \"scattering\":\"coherent_isotropic_same_fine_J\",\n"
+       "  \"bolometric\":false,\n"
+       "  \"radiation_generation\":%llu,\n  \"material_generation\":%llu,\n"
+       "  \"iteration\":%d,\n  \"fine_bins\":%d,\n"
+       "  \"fine_nu_min_edge\":%.17g,\n  \"fine_dlognu\":%.17g,\n"
+       "  \"observer_bins\":%d,\n  \"core_rays\":32,\n  \"outer_rays\":64,\n"
+       "  \"wavelength_min_angstrom\":%.17g,\n"
+       "  \"wavelength_max_angstrom\":%.17g\n}\n",
+       (unsigned long long)rad_generation,(unsigned long long)material_generation,
+       iter,cs->common_obs_fine_bins,cs->common_obs_fine_min,cs->common_obs_fine_dlog,
+       cs->common_obs_n,CM_C*1e8/cs->common_obs_nu[cs->common_obs_n-1],
+       CM_C*1e8/cs->common_obs_nu[0])<0)failed=1;
+    if(fclose(meta)!=0)failed=1;
+    return failed?-1:0;
+}
+
 int cmfgen_fine_jbar(CMFGENState *csb, const Geometry *geo,
                      OpacityState *opac, double T_inner, PlasmaState *plasma,
                      CMFFineLineOperator line_operator)
 {
     int NS = csb->n_shells, NL = opac->n_lines;
+    csb->common_obs_ready=0;
     opac->jbar_line_det_vdoppler_cms = 0.0;
     opac->jbar_line_det_ndoppler = 0.0;
     opac->jbar_line_det_operator = 0;
@@ -9689,12 +9775,12 @@ int cmfgen_fine_jbar(CMFGENState *csb, const Geometry *geo,
 
     /* --- Stage-1 PROOF: frequency-resolved emergent from the fine field --- */
     { const char *e = getenv("LUMINA_CMF_FINE_EMERGENT");
-      if (e && atoi(e))
+      if (!common_field && e && atoi(e))
           cmfgen_fine_emergent(&fs, csb, geo, T_inner, "lumina_spectrum_freqres.csv"); }
 
     /* --- UNIFIED Doppler emergent: P-Cygni + fine color + NLTE fluorescence --- */
     { const char *e = getenv("LUMINA_CMF_FINE_EMERGENT_OBS");
-      if (e && atoi(e))
+      if (!common_field && e && atoi(e))
           cmfgen_fine_emergent_obs(&fs, geo, T_inner, opac, plasma->T_e,
                                    "lumina_spectrum_freqres_obs.csv"); }
 
@@ -10351,6 +10437,13 @@ int cmfgen_fine_jbar(CMFGENState *csb, const Geometry *geo,
     }
 
     if (common_field) {
+        if(csb->common_obs_requested &&
+           cmfgen_common_observer_snapshot(csb,&fs,geo,T_inner)!=0) {
+            fprintf(stderr,"[COMMON-OBS][ERROR] common-material formal solve failed\n");
+            free(fs.nu);free(fs.dnu);free(fs.chi_es);free(fs.chi_abs);
+            free(fs.chi_line);free(fs.chi_tot);free(fs.S_fixed);free(fs.J);
+            free(eta);free(fine_error_upper);return -1;
+        }
         if (cmfgen_rebin_log_field(&fs, csb) != 0) {
             fprintf(stderr, "[cmf_fine][ERROR] common-field BF rebin failed\n");
             free(fs.nu);free(fs.dnu);free(fs.chi_es);free(fs.chi_abs);
@@ -11748,7 +11841,7 @@ int cmfgen_run(Geometry *geo, OpacityState *opac, BFOpacity *bf,
         /* refresh bf opacity for current ionization/T_e */
         if (bf) compute_bf_opacity(bf, atom, plasma, cs.n_shells);
 
-        if (det_obs_on && !init_pass && iter == n_iter - 1)
+        if (!common_field && det_obs_on && !init_pass && iter == n_iter - 1)
             det_obs_capture_arm(&cs, nlte ? nlte->population_committed_generation : 0);
         cmfgen_assemble(&cs, geo, opac, bf, plasma);
         /* DET-LTEUNMAP-EPS: the bin assembler is void; it flags a fail-closed
@@ -11862,6 +11955,7 @@ int cmfgen_run(Geometry *geo, OpacityState *opac, BFOpacity *bf,
             ? CMF_FINE_LINE_OPERATOR_INIT_SHARED_GAUSSIAN
             : CMF_FINE_LINE_OPERATOR_CMFGEN_NONOVERLAP_SOBOLEV;
         w5_cont_rad_generation = rad_generation + 1U;   /* w5_lines.csv label */
+        cs.common_obs_requested=common_field && !init_pass && iter==n_iter-1;
         if (cmfgen_fine_jbar(&cs, geo, opac, T_inner, plasma,
                              line_operator) != 0) {
             fprintf(stderr,
@@ -11895,7 +11989,13 @@ int cmfgen_run(Geometry *geo, OpacityState *opac, BFOpacity *bf,
         /* DET-OBS-WRITER: final radiation commit done, material not yet
          * mutated (R7 below).  A writer failure is recorded in
          * det_obs_status.json and never changes model_rc or the run flow. */
-        (void)det_obs_final_pass_hook(det_obs_on && !init_pass && iter == n_iter - 1,
+        if(cs.common_obs_requested && cmfgen_write_common_observer(&cs,
+                "lumina_spectrum_common_obs.csv","lumina_spectrum_common_obs.json",
+                rad_generation,nlte?nlte->population_committed_generation:0,iter)!=0) {
+            fprintf(stderr,"[COMMON-OBS][FATAL] output failed iter=%d\n",iter);
+            CMFGEN_RUN_DONE(-1);
+        }
+        (void)det_obs_final_pass_hook(!common_field && det_obs_on && !init_pass && iter == n_iter - 1,
                                       &cs, geo, opac, plasma, T_inner, rad_generation,
                                       nlte ? nlte->population_committed_generation : 0, iter);
 
@@ -12083,7 +12183,15 @@ int cmfgen_run(Geometry *geo, OpacityState *opac, BFOpacity *bf,
      * set LUMINA_CMF_OBSERVER_FRAME=0 for the legacy comoving spectrum. */
     const char *obs_env = getenv("LUMINA_CMF_OBSERVER_FRAME");
     int obs_frame = obs_env ? atoi(obs_env) : 1;
-    if (obs_frame) {
+    if (common_field) {
+        if(!cs.common_obs_ready) {
+            fprintf(stderr,"[COMMON-OBS][FATAL] no final common spectrum snapshot\n");
+            CMFGEN_RUN_DONE(-1);
+        }
+        fprintf(stderr,"[COMMON-OBS] spectrum=lumina_spectrum_common_obs.csv "
+            "snapshot=R6_before_R7 outer_convergence=UNVERIFIED "
+            "legacy_sobolev_output=DISABLED\n");
+    } else if (obs_frame) {
         cmfgen_write_spectrum_obs(&cs, geo, T_inner, opac, plasma->T_e,
                                   "lumina_spectrum.csv");
         cmfgen_write_spectrum(&cs, geo, T_inner, "lumina_spectrum_comoving.csv");

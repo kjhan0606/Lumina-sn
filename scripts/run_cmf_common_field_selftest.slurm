@@ -24,13 +24,14 @@ cd "$common_src"
 common_units=(lumina_transport a2_02c_segment_capture radiation_field bf_rate_jnu
  line_jbar seed_capability jnu_seed population_contract atomic_internal_energy
  opacity_publication emissivity_publication radeq_publication line_net_rate
- cmfgen_adiabatic cmf_exact_sliding cmf_error_envelope nlte_population_candidate
+ cmfgen_adiabatic cmf_exact_sliding cmf_error_envelope cmf_observer nlte_population_candidate
  physics_comparison gpu_physics_contract lumina_plasma lumina_element_wide
  lumina_atomic lumina_cmfgen cmfgen_final_writer a210_coupled_newton)
 common_files=()
 for common_unit in "${common_units[@]}"; do common_files+=("src/${common_unit}.c"); done
 sha256sum "${common_files[@]}" src/lumina.h src/lumina_cmfgen.h src/radiation_field.h \
- src/env_universe.h src/cmf_cell_geometry.h tests/cmf_common_field_selftest.c tests/a2_06_dual_commit_selftest.c \
+ src/env_universe.h src/cmf_cell_geometry.h src/cmf_observer.h src/cmf_observer_ray.h \
+ tests/cmf_common_field_selftest.c tests/a2_06_dual_commit_selftest.c \
  scripts/run_cmf_common_field_selftest.slurm > "$common_out/source.sha256"
 gcc -O2 -std=gnu11 -D_GNU_SOURCE -fopenmp -ffunction-sections -fdata-sections \
  -Isrc tests/cmf_common_field_selftest.c "${common_files[@]}" \
