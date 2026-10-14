@@ -2284,6 +2284,10 @@ int load_atomic_data(AtomicData *atom, const char *ref_dir, int n_shells) {
         }
     }
 
+    {
+        const char *channels=getenv("LUMINA_BF_CHANNELS_FILE");
+        if(channels && *channels && load_bf_channels(atom,channels)!=0)return -1;
+    }
     LOAD_STAGE("atomic_data_complete");
     printf("Atomic data loading complete.\n");
     LOAD_STAGE("atomic_data_return");
@@ -2439,6 +2443,67 @@ int load_cmfgen_sigma_bf(AtomicData *atom, const char *path) {
     printf("  CMFGEN sigma_bf: %d/%d levels (%.1f%%) on %d-bin grid\n",
            n_with, n_lev, 100.0 * n_with / (double)n_lev, n_freq);
     return 0;
+}
+
+void free_bf_channels(BfChannels *p){
+    if(!p)return;
+    free(p->offset);free(p->upper);free(p->threshold);free(p->sigma);free(p);
+}
+
+/* CBFC v1: uint32 magic/version; int32 levels/channels/bins; double nu_min/max;
+ * int32 offsets[levels+1], upper[channels]; double threshold[channels],
+ * sigma[channels*bins]. 기존 원자 준위 순서를 그대로 쓴다. 실패시 이전 입력 보존. */
+int load_bf_channels(AtomicData *atom,const char *path){
+    if(!atom||!path||atom->n_levels<=0||!atom->level_Z||!atom->level_ion||
+       !atom->level_g||!atom->level_energy_eV)return -1;
+    FILE *fp=fopen(path,"rb");if(!fp)return -1;
+    uint32_t magic=0,version=0;int32_t nl=0,nr=0,nb=0;
+    BfChannels *p=calloc(1,sizeof(*p));int status=-1;
+    if(!p)goto channel_done;
+    if(fread(&magic,4,1,fp)!=1||fread(&version,4,1,fp)!=1||
+       fread(&nl,4,1,fp)!=1||fread(&nr,4,1,fp)!=1||fread(&nb,4,1,fp)!=1||
+       fread(&p->nu_min,8,1,fp)!=1||fread(&p->nu_max,8,1,fp)!=1)goto channel_done;
+    if(magic!=0x43424643u||version!=1||nl!=atom->n_levels||nr<=0||
+       (size_t)nr>(size_t)nl*40||nb!=NLTE_N_FREQ_BINS||
+       p->nu_min!=NLTE_NU_MIN||p->nu_max!=NLTE_NU_MAX||
+       (size_t)nr>SIZE_MAX/(size_t)nb/sizeof(double))goto channel_done;
+    p->n_levels=nl;p->n_channels=nr;p->n_bins=nb;
+    p->offset=malloc(((size_t)nl+1)*sizeof(int));p->upper=malloc((size_t)nr*sizeof(int));
+    p->threshold=malloc((size_t)nr*sizeof(double));p->sigma=malloc((size_t)nr*nb*sizeof(double));
+    if(!p->offset||!p->upper||!p->threshold||!p->sigma)goto channel_done;
+    if(fread(p->offset,sizeof(int),(size_t)nl+1,fp)!=(size_t)nl+1||
+       fread(p->upper,sizeof(int),(size_t)nr,fp)!=(size_t)nr||
+       fread(p->threshold,sizeof(double),(size_t)nr,fp)!=(size_t)nr||
+       fread(p->sigma,sizeof(double),(size_t)nr*nb,fp)!=(size_t)nr*nb||fgetc(fp)!=EOF)
+        goto channel_done;
+    if(p->offset[0]!=0||p->offset[nl]!=nr)goto channel_done;
+    for(int l=0;l<nl;l++){
+        if(p->offset[l]<0||p->offset[l+1]<p->offset[l]||p->offset[l+1]>nr)goto channel_done;
+        for(int r=p->offset[l];r<p->offset[l+1];r++){
+            int u=p->upper[r];double chi=-1;
+            if(u<0||u>=nl||atom->level_Z[u]!=atom->level_Z[l]||
+               atom->level_ion[u]!=atom->level_ion[l]+1||atom->level_g[u]<=0||
+               atom->level_g[l]<=0)goto channel_done;
+            for(int k=0;k<atom->n_ionization;k++)
+                if(atom->ioniz_Z[k]==atom->level_Z[l]&&atom->ioniz_ion[k]==atom->level_ion[l])
+                    chi=atom->ioniz_energy_eV[k];
+            double expected=(chi+atom->level_energy_eV[u]-atom->level_energy_eV[l])*EV_TO_ERG/H_PLANCK;
+            if(!(chi>0)||!(expected>0)||!isfinite(expected)||!isfinite(p->threshold[r])||
+               fabs(p->threshold[r]/expected-1)>1e-10)goto channel_done;
+            double step=log(p->nu_max/p->nu_min)/nb;
+            for(int b=0;b<nb;b++)
+                if(p->nu_min*exp((b+1)*step)<=p->threshold[r]&&
+                   p->sigma[(size_t)r*nb+b]!=0)goto channel_done;
+        }
+    }
+    for(size_t i=0;i<(size_t)nr*nb;i++)
+        if(!isfinite(p->sigma[i])||p->sigma[i]<0)goto channel_done;
+    free_bf_channels(atom->bf_channels);atom->bf_channels=p;p=NULL;status=0;
+    printf("[BF-CHANNELS] channels=%d levels=%d bins=%d independent_sigma=1\n",nr,nl,nb);
+channel_done:
+    fclose(fp);free_bf_channels(p);
+    if(status)fprintf(stderr,"[BF-CHANNELS] invalid or incompatible channel input: %s\n",path);
+    return status;
 }
 
 /* Load the bound-free upper-ion photoionization TARGET map (B4/D1/M1 data gap).
@@ -2984,6 +3049,7 @@ void free_atomic_data(AtomicData *atom) {
     free(atom->ma_rr_target_offset);
     free(atom->ma_rr_targets);
     free(atom->ma_rr_probability);
+    free_bf_channels(atom->bf_channels);
 }
 
 /* ============================================================ */

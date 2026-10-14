@@ -263,6 +263,7 @@ class PhotIon:
     split_J: bool = False
     n_data_pairs: int = 0
     entries: list[PhotEntry] = field(default_factory=list)
+    smoothing_kms: float | None = None
 
 
 def parse_phot(path: Path) -> PhotIon:
@@ -296,6 +297,8 @@ def parse_phot(path: Path) -> PhotIon:
             out.final_state_excit_eV = _to_float(v) * _CM2EV
         elif 'Statistical weight of ion' in k:
             out.final_state_g = _to_float(v)
+        elif 'Sigma used for Gaussian smoothing (km/s)' in k:
+            out.smoothing_kms = _to_float(v)
         elif 'Cross-section unit' in k:
             out.cs_unit = v
         elif 'Split J levels' in k:

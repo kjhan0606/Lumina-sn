@@ -9118,6 +9118,107 @@ static void bf_event_measure_report(BFOpacity *bf, int emit_diagnostics) {
            (unsigned long long)bf->event_measure_hash, n);
 }
 
+int nlte_bf_channel_rates(NLTEConfig *n,const AtomicData *a,int lower,int r,int shell,
+                         double T,double ne,double *up,double *down,double *cu,double *cd){
+    if(!n||!a||!a->bf_channels||!up||!down||!cu||!cd)return -1;
+    const BfChannels *p=a->bf_channels;
+    if(lower<0||lower>=p->n_levels||r<p->offset[lower]||r>=p->offset[lower+1]||
+       n->n_freq_bins!=p->n_bins||shell<0||n->radfield_view_status!=RADIATION_FIELD_VIEW_OK)
+        return -1;
+    const RadiationFieldView *v=&n->radfield_view;
+    if(v->n_bins!=(size_t)p->n_bins||shell>=(int)v->n_shells||!v->J_nu||
+       !v->frequency_bin_edges||!v->validity)return -1;
+    int upper=p->upper[r];double ru=0,rd=0,sigma_edge=0;
+    int field=nlte_bf_field_source(n,T,0,0,0,NULL,NULL,NULL);
+    double dlog=log(p->nu_max/p->nu_min)/p->n_bins;
+    for(int b=0;b<p->n_bins;b++){
+        double lo=v->frequency_bin_edges[b],hi=v->frequency_bin_edges[b+1];
+        if(fabs(lo/(p->nu_min*exp(b*dlog))-1)>64*DBL_EPSILON||
+           fabs(hi/(p->nu_min*exp((b+1)*dlog))-1)>64*DBL_EPSILON)return -1;
+        if(hi<=p->threshold[r])continue;
+        size_t i=(size_t)shell*p->n_bins+b;
+        if(field!=2&&v->validity[i]!=RADIATION_FIELD_VALID&&
+                     v->validity[i]!=RADIATION_FIELD_EXACT_ZERO)return -1;
+        double j=field==2?0:v->J_nu[i];
+        double sigma=p->sigma[(size_t)r*p->n_bins+b];
+        BfChannelBin cell;
+        if(bf_channel_bin(lo,hi,p->threshold[r],sigma,T,ne,a->level_g[lower],
+                         a->level_g[upper],1,1,j,field==2,&cell))return -1;
+        ru+=cell.ionization;rd+=cell.recombination;
+        if(sigma_edge==0&&sigma>0)sigma_edge=sigma;
+    }
+    double coll_up=0,coll_down=0;
+    if(nlte_bf_collisional_enabled()&&sigma_edge>0&&ne>0){
+        double x=H_PLANCK*p->threshold[r]/(K_BOLTZMANN*T);
+        double gaunt=a->level_ion[lower]<=0?.1:(a->level_ion[lower]==1?.2:.3);
+        double pre=ne*1.55e13/sqrt(T)*gaunt*sigma_edge/x;
+        double ratio=ne*pow(H_PLANCK*H_PLANCK/(2*M_PI_VAL*M_ELECTRON*K_BOLTZMANN*T),1.5)*
+                     a->level_g[lower]/(2.0*a->level_g[upper]);
+        coll_up=pre*exp(-x);coll_down=pre*ratio;
+    }
+    if(!isfinite(ru)||!isfinite(rd)||!isfinite(coll_up)||!isfinite(coll_down))return -1;
+    *up=ru;*down=rd;*cu=coll_up;*cd=coll_down;return 0;
+}
+
+/* 채널 단위 Milne 계수는 낮은 준위 인구가 정확히 0이어도 계산한다.
+ * 원자 입력은 공유하고, 인구는 해당 private candidate만 소비한다. */
+static int bf_channel_continuum_add(BFOpacity *bf,const AtomicData *a,
+        const PlasmaState *p,const NLTEConfig *n,int ns)
+{
+    const BfChannels *c=a->bf_channels;
+    if(!c)return 0;
+    if(c->n_levels!=a->n_levels||c->n_bins!=bf->n_freq_bins||
+       c->nu_min!=bf->nu_min||c->nu_max!=bf->nu_max||
+       !bf->event_chi_bf||!bf->event_chi_bf_comparison||
+       !p->T_e||!p->n_electron||!a->ion_number_density||!a->partition_functions)
+        return -1;
+    const int solved=n&&n->population_committed_generation>0&&
+                     n->nlte_level_populations&&n->global_to_nlte_level;
+    if(solved&&n->population_committed_generation!=a->population_committed_generation)
+        return -1;
+    double *pop=calloc((size_t)a->n_levels,sizeof(double));
+    if(!pop)return -1;
+    PopulationAtomicView av=population_atomic_view(a);
+    int rc=-1;
+    for(int s=0;s<ns;s++){
+        for(int ip=0;ip<a->n_ion_pops;ip++){
+            for(int l=a->level_offset[ip];l<a->level_offset[ip+1];l++){
+                int ni=solved?n->global_to_nlte_level[l]:-1;
+                if(ni>=0){
+                    if(ni>=n->n_nlte_levels_total)goto done;
+                    pop[l]=n->nlte_level_populations[(size_t)ni*ns+s];
+                }else{
+                    double f=0;
+                    PopulationStatus st=population_lte_level_fraction(&av,ip,l,p->T_e[s],
+                        a->partition_functions[(size_t)ip*ns+s],&f);
+                    if(st!=POP_OK&&st!=POP_EXACT_ZERO)goto done;
+                    pop[l]=f*a->ion_number_density[(size_t)ip*ns+s];
+                }
+                if(!isfinite(pop[l])||pop[l]<0)goto done;
+            }
+        }
+        for(int l=0;l<c->n_levels;l++)for(int r=c->offset[l];r<c->offset[l+1];r++){
+            int u=c->upper[r];
+            for(int b=0;b<c->n_bins;b++){
+                double sigma=c->sigma[(size_t)r*c->n_bins+b];
+                if(sigma==0)continue;
+                double lo=c->nu_min*exp(b*bf->d_log_nu);
+                double hi=c->nu_min*exp((b+1)*bf->d_log_nu);
+                BfChannelBin v;
+                if(bf_channel_bin(lo,hi,c->threshold[r],sigma,p->T_e[s],p->n_electron[s],
+                    a->level_g[l],a->level_g[u],pop[l],pop[u],0,0,&v))goto done;
+                size_t i=(size_t)s*c->n_bins+b;
+                bf->chi_bf[i]+=v.chi_net;bf->eta_bf[i]+=v.eta;
+                bf->event_chi_bf[i]+=v.chi_absorption;
+                bf->event_chi_bf_comparison[i]+=v.chi_net;
+            }
+        }
+    }
+    rc=0;
+done:
+    free(pop);return rc;
+}
+
 static int compute_bf_opacity_impl(
         BFOpacity *bf, AtomicData *atom, PlasmaState *plasma,
         int n_shells, const NLTEConfig *nlte_pops,
@@ -9138,7 +9239,7 @@ static int compute_bf_opacity_impl(
     if (bf->eta_milne_ok) memset(bf->eta_milne_ok, 0, (size_t)n_shells * sizeof(int));
     memset(bf->activation_level, -1, grid_size * sizeof(int));
     bf->event_enabled = lumina_fix_bf_continuum_event_enabled();
-    bf->event_measure_provenance = bf->event_enabled
+    bf->event_measure_provenance = (bf->event_enabled || atom->bf_channels)
         ? EVENT_MEASURE_SPONTANEOUS : EVENT_MEASURE_LEGACY_ARGMAX;
     bf->event_measure_generation++;
     if (bf->event_chi_bf)
@@ -9192,6 +9293,15 @@ static int compute_bf_opacity_impl(
     const int bf_neutral = lumina_fix_bf_neutral_enabled();
     const int bf_eta_spingate_fix = lumina_fix_bf_eta_spingate_enabled();
     const int bf_eta_spingate = bf_eta_spingate_fix && rec_spingate_enabled();
+    /* CBFC v1의 실제 소비자는 deterministic CMF다. 아직 단일 sigma를
+     * 쓰는 MC 이벤트/부분 Milne/OTS를 새 경로와 섞지 않는다. */
+    if(atom->bf_channels){
+        const char *pure=getenv("LUMINA_PURE_CMFGEN");
+        if(!pure||atoi(pure)!=1||bf->event_enabled||bf_milne!=2||bf_ots||bf_eta_spingate){
+            fprintf(stderr,"[BF-CHANNELS] unsupported continuum mode (requires pure CMF, full Milne, no MC/OTS/spin mask)\n");
+            return -1;
+        }
+    }
     {
         static int stim_banner = 0, neutral_banner = 0, eta_spin_banner = 0;
         if (emit_diagnostics && bf_stim_recomb && !stim_banner) {
@@ -9227,6 +9337,9 @@ static int compute_bf_opacity_impl(
     for (int b = 0; b < bf->n_freq_bins; b++) {
         nu_bin[b] = bf->nu_min * exp((b + 0.5) * bf->d_log_nu);
     }
+    if(bf_channel_continuum_add(bf,atom,plasma,nlte_pops,n_shells)){
+        free(nu_bin);return -1;
+    }
 
 #ifdef LUMINA_HAS_CUDA_BF_GEMM
     /* Task #39: GPU GEMM path (TF32 tensor cores) when CMFGEN sigma_bf is
@@ -9235,7 +9348,7 @@ static int compute_bf_opacity_impl(
      * D-3 corrfactor is level+frequency dependent and cannot be represented by
      * this unmodified GEMM, so its repair gate deliberately selects the exact
      * CPU summation. Gate OFF preserves the original GEMM selection byte-for-byte. */
-    if (allow_gpu && atom->cmfgen_loaded && !bf_milne && !bf_stim_recomb &&
+    if (allow_gpu && !atom->bf_channels && atom->cmfgen_loaded && !bf_milne && !bf_stim_recomb &&
         !bf->event_enabled &&
         getenv("LUMINA_BF_GEMM") &&
         atom->population_committed_generation > 0) {
@@ -9457,6 +9570,8 @@ static int compute_bf_opacity_impl(
             }
 
             for (int l = lev_start; l < lev_end; l++) {
+                if(atom->bf_channels &&
+                   atom->bf_channels->offset[l]<atom->bf_channels->offset[l+1])continue;
                 double E_eV = atom->level_energy_eV[l];
                 int g = atom->level_g[l];
                 int is_meta = atom->level_metastable[l];
@@ -9925,8 +10040,11 @@ compute_ff:
 
 void compute_bf_opacity(BFOpacity *bf, AtomicData *atom, PlasmaState *plasma,
                          int n_shells) {
-    (void)compute_bf_opacity_impl(
-        bf, atom, plasma, n_shells, g_bf_nlte_pops, 1, 1);
+    int rc=compute_bf_opacity_impl(bf, atom, plasma, n_shells, g_bf_nlte_pops, 1, 1);
+    if(rc && atom && atom->bf_channels){
+        fprintf(stderr,"[BF-CHANNELS] continuum publication failed\n");
+        exit(EXIT_FAILURE);
+    }
 }
 
 static int a208_publish_cpu_opacity_impl(
@@ -19912,18 +20030,42 @@ static int nlte_assemble_rate_matrix_impl(NLTEConfig *nlte, AtomicData *atom,
             int global_lev = nlte->nlte_to_global_level[lev_start + lev];
             double E_lev = atom->level_energy_eV[global_lev] * EV_TO_ERG;
             double nu_thresh = (chi_erg - E_lev) / H_PLANCK;
-            if (nu_thresh <= 0.0) continue;
+            if (nu_thresh <= 0.0 && (!atom->bf_channels ||
+                atom->bf_channels->offset[global_lev]==atom->bf_channels->offset[global_lev+1])) continue;
 
-            /* The EW assembler owns its bound-free arithmetic because a route's
-             * upper identity changes epsilon_trans, the inverse statistical
-             * weight and therefore all four forward/inverse rates.  The legacy
-             * pair path below intentionally retains its historical single-ground
-             * producer and is not used as a target-independent EW shortcut. */
+            /* 목적 상태는 문턱·역율·상위 SL 투영을 함께 결정한다. CBFC가
+             * 있으면 EW/인접 pair 모두 같은 채널별 율을 소비한다. 없는 준위만
+             * 기존 producer를 유지하며 두 경로를 중복 조립하지 않는다. */
             if (ew_capture) {
                 int sl_ew = SOLVE_OF(lev_start + lev);
                 double f_ew = FRAC_OF(lev_start + lev);
                 nlte_ew_capture_bf_target_rates(global_lev, sl_ew, f_ew,
                                                  T_e, n_e);
+                continue;
+            }
+
+            if(atom->bf_channels && atom->bf_channels->offset[global_lev]<
+                                    atom->bf_channels->offset[global_lev+1]){
+                const BfChannels *channels=atom->bf_channels;
+                int sl=SOLVE_OF(lev_start+lev);
+                double fl=FRAC_OF(lev_start+lev);
+                for(int r=channels->offset[global_lev];r<channels->offset[global_lev+1];r++){
+                    int ng=nlte->global_to_nlte_level[channels->upper[r]];
+                    if(ng<nlte->nlte_ion_level_offset[ion_idx_hi]||
+                       ng>=nlte->nlte_ion_level_offset[ion_idx_hi+1]){
+                        free(bb_connected);return -1;
+                    }
+                    int su=SOLVE_OF(ng);double fu=FRAC_OF(ng),up,down,cu,cd;
+                    if(sl<0||sl>=N||su<0||su>=N||
+                       nlte_bf_channel_rates(nlte,atom,global_lev,r,shell,T_e,n_e,
+                                             &up,&down,&cu,&cd)){
+                        free(bb_connected);return -1;
+                    }
+                    ACM(su,sl)+=(up+cu)*fl;ACM(sl,sl)-=(up+cu)*fl;
+                    ACM(sl,su)+=(down+cd)*fu;ACM(su,su)-=(down+cd)*fu;
+                    sum_R_bf+=up;sum_R_rec+=down*fu;
+                }
+                sum_R_bf_levels++;
                 continue;
             }
 

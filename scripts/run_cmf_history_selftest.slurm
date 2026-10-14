@@ -30,7 +30,7 @@ history_units=(lumina_transport a2_02c_segment_capture radiation_field bf_rate_j
  cmfgen_adiabatic cmf_exact_sliding cmf_error_envelope cmf_observer nlte_population_candidate
  physics_comparison gpu_physics_contract lumina_plasma lumina_element_wide
  lumina_atomic lumina_cmfgen cmfgen_final_writer a210_coupled_newton)
-history_tests=(nlte_candidate_adiabatic a2_10_radeq cmf_common_field a2_10_seed_commit physics_comparison population_time population_time_assembly population_time_element a2_07_population)
+history_tests=(bf_channels nlte_candidate_adiabatic a2_10_radeq cmf_common_field a2_10_seed_commit physics_comparison population_time population_time_assembly population_time_element a2_07_population)
 history_files=(scripts/run_cmf_history_selftest.slurm src/*.h)
 for history_unit in "${history_units[@]}"; do history_files+=("src/$history_unit.c"); done
 for history_test in "${history_tests[@]}"; do history_files+=("tests/${history_test}_selftest.c"); done
@@ -78,4 +78,10 @@ gcc -O1 -g -std=gnu11 -D_GNU_SOURCE -DLUMINA_TIME_PAIR_SELFTEST -fopenmp \
  src/nlte_population_candidate.c src/population_contract.c "${history_element_rest[@]}" \
  -Wl,--gc-sections -lm -o "$history_out/element_time_san" > "$history_out/element-san-build.log" 2>&1
 (cd "$history_out"; ASAN_OPTIONS=detect_leaks=1 ./element_time_san > element-san.log 2> element-san.err)
+gcc -O1 -g -std=gnu11 -D_GNU_SOURCE -DLUMINA_TIME_PAIR_SELFTEST -fopenmp \
+ -fsanitize=address,undefined -fno-omit-frame-pointer -ffunction-sections -fdata-sections -Isrc \
+ tests/bf_channels_selftest.c src/lumina_plasma.c src/lumina_element_wide.c \
+ src/nlte_population_candidate.c src/population_contract.c "${history_element_rest[@]}" \
+ -Wl,--gc-sections -lm -o "$history_out/bf_channels_san" > "$history_out/channels-san-build.log" 2>&1
+(cd "$history_out"; mkdir channels-san; cd channels-san; ASAN_OPTIONS=detect_leaks=1 ../bf_channels_san > ../channels-san.log 2> ../channels-san.err)
 sha256sum -c "$history_out/source.sha256" > "$history_out/source_verify.log"

@@ -19,6 +19,7 @@
 #include "opacity_publication.h" /* A2-08 signed CPU opacity/status owner */
 #include "emissivity_publication.h" /* A2-09 CPU eta/redistribution owner */
 #include "radeq_publication.h" /* A2-10 term ledger/root/Te owner */
+#include "bf_channels.h"
 
 /* ============================================================ */
 /* Phase 2 - Step 2: Physical constants (CGS, matching TARDIS)  */
@@ -556,6 +557,7 @@ typedef struct {
     int     *ma_rr_target_offset;    /* [n_levels+1] CSR route offsets */
     int     *ma_rr_targets;          /* [ma_rr_n_routes] upper-ion target levels */
     double  *ma_rr_probability;      /* [ma_rr_n_routes] ARTIS allcont_probability */
+    BfChannels *bf_channels;         /* 불변 채널별 sigma. candidate는 빌려 쓴다. */
 
     /* Real Fe III collisional data (Zhang 1996), imported from CMFGEN's
      * FeIII_COL_DATA (19apr23) by scripts/build_feiii_coldata.py. Loaded from
@@ -1118,6 +1120,10 @@ void bin_escaped_packet(Spectrum *spec, double nu, double energy);
 int load_atomic_data(AtomicData *atom, const char *ref_dir, int n_shells);
 int load_cmfgen_sigma_bf(AtomicData *atom, const char *path);
 int load_ma_radrecomb_target(AtomicData *atom, const char *path);
+int load_bf_channels(AtomicData *atom,const char *path);
+void free_bf_channels(BfChannels *channels);
+int nlte_bf_channel_rates(NLTEConfig*,const AtomicData*,int,int,int,double,double,
+                         double*,double*,double*,double*);
 int load_feiii_coldata(AtomicData *atom, const char *path);
 /* ARTIS-parity (A3): generic per-ion close-coupling Omega loader. Appends one
  * ion's table to atom->col_ion_* (returns 0 on success, -1 fail-closed). */

@@ -590,6 +590,28 @@ void nlte_ew_capture_bf_target_rates(int lower_global, int lower_sl,
         ew_atomic_inc_int(&ew_cap.bad_rate);
         return;
     }
+    if(a->bf_channels && a->bf_channels->offset[lower_global+1]>
+                         a->bf_channels->offset[lower_global]){
+        const BfChannels *p=a->bf_channels;
+        for(int r=p->offset[lower_global];r<p->offset[lower_global+1];r++){
+            ew_atomic_inc_int(&ew_cap.target_expected);
+            int upper=p->upper[r],ng=n->global_to_nlte_level[upper];
+            if(ng<0){ew_atomic_inc_int(&ew_cap.target_fail);continue;}
+            int sl=n->fl_to_super[ng]-ew_cap.pair_super_start;
+            double f=n->within_sl_frac[(size_t)ng*ew_cap.n_shells+ew_cap.shell];
+            double up,down,cu,cd;
+            if(sl<0||sl>=ew_cap.N_pair||nlte_bf_channel_rates(n,a,lower_global,r,
+                    ew_cap.shell,T_e,n_e,&up,&down,&cu,&cd)){
+                ew_atomic_inc_int(&ew_cap.bad_rate);continue;
+            }
+            ew_atomic_inc_int(&ew_cap.target_mapped);
+            nlte_ew_capture_transition(NLTE_EW_RAD_BF,sl,lower_sl,up*lower_fraction);
+            nlte_ew_capture_transition(NLTE_EW_RAD_BF,lower_sl,sl,down*f);
+            nlte_ew_capture_transition(NLTE_EW_COLL_BF,sl,lower_sl,cu*lower_fraction);
+            nlte_ew_capture_transition(NLTE_EW_COLL_BF,lower_sl,sl,cd*f);
+        }
+        return;
+    }
     int has_sigma = a->cmfgen_loaded &&
                     a->cmfgen_n_freq_bins == n->n_freq_bins &&
                     a->cmfgen_has_sigma &&
