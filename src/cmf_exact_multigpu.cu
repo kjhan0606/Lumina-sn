@@ -9,6 +9,7 @@
 #include <cmath>
 #include <cfloat>
 #include <cstdint>
+#include <cstdio>
 #include <cstring>
 #include <limits>
 #include <new>
@@ -390,7 +391,30 @@ static cudaError_t device_allocate(T **pointer, size_t count, DeviceShard *s)
     size_t bytes;
     if (!pointer || !s || !checked_mul(count, sizeof(T), &bytes))
         return cudaErrorInvalidValue;
+#if defined(LUMINA_CMF_EXACT_MANAGED_MEMORY) && LUMINA_CMF_EXACT_MANAGED_MEMORY
+    /* Explicit build variant for a single Ada with host-backed oversubscription.
+     * Preserve kernels, copy directions, rounding and error certification.
+     * allocated_bytes accounts for managed address space, not VRAM residency. */
+    if (s->allocated_bytes == 0) {
+        int device = -1, managed = 0, concurrent = 0;
+        cudaError_t capability = cudaGetDevice(&device);
+        if (capability != cudaSuccess) return capability;
+        capability = cudaDeviceGetAttribute(
+            &managed, cudaDevAttrManagedMemory, device);
+        if (capability != cudaSuccess) return capability;
+        capability = cudaDeviceGetAttribute(
+            &concurrent, cudaDevAttrConcurrentManagedAccess, device);
+        if (capability != cudaSuccess) return capability;
+        std::fprintf(stderr,
+            "[cmf_exact][ALLOCATION] mode=managed device=%d "
+            "managed=%d concurrent_managed=%d\n", device, managed, concurrent);
+        if (!managed || !concurrent) return cudaErrorNotSupported;
+    }
+    cudaError_t rc = cudaMallocManaged(
+        (void **)pointer, bytes, cudaMemAttachGlobal);
+#else
     cudaError_t rc = cudaMalloc((void **)pointer, bytes);
+#endif
     if (rc == cudaSuccess) s->allocated_bytes += bytes;
     return rc;
 }

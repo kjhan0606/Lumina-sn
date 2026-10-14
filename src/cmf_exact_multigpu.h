@@ -135,8 +135,11 @@ typedef struct {
  * CMF_EXACT_MODE_DIRECT_REFERENCE, with contiguous ray ranges distributed
  * over the first requested visible CUDA devices.  Range boundaries balance
  * the number of active ray/segment pairs while preserving global ray order.
- * One halo ray is recomputed at each range boundary, so no peer access or
- * Unified Memory is used.
+ * One halo ray is recomputed at each range boundary, so no peer access is
+ * needed. Allocation is cudaMalloc by default. An explicit build with
+ * LUMINA_CMF_EXACT_MANAGED_MEMORY=1 uses managed allocations and requires
+ * managedMemory and concurrentManagedAccess on each participating device;
+ * reported allocated bytes then describe address space, not VRAM residency.
  *
  * The host reduction order is fixed from largest impact-parameter ray block
  * to smallest.  The caller's J buffer is transactional: it is updated only
