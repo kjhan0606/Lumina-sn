@@ -20452,7 +20452,7 @@ static int nlte_assemble_rate_matrix_impl(NLTEConfig *nlte, AtomicData *atom,
         }
     }
 
-    for (int r = 0; !ew_capture && r < CE_N_REACTIONS; r++) {
+    for (int r = 0; (!ew_capture || nlte_ew_capture_time_active()) && r < CE_N_REACTIONS; r++) {
         const ChargeExchangeReaction *ce = &CE_REACTIONS[r];
         double k_fwd = ce->rate_coeff * pow(T_e / 1e4, ce->alpha);
         double k_rev = k_fwd * exp(ce->delta_E_eV * EV_TO_ERG /
@@ -20475,10 +20475,12 @@ static int nlte_assemble_rate_matrix_impl(NLTEConfig *nlte, AtomicData *atom,
             for (int sl = 0; sl < n_lo_super; sl++) {
                 ACM(ground_hi, sl) += R_fwd;
                 ACM(sl, sl)        -= R_fwd;
+                nlte_ew_capture_time_ce(ground_hi,sl,R_fwd);
             }
             /* Reverse: A^(ion_A+1) ground → A^ion_A ground */
             ACM(0, ground_hi)          += R_rev;
             ACM(ground_hi, ground_hi)  -= R_rev;
+            nlte_ew_capture_time_ce(0,ground_hi,R_rev);
         }
 
         /* Case 2: This pair is element B (forward: B^ion_B → B^(ion_B-1))
@@ -20497,11 +20499,13 @@ static int nlte_assemble_rate_matrix_impl(NLTEConfig *nlte, AtomicData *atom,
              * (ion_B is the upper ion in this pair, ground_hi is its first level) */
             ACM(0, ground_hi)          += R_fwd;
             ACM(ground_hi, ground_hi)  -= R_fwd;
+            nlte_ew_capture_time_ce(0,ground_hi,R_fwd);
             /* Reverse: all B^(ion_B-1) levels → B^ion_B ground.
              * Level-independent rate: applied once per super-level. */
             for (int sl = 0; sl < n_lo_super; sl++) {
                 ACM(ground_hi, sl) += R_rev;
                 ACM(sl, sl)        -= R_rev;
+                nlte_ew_capture_time_ce(ground_hi,sl,R_rev);
             }
         }
     }
@@ -22106,7 +22110,8 @@ static int nlte_solve_all_impl(
      * pairs share a prior slot; the solve below detects that generically. */
     int pairs[NLTE_PAIR_COUNT][2];
     const char *names[NLTE_PAIR_COUNT];
-    int n_pairs = nlte_get_pairs(pairs, names);
+    const int time_history = plasma->physical_history != NULL;
+    int n_pairs = time_history ? 0 : nlte_get_pairs(pairs, names);
 
     int ce_max_iter = 5;
     double ce_threshold = 1e-2;  /* 1% relative convergence on ion totals */
@@ -22121,6 +22126,13 @@ static int nlte_solve_all_impl(
         if (nlte_solve_effect_allowed(nlte, NLTE_SOLVE_EFFECT_PROGRESS))
             printf("  [ARTIS-PARITY B1] outer CE coupling tightened: damping=1.0, "
                    "max_iter=%d (element-wide single matrix = residual)\n", ce_max_iter);
+    }
+
+    if(time_history){
+        ce_max_iter=64;ce_threshold=1e-8;ce_damping=1;
+        if(nlte_ion_lock_active(nlte->current_iter)||coldstart_pin_armed()||
+           nlte_per_ion_rescale_active()||nlte_timedep_active())
+            A2_07_POP_ABORT(POP_FORBIDDEN_FALLBACK);
     }
 
     /* Save old ion totals for convergence check (n_nlte_ions * n_shells) */
@@ -22139,7 +22151,7 @@ static int nlte_solve_all_impl(
     /* Allocated only in the explicitly armed Wave-3 lane.  status is per
      * (S/Fe,shell): 1 means the self-tested candidate may replace legacy for
      * this CE pass; -1 means fail-closed and legacy must run. */
-    if (nlte_element_wide_config_status() != 0) {
+    if (!time_history && nlte_element_wide_config_status() != 0) {
         if (solve_diagnostic)
             solve_diagnostic->stage = NLTE_POP_DIAG_STAGE_ELEMENT_WIDE;
         fprintf(stderr, "[EW] invalid gate configuration; solve aborted\n");
@@ -22147,7 +22159,7 @@ static int nlte_solve_all_impl(
         free(old_pops);
         A2_07_POP_ABORT(POP_FORBIDDEN_FALLBACK);
     }
-    int ew_on = nlte_element_wide_enabled();
+    int ew_on = !time_history && nlte_element_wide_enabled();
     int *ew_status = ew_on ? (int *)calloc((size_t)2 * n_shells, sizeof(int)) : NULL;
     if (ew_on && !ew_status) {
         if (solve_diagnostic)
@@ -22226,7 +22238,30 @@ static int nlte_solve_all_impl(
             }
         }
 
-        /* Solve all ion pairs */
+        if(time_history){
+            /* 원소별 전체 행렬을 순차 호출한다. capture의 전역 작업공간과
+             * 다른 원소의 CE 파트너 인구는 이 소유자만 갱신한다. */
+            for(int e=0;e<atom->n_elements;e++){
+                if(lumina_zinert_element_inactive(atom,e,n_shells))continue;
+                for(int s=0;s<n_shells;s++){
+                    PopulationStatus ps=nlte_element_time_solve(
+                        nlte,atom,plasma,opacity,e,s,time_explosion,gamma_dep);
+                    if(ps!=POP_OK){
+                        if(solve_diagnostic){
+                            solve_diagnostic->stage=NLTE_POP_DIAG_STAGE_ELEMENT_WIDE;
+                            solve_diagnostic->Z=atom->element_Z[e];
+                            solve_diagnostic->shell=s;
+                        }
+                        fprintf(stderr,"[NLTE-TIME] Z=%d shell=%d status=%s\n",
+                            atom->element_Z[e],s,population_status_name(ps));
+                        free(ew_status);free(old_ion_totals);free(old_pops);
+                        A2_07_POP_ABORT(ps);
+                    }
+                }
+            }
+        }
+
+        /* 정상 경로의 pair 해. 과거 상태가 있으면 n_pairs=0이다. */
         for (int p = 0; p < n_pairs; p++) {
             int lo = pairs[p][0], hi = pairs[p][1];
 
@@ -22489,6 +22524,21 @@ static int nlte_solve_all_impl(
             }
         }
 
+        if(time_history){
+            /* 이온 총량만 같고 들뜬 준위가 변하는 상태를 수렴으로 보지 않는다.
+             * 작은 절대 인구도 현재/직전 값의 상대 변화로 확인한다. */
+            max_rel_change=0;
+            for(int ii=0;ii<nlte->n_nlte_ions;ii++)
+                for(int g=nlte->nlte_ion_level_offset[ii];g<nlte->nlte_ion_level_offset[ii+1];g++)
+                    for(int s=0;s<n_shells;s++){
+                        size_t j=(size_t)g*n_shells+s;
+                        double a=old_pops[j],b=nlte->nlte_level_populations[j];
+                        double den=fmax(fabs(a),fabs(b));
+                        double change=(!isfinite(a)||!isfinite(b)||a<0||b<0)?INFINITY:
+                            (den?fabs(b-a)/den:0);
+                        if(change>max_rel_change){max_rel_change=change;worst_ion_slot=ii;worst_shell=s;}
+                    }
+        }
         last_max_rel_change = max_rel_change;
         last_worst_ion_slot = worst_ion_slot;
         last_worst_shell = worst_shell;
@@ -22580,7 +22630,8 @@ static int nlte_solve_all_impl(
     }
 
     /* Probe-B fix (task #29): feed the NLTE-solved ion stage back into opacity. */
-    nlte_writeback_ion_stage(nlte, atom, plasma, opacity, time_explosion,
+    if(time_history)compute_tau_sobolev(atom,plasma,opacity,time_explosion);
+    else nlte_writeback_ion_stage(nlte, atom, plasma, opacity, time_explosion,
                              n_shells, pairs, n_pairs);
 
     /* Update tau_sobolev for NLTE lines */
@@ -22686,6 +22737,15 @@ int nlte_solve_all(NLTEConfig *nlte, AtomicData *atom, PlasmaState *plasma,
         nlte, atom, plasma, opacity, time_explosion, n_shells, gamma_dep,
         0, NULL, NULL);
 }
+
+#ifdef LUMINA_TIME_PAIR_SELFTEST
+int nlte_time_core_selftest_solve(NLTEConfig *nlte,AtomicData *atom,
+    PlasmaState *plasma,OpacityState *opacity,double epoch,GammaDeposition *gamma)
+{
+    return nlte_solve_all_impl(nlte,atom,plasma,opacity,epoch,plasma->n_shells,
+        gamma,1,NULL,NULL);
+}
+#endif
 
 static NLTEPopulationCandidateStatus candidate_ionization_fail(
         NLTEPopulationCandidate *candidate, PopulationStatus status) {
@@ -23057,9 +23117,9 @@ NLTEPopulationCandidateStatus nlte_population_candidate_produce_tau_source(
 
     int pairs[NLTE_PAIR_COUNT][2];
     const char *names[NLTE_PAIR_COUNT];
-    int n_pairs = nlte_get_pairs(pairs, names);
+    int n_pairs = candidate->plasma.physical_history?0:nlte_get_pairs(pairs, names);
     (void)names;
-    nlte_writeback_ion_stage(
+    if(!candidate->plasma.physical_history)nlte_writeback_ion_stage(
         &candidate->nlte, &candidate->atom, &candidate->plasma,
         &candidate->opacity, time_explosion, (int)candidate->n_shells,
         pairs, n_pairs);

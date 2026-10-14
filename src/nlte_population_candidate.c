@@ -170,6 +170,7 @@ PopulationStatus nlte_physical_history_solve_levels(
 {
     if(!nlte||!atom||!plasma||!plasma->physical_history||!plasma->rho||
        !generator||!solution||!n||n>SIZE_MAX/sizeof(double)||
+       plasma->n_shells<=0||nlte->n_nlte_levels_total<=0||atom->n_ion_pops<=0||
        shell>=(size_t)plasma->n_shells||first>SIZE_MAX-n||
        !nlte->nlte_to_global_level||!nlte->fl_to_super||
        !atom->ion_pop_Z||!atom->ion_pop_stage)return POP_ATOMIC_MISSING;

@@ -1226,6 +1226,12 @@ int  nlte_element_wide_layout_enabled(void);
 int  nlte_element_wide_matches(int Z, int shell);
 int  nlte_element_wide_commit_enabled(void);
 int  nlte_ew_capture_active(void);
+int  nlte_ew_capture_time_active(void);
+void nlte_ew_capture_time_ce(int target,int source,double rate);
+/* 원소 전체의 시간 단계. capture는 직렬 소유자가 호출하며 실패시 인구를 보존한다. */
+PopulationStatus nlte_element_time_solve(NLTEConfig *nlte,AtomicData *atom,
+    PlasmaState *plasma,OpacityState *opacity,int element,int shell,
+    double epoch,GammaDeposition *gamma);
 void nlte_ew_capture_transition(int channel, int target, int source,
                                 double rate);
 void nlte_ew_capture_bf_target_rates(int lower_global, int lower_sl,

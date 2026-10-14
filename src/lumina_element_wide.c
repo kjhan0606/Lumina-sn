@@ -9,6 +9,7 @@
  */
 #include "lumina.h"
 #include "bf_rate_jnu.h" /* A2-05 canonical-view bf rate result type */
+#include "nlte_population_candidate.h"
 
 #include <errno.h>
 #include <float.h>
@@ -236,7 +237,7 @@ typedef struct {
     int kramers_fallback, continuum_deleted, target_fallback;
     int nstar_cap, nonfinite_guard;
     int bf_estimator_bins, bf_pref_j_bins, bf_jeqb_bins;
-    int skip_lo_bb;
+    int skip_lo_bb, time_history;
     NLTEConfig *nlte;
     AtomicData *atom;
     double *plane[NLTE_EW_N_CHANNELS];
@@ -303,6 +304,31 @@ void nlte_ew_test_capture_counters_snapshot(int out[EW_TEST_CAPTURE_COUNTERS]) {
 
 int nlte_ew_capture_active(void) {
     return ew_cap.active;
+}
+
+int nlte_ew_capture_time_active(void) {
+    return ew_cap.active && ew_cap.time_history;
+}
+
+void nlte_ew_capture_time_ce(int target,int source,double rate) {
+    if(!nlte_ew_capture_time_active())return;
+    if(target<0||target>=ew_cap.N_pair||source<0||source>=ew_cap.N_pair||
+       rate<0||!isfinite(rate)){ew_atomic_inc_int(&ew_cap.bad_rate);return;}
+    if(target==source||rate==0)return;
+    int i=ew_cap.wide_base+target,j=ew_cap.wide_base+source;
+    if(i<0||j<0||i>=ew_cap.N_wide||j>=ew_cap.N_wide){
+        ew_atomic_inc_int(&ew_cap.bad_rate);return;
+    }
+    /* 시간 경로에서 모든 plane은 같은 실제 행렬을 가리킨다. CE를 DR 등의
+     * 다른 물리 채널로 재명명하지 않고 그 행렬에 직접 더한다. */
+#ifdef _OPENMP
+#pragma omp critical(lumina_ew_capture_accumulate)
+#endif
+    {
+        EW(ew_cap.plane[0],ew_cap.N_wide,i,j)+=rate;
+        EW(ew_cap.plane[0],ew_cap.N_wide,j,j)-=rate;
+        ew_cap.expected_outflow[0][j]+=rate;
+    }
 }
 
 static void ew_capture_begin(NLTEConfig *nlte, AtomicData *atom, int shell,
@@ -647,6 +673,10 @@ void nlte_ew_capture_bf_target_rates(int lower_global, int lower_sl,
                 (br_ew.state == BF_RATE_VALID ||
                  br_ew.state == BF_RATE_EXACT_ZERO))
                 rad_ion = br_ew.gamma;
+            else if(ew_cap.time_history){
+                ew_atomic_inc_int(&ew_cap.bad_rate);
+                continue;
+            }
         }
         for (int bb = 0; bb < n->n_freq_bins; bb++) {
             double loglo = log(n->nu_min) + bb * n->d_log_nu;
@@ -736,25 +766,38 @@ void nlte_ew_capture_nt_routes(double rate_per_particle) {
     int l1 = n->nlte_ion_level_offset[lo_slot + 1];
     for (int g = l0; g < l1; g++) {
         int lower = n->nlte_to_global_level[g];
-        if (!a->ma_rr_loaded || !a->ma_rr_target_offset) continue;
+        if (!a->ma_rr_loaded || !a->ma_rr_target_offset ||
+            !a->ma_rr_targets || !a->ma_rr_probability) {
+            if(ew_cap.time_history)ew_atomic_inc_int(&ew_cap.target_fail);
+            continue;
+        }
         int b = a->ma_rr_target_offset[lower];
         int e = a->ma_rr_target_offset[lower + 1];
-        if (b < 0 || e <= b || e > a->ma_rr_n_routes) continue;
+        if (b < 0 || e <= b || e > a->ma_rr_n_routes) {
+            if(ew_cap.time_history)ew_atomic_inc_int(&ew_cap.target_fail);
+            continue;
+        }
         int source = n->fl_to_super[g] - ew_cap.pair_super_start;
         double f = n->within_sl_frac[(size_t)g * ew_cap.n_shells + ew_cap.shell];
+        double psum=0;
         for (int r = b; r < e; r++) {
             int upper = a->ma_rr_targets[r];
             double p = a->ma_rr_probability[r];
             int ng = (upper >= 0 && upper < a->n_levels) ?
                      n->global_to_nlte_level[upper] : -1;
-            if (ng < 0 || !(p > 0.0) || !isfinite(p)) {
+            if (ng < 0 || !(p > 0.0) || !isfinite(p) ||
+                (ew_cap.time_history && (a->level_Z[upper]!=a->level_Z[lower] ||
+                 a->level_ion[upper]!=a->level_ion[lower]+1))) {
                 ew_atomic_inc_int(&ew_cap.target_fallback);
                 continue;
             }
             int target = n->fl_to_super[ng] - ew_cap.pair_super_start;
             nlte_ew_capture_transition(NLTE_EW_NT_BF, target, source,
                                        rate_per_particle * p * f);
+            psum+=p;
         }
+        if(ew_cap.time_history && fabs(psum-1)>1e-12)
+            ew_atomic_inc_int(&ew_cap.target_fail);
     }
 }
 
@@ -2012,6 +2055,86 @@ static double ew_permutation_check(const double *A, const double *b, int N,
 
 /* D7 hot/cold audit: rebuild channel planes from the current lagged
  * populations without solving or touching the production capture buffers. */
+PopulationStatus nlte_element_time_solve(NLTEConfig *nlte,AtomicData *atom,
+    PlasmaState *plasma,OpacityState *opacity,int element,int shell,
+    double epoch,GammaDeposition *gamma)
+{
+    if(!nlte||!atom||!plasma||!opacity||!plasma->physical_history||
+       element<0||element>=atom->n_elements||shell<0||shell>=plasma->n_shells||
+       !atom->elem_ion_offset||!atom->element_Z||!atom->ion_pop_stage||!atom->ion_pop_Z||
+       !atom->element_mass_amu||!atom->abundances||!atom->ion_number_density||
+       !plasma->rho||!nlte->within_sl_frac||!nlte->nlte_level_populations||
+       !nlte->fl_to_super||ew_cap.active)return POP_ATOMIC_MISSING;
+    int ns=plasma->n_shells,Z=atom->element_Z[element];
+    int ip0=atom->elem_ion_offset[element],ip1=atom->elem_ion_offset[element+1];
+    if(ip0<0||ip1<=ip0||ip1>atom->n_ion_pops)return POP_ATOMIC_MISSING;
+    int first=ew_find_slot(nlte,Z,atom->ion_pop_stage[ip0]),count=ip1-ip0;
+    if(first<0||first+count>nlte->n_nlte_ions)return POP_ATOMIC_MISSING;
+    for(int k=0;k<count;k++){
+        int slot=first+k,ip=ip0+k;
+        if(atom->ion_pop_Z[ip]!=Z||nlte->nlte_Z[slot]!=Z||
+           nlte->nlte_ion[slot]!=atom->ion_pop_stage[ip]||
+           (k&&atom->ion_pop_stage[ip]!=atom->ion_pop_stage[ip-1]+1)||
+           nlte->nlte_ion_level_offset[slot+1]<=nlte->nlte_ion_level_offset[slot]||
+           nlte->nlte_ion_super_offset[slot+1]<=nlte->nlte_ion_super_offset[slot])
+            return POP_ATOMIC_MISSING;
+    }
+    int sl0=nlte->nlte_ion_super_offset[first];
+    int N=nlte->nlte_ion_super_offset[first+count]-sl0;
+    int fl0=nlte->nlte_ion_level_offset[first];
+    int nf=nlte->nlte_ion_level_offset[first+count]-fl0;
+    if(sl0<0||fl0<0||N<=0||nf<=0||nf>nlte->n_nlte_levels_total-fl0||
+       (size_t)N>SIZE_MAX/(size_t)N|| (size_t)N*N>SIZE_MAX/sizeof(double)||
+       (count==1 && (N!=1||nf!=1)))return POP_ATOMIC_MISSING;
+    double mass=atom->element_mass_amu[element];
+    double total=atom->abundances[(size_t)element*ns+shell]*plasma->rho[shell]/(mass*AMU);
+    if(!(mass>0)||!isfinite(mass)||!isfinite(total)||total<0)return POP_NONFINITE;
+    double *A=calloc((size_t)N*N,sizeof(*A)),*outflow=calloc((size_t)N,sizeof(*outflow));
+    double *x=malloc((size_t)N*sizeof(*x)),*full=malloc((size_t)nf*sizeof(*full));
+    double *ions=calloc((size_t)count,sizeof(*ions));
+    PopulationStatus status=POP_SOLVE_FAILED;
+    if(!A||!outflow||!x||!full||!ions)goto time_element_done;
+    /* 필요한 것은 하나의 실제 생성행렬이다. 동일 행렬/유출 배열을 capture에
+     * 주어 채널별 대형 사본이나 별도 계측 파일을 만들지 않는다. */
+    double *planes[NLTE_EW_N_CHANNELS],*ledgers[NLTE_EW_N_CHANNELS];
+    for(int c=0;c<NLTE_EW_N_CHANNELS;c++){planes[c]=A;ledgers[c]=outflow;}
+    for(int k=0;k<count-1;k++){
+        int lo=first+k,hi=lo+1;
+        int np=nlte->nlte_ion_super_offset[hi+1]-nlte->nlte_ion_super_offset[lo];
+        double *pair=calloc((size_t)np*np,sizeof(*pair)),*rhs=calloc((size_t)np,sizeof(*rhs));
+        if(!pair||!rhs){free(pair);free(rhs);goto time_element_done;}
+        ew_capture_begin(nlte,atom,shell,ns,lo,np,N,
+            nlte->nlte_ion_super_offset[lo]-sl0,k>0,planes,ledgers);
+        ew_cap.time_history=1;
+        int rc=nlte_assemble_rate_matrix(nlte,atom,plasma,opacity,lo,hi,shell,
+            epoch,pair,rhs,np,gamma,NULL,-1);
+        int failed=0,bad=0;EWFireCounts fire={0};
+        ew_capture_end(NULL,NULL,&failed,&bad,&fire);free(pair);free(rhs);
+        if(rc||failed||bad||fire.target_fallback||fire.continuum_deleted||
+           fire.nstar_cap||fire.nonfinite_guard){status=POP_ATOMIC_MISSING;goto time_element_done;}
+    }
+    status=nlte_physical_history_solve_levels(nlte,atom,plasma,(size_t)shell,
+        epoch,(size_t)sl0,(size_t)N,A,x,NULL);
+    if(status!=POP_OK)goto time_element_done;
+    for(int k=0;k<count;k++)
+        for(int fl=nlte->nlte_ion_level_offset[first+k];fl<nlte->nlte_ion_level_offset[first+k+1];fl++){
+            int sl=nlte->fl_to_super[fl]-sl0;
+            double f=nlte->within_sl_frac[(size_t)fl*ns+shell];
+            if(sl<0||sl>=N||!isfinite(f)||f<0){status=POP_ATOMIC_MISSING;goto time_element_done;}
+            full[fl-fl0]=x[sl]*f;ions[k]+=full[fl-fl0];
+        }
+    {
+        double sum=0;for(int k=0;k<count;k++)sum+=ions[k];
+        if(!isfinite(sum)||(total?fabs(sum/total-1)>1e-10:sum!=0)){
+            status=POP_SOLVE_FAILED;goto time_element_done;
+        }
+    }
+    for(int fl=0;fl<nf;fl++)nlte->nlte_level_populations[(size_t)(fl0+fl)*ns+shell]=full[fl];
+    for(int k=0;k<count;k++)atom->ion_number_density[(size_t)(ip0+k)*ns+shell]=ions[k];
+time_element_done:
+    free(A);free(outflow);free(x);free(full);free(ions);return status;
+}
+
 static int ew_rebuild_matrix(NLTEConfig *nlte, AtomicData *atom,
                              PlasmaState *plasma, OpacityState *opacity,
                              int slots[3], int stage_start[4], int N, int shell,
