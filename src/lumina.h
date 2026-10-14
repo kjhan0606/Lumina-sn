@@ -303,7 +303,7 @@ typedef struct {
     int     line_producer_terms_n_shells;
     double  jbar_line_det_vdoppler_cms;  /* producer profile identity; 0 = absent */
     double  jbar_line_det_ndoppler;       /* symmetric support in Doppler widths */
-    int     jbar_line_det_operator;       /* 1=sealed init Gaussian, 2=CMFGEN Sobolev */
+    int     jbar_line_det_operator;       /* 1=init, 2=Sobolev, 3=공통 Gaussian */
     int     jbar_line_det_exact_converged;/* exact characteristic qualified */
     int     jbar_line_det_exact_iterations;
     int     jbar_line_det_exact_iteration_cap;

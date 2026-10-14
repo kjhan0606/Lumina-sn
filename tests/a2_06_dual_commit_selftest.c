@@ -240,6 +240,16 @@ int main(void)
           lv.count == 0,
           "det-error-bound-canonical-se");
 
+    dreq.generation = 4;
+    dreq.line_producer = LUMINA_LINE_JBAR_COMMON_GAUSSIAN_PRODUCER;
+    CHECK(radiation_field_commit(&owner, &dreq) == 0,
+          "common-gaussian-dual-commit");
+    CHECK(radiation_field_line_jbar_view(
+              &owner, EPOCH, NS, 4, QH, 1, PH, &view) == LINE_JBAR_VIEW_OK,
+          "common-gaussian-view");
+    CHECK(line_jbar_lookup(&view, 0, 42, &lv) == 0 && lv.jbar == det_jbar[2],
+          "common-gaussian-value");
+
     free(snap_j); free(snap_l);
     radiation_field_owner_free(&owner);
 

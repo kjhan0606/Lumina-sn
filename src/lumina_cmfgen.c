@@ -533,6 +533,8 @@ static int w5_cont_lines_write(const char *path, long call, int sobolev,
         const double *line_nu, const int *Zarr, const int *qarr,
         double nu_lo, double nu_hi, size_t *rows_out, size_t *outside_out)
 {
+    int common_field = sobolev == 2;
+    sobolev = sobolev == 1;
     *rows_out = 0; *outside_out = 0;
     FILE *fp = fopen(path, call == 1 ? "wx" : "a");
     if (!fp) {
@@ -547,7 +549,7 @@ static int w5_cont_lines_write(const char *path, long call, int sobolev,
                     "Jbar_err_upper,tau_eff,srce_chk,status\n") < 0)
         bad = 1;
     const char *op = sobolev ? "CMFGEN_NONOVERLAP_SOBOLEV"
-                             : "INIT_SHARED_GAUSSIAN";
+                    : common_field ? "COMMON_GAUSSIAN" : "INIT_SHARED_GAUSSIAN";
     for (int t = 0; t < nt && !bad; ++t) {
         int l = line_of[t];
         double nu = line_nu[l];
@@ -572,8 +574,9 @@ static int w5_cont_lines_write(const char *path, long call, int sobolev,
             } else if (!sobolev && r->status == W5_CONT_LINE_OK_INIT) {
                 n = fprintf(fp, "NOT_APPLICABLE,NOT_APPLICABLE,NOT_APPLICABLE,"
                             "NOT_APPLICABLE,%.17g,%.17g,NOT_APPLICABLE,"
-                            "NOT_APPLICABLE,OK_INIT_GAUSSIAN_PROFILE_MEAN\n",
-                            r->jbar, r->jbar_err);
+                            "NOT_APPLICABLE,%s\n", r->jbar, r->jbar_err,
+                            common_field ? "OK_COMMON_GAUSSIAN_PROFILE_MEAN" :
+                                           "OK_INIT_GAUSSIAN_PROFILE_MEAN");
             } else {
                 bad = 3; break;
             }
@@ -6585,6 +6588,67 @@ void cmfgen_write_jnu(const CMFGENState *cs, NLTEConfig *nlte)
     memcpy(nlte->J_nu, cs->J, sizeof(double) * n);
 }
 
+/* J_nu의 셀 평균을 정확한 주파수 구간 교집합으로 전달한다.
+ * 점 보간이나 로그폭 가중은 적분 복사 에너지를 보존하지 않는다. */
+int cmfgen_rebin_log_field(const CMFGENState *source, CMFGENState *target)
+{
+    if (!source || !target || !source->J || !target->J ||
+        source->J == target->J || source->n_shells <= 0 ||
+        source->n_shells != target->n_shells || source->n_bins < 1 ||
+        target->n_bins < 1 || !(source->nu_min > 0.0) ||
+        !(target->nu_min > 0.0) || !(source->d_log_nu > 0.0) ||
+        !(target->d_log_nu > 0.0) || !isfinite(source->d_log_nu) ||
+        !isfinite(target->d_log_nu) || !isfinite(source->nu_max) ||
+        !isfinite(target->nu_max) || source->nu_min > target->nu_min ||
+        source->nu_max < target->nu_max) return -1;
+    size_t ns = (size_t)source->n_shells, nf = (size_t)source->n_bins;
+    size_t nb = (size_t)target->n_bins;
+    if (nf >= SIZE_MAX / sizeof(double) || nb >= SIZE_MAX / sizeof(double) ||
+        ns > SIZE_MAX / sizeof(double) / nf ||
+        ns > SIZE_MAX / sizeof(double) / nb) return -1;
+    double *fe = malloc((nf + 1) * sizeof(double));
+    double *be = malloc((nb + 1) * sizeof(double));
+    double *candidate = malloc(ns * nb * sizeof(double));
+    int rc = -1;
+    if (!fe || !be || !candidate) goto done;
+    for (size_t b = 0; b <= nf; ++b)
+        fe[b] = source->nu_min * exp((double)b * source->d_log_nu);
+    for (size_t b = 0; b <= nb; ++b)
+        be[b] = target->nu_min * exp((double)b * target->d_log_nu);
+    if (fabs(fe[nf] / source->nu_max - 1.0) > 1.0e-12 ||
+        fabs(be[nb] / target->nu_max - 1.0) > 1.0e-12) goto done;
+    fe[nf] = source->nu_max;
+    be[nb] = target->nu_max;
+    for (size_t b = 0; b <= nf; ++b)
+        if (!isfinite(fe[b]) || (b && !(fe[b] > fe[b-1]))) goto done;
+    for (size_t b = 0; b <= nb; ++b)
+        if (!isfinite(be[b]) || (b && !(be[b] > be[b-1]))) goto done;
+    for (size_t i = 0; i < ns * nf; ++i)
+        if (!isfinite(source->J[i]) || source->J[i] < 0.0) goto done;
+    for (size_t s = 0; s < ns; ++s) {
+        size_t f = 0;
+        for (size_t b = 0; b < nb; ++b) {
+            while (f < nf && fe[f+1] <= be[b]) ++f;
+            double left = be[b], integral = 0.0;
+            while (left < be[b+1]) {
+                if (f >= nf || fe[f] > left) goto done;
+                double right = fmin(fe[f+1], be[b+1]);
+                if (!(right > left)) goto done;
+                integral += source->J[s*nf+f] * (right-left);
+                left = right;
+                if (left == fe[f+1]) ++f;
+            }
+            candidate[s*nb+b] = integral / (be[b+1]-be[b]);
+            if (!isfinite(candidate[s*nb+b])) goto done;
+        }
+    }
+    memcpy(target->J, candidate, ns * nb * sizeof(double));
+    rc = 0;
+done:
+    free(fe); free(be); free(candidate);
+    return rc;
+}
+
 int cmfgen_commit_jnu(const CMFGENState *cs, NLTEConfig *nlte,
                       const Geometry *geo, const OpacityState *opac,
                       uint64_t generation)
@@ -6614,6 +6678,9 @@ int cmfgen_commit_jnu(const CMFGENState *cs, NLTEConfig *nlte,
                  CMF_FINE_LINE_OPERATOR_CMFGEN_NONOVERLAP_SOBOLEV)
         line_producer =
             LUMINA_LINE_JBAR_CMFGEN_NONOVERLAP_SOBOLEV_PRODUCER;
+    else if (opac->jbar_line_det_operator ==
+                 CMF_FINE_LINE_OPERATOR_COMMON_GAUSSIAN)
+        line_producer = LUMINA_LINE_JBAR_COMMON_GAUSSIAN_PRODUCER;
     else {
         fprintf(stderr,
                 "[R6][BLOCKED] reason=DETERMINISTIC_LINE_OPERATOR_MISSING "
@@ -6864,7 +6931,10 @@ int cmfgen_commit_jnu(const CMFGENState *cs, NLTEConfig *nlte,
     RadiationFieldCommitRequest request;
     memset(&request, 0, sizeof(request));
     request.provenance_kind = RADIATION_FIELD_PROVENANCE_CMFGEN_REPLAY;
-    request.producer = "PURE_CMFGEN_COMOVING_CONSERVATIVE_REBIN";
+    request.producer = opac->jbar_line_det_operator ==
+        CMF_FINE_LINE_OPERATOR_COMMON_GAUSSIAN
+        ? "CMF_COMMON_GAUSSIAN_CONSERVATIVE_REBIN"
+        : "PURE_CMFGEN_COMOVING_CONSERVATIVE_REBIN";
     request.generation = generation;
     request.epoch = geo->time_explosion;
     request.n_shells = (size_t)cs->n_shells;
@@ -8104,10 +8174,16 @@ int cmfgen_fine_jbar(CMFGENState *csb, const Geometry *geo,
     opac->line_producer_tau_eff = NULL;
     opac->line_producer_provenance = NULL;
     if (NL <= 0 || !opac->jbar_line_det || !geo || !plasma ||
-        (line_operator != CMF_FINE_LINE_OPERATOR_INIT_SHARED_GAUSSIAN &&
+        (line_operator != CMF_FINE_LINE_OPERATOR_COMMON_GAUSSIAN &&
+         line_operator != CMF_FINE_LINE_OPERATOR_INIT_SHARED_GAUSSIAN &&
          line_operator !=
              CMF_FINE_LINE_OPERATOR_CMFGEN_NONOVERLAP_SOBOLEV))
         return -1;
+    const int common_field =
+        line_operator == CMF_FINE_LINE_OPERATOR_COMMON_GAUSSIAN;
+    const char *operator_name = common_field ? "COMMON_GAUSSIAN" :
+        line_operator == CMF_FINE_LINE_OPERATOR_CMFGEN_NONOVERLAP_SOBOLEV
+        ? "CMFGEN_NONOVERLAP_SOBOLEV" : "INIT_SHARED_GAUSSIAN";
     double t_exp = geo->time_explosion;
     int diag = 0; { const char *e=getenv("LUMINA_CMF_FINE_DIAG"); if(e) diag=atoi(e); }
     int independent_capture_requested = 0;
@@ -8303,6 +8379,10 @@ int cmfgen_fine_jbar(CMFGENState *csb, const Geometry *geo,
         return -1;
     }
     double nu_lo = support_nu_lo * exp(-0.5 * dlognu);
+    /* BF 전체 격자를 같은 장으로 채운다. BB 프로파일 영역 밖에서도
+     * 원자 선을 버리지 않는다. 파란 주파수 경계 자체는 기존 절단을 유지한다. */
+    if (common_field && csb->nu_min < nu_lo)
+        nu_lo = csb->nu_min * exp(-0.5 * dlognu);
     double requested_nu_hi = reservoir_nu_hi * exp(0.5 * dlognu);
     double span = log(requested_nu_hi / nu_lo) / dlognu;
     if (!(span > 0.0) || !isfinite(span) || span > (double)INT32_MAX - 2.0) {
@@ -8528,8 +8608,8 @@ int cmfgen_fine_jbar(CMFGENState *csb, const Geometry *geo,
         g_fine_upper_population_fill && g_fine_nlte->line_eset;
     int sobolev_operator = line_net_parity &&
         line_operator == CMF_FINE_LINE_OPERATOR_CMFGEN_NONOVERLAP_SOBOLEV;
-    if (line_operator ==
-            CMF_FINE_LINE_OPERATOR_CMFGEN_NONOVERLAP_SOBOLEV &&
+    if ((common_field || line_operator ==
+            CMF_FINE_LINE_OPERATOR_CMFGEN_NONOVERLAP_SOBOLEV) &&
         !line_net_parity) {
         fprintf(stderr,
                 "[cmf_fine][BLOCKED] reason=SOBOLEV_OPERATOR_WITHOUT_PARITY "
@@ -8577,8 +8657,7 @@ int cmfgen_fine_jbar(CMFGENState *csb, const Geometry *geo,
         fprintf(stderr,
                 "[cmf_fine][LINE-MATERIAL] mode=%s "
                 "upper_population_cells=%zu bytes=%zu\n",
-                sobolev_operator ? "CMFGEN_NONOVERLAP_SOBOLEV" :
-                                   "INIT_SHARED_GAUSSIAN",
+                operator_name,
                 population_cells,
                 population_cells * sizeof(*upper_population_cache));
         /* DET-LTEUNMAP-EPS: gate ON => (1) publish the per-(line,shell) NLTE-map
@@ -8636,6 +8715,9 @@ int cmfgen_fine_jbar(CMFGENState *csb, const Geometry *geo,
         for (int l = 0; l < NL; ++l) {
             double nu_l = opac->line_list_nu[l];
             char use = (nu_l >= line_nu_lo && nu_l <= line_nu_hi) ? 1 : 0;
+            if (common_field)
+                use = nu_l * (1.0 + profile_width) >= nu_lo &&
+                      nu_l * (1.0 - profile_width) <= nu_hi;
             if (use) {
                 ++n_inwin;
                 if (fine_taumin > 1e-12) {        /* skip line if weak in ALL shells */
@@ -8765,8 +8847,7 @@ int cmfgen_fine_jbar(CMFGENState *csb, const Geometry *geo,
                 "[cmf_fine][SIGNED-MATERIAL-POLICY] operator=%s "
                 "srce_chk_expected=%llu srce_chk_material=%ld "
                 "raw_preserved=1 floor=0 clamp=0 jitter=0 repair=0\n",
-                sobolev_operator ? "CMFGEN_NONOVERLAP_SOBOLEV" :
-                                   "INIT_SHARED_GAUSSIAN",
+                operator_name,
                 (unsigned long long)srce_chk_expected_cells,
                 srce_chk_cells);
         /* The census count is independent evidence.  Runtime line-operator
@@ -9135,7 +9216,7 @@ int cmfgen_fine_jbar(CMFGENState *csb, const Geometry *geo,
             "Int chi_line dnu=%.4e  material expect=%.4e  ratio=%.4f "
             "mode=%s srce_chk_line_shells=%ld\n",
             n_inwin, st, got, exp_, (exp_!=0.0)?got/exp_:0.0,
-            line_net_parity ? "INIT_SHARED_GAUSSIAN" : "LEGACY_EXPANSION",
+            line_net_parity ? operator_name : "LEGACY_EXPANSION",
             srce_chk_cells);
     }
 
@@ -9900,8 +9981,7 @@ int cmfgen_fine_jbar(CMFGENState *csb, const Geometry *geo,
                 "srce_chk_applied=%llu srce_chk_expected=%llu "
                 "component_error=[%.17g,%.17g] floor=0 clamp=0 "
                 "jitter=0 repair=0\n",
-                sobolev_operator ? "CMFGEN_NONOVERLAP_SOBOLEV" :
-                                   "INIT_SHARED_GAUSSIAN",
+                operator_name,
                 first_profile_bad_line, first_profile_bad_status,
                 sobolev_jbar_cells,
                 (unsigned long long)(signed_cells + exact_zero_tau_cells),
@@ -9920,7 +10000,7 @@ int cmfgen_fine_jbar(CMFGENState *csb, const Geometry *geo,
     if (w5_cont_on) {
         size_t w5_cont_rows = 0, w5_cont_outside = 0;
         int w5_cont_rc = w5_cont_lines_write(W5_CONT_LINES_FILE, w5_cont_fine_calls,
-                sobolev_operator, w5_cont_rad_generation,
+                common_field ? 2 : sobolev_operator, w5_cont_rad_generation,
                 g_fine_nlte->population_committed_generation, NS, w5_cont_tidx,
                 w5_cont_line_of, w5_cont_nt, w5_cont_rec, opac->line_list_nu,
                 g_fine_atom->line_atomic_number,
@@ -9946,8 +10026,7 @@ int cmfgen_fine_jbar(CMFGENState *csb, const Geometry *geo,
                 "source_cells=%llu fine_cells=%zu line_rows=%zu "
                 "outside_support_rows=%zu file=%s\n",
                 w5_cont_fine_calls,
-                sobolev_operator ? "CMFGEN_NONOVERLAP_SOBOLEV" :
-                                   "INIT_SHARED_GAUSSIAN",
+                operator_name,
                 (unsigned long long)w5_cont_rad_generation,
                 (unsigned long long)g_fine_nlte->population_committed_generation,
                 g_asm_cont_src_pass, w5_cont_interp_cells, w5_cont_source_cells,
@@ -10275,7 +10354,23 @@ int cmfgen_fine_jbar(CMFGENState *csb, const Geometry *geo,
       }
     }
 
-    /* FINE-ν PHOTOION (LUMINA_CMF_FINE_PHOTOION): retain the local fine-ν field
+    if (common_field) {
+        if (cmfgen_rebin_log_field(&fs, csb) != 0) {
+            fprintf(stderr, "[cmf_fine][ERROR] common-field BF rebin failed\n");
+            free(fs.nu);free(fs.dnu);free(fs.chi_es);free(fs.chi_abs);
+            free(fs.chi_line);free(fs.chi_tot);free(fs.S_fixed);free(fs.J);
+            free(eta);free(fine_error_upper);
+            return -1;
+        }
+        fprintf(stderr, "[cmf_fine][COMMON-FIELD] fine_bins=%d bf_bins=%d "
+                "source=LINE_PLUS_CONTINUUM BB=PROFILE_INTEGRAL "
+                "BF=CONSERVATIVE_DNU_AVERAGE sobolev_reconstruction=0\n",
+                NF, csb->n_bins);
+    }
+
+    /* 과거 fine-photoion 호환 저장소. coupled_set_fine_jnu는 현행 빈 함수다.
+     * 실제 공통장 전달은 위의 csb->J와 정본 owner commit을 통한다.
+     * FINE-ν PHOTOION (LUMINA_CMF_FINE_PHOTOION): retain the local fine-ν field
      * fs.J + fs.nu (transfer ownership to OpacityState; otherwise freed below) and
      * register it so coupled_photoion_rate_jnu integrates bf rates on the fine grid
      * instead of the binned J. */
@@ -11542,6 +11637,11 @@ int cmfgen_run(Geometry *geo, OpacityState *opac, BFOpacity *bf,
                GammaDeposition *gamma, double T_inner, int n_iter)
 {
     if (getenv("LUMINA_CMF_OBS_SELFTEST")) { cmf_obs_selftest(); return 0; }
+    int common_field = 0;
+    if (cmf_optional_binary_env("LUMINA_CMF_COMMON_FIELD", &common_field) != 0) {
+        fprintf(stderr, "[CMFGEN][ERROR] LUMINA_CMF_COMMON_FIELD requires 0 or 1\n");
+        return -1;
+    }
     int xshell_gate = 0;
     if (cmf_optional_binary_env("LUMINA_XSHELL_RESPONSE", &xshell_gate) != 0) {
         fprintf(stderr,"[XSHELL][BLOCKED] reason=INVALID_GATE expected=0_or_1\n");
@@ -11761,7 +11861,8 @@ int cmfgen_run(Geometry *geo, OpacityState *opac, BFOpacity *bf,
                     "iter=%d\n", iter);
             CMFGEN_RUN_DONE(-1);
         }
-        CMFFineLineOperator line_operator = init_pass
+        CMFFineLineOperator line_operator = common_field
+            ? CMF_FINE_LINE_OPERATOR_COMMON_GAUSSIAN : init_pass
             ? CMF_FINE_LINE_OPERATOR_INIT_SHARED_GAUSSIAN
             : CMF_FINE_LINE_OPERATOR_CMFGEN_NONOVERLAP_SOBOLEV;
         w5_cont_rad_generation = rad_generation + 1U;   /* w5_lines.csv label */
@@ -11771,6 +11872,13 @@ int cmfgen_run(Geometry *geo, OpacityState *opac, BFOpacity *bf,
                     "[R6][BLOCKED] reason=DETERMINISTIC_LINE_JBAR_PRODUCER "
                     "iter=%d\n", iter);
             CMFGEN_RUN_DONE(-1);
+        }
+        if (common_field) {
+            /* 위에 등록된 J 포인터도 이제 정밀장의 보존 평균을 가리킨다.
+             * 색온도 캐시 역시 같은 장으로 갱신한다. Lambda 등은 계속
+             * 근사 전처리자이며 정밀 연산자의 정확한 미분이 아니다. */
+            cmfgen_window_color(&cs);
+            radeq_set_tail_color(cs.t_color, cs.n_shells);
         }
 
         a208_counters()->replay_line_blocks_attempted++;

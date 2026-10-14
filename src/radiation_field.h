@@ -104,6 +104,8 @@ typedef enum {
     "A2-06:line-Jbar:deterministic-profile-integral:v1"
 #define LUMINA_LINE_JBAR_CMFGEN_NONOVERLAP_SOBOLEV_PRODUCER \
     "A2-10:line-Jbar:cmfgen-nonoverlap-sobolev-sigma0:v1"
+#define LUMINA_LINE_JBAR_COMMON_GAUSSIAN_PRODUCER \
+    "CMF:common-line-continuum-gaussian-profile:v1"
 
 typedef struct {
     RadiationFieldProvenanceKind kind;

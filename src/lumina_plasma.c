@@ -18762,11 +18762,13 @@ static int bb_nrb_arm(const NLTEConfig *nlte, const OpacityState *opacity,
     if (req <= 0) return req;
     nlte_skip_z_load();
     int op = opacity->jbar_line_det_operator;
-    if (op != 1 && op != 2) {
+    if (op != 1 && op != 2 && op != 3) {
         fprintf(stderr, "[BB-NRB][FATAL] reason=OPERATOR_UNKNOWN iter=%d "
                 "operator=%d\n", nlte->current_iter, op);
         return -1;
     }
+    /* 공통 Gaussian 장에는 이웃 선과 자체 방출이 이미 들어 있다.
+     * 고립선 Sobolev beta로 다시 치환하지 않고 표준 Einstein 율을 쓴다. */
     int armed = (op == 2);
     int captured = opacity->line_producer_terms_captured == 1 &&
                    opacity->line_producer_terms_n_shells == n_shells &&

@@ -603,7 +603,9 @@ static int radiation_field_prepare_line(
             (strcmp(line_producer,
                     LUMINA_LINE_JBAR_DETERMINISTIC_PRODUCER) != 0 &&
              strcmp(line_producer,
-                    LUMINA_LINE_JBAR_CMFGEN_NONOVERLAP_SOBOLEV_PRODUCER) != 0))
+                    LUMINA_LINE_JBAR_CMFGEN_NONOVERLAP_SOBOLEV_PRODUCER) != 0 &&
+             strcmp(line_producer,
+                    LUMINA_LINE_JBAR_COMMON_GAUSSIAN_PRODUCER) != 0))
             return -1;
     } else {
         return -1;

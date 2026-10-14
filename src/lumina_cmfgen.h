@@ -288,8 +288,14 @@ typedef enum {
     CMF_FINE_LINE_OPERATOR_INIT_SHARED_GAUSSIAN = 1,
     /* Production parity operator for R2 and later: continuum-only exact CMF
      * field followed by a per-line CMFGEN non-overlap Sobolev response. */
-    CMF_FINE_LINE_OPERATOR_CMFGEN_NONOVERLAP_SOBOLEV = 2
+    CMF_FINE_LINE_OPERATOR_CMFGEN_NONOVERLAP_SOBOLEV = 2,
+    /* 모든 반복에서 선 중첩을 포함한 하나의 장을 BB/BF에 제공한다. */
+    CMF_FINE_LINE_OPERATOR_COMMON_GAUSSIAN = 3
 } CMFFineLineOperator;
+
+/* 정밀 셀 평균을 dnu 보존으로 전달한다. 영역 부족/음수/비유한 값이면
+ * 대상 J는 변경하지 않는다. 원천과 대상은 서로 다른 배열이어야 한다. */
+int cmfgen_rebin_log_field(const CMFGENState *source, CMFGENState *target);
 
 /* P7/R6 PRODUCER: exact sliding drifting-characteristic continuum field plus
  * the explicitly selected line operator over the amended 100--20000 A BB
