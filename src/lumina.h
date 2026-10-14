@@ -438,7 +438,14 @@ typedef struct {
     /* Driver-owned immutable snapshot of the previous physical epoch.
      * NULL retains the steady material energy equation. Never free here. */
     const struct NLTEPhysicalHistory *physical_history;
+    /* 입력 온도 고정 초기화의 정상 원소 전체 해. 실제 과거와 동시 사용 금지.
+     * 0은 기존 선택,1은 A*n=0. 가짜 dt 또는 목표 이온분포를 사용하지 않는다. */
+    int initial_steady_nlte;
 } PlasmaState;                /* Phase 2 - Step 4 */
+
+static inline int nlte_whole_element_mode(const PlasmaState *p) {
+    return p && (p->physical_history || p->initial_steady_nlte == 1);
+}
 
 /* Task #072: Atomic data for plasma solver */
 typedef struct {
@@ -1241,6 +1248,10 @@ int  nlte_ew_capture_time_active(void);
 void nlte_ew_capture_time_ce(int target,int source,double rate);
 /* 원소 전체의 시간 단계. capture는 직렬 소유자가 호출하며 실패시 인구를 보존한다. */
 PopulationStatus nlte_element_time_solve(NLTEConfig *nlte,AtomicData *atom,
+    PlasmaState *plasma,OpacityState *opacity,int element,int shell,
+    double epoch,GammaDeposition *gamma);
+/* 같은 전체 전이행렬의 정상해. 초기화 명시/과거 없음이 필요하다. */
+PopulationStatus nlte_element_initial_steady_solve(NLTEConfig *nlte,AtomicData *atom,
     PlasmaState *plasma,OpacityState *opacity,int element,int shell,
     double epoch,GammaDeposition *gamma);
 void nlte_ew_capture_transition(int channel, int target, int source,

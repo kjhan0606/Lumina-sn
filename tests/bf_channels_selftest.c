@@ -272,6 +272,39 @@ static int terminal_check(void){
           near(captured.energy.internal_energy_atom_erg[0],(8+16.35+33.49)*EV_TO_ERG,1e-13),
           "actual history capture retains terminal and internal energy");
     nlte_physical_history_free(&captured);
+    /* 초기 정상해는 실제 과거 없이 동일한 raw 전이율을 쓴다. 시간해의 큰
+     * dt 근사가 아니다. terminal까지 3단계 해석적 birth/death 균형과 비교한다. */
+    p.physical_history=NULL;p.initial_steady_nlte=1;
+    for(int b=0;b<NB;b++){J[b]=1e-8;valid[b]=RADIATION_FIELD_VALID;}
+    for(int r=0;r<2;r++){
+        CHECK(!nlte_bf_channel_rates(&n,&a,r,r,0,T[0],ne[0],up+r,down+r,&cu,&cd),"steady channel rates");
+        const DRCoefficient *dr=dr_lookup(14,r+2);
+        down[r]+=dr?dr_alpha_eval(dr,T[0])*ne[0]:0;
+    }
+    double r0=(up[0]+2)/down[0],r1=(up[1]+2)/down[1];
+    double norm=1+r0+r0*r1,eq[3]={1/norm,r0/norm,r0*r1/norm};
+    CHECK(nlte_element_initial_steady_solve(&n,&a,&p,&op,0,0,2,&gd)==POP_OK,"terminal steady actual solve");
+    for(int i=0;i<3;i++)CHECK(near(ions[i],eq[i],2e-12),"stationary terminal analytic balance");
+    CHECK(!nlte_time_core_selftest_solve(&n,&a,&p,&op,2,&gd),"steady actual private core");
+    for(int i=0;i<3;i++)CHECK(near(ions[i],eq[i],2e-12),"steady core did not pair rescale");
+    double keep[3];memcpy(keep,ions,sizeof keep);
+    p.physical_history=&h;
+    CHECK(nlte_element_initial_steady_solve(&n,&a,&p,&op,0,0,2,&gd)!=POP_OK&&
+          nlte_element_time_solve(&n,&a,&p,&op,0,0,2,&gd)!=POP_OK&&
+          !memcmp(keep,ions,sizeof keep),"conflicting steady/history preserved");
+    p.physical_history=NULL;
+    n.radfield_view_status=RADIATION_FIELD_VIEW_DISABLED;
+    CHECK(nlte_time_core_selftest_solve(&n,&a,&p,&op,2,&gd)!=0&&
+          !memcmp(keep,ions,sizeof keep),"steady invalid radiation rollback");
+    n.radfield_view_status=RADIATION_FIELD_VIEW_OK;
+    p.initial_steady_nlte=0;
+    CHECK(nlte_time_core_selftest_solve(&n,&a,&p,&op,2,&gd)!=0&&
+          !memcmp(keep,ions,sizeof keep),"v2 legacy pair route still refused");
+    p.initial_steady_nlte=1;abund[0]=0;
+    CHECK(nlte_element_initial_steady_solve(&n,&a,&p,&op,0,0,2,&gd)==POP_OK&&
+          ions[0]==0&&ions[1]==0&&ions[2]==0&&pops[0]==0&&pops[1]==0,"exact zero abundance");
+    CHECK(T[0]==1e4,"initial prescribed T preserved");
+    printf("[BF-CHANNELS] INITIAL_STEADY_PASS n0=%.17g n1=%.17g terminal=%.17g actual_core=1 history=NONE\n",keep[0],keep[1],keep[2]);
     printf("[BF-CHANNELS] TERMINAL_PASS n0=%.17g n1=%.17g terminal=%.17g history=PASS core=PASS continuum_bins=%d\n",savedion[0],savedion[1],savedion[2],checked);
     bf_set_nlte_pops(NULL);bf_opacity_free(&bf);gamma_deposition_free(&gd);free_bf_channels(a.bf_channels);
     return 0;

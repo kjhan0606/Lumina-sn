@@ -70,6 +70,54 @@ int main(void){
     for(int s=0;s<NS;s++){ri[s]=ve[s]*newtime;ro[s]=ve[s+1]*newtime;}
     Geometry g={0};g.n_shells=NS;g.time_explosion=newtime;g.r_inner=ri;g.r_outer=ro;g.v_inner=ve;g.v_outer=ve+1;
     CMFGENState c={0};CHECK(!cmfgen_init(&c,&g));
+    if(getenv("CMF_TEST_INITIAL")){
+        /* 같은 실제3준위 원자로 정상 초기 NLTE/복사장 공동해를 실행한다.
+         * 과거를 만들거나 시간항을 큰 dt로 줄이지 않는다. */
+        p.initial_steady_nlte=1;
+        unsetenv("LUMINA_NLTE_NE_CLOSURE"); /* 초기화에서는 전하 폐합이 선택 사항이 아니다. */
+        /* 연결 시험의 약한 합성 선이다. 실제50km/s 선의 해상도 검증이 아니다. */
+        setenv("LUMINA_CMF_FINE_PPD","0.13",1);
+        /* 내부/외부 전리에너지원이 없는 순수 재결합 fixture 대신 고정 T의
+         * 열적 충돌 전리와 그 상세균형 역과정도 실제로 푼다. */
+        setenv("LUMINA_NLTE_COLL_ION","1",1);
+        FILE *profile=fopen("initial_T.csv","wx");CHECK(profile);
+        CHECK(fprintf(profile,"# shell T_e\n0 10000\n1 10000\n")>0&&!fclose(profile));
+        profile=fopen("wrong_initial_T.csv","wx");CHECK(profile);
+        CHECK(fprintf(profile,"# shell T_e\n0 10001\n1 10000\n")>0&&!fclose(profile));
+        nlte_update_tau_sobolev(&n,&a,&o,newtime,NS);
+        GammaDeposition gamma={0};gamma_deposition_init(&gamma,NS);double heating[NS]={0};
+        CHECK(!gamma_deposition_publish(&gamma,GAMMA_PROVENANCE_EXTERNAL_FILE,newtime,NULL,NULL,NULL,heating));
+        BFOpacity bf={0};CHECK(!bf_opacity_init_checked(&bf,NS));
+        c.common_obs_n=5;c.common_obs_nu=malloc(5*sizeof(double));CHECK(c.common_obs_nu);
+        for(int i=0;i<5;i++)c.common_obs_nu[i]=nu*(.99+.005*i);
+        CMFInitialNLTEReport report;
+        setenv("LUMINA_FIXED_TE_PROFILE","wrong_initial_T.csv",1);
+        CHECK(cmfgen_solve_initial_nlte(&c,&g,&o,&bf,&p,&n,&a,&gamma,1e4,64,1e-7,&report)==CMF_EPOCH_INVALID);
+        CHECK(T[0]==1e4&&T[1]==1e4&&a.population_committed_generation==1);
+        setenv("LUMINA_FIXED_TE_PROFILE","initial_T.csv",1);
+        CMFTimeEpochStatus status=cmfgen_solve_initial_nlte(&c,&g,&o,&bf,&p,&n,&a,&gamma,1e4,64,1e-7,&report);
+        fprintf(stderr,"INITIAL_COUPLED_RESULT status=%d iterations=%d ne=%.17g/%.17g T=%.17g/%.17g\n",
+                status,report.iterations,ne[0],ne[1],T[0],T[1]);
+        CHECK(status==CMF_EPOCH_OK&&report.converged&&c.common_obs_ready&&report.iterations>1);
+        CHECK(T[0]==1e4&&T[1]==1e4&&!p.physical_history&&!c.time_trial);
+        double up,down,ci,three;
+        CHECK(!nlte_bf_channel_rates(&n,&a,0,0,0,T[0],ne[0],&up,&down,&ci,&three)&&ci>0&&three>0);
+        for(int s=0;s<NS;s++){
+            CHECK(fabs(ne[s]/ions[NS+s]-1)<1e-8);
+            CHECK(fabs((ions[s]+ions[NS+s])/1e8-1)<1e-12);
+            CHECK(fabs((pops[s]+pops[NS+s])/ions[s]-1)<1e-12);
+        }
+        CHECK(!cmfgen_write_common_observer(&c,"initial_spectrum.csv","initial_spectrum.json",
+            n.radfield_view.generation,a.population_committed_generation,p.T_e_generation,o.tau_computed_generation));
+        puts("CMF_INITIAL_COUPLED_SELFTEST_PASS actual_radiation=1 actual_R7=1 fixed_T=1 synthetic_atom=1 time_history=NOT_CAPTURED SN_comparison=0");
+        cmfgen_fine_set_bf_atom(NULL,NULL,NULL,NULL);bf_set_nlte_pops(NULL);
+        cmfgen_free(&c);bf_opacity_free(&bf);gamma_deposition_free(&gamma);
+        a208_publication_free(&o.cpu_opacity);a209_publication_free(&o.cpu_emissivity);
+        a210_publication_free(&p.te_publication);radiation_field_owner_free(&n.radiation_field);
+        line_jbar_qset_free(&q);line_jbar_qset_free(&e);
+        free(n.J_nu);free(o.jbar_line_det);free(o.jbar_line_det_error_upper);free(o.jnu_fine);free(o.nu_fine);
+        return 0;
+    }
     double fine_dlog=(5e6/C_SPEED_OF_LIGHT)/1.3;
     double fine_min=NLTE_NU_MIN*exp(-.5*fine_dlog);
     int fine_bins=(int)ceil(log(LUMINA_RADFIELD_NU_MAX_HZ*exp(.5*fine_dlog)/fine_min)/fine_dlog);

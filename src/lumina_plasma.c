@@ -22086,7 +22086,7 @@ PopulationStatus nlte_ne_closure_implied_ne(
  * longer turn a mismatched post-solve state into an apparently closed one. */
 int nlte_ne_closure_candidate(NLTEPopulationCandidate *candidate,
                               const char *commit_label, FILE *diagnostic) {
-    if (!nlte_ne_closure_enabled()) return 0;
+    if (!nlte_ne_closure_enabled() && !(candidate&&candidate->plasma.initial_steady_nlte)) return 0;
     if (!candidate || !diagnostic || !commit_label ||
         candidate->n_shells == 0 ||
         candidate->n_shells > SIZE_MAX / sizeof(double))
@@ -22305,12 +22305,15 @@ static int nlte_solve_all_impl(
      * pairs share a prior slot; the solve below detects that generically. */
     int pairs[NLTE_PAIR_COUNT][2];
     const char *names[NLTE_PAIR_COUNT];
-    const int time_history = plasma->physical_history != NULL;
-    if(atom->bf_channels&&atom->bf_channels->version>=2&&!time_history){
-        fprintf(stderr,"[NLTE] atomic channel layout requires whole-element time owner\n");
+    const int whole_element = nlte_whole_element_mode(plasma);
+    if((plasma->initial_steady_nlte!=0&&plasma->initial_steady_nlte!=1)||
+       (plasma->initial_steady_nlte&&plasma->physical_history))
+        A2_07_POP_ABORT(POP_FORBIDDEN_FALLBACK);
+    if(atom->bf_channels&&atom->bf_channels->version>=2&&!whole_element){
+        fprintf(stderr,"[NLTE] atomic channel layout requires whole-element owner\n");
         A2_07_POP_ABORT(POP_FORBIDDEN_FALLBACK);
     }
-    int n_pairs = time_history ? 0 : nlte_get_pairs(pairs, names);
+    int n_pairs = whole_element ? 0 : nlte_get_pairs(pairs, names);
 
     int ce_max_iter = 5;
     double ce_threshold = 1e-2;  /* 1% relative convergence on ion totals */
@@ -22327,7 +22330,7 @@ static int nlte_solve_all_impl(
                    "max_iter=%d (element-wide single matrix = residual)\n", ce_max_iter);
     }
 
-    if(time_history){
+    if(whole_element){
         ce_max_iter=64;ce_threshold=1e-8;ce_damping=1;
         if(nlte_ion_lock_active(nlte->current_iter)||coldstart_pin_armed()||
            nlte_per_ion_rescale_active()||nlte_timedep_active())
@@ -22350,7 +22353,7 @@ static int nlte_solve_all_impl(
     /* Allocated only in the explicitly armed Wave-3 lane.  status is per
      * (S/Fe,shell): 1 means the self-tested candidate may replace legacy for
      * this CE pass; -1 means fail-closed and legacy must run. */
-    if (!time_history && nlte_element_wide_config_status() != 0) {
+    if (!whole_element && nlte_element_wide_config_status() != 0) {
         if (solve_diagnostic)
             solve_diagnostic->stage = NLTE_POP_DIAG_STAGE_ELEMENT_WIDE;
         fprintf(stderr, "[EW] invalid gate configuration; solve aborted\n");
@@ -22358,7 +22361,7 @@ static int nlte_solve_all_impl(
         free(old_pops);
         A2_07_POP_ABORT(POP_FORBIDDEN_FALLBACK);
     }
-    int ew_on = !time_history && nlte_element_wide_enabled();
+    int ew_on = !whole_element && nlte_element_wide_enabled();
     int *ew_status = ew_on ? (int *)calloc((size_t)2 * n_shells, sizeof(int)) : NULL;
     if (ew_on && !ew_status) {
         if (solve_diagnostic)
@@ -22433,7 +22436,7 @@ static int nlte_solve_all_impl(
                 double sum = 0.0;
                 for (int l = lev_s; l < lev_e; l++)
                     sum += nlte->nlte_level_populations[l * n_shells + s];
-                if(time_history&&lev_s==lev_e){
+                if(whole_element&&lev_s==lev_e){
                     int ip=find_ion_pop_idx(atom,nlte->nlte_Z[ii],nlte->nlte_ion[ii]);
                     if(ip>=0)sum=atom->ion_number_density[(size_t)ip*n_shells+s];
                 }
@@ -22441,21 +22444,23 @@ static int nlte_solve_all_impl(
             }
         }
 
-        if(time_history){
+        if(whole_element){
             /* 원소별 전체 행렬을 순차 호출한다. capture의 전역 작업공간과
              * 다른 원소의 CE 파트너 인구는 이 소유자만 갱신한다. */
             for(int e=0;e<atom->n_elements;e++){
                 if(lumina_zinert_element_inactive(atom,e,n_shells))continue;
                 for(int s=0;s<n_shells;s++){
-                    PopulationStatus ps=nlte_element_time_solve(
-                        nlte,atom,plasma,opacity,e,s,time_explosion,gamma_dep);
+                    PopulationStatus ps=plasma->initial_steady_nlte?
+                        nlte_element_initial_steady_solve(nlte,atom,plasma,opacity,e,s,time_explosion,gamma_dep):
+                        nlte_element_time_solve(nlte,atom,plasma,opacity,e,s,time_explosion,gamma_dep);
                     if(ps!=POP_OK){
                         if(solve_diagnostic){
                             solve_diagnostic->stage=NLTE_POP_DIAG_STAGE_ELEMENT_WIDE;
                             solve_diagnostic->Z=atom->element_Z[e];
                             solve_diagnostic->shell=s;
                         }
-                        fprintf(stderr,"[NLTE-TIME] Z=%d shell=%d status=%s\n",
+                        fprintf(stderr,"[NLTE-ELEMENT] mode=%s Z=%d shell=%d status=%s\n",
+                            plasma->initial_steady_nlte?"INITIAL_STEADY":"TIME",
                             atom->element_Z[e],s,population_status_name(ps));
                         free(ew_status);free(old_ion_totals);free(old_pops);
                         A2_07_POP_ABORT(ps);
@@ -22727,7 +22732,7 @@ static int nlte_solve_all_impl(
             }
         }
 
-        if(time_history){
+        if(whole_element){
             /* 이온 총량만 같고 들뜬 준위가 변하는 상태를 수렴으로 보지 않는다.
              * 작은 절대 인구도 현재/직전 값의 상대 변화로 확인한다. */
             max_rel_change=0;
@@ -22845,7 +22850,7 @@ static int nlte_solve_all_impl(
     }
 
     /* Probe-B fix (task #29): feed the NLTE-solved ion stage back into opacity. */
-    if(time_history)compute_tau_sobolev(atom,plasma,opacity,time_explosion);
+    if(whole_element)compute_tau_sobolev(atom,plasma,opacity,time_explosion);
     else nlte_writeback_ion_stage(nlte, atom, plasma, opacity, time_explosion,
                              n_shells, pairs, n_pairs);
 
@@ -23041,11 +23046,11 @@ nlte_population_candidate_prepare_ionization_impl(
     /* 시간의존 원소 전체 해법이 이온량과 전하를 함께 결정한다. 여기서
      * 정상상태 BF 사다리를 먼저 풀면 과거 이력과 무관한 인구로 바뀌고,
      * 채널 기반 원자에도 폐기된 단일 단면적 자료를 요구하게 된다. */
-    const int physical_time = plasma->physical_history != NULL;
-    if (!physical_time)
+    const int whole_element = nlte_whole_element_mode(plasma);
+    if (!whole_element)
         pop_djdn_set_xlag_snapshot(ion_before, atom->n_ion_pops, n_shells);
 
-    if (solve_stage_ne && !physical_time) {
+    if (solve_stage_ne && !whole_element) {
         if (compute_electron_density(
                 atom, plasma, rate_nlte, candidate,
                 n_shells, 0) != 0) {
@@ -23068,7 +23073,7 @@ nlte_population_candidate_prepare_ionization_impl(
             }
     }
     PopulationStatus ion_status = POP_OK;
-    if (!physical_time) {
+    if (!whole_element) {
         ion_status = compute_ion_populations(
             atom, plasma, rate_nlte, candidate, n_shells, 0);
         pop_djdn_clear_xlag_snapshot();
@@ -23339,9 +23344,9 @@ NLTEPopulationCandidateStatus nlte_population_candidate_produce_tau_source(
 
     int pairs[NLTE_PAIR_COUNT][2];
     const char *names[NLTE_PAIR_COUNT];
-    int n_pairs = candidate->plasma.physical_history?0:nlte_get_pairs(pairs, names);
+    int n_pairs = nlte_whole_element_mode(&candidate->plasma)?0:nlte_get_pairs(pairs, names);
     (void)names;
-    if(!candidate->plasma.physical_history)nlte_writeback_ion_stage(
+    if(!nlte_whole_element_mode(&candidate->plasma))nlte_writeback_ion_stage(
         &candidate->nlte, &candidate->atom, &candidate->plasma,
         &candidate->opacity, time_explosion, (int)candidate->n_shells,
         pairs, n_pairs);
@@ -23553,9 +23558,11 @@ static NLTEPopulationCandidateStatus nlte_population_candidate_build_bundle_body
     if (!candidate || !request)
         return NLTE_CANDIDATE_INVALID_ARGUMENT;
     NLTEPopulationCandidateStatus status;
+    const int require_ne=nlte_ne_closure_enabled()||
+        (request->public_plasma&&request->public_plasma->initial_steady_nlte);
     if (prescribed_ne) {
         /* Coupled T_e/n_e root: one core solve at the caller's n_e. */
-        if (!nlte_ne_closure_enabled()) {
+        if (!require_ne) {
             memset(candidate, 0, sizeof(*candidate));
             candidate->status = NLTE_CANDIDATE_INVALID_ARGUMENT;
             return candidate->status;
@@ -23565,7 +23572,7 @@ static NLTEPopulationCandidateStatus nlte_population_candidate_build_bundle_body
         if (status != NLTE_CANDIDATE_OK) return status;
         candidate->ne_closure_active = 1;
         candidate->ne_closure_iterations = 0;
-    } else if (!nlte_ne_closure_enabled()) {
+    } else if (!require_ne) {
         /* Gate-off is the original single stage-only n_e + pair solve. */
         status = nlte_population_candidate_prepare_through_core(
             candidate, request, NULL);
@@ -23818,6 +23825,7 @@ static int candidate_material_commit_preflight(
        !candidate->adiabatic_active||candidate->n_shells<2||
        (!candidate->adiabatic==!candidate->time_work)||
        candidate->plasma.physical_history!=plasma->physical_history||
+       candidate->plasma.initial_steady_nlte!=plasma->initial_steady_nlte||
        (!!candidate->time_work!=!!plasma->physical_history)||
        plasma->n_shells<=0||(size_t)plasma->n_shells!=candidate->n_shells||
        opacity->n_shells!=plasma->n_shells||

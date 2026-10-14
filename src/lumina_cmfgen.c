@@ -11907,16 +11907,21 @@ done:
     xshell_capture_free(&x);cmfgen_free(&tmp);cmfgen_free(&prod);return rc;
 }
 
-int cmfgen_time_radiation_publish(CMFGENState *cs,Geometry *geo,OpacityState *opac,
+static int cmfgen_physical_radiation_publish(CMFGENState *cs,Geometry *geo,OpacityState *opac,
     BFOpacity *bf,PlasmaState *plasma,NLTEConfig *nlte,AtomicData *atom,
-    double T_inner,int observer)
+    double T_inner,int observer,int initial)
 {
-    if(!cs||!geo||!opac||!bf||!plasma||!nlte||!atom||!cs->time_trial||
-       !cs->time_trial->old||!plasma->physical_history||!opac->tau_sobolev||
+    if(!cs||!geo||!opac||!bf||!plasma||!nlte||!atom||!opac->tau_sobolev||
        opac->n_lines<=0||cs->n_shells<=0||cs->n_bins<=0||
        cs->n_shells!=geo->n_shells||opac->n_shells!=cs->n_shells||
        !nlte->line_qset||!nlte->line_eset)return -1;
-    cs->common_obs_ready=0;cs->time_trial->report.converged=0;
+    if(initial){
+        if(plasma->initial_steady_nlte!=1||plasma->physical_history||cs->time_trial)return -1;
+    }else{
+        if(!cs->time_trial||!cs->time_trial->old||!plasma->physical_history||plasma->initial_steady_nlte)return -1;
+        cs->time_trial->report.converged=0;
+    }
+    cs->common_obs_ready=0;
     int common=0;
     if(cmf_optional_binary_env("LUMINA_CMF_COMMON_FIELD",&common)||!common)return -1;
     const LineJbarQSet *q=nlte->line_qset,*e=nlte->line_eset;
@@ -11949,6 +11954,15 @@ int cmfgen_time_radiation_publish(CMFGENState *cs,Geometry *geo,OpacityState *op
         cs->S_fixed,cs->J,cs->nu,cs->dnu,cs->lambda_star,plasma->T_e,
         cs->chi_line,cs->chi_line_cls,cs->n_shells,cs->n_bins);
     return 0;
+}
+
+int cmfgen_time_radiation_publish(CMFGENState *cs,Geometry *g,OpacityState *o,
+    BFOpacity *b,PlasmaState *p,NLTEConfig *n,AtomicData *a,double t,int observer){
+    return cmfgen_physical_radiation_publish(cs,g,o,b,p,n,a,t,observer,0);
+}
+int cmfgen_initial_radiation_publish(CMFGENState *cs,Geometry *g,OpacityState *o,
+    BFOpacity *b,PlasmaState *p,NLTEConfig *n,AtomicData *a,double t,int observer){
+    return cmfgen_physical_radiation_publish(cs,g,o,b,p,n,a,t,observer,1);
 }
 
 int cmfgen_run(Geometry *geo, OpacityState *opac, BFOpacity *bf,

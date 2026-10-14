@@ -17,7 +17,7 @@ source /opt/ohpc/admin/lmod/lmod/init/bash
 module purge
 module load gnu13/13.2.0
 export OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1
-unset CMF_TEST_CENTER
+unset CMF_TEST_CENTER CMF_TEST_INITIAL
 while read -r history_key; do unset "$history_key"; done < <(compgen -v LUMINA_ || true)
 history_src=/home/kjhan/BACKUP/Eunha.A1/Claude/Lumina-sn-timedep-20261015
 history_out=/gpfs/kjhan/lumina/cmfgen_map/trace13_20261010/results/history-${SLURM_JOB_ID}
@@ -37,6 +37,7 @@ case "$history_mode" in
  regression) ;;
  coupled) history_tests=(cmf_time_coupled) ;;
  coupled-center) history_tests=(cmf_time_coupled); export CMF_TEST_CENTER=1 ;;
+ initial) history_tests=(cmf_time_coupled); export CMF_TEST_CENTER=1 CMF_TEST_INITIAL=1 ;;
  *) exit 2 ;;
 esac
 history_files=(scripts/run_cmf_history_selftest.slurm src/*.h)
@@ -79,7 +80,7 @@ for history_test in "${history_tests[@]}"; do
   -o "$history_out/$history_test" >> "$history_out/build.log" 2>&1
  (cd "$history_out"; "./$history_test" > "$history_test.log" 2> "$history_test.err")
 done
-if [[ "$history_mode" == coupled || "$history_mode" == coupled-center ]]; then
+if [[ "$history_mode" != regression ]]; then
  sha256sum -c "$history_out/source.sha256" > "$history_out/source_verify.log"
  exit 0
 fi

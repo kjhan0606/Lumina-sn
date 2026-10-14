@@ -45,6 +45,19 @@ CMFTimeEpochStatus cmfgen_solve_time_epoch(CMFGENState*,Geometry*,OpacityState*,
 int cmfgen_time_radiation_publish(CMFGENState*,Geometry*,OpacityState*,BFOpacity*,
     PlasmaState*,NLTEConfig*,AtomicData*,double T_inner,int observer);
 
+/* 입력 온도 고정 정상 초기해. LUMINA_FIXED_TE_PROFILE은 입력 hydro T를
+ * 담아야 하며 목표 시점의 T가 아니다. 성공은 초기 NLTE/복사장 공동 수렴만
+ * 뜻한다. 시간 이력의 면 H 캡처/팽창 운전은 별도로 연결해야 한다. */
+typedef struct {
+    int iterations,radiation_calls,converged;
+    double tolerance,electron_update,population_update,radiation_update;
+} CMFInitialNLTEReport;
+CMFTimeEpochStatus cmfgen_solve_initial_nlte(CMFGENState*,Geometry*,OpacityState*,BFOpacity*,
+    PlasmaState*,NLTEConfig*,AtomicData*,GammaDeposition*,double T_inner,
+    int iteration_cap,double tolerance,CMFInitialNLTEReport*);
+int cmfgen_initial_radiation_publish(CMFGENState*,Geometry*,OpacityState*,BFOpacity*,
+    PlasmaState*,NLTEConfig*,AtomicData*,double T_inner,int observer);
+
 /* R6와 물질 에너지 소비부가 동일한 시간장 의미를 확인한다. 정상장 오차
  * 인증을 요구하거나 시간장의 반복 차이를 오차 상계로 승격하지 않는다. */
 static inline int cmf_time_line_field_qualified(const OpacityState *o,double old,double now){

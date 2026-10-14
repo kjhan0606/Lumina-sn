@@ -59,6 +59,79 @@ static double flux_update(const double *ja,const double *jb,const double *ha,
     return result;
 }
 
+CMFTimeEpochStatus cmfgen_solve_initial_nlte(CMFGENState *cs,Geometry *g,OpacityState *o,
+    BFOpacity *bf,PlasmaState *p,NLTEConfig *n,AtomicData *a,GammaDeposition *gamma,
+    double T_inner,int cap,double tol,CMFInitialNLTEReport *out){
+    CMFInitialNLTEReport rep={0};rep.tolerance=tol;
+    rep.electron_update=rep.population_update=rep.radiation_update=INFINITY;
+    if(out)*out=rep;
+    if(cs)cs->common_obs_ready=0;
+    if(!cs||!g||!o||!bf||!p||!n||!a||!gamma||!out||cap<1||!(tol>0&&tol<1)||
+       !isfinite(tol)||!(T_inner>0)||!isfinite(T_inner)||cs->time_trial||p->physical_history||
+       p->initial_steady_nlte!=1||!getenv("LUMINA_FIXED_TE_PROFILE")||
+       !p->T_e||!p->n_electron||!a->ion_number_density||!a->ion_pop_stage||!n->nlte_level_populations||
+       p->n_shells<2||p->n_shells!=g->n_shells||cs->n_shells!=p->n_shells||o->n_shells!=p->n_shells||
+       a->n_ion_pops<1||n->n_nlte_levels_total<1||
+       gamma_deposition_require(gamma,g->time_explosion)!=GAMMA_PUBLICATION_OK)return CMF_EPOCH_INVALID;
+    size_t ns=p->n_shells,ni=a->n_ion_pops,nl=n->n_nlte_levels_total;
+    /* 잘못된 파일이 첫 material 게시에서 입력 온도를 바꾸지 않도록 선확인한다. */
+    double *profile=NULL,tmin=0,tmax=0;char hash[65];
+    const char *reason=a210_fixed_te_profile_load(getenv("LUMINA_FIXED_TE_PROFILE"),ns,
+                                                &profile,hash,&tmin,&tmax);
+    if(reason||!profile){free(profile);return CMF_EPOCH_INVALID;}
+    int same=!memcmp(profile,p->T_e,ns*sizeof(double));free(profile);
+    if(!same)return CMF_EPOCH_INVALID;
+    if(ni>SIZE_MAX-nl-2||(ni+nl+2)>SIZE_MAX/ns/sizeof(double))return CMF_EPOCH_ALLOCATION;
+    double *saved=malloc((ni+nl+2)*ns*sizeof(double)),*j=NULL;
+    if(!saved)return CMF_EPOCH_ALLOCATION;
+    double *te=saved,*ne=te+ns,*ions=ne+ns,*levels=ions+ni*ns;
+    memcpy(te,p->T_e,ns*sizeof(double));
+    CMFTimeEpochStatus status=CMF_EPOCH_RADIATION;
+    rep.radiation_calls++;
+    if(cmfgen_initial_radiation_publish(cs,g,o,bf,p,n,a,T_inner,0)||
+       o->n_fine<2||!o->jnu_fine||!o->nu_fine)goto initial_done;
+    size_t nb=o->n_fine;
+    if(nb>SIZE_MAX/ns/sizeof(double)){status=CMF_EPOCH_ALLOCATION;goto initial_done;}
+    j=malloc(ns*nb*sizeof(double));
+    if(!j){status=CMF_EPOCH_ALLOCATION;goto initial_done;}
+    for(int it=0;it<cap;it++){
+        memcpy(ne,p->n_electron,ns*sizeof(double));memcpy(ions,a->ion_number_density,ni*ns*sizeof(double));
+        memcpy(levels,n->nlte_level_populations,nl*ns*sizeof(double));memcpy(j,o->jnu_fine,ns*nb*sizeof(double));
+        n->current_iter=it;
+        if(lumina_r7_publish_and_solve_te(o,bf,a,p,n,gamma,g->time_explosion,(int)ns,1,"DET-INITIAL",it)||
+           p->te_publication.te_lane!=A210_TE_LANE_FIXED_T||p->te_publication.re_root_required||
+           memcmp(te,p->T_e,ns*sizeof(double))||p->physical_history||p->initial_steady_nlte!=1){
+            status=CMF_EPOCH_MATERIAL;goto initial_done;
+        }
+        rep.iterations=it+1;rep.electron_update=update(ne,p->n_electron,ns);
+        rep.population_update=fmax(update(ions,a->ion_number_density,ni*ns),update(levels,n->nlte_level_populations,nl*ns));
+        rep.radiation_calls++;
+        if(cmfgen_initial_radiation_publish(cs,g,o,bf,p,n,a,T_inner,0)||
+           o->n_fine!=(int)nb||!o->jnu_fine){status=CMF_EPOCH_RADIATION;goto initial_done;}
+        rep.radiation_update=update(j,o->jnu_fine,ns*nb);
+        fprintf(stderr,"[CMF-INITIAL] epoch=%.17g iteration=%d ne=%.9g population=%.9g J=%.9g tolerance=%.9g T=INPUT_FIXED\n",
+            g->time_explosion,it+1,rep.electron_update,rep.population_update,rep.radiation_update,tol);
+        if(rep.electron_update<tol&&rep.population_update<tol&&rep.radiation_update<tol){
+            for(size_t s=0;s<ns;s++){
+                double charge=0;
+                for(size_t i=0;i<ni;i++)charge+=a->ion_pop_stage[i]*a->ion_number_density[i*ns+s];
+                if(!(charge>0)||!isfinite(charge)||fabs(p->n_electron[s]/charge-1)>1e-8){
+                    status=CMF_EPOCH_MATERIAL;goto initial_done;
+                }
+            }
+            memcpy(j,o->jnu_fine,ns*nb*sizeof(double));rep.radiation_calls++;
+            if(cmfgen_initial_radiation_publish(cs,g,o,bf,p,n,a,T_inner,1)||!cs->common_obs_ready||
+               o->n_fine!=(int)nb||!o->jnu_fine){status=CMF_EPOCH_RADIATION;goto initial_done;}
+            if(update(j,o->jnu_fine,ns*nb)>=tol){status=CMF_EPOCH_NOT_CONVERGED;goto initial_done;}
+            rep.converged=1;status=CMF_EPOCH_OK;goto initial_done;
+        }
+    }
+    status=CMF_EPOCH_NOT_CONVERGED;
+initial_done:
+    if(status!=CMF_EPOCH_OK)cs->common_obs_ready=0;
+    *out=rep;free(saved);free(j);return status;
+}
+
 CMFTimeEpochStatus cmfgen_solve_time_epoch(CMFGENState *cs,Geometry *g,OpacityState *o,
     BFOpacity *bf,PlasmaState *p,NLTEConfig *n,AtomicData *a,GammaDeposition *gamma,
     double T_inner,int cap,double tol,CMFPhysicalTimeState *next,CMFTimeEpochReport *out){
@@ -70,7 +143,7 @@ CMFTimeEpochStatus cmfgen_solve_time_epoch(CMFGENState *cs,Geometry *g,OpacitySt
     if(!cs||!g||!o||!bf||!p||!n||!a||!gamma||!next||!out||cap<1||
        !(tol>0&&tol<1)||!isfinite(tol)||!(T_inner>0)||!isfinite(T_inner)||
        !cs->time_trial||!cs->time_trial->old||!cs->time_trial->inner_H||
-       !p->physical_history||!p->rho||!p->T_e||!p->n_electron||
+       !p->physical_history||p->initial_steady_nlte||!p->rho||!p->T_e||!p->n_electron||
        !a->ion_number_density||!a->ion_pop_Z||!a->ion_pop_stage||
        !n->nlte_level_populations||!n->nlte_to_global_level||
        a->n_ion_pops<=0||n->n_nlte_levels_total<=0||p->n_shells<2||getenv("LUMINA_FIXED_TE_PROFILE")||

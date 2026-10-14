@@ -2107,13 +2107,14 @@ static double ew_permutation_check(const double *A, const double *b, int N,
     free(perm);free(Ap);free(bp);free(xp);free(xu); return worst;
 }
 
-/* D7 hot/cold audit: rebuild channel planes from the current lagged
- * populations without solving or touching the production capture buffers. */
-PopulationStatus nlte_element_time_solve(NLTEConfig *nlte,AtomicData *atom,
+/* 시간 단계와 정상 초기화가 같은 원소 전체 생성행렬을 소비한다. */
+static PopulationStatus element_physical_solve(NLTEConfig *nlte,AtomicData *atom,
     PlasmaState *plasma,OpacityState *opacity,int element,int shell,
-    double epoch,GammaDeposition *gamma)
+    double epoch,GammaDeposition *gamma,int steady)
 {
-    if(!nlte||!atom||!plasma||!opacity||!plasma->physical_history||
+    if(!nlte||!atom||!plasma||!opacity||
+       (steady?(plasma->initial_steady_nlte!=1||plasma->physical_history):
+               (!plasma->physical_history||plasma->initial_steady_nlte))||
        element<0||element>=atom->n_elements||shell<0||shell>=plasma->n_shells||
        !atom->elem_ion_offset||!atom->element_Z||!atom->ion_pop_stage||!atom->ion_pop_Z||
        !atom->element_mass_amu||!atom->abundances||!atom->ion_number_density||
@@ -2167,6 +2168,8 @@ PopulationStatus nlte_element_time_solve(NLTEConfig *nlte,AtomicData *atom,
         if(!pair||!rhs){free(pair);free(rhs);goto time_element_done;}
         ew_capture_begin(nlte,atom,shell,ns,lo,np,N,
             nlte->nlte_ion_super_offset[lo]-sl0,k>0,planes,ledgers);
+        /* 역사적 이름 time_history는 raw 전체 행렬/CE 포획을 뜻한다.
+         * 시간항은 여기 넣지 않고 아래에서 시간/정상 소유자가 선택한다. */
         ew_cap.time_history=1;
         if(terminal_pair)ew_cap.terminal_ion=terminal;
         int rc=nlte_assemble_rate_matrix(nlte,atom,plasma,opacity,lo,hi,shell,
@@ -2180,8 +2183,17 @@ PopulationStatus nlte_element_time_solve(NLTEConfig *nlte,AtomicData *atom,
             status=POP_ATOMIC_MISSING;goto time_element_done;
         }
     }
-    status=nlte_physical_history_solve_element(nlte,atom,plasma,(size_t)shell,
-        epoch,(size_t)sl0,(size_t)N,terminal,A,x);
+    if(steady){
+        PopulationGeneratorSolveDiagnostic diagnostic={0};
+        if(total==0){memset(x,0,(size_t)N*sizeof(*x));status=POP_OK;}
+        else{
+            status=population_generator_stationary_gth(A,(size_t)N,total,x,&diagnostic);
+            if(status==POP_OK&&!diagnostic.generator_recognized)status=POP_SOLVE_FAILED;
+        }
+    }else{
+        status=nlte_physical_history_solve_element(nlte,atom,plasma,(size_t)shell,
+            epoch,(size_t)sl0,(size_t)N,terminal,A,x);
+    }
     if(status!=POP_OK)goto time_element_done;
     for(int k=0;k<count;k++)
         for(int fl=nlte->nlte_ion_level_offset[first+k];fl<nlte->nlte_ion_level_offset[first+k+1];fl++){
@@ -2201,6 +2213,15 @@ PopulationStatus nlte_element_time_solve(NLTEConfig *nlte,AtomicData *atom,
     for(int k=0;k<count;k++)atom->ion_number_density[(size_t)(ip0+k)*ns+shell]=ions[k];
 time_element_done:
     free(A);free(outflow);free(x);free(full);free(ions);return status;
+}
+
+PopulationStatus nlte_element_time_solve(NLTEConfig *n,AtomicData *a,PlasmaState *p,
+    OpacityState *o,int e,int s,double epoch,GammaDeposition *g){
+    return element_physical_solve(n,a,p,o,e,s,epoch,g,0);
+}
+PopulationStatus nlte_element_initial_steady_solve(NLTEConfig *n,AtomicData *a,PlasmaState *p,
+    OpacityState *o,int e,int s,double epoch,GammaDeposition *g){
+    return element_physical_solve(n,a,p,o,e,s,epoch,g,1);
 }
 
 static int ew_rebuild_matrix(NLTEConfig *nlte, AtomicData *atom,
