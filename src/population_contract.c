@@ -818,6 +818,98 @@ done:
     return status;
 }
 
+PopulationStatus population_generator_implicit_step(
+    const double *generator,size_t n,const double *old,double density_ratio,
+    double dt,double *solution,PopulationGeneratorSolveDiagnostic *diagnostic)
+{
+    PopulationGeneratorSolveDiagnostic local;
+    if(!diagnostic)diagnostic=&local;
+    memset(diagnostic,0,sizeof(*diagnostic));
+    diagnostic->input_column_relative_error=INFINITY;
+    diagnostic->exact_generator_componentwise_residual=INFINITY;
+    if(!generator||!old||!solution||!n||n>SIZE_MAX/n||
+       n*n>SIZE_MAX/sizeof(long double)||n>SIZE_MAX/(4*sizeof(long double))||
+       !(dt>0)||!isfinite(dt)||!(density_ratio>0)||!isfinite(density_ratio))
+        return POP_SOLVE_FAILED;
+    long double worst=0,expected=0,inv_dt=1.0L/(long double)dt;
+    for(size_t j=0;j<n;j++){
+        double diagonal=POP_CM(generator,n,j,j);
+        if(!isfinite(diagonal)||!isfinite(old[j]))return POP_NONFINITE;
+        if(diagonal>0||old[j]<0)return POP_SOLVE_FAILED;
+        expected+=(long double)density_ratio*old[j];
+        long double outgoing=0;
+        for(size_t i=0;i<n;i++)if(i!=j){
+            double rate=POP_CM(generator,n,i,j);
+            if(!isfinite(rate))return POP_NONFINITE;
+            if(rate<0)return POP_SOLVE_FAILED;
+            outgoing+=rate;
+        }
+        long double scale=fmaxl(outgoing,fabsl(diagonal));
+        long double error=scale?fabsl(outgoing+diagonal)/scale:0;
+        if(error>worst)worst=error;
+    }
+    diagnostic->input_column_relative_error=(double)worst;
+    if(worst>POP_GENERATOR_COLUMN_ERROR_LIMIT)return POP_SOLVE_FAILED;
+    diagnostic->generator_recognized=1;
+    long double *rate=calloc(n*n,sizeof(*rate)),*storage=calloc(4*n,sizeof(*storage));
+    double *result=malloc(n*sizeof(*result));
+    if(!rate||!storage||!result){free(rate);free(storage);free(result);return POP_SOLVE_FAILED;}
+    long double *leak=storage,*rhs=storage+n,*pivot=storage+2*n,*x=storage+3*n;
+    PopulationStatus status=POP_OK;
+    for(size_t j=0;j<n;j++){
+        leak[j]=inv_dt;rhs[j]=(long double)density_ratio*old[j]*inv_dt;
+        for(size_t i=0;i<n;i++)if(i!=j)rate[j*n+i]=POP_CM(generator,n,i,j);
+    }
+    /* 모두 양의 항으로 Schur 보완을 계산한다.
+     * 각 열의 유출률과 독립 leak을 보존하므로 매우 큰 전이율에서도
+     * 작은 1/dt가 대각 차감으로 사라지지 않는다. */
+    for(size_t k=0;k<n;k++){
+        pivot[k]=leak[k];
+        for(size_t i=k+1;i<n;i++)pivot[k]+=rate[k*n+i];
+        if(!(pivot[k]>0)||!isfinite(pivot[k])){status=POP_NONFINITE;goto done_time;}
+        for(size_t j=k+1;j<n;j++){
+            long double factor=rate[j*n+k]/pivot[k];
+            leak[j]+=factor*leak[k];
+            for(size_t i=k+1;i<n;i++)if(i!=j)
+                rate[j*n+i]+=factor*rate[k*n+i];
+        }
+        for(size_t i=k+1;i<n;i++)rhs[i]+=rate[k*n+i]/pivot[k]*rhs[k];
+    }
+    for(size_t k=n;k-->0;){
+        long double value=rhs[k];
+        for(size_t j=k+1;j<n;j++)value+=rate[j*n+k]*x[j];
+        x[k]=value/pivot[k];result[k]=(double)x[k];
+        if(!isfinite(result[k])||result[k]<0){status=POP_NONFINITE;goto done_time;}
+    }
+    {
+        long double total=0;worst=0;
+        double minimum=INFINITY,maximum=0;
+        for(size_t i=0;i<n;i++){
+            total+=result[i];
+            if(result[i]<minimum)minimum=result[i];
+            if(result[i]>maximum)maximum=result[i];
+            long double incoming=(long double)density_ratio*old[i]*inv_dt;
+            long double outgoing=(long double)result[i]*inv_dt;
+            for(size_t j=0;j<n;j++)if(i!=j){
+                incoming+=(long double)POP_CM(generator,n,i,j)*result[j];
+                outgoing+=(long double)POP_CM(generator,n,j,i)*result[i];
+            }
+            long double scale=incoming+outgoing;
+            long double error=scale?fabsl(incoming-outgoing)/scale:0;
+            if(error>worst)worst=error;
+        }
+        diagnostic->minimum_population=minimum;diagnostic->maximum_population=maximum;
+        diagnostic->exact_generator_componentwise_residual=(double)worst;
+        if(!isfinite(total)||!isfinite(expected)||worst>POP_GENERATOR_RESIDUAL_LIMIT||
+           (expected?fabsl(total-expected)/expected>1e-12L:total!=0)){
+            status=POP_SOLVE_FAILED;goto done_time;
+        }
+    }
+    memcpy(solution,result,n*sizeof(*result));
+done_time:
+    free(rate);free(storage);free(result);return status;
+}
+
 #undef POP_CM
 
 PopulationStatus population_superlevel_aggregate(

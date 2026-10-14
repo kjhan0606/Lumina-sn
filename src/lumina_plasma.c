@@ -20542,6 +20542,13 @@ static int nlte_assemble_rate_matrix_impl(NLTEConfig *nlte, AtomicData *atom,
         return 0;
     }
 
+    /* 실제 과거 상태를 사용하는 경로는 raw 전이율을 그대로 전달한다.
+     * 아래의 나이=dt 근사, 정규화 행 및 정상상태 제약을 적용하지 않는다. */
+    if (plasma->physical_history) {
+        free(bb_connected);
+        return 0;
+    }
+
     /* ---- Time-dependent ionization: backward-Euler dn_i/dt term (option A) ----
      *
      * Steady-state assumes dn_i/dt = 0, i.e. infinite time to equilibrate, so at
@@ -20958,6 +20965,19 @@ static NLTEIonSolveStatus nlte_solve_ion_shell(NLTEConfig *nlte, AtomicData *ato
                                 int pair_shares_slot,
                                 NLTEIonSolveDetail *detail) {
     nlte_ion_solve_detail_reset(detail);
+    if(plasma->physical_history && (pair_shares_slot ||
+       nlte_ion_lock_active(nlte->current_iter) || coldstart_pin_armed() ||
+       nlte_per_ion_rescale_active() || nlte_timedep_active()))
+        return NLTE_ION_SOLVE_INVALID_LAYOUT;
+    if(plasma->physical_history){
+        /* 현재 단일-pair 시간 소비부는 닫힌 두 이온 계에만 적용한다.
+         * 다른 이온단계를 무시하거나 현재 인구가 0이라고 삭제하지 않는다. */
+        for(int ip=0;ip<atom->n_ion_pops;ip++)
+            if(atom->ion_pop_Z[ip]==nlte->nlte_Z[ion_idx_lo] &&
+               atom->ion_pop_stage[ip]!=nlte->nlte_ion[ion_idx_lo] &&
+               atom->ion_pop_stage[ip]!=nlte->nlte_ion[ion_idx_hi])
+                return NLTE_ION_SOLVE_INVALID_LAYOUT;
+    }
     int zinert = nlte_zinert_pair_exact_zero(
         nlte, atom, plasma, ion_idx_lo, ion_idx_hi, shell);
     if (zinert < 0) return NLTE_ION_SOLVE_INVALID_LAYOUT;
@@ -20975,7 +20995,7 @@ static NLTEIonSolveStatus nlte_solve_ion_shell(NLTEConfig *nlte, AtomicData *ato
     int zero_total = nlte_zero_total_pair_exact_zero(
         nlte, atom, plasma, ion_idx_lo, ion_idx_hi, shell);
     if (zero_total < 0) return NLTE_ION_SOLVE_INVALID_LAYOUT;
-    if (zero_total > 0) {
+    if (zero_total > 0 && !plasma->physical_history) {
         population_counter_note(&nlte->population_counters, POP_EXACT_ZERO);
         if (nlte_solve_effect_allowed(
                 nlte, NLTE_SOLVE_EFFECT_FORENSIC_MATRIX) &&
@@ -21015,7 +21035,7 @@ static NLTEIonSolveStatus nlte_solve_ion_shell(NLTEConfig *nlte, AtomicData *ato
     double *generator_A_cm = NULL;
     double *generator_b = NULL;
     const char *bk_partial_env = getenv("LUMINA_NLTE_BK_PARTIAL");
-    int capture_generator = !nlte_ion_lock_active(nlte->current_iter) &&
+    int capture_generator = !plasma->physical_history && !nlte_ion_lock_active(nlte->current_iter) &&
         !(bk_partial_env && atoi(bk_partial_env) != 0);
     if (capture_generator) {
         generator_A_cm = (double *)malloc((size_t)N * N * sizeof(double));
@@ -21057,7 +21077,23 @@ static NLTEIonSolveStatus nlte_solve_ion_shell(NLTEConfig *nlte, AtomicData *ato
             PopulationStatus generator_status = POP_SOLVE_FAILED;
             PopulationGeneratorSolveDiagnostic generator_diagnostic;
             memset(&generator_diagnostic, 0, sizeof(generator_diagnostic));
-            if (generator_A_cm && generator_b) {
+            if(plasma->physical_history){
+                PopulationStatus time_status=nlte_physical_history_solve_levels(
+                    nlte,atom,plasma,(size_t)shell,time_explosion,
+                    (size_t)super_start,(size_t)N,A_cm,b,&generator_diagnostic);
+                if(time_status==POP_OK){
+                    used_generator=1;
+                    if(detail){
+                        detail->linear_rank=N;detail->equilibration_iterations=0;
+                        detail->refinement_iterations=0;detail->pivot_growth=1;
+                        detail->initial_backward_error=detail->final_backward_error=
+                            generator_diagnostic.exact_generator_componentwise_residual;
+                    }
+                }else{
+                    ret=-1;failure_status=time_status==POP_NONFINITE?
+                        NLTE_ION_SOLVE_NONFINITE:NLTE_ION_SOLVE_LINEAR_FAILED;
+                }
+            }else if (generator_A_cm && generator_b) {
                 int normalization_row = -1;
                 double total_population = NAN;
                 int single_total = 1;
@@ -21268,6 +21304,14 @@ static NLTEIonSolveStatus nlte_solve_ion_shell(NLTEConfig *nlte, AtomicData *ato
                     most_negative = i;
             }
         }
+        if(plasma->physical_history){
+            double expected=nlte_pair_total_density(nlte,atom,plasma,Z_nl,
+                ion_idx_lo,ion_idx_hi,shell);
+            if(!isfinite(expected)||expected<0||!isfinite(vector_sum)||
+               (expected>0?fabs(vector_sum/expected-1)>1e-10:vector_sum!=0)){
+                free(A_cm);free(b);return NLTE_ION_SOLVE_LINEAR_FAILED;
+            }
+        }
         if (negative_count > 0) {
             if (detail) {
                 int super_index = super_start + most_negative;
@@ -21327,7 +21371,11 @@ static NLTEIonSolveStatus nlte_solve_ion_shell(NLTEConfig *nlte, AtomicData *ato
             xfl[i] = b[sl] * f;
         }
 
-        if (lock && n_lo_levels > 0 && n_lo_levels < N_fl) {
+        if(plasma->physical_history){
+            /* 과거 인구로 보존된 해를 정상 stage 총량에 재정규화하지 않는다. */
+            for(int i=0;i<N_fl;i++)
+                nlte->nlte_level_populations[(lev_start+i)*n_shells+shell]=xfl[i];
+        }else if (lock && n_lo_levels > 0 && n_lo_levels < N_fl) {
             double n_lo_total = 0.0, n_hi_total = 0.0;
             int ip_lo = find_ion_pop_idx(atom, Z_nl, nlte->nlte_ion[ion_idx_lo]);
             int ip_hi = find_ion_pop_idx(atom, Z_nl, nlte->nlte_ion[ion_idx_hi]);
@@ -21379,6 +21427,15 @@ static NLTEIonSolveStatus nlte_solve_ion_shell(NLTEConfig *nlte, AtomicData *ato
     free(b);
     return NLTE_ION_SOLVE_OK;
 }
+
+#ifdef LUMINA_TIME_PAIR_SELFTEST
+/* 실제 private pair 소유자를 소형 시험에서 호출한다. 생산 API는 확장하지 않는다. */
+int nlte_time_pair_selftest_solve(NLTEConfig *nlte,AtomicData *atom,
+    PlasmaState *plasma,OpacityState *opacity,double epoch,GammaDeposition *gamma)
+{
+    return nlte_solve_ion_shell(nlte,atom,plasma,opacity,0,1,0,epoch,gamma,0,NULL);
+}
+#endif
 
 /* Update tau_sobolev for NLTE lines using NLTE level populations.
  * Floor the result at the nebular tau already in opacity->tau_sobolev:

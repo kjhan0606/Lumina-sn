@@ -163,6 +163,48 @@ history_done:
     free(energy);nlte_physical_history_free(&trial);return status;
 }
 
+PopulationStatus nlte_physical_history_solve_levels(
+    const NLTEConfig *nlte,const AtomicData *atom,const PlasmaState *plasma,
+    size_t shell,double epoch_s,size_t first,size_t n,
+    const double *generator,double *solution,PopulationGeneratorSolveDiagnostic *diagnostic)
+{
+    if(!nlte||!atom||!plasma||!plasma->physical_history||!plasma->rho||
+       !generator||!solution||!n||n>SIZE_MAX/sizeof(double)||
+       shell>=(size_t)plasma->n_shells||first>SIZE_MAX-n||
+       !nlte->nlte_to_global_level||!nlte->fl_to_super||
+       !atom->ion_pop_Z||!atom->ion_pop_stage)return POP_ATOMIC_MISSING;
+    const NLTEPhysicalHistory *h=plasma->physical_history;
+    size_t ns=(size_t)plasma->n_shells;
+    if(h->energy.n_shells!=ns||h->n_levels!=(size_t)nlte->n_nlte_levels_total||
+       h->n_ions!=(size_t)atom->n_ion_pops||!h->level_density||!h->level_global||
+       !h->energy.density_g_cm3||!h->ion_Z||!h->ion_stage||
+       !isfinite(epoch_s)||!(epoch_s>h->energy.epoch_s)||
+       !(h->energy.epoch_s>0)||!isfinite(h->energy.epoch_s))return POP_ATOMIC_MISSING;
+    if(memcmp(h->level_global,nlte->nlte_to_global_level,h->n_levels*sizeof(int))||
+       memcmp(h->ion_Z,atom->ion_pop_Z,h->n_ions*sizeof(int))||
+       memcmp(h->ion_stage,atom->ion_pop_stage,h->n_ions*sizeof(int)))return POP_ATOMIC_MISSING;
+    double oldrho=h->energy.density_g_cm3[shell],newrho=plasma->rho[shell];
+    if(!(oldrho>0)||!isfinite(oldrho)||!(newrho>0)||!isfinite(newrho))return POP_NONFINITE;
+    double ratio=newrho/oldrho,expected=pow(h->energy.epoch_s/epoch_s,3);
+    if(!(expected>0)||!isfinite(ratio)||fabs(ratio/expected-1)>1e-10)return POP_SOLVE_FAILED;
+    double *old=calloc(n,sizeof(*old));unsigned char *covered=calloc(n,sizeof(*covered));
+    if(!old||!covered){free(old);free(covered);return POP_SOLVE_FAILED;}
+    PopulationStatus status=POP_OK;
+    for(size_t g=0;g<h->n_levels;g++){
+        int sl=nlte->fl_to_super[g];
+        if(sl<0){status=POP_ATOMIC_MISSING;goto time_levels_done;}
+        if((size_t)sl<first||(size_t)sl>=first+n)continue;
+        double value=h->level_density[g*ns+shell];
+        if(value<0||!isfinite(value)){status=POP_NONFINITE;goto time_levels_done;}
+        old[(size_t)sl-first]+=value;covered[(size_t)sl-first]=1;
+    }
+    for(size_t i=0;i<n;i++)if(!covered[i]){status=POP_ATOMIC_MISSING;goto time_levels_done;}
+    status=population_generator_implicit_step(generator,n,old,ratio,
+        epoch_s-h->energy.epoch_s,solution,diagnostic);
+time_levels_done:
+    free(old);free(covered);return status;
+}
+
 static void candidate_bf_free(BFOpacity *bf)
 {
     if (!bf) return;

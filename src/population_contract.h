@@ -208,6 +208,13 @@ PopulationStatus population_generator_stationary_gth(
     double total_population,
     double *solution,
     PopulationGeneratorSolveDiagnostic *diagnostic);
+/* 같은 Lagrange 셸의 실제 과거 인구에 대한 후진 Euler 단계.
+ * (I/dt-A)n_new=(rho_new/rho_old)n_old/dt. 정규화/floor 없이 보존한다.
+ * 실패하면 solution은 바뀌지 않는다. A는 열 우선, A[dest,source]. */
+PopulationStatus population_generator_implicit_step(
+    const double *generator_column_major, size_t n,
+    const double *old_population, double density_ratio, double dt,
+    double *solution, PopulationGeneratorSolveDiagnostic *diagnostic);
 PopulationStatus population_superlevel_aggregate(
     const double *level_population, const int *membership, size_t n_levels,
     size_t n_superlevels, double *super_population);

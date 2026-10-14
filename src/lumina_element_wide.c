@@ -2059,6 +2059,10 @@ static int ew_run_impl(NLTEConfig *nlte, AtomicData *atom,
     if (verdict_pass_out) *verdict_pass_out = 0;
     if (nlte_element_wide_config_status() != 0) return -1;
     if (!nlte_element_wide_matches(Z, shell_label)) return 0;
+    if(plasma && plasma->physical_history){
+        fprintf(stderr,"[EW] physical history requires element-wide time solve; steady substitution refused\n");
+        return -1;
+    }
     const int artifacts_enabled = ew_gate.dump && nlte_solve_effect_allowed(
         nlte, NLTE_SOLVE_EFFECT_DIAGNOSTIC_FILES);
     GammaDepositionPublicationStatus gamma_status=

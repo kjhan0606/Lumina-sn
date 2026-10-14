@@ -35,6 +35,13 @@ NLTEPopulationCandidateStatus nlte_physical_history_capture(
     NLTEPhysicalHistory *history,const NLTEConfig *nlte,const AtomicData *atom,
     const PlasmaState *plasma,double epoch_s);
 void nlte_physical_history_free(NLTEPhysicalHistory *history);
+/* 고정된 과거 full-level 인구를 현재 super-level 맵으로 합산하여 실제
+ * raw 전이율의 시간단계를 푼다. 동일 원자/이온 맵과 동형팽창 셸을 요구한다. */
+PopulationStatus nlte_physical_history_solve_levels(
+    const NLTEConfig *nlte,const AtomicData *atom,const PlasmaState *plasma,
+    size_t shell,double epoch_s,size_t super_start,size_t n_super,
+    const double *generator,double *solution,
+    PopulationGeneratorSolveDiagnostic *diagnostic);
 
 /* Private population-solve failure provenance.  The public A2-07 path does
  * not need or own this state: it is attached only to an all-shell trial so a

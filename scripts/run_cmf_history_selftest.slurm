@@ -30,7 +30,7 @@ history_units=(lumina_transport a2_02c_segment_capture radiation_field bf_rate_j
  cmfgen_adiabatic cmf_exact_sliding cmf_error_envelope cmf_observer nlte_population_candidate
  physics_comparison gpu_physics_contract lumina_plasma lumina_element_wide
  lumina_atomic lumina_cmfgen cmfgen_final_writer a210_coupled_newton)
-history_tests=(nlte_candidate_adiabatic a2_10_radeq cmf_common_field a2_10_seed_commit physics_comparison)
+history_tests=(nlte_candidate_adiabatic a2_10_radeq cmf_common_field a2_10_seed_commit physics_comparison population_time population_time_assembly a2_07_population)
 history_files=(scripts/run_cmf_history_selftest.slurm src/*.h)
 for history_unit in "${history_units[@]}"; do history_files+=("src/$history_unit.c"); done
 for history_test in "${history_tests[@]}"; do history_files+=("tests/${history_test}_selftest.c"); done
@@ -39,7 +39,7 @@ cd "$history_out/source"
 sha256sum "${history_files[@]}" > "$history_out/source.sha256"
 history_objects=()
 for history_unit in "${history_units[@]}"; do
- gcc -O2 -std=gnu11 -D_GNU_SOURCE -fopenmp -ffunction-sections -fdata-sections -Isrc \
+ gcc -O2 -std=gnu11 -D_GNU_SOURCE -DLUMINA_TIME_PAIR_SELFTEST -fopenmp -ffunction-sections -fdata-sections -Isrc \
   -c "src/$history_unit.c" -o "$history_out/objects/$history_unit.o" >> "$history_out/build.log" 2>&1
  history_objects+=("$history_out/objects/$history_unit.o")
 done
@@ -58,4 +58,9 @@ gcc -O1 -g -std=gnu11 -D_GNU_SOURCE -fsanitize=address,undefined -fno-omit-frame
  "${history_san_files[@]}" -Wl,--gc-sections -lm -o "$history_out/history_san" \
  > "$history_out/san-build.log" 2>&1
 (cd "$history_out"; ASAN_OPTIONS=detect_leaks=1 ./history_san > san.log 2> san.err)
+gcc -O1 -g -std=gnu11 -D_GNU_SOURCE -fsanitize=address,undefined -fno-omit-frame-pointer \
+ -ffunction-sections -fdata-sections -Isrc tests/population_time_selftest.c \
+ "${history_san_files[@]}" -Wl,--gc-sections -lm -o "$history_out/population_time_san" \
+ > "$history_out/pop-san-build.log" 2>&1
+(cd "$history_out"; ASAN_OPTIONS=detect_leaks=1 ./population_time_san > pop-san.log 2> pop-san.err)
 sha256sum -c "$history_out/source.sha256" > "$history_out/source_verify.log"
