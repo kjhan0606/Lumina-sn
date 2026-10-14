@@ -32,11 +32,11 @@ def integrate(x,y,low,high):
     return float(np.trapezoid(yy,xx))
 
 
-def physical_profile_at_epoch(path):
+def physical_profile_at_epoch(path, day=DAY):
     """공개 물질 표를 읽는다. 복사장이나 생산 입력으로 바꾸지 않는다."""
     lines = path.read_text().splitlines()
     starts = [i for i,line in enumerate(lines)
-              if line.startswith("#TIME:") and abs(float(line.split()[1])-DAY)<1e-8]
+              if line.startswith("#TIME:") and abs(float(line.split()[1])-day)<1e-8]
     assert len(starts)==1
     start = starts[0]
     assert lines[start+1].startswith("#NVEL:")
