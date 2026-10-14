@@ -266,15 +266,23 @@ class PhotIon:
 
 
 def parse_phot(path: Path) -> PhotIon:
-    """Parse a CMFGEN phot_data_A file. Currently focuses on type 20 (tabulated)."""
+    """CMFGEN phot_data 한 파일을 읽는다(A만이 아니라 B/C도 동일 형식).
+
+    final-state 헤더 에너지는 GET_NUM_PHOT_ROUTES_V1의 실제 cm^-1 해석을
+    보존한다. 상위 이온이 있으면 경로 해석기는 이 헤더 대신 osc 준위를 쓴다.
+    """
     lines = _read_text(path)
     out = PhotIon()
 
     # ---- header ----
     body_start = 0
     for idx, ln in enumerate(lines):
-        v, k = _parse_header_value(ln)
-        if v is None:
+        # 숫자 전용 공통 regex는 final-state 이름/단위/True를 버렸다.
+        # 다른 osc/col 헤더의 해석은 바꾸지 않고 phot에서만 문자열을 보존한다.
+        if '!' not in ln:
+            continue
+        v, k = (part.strip() for part in ln.split('!', 1))
+        if not v:
             continue
         if 'Number of energy levels' in k:
             out.n_levels_listed = int(v)
