@@ -975,7 +975,9 @@ CMFExactStatus cmf_exact_characteristic_apply_positive_bounds(
             invalid = 1;
             break;
         }
-        double depth = (ct + p.a_lam * 4.0) / p.a_drift;
+        /* I_nu along dln(nu)/ds=-a: dI/ds=eta-(chi+3a)I.
+         * S_fixed is eta_fixed/chi, not eta_fixed/(chi+3a). */
+        double depth = (ct + p.a_lam * 3.0) / p.a_drift;
         if (!(depth >= 0.0) || !isfinite(depth)) {
             invalid = 1;
             break;
@@ -989,16 +991,19 @@ CMFExactStatus cmf_exact_characteristic_apply_positive_bounds(
         PositiveRounding rounding = pass < 0 ? POSITIVE_ROUND_LOWER
             : (pass > 0 ? POSITIVE_ROUND_UPPER : POSITIVE_ROUND_NEAREST);
         for (size_t idx = 0; idx < cells; ++idx) {
-            double ratio = chi_tot[idx] > 0.0
-                         ? chi_es[idx] / chi_tot[idx] : 0.0;
+            double extinction = chi_tot[idx] + 3.0 * p.a_lam;
+            double fixed_weight = chi_tot[idx] / extinction;
+            double ratio = chi_es[idx] / extinction;
             if (rounding == POSITIVE_ROUND_NEAREST) {
-                source[idx] = S_fixed[idx] + ratio * input_J[idx];
+                source[idx] = fixed_weight * S_fixed[idx] + ratio * input_J[idx];
                 source_cell[idx] = (1.0 - t1[idx]) * source[idx];
             } else {
-                double scattering;
-                if (positive_multiply_bound(ratio, input_J[idx], rounding,
+                double scattering, fixed;
+                if (positive_multiply_bound(fixed_weight, S_fixed[idx], rounding,
+                                            &fixed) != 0 ||
+                    positive_multiply_bound(ratio, input_J[idx], rounding,
                                             &scattering) != 0 ||
-                    positive_add_bound(S_fixed[idx], scattering, rounding,
+                    positive_add_bound(fixed, scattering, rounding,
                                        &source[idx]) != 0 ||
                     positive_multiply_bound(1.0 - t1[idx], source[idx],
                                             rounding,
@@ -1058,9 +1063,9 @@ static int exact_fill_scattering_source_upper(
     if (!input || !operator_context || n != operator_context->cells)
         return -1;
     for (size_t idx = 0; idx < n; ++idx) {
-        double ratio = operator_context->chi_tot[idx] > 0.0
-                     ? operator_context->chi_es[idx] /
-                       operator_context->chi_tot[idx] : 0.0;
+        double ratio = operator_context->chi_es[idx] /
+            (operator_context->chi_tot[idx] +
+             3.0 * operator_context->problem->a_lam);
         if (positive_multiply_bound(
                 ratio, input[idx], POSITIVE_ROUND_UPPER,
                 &operator_context->source[idx]) != 0 ||
@@ -1122,12 +1127,15 @@ static int exact_componentwise_error_envelope(
                                   ? POSITIVE_ROUND_LOWER
                                   : POSITIVE_ROUND_UPPER;
         for (size_t idx = 0; idx < cells; ++idx) {
-            double ratio = chi_tot[idx] > 0.0
-                         ? chi_es[idx] / chi_tot[idx] : 0.0;
-            double scattering;
-            if (positive_multiply_bound(ratio, J[idx], rounding,
+            double extinction = chi_tot[idx] + 3.0 * p->a_lam;
+            double fixed_weight = chi_tot[idx] / extinction;
+            double ratio = chi_es[idx] / extinction;
+            double scattering, fixed;
+            if (positive_multiply_bound(fixed_weight, S_fixed[idx], rounding,
+                                        &fixed) != 0 ||
+                positive_multiply_bound(ratio, J[idx], rounding,
                                         &scattering) != 0 ||
-                positive_add_bound(S_fixed[idx], scattering, rounding,
+                positive_add_bound(fixed, scattering, rounding,
                                    &source[idx]) != 0 ||
                 positive_multiply_bound(1.0 - t1[idx], source[idx], rounding,
                                         &source_cell[idx]) != 0)
@@ -1306,10 +1314,10 @@ static CMFExactStatus cmf_exact_characteristic_solve_impl(
             invalid = 1;
             dt1[idx] = t1[idx] = 0.0;
         } else {
-            double ratio = ct > 0.0 ? ce / ct : 0.0;
+            double ratio = ce / (ct + 3.0 * p.a_lam);
             if (ratio > max_scattering_ratio)
                 max_scattering_ratio = ratio;
-            double depth = (ct + p.a_lam * 4.0) / p.a_drift;
+            double depth = (ct + p.a_lam * 3.0) / p.a_drift;
             if (!(depth >= 0.0) || !isfinite(depth)) invalid = 1;
             dt1[idx] = depth;
             t1[idx] = exp(-depth);
@@ -1342,8 +1350,10 @@ static CMFExactStatus cmf_exact_characteristic_solve_impl(
 #pragma omp parallel for schedule(static)
 #endif
         for (size_t idx = 0; idx < cells; ++idx) {
-            double ratio = chi_tot[idx] > 0.0 ? chi_es[idx] / chi_tot[idx] : 0.0;
-            source[idx] = S_fixed[idx] + ratio * J[idx];
+            double extinction = chi_tot[idx] + 3.0 * p.a_lam;
+            double fixed_weight = chi_tot[idx] / extinction;
+            double ratio = chi_es[idx] / extinction;
+            source[idx] = fixed_weight * S_fixed[idx] + ratio * J[idx];
             source_cell[idx] = (1.0 - t1[idx]) * source[idx];
         }
 

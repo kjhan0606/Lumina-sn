@@ -35,7 +35,7 @@ typedef struct {
     double final_max_relative_change;
     double final_max_absolute_change;
     /* Conservative infinity-norm qualification.  The formal lambda operator
-     * has row sum <=1, so max(chi_es/chi_tot) is an upper bound on the fixed-
+     * has row sum <=1, so max(chi_es/(chi_tot+3/(ct))) bounds the fixed-
      * point iteration norm.  A finite error bound is published only below 1. */
     double max_scattering_ratio;
     double fixed_point_absolute_error_bound;
@@ -58,6 +58,10 @@ typedef struct {
  * The production mode is CMF_EXACT_MODE_SLIDING, O(1) work per output bin.
  * CMF_EXACT_MODE_DIRECT_REFERENCE is an independent O(beta) oracle intended
  * only for small-grid selftests.  J is both the ALI initial state and output.
+ * I_nu obeys dI/ds=eta-(chi_tot+3a)I along dln(nu)/ds=-a,
+ * with a=1/(c*time_explosion). S_fixed=eta_fixed/chi_tot: the solver
+ * applies chi_tot/(chi_tot+3a) to this material source, and
+ * chi_es/(chi_tot+3a) to J. A finite S_fixed at chi_tot=0 emits nothing.
  */
 CMFExactStatus cmf_exact_characteristic_solve(
     int n_shells, int n_bins, double dlognu, const double *nu,

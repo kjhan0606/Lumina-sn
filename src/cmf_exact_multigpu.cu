@@ -1772,9 +1772,10 @@ static CMFMultiGPUStatus solve_impl(
             if (report) *report = local;
             return local.status;
         }
-        double ratio = ct > 0.0 ? ce / ct : 0.0;
+        /* I_nu characteristic: eta-(chi+3a)I; material S=eta/chi. */
+        double ratio = ce / (ct + 3.0 * geometry.a_lam);
         if (ratio > max_ratio) max_ratio = ratio;
-        double depth = (ct + geometry.a_lam * 4.0) / geometry.a_drift;
+        double depth = (ct + geometry.a_lam * 3.0) / geometry.a_drift;
         if (!(depth >= 0.0) || !std::isfinite(depth)) {
             local.status = CMF_MGPU_NONFINITE;
             if (report) *report = local;
@@ -1932,9 +1933,10 @@ static CMFMultiGPUStatus solve_impl(
     for (int iteration = 0; iteration < iteration_cap; ++iteration) {
         double phase_start = monotonic_seconds();
         for (size_t idx = 0; idx < cells; ++idx) {
-            double ratio = chi_tot[idx] > 0.0
-                         ? chi_es[idx] / chi_tot[idx] : 0.0;
-            source[idx] = S_fixed[idx] + ratio * jwork[idx];
+            double extinction = chi_tot[idx] + 3.0 * geometry.a_lam;
+            double fixed_weight = chi_tot[idx] / extinction;
+            double ratio = chi_es[idx] / extinction;
+            source[idx] = fixed_weight * S_fixed[idx] + ratio * jwork[idx];
             if (!(source[idx] >= 0.0) || !std::isfinite(source[idx])) {
                 local.failure_phase = 1;
                 local.failure_iteration = iteration;
@@ -2225,7 +2227,7 @@ static CMFMultiGPUStatus apply_positive_bounds_impl(
             if (report) *report = local;
             return local.status;
         }
-        double depth = (ct + geometry.a_lam * 4.0) / geometry.a_drift;
+        double depth = (ct + geometry.a_lam * 3.0) / geometry.a_drift;
         if (!(depth >= 0.0) || !std::isfinite(depth)) {
             local.status = CMF_MGPU_NONFINITE;
             if (report) *report = local;
@@ -2374,17 +2376,20 @@ static CMFMultiGPUStatus apply_positive_bounds_impl(
     local.deterministic_host_reduction = 1;
     for (int rounding = -1; rounding <= 1; ++rounding) {
         for (size_t idx = 0; idx < cells; ++idx) {
-            double ratio = chi_tot[idx] > 0.0
-                         ? chi_es[idx] / chi_tot[idx] : 0.0;
+            double extinction = chi_tot[idx] + 3.0 * geometry.a_lam;
+            double fixed_weight = chi_tot[idx] / extinction;
+            double ratio = chi_es[idx] / extinction;
             if (rounding == 0) {
-                source[idx] = S_fixed[idx] + ratio * input_J[idx];
+                source[idx] = fixed_weight * S_fixed[idx] + ratio * input_J[idx];
                 source_cell[idx] = (1.0 - t1[idx]) * source[idx];
             } else {
-                double scattering;
+                double scattering, fixed;
                 if (!host_positive_multiply_bound(
+                        fixed_weight, S_fixed[idx], rounding, &fixed) ||
+                    !host_positive_multiply_bound(
                         ratio, input_J[idx], rounding, &scattering) ||
                     !host_positive_add_bound(
-                        S_fixed[idx], scattering, rounding, &source[idx]) ||
+                        fixed, scattering, rounding, &source[idx]) ||
                     !host_positive_multiply_bound(
                         1.0 - t1[idx], source[idx], rounding,
                         &source_cell[idx])) {
@@ -2851,7 +2856,7 @@ struct PersistentBoundContext {
                 allocation_report.status = CMF_MGPU_NONFINITE;
                 return allocation_report.status;
             }
-            double depth = (ct[idx] + geometry.a_lam * 4.0) /
+            double depth = (ct[idx] + geometry.a_lam * 3.0) /
                            geometry.a_drift;
             if (!(depth >= 0.0) || !std::isfinite(depth)) {
                 allocation_report.status = CMF_MGPU_NONFINITE;
@@ -3058,17 +3063,20 @@ struct PersistentBoundContext {
             if (!(fixed[idx] >= 0.0) || !(input[idx] >= 0.0) ||
                 !std::isfinite(fixed[idx]) || !std::isfinite(input[idx]))
                 return CMF_MGPU_NONFINITE;
-            double ratio = chi_tot[idx] > 0.0
-                         ? chi_es[idx] / chi_tot[idx] : 0.0;
+            double extinction = chi_tot[idx] + 3.0 * geometry.a_lam;
+            double fixed_weight = chi_tot[idx] / extinction;
+            double ratio = chi_es[idx] / extinction;
             if (rounding == 0) {
-                source[idx] = fixed[idx] + ratio * input[idx];
+                source[idx] = fixed_weight * fixed[idx] + ratio * input[idx];
                 source_cell[idx] = (1.0 - t1[idx]) * source[idx];
             } else {
-                double scattering;
+                double scattering, material;
                 if (!host_positive_multiply_bound(
+                        fixed_weight, fixed[idx], rounding, &material) ||
+                    !host_positive_multiply_bound(
                         ratio, input[idx], rounding, &scattering) ||
                     !host_positive_add_bound(
-                        fixed[idx], scattering, rounding, &source[idx]) ||
+                        material, scattering, rounding, &source[idx]) ||
                     !host_positive_multiply_bound(
                         1.0 - t1[idx], source[idx], rounding,
                         &source_cell[idx]))
@@ -3326,8 +3334,8 @@ static CMFMultiGPUStatus positive_solve_envelope_impl(
         }
         residual[idx] = std::max(lower_distance, upper_distance);
         if (residual[idx] > max_residual) max_residual = residual[idx];
-        double ratio = chi_tot[idx] > 0.0
-                     ? chi_es[idx] / chi_tot[idx] : 0.0;
+        double ratio = chi_es[idx] /
+            (chi_tot[idx] + 3.0 * persistent.geometry.a_lam);
         if (ratio > max_scattering_ratio) max_scattering_ratio = ratio;
     }
     local.envelope_residual_seconds = monotonic_seconds() - phase_start;

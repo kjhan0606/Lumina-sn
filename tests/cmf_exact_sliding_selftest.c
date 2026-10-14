@@ -195,7 +195,8 @@ int main(void)
     memcpy(es_gain, chi_es, sizeof(es_gain));
     memcpy(j_gain, j_sliding, sizeof(j_gain));
     for (size_t i = 0; i < (size_t)NS * NB; ++i)
-        es_gain[i] = 1.01 * chi_gain[i];
+        /* Gain must exceed the effective I_nu extinction, including 3a. */
+        es_gain[i] = 1.01 * (chi_gain[i] + 3.0 / (texp * 2.99792458e10));
     CMFExactReport gain_report;
     CMFExactStatus gain_status = cmf_exact_characteristic_solve(
         NS, NB, dlog, nu, r_inner, r_outer, texp, 10000.0, 1.0,
