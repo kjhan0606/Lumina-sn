@@ -15,6 +15,11 @@
 set -euo pipefail
 umask 027
 common_build=${1:?cluster build directory required}
+common_vdop=${2:-1000000}
+case "$common_vdop" in
+ 1000000|5000000) ;; # 원래 로컬 덱 / 공개 StaNdaRT CMFGEN의 물리 선폭
+ *) printf 'unsupported physical vdop=%s\n' "$common_vdop" >&2; exit 2 ;;
+esac
 common_src=/home/kjhan/BACKUP/Eunha.A1/Claude/Lumina-sn-common-20261015
 common_original=/gpfs/kjhan/lumina/cmfgen_map/coll_presc_20261009/OMEGA/run1
 common_model=$common_original/input/model
@@ -49,20 +54,21 @@ export LUMINA_CMFGEN_SIGMA_BF=$common_sigma
 export LUMINA_PHYSICS_COMPARISON_DIR=$common_out/work/physics_comparison
 export LUMINA_CMF_COMMON_FIELD=1 LUMINA_CMF_DEP_SOURCE=0 LUMINA_PURE_CMFGEN_ITER=6
 export LUMINA_CMF_FINE_MGPU_DEVICES=1
+export LUMINA_CMF_FINE_VDOP=$common_vdop
 # Sobolev 전용 추적은 공통 Gaussian producer에 적용하지 않는다.
 export LUMINA_A210_LINE_SATURATION_DIAG=0 LUMINA_A210_SPRODUCER_CAPTURE=0
 export LUMINA_A210_INDEPENDENT_CAPTURE=0 LUMINA_DET_OBS_CAPTURE=0 LUMINA_DET_OBS_WRITER=0
 [[ -z ${LUMINA_FIXED_TE_PROFILE+x} && $LUMINA_NLTE_NE_CLOSURE == 1 &&
-   $LUMINA_CMF_FINE_VDOP == 1000000 && $LUMINA_CMF_FINE_PPD == 12 &&
+   $LUMINA_CMF_FINE_VDOP == "$common_vdop" && $LUMINA_CMF_FINE_PPD == 12 &&
    $LUMINA_MODEL_DIR == "$common_model" ]]
 env | LC_ALL=C sort | grep '^LUMINA_' > "$common_out/env_lumina_effective.txt"
-printf 'build=%s\nsource=%s\nCUDA_VISIBLE_DEVICES=%s\n' "$common_build" "$common_src" \
- "${CUDA_VISIBLE_DEVICES:-UNSET}" > "$common_out/identity.txt"
+printf 'build=%s\nsource=%s\nCUDA_VISIBLE_DEVICES=%s\nphysical_vdop_cm_s=%s\n' "$common_build" "$common_src" \
+ "${CUDA_VISIBLE_DEVICES:-UNSET}" "$common_vdop" > "$common_out/identity.txt"
 cp "$common_build/commit.txt" "$common_build/binary.sha256" "$common_out/"
 cd "$common_out/work"
 # 같은 실행 바이너리의 소형 GPU owner 확인. 다른 모델/CPU로 자동 대체하지 않는다.
 LUMINA_CMF_EXACT_OWNER_SELFTEST=1 "$common_bin" > "$common_out/owner.log" 2> "$common_out/owner.err"
-printf 'COMMON1_START time=%s root=%s\n' "$(date -Is)" "$common_out"
+printf 'COMMON_START time=%s root=%s physical_vdop_cm_s=%s\n' "$(date -Is)" "$common_out" "$common_vdop"
 ( ulimit -f 1048576; exec "$common_bin" "$common_model" 1 2 spectrum nlte ) \
  > "$common_out/stdout.log" 2> "$common_out/stderr.log"
 python3 - "$common_out" <<'PY'
@@ -76,7 +82,7 @@ assert obs['material_iteration']==5
 assert obs['material_generation']==final['population_generation']==material['population_generation']
 assert obs['radiation_generation']==material['radiation_generation']+1
 assert obs['outer_convergence_verified'] is False
-print('COMMON1_OUTPUT_IDENTITY_OK population_generation=',obs['material_generation'],
+print('COMMON_OUTPUT_IDENTITY_OK population_generation=',obs['material_generation'],
       'radiation_generation=',obs['radiation_generation'],'physical_agreement=NOT_YET_EVALUATED')
 PY
-printf 'COMMON1_FINISH time=%s physical_agreement=NOT_YET_EVALUATED\n' "$(date -Is)"
+printf 'COMMON_FINISH time=%s physical_agreement=NOT_YET_EVALUATED\n' "$(date -Is)"
