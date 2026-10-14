@@ -32,6 +32,23 @@ def integrate(x,y,low,high):
     return float(np.trapezoid(yy,xx))
 
 
+def physical_profile_at_epoch(path):
+    """공개 물질 표를 읽는다. 복사장이나 생산 입력으로 바꾸지 않는다."""
+    lines = path.read_text().splitlines()
+    starts = [i for i,line in enumerate(lines)
+              if line.startswith("#TIME:") and abs(float(line.split()[1])-DAY)<1e-8]
+    assert len(starts)==1
+    start = starts[0]
+    assert lines[start+1].startswith("#NVEL:")
+    count = int(lines[start+1].split()[1])
+    assert lines[start+2].split()==["#vel_mid[km/s]","temp[K]","rho[gcc]","ne[/cm^3]","natom[/cm^3]"]
+    data = np.array([[float(v) for v in line.split()]
+                     for line in lines[start+3:start+3+count]])
+    assert data.shape==(count,5) and np.isfinite(data).all()
+    assert np.all(data>0) and np.all(np.diff(data[:,0])>0)
+    return data
+
+
 def main():
     assert os.environ.get("SLURM_JOB_ID"), "Slurm 안에서 계산한다"
     config = json.loads((MODEL/"config.json").read_text())
@@ -65,6 +82,24 @@ def main():
     Loutward = float(config["luminosity_inner_erg_s"])
     Lheat = float(heat@volume)
     gross = Loutward+Lheat
+    profile = physical_profile_at_epoch(PUBLIC/"phys_toy06_cmfgen.txt")
+    vin = float(geometry[0]["v_inner"])/1e5
+    vout = float(geometry[-1]["v_outer"])/1e5
+    assert profile[0,0]<=vin<vout<=profile[-1,0]
+    # 자유전자 산란 깊이만 계산한다. 열평형화 깊이·복사 저장·순경계 광도가 아니다.
+    electron_tau = 6.6524587321e-25*config["time_explosion_s"]*1e5*integrate(
+        profile[:,0],profile[:,3],vin,vout)
+    public_T_at_cut = float(np.interp(vin,profile[:,0],profile[:,1]))
+    boundary = dict(public_profile_min_velocity_km_s=float(profile[0,0]),
+        model_inner_face_velocity_km_s=vin,model_outer_face_velocity_km_s=vout,
+        public_gas_temperature_at_model_inner_face_K=public_T_at_cut,
+        model_fixed_outgoing_blackbody_temperature_K=config["T_inner_K"],
+        public_electron_scattering_tau_across_model=electron_tau,
+        hypothetical_full_blackbody_outward_L_at_public_gas_T=
+            Loutward*(public_T_at_cut/config["T_inner_K"])**4,
+        warning="Public gas T is not a measured boundary radiation temperature. "
+            "Replacing T_inner with it would change injected power and is not a diffusion boundary solution. "
+            "No public temperature or population is injected into production.")
     result = dict(scope="input-only; no return flux, expansion work or time storage measured",
         target_day=DAY,inner_outward_L=Loutward,volume_integrated_input_deposition=Lheat,
         public_Lbol=Lbol,public_Edep=Edep,public_L_2500_25500=Lcommon,
@@ -72,10 +107,11 @@ def main():
         gross_sum_over_public_common=gross/Lcommon,
         gross_minus_90pct_common=gross-.9*Lcommon,
         blackbody_T_inner_K=config["T_inner_K"],
+        boundary_domain_comparison=boundary,
         deposition_reconstruction=comparison,
         warning="L_inner is outward, not net; input sum is not predicted emergent luminosity or proof of a time-storage term")
     paths = [MODEL/n for n in ("config.json","geometry.csv","deposition_cmfgen.csv")]
-    paths += [PUBLIC/n for n in ("spectra_toy06_cmfgen.txt","lbol_edep_toy06_cmfgen.txt","edep_toy06_cmfgen.txt")]
+    paths += [PUBLIC/n for n in ("spectra_toy06_cmfgen.txt","lbol_edep_toy06_cmfgen.txt","edep_toy06_cmfgen.txt","phys_toy06_cmfgen.txt")]
     result["sha256"] = {str(p):hashlib.sha256(p.read_bytes()).hexdigest() for p in paths+[Path(__file__)]}
     print(json.dumps(result,indent=2,allow_nan=False))
 
