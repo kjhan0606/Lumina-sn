@@ -18,6 +18,7 @@
 #include <math.h>
 
 #define LINE_JBAR_PROFILE_GAUSS_VD10 1
+#define LINE_JBAR_PROFILE_GAUSS_VD50 2
 #define LINE_JBAR_VDOPPLER_CMS 1.0e6      /* 10 km/s */
 #define LINE_JBAR_PROFILE_NDOPPLER 4.0    /* +-4 Doppler support */
 #define LINE_JBAR_BB_LAMBDA_MIN_ANGSTROM 100.0
@@ -53,6 +54,14 @@ typedef struct {
     char    profile_hash[65];
     LineJbarSetKind set_kind;
 } LineJbarQSet;
+
+/* DET 공통장의 물리 프로파일. 기존10km/s 식별자는 그대로 보존한다.
+ * 임의 선폭을 기존 hash로 위장하지 않으며 현재10/50km/s만 등록한다. */
+int line_jbar_profile_definition(uint64_t id, double *vdoppler_cms,
+                                 double *ndoppler, char hash[65]);
+int line_jbar_qset_bind_profile(LineJbarQSet *set, double vdoppler_cms);
+int line_jbar_qset_profile_matches(const LineJbarQSet *set,
+                                   double vdoppler_cms, double ndoppler);
 
 /* Q_E deliberately uses the same numeric-set representation.  A single
  * Q_E cache can therefore serve energy consumers and the Q_g subset without

@@ -289,6 +289,9 @@ void cmfgen_write_jnu(const CMFGENState *cs, NLTEConfig *nlte);
 /* A2-04 CPU pure-CMFGEN producer: publish cs->J through the same canonical
  * RadiationField commit API as MC, then refresh the temporary legacy view for
  * pre-A2-05 consumers. */
+/* 첫 공통장 수송 전에 Q_g/Q_E를 같은 물리 선폭에 묶는다.
+ * 이미 게시된 복사장이 있으면 프로파일 재지정을 거부한다. */
+int cmfgen_bind_common_profile(NLTEConfig *nlte, double vdoppler_cms);
 int cmfgen_commit_jnu(const CMFGENState *cs, NLTEConfig *nlte,
                       const Geometry *geo, const OpacityState *opac,
                       uint64_t generation);

@@ -191,8 +191,63 @@ static int producer_test(void) {
     return 0;
 }
 
+static int physical_profile_commit_test(void) {
+    /* 실제50km/s producer -> R6 -> BB/BF/선에너지 view를 잇는다.
+     * 1.3점/선폭의 소형 fixture이며 생산12점의 물리 해상도 검증은 아니다. */
+    enum { NS=2,NL=2 };
+    double ri[NS]={3e14,4e14},ro[NS]={4e14,5e14};
+    double vi[NS]={3e8,4e8},vo[NS]={4e8,5e8};
+    double te[NS]={10000,9000},ne[NS]={1e8,1e8};
+    double nu[NL]={2.99792458e18/1200,2.99792458e18/7000};
+    double tau[NL*NS]={2,2,2,2},jb[NL*NS],A[NL]={1e8,1e8};
+    A208Validity validity[NL*NS]={A208_VALID,A208_VALID,A208_VALID,A208_VALID};
+    int Z[NL]={14,16},ion[NL]={1,1},map[NL]={0,1};uint8_t mask[NL]={1,1};
+    Geometry g={0};g.n_shells=NS;g.r_inner=ri;g.r_outer=ro;
+    g.v_inner=vi;g.v_outer=vo;g.time_explosion=1e6;
+    PlasmaState p={0};p.n_shells=NS;p.T_e=te;p.n_electron=ne;
+    OpacityState o={0};o.n_shells=NS;o.n_lines=NL;o.line_list_nu=nu;
+    o.tau_sobolev=tau;o.tau_validity=validity;o.jbar_line_det=jb;
+    AtomicData a={0};a.n_lines=NL;a.line_A_ul=A;a.line_atomic_number=Z;a.line_ion_number=ion;
+    LineJbarQSet q={0};LineJbarESet e={0};
+    REQUIRE(line_jbar_qset_build(&q,NL,nu,map,mask)==0);
+    REQUIRE(line_jbar_eset_build(&e,NL,nu)==0);
+    NLTEConfig n={0};n.line_qset=&q;n.line_eset=&e;n.nlte_line_map=map;
+    REQUIRE(radiation_field_owner_init(&n.radiation_field,NS)==0);
+    REQUIRE(cmfgen_bind_common_profile(&n,5e6)==0);
+    CMFGENState c={0};REQUIRE(cmfgen_init(&c,&g)==0);
+    for(int s=0;s<NS;++s)for(int b=0;b<c.n_bins;++b) {
+        size_t i=(size_t)s*c.n_bins+b;
+        c.chi_abs[i]=c.chi_tot[i]=2e-14;c.chi_es[i]=0;
+        c.S_fixed[i]=planck(c.nu[b],te[s]);c.J[i]=1e-99;
+    }
+    removed_line=-1;cmfgen_fine_set_bf_atom(NULL,&a,&n,fill_upper);
+    setenv("LUMINA_CMF_FINE_VDOP","5000000",1);
+    setenv("LUMINA_CMF_FINE_PPD","1.3",1);
+    setenv("LUMINA_CMF_FINE_ALI","8",1);
+    setenv("LUMINA_CMF_FINE_ENVELOPE_REFINEMENTS","1",1);
+    setenv("LUMINA_CMF_FINE_TOL","1e-8",1);
+    REQUIRE(cmfgen_fine_jbar(&c,&g,&o,12000,&p,CMF_FINE_LINE_OPERATOR_COMMON_GAUSSIAN)==0);
+    REQUIRE(o.jbar_line_det_vdoppler_cms==5e6);
+    REQUIRE(cmfgen_commit_jnu(&c,&n,&g,&o,1)==0);
+    REQUIRE(n.radfield_view_status==RADIATION_FIELD_VIEW_OK);
+    REQUIRE(n.line_view_status==LINE_JBAR_VIEW_OK && n.line_energy_view_status==LINE_JBAR_VIEW_OK);
+    REQUIRE(n.radiation_field.line_profile_id==LINE_JBAR_PROFILE_GAUSS_VD50);
+    for(int l=0;l<NL;++l)for(int s=0;s<NS;++s) {
+        LineJbarValue rate,energy;
+        REQUIRE(line_jbar_lookup(&n.line_view,s,l,&rate)==0);
+        REQUIRE(line_jbar_lookup(&n.line_energy_view,s,l,&energy)==0);
+        REQUIRE(rate.jbar==jb[l*NS+s] && energy.jbar==rate.jbar);
+    }
+    printf("COMMON50_ACTUAL_PRODUCER_COMMIT_PASS fine_bins=%d profile_id=%llu hash=%s\n",
+        o.n_fine,(unsigned long long)q.profile_id,q.profile_hash);
+    free(o.jnu_fine);free(o.nu_fine);free(o.jbar_line_det_error_upper);
+    cmfgen_free(&c);radiation_field_owner_free(&n.radiation_field);
+    line_jbar_qset_free(&q);line_jbar_qset_free(&e);
+    return 0;
+}
+
 int main(void) {
-    if(rebin_test() || producer_test())return 1;
+    if(rebin_test() || producer_test() || physical_profile_commit_test())return 1;
     puts("COMMON_FIELD_SELFTEST_PASS");
     return 0;
 }

@@ -6652,6 +6652,28 @@ done:
     return rc;
 }
 
+int cmfgen_bind_common_profile(NLTEConfig *nlte, double vdoppler_cms)
+{
+    if (!nlte || !nlte->line_qset || !nlte->line_eset ||
+        !nlte->radiation_field.enabled ||
+        nlte->radiation_field.field.generation.computed_generation != 0 ||
+        nlte->radiation_field.line_jbar_cache.generation.computed_generation != 0)
+        return -1;
+    LineJbarQSet *q = (LineJbarQSet *)nlte->line_qset;
+    LineJbarESet *e = (LineJbarESet *)nlte->line_eset;
+    if (line_jbar_qset_subset_of_eset(q,e,NULL)!=LINE_JBAR_SUBSET_OK) return -1;
+    LineJbarQSet cq=*q, ce=*e;
+    if (line_jbar_qset_bind_profile(&cq,vdoppler_cms)!=0 ||
+        line_jbar_qset_bind_profile(&ce,vdoppler_cms)!=0 ||
+        line_jbar_qset_subset_of_eset(&cq,&ce,NULL)!=LINE_JBAR_SUBSET_OK) return -1;
+    q->profile_id=cq.profile_id;memcpy(q->profile_hash,cq.profile_hash,65);
+    e->profile_id=ce.profile_id;memcpy(e->profile_hash,ce.profile_hash,65);
+    fprintf(stderr,"[COMMON-PROFILE] vdoppler_cm_s=%.17g ndoppler=4 "
+        "profile_id=%llu profile_hash=%s owner_generation=0\n",
+        vdoppler_cms,(unsigned long long)q->profile_id,q->profile_hash);
+    return 0;
+}
+
 int cmfgen_commit_jnu(const CMFGENState *cs, NLTEConfig *nlte,
                       const Geometry *geo, const OpacityState *opac,
                       uint64_t generation)
@@ -6712,12 +6734,12 @@ int cmfgen_commit_jnu(const CMFGENState *cs, NLTEConfig *nlte,
                 (int)subset_status, first_missing_q, qset->n_q, eset->n_q);
         return -1;
     }
-    if (qset->profile_id != LINE_JBAR_PROFILE_GAUSS_VD10 ||
-        strcmp(qset->profile_hash, LINE_JBAR_PROFILE_SHA256) != 0 ||
+    if (!line_jbar_qset_profile_matches(qset,
+            opac->jbar_line_det_vdoppler_cms,opac->jbar_line_det_ndoppler) ||
+        (opac->jbar_line_det_operator != CMF_FINE_LINE_OPERATOR_COMMON_GAUSSIAN &&
+         qset->profile_id != LINE_JBAR_PROFILE_GAUSS_VD10) ||
         strcmp(qset->domain_contract_hash,
-               LINE_JBAR_BB_DOMAIN_CONTRACT_SHA256) != 0 ||
-        opac->jbar_line_det_vdoppler_cms != LINE_JBAR_VDOPPLER_CMS ||
-        opac->jbar_line_det_ndoppler != LINE_JBAR_PROFILE_NDOPPLER) {
+               LINE_JBAR_BB_DOMAIN_CONTRACT_SHA256) != 0) {
         fprintf(stderr,
                 "[R6][BLOCKED] reason=PROFILE_MISMATCH "
                 "q_profile=%llu profile_hash=%s domain_hash=%s "
@@ -6789,8 +6811,8 @@ int cmfgen_commit_jnu(const CMFGENState *cs, NLTEConfig *nlte,
             eset, opac->jbar_line_det_grid_nu_min,
             opac->jbar_line_det_grid_nu_max, &first_bad_e) != 0) {
         if (first_bad_e < eset->n_q) {
-            double profile_width = LINE_JBAR_PROFILE_NDOPPLER *
-                                   LINE_JBAR_VDOPPLER_CMS / CM_C;
+            double profile_width = opac->jbar_line_det_ndoppler *
+                                   opac->jbar_line_det_vdoppler_cms / CM_C;
             double line_nu = eset->line_nu[first_bad_e];
             fprintf(stderr,
                     "[R6][BLOCKED] reason=ESET_PROFILE_SUPPORT_COVERAGE "
@@ -11730,6 +11752,17 @@ int cmfgen_run(Geometry *geo, OpacityState *opac, BFOpacity *bf,
     if (cmf_optional_binary_env("LUMINA_CMF_COMMON_FIELD", &common_field) != 0) {
         fprintf(stderr, "[CMFGEN][ERROR] LUMINA_CMF_COMMON_FIELD requires 0 or 1\n");
         return -1;
+    }
+    if (common_field) {
+        const char *value=getenv("LUMINA_CMF_FINE_VDOP");
+        char *end=NULL;
+        double width=value?strtod(value,&end):LINE_JBAR_VDOPPLER_CMS;
+        if ((value && (end==value || *end!='\0')) ||
+            cmfgen_bind_common_profile(nlte,width)!=0) {
+            fprintf(stderr,"[CMFGEN][ERROR] common profile binding failed vdop=%s\n",
+                value?value:"1000000(default)");
+            return -1;
+        }
     }
     int xshell_gate = 0;
     if (cmf_optional_binary_env("LUMINA_XSHELL_RESPONSE", &xshell_gate) != 0) {

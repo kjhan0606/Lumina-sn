@@ -277,6 +277,47 @@ int line_jbar_bb_domain_mask_build(uint8_t *mask, int n_lines,
     return inside ? 0 : -1;
 }
 
+int line_jbar_profile_definition(uint64_t id, double *vdoppler_cms,
+                                 double *ndoppler, char hash[65])
+{
+    if (!vdoppler_cms || !ndoppler || !hash) return -1;
+    if (id == LINE_JBAR_PROFILE_GAUSS_VD10) {
+        *vdoppler_cms = LINE_JBAR_VDOPPLER_CMS;
+        memcpy(hash, LINE_JBAR_PROFILE_SHA256, 65);
+    } else if (id == LINE_JBAR_PROFILE_GAUSS_VD50) {
+        /* 아래 정확한ASCII 문자열(종료NUL 제외)의SHA256. */
+        const char *definition =
+            "LINE_JBAR_GAUSSIAN_V1|vdoppler_cm_s=5000000|ndoppler=4|"
+            "phi=exp(-x*x)/(sqrt(pi)*erf(4)*dnu_D)|dnu_D=nu_line*vdoppler/c";
+        Sha256 digest; sha256_init(&digest);
+        sha256_update(&digest, definition, strlen(definition));
+        sha256_hex(&digest, hash);
+        *vdoppler_cms = 5.0e6;
+    } else return -1;
+    *ndoppler = LINE_JBAR_PROFILE_NDOPPLER;
+    return 0;
+}
+
+int line_jbar_qset_bind_profile(LineJbarQSet *set, double vdoppler_cms)
+{
+    if (!set || !set->n_q || !set->line_id || !set->line_nu) return -1;
+    uint64_t id = vdoppler_cms == 1.0e6 ? LINE_JBAR_PROFILE_GAUSS_VD10 :
+                  vdoppler_cms == 5.0e6 ? LINE_JBAR_PROFILE_GAUSS_VD50 : 0;
+    double vd, nd; char hash[65];
+    if (line_jbar_profile_definition(id, &vd, &nd, hash) != 0) return -1;
+    set->profile_id = id;
+    memcpy(set->profile_hash, hash, sizeof hash);
+    return 0;
+}
+
+int line_jbar_qset_profile_matches(const LineJbarQSet *set,
+                                   double vdoppler_cms, double ndoppler)
+{
+    double vd, nd; char hash[65];
+    return set && line_jbar_profile_definition(set->profile_id,&vd,&nd,hash)==0 &&
+           vdoppler_cms==vd && ndoppler==nd && strcmp(set->profile_hash,hash)==0;
+}
+
 int line_jbar_qset_profile_support_covered(const LineJbarQSet *q,
                                            double grid_nu_min,
                                            double grid_nu_max,
@@ -286,8 +327,10 @@ int line_jbar_qset_profile_support_covered(const LineJbarQSet *q,
     if (!q || q->n_q == 0 || !q->line_nu ||
         !(grid_nu_min > 0.0) || !(grid_nu_max > grid_nu_min) ||
         !isfinite(grid_nu_min) || !isfinite(grid_nu_max)) return -1;
-    double width = LINE_JBAR_PROFILE_NDOPPLER *
-                   LINE_JBAR_VDOPPLER_CMS / C_CGS;
+    double vd, nd; char hash[65];
+    if (line_jbar_profile_definition(q->profile_id,&vd,&nd,hash)!=0 ||
+        strcmp(q->profile_hash,hash)!=0) return -1;
+    double width = nd * vd / C_CGS;
     for (size_t i = 0; i < q->n_q; ++i) {
         double nu = q->line_nu[i];
         if (!line_jbar_frequency_in_bb_domain(nu) ||
@@ -557,7 +600,9 @@ int line_jbar_segment_add(const LineJbarQSet *q, LineJbarPacketPartial *p,
                           int shell, double nu0, double nu1,
                           double e0, double e1, double length)
 {
-    if (!q || !p || shell < 0 || shell > 255 ||
+    if (!q || !p || q->profile_id != LINE_JBAR_PROFILE_GAUSS_VD10 ||
+        strcmp(q->profile_hash,LINE_JBAR_PROFILE_SHA256)!=0 ||
+        shell < 0 || shell > 255 ||
         !(nu0 > 0.0) || !(nu1 > 0.0) || !isfinite(e0) || !isfinite(e1) ||
         !(length >= 0.0) || !isfinite(length))
         return -1;
