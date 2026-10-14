@@ -1,5 +1,6 @@
 #include "cmf_exact_sliding.h"
 #include "cmf_error_envelope.h"
+#include "cmf_cell_geometry.h"
 
 #include <float.h>
 #include <math.h>
@@ -31,9 +32,10 @@ typedef struct {
     double *p;
     int *rn;
     int *rsh;
-    double *rz;
+    double *ds_outer;
+    double *ds_inner;
+    double *angle_weight;
     int *rcore;
-    double *rzin;
     int *shell_off;
     int *shell_k;
     int *shell_seg;
@@ -87,8 +89,9 @@ static int checked_mul_size(size_t a, size_t b, size_t *out)
 static void exact_problem_free(ExactProblem *p)
 {
     if (!p) return;
-    free(p->rmid); free(p->p); free(p->rn); free(p->rsh); free(p->rz);
-    free(p->rcore); free(p->rzin); free(p->shell_off); free(p->shell_k);
+    free(p->rmid); free(p->p); free(p->rn); free(p->rsh);
+    free(p->ds_outer); free(p->ds_inner); free(p->angle_weight);
+    free(p->rcore); free(p->shell_off); free(p->shell_k);
     free(p->shell_seg); free(p->shell_mu);
     memset(p, 0, sizeof(*p));
 }
@@ -99,13 +102,12 @@ static CMFExactStatus exact_problem_build(
     double time_explosion, const double *chi_tot, const double *chi_es,
     const double *S_fixed)
 {
-    const int ncore = 16;
     if (!p || ns <= 0 || nb < 2 || !(dlognu > 0.0) ||
         !isfinite(dlognu) || !nu || !r_inner || !r_outer ||
         !(time_explosion > 0.0) || !isfinite(time_explosion) ||
         !chi_tot || !chi_es || !S_fixed) return CMF_EXACT_INVALID_INPUT;
     memset(p, 0, sizeof(*p));
-    p->ns = ns; p->nb = nb; p->nr = ns + ncore;
+    p->ns = ns; p->nb = nb; p->nr = cmf_cell_ray_count(ns);
     p->ray_stride = (size_t)ns + 1U;
     p->dlognu = dlognu;
     p->a_lam = 1.0 / (time_explosion * CMF_EXACT_C);
@@ -121,47 +123,41 @@ static CMFExactStatus exact_problem_build(
             (b > 0 && !(nu[b] > nu[b - 1])))
             return CMF_EXACT_INVALID_INPUT;
     }
-    for (int s = 0; s < ns; ++s) {
-        if (!(r_inner[s] > 0.0) || !(r_outer[s] > r_inner[s]) ||
-            !isfinite(r_inner[s]) || !isfinite(r_outer[s]) ||
-            (s > 0 && (r_inner[s] < r_inner[s - 1] ||
-                       r_outer[s] <= r_outer[s - 1])))
-            return CMF_EXACT_INVALID_INPUT;
-    }
+    if (!cmf_cell_grid_valid(ns, r_inner, r_outer)) return CMF_EXACT_INVALID_INPUT;
 
     p->rmid = (double *)malloc((size_t)ns * sizeof(double));
     p->p = (double *)malloc((size_t)p->nr * sizeof(double));
     p->rn = (int *)calloc((size_t)p->nr, sizeof(int));
     p->rsh = (int *)malloc(p->segment_slots * sizeof(int));
-    p->rz = (double *)malloc(p->segment_slots * sizeof(double));
+    p->ds_outer = (double *)malloc(p->segment_slots * sizeof(double));
+    p->ds_inner = (double *)malloc(p->segment_slots * sizeof(double));
+    p->angle_weight = (double *)malloc((size_t)p->nr * ns * sizeof(double));
     p->rcore = (int *)calloc((size_t)p->nr, sizeof(int));
-    p->rzin = (double *)calloc((size_t)p->nr, sizeof(double));
-    if (!p->rmid || !p->p || !p->rn || !p->rsh || !p->rz ||
-        !p->rcore || !p->rzin) {
+    if (!p->rmid || !p->p || !p->rn || !p->rsh || !p->ds_outer ||
+        !p->ds_inner || !p->angle_weight || !p->rcore) {
         exact_problem_free(p);
         return CMF_EXACT_ALLOCATION_FAILED;
     }
     for (int s = 0; s < ns; ++s)
         p->rmid[s] = 0.5 * (r_inner[s] + r_outer[s]);
-    for (int k = 0; k < ncore; ++k)
-        p->p[k] = p->rmid[0] * (double)k / (double)ncore;
-    for (int s = 0; s < ns; ++s) p->p[ncore + s] = p->rmid[s];
+    cmf_cell_fill_rays(ns, r_inner, r_outer, p->p);
 
     for (int k = 0; k < p->nr; ++k) {
         double impact = p->p[k];
         int n = 0;
         size_t base = (size_t)k * p->ray_stride;
         for (int s = ns - 1; s >= 0; --s) {
-            if (p->rmid[s] <= impact) break;
+            if (r_outer[s] <= impact) break;
             p->rsh[base + (size_t)n] = s;
-            p->rz[base + (size_t)n] =
-                sqrt(p->rmid[s] * p->rmid[s] - impact * impact);
+            cmf_cell_half_lengths(r_inner[s], r_outer[s], impact,
+                &p->ds_outer[base+n], &p->ds_inner[base+n]);
             ++n;
         }
         p->rn[k] = n;
-        p->rcore[k] = impact < p->rmid[0];
-        p->rzin[k] = p->rcore[k]
-            ? sqrt(p->rmid[0] * p->rmid[0] - impact * impact) : 0.0;
+        p->rcore[k] = impact < r_inner[0];
+        for (int s=0; s<ns; ++s)
+            p->angle_weight[(size_t)k*ns+s] =
+                cmf_cell_angle_weight(k,p->nr,p->p,p->rmid[s],r_inner[0]);
     }
 
     int *shell_count = (int *)calloc((size_t)ns, sizeof(int));
@@ -173,7 +169,10 @@ static CMFExactStatus exact_problem_build(
     }
     for (int k = 0; k < p->nr; ++k) {
         size_t base = (size_t)k * p->ray_stride;
-        for (int i = 0; i < p->rn[k]; ++i) ++shell_count[p->rsh[base + i]];
+        for (int i = 0; i < p->rn[k]; ++i) {
+            int s=p->rsh[base+i];
+            if (p->p[k]<=p->rmid[s]) ++shell_count[s];
+        }
     }
     p->shell_off[0] = 0;
     for (int s = 0; s < ns; ++s)
@@ -190,10 +189,11 @@ static CMFExactStatus exact_problem_build(
         size_t base = (size_t)k * p->ray_stride;
         for (int i = 0; i < p->rn[k]; ++i) {
             int s = p->rsh[base + i];
+            if (p->p[k]>p->rmid[s]) continue;
             int at = p->shell_off[s] + fill[s]++;
             p->shell_k[at] = k;
             p->shell_seg[at] = i;
-            p->shell_mu[at] = p->rz[base + i] / p->rmid[s];
+            p->shell_mu[at] = cmf_cell_mu(p->p[k],p->rmid[s]);
         }
     }
     for (int s = 0; s < ns; ++s) {
@@ -702,13 +702,18 @@ static ExactSweepStatus exact_formal_sweep(
         if (n <= 0) continue;
         int ray_failed = 0;
         size_t ray_base = (size_t)k * p->ray_stride;
+        double *face = (double *)malloc((size_t)nb * sizeof(double));
+        if (!face) {
+#ifdef _OPENMP
+#pragma omp atomic write
+#endif
+            segment_failure = 1;
+            continue;
+        }
         for (int i = 0; i < n; ++i) {
             int shell = p->rsh[ray_base + i];
-            double ds = i + 1 < n
-                ? p->rz[ray_base + i] - p->rz[ray_base + i + 1]
-                : p->rz[ray_base + i] - p->rzin[k];
-            const double *upstream = i > 0
-                ? in + (ray_base + (size_t)i - 1U) * (size_t)nb : NULL;
+            double ds = p->ds_outer[ray_base+i];
+            const double *upstream = face;
             double neg = NAN;
             int rc = exact_segment(
                 nb, dt1 + (size_t)shell * (size_t)nb,
@@ -717,6 +722,11 @@ static ExactSweepStatus exact_formal_sweep(
                 source_cell + (size_t)shell * (size_t)nb,
                 p->a_drift * ds, upstream, i == 0,
                 in + (ray_base + (size_t)i) * (size_t)nb, mode, &neg);
+            if (rc == 0) rc = exact_segment(
+                nb, dt1 + (size_t)shell*nb, t1 + (size_t)shell*nb,
+                source + (size_t)shell*nb, source_cell + (size_t)shell*nb,
+                p->a_drift*p->ds_inner[ray_base+i],
+                in + (ray_base+(size_t)i)*nb, 0, face, mode, &neg);
             if (rc != 0) {
 #ifdef _OPENMP
 #pragma omp critical(cmf_exact_negative)
@@ -733,18 +743,11 @@ static ExactSweepStatus exact_formal_sweep(
                 break;
             }
         }
-        if (ray_failed) continue;
+        if (ray_failed) { free(face); continue; }
         for (int i = n - 1; i >= 0; --i) {
             int shell = p->rsh[ray_base + i];
-            double ds = i + 1 < n
-                ? p->rz[ray_base + i] - p->rz[ray_base + i + 1]
-                : p->rz[ray_base + i] - p->rzin[k];
-            const double *upstream;
-            if (i == n - 1)
-                upstream = p->rcore[k] ? inner
-                    : in + (ray_base + (size_t)n - 1U) * (size_t)nb;
-            else
-                upstream = out + (ray_base + (size_t)i + 1U) * (size_t)nb;
+            double ds = p->ds_inner[ray_base+i];
+            const double *upstream = i==n-1 && p->rcore[k] ? inner : face;
             double neg = NAN;
             int rc = exact_segment(
                 nb, dt1 + (size_t)shell * (size_t)nb,
@@ -753,6 +756,11 @@ static ExactSweepStatus exact_formal_sweep(
                 source_cell + (size_t)shell * (size_t)nb,
                 p->a_drift * ds, upstream, 0,
                 out + (ray_base + (size_t)i) * (size_t)nb, mode, &neg);
+            if (rc == 0) rc = exact_segment(
+                nb, dt1 + (size_t)shell*nb, t1 + (size_t)shell*nb,
+                source + (size_t)shell*nb, source_cell + (size_t)shell*nb,
+                p->a_drift*p->ds_outer[ray_base+i],
+                out + (ray_base+(size_t)i)*nb, 0, face, mode, &neg);
             if (rc != 0) {
 #ifdef _OPENMP
 #pragma omp critical(cmf_exact_negative)
@@ -768,6 +776,7 @@ static ExactSweepStatus exact_formal_sweep(
                 break;
             }
         }
+        free(face);
     }
     if (negative_count_out) *negative_count_out = negative_count;
     if (first_negative_out) *first_negative_out = first_negative;
@@ -786,21 +795,13 @@ static ExactSweepStatus exact_formal_sweep(
                 j_result[idx] = source[idx];
                 continue;
             }
-            int ray = p->shell_k[lo], seg = p->shell_seg[lo];
-            size_t at = ((size_t)ray * p->ray_stride + (size_t)seg) *
-                        (size_t)nb + (size_t)b;
-            double previous_mu = 0.0;
-            double previous_j = 0.5 * (out[at] + in[at]);
             double sum = 0.0;
             for (int a = lo; a < hi; ++a) {
-                ray = p->shell_k[a]; seg = p->shell_seg[a];
-                double mu = p->shell_mu[a];
-                at = ((size_t)ray * p->ray_stride + (size_t)seg) *
+                int ray = p->shell_k[a], seg = p->shell_seg[a];
+                size_t at = ((size_t)ray * p->ray_stride + (size_t)seg) *
                      (size_t)nb + (size_t)b;
                 double j = 0.5 * (out[at] + in[at]);
-                sum += 0.5 * (previous_j + j) * (mu - previous_mu);
-                previous_mu = mu;
-                previous_j = j;
+                sum += p->angle_weight[(size_t)ray*p->ns+s]*j;
             }
             j_result[idx] = sum;
             if (!(sum >= 0.0) || !isfinite(sum)) invalid = 1;
@@ -825,13 +826,12 @@ static int exact_formal_sweep_bound(
         if (n <= 0) continue;
         int ray_failed = 0;
         size_t ray_base = (size_t)k * p->ray_stride;
+        double *face = (double *)malloc((size_t)nb*sizeof(double));
+        if (!face) { failed=1; continue; }
         for (int i = 0; i < n; ++i) {
             int shell = p->rsh[ray_base + i];
-            double ds = i + 1 < n
-                ? p->rz[ray_base + i] - p->rz[ray_base + i + 1]
-                : p->rz[ray_base + i] - p->rzin[k];
-            const double *upstream = i > 0
-                ? in + (ray_base + (size_t)i - 1U) * (size_t)nb : NULL;
+            double ds = p->ds_outer[ray_base+i];
+            const double *upstream = face;
             if (exact_segment_positive_bound(
                     nb, dt1 + (size_t)shell * (size_t)nb,
                     t1 + (size_t)shell * (size_t)nb,
@@ -839,24 +839,22 @@ static int exact_formal_sweep_bound(
                     source_cell + (size_t)shell * (size_t)nb,
                     p->a_drift * ds, upstream, i == 0,
                     in + (ray_base + (size_t)i) * (size_t)nb,
-                    rounding) != 0) {
+                    rounding) != 0 ||
+                exact_segment_positive_bound(
+                    nb,dt1+(size_t)shell*nb,t1+(size_t)shell*nb,
+                    source+(size_t)shell*nb,source_cell+(size_t)shell*nb,
+                    p->a_drift*p->ds_inner[ray_base+i],
+                    in+(ray_base+(size_t)i)*nb,0,face,rounding) != 0) {
                 failed = 1;
                 ray_failed = 1;
                 break;
             }
         }
-        if (ray_failed) continue;
+        if (ray_failed) { free(face); continue; }
         for (int i = n - 1; i >= 0; --i) {
             int shell = p->rsh[ray_base + i];
-            double ds = i + 1 < n
-                ? p->rz[ray_base + i] - p->rz[ray_base + i + 1]
-                : p->rz[ray_base + i] - p->rzin[k];
-            const double *upstream;
-            if (i == n - 1)
-                upstream = p->rcore[k] ? inner
-                    : in + (ray_base + (size_t)n - 1U) * (size_t)nb;
-            else
-                upstream = out + (ray_base + (size_t)i + 1U) * (size_t)nb;
+            double ds = p->ds_inner[ray_base+i];
+            const double *upstream = i==n-1 && p->rcore[k] ? inner : face;
             if (exact_segment_positive_bound(
                     nb, dt1 + (size_t)shell * (size_t)nb,
                     t1 + (size_t)shell * (size_t)nb,
@@ -864,11 +862,17 @@ static int exact_formal_sweep_bound(
                     source_cell + (size_t)shell * (size_t)nb,
                     p->a_drift * ds, upstream, 0,
                     out + (ray_base + (size_t)i) * (size_t)nb,
-                    rounding) != 0) {
+                    rounding) != 0 ||
+                exact_segment_positive_bound(
+                    nb,dt1+(size_t)shell*nb,t1+(size_t)shell*nb,
+                    source+(size_t)shell*nb,source_cell+(size_t)shell*nb,
+                    p->a_drift*p->ds_outer[ray_base+i],
+                    out+(ray_base+(size_t)i)*nb,0,face,rounding) != 0) {
                 failed = 1;
                 break;
             }
         }
+        free(face);
     }
     if (failed) return -1;
 
@@ -883,30 +887,16 @@ static int exact_formal_sweep_bound(
                 j_result[idx] = source[idx];
                 continue;
             }
-            int ray = p->shell_k[lo], seg = p->shell_seg[lo];
-            size_t at = ((size_t)ray * p->ray_stride + (size_t)seg) *
-                        (size_t)nb + (size_t)b;
-            double previous_mu = 0.0;
-            double previous_j;
-            if (positive_two_product_sum_bound(
-                    0.5, out[at], 0.5, in[at], rounding,
-                    &previous_j) != 0) {
-                failed = 1;
-                continue;
-            }
             double sum = 0.0;
             for (int a = lo; a < hi; ++a) {
-                ray = p->shell_k[a]; seg = p->shell_seg[a];
-                double mu = p->shell_mu[a];
-                at = ((size_t)ray * p->ray_stride + (size_t)seg) *
+                int ray = p->shell_k[a], seg = p->shell_seg[a];
+                size_t at = ((size_t)ray * p->ray_stride + (size_t)seg) *
                      (size_t)nb + (size_t)b;
-                double j, average, weighted, next_sum;
+                double j, weighted, next_sum;
                 if (positive_two_product_sum_bound(
                         0.5, out[at], 0.5, in[at], rounding, &j) != 0 ||
-                    positive_add_bound(previous_j, j, rounding,
-                                       &average) != 0 ||
                     positive_multiply_bound(
-                        0.5 * (mu - previous_mu), average, rounding,
+                        p->angle_weight[(size_t)ray*p->ns+s], j, rounding,
                         &weighted) != 0 ||
                     positive_add_bound(sum, weighted, rounding,
                                        &next_sum) != 0) {
@@ -914,8 +904,6 @@ static int exact_formal_sweep_bound(
                     break;
                 }
                 sum = next_sum;
-                previous_mu = mu;
-                previous_j = j;
             }
             j_result[idx] = sum;
         }
@@ -1335,9 +1323,7 @@ static CMFExactStatus cmf_exact_characteristic_solve_impl(
         double drift = 0.0;
         size_t base = (size_t)k * p.ray_stride;
         for (int i = 0; i < p.rn[k]; ++i) {
-            double ds = i + 1 < p.rn[k]
-                ? p.rz[base + i] - p.rz[base + i + 1]
-                : p.rz[base + i] - p.rzin[k];
+            double ds = p.ds_outer[base+i]+p.ds_inner[base+i];
             drift += p.a_drift * ds;
         }
         if (drift > local.max_characteristic_drift_bins)

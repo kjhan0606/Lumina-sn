@@ -20,7 +20,7 @@ probe_repo=/home/kjhan/BACKUP/Eunha.A1/Claude/Lumina-sn-common-20261015
 probe_out=/gpfs/kjhan/lumina/cmfgen_map/trace13_20261010/results/boundary-geometry-${SLURM_JOB_ID}
 mkdir "$probe_out"
 cd "$probe_repo"
-sha256sum tests/cmf_boundary_geometry_selftest.c src/cmf_exact_sliding.c \
+sha256sum tests/cmf_boundary_geometry_selftest.c src/cmf_exact_sliding.c src/cmf_cell_geometry.h \
  src/cmf_exact_sliding.h src/cmf_error_envelope.c scripts/run_cmf_boundary_geometry_selftest.slurm \
  > "$probe_out/source.sha256"
 gcc -O2 -std=gnu11 -fopenmp -Isrc tests/cmf_boundary_geometry_selftest.c \

@@ -1,5 +1,5 @@
-/* 팽창 특성선의 물리 방정식 시험. 기존 공간/각도 격자를 그대로 고정해
- * 방출항 정규화와 I_nu 감쇠 계수만 독립적인 균질 매질 해로 검사한다. */
+/* 팽창 특성선의 물리 방정식 시험. 실제 경계의 균질 매질 해를
+ * 생산 기하학 함수를 호출하지 않고 현재 광선 격자에 독립적으로 적분한다. */
 #include "cmf_exact_sliding.h"
 #include <math.h>
 #include <stdio.h>
@@ -10,33 +10,29 @@
 
 static double uniform_J(int shell, double chi, double a, int legacy) {
     const double rm[3]={3.5e14,4.5e14,5.5e14};
-    double mu[19], value[19]; int count=0;
+    double impact[35];
+    for(int k=0;k<16;++k){impact[k]=3e14*k/16.;impact[16+k]=3e14+3e14*k/16.;}
+    for(int s=0;s<3;++s)impact[32+s]=rm[s];
+    for(int k=1;k<35;++k){double p=impact[k];int q=k;
+        while(q>0 && impact[q-1]>p){impact[q]=impact[q-1];--q;}impact[q]=p;}
     double kappa=chi+(legacy?4:3)*a;
     double source=legacy?1:chi/kappa;
-    for(int ray=0;ray<19;++ray) {
-        double p=ray<16?rm[0]*ray/16.0:rm[ray-16];
-        if(p>=rm[shell])continue;
-        double zout=sqrt(rm[2]*rm[2]-p*p);
-        double zs=sqrt(rm[shell]*rm[shell]-p*p);
-        double znext=shell>0 && p<rm[shell-1]
-            ? sqrt(rm[shell-1]*rm[shell-1]-p*p):0;
-        int core=p<rm[0];
-        double zcore=core?sqrt(rm[0]*rm[0]-p*p):0;
-        if(shell==0)znext=zcore;
-        double length_in=zout-znext;
+    double sum=0,r=rm[shell],limb=sqrt(1-9e28/(r*r));
+    for(int ray=34;ray>=0;--ray) {
+        double p=impact[ray];
+        if(p>r)continue;
+        double zout=sqrt(36e28-p*p);
+        double zs=sqrt(r*r-p*p);
+        int core=p<3e14;
+        double zcore=core?sqrt(9e28-p*p):0;
+        double length_in=zout-zs;
         double length_out=core?zs-zcore:zout+zs;
-        mu[count]=zs/rm[shell];
-        value[count++]=0.5*source*(-expm1(-kappa*length_in)-expm1(-kappa*length_out));
-    }
-    for(int i=1;i<count;++i) {
-        double m=mu[i],v=value[i];int j=i-1;
-        while(j>=0 && mu[j]>m){mu[j+1]=mu[j];value[j+1]=value[j];--j;}
-        mu[j+1]=m;value[j+1]=v;
-    }
-    double sum=0,prev_mu=0,prev_val=value[0];
-    for(int i=0;i<count;++i) {
-        sum+=0.5*(prev_val+value[i])*(mu[i]-prev_mu);
-        prev_mu=mu[i];prev_val=value[i];
+        double mu=zs/r,high=core?1:limb,low=core?limb:0;
+        if(ray>0 && (impact[ray-1]<3e14)==core)
+            high=0.5*(mu+sqrt(1-impact[ray-1]*impact[ray-1]/(r*r)));
+        if(ray+1<35 && impact[ray+1]<=r && (impact[ray+1]<3e14)==core)
+            low=0.5*(mu+sqrt(1-impact[ray+1]*impact[ray+1]/(r*r)));
+        sum+=(high-low)*0.5*source*(-expm1(-kappa*length_in)-expm1(-kappa*length_out));
     }
     return sum;
 }

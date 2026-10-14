@@ -10,6 +10,7 @@
 #include "line_jbar.h"
 #include "line_net_rate.h"
 #include "cmf_exact_sliding.h"
+#include "cmf_cell_geometry.h"
 #ifdef LUMINA_HAS_CUDA_BF_GEMM
 #include "cmf_exact_multigpu.h"
 #endif
@@ -8342,28 +8343,23 @@ int cmfgen_fine_jbar(CMFGENState *csb, const Geometry *geo,
     if (reservoir_nu_hi < support_nu_hi) reservoir_nu_hi = support_nu_hi;
     double max_upstream_log_shift = 0.0;
     {
-        double rmid[256];
-        if (NS > (int)(sizeof(rmid) / sizeof(rmid[0])) ||
+        double rays[256+CMF_CELL_CORE_RAYS+CMF_CELL_OUTER_RAYS];
+        if (NS > 256 || !cmf_cell_grid_valid(NS,geo->r_inner,geo->r_outer) ||
             !(geo->time_explosion > 0.0)) {
             fprintf(stderr,
                     "[cmf_fine][BLOCKED] reason=INVALID_RESERVOIR_GEOMETRY "
                     "shells=%d t_exp=%.17g\n", NS, geo->time_explosion);
             return -1;
         }
-        for (int s = 0; s < NS; ++s)
-            rmid[s] = 0.5 * (geo->r_inner[s] + geo->r_outer[s]);
-        for (int k = 0; k < NS + 16; ++k) {
-            double impact = k < 16
-                ? rmid[0] * (double)k / 16.0 : rmid[k - 16];
-            double z_outer = 0.0;
-            for (int s = NS - 1; s >= 0; --s) {
-                if (rmid[s] <= impact) break;
-                if (z_outer == 0.0)
-                    z_outer = sqrt(rmid[s] * rmid[s] - impact * impact);
-            }
-            double z_inner = impact < rmid[0]
-                ? sqrt(rmid[0] * rmid[0] - impact * impact) : 0.0;
-            double shift = (z_outer - z_inner) /
+        cmf_cell_fill_rays(NS,geo->r_inner,geo->r_outer,rays);
+        for (int k = 0; k < cmf_cell_ray_count(NS); ++k) {
+            double impact=rays[k],ri=geo->r_inner[0],ro=geo->r_outer[NS-1];
+            double z_outer=sqrt((ro-impact)*(ro+impact));
+            double z_inner=impact<ri?sqrt((ri-impact)*(ri+impact)):0;
+            /* 비코어 광선은 반대편 경계에서 접점을 지나 돌아오는 전체
+             * 광로를 포함한다. 이것은 한 번의 형식해에 대한 범위다. */
+            double path=impact<ri?z_outer-z_inner:2.0*z_outer;
+            double shift = path /
                            (geo->time_explosion * CM_C);
             if (shift > max_upstream_log_shift) max_upstream_log_shift = shift;
         }

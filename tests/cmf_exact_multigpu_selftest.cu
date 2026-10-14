@@ -55,17 +55,18 @@ static bool bitwise_equal_or_report(
 
 int main(void)
 {
+    const char *requested_env = std::getenv("CMF_MGPU_TEST_DEVICES");
+    const int minimum = requested_env && std::atoi(requested_env)==1 ? 1 : 2;
     int visible = 0;
-    if (cudaGetDeviceCount(&visible) != cudaSuccess || visible < 2) {
+    if (cudaGetDeviceCount(&visible) != cudaSuccess || visible < minimum) {
         std::fprintf(stderr,
-                     "CMF_EXACT_MULTIGPU_BLOCKED visible_devices=%d required=2\n",
-                     visible);
+                     "CMF_EXACT_MULTIGPU_BLOCKED visible_devices=%d required=%d\n",
+                     visible,minimum);
         return 77;
     }
     int requested = visible < 4 ? visible : 4;
-    const char *requested_env = std::getenv("CMF_MGPU_TEST_DEVICES");
     if (requested_env && *requested_env) requested = std::atoi(requested_env);
-    if (requested < 2 || requested > visible) {
+    if (requested < minimum || requested > visible) {
         std::fprintf(stderr,
                      "CMF_EXACT_MULTIGPU_BAD_REQUEST requested=%d visible=%d\n",
                      requested, visible);
@@ -315,10 +316,11 @@ int main(void)
               one_positive_report.weighted_contiguous_ray_partition == 1 &&
               one_bound_report.weighted_contiguous_ray_partition == 1,
           "weighted-partition-one-device-paths");
-    CHECK(one_report.min_owned_ray_segment_work == 51U &&
-              one_report.max_owned_ray_segment_work == 51U &&
-              one_report.min_computed_ray_segment_work == 51U &&
-              one_report.max_computed_ray_segment_work == 51U,
+    /* 셸 교차 수: 코어16*3 + 외피(6*3+5*2+5*1) + 접선(3+2+1). */
+    CHECK(one_report.min_owned_ray_segment_work == 87U &&
+              one_report.max_owned_ray_segment_work == 87U &&
+              one_report.min_computed_ray_segment_work == 87U &&
+              one_report.max_computed_ray_segment_work == 87U,
           "one-device-ray-segment-work");
     CHECK(gpu_report.min_owned_ray_segment_work > 0U &&
               gpu_report.min_owned_ray_segment_work <=
@@ -348,8 +350,8 @@ int main(void)
           gpu_report.total_device_allocated_bytes >=
               gpu_report.max_device_allocated_bytes,
           "device-memory-accounting");
-    CHECK(gpu_report.max_device_allocated_bytes <
-              one_report.max_device_allocated_bytes,
+    CHECK(requested==1 ? gpu_report.max_device_allocated_bytes==one_report.max_device_allocated_bytes
+          : gpu_report.max_device_allocated_bytes < one_report.max_device_allocated_bytes,
           "per-device-memory-reduced");
     CHECK(gpu_report.final_max_relative_change < gpu_report.tolerance,
           "multi-residual");

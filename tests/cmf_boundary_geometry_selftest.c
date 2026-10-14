@@ -4,6 +4,9 @@
 #include <math.h>
 #include <stdio.h>
 #include <string.h>
+#ifdef CMF_TEST_CUDA
+#include "cmf_exact_multigpu.h"
+#endif
 
 static double planck(double nu) {
     return 2*6.62607015e-27*nu*nu*nu/(2.99792458e10*2.99792458e10)
@@ -38,11 +41,24 @@ int main(int argc,char **argv) {
     const double dlog=1e-3,t=1e24;
     for(int b=0;b<NB;++b)nu[b]=1e15*exp((b+0.5)*dlog);
     double vacuum_error=0,uniform_error=0;
+    double gpu_cpu_error=0;
     for(int trial=0;trial<2;++trial) {
         for(int i=0;i<NS*NB;++i){chi[i]=trial?1e-15:0;es[i]=0;sf[i]=trial?1:0;j[i]=0;}
         CMFExactReport report;
         if(cmf_exact_characteristic_solve(NS,NB,dlog,nu,ri,ro,t,10000,trial?0:1,
             chi,es,sf,j,8,1e-13,CMF_EXACT_MODE_POSITIVE_SLIDING,&report)!=CMF_EXACT_OK)return 2;
+#ifdef CMF_TEST_CUDA
+        double gj[NS*NB]={0};
+        const CMFMultiGPUEpochSchedule schedule={64,2,1};
+        CMFMultiGPUReport gr;
+        if(cmf_exact_multigpu_positive_solve_epoch(NS,NB,dlog,nu,ri,ro,t,10000,
+            trial?0:1,chi,es,sf,gj,&schedule,1,8,1e-13,&gr)!=CMF_MGPU_OK)return 3;
+        for(int i=0;i<NS*NB;++i) {
+            double err=fabs(gj[i]/j[i]-1);
+            if(err>gpu_cpu_error)gpu_cpu_error=err;
+        }
+        printf("gpu_case=%d rays=%zu allocated_bytes=%zu\n",trial,gr.n_rays,gr.max_device_allocated_bytes);
+#endif
         for(int s=0;s<NS;++s) {
             double r=0.5*(ri[s]+ro[s]);
             double expected=trial?homogeneous_J(r,ri[0],ro[NS-1],1e-15)
@@ -56,6 +72,7 @@ int main(int argc,char **argv) {
     }
     printf("vacuum_max_relative_error=%.17g uniform_max_relative_error=%.17g\n",
             vacuum_error,uniform_error);
-    if(require_physical && (vacuum_error>1e-10 || uniform_error>5e-3))return 1;
+    printf("gpu_cpu_max_relative_error=%.17g\n",gpu_cpu_error);
+    if(require_physical && (vacuum_error>1e-10 || uniform_error>5e-3 || gpu_cpu_error>1e-10))return 1;
     return 0;
 }

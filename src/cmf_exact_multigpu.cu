@@ -1,5 +1,6 @@
 #include "cmf_exact_multigpu.h"
 #include "cmf_error_envelope.h"
+#include "cmf_cell_geometry.h"
 
 #include <cuda_runtime.h>
 
@@ -39,6 +40,7 @@ struct HostGeometry {
     std::vector<int> rn;
     std::vector<int> shell;
     std::vector<double> beta;
+    std::vector<double> angle_weight;
     std::vector<int> core;
 };
 
@@ -69,6 +71,8 @@ struct DeviceShard {
     int *shell = nullptr;
     int *core = nullptr;
     double *beta = nullptr;
+    double *angle_weight = nullptr;
+    double *face = nullptr;
     double *impact = nullptr;
     double *rmid = nullptr;
     double *dt1 = nullptr;
@@ -125,12 +129,11 @@ static bool build_geometry(HostGeometry *g, int ns, int nb, double dlognu,
                            const double *r_inner, const double *r_outer,
                            double time_explosion)
 {
-    constexpr int ncore = 16;
     if (!g || ns <= 0 || nb < 2 || !(dlognu > 0.0) ||
         !(time_explosion > 0.0)) return false;
     g->ns = ns;
     g->nb = nb;
-    g->nr = ns + ncore;
+    g->nr = cmf_cell_ray_count(ns);
     g->stride = ns + 1;
     g->a_lam = 1.0 / (time_explosion * kC);
     g->a_drift = g->a_lam / dlognu;
@@ -140,45 +143,39 @@ static bool build_geometry(HostGeometry *g, int ns, int nb, double dlognu,
     g->impact.resize((size_t)g->nr);
     g->rn.assign((size_t)g->nr, 0);
     g->shell.assign(slots, -1);
-    g->beta.assign(slots, 0.0);
+    g->beta.assign(2U*slots, 0.0);
+    g->angle_weight.resize((size_t)g->nr*ns);
     g->core.assign((size_t)g->nr, 0);
+    if (!cmf_cell_grid_valid(ns,r_inner,r_outer)) return false;
     for (int s = 0; s < ns; ++s) {
-        if (!(r_inner[s] > 0.0) || !(r_outer[s] > r_inner[s]) ||
-            !std::isfinite(r_inner[s]) || !std::isfinite(r_outer[s]) ||
-            (s > 0 && (r_inner[s] < r_inner[s - 1] ||
-                       r_outer[s] <= r_outer[s - 1]))) return false;
         g->rmid[(size_t)s] = 0.5 * (r_inner[s] + r_outer[s]);
     }
-    for (int k = 0; k < ncore; ++k)
-        g->impact[(size_t)k] = g->rmid[0] * (double)k / (double)ncore;
-    for (int s = 0; s < ns; ++s)
-        g->impact[(size_t)(ncore + s)] = g->rmid[(size_t)s];
+    cmf_cell_fill_rays(ns,r_inner,r_outer,g->impact.data());
 
     double max_drift = 0.0;
     for (int k = 0; k < g->nr; ++k) {
         double p = g->impact[(size_t)k];
-        std::vector<double> z;
-        std::vector<int> shells;
+        int n=0;
         for (int s = ns - 1; s >= 0; --s) {
-            if (g->rmid[(size_t)s] <= p) break;
-            shells.push_back(s);
-            z.push_back(std::sqrt(g->rmid[(size_t)s] * g->rmid[(size_t)s] - p * p));
+            if (r_outer[s] <= p) break;
+            size_t at=(size_t)k*g->stride+n++;
+            double outer,inner;
+            cmf_cell_half_lengths(r_inner[s],r_outer[s],p,&outer,&inner);
+            g->shell[at]=s;
+            g->beta[2*at]=g->a_drift*outer;
+            g->beta[2*at+1]=g->a_drift*inner;
+            if (!(g->beta[2*at]>=0) || !(g->beta[2*at+1]>=0) ||
+                !std::isfinite(g->beta[2*at]) || !std::isfinite(g->beta[2*at+1]))return false;
         }
-        int n = (int)shells.size();
         g->rn[(size_t)k] = n;
-        g->core[(size_t)k] = p < g->rmid[0] ? 1 : 0;
-        double zin = g->core[(size_t)k]
-                   ? std::sqrt(g->rmid[0] * g->rmid[0] - p * p) : 0.0;
+        g->core[(size_t)k] = p < r_inner[0] ? 1 : 0;
+        for(int s=0;s<ns;++s)
+            g->angle_weight[(size_t)k*ns+s]=cmf_cell_angle_weight(
+                k,g->nr,g->impact.data(),g->rmid[s],r_inner[0]);
         double drift = 0.0;
         for (int i = 0; i < n; ++i) {
             size_t at = (size_t)k * (size_t)g->stride + (size_t)i;
-            double ds = i + 1 < n ? z[(size_t)i] - z[(size_t)i + 1]
-                                  : z[(size_t)i] - zin;
-            double b = g->a_drift * ds;
-            if (!(b >= 0.0) || !std::isfinite(b)) return false;
-            g->shell[at] = shells[(size_t)i];
-            g->beta[at] = b;
-            drift += b;
+            drift += g->beta[2*at]+g->beta[2*at+1];
         }
         if (drift > max_drift) max_drift = drift;
     }
@@ -325,6 +322,8 @@ static void cleanup_shard(DeviceShard *s)
     cudaFree(s->shell);
     cudaFree(s->core);
     cudaFree(s->beta);
+    cudaFree(s->angle_weight);
+    cudaFree(s->face);
     cudaFree(s->impact);
     cudaFree(s->rmid);
     cudaFree(s->dt1);
@@ -364,7 +363,7 @@ static bool build_compact_shard_geometry(
                 (int)total;
         }
         compact_shell->resize(total);
-        compact_beta->resize(total);
+        compact_beta->resize(2U*total);
         for (int local_ray = 0; local_ray < shard->local_rays; ++local_ray) {
             int ray = shard->ray_begin + local_ray;
             size_t target = (size_t)shard->host_segment_offset[
@@ -375,8 +374,8 @@ static bool build_compact_shard_geometry(
                                 (size_t)segment;
                 compact_shell->at(target + (size_t)segment) =
                     geometry.shell[source];
-                compact_beta->at(target + (size_t)segment) =
-                    geometry.beta[source];
+                compact_beta->at(2U*(target + (size_t)segment)) = geometry.beta[2U*source];
+                compact_beta->at(2U*(target + (size_t)segment)+1U) = geometry.beta[2U*source+1U];
             }
         }
     } catch (const std::bad_alloc &) {
@@ -797,12 +796,12 @@ __device__ bool positive_segment_values(
 }
 
 __global__ void positive_segment_kernel(
-    int nb, int local_rays, int segment, bool outward,
+    int nb, int local_rays, int segment, bool outward, bool after_center,
     int max_window, const int *rn, const int *segment_offset,
     const int *shell, const int *core,
     const double *beta, const double *dt1, const double *t1,
     const double *source, const double *source_cell, const double *inner,
-    double *in, double *out, PositiveWindowNode *window, int *failure,
+    double *in, double *out, double *face, PositiveWindowNode *window, int *failure,
     int rounding)
 {
     int lr = (int)((size_t)blockIdx.x * blockDim.x + threadIdx.x);
@@ -818,14 +817,10 @@ __global__ void positive_segment_kernel(
     const double *src_cell = source_cell + (size_t)s * (size_t)nb;
     const double *upstream = nullptr;
     bool upstream_zero = false;
-    if (!outward) {
-        if (segment == 0) upstream_zero = true;
-        else upstream = in + (segment_slot - 1U) * (size_t)nb;
-    } else if (segment == n - 1) {
-        upstream = core[lr] ? inner : in + segment_slot * (size_t)nb;
-    } else {
-        upstream = out + (segment_slot + 1U) * (size_t)nb;
-    }
+    if (after_center) upstream = (outward?out:in)+segment_slot*(size_t)nb;
+    else if (!outward && segment==0) upstream_zero=true;
+    else if (outward && segment==n-1 && core[lr]) upstream=inner;
+    else upstream=face+(size_t)lr*nb;
     PositiveWindowNode *front = nullptr;
     PositiveWindowNode *back = nullptr;
     if (max_window != 0) {
@@ -833,11 +828,12 @@ __global__ void positive_segment_kernel(
         front = window + base;
         back = front + max_window;
     }
-    double *destination = outward ? out : in;
+    double *destination = after_center ? face+(size_t)lr*nb
+        : (outward?out:in)+segment_slot*(size_t)nb;
     if (!positive_segment_values(
-            nb, beta[segment_slot], dt, tr, src, src_cell,
+            nb, beta[2U*segment_slot+(outward!=after_center)], dt, tr, src, src_cell,
             upstream, upstream_zero,
-            destination + segment_slot * (size_t)nb,
+            destination,
             front, back, max_window, rounding)) {
         record_positive_failure(
             failure, 1, segment, lr, outward ? 1 : 0, rounding);
@@ -900,12 +896,12 @@ __device__ bool positive_epoch_pointwise(
 }
 
 __global__ void positive_epoch_replay_segment_kernel(
-    int nb, int local_rays, int segment, bool outward,
+    int nb, int local_rays, int segment, bool outward, bool after_center,
     int replay_max_window, const int *rn, const int *segment_offset,
     const int *shell,
     const int *core, const double *beta, const double *dt1,
     const double *t1, const double *source, const double *source_cell,
-    const double *inner, double *in, double *out, int *failure,
+    const double *inner, double *in, double *out, double *face, int *failure,
     int rounding)
 {
     size_t tid = (size_t)blockIdx.x * blockDim.x + threadIdx.x;
@@ -924,15 +920,11 @@ __global__ void positive_epoch_replay_segment_kernel(
     const double *src_cell = source_cell + (size_t)s * (size_t)nb;
     const double *upstream = nullptr;
     bool upstream_zero = false;
-    if (!outward) {
-        if (segment == 0) upstream_zero = true;
-        else upstream = in + (segment_slot - 1U) * (size_t)nb;
-    } else if (segment == n - 1) {
-        upstream = core[lr] ? inner : in + segment_slot * (size_t)nb;
-    } else {
-        upstream = out + (segment_slot + 1U) * (size_t)nb;
-    }
-    double ray_beta = beta[segment_slot];
+    if (after_center) upstream = (outward?out:in)+segment_slot*(size_t)nb;
+    else if (!outward && segment==0) upstream_zero=true;
+    else if (outward && segment==n-1 && core[lr]) upstream=inner;
+    else upstream=face+(size_t)lr*nb;
+    double ray_beta = beta[2U*segment_slot+(outward!=after_center)];
     int q = (int)floor(ray_beta);
     double phi = ray_beta - (double)q;
     if (!(q >= 0) || !(phi >= 0.0) || !(phi < 1.0) || !isfinite(phi)) {
@@ -940,8 +932,8 @@ __global__ void positive_epoch_replay_segment_kernel(
             failure, 30, segment, lr, outward ? 1 : 0, rounding);
         return;
     }
-    double *destination = outward ? out : in;
-    double *target = destination + segment_slot * (size_t)nb;
+    double *target = after_center ? face+(size_t)lr*nb
+        : (outward?out:in)+segment_slot*(size_t)nb;
     if (ray_beta <= 0.5) {
         double intensity = 0.0;
         if (!upstream_zero) {
@@ -1040,13 +1032,13 @@ __global__ void positive_epoch_replay_segment_kernel(
 }
 
 __global__ void positive_epoch_large_segment_kernel(
-    int nb, int local_rays, int segment, bool outward,
+    int nb, int local_rays, int segment, bool outward, bool after_center,
     int replay_max_window, int epoch_begin, size_t workspace_span,
     const int *rn, const int *segment_offset, const int *shell,
     const int *core, const double *beta,
     const double *dt1, const double *t1, const double *source,
     const double *source_cell, const double *inner,
-    double *in, double *out, PositiveTransformPair *front_workspace,
+    double *in, double *out, double *face, PositiveTransformPair *front_workspace,
     PositiveTransformPair *back_workspace, int *failure, int rounding)
 {
     extern __shared__ double shared_values[];
@@ -1058,7 +1050,7 @@ __global__ void positive_epoch_large_segment_kernel(
     if (segment >= n) return;
     size_t segment_slot =
         (size_t)segment_offset[lr] + (size_t)segment;
-    double ray_beta = beta[segment_slot];
+    double ray_beta = beta[2U*segment_slot+(outward!=after_center)];
     int q = (int)floor(ray_beta);
     double phi = ray_beta - (double)q;
     int qtop = phi < 0.5 ? q : q + 1;
@@ -1135,16 +1127,12 @@ __global__ void positive_epoch_large_segment_kernel(
 
     const double *upstream = nullptr;
     bool upstream_zero = false;
-    if (!outward) {
-        if (segment == 0) upstream_zero = true;
-        else upstream = in + (segment_slot - 1U) * (size_t)nb;
-    } else if (segment == n - 1) {
-        upstream = core[lr] ? inner : in + segment_slot * (size_t)nb;
-    } else {
-        upstream = out + (segment_slot + 1U) * (size_t)nb;
-    }
-    double *destination = outward ? out : in;
-    double *target = destination + segment_slot * (size_t)nb;
+    if (after_center) upstream = (outward?out:in)+segment_slot*(size_t)nb;
+    else if (!outward && segment==0) upstream_zero=true;
+    else if (outward && segment==n-1 && core[lr]) upstream=inner;
+    else upstream=face+(size_t)lr*nb;
+    double *target = after_center ? face+(size_t)lr*nb
+        : (outward?out:in)+segment_slot*(size_t)nb;
     for (int offset = (int)threadIdx.x;
          offset < epoch_outputs; offset += (int)blockDim.x) {
         int b = boundary_bin - offset;
@@ -1167,11 +1155,11 @@ __global__ void positive_epoch_large_segment_kernel(
 }
 
 __global__ void segment_kernel(
-    int nb, int local_rays, int segment, bool outward,
+    int nb, int local_rays, int segment, bool outward, bool after_center,
     const int *rn, const int *segment_offset, const int *shell,
     const int *core, const double *beta,
     const double *dt1, const double *source, const double *inner,
-    double *in, double *out)
+    double *in, double *out, double *face)
 {
     size_t tid = (size_t)blockIdx.x * blockDim.x + threadIdx.x;
     size_t total = (size_t)local_rays * (size_t)nb;
@@ -1187,27 +1175,21 @@ __global__ void segment_kernel(
     const double *src = source + (size_t)s * (size_t)nb;
     const double *upstream = nullptr;
     bool upstream_zero = false;
-    if (!outward) {
-        if (segment == 0) {
-            upstream_zero = true;
-        } else {
-            upstream = in + (segment_slot - 1U) * (size_t)nb;
-        }
-    } else if (segment == n - 1) {
-        upstream = core[lr] ? inner : in + segment_slot * (size_t)nb;
-    } else {
-        upstream = out + (segment_slot + 1U) * (size_t)nb;
-    }
+    if (after_center) upstream = (outward?out:in)+segment_slot*(size_t)nb;
+    else if (!outward && segment==0) upstream_zero=true;
+    else if (outward && segment==n-1 && core[lr]) upstream=inner;
+    else upstream=face+(size_t)lr*nb;
     double value = direct_segment_value(
-        b, nb, beta[segment_slot], dt, src, upstream, upstream_zero);
-    double *destination = outward ? out : in;
-    destination[segment_slot * (size_t)nb + (size_t)b] = value;
+        b, nb, beta[2U*segment_slot+(outward!=after_center)], dt, src, upstream, upstream_zero);
+    double *target = after_center ? face+(size_t)lr*nb
+        : (outward?out:in)+segment_slot*(size_t)nb;
+    target[b] = value;
 }
 
 __global__ void partial_j_kernel(
     int ns, int nb, int nr, int ray_begin, int ray_end,
     const int *rn, const int *segment_offset,
-    const double *impact, const double *rmid,
+    const double *angle_weight,
     const double *in, const double *out, double *partial)
 {
     size_t tid = (size_t)blockIdx.x * blockDim.x + threadIdx.x;
@@ -1220,47 +1202,12 @@ __global__ void partial_j_kernel(
     for (int ray = ray_end - 1; ray >= ray_begin; --ray) {
         int lr = ray - ray_begin;
         if (segment >= rn[lr]) continue;
+        double weight=angle_weight[(size_t)ray*ns+s];
+        if (weight==0.0) continue;
         size_t at = ((size_t)segment_offset[lr] + (size_t)segment) *
                     (size_t)nb + (size_t)b;
         double current_j = 0.5 * (out[at] + in[at]);
-        double current_mu_squared =
-            1.0 - impact[ray] * impact[ray] / (rmid[s] * rmid[s]);
-        if (!(current_mu_squared >= 0.0) ||
-            !isfinite(current_mu_squared)) {
-            partial[tid] = NAN;
-            return;
-        }
-        double current_mu = sqrt(current_mu_squared);
-        double previous_j = 0.0;
-        double previous_mu = 0.0;
-        int previous_ray = ray + 1;
-        bool has_previous_sample = false;
-        if (previous_ray < nr) {
-            int previous_local = previous_ray - ray_begin;
-            if (previous_local >= 0 && segment < rn[previous_local]) {
-                size_t previous_at =
-                    ((size_t)segment_offset[previous_local] +
-                     (size_t)segment) * (size_t)nb + (size_t)b;
-                previous_j = 0.5 * (out[previous_at] + in[previous_at]);
-                double previous_mu_squared =
-                    1.0 - impact[previous_ray] * impact[previous_ray] /
-                          (rmid[s] * rmid[s]);
-                if (!(previous_mu_squared >= 0.0) ||
-                    !isfinite(previous_mu_squared)) {
-                    partial[tid] = NAN;
-                    return;
-                }
-                previous_mu = sqrt(previous_mu_squared);
-                has_previous_sample = true;
-            }
-        }
-        /* Match the canonical angular reconstruction exactly at the tangent
-         * boundary: its first sampled intensity is held constant from mu=0
-         * to the first ray.  This is a quadrature boundary condition, not a
-         * floor or a replacement of a computed physical value. */
-        if (!has_previous_sample) previous_j = current_j;
-        sum += 0.5 * (previous_j + current_j) *
-               (current_mu - previous_mu);
+        sum += weight*current_j;
     }
     partial[tid] = sum;
 }
@@ -1268,7 +1215,7 @@ __global__ void partial_j_kernel(
 __global__ void partial_j_bound_kernel(
     int ns, int nb, int nr, int ray_begin, int ray_end,
     const int *rn, const int *segment_offset,
-    const double *impact, const double *rmid,
+    const double *angle_weight,
     const double *in, const double *out, double *partial,
     int *failure, int rounding)
 {
@@ -1282,6 +1229,8 @@ __global__ void partial_j_bound_kernel(
     for (int ray = ray_end - 1; ray >= ray_begin; --ray) {
         int lr = ray - ray_begin;
         if (segment >= rn[lr]) continue;
+        double weight=angle_weight[(size_t)ray*ns+s];
+        if (weight==0.0) continue;
         size_t at = ((size_t)segment_offset[lr] + (size_t)segment) *
                     (size_t)nb + (size_t)b;
         double current_j;
@@ -1290,52 +1239,10 @@ __global__ void partial_j_bound_kernel(
             record_positive_failure(failure, 21, s, b, 0, rounding);
             return;
         }
-        double current_mu_squared =
-            1.0 - impact[ray] * impact[ray] / (rmid[s] * rmid[s]);
-        if (!(current_mu_squared >= 0.0) ||
-            !isfinite(current_mu_squared)) {
-            record_positive_failure(failure, 26, s, b, 0, rounding);
-            return;
-        }
-        double current_mu = sqrt(current_mu_squared);
-        double previous_j = current_j;
-        double previous_mu = 0.0;
-        int previous_ray = ray + 1;
-        if (previous_ray < nr) {
-            int previous_local = previous_ray - ray_begin;
-            if (previous_local >= 0 && segment < rn[previous_local]) {
-                size_t previous_at =
-                    ((size_t)segment_offset[previous_local] +
-                     (size_t)segment) * (size_t)nb + (size_t)b;
-                if (!positive_two_product_sum_device(
-                        0.5, out[previous_at], 0.5, in[previous_at],
-                        rounding, &previous_j)) {
-                    record_positive_failure(
-                        failure, 22, s, b, 0, rounding);
-                    return;
-                }
-                double previous_mu_squared =
-                    1.0 - impact[previous_ray] * impact[previous_ray] /
-                          (rmid[s] * rmid[s]);
-                if (!(previous_mu_squared >= 0.0) ||
-                    !isfinite(previous_mu_squared)) {
-                    record_positive_failure(
-                        failure, 27, s, b, 0, rounding);
-                    return;
-                }
-                previous_mu = sqrt(previous_mu_squared);
-            }
-        }
-        double average;
         double weighted;
         double next_sum;
-        if (!positive_add_bound_device(
-                previous_j, current_j, rounding, &average)) {
-            record_positive_failure(failure, 23, s, b, 0, rounding);
-            return;
-        }
         if (!positive_multiply_bound_device(
-                0.5 * (current_mu - previous_mu), average,
+                weight, current_j,
                 rounding, &weighted)) {
             record_positive_failure(failure, 24, s, b, 0, rounding);
             return;
@@ -1362,14 +1269,14 @@ struct SweepFailureDetail {
 
 static int max_large_epochs_for_segment(
     const HostGeometry &geometry, const DeviceShard &shard, int segment,
-    int replay_max_window)
+    int half, int replay_max_window)
 {
     int maximum = 0;
     for (int local_ray = 0; local_ray < shard.local_rays; ++local_ray) {
         int ray = shard.ray_begin + local_ray;
         if (segment >= geometry.rn[(size_t)ray]) continue;
         double beta = geometry.beta[
-            (size_t)ray * (size_t)geometry.stride + (size_t)segment];
+            2U*((size_t)ray * (size_t)geometry.stride + (size_t)segment)+(size_t)half];
         int q = (int)std::floor(beta);
         double phi = beta - (double)q;
         int qtop = phi < 0.5 ? q : q + 1;
@@ -1383,19 +1290,19 @@ static int max_large_epochs_for_segment(
 
 static int launch_positive_segment(
     DeviceShard &shard, const HostGeometry &geometry, int segment,
-    bool outward, int max_positive_window, int rounding,
+    bool outward, bool after_center, int max_positive_window, int rounding,
     const CMFMultiGPUEpochSchedule *epoch_schedule)
 {
     if (!epoch_schedule) {
         constexpr int threads = 256;
         int blocks = (shard.local_rays + threads - 1) / threads;
         positive_segment_kernel<<<blocks, threads>>>(
-            geometry.nb, shard.local_rays, segment, outward,
+            geometry.nb, shard.local_rays, segment, outward, after_center,
             max_positive_window, shard.rn, shard.segment_offset,
             shard.shell, shard.core,
             shard.beta, shard.dt1, shard.t1, shard.source,
             shard.source_cell, shard.inner, shard.in, shard.out,
-            shard.positive_window, shard.failure, rounding);
+            shard.face, shard.positive_window, shard.failure, rounding);
         return cudaGetLastError() == cudaSuccess ? 0 : 1;
     }
 
@@ -1403,16 +1310,16 @@ static int launch_positive_segment(
     size_t total = (size_t)shard.local_rays * (size_t)geometry.nb;
     int blocks = (int)((total + (size_t)threads - 1U) / (size_t)threads);
     positive_epoch_replay_segment_kernel<<<blocks, threads>>>(
-        geometry.nb, shard.local_rays, segment, outward,
+        geometry.nb, shard.local_rays, segment, outward, after_center,
         epoch_schedule->direct_replay_max_window,
         shard.rn, shard.segment_offset, shard.shell, shard.core,
         shard.beta, shard.dt1, shard.t1,
         shard.source, shard.source_cell, shard.inner, shard.in, shard.out,
-        shard.failure, rounding);
+        shard.face, shard.failure, rounding);
     if (cudaGetLastError() != cudaSuccess) return 1;
 
     int maximum_epochs = max_large_epochs_for_segment(
-        geometry, shard, segment,
+        geometry, shard, segment, outward!=after_center,
         epoch_schedule->direct_replay_max_window);
     for (int epoch_begin = 0; epoch_begin < maximum_epochs;
          epoch_begin += epoch_schedule->epoch_batch_cardinality) {
@@ -1423,12 +1330,12 @@ static int launch_positive_segment(
         positive_epoch_large_segment_kernel<<<
             grid, threads, sizeof(PositiveTransformPair)>>>(
             geometry.nb, shard.local_rays, segment,
-            outward, epoch_schedule->direct_replay_max_window, epoch_begin,
+            outward, after_center, epoch_schedule->direct_replay_max_window, epoch_begin,
             shard.epoch_workspace_span, shard.rn, shard.segment_offset,
             shard.shell, shard.core, shard.beta, shard.dt1, shard.t1,
             shard.source,
             shard.source_cell, shard.inner, shard.in, shard.out,
-            shard.epoch_front, shard.epoch_back, shard.failure, rounding);
+            shard.face, shard.epoch_front, shard.epoch_back, shard.failure, rounding);
         if (cudaGetLastError() != cudaSuccess) return 1;
     }
     return 0;
@@ -1451,46 +1358,50 @@ static int launch_sweep(DeviceShard *shards, int ndev,
         }
     }
     for (int segment = 0; segment < g.ns; ++segment) {
+      for (int half = 0; half < 2; ++half) {
         for (int d = 0; d < ndev; ++d) {
             DeviceShard &s = shards[d];
             if (cudaSetDevice(s.device) != cudaSuccess) return 1;
             if (positive_sliding) {
                 if (launch_positive_segment(
-                        s, g, segment, false, max_positive_window,
+                        s, g, segment, false, half!=0, max_positive_window,
                         rounding, epoch_schedule) != 0) return 1;
             } else {
                 size_t total = (size_t)s.local_rays * (size_t)g.nb;
                 int blocks = (int)((total + threads - 1U) / threads);
                 segment_kernel<<<blocks, threads>>>(
-                    g.nb, s.local_rays, segment, false,
+                    g.nb, s.local_rays, segment, false, half!=0,
                     s.rn, s.segment_offset, s.shell, s.core, s.beta,
                     s.dt1, s.source, s.inner,
-                    s.in, s.out);
+                    s.in, s.out, s.face);
             }
             if (!positive_sliding && cudaGetLastError() != cudaSuccess)
                 return 1;
         }
+      }
     }
     for (int segment = g.ns - 1; segment >= 0; --segment) {
+      for (int half = 0; half < 2; ++half) {
         for (int d = 0; d < ndev; ++d) {
             DeviceShard &s = shards[d];
             if (cudaSetDevice(s.device) != cudaSuccess) return 1;
             if (positive_sliding) {
                 if (launch_positive_segment(
-                        s, g, segment, true, max_positive_window,
+                        s, g, segment, true, half!=0, max_positive_window,
                         rounding, epoch_schedule) != 0) return 1;
             } else {
                 size_t total = (size_t)s.local_rays * (size_t)g.nb;
                 int blocks = (int)((total + threads - 1U) / threads);
                 segment_kernel<<<blocks, threads>>>(
-                    g.nb, s.local_rays, segment, true,
+                    g.nb, s.local_rays, segment, true, half!=0,
                     s.rn, s.segment_offset, s.shell, s.core, s.beta,
                     s.dt1, s.source, s.inner,
-                    s.in, s.out);
+                    s.in, s.out, s.face);
             }
             if (!positive_sliding && cudaGetLastError() != cudaSuccess)
                 return 1;
         }
+      }
     }
     if (positive_sliding) {
         for (int d = 0; d < ndev; ++d) {
@@ -1520,13 +1431,13 @@ static int launch_sweep(DeviceShard *shards, int ndev,
         if (positive_sliding) {
             partial_j_bound_kernel<<<blocks, threads>>>(
                 g.ns, g.nb, g.nr, s.ray_begin, s.ray_end,
-                s.rn, s.segment_offset, s.impact, s.rmid,
+                s.rn, s.segment_offset, s.angle_weight,
                 s.in, s.out, s.partial,
                 s.failure, rounding);
         } else {
             partial_j_kernel<<<blocks, threads>>>(
                 g.ns, g.nb, g.nr, s.ray_begin, s.ray_end,
-                s.rn, s.segment_offset, s.impact, s.rmid,
+                s.rn, s.segment_offset, s.angle_weight,
                 s.in, s.out, s.partial);
         }
         if (cudaGetLastError() != cudaSuccess) return 1;
@@ -1806,9 +1717,9 @@ static CMFMultiGPUStatus solve_impl(
     int max_positive_window = 0;
     for (int k = 0; k < geometry.nr; ++k) {
         double drift = 0.0;
-        for (int i = 0; i < geometry.rn[(size_t)k]; ++i) {
+        for (int i = 0; i < 2*geometry.rn[(size_t)k]; ++i) {
             double beta = geometry.beta[
-                (size_t)k * (size_t)geometry.stride + (size_t)i];
+                2U*(size_t)k * (size_t)geometry.stride + (size_t)i];
             drift += beta;
             if (positive_sliding) {
                 if (!(beta <= (double)INT_MAX - 2.0)) {
@@ -1859,7 +1770,9 @@ static CMFMultiGPUStatus solve_impl(
                             (size_t)s.local_rays + 1U, &s) != cudaSuccess ||
             device_allocate(&s.shell, local_slots, &s) != cudaSuccess ||
             device_allocate(&s.core, (size_t)s.local_rays, &s) != cudaSuccess ||
-            device_allocate(&s.beta, local_slots, &s) != cudaSuccess ||
+            device_allocate(&s.beta, 2U*local_slots, &s) != cudaSuccess ||
+            device_allocate(&s.angle_weight, geometry.angle_weight.size(), &s) != cudaSuccess ||
+            device_allocate(&s.face, (size_t)s.local_rays*n_bins, &s) != cudaSuccess ||
             device_allocate(&s.impact, (size_t)geometry.nr, &s) != cudaSuccess ||
             device_allocate(&s.rmid, (size_t)n_shells, &s) != cudaSuccess ||
             device_allocate(&s.dt1, cells, &s) != cudaSuccess ||
@@ -1898,7 +1811,10 @@ static CMFMultiGPUStatus solve_impl(
                        (size_t)s.local_rays * sizeof(int),
                        cudaMemcpyHostToDevice) != cudaSuccess ||
             cudaMemcpy(s.beta, compact_beta.data(),
-                       local_slots * sizeof(double),
+                       2U*local_slots * sizeof(double),
+                       cudaMemcpyHostToDevice) != cudaSuccess ||
+            cudaMemcpy(s.angle_weight, geometry.angle_weight.data(),
+                       geometry.angle_weight.size()*sizeof(double),
                        cudaMemcpyHostToDevice) != cudaSuccess ||
             cudaMemcpy(s.impact, geometry.impact.data(),
                        (size_t)geometry.nr * sizeof(double),
@@ -2256,9 +2172,9 @@ static CMFMultiGPUStatus apply_positive_bounds_impl(
     int max_positive_window = 0;
     for (int k = 0; k < geometry.nr; ++k) {
         double drift = 0.0;
-        for (int i = 0; i < geometry.rn[(size_t)k]; ++i) {
+        for (int i = 0; i < 2*geometry.rn[(size_t)k]; ++i) {
             double beta = geometry.beta[
-                (size_t)k * (size_t)geometry.stride + (size_t)i];
+                2U*(size_t)k * (size_t)geometry.stride + (size_t)i];
             if (!(beta <= (double)INT_MAX - 2.0)) {
                 local.status = CMF_MGPU_INVALID_INPUT;
                 if (report) *report = local;
@@ -2310,7 +2226,9 @@ static CMFMultiGPUStatus apply_positive_bounds_impl(
                             (size_t)s.local_rays + 1U, &s) != cudaSuccess ||
             device_allocate(&s.shell, local_slots, &s) != cudaSuccess ||
             device_allocate(&s.core, (size_t)s.local_rays, &s) != cudaSuccess ||
-            device_allocate(&s.beta, local_slots, &s) != cudaSuccess ||
+            device_allocate(&s.beta, 2U*local_slots, &s) != cudaSuccess ||
+            device_allocate(&s.angle_weight, geometry.angle_weight.size(), &s) != cudaSuccess ||
+            device_allocate(&s.face, (size_t)s.local_rays*n_bins, &s) != cudaSuccess ||
             device_allocate(&s.impact, (size_t)geometry.nr, &s) != cudaSuccess ||
             device_allocate(&s.rmid, (size_t)n_shells, &s) != cudaSuccess ||
             device_allocate(&s.dt1, cells, &s) != cudaSuccess ||
@@ -2347,7 +2265,10 @@ static CMFMultiGPUStatus apply_positive_bounds_impl(
                        (size_t)s.local_rays * sizeof(int),
                        cudaMemcpyHostToDevice) != cudaSuccess ||
             cudaMemcpy(s.beta, compact_beta.data(),
-                       local_slots * sizeof(double),
+                       2U*local_slots * sizeof(double),
+                       cudaMemcpyHostToDevice) != cudaSuccess ||
+            cudaMemcpy(s.angle_weight, geometry.angle_weight.data(),
+                       geometry.angle_weight.size()*sizeof(double),
                        cudaMemcpyHostToDevice) != cudaSuccess ||
             cudaMemcpy(s.impact, geometry.impact.data(),
                        (size_t)geometry.nr * sizeof(double),
@@ -2512,109 +2433,12 @@ static CMFMultiGPUStatus apply_positive_bounds_impl(
                                     local.failure_ray_in = ray_in;
                                     local.failure_ray_out = ray_out;
                                 }
-                                double current_mu_squared =
-                                    1.0 - geometry.impact[(size_t)ray] *
-                                          geometry.impact[(size_t)ray] /
-                                          (geometry.rmid[(size_t)shell] *
-                                           geometry.rmid[(size_t)shell]);
-                                double current_mu =
-                                    current_mu_squared >= 0.0 &&
-                                    std::isfinite(current_mu_squared)
-                                        ? std::sqrt(current_mu_squared)
-                                        : NAN;
-                                double device_impact = NAN;
-                                (void)cudaMemcpy(
-                                    &device_impact, s.impact + ray,
-                                    sizeof(double), cudaMemcpyDeviceToHost);
-                                local.failure_max_impact_absolute_difference =
-                                    std::max(
-                                        local.failure_max_impact_absolute_difference,
-                                        std::fabs(
-                                            device_impact -
-                                            geometry.impact[(size_t)ray]));
-                                double current_mu_device_squared =
-                                    1.0 - device_impact * device_impact /
-                                          (device_rmid * device_rmid);
-                                double current_mu_device =
-                                    current_mu_device_squared >= 0.0 &&
-                                    std::isfinite(current_mu_device_squared)
-                                        ? std::sqrt(
-                                              current_mu_device_squared)
-                                        : NAN;
-                                double previous_intensity = intensity;
-                                double previous_mu = 0.0;
-                                double previous_mu_device = 0.0;
-                                int previous_ray = ray + 1;
-                                if (previous_ray < geometry.nr &&
-                                    segment < geometry.rn[
-                                        (size_t)previous_ray]) {
-                                    int previous_local =
-                                        previous_ray - s.ray_begin;
-                                    size_t previous_at =
-                                        ((size_t)s.host_segment_offset[
-                                             (size_t)previous_local] +
-                                         (size_t)segment) *
-                                        (size_t)n_bins + (size_t)bin;
-                                    double previous_in = NAN;
-                                    double previous_out = NAN;
-                                    if (cudaMemcpy(
-                                            &previous_in,
-                                            s.in + previous_at,
-                                            sizeof(double),
-                                            cudaMemcpyDeviceToHost) !=
-                                            cudaSuccess ||
-                                        cudaMemcpy(
-                                            &previous_out,
-                                            s.out + previous_at,
-                                            sizeof(double),
-                                            cudaMemcpyDeviceToHost) !=
-                                            cudaSuccess)
-                                        break;
-                                    previous_intensity =
-                                        0.5 * (previous_in + previous_out);
-                                    double previous_mu_squared =
-                                        1.0 - geometry.impact[
-                                                  (size_t)previous_ray] *
-                                              geometry.impact[
-                                                  (size_t)previous_ray] /
-                                              (geometry.rmid[(size_t)shell] *
-                                               geometry.rmid[(size_t)shell]);
-                                    previous_mu =
-                                        previous_mu_squared >= 0.0 &&
-                                        std::isfinite(previous_mu_squared)
-                                            ? std::sqrt(previous_mu_squared)
-                                            : NAN;
-                                    double previous_device_impact = NAN;
-                                    (void)cudaMemcpy(
-                                        &previous_device_impact,
-                                        s.impact + previous_ray,
-                                        sizeof(double),
-                                        cudaMemcpyDeviceToHost);
-                                    local.failure_max_impact_absolute_difference =
-                                        std::max(
-                                            local.failure_max_impact_absolute_difference,
-                                            std::fabs(
-                                                previous_device_impact -
-                                                geometry.impact[
-                                                    (size_t)previous_ray]));
-                                    double previous_mu_device_squared =
-                                        1.0 - previous_device_impact *
-                                                  previous_device_impact /
-                                              (device_rmid * device_rmid);
-                                    previous_mu_device =
-                                        previous_mu_device_squared >= 0.0 &&
-                                        std::isfinite(
-                                            previous_mu_device_squared)
-                                            ? std::sqrt(
-                                                  previous_mu_device_squared)
-                                            : NAN;
-                                }
-                                host_sum +=
-                                    0.5 * (previous_intensity + intensity) *
-                                    (current_mu - previous_mu);
-                                device_geometry_sum +=
-                                    0.5 * (previous_intensity + intensity) *
-                                    (current_mu_device - previous_mu_device);
+                                size_t weight_at=(size_t)ray*n_shells+shell;
+                                double device_weight=NAN;
+                                (void)cudaMemcpy(&device_weight,s.angle_weight+weight_at,
+                                    sizeof(double),cudaMemcpyDeviceToHost);
+                                host_sum += geometry.angle_weight[weight_at]*intensity;
+                                device_geometry_sum += device_weight*intensity;
                             }
                         }
                         local.failure_host_recomputed_partial = host_sum;
@@ -2882,9 +2706,9 @@ struct PersistentBoundContext {
         double max_drift = 0.0;
         for (int k = 0; k < geometry.nr; ++k) {
             double drift = 0.0;
-            for (int i = 0; i < geometry.rn[(size_t)k]; ++i) {
+            for (int i = 0; i < 2*geometry.rn[(size_t)k]; ++i) {
                 double beta = geometry.beta[
-                    (size_t)k * (size_t)geometry.stride + (size_t)i];
+                    2U*(size_t)k * (size_t)geometry.stride + (size_t)i];
                 if (!(beta <= (double)INT_MAX - 2.0))
                     return allocation_report.status;
                 drift += beta;
@@ -2951,8 +2775,10 @@ struct PersistentBoundContext {
                     cudaSuccess ||
                 device_allocate(&shard.core, (size_t)shard.local_rays,
                                 &shard) != cudaSuccess ||
-                device_allocate(&shard.beta, local_slots, &shard) !=
+                device_allocate(&shard.beta, 2U*local_slots, &shard) !=
                     cudaSuccess ||
+                device_allocate(&shard.angle_weight, geometry.angle_weight.size(), &shard) != cudaSuccess ||
+                device_allocate(&shard.face, (size_t)shard.local_rays*nb, &shard) != cudaSuccess ||
                 device_allocate(&shard.impact, (size_t)geometry.nr,
                                 &shard) != cudaSuccess ||
                 device_allocate(&shard.rmid, (size_t)ns, &shard) !=
@@ -3010,7 +2836,10 @@ struct PersistentBoundContext {
                            cudaMemcpyHostToDevice) != cudaSuccess ||
                 cudaMemcpy(shard.beta,
                            compact_beta.data(),
-                           local_slots * sizeof(double),
+                           2U*local_slots * sizeof(double),
+                           cudaMemcpyHostToDevice) != cudaSuccess ||
+                cudaMemcpy(shard.angle_weight, geometry.angle_weight.data(),
+                           geometry.angle_weight.size()*sizeof(double),
                            cudaMemcpyHostToDevice) != cudaSuccess ||
                 cudaMemcpy(shard.impact, geometry.impact.data(),
                            (size_t)geometry.nr * sizeof(double),

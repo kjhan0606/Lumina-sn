@@ -30,7 +30,7 @@ common_units=(lumina_transport a2_02c_segment_capture radiation_field bf_rate_jn
 common_files=()
 for common_unit in "${common_units[@]}"; do common_files+=("src/${common_unit}.c"); done
 sha256sum "${common_files[@]}" src/lumina.h src/lumina_cmfgen.h src/radiation_field.h \
- src/env_universe.h tests/cmf_common_field_selftest.c tests/a2_06_dual_commit_selftest.c \
+ src/env_universe.h src/cmf_cell_geometry.h tests/cmf_common_field_selftest.c tests/a2_06_dual_commit_selftest.c \
  scripts/run_cmf_common_field_selftest.slurm > "$common_out/source.sha256"
 gcc -O2 -std=gnu11 -D_GNU_SOURCE -fopenmp -ffunction-sections -fdata-sections \
  -Isrc tests/cmf_common_field_selftest.c "${common_files[@]}" \

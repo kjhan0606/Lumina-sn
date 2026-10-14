@@ -22,7 +22,7 @@ probe_out=/gpfs/kjhan/lumina/cmfgen_map/trace13_20261010/results/expansion-sourc
 mkdir "$probe_out"
 sha256sum "$probe_repo/tests/cmf_expansion_source_selftest.c" \
  "$probe_src/cmf_exact_sliding.c" "$probe_src/cmf_exact_sliding.h" \
- "$probe_src/cmf_error_envelope.c" \
+ "$probe_src/cmf_error_envelope.c" "$probe_src/cmf_cell_geometry.h" \
  "$probe_repo/tests/cmf_exact_sliding_selftest.c" \
  "$probe_repo/tests/cmf_error_envelope_selftest.c" \
  "$probe_repo/scripts/run_cmf_expansion_source_selftest.slurm" > "$probe_out/source.sha256"

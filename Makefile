@@ -24,7 +24,7 @@ HEADERS = src/lumina.h src/a2_02c_segment_capture.h src/radiation_field.h src/bf
           src/opacity_publication.h src/emissivity_publication.h src/radeq_publication.h \
           src/a210_coupled_newton.h \
           src/cmfgen_adiabatic.h \
-          src/cmf_exact_sliding.h \
+          src/cmf_exact_sliding.h src/cmf_cell_geometry.h \
           src/cmf_exact_multigpu.h \
           src/cmf_error_envelope.h \
           src/nlte_population_candidate.h \
