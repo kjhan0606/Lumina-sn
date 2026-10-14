@@ -11,7 +11,10 @@
  * so the threshold partial bin uses [max(nu_th, nu_lo), nu_hi] exactly (gate
  * contract 4).  Validity propagates per R6: within the integration range the
  * sigma-weighted contribution share of non-VALID bins (w_miss) decides the
- * result state; no value substitution ever happens.
+ * result state; no value substitution ever happens. A finite, nonnegative,
+ * explicitly all-zero tabulation covering the full active range is EXACT_ZERO
+ * only with VALID/EXACT_ZERO field bins throughout that range. Truncated zero
+ * support remains OUT_OF_GRID; invalid cross-section values are errors.
  */
 
 #include <stddef.h>

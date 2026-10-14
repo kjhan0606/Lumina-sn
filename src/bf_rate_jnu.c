@@ -1,5 +1,6 @@
 #include "bf_rate_jnu.h"
 
+#include <float.h>
 #include <math.h>
 
 #ifndef M_PI
@@ -23,8 +24,11 @@ static double segment_sigma_over_nu(double n0, double s0, double n1, double s1,
 int bf_rate_gamma_from_view(const RadiationFieldView *view, size_t shell,
                             const BfCrossSection *sigma, BfRateResult *out)
 {
-    if (!view || !view->J_nu || !sigma || !out || shell >= view->n_shells ||
-        sigma->n_points < 2 || !(sigma->nu_threshold > 0.0))
+    if (!view || !view->J_nu || !view->frequency_bin_edges ||
+        !view->validity || !view->count || !view->n_bins ||
+        !sigma || !sigma->nu || !sigma->sigma || !out ||
+        shell >= view->n_shells || sigma->n_points < 2 ||
+        !(sigma->nu_threshold > 0.0) || !isfinite(sigma->nu_threshold))
         return -1;
     out->gamma = 0.0;
     out->state = BF_RATE_OUT_OF_GRID;
@@ -35,11 +39,49 @@ int bf_rate_gamma_from_view(const RadiationFieldView *view, size_t shell,
     const double *edges = view->frequency_bin_edges;
     size_t nb = view->n_bins;
     double nu_lo_grid = edges[0], nu_hi_grid = edges[nb];
+    if (!(nu_lo_grid > 0.0) || !(nu_hi_grid > nu_lo_grid) ||
+        !isfinite(nu_hi_grid)) return -1;
+    int declared_zero = 1;
+    for (size_t j = 0; j < sigma->n_points; ++j) {
+        if (!(sigma->nu[j] > 0.0) || !isfinite(sigma->nu[j]) ||
+            !isfinite(sigma->sigma[j]) || sigma->sigma[j] < 0.0 ||
+            (j && sigma->nu[j] < sigma->nu[j - 1])) return -1;
+        if (sigma->sigma[j] != 0.0) declared_zero = 0;
+    }
     double nu_start = sigma->nu_threshold > nu_lo_grid ? sigma->nu_threshold
                                                        : nu_lo_grid;
     if (nu_start >= nu_hi_grid) {
         /* Threshold above the canonical grid: structural absence. */
         out->state = BF_RATE_OUT_OF_GRID;
+        return 0;
+    }
+
+    if (declared_zero) {
+        /* A declared zero curve has no sigma-weighted normalization. It is
+         * nevertheless a known zero rate if its tabulation covers the entire
+         * active range. Do not turn an absent/truncated table into a zero.
+         * Only allow roundoff from the two equivalent log-grid constructions. */
+        const double edge_roundoff = 64.0 * DBL_EPSILON;
+        if (sigma->nu[0] - nu_start > edge_roundoff * nu_start ||
+            nu_hi_grid - sigma->nu[sigma->n_points - 1] >
+                edge_roundoff * nu_hi_grid) return 0;
+        int stale = 0, unsampled = 0, oog = 0;
+        for (size_t b = 0; b < nb; ++b) {
+            if (edges[b + 1] <= nu_start) continue;
+            size_t index = shell * nb + b;
+            RadiationFieldValidityState state = view->validity[index];
+            if (state == RADIATION_FIELD_VALID ||
+                state == RADIATION_FIELD_EXACT_ZERO) {
+                out->sample_count += view->count[index];
+            } else if (state == RADIATION_FIELD_STALE) stale = 1;
+            else if (state == RADIATION_FIELD_UNSAMPLED) unsampled = 1;
+            else oog = 1;
+        }
+        /* Preserve the view-validity contract even though the mathematical
+         * integral of a known zero cross section does not depend on J. */
+        out->state = stale ? BF_RATE_STALE
+                   : unsampled ? BF_RATE_UNSAMPLED
+                   : oog ? BF_RATE_OUT_OF_GRID : BF_RATE_EXACT_ZERO;
         return 0;
     }
 
@@ -135,7 +177,10 @@ int bf_rate_gamma_legacy_grid(const RadiationFieldView *view, size_t shell,
                               double *node_nu, double *node_sigma,
                               BfRateResult *out)
 {
-    if (nfb < 1 || !(nu_min > 0.0) || !(d_log_nu > 0.0) ||
+    if (nfb < 1 || !(nu_min > 0.0) || !isfinite(nu_min) ||
+        !(d_log_nu > 0.0) || !isfinite(d_log_nu) ||
+        !(nu_thresh > 0.0) || !isfinite(nu_thresh) ||
+        (!sigma_row && (!(sigma_0 > 0.0) || !isfinite(sigma_0))) ||
         !node_nu || !node_sigma || !out)
         return -1;
     double log_numin = log(nu_min);
@@ -147,7 +192,7 @@ int bf_rate_gamma_legacy_grid(const RadiationFieldView *view, size_t shell,
         double sg;
         if (sigma_row) {
             sg = sigma_row[bb];
-            if (!(sg > 0.0) || !isfinite(sg)) sg = 0.0;
+            if (!isfinite(sg) || sg < 0.0) return -1;
             /* A stored CMFGEN value is the linear-frequency average over the
              * complete bin, including zero support below a physical edge.
              * Locate that conserved sigma*dnu mass on its actual active

@@ -504,7 +504,124 @@ static void run_sh_grid_upper_closure_test(void)
     test_field_free(&tf);
 }
 
-int main(void)
+/* A full, explicitly tabulated zero cross section is not missing support. */
+static void run_declared_zero_sigma_tests(void)
+{
+    TestField tf;
+    test_field_init(&tf, 8, 1.0e14, 1.0e17);
+    for (size_t b=0;b<tf.n_bins;b++) tf.J[b]=1.0e-4;
+    double nu[2]={tf.edges[0],tf.edges[tf.n_bins]}, sg[2]={0,0};
+    BfCrossSection cs={2,nu,sg,2.0e15};
+    BfRateResult result;
+    CHECK(bf_rate_gamma_from_view(&tf.view,0,&cs,&result)==0,"zs-full-rc");
+    CHECK(result.state==BF_RATE_EXACT_ZERO && result.gamma==0 &&
+          result.gamma_poisson_var==0,"zs-full-exact-zero");
+    tf.validity[7]=RADIATION_FIELD_UNSAMPLED;
+    CHECK(bf_rate_gamma_from_view(&tf.view,0,&cs,&result)==0 &&
+          result.state==BF_RATE_UNSAMPLED,"zs-unsampled-not-zero");
+    tf.validity[7]=RADIATION_FIELD_STALE;
+    CHECK(bf_rate_gamma_from_view(&tf.view,0,&cs,&result)==0 &&
+          result.state==BF_RATE_STALE,"zs-stale-not-zero");
+    tf.validity[7]=RADIATION_FIELD_OUT_OF_GRID;
+    CHECK(bf_rate_gamma_from_view(&tf.view,0,&cs,&result)==0 &&
+          result.state==BF_RATE_OUT_OF_GRID,"zs-field-oog-not-zero");
+    tf.validity[7]=RADIATION_FIELD_VALID;
+    tf.validity[0]=RADIATION_FIELD_STALE; /* Entirely below the physical edge. */
+    CHECK(bf_rate_gamma_from_view(&tf.view,0,&cs,&result)==0 &&
+          result.state==BF_RATE_EXACT_ZERO,"zs-below-threshold-irrelevant");
+    tf.validity[0]=RADIATION_FIELD_VALID;
+    nu[0]=cs.nu_threshold*1.001;
+    CHECK(bf_rate_gamma_from_view(&tf.view,0,&cs,&result)==0 &&
+          result.state==BF_RATE_OUT_OF_GRID,"zs-missing-low-support");
+    nu[0]=tf.edges[0];
+    nu[1]*=(1.0-1e-10);
+    CHECK(bf_rate_gamma_from_view(&tf.view,0,&cs,&result)==0 &&
+          result.state==BF_RATE_OUT_OF_GRID,"zs-small-gap-not-roundoff");
+    nu[1]=tf.edges[tf.n_bins];
+    nu[1]*=0.5;
+    CHECK(bf_rate_gamma_from_view(&tf.view,0,&cs,&result)==0 &&
+          result.state==BF_RATE_OUT_OF_GRID,"zs-truncated-not-zero");
+    nu[1]=tf.edges[tf.n_bins];cs.nu_threshold=2.0e17;
+    CHECK(bf_rate_gamma_from_view(&tf.view,0,&cs,&result)==0 &&
+          result.state==BF_RATE_OUT_OF_GRID,"zs-threshold-oog");
+    cs.nu_threshold=2.0e15;sg[0]=NAN;
+    CHECK(bf_rate_gamma_from_view(&tf.view,0,&cs,&result)==-1,"zs-nan-invalid");
+    sg[0]=-1e-20;
+    CHECK(bf_rate_gamma_from_view(&tf.view,0,&cs,&result)==-1,"zs-negative-invalid");
+    sg[0]=0;nu[0]=nu[1]*2;
+    CHECK(bf_rate_gamma_from_view(&tf.view,0,&cs,&result)==-1,"zs-descending-invalid");
+    nu[0]=tf.edges[0];cs.nu_threshold=NAN;
+    CHECK(bf_rate_gamma_from_view(&tf.view,0,&cs,&result)==-1,"zs-threshold-nan-invalid");
+    double row[8]={0}, nodes[16], values[16];
+    double dln=log(1e17/1e14)/8;
+    CHECK(bf_rate_gamma_legacy_grid(&tf.view,0,8,1e14,dln,row,0,2e15,
+            nodes,values,&result)==0 && result.state==BF_RATE_EXACT_ZERO,
+          "zs-adapter-exact-zero");
+    row[5]=NAN;
+    CHECK(bf_rate_gamma_legacy_grid(&tf.view,0,8,1e14,dln,row,0,2e15,
+            nodes,values,&result)==-1,"zs-adapter-nan-invalid");
+    row[5]=-1e-20;
+    CHECK(bf_rate_gamma_legacy_grid(&tf.view,0,8,1e14,dln,row,0,2e15,
+            nodes,values,&result)==-1,"zs-adapter-negative-invalid");
+    CHECK(bf_rate_gamma_legacy_grid(&tf.view,0,8,1e14,dln,NULL,0,2e15,
+            nodes,values,&result)==-1,"zs-absent-not-zero");
+    test_field_free(&tf);
+}
+
+/* Same byte asset and level energies as failed production422968, but an
+ * artificial valid J. This checks rate classification, not physical agreement. */
+static void run_real_si_zero_rows(const char *asset,const char *levels)
+{
+    FILE *fp=fopen(asset,"rb"),*lf=fopen(levels,"r");
+    CHECK(fp && lf,"zs-real-open");
+    if(!fp||!lf){if(fp)fclose(fp);if(lf)fclose(lf);return;}
+    uint32_t head[4];double grid[2];
+    if(fread(head,sizeof(*head),4,fp)!=4 || fread(grid,sizeof(*grid),2,fp)!=2){
+        CHECK(0,"zs-real-header");fclose(fp);fclose(lf);return;
+    }
+    if(head[0]!=0x434d4644 || head[1]!=1 || head[3]!=NLTE_N_FREQ_BINS || head[2]<125){
+        CHECK(0,"zs-real-shape");fclose(fp);fclose(lf);return;
+    }
+    const int target[]={2,3,4,33,34,35,36,37,38,39,64,68,69,70,71,74,75,76};
+    double energy[125];char line[1024];
+    CHECK(fgets(line,sizeof(line),lf)!=NULL,"zs-real-csv-header");
+    for(int i=0;i<125;i++){
+        int z=-1,q=-1,level=-1;double e=NAN;
+        CHECK(fgets(line,sizeof(line),lf)!=NULL &&
+              sscanf(line,"%d,%d,%d,%lf",&z,&q,&level,&e)==4 &&
+              z==14 && q==1 && level==i,"zs-real-si-level");
+        energy[i]=e;
+    }
+    fclose(lf);
+    unsigned char *flags=malloc(head[2]);
+    double *row=malloc(head[3]*sizeof(double));
+    double *nodes=malloc(2*head[3]*sizeof(double)),*values=malloc(2*head[3]*sizeof(double));
+    CHECK(flags && row && nodes && values,"zs-real-alloc");
+    if(!flags||!row||!nodes||!values){free(flags);free(row);free(nodes);free(values);fclose(fp);return;}
+    CHECK(fread(flags,1,head[2],fp)==head[2],"zs-real-flags");
+    size_t offset=32+(size_t)head[2]+(8-head[2]%8)%8;
+    TestField tf;
+    test_field_init(&tf,LUMINA_RADFIELD_N_BINS,LUMINA_RADFIELD_NU_MIN_HZ,LUMINA_RADFIELD_NU_MAX_HZ);
+    for(size_t b=0;b<=tf.n_bins;b++)tf.edges[b]=radiation_field_canonical_frequency_edge(b);
+    for(size_t b=0;b<tf.n_bins;b++)tf.J[b]=1e-4;
+    for(size_t k=0;k<sizeof(target)/sizeof(target[0]);k++){
+        int level=target[k];
+        CHECK(flags[level]==1,"zs-real-declared-table");
+        CHECK(fseek(fp,(long)(offset+(size_t)level*head[3]*sizeof(double)),SEEK_SET)==0 &&
+              fread(row,sizeof(double),head[3],fp)==head[3],"zs-real-row-read");
+        for(size_t b=0;b<head[3];b++)CHECK(row[b]==0,"zs-real-explicit-zero");
+        double threshold=(16.3458461064-energy[level])*1.602176634e-12/H_CGS;
+        BfRateResult result;
+        int rc=bf_rate_gamma_legacy_grid(&tf.view,0,(int)head[3],grid[0],
+            log(grid[1]/grid[0])/head[3],row,0,threshold,nodes,values,&result);
+        printf("REAL_SI_ZERO level=%d threshold=%.17g rc=%d state=%d gamma=%.17g\n",
+               level,threshold,rc,(int)result.state,result.gamma);
+        CHECK(rc==0 && result.state==BF_RATE_EXACT_ZERO && result.gamma==0,"zs-real-rate");
+    }
+    test_field_free(&tf);free(flags);free(row);free(nodes);free(values);fclose(fp);
+}
+
+int main(int argc,char **argv)
 {
     run_integrator_tests();
     run_kramers_adapter_test();
@@ -512,6 +629,8 @@ int main(void)
     run_zero_plus_missing_test();
     run_sh_grid_upper_closure_test();
     run_read_view_tests();
+    run_declared_zero_sigma_tests();
+    if(argc==3)run_real_si_zero_rows(argv[1],argv[2]);
     if (failures) {
         fprintf(stderr, "A2_05_BF_RATE_SELFTEST FAIL failures=%d\n", failures);
         return 1;
