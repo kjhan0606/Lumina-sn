@@ -51,6 +51,10 @@ static int trial_ledger_fixture(void){
  };
  A210TermLedger ledger={0};
  if(a210_trial_ledger_build(&input,&ledger)!=RADEQ_OK)return fail("trial ledger build");
+ line_net.uncertainty_kind=LINE_JBAR_UNCERTAINTY_ITERATION_DELTA;
+ if(a210_trial_ledger_build(&input,&ledger)!=RADEQ_OK||
+    ledger.line_uncertainty_kind!=LINE_JBAR_UNCERTAINTY_ITERATION_DELTA)
+  return fail("time field uncertainty kind lost in energy ledger");
  double expected=39.0*fourpi+4.0;
  if(fabs(ledger.residual-expected)>1e-12*fabs(expected)||
     ledger.adiabatic_model!=A210_ADIABATIC_CMFGEN_COMPLETE||

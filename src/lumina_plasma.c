@@ -4,6 +4,7 @@
 
 #include "lumina.h" /* Phase 4 - Step 1 */
 #include "nlte_population_candidate.h" /* private all-shell A2-07 trial view */
+#include "cmf_time_epoch.h"
 #include "bf_event_measure_access.h" /* MC-EVT shared CPU/GPU classifier */
 #include "bf_rate_jnu.h" /* A2-05 canonical-view bf photoionization rate */
 #include "line_jbar.h" /* amended A2-02C BB rate graph */
@@ -16528,7 +16529,13 @@ static RadeqStatus a210_private_line_energy_build(
     if (!deterministic &&
         view->statistic_kind != RADIATION_FIELD_ESTIMATOR_COUNT)
         return RADEQ_TERM_SCHEMA;
-    if (deterministic &&
+    const int time_field=deterministic&&view->uncertainty_kind==LINE_JBAR_UNCERTAINTY_ITERATION_DELTA;
+    if(time_field){
+        const NLTEPhysicalHistory *old=candidate->plasma.physical_history;
+        if(!old||!cmf_time_line_field_qualified(opacity,old->energy.epoch_s,epoch))return RADEQ_STALE_LINE;
+    }
+    if(deterministic&&!time_field&&view->uncertainty_kind!=LINE_JBAR_UNCERTAINTY_LEGACY)return RADEQ_STALE_LINE;
+    if (deterministic && !time_field &&
         (!opacity->jbar_line_det_exact_converged ||
          opacity->jbar_line_det_exact_iterations < 2 ||
          !(opacity->jbar_line_det_exact_tolerance > 0.0) ||
@@ -16731,7 +16738,8 @@ static RadeqStatus a210_private_line_energy_build(
             LineNetSobolevMaterial material;
             if (line_net_sobolev_material(
                     n_upper, Aul, nu, tau, epoch,
-                    LINE_NET_NEGATIVE_OPACITY_CMFGEN_SRCE_CHK, 1,
+                    opacity->jbar_line_det_operator==CMF_FINE_LINE_OPERATOR_COMMON_GAUSSIAN
+                        ? LINE_NET_NEGATIVE_OPACITY_NONE : LINE_NET_NEGATIVE_OPACITY_CMFGEN_SRCE_CHK, 1,
                     &material) != 0) {
                 status = RADEQ_NONFINITE; first_bad_line = line;
                 first_bad_shell = s; break;
@@ -17202,10 +17210,11 @@ static RadeqStatus a210_private_line_energy_build(
         fprintf(stderr,
             "[A2-10][LINE-NET-BLOCKED] status=%s line_status=%s "
             "line=%d shell=%zu equation=FMA_ETA_MINUS_CHI_JBAR "
-            "negative_policy=CMFGEN_SRCE_CHK clamp=0 floor=0 jitter=0\n",
+            "negative_policy=%s clamp=0 floor=0 jitter=0\n",
             a210_status_name(status),
             line_net_status_name(first_line_status),
-            first_bad_line, first_bad_shell);
+            first_bad_line, first_bad_shell,
+            opacity->jbar_line_det_operator==CMF_FINE_LINE_OPERATOR_COMMON_GAUSSIAN?"RAW_SIGNED":"CMFGEN_SRCE_CHK");
     } else {
         memset(publication, 0, sizeof(*publication));
         publication->n_shells = ns;
@@ -17215,6 +17224,7 @@ static RadeqStatus a210_private_line_energy_build(
         publication->opacity_generation = op->generation_committed;
         publication->radiation_generation = view->generation;
         publication->shell = shell_out;
+        publication->uncertainty_kind=view->uncertainty_kind;
     }
     free(super_average); free(lte_level_density); free(signed_sum);
     free(absolute_sum); free(uncertainty_sum); free(emission_sum);
@@ -17228,6 +17238,13 @@ static RadeqStatus a210_private_line_energy_build(
     a210_line_saturation_free(&saturation_diag);
     return status;
 }
+
+#ifdef LUMINA_TIME_PAIR_SELFTEST
+RadeqStatus cmf_time_line_energy_selftest(const NLTEPopulationCandidate *c,double epoch,
+    A210LineNetPublication *publication,A210LineNetShell *shell){
+    return a210_private_line_energy_build(c,epoch,publication,shell);
+}
+#endif
 
 /* Shared build-failure evidence line for the A2-10 trial lane and the A2-INIT
  * seed predictor.  event carries the log prefix so the two lanes never mix in

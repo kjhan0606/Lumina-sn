@@ -27,11 +27,12 @@ git rev-parse HEAD > "$history_out/commit.txt"
 history_units=(lumina_transport a2_02c_segment_capture radiation_field bf_rate_jnu
  line_jbar seed_capability jnu_seed population_contract atomic_internal_energy
  opacity_publication emissivity_publication radeq_publication line_net_rate
- cmfgen_adiabatic cmf_exact_sliding cmf_error_envelope cmf_observer cmf_time_moment cmf_time_field nlte_population_candidate
+ cmfgen_adiabatic cmf_exact_sliding cmf_error_envelope cmf_observer cmf_time_moment cmf_time_field cmf_time_epoch nlte_population_candidate
  physics_comparison gpu_physics_contract lumina_plasma lumina_element_wide
  lumina_atomic lumina_cmfgen cmfgen_final_writer a210_coupled_newton)
-history_tests=(bf_channels nlte_candidate_adiabatic a2_10_radeq cmf_common_field a2_10_seed_commit physics_comparison population_time population_time_assembly population_time_element a2_07_population)
+history_tests=(cmf_time_line_energy bf_channels nlte_candidate_adiabatic a2_10_radeq cmf_common_field a2_10_seed_commit physics_comparison population_time population_time_assembly population_time_element a2_07_population)
 history_files=(scripts/run_cmf_history_selftest.slurm src/*.h)
+history_files+=(tests/cmf_time_epoch_selftest.c)
 for history_unit in "${history_units[@]}"; do history_files+=("src/$history_unit.c"); done
 for history_test in "${history_tests[@]}"; do history_files+=("tests/${history_test}_selftest.c"); done
 cp --parents "${history_files[@]}" "$history_out/source/"
@@ -45,6 +46,12 @@ for history_unit in "${history_units[@]}"; do
   -c "src/$history_unit.c" -o "$history_out/objects/$history_unit.o" >> "$history_out/build.log" 2>&1
  history_objects+=("$history_out/objects/$history_unit.o")
 done
+history_epoch_wrap=(-Wl,--wrap=cmfgen_time_radiation_publish -Wl,--wrap=lumina_r7_publish_and_solve_te
+ -Wl,--wrap=gamma_deposition_require)
+gcc -O2 -std=gnu11 -D_GNU_SOURCE -fopenmp -ffunction-sections -fdata-sections -Isrc \
+ tests/cmf_time_epoch_selftest.c "${history_objects[@]}" "${history_epoch_wrap[@]}" \
+ -Wl,--gc-sections -lm -o "$history_out/time_epoch" >> "$history_out/build.log" 2>&1
+(cd "$history_out"; ./time_epoch > time-epoch.log 2> time-epoch.err)
 for history_test in "${history_tests[@]}"; do
  gcc -O2 -std=gnu11 -D_GNU_SOURCE -fopenmp -ffunction-sections -fdata-sections -Isrc \
   "tests/${history_test}_selftest.c" "${history_objects[@]}" -Wl,--gc-sections -lm \
@@ -55,6 +62,11 @@ history_san_units=(nlte_population_candidate atomic_internal_energy cmfgen_adiab
  opacity_publication emissivity_publication radeq_publication radiation_field seed_capability line_net_rate)
 history_san_files=()
 for history_unit in "${history_san_units[@]}"; do history_san_files+=("src/$history_unit.c"); done
+gcc -O1 -g -std=gnu11 -D_GNU_SOURCE -fsanitize=address,undefined -fno-omit-frame-pointer \
+ -ffunction-sections -fdata-sections -Isrc tests/cmf_time_epoch_selftest.c src/cmf_time_epoch.c src/cmf_time_field.c \
+ "${history_san_files[@]}" "${history_epoch_wrap[@]}" -Wl,--gc-sections -lm -o "$history_out/epoch_san" \
+ > "$history_out/epoch-san-build.log" 2>&1
+(cd "$history_out"; ASAN_OPTIONS=detect_leaks=1 ./epoch_san > epoch-san.log 2> epoch-san.err)
 gcc -O1 -g -std=gnu11 -D_GNU_SOURCE -fsanitize=address,undefined -fno-omit-frame-pointer \
  -ffunction-sections -fdata-sections -Isrc tests/nlte_candidate_adiabatic_selftest.c \
  "${history_san_files[@]}" -Wl,--gc-sections -lm -o "$history_out/history_san" \

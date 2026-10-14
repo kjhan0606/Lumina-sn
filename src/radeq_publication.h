@@ -6,6 +6,7 @@
 #include "opacity_publication.h"
 #include "emissivity_publication.h"
 #include "line_net_rate.h"
+#include "radiation_field.h"
 #include <math.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -55,6 +56,7 @@ typedef struct {
  double line_owner_closure,normalized_line_owner_closure;
  double sum_heating,sum_cooling,residual,e_balance;
  RadeqStatus status;
+ LineJbarUncertaintyKind line_uncertainty_kind; /* 시간장의 delta는 엄밀 상계가 아님 */
 } A210TermLedger;
 
 typedef struct {
@@ -75,6 +77,7 @@ typedef struct {
  uint64_t population_generation,te_generation,tau_generation;
  uint64_t opacity_generation,radiation_generation;
  const A210LineNetShell *shell;
+ LineJbarUncertaintyKind uncertainty_kind;
 } A210LineNetPublication;
 
 /* Production deterministic line-cell admission and completed-shell

@@ -139,6 +139,7 @@ RadeqStatus a210_trial_ledger_build(
  for(size_t s=0;s<ns;s++){
   A210TermLedger*l=&candidate[s];
   l->equation_kind=A210_RE_INTEGRAL;
+  l->line_uncertainty_kind=ln->uncertainty_kind;
   for(int k=0;k<A210_NHEAT;k++)l->heating_status[k]=A210_EXACT_ZERO;
   for(int k=0;k<A210_NCOOL;k++)l->cooling_status[k]=A210_EXACT_ZERO;
   double te=in->temperature_K[s],ne=in->electron_density_cm3[s];

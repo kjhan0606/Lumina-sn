@@ -12,6 +12,7 @@
 #include "cmf_exact_sliding.h"
 #include "cmf_cell_geometry.h"
 #include "cmf_observer.h"
+#include "cmf_time_epoch.h"
 #ifdef LUMINA_HAS_CUDA_BF_GEMM
 #include "cmf_exact_multigpu.h"
 #endif
@@ -6788,24 +6789,8 @@ int cmfgen_commit_jnu(const CMFGENState *cs, NLTEConfig *nlte,
         !(opac->jbar_line_det_grid_nu_min > 0.0) ||
         !(opac->jbar_line_det_grid_nu_max >
           opac->jbar_line_det_grid_nu_min);
-    if(time_field)field_unqualified=
-        !(opac->jbar_line_det_time_old>0)||
-        !(opac->jbar_line_det_time_new>opac->jbar_line_det_time_old)||
-        !(opac->jbar_line_det_time_equation_residual>=0)||
-        !(opac->jbar_line_det_time_equation_residual<=1e-10)||
-        !(opac->jbar_line_det_exact_tolerance>0&&opac->jbar_line_det_exact_tolerance<1)||
-        !(opac->jbar_line_det_time_closure_update>=0&&
-          opac->jbar_line_det_time_closure_update<opac->jbar_line_det_exact_tolerance)||
-        !(opac->jbar_line_det_exact_residual>=0&&
-          opac->jbar_line_det_exact_residual<opac->jbar_line_det_exact_tolerance)||
-        opac->jbar_line_det_exact_iterations<2||
-        opac->jbar_line_det_exact_iterations>opac->jbar_line_det_exact_iteration_cap||
-        !opac->jbar_line_det_error_upper||opac->jbar_line_det_grid_n_bins<2||
-        !(opac->jbar_line_det_grid_nu_min>0)||
-        !(opac->jbar_line_det_grid_nu_max>opac->jbar_line_det_grid_nu_min)||
-        !(opac->jbar_line_det_profile_error_min>=0)||
-        !isfinite(opac->jbar_line_det_profile_error_max)||
-        opac->jbar_line_det_profile_error_max<opac->jbar_line_det_profile_error_min;
+    if(time_field)field_unqualified=!cmf_time_line_field_qualified(
+        opac,cs->time_trial->old->epoch_s,geo->time_explosion);
     if (field_unqualified) {
         fprintf(stderr,
                 "[R6][BLOCKED] reason=EXACT_SOLVER_QUALIFICATION "
@@ -11878,6 +11863,49 @@ int cmfgen_xshell_production_selftest(const char *fault,
 done:
     if(solve_count)*solve_count=x.measured_solves;
     xshell_capture_free(&x);cmfgen_free(&tmp);cmfgen_free(&prod);return rc;
+}
+
+int cmfgen_time_radiation_publish(CMFGENState *cs,Geometry *geo,OpacityState *opac,
+    BFOpacity *bf,PlasmaState *plasma,NLTEConfig *nlte,AtomicData *atom,
+    double T_inner,int observer)
+{
+    if(!cs||!geo||!opac||!bf||!plasma||!nlte||!atom||!cs->time_trial||
+       !cs->time_trial->old||!plasma->physical_history||!opac->tau_sobolev||
+       opac->n_lines<=0||cs->n_shells<=0||cs->n_bins<=0||
+       cs->n_shells!=geo->n_shells||opac->n_shells!=cs->n_shells||
+       !nlte->line_qset||!nlte->line_eset)return -1;
+    cs->common_obs_ready=0;cs->time_trial->report.converged=0;
+    int common=0;
+    if(cmf_optional_binary_env("LUMINA_CMF_COMMON_FIELD",&common)||!common)return -1;
+    const LineJbarQSet *q=nlte->line_qset,*e=nlte->line_eset;
+    const char *text=getenv("LUMINA_CMF_FINE_VDOP");char *end=NULL;
+    double width=text?strtod(text,&end):LINE_JBAR_VDOPPLER_CMS;
+    if((text&&(end==text||*end))||!line_jbar_qset_profile_matches(q,width,4)||
+       !line_jbar_qset_profile_matches(e,width,4))return -1;
+    uint64_t generation=nlte->radiation_field.field.generation.computed_generation;
+    if(generation==UINT64_MAX)return -1;
+    if(!opac->jbar_line_det){
+        if((size_t)opac->n_lines>SIZE_MAX/sizeof(double)/(size_t)cs->n_shells)return -1;
+        opac->jbar_line_det=malloc((size_t)opac->n_lines*cs->n_shells*sizeof(double));
+        if(!opac->jbar_line_det)return -1;
+    }
+    cmfgen_fine_set_bf_atom(bf,atom,nlte,lumina_line_upper_population_fill_for_tau);
+    compute_bf_opacity(bf,atom,plasma,cs->n_shells);
+    cmfgen_assemble(cs,geo,opac,bf,plasma);
+    if(g_asm_unmapped_eps_fault||g_asm_cont_src_fault)return -1;
+    /* 정상장 형식해/색온도 thermostat/정상장 dJdchi를 시간해로 사용하지 않는다.
+     * 고정 J의 물질 root는 실제 R6 장을 소비하며 위 소광의 부호를 보존한다. */
+    radeq_set_tri_response(NULL,NULL,NULL,0,0);
+    radeq_set_djdchi_fs(NULL,0,0);radeq_set_tail_color(NULL,0);
+    memset(cs->lambda_star,0,(size_t)cs->n_shells*cs->n_bins*sizeof(double));
+    cs->common_obs_requested=observer;
+    w5_cont_rad_generation=generation+1;
+    if(cmfgen_fine_jbar(cs,geo,opac,T_inner,plasma,CMF_FINE_LINE_OPERATOR_COMMON_GAUSSIAN))return -1;
+    if(cmfgen_commit_jnu(cs,nlte,geo,opac,generation+1))return -1;
+    radeq_set_line_re_source(cs->chi_line_re,cs->chi_abs,cs->chi_tot,
+        cs->S_fixed,cs->J,cs->nu,cs->dnu,cs->lambda_star,plasma->T_e,
+        cs->chi_line,cs->chi_line_cls,cs->n_shells,cs->n_bins);
+    return 0;
 }
 
 int cmfgen_run(Geometry *geo, OpacityState *opac, BFOpacity *bf,
