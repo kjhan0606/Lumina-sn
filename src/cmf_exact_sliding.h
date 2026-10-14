@@ -142,6 +142,10 @@ const char *cmf_exact_status_name(CMFExactStatus status);
 typedef struct {
     double *J, *H, *K;
     double *outer_J, *outer_H, *outer_K;
+    /* 선택 출력: (ns+1)*nb의 실제 면 H. NULL이면 저장/계산하지 않는다.
+     * 중심 r=0은 대칭으로0, 내부 코어는 지정 B와 유입 강도의 차이다.
+     * 구조체를 반드시0 또는 전체 aggregate 초기화한다. */
+    double *face_H;
 } CMFFormalMoments;
 
 CMFExactStatus cmf_exact_formal_moments(

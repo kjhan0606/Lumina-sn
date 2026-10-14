@@ -10,8 +10,8 @@ static int failures;
 #define CHECK(x) do{if(!(x)){std::fprintf(stderr,"EMISSIVITY_FAIL line=%d %s\n",__LINE__,#x);++failures;}}while(0)
 struct MomentData{
     std::vector<double> v;CMFFormalMoments m;
-    MomentData(int cells,int nb):v(3*cells+3*nb){m={v.data(),v.data()+cells,v.data()+2*cells,
-        v.data()+3*cells,v.data()+3*cells+nb,v.data()+3*cells+2*nb};}
+    MomentData(int cells,int nb):v(4*cells+4*nb){m={v.data(),v.data()+cells,v.data()+2*cells,
+        v.data()+3*cells,v.data()+3*cells+nb,v.data()+3*cells+2*nb,v.data()+3*cells+3*nb};}
 };
 static void run(int kind){
     const int ns=3,nb=192,cells=ns*nb;
@@ -29,6 +29,10 @@ static void run(int kind){
     double max_delta=0;
     for(size_t i=0;i<cpu.v.size();i++){
         double norm=i<(size_t)3*cells?cpu.m.J[i%cells]:cpu.m.outer_J[(i-3*cells)%nb];
+        if(i>=(size_t)3*cells+3*nb){
+            size_t face=i-3*cells-3*nb,s=std::min(face/nb,(size_t)ns-1);
+            norm=cpu.m.J[s*nb+face%nb];
+        }
         if(norm>0)max_delta=std::max(max_delta,std::fabs(gpu.v[i]-cpu.v[i])/norm);
         else CHECK(gpu.v[i]==cpu.v[i]);
     }

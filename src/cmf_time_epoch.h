@@ -47,14 +47,15 @@ int cmfgen_time_radiation_publish(CMFGENState*,Geometry*,OpacityState*,BFOpacity
 
 /* 입력 온도 고정 정상 초기해. LUMINA_FIXED_TE_PROFILE은 입력 hydro T를
  * 담아야 하며 목표 시점의 T가 아니다. 성공은 초기 NLTE/복사장 공동 수렴만
- * 뜻한다. 시간 이력의 면 H 캡처/팽창 운전은 별도로 연결해야 한다. */
+ * 뜻한다. 성공 때만 같은 정밀 J와 실제 면 H/물질의 깊은복사 initial을
+ * 교체한다. 실패하면 initial은 보존한다. 팽창 운전은 호출자 책임이다. */
 typedef struct {
     int iterations,radiation_calls,converged;
     double tolerance,electron_update,population_update,radiation_update;
 } CMFInitialNLTEReport;
 CMFTimeEpochStatus cmfgen_solve_initial_nlte(CMFGENState*,Geometry*,OpacityState*,BFOpacity*,
     PlasmaState*,NLTEConfig*,AtomicData*,GammaDeposition*,double T_inner,
-    int iteration_cap,double tolerance,CMFInitialNLTEReport*);
+    int iteration_cap,double tolerance,CMFPhysicalTimeState *initial,CMFInitialNLTEReport*);
 int cmfgen_initial_radiation_publish(CMFGENState*,Geometry*,OpacityState*,BFOpacity*,
     PlasmaState*,NLTEConfig*,AtomicData*,double T_inner,int observer);
 

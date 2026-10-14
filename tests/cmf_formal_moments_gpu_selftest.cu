@@ -12,9 +12,10 @@ static int failures;
 struct Moments {
     std::vector<double> data;
     CMFFormalMoments m;
-    Moments(size_t cells,int nb):data(3*cells+3*nb){
+    Moments(size_t cells,int nb):data(4*cells+4*nb){
         m={data.data(),data.data()+cells,data.data()+2*cells,
-           data.data()+3*cells,data.data()+3*cells+nb,data.data()+3*cells+2*nb};
+           data.data()+3*cells,data.data()+3*cells+nb,data.data()+3*cells+2*nb,
+           data.data()+3*cells+3*nb};
     }
 };
 
@@ -53,6 +54,10 @@ static void run_case(int kind)
         /* H can be exactly zero. Normalize all three moments by their J,
          * not by an artificial absolute floor or nearly cancelling H. */
         double scale=i<3*cells?cpu.m.J[i%cells]:cpu.m.outer_J[(i-3*cells)%nb];
+        if(i>=3*cells+3*nb){
+            size_t face=i-3*cells-3*nb,s=std::min(face/nb,(size_t)ns-1);
+            scale=cpu.m.J[s*nb+face%nb];
+        }
         double delta=std::fabs(gpu.data[i]-cpu.data[i]);
         if(scale==0)CHECK(delta==0);else maximum=std::max(maximum,delta/scale);
     }
@@ -65,12 +70,20 @@ static void run_case(int kind)
             CHECK(std::fabs(gpu.m.outer_J[b]/(.5*B*(1-mu))-1)<3e-12);
             CHECK(std::fabs(gpu.m.outer_H[b]/(.25*B*(1-mu*mu))-1)<3e-12);
             CHECK(std::fabs(gpu.m.outer_K[b]/(B*(1-mu*mu*mu)/6)-1)<3e-12);
+            for(int s=0;s<=ns;s++){
+                double r=s<ns?ri[s]:ro[ns-1];
+                CHECK(std::fabs(gpu.m.face_H[(size_t)s*nb+b]/(.25*B*ri[0]*ri[0]/(r*r))-1)<3e-12);
+            }
         }
     }
     if(kind==1)for(size_t i=0;i<cells;++i){
         CHECK(std::fabs(gpu.m.J[i]-2)<2e-12);CHECK(std::fabs(gpu.m.H[i])<2e-12);
         CHECK(std::fabs(gpu.m.K[i]-2.0/3)<2e-12);
     }
+    if(kind==1)for(int s=1;s<ns;s++)for(int b=0;b<nb;b++)
+        CHECK(std::fabs(gpu.m.face_H[(size_t)s*nb+b])<2e-12);
+    for(int b=0;b<nb;b++)CHECK(std::fabs(gpu.m.face_H[cells+b]-gpu.m.outer_H[b])<=
+        3e-12*gpu.m.outer_J[b]);
     if(kind==3)for(double v:gpu.data)CHECK(v==0);
     std::vector<double> lo(cells),nearest(cells),up(cells);
     CHECK(cmf_exact_multigpu_apply_positive_bounds_epoch(ns,nb,dlog,nu.data(),ri.data(),ro.data(),time,
@@ -124,7 +137,7 @@ static void run_case(int kind)
     CHECK(cmf_exact_multigpu_formal_moments_epoch(ns,nb,dlog,nu.data(),ri.data(),ro.data(),time,
         10000,1,ct.data(),ce.data(),sf.data(),input.data(),&gpu.m,&schedule,1,nullptr)!=CMF_MGPU_OK);
     CHECK(std::memcmp(saved.data(),gpu.data.data(),saved.size()*sizeof(double))==0);
-    std::printf("FORMAL_GPU case=%d max_delta_over_J=%.17g memory_bytes=%zu drift_bins=%.9g legacy_J_bitwise=checked schedule_bitwise=checked\n",
+    std::printf("FORMAL_GPU case=%d max_delta_over_J=%.17g memory_bytes=%zu drift_bins=%.9g legacy_J_bitwise=checked schedule_bitwise=checked face_H=checked\n",
         kind,maximum,report.max_device_allocated_bytes,report.max_characteristic_drift_bins);
 }
 

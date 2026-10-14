@@ -204,7 +204,7 @@ static void test_actual_formal_closure(double extinction)
 {
     Fixture a;init(&a,8,32);const int ns=8,nb=32;
     double nu[32],ri[8],ro[8],sf[256],guess[256],fj[256],fh[256],fk[256];
-    double oj[32],oh[32],ok[32];CMFFormalMoments formal={fj,fh,fk,oj,oh,ok};
+    double oj[32],oh[32],ok[32];CMFFormalMoments formal={fj,fh,fk,oj,oh,ok,NULL};
     for(int b=0;b<nb;b++)nu[b]=sqrt(a.nu[b]*a.nu[b+1]);
     for(int s=0;s<ns;s++){ri[s]=a.r[s];ro[s]=a.r[s+1];}
     for(int i=0;i<ns*nb;i++){

@@ -91,15 +91,23 @@ int main(void){
         c.common_obs_n=5;c.common_obs_nu=malloc(5*sizeof(double));CHECK(c.common_obs_nu);
         for(int i=0;i<5;i++)c.common_obs_nu[i]=nu*(.99+.005*i);
         CMFInitialNLTEReport report;
+        CMFPhysicalTimeState initial={0},evolved={0};
         setenv("LUMINA_FIXED_TE_PROFILE","wrong_initial_T.csv",1);
-        CHECK(cmfgen_solve_initial_nlte(&c,&g,&o,&bf,&p,&n,&a,&gamma,1e4,64,1e-7,&report)==CMF_EPOCH_INVALID);
+        CHECK(cmfgen_solve_initial_nlte(&c,&g,&o,&bf,&p,&n,&a,&gamma,1e4,64,1e-7,&initial,&report)==CMF_EPOCH_INVALID);
+        CHECK(!initial.radiation_storage&&!initial.material.storage);
         CHECK(T[0]==1e4&&T[1]==1e4&&a.population_committed_generation==1);
         setenv("LUMINA_FIXED_TE_PROFILE","initial_T.csv",1);
-        CMFTimeEpochStatus status=cmfgen_solve_initial_nlte(&c,&g,&o,&bf,&p,&n,&a,&gamma,1e4,64,1e-7,&report);
+        CMFTimeEpochStatus status=cmfgen_solve_initial_nlte(&c,&g,&o,&bf,&p,&n,&a,&gamma,1e4,64,1e-7,&initial,&report);
         fprintf(stderr,"INITIAL_COUPLED_RESULT status=%d iterations=%d ne=%.17g/%.17g T=%.17g/%.17g\n",
                 status,report.iterations,ne[0],ne[1],T[0],T[1]);
         CHECK(status==CMF_EPOCH_OK&&report.converged&&c.common_obs_ready&&report.iterations>1);
         CHECK(T[0]==1e4&&T[1]==1e4&&!p.physical_history&&!c.time_trial);
+        CHECK(initial.material.energy.epoch_s==newtime&&initial.radiation.epoch_s==newtime);
+        CHECK(initial.radiation.J!=o.jnu_fine&&initial.radiation.H!=c.initial_face_H);
+        CHECK(initial.radiation.n_bins==o.n_fine&&c.initial_face_J_residual<1e-7);
+        CHECK(!memcmp(initial.radiation.J,o.jnu_fine,(size_t)NS*o.n_fine*sizeof(double)));
+        CHECK(!memcmp(initial.radiation.H,c.initial_face_H,(size_t)(NS+1)*o.n_fine*sizeof(double)));
+        for(int b=0;b<o.n_fine;b++)CHECK(initial.radiation.H[b]==0);
         double up,down,ci,three;
         CHECK(!nlte_bf_channel_rates(&n,&a,0,0,0,T[0],ne[0],&up,&down,&ci,&three)&&ci>0&&three>0);
         for(int s=0;s<NS;s++){
@@ -109,7 +117,48 @@ int main(void){
         }
         CHECK(!cmfgen_write_common_observer(&c,"initial_spectrum.csv","initial_spectrum.json",
             n.radfield_view.generation,a.population_committed_generation,p.T_e_generation,o.tau_computed_generation));
-        puts("CMF_INITIAL_COUPLED_SELFTEST_PASS actual_radiation=1 actual_R7=1 fixed_T=1 synthetic_atom=1 time_history=NOT_CAPTURED SN_comparison=0");
+        fprintf(stderr,"INITIAL_HISTORY epoch=%.17g face_J_residual=%.17g bins=%d center_H=0\n",
+            initial.radiation.epoch_s,c.initial_face_J_residual,initial.radiation.n_bins);
+        /* 방금 구한 실제 초기해에서 다음 물리 시점으로 진행한다. 임의 J=B나
+         * 면 H=0으로 과거를 교체하지 않고, cs를 해제해 깊은복사도 확인한다. */
+        double *old_radiation=malloc((size_t)(2*NS+1)*o.n_fine*sizeof(double));CHECK(old_radiation);
+        memcpy(old_radiation,initial.radiation.J,(size_t)NS*o.n_fine*sizeof(double));
+        memcpy(old_radiation+(size_t)NS*o.n_fine,initial.radiation.H,(size_t)(NS+1)*o.n_fine*sizeof(double));
+        double initial_material[(5+NI+NL)*NS];memcpy(initial_material,initial.material.storage,sizeof initial_material);
+        double evolved_time=newtime+100,dilution=pow(newtime/evolved_time,3);
+        cmfgen_free(&c);g.time_explosion=evolved_time;
+        for(int s=0;s<NS;s++){ri[s]=ve[s]*evolved_time;ro[s]=ve[s+1]*evolved_time;rho[s]*=dilution;ne[s]*=dilution;}
+        for(int i=0;i<NI*NS;i++)ions[i]*=dilution;
+        for(int i=0;i<NL*NS;i++)pops[i]*=dilution;
+        p.initial_steady_nlte=0;p.physical_history=&initial.material;
+        unsetenv("LUMINA_FIXED_TE_PROFILE");setenv("LUMINA_NLTE_NE_CLOSURE","1",1);
+        CHECK(!cmfgen_init(&c,&g));
+        nlte_update_tau_sobolev(&n,&a,&o,evolved_time,NS);
+        CHECK(!gamma_deposition_publish(&gamma,GAMMA_PROVENANCE_EXTERNAL_FILE,evolved_time,NULL,NULL,NULL,heating));
+        double *inner=calloc((size_t)o.n_fine,sizeof(double));CHECK(inner);
+        CMFTimeRadiationTrial trial={0};trial.old=&initial.radiation;trial.epoch_s=evolved_time;trial.inner_H=inner;c.time_trial=&trial;
+        c.common_obs_n=5;c.common_obs_nu=malloc(5*sizeof(double));CHECK(c.common_obs_nu);
+        for(int i=0;i<5;i++)c.common_obs_nu[i]=nu*(.99+.005*i);
+        CMFTimeEpochReport time_report;
+        status=cmfgen_solve_time_epoch(&c,&g,&o,&bf,&p,&n,&a,&gamma,1e4,32,1e-7,&evolved,&time_report);
+        fprintf(stderr,"INITIAL_TIME_BRIDGE_RESULT status=%d iterations=%d T=%.17g/%.17g ne=%.17g/%.17g\n",
+            status,time_report.iterations,T[0],T[1],ne[0],ne[1]);
+        CHECK(status==CMF_EPOCH_OK&&time_report.converged&&evolved.radiation.epoch_s==evolved_time);
+        CHECK(T[0]!=10000&&T[1]!=10000);
+        CHECK(!memcmp(initial.material.storage,initial_material,sizeof initial_material));
+        CHECK(!memcmp(initial.radiation.J,old_radiation,(size_t)NS*o.n_fine*sizeof(double)));
+        CHECK(!memcmp(initial.radiation.H,old_radiation+(size_t)NS*o.n_fine,(size_t)(NS+1)*o.n_fine*sizeof(double)));
+        for(int s=0;s<NS;s++){
+            CHECK(fabs(ne[s]/ions[NS+s]-1)<1e-8);
+            CHECK(fabs((ions[s]+ions[NS+s])/(1e8*dilution)-1)<1e-12);
+            CHECK(p.te_publication.ledger[s].adiabatic_model==A210_MATERIAL_TIME_HISTORY);
+            CHECK(fabs(p.te_publication.ledger[s].e_balance)<1e-12);
+        }
+        CHECK(!cmfgen_write_common_observer(&c,"initial_evolved_spectrum.csv","initial_evolved_spectrum.json",
+            n.radfield_view.generation,a.population_committed_generation,p.T_e_generation,o.tau_computed_generation));
+        puts("CMF_INITIAL_COUPLED_SELFTEST_PASS actual_radiation=1 actual_R7=1 initial_fixed_T=1 evolved_free_T=1 synthetic_atom=1 time_history=ACTUAL_INITIAL_FACE_H SN_comparison=0");
+        free(inner);free(old_radiation);cmf_time_radiation_trial_free(&trial);
+        cmf_physical_time_state_free(&initial);cmf_physical_time_state_free(&evolved);
         cmfgen_fine_set_bf_atom(NULL,NULL,NULL,NULL);bf_set_nlte_pops(NULL);
         cmfgen_free(&c);bf_opacity_free(&bf);gamma_deposition_free(&gamma);
         a208_publication_free(&o.cpu_opacity);a209_publication_free(&o.cpu_emissivity);

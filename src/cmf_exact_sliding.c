@@ -938,11 +938,14 @@ static CMFExactStatus exact_formal_moments_impl(
        (size_t)n_bins>SIZE_MAX/(4*sizeof(double))) {
         exact_problem_free(&p);return CMF_EXACT_INVALID_INPUT;
     }
+    size_t faces=cells+(size_t)n_bins;
+    double *face_h=moments->face_H?(double *)calloc(faces,sizeof(double)):NULL;
     double *storage=(double *)malloc(7*cells*sizeof(double));
     double *rays=(double *)malloc(2*segments*sizeof(double));
     double *edge=(double *)calloc(4*(size_t)n_bins,sizeof(double));
     double *face=(double *)malloc((size_t)n_bins*sizeof(double));
-    if(!storage || !rays || !edge || !face){
+    if(!storage || !rays || !edge || !face || (moments->face_H && !face_h)){
+        free(face_h);
         free(storage);free(rays);free(edge);free(face);exact_problem_free(&p);
         return CMF_EXACT_ALLOCATION_FAILED;
     }
@@ -969,6 +972,7 @@ static CMFExactStatus exact_formal_moments_impl(
         }
     }
     for(int b=0;b<n_bins;b++)inner[b]=inner_boundary_scale*exact_planck(nu[b],T_inner);
+    if(face_h && r_inner[0]>0)for(int b=0;b<n_bins;b++)face_h[b]=0.25*inner[b];
     sweep=exact_formal_sweep(&p,dt1,t1,source,source_cell,inner,in,out,j,
         CMF_EXACT_MODE_POSITIVE_SLIDING,&negative_count,&first_negative);
     if(sweep!=EXACT_SWEEP_OK){
@@ -990,21 +994,42 @@ static CMFExactStatus exact_formal_moments_impl(
             status=CMF_EXACT_NONFINITE;goto moment_cleanup;
         }
     }
-    /* The existing sweep stores centers. Replay only its identical final
-     * center->outer-face half segment; no alternate transport equation. */
+    /* 동일한 반구간을 재생하여 실제 면의 강도를 적분한다. 면 H는 중심
+     * H의 보간이 아니다. 접선 p==r의 두 방향은 같으므로 순플럭스0이다. */
     for(int ray=0;ray<p.nr;ray++){
         size_t base=(size_t)ray*p.ray_stride;
         if(p.rn[ray]<=0)continue;
-        int shell=p.rsh[base];
+      for(int seg=0;seg<(face_h?p.rn[ray]:1);seg++){
+        size_t slot=base+seg;
+        int shell=p.rsh[slot];
         int rc=exact_segment(n_bins,dt1+(size_t)shell*n_bins,t1+(size_t)shell*n_bins,
             source+(size_t)shell*n_bins,source_cell+(size_t)shell*n_bins,
-            p.a_drift*p.ds_outer[base],out+base*n_bins,0,face,
+            p.a_drift*p.ds_outer[slot],out+slot*n_bins,0,face,
             CMF_EXACT_MODE_POSITIVE_SLIDING,&first_negative);
         if(rc){status=rc==-1 ? CMF_EXACT_NEGATIVE_RECURRENCE : CMF_EXACT_ALLOCATION_FAILED;goto moment_cleanup;}
+        if(face_h){
+            double w=cmf_cell_angle_moment_weight(ray,p.nr,p.p,r_outer[shell],r_inner[0],1);
+            for(int b=0;b<n_bins;b++)face_h[(size_t)(shell+1)*n_bins+b]+=0.5*w*face[b];
+        }
+        if(seg==0){
         double w0=cmf_cell_angle_weight(ray,p.nr,p.p,r_outer[n_shells-1],r_inner[0]);
         double w1=cmf_cell_angle_moment_weight(ray,p.nr,p.p,r_outer[n_shells-1],r_inner[0],1);
         double w2=cmf_cell_angle_moment_weight(ray,p.nr,p.p,r_outer[n_shells-1],r_inner[0],2);
         for(int b=0;b<n_bins;b++){oj[b]+=0.5*w0*face[b];oh[b]+=0.5*w1*face[b];ok[b]+=0.5*w2*face[b];}
+        }
+        if(face_h && p.p[ray]<r_inner[shell]){
+            rc=exact_segment(n_bins,dt1+(size_t)shell*n_bins,t1+(size_t)shell*n_bins,
+                source+(size_t)shell*n_bins,source_cell+(size_t)shell*n_bins,
+                p.a_drift*p.ds_inner[slot],in+slot*n_bins,0,face,
+                CMF_EXACT_MODE_POSITIVE_SLIDING,&first_negative);
+            if(rc){status=rc==-1 ? CMF_EXACT_NEGATIVE_RECURRENCE : CMF_EXACT_ALLOCATION_FAILED;goto moment_cleanup;}
+            double w=cmf_cell_angle_moment_weight(ray,p.nr,p.p,r_inner[shell],r_inner[0],1);
+            for(int b=0;b<n_bins;b++)face_h[(size_t)shell*n_bins+b]-=0.5*w*face[b];
+        }
+      }
+    }
+    if(face_h)for(size_t i=0;i<faces;i++)if(!isfinite(face_h[i])){
+        status=CMF_EXACT_NONFINITE;goto moment_cleanup;
     }
     for(int b=0;b<n_bins;b++)if(!isfinite(oj[b]) || !isfinite(oh[b]) || !isfinite(ok[b])){
         status=CMF_EXACT_NONFINITE;goto moment_cleanup;
@@ -1014,9 +1039,10 @@ static CMFExactStatus exact_formal_moments_impl(
     memcpy(moments->outer_J,oj,(size_t)n_bins*sizeof(double));
     memcpy(moments->outer_H,oh,(size_t)n_bins*sizeof(double));
     memcpy(moments->outer_K,ok,(size_t)n_bins*sizeof(double));
+    if(face_h)memcpy(moments->face_H,face_h,faces*sizeof(double));
     status=CMF_EXACT_OK;
 moment_cleanup:
-    free(storage);free(rays);free(edge);free(face);exact_problem_free(&p);return status;
+    free(storage);free(rays);free(edge);free(face);free(face_h);exact_problem_free(&p);return status;
 }
 
 CMFExactStatus cmf_exact_characteristic_apply_positive_bounds(

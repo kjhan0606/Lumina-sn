@@ -77,7 +77,7 @@ CMFTimeMomentStatus cmf_time_field_solve(const CMFTimeMomentInput *p,
     double *iter=mem,*next=iter+cells,*h=next+cells,*mj=h+faces,*mh=mj+cells,*mk=mh+cells;
     double *f=mk+cells,*priorf=f+cells,*change=priorf+cells;
     double *oj=change+cells,*oh=oj+nb,*ok=oh+nb,*ho=ok+nb,*fo=ho+nb;
-    CMFFormalMoments m={mj,mh,mk,oj,oh,ok};
+    CMFFormalMoments m={mj,mh,mk,oj,oh,ok,NULL};
     memcpy(iter,initial_J,cells*sizeof(double));
     CMFTimeMomentInput work=*p;work.eddington=f;work.outer_h=ho;work.outer_f=fo;
     CMFTimeMomentStatus status=CMF_TIME_NOT_CONVERGED;

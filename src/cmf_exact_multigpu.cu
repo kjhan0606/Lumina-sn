@@ -37,6 +37,7 @@ struct HostGeometry {
     double a_lam = 0.0;
     double a_drift = 0.0;
     std::vector<double> rmid;
+    std::vector<double> redge;
     std::vector<double> impact;
     std::vector<int> rn;
     std::vector<int> shell;
@@ -89,6 +90,7 @@ struct DeviceShard {
      * partials H/K at cells + J/H/K at the actual outer face. */
     double *moment_weight = nullptr;
     double *moment_partial = nullptr;
+    bool moment_faces = false;
     PositiveWindowNode *positive_window = nullptr;
     PositiveTransformPair *epoch_front = nullptr;
     PositiveTransformPair *epoch_back = nullptr;
@@ -146,6 +148,7 @@ static bool build_geometry(HostGeometry *g, int ns, int nb, double dlognu,
     size_t slots;
     if (!checked_mul((size_t)g->nr, (size_t)g->stride, &slots)) return false;
     g->rmid.resize((size_t)ns);
+    g->redge.resize((size_t)ns+1);
     g->impact.resize((size_t)g->nr);
     g->rn.assign((size_t)g->nr, 0);
     g->shell.assign(slots, -1);
@@ -156,7 +159,9 @@ static bool build_geometry(HostGeometry *g, int ns, int nb, double dlognu,
     if (!cmf_cell_grid_valid(ns,r_inner,r_outer)) return false;
     for (int s = 0; s < ns; ++s) {
         g->rmid[(size_t)s] = 0.5 * (r_inner[s] + r_outer[s]);
+        g->redge[(size_t)s]=r_inner[s];
     }
+    g->redge[(size_t)ns]=r_outer[ns-1];
     cmf_cell_fill_rays(ns,r_inner,r_outer,g->impact.data());
 
     double max_drift = 0.0;
@@ -1368,6 +1373,28 @@ __global__ void partial_outer_moments_kernel(
     partial[2*cells+2*nb+b]=k;
 }
 
+/* 스트리밍 반구간의 실제 경계 강도를 즉시 축약한다. 별도 광선 이력 없음. */
+__global__ void partial_face_h_kernel(
+    int ns,int nb,int nr,int segment,int ray_begin,int ray_end,const int *rn,
+    const double *weight,const double *face,const double *inner,
+    double *partial,bool outward)
+{
+    int b=blockIdx.x*blockDim.x+threadIdx.x;
+    if(b>=nb)return;
+    int edge=ns-1-segment+(outward?1:0);
+    size_t woff=2*(size_t)nr*ns+3*(size_t)nr;
+    size_t at=2*(size_t)ns*nb+3*(size_t)nb+(size_t)edge*nb+b;
+    double h=0;
+    for(int ray=ray_end-1;ray>=ray_begin;--ray){
+        int lr=ray-ray_begin;
+        if(segment>=rn[lr])continue;
+        double w=weight[woff+(size_t)ray*(ns+1)+edge];
+        h+=0.5*w*(outward?face[(size_t)lr*nb+b]:
+            ((edge==0?inner[b]:0)-face[(size_t)lr*nb+b]));
+    }
+    partial[at]=outward?partial[at]+h:h;
+}
+
 /* 중심 강도는 이 셸의 각도 적분 직후 재사용한다. 이전 셸의 중심 강도는
  * 전파에 쓰이지 않으며 반구간 경계 강도 face만 다음 구간에 전달된다. */
 static int reduce_current_centers(DeviceShard &s,const HostGeometry &g,
@@ -1517,6 +1544,12 @@ static int launch_sweep(DeviceShard *shards, int ndev,
                 return 1;
             if(half==0 && reduce_current_centers(s,g,segment,false,
                                                 positive_sliding,rounding))return 1;
+            if(half==1 && s.moment_faces){
+                partial_face_h_kernel<<<(g.nb+threads-1)/threads,threads>>>(
+                    g.ns,g.nb,g.nr,segment,s.ray_begin,s.ray_end,s.rn,
+                    s.moment_weight,s.face,s.inner,s.moment_partial,false);
+                if(cudaGetLastError()!=cudaSuccess)return 1;
+            }
         }
       }
     }
@@ -1542,6 +1575,12 @@ static int launch_sweep(DeviceShard *shards, int ndev,
                 return 1;
             if(half==0 && reduce_current_centers(s,g,segment,true,
                                                 positive_sliding,rounding))return 1;
+            if(half==1 && s.moment_faces){
+                partial_face_h_kernel<<<(g.nb+threads-1)/threads,threads>>>(
+                    g.ns,g.nb,g.nr,segment,s.ray_begin,s.ray_end,s.rn,
+                    s.moment_weight,s.face,s.inner,s.moment_partial,true);
+                if(cudaGetLastError()!=cudaSuccess)return 1;
+            }
             if(segment==0 && half==1 && s.moment_partial){
                 partial_outer_moments_kernel<<<(g.nb+threads-1)/threads,threads>>>(
                     g.ns,g.nb,g.nr,s.ray_begin,s.ray_end,s.moment_weight,
@@ -3073,8 +3112,13 @@ struct PersistentBoundContext {
         if(edge_cells>limit || edge_angles>limit ||
            cells>(limit-edge_cells)/2 || angles>(limit-edge_angles)/2)
             return CMF_MGPU_ALLOCATION_FAILED;
-        size_t values=2*cells+edge_cells;
-        std::vector<double> weights(2*angles+edge_angles),j(cells),
+        size_t base_values=2*cells+edge_cells,base_weights=2*angles+edge_angles;
+        size_t face_values=output->face_H?cells+(size_t)n_bins:0;
+        size_t face_weights=output->face_H?angles+(size_t)geometry.nr:0;
+        if(face_values>limit-base_values || face_weights>limit-base_weights)
+            return CMF_MGPU_ALLOCATION_FAILED;
+        size_t values=base_values+face_values;
+        std::vector<double> weights(base_weights+face_weights),j(cells),
                             moments(values,0.0),scratch(values);
         for(int ray=0;ray<geometry.nr;++ray){
             for(int s=0;s<n_shells;++s){
@@ -3088,6 +3132,12 @@ struct PersistentBoundContext {
                 weights[2*angles+(size_t)m*geometry.nr+ray]=
                     cmf_cell_angle_moment_weight(ray,geometry.nr,
                         geometry.impact.data(),outer_radius,core_radius,m);
+            if(output->face_H)for(int edge=0;edge<=n_shells;++edge){
+                double r=geometry.redge[edge];
+                weights[base_weights+(size_t)ray*(n_shells+1)+edge]=
+                    geometry.impact[ray]<r?cmf_cell_angle_moment_weight(
+                        ray,geometry.nr,geometry.impact.data(),r,core_radius,1):0;
+            }
         }
         for(DeviceShard &shard:shards){
             if(shard.moment_partial || shard.moment_weight)
@@ -3099,8 +3149,10 @@ struct PersistentBoundContext {
                device_allocate(&shard.moment_partial,values,&shard)!=cudaSuccess)
                 return CMF_MGPU_ALLOCATION_FAILED;
             if(cudaMemcpy(shard.moment_weight,weights.data(),weights.size()*sizeof(double),
-                          cudaMemcpyHostToDevice)!=cudaSuccess)
+                          cudaMemcpyHostToDevice)!=cudaSuccess ||
+               cudaMemset(shard.moment_partial,0,values*sizeof(double))!=cudaSuccess)
                 return CMF_MGPU_CUDA_FAILURE;
+            shard.moment_faces=output->face_H!=nullptr;
             allocation_report.total_device_allocated_bytes+=shard.allocated_bytes-previous;
             allocation_report.max_device_allocated_bytes=std::max(
                 allocation_report.max_device_allocated_bytes,shard.allocated_bytes);
@@ -3118,7 +3170,7 @@ struct PersistentBoundContext {
             for(size_t i=0;i<values;++i)moments[i]+=scratch[i];
         }
         for(size_t i=0;i<values;++i)
-            if(!std::isfinite(moments[i]) || (i>=cells && !(moments[i]>=0)))
+            if(!std::isfinite(moments[i]) || (i>=cells && i<base_values && !(moments[i]>=0)))
                 return CMF_MGPU_NONFINITE;
         std::memcpy(output->J,j.data(),cells*sizeof(double));
         std::memcpy(output->H,moments.data(),cells*sizeof(double));
@@ -3126,6 +3178,7 @@ struct PersistentBoundContext {
         std::memcpy(output->outer_J,moments.data()+2*cells,n_bins*sizeof(double));
         std::memcpy(output->outer_H,moments.data()+2*cells+n_bins,n_bins*sizeof(double));
         std::memcpy(output->outer_K,moments.data()+2*cells+2*n_bins,n_bins*sizeof(double));
+        if(output->face_H)std::memcpy(output->face_H,moments.data()+base_values,face_values*sizeof(double));
         return CMF_MGPU_OK;
     }
 

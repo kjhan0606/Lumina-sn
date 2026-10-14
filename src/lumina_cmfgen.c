@@ -2166,6 +2166,7 @@ void cmfgen_free(CMFGENState *cs)
     free(cs->tri_lo); free(cs->tri_up); free(cs->tri_r);
     free(cs->p_ray);
     free(cs->common_obs_nu); free(cs->common_obs_lnu);
+    free(cs->initial_face_H);
     memset(cs, 0, sizeof(*cs));
 }
 
@@ -8325,6 +8326,31 @@ static int cmf_time_formal_apply(void *arg,const double *J,CMFFormalMoments *out
 #endif
 }
 
+static int cmf_initial_faces(CMFGENState *out,const CMFGENState *fine,
+    const Geometry *geo,const double *eta,double temperature){
+    size_t ns=fine->n_shells,nb=fine->n_bins,cells=ns*nb,faces=(ns+1)*nb;
+    if(!ns||nb<2||nb>SIZE_MAX/sizeof(double)/(4*ns+4))return -1;
+    double *v=malloc((3*cells+3*nb)*sizeof(double)),*h=malloc(faces*sizeof(double));
+    if(!v||!h){free(v);free(h);return -1;}
+    CMFFormalMoments m={v,v+cells,v+2*cells,v+3*cells,v+3*cells+nb,v+3*cells+2*nb,h};
+    CMFTimeFormalContext ctx={fine,geo,eta,temperature,0};
+    int rc=cmf_fine_multigpu_device_request(&ctx.devices);
+    if(!rc)rc=cmf_time_formal_apply(&ctx,fine->J,&m);
+    double residual=0;
+    if(!rc)for(size_t i=0;i<cells;i++){
+        double scale=fmax(fine->J[i],m.J[i]),delta=fabs(fine->J[i]-m.J[i]);
+        if(scale>0)residual=fmax(residual,delta/scale);
+        else if(delta)rc=-1;
+    }
+    if(!rc){
+        free(out->initial_face_H);out->initial_face_H=h;h=NULL;
+        out->initial_face_bins=(int)nb;out->initial_face_nu_min=fine->nu_min;
+        out->initial_face_dlog=fine->d_log_nu;out->initial_face_J_residual=residual;
+        out->initial_face_ready=1;
+    }
+    free(v);free(h);return rc;
+}
+
 static int cmf_fine_time_solve(CMFGENState *fine,const Geometry *geo,const double *eta,
     double temperature,int cap,double tol,CMFTimeRadiationTrial *trial,double *delta){
     if(!trial||!trial->old||!trial->inner_H)return -1;
@@ -8372,6 +8398,7 @@ int cmfgen_fine_jbar(CMFGENState *csb, const Geometry *geo,
 {
     int NS = csb->n_shells, NL = opac->n_lines;
     csb->common_obs_ready=0;
+    csb->initial_face_ready=0;
     opac->jbar_line_det_time_old=opac->jbar_line_det_time_new=0;
     opac->jbar_line_det_time_equation_residual=opac->jbar_line_det_time_closure_update=INFINITY;
     opac->jbar_line_det_vdoppler_cms = 0.0;
@@ -10617,9 +10644,11 @@ int cmfgen_fine_jbar(CMFGENState *csb, const Geometry *geo,
     }
 
     if (common_field) {
-        if(csb->common_obs_requested &&
-           cmfgen_common_observer_snapshot(csb,&fs,geo,T_inner)!=0) {
-            fprintf(stderr,"[COMMON-OBS][ERROR] common-material formal solve failed\n");
+        if((csb->initial_face_requested && (time_field ||
+            cmf_initial_faces(csb,&fs,geo,eta,T_inner))) ||
+           (csb->common_obs_requested && cmfgen_common_observer_snapshot(csb,&fs,geo,T_inner)!=0)) {
+            csb->initial_face_ready=0;
+            fprintf(stderr,"[COMMON-OBS][ERROR] common-material face/observer formal solve failed\n");
             free(fs.nu);free(fs.dnu);free(fs.chi_es);free(fs.chi_abs);
             free(fs.chi_line);free(fs.chi_tot);free(fs.S_fixed);free(fs.J);
             free(eta);free(fine_error_upper);return -1;

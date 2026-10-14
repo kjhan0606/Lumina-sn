@@ -120,6 +120,11 @@ typedef struct {
     int common_obs_fine_bins;
     double common_obs_fine_min, common_obs_fine_dlog;
     CMFTimeRadiationTrial *time_trial; /* 빌린 실제 시간 입력/후보, cs가 free하지 않는다. */
+    /* 수렴한 정상 초기화의 마지막 형식해에서만 요청한다. 실제 면 H이며
+     * 이 객체 소유. ready는 마지막 fine 게시가 성공했을 때만 유효하다. */
+    int initial_face_requested,initial_face_ready,initial_face_bins;
+    double initial_face_nu_min,initial_face_dlog,initial_face_J_residual;
+    double *initial_face_H;
 } CMFGENState;
 
 int cmfgen_write_common_observer(const CMFGENState *cs, const char *csv_path,

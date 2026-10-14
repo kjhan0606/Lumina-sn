@@ -14,7 +14,8 @@ int main(void)
 {
     double ri[NS],ro[NS],nu[NB],ct[N]={0},ce[N]={0},sf[N]={0},input[N]={0};
     double j[N],h[N],k[N],oj[NB],oh[NB],ok[NB],lo[N],nearest[N],up[N];
-    CMFFormalMoments out={j,h,k,oj,oh,ok};const double T=10000,dlog=log(3e15/1e13)/NB;
+    double face[(NS+1)*NB];
+    CMFFormalMoments out={j,h,k,oj,oh,ok,face};const double T=10000,dlog=log(3e15/1e13)/NB;
     for(int s=0;s<NS;s++){ri[s]=(s+1)*1e10;ro[s]=(s+2)*1e10;}
     for(int b=0;b<NB;b++)nu[b]=1e13*exp((b+.5)*dlog);
     CHECK(cmf_exact_formal_moments(NS,NB,dlog,nu,ri,ro,1e30,T,1,ct,ce,sf,input,&out)==CMF_EXACT_OK);
@@ -32,6 +33,10 @@ int main(void)
         CHECK(error(ok[b],B*(1-mu*mu*mu)/6)<2e-12);
     }
     CHECK(vacuum_error<2e-12);
+    for(int s=0;s<=NS;s++)for(int b=0;b<NB;b++){
+        double r=s<NS?ri[s]:ro[NS-1],expected=.25*planck(nu[b],T)*ri[0]*ri[0]/(r*r);
+        CHECK(error(face[s*NB+b],expected)<2e-12);
+    }
     CHECK(cmf_exact_characteristic_apply_positive_bounds(NS,NB,dlog,nu,ri,ro,1e30,T,1,
         ct,ce,sf,input,lo,nearest,up)==CMF_EXACT_OK);
     CHECK(memcmp(nearest,j,sizeof(j))==0);
@@ -42,6 +47,9 @@ int main(void)
     }
     for(int b=0;b<NB;b++){
         CHECK(error(oj[b],1)<2e-12);CHECK(error(oh[b],.5)<2e-12);CHECK(error(ok[b],1.0/3)<2e-12);
+        CHECK(fabs(face[b]-.25*(planck(nu[b],T)-2))<2e-12);
+        CHECK(error(face[NS*NB+b],oh[b])<2e-12);
+        for(int s=1;s<NS;s++)CHECK(fabs(face[s*NB+b])<2e-12);
     }
     /* Full sphere: zero-radius inner face introduces no artificial core light. */
     for(int s=0;s<NS;s++){ri[s]=s*1e10;ro[s]=(s+1)*1e10;}
@@ -49,10 +57,12 @@ int main(void)
     CHECK(cmf_exact_formal_moments(NS,NB,dlog,nu,ri,ro,1e30,T,1,ct,ce,sf,input,&out)==CMF_EXACT_OK);
     for(int i=0;i<N;i++)CHECK(j[i]==0&&h[i]==0&&k[i]==0);
     for(int b=0;b<NB;b++)CHECK(oj[b]==0&&oh[b]==0&&ok[b]==0);
+    for(int i=0;i<(NS+1)*NB;i++)CHECK(face[i]==0);
     /* Invalid input must not publish any partial result. */
-    j[0]=101;h[0]=102;k[0]=103;oj[0]=104;oh[0]=105;ok[0]=106;input[N-1]=NAN;
+    j[0]=101;h[0]=102;k[0]=103;oj[0]=104;oh[0]=105;ok[0]=106;face[0]=107;input[N-1]=NAN;
     CHECK(cmf_exact_formal_moments(NS,NB,dlog,nu,ri,ro,1e30,T,1,ct,ce,sf,input,&out)!=CMF_EXACT_OK);
-    CHECK(j[0]==101&&h[0]==102&&k[0]==103&&oj[0]==104&&oh[0]==105&&ok[0]==106);
+    CHECK(j[0]==101&&h[0]==102&&k[0]==103&&oj[0]==104&&oh[0]==105&&ok[0]==106&&face[0]==107);
+    puts("FORMAL_FACE_H vacuum_r2H=checked inner_core=checked thick_interfaces=checked center_symmetry=checked");
     printf("FORMAL_MOMENTS vacuum_max_relative=%.17g legacy_J_bitwise=checked thick_isotropy=checked\n",vacuum_error);
     printf("CMF_FORMAL_MOMENTS_SELFTEST %s failures=%d\n",failures?"FAIL":"PASS",failures);
     return failures?1:0;
