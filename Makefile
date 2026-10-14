@@ -10,7 +10,7 @@ LDFLAGS += -fopenmp
 endif
 
 # Source files (in src/)
-SOURCES = src/lumina_main.c src/lumina_transport.c src/a2_02c_segment_capture.c src/radiation_field.c src/bf_rate_jnu.c src/line_jbar.c src/seed_capability.c src/jnu_seed.c src/population_contract.c src/atomic_internal_energy.c src/opacity_publication.c src/emissivity_publication.c src/radeq_publication.c src/line_net_rate.c src/cmfgen_adiabatic.c src/cmf_exact_sliding.c src/cmf_error_envelope.c src/nlte_population_candidate.c src/physics_comparison.c src/gpu_physics_contract.c src/lumina_plasma.c src/lumina_element_wide.c src/lumina_atomic.c src/lumina_cmfgen.c src/cmfgen_final_writer.c
+SOURCES = src/lumina_main.c src/lumina_transport.c src/a2_02c_segment_capture.c src/radiation_field.c src/bf_rate_jnu.c src/line_jbar.c src/seed_capability.c src/jnu_seed.c src/population_contract.c src/atomic_internal_energy.c src/opacity_publication.c src/emissivity_publication.c src/radeq_publication.c src/line_net_rate.c src/cmfgen_adiabatic.c src/cmf_exact_sliding.c src/cmf_error_envelope.c src/nlte_population_candidate.c src/physics_comparison.c src/gpu_physics_contract.c src/lumina_plasma.c src/lumina_element_wide.c src/lumina_atomic.c src/lumina_cmfgen.c src/cmfgen_final_writer.c src/a210_coupled_newton.c
 # ★2026-08-07: 이 목록이 12개였고, src 가 실제로 #include 하는 헤더는 21개였다.
 #   빠진 9개는 바뀌어도 리빌드가 일어나지 않는다 — 그 중에 **계약 헤더**들이 있었다
 #   (gpu_radiation_field_contract · gpu_physics_kernels · lumina_cmfgen).
@@ -22,6 +22,7 @@ HEADERS = src/lumina.h src/a2_02c_segment_capture.h src/radiation_field.h src/bf
           src/line_jbar.h src/seed_capability.h src/jnu_seed.h src/population_contract.h \
           src/atomic_internal_energy.h src/line_net_rate.h \
           src/opacity_publication.h src/emissivity_publication.h src/radeq_publication.h \
+          src/a210_coupled_newton.h \
           src/cmfgen_adiabatic.h \
           src/cmf_exact_sliding.h \
           src/cmf_exact_multigpu.h \

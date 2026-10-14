@@ -9,6 +9,7 @@
 #include "line_jbar.h" /* amended A2-02C BB rate graph */
 #include "line_net_rate.h" /* DET-BB-ALI net radiative bracket */
 #include "lumina_radeq_col_pairs.h" /* withParityO: CMFGEN-faithful all-pair COL cooling */
+#include "a210_coupled_newton.h" /* sprint 2026-10-13: coupled T_e/n_e root (FREE_T) */
 #include <assert.h>
 #include <errno.h>
 #include <fcntl.h>
@@ -17218,8 +17219,9 @@ static void a210_log_candidate_build_failure(
     }
 }
 
-static RadeqStatus a210_production_bundle_ledger(
+static RadeqStatus a210_production_bundle_ledger_ex(
         const A210VectorProdContext *context,const double *trial_te,
+        const double *prescribed_ne,
         NLTEPopulationCandidate *candidate,A210TermLedger *ledger,
         int note_trial) {
     if(!context||!trial_te||!candidate||!ledger||!context->nlte||
@@ -17232,8 +17234,10 @@ static RadeqStatus a210_production_bundle_ledger(
         context->n_shells,context->epoch,context->required_te_generation,
         context->required_population_generation,context->gamma
     };
-    NLTEPopulationCandidateStatus candidate_status=
-        nlte_population_candidate_build_bundle(candidate,&request);
+    NLTEPopulationCandidateStatus candidate_status=prescribed_ne
+        ? nlte_population_candidate_build_bundle_at_ne(
+              candidate,&request,prescribed_ne)
+        : nlte_population_candidate_build_bundle(candidate,&request);
     if(candidate_status!=NLTE_CANDIDATE_OK){
         a210_log_candidate_build_failure(
             "[A2-10][TRIAL-BUNDLE-BLOCKED]",candidate_status,candidate,
@@ -17293,6 +17297,53 @@ static RadeqStatus a210_production_bundle_ledger(
     if(status==RADEQ_OK&&note_trial)
         a210_note_complete_trial(ledger,context->n_shells);
     return status;
+}
+
+static RadeqStatus a210_production_bundle_ledger(
+        const A210VectorProdContext *context,const double *trial_te,
+        NLTEPopulationCandidate *candidate,A210TermLedger *ledger,
+        int note_trial) {
+    return a210_production_bundle_ledger_ex(
+        context,trial_te,NULL,candidate,ledger,note_trial);
+}
+
+/* Coupled T_e/n_e residual (sprint FREE_T accel): one private producer
+ * chain at the prescribed (T_e, n_e); eval_out is the shell ledger vector. */
+static int a210_coupled_production_residual(
+        const double *te,const double *ne,size_t n,double *f_te,
+        double *f_ne,void *eval_out,void *opaque) {
+    const A210VectorProdContext *context=
+        (const A210VectorProdContext*)opaque;
+    A210TermLedger *ledger=(A210TermLedger*)eval_out;
+    if(!context||!ledger||context->n_shells!=n)return 1;
+    double *q=malloc(n*sizeof(*q));
+    if(!q)return 1;
+    NLTEPopulationCandidate candidate={0};
+    int rc=1;
+    RadeqStatus status=a210_production_bundle_ledger_ex(
+        context,te,ne,&candidate,ledger,1);
+    if(status!=RADEQ_OK&&status!=RADEQ_EXACT_ZERO_BALANCE)goto done;
+    if(nlte_ne_closure_implied_ne(&candidate,q)!=POP_OK)goto done;
+    for(size_t s=0;s<n;s++){
+        const A210TermLedger *l=&ledger[s];
+        if((l->status!=RADEQ_OK&&l->status!=RADEQ_EXACT_ZERO_BALANCE)||
+           l->equation_kind!=A210_RE_INTEGRAL||
+           l->adiabatic_model!=A210_ADIABATIC_CMFGEN_COMPLETE||
+           l->cooling_status[A210_ADIABATIC]==A210_INCOMPLETE||
+           !isfinite(l->residual)||!isfinite(l->sum_heating)||
+           !isfinite(l->sum_cooling))goto done;
+        /* ln(H/C): same root as H-C, nearly linear in ln T far from it. */
+        if(l->sum_heating==0.0&&l->sum_cooling==0.0)f_te[s]=0.0;
+        else if(l->sum_heating>0.0&&l->sum_cooling>0.0)
+            f_te[s]=log1p(l->residual/l->sum_cooling);
+        else goto done;
+        f_ne[s]=log(q[s]/ne[s]);
+    }
+    rc=0;
+done:
+    nlte_population_candidate_free(&candidate);
+    free(q);
+    return rc;
 }
 
 static RadeqStatus a210_production_vector_residual(
@@ -17687,17 +17738,40 @@ static int a210_production_solve(PlasmaState*plasma,GammaDeposition*gamma,
             goto cleanup;
         }
     }else{
-        /* FREE_T body: existing bracket/root search and replay, unchanged. */
-        solve_status=a210_solve_vector_candidate(
-            lo,hi,plasma->n_electron,n,(uint64_t)llround(epoch),te_generation,
-            geo,a210_production_vector_residual,&context,&root,root_te,root_ne);
+        /* FREE_T body (sprint accel build): one coupled (T_e, n_e) Newton
+         * root with populations solved at the prescribed n_e, in place of the
+         * vector bisection whose every trial ran the damped n_e closure.
+         * Start = published T_e and n_e; no bound is applied to the root. */
+        A210CoupledNewtonConfig cn;
+        A210CoupledNewtonReport cn_report;
+        A210TermLedger *root_ledger=calloc(n,sizeof(*root_ledger));
+        if(!root_ledger){ct->blocked_schema++;goto cleanup;}
+        a210_coupled_newton_default_config(&cn,n);
+        cn.te_min=lo[0];cn.te_max=hi[0];
+        cn.eval_out_bytes=n*sizeof(*root_ledger);
+        cn.log=stderr;cn.tag="A2-10";
+        cn.outer_iteration=(uint64_t)nlte->current_iter;
+        A210CoupledNewtonStatus cn_status=a210_coupled_newton_solve(
+            &cn,a210_coupled_production_residual,&context,root_te,root_ne,
+            root_ledger,&cn_report);
+        if(cn_status!=A210_CN_CONVERGED){
+            ct->nonconverged++;free(root_ledger);goto cleanup;
+        }
+        solve_status=a210_publication_candidate_from_root(
+            root_te,root_ne,root_ledger,n,(uint64_t)llround(epoch),
+            te_generation,geo,(uint64_t)cn_report.evaluations,&root,
+            root_te,root_ne);
+        free(root_ledger);
         if(solve_status!=0){a210_publication_free(&root);goto cleanup;}
-        replay_status=a210_production_bundle_ledger(
-            &context,root_te,&replay,replay_ledger,0);
+        replay_status=a210_production_bundle_ledger_ex(
+            &context,root_te,root_ne,&replay,replay_ledger,0);
         if(replay_status!=RADEQ_OK||!replay.bundle_complete||
            root.committed_te_generation!=0||
            memcmp(root.ledger,replay_ledger,n*sizeof(*replay_ledger))!=0){
             ct->blocked_schema++;
+            fprintf(stderr,"[A2-10][COUPLED-NEWTON][REPLAY-MISMATCH] "
+                    "replay_status=%s bundle_complete=%d action=TERMINATE\n",
+                    a210_status_name(replay_status),replay.bundle_complete);
             nlte_population_candidate_free(&replay);
             a210_publication_free(&root);goto cleanup;
         }
@@ -21715,6 +21789,30 @@ PopulationStatus nlte_ne_closure_trial_step(
     return POP_OK;
 }
 
+PopulationStatus nlte_ne_closure_implied_ne(
+        const NLTEPopulationCandidate *candidate, double *q_closed) {
+    if (!candidate || !q_closed || candidate->n_shells == 0 ||
+        candidate->n_shells > (size_t)INT_MAX)
+        return POP_ATOMIC_MISSING;
+    int n_shells = (int)candidate->n_shells;
+    const NLTEConfig *nlte = &candidate->nlte;
+    const AtomicData *atom = &candidate->atom;
+    PopulationStatus status = nlte_ne_closure_layout_check(
+        nlte, atom, candidate->level_population, candidate->ion_population,
+        candidate->electron_density, n_shells);
+    if (status != POP_OK) return status;
+    for (int shell = 0; shell < n_shells; shell++) {
+        double q = 0.0, q_saha = 0.0;
+        status = nlte_ne_closure_charge(
+            nlte, atom, candidate->level_population, candidate->ion_population,
+            n_shells, shell, &q, &q_saha);
+        if (status != POP_OK) return status;
+        if (!isfinite(q) || q <= 0.0) return POP_NONFINITE;
+        q_closed[shell] = q;
+    }
+    return POP_OK;
+}
+
 /* Final read-only invariant check.  The accepted candidate must retain the
  * exact n_e used by both its stage ladder and pair solve; this API can no
  * longer turn a mismatched post-solve state into an apparently closed one. */
@@ -23097,13 +23195,26 @@ nlte_population_candidate_prepare_through_core(
         candidate, request->time_explosion, request->gamma_dep);
 }
 
-static NLTEPopulationCandidateStatus nlte_population_candidate_build_bundle_body(
+static NLTEPopulationCandidateStatus nlte_population_candidate_build_bundle_body_ex(
         NLTEPopulationCandidate *candidate,
-        const NLTEPopulationBundleRequest *request) {
+        const NLTEPopulationBundleRequest *request,
+        const double *prescribed_ne) {
     if (!candidate || !request)
         return NLTE_CANDIDATE_INVALID_ARGUMENT;
     NLTEPopulationCandidateStatus status;
-    if (!nlte_ne_closure_enabled()) {
+    if (prescribed_ne) {
+        /* Coupled T_e/n_e root: one core solve at the caller's n_e. */
+        if (!nlte_ne_closure_enabled()) {
+            memset(candidate, 0, sizeof(*candidate));
+            candidate->status = NLTE_CANDIDATE_INVALID_ARGUMENT;
+            return candidate->status;
+        }
+        status = nlte_population_candidate_prepare_through_core(
+            candidate, request, prescribed_ne);
+        if (status != NLTE_CANDIDATE_OK) return status;
+        candidate->ne_closure_active = 1;
+        candidate->ne_closure_iterations = 0;
+    } else if (!nlte_ne_closure_enabled()) {
         /* Gate-off is the original single stage-only n_e + pair solve. */
         status = nlte_population_candidate_prepare_through_core(
             candidate, request, NULL);
@@ -23220,6 +23331,24 @@ static NLTEPopulationCandidateStatus nlte_population_candidate_build_bundle_body
     candidate->population_status = POP_OK;
     candidate->status = NLTE_CANDIDATE_OK;
     return NLTE_CANDIDATE_OK;
+}
+
+static NLTEPopulationCandidateStatus nlte_population_candidate_build_bundle_body(
+        NLTEPopulationCandidate *candidate,
+        const NLTEPopulationBundleRequest *request) {
+    return nlte_population_candidate_build_bundle_body_ex(
+        candidate, request, NULL);
+}
+
+/* The coupled root does not compose with the DET-COLDSTART pin. */
+NLTEPopulationCandidateStatus nlte_population_candidate_build_bundle_at_ne(
+        NLTEPopulationCandidate *candidate,
+        const NLTEPopulationBundleRequest *request,
+        const double *prescribed_ne) {
+    if (!candidate || !request || !prescribed_ne || coldstart_dir())
+        return NLTE_CANDIDATE_INVALID_ARGUMENT;
+    return nlte_population_candidate_build_bundle_body_ex(
+        candidate, request, prescribed_ne);
 }
 
 /* DET-COLDSTART armed judgment (the single place): armed = DIR set ∧

@@ -1,0 +1,15 @@
+PASS T1_smooth_converges_to_reference_root status=CONVERGED iters=9 evals=22 jac=3 max_f_te=7.32e-13 max_f_ne=3e-15 err_T=9.01e-13 err_ne=4.83e-13
+PASS T2_evaluation_budget_small status=CONVERGED iters=9 evals=22 jac=3 max_f_te=7.32e-13 max_f_ne=3e-15 err_T=9.01e-13 err_ne=4.83e-13
+PASS T3_root_record_is_accepted_root_evaluation aux==te bytes
+PASS T4_no_callback_outside_domain 
+PASS T5_wide_stencil_residual_declared_only status=CONVERGED iters=11 evals=20 max_f_te=4.09e-14
+PASS T6_no_root_fails_closed status=NOT_CONVERGED evals=200
+PASS T7_no_root_never_leaves_domain 
+PASS T8_jump_root_not_declared_converged status=LINESEARCH_FAILED iters=8 evals=56 max_f_te=0.001
+PASS T9_rejected_trials_shorten_step status=CONVERGED rejected=1 evals=20
+PASS T10_initial_eval_failure_fails_closed INITIAL_EVAL_FAILED
+PASS T13_log_balance_from_domain_floor status=CONVERGED iters=10 evals=15 jac=1 rejected=0 err_T=3.73e-14 domain_violations=0
+PASS T14_log_balance_from_domain_ceiling status=CONVERGED iters=21 evals=26 jac=1 rejected=0 err_T=4.39e-13 domain_violations=0
+PASS T11_single_shell_rejected INVALID_ARGUMENT
+PASS T12_nonpositive_guess_rejected INVALID_ARGUMENT
+SELFTEST PASS failures=0

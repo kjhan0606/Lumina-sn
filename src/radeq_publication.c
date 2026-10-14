@@ -620,6 +620,54 @@ int a210_solve_vector_candidate(
  return a210_solve_vector_impl(lower,upper,ne,n,ep,gen,geo,fn,ctx,pub,
                                outte,outne,0);
 }
+/* Uncommitted FREE_T candidate from an externally solved coupled root: the
+ * same qualification and manifests as the vector bisection tail
+ * (authorize_publication = 0). */
+int a210_publication_candidate_from_root(
+ const double*te,const double*ne,const A210TermLedger*ledger,size_t n,
+ uint64_t ep,uint64_t gen,const char*geo,uint64_t trials,
+ ElectronTemperaturePublication*pub,double*outte,double*outne){
+ if(!te||!ne||!ledger||!geo||!pub||!outte||!outne||!n||!gen)return 2;
+ ElectronTemperaturePublication c={0};
+ if(a210_publication_init(&c,n))return 2;
+ c.solve_epoch=ep;c.required_te_generation=gen;memcpy(c.geometry_sha256,geo,65);
+ g.solve_epoch=ep;g.te_generation_required=gen;g.shells_attempted+=n;
+ g.trials+=trials;
+ if(!a210_vector_ledgers_valid(RADEQ_OK,ledger,n)){
+  g.blocked_schema++;a210_publication_free(&c);return 5;
+ }
+ memcpy(c.T_e,te,n*sizeof(*c.T_e));memcpy(c.ledger,ledger,n*sizeof(*c.ledger));
+ for(size_t s=0;s<n;s++){
+  if(!isfinite(te[s])||te[s]<=0.0||!isfinite(ne[s])||ne[s]<=0.0){
+   g.nonfinite_failures++;a210_publication_free(&c);return 5;
+  }
+  c.n_e[s]=ne[s];c.shell_status[s]=RADEQ_OK;
+  c.residual_status[s]=c.ledger[s].e_balance<=1e-3?
+      RADEQ_OK:RADEQ_HEAT_RESIDUAL;
+  if(c.residual_status[s]!=RADEQ_OK){
+   g.max_heat_residual=fmax(g.max_heat_residual,c.ledger[s].e_balance);
+   a210_publication_free(&c);return 4;
+  }
+ }
+ if(population_te_manifest_sha256(c.T_e,n,c.te_manifest_sha256)!=POP_OK){
+  g.te_manifest_mismatch++;a210_publication_free(&c);return 5;
+ }
+ if(a210_te_context_sha256(c.te_manifest_sha256,geo,ep,
+                           c.te_context_sha256)!=RADEQ_OK){
+  g.te_context_mismatch++;a210_publication_free(&c);return 5;
+ }
+ Sh sh;si(&sh);const char domain[]="A2-10:term-ledger:v1";
+ su(&sh,domain,sizeof(domain)-1);u64(&sh,ep);
+ for(size_t s=0;s<n;s++)su(&sh,&c.ledger[s],sizeof(c.ledger[s]));
+ sd(&sh,c.term_manifest_sha256);c.producer_equation=A210_RE_INTEGRAL;
+ c.te_lane=A210_TE_LANE_FREE_T;c.re_root_required=1;
+ c.committed_te_generation=0;
+ memcpy(outte,c.T_e,n*sizeof(*outte));memcpy(outne,c.n_e,n*sizeof(*outne));
+ ElectronTemperaturePublication old=*pub;*pub=c;memset(&c,0,sizeof(c));
+ a210_publication_free(&old);
+ g.shells_converged+=n;
+ return 0;
+}
 A210Counters*a210_counters(void){return &g;}void a210_counters_reset(void){memset(&g,0,sizeof(g));}
 const char*a210_status_name(RadeqStatus s){static const char*n[]={"INVALID","RADEQ_OK","RADEQ_EXACT_ZERO_BALANCE","RADEQ_STALE_RF","RADEQ_STALE_BF","RADEQ_STALE_LINE","RADEQ_STALE_POP","RADEQ_STALE_OPACITY","RADEQ_STALE_EMISSIVITY","RADEQ_TERM_MISSING","RADEQ_TERM_SCHEMA","RADEQ_SIGN_MISMATCH","RADEQ_INVALID_TE_TRIAL","RADEQ_INVALID_NE","RADEQ_ATOMIC_MISSING","RADEQ_NO_BRACKET","RADEQ_NO_ROOT","RADEQ_NOT_CONVERGED","RADEQ_POPULATION_NOT_CONVERGED","RADEQ_CHARGE_NOT_CONVERGED","RADEQ_HEAT_RESIDUAL","RADEQ_TE_MANIFEST_MISMATCH","RADEQ_TE_CONTEXT_MISMATCH","RADEQ_UNQUALIFIED_TE","RADEQ_FIXED_T","RADEQ_FORBIDDEN_FALLBACK","RADEQ_PARTIAL_PUBLISH","RADEQ_INCOMPLETE_ADIABATIC","RADEQ_NONFINITE","RADEQ_GAMMA_UNPUBLISHED"};return s>=RADEQ_OK&&s<=RADEQ_GAMMA_UNPUBLISHED?n[s]:n[0];}
 const char*a210_equation_name(A210EquationKind k){return k==A210_RE_INTEGRAL?"RE_INTEGRAL":k==A210_EHB_THERMAL?"EHB_THERMAL":"EQUATION_NONE";}

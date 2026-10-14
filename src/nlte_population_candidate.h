@@ -187,6 +187,12 @@ PopulationStatus nlte_ne_closure_trial_step(
     double *max_relative_residual,
     int *worst_shell);
 
+/* Read-only: q_closed[s] = the charge-implied n_e of the candidate's
+ * populations (the same sum nlte_ne_closure_trial_step damps toward). */
+PopulationStatus nlte_ne_closure_implied_ne(
+    const NLTEPopulationCandidate *candidate,
+    double *q_closed);
+
 
 typedef struct {
     const NLTEConfig *public_nlte;
@@ -292,6 +298,14 @@ NLTEPopulationCandidateStatus nlte_population_candidate_prepare_adiabatic(
 NLTEPopulationCandidateStatus nlte_population_candidate_build_bundle(
     NLTEPopulationCandidate *candidate,
     const NLTEPopulationBundleRequest *request);
+
+/* Same producer chain at a prescribed n_e: the stage ladder and pair solve
+ * consume prescribed_ne once, with no damped closure loop.  The caller owns
+ * charge closure (coupled T_e/n_e root).  Requires the n_e-closure gate. */
+NLTEPopulationCandidateStatus nlte_population_candidate_build_bundle_at_ne(
+    NLTEPopulationCandidate *candidate,
+    const NLTEPopulationBundleRequest *request,
+    const double *prescribed_ne);
 
 /* A2-INIT seed-only material commit: publish the candidate material bundle
  * (ion/ne/level populations, tau/source, BF, A2-08, A2-09) at the CURRENT

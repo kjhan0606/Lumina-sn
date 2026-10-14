@@ -323,6 +323,14 @@ int a210_solve_vector_candidate(
  const char *geometry_sha256,A210VectorResidualFunction residual,
  void *context,ElectronTemperaturePublication *candidate,
  double *candidate_te,double *candidate_ne);
+/* Uncommitted candidate from a coupled (T_e, n_e) root solved elsewhere;
+ * same e_balance qualification and manifests as the vector candidate. */
+int a210_publication_candidate_from_root(
+ const double *te,const double *ne,const A210TermLedger *ledger,size_t n,
+ uint64_t solve_epoch,uint64_t required_generation,
+ const char *geometry_sha256,uint64_t trials,
+ ElectronTemperaturePublication *candidate,
+ double *candidate_te,double *candidate_ne);
 RadeqStatus a210_te_context_sha256(const char te_manifest[65],
  const char geometry[65],uint64_t solve_epoch,char out[65]);
 RadeqStatus a210_geometry_sha256(const double *shell_boundaries,
