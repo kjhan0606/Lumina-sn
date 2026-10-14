@@ -3345,153 +3345,196 @@ fail:
 }
 
 /* ------------------------------------------------------------ */
-/* One short-characteristics formal solution along all tangent rays for a
- * single frequency bin b, given the current total source S[shell]. Accumulates
- * J[shell] (angle-averaged) and the diagonal lambda_star[shell]. */
+/* The coarse field is an angular mean, not an impact-area mean.  Integrate
+ * dmu separately on the core and non-core angular intervals so the sharp
+ * stellar limb is not smeared. Add each receiving shell's tangent ray and an
+ * axial ray; the original production ray set is preserved as extra samples.
+ * This geometric rule has no dependence on CMFGEN populations or spectra. */
+typedef struct {
+    int nr;
+    double *p;
+    double *w;                 /* [ray * n_shells + shell], one hemisphere */
+} CmfCoarseAngles;
+
+static int cmf_angle_cmp(const void *a, const void *b) {
+    double x = *(const double *)a, y = *(const double *)b;
+    return (x > y) - (x < y);
+}
+
+static CmfCoarseAngles cmf_coarse_angles(const CMFGENState *cs,
+                                         const Geometry *geo) {
+    CmfCoarseAngles q = {0};
+    int ns = cs->n_shells, capacity = cs->n_rays + ns + 1;
+    q.p = malloc((size_t)capacity * sizeof(double));
+    if (!q.p) goto invalid;
+    q.p[q.nr++] = 0.0;
+    for (int k = 0; k < cs->n_rays; ++k) {
+        if (!(cs->p_ray[k] >= 0.0) || !isfinite(cs->p_ray[k])) goto invalid;
+        q.p[q.nr++] = cs->p_ray[k];
+    }
+    for (int s = 0; s < ns; ++s) {
+        if (!(geo->r_inner[s] > 0.0) ||
+            !(geo->r_outer[s] > geo->r_inner[s])) goto invalid;
+        q.p[q.nr++] = 0.5 * (geo->r_inner[s] + geo->r_outer[s]);
+    }
+    qsort(q.p, (size_t)q.nr, sizeof(double), cmf_angle_cmp);
+    int unique = 0;
+    for (int k = 0; k < q.nr; ++k)
+        if (!unique || q.p[k] != q.p[unique - 1]) q.p[unique++] = q.p[k];
+    q.nr = unique;
+    q.w = calloc((size_t)q.nr * (size_t)ns, sizeof(double));
+    if (!q.w) goto invalid;
+    for (int s = 0; s < ns; ++s) {
+        double r = 0.5 * (geo->r_inner[s] + geo->r_outer[s]);
+        double cr = geo->r_inner[0] / r;
+        double limb = sqrt((1.0 - cr) * (1.0 + cr));
+        double sum = 0.0;
+        for (int k = 0; k < q.nr && q.p[k] <= r; ++k) {
+            int core = q.p[k] < geo->r_inner[0];
+            double pr = q.p[k] / r;
+            double mu = sqrt((1.0 - pr) * (1.0 + pr));
+            double top = core ? 1.0 : limb, bottom = core ? limb : 0.0;
+            if (k > 0 && (q.p[k - 1] < geo->r_inner[0]) == core) {
+                double prev = q.p[k - 1] / r;
+                top = 0.5 * (mu + sqrt((1.0 - prev) * (1.0 + prev)));
+            }
+            if (k + 1 < q.nr && q.p[k + 1] <= r &&
+                (q.p[k + 1] < geo->r_inner[0]) == core) {
+                double next = q.p[k + 1] / r;
+                bottom = 0.5 * (mu + sqrt((1.0 - next) * (1.0 + next)));
+            }
+            double w = top - bottom;
+            if (!(w >= 0.0) || !isfinite(w)) goto invalid;
+            q.w[(size_t)k * ns + s] = w;
+            sum += w;
+        }
+        if (!isfinite(sum) || fabs(sum - 1.0) > 1e-12) goto invalid;
+    }
+    return q;
+invalid:
+    free(q.p); free(q.w);
+    fprintf(stderr, "[CMFGEN][FATAL] invalid coarse angular quadrature\n");
+    abort();
+}
+
+static void cmf_coarse_angles_free(CmfCoarseAngles *q) {
+    free(q->p); free(q->w); q->p = q->w = NULL; q->nr = 0;
+}
+
+typedef struct { double ex, psi, dsrc; } FsSeg;
+static FsSeg fs_seg_eval(double dtau, double S, double I_in, double ds);
+
+static void cmf_coarse_segment(int s, int ns, double ds, double chi,
+                               double source, int chi_derivative,
+                               double *I, double *response) {
+    FsSeg seg = fs_seg_eval(chi * ds, source, *I, ds);
+    for (int t = 0; t < ns; ++t) response[t] *= seg.ex;
+    response[s] += chi_derivative ? seg.dsrc : seg.psi;
+    *I = *I * seg.ex + source * seg.psi;
+}
+
+/* Piecewise-constant cell transport. Each leg crosses the actual cell faces
+ * and samples I AT the receiving cell centre, not after crossing a different
+ * centre-to-centre interval. Non-core rays turn continuously at z=0.
+ * The same walker differentiates with respect to S (Lambda) or chi at fixed S.
+ * Consequently tangent/far-side return terms are included in the diagonal and
+ * nearest-neighbour Lambda without changing the transport in tri-ALI mode. */
+static void formal_solve_bin_response(CMFGENState *cs, const Geometry *geo,
+                             int b, const double *S, double Bnu_inner,
+                             double *Jb, double *Lstar,
+                             double *Tlo, double *Tup,
+                             const CmfCoarseAngles *angles, int chi_derivative)
+{
+    int NS = cs->n_shells, NB = cs->n_bins;
+    if (NS <= 0 || NB <= 0) {
+        fprintf(stderr, "[CMFGEN][FATAL] invalid coarse grid dimensions\n");
+        abort();
+    }
+    double *response = calloc((size_t)NS, sizeof(double));
+    if (!response) {
+        fprintf(stderr, "[CMFGEN][FATAL] coarse response allocation failed\n");
+        abort();
+    }
+    for (int s = 0; s < NS; ++s) {
+        Jb[s] = Lstar[s] = 0.0;
+        if (Tlo) Tlo[s] = 0.0;
+        if (Tup) Tup[s] = 0.0;
+    }
+    for (int ray = 0; ray < angles->nr; ++ray) {
+        double p = angles->p[ray];
+        int first = 0;
+        while (first < NS && geo->r_outer[first] <= p) ++first;
+        if (first == NS) continue;
+        memset(response, 0, (size_t)NS * sizeof(double));
+        double I = 0.0; /* outer BC, no incoming intensity */
+        for (int outward = 0; outward < 2; ++outward) {
+            if (outward && p < geo->r_inner[0]) {
+                I = Bnu_inner;
+                memset(response, 0, (size_t)NS * sizeof(double));
+            }
+            for (int step = 0; step < NS - first; ++step) {
+                int s = outward ? first + step : NS - 1 - step;
+                double ri = geo->r_inner[s], ro = geo->r_outer[s];
+                double mid = 0.5 * (ri + ro);
+                double zh = sqrt((ro - p) * (ro + p));
+                double zl = p < ri ? sqrt((ri - p) * (ri + p)) : 0.0;
+                double chi = cs->chi_tot[(size_t)s * NB + b];
+                if (p > mid) {
+                    /* The ray crosses part of this cell, but never reaches
+                     * its receiving radius: transport, with no J sample. */
+                    cmf_coarse_segment(s, NS, zh-zl, chi, S[s],
+                                       chi_derivative, &I, response);
+                    continue;
+                }
+                double zm = sqrt((mid-p) * (mid+p));
+                double before = outward ? zm-zl : zh-zm;
+                double after = outward ? zh-zm : zm-zl;
+                cmf_coarse_segment(s, NS, before, chi, S[s],
+                                   chi_derivative, &I, response);
+                double w = 0.5 * angles->w[(size_t)ray * NS + s];
+                Jb[s] += w * I;
+                Lstar[s] += w * response[s];
+                if (Tlo && s > 0) Tlo[s] += w * response[s-1];
+                if (Tup && s+1 < NS) Tup[s] += w * response[s+1];
+                cmf_coarse_segment(s, NS, after, chi, S[s],
+                                   chi_derivative, &I, response);
+            }
+        }
+    }
+    free(response);
+}
+
+static void formal_solve_bin_angles(CMFGENState *cs, const Geometry *geo,
+                             int b, const double *S, double Bnu_inner,
+                             double *Jb, double *Lstar,
+                             double *Tlo, double *Tup,
+                             const CmfCoarseAngles *angles) {
+    formal_solve_bin_response(cs, geo, b, S, Bnu_inner, Jb, Lstar,
+                             Tlo, Tup, angles, 0);
+}
+
 static void formal_solve_bin(CMFGENState *cs, const Geometry *geo,
                              int b, const double *S, double Bnu_inner,
                              double *Jb, double *Lstar,
-                             double *Tlo, double *Tup)
-{
-    /* Tlo/Tup (optional, NULL to skip): tridiagonal Lambda off-diagonals —
-     * Tlo[s] = nearest-INNER-neighbour coefficient L[s,s-1], Tup[s] = L[s,s+1].
-     * Accumulated like Lacc (one-segment-attenuated upstream psi), normalized
-     * by wacc. Used as the A4 ALI preconditioner (LUMINA_CMFGEN_LAMBDA_TRI). */
-    int NS = cs->n_shells, NB = cs->n_bins;
-    double *Jacc = calloc(NS, sizeof(double));
-    double *wacc = calloc(NS, sizeof(double));
-    double *Lacc = calloc(NS, sizeof(double));
-    double *TloA = Tlo ? calloc(NS, sizeof(double)) : NULL;
-    double *TupA = Tup ? calloc(NS, sizeof(double)) : NULL;
-    if (!Jacc || !wacc || !Lacc || (Tlo && !TloA) || (Tup && !TupA)) {
-        free(Jacc); free(wacc); free(Lacc); free(TloA); free(TupA); return;
-    }
-
-    /* shell-midpoint radii for the source grid */
-    /* For each ray of impact parameter p, find shells with r_outer > p and
-     * integrate inward (mu<0) then reflect/emit and integrate outward (mu>0). */
-    for (int ray = 0; ray < cs->n_rays; ++ray) {
-        double p = cs->p_ray[ray];
-        /* collect intersected shells (outer->in), store z and shell idx */
-        int    *sh = malloc(sizeof(int) * (NS + 1));
-        double *z  = malloc(sizeof(double) * (NS + 1));
-        int n = 0;
-        for (int s = NS - 1; s >= 0; --s) {
-            double ro = geo->r_outer[s];
-            if (ro <= p) break;          /* inner shells don't reach this p */
-            double rmid = 0.5 * (geo->r_inner[s] + geo->r_outer[s]);
-            if (rmid <= p) rmid = p * 1.0000001;
-            sh[n] = s;
-            z[n]  = sqrt(rmid * rmid - p * p);
-            ++n;
-        }
-        if (n == 0) { free(sh); free(z); continue; }
-        int core = (p < geo->r_inner[0]) ? 1 : 0;
-        /* core rays terminate at the core SURFACE z_core=sqrt(r_in0^2-p^2),
-         * not at z=0: the innermost segment is z[n-1]-z_core, else dtau is
-         * overestimated ~r_in/dr (100x) and the core B(T_inner) never leaks
-         * into shell 0 (artificial seed-pin of inner T_e). */
-        double z_core = 0.0;
-        if (core) {
-            double ri0 = geo->r_inner[0];
-            z_core = sqrt(ri0 * ri0 - p * p);
-            if (z_core > z[n - 1]) z_core = z[n - 1];
-        }
-
-        /* angular weight: this ray represents mu-interval around mu=z/r at the
-         * outermost shell; use simple dp annulus weight 2 p dp / r^2 ~ dmu.
-         * For an even-handed first solver we use uniform ray weight then
-         * renormalise J by total weight per shell (wacc). */
-        double ray_w = p;   /* proportional to annulus area element p dp */
-
-        /* ----- inbound leg (mu<0): from outer boundary inward ----- */
-        double I = 0.0;                       /* outer BC: no incoming */
-        double psi_prev = 0.0;                /* upstream segment's psi */
-        for (int i = 0; i < n; ++i) {
-            int s = sh[i];
-            double S_s = S[s];
-            double ds = (i + 1 < n) ? fabs(z[i] - z[i + 1])
-                                    : (z[i] - z_core);  /* to core surface/origin */
-            double dtau = cs->chi_tot[(size_t)s * NB + b] * ds;
-            if (dtau < 0.0) dtau = 0.0;
-            double ex = exp(-dtau);
-            double psi = (dtau > 1e-4) ? (1.0 - ex) : (dtau - 0.5*dtau*dtau);
-            I = I * ex + S_s * psi;
-            /* inbound (mu<0) hemisphere sample; the matching outbound leg
-             * supplies mu>0, so J = mean over both legs = mean intensity.
-             * No extra 0.5: the leg average already gives (I_+ + I_-)/2. */
-            Jacc[s] += ray_w * I;
-            wacc[s] += ray_w;
-            Lacc[s] += ray_w * psi;           /* diagonal local response */
-            /* inbound upstream neighbour is the next-OUTER shell sh[i-1]=s+1 */
-            if (TupA && i > 0) TupA[s] += ray_w * ex * psi_prev;
-            psi_prev = psi;
-        }
-        double psi_turn = core ? 0.0 : psi_prev;  /* tangent carry (non-core) */
-        /* ----- inner boundary ----- */
-        if (core) I = Bnu_inner;              /* diffusive core emits B */
-        /* (non-core grazing ray: I continues with whatever it accumulated) */
-        /* ----- outbound leg (mu>0): from inner shell back out ----- */
-        psi_prev = 0.0;
-        for (int i = n - 1; i >= 0; --i) {
-            int s = sh[i];
-            double S_s = S[s];
-            double ds = (i + 1 < n) ? fabs(z[i] - z[i + 1]) : (z[i] - z_core);
-            double dtau = cs->chi_tot[(size_t)s * NB + b] * ds;
-            if (dtau < 0.0) dtau = 0.0;
-            double ex = exp(-dtau);
-            double psi = (dtau > 1e-4) ? (1.0 - ex) : (dtau - 0.5*dtau*dtau);
-            I = I * ex + S_s * psi;            /* outbound (mu>0) hemisphere */
-            Jacc[s] += ray_w * I;
-            wacc[s] += ray_w;
-            Lacc[s] += ray_w * psi;
-            if (i == n - 1) {
-                /* first outbound visit: upstream is the SAME shell's inbound
-                 * segment (tangent turn) — a tridiag-LOCAL (diagonal) term;
-                 * core rays carry B(T_inner) instead (inhomogeneous, in J_fs).
-                 * Only counted in tridiag mode (keeps the legacy diagonal-ALI
-                 * Lambda* byte-identical when the preconditioner is off). */
-                if (TloA) Lacc[s] += ray_w * ex * psi_turn;
-            } else if (TloA) {
-                /* outbound upstream neighbour is the next-INNER shell s-1 */
-                TloA[s] += ray_w * ex * psi_prev;
-            }
-            psi_prev = psi;
-        }
-        free(sh); free(z);
-    }
-
-    for (int s = 0; s < NS; ++s) {
-        double iw = (wacc[s] > 0.0) ? 1.0 / wacc[s] : 0.0;
-        Jb[s]    = Jacc[s] * iw;
-        Lstar[s] = Lacc[s] * iw;
-        if (Tlo) Tlo[s] = TloA ? TloA[s] * iw : 0.0;
-        if (Tup) Tup[s] = TupA ? TupA[s] * iw : 0.0;
-    }
-    free(Jacc); free(wacc); free(Lacc); free(TloA); free(TupA);
+                             double *Tlo, double *Tup) {
+    CmfCoarseAngles angles = cmf_coarse_angles(cs, geo);
+    formal_solve_bin_angles(cs, geo, b, S, Bnu_inner, Jb, Lstar,
+                           Tlo, Tup, &angles);
+    cmf_coarse_angles_free(&angles);
 }
 
 /* ============================================================ */
 /* DET-PATHB-LOCAL: fixed-S formal-solve chi derivative (dJ_fs/dchi)|_S.        */
 /*                                                                              */
-/* A SEPARATE-BUFFER recursion that reproduces formal_solve_bin's ray structure */
-/* (same inbound/inner-BC/outbound legs, same z-grid, same ray weight, same     */
-/* small-tau branch) but propagates dI[t] = dI/dchi_t (LOCAL diagonal only) at   */
-/* FIXED S = S_fixed. It NEVER touches the production I/Jacc/Lacc/lambda_star -- */
-/* it writes only its own dJacc/dI scratch and the caller's dJdchi buffer, so    */
-/* cmfgen_solve_J's committed J and L* are bit-identical whether CHI is on or    */
-/* off. No Tlo/Tup: this is the F2DA same-depth diagonal, not the tri operator.  */
-/*                                                                              */
-/* Segment primitive fs_seg_eval is the SINGLE source of truth shared by the    */
-/* production walker below and the selftest hooks (no replica): its ex/psi match */
-/* formal_solve_bin's inline forward step, and dsrc is the exact fixed-S chi     */
-/* derivative source d(I_out)/dchi_local = (-I_in*ex + S*psi')*ds (psi'=ex for   */
-/* tau>1e-4, else 1-tau -- the derivative of psi w.r.t. dtau, times ds=dtau/dchi).*/
-typedef struct { double ex, psi, dsrc; } FsSeg;
+/* Uses the SAME cell-face/midpoint walker and segment primitive as the        */
+/* production formal solve, with separate scratch. At fixed S it propagates   */
+/* dI/dchi_t instead of dI/dS_t, then extracts the same-depth diagonal.          */
+/* It never overwrites committed J/Lambda, so enabling this derivative does   */
+/* not alter the forward solution. fs_seg_eval is shared with direct tests.   */
 static FsSeg fs_seg_eval(double dtau, double S, double I_in, double ds)
 {
     FsSeg r;
-    /* Geometry tau-guard, faithfully copied from formal_solve_bin (:2991):
+    /* Existing negative-opacity policy, preserved in the shared primitive:
      * dtau<0 (chi<0, since ds>=0) is CLAMPED to 0. In that region dtau is pinned
      * to 0 REGARDLESS of chi, so d(dtau)/dchi = 0 and the segment's source
      * derivative must vanish: I_out = I_in*1 + S*psi(0) = I_in is chi-independent.
@@ -3518,76 +3561,24 @@ static void formal_djdchi_fs_S(CMFGENState *cs, const Geometry *geo,
 {
     int NS = cs->n_shells, NB = cs->n_bins;
     double inner_bb_scale = cmf_inner_bb_scale();
-    double *dJacc = calloc(NS, sizeof(double));
-    double *wacc  = calloc(NS, sizeof(double));
-    double *dI    = calloc(NS, sizeof(double));   /* dI/dchi_t, per ray */
-    if (!dJacc || !wacc || !dI) { free(dJacc); free(wacc); free(dI); return; }
-
+    double *source = malloc((size_t)NS * sizeof(double));
+    double *unused_J = malloc((size_t)NS * sizeof(double));
+    double *response = malloc((size_t)NS * sizeof(double));
+    if (!source || !unused_J || !response) {
+        fprintf(stderr, "[CMFGEN][FATAL] coarse derivative allocation failed\n");
+        abort();
+    }
+    CmfCoarseAngles angles = cmf_coarse_angles(cs, geo);
     for (int b = 0; b < NB; ++b) {
         double Bin = inner_bb_scale * cm_planck(cs->nu[b], T_inner);
-        for (int s = 0; s < NS; ++s) { dJacc[s] = 0.0; wacc[s] = 0.0; }
-        for (int ray = 0; ray < cs->n_rays; ++ray) {
-            double p = cs->p_ray[ray];
-            int    *sh = malloc(sizeof(int) * (NS + 1));
-            double *z  = malloc(sizeof(double) * (NS + 1));
-            int n = 0;
-            for (int s = NS - 1; s >= 0; --s) {
-                double ro = geo->r_outer[s];
-                if (ro <= p) break;
-                double rmid = 0.5 * (geo->r_inner[s] + geo->r_outer[s]);
-                if (rmid <= p) rmid = p * 1.0000001;
-                sh[n] = s;
-                z[n]  = sqrt(rmid * rmid - p * p);
-                ++n;
-            }
-            if (n == 0) { free(sh); free(z); continue; }
-            int core = (p < geo->r_inner[0]) ? 1 : 0;
-            double z_core = 0.0;
-            if (core) {
-                double ri0 = geo->r_inner[0];
-                z_core = sqrt(ri0 * ri0 - p * p);
-                if (z_core > z[n - 1]) z_core = z[n - 1];
-            }
-            double ray_w = p;
-            for (int s = 0; s < NS; ++s) dI[s] = 0.0;   /* outer BC: no dI */
-            double I = 0.0;
-            /* ----- inbound leg (mu<0) ----- */
-            for (int i = 0; i < n; ++i) {
-                int s = sh[i];
-                double S_s = cs->S_fixed[(size_t)s * NB + b];
-                double ds = (i + 1 < n) ? fabs(z[i] - z[i + 1]) : (z[i] - z_core);
-                double dtau = cs->chi_tot[(size_t)s * NB + b] * ds;
-                FsSeg seg = fs_seg_eval(dtau, S_s, I, ds);
-                for (int t = 0; t < NS; ++t) dI[t] *= seg.ex;  /* attenuate all */
-                dI[s] += seg.dsrc;                             /* local diagonal */
-                I = I * seg.ex + S_s * seg.psi;
-                dJacc[s] += ray_w * dI[s];
-                wacc[s]  += ray_w;
-            }
-            /* ----- inner boundary ----- */
-            if (core) { I = Bin; for (int t = 0; t < NS; ++t) dI[t] = 0.0; }
-            /* (B(T_inner) is not a function of chi => dI reset to 0 at the core) */
-            /* ----- outbound leg (mu>0) ----- */
-            for (int i = n - 1; i >= 0; --i) {
-                int s = sh[i];
-                double S_s = cs->S_fixed[(size_t)s * NB + b];
-                double ds = (i + 1 < n) ? fabs(z[i] - z[i + 1]) : (z[i] - z_core);
-                double dtau = cs->chi_tot[(size_t)s * NB + b] * ds;
-                FsSeg seg = fs_seg_eval(dtau, S_s, I, ds);
-                for (int t = 0; t < NS; ++t) dI[t] *= seg.ex;
-                dI[s] += seg.dsrc;
-                I = I * seg.ex + S_s * seg.psi;
-                dJacc[s] += ray_w * dI[s];
-                wacc[s]  += ray_w;
-            }
-            free(sh); free(z);
-        }
-        for (int s = 0; s < NS; ++s) {
-            double iw = (wacc[s] > 0.0) ? 1.0 / wacc[s] : 0.0;
-            dJdchi[(size_t)s * NB + b] = dJacc[s] * iw;   /* wacc==0 => 0 */
-        }
+        for (int s = 0; s < NS; ++s)
+            source[s] = cs->S_fixed[(size_t)s * NB + b];
+        formal_solve_bin_response(cs, geo, b, source, Bin, unused_J, response,
+                                 NULL, NULL, &angles, 1);
+        for (int s = 0; s < NS; ++s) dJdchi[(size_t)s * NB + b] = response[s];
     }
-    free(dJacc); free(wacc); free(dI);
+    free(source); free(unused_J); free(response);
+    cmf_coarse_angles_free(&angles);
 }
 
 /* ------------------------------------------------------------ */
@@ -3645,6 +3636,7 @@ void cmfgen_solve_J(CMFGENState *cs, const Geometry *geo, double T_inner,
      * distributed deposition with NO inner blackbody). Keeps T_inner's COLOR;
      * only scales the amplitude (a dilution W_inner). */
     double inner_bb_scale = cmf_inner_bb_scale();
+    CmfCoarseAngles angles = cmf_coarse_angles(cs, geo);
     for (int b = 0; b < NB; ++b) {
         double Bin = inner_bb_scale * cm_planck(cs->nu[b], T_inner);
         /* (tridiagonal-)ALI Lambda iteration for the scattering channel */
@@ -3656,7 +3648,8 @@ void cmfgen_solve_J(CMFGENState *cs, const Geometry *geo, double T_inner,
                 if (rA) rA[s] = r;
                 S[s] = cs->S_fixed[idx] + r * cs->J[idx];
             }
-            formal_solve_bin(cs, geo, b, S, Bin, Jb, Lst, Tlo, Tup);
+            formal_solve_bin_angles(cs, geo, b, S, Bin, Jb, Lst, Tlo, Tup,
+                                   &angles);
             double maxrel = 0.0;
             if (use_tri) {
                 for (int s = 0; s < NS; ++s) {
@@ -3741,6 +3734,7 @@ void cmfgen_solve_J(CMFGENState *cs, const Geometry *geo, double T_inner,
             if (use_tri && maxrel < ali_tol && it >= ali_minit) break;
         }
     }
+    cmf_coarse_angles_free(&angles);
     /* DET-LTEUNMAP-EPS (rev 5): per-pass convergence diagnostic (always). max and
      * p99 of the last-ALI-iter per-cell relative J change; consumed by the verdict
      * to grade the E-1 lamp claim (observed vs converged). */
