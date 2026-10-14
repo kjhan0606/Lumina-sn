@@ -253,6 +253,23 @@ int main(void)
           "ion-size-cap");
 
     em.te_generation=6;
+    /* Preserve the actual material-work identity in the existing compact output. */
+    em.te_generation=5;input.lane="TIME";
+    A210TermLedger saved_ledger[NS];memcpy(saved_ledger,ledger,sizeof(ledger));
+    for(size_t s=0;s<NS;++s){
+        CmfgenMaterialTimeWork work={0.1,0.3,0.2,0.6,0.6,0};
+        CHECK(a210_apply_material_time_work(&ledger[s],&work)==RADEQ_OK,"time-work-apply");
+    }
+    CHECK(physics_comparison_snapshot_write(directory,&input)==PHYSICS_COMPARISON_OK,"time-work-write");
+    char time_path[512];snprintf(time_path,sizeof(time_path),"%s/physics_TIME_iter0000.shell.csv",directory);
+    CHECK(file_has(time_path,"q_material_thermal_time"),"time-work-schema");
+    CHECK(file_has(time_path,"MATERIAL_TIME_HISTORY"),"time-work-identity");
+    const char *time_suffix[]={"shell.csv","spectral.csv","ion.csv","manifest.json"};
+    for(int k=0;k<4;k++){
+        snprintf(time_path,sizeof(time_path),"%s/physics_TIME_iter0000.%s",directory,time_suffix[k]);
+        remove(time_path);
+    }
+    memcpy(ledger,saved_ledger,sizeof(ledger));input.lane="DET";em.te_generation=6;
     input.iteration=1;
     CHECK(physics_comparison_snapshot_write(directory,&input)==
           PHYSICS_COMPARISON_STALE_GENERATION,"generation-negative");

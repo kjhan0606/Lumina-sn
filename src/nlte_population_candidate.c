@@ -100,6 +100,69 @@ static A208Validity *copy_validity_values(
     return copy;
 }
 
+void nlte_physical_history_free(NLTEPhysicalHistory *history)
+{
+    if(!history)return;
+    free(history->storage);free(history->level_global);
+    free(history->ion_Z);free(history->ion_stage);
+    memset(history,0,sizeof(*history));
+}
+
+NLTEPopulationCandidateStatus nlte_physical_history_capture(
+    NLTEPhysicalHistory *history,const NLTEConfig *nlte,const AtomicData *atom,
+    const PlasmaState *plasma,double epoch_s)
+{
+    if(!history || !nlte || !atom || !plasma || !isfinite(epoch_s) || epoch_s<=0 ||
+       plasma->n_shells<=0 || atom->n_ion_pops<=0 || nlte->n_nlte_levels_total<=0 ||
+       !plasma->rho || !plasma->T_e || !plasma->n_electron ||
+       !nlte->nlte_to_global_level || !nlte->nlte_level_populations ||
+       !atom->ion_pop_Z || !atom->ion_pop_stage || !atom->ion_number_density)
+        return NLTE_CANDIDATE_INVALID_ARGUMENT;
+    size_t ns=(size_t)plasma->n_shells,ni=(size_t)atom->n_ion_pops,
+           nl=(size_t)nlte->n_nlte_levels_total,count;
+    if(ni>SIZE_MAX-nl-5 || multiply_size(5+ni+nl,ns,&count) ||
+       count>SIZE_MAX/sizeof(double) || ni>SIZE_MAX/sizeof(int) ||
+       nl>SIZE_MAX/sizeof(int))return NLTE_CANDIDATE_INVALID_LAYOUT;
+    NLTEPhysicalHistory trial={0};
+    AtomicInternalEnergyCell *energy=calloc(ns,sizeof(*energy));
+    trial.storage=malloc(count*sizeof(double));
+    trial.level_global=malloc(nl*sizeof(int));
+    trial.ion_Z=malloc(ni*sizeof(int));trial.ion_stage=malloc(ni*sizeof(int));
+    NLTEPopulationCandidateStatus status=NLTE_CANDIDATE_ALLOCATION_FAILED;
+    if(!energy || !trial.storage || !trial.level_global || !trial.ion_Z || !trial.ion_stage)
+        goto history_done;
+    status=NLTE_CANDIDATE_INTERNAL_ENERGY_FAILED;
+    if(atomic_internal_energy_build(atom,nlte,plasma,ns,
+           atom->population_committed_generation,plasma->T_e_generation,energy)!=
+           ATOMIC_INTERNAL_ENERGY_OK)goto history_done;
+    for(size_t s=0;s<ns;++s){
+        if(!isfinite(plasma->rho[s]) || plasma->rho[s]<=0 ||
+           !isfinite(plasma->n_electron[s]) || plasma->n_electron[s]<0)
+            goto history_done;
+        trial.storage[s]=plasma->rho[s];trial.storage[ns+s]=plasma->T_e[s];
+        trial.storage[2*ns+s]=energy[s].n_atom_cm3;
+        trial.storage[3*ns+s]=plasma->n_electron[s];
+        trial.storage[4*ns+s]=energy[s].internal_energy_atom_erg;
+    }
+    trial.energy=(CmfgenMaterialEnergyState){ns,epoch_s,trial.storage,trial.storage+ns,
+        trial.storage+2*ns,trial.storage+3*ns,trial.storage+4*ns};
+    trial.n_ions=ni;trial.n_levels=nl;
+    trial.population_generation=atom->population_committed_generation;
+    trial.temperature_generation=plasma->T_e_generation;
+    trial.ion_density=trial.storage+5*ns;trial.level_density=trial.ion_density+ni*ns;
+    memcpy(trial.ion_density,atom->ion_number_density,ni*ns*sizeof(double));
+    memcpy(trial.level_density,nlte->nlte_level_populations,nl*ns*sizeof(double));
+    memcpy(trial.level_global,nlte->nlte_to_global_level,nl*sizeof(int));
+    memcpy(trial.ion_Z,atom->ion_pop_Z,ni*sizeof(int));
+    memcpy(trial.ion_stage,atom->ion_pop_stage,ni*sizeof(int));
+    for(size_t i=0;i<ni*ns+nl*ns;++i)
+        if(!(trial.ion_density[i]>=0) || !isfinite(trial.ion_density[i]))goto history_done;
+    nlte_physical_history_free(history);*history=trial;
+    memset(&trial,0,sizeof(trial));status=NLTE_CANDIDATE_OK;
+history_done:
+    free(energy);nlte_physical_history_free(&trial);return status;
+}
+
 static void candidate_bf_free(BFOpacity *bf)
 {
     if (!bf) return;
@@ -163,6 +226,7 @@ void nlte_population_candidate_free(NLTEPopulationCandidate *candidate)
     free(candidate->internal_energy_density);
     free(candidate->internal_energy_atom);
     free(candidate->adiabatic);
+    free(candidate->time_work);
     memset(candidate, 0, sizeof(*candidate));
 }
 
@@ -443,11 +507,13 @@ NLTEPopulationCandidateStatus nlte_population_candidate_prepare_adiabatic(
     double *n_atom = calloc(n, sizeof(*n_atom));
     double *energy_density = calloc(n, sizeof(*energy_density));
     double *energy_atom = calloc(n, sizeof(*energy_atom));
-    CmfgenAdiabaticCell *adiabatic = calloc(n, sizeof(*adiabatic));
+    const NLTEPhysicalHistory *history=candidate->plasma.physical_history;
+    CmfgenAdiabaticCell *adiabatic = history?NULL:calloc(n, sizeof(*adiabatic));
+    CmfgenMaterialTimeWork *time_work=history?calloc(n,sizeof(*time_work)):NULL;
     if (!energy || !n_atom || !energy_density || !energy_atom ||
-        !adiabatic) {
+        (history?!time_work:!adiabatic)) {
         free(energy); free(n_atom); free(energy_density);
-        free(energy_atom); free(adiabatic);
+        free(energy_atom); free(adiabatic);free(time_work);
         candidate->population_status = POP_SOLVE_FAILED;
         candidate->status = NLTE_CANDIDATE_INTERNAL_ENERGY_FAILED;
         candidate->active = 0;
@@ -469,7 +535,7 @@ NLTEPopulationCandidateStatus nlte_population_candidate_prepare_adiabatic(
                 candidate->atom.n_ionization,
                 candidate->atom.n_ionization_reference);
         free(energy); free(n_atom); free(energy_density);
-        free(energy_atom); free(adiabatic);
+        free(energy_atom); free(adiabatic);free(time_work);
         candidate->population_status =
             energy_status == ATOMIC_INTERNAL_ENERGY_POPULATION_CLOSURE
           ? POP_SOLVE_FAILED : POP_ATOMIC_MISSING;
@@ -486,11 +552,21 @@ NLTEPopulationCandidateStatus nlte_population_candidate_prepare_adiabatic(
         n, epoch_s, radius_cm, velocity_cm_s, candidate->trial_te,
         n_atom, candidate->electron_density, energy_atom
     };
-    CmfgenAdiabaticStatus adiabatic_status =
-        cmfgen_adiabatic_v3_homologous_evaluate(&input, adiabatic);
+    CmfgenAdiabaticStatus adiabatic_status;
+    if(history){
+        CmfgenMaterialEnergyState current={n,epoch_s,candidate->plasma.rho,
+            candidate->trial_te,n_atom,candidate->electron_density,energy_atom};
+        adiabatic_status=cmfgen_material_time_work(&current,&history->energy,time_work);
+        for(size_t s=0;s<n && adiabatic_status==CMFGEN_ADIABATIC_OK;++s)
+            if(!isfinite(radius_cm[s]) || radius_cm[s]<=0 ||
+               !isfinite(velocity_cm_s[s]) || velocity_cm_s[s]<=0 ||
+               (s && radius_cm[s]<=radius_cm[s-1]) ||
+               fabs(velocity_cm_s[s]*epoch_s/radius_cm[s]-1)>1e-10)
+                adiabatic_status=CMFGEN_ADIABATIC_NON_HOMOLOGOUS;
+    }else adiabatic_status=cmfgen_adiabatic_v3_homologous_evaluate(&input, adiabatic);
     free(energy);
     if (adiabatic_status != CMFGEN_ADIABATIC_OK) {
-        free(n_atom); free(energy_density); free(energy_atom); free(adiabatic);
+        free(n_atom); free(energy_density); free(energy_atom); free(adiabatic);free(time_work);
         candidate->population_status = POP_SOLVE_FAILED;
         candidate->status = NLTE_CANDIDATE_ADIABATIC_FAILED;
         candidate->active = 0;
@@ -500,6 +576,7 @@ NLTEPopulationCandidateStatus nlte_population_candidate_prepare_adiabatic(
     candidate->internal_energy_density = energy_density;
     candidate->internal_energy_atom = energy_atom;
     candidate->adiabatic = adiabatic;
+    candidate->time_work = time_work;
     candidate->adiabatic_active = 1;
     candidate->population_status = POP_OK;
     candidate->status = NLTE_CANDIDATE_OK;

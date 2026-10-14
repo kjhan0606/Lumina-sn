@@ -16202,8 +16202,18 @@ static void a210_endpoint_finite_diagnostic(
        candidate->n_shells!=n||!candidate->trial_te||
        !candidate->electron_density||!candidate->n_atom||
        !candidate->internal_energy_density||
-       !candidate->internal_energy_atom||!candidate->adiabatic)return;
+       !candidate->internal_energy_atom||(!candidate->adiabatic&&!candidate->time_work))return;
     for(size_t s=0;s<n;s++){
+        if(candidate->time_work){
+            const CmfgenMaterialTimeWork *w=&candidate->time_work[s];
+            fprintf(stderr,"[A2-10][ENDPOINT-FINITE] phase=%s shell=%zu "
+                "material_work=MATERIAL_TIME_HISTORY T_e_K=%.17g n_e_cm3=%.17g "
+                "thermal_time=%.17g atomic_time=%.17g expansion=%.17g "
+                "signed_work=%.17g residual=%.17g e_balance=%.17g\n",phase,s,
+                candidate->trial_te[s],candidate->electron_density[s],w->thermal_time,
+                w->atomic_time,w->expansion,w->signed_total,ledger[s].residual,ledger[s].e_balance);
+            continue;
+        }
         const CmfgenAdiabaticCell *ad=&candidate->adiabatic[s];
         const A210TermLedger *l=&ledger[s];
         fprintf(stderr,
@@ -17276,7 +17286,7 @@ static RadeqStatus a210_production_bundle_ledger_ex(
         .temperature_K=candidate->trial_te,
         .electron_density_cm3=candidate->electron_density,
         .gamma_heating_rate=context->gamma->heating_rate,
-        .adiabatic=candidate->adiabatic,.line_net=&line_net,
+        .adiabatic=candidate->adiabatic,.time_work=candidate->time_work,.line_net=&line_net,
         .n_shells=context->n_shells
     };
     RadeqStatus status=a210_trial_ledger_build(&input,ledger);
@@ -17328,7 +17338,7 @@ static int a210_coupled_production_residual(
         const A210TermLedger *l=&ledger[s];
         if((l->status!=RADEQ_OK&&l->status!=RADEQ_EXACT_ZERO_BALANCE)||
            l->equation_kind!=A210_RE_INTEGRAL||
-           l->adiabatic_model!=A210_ADIABATIC_CMFGEN_COMPLETE||
+           !a210_adiabatic_model_complete(l->adiabatic_model)||
            l->cooling_status[A210_ADIABATIC]==A210_INCOMPLETE||
            !isfinite(l->residual)||!isfinite(l->sum_heating)||
            !isfinite(l->sum_cooling))goto done;
@@ -23467,6 +23477,9 @@ static int candidate_material_commit_preflight(
        !candidate->active||!candidate->bundle_complete||
        !candidate->opacity_active||!candidate->bf_active||
        !candidate->adiabatic_active||candidate->n_shells<2||
+       (!candidate->adiabatic==!candidate->time_work)||
+       candidate->plasma.physical_history!=plasma->physical_history||
+       (!!candidate->time_work!=!!plasma->physical_history)||
        plasma->n_shells<=0||(size_t)plasma->n_shells!=candidate->n_shells||
        opacity->n_shells!=plasma->n_shells||
        atom->n_ion_pops<=0||nlte->n_nlte_levels_total<=0)return 0;
@@ -23594,8 +23607,8 @@ static int candidate_bundle_commit_preflight(
        (te_candidate->ledger[s].status!=RADEQ_OK&&
         te_candidate->ledger[s].status!=RADEQ_EXACT_ZERO_BALANCE)||
        te_candidate->ledger[s].equation_kind!=A210_RE_INTEGRAL||
-       te_candidate->ledger[s].adiabatic_model!=
-           A210_ADIABATIC_CMFGEN_COMPLETE)return 0;
+       te_candidate->ledger[s].adiabatic_model!=(candidate->time_work?
+           A210_MATERIAL_TIME_HISTORY:A210_ADIABATIC_CMFGEN_COMPLETE))return 0;
     return 1;
 }
 

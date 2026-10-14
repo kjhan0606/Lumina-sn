@@ -32,7 +32,10 @@ typedef enum { A210_INCLUDED=1,A210_EXACT_ZERO,A210_REPLACED_NOT_APPLICABLE,
 typedef enum { A210_EQUATION_NONE=0,A210_RE_INTEGRAL,
  A210_EHB_THERMAL } A210EquationKind;
 typedef enum { A210_ADIABATIC_NONE=0,A210_ADIABATIC_ELECTRON_TRANSLATIONAL_ONLY,
- A210_ADIABATIC_CMFGEN_COMPLETE } A210AdiabaticModel;
+ A210_ADIABATIC_CMFGEN_COMPLETE, A210_MATERIAL_TIME_HISTORY } A210AdiabaticModel;
+static inline int a210_adiabatic_model_complete(A210AdiabaticModel model){
+ return model==A210_ADIABATIC_CMFGEN_COMPLETE||model==A210_MATERIAL_TIME_HISTORY;
+}
 typedef enum { A210_PHOTO=0,A210_LINE_ABS,A210_FF_ABS,A210_COMPTON_H,A210_GAMMA,A210_NONTHERMAL,A210_ADIABATIC_H,A210_NHEAT } A210HeatTerm;
 typedef enum { A210_RECOMB=0,A210_LINE_EMIT,A210_COLL_LINE,A210_FF_EMIT,A210_COMPTON_C,A210_ADIABATIC,A210_NCOOL } A210CoolTerm;
 
@@ -46,6 +49,7 @@ typedef struct {
  double adiabatic_temperature_gradient,adiabatic_velocity_divergence;
  double adiabatic_electron_fraction_gradient,adiabatic_internal_energy_gradient;
  double adiabatic_signed_total;
+ double material_thermal_time,material_atomic_time;
  int m_line,radiative_line_included,collisional_or_escape_included;
  int line_owner_overlap;
  double line_owner_closure,normalized_line_owner_closure;
@@ -287,12 +291,15 @@ typedef struct {
  const CmfgenAdiabaticCell *adiabatic;
  const A210LineNetPublication *line_net;
  size_t n_shells;
+ const CmfgenMaterialTimeWork *time_work; /* exactly one of this/adiabatic */
 } A210TrialLedgerInput;
 int a210_publication_init(ElectronTemperaturePublication*p,size_t n_shells);
 void a210_publication_free(ElectronTemperaturePublication*p);
 RadeqStatus a210_line_owner_finalize(A210TermLedger*l);
 RadeqStatus a210_apply_cmfgen_adiabatic(
     A210TermLedger *ledger, const CmfgenAdiabaticCell *cell);
+RadeqStatus a210_apply_material_time_work(
+    A210TermLedger *ledger,const CmfgenMaterialTimeWork *cell);
 /* Legacy safety API retained for focused negative controls.  Production A2-10
  * consumes A210LineNetPublication and therefore does not call this guard. */
 RadeqStatus a210_signed_tau_energy_preflight(

@@ -20,6 +20,22 @@ typedef enum {
     NLTE_CANDIDATE_COMMIT_FAILED
 } NLTEPopulationCandidateStatus;
 
+/* 실제 이전 시점. 최초 사용 전0으로 초기화한다. 캡처는 완결된 물질에서만
+ * 수행하고 같은시점 반복 중에는 교체하지 않는다. 모든 배열은 깊은복사다.
+ * 셸 순서는 동일한 Lagrange 격자, 준위/이온 맵은 저장된 정체성을 유지한다. */
+typedef struct NLTEPhysicalHistory {
+    CmfgenMaterialEnergyState energy;
+    size_t n_ions, n_levels;
+    uint64_t population_generation, temperature_generation;
+    double *storage, *ion_density, *level_density;
+    int *level_global, *ion_Z, *ion_stage;
+} NLTEPhysicalHistory;
+
+NLTEPopulationCandidateStatus nlte_physical_history_capture(
+    NLTEPhysicalHistory *history,const NLTEConfig *nlte,const AtomicData *atom,
+    const PlasmaState *plasma,double epoch_s);
+void nlte_physical_history_free(NLTEPhysicalHistory *history);
+
 /* Private population-solve failure provenance.  The public A2-07 path does
  * not need or own this state: it is attached only to an all-shell trial so a
  * failed A2-10 endpoint cannot collapse pair, shell and CE failures into the
@@ -159,6 +175,7 @@ typedef struct {
     double *internal_energy_density;
     double *internal_energy_atom;
     CmfgenAdiabaticCell *adiabatic;
+    CmfgenMaterialTimeWork *time_work; /* exclusive alternative to adiabatic */
     int adiabatic_active;
     int bundle_complete;
 

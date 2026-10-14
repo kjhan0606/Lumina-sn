@@ -54,6 +54,7 @@ RadeqStatus a210_apply_cmfgen_adiabatic(
   return l->status=RADEQ_SIGN_MISMATCH;
  }
  l->adiabatic_model=A210_ADIABATIC_CMFGEN_COMPLETE;
+ l->material_thermal_time=l->material_atomic_time=0;
  l->adiabatic_temperature_gradient=c->temperature_gradient;
  l->adiabatic_velocity_divergence=c->velocity_divergence;
  l->adiabatic_electron_fraction_gradient=c->electron_fraction_gradient;
@@ -68,6 +69,29 @@ RadeqStatus a210_apply_cmfgen_adiabatic(
  return RADEQ_OK;
 }
 
+RadeqStatus a210_apply_material_time_work(
+ A210TermLedger*l,const CmfgenMaterialTimeWork*c){
+ if(!l||!c)return RADEQ_TERM_SCHEMA;
+ double parts[3]={c->thermal_time,c->atomic_time,c->expansion};
+ double total=sum(parts,3),scale=fmax(fabs(parts[0])+fabs(parts[1])+fabs(parts[2]),DBL_MIN);
+ if(!isfinite(parts[0])||!isfinite(parts[1])||!isfinite(parts[2])||
+    !isfinite(c->signed_total)||!isfinite(c->cooling)||!isfinite(c->heating)||
+    c->expansion<0||c->cooling<0||c->heating<0||
+    fabs(total-c->signed_total)>1e-12*scale||
+    fabs(c->cooling-c->heating-c->signed_total)>1e-12*scale||
+    (c->cooling>0&&c->heating>0))return l->status=RADEQ_SIGN_MISMATCH;
+ l->adiabatic_model=A210_MATERIAL_TIME_HISTORY;
+ l->material_thermal_time=c->thermal_time;l->material_atomic_time=c->atomic_time;
+ l->adiabatic_temperature_gradient=l->adiabatic_electron_fraction_gradient=0;
+ l->adiabatic_internal_energy_gradient=0;l->adiabatic_velocity_divergence=c->expansion;
+ l->adiabatic_signed_total=c->signed_total;
+ l->cooling[A210_ADIABATIC]=c->cooling;
+ l->cooling_status[A210_ADIABATIC]=c->cooling?A210_INCLUDED:A210_EXACT_ZERO;
+ l->heating[A210_ADIABATIC_H]=c->heating;
+ l->heating_status[A210_ADIABATIC_H]=c->heating?A210_INCLUDED:A210_EXACT_ZERO;
+ return RADEQ_OK;
+}
+
 static int a210_opacity_component_valid(A208Validity validity){
  return validity==A208_VALID||validity==A208_EXACT_ZERO;
 }
@@ -79,7 +103,7 @@ static int a210_emissivity_component_valid(EmissivityStatus status){
 RadeqStatus a210_trial_ledger_build(
  const A210TrialLedgerInput*in,A210TermLedger*out){
  if(!in||!out||!in->opacity||!in->emissivity||!in->j_nu||
-    !in->temperature_K||!in->electron_density_cm3||!in->adiabatic||
+    !in->temperature_K||!in->electron_density_cm3||(!in->adiabatic==!in->time_work)||
     !in->line_net||!in->n_shells)return RADEQ_TERM_SCHEMA;
  const CpuOpacityPublication*op=in->opacity;
  const CpuEmissivityPublication*em=in->emissivity;
@@ -213,7 +237,8 @@ RadeqStatus a210_trial_ledger_build(
   l->heating_status[A210_GAMMA]=qg==0.0?A210_EXACT_ZERO:A210_INCLUDED;
   l->heating_status[A210_NONTHERMAL]=A210_EXACT_ZERO;
   l->cooling_status[A210_COLL_LINE]=A210_REPLACED_NOT_APPLICABLE;
-  result=a210_apply_cmfgen_adiabatic(l,&in->adiabatic[s]);
+  result=in->time_work?a210_apply_material_time_work(l,&in->time_work[s]):
+      a210_apply_cmfgen_adiabatic(l,&in->adiabatic[s]);
   if(result!=RADEQ_OK)break;
   result=a210_line_owner_finalize(l);
   if(result!=RADEQ_OK&&result!=RADEQ_EXACT_ZERO_BALANCE)break;
@@ -223,7 +248,7 @@ RadeqStatus a210_trial_ledger_build(
  free(candidate);return result;
 }
 RadeqStatus a210_line_owner_finalize(A210TermLedger*l){if(!l)return RADEQ_TERM_SCHEMA;if(l->equation_kind!=A210_RE_INTEGRAL&&l->equation_kind!=A210_EHB_THERMAL){g.blocked_schema++;return l->status=RADEQ_TERM_SCHEMA;}l->line_owner_overlap=l->radiative_line_included&&l->collisional_or_escape_included;if(l->m_line!=0&&l->m_line!=1){g.blocked_schema++;return l->status=RADEQ_TERM_SCHEMA;}if(l->line_owner_overlap){g.line_owner_overlap_shells++;g.blocked_schema++;return l->status=RADEQ_TERM_SCHEMA;}if((l->m_line==1)!=!!l->radiative_line_included||(l->m_line==0)!=!!l->collisional_or_escape_included){g.blocked_schema++;return l->status=RADEQ_TERM_SCHEMA;}if(l->m_line){l->cooling_status[A210_COLL_LINE]=A210_REPLACED_NOT_APPLICABLE;}else{l->heating_status[A210_LINE_ABS]=A210_REPLACED_NOT_APPLICABLE;l->cooling_status[A210_LINE_EMIT]=A210_REPLACED_NOT_APPLICABLE;}
- l->sum_heating=sum(l->heating,A210_NHEAT);l->sum_cooling=sum(l->cooling,A210_NCOOL);l->residual=l->sum_heating-l->sum_cooling;double hn=l->heating[A210_LINE_ABS],cn=l->cooling[A210_LINE_EMIT]+l->cooling[A210_COLL_LINE];double non=(l->sum_heating-hn)-(l->sum_cooling-cn);double own=l->m_line*(-l->Q_line_rad)-(1-l->m_line)*l->C_line_ce;l->line_owner_closure=l->residual-(non+own);double scale=0;for(int i=0;i<A210_NHEAT;i++)scale+=fabs(l->heating[i]);for(int i=0;i<A210_NCOOL;i++)scale+=fabs(l->cooling[i]);scale+=fabs(own);l->normalized_line_owner_closure=scale?fabs(l->line_owner_closure)/scale:fabs(l->line_owner_closure);if((scale==0&&l->line_owner_closure!=0)||l->normalized_line_owner_closure>1e-12){g.line_owner_closure_failures++;g.blocked_schema++;if(l->normalized_line_owner_closure>g.max_line_owner_closure)g.max_line_owner_closure=l->normalized_line_owner_closure;return l->status=RADEQ_TERM_SCHEMA;}double den=l->sum_heating+l->sum_cooling;l->e_balance=den?fabs(l->residual)/den:(l->residual==0?0:INFINITY);if(l->adiabatic_model!=A210_ADIABATIC_CMFGEN_COMPLETE||l->cooling_status[A210_ADIABATIC]==A210_INCOMPLETE)return l->status=RADEQ_INCOMPLETE_ADIABATIC;l->status=(den==0)?RADEQ_EXACT_ZERO_BALANCE:RADEQ_OK;return l->status;}
+ l->sum_heating=sum(l->heating,A210_NHEAT);l->sum_cooling=sum(l->cooling,A210_NCOOL);l->residual=l->sum_heating-l->sum_cooling;double hn=l->heating[A210_LINE_ABS],cn=l->cooling[A210_LINE_EMIT]+l->cooling[A210_COLL_LINE];double non=(l->sum_heating-hn)-(l->sum_cooling-cn);double own=l->m_line*(-l->Q_line_rad)-(1-l->m_line)*l->C_line_ce;l->line_owner_closure=l->residual-(non+own);double scale=0;for(int i=0;i<A210_NHEAT;i++)scale+=fabs(l->heating[i]);for(int i=0;i<A210_NCOOL;i++)scale+=fabs(l->cooling[i]);scale+=fabs(own);l->normalized_line_owner_closure=scale?fabs(l->line_owner_closure)/scale:fabs(l->line_owner_closure);if((scale==0&&l->line_owner_closure!=0)||l->normalized_line_owner_closure>1e-12){g.line_owner_closure_failures++;g.blocked_schema++;if(l->normalized_line_owner_closure>g.max_line_owner_closure)g.max_line_owner_closure=l->normalized_line_owner_closure;return l->status=RADEQ_TERM_SCHEMA;}double den=l->sum_heating+l->sum_cooling;l->e_balance=den?fabs(l->residual)/den:(l->residual==0?0:INFINITY);if(!a210_adiabatic_model_complete(l->adiabatic_model)||l->cooling_status[A210_ADIABATIC]==A210_INCOMPLETE)return l->status=RADEQ_INCOMPLETE_ADIABATIC;l->status=(den==0)?RADEQ_EXACT_ZERO_BALANCE:RADEQ_OK;return l->status;}
 RadeqStatus a210_te_context_sha256(const char te[65],const char geo[65],uint64_t ep,char out[65]){if(!te||!geo||!out||strlen(te)!=64||strlen(geo)!=64)return RADEQ_TE_CONTEXT_MISMATCH;Sh s;si(&s);const char d[]="A2-10:Te-context:v1";su(&s,d,sizeof(d)-1);su(&s,te,64);su(&s,geo,64);u64(&s,ep);sd(&s,out);return RADEQ_OK;}
 RadeqStatus a210_geometry_sha256(const double*x,size_t n,char out[65]){if(!x||n<2||!out)return RADEQ_TE_CONTEXT_MISMATCH;Sh s;si(&s);const char d[]="A2-10:shell-geometry:cm-s^-1:IEEE754:v1";su(&s,d,sizeof(d)-1);u64(&s,n);for(size_t i=0;i<n;i++){if(!isfinite(x[i]))return RADEQ_TE_CONTEXT_MISMATCH;uint64_t v;memcpy(&v,&x[i],8);u64(&s,v);}sd(&s,out);return RADEQ_OK;}
 int a210_solve_transaction(ElectronTemperaturePublication*pub,const double*lo,const double*hi,const double*ne,size_t n,uint64_t ep,uint64_t gen,const char*geo,A210ResidualFunction fn,void*ctx,double*outte,double*outne){if(!pub||!lo||!hi||!ne||!geo||!fn||!outte||!outne||!n||!gen)return 2;ElectronTemperaturePublication c={0};if(a210_publication_init(&c,n))return 2;c.solve_epoch=ep;c.required_te_generation=gen;memcpy(c.geometry_sha256,geo,65);g.solve_epoch=ep;g.te_generation_required=gen;g.shells_attempted+=n;
@@ -240,7 +265,7 @@ static int a210_vector_ledgers_valid(
   if((ledger[s].status!=RADEQ_OK&&
       ledger[s].status!=RADEQ_EXACT_ZERO_BALANCE)||
      ledger[s].equation_kind!=A210_RE_INTEGRAL||
-     ledger[s].adiabatic_model!=A210_ADIABATIC_CMFGEN_COMPLETE||
+     !a210_adiabatic_model_complete(ledger[s].adiabatic_model)||
      ledger[s].cooling_status[A210_ADIABATIC]==A210_INCOMPLETE||
      !isfinite(ledger[s].residual)||!isfinite(ledger[s].sum_heating)||
      !isfinite(ledger[s].sum_cooling))return 0;
@@ -256,7 +281,7 @@ static void a210_vector_ledger_diagnostic(
     (ledger[s].status!=RADEQ_OK&&
      ledger[s].status!=RADEQ_EXACT_ZERO_BALANCE)||
     ledger[s].equation_kind!=A210_RE_INTEGRAL||
-    ledger[s].adiabatic_model!=A210_ADIABATIC_CMFGEN_COMPLETE||
+    !a210_adiabatic_model_complete(ledger[s].adiabatic_model)||
     ledger[s].cooling_status[A210_ADIABATIC]==A210_INCOMPLETE||
     !isfinite(ledger[s].residual)||
     !isfinite(ledger[s].sum_heating)||
@@ -671,7 +696,7 @@ int a210_publication_candidate_from_root(
 A210Counters*a210_counters(void){return &g;}void a210_counters_reset(void){memset(&g,0,sizeof(g));}
 const char*a210_status_name(RadeqStatus s){static const char*n[]={"INVALID","RADEQ_OK","RADEQ_EXACT_ZERO_BALANCE","RADEQ_STALE_RF","RADEQ_STALE_BF","RADEQ_STALE_LINE","RADEQ_STALE_POP","RADEQ_STALE_OPACITY","RADEQ_STALE_EMISSIVITY","RADEQ_TERM_MISSING","RADEQ_TERM_SCHEMA","RADEQ_SIGN_MISMATCH","RADEQ_INVALID_TE_TRIAL","RADEQ_INVALID_NE","RADEQ_ATOMIC_MISSING","RADEQ_NO_BRACKET","RADEQ_NO_ROOT","RADEQ_NOT_CONVERGED","RADEQ_POPULATION_NOT_CONVERGED","RADEQ_CHARGE_NOT_CONVERGED","RADEQ_HEAT_RESIDUAL","RADEQ_TE_MANIFEST_MISMATCH","RADEQ_TE_CONTEXT_MISMATCH","RADEQ_UNQUALIFIED_TE","RADEQ_FIXED_T","RADEQ_FORBIDDEN_FALLBACK","RADEQ_PARTIAL_PUBLISH","RADEQ_INCOMPLETE_ADIABATIC","RADEQ_NONFINITE","RADEQ_GAMMA_UNPUBLISHED"};return s>=RADEQ_OK&&s<=RADEQ_GAMMA_UNPUBLISHED?n[s]:n[0];}
 const char*a210_equation_name(A210EquationKind k){return k==A210_RE_INTEGRAL?"RE_INTEGRAL":k==A210_EHB_THERMAL?"EHB_THERMAL":"EQUATION_NONE";}
-const char*a210_adiabatic_model_name(A210AdiabaticModel m){return m==A210_ADIABATIC_CMFGEN_COMPLETE?"CMFGEN_COMPLETE":m==A210_ADIABATIC_ELECTRON_TRANSLATIONAL_ONLY?"ELECTRON_TRANSLATIONAL_ONLY":"ADIABATIC_NONE";}
+const char*a210_adiabatic_model_name(A210AdiabaticModel m){return m==A210_MATERIAL_TIME_HISTORY?"MATERIAL_TIME_HISTORY":m==A210_ADIABATIC_CMFGEN_COMPLETE?"CMFGEN_COMPLETE":m==A210_ADIABATIC_ELECTRON_TRANSLATIONAL_ONLY?"ELECTRON_TRANSLATIONAL_ONLY":"ADIABATIC_NONE";}
 void a210_counters_print(FILE*f){if(!f)f=stdout;fprintf(f,"[A2-10][RADEQ] solve_epoch=%llu te_generation_required=%llu te_generation_committed=%llu shells_attempted=%llu shells_converged=%llu shells_published=%llu trials=%llu population_trials=%llu opacity_trials=%llu emissivity_trials=%llu photo_heat_terms=%llu line_heat_terms=%llu ff_heat_terms=%llu compton_heat_terms=%llu gamma_heat_terms=%llu nonthermal_heat_terms=%llu adiabatic_heat_terms=%llu recomb_cool_terms=%llu line_cool_terms=%llu collisional_cool_terms=%llu ff_cool_terms=%llu compton_cool_terms=%llu adiabatic_cool_terms=%llu exact_zero_balance=%llu no_bracket=%llu no_root=%llu nonconverged=%llu charge_nonconverged=%llu blocked_stale=%llu blocked_missing_term=%llu blocked_gamma_unpublished=%llu blocked_schema=%llu blocked_sign=%llu blocked_incomplete_adiabatic=%llu te_manifest_mismatch=%llu te_context_mismatch=%llu fixed_te_attempts=%llu seed_generation_attempts=%llu line_radiative_owner_shells=%llu line_collisional_escape_owner_shells=%llu line_replaced_collisional_terms=%llu line_replaced_radiative_terms=%llu line_owner_overlap_shells=%llu line_owner_closure_failures=%llu diagnostic_seed_trials=%llu diagnostic_requested_te_trials=%llu pin_attempts=%llu floor_attempts=%llu neighbor_attempts=%llu old_te_attempts=%llu fallback_attempts=%llu partial_publish_attempts=%llu nonfinite_failures=%llu max_line_owner_closure=%.17g te_lane=%s max_heat_residual=%.17g\n",(unsigned long long)g.solve_epoch,(unsigned long long)g.te_generation_required,(unsigned long long)g.te_generation_committed,(unsigned long long)g.shells_attempted,(unsigned long long)g.shells_converged,(unsigned long long)g.shells_published,(unsigned long long)g.trials,(unsigned long long)g.population_trials,(unsigned long long)g.opacity_trials,(unsigned long long)g.emissivity_trials,(unsigned long long)g.photo_heat_terms,(unsigned long long)g.line_heat_terms,(unsigned long long)g.ff_heat_terms,(unsigned long long)g.compton_heat_terms,(unsigned long long)g.gamma_heat_terms,(unsigned long long)g.nonthermal_heat_terms,(unsigned long long)g.adiabatic_heat_terms,(unsigned long long)g.recomb_cool_terms,(unsigned long long)g.line_cool_terms,(unsigned long long)g.collisional_cool_terms,(unsigned long long)g.ff_cool_terms,(unsigned long long)g.compton_cool_terms,(unsigned long long)g.adiabatic_cool_terms,(unsigned long long)g.exact_zero_balance,(unsigned long long)g.no_bracket,(unsigned long long)g.no_root,(unsigned long long)g.nonconverged,(unsigned long long)g.charge_nonconverged,(unsigned long long)g.blocked_stale,(unsigned long long)g.blocked_missing_term,(unsigned long long)g.blocked_gamma_unpublished,(unsigned long long)g.blocked_schema,(unsigned long long)g.blocked_sign,(unsigned long long)g.blocked_incomplete_adiabatic,(unsigned long long)g.te_manifest_mismatch,(unsigned long long)g.te_context_mismatch,(unsigned long long)g.fixed_te_attempts,(unsigned long long)g.seed_generation_attempts,(unsigned long long)g.line_radiative_owner_shells,(unsigned long long)g.line_collisional_escape_owner_shells,(unsigned long long)g.line_replaced_collisional_terms,(unsigned long long)g.line_replaced_radiative_terms,(unsigned long long)g.line_owner_overlap_shells,(unsigned long long)g.line_owner_closure_failures,(unsigned long long)g.diagnostic_seed_trials,(unsigned long long)g.diagnostic_requested_te_trials,(unsigned long long)g.pin_attempts,(unsigned long long)g.floor_attempts,(unsigned long long)g.neighbor_attempts,(unsigned long long)g.old_te_attempts,(unsigned long long)g.fallback_attempts,(unsigned long long)g.partial_publish_attempts,(unsigned long long)g.nonfinite_failures,g.max_line_owner_closure,a210_te_lane_name(g.te_lane),g.max_heat_residual);}
 RadeqStatus a210_signed_tau_energy_preflight(
         const A208ValueView *values, size_t count,

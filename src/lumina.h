@@ -416,6 +416,7 @@ typedef struct {
 } MCConfig;                             /* Phase 2 - Step 4 */
 
 /* Phase 2 - Step 4: Plasma state for convergence */
+struct NLTEPhysicalHistory;
 typedef struct {
     int     n_shells;         /* Phase 2 - Step 4 */
     double *rho;              /* Phase 2 - Step 4: [n_shells] density [g/cm^3] */
@@ -428,6 +429,9 @@ typedef struct {
     ElectronTemperaturePublication te_publication; /* A2-10 sole production owner */
     PopulationStatus population_last_error;
     uint64_t population_error_count;
+    /* Driver-owned immutable snapshot of the previous physical epoch.
+     * NULL retains the steady material energy equation. Never free here. */
+    const struct NLTEPhysicalHistory *physical_history;
 } PlasmaState;                /* Phase 2 - Step 4 */
 
 /* Task #072: Atomic data for plasma solver */
