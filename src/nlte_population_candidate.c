@@ -163,10 +163,10 @@ history_done:
     free(energy);nlte_physical_history_free(&trial);return status;
 }
 
-PopulationStatus nlte_physical_history_solve_levels(
+static PopulationStatus physical_history_solve_impl(
     const NLTEConfig *nlte,const AtomicData *atom,const PlasmaState *plasma,
     size_t shell,double epoch_s,size_t first,size_t n,
-    const double *generator,double *solution,PopulationGeneratorSolveDiagnostic *diagnostic)
+    int terminal_ion,const double *generator,double *solution,PopulationGeneratorSolveDiagnostic *diagnostic)
 {
     if(!nlte||!atom||!plasma||!plasma->physical_history||!plasma->rho||
        !generator||!solution||!n||n>SIZE_MAX/sizeof(double)||
@@ -191,10 +191,20 @@ PopulationStatus nlte_physical_history_solve_levels(
     double *old=calloc(n,sizeof(*old));unsigned char *covered=calloc(n,sizeof(*covered));
     if(!old||!covered){free(old);free(covered);return POP_SOLVE_FAILED;}
     PopulationStatus status=POP_OK;
+    size_t bound_n=n;
+    if(terminal_ion>=0){
+        if((size_t)terminal_ion>=h->n_ions||!h->ion_density||!atom->level_offset||n<2||
+           atom->level_offset[terminal_ion]!=atom->level_offset[terminal_ion+1]){
+            status=POP_ATOMIC_MISSING;goto time_levels_done;
+        }
+        bound_n--;
+        old[n-1]=h->ion_density[(size_t)terminal_ion*ns+shell];covered[n-1]=1;
+        if(!isfinite(old[n-1])||old[n-1]<0){status=POP_NONFINITE;goto time_levels_done;}
+    }
     for(size_t g=0;g<h->n_levels;g++){
         int sl=nlte->fl_to_super[g];
         if(sl<0){status=POP_ATOMIC_MISSING;goto time_levels_done;}
-        if((size_t)sl<first||(size_t)sl>=first+n)continue;
+        if((size_t)sl<first||(size_t)sl>=first+bound_n)continue;
         double value=h->level_density[g*ns+shell];
         if(value<0||!isfinite(value)){status=POP_NONFINITE;goto time_levels_done;}
         old[(size_t)sl-first]+=value;covered[(size_t)sl-first]=1;
@@ -204,6 +214,20 @@ PopulationStatus nlte_physical_history_solve_levels(
         epoch_s-h->energy.epoch_s,solution,diagnostic);
 time_levels_done:
     free(old);free(covered);return status;
+}
+
+PopulationStatus nlte_physical_history_solve_levels(
+    const NLTEConfig *n,const AtomicData *a,const PlasmaState *p,
+    size_t shell,double epoch,size_t first,size_t count,const double *A,double *x,
+    PopulationGeneratorSolveDiagnostic *d){
+    return physical_history_solve_impl(n,a,p,shell,epoch,first,count,-1,A,x,d);
+}
+
+PopulationStatus nlte_physical_history_solve_element(
+    const NLTEConfig *n,const AtomicData *a,const PlasmaState *p,
+    size_t shell,double epoch,size_t first,size_t count,int terminal_ion,
+    const double *A,double *x){
+    return physical_history_solve_impl(n,a,p,shell,epoch,first,count,terminal_ion,A,x,NULL);
 }
 
 static void candidate_bf_free(BFOpacity *bf)

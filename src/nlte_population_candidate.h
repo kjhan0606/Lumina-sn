@@ -42,6 +42,10 @@ PopulationStatus nlte_physical_history_solve_levels(
     size_t shell,double epoch_s,size_t super_start,size_t n_super,
     const double *generator,double *solution,
     PopulationGeneratorSolveDiagnostic *diagnostic);
+/* terminal>=0이면 행렬 마지막 성분은 그 ion-pop의 실제 과거 인구다. */
+PopulationStatus nlte_physical_history_solve_element(
+    const NLTEConfig*,const AtomicData*,const PlasmaState*,size_t,double,
+    size_t,size_t,int,const double*,double*);
 
 /* Private population-solve failure provenance.  The public A2-07 path does
  * not need or own this state: it is attached only to an all-shell trial so a

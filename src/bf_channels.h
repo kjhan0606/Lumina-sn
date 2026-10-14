@@ -11,6 +11,9 @@ typedef struct {
     double nu_min,nu_max;
     int *offset,*upper;
     double *threshold,*sigma;
+    int version;
+    int *upper_ion;              /* 실제 ion-pop. upper=-1이면 terminal */
+    double *upper_g;             /* terminal은 CMFGEN phot 헤더의 LS 상태 g */
 } BfChannels;
 
 typedef struct {

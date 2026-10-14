@@ -7,7 +7,7 @@
 #include <string.h>
 #define REQUIRE(c) do{if(!(c)){fprintf(stderr,"input probe failed line=%d\n",__LINE__);return 1;}}while(0)
 int main(int argc,char **argv){
-    REQUIRE(argc==4);AtomicData a={0};char *line=NULL;size_t cap=0;
+    REQUIRE(argc==4||argc==5);AtomicData a={0};char *line=NULL;size_t cap=0;
     FILE *f=fopen(argv[1],"r");REQUIRE(f);REQUIRE(getline(&line,&cap,f)>0);
     while(getline(&line,&cap,f)>0)a.n_levels++;
     rewind(f);REQUIRE(getline(&line,&cap,f)>0);
@@ -30,29 +30,64 @@ int main(int argc,char **argv){
         REQUIRE(getline(&line,&cap,f)>0);
         REQUIRE(sscanf(line,"%d,%d,%lf",a.ioniz_Z+i,a.ioniz_ion+i,a.ioniz_energy_eV+i)==3);
     }
-    fclose(f);free(line);REQUIRE(!load_bf_channels(&a,argv[3]));
-    BfChannels *c=a.bf_channels;int nonzero=0;double worst=0,witness_up[2]={0},witness_down[2]={0};
+    fclose(f);
+    a.ion_pop_Z=calloc(2*a.n_ionization,sizeof(int));a.ion_pop_stage=calloc(2*a.n_ionization,sizeof(int));
+    a.level_offset=calloc(2*a.n_ionization+1,sizeof(int));
+    REQUIRE(a.ion_pop_Z&&a.ion_pop_stage&&a.level_offset);
+    for(int i=0;i<a.n_ionization;i++){
+        int ip=a.n_ion_pops++;a.ion_pop_Z[ip]=a.ioniz_Z[i];a.ion_pop_stage[ip]=a.ioniz_ion[i];
+        if(i+1==a.n_ionization||a.ioniz_Z[i+1]!=a.ioniz_Z[i]){
+            ip=a.n_ion_pops++;a.ion_pop_Z[ip]=a.ioniz_Z[i];a.ion_pop_stage[ip]=a.ioniz_ion[i]+1;
+        }
+    }
+    for(int ip=0;ip<a.n_ion_pops;ip++){
+        int count=0;
+        for(int l=0;l<a.n_levels;l++)if(a.level_Z[l]==a.ion_pop_Z[ip]&&a.level_ion[l]==a.ion_pop_stage[ip])count++;
+        a.level_offset[ip+1]=a.level_offset[ip]+count;
+    }
+    if(argc==5){
+        a.topion_ion_index=calloc(a.n_ion_pops,sizeof(int));a.topion_E_cm=calloc(a.n_ion_pops,sizeof(double));
+        a.topion_g=calloc(a.n_ion_pops,sizeof(double));REQUIRE(a.topion_ion_index&&a.topion_E_cm&&a.topion_g);
+        f=fopen(argv[4],"r");REQUIRE(f);REQUIRE(getline(&line,&cap,f)>0);
+        while(getline(&line,&cap,f)>0){
+            int z,stage,li,ip=-1;double E,g;char label[64];
+            REQUIRE(sscanf(line,"%d,%d,%63[^,],%d,%lf,%lf",&z,&stage,label,&li,&E,&g)==6);
+            for(int j=0;j<a.n_ion_pops;j++)if(a.ion_pop_Z[j]==z&&a.ion_pop_stage[j]==stage)ip=j;
+            REQUIRE(ip>=0&&a.topion_n<(size_t)a.n_ion_pops);
+            a.topion_ion_index[a.topion_n]=ip;a.topion_E_cm[a.topion_n]=E;a.topion_g[a.topion_n++]=g;
+        }
+        fclose(f);
+    }
+    free(line);REQUIRE(!load_bf_channels(&a,argv[3]));
+    BfChannels *c=a.bf_channels;int nonzero=0,terminal=0,covered=0;double worst=0,witness_up[2]={0},witness_down[2]={0};
     const double T=1e4,ne=1e8,step=log(c->nu_max/c->nu_min)/c->n_bins;
-    for(int l=0;l<a.n_levels;l++)for(int r=c->offset[l];r<c->offset[l+1];r++){
-        int u=c->upper[r];double up=0,down=0;
+    for(int l=0;l<a.n_levels;l++){
+      if(c->offset[l+1]>c->offset[l])covered++;
+      for(int r=c->offset[l];r<c->offset[l+1];r++){
+        int u=c->upper[r];double gu=c->upper_g[r],up=0,down=0;
+        if(u<0)terminal++;
         for(int b=0;b<c->n_bins;b++){
             BfChannelBin v;
             REQUIRE(!bf_channel_bin(c->nu_min*exp(b*step),c->nu_min*exp((b+1)*step),c->threshold[r],
-                c->sigma[(size_t)r*c->n_bins+b],T,ne,a.level_g[l],a.level_g[u],1,1,0,1,&v));
+                c->sigma[(size_t)r*c->n_bins+b],T,ne,a.level_g[l],gu,1,1,0,1,&v));
             up+=v.ionization;down+=v.recombination;
         }
         if(up>0){
             nonzero++;double ratio=ne*pow(H_PLANCK*H_PLANCK/(2*M_PI_VAL*M_ELECTRON*K_BOLTZMANN*T),1.5)*
-                a.level_g[l]/(2.0*a.level_g[u])*exp(H_PLANCK*c->threshold[r]/(K_BOLTZMANN*T));
+                a.level_g[l]/(2.0*gu)*exp(H_PLANCK*c->threshold[r]/(K_BOLTZMANN*T));
             double err=fabs(up*ratio/down-1);if(err>worst)worst=err;REQUIRE(err<2e-12);
         }else REQUIRE(down==0);
         if(l==witness){int k=r-c->offset[l];REQUIRE(k<2);witness_up[k]=up;witness_down[k]=down;}
+      }
     }
     REQUIRE(witness>=0&&c->offset[witness+1]-c->offset[witness]==2);
     REQUIRE(witness_up[0]==0&&witness_down[0]==0&&witness_up[1]>0&&witness_down[1]>0);
-    printf("[BF-INPUT] PASS channels=%d nonzero=%d max_Planck_balance_error=%.17g\n",c->n_channels,nonzero,worst);
+    if(argc==5)REQUIRE(covered==a.n_levels&&a.topion_n==6&&terminal>0);
+    printf("[BF-INPUT] PASS channels=%d nonzero=%d covered=%d terminal_channels=%d terminal_ions=%zu max_Planck_balance_error=%.17g\n",c->n_channels,nonzero,covered,terminal,a.topion_n,worst);
     printf("[BF-INPUT] SiII_level2 T=10000 ne=1e8 A_Gamma=%.17g B_Gamma=%.17g A_Rrec=%.17g B_Rrec=%.17g spectrum=NOT_TESTED\n",
         witness_up[0],witness_up[1],witness_down[0],witness_down[1]);
     free_bf_channels(c);free(a.level_Z);free(a.level_ion);free(a.level_g);free(a.level_energy_eV);
-    free(a.ioniz_Z);free(a.ioniz_ion);free(a.ioniz_energy_eV);return 0;
+    free(a.ioniz_Z);free(a.ioniz_ion);free(a.ioniz_energy_eV);
+    free(a.ion_pop_Z);free(a.ion_pop_stage);free(a.level_offset);
+    free(a.topion_ion_index);free(a.topion_E_cm);free(a.topion_g);return 0;
 }

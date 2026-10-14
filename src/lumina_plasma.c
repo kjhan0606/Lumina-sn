@@ -9129,6 +9129,8 @@ int nlte_bf_channel_rates(NLTEConfig *n,const AtomicData *a,int lower,int r,int 
     if(v->n_bins!=(size_t)p->n_bins||shell>=(int)v->n_shells||!v->J_nu||
        !v->frequency_bin_edges||!v->validity)return -1;
     int upper=p->upper[r];double ru=0,rd=0,sigma_edge=0;
+    double gu=upper>=0?a->level_g[upper]:(p->upper_g?p->upper_g[r]:0);
+    if(!(gu>0)||!isfinite(gu))return -1;
     int field=nlte_bf_field_source(n,T,0,0,0,NULL,NULL,NULL);
     double dlog=log(p->nu_max/p->nu_min)/p->n_bins;
     for(int b=0;b<p->n_bins;b++){
@@ -9143,7 +9145,7 @@ int nlte_bf_channel_rates(NLTEConfig *n,const AtomicData *a,int lower,int r,int 
         double sigma=p->sigma[(size_t)r*p->n_bins+b];
         BfChannelBin cell;
         if(bf_channel_bin(lo,hi,p->threshold[r],sigma,T,ne,a->level_g[lower],
-                         a->level_g[upper],1,1,j,field==2,&cell))return -1;
+                         gu,1,1,j,field==2,&cell))return -1;
         ru+=cell.ionization;rd+=cell.recombination;
         if(sigma_edge==0&&sigma>0)sigma_edge=sigma;
     }
@@ -9153,7 +9155,7 @@ int nlte_bf_channel_rates(NLTEConfig *n,const AtomicData *a,int lower,int r,int 
         double gaunt=a->level_ion[lower]<=0?.1:(a->level_ion[lower]==1?.2:.3);
         double pre=ne*1.55e13/sqrt(T)*gaunt*sigma_edge/x;
         double ratio=ne*pow(H_PLANCK*H_PLANCK/(2*M_PI_VAL*M_ELECTRON*K_BOLTZMANN*T),1.5)*
-                     a->level_g[lower]/(2.0*a->level_g[upper]);
+                     a->level_g[lower]/(2.0*gu);
         coll_up=pre*exp(-x);coll_down=pre*ratio;
     }
     if(!isfinite(ru)||!isfinite(rd)||!isfinite(coll_up)||!isfinite(coll_down))return -1;
@@ -9199,6 +9201,10 @@ static int bf_channel_continuum_add(BFOpacity *bf,const AtomicData *a,
         }
         for(int l=0;l<c->n_levels;l++)for(int r=c->offset[l];r<c->offset[l+1];r++){
             int u=c->upper[r];
+            int ip=c->upper_ion?c->upper_ion[r]:-1;
+            if(u<0&&(ip<0||ip>=a->n_ion_pops||!c->upper_g))goto done;
+            double gu=u>=0?a->level_g[u]:c->upper_g[r];
+            double nu=u>=0?pop[u]:a->ion_number_density[(size_t)ip*ns+s];
             for(int b=0;b<c->n_bins;b++){
                 double sigma=c->sigma[(size_t)r*c->n_bins+b];
                 if(sigma==0)continue;
@@ -9206,7 +9212,7 @@ static int bf_channel_continuum_add(BFOpacity *bf,const AtomicData *a,
                 double hi=c->nu_min*exp((b+1)*bf->d_log_nu);
                 BfChannelBin v;
                 if(bf_channel_bin(lo,hi,c->threshold[r],sigma,p->T_e[s],p->n_electron[s],
-                    a->level_g[l],a->level_g[u],pop[l],pop[u],0,0,&v))goto done;
+                    a->level_g[l],gu,pop[l],nu,0,0,&v))goto done;
                 size_t i=(size_t)s*c->n_bins+b;
                 bf->chi_bf[i]+=v.chi_net;bf->eta_bf[i]+=v.eta;
                 bf->event_chi_bf[i]+=v.chi_absorption;
@@ -10270,7 +10276,8 @@ static NLTETauLineAuthority nlte_tau_line_authority(
  a.nlte_lo=nlte->global_to_nlte_level[a.lower_global];
  a.nlte_up=nlte->global_to_nlte_level[a.upper_global];
  if(a.nlte_lo<0||a.nlte_up<0)return a;
- a.candidate_only_slot=!pair_owned[a.ion_idx];
+ a.candidate_only_slot=!(atom->bf_channels&&atom->bf_channels->version>=2)&&
+                       !pair_owned[a.ion_idx];
  a.mapped=1;
  return a;
 }
@@ -10532,7 +10539,12 @@ static int dproxy_committed_population_view_valid(
  for(int ion_slot=0;ion_slot<nlte->n_nlte_ions;ion_slot++){
   int begin=nlte->nlte_ion_super_offset[ion_slot];
   int end=nlte->nlte_ion_super_offset[ion_slot+1];
-  if(begin<0||end<=begin||end>nlte->n_super_total)return 0;
+  if(begin<0||end<begin||end>nlte->n_super_total)return 0;
+  if(end==begin){
+   int ip=a209_find_ion_pop_idx(atom,nlte->nlte_Z[ion_slot],nlte->nlte_ion[ion_slot]);
+   if(!atom->bf_channels||atom->bf_channels->version<2||ip<0||
+      !atom->level_offset||atom->level_offset[ip]!=atom->level_offset[ip+1])return 0;
+  }
  }
  unsigned char *seen=calloc((size_t)nlte->n_super_total,sizeof(*seen));
  if(!seen)return 0;
@@ -18378,6 +18390,11 @@ int nlte_init(NLTEConfig *nlte, AtomicData *atom, OpacityState *opacity,
                          (stage4 ? NLTE_TARGET_ION4 : NLTE_TARGET_ION);
     int n_targets = element_wide ? NLTE_EW_IONS :
                     (stage4 ? NLTE_STAGE4_IONS : NLTE_BASE_IONS);
+    if(atom->bf_channels&&atom->bf_channels->version>=2){
+        /* 채널 입력의 실제 원자 목록. 빈 terminal slot에는 가짜 FL을 만들지 않는다. */
+        TGT_Z=atom->ion_pop_Z;TGT_ION=atom->ion_pop_stage;n_targets=atom->n_ion_pops;
+        element_wide=0;stage4=0;
+    }
     const char *super_env = getenv("LUMINA_SUPER_LEVELS");
     int super_requested = (super_env && atoi(super_env) != 0) || element_wide;
     int n_nlte_lines = 0;
@@ -20047,9 +20064,12 @@ static int nlte_assemble_rate_matrix_impl(NLTEConfig *nlte, AtomicData *atom,
             if(atom->bf_channels && atom->bf_channels->offset[global_lev]<
                                     atom->bf_channels->offset[global_lev+1]){
                 const BfChannels *channels=atom->bf_channels;
+                /* terminal은 원소 시간해의 별도 미지수로만 풀어야 한다. */
+                if(channels->upper[channels->offset[global_lev]]<0){free(bb_connected);return -1;}
                 int sl=SOLVE_OF(lev_start+lev);
                 double fl=FRAC_OF(lev_start+lev);
                 for(int r=channels->offset[global_lev];r<channels->offset[global_lev+1];r++){
+                    if(channels->upper[r]<0){free(bb_connected);return -1;}
                     int ng=nlte->global_to_nlte_level[channels->upper[r]];
                     if(ng<nlte->nlte_ion_level_offset[ion_idx_hi]||
                        ng>=nlte->nlte_ion_level_offset[ion_idx_hi+1]){
@@ -22253,6 +22273,10 @@ static int nlte_solve_all_impl(
     int pairs[NLTE_PAIR_COUNT][2];
     const char *names[NLTE_PAIR_COUNT];
     const int time_history = plasma->physical_history != NULL;
+    if(atom->bf_channels&&atom->bf_channels->version>=2&&!time_history){
+        fprintf(stderr,"[NLTE] atomic channel layout requires whole-element time owner\n");
+        A2_07_POP_ABORT(POP_FORBIDDEN_FALLBACK);
+    }
     int n_pairs = time_history ? 0 : nlte_get_pairs(pairs, names);
 
     int ce_max_iter = 5;
@@ -22376,6 +22400,10 @@ static int nlte_solve_all_impl(
                 double sum = 0.0;
                 for (int l = lev_s; l < lev_e; l++)
                     sum += nlte->nlte_level_populations[l * n_shells + s];
+                if(time_history&&lev_s==lev_e){
+                    int ip=find_ion_pop_idx(atom,nlte->nlte_Z[ii],nlte->nlte_ion[ii]);
+                    if(ip>=0)sum=atom->ion_number_density[(size_t)ip*n_shells+s];
+                }
                 old_ion_totals[ii * n_shells + s] = sum;
             }
         }
@@ -22680,6 +22708,18 @@ static int nlte_solve_all_impl(
                             (den?fabs(b-a)/den:0);
                         if(change>max_rel_change){max_rel_change=change;worst_ion_slot=ii;worst_shell=s;}
                     }
+            for(int ii=0;ii<nlte->n_nlte_ions;ii++)
+                if(nlte->nlte_ion_level_offset[ii]==nlte->nlte_ion_level_offset[ii+1]){
+                    int ip=find_ion_pop_idx(atom,nlte->nlte_Z[ii],nlte->nlte_ion[ii]);
+                    for(int s=0;s<n_shells;s++){
+                        double a=old_ion_totals[ii*n_shells+s];
+                        double b=ip>=0?atom->ion_number_density[(size_t)ip*n_shells+s]:NAN;
+                        double den=fmax(fabs(a),fabs(b));
+                        double change=(!isfinite(a)||!isfinite(b)||a<0||b<0)?INFINITY:
+                            (den?fabs(b-a)/den:0);
+                        if(change>max_rel_change){max_rel_change=change;worst_ion_slot=ii;worst_shell=s;}
+                    }
+                }
         }
         last_max_rel_change = max_rel_change;
         last_worst_ion_slot = worst_ion_slot;

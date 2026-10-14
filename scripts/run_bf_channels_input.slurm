@@ -6,7 +6,7 @@
 #SBATCH --cpus-per-task=2
 #SBATCH --mem=8G
 #SBATCH --gres=gpu:0
-#SBATCH --time=00:05:00
+#SBATCH --time=00:15:00
 #SBATCH --no-requeue
 #SBATCH --exclude=syn102,syn03
 #SBATCH --output=/gpfs/kjhan/lumina/cmfgen_map/trace13_20261010/results/bf-input-%j.log
@@ -45,12 +45,12 @@ gfortran -O2 -fcheck=all -ffixed-line-length-none -c reference/sm_phot_v3.f refe
 gfortran smooth-driver.o sm_phot_v3.o cut_points_v3.o -o smooth >> build.log 2>&1
 /home/kjhan/miniconda3/bin/python3 source/scripts/build_bf_channels.py --deck "$bf_deck" \
  --output "$bf_out/bf_channels.bin" --control VADAT --smoother "$bf_out/smooth" \
- --hyd-data "$bf_out/hyd" --ion 14:1 --ion 16:1 > bake.log 2> bake.err
+ --hyd-data "$bf_out/hyd" --all-active > bake.log 2> bake.err
 gcc -O1 -g -std=gnu11 -D_GNU_SOURCE -fsanitize=address,undefined -fno-omit-frame-pointer \
  -ffunction-sections -fdata-sections -Isource/src source/tests/bf_channels_input_probe.c \
  source/src/lumina_atomic.c -Wl,--gc-sections -lm -o input-probe >> build.log 2>&1
 ASAN_OPTIONS=detect_leaks=1 ./input-probe "$bf_deck/levels.csv" "$bf_deck/ionization_energies.csv" \
- bf_channels.bin > input-probe.log 2> input-probe.err
+ bf_channels.bin bf_channels.terminal.csv > input-probe.log 2> input-probe.err
 sha256sum -c reference.sha256 > reference_verify.log
 cd "$bf_out/source"
 sha256sum -c "$bf_out/source.sha256" > "$bf_out/source_verify.log"

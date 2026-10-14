@@ -2447,12 +2447,15 @@ int load_cmfgen_sigma_bf(AtomicData *atom, const char *path) {
 
 void free_bf_channels(BfChannels *p){
     if(!p)return;
-    free(p->offset);free(p->upper);free(p->threshold);free(p->sigma);free(p);
+    free(p->offset);free(p->upper);free(p->threshold);free(p->sigma);
+    free(p->upper_ion);free(p->upper_g);free(p);
 }
 
 /* CBFC v1: uint32 magic/version; int32 levels/channels/bins; double nu_min/max;
  * int32 offsets[levels+1], upper[channels]; double threshold[channels],
- * sigma[channels*bins]. 기존 원자 준위 순서를 그대로 쓴다. 실패시 이전 입력 보존. */
+ * sigma[channels*bins]. v2는 맨 뒤에 double upper_g[channels]를 추가한다.
+ * upper=-1은 별도 terminal ion-pop이며 전역 준위가 아니다.
+ * 기존 원자 준위 순서를 그대로 쓴다. 실패시 이전 입력 보존. */
 int load_bf_channels(AtomicData *atom,const char *path){
     if(!atom||!path||atom->n_levels<=0||!atom->level_Z||!atom->level_ion||
        !atom->level_g||!atom->level_energy_eV)return -1;
@@ -2463,31 +2466,59 @@ int load_bf_channels(AtomicData *atom,const char *path){
     if(fread(&magic,4,1,fp)!=1||fread(&version,4,1,fp)!=1||
        fread(&nl,4,1,fp)!=1||fread(&nr,4,1,fp)!=1||fread(&nb,4,1,fp)!=1||
        fread(&p->nu_min,8,1,fp)!=1||fread(&p->nu_max,8,1,fp)!=1)goto channel_done;
-    if(magic!=0x43424643u||version!=1||nl!=atom->n_levels||nr<=0||
+    if(magic!=0x43424643u||(version!=1&&version!=2)||nl!=atom->n_levels||nr<=0||
        (size_t)nr>(size_t)nl*40||nb!=NLTE_N_FREQ_BINS||
        p->nu_min!=NLTE_NU_MIN||p->nu_max!=NLTE_NU_MAX||
        (size_t)nr>SIZE_MAX/(size_t)nb/sizeof(double))goto channel_done;
-    p->n_levels=nl;p->n_channels=nr;p->n_bins=nb;
+    if(version==2&&(!atom->ion_pop_Z||!atom->ion_pop_stage||!atom->level_offset||
+       (atom->topion_n&&(!atom->topion_ion_index||!atom->topion_E_cm||!atom->topion_g))))
+        goto channel_done;
+    p->n_levels=nl;p->n_channels=nr;p->n_bins=nb;p->version=(int)version;
     p->offset=malloc(((size_t)nl+1)*sizeof(int));p->upper=malloc((size_t)nr*sizeof(int));
     p->threshold=malloc((size_t)nr*sizeof(double));p->sigma=malloc((size_t)nr*nb*sizeof(double));
-    if(!p->offset||!p->upper||!p->threshold||!p->sigma)goto channel_done;
+    p->upper_ion=malloc((size_t)nr*sizeof(int));p->upper_g=malloc((size_t)nr*sizeof(double));
+    if(!p->offset||!p->upper||!p->threshold||!p->sigma||!p->upper_ion||!p->upper_g)goto channel_done;
     if(fread(p->offset,sizeof(int),(size_t)nl+1,fp)!=(size_t)nl+1||
        fread(p->upper,sizeof(int),(size_t)nr,fp)!=(size_t)nr||
        fread(p->threshold,sizeof(double),(size_t)nr,fp)!=(size_t)nr||
-       fread(p->sigma,sizeof(double),(size_t)nr*nb,fp)!=(size_t)nr*nb||fgetc(fp)!=EOF)
+       fread(p->sigma,sizeof(double),(size_t)nr*nb,fp)!=(size_t)nr*nb)
         goto channel_done;
+    if(version==2 && fread(p->upper_g,sizeof(double),(size_t)nr,fp)!=(size_t)nr)goto channel_done;
+    if(fgetc(fp)!=EOF)goto channel_done;
     if(p->offset[0]!=0||p->offset[nl]!=nr)goto channel_done;
     for(int l=0;l<nl;l++){
         if(p->offset[l]<0||p->offset[l+1]<p->offset[l]||p->offset[l+1]>nr)goto channel_done;
         for(int r=p->offset[l];r<p->offset[l+1];r++){
-            int u=p->upper[r];double chi=-1;
-            if(u<0||u>=nl||atom->level_Z[u]!=atom->level_Z[l]||
-               atom->level_ion[u]!=atom->level_ion[l]+1||atom->level_g[u]<=0||
-               atom->level_g[l]<=0)goto channel_done;
+            int u=p->upper[r];double chi=-1,excitation=0;
+            p->upper_ion[r]=-1;
+            if(atom->ion_pop_Z&&atom->ion_pop_stage)
+                for(int ip=0;ip<atom->n_ion_pops;ip++)
+                    if(atom->ion_pop_Z[ip]==atom->level_Z[l]&&atom->ion_pop_stage[ip]==atom->level_ion[l]+1)
+                        p->upper_ion[r]=ip;
+            if(atom->level_g[l]<=0)goto channel_done;
+            if(u>=0){
+                if(u>=nl||atom->level_Z[u]!=atom->level_Z[l]||
+                   atom->level_ion[u]!=atom->level_ion[l]+1||atom->level_g[u]<=0)goto channel_done;
+                excitation=atom->level_energy_eV[u];
+                if(version==2&&p->upper_g[r]!=atom->level_g[u])goto channel_done;
+                p->upper_g[r]=atom->level_g[u];
+            }else{
+                int ip=p->upper_ion[r];
+                if(version!=2||u!=-1||ip<0||!atom->level_offset||
+                   atom->level_offset[ip]!=atom->level_offset[ip+1]||
+                   !(p->upper_g[r]>0)||!isfinite(p->upper_g[r]))goto channel_done;
+                /* 시간/열역학/복사 모두 CMFGEN의 같은 단일 경계 상태를 사용한다. */
+                size_t matched=0;
+                for(size_t k=0;k<atom->topion_n;k++)if(atom->topion_ion_index[k]==ip){
+                    if(atom->topion_E_cm[k]!=0||atom->topion_g[k]!=p->upper_g[r])goto channel_done;
+                    matched++;
+                }
+                if(matched!=1)goto channel_done;
+            }
             for(int k=0;k<atom->n_ionization;k++)
                 if(atom->ioniz_Z[k]==atom->level_Z[l]&&atom->ioniz_ion[k]==atom->level_ion[l])
                     chi=atom->ioniz_energy_eV[k];
-            double expected=(chi+atom->level_energy_eV[u]-atom->level_energy_eV[l])*EV_TO_ERG/H_PLANCK;
+            double expected=(chi+excitation-atom->level_energy_eV[l])*EV_TO_ERG/H_PLANCK;
             if(!(chi>0)||!(expected>0)||!isfinite(expected)||!isfinite(p->threshold[r])||
                fabs(p->threshold[r]/expected-1)>1e-10)goto channel_done;
             double step=log(p->nu_max/p->nu_min)/nb;
