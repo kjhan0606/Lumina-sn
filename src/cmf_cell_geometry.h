@@ -8,7 +8,7 @@ enum { CMF_CELL_CORE_RAYS=16, CMF_CELL_OUTER_RAYS=16 };
 static inline int cmf_cell_grid_valid(int ns,const double *ri,const double *ro) {
     if(ns<=0 || !ri || !ro)return 0;
     for(int s=0;s<ns;++s)
-        if(!(ri[s]>0) || !(ro[s]>ri[s]) || !isfinite(ri[s]) ||
+        if(!(ri[s]>=0) || !(ro[s]>ri[s]) || !isfinite(ri[s]) ||
            !isfinite(ro[s]) || (s && ri[s]!=ro[s-1]))return 0;
     return 1;
 }
@@ -47,6 +47,24 @@ static inline double cmf_cell_angle_weight(int k,int nr,const double *p,double r
     if(k+1<nr && p[k+1]<=r && (p[k+1]<core)==is_core)
         bottom=0.5*(mu+cmf_cell_mu(p[k+1],r));
     return top-bottom;
+}
+
+/* 동일한 각도 구간의 정확한 integral(mu^m dmu). m=1,2는 H/K용이다.
+ * 등방 강도는 격자와 무관하게 K/J=1/3, 바깥 반구는 H/J=1/2를 준다. */
+static inline double cmf_cell_angle_moment_weight(int k,int nr,const double *p,
+                                                double r,double core,int moment) {
+    if(p[k]>r)return 0;
+    int is_core=p[k]<core;
+    double limb=cmf_cell_mu(core,r),mu=cmf_cell_mu(p[k],r);
+    double top=is_core?1:limb,bottom=is_core?limb:0;
+    if(k>0 && (p[k-1]<core)==is_core)
+        top=0.5*(mu+cmf_cell_mu(p[k-1],r));
+    if(k+1<nr && p[k+1]<=r && (p[k+1]<core)==is_core)
+        bottom=0.5*(mu+cmf_cell_mu(p[k+1],r));
+    double width=top-bottom;
+    if(moment==1)return width*(top+bottom)/2;
+    if(moment==2)return width*(top*top+top*bottom+bottom*bottom)/3;
+    return width;
 }
 
 /* 광선은 ro>p인 모든 셸을 통과한다. 중심에 닿지 않는 접선 셸의

@@ -96,6 +96,22 @@ CMFExactStatus cmf_exact_characteristic_apply_positive_bounds(
 
 const char *cmf_exact_status_name(CMFExactStatus status);
 
+/* 한 번의 기존 형식해에서 얻은 각도 모멘트. 시간 의존 J를 대신하지 않으며
+ * 변수 Eddington 해법의 K/J 및 외곽 H/J를 계산하는 입력이다.
+ * 셸 중심: ns*nb, 외곽면: nb. J=0일 때 비를 임의로 만들지 않는다.
+ * CPU 소형 연결 시험용이며 현재 ray*segment 저장 방식은 큰 격자용이 아니다. */
+typedef struct {
+    double *J, *H, *K;
+    double *outer_J, *outer_H, *outer_K;
+} CMFFormalMoments;
+
+CMFExactStatus cmf_exact_formal_moments(
+    int n_shells, int n_bins, double dlognu, const double *nu,
+    const double *r_inner, const double *r_outer, double time_explosion,
+    double T_inner, double inner_boundary_scale,
+    const double *chi_tot, const double *chi_es,
+    const double *S_fixed, const double *input_J, CMFFormalMoments *moments);
+
 #ifdef __cplusplus
 }
 #endif

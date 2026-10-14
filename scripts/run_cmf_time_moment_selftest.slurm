@@ -22,15 +22,27 @@ module load gnu13/13.2.0
 export OMP_NUM_THREADS=2 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1
 cd "$moment_src"
 git rev-parse HEAD > "$moment_out/commit.txt"
-cp src/cmf_time_moment.c src/cmf_time_moment.h tests/cmf_time_moment_selftest.c \
+cp src/cmf_time_moment.c src/cmf_time_moment.h src/cmf_exact_sliding.c \
+ src/cmf_exact_sliding.h src/cmf_cell_geometry.h tests/cmf_time_moment_selftest.c \
+ tests/cmf_formal_moments_selftest.c tests/cmf_exact_sliding_selftest.c \
  scripts/run_cmf_time_moment_selftest.slurm "$moment_out/"
-sha256sum src/cmf_time_moment.c src/cmf_time_moment.h tests/cmf_time_moment_selftest.c \
+sha256sum src/cmf_time_moment.c src/cmf_time_moment.h src/cmf_exact_sliding.c \
+ src/cmf_exact_sliding.h src/cmf_cell_geometry.h src/cmf_error_envelope.c \
+ src/cmf_error_envelope.h tests/cmf_time_moment_selftest.c \
+ tests/cmf_formal_moments_selftest.c tests/cmf_exact_sliding_selftest.c \
  scripts/run_cmf_time_moment_selftest.slurm > "$moment_out/source.sha256"
-gcc -O2 -std=c11 -Wall -Wextra -Werror -Isrc src/cmf_time_moment.c \
+moment_units=(src/cmf_time_moment.c src/cmf_exact_sliding.c src/cmf_error_envelope.c)
+gcc -O2 -std=c11 -Wall -Wextra -Werror -Isrc "${moment_units[@]}" \
  tests/cmf_time_moment_selftest.c -lm -o "$moment_out/selftest" > "$moment_out/build.log" 2>&1
 "$moment_out/selftest" > "$moment_out/test.log" 2> "$moment_out/test.err"
 gcc -O1 -g -std=c11 -fsanitize=address,undefined -fno-omit-frame-pointer -Isrc \
- src/cmf_time_moment.c tests/cmf_time_moment_selftest.c -lm -o "$moment_out/selftest_san" \
+ "${moment_units[@]}" tests/cmf_time_moment_selftest.c -lm -o "$moment_out/selftest_san" \
  > "$moment_out/build_san.log" 2>&1
 ASAN_OPTIONS=detect_leaks=1 "$moment_out/selftest_san" > "$moment_out/san.log" 2> "$moment_out/san.err"
+gcc -O2 -std=c11 -Wall -Wextra -Werror -Isrc "${moment_units[@]}" \
+ tests/cmf_formal_moments_selftest.c -lm -o "$moment_out/formal_test" > "$moment_out/formal_build.log" 2>&1
+"$moment_out/formal_test" > "$moment_out/formal.log" 2> "$moment_out/formal.err"
+gcc -O2 -std=c11 -Wall -Wextra -Isrc "${moment_units[@]}" \
+ tests/cmf_exact_sliding_selftest.c -lm -o "$moment_out/legacy_test" > "$moment_out/legacy_build.log" 2>&1
+"$moment_out/legacy_test" > "$moment_out/legacy.log" 2> "$moment_out/legacy.err"
 sha256sum -c "$moment_out/source.sha256" > "$moment_out/source_verify.log"

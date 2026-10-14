@@ -911,6 +911,108 @@ static int exact_formal_sweep_bound(
     return failed ? -1 : 0;
 }
 
+CMFExactStatus cmf_exact_formal_moments(
+    int n_shells, int n_bins, double dlognu, const double *nu,
+    const double *r_inner, const double *r_outer, double time_explosion,
+    double T_inner, double inner_boundary_scale,
+    const double *chi_tot, const double *chi_es,
+    const double *S_fixed, const double *input_J, CMFFormalMoments *moments)
+{
+    if (!input_J || !moments || !moments->J || !moments->H || !moments->K ||
+        !moments->outer_J || !moments->outer_H || !moments->outer_K ||
+        !(T_inner>0) || !isfinite(T_inner) ||
+        !(inner_boundary_scale>=0) || !isfinite(inner_boundary_scale))
+        return CMF_EXACT_INVALID_INPUT;
+    ExactProblem p;
+    CMFExactStatus status=exact_problem_build(&p,n_shells,n_bins,dlognu,nu,
+        r_inner,r_outer,time_explosion,chi_tot,chi_es,S_fixed);
+    if(status!=CMF_EXACT_OK)return status;
+    size_t cells,segments;
+    if(checked_mul_size((size_t)n_shells,(size_t)n_bins,&cells)!=0 ||
+       checked_mul_size(p.segment_slots,(size_t)n_bins,&segments)!=0 ||
+       cells>SIZE_MAX/(7*sizeof(double)) || segments>SIZE_MAX/(2*sizeof(double)) ||
+       (size_t)n_bins>SIZE_MAX/(4*sizeof(double))) {
+        exact_problem_free(&p);return CMF_EXACT_INVALID_INPUT;
+    }
+    double *storage=(double *)malloc(7*cells*sizeof(double));
+    double *rays=(double *)malloc(2*segments*sizeof(double));
+    double *edge=(double *)calloc(4*(size_t)n_bins,sizeof(double));
+    double *face=(double *)malloc((size_t)n_bins*sizeof(double));
+    if(!storage || !rays || !edge || !face){
+        free(storage);free(rays);free(edge);free(face);exact_problem_free(&p);
+        return CMF_EXACT_ALLOCATION_FAILED;
+    }
+    double *dt1=storage,*t1=dt1+cells,*source=t1+cells,*source_cell=source+cells;
+    double *j=source_cell+cells,*h=j+cells,*k=h+cells;
+    double *in=rays,*out=in+segments,*inner=edge;
+    double *oj=inner+n_bins,*oh=oj+n_bins,*ok=oh+n_bins;
+    uint64_t negative_count=0;double first_negative=NAN;
+    ExactSweepStatus sweep;
+    for(size_t i=0;i<cells;i++){
+        double ct=chi_tot[i],ce=chi_es[i],sf=S_fixed[i],value=input_J[i];
+        if(!(ct>=0) || !(ce>=0) || (ct==0 && ce!=0) || !(sf>=0) || !(value>=0) ||
+           !isfinite(ct) || !isfinite(ce) || !isfinite(sf) || !isfinite(value)){
+            status=CMF_EXACT_INVALID_INPUT;goto moment_cleanup;
+        }
+        double extinction=ct+3*p.a_lam;
+        dt1[i]=extinction/p.a_drift;t1[i]=exp(-dt1[i]);
+        source[i]=(ct/extinction)*sf+(ce/extinction)*value;
+        source_cell[i]=(1-t1[i])*source[i];
+        if(!isfinite(dt1[i]) || !isfinite(source[i])){
+            status=CMF_EXACT_NONFINITE;goto moment_cleanup;
+        }
+    }
+    for(int b=0;b<n_bins;b++)inner[b]=inner_boundary_scale*exact_planck(nu[b],T_inner);
+    sweep=exact_formal_sweep(&p,dt1,t1,source,source_cell,inner,in,out,j,
+        CMF_EXACT_MODE_POSITIVE_SLIDING,&negative_count,&first_negative);
+    if(sweep!=EXACT_SWEEP_OK){
+        status=sweep==EXACT_SWEEP_NEGATIVE ? CMF_EXACT_NEGATIVE_RECURRENCE :
+               sweep==EXACT_SWEEP_ALLOCATION_FAILED ? CMF_EXACT_ALLOCATION_FAILED : CMF_EXACT_NONFINITE;
+        goto moment_cleanup;
+    }
+    for(int s=0;s<n_shells;s++)for(int b=0;b<n_bins;b++){
+        size_t i=(size_t)s*n_bins+b;h[i]=k[i]=0;
+        for(int sample=p.shell_off[s];sample<p.shell_off[s+1];sample++){
+            int ray=p.shell_k[sample],seg=p.shell_seg[sample];
+            size_t at=((size_t)ray*p.ray_stride+seg)*n_bins+b;
+            h[i]+=cmf_cell_angle_moment_weight(ray,p.nr,p.p,p.rmid[s],r_inner[0],1)
+                   *0.5*(out[at]-in[at]);
+            k[i]+=cmf_cell_angle_moment_weight(ray,p.nr,p.p,p.rmid[s],r_inner[0],2)
+                   *0.5*(out[at]+in[at]);
+        }
+        if(!isfinite(h[i]) || !isfinite(k[i]) || !(k[i]>=0)){
+            status=CMF_EXACT_NONFINITE;goto moment_cleanup;
+        }
+    }
+    /* The existing sweep stores centers. Replay only its identical final
+     * center->outer-face half segment; no alternate transport equation. */
+    for(int ray=0;ray<p.nr;ray++){
+        size_t base=(size_t)ray*p.ray_stride;
+        if(p.rn[ray]<=0)continue;
+        int shell=p.rsh[base];
+        int rc=exact_segment(n_bins,dt1+(size_t)shell*n_bins,t1+(size_t)shell*n_bins,
+            source+(size_t)shell*n_bins,source_cell+(size_t)shell*n_bins,
+            p.a_drift*p.ds_outer[base],out+base*n_bins,0,face,
+            CMF_EXACT_MODE_POSITIVE_SLIDING,&first_negative);
+        if(rc){status=rc==-1 ? CMF_EXACT_NEGATIVE_RECURRENCE : CMF_EXACT_ALLOCATION_FAILED;goto moment_cleanup;}
+        double w0=cmf_cell_angle_weight(ray,p.nr,p.p,r_outer[n_shells-1],r_inner[0]);
+        double w1=cmf_cell_angle_moment_weight(ray,p.nr,p.p,r_outer[n_shells-1],r_inner[0],1);
+        double w2=cmf_cell_angle_moment_weight(ray,p.nr,p.p,r_outer[n_shells-1],r_inner[0],2);
+        for(int b=0;b<n_bins;b++){oj[b]+=0.5*w0*face[b];oh[b]+=0.5*w1*face[b];ok[b]+=0.5*w2*face[b];}
+    }
+    for(int b=0;b<n_bins;b++)if(!isfinite(oj[b]) || !isfinite(oh[b]) || !isfinite(ok[b])){
+        status=CMF_EXACT_NONFINITE;goto moment_cleanup;
+    }
+    memcpy(moments->J,j,cells*sizeof(double));memcpy(moments->H,h,cells*sizeof(double));
+    memcpy(moments->K,k,cells*sizeof(double));
+    memcpy(moments->outer_J,oj,(size_t)n_bins*sizeof(double));
+    memcpy(moments->outer_H,oh,(size_t)n_bins*sizeof(double));
+    memcpy(moments->outer_K,ok,(size_t)n_bins*sizeof(double));
+    status=CMF_EXACT_OK;
+moment_cleanup:
+    free(storage);free(rays);free(edge);free(face);exact_problem_free(&p);return status;
+}
+
 CMFExactStatus cmf_exact_characteristic_apply_positive_bounds(
     int n_shells, int n_bins, double dlognu, const double *nu,
     const double *r_inner, const double *r_outer, double time_explosion,

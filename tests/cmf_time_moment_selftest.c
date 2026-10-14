@@ -1,4 +1,5 @@
 #include "cmf_time_moment.h"
+#include "cmf_exact_sliding.h"
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -176,6 +177,46 @@ static double manufactured_spatial(int ns)
     free(target);destroy(&a);return relative;
 }
 
+static void test_actual_formal_closure(double extinction)
+{
+    Fixture a;init(&a,8,32);const int ns=8,nb=32;
+    double nu[32],ri[8],ro[8],sf[256],guess[256],fj[256],fh[256],fk[256];
+    double oj[32],oh[32],ok[32];CMFFormalMoments formal={fj,fh,fk,oj,oh,ok};
+    for(int b=0;b<nb;b++)nu[b]=sqrt(a.nu[b]*a.nu[b+1]);
+    for(int s=0;s<ns;s++){ri[s]=a.r[s];ro[s]=a.r[s+1];}
+    for(int i=0;i<ns*nb;i++){
+        a.ct[i]=extinction;a.cs[i]=.8*extinction;a.eta[i]=.2*extinction*a.jo[i];sf[i]=.2*a.jo[i];
+        guess[i]=pow(a.p.time_old/a.p.time_new,3)*a.jo[i];
+    }
+    double residual=INFINITY,closure_change=INFINITY;int iter;
+    for(iter=0;iter<48;iter++){
+        CHECK(cmf_exact_formal_moments(ns,nb,log(a.nu[nb]/a.nu[0])/nb,nu,ri,ro,
+            a.p.time_new,10000,0,a.ct,a.cs,sf,guess,&formal)==CMF_EXACT_OK);
+        closure_change=0;
+        for(int i=0;i<ns*nb;i++){
+            CHECK(fj[i]>0);double value=fk[i]/fj[i];
+            closure_change=fmax(closure_change,fabs(value-a.f[i]));a.f[i]=value;
+        }
+        for(int b=0;b<nb;b++){
+            CHECK(oj[b]>0);double h=oh[b]/oj[b],f=ok[b]/oj[b];
+            closure_change=fmax(closure_change,fmax(fabs(h-a.h[b]),fabs(f-a.fb[b])));
+            a.h[b]=h;a.fb[b]=f;
+        }
+        CHECK(cmf_time_moment_step(&a.p,a.jn,a.hn)==CMF_TIME_OK);
+        residual=0;
+        for(int i=0;i<ns*nb;i++){
+            residual=fmax(residual,fabs(a.jn[i]-guess[i])/fmax(a.jn[i],guess[i]));guess[i]=a.jn[i];
+        }
+        if(iter>0&&residual<1e-9&&closure_change<1e-9)break;
+    }
+    CHECK(iter<48);double conserved=balance(&a),fmin=1,fmaxval=0;
+    for(int i=0;i<ns*nb;i++){fmin=fmin<a.f[i]?fmin:a.f[i];fmaxval=fmaxval>a.f[i]?fmaxval:a.f[i];}
+    if(extinction<1e-11)CHECK(fmaxval-fmin>0.01);
+    printf("FORMAL_TIME_COUPLING extinction=%.9g iterations=%d relative_J_change=%.17g closure_change=%.17g energy_balance=%.17g f=[%.9g,%.9g]\n",
+           extinction,iter+1,residual,closure_change,conserved,fmin,fmaxval);
+    destroy(&a);
+}
+
 int main(void)
 {
     double shape,e10=evolve(128,10,&shape),e20=evolve(128,20,&shape),e40=evolve(128,40,&shape);
@@ -187,6 +228,7 @@ int main(void)
     test_open_and_memory();
     double s20=manufactured_spatial(20),s40=manufactured_spatial(40),s80=manufactured_spatial(80);
     CHECK(s40<.55*s20&&s80<.55*s40);
+    test_actual_formal_closure(1e-10);test_actual_formal_closure(1e-13);
     printf("CMF_TIME_MOMENT_SELFTEST %s failures=%d\n",failures?"FAIL":"PASS",failures);
     return failures?1:0;
 }
