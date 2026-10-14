@@ -2329,11 +2329,50 @@ typedef struct {
 /* ------------------------------------------------------------ */
 /* Assemble per (shell,bin): electron-scatter, thermal bf/ff absorption,
  * expansion line opacity, and the scattering-independent source S_fixed. */
+/* common 수송은 R7의 같은 BF+FF pack을 한번만 쓴다. 이 pack에는 이미
+ * 실제 sum(q^2 n_ion)의 FF가 포함되어 있다. 추가 ne^2 FF, signed chi 절단,
+ * B로의 eta 대체 또는 expansion-opacity 선 계수는 넣지 않는다.
+ * 선은 정밀 producer가 실제 인구/tau에서 조립한다. */
+static int cmfgen_assemble_common_continuum(CMFGENState *cs,const BFOpacity *bf,
+                                          const PlasmaState *p){
+    if(!cs||!bf||!p||!bf->chi_bf||!bf->eta_bf||!p->n_electron||
+       cs->n_shells!=bf->n_shells||cs->n_bins!=bf->n_freq_bins||
+       cs->nu_min!=bf->nu_min||cs->d_log_nu!=bf->d_log_nu)return -1;
+    const char *milne=getenv("LUMINA_CMF_BF_MILNE");
+    if(!milne||strcmp(milne,"2"))return -1;
+    size_t cells=(size_t)cs->n_shells*cs->n_bins;
+    for(size_t i=0;i<cells;i++)if(!isfinite(bf->chi_bf[i])||
+        !isfinite(bf->eta_bf[i])||bf->eta_bf[i]<0||
+        !isfinite(p->n_electron[i/cs->n_bins])||p->n_electron[i/cs->n_bins]<0)return -1;
+    if(!cs->w5_cont_eta)cs->w5_cont_eta=malloc(cells*sizeof(double));
+    if(!cs->w5_cont_eta)return -1;
+    for(size_t i=0;i<cells;i++){
+        cs->chi_abs[i]=bf->chi_bf[i];cs->w5_cont_eta[i]=bf->eta_bf[i];
+        cs->chi_es[i]=p->n_electron[i/cs->n_bins]*SIGMA_THOMSON;
+        cs->chi_tot[i]=cs->chi_abs[i]+cs->chi_es[i];
+        cs->S_fixed[i]=cs->chi_tot[i]!=0?bf->eta_bf[i]/cs->chi_tot[i]:0;
+        cs->chi_line[i]=cs->chi_line_th[i]=cs->chi_line_cls[i]=0;
+        cs->eta_total_audit[i]=bf->eta_bf[i];
+    }
+    cs->chi_line_re=cs->chi_line;
+    return 0;
+}
+
 static void cmfgen_assemble_impl(CMFGENState *cs, const Geometry *geo,
                      const OpacityState *opac, BFOpacity *bf,
                      const PlasmaState *plasma, CMFEmissBContext *emiss_b)
 {
     int NB = cs->n_bins, NS = cs->n_shells;
+    int common=0;
+    if(cmf_optional_binary_env("LUMINA_CMF_COMMON_FIELD",&common)){
+        g_asm_cont_src_fault=1;return;
+    }
+    if(common&&!emiss_b){
+        g_asm_unmapped_eps_fault=0;
+        g_asm_cont_src_fault=cmfgen_assemble_common_continuum(cs,bf,plasma)!=0;
+        if(g_asm_cont_src_fault)fprintf(stderr,"[CMF-COMMON] invalid shared BF+FF continuum\n");
+        return;
+    }
     int n_lines = opac->n_lines;
     double t_exp = geo->time_explosion;
     double inv_ct = 1.0 / (CM_C * t_exp);   /* expansion-opacity prefactor */
@@ -8505,6 +8544,9 @@ int cmfgen_fine_jbar(CMFGENState *csb, const Geometry *geo,
                 getenv("LUMINA_CMF_FINE_CONT_NLTE_SOURCE"));
         return -1;
     }
+    /* common의 생산 BF pack은 실제 eta를 보존한다. 옛 W5 옵션 없이도
+     * 이 eta를 쓴다. BF없는 형식해 fixture는 기존 입력 계수를 사용한다. */
+    if(common_field&&g_fine_bf)w5_cont_on=1;
     if (w5_cont_on) {
         const char *bo = getenv("LUMINA_CMF_FINE_BF_OPAC");
         int w5_cont_fine_bf_opac = (bo && atoi(bo)) ? 1 : 0;
@@ -8650,7 +8692,7 @@ int cmfgen_fine_jbar(CMFGENState *csb, const Geometry *geo,
      * the SAME construction as base (no near-unity line-scatter forest); else
      * the exact fixed-point cannot converge (run 374640). Array NULL / wrong
      * size (commit gate off) => subtract nothing => byte-identical. */
-    int fine_sub_sc = (g_chi_line_sc_unmapped != NULL &&
+    int fine_sub_sc = (!common_field && g_chi_line_sc_unmapped != NULL &&
         g_chi_line_sc_unmapped_cells == (size_t)NS * (size_t)csb->n_bins);
     #pragma omp parallel for schedule(static) reduction(+:w5_cont_interp_cells)
     for (int s = 0; s < NS; ++s) {
@@ -11890,6 +11932,7 @@ int cmfgen_time_radiation_publish(CMFGENState *cs,Geometry *geo,OpacityState *op
         if(!opac->jbar_line_det)return -1;
     }
     cmfgen_fine_set_bf_atom(bf,atom,nlte,lumina_line_upper_population_fill_for_tau);
+    bf_set_nlte_pops(nlte);
     compute_bf_opacity(bf,atom,plasma,cs->n_shells);
     cmfgen_assemble(cs,geo,opac,bf,plasma);
     if(g_asm_unmapped_eps_fault||g_asm_cont_src_fault)return -1;

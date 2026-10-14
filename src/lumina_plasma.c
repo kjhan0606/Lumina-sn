@@ -9127,22 +9127,38 @@ int nlte_bf_channel_rates(NLTEConfig *n,const AtomicData *a,int lower,int r,int 
        n->n_freq_bins!=p->n_bins||shell<0||n->radfield_view_status!=RADIATION_FIELD_VIEW_OK)
         return -1;
     const RadiationFieldView *v=&n->radfield_view;
-    if(v->n_bins!=(size_t)p->n_bins||shell>=(int)v->n_shells||!v->J_nu||
+    if(!v->n_bins||shell>=(int)v->n_shells||!v->J_nu||
        !v->frequency_bin_edges||!v->validity)return -1;
     int upper=p->upper[r];double ru=0,rd=0,sigma_edge=0;
     double gu=upper>=0?a->level_g[upper]:(p->upper_g?p->upper_g[r]:0);
     if(!(gu>0)||!isfinite(gu))return -1;
     int field=nlte_bf_field_source(n,T,0,0,0,NULL,NULL,NULL);
     double dlog=log(p->nu_max/p->nu_min)/p->n_bins;
+    size_t q=0;
     for(int b=0;b<p->n_bins;b++){
-        double lo=v->frequency_bin_edges[b],hi=v->frequency_bin_edges[b+1];
-        if(fabs(lo/(p->nu_min*exp(b*dlog))-1)>64*DBL_EPSILON||
-           fabs(hi/(p->nu_min*exp((b+1)*dlog))-1)>64*DBL_EPSILON)return -1;
+        double lo=p->nu_min*exp(b*dlog),hi=p->nu_min*exp((b+1)*dlog);
         if(hi<=p->threshold[r])continue;
-        size_t i=(size_t)shell*p->n_bins+b;
-        if(field!=2&&v->validity[i]!=RADIATION_FIELD_VALID&&
-                     v->validity[i]!=RADIATION_FIELD_EXACT_ZERO)return -1;
-        double j=field==2?0:v->J_nu[i];
+        /* 게시된 canonical 장은 BF 격자보다 넓고 촘촘하다. 실제 에너지
+         * ledger와 같은 dnu 보존 평균을 소비하며 J_nu 사본으로 우회하지
+         * 않는다. bin 내부 상수 J/평균 sigma는 현행 연속 pack의 이산 규약이다. */
+        while(q<v->n_bins&&v->frequency_bin_edges[q+1]<=lo)q++;
+        double integral=0,covered=0;
+        for(size_t k=q;k<v->n_bins&&v->frequency_bin_edges[k]<hi;k++){
+            double vlo=v->frequency_bin_edges[k],vhi=v->frequency_bin_edges[k+1];
+            if(!(vhi>vlo)||!isfinite(vlo)||!isfinite(vhi))return -1;
+            double width=fmin(hi,vhi)-fmax(lo,vlo);
+            if(width<=0)continue;
+            size_t i=(size_t)shell*v->n_bins+k;
+            if(field!=2){
+                if((v->validity[i]!=RADIATION_FIELD_VALID&&
+                    v->validity[i]!=RADIATION_FIELD_EXACT_ZERO)||
+                   !(v->J_nu[i]>=0)||!isfinite(v->J_nu[i]))return -1;
+                integral+=v->J_nu[i]*width;
+            }
+            covered+=width;
+        }
+        if(fabs(covered-(hi-lo))>1e-10*(hi-lo))return -1;
+        double j=integral/(hi-lo);
         double sigma=p->sigma[(size_t)r*p->n_bins+b];
         BfChannelBin cell;
         if(bf_channel_bin(lo,hi,p->threshold[r],sigma,T,ne,a->level_g[lower],
@@ -23022,9 +23038,14 @@ nlte_population_candidate_prepare_ionization_impl(
      * lag across every n_e sub-iteration (which overwrite the live array) and
      * the final armed sweep, instead of self-cancelling to x_map. Cleared after
      * compute_ion_populations. */
-    pop_djdn_set_xlag_snapshot(ion_before, atom->n_ion_pops, n_shells);
+    /* 시간의존 원소 전체 해법이 이온량과 전하를 함께 결정한다. 여기서
+     * 정상상태 BF 사다리를 먼저 풀면 과거 이력과 무관한 인구로 바뀌고,
+     * 채널 기반 원자에도 폐기된 단일 단면적 자료를 요구하게 된다. */
+    const int physical_time = plasma->physical_history != NULL;
+    if (!physical_time)
+        pop_djdn_set_xlag_snapshot(ion_before, atom->n_ion_pops, n_shells);
 
-    if (solve_stage_ne) {
+    if (solve_stage_ne && !physical_time) {
         if (compute_electron_density(
                 atom, plasma, rate_nlte, candidate,
                 n_shells, 0) != 0) {
@@ -23046,10 +23067,12 @@ nlte_population_candidate_prepare_ionization_impl(
                 return candidate_ionization_fail(candidate, POP_NONFINITE);
             }
     }
-    PopulationStatus ion_status = compute_ion_populations(
-        atom, plasma, rate_nlte, candidate,
-        n_shells, 0);
-    pop_djdn_clear_xlag_snapshot();
+    PopulationStatus ion_status = POP_OK;
+    if (!physical_time) {
+        ion_status = compute_ion_populations(
+            atom, plasma, rate_nlte, candidate, n_shells, 0);
+        pop_djdn_clear_xlag_snapshot();
+    }
     if (ion_status != POP_OK) {
         free(ne_before);
         free(ion_before);

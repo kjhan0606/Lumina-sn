@@ -84,6 +84,40 @@ static int integration_check(void){
     double up,down,cu,cd;
     CHECK(!nlte_bf_channel_rates(&n,&a,0,0,0,T[0],ne[0],&up,&down,&cu,&cd)&&up==0&&down==0,"A zero channel");
     CHECK(!nlte_bf_channel_rates(&n,&a,0,1,0,T[0],ne[0],&up,&down,&cu,&cd)&&up>0&&down>0&&cu==0&&cd==0,"B excited parent rates");
+    /* 실제 게시 격자는3866칸이고 원자 pack은1234칸이다. 같은 보존 평균의
+     * 율, 누락/비표본 거부를 확인한다. 아래 whole-element 시험 전에 복원한다. */
+    RadiationFieldView saved_view=n.radfield_view;
+    double canonical_edges[LUMINA_RADFIELD_N_BINS+1],canonical_J[LUMINA_RADFIELD_N_BINS];
+    RadiationFieldValidityState canonical_valid[LUMINA_RADFIELD_N_BINS];
+    for(int i=0;i<=LUMINA_RADFIELD_N_BINS;i++)canonical_edges[i]=radiation_field_canonical_frequency_edge(i);
+    for(int i=0;i<LUMINA_RADFIELD_N_BINS;i++){canonical_J[i]=1e-8;canonical_valid[i]=RADIATION_FIELD_VALID;}
+    n.radfield_view.n_bins=LUMINA_RADFIELD_N_BINS;n.radfield_view.frequency_bin_edges=canonical_edges;
+    n.radfield_view.J_nu=canonical_J;n.radfield_view.validity=canonical_valid;
+    double up_fine,down_fine;
+    CHECK(!nlte_bf_channel_rates(&n,&a,0,1,0,T[0],ne[0],&up_fine,&down_fine,&cu,&cd)&&
+          near(up,up_fine,1e-13)&&near(down,down_fine,1e-13),"canonical grid conservation");
+    for(int i=0;i<LUMINA_RADFIELD_N_BINS;i++)canonical_J[i]=(i%2?3:1)*1e-8;
+    double expected_up=0,expected_down=0;
+    for(int b=0;b<NB;b++){
+        int q0=-LUMINA_RADFIELD_J_LO+2*b;
+        double jm=(canonical_J[q0]*(canonical_edges[q0+1]-edges[b])+
+                   canonical_J[q0+1]*(edges[b+1]-canonical_edges[q0+1]))/(edges[b+1]-edges[b]);
+        BfChannelBin v;
+        CHECK(!bf_channel_bin(edges[b],edges[b+1],threshold[1],sigma[NB+b],T[0],ne[0],2,3,1,1,jm,0,&v),
+              "independent rebin coefficients");
+        expected_up+=v.ionization;expected_down+=v.recombination;
+    }
+    CHECK(!nlte_bf_channel_rates(&n,&a,0,1,0,T[0],ne[0],&up_fine,&down_fine,&cu,&cd)&&
+          near(expected_up,up_fine,1e-13)&&near(expected_down,down_fine,1e-13)&&up_fine>up,
+          "canonical varying field not stale coarse copy");
+    canonical_valid[LUMINA_RADFIELD_N_BINS-1]=RADIATION_FIELD_UNSAMPLED;
+    CHECK(nlte_bf_channel_rates(&n,&a,0,1,0,T[0],ne[0],&up_fine,&down_fine,&cu,&cd)!=0,
+          "canonical missing cell rejected");
+    canonical_valid[LUMINA_RADFIELD_N_BINS-1]=RADIATION_FIELD_VALID;
+    n.radfield_view.n_bins--;
+    CHECK(nlte_bf_channel_rates(&n,&a,0,1,0,T[0],ne[0],&up_fine,&down_fine,&cu,&cd)!=0,
+          "canonical missing coverage rejected");
+    n.radfield_view=saved_view;
     NLTEPhysicalHistory h={0};double past[3]={8,0,0},oldrho[1]={8*AMU};
     h.energy.n_shells=1;h.energy.epoch_s=1;h.energy.density_g_cm3=oldrho;
     h.n_levels=3;h.n_ions=2;h.level_density=past;h.level_global=map;h.ion_Z=ionZ;h.ion_stage=st;p.physical_history=&h;

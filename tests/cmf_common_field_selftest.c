@@ -288,8 +288,35 @@ static int physical_profile_commit_test(void) {
     return 0;
 }
 
+static int continuum_pack_test(void){
+    Geometry g={0};g.n_shells=2;g.time_explosion=1e6;
+    double ri[2]={3e14,4e14},ro[2]={4e14,5e14};g.r_inner=ri;g.r_outer=ro;
+    double T[2]={1e4,1e4},ne[2]={1e8,1e8};
+    PlasmaState p={0};p.n_shells=2;p.T_e=T;p.n_electron=ne;
+    CMFGENState c={0};REQUIRE(!cmfgen_init(&c,&g));
+    BFOpacity bf={0};REQUIRE(!bf_opacity_init_checked(&bf,2));
+    size_t cells=(size_t)2*c.n_bins;
+    for(size_t i=0;i<cells;i++){
+        bf.chi_bf[i]=i%3==0?-1e-16:i%3==1?0:2e-16;
+        bf.eta_bf[i]=1e-20*(1+i%7);
+    }
+    OpacityState o={0};o.n_shells=2;
+    setenv("LUMINA_CMF_COMMON_FIELD","1",1);setenv("LUMINA_CMF_BF_MILNE","2",1);
+    cmfgen_assemble(&c,&g,&o,&bf,&p);
+    REQUIRE(c.w5_cont_eta);
+    for(size_t i=0;i<cells;i++){
+        REQUIRE(c.chi_abs[i]==bf.chi_bf[i]&&c.w5_cont_eta[i]==bf.eta_bf[i]);
+        REQUIRE(c.chi_es[i]==ne[i/c.n_bins]*SIGMA_THOMSON);
+        REQUIRE(c.chi_tot[i]==c.chi_es[i]+bf.chi_bf[i]);
+        REQUIRE(c.chi_line[i]==0&&c.eta_total_audit[i]==bf.eta_bf[i]);
+    }
+    printf("COMMON_CONTINUUM_PACK_PASS cells=%zu signed_chi=1 ff_count=1 exact_eta=1\n",cells);
+    unsetenv("LUMINA_CMF_COMMON_FIELD");unsetenv("LUMINA_CMF_BF_MILNE");
+    bf_opacity_free(&bf);cmfgen_free(&c);return 0;
+}
+
 int main(void) {
-    if(rebin_test() || producer_test() || physical_profile_commit_test())return 1;
+    if(rebin_test() || producer_test() || physical_profile_commit_test() || continuum_pack_test())return 1;
     puts("COMMON_FIELD_SELFTEST_PASS");
     return 0;
 }

@@ -2174,7 +2174,11 @@ PopulationStatus nlte_element_time_solve(NLTEConfig *nlte,AtomicData *atom,
         int failed=0,bad=0;EWFireCounts fire={0};
         ew_capture_end(NULL,NULL,&failed,&bad,&fire);free(pair);free(rhs);
         if(rc||failed||bad||fire.target_fallback||fire.continuum_deleted||
-           fire.nstar_cap||fire.nonfinite_guard){status=POP_ATOMIC_MISSING;goto time_element_done;}
+           fire.nstar_cap||fire.nonfinite_guard){
+            fprintf(stderr,"[NLTE-TIME][ASSEMBLY-FAILED] Z=%d shell=%d pair=%d:%d rc=%d target=%d bad_rate=%d fallback=%d deleted=%d nstar_cap=%d nonfinite=%d\n",
+                Z,shell,lo,hi,rc,failed,bad,fire.target_fallback,fire.continuum_deleted,fire.nstar_cap,fire.nonfinite_guard);
+            status=POP_ATOMIC_MISSING;goto time_element_done;
+        }
     }
     status=nlte_physical_history_solve_element(nlte,atom,plasma,(size_t)shell,
         epoch,(size_t)sl0,(size_t)N,terminal,A,x);
