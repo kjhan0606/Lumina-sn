@@ -110,6 +110,29 @@ int main(int argc,char **argv) {
     }
     printf("static_core_absolute_luminosity_relative=%.17g\n",worst);
     CHECK(worst<1e-11);
+    /* 중심까지 채운 균질 구: lamp 없이 Lnu=4pi eta V와 유한 소광 해석해.
+     * 양의 core radius를 요구하던 관측 출력 오류를 재현한다. */
+    ri[0]=0;in.source_is_emissivity=1;
+    for(int i=0;i<NS*NF;i++){chi[i]=0;es[i]=0;src[i]=6e-20;}
+    CHECK(cmf_observer_cpu(&in,L)==0);
+    for(int f=0;f<NO;f++)CHECK(fabs(L[f]/(16*pi*pi/3*6e-20*pow(ro[NS-1],3))-1)<1e-12);
+#ifdef OBSERVER_TEST_GPU
+    CHECK(cmf_observer_gpu(&in,save)==0);
+    for(int f=0;f<NO;f++)CHECK(fabs(L[f]/save[f]-1)<1e-12);
+#endif
+    for(int i=0;i<NS*NF;i++)chi[i]=.3/ro[NS-1];
+    CHECK(cmf_observer_cpu(&in,L)==0);
+    double a=.3/ro[NS-1],tau=2*a*ro[NS-1];
+    double analytic=8*pi*pi*(6e-20/a)*(.5*pow(ro[NS-1],2)-(1-(1+tau)*exp(-tau))/(4*a*a));
+    for(int f=0;f<NO;f++)CHECK(fabs(L[f]/analytic-1)<1e-12);
+#ifdef OBSERVER_TEST_GPU
+    CHECK(cmf_observer_gpu(&in,save)==0);
+    for(int f=0;f<NO;f++)CHECK(fabs(L[f]/save[f]-1)<1e-12);
+#endif
+    printf("full_sphere_absolute_luminosity_relative=%.17g\n",fabs(L[0]/analytic-1));
+    memcpy(save,L,sizeof L);ri[0]=-1;
+    CHECK(cmf_observer_cpu(&in,L)!=0&&memcmp(save,L,sizeof L)==0);
+    ri[0]=1e14;in.source_is_emissivity=0;
     /* 정적 균질 외피: 독립적인 연속 각도 적분과 비교한다. */
     for(int i=0;i<NS*NF;++i){chi[i]=2e-14;es[i]=5e-15;src[i]=3e-5;}
     CHECK(cmf_observer_cpu(&in,L)==0);

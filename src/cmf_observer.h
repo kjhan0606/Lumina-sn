@@ -7,7 +7,8 @@ extern "C" {
 
 /* 같은 공변계 재료와 J를 관측자계로 변환하는 구형 형식해.
  * 재료는 로그 주파수 셀 안에서 상수. 모든 입력은 읽기 전용이다.
- * t_exp=0은 정적 시험, 양수는 homologous expansion [s]. */
+ * t_exp=0은 정적 시험, 양수는 homologous expansion [s].
+ * ri[0]=0은 중심 포함 모델이며 코어 면적/경계 광도는0이다. */
 typedef struct {
     int ns, nf;
     double nu_min, dlognu, t_exp, T_inner, inner_scale;

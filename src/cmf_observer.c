@@ -15,7 +15,7 @@ int cmf_observer_validate(const CMFObserverInput *in) {
        !isfinite(in->inner_scale) || in->inner_scale<0) return -1;
     if(in->source_is_emissivity!=0 && in->source_is_emissivity!=1)return -1;
     for(int s=0;s<in->ns;++s)
-        if(!isfinite(in->ri[s]) || !isfinite(in->ro[s]) || in->ri[s]<=0 ||
+        if(!isfinite(in->ri[s]) || !isfinite(in->ro[s]) || in->ri[s]<0 ||
            in->ro[s]<=in->ri[s] || (s && in->ri[s]!=in->ro[s-1]))return -1;
     const double beta=in->t_exp==0?0:in->ro[in->ns-1]/(OBS_C*in->t_exp);
     if(!isfinite(beta) || beta>=1) return -1;

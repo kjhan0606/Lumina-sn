@@ -66,6 +66,7 @@ int main(void){
     n.line_qset=&q;n.line_eset=&e;CHECK(!radiation_field_owner_init(&n.radiation_field,NS));
     CHECK(!cmfgen_bind_common_profile(&n,5e6));
     double oldtime=1e6,newtime=oldtime+100,ve[NS+1]={3e8,4e8,5e8},ri[NS],ro[NS];
+    if(getenv("CMF_TEST_CENTER"))ve[0]=0;
     for(int s=0;s<NS;s++){ri[s]=ve[s]*newtime;ro[s]=ve[s+1]*newtime;}
     Geometry g={0};g.n_shells=NS;g.time_explosion=newtime;g.r_inner=ri;g.r_outer=ro;g.v_inner=ve;g.v_outer=ve+1;
     CMFGENState c={0};CHECK(!cmfgen_init(&c,&g));
@@ -95,6 +96,8 @@ int main(void){
     CMFTimeEpochStatus status=cmfgen_solve_time_epoch(&c,&g,&o,&bf,&p,&n,&a,&gamma,1e4,64,1e-7,&next,&rep);
     fprintf(stderr,"TIME_COUPLED_RESULT status=%d iterations=%d T=%.17g/%.17g ne=%.17g/%.17g\n",status,rep.iterations,T[0],T[1],ne[0],ne[1]);
     CHECK(status==CMF_EPOCH_OK&&rep.converged&&c.common_obs_ready);
+    fprintf(stderr,"TIME_COUPLED_BOUNDARY inner_velocity=%.17g inner_H=%.17g\n",ve[0],trial.H[0]);
+    if(ve[0]==0)for(int b=0;b<fine_bins;b++)CHECK(trial.H[b]==0);
     CHECK(T[0]!=1e4&&ne[0]!=9e7*expansion&&next.material.energy.epoch_s==newtime);
     CHECK(!memcmp(past.radiation.J,oldJ,(size_t)NS*fine_bins*sizeof(double)));
     CHECK(!memcmp(past_material,past.material.storage,sizeof past_material));
